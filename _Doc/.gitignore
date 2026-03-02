@@ -1,0 +1,41 @@
+# ============ 操作系统 ============
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# ============ 编辑器 / IDE ============
+# VSCode / Cursor（可选：若需共享工作区配置可删除此项）
+.vscode/
+.cursor/
+
+# 临时/备份
+*~
+*.swp
+*.swo
+*.bak
+
+# ============ Obsidian 本地状态 ============
+# 工作区状态（本地窗口、布局等，通常不纳入版本控制）
+.obsidian/workspace.json
+
+# 插件本地数据
+.obsidian/plugins/*/data.json
+
+# ============ 日志与临时文件 ============
+*.log
+*.tmp
+*.temp
+.cache/
+
+# ============ 其他 ============
+# 敏感或本地配置
+.env
+.env.local
+*.local
