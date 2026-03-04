@@ -13,12 +13,12 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "_Doc/001_需求整理/新马数据需求整理.md",
+                "file": "_Doc/004_错误推送修复记录/如何修复未加忽略文件的错误推送.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "新马数据需求整理"
+              "title": "如何修复未加忽略文件的错误推送"
             }
           }
         ]
@@ -184,5 +184,7 @@
     }
   },
   "active": "9d5280b337b56b55",
-  "lastOpenFiles": []
+  "lastOpenFiles": [
+    "_Doc/001_需求整理/新马数据需求整理.md"
+  ]
 }
