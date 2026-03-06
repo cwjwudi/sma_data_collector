@@ -1,0 +1,19 @@
+(********************************************************************
+ * COPYRIGHT --  Bernecker + Rainer
+ ********************************************************************
+ * Program: service_4
+ * File: service_4.var
+ * Author: Bernecker + Rainer
+ * Created: February 16, 2012
+ ********************************************************************
+ * Local variables of program service_4
+ ********************************************************************)
+VAR
+	Request : STRING[400];
+	ResponseHeader : httpResponseHeader_t := (0);
+	Response : STRING[400];
+	Webservice : httpService := (0);
+	UrlParam : httpGetParamUrl := (0);
+	FormParam1 : STRING[80] := '';
+	FormParam2 : STRING[80] := '';
+END_VAR

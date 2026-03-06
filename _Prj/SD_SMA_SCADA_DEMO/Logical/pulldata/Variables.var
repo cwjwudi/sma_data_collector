@@ -1,0 +1,16 @@
+(* HTTP Client *)
+VAR
+	httpClient_0 : httpClient; (* Request/Response buffers *)
+	jsonBuffer : ARRAY[0..8191] OF USINT;
+	jsonLength : UDINT;
+	responseBuffer : ARRAY[0..4095] OF USINT; (* Request header - Content-Type: application/json *)
+	requestHeader : STRING[256] := 'Content-Type: application/json'; (* State machine *)
+	step : UINT;
+	sendTimer : UDINT;
+	errorCode : DINT;
+	responseCode : UINT; (* Data *)
+	currentTimestamp : UDINT;
+	currentValue : ARRAY[0..3599] OF data_typ;
+	PLCVariable : ARRAY[0..3599] OF data_typ; (* Batch data storage (for 3600 points) *)
+	DTGetTime_0 : DTGetTime;
+END_VAR

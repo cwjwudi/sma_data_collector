@@ -1,0 +1,67 @@
+<!--
+	此示例来源 https://echarts.apache.org/examples/zh/editor.html?c=pie-simple
+-->
+
+<!DOCTYPE html>
+<html lang="en" style="height: 100%">
+  <head>
+    <meta charset="utf-8" />
+    <!-- 引入在线CDN的ECharts和jQuery，无需本地文件 -->
+    <script src="https://cdn.jsdelivr.net/npm/echarts/dist/echarts.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jquery/dist/jquery.min.js"></script>
+  </head>
+  <body style="height: 100%; margin: 0">
+    <div id="container" style="height: 100%"></div>
+
+    <script type="text/javascript">
+      var dom = document.getElementById("container");
+      var myChart = echarts.init(dom, null, {
+        renderer: "canvas",
+        useDirtyRect: false,
+      });
+
+      var app = {};
+
+      // ========== 折线图核心配置 ==========
+      var option = {
+        title: {
+          text: "折线图显示",
+          subtext: "数据来源：模拟PLC变量",
+          left: "center",
+        },
+        tooltip: {
+          trigger: "axis", // 折线图推荐axis触发方式
+        },
+        xAxis: {
+          type: 'category',
+          boundaryGap: false,
+          data: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'] // 初始X轴数据
+        },
+        yAxis: {
+          type: 'value'
+        },
+        series: [
+          {
+            name: "PLC数据",
+            data: [820, 932, 901, 934, 1290, 1330, 1320],
+            type: 'line',
+            areaStyle: {} // 开启面积填充
+          }
+        ]
+      };
+
+      if (option && typeof option === "object") {
+        myChart.setOption(option);
+      }
+
+      window.addEventListener("resize", myChart.resize);
+	
+		
+	  // 初始数据结构
+	  var xAxisDataFromPLC = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+	  var yAxisDataFromPLC = [820, 932, 901, 934, 1290, 1330, 1320];
+	
+	 
+    </script>
+  </body>
+</html>

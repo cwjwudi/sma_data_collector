@@ -1,0 +1,10 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<?AutomationStudio FileVersion="4.9"?>
+<Package xmlns="http://br-automation.co.at/AS/Package">
+  <Objects>
+    <Object Type="File">echarts.min.js</Object>
+    <Object Type="File">jquery.min.js</Object>
+    <Object Type="File" Description="EChart饼图">line.html</Object>
+    <Object Type="File" Description="EChart与BR通信配置文件">line.json.asp</Object>
+  </Objects>
+</Package>
