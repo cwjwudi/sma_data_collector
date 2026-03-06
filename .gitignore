@@ -16,3 +16,8 @@ Diagnosis/
 ~*
 *.zip
 *.mp4
+
+# Visual Studio Code
+.vscode
+.lingma
+

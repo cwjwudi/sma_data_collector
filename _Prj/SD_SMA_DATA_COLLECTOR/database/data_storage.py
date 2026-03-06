@@ -1,0 +1,323 @@
+"""
+数据存储处理器
+负责接收采集数据并批量写入数据库
+"""
+
+import asyncio
+import logging
+from typing import Dict, List, Any, Optional
+from datetime import datetime
+from collections import deque
+# 处理相对导入问题
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from database.db_manager import DatabaseManager
+
+
+class DataStorageProcessor:
+    """数据存储处理器类"""
+    
+    def __init__(self, db_manager: DatabaseManager, batch_size: int = 100):
+        """
+        初始化数据存储处理器
+        
+        Args:
+            db_manager: 数据库管理器实例
+            batch_size: 默认批量插入大小（用于向后兼容）
+        """
+        self.db_manager = db_manager
+        self.default_batch_size = batch_size
+        self.group_batch_sizes = {}  # 存储各组的batch_size配置
+        self.data_queue = deque()
+        self.processing_task = None
+        self.running = False
+        self.logger = logging.getLogger(__name__)
+        self.column_types_cache = {}  # 缓存列类型信息
+    
+    def add_data(self, collection_data: Dict[str, Any]) -> None:
+        """
+        添加采集数据到队列
+        
+        Args:
+            collection_data: 采集的数据
+        """
+        self.data_queue.append(collection_data)
+        self.logger.debug(f"数据已添加到队列，当前队列大小: {len(self.data_queue)}")
+    
+    async def start_processing(self) -> None:
+        """启动数据处理任务"""
+        if self.running:
+            return
+        
+        self.running = True
+        self.processing_task = asyncio.create_task(self._process_data_loop())
+        self.logger.info("数据存储处理器已启动")
+    
+    async def stop_processing(self) -> None:
+        """停止数据处理任务"""
+        self.running = False
+        if self.processing_task:
+            self.processing_task.cancel()
+            try:
+                await self.processing_task
+            except asyncio.CancelledError:
+                pass
+        self.logger.info("数据存储处理器已停止")
+    
+    async def _process_data_loop(self) -> None:
+        """数据处理循环"""
+        while self.running:
+            try:
+                # 检查是否有足够的数据进行批量处理
+                if self._has_enough_data_for_batch():
+                    # 按组分别处理数据
+                    await self._process_data_by_groups()
+                else:
+                    # 如果队列中有数据但不足一批，等待一段时间再处理
+                    if self.data_queue:
+                        await asyncio.sleep(1)
+                    else:
+                        await asyncio.sleep(0.1)
+                        
+            except asyncio.CancelledError:
+                # 处理剩余数据
+                if self.data_queue:
+                    remaining_data = list(self.data_queue)
+                    self.data_queue.clear()
+                    await self._process_batch(remaining_data)
+                break
+            except Exception as e:
+                self.logger.error(f"数据处理过程中发生错误: {e}")
+                await asyncio.sleep(5)
+    
+    def _has_enough_data_for_batch(self) -> bool:
+        """
+        检查是否有足够的数据进行批量处理
+        """
+        if not self.data_queue:
+            return False
+            
+        # 按组统计数据量
+        group_counts = {}
+        temp_queue = list(self.data_queue)
+        
+        for data_item in temp_queue:
+            group_name = data_item['group_name']
+            group_counts[group_name] = group_counts.get(group_name, 0) + 1
+        
+        # 检查是否有任何一个组达到了其batch_size
+        for group_name, count in group_counts.items():
+            batch_size = self.group_batch_sizes.get(group_name, self.default_batch_size)
+            if count >= batch_size:
+                return True
+        
+        return False
+    
+    async def _process_data_by_groups(self) -> None:
+        """
+        按组分别处理数据
+        """
+        # 按组分组数据
+        grouped_data = {}
+        
+        # 先收集所有可以处理的数据
+        temp_queue = list(self.data_queue)
+        processable_data = []
+        unprocessable_data = []
+        
+        group_counts = {}
+        for data_item in temp_queue:
+            group_name = data_item['group_name']
+            group_counts[group_name] = group_counts.get(group_name, 0) + 1
+        
+        # 分离可处理和不可处理的数据
+        for data_item in temp_queue:
+            group_name = data_item['group_name']
+            batch_size = self.group_batch_sizes.get(group_name, self.default_batch_size)
+            
+            if group_counts[group_name] >= batch_size:
+                processable_data.append(data_item)
+            else:
+                unprocessable_data.append(data_item)
+        
+        # 更新队列
+        self.data_queue.clear()
+        for data_item in unprocessable_data:
+            self.data_queue.append(data_item)
+        
+        # 按组处理可处理的数据
+        grouped_processable = {}
+        for data_item in processable_data:
+            group_name = data_item['group_name']
+            if group_name not in grouped_processable:
+                grouped_processable[group_name] = []
+            grouped_processable[group_name].append(data_item)
+        
+        # 分别处理每个组的数据
+        for group_name, group_data_list in grouped_processable.items():
+            await self._process_group_data(group_name, group_data_list)
+    
+    async def _process_batch(self, batch_data: List[Dict[str, Any]]) -> None:
+        """
+        处理一批数据
+        
+        Args:
+            batch_data: 批量数据列表
+        """
+        if not batch_data:
+            return
+        
+        try:
+            # 按组名分组数据，确保每个组的数据单独处理
+            grouped_data = {}
+            for data_item in batch_data:
+                group_name = data_item['group_name']
+                if group_name not in grouped_data:
+                    grouped_data[group_name] = []
+                grouped_data[group_name].append(data_item)
+            
+            # 分别处理每个组的数据
+            for group_name, group_data_list in grouped_data.items():
+                await self._process_group_data(group_name, group_data_list)
+            
+        except Exception as e:
+            self.logger.error(f"批处理数据失败: {e}", exc_info=True)
+    
+    async def _process_group_data(self, group_name: str, group_data_list: List[Dict[str, Any]]) -> None:
+        """
+        处理单个组的数据
+        
+        Args:
+            group_name: 组名
+            group_data_list: 该组的数据列表
+        """
+        try:
+            # 获取第一个数据项来确定表结构
+            sample_data = group_data_list[0]
+            # 传递group_name给数据库管理器
+            table_name = self.db_manager.get_current_table_name(group_name)
+            
+            # 准备插入数据
+            insert_data_list = []
+            column_types = self._infer_column_types(sample_data)
+            
+            # 创建表（如果不存在）
+            if not self._ensure_table_exists(table_name, column_types):
+                return
+            
+            # 转换数据格式
+            for data_item in group_data_list:
+                insert_data = self._convert_to_db_format(data_item)
+                if insert_data:
+                    insert_data_list.append(insert_data)
+            
+            # 批量插入
+            success_count = 0
+            for data_row in insert_data_list:
+                if self.db_manager.execute_insert(table_name, data_row):
+                    success_count += 1
+            
+            self.logger.info(f"批量插入完成: 成功 {success_count}/{len(insert_data_list)} 条记录到表 {table_name} (group: {group_name})")
+            
+        except Exception as e:
+            self.logger.error(f"处理组 {group_name} 数据失败: {e}", exc_info=True)
+    
+    def _infer_column_types(self, sample_data: Dict[str, Any]) -> Dict[str, str]:
+        """
+        推断列的数据类型
+        
+        Args:
+            sample_data: 样本数据
+            
+        Returns:
+            Dict[str, str]: 列名到数据类型的映射
+        """
+        group_name = sample_data['group_name']
+        
+        if group_name in self.column_types_cache:
+            return self.column_types_cache[group_name]
+        
+        column_types = {}
+        data_points = sample_data['data']
+        
+        for point_name, point_data in data_points.items():
+            value = point_data.get('value')
+            if value is not None:
+                if isinstance(value, bool):
+                    column_types[point_name] = "BOOLEAN"
+                elif isinstance(value, int):
+                    column_types[point_name] = "INTEGER"
+                elif isinstance(value, float):
+                    column_types[point_name] = "DOUBLE"
+                else:
+                    column_types[point_name] = "VARCHAR(255)"
+            else:
+                column_types[point_name] = "VARCHAR(255)"
+        
+        self.column_types_cache[group_name] = column_types
+        return column_types
+    
+    def _ensure_table_exists(self, table_name: str, column_types: Dict[str, str]) -> bool:
+        """
+        确保数据表存在
+        
+        Args:
+            table_name: 表名
+            column_types: 列类型定义
+            
+        Returns:
+            bool: 表是否存在或创建成功
+        """
+        try:
+            # 检查表是否存在
+            check_sql = """
+            SELECT name FROM sqlite_master WHERE type='table' AND name=?
+            """ if self.db_manager.db_config['type'].lower() == 'sqlite' else """
+            SELECT table_name FROM information_schema.tables 
+            WHERE table_schema = DATABASE() AND table_name = %s
+            """
+            
+            # 简化处理：直接尝试创建表（IF NOT EXISTS）
+            return self.db_manager.create_data_table(table_name, column_types)
+            
+        except Exception as e:
+            self.logger.error(f"确保表存在时出错: {e}")
+            return False
+    
+    def _convert_to_db_format(self, collection_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """
+        将采集数据转换为数据库格式
+        
+        Args:
+            collection_data: 采集的数据
+            
+        Returns:
+            Optional[Dict[str, Any]]: 转换后的数据，失败时返回None
+        """
+        try:
+            db_data = {}
+            collection_time = collection_data['collection_time']
+            
+            # 添加通用字段
+            db_data['collection_time'] = collection_time
+            
+            # 添加数据点值
+            data_points = collection_data['data']
+            for point_name, point_data in data_points.items():
+                value = point_data.get('value')
+                if value is not None:
+                    db_data[point_name] = value
+                else:
+                    db_data[point_name] = None
+            
+            return db_data
+            
+        except Exception as e:
+            self.logger.error(f"数据格式转换失败: {e}")
+            return None
+    
+    def get_queue_size(self) -> int:
+        """获取队列大小"""
+        return len(self.data_queue)
