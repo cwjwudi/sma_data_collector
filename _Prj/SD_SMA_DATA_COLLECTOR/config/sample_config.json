@@ -1,0 +1,175 @@
+{
+  "communications": [
+    {
+      "name": "PLC1",
+      "type": "opcua",
+      "host": "192.168.50.233",
+      "port": 4840
+    }
+  ],
+  "connections": [
+    {
+      "name": "connection1",
+      "communication": "PLC1",
+      "data_groups": ["sensor_group_1", "sensor_group_2", "trigger_group_1","query_group_1"]
+    }
+  ],
+  "points": [
+    {
+      "name": "rEC",
+      "path": "ns=6;s=::Demo:EC",
+      "description": "PLC1测试FLOAT数据"
+    },
+    {
+      "name": "rF1",
+      "path": "ns=6;s=::Demo:F1",
+      "description": "PLC1测试REAL数据"
+    },
+    {
+      "name": "rF2",
+      "path": "ns=6;s=::Demo:F2",
+      "description": "PLC1测试REAL数据"
+    },
+    {
+      "name": "rF3",
+      "path": "ns=6;s=::Demo:F3",
+      "description": "PLC1测试REAL数据"
+    },
+    {
+      "name": "rF4",
+      "path": "ns=6;s=::Demo:F4",
+      "description": "PLC1测试REAL数据"
+    },
+    {
+      "name": "rF10", 
+      "path": "ns=6;s=::Demo:F10",
+      "description": "PLC1测试REAL数据"
+    },
+    {
+      "name": "rF11",
+      "path": "ns=6;s=::Demo:F11",
+      "description": "PLC1测试REAL数据"
+    },
+    {
+      "name": "rF12",
+      "path": "ns=6;s=::Demo:F12",
+      "description": "PLC1测试REAL数据"
+    },
+    {
+      "name": "rF13",
+      "path": "ns=6;s=::Demo:F13",
+      "description": "PLC1测试REAL数据"
+    },
+    {
+      "name": "rF14",
+      "path": "ns=6;s=::Demo:F14",
+      "description": "PLC1测试REAL数据"
+    },
+    {
+      "name": "rF15",
+      "path": "ns=6;s=::Demo:F15",
+      "description": "PLC1测试REAL数据"
+    },
+    {
+      "name": "rAIR",
+      "path": "ns=6;s=::Demo:AIR",
+      "description": "远程PLC AIR数据"
+    },
+    {
+      "name": "rAP1",
+      "path": "ns=6;s=::Demo:AP1",
+      "description": "远程PLC AP1数据"
+    },
+    {
+      "name": "rBP1",
+      "path": "ns=6;s=::Demo:BP1",
+      "description": "远程PLC BP1数据"
+    },
+    {
+      "name": "bTrigger1",
+      "path": "ns=6;s=::OpcCon:bSwitch",
+      "description": "PLC1触发点1，布尔类型"
+    },
+    {
+      "name": "bTriggerQuery",
+      "path": "ns=6;s=::OpcCon:bSwitch2",
+      "description": "用于触发查询任务"
+    },
+    {
+      "name": "strStartTime",
+      "path": "ns=6;s=::OpcCon:strStartTime",
+      "description": ""
+    },
+    {
+      "name": "strEndTime",
+      "path": "ns=6;s=::OpcCon:strEndTime",
+      "description": ""
+    },
+    {
+      "name": "strReadName",
+      "path": "ns=6;s=::OpcCon:strReadName",
+      "description": ""
+    },
+    {
+      "name": "strRecBuffer1",
+      "path": "ns=6;s=::OpcCon:rRecBuffer1",
+      "description": ""
+    }
+  ],
+  "groups": [
+    {
+      "name": "sensor_group_1",
+      "interval_seconds": 1,
+      "trigger": "time",
+      "description": "PLC1传感器组，每1秒采集一次",
+      "data_points": ["rEC", "rF10", "rF11", "rF12", "rF13", "rF14", "rF15"],
+      "trigger_point": null,
+      "recreate_interval_days": 1,
+      "batch_insert_size": 5
+    },
+    {
+      "name": "trigger_group_1",
+      "interval_seconds": 0,
+      "trigger": "variable",
+      "description": "PLC2触发组，由变量触发采集",
+      "data_points": ["rF1", "rF2", "rF3", "rF4"],
+      "trigger_point": "bTrigger1",
+      "reset_trigger_after_read": false,
+      "recreate_interval_days": 15,
+      "batch_insert_size": 1
+    },
+    {
+      "name": "sensor_group_2",
+      "interval_seconds": 1,
+      "trigger": "time",
+      "description": "远程PLC传感器组，每5秒采集一次",
+      "data_points": ["rAIR", "rAP1", "rBP1"],
+      "trigger_point": null,
+      "recreate_interval_days": 1,
+      "batch_insert_size": 5
+    },
+    {
+      "name": "query_group_1",
+      "interval_seconds": 0.5,
+      "trigger": "query",
+      "description": "用于处理查询任务，不要改动该字段",
+      "data_points": ["strStartTime", "strEndTime", "strReadName"],
+      "trigger_point": "bTriggerQuery",
+      "query_config": {
+        "start_time_field": "strStartTime",
+        "end_time_field": "strEndTime",
+        "query_point_field": "strReadName",
+        "output_file": null
+      }
+    }
+  ],
+  "database": {
+    "type": "mysql",
+    "name": "wn_10",
+    "host": "127.0.0.1",
+    "port": 3306,
+    "username": "newuser",
+    "password": "123456",
+    "data_groups": ["sensor_group_1", "sensor_group_2", "trigger_group_1", "query_group_1"]
+  }
+}
