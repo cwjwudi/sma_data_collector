@@ -3,10 +3,10 @@
 <SwConfiguration CpuAddress="SL1" xmlns="http://br-automation.co.at/AS/SwConfiguration">
   <TaskClass Name="Cyclic#1" />
   <TaskClass Name="Cyclic#2" />
-  <TaskClass Name="Cyclic#3">
-    <Task Name="pulldata" Source="pulldata.prg" Memory="UserROM" Language="IEC" Debugging="true" />
+  <TaskClass Name="Cyclic#3" />
+  <TaskClass Name="Cyclic#4">
+    <Task Name="AlarmQuerr" Source="AlarmQuerry.prg" Memory="UserROM" Language="IEC" Debugging="true" />
   </TaskClass>
-  <TaskClass Name="Cyclic#4" />
   <TaskClass Name="Cyclic#5" />
   <TaskClass Name="Cyclic#6" />
   <TaskClass Name="Cyclic#7" />
@@ -29,6 +29,8 @@
     <LibraryObject Name="AsHttp" Source="Libraries.AsHttp.lby" Memory="UserROM" Language="binary" Debugging="true" />
     <LibraryObject Name="runtime" Source="Libraries.runtime.lby" Memory="UserROM" Language="binary" Debugging="true" />
     <LibraryObject Name="asstring" Source="Libraries.asstring.lby" Memory="UserROM" Language="binary" Debugging="true" />
+    <LibraryObject Name="MpAlarm" Source="Libraries.MpAlarm.lby" Memory="UserROM" Language="Binary" Debugging="true" />
+    <LibraryObject Name="MpBase" Source="Libraries.MpBase.lby" Memory="UserROM" Language="Binary" Debugging="true" />
     <LibraryObject Name="arssl" Source="" Memory="UserROM" Language="Binary" Debugging="true" />
     <LibraryObject Name="fileio" Source="" Memory="UserROM" Language="Binary" Debugging="true" />
   </Libraries>

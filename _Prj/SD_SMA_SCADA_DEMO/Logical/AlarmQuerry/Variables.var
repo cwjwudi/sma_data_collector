@@ -1,0 +1,7 @@
+VAR
+	HMIAlarmQuerryStartTime : DATE_AND_TIME;
+	HMIAlarmQuerryEndTime : DATE_AND_TIME;
+	HMIAlarmQuerryMBBtn : UINT;
+	HMIAlarmQuerryTimestr : ARRAY[0..49] OF STRING[100];
+	HMIAlarmQuerryIndex : ARRAY[0..49] OF UINT;
+END_VAR
