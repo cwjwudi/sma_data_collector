@@ -9,5 +9,7 @@
     <Object Type="Package" Description="F盘中文件,需将CFCARD文件夹整体拷贝">CFCARD</Object>
     <Object Type="Package" Description="Samples for AsHttp Library">LibAsHttp1_ST</Object>
     <Object Type="Program" Language="IEC">pulldata</Object>
+    <Object Type="Program" Language="IEC">DataGen</Object>
+    <Object Type="Program" Language="IEC">DataRev</Object>
   </Objects>
 </Package>

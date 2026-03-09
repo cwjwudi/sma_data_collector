@@ -216,9 +216,9 @@ class DataCollector:
         if not query_config:
             self.logger.warning(f"查询组 {group.name} 没有配置 query_config，使用默认配置")
             query_config = {
-                'start_time_field': 'strStartTime',
-                'end_time_field': 'strEndTime',
-                'query_point_field': 'strReadName',
+                'start_time_field': 'strStartTimes',
+                'end_time_field': 'strEndTimes',
+                'query_point_field': 'strPointNames',
                 'output_file': None
             }
         

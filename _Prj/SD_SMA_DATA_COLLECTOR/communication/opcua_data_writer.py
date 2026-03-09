@@ -29,11 +29,18 @@ class OpcUaDataWriter:
         
         # 缓冲区节点配置
         self.buffer_nodes = [
-            'ns=6;s=::OpcCon:rRecBuffer1',
-            'ns=6;s=::OpcCon:rRecBuffer2',
-            'ns=6;s=::OpcCon:rRecBuffer3'
+            'ns=6;s=::DataRev:stDbReadQuery.stRev[0].rRevBuffer',
+            'ns=6;s=::DataRev:stDbReadQuery.stRev[1].rRevBuffer',
+            'ns=6;s=::DataRev:stDbReadQuery.stRev[2].rRevBuffer',
+            'ns=6;s=::DataRev:stDbReadQuery.stRev[3].rRevBuffer',
+            'ns=6;s=::DataRev:stDbReadQuery.stRev[4].rRevBuffer',
+            'ns=6;s=::DataRev:stDbReadQuery.stRev[5].rRevBuffer',
+            'ns=6;s=::DataRev:stDbReadQuery.stRev[6].rRevBuffer',
+            'ns=6;s=::DataRev:stDbReadQuery.stRev[7].rRevBuffer',
+            'ns=6;s=::DataRev:stDbReadQuery.stRev[8].rRevBuffer',
+            'ns=6;s=::DataRev:stDbReadQuery.stRev[9].rRevBuffer',
         ]
-        self.buffer_size = 1000  # 每个缓冲区的长度
+        self.buffer_size = 10000  # 每个缓冲区的长度
     
     async def write_query_results(self, 
                                   query_results: List[List[Any]],

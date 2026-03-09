@@ -17,102 +17,97 @@
   "points": [
     {
       "name": "rEC",
-      "path": "ns=6;s=::Demo:EC",
+      "path": "ns=6;s=::DataGen:EC",
       "description": "PLC1测试FLOAT数据"
     },
     {
       "name": "rF1",
-      "path": "ns=6;s=::Demo:F1",
+      "path": "ns=6;s=::DataGen:F1",
       "description": "PLC1测试REAL数据"
     },
     {
       "name": "rF2",
-      "path": "ns=6;s=::Demo:F2",
+      "path": "ns=6;s=::DataGen:F2",
       "description": "PLC1测试REAL数据"
     },
     {
       "name": "rF3",
-      "path": "ns=6;s=::Demo:F3",
+      "path": "ns=6;s=::DataGen:F3",
       "description": "PLC1测试REAL数据"
     },
     {
       "name": "rF4",
-      "path": "ns=6;s=::Demo:F4",
+      "path": "ns=6;s=::DataGen:F4",
       "description": "PLC1测试REAL数据"
     },
     {
       "name": "rF10", 
-      "path": "ns=6;s=::Demo:F10",
+      "path": "ns=6;s=::DataGen:F10",
       "description": "PLC1测试REAL数据"
     },
     {
       "name": "rF11",
-      "path": "ns=6;s=::Demo:F11",
+      "path": "ns=6;s=::DataGen:F11",
       "description": "PLC1测试REAL数据"
     },
     {
       "name": "rF12",
-      "path": "ns=6;s=::Demo:F12",
+      "path": "ns=6;s=::DataGen:F12",
       "description": "PLC1测试REAL数据"
     },
     {
       "name": "rF13",
-      "path": "ns=6;s=::Demo:F13",
+      "path": "ns=6;s=::DataGen:F13",
       "description": "PLC1测试REAL数据"
     },
     {
       "name": "rF14",
-      "path": "ns=6;s=::Demo:F14",
+      "path": "ns=6;s=::DataGen:F14",
       "description": "PLC1测试REAL数据"
     },
     {
       "name": "rF15",
-      "path": "ns=6;s=::Demo:F15",
+      "path": "ns=6;s=::DataGen:F15",
       "description": "PLC1测试REAL数据"
     },
     {
       "name": "rAIR",
-      "path": "ns=6;s=::Demo:AIR",
+      "path": "ns=6;s=::DataGen:AIR",
       "description": "远程PLC AIR数据"
     },
     {
       "name": "rAP1",
-      "path": "ns=6;s=::Demo:AP1",
+      "path": "ns=6;s=::DataGen:AP1",
       "description": "远程PLC AP1数据"
     },
     {
       "name": "rBP1",
-      "path": "ns=6;s=::Demo:BP1",
+      "path": "ns=6;s=::DataGen:BP1",
       "description": "远程PLC BP1数据"
     },
     {
       "name": "bTrigger1",
-      "path": "ns=6;s=::OpcCon:bSwitch",
-      "description": "PLC1触发点1，布尔类型"
+      "path": "ns=6;s=::DataRev:bTestTriger",
+      "description": "PLC测试Trigger信号，布尔类型"
     },
     {
       "name": "bTriggerQuery",
-      "path": "ns=6;s=::OpcCon:bSwitch2",
+      "path": "ns=6;s=::DataRev:bExecuteRead",
       "description": "用于触发查询任务"
     },
     {
-      "name": "strStartTime",
-      "path": "ns=6;s=::OpcCon:strStartTime",
+      "name": "strStartTimes",
+      "path": "ns=6;s=::DataRev:stDbReadQuery.stConfig.strStartTime",
       "description": ""
     },
     {
-      "name": "strEndTime",
-      "path": "ns=6;s=::OpcCon:strEndTime",
+      "name": "strEndTimes",
+      "path": "ns=6;s=::DataRev:stDbReadQuery.stConfig.strEndTime",
       "description": ""
     },
     {
-      "name": "strReadName",
-      "path": "ns=6;s=::OpcCon:strReadName",
-      "description": ""
-    },
-    {
-      "name": "strRecBuffer1",
-      "path": "ns=6;s=::OpcCon:rRecBuffer1",
+      "name": "strPointNames",
+      "path": "ns=6;s=::DataRev:stDbReadQuery.stConfig.strPointName",
       "description": ""
     }
   ],
@@ -128,6 +123,16 @@
       "batch_insert_size": 5
     },
     {
+      "name": "sensor_group_2",
+      "interval_seconds": 1,
+      "trigger": "time",
+      "description": "远程PLC传感器组，每1秒采集一次",
+      "data_points": ["rAIR", "rAP1", "rBP1"],
+      "trigger_point": null,
+      "recreate_interval_days": 1,
+      "batch_insert_size": 5
+    },   
+    {
       "name": "trigger_group_1",
       "interval_seconds": 0,
       "trigger": "variable",
@@ -139,26 +144,16 @@
       "batch_insert_size": 1
     },
     {
-      "name": "sensor_group_2",
-      "interval_seconds": 1,
-      "trigger": "time",
-      "description": "远程PLC传感器组，每5秒采集一次",
-      "data_points": ["rAIR", "rAP1", "rBP1"],
-      "trigger_point": null,
-      "recreate_interval_days": 1,
-      "batch_insert_size": 5
-    },
-    {
       "name": "query_group_1",
       "interval_seconds": 0.5,
       "trigger": "query",
-      "description": "用于处理查询任务，不要改动该字段",
-      "data_points": ["strStartTime", "strEndTime", "strReadName"],
+      "description": "用于处理查询任务，不要改动该字段，interval_seconds检查bTriggerQuery的轮询时间，单位是秒",
+      "data_points": ["strStartTimes", "strEndTimes", "strPointNames"],
       "trigger_point": "bTriggerQuery",
       "query_config": {
-        "start_time_field": "strStartTime",
-        "end_time_field": "strEndTime",
-        "query_point_field": "strReadName",
+        "start_time_field": "strStartTimes",
+        "end_time_field": "strEndTimes",
+        "query_point_field": "strPointNames",
         "output_file": null
       }
     }
