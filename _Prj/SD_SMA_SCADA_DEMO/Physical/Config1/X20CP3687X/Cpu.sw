@@ -7,6 +7,7 @@
     <Task Name="pulldata" Source="pulldata.prg" Memory="UserROM" Language="IEC" Debugging="true" Disabled="true" />
   </TaskClass>
   <TaskClass Name="Cyclic#4">
+    <Task Name="AlarmQuerr" Source="AlarmQuerry.prg" Memory="UserROM" Language="IEC" Debugging="true" />
     <Task Name="DataGen" Source="DataGen.prg" Memory="UserROM" Language="IEC" Debugging="true" />
     <Task Name="DataRev" Source="DataRev.prg" Memory="UserROM" Language="IEC" Debugging="true" />
   </TaskClass>
@@ -36,7 +37,11 @@
     <LibraryObject Name="sys_lib" Source="Libraries.sys_lib.lby" Memory="UserROM" Language="binary" Debugging="true" />
     <LibraryObject Name="LxVar" Source="Libraries.LxVar.lby" Memory="UserROM" Language="ANSIC" Debugging="true" />
     <LibraryObject Name="BrRand" Source="Libraries.BrRand.lby" Memory="UserROM" Language="ANSIC" Debugging="true" />
+    <LibraryObject Name="MpAlarm" Source="Libraries.MpAlarm.lby" Memory="UserROM" Language="Binary" Debugging="true" />
+    <LibraryObject Name="MpBase" Source="Libraries.MpBase.lby" Memory="UserROM" Language="Binary" Debugging="true" />
     <LibraryObject Name="arssl" Source="" Memory="UserROM" Language="Binary" Debugging="true" />
     <LibraryObject Name="fileio" Source="" Memory="UserROM" Language="Binary" Debugging="true" />
+    <LibraryObject Name="astime" Source="" Memory="UserROM" Language="Binary" Debugging="true" />
+    <LibraryObject Name="asieccon" Source="" Memory="UserROM" Language="Binary" Debugging="true" />
   </Libraries>
 </SwConfiguration>

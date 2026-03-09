@@ -99,6 +99,13 @@
         <Variable Name="stDbReadQuery" RecursiveEnable="2" />
         <Variable Name="bTestTriger" />
       </Task>
+      <Task Name="AlarmQuerr">
+        <Variable Name="HMIAlarmQuerryEndTime" />
+        <Variable Name="HMIAlarmQuerryIndex" RecursiveEnable="2" />
+        <Variable Name="HMIAlarmQuerryMBBtn" />
+        <Variable Name="HMIAlarmQuerryStartTime" />
+        <Variable Name="HMIAlarmQuerryTimestr" RecursiveEnable="2" />
+      </Task>
     </Module>
   </DefaultView>
 </OpcUaSource>

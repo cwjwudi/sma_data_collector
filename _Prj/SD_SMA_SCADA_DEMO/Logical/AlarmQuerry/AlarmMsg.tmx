@@ -1,0 +1,90 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<tmx version="1.4">
+  <header creationtool="B&amp;R Automation Studio" creationtoolversion="4.2" datatype="unknown" segtype="sentence" adminlang="en" srclang="en" o-tmf="TMX">
+    <note>Change the namespace to define where this text module should be located within the logical structure of your texts</note>
+    <prop type="x-BR-TS:Namespace">IAT</prop>
+  </header>
+  <body>
+    <tu tuid="Alarmmsg.0">
+      <tuv xml:lang="fr">
+        <seg> </seg>
+      </tuv>
+      <tuv xml:lang="de">
+        <seg> </seg>
+      </tuv>
+      <tuv xml:lang="en">
+        <seg> </seg>
+      </tuv>
+    </tu>
+    <tu tuid="Alarmmsg.1">
+      <tuv xml:lang="zh-CHS">
+        <seg>alarm1</seg>
+      </tuv>
+      <tuv xml:lang="fr">
+        <seg>alarm1</seg>
+      </tuv>
+      <tuv xml:lang="de">
+        <seg>alarm1</seg>
+      </tuv>
+      <tuv xml:lang="en">
+        <seg>alarm1</seg>
+      </tuv>
+    </tu>
+    <tu tuid="Alarmmsg.2">
+      <tuv xml:lang="zh-CHS">
+        <seg>alarm2</seg>
+      </tuv>
+      <tuv xml:lang="fr">
+        <seg>alarm2</seg>
+      </tuv>
+      <tuv xml:lang="de">
+        <seg>alarm2</seg>
+      </tuv>
+      <tuv xml:lang="en">
+        <seg>alarm2</seg>
+      </tuv>
+    </tu>
+    <tu tuid="Alarmmsg.3">
+      <tuv xml:lang="zh-CHS">
+        <seg>alarm3</seg>
+      </tuv>
+      <tuv xml:lang="fr">
+        <seg>alarm3</seg>
+      </tuv>
+      <tuv xml:lang="de">
+        <seg>alarm3</seg>
+      </tuv>
+      <tuv xml:lang="en">
+        <seg>alarm3</seg>
+      </tuv>
+    </tu>
+    <tu tuid="Alarmmsg.4">
+      <tuv xml:lang="zh-CHS">
+        <seg>alarm4</seg>
+      </tuv>
+      <tuv xml:lang="fr">
+        <seg>alarm4</seg>
+      </tuv>
+      <tuv xml:lang="de">
+        <seg>alarm4</seg>
+      </tuv>
+      <tuv xml:lang="en">
+        <seg>alarm4</seg>
+      </tuv>
+    </tu>
+    <tu tuid="Alarmmsg.5">
+      <tuv xml:lang="zh-CHS">
+        <seg>alarm5</seg>
+      </tuv>
+      <tuv xml:lang="fr">
+        <seg>alarm5</seg>
+      </tuv>
+      <tuv xml:lang="de">
+        <seg>alarm5</seg>
+      </tuv>
+      <tuv xml:lang="en">
+        <seg>alarm5</seg>
+      </tuv>
+    </tu>
+  </body>
+</tmx>

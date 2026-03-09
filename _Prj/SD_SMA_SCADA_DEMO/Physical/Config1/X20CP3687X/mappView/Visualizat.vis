@@ -7,7 +7,9 @@
     <Page refId="Page_Trend" />
   </Pages>
   <Navigations />
-  <BindingsSets />
+  <BindingsSets>
+    <BindingsSet refId="content_Alarm_binding" />
+  </BindingsSets>
   <EventBindingsSets />
   <Dialogs />
   <Contents>
@@ -16,10 +18,12 @@
     <Content refId="content_Trend" />
     <Content refId="content_Line" />
   </Contents>
-  <SnippetsSets />
+  <SnippetsSets>
+    <SnippetsSet refId="snippet_Audit" />
+  </SnippetsSets>
   <VariablesSets />
   <ExpressionsSets />
-	<StartTheme themeRefId="BuRTheme1" />
+  <StartTheme themeRefId="BuRTheme1" />
   <Themes>
     <Theme refId="BuRTheme1" />
   </Themes>
