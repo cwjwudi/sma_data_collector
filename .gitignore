@@ -21,3 +21,22 @@ Diagnosis/
 .vscode
 .lingma
 
+# Python (SD_SMA_ReportEditor / SD_SMA_DATA_COLLECTOR)
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+venv/
+.venv/
+
+# Node (SD_SMA_ReportEditor frontend)
+node_modules/
+dist/
+dist-electron/
+
+# Runtime data
+_Prj/SD_SMA_ReportEditor/backend/data/
+
+# Environment
+.env
+.env.local
