@@ -3,7 +3,7 @@
     {
       "name": "PLC1",
       "type": "opcua",
-      "host": "192.168.50.233",
+      "host": "127.0.0.1",
       "port": 4840
     }
   ],
@@ -161,10 +161,10 @@
   "database": {
     "type": "mysql",
     "name": "wn_10",
-    "host": "127.0.0.1",
+    "host": "192.168.50.22",
     "port": 3306,
-    "username": "newuser",
-    "password": "123456",
+    "username": "root",
+    "password": "Br54644800@",
     "data_groups": ["sensor_group_1", "sensor_group_2", "trigger_group_1", "query_group_1"]
   }
 }
