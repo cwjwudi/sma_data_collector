@@ -116,12 +116,26 @@ class DataCollector:
                 # 读取数据
                 data = await opcua_client.read_data_points(data_points)
                 
+                # 过滤掉值为 None 的数据点
+                valid_data = {name: info for name, info in data.items() if info.get('value') is not None}
+                
+                # 检查是否有有效数据
+                if not valid_data:
+                    self.logger.warning(f"采集组 {group.name} 所有数据点读取失败，跳过本次采集")
+                    await asyncio.sleep(group.interval_seconds)
+                    continue
+                
+                # 记录无效数据点（可选）
+                invalid_points = [name for name, info in data.items() if info.get('value') is None]
+                if invalid_points:
+                    self.logger.warning(f"采集组 {group.name} 以下数据点读取失败，已过滤：{invalid_points}")
+                
                 # 添加元数据
                 collection_data = {
                     'group_name': group.name,
                     'collection_time': datetime.now(),
                     'trigger_type': 'time',
-                    'data': data
+                    'data': valid_data
                 }
                 
                 # 调用回调函数
@@ -158,30 +172,42 @@ class DataCollector:
                     
                     # 读取实际数据
                     data = await opcua_client.read_data_points(data_points)
-                    
-                    # 根据配置决定是否复位触发点
-                    if group.reset_trigger_after_read:
-                        success = await opcua_client.write_boolean_value(trigger_point.path, False)
-                        if success:
-                            self.logger.debug(f"已复位触发点: {trigger_point.name}")
-                        else:
-                            # 如果复位失败，记录警告但继续处理数据
-                            self.logger.warning(f"复位触发点失败: {trigger_point.name}，但这不会影响数据采集")
+                                        
+                    # 过滤掉值为 None 的数据点
+                    valid_data = {name: info for name, info in data.items() if info.get('value') is not None}
+                                        
+                    # 检查是否有有效数据
+                    if not valid_data:
+                        self.logger.warning(f"变量触发组 {group.name} 所有数据点读取失败，跳过本次采集")
                     else:
-                        self.logger.debug(f"根据配置跳过触发点复位: {trigger_point.name}")
-                    
-                    # 添加元数据
-                    collection_data = {
-                        'group_name': group.name,
-                        'collection_time': datetime.now(),
-                        'trigger_type': 'variable',
-                        'trigger_point': trigger_point.name,
-                        'data': data
-                    }
-                    
-                    # 调用回调函数
-                    for callback in self.data_callbacks:
-                        callback(collection_data)
+                        # 记录无效数据点（可选）
+                        invalid_points = [name for name, info in data.items() if info.get('value') is None]
+                        if invalid_points:
+                            self.logger.warning(f"变量触发组 {group.name} 以下数据点读取失败，已过滤：{invalid_points}")
+                                            
+                        # 根据配置决定是否复位触发点
+                        if group.reset_trigger_after_read:
+                            success = await opcua_client.write_boolean_value(trigger_point.path, False)
+                            if success:
+                                self.logger.debug(f"已复位触发点：{trigger_point.name}")
+                            else:
+                                # 如果复位失败，记录警告但继续处理数据
+                                self.logger.warning(f"复位触发点失败：{trigger_point.name}，但这不会影响数据采集")
+                        else:
+                            self.logger.debug(f"根据配置跳过触发点复位：{trigger_point.name}")
+                                            
+                        # 添加元数据
+                        collection_data = {
+                            'group_name': group.name,
+                            'collection_time': datetime.now(),
+                            'trigger_type': 'variable',
+                            'trigger_point': trigger_point.name,
+                            'data': valid_data
+                        }
+                                            
+                        # 调用回调函数
+                        for callback in self.data_callbacks:
+                            callback(collection_data)
                 
                 # 更新上一次的状态
                 previous_trigger_state = current_trigger_value
