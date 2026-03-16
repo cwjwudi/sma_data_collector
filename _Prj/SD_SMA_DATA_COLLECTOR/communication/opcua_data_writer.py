@@ -12,6 +12,7 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from communication.opcua_client import OpcUaClient
+from communication.date_and_time import fast_dt_to_date_and_time
 
 
 class OpcUaDataWriter:
@@ -40,10 +41,25 @@ class OpcUaDataWriter:
             'ns=6;s=::DataRev:stDbReadQuery.stRev[8].rRevBuffer',
             'ns=6;s=::DataRev:stDbReadQuery.stRev[9].rRevBuffer',
         ]
+
+        self.time_nodes = [
+            'ns=6;s=::DataRev:stDbReadQuery.stRev[0].udiRevTime',
+            'ns=6;s=::DataRev:stDbReadQuery.stRev[1].udiRevTime',
+            'ns=6;s=::DataRev:stDbReadQuery.stRev[2].udiRevTime',
+            'ns=6;s=::DataRev:stDbReadQuery.stRev[3].udiRevTime',
+            'ns=6;s=::DataRev:stDbReadQuery.stRev[4].udiRevTime',
+            'ns=6;s=::DataRev:stDbReadQuery.stRev[5].udiRevTime',
+            'ns=6;s=::DataRev:stDbReadQuery.stRev[6].udiRevTime',
+            'ns=6;s=::DataRev:stDbReadQuery.stRev[7].udiRevTime',
+            'ns=6;s=::DataRev:stDbReadQuery.stRev[8].udiRevTime',
+            'ns=6;s=::DataRev:stDbReadQuery.stRev[9].udiRevTime',
+        ]
+
         self.buffer_size = 10000  # 每个缓冲区的长度
     
     async def write_query_results(self, 
                                   query_results: List[List[Any]],
+                                  query_time: List[List[Any]],
                                   point_names: List[str]) -> bool:
         """
         将查询结果写入 OPC UA 缓冲区
@@ -68,7 +84,7 @@ class OpcUaDataWriter:
             # 将数据转换为浮点数数组
             # float_data = self._convert_to_float_arrays(query_results, point_names)
             
-            # 依次写入各个缓冲区
+            # 数据依次写入各个缓冲区
             success_count = 0
             for i, buffer_node in enumerate(self.buffer_nodes):
                 if i < len(query_results):
@@ -80,7 +96,7 @@ class OpcUaDataWriter:
                         data_to_write.extend([0.0] * (self.buffer_size - len(data_to_write)))
                     
                     # 写入数据
-                    success = await self._write_to_node(buffer_node, data_to_write)
+                    success = await self._write_to_node(buffer_node, data_to_write, ua.VariantType.Float)
                     if success:
                         success_count += 1
                         self.logger.info(f"成功写入缓冲区 {i+1}: {buffer_node}, "
@@ -92,6 +108,31 @@ class OpcUaDataWriter:
                     self.logger.warning(f"没有足够的数据写入缓冲区 {i+1}")
             
             self.logger.info(f"写入完成，成功 {success_count}/{len(self.buffer_nodes)} 个缓冲区")
+
+            for i, time_node in enumerate(self.time_nodes):
+                if i < len(query_time):
+                    # 截断超出部分
+                    time_to_write = query_time[i][:self.buffer_size]
+
+                    # 修改时间格式为UINT32
+                    time_to_write = [fast_dt_to_date_and_time(t) for t in time_to_write]
+                    
+                    # 如果数据不足 1000 个，用 0 填充
+                    if len(time_to_write) < self.buffer_size:
+                        time_to_write.extend([0] * (self.buffer_size - len(time_to_write)))
+
+                    # 写入数据
+                    success = await self._write_to_node(time_node, time_to_write, ua.VariantType.UInt32)
+                    if success:
+                        self.logger.info(f"成功写入时间缓冲区 {i+1}: {time_node}, "
+                                       f"数据长度={len(query_time[i])}, "
+                                       f"写入长度={len(time_to_write)}")
+                    else:
+                        self.logger.warning(f"写入时间缓冲区 {i+1} 失败：{time_node}")
+                else:
+                    self.logger.warning(f"没有足够的数据写入时间缓冲区 {i+1}")
+            self.logger.info(f"写入完成，成功 {success_count}/{len(self.time_nodes)} 个时间缓冲区")
+            
             return success_count > 0
             
         except Exception as e:
@@ -138,13 +179,14 @@ class OpcUaDataWriter:
         
         return buffer_arrays
     
-    async def _write_to_node(self, node_path: str, values: List[float]) -> bool:
+    async def _write_to_node(self, node_path: str, values: List[Any], ua_type: Any) -> bool:
         """
         写入浮点数数组到指定节点
         
         Args:
             node_path: 节点路径
-            values: 浮点数数组
+            values: 数组
+            ua_type: 节点类型
             
         Returns:
             bool: 写入是否成功
@@ -158,12 +200,12 @@ class OpcUaDataWriter:
             node = self.opcua_client.client.get_node(node_path)
             
             # 创建 Float 数组变体
-            variant = ua.Variant(values, ua.VariantType.Float)
+            variant = ua.Variant(values, ua_type)
             
             # 写入数据
             node.set_attribute(ua.AttributeIds.Value, ua.DataValue(variant))
             
-            self.logger.debug(f"成功写入 {len(values)} 个浮点数到 {node_path}")
+            self.logger.debug(f"成功写入 {len(values)} 个数到 {node_path}")
             return True
             
         except Exception as e:
