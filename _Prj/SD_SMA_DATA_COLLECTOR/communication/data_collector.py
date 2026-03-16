@@ -187,7 +187,7 @@ class DataCollector:
                 previous_trigger_state = current_trigger_value
                 
                 # 短暂等待后继续检查
-                await asyncio.sleep(0.1)
+                await asyncio.sleep(group.interval_seconds)
                 
             except asyncio.CancelledError:
                 self.logger.info(f"变量触发采集组 {group.name} 已取消")
@@ -254,7 +254,7 @@ class DataCollector:
                 previous_trigger_state = current_trigger_value
                 
                 # 短暂等待后继续检查
-                await asyncio.sleep(0.1)
+                await asyncio.sleep(group.interval_seconds)
                 
             except asyncio.CancelledError:
                 self.logger.info(f"查询任务组 {group.name} 已取消")

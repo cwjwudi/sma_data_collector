@@ -52,7 +52,7 @@ class CommunicationManager:
                 # 创建OPC UA客户端
                 client = OpcUaClient(
                     server_url=comm.server_url,
-                    max_retries=5,
+                    max_retries=10000,
                     retry_delay=5.0,
                     health_check_interval=30
                 )
