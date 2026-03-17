@@ -86,5 +86,75 @@
         <seg>alarm5</seg>
       </tuv>
     </tu>
+    <tu tuid="Alarmmsg.6">
+      <tuv xml:lang="zh-CHS">
+        <seg>alarm6</seg>
+      </tuv>
+      <tuv xml:lang="fr">
+        <seg>alarm6</seg>
+      </tuv>
+      <tuv xml:lang="de">
+        <seg>alarm6</seg>
+      </tuv>
+      <tuv xml:lang="en">
+        <seg>alarm6</seg>
+      </tuv>
+    </tu>
+    <tu tuid="Alarmmsg.7">
+      <tuv xml:lang="zh-CHS">
+        <seg>alarm7</seg>
+      </tuv>
+      <tuv xml:lang="fr">
+        <seg>alarm7</seg>
+      </tuv>
+      <tuv xml:lang="de">
+        <seg>alarm7</seg>
+      </tuv>
+      <tuv xml:lang="en">
+        <seg>alarm7</seg>
+      </tuv>
+    </tu>
+    <tu tuid="Alarmmsg.8">
+      <tuv xml:lang="zh-CHS">
+        <seg>alarm8</seg>
+      </tuv>
+      <tuv xml:lang="fr">
+        <seg>alarm8</seg>
+      </tuv>
+      <tuv xml:lang="de">
+        <seg>alarm8</seg>
+      </tuv>
+      <tuv xml:lang="en">
+        <seg>alarm8</seg>
+      </tuv>
+    </tu>
+    <tu tuid="Alarmmsg.9">
+      <tuv xml:lang="zh-CHS">
+        <seg>alarm9</seg>
+      </tuv>
+      <tuv xml:lang="fr">
+        <seg>alarm9</seg>
+      </tuv>
+      <tuv xml:lang="de">
+        <seg>alarm9</seg>
+      </tuv>
+      <tuv xml:lang="en">
+        <seg>alarm9</seg>
+      </tuv>
+    </tu>
+    <tu tuid="Alarmmsg.10">
+      <tuv xml:lang="zh-CHS">
+        <seg>alarm10</seg>
+      </tuv>
+      <tuv xml:lang="fr">
+        <seg>alarm10</seg>
+      </tuv>
+      <tuv xml:lang="de">
+        <seg>alarm10</seg>
+      </tuv>
+      <tuv xml:lang="en">
+        <seg>alarm10</seg>
+      </tuv>
+    </tu>
   </body>
 </tmx>

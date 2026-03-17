@@ -29,16 +29,16 @@ class OpcUaDataWriter:
         
         # 缓冲区节点配置
         self.buffer_nodes = [
-            'ns=6;s=::DataRev:stDbReadQuery.stRev[0].rRevBuffer',
-            'ns=6;s=::DataRev:stDbReadQuery.stRev[1].rRevBuffer',
-            'ns=6;s=::DataRev:stDbReadQuery.stRev[2].rRevBuffer',
-            'ns=6;s=::DataRev:stDbReadQuery.stRev[3].rRevBuffer',
-            'ns=6;s=::DataRev:stDbReadQuery.stRev[4].rRevBuffer',
-            'ns=6;s=::DataRev:stDbReadQuery.stRev[5].rRevBuffer',
-            'ns=6;s=::DataRev:stDbReadQuery.stRev[6].rRevBuffer',
-            'ns=6;s=::DataRev:stDbReadQuery.stRev[7].rRevBuffer',
-            'ns=6;s=::DataRev:stDbReadQuery.stRev[8].rRevBuffer',
-            'ns=6;s=::DataRev:stDbReadQuery.stRev[9].rRevBuffer',
+            'ns=6;s=::AlarmQuerr:stDbReadQuery.stRev[0].rRevBuffer',
+            'ns=6;s=::AlarmQuerr:stDbReadQuery.stRev[1].rRevBuffer',
+            'ns=6;s=::AlarmQuerr:stDbReadQuery.stRev[2].rRevBuffer',
+            'ns=6;s=::AlarmQuerr:stDbReadQuery.stRev[3].rRevBuffer',
+            'ns=6;s=::AlarmQuerr:stDbReadQuery.stRev[4].rRevBuffer',
+            'ns=6;s=::AlarmQuerr:stDbReadQuery.stRev[5].rRevBuffer',
+            'ns=6;s=::AlarmQuerr:stDbReadQuery.stRev[6].rRevBuffer',
+            'ns=6;s=::AlarmQuerr:stDbReadQuery.stRev[7].rRevBuffer',
+            'ns=6;s=::AlarmQuerr:stDbReadQuery.stRev[8].rRevBuffer',
+            'ns=6;s=::AlarmQuerr:stDbReadQuery.stRev[9].rRevBuffer',
         ]
         self.buffer_size = 10000  # 每个缓冲区的长度
     

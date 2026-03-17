@@ -5,3 +5,35 @@ VAR
 	HMIAlarmQuerryTimestr : ARRAY[0..49] OF STRING[100];
 	HMIAlarmQuerryIndex : ARRAY[0..49] OF UINT;
 END_VAR
+(*DATA BASE Query*)
+VAR
+	bExecuteRead : BOOL;
+	stDbReadQuery : dbReadQuery_typ;
+END_VAR
+(*DATA BASE CONSTANT*)
+VAR CONSTANT
+	REV_BUFFER_SIZE : UINT := 10000;
+	REV_BUFFER_SIZE_MINUS_ONE : UINT := REV_BUFFER_SIZE-1;
+	DB_READ_QUERY_SIZE : UINT := 10;
+	DB_READ_QUERY_SIZE_MINUS_ONE : UINT := DB_READ_QUERY_SIZE-1;
+END_VAR
+VAR
+	msg : DINT;
+END_VAR
+(*ConnectVar*)
+VAR
+	tstAlarmQuerryStartTime : DTStructure;
+	strStartTimeYear : STRING[10];
+	strStartTimeMonth : STRING[10];
+	strStartTimeDay : STRING[10];
+	strStartTimeHour : STRING[10];
+	strStartTimeMinute : STRING[10];
+	strStartTimeSecond : STRING[10];
+	tstAlarmQuerryEndTime : DTStructure;
+	strEndTimeYear : STRING[10];
+	strEndTimeMonth : STRING[10];
+	strEndTimeDay : STRING[10];
+	strEndTimeHour : STRING[10];
+	strEndTimeMinute : STRING[10];
+	strEndTimeSecond : STRING[10];
+END_VAR
