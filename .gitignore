@@ -40,3 +40,6 @@ _Prj/SD_SMA_ReportEditor/backend/data/
 # Environment
 .env
 .env.local
+
+# Logs
+*.log
