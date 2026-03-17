@@ -121,6 +121,9 @@ class OpcUaClient:
                 if self._is_connection_error(e):
                     self.logger.warning(f"检测到连接错误，准备重连: {e}")
                     if await self._attempt_reconnect():
+                        # 重连成功后添加延时，避免快速反复重连
+                        await asyncio.sleep(2.0)  # 延时 2 秒
+                        
                         # 重连成功后重试读取
                         try:
                             node = self.client.get_node(point.path)
@@ -140,6 +143,8 @@ class OpcUaClient:
                                 'path': point.path
                             }
                     else:
+                        # 重连失败也要添加延时，避免立刻重连
+                        await asyncio.sleep(3.0)  # 延时 3 秒
                         results[point.name] = {
                             'value': None,
                             'timestamp': timestamp,

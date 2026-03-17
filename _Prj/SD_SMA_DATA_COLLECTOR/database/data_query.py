@@ -111,7 +111,16 @@ class DataQueryProcessor:
                         continue
                     else:
                         _all_time[point_to_idx[key]].append(rec['collection_time'])
-                        _all_data[point_to_idx[key]].append(rec[key])
+                        # 将 NULL 值转换为 0.0
+                        value = rec[key]
+                        if value is None:
+                            value = 0.0
+                        else:
+                            try:
+                                value = float(value)
+                            except (TypeError, ValueError):
+                                value = 0.0
+                        _all_data[point_to_idx[key]].append(value)
 
             # 如果需要返回数据
             if return_data:

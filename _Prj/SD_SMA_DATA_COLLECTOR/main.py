@@ -325,6 +325,7 @@ class DataCollectionSystem:
                     # 将查询结果写入 OPC UA 缓冲区
                     success = await data_writer.write_query_results(
                         query_results,
+                        query_time,
                         query_task['point_names']
                     )
                     

@@ -48,11 +48,16 @@ class DatabaseManager:
         try:
             if self.db_config['type'].lower() == 'mysql':
                 if not MYSQL_AVAILABLE:
-                    raise ImportError("MySQL驱动未安装，请安装pymysql")
+                    raise ImportError("MySQL 驱动未安装，请安装 pymysql")
+                
+                from urllib.parse import quote_plus
+                
+                # 对密码进行 URL 编码，避免特殊字符导致解析错误
+                encoded_password = quote_plus(self.db_config['password'])
                 
                 connection_string = (
                     f"mysql+pymysql://{self.db_config['username']}:"
-                    f"{self.db_config['password']}@"
+                    f"{encoded_password}@"
                     f"{self.db_config['host']}:{self.db_config['port']}/"
                     f"{self.db_config['name']}?charset=utf8mb4"
                 )

@@ -7,6 +7,7 @@ TYPE
 	END_STRUCT;
 	dbReadRev_typ : 	STRUCT 
 		rRevBuffer : ARRAY[0..REV_BUFFER_SIZE_MINUS_ONE]OF REAL;
+		udiRevTime : ARRAY[0..REV_BUFFER_SIZE_MINUS_ONE]OF UDINT;
 	END_STRUCT;
 	dbReadQuery_typ : 	STRUCT 
 		stConfig : dbReadConfig_typ;
