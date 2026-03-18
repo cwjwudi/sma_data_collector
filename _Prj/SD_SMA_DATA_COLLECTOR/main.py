@@ -360,7 +360,7 @@ def main():
     import argparse
     
     parser = argparse.ArgumentParser(description='BR数据采集系统')
-    parser.add_argument('--config', '-c', default='config/sample_config.json',
+    parser.add_argument('--config', '-c', default='config/Alarm_Audit.json',
                        help='配置文件路径')
     parser.add_argument('--query', '-q', action='store_true',
                        help='进入查询模式')

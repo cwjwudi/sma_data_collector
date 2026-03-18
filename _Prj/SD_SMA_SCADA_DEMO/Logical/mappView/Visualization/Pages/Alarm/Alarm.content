@@ -101,9 +101,32 @@
         </Widget>
       </Widgets>
     </Widget>
-    <Widget xsi:type="widgets.brease.DateTimeInput" id="StartTime" top="103" left="1067" width="353" height="40" zIndex="2" />
-    <Widget xsi:type="widgets.brease.DateTimeInput" id="Endtime" top="218" left="1067" width="353" height="40" zIndex="3" />
-    <Widget xsi:type="widgets.brease.Label" id="to" top="166" left="1222" width="44" zIndex="4" text="to" textAlign="center" fontSize="18px" bold="true" padding="0px" />
-    <Widget xsi:type="widgets.brease.MomentaryPushButton" id="QueryMB1" top="281" left="1194" zIndex="5" text="Query" />
+    <Widget xsi:type="widgets.brease.Label" id="to" top="156" left="1222" width="44" zIndex="2" text="to" textAlign="center" fontSize="18px" bold="true" padding="0px" />
+    <Widget xsi:type="widgets.brease.MomentaryPushButton" id="QueryMB1" top="318" left="1207" zIndex="3" text="Query" />
+    <Widget xsi:type="widgets.brease.TextInput" id="stYear" top="63" left="1109" width="63" zIndex="4" inputRestriction="^[0-9]+$" maxLength="4" style="DTInput" />
+    <Widget xsi:type="widgets.brease.TextInput" id="stMonth" top="63" left="1219" width="52" zIndex="5" inputRestriction="^[0-9]+$" maxLength="2" style="DTInput" />
+    <Widget xsi:type="widgets.brease.TextInput" id="stDay" top="63" left="1317" width="51" zIndex="6" inputRestriction="^[0-9]+$" maxLength="2" style="DTInput" />
+    <Widget xsi:type="widgets.brease.TextInput" id="stHour" top="110" left="1121" width="51" zIndex="7" inputRestriction="^[0-9]+$" maxLength="2" style="DTInput" />
+    <Widget xsi:type="widgets.brease.TextInput" id="stMin" top="110" left="1220" width="51" zIndex="8" inputRestriction="^[0-9]+$" maxLength="2" style="DTInput" />
+    <Widget xsi:type="widgets.brease.TextInput" id="stSec" top="110" left="1317" width="51" zIndex="9" inputRestriction="^[0-9]+$" maxLength="2" style="DTInput" />
+    <Widget xsi:type="widgets.brease.Label" id="YLabel" top="63" left="1182" width="28" zIndex="10" text="年" />
+    <Widget xsi:type="widgets.brease.Label" id="YLabel1" top="63" left="1281" width="27" zIndex="11" text="月" />
+    <Widget xsi:type="widgets.brease.Label" id="YLabel2" top="63" left="1378" width="27" zIndex="12" text="日" />
+    <Widget xsi:type="widgets.brease.Label" id="YLabel3" top="110" left="1182" width="28" zIndex="13" text="时" />
+    <Widget xsi:type="widgets.brease.Label" id="YLabel4" top="110" left="1280" width="28" zIndex="14" text="分" />
+    <Widget xsi:type="widgets.brease.Label" id="YLabel5" top="110" left="1377" width="28" zIndex="15" text="秒" />
+    <Widget xsi:type="widgets.brease.TextInput" id="edYear" top="202" left="1109" width="63" zIndex="16" inputRestriction="^[0-9]+$" maxLength="4" style="DTInput" />
+    <Widget xsi:type="widgets.brease.TextInput" id="edMonth" top="202" left="1219" width="52" zIndex="17" inputRestriction="^[0-9]+$" maxLength="2" style="DTInput" />
+    <Widget xsi:type="widgets.brease.TextInput" id="edDay" top="202" left="1317" width="51" zIndex="18" inputRestriction="^[0-9]+$" maxLength="2" style="DTInput" />
+    <Widget xsi:type="widgets.brease.TextInput" id="edHour" top="249" left="1121" width="51" zIndex="19" inputRestriction="^[0-9]+$" maxLength="2" style="DTInput" />
+    <Widget xsi:type="widgets.brease.TextInput" id="edMin" top="249" left="1220" width="51" zIndex="20" inputRestriction="^[0-9]+$" maxLength="2" style="DTInput" />
+    <Widget xsi:type="widgets.brease.TextInput" id="edSec" top="249" left="1317" width="51" zIndex="21" inputRestriction="^[0-9]+$" maxLength="2" style="DTInput" />
+    <Widget xsi:type="widgets.brease.Label" id="YLabel6" top="202" left="1182" width="28" zIndex="22" text="年" />
+    <Widget xsi:type="widgets.brease.Label" id="YLabel7" top="202" left="1281" width="27" zIndex="23" text="月" />
+    <Widget xsi:type="widgets.brease.Label" id="YLabel8" top="202" left="1378" width="27" zIndex="24" text="日" />
+    <Widget xsi:type="widgets.brease.Label" id="YLabel9" top="249" left="1182" width="28" zIndex="25" text="时" />
+    <Widget xsi:type="widgets.brease.Label" id="YLabel10" top="249" left="1280" width="28" zIndex="26" text="分" />
+    <Widget xsi:type="widgets.brease.Label" id="YLabel11" top="249" left="1377" width="28" zIndex="27" text="秒" />
+    <Widget xsi:type="widgets.brease.MomentaryPushButton" id="QueryClearMB" top="390" left="1209" zIndex="28" text="Clear" />
   </Widgets>
 </Content>
