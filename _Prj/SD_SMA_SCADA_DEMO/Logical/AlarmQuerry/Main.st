@@ -1,78 +1,91 @@
 
 PROGRAM _INIT
 	(* Insert code here *)
-	 
+	stDbReadQuery.stConfig.strPointName[0] := 'msg';
+
 END_PROGRAM
 
 PROGRAM _CYCLIC
 	(* Insert code here *)
 	//Data GEN
-	msg := RandRange(0,10);
+	msg := RandRange(1,10);
 	
 	//Data from DATABASE
 	bExecuteRead;
 	stDbReadQuery;
 	
 	//Para and button connect
+	stDbReadQuery.stConfig.strStartTime[0] := '';
+	brsstrcat(ADR(stDbReadQuery.stConfig.strStartTime[0]),ADR(HMIAlarmQuerrystYear));
+	brsstrcat(ADR(stDbReadQuery.stConfig.strStartTime[0]),ADR('-'));
+	brsstrcat(ADR(stDbReadQuery.stConfig.strStartTime[0]),ADR(HMIAlarmQuerrystMonth));
+	brsstrcat(ADR(stDbReadQuery.stConfig.strStartTime[0]),ADR('-'));
+	brsstrcat(ADR(stDbReadQuery.stConfig.strStartTime[0]),ADR(HMIAlarmQuerrystDay));
+	brsstrcat(ADR(stDbReadQuery.stConfig.strStartTime[0]),ADR(' '));
 	
-	
-	DT_TO_DTStructure(HMIAlarmQuerryStartTime,ADR(tstAlarmQuerryStartTime));
-	
-//	stDbReadQuery.stConfig.strStartTime[0] := '';
-//	brsitoa(UINT_TO_UDINT(tstAlarmQuerryStartTime.year),ADR(strStartTimeYear));
-//	
-//	brsitoa(USINT_TO_UDINT(tstAlarmQuerryStartTime.month),ADR(strStartTimeMonth));
-//	brsitoa(USINT_TO_UDINT(tstAlarmQuerryStartTime.day),ADR(strStartTimeDay));
-//
-//	brsitoa(USINT_TO_UDINT(tstAlarmQuerryStartTime.hour),ADR(strStartTimeHour));
-//	brsitoa(USINT_TO_UDINT(tstAlarmQuerryStartTime.minute),ADR(strStartTimeMinute));
-//	brsitoa(USINT_TO_UDINT(tstAlarmQuerryStartTime.second),ADR(strStartTimeSecond));
-//
-//	brsstrcat(ADR(stDbReadQuery.stConfig.strStartTime[0]),ADR(strStartTimeYear));
-//	brsstrcat(ADR(stDbReadQuery.stConfig.strStartTime[0]),ADR('-'));
-//	brsstrcat(ADR(stDbReadQuery.stConfig.strStartTime[0]),ADR(strStartTimeMonth));
-//	brsstrcat(ADR(stDbReadQuery.stConfig.strStartTime[0]),ADR('-'));
-//	brsstrcat(ADR(stDbReadQuery.stConfig.strStartTime[0]),ADR(strStartTimeDay));
-//	brsstrcat(ADR(stDbReadQuery.stConfig.strStartTime[0]),ADR(' '));
-//	
-//	brsstrcat(ADR(stDbReadQuery.stConfig.strStartTime[0]),ADR(strStartTimeHour));
-//	brsstrcat(ADR(stDbReadQuery.stConfig.strStartTime[0]),ADR(':'));
-//	brsstrcat(ADR(stDbReadQuery.stConfig.strStartTime[0]),ADR(strStartTimeMinute));
-//	brsstrcat(ADR(stDbReadQuery.stConfig.strStartTime[0]),ADR(':'));
-//	brsstrcat(ADR(stDbReadQuery.stConfig.strStartTime[0]),ADR(strStartTimeSecond));
+	brsstrcat(ADR(stDbReadQuery.stConfig.strStartTime[0]),ADR(HMIAlarmQuerrystHour));
+	brsstrcat(ADR(stDbReadQuery.stConfig.strStartTime[0]),ADR(':'));
+	brsstrcat(ADR(stDbReadQuery.stConfig.strStartTime[0]),ADR(HMIAlarmQuerrystMinute));
+	brsstrcat(ADR(stDbReadQuery.stConfig.strStartTime[0]),ADR(':'));
+	brsstrcat(ADR(stDbReadQuery.stConfig.strStartTime[0]),ADR(HMIAlarmQuerrystSec));
 
 	
 	
-	DT_TO_DTStructure(HMIAlarmQuerryEndTime,ADR(tstAlarmQuerryEndTime));
-//	stDbReadQuery.stConfig.strEndTime[0] := '';
-//	brsitoa(UINT_TO_UDINT(tstAlarmQuerryEndTime.year),ADR(strEndTimeYear));
-//	brsitoa(USINT_TO_UDINT(tstAlarmQuerryEndTime.month),ADR(strEndTimeMonth));
-//	brsitoa(USINT_TO_UDINT(tstAlarmQuerryEndTime.day),ADR(strEndTimeDay));
-//
-//	brsitoa(USINT_TO_UDINT(tstAlarmQuerryEndTime.hour),ADR(strEndTimeHour));
-//	brsitoa(USINT_TO_UDINT(tstAlarmQuerryEndTime.minute),ADR(strEndTimeMinute));
-//	brsitoa(USINT_TO_UDINT(tstAlarmQuerryEndTime.second),ADR(strEndTimeSecond));
-//
-//	brsstrcat(ADR(stDbReadQuery.stConfig.strEndTime[0]),ADR(strEndTimeYear));
-//	brsstrcat(ADR(stDbReadQuery.stConfig.strEndTime[0]),ADR('-'));
-//	brsstrcat(ADR(stDbReadQuery.stConfig.strEndTime[0]),ADR(strEndTimeMonth));
-//	brsstrcat(ADR(stDbReadQuery.stConfig.strEndTime[0]),ADR('-'));
-//
-//	
-//	brsstrcat(ADR(stDbReadQuery.stConfig.strEndTime[0]),ADR(strEndTimeDay));
-//	brsstrcat(ADR(stDbReadQuery.stConfig.strEndTime[0]),ADR(' '));
-//	brsstrcat(ADR(stDbReadQuery.stConfig.strEndTime[0]),ADR(strEndTimeHour));
-//	brsstrcat(ADR(stDbReadQuery.stConfig.strEndTime[0]),ADR(':'));
-//	brsstrcat(ADR(stDbReadQuery.stConfig.strEndTime[0]),ADR(strEndTimeMinute));
-//	brsstrcat(ADR(stDbReadQuery.stConfig.strEndTime[0]),ADR(':'));
-//	brsstrcat(ADR(stDbReadQuery.stConfig.strEndTime[0]),ADR(strEndTimeSecond));
+	stDbReadQuery.stConfig.strEndTime[0] := '';
+	brsstrcat(ADR(stDbReadQuery.stConfig.strEndTime[0]),ADR(HMIAlarmQuerryedYear));
+	brsstrcat(ADR(stDbReadQuery.stConfig.strEndTime[0]),ADR('-'));
+	brsstrcat(ADR(stDbReadQuery.stConfig.strEndTime[0]),ADR(HMIAlarmQuerryedMonth));
+	brsstrcat(ADR(stDbReadQuery.stConfig.strEndTime[0]),ADR('-'));
+	brsstrcat(ADR(stDbReadQuery.stConfig.strEndTime[0]),ADR(HMIAlarmQuerryedDay));
+	brsstrcat(ADR(stDbReadQuery.stConfig.strEndTime[0]),ADR(' '));
+	
+	brsstrcat(ADR(stDbReadQuery.stConfig.strEndTime[0]),ADR(HMIAlarmQuerryedHour));
+	brsstrcat(ADR(stDbReadQuery.stConfig.strEndTime[0]),ADR(':'));
+	brsstrcat(ADR(stDbReadQuery.stConfig.strEndTime[0]),ADR(HMIAlarmQuerryedMinute));
+	brsstrcat(ADR(stDbReadQuery.stConfig.strEndTime[0]),ADR(':'));
+	brsstrcat(ADR(stDbReadQuery.stConfig.strEndTime[0]),ADR(HMIAlarmQuerryedSec));
 
 	
-	HMIAlarmQuerryMBBtn;
 	
+	bExecuteRead := UINT_TO_BOOL(HMIAlarmQuerryMBBtn);
+
 	//Response data
-	HMIAlarmQuerryTimestr[0];
-	HMIAlarmQuerryIndex[0];
+	FOR i := 0 TO MAX_ENTRIES_PERPAGE_MINUSONE DO
+		IF stDbReadQuery.stRev[0].udiRevTime[i] <> 0 THEN
+			//Ç¿ÖÆ×ª»»
+			DT_TO_DTStructure(UDINT_TO_DT(stDbReadQuery.stRev[0].udiRevTime[i]),ADR(stRecvDT[i]));
+			
+			HMIAlarmQuerryTimestr[i] := '';
+				
+			brsitoa(UINT_TO_DINT(stRecvDT[i].year),ADR(strempYear));
+			brsitoa(UINT_TO_DINT(stRecvDT[i].month),ADR(strempMonth));
+			brsitoa(UINT_TO_DINT(stRecvDT[i].day),ADR(strempDay));
+			brsitoa(UINT_TO_DINT(stRecvDT[i].hour),ADR(strempHour));
+			brsitoa(UINT_TO_DINT(stRecvDT[i].minute),ADR(strempMinute));
+			brsitoa(UINT_TO_DINT(stRecvDT[i].second),ADR(strtempSecond));
+			
+			brsstrcat(ADR(HMIAlarmQuerryTimestr[i]),ADR(strempYear));
+			brsstrcat(ADR(HMIAlarmQuerryTimestr[i]),ADR('-'));
+			brsstrcat(ADR(HMIAlarmQuerryTimestr[i]),ADR(strempMonth));
+			brsstrcat(ADR(HMIAlarmQuerryTimestr[i]),ADR('-'));
+			brsstrcat(ADR(HMIAlarmQuerryTimestr[i]),ADR(strempDay));
+			brsstrcat(ADR(HMIAlarmQuerryTimestr[i]),ADR(' '));
+			brsstrcat(ADR(HMIAlarmQuerryTimestr[i]),ADR(strempHour));
+			brsstrcat(ADR(HMIAlarmQuerryTimestr[i]),ADR(':'));
+			brsstrcat(ADR(HMIAlarmQuerryTimestr[i]),ADR(strempMinute));
+			brsstrcat(ADR(HMIAlarmQuerryTimestr[i]),ADR(':'));
+			brsstrcat(ADR(HMIAlarmQuerryTimestr[i]),ADR(strtempSecond));
+		
+		ELSE
+			brsmemset(ADR(HMIAlarmQuerryTimestr[i]),0,SIZEOF(HMIAlarmQuerryTimestr[i]));
+		END_IF
+		HMIAlarmQuerryIndex[i] :=  REAL_TO_UINT(stDbReadQuery.stRev[0].rRevBuffer[i]);
+
+	END_FOR
+
+
+
+
 	
 END_PROGRAM
 

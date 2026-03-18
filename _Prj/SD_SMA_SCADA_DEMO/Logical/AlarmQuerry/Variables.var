@@ -1,9 +1,21 @@
+(*HMIConnect*)
 VAR
-	HMIAlarmQuerryStartTime : DATE_AND_TIME;
-	HMIAlarmQuerryEndTime : DATE_AND_TIME;
+	HMIAlarmQuerrystYear : STRING[10];
+	HMIAlarmQuerrystMonth : STRING[10];
+	HMIAlarmQuerrystDay : STRING[10];
+	HMIAlarmQuerrystHour : STRING[10];
+	HMIAlarmQuerrystMinute : STRING[10];
+	HMIAlarmQuerrystSec : STRING[10];
+	HMIAlarmQuerryedYear : STRING[10];
+	HMIAlarmQuerryedMonth : STRING[10];
+	HMIAlarmQuerryedDay : STRING[10];
+	HMIAlarmQuerryedHour : STRING[10];
+	HMIAlarmQuerryedMinute : STRING[10];
+	HMIAlarmQuerryedSec : STRING[10];
+	HMIAlarmClearMBBtn : UINT;
 	HMIAlarmQuerryMBBtn : UINT;
-	HMIAlarmQuerryTimestr : ARRAY[0..49] OF STRING[100];
-	HMIAlarmQuerryIndex : ARRAY[0..49] OF UINT;
+	HMIAlarmQuerryTimestr : ARRAY[0..MAX_ENTRIES_PERPAGE_MINUSONE] OF STRING[100];
+	HMIAlarmQuerryIndex : ARRAY[0..MAX_ENTRIES_PERPAGE_MINUSONE] OF UINT;
 END_VAR
 (*DATA BASE Query*)
 VAR
@@ -17,23 +29,25 @@ VAR CONSTANT
 	DB_READ_QUERY_SIZE : UINT := 10;
 	DB_READ_QUERY_SIZE_MINUS_ONE : UINT := DB_READ_QUERY_SIZE-1;
 END_VAR
+(*Data point*)
 VAR
+	Name : DINT;
+	Code : DINT;
 	msg : DINT;
 END_VAR
-(*ConnectVar*)
+(*connect var*)
 VAR
-	tstAlarmQuerryStartTime : DTStructure;
-	strStartTimeYear : STRING[10];
-	strStartTimeMonth : STRING[10];
-	strStartTimeDay : STRING[10];
-	strStartTimeHour : STRING[10];
-	strStartTimeMinute : STRING[10];
-	strStartTimeSecond : STRING[10];
-	tstAlarmQuerryEndTime : DTStructure;
-	strEndTimeYear : STRING[10];
-	strEndTimeMonth : STRING[10];
-	strEndTimeDay : STRING[10];
-	strEndTimeHour : STRING[10];
-	strEndTimeMinute : STRING[10];
-	strEndTimeSecond : STRING[10];
+	stRecvDT : {REDUND_UNREPLICABLE} ARRAY[0..MAX_ENTRIES_PERPAGE_MINUSONE] OF DTStructure;
+	strtempSecond : STRING[10];
+	strempMinute : STRING[10];
+	strempHour : STRING[10];
+	strempDay : STRING[10];
+	strempMonth : STRING[10];
+	strempYear : STRING[10];
+	i : UINT;
+END_VAR
+(*Insert your comment here.*)
+VAR CONSTANT
+	MAX_ENTRIES_PERPAGE_MINUSONE : UINT := MAX_ENTRIES_PERPAGE- 1;
+	MAX_ENTRIES_PERPAGE : UINT := 15;
 END_VAR

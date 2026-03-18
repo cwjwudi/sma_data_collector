@@ -10,15 +10,14 @@
   <DefaultView>
     <Module Name="&lt;Default&gt;">
       <Task Name="AlarmQuerr">
-        <Variable Name="HMIAlarmQuerryEndTime" />
         <Variable Name="HMIAlarmQuerryIndex" RecursiveEnable="2" />
         <Variable Name="HMIAlarmQuerryMBBtn" />
-        <Variable Name="HMIAlarmQuerryStartTime" />
         <Variable Name="HMIAlarmQuerryTimestr" RecursiveEnable="2" />
         <Variable Name="stDbReadQuery" RecursiveEnable="2">
           <Variable Name="stRev">
             <Variable Name="stRev[0]">
               <Variable Name="rRevBuffer" RecursiveEnable="2" ChangedCommonProperties="1" />
+              <Variable Name="udiRevTime" RecursiveEnable="2" ChangedCommonProperties="1" />
             </Variable>
             <Variable Name="stRev[1]">
               <Variable Name="rRevBuffer" RecursiveEnable="2" ChangedCommonProperties="1" />
@@ -51,6 +50,19 @@
         </Variable>
         <Variable Name="msg" />
         <Variable Name="bExecuteRead" />
+        <Variable Name="HMIAlarmQuerryedDay" />
+        <Variable Name="HMIAlarmQuerryedHour" />
+        <Variable Name="HMIAlarmQuerryedMinute" />
+        <Variable Name="HMIAlarmQuerryedMonth" />
+        <Variable Name="HMIAlarmQuerryedSec" />
+        <Variable Name="HMIAlarmQuerryedYear" />
+        <Variable Name="HMIAlarmQuerrystDay" />
+        <Variable Name="HMIAlarmQuerrystHour" />
+        <Variable Name="HMIAlarmQuerrystMinute" />
+        <Variable Name="HMIAlarmQuerrystMonth" />
+        <Variable Name="HMIAlarmQuerrystSec" />
+        <Variable Name="HMIAlarmQuerrystYear" />
+        <Variable Name="HMIAlarmClearMBBtn" />
       </Task>
     </Module>
   </DefaultView>

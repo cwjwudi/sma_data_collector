@@ -43,16 +43,16 @@ class OpcUaDataWriter:
         ]
 
         self.time_nodes = [
-            'ns=6;s=::DataRev:stDbReadQuery.stRev[0].udiRevTime',
-            'ns=6;s=::DataRev:stDbReadQuery.stRev[1].udiRevTime',
-            'ns=6;s=::DataRev:stDbReadQuery.stRev[2].udiRevTime',
-            'ns=6;s=::DataRev:stDbReadQuery.stRev[3].udiRevTime',
-            'ns=6;s=::DataRev:stDbReadQuery.stRev[4].udiRevTime',
-            'ns=6;s=::DataRev:stDbReadQuery.stRev[5].udiRevTime',
-            'ns=6;s=::DataRev:stDbReadQuery.stRev[6].udiRevTime',
-            'ns=6;s=::DataRev:stDbReadQuery.stRev[7].udiRevTime',
-            'ns=6;s=::DataRev:stDbReadQuery.stRev[8].udiRevTime',
-            'ns=6;s=::DataRev:stDbReadQuery.stRev[9].udiRevTime',
+            'ns=6;s=::AlarmQuerr:stDbReadQuery.stRev[0].udiRevTime',
+            'ns=6;s=::AlarmQuerr:stDbReadQuery.stRev[1].udiRevTime',
+            'ns=6;s=::AlarmQuerr:stDbReadQuery.stRev[2].udiRevTime',
+            'ns=6;s=::AlarmQuerr:stDbReadQuery.stRev[3].udiRevTime',
+            'ns=6;s=::AlarmQuerr:stDbReadQuery.stRev[4].udiRevTime',
+            'ns=6;s=::AlarmQuerr:stDbReadQuery.stRev[5].udiRevTime',
+            'ns=6;s=::AlarmQuerr:stDbReadQuery.stRev[6].udiRevTime',
+            'ns=6;s=::AlarmQuerr:stDbReadQuery.stRev[7].udiRevTime',
+            'ns=6;s=::AlarmQuerr:stDbReadQuery.stRev[8].udiRevTime',
+            'ns=6;s=::AlarmQuerr:stDbReadQuery.stRev[9].udiRevTime',
         ]
 
         self.buffer_size = 10000  # 每个缓冲区的长度

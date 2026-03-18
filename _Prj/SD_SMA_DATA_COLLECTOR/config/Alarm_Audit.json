@@ -3,7 +3,7 @@
     {
       "name": "PLC1",
       "type": "opcua",
-      "host": "192.168.50.233",
+      "host": "127.0.0.1",
       "port": 4840
     }
   ],
@@ -69,7 +69,7 @@
   ],
   "database": {
     "type": "mysql",
-    "name": "wn_10",
+    "name": "wn_9",
     "host": "192.168.50.22",
     "port": 3306,
     "username": "root",

@@ -14,5 +14,6 @@
     <Object Type="Library" Language="ANSIC" Description="Random Value Generate">BrRand</Object>
     <Object Type="Library" Language="Binary" Description="Basic alarm management">MpAlarm</Object>
     <Object Type="Library" Language="Binary" Description="Core library for mapp components">MpBase</Object>
+    <Object Type="Library" Language="Binary" Description="Report generation">MpReport</Object>
   </Objects>
 </Package>

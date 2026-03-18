@@ -264,6 +264,19 @@
 		shadow="4px 1px 3px 0px rgba(255, 113, 0, 0.75)" 
 		textAlign="left" />
 	
+	<Style id="DTInput" xsi:type="widgets.brease.TextInput" 
+		textColor="#333333" 
+		borderWidth="1px 1px 1px 1px" 
+		activeBorderWidth="1px 1px 1px 1px" 
+		borderColor="#CCCCCC" 
+		activeBorderColor="#6699FF" 
+		fontSize="14px" 
+		backColor="#FFFFFF" 
+		activeBackColor="#F8FAFF" 
+		activeTextColor="#333333" 
+		bold="false" 
+		shadow="none" 
+		textAlign="center" />
 	<!--text output-->
 	
 	<Style id="default" xsi:type="widgets.brease.TextOutput" 
