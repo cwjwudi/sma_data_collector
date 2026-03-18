@@ -344,8 +344,17 @@ class DataCollector:
                     
             invalid_positions = [i for i, val in enumerate(invalid_time_indices) if val == 1]
 
+            # 检查 data_points 中名称为空的情况
+            for i in range(len(query_point_str)):
+                if query_point_str[i] is None or query_point_str[i] == '':
+                    if i not in invalid_positions:
+                        invalid_positions.append(i)
+            
+            # 去重并排序 invalid_positions
+            invalid_positions = sorted(set[int](invalid_positions))
+
             if invalid_positions:
-                self.logger.error(f"第{invalid_positions}条查询参数的起始时间不能晚于结束时间")
+                self.logger.error(f"第{invalid_positions}条查询参数设定了无效的时间范围或数据点名称为空")
 
             for i in invalid_positions:
                 start_time[i] = None
@@ -358,7 +367,10 @@ class DataCollector:
                 if query_point_str[i] is None:
                     group_names[i] = None
                 else:
-                    group_names[i] = self.point_to_group(query_point_str[i])
+                    group_name_result = self.point_to_group(query_point_str[i])
+                    if group_name_result is None:
+                        self.logger.error(f"找不到数据点 '{query_point_str[i]}' 对应的数据组")
+                    group_names[i] = group_name_result
 
             return {
                 'start_time': start_time,
