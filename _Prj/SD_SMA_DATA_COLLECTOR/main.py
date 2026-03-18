@@ -305,6 +305,13 @@ class DataCollectionSystem:
                 
                 self.logger.info(f"开始处理查询任务：{query_task['group_name']}")
                 
+                # 获取查询组的配置
+                query_group_config = None
+                for group in self.config.groups:
+                    if group.name == query_task['group_name']:
+                        query_group_config = group
+                        break
+                
                 # 执行数据库查询
                 query_results, query_time = self.query_processor.query_data(
                     start_times=query_task['start_time'],
@@ -318,9 +325,9 @@ class DataCollectionSystem:
                 if query_results is None:
                     self.logger.error(f"查询任务失败：{query_task['group_name']}")
                 else:             
-                    # 使用查询任务中的 opcua_client 创建写入器
+                    # 使用查询任务中的 opcua_client 创建写入器，并传入组配置
                     opcua_client = query_task['opcua_client']
-                    data_writer = OpcUaDataWriter(opcua_client)
+                    data_writer = OpcUaDataWriter(opcua_client, query_group_config)
                     
                     # 将查询结果写入 OPC UA 缓冲区
                     success = await data_writer.write_query_results(

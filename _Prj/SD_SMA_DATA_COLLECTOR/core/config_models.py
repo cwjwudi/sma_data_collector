@@ -36,6 +36,33 @@ class DataGroup:
     recreate_interval_days: int = 30  # 数据库分表间隔天数
     batch_insert_size: int = 100  # 批量插入大小
     query_config: Optional[Dict[str, Any]] = None  # 查询配置（仅 query 类型使用）
+    
+    def get_buffer_nodes(self) -> List[str]:
+        """获取缓冲区节点列表（从 query_config 中）"""
+        if self.query_config and 'buffer_nodes' in self.query_config:
+            return self.query_config['buffer_nodes']
+        # 返回默认值（向后兼容）
+        return [
+            f'ns=6;s=::DataRev:stDbReadQuery.stRev[{i}].rRevBuffer'
+            for i in range(10)
+        ]
+    
+    def get_time_nodes(self) -> List[str]:
+        """获取时间节点列表（从 query_config 中）"""
+        if self.query_config and 'time_nodes' in self.query_config:
+            return self.query_config['time_nodes']
+        # 返回默认值（向后兼容）
+        return [
+            f'ns=6;s=::DataRev:stDbReadQuery.stRev[{i}].udiRevTime'
+            for i in range(10)
+        ]
+    
+    def get_buffer_size(self) -> int:
+        """获取缓冲区大小（从 query_config 中）"""
+        if self.query_config and 'buffer_size' in self.query_config:
+            return self.query_config['buffer_size']
+        # 返回默认值（向后兼容）
+        return 10000
 
 
 @dataclass

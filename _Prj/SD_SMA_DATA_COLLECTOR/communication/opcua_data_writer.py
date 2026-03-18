@@ -18,44 +18,52 @@ from communication.date_and_time import fast_dt_to_date_and_time
 class OpcUaDataWriter:
     """OPC UA 数据写入器类"""
     
-    def __init__(self, opcua_client: OpcUaClient):
+    def __init__(self, opcua_client: OpcUaClient, query_group_config = None):
         """
         初始化 OPC UA 数据写入器
         
         Args:
             opcua_client: OPC UA 客户端实例
+            query_group_config: 查询组的配置对象（DataGroup），用于获取缓冲区配置
         """
         self.opcua_client = opcua_client
         self.logger = logging.getLogger(__name__)
+        self.query_group_config = query_group_config
         
-        # 缓冲区节点配置
-        self.buffer_nodes = [
-            'ns=6;s=::DataRev:stDbReadQuery.stRev[0].rRevBuffer',
-            'ns=6;s=::DataRev:stDbReadQuery.stRev[1].rRevBuffer',
-            'ns=6;s=::DataRev:stDbReadQuery.stRev[2].rRevBuffer',
-            'ns=6;s=::DataRev:stDbReadQuery.stRev[3].rRevBuffer',
-            'ns=6;s=::DataRev:stDbReadQuery.stRev[4].rRevBuffer',
-            'ns=6;s=::DataRev:stDbReadQuery.stRev[5].rRevBuffer',
-            'ns=6;s=::DataRev:stDbReadQuery.stRev[6].rRevBuffer',
-            'ns=6;s=::DataRev:stDbReadQuery.stRev[7].rRevBuffer',
-            'ns=6;s=::DataRev:stDbReadQuery.stRev[8].rRevBuffer',
-            'ns=6;s=::DataRev:stDbReadQuery.stRev[9].rRevBuffer',
-        ]
+        # 从配置中读取缓冲区节点配置（如果提供了配置）
+        if query_group_config:
+            self.buffer_nodes = query_group_config.get_buffer_nodes()
+            self.time_nodes = query_group_config.get_time_nodes()
+            self.buffer_size = query_group_config.get_buffer_size()
+        else:
+            # 向后兼容：使用默认配置
+            self.buffer_nodes = [
+                'ns=6;s=::DataRev:stDbReadQuery.stRev[0].rRevBuffer',
+                'ns=6;s=::DataRev:stDbReadQuery.stRev[1].rRevBuffer',
+                'ns=6;s=::DataRev:stDbReadQuery.stRev[2].rRevBuffer',
+                'ns=6;s=::DataRev:stDbReadQuery.stRev[3].rRevBuffer',
+                'ns=6;s=::DataRev:stDbReadQuery.stRev[4].rRevBuffer',
+                'ns=6;s=::DataRev:stDbReadQuery.stRev[5].rRevBuffer',
+                'ns=6;s=::DataRev:stDbReadQuery.stRev[6].rRevBuffer',
+                'ns=6;s=::DataRev:stDbReadQuery.stRev[7].rRevBuffer',
+                'ns=6;s=::DataRev:stDbReadQuery.stRev[8].rRevBuffer',
+                'ns=6;s=::DataRev:stDbReadQuery.stRev[9].rRevBuffer',
+            ]
 
-        self.time_nodes = [
-            'ns=6;s=::DataRev:stDbReadQuery.stRev[0].udiRevTime',
-            'ns=6;s=::DataRev:stDbReadQuery.stRev[1].udiRevTime',
-            'ns=6;s=::DataRev:stDbReadQuery.stRev[2].udiRevTime',
-            'ns=6;s=::DataRev:stDbReadQuery.stRev[3].udiRevTime',
-            'ns=6;s=::DataRev:stDbReadQuery.stRev[4].udiRevTime',
-            'ns=6;s=::DataRev:stDbReadQuery.stRev[5].udiRevTime',
-            'ns=6;s=::DataRev:stDbReadQuery.stRev[6].udiRevTime',
-            'ns=6;s=::DataRev:stDbReadQuery.stRev[7].udiRevTime',
-            'ns=6;s=::DataRev:stDbReadQuery.stRev[8].udiRevTime',
-            'ns=6;s=::DataRev:stDbReadQuery.stRev[9].udiRevTime',
-        ]
+            self.time_nodes = [
+                'ns=6;s=::DataRev:stDbReadQuery.stRev[0].udiRevTime',
+                'ns=6;s=::DataRev:stDbReadQuery.stRev[1].udiRevTime',
+                'ns=6;s=::DataRev:stDbReadQuery.stRev[2].udiRevTime',
+                'ns=6;s=::DataRev:stDbReadQuery.stRev[3].udiRevTime',
+                'ns=6;s=::DataRev:stDbReadQuery.stRev[4].udiRevTime',
+                'ns=6;s=::DataRev:stDbReadQuery.stRev[5].udiRevTime',
+                'ns=6;s=::DataRev:stDbReadQuery.stRev[6].udiRevTime',
+                'ns=6;s=::DataRev:stDbReadQuery.stRev[7].udiRevTime',
+                'ns=6;s=::DataRev:stDbReadQuery.stRev[8].udiRevTime',
+                'ns=6;s=::DataRev:stDbReadQuery.stRev[9].udiRevTime',
+            ]
 
-        self.buffer_size = 10000  # 每个缓冲区的长度
+            self.buffer_size = 10000  # 每个缓冲区的长度
     
     async def write_query_results(self, 
                                   query_results: List[List[Any]],

@@ -3,7 +3,7 @@
     {
       "name": "PLC1",
       "type": "opcua",
-      "host": "127.0.0.1",
+      "host": "192.168.50.233",
       "port": 4840
     }
   ],
@@ -147,14 +147,39 @@
       "name": "query_group_1",
       "interval_seconds": 0.5,
       "trigger": "query",
-      "description": "用于处理查询任务，不要改动该字段，interval_seconds检查bTriggerQuery的轮询时间，单位是秒",
+      "description": "用于处理查询任务，不要改动该字段，interval_seconds 检查 bTriggerQuery 的轮询时间，单位是秒",
       "data_points": ["strStartTimes", "strEndTimes", "strPointNames"],
       "trigger_point": "bTriggerQuery",
       "query_config": {
         "start_time_field": "strStartTimes",
         "end_time_field": "strEndTimes",
         "query_point_field": "strPointNames",
-        "output_file": null
+        "output_file": null,
+        "buffer_nodes": [
+          "ns=6;s=::DataRev:stDbReadQuery.stRev[0].rRevBuffer",
+          "ns=6;s=::DataRev:stDbReadQuery.stRev[1].rRevBuffer",
+          "ns=6;s=::DataRev:stDbReadQuery.stRev[2].rRevBuffer",
+          "ns=6;s=::DataRev:stDbReadQuery.stRev[3].rRevBuffer",
+          "ns=6;s=::DataRev:stDbReadQuery.stRev[4].rRevBuffer",
+          "ns=6;s=::DataRev:stDbReadQuery.stRev[5].rRevBuffer",
+          "ns=6;s=::DataRev:stDbReadQuery.stRev[6].rRevBuffer",
+          "ns=6;s=::DataRev:stDbReadQuery.stRev[7].rRevBuffer",
+          "ns=6;s=::DataRev:stDbReadQuery.stRev[8].rRevBuffer",
+          "ns=6;s=::DataRev:stDbReadQuery.stRev[9].rRevBuffer"
+        ],
+        "time_nodes": [
+          "ns=6;s=::DataRev:stDbReadQuery.stRev[0].udiRevTime",
+          "ns=6;s=::DataRev:stDbReadQuery.stRev[1].udiRevTime",
+          "ns=6;s=::DataRev:stDbReadQuery.stRev[2].udiRevTime",
+          "ns=6;s=::DataRev:stDbReadQuery.stRev[3].udiRevTime",
+          "ns=6;s=::DataRev:stDbReadQuery.stRev[4].udiRevTime",
+          "ns=6;s=::DataRev:stDbReadQuery.stRev[5].udiRevTime",
+          "ns=6;s=::DataRev:stDbReadQuery.stRev[6].udiRevTime",
+          "ns=6;s=::DataRev:stDbReadQuery.stRev[7].udiRevTime",
+          "ns=6;s=::DataRev:stDbReadQuery.stRev[8].udiRevTime",
+          "ns=6;s=::DataRev:stDbReadQuery.stRev[9].udiRevTime"
+        ],
+        "buffer_size": 10000
       }
     }
   ],
