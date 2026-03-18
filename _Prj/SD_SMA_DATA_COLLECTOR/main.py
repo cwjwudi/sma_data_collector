@@ -10,6 +10,7 @@ import signal
 import sys
 from typing import Optional
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor
 
 # 处理相对导入问题
 import sys
@@ -53,6 +54,7 @@ class DataCollectionSystem:
         self.query_processor: Optional[DataQueryProcessor] = None
         self.query_task_processor: Optional[asyncio.Task] = None  # 查询任务处理任务
         self.running = False
+        self.executor = ThreadPoolExecutor(max_workers=5)  # 创建线程池，最多 5 个工作线程
         self.setup_logging()
     
     def setup_logging(self) -> None:
@@ -236,7 +238,12 @@ class DataCollectionSystem:
             if self.db_manager:
                 self.db_manager.disconnect()
         except Exception as e:
-            self.logger.error(f"断开数据库连接时发生错误: {e}")
+            self.logger.error(f"断开数据库连接时发生错误：{e}")
+        
+        # 关闭线程池
+        if hasattr(self, 'executor') and self.executor:
+            self.executor.shutdown(wait=True)
+            self.logger.info("线程池已关闭")
         
         self.logger.info("数据采集系统已停止")
     
@@ -312,14 +319,18 @@ class DataCollectionSystem:
                         query_group_config = group
                         break
                 
-                # 执行数据库查询
-                query_results, query_time = self.query_processor.query_data(
-                    start_times=query_task['start_time'],
-                    end_times=query_task['end_time'],
-                    point_names=query_task['point_names'],
-                    group_names=query_task['group_names'],
-                    output_file=query_task.get('output_file'),
-                    return_data=True
+                # 在线程池中执行数据库查询，避免阻塞主事件循环
+                loop = asyncio.get_event_loop()
+                query_results, query_time = await loop.run_in_executor(
+                    self.executor,
+                    lambda: self.query_processor.query_data(
+                        start_times=query_task['start_time'],
+                        end_times=query_task['end_time'],
+                        point_names=query_task['point_names'],
+                        group_names=query_task['group_names'],
+                        output_file=query_task.get('output_file'),
+                        return_data=True
+                    )
                 )
                 
                 if query_results is None:
@@ -360,7 +371,7 @@ def main():
     import argparse
     
     parser = argparse.ArgumentParser(description='BR数据采集系统')
-    parser.add_argument('--config', '-c', default='config/Alarm_Audit.json',
+    parser.add_argument('--config', '-c', default='config/sample_config.json',
                        help='配置文件路径')
     parser.add_argument('--query', '-q', action='store_true',
                        help='进入查询模式')
