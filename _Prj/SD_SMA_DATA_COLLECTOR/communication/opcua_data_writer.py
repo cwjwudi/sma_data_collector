@@ -74,7 +74,7 @@ class OpcUaDataWriter:
                                   query_time: List[List[Any]],
                                   point_names: List[str]) -> bool:
         """
-        将查询结果写入 OPC UA 缓冲区并发送到 HTTP 服务器
+        将查询结果写入 OPC UA 缓冲区并发送到 HTTP 服务器（根据 output_mode 配置）
             
         Args:
             query_results: 查询结果列表
@@ -88,14 +88,31 @@ class OpcUaDataWriter:
                 self.logger.debug("查询结果为空，跳过写入")
                 return True
                 
-            # 1️⃣ 写入 OPC UA 缓冲区（原有功能保留）
-            opcua_success = await self._write_to_opcua_buffers(query_results, query_time, point_names)
+            # 根据 output_mode 配置决定输出到哪些通道
+            output_to_opcua = True
+            output_to_http = True
+            
+            if self.query_group_config:
+                output_to_opcua = self.query_group_config.should_output_to_opcua()
+                output_to_http = self.query_group_config.should_output_to_http()
                 
-            # 2️⃣ 发送到 HTTP 服务器（如果配置了 HTTP 客户端）
+                self.logger.info(f"查询组 '{self.query_group_config.name}' 输出模式："
+                               f"OPC UA={output_to_opcua}, HTTP={output_to_http}")
+            
+            # 1️⃣ 写入 OPC UA 缓冲区（如果配置了输出到 OPC UA）
+            opcua_success = True
+            if output_to_opcua:
+                opcua_success = await self._write_to_opcua_buffers(query_results, query_time, point_names)
+            else:
+                self.logger.debug("输出模式配置为不输出到 OPC UA，跳过写入")
+                
+            # 2️⃣ 发送到 HTTP 服务器（如果配置了输出到 HTTP 且有 HTTP 客户端）
             http_success = True
-            if self.http_client:
+            if output_to_http and self.http_client:
                 self.logger.info("准备发送数据到 HTTP 服务器...")
                 http_success = await self._send_to_http_server(query_results, query_time, point_names)
+            elif not output_to_http:
+                self.logger.debug("输出模式配置为不输出到 HTTP，跳过发送")
             else:
                 self.logger.debug("未配置 HTTP 客户端，跳过 HTTP 发送")
                 

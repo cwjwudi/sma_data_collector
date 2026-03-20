@@ -15,6 +15,13 @@ class TriggerType(Enum):
     QUERY = "query"
 
 
+class OutputMode(Enum):
+    """输出模式枚举"""
+    DUAL = "dual"  # 双通道输出（同时输出到 OPC UA 和 HTTP）
+    OPC_UA_ONLY = "opcua_only"  # 只输出到 OPC UA
+    HTTP_ONLY = "http_only"  # 只输出到 HTTP
+
+
 @dataclass
 class DataPoint:
     """数据点配置"""
@@ -36,6 +43,7 @@ class DataGroup:
     recreate_interval_days: int = 30  # 数据库分表间隔天数
     batch_insert_size: int = 100  # 批量插入大小
     query_config: Optional[Dict[str, Any]] = None  # 查询配置（仅 query 类型使用）
+    output_mode: str = "dual"  # 输出模式："dual", "opcua_only", "http_only"
     
     def get_buffer_nodes(self) -> List[str]:
         """获取缓冲区节点列表（从 query_config 中）"""
@@ -63,6 +71,24 @@ class DataGroup:
             return self.query_config['buffer_size']
         # 返回默认值（向后兼容）
         return 10000
+    
+    def get_output_mode(self) -> OutputMode:
+        """获取输出模式"""
+        try:
+            return OutputMode(self.output_mode)
+        except ValueError:
+            # 如果配置无效，默认返回双通道输出
+            return OutputMode.DUAL
+    
+    def should_output_to_opcua(self) -> bool:
+        """判断是否应该输出到 OPC UA"""
+        mode = self.get_output_mode()
+        return mode in [OutputMode.DUAL, OutputMode.OPC_UA_ONLY]
+    
+    def should_output_to_http(self) -> bool:
+        """判断是否应该输出到 HTTP 服务器"""
+        mode = self.get_output_mode()
+        return mode in [OutputMode.DUAL, OutputMode.HTTP_ONLY]
 
 
 @dataclass

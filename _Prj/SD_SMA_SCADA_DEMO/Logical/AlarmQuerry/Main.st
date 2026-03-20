@@ -9,6 +9,8 @@ PROGRAM _CYCLIC
 	(* Insert code here *)
 	//Data GEN
 	msg := RandRange(1,10);
+	//Triggerrecord
+	btrigger;
 	
 	//Data from DATABASE
 	bExecuteRead;
