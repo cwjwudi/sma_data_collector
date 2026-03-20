@@ -191,5 +191,13 @@
     "username": "root",
     "password": "Br54644800@",
     "data_groups": ["sensor_group_1", "sensor_group_2", "trigger_group_1", "query_group_1"]
+  },
+  "http_server": {
+    "enabled": true,
+    "base_url": "http://localhost:8080",
+    "endpoint": "/api/data",
+    "timeout": 30,
+    "max_retries": 3,
+    "retry_delay": 1.0
   }
 }

@@ -1,0 +1,113 @@
+{
+  "communications": [
+    {
+      "name": "PLC1",
+      "type": "opcua",
+      "host": "127.0.0.1",
+      "port": 4840
+    }
+  ],
+  "connections": [
+    {
+      "name": "connection1",
+      "communication": "PLC1",
+      "data_groups": ["trend_group", "query_group_1"]
+    }
+  ],
+  "points": [
+    {
+      "name": "Trenddata",
+      "path": "ns=6;s=::Trend:Trenddata",
+      "description": "趋势数据"
+    },
+    {
+      "name": "strStartTimes",
+      "path": "ns=6;s=::Trend:stDbReadQuery.stConfig.strStartTime",
+      "description": "查询起始时间"
+    },
+    {
+      "name": "strEndTimes",
+      "path": "ns=6;s=::Trend:stDbReadQuery.stConfig.strEndTime",
+      "description": "查询结束时间"
+    },
+    {
+      "name": "strPointNames",
+      "path": "ns=6;s=::Trend:stDbReadQuery.stConfig.strPointName",
+      "description": "查询数据点名称"
+    },
+    {
+      "name": "bTriggerQuery",
+      "path": "ns=6;s=::Trend:bExecuteRead",
+      "description": "用于触发查询任务"
+    }
+  ],
+  "groups": [
+    {
+      "name": "trend_group",
+      "interval_seconds": 5,
+      "trigger": "time",
+      "description": "趋势数据采集组，每 5 秒采集一次",
+      "data_points": ["Trenddata"],
+      "trigger_point": null,
+      "recreate_interval_days": 1,
+      "batch_insert_size": 5
+    },
+    {
+      "name": "query_group_1",
+      "interval_seconds": 0.5,
+      "trigger": "query",
+      "description": "用于处理查询任务",
+      "data_points": ["strStartTimes", "strEndTimes", "strPointNames"],
+      "trigger_point": "bTriggerQuery",
+      "query_config": {
+        "start_time_field": "strStartTimes",
+        "end_time_field": "strEndTimes",
+        "query_point_field": "strPointNames",
+        "output_file": null,
+        "buffer_nodes": [
+          "ns=6;s=::Trend:stDbReadQuery.stRev[0].rRevBuffer",
+          "ns=6;s=::Trend:stDbReadQuery.stRev[1].rRevBuffer",
+          "ns=6;s=::Trend:stDbReadQuery.stRev[2].rRevBuffer",
+          "ns=6;s=::Trend:stDbReadQuery.stRev[3].rRevBuffer",
+          "ns=6;s=::Trend:stDbReadQuery.stRev[4].rRevBuffer",
+          "ns=6;s=::Trend:stDbReadQuery.stRev[5].rRevBuffer",
+          "ns=6;s=::Trend:stDbReadQuery.stRev[6].rRevBuffer",
+          "ns=6;s=::Trend:stDbReadQuery.stRev[7].rRevBuffer",
+          "ns=6;s=::Trend:stDbReadQuery.stRev[8].rRevBuffer",
+          "ns=6;s=::Trend:stDbReadQuery.stRev[9].rRevBuffer"
+        ],
+        "time_nodes": [
+          "ns=6;s=::Trend:stDbReadQuery.stRev[0].udiRevTime",
+          "ns=6;s=::Trend:stDbReadQuery.stRev[1].udiRevTime",
+          "ns=6;s=::Trend:stDbReadQuery.stRev[2].udiRevTime",
+          "ns=6;s=::Trend:stDbReadQuery.stRev[3].udiRevTime",
+          "ns=6;s=::Trend:stDbReadQuery.stRev[4].udiRevTime",
+          "ns=6;s=::Trend:stDbReadQuery.stRev[5].udiRevTime",
+          "ns=6;s=::Trend:stDbReadQuery.stRev[6].udiRevTime",
+          "ns=6;s=::Trend:stDbReadQuery.stRev[7].udiRevTime",
+          "ns=6;s=::Trend:stDbReadQuery.stRev[8].udiRevTime",
+          "ns=6;s=::Trend:stDbReadQuery.stRev[9].udiRevTime"
+        ],
+        "buffer_size": 10000
+      }
+    }
+  ],
+  "database": {
+    "type": "mysql",
+    "name": "wn_10",
+    "host": "192.168.50.22",
+    "port": 3306,
+    "username": "root",
+    "password": "Br54644800@",
+    "data_groups": ["trend_group", "query_group_1"]
+  },
+  "http_server": {
+    "enabled": true,
+    "base_url": "http://localhost:8080",
+    "endpoint": "/api/data",
+    "port": 8080,
+    "timeout": 30,
+    "max_retries": 3,
+    "retry_delay": 1.0
+  }
+}

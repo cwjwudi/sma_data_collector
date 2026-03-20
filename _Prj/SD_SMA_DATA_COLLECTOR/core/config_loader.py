@@ -7,7 +7,7 @@ import json
 from typing import Dict, Any
 from .config_models import (
     DataPoint, DataGroup, OpcUaConfig, DatabaseConfig, AppConfig, 
-    TriggerType, Communication, Connection
+    TriggerType, Communication, Connection, HttpServerConfig
 )
 
 
@@ -100,12 +100,12 @@ class ConfigLoader:
         
         # 解析数据库配置
         db_data = config_data.get('database', {})
-        
-        # 处理向后兼容性：如果存在旧的data_group字段，则转换为data_groups
+                
+        # 处理向后兼容性：如果存在旧的 data_group 字段，则转换为 data_groups
         data_groups = db_data.get('data_groups', [])
         if not data_groups and 'data_group' in db_data:
             data_groups = [db_data['data_group']] if db_data['data_group'] else []
-        
+                
         database = DatabaseConfig(
             type=db_data.get('type', 'sqlite'),
             name=db_data.get('name', 'data.db'),
@@ -115,7 +115,18 @@ class ConfigLoader:
             password=db_data.get('password', ''),
             data_groups=data_groups
         )
-        
+                
+        # 解析 HTTP 服务器配置
+        http_server_data = config_data.get('http_server', {})
+        http_server = HttpServerConfig(
+            enabled=http_server_data.get('enabled', False),
+            base_url=http_server_data.get('base_url', 'http://localhost:8080'),
+            endpoint=http_server_data.get('endpoint', '/api/data'),
+            timeout=http_server_data.get('timeout', 30),
+            max_retries=http_server_data.get('max_retries', 3),
+            retry_delay=http_server_data.get('retry_delay', 1.0)
+        )
+                
         # 创建应用配置
         config = AppConfig(
             points=points,
@@ -123,7 +134,8 @@ class ConfigLoader:
             opcua=opcua,
             database=database,
             communications=communications,
-            connections=connections
+            connections=connections,
+            http_server=http_server
         )
         
         # 验证配置

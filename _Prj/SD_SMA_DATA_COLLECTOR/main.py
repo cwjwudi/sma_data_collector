@@ -10,6 +10,7 @@ import signal
 import sys
 from typing import Optional
 from datetime import datetime
+from aiohttp import web
 
 # 处理相对导入问题
 import sys
@@ -23,6 +24,7 @@ try:
     from communication.data_collector import DataCollector
     from communication.communication_manager import CommunicationManager
     from communication.opcua_data_writer import OpcUaDataWriter
+    from communication.http_client import HttpClient
     from database.db_manager import DatabaseManager
     from database.data_storage import DataStorageProcessor
     from database.data_query import DataQueryProcessor
@@ -52,6 +54,9 @@ class DataCollectionSystem:
         self.storage_processor: Optional[DataStorageProcessor] = None
         self.query_processor: Optional[DataQueryProcessor] = None
         self.query_task_processor: Optional[asyncio.Task] = None  # 查询任务处理任务
+        self.http_client: Optional[HttpClient] = None  # HTTP 客户端
+        self.http_server: Optional[web.Application] = None  # HTTP 服务器
+        self.http_server_runner: Optional[web.AppRunner] = None  # HTTP 服务器运行器
         self.running = False
         self.setup_logging()
     
@@ -127,6 +132,27 @@ class DataCollectionSystem:
             # 初始化数据查询处理器
             self.query_processor = DataQueryProcessor(self.db_manager)
             
+            # 初始化 HTTP 客户端和服务器（如果配置了 HTTP 服务器）
+            http_config = getattr(self.config, 'http_server', None)
+            if http_config and getattr(http_config, 'enabled', False):
+                self.logger.info("正在初始化 HTTP 客户端和服务器...")
+                
+                # 初始化 HTTP 客户端
+                self.http_client = HttpClient(
+                    base_url=getattr(http_config, 'base_url', 'http://localhost:8080'),
+                    endpoint=getattr(http_config, 'endpoint', '/api/data'),
+                    timeout=getattr(http_config, 'timeout', 30),
+                    max_retries=getattr(http_config, 'max_retries', 3),
+                    retry_delay=getattr(http_config, 'retry_delay', 1.0)
+                )
+                self.logger.info(f"HTTP 客户端已配置：{self.http_client.full_url}")
+                
+                # 初始化 HTTP 服务器
+                await self._init_http_server(http_config)
+            else:
+                self.logger.info("未启用 HTTP 服务器功能")
+                self.http_client = None
+            
             # 初始化数据采集器
             self.data_collector = DataCollector(self.communication_manager)
             self.data_collector.register_data_callback(self._on_data_received)
@@ -175,16 +201,20 @@ class DataCollectionSystem:
             target_group_names = self.config.database.data_groups
             if not target_group_names:
                 raise ValueError("数据库配置中未指定任何数据组")
-            
+                        
             target_groups = [g for g in self.config.groups if g.name in target_group_names]
-            
+                        
             if len(target_groups) != len(target_group_names):
                 missing_groups = set(target_group_names) - set(g.name for g in target_groups)
-                raise ValueError(f"未找到指定的数据组: {missing_groups}")
-            
-            self.logger.info(f"启动数据采集，目标数据组: {[g.name for g in target_groups]}")
+                raise ValueError(f"未找到指定的数据组：{missing_groups}")
+                        
+            self.logger.info(f"启动数据采集，目标数据组：{[g.name for g in target_groups]}")
             await self.data_collector.start_collection(target_groups, data_points_dict)
-            
+                        
+            # 启动 HTTP 服务器（如果已初始化）
+            if self.http_server_runner:
+                await self._start_http_server()
+                        
             self.logger.info("数据采集系统已启动")
             
             # 等待中断信号
@@ -236,8 +266,24 @@ class DataCollectionSystem:
             if self.db_manager:
                 self.db_manager.disconnect()
         except Exception as e:
-            self.logger.error(f"断开数据库连接时发生错误: {e}")
-        
+            self.logger.error(f"断开数据库连接时发生错误：{e}")
+                
+        try:
+            # 关闭 HTTP 客户端
+            if self.http_client:
+                await self.http_client.close()
+                self.logger.info("HTTP 客户端已关闭")
+        except Exception as e:
+            self.logger.error(f"关闭 HTTP 客户端时发生错误：{e}")
+                
+        try:
+            # 停止 HTTP 服务器
+            if self.http_server_runner:
+                await self.http_server_runner.cleanup()
+                self.logger.info("HTTP 服务器已停止")
+        except Exception as e:
+            self.logger.error(f"停止 HTTP 服务器时发生错误：{e}")
+                
         self.logger.info("数据采集系统已停止")
     
     async def _wait_for_shutdown(self) -> None:
@@ -325,11 +371,11 @@ class DataCollectionSystem:
                 if query_results is None:
                     self.logger.error(f"查询任务失败：{query_task['group_name']}")
                 else:             
-                    # 使用查询任务中的 opcua_client 创建写入器，并传入组配置
+                    # 使用查询任务中的 opcua_client 创建写入器，并传入组配置和 HTTP 客户端
                     opcua_client = query_task['opcua_client']
-                    data_writer = OpcUaDataWriter(opcua_client, query_group_config)
+                    data_writer = OpcUaDataWriter(opcua_client, query_group_config, self.http_client)
                     
-                    # 将查询结果写入 OPC UA 缓冲区
+                    # 将查询结果写入 OPC UA 缓冲区（同时发送到 HTTP 服务器）
                     success = await data_writer.write_query_results(
                         query_results,
                         query_time,
@@ -337,7 +383,7 @@ class DataCollectionSystem:
                     )
                     
                     if success:
-                        self.logger.info(f"查询结果已成功写入 OPC UA 缓冲区：{query_task['group_name']}")
+                        self.logger.info(f"查询结果已成功写入 OPC UA 缓冲区并发送到 HTTP 服务器：{query_task['group_name']}")
                     else:
                         self.logger.warning(f"写入 OPC UA 缓冲区失败：{query_task['group_name']}")
                 
@@ -353,6 +399,95 @@ class DataCollectionSystem:
             except Exception as e:
                 self.logger.error(f"处理查询任务时发生错误：{e}", exc_info=True)
                 await asyncio.sleep(1)
+
+    async def _init_http_server(self, http_config) -> None:
+        """
+        初始化 HTTP 服务器
+        
+        Args:
+            http_config: HTTP 服务器配置对象
+        """
+        try:
+            # 创建 HTTP 服务器应用
+            self.http_server = web.Application()
+            
+            # 添加路由
+            self.http_server.router.add_get('/', self._handle_index)
+            self.http_server.router.add_get('/api/latest-data', self._handle_get_latest_data)
+            self.http_server.router.add_post('/api/data', self._handle_receive_data)
+            
+            # 创建运行器
+            port = getattr(http_config, 'port', 8080)
+            self.http_server_runner = web.AppRunner(self.http_server)
+            await self.http_server_runner.setup()
+            
+            # 启动监听
+            site = web.TCPSite(self.http_server_runner, '0.0.0.0', port)
+            await site.start()
+            
+            self.logger.info(f"HTTP 服务器已启动，监听 http://0.0.0.0:{port}")
+            self.logger.info(f"访问地址:")
+            self.logger.info(f"  - 首页：http://localhost:{port}/")
+            self.logger.info(f"  - 最新数据：http://localhost:{port}/api/latest-data")
+            
+            # 存储最新数据（用于提供给前端）
+            self.latest_data = None
+            
+        except Exception as e:
+            self.logger.error(f"HTTP 服务器初始化失败：{e}")
+    
+    async def _start_http_server(self) -> None:
+        """启动 HTTP 服务器（已经在_init_http_server 中启动，这里保留以便未来扩展）"""
+        pass
+    
+    async def _handle_index(self, request: web.Request) -> web.Response:
+        """处理首页请求"""
+        try:
+            # 读取 line_http.html 文件
+            html_path = os.path.join(os.path.dirname(__file__), 'js', 'line_http.html')
+            with open(html_path, 'r', encoding='utf-8') as f:
+                html_content = f.read()
+            return web.Response(text=html_content, content_type='text/html')
+        except Exception as e:
+            self.logger.error(f"读取 HTML 文件失败：{e}")
+            return web.Response(text=f'Error: {e}', status=500)
+    
+    async def _handle_get_latest_data(self, request: web.Request) -> web.Response:
+        """处理获取最新数据的请求"""
+        try:
+            if hasattr(self, 'latest_data') and self.latest_data is not None:
+                return web.json_response({
+                    'status': 'success',
+                    'data': self.latest_data
+                })
+            else:
+                return web.json_response({
+                    'status': 'no_data',
+                    'message': '暂无数据'
+                })
+        except Exception as e:
+            self.logger.error(f"处理获取数据请求失败：{e}")
+            return web.json_response({
+                'status': 'error',
+                'message': str(e)
+            }, status=500)
+    
+    async def _handle_receive_data(self, request: web.Request) -> web.Response:
+        """处理接收数据的 POST 请求"""
+        try:
+            data = await request.json()
+            self.latest_data = data
+            self.logger.debug(f"收到 HTTP 数据：group={data.get('group_name', 'unknown')}")
+            return web.json_response({
+                'status': 'success',
+                'message': '数据已接收'
+            })
+        except Exception as e:
+            self.logger.error(f"处理接收数据请求失败：{e}")
+            return web.json_response({
+                'status': 'error',
+                'message': str(e)
+            }, status=400)
 
 
 def main():

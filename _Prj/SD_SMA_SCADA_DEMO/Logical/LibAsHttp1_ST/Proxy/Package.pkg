@@ -1,8 +1,0 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
-<?AutomationStudio FileVersion="4.9"?>
-<Package xmlns="http://br-automation.co.at/AS/Package">
-  <Objects>
-    <Object Type="Program" Language="IEC" Description="Client Asking Ressource '/Proxy.cgi' Via A Local Proxy (Port 8888)">client_3</Object>
-    <Object Type="Program" Language="IEC" Description="Webservice 'Formdata.cgi'">service_3</Object>
-  </Objects>
-</Package>

@@ -117,6 +117,17 @@ class DatabaseConfig:
 
 
 @dataclass
+class HttpServerConfig:
+    """HTTP 服务器配置"""
+    enabled: bool = False  # 是否启用 HTTP 发送功能
+    base_url: str = "http://localhost:8080"  # HTTP 服务器地址
+    endpoint: str = "/api/data"  # API 端点
+    timeout: int = 30  # 请求超时时间（秒）
+    max_retries: int = 3  # 最大重试次数
+    retry_delay: float = 1.0  # 重试延迟（秒）
+
+
+@dataclass
 class AppConfig:
     """应用总配置"""
     points: List[DataPoint]
@@ -125,6 +136,7 @@ class AppConfig:
     database: DatabaseConfig
     communications: List[Communication] = None  # 新增：通信配置列表
     connections: List[Connection] = None  # 新增：连接配置列表
+    http_server: HttpServerConfig = None  # HTTP 服务器配置
     
     def __post_init__(self):
         # 保持向后兼容性
@@ -132,6 +144,8 @@ class AppConfig:
             self.communications = []
         if self.connections is None:
             self.connections = []
+        if self.http_server is None:
+            self.http_server = HttpServerConfig()
         
         # 如果没有communications配置，从opcua配置创建默认通信
         if not self.communications and self.opcua:

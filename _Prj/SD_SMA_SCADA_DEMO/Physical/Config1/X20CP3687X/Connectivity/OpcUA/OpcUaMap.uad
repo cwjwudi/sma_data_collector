@@ -64,6 +64,23 @@
         <Variable Name="HMIAlarmQuerrystYear" />
         <Variable Name="HMIAlarmClearMBBtn" />
       </Task>
+      <Task Name="Trend">
+        <Variable Name="bExecuteRead" />
+        <Variable Name="stDbReadQuery" RecursiveEnable="2">
+          <Variable Name="stConfig">
+            <Variable Name="strStartTime" RecursiveEnable="2" />
+            <Variable Name="strEndTime" RecursiveEnable="2" />
+            <Variable Name="strPointName" RecursiveEnable="2" />
+          </Variable>
+          <Variable Name="stRev">
+            <VariableCommon Name="Common Properties">
+              <Variable Name="rRevBuffer" RecursiveEnable="2" />
+              <Variable Name="udiRevTime" RecursiveEnable="2" />
+            </VariableCommon>
+          </Variable>
+        </Variable>
+        <Variable Name="Trenddata" />
+      </Task>
     </Module>
   </DefaultView>
 </OpcUaSource>
