@@ -43,3 +43,9 @@ _Prj/SD_SMA_ReportEditor/backend/data/
 
 # Logs
 *.log
+
+# Obsidian: workspace / Projects plugin (local state)
+.obsidian/workspace.json
+.obsidian/plugins/obsidian-projects/data.json
+_Doc/.obsidian/workspace.json
+_Doc/.obsidian/plugins/obsidian-projects/data.json
