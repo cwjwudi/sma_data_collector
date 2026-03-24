@@ -21,9 +21,34 @@
       "description": "趋势数据"
     },
     {
+      "name": "ts",
+      "path": "ns=6;s=::AlarmQuerr:ts",
+      "description": "报警时间戳"
+    },
+    {
+      "name": "code",
+      "path": "ns=6;s=::AlarmQuerr:code",
+      "description": "报警码"
+    },
+    {
       "name": "msg",
       "path": "ns=6;s=::AlarmQuerr:msg",
-      "description": "PLC1测试FLOAT数据"
+      "description": "报警信息"
+    },
+    {
+      "name": "severity",
+      "path": "ns=6;s=::AlarmQuerr:severity",
+      "description": "报警等级"
+    },
+    {
+      "name": "Status",
+      "path": "ns=6;s=::AlarmQuerr:Status",
+      "description": "报警状态"
+    },
+    {
+      "name": "Batch",
+      "path": "ns=6;s=::AlarmQuerr:Batch",
+      "description": "生产批号"
     },
     {
       "name": "bTrigger1",
@@ -77,7 +102,7 @@
       "interval_seconds": 0.2,
       "trigger": "variable",
       "description": "每0.2s检查一次trigger变量",
-      "data_points": ["msg"],
+      "data_points": ["ts","code","msg","severity","Status","Batch"],
       "trigger_point": "bTrigger1",
        "reset_trigger_after_read": false,
       "recreate_interval_days": 1,

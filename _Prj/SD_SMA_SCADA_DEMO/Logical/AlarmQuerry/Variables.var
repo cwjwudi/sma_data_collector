@@ -31,9 +31,12 @@ VAR CONSTANT
 END_VAR
 (*Data point*)
 VAR
-	Name : DINT;
+	ts : DINT;
 	Code : DINT;
 	msg : DINT;
+	Batch : DINT;
+	severity : DINT;
+	Status : DINT;
 END_VAR
 (*connect var*)
 VAR

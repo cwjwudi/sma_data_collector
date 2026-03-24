@@ -64,6 +64,11 @@
         <Variable Name="HMIAlarmQuerrystYear" />
         <Variable Name="HMIAlarmClearMBBtn" />
         <Variable Name="btrigger" />
+        <Variable Name="severity" />
+        <Variable Name="Status" />
+        <Variable Name="ts" />
+        <Variable Name="Batch" />
+        <Variable Name="Code" />
       </Task>
       <Task Name="Trend">
         <Variable Name="bExecuteRead" />
