@@ -11,6 +11,7 @@
 - ✅ **智能批量处理**: 支持批量数据插入，可自定义每组批量大小
 - ✅ **查询回写功能**: 支持从数据库查询历史数据并回写到 OPC UA 缓冲区
 - ✅ **HTTP 数据推送**: 支持将查询结果推送到 HTTP 服务器，支持重试机制
+- ✅ **心跳信号功能**: 支持定时向 OPC UA 服务器写入心跳信号，保持连接活跃
 - ✅ **松耦合设计**: 通信、数据库、HTTP 模块解耦，易于扩展
 
 ## 系统架构
@@ -31,6 +32,7 @@ SD_SMA_DATA_COLLECTOR/
 │   ├── data_collector.py  # 数据采集器（时间/变量/查询触发）
 │   ├── opcua_data_writer.py # OPC UA 数据写入器（查询结果回写）
 │   ├── http_client.py     # HTTP 客户端（数据推送）
+│   ├── heartbeat_manager.py # 心跳管理器（定时写入心跳信号）
 │   └── date_and_time.py   # 日期时间工具函数
 ├── database/           # 数据库模块
 │   ├── db_manager.py      # 数据库管理器（连接/断开/建表）
@@ -48,14 +50,16 @@ SD_SMA_DATA_COLLECTOR/
 │   ├── HTTP_SERVER_GUIDE.md     # HTTP 数据推送使用指南
 │   ├── HTTP_QUICK_START.md      # HTTP 快速入门
 │   ├── OPC_UA_CONFIG.md         # OPC UA 配置说明
-│   └── OPC_UA_WRITE_FIX.md      # OPC UA 写入问题修复记录
+│   ├── OPC_UA_WRITE_FIX.md      # OPC UA 写入问题修复记录
+│   └── CHANGELOG.md             # 系统更新日志
 ├── js/                 # 前端资源
 │   └── line_http.html   # HTTP 监控页面
 ├── main.py             # 主程序入口
 ├── init.py             # 依赖安装脚本
 ├── check_config.py     # 配置检查工具
 ├── requirements.txt    # Python 依赖包列表
-└── README.md           # 项目说明文档
+├── README.md           # 项目说明文档
+└── CHANGELOG.md        # 更新日志
 ```
 
 ## 安装部署
@@ -97,7 +101,8 @@ pip install -r requirements.txt
     {
       "name": "connection1",
       "communication": "PLC1",
-      "data_groups": ["sensor_group_1", "trigger_group_1"]
+      "data_groups": ["sensor_group_1", "trigger_group_1"],
+      "heartbeat": "ns=6;s=::DataRev:bHeartBeat"
     }
   ],
   "points": [
@@ -156,7 +161,7 @@ pip install -r requirements.txt
 
 **配置说明：**
 - **communications**: 定义多个 OPC UA 通信连接
-- **connections**: 指定数据组与通信连接的映射关系
+- **connections**: 指定数据组与通信连接的映射关系，可配置 `heartbeat` 字段实现心跳功能
 - **points**: 定义所有数据点的 OPC UA 节点路径
 - **groups**: 配置数据组，支持三种触发方式：
   - `time`: 时间间隔触发
@@ -164,6 +169,32 @@ pip install -r requirements.txt
   - `query`: 查询任务触发（用于查询回写）
 - **database**: 数据库连接配置和数据组分配
 - **http_server**: HTTP 数据推送配置（可选）
+
+### 心跳信号配置
+
+在 `connections` 中添加 `heartbeat` 字段即可启用心跳功能：
+
+```json
+{
+  "connections": [
+    {
+      "name": "connection1",
+      "communication": "PLC1",
+      "data_groups": ["sensor_group_1", "sensor_group_2"],
+      "heartbeat": "ns=6;s=::DataRev:bHeartBeat"
+    }
+  ]
+}
+```
+
+系统会自动每隔 1 秒向指定地址写入值 1（UInt16 类型），保持 PLC 连接活跃。
+
+**心跳功能特性：**
+- ✅ 自动检测 OPC UA 连接状态
+- ✅ 支持多个心跳信号并行运行
+- ✅ 详细的日志记录和错误处理
+- ✅ 优雅的开始和停止机制
+- ✅ 不影响现有功能，完全向后兼容
 
 ## 使用方法
 
@@ -218,6 +249,10 @@ python check_config.py config/sample_config.json
   ```bash
   start_http.bat
   ```
+- **查看更新日志**: 
+  ```bash
+  cat CHANGELOG.md
+  ```
 
 ## 配置说明
 
@@ -256,6 +291,10 @@ python check_config.py config/sample_config.json
 - `name`: 连接配置名称（唯一标识）
 - `communication`: 引用的通信名称
 - `data_groups`: 使用该通信的数据组名称列表
+- `heartbeat`: （可选）心跳信号的 OPC UA 地址，格式：`ns=X;s=节点路径`
+  - 如果配置了该字段，系统会每隔 1 秒向该地址写入值 1（UInt16 类型）
+  - 用于保持 PLC 连接活跃，防止超时断开
+  - 示例：`"heartbeat": "ns=6;s=::DataRev:bHeartBeat"`
 
 ### 数据库配置 (database)
 - `type`: 数据库类型（mysql/sqlite）
@@ -296,6 +335,7 @@ pytest tests/test_http_server.py -v
    - `data_collector.py`: 实现时间/变量/查询三种触发采集逻辑
    - `opcua_data_writer.py`: 查询结果回写到 OPC UA 缓冲区
    - `http_client.py`: HTTP 数据推送客户端
+   - `heartbeat_manager.py`: 心跳信号管理，定时写入 OPC UA 保持连接活跃
 
 3. **数据库模块** (`database/`)
    - `db_manager.py`: 数据库连接管理、自动建表
@@ -387,6 +427,10 @@ tail -f data_collector.log
 ## 许可证
 
 MIT License
+
+## 更新日志
+
+详细的更新历史记录请查看 [CHANGELOG.md](CHANGELOG.md) 文件。
 
 ## 联系方式
 
