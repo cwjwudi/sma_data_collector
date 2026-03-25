@@ -1,204 +1,388 @@
-# BR数据采集系统
+# SMA 数据采集系统
 
-一个基于Python的工业数据采集系统，支持OPC UA协议通信，具备MySQL和SQLite数据库存储能力。
+一个功能强大的工业数据采集系统，支持多 OPC UA 控制器连接，具备 MySQL/SQLite 数据库存储、HTTP 数据推送和查询回写功能。
 
 ## 功能特性
 
-- ✅ **多协议支持**: 主要支持OPC UA协议，易于扩展其他协议
-- ✅ **灵活配置**: 通过JSON文件配置数据点、数据组和数据库参数
-- ✅ **双触发模式**: 支持时间间隔触发和变量触发两种采集方式
-- ✅ **多数据库支持**: 支持MySQL和SQLite数据库
-- ✅ **智能分表**: 按时间自动分表，避免单表过大
-- ✅ **批量写入**: 支持批量数据插入，提高写入效率
-- ✅ **数据查询**: 支持历史数据查询和CSV导出
-- ✅ **松耦合设计**: 通信模块与数据库模块解耦
+- ✅ **多控制器支持**: 支持同时连接多个 OPC UA 服务器，为不同数据组分配不同通信连接
+- ✅ **灵活配置**: 通过 JSON 文件配置数据点、数据组、通信连接和数据库参数
+- ✅ **多种触发模式**: 支持时间间隔触发、变量触发和查询任务触发三种采集方式
+- ✅ **双数据库支持**: 支持 MySQL 和 SQLite 数据库，自动按时间分表
+- ✅ **智能批量处理**: 支持批量数据插入，可自定义每组批量大小
+- ✅ **查询回写功能**: 支持从数据库查询历史数据并回写到 OPC UA 缓冲区
+- ✅ **HTTP 数据推送**: 支持将查询结果推送到 HTTP 服务器，支持重试机制
+- ✅ **松耦合设计**: 通信、数据库、HTTP 模块解耦，易于扩展
 
 ## 系统架构
 
 ```
-br_data_collector/
+SD_SMA_DATA_COLLECTOR/
 ├── config/              # 配置文件目录
-│   └── sample_config.json
+│   ├── sample_config.json      # 基础配置示例
+│   ├── trend_config.json       # 趋势数据配置
+│   ├── Alarm_Audit.json        # 报警审计配置
+│   └── Alarm_trend.json        # 报警趋势配置
 ├── core/               # 核心模块
-│   ├── config_models.py   # 配置数据模型
-│   └── config_loader.py   # 配置加载器
+│   ├── config_models.py   # 配置数据模型（数据点、数据组、通信连接等）
+│   └── config_loader.py   # 配置加载器和验证器
 ├── communication/      # 通信模块
-│   ├── opcua_client.py    # OPC UA客户端
-│   └── data_collector.py  # 数据采集器
+│   ├── communication_manager.py  # 通信管理器（管理多个 OPC UA 连接）
+│   ├── opcua_client.py    # OPC UA 客户端封装
+│   ├── data_collector.py  # 数据采集器（时间/变量/查询触发）
+│   ├── opcua_data_writer.py # OPC UA 数据写入器（查询结果回写）
+│   ├── http_client.py     # HTTP 客户端（数据推送）
+│   └── date_and_time.py   # 日期时间工具函数
 ├── database/           # 数据库模块
-│   ├── db_manager.py      # 数据库管理器
-│   ├── data_storage.py    # 数据存储处理器
-│   └── data_query.py      # 数据查询处理器
-├── tests/              # 测试文件
-│   └── test_core.py
+│   ├── db_manager.py      # 数据库管理器（连接/断开/建表）
+│   ├── data_storage.py    # 数据存储处理器（批量插入）
+│   └── data_query.py      # 数据查询处理器（历史数据查询）
+├── tests/              # 测试用例
+│   ├── test_core.py              # 核心配置测试
+│   ├── test_multi_communication.py # 多通信连接测试
+│   ├── test_http_server.py       # HTTP 服务器测试
+│   ├── test_opc_write.py         # OPC UA 写入测试
+│   ├── test_mysql.py             # MySQL 数据库测试
+│   └── trigger_query_test.py     # 查询触发测试
+├── docs/               # 文档目录
+│   ├── MULTI_COMMUNICATION.md   # 多控制器连接配置指南
+│   ├── HTTP_SERVER_GUIDE.md     # HTTP 数据推送使用指南
+│   ├── HTTP_QUICK_START.md      # HTTP 快速入门
+│   ├── OPC_UA_CONFIG.md         # OPC UA 配置说明
+│   └── OPC_UA_WRITE_FIX.md      # OPC UA 写入问题修复记录
+├── js/                 # 前端资源
+│   └── line_http.html   # HTTP 监控页面
 ├── main.py             # 主程序入口
-├── init.py             # 系统初始化脚本
-└── requirements.txt    # 依赖包列表
+├── init.py             # 依赖安装脚本
+├── check_config.py     # 配置检查工具
+├── requirements.txt    # Python 依赖包列表
+└── README.md           # 项目说明文档
 ```
 
 ## 安装部署
 
-### 1. 环境要求
-- Python 3.8+
-- pip包管理器
-
 ### 2. 安装步骤
 
 ```bash
-# 克隆项目
-git clone <repository-url>
-cd br_data_collector
+# 进入项目目录
+cd SD_SMA_DATA_COLLECTOR
 
-# 安装依赖
+# 自动安装依赖（推荐）
 python init.py
 
 # 或手动安装
 pip install -r requirements.txt
 ```
 
-### 3. 配置文件
+### 3. 环境要求
+- Python 3.8+
+- pip 包管理器
+- MySQL 5.7+ 或 SQLite 3.x
+- OPC UA 服务器
+
+### 4. 配置文件
 
 修改 `config/sample_config.json` 文件：
 
 ```json
 {
+  "communications": [
+    {
+      "name": "PLC1",
+      "type": "opcua",
+      "host": "192.168.50.233",
+      "port": 4840
+    }
+  ],
+  "connections": [
+    {
+      "name": "connection1",
+      "communication": "PLC1",
+      "data_groups": ["sensor_group_1", "trigger_group_1"]
+    }
+  ],
   "points": [
     {
-      "name": "temperature_sensor_1",
-      "path": "ns=6;s=::OpcCon:usiBuffer.Temperature1",
-      "description": "温度传感器1数据"
+      "name": "rEC",
+      "path": "ns=6;s=::DataGen:EC",
+      "description": "温度传感器数据"
+    },
+    {
+      "name": "bTrigger1",
+      "path": "ns=6;s=::DataRev:bTestTriger",
+      "description": "触发信号"
     }
   ],
   "groups": [
     {
       "name": "sensor_group_1",
-      "interval_seconds": 5,
+      "interval_seconds": 1,
       "trigger": "time",
-      "description": "传感器组1，每5秒采集一次",
-      "data_points": ["temperature_sensor_1"]
+      "description": "时间触发组，每 1 秒采集一次",
+      "data_points": ["rEC", "rF10", "rF11"],
+      "recreate_interval_days": 1,
+      "batch_insert_size": 5
+    },
+    {
+      "name": "trigger_group_1",
+      "interval_seconds": 0.5,
+      "trigger": "variable",
+      "description": "变量触发组",
+      "data_points": ["rF1", "rF2"],
+      "trigger_point": "bTrigger1",
+      "reset_trigger_after_read": false,
+      "recreate_interval_days": 15,
+      "batch_insert_size": 1
     }
   ],
   "database": {
-    "type": "sqlite",
-    "name": "data_collection.db",
-    "recreate_interval_days": 30,
-    "batch_insert_size": 100,
-    "data_group": "sensor_group_1"
+    "type": "mysql",
+    "name": "wn_10",
+    "host": "192.168.50.22",
+    "port": 3306,
+    "username": "root",
+    "password": "your_password",
+    "data_groups": ["sensor_group_1", "trigger_group_1"]
+  },
+  "http_server": {
+    "enabled": true,
+    "base_url": "http://localhost:8080",
+    "endpoint": "/api/data",
+    "timeout": 30,
+    "max_retries": 3,
+    "retry_delay": 1.0
   }
 }
 ```
+
+**配置说明：**
+- **communications**: 定义多个 OPC UA 通信连接
+- **connections**: 指定数据组与通信连接的映射关系
+- **points**: 定义所有数据点的 OPC UA 节点路径
+- **groups**: 配置数据组，支持三种触发方式：
+  - `time`: 时间间隔触发
+  - `variable`: 变量触发
+  - `query`: 查询任务触发（用于查询回写）
+- **database**: 数据库连接配置和数据组分配
+- **http_server**: HTTP 数据推送配置（可选）
 
 ## 使用方法
 
 ### 1. 数据采集模式
 
 ```bash
-# 启动数据采集
+# 启动数据采集（使用默认配置）
 python main.py
 
 # 指定配置文件
-python main.py --config config/my_config.json
+python main.py --config config/Alarm_Audit.json
 ```
+
+系统启动后会：
+- 连接所有配置的 OPC UA 服务器
+- 初始化数据库连接
+- 启动 HTTP 服务器（如果启用）
+- 按照配置的触发方式采集数据
+- 实时写入数据库
 
 ### 2. 数据查询模式
 
 ```bash
 # 进入查询交互模式
 python main.py --query
-
-# 按提示输入查询参数：
-# - 开始时间
-# - 结束时间  
-# - 输出文件路径
 ```
 
-### 3. 系统控制
+按提示输入：
+- 开始时间（YYYY-MM-DD HH:MM:SS）
+- 结束时间（YYYY-MM-DD HH:MM:SS）
+- 输出文件路径（如：output.csv）
 
-- **正常退出**: Ctrl+C
-- **后台运行**: `nohup python main.py &`
-- **查看日志**: `tail -f data_collector.log`
+### 3. 配置检查
+
+```bash
+# 检查配置文件格式
+python check_config.py config/sample_config.json
+```
+
+### 4. 系统控制
+
+- **正常退出**: Ctrl+C 或发送终止信号
+- **后台运行**: 
+  ```bash
+  nohup python main.py > output.log 2>&1 &
+  ```
+- **查看日志**: 
+  ```bash
+  tail -f data_collector.log
+  ```
+- **Windows 启动**: 
+  ```bash
+  start_http.bat
+  ```
 
 ## 配置说明
 
 ### 数据点配置 (points)
-- `name`: 自定义变量名
-- `path`: OPC UA节点路径
-- `description`: 描述信息
+- `name`: 数据点唯一标识符
+- `path`: OPC UA 节点路径（格式：ns=X;s=节点路径）
+- `description`: 数据点描述信息
 
 ### 数据组配置 (groups)
 - `name`: 数据组名称
-- `interval_seconds`: 采样间隔(秒)
-- `trigger`: 触发方式(time/variable)
+- `interval_seconds`: 采样/检查间隔（秒）
+- `trigger`: 触发方式
+  - `time`: 时间间隔触发
+  - `variable`: 变量触发（由 PLC 信号触发）
+  - `query`: 查询任务触发（读取配置并执行数据库查询）
 - `data_points`: 包含的数据点名称列表
-- `trigger_point`: 触发点名称(变量触发时必需)
+- `trigger_point`: 触发变量名称（仅 variable/query 类型需要）
+- `reset_trigger_after_read`: 读取后是否复位触发信号
+- `recreate_interval_days`: 数据库分表间隔天数
+- `batch_insert_size`: 批量插入大小
+- `query_config`: 查询配置（仅 query 类型）
+  - `start_time_field`: 开始时间变量名
+  - `end_time_field`: 结束时间变量名
+  - `query_point_field`: 查询数据点变量名
+  - `buffer_nodes`: OPC UA 缓冲区节点数组
+  - `time_nodes`: 时间戳节点数组
+  - `buffer_size`: 单个缓冲区容量
+
+### 通信配置 (communications)
+- `name`: 通信连接名称（唯一标识）
+- `type`: 通信类型（目前仅支持 "opcua"）
+- `host`: OPC UA 服务器地址
+- `port`: OPC UA 服务器端口
+
+### 连接配置 (connections)
+- `name`: 连接配置名称（唯一标识）
+- `communication`: 引用的通信名称
+- `data_groups`: 使用该通信的数据组名称列表
 
 ### 数据库配置 (database)
-- `type`: 数据库类型(mysql/sqlite)
+- `type`: 数据库类型（mysql/sqlite）
 - `name`: 数据库名称
-- `host/port/username/password`: 连接参数
-- `recreate_interval_days`: 分表间隔天数
-- `batch_insert_size`: 批量插入大小
-- `data_group`: 使用的数据组名称
+- `host/port/username/password`: 连接参数（MySQL 需要）
+- `data_groups`: 要存储的数据组名称列表
+
+### HTTP 服务器配置 (http_server)
+- `enabled`: 是否启用 HTTP 推送
+- `base_url`: HTTP 服务器地址
+- `endpoint`: API 端点路径
+- `timeout`: 请求超时时间（秒）
+- `max_retries`: 失败重试次数
+- `retry_delay`: 重试间隔（秒）
 
 ## 开发指南
 
 ### 运行测试
 
 ```bash
-python -m pytest tests/ -v
+# 运行所有测试
+pytest tests/ -v
+
+# 运行特定测试
+pytest tests/test_multi_communication.py -v
+pytest tests/test_http_server.py -v
 ```
 
-### 代码结构
+### 核心模块说明
 
-1. **配置模块**: `core/` - 处理JSON配置文件的加载和验证
-2. **通信模块**: `communication/` - 实现OPC UA通信协议
-3. **数据库模块**: `database/` - 提供数据库访问和数据存储功能
-4. **主程序**: `main.py` - 整合各模块，提供统一接口
+1. **配置模块** (`core/`)
+   - `config_models.py`: 定义数据点、数据组、通信连接等数据模型
+   - `config_loader.py`: JSON 配置文件加载、解析和验证
+
+2. **通信模块** (`communication/`)
+   - `communication_manager.py`: 管理多个 OPC UA 客户端连接
+   - `opcua_client.py`: OPC UA 客户端封装，支持断线重连
+   - `data_collector.py`: 实现时间/变量/查询三种触发采集逻辑
+   - `opcua_data_writer.py`: 查询结果回写到 OPC UA 缓冲区
+   - `http_client.py`: HTTP 数据推送客户端
+
+3. **数据库模块** (`database/`)
+   - `db_manager.py`: 数据库连接管理、自动建表
+   - `data_storage.py`: 批量数据插入处理
+   - `data_query.py`: 历史数据查询和导出
+
+4. **主程序** (`main.py`)
+   - 整合各模块，提供采集和查询两种运行模式
+   - 支持 HTTP 服务器和客户端功能
 
 ### 扩展开发
 
-#### 添加新的通信协议
-1. 在 `communication/` 目录下创建新的客户端类
-2. 实现相应的数据读取接口
-3. 在主程序中集成新的通信方式
+#### 添加新的触发方式
+1. 在 `core/config_models.py` 中添加新的 TriggerType 枚举值
+2. 在 `communication/data_collector.py` 中实现相应的触发逻辑
+3. 更新配置验证逻辑
 
-#### 添加新的数据库支持
-1. 扩展 `database/db_manager.py` 中的连接逻辑
-2. 实现相应数据库的SQL方言适配
+#### 扩展 HTTP 功能
+1. 修改 `communication/http_client.py` 添加自定义请求头或认证
+2. 在 `opcua_data_writer.py` 中调整发送数据格式
+3. 参考 `docs/HTTP_SERVER_GUIDE.md` 实现 WebSocket/SSE 推送
 
 ## 性能优化建议
 
-1. **合理设置批量大小**: 根据数据量调整 `batch_insert_size`
-2. **优化采集频率**: 避免过于频繁的数据采集
-3. **定期维护数据库**: 清理过期数据，优化索引
-4. **监控系统资源**: 关注CPU、内存和磁盘使用情况
+1. **优化批量大小**: 根据数据量调整 `batch_insert_size`，平衡内存和性能
+2. **合理设置采集频率**: 避免过于频繁的数据采集影响 PLC 性能
+3. **数据库定期维护**: 清理过期数据，优化索引结构
+4. **监控系统资源**: 关注 CPU、内存和磁盘 IO 使用情况
+5. **网络优化**: 对于远程 OPC UA 服务器，考虑网络延迟影响
+6. **HTTP 推送性能**: 调整 timeout 和 max_retries 参数适应网络环境
 
 ## 故障排除
 
 ### 常见问题
 
-1. **OPC UA连接失败**
-   - 检查服务器地址和端口
-   - 确认网络连通性
-   - 验证认证信息
+#### 1. OPC UA 连接失败
+- 检查服务器地址和端口配置
+- 确认网络连通性（ping/telnet）
+- 验证 OPC UA 服务器是否运行
+- 检查防火墙设置
 
-2. **数据库写入失败**
-   - 检查数据库连接参数
-   - 确认有足够的磁盘空间
-   - 查看数据库用户权限
+#### 2. 数据库写入失败
+- 检查数据库连接参数（用户名/密码/主机）
+- 确认数据库服务已启动
+- 查看数据库用户权限
+- 检查磁盘空间
 
-3. **数据采集异常**
-   - 查看日志文件 `data_collector.log`
-   - 检查配置文件格式
-   - 验证数据点路径正确性
+#### 3. 数据采集异常
+- 查看详细日志 `data_collector.log`
+- 验证数据点 OPC UA 路径正确性
+- 检查触发变量状态
+- 确认数据组与通信连接映射正确
 
-### 日志分析
+#### 4. HTTP 推送失败
+- 检查 HTTP 服务器是否运行
+- 验证 base_url 和 endpoint 配置
+- 查看网络防火墙规则
+- 检查 HTTP 服务器日志
 
-日志级别：
-- INFO: 正常运行信息
-- WARNING: 警告信息
-- ERROR: 错误信息
-- DEBUG: 调试详细信息
+#### 5. 查询回写不工作
+- 确认 query_group 配置正确
+- 检查 bTriggerQuery 触发信号
+- 验证查询参数（时间范围/数据点）格式
+- 查看 OPC UA 缓冲区节点路径
+
+### 日志级别说明
+
+- **INFO**: 系统正常运行信息（启动/停止/连接成功）
+- **WARNING**: 警告信息（重试/非关键错误）
+- **ERROR**: 错误信息（连接失败/写入失败）
+- **DEBUG**: 调试详细信息（数据详情/内部状态）
+
+### 日志分析技巧
+
+```bash
+# 查看最近的错误日志
+tail -n 100 data_collector.log | grep ERROR
+
+# 查看特定时间的日志
+sed -n '2024-01-01 10:00:00/,2024-01-01 11:00:00/p' data_collector.log
+
+# 统计错误数量
+grep -c "ERROR" data_collector.log
+
+# 实时查看日志
+tail -f data_collector.log
+```
 
 ## 许可证
 
