@@ -11,7 +11,8 @@
     {
       "name": "connection1",
       "communication": "PLC1",
-      "data_groups": ["sensor_group_1", "sensor_group_2", "trigger_group_1","query_group_1"]
+      "data_groups": ["sensor_group_1", "sensor_group_2", "trigger_group_1","query_group_1"],
+      "heartbeat": "ns=6;s=::DataRev:uiHeartBeat"
     }
   ],
   "points": [

@@ -87,7 +87,8 @@ class ConfigLoader:
             conn = Connection(
                 name=conn_data['name'],
                 communication=conn_data['communication'],
-                data_groups=conn_data['data_groups']
+                data_groups=conn_data['data_groups'],
+                heartbeat=conn_data.get('heartbeat', None) 
             )
             connections.append(conn)
         

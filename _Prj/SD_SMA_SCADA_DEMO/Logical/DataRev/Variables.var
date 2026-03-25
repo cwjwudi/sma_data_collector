@@ -12,4 +12,5 @@ VAR CONSTANT
 END_VAR
 VAR
 	bTestTriger : BOOL;
+	uiHeartBeat : UINT;
 END_VAR

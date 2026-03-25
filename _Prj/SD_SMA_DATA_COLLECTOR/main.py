@@ -26,6 +26,7 @@ try:
     from communication.communication_manager import CommunicationManager
     from communication.opcua_data_writer import OpcUaDataWriter
     from communication.http_client import HttpClient
+    from communication.heartbeat_manager import HeartbeatManager
     from database.db_manager import DatabaseManager
     from database.data_storage import DataStorageProcessor
     from database.data_query import DataQueryProcessor
@@ -50,6 +51,7 @@ class DataCollectionSystem:
         self.config_file = config_file
         self.config: Optional[AppConfig] = None
         self.communication_manager: Optional[CommunicationManager] = None
+        self.heartbeat_manager: Optional[HeartbeatManager] = None  # 心跳管理器
         self.data_collector: Optional[DataCollector] = None
         self.db_manager: Optional[DatabaseManager] = None
         self.storage_processor: Optional[DataStorageProcessor] = None
@@ -93,7 +95,11 @@ class DataCollectionSystem:
                 self.logger.error("通信管理器初始化失败")
                 return False
             
-            # 构建group配置字典
+            # 初始化心跳管理器
+            self.logger.info("正在初始化心跳管理器...")
+            self.heartbeat_manager = HeartbeatManager(self.config, self.communication_manager)
+            
+            # 构建 group 配置字典
             group_configs = {}
             for group in self.config.groups:
                 group_configs[group.name] = {
@@ -186,6 +192,10 @@ class DataCollectionSystem:
         try:
             self.running = True
             
+            # 启动心跳信号
+            if self.heartbeat_manager:
+                await self.heartbeat_manager.start_heartbeats()
+            
             # 启动数据存储处理器
             await self.storage_processor.start_processing()
             
@@ -230,6 +240,13 @@ class DataCollectionSystem:
         """停止数据采集系统"""
         self.logger.info("正在停止数据采集系统...")
         self.running = False
+        
+        try:
+            # 停止心跳信号
+            if self.heartbeat_manager:
+                await self.heartbeat_manager.stop_heartbeats()
+        except Exception as e:
+            self.logger.error(f"停止心跳管理器时发生错误：{e}")
         
         try:
             # 停止数据采集

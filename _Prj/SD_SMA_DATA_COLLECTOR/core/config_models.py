@@ -111,6 +111,7 @@ class Connection:
     name: str
     communication: str  # 通信名称
     data_groups: List[str]  # 使用此通信的数据组列表
+    heartbeat: Optional[str] = None  # 心跳信号的 OPC UA 地址（可选）
 
 
 @dataclass
