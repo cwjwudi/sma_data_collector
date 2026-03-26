@@ -40,7 +40,7 @@ class DataQueryProcessor:
                    point_names: List[str],
                    group_names: List[str],
                    output_file: Optional[str] = None,
-                   return_data: bool = True) -> Optional[tuple[List[List[Any]], List[List[datetime]]]]:
+                   return_data: bool = True) -> Optional[tuple[List[List[Any]], List[List[datetime]], int]]:
         """
         查询指定时间段内的数据并可选导出到 CSV 文件
         
@@ -125,9 +125,9 @@ class DataQueryProcessor:
             # 如果需要返回数据
             if return_data:
                 self.logger.info(f"查询完成，共获取 {len(all_data)} 条记录")
-                return _all_data, _all_time
+                return _all_data, _all_time, len(all_data)
             
-            return True
+            return [], [], 0
             
         except Exception as e:
             self.logger.error(f"数据查询失败：{e}")

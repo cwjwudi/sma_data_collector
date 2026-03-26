@@ -13,4 +13,5 @@ END_VAR
 VAR
 	bTestTriger : BOOL;
 	uiHeartBeat : UINT;
+	uiQueryFeedBack : UINT;
 END_VAR

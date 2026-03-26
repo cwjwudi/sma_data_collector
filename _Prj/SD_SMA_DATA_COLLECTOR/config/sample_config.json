@@ -156,6 +156,7 @@
         "end_time_field": "strEndTimes",
         "query_point_field": "strPointNames",
         "output_file": null,
+        "feed_back_point": "ns=6;s=::DataRev:uiQueryFeedBack",
         "buffer_nodes": [
           "ns=6;s=::DataRev:stDbReadQuery.stRev[0].rRevBuffer",
           "ns=6;s=::DataRev:stDbReadQuery.stRev[1].rRevBuffer",

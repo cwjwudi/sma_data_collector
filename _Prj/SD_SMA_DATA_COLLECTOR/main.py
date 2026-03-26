@@ -357,6 +357,40 @@ class DataCollectionSystem:
         
         return self.query_processor.get_available_points()
     
+    async def _write_query_status(self, opcua_client, query_group_config, status: int) -> bool:
+        """
+        写入查询状态到 OPC UA 反馈点
+        
+        Args:
+            opcua_client: OPC UA 客户端实例
+            query_group_config: 查询组配置对象
+            status: 状态码
+            
+        Returns:
+            bool: 写入是否成功
+        """
+        try:
+            # 检查是否配置了反馈点
+            if not query_group_config or not query_group_config.get_feed_back_point():
+                self.logger.debug("未配置反馈点，跳过状态写入")
+                return True
+            
+            # 创建数据写入器
+            data_writer = OpcUaDataWriter(
+                opcua_client, 
+                query_group_config, 
+                self.http_client
+            )
+            
+            # 写入状态
+            success = await data_writer._write_feed_back_status(status)
+            
+            return success
+            
+        except Exception as e:
+            self.logger.error(f"写入查询状态失败：{e}", exc_info=True)
+            return False
+    
     async def _process_query_tasks(self) -> None:
         """
         处理查询任务队列中的任务
@@ -383,9 +417,16 @@ class DataCollectionSystem:
                         query_group_config = group
                         break
                 
+                # 写入查询状态：正在查询
+                await self._write_query_status(
+                    query_task['opcua_client'],
+                    query_group_config,
+                    OpcUaDataWriter.QUERY_STATUS_RUNNING
+                )
+                
                 # 在线程池中执行数据库查询，避免阻塞主事件循环
                 loop = asyncio.get_event_loop()
-                query_results, query_time = await loop.run_in_executor(
+                query_results, query_time, data_len = await loop.run_in_executor(
                     self.executor,
                     lambda: self.query_processor.query_data(
                         start_times=query_task['start_time'],
@@ -396,10 +437,23 @@ class DataCollectionSystem:
                         return_data=True
                     )
                 )
-                
+
                 if query_results is None:
                     self.logger.error(f"查询任务失败：{query_task['group_name']}")
-                else:             
+                    # 写入错误状态（如果配置了反馈点）
+                    await self._write_query_status(
+                        query_task['opcua_client'],
+                        query_group_config,
+                        OpcUaDataWriter.QUERY_STATUS_ERROR
+                    )
+                elif data_len == 0:
+                    self.logger.warning(f"查询结果为空：{query_task['group_name']}")
+                    await self._write_query_status(
+                        query_task['opcua_client'],
+                        query_group_config,
+                        OpcUaDataWriter.QUERY_STATUS_NO_DATA
+                    )
+                else:                  
                     # 使用查询任务中的 opcua_client 创建写入器，并传入组配置和 HTTP 客户端
                     opcua_client = query_task['opcua_client']
                     data_writer = OpcUaDataWriter(opcua_client, query_group_config, self.http_client)
@@ -413,6 +467,11 @@ class DataCollectionSystem:
                     
                     if success:
                         self.logger.info(f"查询结果已成功写入 OPC UA 缓冲区并发送到 HTTP 服务器：{query_task['group_name']}")
+                        await self._write_query_status(
+                            query_task['opcua_client'],
+                            query_group_config,
+                            OpcUaDataWriter.QUERY_STATUS_SUCCESS
+                        )
                     else:
                         self.logger.warning(f"写入 OPC UA 缓冲区失败：{query_task['group_name']}")
                 
@@ -427,6 +486,15 @@ class DataCollectionSystem:
                 break
             except Exception as e:
                 self.logger.error(f"处理查询任务时发生错误：{e}", exc_info=True)
+                # 写入错误状态（如果有活动的查询任务）
+                try:
+                    await self._write_query_status(
+                        query_task['opcua_client'],
+                        query_group_config,
+                        OpcUaDataWriter.QUERY_STATUS_ERROR
+                    )
+                except:
+                    pass  # 忽略状态写入失败
                 await asyncio.sleep(1)
 
     async def _init_http_server(self, http_config) -> None:

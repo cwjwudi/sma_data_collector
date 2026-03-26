@@ -20,6 +20,13 @@ from communication.date_and_time import fast_dt_to_date_and_time
 class OpcUaDataWriter:
     """OPC UA 数据写入器类"""
     
+    # 查询状态码常量定义
+    QUERY_STATUS_IDLE = 0  # 空闲/无查询
+    QUERY_STATUS_RUNNING = 1  # 正在查询
+    QUERY_STATUS_SUCCESS = 2  # 查询成功
+    QUERY_STATUS_NO_DATA = 3  # 无查询数据返回
+    QUERY_STATUS_ERROR = 4  # 其他错误
+    
     def __init__(self, opcua_client: OpcUaClient, query_group_config = None, http_client: HttpClient = None):
         """
         初始化 OPC UA 数据写入器
@@ -39,6 +46,7 @@ class OpcUaDataWriter:
             self.buffer_nodes = query_group_config.get_buffer_nodes()
             self.time_nodes = query_group_config.get_time_nodes()
             self.buffer_size = query_group_config.get_buffer_size()
+            self.feed_back_point = query_group_config.get_feed_back_point()
         else:
             # 向后兼容：使用默认配置
             self.buffer_nodes = [
@@ -68,6 +76,7 @@ class OpcUaDataWriter:
             ]
 
             self.buffer_size = 10000  # 每个缓冲区的长度
+            self.feed_back_point = None  # 默认无反馈点
     
     async def write_query_results(self, 
                                   query_results: List[List[Any]],
@@ -121,6 +130,51 @@ class OpcUaDataWriter:
                 
         except Exception as e:
             self.logger.error(f"写入查询结果失败：{e}", exc_info=True)
+            return False
+    
+    async def _write_feed_back_status(self, status: int) -> bool:
+        """
+        写入查询反馈状态到 OPC UA 服务器
+        
+        Args:
+            status: 状态码 (0-空闲，1-正在查询，2-成功，3-无数据，4-错误)
+            
+        Returns:
+            bool: 写入是否成功
+        """
+        if not self.feed_back_point:
+            self.logger.debug("未配置反馈点，跳过状态写入")
+            return True
+        
+        try:
+            if not self.opcua_client.is_connected():
+                self.logger.error("OPC UA 客户端未连接，无法写入反馈状态")
+                return False
+            
+            # 写入 UInt16 类型的状态值
+            success = await self._write_to_node(
+                self.feed_back_point, 
+                [status], 
+                ua.VariantType.UInt16
+            )
+            
+            if success:
+                status_text = {
+                    self.QUERY_STATUS_IDLE: "空闲",
+                    self.QUERY_STATUS_RUNNING: "正在查询",
+                    self.QUERY_STATUS_SUCCESS: "查询成功",
+                    self.QUERY_STATUS_NO_DATA: "无数据",
+                    self.QUERY_STATUS_ERROR: "错误"
+                }.get(status, f"未知状态 ({status})")
+                
+                self.logger.info(f"已写入查询反馈状态：{status} ({status_text})")
+            else:
+                self.logger.warning(f"写入反馈状态失败：{status}")
+            
+            return success
+            
+        except Exception as e:
+            self.logger.error(f"写入反馈状态失败：{e}", exc_info=True)
             return False
         
     async def _write_to_opcua_buffers(self,

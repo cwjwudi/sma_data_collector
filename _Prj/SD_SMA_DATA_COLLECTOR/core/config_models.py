@@ -72,6 +72,12 @@ class DataGroup:
         # 返回默认值（向后兼容）
         return 10000
     
+    def get_feed_back_point(self) -> Optional[str]:
+        """获取反馈信号节点路径（从 query_config 中）"""
+        if self.query_config and 'feed_back_point' in self.query_config:
+            return self.query_config['feed_back_point']
+        return None
+    
     def get_output_mode(self) -> OutputMode:
         """获取输出模式"""
         try:

@@ -184,6 +184,7 @@
           <Variable Name="stRev" RecursiveEnable="2" />
         </Variable>
         <Variable Name="uiHeartBeat" />
+        <Variable Name="uiQueryFeedBack" />
       </Task>
     </Module>
   </DefaultView>
