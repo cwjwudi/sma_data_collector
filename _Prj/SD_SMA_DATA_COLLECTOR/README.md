@@ -12,6 +12,7 @@
 - ✅ **查询回写功能**: 支持从数据库查询历史数据并回写到 OPC UA 缓冲区
 - ✅ **HTTP 数据推送**: 支持将查询结果推送到 HTTP 服务器，支持重试机制
 - ✅ **心跳信号功能**: 支持定时向 OPC UA 服务器写入心跳信号，保持连接活跃
+- ✅ **查询状态反馈**: 实时向 PLC 反馈数据库查询状态（空闲/正在查询/成功/无数据/错误）
 - ✅ **松耦合设计**: 通信、数据库、HTTP 模块解耦，易于扩展
 
 ## 系统架构
@@ -196,6 +197,55 @@ pip install -r requirements.txt
 - ✅ 优雅的开始和停止机制
 - ✅ 不影响现有功能，完全向后兼容
 
+### 查询状态反馈配置
+
+在查询组的 `query_config` 中配置 `feed_back_point` 字段：
+
+```json
+{
+  "groups": [
+    {
+      "name": "query_group_1",
+      "interval_seconds": 0.5,
+      "trigger": "query",
+      "description": "查询回写组",
+      "data_points": ["strStartTimes", "strEndTimes", "strPointNames"],
+      "trigger_point": "bTriggerQuery",
+      "query_config": {
+        "start_time_field": "strStartTimes",
+        "end_time_field": "strEndTimes",
+        "query_point_field": "strPointNames",
+        "feed_back_point": "ns=6;s=::DataRev:uiQueryFeedback",
+        "buffer_nodes": [
+          "ns=6;s=::DataRev:stDbReadQuery.stRev[0].rRevBuffer"
+        ],
+        "time_nodes": [
+          "ns=6;s=::DataRev:stDbReadQuery.stRev[0].udiRevTime"
+        ],
+        "buffer_size": 10000
+      }
+    }
+  ]
+}
+```
+
+**状态码说明：**
+
+| 状态码 | 含义 | 说明 |
+|-------|------|------|
+| 0 | 空闲 | 系统就绪，无查询任务 |
+| 1 | 正在查询 | 数据库查询正在进行中 |
+| 2 | 查询成功 | 查询完成且成功写入缓冲区 |
+| 3 | 无数据 | 查询完成但没有数据返回 |
+| 4 | 错误 | 查询过程中发生错误 |
+
+**查询状态反馈特性：**
+- ✅ 实时状态反馈，PLC 可随时读取
+- ✅ 完整的状态流转（空闲→正在查询→成功/无数据/错误）
+- ✅ 异常情况自动反馈错误状态
+- ✅ 可选配置，不影响现有查询功能
+- ✅ UInt16 数据类型，兼容大多数 PLC
+
 ## 使用方法
 
 ### 1. 数据采集模式
@@ -333,7 +383,7 @@ pytest tests/test_http_server.py -v
    - `communication_manager.py`: 管理多个 OPC UA 客户端连接
    - `opcua_client.py`: OPC UA 客户端封装，支持断线重连
    - `data_collector.py`: 实现时间/变量/查询三种触发采集逻辑
-   - `opcua_data_writer.py`: 查询结果回写到 OPC UA 缓冲区
+   - `opcua_data_writer.py`: 查询结果回写到 OPC UA 缓冲区，支持状态反馈
    - `http_client.py`: HTTP 数据推送客户端
    - `heartbeat_manager.py`: 心跳信号管理，定时写入 OPC UA 保持连接活跃
 
@@ -345,6 +395,7 @@ pytest tests/test_http_server.py -v
 4. **主程序** (`main.py`)
    - 整合各模块，提供采集和查询两种运行模式
    - 支持 HTTP 服务器和客户端功能
+   - 集成心跳管理和查询状态反馈
 
 ### 扩展开发
 
