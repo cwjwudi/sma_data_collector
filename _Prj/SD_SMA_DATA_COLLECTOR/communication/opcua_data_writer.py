@@ -46,6 +46,7 @@ class OpcUaDataWriter:
             self.buffer_nodes = query_group_config.get_buffer_nodes()
             self.time_nodes = query_group_config.get_time_nodes()
             self.feed_back_nodes = query_group_config.get_feed_back_nodes()
+            self.cmd_next_nodes = query_group_config.get_cmd_next_nodes()
             self.buffer_size = query_group_config.get_buffer_size()
             self.feed_back_point = query_group_config.get_feed_back_point()
         else:
@@ -89,6 +90,10 @@ class OpcUaDataWriter:
                 'ns=6;s=::DataRev:stDbReadQuery.stRev[9].udiRevFeedBack',
             ]
 
+            self.cmd_next_nodes = [
+                'ns=6;s=::DataRev:stDbReadQuery.stCmd.bNext'
+            ]
+
             self.buffer_size = 10000  # 每个缓冲区的长度
             self.feed_back_point = None  # 默认无反馈点
     
@@ -98,6 +103,7 @@ class OpcUaDataWriter:
                                   point_names: List[str]) -> bool:
         """
         将查询结果写入 OPC UA 缓冲区并发送到 HTTP 服务器（根据 output_mode 配置）
+        支持分批传输，当数据量超过 buffer_size 时，分多次写入
             
         Args:
             query_results: 查询结果列表
@@ -111,86 +117,25 @@ class OpcUaDataWriter:
                 self.logger.debug("查询结果为空，跳过写入")
                 return True
                 
-            # 根据 output_mode 配置决定输出到哪些通道
-            output_to_opcua = True
-            output_to_http = True
+            # 计算总数据量
+            total_records = sum(len(buffer_data) for buffer_data in query_results)
+            self.logger.info(f"查询结果总计 {total_records} 条记录")
             
-            if self.query_group_config:
-                output_to_opcua = self.query_group_config.should_output_to_opcua()
-                output_to_http = self.query_group_config.should_output_to_http()
-                
-                self.logger.info(f"查询组 '{self.query_group_config.name}' 输出模式："
-                               f"OPC UA={output_to_opcua}, HTTP={output_to_http}")
+            # 判断是否需要分批传输
+            max_batch_size = self.buffer_size
+            needs_batching = any(len(buffer_data) > max_batch_size for buffer_data in query_results)
             
-            # 1️⃣ 写入 OPC UA 缓冲区（如果配置了输出到 OPC UA）
-            opcua_success = True
-            if output_to_opcua:
-                opcua_success = await self._write_to_opcua_buffers(query_results, query_time, point_names)
+            if needs_batching:
+                self.logger.info(f"数据量超过缓冲区限制 ({max_batch_size})，启动分批传输模式")
+                return await self._write_query_results_batched(query_results, query_time, point_names)
             else:
-                self.logger.debug("输出模式配置为不输出到 OPC UA，跳过写入")
-                
-            # 2️⃣ 发送到 HTTP 服务器（如果配置了输出到 HTTP 且有 HTTP 客户端）
-            http_success = True
-            if output_to_http and self.http_client:
-                self.logger.info("准备发送数据到 HTTP 服务器...")
-                http_success = await self._send_to_http_server(query_results, query_time, point_names)
-            elif not output_to_http:
-                self.logger.debug("输出模式配置为不输出到 HTTP，跳过发送")
-            else:
-                self.logger.debug("未配置 HTTP 客户端，跳过 HTTP 发送")
-                
-            # 返回整体成功状态（只要 OPC UA 成功即可）
-            return opcua_success
+                # 不需要分批，直接写入
+                return await self._write_to_opcua_buffers(query_results, query_time, point_names)
                 
         except Exception as e:
             self.logger.error(f"写入查询结果失败：{e}", exc_info=True)
             return False
     
-    async def _write_feed_back_status(self, status: int) -> bool:
-        """
-        写入查询反馈状态到 OPC UA 服务器
-        
-        Args:
-            status: 状态码 (0-空闲，1-正在查询，2-成功，3-无数据，4-错误)
-            
-        Returns:
-            bool: 写入是否成功
-        """
-        if not self.feed_back_point:
-            self.logger.debug("未配置反馈点，跳过状态写入")
-            return True
-        
-        try:
-            if not self.opcua_client.is_connected():
-                self.logger.error("OPC UA 客户端未连接，无法写入反馈状态")
-                return False
-            
-            # 写入 UInt16 类型的状态值
-            success = await self._write_to_node(
-                self.feed_back_point, 
-                [status], 
-                ua.VariantType.UInt16
-            )
-            
-            if success:
-                status_text = {
-                    self.QUERY_STATUS_IDLE: "空闲",
-                    self.QUERY_STATUS_RUNNING: "正在查询",
-                    self.QUERY_STATUS_SUCCESS: "查询成功",
-                    self.QUERY_STATUS_NO_DATA: "无数据",
-                    self.QUERY_STATUS_ERROR: "错误"
-                }.get(status, f"未知状态 ({status})")
-                
-                self.logger.info(f"已写入查询反馈状态：{status} ({status_text})")
-            else:
-                self.logger.warning(f"写入反馈状态失败：{status}")
-            
-            return success
-            
-        except Exception as e:
-            self.logger.error(f"写入反馈状态失败：{e}", exc_info=True)
-            return False
-        
     async def _write_to_opcua_buffers(self,
                                      query_results: List[List[Any]],
                                      query_time: List[List[Any]],
@@ -235,10 +180,7 @@ class OpcUaDataWriter:
                 if i < len(query_time):
                     # 截断超出部分
                     time_to_write = query_time[i][:self.buffer_size]
-                    # 如果数据为空，跳过写入
-                    if len(time_to_write) == 0:
-                        self.logger.warning(f"缓冲区 {i+1} 时间数据为空，跳过写入")
-                        continue    
+    
                     # 修改时间格式为 UINT32
                     time_to_write = [fast_dt_to_date_and_time(t) for t in time_to_write]
                         
@@ -285,6 +227,304 @@ class OpcUaDataWriter:
                 
         except Exception as e:
             self.logger.error(f"写入 OPC UA 缓冲区失败：{e}", exc_info=True)
+            return False
+    
+    async def _write_query_results_batched(self,
+                                          query_results: List[List[Any]],
+                                          query_time: List[List[Any]],
+                                          point_names: List[str]) -> bool:
+        """
+        分批写入查询结果到 OPC UA 缓冲区
+        
+        工作流程：
+        1. 计算总数据量和总批次数
+        2. 首先写入第一批数据（最多 buffer_size 条）
+        3. 写入反馈信息（剩余待发送数据量 = 总量 - 已发送量）
+        4. 等待 PLC 的 bNext 上升沿信号
+        5. 写入下一批数据，更新反馈值（递减）
+        6. 重复步骤 4-5 直到所有数据传输完成
+        
+        Args:
+            query_results: 查询结果列表
+            query_time: 查询时间列表
+            point_names: 数据点名称列表
+            
+        Returns:
+            bool: 是否全部传输成功
+        """
+        try:
+            # 计算每个缓冲区的总数据量
+            total_counts_per_buffer = [len(buffer_data) for buffer_data in query_results]
+            total_records = sum(total_counts_per_buffer)
+            
+            # 计算每个缓冲区需要的批次数
+            batch_counts = []
+            max_batches = 0
+            for i, buffer_data in enumerate(query_results):
+                batches_for_this_buffer = (len(buffer_data) + self.buffer_size - 1) // self.buffer_size
+                batch_counts.append(batches_for_this_buffer)
+                max_batches = max(max_batches, batches_for_this_buffer)
+            
+            self.logger.info(f"需要分批传输，总计 {total_records} 条记录，最大批次数：{max_batches}, 各缓冲区批次数：{batch_counts}")
+            
+            # 记录已发送的数据量（用于计算剩余量）
+            sent_counts_per_buffer = [0] * len(query_results)
+            
+            # 逐批传输
+            for batch_idx in range(max_batches):
+                self.logger.info(f"开始传输第 {batch_idx + 1}/{max_batches} 批数据")
+                
+                # 准备当前批次的数据
+                current_batch_data = []
+                current_batch_time = []
+                
+                for i, buffer_data in enumerate(query_results):
+                    start_idx = batch_idx * self.buffer_size
+                    end_idx = min(start_idx + self.buffer_size, len(buffer_data))
+                    
+                    if start_idx < len(buffer_data):
+                        batch_slice = buffer_data[start_idx:end_idx]
+                        current_batch_data.append(batch_slice)
+                        current_batch_time.append(query_time[i][start_idx:end_idx])
+                        # 更新已发送量
+                        sent_counts_per_buffer[i] += len(batch_slice)
+                    else:
+                        # 该缓冲区已无数据
+                        current_batch_data.append([])
+                        current_batch_time.append([])
+                
+                # 写入当前批次数据
+                success = await self._write_batch_to_buffers(current_batch_data, current_batch_time, batch_idx, max_batches, 
+                                                            total_counts_per_buffer, sent_counts_per_buffer)
+                
+                if not success:
+                    self.logger.error(f"第 {batch_idx + 1} 批数据传输失败")
+                    return False
+                
+                # 如果不是最后一批，等待 PLC 的 Next 信号
+                if batch_idx < max_batches - 1:
+                    self.logger.info(f"等待 PLC 确认信号 (bNext)，准备传输下一批...")
+                    plc_ready = await self._wait_for_plc_next_signal(batch_idx)
+                    
+                    if not plc_ready:
+                        self.logger.error(f"等待 PLC 确认信号超时，传输中断")
+                        return False
+                    
+                    self.logger.info(f"PLC 确认信号已收到，继续传输下一批")
+            
+            self.logger.info(f"所有 {max_batches} 批数据传输完成")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"分批传输失败：{e}", exc_info=True)
+            return False
+    
+    async def _write_batch_to_buffers(self,
+                                     batch_data: List[List[Any]],
+                                     batch_time: List[List[datetime]],
+                                     current_batch: int,
+                                     total_batches: int,
+                                     total_counts: List[int],
+                                     sent_counts: List[int]) -> bool:
+        """
+        写入单批数据到缓冲区
+        
+        Args:
+            batch_data: 当前批次的数据
+            batch_time: 当前批次的时间
+            current_batch: 当前批次索引（从 0 开始）
+            total_batches: 总批次数
+            total_counts: 每个缓冲区的总数据量
+            sent_counts: 每个缓冲区已发送的数据量
+            
+        Returns:
+            bool: 写入是否成功
+        """
+        try:
+            if not self.opcua_client.is_connected():
+                self.logger.error("OPC UA 客户端未连接，无法写入数据")
+                return False
+            
+            # 写入数据缓冲区
+            success_count = 0
+            for i, buffer_node in enumerate(self.buffer_nodes):
+                if i < len(batch_data) and len(batch_data[i]) > 0:
+                    data_to_write = batch_data[i].copy()
+                    actual_count = len(data_to_write)
+                    
+                    # 如果数据不足 buffer_size，用 0.0 填充
+                    if len(data_to_write) < self.buffer_size:
+                        data_to_write.extend([0.0] * (self.buffer_size - len(data_to_write)))
+                    
+                    # 写入数据
+                    success = await self._write_to_node(buffer_node, data_to_write, ua.VariantType.Float)
+                    if success:
+                        success_count += 1
+                        self.logger.info(f"批次 {current_batch + 1}/{total_batches} - "
+                                       f"成功写入缓冲区 {i+1}: {buffer_node}, "
+                                       f"本批实际数据量={actual_count}")
+                    else:
+                        self.logger.warning(f"批次 {current_batch + 1}/{total_batches} - "
+                                          f"写入缓冲区 {i+1} 失败：{buffer_node}")
+                else:
+                    # 写入空缓冲区
+                    empty_data = [0.0] * self.buffer_size
+                    success = await self._write_to_node(buffer_node, empty_data, ua.VariantType.Float)
+                    if success:
+                        success_count += 1
+                        self.logger.debug(f"批次 {current_batch + 1}/{total_batches} - "
+                                        f"写入空缓冲区 {i+1}")
+            
+            # 写入时间缓冲区
+            for i, time_node in enumerate(self.time_nodes):
+                if i < len(batch_time) and len(batch_time[i]) > 0:
+                    time_to_write = [fast_dt_to_date_and_time(t) for t in batch_time[i]]
+                    actual_count = len(time_to_write)
+                    
+                    # 如果数据不足 buffer_size，用 0 填充
+                    if len(time_to_write) < self.buffer_size:
+                        time_to_write.extend([0] * (self.buffer_size - len(time_to_write)))
+                    
+                    # 写入时间
+                    success = await self._write_to_node(time_node, time_to_write, ua.VariantType.UInt32)
+                    if success:
+                        self.logger.info(f"批次 {current_batch + 1}/{total_batches} - "
+                                       f"成功写入时间缓冲区 {i+1}: {time_node}, "
+                                       f"本批实际数据量={actual_count}")
+                    else:
+                        self.logger.warning(f"批次 {current_batch + 1}/{total_batches} - "
+                                          f"写入时间缓冲区 {i+1} 失败：{time_node}")
+            
+            # 写入反馈信息（剩余待发送数据量）
+            for i, feed_back_node in enumerate(self.feed_back_nodes):
+                if i < len(total_counts):
+                    # 剩余量 = 总量 - 已发送量
+                    remaining_count = total_counts[i] - sent_counts[i]
+                    current_batch_send_count = sent_counts[i] - (current_batch) * self.buffer_size
+                    if current_batch_send_count < 0:
+                        current_batch_send_count = 0
+                    fead_back_count = current_batch_send_count + remaining_count
+
+                    # 反馈信息包含：剩余待发送数据量
+                    success = await self._write_to_node(feed_back_node, [fead_back_count], ua.VariantType.UInt32)
+                    if success:
+                        self.logger.info(f"批次 {current_batch + 1}/{total_batches} - "
+                                       f"成功写入反馈 {i+1}: {feed_back_node}, "
+                                       f"总量={total_counts[i]}, 已发送={sent_counts[i]}, 剩余={remaining_count}")
+                    else:
+                        self.logger.warning(f"批次 {current_batch + 1}/{total_batches} - "
+                                          f"写入反馈 {i+1} 失败：{feed_back_node}")
+            
+            self.logger.info(f"批次 {current_batch + 1}/{total_batches} - 写入完成，剩余待发送：{sum(total_counts) - sum(sent_counts)}")
+            return success_count > 0
+            
+        except Exception as e:
+            self.logger.error(f"写入单批数据失败：{e}", exc_info=True)
+            return False
+    
+    async def _wait_for_plc_next_signal(self, current_batch: int, timeout: float = 30.0) -> bool:
+        """
+        等待 PLC 的 bNext 上升沿信号
+        
+        Args:
+            current_batch: 当前批次索引
+            timeout: 超时时间（秒）
+            
+        Returns:
+            bool: 是否收到信号
+        """
+        try:
+            import asyncio
+            
+            start_time = asyncio.get_event_loop().time()
+            
+            # 读取 bNext 信号初始状态
+            try:
+                node = self.opcua_client.client.get_node(self.cmd_next_nodes[0])
+                initial_value = node.get_value()
+                previous_state = bool(initial_value) if initial_value is not None else False
+                
+                self.logger.debug(f"bNext 初始状态：{initial_value} ({previous_state})")
+                
+            except Exception as e:
+                self.logger.warning(f"读取 bNext 初始状态失败：{e}")
+                previous_state = False
+            
+            # 循环检测上升沿
+            while True:
+                # 检查超时
+                elapsed = asyncio.get_event_loop().time() - start_time
+                if elapsed > timeout:
+                    self.logger.error(f"等待 PLC 信号超时 ({timeout}秒)")
+                    return False
+                
+                try:
+                    # 读取 bNext 当前状态
+                    node = self.opcua_client.client.get_node(self.cmd_next_nodes[0])
+                    current_value = node.get_value()
+                    current_state = bool(current_value) if current_value is not None else False
+                    
+                    # 检测上升沿：从 False 变为 True
+                    if not previous_state and current_state:
+                        self.logger.info(f"检测到 bNext 上升沿信号 (批次 {current_batch + 1})")
+                        return True
+                    
+                    # 更新状态
+                    previous_state = current_state
+                    
+                except Exception as e:
+                    self.logger.debug(f"读取 bNext 失败：{e}")
+                
+                # 等待 100ms 后再次检测
+                await asyncio.sleep(0.1)
+                
+        except Exception as e:
+            self.logger.error(f"等待 PLC 信号过程出错：{e}", exc_info=True)
+            return False
+    
+    async def _write_feed_back_status(self, status: int) -> bool:
+        """
+        写入查询反馈状态到 OPC UA 服务器
+        
+        Args:
+            status: 状态码或总批次数
+            
+        Returns:
+            bool: 写入是否成功
+        """
+        if not self.feed_back_point:
+            self.logger.debug("未配置反馈点，跳过状态写入")
+            return True
+        
+        try:
+            if not self.opcua_client.is_connected():
+                self.logger.error("OPC UA 客户端未连接，无法写入反馈状态")
+                return False
+            
+            # 写入 UInt16 类型的状态值
+            success = await self._write_to_node(
+                self.feed_back_point, 
+                [status], 
+                ua.VariantType.UInt16
+            )
+            
+            if success:
+                status_text = {
+                    self.QUERY_STATUS_IDLE: "空闲",
+                    self.QUERY_STATUS_RUNNING: "正在查询",
+                    self.QUERY_STATUS_SUCCESS: "查询成功",
+                    self.QUERY_STATUS_NO_DATA: "无数据",
+                    self.QUERY_STATUS_ERROR: "错误"
+                }.get(status, f"未知状态 ({status})")
+                
+                self.logger.info(f"已写入查询反馈状态：{status} ({status_text})")
+            else:
+                self.logger.warning(f"写入反馈状态失败：{status}")
+            
+            return success
+            
+        except Exception as e:
+            self.logger.error(f"写入反馈状态失败：{e}", exc_info=True)
             return False
         
     async def _send_to_http_server(self,

@@ -72,12 +72,6 @@ class DataGroup:
         # 返回默认值（向后兼容）
         return 10000
     
-    def get_feed_back_point(self) -> Optional[str]:
-        """获取反馈信号节点路径（从 query_config 中）"""
-        if self.query_config and 'feed_back_point' in self.query_config:
-            return self.query_config['feed_back_point']
-        return None
-    
     def get_feed_back_nodes(self) -> List[str]:
         """获取反馈节点列表（从 query_config 中）"""
         if self.query_config and 'feed_back_nodes' in self.query_config:
@@ -87,6 +81,22 @@ class DataGroup:
             f'ns=6;s=::DataRev:stDbReadQuery.stRev[{i}].udiRevFeedBack'
             for i in range(10)
         ]
+    
+    def get_cmd_next_nodes(self) -> List[str]:
+        """获取下一批命令节点列表（从 query_config 中）"""
+        if self.query_config and 'cmd_next_nodes' in self.query_config:
+            return self.query_config['cmd_next_nodes']
+        # 返回默认值（向后兼容）
+        return [
+            f'ns=6;s=::DataRev:stDbReadQuery.stCmd.bNext[{i}]'
+            for i in range(10)
+        ]
+    
+    def get_feed_back_point(self) -> Optional[str]:
+        """获取反馈信号节点路径（从 query_config 中）"""
+        if self.query_config and 'feed_back_point' in self.query_config:
+            return self.query_config['feed_back_point']
+        return None
     
     def get_output_mode(self) -> OutputMode:
         """获取输出模式"""
