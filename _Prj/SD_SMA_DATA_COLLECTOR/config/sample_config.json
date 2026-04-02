@@ -181,6 +181,18 @@
           "ns=6;s=::DataRev:stDbReadQuery.stRev[8].udiRevTime",
           "ns=6;s=::DataRev:stDbReadQuery.stRev[9].udiRevTime"
         ],
+        "feed_back_nodes": [
+          "ns=6;s=::DataRev:stDbReadQuery.stRev[0].udiRevFeedBack",
+          "ns=6;s=::DataRev:stDbReadQuery.stRev[1].udiRevFeedBack",
+          "ns=6;s=::DataRev:stDbReadQuery.stRev[2].udiRevFeedBack",
+          "ns=6;s=::DataRev:stDbReadQuery.stRev[3].udiRevFeedBack",
+          "ns=6;s=::DataRev:stDbReadQuery.stRev[4].udiRevFeedBack",
+          "ns=6;s=::DataRev:stDbReadQuery.stRev[5].udiRevFeedBack",
+          "ns=6;s=::DataRev:stDbReadQuery.stRev[6].udiRevFeedBack",
+          "ns=6;s=::DataRev:stDbReadQuery.stRev[7].udiRevFeedBack",
+          "ns=6;s=::DataRev:stDbReadQuery.stRev[8].udiRevFeedBack",
+          "ns=6;s=::DataRev:stDbReadQuery.stRev[9].udiRevFeedBack"
+        ],
         "buffer_size": 10000
       }
     }

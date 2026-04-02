@@ -45,6 +45,7 @@ class OpcUaDataWriter:
         if query_group_config:
             self.buffer_nodes = query_group_config.get_buffer_nodes()
             self.time_nodes = query_group_config.get_time_nodes()
+            self.feed_back_nodes = query_group_config.get_feed_back_nodes()
             self.buffer_size = query_group_config.get_buffer_size()
             self.feed_back_point = query_group_config.get_feed_back_point()
         else:
@@ -73,6 +74,19 @@ class OpcUaDataWriter:
                 'ns=6;s=::DataRev:stDbReadQuery.stRev[7].udiRevTime',
                 'ns=6;s=::DataRev:stDbReadQuery.stRev[8].udiRevTime',
                 'ns=6;s=::DataRev:stDbReadQuery.stRev[9].udiRevTime',
+            ]
+
+            self.feed_back_nodes = [
+                'ns=6;s=::DataRev:stDbReadQuery.stRev[0].udiRevFeedBack',
+                'ns=6;s=::DataRev:stDbReadQuery.stRev[1].udiRevFeedBack',
+                'ns=6;s=::DataRev:stDbReadQuery.stRev[2].udiRevFeedBack',
+                'ns=6;s=::DataRev:stDbReadQuery.stRev[3].udiRevFeedBack',
+                'ns=6;s=::DataRev:stDbReadQuery.stRev[4].udiRevFeedBack',
+                'ns=6;s=::DataRev:stDbReadQuery.stRev[5].udiRevFeedBack',
+                'ns=6;s=::DataRev:stDbReadQuery.stRev[6].udiRevFeedBack',
+                'ns=6;s=::DataRev:stDbReadQuery.stRev[7].udiRevFeedBack',
+                'ns=6;s=::DataRev:stDbReadQuery.stRev[8].udiRevFeedBack',
+                'ns=6;s=::DataRev:stDbReadQuery.stRev[9].udiRevFeedBack',
             ]
 
             self.buffer_size = 10000  # 每个缓冲区的长度
@@ -195,8 +209,11 @@ class OpcUaDataWriter:
                 if i < len(query_results):
                     # 截断超出部分
                     data_to_write = query_results[i][:self.buffer_size]
-                        
-                    # 如果数据不足 1000 个，用 0.0 填充
+                    # 如果数据为空，跳过写入
+                    if len(data_to_write) == 0:
+                        self.logger.warning(f"缓冲区 {i+1} 数据为空，跳过写入")
+                        continue
+                    # 如果数据不足 10000 个，用 0.0 填充
                     if len(data_to_write) < self.buffer_size:
                         data_to_write.extend([0.0] * (self.buffer_size - len(data_to_write)))
                         
@@ -218,7 +235,10 @@ class OpcUaDataWriter:
                 if i < len(query_time):
                     # 截断超出部分
                     time_to_write = query_time[i][:self.buffer_size]
-    
+                    # 如果数据为空，跳过写入
+                    if len(time_to_write) == 0:
+                        self.logger.warning(f"缓冲区 {i+1} 时间数据为空，跳过写入")
+                        continue    
                     # 修改时间格式为 UINT32
                     time_to_write = [fast_dt_to_date_and_time(t) for t in time_to_write]
                         
@@ -237,6 +257,29 @@ class OpcUaDataWriter:
                 else:
                     self.logger.warning(f"没有足够的数据写入时间缓冲区 {i+1}")
             self.logger.info(f"写入完成，成功 {success_count}/{len(self.time_nodes)} 个时间缓冲区")
+    
+            # 写入反馈数据（实际写入的数据数量）
+            for i, feed_back_node in enumerate(self.feed_back_nodes):
+                if i < len(query_results):
+                    # 获取实际数据量
+                    actual_data_count = len(query_results[i])
+                    
+                    # 写入实际数据量作为反馈
+                    success = await self._write_to_node(feed_back_node, [actual_data_count], ua.VariantType.UInt32)
+                    if success:
+                        self.logger.info(f"成功写入反馈 {i+1}: {feed_back_node}, "
+                                       f"实际数据量={actual_data_count}")
+                    else:
+                        self.logger.warning(f"写入反馈 {i+1} 失败：{feed_back_node}")
+                else:
+                    # 如果没有对应的数据，写入 0
+                    success = await self._write_to_node(feed_back_node, [0], ua.VariantType.UInt32)
+                    if success:
+                        self.logger.info(f"成功写入反馈 {i+1}: {feed_back_node}, 无数据 (0)")
+                    else:
+                        self.logger.warning(f"写入反馈 {i+1} 失败：{feed_back_node}")
+            
+            self.logger.info(f"写入完成，成功 {len(self.feed_back_nodes)}/{len(self.feed_back_nodes)} 个反馈节点")
                 
             return success_count > 0
                 

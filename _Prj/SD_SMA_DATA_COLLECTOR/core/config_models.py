@@ -78,6 +78,16 @@ class DataGroup:
             return self.query_config['feed_back_point']
         return None
     
+    def get_feed_back_nodes(self) -> List[str]:
+        """获取反馈节点列表（从 query_config 中）"""
+        if self.query_config and 'feed_back_nodes' in self.query_config:
+            return self.query_config['feed_back_nodes']
+        # 返回默认值（向后兼容）
+        return [
+            f'ns=6;s=::DataRev:stDbReadQuery.stRev[{i}].udiRevFeedBack'
+            for i in range(10)
+        ]
+    
     def get_output_mode(self) -> OutputMode:
         """获取输出模式"""
         try:
