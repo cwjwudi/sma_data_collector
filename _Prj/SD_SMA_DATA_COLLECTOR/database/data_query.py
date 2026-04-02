@@ -65,37 +65,29 @@ class DataQueryProcessor:
             # 构建查询 SQL
             all_data = []
 
-
-            # 构建数据与idx的字典，便于还原数据
-            point_to_idx = {}
-            for i in range(len(point_names)):
-                point_to_idx[point_names[i]] = i
-            # 构建数据，将数据从按组重新分类
+            # 将具有相同start_time、end_time、table_name的point合并到字典中
             rebuild_datas_dict = {}
 
-            @dataclass
-            class TableData:
-                start_time: datetime = datetime.min
-                end_time: datetime = datetime.max
-                point_names: List[str] = field(default_factory=list)
-
-            for i in range(len(table_names)):
-                if table_names[i] is None:
+            for i in range(len(point_names)):
+                if group_names[i] is None:
                     continue
-                if table_names[i] not in rebuild_datas_dict:
-                    temp_data = TableData()
-                    temp_data.start_time = start_times[i]
-                    temp_data.end_time = end_times[i]
-                    temp_data.point_names.append(point_names[i])
-                    rebuild_datas_dict[table_names[i]] = temp_data
-                else:
-                    rebuild_datas_dict[table_names[i]].point_names.append(point_names[i])
-            
-            for key in rebuild_datas_dict:
-                table_data = self._query_table_data(key, rebuild_datas_dict[key].start_time, rebuild_datas_dict[key].end_time, rebuild_datas_dict[key].point_names)
+                
+                key = (group_names[i], start_times[i], end_times[i])
+                
+                if key not in rebuild_datas_dict:
+                    rebuild_datas_dict[key] = []
+                
+                rebuild_datas_dict[key].append(point_names[i])
 
-                all_data.extend(table_data)
             
+            # 创建point_name到索引的映射
+            point_to_idx = {name: idx for idx, name in enumerate(point_names)}
+            
+            for key, points in rebuild_datas_dict.items():
+                table_name, start_time, end_time = key
+                table_data = self._query_table_data(table_name, start_time, end_time, points)
+                all_data.extend(table_data)
+                
             # 按时间排序
             # all_data.sort(key=lambda x: x['collection_time'])
             
