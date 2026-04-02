@@ -2,7 +2,49 @@
 
 本文档记录 SMA 数据采集系统的所有重要更新和变更。
 
-## [未发布] - 2026-03-26
+
+
+## [未发布] - 2026-04-02
+
+### 新增功能
+- ✨ **缓冲区数据量反馈功能**
+  - 在 `query_config` 中新增 `feed_back_nodes` 字段配置反馈节点数组
+  - 每个缓冲区对应一个反馈节点，用于记录实际写入的数据量
+  - 自动将每个缓冲区的实际采集数据条数写入对应的 OPC UA 反馈节点
+  - 反馈值类型：UInt32（无符号 32 位整数）
+  - 支持 10 个反馈节点，与 buffer_nodes 和 time_nodes 保持一一对应
+  - 如果某缓冲区无数据，则向对应反馈节点写入 0
+  - 详细的日志记录，包括每个反馈节点的写入状态和数据量
+
+### 配置文件变更
+- 📝 **DataGroup 数据模型扩展**
+  - 在 `DataGroup.query_config` 中支持 `feed_back_nodes` 字段
+  - 用于配置缓冲区数据量反馈的 OPC UA 节点地址数组
+  
+### 使用示例
+```json
+{
+  "query_config": {
+    "feed_back_point": "ns=6;s=::DataRev:uiQueryFeedBack",
+    "buffer_nodes": [
+      "ns=6;s=::DataRev:stDbReadQuery.stRev[0].rRevBuffer",
+      "... 更多缓冲区节点"
+    ],
+    "time_nodes": [
+      "ns=6;s=::DataRev:stDbReadQuery.stRev[0].udiRevTime",
+      "... 更多时间节点"
+    ],
+    "feed_back_nodes": [
+      "ns=6;s=::DataRev:stDbReadQuery.stRev[0].udiRevFeedBack",
+      "ns=6;s=::DataRev:stDbReadQuery.stRev[1].udiRevFeedBack",
+      "... 共 10 个反馈节点"
+    ],
+    "buffer_size": 10000
+  }
+}
+```
+
+## [v1.1.0] - 2026-03-26
 
 ### 新增功能
 - ✨ **心跳信号功能**
@@ -59,9 +101,7 @@
 
 ---
 
-## [未发布] - 2026-03-25
-
-### [v1.0.0] - 初始版本
+## [v1.0.0] - 初始版本
 - 多控制器支持
 - 灵活配置系统
 - 多种触发模式（时间/变量/查询）
