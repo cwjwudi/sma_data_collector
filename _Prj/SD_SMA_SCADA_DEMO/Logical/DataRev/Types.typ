@@ -12,6 +12,10 @@ TYPE
 	END_STRUCT;
 	dbReadQuery_typ : 	STRUCT 
 		stConfig : dbReadConfig_typ;
+		stCmd : dbReadCmd_typ;
 		stRev : ARRAY[0..DB_READ_QUERY_SIZE_MINUS_ONE]OF dbReadRev_typ;
+	END_STRUCT;
+	dbReadCmd_typ : 	STRUCT 
+		bNext : BOOL;
 	END_STRUCT;
 END_TYPE

@@ -193,6 +193,9 @@
           "ns=6;s=::DataRev:stDbReadQuery.stRev[8].udiRevFeedBack",
           "ns=6;s=::DataRev:stDbReadQuery.stRev[9].udiRevFeedBack"
         ],
+        "cmd_next_nodes": [
+          "ns=6;s=::DataRev:stDbReadQuery.stCmd.bNext"
+        ],
         "buffer_size": 10000
       }
     }

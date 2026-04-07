@@ -182,6 +182,9 @@
             <Variable Name="strPointName" RecursiveEnable="2" />
           </Variable>
           <Variable Name="stRev" RecursiveEnable="2" />
+          <Variable Name="stCmd">
+            <Variable Name="bNext" RecursiveEnable="2" />
+          </Variable>
         </Variable>
         <Variable Name="uiHeartBeat" />
         <Variable Name="uiQueryFeedBack" />
