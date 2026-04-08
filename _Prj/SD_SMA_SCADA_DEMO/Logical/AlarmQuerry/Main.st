@@ -97,7 +97,10 @@ PROGRAM _CYCLIC
 
 	END_FOR
 
-
+	IF EDGEPOS(UINT_TO_BOOL(HMIAlarmClearMBBtn)) THEN
+		brsmemset(ADR(HMIAlarmQuerryTimestr), 0, SIZEOF(HMIAlarmQuerryTimestr));
+		brsmemset(ADR(HMIAlarmQuerryIndex), 0, SIZEOF(HMIAlarmQuerryIndex));
+	END_IF
 
 
 	

@@ -438,7 +438,8 @@ class DataCollectionSystem:
                         point_names=query_task['point_names'],
                         group_names=query_task['group_names'],
                         output_file=query_task.get('output_file'),
-                        return_data=True
+                        return_data=True,
+                        by_what_time=query_task.get('by_what_time')  # 支持自定义时间字段查询
                     )
                 )
 

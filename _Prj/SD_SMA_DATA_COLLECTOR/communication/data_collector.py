@@ -271,6 +271,7 @@ class DataCollector:
                             'point_names': query_params['point_names'],
                             'group_names': query_params['group_names'],
                             'output_file': query_params.get('output_file'),
+                            'by_what_time': query_params.get('by_what_time'),  # 支持自定义时间字段
                             'group_name': group.name,
                             'opcua_client': opcua_client
                         })
@@ -377,7 +378,8 @@ class DataCollector:
                 'end_time': end_time,
                 'point_names': query_point_str,
                 'group_names': group_names,
-                'output_file': query_config.get('output_file')
+                'output_file': query_config.get('output_file'),
+                'by_what_time': query_config.get('by_what_time')  # 支持自定义时间字段查询
             }
             
         except Exception as e:

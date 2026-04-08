@@ -40,7 +40,8 @@ class DataQueryProcessor:
                    point_names: List[str],
                    group_names: List[str],
                    output_file: Optional[str] = None,
-                   return_data: bool = True) -> Optional[tuple[List[List[Any]], List[List[datetime]], int]]:
+                   return_data: bool = True,
+                   by_what_time: Optional[str] = None) -> Optional[tuple[List[List[Any]], List[List[datetime]], int]]:
         """
         查询指定时间段内的数据并可选导出到 CSV 文件
         
@@ -50,6 +51,7 @@ class DataQueryProcessor:
             point_names: 数据点名称列表
             output_file: 输出 CSV 文件路径（可选）
             return_data: 是否直接返回数据（默认 True）
+            by_what_time: 自定义时间字段名（可选，默认使用 collection_time）
             
         Returns:
             查询结果列表，失败时返回 None
@@ -85,7 +87,7 @@ class DataQueryProcessor:
             
             for key, points in rebuild_datas_dict.items():
                 table_name, start_time, end_time = key
-                table_data = self._query_table_data(table_name, start_time, end_time, points)
+                table_data = self._query_table_data(table_name, start_time, end_time, points, by_what_time)
                 all_data.extend(table_data)
                 
             # 按时间排序
@@ -93,16 +95,19 @@ class DataQueryProcessor:
             
             # 如果指定了输出文件，导出到 CSV
             if output_file:
-                self._export_to_csv(all_data, point_names, output_file)
+                self._export_to_csv(all_data, point_names, output_file, by_what_time)
+            
+            # 确定时间字段名：如果配置了 by_what_time 则使用，否则默认使用 collection_time
+            time_field = by_what_time if by_what_time else 'collection_time'
             
             _all_data = [[] for _ in range(len(point_names))]
             _all_time = [[] for _ in range(len(point_names))]
             for rec in all_data:
                 for key in rec:
-                    if key == 'collection_time':
+                    if key == time_field:
                         continue
                     else:
-                        _all_time[point_to_idx[key]].append(rec['collection_time'])
+                        _all_time[point_to_idx[key]].append(rec[time_field])
                         # 将 NULL 值转换为 0.0
                         value = rec[key]
                         if value is None:
@@ -153,7 +158,8 @@ class DataQueryProcessor:
                         table_name: str,
                         start_time: datetime,
                         end_time: datetime,
-                        point_names: List[str]) -> List[Dict[str, Any]]:
+                        point_names: List[str],
+                        by_what_time: Optional[str] = None) -> List[Dict[str, Any]]:
         """
         查询单个逻辑表（可能对应多个带日期后缀的物理表）中的数据
         
@@ -162,10 +168,14 @@ class DataQueryProcessor:
             start_time: 开始时间
             end_time: 结束时间
             point_names: 数据点名称列表
+            by_what_time: 自定义时间字段名（可选，默认使用 collection_time）
             
         Returns:
-            List[Dict[str, Any]]: 查询结果（按 collection_time 排序）
+            List[Dict[str, Any]]: 查询结果（按时间字段排序）
         """
+        # 确定时间字段名：如果配置了 by_what_time 则使用，否则默认使用 collection_time
+        time_field = by_what_time if by_what_time else 'collection_time'
+        
         try:
             # 步骤1: 获取所有匹配的物理表名
             candidate_tables = self._get_matching_tables(table_name, start_time, end_time)
@@ -175,18 +185,14 @@ class DataQueryProcessor:
 
             # 步骤2: 对每个物理表执行查询并合并结果
             all_results = []
-            columns = ['collection_time'] + point_names
+            columns = [time_field] + point_names
             columns_str = ', '.join([f"`{col}`" for col in columns])
 
             for physical_table in candidate_tables:
-                # 构建 WHERE 条件
-                # 在 _query_table_data 中
-                if self.db_manager.db_config['type'].lower() == 'mysql':
-                    where_clause = "collection_time BETWEEN :start AND :end"
-                else:  # sqlite 也支持 :name
-                    where_clause = "collection_time BETWEEN :start AND :end"
+                # 构建 WHERE 条件，使用自定义时间字段（如果有）
+                where_clause = f"`{time_field}` BETWEEN :start AND :end"
 
-                sql = f"SELECT {columns_str} FROM `{physical_table}` WHERE {where_clause} ORDER BY collection_time"
+                sql = f"SELECT {columns_str} FROM `{physical_table}` WHERE {where_clause} ORDER BY `{time_field}`"
                 params = {
                     'start': start_time,
                     'end': end_time
@@ -198,10 +204,10 @@ class DataQueryProcessor:
                     row_dict = dict(zip(columns, row))
                     all_results.append(row_dict)
 
-            # 步骤3: 按 collection_time 排序（跨表后可能无序）
-            all_results.sort(key=lambda x: x['collection_time'])
+            # 步骤3: 按时间字段排序（跨表后可能无序）
+            all_results.sort(key=lambda x: x[time_field])
 
-            self.logger.debug(f"从逻辑表 {table_name}（实际查询 {len(candidate_tables)} 张物理表）共获取 {len(all_results)} 条记录")
+            self.logger.debug(f"从逻辑表 {table_name}（实际查询 {len(candidate_tables)} 张物理表）共获取 {len(all_results)} 条记录，时间字段: {time_field}")
             return all_results
 
         except Exception as e:
@@ -251,7 +257,8 @@ class DataQueryProcessor:
     def _export_to_csv(self, 
                       data: List[Dict[str, Any]],
                       point_names: List[str],
-                      output_file: str) -> bool:
+                      output_file: str,
+                      by_what_time: Optional[str] = None) -> bool:
         """
         导出数据到CSV文件
         
@@ -259,10 +266,14 @@ class DataQueryProcessor:
             data: 要导出的数据
             point_names: 数据点名称列表
             output_file: 输出文件路径
+            by_what_time: 自定义时间字段名（可选，默认使用 collection_time）
             
         Returns:
             bool: 导出是否成功
         """
+        # 确定时间字段名：如果配置了 by_what_time 则使用，否则默认使用 collection_time
+        time_field = by_what_time if by_what_time else 'collection_time'
+        
         try:
             # 确保输出目录存在
             output_dir = os.path.dirname(output_file)
@@ -271,7 +282,7 @@ class DataQueryProcessor:
             
             # 写入CSV文件
             with open(output_file, 'w', newline='', encoding='utf-8') as csvfile:
-                fieldnames = ['collection_time'] + point_names
+                fieldnames = [time_field] + point_names
                 writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
                 
                 # 写入表头
@@ -281,8 +292,8 @@ class DataQueryProcessor:
                 for row in data:
                     # 处理时间格式
                     row_copy = row.copy()
-                    if 'collection_time' in row_copy:
-                        row_copy['collection_time'] = row_copy['collection_time'].strftime('%Y-%m-%d %H:%M:%S')
+                    if time_field in row_copy:
+                        row_copy[time_field] = row_copy[time_field].strftime('%Y-%m-%d %H:%M:%S')
                     writer.writerow(row_copy)
             
             self.logger.info(f"数据已成功导出到: {output_file}，共 {len(data)} 条记录")

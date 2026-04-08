@@ -133,6 +133,7 @@
         "end_time_field": "strEndTimes1",
         "query_point_field": "strPointNames1",
         "output_file": null,
+        "by_what_time": "ts",
         "buffer_nodes": [
           "ns=6;s=::AlarmQuerr:stDbReadQuery.stRev[0].rRevBuffer",
           "ns=6;s=::AlarmQuerr:stDbReadQuery.stRev[1].rRevBuffer",
@@ -156,6 +157,21 @@
           "ns=6;s=::AlarmQuerr:stDbReadQuery.stRev[7].udiRevTime",
           "ns=6;s=::AlarmQuerr:stDbReadQuery.stRev[8].udiRevTime",
           "ns=6;s=::AlarmQuerr:stDbReadQuery.stRev[9].udiRevTime"
+        ],
+        "feed_back_nodes": [
+          "ns=6;s=::Trend:stDbReadQuery.stRev[0].udiRevFeedBack",
+          "ns=6;s=::Trend:stDbReadQuery.stRev[1].udiRevFeedBack",
+          "ns=6;s=::Trend:stDbReadQuery.stRev[2].udiRevFeedBack",
+          "ns=6;s=::Trend:stDbReadQuery.stRev[3].udiRevFeedBack",
+          "ns=6;s=::Trend:stDbReadQuery.stRev[4].udiRevFeedBack",
+          "ns=6;s=::Trend:stDbReadQuery.stRev[5].udiRevFeedBack",
+          "ns=6;s=::Trend:stDbReadQuery.stRev[6].udiRevFeedBack",
+          "ns=6;s=::Trend:stDbReadQuery.stRev[7].udiRevFeedBack",
+          "ns=6;s=::Trend:stDbReadQuery.stRev[8].udiRevFeedBack",
+          "ns=6;s=::Trend:stDbReadQuery.stRev[9].udiRevFeedBack"
+        ],
+        "cmd_next_nodes": [
+          "ns=6;s=::Trend:stDbReadQuery.stCmd.bNext"
         ],
         "buffer_size": 10000
       }
