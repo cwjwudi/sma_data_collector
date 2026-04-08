@@ -19,17 +19,19 @@ from database.db_manager import DatabaseManager
 class DataStorageProcessor:
     """数据存储处理器类"""
     
-    def __init__(self, db_manager: DatabaseManager, batch_size: int = 100):
+    def __init__(self, db_manager: DatabaseManager, batch_size: int = 100, points_dict: dict = None):
         """
         初始化数据存储处理器
         
         Args:
             db_manager: 数据库管理器实例
             batch_size: 默认批量插入大小（用于向后兼容）
+            points_dict: 数据点字典 {point_name: DataPoint}，用于获取 datatype 信息
         """
         self.db_manager = db_manager
         self.default_batch_size = batch_size
         self.group_batch_sizes = {}  # 存储各组的batch_size配置
+        self.points_dict = points_dict or {}  # 数据点配置字典
         self.data_queue = deque()
         self.processing_task = None
         self.running = False
@@ -226,7 +228,7 @@ class DataStorageProcessor:
     
     def _infer_column_types(self, sample_data: Dict[str, Any]) -> Dict[str, str]:
         """
-        推断列的数据类型
+        推断列的数据类型，优先使用配置中的 datatype
         
         Args:
             sample_data: 样本数据
@@ -244,6 +246,20 @@ class DataStorageProcessor:
         
         for point_name, point_data in data_points.items():
             value = point_data.get('value')
+            
+            # 优先使用配置中的 datatype
+            if point_name in self.points_dict:
+                point_config = self.points_dict[point_name]
+                datatype = getattr(point_config, 'datatype', None)
+                
+                if datatype:
+                    # 根据配置的 datatype 确定数据库类型
+                    column_type = self._get_db_type_from_datatype(datatype)
+                    column_types[point_name] = column_type
+                    self.logger.debug(f"列类型从配置推断 (point: {point_name}, datatype: {datatype}, db_type: {column_type})")
+                    continue
+            
+            # 如果没有配置 datatype，回退到基于值的推断
             if value is not None:
                 if isinstance(value, bool):
                     column_types[point_name] = "BOOLEAN"
@@ -251,13 +267,53 @@ class DataStorageProcessor:
                     column_types[point_name] = "INTEGER"
                 elif isinstance(value, float):
                     column_types[point_name] = "DOUBLE"
+                elif isinstance(value, datetime):
+                    column_types[point_name] = "DATETIME"
                 else:
                     column_types[point_name] = "VARCHAR(255)"
             else:
                 column_types[point_name] = "VARCHAR(255)"
         
         self.column_types_cache[group_name] = column_types
+        self.logger.info(f"推断列类型: {column_types}")
         return column_types
+    
+    def _get_db_type_from_datatype(self, datatype: str) -> str:
+        """
+        根据配置的 datatype 转换为数据库类型
+        
+        Args:
+            datatype: 数据类型字符串
+            
+        Returns:
+            str: 数据库类型字符串
+        """
+        datatype_lower = datatype.lower().strip()
+        
+        # datetime 类型映射
+        if datatype_lower == 'datetime':
+            return 'DATETIME'
+        
+        # 整数类型映射
+        elif datatype_lower in ['int', 'integer']:
+            return 'INTEGER'
+        
+        # 浮点数类型映射
+        elif datatype_lower in ['float', 'double', 'real']:
+            return 'DOUBLE'
+        
+        # 字符串类型映射
+        elif datatype_lower in ['str', 'string', 'varchar', 'text']:
+            return 'VARCHAR(255)'
+        
+        # 布尔类型映射
+        elif datatype_lower in ['bool', 'boolean']:
+            return 'BOOLEAN'
+        
+        # 默认返回 VARCHAR
+        else:
+            self.logger.warning(f"未知的 datatype: {datatype}，使用 VARCHAR(255)")
+            return 'VARCHAR(255)'
     
     def _ensure_table_exists(self, table_name: str, column_types: Dict[str, str]) -> bool:
         """
@@ -307,16 +363,114 @@ class DataStorageProcessor:
             data_points = collection_data['data']
             for point_name, point_data in data_points.items():
                 value = point_data.get('value')
-                if value is not None:
-                    db_data[point_name] = value
+                
+                # 如果配置了 datatype，则进行类型转换
+                if point_name in self.points_dict:
+                    point_config = self.points_dict[point_name]
+                    datatype = getattr(point_config, 'datatype', None)
+                    
+                    if datatype and value is not None:
+                        # 根据 datatype 进行类型转换
+                        converted_value = self._convert_value_by_datatype(value, datatype, point_name)
+                        db_data[point_name] = converted_value
+                    else:
+                        # 没有配置 datatype 或值为 None，直接存储
+                        db_data[point_name] = value
                 else:
-                    db_data[point_name] = None
+                    # 数据点不在配置中，直接存储
+                    db_data[point_name] = value
             
             return db_data
             
         except Exception as e:
             self.logger.error(f"数据格式转换失败: {e}")
             return None
+    
+    def _convert_value_by_datatype(self, value: Any, datatype: str, point_name: str) -> Any:
+        """
+        根据 datatype 转换值类型
+        
+        Args:
+            value: 原始值
+            datatype: 数据类型字符串（如 "datetime", "int", "float", "string"）
+            point_name: 数据点名称（用于日志记录）
+            
+        Returns:
+            转换后的值
+        """
+        try:
+            datatype_lower = datatype.lower().strip()
+            
+            if datatype_lower == 'datetime':
+                # datetime 类型：将字符串转换为 datetime 对象
+                if isinstance(value, str):
+                    # 尝试多种常见的时间格式
+                    datetime_formats = [
+                        '%Y-%m-%d %H:%M:%S',
+                        '%Y-%m-%d %H:%M:%S.%f',
+                        '%Y-%m-%dT%H:%M:%S',
+                        '%Y-%m-%dT%H:%M:%S.%f',
+                        '%Y-%m-%dT%H:%M:%SZ',
+                        '%Y/%m/%d %H:%M:%S',
+                        '%Y%m%d%H%M%S',
+                        'DT#%Y-%m-%d-%H:%M:%S',  # 支持 DT#2022-03-19-17:41:48 这种格式中的日期部分解析逻辑需特殊处理，但标准strptime不支持前缀，因此下面会添加特殊处理
+                    ]
+                    
+                    for fmt in datetime_formats:
+                        try:
+                            dt = datetime.strptime(value, fmt)
+                            self.logger.debug(f"成功将 '{value}' 转换为 datetime (格式: {fmt})")
+                            return dt
+                        except ValueError:
+                            continue
+                    
+                    # 如果所有格式都失败，记录警告并返回原始值
+                    self.logger.warning(f"无法将 '{value}' 解析为 datetime (point: {point_name})，使用原始值")
+                    return value
+                elif isinstance(value, datetime):
+                    # 已经是 datetime 对象，直接返回
+                    return value
+                else:
+                    self.logger.warning(f"datetime 类型的值不是字符串: {type(value)} (point: {point_name})")
+                    return value
+            
+            elif datatype_lower in ['int', 'integer']:
+                # 整数类型
+                try:
+                    return int(value)
+                except (ValueError, TypeError):
+                    self.logger.warning(f"无法将 '{value}' 转换为 int (point: {point_name})")
+                    return value
+            
+            elif datatype_lower in ['float', 'double', 'real']:
+                # 浮点数类型
+                try:
+                    return float(value)
+                except (ValueError, TypeError):
+                    self.logger.warning(f"无法将 '{value}' 转换为 float (point: {point_name})")
+                    return value
+            
+            elif datatype_lower in ['str', 'string', 'varchar', 'text']:
+                # 字符串类型
+                return str(value) if value is not None else None
+            
+            elif datatype_lower in ['bool', 'boolean']:
+                # 布尔类型
+                if isinstance(value, bool):
+                    return value
+                elif isinstance(value, str):
+                    return value.lower() in ['true', '1', 'yes', 'on']
+                else:
+                    return bool(value)
+            
+            else:
+                # 未知类型，返回原始值
+                self.logger.debug(f"未知的 datatype: {datatype} (point: {point_name})，使用原始值")
+                return value
+                
+        except Exception as e:
+            self.logger.error(f"类型转换失败 (point: {point_name}, datatype: {datatype}): {e}")
+            return value
     
     def get_queue_size(self) -> int:
         """获取队列大小"""

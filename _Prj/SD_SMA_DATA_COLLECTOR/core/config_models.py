@@ -28,6 +28,7 @@ class DataPoint:
     name: str
     path: str
     description: str
+    datatype: Optional[str] = None  # 可选的数据类型，如 "datetime", "int", "float", "string" 等
 
 
 @dataclass

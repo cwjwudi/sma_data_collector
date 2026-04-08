@@ -127,9 +127,13 @@ class DataCollectionSystem:
             if self.config.groups:
                 default_batch_size = self.config.groups[0].batch_insert_size
             
+            # 构建数据点字典，用于传递 datatype 信息
+            points_dict = {point.name: point for point in self.config.points}
+            
             self.storage_processor = DataStorageProcessor(
                 self.db_manager,
-                default_batch_size
+                default_batch_size,
+                points_dict  # 传递数据点配置
             )
             
             # 为每个数据组设置对应的batch_size

@@ -3,7 +3,7 @@
     {
       "name": "PLC1",
       "type": "opcua",
-      "host": "127.0.0.1",
+      "host": "192.168.50.233",
       "port": 4840
     }
   ],
@@ -11,7 +11,8 @@
     {
       "name": "connection1",
       "communication": "PLC1",
-      "data_groups": ["alarm_group_1", "trend_group_1", "alarm_query_group_1","trend_query_group_1"]
+      "data_groups": ["alarm_group_1", "trend_group_1", "alarm_query_group_1","trend_query_group_1"],
+      "heartbeat": "ns=6;s=::AsGlobalPV:guiDBHeartBeat"
     }
   ],
   "points": [
@@ -23,11 +24,12 @@
     {
       "name": "ts",
       "path": "ns=6;s=::AlarmQuerr:ts",
-      "description": "报警时间戳"
+      "description": "报警时间戳",
+      "datatype": "datetime"
     },
     {
       "name": "code",
-      "path": "ns=6;s=::AlarmQuerr:code",
+      "path": "ns=6;s=::AlarmQuerr:Code",
       "description": "报警码"
     },
     {
@@ -110,7 +112,7 @@
     },
     {
       "name": "trend_group_1",
-   "interval_seconds": 2,
+      "interval_seconds": 2,
       "trigger": "time",
       "description": "趋势数据采集组，每 2 秒采集一次",
       "data_points": ["Trenddata"],
@@ -195,13 +197,28 @@
           "ns=6;s=::Trend:stDbReadQuery.stRev[8].udiRevTime",
           "ns=6;s=::Trend:stDbReadQuery.stRev[9].udiRevTime"
         ],
+        "feed_back_nodes": [
+          "ns=6;s=::Trend:stDbReadQuery.stRev[0].udiRevFeedBack",
+          "ns=6;s=::Trend:stDbReadQuery.stRev[1].udiRevFeedBack",
+          "ns=6;s=::Trend:stDbReadQuery.stRev[2].udiRevFeedBack",
+          "ns=6;s=::Trend:stDbReadQuery.stRev[3].udiRevFeedBack",
+          "ns=6;s=::Trend:stDbReadQuery.stRev[4].udiRevFeedBack",
+          "ns=6;s=::Trend:stDbReadQuery.stRev[5].udiRevFeedBack",
+          "ns=6;s=::Trend:stDbReadQuery.stRev[6].udiRevFeedBack",
+          "ns=6;s=::Trend:stDbReadQuery.stRev[7].udiRevFeedBack",
+          "ns=6;s=::Trend:stDbReadQuery.stRev[8].udiRevFeedBack",
+          "ns=6;s=::Trend:stDbReadQuery.stRev[9].udiRevFeedBack"
+        ],
+        "cmd_next_nodes": [
+          "ns=6;s=::Trend:stDbReadQuery.stCmd.bNext"
+        ],
         "buffer_size": 10000
       }
     }
   ],
   "database": {
     "type": "mysql",
-    "name": "wn_10",
+    "name": "wn_9",
     "host": "192.168.50.22",
     "port": 3306,
     "username": "root",

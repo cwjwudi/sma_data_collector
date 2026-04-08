@@ -47,7 +47,8 @@ class ConfigLoader:
             point = DataPoint(
                 name=point_data['name'],
                 path=point_data['path'],
-                description=point_data['description']
+                description=point_data['description'],
+                datatype=point_data.get('datatype')  # 可选的 datatype 属性
             )
             points.append(point)
         
