@@ -272,6 +272,7 @@ class DataCollector:
                             'group_names': query_params['group_names'],
                             'output_file': query_params.get('output_file'),
                             'by_what_time': query_params.get('by_what_time'),  # 支持自定义时间字段
+                            'aux_queries': query_params.get('aux_queries'),  # 支持附加查询条件
                             'group_name': group.name,
                             'opcua_client': opcua_client
                         })
@@ -315,6 +316,12 @@ class DataCollector:
             start_time_str = data.get(query_config['start_time_field'], {}).get('value')
             end_time_str = data.get(query_config['end_time_field'], {}).get('value')
             query_point_str = data.get(query_config['query_point_field'], {}).get('value')
+            
+            # 提取附加查询条件
+            aux_query_field = query_config.get('aux_query_field')
+            aux_query_str = None
+            if aux_query_field:
+                aux_query_str = data.get(aux_query_field, {}).get('value')
             
             if not start_time_str or not end_time_str:
                 self.logger.error("无法从数据点中获取时间信息")
@@ -379,7 +386,8 @@ class DataCollector:
                 'point_names': query_point_str,
                 'group_names': group_names,
                 'output_file': query_config.get('output_file'),
-                'by_what_time': query_config.get('by_what_time')  # 支持自定义时间字段查询
+                'by_what_time': query_config.get('by_what_time'),  # 支持自定义时间字段查询
+                'aux_queries': aux_query_str  # 支持附加查询条件
             }
             
         except Exception as e:

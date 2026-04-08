@@ -82,7 +82,12 @@
       "path": "ns=6;s=::AlarmQuerr:stDbReadQuery.stConfig.strPointName",
       "description": ""
     },
-        {
+    {
+      "name": "strAuxQuery1",
+      "path": "ns=6;s=::AlarmQuerr:stDbReadQuery.stConfig.strAuxQuery",
+      "description": "附加查询指令，SELECT XX FROM table_name WHERE point_name BETWEEN 开始时间 AND 结束时间 AND (strAuxQuery);"
+    },
+    {
       "name": "strStartTimes2",
       "path": "ns=6;s=::Trend:stDbReadQuery.stConfig.strStartTime",
       "description": ""
@@ -96,6 +101,11 @@
       "name": "strPointNames2",
       "path": "ns=6;s=::Trend:stDbReadQuery.stConfig.strPointName",
       "description": ""
+    },
+    {
+      "name": "strAuxQuery2",
+      "path": "ns=6;s=::Trend:stDbReadQuery.stConfig.strAuxQuery",
+      "description": "附加查询指令，SELECT XX FROM table_name WHERE point_name BETWEEN 开始时间 AND 结束时间 AND (strAuxQuery);"
     }
   ],
   "groups": [
@@ -125,13 +135,14 @@
       "interval_seconds": 0.5,
       "trigger": "query",
       "description": "用于处理查询任务（只输出到 OPC UA，不推送 HTTP）",
-      "data_points": ["strStartTimes1", "strEndTimes1", "strPointNames1"],
+      "data_points": ["strStartTimes1", "strEndTimes1", "strPointNames1", "strAuxQuery1"],
       "trigger_point": "bTriggerQuery1",
       "output_mode": "opcua_only",
       "query_config": {
         "start_time_field": "strStartTimes1",
         "end_time_field": "strEndTimes1",
         "query_point_field": "strPointNames1",
+        "aux_query_field": "strAuxQuery1",
         "output_file": null,
         "by_what_time": "ts",
         "buffer_nodes": [
@@ -181,13 +192,14 @@
       "interval_seconds": 0.5,
       "trigger": "query",
       "description": "用于处理查询任务（双通道输出到 OPC UA 和 HTTP）",
-      "data_points": ["strStartTimes2", "strEndTimes2", "strPointNames2"],
+      "data_points": ["strStartTimes2", "strEndTimes2", "strPointNames2", "strAuxQuery2"],
       "trigger_point": "bTriggerQuery2",
       "output_mode": "dual",
       "query_config": {
         "start_time_field": "strStartTimes2",
         "end_time_field": "strEndTimes2",
         "query_point_field": "strPointNames2",
+        "aux_query_field": "strAuxQuery2",
         "output_file": null,
         "buffer_nodes": [
           "ns=6;s=::Trend:stDbReadQuery.stRev[0].rRevBuffer",

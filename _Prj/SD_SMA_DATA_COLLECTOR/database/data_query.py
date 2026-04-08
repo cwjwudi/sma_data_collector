@@ -41,7 +41,8 @@ class DataQueryProcessor:
                    group_names: List[str],
                    output_file: Optional[str] = None,
                    return_data: bool = True,
-                   by_what_time: Optional[str] = None) -> Optional[tuple[List[List[Any]], List[List[datetime]], int]]:
+                   by_what_time: Optional[str] = None,
+                   aux_queries: Optional[List[str]] = None) -> Optional[tuple[List[List[Any]], List[List[datetime]], int]]:
         """
         查询指定时间段内的数据并可选导出到 CSV 文件
         
@@ -49,9 +50,11 @@ class DataQueryProcessor:
             start_times: 开始时间
             end_times: 结束时间
             point_names: 数据点名称列表
+            group_names: 数据组名称列表
             output_file: 输出 CSV 文件路径（可选）
             return_data: 是否直接返回数据（默认 True）
             by_what_time: 自定义时间字段名（可选，默认使用 collection_time）
+            aux_queries: 附加查询条件列表（可选），例如 ['code > 100', "msg LIKE '%error%'"]
             
         Returns:
             查询结果列表，失败时返回 None
@@ -69,15 +72,21 @@ class DataQueryProcessor:
 
             # 将具有相同start_time、end_time、table_name的point合并到字典中
             rebuild_datas_dict = {}
+            # 用于存储每个key对应的附加查询条件
+            rebuild_aux_query_dict = {}
 
             for i in range(len(point_names)):
                 if group_names[i] is None:
                     continue
                 
-                key = (group_names[i], start_times[i], end_times[i])
+                # 获取附加查询条件
+                aux_query = aux_queries[i] if aux_queries and i < len(aux_queries) else None
+                # key 需要包括附加查询条件，以便不同的附加查询条件分开处理
+                key = (group_names[i], start_times[i], end_times[i], aux_query)
                 
                 if key not in rebuild_datas_dict:
                     rebuild_datas_dict[key] = []
+                    rebuild_aux_query_dict[key] = aux_query
                 
                 rebuild_datas_dict[key].append(point_names[i])
 
@@ -86,8 +95,8 @@ class DataQueryProcessor:
             point_to_idx = {name: idx for idx, name in enumerate(point_names)}
             
             for key, points in rebuild_datas_dict.items():
-                table_name, start_time, end_time = key
-                table_data = self._query_table_data(table_name, start_time, end_time, points, by_what_time)
+                table_name, start_time, end_time, aux_query = key
+                table_data = self._query_table_data(table_name, start_time, end_time, points, by_what_time, aux_query)
                 all_data.extend(table_data)
                 
             # 按时间排序
@@ -159,7 +168,8 @@ class DataQueryProcessor:
                         start_time: datetime,
                         end_time: datetime,
                         point_names: List[str],
-                        by_what_time: Optional[str] = None) -> List[Dict[str, Any]]:
+                        by_what_time: Optional[str] = None,
+                        aux_query: Optional[str] = None) -> List[Dict[str, Any]]:
         """
         查询单个逻辑表（可能对应多个带日期后缀的物理表）中的数据
         
@@ -169,6 +179,7 @@ class DataQueryProcessor:
             end_time: 结束时间
             point_names: 数据点名称列表
             by_what_time: 自定义时间字段名（可选，默认使用 collection_time）
+            aux_query: 附加查询条件（可选），例如 "code > 100" 或 "msg LIKE '%error%'"
             
         Returns:
             List[Dict[str, Any]]: 查询结果（按时间字段排序）
@@ -191,7 +202,12 @@ class DataQueryProcessor:
             for physical_table in candidate_tables:
                 # 构建 WHERE 条件，使用自定义时间字段（如果有）
                 where_clause = f"`{time_field}` BETWEEN :start AND :end"
-
+                        
+                # 添加附加查询条件
+                if aux_query and aux_query.strip():
+                    # 确保附加查询条件被安全地包裹在括号中
+                    where_clause = f"({where_clause}) AND ({aux_query})"
+                        
                 sql = f"SELECT {columns_str} FROM `{physical_table}` WHERE {where_clause} ORDER BY `{time_field}`"
                 params = {
                     'start': start_time,
