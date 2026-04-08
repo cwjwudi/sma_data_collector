@@ -219,8 +219,11 @@ class DataQueryProcessor:
         """
         根据时间范围，找出所有匹配的带日期后缀的物理表
         
-        假设表命名规则: {base_table_name}_{YYYYMMDD}
-        每张表存储一天的数据（00:00:00 到 23:59:59.999999）
+        表名规则: {base_table_name}_{YYYYMMDD}
+        每张表表示从创建日期开始的数据，直到下一张表创建为止
+        
+        匹配逻辑: 查询时间范围与表的数据时间范围有交集
+        表的数据时间范围: [表创建日期, 下一张表的创建日期)
         """
         # 获取数据库中所有表名
         if self.db_manager.db_config['type'].lower() == 'mysql':
@@ -230,29 +233,35 @@ class DataQueryProcessor:
             sql = "SELECT name FROM sqlite_master WHERE type='table';"
             tables = [row[0] for row in self.db_manager.execute_query(sql)]
 
-        # 构造正则匹配模式
+        # 构造正则匹配模式，提取表名中的日期
         pattern = re.compile(rf'^{re.escape(base_table_name)}_(\d{{8}})$')
         
-        matching_tables = []
-        current_date = start_time.date()
-        end_date = end_time.date()
-
-        # 预生成所有需要的日期（避免遗漏边界）
-        required_dates = set()
-        delta = timedelta(days=1)
-        d = current_date
-        while d <= end_date:
-            required_dates.add(d.strftime('%Y%m%d'))
-            d += delta
-
+        # 提取所有匹配的表及其创建日期
+        table_dates = []  # [(table_name, date_obj), ...]
         for table in tables:
             match = pattern.match(table)
             if match:
                 date_str = match.group(1)
-                if date_str in required_dates:
-                    matching_tables.append(table)
+                date_obj = datetime.strptime(date_str, '%Y%m%d')
+                table_dates.append((table, date_obj))
 
-        return sorted(matching_tables)  # 可选：按日期排序
+        # 按日期排序
+        table_dates.sort(key=lambda x: x[1])
+        
+        # 找出所有与查询时间范围有交集的表
+        matching_tables = []
+        for i, (table_name, table_date) in enumerate(table_dates):
+            # 表的数据时间范围: [创建日期, 下一张表的创建日期)
+            next_table_date = table_dates[i + 1][1] if i + 1 < len(table_dates) else None
+            
+            # 判断查询范围与表的数据范围是否有交集
+            # 交集条件: 查询开始时间 < 表的数据结束时间 AND 查询结束时间 > 表的数据开始时间
+            table_end = next_table_date if next_table_date else datetime.max
+            
+            if start_time < table_end and end_time > table_date:
+                matching_tables.append(table_name)
+
+        return matching_tables
     
     def _export_to_csv(self, 
                       data: List[Dict[str, Any]],
