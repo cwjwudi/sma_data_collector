@@ -3,6 +3,56 @@
 本文档记录 SMA 数据采集系统的所有重要更新和变更。
 
 
+## [v1.3.0] - 2026-04-08
+### 新增功能
+- ✨ **附加查询条件（aux_query）功能**
+  - 在 `query_config` 中支持 `aux_query_field` 字段配置
+  - 支持从 OPC UA 读取附加查询条件字符串
+  - 将附加条件拼接到 SQL WHERE 子句中
+  - 格式：`SELECT ... WHERE (time BETWEEN start AND end) AND (aux_query)`
+  - 支持灵活的自定义 SQL 条件（如 `code > 100`、`msg LIKE '%error%'`）
+
+### 配置文件变更
+- 📝 **DataGroup 数据模型扩展**
+  - 在 `query_config` 中新增 `aux_query_field` 字段
+  - 用于指定读取附加查询条件的 OPC UA 数据点名称
+
+### 使用示例
+```json
+{
+  "query_config": {
+    "aux_query_field": "strAuxQuery1",
+    "start_time_field": "strStartTimes1",
+    "end_time_field": "strEndTimes1",
+    "by_what_time": "ts"
+  }
+}
+```
+
+### 技术改进
+- 🔧 **数据采集器更新** (`communication/data_collector.py`)
+  - `_read_query_parameters()` 方法读取 `aux_query_field` 配置
+  - 查询任务字典新增 `aux_queries` 字段传递附加条件
+
+- 🔧 **查询处理器增强** (`database/data_query.py`)
+  - `query_data()` 方法新增 `aux_queries` 参数
+  - `_query_table_data()` 方法新增 `aux_query` 参数
+  - SQL 构建时将附加条件添加到 WHERE 子句
+  - **key 包含 aux_query**：确保不同的附加查询条件分开处理
+
+- 🔧 **主程序集成** (`main.py`)
+  - `query_processor.query_data()` 调用传递 `aux_queries` 参数
+
+### 查询示例
+当 `strAuxQuery1` = `"code > 100"` 时，生成的 SQL：
+```sql
+SELECT `ts`, `code`, `msg` FROM `alarm_group_1_20260408` 
+WHERE (`ts` BETWEEN '2026-04-01' AND '2026-04-08') AND (code > 100) 
+ORDER BY `ts`
+```
+
+---
+
 ## [v1.2.1] - 2026-04-08
 ### 优化功能
 - 🔧 **分表查询逻辑优化** (`database/data_query.py`)
