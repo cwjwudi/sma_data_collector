@@ -2,9 +2,80 @@
 
 本文档记录 SMA 数据采集系统的所有重要更新和变更。
 
+## [v1.2.0] - 2026-04-08
+### 新增功能
+- ✨ **数据类型（datatype）功能**
+  - 在配置文件中支持为数据点指定 `datatype` 属性
+  - 支持类型：datetime、int、float、str、bool
+  - **影响数据库表结构**：datatype 会决定数据库列的类型
+    - `datetime` → `DATETIME` 类型
+    - `int` → `INTEGER` 类型
+    - `float` → `DOUBLE` 类型
+    - `str` → `VARCHAR(255)` 类型
+  - **数据转换**：写入数据库前自动进行类型转换
+    - datetime 类型支持多种格式解析（7 种常见格式）
+    - 包含 `DT#2022-03-19-17:41:48` 格式支持
+  - **向后兼容**：datatype 是可选属性，不影响现有配置
+  
+- ✨ **查询时间字段动态配置（by_what_time）**
+  - 在 `query_config` 中新增 `by_what_time` 字段
+  - 支持自定义查询时使用的时间字段（默认使用 `collection_time`）
+  - 适用于使用数据点中的时间字段（如 `ts`）进行查询的场景
+  - 影响所有查询相关操作：
+    - SQL WHERE 条件
+    - SELECT 字段列表
+    - ORDER BY 排序
+    - CSV 导出时间列名
+  - 详细的日志记录，包含使用的时间字段信息
 
+### 配置文件变更
+- 📝 **DataPoint 数据模型扩展**
+  - 新增 `datatype` 可选字段
+  - 支持指定数据类型：datetime、int、float、str、bool
+  
+- 📝 **DataGroup 数据模型扩展**
+  - 在 `query_config` 中新增 `by_what_time` 字段
+  - 用于指定查询时使用的时间字段名
 
-## [未发布] - 2026-04-02
+### 使用示例
+```json
+{
+  "points": [
+    {
+      "name": "ts",
+      "path": "ns=6;s=::AlarmQuerr:ts",
+      "description": "报警时间戳",
+      "datatype": "datetime"
+    }
+  ],
+  "query_config": {
+    "by_what_time": "ts",
+    "buffer_nodes": [...],
+    "time_nodes": [...]
+  }
+}
+```
+
+### 技术改进
+- 🔧 **类型推断优化** (`database/data_storage.py`)
+  - `_infer_column_types()` 方法优先使用配置的 datatype
+  - 简化列类型推断逻辑
+  
+- 🔧 **查询处理器增强** (`database/data_query.py`)
+  - `query_data()` 方法支持 by_what_time 参数
+  - `_query_table_data()` 方法使用动态时间字段
+  - `_export_to_csv()` 方法支持自定义时间列名
+
+- 🔧 **数据采集器更新** (`communication/data_collector.py`)
+  - `_read_query_parameters()` 方法读取 by_what_time 配置
+  - query_task 字典包含 by_what_time 参数
+
+- 🔧 **主程序集成** (`main.py`)
+  - `query_processor.query_data()` 调用传递 by_what_time 参数
+
+---
+
+## [v1.1.1] - 2026-04-02
 
 ### 新增功能
 - ✨ **缓冲区数据量反馈功能**
@@ -43,6 +114,8 @@
   }
 }
 ```
+
+---
 
 ## [v1.1.0] - 2026-03-26
 
