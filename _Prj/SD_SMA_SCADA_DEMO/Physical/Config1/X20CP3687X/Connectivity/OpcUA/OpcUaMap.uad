@@ -1,5 +1,4 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
-<?AutomationStudio FileVersion="4.9"?>
 <OpcUaSource FileVersion="9" ArVersion="M4.93">
   <Aliases>
     <ACLAliases />
@@ -9,6 +8,9 @@
   </Aliases>
   <DefaultView>
     <Module Name="&lt;Default&gt;">
+      <GlobalVariables Name="Global Variables">
+        <Variable Name="guiDBHeartBeat" />
+      </GlobalVariables>
       <Task Name="AlarmQuerr">
         <Variable Name="HMIAlarmQuerryIndex" RecursiveEnable="2" />
         <Variable Name="HMIAlarmQuerryMBBtn" />

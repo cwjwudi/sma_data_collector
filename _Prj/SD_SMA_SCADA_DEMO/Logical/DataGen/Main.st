@@ -6,6 +6,8 @@ END_PROGRAM
 
 PROGRAM _CYCLIC
 	(* Insert code here *)
+	strTimeStamp;
+	strTimeStamp := DT_TO_STRING(dtTimeStamp);
 	IP1 := RandINT();
 	IP2 := RandINT();
 

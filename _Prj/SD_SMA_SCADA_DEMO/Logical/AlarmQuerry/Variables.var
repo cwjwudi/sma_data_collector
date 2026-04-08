@@ -31,12 +31,16 @@ VAR CONSTANT
 END_VAR
 (*Data point*)
 VAR
-	ts : DINT;
+	ts : STRING[80];
 	Code : DINT;
 	msg : DINT;
 	Batch : DINT;
 	severity : DINT;
 	Status : DINT;
+END_VAR
+(*TIME CONVENT*)
+VAR
+	UtcDTGetTime_0 : UtcDTGetTime;
 END_VAR
 (*connect var*)
 VAR

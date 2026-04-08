@@ -15,5 +15,6 @@
     <Object Type="Library" Language="Binary" Description="Basic alarm management">MpAlarm</Object>
     <Object Type="Library" Language="Binary" Description="Core library for mapp components">MpBase</Object>
     <Object Type="Library" Language="Binary" Description="Report generation">MpReport</Object>
+    <Object Type="Library" Language="binary" Description="This library contains standard function blocks and functions for IEC 61131-3.">standard</Object>
   </Objects>
 </Package>

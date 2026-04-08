@@ -5,6 +5,8 @@ VAR
 END_VAR
 (*Insert your comment here.*)
 VAR
+	dtTimeStamp : DATE_AND_TIME;
+	strTimeStamp : STRING[80];
 	ID : DINT;
 	STATE : DINT;
 	TimeStamp : STRING[32];
