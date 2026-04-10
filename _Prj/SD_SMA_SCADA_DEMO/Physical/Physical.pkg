@@ -4,5 +4,6 @@
   <Objects>
     <Object Type="Configuration">Config1</Object>
     <Object Type="Configuration">Config2</Object>
+    <Object Type="Configuration">cp1586</Object>
   </Objects>
 </Physical>
