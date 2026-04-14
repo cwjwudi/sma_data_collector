@@ -7,8 +7,7 @@ import asyncio
 import logging
 import sys
 import os
-from telnetlib import EL
-from typing import Dict, List, Callable, Any, Optional
+from typing import Dict, List, Callable, Any, Optional, Iterator
 from datetime import datetime
 
 # 处理相对导入问题
@@ -36,6 +35,63 @@ class DataCollector:
         self.collectors = {}  # 存储各个数据组的采集任务
         self.point_to_group = {}  # 数据点到数据组的映射，供查询任务使用
         self.query_task_queue: asyncio.Queue = asyncio.Queue()  # 查询任务队列
+    
+    def _iter_scalar_collection_rows(self, collection_data: Dict[str, Any]) -> Iterator[Dict[str, Any]]:
+        """
+        将并行采集结果（各数据点 value 为等长列表）拆成多行，每行各点为标量。
+        若结构不符合并行列表形态，则原样返回一行。
+        """
+        data = collection_data.get('data') or {}
+        if not collection_data.get('is_parallel') or not data:
+            yield collection_data
+            return
+        lengths: List[int] = []
+        for name, info in data.items():
+            if not isinstance(info, dict):
+                self.logger.warning(
+                    f"并行组 {collection_data.get('group_name')} 数据点 {name} 结构异常，不拆分行"
+                )
+                yield collection_data
+                return
+            v = info.get('value')
+            if not isinstance(v, (list, tuple)):
+                self.logger.warning(
+                    f"并行组 {collection_data.get('group_name')} 数据点 {name} 值非列表，不拆分行"
+                )
+                yield collection_data
+                return
+            lengths.append(len(v))
+        if not lengths:
+            yield collection_data
+            return
+        n = lengths[0]
+        if any(L != n for L in lengths):
+            self.logger.warning(
+                f"并行组 {collection_data.get('group_name')} 各点列表长度不一致 {lengths}，不拆分行"
+            )
+            yield collection_data
+            return
+        triggered_indices: List[int] = collection_data.get('triggered_indices') or []
+        if len(triggered_indices) != n:
+            triggered_indices = list(range(n))
+        for j in range(n):
+            row_data: Dict[str, Any] = {}
+            for name, info in data.items():
+                v = info['value']
+                row_data[name] = {
+                    'value': v[j],
+                    'timestamp': info.get('timestamp'),
+                    'path': info.get('path'),
+                }
+            yield {
+                'group_name': collection_data['group_name'],
+                'collection_time': collection_data['collection_time'],
+                'trigger_type': collection_data['trigger_type'],
+                'trigger_point': collection_data.get('trigger_point'),
+                'is_parallel': False,
+                'trigger_index': triggered_indices[j],
+                'data': row_data,
+            }
     
     def register_data_callback(self, callback: Callable[[Dict[str, Any]], None]) -> None:
         """
@@ -80,11 +136,18 @@ class DataCollector:
             elif group.trigger == TriggerType.VARIABLE:
                 # 变量触发采集
                 trigger_point = data_points_dict[group.trigger_point]
-                task = asyncio.create_task(
-                    self._variable_triggered_collection(group, group_points, trigger_point, opcua_client)
-                )
-                self.collectors[group.name] = task
-                self.logger.info(f"启动变量触发采集组: {group.name}")
+                if group.is_parallel:
+                    task = asyncio.create_task(
+                        self._parallel_variable_triggered_collection(group, group_points, trigger_point, opcua_client)
+                    )
+                    self.collectors[group.name] = task
+                    self.logger.info(f"启动并行变量触发采集组: {group.name}")
+                else:
+                    task = asyncio.create_task(
+                        self._variable_triggered_collection(group, group_points, trigger_point, opcua_client)
+                    )
+                    self.collectors[group.name] = task
+                    self.logger.info(f"启动变量触发采集组: {group.name}")
 
             elif group.trigger == TriggerType.QUERY:
                 # 变量触发查询
@@ -221,6 +284,100 @@ class DataCollector:
             except Exception as e:
                 self.logger.error(f"变量触发采集组 {group.name} 发生错误: {e}")
                 await asyncio.sleep(5)  # 错误后等待5秒重试
+
+    async def _parallel_variable_triggered_collection(self, group: DataGroup,
+                                                       data_points: List[DataPoint],
+                                                       trigger_point: DataPoint,
+                                                       opcua_client: OpcUaClient) -> None:
+        """并行变量触发的数据采集 - trigger_point 为布尔数组，data_points 为数组节点，
+        检测上升沿索引，提取对应索引的数据"""
+        previous_trigger_state = None
+
+        while True:
+            try:
+                # 读取触发点数组
+                trigger_data = await opcua_client.read_data_points([trigger_point])
+                current_trigger_values = trigger_data.get(trigger_point.name, {}).get('value')
+
+                if current_trigger_values is None:
+                    self.logger.warning(f"并行触发组 {group.name} 读取触发点失败")
+                    await asyncio.sleep(group.interval_seconds)
+                    continue
+
+                # 首次读取仅初始化状态，不触发
+                if previous_trigger_state is None:
+                    previous_trigger_state = list(current_trigger_values)
+                    self.logger.info(f"并行触发组 {group.name} 初始化触发状态，数组长度={len(current_trigger_values)}")
+                    await asyncio.sleep(group.interval_seconds)
+                    continue
+
+                # 检测上升沿索引
+                triggered_indices = []
+                for i, (prev, curr) in enumerate(zip(previous_trigger_state, current_trigger_values)):
+                    if not prev and curr:
+                        triggered_indices.append(i)
+
+                if triggered_indices:
+                    self.logger.info(f"并行触发组 {group.name} 检测到上升沿，触发索引: {triggered_indices}")
+
+                    # 读取所有数据点（每个返回数组）
+                    data = await opcua_client.read_data_points(data_points)
+
+                    # 构建合并的 collection_data
+                    indexed_data = {}
+                    for point in data_points:
+                        point_data = data.get(point.name, {})
+                        array_value = point_data.get('value')
+                        if array_value is not None and isinstance(array_value, (list, tuple)):
+                            extracted = [array_value[i] for i in triggered_indices if i < len(array_value)]
+                            indexed_data[point.name] = {
+                                'value': extracted,
+                                'timestamp': point_data.get('timestamp'),
+                                'path': point_data.get('path'),
+                                'triggered_indices': triggered_indices
+                            }
+                        else:
+                            self.logger.warning(f"并行触发组 {group.name} 数据点 {point.name} 不是数组或值为 None")
+
+                    if indexed_data:
+                        collection_data = {
+                            'group_name': group.name,
+                            'collection_time': datetime.now(),
+                            'trigger_type': 'variable',
+                            'trigger_point': trigger_point.name,
+                            'is_parallel': True,
+                            'triggered_indices': triggered_indices,
+                            'data': indexed_data
+                        }
+
+                        # 并行结果按索引拆成多行标量，逐行回调（便于入库与 batch 计数）
+                        for row in self._iter_scalar_collection_rows(collection_data):
+                            for callback in self.data_callbacks:
+                                callback(row)
+
+                    # 复位已触发的索引
+                    if group.reset_trigger_after_read:
+                        reset_values = list(current_trigger_values)
+                        for idx in triggered_indices:
+                            if idx < len(reset_values):
+                                reset_values[idx] = False
+                        success = await opcua_client.write_array_value(trigger_point.path, reset_values)
+                        if success:
+                            self.logger.debug(f"已复位触发点索引: {triggered_indices}")
+                        else:
+                            self.logger.warning(f"复位触发点索引失败: {triggered_indices}")
+
+                # 更新上一次的状态
+                previous_trigger_state = list(current_trigger_values)
+
+                await asyncio.sleep(group.interval_seconds)
+
+            except asyncio.CancelledError:
+                self.logger.info(f"并行触发采集组 {group.name} 已取消")
+                break
+            except Exception as e:
+                self.logger.error(f"并行触发采集组 {group.name} 发生错误: {e}")
+                await asyncio.sleep(5)
 
     async def _query_collection(self, group: DataGroup,
                               data_points: List[DataPoint],
