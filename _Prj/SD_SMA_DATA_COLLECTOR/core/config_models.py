@@ -45,6 +45,7 @@ class DataGroup:
     batch_insert_size: int = 100  # 批量插入大小
     query_config: Optional[Dict[str, Any]] = None  # 查询配置（仅 query 类型使用）
     output_mode: str = "dual"  # 输出模式："dual", "opcua_only", "http_only"
+    is_parallel: bool = False  # 是否启用并行触发模式（trigger_point 和 data_points 为数组节点）
     
     def get_buffer_nodes(self) -> List[str]:
         """获取缓冲区节点列表（从 query_config 中）"""

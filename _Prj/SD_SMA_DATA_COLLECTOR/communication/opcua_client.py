@@ -162,6 +162,80 @@ class OpcUaClient:
         
         return results
     
+    async def write_array_value(self, point_path: str, values: list) -> bool:
+        """
+        写入数组值到指定节点
+
+        Args:
+            point_path: 节点路径
+            values: 要写入的数组值
+
+        Returns:
+            bool: 写入是否成功
+        """
+        # 检查连接状态，如果需要则尝试重连
+        if not self.connected or not self.client:
+            if not await self._attempt_reconnect():
+                self.logger.error("写入失败：无法连接到OPC UA服务器")
+                return False
+
+        try:
+            node = self.client.get_node(point_path)
+
+            # 先检查节点是否可写
+            try:
+                node_attrs = node.get_attributes([
+                    ua.AttributeIds.AccessLevel,
+                    ua.AttributeIds.UserAccessLevel
+                ])
+
+                access_level = node_attrs[0].Value.Value if len(node_attrs) > 0 and node_attrs[0].Value else 0
+                user_access_level = node_attrs[1].Value.Value if len(node_attrs) > 1 and node_attrs[1].Value else 0
+
+                if not (access_level & 2) or not (user_access_level & 2):
+                    self.logger.info(f"节点 {point_path} 不可写，跳过写入操作")
+                    return False
+            except Exception as attr_error:
+                self.logger.debug(f"无法获取节点属性，继续尝试写入: {attr_error}")
+
+            try:
+                # 根据数组元素类型推断 VariantType
+                if values and isinstance(values[0], bool):
+                    variant_type = ua.VariantType.Boolean
+                elif values and isinstance(values[0], int):
+                    variant_type = ua.VariantType.Int64
+                elif values and isinstance(values[0], float):
+                    variant_type = ua.VariantType.Float
+                else:
+                    variant_type = ua.VariantType.Null
+
+                node.set_attribute(
+                    ua.AttributeIds.Value,
+                    ua.DataValue(ua.Variant(values, variant_type))
+                )
+                self.logger.debug(f"成功写入数组值到 {point_path}, 长度={len(values)}")
+                return True
+            except Exception as write_error:
+                error_str = str(write_error)
+                if "BadWriteNotSupported" in error_str or "not support writing" in error_str.lower():
+                    self.logger.info(f"服务器不支持写入操作: {point_path}")
+                    return False
+                else:
+                    self.logger.warning(f"写入数组失败: {write_error}")
+                    return False
+
+        except Exception as e:
+            if self._is_connection_error(e):
+                self.logger.warning(f"写入数组时检测到连接错误，准备重连: {e}")
+                if await self._attempt_reconnect():
+                    return await self.write_array_value(point_path, values)
+                else:
+                    self.logger.error(f"写入数组失败且无法重连: {e}")
+                    return False
+            else:
+                self.logger.error(f"写入数组值到 {point_path} 失败: {e}")
+                return False
+
     async def write_boolean_value(self, point_path: str, value: bool) -> bool:
         """
         写入布尔值到指定节点

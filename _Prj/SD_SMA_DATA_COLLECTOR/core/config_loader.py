@@ -65,7 +65,8 @@ class ConfigLoader:
                 reset_trigger_after_read=group_data.get('reset_trigger_after_read', True),
                 recreate_interval_days=group_data.get('recreate_interval_days', 30),
                 batch_insert_size=group_data.get('batch_insert_size', 100),
-                query_config=group_data.get('query_config')
+                query_config=group_data.get('query_config'),
+                is_parallel=group_data.get('is_parallel', False)
             )
             groups.append(group)
         
