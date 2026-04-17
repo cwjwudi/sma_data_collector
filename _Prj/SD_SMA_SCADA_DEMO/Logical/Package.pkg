@@ -13,5 +13,6 @@
     <Object Type="Program" Language="IEC" Description="追溯查询">AuditQuerry</Object>
     <Object Type="File">Project.language</Object>
     <Object Type="Program" Language="IEC">Trend</Object>
+    <Object Type="Program" Language="IEC" Description="并发触发测试">ParallelTest</Object>
   </Objects>
 </Package>
