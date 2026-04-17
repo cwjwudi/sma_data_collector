@@ -3,6 +3,23 @@
 本文档记录 SMA 数据采集系统的所有重要更新和变更。
 
 
+## [v1.3.1] - 2026-04-14
+### 修复与优化
+- 🐛 **并行触发入库修复**（`is_parallel` / 布尔数组触发 + 数组测点）
+  - 单次触发若对应多个索引，原先各点 `value` 为 Python 列表，单行 `INSERT` 会导致 MySQL 报错 `1241 Operand should contain 1 column(s)`。
+  - 在 `communication/data_collector.py` 中于回调前将等长列表**按索引拆成 n 条**采集记录，每条内各点为**标量**；拆分行携带 `trigger_index`，`is_parallel` 置为 `false`，避免重复拆分。
+  - 若各点列表长度不一致或结构异常，记录警告并**回退为整包单次回调**（与旧行为一致）。
+
+### 技术改进
+- 🔧 **批量入库唤醒**（`database/data_storage.py`）
+  - 当某组队列中条数达到该组配置的 `batch_insert_size` 时，通过 `asyncio.Event` **立即唤醒**处理循环，避免在「未满一批」分支固定 `sleep(1)` 或空队列 `sleep(0.1)` 时，短时间连续 `add_data`（例如并行一次拆出 n 条）仍长时间等待。
+  - 原有「该组累计条数 ≥ batch 则整组可处理」逻辑不变；单次涌入条数大于 `batch_insert_size` 时仍会尽快执行插入。
+
+### 其他
+- 🔧 移除 `data_collector.py` 中误引入的 `telnetlib` 无用导入。
+
+---
+
 ## [v1.3.0] - 2026-04-08
 ### 新增功能
 - ✨ **附加查询条件（aux_query）功能**
