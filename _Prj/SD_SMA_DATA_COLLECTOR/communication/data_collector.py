@@ -7,6 +7,7 @@ import asyncio
 import logging
 import sys
 import os
+import time
 from typing import Dict, List, Callable, Any, Optional, Iterator
 from datetime import datetime
 
@@ -149,6 +150,16 @@ class DataCollector:
                     self.collectors[group.name] = task
                     self.logger.info(f"启动变量触发采集组: {group.name}")
 
+            elif group.trigger == TriggerType.TIME_AND_VARIABLE:
+                trigger_point = data_points_dict[group.trigger_point]
+                task = asyncio.create_task(
+                    self._time_and_variable_collection(
+                        group, group_points, trigger_point, opcua_client
+                    )
+                )
+                self.collectors[group.name] = task
+                self.logger.info(f"启动时间+变量触发采集组: {group.name}")
+
             elif group.trigger == TriggerType.QUERY:
                 # 变量触发查询
                 trigger_point = data_points_dict[group.trigger_point]
@@ -214,6 +225,116 @@ class DataCollector:
             except Exception as e:
                 self.logger.error(f"时间触发采集组 {group.name} 发生错误: {e}")
                 await asyncio.sleep(5)  # 错误后等待5秒重试
+
+    async def _time_and_variable_collection(
+        self,
+        group: DataGroup,
+        data_points: List[DataPoint],
+        trigger_point: DataPoint,
+        opcua_client: OpcUaClient,
+    ) -> None:
+        """
+        按 interval_seconds 定时采集；同时以 trigger_interval_seconds 为周期采样 trigger_point，
+        上升沿时立即采集一次（行为与同组 variable 模式一致，含可选复位）。
+        """
+        trigger_interval = float(group.trigger_interval_seconds)
+        next_time_deadline = 0.0
+        previous_trigger_state = False
+
+        async def do_time_collect() -> None:
+            nonlocal next_time_deadline
+            data = await opcua_client.read_data_points(data_points)
+            valid_data = {
+                name: info for name, info in data.items() if info.get('value') is not None
+            }
+            if not valid_data:
+                self.logger.warning(
+                    f"采集组 {group.name}（time_and_variable 定时）所有数据点读取失败，跳过本次采集"
+                )
+            else:
+                invalid_points = [name for name, info in data.items() if info.get('value') is None]
+                if invalid_points:
+                    self.logger.warning(
+                        f"采集组 {group.name}（定时）以下数据点读取失败，已过滤：{invalid_points}"
+                    )
+                collection_data = {
+                    'group_name': group.name,
+                    'collection_time': datetime.now(),
+                    'trigger_type': 'time',
+                    'data': valid_data,
+                }
+                for callback in self.data_callbacks:
+                    callback(collection_data)
+            next_time_deadline = time.monotonic() + float(group.interval_seconds)
+
+        while True:
+            try:
+                now = time.monotonic()
+                if now >= next_time_deadline:
+                    await do_time_collect()
+
+                until_next = next_time_deadline - time.monotonic()
+                sleep_for = min(trigger_interval, max(0.001, until_next))
+                await asyncio.sleep(sleep_for)
+
+                trigger_data = await opcua_client.read_data_points([trigger_point])
+                current_trigger_value = trigger_data.get(trigger_point.name, {}).get('value', False)
+
+                if not previous_trigger_state and current_trigger_value:
+                    self.logger.info(
+                        f"检测到上升沿触发信号（time_and_variable）: {group.name}"
+                    )
+                    data = await opcua_client.read_data_points(data_points)
+                    valid_data = {
+                        name: info for name, info in data.items() if info.get('value') is not None
+                    }
+                    if not valid_data:
+                        self.logger.warning(
+                            f"采集组 {group.name}（time_and_variable 变量触发）所有数据点读取失败，跳过本次采集"
+                        )
+                    else:
+                        invalid_points = [
+                            name for name, info in data.items() if info.get('value') is None
+                        ]
+                        if invalid_points:
+                            self.logger.warning(
+                                f"采集组 {group.name}（变量触发）以下数据点读取失败，已过滤：{invalid_points}"
+                            )
+                        if group.reset_trigger_after_read:
+                            success = await opcua_client.write_boolean_value(
+                                trigger_point.path, False
+                            )
+                            if success:
+                                self.logger.debug(f"已复位触发点：{trigger_point.name}")
+                            else:
+                                self.logger.warning(
+                                    f"复位触发点失败：{trigger_point.name}，但这不会影响数据采集"
+                                )
+                        else:
+                            self.logger.debug(f"根据配置跳过触发点复位：{trigger_point.name}")
+
+                        collection_data = {
+                            'group_name': group.name,
+                            'collection_time': datetime.now(),
+                            'trigger_type': 'variable',
+                            'trigger_point': trigger_point.name,
+                            'data': valid_data,
+                        }
+                        for callback in self.data_callbacks:
+                            callback(collection_data)
+
+                previous_trigger_state = current_trigger_value
+
+                now = time.monotonic()
+                if now >= next_time_deadline:
+                    await do_time_collect()
+
+            except asyncio.CancelledError:
+                self.logger.info(f"time_and_variable 采集组 {group.name} 已取消")
+                break
+            except Exception as e:
+                self.logger.error(f"time_and_variable 采集组 {group.name} 发生错误: {e}")
+                await asyncio.sleep(5)
     
     async def _variable_triggered_collection(self, group: DataGroup,
                                            data_points: List[DataPoint],

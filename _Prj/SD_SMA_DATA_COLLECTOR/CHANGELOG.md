@@ -3,6 +3,24 @@
 本文档记录 SMA 数据采集系统的所有重要更新和变更。
 
 
+## [v1.3.3] - 2026-04-22
+### 新增功能
+- ✨ **`time_and_variable` 触发模式**（定时插入 + 变量上升沿立即插入）
+  - 在 `groups[].trigger` 中取值 **`"time_and_variable"`**。
+  - **`interval_seconds`**：与纯时间触发相同，按周期采集并入库；首次进入循环即执行一次定时采集。
+  - **`trigger_interval_seconds`**（必填）：对 **`trigger_point`** 的轮询周期（秒），用于检测布尔上升沿（`false` → `true`）；沿触发时立即读取本组 `data_points` 并入库。
+  - 回调中 **`trigger_type`**：定时为 **`"time"`**，变量沿触发为 **`"variable"`**（与现有存储/日志语义一致）。
+  - **`reset_trigger_after_read`**：沿触发采集后是否将触发点写回 `false`，行为与 `trigger: variable` 单点模式一致。
+  - **约束**：此模式下 **`is_parallel` 必须为 `false`**（不支持并行数组触发）；加载配置时若不满足或缺少 `trigger_point` / `trigger_interval_seconds`（≤0 或非数值）将报错。
+
+### 配置与模型
+- 📝 **`core/config_models.py`**：`TriggerType` 增加 `TIME_AND_VARIABLE`；`DataGroup` 增加可选字段 **`trigger_interval_seconds`**。
+- 📝 **`core/config_loader.py`**：解析并校验上述字段与并行约束。
+- 📝 **`communication/data_collector.py`**：实现 **`_time_and_variable_collection`**，在单次循环内用 `min(trigger_interval_seconds, 距下次定时采集剩余时间)` 睡眠，兼顾定时与触发采样。
+- 📄 示例配置：**`config/time_and_variable_config.json`**。
+
+---
+
 ## [v1.3.2] - 2026-04-14
 ### 修复与优化
 - 🐛 **并行触发入库修复**（`is_parallel` / 布尔数组触发 + 数组测点）

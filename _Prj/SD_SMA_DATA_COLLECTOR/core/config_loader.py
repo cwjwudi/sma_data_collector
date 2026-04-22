@@ -61,6 +61,7 @@ class ConfigLoader:
                 trigger=TriggerType(group_data['trigger']),
                 description=group_data['description'],
                 data_points=group_data['data_points'],
+                trigger_interval_seconds=group_data.get('trigger_interval_seconds'),
                 trigger_point=group_data.get('trigger_point'),
                 reset_trigger_after_read=group_data.get('reset_trigger_after_read', True),
                 recreate_interval_days=group_data.get('recreate_interval_days', 30),
@@ -166,6 +167,32 @@ class ConfigLoader:
                     raise ValueError(f"触发类型为variable的数据组 '{group.name}' 必须指定trigger_point")
                 if group.trigger_point not in point_name_set:
                     raise ValueError(f"数据组 '{group.name}' 的触发点不存在: {group.trigger_point}")
+
+            if group.trigger == TriggerType.TIME_AND_VARIABLE:
+                if group.is_parallel:
+                    raise ValueError(
+                        f"数据组 '{group.name}' 的触发类型 time_and_variable 不支持并行模式，请将 is_parallel 设为 false"
+                    )
+                if not group.trigger_point:
+                    raise ValueError(
+                        f"触发类型为time_and_variable的数据组 '{group.name}' 必须指定 trigger_point"
+                    )
+                if group.trigger_point not in point_name_set:
+                    raise ValueError(f"数据组 '{group.name}' 的触发点不存在: {group.trigger_point}")
+                if group.trigger_interval_seconds is None:
+                    raise ValueError(
+                        f"数据组 '{group.name}' 使用 time_and_variable 时必须配置 trigger_interval_seconds（秒）"
+                    )
+                try:
+                    tri = float(group.trigger_interval_seconds)
+                except (TypeError, ValueError):
+                    raise ValueError(
+                        f"数据组 '{group.name}' 的 trigger_interval_seconds 必须为数值"
+                    ) from None
+                if tri <= 0:
+                    raise ValueError(
+                        f"数据组 '{group.name}' 的 trigger_interval_seconds 必须大于 0"
+                    )
         
         # 检查数据库配置引用的数据组是否存在
         group_names = [group.name for group in config.groups]
