@@ -88,24 +88,11 @@ class OpcUaClient:
                 self.client = None
                 self.is_reconnecting = False
     
-    async def read_data_points(self, data_points: List[DataPoint]) -> Dict[str, Any]:
-        """
-        读取多个数据点的值
-        
-        Args:
-            data_points: 数据点列表
-            
-        Returns:
-            Dict[str, Any]: 数据点名称到值的映射
-        """
-        # 检查连接状态，如果需要则尝试重连
-        if not self.connected or not self.client:
-            if not await self._attempt_reconnect():
-                raise ConnectionError("OPC UA客户端连接失败且无法重连")
-        
-        results = {}
-        timestamp = datetime.now()
-        
+    async def _read_data_points_sequential(
+        self, data_points: List[DataPoint], timestamp: datetime
+    ) -> Dict[str, Any]:
+        """逐点读取（批量失败时的回退路径，行为与历史版本一致）。"""
+        results: Dict[str, Any] = {}
         for point in data_points:
             try:
                 node = self.client.get_node(point.path)
@@ -117,14 +104,10 @@ class OpcUaClient:
                 }
                 self.logger.debug(f"读取数据点 {point.name}: {value}")
             except Exception as e:
-                # 检查是否是连接相关的错误
                 if self._is_connection_error(e):
                     self.logger.warning(f"检测到连接错误，准备重连: {e}")
                     if await self._attempt_reconnect():
-                        # 重连成功后添加延时，避免快速反复重连
-                        await asyncio.sleep(2.0)  # 延时 2 秒
-                        
-                        # 重连成功后重试读取
+                        await asyncio.sleep(2.0)
                         try:
                             node = self.client.get_node(point.path)
                             value = node.get_value()
@@ -143,8 +126,7 @@ class OpcUaClient:
                                 'path': point.path
                             }
                     else:
-                        # 重连失败也要添加延时，避免立刻重连
-                        await asyncio.sleep(3.0)  # 延时 3 秒
+                        await asyncio.sleep(3.0)
                         results[point.name] = {
                             'value': None,
                             'timestamp': timestamp,
@@ -159,8 +141,72 @@ class OpcUaClient:
                         'error': str(e),
                         'path': point.path
                     }
-        
         return results
+
+    async def read_data_points(self, data_points: List[DataPoint]) -> Dict[str, Any]:
+        """
+        读取多个数据点的值
+
+        优先使用 OPC UA 一次往返批量读取（Client.get_values）；失败时回退为逐点读取。
+        
+        Args:
+            data_points: 数据点列表
+            
+        Returns:
+            Dict[str, Any]: 数据点名称到值的映射
+        """
+        if not self.connected or not self.client:
+            if not await self._attempt_reconnect():
+                raise ConnectionError("OPC UA客户端连接失败且无法重连")
+
+        if not data_points:
+            return {}
+
+        timestamp = datetime.now()
+
+        async def try_batch_read() -> Optional[Dict[str, Any]]:
+            try:
+                nodes = [self.client.get_node(p.path) for p in data_points]
+                values = self.client.get_values(nodes)
+            except Exception as e:
+                if self._is_connection_error(e):
+                    self.logger.warning(f"批量读取遇连接错误，准备重连: {e}")
+                    if await self._attempt_reconnect():
+                        await asyncio.sleep(2.0)
+                        try:
+                            nodes = [self.client.get_node(p.path) for p in data_points]
+                            values = self.client.get_values(nodes)
+                        except Exception as retry_e:
+                            self.logger.error(f"重连后批量读取仍失败: {retry_e}")
+                            return None
+                    else:
+                        await asyncio.sleep(3.0)
+                        return None
+                else:
+                    self.logger.warning(f"批量读取失败，将回退逐点读取: {e}")
+                    return None
+
+            if len(values) != len(data_points):
+                self.logger.error(
+                    f"批量读取返回数量({len(values)})与请求({len(data_points)})不一致，回退逐点读取"
+                )
+                return None
+
+            out: Dict[str, Any] = {}
+            for point, value in zip(data_points, values):
+                out[point.name] = {
+                    'value': value,
+                    'timestamp': timestamp,
+                    'path': point.path
+                }
+                self.logger.debug(f"读取数据点 {point.name}: {value}")
+            return out
+
+        batch = await try_batch_read()
+        if batch is not None:
+            return batch
+
+        return await self._read_data_points_sequential(data_points, timestamp)
     
     async def write_array_value(self, point_path: str, values: list) -> bool:
         """

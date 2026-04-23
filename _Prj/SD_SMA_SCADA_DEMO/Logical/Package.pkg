@@ -14,5 +14,6 @@
     <Object Type="File">Project.language</Object>
     <Object Type="Program" Language="IEC">Trend</Object>
     <Object Type="Program" Language="IEC" Description="并发触发测试">ParallelTest</Object>
+    <Object Type="Program" Language="ANSIC">TimeSt</Object>
   </Objects>
 </Package>

@@ -3,6 +3,22 @@
 本文档记录 SMA 数据采集系统的所有重要更新和变更。
 
 
+## [v1.3.4] - 2026-04-23
+### 修复与优化
+- ⏱️ **纯时间触发（`trigger: time`）节拍**（`communication/data_collector.py` → `_time_triggered_collection`）
+  - 使用 **`time.monotonic()`** 维护 **`next_deadline`**：每轮开始前若早于计划时刻则 **`sleep`** 至该时刻，减轻「读点 + 回调耗时叠在 `interval_seconds` 后面」导致的周期漂移。
+  - 本轮结束后 **`next_deadline += interval_seconds`**；若实际结束时间**已晚于**该计划点（读点或回调超时），**不再追欠拍**，将下一拍重置为 **`当前单调时刻 + interval_seconds`**（超时后重置相位）。
+  - 异常路径在 **`sleep(5)`** 重试等待后，将 **`next_deadline`** 设为 **`monotonic() + interval_seconds`**，避免长期追赶旧计划点。
+  - 无效数据跳过回调时仍计为一轮节拍，与原先「失败也等待一轮」的语义一致，但等待方式改为对齐 **`next_deadline`**。
+
+### 技术改进
+- 🔧 **OPC UA 按组批量读**（`communication/opcua_client.py` → `read_data_points`）
+  - 优先使用 **`Client.get_values(nodes)`** 对当前传入的 **`data_points` 列表一次往返**读取（与配置中**同一 `group` 的一次采集**一致），缩短多变量顺序 `get_value` 的间隔与总耗时。
+  - 批量失败（含连接类错误：重连后再次批量仍失败）或返回值个数与请求不一致时，**回退**为原有 **`_read_data_points_sequential`** 逐点读取，保留逐点重连与单点错误记录行为。
+  - 返回结构不变：各点仍带 **`value` / `timestamp` / `path`**；整批仍共用进入本方法时的一次 **`datetime.now()`** 作为 **`timestamp`**（与改前整批单一时标一致）。
+
+---
+
 ## [v1.3.3] - 2026-04-22
 ### 新增功能
 - ✨ **`time_and_variable` 触发模式**（定时插入 + 变量上升沿立即插入）

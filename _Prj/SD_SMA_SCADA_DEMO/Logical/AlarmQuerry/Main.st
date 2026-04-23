@@ -15,6 +15,7 @@ PROGRAM _CYCLIC
 	IF UtcDTGetTime_0.status = 0 THEN
 		ts := DT_TO_STRING(UtcDTGetTime_0.DT1);
 	END_IF
+	
 	Code := RandRange(1,10);  // 报警码
 	msg := RandRange(1,10);  // 报警信息
 	severity := RandRange(1,4);  // 报警等级 (1=Critical, 2=Major, 3=Minor, 4=Info)

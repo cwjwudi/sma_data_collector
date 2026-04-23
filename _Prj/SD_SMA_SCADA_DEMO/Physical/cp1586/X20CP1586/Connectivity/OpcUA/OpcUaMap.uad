@@ -194,6 +194,12 @@
         <Variable Name="bParallelTriger" />
         <Variable Name="uiHeartBeat" />
       </Task>
+      <Task Name="TimeSt">
+        <Variable Name="sDbDateTime" />
+        <Variable Name="stRTCtime">
+          <Variable Name="millisec" />
+        </Variable>
+      </Task>
     </Module>
   </DefaultView>
 </OpcUaSource>

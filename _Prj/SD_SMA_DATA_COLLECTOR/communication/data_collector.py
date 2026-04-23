@@ -184,47 +184,55 @@ class DataCollector:
     async def _time_triggered_collection(self, group: DataGroup, 
                                        data_points: List[DataPoint],
                                        opcua_client: OpcUaClient) -> None:
-        """时间触发的数据采集"""
+        """时间触发的数据采集。
+
+        使用单调时钟维护计划节拍：每轮开始前睡到本组的 next_deadline。
+        本轮结束后将 next_deadline 推进 interval；若实际结束时间已晚于该计划时刻
+        （读点/回调超时），则不再追欠拍，将下一拍重置为「当前时刻 + interval」。
+        """
+        interval = float(group.interval_seconds)
+        next_deadline = time.monotonic()
+
         while True:
             try:
-                # 读取数据
+                now = time.monotonic()
+                wait = next_deadline - now
+                if wait > 0:
+                    await asyncio.sleep(wait)
+
                 data = await opcua_client.read_data_points(data_points)
-                
-                # 过滤掉值为 None 的数据点
+
                 valid_data = {name: info for name, info in data.items() if info.get('value') is not None}
-                
-                # 检查是否有有效数据
+
                 if not valid_data:
                     self.logger.warning(f"采集组 {group.name} 所有数据点读取失败，跳过本次采集")
-                    await asyncio.sleep(group.interval_seconds)
-                    continue
-                
-                # 记录无效数据点（可选）
-                invalid_points = [name for name, info in data.items() if info.get('value') is None]
-                if invalid_points:
-                    self.logger.warning(f"采集组 {group.name} 以下数据点读取失败，已过滤：{invalid_points}")
-                
-                # 添加元数据
-                collection_data = {
-                    'group_name': group.name,
-                    'collection_time': datetime.now(),
-                    'trigger_type': 'time',
-                    'data': valid_data
-                }
-                
-                # 调用回调函数
-                for callback in self.data_callbacks:
-                    callback(collection_data)
-                
-                # 等待下次采集
-                await asyncio.sleep(group.interval_seconds)
-                
+                else:
+                    invalid_points = [name for name, info in data.items() if info.get('value') is None]
+                    if invalid_points:
+                        self.logger.warning(f"采集组 {group.name} 以下数据点读取失败，已过滤：{invalid_points}")
+
+                    collection_data = {
+                        'group_name': group.name,
+                        'collection_time': datetime.now(),
+                        'trigger_type': 'time',
+                        'data': valid_data
+                    }
+
+                    for callback in self.data_callbacks:
+                        callback(collection_data)
+
+                now = time.monotonic()
+                next_deadline += interval
+                if now > next_deadline:
+                    next_deadline = now + interval
+
             except asyncio.CancelledError:
                 self.logger.info(f"时间触发采集组 {group.name} 已取消")
                 break
             except Exception as e:
                 self.logger.error(f"时间触发采集组 {group.name} 发生错误: {e}")
                 await asyncio.sleep(5)  # 错误后等待5秒重试
+                next_deadline = time.monotonic() + interval
 
     async def _time_and_variable_collection(
         self,
