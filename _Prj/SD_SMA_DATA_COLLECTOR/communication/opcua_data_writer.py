@@ -148,34 +148,48 @@ class OpcUaDataWriter:
                 self.logger.error("OPC UA 客户端未连接，无法写入数据")
                 return False
                 
-            # 数据依次写入各个缓冲区
-            success_count = 0
+            # 数据依次写入各个缓冲区（汇总日志）
+            buffer_success_count = 0
+            buffer_data_empty_count = 0
+            buffer_failures: List[int] = []
             for i, buffer_node in enumerate(self.buffer_nodes):
                 if i < len(query_results):
                     # 截断超出部分
                     data_to_write = query_results[i][:self.buffer_size]
                     # 如果数据为空，跳过写入
                     if len(data_to_write) == 0:
-                        self.logger.warning(f"缓冲区 {i+1} 数据为空，跳过写入")
+                        buffer_data_empty_count += 1
                         continue
                     # 如果数据不足 10000 个，用 0.0 填充
                     if len(data_to_write) < self.buffer_size:
                         data_to_write.extend([0.0] * (self.buffer_size - len(data_to_write)))
                         
                     # 写入数据
-                    success = await self._write_to_node(buffer_node, data_to_write, ua.VariantType.Float)
+                    success = await self._write_to_node(
+                        buffer_node,
+                        data_to_write,
+                        ua.VariantType.Float,
+                        log_success=False
+                    )
                     if success:
-                        success_count += 1
-                        self.logger.info(f"成功写入缓冲区 {i+1}: {buffer_node}, "
-                                       f"数据长度={len(query_results[i])}, "
-                                       f"写入长度={len(data_to_write)}")
+                        buffer_success_count += 1
                     else:
                         self.logger.warning(f"写入缓冲区 {i+1} 失败：{buffer_node}")
+                        buffer_failures.append(i + 1)
                 else:
-                    self.logger.warning(f"没有足够的数据写入缓冲区 {i+1}")
+                    buffer_data_empty_count += 1
                 
-            self.logger.info(f"写入完成，成功 {success_count}/{len(self.buffer_nodes)} 个缓冲区")
+            self.logger.info(
+                f"缓冲区写入完成: 成功 {buffer_success_count}/{len(self.buffer_nodes)}"
+                f"（无数据跳过: {buffer_data_empty_count}）"
+            )
+            if buffer_failures:
+                self.logger.warning(f"缓冲区写入失败索引: {buffer_failures}")
     
+            # 写入时间缓冲区（汇总日志）
+            time_success_count = 0
+            time_data_empty_count = 0
+            time_failures: List[int] = []
             for i, time_node in enumerate(self.time_nodes):
                 if i < len(query_time):
                     # 截断超出部分
@@ -183,47 +197,77 @@ class OpcUaDataWriter:
     
                     # 修改时间格式为 UINT32
                     time_to_write = [fast_dt_to_date_and_time(t) for t in time_to_write]
+                    if len(time_to_write) == 0:
+                        time_data_empty_count += 1
+                        continue
                         
                     # 如果数据不足 1000 个，用 0 填充
                     if len(time_to_write) < self.buffer_size:
                         time_to_write.extend([0] * (self.buffer_size - len(time_to_write)))
     
                     # 写入数据
-                    success = await self._write_to_node(time_node, time_to_write, ua.VariantType.UInt32)
+                    success = await self._write_to_node(
+                        time_node,
+                        time_to_write,
+                        ua.VariantType.UInt32,
+                        log_success=False
+                    )
                     if success:
-                        self.logger.info(f"成功写入时间缓冲区 {i+1}: {time_node}, "
-                                       f"数据长度={len(query_time[i])}, "
-                                       f"写入长度={len(time_to_write)}")
+                        time_success_count += 1
                     else:
                         self.logger.warning(f"写入时间缓冲区 {i+1} 失败：{time_node}")
+                        time_failures.append(i + 1)
                 else:
-                    self.logger.warning(f"没有足够的数据写入时间缓冲区 {i+1}")
-            self.logger.info(f"写入完成，成功 {success_count}/{len(self.time_nodes)} 个时间缓冲区")
+                    time_data_empty_count += 1
+            self.logger.info(
+                f"时间缓冲区写入完成: 成功 {time_success_count}/{len(self.time_nodes)}"
+                f"（无数据跳过: {time_data_empty_count}）"
+            )
+            if time_failures:
+                self.logger.warning(f"时间缓冲区写入失败索引: {time_failures}")
     
             # 写入反馈数据（实际写入的数据数量）
+            feedback_success_count = 0
+            feedback_zero_count = 0
+            feedback_failures: List[int] = []
             for i, feed_back_node in enumerate(self.feed_back_nodes):
                 if i < len(query_results):
                     # 获取实际数据量
                     actual_data_count = len(query_results[i])
                     
                     # 写入实际数据量作为反馈
-                    success = await self._write_to_node(feed_back_node, [actual_data_count], ua.VariantType.UInt32)
+                    success = await self._write_to_node(
+                        feed_back_node,
+                        [actual_data_count],
+                        ua.VariantType.UInt32,
+                        log_success=False
+                    )
                     if success:
-                        self.logger.info(f"成功写入反馈 {i+1}: {feed_back_node}, "
-                                       f"实际数据量={actual_data_count}")
+                        feedback_success_count += 1
                     else:
-                        self.logger.warning(f"写入反馈 {i+1} 失败：{feed_back_node}")
+                        feedback_failures.append(i + 1)
                 else:
                     # 如果没有对应的数据，写入 0
-                    success = await self._write_to_node(feed_back_node, [0], ua.VariantType.UInt32)
+                    success = await self._write_to_node(
+                        feed_back_node,
+                        [0],
+                        ua.VariantType.UInt32,
+                        log_success=False
+                    )
                     if success:
-                        self.logger.info(f"成功写入反馈 {i+1}: {feed_back_node}, 无数据 (0)")
+                        feedback_success_count += 1
+                        feedback_zero_count += 1
                     else:
-                        self.logger.warning(f"写入反馈 {i+1} 失败：{feed_back_node}")
+                        feedback_failures.append(i + 1)
             
-            self.logger.info(f"写入完成，成功 {len(self.feed_back_nodes)}/{len(self.feed_back_nodes)} 个反馈节点")
+            self.logger.info(
+                f"反馈写入完成: 成功 {feedback_success_count}/{len(self.feed_back_nodes)}"
+                f"（无数据置0: {feedback_zero_count}）"
+            )
+            if feedback_failures:
+                self.logger.warning(f"反馈节点写入失败索引: {feedback_failures}")
                 
-            return success_count > 0
+            return buffer_success_count > 0
                 
         except Exception as e:
             self.logger.error(f"写入 OPC UA 缓冲区失败：{e}", exc_info=True)
@@ -406,11 +450,17 @@ class OpcUaDataWriter:
                     fead_back_count = current_batch_send_count + remaining_count
 
                     # 反馈信息包含：剩余待发送数据量
-                    success = await self._write_to_node(feed_back_node, [fead_back_count], ua.VariantType.UInt32)
+                    success = await self._write_to_node(
+                        feed_back_node,
+                        [fead_back_count],
+                        ua.VariantType.UInt32,
+                        log_success=False
+                    )
                     if success:
-                        self.logger.debug(f"批次 {current_batch + 1}/{total_batches} - "
-                                        f"成功写入反馈 {i+1}: {feed_back_node}, "
-                                        f"总量={total_counts[i]}, 已发送={sent_counts[i]}, 剩余={remaining_count}")
+                        self.logger.debug(
+                            f"批次 {current_batch + 1}/{total_batches} - "
+                            f"反馈 {i+1} 已更新: 总量={total_counts[i]}, 已发送={sent_counts[i]}, 剩余={remaining_count}"
+                        )
                     else:
                         self.logger.warning(f"批次 {current_batch + 1}/{total_batches} - "
                                           f"写入反馈 {i+1} 失败：{feed_back_node}")
@@ -617,7 +667,7 @@ class OpcUaDataWriter:
         
         return buffer_arrays
     
-    async def _write_to_node(self, node_path: str, values: List[Any], ua_type: Any) -> bool:
+    async def _write_to_node(self, node_path: str, values: List[Any], ua_type: Any, log_success: bool = True) -> bool:
         """
         写入浮点数数组到指定节点
         
@@ -643,9 +693,16 @@ class OpcUaDataWriter:
             # 写入数据
             node.set_attribute(ua.AttributeIds.Value, ua.DataValue(variant))
             
-            self.logger.debug(f"成功写入 {len(values)} 个数到 {node_path}")
+            if log_success:
+                self.logger.debug(f"成功写入 {len(values)} 个数到 {node_path}")
             return True
             
         except Exception as e:
+            error_text = str(e)
+            if "BadTypeMismatch" in error_text:
+                self.logger.error(
+                    f"节点类型不匹配: {node_path}。请检查该节点在 PLC/OPC UA 中的数据类型，"
+                    f"以及 query_config 映射与写入类型是否一致（当前写入类型: {ua_type}）。"
+                )
             self.logger.error(f"写入节点 {node_path} 失败：{e}", exc_info=True)
             return False

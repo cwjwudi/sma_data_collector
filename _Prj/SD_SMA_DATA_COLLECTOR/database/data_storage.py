@@ -450,6 +450,8 @@ class DataStorageProcessor:
                         '%Y/%m/%d %H:%M:%S',
                         '%Y%m%d%H%M%S',
                         'DT#%Y-%m-%d-%H:%M:%S',  # 支持 DT#2022-03-19-17:41:48 这种格式中的日期部分解析逻辑需特殊处理，但标准strptime不支持前缀，因此下面会添加特殊处理
+                        '%a %b %d %H:%M:%S %Y',  # ctime 风格，如 Tue Apr 28 15:46:18 2026
+                        '%a %b  %d %H:%M:%S %Y',  # 同上，个位数日期时日在月名后双空格，如 Tue Apr  8 15:46:18 2026
                     ]
                     
                     for fmt in datetime_formats:
