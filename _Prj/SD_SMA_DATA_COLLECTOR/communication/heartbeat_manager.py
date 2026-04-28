@@ -129,7 +129,7 @@ class HeartbeatManager:
                 self.logger.info(f"心跳循环已取消：{connection_name}")
                 break
             except Exception as e:
-                self.logger.error(f"心跳循环发生错误：{connection_name}: {e}")
+                self.logger.error(f"心跳循环发生错误：{connection_name}: {e}", exc_info=True)
                 await asyncio.sleep(self.heartbeat_interval)
     
     async def _write_heartbeat(self, opcua_client, heartbeat_address: str) -> bool:
@@ -161,7 +161,7 @@ class HeartbeatManager:
             return True
             
         except Exception as e:
-            self.logger.error(f"写入心跳信号失败：{heartbeat_address}: {e}")
+            self.logger.error(f"写入心跳信号失败：{heartbeat_address}: {e}", exc_info=True)
             return False
     
     def get_heartbeat_status(self) -> Dict[str, bool]:

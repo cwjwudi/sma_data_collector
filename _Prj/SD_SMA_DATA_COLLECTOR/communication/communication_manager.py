@@ -82,7 +82,7 @@ class CommunicationManager:
             return success_count > 0
             
         except Exception as e:
-            self.logger.error(f"初始化通信连接时发生错误: {e}")
+            self.logger.error(f"初始化通信连接时发生错误: {e}", exc_info=True)
             return False
     
     async def _connect_client(self, name: str, client: OpcUaClient) -> bool:
@@ -99,7 +99,7 @@ class CommunicationManager:
         try:
             return await client.connect()
         except Exception as e:
-            self.logger.error(f"连接客户端 {name} 时发生错误: {e}")
+            self.logger.error(f"连接客户端 {name} 时发生错误: {e}", exc_info=True)
             return False
     
     async def disconnect_all(self) -> None:
@@ -130,7 +130,7 @@ class CommunicationManager:
             await client.disconnect()
             self.logger.info(f"已断开通信连接: {name}")
         except Exception as e:
-            self.logger.error(f"断开通信 {name} 时发生错误: {e}")
+            self.logger.error(f"断开通信 {name} 时发生错误: {e}", exc_info=True)
     
     def get_client(self, communication_name: str) -> Optional[OpcUaClient]:
         """
@@ -224,6 +224,6 @@ class CommunicationManager:
             return success
             
         except Exception as e:
-            self.logger.error(f"重连通信 {communication_name} 时发生错误: {e}")
+            self.logger.error(f"重连通信 {communication_name} 时发生错误: {e}", exc_info=True)
             self.connection_status[communication_name] = False
             return False

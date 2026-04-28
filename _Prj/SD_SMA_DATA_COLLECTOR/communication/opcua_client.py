@@ -66,7 +66,7 @@ class OpcUaClient:
             
             return True
         except Exception as e:
-            self.logger.error(f"连接OPC UA服务器失败: {e}")
+            self.logger.error(f"连接OPC UA服务器失败: {e}", exc_info=True)
             self.connected = False
             return False
     
@@ -82,7 +82,7 @@ class OpcUaClient:
                 await loop.run_in_executor(None, self.client.disconnect)
                 self.logger.info("已断开OPC UA服务器连接")
             except Exception as e:
-                self.logger.error(f"断开连接时发生错误: {e}")
+                self.logger.error(f"断开连接时发生错误: {e}", exc_info=True)
             finally:
                 self.connected = False
                 self.client = None
@@ -118,7 +118,10 @@ class OpcUaClient:
                             }
                             self.logger.info(f"重连后成功读取数据点 {point.name}")
                         except Exception as retry_e:
-                            self.logger.error(f"重连后读取数据点 {point.name} 仍然失败: {retry_e}")
+                            self.logger.error(
+                                f"重连后读取数据点 {point.name} 仍然失败: {retry_e}",
+                                exc_info=True
+                            )
                             results[point.name] = {
                                 'value': None,
                                 'timestamp': timestamp,
@@ -134,7 +137,7 @@ class OpcUaClient:
                             'path': point.path
                         }
                 else:
-                    self.logger.error(f"读取数据点 {point.name} 失败: {e}")
+                    self.logger.error(f"读取数据点 {point.name} 失败: {e}", exc_info=True)
                     results[point.name] = {
                         'value': None,
                         'timestamp': timestamp,
@@ -177,7 +180,7 @@ class OpcUaClient:
                             nodes = [self.client.get_node(p.path) for p in data_points]
                             values = self.client.get_values(nodes)
                         except Exception as retry_e:
-                            self.logger.error(f"重连后批量读取仍失败: {retry_e}")
+                            self.logger.error(f"重连后批量读取仍失败: {retry_e}", exc_info=True)
                             return None
                     else:
                         await asyncio.sleep(3.0)
@@ -276,10 +279,10 @@ class OpcUaClient:
                 if await self._attempt_reconnect():
                     return await self.write_array_value(point_path, values)
                 else:
-                    self.logger.error(f"写入数组失败且无法重连: {e}")
+                    self.logger.error(f"写入数组失败且无法重连: {e}", exc_info=True)
                     return False
             else:
-                self.logger.error(f"写入数组值到 {point_path} 失败: {e}")
+                self.logger.error(f"写入数组值到 {point_path} 失败: {e}", exc_info=True)
                 return False
 
     async def write_boolean_value(self, point_path: str, value: bool) -> bool:
@@ -344,10 +347,10 @@ class OpcUaClient:
                     # 重连成功后重试写入
                     return await self.write_boolean_value(point_path, value)
                 else:
-                    self.logger.error(f"写入失败且无法重连: {e}")
+                    self.logger.error(f"写入失败且无法重连: {e}", exc_info=True)
                     return False
             else:
-                self.logger.error(f"写入布尔值到 {point_path} 失败: {e}")
+                self.logger.error(f"写入布尔值到 {point_path} 失败: {e}", exc_info=True)
                 return False
     
     def is_connected(self) -> bool:
@@ -423,7 +426,7 @@ class OpcUaClient:
             return True
             
         except Exception as e:
-            self.logger.error(f"重连失败: {e}")
+            self.logger.error(f"重连失败: {e}", exc_info=True)
             self.connected = False
             self.client = None
             return False
@@ -471,11 +474,11 @@ class OpcUaClient:
                 else:
                     # 如果未连接，尝试重连
                     if not self.is_reconnecting:
-                        self.logger.info("健康检查发现未连接，尝试重连")
+                        self.logger.debug("健康检查发现未连接，尝试重连")
                         await self._attempt_reconnect()
                         
             except asyncio.CancelledError:
                 self.logger.debug("健康检查任务被取消")
                 break
             except Exception as e:
-                self.logger.error(f"健康检查过程中发生错误: {e}")
+                self.logger.error(f"健康检查过程中发生错误: {e}", exc_info=True)

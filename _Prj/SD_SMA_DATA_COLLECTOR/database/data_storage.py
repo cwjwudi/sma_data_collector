@@ -127,7 +127,7 @@ class DataStorageProcessor:
                     await self._process_batch(remaining_data)
                 break
             except Exception as e:
-                self.logger.error(f"数据处理过程中发生错误: {e}")
+                self.logger.error(f"数据处理过程中发生错误: {e}", exc_info=True)
                 await asyncio.sleep(5)
     
     def _has_enough_data_for_batch(self) -> bool:
@@ -375,7 +375,7 @@ class DataStorageProcessor:
             return self.db_manager.create_data_table(table_name, column_types)
             
         except Exception as e:
-            self.logger.error(f"确保表存在时出错: {e}")
+            self.logger.error(f"确保表存在时出错: {e}", exc_info=True)
             return False
     
     def _convert_to_db_format(self, collection_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -419,7 +419,7 @@ class DataStorageProcessor:
             return db_data
             
         except Exception as e:
-            self.logger.error(f"数据格式转换失败: {e}")
+            self.logger.error(f"数据格式转换失败: {e}", exc_info=True)
             return None
     
     def _convert_value_by_datatype(self, value: Any, datatype: str, point_name: str) -> Any:
@@ -505,7 +505,10 @@ class DataStorageProcessor:
                 return value
                 
         except Exception as e:
-            self.logger.error(f"类型转换失败 (point: {point_name}, datatype: {datatype}): {e}")
+            self.logger.error(
+                f"类型转换失败 (point: {point_name}, datatype: {datatype}): {e}",
+                exc_info=True
+            )
             return value
     
     def get_queue_size(self) -> int:

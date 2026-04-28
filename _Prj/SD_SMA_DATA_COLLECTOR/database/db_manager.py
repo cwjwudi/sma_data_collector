@@ -87,7 +87,7 @@ class DatabaseManager:
             return True
             
         except Exception as e:
-            self.logger.error(f"数据库连接失败: {e}")
+            self.logger.error(f"数据库连接失败: {e}", exc_info=True)
             return False
     
     def disconnect(self) -> None:
@@ -153,7 +153,7 @@ class DatabaseManager:
             return True
             
         except Exception as e:
-            self.logger.error(f"创建数据表失败: {e}")
+            self.logger.error(f"创建数据表失败: {e}", exc_info=True)
             return False
     
     def get_recreate_interval_days(self, group_name: str = None) -> int:
@@ -230,7 +230,7 @@ class DatabaseManager:
                 result = conn.execute(text(sql), params or {})
                 return result.fetchall()
         except Exception as e:
-            self.logger.error(f"查询执行失败: {e}")
+            self.logger.error(f"查询执行失败: {e}", exc_info=True)
             raise
     
     def execute_insert(self, table_name: str, data: Dict[str, Any]) -> bool:
@@ -256,7 +256,7 @@ class DatabaseManager:
             
             return True
         except Exception as e:
-            self.logger.error(f"数据插入失败: {e}")
+            self.logger.error(f"数据插入失败: {e}", exc_info=True)
             return False
 
     def _initialize_table_dates(self) -> None:
@@ -313,4 +313,4 @@ class DatabaseManager:
                 self.logger.info("未找到符合条件的表，将使用默认表名策略")
                 
         except Exception as e:
-            self.logger.error(f"初始化表日期信息失败: {e}")
+            self.logger.error(f"初始化表日期信息失败: {e}", exc_info=True)

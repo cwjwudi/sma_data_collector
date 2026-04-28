@@ -230,7 +230,7 @@ class DataCollector:
                 self.logger.info(f"时间触发采集组 {group.name} 已取消")
                 break
             except Exception as e:
-                self.logger.error(f"时间触发采集组 {group.name} 发生错误: {e}")
+                self.logger.error(f"时间触发采集组 {group.name} 发生错误: {e}", exc_info=True)
                 await asyncio.sleep(5)  # 错误后等待5秒重试
                 next_deadline = time.monotonic() + interval
 
@@ -341,7 +341,7 @@ class DataCollector:
                 self.logger.info(f"time_and_variable 采集组 {group.name} 已取消")
                 break
             except Exception as e:
-                self.logger.error(f"time_and_variable 采集组 {group.name} 发生错误: {e}")
+                self.logger.error(f"time_and_variable 采集组 {group.name} 发生错误: {e}", exc_info=True)
                 await asyncio.sleep(5)
     
     async def _variable_triggered_collection(self, group: DataGroup,
@@ -411,7 +411,7 @@ class DataCollector:
                 self.logger.info(f"变量触发采集组 {group.name} 已取消")
                 break
             except Exception as e:
-                self.logger.error(f"变量触发采集组 {group.name} 发生错误: {e}")
+                self.logger.error(f"变量触发采集组 {group.name} 发生错误: {e}", exc_info=True)
                 await asyncio.sleep(5)  # 错误后等待5秒重试
 
     async def _parallel_variable_triggered_collection(self, group: DataGroup,
@@ -505,7 +505,7 @@ class DataCollector:
                 self.logger.info(f"并行触发采集组 {group.name} 已取消")
                 break
             except Exception as e:
-                self.logger.error(f"并行触发采集组 {group.name} 发生错误: {e}")
+                self.logger.error(f"并行触发采集组 {group.name} 发生错误: {e}", exc_info=True)
                 await asyncio.sleep(5)
 
     async def _query_collection(self, group: DataGroup,
@@ -677,7 +677,7 @@ class DataCollector:
             }
             
         except Exception as e:
-            self.logger.error(f"读取查询参数失败：{e}")
+            self.logger.error(f"读取查询参数失败：{e}", exc_info=True)
             return None
 
     def _build_point_to_group_lookup(self, groups):

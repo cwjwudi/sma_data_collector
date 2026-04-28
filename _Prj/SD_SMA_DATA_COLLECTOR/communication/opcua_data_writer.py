@@ -360,9 +360,9 @@ class OpcUaDataWriter:
                     success = await self._write_to_node(buffer_node, data_to_write, ua.VariantType.Float)
                     if success:
                         success_count += 1
-                        self.logger.info(f"批次 {current_batch + 1}/{total_batches} - "
-                                       f"成功写入缓冲区 {i+1}: {buffer_node}, "
-                                       f"本批实际数据量={actual_count}")
+                        self.logger.debug(f"批次 {current_batch + 1}/{total_batches} - "
+                                        f"成功写入缓冲区 {i+1}: {buffer_node}, "
+                                        f"本批实际数据量={actual_count}")
                     else:
                         self.logger.warning(f"批次 {current_batch + 1}/{total_batches} - "
                                           f"写入缓冲区 {i+1} 失败：{buffer_node}")
@@ -388,9 +388,9 @@ class OpcUaDataWriter:
                     # 写入时间
                     success = await self._write_to_node(time_node, time_to_write, ua.VariantType.UInt32)
                     if success:
-                        self.logger.info(f"批次 {current_batch + 1}/{total_batches} - "
-                                       f"成功写入时间缓冲区 {i+1}: {time_node}, "
-                                       f"本批实际数据量={actual_count}")
+                        self.logger.debug(f"批次 {current_batch + 1}/{total_batches} - "
+                                        f"成功写入时间缓冲区 {i+1}: {time_node}, "
+                                        f"本批实际数据量={actual_count}")
                     else:
                         self.logger.warning(f"批次 {current_batch + 1}/{total_batches} - "
                                           f"写入时间缓冲区 {i+1} 失败：{time_node}")
@@ -408,9 +408,9 @@ class OpcUaDataWriter:
                     # 反馈信息包含：剩余待发送数据量
                     success = await self._write_to_node(feed_back_node, [fead_back_count], ua.VariantType.UInt32)
                     if success:
-                        self.logger.info(f"批次 {current_batch + 1}/{total_batches} - "
-                                       f"成功写入反馈 {i+1}: {feed_back_node}, "
-                                       f"总量={total_counts[i]}, 已发送={sent_counts[i]}, 剩余={remaining_count}")
+                        self.logger.debug(f"批次 {current_batch + 1}/{total_batches} - "
+                                        f"成功写入反馈 {i+1}: {feed_back_node}, "
+                                        f"总量={total_counts[i]}, 已发送={sent_counts[i]}, 剩余={remaining_count}")
                     else:
                         self.logger.warning(f"批次 {current_batch + 1}/{total_batches} - "
                                           f"写入反馈 {i+1} 失败：{feed_back_node}")
@@ -647,5 +647,5 @@ class OpcUaDataWriter:
             return True
             
         except Exception as e:
-            self.logger.error(f"写入节点 {node_path} 失败：{e}")
+            self.logger.error(f"写入节点 {node_path} 失败：{e}", exc_info=True)
             return False

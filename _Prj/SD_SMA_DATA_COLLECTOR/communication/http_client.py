@@ -95,7 +95,7 @@ class HttpClient:
                     return False
                     
             except aiohttp.ClientError as e:
-                self.logger.error(f"HTTP 客户端错误：{e}")
+                self.logger.error(f"HTTP 客户端错误：{e}", exc_info=True)
                 if attempt < self.max_retries - 1:
                     await asyncio.sleep(self.retry_delay)
                 else:

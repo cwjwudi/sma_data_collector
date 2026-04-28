@@ -136,7 +136,7 @@ class DataQueryProcessor:
             return [], [], 0
             
         except Exception as e:
-            self.logger.error(f"数据查询失败：{e}")
+            self.logger.error(f"数据查询失败：{e}", exc_info=True)
             return None
     
     def _get_tables_for_period(self, start_time: datetime, end_time: datetime) -> List[str]:
@@ -325,7 +325,7 @@ class DataQueryProcessor:
             return True
             
         except Exception as e:
-            self.logger.error(f"导出CSV文件失败: {e}")
+            self.logger.error(f"导出CSV文件失败: {e}", exc_info=True)
             return False
     
     def get_available_points(self) -> List[str]:
@@ -363,7 +363,7 @@ class DataQueryProcessor:
             return point_names
             
         except Exception as e:
-            self.logger.error(f"获取可用数据点失败: {e}")
+            self.logger.error(f"获取可用数据点失败: {e}", exc_info=True)
             return []
 
 

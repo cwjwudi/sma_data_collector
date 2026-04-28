@@ -5,6 +5,7 @@
 
 import asyncio
 import logging
+from logging.handlers import TimedRotatingFileHandler
 from nt import system
 import signal
 import sys
@@ -66,14 +67,36 @@ class DataCollectionSystem:
     
     def setup_logging(self) -> None:
         """设置日志配置"""
-        logging.basicConfig(
-            level=logging.INFO,
-            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-            handlers=[
-                logging.FileHandler('data_collector.log', encoding='utf-8'),
-                logging.StreamHandler(sys.stdout)
-            ]
+        log_level_name = os.getenv("SD_SMA_LOG_LEVEL", "INFO").upper()
+        log_level = getattr(logging, log_level_name, logging.INFO)
+        log_file = self._get_log_file_path()
+        rotation_when, rotation_interval, backup_days, console_enabled = self._get_log_rotation_settings()
+        os.makedirs(os.path.dirname(log_file), exist_ok=True)
+
+        formatter = logging.Formatter(
+            '%(asctime)s - %(name)s - %(levelname)s - '
+            '[pid=%(process)d tid=%(threadName)s] %(message)s'
         )
+        file_handler = TimedRotatingFileHandler(
+            filename=log_file,
+            when=rotation_when,
+            interval=rotation_interval,
+            backupCount=backup_days,
+            encoding="utf-8",
+        )
+        file_handler.setFormatter(formatter)
+        file_handler.setLevel(log_level)
+
+        root_logger = logging.getLogger()
+        root_logger.setLevel(log_level)
+        root_logger.handlers.clear()
+        root_logger.addHandler(file_handler)
+        if console_enabled:
+            stream_handler = logging.StreamHandler(sys.stdout)
+            stream_handler.setFormatter(formatter)
+            stream_handler.setLevel(log_level)
+            root_logger.addHandler(stream_handler)
+
         self.logger = logging.getLogger(__name__)
     
     async def initialize(self) -> bool:
@@ -87,6 +110,9 @@ class DataCollectionSystem:
             # 加载配置
             self.logger.info("正在加载配置...")
             self.config = ConfigLoader.load_from_file(self.config_file)
+            # 配置加载后按配置重建日志输出目录
+            self.setup_logging()
+            self.logger.info("日志目录: %s", os.path.abspath(os.path.dirname(self._get_log_file_path())))
             
             # 初始化通信管理器
             self.logger.info("正在初始化通信管理器...")
@@ -173,7 +199,7 @@ class DataCollectionSystem:
             return True
             
         except Exception as e:
-            self.logger.error(f"系统初始化失败: {e}")
+            self.logger.error(f"系统初始化失败: {e}", exc_info=True)
             return False
     
     def _on_data_received(self, collection_data: dict) -> None:
@@ -237,7 +263,7 @@ class DataCollectionSystem:
             await self._wait_for_shutdown()
             
         except Exception as e:
-            self.logger.error(f"启动系统时发生错误: {e}")
+            self.logger.error(f"启动系统时发生错误: {e}", exc_info=True)
             raise
     
     async def stop(self) -> None:
@@ -250,14 +276,14 @@ class DataCollectionSystem:
             if self.heartbeat_manager:
                 await self.heartbeat_manager.stop_heartbeats()
         except Exception as e:
-            self.logger.error(f"停止心跳管理器时发生错误：{e}")
+            self.logger.error(f"停止心跳管理器时发生错误：{e}", exc_info=True)
         
         try:
             # 停止数据采集
             if self.data_collector:
                 await self.data_collector.stop_collection()
         except Exception as e:
-            self.logger.error(f"停止数据采集器时发生错误：{e}")
+            self.logger.error(f"停止数据采集器时发生错误：{e}", exc_info=True)
                 
         try:
             # 停止查询任务处理器
@@ -268,28 +294,28 @@ class DataCollectionSystem:
                 except asyncio.CancelledError:
                     self.logger.info("查询任务处理器已停止")
         except Exception as e:
-            self.logger.error(f"停止查询任务处理器时发生错误：{e}")
+            self.logger.error(f"停止查询任务处理器时发生错误：{e}", exc_info=True)
         
         try:
             # 停止数据存储处理器
             if self.storage_processor:
                 await self.storage_processor.stop_processing()
         except Exception as e:
-            self.logger.error(f"停止数据存储处理器时发生错误: {e}")
+            self.logger.error(f"停止数据存储处理器时发生错误: {e}", exc_info=True)
         
         try:
             # 断开所有通信连接
             if self.communication_manager:
                 await self.communication_manager.disconnect_all()
         except Exception as e:
-            self.logger.error(f"断开OPC UA连接时发生错误: {e}")
+            self.logger.error(f"断开OPC UA连接时发生错误: {e}", exc_info=True)
         
         try:
             # 断开数据库连接
             if self.db_manager:
                 self.db_manager.disconnect()
         except Exception as e:
-            self.logger.error(f"断开数据库连接时发生错误：{e}")
+            self.logger.error(f"断开数据库连接时发生错误：{e}", exc_info=True)
                 
         try:
             # 关闭 HTTP 客户端
@@ -297,7 +323,7 @@ class DataCollectionSystem:
                 await self.http_client.close()
                 self.logger.info("HTTP 客户端已关闭")
         except Exception as e:
-            self.logger.error(f"关闭 HTTP 客户端时发生错误：{e}")
+            self.logger.error(f"关闭 HTTP 客户端时发生错误：{e}", exc_info=True)
                 
         try:
             # 停止 HTTP 服务器
@@ -305,7 +331,7 @@ class DataCollectionSystem:
                 await self.http_server_runner.cleanup()
                 self.logger.info("HTTP 服务器已停止")
         except Exception as e:
-            self.logger.error(f"停止 HTTP 服务器时发生错误：{e}")
+            self.logger.error(f"停止 HTTP 服务器时发生错误：{e}", exc_info=True)
                 
         
         # 关闭线程池
@@ -537,7 +563,7 @@ class DataCollectionSystem:
             self.latest_data = None
             
         except Exception as e:
-            self.logger.error(f"HTTP 服务器初始化失败：{e}")
+            self.logger.error(f"HTTP 服务器初始化失败：{e}", exc_info=True)
     
     async def _start_http_server(self) -> None:
         """启动 HTTP 服务器（已经在_init_http_server 中启动，这里保留以便未来扩展）"""
@@ -552,7 +578,7 @@ class DataCollectionSystem:
                 html_content = f.read()
             return web.Response(text=html_content, content_type='text/html')
         except Exception as e:
-            self.logger.error(f"读取 HTML 文件失败：{e}")
+            self.logger.error(f"读取 HTML 文件失败：{e}", exc_info=True)
             return web.Response(text=f'Error: {e}', status=500)
     
     async def _handle_get_latest_data(self, request: web.Request) -> web.Response:
@@ -569,7 +595,7 @@ class DataCollectionSystem:
                     'message': '暂无数据'
                 })
         except Exception as e:
-            self.logger.error(f"处理获取数据请求失败：{e}")
+            self.logger.error(f"处理获取数据请求失败：{e}", exc_info=True)
             return web.json_response({
                 'status': 'error',
                 'message': str(e)
@@ -586,11 +612,60 @@ class DataCollectionSystem:
                 'message': '数据已接收'
             })
         except Exception as e:
-            self.logger.error(f"处理接收数据请求失败：{e}")
+            self.logger.error(f"处理接收数据请求失败：{e}", exc_info=True)
             return web.json_response({
                 'status': 'error',
                 'message': str(e)
             }, status=400)
+
+    def _get_log_file_path(self) -> str:
+        """获取当前日志文件路径"""
+        base_dir = os.path.dirname(os.path.abspath(__file__))
+        configured_log_dir = None
+        if self.config and getattr(self.config, "logging", None):
+            configured_log_dir = self.config.logging.output_dir
+        log_dir = configured_log_dir or os.getenv(
+            "SD_SMA_LOG_DIR",
+            os.path.join(base_dir, "logs"),
+        )
+        if not os.path.isabs(log_dir):
+            log_dir = os.path.join(base_dir, log_dir)
+        return os.path.join(log_dir, "data_collector.log")
+
+    def _get_log_rotation_settings(self) -> tuple[str, int, int, bool]:
+        """获取日志轮转配置，包含默认值与容错处理"""
+        default_when = "midnight"
+        default_interval = 1
+        default_backup_days = 14
+        default_console_enabled = True
+
+        logging_config = getattr(self.config, "logging", None) if self.config else None
+        if not logging_config:
+            return default_when, default_interval, default_backup_days, default_console_enabled
+
+        raw_when = str(getattr(logging_config, "rotation_when", default_when)).strip()
+        normalized_when = raw_when.upper()
+        valid_when = {"S", "M", "H", "D", "MIDNIGHT", "W0", "W1", "W2", "W3", "W4", "W5", "W6"}
+        if normalized_when not in valid_when:
+            normalized_when = "MIDNIGHT"
+        when = "midnight" if normalized_when == "MIDNIGHT" else normalized_when
+
+        try:
+            rotation_interval = int(getattr(logging_config, "rotation_interval", default_interval))
+        except (TypeError, ValueError):
+            rotation_interval = default_interval
+        if rotation_interval < 1:
+            rotation_interval = default_interval
+
+        try:
+            backup_days = int(getattr(logging_config, "backup_days", default_backup_days))
+        except (TypeError, ValueError):
+            backup_days = default_backup_days
+        if backup_days < 1:
+            backup_days = default_backup_days
+
+        console_enabled = bool(getattr(logging_config, "console_enabled", default_console_enabled))
+        return when, rotation_interval, backup_days, console_enabled
 
 
 def main():

@@ -7,7 +7,7 @@ import json
 from typing import Dict, Any
 from .config_models import (
     DataPoint, DataGroup, OpcUaConfig, DatabaseConfig, AppConfig, 
-    TriggerType, Communication, Connection, HttpServerConfig
+    TriggerType, Communication, Connection, HttpServerConfig, LoggingConfig
 )
 
 
@@ -130,6 +130,16 @@ class ConfigLoader:
             max_retries=http_server_data.get('max_retries', 3),
             retry_delay=http_server_data.get('retry_delay', 1.0)
         )
+
+        # 解析日志配置
+        logging_data = config_data.get('logging', {})
+        logging_config = LoggingConfig(
+            output_dir=logging_data.get('output_dir'),
+            backup_days=logging_data.get('backup_days', 14),
+            rotation_when=logging_data.get('rotation_when', 'midnight'),
+            rotation_interval=logging_data.get('rotation_interval', 1),
+            console_enabled=logging_data.get('console_enabled', True)
+        )
                 
         # 创建应用配置
         config = AppConfig(
@@ -139,7 +149,8 @@ class ConfigLoader:
             database=database,
             communications=communications,
             connections=connections,
-            http_server=http_server
+            http_server=http_server,
+            logging=logging_config
         )
         
         # 验证配置

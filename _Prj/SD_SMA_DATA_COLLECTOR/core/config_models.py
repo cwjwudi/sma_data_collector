@@ -185,6 +185,16 @@ class HttpServerConfig:
 
 
 @dataclass
+class LoggingConfig:
+    """日志配置"""
+    output_dir: Optional[str] = None  # 日志输出目录，未配置时使用默认目录
+    backup_days: int = 14  # 日志保留天数
+    rotation_when: str = "midnight"  # 轮转周期: S/M/H/D/midnight/W0-W6
+    rotation_interval: int = 1  # 轮转周期倍数
+    console_enabled: bool = True  # 是否输出到控制台
+
+
+@dataclass
 class AppConfig:
     """应用总配置"""
     points: List[DataPoint]
@@ -194,6 +204,7 @@ class AppConfig:
     communications: List[Communication] = None  # 新增：通信配置列表
     connections: List[Connection] = None  # 新增：连接配置列表
     http_server: HttpServerConfig = None  # HTTP 服务器配置
+    logging: LoggingConfig = None  # 日志配置
     
     def __post_init__(self):
         # 保持向后兼容性
@@ -203,6 +214,8 @@ class AppConfig:
             self.connections = []
         if self.http_server is None:
             self.http_server = HttpServerConfig()
+        if self.logging is None:
+            self.logging = LoggingConfig()
         
         # 如果没有communications配置，从opcua配置创建默认通信
         if not self.communications and self.opcua:

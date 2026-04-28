@@ -3,6 +3,62 @@
 本文档记录 SMA 数据采集系统的所有重要更新和变更。
 
 
+## [v1.3.5] - 2026-04-28
+### 新增功能
+- ✨ **日志系统配置化升级**（`main.py`、`core/config_models.py`、`core/config_loader.py`）
+  - 新增 `logging` 配置段，支持以下字段：
+    - `output_dir`：日志输出目录（可相对/绝对路径）
+    - `backup_days`：日志保留天数
+    - `rotation_when`：轮转周期（`S/M/H/D/midnight/W0-W6`）
+    - `rotation_interval`：轮转间隔倍数
+    - `console_enabled`：是否输出到控制台
+  - 主程序启动后在加载配置完成时自动重建日志处理器，使配置目录和轮转参数立即生效。
+
+### 修复与优化
+- 🔧 **日志文件轮转与可运维性增强**（`main.py`）
+  - 使用 `TimedRotatingFileHandler` 进行文件轮转，避免 `data_collector.log` 长期增长。
+  - 日志格式补充 `pid` 与线程名，便于并发排障。
+  - 输出目录优先级：`logging.output_dir` > 环境变量 `SD_SMA_LOG_DIR` > `main.py` 同级 `logs` 目录。
+  - 对轮转配置增加容错：非法值回退到默认配置（`midnight` / `1` / `14` / 控制台开启）。
+
+### 稳定性改进
+- 🛠️ **异常日志统一补充堆栈信息**（多个模块）
+  - 在 `main.py`、`communication/*`、`database/*` 的关键异常分支统一使用 `exc_info=True`，提升根因定位效率。
+
+### 日志降噪
+- 🔉 **高频日志级别收敛**（`communication/opcua_data_writer.py`、`communication/opcua_client.py`）
+  - 批次内逐缓冲区写入成功日志由 `info` 下调为 `debug`，保留批次汇总日志。
+  - 健康检查中的高频“未连接尝试重连”日志由 `info` 下调为 `debug`。
+
+### 配置文件
+- 📄 新增示例：`config/time_and_variable_logging_config.json`（基于 `time_and_variable_config.json`，包含完整日志参数示例）。
+- 📄 更新示例：`config/sample_config.json`、`config/time_and_variable_config.json`、`config/trend_config.json`、`config/pallel_test_config.json` 增加 `logging.output_dir` 示例字段。
+
+### 日志参数说明（`logging`）
+- `output_dir`
+  - 日志输出目录；支持相对路径与绝对路径。
+  - 相对路径按 `main.py` 所在目录解析；未配置时默认使用 `main.py` 同级 `logs` 目录。
+  - 目录优先级：`logging.output_dir` > 环境变量 `SD_SMA_LOG_DIR` > 默认 `logs`。
+
+- `backup_days`
+  - 对应 `TimedRotatingFileHandler.backupCount`，表示最多保留的历史轮转文件数量。
+  - 默认值：`14`；非法值或小于 `1` 时回退到默认值。
+
+- `rotation_when`
+  - 对应轮转单位，支持：`S`（秒）、`M`（分钟）、`H`（小时）、`D`（天）、`midnight`（每日零点）、`W0`~`W6`（每周一到周日）。
+  - 默认值：`midnight`；非法值回退到默认值。
+
+- `rotation_interval`
+  - 轮转间隔倍数；实际轮转周期 = `rotation_when` × `rotation_interval`。
+  - 默认值：`1`；非法值或小于 `1` 时回退到默认值。
+  - 示例：`rotation_when=H, rotation_interval=6` 表示每 6 小时轮转一次。
+
+- `console_enabled`
+  - 是否输出到控制台（stdout）。
+  - 默认值：`true`。`false` 时仅文件输出，适合后台服务场景。
+
+---
+
 ## [v1.3.4] - 2026-04-23
 ### 修复与优化
 - ⏱️ **纯时间触发（`trigger: time`）节拍**（`communication/data_collector.py` → `_time_triggered_collection`）
