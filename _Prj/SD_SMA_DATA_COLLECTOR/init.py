@@ -3,16 +3,20 @@
 用于初始化系统环境和依赖
 """
 
+import argparse
 import os
 import subprocess
 import sys
 
 
-def install_dependencies():
-    """安装项目依赖"""
-    print("正在安装项目依赖...")
+def install_dependencies(requirements_file: str) -> bool:
+    """安装指定 requirements 文件中的依赖"""
+    if not os.path.exists(requirements_file):
+        print(f"依赖文件不存在，跳过: {requirements_file}")
+        return False
+    print(f"正在安装依赖: {requirements_file}")
     try:
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "-r", "requirements.txt"])
+        subprocess.check_call([sys.executable, "-m", "pip", "install", "-r", requirements_file])
         print("依赖安装完成!")
     except subprocess.CalledProcessError as e:
         print(f"依赖安装失败: {e}")
@@ -31,13 +35,30 @@ def create_directories():
 
 def main():
     """主初始化函数"""
+    parser = argparse.ArgumentParser(description="SMA 数据采集系统初始化")
+    parser.add_argument(
+        "--dev",
+        action="store_true",
+        help="同时安装开发/测试依赖（requirements-dev.txt）",
+    )
+    args = parser.parse_args()
+
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    runtime_requirements = os.path.join(script_dir, "requirements.txt")
+    dev_requirements = os.path.join(script_dir, "requirements-dev.txt")
+
     print("=== BR数据采集系统初始化 ===")
     
-    # 安装依赖
-    if not install_dependencies():
+    # 安装运行依赖
+    if not install_dependencies(runtime_requirements):
+        return False
+
+    # 可选安装开发依赖
+    if args.dev and not install_dependencies(dev_requirements):
         return False
     
     # 创建目录
+    os.chdir(script_dir)
     create_directories()
     
     print("系统初始化完成!")
@@ -45,6 +66,8 @@ def main():
     print("1. 修改 config/sample_config.json 中的配置")
     print("2. 运行采集模式: python main.py")
     print("3. 运行查询模式: python main.py --query")
+    if not args.dev:
+        print("4. 如需开发/测试依赖: python init.py --dev")
     
     return True
 

@@ -10,10 +10,13 @@
 
 **主要特性：**
 - ✅ **时间间隔触发**: 按照配置的间隔自动采集数据
+- ✅ **单调时钟节拍控制**: 使用 `time.monotonic()` 对齐采样节拍，降低循环执行耗时导致的周期漂移
+- ✅ **超时不追欠拍**: 当单轮处理超时，下一拍自动重置为“当前时刻 + interval”，避免连续追赶历史节拍
 - ✅ **多数据点支持**: 每个数据组支持多个数据点同时采集
 - ✅ **灵活配置**: 可为不同数据组设置不同的采集间隔
 - ✅ **批量存储**: 支持批量数据插入，提高数据库写入效率
 - ✅ **自动分表**: 按日期自动创建新表，支持自定义分表周期
+- ✅ **按组批量读取 OPC UA**: 优先单次往返批量读取，失败时自动回退逐点读取
 
 **典型应用场景：**
 - 传感器数据周期性采集
@@ -26,6 +29,9 @@
 
 **主要特性：**
 - ✅ **变量触发**: 由 PLC 布尔变量上升沿触发采集
+- ✅ **时间+变量混合触发**: 支持 `time_and_variable`（定时采集 + 上升沿立即采集）
+- ✅ **并行触发（数组触发）**: 支持 `is_parallel: true`，一次可处理多个触发位上升沿
+- ✅ **并行触发自动拆行入库**: 触发数组对应的多索引结果会拆成多条标量记录（含 `trigger_index`）
 - ✅ **实时响应**: 事件发生时立即采集数据
 - ✅ **触发复位**: 支持采集后自动复位触发信号
 - ✅ **多组并行**: 支持多个触发组并行工作
@@ -35,6 +41,7 @@
 - 报警事件记录
 - 设备故障捕获
 - 工艺参数变更记录
+- 多工位并行触发快照采集
 
 ### 3. 读取数据（查询回写）
 
@@ -72,6 +79,32 @@
 - 历史报警查询回放
 - 报表数据提取
 - 数据统计分析
+
+### 4. v1.3.0+ 版本增强（重点）
+
+- **v1.3.0 - 附加查询条件（aux_query）**
+  - 在 `query_config` 中支持 `aux_query_field`，可从 OPC UA 读取附加 SQL 条件并拼接到 `WHERE`。
+  - 支持按 `aux_query` 维度分组执行查询，避免不同条件互相覆盖。
+
+- **v1.3.1 - 并行触发（Parallel）**
+  - `trigger: variable` + `is_parallel: true`：`trigger_point` 为布尔数组，`data_points` 为同下标数组。
+  - 单次轮询可识别多个上升沿，并按索引拆成多条记录写入数据库。
+
+- **v1.3.2 - 并行入库与吞吐优化**
+  - 并行触发结果在回调前拆分为标量行，避免数组值直接入库导致 SQL 错误。
+  - 批处理队列达到阈值后使用事件立即唤醒写入循环，减少固定 sleep 带来的延迟。
+
+- **v1.3.3 - `time_and_variable` 混合触发**
+  - 在固定周期采集基础上，增加触发点上升沿即时采集。
+  - 该模式要求 `trigger_interval_seconds > 0`，且不支持 `is_parallel: true`。
+
+- **v1.3.4 - 采样节拍与读点优化**
+  - 纯时间触发改为单调时钟节拍驱动，降低累计漂移。
+  - OPC UA 读点优先按组批量读取，失败自动回退逐点读，兼顾性能与稳定性。
+
+- **v1.3.5 - 日志系统配置化**
+  - 新增 `logging` 配置（目录、保留、轮转、控制台输出）与默认值/容错策略。
+  - 日志支持按策略轮转，异常日志统一带堆栈，高频成功日志降噪到 `DEBUG`。
 
 ## 快速开始
 
@@ -126,7 +159,7 @@ python check_config.py config/sample_config.json
   nohup python main.py > output.log 2>&1 &
   ```
 - **Windows 启动**: `start_http.bat`
-- **查看日志**: `tail -f data_collector.log`
+- **查看日志**: `tail -f logs/data_collector.log`
 
 ## 系统架构
 
@@ -135,6 +168,8 @@ SD_SMA_DATA_COLLECTOR/
 ├── config/              # 配置文件目录
 │   ├── sample_config.json      # 基础配置示例
 │   ├── trend_config.json       # 趋势数据配置
+│   ├── time_and_variable_config.json # time_and_variable 触发模式示例
+│   ├── time_and_variable_logging_config.json # 日志参数配置示例
 │   ├── Alarm_Audit.json        # 报警审计配置
 │   └── Alarm_trend.json        # 报警趋势配置
 ├── core/               # 核心模块
@@ -143,7 +178,7 @@ SD_SMA_DATA_COLLECTOR/
 ├── communication/      # 通信模块
 │   ├── communication_manager.py  # 通信管理器（管理多个 OPC UA 连接）
 │   ├── opcua_client.py    # OPC UA 客户端封装
-│   ├── data_collector.py  # 数据采集器（时间/变量/查询触发）
+│   ├── data_collector.py  # 数据采集器（时间/变量/时间+变量/查询触发）
 │   ├── opcua_data_writer.py # OPC UA 数据写入器（查询结果回写）
 │   ├── http_client.py     # HTTP 客户端（数据推送）
 │   ├── heartbeat_manager.py # 心跳管理器（定时写入心跳信号）
@@ -190,10 +225,14 @@ SD_SMA_DATA_COLLECTOR/
 - `trigger`: 触发方式
   - `time`: 时间间隔触发
   - `variable`: 变量触发（由 PLC 信号触发）
+  - `time_and_variable`: 定时采集 + 变量上升沿立即采集（需配置 `trigger_interval_seconds`）
   - `query`: 查询任务触发（读取配置并执行数据库查询）
 - `data_points`: 包含的数据点名称列表
 - `trigger_point`: 触发变量名称（仅 variable/query 类型需要）
+- `trigger_interval_seconds`: 触发点轮询间隔（仅 `time_and_variable` 必填，必须 > 0）
 - `reset_trigger_after_read`: 读取后是否复位触发信号
+- `is_parallel`: 是否启用并行触发模式（仅 `trigger: variable` 可用）
+- `output_mode`: 查询结果输出方式（`dual` / `opcua_only` / `http_only`）
 - `recreate_interval_days`: 数据库分表间隔天数
 - `batch_insert_size`: 批量插入大小
 - `query_config`: 查询配置（仅 query 类型）
@@ -208,6 +247,10 @@ SD_SMA_DATA_COLLECTOR/
   - `cmd_next_nodes`: 下一批请求信号节点（bNext 控制）
   - `by_what_time`: 查询时使用的时间字段名（默认 collection_time）
   - `aux_query_field`: 附加查询条件变量名
+
+**触发配置约束：**
+- `time_and_variable` 模式下，`trigger_point` 与 `trigger_interval_seconds` 必须配置，且 `is_parallel` 必须为 `false`。
+- 并行触发模式（`trigger: variable` + `is_parallel: true`）下，`trigger_point` 应为布尔数组节点，`data_points` 应为与触发数组同下标语义的数组节点。
 
 ### 通信配置 (communications)
 - `name`: 通信连接名称（唯一标识）
@@ -237,6 +280,16 @@ SD_SMA_DATA_COLLECTOR/
 - `timeout`: 请求超时时间（秒）
 - `max_retries`: 失败重试次数
 - `retry_delay`: 重试间隔（秒）
+
+### 日志配置 (logging)
+- `output_dir`: 日志输出目录（支持相对/绝对路径）
+  - 相对路径按 `main.py` 所在目录解析
+  - 优先级：`logging.output_dir` > 环境变量 `SD_SMA_LOG_DIR` > 默认 `logs`
+- `backup_days`: 历史轮转日志保留数量（默认 `14`）
+- `rotation_when`: 轮转单位（`S/M/H/D/midnight/W0-W6`，默认 `midnight`）
+- `rotation_interval`: 轮转间隔倍数（默认 `1`）
+  - 实际周期 = `rotation_when` × `rotation_interval`
+- `console_enabled`: 是否输出到控制台（默认 `true`）
 
 ### 完整配置文件示例
 
@@ -308,6 +361,13 @@ SD_SMA_DATA_COLLECTOR/
     "timeout": 30,
     "max_retries": 3,
     "retry_delay": 1.0
+  },
+  "logging": {
+    "output_dir": "logs",
+    "backup_days": 14,
+    "rotation_when": "midnight",
+    "rotation_interval": 1,
+    "console_enabled": true
   }
 }
 ```
@@ -372,6 +432,44 @@ SD_SMA_DATA_COLLECTOR/
   ]
 }
 ```
+
+### 并行触发配置（v1.3.1+）
+
+```json
+{
+  "name": "pallel_group_1",
+  "interval_seconds": 0.5,
+  "trigger": "variable",
+  "is_parallel": true,
+  "data_points": ["rF1", "rF2", "rF3"],
+  "trigger_point": "bTrigger1",
+  "reset_trigger_after_read": true,
+  "batch_insert_size": 1
+}
+```
+
+并行模式运行要点：
+- `bTrigger1` 为布尔数组（如 `[false, true, false, ...]`），系统检测每个索引的上升沿。
+- `data_points` 对应数组按同索引取值，并拆分为多条标量记录写入数据库。
+- 拆分记录可带 `trigger_index`，用于定位具体工位/通道。
+
+### time_and_variable 配置（v1.3.3+）
+
+```json
+{
+  "name": "time_and_variable_group_2",
+  "interval_seconds": 5,
+  "trigger": "time_and_variable",
+  "trigger_interval_seconds": 0.5,
+  "trigger_point": "bTrigger1",
+  "is_parallel": false
+}
+```
+
+混合触发运行要点：
+- 每 `interval_seconds` 执行一次定时采集。
+- 每 `trigger_interval_seconds` 检测触发点上升沿，出现上升沿时立即采集。
+- 该模式用于“周期采样 + 事件快照”并存场景。
 
 ### 附加查询条件配置
 
@@ -467,7 +565,7 @@ pytest tests/test_http_server.py -v
    - 检查磁盘空间
 
 3. **数据采集异常**
-   - 查看详细日志 `data_collector.log`
+   - 查看详细日志 `logs/data_collector.log`
    - 验证数据点 OPC UA 路径正确性
    - 检查触发变量状态
    - 确认数据组与通信连接映射正确
@@ -482,14 +580,18 @@ pytest tests/test_http_server.py -v
 
 ```bash
 # 查看最近的错误日志
-tail -n 100 data_collector.log | grep ERROR
+tail -n 100 logs/data_collector.log | grep ERROR
 
 # 统计错误数量
-grep -c "ERROR" data_collector.log
+grep -c "ERROR" logs/data_collector.log
 
 # 实时查看日志
-tail -f data_collector.log
+tail -f logs/data_collector.log
 ```
+
+**日志轮转建议：**
+- 生产环境建议：`rotation_when=midnight`、`rotation_interval=1`、`backup_days=14~30`。
+- 若要降低控制台噪声，可设置 `console_enabled=false` 仅保留文件日志。
 
 **日志级别:**
 - INFO: 系统正常运行信息
