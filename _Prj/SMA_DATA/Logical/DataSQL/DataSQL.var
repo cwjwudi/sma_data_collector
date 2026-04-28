@@ -1,0 +1,4 @@
+(*Data SQL Variable*)
+VAR
+	TimerDataSQLComm : TON_10ms;
+END_VAR

@@ -1,0 +1,82 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<OpcUaSource FileVersion="7" ArVersion="I4.83">
+  <Aliases>
+    <ACLAliases />
+    <EURangeViolationAliases />
+    <EURangesAliases />
+    <EngineeringUnitAliases />
+  </Aliases>
+  <DefaultView>
+    <Module Name="&lt;Default&gt;">
+      <GlobalVariables Name="Global Variables">
+        <Variable Name="gDataSQLCommFault" />
+        <Variable Name="gDataSQLHeartBeat" />
+        <Variable Name="gDataSQLOperate">
+          <Variable Name="RecipeRead" />
+          <Variable Name="RecipeReadStatus" />
+          <Variable Name="RecipeInsert" />
+          <Variable Name="RecipeInsertReq" />
+          <Variable Name="ProductRead" />
+          <Variable Name="ProductReadStatus" />
+          <Variable Name="ProductInsert" />
+          <Variable Name="ProductInsertReq" />
+          <Variable Name="AuditRead" />
+          <Variable Name="AuditReadStatus" />
+          <Variable Name="AuditInsertFault" />
+          <Variable Name="AlarmRead" />
+          <Variable Name="AlarmReadStatus" />
+          <Variable Name="AlarmInsertFault" />
+        </Variable>
+        <Variable Name="gDataSQLProduct">
+          <Variable Name="TimeStamp" />
+          <Variable Name="State" />
+          <Variable Name="CH01" />
+          <Variable Name="CH02" />
+          <Variable Name="CH03" />
+          <Variable Name="CH04" />
+          <Variable Name="CH05" />
+          <Variable Name="CH06" />
+        </Variable>
+      </GlobalVariables>
+      <Task Name="DataSQLPro">
+        <Variable Name="ProductDataSQLQuery">
+          <Variable Name="Config">
+            <Variable Name="StartTime" />
+            <Variable Name="EndTime" />
+            <Variable Name="PointName" />
+            <Variable Name="AuxQuery" />
+          </Variable>
+          <Variable Name="Cmd">
+            <Variable Name="Next" />
+          </Variable>
+        </Variable>
+        <Variable Name="ProductDataSQLRev">
+          <Variable Name="TimeStamp" />
+          <Variable Name="TimeStampTS" />
+          <Variable Name="TimeStampFB" />
+          <Variable Name="State" />
+          <Variable Name="StateTS" />
+          <Variable Name="StateFB" />
+          <Variable Name="CH01" />
+          <Variable Name="CH02" />
+          <Variable Name="CH03" />
+          <Variable Name="CH04" />
+          <Variable Name="CH05" />
+          <Variable Name="CH06" />
+          <Variable Name="TS01" />
+          <Variable Name="TS02" />
+          <Variable Name="TS03" />
+          <Variable Name="TS04" />
+          <Variable Name="TS05" />
+          <Variable Name="TS06" />
+          <Variable Name="FB01" />
+          <Variable Name="FB02" />
+          <Variable Name="FB03" />
+          <Variable Name="FB04" />
+          <Variable Name="FB05" />
+          <Variable Name="FB06" />
+        </Variable>
+      </Task>
+    </Module>
+  </DefaultView>
+</OpcUaSource>

@@ -11,7 +11,7 @@
     {
       "name": "connection1",
       "communication": "PLC_TPS",
-      "data_groups": ["Data_Recipe", "Data_Product", "Data_Alarm", "Data_Audit", "Data_Recipe_Query", "Data_Product_Query", "Data_Alarm_Query", "Data_Audit_Query"],
+      "data_groups": ["Data_Product", "Data_Product_Query"],
       "heartbeat": "ns=6;s=::AsGlobalPV:gDataSQLHeartBeat"
     }
   ],
@@ -457,5 +457,13 @@
     "timeout": 30,
     "max_retries": 3,
     "retry_delay": 1.0
+  },
+  "logging": {
+    "level": "DEBUG",
+    "output_dir": "logs",
+    "backup_days": 14,
+    "rotation_when": "midnight",
+    "rotation_interval": 1,
+    "console_enabled": true
   }
 }

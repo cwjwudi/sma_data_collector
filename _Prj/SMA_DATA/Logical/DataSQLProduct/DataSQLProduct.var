@@ -1,0 +1,7 @@
+(*Data SQL Variable - Product*)
+VAR
+	ProductDataSQLQuery : DataSQLQuery_typ;
+	ProductDataSQLRev : DataSQLProduct_typ;
+	SystemGetTime : DTGetTime;
+	SystemTimeAct : DATE_AND_TIME;
+END_VAR
