@@ -123,8 +123,14 @@ cd SD_SMA_DATA_COLLECTOR
 # 自动安装依赖（推荐）
 python init.py
 
+# 安装开发/测试依赖（pytest、black、flake8、asyncua 等）
+python init.py --dev
+
 # 或手动安装
 pip install -r requirements.txt
+
+# 手动安装开发依赖
+pip install -r requirements-dev.txt
 ```
 
 ### 启动系统
@@ -154,6 +160,7 @@ python check_config.py config/sample_config.json
 ### 系统控制
 
 - **正常退出**: Ctrl+C 或发送终止信号
+  - Python 3.12 下已适配 `CancelledError/KeyboardInterrupt` 协同处理，Ctrl+C 会执行完整 stop 流程并尽量避免额外 traceback 噪声
 - **后台运行 (Linux)**:
   ```bash
   nohup python main.py > output.log 2>&1 &
@@ -282,6 +289,7 @@ SD_SMA_DATA_COLLECTOR/
 - `retry_delay`: 重试间隔（秒）
 
 ### 日志配置 (logging)
+- `level`: 日志级别（`DEBUG/INFO/WARNING/ERROR/CRITICAL`，默认 `INFO`）
 - `output_dir`: 日志输出目录（支持相对/绝对路径）
   - 相对路径按 `main.py` 所在目录解析
   - 优先级：`logging.output_dir` > 环境变量 `SD_SMA_LOG_DIR` > 默认 `logs`
@@ -363,6 +371,7 @@ SD_SMA_DATA_COLLECTOR/
     "retry_delay": 1.0
   },
   "logging": {
+    "level": "INFO",
     "output_dir": "logs",
     "backup_days": 14,
     "rotation_when": "midnight",
@@ -592,6 +601,17 @@ tail -f logs/data_collector.log
 **日志轮转建议：**
 - 生产环境建议：`rotation_when=midnight`、`rotation_interval=1`、`backup_days=14~30`。
 - 若要降低控制台噪声，可设置 `console_enabled=false` 仅保留文件日志。
+- 稳定运行建议将 `level=INFO`；排障时再临时调整为 `DEBUG`。
+
+**MySQL SQL 明细日志：**
+- 系统支持打印 MySQL SQL 语句与参数（建表/查询/插入）。
+- 默认仅在 `DEBUG` 可见；若要在 `INFO` 级别查看，可设置环境变量：
+
+```bash
+# Windows PowerShell
+$env:SD_SMA_SQL_LOG_INFO="true"
+python main.py --config config/sample_config.json
+```
 
 **日志级别:**
 - INFO: 系统正常运行信息

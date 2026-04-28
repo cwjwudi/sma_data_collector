@@ -7,6 +7,7 @@
 ### 新增功能
 - ✨ **日志系统配置化升级**（`main.py`、`core/config_models.py`、`core/config_loader.py`）
   - 新增 `logging` 配置段，支持以下字段：
+    - `level`：日志级别（`DEBUG/INFO/WARNING/ERROR/CRITICAL`）
     - `output_dir`：日志输出目录（可相对/绝对路径）
     - `backup_days`：日志保留天数
     - `rotation_when`：轮转周期（`S/M/H/D/midnight/W0-W6`）
@@ -29,6 +30,25 @@
 - 🔉 **高频日志级别收敛**（`communication/opcua_data_writer.py`、`communication/opcua_client.py`）
   - 批次内逐缓冲区写入成功日志由 `info` 下调为 `debug`，保留批次汇总日志。
   - 健康检查中的高频“未连接尝试重连”日志由 `info` 下调为 `debug`。
+  - 数据存储“批量插入完成”日志由 `info` 下调为 `debug`（`database/data_storage.py`），减少稳定运行期刷屏。
+
+### 数据库日志与建表优化
+- 🗄️ **MySQL SQL 详细日志**（`database/db_manager.py`）
+  - 新增 SQL 语句与参数打印能力（MySQL），覆盖 `CREATE TABLE` / `SELECT` / `INSERT` 路径。
+  - 新增环境变量 `SD_SMA_SQL_LOG_INFO`：开启后 SQL 明细提升为 `INFO`；默认按 `DEBUG` 输出。
+- ⚡ **建表调用降噪优化**（`database/data_storage.py`）
+  - 同一进程内同一张表仅首次执行“确保存在”逻辑，避免每批次重复 `CREATE TABLE IF NOT EXISTS` 与重复日志。
+
+### 退出流程优化
+- 🧯 **Ctrl+C 优雅关闭**（`main.py`）
+  - 对 `asyncio.CancelledError` 与 `KeyboardInterrupt` 进行协同处理，关闭流程仍完整执行。
+  - 抑制 Python 3.12 下 Ctrl+C 时额外 traceback 噪声，终端输出更干净。
+
+### 工程化改进
+- 🧰 **依赖分层与初始化增强**（`init.py`、`requirements.txt`、`requirements-dev.txt`）
+  - 运行依赖与开发/测试依赖拆分：`requirements.txt`（运行）+ `requirements-dev.txt`（测试/格式化/静态检查）。
+  - `init.py` 改为基于脚本绝对路径安装依赖，避免受当前工作目录影响。
+  - 新增 `python init.py --dev`，可一键安装开发依赖（含 `asyncua` 测试依赖）。
 
 ### 配置文件
 - 📄 新增示例：`config/time_and_variable_logging_config.json`（基于 `time_and_variable_config.json`，包含完整日志参数示例）。
@@ -39,6 +59,10 @@
   - 日志输出目录；支持相对路径与绝对路径。
   - 相对路径按 `main.py` 所在目录解析；未配置时默认使用 `main.py` 同级 `logs` 目录。
   - 目录优先级：`logging.output_dir` > 环境变量 `SD_SMA_LOG_DIR` > 默认 `logs`。
+
+- `level`
+  - 日志级别：`DEBUG/INFO/WARNING/ERROR/CRITICAL`。
+  - 默认值：`INFO`；可通过配置精细控制日志量（例如生产使用 `INFO`，排障使用 `DEBUG`）。
 
 - `backup_days`
   - 对应 `TimedRotatingFileHandler.backupCount`，表示最多保留的历史轮转文件数量。
