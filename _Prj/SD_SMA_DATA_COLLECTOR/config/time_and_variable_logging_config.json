@@ -80,6 +80,7 @@
     "retry_delay": 1.0
   },
   "logging": {
+    "level": "INFO",
     "output_dir": "logs",
     "backup_days": 14,
     "rotation_when": "midnight",

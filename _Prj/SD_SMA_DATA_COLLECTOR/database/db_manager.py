@@ -4,6 +4,7 @@
 """
 
 import logging
+import os
 from typing import Optional, Dict, Any
 from datetime import datetime
 import sqlite3
@@ -36,6 +37,21 @@ class DatabaseManager:
         self.current_table_names = {}  # 使用字典存储不同group的当前表名
         self.table_created_dates = {}  # 存储不同group的表创建日期
         self.logger = logging.getLogger(__name__)
+        # SQL 打印控制：默认 debug；设置 SD_SMA_SQL_LOG_INFO=true 可提升为 info
+        self.sql_log_info = os.getenv("SD_SMA_SQL_LOG_INFO", "").lower() in ("1", "true", "yes", "on")
+
+    def _log_mysql_sql(self, sql: str, params: Optional[Dict[str, Any]] = None, force_info: bool = False) -> None:
+        """打印 MySQL SQL 语句与参数"""
+        if self.db_config.get('type', '').lower() != 'mysql':
+            return
+        sql_text = " ".join(sql.split())
+        message = f"MySQL SQL: {sql_text}"
+        if params:
+            message += f" | params={params}"
+        if force_info or self.sql_log_info:
+            self.logger.info(message)
+        else:
+            self.logger.debug(message)
         
         
     def connect(self) -> bool:
@@ -142,6 +158,7 @@ class DatabaseManager:
                 {', '.join(column_definitions)}
             )
             """
+            self._log_mysql_sql(create_sql, force_info=True)
             
             with self.engine.connect() as conn:
                 conn.execute(text(create_sql))
@@ -226,6 +243,7 @@ class DatabaseManager:
             list: 查询结果
         """
         try:
+            self._log_mysql_sql(sql, params)
             with self.engine.connect() as conn:
                 result = conn.execute(text(sql), params or {})
                 return result.fetchall()
@@ -249,6 +267,7 @@ class DatabaseManager:
             placeholders = ', '.join([f":{k}" for k in data.keys()])
             
             sql = f"INSERT INTO `{table_name}` ({columns}) VALUES ({placeholders})"
+            self._log_mysql_sql(sql, data)
             
             with self.engine.connect() as conn:
                 conn.execute(text(sql), data)

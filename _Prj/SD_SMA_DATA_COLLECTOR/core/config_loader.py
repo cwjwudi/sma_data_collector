@@ -134,6 +134,7 @@ class ConfigLoader:
         # 解析日志配置
         logging_data = config_data.get('logging', {})
         logging_config = LoggingConfig(
+            level=logging_data.get('level', 'INFO'),
             output_dir=logging_data.get('output_dir'),
             backup_days=logging_data.get('backup_days', 14),
             rotation_when=logging_data.get('rotation_when', 'midnight'),

@@ -67,7 +67,10 @@ class DataCollectionSystem:
     
     def setup_logging(self) -> None:
         """设置日志配置"""
-        log_level_name = os.getenv("SD_SMA_LOG_LEVEL", "INFO").upper()
+        configured_level = None
+        if self.config and getattr(self.config, "logging", None):
+            configured_level = getattr(self.config.logging, "level", None)
+        log_level_name = (configured_level or os.getenv("SD_SMA_LOG_LEVEL", "INFO")).upper()
         log_level = getattr(logging, log_level_name, logging.INFO)
         log_file = self._get_log_file_path()
         rotation_when, rotation_interval, backup_days, console_enabled = self._get_log_rotation_settings()
@@ -348,8 +351,11 @@ class DataCollectionSystem:
             while self.running:
                 await asyncio.sleep(1)
         except KeyboardInterrupt:
-            # 捕获Ctrl+C中断
-            await self.stop()
+            # 交由外层统一执行 stop()，避免重复关闭
+            self.logger.info("收到 KeyboardInterrupt，准备关闭系统...")
+        except asyncio.CancelledError:
+            # Python 3.12 下 Ctrl+C 常表现为主协程取消
+            self.logger.info("收到取消信号，准备关闭系统...")
     
     def query_data(self, 
                    start_time: datetime,
@@ -685,7 +691,11 @@ def main():
         run_query_mode(args.config)
     else:
         # 采集模式
-        asyncio.run(run_collection_mode(args.config))
+        try:
+            asyncio.run(run_collection_mode(args.config))
+        except KeyboardInterrupt:
+            # 避免 asyncio.run 在 Ctrl+C 时输出额外 traceback
+            print("\n收到中断信号，已退出。")
 
 
 async def run_collection_mode(config_file: str):
@@ -699,6 +709,8 @@ async def run_collection_mode(config_file: str):
             print("系统初始化失败")
     except KeyboardInterrupt:
         print("\n收到中断信号，正在停止系统...")
+    except asyncio.CancelledError:
+        print("\n收到取消信号，正在停止系统...")
     except Exception as e:
         print(f"系统运行错误: {e}")
         import traceback

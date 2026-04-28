@@ -187,6 +187,7 @@ class HttpServerConfig:
 @dataclass
 class LoggingConfig:
     """日志配置"""
+    level: str = "INFO"  # 日志级别（DEBUG/INFO/WARNING/ERROR/CRITICAL）
     output_dir: Optional[str] = None  # 日志输出目录，未配置时使用默认目录
     backup_days: int = 14  # 日志保留天数
     rotation_when: str = "midnight"  # 轮转周期: S/M/H/D/midnight/W0-W6

@@ -37,6 +37,7 @@ class DataStorageProcessor:
         self.running = False
         self.logger = logging.getLogger(__name__)
         self.column_types_cache = {}  # 缓存列类型信息
+        self.ensured_tables = set()  # 记录已确保存在的数据表，避免重复 CREATE TABLE
         self._batch_ready_event: Optional[asyncio.Event] = None # 某组达到 batch大小时唤醒处理循环
     
     def add_data(self, collection_data: Dict[str, Any]) -> None:
@@ -72,6 +73,7 @@ class DataStorageProcessor:
         """停止数据处理任务"""
         self.running = False
         self._batch_ready_event = None
+        self.ensured_tables.clear()
         if self.processing_task:
             self.processing_task.cancel()
             try:
@@ -257,7 +259,7 @@ class DataStorageProcessor:
                 if self.db_manager.execute_insert(table_name, data_row):
                     success_count += 1
             
-            self.logger.info(f"批量插入完成: 成功 {success_count}/{len(insert_data_list)} 条记录到表 {table_name} (group: {group_name})")
+            self.logger.debug(f"批量插入完成: 成功 {success_count}/{len(insert_data_list)} 条记录到表 {table_name} (group: {group_name})")
             
         except Exception as e:
             self.logger.error(f"处理组 {group_name} 数据失败: {e}", exc_info=True)
@@ -363,16 +365,14 @@ class DataStorageProcessor:
             bool: 表是否存在或创建成功
         """
         try:
-            # 检查表是否存在
-            check_sql = """
-            SELECT name FROM sqlite_master WHERE type='table' AND name=?
-            """ if self.db_manager.db_config['type'].lower() == 'sqlite' else """
-            SELECT table_name FROM information_schema.tables 
-            WHERE table_schema = DATABASE() AND table_name = %s
-            """
-            
-            # 简化处理：直接尝试创建表（IF NOT EXISTS）
-            return self.db_manager.create_data_table(table_name, column_types)
+            if table_name in self.ensured_tables:
+                return True
+
+            # 简化处理：首次使用该表时尝试创建（IF NOT EXISTS）
+            success = self.db_manager.create_data_table(table_name, column_types)
+            if success:
+                self.ensured_tables.add(table_name)
+            return success
             
         except Exception as e:
             self.logger.error(f"确保表存在时出错: {e}", exc_info=True)
