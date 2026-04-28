@@ -291,12 +291,11 @@ class DatabaseManager:
                 sql = "SELECT name FROM sqlite_master WHERE type='table'"
             
             tables = self.execute_query(sql)
-            table_name_str = ''
-            # 解析表名并按group分类
+            # 解析表名并按 group 分类
             group_latest_dates = {}
             for table_row in tables:
                 table_name = table_row[0] if isinstance(table_row, tuple) else table_row
-                table_name_str = table_name[0]
+                table_name_str = table_name
                 # 取表名最后8位作为日期字符串
                 date_str = table_name_str[-8:]
 

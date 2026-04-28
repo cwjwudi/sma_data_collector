@@ -249,8 +249,8 @@ class DataQueryProcessor:
             sql = "SELECT name FROM sqlite_master WHERE type='table';"
             tables = [row[0] for row in self.db_manager.execute_query(sql)]
 
-        # 构造正则匹配模式，提取表名中的日期
-        pattern = re.compile(rf'^{re.escape(base_table_name)}_(\d{{8}})$')
+        # 构造正则匹配模式，提取表名中的日期（逻辑组名与物理表前缀不区分大小写）
+        pattern = re.compile(rf'^{re.escape(base_table_name)}_(\d{{8}})$', re.IGNORECASE)
         
         # 提取所有匹配的表及其创建日期
         table_dates = []  # [(table_name, date_obj), ...]
