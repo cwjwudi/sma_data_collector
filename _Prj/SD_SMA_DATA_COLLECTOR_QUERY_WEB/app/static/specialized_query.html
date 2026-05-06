@@ -25,12 +25,18 @@
     }
     .toolbar {
       display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 6px;
+    }
+    .toolbar-row {
+      display: flex;
       align-items: center;
       gap: 6px;
       flex-wrap: wrap;
       min-height: 34px;
     }
-    .toolbar .spacer {
+    .toolbar-row .spacer {
       flex: 1 1 auto;
     }
     .toolbar input, .toolbar select, .toolbar button, .pager input, .pager button {
@@ -120,15 +126,18 @@
 <body>
   <div id="app" class="root">
     <div class="toolbar">
-      <label>startDate</label><input id="startDate" type="datetime-local" />
-      <label>endDate</label><input id="endDate" type="datetime-local" />
-      <button id="btnRange1D">最近1天</button>
-      <button id="btnRange1W">最近1周</button>
-      <button id="btnRange1M">最近1月</button>
-      <button id="btnRange1Y">最近1年</button>
-      <button id="btnGo">查询</button>
-      <div class="spacer"></div>
-      <label>表</label><select id="tableSelector"></select>
+      <div class="toolbar-row">
+        <label>startDate</label><input id="startDate" type="datetime-local" />
+        <label>endDate</label><input id="endDate" type="datetime-local" />
+        <button id="btnRange1D">最近1天</button>
+        <button id="btnRange1W">最近1周</button>
+        <button id="btnRange1M">最近1月</button>
+        <button id="btnRange1Y">最近1年</button>
+        <button id="btnGo">查询</button>
+      </div>
+      <div class="toolbar-row">
+        <label>表</label><select id="tableSelector"></select>
+      </div>
     </div>
     <div class="tableWrap">
       <table id="resultTable"></table>
