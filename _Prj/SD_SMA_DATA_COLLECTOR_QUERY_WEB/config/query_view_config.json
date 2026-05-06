@@ -1,0 +1,190 @@
+{
+  "default_page_size": 10,
+  "max_page_size": 500,
+  "views": {
+    "table": {
+      "title": "通用表格查询",
+      "description": "用于任意历史表的通用查询",
+      "time_field": "collection_time",
+      "columns": [],
+      "sort_by": "collection_time",
+      "sort_dir": "desc",
+      "page_size": 10,
+      "default_filters": [],
+      "per_table": {
+        "alarm_group_1_20260320": {
+          "columns": [
+            "collection_time",
+            "id",
+            "msg"
+          ]
+        },
+        "sensor_group_1_20260428": {
+          "columns": [
+            {
+              "name": "collection_time",
+              "label_en": "collection_time",
+              "label_zh": "采集时间"
+            },
+            {
+              "name": "rEC",
+              "label_en": "rEC",
+              "label_zh": "rEC"
+            },
+            {
+              "name": "rF10",
+              "label_en": "rF10",
+              "label_zh": "rF10"
+            },
+            {
+              "name": "rF11",
+              "label_en": "rF11",
+              "label_zh": "rF11"
+            },
+            {
+              "name": "rF12",
+              "label_en": "rF12",
+              "label_zh": "rF12"
+            },
+            {
+              "name": "rF13",
+              "label_en": "rF13",
+              "label_zh": "rF13"
+            },
+            {
+              "name": "rF14",
+              "label_en": "rF14",
+              "label_zh": "rF14"
+            },
+            {
+              "name": "rF15",
+              "label_en": "rF15",
+              "label_zh": "rF15"
+            }
+          ],
+          "sort_by": "collection_time",
+          "sort_dir": "desc",
+          "page_size": 50
+        }
+      },
+      "per_group": {
+        "sensor_group_1": {
+          "columns": [
+            {
+              "name": "collection_time",
+              "label_en": "collection_time",
+              "label_zh": "采集时间"
+            },
+            {
+              "name": "rEC",
+              "label_en": "rEC(En)",
+              "label_zh": "第EC"
+            },
+            {
+              "name": "rF10",
+              "label_en": "rF10",
+              "label_zh": "F10"
+            },
+            {
+              "name": "rF11",
+              "label_en": "rF11",
+              "label_zh": "F11"
+            },
+            {
+              "name": "rF12",
+              "label_en": "rF12",
+              "label_zh": "F12"
+            },
+            {
+              "name": "rF13",
+              "label_en": "rF13",
+              "label_zh": "F13"
+            },
+            {
+              "name": "rF14",
+              "label_en": "rF14",
+              "label_zh": "F14"
+            },
+            {
+              "name": "rF15",
+              "label_en": "rF15",
+              "label_zh": "F15"
+            }
+          ],
+          "sort_by": "collection_time",
+          "sort_dir": "desc",
+          "page_size": 10
+        },
+        "alarm_group_1": {
+          "columns": [],
+          "sort_by": "collection_time",
+          "sort_dir": "desc",
+          "page_size": 50
+        }
+      }
+    },
+    "alarm": {
+      "title": "报警列表",
+      "description": "报警记录查询视图",
+      "time_field": "ts",
+      "columns": [
+        "ts",
+        "Status",
+        "severity",
+        "code",
+        "msg",
+        "Batch"
+      ],
+      "sort_by": "ts",
+      "sort_dir": "desc",
+      "page_size": 100,
+      "default_filters": [
+        {
+          "field": "Status",
+          "op": "ne",
+          "value": "0"
+        }
+      ],
+      "per_table": {
+        "alarm_group_1_20260407": {
+          "columns": [
+            "ts",
+            "Status",
+            "severity",
+            "Batch",
+            "id",
+            "msg"
+          ]
+        }
+      }
+    },
+    "audit": {
+      "title": "审计列表",
+      "description": "审计记录查询视图",
+      "time_field": "ts",
+      "columns": [
+        "ts",
+        "operator",
+        "action",
+        "result",
+        "msg"
+      ],
+      "sort_by": "ts",
+      "sort_dir": "desc",
+      "page_size": 100,
+      "default_filters": [
+        {
+          "field": "action",
+          "op": "like",
+          "value": "%"
+        }
+      ],
+      "per_table": {}
+    }
+  },
+  "group_baselines": {
+    "sensor_group_1": "sensor_group_1_20260402",
+    "sensor_group_2": "sensor_group_2_20260326",
+    "alarm_group_1": "alarm_group_1_20260407"
+  }
+}

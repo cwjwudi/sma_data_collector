@@ -1,0 +1,145 @@
+{
+  "modules": {
+    "alarm": {
+      "title": "Alarm Module",
+      "view_name": "alarm",
+      "bind_group": "alarm_group_1",
+      "page_size": 10,
+      "pages": {
+        "1": {
+          "title": "Alarm Page 1",
+          "enabled": true,
+          "bind_group": "alarm_group_1",
+          "view_name": "alarm",
+          "page_size": 10,
+          "bind_table": "alarm_group_1_20260407"
+        },
+        "2": {
+          "title": "Alarm Page 2",
+          "enabled": true,
+          "bind_group": "alarm_group_1",
+          "view_name": "alarm",
+          "page_size": 10
+        },
+        "3": {
+          "title": "Alarm Page 3",
+          "enabled": true,
+          "bind_group": "alarm_group_1"
+        },
+        "4": {
+          "title": "Alarm Page 4",
+          "enabled": false,
+          "bind_group": "alarm_group_1"
+        },
+        "5": {
+          "title": "Alarm Page 5",
+          "enabled": false,
+          "bind_group": "alarm_group_1"
+        }
+      }
+    },
+    "trend": {
+      "title": "Trend Module",
+      "view_name": "table",
+      "bind_group": "sensor_group_1",
+      "page_size": 10,
+      "pages": {
+        "1": {
+          "title": "Trend Page 1",
+          "enabled": true,
+          "bind_group": "sensor_group_1"
+        },
+        "2": {
+          "title": "Trend Page 2",
+          "enabled": true,
+          "bind_group": "sensor_group_1"
+        },
+        "3": {
+          "title": "Trend Page 3",
+          "enabled": true,
+          "bind_group": "sensor_group_1"
+        },
+        "4": {
+          "title": "Trend Page 4",
+          "enabled": false,
+          "bind_group": "sensor_group_1"
+        },
+        "5": {
+          "title": "Trend Page 5",
+          "enabled": false,
+          "bind_group": "sensor_group_1"
+        }
+      }
+    },
+    "audit": {
+      "title": "Audit Module",
+      "view_name": "audit",
+      "bind_group": "alarm_group_1",
+      "page_size": 10,
+      "pages": {
+        "1": {
+          "title": "Audit Page 1",
+          "enabled": true,
+          "bind_group": "alarm_group_1"
+        },
+        "2": {
+          "title": "Audit Page 2",
+          "enabled": true,
+          "bind_group": "alarm_group_1"
+        },
+        "3": {
+          "title": "Audit Page 3",
+          "enabled": true,
+          "bind_group": "alarm_group_1"
+        },
+        "4": {
+          "title": "Audit Page 4",
+          "enabled": false,
+          "bind_group": "alarm_group_1"
+        },
+        "5": {
+          "title": "Audit Page 5",
+          "enabled": false,
+          "bind_group": "alarm_group_1"
+        }
+      }
+    },
+    "general": {
+      "title": "General Module",
+      "view_name": "table",
+      "bind_group": "sensor_group_1",
+      "page_size": 10,
+      "pages": {
+        "1": {
+          "title": "General Page 1",
+          "enabled": true,
+          "bind_group": "sensor_group_1",
+          "view_name": "table",
+          "page_size": 10
+        },
+        "2": {
+          "title": "General Page 2",
+          "enabled": true,
+          "bind_group": "sensor_group_2",
+          "view_name": "table",
+          "page_size": 10
+        },
+        "3": {
+          "title": "General Page 3",
+          "enabled": true,
+          "bind_group": "sensor_group_1"
+        },
+        "4": {
+          "title": "General Page 4",
+          "enabled": false,
+          "bind_group": "sensor_group_1"
+        },
+        "5": {
+          "title": "General Page 5",
+          "enabled": false,
+          "bind_group": "sensor_group_1"
+        }
+      }
+    }
+  }
+}
