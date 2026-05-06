@@ -5,7 +5,7 @@
 
 import asyncio
 import logging
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Callable, Awaitable
 from datetime import datetime
 from collections import deque
 # 处理相对导入问题
@@ -18,8 +18,19 @@ from database.db_manager import DatabaseManager
 
 class DataStorageProcessor:
     """数据存储处理器类"""
+
+    STATUS_SUCCESS = "success"
+    STATUS_UNIQUE_CONFLICT = "unique_conflict"
+    STATUS_DB_ERROR = "db_error"
+    STATUS_OTHER_ERROR = "other_error"
     
-    def __init__(self, db_manager: DatabaseManager, batch_size: int = 100, points_dict: dict = None):
+    def __init__(
+        self,
+        db_manager: DatabaseManager,
+        batch_size: int = 100,
+        points_dict: dict = None,
+        insert_feedback_callback: Optional[Callable[[str, str, int], Awaitable[bool]]] = None,
+    ):
         """
         初始化数据存储处理器
         
@@ -31,7 +42,10 @@ class DataStorageProcessor:
         self.db_manager = db_manager
         self.default_batch_size = batch_size
         self.group_batch_sizes = {}  # 存储各组的batch_size配置
+        self.group_unique_key_points = {}  # 存储各组唯一键点配置
+        self.group_insert_feedback_configs = {}  # 存储各组反馈配置
         self.points_dict = points_dict or {}  # 数据点配置字典
+        self.insert_feedback_callback = insert_feedback_callback
         self.data_queue = deque()
         self.processing_task = None
         self.running = False
@@ -234,35 +248,142 @@ class DataStorageProcessor:
             group_data_list: 该组的数据列表
         """
         try:
+            if not group_data_list:
+                return
+
             # 获取第一个数据项来确定表结构
             sample_data = group_data_list[0]
             # 传递group_name给数据库管理器
             table_name = self.db_manager.get_current_table_name(group_name)
+            unique_key_point = self.group_unique_key_points.get(group_name)
             
             # 准备插入数据
-            insert_data_list = []
             column_types = self._infer_column_types(sample_data)
             
             # 创建表（如果不存在）
             if not self._ensure_table_exists(table_name, column_types):
+                await self._write_insert_feedback_by_outcome(
+                    group_name,
+                    {
+                        self.STATUS_SUCCESS: 0,
+                        self.STATUS_UNIQUE_CONFLICT: 0,
+                        self.STATUS_DB_ERROR: 1,
+                        self.STATUS_OTHER_ERROR: 0,
+                    },
+                )
                 return
             
-            # 转换数据格式
+            # 转换数据格式并逐条处理（支持唯一性检查）
+            outcome_counts = {
+                self.STATUS_SUCCESS: 0,
+                self.STATUS_UNIQUE_CONFLICT: 0,
+                self.STATUS_DB_ERROR: 0,
+                self.STATUS_OTHER_ERROR: 0,
+            }
             for data_item in group_data_list:
                 insert_data = self._convert_to_db_format(data_item)
-                if insert_data:
-                    insert_data_list.append(insert_data)
-            
-            # 批量插入
-            success_count = 0
-            for data_row in insert_data_list:
-                if self.db_manager.execute_insert(table_name, data_row):
-                    success_count += 1
-            
-            self.logger.debug(f"批量插入完成: 成功 {success_count}/{len(insert_data_list)} 条记录到表 {table_name} (group: {group_name})")
+                if not insert_data:
+                    outcome_counts[self.STATUS_OTHER_ERROR] += 1
+                    continue
+
+                if unique_key_point:
+                    unique_value = insert_data.get(unique_key_point)
+                    if unique_value is None:
+                        self.logger.warning(
+                            f"组 {group_name} 配置了 unique_key_point={unique_key_point}，"
+                            f"但当前记录该值为空，按失败处理"
+                        )
+                        outcome_counts[self.STATUS_OTHER_ERROR] += 1
+                        continue
+                    try:
+                        if self.db_manager.record_exists(table_name, unique_key_point, unique_value):
+                            outcome_counts[self.STATUS_UNIQUE_CONFLICT] += 1
+                            self.logger.warning(
+                                f"组 {group_name} 唯一性冲突，跳过插入: {unique_key_point}={unique_value}"
+                            )
+                            continue
+                    except Exception as query_error:
+                        self.logger.error(
+                            f"组 {group_name} 唯一性校验失败: {query_error}",
+                            exc_info=True
+                        )
+                        outcome_counts[self.STATUS_DB_ERROR] += 1
+                        continue
+
+                if self.db_manager.execute_insert(table_name, insert_data):
+                    outcome_counts[self.STATUS_SUCCESS] += 1
+                else:
+                    outcome_counts[self.STATUS_DB_ERROR] += 1
+
+            total_records = sum(outcome_counts.values())
+            self.logger.debug(
+                "组 %s 批量插入完成: success=%s, unique_conflict=%s, db_error=%s, other_error=%s, total=%s, table=%s",
+                group_name,
+                outcome_counts[self.STATUS_SUCCESS],
+                outcome_counts[self.STATUS_UNIQUE_CONFLICT],
+                outcome_counts[self.STATUS_DB_ERROR],
+                outcome_counts[self.STATUS_OTHER_ERROR],
+                total_records,
+                table_name,
+            )
+
+            await self._write_insert_feedback_by_outcome(group_name, outcome_counts)
             
         except Exception as e:
             self.logger.error(f"处理组 {group_name} 数据失败: {e}", exc_info=True)
+            await self._write_insert_feedback_by_outcome(
+                group_name,
+                {
+                    self.STATUS_SUCCESS: 0,
+                    self.STATUS_UNIQUE_CONFLICT: 0,
+                    self.STATUS_DB_ERROR: 0,
+                    self.STATUS_OTHER_ERROR: 1,
+                },
+            )
+
+    async def _write_insert_feedback_by_outcome(self, group_name: str, outcome_counts: Dict[str, int]) -> None:
+        """
+        按组批次处理结果写入反馈点（UDINT）
+        """
+        feedback_config = self.group_insert_feedback_configs.get(group_name)
+        if not feedback_config:
+            return
+
+        feedback_point = feedback_config.get("feedback_point")
+        if not feedback_point:
+            return
+
+        success_count = outcome_counts.get(self.STATUS_SUCCESS, 0)
+        unique_conflict_count = outcome_counts.get(self.STATUS_UNIQUE_CONFLICT, 0)
+        db_error_count = outcome_counts.get(self.STATUS_DB_ERROR, 0)
+        other_error_count = outcome_counts.get(self.STATUS_OTHER_ERROR, 0)
+        total_count = success_count + unique_conflict_count + db_error_count + other_error_count
+
+        if total_count == 0:
+            return
+
+        if success_count == total_count:
+            status_code = feedback_config.get("code_success", 0)
+        elif unique_conflict_count > 0:
+            status_code = feedback_config.get("code_unique_conflict", 1)
+        elif db_error_count > 0:
+            status_code = feedback_config.get("code_db_error", 2)
+        else:
+            status_code = feedback_config.get("code_other_error", 3)
+
+        if not self.insert_feedback_callback:
+            self.logger.warning(
+                f"组 {group_name} 配置了 insert_feedback，但未设置反馈回调，跳过写入"
+            )
+            return
+
+        try:
+            await self.insert_feedback_callback(group_name, feedback_point, status_code)
+        except Exception as callback_error:
+            self.logger.error(
+                f"组 {group_name} 写入插入反馈失败: {callback_error}",
+                exc_info=True
+            )
     
     def _infer_column_types(self, sample_data: Dict[str, Any]) -> Dict[str, str]:
         """

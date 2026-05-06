@@ -3,6 +3,33 @@
 本文档记录 SMA 数据采集系统的所有重要更新和变更。
 
 
+## [v1.3.6] - 2026-04-29
+### 新增功能
+- ✨ **组内唯一性校验与插入反馈**（`core/config_models.py`、`core/config_loader.py`、`database/data_storage.py`、`database/db_manager.py`、`main.py`、`communication/opcua_data_writer.py`）
+  - `groups[]` 新增 `unique_key_point`：可配置组内唯一键点，插入前按当前目标表判重。
+  - `groups[]` 新增 `insert_feedback`：支持按批次回写 UDINT 状态码，默认 `0=成功`、`1=唯一性冲突`、`2=数据库异常`、`3=其他失败`。
+  - 新增 `DatabaseManager.record_exists()`，用于通用列值存在性查询。
+  - 存储流程新增结果分类统计（`success / unique_conflict / db_error / other_error`），并按优先级回写反馈码。
+
+### 配置约束与兼容性
+- 🧩 **反馈点改为点名引用**（`core/config_loader.py`、`main.py`）
+  - `insert_feedback.feedback_point` 现在必须引用 `points[].name`，不再直接填写 OPC UA 地址。
+  - 启动时由系统自动将点名解析为对应 `path` 后执行回写。
+- ✅ **变量触发间隔校验增强**（`core/config_loader.py`）
+  - `trigger=variable` 时，`interval_seconds` 必须为数值且 `> 0`，避免运行期 `asyncio.sleep(None)` 异常。
+
+### 日志系统优化
+- 📝 **归档日志命名调整**（`main.py`）
+  - 轮转文件名由 `data_collector.log.YYYY-MM-DD` 调整为 `data_collector.YYYY-MM-DD.log`。
+  - 仅对新生成的归档文件生效，历史文件名保持不变。
+
+### 测试与示例
+- 🧪 新增测试：`tests/test_insert_feedback_and_unique.py`，覆盖配置校验、唯一性冲突、数据库异常反馈及变量触发间隔校验。
+- 📄 新增最小联调配置：`config/unique_feedback_test_config.json`，用于验证唯一性与插入反馈链路。
+- 📄 更新示例：`config/sample_config.json`，补充 `unique_key_point` 与 `insert_feedback` 配置示例。
+
+---
+
 ## [v1.3.5] - 2026-04-28
 ### 新增功能
 - ✨ **日志系统配置化升级**（`main.py`、`core/config_models.py`、`core/config_loader.py`）

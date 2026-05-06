@@ -33,6 +33,16 @@ class DataPoint:
 
 
 @dataclass
+class InsertFeedbackConfig:
+    """插入反馈配置（UDINT）"""
+    feedback_point: str  # 引用 points 中定义的数据点名称
+    code_success: int = 0
+    code_unique_conflict: int = 1
+    code_db_error: int = 2
+    code_other_error: int = 3
+
+
+@dataclass
 class DataGroup:
     """数据组配置"""
     name: str
@@ -48,6 +58,8 @@ class DataGroup:
     query_config: Optional[Dict[str, Any]] = None  # 查询配置（仅 query 类型使用）
     output_mode: str = "dual"  # 输出模式："dual", "opcua_only", "http_only"
     is_parallel: bool = False  # 是否启用并行触发模式（trigger_point 和 data_points 为数组节点）
+    unique_key_point: Optional[str] = None  # 唯一性校验键（按组）
+    insert_feedback: Optional[InsertFeedbackConfig] = None  # 插入反馈配置（UDINT）
     
     def get_buffer_nodes(self) -> List[str]:
         """获取缓冲区节点列表（从 query_config 中）"""

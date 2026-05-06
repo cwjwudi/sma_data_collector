@@ -278,6 +278,26 @@ class DatabaseManager:
             self.logger.error(f"数据插入失败: {e}", exc_info=True)
             return False
 
+    def record_exists(self, table_name: str, column_name: str, value: Any) -> bool:
+        """
+        检查指定列值是否已存在
+
+        Args:
+            table_name: 表名
+            column_name: 列名
+            value: 待检查值
+
+        Returns:
+            bool: 是否存在匹配记录
+        """
+        if value is None:
+            sql = f"SELECT 1 FROM `{table_name}` WHERE `{column_name}` IS NULL LIMIT 1"
+            rows = self.execute_query(sql)
+        else:
+            sql = f"SELECT 1 FROM `{table_name}` WHERE `{column_name}` = :value LIMIT 1"
+            rows = self.execute_query(sql, {"value": value})
+        return len(rows) > 0
+
     def _initialize_table_dates(self) -> None:
         """
         初始化数据库中所有表的日期信息

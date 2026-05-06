@@ -576,6 +576,32 @@ class OpcUaDataWriter:
         except Exception as e:
             self.logger.error(f"写入反馈状态失败：{e}", exc_info=True)
             return False
+
+    async def write_udint_feedback(self, node_path: str, value: int) -> bool:
+        """
+        向指定节点写入 UDINT(UInt32) 单值反馈
+        """
+        try:
+            if not node_path:
+                self.logger.warning("反馈节点为空，跳过 UDINT 反馈写入")
+                return False
+
+            if value < 0 or value > 0xFFFFFFFF:
+                self.logger.error(f"UDINT 反馈值越界: {value}")
+                return False
+
+            if not self.opcua_client.is_connected():
+                self.logger.error("OPC UA 客户端未连接，无法写入 UDINT 反馈")
+                return False
+
+            return await self._write_to_node(
+                node_path,
+                [value],
+                ua.VariantType.UInt32
+            )
+        except Exception as e:
+            self.logger.error(f"写入 UDINT 反馈失败: {e}", exc_info=True)
+            return False
         
     async def _send_to_http_server(self,
                                   query_results: List[List[Any]],

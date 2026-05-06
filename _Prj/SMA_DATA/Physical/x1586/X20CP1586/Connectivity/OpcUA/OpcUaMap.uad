@@ -27,6 +27,7 @@
           <Variable Name="AlarmRead" />
           <Variable Name="AlarmReadStatus" />
           <Variable Name="AlarmInsertFault" />
+          <Variable Name="ProductInsertStatus" />
         </Variable>
         <Variable Name="gDataSQLProduct">
           <Variable Name="TimeStamp" />

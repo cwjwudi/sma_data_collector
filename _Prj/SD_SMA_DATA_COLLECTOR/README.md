@@ -242,6 +242,13 @@ SD_SMA_DATA_COLLECTOR/
 - `output_mode`: 查询结果输出方式（`dual` / `opcua_only` / `http_only`）
 - `recreate_interval_days`: 数据库分表间隔天数
 - `batch_insert_size`: 批量插入大小
+- `unique_key_point`: （可选）组内唯一性校验键（必须在 `data_points` 中）
+- `insert_feedback`: （可选）插入反馈配置（UDINT）
+  - `feedback_point`: 插入结果反馈点名称（需先在 `points` 中定义，再在此引用）
+  - `code_success`: 全部成功时回写码（默认 `0`）
+  - `code_unique_conflict`: 唯一性冲突时回写码（默认 `1`）
+  - `code_db_error`: 数据库错误时回写码（默认 `2`）
+  - `code_other_error`: 其他失败时回写码（默认 `3`）
 - `query_config`: 查询配置（仅 query 类型）
   - `start_time_field`: 开始时间变量名
   - `end_time_field`: 结束时间变量名
@@ -258,6 +265,7 @@ SD_SMA_DATA_COLLECTOR/
 **触发配置约束：**
 - `time_and_variable` 模式下，`trigger_point` 与 `trigger_interval_seconds` 必须配置，且 `is_parallel` 必须为 `false`。
 - 并行触发模式（`trigger: variable` + `is_parallel: true`）下，`trigger_point` 应为布尔数组节点，`data_points` 应为与触发数组同下标语义的数组节点。
+- 配置了 `unique_key_point` 时，系统会在插入前按该列做表内判重，重复数据不落库并返回唯一性冲突码。
 
 ### 通信配置 (communications)
 - `name`: 通信连接名称（唯一标识）
@@ -329,6 +337,11 @@ SD_SMA_DATA_COLLECTOR/
       "name": "bTrigger1",
       "path": "ns=6;s=::DataRev:bTestTriger",
       "description": "触发信号"
+    },
+    {
+      "name": "udiInsertFeedBack",
+      "path": "ns=6;s=::DataRev:udiInsertFeedBack",
+      "description": "插入反馈码（UDINT）"
     }
   ],
   "groups": [
@@ -349,6 +362,14 @@ SD_SMA_DATA_COLLECTOR/
       "data_points": ["rF1", "rF2"],
       "trigger_point": "bTrigger1",
       "reset_trigger_after_read": false,
+      "unique_key_point": "rF1",
+      "insert_feedback": {
+        "feedback_point": "udiInsertFeedBack",
+        "code_success": 0,
+        "code_unique_conflict": 1,
+        "code_db_error": 2,
+        "code_other_error": 3
+      },
       "recreate_interval_days": 15,
       "batch_insert_size": 1
     }

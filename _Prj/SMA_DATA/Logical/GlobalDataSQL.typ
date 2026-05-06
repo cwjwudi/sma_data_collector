@@ -10,6 +10,7 @@ TYPE
 		ProductReadStatus : UINT;
 		ProductInsert : BOOL;
 		ProductInsertReq : BOOL;
+		ProductInsertStatus : UDINT;
 		AuditRead : BOOL;
 		AuditReadStatus : UINT;
 		AuditInsertFault : BOOL;

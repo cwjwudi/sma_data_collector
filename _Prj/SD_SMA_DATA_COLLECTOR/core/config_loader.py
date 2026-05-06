@@ -7,7 +7,7 @@ import json
 from typing import Dict, Any
 from .config_models import (
     DataPoint, DataGroup, OpcUaConfig, DatabaseConfig, AppConfig, 
-    TriggerType, Communication, Connection, HttpServerConfig, LoggingConfig
+    TriggerType, Communication, Connection, HttpServerConfig, LoggingConfig, InsertFeedbackConfig
 )
 
 
@@ -55,6 +55,17 @@ class ConfigLoader:
         # 解析数据组
         groups = []
         for group_data in config_data.get('groups', []):
+            feedback_data = group_data.get('insert_feedback')
+            insert_feedback = None
+            if feedback_data is not None:
+                insert_feedback = InsertFeedbackConfig(
+                    feedback_point=feedback_data.get('feedback_point', ''),
+                    code_success=feedback_data.get('code_success', 0),
+                    code_unique_conflict=feedback_data.get('code_unique_conflict', 1),
+                    code_db_error=feedback_data.get('code_db_error', 2),
+                    code_other_error=feedback_data.get('code_other_error', 3)
+                )
+
             group = DataGroup(
                 name=group_data['name'],
                 interval_seconds=group_data['interval_seconds'],
@@ -67,7 +78,9 @@ class ConfigLoader:
                 recreate_interval_days=group_data.get('recreate_interval_days', 30),
                 batch_insert_size=group_data.get('batch_insert_size', 100),
                 query_config=group_data.get('query_config'),
-                is_parallel=group_data.get('is_parallel', False)
+                is_parallel=group_data.get('is_parallel', False),
+                unique_key_point=group_data.get('unique_key_point'),
+                insert_feedback=insert_feedback
             )
             groups.append(group)
         
@@ -173,12 +186,55 @@ class ConfigLoader:
             for point_name in group.data_points:
                 if point_name not in point_name_set:
                     raise ValueError(f"数据组 '{group.name}' 引用了不存在的数据点: {point_name}")
+
+            if group.unique_key_point:
+                if group.unique_key_point not in group.data_points:
+                    raise ValueError(
+                        f"数据组 '{group.name}' 的 unique_key_point 必须包含在 data_points 中: {group.unique_key_point}"
+                    )
+
+            if group.insert_feedback:
+                if not group.insert_feedback.feedback_point or not str(group.insert_feedback.feedback_point).strip():
+                    raise ValueError(
+                        f"数据组 '{group.name}' 的 insert_feedback.feedback_point 不能为空"
+                    )
+                if group.insert_feedback.feedback_point not in point_name_set:
+                    raise ValueError(
+                        f"数据组 '{group.name}' 的 insert_feedback.feedback_point 必须引用 points 中已定义的数据点名称: "
+                        f"{group.insert_feedback.feedback_point}"
+                    )
+
+                for field_name in (
+                    "code_success",
+                    "code_unique_conflict",
+                    "code_db_error",
+                    "code_other_error",
+                ):
+                    value = getattr(group.insert_feedback, field_name)
+                    if not isinstance(value, int):
+                        raise ValueError(
+                            f"数据组 '{group.name}' 的 insert_feedback.{field_name} 必须为整数"
+                        )
+                    if value < 0 or value > 0xFFFFFFFF:
+                        raise ValueError(
+                            f"数据组 '{group.name}' 的 insert_feedback.{field_name} 超出 UDINT 范围(0~4294967295)"
+                        )
             
             if group.trigger == TriggerType.VARIABLE:
                 if not group.trigger_point:
                     raise ValueError(f"触发类型为variable的数据组 '{group.name}' 必须指定trigger_point")
                 if group.trigger_point not in point_name_set:
                     raise ValueError(f"数据组 '{group.name}' 的触发点不存在: {group.trigger_point}")
+                try:
+                    interval = float(group.interval_seconds)
+                except (TypeError, ValueError):
+                    raise ValueError(
+                        f"数据组 '{group.name}' 的 interval_seconds 必须为数值（trigger=variable）"
+                    ) from None
+                if interval <= 0:
+                    raise ValueError(
+                        f"数据组 '{group.name}' 的 interval_seconds 必须大于 0（trigger=variable）"
+                    )
 
             if group.trigger == TriggerType.TIME_AND_VARIABLE:
                 if group.is_parallel:

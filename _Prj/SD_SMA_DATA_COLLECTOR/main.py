@@ -9,6 +9,7 @@ from logging.handlers import TimedRotatingFileHandler
 from nt import system
 import signal
 import sys
+import re
 from typing import Optional
 from datetime import datetime
 from aiohttp import web
@@ -42,6 +43,17 @@ logging.getLogger("opcua").setLevel(logging.WARNING)
 class DataCollectionSystem:
     """数据采集系统主类"""
     
+    @staticmethod
+    def _rotated_log_namer(default_name: str) -> str:
+        """
+        将轮转文件名从 data_collector.log.YYYY-MM-DD
+        转换为 data_collector.YYYY-MM-DD.log
+        """
+        match = re.match(r"^(?P<prefix>.+)\.log\.(?P<suffix>.+)$", default_name)
+        if not match:
+            return default_name
+        return f"{match.group('prefix')}.{match.group('suffix')}.log"
+
     def __init__(self, config_file: str):
         """
         初始化数据采集系统
@@ -87,6 +99,7 @@ class DataCollectionSystem:
             backupCount=backup_days,
             encoding="utf-8",
         )
+        file_handler.namer = self._rotated_log_namer
         file_handler.setFormatter(formatter)
         file_handler.setLevel(log_level)
 
@@ -162,12 +175,25 @@ class DataCollectionSystem:
             self.storage_processor = DataStorageProcessor(
                 self.db_manager,
                 default_batch_size,
-                points_dict  # 传递数据点配置
+                points_dict,  # 传递数据点配置
+                self._write_insert_feedback
             )
             
             # 为每个数据组设置对应的batch_size
             for group in self.config.groups:
                 self.storage_processor.group_batch_sizes[group.name] = group.batch_insert_size
+                self.storage_processor.group_unique_key_points[group.name] = group.unique_key_point
+                if group.insert_feedback:
+                    feedback_point_name = group.insert_feedback.feedback_point
+                    feedback_point_path = points_dict[feedback_point_name].path
+                    self.storage_processor.group_insert_feedback_configs[group.name] = {
+                        "feedback_point_name": feedback_point_name,
+                        "feedback_point": feedback_point_path,
+                        "code_success": group.insert_feedback.code_success,
+                        "code_unique_conflict": group.insert_feedback.code_unique_conflict,
+                        "code_db_error": group.insert_feedback.code_db_error,
+                        "code_other_error": group.insert_feedback.code_other_error,
+                    }
                 self.logger.debug(f"设置组 {group.name} 的batch_size为 {group.batch_insert_size}")
             
             # 初始化数据查询处理器
@@ -425,6 +451,38 @@ class DataCollectionSystem:
             
         except Exception as e:
             self.logger.error(f"写入查询状态失败：{e}", exc_info=True)
+            return False
+
+    async def _write_insert_feedback(self, group_name: str, feedback_point: str, status_code: int) -> bool:
+        """
+        写入采集插入反馈（UDINT）
+        """
+        try:
+            if not self.communication_manager:
+                self.logger.warning("通信管理器未初始化，无法写入插入反馈")
+                return False
+
+            opcua_client = self.communication_manager.get_client_for_group(group_name)
+            if not opcua_client:
+                self.logger.warning(f"组 {group_name} 未找到对应通信客户端，无法写入反馈")
+                return False
+
+            data_writer = OpcUaDataWriter(opcua_client, None, self.http_client)
+            success = await data_writer.write_udint_feedback(feedback_point, status_code)
+            if success:
+                self.logger.debug(
+                    f"组 {group_name} 已写入插入反馈: point={feedback_point}, code={status_code}"
+                )
+            else:
+                self.logger.warning(
+                    f"组 {group_name} 写入插入反馈失败: point={feedback_point}, code={status_code}"
+                )
+            return success
+        except Exception as e:
+            self.logger.error(
+                f"组 {group_name} 写入插入反馈异常: {e}",
+                exc_info=True
+            )
             return False
     
     async def _process_query_tasks(self) -> None:
