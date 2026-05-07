@@ -42,9 +42,12 @@ catch {
     Write-Host "Remove failed, trying rename-aside (so next dist can use a fresh win-unpacked)..."
 }
 
-$parent = Split-Path -LiteralPath $UnpackFull -Parent
+$parent = [System.IO.Path]::GetDirectoryName($UnpackFull)
+if (-not $parent) {
+    throw "Cannot get parent directory of: $UnpackFull"
+}
 $trashName = 'win-unpacked._trash_' + (Get-Date -Format 'yyyyMMdd_HHmmss')
-$trashPath = Join-Path $parent $trashName
+$trashPath = [System.IO.Path]::Combine($parent, $trashName)
 
 try {
     Rename-Item -LiteralPath $UnpackFull -NewName $trashName -ErrorAction Stop
