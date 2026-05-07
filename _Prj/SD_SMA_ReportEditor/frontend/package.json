@@ -5,7 +5,7 @@
   "author": "B&R Team",
   "private": true,
   "type": "module",
-  "main": "electron/main.js",
+  "main": "electron/main.cjs",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
@@ -37,7 +37,7 @@
     },
     "files": [
       "dist/**/*",
-      "electron/main.js",
+      "electron/main.cjs",
       "package.json"
     ],
     "asar": true,

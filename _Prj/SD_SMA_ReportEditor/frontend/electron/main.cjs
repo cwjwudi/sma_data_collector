@@ -66,7 +66,8 @@ function startPythonBackend() {
     })
   } else {
     const { cmd } = findPython()
-    pythonProcess = spawn(cmd, args, {
+    const pyArgs = ['-m', 'uvicorn', 'main:app', '--host', '127.0.0.1', '--port', String(BACKEND_PORT)]
+    pythonProcess = spawn(cmd, pyArgs, {
       cwd: backendDir,
       env,
       stdio: 'pipe',
