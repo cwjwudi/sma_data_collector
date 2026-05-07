@@ -77,6 +77,8 @@ npm.cmd run dist:cn:alt
 
 **NSIS 报错 `Plugin not found, cannot call UAC::_`**：多为 `%LOCALAPPDATA%\electron-builder\Cache\nsis` 不完整（下载后 `rename ... Access is denied` 造成）。先关闭其它正在跑的 electron-builder/杀毒对缓存目录的占用，再执行 **`npm.cmd run clean:eb-cache`**，然后重新 **`npm.cmd run dist:cn:alt`**。若暂时不需要安装包，可只打便携版：**`npm.cmd run dist:cn:portable`**（无 NSIS，仍输出到 `release-alt/`）。
 
+**双击 exe 仍报 `require is not defined`（主进程）**：开发目录的 `package.json` 带 `"type":"module"` 仅服务于 Vite；**安装包内的 `package.json`** 由 **`build.extraMetadata`** 写成 **`type: commonjs`** 并固定 **`main: electron/main.cjs`**。请 **`git pull`** 后务必 **重新执行 `npm.cmd run dist:cn:alt`**，再用 **`release-alt`** 下新生成的 exe；勿继续运行旧次打包的 `release` / `release-alt` 文件。
+
 **打包报 `Access is denied` / `app.asar` 仍被占用**：`clean:release` 会多轮结束落在 `win-unpacked` 下的进程；若仍失败会尝试改名 `_trash_`。请配合 **`.cursorignore` + Reload Window**；或直接使用上文 **`dist:cn:alt`**。
 
 成品说明：

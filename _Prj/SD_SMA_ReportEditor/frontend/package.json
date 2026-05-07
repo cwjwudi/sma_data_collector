@@ -31,6 +31,10 @@
     "appId": "com.brteam.sd_sma.report_editor",
     "productName": "SD SMA Report Editor",
     "copyright": "Copyright © B&R Team",
+    "extraMetadata": {
+      "main": "electron/main.cjs",
+      "type": "commonjs"
+    },
     "directories": {
       "output": "release",
       "buildResources": "build"
