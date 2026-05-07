@@ -77,6 +77,30 @@ button.is-selected {
   color: #ffffff;
 }
 
+button.btn-danger {
+  background: #ef4444;
+  border-color: #dc2626;
+  color: #ffffff;
+}
+
+button.btn-danger:hover {
+  background: #dc2626;
+  border-color: #b91c1c;
+  color: #ffffff;
+}
+
+button.btn-danger:active {
+  background: #b91c1c;
+  border-color: #991b1b;
+  color: #ffffff;
+}
+
+button.btn-danger.is-clicked {
+  background: #f87171;
+  border-color: #dc2626;
+  color: #ffffff;
+}
+
 textarea {
   width: 100%;
   min-height: 180px;

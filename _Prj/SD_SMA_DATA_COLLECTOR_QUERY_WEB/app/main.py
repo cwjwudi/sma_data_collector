@@ -339,6 +339,15 @@ def get_query_views() -> dict[str, Any]:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@app.get("/api/query/configured-groups")
+def get_configured_groups(view_name: str) -> dict[str, Any]:
+    try:
+        groups = cfg.list_configured_groups_by_view(view_name)
+        return {"view_name": view_name, "groups": groups}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @app.get("/api/plugins/resolve/{plugin_key}")
 def resolve_plugin(plugin_key: str, request: Request) -> dict[str, Any]:
     _enforce_rate_limit(request)
@@ -638,6 +647,15 @@ def save_query_group_config(payload: QueryGroupConfigUpdateRequest) -> dict[str,
         baseline_table=payload.baseline_table,
     )
     return {"status": "saved"}
+
+
+@app.delete("/api/config/query-group")
+def delete_query_group_config(view_name: str, group: str) -> dict[str, Any]:
+    try:
+        existed = cfg.delete_query_group_config(view_name=view_name, group=group)
+        return {"status": "deleted" if existed else "not_found", "view_name": view_name, "group": group}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.get("/api/config/plugins")

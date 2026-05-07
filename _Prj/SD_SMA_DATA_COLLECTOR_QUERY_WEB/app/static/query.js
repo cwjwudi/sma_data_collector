@@ -1,5 +1,4 @@
 let queryViews = {};
-let currentSchema = null;
 let currentPage = 1;
 let totalPages = 1;
 let lastQueryContext = null;
@@ -18,7 +17,6 @@ async function fetchJson(url, opts) {
 function saveQueryPageState() {
   const state = {
     group: document.getElementById('group').value || '',
-    baselineTable: document.getElementById('baselineTable').value || '',
     viewName: document.getElementById('viewName').value || '',
     labelLang: document.getElementById('labelLang').value || 'zh',
     pageSize: document.getElementById('pageSize').value || '10',
@@ -90,49 +88,55 @@ function clearQuickRangeActive() {
   }
 }
 
-async function loadGroups() {
-  const data = await fetchJson('/api/meta/groups');
+async function loadGroupSchemaHint() {
+  const group = document.getElementById('group').value;
+  if (!group) return;
+  const data = await fetchJson('/api/meta/group-schema?group=' + encodeURIComponent(group));
+  const hint = document.getElementById('schemaHint');
+  if (data.consistent) {
+    hint.textContent = `group=${group} 已配置，可查询；当前基准表=${data.baseline_table}，共 ${data.tables.length} 张表`;
+    hint.className = 'muted ok';
+  } else {
+    hint.textContent = `group=${group} 表结构不一致，将按已配置基准表 ${data.baseline_table} 查询`;
+    hint.className = 'muted warn';
+  }
+}
+
+async function loadGroupsForCurrentView(preferredGroup) {
+  const viewName = document.getElementById('viewName').value;
+  const hint = document.getElementById('schemaHint');
+  if (!viewName) {
+    const sel = document.getElementById('group');
+    sel.innerHTML = '';
+    hint.textContent = '暂无可用 view';
+    hint.className = 'muted warn';
+    return;
+  }
+  const view = queryViews[viewName] || {};
+  const perGroup = view.per_group && typeof view.per_group === 'object' ? view.per_group : {};
+  const configuredGroups = Object.keys(perGroup);
   const sel = document.getElementById('group');
   sel.innerHTML = '';
-  for (const g of data.groups || []) {
+  for (const g of configuredGroups) {
     const op = document.createElement('option');
     op.value = g;
     op.textContent = g;
     sel.appendChild(op);
   }
-  if ((data.groups || []).length > 0) {
-    await loadTables();
-  }
-}
-
-async function loadTables() {
-  const group = document.getElementById('group').value;
-  if (!group) return;
-  const data = await fetchJson('/api/meta/group-schema?group=' + encodeURIComponent(group));
-  currentSchema = data;
-  const sel = document.getElementById('baselineTable');
-  sel.innerHTML = '';
-  for (const t of data.tables || []) {
-    const op = document.createElement('option');
-    op.value = t;
-    op.textContent = t;
-    sel.appendChild(op);
-  }
-  if (data.baseline_table && (data.tables || []).includes(data.baseline_table)) {
-    sel.value = data.baseline_table;
-  }
-  const hint = document.getElementById('schemaHint');
-  if (data.consistent) {
-    hint.textContent = `group=${group} 结构一致，共 ${data.tables.length} 张表`;
-    hint.className = 'muted ok';
-  } else {
-    hint.textContent =
-      `group=${group} 检测到表结构不一致，请选择基准表。当前基准：${data.baseline_table}`;
+  if (configuredGroups.length === 0) {
+    hint.textContent = `view=${viewName} 暂无已配置 group，请先到配置页保存 group 配置`;
     hint.className = 'muted warn';
+    return;
   }
+  if (preferredGroup && configuredGroups.includes(preferredGroup)) {
+    sel.value = preferredGroup;
+  }
+  await loadGroupSchemaHint();
 }
 
 async function loadViews() {
+  const currentView = document.getElementById('viewName').value;
+  const currentGroup = document.getElementById('group').value;
   const data = await fetchJson('/api/query/views');
   queryViews = data.views || {};
   const viewSel = document.getElementById('viewName');
@@ -143,7 +147,11 @@ async function loadViews() {
     op.textContent = `${name} - ${view.title || name}`;
     viewSel.appendChild(op);
   }
+  if (currentView && queryViews[currentView]) {
+    viewSel.value = currentView;
+  }
   updateViewSummary();
+  await loadGroupsForCurrentView(currentGroup);
 }
 
 function updateViewSummary() {
@@ -172,13 +180,11 @@ function getCurrentPageSize() {
 }
 
 function getCurrentQueryContext() {
-  const baselineTable = document.getElementById('baselineTable').value;
   const viewName = document.getElementById('viewName').value;
   const group = document.getElementById('group').value;
-  if (!group) return alert('请先选择 group');
-  if (!baselineTable) return alert('请先选择基准表');
   if (!viewName) return alert('请先选择 view');
-  return { baselineTable, viewName, group };
+  if (!group) return alert('请先选择已配置 group');
+  return { viewName, group };
 }
 
 function updatePageInfo(total, page, pageSize) {
@@ -193,14 +199,13 @@ function updatePageInfo(total, page, pageSize) {
 async function runQueryAtPage(page) {
   const context = getCurrentQueryContext();
   if (!context) return;
-  const { baselineTable, viewName, group } = context;
+  const { viewName, group } = context;
   const pageSize = getCurrentPageSize();
   const targetPage = Math.max(1, page);
 
   const payload = {
     view_name: viewName,
     group,
-    table: baselineTable,
     page: targetPage,
     page_size: pageSize,
   };
@@ -243,14 +248,13 @@ async function runQueryAtPage(page) {
 
 async function runLastQueryAtPage(page) {
   if (!lastQueryContext) return;
-  const { baselineTable, viewName, group, start, end } = lastQueryContext;
+  const { viewName, group, start, end } = lastQueryContext;
   const pageSize = getCurrentPageSize();
   const targetPage = Math.max(1, page);
 
   const payload = {
     view_name: viewName,
     group,
-    table: baselineTable,
     page: targetPage,
     page_size: pageSize,
   };
@@ -341,29 +345,17 @@ async function restoreQueryPageState() {
   if (saved.pageNumber) document.getElementById('pageNumber').value = saved.pageNumber;
   if (saved.viewName && queryViews[saved.viewName]) {
     document.getElementById('viewName').value = saved.viewName;
-    updateViewSummary();
   }
+  updateViewSummary();
+  await loadGroupsForCurrentView(saved.group || '');
 
-  if (saved.group) {
-    const groupSel = document.getElementById('group');
-    if (Array.from(groupSel.options).some(o => o.value === saved.group)) {
-      groupSel.value = saved.group;
-      await loadTables();
-      if (saved.baselineTable) {
-        const baseSel = document.getElementById('baselineTable');
-        if (Array.from(baseSel.options).some(o => o.value === saved.baselineTable)) {
-          baseSel.value = saved.baselineTable;
-        }
-      }
-    }
-  }
   lastQueryContext = saved.lastQueryContext || null;
   lastResultData = saved.lastResultData || null;
   restoreResultFromState(saved);
 }
 
 document.getElementById('btnRefreshGroups').addEventListener('click', () => {
-  loadGroups().catch(err => alert(err.message));
+  loadViews().catch(err => alert(err.message));
 });
 document.getElementById('btnRunQuery').addEventListener('click', () => {
   runQuery().catch(err => alert(err.message));
@@ -382,25 +374,17 @@ document.getElementById('btnGoPage').addEventListener('click', () => {
   runLastQueryAtPage(Math.min(totalPages, Math.max(1, target))).catch(err => alert(err.message));
 });
 document.getElementById('group').addEventListener('change', () => {
-  loadTables().catch(err => alert(err.message));
-  saveQueryPageState();
-});
-document.getElementById('baselineTable').addEventListener('change', async () => {
-  const group = document.getElementById('group').value;
-  const baselineTable = document.getElementById('baselineTable').value;
-  if (!group || !baselineTable) return;
-  await fetchJson('/api/config/group-baseline', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ group, baseline_table: baselineTable }),
-  });
-  const hint = document.getElementById('schemaHint');
-  hint.textContent = `已保存 group=${group} 的基准表为 ${baselineTable}`;
+  loadGroupSchemaHint().catch(err => alert(err.message));
   saveQueryPageState();
 });
 document.getElementById('viewName').addEventListener('change', () => {
-  updateViewSummary();
-  saveQueryPageState();
+  const selectedGroup = document.getElementById('group').value || '';
+  loadGroupsForCurrentView(selectedGroup)
+    .then(() => {
+      updateViewSummary();
+      saveQueryPageState();
+    })
+    .catch(err => alert(err.message));
 });
 document.getElementById('startTime').addEventListener('input', clearQuickRangeActive);
 document.getElementById('endTime').addEventListener('input', clearQuickRangeActive);
@@ -427,7 +411,6 @@ document.getElementById('btnRange1Y').addEventListener('click', saveQueryPageSta
 
 async function initQueryPage() {
   await loadViews();
-  await loadGroups();
   enableButtonClickFeedback();
   const saved = loadSavedQueryPageState();
   if (!saved) {

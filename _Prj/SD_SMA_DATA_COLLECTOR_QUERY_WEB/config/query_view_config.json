@@ -11,62 +11,7 @@
       "sort_dir": "desc",
       "page_size": 10,
       "default_filters": [],
-      "per_table": {
-        "alarm_group_1_20260320": {
-          "columns": [
-            "collection_time",
-            "id",
-            "msg"
-          ]
-        },
-        "sensor_group_1_20260428": {
-          "columns": [
-            {
-              "name": "collection_time",
-              "label_en": "collection_time",
-              "label_zh": "采集时间"
-            },
-            {
-              "name": "rEC",
-              "label_en": "rEC",
-              "label_zh": "rEC"
-            },
-            {
-              "name": "rF10",
-              "label_en": "rF10",
-              "label_zh": "rF10"
-            },
-            {
-              "name": "rF11",
-              "label_en": "rF11",
-              "label_zh": "rF11"
-            },
-            {
-              "name": "rF12",
-              "label_en": "rF12",
-              "label_zh": "rF12"
-            },
-            {
-              "name": "rF13",
-              "label_en": "rF13",
-              "label_zh": "rF13"
-            },
-            {
-              "name": "rF14",
-              "label_en": "rF14",
-              "label_zh": "rF14"
-            },
-            {
-              "name": "rF15",
-              "label_en": "rF15",
-              "label_zh": "rF15"
-            }
-          ],
-          "sort_by": "collection_time",
-          "sort_dir": "desc",
-          "page_size": 50
-        }
-      },
+      "per_table": {},
       "per_group": {
         "sensor_group_1": {
           "columns": [
@@ -114,12 +59,6 @@
           "sort_by": "collection_time",
           "sort_dir": "desc",
           "page_size": 10
-        },
-        "alarm_group_1": {
-          "columns": [],
-          "sort_by": "collection_time",
-          "sort_dir": "desc",
-          "page_size": 50
         }
       }
     },
@@ -145,16 +84,44 @@
           "value": "0"
         }
       ],
-      "per_table": {
-        "alarm_group_1_20260407": {
+      "per_table": {},
+      "per_group": {
+        "alarm_group_1": {
           "columns": [
-            "ts",
-            "Status",
-            "severity",
-            "Batch",
-            "id",
-            "msg"
-          ]
+            {
+              "name": "ts",
+              "label_en": "ts",
+              "label_zh": "ts"
+            },
+            {
+              "name": "Status",
+              "label_en": "Status",
+              "label_zh": "Status"
+            },
+            {
+              "name": "severity",
+              "label_en": "severity",
+              "label_zh": "severity"
+            },
+            {
+              "name": "code",
+              "label_en": "code",
+              "label_zh": "code"
+            },
+            {
+              "name": "msg",
+              "label_en": "msg",
+              "label_zh": "msg"
+            },
+            {
+              "name": "Batch",
+              "label_en": "Batch",
+              "label_zh": "Batch"
+            }
+          ],
+          "sort_by": "ts",
+          "sort_dir": "desc",
+          "page_size": 100
         }
       }
     },
@@ -179,12 +146,37 @@
           "value": "%"
         }
       ],
-      "per_table": {}
+      "per_table": {},
+      "per_group": {
+        "trend_group_1": {
+          "columns": [
+            {
+              "name": "collection_time",
+              "label_en": "collection_time",
+              "label_zh": "collection_time"
+            },
+            {
+              "name": "id",
+              "label_en": "id",
+              "label_zh": "id"
+            },
+            {
+              "name": "Trenddata",
+              "label_en": "Trenddata",
+              "label_zh": "Trenddata"
+            }
+          ],
+          "sort_by": "collection_time",
+          "sort_dir": "desc",
+          "page_size": 100
+        }
+      }
     }
   },
   "group_baselines": {
     "sensor_group_1": "sensor_group_1_20260402",
     "sensor_group_2": "sensor_group_2_20260326",
-    "alarm_group_1": "alarm_group_1_20260407"
+    "alarm_group_1": "alarm_group_1_20260407",
+    "trend_group_1": "trend_group_1_20260408"
   }
 }

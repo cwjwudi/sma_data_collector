@@ -435,3 +435,32 @@ class ConfigManager:
 
         self._validate_query_view_config(config)
         self._write_json(self.query_view_config_path, config)
+
+    def list_configured_groups_by_view(self, view_name: str) -> list[str]:
+        config = self.get_query_view_config()
+        self._validate_query_view_config(config)
+        views = config.get("views", {})
+        if view_name not in views:
+            raise ValueError(f"Unknown view_name: {view_name}")
+        view = views[view_name]
+        per_group = view.get("per_group", {})
+        if not isinstance(per_group, dict):
+            return []
+        return sorted(str(name) for name in per_group.keys())
+
+    def delete_query_group_config(self, view_name: str, group: str) -> bool:
+        config = self.get_query_view_config()
+        self._validate_query_view_config(config)
+        views = config.get("views", {})
+        if view_name not in views:
+            raise ValueError(f"Unknown view_name: {view_name}")
+        view = views[view_name]
+        per_group = view.setdefault("per_group", {})
+        if not isinstance(per_group, dict):
+            raise ValueError("per_group config must be an object")
+        existed = group in per_group
+        if existed:
+            del per_group[group]
+            self._validate_query_view_config(config)
+            self._write_json(self.query_view_config_path, config)
+        return existed

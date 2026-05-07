@@ -18,8 +18,8 @@
 
     <section class="card">
       <div class="row">
+        <label>View</label><select id="viewName"></select>
         <label>Group</label><select id="group"></select>
-        <label>基准表</label><select id="baselineTable"></select>
         <label>列名显示</label>
         <select id="labelLang">
           <option value="zh">中文</option>
@@ -30,6 +30,7 @@
         <button id="btnRefreshGroups">刷新组</button>
         <button id="btnRunQuery">查询</button>
       </div>
+      <div id="viewSummary" class="muted"></div>
       <div class="row">
         <button id="btnPrevPage">上一页</button>
         <button id="btnNextPage">下一页</button>

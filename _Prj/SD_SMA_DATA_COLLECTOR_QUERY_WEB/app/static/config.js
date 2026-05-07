@@ -5,6 +5,8 @@ let columnLabels = {};
 let currentSchema = null;
 let pluginConfigData = { modules: {} };
 const CONFIG_STATE_KEY = 'sd_sma_query_config_page_state_v1';
+let deleteConfirmArmed = false;
+let deleteConfirmTimer = null;
 
 async function fetchJson(url, opts) {
   const resp = await fetch(url, opts);
@@ -289,6 +291,50 @@ async function saveTableConfig() {
   saveConfigPageState();
 }
 
+async function deleteGroupConfig() {
+  const viewName = document.getElementById('editViewName').value;
+  const group = document.getElementById('editGroupName').value;
+  const deleteBtn = document.getElementById('btnDeleteGroupConfig');
+  const hint = document.getElementById('columnEditorHint');
+  if (!viewName || !group) return alert('请先选择 view、group');
+
+  if (!deleteConfirmArmed) {
+    deleteConfirmArmed = true;
+    deleteBtn.textContent = '再次点击确认删除';
+    hint.textContent = `再次点击“删除当前配置”将删除 view=${viewName}, group=${group}（5秒内有效）`;
+    hint.className = 'muted warn';
+    if (deleteConfirmTimer) clearTimeout(deleteConfirmTimer);
+    deleteConfirmTimer = setTimeout(() => {
+      deleteConfirmArmed = false;
+      deleteConfirmTimer = null;
+      deleteBtn.textContent = '删除当前配置';
+    }, 5000);
+    return;
+  }
+  deleteConfirmArmed = false;
+  if (deleteConfirmTimer) {
+    clearTimeout(deleteConfirmTimer);
+    deleteConfirmTimer = null;
+  }
+  deleteBtn.textContent = '删除当前配置';
+
+  const result = await fetchJson(
+    '/api/config/query-group?view_name=' +
+      encodeURIComponent(viewName) +
+      '&group=' +
+      encodeURIComponent(group),
+    { method: 'DELETE' },
+  );
+  orderedColumns = [];
+  columnLabels = {};
+  renderOrderedColumns();
+  document.getElementById('columnEditorHint').textContent =
+    result.status === 'deleted'
+      ? `已删除: view=${viewName}, group=${group}（views.${viewName}.per_group.${group}）`
+      : `未找到配置: view=${viewName}, group=${group}`;
+  saveConfigPageState();
+}
+
 async function restoreConfigPageState() {
   const saved = loadSavedConfigPageState();
   if (!saved) return;
@@ -349,6 +395,9 @@ document.getElementById('btnMoveUp').addEventListener('click', () => moveSelecte
 document.getElementById('btnMoveDown').addEventListener('click', () => moveSelected(false));
 document.getElementById('btnSaveTableConfig').addEventListener('click', () => {
   saveTableConfig().catch(err => alert(err.message));
+});
+document.getElementById('btnDeleteGroupConfig').addEventListener('click', () => {
+  deleteGroupConfig().catch(err => alert(err.message));
 });
 document.getElementById('editGroupName').addEventListener('change', () => {
   loadTables().catch(err => alert(err.message));
