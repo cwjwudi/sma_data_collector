@@ -1,6 +1,8 @@
 {
   "name": "sd-sma-report-editor",
   "version": "0.1.0",
+  "description": "SD SMA Report Editor — Markdown 报表编辑器（Electron + FastAPI）",
+  "author": "B&R Team",
   "private": true,
   "type": "module",
   "main": "electron/main.js",
@@ -9,7 +11,54 @@
     "build": "vite build",
     "preview": "vite preview",
     "electron:dev": "concurrently -k \"vite\" \"wait-on http://localhost:5173 && electron .\"",
-    "electron:build": "vite build && electron ."
+    "electron:build": "vite build && electron .",
+    "build:backend": "powershell -ExecutionPolicy Bypass -File ../backend/scripts/build-backend-exe.ps1",
+    "dist": "npm run build && electron-builder --win",
+    "dist:win": "npm run build:backend && npm run dist"
+  },
+  "build": {
+    "appId": "com.brteam.sd_sma.report_editor",
+    "productName": "SD SMA Report Editor",
+    "copyright": "Copyright © B&R Team",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/main.js",
+      "package.json"
+    ],
+    "asar": true,
+    "extraResources": [
+      {
+        "from": "../backend/dist/report_backend",
+        "to": "report_backend",
+        "filter": ["**/*"]
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        },
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "artifactName": "${productName}-Setup-${version}-${arch}.${ext}"
+    },
+    "portable": {
+      "artifactName": "${productName}-Portable-${version}-${arch}.exe"
+    }
   },
   "dependencies": {
     "@vueuse/core": "^12.0.0",
@@ -22,6 +71,7 @@
     "@vitejs/plugin-vue": "^5.2.0",
     "concurrently": "^9.2.1",
     "electron": "^34.0.0",
+    "electron-builder": "^25.1.8",
     "vite": "^6.2.0",
     "wait-on": "^8.0.5"
   }

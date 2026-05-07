@@ -2,6 +2,7 @@ const { app, BrowserWindow } = require('electron')
 const { spawn } = require('child_process')
 const path = require('path')
 const http = require('http')
+const fs = require('fs')
 
 let mainWindow
 let pythonProcess
@@ -14,27 +15,63 @@ function log(msg) {
   console.log(`[Electron] ${msg}`)
 }
 
+function getBackendDir() {
+  if (app.isPackaged) {
+    return path.join(process.resourcesPath, 'report_backend')
+  }
+  return path.join(__dirname, '..', '..', 'backend')
+}
+
+function getBundledBackendExe() {
+  return path.join(getBackendDir(), 'report_backend.exe')
+}
+
+function getUserDataDirForBackend() {
+  return path.join(app.getPath('userData'), 'backend-data')
+}
+
 function findPython() {
-  const backendDir = path.join(__dirname, '..', '..', 'backend')
+  const backendDir = getBackendDir()
   const venvPython = path.join(backendDir, 'venv', 'Scripts', 'python.exe')
 
-  const fs = require('fs')
   if (fs.existsSync(venvPython)) {
     log(`Using venv Python: ${venvPython}`)
-    return venvPython
+    return { cmd: venvPython }
   }
   log('Using system Python')
-  return 'python'
+  return { cmd: 'python' }
 }
 
 function startPythonBackend() {
-  const backendDir = path.join(__dirname, '..', '..', 'backend')
-  const pythonExe = findPython()
+  const backendDir = getBackendDir()
+  const dataDir = getUserDataDirForBackend()
+  fs.mkdirSync(dataDir, { recursive: true })
 
-  pythonProcess = spawn(pythonExe, ['-m', 'uvicorn', 'main:app', '--host', '127.0.0.1', '--port', String(BACKEND_PORT)], {
-    cwd: backendDir,
-    stdio: 'pipe',
-  })
+  const env = {
+    ...process.env,
+    REPORT_EDITOR_DATA_DIR: dataDir,
+  }
+
+  if (app.isPackaged) {
+    const exe = getBundledBackendExe()
+    if (!fs.existsSync(exe)) {
+      log(`ERROR: 未找到打包后端: ${exe}`)
+      return
+    }
+    log(`Starting bundled backend: ${exe}`)
+    pythonProcess = spawn(exe, [], {
+      cwd: path.dirname(exe),
+      env,
+      stdio: 'pipe',
+    })
+  } else {
+    const { cmd } = findPython()
+    pythonProcess = spawn(cmd, args, {
+      cwd: backendDir,
+      env,
+      stdio: 'pipe',
+    })
+  }
 
   pythonProcess.stdout.on('data', (data) => {
     console.log(`[Python] ${data.toString().trim()}`)
@@ -54,7 +91,7 @@ function startPythonBackend() {
   })
 }
 
-function waitForBackend(maxRetries = 30, interval = 500) {
+function waitForBackend(maxRetries = 60, interval = 500) {
   return new Promise((resolve, reject) => {
     let retries = 0
 

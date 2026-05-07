@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 from pathlib import Path
 from contextlib import asynccontextmanager
 
@@ -9,7 +10,15 @@ from fastapi.middleware.cors import CORSMiddleware
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
 
-DATA_DIR = Path(__file__).parent / "data"
+def _resolve_data_dir() -> Path:
+    """开发：backend/data；安装版：由 Electron 注入 REPORT_EDITOR_DATA_DIR（用户目录下可写路径）。"""
+    override = os.environ.get("REPORT_EDITOR_DATA_DIR", "").strip()
+    if override:
+        return Path(override)
+    return Path(__file__).resolve().parent / "data"
+
+
+DATA_DIR = _resolve_data_dir()
 TEMPLATES_DIR = DATA_DIR / "templates"
 HISTORY_DIR = DATA_DIR / "history"
 CONFIG_FILE = DATA_DIR / "config.json"

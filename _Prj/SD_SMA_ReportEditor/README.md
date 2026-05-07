@@ -43,6 +43,30 @@ cd frontend
 npm run electron:dev
 ```
 
+## Windows 安装包 / 绿色便携版（.exe）
+
+成品在 `frontend/release/`（不入库）：
+
+1. 前置：已安装 **Node.js**、**Python 3.10+**（含 `py` 启动器）、Windows x64。
+2. 在 `frontend/` 安装依赖：`npm install`
+3. **一键完整打包**（先 PyInstaller 打后端，再 electron-builder 打安装包 + 便携 exe）：  
+   `npm run dist:win`
+4. 仅打前端包（需已存在 `backend/dist/report_backend/`）：  
+   `npm run dist`
+
+产出说明：
+
+- **NSIS 安装程序**：`SD SMA Report Editor-Setup-0.1.0-x64.exe`
+- **便携版**：`SD SMA Report Editor-Portable-0.1.0-x64.exe`
+- 安装/解压后，后端为内置的 `report_backend.exe`，**配置文件与模板等** 写在用户目录：`%APPDATA%\sd-sma-report-editor\backend-data\`（环境变量 `REPORT_EDITOR_DATA_DIR`）。
+
+单独重建后端可执行文件：
+
+```powershell
+cd backend
+powershell -ExecutionPolicy Bypass -File scripts/build-backend-exe.ps1
+```
+
 ## 文档
 
 - [项目计划](_Doc/001_项目计划.md)
