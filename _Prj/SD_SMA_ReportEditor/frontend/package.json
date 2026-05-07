@@ -14,7 +14,9 @@
     "electron:build": "vite build && electron .",
     "build:backend": "powershell -ExecutionPolicy Bypass -File ../backend/scripts/build-backend-exe.ps1",
     "dist": "npm run build && electron-builder --win",
-    "dist:win": "npm run build:backend && npm run dist"
+    "dist:cn": "set ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/&& npm run dist",
+    "dist:win": "npm run build:backend && npm run dist",
+    "dist:win:cn": "set ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/&& npm run dist:win"
   },
   "build": {
     "appId": "com.brteam.sd_sma.report_editor",

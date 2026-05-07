@@ -50,11 +50,22 @@ npm run electron:dev
 1. 前置：已安装 **Node.js**、**Python 3.10+**（含 `py` 启动器）、Windows x64。
 2. 在 `frontend/` 安装依赖：`npm install`
 3. **一键完整打包**（先 PyInstaller 打后端，再 electron-builder 打安装包 + 便携 exe）：  
-   `npm run dist:win`
-4. 仅打前端包（需已存在 `backend/dist/report_backend/`）：  
+   `npm run dist:win`（PowerShell 可用 **`npm.cmd run dist:win`**）
+4. 若 **`electron-v*-win32-x64.zip` 从 GitHub 下载超时**（常见于内网或对 `github.com` 不稳定），使用 **npmmirror 镜像** 再打一次：  
+   `npm.cmd run dist:win:cn`  
+   若后端已编好、只重打 Electron：  
+   `npm.cmd run dist:cn`
+5. 仅打前端包（需已存在 `backend/dist/report_backend/`）：  
    `npm run dist`
 
-**网络说明**：若日志中出现从 GitHub 下载 `winCodeSign` 超时，本仓库已在 `build.win` 中关闭可执行文件/DLL 签名相关步骤（`signAndEditExecutable` / `signDlls`），以减少对 `electron-builder-binaries` 的拉取。若 **Electron 运行时** 下载仍失败，需配置代理或使用可访问 `github.com` 的网络；PowerShell 默认策略可能拦截 `npm.ps1`，可改用 **`npm.cmd install`**。
+**网络说明**：`winCodeSign` 相关下载已通过 `build.win` 中 `signAndEditExecutable` / `signDlls` 关闭。**Electron 本体**仍默认从 GitHub 拉取；镜像失败时可自行设系统/会话代理，或 PowerShell 临时：
+
+```powershell
+$env:ELECTRON_MIRROR = "https://npmmirror.com/mirrors/electron/"
+npm.cmd run dist:win
+```
+
+（与 `dist:win:cn` 等价思路。）PowerShell 若拦截 `npm.ps1`，请统一使用 **`npm.cmd`**。
 
 成品说明：
 
