@@ -67,7 +67,7 @@ npm.cmd run dist:win
 
 （与 `dist:win:cn` 等价思路。）PowerShell 若拦截 `npm.ps1`，请统一使用 **`npm.cmd`**。
 
-**打包报 `Access is denied` / 无法删除 `release\win-unpacked\*.pak`**：说明仍有进程占用该目录（常见为 **SD SMA Report Editor**、其子进程或 **`report_backend.exe`**）。`npm.cmd run clean:release` 会**按可执行文件路径**尝试结束落在 `win-unpacked` 下的进程再删目录；若仍失败，请手动在任务管理器结束上述进程，**关闭 Cursor/资源管理器中对 `win-unpacked` 的打开与预览**后重试，再执行 **`npm.cmd run dist:cn`**，或 **`npm.cmd run dist:cn:fresh`** / **`npm.cmd run dist:win:cn:fresh`**。
+**打包报 `Access is denied` / `app.asar` 仍被占用**：`clean:release` 会用 **Win32 进程表**多轮结束「可执行路径落在 `win-unpacked` 下」的进程（含易漏掉的 Electron 子进程与 **`report_backend.exe`**）。若仍删不掉，常见是 **Cursor 打开了该目录下文件**或资源管理器预览锁了 **`app.asar`**：请关掉相关编辑器标签与文件夹窗口后再执行 **`npm.cmd run clean:release`**，然后 **`npm.cmd run dist:cn`**（或 **`dist:cn:fresh`** / **`dist:win:cn:fresh`**）。
 
 成品说明：
 
