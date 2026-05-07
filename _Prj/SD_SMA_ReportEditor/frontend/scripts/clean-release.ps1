@@ -36,9 +36,27 @@ if (-not (Test-Path $Unpack)) {
 try {
     Remove-Item -LiteralPath $Unpack -Recurse -Force -ErrorAction Stop
     Write-Host "OK: removed $UnpackFull"
+    exit 0
+}
+catch {
+    Write-Host "Remove failed, trying rename-aside (so next dist can use a fresh win-unpacked)..."
+}
+
+$parent = Split-Path -LiteralPath $UnpackFull -Parent
+$trashName = 'win-unpacked._trash_' + (Get-Date -Format 'yyyyMMdd_HHmmss')
+$trashPath = Join-Path $parent $trashName
+
+try {
+    Rename-Item -LiteralPath $UnpackFull -NewName $trashName -ErrorAction Stop
+    Write-Host "OK: renamed locked folder to: $trashPath"
+    Write-Host "Delete the _trash_ folder later when no editor holds app.asar (or after Cursor reload). Next build is unblocked."
+    exit 0
 }
 catch {
     Write-Host ""
-    Write-Host "Still locked (e.g. app.asar). Close: 1) Report Editor from win-unpacked 2) Cursor tabs or Explorer preview on this folder 3) retry."
+    Write-Host "Still blocked. Do this:"
+    Write-Host "  1) Close ALL tabs/preview under frontend/release/win-unpacked (including .exe / app.asar)."
+    Write-Host "  2) Repo root .cursorignore should list frontend/release/ — reload Cursor window (Developer: Reload Window)."
+    Write-Host "  3) Retry: npm.cmd run clean:release"
     throw
 }

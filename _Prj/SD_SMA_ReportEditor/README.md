@@ -67,7 +67,7 @@ npm.cmd run dist:win
 
 （与 `dist:win:cn` 等价思路。）PowerShell 若拦截 `npm.ps1`，请统一使用 **`npm.cmd`**。
 
-**打包报 `Access is denied` / `app.asar` 仍被占用**：`clean:release` 会用 **Win32 进程表**多轮结束「可执行路径落在 `win-unpacked` 下」的进程（含易漏掉的 Electron 子进程与 **`report_backend.exe`**）。若仍删不掉，常见是 **Cursor 打开了该目录下文件**或资源管理器预览锁了 **`app.asar`**：请关掉相关编辑器标签与文件夹窗口后再执行 **`npm.cmd run clean:release`**，然后 **`npm.cmd run dist:cn`**（或 **`dist:cn:fresh`** / **`dist:win:cn:fresh`**）。
+**打包报 `Access is denied` / `app.asar` 仍被占用**：`clean:release` 会用 **Win32 进程表**多轮结束「可执行路径落在 `win-unpacked` 下」的进程。若 **删目录仍失败**（常见于 **Cursor 对 `release/` 建索引或打开了该目录下文件**），脚本会尝试把 `win-unpacked` **改名为** `win-unpacked._trash_时间戳`，让下次 **`dist:cn`** 能新建干净的 `win-unpacked`；遗留的 `_trash_` 文件夹可在关掉相关标签页后手动删。仓库已提供 **`.cursorignore`**（忽略 `frontend/release/`，根目录亦有一条路径规则），**修改后请在 Cursor 执行「Developer: Reload Window」** 再清理/打包。
 
 成品说明：
 
