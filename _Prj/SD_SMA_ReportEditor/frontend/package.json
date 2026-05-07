@@ -14,11 +14,15 @@
     "electron:build": "vite build && electron .",
     "build:backend": "powershell -ExecutionPolicy Bypass -File ../backend/scripts/build-backend-exe.ps1",
     "clean:release": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/clean-release.ps1",
+    "clean:release:alt": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/clean-release.ps1 release-alt",
     "dist": "npm run build && electron-builder --win",
+    "dist:alt": "npm run build && electron-builder --win --config.directories.output=release-alt",
     "dist:cn": "set ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/&& npm run dist",
+    "dist:cn:alt": "set ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/&& npm run build && electron-builder --win --config.directories.output=release-alt",
     "dist:cn:fresh": "npm run clean:release && set ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/&& npm run dist",
     "dist:win": "npm run build:backend && npm run dist",
     "dist:win:cn": "set ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/&& npm run dist:win",
+    "dist:win:cn:alt": "npm run build:backend && set ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/&& npm run build && electron-builder --win --config.directories.output=release-alt",
     "dist:win:cn:fresh": "npm run clean:release && set ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/&& npm run dist:win"
   },
   "build": {

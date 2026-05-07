@@ -67,7 +67,15 @@ npm.cmd run dist:win
 
 （与 `dist:win:cn` 等价思路。）PowerShell 若拦截 `npm.ps1`，请统一使用 **`npm.cmd`**。
 
-**打包报 `Access is denied` / `app.asar` 仍被占用**：`clean:release` 会用 **Win32 进程表**多轮结束「可执行路径落在 `win-unpacked` 下」的进程。若 **删目录仍失败**（常见于 **Cursor 对 `release/` 建索引或打开了该目录下文件**），脚本会尝试把 `win-unpacked` **改名为** `win-unpacked._trash_时间戳`，让下次 **`dist:cn`** 能新建干净的 `win-unpacked`；遗留的 `_trash_` 文件夹可在关掉相关标签页后手动删。仓库已提供 **`.cursorignore`**（忽略 `frontend/release/`，根目录亦有一条路径规则），**修改后请在 Cursor 执行「Developer: Reload Window」** 再清理/打包。
+**当 `release\win-unpacked` 被 Cursor 锁住、删/改名都失败时**：改用 **另一输出目录** 打包（不碰 `release/`）：
+
+```powershell
+npm.cmd run dist:cn:alt
+```
+
+产物在 **`frontend/release-alt/`**（安装包/便携 exe 与 `win-unpacked` 均在此目录下）。完整流程（含后端）：`npm.cmd run dist:win:cn:alt`。清理备用目录：`npm.cmd run clean:release:alt`。
+
+**打包报 `Access is denied` / `app.asar` 仍被占用**：`clean:release` 会多轮结束落在 `win-unpacked` 下的进程；若仍失败会尝试改名 `_trash_`。请配合 **`.cursorignore` + Reload Window**；或直接使用上文 **`dist:cn:alt`**。
 
 成品说明：
 

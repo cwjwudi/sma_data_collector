@@ -1,9 +1,15 @@
-# 释放 win-unpacked 占用后删除目录，供 npm run clean:release 调用
-# 使用 Win32_Process.ExecutablePath：比 Get-Process .Path 更稳，便于扫全 Electron 子进程与 report_backend
+# 释放 win-unpacked 占用后删除目录。
+# 用法: .\clean-release.ps1           # 默认清理 frontend\release\win-unpacked
+#       .\clean-release.ps1 release-alt  # 清理 frontend\release-alt\win-unpacked
+param(
+    [Parameter(Position = 0)]
+    [string]$OutputFolderName = 'release'
+)
+
 $ErrorActionPreference = 'Continue'
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $FrontendRoot = Resolve-Path (Join-Path $ScriptDir '..')
-$Unpack = Join-Path $FrontendRoot 'release\win-unpacked'
+$Unpack = Join-Path $FrontendRoot (Join-Path $OutputFolderName 'win-unpacked')
 
 if (-not (Test-Path $Unpack)) {
     Write-Host "OK: nothing to clean ($Unpack)"
@@ -57,9 +63,8 @@ try {
 }
 catch {
     Write-Host ""
-    Write-Host "Still blocked. Do this:"
-    Write-Host "  1) Close ALL tabs/preview under frontend/release/win-unpacked (including .exe / app.asar)."
-    Write-Host "  2) Repo root .cursorignore should list frontend/release/ — reload Cursor window (Developer: Reload Window)."
-    Write-Host "  3) Retry: npm.cmd run clean:release"
+    Write-Host "Still blocked. Options:"
+    Write-Host "  1) Close tabs/preview under frontend/$OutputFolderName/win-unpacked, reload Cursor, retry clean:release."
+    Write-Host "  2) Build to another output folder (avoids locked release/): npm.cmd run dist:cn:alt - artifacts go to frontend/release-alt/"
     throw
 }
