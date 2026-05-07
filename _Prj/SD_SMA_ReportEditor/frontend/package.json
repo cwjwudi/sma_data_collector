@@ -13,10 +13,13 @@
     "electron:dev": "concurrently -k \"vite\" \"wait-on http://localhost:5173 && electron .\"",
     "electron:build": "vite build && electron .",
     "build:backend": "powershell -ExecutionPolicy Bypass -File ../backend/scripts/build-backend-exe.ps1",
+    "clean:release": "powershell -NoProfile -ExecutionPolicy Bypass -Command \"if (Test-Path 'release/win-unpacked') { Remove-Item -LiteralPath 'release/win-unpacked' -Recurse -Force }\"",
     "dist": "npm run build && electron-builder --win",
     "dist:cn": "set ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/&& npm run dist",
+    "dist:cn:fresh": "npm run clean:release && set ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/&& npm run dist",
     "dist:win": "npm run build:backend && npm run dist",
-    "dist:win:cn": "set ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/&& npm run dist:win"
+    "dist:win:cn": "set ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/&& npm run dist:win",
+    "dist:win:cn:fresh": "npm run clean:release && set ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/&& npm run dist:win"
   },
   "build": {
     "appId": "com.brteam.sd_sma.report_editor",

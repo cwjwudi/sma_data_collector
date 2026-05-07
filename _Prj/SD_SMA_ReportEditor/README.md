@@ -67,6 +67,8 @@ npm.cmd run dist:win
 
 （与 `dist:win:cn` 等价思路。）PowerShell 若拦截 `npm.ps1`，请统一使用 **`npm.cmd`**。
 
+**打包报 `Access is denied` / 无法删除 `release\win-unpacked\*.pak`**：多数是 **正在运行的「SD SMA Report Editor」仍从该目录启动**（或资源管理器预览占用文件）。请先**退出应用**（任务管理器中结束对应进程），再在 `frontend/` 执行 **`npm.cmd run clean:release`** 后重新 **`npm.cmd run dist:cn`**；也可一条命令 **`npm.cmd run dist:cn:fresh`**（先删 `win-unpacked` 再打包）。完整重打含后端时用 **`npm.cmd run dist:win:cn:fresh`**。
+
 成品说明：
 
 - **NSIS 安装程序**：`SD SMA Report Editor-Setup-0.1.0-x64.exe`
