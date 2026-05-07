@@ -38,6 +38,8 @@
       }
     ],
     "win": {
+      "signAndEditExecutable": false,
+      "signDlls": false,
       "target": [
         {
           "target": "nsis",

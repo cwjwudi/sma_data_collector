@@ -54,7 +54,9 @@ npm run electron:dev
 4. 仅打前端包（需已存在 `backend/dist/report_backend/`）：  
    `npm run dist`
 
-产出说明：
+**网络说明**：若日志中出现从 GitHub 下载 `winCodeSign` 超时，本仓库已在 `build.win` 中关闭可执行文件/DLL 签名相关步骤（`signAndEditExecutable` / `signDlls`），以减少对 `electron-builder-binaries` 的拉取。若 **Electron 运行时** 下载仍失败，需配置代理或使用可访问 `github.com` 的网络；PowerShell 默认策略可能拦截 `npm.ps1`，可改用 **`npm.cmd install`**。
+
+成品说明：
 
 - **NSIS 安装程序**：`SD SMA Report Editor-Setup-0.1.0-x64.exe`
 - **便携版**：`SD SMA Report Editor-Portable-0.1.0-x64.exe`
