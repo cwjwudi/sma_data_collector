@@ -1,0 +1,16 @@
+{
+  "database": {
+    "type": "mysql",
+    "name": "wn_10",
+    "host": "192.168.50.22",
+    "port": 3306,
+    "username": "root",
+    "password": "Br54644800@"
+  },
+  "collector_config_dir": "D:/projects/50_/P000_SD_SMA_SCADA/_Prj/SD_SMA_DATA_COLLECTOR/config",
+  "query_limits": {
+    "requests_per_minute": 180,
+    "default_window_hours": 24,
+    "max_window_hours": 8760
+  }
+}

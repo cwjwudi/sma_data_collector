@@ -1,0 +1,104 @@
+{
+  "communications": [
+    {
+      "name": "PLC1",
+      "type": "opcua",
+      "host": "192.168.50.233",
+      "port": 4840
+    }
+  ],
+  "connections": [
+    {
+      "name": "Connect1",
+      "communication": "PLC1",
+      "data_groups": [
+        "Group1"
+      ],
+      "heartbeat": ""
+    }
+  ],
+  "points": [
+    {
+      "name": "AIR",
+      "path": "ns=6;s=::DataGen:AIR",
+      "description": "AIR"
+    },
+    {
+      "name": "AP1",
+      "path": "ns=6;s=::DataGen:AP1",
+      "description": "AP1"
+    },
+    {
+      "name": "AP2",
+      "path": "ns=6;s=::DataGen:AP2",
+      "description": "AP2"
+    },
+    {
+      "name": "CP",
+      "path": "ns=6;s=::DataGen:CP",
+      "description": "CP"
+    },
+    {
+      "name": "CT",
+      "path": "ns=6;s=::DataGen:CT",
+      "description": "CT"
+    },
+    {
+      "name": "EC",
+      "path": "ns=6;s=::DataGen:EC",
+      "description": "EC"
+    },
+    {
+      "name": "ES",
+      "path": "ns=6;s=::DataGen:ES",
+      "description": "ES"
+    },
+    {
+      "name": "strTimeStamp",
+      "path": "ns=6;s=::DataGen:strTimeStamp",
+      "description": "strTimeStamp"
+    }
+  ],
+  "groups": [
+    {
+      "name": "Group1",
+      "interval_seconds": 1,
+      "trigger": "time",
+      "description": "测试数据1",
+      "data_points": [
+        "AIR",
+        "AP1",
+        "AP2",
+        "CP",
+        "CT",
+        "EC",
+        "ES",
+        "strTimeStamp"
+      ],
+      "trigger_point": "",
+      "reset_trigger_after_read": false,
+      "recreate_interval_days": 365,
+      "batch_insert_size": 2,
+      "is_parallel": false
+    }
+  ],
+  "database": {
+    "type": "mysql",
+    "name": "wn_10",
+    "host": "192.168.50.22",
+    "port": 3306,
+    "username": "root",
+    "password": "Br54644800@",
+    "data_groups": [
+      "Group1"
+    ]
+  },
+  "logging": {
+    "level": "INFO",
+    "output_dir": "logs",
+    "backup_days": 14,
+    "rotation_when": "midnight",
+    "rotation_interval": 1,
+    "console_enabled": true
+  }
+}

@@ -45,3 +45,17 @@ _Prj/SD_SMA_ReportEditor/backend/data/
 
 # Logs
 *.log
+
+# 压缩文件
+*.zip
+*.rar
+*.7z
+*.tar
+*.gz
+*.bz2
+*.xz
+*.iso
+*.dmg
+*.pkg
+*.deb
+*.rpm

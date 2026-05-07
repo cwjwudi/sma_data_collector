@@ -1,0 +1,164 @@
+body {
+  margin: 0;
+  background: #f7f8fa;
+  color: #111827;
+  font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+
+.shell {
+  max-width: 1180px;
+  margin: 24px auto;
+  padding: 0 16px 24px;
+}
+
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.nav a {
+  color: #2563eb;
+  text-decoration: none;
+  margin-left: 12px;
+}
+
+.card {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 14px;
+  margin-bottom: 14px;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin: 6px 0;
+}
+
+input,
+select,
+button,
+textarea {
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  padding: 6px 8px;
+  background: #fff;
+}
+
+button {
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, transform 0.06s ease;
+}
+
+button:hover {
+  background: #f3f4f6;
+}
+
+button:active {
+  background: #e5e7eb;
+  border-color: #9ca3af;
+  transform: translateY(1px);
+}
+
+button.is-clicked {
+  background: #dbeafe;
+  border-color: #93c5fd;
+  color: #1d4ed8;
+}
+
+button.is-selected {
+  background: #2563eb;
+  border-color: #1d4ed8;
+  color: #ffffff;
+}
+
+button.btn-danger {
+  background: #ef4444;
+  border-color: #dc2626;
+  color: #ffffff;
+}
+
+button.btn-danger:hover {
+  background: #dc2626;
+  border-color: #b91c1c;
+  color: #ffffff;
+}
+
+button.btn-danger:active {
+  background: #b91c1c;
+  border-color: #991b1b;
+  color: #ffffff;
+}
+
+button.btn-danger.is-clicked {
+  background: #f87171;
+  border-color: #dc2626;
+  color: #ffffff;
+}
+
+textarea {
+  width: 100%;
+  min-height: 180px;
+  font-family: Consolas, monospace;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th,
+td {
+  border: 1px solid #e5e7eb;
+  padding: 6px;
+  font-size: 12px;
+}
+
+th {
+  background: #f3f4f6;
+}
+
+.muted {
+  color: #6b7280;
+  font-size: 12px;
+}
+
+.warn {
+  color: #b45309;
+}
+
+.ok {
+  color: #047857;
+}
+
+.btn-link {
+  display: inline-block;
+  padding: 8px 12px;
+  border: 1px solid #dbeafe;
+  background: #eff6ff;
+  border-radius: 8px;
+  color: #1d4ed8;
+  text-decoration: none;
+}
+
+select[multiple] {
+  min-width: 240px;
+  min-height: 190px;
+}
+
+.col-editor {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.col-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}

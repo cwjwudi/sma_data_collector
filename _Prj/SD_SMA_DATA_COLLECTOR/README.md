@@ -133,6 +133,24 @@ pip install -r requirements.txt
 pip install -r requirements-dev.txt
 ```
 
+### 启动配置网页（新增）
+
+```bash
+# Windows
+start_config_web.bat
+
+# 或手动启动
+pip install -r web_config/requirements.txt
+python -m uvicorn web_config.main:app --host 0.0.0.0 --port 8091
+```
+
+- 访问地址：`http://localhost:8091`
+- 支持功能：
+  - 读取/编辑/校验采集配置模板
+  - 导出配置文件与直写 `config/`
+  - OPC UA 浏览并一键加入 `points`
+- 设计边界：配置网页不支持 `trigger=query` 与 `groups[].query_config`
+
 ### 启动系统
 
 ```bash

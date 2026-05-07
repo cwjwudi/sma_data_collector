@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>查询页 - SD SMA Query Web</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <h1>查询页</h1>
+      <nav class="nav">
+        <a href="/query">查询页</a>
+        <a href="/config">配置页</a>
+      </nav>
+    </header>
+
+    <section class="card">
+      <div class="row">
+        <label>View</label><select id="viewName"></select>
+        <label>Group</label><select id="group"></select>
+        <label>列名显示</label>
+        <select id="labelLang">
+          <option value="zh">中文</option>
+          <option value="en">English</option>
+          <option value="both">中文 + English</option>
+        </select>
+        <label>PageSize</label><input id="pageSize" type="number" value="10" min="1" max="500" />
+        <button id="btnRefreshGroups">刷新组</button>
+        <button id="btnRunQuery">查询</button>
+      </div>
+      <div id="viewSummary" class="muted"></div>
+      <div class="row">
+        <button id="btnPrevPage">上一页</button>
+        <button id="btnNextPage">下一页</button>
+        <label>第</label><input id="pageNumber" type="number" value="1" min="1" style="width: 72px;" />
+        <label>页</label>
+        <button id="btnGoPage">跳转</button>
+        <span id="pageInfo" class="muted"></span>
+      </div>
+      <div id="schemaHint" class="muted"></div>
+      <div class="row">
+        <label>Start</label><input id="startTime" type="datetime-local" />
+        <label>End</label><input id="endTime" type="datetime-local" />
+        <button id="btnRange1D">最近1天</button>
+        <button id="btnRange1W">最近1周</button>
+        <button id="btnRange1M">最近1月</button>
+        <button id="btnRange1Y">最近1年</button>
+      </div>
+      <div id="querySummary" class="muted"></div>
+      <div id="queryWarnings" class="muted warn"></div>
+    </section>
+
+    <section class="card">
+      <table id="resultTable"></table>
+    </section>
+  </main>
+  <script src="/static/query.js"></script>
+</body>
+</html>

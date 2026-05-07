@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>SpecializedQuery</title>
+  <style>
+    html, body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      background: #ffffff;
+    }
+    .root {
+      width: 100%;
+      height: 100%;
+      box-sizing: border-box;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      padding: 8px;
+      gap: 8px;
+    }
+    .toolbar {
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 6px;
+    }
+    .toolbar-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+      min-height: 34px;
+    }
+    .toolbar-row .spacer {
+      flex: 1 1 auto;
+    }
+    .toolbar input, .toolbar select, .toolbar button, .pager input, .pager button {
+      border: 1px solid #d1d5db;
+      border-radius: 6px;
+      padding: 6px 10px;
+      font-size: 12px;
+      background: #fff;
+      height: 32px;
+      box-sizing: border-box;
+    }
+    .toolbar button {
+      cursor: pointer;
+    }
+    .toolbar button, .pager button {
+      transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, transform 0.06s ease;
+    }
+    .toolbar button:hover, .pager button:hover {
+      background: #f3f4f6;
+    }
+    .toolbar button:active, .pager button:active {
+      background: #e5e7eb;
+      border-color: #9ca3af;
+      transform: translateY(1px);
+    }
+    .toolbar button.is-clicked, .pager button.is-clicked {
+      background: #dbeafe;
+      border-color: #93c5fd;
+      color: #1d4ed8;
+    }
+    .toolbar button.active {
+      background: #2563eb;
+      border-color: #1d4ed8;
+      color: #fff;
+    }
+    .meta {
+      font-size: 12px;
+      color: #6b7280;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .tableWrap {
+      flex: 1;
+      min-height: 0;
+      overflow: auto;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+    th, td {
+      border: 1px solid #e5e7eb;
+      padding: 6px;
+      text-align: left;
+    }
+    th {
+      position: sticky;
+      top: 0;
+      background: #f9fafb;
+      z-index: 1;
+    }
+    .pager {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+      min-height: 34px;
+    }
+    .pageInput {
+      width: 68px;
+      text-align: center;
+    }
+    .pageText {
+      font-size: 12px;
+      color: #374151;
+      white-space: nowrap;
+    }
+    #tableSelector {
+      min-width: 220px;
+    }
+  </style>
+</head>
+<body>
+  <div id="app" class="root">
+    <div class="toolbar">
+      <div class="toolbar-row">
+        <label>startDate</label><input id="startDate" type="datetime-local" />
+        <label>endDate</label><input id="endDate" type="datetime-local" />
+        <button id="btnRange1D">最近1天</button>
+        <button id="btnRange1W">最近1周</button>
+        <button id="btnRange1M">最近1月</button>
+        <button id="btnRange1Y">最近1年</button>
+        <button id="btnGo">查询</button>
+      </div>
+      <div class="toolbar-row">
+        <label>表</label><select id="tableSelector"></select>
+      </div>
+    </div>
+    <div class="tableWrap">
+      <table id="resultTable"></table>
+    </div>
+    <div class="pager">
+      <button id="btnPrevPage">上一页</button>
+      <button id="btnNextPage">下一页</button>
+      <span class="pageText">第</span><input id="pageNumber" class="pageInput" type="number" min="1" value="1" />
+      <span class="pageText">/</span><span id="totalPagesText" class="pageText">1</span>
+      <button id="btnGoPage">跳转页</button>
+      <div id="meta" class="meta"></div>
+    </div>
+  </div>
+  <script src="/static/specialized_query.js"></script>
+</body>
+</html>
