@@ -606,6 +606,7 @@ function bindLvisAlignVisualGrid(): void {
 function bindDrawerInputs(): void {
   const onChange = () => {
     applyDrawerToDraft();
+    renderLvis();
     syncElementInputsFromModel();
   };
   const ids = [
