@@ -537,6 +537,64 @@ body.is-resizing .drawer-resizer::after {
   color: var(--muted);
   font-size: 0.75rem;
 }
+.field .field-text-label {
+  display: block;
+  margin-bottom: 0.25rem;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+/* 版式抽屉：用途 / 纸张 / 方向 · 胶囊按钮（替代原生 select） */
+.rptp-choice-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+.rptp-choice-row--stretch .rptp-choice-pill {
+  flex: 1;
+  min-width: 4rem;
+  justify-content: center;
+}
+.rptp-choice-pill {
+  appearance: none;
+  margin: 0;
+  padding: 0.45rem 0.65rem;
+  border-radius: 8px;
+  border: var(--border);
+  background: var(--surface);
+  color: inherit;
+  font: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease,
+    background 0.15s ease;
+}
+.rptp-choice-pill:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--muted));
+}
+.rptp-choice-pill.is-active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+  background: rgba(37, 99, 235, 0.08);
+}
+html[data-theme="dark"] .rptp-choice-pill.is-active {
+  background: rgba(96, 165, 250, 0.14);
+}
+.rptp-choice-pill:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.rptp-choice-grid-paper {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.35rem;
+}
+.rptp-choice-pill--paper {
+  padding: 0.55rem 0.45rem;
+  font-weight: 600;
+}
 .field input {
   width: 100%;
   padding: 0.45rem 0.5rem;
@@ -811,6 +869,13 @@ html[data-theme="dark"] .layout-preset-row.is-active-row td {
 .rptp-dialog#dialog-new-template.rptp-dialog--wide,
 #dialog-new-template.rptp-dialog--wide {
   max-width: min(720px, 96vw);
+}
+.rptp-dialog.rptp-dialog--new-layout,
+#dialog-new-layout.rptp-dialog--new-layout {
+  max-width: min(520px, 96vw);
+}
+#form-new-layout {
+  padding: 1.25rem;
 }
 #form-new-template {
   padding: 1.25rem;

@@ -7,6 +7,10 @@ import {
   type LayoutPreset,
 } from "./templates/layout-model";
 import { PAPER_LABEL, type PaperKind } from "./templates/paper";
+import {
+  bindHiddenBackedChoiceButtons,
+  syncAllChoiceButtonsFromHiddens,
+} from "./layout-choice-controls";
 import { openLayoutVisual } from "./report-layout-visual";
 
 export interface LayoutPageDeps {
@@ -20,14 +24,11 @@ let selectedId: string | null = null;
 export function initReportLayoutPage(d: LayoutPageDeps): void {
   deps = d;
 
+  bindHiddenBackedChoiceButtons(document.getElementById("layout-edit-panel"));
+  bindNewLayoutDialog();
+
   document.getElementById("btn-layout-new")?.addEventListener("click", () => {
-    presets = loadLayoutPresets();
-    const p = createEmptyLayoutPreset();
-    presets.push(p);
-    saveLayoutPresets(presets);
-    selectedId = p.id;
-    renderLayoutList();
-    syncLayoutForm();
+    openNewLayoutDialog();
   });
 
   document.getElementById("btn-layout-save")?.addEventListener("click", () => {
@@ -66,6 +67,73 @@ export function initReportLayoutPage(d: LayoutPageDeps): void {
     selectedId = id;
     renderLayoutList();
     syncLayoutForm();
+  });
+}
+
+function suggestNewLayoutName(p: LayoutPreset): string {
+  const paper = PAPER_LABEL[p.paperKind];
+  const ori = p.orientation === "landscape" ? "横向" : "纵向";
+  const tag = LAYOUT_PAGE_ROLE_LABEL[p.pageRole];
+  return `${paper} ${ori} · ${tag}`;
+}
+
+function resetNewLayoutDialog(): void {
+  const form = document.getElementById("form-new-layout");
+  const nameEl = document.getElementById("nl-layout-name") as HTMLInputElement | null;
+  const role = document.getElementById("nl-field-page-role") as HTMLInputElement | null;
+  const paper = document.getElementById("nl-field-paper") as HTMLInputElement | null;
+  const orient = document.getElementById("nl-field-orientation") as HTMLInputElement | null;
+  if (!form || !role || !paper || !orient) return;
+  if (nameEl) nameEl.value = "";
+  role.value = "normal";
+  paper.value = "A4";
+  orient.value = "portrait";
+  syncAllChoiceButtonsFromHiddens(form);
+}
+
+function openNewLayoutDialog(): void {
+  resetNewLayoutDialog();
+  const dlg = document.getElementById("dialog-new-layout") as HTMLDialogElement | null;
+  dlg?.showModal();
+}
+
+function submitNewLayoutFromDialog(): void {
+  const roleEl = document.getElementById("nl-field-page-role") as HTMLInputElement | null;
+  const paperEl = document.getElementById("nl-field-paper") as HTMLInputElement | null;
+  const orientEl = document.getElementById("nl-field-orientation") as HTMLInputElement | null;
+  const nameEl = document.getElementById("nl-layout-name") as HTMLInputElement | null;
+  if (!roleEl || !paperEl || !orientEl) return;
+  const pkRaw = paperEl.value;
+  const paperKind: PaperKind =
+    pkRaw === "A5" || pkRaw === "A4" || pkRaw === "A3" || pkRaw === "Letter" ? pkRaw : "A4";
+  const pr = roleEl.value;
+  const pageRole = pr === "cover" || pr === "back" ? pr : "normal";
+  const orientation = orientEl.value === "landscape" ? "landscape" : "portrait";
+
+  presets = loadLayoutPresets();
+  const p = createEmptyLayoutPreset();
+  p.paperKind = paperKind;
+  p.orientation = orientation;
+  p.pageRole = pageRole;
+  const customName = nameEl?.value.trim() ?? "";
+  p.name = customName || suggestNewLayoutName(p);
+  presets.push(p);
+  saveLayoutPresets(presets);
+  selectedId = p.id;
+  renderLayoutList();
+  syncLayoutForm();
+}
+
+function bindNewLayoutDialog(): void {
+  const dlg = document.getElementById("dialog-new-layout") as HTMLDialogElement | null;
+  const form = document.getElementById("form-new-layout");
+  if (!dlg || !form) return;
+  bindHiddenBackedChoiceButtons(form);
+  document.getElementById("nl-cancel")?.addEventListener("click", () => dlg.close());
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    submitNewLayoutFromDialog();
+    dlg.close();
   });
 }
 
@@ -125,7 +193,7 @@ function renderLayoutList(): void {
   if (presets.length === 0) {
     const tr = document.createElement("tr");
     tr.innerHTML =
-      '<td colspan="5" class="template-table-empty">暂无版式。点击顶栏「新建版式」，再在右侧参数栏填写并保存后，即可在「新建模版」中优先选用。</td>';
+      '<td colspan="5" class="template-table-empty">暂无版式。点击顶栏「新建版式」在弹出框中选择用途、纸张与方向；随后在右侧参数栏可继续微调并保存，即可在「新建模版」中选用。</td>';
     tbody.appendChild(tr);
     return;
   }
@@ -181,6 +249,7 @@ function syncLayoutForm(): void {
   setNum("layout-ml", p.marginLeftMm);
   setNum("layout-hband", p.headerBandMm);
   setNum("layout-fband", p.footerBandMm);
+  syncAllChoiceButtonsFromHiddens(form);
 }
 
 function setVal(id: string, v: string): void {

@@ -536,7 +536,7 @@
           </div>
           <div id="drawer-panel-layout" class="drawer-panel" hidden>
             <p id="layout-edit-empty" class="layout-edit-empty drawer-layout-empty">
-              请<strong>点击表格中的某一版式行</strong>以在右侧编辑纸张与页边距并保存；或点击顶栏「新建版式」。未选中行时不显示下方表单。
+              请<strong>点击表格中的某一版式行</strong>以在右侧编辑纸张与页边距并保存；或点击顶栏<strong>「新建版式」</strong>在弹出框中选择用途、纸张与方向。未选中行时不显示下方表单。
             </p>
             <div id="layout-edit-panel" class="layout-edit-panel drawer-layout-edit-panel" hidden>
               <p class="drawer-panel-hint">
@@ -548,32 +548,61 @@
                 <input id="layout-field-name" type="text" maxlength="120" />
               </div>
               <div class="field">
-                <label for="layout-field-page-role">页面用途</label>
-                <select id="layout-field-page-role">
-                  <option value="normal">正文页（默认）</option>
-                  <option value="cover">封面</option>
-                  <option value="back">末页</option>
-                </select>
+                <span class="field-text-label" id="layout-field-page-role-label">页面用途</span>
+                <input type="hidden" id="layout-field-page-role" value="normal" />
+                <div
+                  class="rptp-choice-row rptp-choice-row--stretch"
+                  role="group"
+                  aria-labelledby="layout-field-page-role-label"
+                >
+                  <button
+                    type="button"
+                    class="rptp-choice-pill"
+                    data-choice-target="layout-field-page-role"
+                    data-choice-value="normal"
+                    aria-pressed="false"
+                  >
+                    正文页
+                  </button>
+                  <button
+                    type="button"
+                    class="rptp-choice-pill"
+                    data-choice-target="layout-field-page-role"
+                    data-choice-value="cover"
+                    aria-pressed="false"
+                  >
+                    封面
+                  </button>
+                  <button
+                    type="button"
+                    class="rptp-choice-pill"
+                    data-choice-target="layout-field-page-role"
+                    data-choice-value="back"
+                    aria-pressed="false"
+                  >
+                    末页
+                  </button>
+                </div>
                 <p class="drawer-panel-hint" style="margin-top: 0.35rem">
                   新建模版时：只会列出「正文页」版式作为正文候选；「封面」「末页」版式用于可选封面/末页。
                 </p>
               </div>
-              <div class="field-row">
-                <div class="field">
-                  <label for="layout-field-paper">纸张</label>
-                  <select id="layout-field-paper">
-                    <option value="A5">A5</option>
-                    <option value="A4">A4</option>
-                    <option value="A3">A3</option>
-                    <option value="Letter">Letter</option>
-                  </select>
+              <div class="field">
+                <span class="field-text-label" id="layout-field-paper-label">纸张</span>
+                <input type="hidden" id="layout-field-paper" value="A4" />
+                <div class="rptp-choice-grid-paper" role="group" aria-labelledby="layout-field-paper-label">
+                  <button type="button" class="rptp-choice-pill rptp-choice-pill--paper" data-choice-target="layout-field-paper" data-choice-value="A5" aria-pressed="false">A5</button>
+                  <button type="button" class="rptp-choice-pill rptp-choice-pill--paper" data-choice-target="layout-field-paper" data-choice-value="A4" aria-pressed="false">A4</button>
+                  <button type="button" class="rptp-choice-pill rptp-choice-pill--paper" data-choice-target="layout-field-paper" data-choice-value="A3" aria-pressed="false">A3</button>
+                  <button type="button" class="rptp-choice-pill rptp-choice-pill--paper" data-choice-target="layout-field-paper" data-choice-value="Letter" aria-pressed="false">Letter</button>
                 </div>
-                <div class="field">
-                  <label for="layout-field-orientation">方向</label>
-                  <select id="layout-field-orientation">
-                    <option value="portrait">纵向</option>
-                    <option value="landscape">横向</option>
-                  </select>
+              </div>
+              <div class="field">
+                <span class="field-text-label" id="layout-field-orientation-label">方向</span>
+                <input type="hidden" id="layout-field-orientation" value="portrait" />
+                <div class="rptp-choice-row rptp-choice-row--stretch" role="group" aria-labelledby="layout-field-orientation-label">
+                  <button type="button" class="rptp-choice-pill" data-choice-target="layout-field-orientation" data-choice-value="portrait" aria-pressed="false">纵向</button>
+                  <button type="button" class="rptp-choice-pill" data-choice-target="layout-field-orientation" data-choice-value="landscape" aria-pressed="false">横向</button>
                 </div>
               </div>
               <p class="layout-edit-sub">页边距与页眉页脚带（单位 mm）</p>
@@ -609,29 +638,30 @@
                 <input id="lvis-field-name" type="text" maxlength="120" />
               </div>
               <div class="field">
-                <label for="lvis-field-page-role">页面用途</label>
-                <select id="lvis-field-page-role">
-                  <option value="normal">正文页</option>
-                  <option value="cover">封面</option>
-                  <option value="back">末页</option>
-                </select>
-              </div>
-              <div class="field-row">
-                <div class="field">
-                  <label for="lvis-field-paper">纸张</label>
-                  <select id="lvis-field-paper">
-                    <option value="A5">A5</option>
-                    <option value="A4">A4</option>
-                    <option value="A3">A3</option>
-                    <option value="Letter">Letter</option>
-                  </select>
+                <span class="field-text-label" id="lvis-field-page-role-label">页面用途</span>
+                <input type="hidden" id="lvis-field-page-role" value="normal" />
+                <div class="rptp-choice-row rptp-choice-row--stretch" role="group" aria-labelledby="lvis-field-page-role-label">
+                  <button type="button" class="rptp-choice-pill" data-choice-target="lvis-field-page-role" data-choice-value="normal" aria-pressed="false">正文页</button>
+                  <button type="button" class="rptp-choice-pill" data-choice-target="lvis-field-page-role" data-choice-value="cover" aria-pressed="false">封面</button>
+                  <button type="button" class="rptp-choice-pill" data-choice-target="lvis-field-page-role" data-choice-value="back" aria-pressed="false">末页</button>
                 </div>
-                <div class="field">
-                  <label for="lvis-field-orientation">方向</label>
-                  <select id="lvis-field-orientation">
-                    <option value="portrait">纵向</option>
-                    <option value="landscape">横向</option>
-                  </select>
+              </div>
+              <div class="field">
+                <span class="field-text-label" id="lvis-field-paper-label">纸张</span>
+                <input type="hidden" id="lvis-field-paper" value="A4" />
+                <div class="rptp-choice-grid-paper" role="group" aria-labelledby="lvis-field-paper-label">
+                  <button type="button" class="rptp-choice-pill rptp-choice-pill--paper" data-choice-target="lvis-field-paper" data-choice-value="A5" aria-pressed="false">A5</button>
+                  <button type="button" class="rptp-choice-pill rptp-choice-pill--paper" data-choice-target="lvis-field-paper" data-choice-value="A4" aria-pressed="false">A4</button>
+                  <button type="button" class="rptp-choice-pill rptp-choice-pill--paper" data-choice-target="lvis-field-paper" data-choice-value="A3" aria-pressed="false">A3</button>
+                  <button type="button" class="rptp-choice-pill rptp-choice-pill--paper" data-choice-target="lvis-field-paper" data-choice-value="Letter" aria-pressed="false">Letter</button>
+                </div>
+              </div>
+              <div class="field">
+                <span class="field-text-label" id="lvis-field-orientation-label">方向</span>
+                <input type="hidden" id="lvis-field-orientation" value="portrait" />
+                <div class="rptp-choice-row rptp-choice-row--stretch" role="group" aria-labelledby="lvis-field-orientation-label">
+                  <button type="button" class="rptp-choice-pill" data-choice-target="lvis-field-orientation" data-choice-value="portrait" aria-pressed="false">纵向</button>
+                  <button type="button" class="rptp-choice-pill" data-choice-target="lvis-field-orientation" data-choice-value="landscape" aria-pressed="false">横向</button>
                 </div>
               </div>
               <p class="layout-edit-sub">页边距（mm）</p>
@@ -738,6 +768,51 @@
       </div>
     </aside>
   </div>
+
+  <dialog id="dialog-new-layout" class="rptp-dialog rptp-dialog--new-layout">
+    <form id="form-new-layout">
+      <h2 class="rptp-dialog-title">新建版式</h2>
+      <p class="nt-picker-hint" style="margin-top: -0.35rem; margin-bottom: 0.65rem">
+        选择用途、纸张与方向后加入列表；名称可在此填写或稍后在右侧参数栏与可视化页修改。
+      </p>
+      <div class="field">
+        <label for="nl-layout-name">名称（可选）</label>
+        <input id="nl-layout-name" type="text" maxlength="120" placeholder="留空则按「纸张 + 方向 + 用途」自动命名" autocomplete="off" />
+      </div>
+      <section class="nt-picker-section">
+        <h3 class="nt-picker-heading">页面用途</h3>
+        <input type="hidden" id="nl-field-page-role" value="normal" />
+        <div class="rptp-choice-row rptp-choice-row--stretch" role="group" aria-label="页面用途">
+          <button type="button" class="rptp-choice-pill is-active" data-choice-target="nl-field-page-role" data-choice-value="normal" aria-pressed="true">正文页</button>
+          <button type="button" class="rptp-choice-pill" data-choice-target="nl-field-page-role" data-choice-value="cover" aria-pressed="false">封面</button>
+          <button type="button" class="rptp-choice-pill" data-choice-target="nl-field-page-role" data-choice-value="back" aria-pressed="false">末页</button>
+        </div>
+      </section>
+      <section class="nt-picker-section">
+        <h3 class="nt-picker-heading">纸张</h3>
+        <input type="hidden" id="nl-field-paper" value="A4" />
+        <div class="rptp-choice-grid-paper" role="group" aria-label="纸张规格">
+          <button type="button" class="rptp-choice-pill rptp-choice-pill--paper" data-choice-target="nl-field-paper" data-choice-value="A5" aria-pressed="false">A5</button>
+          <button type="button" class="rptp-choice-pill rptp-choice-pill--paper is-active" data-choice-target="nl-field-paper" data-choice-value="A4" aria-pressed="true">A4</button>
+          <button type="button" class="rptp-choice-pill rptp-choice-pill--paper" data-choice-target="nl-field-paper" data-choice-value="A3" aria-pressed="false">A3</button>
+          <button type="button" class="rptp-choice-pill rptp-choice-pill--paper" data-choice-target="nl-field-paper" data-choice-value="Letter" aria-pressed="false">Letter</button>
+        </div>
+      </section>
+      <section class="nt-picker-section">
+        <h3 class="nt-picker-heading">方向</h3>
+        <input type="hidden" id="nl-field-orientation" value="portrait" />
+        <div class="rptp-choice-row rptp-choice-row--stretch" role="group" aria-label="纸张方向">
+          <button type="button" class="rptp-choice-pill is-active" data-choice-target="nl-field-orientation" data-choice-value="portrait" aria-pressed="true">纵向</button>
+          <button type="button" class="rptp-choice-pill" data-choice-target="nl-field-orientation" data-choice-value="landscape" aria-pressed="false">横向</button>
+        </div>
+      </section>
+      <p class="nt-picker-hint">创建后可在右侧调整页边距与页眉页脚带高度，或使用「可视化编辑」编排页眉页脚控件。</p>
+      <div class="rptp-dialog-actions">
+        <button type="button" class="btn" id="nl-cancel">取消</button>
+        <button type="submit" class="btn btn-primary">创建</button>
+      </div>
+    </form>
+  </dialog>
 
   <dialog id="dialog-new-template" class="rptp-dialog rptp-dialog--wide">
     <form id="form-new-template">

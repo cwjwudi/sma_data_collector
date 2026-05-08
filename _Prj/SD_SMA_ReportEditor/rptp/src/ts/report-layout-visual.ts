@@ -16,6 +16,10 @@ import {
 } from "./templates/layout-zone-element";
 import { renderZoneElementsInto } from "./templates/layout-zone-render";
 import { PAPER_LABEL, type PaperKind } from "./templates/paper";
+import {
+  bindHiddenBackedChoiceButtons,
+  syncAllChoiceButtonsFromHiddens,
+} from "./layout-choice-controls";
 
 export interface LayoutVisualDeps {
   showPage: (id: string) => void;
@@ -958,6 +962,7 @@ export function initReportLayoutVisual(d: LayoutVisualDeps): void {
   bindAlign("lvis-match-zone-h", () => matchSelectionToZoneDimension("h"));
 
   bindDrawerInputs();
+  bindHiddenBackedChoiceButtons(document.getElementById("lvis-drawer-global"));
   bindLvisAlignVisualGrid();
   bindLvisAlignTooltips();
 
@@ -1521,6 +1526,7 @@ function syncLvisDrawer(): void {
     set("lvis-g-mr", draft.marginRightMm);
     set("lvis-g-mb", draft.marginBottomMm);
     set("lvis-g-ml", draft.marginLeftMm);
+    syncAllChoiceButtonsFromHiddens(pg);
   }
 
   if (sel.k === "headerBand" || sel.k === "footerBand") {
