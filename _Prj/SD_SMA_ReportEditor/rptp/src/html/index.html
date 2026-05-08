@@ -101,9 +101,35 @@
             <button type="button" class="btn btn-primary" id="btn-lvis-save">保存版式</button>
           </div>
           <div class="lvis-editor-layout">
+            <div class="lvis-editor-center">
+              <div class="lvis-canvas-stack">
+                <div class="lvis-zoom-strip">
+                  <button type="button" class="btn btn-sm" id="btn-lvis-zoom-out" title="缩小">−</button>
+                  <input type="range" id="lvis-zoom-range" min="35" max="200" step="5" value="100" aria-label="缩放比例" />
+                  <span id="lvis-zoom-pct" class="lvis-zoom-pct">100%</span>
+                  <button type="button" class="btn btn-sm" id="btn-lvis-zoom-in" title="放大">+</button>
+                  <button type="button" class="btn btn-sm" id="btn-lvis-zoom-fit">适应宽度</button>
+                </div>
+                <div class="lvis-scroll" aria-label="纸张预览">
+                  <div class="lvis-scroll-pad">
+                    <div id="lvis-page-scale-wrap" class="lvis-page-scale-wrap">
+                      <div id="lvis-page" class="lvis-page">
+                        <div id="lvis-header-wrap" class="lvis-zone-wrap lvis-zone-header">
+                          <div id="lvis-header-canvas" class="lvis-zone-canvas" tabindex="-1"></div>
+                        </div>
+                        <div id="lvis-body-zone" class="lvis-body-zone" tabindex="-1">正文区（导出时摆放模版控件）</div>
+                        <div id="lvis-footer-wrap" class="lvis-zone-wrap lvis-zone-footer">
+                          <div id="lvis-footer-canvas" class="lvis-zone-canvas" tabindex="-1"></div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
             <aside class="lvis-tool-palette" aria-label="页眉页脚控件">
-              <h2 class="lvis-tool-palette-title">页眉 / 页脚控件</h2>
-              <p class="lvis-tool-palette-hint">拖到上方（页眉）或下方（页脚）浅底区域。点击中间<strong>正文区</strong>在右侧改纸张与页边距；点页眉/页脚空白改带高度；点选控件后改位置与样式。</p>
+              <h2 class="lvis-tool-palette-title">控件</h2>
+              <p class="lvis-tool-palette-hint">拖到页眉/页脚区。点击<strong>正文</strong>→右侧参数栏为纸张；点击<strong>页眉/页脚空白</strong>→带高度；点击<strong>控件</strong>→属性。<kbd class="lvis-kbd">Shift</kbd> 点选可多选。</p>
               <div class="lvis-tool-grid">
                 <button type="button" class="template-tool-chip" draggable="true" data-layout-vis-tool="text">文本</button>
                 <button type="button" class="template-tool-chip" draggable="true" data-layout-vis-tool="box">色块</button>
@@ -111,20 +137,40 @@
                 <button type="button" class="template-tool-chip" draggable="true" data-layout-vis-tool="pageNumber">页码</button>
                 <button type="button" class="template-tool-chip" draggable="true" data-layout-vis-tool="date">日期</button>
               </div>
-            </aside>
-            <div class="lvis-editor-center">
-              <div class="lvis-scroll" aria-label="纸张预览">
-                <div id="lvis-page" class="lvis-page">
-                  <div id="lvis-header-wrap" class="lvis-zone-wrap lvis-zone-header">
-                    <div id="lvis-header-canvas" class="lvis-zone-canvas" tabindex="-1"></div>
-                  </div>
-                  <div id="lvis-body-zone" class="lvis-body-zone" tabindex="-1">正文区（导出时摆放模版控件）</div>
-                  <div id="lvis-footer-wrap" class="lvis-zone-wrap lvis-zone-footer">
-                    <div id="lvis-footer-canvas" class="lvis-zone-canvas" tabindex="-1"></div>
-                  </div>
+              <div class="lvis-palette-divider"></div>
+              <label class="lvis-check-row">
+                <input type="checkbox" id="lvis-snap-enabled" checked />
+                <span>网格吸附</span>
+              </label>
+              <div class="field lvis-field-tight">
+                <label for="lvis-snap-grid">网格 px</label>
+                <input id="lvis-snap-grid" type="number" min="2" max="64" step="2" value="8" />
+              </div>
+              <div id="lvis-align-actions" class="lvis-align-actions" hidden>
+                <span class="lvis-mini-label">区内对齐</span>
+                <div class="lvis-btn-row">
+                  <button type="button" class="btn btn-sm" id="lvis-al-left">左</button>
+                  <button type="button" class="btn btn-sm" id="lvis-al-center-x">水平</button>
+                  <button type="button" class="btn btn-sm" id="lvis-al-right">右</button>
+                </div>
+                <div class="lvis-btn-row">
+                  <button type="button" class="btn btn-sm" id="lvis-al-top">上</button>
+                  <button type="button" class="btn btn-sm" id="lvis-al-center-y">垂直</button>
+                  <button type="button" class="btn btn-sm" id="lvis-al-bottom">下</button>
+                </div>
+                <span class="lvis-mini-label">铺满区带</span>
+                <div class="lvis-btn-row">
+                  <button type="button" class="btn btn-sm" id="lvis-fill-w">区宽</button>
+                  <button type="button" class="btn btn-sm" id="lvis-fill-h">区高</button>
+                  <button type="button" class="btn btn-sm" id="lvis-fill-both">铺满</button>
+                </div>
+                <span class="lvis-mini-label">多选统一（参照首个）</span>
+                <div class="lvis-btn-row">
+                  <button type="button" class="btn btn-sm lvis-match-btn" id="lvis-match-w" disabled>同宽</button>
+                  <button type="button" class="btn btn-sm lvis-match-btn" id="lvis-match-h" disabled>同高</button>
                 </div>
               </div>
-            </div>
+            </aside>
           </div>
         </section>
         <section id="page-templates" class="page-panel page-templates" aria-label="模版管理">
@@ -361,8 +407,11 @@
             </div>
           </div>
           <div id="drawer-panel-layout-visual" class="drawer-panel" hidden>
-            <p class="drawer-panel-hint">点击下方画布可选区域切换本节内容。</p>
-            <div id="lvis-drawer-global">
+            <p id="lvis-drawer-context-hint" class="drawer-panel-hint" hidden>点击下方画布后，此处显示纸张、带高度或控件属性。</p>
+            <div id="lvis-drawer-idle">
+              <p class="drawer-panel-muted">请先点击预览区：<strong>正文</strong>编辑纸张与页边距；<strong>页眉/页脚空白</strong>编辑带高度；<strong>控件</strong>编辑样式。点击预览区外侧留白返回此说明。</p>
+            </div>
+            <div id="lvis-drawer-global" hidden>
               <h2 class="layout-edit-title">纸张与页边距</h2>
               <div class="field">
                 <label for="lvis-field-name">名称</label>
@@ -405,6 +454,7 @@
             </div>
             <div id="lvis-drawer-element" hidden>
               <h2 class="layout-edit-title">选中控件</h2>
+              <p id="lvis-drawer-multi" class="drawer-panel-hint" hidden></p>
               <div id="lvis-e-text-wrap" class="field">
                 <label for="lvis-e-text">文本</label>
                 <textarea id="lvis-e-text" rows="2" maxlength="500"></textarea>

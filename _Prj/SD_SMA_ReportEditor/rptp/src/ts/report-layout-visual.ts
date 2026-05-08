@@ -23,12 +23,20 @@ let deps: LayoutVisualDeps;
 let draft: LayoutPreset | null = null;
 
 type Sel =
+  | { k: "idle" }
   | { k: "global" }
   | { k: "headerBand" }
   | { k: "footerBand" }
-  | { k: "el"; zone: "header" | "footer"; id: string };
+  | { k: "el"; zone: "header" | "footer"; ids: string[] };
 
-let sel: Sel = { k: "global" };
+let sel: Sel = { k: "idle" };
+
+/** 预览缩放（不影响导出几何，仅视图） */
+let lvisZoom = 1;
+
+/** 拖拽对齐网格（px） */
+let snapEnabled = true;
+let snapGridPx = 8;
 
 let dragMove: {
   zone: "header" | "footer";
@@ -38,6 +46,20 @@ let dragMove: {
   ox: number;
   oy: number;
 } | null = null;
+
+function snapPx(v: number): number {
+  if (!snapEnabled || snapGridPx <= 0) return Math.round(v);
+  return Math.round(v / snapGridPx) * snapGridPx;
+}
+
+function snapElInZone(el: LayoutZoneElement, zone: "header" | "footer"): void {
+  const { zw, zh } = zoneDims(zone);
+  el.x = snapPx(el.x);
+  el.y = snapPx(el.y);
+  el.w = Math.max(16, snapPx(el.w));
+  el.h = Math.max(16, snapPx(el.h));
+  clampZoneElement(el, zw, zh);
+}
 
 function snapFromDraft(d: LayoutPreset): LayoutSnapshot {
   return {
@@ -69,10 +91,103 @@ function clampAllZoneElements(): void {
   for (const el of draft.footerElements) clampZoneElement(el, fd.zw, fd.zh);
 }
 
+function primarySelId(): string | undefined {
+  return sel.k === "el" ? sel.ids[0] : undefined;
+}
+
 function findSelEl(): LayoutZoneElement | undefined {
   if (!draft || sel.k !== "el") return undefined;
+  const pid = primarySelId();
+  if (!pid) return undefined;
   const list = sel.zone === "header" ? draft.headerElements : draft.footerElements;
-  return list.find((x) => x.id === sel.id);
+  return list.find((x) => x.id === pid);
+}
+
+function listForZone(zone: "header" | "footer"): LayoutZoneElement[] {
+  if (!draft) return [];
+  return zone === "header" ? draft.headerElements : draft.footerElements;
+}
+
+function applyLvisZoom(): void {
+  const wrap = document.getElementById("lvis-page-scale-wrap");
+  const pct = document.getElementById("lvis-zoom-pct");
+  const range = document.getElementById("lvis-zoom-range") as HTMLInputElement | null;
+  if (wrap) {
+    wrap.style.transform = `scale(${lvisZoom})`;
+    wrap.style.transformOrigin = "top center";
+  }
+  const p = Math.round(lvisZoom * 100);
+  if (pct) pct.textContent = `${p}%`;
+  if (range) range.value = String(p);
+}
+
+function lvisZoomFit(): void {
+  const scroll = document.querySelector(".lvis-scroll-pad") as HTMLElement | null;
+  const page = document.getElementById("lvis-page");
+  if (!scroll || !page) return;
+  const pad = 16;
+  const mw = Math.max(80, scroll.clientWidth - pad * 2);
+  const w = page.offsetWidth;
+  if (w <= 0) return;
+  lvisZoom = Math.min(2, Math.max(0.35, mw / w));
+  applyLvisZoom();
+}
+
+function alignSelection(mode: "left" | "centerX" | "right" | "top" | "centerY" | "bottom"): void {
+  if (!draft || sel.k !== "el") return;
+  const z = sel.zone;
+  const { zw, zh } = zoneDims(z);
+  const list = listForZone(z);
+  for (const id of sel.ids) {
+    const el = list.find((x) => x.id === id);
+    if (!el) continue;
+    if (mode === "left") el.x = 0;
+    else if (mode === "centerX") el.x = Math.max(0, Math.round((zw - el.w) / 2));
+    else if (mode === "right") el.x = Math.max(0, zw - el.w);
+    else if (mode === "top") el.y = 0;
+    else if (mode === "centerY") el.y = Math.max(0, Math.round((zh - el.h) / 2));
+    else if (mode === "bottom") el.y = Math.max(0, zh - el.h);
+    snapElInZone(el, z);
+  }
+  renderLvis();
+  syncElementInputsFromModel();
+}
+
+function stretchPrimary(fill: "width" | "height" | "both"): void {
+  const el = findSelEl();
+  if (!draft || sel.k !== "el" || !el) return;
+  const z = sel.zone;
+  const { zw, zh } = zoneDims(z);
+  if (fill === "width" || fill === "both") {
+    el.x = 0;
+    el.w = zw;
+  }
+  if (fill === "height" || fill === "both") {
+    el.y = 0;
+    el.h = zh;
+  }
+  snapElInZone(el, z);
+  renderLvis();
+  syncElementInputsFromModel();
+}
+
+/** 其余选中项与首个选中项同宽 / 同高 */
+function matchOthersDimension(dim: "w" | "h"): void {
+  if (!draft || sel.k !== "el" || sel.ids.length < 2) return;
+  const z = sel.zone;
+  const list = listForZone(z);
+  const primary = list.find((x) => x.id === sel.ids[0]);
+  if (!primary) return;
+  const ref = dim === "w" ? primary.w : primary.h;
+  for (let i = 1; i < sel.ids.length; i++) {
+    const el = list.find((x) => x.id === sel.ids[i]);
+    if (!el) continue;
+    if (dim === "w") el.w = ref;
+    else el.h = ref;
+    snapElInZone(el, z);
+  }
+  renderLvis();
+  syncElementInputsFromModel();
 }
 
 export function initReportLayoutVisual(d: LayoutVisualDeps): void {
@@ -80,7 +195,7 @@ export function initReportLayoutVisual(d: LayoutVisualDeps): void {
 
   document.getElementById("btn-lvis-back")?.addEventListener("click", () => {
     draft = null;
-    sel = { k: "global" };
+    sel = { k: "idle" };
     deps.showPage("layout");
   });
 
@@ -109,25 +224,92 @@ export function initReportLayoutVisual(d: LayoutVisualDeps): void {
   setupZoneCanvas(document.getElementById("lvis-header-canvas"), "header");
   setupZoneCanvas(document.getElementById("lvis-footer-canvas"), "footer");
 
-  document.getElementById("lvis-body-zone")?.addEventListener("click", () => {
+  document.getElementById("lvis-body-zone")?.addEventListener("click", (e) => {
+    e.stopPropagation();
     sel = { k: "global" };
     renderLvis();
     syncLvisDrawer();
   });
 
+  const scrollPad = document.querySelector(".lvis-scroll-pad");
+  scrollPad?.addEventListener("click", (e) => {
+    const page = document.getElementById("lvis-page");
+    if (!draft || !page) return;
+    if (page.contains(e.target as Node)) return;
+    sel = { k: "idle" };
+    renderLvis();
+    syncLvisDrawer();
+  });
+
+  document.querySelector(".lvis-zoom-strip")?.addEventListener("click", (e) => e.stopPropagation());
+
+  document.getElementById("btn-lvis-zoom-out")?.addEventListener("click", () => {
+    lvisZoom = Math.max(0.35, Math.round((lvisZoom - 0.1) * 100) / 100);
+    applyLvisZoom();
+  });
+  document.getElementById("btn-lvis-zoom-in")?.addEventListener("click", () => {
+    lvisZoom = Math.min(2, Math.round((lvisZoom + 0.1) * 100) / 100);
+    applyLvisZoom();
+  });
+  document.getElementById("lvis-zoom-range")?.addEventListener("input", () => {
+    const r = document.getElementById("lvis-zoom-range") as HTMLInputElement | null;
+    if (!r) return;
+    const p = Number(r.value);
+    if (!Number.isFinite(p)) return;
+    lvisZoom = Math.min(2, Math.max(0.35, p / 100));
+    applyLvisZoom();
+  });
+  document.getElementById("btn-lvis-zoom-fit")?.addEventListener("click", () => {
+    lvisZoomFit();
+  });
+
+  document.getElementById("lvis-snap-enabled")?.addEventListener("change", () => {
+    const c = document.getElementById("lvis-snap-enabled") as HTMLInputElement | null;
+    snapEnabled = c?.checked ?? true;
+  });
+  document.getElementById("lvis-snap-grid")?.addEventListener("input", () => {
+    const n = document.getElementById("lvis-snap-grid") as HTMLInputElement | null;
+    snapGridPx = Math.max(2, Math.min(64, parseInt(n?.value ?? "8", 10) || 8));
+    if (n) n.value = String(snapGridPx);
+  });
+
+  const bindAlign = (id: string, fn: () => void) => {
+    document.getElementById(id)?.addEventListener("click", fn);
+  };
+  bindAlign("lvis-al-left", () => alignSelection("left"));
+  bindAlign("lvis-al-center-x", () => alignSelection("centerX"));
+  bindAlign("lvis-al-right", () => alignSelection("right"));
+  bindAlign("lvis-al-top", () => alignSelection("top"));
+  bindAlign("lvis-al-center-y", () => alignSelection("centerY"));
+  bindAlign("lvis-al-bottom", () => alignSelection("bottom"));
+  bindAlign("lvis-fill-w", () => stretchPrimary("width"));
+  bindAlign("lvis-fill-h", () => stretchPrimary("height"));
+  bindAlign("lvis-fill-both", () => stretchPrimary("both"));
+  bindAlign("lvis-match-w", () => matchOthersDimension("w"));
+  bindAlign("lvis-match-h", () => matchOthersDimension("h"));
+
   bindDrawerInputs();
 
   document.getElementById("btn-lvis-el-delete")?.addEventListener("click", () => {
     if (!draft || sel.k !== "el") return;
-    if (sel.zone === "header") draft.headerElements = draft.headerElements.filter((x) => x.id !== sel.id);
-    else draft.footerElements = draft.footerElements.filter((x) => x.id !== sel.id);
-    sel = { k: sel.zone === "header" ? "headerBand" : "footerBand" };
+    const z = sel.zone;
+    const rm = new Set(sel.ids);
+    if (z === "header") draft.headerElements = draft.headerElements.filter((x) => !rm.has(x.id));
+    else draft.footerElements = draft.footerElements.filter((x) => !rm.has(x.id));
+    sel = { k: z === "header" ? "headerBand" : "footerBand" };
     renderLvis();
     syncLvisDrawer();
   });
 
   window.addEventListener("mousemove", onWinMove);
   window.addEventListener("mouseup", () => {
+    if (dragMove && draft) {
+      const list = dragMove.zone === "header" ? draft.headerElements : draft.footerElements;
+      const el = list.find((x) => x.id === dragMove!.id);
+      if (el) snapElInZone(el, dragMove.zone);
+      renderLvis();
+      syncElementInputsFromModel();
+    }
     dragMove = null;
   });
 
@@ -140,6 +322,11 @@ export function initReportLayoutVisual(d: LayoutVisualDeps): void {
     if (sel.k !== "el" || !draft) return;
     e.preventDefault();
     document.getElementById("btn-lvis-el-delete")?.dispatchEvent(new Event("click"));
+  });
+
+  window.addEventListener("resize", () => {
+    const p = document.getElementById("page-layout-visual");
+    if (p?.classList.contains("is-visible")) applyLvisZoom();
   });
 }
 
@@ -163,9 +350,10 @@ function setupZoneCanvas(canvas: HTMLElement | null, zone: "header" | "footer"):
     el.x = Math.max(0, x);
     el.y = Math.max(0, y);
     clampZoneElement(el, zoneDims(zone).zw, zoneDims(zone).zh);
+    snapElInZone(el, zone);
     if (zone === "header") draft!.headerElements.push(el);
     else draft!.footerElements.push(el);
-    sel = { k: "el", zone, id: el.id };
+    sel = { k: "el", zone, ids: [el.id] };
     renderLvis();
     syncLvisDrawer();
   });
@@ -179,7 +367,13 @@ function setupZoneCanvas(canvas: HTMLElement | null, zone: "header" | "footer"):
     const list = zone === "header" ? draft.headerElements : draft.footerElements;
     const el = list.find((x) => x.id === id);
     if (!el) return;
-    sel = { k: "el", zone, id };
+    if (e.shiftKey && sel.k === "el" && sel.zone === zone) {
+      const ids = toggleSelId(sel.ids, id);
+      sel =
+        ids.length === 0 ? { k: zone === "header" ? "headerBand" : "footerBand" } : { k: "el", zone, ids };
+    } else {
+      sel = { k: "el", zone, ids: [id] };
+    }
     dragMove = { zone, id, sx: e.clientX, sy: e.clientY, ox: el.x, oy: el.y };
     e.preventDefault();
     renderLvis();
@@ -188,17 +382,22 @@ function setupZoneCanvas(canvas: HTMLElement | null, zone: "header" | "footer"):
 
   canvas.addEventListener("click", (e) => {
     if (!draft) return;
+    e.stopPropagation();
     const t = e.target as HTMLElement;
-    const node = t.closest("[data-layout-zone-el-id]");
-    if (node && canvas.contains(node)) {
-      const id = node.getAttribute("data-layout-zone-el-id")!;
-      sel = { k: "el", zone, id };
-    } else if (t === canvas || t.classList.contains("lvis-zone-canvas")) {
+    if (t.closest("[data-layout-zone-el-id]")) return;
+    if (t === canvas || t.classList.contains("lvis-zone-canvas")) {
       sel = zone === "header" ? { k: "headerBand" } : { k: "footerBand" };
     }
     renderLvis();
     syncLvisDrawer();
   });
+}
+
+function toggleSelId(ids: string[], id: string): string[] {
+  const s = new Set(ids);
+  if (s.has(id)) s.delete(id);
+  else s.add(id);
+  return [...s];
 }
 
 function onWinMove(e: MouseEvent): void {
@@ -291,7 +490,7 @@ function applyGlobalFromInputs(): void {
 
 function applyElementFromInputs(): void {
   const el = findSelEl();
-  if (!el || !draft) return;
+  if (!el || !draft || sel.k !== "el") return;
   const g = (id: string) => (document.getElementById(id) as HTMLInputElement | HTMLTextAreaElement | null)?.value;
   if (el.type === "text" || el.type === "box") el.text = g("lvis-e-text") ?? el.text;
   el.x = Math.max(0, parseInt(g("lvis-e-x") ?? String(el.x), 10) || 0);
@@ -305,7 +504,7 @@ function applyElementFromInputs(): void {
   el.dateFormat = g("lvis-e-date-format") ?? el.dateFormat;
   const url = g("lvis-e-img-url");
   if (url !== undefined && el.type === "image") el.imageSrc = url;
-  clampZoneElement(el, zoneDims(sel.zone).zw, zoneDims(sel.zone).zh);
+  snapElInZone(el, sel.zone);
 }
 
 function syncElementInputsFromModel(): void {
@@ -334,10 +533,23 @@ export function openLayoutVisual(presetId: string): void {
   draft = hydrateLayoutPreset(JSON.parse(JSON.stringify(p)) as Partial<LayoutPreset>);
   draft.headerElements = draft.headerElements.map((x) => ({ ...x }));
   draft.footerElements = draft.footerElements.map((x) => ({ ...x }));
-  sel = { k: "global" };
+  sel = { k: "idle" };
+  lvisZoom = 1;
   deps.showPage("layoutVisual");
   renderLvis();
+  applyLvisZoom();
+  requestAnimationFrame(() => {
+    lvisZoomFit();
+  });
+  syncSnapUi();
   syncLvisDrawer();
+}
+
+function syncSnapUi(): void {
+  const c = document.getElementById("lvis-snap-enabled") as HTMLInputElement | null;
+  const n = document.getElementById("lvis-snap-grid") as HTMLInputElement | null;
+  if (c) c.checked = snapEnabled;
+  if (n) n.value = String(snapGridPx);
 }
 
 function renderLvis(): void {
@@ -376,14 +588,28 @@ function renderLvis(): void {
   bodyZone.style.width = `${m.contentW}px`;
   bodyZone.style.height = `${m.contentH}px`;
 
-  const headerSel = sel.k === "el" && sel.zone === "header" ? sel.id : null;
-  const footerSel = sel.k === "el" && sel.zone === "footer" ? sel.id : null;
+  const headerIds =
+    sel.k === "el" && sel.zone === "header" ? new Set(sel.ids) : undefined;
+  const footerIds =
+    sel.k === "el" && sel.zone === "footer" ? new Set(sel.ids) : undefined;
 
-  renderZoneElementsInto(hc, draft.headerElements, { selectedId: headerSel, selectionChrome: true });
-  renderZoneElementsInto(fc, draft.footerElements, { selectedId: footerSel, selectionChrome: true });
+  renderZoneElementsInto(hc, draft.headerElements, {
+    selectedIds: headerIds,
+    selectionChrome: true,
+  });
+  renderZoneElementsInto(fc, draft.footerElements, {
+    selectedIds: footerIds,
+    selectionChrome: true,
+  });
 
-  hw.classList.toggle("lvis-zone-focused", sel.k === "headerBand" || (sel.k === "el" && sel.zone === "header"));
-  fw.classList.toggle("lvis-zone-focused", sel.k === "footerBand" || (sel.k === "el" && sel.zone === "footer"));
+  hw.classList.toggle(
+    "lvis-zone-focused",
+    sel.k === "headerBand" || (sel.k === "el" && sel.zone === "header"),
+  );
+  fw.classList.toggle(
+    "lvis-zone-focused",
+    sel.k === "footerBand" || (sel.k === "el" && sel.zone === "footer"),
+  );
   bodyZone.classList.toggle("lvis-zone-focused", sel.k === "global");
 
   if (meta)
@@ -391,14 +617,34 @@ function renderLvis(): void {
 }
 
 function syncLvisDrawer(): void {
+  const idle = document.getElementById("lvis-drawer-idle");
   const pg = document.getElementById("lvis-drawer-global");
   const pb = document.getElementById("lvis-drawer-band");
   const pe = document.getElementById("lvis-drawer-element");
-  if (!draft || !pg || !pb || !pe) return;
+  if (!draft || !idle || !pg || !pb || !pe) return;
 
+  idle.hidden = sel.k !== "idle";
   pg.hidden = sel.k !== "global";
   pb.hidden = sel.k !== "headerBand" && sel.k !== "footerBand";
   pe.hidden = sel.k !== "el";
+
+  const hintTop = document.getElementById("lvis-drawer-context-hint");
+  if (hintTop) hintTop.hidden = sel.k === "idle";
+
+  const multi = document.getElementById("lvis-drawer-multi");
+  const alignBar = document.getElementById("lvis-align-actions");
+  const multiHint = sel.k === "el" && sel.ids.length > 1;
+  if (multi) {
+    multi.hidden = !multiHint;
+    if (multiHint) {
+      multi.textContent = `已选 ${sel.ids.length} 个控件；下方属性仅编辑首个选中项；可用「同宽/同高」统一其余项与参照项一致。`;
+    }
+  }
+  if (alignBar) alignBar.hidden = sel.k !== "el";
+
+  document.querySelectorAll<HTMLButtonElement>(".lvis-match-btn").forEach((b) => {
+    b.disabled = !(sel.k === "el" && sel.ids.length > 1);
+  });
 
   const set = (id: string, v: string | number) => {
     const n = document.getElementById(id) as HTMLInputElement | HTMLSelectElement | null;

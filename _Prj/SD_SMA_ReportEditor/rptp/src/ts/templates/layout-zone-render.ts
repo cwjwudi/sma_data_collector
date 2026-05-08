@@ -3,6 +3,8 @@ import { formatLayoutDate } from "./layout-zone-element";
 
 export interface RenderZoneOptions {
   selectedId?: string | null;
+  /** 多选高亮；若提供则优先于 selectedId */
+  selectedIds?: ReadonlySet<string>;
   /** 模版预览用当前页码 */
   previewPage?: number;
   /** 是否绘制选中描边（模版预览传 false） */
@@ -29,13 +31,15 @@ export function renderZoneElementsInto(
   host.style.boxSizing = "border-box";
 
   const previewPage = opts.previewPage ?? 1;
-  const sel = opts.selectedId ?? null;
+  const idSet =
+    opts.selectedIds ??
+    (opts.selectedId ? new Set<string>([opts.selectedId]) : null);
   const chrome = opts.selectionChrome !== false;
 
   for (const el of elements) {
     const node = document.createElement("div");
     node.className = "layout-zone-node";
-    if (chrome && sel === el.id) node.classList.add("is-selected");
+    if (chrome && idSet?.has(el.id)) node.classList.add("is-selected");
     node.dataset.layoutZoneElId = el.id;
     node.style.position = "absolute";
     node.style.left = `${el.x}px`;
