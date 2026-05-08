@@ -1444,21 +1444,25 @@ html[data-theme="dark"] .lvis-align-actions {
   letter-spacing: 0.04em;
   color: var(--muted);
 }
+/* 固定格子尺寸，避免侧栏较宽时图标按钮被拉成 60–100px 大方块 */
 .lvis-align-icon-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 3px;
+  grid-template-columns: repeat(3, var(--lvis-icon-tool-px, 40px));
+  gap: 4px;
+  justify-content: flex-start;
 }
 .lvis-align-icon-grid + .lvis-align-icon-grid {
   margin-top: 4px;
 }
 .lvis-align-icon-grid--cols-2 {
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(2, var(--lvis-icon-tool-px, 40px));
 }
 .lvis-icon-tool-slot {
   display: flex;
+  width: var(--lvis-icon-tool-px, 40px);
+  height: var(--lvis-icon-tool-px, 40px);
   min-height: 0;
-  aspect-ratio: 1;
+  flex-shrink: 0;
 }
 .lvis-icon-tool-slot .lvis-icon-tool {
   flex: 1;
@@ -1470,8 +1474,9 @@ html[data-theme="dark"] .lvis-align-actions {
   display: flex;
   align-items: center;
   justify-content: center;
-  aspect-ratio: 1;
-  min-height: 0;
+  width: var(--lvis-icon-tool-px, 40px);
+  height: var(--lvis-icon-tool-px, 40px);
+  flex-shrink: 0;
   padding: 3px;
   margin: 0;
   border: 1px solid color-mix(in srgb, var(--muted) 40%, transparent);
