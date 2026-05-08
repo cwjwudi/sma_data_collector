@@ -8,6 +8,8 @@ import {
   type ThemeMode,
 } from "./theme";
 
+type PageId = "home" | "settings" | "about";
+
 initThemeFromStorage();
 applyTheme(currentTheme(), false);
 
@@ -40,11 +42,13 @@ const edgeTab = document.getElementById("drawerEdgeTab")!;
 const topTitle = document.getElementById("topTitle")!;
 const pageHome = document.getElementById("page-home")!;
 const pageSettings = document.getElementById("page-settings")!;
+const pageAbout = document.getElementById("page-about")!;
 const themeLight = document.querySelector<HTMLInputElement>("#theme-light");
 const themeDark = document.querySelector<HTMLInputElement>("#theme-dark");
 
 const drawerPanelTool = document.getElementById("drawer-panel-tool");
 const drawerPanelHint = document.getElementById("drawer-panel-settings-hint");
+const drawerPanelAboutHint = document.getElementById("drawer-panel-about-hint");
 const drawerTitleText = document.getElementById("drawerTitleText");
 
 const btnSettingsSave = document.getElementById("btn-settings-save");
@@ -70,29 +74,49 @@ btnSettingsRevert?.addEventListener("click", () => {
   applyTheme(committedTheme, false);
 });
 
-function syncDrawerContext(pageId: "home" | "settings"): void {
-  if (!drawerPanelTool || !drawerPanelHint || !drawerTitleText) return;
-  if (pageId === "settings") {
-    drawerPanelTool.hidden = true;
-    drawerPanelHint.hidden = false;
-    drawerTitleText.textContent = "全局设置";
-  } else {
+function syncDrawerContext(pageId: PageId): void {
+  if (!drawerPanelTool || !drawerPanelHint || !drawerPanelAboutHint || !drawerTitleText) return;
+  if (pageId === "home") {
     drawerPanelTool.hidden = false;
     drawerPanelHint.hidden = true;
+    drawerPanelAboutHint.hidden = true;
     drawerTitleText.textContent = "当前工具参数";
+    return;
   }
+  drawerPanelTool.hidden = true;
+  if (pageId === "settings") {
+    drawerPanelHint.hidden = false;
+    drawerPanelAboutHint.hidden = true;
+    drawerTitleText.textContent = "全局设置";
+    return;
+  }
+  drawerPanelHint.hidden = true;
+  drawerPanelAboutHint.hidden = false;
+  drawerTitleText.textContent = "关于";
 }
 
-function showPage(pageId: "home" | "settings"): void {
+function parseNavPage(raw: string | undefined): PageId {
+  if (raw === "settings") return "settings";
+  if (raw === "about") return "about";
+  return "home";
+}
+
+function showPage(pageId: PageId): void {
   const wasSettings = pageSettings.classList.contains("is-visible");
   if (wasSettings && pageId !== "settings" && currentTheme() !== committedTheme) {
     applyTheme(committedTheme, false);
   }
 
-  const settings = pageId === "settings";
-  pageHome.classList.toggle("is-visible", !settings);
-  pageSettings.classList.toggle("is-visible", settings);
-  topTitle.textContent = settings ? "当前视图 · 全局设置" : "当前视图 · SQL 工作台";
+  pageHome.classList.toggle("is-visible", pageId === "home");
+  pageSettings.classList.toggle("is-visible", pageId === "settings");
+  pageAbout.classList.toggle("is-visible", pageId === "about");
+
+  const titles: Record<PageId, string> = {
+    home: "当前视图 · SQL 工作台",
+    settings: "当前视图 · 全局设置",
+    about: "当前视图 · 关于",
+  };
+  topTitle.textContent = titles[pageId];
 
   syncDrawerContext(pageId);
 }
@@ -105,7 +129,7 @@ function setActiveNav(activeLink: HTMLElement | null): void {
 document.querySelectorAll<HTMLAnchorElement>("a.nav-item[data-page]").forEach((link) => {
   link.addEventListener("click", (e) => {
     e.preventDefault();
-    const page = link.dataset.page === "settings" ? "settings" : "home";
+    const page = parseNavPage(link.dataset.page);
     const d = link.closest("details");
     if (d) d.open = true;
     showPage(page);

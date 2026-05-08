@@ -43,7 +43,7 @@
           <summary>系统工具</summary>
           <div class="nav-group-body">
             <a class="nav-item" href="#" data-page="settings">全局设置</a>
-            <a class="nav-item" href="#" data-page="home">关于</a>
+            <a class="nav-item" href="#" data-page="about">关于</a>
           </div>
         </details>
       </nav>
@@ -89,6 +89,27 @@
             <button type="button" class="btn" id="btn-settings-revert">回退修改</button>
           </div>
         </section>
+        <section id="page-about" class="page-panel page-about" aria-label="关于">
+          <h1>关于</h1>
+          <div class="about-card">
+            <p class="about-lead">
+              本网页用于嵌入 <strong>mappView</strong>，提供数据库配置、OPC UA 工具以及报表输出等相关能力的入口与界面（具体能力随版本迭代）。
+            </p>
+            <p class="about-contact">
+              本功能由<strong>贝加莱行业开发</strong>维护。如有问题或需求，请联系<strong>贝加莱行业组</strong>。
+            </p>
+          </div>
+          <footer class="about-meta" aria-label="版本信息">
+            <div class="about-meta-row">
+              <span class="about-meta-label">最后更新</span>
+              <span class="about-meta-value">2026-05-08</span>
+            </div>
+            <div class="about-meta-row">
+              <span class="about-meta-label">版本</span>
+              <span class="about-meta-value"><code>V0.0.0 beta</code>（当前均未成型）</span>
+            </div>
+          </footer>
+        </section>
       </main>
 
       <footer class="bottom-toolbar" aria-label="底部工具栏">
@@ -125,6 +146,9 @@
           </div>
           <div id="drawer-panel-settings-hint" class="drawer-panel drawer-panel-muted" hidden>
             <p>全局设置不使用侧栏参数，请在中间区域调整主题后使用底部按钮保存或回退。</p>
+          </div>
+          <div id="drawer-panel-about-hint" class="drawer-panel drawer-panel-muted" hidden>
+            <p>「关于」为说明信息，侧栏无额外参数。</p>
           </div>
         </div>
       </div>

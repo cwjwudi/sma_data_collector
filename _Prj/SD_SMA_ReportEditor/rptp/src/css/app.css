@@ -315,6 +315,73 @@ html[data-theme="dark"] .theme-option input:checked + span {
   border-top: var(--border);
 }
 
+/* ----- 关于 ----- */
+.main-area .page-about.is-visible {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.about-card {
+  background: var(--surface);
+  border: var(--border);
+  border-radius: 12px;
+  padding: 1rem 1.25rem;
+  width: 100%;
+  box-sizing: border-box;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  flex: 0 1 auto;
+}
+html[data-theme="dark"] .about-card {
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+}
+.about-lead,
+.about-contact {
+  margin: 0;
+  font-size: 0.9375rem;
+  line-height: 1.65;
+  color: var(--text);
+}
+.about-contact {
+  margin-top: 1rem;
+}
+.about-meta {
+  margin-top: auto;
+  padding-top: 1.25rem;
+  flex-shrink: 0;
+  border-top: var(--border);
+  font-size: 0.8125rem;
+  color: var(--muted);
+}
+.about-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.75rem;
+  align-items: baseline;
+  margin-bottom: 0.35rem;
+}
+.about-meta-row:last-child {
+  margin-bottom: 0;
+}
+.about-meta-label {
+  font-weight: 600;
+  color: var(--muted);
+  min-width: 4.5rem;
+}
+.about-meta-value code {
+  font-size: 0.8125rem;
+  padding: 0.08rem 0.3rem;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.06);
+}
+html[data-theme="dark"] .about-meta-value code {
+  background: rgba(255, 255, 255, 0.08);
+}
+
 .bottom-toolbar {
   height: var(--bottom-h);
   flex-shrink: 0;
