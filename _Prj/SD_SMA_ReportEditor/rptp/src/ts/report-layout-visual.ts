@@ -463,10 +463,14 @@ function lvisZoomFit(): void {
   const mw = Math.max(80, viewport.clientWidth - pad * 2);
   const w = wrap && wrap.offsetWidth > 0 ? wrap.offsetWidth : page.offsetWidth;
   if (w <= 0) return;
+  /* 恢复适中缩放并把纸张置于编辑区正中（大块留白下便于找回页面） */
   lvisZoom = Math.min(2, Math.max(0.35, mw / w));
   applyLvisZoom();
   requestAnimationFrame(() => {
-    requestAnimationFrame(() => centerLvisScrollOnPage());
+    requestAnimationFrame(() => {
+      centerLvisScrollOnPage();
+      requestAnimationFrame(() => centerLvisScrollOnPage());
+    });
   });
 }
 

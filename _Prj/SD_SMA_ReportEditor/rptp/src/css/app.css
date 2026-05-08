@@ -1329,6 +1329,13 @@ html[data-theme="dark"] .template-canvas-root {
   flex: 1 1 auto;
   overflow: auto;
   min-height: min(52vh, 480px);
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.lvis-scroll::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
 }
 /* 大块留白：任意缩放下仍可大幅左右/上下拖动（类似无边记画布） */
 .lvis-scroll-pad {
