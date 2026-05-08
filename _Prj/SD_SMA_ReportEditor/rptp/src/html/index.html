@@ -73,12 +73,10 @@
             <h1>版式与页眉页脚</h1>
             <div class="layout-head-actions">
               <button type="button" class="btn btn-primary" id="btn-layout-new">新建版式</button>
-              <button type="button" class="btn" id="btn-layout-save">保存</button>
-              <button type="button" class="btn btn-danger-outline" id="btn-layout-delete">删除</button>
             </div>
           </div>
           <p class="templates-intro">
-            建议<strong>先于模版管理</strong>在此维护可复用版式。列表中<strong>表单</strong>用于纸张与页边距；<strong>可视化</strong>进入单独一页编排页眉/页脚区控件（文本、色块、图片、页码、日期）。新建模版时可优先套用<strong>快照</strong>。动态内容超高一页时，导出阶段按纸张分页（后续在「生成与导出」实现）。
+            建议<strong>先于模版管理</strong>在此维护可复用版式。<strong>点击表格某一整行</strong>选中后在<strong>右侧参数栏</strong>编辑纸张与页边距，并在参数栏底部<strong>保存</strong>；<strong>可视化编辑</strong>进入单独一页编排页眉/页脚区控件。新建模版时为快照套用。动态内容超高一页时，导出阶段按纸张分页（后续在「生成与导出」实现）。
           </p>
           <div class="template-table-wrap layout-preset-table-wrap layout-preset-main">
             <table class="template-table" id="layout-preset-list">
@@ -359,7 +357,7 @@
           </div>
           <div id="drawer-panel-layout" class="drawer-panel" hidden>
             <p id="layout-edit-empty" class="layout-edit-empty drawer-layout-empty">
-              请先在列表中点击某一行的<strong>表单</strong>以编辑该版式，或点击顶栏「新建版式」。未选中时不显示纸张与页边距等参数。
+              请<strong>点击表格中的某一版式行</strong>以在右侧编辑纸张与页边距并保存；或点击顶栏「新建版式」。未选中行时不显示下方表单。
             </p>
             <div id="layout-edit-panel" class="layout-edit-panel drawer-layout-edit-panel" hidden>
               <p class="drawer-panel-hint">
@@ -402,8 +400,11 @@
                 <div class="field"><label for="layout-fband">页脚带高度</label><input id="layout-fband" type="number" min="0" step="0.5" /></div>
               </div>
               <p class="drawer-panel-hint" style="margin-top: 0.65rem">
-                页眉页脚<strong>内容与拖拽排版</strong>请在列表中点<strong>可视化</strong>；此处数值仍可微调带高度（会与可视化页保持一致）。
+                页眉页脚<strong>内容与拖拽排版</strong>请在列表中点<strong>可视化编辑</strong>；此处仍可微调页眉/页脚<strong>带高度</strong>（与可视化页一致）。
               </p>
+              <div class="layout-drawer-actions">
+                <button type="button" class="btn btn-primary" id="btn-layout-save">保存版式</button>
+              </div>
             </div>
           </div>
           <div id="drawer-panel-layout-visual" class="drawer-panel" hidden>

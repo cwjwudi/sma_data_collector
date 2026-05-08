@@ -729,6 +729,17 @@ html[data-theme="dark"] .drawer-edge-tab {
   width: auto;
   margin-top: 0;
 }
+.layout-preset-row {
+  cursor: pointer;
+}
+.layout-preset-row .template-table-actions {
+  cursor: default;
+}
+.layout-drawer-actions {
+  margin-top: 0.85rem;
+  padding-top: 0.65rem;
+  border-top: var(--border);
+}
 .layout-preset-main {
   flex: 1 1 auto;
   min-height: 0;

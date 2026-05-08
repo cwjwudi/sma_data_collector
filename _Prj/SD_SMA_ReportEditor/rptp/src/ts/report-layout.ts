@@ -30,8 +30,9 @@ export function initReportLayoutPage(d: LayoutPageDeps): void {
   });
 
   document.getElementById("btn-layout-save")?.addEventListener("click", () => {
+    presets = loadLayoutPresets();
     if (!selectedId) {
-      alert("请先新建或选择一个版式");
+      alert("请先点击表格中的某一版式行");
       return;
     }
     const idx = presets.findIndex((x) => x.id === selectedId);
@@ -43,27 +44,40 @@ export function initReportLayoutPage(d: LayoutPageDeps): void {
     alert("版式已保存（本地）");
   });
 
-  document.getElementById("btn-layout-delete")?.addEventListener("click", () => {
-    if (!selectedId) return;
-    const p = presets.find((x) => x.id === selectedId);
-    if (!p) return;
-    if (!confirm(`删除版式「${p.name}」？引用它的模版保留各自快照不受影响。`)) return;
-    presets = presets.filter((x) => x.id !== selectedId);
-    saveLayoutPresets(presets);
-    selectedId = null;
-    renderLayoutList();
-    syncLayoutForm();
-  });
-
   document.querySelector("#layout-preset-list tbody")?.addEventListener("click", (e) => {
-    const btn = (e.target as HTMLElement).closest("[data-select-preset]");
-    if (!btn) return;
-    const id = btn.getAttribute("data-select-preset");
+    const t = e.target as HTMLElement;
+    const visBtn = t.closest("[data-layout-vis]");
+    if (visBtn) {
+      const id = visBtn.getAttribute("data-layout-vis");
+      if (id) openLayoutVisual(id);
+      return;
+    }
+    const delBtn = t.closest("[data-delete-preset]");
+    if (delBtn) {
+      const id = delBtn.getAttribute("data-delete-preset");
+      if (id) deletePresetRow(id);
+      return;
+    }
+    const row = t.closest("tr[data-preset-id]");
+    if (!row) return;
+    const id = row.getAttribute("data-preset-id");
     if (!id) return;
     selectedId = id;
     renderLayoutList();
     syncLayoutForm();
   });
+}
+
+function deletePresetRow(id: string): void {
+  presets = loadLayoutPresets();
+  const p = presets.find((x) => x.id === id);
+  if (!p) return;
+  if (!confirm(`删除版式「${p.name}」？引用它的模版保留各自快照不受影响。`)) return;
+  presets = presets.filter((x) => x.id !== id);
+  saveLayoutPresets(presets);
+  if (selectedId === id) selectedId = null;
+  renderLayoutList();
+  syncLayoutForm();
 }
 
 export function showLayoutPage(): void {
@@ -108,7 +122,7 @@ function renderLayoutList(): void {
   if (presets.length === 0) {
     const tr = document.createElement("tr");
     tr.innerHTML =
-      '<td colspan="4" class="template-table-empty">暂无版式。点击下方「新建版式」，保存后边可在「新建模版」中优先选用。</td>';
+      '<td colspan="4" class="template-table-empty">暂无版式。点击顶栏「新建版式」，再在右侧参数栏填写并保存后，即可在「新建模版」中优先选用。</td>';
     tbody.appendChild(tr);
     return;
   }
@@ -117,16 +131,16 @@ function renderLayoutList(): void {
     const active = p.id === selectedId ? " is-active-row" : "";
     const date = p.updatedAt.slice(0, 19).replace("T", " ");
     tr.className = "layout-preset-row" + active;
+    tr.dataset.presetId = p.id;
     tr.innerHTML = `
       <td>${escapeHtml(p.name)}</td>
       <td>${PAPER_LABEL[p.paperKind]}</td>
       <td>${date}</td>
       <td class="template-table-actions">
-        <button type="button" class="btn btn-sm" data-select-preset="${p.id}">表单</button>
-        <button type="button" class="btn btn-sm btn-primary" data-layout-vis="${p.id}">可视化</button>
+        <button type="button" class="btn btn-sm btn-primary" data-layout-vis="${p.id}">可视化编辑</button>
+        <button type="button" class="btn btn-sm btn-danger-outline" data-delete-preset="${p.id}">删除</button>
       </td>`;
     tbody.appendChild(tr);
-    tr.querySelector(`[data-layout-vis="${p.id}"]`)?.addEventListener("click", () => openLayoutVisual(p.id));
   }
 }
 
@@ -140,6 +154,7 @@ function syncLayoutForm(): void {
   const form = document.getElementById("layout-edit-panel");
   if (!form) return;
   const emptyHint = document.getElementById("layout-edit-empty");
+  presets = loadLayoutPresets();
   const preset =
     selectedId !== null ? presets.find((x) => x.id === selectedId) : undefined;
   if (!preset) {
