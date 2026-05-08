@@ -6,6 +6,7 @@ import {
   type LayoutPreset,
 } from "./templates/layout-model";
 import { PAPER_LABEL, type PaperKind } from "./templates/paper";
+import { openLayoutVisual } from "./report-layout-visual";
 
 export interface LayoutPageDeps {
   showPage: (id: string) => void;
@@ -118,8 +119,12 @@ function renderLayoutList(): void {
       <td>${escapeHtml(p.name)}</td>
       <td>${PAPER_LABEL[p.paperKind]}</td>
       <td>${date}</td>
-      <td><button type="button" class="btn btn-sm btn-primary" data-select-preset="${p.id}">编辑</button></td>`;
+      <td class="template-table-actions">
+        <button type="button" class="btn btn-sm" data-select-preset="${p.id}">表单</button>
+        <button type="button" class="btn btn-sm btn-primary" data-layout-vis="${p.id}">可视化</button>
+      </td>`;
     tbody.appendChild(tr);
+    tr.querySelector(`[data-layout-vis="${p.id}"]`)?.addEventListener("click", () => openLayoutVisual(p.id));
   }
 }
 
@@ -154,8 +159,6 @@ function syncLayoutForm(): void {
   setNum("layout-ml", p.marginLeftMm);
   setNum("layout-hband", p.headerBandMm);
   setNum("layout-fband", p.footerBandMm);
-  setVal("layout-header-text", p.headerText);
-  setVal("layout-footer-text", p.footerText);
 }
 
 function setVal(id: string, v: string): void {
@@ -180,6 +183,4 @@ function readLayoutFormInto(target: LayoutPreset): void {
   target.marginLeftMm = gn("layout-ml", target.marginLeftMm);
   target.headerBandMm = gn("layout-hband", target.headerBandMm);
   target.footerBandMm = gn("layout-fband", target.footerBandMm);
-  target.headerText = g("layout-header-text") ?? "";
-  target.footerText = g("layout-footer-text") ?? "";
 }

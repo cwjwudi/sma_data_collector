@@ -9,8 +9,9 @@ import {
 } from "./theme";
 import { initReportTemplates, showTemplatesPage } from "./report-templates";
 import { initReportLayoutPage, showLayoutPage } from "./report-layout";
+import { initReportLayoutVisual } from "./report-layout-visual";
 
-type PageId = "home" | "settings" | "about" | "layout" | "templates" | "templateEditor";
+type PageId = "home" | "settings" | "about" | "layout" | "layoutVisual" | "templates" | "templateEditor";
 
 initThemeFromStorage();
 applyTheme(currentTheme(), false);
@@ -44,6 +45,7 @@ const edgeTab = document.getElementById("drawerEdgeTab")!;
 const topTitle = document.getElementById("topTitle")!;
 const pageHome = document.getElementById("page-home")!;
 const pageLayout = document.getElementById("page-layout")!;
+const pageLayoutVisual = document.getElementById("page-layout-visual")!;
 const pageTemplates = document.getElementById("page-templates")!;
 const pageTemplateEditor = document.getElementById("page-template-editor")!;
 const pageSettings = document.getElementById("page-settings")!;
@@ -56,6 +58,7 @@ const drawerPanelHint = document.getElementById("drawer-panel-settings-hint");
 const drawerPanelAboutHint = document.getElementById("drawer-panel-about-hint");
 const drawerPanelTemplatesHint = document.getElementById("drawer-panel-templates-hint");
 const drawerPanelLayout = document.getElementById("drawer-panel-layout");
+const drawerPanelLayoutVisual = document.getElementById("drawer-panel-layout-visual");
 const drawerTitleText = document.getElementById("drawerTitleText");
 
 const btnSettingsSave = document.getElementById("btn-settings-save");
@@ -88,11 +91,13 @@ function syncDrawerContext(pageId: PageId): void {
     !drawerPanelAboutHint ||
     !drawerPanelTemplatesHint ||
     !drawerPanelLayout ||
+    !drawerPanelLayoutVisual ||
     !drawerTitleText
   )
     return;
   drawerPanelTemplatesHint.hidden = true;
   drawerPanelLayout.hidden = true;
+  drawerPanelLayoutVisual.hidden = true;
   if (pageId === "home") {
     drawerPanelTool.hidden = false;
     drawerPanelHint.hidden = true;
@@ -120,6 +125,13 @@ function syncDrawerContext(pageId: PageId): void {
     drawerTitleText.textContent = "版式与页眉页脚";
     return;
   }
+  if (pageId === "layoutVisual") {
+    drawerPanelHint.hidden = true;
+    drawerPanelAboutHint.hidden = true;
+    drawerPanelLayoutVisual.hidden = false;
+    drawerTitleText.textContent = "版式可视化";
+    return;
+  }
   if (pageId === "templates" || pageId === "templateEditor") {
     drawerPanelHint.hidden = true;
     drawerPanelAboutHint.hidden = true;
@@ -145,6 +157,7 @@ function showPage(pageId: PageId): void {
 
   pageHome.classList.toggle("is-visible", pageId === "home");
   pageLayout.classList.toggle("is-visible", pageId === "layout");
+  pageLayoutVisual.classList.toggle("is-visible", pageId === "layoutVisual");
   pageTemplates.classList.toggle("is-visible", pageId === "templates");
   pageTemplateEditor.classList.toggle("is-visible", pageId === "templateEditor");
   pageSettings.classList.toggle("is-visible", pageId === "settings");
@@ -153,6 +166,7 @@ function showPage(pageId: PageId): void {
   const titles: Record<PageId, string> = {
     home: "当前视图 · SQL 工作台",
     layout: "当前视图 · 版式与页眉页脚",
+    layoutVisual: "当前视图 · 版式可视化编排",
     templates: "当前视图 · 模版管理",
     templateEditor: "当前视图 · 模版编辑",
     settings: "当前视图 · 全局设置",
@@ -328,5 +342,8 @@ initReportTemplates({
   showPage: (id: string) => showPage(id as PageId),
 });
 initReportLayoutPage({
+  showPage: (id: string) => showPage(id as PageId),
+});
+initReportLayoutVisual({
   showPage: (id: string) => showPage(id as PageId),
 });

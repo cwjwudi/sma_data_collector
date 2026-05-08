@@ -11,6 +11,7 @@ import {
 } from "./templates/model";
 import { defaultBlankLayoutSnapshot, presetToSnapshot } from "./templates/layout-model";
 import { computePaperLayout } from "./templates/layout-geometry";
+import { renderZoneElementsInto } from "./templates/layout-zone-render";
 import { PAPER_LABEL, type PaperKind } from "./templates/paper";
 import { getLayoutPresetById, refreshLayoutPresetDropdown } from "./report-layout";
 
@@ -169,6 +170,8 @@ function renderPaperChrome(): void {
   const root = document.getElementById("template-canvas-root");
   const headerEl = document.getElementById("template-paper-header");
   const footerEl = document.getElementById("template-paper-footer");
+  const headerInner = document.getElementById("template-paper-header-inner");
+  const footerInner = document.getElementById("template-paper-footer-inner");
   const meta = document.getElementById("template-editor-paper-meta");
   if (!editing || !pageEl || !root) return;
 
@@ -182,24 +185,40 @@ function renderPaperChrome(): void {
   root.style.width = `${m.contentW}px`;
   root.style.height = `${m.contentH}px`;
 
-  if (headerEl) {
+  if (headerEl && headerInner) {
     const show = m.hb > 1;
     headerEl.hidden = !show;
     headerEl.style.left = `${m.ml}px`;
     headerEl.style.top = `${m.mt}px`;
     headerEl.style.width = `${m.pageW - m.ml - m.mr}px`;
     headerEl.style.height = `${m.hb}px`;
-    headerEl.textContent = editing.headerText.trim() || "（页眉）";
+    if (editing.headerElements.length > 0) {
+      renderZoneElementsInto(headerInner, editing.headerElements, {
+        previewPage: 1,
+        selectionChrome: false,
+      });
+    } else {
+      headerInner.replaceChildren();
+      headerInner.textContent = editing.headerText.trim() || "（页眉）";
+    }
   }
 
-  if (footerEl) {
+  if (footerEl && footerInner) {
     const show = m.fb > 1;
     footerEl.hidden = !show;
     footerEl.style.left = `${m.ml}px`;
     footerEl.style.width = `${m.pageW - m.ml - m.mr}px`;
     footerEl.style.height = `${m.fb}px`;
     footerEl.style.bottom = `${m.mb}px`;
-    footerEl.textContent = editing.footerText.trim() || "（页脚）";
+    if (editing.footerElements.length > 0) {
+      renderZoneElementsInto(footerInner, editing.footerElements, {
+        previewPage: 1,
+        selectionChrome: false,
+      });
+    } else {
+      footerInner.replaceChildren();
+      footerInner.textContent = editing.footerText.trim() || "（页脚）";
+    }
   }
 
   if (meta) {
@@ -256,6 +275,8 @@ function bindNewTemplateDialog(): void {
         layoutSnapshot: presetToSnapshot(preset),
         headerText: preset.headerText,
         footerText: preset.footerText,
+        headerElements: preset.headerElements.map((e) => ({ ...e })),
+        footerElements: preset.footerElements.map((e) => ({ ...e })),
       };
     } else {
       opts = {
@@ -266,6 +287,8 @@ function bindNewTemplateDialog(): void {
         layoutSnapshot: defaultBlankLayoutSnapshot(),
         headerText: "",
         footerText: "",
+        headerElements: [],
+        footerElements: [],
       };
     }
 

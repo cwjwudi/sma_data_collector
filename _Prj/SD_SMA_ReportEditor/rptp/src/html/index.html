@@ -78,7 +78,7 @@
             </div>
           </div>
           <p class="templates-intro">
-            建议<strong>先于模版管理</strong>在此维护可复用版式。在中间列表选择条目或新建后，在<strong>右侧参数栏</strong>编辑纸张、页边距与页眉页脚示意文案；新建模版时可优先套用。动态内容超高一页时，导出阶段按纸张分页（后续在「生成与导出」实现）。
+            建议<strong>先于模版管理</strong>在此维护可复用版式。列表中<strong>表单</strong>用于纸张与页边距；<strong>可视化</strong>进入单独一页编排页眉/页脚区控件（文本、色块、图片、页码、日期）。新建模版时可优先套用<strong>快照</strong>。动态内容超高一页时，导出阶段按纸张分页（后续在「生成与导出」实现）。
           </p>
           <div class="template-table-wrap layout-preset-table-wrap layout-preset-main">
             <table class="template-table" id="layout-preset-list">
@@ -92,6 +92,39 @@
               </thead>
               <tbody></tbody>
             </table>
+          </div>
+        </section>
+        <section id="page-layout-visual" class="page-panel page-layout-visual" aria-label="版式可视化编排">
+          <div class="lvis-toolbar-row">
+            <button type="button" class="btn" id="btn-lvis-back">← 返回列表</button>
+            <span id="lvis-meta" class="lvis-meta" aria-live="polite"></span>
+            <button type="button" class="btn btn-primary" id="btn-lvis-save">保存版式</button>
+          </div>
+          <div class="lvis-editor-layout">
+            <aside class="lvis-tool-palette" aria-label="页眉页脚控件">
+              <h2 class="lvis-tool-palette-title">页眉 / 页脚控件</h2>
+              <p class="lvis-tool-palette-hint">拖到上方（页眉）或下方（页脚）浅底区域。点击中间<strong>正文区</strong>在右侧改纸张与页边距；点页眉/页脚空白改带高度；点选控件后改位置与样式。</p>
+              <div class="lvis-tool-grid">
+                <button type="button" class="template-tool-chip" draggable="true" data-layout-vis-tool="text">文本</button>
+                <button type="button" class="template-tool-chip" draggable="true" data-layout-vis-tool="box">色块</button>
+                <button type="button" class="template-tool-chip" draggable="true" data-layout-vis-tool="image">图片</button>
+                <button type="button" class="template-tool-chip" draggable="true" data-layout-vis-tool="pageNumber">页码</button>
+                <button type="button" class="template-tool-chip" draggable="true" data-layout-vis-tool="date">日期</button>
+              </div>
+            </aside>
+            <div class="lvis-editor-center">
+              <div class="lvis-scroll" aria-label="纸张预览">
+                <div id="lvis-page" class="lvis-page">
+                  <div id="lvis-header-wrap" class="lvis-zone-wrap lvis-zone-header">
+                    <div id="lvis-header-canvas" class="lvis-zone-canvas" tabindex="-1"></div>
+                  </div>
+                  <div id="lvis-body-zone" class="lvis-body-zone" tabindex="-1">正文区（导出时摆放模版控件）</div>
+                  <div id="lvis-footer-wrap" class="lvis-zone-wrap lvis-zone-footer">
+                    <div id="lvis-footer-canvas" class="lvis-zone-canvas" tabindex="-1"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </section>
         <section id="page-templates" class="page-panel page-templates" aria-label="模版管理">
@@ -138,8 +171,12 @@
             <div class="template-editor-center">
               <div id="template-canvas" class="template-canvas" aria-label="模版画布">
                 <div id="template-canvas-page" class="template-canvas-page">
-                  <div id="template-paper-header" class="template-paper-header" hidden></div>
-                  <div id="template-paper-footer" class="template-paper-footer" hidden></div>
+                  <div id="template-paper-header" class="template-paper-header" hidden>
+                    <div id="template-paper-header-inner" class="template-paper-zone-inner"></div>
+                  </div>
+                  <div id="template-paper-footer" class="template-paper-footer" hidden>
+                    <div id="template-paper-footer-inner" class="template-paper-zone-inner"></div>
+                  </div>
                   <div id="template-canvas-root" class="template-canvas-root"></div>
                 </div>
               </div>
@@ -318,14 +355,92 @@
                 <div class="field"><label for="layout-hband">页眉带高度</label><input id="layout-hband" type="number" min="0" step="0.5" /></div>
                 <div class="field"><label for="layout-fband">页脚带高度</label><input id="layout-fband" type="number" min="0" step="0.5" /></div>
               </div>
+              <p class="drawer-panel-hint" style="margin-top: 0.65rem">
+                页眉页脚<strong>内容与拖拽排版</strong>请在列表中点<strong>可视化</strong>；此处数值仍可微调带高度（会与可视化页保持一致）。
+              </p>
+            </div>
+          </div>
+          <div id="drawer-panel-layout-visual" class="drawer-panel" hidden>
+            <p class="drawer-panel-hint">点击下方画布可选区域切换本节内容。</p>
+            <div id="lvis-drawer-global">
+              <h2 class="layout-edit-title">纸张与页边距</h2>
               <div class="field">
-                <label for="layout-header-text">页眉文案（示意）</label>
-                <textarea id="layout-header-text" rows="2" maxlength="500"></textarea>
+                <label for="lvis-field-name">名称</label>
+                <input id="lvis-field-name" type="text" maxlength="120" />
+              </div>
+              <div class="field-row">
+                <div class="field">
+                  <label for="lvis-field-paper">纸张</label>
+                  <select id="lvis-field-paper">
+                    <option value="A5">A5</option>
+                    <option value="A4">A4</option>
+                    <option value="A3">A3</option>
+                    <option value="Letter">Letter</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="lvis-field-orientation">方向</label>
+                  <select id="lvis-field-orientation">
+                    <option value="portrait">纵向</option>
+                    <option value="landscape">横向</option>
+                  </select>
+                </div>
+              </div>
+              <p class="layout-edit-sub">页边距（mm）</p>
+              <div class="field-row">
+                <div class="field"><label for="lvis-g-mt">上</label><input id="lvis-g-mt" type="number" min="0" step="0.5" /></div>
+                <div class="field"><label for="lvis-g-mr">右</label><input id="lvis-g-mr" type="number" min="0" step="0.5" /></div>
+              </div>
+              <div class="field-row">
+                <div class="field"><label for="lvis-g-mb">下</label><input id="lvis-g-mb" type="number" min="0" step="0.5" /></div>
+                <div class="field"><label for="lvis-g-ml">左</label><input id="lvis-g-ml" type="number" min="0" step="0.5" /></div>
+              </div>
+            </div>
+            <div id="lvis-drawer-band" hidden>
+              <h2 id="lvis-band-title" class="layout-edit-title">页眉带高度（mm）</h2>
+              <div class="field">
+                <label for="lvis-band-mm">高度 mm</label>
+                <input id="lvis-band-mm" type="number" min="0" step="0.5" />
+              </div>
+            </div>
+            <div id="lvis-drawer-element" hidden>
+              <h2 class="layout-edit-title">选中控件</h2>
+              <div id="lvis-e-text-wrap" class="field">
+                <label for="lvis-e-text">文本</label>
+                <textarea id="lvis-e-text" rows="2" maxlength="500"></textarea>
+              </div>
+              <div id="lvis-e-date-wrap" class="field" hidden>
+                <label for="lvis-e-date-format">日期格式</label>
+                <input id="lvis-e-date-format" type="text" spellcheck="false" placeholder="yyyy-MM-dd HH:mm" />
+                <p class="drawer-panel-hint">导出时使用<strong>真实导出时刻</strong>按此处占位格式化（yyyy MM dd HH mm ss）。</p>
+              </div>
+              <div id="lvis-e-img-wrap" class="field" hidden>
+                <label for="lvis-e-img-url">图片 URL</label>
+                <input id="lvis-e-img-url" type="text" spellcheck="false" placeholder="https:// 或留空后下方选取本地文件" />
+                <label for="lvis-e-img-file" class="layout-edit-sub" style="display:block;margin-top:0.5rem">本地文件</label>
+                <input id="lvis-e-img-file" type="file" accept="image/*" />
+              </div>
+              <div class="field-row">
+                <div class="field"><label for="lvis-e-x">X</label><input id="lvis-e-x" type="number" min="0" step="1" /></div>
+                <div class="field"><label for="lvis-e-y">Y</label><input id="lvis-e-y" type="number" min="0" step="1" /></div>
+              </div>
+              <div class="field-row">
+                <div class="field"><label for="lvis-e-w">宽</label><input id="lvis-e-w" type="number" min="16" step="1" /></div>
+                <div class="field"><label for="lvis-e-h">高</label><input id="lvis-e-h" type="number" min="16" step="1" /></div>
               </div>
               <div class="field">
-                <label for="layout-footer-text">页脚文案（示意）</label>
-                <textarea id="layout-footer-text" rows="2" maxlength="500" placeholder="可使用 {page} 表示页码"></textarea>
+                <label for="lvis-e-color">前景色</label>
+                <input id="lvis-e-color" type="color" />
               </div>
+              <div class="field">
+                <label for="lvis-e-bg">背景色</label>
+                <input id="lvis-e-bg" type="text" placeholder="#RRGGBB 或 transparent" spellcheck="false" />
+              </div>
+              <div class="field">
+                <label for="lvis-e-font">字号 (px)</label>
+                <input id="lvis-e-font" type="number" min="8" max="96" step="1" />
+              </div>
+              <button type="button" class="btn btn-danger-outline" id="btn-lvis-el-delete">删除控件</button>
             </div>
           </div>
         </div>

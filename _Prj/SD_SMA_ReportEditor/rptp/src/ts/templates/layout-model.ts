@@ -1,4 +1,9 @@
 import type { PaperKind } from "./paper";
+import {
+  hydrateLayoutZoneElement,
+  makeLayoutZoneElement,
+  type LayoutZoneElement,
+} from "./layout-zone-element";
 
 /** 写入模版时的版式几何快照（与版式预设脱钩，避免事后改预设导致旧模版错位） */
 export interface LayoutSnapshot {
@@ -12,7 +17,7 @@ export interface LayoutSnapshot {
   footerBandMm: number;
 }
 
-/** 可复用的版式 + 页眉页脚文案占位（先于模版编辑维护） */
+/** 可复用的版式 + 页眉页脚可视化控件（先于模版编辑维护） */
 export interface LayoutPreset {
   id: string;
   name: string;
@@ -25,9 +30,15 @@ export interface LayoutPreset {
   marginLeftMm: number;
   headerBandMm: number;
   footerBandMm: number;
+  /** @deprecated 仅兼容旧数据；新界面写入 headerElements */
   headerText: string;
+  /** @deprecated 仅兼容旧数据 */
   footerText: string;
+  headerElements: LayoutZoneElement[];
+  footerElements: LayoutZoneElement[];
 }
+
+export type { LayoutZoneElement };
 
 export const LAYOUT_PRESET_STORAGE_KEY = "rptp-layout-presets";
 
@@ -73,10 +84,12 @@ export function createEmptyLayoutPreset(): LayoutPreset {
     marginRightMm: 15,
     marginBottomMm: 15,
     marginLeftMm: 15,
-    headerBandMm: 20,
-    footerBandMm: 15,
-    headerText: "页眉（示意）",
-    footerText: "第 {page} 页",
+    headerBandMm: 22,
+    footerBandMm: 18,
+    headerText: "",
+    footerText: "",
+    headerElements: [],
+    footerElements: [],
   };
 }
 
@@ -86,7 +99,7 @@ export function loadLayoutPresets(): LayoutPreset[] {
     if (!raw) return [];
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter(isLayoutPreset);
+    return parsed.filter(isLayoutPreset).map((p) => hydrateLayoutPreset(p as Partial<LayoutPreset>));
   } catch {
     return [];
   }
@@ -106,13 +119,44 @@ function isLayoutPreset(v: unknown): v is LayoutPreset {
   return typeof o.id === "string" && typeof o.name === "string";
 }
 
+function normalizeZoneArray(raw: unknown): LayoutZoneElement[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((x) => hydrateLayoutZoneElement(x as Partial<LayoutZoneElement>));
+}
+
 export function hydrateLayoutPreset(raw: Partial<LayoutPreset>): LayoutPreset {
   const d = createEmptyLayoutPreset();
-  return {
+  const merged: LayoutPreset = {
     ...d,
     ...raw,
     id: typeof raw.id === "string" && raw.id.length > 0 ? raw.id : d.id,
     paperKind: (raw.paperKind as PaperKind) || d.paperKind,
     orientation: raw.orientation === "landscape" ? "landscape" : "portrait",
+    headerText: typeof raw.headerText === "string" ? raw.headerText : d.headerText,
+    footerText: typeof raw.footerText === "string" ? raw.footerText : d.footerText,
+    headerElements: normalizeZoneArray(raw.headerElements),
+    footerElements: normalizeZoneArray(raw.footerElements),
   };
+
+  if (merged.headerElements.length === 0 && merged.headerText.trim()) {
+    const el = makeLayoutZoneElement("text");
+    el.text = merged.headerText;
+    el.x = 8;
+    el.y = 6;
+    el.w = 280;
+    el.h = 26;
+    merged.headerElements = [el];
+  }
+  if (merged.footerElements.length === 0 && merged.footerText.trim()) {
+    const el = makeLayoutZoneElement("text");
+    el.text = merged.footerText;
+    el.x = 8;
+    el.y = 6;
+    el.w = 320;
+    el.h = 22;
+    el.fontSize = 12;
+    merged.footerElements = [el];
+  }
+
+  return merged;
 }

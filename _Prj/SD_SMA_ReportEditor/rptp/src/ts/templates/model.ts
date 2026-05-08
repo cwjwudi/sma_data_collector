@@ -2,6 +2,7 @@
 
 import type { LayoutSnapshot } from "./layout-model";
 import { defaultBlankLayoutSnapshot } from "./layout-model";
+import { hydrateLayoutZoneElement, type LayoutZoneElement } from "./layout-zone-element";
 import type { PaperKind } from "./paper";
 
 export type TemplateControlType = "text" | "box";
@@ -32,6 +33,9 @@ export interface ReportTemplate {
   /** 页眉页脚占位文案（创建时从版式预设带入或留空），导出时渲染 */
   headerText: string;
   footerText: string;
+  /** 创建时从版式快照：页眉区控件（导出时按当前页渲染页码/日期） */
+  headerElements: LayoutZoneElement[];
+  footerElements: LayoutZoneElement[];
 }
 
 export interface NewTemplateOptions {
@@ -42,6 +46,8 @@ export interface NewTemplateOptions {
   layoutSnapshot: LayoutSnapshot;
   headerText: string;
   footerText: string;
+  headerElements: LayoutZoneElement[];
+  footerElements: LayoutZoneElement[];
 }
 
 export const TEMPLATE_STORAGE_KEY = "rptp-report-templates";
@@ -94,6 +100,8 @@ export function createTemplate(opts: NewTemplateOptions): ReportTemplate {
     layoutSnapshot: { ...opts.layoutSnapshot },
     headerText: opts.headerText,
     footerText: opts.footerText,
+    headerElements: opts.headerElements.map((e) => ({ ...e })),
+    footerElements: opts.footerElements.map((e) => ({ ...e })),
   };
 }
 
@@ -137,7 +145,14 @@ function migrateReportTemplate(v: unknown): unknown {
     layoutSnapshot,
     headerText: typeof o.headerText === "string" ? o.headerText : "",
     footerText: typeof o.footerText === "string" ? o.footerText : "",
+    headerElements: normalizeTplZone(o.headerElements),
+    footerElements: normalizeTplZone(o.footerElements),
   };
+}
+
+function normalizeTplZone(raw: unknown): LayoutZoneElement[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((x) => hydrateLayoutZoneElement(x as Partial<LayoutZoneElement>));
 }
 
 function isReportTemplate(v: unknown): v is ReportTemplate {
@@ -147,6 +162,7 @@ function isReportTemplate(v: unknown): v is ReportTemplate {
   if (!o.layoutSnapshot || typeof o.layoutSnapshot !== "object") return false;
   if (typeof o.headerText !== "string") return false;
   if (typeof o.footerText !== "string") return false;
+  if (!Array.isArray(o.headerElements) || !Array.isArray(o.footerElements)) return false;
   return true;
 }
 
