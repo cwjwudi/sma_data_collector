@@ -34,9 +34,12 @@ function commitThemePreferences(): void {
 }
 
 const root = document.documentElement;
+const appEl = document.getElementById("app")!;
 const sidebar = document.getElementById("sidebar")!;
 const backdrop = document.getElementById("sidebarBackdrop")!;
 const btnNav = document.getElementById("btnNavToggle")!;
+const btnSidebarCollapse = document.getElementById("btnSidebarCollapse");
+const sidebarEdgeTab = document.getElementById("sidebarEdgeTab");
 const drawer = document.getElementById("drawerParams")!;
 const resizer = document.getElementById("drawerResizer")!;
 const btnDrawerToggle = document.getElementById("btnDrawerToggle")!;
@@ -64,6 +67,46 @@ const drawerTitleText = document.getElementById("drawerTitleText");
 const btnSettingsSave = document.getElementById("btn-settings-save");
 const btnSettingsResetDefault = document.getElementById("btn-settings-reset-default");
 const btnSettingsRevert = document.getElementById("btn-settings-revert");
+
+const SIDEBAR_COLLAPSE_KEY = "rptp-sidebar-collapsed";
+
+function loadSidebarCollapsedPreference(): boolean {
+  try {
+    return localStorage.getItem(SIDEBAR_COLLAPSE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+/** 宽屏：收起/展开主导航并写入本地偏好 */
+function syncSidebarCollapsedUi(collapsed: boolean): void {
+  if (window.innerWidth <= 768) return;
+  appEl.classList.toggle("sidebar-nav-collapsed", collapsed);
+  if (sidebarEdgeTab) sidebarEdgeTab.hidden = !collapsed;
+  btnNav.title = collapsed ? "展开导航" : "菜单";
+  btnSidebarCollapse?.setAttribute("aria-expanded", collapsed ? "false" : "true");
+  try {
+    localStorage.setItem(SIDEBAR_COLLAPSE_KEY, collapsed ? "1" : "0");
+  } catch {
+    /* ignore */
+  }
+}
+
+/** 随窗口宽度切换窄屏抽屉 / 宽屏可收起导航 */
+function applySidebarLayoutForViewport(): void {
+  if (window.innerWidth <= 768) {
+    appEl.classList.remove("sidebar-nav-collapsed");
+    if (sidebarEdgeTab) sidebarEdgeTab.hidden = true;
+    btnNav.title = "打开菜单";
+    btnSidebarCollapse?.setAttribute("aria-expanded", "true");
+    return;
+  }
+  const collapsed = loadSidebarCollapsedPreference();
+  appEl.classList.toggle("sidebar-nav-collapsed", collapsed);
+  if (sidebarEdgeTab) sidebarEdgeTab.hidden = !collapsed;
+  btnNav.title = collapsed ? "展开导航" : "菜单";
+  btnSidebarCollapse?.setAttribute("aria-expanded", collapsed ? "false" : "true");
+}
 
 themeLight?.addEventListener("change", () => {
   if (themeLight.checked) applyTheme("light", false);
@@ -236,13 +279,23 @@ function openSidebar(): void {
 }
 
 btnNav.addEventListener("click", () => {
+  if (window.innerWidth > 768) {
+    if (appEl.classList.contains("sidebar-nav-collapsed")) {
+      syncSidebarCollapsedUi(false);
+    }
+    return;
+  }
   if (sidebar.classList.contains("is-open")) closeSidebar();
   else openSidebar();
 });
 backdrop.addEventListener("click", closeSidebar);
 window.addEventListener("resize", () => {
   if (window.innerWidth > 768) closeSidebar();
+  applySidebarLayoutForViewport();
 });
+
+btnSidebarCollapse?.addEventListener("click", () => syncSidebarCollapsedUi(true));
+sidebarEdgeTab?.addEventListener("click", () => syncSidebarCollapsedUi(false));
 
 function syncDrawerUi(collapsed: boolean): void {
   drawer.classList.toggle("is-collapsed", collapsed);
@@ -336,6 +389,7 @@ resizer.addEventListener("keydown", (e) => {
 
 setDrawerWidth(getDrawerWidth() || 280);
 syncDrawerUi(false);
+applySidebarLayoutForViewport();
 syncDrawerContext("home");
 
 initReportTemplates({

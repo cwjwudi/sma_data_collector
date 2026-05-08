@@ -57,12 +57,47 @@ body {
   transition: width 0.2s ease, transform 0.22s ease;
   z-index: 40;
 }
+.sidebar-brand-row {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.65rem 0.5rem 0.65rem 1rem;
+  border-bottom: var(--border);
+  min-height: 52px;
+  box-sizing: border-box;
+}
 .sidebar-brand {
-  padding: 0.875rem 1rem;
+  flex: 1;
+  min-width: 0;
   font-weight: 700;
   font-size: 0.9375rem;
-  border-bottom: var(--border);
   letter-spacing: 0.02em;
+  line-height: 1.25;
+}
+.sidebar-collapse-btn {
+  display: none;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.sidebar-collapse-btn:hover {
+  background: rgba(0, 0, 0, 0.06);
+}
+html[data-theme="dark"] .sidebar-collapse-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+@media (min-width: 769px) {
+  .sidebar-collapse-btn {
+    display: flex;
+  }
 }
 .nav-scroll {
   flex: 1;
@@ -632,6 +667,33 @@ html[data-theme="dark"] .drawer-edge-tab {
   display: none !important;
 }
 
+/* 主导航收起后左侧拉出条（桌面端） */
+.sidebar-edge-tab {
+  position: fixed;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 36;
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  padding: 0.65rem 0.35rem;
+  font-size: 0.75rem;
+  letter-spacing: 0.08em;
+  border: var(--border);
+  border-left: none;
+  border-radius: 0 8px 8px 0;
+  background: var(--surface);
+  cursor: pointer;
+  box-shadow: 2px 0 8px rgba(0, 0, 0, 0.06);
+  transition: transform 0.2s ease, opacity 0.2s ease;
+}
+html[data-theme="dark"] .sidebar-edge-tab {
+  box-shadow: 2px 0 12px rgba(0, 0, 0, 0.35);
+}
+.sidebar-edge-tab[hidden] {
+  display: none !important;
+}
+
 /* 移动端遮罩 */
 .sidebar-backdrop {
   display: none;
@@ -649,6 +711,20 @@ html[data-theme="dark"] .drawer-edge-tab {
 }
 
 /* ----- 响应式 ----- */
+
+@media (min-width: 769px) {
+  .app.sidebar-nav-collapsed .sidebar {
+    width: 0 !important;
+    min-width: 0 !important;
+    overflow: hidden;
+    border-right-width: 0;
+    pointer-events: none;
+  }
+  .app.sidebar-nav-collapsed .menu-toggle {
+    display: flex;
+  }
+}
+
 @media (max-width: 900px) {
   .drawer {
     position: fixed;
