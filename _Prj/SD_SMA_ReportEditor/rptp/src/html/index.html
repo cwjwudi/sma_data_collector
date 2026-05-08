@@ -33,7 +33,7 @@
         <details class="nav-group">
           <summary>报表配置</summary>
           <div class="nav-group-body">
-            <a class="nav-item" href="#" data-page="home">模板管理</a>
+            <a class="nav-item" href="#" data-page="templates">模版管理</a>
             <a class="nav-item" href="#" data-page="home">版式与页眉页脚</a>
             <a class="nav-item" href="#" data-page="home">生成与导出</a>
             <a class="nav-item" href="#" data-page="home">报表历史</a>
@@ -67,6 +67,92 @@
           <h1>主内容区</h1>
           <p>响应式布局：窄屏下左侧导航变为抽屉；右侧参数栏可拖拽改宽、可收起，收起后可用屏幕右侧竖条再次打开。</p>
           <p style="margin-top: 0.75rem">源码按文件夹拆分：<code>src/html</code>、<code>src/css</code>、<code>src/ts</code>、<code>src/js</code>；开发运行 <code>npm run dev</code>，交付 PLC 单文件执行 <code>npm run ship</code> 生成根目录 <code>index.html</code>。</p>
+        </section>
+        <section id="page-templates" class="page-panel page-templates" aria-label="模版管理">
+          <div class="templates-head">
+            <h1>模版管理</h1>
+            <button type="button" class="btn btn-primary" id="btn-new-template">新建模版</button>
+          </div>
+          <p class="templates-intro">在此创建、删除模版；使用「编辑」进入可视化编排（拖拽控件、调整属性）。数据保存在本机浏览器。</p>
+          <div class="template-table-wrap">
+            <table class="template-table" id="template-list">
+              <thead>
+                <tr>
+                  <th>名称</th>
+                  <th>控件数</th>
+                  <th>更新时间</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </section>
+        <section id="page-template-editor" class="page-panel page-template-editor" aria-label="模版编辑">
+          <div class="template-editor-toolbar-row">
+            <button type="button" class="btn" id="btn-template-back">← 返回列表</button>
+            <label class="template-editor-name-label">
+              <span class="sr-only">模版名称</span>
+              <input type="text" id="template-editor-name" class="template-editor-name-input" maxlength="120" placeholder="模版名称" />
+            </label>
+            <button type="button" class="btn btn-primary" id="btn-template-save">保存模版</button>
+          </div>
+          <div class="template-editor-layout">
+            <aside class="template-tool-palette" aria-label="控件工具栏">
+              <h2 class="template-tool-palette-title">控件</h2>
+              <p class="template-tool-palette-hint">拖到右侧画布释放即可放置。</p>
+              <button type="button" class="template-tool-chip" draggable="true" data-template-tool="text">文本</button>
+              <button type="button" class="template-tool-chip" draggable="true" data-template-tool="box">矩形</button>
+            </aside>
+            <div class="template-editor-center">
+              <div id="template-canvas" class="template-canvas" aria-label="模版画布">
+                <div id="template-canvas-root" class="template-canvas-root"></div>
+              </div>
+            </div>
+            <aside class="template-props" aria-label="选中项属性">
+              <h2 class="template-props-title">属性</h2>
+              <p id="template-props-empty" class="template-props-empty">点击画布上的控件以编辑。</p>
+              <div id="template-props-fields" class="template-props-fields" hidden>
+                <div class="field">
+                  <label for="prop-text">文本内容</label>
+                  <input id="prop-text" type="text" maxlength="500" />
+                </div>
+                <div class="field-row">
+                  <div class="field">
+                    <label for="prop-x">X</label>
+                    <input id="prop-x" type="number" min="0" step="1" />
+                  </div>
+                  <div class="field">
+                    <label for="prop-y">Y</label>
+                    <input id="prop-y" type="number" min="0" step="1" />
+                  </div>
+                </div>
+                <div class="field-row">
+                  <div class="field">
+                    <label for="prop-w">宽</label>
+                    <input id="prop-w" type="number" min="20" step="1" />
+                  </div>
+                  <div class="field">
+                    <label for="prop-h">高</label>
+                    <input id="prop-h" type="number" min="20" step="1" />
+                  </div>
+                </div>
+                <div class="field">
+                  <label for="prop-color">前景色</label>
+                  <input id="prop-color" type="color" />
+                </div>
+                <div class="field">
+                  <label for="prop-bg">背景色</label>
+                  <input id="prop-bg" type="text" placeholder="#RRGGBB 或 transparent" spellcheck="false" />
+                </div>
+                <div class="field">
+                  <label for="prop-font">字号 (px)</label>
+                  <input id="prop-font" type="number" min="8" max="96" step="1" />
+                </div>
+                <button type="button" class="btn btn-danger-outline" id="btn-prop-delete">删除控件</button>
+              </div>
+            </aside>
+          </div>
         </section>
         <section id="page-settings" class="page-panel page-settings" aria-label="全局设置">
           <h1>全局设置</h1>
@@ -149,6 +235,9 @@
           </div>
           <div id="drawer-panel-about-hint" class="drawer-panel drawer-panel-muted" hidden>
             <p>「关于」为说明信息，侧栏无额外参数。</p>
+          </div>
+          <div id="drawer-panel-templates-hint" class="drawer-panel drawer-panel-muted" hidden>
+            <p>模版在中栏管理；列表可新建与删除，编辑模式下从左侧拖入控件到画布，右侧编辑尺寸、颜色与文本。数据保存在浏览器本地。</p>
           </div>
         </div>
       </div>

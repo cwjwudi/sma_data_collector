@@ -7,8 +7,9 @@ import {
   THEME_KEY,
   type ThemeMode,
 } from "./theme";
+import { initReportTemplates, showTemplatesPage } from "./report-templates";
 
-type PageId = "home" | "settings" | "about";
+type PageId = "home" | "settings" | "about" | "templates" | "templateEditor";
 
 initThemeFromStorage();
 applyTheme(currentTheme(), false);
@@ -41,6 +42,8 @@ const btnCollapse = document.getElementById("btnDrawerCollapse")!;
 const edgeTab = document.getElementById("drawerEdgeTab")!;
 const topTitle = document.getElementById("topTitle")!;
 const pageHome = document.getElementById("page-home")!;
+const pageTemplates = document.getElementById("page-templates")!;
+const pageTemplateEditor = document.getElementById("page-template-editor")!;
 const pageSettings = document.getElementById("page-settings")!;
 const pageAbout = document.getElementById("page-about")!;
 const themeLight = document.querySelector<HTMLInputElement>("#theme-light");
@@ -49,6 +52,7 @@ const themeDark = document.querySelector<HTMLInputElement>("#theme-dark");
 const drawerPanelTool = document.getElementById("drawer-panel-tool");
 const drawerPanelHint = document.getElementById("drawer-panel-settings-hint");
 const drawerPanelAboutHint = document.getElementById("drawer-panel-about-hint");
+const drawerPanelTemplatesHint = document.getElementById("drawer-panel-templates-hint");
 const drawerTitleText = document.getElementById("drawerTitleText");
 
 const btnSettingsSave = document.getElementById("btn-settings-save");
@@ -75,7 +79,15 @@ btnSettingsRevert?.addEventListener("click", () => {
 });
 
 function syncDrawerContext(pageId: PageId): void {
-  if (!drawerPanelTool || !drawerPanelHint || !drawerPanelAboutHint || !drawerTitleText) return;
+  if (
+    !drawerPanelTool ||
+    !drawerPanelHint ||
+    !drawerPanelAboutHint ||
+    !drawerPanelTemplatesHint ||
+    !drawerTitleText
+  )
+    return;
+  drawerPanelTemplatesHint.hidden = true;
   if (pageId === "home") {
     drawerPanelTool.hidden = false;
     drawerPanelHint.hidden = true;
@@ -90,14 +102,25 @@ function syncDrawerContext(pageId: PageId): void {
     drawerTitleText.textContent = "全局设置";
     return;
   }
-  drawerPanelHint.hidden = true;
-  drawerPanelAboutHint.hidden = false;
-  drawerTitleText.textContent = "关于";
+  if (pageId === "about") {
+    drawerPanelHint.hidden = true;
+    drawerPanelAboutHint.hidden = false;
+    drawerTitleText.textContent = "关于";
+    return;
+  }
+  if (pageId === "templates" || pageId === "templateEditor") {
+    drawerPanelHint.hidden = true;
+    drawerPanelAboutHint.hidden = true;
+    drawerPanelTemplatesHint.hidden = false;
+    drawerTitleText.textContent = pageId === "templateEditor" ? "模版编辑" : "模版管理";
+    return;
+  }
 }
 
 function parseNavPage(raw: string | undefined): PageId {
   if (raw === "settings") return "settings";
   if (raw === "about") return "about";
+  if (raw === "templates") return "templates";
   return "home";
 }
 
@@ -108,11 +131,15 @@ function showPage(pageId: PageId): void {
   }
 
   pageHome.classList.toggle("is-visible", pageId === "home");
+  pageTemplates.classList.toggle("is-visible", pageId === "templates");
+  pageTemplateEditor.classList.toggle("is-visible", pageId === "templateEditor");
   pageSettings.classList.toggle("is-visible", pageId === "settings");
   pageAbout.classList.toggle("is-visible", pageId === "about");
 
   const titles: Record<PageId, string> = {
     home: "当前视图 · SQL 工作台",
+    templates: "当前视图 · 模版管理",
+    templateEditor: "当前视图 · 模版编辑",
     settings: "当前视图 · 全局设置",
     about: "当前视图 · 关于",
   };
@@ -129,9 +156,15 @@ function setActiveNav(activeLink: HTMLElement | null): void {
 document.querySelectorAll<HTMLAnchorElement>("a.nav-item[data-page]").forEach((link) => {
   link.addEventListener("click", (e) => {
     e.preventDefault();
-    const page = parseNavPage(link.dataset.page);
     const d = link.closest("details");
     if (d) d.open = true;
+    if (link.dataset.page === "templates") {
+      showTemplatesPage();
+      setActiveNav(link);
+      if (window.innerWidth <= 768) closeSidebar();
+      return;
+    }
+    const page = parseNavPage(link.dataset.page);
     showPage(page);
     setActiveNav(link);
     if (window.innerWidth <= 768) closeSidebar();
@@ -269,3 +302,7 @@ resizer.addEventListener("keydown", (e) => {
 setDrawerWidth(getDrawerWidth() || 280);
 syncDrawerUi(false);
 syncDrawerContext("home");
+
+initReportTemplates({
+  showPage: (id: string) => showPage(id as PageId),
+});
