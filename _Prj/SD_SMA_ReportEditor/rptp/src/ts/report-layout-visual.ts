@@ -385,22 +385,24 @@ function listForZone(zone: "header" | "footer"): LayoutZoneElement[] {
 }
 
 /**
- * 纸张 #lvis-zoom-outer 在 .lvis-scroll 滚动坐标系下的矩形。
- * 不可用 outer.offsetLeft：外层 .lvis-scroll-pad 有 4000px padding，offset 相对 offsetParent，与 scrollLeft 不同步，会导致缩放后视图飞出、适应宽度无法居中。
+ * 缩放层 #lvis-page-scale-wrap（应用 transform: scale）在 .lvis-scroll 滚动坐标系下的矩形。
+ * 必须用 wrap 的 getBoundingClientRect（含变换后的视觉尺寸）；若误用 #lvis-zoom-outer，会出现 frac 越界与缩放锚点漂移。
  */
-function lvisPaperRectInScrollCoords(sc: HTMLElement, out: HTMLElement): {
+function lvisPaperRectInScrollCoords(sc: HTMLElement): {
   left: number;
   top: number;
   width: number;
   height: number;
 } {
+  const wrap = document.getElementById("lvis-page-scale-wrap");
+  if (!wrap) return { left: 0, top: 0, width: 0, height: 0 };
   const scr = sc.getBoundingClientRect();
-  const or = out.getBoundingClientRect();
+  const wr = wrap.getBoundingClientRect();
   return {
-    left: sc.scrollLeft + (or.left - scr.left),
-    top: sc.scrollTop + (or.top - scr.top),
-    width: or.width,
-    height: or.height,
+    left: sc.scrollLeft + (wr.left - scr.left),
+    top: sc.scrollTop + (wr.top - scr.top),
+    width: wr.width,
+    height: wr.height,
   };
 }
 
@@ -446,7 +448,7 @@ function applyLvisZoomAnchoredAt(clientX: number, clientY: number): void {
     applyLvisZoom();
     return;
   }
-  const pr = lvisPaperRectInScrollCoords(scroll, outer);
+  const pr = lvisPaperRectInScrollCoords(scroll);
   if (pr.width <= 0 || pr.height <= 0) {
     applyLvisZoom();
     return;
@@ -475,6 +477,7 @@ function applyLvisZoomAnchoredAt(clientX: number, clientY: number): void {
         fracX,
         fracY,
         pr: { left: pr.left, top: pr.top, w: pr.width, h: pr.height },
+        rectBasis: "lvis-page-scale-wrap",
         scrollBefore: { left: scroll.scrollLeft, top: scroll.scrollTop },
       },
       timestamp: Date.now(),
@@ -488,7 +491,7 @@ function applyLvisZoomAnchoredAt(clientX: number, clientY: number): void {
   void outer.offsetHeight;
   void scroll.offsetHeight;
 
-  const pr2 = lvisPaperRectInScrollCoords(scroll, outer);
+  const pr2 = lvisPaperRectInScrollCoords(scroll);
   if (pr2.width > 0 && pr2.height > 0) {
     const scr = scroll.getBoundingClientRect();
     const ax = anchor.x;
@@ -529,7 +532,7 @@ function applyLvisZoomAndPreserveView(): void {
   let fracX = 0.5;
   let fracY = 0.5;
   if (scroll && outer) {
-    const pr = lvisPaperRectInScrollCoords(scroll, outer);
+    const pr = lvisPaperRectInScrollCoords(scroll);
     if (pr.width > 0 && pr.height > 0) {
       const cx = scroll.scrollLeft + scroll.clientWidth / 2;
       const cy = scroll.scrollTop + scroll.clientHeight / 2;
@@ -545,7 +548,7 @@ function applyLvisZoomAndPreserveView(): void {
       const sc = document.querySelector(".lvis-scroll") as HTMLElement | null;
       const out = document.getElementById("lvis-zoom-outer");
       if (!sc || !out) return;
-      const pr2 = lvisPaperRectInScrollCoords(sc, out);
+      const pr2 = lvisPaperRectInScrollCoords(sc);
       if (pr2.width <= 0 || pr2.height <= 0) return;
       sc.scrollLeft = Math.round(pr2.left + pr2.width * fracX - sc.clientWidth / 2);
       sc.scrollTop = Math.round(pr2.top + pr2.height * fracY - sc.clientHeight / 2);
@@ -557,7 +560,7 @@ function centerLvisScrollOnPage(): void {
   const sc = document.querySelector(".lvis-scroll") as HTMLElement | null;
   const out = document.getElementById("lvis-zoom-outer");
   if (!sc || !out) return;
-  const pr = lvisPaperRectInScrollCoords(sc, out);
+  const pr = lvisPaperRectInScrollCoords(sc);
   if (pr.width <= 0 || pr.height <= 0) return;
   sc.scrollLeft = Math.round(pr.left + pr.width / 2 - sc.clientWidth / 2);
   sc.scrollTop = Math.round(pr.top + pr.height / 2 - sc.clientHeight / 2);
@@ -572,7 +575,7 @@ function ensureLvisPageVisible(): void {
   const st = scroll.scrollTop;
   const vw = scroll.clientWidth;
   const vh = scroll.clientHeight;
-  const pr = lvisPaperRectInScrollCoords(scroll, outer);
+  const pr = lvisPaperRectInScrollCoords(scroll);
   const rx = Math.min(sl + vw, pr.left + pr.width) - Math.max(sl, pr.left);
   const ry = Math.min(st + vh, pr.top + pr.height) - Math.max(st, pr.top);
   if (rx <= 2 || ry <= 2) {
