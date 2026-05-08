@@ -124,6 +124,14 @@ export function initReportTemplates(d: TemplatePagesDeps): void {
       layoutSnapshot: { ...editing.layoutSnapshot },
       coverLayoutSnapshot: { ...editing.coverLayoutSnapshot },
       backLayoutSnapshot: { ...editing.backLayoutSnapshot },
+      headerElements: editing.headerElements.map((e) => ({ ...e })),
+      footerElements: editing.footerElements.map((e) => ({ ...e })),
+      coverHeaderElements: editing.coverHeaderElements.map((e) => ({ ...e })),
+      coverFooterElements: editing.coverFooterElements.map((e) => ({ ...e })),
+      coverBodyZoneElements: editing.coverBodyZoneElements.map((e) => ({ ...e })),
+      backHeaderElements: editing.backHeaderElements.map((e) => ({ ...e })),
+      backFooterElements: editing.backFooterElements.map((e) => ({ ...e })),
+      backBodyZoneElements: editing.backBodyZoneElements.map((e) => ({ ...e })),
       elements: editing.elements.map((e) => ({ ...e })),
       coverElements: editing.coverElements.map((e) => ({ ...e })),
       backElements: editing.backElements.map((e) => ({ ...e })),
@@ -263,6 +271,7 @@ function clampElementToContent(el: TemplateElement): void {
 function renderPaperChrome(): void {
   const pageEl = document.getElementById("template-canvas-page");
   const root = document.getElementById("template-canvas-root");
+  const underlay = document.getElementById("template-body-zone-underlay");
   const headerEl = document.getElementById("template-paper-header");
   const footerEl = document.getElementById("template-paper-footer");
   const headerInner = document.getElementById("template-paper-header-inner");
@@ -272,6 +281,7 @@ function renderPaperChrome(): void {
 
   const snap = activeLayoutSnapshot(editing);
   const m = computePaperLayout(editing.paperKind, editing.orientation, snap);
+  const sheet = editorSheet;
 
   pageEl.style.width = `${m.pageW}px`;
   pageEl.style.height = `${m.pageH}px`;
@@ -281,7 +291,28 @@ function renderPaperChrome(): void {
   root.style.width = `${m.contentW}px`;
   root.style.height = `${m.contentH}px`;
 
-  const sheet = editorSheet;
+  if (underlay) {
+    underlay.style.left = `${m.contentLeft}px`;
+    underlay.style.top = `${m.contentTop}px`;
+    underlay.style.width = `${m.contentW}px`;
+    underlay.style.height = `${m.contentH}px`;
+    if (sheet === "cover") {
+      renderZoneElementsInto(underlay, editing.coverBodyZoneElements, {
+        previewPage: 1,
+        previewTotalPages: PAGE_NUMBER_PREVIEW_TOTAL_FALLBACK,
+        selectionChrome: false,
+      });
+    } else if (sheet === "back") {
+      renderZoneElementsInto(underlay, editing.backBodyZoneElements, {
+        previewPage: 1,
+        previewTotalPages: PAGE_NUMBER_PREVIEW_TOTAL_FALLBACK,
+        selectionChrome: false,
+      });
+    } else {
+      underlay.replaceChildren();
+    }
+  }
+
   const headerText =
     sheet === "cover"
       ? editing.coverHeaderText
@@ -420,7 +451,25 @@ function renderNtPresetMiniPage(thumb: HTMLElement, preset: LayoutPreset): void 
   body.style.width = `${m.contentW}px`;
   body.style.height = `${m.contentH}px`;
   body.style.boxSizing = "border-box";
-  body.textContent = "正文";
+  body.style.overflow = "hidden";
+  if (preset.pageRole === "cover" || preset.pageRole === "back") {
+    const inner = document.createElement("div");
+    inner.style.cssText = "position:absolute;inset:0;overflow:hidden;box-sizing:border-box;";
+    body.appendChild(inner);
+    renderZoneElementsInto(inner, preset.bodyElements, {
+      selectionChrome: false,
+      previewPage: 1,
+      previewTotalPages: PAGE_NUMBER_PREVIEW_TOTAL_FALLBACK,
+    });
+    if (preset.bodyElements.length === 0) {
+      const leg = document.createElement("div");
+      leg.className = "nt-preset-legacy-band";
+      leg.textContent = "正文装饰";
+      inner.appendChild(leg);
+    }
+  } else {
+    body.textContent = "正文";
+  }
 
   const fw = document.createElement("div");
   fw.className = "nt-preset-zone nt-preset-zone--footer";
@@ -719,12 +768,14 @@ function bindNewTemplateDialog(): void {
       coverFooterText: coverZones.footerText,
       coverHeaderElements: coverZones.headerElements,
       coverFooterElements: coverZones.footerElements,
+      coverBodyZoneElements: coverZones.bodyElements,
       backLayoutPresetId,
       backLayoutSnapshot: backZones.layoutSnapshot,
       backHeaderText: backZones.headerText,
       backFooterText: backZones.footerText,
       backHeaderElements: backZones.headerElements,
       backFooterElements: backZones.footerElements,
+      backBodyZoneElements: backZones.bodyElements,
     };
 
     const t = createTemplate(opts);
@@ -858,6 +909,14 @@ export function openEditor(templateId: string): void {
     layoutSnapshot: { ...t.layoutSnapshot },
     coverLayoutSnapshot: { ...t.coverLayoutSnapshot },
     backLayoutSnapshot: { ...t.backLayoutSnapshot },
+    headerElements: t.headerElements.map((e) => ({ ...e })),
+    footerElements: t.footerElements.map((e) => ({ ...e })),
+    coverHeaderElements: t.coverHeaderElements.map((e) => ({ ...e })),
+    coverFooterElements: t.coverFooterElements.map((e) => ({ ...e })),
+    coverBodyZoneElements: t.coverBodyZoneElements.map((e) => ({ ...e })),
+    backHeaderElements: t.backHeaderElements.map((e) => ({ ...e })),
+    backFooterElements: t.backFooterElements.map((e) => ({ ...e })),
+    backBodyZoneElements: t.backBodyZoneElements.map((e) => ({ ...e })),
     elements: t.elements.map((raw) => hydrateElement(raw)),
     coverElements: t.coverElements.map((raw) => hydrateElement(raw)),
     backElements: t.backElements.map((raw) => hydrateElement(raw)),

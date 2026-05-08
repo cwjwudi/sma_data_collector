@@ -135,7 +135,10 @@
                         <div id="lvis-header-wrap" class="lvis-zone-wrap lvis-zone-header">
                           <div id="lvis-header-canvas" class="lvis-zone-canvas" tabindex="-1"></div>
                         </div>
-                        <div id="lvis-body-zone" class="lvis-body-zone" tabindex="-1">正文区（导出时摆放模版控件）</div>
+                        <div id="lvis-body-zone" class="lvis-body-zone" tabindex="-1">
+                          <div id="lvis-body-placeholder" class="lvis-body-placeholder">正文区（导出时摆放模版控件）</div>
+                          <div id="lvis-body-canvas" class="lvis-zone-canvas lvis-body-canvas" tabindex="-1" hidden></div>
+                        </div>
                         <div id="lvis-footer-wrap" class="lvis-zone-wrap lvis-zone-footer">
                           <div id="lvis-footer-canvas" class="lvis-zone-canvas" tabindex="-1"></div>
                         </div>
@@ -418,6 +421,7 @@
                   <div id="template-paper-footer" class="template-paper-footer" hidden>
                     <div id="template-paper-footer-inner" class="template-paper-zone-inner"></div>
                   </div>
+                  <div id="template-body-zone-underlay" class="template-body-zone-underlay" aria-hidden="true"></div>
                   <div id="template-canvas-root" class="template-canvas-root"></div>
                 </div>
               </div>
@@ -645,7 +649,7 @@
           </div>
           <div id="drawer-panel-layout-visual" class="drawer-panel" hidden>
             <div id="lvis-drawer-idle">
-              <p class="drawer-panel-muted">请先点击预览区：<strong>正文</strong>编辑纸张与页边距；<strong>页眉/页脚空白</strong>编辑带高度；<strong>控件</strong>编辑样式。点击预览区外侧留白返回此说明。</p>
+              <p class="drawer-panel-muted">请先点击预览区：<strong>正文页</strong>时点<strong>正文占位区</strong>编辑纸张与页边距；<strong>封面 / 末页</strong>时<strong>正文画布</strong>可摆放装饰控件（空白处点击或<strong>Shift+点击空白</strong>切换纸张设置）。<strong>页眉 / 页脚空白</strong>编辑带高度；<strong>控件</strong>编辑样式。点击预览区外侧留白返回此说明。</p>
             </div>
             <div id="lvis-drawer-global" hidden>
               <h2 class="layout-edit-title">纸张与页边距</h2>
@@ -696,6 +700,16 @@
                 <label for="lvis-band-mm">高度 mm</label>
                 <input id="lvis-band-mm" type="number" min="0" step="0.5" />
               </div>
+            </div>
+            <div id="lvis-drawer-body-zone" hidden>
+              <h2 class="layout-edit-title">正文装饰区</h2>
+              <p class="drawer-panel-hint">
+                封面 / 末页版式下，可在<strong>正文区域</strong>内拖拽摆放装饰控件（页码、日期、图片等与页眉区一致）。与模版编辑里的<strong>正文画布控件</strong>独立。
+              </p>
+              <p class="drawer-panel-hint">
+                需要改<strong>纸张与页边距</strong>时，请在正文画布<strong>空白处按住 Shift 点击</strong>，或点下方按钮。
+              </p>
+              <button type="button" class="btn btn-sm btn-primary" id="btn-lvis-to-global">纸张与页边距…</button>
             </div>
             <div id="lvis-drawer-element" hidden>
               <h2 class="layout-edit-title">选中控件</h2>

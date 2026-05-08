@@ -37,6 +37,8 @@ export interface ReportTemplate {
   coverFooterText: string;
   coverHeaderElements: LayoutZoneElement[];
   coverFooterElements: LayoutZoneElement[];
+  /** 封面版式快照：正文区内装饰（与 coverElements 模版画布独立） */
+  coverBodyZoneElements: LayoutZoneElement[];
   /** 可选末页版式 */
   backLayoutPresetId: string | null;
   backLayoutSnapshot: LayoutSnapshot;
@@ -44,6 +46,8 @@ export interface ReportTemplate {
   backFooterText: string;
   backHeaderElements: LayoutZoneElement[];
   backFooterElements: LayoutZoneElement[];
+  /** 末页版式快照：正文区内装饰 */
+  backBodyZoneElements: LayoutZoneElement[];
   /** 页眉页脚占位文案（创建时从版式预设带入或留空），导出时渲染 */
   headerText: string;
   footerText: string;
@@ -72,12 +76,14 @@ export interface NewTemplateOptions {
   coverFooterText: string;
   coverHeaderElements: LayoutZoneElement[];
   coverFooterElements: LayoutZoneElement[];
+  coverBodyZoneElements: LayoutZoneElement[];
   backLayoutPresetId: string | null;
   backLayoutSnapshot: LayoutSnapshot;
   backHeaderText: string;
   backFooterText: string;
   backHeaderElements: LayoutZoneElement[];
   backFooterElements: LayoutZoneElement[];
+  backBodyZoneElements: LayoutZoneElement[];
 }
 
 export const TEMPLATE_STORAGE_KEY = "rptp-report-templates";
@@ -134,12 +140,14 @@ export function createTemplate(opts: NewTemplateOptions): ReportTemplate {
     coverFooterText: opts.coverFooterText,
     coverHeaderElements: opts.coverHeaderElements.map((e) => ({ ...e })),
     coverFooterElements: opts.coverFooterElements.map((e) => ({ ...e })),
+    coverBodyZoneElements: opts.coverBodyZoneElements.map((e) => ({ ...e })),
     backLayoutPresetId: opts.backLayoutPresetId,
     backLayoutSnapshot: { ...opts.backLayoutSnapshot },
     backHeaderText: opts.backHeaderText,
     backFooterText: opts.backFooterText,
     backHeaderElements: opts.backHeaderElements.map((e) => ({ ...e })),
     backFooterElements: opts.backFooterElements.map((e) => ({ ...e })),
+    backBodyZoneElements: opts.backBodyZoneElements.map((e) => ({ ...e })),
     headerText: opts.headerText,
     footerText: opts.footerText,
     headerElements: opts.headerElements.map((e) => ({ ...e })),
@@ -203,12 +211,14 @@ function migrateReportTemplate(v: unknown): unknown {
     coverFooterText: typeof o.coverFooterText === "string" ? o.coverFooterText : "",
     coverHeaderElements: normalizeTplZone(o.coverHeaderElements),
     coverFooterElements: normalizeTplZone(o.coverFooterElements),
+    coverBodyZoneElements: normalizeTplZone(o.coverBodyZoneElements),
     backLayoutPresetId: typeof o.backLayoutPresetId === "string" ? o.backLayoutPresetId : null,
     backLayoutSnapshot: backSnap,
     backHeaderText: typeof o.backHeaderText === "string" ? o.backHeaderText : "",
     backFooterText: typeof o.backFooterText === "string" ? o.backFooterText : "",
     backHeaderElements: normalizeTplZone(o.backHeaderElements),
     backFooterElements: normalizeTplZone(o.backFooterElements),
+    backBodyZoneElements: normalizeTplZone(o.backBodyZoneElements),
     headerText: typeof o.headerText === "string" ? o.headerText : "",
     footerText: typeof o.footerText === "string" ? o.footerText : "",
     headerElements: normalizeTplZone(o.headerElements),
@@ -232,7 +242,9 @@ function isReportTemplate(v: unknown): v is ReportTemplate {
   if (typeof o.footerText !== "string") return false;
   if (!Array.isArray(o.headerElements) || !Array.isArray(o.footerElements)) return false;
   if (!Array.isArray(o.coverHeaderElements) || !Array.isArray(o.coverFooterElements)) return false;
+  if (!Array.isArray(o.coverBodyZoneElements)) return false;
   if (!Array.isArray(o.backHeaderElements) || !Array.isArray(o.backFooterElements)) return false;
+  if (!Array.isArray(o.backBodyZoneElements)) return false;
   if (!Array.isArray(o.coverElements) || !Array.isArray(o.backElements)) return false;
   return true;
 }

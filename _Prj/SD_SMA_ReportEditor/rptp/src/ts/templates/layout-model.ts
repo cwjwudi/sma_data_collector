@@ -47,6 +47,8 @@ export interface LayoutPreset {
   footerText: string;
   headerElements: LayoutZoneElement[];
   footerElements: LayoutZoneElement[];
+  /** 封面 / 末页：正文区装饰控件；正文页通常为空 */
+  bodyElements: LayoutZoneElement[];
 }
 
 export type { LayoutZoneElement };
@@ -100,6 +102,7 @@ export interface ZonesSnapshot {
   footerText: string;
   headerElements: LayoutZoneElement[];
   footerElements: LayoutZoneElement[];
+  bodyElements: LayoutZoneElement[];
 }
 
 export function presetZonesSnapshot(preset: LayoutPreset): ZonesSnapshot {
@@ -109,6 +112,7 @@ export function presetZonesSnapshot(preset: LayoutPreset): ZonesSnapshot {
     footerText: preset.footerText,
     headerElements: preset.headerElements.map((e) => ({ ...e })),
     footerElements: preset.footerElements.map((e) => ({ ...e })),
+    bodyElements: preset.bodyElements.map((e) => ({ ...e })),
   };
 }
 
@@ -119,6 +123,7 @@ export function blankZonesSnapshot(): ZonesSnapshot {
     footerText: "",
     headerElements: [],
     footerElements: [],
+    bodyElements: [],
   };
 }
 
@@ -149,6 +154,7 @@ export function createEmptyLayoutPreset(): LayoutPreset {
     footerText: "",
     headerElements: [],
     footerElements: [],
+    bodyElements: [],
   };
 }
 
@@ -201,6 +207,7 @@ export function hydrateLayoutPreset(raw: Partial<LayoutPreset>): LayoutPreset {
     footerText: typeof raw.footerText === "string" ? raw.footerText : d.footerText,
     headerElements: normalizeZoneArray(raw.headerElements),
     footerElements: normalizeZoneArray(raw.footerElements),
+    bodyElements: normalizeZoneArray(raw.bodyElements),
   };
 
   if (merged.headerElements.length === 0 && merged.headerText.trim()) {

@@ -1380,6 +1380,13 @@ html[data-theme="dark"] .template-paper-footer {
 .template-paper-footer {
   justify-content: center;
 }
+.template-body-zone-underlay {
+  position: absolute;
+  box-sizing: border-box;
+  z-index: 1;
+  pointer-events: none;
+  overflow: hidden;
+}
 .template-canvas-root {
   position: absolute;
   box-sizing: border-box;
@@ -1793,6 +1800,13 @@ html[data-theme="dark"] .lvis-zone-wrap {
 }
 .lvis-body-zone {
   box-sizing: border-box;
+  position: absolute;
+  cursor: pointer;
+  overflow: hidden;
+}
+.lvis-body-placeholder {
+  position: absolute;
+  inset: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1804,12 +1818,16 @@ html[data-theme="dark"] .lvis-zone-wrap {
     linear-gradient(rgba(0, 0, 0, 0.04) 1px, transparent 1px),
     linear-gradient(90deg, rgba(0, 0, 0, 0.04) 1px, transparent 1px);
   background-size: 20px 20px;
-  cursor: pointer;
+  pointer-events: auto;
 }
-html[data-theme="dark"] .lvis-body-zone {
+html[data-theme="dark"] .lvis-body-placeholder {
   background-image:
     linear-gradient(rgba(255, 255, 255, 0.06) 1px, transparent 1px),
     linear-gradient(90deg, rgba(255, 255, 255, 0.06) 1px, transparent 1px);
+}
+.lvis-body-canvas {
+  position: absolute;
+  inset: 0;
 }
 .lvis-body-zone.lvis-zone-focused {
   outline: 2px solid var(--accent);

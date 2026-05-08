@@ -32,14 +32,27 @@ export interface LayoutVisualDeps {
 let deps: LayoutVisualDeps;
 let draft: LayoutPreset | null = null;
 
+type LvisZone = "header" | "footer" | "body";
+
 type Sel =
   | { k: "idle" }
   | { k: "global" }
   | { k: "headerBand" }
   | { k: "footerBand" }
-  | { k: "el"; zone: "header" | "footer"; ids: string[] };
+  | { k: "bodyBand" }
+  | { k: "el"; zone: LvisZone; ids: string[] };
 
 let sel: Sel = { k: "idle" };
+
+function bandSelForZone(zone: LvisZone): Extract<Sel, { k: "headerBand" | "footerBand" | "bodyBand" }> {
+  if (zone === "header") return { k: "headerBand" };
+  if (zone === "footer") return { k: "footerBand" };
+  return { k: "bodyBand" };
+}
+
+function isBodyZoneEditable(): boolean {
+  return !!draft && (draft.pageRole === "cover" || draft.pageRole === "back");
+}
 
 /** 预览缩放（不影响导出几何，仅视图） */
 let lvisZoom = 1;
@@ -57,7 +70,7 @@ let snapEnabled = true;
 let snapGridPx = 8;
 
 let dragMove: {
-  zone: "header" | "footer";
+  zone: LvisZone;
   id: string;
   sx: number;
   sy: number;
@@ -66,7 +79,7 @@ let dragMove: {
 } | null = null;
 
 let resizeDrag: {
-  zone: "header" | "footer";
+  zone: LvisZone;
   id: string;
   handle: string;
   sx: number;
@@ -89,6 +102,7 @@ function cloneLayoutDraftFrom(p: LayoutPreset): LayoutPreset {
   const d = hydrateLayoutPreset(JSON.parse(JSON.stringify(p)) as Partial<LayoutPreset>);
   d.headerElements = d.headerElements.map((x) => ({ ...x }));
   d.footerElements = d.footerElements.map((x) => ({ ...x }));
+  d.bodyElements = d.bodyElements.map((x) => ({ ...x }));
   return d;
 }
 
@@ -110,10 +124,10 @@ function resetLvisUndoRedo(): void {
 function coerceSelAfterHistoryJump(): void {
   if (!draft) return;
   if (sel.k !== "el") return;
-  const list = sel.zone === "header" ? draft.headerElements : draft.footerElements;
+  const list = listForZone(sel.zone);
   const ok = sel.ids.filter((id) => list.some((e) => e.id === id));
   if (ok.length === 0) {
-    sel = sel.zone === "header" ? { k: "headerBand" } : { k: "footerBand" };
+    sel = bandSelForZone(sel.zone);
   } else {
     sel = { k: "el", zone: sel.zone, ids: ok };
   }
@@ -165,7 +179,7 @@ function snapPx(v: number): number {
   return Math.round(v / snapGridPx) * snapGridPx;
 }
 
-function snapElInZone(el: LayoutZoneElement, zone: "header" | "footer"): void {
+function snapElInZone(el: LayoutZoneElement, zone: LvisZone): void {
   const { zw, zh } = zoneDims(zone);
   el.x = snapPx(el.x);
   el.y = snapPx(el.y);
@@ -361,9 +375,10 @@ function metrics(): PaperLayoutMetrics | null {
   return computePaperLayout(draft.paperKind, draft.orientation, snapFromDraft(draft));
 }
 
-function zoneDims(zone: "header" | "footer"): { zw: number; zh: number } {
+function zoneDims(zone: LvisZone): { zw: number; zh: number } {
   const m = metrics();
   if (!m) return { zw: 100, zh: 40 };
+  if (zone === "body") return { zw: m.contentW, zh: m.contentH };
   return { zw: m.contentW, zh: zone === "header" ? m.hb : m.fb };
 }
 
@@ -373,6 +388,8 @@ function clampAllZoneElements(): void {
   for (const el of draft.headerElements) clampZoneElement(el, hd.zw, hd.zh);
   const fd = zoneDims("footer");
   for (const el of draft.footerElements) clampZoneElement(el, fd.zw, fd.zh);
+  const bd = zoneDims("body");
+  for (const el of draft.bodyElements) clampZoneElement(el, bd.zw, bd.zh);
 }
 
 function primarySelId(): string | undefined {
@@ -383,13 +400,15 @@ function findSelEl(): LayoutZoneElement | undefined {
   if (!draft || sel.k !== "el") return undefined;
   const pid = primarySelId();
   if (!pid) return undefined;
-  const list = sel.zone === "header" ? draft.headerElements : draft.footerElements;
+  const list = listForZone(sel.zone);
   return list.find((x) => x.id === pid);
 }
 
-function listForZone(zone: "header" | "footer"): LayoutZoneElement[] {
+function listForZone(zone: LvisZone): LayoutZoneElement[] {
   if (!draft) return [];
-  return zone === "header" ? draft.headerElements : draft.footerElements;
+  if (zone === "header") return draft.headerElements;
+  if (zone === "footer") return draft.footerElements;
+  return draft.bodyElements;
 }
 
 /**
@@ -590,15 +609,16 @@ function lvisZoomFit(): void {
 
 function alignSelection(mode: "left" | "centerX" | "right" | "top" | "centerY" | "bottom"): void {
   if (!draft || sel.k !== "el") return;
+  const elSel = sel;
   saveLvisUndoCheckpoint("once");
-  const z = sel.zone;
+  const z = elSel.zone;
   const { zw, zh } = zoneDims(z);
   const list = listForZone(z);
-  const multi = sel.ids.length >= 2;
-  const primary = list.find((x) => x.id === sel.ids[0]);
+  const multi = elSel.ids.length >= 2;
+  const primary = list.find((x) => x.id === elSel.ids[0]);
   if (!primary) return;
 
-  for (const id of sel.ids) {
+  for (const id of elSel.ids) {
     const el = list.find((x) => x.id === id);
     if (!el) continue;
     if (!multi) {
@@ -628,8 +648,9 @@ function alignSelection(mode: "left" | "centerX" | "right" | "top" | "centerY" |
 function stretchPrimary(fill: "width" | "height" | "both"): void {
   const el = findSelEl();
   if (!draft || sel.k !== "el" || !el) return;
+  const elSel = sel;
   saveLvisUndoCheckpoint("once");
-  const z = sel.zone;
+  const z = elSel.zone;
   const { zw, zh } = zoneDims(z);
   if (fill === "width" || fill === "both") {
     el.x = 0;
@@ -647,14 +668,15 @@ function stretchPrimary(fill: "width" | "height" | "both"): void {
 /** 其余选中项与首个选中项同宽 / 同高 */
 function matchOthersDimension(dim: "w" | "h"): void {
   if (!draft || sel.k !== "el" || sel.ids.length < 2) return;
-  const z = sel.zone;
+  const elSel = sel;
+  const z = elSel.zone;
   const list = listForZone(z);
-  const primary = list.find((x) => x.id === sel.ids[0]);
+  const primary = list.find((x) => x.id === elSel.ids[0]);
   if (!primary) return;
   saveLvisUndoCheckpoint("once");
   const ref = dim === "w" ? primary.w : primary.h;
-  for (let i = 1; i < sel.ids.length; i++) {
-    const el = list.find((x) => x.id === sel.ids[i]);
+  for (let i = 1; i < elSel.ids.length; i++) {
+    const el = list.find((x) => x.id === elSel.ids[i]);
     if (!el) continue;
     if (dim === "w") el.w = ref;
     else el.h = ref;
@@ -667,15 +689,16 @@ function matchOthersDimension(dim: "w" | "h"): void {
 /** 其余选中项与首个选中项宽、高一致 */
 function matchOthersDimensionBoth(): void {
   if (!draft || sel.k !== "el" || sel.ids.length < 2) return;
-  const z = sel.zone;
+  const elSel = sel;
+  const z = elSel.zone;
   const list = listForZone(z);
-  const primary = list.find((x) => x.id === sel.ids[0]);
+  const primary = list.find((x) => x.id === elSel.ids[0]);
   if (!primary) return;
   saveLvisUndoCheckpoint("once");
   const refW = primary.w;
   const refH = primary.h;
-  for (let i = 1; i < sel.ids.length; i++) {
-    const el = list.find((x) => x.id === sel.ids[i]);
+  for (let i = 1; i < elSel.ids.length; i++) {
+    const el = list.find((x) => x.id === elSel.ids[i]);
     if (!el) continue;
     el.w = refW;
     el.h = refH;
@@ -688,12 +711,13 @@ function matchOthersDimensionBoth(): void {
 /** 将所有选中项宽或高设为当前页眉/页脚区带的可用尺寸 */
 function matchSelectionToZoneDimension(dim: "w" | "h"): void {
   if (!draft || sel.k !== "el" || sel.ids.length < 1) return;
-  const z = sel.zone;
+  const elSel = sel;
+  const z = elSel.zone;
   const { zw, zh } = zoneDims(z);
   const list = listForZone(z);
   saveLvisUndoCheckpoint("once");
   const v = dim === "w" ? zw : zh;
-  for (const id of sel.ids) {
+  for (const id of elSel.ids) {
     const el = list.find((x) => x.id === id);
     if (!el) continue;
     if (dim === "w") el.w = v;
@@ -884,9 +908,22 @@ export function initReportLayoutVisual(d: LayoutVisualDeps): void {
 
   setupZoneCanvas(document.getElementById("lvis-header-canvas"), "header");
   setupZoneCanvas(document.getElementById("lvis-footer-canvas"), "footer");
+  setupZoneCanvas(document.getElementById("lvis-body-canvas"), "body");
 
   document.getElementById("lvis-body-zone")?.addEventListener("click", (e) => {
     e.stopPropagation();
+    if (!draft) return;
+    if (isBodyZoneEditable()) {
+      if ((e.target as HTMLElement).closest("#lvis-body-canvas")) return;
+      sel = { k: "bodyBand" };
+    } else {
+      sel = { k: "global" };
+    }
+    renderLvis();
+    syncLvisDrawer();
+  });
+
+  document.getElementById("btn-lvis-to-global")?.addEventListener("click", () => {
     sel = { k: "global" };
     renderLvis();
     syncLvisDrawer();
@@ -911,10 +948,11 @@ export function initReportLayoutVisual(d: LayoutVisualDeps): void {
   const lvisSection = document.getElementById("page-layout-visual");
   document.querySelector(".lvis-scroll")?.addEventListener(
     "pointermove",
-    (e) => {
+    (e: Event) => {
+      const pe = e as PointerEvent;
       const scroll = e.currentTarget as HTMLElement;
-      const cx = e.clientX;
-      const cy = e.clientY;
+      const cx = pe.clientX;
+      const cy = pe.clientY;
       if (lvisClientInScrollViewport(scroll, cx, cy)) {
         lvisLastPointerClient.x = cx;
         lvisLastPointerClient.y = cy;
@@ -987,9 +1025,12 @@ export function initReportLayoutVisual(d: LayoutVisualDeps): void {
     saveLvisUndoCheckpoint("once");
     const z = sel.zone;
     const rm = new Set(sel.ids);
-    if (z === "header") draft.headerElements = draft.headerElements.filter((x) => !rm.has(x.id));
-    else draft.footerElements = draft.footerElements.filter((x) => !rm.has(x.id));
-    sel = { k: z === "header" ? "headerBand" : "footerBand" };
+    const list = listForZone(z);
+    const next = list.filter((x) => !rm.has(x.id));
+    if (z === "header") draft.headerElements = next;
+    else if (z === "footer") draft.footerElements = next;
+    else draft.bodyElements = next;
+    sel = bandSelForZone(z);
     renderLvis();
     syncLvisDrawer();
   });
@@ -997,7 +1038,7 @@ export function initReportLayoutVisual(d: LayoutVisualDeps): void {
   window.addEventListener("mousemove", onWinMove);
   window.addEventListener("mouseup", () => {
     if (resizeDrag && draft) {
-      const list = resizeDrag.zone === "header" ? draft.headerElements : draft.footerElements;
+      const list = listForZone(resizeDrag.zone);
       const el = list.find((x) => x.id === resizeDrag!.id);
       if (el) snapElInZone(el, resizeDrag.zone);
       renderLvis();
@@ -1005,7 +1046,7 @@ export function initReportLayoutVisual(d: LayoutVisualDeps): void {
     }
     resizeDrag = null;
     if (dragMove && draft) {
-      const list = dragMove.zone === "header" ? draft.headerElements : draft.footerElements;
+      const list = listForZone(dragMove.zone);
       const el = list.find((x) => x.id === dragMove!.id);
       if (el) snapElInZone(el, dragMove.zone);
       renderLvis();
@@ -1071,7 +1112,7 @@ export function initReportLayoutVisual(d: LayoutVisualDeps): void {
   });
 }
 
-function setupZoneCanvas(canvas: HTMLElement | null, zone: "header" | "footer"): void {
+function setupZoneCanvas(canvas: HTMLElement | null, zone: LvisZone): void {
   if (!canvas) return;
   canvas.addEventListener("dragover", (e) => {
     e.preventDefault();
@@ -1080,6 +1121,7 @@ function setupZoneCanvas(canvas: HTMLElement | null, zone: "header" | "footer"):
   canvas.addEventListener("drop", (e) => {
     e.preventDefault();
     if (!draft) return;
+    if (zone === "body" && !isBodyZoneEditable()) return;
     const raw = e.dataTransfer?.getData("application/x-rptp-layout-vis") || e.dataTransfer?.getData("text/plain");
     const type = raw as LayoutControlType;
     const ok = type === "text" || type === "box" || type === "image" || type === "pageNumber" || type === "date";
@@ -1094,7 +1136,8 @@ function setupZoneCanvas(canvas: HTMLElement | null, zone: "header" | "footer"):
     clampZoneElement(el, zoneDims(zone).zw, zoneDims(zone).zh);
     snapElInZone(el, zone);
     if (zone === "header") draft!.headerElements.push(el);
-    else draft!.footerElements.push(el);
+    else if (zone === "footer") draft!.footerElements.push(el);
+    else draft!.bodyElements.push(el);
     sel = { k: "el", zone, ids: [el.id] };
     renderLvis();
     syncLvisDrawer();
@@ -1102,12 +1145,13 @@ function setupZoneCanvas(canvas: HTMLElement | null, zone: "header" | "footer"):
 
   canvas.addEventListener("mousedown", (e) => {
     if (!draft) return;
+    if (zone === "body" && !isBodyZoneEditable()) return;
     const rh = (e.target as HTMLElement).closest("[data-layout-resize-handle]");
     if (rh && canvas.contains(rh)) {
       const handle = rh.getAttribute("data-layout-resize-handle");
       const rid = rh.getAttribute("data-layout-zone-el-id");
       if (!handle || !rid) return;
-      const list = zone === "header" ? draft.headerElements : draft.footerElements;
+      const list = listForZone(zone);
       const el = list.find((x) => x.id === rid);
       if (!el) return;
       saveLvisUndoCheckpoint("once");
@@ -1134,14 +1178,13 @@ function setupZoneCanvas(canvas: HTMLElement | null, zone: "header" | "footer"):
     if (!node || !canvas.contains(node)) return;
     const id = node.getAttribute("data-layout-zone-el-id");
     if (!id) return;
-    const list = zone === "header" ? draft.headerElements : draft.footerElements;
+    const list = listForZone(zone);
     const el = list.find((x) => x.id === id);
     if (!el) return;
     saveLvisUndoCheckpoint("once");
     if (e.shiftKey && sel.k === "el" && sel.zone === zone) {
       const ids = toggleSelId(sel.ids, id);
-      sel =
-        ids.length === 0 ? { k: zone === "header" ? "headerBand" : "footerBand" } : { k: "el", zone, ids };
+      sel = ids.length === 0 ? bandSelForZone(zone) : { k: "el", zone, ids };
     } else {
       sel = { k: "el", zone, ids: [id] };
     }
@@ -1159,7 +1202,8 @@ function setupZoneCanvas(canvas: HTMLElement | null, zone: "header" | "footer"):
     if (t.closest("[data-layout-resize-handle]")) return;
     if (t.closest("[data-layout-zone-el-id]")) return;
     if (t === canvas || t.classList.contains("lvis-zone-canvas")) {
-      sel = zone === "header" ? { k: "headerBand" } : { k: "footerBand" };
+      if (zone === "body" && e.shiftKey) sel = { k: "global" };
+      else sel = bandSelForZone(zone);
     }
     renderLvis();
     syncLvisDrawer();
@@ -1175,7 +1219,7 @@ function toggleSelId(ids: string[], id: string): string[] {
 
 function onWinMove(e: MouseEvent): void {
   if (resizeDrag && draft) {
-    const list = resizeDrag.zone === "header" ? draft.headerElements : draft.footerElements;
+    const list = listForZone(resizeDrag.zone);
     const el = list.find((x) => x.id === resizeDrag!.id);
     if (!el) return;
     const dx = e.clientX - resizeDrag.sx;
@@ -1197,7 +1241,7 @@ function onWinMove(e: MouseEvent): void {
     return;
   }
   if (!dragMove || !draft) return;
-  const list = dragMove.zone === "header" ? draft.headerElements : draft.footerElements;
+  const list = listForZone(dragMove.zone);
   const el = list.find((x) => x.id === dragMove!.id);
   if (!el) return;
   el.x = dragMove.ox + (e.clientX - dragMove.sx);
@@ -1306,6 +1350,8 @@ function applyDrawerToDraft(): void {
     if (sel.k === "headerBand") draft.headerBandMm = v;
     else draft.footerBandMm = v;
     clampAllZoneElements();
+  } else if (sel.k === "bodyBand") {
+    /* 正文装饰区无额外抽屉字段 */
   } else if (sel.k === "el") {
     applyElementFromInputs();
   }
@@ -1323,6 +1369,12 @@ function applyGlobalFromInputs(): void {
   draft.marginRightMm = Math.max(0, parseFloat(g("lvis-g-mr") ?? "0") || 0);
   draft.marginBottomMm = Math.max(0, parseFloat(g("lvis-g-mb") ?? "0") || 0);
   draft.marginLeftMm = Math.max(0, parseFloat(g("lvis-g-ml") ?? "0") || 0);
+  if (
+    draft.pageRole === "normal" &&
+    (sel.k === "bodyBand" || (sel.k === "el" && sel.zone === "body"))
+  ) {
+    sel = { k: "global" };
+  }
 }
 
 function applyElementFromInputs(): void {
@@ -1378,6 +1430,7 @@ export function openLayoutVisual(presetId: string): void {
   draft = hydrateLayoutPreset(JSON.parse(JSON.stringify(p)) as Partial<LayoutPreset>);
   draft.headerElements = draft.headerElements.map((x) => ({ ...x }));
   draft.footerElements = draft.footerElements.map((x) => ({ ...x }));
+  draft.bodyElements = draft.bodyElements.map((x) => ({ ...x }));
   sel = { k: "idle" };
   resetLvisUndoRedo();
   lvisZoom = 1;
@@ -1404,12 +1457,14 @@ function renderLvis(): void {
   if (!m) return;
   const pageEl = document.getElementById("lvis-page");
   const bodyZone = document.getElementById("lvis-body-zone");
+  const bodyPh = document.getElementById("lvis-body-placeholder");
+  const bodyBc = document.getElementById("lvis-body-canvas");
   const hw = document.getElementById("lvis-header-wrap");
   const hc = document.getElementById("lvis-header-canvas");
   const fw = document.getElementById("lvis-footer-wrap");
   const fc = document.getElementById("lvis-footer-canvas");
   const meta = document.getElementById("lvis-meta");
-  if (!pageEl || !bodyZone || !hw || !hc || !fw || !fc) return;
+  if (!pageEl || !bodyZone || !bodyPh || !bodyBc || !hw || !hc || !fw || !fc) return;
 
   pageEl.style.position = "relative";
   hw.style.position = "absolute";
@@ -1434,16 +1489,26 @@ function renderLvis(): void {
   bodyZone.style.width = `${m.contentW}px`;
   bodyZone.style.height = `${m.contentH}px`;
 
+  const bodyEditable = isBodyZoneEditable();
+  bodyPh.hidden = bodyEditable;
+  bodyBc.hidden = !bodyEditable;
+
   const headerIds =
     sel.k === "el" && sel.zone === "header" ? new Set(sel.ids) : undefined;
   const footerIds =
     sel.k === "el" && sel.zone === "footer" ? new Set(sel.ids) : undefined;
+  const bodyIds =
+    sel.k === "el" && sel.zone === "body" ? new Set(sel.ids) : undefined;
   const headerResize =
     sel.k === "el" && sel.zone === "header" && sel.ids.length === 1
       ? new Set(sel.ids)
       : undefined;
   const footerResize =
     sel.k === "el" && sel.zone === "footer" && sel.ids.length === 1
+      ? new Set(sel.ids)
+      : undefined;
+  const bodyResize =
+    sel.k === "el" && sel.zone === "body" && sel.ids.length === 1
       ? new Set(sel.ids)
       : undefined;
 
@@ -1461,6 +1526,13 @@ function renderLvis(): void {
     previewPage: 1,
     previewTotalPages: PAGE_NUMBER_PREVIEW_TOTAL_FALLBACK,
   });
+  renderZoneElementsInto(bodyBc, bodyEditable ? draft.bodyElements : [], {
+    selectedIds: bodyIds,
+    resizeHandlesForIds: bodyResize,
+    selectionChrome: true,
+    previewPage: 1,
+    previewTotalPages: PAGE_NUMBER_PREVIEW_TOTAL_FALLBACK,
+  });
 
   hw.classList.toggle(
     "lvis-zone-focused",
@@ -1470,7 +1542,11 @@ function renderLvis(): void {
     "lvis-zone-focused",
     sel.k === "footerBand" || (sel.k === "el" && sel.zone === "footer"),
   );
-  bodyZone.classList.toggle("lvis-zone-focused", sel.k === "global");
+  const bodyFocused =
+    draft.pageRole === "normal"
+      ? sel.k === "global"
+      : sel.k === "bodyBand" || (sel.k === "el" && sel.zone === "body");
+  bodyZone.classList.toggle("lvis-zone-focused", bodyFocused);
 
   if (meta)
     meta.textContent = `${PAPER_LABEL[draft.paperKind]} · ${draft.orientation === "landscape" ? "横向" : "纵向"} · ${draft.name} · ${LAYOUT_PAGE_ROLE_LABEL[draft.pageRole]}`;
@@ -1483,12 +1559,14 @@ function syncLvisDrawer(): void {
   const idle = document.getElementById("lvis-drawer-idle");
   const pg = document.getElementById("lvis-drawer-global");
   const pb = document.getElementById("lvis-drawer-band");
+  const pBody = document.getElementById("lvis-drawer-body-zone");
   const pe = document.getElementById("lvis-drawer-element");
-  if (!draft || !idle || !pg || !pb || !pe) return;
+  if (!draft || !idle || !pg || !pb || !pBody || !pe) return;
 
   idle.hidden = sel.k !== "idle";
   pg.hidden = sel.k !== "global";
   pb.hidden = sel.k !== "headerBand" && sel.k !== "footerBand";
+  pBody.hidden = sel.k !== "bodyBand";
   pe.hidden = sel.k !== "el";
 
   const multi = document.getElementById("lvis-drawer-multi");
@@ -1496,8 +1574,10 @@ function syncLvisDrawer(): void {
   const multiHint = sel.k === "el" && sel.ids.length > 1;
   if (multi) {
     multi.hidden = !multiHint;
-    if (multiHint) {
-      multi.textContent = `已选 ${sel.ids.length} 个控件；右侧属性仅编辑首个选中项。对齐按钮在多选时为「互相对齐」（参照首个）；「同宽 / 同高 / 同尺寸」将其余项与首个一致；「区带宽 / 区带高」将所有选中项统一为当前页眉或页脚的可用宽高。「铺满区带」仍仅作用于首个选中项。`;
+    if (multiHint && sel.k === "el") {
+      const zoneBandLabel =
+        sel.zone === "header" ? "页眉带" : sel.zone === "footer" ? "页脚带" : "正文区";
+      multi.textContent = `已选 ${sel.ids.length} 个控件；右侧属性仅编辑首个选中项。对齐按钮在多选时为「互相对齐」（参照首个）；「同宽 / 同高 / 同尺寸」将其余项与首个一致；「区带宽 / 区带高」将所有选中项统一为当前${zoneBandLabel}的可用宽高。「铺满区带」仍仅作用于首个选中项。`;
     }
   }
   if (alignBar) {
