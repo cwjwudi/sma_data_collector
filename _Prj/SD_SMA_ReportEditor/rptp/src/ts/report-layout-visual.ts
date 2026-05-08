@@ -36,8 +36,13 @@ let sel: Sel = { k: "idle" };
 /** 预览缩放（不影响导出几何，仅视图） */
 let lvisZoom = 1;
 
-/** 版式可视化页内最近一次指针屏幕坐标（捏合等场景下 wheel.client 偶发 0,0 时用） */
+/** 版式可视化页内最近一次指针屏幕坐标（仅在预览区内更新；捏合/wheel 回退用） */
 let lvisLastPointerClient = { x: 0, y: 0 };
+
+/** ctrl/meta + wheel：会话内固定锚点，避免触控板连续 wheel 的 client 抖动导致捏偏 */
+const LVIS_WHEEL_GESTURE_GAP_MS = 100;
+let lvisWheelLastTime = 0;
+let lvisWheelGestureAnchor: { x: number; y: number } | null = null;
 
 /** 拖拽对齐网格（px） */
 let snapEnabled = true;
@@ -763,6 +768,37 @@ function lvisResolveWheelAnchorClient(e: WheelEvent): { x: number; y: number } {
   return { x: cx, y: cy };
 }
 
+/** 屏幕坐标是否在预览滚动控件可视矩形内 */
+function lvisClientInScrollViewport(scroll: HTMLElement, clientX: number, clientY: number): boolean {
+  const r = scroll.getBoundingClientRect();
+  return (
+    clientX >= r.left &&
+    clientX <= r.right &&
+    clientY >= r.top &&
+    clientY <= r.bottom
+  );
+}
+
+/** Chromium/Safari 下触控板捏合缩放多为 PIXEL + ctrl/meta */
+function lvisIsLikelyTrackpadPinchWheel(e: WheelEvent): boolean {
+  return (e.ctrlKey || e.metaKey) && e.deltaMode === WheelEvent.DOM_DELTA_PIXEL;
+}
+
+/** 新缩放会话第一帧：捏合用预览区内指针或预览中心；鼠标 Ctrl 滚轮用 wheel client */
+function lvisComputeWheelGestureAnchor(e: WheelEvent): { x: number; y: number } {
+  const scroll = document.querySelector(".lvis-scroll") as HTMLElement | null;
+  if (!scroll) return { x: e.clientX, y: e.clientY };
+
+  if (lvisIsLikelyTrackpadPinchWheel(e)) {
+    const lx = lvisLastPointerClient.x;
+    const ly = lvisLastPointerClient.y;
+    if (lvisClientInScrollViewport(scroll, lx, ly)) return { x: lx, y: ly };
+    const sr = scroll.getBoundingClientRect();
+    return { x: sr.left + sr.width / 2, y: sr.top + sr.height / 2 };
+  }
+  return lvisResolveWheelAnchorClient(e);
+}
+
 export function initReportLayoutVisual(d: LayoutVisualDeps): void {
   deps = d;
 
@@ -770,6 +806,8 @@ export function initReportLayoutVisual(d: LayoutVisualDeps): void {
     draft = null;
     sel = { k: "idle" };
     resetLvisUndoRedo();
+    lvisWheelGestureAnchor = null;
+    lvisWheelLastTime = 0;
     deps.showPage("layout");
   });
 
@@ -825,11 +863,16 @@ export function initReportLayoutVisual(d: LayoutVisualDeps): void {
   });
 
   const lvisSection = document.getElementById("page-layout-visual");
-  lvisSection?.addEventListener(
+  document.querySelector(".lvis-scroll")?.addEventListener(
     "pointermove",
     (e) => {
-      lvisLastPointerClient.x = e.clientX;
-      lvisLastPointerClient.y = e.clientY;
+      const scroll = e.currentTarget as HTMLElement;
+      const cx = e.clientX;
+      const cy = e.clientY;
+      if (lvisClientInScrollViewport(scroll, cx, cy)) {
+        lvisLastPointerClient.x = cx;
+        lvisLastPointerClient.y = cy;
+      }
     },
     { passive: true },
   );
@@ -844,9 +887,16 @@ export function initReportLayoutVisual(d: LayoutVisualDeps): void {
       const factor = Math.exp(-e.deltaY * 0.002);
       const nz = Math.min(2, Math.max(0.35, lvisZoom * factor));
       if (Math.abs(nz - lvisZoom) < 1e-4) return;
+
+      const now = performance.now();
+      const gapElapsed = now - lvisWheelLastTime > LVIS_WHEEL_GESTURE_GAP_MS;
+      lvisWheelLastTime = now;
+      if (gapElapsed || !lvisWheelGestureAnchor) {
+        lvisWheelGestureAnchor = lvisComputeWheelGestureAnchor(e);
+      }
+
       lvisZoom = nz;
-      const { x, y } = lvisResolveWheelAnchorClient(e);
-      applyLvisZoomAnchoredAt(x, y);
+      applyLvisZoomAnchoredAt(lvisWheelGestureAnchor.x, lvisWheelGestureAnchor.y);
     },
     { passive: false, capture: true },
   );
