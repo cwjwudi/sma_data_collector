@@ -16,7 +16,6 @@ import {
   presetZonesSnapshot,
   type LayoutPreset,
 } from "./templates/layout-model";
-import type { LayoutZoneElement } from "./templates/layout-zone-element";
 import { computePaperLayout } from "./templates/layout-geometry";
 import { renderZoneElementsInto } from "./templates/layout-zone-render";
 import { PAPER_KIND_SHORT, PAPER_LABEL, PAPER_PRESETS, type PaperKind } from "./templates/paper";
@@ -260,65 +259,85 @@ function thumbAspect(pk: PaperKind, orientation: "portrait" | "landscape"): stri
   return `${w} / ${h}`;
 }
 
-function appendNtLegacyBandHint(zoneEl: HTMLElement): void {
-  zoneEl.classList.add("nt-sheet-zone--has-items");
-  const hint = document.createElement("span");
-  hint.className = "nt-sheet-zone-hint nt-sheet-zone-hint--legacy";
-  zoneEl.appendChild(hint);
-}
+/** 新建模版卡片：按真实纸张像素与几何缩放绘制（与版式可视化一致），页眉页脚走 layout-zone-render */
+function renderNtPresetMiniPage(thumb: HTMLElement, preset: LayoutPreset): void {
+  thumb.replaceChildren();
+  const m = computePaperLayout(preset.paperKind, preset.orientation, presetToSnapshot(preset));
+  const maxW = 106;
+  const maxH = 112;
+  const scale = Math.min(maxW / Math.max(1, m.pageW), maxH / Math.max(1, m.pageH), 1);
 
-function appendNtThumbHints(
-  zoneEl: HTMLElement,
-  elements: LayoutZoneElement[],
-  zoneWpx: number,
-  zoneHpx: number,
-): void {
-  if (elements.length === 0) return;
-  zoneEl.classList.add("nt-sheet-zone--has-items");
-  const zw = Math.max(1, zoneWpx);
-  const zh = Math.max(1, zoneHpx);
-  const n = Math.min(elements.length, 8);
-  for (let i = 0; i < n; i++) {
-    const el = elements[i]!;
-    const hint = document.createElement("span");
-    hint.className = "nt-sheet-zone-hint";
-    const left = Math.max(0, Math.min(95, (el.x / zw) * 100));
-    const top = Math.max(0, Math.min(95, (el.y / zh) * 100));
-    const wPct = Math.max(5, Math.min(100 - left, (el.w / zw) * 100));
-    const hPct = Math.max(6, Math.min(100 - top, (el.h / zh) * 100));
-    hint.style.left = `${left}%`;
-    hint.style.top = `${top}%`;
-    hint.style.width = `${wPct}%`;
-    hint.style.height = `${hPct}%`;
-    zoneEl.appendChild(hint);
-  }
-}
+  const wrap = document.createElement("div");
+  wrap.className = "nt-preset-real-thumb-wrap";
+  wrap.style.width = `${Math.ceil(m.pageW * scale)}px`;
+  wrap.style.height = `${Math.ceil(m.pageH * scale)}px`;
 
-function ntThumbBandPercents(
-  m: ReturnType<typeof computePaperLayout>,
-  preset: LayoutPreset,
-): { top: number; mid: number; bot: number } {
-  const ph = Math.max(1, m.pageH);
-  let topPct = ((m.mt + m.hb) / ph) * 100;
-  let midPct = (m.contentH / ph) * 100;
-  let botPct = ((m.fb + m.mb) / ph) * 100;
-  const hasHead = preset.headerElements.length > 0 || preset.headerText.trim().length > 0;
-  const hasFoot = preset.footerElements.length > 0 || preset.footerText.trim().length > 0;
-  const minBand = 11;
-  if (hasHead && topPct < minBand) {
-    const d = minBand - topPct;
-    topPct = minBand;
-    midPct = Math.max(14, midPct - d);
+  const page = document.createElement("div");
+  page.className = "nt-preset-real-page";
+  page.style.width = `${m.pageW}px`;
+  page.style.height = `${m.pageH}px`;
+  page.style.transform = `scale(${scale})`;
+  page.style.transformOrigin = "top left";
+
+  const hw = document.createElement("div");
+  hw.className = "nt-preset-zone nt-preset-zone--header";
+  hw.style.position = "absolute";
+  hw.style.left = `${m.ml}px`;
+  hw.style.top = `${m.mt}px`;
+  hw.style.width = `${m.contentW}px`;
+  hw.style.height = `${m.hb}px`;
+  hw.style.overflow = "hidden";
+  hw.style.boxSizing = "border-box";
+
+  const hc = document.createElement("div");
+  hc.style.cssText = "position:relative;width:100%;height:100%;overflow:hidden;box-sizing:border-box;";
+  hw.appendChild(hc);
+
+  const body = document.createElement("div");
+  body.className = "nt-preset-real-body";
+  body.style.position = "absolute";
+  body.style.left = `${m.ml}px`;
+  body.style.top = `${m.mt + m.hb}px`;
+  body.style.width = `${m.contentW}px`;
+  body.style.height = `${m.contentH}px`;
+  body.style.boxSizing = "border-box";
+  body.textContent = "正文";
+
+  const fw = document.createElement("div");
+  fw.className = "nt-preset-zone nt-preset-zone--footer";
+  fw.style.position = "absolute";
+  fw.style.left = `${m.ml}px`;
+  fw.style.bottom = `${m.mb}px`;
+  fw.style.width = `${m.contentW}px`;
+  fw.style.height = `${m.fb}px`;
+  fw.style.overflow = "hidden";
+  fw.style.boxSizing = "border-box";
+
+  const fc = document.createElement("div");
+  fc.style.cssText = "position:relative;width:100%;height:100%;overflow:hidden;box-sizing:border-box;";
+  fw.appendChild(fc);
+
+  renderZoneElementsInto(hc, preset.headerElements, { selectionChrome: false, previewPage: 1 });
+  renderZoneElementsInto(fc, preset.footerElements, { selectionChrome: false, previewPage: 1 });
+
+  if (preset.headerElements.length === 0 && preset.headerText.trim()) {
+    const leg = document.createElement("div");
+    leg.className = "nt-preset-legacy-band";
+    leg.textContent = preset.headerText.trim().slice(0, 120);
+    hc.appendChild(leg);
   }
-  if (hasFoot && botPct < minBand) {
-    const d = minBand - botPct;
-    botPct = minBand;
-    midPct = Math.max(14, midPct - d);
+  if (preset.footerElements.length === 0 && preset.footerText.trim()) {
+    const leg = document.createElement("div");
+    leg.className = "nt-preset-legacy-band";
+    leg.textContent = preset.footerText.trim().slice(0, 120);
+    fc.appendChild(leg);
   }
-  const sum = topPct + midPct + botPct;
-  if (sum <= 0) return { top: 100 / 3, mid: 100 / 3, bot: 100 / 3 };
-  const k = 100 / sum;
-  return { top: topPct * k, mid: midPct * k, bot: botPct * k };
+
+  page.appendChild(hw);
+  page.appendChild(body);
+  page.appendChild(fw);
+  wrap.appendChild(page);
+  thumb.appendChild(wrap);
 }
 
 function selectSingleCard(grid: HTMLElement, btn: HTMLButtonElement): void {
@@ -332,45 +351,9 @@ function appendPresetCard(grid: HTMLElement, preset: LayoutPreset): void {
   btn.className = "nt-layout-card";
   btn.dataset.presetId = preset.id;
 
-  const snap = presetToSnapshot(preset);
-  const m = computePaperLayout(preset.paperKind, preset.orientation, snap);
-  const { top, mid, bot } = ntThumbBandPercents(m, preset);
-
   const thumb = document.createElement("div");
   thumb.className = "nt-layout-card-preview";
-  const sheet = document.createElement("div");
-  sheet.className = "nt-sheet-thumb nt-sheet-thumb--zones";
-  sheet.style.aspectRatio = thumbAspect(preset.paperKind, preset.orientation);
-
-  const headerZone = document.createElement("div");
-  headerZone.className = "nt-sheet-zone nt-sheet-zone-header";
-  headerZone.style.flex = `0 0 ${top.toFixed(3)}%`;
-
-  const contentZone = document.createElement("div");
-  contentZone.className = "nt-sheet-zone nt-sheet-zone-content";
-  contentZone.style.flex = `0 0 ${mid.toFixed(3)}%`;
-
-  const footerZone = document.createElement("div");
-  footerZone.className = "nt-sheet-zone nt-sheet-zone-footer";
-  footerZone.style.flex = `0 0 ${bot.toFixed(3)}%`;
-
-  const headerZh = Math.max(24, m.hb);
-  const footerZh = Math.max(24, m.fb);
-
-  appendNtThumbHints(headerZone, preset.headerElements, m.contentW, headerZh);
-  if (preset.headerElements.length === 0 && preset.headerText.trim()) {
-    appendNtLegacyBandHint(headerZone);
-  }
-
-  appendNtThumbHints(footerZone, preset.footerElements, m.contentW, footerZh);
-  if (preset.footerElements.length === 0 && preset.footerText.trim()) {
-    appendNtLegacyBandHint(footerZone);
-  }
-
-  sheet.appendChild(headerZone);
-  sheet.appendChild(contentZone);
-  sheet.appendChild(footerZone);
-  thumb.appendChild(sheet);
+  renderNtPresetMiniPage(thumb, preset);
   btn.appendChild(thumb);
 
   const title = document.createElement("div");

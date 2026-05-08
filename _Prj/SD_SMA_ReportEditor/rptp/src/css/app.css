@@ -890,6 +890,60 @@ html[data-theme="dark"] .nt-layout-card.is-selected {
   justify-content: center;
   padding: 3px;
 }
+/* 新建模版 · 版式卡片：真实纸张缩小预览（几何与版式可视化一致） */
+.nt-preset-real-thumb-wrap {
+  overflow: hidden;
+  flex-shrink: 0;
+  margin: 0 auto;
+  border-radius: 6px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  box-sizing: border-box;
+  pointer-events: none;
+}
+.nt-preset-real-thumb-wrap * {
+  pointer-events: none;
+}
+.nt-preset-real-page {
+  position: relative;
+  background: var(--surface);
+  border-radius: 5px;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.05);
+}
+.nt-preset-zone--header,
+.nt-preset-zone--footer {
+  border-radius: 3px;
+  border: 1px dashed rgba(0, 0, 0, 0.14);
+  background: color-mix(in srgb, var(--accent) 6%, var(--surface));
+}
+html[data-theme="dark"] .nt-preset-zone--header,
+html[data-theme="dark"] .nt-preset-zone--footer {
+  border-color: rgba(255, 255, 255, 0.14);
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+}
+.nt-preset-real-body {
+  border-radius: 3px;
+  border: 1px dashed rgba(0, 0, 0, 0.08);
+  background: color-mix(in srgb, var(--muted) 7%, transparent);
+  font-size: 10px;
+  line-height: 1.2;
+  color: var(--muted);
+}
+html[data-theme="dark"] .nt-preset-real-body {
+  border-color: rgba(255, 255, 255, 0.1);
+}
+.nt-preset-legacy-band {
+  position: absolute;
+  inset: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font-size: 11px;
+  line-height: 1.25;
+  color: var(--muted);
+  overflow: hidden;
+  word-break: break-word;
+}
 .nt-sheet-thumb {
   width: 100%;
   max-height: 110px;
