@@ -76,7 +76,7 @@
             </div>
           </div>
           <p class="templates-intro">
-            建议<strong>先于模版管理</strong>在此维护可复用版式。<strong>点击表格某一整行</strong>选中后在<strong>右侧参数栏</strong>编辑纸张与页边距，并在参数栏底部<strong>保存</strong>；<strong>可视化编辑</strong>进入单独一页编排页眉/页脚区控件。新建模版时为快照套用。动态内容超高一页时，导出阶段按纸张分页（后续在「生成与导出」实现）。
+            建议<strong>先于模版管理</strong>在此维护可复用版式。<strong>点击表格某一整行</strong>选中后在<strong>右侧参数栏</strong>编辑纸张与页边距，并在参数栏底部<strong>保存</strong>；<strong>可视化编辑</strong>进入单独一页编排页眉/页脚区控件。新建模版时为快照套用。<strong>封面页与末页</strong>在此<strong>不会单独建菜单</strong>：与正文版式相同，点顶栏「新建版式」，在参数栏把<strong>页面用途</strong>选为「封面」或「末页」并保存即可；之后在「模版管理 → 新建模版」里即可勾选选用对应版式。动态内容超高一页时，导出阶段按纸张分页（后续在「生成与导出」实现）。
           </p>
           <div class="template-table-wrap layout-preset-table-wrap layout-preset-main">
             <table class="template-table" id="layout-preset-list">
@@ -350,7 +350,7 @@
             <button type="button" class="btn btn-primary" id="btn-new-template">新建模版</button>
           </div>
           <p class="templates-intro">
-            画布宽高随所选<strong>纸张</strong>固定；控件落在<strong>正文区</strong>内。编辑模版时可切换<strong>正文页 / 封面 / 末页</strong>分别摆放控件；页眉页脚带由各页对应版式快照决定（封面与末页在新建模版时可选）。
+            画布宽高随所选<strong>纸张</strong>固定；控件落在<strong>正文区</strong>内。编辑模版时可切换<strong>正文页 / 封面 / 末页</strong>分别摆放控件；页眉页脚带由各页对应版式快照决定。<strong>封面、末页的纸张与页眉页脚带</strong>不是在模版页里「新建」，须先到左侧<strong>报表配置 → 版式与页眉页脚</strong>，用「新建版式」并把<strong>页面用途</strong>设为封面或末页；再在<strong>新建模版</strong>对话框里选用（可不选用，仅用默认留白）。
           </p>
           <div class="template-table-wrap">
             <table class="template-table" id="template-list">
@@ -532,7 +532,7 @@
             <p>「关于」为说明信息，侧栏无额外参数。</p>
           </div>
           <div id="drawer-panel-templates-hint" class="drawer-panel drawer-panel-muted" hidden>
-            <p>模版在中栏管理；列表可新建与删除，编辑模式下从左侧拖入控件到画布，右侧编辑尺寸、颜色与文本。数据保存在浏览器本地。</p>
+            <p>模版在中栏管理；列表可新建与删除，编辑模式下从左侧拖入控件到画布，右侧编辑尺寸、颜色与文本；顶部可切换正文页 / 封面 / 末页画布。<strong>封面、末页的版式定义</strong>在「版式与页眉页脚」中新建版式并把页面用途设为封面或末页，再在新建模版时选用。数据保存在浏览器本地。</p>
           </div>
           <div id="drawer-panel-layout" class="drawer-panel" hidden>
             <p id="layout-edit-empty" class="layout-edit-empty drawer-layout-empty">
@@ -760,6 +760,9 @@
 
       <section class="nt-picker-section">
         <h3 class="nt-picker-heading">封面（可选）</h3>
+        <p class="nt-picker-hint">
+          无可选列表时：请到<strong>报表配置 → 版式与页眉页脚</strong>，点<strong>新建版式</strong>，在右侧参数栏将<strong>页面用途</strong>设为<strong>封面</strong>并保存；再回到此处选用。
+        </p>
         <div class="nt-opt-row">
           <label class="nt-radio-line"><input type="radio" name="nt-cover" value="none" checked /> 不使用封面版式</label>
           <label class="nt-radio-line"><input type="radio" name="nt-cover" value="preset" /> 选用封面版式</label>
@@ -770,6 +773,9 @@
 
       <section class="nt-picker-section">
         <h3 class="nt-picker-heading">末页（可选）</h3>
+        <p class="nt-picker-hint">
+          无可选列表时：同上，在版式页把<strong>页面用途</strong>设为<strong>末页</strong>并保存即可出现在下列表中。
+        </p>
         <div class="nt-opt-row">
           <label class="nt-radio-line"><input type="radio" name="nt-back" value="none" checked /> 不使用末页版式</label>
           <label class="nt-radio-line"><input type="radio" name="nt-back" value="preset" /> 选用末页版式</label>
