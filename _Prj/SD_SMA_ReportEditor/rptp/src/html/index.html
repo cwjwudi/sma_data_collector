@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>自定义报表工具箱</title>
+  <link rel="stylesheet" href="../css/app.css" />
+</head>
+<body>
+  <div class="sidebar-backdrop" id="sidebarBackdrop" aria-hidden="true"></div>
+
+  <div class="app" id="app">
+    <aside class="sidebar" id="sidebar" aria-label="主导航">
+      <div class="sidebar-brand">自定义报表工具箱</div>
+      <nav class="nav-scroll" aria-label="功能导航">
+        <details class="nav-group" open>
+          <summary>数据库工具</summary>
+          <div class="nav-group-body">
+            <a class="nav-item is-active" href="#" data-page="home">SQL 工作台</a>
+            <a class="nav-item" href="#" data-page="home">连接与数据源</a>
+            <a class="nav-item" href="#" data-page="home">查询历史</a>
+          </div>
+        </details>
+        <details class="nav-group">
+          <summary>OPC UA 工具</summary>
+          <div class="nav-group-body">
+            <a class="nav-item" href="#" data-page="home">连接与证书</a>
+            <a class="nav-item" href="#" data-page="home">节点浏览</a>
+            <a class="nav-item" href="#" data-page="home">读写与方法调用</a>
+            <a class="nav-item" href="#" data-page="home">订阅与监视</a>
+          </div>
+        </details>
+        <details class="nav-group">
+          <summary>报表配置</summary>
+          <div class="nav-group-body">
+            <a class="nav-item" href="#" data-page="home">模板管理</a>
+            <a class="nav-item" href="#" data-page="home">版式与页眉页脚</a>
+            <a class="nav-item" href="#" data-page="home">生成与导出</a>
+            <a class="nav-item" href="#" data-page="home">报表历史</a>
+          </div>
+        </details>
+        <details class="nav-group">
+          <summary>系统工具</summary>
+          <div class="nav-group-body">
+            <a class="nav-item" href="#" data-page="settings">全局设置</a>
+            <a class="nav-item" href="#" data-page="home">审计与日志</a>
+            <a class="nav-item" href="#" data-page="home">关于</a>
+          </div>
+        </details>
+      </nav>
+    </aside>
+
+    <div class="center">
+      <header class="top-menu">
+        <button type="button" class="menu-toggle" id="btnNavToggle" aria-expanded="false" aria-controls="sidebar" title="打开菜单">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path d="M4 6h16M4 12h16M4 18h16" />
+          </svg>
+        </button>
+        <div class="top-title" id="topTitle">当前视图 · SQL 工作台</div>
+        <div class="top-actions">
+          <button type="button" class="btn" id="btnDrawerToggle" aria-expanded="true" aria-controls="drawerParams">参数栏</button>
+          <button type="button" class="btn btn-primary">保存</button>
+        </div>
+      </header>
+
+      <main class="main-area">
+        <section id="page-home" class="page-panel is-visible" aria-label="主页">
+          <h1>主内容区</h1>
+          <p>响应式布局：窄屏下左侧导航变为抽屉；右侧参数栏可拖拽改宽、可收起，收起后可用屏幕右侧竖条再次打开。</p>
+          <p style="margin-top: 0.75rem">源码按文件夹拆分：<code>src/html</code>、<code>src/css</code>、<code>src/ts</code>、<code>src/js</code>；开发运行 <code>npm run dev</code>，交付 PLC 单文件执行 <code>npm run ship</code> 生成根目录 <code>index.html</code>。</p>
+        </section>
+        <section id="page-settings" class="page-panel" aria-label="全局设置">
+          <h1>全局设置</h1>
+          <p class="settings-intro">以下为系统级偏好；主题选择会保存在本机浏览器（localStorage 键名 <code>rptp-theme</code>），刷新后仍保留。</p>
+          <div class="settings-card">
+            <h2>外观 · 主题</h2>
+            <div class="theme-options" role="radiogroup" aria-label="界面主题">
+              <label class="theme-option">
+                <input type="radio" name="theme" value="light" id="theme-light" />
+                <span>浅色（Light）</span>
+              </label>
+              <label class="theme-option">
+                <input type="radio" name="theme" value="dark" id="theme-dark" />
+                <span>深色（Dark）</span>
+              </label>
+            </div>
+          </div>
+        </section>
+      </main>
+
+      <footer class="bottom-toolbar" aria-label="底部工具栏">
+        <span>就绪</span>
+        <span class="sep" aria-hidden="true"></span>
+        <span>缩放 <strong>100%</strong></span>
+        <span class="sep" aria-hidden="true"></span>
+        <span>上次保存 —</span>
+      </footer>
+    </div>
+
+    <aside class="drawer" id="drawerParams" aria-label="参数面板">
+      <div class="drawer-resizer" id="drawerResizer" role="separator" aria-orientation="vertical" aria-valuemin="200" aria-valuemax="480" tabindex="0" title="拖拽调整宽度"></div>
+      <div class="drawer-inner">
+        <div class="drawer-header">
+          <span class="drawer-title">参数</span>
+          <button type="button" class="btn" id="btnDrawerCollapse" title="收起参数栏">收起</button>
+        </div>
+        <div class="drawer-body">
+          <div class="field">
+            <label for="f-report-name">报表名称</label>
+            <input id="f-report-name" type="text" placeholder="例如：班报 2026-05-08" />
+          </div>
+          <div class="field">
+            <label for="f-connection">连接配置</label>
+            <input id="f-connection" type="text" placeholder="使用 DataPlane 配置别名" />
+          </div>
+          <div class="field">
+            <label for="f-note">备注</label>
+            <input id="f-note" type="text" placeholder="可选" />
+          </div>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <button type="button" class="drawer-edge-tab" id="drawerEdgeTab" hidden>参数</button>
+
+  <script type="module" src="../ts/main.ts"></script>
+</body>
+</html>
