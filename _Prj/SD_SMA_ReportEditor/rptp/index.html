@@ -3,47 +3,608 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>RPTP · 报表工作台占位页</title>
+  <title>RPTP · 报表工作台</title>
   <style>
     :root {
       color-scheme: light dark;
       font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
       line-height: 1.5;
+      --nav-width: 220px;
+      --nav-width-collapsed: 0px;
+      --drawer-width: 280px;
+      --drawer-min: 200px;
+      --drawer-max: min(480px, 55vw);
+      --top-h: 48px;
+      --bottom-h: 44px;
+      --border: 1px solid rgba(0, 0, 0, 0.08);
+      --bg: #f4f4f5;
+      --surface: #ffffff;
+      --text: #18181b;
+      --muted: #71717a;
+      --accent: #2563eb;
+      --handle-hit: 10px;
     }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --border: 1px solid rgba(255, 255, 255, 0.1);
+        --bg: #09090b;
+        --surface: #18181b;
+        --text: #fafafa;
+        --muted: #a1a1aa;
+        --accent: #60a5fa;
+      }
+    }
+
+    *, *::before, *::after { box-sizing: border-box; }
     body {
       margin: 0;
       min-height: 100vh;
-      display: grid;
-      place-items: center;
-      padding: 1.5rem;
-      background: #f4f4f5;
-      color: #18181b;
+      height: 100vh;
+      overflow: hidden;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    .app {
+      display: flex;
+      height: 100%;
+      min-height: 0;
+    }
+
+    /* ----- 左侧导航 ----- */
+    .sidebar {
+      width: var(--nav-width);
+      flex-shrink: 0;
+      background: var(--surface);
+      border-right: var(--border);
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      transition: width 0.2s ease, transform 0.22s ease;
+      z-index: 40;
+    }
+    .sidebar-brand {
+      padding: 0.875rem 1rem;
+      font-weight: 700;
+      font-size: 0.9375rem;
+      border-bottom: var(--border);
+      letter-spacing: 0.02em;
+    }
+    .nav-scroll {
+      flex: 1;
+      overflow-y: auto;
+      padding: 0.5rem 0;
+    }
+    .nav-item {
+      display: block;
+      padding: 0.625rem 1rem;
+      color: inherit;
+      text-decoration: none;
+      font-size: 0.875rem;
+      border-left: 3px solid transparent;
+    }
+    .nav-item:hover { background: rgba(0, 0, 0, 0.04); }
+    @media (prefers-color-scheme: dark) {
+      .nav-item:hover { background: rgba(255, 255, 255, 0.06); }
+    }
+    .nav-item.is-active {
+      border-left-color: var(--accent);
+      font-weight: 600;
+      background: rgba(37, 99, 235, 0.08);
+    }
+
+    /* ----- 中间栏：顶 + 主 + 底 ----- */
+    .center {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      min-height: 0;
+    }
+
+    .top-menu {
+      height: var(--top-h);
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0 0.75rem;
+      background: var(--surface);
+      border-bottom: var(--border);
+    }
+    .menu-toggle {
+      display: none;
+      align-items: center;
+      justify-content: center;
+      width: 40px;
+      height: 40px;
+      border: none;
+      border-radius: 8px;
+      background: transparent;
+      color: inherit;
+      cursor: pointer;
+    }
+    .menu-toggle:hover { background: rgba(0, 0, 0, 0.06); }
+    @media (prefers-color-scheme: dark) {
+      .menu-toggle:hover { background: rgba(255, 255, 255, 0.08); }
+    }
+    .top-title {
+      font-size: 0.9375rem;
+      font-weight: 600;
+      flex: 1;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .top-actions {
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+      flex-shrink: 0;
+    }
+    .btn {
+      padding: 0.375rem 0.75rem;
+      font-size: 0.8125rem;
+      border-radius: 8px;
+      border: var(--border);
+      background: var(--surface);
+      color: inherit;
+      cursor: pointer;
+    }
+    .btn:hover { filter: brightness(0.97); }
+    .btn-primary {
+      background: var(--accent);
+      border-color: transparent;
+      color: #fff;
     }
     @media (prefers-color-scheme: dark) {
-      body { background: #18181b; color: #fafafa; }
+      .btn-primary { color: #0f172a; }
     }
-    main {
-      max-width: 36rem;
-      text-align: center;
+
+    .main-area {
+      flex: 1;
+      overflow: auto;
+      padding: 1rem 1.25rem;
+      min-height: 0;
     }
-    h1 { font-size: 1.375rem; font-weight: 600; margin: 0 0 0.5rem; }
-    p { margin: 0; opacity: 0.85; font-size: 0.9375rem; }
-    code {
-      font-size: 0.8125rem;
-      padding: 0.125rem 0.375rem;
-      border-radius: 4px;
+    .main-area h1 {
+      font-size: clamp(1.125rem, 2.5vw, 1.375rem);
+      margin: 0 0 0.75rem;
+    }
+    .main-area p {
+      margin: 0;
+      color: var(--muted);
+      font-size: clamp(0.8125rem, 2vw, 0.9375rem);
+      max-width: 52ch;
+    }
+
+    .bottom-toolbar {
+      height: var(--bottom-h);
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0 0.75rem;
+      background: var(--surface);
+      border-top: var(--border);
+      font-size: 0.75rem;
+      color: var(--muted);
+    }
+    .bottom-toolbar .sep {
+      width: 1px;
+      height: 1rem;
+      background: rgba(0, 0, 0, 0.12);
+    }
+    @media (prefers-color-scheme: dark) {
+      .bottom-toolbar .sep { background: rgba(255, 255, 255, 0.15); }
+    }
+
+    /* ----- 右侧参数抽屉 ----- */
+    .drawer {
+      flex-shrink: 0;
+      width: var(--drawer-width);
+      max-width: var(--drawer-max);
+      min-width: 0;
+      background: var(--surface);
+      border-left: var(--border);
+      display: flex;
+      position: relative;
+      transition: width 0.22s ease, border-color 0.2s ease;
+      min-height: 0;
+    }
+    .drawer.is-collapsed {
+      width: 0 !important;
+      border-left-color: transparent;
+      overflow: hidden;
+    }
+    .drawer.is-collapsed .drawer-inner,
+    .drawer.is-collapsed .drawer-resizer { opacity: 0; pointer-events: none; }
+
+    .drawer-resizer {
+      flex-shrink: 0;
+      width: var(--handle-hit);
+      margin-left: calc((var(--handle-hit) - 6px) / -2);
+      cursor: col-resize;
+      align-self: stretch;
+      position: relative;
+      z-index: 2;
+      touch-action: none;
+      opacity: 1;
+      transition: opacity 0.15s ease;
+    }
+    .drawer-resizer::after {
+      content: "";
+      position: absolute;
+      left: 50%;
+      top: 0;
+      bottom: 0;
+      width: 4px;
+      transform: translateX(-50%);
+      border-radius: 999px;
       background: rgba(0, 0, 0, 0.06);
     }
     @media (prefers-color-scheme: dark) {
-      code { background: rgba(255, 255, 255, 0.08); }
+      .drawer-resizer::after { background: rgba(255, 255, 255, 0.12); }
+    }
+    .drawer-resizer:hover::after,
+    body.is-resizing .drawer-resizer::after {
+      background: var(--accent);
+      opacity: 0.55;
+    }
+
+    .drawer-inner {
+      flex: 1;
+      min-width: var(--drawer-min);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .drawer-header {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.5rem 0.75rem;
+      border-bottom: var(--border);
+      flex-shrink: 0;
+    }
+    .drawer-title {
+      flex: 1;
+      font-size: 0.8125rem;
+      font-weight: 600;
+    }
+    .drawer-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 0.75rem;
+      font-size: 0.8125rem;
+    }
+    .field {
+      margin-bottom: 0.875rem;
+    }
+    .field label {
+      display: block;
+      margin-bottom: 0.25rem;
+      color: var(--muted);
+      font-size: 0.75rem;
+    }
+    .field input {
+      width: 100%;
+      padding: 0.45rem 0.5rem;
+      border-radius: 6px;
+      border: var(--border);
+      background: var(--bg);
+      color: inherit;
+      font-size: 0.8125rem;
+    }
+
+    /* 抽屉收起后边缘拉出条 */
+    .drawer-edge-tab {
+      position: fixed;
+      right: 0;
+      top: 50%;
+      transform: translateY(-50%);
+      z-index: 35;
+      writing-mode: vertical-rl;
+      text-orientation: mixed;
+      padding: 0.65rem 0.35rem;
+      font-size: 0.75rem;
+      letter-spacing: 0.08em;
+      border: var(--border);
+      border-right: none;
+      border-radius: 8px 0 0 8px;
+      background: var(--surface);
+      cursor: pointer;
+      box-shadow: -2px 0 8px rgba(0, 0, 0, 0.06);
+      transition: transform 0.2s ease, opacity 0.2s ease;
+    }
+    @media (prefers-color-scheme: dark) {
+      .drawer-edge-tab { box-shadow: -2px 0 12px rgba(0, 0, 0, 0.35); }
+    }
+    .drawer-edge-tab[hidden] {
+      display: none !important;
+    }
+
+    /* 移动端遮罩 */
+    .sidebar-backdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.4);
+      z-index: 30;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.22s ease;
+    }
+    .sidebar-backdrop.is-visible {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    /* ----- 响应式 ----- */
+    @media (max-width: 900px) {
+      .drawer {
+        position: fixed;
+        top: var(--top-h);
+        bottom: var(--bottom-h);
+        right: 0;
+        max-height: none;
+        box-shadow: -8px 0 24px rgba(0, 0, 0, 0.12);
+        z-index: 25;
+      }
+      .drawer.is-collapsed {
+        transform: translateX(100%);
+        width: min(var(--drawer-width), var(--drawer-max)) !important;
+      }
+      .drawer:not(.is-collapsed) {
+        transform: translateX(0);
+      }
+    }
+
+    @media (max-width: 768px) {
+      .menu-toggle { display: flex; }
+      .sidebar {
+        position: fixed;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: min(var(--nav-width), 85vw);
+        transform: translateX(-100%);
+        box-shadow: none;
+      }
+      .sidebar.is-open {
+        transform: translateX(0);
+        box-shadow: 8px 0 24px rgba(0, 0, 0, 0.15);
+      }
+      .sidebar-backdrop { display: block; }
+      .center {
+        width: 100%;
+      }
+      :root {
+        --drawer-max: min(100vw - 48px, 420px);
+      }
+    }
+
+    @media (max-width: 480px) {
+      .top-actions .btn:not(#btnDrawerToggle) {
+        padding: 0.35rem 0.5rem;
+        font-size: 0.75rem;
+      }
+      .bottom-toolbar {
+        flex-wrap: wrap;
+        height: auto;
+        min-height: var(--bottom-h);
+        padding: 0.4rem 0.75rem;
+      }
     }
   </style>
 </head>
 <body>
-  <main>
-    <h1>RPTP</h1>
-    <p>此处为报表相关单页应用的占位入口，后续可替换为构建产物或接入 PLC Web 服务。</p>
-    <p style="margin-top: 1rem;"><code>_Prj/SD_SMA_ReportEditor/rptp/index.html</code></p>
-  </main>
+  <div class="sidebar-backdrop" id="sidebarBackdrop" aria-hidden="true"></div>
+
+  <div class="app" id="app">
+    <aside class="sidebar" id="sidebar" aria-label="主导航">
+      <div class="sidebar-brand">RPTP</div>
+      <nav class="nav-scroll">
+        <a class="nav-item is-active" href="#">报表概览</a>
+        <a class="nav-item" href="#">数据源</a>
+        <a class="nav-item" href="#">模板</a>
+        <a class="nav-item" href="#">生成任务</a>
+        <a class="nav-item" href="#">历史记录</a>
+      </nav>
+    </aside>
+
+    <div class="center">
+      <header class="top-menu">
+        <button type="button" class="menu-toggle" id="btnNavToggle" aria-expanded="false" aria-controls="sidebar" title="打开菜单">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path d="M4 6h16M4 12h16M4 18h16" />
+          </svg>
+        </button>
+        <div class="top-title">当前视图 · 报表工作台</div>
+        <div class="top-actions">
+          <button type="button" class="btn" id="btnDrawerToggle" aria-expanded="true" aria-controls="drawerParams">参数栏</button>
+          <button type="button" class="btn btn-primary">保存</button>
+        </div>
+      </header>
+
+      <main class="main-area">
+        <h1>主内容区</h1>
+        <p>响应式布局：窄屏下左侧导航变为抽屉；右侧参数栏可拖拽改宽、可收起，收起后可用屏幕右侧竖条再次打开。</p>
+      </main>
+
+      <footer class="bottom-toolbar" aria-label="底部工具栏">
+        <span>就绪</span>
+        <span class="sep" aria-hidden="true"></span>
+        <span>缩放 <strong>100%</strong></span>
+        <span class="sep" aria-hidden="true"></span>
+        <span>上次保存 —</span>
+      </footer>
+    </div>
+
+    <aside class="drawer" id="drawerParams" aria-label="参数面板">
+      <div class="drawer-resizer" id="drawerResizer" role="separator" aria-orientation="vertical" aria-valuemin="200" aria-valuemax="480" tabindex="0" title="拖拽调整宽度"></div>
+      <div class="drawer-inner">
+        <div class="drawer-header">
+          <span class="drawer-title">参数</span>
+          <button type="button" class="btn" id="btnDrawerCollapse" title="收起参数栏">收起</button>
+        </div>
+        <div class="drawer-body">
+          <div class="field">
+            <label for="f-report-name">报表名称</label>
+            <input id="f-report-name" type="text" placeholder="例如：班报 2026-05-08" />
+          </div>
+          <div class="field">
+            <label for="f-connection">连接配置</label>
+            <input id="f-connection" type="text" placeholder="使用 DataPlane 配置别名" />
+          </div>
+          <div class="field">
+            <label for="f-note">备注</label>
+            <input id="f-note" type="text" placeholder="可选" />
+          </div>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <button type="button" class="drawer-edge-tab" id="drawerEdgeTab" hidden>参数</button>
+
+  <script>
+    (function () {
+      var root = document.documentElement;
+      var sidebar = document.getElementById("sidebar");
+      var backdrop = document.getElementById("sidebarBackdrop");
+      var btnNav = document.getElementById("btnNavToggle");
+      var drawer = document.getElementById("drawerParams");
+      var resizer = document.getElementById("drawerResizer");
+      var btnDrawerToggle = document.getElementById("btnDrawerToggle");
+      var btnCollapse = document.getElementById("btnDrawerCollapse");
+      var edgeTab = document.getElementById("drawerEdgeTab");
+
+      function pxNum(val) {
+        var n = parseFloat(String(val).trim());
+        return isFinite(n) ? n : 0;
+      }
+
+      function getDrawerWidth() {
+        return pxNum(getComputedStyle(root).getPropertyValue("--drawer-width"));
+      }
+
+      function setDrawerWidth(w) {
+        var mn = pxNum(getComputedStyle(root).getPropertyValue("--drawer-min"));
+        var mxStr = getComputedStyle(root).getPropertyValue("--drawer-max");
+        var mx = Math.min(pxNum(mxStr), window.innerWidth * 0.55);
+        if (!mx || mx < mn) mx = Math.min(480, window.innerWidth * 0.55);
+        w = Math.round(Math.min(Math.max(w, mn), mx));
+        root.style.setProperty("--drawer-width", w + "px");
+      }
+
+      /* 左侧导航（移动端） */
+      function closeSidebar() {
+        sidebar.classList.remove("is-open");
+        backdrop.classList.remove("is-visible");
+        btnNav.setAttribute("aria-expanded", "false");
+      }
+      function openSidebar() {
+        sidebar.classList.add("is-open");
+        backdrop.classList.add("is-visible");
+        btnNav.setAttribute("aria-expanded", "true");
+      }
+      btnNav.addEventListener("click", function () {
+        if (sidebar.classList.contains("is-open")) closeSidebar();
+        else openSidebar();
+      });
+      backdrop.addEventListener("click", closeSidebar);
+      window.addEventListener("resize", function () {
+        if (window.innerWidth > 768) closeSidebar();
+      });
+
+      /* 参数抽屉收起 / 展开 */
+      function syncDrawerUi(collapsed) {
+        drawer.classList.toggle("is-collapsed", collapsed);
+        drawer.setAttribute("aria-hidden", collapsed ? "true" : "false");
+        btnDrawerToggle.setAttribute("aria-expanded", collapsed ? "false" : "true");
+        edgeTab.hidden = !collapsed;
+      }
+
+      btnDrawerToggle.addEventListener("click", function () {
+        syncDrawerUi(!drawer.classList.contains("is-collapsed"));
+      });
+      btnCollapse.addEventListener("click", function () {
+        syncDrawerUi(true);
+      });
+      edgeTab.addEventListener("click", function () {
+        syncDrawerUi(false);
+      });
+
+      /* 拖拽改宽度 */
+      var dragging = false;
+      var startX = 0;
+      var startW = 0;
+
+      function onMove(clientX) {
+        if (!dragging) return;
+        var delta = startX - clientX;
+        setDrawerWidth(startW + delta);
+      }
+
+      resizer.addEventListener("mousedown", function (e) {
+        if (drawer.classList.contains("is-collapsed")) return;
+        e.preventDefault();
+        dragging = true;
+        startX = e.clientX;
+        startW = drawer.getBoundingClientRect().width;
+        document.body.classList.add("is-resizing");
+      });
+
+      window.addEventListener("mousemove", function (e) {
+        onMove(e.clientX);
+      });
+
+      window.addEventListener("mouseup", function () {
+        if (dragging) {
+          dragging = false;
+          document.body.classList.remove("is-resizing");
+        }
+      });
+
+      /* 触摸拖拽（平板） */
+      resizer.addEventListener("touchstart", function (e) {
+        if (drawer.classList.contains("is-collapsed")) return;
+        if (!e.touches.length) return;
+        dragging = true;
+        startX = e.touches[0].clientX;
+        startW = drawer.getBoundingClientRect().width;
+        document.body.classList.add("is-resizing");
+      }, { passive: true });
+
+      window.addEventListener("touchmove", function (e) {
+        if (!dragging || !e.touches.length) return;
+        onMove(e.touches[0].clientX);
+      }, { passive: true });
+
+      window.addEventListener("touchend", function () {
+        if (dragging) {
+          dragging = false;
+          document.body.classList.remove("is-resizing");
+        }
+      });
+
+      /* 键盘调整分隔条（无障碍） */
+      resizer.addEventListener("keydown", function (e) {
+        if (drawer.classList.contains("is-collapsed")) return;
+        var step = e.shiftKey ? 24 : 8;
+        if (e.key === "ArrowLeft") {
+          e.preventDefault();
+          setDrawerWidth(getDrawerWidth() + step);
+        } else if (e.key === "ArrowRight") {
+          e.preventDefault();
+          setDrawerWidth(getDrawerWidth() - step);
+        }
+      });
+
+      setDrawerWidth(getDrawerWidth() || 280);
+      syncDrawerUi(false);
+    })();
+  </script>
 </body>
 </html>
