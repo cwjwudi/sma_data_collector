@@ -4,6 +4,45 @@ export type LayoutZoneKind = "header" | "footer";
 
 export type LayoutControlType = "text" | "box" | "image" | "pageNumber" | "date";
 
+/** 页码在预览/导出时的展示形式（导出时传入真实当前页与总页数） */
+export type PageNumberDisplayMode = "plain" | "slashTotal" | "cnPage" | "circle";
+
+export const PAGE_NUMBER_MODE_LABEL: Record<PageNumberDisplayMode, string> = {
+  plain: "仅数字",
+  slashTotal: "当前页/总页数",
+  cnPage: "第N页",
+  circle: "圆形框",
+};
+
+/** 预览占位总页数（编辑器与模版预览） */
+export const PAGE_NUMBER_PREVIEW_TOTAL_FALLBACK = 10;
+
+export function normalizePageNumberMode(v: unknown): PageNumberDisplayMode {
+  if (v === "slashTotal" || v === "cnPage" || v === "circle") return v;
+  return "plain";
+}
+
+/** 导出或打印分页时应调用：根据形式输出页码字符串 */
+export function formatPageNumberDisplay(
+  mode: PageNumberDisplayMode | undefined,
+  page: number,
+  totalPages: number,
+): string {
+  const m = normalizePageNumberMode(mode);
+  const p = Math.max(1, Math.floor(Number.isFinite(page) ? page : 1));
+  const t = Math.max(p, Math.floor(Number.isFinite(totalPages) ? totalPages : p));
+  switch (m) {
+    case "slashTotal":
+      return `${p}/${t}`;
+    case "cnPage":
+      return `第${p}页`;
+    case "circle":
+      return String(p);
+    default:
+      return String(p);
+  }
+}
+
 /** 内容在控件框内的对齐（flex）：start=左/上，center=中，end=右/下 */
 export type LayoutAlignAxis = "start" | "center" | "end";
 
@@ -26,6 +65,8 @@ export interface LayoutZoneElement {
   dateFormat: string;
   /** type image：支持 URL、data URL */
   imageSrc: string;
+  /** type pageNumber：展示形式 */
+  pageNumberMode: PageNumberDisplayMode;
 }
 
 export function normalizeAlignAxis(v: unknown, fb: LayoutAlignAxis): LayoutAlignAxis {
@@ -63,6 +104,7 @@ export function defaultLayoutZoneElement(type: LayoutControlType): Omit<LayoutZo
     fontSize: 13,
     dateFormat: "yyyy-MM-dd HH:mm",
     imageSrc: "",
+    pageNumberMode: "plain" as PageNumberDisplayMode,
   };
   if (type === "text") {
     return { type: "text", x: 8, y: 8, w: 160, h: 28, ...baseText, ...axStart };
@@ -122,6 +164,7 @@ export function hydrateLayoutZoneElement(raw: Partial<LayoutZoneElement>): Layou
     alignY: normalizeAlignAxis(raw.alignY, d.alignY),
     dateFormat: typeof raw.dateFormat === "string" ? raw.dateFormat : d.dateFormat,
     imageSrc: typeof raw.imageSrc === "string" ? raw.imageSrc : d.imageSrc,
+    pageNumberMode: normalizePageNumberMode(raw.pageNumberMode),
   };
 }
 
@@ -138,7 +181,9 @@ export function clampZoneElement(el: LayoutZoneElement, zw: number, zh: number):
 }
 
 export function previewZoneElementDisplay(el: LayoutZoneElement): string {
-  if (el.type === "pageNumber") return "{page}";
+  if (el.type === "pageNumber") {
+    return formatPageNumberDisplay(el.pageNumberMode, 1, PAGE_NUMBER_PREVIEW_TOTAL_FALLBACK);
+  }
   if (el.type === "date") return formatLayoutDate(new Date(), el.dateFormat || "yyyy-MM-dd");
   return el.text;
 }

@@ -1824,6 +1824,9 @@ html[data-theme="dark"] .lvis-body-zone {
 .lvis-zone-canvas .layout-zone-node {
   cursor: move;
 }
+.layout-zone-page-circle {
+  flex-shrink: 0;
+}
 .lvis-zone-canvas .layout-zone-node.is-selected {
   outline: 2px solid var(--accent);
   outline-offset: 1px;

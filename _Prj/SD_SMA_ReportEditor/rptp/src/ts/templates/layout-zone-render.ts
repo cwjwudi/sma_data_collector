@@ -1,5 +1,9 @@
 import type { LayoutAlignAxis, LayoutZoneElement } from "./layout-zone-element";
-import { formatLayoutDate } from "./layout-zone-element";
+import {
+  formatLayoutDate,
+  formatPageNumberDisplay,
+  PAGE_NUMBER_PREVIEW_TOTAL_FALLBACK,
+} from "./layout-zone-element";
 
 export interface RenderZoneOptions {
   selectedId?: string | null;
@@ -9,12 +13,13 @@ export interface RenderZoneOptions {
   resizeHandlesForIds?: ReadonlySet<string>;
   /** 模版预览用当前页码 */
   previewPage?: number;
+  /** 预览占位总页数（导出时应使用真实分页总数） */
+  previewTotalPages?: number;
   /** 是否绘制选中描边（模版预览传 false） */
   selectionChrome?: boolean;
 }
 
-function previewText(el: LayoutZoneElement, previewPage: number): string {
-  if (el.type === "pageNumber") return String(previewPage);
+function previewPlainOrDate(el: LayoutZoneElement): string {
   if (el.type === "date") return formatLayoutDate(new Date(), el.dateFormat || "yyyy-MM-dd");
   return el.text;
 }
@@ -66,6 +71,11 @@ export function renderZoneElementsInto(
   host.style.boxSizing = "border-box";
 
   const previewPage = opts.previewPage ?? 1;
+  const previewTotal = Math.max(
+    1,
+    previewPage,
+    opts.previewTotalPages ?? PAGE_NUMBER_PREVIEW_TOTAL_FALLBACK,
+  );
   const idSet =
     opts.selectedIds ??
     (opts.selectedId ? new Set<string>([opts.selectedId]) : null);
@@ -122,6 +132,38 @@ export function renderZoneElementsInto(
       node.style.padding = "2px 6px";
       node.style.whiteSpace = "pre-wrap";
       node.textContent = el.text || "";
+    } else if (el.type === "pageNumber") {
+      const mode = el.pageNumberMode ?? "plain";
+      node.style.backgroundColor = "transparent";
+      node.style.display = "flex";
+      node.style.justifyContent = flex.justifyContent;
+      node.style.alignItems = flex.alignItems;
+      node.style.padding = mode === "circle" ? "2px" : "2px 6px";
+      node.style.whiteSpace = "nowrap";
+
+      if (mode === "circle") {
+        const badge = document.createElement("span");
+        badge.className = "layout-zone-page-circle";
+        badge.textContent = formatPageNumberDisplay(mode, previewPage, previewTotal);
+        badge.style.boxSizing = "border-box";
+        badge.style.display = "flex";
+        badge.style.alignItems = "center";
+        badge.style.justifyContent = "center";
+        badge.style.width = "min(100%, 2.75em)";
+        badge.style.height = "min(100%, 2.75em)";
+        badge.style.aspectRatio = "1";
+        badge.style.borderRadius = "50%";
+        badge.style.border = `1.5px solid ${el.color}`;
+        badge.style.color = el.color;
+        badge.style.backgroundColor =
+          el.bgColor !== "transparent" ? el.bgColor : "transparent";
+        badge.style.fontSize = `${el.fontSize}px`;
+        badge.style.lineHeight = "1";
+        node.appendChild(badge);
+      } else {
+        node.style.backgroundColor = el.bgColor === "transparent" ? "transparent" : el.bgColor;
+        node.textContent = formatPageNumberDisplay(mode, previewPage, previewTotal);
+      }
     } else {
       node.style.backgroundColor = el.bgColor === "transparent" ? "transparent" : el.bgColor;
       node.style.display = "flex";
@@ -129,7 +171,7 @@ export function renderZoneElementsInto(
       node.style.alignItems = flex.alignItems;
       node.style.padding = "2px 6px";
       node.style.whiteSpace = "nowrap";
-      node.textContent = previewText(el, previewPage);
+      node.textContent = previewPlainOrDate(el);
     }
 
     if (chrome && resizeSet?.has(el.id)) {

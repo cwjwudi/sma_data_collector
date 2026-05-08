@@ -19,6 +19,7 @@ import {
 } from "./templates/layout-model";
 import { computePaperLayout } from "./templates/layout-geometry";
 import { renderZoneElementsInto } from "./templates/layout-zone-render";
+import { PAGE_NUMBER_PREVIEW_TOTAL_FALLBACK } from "./templates/layout-zone-element";
 import { PAPER_KIND_SHORT, PAPER_LABEL, PAPER_PRESETS, type PaperKind } from "./templates/paper";
 import { getLayoutPresetById } from "./report-layout";
 
@@ -316,6 +317,7 @@ function renderPaperChrome(): void {
     if (headerElements.length > 0) {
       renderZoneElementsInto(headerInner, headerElements, {
         previewPage: 1,
+        previewTotalPages: PAGE_NUMBER_PREVIEW_TOTAL_FALLBACK,
         selectionChrome: false,
       });
     } else {
@@ -334,6 +336,7 @@ function renderPaperChrome(): void {
     if (footerElements.length > 0) {
       renderZoneElementsInto(footerInner, footerElements, {
         previewPage: 1,
+        previewTotalPages: PAGE_NUMBER_PREVIEW_TOTAL_FALLBACK,
         selectionChrome: false,
       });
     } else {
@@ -433,8 +436,16 @@ function renderNtPresetMiniPage(thumb: HTMLElement, preset: LayoutPreset): void 
   fc.style.cssText = "position:relative;width:100%;height:100%;overflow:hidden;box-sizing:border-box;";
   fw.appendChild(fc);
 
-  renderZoneElementsInto(hc, preset.headerElements, { selectionChrome: false, previewPage: 1 });
-  renderZoneElementsInto(fc, preset.footerElements, { selectionChrome: false, previewPage: 1 });
+  renderZoneElementsInto(hc, preset.headerElements, {
+    selectionChrome: false,
+    previewPage: 1,
+    previewTotalPages: PAGE_NUMBER_PREVIEW_TOTAL_FALLBACK,
+  });
+  renderZoneElementsInto(fc, preset.footerElements, {
+    selectionChrome: false,
+    previewPage: 1,
+    previewTotalPages: PAGE_NUMBER_PREVIEW_TOTAL_FALLBACK,
+  });
 
   if (preset.headerElements.length === 0 && preset.headerText.trim()) {
     const leg = document.createElement("div");

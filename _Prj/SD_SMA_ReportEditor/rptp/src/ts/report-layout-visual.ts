@@ -14,6 +14,8 @@ import {
   clampZoneElement,
   makeLayoutZoneElement,
   normalizeAlignAxis,
+  normalizePageNumberMode,
+  PAGE_NUMBER_PREVIEW_TOTAL_FALLBACK,
   type LayoutZoneElement,
 } from "./templates/layout-zone-element";
 import { renderZoneElementsInto } from "./templates/layout-zone-render";
@@ -976,6 +978,7 @@ export function initReportLayoutVisual(d: LayoutVisualDeps): void {
 
   bindDrawerInputs();
   bindHiddenBackedChoiceButtons(document.getElementById("lvis-drawer-global"));
+  bindHiddenBackedChoiceButtons(document.getElementById("lvis-drawer-element"));
   bindLvisAlignVisualGrid();
   bindLvisAlignTooltips();
 
@@ -1266,6 +1269,7 @@ function bindDrawerInputs(): void {
     "lvis-e-align-y",
     "lvis-e-date-format",
     "lvis-e-img-url",
+    "lvis-e-page-mode",
   ];
   for (const id of ids) {
     document.getElementById(id)?.addEventListener("input", onChange);
@@ -1339,6 +1343,7 @@ function applyElementFromInputs(): void {
   el.dateFormat = g("lvis-e-date-format") ?? el.dateFormat;
   const url = g("lvis-e-img-url");
   if (url !== undefined && el.type === "image") el.imageSrc = url;
+  if (el.type === "pageNumber") el.pageNumberMode = normalizePageNumberMode(g("lvis-e-page-mode"));
   snapElInZone(el, sel.zone);
 }
 
@@ -1361,6 +1366,8 @@ function syncElementInputsFromModel(): void {
   set("lvis-e-align-y", el.alignY);
   set("lvis-e-date-format", el.dateFormat);
   set("lvis-e-img-url", el.imageSrc);
+  set("lvis-e-page-mode", el.pageNumberMode ?? "plain");
+  syncAllChoiceButtonsFromHiddens(document.getElementById("lvis-drawer-element"));
   syncLvisAlignVisualHighlight();
 }
 
@@ -1444,11 +1451,15 @@ function renderLvis(): void {
     selectedIds: headerIds,
     resizeHandlesForIds: headerResize,
     selectionChrome: true,
+    previewPage: 1,
+    previewTotalPages: PAGE_NUMBER_PREVIEW_TOTAL_FALLBACK,
   });
   renderZoneElementsInto(fc, draft.footerElements, {
     selectedIds: footerIds,
     resizeHandlesForIds: footerResize,
     selectionChrome: true,
+    previewPage: 1,
+    previewTotalPages: PAGE_NUMBER_PREVIEW_TOTAL_FALLBACK,
   });
 
   hw.classList.toggle(
@@ -1554,8 +1565,10 @@ function syncLvisDrawer(): void {
     const dw = document.getElementById("lvis-e-date-wrap");
     const iw = document.getElementById("lvis-e-img-wrap");
     const tw = document.getElementById("lvis-e-text-wrap");
+    const pw = document.getElementById("lvis-e-page-wrap");
     if (dw) dw.hidden = el?.type !== "date";
     if (iw) iw.hidden = el?.type !== "image";
     if (tw) tw.hidden = el?.type !== "text" && el?.type !== "box";
+    if (pw) pw.hidden = el?.type !== "pageNumber";
   }
 }
