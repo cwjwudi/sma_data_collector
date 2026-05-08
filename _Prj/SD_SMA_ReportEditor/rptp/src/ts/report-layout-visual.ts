@@ -396,17 +396,78 @@ function applyLvisZoom(): void {
   if (range) range.value = String(p);
 }
 
+/** 缩放后保持当前视口中心落在纸张上的相对位置，避免滑块拖动时画面跑出视野 */
+function applyLvisZoomAndPreserveView(): void {
+  const scroll = document.querySelector(".lvis-scroll") as HTMLElement | null;
+  const outer = document.getElementById("lvis-zoom-outer");
+  let fracX = 0.5;
+  let fracY = 0.5;
+  if (scroll && outer && outer.offsetWidth > 0 && outer.offsetHeight > 0) {
+    const cx = scroll.scrollLeft + scroll.clientWidth / 2;
+    const cy = scroll.scrollTop + scroll.clientHeight / 2;
+    fracX = (cx - outer.offsetLeft) / outer.offsetWidth;
+    fracY = (cy - outer.offsetTop) / outer.offsetHeight;
+    fracX = Math.min(1, Math.max(0, fracX));
+    fracY = Math.min(1, Math.max(0, fracY));
+  }
+  applyLvisZoom();
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      const sc = document.querySelector(".lvis-scroll") as HTMLElement | null;
+      const out = document.getElementById("lvis-zoom-outer");
+      if (!sc || !out || out.offsetWidth <= 0 || out.offsetHeight <= 0) return;
+      const nl = out.offsetLeft;
+      const nt = out.offsetTop;
+      const nw = out.offsetWidth;
+      const nh = out.offsetHeight;
+      sc.scrollLeft = Math.round(nl + nw * fracX - sc.clientWidth / 2);
+      sc.scrollTop = Math.round(nt + nh * fracY - sc.clientHeight / 2);
+    });
+  });
+}
+
+function centerLvisScrollOnPage(): void {
+  const sc = document.querySelector(".lvis-scroll") as HTMLElement | null;
+  const out = document.getElementById("lvis-zoom-outer");
+  if (!sc || !out || out.offsetWidth <= 0 || out.offsetHeight <= 0) return;
+  sc.scrollLeft = Math.round(out.offsetLeft + out.offsetWidth / 2 - sc.clientWidth / 2);
+  sc.scrollTop = Math.round(out.offsetTop + out.offsetHeight / 2 - sc.clientHeight / 2);
+}
+
+/** 纸张完全不在视口内时再拉回（大块留白下尽量少打断用户拖动） */
+function ensureLvisPageVisible(): void {
+  const scroll = document.querySelector(".lvis-scroll") as HTMLElement | null;
+  const outer = document.getElementById("lvis-zoom-outer");
+  if (!scroll || !outer) return;
+  const sl = scroll.scrollLeft;
+  const st = scroll.scrollTop;
+  const vw = scroll.clientWidth;
+  const vh = scroll.clientHeight;
+  const ol = outer.offsetLeft;
+  const ot = outer.offsetTop;
+  const ow = outer.offsetWidth;
+  const oh = outer.offsetHeight;
+  const rx = Math.min(sl + vw, ol + ow) - Math.max(sl, ol);
+  const ry = Math.min(st + vh, ot + oh) - Math.max(st, ot);
+  if (rx <= 2 || ry <= 2) {
+    centerLvisScrollOnPage();
+  }
+}
+
 function lvisZoomFit(): void {
-  const scroll = document.querySelector(".lvis-scroll-pad") as HTMLElement | null;
+  const viewport = document.querySelector(".lvis-scroll") as HTMLElement | null;
   const wrap = document.getElementById("lvis-page-scale-wrap");
   const page = document.getElementById("lvis-page");
-  if (!scroll || !page) return;
-  const pad = 16;
-  const mw = Math.max(80, scroll.clientWidth - pad * 2);
+  if (!viewport || !page) return;
+  const pad = 24;
+  const mw = Math.max(80, viewport.clientWidth - pad * 2);
   const w = wrap && wrap.offsetWidth > 0 ? wrap.offsetWidth : page.offsetWidth;
   if (w <= 0) return;
   lvisZoom = Math.min(2, Math.max(0.35, mw / w));
   applyLvisZoom();
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => centerLvisScrollOnPage());
+  });
 }
 
 function alignSelection(mode: "left" | "centerX" | "right" | "top" | "centerY" | "bottom"): void {
@@ -528,11 +589,11 @@ export function initReportLayoutVisual(d: LayoutVisualDeps): void {
 
   document.getElementById("btn-lvis-zoom-out")?.addEventListener("click", () => {
     lvisZoom = Math.max(0.35, Math.round((lvisZoom - 0.1) * 100) / 100);
-    applyLvisZoom();
+    applyLvisZoomAndPreserveView();
   });
   document.getElementById("btn-lvis-zoom-in")?.addEventListener("click", () => {
     lvisZoom = Math.min(2, Math.round((lvisZoom + 0.1) * 100) / 100);
-    applyLvisZoom();
+    applyLvisZoomAndPreserveView();
   });
   document.getElementById("lvis-zoom-range")?.addEventListener("input", () => {
     const r = document.getElementById("lvis-zoom-range") as HTMLInputElement | null;
@@ -540,7 +601,7 @@ export function initReportLayoutVisual(d: LayoutVisualDeps): void {
     const p = Number(r.value);
     if (!Number.isFinite(p)) return;
     lvisZoom = Math.min(2, Math.max(0.35, p / 100));
-    applyLvisZoom();
+    applyLvisZoomAndPreserveView();
   });
   document.getElementById("btn-lvis-zoom-fit")?.addEventListener("click", () => {
     lvisZoomFit();
@@ -659,7 +720,7 @@ export function initReportLayoutVisual(d: LayoutVisualDeps): void {
 
   window.addEventListener("resize", () => {
     const p = document.getElementById("page-layout-visual");
-    if (p?.classList.contains("is-visible")) applyLvisZoom();
+    if (p?.classList.contains("is-visible")) applyLvisZoomAndPreserveView();
   });
 }
 
@@ -1060,6 +1121,7 @@ function renderLvis(): void {
     meta.textContent = `${PAPER_LABEL[draft.paperKind]} · ${draft.orientation === "landscape" ? "横向" : "纵向"} · ${draft.name} · ${LAYOUT_PAGE_ROLE_LABEL[draft.pageRole]}`;
 
   applyLvisZoom();
+  requestAnimationFrame(() => ensureLvisPageVisible());
 }
 
 function syncLvisDrawer(): void {

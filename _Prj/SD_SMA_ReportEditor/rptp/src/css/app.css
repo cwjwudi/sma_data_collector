@@ -1276,15 +1276,13 @@ html[data-theme="dark"] .template-canvas-root {
   overflow: auto;
   min-height: min(52vh, 480px);
 }
+/* 大块留白：任意缩放下仍可大幅左右/上下拖动（类似无边记画布） */
 .lvis-scroll-pad {
-  min-height: 100%;
-  padding: 6px 8px 10px;
-  box-sizing: border-box;
-  display: flex;
-  justify-content: center;
-  align-items: flex-start;
+  display: inline-block;
+  vertical-align: top;
+  padding: 4000px;
+  box-sizing: content-box;
 }
-/* 占位缩放后的布局宽高，避免仅用 transform 导致滚动区域不包含左侧溢出 */
 .lvis-zoom-outer {
   flex-shrink: 0;
   line-height: 0;
