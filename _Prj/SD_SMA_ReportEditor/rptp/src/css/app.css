@@ -917,6 +917,9 @@ html[data-theme="dark"] .nt-sheet-thumb--zones {
 }
 .nt-sheet-zone {
   box-sizing: border-box;
+  position: relative;
+  overflow: hidden;
+  min-height: 0;
   border-radius: 2px;
   background: #fff;
   border: 1px dashed rgba(0, 0, 0, 0.1);
@@ -925,17 +928,35 @@ html[data-theme="dark"] .nt-sheet-zone {
   background: #27272a;
   border-color: rgba(255, 255, 255, 0.12);
 }
-.nt-sheet-zone-header {
-  flex: 0 0 18%;
-  min-height: 6px;
-}
-.nt-sheet-zone-content {
-  flex: 1 1 auto;
-  min-height: 18px;
-}
+.nt-sheet-zone-header,
+.nt-sheet-zone-content,
 .nt-sheet-zone-footer {
-  flex: 0 0 14%;
-  min-height: 6px;
+  min-height: 2px;
+}
+.nt-sheet-zone--has-items {
+  border-style: solid;
+  border-color: color-mix(in srgb, var(--accent) 42%, rgba(0, 0, 0, 0.12));
+  background: color-mix(in srgb, var(--accent) 9%, #fff);
+}
+html[data-theme="dark"] .nt-sheet-zone--has-items {
+  border-color: color-mix(in srgb, var(--accent) 48%, rgba(255, 255, 255, 0.14));
+  background: color-mix(in srgb, var(--accent) 14%, #27272a);
+}
+.nt-sheet-zone-hint {
+  position: absolute;
+  box-sizing: border-box;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--accent) 68%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 50%, transparent);
+  pointer-events: none;
+}
+.nt-sheet-zone-hint--legacy {
+  left: 10%;
+  top: 22%;
+  width: 80%;
+  height: 56%;
+  border-radius: 3px;
+  opacity: 0.88;
 }
 html[data-theme="dark"] .nt-layout-card-preview {
   border-color: rgba(255, 255, 255, 0.14);

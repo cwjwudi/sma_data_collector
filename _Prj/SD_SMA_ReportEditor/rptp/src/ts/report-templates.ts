@@ -12,12 +12,14 @@ import {
 import {
   blankZonesSnapshot,
   loadLayoutPresets,
+  presetToSnapshot,
   presetZonesSnapshot,
   type LayoutPreset,
 } from "./templates/layout-model";
+import type { LayoutZoneElement } from "./templates/layout-zone-element";
 import { computePaperLayout } from "./templates/layout-geometry";
 import { renderZoneElementsInto } from "./templates/layout-zone-render";
-import { PAPER_LABEL, PAPER_PRESETS, type PaperKind } from "./templates/paper";
+import { PAPER_KIND_SHORT, PAPER_LABEL, PAPER_PRESETS, type PaperKind } from "./templates/paper";
 import { getLayoutPresetById } from "./report-layout";
 
 export interface TemplatePagesDeps {
@@ -247,13 +249,8 @@ function renderPaperChrome(): void {
   }
 }
 
-function paperMmLine(pk: PaperKind, orientation: "portrait" | "landscape"): string {
-  const def = PAPER_PRESETS[pk];
-  const mm =
-    orientation === "landscape"
-      ? `${def.heightMm}×${def.widthMm}`
-      : `${def.widthMm}×${def.heightMm}`;
-  return `${mm} mm`;
+function orientLabelShort(o: "portrait" | "landscape"): string {
+  return o === "landscape" ? "横向" : "纵向";
 }
 
 function thumbAspect(pk: PaperKind, orientation: "portrait" | "landscape"): string {
@@ -261,6 +258,67 @@ function thumbAspect(pk: PaperKind, orientation: "portrait" | "landscape"): stri
   const w = orientation === "portrait" ? d.widthMm : d.heightMm;
   const h = orientation === "portrait" ? d.heightMm : d.widthMm;
   return `${w} / ${h}`;
+}
+
+function appendNtLegacyBandHint(zoneEl: HTMLElement): void {
+  zoneEl.classList.add("nt-sheet-zone--has-items");
+  const hint = document.createElement("span");
+  hint.className = "nt-sheet-zone-hint nt-sheet-zone-hint--legacy";
+  zoneEl.appendChild(hint);
+}
+
+function appendNtThumbHints(
+  zoneEl: HTMLElement,
+  elements: LayoutZoneElement[],
+  zoneWpx: number,
+  zoneHpx: number,
+): void {
+  if (elements.length === 0) return;
+  zoneEl.classList.add("nt-sheet-zone--has-items");
+  const zw = Math.max(1, zoneWpx);
+  const zh = Math.max(1, zoneHpx);
+  const n = Math.min(elements.length, 8);
+  for (let i = 0; i < n; i++) {
+    const el = elements[i]!;
+    const hint = document.createElement("span");
+    hint.className = "nt-sheet-zone-hint";
+    const left = Math.max(0, Math.min(95, (el.x / zw) * 100));
+    const top = Math.max(0, Math.min(95, (el.y / zh) * 100));
+    const wPct = Math.max(5, Math.min(100 - left, (el.w / zw) * 100));
+    const hPct = Math.max(6, Math.min(100 - top, (el.h / zh) * 100));
+    hint.style.left = `${left}%`;
+    hint.style.top = `${top}%`;
+    hint.style.width = `${wPct}%`;
+    hint.style.height = `${hPct}%`;
+    zoneEl.appendChild(hint);
+  }
+}
+
+function ntThumbBandPercents(
+  m: ReturnType<typeof computePaperLayout>,
+  preset: LayoutPreset,
+): { top: number; mid: number; bot: number } {
+  const ph = Math.max(1, m.pageH);
+  let topPct = ((m.mt + m.hb) / ph) * 100;
+  let midPct = (m.contentH / ph) * 100;
+  let botPct = ((m.fb + m.mb) / ph) * 100;
+  const hasHead = preset.headerElements.length > 0 || preset.headerText.trim().length > 0;
+  const hasFoot = preset.footerElements.length > 0 || preset.footerText.trim().length > 0;
+  const minBand = 11;
+  if (hasHead && topPct < minBand) {
+    const d = minBand - topPct;
+    topPct = minBand;
+    midPct = Math.max(14, midPct - d);
+  }
+  if (hasFoot && botPct < minBand) {
+    const d = minBand - botPct;
+    botPct = minBand;
+    midPct = Math.max(14, midPct - d);
+  }
+  const sum = topPct + midPct + botPct;
+  if (sum <= 0) return { top: 100 / 3, mid: 100 / 3, bot: 100 / 3 };
+  const k = 100 / sum;
+  return { top: topPct * k, mid: midPct * k, bot: botPct * k };
 }
 
 function selectSingleCard(grid: HTMLElement, btn: HTMLButtonElement): void {
@@ -274,14 +332,44 @@ function appendPresetCard(grid: HTMLElement, preset: LayoutPreset): void {
   btn.className = "nt-layout-card";
   btn.dataset.presetId = preset.id;
 
+  const snap = presetToSnapshot(preset);
+  const m = computePaperLayout(preset.paperKind, preset.orientation, snap);
+  const { top, mid, bot } = ntThumbBandPercents(m, preset);
+
   const thumb = document.createElement("div");
   thumb.className = "nt-layout-card-preview";
   const sheet = document.createElement("div");
   sheet.className = "nt-sheet-thumb nt-sheet-thumb--zones";
   sheet.style.aspectRatio = thumbAspect(preset.paperKind, preset.orientation);
-  sheet.appendChild(document.createElement("div")).className = "nt-sheet-zone nt-sheet-zone-header";
-  sheet.appendChild(document.createElement("div")).className = "nt-sheet-zone nt-sheet-zone-content";
-  sheet.appendChild(document.createElement("div")).className = "nt-sheet-zone nt-sheet-zone-footer";
+
+  const headerZone = document.createElement("div");
+  headerZone.className = "nt-sheet-zone nt-sheet-zone-header";
+  headerZone.style.flex = `0 0 ${top.toFixed(3)}%`;
+
+  const contentZone = document.createElement("div");
+  contentZone.className = "nt-sheet-zone nt-sheet-zone-content";
+  contentZone.style.flex = `0 0 ${mid.toFixed(3)}%`;
+
+  const footerZone = document.createElement("div");
+  footerZone.className = "nt-sheet-zone nt-sheet-zone-footer";
+  footerZone.style.flex = `0 0 ${bot.toFixed(3)}%`;
+
+  const headerZh = Math.max(24, m.hb);
+  const footerZh = Math.max(24, m.fb);
+
+  appendNtThumbHints(headerZone, preset.headerElements, m.contentW, headerZh);
+  if (preset.headerElements.length === 0 && preset.headerText.trim()) {
+    appendNtLegacyBandHint(headerZone);
+  }
+
+  appendNtThumbHints(footerZone, preset.footerElements, m.contentW, footerZh);
+  if (preset.footerElements.length === 0 && preset.footerText.trim()) {
+    appendNtLegacyBandHint(footerZone);
+  }
+
+  sheet.appendChild(headerZone);
+  sheet.appendChild(contentZone);
+  sheet.appendChild(footerZone);
   thumb.appendChild(sheet);
   btn.appendChild(thumb);
 
@@ -291,7 +379,7 @@ function appendPresetCard(grid: HTMLElement, preset: LayoutPreset): void {
 
   const meta = document.createElement("div");
   meta.className = "nt-layout-card-dim";
-  meta.textContent = `${PAPER_LABEL[preset.paperKind]} · ${paperMmLine(preset.paperKind, preset.orientation)}`;
+  meta.textContent = `${PAPER_KIND_SHORT[preset.paperKind]} · ${orientLabelShort(preset.orientation)}`;
 
   btn.appendChild(title);
   btn.appendChild(meta);
@@ -320,11 +408,11 @@ function appendBlankCard(
 
   const title = document.createElement("div");
   title.className = "nt-layout-card-title";
-  title.textContent = `${PAPER_LABEL[paper]}（空白）`;
+  title.textContent = `${PAPER_KIND_SHORT[paper]} · 空白`;
 
   const meta = document.createElement("div");
   meta.className = "nt-layout-card-dim";
-  meta.textContent = paperMmLine(paper, orientation);
+  meta.textContent = orientLabelShort(orientation);
 
   btn.appendChild(title);
   btn.appendChild(meta);

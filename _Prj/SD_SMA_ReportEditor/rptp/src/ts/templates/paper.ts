@@ -14,6 +14,14 @@ export const PAPER_LABEL: Record<PaperKind, string> = {
   Letter: "Letter（216×279 mm）",
 };
 
+/** 简短纸张名（卡片等不需标注毫米时用） */
+export const PAPER_KIND_SHORT: Record<PaperKind, string> = {
+  A3: "A3",
+  A4: "A4",
+  A5: "A5",
+  Letter: "Letter",
+};
+
 export const PAPER_PRESETS: Record<PaperKind, PaperDimensionsMm> = {
   A3: { widthMm: 297, heightMm: 420 },
   A4: { widthMm: 210, heightMm: 297 },
