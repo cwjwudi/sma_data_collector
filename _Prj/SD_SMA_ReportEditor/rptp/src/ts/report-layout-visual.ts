@@ -484,42 +484,42 @@ function applyLvisZoomAnchoredAt(clientX: number, clientY: number): void {
 
   applyLvisZoom();
 
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => {
-      const sc = document.querySelector(".lvis-scroll") as HTMLElement | null;
-      const out = document.getElementById("lvis-zoom-outer");
-      if (!sc || !out) return;
-      const pr2 = lvisPaperRectInScrollCoords(sc, out);
-      if (pr2.width <= 0 || pr2.height <= 0) return;
-      const scr = sc.getBoundingClientRect();
-      const ax = anchor.x;
-      const ay = anchor.y;
-      const nextLeft = Math.round(pr2.left + pr2.width * fracX - (ax - scr.left));
-      const nextTop = Math.round(pr2.top + pr2.height * fracY - (ay - scr.top));
-      sc.scrollLeft = nextLeft;
-      sc.scrollTop = nextTop;
+  // 连续 ctrl+wheel 会在上一次 rAF 修正 scroll 之前再次进入此处；若仍用陈旧 scrollLeft 与已更新的纸张矩形算 frac，会出现 frac>>1 与视图乱跳（见调试日志）。
+  void outer.offsetHeight;
+  void scroll.offsetHeight;
 
-      // #region agent log
-      fetch("http://127.0.0.1:7384/ingest/8646e41b-c472-492e-9346-8be671be03e0", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "84e945" },
-        body: JSON.stringify({
-          sessionId: "84e945",
-          runId: "post-fix",
-          hypothesisId: "H2",
-          location: "report-layout-visual.ts:applyLvisZoomAnchoredAt:rAF2",
-          message: "scroll applied after zoom",
-          data: {
-            nextLeft,
-            nextTop,
-            pr2: { left: pr2.left, top: pr2.top, w: pr2.width, h: pr2.height },
-          },
-          timestamp: Date.now(),
-        }),
-      }).catch(() => {});
-      // #endregion
-    });
-  });
+  const pr2 = lvisPaperRectInScrollCoords(scroll, outer);
+  if (pr2.width > 0 && pr2.height > 0) {
+    const scr = scroll.getBoundingClientRect();
+    const ax = anchor.x;
+    const ay = anchor.y;
+    const nextLeft = Math.round(pr2.left + pr2.width * fracX - (ax - scr.left));
+    const nextTop = Math.round(pr2.top + pr2.height * fracY - (ay - scr.top));
+    scroll.scrollLeft = nextLeft;
+    scroll.scrollTop = nextTop;
+
+    // #region agent log
+    fetch("http://127.0.0.1:7384/ingest/8646e41b-c472-492e-9346-8be671be03e0", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "84e945" },
+      body: JSON.stringify({
+        sessionId: "84e945",
+        runId: "post-fix",
+        hypothesisId: "H2",
+        location: "report-layout-visual.ts:applyLvisZoomAnchoredAt:sync",
+        message: "scroll applied after zoom (sync)",
+        data: {
+          nextLeft,
+          nextTop,
+          pr2: { left: pr2.left, top: pr2.top, w: pr2.width, h: pr2.height },
+          fracX,
+          fracY,
+        },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion
+  }
 }
 
 /** 缩放后保持当前视口中心落在纸张上的相对位置（窗口尺寸变化等） */
