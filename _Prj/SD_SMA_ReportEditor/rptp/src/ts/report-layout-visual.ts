@@ -60,6 +60,89 @@ let resizeDrag: {
   oh: number;
 } | null = null;
 
+/** 版式可视化撤回 / 重做 */
+const LVIS_UNDO_CAP = 60;
+const LVIS_HISTORY_MERGE_MS = 550;
+
+let lvisUndoStack: LayoutPreset[] = [];
+let lvisRedoStack: LayoutPreset[] = [];
+let lvisHistoryMergeUntil = 0;
+
+function cloneLayoutDraftFrom(p: LayoutPreset): LayoutPreset {
+  const d = hydrateLayoutPreset(JSON.parse(JSON.stringify(p)) as Partial<LayoutPreset>);
+  d.headerElements = d.headerElements.map((x) => ({ ...x }));
+  d.footerElements = d.footerElements.map((x) => ({ ...x }));
+  return d;
+}
+
+function syncLvisHistoryButtons(): void {
+  const u = document.getElementById("btn-lvis-undo") as HTMLButtonElement | null;
+  const r = document.getElementById("btn-lvis-redo") as HTMLButtonElement | null;
+  const hasDraft = !!draft;
+  if (u) u.disabled = !hasDraft || lvisUndoStack.length === 0;
+  if (r) r.disabled = !hasDraft || lvisRedoStack.length === 0;
+}
+
+function resetLvisUndoRedo(): void {
+  lvisUndoStack = [];
+  lvisRedoStack = [];
+  lvisHistoryMergeUntil = 0;
+  syncLvisHistoryButtons();
+}
+
+function coerceSelAfterHistoryJump(): void {
+  if (!draft) return;
+  if (sel.k !== "el") return;
+  const list = sel.zone === "header" ? draft.headerElements : draft.footerElements;
+  const ok = sel.ids.filter((id) => list.some((e) => e.id === id));
+  if (ok.length === 0) {
+    sel = sel.zone === "header" ? { k: "headerBand" } : { k: "footerBand" };
+  } else {
+    sel = { k: "el", zone: sel.zone, ids: ok };
+  }
+}
+
+function saveLvisUndoCheckpoint(mode: "merge" | "once"): void {
+  if (!draft) return;
+  const now = Date.now();
+  if (mode === "merge") {
+    if (now < lvisHistoryMergeUntil) return;
+    lvisHistoryMergeUntil = now + LVIS_HISTORY_MERGE_MS;
+  } else {
+    lvisHistoryMergeUntil = 0;
+  }
+  lvisUndoStack.push(cloneLayoutDraftFrom(draft));
+  if (lvisUndoStack.length > LVIS_UNDO_CAP) lvisUndoStack.shift();
+  lvisRedoStack = [];
+  syncLvisHistoryButtons();
+}
+
+function undoLvis(): void {
+  if (!draft || lvisUndoStack.length === 0) return;
+  lvisHistoryMergeUntil = 0;
+  lvisRedoStack.push(cloneLayoutDraftFrom(draft));
+  if (lvisRedoStack.length > LVIS_UNDO_CAP) lvisRedoStack.shift();
+  draft = cloneLayoutDraftFrom(lvisUndoStack.pop()!);
+  coerceSelAfterHistoryJump();
+  clampAllZoneElements();
+  renderLvis();
+  syncLvisDrawer();
+  syncLvisHistoryButtons();
+}
+
+function redoLvis(): void {
+  if (!draft || lvisRedoStack.length === 0) return;
+  lvisHistoryMergeUntil = 0;
+  lvisUndoStack.push(cloneLayoutDraftFrom(draft));
+  if (lvisUndoStack.length > LVIS_UNDO_CAP) lvisUndoStack.shift();
+  draft = cloneLayoutDraftFrom(lvisRedoStack.pop()!);
+  coerceSelAfterHistoryJump();
+  clampAllZoneElements();
+  renderLvis();
+  syncLvisDrawer();
+  syncLvisHistoryButtons();
+}
+
 function snapPx(v: number): number {
   if (!snapEnabled || snapGridPx <= 0) return Math.round(v);
   return Math.round(v / snapGridPx) * snapGridPx;
@@ -81,6 +164,7 @@ function nudgeStepPx(): number {
 function nudgeSelectedElement(sdx: number, sdy: number): void {
   const el = findSelEl();
   if (!draft || sel.k !== "el" || !el || sel.ids.length !== 1) return;
+  saveLvisUndoCheckpoint("merge");
   const z = sel.zone;
   const step = nudgeStepPx();
   el.x = Math.max(0, el.x + sdx * step);
@@ -203,6 +287,7 @@ function lvisZoomFit(): void {
 
 function alignSelection(mode: "left" | "centerX" | "right" | "top" | "centerY" | "bottom"): void {
   if (!draft || sel.k !== "el") return;
+  saveLvisUndoCheckpoint("once");
   const z = sel.zone;
   const { zw, zh } = zoneDims(z);
   const list = listForZone(z);
@@ -224,6 +309,7 @@ function alignSelection(mode: "left" | "centerX" | "right" | "top" | "centerY" |
 function stretchPrimary(fill: "width" | "height" | "both"): void {
   const el = findSelEl();
   if (!draft || sel.k !== "el" || !el) return;
+  saveLvisUndoCheckpoint("once");
   const z = sel.zone;
   const { zw, zh } = zoneDims(z);
   if (fill === "width" || fill === "both") {
@@ -246,6 +332,7 @@ function matchOthersDimension(dim: "w" | "h"): void {
   const list = listForZone(z);
   const primary = list.find((x) => x.id === sel.ids[0]);
   if (!primary) return;
+  saveLvisUndoCheckpoint("once");
   const ref = dim === "w" ? primary.w : primary.h;
   for (let i = 1; i < sel.ids.length; i++) {
     const el = list.find((x) => x.id === sel.ids[i]);
@@ -264,8 +351,12 @@ export function initReportLayoutVisual(d: LayoutVisualDeps): void {
   document.getElementById("btn-lvis-back")?.addEventListener("click", () => {
     draft = null;
     sel = { k: "idle" };
+    resetLvisUndoRedo();
     deps.showPage("layout");
   });
+
+  document.getElementById("btn-lvis-undo")?.addEventListener("click", () => undoLvis());
+  document.getElementById("btn-lvis-redo")?.addEventListener("click", () => redoLvis());
 
   document.getElementById("btn-lvis-save")?.addEventListener("click", () => {
     if (!draft) return;
@@ -362,6 +453,7 @@ export function initReportLayoutVisual(d: LayoutVisualDeps): void {
 
   document.getElementById("btn-lvis-el-delete")?.addEventListener("click", () => {
     if (!draft || sel.k !== "el") return;
+    saveLvisUndoCheckpoint("once");
     const z = sel.zone;
     const rm = new Set(sel.ids);
     if (z === "header") draft.headerElements = draft.headerElements.filter((x) => !rm.has(x.id));
@@ -400,6 +492,23 @@ export function initReportLayoutVisual(d: LayoutVisualDeps): void {
       t.tagName === "TEXTAREA" ||
       t.tagName === "SELECT" ||
       t.isContentEditable === true;
+
+    const metaOrCtrl = e.ctrlKey || e.metaKey;
+    if (metaOrCtrl && String(e.key).toLowerCase() === "z" && !e.altKey) {
+      if (!typing) {
+        e.preventDefault();
+        if (e.shiftKey) redoLvis();
+        else undoLvis();
+      }
+      return;
+    }
+    if (metaOrCtrl && String(e.key).toLowerCase() === "y" && !e.altKey && !e.shiftKey) {
+      if (!typing) {
+        e.preventDefault();
+        redoLvis();
+      }
+      return;
+    }
 
     if (e.key === "Delete" || e.key === "Backspace") {
       if (typing) return;
@@ -444,6 +553,7 @@ function setupZoneCanvas(canvas: HTMLElement | null, zone: "header" | "footer"):
     const type = raw as LayoutControlType;
     const ok = type === "text" || type === "box" || type === "image" || type === "pageNumber" || type === "date";
     if (!ok) return;
+    saveLvisUndoCheckpoint("once");
     const rect = canvas.getBoundingClientRect();
     const x = Math.round(e.clientX - rect.left - 10);
     const y = Math.round(e.clientY - rect.top - 8);
@@ -470,6 +580,7 @@ function setupZoneCanvas(canvas: HTMLElement | null, zone: "header" | "footer"):
       const list = zone === "header" ? draft.headerElements : draft.footerElements;
       const el = list.find((x) => x.id === rid);
       if (!el) return;
+      saveLvisUndoCheckpoint("once");
       sel = { k: "el", zone, ids: [rid] };
       resizeDrag = {
         zone,
@@ -496,6 +607,7 @@ function setupZoneCanvas(canvas: HTMLElement | null, zone: "header" | "footer"):
     const list = zone === "header" ? draft.headerElements : draft.footerElements;
     const el = list.find((x) => x.id === id);
     if (!el) return;
+    saveLvisUndoCheckpoint("once");
     if (e.shiftKey && sel.k === "el" && sel.zone === zone) {
       const ids = toggleSelId(sel.ids, id);
       sel =
@@ -593,6 +705,7 @@ function bindLvisAlignVisualGrid(): void {
     const ax = btn.getAttribute("data-lvis-align-x");
     const ay = btn.getAttribute("data-lvis-align-y");
     if (!ax || !ay) return;
+    saveLvisUndoCheckpoint("once");
     const ix = document.getElementById("lvis-e-align-x") as HTMLInputElement | null;
     const iy = document.getElementById("lvis-e-align-y") as HTMLInputElement | null;
     if (ix) ix.value = ax;
@@ -605,6 +718,7 @@ function bindLvisAlignVisualGrid(): void {
 
 function bindDrawerInputs(): void {
   const onChange = () => {
+    saveLvisUndoCheckpoint("merge");
     applyDrawerToDraft();
     renderLvis();
     syncElementInputsFromModel();
@@ -644,6 +758,7 @@ function bindDrawerInputs(): void {
     r.onload = () => {
       const el = findSelEl();
       if (el?.type === "image") {
+        saveLvisUndoCheckpoint("once");
         el.imageSrc = String(r.result || "");
         renderLvis();
         syncLvisDrawer();
@@ -733,6 +848,7 @@ export function openLayoutVisual(presetId: string): void {
   draft.headerElements = draft.headerElements.map((x) => ({ ...x }));
   draft.footerElements = draft.footerElements.map((x) => ({ ...x }));
   sel = { k: "idle" };
+  resetLvisUndoRedo();
   lvisZoom = 1;
   deps.showPage("layoutVisual");
   renderLvis();
