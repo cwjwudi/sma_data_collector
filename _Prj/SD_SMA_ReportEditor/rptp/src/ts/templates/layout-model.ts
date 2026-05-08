@@ -51,6 +51,24 @@ export interface LayoutPreset {
 
 export type { LayoutZoneElement };
 
+/** 版式名称规范化（去首尾空白） */
+export function normalizeLayoutPresetName(s: string): string {
+  return s.trim();
+}
+
+/** 是否与列表中其他预设同名（excludeId 为当前编辑项 id 时排除自身） */
+export function isLayoutPresetNameTaken(
+  list: LayoutPreset[],
+  name: string,
+  excludeId?: string | null,
+): boolean {
+  const n = normalizeLayoutPresetName(name);
+  if (!n) return false;
+  return list.some(
+    (x) => x.id !== excludeId && normalizeLayoutPresetName(x.name) === n,
+  );
+}
+
 export const LAYOUT_PRESET_STORAGE_KEY = "rptp-layout-presets";
 
 export function defaultBlankLayoutSnapshot(): LayoutSnapshot {

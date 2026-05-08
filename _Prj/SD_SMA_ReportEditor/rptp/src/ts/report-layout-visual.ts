@@ -1,7 +1,9 @@
 import { computePaperLayout, type PaperLayoutMetrics } from "./templates/layout-geometry";
 import {
   hydrateLayoutPreset,
+  isLayoutPresetNameTaken,
   loadLayoutPresets,
+  normalizeLayoutPresetName,
   saveLayoutPresets,
   LAYOUT_PAGE_ROLE_LABEL,
   type LayoutPreset,
@@ -847,9 +849,20 @@ export function initReportLayoutVisual(d: LayoutVisualDeps): void {
 
   document.getElementById("btn-lvis-save")?.addEventListener("click", () => {
     if (!draft) return;
+    if (sel.k === "global") applyDrawerToDraft();
     clampAllZoneElements();
-    draft.updatedAt = new Date().toISOString();
+    const nm = normalizeLayoutPresetName(draft.name);
+    if (!nm) {
+      alert("名称不能为空。");
+      return;
+    }
     const list = loadLayoutPresets();
+    if (isLayoutPresetNameTaken(list, nm, draft.id)) {
+      alert("已有同名版式，请更换名称。");
+      return;
+    }
+    draft.name = nm;
+    draft.updatedAt = new Date().toISOString();
     const idx = list.findIndex((x) => x.id === draft!.id);
     const saved = hydrateLayoutPreset(draft);
     if (idx >= 0) list[idx] = saved;
@@ -1297,7 +1310,7 @@ function applyDrawerToDraft(): void {
 function applyGlobalFromInputs(): void {
   if (!draft) return;
   const g = (id: string) => (document.getElementById(id) as HTMLInputElement | HTMLSelectElement | null)?.value;
-  draft.name = (g("lvis-field-name") ?? "").trim() || draft.name;
+  draft.name = normalizeLayoutPresetName(g("lvis-field-name") ?? "") || draft.name;
   const pr = g("lvis-field-page-role");
   draft.pageRole = pr === "cover" || pr === "back" ? pr : "normal";
   draft.paperKind = (g("lvis-field-paper") as PaperKind) || draft.paperKind;

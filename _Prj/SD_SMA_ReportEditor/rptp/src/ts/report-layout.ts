@@ -1,12 +1,14 @@
 import {
   createEmptyLayoutPreset,
   hydrateLayoutPreset,
+  isLayoutPresetNameTaken,
   loadLayoutPresets,
+  normalizeLayoutPresetName,
   saveLayoutPresets,
   LAYOUT_PAGE_ROLE_LABEL,
   type LayoutPreset,
 } from "./templates/layout-model";
-import { PAPER_LABEL, type PaperKind } from "./templates/paper";
+import { PAPER_KIND_SHORT, type PaperKind } from "./templates/paper";
 import {
   bindHiddenBackedChoiceButtons,
   syncAllChoiceButtonsFromHiddens,
@@ -40,6 +42,18 @@ export function initReportLayoutPage(d: LayoutPageDeps): void {
     const idx = presets.findIndex((x) => x.id === selectedId);
     if (idx < 0) return;
     readLayoutFormInto(presets[idx]);
+    const nextName = normalizeLayoutPresetName(presets[idx].name);
+    if (!nextName) {
+      alert("名称不能为空。");
+      syncLayoutForm();
+      return;
+    }
+    if (isLayoutPresetNameTaken(presets, nextName, presets[idx].id)) {
+      alert("已有同名版式，请更换名称。");
+      syncLayoutForm();
+      return;
+    }
+    presets[idx].name = nextName;
     presets[idx].updatedAt = new Date().toISOString();
     saveLayoutPresets(presets);
     renderLayoutList();
@@ -71,10 +85,19 @@ export function initReportLayoutPage(d: LayoutPageDeps): void {
 }
 
 function suggestNewLayoutName(p: LayoutPreset): string {
-  const paper = PAPER_LABEL[p.paperKind];
+  const paper = PAPER_KIND_SHORT[p.paperKind];
   const ori = p.orientation === "landscape" ? "横向" : "纵向";
   const tag = LAYOUT_PAGE_ROLE_LABEL[p.pageRole];
   return `${paper} ${ori} · ${tag}`;
+}
+
+/** 自动命名与已有版式冲突时追加 「（2）」等后缀 */
+function allocateUniqueAutoPresetName(list: LayoutPreset[], base: string): string {
+  const root = normalizeLayoutPresetName(base) || "新建版式";
+  if (!isLayoutPresetNameTaken(list, root)) return root;
+  let i = 2;
+  while (isLayoutPresetNameTaken(list, `${root} （${i}）`)) i += 1;
+  return `${root} （${i}）`;
 }
 
 function resetNewLayoutDialog(): void {
@@ -97,12 +120,12 @@ function openNewLayoutDialog(): void {
   dlg?.showModal();
 }
 
-function submitNewLayoutFromDialog(): void {
+function submitNewLayoutFromDialog(): boolean {
   const roleEl = document.getElementById("nl-field-page-role") as HTMLInputElement | null;
   const paperEl = document.getElementById("nl-field-paper") as HTMLInputElement | null;
   const orientEl = document.getElementById("nl-field-orientation") as HTMLInputElement | null;
   const nameEl = document.getElementById("nl-layout-name") as HTMLInputElement | null;
-  if (!roleEl || !paperEl || !orientEl) return;
+  if (!roleEl || !paperEl || !orientEl) return false;
   const pkRaw = paperEl.value;
   const paperKind: PaperKind =
     pkRaw === "A5" || pkRaw === "A4" || pkRaw === "A3" || pkRaw === "Letter" ? pkRaw : "A4";
@@ -115,13 +138,22 @@ function submitNewLayoutFromDialog(): void {
   p.paperKind = paperKind;
   p.orientation = orientation;
   p.pageRole = pageRole;
-  const customName = nameEl?.value.trim() ?? "";
-  p.name = customName || suggestNewLayoutName(p);
+  const customName = normalizeLayoutPresetName(nameEl?.value ?? "");
+  if (customName) {
+    if (isLayoutPresetNameTaken(presets, customName)) {
+      alert("已有同名版式，请更换名称。");
+      return false;
+    }
+    p.name = customName;
+  } else {
+    p.name = allocateUniqueAutoPresetName(presets, suggestNewLayoutName(p));
+  }
   presets.push(p);
   saveLayoutPresets(presets);
   selectedId = p.id;
   renderLayoutList();
   syncLayoutForm();
+  return true;
 }
 
 function bindNewLayoutDialog(): void {
@@ -132,8 +164,7 @@ function bindNewLayoutDialog(): void {
   document.getElementById("nl-cancel")?.addEventListener("click", () => dlg.close());
   form.addEventListener("submit", (e) => {
     e.preventDefault();
-    submitNewLayoutFromDialog();
-    dlg.close();
+    if (submitNewLayoutFromDialog()) dlg.close();
   });
 }
 
@@ -176,7 +207,7 @@ export function refreshLayoutPresetDropdown(select: HTMLSelectElement): void {
     opt.value = p.id;
     const tag =
       p.pageRole === "cover" ? "「封面」" : p.pageRole === "back" ? "「末页」" : "";
-    opt.textContent = `${tag}${p.name} · ${PAPER_LABEL[p.paperKind]} · ${p.orientation === "landscape" ? "横" : "竖"}`;
+    opt.textContent = `${tag}${p.name} · ${PAPER_KIND_SHORT[p.paperKind]} · ${p.orientation === "landscape" ? "横" : "竖"}`;
     select.appendChild(opt);
   }
 }
@@ -193,21 +224,20 @@ function renderLayoutList(): void {
   if (presets.length === 0) {
     const tr = document.createElement("tr");
     tr.innerHTML =
-      '<td colspan="5" class="template-table-empty">暂无版式。点击顶栏「新建版式」在弹出框中选择用途、纸张与方向；随后在右侧参数栏可继续微调并保存，即可在「新建模版」中选用。</td>';
+      '<td colspan="4" class="template-table-empty">暂无版式。点击顶栏「新建版式」在弹出框中选择用途、纸张与方向；随后在右侧参数栏可继续微调并保存，即可在「新建模版」中选用。</td>';
     tbody.appendChild(tr);
     return;
   }
   for (const p of presets) {
     const tr = document.createElement("tr");
     const active = p.id === selectedId ? " is-active-row" : "";
-    const date = p.updatedAt.slice(0, 19).replace("T", " ");
     tr.className = "layout-preset-row" + active;
     tr.dataset.presetId = p.id;
+    const paperShort = PAPER_KIND_SHORT[p.paperKind];
     tr.innerHTML = `
       <td>${escapeHtml(p.name)}</td>
       <td>${escapeHtml(LAYOUT_PAGE_ROLE_LABEL[p.pageRole] ?? "正文页")}</td>
-      <td>${PAPER_LABEL[p.paperKind]}</td>
-      <td>${date}</td>
+      <td>${paperShort}</td>
       <td class="template-table-actions">
         <button type="button" class="btn btn-sm btn-primary" data-layout-vis="${p.id}">可视化编辑</button>
         <button type="button" class="btn btn-sm btn-danger-outline" data-delete-preset="${p.id}">删除</button>
@@ -265,7 +295,7 @@ function setNum(id: string, v: number): void {
 function readLayoutFormInto(target: LayoutPreset): void {
   const g = (id: string) => (document.getElementById(id) as HTMLInputElement | HTMLSelectElement | null)?.value;
   const gn = (id: string, fb: number) => Math.max(0, parseFloat(g(id) ?? String(fb)) || fb);
-  target.name = (g("layout-field-name") ?? "").trim() || target.name;
+  target.name = normalizeLayoutPresetName(g("layout-field-name") ?? "") || target.name;
   target.paperKind = (g("layout-field-paper") as PaperKind) || target.paperKind;
   target.orientation = g("layout-field-orientation") === "landscape" ? "landscape" : "portrait";
   {
