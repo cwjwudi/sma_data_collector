@@ -41,7 +41,7 @@
         </Widget>
         <Widget xsi:type="widgets.brease.GroupBox" id="AlarmRow6" top="240" left="0" width="950" height="40" zIndex="9" borderWidth="1px" cornerRadius="0px" backColor="rgba(255, 255, 255, 0)" borderStyle="solid" shadow="none">
           <Widgets>
-            <Widget xsi:type="widgets.brease.TextOutput" id="AlarmMsg6" top="0" left="350" width="600" height="40" zIndex="0" borderWidth="0px 0px 0px 1px" borderColor="rgba(0, 0, 0, 1)" borderStyle="solid" />
+            <Widget xsi:type="widgets.brease.TextOutput" id="AlarmMsg6" top="5" left="355" width="600" height="40" zIndex="0" borderWidth="0px 0px 0px 1px" borderColor="rgba(0, 0, 0, 1)" borderStyle="solid" />
             <Widget xsi:type="widgets.brease.TextOutput" id="DateTimeOutput6" top="0" left="0" width="350" height="40" zIndex="1" value="" borderWidth="0px 1px 0px 0px" borderColor="rgba(0, 0, 0, 1)" />
           </Widgets>
         </Widget>

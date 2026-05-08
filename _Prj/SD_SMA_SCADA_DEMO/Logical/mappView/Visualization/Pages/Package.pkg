@@ -6,5 +6,6 @@
     <Object Type="Package">Audit</Object>
     <Object Type="Package">Alarm</Object>
     <Object Type="Package">Trend</Object>
+    <Object Type="Package">Config</Object>
   </Objects>
 </Package>
