@@ -1563,12 +1563,6 @@ html[data-theme="dark"] .lvis-page {
   font-size: 0.8125rem;
   font-weight: 600;
 }
-.lvis-tool-palette-hint {
-  margin: 0 0 0.45rem !important;
-  font-size: 0.68rem !important;
-  color: var(--muted) !important;
-  line-height: 1.45 !important;
-}
 .lvis-kbd {
   font-size: 0.65rem;
   padding: 0.05rem 0.25rem;

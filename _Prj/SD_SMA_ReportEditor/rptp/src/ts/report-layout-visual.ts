@@ -1491,9 +1491,6 @@ function syncLvisDrawer(): void {
   pb.hidden = sel.k !== "headerBand" && sel.k !== "footerBand";
   pe.hidden = sel.k !== "el";
 
-  const hintTop = document.getElementById("lvis-drawer-context-hint");
-  if (hintTop) hintTop.hidden = sel.k === "idle";
-
   const multi = document.getElementById("lvis-drawer-multi");
   const alignBar = document.getElementById("lvis-align-actions");
   const multiHint = sel.k === "el" && sel.ids.length > 1;
