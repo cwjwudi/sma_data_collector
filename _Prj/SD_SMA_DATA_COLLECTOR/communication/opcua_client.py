@@ -47,6 +47,12 @@ class OpcUaClient:
         self.is_reconnecting = False
         self.health_check_task: Optional[asyncio.Task] = None
     
+    async def _ensure_connected(self) -> bool:
+        """若已连接则直接返回 True，否则尝试重连（避免与 health check / 断线竞态导致 client 为 None）。"""
+        if self.connected and self.client is not None:
+            return True
+        return await self._attempt_reconnect()
+    
     async def connect(self) -> bool:
         """
         连接到OPC UA服务器
@@ -93,7 +99,39 @@ class OpcUaClient:
     ) -> Dict[str, Any]:
         """逐点读取（批量失败时的回退路径，行为与历史版本一致）。"""
         results: Dict[str, Any] = {}
-        for point in data_points:
+
+        def _fill_remaining(start_idx: int, error_message: str) -> None:
+            for p in data_points[start_idx:]:
+                if p.name in results:
+                    continue
+                results[p.name] = {
+                    "value": None,
+                    "timestamp": timestamp,
+                    "error": error_message,
+                    "path": p.path,
+                }
+
+        if not await self._ensure_connected():
+            self.logger.warning(
+                "OPC UA 未连接，跳过逐点读取（%d 个数据点）",
+                len(data_points),
+            )
+            _fill_remaining(0, "OPC UA 未连接")
+            return results
+
+        for idx, point in enumerate(data_points):
+            if not self.client or not self.connected:
+                if not await self._ensure_connected():
+                    self.logger.warning(
+                        "逐点读取中断：客户端不可用，剩余 %d 个数据点跳过",
+                        len(data_points) - idx,
+                    )
+                    _fill_remaining(
+                        idx,
+                        "OPC UA 客户端不可用（可能已断开或正在重连）",
+                    )
+                    break
+
             try:
                 node = self.client.get_node(point.path)
                 value = node.get_value()
@@ -104,11 +142,18 @@ class OpcUaClient:
                 }
                 self.logger.debug(f"读取数据点 {point.name}: {value}")
             except Exception as e:
-                if self._is_connection_error(e):
-                    self.logger.warning(f"检测到连接错误，准备重连: {e}")
+                conn_err = self._is_connection_error(e)
+                if conn_err:
+                    self.logger.warning(
+                        "读取数据点 %s 时连接异常: %s",
+                        point.name,
+                        e,
+                    )
                     if await self._attempt_reconnect():
                         await asyncio.sleep(2.0)
                         try:
+                            if not self.client:
+                                raise ConnectionError("重连后客户端仍不可用")
                             node = self.client.get_node(point.path)
                             value = node.get_value()
                             results[point.name] = {
@@ -116,11 +161,14 @@ class OpcUaClient:
                                 'timestamp': timestamp,
                                 'path': point.path
                             }
-                            self.logger.info(f"重连后成功读取数据点 {point.name}")
+                            self.logger.info(
+                                "重连后成功读取数据点 %s", point.name
+                            )
                         except Exception as retry_e:
-                            self.logger.error(
-                                f"重连后读取数据点 {point.name} 仍然失败: {retry_e}",
-                                exc_info=True
+                            self.logger.warning(
+                                "重连后读取数据点 %s 仍失败: %s",
+                                point.name,
+                                retry_e,
                             )
                             results[point.name] = {
                                 'value': None,
@@ -128,6 +176,15 @@ class OpcUaClient:
                                 'error': str(retry_e),
                                 'path': point.path
                             }
+                            self.logger.warning(
+                                "停止逐点读取，跳过剩余 %d 个数据点",
+                                len(data_points) - idx - 1,
+                            )
+                            _fill_remaining(
+                                idx + 1,
+                                "前序点读取失败，已中止本轮逐点读取",
+                            )
+                            break
                     else:
                         await asyncio.sleep(3.0)
                         results[point.name] = {
@@ -136,8 +193,16 @@ class OpcUaClient:
                             'error': f"连接失败: {str(e)}",
                             'path': point.path
                         }
+                        self.logger.warning(
+                            "OPC UA 重连失败，跳过剩余 %d 个数据点",
+                            len(data_points) - idx - 1,
+                        )
+                        _fill_remaining(idx + 1, "OPC UA 重连失败")
+                        break
                 else:
-                    self.logger.error(f"读取数据点 {point.name} 失败: {e}", exc_info=True)
+                    self.logger.error(
+                        "读取数据点 %s 失败: %s", point.name, e, exc_info=True
+                    )
                     results[point.name] = {
                         'value': None,
                         'timestamp': timestamp,
@@ -158,9 +223,8 @@ class OpcUaClient:
         Returns:
             Dict[str, Any]: 数据点名称到值的映射
         """
-        if not self.connected or not self.client:
-            if not await self._attempt_reconnect():
-                raise ConnectionError("OPC UA客户端连接失败且无法重连")
+        if not await self._ensure_connected():
+            raise ConnectionError("OPC UA客户端连接失败且无法重连")
 
         if not data_points:
             return {}
@@ -168,6 +232,8 @@ class OpcUaClient:
         timestamp = datetime.now()
 
         async def try_batch_read() -> Optional[Dict[str, Any]]:
+            if not await self._ensure_connected():
+                return None
             try:
                 nodes = [self.client.get_node(p.path) for p in data_points]
                 values = self.client.get_values(nodes)
@@ -347,7 +413,10 @@ class OpcUaClient:
                     # 重连成功后重试写入
                     return await self.write_boolean_value(point_path, value)
                 else:
-                    self.logger.error(f"写入失败且无法重连: {e}", exc_info=True)
+                    if self._is_transient_connect_failure(e):
+                        self.logger.warning("写入失败且无法重连（对端可能已断开）: %s: %s", type(e).__name__, e)
+                    else:
+                        self.logger.error(f"写入失败且无法重连: {e}", exc_info=True)
                     return False
             else:
                 self.logger.error(f"写入布尔值到 {point_path} 失败: {e}", exc_info=True)
@@ -367,6 +436,11 @@ class OpcUaClient:
         Returns:
             bool: 是否为连接错误
         """
+        # 健康检查/重连与采集并发时，可能出现 client 已被置空仍进入读取
+        if isinstance(error, AttributeError):
+            msg = str(error).lower()
+            if "nonetype" in msg and "get_node" in msg:
+                return True
         error_str = str(error).lower()
         connection_keywords = [
             'connection', 'connect', 'disconnected', 'closed',
@@ -374,6 +448,22 @@ class OpcUaClient:
             'forcibly closed', 'broken pipe'
         ]
         return any(keyword in error_str for keyword in connection_keywords)
+
+    def _is_transient_connect_failure(self, error: BaseException) -> bool:
+        """
+        断连、手动关 PLC、对端不可达等场景下常见的可恢复错误。
+        此类错误只打简要日志，避免 ERROR+完整堆栈刷屏。
+        """
+        if isinstance(error, (TimeoutError, asyncio.TimeoutError, ConnectionError)):
+            return True
+        if isinstance(error, OSError):
+            code = getattr(error, "errno", None)
+            if code in {10054, 10053, 10051, 10050, 10060, 10061, 110, 111, 113}:
+                return True
+            return self._is_connection_error(error)
+        if isinstance(error, Exception):
+            return self._is_connection_error(error)
+        return False
     
     async def _attempt_reconnect(self) -> bool:
         """
@@ -426,7 +516,14 @@ class OpcUaClient:
             return True
             
         except Exception as e:
-            self.logger.error(f"重连失败: {e}", exc_info=True)
+            if self._is_transient_connect_failure(e):
+                self.logger.warning(
+                    "重连失败（服务器不可达或已断开）: %s: %s",
+                    type(e).__name__,
+                    e,
+                )
+            else:
+                self.logger.error("重连失败: %s", e, exc_info=True)
             self.connected = False
             self.client = None
             return False
