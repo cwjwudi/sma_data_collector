@@ -4,10 +4,15 @@ import {
   loadTemplates,
   makeElement,
   saveTemplates,
+  type NewTemplateOptions,
   type ReportTemplate,
   type TemplateControlType,
   type TemplateElement,
 } from "./templates/model";
+import { defaultBlankLayoutSnapshot, presetToSnapshot } from "./templates/layout-model";
+import { computePaperLayout } from "./templates/layout-geometry";
+import { PAPER_LABEL, type PaperKind } from "./templates/paper";
+import { getLayoutPresetById, refreshLayoutPresetDropdown } from "./report-layout";
 
 export interface TemplatePagesDeps {
   showPage: (id: string) => void;
@@ -25,15 +30,7 @@ export function initReportTemplates(d: TemplatePagesDeps): void {
   deps = d;
   templates = loadTemplates();
 
-  document.getElementById("btn-new-template")?.addEventListener("click", () => {
-    const name = window.prompt("新建模版名称", "新建模版");
-    if (name === null) return;
-    const t = createTemplate(name);
-    templates.push(t);
-    saveTemplates(templates);
-    renderTemplateList();
-    openEditor(t.id);
-  });
+  document.getElementById("btn-new-template")?.addEventListener("click", () => openNewTemplateDialog());
 
   document.getElementById("btn-template-back")?.addEventListener("click", () => {
     editing = null;
@@ -47,6 +44,7 @@ export function initReportTemplates(d: TemplatePagesDeps): void {
     const nameInput = document.getElementById("template-editor-name") as HTMLInputElement | null;
     if (nameInput) editing.name = nameInput.value.trim() || "未命名模版";
     editing.updatedAt = new Date().toISOString();
+    editing.elements.forEach(clampElementToContent);
     const idx = templates.findIndex((x) => x.id === editing!.id);
     if (idx >= 0) templates[idx] = { ...editing, elements: editing.elements.map((e) => ({ ...e })) };
     else templates.push({ ...editing });
@@ -54,6 +52,8 @@ export function initReportTemplates(d: TemplatePagesDeps): void {
     renderTemplateList();
     alert("已保存模版（本地）");
   });
+
+  bindNewTemplateDialog();
 
   const canvas = document.getElementById("template-canvas-root");
   canvas?.addEventListener("dragover", (e) => {
@@ -72,6 +72,7 @@ export function initReportTemplates(d: TemplatePagesDeps): void {
     const el = makeElement(type);
     el.x = Math.max(0, x);
     el.y = Math.max(0, y);
+    clampElementToContent(el);
     editing.elements.push(el);
     selectedId = el.id;
     renderCanvas();
@@ -112,6 +113,7 @@ export function initReportTemplates(d: TemplatePagesDeps): void {
     if (!el) return;
     el.x = Math.max(0, dragMove.origX + (e.clientX - dragMove.startX));
     el.y = Math.max(0, dragMove.origY + (e.clientY - dragMove.startY));
+    clampElementToContent(el);
     renderCanvas();
     syncPropsPanel();
   });
@@ -153,6 +155,186 @@ export function initReportTemplates(d: TemplatePagesDeps): void {
   });
 }
 
+function clampElementToContent(el: TemplateElement): void {
+  if (!editing) return;
+  const m = computePaperLayout(editing.paperKind, editing.orientation, editing.layoutSnapshot);
+  el.w = Math.max(20, Math.min(el.w, m.contentW));
+  el.h = Math.max(20, Math.min(el.h, m.contentH));
+  el.x = Math.max(0, Math.min(el.x, m.contentW - el.w));
+  el.y = Math.max(0, Math.min(el.y, m.contentH - el.h));
+}
+
+function renderPaperChrome(): void {
+  const pageEl = document.getElementById("template-canvas-page");
+  const root = document.getElementById("template-canvas-root");
+  const headerEl = document.getElementById("template-paper-header");
+  const footerEl = document.getElementById("template-paper-footer");
+  const meta = document.getElementById("template-editor-paper-meta");
+  if (!editing || !pageEl || !root) return;
+
+  const m = computePaperLayout(editing.paperKind, editing.orientation, editing.layoutSnapshot);
+
+  pageEl.style.width = `${m.pageW}px`;
+  pageEl.style.height = `${m.pageH}px`;
+
+  root.style.left = `${m.contentLeft}px`;
+  root.style.top = `${m.contentTop}px`;
+  root.style.width = `${m.contentW}px`;
+  root.style.height = `${m.contentH}px`;
+
+  if (headerEl) {
+    const show = m.hb > 1;
+    headerEl.hidden = !show;
+    headerEl.style.left = `${m.ml}px`;
+    headerEl.style.top = `${m.mt}px`;
+    headerEl.style.width = `${m.pageW - m.ml - m.mr}px`;
+    headerEl.style.height = `${m.hb}px`;
+    headerEl.textContent = editing.headerText.trim() || "（页眉）";
+  }
+
+  if (footerEl) {
+    const show = m.fb > 1;
+    footerEl.hidden = !show;
+    footerEl.style.left = `${m.ml}px`;
+    footerEl.style.width = `${m.pageW - m.ml - m.mr}px`;
+    footerEl.style.height = `${m.fb}px`;
+    footerEl.style.bottom = `${m.mb}px`;
+    footerEl.textContent = editing.footerText.trim() || "（页脚）";
+  }
+
+  if (meta) {
+    const orient = editing.orientation === "landscape" ? "横向" : "纵向";
+    let src: string;
+    if (editing.layoutPresetId === null) {
+      src = "空白纸张";
+    } else {
+      const pref = getLayoutPresetById(editing.layoutPresetId);
+      src = pref ? `版式「${pref.name}」` : "版式（预设已删除）";
+    }
+    meta.textContent = `${PAPER_LABEL[editing.paperKind]} · ${orient} · ${src} · 正文 ${m.contentW}×${m.contentH} px`;
+  }
+}
+
+function bindNewTemplateDialog(): void {
+  const dlg = document.getElementById("dialog-new-template") as HTMLDialogElement | null;
+  const form = document.getElementById("form-new-template") as HTMLFormElement | null;
+  const btnCancel = document.getElementById("nt-cancel");
+  const presetSelect = document.getElementById("nt-preset") as HTMLSelectElement | null;
+  const paperSelect = document.getElementById("nt-paper") as HTMLSelectElement | null;
+  const orientSelect = document.getElementById("nt-orient") as HTMLSelectElement | null;
+  const presetRadio = document.querySelector<HTMLInputElement>('input[name="nt-base"][value="preset"]');
+  const blankRadio = document.querySelector<HTMLInputElement>('input[name="nt-base"][value="blank"]');
+
+  btnCancel?.addEventListener("click", () => dlg?.close());
+
+  form?.addEventListener("submit", (e) => {
+    e.preventDefault();
+    if (!dlg || !paperSelect || !orientSelect || !presetSelect) return;
+
+    const nameEl = document.getElementById("nt-name") as HTMLInputElement | null;
+    const name = nameEl?.value.trim() || "新建模版";
+
+    const usePreset = presetRadio?.checked === true;
+
+    let opts: NewTemplateOptions;
+
+    if (usePreset) {
+      if (!presetSelect.value) {
+        alert("请先在「版式与页眉页脚」中创建版式，或改用「空白纸张」。");
+        return;
+      }
+      const preset = getLayoutPresetById(presetSelect.value);
+      if (!preset) {
+        alert("所选版式不存在，请重新选择。");
+        return;
+      }
+      opts = {
+        name,
+        paperKind: preset.paperKind,
+        orientation: preset.orientation,
+        layoutPresetId: preset.id,
+        layoutSnapshot: presetToSnapshot(preset),
+        headerText: preset.headerText,
+        footerText: preset.footerText,
+      };
+    } else {
+      opts = {
+        name,
+        paperKind: (paperSelect.value as PaperKind) || "A4",
+        orientation: orientSelect.value === "landscape" ? "landscape" : "portrait",
+        layoutPresetId: null,
+        layoutSnapshot: defaultBlankLayoutSnapshot(),
+        headerText: "",
+        footerText: "",
+      };
+    }
+
+    const t = createTemplate(opts);
+    templates.push(t);
+    saveTemplates(templates);
+    renderTemplateList();
+    dlg.close();
+    openEditor(t.id);
+  });
+
+  function syncNtControls(): void {
+    const usePreset = presetRadio?.checked === true;
+    const presetBlock = document.getElementById("nt-preset-block");
+    if (presetBlock) presetBlock.hidden = !usePreset;
+
+    if (!paperSelect || !orientSelect || !presetSelect) return;
+
+    if (usePreset && presetSelect.value) {
+      const preset = getLayoutPresetById(presetSelect.value);
+      if (preset) {
+        paperSelect.value = preset.paperKind;
+        orientSelect.value = preset.orientation;
+      }
+      paperSelect.disabled = true;
+      orientSelect.disabled = true;
+    } else {
+      paperSelect.disabled = false;
+      orientSelect.disabled = false;
+    }
+  }
+
+  presetRadio?.addEventListener("change", syncNtControls);
+  blankRadio?.addEventListener("change", syncNtControls);
+  presetSelect?.addEventListener("change", syncNtControls);
+}
+
+function openNewTemplateDialog(): void {
+  const dlg = document.getElementById("dialog-new-template") as HTMLDialogElement | null;
+  const presetSelect = document.getElementById("nt-preset") as HTMLSelectElement | null;
+  const nameEl = document.getElementById("nt-name") as HTMLInputElement | null;
+  const presetRadio = document.querySelector<HTMLInputElement>('input[name="nt-base"][value="preset"]');
+  const blankRadio = document.querySelector<HTMLInputElement>('input[name="nt-base"][value="blank"]');
+
+  if (!dlg || !presetSelect) return;
+
+  refreshLayoutPresetDropdown(presetSelect);
+
+  if (nameEl) nameEl.value = "新建模版";
+
+  const paperSelect = document.getElementById("nt-paper") as HTMLSelectElement | null;
+  const orientSelect = document.getElementById("nt-orient") as HTMLSelectElement | null;
+  if (paperSelect) paperSelect.value = "A4";
+  if (orientSelect) orientSelect.value = "portrait";
+
+  if (presetSelect.disabled || presetSelect.options.length === 0 || !presetSelect.options[0]?.value) {
+    presetRadio && (presetRadio.checked = false);
+    blankRadio && (blankRadio.checked = true);
+  } else {
+    presetRadio && (presetRadio.checked = true);
+    blankRadio && (blankRadio.checked = false);
+    presetSelect.selectedIndex = 0;
+  }
+
+  presetRadio?.dispatchEvent(new Event("change"));
+
+  dlg.showModal();
+}
+
 export function refreshTemplateList(): void {
   templates = loadTemplates();
   renderTemplateList();
@@ -169,12 +351,15 @@ export function openEditor(templateId: string): void {
   if (!t) return;
   editing = {
     ...t,
+    layoutSnapshot: { ...t.layoutSnapshot },
     elements: t.elements.map((raw) => hydrateElement(raw)),
   };
+  editing.elements.forEach(clampElementToContent);
   selectedId = null;
   const nameInput = document.getElementById("template-editor-name") as HTMLInputElement | null;
   if (nameInput) nameInput.value = editing.name;
   deps.showPage("templateEditor");
+  renderPaperChrome();
   renderCanvas();
   syncPropsPanel();
 }
@@ -192,6 +377,12 @@ function hydrateElement(raw: TemplateElement): TemplateElement {
   };
 }
 
+function layoutSourceLabel(t: ReportTemplate): string {
+  if (t.layoutPresetId === null) return "空白纸张";
+  const preset = getLayoutPresetById(t.layoutPresetId);
+  return preset ? `版式「${preset.name}」` : "自定义版式（预设已删）";
+}
+
 function renderTemplateList(): void {
   const tbody = document.querySelector("#template-list tbody");
   if (!tbody) return;
@@ -200,15 +391,18 @@ function renderTemplateList(): void {
   if (templates.length === 0) {
     const tr = document.createElement("tr");
     tr.innerHTML =
-      '<td colspan="4" class="template-table-empty">暂无模版，点击「新建模版」开始。</td>';
+      '<td colspan="6" class="template-table-empty">暂无模版，点击「新建模版」开始。</td>';
     tbody.appendChild(tr);
     return;
   }
   for (const t of templates) {
     const tr = document.createElement("tr");
     const date = t.updatedAt.slice(0, 19).replace("T", " ");
+    const orient = t.orientation === "landscape" ? "横" : "竖";
     tr.innerHTML = `
       <td>${escapeHtml(t.name)}</td>
+      <td>${PAPER_LABEL[t.paperKind]} · ${orient}</td>
+      <td>${escapeHtml(layoutSourceLabel(t))}</td>
       <td>${t.elements.length}</td>
       <td>${date}</td>
       <td class="template-table-actions">
@@ -282,6 +476,7 @@ function applyPropsFromInputs(): void {
   el.color = g("prop-color") ?? el.color;
   el.bgColor = g("prop-bg") ?? el.bgColor;
   el.fontSize = Math.max(8, parseInt(g("prop-font") ?? String(el.fontSize), 10) || 14);
+  clampElementToContent(el);
   renderCanvas();
 }
 

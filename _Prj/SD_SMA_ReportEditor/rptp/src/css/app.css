@@ -708,6 +708,131 @@ html[data-theme="dark"] .drawer-edge-tab {
   gap: 0.35rem;
 }
 
+/* ----- 版式与页眉页脚 ----- */
+.main-area .page-layout.is-visible {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.layout-head-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+.layout-head-actions .btn-danger-outline {
+  width: auto;
+  margin-top: 0;
+}
+.layout-split {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) minmax(280px, 1.1fr);
+  gap: 1rem;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.layout-preset-table-wrap {
+  max-height: min(55vh, 440px);
+}
+.layout-edit-card {
+  border: var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  padding: 0.85rem 1rem;
+  overflow-y: auto;
+  min-height: 260px;
+}
+.layout-edit-empty {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+.layout-edit-title {
+  font-size: 0.9375rem;
+  margin: 0 0 0.75rem;
+}
+.layout-edit-sub {
+  margin: 0.25rem 0 0.5rem;
+  font-size: 0.75rem;
+  color: var(--muted);
+  font-weight: 600;
+}
+.layout-edit-panel textarea {
+  width: 100%;
+  min-height: 2.75rem;
+  padding: 0.45rem 0.5rem;
+  border-radius: 6px;
+  border: var(--border);
+  background: var(--bg);
+  color: inherit;
+  font-size: 0.8125rem;
+  resize: vertical;
+  box-sizing: border-box;
+}
+.layout-preset-row.is-active-row td {
+  background: rgba(37, 99, 235, 0.08);
+}
+html[data-theme="dark"] .layout-preset-row.is-active-row td {
+  background: rgba(96, 165, 250, 0.12);
+}
+
+.rptp-dialog {
+  border: var(--border);
+  border-radius: 12px;
+  padding: 0;
+  max-width: min(440px, 94vw);
+  background: var(--surface);
+  color: var(--text);
+}
+.rptp-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.48);
+}
+.rptp-dialog-title {
+  margin: 0 0 1rem;
+  font-size: 1.05rem;
+}
+#form-new-template {
+  padding: 1.25rem;
+}
+.nt-fieldset {
+  border: var(--border);
+  border-radius: 8px;
+  padding: 0.65rem 0.75rem;
+  margin: 0 0 0.75rem;
+}
+.nt-fieldset legend {
+  padding: 0 0.35rem;
+  font-size: 0.8125rem;
+}
+.nt-radio-line {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.8125rem;
+  margin-bottom: 0.35rem;
+  cursor: pointer;
+}
+.nt-radio-line:last-child {
+  margin-bottom: 0;
+}
+.nt-export-hint {
+  margin: 0 0 1rem !important;
+  font-size: 0.72rem !important;
+  color: var(--muted) !important;
+  line-height: 1.45 !important;
+}
+.rptp-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.25rem;
+}
+
 /* ----- 模版编辑器 ----- */
 .main-area .page-template-editor.is-visible {
   display: flex;
@@ -739,6 +864,13 @@ html[data-theme="dark"] .drawer-edge-tab {
   background: var(--bg);
   color: inherit;
   font-size: 0.875rem;
+}
+.template-editor-paper-meta {
+  flex: 1 1 200px;
+  font-size: 0.72rem;
+  color: var(--muted);
+  line-height: 1.35;
+  min-width: 140px;
 }
 .template-editor-layout {
   display: flex;
@@ -798,10 +930,45 @@ html[data-theme="dark"] .drawer-edge-tab {
   overflow: auto;
   min-height: min(60vh, 560px);
 }
-.template-canvas-root {
+.template-canvas-page {
   position: relative;
-  min-height: 520px;
-  min-width: 100%;
+  flex-shrink: 0;
+  margin: 0 auto;
+  background: var(--surface);
+  border-radius: 8px;
+  box-shadow: 0 2px 14px rgba(0, 0, 0, 0.08);
+}
+html[data-theme="dark"] .template-canvas-page {
+  box-shadow: 0 2px 18px rgba(0, 0, 0, 0.45);
+}
+.template-paper-header,
+.template-paper-footer {
+  position: absolute;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.72rem;
+  color: var(--muted);
+  overflow: hidden;
+  padding: 0 6px;
+  text-align: center;
+  z-index: 1;
+  background: rgba(0, 0, 0, 0.04);
+  border: 1px dashed rgba(0, 0, 0, 0.12);
+}
+html[data-theme="dark"] .template-paper-header,
+html[data-theme="dark"] .template-paper-footer {
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+.template-paper-footer {
+  justify-content: center;
+}
+.template-canvas-root {
+  position: absolute;
+  box-sizing: border-box;
+  z-index: 2;
   background-image:
     linear-gradient(rgba(0, 0, 0, 0.05) 1px, transparent 1px),
     linear-gradient(90deg, rgba(0, 0, 0, 0.05) 1px, transparent 1px);
@@ -857,6 +1024,12 @@ html[data-theme="dark"] .template-canvas-root {
 }
 
 @media (max-width: 900px) {
+  .layout-split {
+    grid-template-columns: 1fr;
+  }
+  .layout-preset-table-wrap {
+    max-height: none;
+  }
   .template-editor-layout {
     flex-direction: column;
   }

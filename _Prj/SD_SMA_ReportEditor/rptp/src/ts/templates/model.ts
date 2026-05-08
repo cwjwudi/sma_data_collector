@@ -1,5 +1,9 @@
 /** 报表模板 · 数据模型与持久化 */
 
+import type { LayoutSnapshot } from "./layout-model";
+import { defaultBlankLayoutSnapshot } from "./layout-model";
+import type { PaperKind } from "./paper";
+
 export type TemplateControlType = "text" | "box";
 
 export interface TemplateElement {
@@ -19,7 +23,25 @@ export interface ReportTemplate {
   id: string;
   name: string;
   updatedAt: string;
+  /** 排版控件所处的画布坐标相对于「正文区域」左上角（不含页眉带 / 页脚带） */
   elements: TemplateElement[];
+  paperKind: PaperKind;
+  orientation: "portrait" | "landscape";
+  layoutPresetId: string | null;
+  layoutSnapshot: LayoutSnapshot;
+  /** 页眉页脚占位文案（创建时从版式预设带入或留空），导出时渲染 */
+  headerText: string;
+  footerText: string;
+}
+
+export interface NewTemplateOptions {
+  name: string;
+  paperKind: PaperKind;
+  orientation: "portrait" | "landscape";
+  layoutPresetId: string | null;
+  layoutSnapshot: LayoutSnapshot;
+  headerText: string;
+  footerText: string;
 }
 
 export const TEMPLATE_STORAGE_KEY = "rptp-report-templates";
@@ -59,13 +81,19 @@ function newId(): string {
   }
 }
 
-export function createTemplate(name: string): ReportTemplate {
+export function createTemplate(opts: NewTemplateOptions): ReportTemplate {
   const now = new Date().toISOString();
   return {
     id: newId(),
-    name: name.trim() || "未命名模版",
+    name: opts.name.trim() || "未命名模版",
     updatedAt: now,
     elements: [],
+    paperKind: opts.paperKind,
+    orientation: opts.orientation,
+    layoutPresetId: opts.layoutPresetId,
+    layoutSnapshot: { ...opts.layoutSnapshot },
+    headerText: opts.headerText,
+    footerText: opts.footerText,
   };
 }
 
@@ -75,7 +103,7 @@ export function loadTemplates(): ReportTemplate[] {
     if (!raw) return [];
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter(isReportTemplate);
+    return parsed.map(migrateReportTemplate).filter(isReportTemplate);
   } catch {
     return [];
   }
@@ -89,10 +117,37 @@ export function saveTemplates(list: ReportTemplate[]): void {
   }
 }
 
+function migrateReportTemplate(v: unknown): unknown {
+  if (!v || typeof v !== "object") return v;
+  const o = v as Record<string, unknown>;
+  const paperKind: PaperKind =
+    o.paperKind === "A3" || o.paperKind === "A4" || o.paperKind === "A5" || o.paperKind === "Letter"
+      ? o.paperKind
+      : "A4";
+  const orientation = o.orientation === "landscape" ? "landscape" : "portrait";
+  let layoutSnapshot = o.layoutSnapshot as LayoutSnapshot | undefined;
+  if (!layoutSnapshot || typeof layoutSnapshot !== "object") {
+    layoutSnapshot = defaultBlankLayoutSnapshot();
+  }
+  return {
+    ...o,
+    paperKind,
+    orientation,
+    layoutPresetId: typeof o.layoutPresetId === "string" ? o.layoutPresetId : null,
+    layoutSnapshot,
+    headerText: typeof o.headerText === "string" ? o.headerText : "",
+    footerText: typeof o.footerText === "string" ? o.footerText : "",
+  };
+}
+
 function isReportTemplate(v: unknown): v is ReportTemplate {
   if (!v || typeof v !== "object") return false;
   const o = v as Record<string, unknown>;
-  return typeof o.id === "string" && typeof o.name === "string" && Array.isArray(o.elements);
+  if (typeof o.id !== "string" || typeof o.name !== "string" || !Array.isArray(o.elements)) return false;
+  if (!o.layoutSnapshot || typeof o.layoutSnapshot !== "object") return false;
+  if (typeof o.headerText !== "string") return false;
+  if (typeof o.footerText !== "string") return false;
+  return true;
 }
 
 export function makeElement(type: TemplateControlType): TemplateElement {
