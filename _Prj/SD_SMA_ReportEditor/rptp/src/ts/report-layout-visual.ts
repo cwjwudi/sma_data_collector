@@ -530,6 +530,80 @@ function matchOthersDimension(dim: "w" | "h"): void {
   syncElementInputsFromModel();
 }
 
+/** 对齐工具栏：悬停说明（fixed，避免侧栏 overflow 裁切） */
+function bindLvisAlignTooltips(): void {
+  let host = document.getElementById("lvis-tooltip-host") as HTMLDivElement | null;
+  if (!host) {
+    host = document.createElement("div");
+    host.id = "lvis-tooltip-host";
+    host.className = "lvis-tooltip-host";
+    host.setAttribute("role", "tooltip");
+    host.hidden = true;
+    document.body.appendChild(host);
+  }
+
+  const hide = () => {
+    host!.hidden = true;
+    host!.textContent = "";
+  };
+
+  const show = (anchor: HTMLElement, text: string) => {
+    host!.textContent = text;
+    host!.hidden = false;
+    const r = anchor.getBoundingClientRect();
+    const m = 8;
+    let left = Math.round(r.left + r.width / 2);
+    let top = Math.round(r.bottom + m);
+    host!.style.left = `${left}px`;
+    host!.style.top = `${top}px`;
+    host!.style.transform = "translateX(-50%)";
+
+    requestAnimationFrame(() => {
+      const tw = host!.offsetWidth;
+      const th = host!.offsetHeight;
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      if (top + th > vh - m) {
+        top = Math.round(r.top - m - th);
+        host!.style.top = `${top}px`;
+      }
+      let cx = left;
+      const half = tw / 2;
+      if (cx + half > vw - m) cx = vw - m - half;
+      if (cx - half < m) cx = m + half;
+      host!.style.left = `${Math.round(cx)}px`;
+    });
+  };
+
+  const root = document.getElementById("lvis-align-actions");
+  if (!root || root.dataset.lvisTipDelegation === "1") return;
+  root.dataset.lvisTipDelegation = "1";
+
+  root.addEventListener("mouseover", (e) => {
+    const el = (e.target as HTMLElement).closest("[data-lvis-tip]");
+    if (!el || !root.contains(el)) return;
+    const text = el.getAttribute("data-lvis-tip")?.trim();
+    if (!text) return;
+    show(el as HTMLElement, text);
+  });
+  root.addEventListener("mouseout", (e) => {
+    const related = e.relatedTarget as Node | null;
+    if (related && root.contains(related)) return;
+    hide();
+  });
+
+  if (!document.documentElement.dataset.lvisTipScrollHide) {
+    document.documentElement.dataset.lvisTipScrollHide = "1";
+    window.addEventListener(
+      "scroll",
+      () => {
+        if (host && !host.hidden) hide();
+      },
+      true,
+    );
+  }
+}
+
 export function initReportLayoutVisual(d: LayoutVisualDeps): void {
   deps = d;
 
@@ -634,6 +708,7 @@ export function initReportLayoutVisual(d: LayoutVisualDeps): void {
 
   bindDrawerInputs();
   bindLvisAlignVisualGrid();
+  bindLvisAlignTooltips();
 
   document.getElementById("btn-lvis-el-delete")?.addEventListener("click", () => {
     if (!draft || sel.k !== "el") return;
