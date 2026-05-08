@@ -480,15 +480,31 @@ function alignSelection(mode: "left" | "centerX" | "right" | "top" | "centerY" |
   const z = sel.zone;
   const { zw, zh } = zoneDims(z);
   const list = listForZone(z);
+  const multi = sel.ids.length >= 2;
+  const primary = list.find((x) => x.id === sel.ids[0]);
+  if (!primary) return;
+
   for (const id of sel.ids) {
     const el = list.find((x) => x.id === id);
     if (!el) continue;
-    if (mode === "left") el.x = 0;
-    else if (mode === "centerX") el.x = Math.max(0, Math.round((zw - el.w) / 2));
-    else if (mode === "right") el.x = Math.max(0, zw - el.w);
-    else if (mode === "top") el.y = 0;
-    else if (mode === "centerY") el.y = Math.max(0, Math.round((zh - el.h) / 2));
-    else if (mode === "bottom") el.y = Math.max(0, zh - el.h);
+    if (!multi) {
+      if (mode === "left") el.x = 0;
+      else if (mode === "centerX") el.x = Math.max(0, Math.round((zw - el.w) / 2));
+      else if (mode === "right") el.x = Math.max(0, zw - el.w);
+      else if (mode === "top") el.y = 0;
+      else if (mode === "centerY") el.y = Math.max(0, Math.round((zh - el.h) / 2));
+      else if (mode === "bottom") el.y = Math.max(0, zh - el.h);
+    } else {
+      if (el.id === primary.id) continue;
+      if (mode === "left") el.x = primary.x;
+      else if (mode === "centerX")
+        el.x = Math.max(0, Math.round(primary.x + primary.w / 2 - el.w / 2));
+      else if (mode === "right") el.x = Math.max(0, Math.round(primary.x + primary.w - el.w));
+      else if (mode === "top") el.y = primary.y;
+      else if (mode === "centerY")
+        el.y = Math.max(0, Math.round(primary.y + primary.h / 2 - el.h / 2));
+      else if (mode === "bottom") el.y = Math.max(0, Math.round(primary.y + primary.h - el.h));
+    }
     snapElInZone(el, z);
   }
   renderLvis();
@@ -528,6 +544,46 @@ function matchOthersDimension(dim: "w" | "h"): void {
     if (!el) continue;
     if (dim === "w") el.w = ref;
     else el.h = ref;
+    snapElInZone(el, z);
+  }
+  renderLvis();
+  syncElementInputsFromModel();
+}
+
+/** 其余选中项与首个选中项宽、高一致 */
+function matchOthersDimensionBoth(): void {
+  if (!draft || sel.k !== "el" || sel.ids.length < 2) return;
+  const z = sel.zone;
+  const list = listForZone(z);
+  const primary = list.find((x) => x.id === sel.ids[0]);
+  if (!primary) return;
+  saveLvisUndoCheckpoint("once");
+  const refW = primary.w;
+  const refH = primary.h;
+  for (let i = 1; i < sel.ids.length; i++) {
+    const el = list.find((x) => x.id === sel.ids[i]);
+    if (!el) continue;
+    el.w = refW;
+    el.h = refH;
+    snapElInZone(el, z);
+  }
+  renderLvis();
+  syncElementInputsFromModel();
+}
+
+/** 将所有选中项宽或高设为当前页眉/页脚区带的可用尺寸 */
+function matchSelectionToZoneDimension(dim: "w" | "h"): void {
+  if (!draft || sel.k !== "el" || sel.ids.length < 1) return;
+  const z = sel.zone;
+  const { zw, zh } = zoneDims(z);
+  const list = listForZone(z);
+  saveLvisUndoCheckpoint("once");
+  const v = dim === "w" ? zw : zh;
+  for (const id of sel.ids) {
+    const el = list.find((x) => x.id === id);
+    if (!el) continue;
+    if (dim === "w") el.w = v;
+    else el.h = v;
     snapElInZone(el, z);
   }
   renderLvis();
@@ -584,9 +640,12 @@ function bindLvisAlignTooltips(): void {
   root.dataset.lvisTipDelegation = "1";
 
   root.addEventListener("mouseover", (e) => {
-    const el = (e.target as HTMLElement).closest("[data-lvis-tip]");
+    const el = (e.target as HTMLElement).closest("[data-lvis-tip], [data-lvis-tip-zone], [data-lvis-tip-multi]");
     if (!el || !root.contains(el)) return;
-    const text = el.getAttribute("data-lvis-tip")?.trim();
+    const multi = root.classList.contains("lvis-align--multi");
+    let text =
+      (multi ? el.getAttribute("data-lvis-tip-multi") : el.getAttribute("data-lvis-tip-zone"))?.trim() ??
+      el.getAttribute("data-lvis-tip")?.trim();
     if (!text) return;
     show(el as HTMLElement, text);
   });
@@ -709,6 +768,9 @@ export function initReportLayoutVisual(d: LayoutVisualDeps): void {
   bindAlign("lvis-fill-both", () => stretchPrimary("both"));
   bindAlign("lvis-match-w", () => matchOthersDimension("w"));
   bindAlign("lvis-match-h", () => matchOthersDimension("h"));
+  bindAlign("lvis-match-both", () => matchOthersDimensionBoth());
+  bindAlign("lvis-match-zone-w", () => matchSelectionToZoneDimension("w"));
+  bindAlign("lvis-match-zone-h", () => matchSelectionToZoneDimension("h"));
 
   bindDrawerInputs();
   bindLvisAlignVisualGrid();
@@ -1224,13 +1286,40 @@ function syncLvisDrawer(): void {
   if (multi) {
     multi.hidden = !multiHint;
     if (multiHint) {
-      multi.textContent = `已选 ${sel.ids.length} 个控件；下方属性仅编辑首个选中项；可用「同宽/同高」统一其余项与参照项一致。`;
+      multi.textContent = `已选 ${sel.ids.length} 个控件；右侧属性仅编辑首个选中项。对齐按钮在多选时为「互相对齐」（参照首个）；「同宽 / 同高 / 同尺寸」将其余项与首个一致；「区带宽 / 区带高」将所有选中项统一为当前页眉或页脚的可用宽高。「铺满区带」仍仅作用于首个选中项。`;
     }
   }
-  if (alignBar) alignBar.hidden = sel.k !== "el";
+  if (alignBar) {
+    alignBar.hidden = sel.k !== "el";
+    const multiAlign = sel.k === "el" && sel.ids.length >= 2;
+    alignBar.classList.toggle("lvis-align--multi", multiAlign);
+    const mainTitle = document.getElementById("lvis-align-main-title");
+    if (mainTitle)
+      mainTitle.textContent = multiAlign ? "互相对齐（参照首个）" : "区内对齐（相对区带）";
 
-  document.querySelectorAll<HTMLButtonElement>(".lvis-match-btn").forEach((b) => {
+    const hz = document.getElementById("lvis-grid-al-h");
+    const vz = document.getElementById("lvis-grid-al-v");
+    if (hz) hz.setAttribute("aria-label", multiAlign ? "水平互相对齐" : "水平区内对齐");
+    if (vz) vz.setAttribute("aria-label", multiAlign ? "垂直互相对齐" : "垂直区内对齐");
+
+    const alAria: [string, string, string][] = [
+      ["lvis-al-left", "区内水平靠左", "左缘与首个对齐"],
+      ["lvis-al-center-x", "区内水平居中", "水平方向与首个居中对齐"],
+      ["lvis-al-right", "区内水平靠右", "右缘与首个对齐"],
+      ["lvis-al-top", "区内垂直靠上", "顶边与首个对齐"],
+      ["lvis-al-center-y", "区内垂直居中", "垂直方向与首个居中对齐"],
+      ["lvis-al-bottom", "区内垂直靠下", "底边与首个对齐"],
+    ];
+    for (const [id, zoneLab, multiLab] of alAria) {
+      document.getElementById(id)?.setAttribute("aria-label", multiAlign ? multiLab : zoneLab);
+    }
+  }
+
+  document.querySelectorAll<HTMLButtonElement>(".lvis-match-ref-btn").forEach((b) => {
     b.disabled = !(sel.k === "el" && sel.ids.length > 1);
+  });
+  document.querySelectorAll<HTMLButtonElement>(".lvis-match-zone-btn").forEach((b) => {
+    b.disabled = !(sel.k === "el" && sel.ids.length >= 1);
   });
 
   const set = (id: string, v: string | number) => {

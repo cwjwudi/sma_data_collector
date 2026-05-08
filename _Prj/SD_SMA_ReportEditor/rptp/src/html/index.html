@@ -151,64 +151,115 @@
               </div>
               <div id="lvis-align-actions" class="lvis-align-actions" hidden>
                 <div class="lvis-align-section">
-                  <span class="lvis-align-section__title">区内对齐</span>
-                  <div class="lvis-align-icon-grid" role="toolbar" aria-label="水平对齐">
-                    <button type="button" class="lvis-icon-tool" id="lvis-al-left" aria-label="靠左对齐" data-lvis-tip="将所选控件在当前页眉或页脚区内水平方向靠左对齐。">
-                      <svg class="lvis-icon-tool__svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                        <rect x="3.5" y="4" width="17" height="16" rx="2" fill="none" stroke="currentColor" stroke-opacity="0.4" />
-                        <rect x="5.5" y="8" width="7.5" height="8" rx="1.25" fill="currentColor" stroke="none" />
-                      </svg>
+                  <span class="lvis-align-section__title" id="lvis-align-main-title">区内对齐（相对区带）</span>
+                  <div id="lvis-grid-al-h" class="lvis-align-icon-grid" role="toolbar" aria-label="水平区内对齐">
+                    <button type="button" class="lvis-icon-tool" id="lvis-al-left" aria-label="区内水平靠左"
+                      data-lvis-tip-zone="单选：控件在页眉/页脚区内水平靠左。多选时各自相对区带靠左。"
+                      data-lvis-tip-multi="多选（≥2）：将其余项的左边缘与首个选中项对齐。">
+                      <span class="lvis-al-svg-stack" aria-hidden="true">
+                        <svg class="lvis-icon-tool__svg lvis-al-icon--zone" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                          <rect x="3.5" y="4" width="17" height="16" rx="2" fill="none" stroke="currentColor" stroke-opacity="0.4" />
+                          <rect x="5.5" y="8" width="7.5" height="8" rx="1.25" fill="currentColor" stroke="none" />
+                        </svg>
+                        <svg class="lvis-icon-tool__svg lvis-al-icon--multi" viewBox="0 0 24 24" fill="none">
+                          <rect x="4.5" y="6" width="7" height="5" rx="1.25" fill="currentColor" opacity="0.95" />
+                          <rect x="4.5" y="13" width="11" height="5" rx="1.25" fill="currentColor" opacity="0.45" />
+                        </svg>
+                      </span>
                     </button>
-                    <button type="button" class="lvis-icon-tool" id="lvis-al-center-x" aria-label="水平居中" data-lvis-tip="将所选控件在当前区内水平方向居中。">
-                      <svg class="lvis-icon-tool__svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                        <rect x="3.5" y="4" width="17" height="16" rx="2" fill="none" stroke="currentColor" stroke-opacity="0.4" />
-                        <rect x="8.25" y="8" width="7.5" height="8" rx="1.25" fill="currentColor" stroke="none" />
-                      </svg>
+                    <button type="button" class="lvis-icon-tool" id="lvis-al-center-x" aria-label="区内水平居中"
+                      data-lvis-tip-zone="单选：控件在区内水平居中。多选时各自在区内水平居中。"
+                      data-lvis-tip-multi="多选（≥2）：将其余项的水平中心线与首个选中项对齐。">
+                      <span class="lvis-al-svg-stack" aria-hidden="true">
+                        <svg class="lvis-icon-tool__svg lvis-al-icon--zone" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                          <rect x="3.5" y="4" width="17" height="16" rx="2" fill="none" stroke="currentColor" stroke-opacity="0.4" />
+                          <rect x="8.25" y="8" width="7.5" height="8" rx="1.25" fill="currentColor" stroke="none" />
+                        </svg>
+                        <svg class="lvis-icon-tool__svg lvis-al-icon--multi" viewBox="0 0 24 24" fill="none">
+                          <rect x="8.5" y="5.5" width="7" height="6" rx="1.25" fill="currentColor" opacity="0.95" />
+                          <rect x="8.5" y="12.5" width="7" height="6" rx="1.25" fill="currentColor" opacity="0.45" />
+                        </svg>
+                      </span>
                     </button>
-                    <button type="button" class="lvis-icon-tool" id="lvis-al-right" aria-label="靠右对齐" data-lvis-tip="将所选控件在当前区内水平方向靠右对齐。">
-                      <svg class="lvis-icon-tool__svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                        <rect x="3.5" y="4" width="17" height="16" rx="2" fill="none" stroke="currentColor" stroke-opacity="0.4" />
-                        <rect x="11" y="8" width="7.5" height="8" rx="1.25" fill="currentColor" stroke="none" />
-                      </svg>
+                    <button type="button" class="lvis-icon-tool" id="lvis-al-right" aria-label="区内水平靠右"
+                      data-lvis-tip-zone="单选：控件在区内水平靠右。多选时各自相对区带靠右。"
+                      data-lvis-tip-multi="多选（≥2）：将其余项的右边缘与首个选中项对齐。">
+                      <span class="lvis-al-svg-stack" aria-hidden="true">
+                        <svg class="lvis-icon-tool__svg lvis-al-icon--zone" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                          <rect x="3.5" y="4" width="17" height="16" rx="2" fill="none" stroke="currentColor" stroke-opacity="0.4" />
+                          <rect x="11" y="8" width="7.5" height="8" rx="1.25" fill="currentColor" stroke="none" />
+                        </svg>
+                        <svg class="lvis-icon-tool__svg lvis-al-icon--multi" viewBox="0 0 24 24" fill="none">
+                          <rect x="10.5" y="6" width="7" height="5" rx="1.25" fill="currentColor" opacity="0.95" />
+                          <rect x="6.5" y="13" width="11" height="5" rx="1.25" fill="currentColor" opacity="0.45" />
+                        </svg>
+                      </span>
                     </button>
                   </div>
-                  <div class="lvis-align-icon-grid" role="toolbar" aria-label="垂直对齐">
-                    <button type="button" class="lvis-icon-tool" id="lvis-al-top" aria-label="靠上对齐" data-lvis-tip="将所选控件在当前区内垂直方向靠上对齐。">
-                      <svg class="lvis-icon-tool__svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                        <rect x="4" y="3.5" width="16" height="17" rx="2" fill="none" stroke="currentColor" stroke-opacity="0.4" />
-                        <rect x="8" y="5.5" width="8" height="7.5" rx="1.25" fill="currentColor" stroke="none" />
-                      </svg>
+                  <div id="lvis-grid-al-v" class="lvis-align-icon-grid" role="toolbar" aria-label="垂直区内对齐">
+                    <button type="button" class="lvis-icon-tool" id="lvis-al-top" aria-label="区内垂直靠上"
+                      data-lvis-tip-zone="单选：控件在区内垂直靠上。多选时各自相对区带靠上。"
+                      data-lvis-tip-multi="多选（≥2）：将其余项的顶边与首个选中项对齐。">
+                      <span class="lvis-al-svg-stack" aria-hidden="true">
+                        <svg class="lvis-icon-tool__svg lvis-al-icon--zone" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                          <rect x="4" y="3.5" width="16" height="17" rx="2" fill="none" stroke="currentColor" stroke-opacity="0.4" />
+                          <rect x="8" y="5.5" width="8" height="7.5" rx="1.25" fill="currentColor" stroke="none" />
+                        </svg>
+                        <svg class="lvis-icon-tool__svg lvis-al-icon--multi" viewBox="0 0 24 24" fill="none">
+                          <rect x="6" y="4.5" width="5" height="6" rx="1.25" fill="currentColor" opacity="0.95" />
+                          <rect x="13" y="4.5" width="5" height="9" rx="1.25" fill="currentColor" opacity="0.45" />
+                        </svg>
+                      </span>
                     </button>
-                    <button type="button" class="lvis-icon-tool" id="lvis-al-center-y" aria-label="垂直居中" data-lvis-tip="将所选控件在当前区内垂直方向居中。">
-                      <svg class="lvis-icon-tool__svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                        <rect x="4" y="3.5" width="16" height="17" rx="2" fill="none" stroke="currentColor" stroke-opacity="0.4" />
-                        <rect x="8" y="8.25" width="8" height="7.5" rx="1.25" fill="currentColor" stroke="none" />
-                      </svg>
+                    <button type="button" class="lvis-icon-tool" id="lvis-al-center-y" aria-label="区内垂直居中"
+                      data-lvis-tip-zone="单选：控件在区内垂直居中。多选时各自在区内垂直居中。"
+                      data-lvis-tip-multi="多选（≥2）：将其余项的垂直中心线与首个选中项对齐。">
+                      <span class="lvis-al-svg-stack" aria-hidden="true">
+                        <svg class="lvis-icon-tool__svg lvis-al-icon--zone" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                          <rect x="4" y="3.5" width="16" height="17" rx="2" fill="none" stroke="currentColor" stroke-opacity="0.4" />
+                          <rect x="8" y="8.25" width="8" height="7.5" rx="1.25" fill="currentColor" stroke="none" />
+                        </svg>
+                        <svg class="lvis-icon-tool__svg lvis-al-icon--multi" viewBox="0 0 24 24" fill="none">
+                          <rect x="5" y="9" width="6" height="5" rx="1.25" fill="currentColor" opacity="0.95" />
+                          <rect x="13" y="8" width="6" height="7" rx="1.25" fill="currentColor" opacity="0.45" />
+                        </svg>
+                      </span>
                     </button>
-                    <button type="button" class="lvis-icon-tool" id="lvis-al-bottom" aria-label="靠下对齐" data-lvis-tip="将所选控件在当前区内垂直方向靠下对齐。">
-                      <svg class="lvis-icon-tool__svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                        <rect x="4" y="3.5" width="16" height="17" rx="2" fill="none" stroke="currentColor" stroke-opacity="0.4" />
-                        <rect x="8" y="11" width="8" height="7.5" rx="1.25" fill="currentColor" stroke="none" />
-                      </svg>
+                    <button type="button" class="lvis-icon-tool" id="lvis-al-bottom" aria-label="区内垂直靠下"
+                      data-lvis-tip-zone="单选：控件在区内垂直靠下。多选时各自相对区带靠下。"
+                      data-lvis-tip-multi="多选（≥2）：将其余项的底边与首个选中项对齐。">
+                      <span class="lvis-al-svg-stack" aria-hidden="true">
+                        <svg class="lvis-icon-tool__svg lvis-al-icon--zone" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+                          <rect x="4" y="3.5" width="16" height="17" rx="2" fill="none" stroke="currentColor" stroke-opacity="0.4" />
+                          <rect x="8" y="11" width="8" height="7.5" rx="1.25" fill="currentColor" stroke="none" />
+                        </svg>
+                        <svg class="lvis-icon-tool__svg lvis-al-icon--multi" viewBox="0 0 24 24" fill="none">
+                          <rect x="6" y="11" width="5" height="7" rx="1.25" fill="currentColor" opacity="0.95" />
+                          <rect x="13" y="7" width="5" height="11" rx="1.25" fill="currentColor" opacity="0.45" />
+                        </svg>
+                      </span>
                     </button>
                   </div>
                 </div>
                 <div class="lvis-align-section">
-                  <span class="lvis-align-section__title">铺满区带</span>
+                  <span class="lvis-align-section__title">铺满区带（仅首个）</span>
                   <div class="lvis-align-icon-grid" role="toolbar" aria-label="铺满区带">
-                    <button type="button" class="lvis-icon-tool" id="lvis-fill-w" aria-label="铺满区宽" data-lvis-tip="将所选控件宽度拉满当前页眉或页脚区的可用宽度，并保持左边对齐。">
+                    <button type="button" class="lvis-icon-tool" id="lvis-fill-w" aria-label="铺满区宽"
+                      data-lvis-tip="仅对首个选中项：宽度拉满当前页眉或页脚区的可用宽度，左对齐。">
                       <svg class="lvis-icon-tool__svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                         <rect x="3.5" y="4" width="17" height="16" rx="2" fill="none" stroke="currentColor" stroke-opacity="0.4" />
                         <rect x="5" y="10" width="14" height="4" rx="1" fill="currentColor" stroke="none" />
                       </svg>
                     </button>
-                    <button type="button" class="lvis-icon-tool" id="lvis-fill-h" aria-label="铺满区高" data-lvis-tip="将所选控件高度拉满当前区的可用高度，并保持顶边对齐。">
+                    <button type="button" class="lvis-icon-tool" id="lvis-fill-h" aria-label="铺满区高"
+                      data-lvis-tip="仅对首个选中项：高度拉满当前区可用高度，顶对齐。">
                       <svg class="lvis-icon-tool__svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                         <rect x="3.5" y="4" width="17" height="16" rx="2" fill="none" stroke="currentColor" stroke-opacity="0.4" />
                         <rect x="10" y="5.5" width="4" height="13" rx="1" fill="currentColor" stroke="none" />
                       </svg>
                     </button>
-                    <button type="button" class="lvis-icon-tool" id="lvis-fill-both" aria-label="铺满整个区带" data-lvis-tip="将所选控件宽高同时铺满当前页眉或页脚区域（贴左上）。">
+                    <button type="button" class="lvis-icon-tool" id="lvis-fill-both" aria-label="铺满整个区带"
+                      data-lvis-tip="仅对首个选中项：宽高铺满当前页眉或页脚区（贴左上）。">
                       <svg class="lvis-icon-tool__svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                         <rect x="3.5" y="4" width="17" height="16" rx="2" fill="none" stroke="currentColor" stroke-opacity="0.4" />
                         <rect x="5.5" y="6" width="13" height="12" rx="1.25" fill="currentColor" stroke="none" />
@@ -217,10 +268,10 @@
                   </div>
                 </div>
                 <div class="lvis-align-section">
-                  <span class="lvis-align-section__title">多选 · 参照首个</span>
-                  <div class="lvis-align-icon-grid lvis-align-icon-grid--cols-2" role="toolbar" aria-label="多选统一尺寸">
-                    <div class="lvis-icon-tool-slot" data-lvis-tip="至少选中两个控件时可用：将其余选中项宽度改为与第一个选中项相同。">
-                      <button type="button" class="lvis-icon-tool lvis-match-btn" id="lvis-match-w" disabled aria-label="同宽">
+                  <span class="lvis-align-section__title">尺寸 · 参照首个（≥2 项）</span>
+                  <div class="lvis-align-icon-grid lvis-align-icon-grid--cols-3" role="toolbar" aria-label="与首个选中项统一尺寸">
+                    <div class="lvis-icon-tool-slot" data-lvis-tip="至少选中两个控件：将其余项宽度改为与首个选中项相同。">
+                      <button type="button" class="lvis-icon-tool lvis-match-ref-btn" id="lvis-match-w" disabled aria-label="同参照宽">
                         <svg class="lvis-icon-tool__svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                           <rect x="3.5" y="5" width="17" height="14" rx="2" fill="none" stroke="currentColor" stroke-opacity="0.4" />
                           <rect x="6" y="8" width="5" height="8" rx="1" fill="currentColor" stroke="none" />
@@ -228,12 +279,40 @@
                         </svg>
                       </button>
                     </div>
-                    <div class="lvis-icon-tool-slot" data-lvis-tip="至少选中两个控件时可用：将其余选中项高度改为与第一个选中项相同。">
-                      <button type="button" class="lvis-icon-tool lvis-match-btn" id="lvis-match-h" disabled aria-label="同高">
+                    <div class="lvis-icon-tool-slot" data-lvis-tip="至少选中两个控件：将其余项高度改为与首个选中项相同。">
+                      <button type="button" class="lvis-icon-tool lvis-match-ref-btn" id="lvis-match-h" disabled aria-label="同参照高">
                         <svg class="lvis-icon-tool__svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                           <rect x="5" y="3.5" width="14" height="17" rx="2" fill="none" stroke="currentColor" stroke-opacity="0.4" />
                           <rect x="8" y="6" width="8" height="5" rx="1" fill="currentColor" stroke="none" />
                           <rect x="8" y="13" width="8" height="5" rx="1" fill="currentColor" stroke="none" />
+                        </svg>
+                      </button>
+                    </div>
+                    <div class="lvis-icon-tool-slot" data-lvis-tip="至少选中两个控件：将其余项宽与高均改为与首个选中项相同。">
+                      <button type="button" class="lvis-icon-tool lvis-match-ref-btn" id="lvis-match-both" disabled aria-label="同参照尺寸">
+                        <svg class="lvis-icon-tool__svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                          <rect x="5" y="5" width="6.5" height="6.5" rx="1" fill="currentColor" stroke="none" opacity="0.95" />
+                          <rect x="12.5" y="12.5" width="6.5" height="6.5" rx="1" fill="currentColor" stroke="none" opacity="0.55" />
+                          <path d="M6 17.5h5M17 6.5v5" stroke="currentColor" stroke-opacity="0.35" stroke-width="1.2" stroke-linecap="round" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                  <span class="lvis-align-section__title lvis-align-section__title--sub">统一到区带尺寸（全部选中项）</span>
+                  <div class="lvis-align-icon-grid lvis-align-icon-grid--cols-2" role="toolbar" aria-label="对齐当前区带的可用宽高">
+                    <div class="lvis-icon-tool-slot" data-lvis-tip="将所有选中项宽度设为当前页眉或页脚区的可用宽度（与铺满区宽尺寸一致，不改变位置）。">
+                      <button type="button" class="lvis-icon-tool lvis-match-zone-btn" id="lvis-match-zone-w" disabled aria-label="区带宽">
+                        <svg class="lvis-icon-tool__svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                          <rect x="3.5" y="5" width="17" height="14" rx="2" fill="none" stroke="currentColor" stroke-dasharray="2 2" stroke-opacity="0.5" />
+                          <rect x="5" y="9.5" width="14" height="5" rx="1" fill="currentColor" stroke="none" opacity="0.85" />
+                        </svg>
+                      </button>
+                    </div>
+                    <div class="lvis-icon-tool-slot" data-lvis-tip="将所有选中项高度设为当前页眉或页脚区的可用高度（与铺满区高尺寸一致，不改变位置）。">
+                      <button type="button" class="lvis-icon-tool lvis-match-zone-btn" id="lvis-match-zone-h" disabled aria-label="区带高">
+                        <svg class="lvis-icon-tool__svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                          <rect x="5" y="3.5" width="14" height="17" rx="2" fill="none" stroke="currentColor" stroke-dasharray="2 2" stroke-opacity="0.5" />
+                          <rect x="9.5" y="5.5" width="5" height="13" rx="1" fill="currentColor" stroke="none" opacity="0.85" />
                         </svg>
                       </button>
                     </div>

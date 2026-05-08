@@ -1457,6 +1457,35 @@ html[data-theme="dark"] .lvis-align-actions {
 .lvis-align-icon-grid--cols-2 {
   grid-template-columns: repeat(2, var(--lvis-icon-tool-px, 40px));
 }
+.lvis-align-icon-grid--cols-3 {
+  grid-template-columns: repeat(3, var(--lvis-icon-tool-px, 40px));
+}
+.lvis-align-section__title--sub {
+  margin-top: 0.28rem;
+  font-size: 0.52rem;
+  font-weight: 600;
+  opacity: 0.92;
+}
+.lvis-al-svg-stack {
+  position: relative;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+.lvis-al-svg-stack .lvis-icon-tool__svg {
+  position: absolute;
+  left: 0;
+  top: 0;
+}
+.lvis-al-svg-stack .lvis-al-icon--multi {
+  display: none;
+}
+.lvis-align-actions.lvis-align--multi .lvis-al-svg-stack .lvis-al-icon--zone {
+  display: none;
+}
+.lvis-align-actions.lvis-align--multi .lvis-al-svg-stack .lvis-al-icon--multi {
+  display: block;
+}
 .lvis-icon-tool-slot {
   display: flex;
   width: var(--lvis-icon-tool-px, 40px);
