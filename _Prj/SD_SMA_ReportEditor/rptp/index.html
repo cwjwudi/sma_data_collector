@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>RPTP · 报表工作台</title>
+  <title>自定义报表工具箱</title>
   <style>
     :root {
       color-scheme: light dark;
@@ -73,14 +73,58 @@
     .nav-scroll {
       flex: 1;
       overflow-y: auto;
-      padding: 0.5rem 0;
+      padding: 0.35rem 0 0.75rem;
+    }
+    .nav-group {
+      border-bottom: var(--border);
+      margin: 0;
+    }
+    .nav-group:last-child {
+      border-bottom: none;
+    }
+    .nav-group > summary {
+      list-style: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.65rem 0.65rem 0.65rem 0.85rem;
+      font-size: 0.8125rem;
+      font-weight: 600;
+      color: var(--text);
+      user-select: none;
+    }
+    .nav-group > summary::-webkit-details-marker { display: none; }
+    .nav-group > summary::after {
+      content: "";
+      width: 0.45rem;
+      height: 0.45rem;
+      margin-left: auto;
+      margin-right: 0.25rem;
+      border-right: 2px solid var(--muted);
+      border-bottom: 2px solid var(--muted);
+      transform: rotate(-45deg);
+      transition: transform 0.2s ease;
+      flex-shrink: 0;
+    }
+    .nav-group[open] > summary::after {
+      transform: rotate(45deg);
+    }
+    .nav-group > summary:hover {
+      background: rgba(0, 0, 0, 0.04);
+    }
+    @media (prefers-color-scheme: dark) {
+      .nav-group > summary:hover { background: rgba(255, 255, 255, 0.06); }
+    }
+    .nav-group-body {
+      padding: 0 0 0.35rem;
     }
     .nav-item {
       display: block;
-      padding: 0.625rem 1rem;
+      padding: 0.5rem 0.85rem 0.5rem 1.35rem;
       color: inherit;
       text-decoration: none;
-      font-size: 0.875rem;
+      font-size: 0.8125rem;
       border-left: 3px solid transparent;
     }
     .nav-item:hover { background: rgba(0, 0, 0, 0.04); }
@@ -403,13 +447,42 @@
 
   <div class="app" id="app">
     <aside class="sidebar" id="sidebar" aria-label="主导航">
-      <div class="sidebar-brand">RPTP</div>
-      <nav class="nav-scroll">
-        <a class="nav-item is-active" href="#">报表概览</a>
-        <a class="nav-item" href="#">数据源</a>
-        <a class="nav-item" href="#">模板</a>
-        <a class="nav-item" href="#">生成任务</a>
-        <a class="nav-item" href="#">历史记录</a>
+      <div class="sidebar-brand">自定义报表工具箱</div>
+      <nav class="nav-scroll" aria-label="功能导航">
+        <details class="nav-group" open>
+          <summary>数据库工具</summary>
+          <div class="nav-group-body">
+            <a class="nav-item is-active" href="#">SQL 工作台</a>
+            <a class="nav-item" href="#">连接与数据源</a>
+            <a class="nav-item" href="#">查询历史</a>
+          </div>
+        </details>
+        <details class="nav-group">
+          <summary>OPC UA 工具</summary>
+          <div class="nav-group-body">
+            <a class="nav-item" href="#">连接与证书</a>
+            <a class="nav-item" href="#">节点浏览</a>
+            <a class="nav-item" href="#">读写与方法调用</a>
+            <a class="nav-item" href="#">订阅与监视</a>
+          </div>
+        </details>
+        <details class="nav-group">
+          <summary>报表配置</summary>
+          <div class="nav-group-body">
+            <a class="nav-item" href="#">模板管理</a>
+            <a class="nav-item" href="#">版式与页眉页脚</a>
+            <a class="nav-item" href="#">生成与导出</a>
+            <a class="nav-item" href="#">报表历史</a>
+          </div>
+        </details>
+        <details class="nav-group">
+          <summary>系统工具</summary>
+          <div class="nav-group-body">
+            <a class="nav-item" href="#">全局设置</a>
+            <a class="nav-item" href="#">审计与日志</a>
+            <a class="nav-item" href="#">关于</a>
+          </div>
+        </details>
       </nav>
     </aside>
 
