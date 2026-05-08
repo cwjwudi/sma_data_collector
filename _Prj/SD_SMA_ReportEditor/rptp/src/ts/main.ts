@@ -55,7 +55,7 @@ const drawerPanelTool = document.getElementById("drawer-panel-tool");
 const drawerPanelHint = document.getElementById("drawer-panel-settings-hint");
 const drawerPanelAboutHint = document.getElementById("drawer-panel-about-hint");
 const drawerPanelTemplatesHint = document.getElementById("drawer-panel-templates-hint");
-const drawerPanelLayoutHint = document.getElementById("drawer-panel-layout-hint");
+const drawerPanelLayout = document.getElementById("drawer-panel-layout");
 const drawerTitleText = document.getElementById("drawerTitleText");
 
 const btnSettingsSave = document.getElementById("btn-settings-save");
@@ -87,12 +87,12 @@ function syncDrawerContext(pageId: PageId): void {
     !drawerPanelHint ||
     !drawerPanelAboutHint ||
     !drawerPanelTemplatesHint ||
-    !drawerPanelLayoutHint ||
+    !drawerPanelLayout ||
     !drawerTitleText
   )
     return;
   drawerPanelTemplatesHint.hidden = true;
-  drawerPanelLayoutHint.hidden = true;
+  drawerPanelLayout.hidden = true;
   if (pageId === "home") {
     drawerPanelTool.hidden = false;
     drawerPanelHint.hidden = true;
@@ -116,7 +116,7 @@ function syncDrawerContext(pageId: PageId): void {
   if (pageId === "layout") {
     drawerPanelHint.hidden = true;
     drawerPanelAboutHint.hidden = true;
-    drawerPanelLayoutHint.hidden = false;
+    drawerPanelLayout.hidden = false;
     drawerTitleText.textContent = "版式与页眉页脚";
     return;
   }

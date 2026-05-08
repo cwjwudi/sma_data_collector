@@ -19,6 +19,7 @@ export function initReportLayoutPage(d: LayoutPageDeps): void {
   deps = d;
 
   document.getElementById("btn-layout-new")?.addEventListener("click", () => {
+    presets = loadLayoutPresets();
     const p = createEmptyLayoutPreset();
     presets.push(p);
     saveLayoutPresets(presets);

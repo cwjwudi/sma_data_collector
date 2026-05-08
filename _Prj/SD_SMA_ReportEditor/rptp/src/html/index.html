@@ -78,71 +78,20 @@
             </div>
           </div>
           <p class="templates-intro">
-            建议<strong>先于模版管理</strong>在此维护可复用版式：纸张规格（与模版画布宽度一致）、页边距、页眉/页脚占位高度与示意文案。新建模版时可<strong>优先基于自定义版式</strong>起步；动态内容超出单页高度时，在「生成与导出」阶段按所选纸张<strong>自动分页</strong>（后续实现）。
+            建议<strong>先于模版管理</strong>在此维护可复用版式。在中间列表选择条目或新建后，在<strong>右侧参数栏</strong>编辑纸张、页边距与页眉页脚示意文案；新建模版时可优先套用。动态内容超高一页时，导出阶段按纸张分页（后续在「生成与导出」实现）。
           </p>
-          <div class="layout-split">
-            <div class="template-table-wrap layout-preset-table-wrap">
-              <table class="template-table" id="layout-preset-list">
-                <thead>
-                  <tr>
-                    <th>名称</th>
-                    <th>纸张</th>
-                    <th>更新时间</th>
-                    <th>操作</th>
-                  </tr>
-                </thead>
-                <tbody></tbody>
-              </table>
-            </div>
-            <div class="layout-edit-card">
-              <p id="layout-edit-empty" class="layout-edit-empty">请选择左侧版式，或点击「新建版式」。</p>
-              <div id="layout-edit-panel" class="layout-edit-panel" hidden>
-                <h2 class="layout-edit-title">编辑当前版式</h2>
-                <div class="field">
-                  <label for="layout-field-name">名称</label>
-                  <input id="layout-field-name" type="text" maxlength="120" />
-                </div>
-                <div class="field-row">
-                  <div class="field">
-                    <label for="layout-field-paper">纸张</label>
-                    <select id="layout-field-paper">
-                      <option value="A5">A5</option>
-                      <option value="A4">A4</option>
-                      <option value="A3">A3</option>
-                      <option value="Letter">Letter</option>
-                    </select>
-                  </div>
-                  <div class="field">
-                    <label for="layout-field-orientation">方向</label>
-                    <select id="layout-field-orientation">
-                      <option value="portrait">纵向</option>
-                      <option value="landscape">横向</option>
-                    </select>
-                  </div>
-                </div>
-                <p class="layout-edit-sub">页边距与页眉页脚带（单位 mm）</p>
-                <div class="field-row">
-                  <div class="field"><label for="layout-mt">上</label><input id="layout-mt" type="number" min="0" step="0.5" /></div>
-                  <div class="field"><label for="layout-mr">右</label><input id="layout-mr" type="number" min="0" step="0.5" /></div>
-                </div>
-                <div class="field-row">
-                  <div class="field"><label for="layout-mb">下</label><input id="layout-mb" type="number" min="0" step="0.5" /></div>
-                  <div class="field"><label for="layout-ml">左</label><input id="layout-ml" type="number" min="0" step="0.5" /></div>
-                </div>
-                <div class="field-row">
-                  <div class="field"><label for="layout-hband">页眉带高度</label><input id="layout-hband" type="number" min="0" step="0.5" /></div>
-                  <div class="field"><label for="layout-fband">页脚带高度</label><input id="layout-fband" type="number" min="0" step="0.5" /></div>
-                </div>
-                <div class="field">
-                  <label for="layout-header-text">页眉文案（示意）</label>
-                  <textarea id="layout-header-text" rows="2" maxlength="500"></textarea>
-                </div>
-                <div class="field">
-                  <label for="layout-footer-text">页脚文案（示意）</label>
-                  <textarea id="layout-footer-text" rows="2" maxlength="500" placeholder="可使用 {page} 表示页码"></textarea>
-                </div>
-              </div>
-            </div>
+          <div class="template-table-wrap layout-preset-table-wrap layout-preset-main">
+            <table class="template-table" id="layout-preset-list">
+              <thead>
+                <tr>
+                  <th>名称</th>
+                  <th>纸张</th>
+                  <th>更新时间</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
           </div>
         </section>
         <section id="page-templates" class="page-panel page-templates" aria-label="模版管理">
@@ -325,8 +274,59 @@
           <div id="drawer-panel-templates-hint" class="drawer-panel drawer-panel-muted" hidden>
             <p>模版在中栏管理；列表可新建与删除，编辑模式下从左侧拖入控件到画布，右侧编辑尺寸、颜色与文本。数据保存在浏览器本地。</p>
           </div>
-          <div id="drawer-panel-layout-hint" class="drawer-panel drawer-panel-muted" hidden>
-            <p>在此维护纸张与页眉页脚版式，供新建模版时优先套用；模版内冻结版面快照，后续改预设不会牵动旧模版。</p>
+          <div id="drawer-panel-layout" class="drawer-panel" hidden>
+            <p class="drawer-panel-hint">
+              在此编辑当前选中的版式：纸张、页边距与页眉页脚带；供新建模版优先套用。模版保存的是<strong>快照</strong>，日后修改此处预设不会牵动已有模版。
+            </p>
+            <p id="layout-edit-empty" class="layout-edit-empty drawer-layout-empty">
+              请在中间列表选择版式，或点击顶栏「新建版式」。
+            </p>
+            <div id="layout-edit-panel" class="layout-edit-panel drawer-layout-edit-panel" hidden>
+              <h2 class="layout-edit-title">编辑当前版式</h2>
+              <div class="field">
+                <label for="layout-field-name">名称</label>
+                <input id="layout-field-name" type="text" maxlength="120" />
+              </div>
+              <div class="field-row">
+                <div class="field">
+                  <label for="layout-field-paper">纸张</label>
+                  <select id="layout-field-paper">
+                    <option value="A5">A5</option>
+                    <option value="A4">A4</option>
+                    <option value="A3">A3</option>
+                    <option value="Letter">Letter</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="layout-field-orientation">方向</label>
+                  <select id="layout-field-orientation">
+                    <option value="portrait">纵向</option>
+                    <option value="landscape">横向</option>
+                  </select>
+                </div>
+              </div>
+              <p class="layout-edit-sub">页边距与页眉页脚带（单位 mm）</p>
+              <div class="field-row">
+                <div class="field"><label for="layout-mt">上</label><input id="layout-mt" type="number" min="0" step="0.5" /></div>
+                <div class="field"><label for="layout-mr">右</label><input id="layout-mr" type="number" min="0" step="0.5" /></div>
+              </div>
+              <div class="field-row">
+                <div class="field"><label for="layout-mb">下</label><input id="layout-mb" type="number" min="0" step="0.5" /></div>
+                <div class="field"><label for="layout-ml">左</label><input id="layout-ml" type="number" min="0" step="0.5" /></div>
+              </div>
+              <div class="field-row">
+                <div class="field"><label for="layout-hband">页眉带高度</label><input id="layout-hband" type="number" min="0" step="0.5" /></div>
+                <div class="field"><label for="layout-fband">页脚带高度</label><input id="layout-fband" type="number" min="0" step="0.5" /></div>
+              </div>
+              <div class="field">
+                <label for="layout-header-text">页眉文案（示意）</label>
+                <textarea id="layout-header-text" rows="2" maxlength="500"></textarea>
+              </div>
+              <div class="field">
+                <label for="layout-footer-text">页脚文案（示意）</label>
+                <textarea id="layout-footer-text" rows="2" maxlength="500" placeholder="可使用 {page} 表示页码"></textarea>
+              </div>
+            </div>
           </div>
         </div>
       </div>
