@@ -51,7 +51,7 @@ let dragMove: {
 let resizeDrag: {
   zone: "header" | "footer";
   id: string;
-  corner: string;
+  handle: string;
   sx: number;
   sy: number;
   ox: number;
@@ -174,39 +174,154 @@ function nudgeSelectedElement(sdx: number, sdy: number): void {
   syncElementInputsFromModel();
 }
 
-function applyResizeFromCorner(
-  el: LayoutZoneElement,
-  corner: string,
+function linearResizeFromHandle(
+  handle: string,
   ox: number,
   oy: number,
   ow: number,
   oh: number,
   dx: number,
   dy: number,
-): void {
+): { x: number; y: number; w: number; h: number } {
   const MIN = 16;
   let x = ox;
   let y = oy;
   let w = ow;
   let h = oh;
-  if (corner.includes("e")) w = ow + dx;
-  if (corner.includes("w")) {
-    x = ox + dx;
-    w = ow - dx;
-  }
-  if (corner.includes("s")) h = oh + dy;
-  if (corner.includes("n")) {
-    y = oy + dy;
-    h = oh - dy;
+  switch (handle) {
+    case "nw":
+      x = ox + dx;
+      y = oy + dy;
+      w = ow - dx;
+      h = oh - dy;
+      break;
+    case "n":
+      y = oy + dy;
+      h = oh - dy;
+      break;
+    case "ne":
+      y = oy + dy;
+      h = oh - dy;
+      w = ow + dx;
+      break;
+    case "e":
+      w = ow + dx;
+      break;
+    case "se":
+      w = ow + dx;
+      h = oh + dy;
+      break;
+    case "s":
+      h = oh + dy;
+      break;
+    case "sw":
+      x = ox + dx;
+      w = ow - dx;
+      h = oh + dy;
+      break;
+    case "w":
+      x = ox + dx;
+      w = ow - dx;
+      break;
+    default:
+      break;
   }
   if (w < MIN) {
-    if (corner.includes("w")) x = ox + ow - MIN;
+    if (handle === "nw" || handle === "w" || handle === "sw") x = ox + ow - MIN;
     w = MIN;
   }
   if (h < MIN) {
-    if (corner.includes("n")) y = oy + oh - MIN;
+    if (handle === "nw" || handle === "n" || handle === "ne") y = oy + oh - MIN;
     h = MIN;
   }
+  return { x, y, w, h };
+}
+
+function applyResizeFromHandle(
+  el: LayoutZoneElement,
+  handle: string,
+  ox: number,
+  oy: number,
+  ow: number,
+  oh: number,
+  dx: number,
+  dy: number,
+  proportional: boolean,
+): void {
+  const MIN = 16;
+  const r = ow / Math.max(oh, 1e-6);
+
+  let x: number;
+  let y: number;
+  let w: number;
+  let h: number;
+
+  if (!proportional) {
+    const o = linearResizeFromHandle(handle, ox, oy, ow, oh, dx, dy);
+    x = o.x;
+    y = o.y;
+    w = o.w;
+    h = o.h;
+  } else {
+    switch (handle) {
+      case "se":
+        w = Math.max(MIN, ow + dx);
+        h = Math.max(MIN, Math.round(w / r));
+        x = ox;
+        y = oy;
+        break;
+      case "nw":
+        w = Math.max(MIN, ow - dx);
+        h = Math.max(MIN, Math.round(w / r));
+        x = ox + ow - w;
+        y = oy + oh - h;
+        break;
+      case "ne":
+        w = Math.max(MIN, ow + dx);
+        h = Math.max(MIN, Math.round(w / r));
+        x = ox;
+        y = oy + oh - h;
+        break;
+      case "sw":
+        w = Math.max(MIN, ow - dx);
+        h = Math.max(MIN, Math.round(w / r));
+        x = ox + ow - w;
+        y = oy;
+        break;
+      case "e":
+        w = Math.max(MIN, ow + dx);
+        h = Math.max(MIN, Math.round(w / r));
+        x = ox;
+        y = oy + Math.round((oh - h) / 2);
+        break;
+      case "w":
+        w = Math.max(MIN, ow - dx);
+        h = Math.max(MIN, Math.round(w / r));
+        x = ox + ow - w;
+        y = oy + Math.round((oh - h) / 2);
+        break;
+      case "s":
+        h = Math.max(MIN, oh + dy);
+        w = Math.max(MIN, Math.round(h * r));
+        x = ox + Math.round((ow - w) / 2);
+        y = oy;
+        break;
+      case "n":
+        h = Math.max(MIN, oh - dy);
+        w = Math.max(MIN, Math.round(h * r));
+        x = ox + Math.round((ow - w) / 2);
+        y = oy + oh - h;
+        break;
+      default: {
+        const o = linearResizeFromHandle(handle, ox, oy, ow, oh, dx, dy);
+        x = o.x;
+        y = o.y;
+        w = o.w;
+        h = o.h;
+      }
+    }
+  }
+
   el.x = Math.round(x);
   el.y = Math.round(y);
   el.w = Math.round(w);
@@ -570,12 +685,11 @@ function setupZoneCanvas(canvas: HTMLElement | null, zone: "header" | "footer"):
 
   canvas.addEventListener("mousedown", (e) => {
     if (!draft) return;
-    const rh = (e.target as HTMLElement).closest("[data-layout-resize-corner]");
+    const rh = (e.target as HTMLElement).closest("[data-layout-resize-handle]");
     if (rh && canvas.contains(rh)) {
-      const corner = rh.getAttribute("data-layout-resize-corner");
-      const wrap = rh.closest("[data-layout-zone-el-id]");
-      const rid = wrap?.getAttribute("data-layout-zone-el-id");
-      if (!corner || !rid) return;
+      const handle = rh.getAttribute("data-layout-resize-handle");
+      const rid = rh.getAttribute("data-layout-zone-el-id");
+      if (!handle || !rid) return;
       const list = zone === "header" ? draft.headerElements : draft.footerElements;
       const el = list.find((x) => x.id === rid);
       if (!el) return;
@@ -584,7 +698,7 @@ function setupZoneCanvas(canvas: HTMLElement | null, zone: "header" | "footer"):
       resizeDrag = {
         zone,
         id: rid,
-        corner,
+        handle,
         sx: e.clientX,
         sy: e.clientY,
         ox: el.x,
@@ -625,7 +739,7 @@ function setupZoneCanvas(canvas: HTMLElement | null, zone: "header" | "footer"):
     if (!draft) return;
     e.stopPropagation();
     const t = e.target as HTMLElement;
-    if (t.closest("[data-layout-resize-corner]")) return;
+    if (t.closest("[data-layout-resize-handle]")) return;
     if (t.closest("[data-layout-zone-el-id]")) return;
     if (t === canvas || t.classList.contains("lvis-zone-canvas")) {
       sel = zone === "header" ? { k: "headerBand" } : { k: "footerBand" };
@@ -649,15 +763,16 @@ function onWinMove(e: MouseEvent): void {
     if (!el) return;
     const dx = e.clientX - resizeDrag.sx;
     const dy = e.clientY - resizeDrag.sy;
-    applyResizeFromCorner(
+    applyResizeFromHandle(
       el,
-      resizeDrag.corner,
+      resizeDrag.handle,
       resizeDrag.ox,
       resizeDrag.oy,
       resizeDrag.ow,
       resizeDrag.oh,
       dx,
       dy,
+      e.shiftKey,
     );
     clampZoneElement(el, zoneDims(resizeDrag.zone).zw, zoneDims(resizeDrag.zone).zh);
     renderLvis();

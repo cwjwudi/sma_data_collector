@@ -28,14 +28,26 @@ function flexPlaceContent(el: LayoutZoneElement): { justifyContent: string; alig
 }
 
 function appendResizeHandles(node: HTMLElement, elId: string): void {
-  for (const corner of ["nw", "ne", "sw", "se"] as const) {
+  const handles = ["nw", "n", "ne", "e", "se", "s", "sw", "w"] as const;
+  const label: Record<(typeof handles)[number], string> = {
+    nw: "左上角缩放",
+    n: "上边缩放",
+    ne: "右上角缩放",
+    e: "右边缩放",
+    se: "右下角缩放",
+    s: "下边缩放",
+    sw: "左下角缩放",
+    w: "左边缩放",
+  };
+  for (const h of handles) {
     const btn = document.createElement("button");
     btn.type = "button";
-    btn.className = `layout-zone-resize layout-zone-resize-${corner}`;
-    btn.dataset.layoutResizeCorner = corner;
+    btn.className = `layout-zone-resize layout-zone-resize-${h}`;
+    btn.dataset.layoutResizeHandle = h;
     btn.dataset.layoutZoneElId = elId;
     btn.tabIndex = -1;
-    btn.setAttribute("aria-label", `缩放 ${corner}`);
+    btn.title = "拖拽调整大小；按住 Shift 保持宽高比";
+    btn.setAttribute("aria-label", label[h]);
     node.appendChild(btn);
   }
 }

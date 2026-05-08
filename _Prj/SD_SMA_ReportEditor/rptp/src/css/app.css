@@ -1436,21 +1436,61 @@ html[data-theme="dark"] .lvis-body-zone {
   top: 1px;
   left: 1px;
   cursor: nwse-resize;
+  z-index: 6;
 }
 .lvis-zone-canvas .layout-zone-resize-ne {
   top: 1px;
   right: 1px;
   cursor: nesw-resize;
+  z-index: 6;
 }
 .lvis-zone-canvas .layout-zone-resize-sw {
   bottom: 1px;
   left: 1px;
   cursor: nesw-resize;
+  z-index: 6;
 }
 .lvis-zone-canvas .layout-zone-resize-se {
   bottom: 1px;
   right: 1px;
   cursor: nwse-resize;
+  z-index: 6;
+}
+.lvis-zone-canvas .layout-zone-resize-n {
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 24px;
+  height: 7px;
+  cursor: ns-resize;
+  z-index: 5;
+}
+.lvis-zone-canvas .layout-zone-resize-s {
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 24px;
+  height: 7px;
+  cursor: ns-resize;
+  z-index: 5;
+}
+.lvis-zone-canvas .layout-zone-resize-e {
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 7px;
+  height: 24px;
+  cursor: ew-resize;
+  z-index: 5;
+}
+.lvis-zone-canvas .layout-zone-resize-w {
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 7px;
+  height: 24px;
+  cursor: ew-resize;
+  z-index: 5;
 }
 
 /* 版式可视化 · 选中控件位置尺寸（紧凑） */
