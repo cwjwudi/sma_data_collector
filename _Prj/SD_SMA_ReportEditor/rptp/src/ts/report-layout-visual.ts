@@ -74,6 +74,22 @@ function snapElInZone(el: LayoutZoneElement, zone: "header" | "footer"): void {
   clampZoneElement(el, zw, zh);
 }
 
+function nudgeStepPx(): number {
+  return snapEnabled ? Math.max(1, snapGridPx) : 1;
+}
+
+function nudgeSelectedElement(sdx: number, sdy: number): void {
+  const el = findSelEl();
+  if (!draft || sel.k !== "el" || !el || sel.ids.length !== 1) return;
+  const z = sel.zone;
+  const step = nudgeStepPx();
+  el.x = Math.max(0, el.x + sdx * step);
+  el.y = Math.max(0, el.y + sdy * step);
+  snapElInZone(el, z);
+  renderLvis();
+  syncElementInputsFromModel();
+}
+
 function applyResizeFromCorner(
   el: LayoutZoneElement,
   corner: string,
@@ -342,6 +358,7 @@ export function initReportLayoutVisual(d: LayoutVisualDeps): void {
 
   bindDrawerInputs();
   bindLvisAlignVisualGrid();
+  bindLvisNudgeButtons();
 
   document.getElementById("btn-lvis-el-delete")?.addEventListener("click", () => {
     if (!draft || sel.k !== "el") return;
@@ -377,12 +394,35 @@ export function initReportLayoutVisual(d: LayoutVisualDeps): void {
   window.addEventListener("keydown", (e) => {
     const page = document.getElementById("page-layout-visual");
     if (!page?.classList.contains("is-visible")) return;
-    if (e.key !== "Delete" && e.key !== "Backspace") return;
     const t = e.target as HTMLElement;
-    if (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT") return;
-    if (sel.k !== "el" || !draft) return;
-    e.preventDefault();
-    document.getElementById("btn-lvis-el-delete")?.dispatchEvent(new Event("click"));
+    const typing =
+      t.tagName === "INPUT" ||
+      t.tagName === "TEXTAREA" ||
+      t.tagName === "SELECT" ||
+      t.isContentEditable === true;
+
+    if (e.key === "Delete" || e.key === "Backspace") {
+      if (typing) return;
+      if (sel.k !== "el" || !draft) return;
+      e.preventDefault();
+      document.getElementById("btn-lvis-el-delete")?.dispatchEvent(new Event("click"));
+      return;
+    }
+
+    if (
+      e.key === "ArrowLeft" ||
+      e.key === "ArrowRight" ||
+      e.key === "ArrowUp" ||
+      e.key === "ArrowDown"
+    ) {
+      if (typing) return;
+      if (sel.k !== "el" || !draft || sel.ids.length !== 1) return;
+      e.preventDefault();
+      if (e.key === "ArrowLeft") nudgeSelectedElement(-1, 0);
+      else if (e.key === "ArrowRight") nudgeSelectedElement(1, 0);
+      else if (e.key === "ArrowUp") nudgeSelectedElement(0, -1);
+      else nudgeSelectedElement(0, 1);
+    }
   });
 
   window.addEventListener("resize", () => {
@@ -537,6 +577,13 @@ function syncLvisAlignVisualHighlight(): void {
     b.classList.toggle("is-active", match);
     b.setAttribute("aria-pressed", match ? "true" : "false");
   });
+}
+
+function bindLvisNudgeButtons(): void {
+  document.getElementById("lvis-nudge-up")?.addEventListener("click", () => nudgeSelectedElement(0, -1));
+  document.getElementById("lvis-nudge-down")?.addEventListener("click", () => nudgeSelectedElement(0, 1));
+  document.getElementById("lvis-nudge-left")?.addEventListener("click", () => nudgeSelectedElement(-1, 0));
+  document.getElementById("lvis-nudge-right")?.addEventListener("click", () => nudgeSelectedElement(1, 0));
 }
 
 function bindLvisAlignVisualGrid(): void {
@@ -838,4 +885,8 @@ function syncLvisDrawer(): void {
     if (iw) iw.hidden = el?.type !== "image";
     if (tw) tw.hidden = el?.type !== "text" && el?.type !== "box";
   }
+
+  document.querySelectorAll<HTMLButtonElement>(".lvis-nudge-btn").forEach((b) => {
+    b.disabled = !(draft && sel.k === "el" && sel.ids.length === 1);
+  });
 }

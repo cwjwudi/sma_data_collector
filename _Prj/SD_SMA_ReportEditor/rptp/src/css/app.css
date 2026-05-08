@@ -1300,6 +1300,68 @@ html[data-theme="dark"] .lvis-body-zone {
   cursor: nwse-resize;
 }
 
+/* 版式可视化 · 选中控件位置尺寸（紧凑 + 方向微调） */
+#lvis-drawer-element .lvis-e-dims-wrap {
+  margin-bottom: 0.65rem;
+}
+#lvis-drawer-element .lvis-e-dims-sub {
+  display: block;
+  margin: 0 0 0.35rem;
+}
+#lvis-drawer-element .lvis-e-nudge-cross {
+  display: grid;
+  grid-template-columns: repeat(3, 30px);
+  grid-template-rows: repeat(3, 30px);
+  gap: 4px;
+  margin-bottom: 0.45rem;
+  width: fit-content;
+}
+#lvis-drawer-element .lvis-nudge-btn {
+  padding: 0;
+  min-width: 0;
+  width: 100%;
+  height: 100%;
+  font-size: 0.8125rem;
+  line-height: 1;
+  border-radius: 6px;
+}
+#lvis-drawer-element .lvis-nudge-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+#lvis-drawer-element .lvis-nudge--up {
+  grid-column: 2;
+  grid-row: 1;
+}
+#lvis-drawer-element .lvis-nudge--left {
+  grid-column: 1;
+  grid-row: 2;
+}
+#lvis-drawer-element .lvis-nudge--right {
+  grid-column: 3;
+  grid-row: 2;
+}
+#lvis-drawer-element .lvis-nudge--down {
+  grid-column: 2;
+  grid-row: 3;
+}
+#lvis-drawer-element .lvis-e-dims-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.35rem 0.5rem;
+}
+#lvis-drawer-element .lvis-e-dims-grid .field {
+  margin-bottom: 0;
+}
+#lvis-drawer-element .lvis-e-dims-grid label {
+  font-size: 0.6875rem;
+  margin-bottom: 0.15rem;
+}
+#lvis-drawer-element .lvis-e-dims-grid input {
+  padding: 0.32rem 0.4rem;
+  font-size: 0.75rem;
+}
+
 /* 版式可视化 · 抽屉内九宫格对齐 */
 .drawer-panel .lvis-align-visual-field .layout-edit-sub {
   display: block;

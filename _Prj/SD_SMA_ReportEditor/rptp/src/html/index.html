@@ -471,13 +471,20 @@
                 <label for="lvis-e-img-file" class="layout-edit-sub" style="display:block;margin-top:0.5rem">本地文件</label>
                 <input id="lvis-e-img-file" type="file" accept="image/*" />
               </div>
-              <div class="field-row">
-                <div class="field"><label for="lvis-e-x">X</label><input id="lvis-e-x" type="number" min="0" step="1" /></div>
-                <div class="field"><label for="lvis-e-y">Y</label><input id="lvis-e-y" type="number" min="0" step="1" /></div>
-              </div>
-              <div class="field-row">
-                <div class="field"><label for="lvis-e-w">宽</label><input id="lvis-e-w" type="number" min="16" step="1" /></div>
-                <div class="field"><label for="lvis-e-h">高</label><input id="lvis-e-h" type="number" min="16" step="1" /></div>
+              <div class="lvis-e-dims-wrap">
+                <span class="layout-edit-sub lvis-e-dims-sub">位置与尺寸（px）</span>
+                <div class="lvis-e-nudge-cross" role="toolbar" aria-label="微调位置">
+                  <button type="button" id="lvis-nudge-up" class="btn btn-sm lvis-nudge-btn lvis-nudge--up" title="上移 ↑" aria-label="上移">↑</button>
+                  <button type="button" id="lvis-nudge-left" class="btn btn-sm lvis-nudge-btn lvis-nudge--left" title="左移 ←" aria-label="左移">←</button>
+                  <button type="button" id="lvis-nudge-right" class="btn btn-sm lvis-nudge-btn lvis-nudge--right" title="右移 →" aria-label="右移">→</button>
+                  <button type="button" id="lvis-nudge-down" class="btn btn-sm lvis-nudge-btn lvis-nudge--down" title="下移 ↓" aria-label="下移">↓</button>
+                </div>
+                <div class="lvis-e-dims-grid">
+                  <div class="field"><label for="lvis-e-x">X</label><input id="lvis-e-x" type="number" min="0" step="1" /></div>
+                  <div class="field"><label for="lvis-e-y">Y</label><input id="lvis-e-y" type="number" min="0" step="1" /></div>
+                  <div class="field"><label for="lvis-e-w">宽</label><input id="lvis-e-w" type="number" min="16" step="1" /></div>
+                  <div class="field"><label for="lvis-e-h">高</label><input id="lvis-e-h" type="number" min="16" step="1" /></div>
+                </div>
               </div>
               <div class="field">
                 <label for="lvis-e-color">前景色</label>
