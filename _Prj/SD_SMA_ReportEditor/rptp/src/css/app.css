@@ -1467,15 +1467,20 @@ html[data-theme="dark"] .lvis-align-actions {
   font-weight: 600;
   opacity: 0.92;
 }
+/* 两层 SVG 叠在同一格；勿用 absolute 占位——否则 grid 行高会塌成 0，图标不可见 */
 .lvis-al-svg-stack {
-  position: relative;
+  display: grid;
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr;
   width: 100%;
   height: 100%;
   min-height: 0;
+  align-self: stretch;
+  justify-self: stretch;
 }
 .lvis-al-svg-stack .lvis-icon-tool__svg {
-  position: absolute;
-  inset: 0;
+  grid-area: 1 / 1;
+  position: relative;
   width: 100%;
   height: 100%;
   display: block;
@@ -1526,8 +1531,11 @@ html[data-theme="dark"] .lvis-align-actions {
 /* 区内 / 互相对齐：双图标叠层铺满整格（与 40px 按钮可视区一致） */
 .lvis-icon-tool:has(.lvis-al-svg-stack) {
   display: grid;
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr;
   place-items: stretch;
   padding: 2px;
+  min-height: 0;
 }
 .lvis-icon-tool:hover:not(:disabled) {
   border-color: var(--accent);
