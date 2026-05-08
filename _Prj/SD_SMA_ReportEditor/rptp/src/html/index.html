@@ -60,7 +60,6 @@
         <div class="top-title" id="topTitle">当前视图 · SQL 工作台</div>
         <div class="top-actions">
           <button type="button" class="btn" id="btnDrawerToggle" aria-expanded="true" aria-controls="drawerParams">参数栏</button>
-          <button type="button" class="btn btn-primary">保存</button>
         </div>
       </header>
 
@@ -85,6 +84,11 @@
               </label>
             </div>
           </div>
+          <div class="settings-actions">
+            <button type="button" class="btn btn-primary" id="btn-settings-save">保存</button>
+            <button type="button" class="btn" id="btn-settings-reset-default">恢复默认</button>
+            <button type="button" class="btn" id="btn-settings-revert">回退修改</button>
+          </div>
         </section>
       </main>
 
@@ -101,21 +105,27 @@
       <div class="drawer-resizer" id="drawerResizer" role="separator" aria-orientation="vertical" aria-valuemin="200" aria-valuemax="480" tabindex="0" title="拖拽调整宽度"></div>
       <div class="drawer-inner">
         <div class="drawer-header">
-          <span class="drawer-title">参数</span>
+          <span class="drawer-title" id="drawerTitleText">当前工具参数</span>
           <button type="button" class="btn" id="btnDrawerCollapse" title="收起参数栏">收起</button>
         </div>
         <div class="drawer-body">
-          <div class="field">
-            <label for="f-report-name">报表名称</label>
-            <input id="f-report-name" type="text" placeholder="例如：班报 2026-05-08" />
+          <div id="drawer-panel-tool" class="drawer-panel">
+            <p class="drawer-panel-hint">以下为当前工具所用参数（各菜单独立）。</p>
+            <div class="field">
+              <label for="f-report-name">报表名称</label>
+              <input id="f-report-name" type="text" placeholder="例如：班报 2026-05-08" />
+            </div>
+            <div class="field">
+              <label for="f-connection">连接配置</label>
+              <input id="f-connection" type="text" placeholder="使用 DataPlane 配置别名" />
+            </div>
+            <div class="field">
+              <label for="f-note">备注</label>
+              <input id="f-note" type="text" placeholder="可选" />
+            </div>
           </div>
-          <div class="field">
-            <label for="f-connection">连接配置</label>
-            <input id="f-connection" type="text" placeholder="使用 DataPlane 配置别名" />
-          </div>
-          <div class="field">
-            <label for="f-note">备注</label>
-            <input id="f-note" type="text" placeholder="可选" />
+          <div id="drawer-panel-settings-hint" class="drawer-panel drawer-panel-muted" hidden>
+            <p>全局设置不使用侧栏参数，请在中间区域调整主题后使用底部按钮保存或回退。</p>
           </div>
         </div>
       </div>

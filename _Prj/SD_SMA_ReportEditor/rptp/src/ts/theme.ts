@@ -39,3 +39,16 @@ export function applyTheme(theme: ThemeMode, persist = true): void {
 export function currentTheme(): ThemeMode {
   return document.documentElement.getAttribute("data-theme") === "dark" ? "dark" : "light";
 }
+
+/** 未写入 localStorage 时的系统偏好 */
+export function getSystemTheme(): ThemeMode {
+  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
+export function clearStoredTheme(): void {
+  try {
+    localStorage.removeItem(THEME_KEY);
+  } catch {
+    /* ignore */
+  }
+}

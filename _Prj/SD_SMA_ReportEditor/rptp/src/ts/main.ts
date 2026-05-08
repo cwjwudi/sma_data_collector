@@ -1,7 +1,32 @@
-import { applyTheme, currentTheme, initThemeFromStorage } from "./theme";
+import {
+  applyTheme,
+  clearStoredTheme,
+  currentTheme,
+  getSystemTheme,
+  initThemeFromStorage,
+  THEME_KEY,
+  type ThemeMode,
+} from "./theme";
 
 initThemeFromStorage();
 applyTheme(currentTheme(), false);
+
+/** 已提交（与 localStorage 一致）的主题基准 */
+let committedTheme: ThemeMode = currentTheme();
+
+function commitThemePreferences(): void {
+  const t = currentTheme();
+  if (t === getSystemTheme()) {
+    clearStoredTheme();
+  } else {
+    try {
+      localStorage.setItem(THEME_KEY, t);
+    } catch {
+      /* ignore */
+    }
+  }
+  committedTheme = t;
+}
 
 const root = document.documentElement;
 const sidebar = document.getElementById("sidebar")!;
@@ -18,18 +43,58 @@ const pageSettings = document.getElementById("page-settings")!;
 const themeLight = document.querySelector<HTMLInputElement>("#theme-light");
 const themeDark = document.querySelector<HTMLInputElement>("#theme-dark");
 
+const drawerPanelTool = document.getElementById("drawer-panel-tool");
+const drawerPanelHint = document.getElementById("drawer-panel-settings-hint");
+const drawerTitleText = document.getElementById("drawerTitleText");
+
+const btnSettingsSave = document.getElementById("btn-settings-save");
+const btnSettingsResetDefault = document.getElementById("btn-settings-reset-default");
+const btnSettingsRevert = document.getElementById("btn-settings-revert");
+
 themeLight?.addEventListener("change", () => {
-  if (themeLight.checked) applyTheme("light");
+  if (themeLight.checked) applyTheme("light", false);
 });
 themeDark?.addEventListener("change", () => {
-  if (themeDark.checked) applyTheme("dark");
+  if (themeDark.checked) applyTheme("dark", false);
 });
 
+btnSettingsSave?.addEventListener("click", () => {
+  commitThemePreferences();
+});
+
+btnSettingsResetDefault?.addEventListener("click", () => {
+  applyTheme(getSystemTheme(), false);
+});
+
+btnSettingsRevert?.addEventListener("click", () => {
+  applyTheme(committedTheme, false);
+});
+
+function syncDrawerContext(pageId: "home" | "settings"): void {
+  if (!drawerPanelTool || !drawerPanelHint || !drawerTitleText) return;
+  if (pageId === "settings") {
+    drawerPanelTool.hidden = true;
+    drawerPanelHint.hidden = false;
+    drawerTitleText.textContent = "全局设置";
+  } else {
+    drawerPanelTool.hidden = false;
+    drawerPanelHint.hidden = true;
+    drawerTitleText.textContent = "当前工具参数";
+  }
+}
+
 function showPage(pageId: "home" | "settings"): void {
+  const wasSettings = pageSettings.classList.contains("is-visible");
+  if (wasSettings && pageId !== "settings" && currentTheme() !== committedTheme) {
+    applyTheme(committedTheme, false);
+  }
+
   const settings = pageId === "settings";
   pageHome.classList.toggle("is-visible", !settings);
   pageSettings.classList.toggle("is-visible", settings);
   topTitle.textContent = settings ? "当前视图 · 全局设置" : "当前视图 · SQL 工作台";
+
+  syncDrawerContext(pageId);
 }
 
 function setActiveNav(activeLink: HTMLElement | null): void {
@@ -179,3 +244,4 @@ resizer.addEventListener("keydown", (e) => {
 
 setDrawerWidth(getDrawerWidth() || 280);
 syncDrawerUi(false);
+syncDrawerContext("home");
