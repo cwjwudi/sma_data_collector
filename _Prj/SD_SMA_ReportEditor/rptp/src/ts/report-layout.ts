@@ -50,7 +50,7 @@ export function initReportLayoutPage(d: LayoutPageDeps): void {
     if (!confirm(`删除版式「${p.name}」？引用它的模版保留各自快照不受影响。`)) return;
     presets = presets.filter((x) => x.id !== selectedId);
     saveLayoutPresets(presets);
-    selectedId = presets[0]?.id ?? null;
+    selectedId = null;
     renderLayoutList();
     syncLayoutForm();
   });
@@ -68,7 +68,9 @@ export function initReportLayoutPage(d: LayoutPageDeps): void {
 
 export function showLayoutPage(): void {
   presets = loadLayoutPresets();
-  if (!selectedId && presets.length > 0) selectedId = presets[0]!.id;
+  if (selectedId !== null && !presets.some((x) => x.id === selectedId)) {
+    selectedId = null;
+  }
   renderLayoutList();
   syncLayoutForm();
   deps.showPage("layout");
