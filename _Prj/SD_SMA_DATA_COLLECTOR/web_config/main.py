@@ -61,7 +61,17 @@ app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="stat
 
 @app.get("/")
 def index() -> FileResponse:
-    return FileResponse(BASE_DIR / "static" / "index.html")
+    return FileResponse(BASE_DIR / "static" / "home.html")
+
+
+@app.get("/dashboard")
+def dashboard_page() -> FileResponse:
+    return FileResponse(BASE_DIR / "static" / "dashboard.html")
+
+
+@app.get("/config")
+def config_page() -> FileResponse:
+    return FileResponse(BASE_DIR / "static" / "config.html")
 
 
 @app.get("/api/health")

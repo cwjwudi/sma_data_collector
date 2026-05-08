@@ -59,6 +59,33 @@
           "sort_by": "collection_time",
           "sort_dir": "desc",
           "page_size": 10
+        },
+        "Group1": {
+          "columns": [
+            {
+              "name": "collection_time",
+              "label_en": "collection_time",
+              "label_zh": "collection_time"
+            },
+            {
+              "name": "AP1",
+              "label_en": "AP1",
+              "label_zh": "AP1"
+            },
+            {
+              "name": "AP2",
+              "label_en": "AP2",
+              "label_zh": "AP2"
+            },
+            {
+              "name": "AIR",
+              "label_en": "AIR",
+              "label_zh": "AIR"
+            }
+          ],
+          "sort_by": "collection_time",
+          "sort_dir": "desc",
+          "page_size": 10
         }
       }
     },
@@ -177,6 +204,7 @@
     "sensor_group_1": "sensor_group_1_20260402",
     "sensor_group_2": "sensor_group_2_20260326",
     "alarm_group_1": "alarm_group_1_20260407",
-    "trend_group_1": "trend_group_1_20260408"
+    "trend_group_1": "trend_group_1_20260408",
+    "Group1": "Group1_20260507"
   }
 }

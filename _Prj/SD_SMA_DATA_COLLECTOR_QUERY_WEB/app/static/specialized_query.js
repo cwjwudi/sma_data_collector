@@ -262,8 +262,9 @@
         page_size: currentBinding.page_size || 10,
         table: tableSelector.value || undefined,
       };
-      if (startInput.value) payload.start_time = new Date(startInput.value).toISOString();
-      if (endInput.value) payload.end_time = new Date(endInput.value).toISOString();
+      // datetime-local 是本地时间，直接传递避免 UTC 偏移导致当天数据被过滤
+      if (startInput.value) payload.start_time = startInput.value;
+      if (endInput.value) payload.end_time = endInput.value;
       lastStartIso = payload.start_time || null;
       lastEndIso = payload.end_time || null;
       const data = await fetchJson(`/api/plugins/query/${encodeURIComponent(pluginKey)}`, {

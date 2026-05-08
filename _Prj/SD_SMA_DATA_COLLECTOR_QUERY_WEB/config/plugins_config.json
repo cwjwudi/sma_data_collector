@@ -113,7 +113,7 @@
         "1": {
           "title": "General Page 1",
           "enabled": true,
-          "bind_group": "sensor_group_1",
+          "bind_group": "Group1",
           "view_name": "table",
           "page_size": 10
         },

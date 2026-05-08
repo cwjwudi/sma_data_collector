@@ -5,6 +5,89 @@ body {
   color: #1f2937;
 }
 
+.page-nav {
+  padding: 10px 12px;
+  background: #fff;
+  border-bottom: 1px solid #dbe1ea;
+  font-size: 14px;
+}
+
+.page-nav a {
+  color: #2563eb;
+  text-decoration: none;
+}
+
+.page-nav a:hover {
+  text-decoration: underline;
+}
+
+.page-nav-sep {
+  margin: 0 8px;
+  color: #94a3b8;
+}
+
+.page-nav-current {
+  color: #334155;
+  font-weight: 600;
+}
+
+.home-layout {
+  max-width: 900px;
+  margin: 0 auto;
+  grid-template-columns: 1fr;
+}
+
+.home-hero h1 {
+  margin-top: 0;
+  font-size: 22px;
+}
+
+.home-lead {
+  margin-bottom: 20px;
+}
+
+.home-lead code {
+  font-size: 12px;
+  background: #f1f5f9;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.nav-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 14px;
+}
+
+.nav-card {
+  display: block;
+  padding: 16px;
+  border: 1px solid #dbe1ea;
+  border-radius: 8px;
+  background: #f8fafc;
+  color: inherit;
+  text-decoration: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.nav-card:hover {
+  border-color: #93c5fd;
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.08);
+}
+
+.nav-card h2 {
+  margin: 0 0 8px;
+  font-size: 17px;
+  color: #1e40af;
+}
+
+.nav-card p {
+  margin: 0;
+  font-size: 14px;
+  color: #64748b;
+  line-height: 1.45;
+}
+
 .layout {
   display: grid;
   grid-template-columns: 1fr 1.5fr;

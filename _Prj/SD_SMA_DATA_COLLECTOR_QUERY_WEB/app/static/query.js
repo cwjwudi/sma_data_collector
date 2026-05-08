@@ -17,6 +17,7 @@ async function fetchJson(url, opts) {
 function saveQueryPageState() {
   const state = {
     group: document.getElementById('group').value || '',
+    table: document.getElementById('tableName').value || '',
     viewName: document.getElementById('viewName').value || '',
     labelLang: document.getElementById('labelLang').value || 'zh',
     pageSize: document.getElementById('pageSize').value || '10',
@@ -102,6 +103,25 @@ async function loadGroupSchemaHint() {
   }
 }
 
+async function loadTablesForCurrentGroup(preferredTable) {
+  const group = document.getElementById('group').value;
+  const tableSel = document.getElementById('tableName');
+  tableSel.innerHTML = '';
+  if (!group) return;
+
+  const data = await fetchJson('/api/meta/tables?group=' + encodeURIComponent(group));
+  const tables = Array.isArray(data.tables) ? data.tables : [];
+  for (const table of tables) {
+    const op = document.createElement('option');
+    op.value = table;
+    op.textContent = table;
+    tableSel.appendChild(op);
+  }
+  if (preferredTable && tables.includes(preferredTable)) {
+    tableSel.value = preferredTable;
+  }
+}
+
 async function loadGroupsForCurrentView(preferredGroup) {
   const viewName = document.getElementById('viewName').value;
   const hint = document.getElementById('schemaHint');
@@ -132,6 +152,7 @@ async function loadGroupsForCurrentView(preferredGroup) {
     sel.value = preferredGroup;
   }
   await loadGroupSchemaHint();
+  await loadTablesForCurrentGroup();
 }
 
 async function loadViews() {
@@ -182,9 +203,10 @@ function getCurrentPageSize() {
 function getCurrentQueryContext() {
   const viewName = document.getElementById('viewName').value;
   const group = document.getElementById('group').value;
+  const table = document.getElementById('tableName').value;
   if (!viewName) return alert('请先选择 view');
   if (!group) return alert('请先选择已配置 group');
-  return { viewName, group };
+  return { viewName, group, table };
 }
 
 function updatePageInfo(total, page, pageSize) {
@@ -199,7 +221,7 @@ function updatePageInfo(total, page, pageSize) {
 async function runQueryAtPage(page) {
   const context = getCurrentQueryContext();
   if (!context) return;
-  const { viewName, group } = context;
+  const { viewName, group, table } = context;
   const pageSize = getCurrentPageSize();
   const targetPage = Math.max(1, page);
 
@@ -209,14 +231,16 @@ async function runQueryAtPage(page) {
     page: targetPage,
     page_size: pageSize,
   };
+  if (table) payload.table = table;
 
   const start = document.getElementById('startTime').value;
   const end = document.getElementById('endTime').value;
   if (start && end && new Date(start).getTime() > new Date(end).getTime()) {
     return alert('开始时间不能大于结束时间');
   }
-  if (start) payload.start_time = new Date(start).toISOString();
-  if (end) payload.end_time = new Date(end).toISOString();
+  // datetime-local 是本地时间，直接传递避免 toISOString() 产生时区偏移
+  if (start) payload.start_time = start;
+  if (end) payload.end_time = end;
 
   const data = await fetchJson('/api/history/by-view', {
     method: 'POST',
@@ -249,6 +273,7 @@ async function runQueryAtPage(page) {
 async function runLastQueryAtPage(page) {
   if (!lastQueryContext) return;
   const { viewName, group, start, end } = lastQueryContext;
+  const table = lastQueryContext.table || '';
   const pageSize = getCurrentPageSize();
   const targetPage = Math.max(1, page);
 
@@ -258,8 +283,9 @@ async function runLastQueryAtPage(page) {
     page: targetPage,
     page_size: pageSize,
   };
-  if (start) payload.start_time = new Date(start).toISOString();
-  if (end) payload.end_time = new Date(end).toISOString();
+  if (table) payload.table = table;
+  if (start) payload.start_time = start;
+  if (end) payload.end_time = end;
 
   const data = await fetchJson('/api/history/by-view', {
     method: 'POST',
@@ -348,6 +374,7 @@ async function restoreQueryPageState() {
   }
   updateViewSummary();
   await loadGroupsForCurrentView(saved.group || '');
+  await loadTablesForCurrentGroup(saved.table || '');
 
   lastQueryContext = saved.lastQueryContext || null;
   lastResultData = saved.lastResultData || null;
@@ -374,9 +401,11 @@ document.getElementById('btnGoPage').addEventListener('click', () => {
   runLastQueryAtPage(Math.min(totalPages, Math.max(1, target))).catch(err => alert(err.message));
 });
 document.getElementById('group').addEventListener('change', () => {
-  loadGroupSchemaHint().catch(err => alert(err.message));
-  saveQueryPageState();
+  Promise.all([loadGroupSchemaHint(), loadTablesForCurrentGroup()])
+    .then(() => saveQueryPageState())
+    .catch(err => alert(err.message));
 });
+document.getElementById('tableName').addEventListener('change', saveQueryPageState);
 document.getElementById('viewName').addEventListener('change', () => {
   const selectedGroup = document.getElementById('group').value || '';
   loadGroupsForCurrentView(selectedGroup)

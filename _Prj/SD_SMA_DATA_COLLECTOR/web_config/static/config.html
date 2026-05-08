@@ -3,27 +3,16 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>SD SMA 采集配置页面</title>
+    <title>配置 — SD SMA 采集配置</title>
     <link rel="stylesheet" href="/static/styles.css" />
   </head>
   <body>
+    <nav class="page-nav" aria-label="站内导航">
+      <a href="/dashboard">采集监视</a>
+      <span class="page-nav-sep" aria-hidden="true">·</span>
+      <span class="page-nav-current">配置与 OPC UA</span>
+    </nav>
     <div class="layout">
-      <section class="panel panel-span">
-        <h2>采集监视</h2>
-        <p class="hint">
-          仅在此处点击「启动采集」后才会开始 data_collector。关闭本窗口即结束 Web 服务与托管的采集任务。
-        </p>
-        <div class="row row-monitor">
-          <span class="inline-label">配置文件</span>
-          <select id="monitor-config-select"></select>
-          <button type="button" id="btn-collector-start">启动采集</button>
-          <button type="button" id="btn-collector-stop" class="danger-btn">停止采集</button>
-        </div>
-        <div id="monitor-status" class="monitor-status">加载状态…</div>
-        <h3 class="subheading">运行日志（与文件/控制台同源）</h3>
-        <pre id="monitor-log" class="monitor-log"></pre>
-      </section>
-
       <section class="panel">
         <h2>OPC UA 浏览器</h2>
         <div class="row">
@@ -99,5 +88,4 @@
 
     <script src="/static/config.js"></script>
   </body>
-  </html>
-
+</html>

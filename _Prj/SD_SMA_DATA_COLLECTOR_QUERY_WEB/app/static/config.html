@@ -1,103 +1,110 @@
 <!doctype html>
 <html lang="zh-CN">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>配置页 - SD SMA Query Web</title>
-  <link rel="stylesheet" href="/static/styles.css" />
-</head>
-<body>
-  <main class="shell">
-    <header class="topbar">
-      <h1>配置页</h1>
-      <nav class="nav">
-        <a href="/query">查询页</a>
-        <a href="/config">配置页</a>
-      </nav>
-    </header>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>配置页 — SD SMA Query Web</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <nav class="page-nav" aria-label="站内导航">
+      <a href="/query">查询页</a>
+      <span class="page-nav-sep" aria-hidden="true">·</span>
+      <span class="page-nav-current">配置页</span>
+    </nav>
+    <div class="layout layout-stack">
+      <section class="panel">
+        <h2>Group 与列</h2>
+        <p class="hint">配置各表的列顺序、排序、分页与列中英文显示名；仅在查询中引用已配置的组。</p>
+        <div class="row">
+          <label for="editViewName">View</label>
+          <select id="editViewName"></select>
+          <label for="editGroupName">Group</label>
+          <select id="editGroupName"></select>
+          <label for="editTableName">基准表</label>
+          <select id="editTableName"></select>
+          <button type="button" id="btnLoadTableConfig">加载 group 配置</button>
+        </div>
+        <div id="schemaHint" class="muted"></div>
+        <div class="row">
+          <label for="tableSortBy">SortBy</label>
+          <select id="tableSortBy"></select>
+          <label for="tableSortDir">SortDir</label>
+          <select id="tableSortDir">
+            <option value="desc">desc</option>
+            <option value="asc">asc</option>
+          </select>
+          <label for="tablePageSize">PageSize</label>
+          <input id="tablePageSize" class="field-narrow-num" type="number" value="50" min="1" max="500" />
+        </div>
+        <div class="col-editor">
+          <div>
+            <div class="muted">可选列</div>
+            <select id="availableColumns" multiple></select>
+          </div>
+          <div class="col-actions">
+            <button type="button" id="btnAddColumns">添加 &gt;&gt;</button>
+            <button type="button" id="btnRemoveColumns">&lt;&lt; 移除</button>
+            <button type="button" id="btnMoveUp">上移</button>
+            <button type="button" id="btnMoveDown">下移</button>
+          </div>
+          <div>
+            <div class="muted">查询列顺序（最终生效）</div>
+            <select id="orderedColumns" multiple></select>
+          </div>
+        </div>
+        <div class="row">
+          <span class="inline-label">列显示名编辑</span>
+        </div>
+        <table id="columnLabelTable"></table>
+        <div class="row">
+          <button type="button" id="btnSaveTableConfig">保存当前表配置</button>
+          <button type="button" id="btnDeleteGroupConfig" class="danger-btn">删除当前配置</button>
+        </div>
+        <div id="columnEditorHint" class="muted"></div>
+      </section>
 
-    <section class="card">
-      <h3>每个 Group 表的列顺序和参数</h3>
-      <p class="muted">仅配置你需要的表：列顺序、排序字段、排序方向、分页大小、列中英显示名。</p>
-      <div class="row">
-        <label>View</label><select id="editViewName"></select>
-        <label>Group</label><select id="editGroupName"></select>
-        <label>基准表</label><select id="editTableName"></select>
-        <button id="btnLoadTableConfig">加载 group 配置</button>
-      </div>
-      <div id="schemaHint" class="muted"></div>
-      <div class="row">
-        <label>SortBy</label><select id="tableSortBy"></select>
-        <label>SortDir</label>
-        <select id="tableSortDir">
-          <option value="desc">desc</option>
-          <option value="asc">asc</option>
-        </select>
-        <label>PageSize</label><input id="tablePageSize" type="number" value="50" min="1" max="500" />
-      </div>
-      <div class="col-editor">
-        <div>
-          <div class="muted">可选列</div>
-          <select id="availableColumns" multiple></select>
+      <section class="panel">
+        <h2>插件页面</h2>
+        <p class="hint">用于 <code>/plugins/{module}_{1-5}.html</code> 动态绑定；每模块预留 1–5 页。</p>
+        <div class="row">
+          <label for="pluginModule">模块</label>
+          <select id="pluginModule"></select>
+          <label for="pluginPageIndex">页码</label>
+          <select id="pluginPageIndex">
+            <option value="1">1</option>
+            <option value="2">2</option>
+            <option value="3">3</option>
+            <option value="4">4</option>
+            <option value="5">5</option>
+          </select>
+          <button type="button" id="btnLoadPluginPage">加载当前页配置</button>
+          <button type="button" id="btnSavePluginPage">保存当前页配置</button>
         </div>
-        <div class="col-actions">
-          <button id="btnAddColumns">添加 &gt;&gt;</button>
-          <button id="btnRemoveColumns">&lt;&lt; 移除</button>
-          <button id="btnMoveUp">上移</button>
-          <button id="btnMoveDown">下移</button>
+        <div class="row">
+          <label for="pluginEnabled">启用</label>
+          <input id="pluginEnabled" type="checkbox" checked />
+          <label for="pluginTitle">标题</label>
+          <input id="pluginTitle" type="text" />
         </div>
-        <div>
-          <div class="muted">查询列顺序（最终生效）</div>
-          <select id="orderedColumns" multiple></select>
+        <div class="row">
+          <label for="pluginViewName">View</label>
+          <select id="pluginViewName">
+            <option value="table">table</option>
+            <option value="alarm">alarm</option>
+            <option value="audit">audit</option>
+          </select>
+          <label for="pluginPageSize">PageSize</label>
+          <input id="pluginPageSize" class="field-narrow-num" type="number" value="10" min="1" max="500" />
         </div>
-      </div>
-      <div class="row">
-        <label>列显示名编辑</label>
-      </div>
-      <table id="columnLabelTable"></table>
-      <div class="row">
-        <button id="btnSaveTableConfig">保存当前表配置</button>
-        <button id="btnDeleteGroupConfig" class="btn-danger">删除当前配置</button>
-      </div>
-      <div id="columnEditorHint" class="muted"></div>
-    </section>
-
-    <section class="card">
-      <h3>插件页面配置（alarm / audit / general）</h3>
-      <p class="muted">用于 `/plugins/{module}_{1-5}.html` 动态绑定。支持每个模块 1-5 页预留。</p>
-      <div class="row">
-        <label>模块</label><select id="pluginModule"></select>
-        <label>页码</label>
-        <select id="pluginPageIndex">
-          <option value="1">1</option>
-          <option value="2">2</option>
-          <option value="3">3</option>
-          <option value="4">4</option>
-          <option value="5">5</option>
-        </select>
-        <button id="btnLoadPluginPage">加载当前页配置</button>
-        <button id="btnSavePluginPage">保存当前页配置</button>
-      </div>
-      <div class="row">
-        <label>启用</label><input id="pluginEnabled" type="checkbox" checked />
-        <label>标题</label><input id="pluginTitle" type="text" />
-      </div>
-      <div class="row">
-        <label>View</label>
-        <select id="pluginViewName">
-          <option value="table">table</option>
-          <option value="alarm">alarm</option>
-          <option value="audit">audit</option>
-        </select>
-        <label>PageSize</label><input id="pluginPageSize" type="number" value="10" min="1" max="500" />
-      </div>
-      <div class="row">
-        <label>bind_group</label><select id="pluginBindGroup"></select>
-      </div>
-      <div id="pluginGroupHint" class="muted"></div>
-      <div id="pluginConfigHint" class="muted"></div>
-    </section>
-  </main>
-  <script src="/static/config.js"></script>
-</body>
+        <div class="row">
+          <label for="pluginBindGroup">bind_group</label>
+          <select id="pluginBindGroup"></select>
+        </div>
+        <div id="pluginGroupHint" class="muted"></div>
+        <div id="pluginConfigHint" class="muted"></div>
+      </section>
+    </div>
+    <script src="/static/config.js"></script>
+  </body>
 </html>
