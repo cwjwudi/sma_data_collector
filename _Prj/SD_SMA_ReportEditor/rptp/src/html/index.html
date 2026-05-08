@@ -83,6 +83,7 @@
               <thead>
                 <tr>
                   <th>名称</th>
+                  <th>用途</th>
                   <th>纸张</th>
                   <th>更新时间</th>
                   <th>操作</th>
@@ -416,6 +417,17 @@
                 <label for="layout-field-name">名称</label>
                 <input id="layout-field-name" type="text" maxlength="120" />
               </div>
+              <div class="field">
+                <label for="layout-field-page-role">页面用途</label>
+                <select id="layout-field-page-role">
+                  <option value="normal">正文页（默认）</option>
+                  <option value="cover">封面</option>
+                  <option value="back">末页</option>
+                </select>
+                <p class="drawer-panel-hint" style="margin-top: 0.35rem">
+                  新建模版时：只会列出「正文页」版式作为正文候选；「封面」「末页」版式用于可选封面/末页。
+                </p>
+              </div>
               <div class="field-row">
                 <div class="field">
                   <label for="layout-field-paper">纸张</label>
@@ -465,6 +477,14 @@
               <div class="field">
                 <label for="lvis-field-name">名称</label>
                 <input id="lvis-field-name" type="text" maxlength="120" />
+              </div>
+              <div class="field">
+                <label for="lvis-field-page-role">页面用途</label>
+                <select id="lvis-field-page-role">
+                  <option value="normal">正文页</option>
+                  <option value="cover">封面</option>
+                  <option value="back">末页</option>
+                </select>
               </div>
               <div class="field-row">
                 <div class="field">
@@ -589,41 +609,46 @@
     </aside>
   </div>
 
-  <dialog id="dialog-new-template" class="rptp-dialog">
+  <dialog id="dialog-new-template" class="rptp-dialog rptp-dialog--wide">
     <form id="form-new-template">
       <h2 class="rptp-dialog-title">新建模版</h2>
       <div class="field">
         <label for="nt-name">模版名称</label>
         <input id="nt-name" type="text" maxlength="120" required placeholder="例如：班产报表" />
       </div>
-      <fieldset class="nt-fieldset">
-        <legend>起始方式</legend>
-        <label class="nt-radio-line"><input type="radio" name="nt-base" value="preset" checked /> 基于自定义版式（推荐）</label>
-        <label class="nt-radio-line"><input type="radio" name="nt-base" value="blank" /> 空白纸张</label>
-      </fieldset>
-      <div id="nt-preset-block" class="field">
-        <label for="nt-preset">选用版式</label>
-        <select id="nt-preset"></select>
-      </div>
-      <div id="nt-paper-block" class="field-row nt-paper-row">
-        <div class="field">
-          <label for="nt-paper">纸张</label>
-          <select id="nt-paper">
-            <option value="A5">A5</option>
-            <option value="A4" selected>A4</option>
-            <option value="A3">A3</option>
-            <option value="Letter">Letter</option>
-          </select>
+
+      <section class="nt-picker-section">
+        <h3 class="nt-picker-heading">正文纸张（必选）</h3>
+        <div class="nt-body-mode-row">
+          <button type="button" class="btn btn-sm nt-body-tab is-active" data-nt-body-tab="preset">自定义版式</button>
+          <button type="button" class="btn btn-sm nt-body-tab" data-nt-body-tab="blank">空白纸张</button>
         </div>
-        <div class="field">
-          <label for="nt-orient">方向</label>
-          <select id="nt-orient">
-            <option value="portrait" selected>纵向</option>
-            <option value="landscape">横向</option>
-          </select>
+        <div id="nt-body-preset-grid" class="nt-layout-grid" aria-label="正文版式可选列表"></div>
+        <div id="nt-body-blank-grid" class="nt-layout-grid" hidden aria-label="空白纸张可选列表"></div>
+        <p id="nt-body-hint" class="nt-picker-hint"></p>
+      </section>
+
+      <section class="nt-picker-section">
+        <h3 class="nt-picker-heading">封面（可选）</h3>
+        <div class="nt-opt-row">
+          <label class="nt-radio-line"><input type="radio" name="nt-cover" value="none" checked /> 不使用封面版式</label>
+          <label class="nt-radio-line"><input type="radio" name="nt-cover" value="preset" /> 选用封面版式</label>
         </div>
-      </div>
-      <p class="nt-export-hint">动态正文超过一页高度时，导出阶段将按所选纸张自动拆页（在「生成与导出」中对接）。</p>
+        <p id="nt-cover-empty" class="nt-picker-hint" hidden></p>
+        <div id="nt-cover-grid" class="nt-layout-grid" hidden aria-label="封面版式可选列表"></div>
+      </section>
+
+      <section class="nt-picker-section">
+        <h3 class="nt-picker-heading">末页（可选）</h3>
+        <div class="nt-opt-row">
+          <label class="nt-radio-line"><input type="radio" name="nt-back" value="none" checked /> 不使用末页版式</label>
+          <label class="nt-radio-line"><input type="radio" name="nt-back" value="preset" /> 选用末页版式</label>
+        </div>
+        <p id="nt-back-empty" class="nt-picker-hint" hidden></p>
+        <div id="nt-back-grid" class="nt-layout-grid" hidden aria-label="末页版式可选列表"></div>
+      </section>
+
+      <p class="nt-export-hint">点击卡片选用版式或空白规格；预览下方为名称与纸张尺寸。模版保存各自快照。动态正文超高一页时导出将按纸张分页（后续在「生成与导出」对接）；封面/末页快照供首页与最后一页渲染使用。</p>
       <div class="rptp-dialog-actions">
         <button type="button" class="btn" id="nt-cancel">取消</button>
         <button type="submit" class="btn btn-primary">创建并编辑</button>

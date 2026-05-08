@@ -3,6 +3,7 @@ import {
   hydrateLayoutPreset,
   loadLayoutPresets,
   saveLayoutPresets,
+  LAYOUT_PAGE_ROLE_LABEL,
   type LayoutPreset,
   type LayoutSnapshot,
 } from "./templates/layout-model";
@@ -832,6 +833,7 @@ function bindDrawerInputs(): void {
   };
   const ids = [
     "lvis-field-name",
+    "lvis-field-page-role",
     "lvis-field-paper",
     "lvis-field-orientation",
     "lvis-g-mt",
@@ -896,6 +898,8 @@ function applyGlobalFromInputs(): void {
   if (!draft) return;
   const g = (id: string) => (document.getElementById(id) as HTMLInputElement | HTMLSelectElement | null)?.value;
   draft.name = (g("lvis-field-name") ?? "").trim() || draft.name;
+  const pr = g("lvis-field-page-role");
+  draft.pageRole = pr === "cover" || pr === "back" ? pr : "normal";
   draft.paperKind = (g("lvis-field-paper") as PaperKind) || draft.paperKind;
   draft.orientation = g("lvis-field-orientation") === "landscape" ? "landscape" : "portrait";
   draft.marginTopMm = Math.max(0, parseFloat(g("lvis-g-mt") ?? "0") || 0);
@@ -1045,7 +1049,7 @@ function renderLvis(): void {
   bodyZone.classList.toggle("lvis-zone-focused", sel.k === "global");
 
   if (meta)
-    meta.textContent = `${PAPER_LABEL[draft.paperKind]} · ${draft.orientation === "landscape" ? "横向" : "纵向"} · ${draft.name}`;
+    meta.textContent = `${PAPER_LABEL[draft.paperKind]} · ${draft.orientation === "landscape" ? "横向" : "纵向"} · ${draft.name} · ${LAYOUT_PAGE_ROLE_LABEL[draft.pageRole]}`;
 }
 
 function syncLvisDrawer(): void {
@@ -1085,6 +1089,7 @@ function syncLvisDrawer(): void {
 
   if (sel.k === "global") {
     set("lvis-field-name", draft.name);
+    set("lvis-field-page-role", draft.pageRole);
     set("lvis-field-paper", draft.paperKind);
     set("lvis-field-orientation", draft.orientation);
     set("lvis-g-mt", draft.marginTopMm);

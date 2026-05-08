@@ -9,11 +9,16 @@ import {
   type TemplateControlType,
   type TemplateElement,
 } from "./templates/model";
-import { defaultBlankLayoutSnapshot, presetToSnapshot } from "./templates/layout-model";
+import {
+  blankZonesSnapshot,
+  loadLayoutPresets,
+  presetZonesSnapshot,
+  type LayoutPreset,
+} from "./templates/layout-model";
 import { computePaperLayout } from "./templates/layout-geometry";
 import { renderZoneElementsInto } from "./templates/layout-zone-render";
-import { PAPER_LABEL, type PaperKind } from "./templates/paper";
-import { getLayoutPresetById, refreshLayoutPresetDropdown } from "./report-layout";
+import { PAPER_LABEL, PAPER_PRESETS, type PaperKind } from "./templates/paper";
+import { getLayoutPresetById } from "./report-layout";
 
 export interface TemplatePagesDeps {
   showPage: (id: string) => void;
@@ -230,67 +235,286 @@ function renderPaperChrome(): void {
       const pref = getLayoutPresetById(editing.layoutPresetId);
       src = pref ? `版式「${pref.name}」` : "版式（预设已删除）";
     }
-    meta.textContent = `${PAPER_LABEL[editing.paperKind]} · ${orient} · ${src} · 正文 ${m.contentW}×${m.contentH} px`;
+    const cov =
+      editing.coverLayoutPresetId === null
+        ? "无"
+        : getLayoutPresetById(editing.coverLayoutPresetId)?.name ?? "预设已删";
+    const bk =
+      editing.backLayoutPresetId === null
+        ? "无"
+        : getLayoutPresetById(editing.backLayoutPresetId)?.name ?? "预设已删";
+    meta.textContent = `${PAPER_LABEL[editing.paperKind]} · ${orient} · ${src} · 正文 ${m.contentW}×${m.contentH} px · 封面 ${cov} · 末页 ${bk}`;
   }
+}
+
+function paperMmLine(pk: PaperKind, orientation: "portrait" | "landscape"): string {
+  const def = PAPER_PRESETS[pk];
+  const mm =
+    orientation === "landscape"
+      ? `${def.heightMm}×${def.widthMm}`
+      : `${def.widthMm}×${def.heightMm}`;
+  return `${mm} mm`;
+}
+
+function thumbAspect(pk: PaperKind, orientation: "portrait" | "landscape"): string {
+  const d = PAPER_PRESETS[pk];
+  const w = orientation === "portrait" ? d.widthMm : d.heightMm;
+  const h = orientation === "portrait" ? d.heightMm : d.widthMm;
+  return `${w} / ${h}`;
+}
+
+function selectSingleCard(grid: HTMLElement, btn: HTMLButtonElement): void {
+  grid.querySelectorAll(".nt-layout-card").forEach((c) => c.classList.remove("is-selected"));
+  btn.classList.add("is-selected");
+}
+
+function appendPresetCard(grid: HTMLElement, preset: LayoutPreset): void {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "nt-layout-card";
+  btn.dataset.presetId = preset.id;
+
+  const thumb = document.createElement("div");
+  thumb.className = "nt-layout-card-preview";
+  const sheet = document.createElement("div");
+  sheet.className = "nt-sheet-thumb nt-sheet-thumb--zones";
+  sheet.style.aspectRatio = thumbAspect(preset.paperKind, preset.orientation);
+  sheet.appendChild(document.createElement("div")).className = "nt-sheet-zone nt-sheet-zone-header";
+  sheet.appendChild(document.createElement("div")).className = "nt-sheet-zone nt-sheet-zone-content";
+  sheet.appendChild(document.createElement("div")).className = "nt-sheet-zone nt-sheet-zone-footer";
+  thumb.appendChild(sheet);
+  btn.appendChild(thumb);
+
+  const title = document.createElement("div");
+  title.className = "nt-layout-card-title";
+  title.textContent = preset.name;
+
+  const meta = document.createElement("div");
+  meta.className = "nt-layout-card-dim";
+  meta.textContent = `${PAPER_LABEL[preset.paperKind]} · ${paperMmLine(preset.paperKind, preset.orientation)}`;
+
+  btn.appendChild(title);
+  btn.appendChild(meta);
+
+  btn.addEventListener("click", () => selectSingleCard(grid, btn));
+  grid.appendChild(btn);
+}
+
+function appendBlankCard(
+  grid: HTMLElement,
+  paper: PaperKind,
+  orientation: "portrait" | "landscape",
+): void {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "nt-layout-card nt-layout-card--blank";
+  btn.dataset.ntBlank = `${paper}:${orientation}`;
+
+  const thumb = document.createElement("div");
+  thumb.className = "nt-layout-card-preview";
+  const sheet = document.createElement("div");
+  sheet.className = "nt-sheet-thumb nt-sheet-thumb--blank";
+  sheet.style.aspectRatio = thumbAspect(paper, orientation);
+  thumb.appendChild(sheet);
+  btn.appendChild(thumb);
+
+  const title = document.createElement("div");
+  title.className = "nt-layout-card-title";
+  title.textContent = `${PAPER_LABEL[paper]}（空白）`;
+
+  const meta = document.createElement("div");
+  meta.className = "nt-layout-card-dim";
+  meta.textContent = paperMmLine(paper, orientation);
+
+  btn.appendChild(title);
+  btn.appendChild(meta);
+
+  btn.addEventListener("click", () => selectSingleCard(grid, btn));
+  grid.appendChild(btn);
+}
+
+function selectedPresetIdFromGrid(grid: HTMLElement | null): string | null {
+  if (!grid) return null;
+  const sel = grid.querySelector<HTMLButtonElement>(".nt-layout-card.is-selected");
+  return sel?.dataset.presetId ?? null;
+}
+
+function selectedBlankFromGrid(grid: HTMLElement | null): {
+  paper: PaperKind;
+  orientation: "portrait" | "landscape";
+} | null {
+  if (!grid) return null;
+  const sel = grid.querySelector<HTMLButtonElement>(".nt-layout-card.is-selected");
+  const raw = sel?.dataset.ntBlank;
+  if (!raw || !raw.includes(":")) return null;
+  const [paper, orientation] = raw.split(":") as [PaperKind, "portrait" | "landscape"];
+  if (!paper || (orientation !== "portrait" && orientation !== "landscape")) return null;
+  return { paper, orientation };
 }
 
 function bindNewTemplateDialog(): void {
   const dlg = document.getElementById("dialog-new-template") as HTMLDialogElement | null;
   const form = document.getElementById("form-new-template") as HTMLFormElement | null;
   const btnCancel = document.getElementById("nt-cancel");
-  const presetSelect = document.getElementById("nt-preset") as HTMLSelectElement | null;
-  const paperSelect = document.getElementById("nt-paper") as HTMLSelectElement | null;
-  const orientSelect = document.getElementById("nt-orient") as HTMLSelectElement | null;
-  const presetRadio = document.querySelector<HTMLInputElement>('input[name="nt-base"][value="preset"]');
-  const blankRadio = document.querySelector<HTMLInputElement>('input[name="nt-base"][value="blank"]');
+  const bodyPresetGrid = document.getElementById("nt-body-preset-grid");
+  const bodyBlankGrid = document.getElementById("nt-body-blank-grid");
+  const coverGrid = document.getElementById("nt-cover-grid");
+  const backGrid = document.getElementById("nt-back-grid");
+  const tabs = document.querySelectorAll<HTMLButtonElement>(".nt-body-tab");
 
   btnCancel?.addEventListener("click", () => dlg?.close());
 
+  tabs.forEach((tab) => {
+    tab.addEventListener("click", () => {
+      const mode = tab.dataset.ntBodyTab as "preset" | "blank" | undefined;
+      if (!mode || !bodyPresetGrid || !bodyBlankGrid) return;
+      tabs.forEach((t) => t.classList.toggle("is-active", t === tab));
+      const presetMode = mode === "preset";
+      bodyPresetGrid.hidden = !presetMode;
+      bodyBlankGrid.hidden = presetMode;
+      if (presetMode) {
+        const first = bodyPresetGrid.querySelector<HTMLButtonElement>(".nt-layout-card");
+        if (first && !bodyPresetGrid.querySelector(".nt-layout-card.is-selected")) {
+          selectSingleCard(bodyPresetGrid, first);
+        }
+      } else {
+        const first = bodyBlankGrid.querySelector<HTMLButtonElement>(".nt-layout-card");
+        if (first && !bodyBlankGrid.querySelector(".nt-layout-card.is-selected")) {
+          selectSingleCard(bodyBlankGrid, first);
+        }
+      }
+    });
+  });
+
+  document.querySelectorAll<HTMLInputElement>('input[name="nt-cover"]').forEach((r) => {
+    r.addEventListener("change", () => {
+      const show =
+        document.querySelector<HTMLInputElement>('input[name="nt-cover"]:checked')?.value === "preset";
+      if (coverGrid) coverGrid.hidden = !show;
+      if (!show) {
+        coverGrid?.querySelectorAll(".nt-layout-card").forEach((c) => c.classList.remove("is-selected"));
+      }
+    });
+  });
+
+  document.querySelectorAll<HTMLInputElement>('input[name="nt-back"]').forEach((r) => {
+    r.addEventListener("change", () => {
+      const show =
+        document.querySelector<HTMLInputElement>('input[name="nt-back"]:checked')?.value === "preset";
+      if (backGrid) backGrid.hidden = !show;
+      if (!show) {
+        backGrid?.querySelectorAll(".nt-layout-card").forEach((c) => c.classList.remove("is-selected"));
+      }
+    });
+  });
+
   form?.addEventListener("submit", (e) => {
     e.preventDefault();
-    if (!dlg || !paperSelect || !orientSelect || !presetSelect) return;
+    if (!dlg || !bodyPresetGrid || !bodyBlankGrid || !coverGrid || !backGrid) return;
 
     const nameEl = document.getElementById("nt-name") as HTMLInputElement | null;
     const name = nameEl?.value.trim() || "新建模版";
 
-    const usePreset = presetRadio?.checked === true;
-
     let opts: NewTemplateOptions;
 
-    if (usePreset) {
-      if (!presetSelect.value) {
-        alert("请先在「版式与页眉页脚」中创建版式，或改用「空白纸张」。");
+    if (!bodyPresetGrid.hidden) {
+      const pid = selectedPresetIdFromGrid(bodyPresetGrid);
+      if (!pid) {
+        alert("请点选一个正文「自定义版式」卡片。");
         return;
       }
-      const preset = getLayoutPresetById(presetSelect.value);
+      const preset = getLayoutPresetById(pid);
       if (!preset) {
-        alert("所选版式不存在，请重新选择。");
+        alert("所选正文版式不存在，请重新选择。");
         return;
       }
+      const b = presetZonesSnapshot(preset);
       opts = {
         name,
         paperKind: preset.paperKind,
         orientation: preset.orientation,
         layoutPresetId: preset.id,
-        layoutSnapshot: presetToSnapshot(preset),
-        headerText: preset.headerText,
-        footerText: preset.footerText,
-        headerElements: preset.headerElements.map((e) => ({ ...e })),
-        footerElements: preset.footerElements.map((e) => ({ ...e })),
+        layoutSnapshot: b.layoutSnapshot,
+        headerText: b.headerText,
+        footerText: b.footerText,
+        headerElements: b.headerElements,
+        footerElements: b.footerElements,
       };
     } else {
+      const bk = selectedBlankFromGrid(bodyBlankGrid);
+      if (!bk) {
+        alert("请点选一个「空白纸张」规格卡片。");
+        return;
+      }
+      const b = blankZonesSnapshot();
       opts = {
         name,
-        paperKind: (paperSelect.value as PaperKind) || "A4",
-        orientation: orientSelect.value === "landscape" ? "landscape" : "portrait",
+        paperKind: bk.paper,
+        orientation: bk.orientation,
         layoutPresetId: null,
-        layoutSnapshot: defaultBlankLayoutSnapshot(),
+        layoutSnapshot: b.layoutSnapshot,
         headerText: "",
         footerText: "",
         headerElements: [],
         footerElements: [],
       };
     }
+
+    const coverWantPreset =
+      document.querySelector<HTMLInputElement>('input[name="nt-cover"]:checked')?.value === "preset";
+    const emptyCover = blankZonesSnapshot();
+    let coverLayoutPresetId: string | null = null;
+    let coverZones = emptyCover;
+    if (coverWantPreset) {
+      const cid = selectedPresetIdFromGrid(coverGrid);
+      if (!cid) {
+        alert("已选择「选用封面版式」，请在卡片中点选一个封面版式。");
+        return;
+      }
+      const cp = getLayoutPresetById(cid);
+      if (!cp) {
+        alert("所选封面版式不存在。");
+        return;
+      }
+      coverLayoutPresetId = cp.id;
+      coverZones = presetZonesSnapshot(cp);
+    }
+
+    const backWantPreset =
+      document.querySelector<HTMLInputElement>('input[name="nt-back"]:checked')?.value === "preset";
+    const emptyBack = blankZonesSnapshot();
+    let backLayoutPresetId: string | null = null;
+    let backZones = emptyBack;
+    if (backWantPreset) {
+      const bid = selectedPresetIdFromGrid(backGrid);
+      if (!bid) {
+        alert("已选择「选用末页版式」，请在卡片中点选一个末页版式。");
+        return;
+      }
+      const bp = getLayoutPresetById(bid);
+      if (!bp) {
+        alert("所选末页版式不存在。");
+        return;
+      }
+      backLayoutPresetId = bp.id;
+      backZones = presetZonesSnapshot(bp);
+    }
+
+    opts = {
+      ...opts,
+      coverLayoutPresetId,
+      coverLayoutSnapshot: coverZones.layoutSnapshot,
+      coverHeaderText: coverZones.headerText,
+      coverFooterText: coverZones.footerText,
+      coverHeaderElements: coverZones.headerElements,
+      coverFooterElements: coverZones.footerElements,
+      backLayoutPresetId,
+      backLayoutSnapshot: backZones.layoutSnapshot,
+      backHeaderText: backZones.headerText,
+      backFooterText: backZones.footerText,
+      backHeaderElements: backZones.headerElements,
+      backFooterElements: backZones.footerElements,
+    };
 
     const t = createTemplate(opts);
     templates.push(t);
@@ -299,61 +523,106 @@ function bindNewTemplateDialog(): void {
     dlg.close();
     openEditor(t.id);
   });
-
-  function syncNtControls(): void {
-    const usePreset = presetRadio?.checked === true;
-    const presetBlock = document.getElementById("nt-preset-block");
-    if (presetBlock) presetBlock.hidden = !usePreset;
-
-    if (!paperSelect || !orientSelect || !presetSelect) return;
-
-    if (usePreset && presetSelect.value) {
-      const preset = getLayoutPresetById(presetSelect.value);
-      if (preset) {
-        paperSelect.value = preset.paperKind;
-        orientSelect.value = preset.orientation;
-      }
-      paperSelect.disabled = true;
-      orientSelect.disabled = true;
-    } else {
-      paperSelect.disabled = false;
-      orientSelect.disabled = false;
-    }
-  }
-
-  presetRadio?.addEventListener("change", syncNtControls);
-  blankRadio?.addEventListener("change", syncNtControls);
-  presetSelect?.addEventListener("change", syncNtControls);
 }
 
 function openNewTemplateDialog(): void {
   const dlg = document.getElementById("dialog-new-template") as HTMLDialogElement | null;
-  const presetSelect = document.getElementById("nt-preset") as HTMLSelectElement | null;
   const nameEl = document.getElementById("nt-name") as HTMLInputElement | null;
-  const presetRadio = document.querySelector<HTMLInputElement>('input[name="nt-base"][value="preset"]');
-  const blankRadio = document.querySelector<HTMLInputElement>('input[name="nt-base"][value="blank"]');
+  const bodyPresetGrid = document.getElementById("nt-body-preset-grid");
+  const bodyBlankGrid = document.getElementById("nt-body-blank-grid");
+  const coverGrid = document.getElementById("nt-cover-grid");
+  const backGrid = document.getElementById("nt-back-grid");
+  const bodyHint = document.getElementById("nt-body-hint");
+  const coverEmpty = document.getElementById("nt-cover-empty");
+  const backEmpty = document.getElementById("nt-back-empty");
+  const tabs = document.querySelectorAll<HTMLButtonElement>(".nt-body-tab");
 
-  if (!dlg || !presetSelect) return;
-
-  refreshLayoutPresetDropdown(presetSelect);
+  if (!dlg || !bodyPresetGrid || !bodyBlankGrid || !coverGrid || !backGrid) return;
 
   if (nameEl) nameEl.value = "新建模版";
 
-  const paperSelect = document.getElementById("nt-paper") as HTMLSelectElement | null;
-  const orientSelect = document.getElementById("nt-orient") as HTMLSelectElement | null;
-  if (paperSelect) paperSelect.value = "A4";
-  if (orientSelect) orientSelect.value = "portrait";
+  document.querySelectorAll<HTMLInputElement>('input[name="nt-cover"]').forEach((r) => {
+    r.checked = r.value === "none";
+  });
+  document.querySelectorAll<HTMLInputElement>('input[name="nt-back"]').forEach((r) => {
+    r.checked = r.value === "none";
+  });
+  coverGrid.hidden = true;
+  backGrid.hidden = true;
 
-  if (presetSelect.disabled || presetSelect.options.length === 0 || !presetSelect.options[0]?.value) {
-    presetRadio && (presetRadio.checked = false);
-    blankRadio && (blankRadio.checked = true);
-  } else {
-    presetRadio && (presetRadio.checked = true);
-    blankRadio && (blankRadio.checked = false);
-    presetSelect.selectedIndex = 0;
+  const presets = loadLayoutPresets();
+  const normal = presets.filter((p) => p.pageRole === "normal");
+  const covers = presets.filter((p) => p.pageRole === "cover");
+  const backs = presets.filter((p) => p.pageRole === "back");
+
+  bodyPresetGrid.replaceChildren();
+  bodyBlankGrid.replaceChildren();
+  coverGrid.replaceChildren();
+  backGrid.replaceChildren();
+
+  if (bodyHint) {
+    bodyHint.textContent =
+      normal.length === 0
+        ? "暂无标记为「正文页」的版式，请使用空白纸张或先到「版式与页眉页脚」新建版式并将页面用途设为正文页。"
+        : "点选卡片选择正文：自定义版式（正文页）或切换到「空白纸张」选择纸张与方向。";
   }
 
-  presetRadio?.dispatchEvent(new Event("change"));
+  for (const p of normal) {
+    appendPresetCard(bodyPresetGrid, p);
+  }
+
+  const papers: PaperKind[] = ["A5", "A4", "A3", "Letter"];
+  const orients = ["portrait", "landscape"] as const;
+  for (const pk of papers) {
+    for (const o of orients) {
+      appendBlankCard(bodyBlankGrid, pk, o);
+    }
+  }
+
+  for (const p of covers) {
+    appendPresetCard(coverGrid, p);
+  }
+
+  for (const p of backs) {
+    appendPresetCard(backGrid, p);
+  }
+
+  const coverPresetRadio = document.querySelector<HTMLInputElement>('input[name="nt-cover"][value="preset"]');
+  const backPresetRadio = document.querySelector<HTMLInputElement>('input[name="nt-back"][value="preset"]');
+  if (coverPresetRadio) coverPresetRadio.disabled = covers.length === 0;
+  if (backPresetRadio) backPresetRadio.disabled = backs.length === 0;
+
+  if (coverEmpty) {
+    coverEmpty.hidden = covers.length > 0;
+    coverEmpty.textContent =
+      covers.length === 0
+        ? "暂无「封面」版式。请到「版式与页眉页脚」新建并将页面用途设为封面。"
+        : "";
+  }
+
+  if (backEmpty) {
+    backEmpty.hidden = backs.length > 0;
+    backEmpty.textContent =
+      backs.length === 0
+        ? "暂无「末页」版式。请到「版式与页眉页脚」新建并将页面用途设为末页。"
+        : "";
+  }
+
+  const preferBlank = normal.length === 0;
+  tabs.forEach((tab) => {
+    const mode = tab.dataset.ntBodyTab;
+    tab.classList.toggle("is-active", preferBlank ? mode === "blank" : mode === "preset");
+  });
+  bodyPresetGrid.hidden = preferBlank;
+  bodyBlankGrid.hidden = !preferBlank;
+
+  if (!preferBlank && normal.length > 0) {
+    const first = bodyPresetGrid.querySelector<HTMLButtonElement>(".nt-layout-card");
+    if (first) selectSingleCard(bodyPresetGrid, first);
+  } else {
+    const firstBlank = bodyBlankGrid.querySelector<HTMLButtonElement>(".nt-layout-card");
+    if (firstBlank) selectSingleCard(bodyBlankGrid, firstBlank);
+  }
 
   dlg.showModal();
 }

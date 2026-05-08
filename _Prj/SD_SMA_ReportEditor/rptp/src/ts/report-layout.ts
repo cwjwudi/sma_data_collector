@@ -3,6 +3,7 @@ import {
   hydrateLayoutPreset,
   loadLayoutPresets,
   saveLayoutPresets,
+  LAYOUT_PAGE_ROLE_LABEL,
   type LayoutPreset,
 } from "./templates/layout-model";
 import { PAPER_LABEL, type PaperKind } from "./templates/paper";
@@ -105,7 +106,9 @@ export function refreshLayoutPresetDropdown(select: HTMLSelectElement): void {
   for (const p of presets) {
     const opt = document.createElement("option");
     opt.value = p.id;
-    opt.textContent = `${p.name} · ${PAPER_LABEL[p.paperKind]} · ${p.orientation === "landscape" ? "横" : "竖"}`;
+    const tag =
+      p.pageRole === "cover" ? "「封面」" : p.pageRole === "back" ? "「末页」" : "";
+    opt.textContent = `${tag}${p.name} · ${PAPER_LABEL[p.paperKind]} · ${p.orientation === "landscape" ? "横" : "竖"}`;
     select.appendChild(opt);
   }
 }
@@ -122,7 +125,7 @@ function renderLayoutList(): void {
   if (presets.length === 0) {
     const tr = document.createElement("tr");
     tr.innerHTML =
-      '<td colspan="4" class="template-table-empty">暂无版式。点击顶栏「新建版式」，再在右侧参数栏填写并保存后，即可在「新建模版」中优先选用。</td>';
+      '<td colspan="5" class="template-table-empty">暂无版式。点击顶栏「新建版式」，再在右侧参数栏填写并保存后，即可在「新建模版」中优先选用。</td>';
     tbody.appendChild(tr);
     return;
   }
@@ -134,6 +137,7 @@ function renderLayoutList(): void {
     tr.dataset.presetId = p.id;
     tr.innerHTML = `
       <td>${escapeHtml(p.name)}</td>
+      <td>${escapeHtml(LAYOUT_PAGE_ROLE_LABEL[p.pageRole] ?? "正文页")}</td>
       <td>${PAPER_LABEL[p.paperKind]}</td>
       <td>${date}</td>
       <td class="template-table-actions">
@@ -168,6 +172,7 @@ function syncLayoutForm(): void {
   const p = hydrateLayoutPreset(preset);
 
   setVal("layout-field-name", p.name);
+  setVal("layout-field-page-role", p.pageRole);
   setVal("layout-field-paper", p.paperKind);
   setVal("layout-field-orientation", p.orientation);
   setNum("layout-mt", p.marginTopMm);
@@ -194,6 +199,10 @@ function readLayoutFormInto(target: LayoutPreset): void {
   target.name = (g("layout-field-name") ?? "").trim() || target.name;
   target.paperKind = (g("layout-field-paper") as PaperKind) || target.paperKind;
   target.orientation = g("layout-field-orientation") === "landscape" ? "landscape" : "portrait";
+  {
+    const pr = g("layout-field-page-role");
+    target.pageRole = pr === "cover" || pr === "back" ? pr : "normal";
+  }
   target.marginTopMm = gn("layout-mt", target.marginTopMm);
   target.marginRightMm = gn("layout-mr", target.marginRightMm);
   target.marginBottomMm = gn("layout-mb", target.marginBottomMm);

@@ -30,6 +30,20 @@ export interface ReportTemplate {
   orientation: "portrait" | "landscape";
   layoutPresetId: string | null;
   layoutSnapshot: LayoutSnapshot;
+  /** 可选封面版式（与正文独立的页眉页脚快照）；导出首页时使用 */
+  coverLayoutPresetId: string | null;
+  coverLayoutSnapshot: LayoutSnapshot;
+  coverHeaderText: string;
+  coverFooterText: string;
+  coverHeaderElements: LayoutZoneElement[];
+  coverFooterElements: LayoutZoneElement[];
+  /** 可选末页版式 */
+  backLayoutPresetId: string | null;
+  backLayoutSnapshot: LayoutSnapshot;
+  backHeaderText: string;
+  backFooterText: string;
+  backHeaderElements: LayoutZoneElement[];
+  backFooterElements: LayoutZoneElement[];
   /** 页眉页脚占位文案（创建时从版式预设带入或留空），导出时渲染 */
   headerText: string;
   footerText: string;
@@ -48,6 +62,18 @@ export interface NewTemplateOptions {
   footerText: string;
   headerElements: LayoutZoneElement[];
   footerElements: LayoutZoneElement[];
+  coverLayoutPresetId: string | null;
+  coverLayoutSnapshot: LayoutSnapshot;
+  coverHeaderText: string;
+  coverFooterText: string;
+  coverHeaderElements: LayoutZoneElement[];
+  coverFooterElements: LayoutZoneElement[];
+  backLayoutPresetId: string | null;
+  backLayoutSnapshot: LayoutSnapshot;
+  backHeaderText: string;
+  backFooterText: string;
+  backHeaderElements: LayoutZoneElement[];
+  backFooterElements: LayoutZoneElement[];
 }
 
 export const TEMPLATE_STORAGE_KEY = "rptp-report-templates";
@@ -98,6 +124,18 @@ export function createTemplate(opts: NewTemplateOptions): ReportTemplate {
     orientation: opts.orientation,
     layoutPresetId: opts.layoutPresetId,
     layoutSnapshot: { ...opts.layoutSnapshot },
+    coverLayoutPresetId: opts.coverLayoutPresetId,
+    coverLayoutSnapshot: { ...opts.coverLayoutSnapshot },
+    coverHeaderText: opts.coverHeaderText,
+    coverFooterText: opts.coverFooterText,
+    coverHeaderElements: opts.coverHeaderElements.map((e) => ({ ...e })),
+    coverFooterElements: opts.coverFooterElements.map((e) => ({ ...e })),
+    backLayoutPresetId: opts.backLayoutPresetId,
+    backLayoutSnapshot: { ...opts.backLayoutSnapshot },
+    backHeaderText: opts.backHeaderText,
+    backFooterText: opts.backFooterText,
+    backHeaderElements: opts.backHeaderElements.map((e) => ({ ...e })),
+    backFooterElements: opts.backFooterElements.map((e) => ({ ...e })),
     headerText: opts.headerText,
     footerText: opts.footerText,
     headerElements: opts.headerElements.map((e) => ({ ...e })),
@@ -137,12 +175,29 @@ function migrateReportTemplate(v: unknown): unknown {
   if (!layoutSnapshot || typeof layoutSnapshot !== "object") {
     layoutSnapshot = defaultBlankLayoutSnapshot();
   }
+  let covSnap = o.coverLayoutSnapshot as LayoutSnapshot | undefined;
+  if (!covSnap || typeof covSnap !== "object") covSnap = defaultBlankLayoutSnapshot();
+  let backSnap = o.backLayoutSnapshot as LayoutSnapshot | undefined;
+  if (!backSnap || typeof backSnap !== "object") backSnap = defaultBlankLayoutSnapshot();
+
   return {
     ...o,
     paperKind,
     orientation,
     layoutPresetId: typeof o.layoutPresetId === "string" ? o.layoutPresetId : null,
     layoutSnapshot,
+    coverLayoutPresetId: typeof o.coverLayoutPresetId === "string" ? o.coverLayoutPresetId : null,
+    coverLayoutSnapshot: covSnap,
+    coverHeaderText: typeof o.coverHeaderText === "string" ? o.coverHeaderText : "",
+    coverFooterText: typeof o.coverFooterText === "string" ? o.coverFooterText : "",
+    coverHeaderElements: normalizeTplZone(o.coverHeaderElements),
+    coverFooterElements: normalizeTplZone(o.coverFooterElements),
+    backLayoutPresetId: typeof o.backLayoutPresetId === "string" ? o.backLayoutPresetId : null,
+    backLayoutSnapshot: backSnap,
+    backHeaderText: typeof o.backHeaderText === "string" ? o.backHeaderText : "",
+    backFooterText: typeof o.backFooterText === "string" ? o.backFooterText : "",
+    backHeaderElements: normalizeTplZone(o.backHeaderElements),
+    backFooterElements: normalizeTplZone(o.backFooterElements),
     headerText: typeof o.headerText === "string" ? o.headerText : "",
     footerText: typeof o.footerText === "string" ? o.footerText : "",
     headerElements: normalizeTplZone(o.headerElements),
@@ -163,6 +218,8 @@ function isReportTemplate(v: unknown): v is ReportTemplate {
   if (typeof o.headerText !== "string") return false;
   if (typeof o.footerText !== "string") return false;
   if (!Array.isArray(o.headerElements) || !Array.isArray(o.footerElements)) return false;
+  if (!Array.isArray(o.coverHeaderElements) || !Array.isArray(o.coverFooterElements)) return false;
+  if (!Array.isArray(o.backHeaderElements) || !Array.isArray(o.backFooterElements)) return false;
   return true;
 }
 

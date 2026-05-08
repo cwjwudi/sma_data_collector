@@ -5,6 +5,15 @@ import {
   type LayoutZoneElement,
 } from "./layout-zone-element";
 
+/** 版式预设的页面用途（新建模版时可分别选用封面 / 正文 / 末页版式） */
+export type LayoutPageRole = "normal" | "cover" | "back";
+
+export const LAYOUT_PAGE_ROLE_LABEL: Record<LayoutPageRole, string> = {
+  normal: "正文页",
+  cover: "封面",
+  back: "末页",
+};
+
 /** 写入模版时的版式几何快照（与版式预设脱钩，避免事后改预设导致旧模版错位） */
 export interface LayoutSnapshot {
   marginTopMm: number;
@@ -30,6 +39,8 @@ export interface LayoutPreset {
   marginLeftMm: number;
   headerBandMm: number;
   footerBandMm: number;
+  /** 页面用途：正文页 / 封面 / 末页（新建模版时按用途筛选可选版式） */
+  pageRole: LayoutPageRole;
   /** @deprecated 仅兼容旧数据；新界面写入 headerElements */
   headerText: string;
   /** @deprecated 仅兼容旧数据 */
@@ -64,6 +75,35 @@ export function presetToSnapshot(p: LayoutPreset): LayoutSnapshot {
   };
 }
 
+/** 页眉页脚区与几何快照（新建模版从预设复制或空白） */
+export interface ZonesSnapshot {
+  layoutSnapshot: LayoutSnapshot;
+  headerText: string;
+  footerText: string;
+  headerElements: LayoutZoneElement[];
+  footerElements: LayoutZoneElement[];
+}
+
+export function presetZonesSnapshot(preset: LayoutPreset): ZonesSnapshot {
+  return {
+    layoutSnapshot: presetToSnapshot(preset),
+    headerText: preset.headerText,
+    footerText: preset.footerText,
+    headerElements: preset.headerElements.map((e) => ({ ...e })),
+    footerElements: preset.footerElements.map((e) => ({ ...e })),
+  };
+}
+
+export function blankZonesSnapshot(): ZonesSnapshot {
+  return {
+    layoutSnapshot: defaultBlankLayoutSnapshot(),
+    headerText: "",
+    footerText: "",
+    headerElements: [],
+    footerElements: [],
+  };
+}
+
 function newId(): string {
   try {
     return crypto.randomUUID();
@@ -86,6 +126,7 @@ export function createEmptyLayoutPreset(): LayoutPreset {
     marginLeftMm: 15,
     headerBandMm: 22,
     footerBandMm: 18,
+    pageRole: "normal",
     headerText: "",
     footerText: "",
     headerElements: [],
@@ -124,6 +165,11 @@ function normalizeZoneArray(raw: unknown): LayoutZoneElement[] {
   return raw.map((x) => hydrateLayoutZoneElement(x as Partial<LayoutZoneElement>));
 }
 
+function normalizePageRole(v: unknown): LayoutPageRole {
+  if (v === "cover" || v === "back") return v;
+  return "normal";
+}
+
 export function hydrateLayoutPreset(raw: Partial<LayoutPreset>): LayoutPreset {
   const d = createEmptyLayoutPreset();
   const merged: LayoutPreset = {
@@ -132,6 +178,7 @@ export function hydrateLayoutPreset(raw: Partial<LayoutPreset>): LayoutPreset {
     id: typeof raw.id === "string" && raw.id.length > 0 ? raw.id : d.id,
     paperKind: (raw.paperKind as PaperKind) || d.paperKind,
     orientation: raw.orientation === "landscape" ? "landscape" : "portrait",
+    pageRole: normalizePageRole(raw.pageRole),
     headerText: typeof raw.headerText === "string" ? raw.headerText : d.headerText,
     footerText: typeof raw.footerText === "string" ? raw.footerText : d.footerText,
     headerElements: normalizeZoneArray(raw.headerElements),
