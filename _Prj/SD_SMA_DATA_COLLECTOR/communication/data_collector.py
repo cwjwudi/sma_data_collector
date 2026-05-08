@@ -170,12 +170,12 @@ class DataCollector:
                 self.logger.info(f"启动时间+变量触发采集组: {group.name}")
 
             elif group.trigger == TriggerType.QUERY:
-                # 变量触发查询
+                # 变量触发查询（必须登记到 collectors，否则 stop_collection 无法取消轮询任务）
                 trigger_point = data_points_dict[group.trigger_point]
                 task = asyncio.create_task(
                     self._query_collection(group, group_points, trigger_point, opcua_client)
                 )
-                # self.collectors[group.name] = task
+                self.collectors[group.name] = task
                 self.logger.info(f"启动查询任务组: {group.name}")
 
         
