@@ -148,26 +148,72 @@
               </div>
               <div id="lvis-align-actions" class="lvis-align-actions" hidden>
                 <span class="lvis-mini-label">区内对齐</span>
-                <div class="lvis-btn-row">
-                  <button type="button" class="btn btn-sm" id="lvis-al-left">左</button>
-                  <button type="button" class="btn btn-sm" id="lvis-al-center-x">水平</button>
-                  <button type="button" class="btn btn-sm" id="lvis-al-right">右</button>
+                <div class="lvis-palette-vis-grid" role="toolbar" aria-label="水平对齐">
+                  <button type="button" class="lvis-palette-vis-btn" id="lvis-al-left" title="靠左" aria-label="靠左对齐">
+                    <span class="lvis-palette-vis-preview lvis-palette-vis-preview--h" aria-hidden="true">
+                      <span class="lvis-palette-vis-block lvis-palette-vis-block--h-left"></span>
+                    </span>
+                  </button>
+                  <button type="button" class="lvis-palette-vis-btn" id="lvis-al-center-x" title="水平居中" aria-label="水平居中">
+                    <span class="lvis-palette-vis-preview lvis-palette-vis-preview--h" aria-hidden="true">
+                      <span class="lvis-palette-vis-block lvis-palette-vis-block--h-center"></span>
+                    </span>
+                  </button>
+                  <button type="button" class="lvis-palette-vis-btn" id="lvis-al-right" title="靠右" aria-label="靠右对齐">
+                    <span class="lvis-palette-vis-preview lvis-palette-vis-preview--h" aria-hidden="true">
+                      <span class="lvis-palette-vis-block lvis-palette-vis-block--h-right"></span>
+                    </span>
+                  </button>
                 </div>
-                <div class="lvis-btn-row">
-                  <button type="button" class="btn btn-sm" id="lvis-al-top">上</button>
-                  <button type="button" class="btn btn-sm" id="lvis-al-center-y">垂直</button>
-                  <button type="button" class="btn btn-sm" id="lvis-al-bottom">下</button>
+                <div class="lvis-palette-vis-grid" role="toolbar" aria-label="垂直对齐">
+                  <button type="button" class="lvis-palette-vis-btn" id="lvis-al-top" title="靠上" aria-label="靠上对齐">
+                    <span class="lvis-palette-vis-preview lvis-palette-vis-preview--v" aria-hidden="true">
+                      <span class="lvis-palette-vis-block lvis-palette-vis-block--v-top"></span>
+                    </span>
+                  </button>
+                  <button type="button" class="lvis-palette-vis-btn" id="lvis-al-center-y" title="垂直居中" aria-label="垂直居中">
+                    <span class="lvis-palette-vis-preview lvis-palette-vis-preview--v" aria-hidden="true">
+                      <span class="lvis-palette-vis-block lvis-palette-vis-block--v-center"></span>
+                    </span>
+                  </button>
+                  <button type="button" class="lvis-palette-vis-btn" id="lvis-al-bottom" title="靠下" aria-label="靠下对齐">
+                    <span class="lvis-palette-vis-preview lvis-palette-vis-preview--v" aria-hidden="true">
+                      <span class="lvis-palette-vis-block lvis-palette-vis-block--v-bottom"></span>
+                    </span>
+                  </button>
                 </div>
                 <span class="lvis-mini-label">铺满区带</span>
-                <div class="lvis-btn-row">
-                  <button type="button" class="btn btn-sm" id="lvis-fill-w">区宽</button>
-                  <button type="button" class="btn btn-sm" id="lvis-fill-h">区高</button>
-                  <button type="button" class="btn btn-sm" id="lvis-fill-both">铺满</button>
+                <div class="lvis-palette-vis-grid" role="toolbar" aria-label="铺满区带">
+                  <button type="button" class="lvis-palette-vis-btn" id="lvis-fill-w" title="铺满区宽" aria-label="铺满区宽">
+                    <span class="lvis-palette-vis-preview lvis-palette-vis-preview--square" aria-hidden="true">
+                      <span class="lvis-palette-vis-fill lvis-palette-vis-fill--w"></span>
+                    </span>
+                  </button>
+                  <button type="button" class="lvis-palette-vis-btn" id="lvis-fill-h" title="铺满区高" aria-label="铺满区高">
+                    <span class="lvis-palette-vis-preview lvis-palette-vis-preview--square" aria-hidden="true">
+                      <span class="lvis-palette-vis-fill lvis-palette-vis-fill--h"></span>
+                    </span>
+                  </button>
+                  <button type="button" class="lvis-palette-vis-btn" id="lvis-fill-both" title="铺满区带" aria-label="铺满整个区带">
+                    <span class="lvis-palette-vis-preview lvis-palette-vis-preview--square" aria-hidden="true">
+                      <span class="lvis-palette-vis-fill lvis-palette-vis-fill--both"></span>
+                    </span>
+                  </button>
                 </div>
                 <span class="lvis-mini-label">多选统一（参照首个）</span>
-                <div class="lvis-btn-row">
-                  <button type="button" class="btn btn-sm lvis-match-btn" id="lvis-match-w" disabled>同宽</button>
-                  <button type="button" class="btn btn-sm lvis-match-btn" id="lvis-match-h" disabled>同高</button>
+                <div class="lvis-palette-vis-grid lvis-palette-vis-grid--cols-2" role="toolbar" aria-label="多选统一尺寸">
+                  <button type="button" class="lvis-palette-vis-btn lvis-match-btn" id="lvis-match-w" disabled title="同宽（参照首个）" aria-label="同宽">
+                    <span class="lvis-palette-vis-preview lvis-palette-vis-preview--match-w" aria-hidden="true">
+                      <span class="lvis-palette-vis-match-bar"></span>
+                      <span class="lvis-palette-vis-match-bar"></span>
+                    </span>
+                  </button>
+                  <button type="button" class="lvis-palette-vis-btn lvis-match-btn" id="lvis-match-h" disabled title="同高（参照首个）" aria-label="同高">
+                    <span class="lvis-palette-vis-preview lvis-palette-vis-preview--match-h" aria-hidden="true">
+                      <span class="lvis-palette-vis-match-row"></span>
+                      <span class="lvis-palette-vis-match-row"></span>
+                    </span>
+                  </button>
                 </div>
               </div>
             </aside>
