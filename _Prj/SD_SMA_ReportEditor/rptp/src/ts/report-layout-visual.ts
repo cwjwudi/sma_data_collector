@@ -385,8 +385,10 @@ function listForZone(zone: "header" | "footer"): LayoutZoneElement[] {
 }
 
 /**
- * 缩放层 #lvis-page-scale-wrap（应用 transform: scale）在 .lvis-scroll 滚动坐标系下的矩形。
- * 必须用 wrap 的 getBoundingClientRect（含变换后的视觉尺寸）；若误用 #lvis-zoom-outer，会出现 frac 越界与缩放锚点漂移。
+ * 纸张预览块在 .lvis-scroll 滚动坐标系下的矩形。
+ * 左上角用 #lvis-zoom-outer 的 getBoundingClientRect（视口对齐）；宽高用 outer.offsetWidth/Height，
+ * 与 applyLvisZoom 写入的尺寸一致。仅用 inner wrap 的 BCR 在部分布局下 width 会异常偏小（日志曾出现 w≈2）；
+ * 仅用 outer BCR 的宽高则可能与子元素 transform 后的亚像素不一致，二者拆开可避免 frac 爆炸。
  */
 function lvisPaperRectInScrollCoords(sc: HTMLElement): {
   left: number;
@@ -394,15 +396,18 @@ function lvisPaperRectInScrollCoords(sc: HTMLElement): {
   width: number;
   height: number;
 } {
-  const wrap = document.getElementById("lvis-page-scale-wrap");
-  if (!wrap) return { left: 0, top: 0, width: 0, height: 0 };
+  const outer = document.getElementById("lvis-zoom-outer");
+  if (!outer) return { left: 0, top: 0, width: 0, height: 0 };
   const scr = sc.getBoundingClientRect();
-  const wr = wrap.getBoundingClientRect();
+  const or = outer.getBoundingClientRect();
+  const w = outer.offsetWidth;
+  const h = outer.offsetHeight;
+  if (w <= 0 || h <= 0) return { left: 0, top: 0, width: 0, height: 0 };
   return {
-    left: sc.scrollLeft + (wr.left - scr.left),
-    top: sc.scrollTop + (wr.top - scr.top),
-    width: wr.width,
-    height: wr.height,
+    left: sc.scrollLeft + (or.left - scr.left),
+    top: sc.scrollTop + (or.top - scr.top),
+    width: w,
+    height: h,
   };
 }
 
@@ -477,7 +482,7 @@ function applyLvisZoomAnchoredAt(clientX: number, clientY: number): void {
         fracX,
         fracY,
         pr: { left: pr.left, top: pr.top, w: pr.width, h: pr.height },
-        rectBasis: "lvis-page-scale-wrap",
+        rectBasis: "outer-bcr-pos+offset-wh",
         scrollBefore: { left: scroll.scrollLeft, top: scroll.scrollTop },
       },
       timestamp: Date.now(),
