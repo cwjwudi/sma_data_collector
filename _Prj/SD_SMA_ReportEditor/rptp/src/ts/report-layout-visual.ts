@@ -10,6 +10,7 @@ import type { LayoutControlType } from "./templates/layout-zone-element";
 import {
   clampZoneElement,
   makeLayoutZoneElement,
+  normalizeAlignAxis,
   type LayoutZoneElement,
 } from "./templates/layout-zone-element";
 import { renderZoneElementsInto } from "./templates/layout-zone-render";
@@ -47,6 +48,18 @@ let dragMove: {
   oy: number;
 } | null = null;
 
+let resizeDrag: {
+  zone: "header" | "footer";
+  id: string;
+  corner: string;
+  sx: number;
+  sy: number;
+  ox: number;
+  oy: number;
+  ow: number;
+  oh: number;
+} | null = null;
+
 function snapPx(v: number): number {
   if (!snapEnabled || snapGridPx <= 0) return Math.round(v);
   return Math.round(v / snapGridPx) * snapGridPx;
@@ -59,6 +72,45 @@ function snapElInZone(el: LayoutZoneElement, zone: "header" | "footer"): void {
   el.w = Math.max(16, snapPx(el.w));
   el.h = Math.max(16, snapPx(el.h));
   clampZoneElement(el, zw, zh);
+}
+
+function applyResizeFromCorner(
+  el: LayoutZoneElement,
+  corner: string,
+  ox: number,
+  oy: number,
+  ow: number,
+  oh: number,
+  dx: number,
+  dy: number,
+): void {
+  const MIN = 16;
+  let x = ox;
+  let y = oy;
+  let w = ow;
+  let h = oh;
+  if (corner.includes("e")) w = ow + dx;
+  if (corner.includes("w")) {
+    x = ox + dx;
+    w = ow - dx;
+  }
+  if (corner.includes("s")) h = oh + dy;
+  if (corner.includes("n")) {
+    y = oy + dy;
+    h = oh - dy;
+  }
+  if (w < MIN) {
+    if (corner.includes("w")) x = ox + ow - MIN;
+    w = MIN;
+  }
+  if (h < MIN) {
+    if (corner.includes("n")) y = oy + oh - MIN;
+    h = MIN;
+  }
+  el.x = Math.round(x);
+  el.y = Math.round(y);
+  el.w = Math.round(w);
+  el.h = Math.round(h);
 }
 
 function snapFromDraft(d: LayoutPreset): LayoutSnapshot {
@@ -303,6 +355,14 @@ export function initReportLayoutVisual(d: LayoutVisualDeps): void {
 
   window.addEventListener("mousemove", onWinMove);
   window.addEventListener("mouseup", () => {
+    if (resizeDrag && draft) {
+      const list = resizeDrag.zone === "header" ? draft.headerElements : draft.footerElements;
+      const el = list.find((x) => x.id === resizeDrag!.id);
+      if (el) snapElInZone(el, resizeDrag.zone);
+      renderLvis();
+      syncElementInputsFromModel();
+    }
+    resizeDrag = null;
     if (dragMove && draft) {
       const list = dragMove.zone === "header" ? draft.headerElements : draft.footerElements;
       const el = list.find((x) => x.id === dragMove!.id);
@@ -360,6 +420,34 @@ function setupZoneCanvas(canvas: HTMLElement | null, zone: "header" | "footer"):
 
   canvas.addEventListener("mousedown", (e) => {
     if (!draft) return;
+    const rh = (e.target as HTMLElement).closest("[data-layout-resize-corner]");
+    if (rh && canvas.contains(rh)) {
+      const corner = rh.getAttribute("data-layout-resize-corner");
+      const wrap = rh.closest("[data-layout-zone-el-id]");
+      const rid = wrap?.getAttribute("data-layout-zone-el-id");
+      if (!corner || !rid) return;
+      const list = zone === "header" ? draft.headerElements : draft.footerElements;
+      const el = list.find((x) => x.id === rid);
+      if (!el) return;
+      sel = { k: "el", zone, ids: [rid] };
+      resizeDrag = {
+        zone,
+        id: rid,
+        corner,
+        sx: e.clientX,
+        sy: e.clientY,
+        ox: el.x,
+        oy: el.y,
+        ow: el.w,
+        oh: el.h,
+      };
+      dragMove = null;
+      e.preventDefault();
+      e.stopPropagation();
+      renderLvis();
+      syncLvisDrawer();
+      return;
+    }
     const node = (e.target as HTMLElement).closest("[data-layout-zone-el-id]");
     if (!node || !canvas.contains(node)) return;
     const id = node.getAttribute("data-layout-zone-el-id");
@@ -375,6 +463,7 @@ function setupZoneCanvas(canvas: HTMLElement | null, zone: "header" | "footer"):
       sel = { k: "el", zone, ids: [id] };
     }
     dragMove = { zone, id, sx: e.clientX, sy: e.clientY, ox: el.x, oy: el.y };
+    resizeDrag = null;
     e.preventDefault();
     renderLvis();
     syncLvisDrawer();
@@ -384,6 +473,7 @@ function setupZoneCanvas(canvas: HTMLElement | null, zone: "header" | "footer"):
     if (!draft) return;
     e.stopPropagation();
     const t = e.target as HTMLElement;
+    if (t.closest("[data-layout-resize-corner]")) return;
     if (t.closest("[data-layout-zone-el-id]")) return;
     if (t === canvas || t.classList.contains("lvis-zone-canvas")) {
       sel = zone === "header" ? { k: "headerBand" } : { k: "footerBand" };
@@ -401,6 +491,27 @@ function toggleSelId(ids: string[], id: string): string[] {
 }
 
 function onWinMove(e: MouseEvent): void {
+  if (resizeDrag && draft) {
+    const list = resizeDrag.zone === "header" ? draft.headerElements : draft.footerElements;
+    const el = list.find((x) => x.id === resizeDrag!.id);
+    if (!el) return;
+    const dx = e.clientX - resizeDrag.sx;
+    const dy = e.clientY - resizeDrag.sy;
+    applyResizeFromCorner(
+      el,
+      resizeDrag.corner,
+      resizeDrag.ox,
+      resizeDrag.oy,
+      resizeDrag.ow,
+      resizeDrag.oh,
+      dx,
+      dy,
+    );
+    clampZoneElement(el, zoneDims(resizeDrag.zone).zw, zoneDims(resizeDrag.zone).zh);
+    renderLvis();
+    syncElementInputsFromModel();
+    return;
+  }
   if (!dragMove || !draft) return;
   const list = dragMove.zone === "header" ? draft.headerElements : draft.footerElements;
   const el = list.find((x) => x.id === dragMove!.id);
@@ -434,6 +545,8 @@ function bindDrawerInputs(): void {
     "lvis-e-color",
     "lvis-e-bg",
     "lvis-e-font",
+    "lvis-e-align-x",
+    "lvis-e-align-y",
     "lvis-e-date-format",
     "lvis-e-img-url",
   ];
@@ -501,6 +614,8 @@ function applyElementFromInputs(): void {
   if (c && /^#[0-9A-Fa-f]{6}$/.test(c)) el.color = c;
   el.bgColor = g("lvis-e-bg") ?? el.bgColor;
   el.fontSize = Math.max(8, parseInt(g("lvis-e-font") ?? String(el.fontSize), 10) || 12);
+  el.alignX = normalizeAlignAxis(g("lvis-e-align-x"), el.alignX);
+  el.alignY = normalizeAlignAxis(g("lvis-e-align-y"), el.alignY);
   el.dateFormat = g("lvis-e-date-format") ?? el.dateFormat;
   const url = g("lvis-e-img-url");
   if (url !== undefined && el.type === "image") el.imageSrc = url;
@@ -522,6 +637,8 @@ function syncElementInputsFromModel(): void {
   set("lvis-e-color", /^#[0-9A-Fa-f]{6}$/.test(el.color) ? el.color : "#18181b");
   set("lvis-e-bg", el.bgColor);
   set("lvis-e-font", el.fontSize);
+  set("lvis-e-align-x", el.alignX);
+  set("lvis-e-align-y", el.alignY);
   set("lvis-e-date-format", el.dateFormat);
   set("lvis-e-img-url", el.imageSrc);
 }
@@ -592,13 +709,23 @@ function renderLvis(): void {
     sel.k === "el" && sel.zone === "header" ? new Set(sel.ids) : undefined;
   const footerIds =
     sel.k === "el" && sel.zone === "footer" ? new Set(sel.ids) : undefined;
+  const headerResize =
+    sel.k === "el" && sel.zone === "header" && sel.ids.length === 1
+      ? new Set(sel.ids)
+      : undefined;
+  const footerResize =
+    sel.k === "el" && sel.zone === "footer" && sel.ids.length === 1
+      ? new Set(sel.ids)
+      : undefined;
 
   renderZoneElementsInto(hc, draft.headerElements, {
     selectedIds: headerIds,
+    resizeHandlesForIds: headerResize,
     selectionChrome: true,
   });
   renderZoneElementsInto(fc, draft.footerElements, {
     selectedIds: footerIds,
+    resizeHandlesForIds: footerResize,
     selectionChrome: true,
   });
 

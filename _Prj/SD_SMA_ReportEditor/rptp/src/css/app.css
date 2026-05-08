@@ -1263,6 +1263,42 @@ html[data-theme="dark"] .lvis-body-zone {
   outline-offset: 1px;
   z-index: 1;
 }
+.lvis-zone-canvas .layout-zone-resize {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  padding: 0;
+  margin: 0;
+  border: 1px solid var(--surface);
+  background: var(--accent);
+  border-radius: 2px;
+  z-index: 5;
+  box-sizing: border-box;
+  cursor: nwse-resize;
+}
+.lvis-zone-canvas .layout-zone-resize:focus {
+  outline: none;
+}
+.lvis-zone-canvas .layout-zone-resize-nw {
+  top: 1px;
+  left: 1px;
+  cursor: nwse-resize;
+}
+.lvis-zone-canvas .layout-zone-resize-ne {
+  top: 1px;
+  right: 1px;
+  cursor: nesw-resize;
+}
+.lvis-zone-canvas .layout-zone-resize-sw {
+  bottom: 1px;
+  left: 1px;
+  cursor: nesw-resize;
+}
+.lvis-zone-canvas .layout-zone-resize-se {
+  bottom: 1px;
+  right: 1px;
+  cursor: nwse-resize;
+}
 .template-paper-zone-inner .layout-zone-node {
   cursor: default;
 }

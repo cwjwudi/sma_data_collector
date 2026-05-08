@@ -4,6 +4,9 @@ export type LayoutZoneKind = "header" | "footer";
 
 export type LayoutControlType = "text" | "box" | "image" | "pageNumber" | "date";
 
+/** 内容在控件框内的对齐（flex）：start=左/上，center=中，end=右/下 */
+export type LayoutAlignAxis = "start" | "center" | "end";
+
 export interface LayoutZoneElement {
   id: string;
   type: LayoutControlType;
@@ -15,10 +18,19 @@ export interface LayoutZoneElement {
   color: string;
   bgColor: string;
   fontSize: number;
+  /** 水平：左 / 中 / 右 */
+  alignX: LayoutAlignAxis;
+  /** 垂直：上 / 中 / 下 */
+  alignY: LayoutAlignAxis;
   /** type date：占位格式，导出时用真实日期按此格式化 */
   dateFormat: string;
   /** type image：支持 URL、data URL */
   imageSrc: string;
+}
+
+export function normalizeAlignAxis(v: unknown, fb: LayoutAlignAxis): LayoutAlignAxis {
+  if (v === "center" || v === "end") return v;
+  return fb;
 }
 
 export function formatLayoutDate(d: Date, pattern: string): string {
@@ -42,6 +54,8 @@ function newId(): string {
 }
 
 export function defaultLayoutZoneElement(type: LayoutControlType): Omit<LayoutZoneElement, "id"> {
+  const axStart = { alignX: "start" as const, alignY: "center" as const };
+  const axCenter = { alignX: "center" as const, alignY: "center" as const };
   const baseText = {
     text: type === "text" ? "文本" : "",
     color: "#18181b",
@@ -51,13 +65,13 @@ export function defaultLayoutZoneElement(type: LayoutControlType): Omit<LayoutZo
     imageSrc: "",
   };
   if (type === "text") {
-    return { type: "text", x: 8, y: 8, w: 160, h: 28, ...baseText };
+    return { type: "text", x: 8, y: 8, w: 160, h: 28, ...baseText, ...axStart };
   }
   if (type === "box") {
-    return { type: "box", x: 8, y: 8, w: 100, h: 36, ...baseText };
+    return { type: "box", x: 8, y: 8, w: 100, h: 36, ...baseText, ...axCenter };
   }
   if (type === "image") {
-    return { type: "image", x: 8, y: 8, w: 64, h: 64, ...baseText, text: "" };
+    return { type: "image", x: 8, y: 8, w: 64, h: 64, ...baseText, text: "", ...axCenter };
   }
   if (type === "pageNumber") {
     return {
@@ -72,6 +86,7 @@ export function defaultLayoutZoneElement(type: LayoutControlType): Omit<LayoutZo
       fontSize: 12,
       dateFormat: "",
       imageSrc: "",
+      ...axStart,
     };
   }
   return {
@@ -86,6 +101,7 @@ export function defaultLayoutZoneElement(type: LayoutControlType): Omit<LayoutZo
     fontSize: 12,
     dateFormat: "yyyy-MM-dd",
     imageSrc: "",
+    ...axStart,
   };
 }
 
@@ -102,6 +118,8 @@ export function hydrateLayoutZoneElement(raw: Partial<LayoutZoneElement>): Layou
     ...raw,
     id: typeof raw.id === "string" && raw.id.length > 0 ? raw.id : newId(),
     type,
+    alignX: normalizeAlignAxis(raw.alignX, d.alignX),
+    alignY: normalizeAlignAxis(raw.alignY, d.alignY),
     dateFormat: typeof raw.dateFormat === "string" ? raw.dateFormat : d.dateFormat,
     imageSrc: typeof raw.imageSrc === "string" ? raw.imageSrc : d.imageSrc,
   };
