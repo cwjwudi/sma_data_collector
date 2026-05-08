@@ -1313,17 +1313,18 @@ html[data-theme="dark"] .template-canvas-root {
   border-bottom: var(--border);
   background: var(--surface);
 }
-.lvis-zoom-strip #lvis-zoom-range {
-  flex: 1 1 auto;
-  min-width: 72px;
-  max-width: 220px;
-  vertical-align: middle;
-}
 .lvis-zoom-pct {
   font-size: 0.72rem;
   color: var(--muted);
-  width: 2.75rem;
+  min-width: 2.75rem;
   text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.lvis-zoom-hint {
+  flex: 1 1 12rem;
+  font-size: 0.68rem;
+  line-height: 1.35;
+  color: var(--muted);
 }
 .lvis-scroll {
   flex: 1 1 auto;

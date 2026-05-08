@@ -380,7 +380,6 @@ function applyLvisZoom(): void {
   const outer = document.getElementById("lvis-zoom-outer");
   const wrap = document.getElementById("lvis-page-scale-wrap");
   const pct = document.getElementById("lvis-zoom-pct");
-  const range = document.getElementById("lvis-zoom-range") as HTMLInputElement | null;
   if (wrap) {
     wrap.style.transform = `scale(${lvisZoom})`;
     wrap.style.transformOrigin = "top left";
@@ -393,10 +392,41 @@ function applyLvisZoom(): void {
   }
   const p = Math.round(lvisZoom * 100);
   if (pct) pct.textContent = `${p}%`;
-  if (range) range.value = String(p);
 }
 
-/** 缩放后保持当前视口中心落在纸张上的相对位置，避免滑块拖动时画面跑出视野 */
+/** 缩放后以指针下的纸张相对位置为锚（用于 Ctrl/⌘+滚轮或触控板捏合） */
+function applyLvisZoomAnchoredAt(clientX: number, clientY: number): void {
+  const scroll = document.querySelector(".lvis-scroll") as HTMLElement | null;
+  const outer = document.getElementById("lvis-zoom-outer");
+  if (!scroll || !outer || outer.offsetWidth <= 0 || outer.offsetHeight <= 0) {
+    applyLvisZoom();
+    return;
+  }
+  const sr = scroll.getBoundingClientRect();
+  const cx = scroll.scrollLeft + (clientX - sr.left);
+  const cy = scroll.scrollTop + (clientY - sr.top);
+  let fracX = (cx - outer.offsetLeft) / outer.offsetWidth;
+  let fracY = (cy - outer.offsetTop) / outer.offsetHeight;
+  fracX = Math.min(1, Math.max(0, fracX));
+  fracY = Math.min(1, Math.max(0, fracY));
+  applyLvisZoom();
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      const sc = document.querySelector(".lvis-scroll") as HTMLElement | null;
+      const out = document.getElementById("lvis-zoom-outer");
+      if (!sc || !out || out.offsetWidth <= 0 || out.offsetHeight <= 0) return;
+      const scr = sc.getBoundingClientRect();
+      const nl = out.offsetLeft;
+      const nt = out.offsetTop;
+      const nw = out.offsetWidth;
+      const nh = out.offsetHeight;
+      sc.scrollLeft = Math.round(nl + nw * fracX - (clientX - scr.left));
+      sc.scrollTop = Math.round(nt + nh * fracY - (clientY - scr.top));
+    });
+  });
+}
+
+/** 缩放后保持当前视口中心落在纸张上的相对位置（窗口尺寸变化等） */
 function applyLvisZoomAndPreserveView(): void {
   const scroll = document.querySelector(".lvis-scroll") as HTMLElement | null;
   const outer = document.getElementById("lvis-zoom-outer");
@@ -454,6 +484,7 @@ function ensureLvisPageVisible(): void {
   }
 }
 
+/** 在预览区内完整显示整张纸（宽高同时适配）并居中，避免只按宽度裁切导致页眉页脚滚出视野 */
 function lvisZoomFit(): void {
   const viewport = document.querySelector(".lvis-scroll") as HTMLElement | null;
   const wrap = document.getElementById("lvis-page-scale-wrap");
@@ -461,10 +492,12 @@ function lvisZoomFit(): void {
   if (!viewport || !page) return;
   const pad = 24;
   const mw = Math.max(80, viewport.clientWidth - pad * 2);
+  const mh = Math.max(80, viewport.clientHeight - pad * 2);
   const w = wrap && wrap.offsetWidth > 0 ? wrap.offsetWidth : page.offsetWidth;
-  if (w <= 0) return;
-  /* 恢复适中缩放并把纸张置于编辑区正中（大块留白下便于找回页面） */
-  lvisZoom = Math.min(2, Math.max(0.35, mw / w));
+  const h = wrap && wrap.offsetHeight > 0 ? wrap.offsetHeight : page.offsetHeight;
+  if (w <= 0 || h <= 0) return;
+  const scale = Math.min(mw / w, mh / h);
+  lvisZoom = Math.min(2, Math.max(0.35, scale));
   applyLvisZoom();
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
@@ -724,25 +757,26 @@ export function initReportLayoutVisual(d: LayoutVisualDeps): void {
 
   document.querySelector(".lvis-zoom-strip")?.addEventListener("click", (e) => e.stopPropagation());
 
-  document.getElementById("btn-lvis-zoom-out")?.addEventListener("click", () => {
-    lvisZoom = Math.max(0.35, Math.round((lvisZoom - 0.1) * 100) / 100);
-    applyLvisZoomAndPreserveView();
-  });
-  document.getElementById("btn-lvis-zoom-in")?.addEventListener("click", () => {
-    lvisZoom = Math.min(2, Math.round((lvisZoom + 0.1) * 100) / 100);
-    applyLvisZoomAndPreserveView();
-  });
-  document.getElementById("lvis-zoom-range")?.addEventListener("input", () => {
-    const r = document.getElementById("lvis-zoom-range") as HTMLInputElement | null;
-    if (!r) return;
-    const p = Number(r.value);
-    if (!Number.isFinite(p)) return;
-    lvisZoom = Math.min(2, Math.max(0.35, p / 100));
-    applyLvisZoomAndPreserveView();
-  });
   document.getElementById("btn-lvis-zoom-fit")?.addEventListener("click", () => {
     lvisZoomFit();
   });
+
+  const lvisScrollEl = document.querySelector(".lvis-scroll");
+  lvisScrollEl?.addEventListener(
+    "wheel",
+    (e) => {
+      if (!draft) return;
+      /* 触控板捏合在 Chromium/Safari 常表现为 ctrlKey+wheel；⌘ 与 Ctrl 便于鼠标滚轮缩放 */
+      if (!(e.ctrlKey || e.metaKey)) return;
+      e.preventDefault();
+      const factor = Math.exp(-e.deltaY * 0.002);
+      const nz = Math.min(2, Math.max(0.35, lvisZoom * factor));
+      if (Math.abs(nz - lvisZoom) < 1e-4) return;
+      lvisZoom = nz;
+      applyLvisZoomAnchoredAt(e.clientX, e.clientY);
+    },
+    { passive: false },
+  );
 
   document.getElementById("lvis-snap-enabled")?.addEventListener("change", () => {
     const c = document.getElementById("lvis-snap-enabled") as HTMLInputElement | null;
