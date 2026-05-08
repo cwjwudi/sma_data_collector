@@ -1263,8 +1263,14 @@ html[data-theme="dark"] .template-canvas-root {
   justify-content: center;
   align-items: flex-start;
 }
+/* 占位缩放后的布局宽高，避免仅用 transform 导致滚动区域不包含左侧溢出 */
+.lvis-zoom-outer {
+  flex-shrink: 0;
+  line-height: 0;
+}
 .lvis-page-scale-wrap {
   flex-shrink: 0;
+  transform-origin: top left;
 }
 .lvis-page {
   position: relative;

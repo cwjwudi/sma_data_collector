@@ -377,12 +377,19 @@ function listForZone(zone: "header" | "footer"): LayoutZoneElement[] {
 }
 
 function applyLvisZoom(): void {
+  const outer = document.getElementById("lvis-zoom-outer");
   const wrap = document.getElementById("lvis-page-scale-wrap");
   const pct = document.getElementById("lvis-zoom-pct");
   const range = document.getElementById("lvis-zoom-range") as HTMLInputElement | null;
   if (wrap) {
     wrap.style.transform = `scale(${lvisZoom})`;
-    wrap.style.transformOrigin = "top center";
+    wrap.style.transformOrigin = "top left";
+  }
+  if (outer && wrap) {
+    const pw = wrap.offsetWidth > 0 ? wrap.offsetWidth : 1;
+    const ph = wrap.offsetHeight > 0 ? wrap.offsetHeight : 1;
+    outer.style.width = `${Math.ceil(pw * lvisZoom)}px`;
+    outer.style.height = `${Math.ceil(ph * lvisZoom)}px`;
   }
   const p = Math.round(lvisZoom * 100);
   if (pct) pct.textContent = `${p}%`;
@@ -391,11 +398,12 @@ function applyLvisZoom(): void {
 
 function lvisZoomFit(): void {
   const scroll = document.querySelector(".lvis-scroll-pad") as HTMLElement | null;
+  const wrap = document.getElementById("lvis-page-scale-wrap");
   const page = document.getElementById("lvis-page");
   if (!scroll || !page) return;
   const pad = 16;
   const mw = Math.max(80, scroll.clientWidth - pad * 2);
-  const w = page.offsetWidth;
+  const w = wrap && wrap.offsetWidth > 0 ? wrap.offsetWidth : page.offsetWidth;
   if (w <= 0) return;
   lvisZoom = Math.min(2, Math.max(0.35, mw / w));
   applyLvisZoom();
@@ -1050,6 +1058,8 @@ function renderLvis(): void {
 
   if (meta)
     meta.textContent = `${PAPER_LABEL[draft.paperKind]} · ${draft.orientation === "landscape" ? "横向" : "纵向"} · ${draft.name} · ${LAYOUT_PAGE_ROLE_LABEL[draft.pageRole]}`;
+
+  applyLvisZoom();
 }
 
 function syncLvisDrawer(): void {
