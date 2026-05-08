@@ -449,7 +449,6 @@ export function initReportLayoutVisual(d: LayoutVisualDeps): void {
 
   bindDrawerInputs();
   bindLvisAlignVisualGrid();
-  bindLvisNudgeButtons();
 
   document.getElementById("btn-lvis-el-delete")?.addEventListener("click", () => {
     if (!draft || sel.k !== "el") return;
@@ -689,13 +688,6 @@ function syncLvisAlignVisualHighlight(): void {
     b.classList.toggle("is-active", match);
     b.setAttribute("aria-pressed", match ? "true" : "false");
   });
-}
-
-function bindLvisNudgeButtons(): void {
-  document.getElementById("lvis-nudge-up")?.addEventListener("click", () => nudgeSelectedElement(0, -1));
-  document.getElementById("lvis-nudge-down")?.addEventListener("click", () => nudgeSelectedElement(0, 1));
-  document.getElementById("lvis-nudge-left")?.addEventListener("click", () => nudgeSelectedElement(-1, 0));
-  document.getElementById("lvis-nudge-right")?.addEventListener("click", () => nudgeSelectedElement(1, 0));
 }
 
 function bindLvisAlignVisualGrid(): void {
@@ -1002,8 +994,4 @@ function syncLvisDrawer(): void {
     if (iw) iw.hidden = el?.type !== "image";
     if (tw) tw.hidden = el?.type !== "text" && el?.type !== "box";
   }
-
-  document.querySelectorAll<HTMLButtonElement>(".lvis-nudge-btn").forEach((b) => {
-    b.disabled = !(draft && sel.k === "el" && sel.ids.length === 1);
-  });
 }
