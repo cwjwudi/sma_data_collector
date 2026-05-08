@@ -414,7 +414,7 @@ function applyLvisZoom(): void {
   if (pct) pct.textContent = `${p}%`;
 }
 
-/** 缩放后以指针下的纸张相对位置为锚（用于 Ctrl/⌘+滚轮或触控板捏合） */
+/** 缩放后以某一屏幕点为锚保持纸张相对位置（可用于预览区中心等可靠坐标） */
 function applyLvisZoomAnchoredAt(clientX: number, clientY: number): void {
   const scroll = document.querySelector(".lvis-scroll") as HTMLElement | null;
   const outer = document.getElementById("lvis-zoom-outer");
@@ -795,7 +795,12 @@ export function initReportLayoutVisual(d: LayoutVisualDeps): void {
       const nz = Math.min(2, Math.max(0.35, lvisZoom * factor));
       if (Math.abs(nz - lvisZoom) < 1e-4) return;
       lvisZoom = nz;
-      applyLvisZoomAnchoredAt(e.clientX, e.clientY);
+      /* 捏合与 Ctrl+滚轮在部分浏览器里 clientX/Y 不可靠（视图易偏向一侧）；锚点固定为预览区中心 */
+      const scroll = document.querySelector(".lvis-scroll") as HTMLElement | null;
+      if (scroll) {
+        const sr = scroll.getBoundingClientRect();
+        applyLvisZoomAnchoredAt(sr.left + sr.width / 2, sr.top + sr.height / 2);
+      } else applyLvisZoom();
     },
     { passive: false, capture: true },
   );

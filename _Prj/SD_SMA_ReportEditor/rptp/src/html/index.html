@@ -107,7 +107,7 @@
                 <div class="lvis-zoom-strip">
                   <span id="lvis-zoom-pct" class="lvis-zoom-pct" aria-live="polite">100%</span>
                   <button type="button" class="btn btn-sm btn-primary" id="btn-lvis-zoom-fit" title="整张纸完整纳入预览区并居中（按宽高同时适配，避免页眉页脚被裁出视野）">适应宽度</button>
-                  <span class="lvis-zoom-hint">鼠标在预览区内：<strong>Ctrl</strong> / <strong>⌘</strong> 加滚轮缩放；触控板双指捏合亦可。普通滚轮仍会平移画布。</span>
+                  <span class="lvis-zoom-hint">在版式可视化页任意处：<strong>Ctrl</strong> / <strong>⌘</strong> 加滚轮或触控板捏合缩放（以<strong>预览区正中</strong>为锚，避免捏合时跑偏）。普通滚轮在预览区内平移画布。</span>
                 </div>
                 <div class="lvis-scroll" aria-label="纸张预览">
                   <div class="lvis-scroll-pad">
@@ -489,8 +489,6 @@
 
       <footer class="bottom-toolbar" aria-label="底部工具栏">
         <span>就绪</span>
-        <span class="sep" aria-hidden="true"></span>
-        <span>缩放 <strong>100%</strong></span>
         <span class="sep" aria-hidden="true"></span>
         <span>上次保存 —</span>
       </footer>
