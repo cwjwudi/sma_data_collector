@@ -2,4 +2,6 @@
 opcua==0.98.13
 sqlalchemy==2.0.25
 pymysql==1.1.0
-aiohttp==3.9.1
+fastapi
+uvicorn
+pydantic

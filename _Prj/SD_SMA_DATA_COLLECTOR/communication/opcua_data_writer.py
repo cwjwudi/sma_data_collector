@@ -1,6 +1,6 @@
 """
 OPC UA 数据写入器
-负责将查询结果写入 OPC UA 服务器的缓冲区，同时支持发送到 HTTP 服务器
+负责将查询结果写入 OPC UA 服务器的缓冲区
 """
 
 import logging
@@ -13,7 +13,6 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from communication.opcua_client import OpcUaClient
-from communication.http_client import HttpClient
 from communication.date_and_time import fast_dt_to_date_and_time
 
 
@@ -27,17 +26,15 @@ class OpcUaDataWriter:
     QUERY_STATUS_NO_DATA = 3  # 无查询数据返回
     QUERY_STATUS_ERROR = 4  # 其他错误
     
-    def __init__(self, opcua_client: OpcUaClient, query_group_config = None, http_client: HttpClient = None):
+    def __init__(self, opcua_client: OpcUaClient, query_group_config = None):
         """
         初始化 OPC UA 数据写入器
         
         Args:
             opcua_client: OPC UA 客户端实例
             query_group_config: 查询组的配置对象（DataGroup），用于获取缓冲区配置
-            http_client: HTTP 客户端实例（可选）
         """
         self.opcua_client = opcua_client
-        self.http_client = http_client
         self.logger = logging.getLogger(__name__)
         self.query_group_config = query_group_config
         
@@ -102,7 +99,7 @@ class OpcUaDataWriter:
                                   query_time: List[List[Any]],
                                   point_names: List[str]) -> bool:
         """
-        将查询结果写入 OPC UA 缓冲区并发送到 HTTP 服务器（根据 output_mode 配置）
+        将查询结果写入 OPC UA 缓冲区
         支持分批传输，当数据量超过 buffer_size 时，分多次写入
             
         Args:
@@ -603,56 +600,6 @@ class OpcUaDataWriter:
             self.logger.error(f"写入 UDINT 反馈失败: {e}", exc_info=True)
             return False
         
-    async def _send_to_http_server(self,
-                                  query_results: List[List[Any]],
-                                  query_time: List[List[Any]],
-                                  point_names: List[str]) -> bool:
-        """
-        发送查询结果到 HTTP 服务器
-            
-        Args:
-            query_results: 查询结果列表
-            query_time: 查询时间列表
-            point_names: 数据点名称列表
-                
-        Returns:
-            bool: 发送是否成功
-        """
-        try:
-            # 构建要发送的数据结构
-            http_data = {
-                'timestamp': datetime.now().isoformat(),
-                'group_name': self.query_group_config.name if self.query_group_config else 'unknown',
-                'point_names': point_names,
-                'data_count': len(query_results),
-                'buffers': []
-            }
-                
-            # 添加每个缓冲区的数据
-            for i, (buffer_data, buffer_time) in enumerate(zip(query_results, query_time)):
-                buffer_info = {
-                    'buffer_index': i,
-                    'values': buffer_data[:100],  # 只发送前 100 个值，避免数据量过大
-                    'times': [t.isoformat() if hasattr(t, 'isoformat') else str(t) 
-                             for t in buffer_time[:100]],
-                    'total_count': len(buffer_data)
-                }
-                http_data['buffers'].append(buffer_info)
-                
-            # 发送数据
-            success = await self.http_client.send_data(http_data)
-                
-            if success:
-                self.logger.info(f"成功发送数据到 HTTP 服务器，共 {len(query_results)} 个缓冲区")
-            else:
-                self.logger.warning("发送数据到 HTTP 服务器失败")
-                
-            return success
-                
-        except Exception as e:
-            self.logger.error(f"发送数据到 HTTP 服务器失败：{e}", exc_info=True)
-            return False
-    
     def _convert_to_float_arrays(self, 
                                 query_results: List[Dict[str, Any]],
                                 point_names: List[str]) -> List[List[float]]:

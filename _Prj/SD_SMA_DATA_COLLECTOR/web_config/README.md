@@ -21,7 +21,7 @@
 ## 启动
 
 ```bash
-pip install -r web_config/requirements.txt
+pip install -r ../requirements.txt
 python -m uvicorn web_config.main:app --host 0.0.0.0 --port 8091
 ```
 

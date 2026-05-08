@@ -1,5 +1,2 @@
-fastapi
-uvicorn
-pydantic
-opcua
+-r ../requirements.txt
 

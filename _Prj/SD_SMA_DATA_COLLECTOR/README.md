@@ -137,10 +137,11 @@ pip install -r requirements-dev.txt
 
 ```bash
 # Windows
-start_config_web.bat
+start_collector.bat web
 
 # 或手动启动
-pip install -r web_config/requirements.txt
+# 依赖已统一到根 requirements.txt
+pip install -r requirements.txt
 python -m uvicorn web_config.main:app --host 0.0.0.0 --port 8091
 ```
 
@@ -159,6 +160,9 @@ python main.py
 
 # 指定配置文件
 python main.py --config config/Alarm_Audit.json
+
+# Windows 统一启动脚本（交互菜单）
+start_collector.bat
 ```
 
 系统启动后会：
@@ -183,7 +187,7 @@ python check_config.py config/sample_config.json
   ```bash
   nohup python main.py > output.log 2>&1 &
   ```
-- **Windows 启动**: `start_http.bat`
+- **Windows 启动**: `python main.py`
 - **查看日志**: `tail -f logs/data_collector.log`
 
 ## 系统架构
@@ -307,12 +311,9 @@ SD_SMA_DATA_COLLECTOR/
 - `data_groups`: 要存储的数据组名称列表
 
 ### HTTP 服务器配置 (http_server)
-- `enabled`: 是否启用 HTTP 推送
-- `base_url`: HTTP 服务器地址
-- `endpoint`: API 端点路径
-- `timeout`: 请求超时时间（秒）
-- `max_retries`: 失败重试次数
-- `retry_delay`: 重试间隔（秒）
+- 主程序已移除全部 HTTP 功能（含数据推送）
+- 若配置文件中存在 `http_server` 且 `enabled=true`，系统会记录 `WARNING` 并自动忽略，不会中断启动
+- 该配置段可保留用于历史兼容，也可删除
 
 ### 日志配置 (logging)
 - `level`: 日志级别（`DEBUG/INFO/WARNING/ERROR/CRITICAL`，默认 `INFO`）
