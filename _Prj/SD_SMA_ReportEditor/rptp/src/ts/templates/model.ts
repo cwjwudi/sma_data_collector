@@ -50,6 +50,10 @@ export interface ReportTemplate {
   /** 创建时从版式快照：页眉区控件（导出时按当前页渲染页码/日期） */
   headerElements: LayoutZoneElement[];
   footerElements: LayoutZoneElement[];
+  /** 封面页正文区控件（导出首页动态内容；页眉页脚见 coverHeader/Footer） */
+  coverElements: TemplateElement[];
+  /** 末页正文区控件 */
+  backElements: TemplateElement[];
 }
 
 export interface NewTemplateOptions {
@@ -140,6 +144,8 @@ export function createTemplate(opts: NewTemplateOptions): ReportTemplate {
     footerText: opts.footerText,
     headerElements: opts.headerElements.map((e) => ({ ...e })),
     footerElements: opts.footerElements.map((e) => ({ ...e })),
+    coverElements: [],
+    backElements: [],
   };
 }
 
@@ -161,6 +167,11 @@ export function saveTemplates(list: ReportTemplate[]): void {
   } catch {
     /* ignore */
   }
+}
+
+function normalizeTplBodyElements(raw: unknown): TemplateElement[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((x) => x && typeof x === "object") as TemplateElement[];
 }
 
 function migrateReportTemplate(v: unknown): unknown {
@@ -202,6 +213,8 @@ function migrateReportTemplate(v: unknown): unknown {
     footerText: typeof o.footerText === "string" ? o.footerText : "",
     headerElements: normalizeTplZone(o.headerElements),
     footerElements: normalizeTplZone(o.footerElements),
+    coverElements: normalizeTplBodyElements(o.coverElements),
+    backElements: normalizeTplBodyElements(o.backElements),
   };
 }
 
@@ -220,6 +233,7 @@ function isReportTemplate(v: unknown): v is ReportTemplate {
   if (!Array.isArray(o.headerElements) || !Array.isArray(o.footerElements)) return false;
   if (!Array.isArray(o.coverHeaderElements) || !Array.isArray(o.coverFooterElements)) return false;
   if (!Array.isArray(o.backHeaderElements) || !Array.isArray(o.backFooterElements)) return false;
+  if (!Array.isArray(o.coverElements) || !Array.isArray(o.backElements)) return false;
   return true;
 }
 

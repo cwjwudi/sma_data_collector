@@ -1149,8 +1149,50 @@ html[data-theme="dark"] .nt-layout-card-preview {
   min-height: 280px;
   display: flex;
 }
+.template-editor-canvas-column {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.template-editor-sheet-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-bottom: 0.35rem;
+  flex-shrink: 0;
+}
+.template-sheet-tab {
+  padding: 0.35rem 0.65rem;
+  border-radius: 8px;
+  border: var(--border);
+  background: var(--bg);
+  color: inherit;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+.template-sheet-tab:hover {
+  filter: brightness(0.97);
+}
+html[data-theme="dark"] .template-sheet-tab:hover {
+  filter: brightness(1.06);
+}
+.template-sheet-tab.is-active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, var(--surface));
+  font-weight: 600;
+}
+.template-sheet-hint {
+  margin: 0 0 0.45rem 0;
+  font-size: 0.72rem;
+  color: var(--muted);
+  line-height: 1.45;
+  flex-shrink: 0;
+}
 .template-canvas {
   flex: 1;
+  min-height: 0;
   border: var(--border);
   border-radius: 10px;
   background: var(--bg);

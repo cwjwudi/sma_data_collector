@@ -15,6 +15,7 @@ import {
   presetToSnapshot,
   presetZonesSnapshot,
   type LayoutPreset,
+  type LayoutSnapshot,
 } from "./templates/layout-model";
 import { computePaperLayout } from "./templates/layout-geometry";
 import { renderZoneElementsInto } from "./templates/layout-zone-render";
@@ -30,8 +31,69 @@ let templates: ReportTemplate[] = [];
 let editing: ReportTemplate | null = null;
 let selectedId: string | null = null;
 
+type TemplateEditorSheet = "body" | "cover" | "back";
+let editorSheet: TemplateEditorSheet = "body";
+
 let dragMove: { id: string; startX: number; startY: number; origX: number; origY: number } | null =
   null;
+
+function activeLayoutSnapshot(t: ReportTemplate): LayoutSnapshot {
+  if (editorSheet === "cover") return t.coverLayoutSnapshot;
+  if (editorSheet === "back") return t.backLayoutSnapshot;
+  return t.layoutSnapshot;
+}
+
+function activeCanvasElements(t: ReportTemplate): TemplateElement[] {
+  if (editorSheet === "cover") return t.coverElements;
+  if (editorSheet === "back") return t.backElements;
+  return t.elements;
+}
+
+function syncTemplateSheetTabsUi(): void {
+  document.querySelectorAll<HTMLElement>("[data-template-sheet]").forEach((btn) => {
+    const s = btn.dataset.templateSheet;
+    const active = s === editorSheet;
+    btn.classList.toggle("is-active", active);
+    btn.setAttribute("aria-selected", active ? "true" : "false");
+  });
+}
+
+function updateTemplateSheetHint(): void {
+  const hint = document.getElementById("template-sheet-hint");
+  if (!hint || !editing) return;
+  if (editorSheet === "body") {
+    hint.textContent =
+      "正文页：画布控件位于每一页正文区域（导出分页后在各正文页重复）。页眉/页脚来自正文版式快照。";
+    return;
+  }
+  if (editorSheet === "cover") {
+    hint.textContent =
+      editing.coverLayoutPresetId !== null
+        ? "封面：画布与页眉页脚仅用于导出首页。封面版式可在「版式与页眉页脚」中单独编辑。"
+        : "封面：新建时若未选用封面版式，此处仍可按默认留白几何摆放控件；导出接入时将作为首页内容。";
+    return;
+  }
+  hint.textContent =
+    editing.backLayoutPresetId !== null
+      ? "末页：画布与页眉页脚仅用于导出最后一页。"
+      : "末页：未选用末页版式时仍可在此摆放控件；导出接入时将作为末页内容。";
+}
+
+function bindTemplateSheetTabs(): void {
+  document.querySelectorAll<HTMLButtonElement>("[data-template-sheet]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const s = btn.dataset.templateSheet as TemplateEditorSheet | undefined;
+      if (s !== "body" && s !== "cover" && s !== "back") return;
+      editorSheet = s;
+      selectedId = null;
+      syncTemplateSheetTabsUi();
+      updateTemplateSheetHint();
+      renderPaperChrome();
+      renderCanvas();
+      syncPropsPanel();
+    });
+  });
+}
 
 export function initReportTemplates(d: TemplatePagesDeps): void {
   deps = d;
@@ -42,6 +104,7 @@ export function initReportTemplates(d: TemplatePagesDeps): void {
   document.getElementById("btn-template-back")?.addEventListener("click", () => {
     editing = null;
     selectedId = null;
+    editorSheet = "body";
     deps.showPage("templates");
     refreshTemplateList();
   });
@@ -52,9 +115,20 @@ export function initReportTemplates(d: TemplatePagesDeps): void {
     if (nameInput) editing.name = nameInput.value.trim() || "未命名模版";
     editing.updatedAt = new Date().toISOString();
     editing.elements.forEach(clampElementToContent);
+    editing.coverElements.forEach(clampElementToContent);
+    editing.backElements.forEach(clampElementToContent);
     const idx = templates.findIndex((x) => x.id === editing!.id);
-    if (idx >= 0) templates[idx] = { ...editing, elements: editing.elements.map((e) => ({ ...e })) };
-    else templates.push({ ...editing });
+    const saved: ReportTemplate = {
+      ...editing,
+      layoutSnapshot: { ...editing.layoutSnapshot },
+      coverLayoutSnapshot: { ...editing.coverLayoutSnapshot },
+      backLayoutSnapshot: { ...editing.backLayoutSnapshot },
+      elements: editing.elements.map((e) => ({ ...e })),
+      coverElements: editing.coverElements.map((e) => ({ ...e })),
+      backElements: editing.backElements.map((e) => ({ ...e })),
+    };
+    if (idx >= 0) templates[idx] = saved;
+    else templates.push(saved);
     saveTemplates(templates);
     renderTemplateList();
     alert("已保存模版（本地）");
@@ -80,7 +154,7 @@ export function initReportTemplates(d: TemplatePagesDeps): void {
     el.x = Math.max(0, x);
     el.y = Math.max(0, y);
     clampElementToContent(el);
-    editing.elements.push(el);
+    activeCanvasElements(editing).push(el);
     selectedId = el.id;
     renderCanvas();
     syncPropsPanel();
@@ -91,7 +165,7 @@ export function initReportTemplates(d: TemplatePagesDeps): void {
     if (!t || !canvas.contains(t)) return;
     const id = t.getAttribute("data-element-id");
     if (!id || !editing) return;
-    const el = editing.elements.find((x) => x.id === id);
+    const el = activeCanvasElements(editing).find((x) => x.id === id);
     if (!el) return;
     selectedId = id;
     renderCanvas();
@@ -116,7 +190,7 @@ export function initReportTemplates(d: TemplatePagesDeps): void {
 
   window.addEventListener("mousemove", (e) => {
     if (!dragMove || !editing) return;
-    const el = editing.elements.find((x) => x.id === dragMove!.id);
+    const el = activeCanvasElements(editing!).find((x) => x.id === dragMove!.id);
     if (!el) return;
     el.x = Math.max(0, dragMove.origX + (e.clientX - dragMove.startX));
     el.y = Math.max(0, dragMove.origY + (e.clientY - dragMove.startY));
@@ -141,7 +215,13 @@ export function initReportTemplates(d: TemplatePagesDeps): void {
   bindPropsForm();
   document.getElementById("btn-prop-delete")?.addEventListener("click", () => {
     if (!editing || !selectedId) return;
-    editing.elements = editing.elements.filter((x) => x.id !== selectedId);
+    if (editorSheet === "body") {
+      editing.elements = editing.elements.filter((x) => x.id !== selectedId);
+    } else if (editorSheet === "cover") {
+      editing.coverElements = editing.coverElements.filter((x) => x.id !== selectedId);
+    } else {
+      editing.backElements = editing.backElements.filter((x) => x.id !== selectedId);
+    }
     selectedId = null;
     renderCanvas();
     syncPropsPanel();
@@ -155,16 +235,24 @@ export function initReportTemplates(d: TemplatePagesDeps): void {
     if (t.tagName === "INPUT" || t.tagName === "TEXTAREA") return;
     if (!selectedId || !editing) return;
     e.preventDefault();
-    editing.elements = editing.elements.filter((x) => x.id !== selectedId);
+    if (editorSheet === "body") {
+      editing.elements = editing.elements.filter((x) => x.id !== selectedId);
+    } else if (editorSheet === "cover") {
+      editing.coverElements = editing.coverElements.filter((x) => x.id !== selectedId);
+    } else {
+      editing.backElements = editing.backElements.filter((x) => x.id !== selectedId);
+    }
     selectedId = null;
     renderCanvas();
     syncPropsPanel();
   });
+
+  bindTemplateSheetTabs();
 }
 
 function clampElementToContent(el: TemplateElement): void {
   if (!editing) return;
-  const m = computePaperLayout(editing.paperKind, editing.orientation, editing.layoutSnapshot);
+  const m = computePaperLayout(editing.paperKind, editing.orientation, activeLayoutSnapshot(editing));
   el.w = Math.max(20, Math.min(el.w, m.contentW));
   el.h = Math.max(20, Math.min(el.h, m.contentH));
   el.x = Math.max(0, Math.min(el.x, m.contentW - el.w));
@@ -181,7 +269,8 @@ function renderPaperChrome(): void {
   const meta = document.getElementById("template-editor-paper-meta");
   if (!editing || !pageEl || !root) return;
 
-  const m = computePaperLayout(editing.paperKind, editing.orientation, editing.layoutSnapshot);
+  const snap = activeLayoutSnapshot(editing);
+  const m = computePaperLayout(editing.paperKind, editing.orientation, snap);
 
   pageEl.style.width = `${m.pageW}px`;
   pageEl.style.height = `${m.pageH}px`;
@@ -191,6 +280,32 @@ function renderPaperChrome(): void {
   root.style.width = `${m.contentW}px`;
   root.style.height = `${m.contentH}px`;
 
+  const sheet = editorSheet;
+  const headerText =
+    sheet === "cover"
+      ? editing.coverHeaderText
+      : sheet === "back"
+        ? editing.backHeaderText
+        : editing.headerText;
+  const footerText =
+    sheet === "cover"
+      ? editing.coverFooterText
+      : sheet === "back"
+        ? editing.backFooterText
+        : editing.footerText;
+  const headerElements =
+    sheet === "cover"
+      ? editing.coverHeaderElements
+      : sheet === "back"
+        ? editing.backHeaderElements
+        : editing.headerElements;
+  const footerElements =
+    sheet === "cover"
+      ? editing.coverFooterElements
+      : sheet === "back"
+        ? editing.backFooterElements
+        : editing.footerElements;
+
   if (headerEl && headerInner) {
     const show = m.hb > 1;
     headerEl.hidden = !show;
@@ -198,14 +313,14 @@ function renderPaperChrome(): void {
     headerEl.style.top = `${m.mt}px`;
     headerEl.style.width = `${m.pageW - m.ml - m.mr}px`;
     headerEl.style.height = `${m.hb}px`;
-    if (editing.headerElements.length > 0) {
-      renderZoneElementsInto(headerInner, editing.headerElements, {
+    if (headerElements.length > 0) {
+      renderZoneElementsInto(headerInner, headerElements, {
         previewPage: 1,
         selectionChrome: false,
       });
     } else {
       headerInner.replaceChildren();
-      headerInner.textContent = editing.headerText.trim() || "（页眉）";
+      headerInner.textContent = headerText.trim() || "（页眉）";
     }
   }
 
@@ -216,14 +331,14 @@ function renderPaperChrome(): void {
     footerEl.style.width = `${m.pageW - m.ml - m.mr}px`;
     footerEl.style.height = `${m.fb}px`;
     footerEl.style.bottom = `${m.mb}px`;
-    if (editing.footerElements.length > 0) {
-      renderZoneElementsInto(footerInner, editing.footerElements, {
+    if (footerElements.length > 0) {
+      renderZoneElementsInto(footerInner, footerElements, {
         previewPage: 1,
         selectionChrome: false,
       });
     } else {
       footerInner.replaceChildren();
-      footerInner.textContent = editing.footerText.trim() || "（页脚）";
+      footerInner.textContent = footerText.trim() || "（页脚）";
     }
   }
 
@@ -244,7 +359,8 @@ function renderPaperChrome(): void {
       editing.backLayoutPresetId === null
         ? "无"
         : getLayoutPresetById(editing.backLayoutPresetId)?.name ?? "预设已删";
-    meta.textContent = `${PAPER_LABEL[editing.paperKind]} · ${orient} · ${src} · 正文 ${m.contentW}×${m.contentH} px · 封面 ${cov} · 末页 ${bk}`;
+    const sheetLabel = sheet === "body" ? "正文页" : sheet === "cover" ? "封面" : "末页";
+    meta.textContent = `当前：${sheetLabel} · ${PAPER_LABEL[editing.paperKind]} · ${orient} · 正文来源 ${src} · 画布 ${m.contentW}×${m.contentH} px · 封面 ${cov} · 末页 ${bk}`;
   }
 }
 
@@ -486,7 +602,20 @@ function bindNewTemplateDialog(): void {
     const nameEl = document.getElementById("nt-name") as HTMLInputElement | null;
     const name = nameEl?.value.trim() || "新建模版";
 
-    let opts: NewTemplateOptions;
+    type BodyPart = Pick<
+      NewTemplateOptions,
+      | "name"
+      | "paperKind"
+      | "orientation"
+      | "layoutPresetId"
+      | "layoutSnapshot"
+      | "headerText"
+      | "footerText"
+      | "headerElements"
+      | "footerElements"
+    >;
+
+    let bodyOpts: BodyPart;
 
     if (!bodyPresetGrid.hidden) {
       const pid = selectedPresetIdFromGrid(bodyPresetGrid);
@@ -500,7 +629,7 @@ function bindNewTemplateDialog(): void {
         return;
       }
       const b = presetZonesSnapshot(preset);
-      opts = {
+      bodyOpts = {
         name,
         paperKind: preset.paperKind,
         orientation: preset.orientation,
@@ -518,7 +647,7 @@ function bindNewTemplateDialog(): void {
         return;
       }
       const b = blankZonesSnapshot();
-      opts = {
+      bodyOpts = {
         name,
         paperKind: bk.paper,
         orientation: bk.orientation,
@@ -571,8 +700,8 @@ function bindNewTemplateDialog(): void {
       backZones = presetZonesSnapshot(bp);
     }
 
-    opts = {
-      ...opts,
+    const opts: NewTemplateOptions = {
+      ...bodyOpts,
       coverLayoutPresetId,
       coverLayoutSnapshot: coverZones.layoutSnapshot,
       coverHeaderText: coverZones.headerText,
@@ -712,15 +841,24 @@ export function openEditor(templateId: string): void {
   templates = loadTemplates();
   const t = templates.find((x) => x.id === templateId);
   if (!t) return;
+  editorSheet = "body";
   editing = {
     ...t,
     layoutSnapshot: { ...t.layoutSnapshot },
+    coverLayoutSnapshot: { ...t.coverLayoutSnapshot },
+    backLayoutSnapshot: { ...t.backLayoutSnapshot },
     elements: t.elements.map((raw) => hydrateElement(raw)),
+    coverElements: t.coverElements.map((raw) => hydrateElement(raw)),
+    backElements: t.backElements.map((raw) => hydrateElement(raw)),
   };
   editing.elements.forEach(clampElementToContent);
+  editing.coverElements.forEach(clampElementToContent);
+  editing.backElements.forEach(clampElementToContent);
   selectedId = null;
   const nameInput = document.getElementById("template-editor-name") as HTMLInputElement | null;
   if (nameInput) nameInput.value = editing.name;
+  syncTemplateSheetTabsUi();
+  updateTemplateSheetHint();
   deps.showPage("templateEditor");
   renderPaperChrome();
   renderCanvas();
@@ -766,7 +904,7 @@ function renderTemplateList(): void {
       <td>${escapeHtml(t.name)}</td>
       <td>${PAPER_LABEL[t.paperKind]} · ${orient}</td>
       <td>${escapeHtml(layoutSourceLabel(t))}</td>
-      <td>${t.elements.length}</td>
+      <td>${t.elements.length} / ${t.coverElements.length} / ${t.backElements.length}</td>
       <td>${date}</td>
       <td class="template-table-actions">
         <button type="button" class="btn btn-sm btn-primary" data-edit="${t.id}">编辑</button>
@@ -793,7 +931,7 @@ function renderCanvas(): void {
   const canvas = document.getElementById("template-canvas-root");
   if (!canvas || !editing) return;
   canvas.querySelectorAll("[data-element-id]").forEach((n) => n.remove());
-  for (const el of editing.elements) {
+  for (const el of activeCanvasElements(editing)) {
     const node = document.createElement("div");
     node.className = "template-canvas-node" + (selectedId === el.id ? " is-selected" : "");
     node.dataset.elementId = el.id;
@@ -828,7 +966,7 @@ function bindPropsForm(): void {
 
 function applyPropsFromInputs(): void {
   if (!editing || !selectedId) return;
-  const el = editing.elements.find((x) => x.id === selectedId);
+  const el = activeCanvasElements(editing).find((x) => x.id === selectedId);
   if (!el) return;
   const g = (id: string) => (document.getElementById(id) as HTMLInputElement | null)?.value;
   el.text = g("prop-text") ?? el.text;
@@ -852,7 +990,7 @@ function syncPropsPanel(): void {
     empty.hidden = false;
     return;
   }
-  const el = editing.elements.find((x) => x.id === selectedId);
+  const el = activeCanvasElements(editing).find((x) => x.id === selectedId);
   if (!el) {
     selectedId = null;
     panel.hidden = true;

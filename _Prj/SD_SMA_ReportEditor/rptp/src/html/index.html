@@ -350,7 +350,7 @@
             <button type="button" class="btn btn-primary" id="btn-new-template">新建模版</button>
           </div>
           <p class="templates-intro">
-            画布宽高随所选<strong>纸张</strong>固定；控件仅在<strong>正文区</strong>内摆放（页眉页脚带在「版式与页眉页脚」中配置）。新建时可优先选择<strong>自定义版式</strong>或<strong>空白纸张</strong>。
+            画布宽高随所选<strong>纸张</strong>固定；控件落在<strong>正文区</strong>内。编辑模版时可切换<strong>正文页 / 封面 / 末页</strong>分别摆放控件；页眉页脚带由各页对应版式快照决定（封面与末页在新建模版时可选）。
           </p>
           <div class="template-table-wrap">
             <table class="template-table" id="template-list">
@@ -359,7 +359,7 @@
                   <th>名称</th>
                   <th>纸张</th>
                   <th>起始版式</th>
-                  <th>控件数</th>
+                  <th>正文/封/末控件</th>
                   <th>更新时间</th>
                   <th>操作</th>
                 </tr>
@@ -381,11 +381,18 @@
           <div class="template-editor-layout">
             <aside class="template-tool-palette" aria-label="控件工具栏">
               <h2 class="template-tool-palette-title">控件</h2>
-              <p class="template-tool-palette-hint">控件落在正文区内；纸张与页眉页脚带由新建模版时的选项决定。</p>
+              <p id="template-tool-palette-hint" class="template-tool-palette-hint">控件落在当前所选页面的正文区内；切换顶部「正文页 / 封面 / 末页」分别编辑。</p>
               <button type="button" class="template-tool-chip" draggable="true" data-template-tool="text">文本</button>
               <button type="button" class="template-tool-chip" draggable="true" data-template-tool="box">矩形</button>
             </aside>
             <div class="template-editor-center">
+              <div class="template-editor-canvas-column">
+                <div class="template-editor-sheet-tabs" role="tablist" aria-label="编辑页面类型">
+                  <button type="button" role="tab" class="template-sheet-tab is-active" data-template-sheet="body" aria-selected="true">正文页</button>
+                  <button type="button" role="tab" class="template-sheet-tab" data-template-sheet="cover" aria-selected="false">封面</button>
+                  <button type="button" role="tab" class="template-sheet-tab" data-template-sheet="back" aria-selected="false">末页</button>
+                </div>
+                <p id="template-sheet-hint" class="template-sheet-hint" aria-live="polite"></p>
               <div id="template-canvas" class="template-canvas" aria-label="模版画布">
                 <div id="template-canvas-page" class="template-canvas-page">
                   <div id="template-paper-header" class="template-paper-header" hidden>
@@ -396,6 +403,7 @@
                   </div>
                   <div id="template-canvas-root" class="template-canvas-root"></div>
                 </div>
+              </div>
               </div>
             </div>
             <aside class="template-props" aria-label="选中项属性">
