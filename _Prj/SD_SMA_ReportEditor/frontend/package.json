@@ -1,15 +1,81 @@
 {
   "name": "sd-sma-report-editor",
   "version": "0.1.0",
+  "description": "SD SMA Report Editor — Markdown 报表编辑器（Electron + FastAPI）",
+  "author": "B&R Team",
   "private": true,
   "type": "module",
-  "main": "electron/main.js",
+  "main": "electron/main.cjs",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
     "electron:dev": "concurrently -k \"vite\" \"wait-on http://localhost:5173 && electron .\"",
-    "electron:build": "vite build && electron ."
+    "electron:build": "vite build && electron .",
+    "build:backend": "powershell -ExecutionPolicy Bypass -File ../backend/scripts/build-backend-exe.ps1",
+    "clean:release": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/clean-release.ps1",
+    "clean:release:alt": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/clean-release.ps1 release-alt",
+    "clean:eb-cache": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/clean-electron-builder-cache.ps1",
+    "dist": "npm run build && electron-builder --win",
+    "dist:alt": "npm run build && electron-builder --win --config.directories.output=release-alt",
+    "dist:cn": "set ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/&& npm run dist",
+    "dist:cn:alt": "set ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/&& npm run build && electron-builder --win --config.directories.output=release-alt",
+    "dist:cn:portable": "set ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/&& npm run build && electron-builder --win portable --config.directories.output=release-alt",
+    "dist:cn:fresh": "npm run clean:release && set ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/&& npm run dist",
+    "dist:win": "npm run build:backend && npm run dist",
+    "dist:win:cn": "set ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/&& npm run dist:win",
+    "dist:win:cn:alt": "npm run build:backend && set ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/&& npm run build && electron-builder --win --config.directories.output=release-alt",
+    "dist:win:cn:fresh": "npm run clean:release && set ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/&& npm run dist:win"
+  },
+  "build": {
+    "appId": "com.brteam.sd_sma.report_editor",
+    "productName": "SD SMA Report Editor",
+    "copyright": "Copyright © B&R Team",
+    "extraMetadata": {
+      "main": "electron/main.cjs",
+      "type": "commonjs"
+    },
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/main.cjs",
+      "package.json"
+    ],
+    "asar": true,
+    "extraResources": [
+      {
+        "from": "../backend/dist/report_backend",
+        "to": "report_backend",
+        "filter": ["**/*"]
+      }
+    ],
+    "win": {
+      "signAndEditExecutable": false,
+      "signDlls": false,
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        },
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "artifactName": "${productName}-Setup-${version}-${arch}.${ext}"
+    },
+    "portable": {
+      "artifactName": "${productName}-Portable-${version}-${arch}.exe"
+    }
   },
   "dependencies": {
     "@vueuse/core": "^12.0.0",
@@ -22,6 +88,7 @@
     "@vitejs/plugin-vue": "^5.2.0",
     "concurrently": "^9.2.1",
     "electron": "^34.0.0",
+    "electron-builder": "^25.1.8",
     "vite": "^6.2.0",
     "wait-on": "^8.0.5"
   }

@@ -1,0 +1,3 @@
+﻿# ReportEditor 打包输出（减轻 app.asar 被编辑器索引占用）
+_Prj/SD_SMA_ReportEditor/frontend/release/
+_Prj/SD_SMA_ReportEditor/frontend/release-alt/
