@@ -376,6 +376,26 @@ function listForZone(zone: "header" | "footer"): LayoutZoneElement[] {
   return zone === "header" ? draft.headerElements : draft.footerElements;
 }
 
+/**
+ * 纸张 #lvis-zoom-outer 在 .lvis-scroll 滚动坐标系下的矩形。
+ * 不可用 outer.offsetLeft：外层 .lvis-scroll-pad 有 4000px padding，offset 相对 offsetParent，与 scrollLeft 不同步，会导致缩放后视图飞出、适应宽度无法居中。
+ */
+function lvisPaperRectInScrollCoords(sc: HTMLElement, out: HTMLElement): {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+} {
+  const scr = sc.getBoundingClientRect();
+  const or = out.getBoundingClientRect();
+  return {
+    left: sc.scrollLeft + (or.left - scr.left),
+    top: sc.scrollTop + (or.top - scr.top),
+    width: or.width,
+    height: or.height,
+  };
+}
+
 function applyLvisZoom(): void {
   const outer = document.getElementById("lvis-zoom-outer");
   const wrap = document.getElementById("lvis-page-scale-wrap");
@@ -398,15 +418,20 @@ function applyLvisZoom(): void {
 function applyLvisZoomAnchoredAt(clientX: number, clientY: number): void {
   const scroll = document.querySelector(".lvis-scroll") as HTMLElement | null;
   const outer = document.getElementById("lvis-zoom-outer");
-  if (!scroll || !outer || outer.offsetWidth <= 0 || outer.offsetHeight <= 0) {
+  if (!scroll || !outer) {
+    applyLvisZoom();
+    return;
+  }
+  const pr = lvisPaperRectInScrollCoords(scroll, outer);
+  if (pr.width <= 0 || pr.height <= 0) {
     applyLvisZoom();
     return;
   }
   const sr = scroll.getBoundingClientRect();
-  const cx = scroll.scrollLeft + (clientX - sr.left);
-  const cy = scroll.scrollTop + (clientY - sr.top);
-  let fracX = (cx - outer.offsetLeft) / outer.offsetWidth;
-  let fracY = (cy - outer.offsetTop) / outer.offsetHeight;
+  const px = scroll.scrollLeft + (clientX - sr.left);
+  const py = scroll.scrollTop + (clientY - sr.top);
+  let fracX = (px - pr.left) / pr.width;
+  let fracY = (py - pr.top) / pr.height;
   fracX = Math.min(1, Math.max(0, fracX));
   fracY = Math.min(1, Math.max(0, fracY));
   applyLvisZoom();
@@ -414,14 +439,12 @@ function applyLvisZoomAnchoredAt(clientX: number, clientY: number): void {
     requestAnimationFrame(() => {
       const sc = document.querySelector(".lvis-scroll") as HTMLElement | null;
       const out = document.getElementById("lvis-zoom-outer");
-      if (!sc || !out || out.offsetWidth <= 0 || out.offsetHeight <= 0) return;
+      if (!sc || !out) return;
+      const pr2 = lvisPaperRectInScrollCoords(sc, out);
+      if (pr2.width <= 0 || pr2.height <= 0) return;
       const scr = sc.getBoundingClientRect();
-      const nl = out.offsetLeft;
-      const nt = out.offsetTop;
-      const nw = out.offsetWidth;
-      const nh = out.offsetHeight;
-      sc.scrollLeft = Math.round(nl + nw * fracX - (clientX - scr.left));
-      sc.scrollTop = Math.round(nt + nh * fracY - (clientY - scr.top));
+      sc.scrollLeft = Math.round(pr2.left + pr2.width * fracX - (clientX - scr.left));
+      sc.scrollTop = Math.round(pr2.top + pr2.height * fracY - (clientY - scr.top));
     });
   });
 }
@@ -432,26 +455,27 @@ function applyLvisZoomAndPreserveView(): void {
   const outer = document.getElementById("lvis-zoom-outer");
   let fracX = 0.5;
   let fracY = 0.5;
-  if (scroll && outer && outer.offsetWidth > 0 && outer.offsetHeight > 0) {
-    const cx = scroll.scrollLeft + scroll.clientWidth / 2;
-    const cy = scroll.scrollTop + scroll.clientHeight / 2;
-    fracX = (cx - outer.offsetLeft) / outer.offsetWidth;
-    fracY = (cy - outer.offsetTop) / outer.offsetHeight;
-    fracX = Math.min(1, Math.max(0, fracX));
-    fracY = Math.min(1, Math.max(0, fracY));
+  if (scroll && outer) {
+    const pr = lvisPaperRectInScrollCoords(scroll, outer);
+    if (pr.width > 0 && pr.height > 0) {
+      const cx = scroll.scrollLeft + scroll.clientWidth / 2;
+      const cy = scroll.scrollTop + scroll.clientHeight / 2;
+      fracX = (cx - pr.left) / pr.width;
+      fracY = (cy - pr.top) / pr.height;
+      fracX = Math.min(1, Math.max(0, fracX));
+      fracY = Math.min(1, Math.max(0, fracY));
+    }
   }
   applyLvisZoom();
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
       const sc = document.querySelector(".lvis-scroll") as HTMLElement | null;
       const out = document.getElementById("lvis-zoom-outer");
-      if (!sc || !out || out.offsetWidth <= 0 || out.offsetHeight <= 0) return;
-      const nl = out.offsetLeft;
-      const nt = out.offsetTop;
-      const nw = out.offsetWidth;
-      const nh = out.offsetHeight;
-      sc.scrollLeft = Math.round(nl + nw * fracX - sc.clientWidth / 2);
-      sc.scrollTop = Math.round(nt + nh * fracY - sc.clientHeight / 2);
+      if (!sc || !out) return;
+      const pr2 = lvisPaperRectInScrollCoords(sc, out);
+      if (pr2.width <= 0 || pr2.height <= 0) return;
+      sc.scrollLeft = Math.round(pr2.left + pr2.width * fracX - sc.clientWidth / 2);
+      sc.scrollTop = Math.round(pr2.top + pr2.height * fracY - sc.clientHeight / 2);
     });
   });
 }
@@ -459,9 +483,11 @@ function applyLvisZoomAndPreserveView(): void {
 function centerLvisScrollOnPage(): void {
   const sc = document.querySelector(".lvis-scroll") as HTMLElement | null;
   const out = document.getElementById("lvis-zoom-outer");
-  if (!sc || !out || out.offsetWidth <= 0 || out.offsetHeight <= 0) return;
-  sc.scrollLeft = Math.round(out.offsetLeft + out.offsetWidth / 2 - sc.clientWidth / 2);
-  sc.scrollTop = Math.round(out.offsetTop + out.offsetHeight / 2 - sc.clientHeight / 2);
+  if (!sc || !out) return;
+  const pr = lvisPaperRectInScrollCoords(sc, out);
+  if (pr.width <= 0 || pr.height <= 0) return;
+  sc.scrollLeft = Math.round(pr.left + pr.width / 2 - sc.clientWidth / 2);
+  sc.scrollTop = Math.round(pr.top + pr.height / 2 - sc.clientHeight / 2);
 }
 
 /** 纸张完全不在视口内时再拉回（大块留白下尽量少打断用户拖动） */
@@ -473,12 +499,9 @@ function ensureLvisPageVisible(): void {
   const st = scroll.scrollTop;
   const vw = scroll.clientWidth;
   const vh = scroll.clientHeight;
-  const ol = outer.offsetLeft;
-  const ot = outer.offsetTop;
-  const ow = outer.offsetWidth;
-  const oh = outer.offsetHeight;
-  const rx = Math.min(sl + vw, ol + ow) - Math.max(sl, ol);
-  const ry = Math.min(st + vh, ot + oh) - Math.max(st, ot);
+  const pr = lvisPaperRectInScrollCoords(scroll, outer);
+  const rx = Math.min(sl + vw, pr.left + pr.width) - Math.max(sl, pr.left);
+  const ry = Math.min(st + vh, pr.top + pr.height) - Math.max(st, pr.top);
   if (rx <= 2 || ry <= 2) {
     centerLvisScrollOnPage();
   }
@@ -761,12 +784,11 @@ export function initReportLayoutVisual(d: LayoutVisualDeps): void {
     lvisZoomFit();
   });
 
-  const lvisScrollEl = document.querySelector(".lvis-scroll");
-  lvisScrollEl?.addEventListener(
+  /* 捕获在整页 section 上：避免仅在 .lvis-scroll 外按下 Ctrl+滚轮时触发浏览器整页缩放导致「画面突然出去」 */
+  document.getElementById("page-layout-visual")?.addEventListener(
     "wheel",
     (e) => {
       if (!draft) return;
-      /* 触控板捏合在 Chromium/Safari 常表现为 ctrlKey+wheel；⌘ 与 Ctrl 便于鼠标滚轮缩放 */
       if (!(e.ctrlKey || e.metaKey)) return;
       e.preventDefault();
       const factor = Math.exp(-e.deltaY * 0.002);
@@ -775,7 +797,7 @@ export function initReportLayoutVisual(d: LayoutVisualDeps): void {
       lvisZoom = nz;
       applyLvisZoomAnchoredAt(e.clientX, e.clientY);
     },
-    { passive: false },
+    { passive: false, capture: true },
   );
 
   document.getElementById("lvis-snap-enabled")?.addEventListener("change", () => {
