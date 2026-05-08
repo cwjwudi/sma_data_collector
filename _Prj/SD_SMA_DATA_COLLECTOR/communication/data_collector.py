@@ -20,6 +20,15 @@ from communication.communication_manager import CommunicationManager
 from database.data_query import DataQueryProcessor
 
 
+def _is_opcua_transient(exc: BaseException) -> bool:
+    """手动断线、PLC 关机、对端不可达等：用简短日志即可，不必打 ERROR 全栈。"""
+    if isinstance(exc, (ConnectionError, TimeoutError)):
+        return True
+    if isinstance(exc, OSError):
+        code = getattr(exc, "errno", None)
+        if code in {10054, 10053, 10051, 10050, 10060, 10061, 110, 111, 113}:
+            return True
+    return False
 class DataCollector:
     """数据采集器类"""
     
@@ -230,7 +239,15 @@ class DataCollector:
                 self.logger.info(f"时间触发采集组 {group.name} 已取消")
                 break
             except Exception as e:
-                self.logger.error(f"时间触发采集组 {group.name} 发生错误: {e}", exc_info=True)
+                if _is_opcua_transient(e):
+                    self.logger.warning(
+                        "时间触发采集组 %s OPC UA 暂不可用，5s 后重试: %s: %s",
+                        group.name,
+                        type(e).__name__,
+                        e,
+                    )
+                else:
+                    self.logger.error(f"时间触发采集组 {group.name} 发生错误: {e}", exc_info=True)
                 await asyncio.sleep(5)  # 错误后等待5秒重试
                 next_deadline = time.monotonic() + interval
 
@@ -341,7 +358,15 @@ class DataCollector:
                 self.logger.info(f"time_and_variable 采集组 {group.name} 已取消")
                 break
             except Exception as e:
-                self.logger.error(f"time_and_variable 采集组 {group.name} 发生错误: {e}", exc_info=True)
+                if _is_opcua_transient(e):
+                    self.logger.warning(
+                        "time_and_variable 采集组 %s OPC UA 暂不可用，5s 后重试: %s: %s",
+                        group.name,
+                        type(e).__name__,
+                        e,
+                    )
+                else:
+                    self.logger.error(f"time_and_variable 采集组 {group.name} 发生错误: {e}", exc_info=True)
                 await asyncio.sleep(5)
     
     async def _variable_triggered_collection(self, group: DataGroup,
@@ -411,7 +436,15 @@ class DataCollector:
                 self.logger.info(f"变量触发采集组 {group.name} 已取消")
                 break
             except Exception as e:
-                self.logger.error(f"变量触发采集组 {group.name} 发生错误: {e}", exc_info=True)
+                if _is_opcua_transient(e):
+                    self.logger.warning(
+                        "变量触发采集组 %s OPC UA 暂不可用，5s 后重试: %s: %s",
+                        group.name,
+                        type(e).__name__,
+                        e,
+                    )
+                else:
+                    self.logger.error(f"变量触发采集组 {group.name} 发生错误: {e}", exc_info=True)
                 await asyncio.sleep(5)  # 错误后等待5秒重试
 
     async def _parallel_variable_triggered_collection(self, group: DataGroup,
@@ -505,7 +538,15 @@ class DataCollector:
                 self.logger.info(f"并行触发采集组 {group.name} 已取消")
                 break
             except Exception as e:
-                self.logger.error(f"并行触发采集组 {group.name} 发生错误: {e}", exc_info=True)
+                if _is_opcua_transient(e):
+                    self.logger.warning(
+                        "并行触发采集组 %s OPC UA 暂不可用，5s 后重试: %s: %s",
+                        group.name,
+                        type(e).__name__,
+                        e,
+                    )
+                else:
+                    self.logger.error(f"并行触发采集组 {group.name} 发生错误: {e}", exc_info=True)
                 await asyncio.sleep(5)
 
     async def _query_collection(self, group: DataGroup,
@@ -574,7 +615,15 @@ class DataCollector:
                 self.logger.info(f"查询任务组 {group.name} 已取消")
                 break
             except Exception as e:
-                self.logger.error(f"查询任务组 {group.name} 发生错误：{e}", exc_info=True)
+                if _is_opcua_transient(e):
+                    self.logger.warning(
+                        "查询任务组 %s OPC UA 暂不可用，5s 后重试: %s: %s",
+                        group.name,
+                        type(e).__name__,
+                        e,
+                    )
+                else:
+                    self.logger.error(f"查询任务组 {group.name} 发生错误：{e}", exc_info=True)
                 await asyncio.sleep(5)
 
     async def _read_query_parameters(self,
@@ -676,6 +725,18 @@ class DataCollector:
                 'aux_queries': aux_query_str  # 支持附加查询条件
             }
             
+        except ConnectionError as e:
+            self.logger.warning("读取查询参数时 OPC UA 不可用: %s: %s", type(e).__name__, e)
+            return None
+        except TimeoutError as e:
+            self.logger.warning("读取查询参数时 OPC UA 超时: %s: %s", type(e).__name__, e)
+            return None
+        except OSError as e:
+            if _is_opcua_transient(e):
+                self.logger.warning("读取查询参数时 OPC UA 网络错误: %s: %s", type(e).__name__, e)
+                return None
+            self.logger.error(f"读取查询参数失败：{e}", exc_info=True)
+            return None
         except Exception as e:
             self.logger.error(f"读取查询参数失败：{e}", exc_info=True)
             return None

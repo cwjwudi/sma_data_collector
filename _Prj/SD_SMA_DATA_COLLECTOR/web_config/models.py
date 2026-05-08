@@ -23,3 +23,7 @@ class OpcUaConnectRequest(BaseModel):
     host: str = Field(..., min_length=1)
     port: int = Field(default=4840, ge=1, le=65535)
 
+
+class CollectorStartRequest(BaseModel):
+    filename: str = Field(..., min_length=1)
+

@@ -11,7 +11,7 @@ import sys
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from logging.handlers import TimedRotatingFileHandler
-from typing import Optional
+from typing import Any, Optional
 
 from communication.data_collector import DataCollector
 from communication.communication_manager import CommunicationManager
@@ -41,8 +41,9 @@ class DataCollectionSystem:
             return default_name
         return f"{match.group('prefix')}.{match.group('suffix')}.log"
 
-    def __init__(self, config_file: str):
+    def __init__(self, config_file: str, *, extra_log_handlers: Optional[list[logging.Handler]] = None):
         self.config_file = config_file
+        self._extra_log_handlers = list(extra_log_handlers or [])
         self.config: Optional[AppConfig] = None
         self.communication_manager: Optional[CommunicationManager] = None
         self.heartbeat_manager: Optional[HeartbeatManager] = None
@@ -83,6 +84,8 @@ class DataCollectionSystem:
         root_logger = logging.getLogger()
         root_logger.setLevel(log_level)
         root_logger.handlers.clear()
+        for h in self._extra_log_handlers:
+            root_logger.addHandler(h)
         root_logger.addHandler(file_handler)
         if console_enabled:
             stream_handler = logging.StreamHandler(sys.stdout)
@@ -91,6 +94,38 @@ class DataCollectionSystem:
             root_logger.addHandler(stream_handler)
 
         self.logger = logging.getLogger(__name__)
+
+    def get_runtime_snapshot(self) -> dict[str, Any]:
+        """
+        供监视面板使用的轻量状态（可在采集运行时轮询）。
+        """
+        from sqlalchemy import text
+
+        db_ok = False
+        if self.db_manager and getattr(self.db_manager, "engine", None):
+            try:
+                with self.db_manager.engine.connect() as conn:
+                    conn.execute(text("SELECT 1"))
+                db_ok = True
+            except Exception:
+                db_ok = False
+
+        opcua_detail: dict[str, bool] = {}
+        if self.communication_manager and self.communication_manager.clients:
+            for name, client in self.communication_manager.clients.items():
+                try:
+                    opcua_detail[name] = bool(client.is_connected())
+                except Exception:
+                    opcua_detail[name] = False
+        opcua_all = bool(opcua_detail) and all(opcua_detail.values())
+
+        return {
+            "collector_running": bool(self.running),
+            "config_path": self.config_file,
+            "initialized": self.config is not None and self.data_collector is not None,
+            "database_connected": db_ok,
+            "opcua": {"by_name": opcua_detail, "all_connected": opcua_all},
+        }
 
     async def initialize(self) -> bool:
         try:

@@ -133,44 +133,44 @@ pip install -r requirements.txt
 pip install -r requirements-dev.txt
 ```
 
-### 启动配置网页（新增）
+### Web 界面与采集（推荐）
 
 ```bash
-# Windows
-start_collector.bat web
+# Windows：一键启动（浏览器内「采集监视」面板再点「启动采集」）
+start_collector.bat
 
 # 或手动启动
-# 依赖已统一到根 requirements.txt
+# 依赖见根目录 requirements.txt
 pip install -r requirements.txt
 python -m uvicorn web_config.main:app --host 0.0.0.0 --port 8091
 ```
 
-- 访问地址：`http://localhost:8091`
-- 支持功能：
-  - 读取/编辑/校验采集配置模板
-  - 导出配置文件与直写 `config/`
-  - OPC UA 浏览并一键加入 `points`
-- 设计边界：配置网页不支持 `trigger=query` 与 `groups[].query_config`
+- 访问地址：`http://127.0.0.1:8091`（或本机 IP:8091）
+- 页面顶部 **采集监视**：选择 `config/` 下 JSON 后点击 **启动采集** / **停止采集**；在此启动前不会进行采集。
+- 监视区会轮询数据库连通、各 OPC UA 连接、采集主循环是否在跑，并展示与 `data_collector.log` / 控制台同源的最近日志（内存环形缓冲）。
+- 同一进程内请勿再运行 `python main.py` 连接同一数据库做采集，避免重复占库。
+- 其余：读取/编辑/校验配置、导出与直写 `config/`、OPC UA 浏览加点位等。
+- 设计边界：配置网页仍不支持 `trigger=query` 与 `groups[].query_config`
 
-### 启动系统
+### 命令行采集（可选）
 
 ```bash
-# 启动数据采集（使用默认配置）
+# 不开 Web、仅控制台运行采集
 python main.py
 
 # 指定配置文件
 python main.py --config config/Alarm_Audit.json
-
-# Windows 统一启动脚本（交互菜单）
-start_collector.bat
 ```
 
-系统启动后会：
+命令行模式适用脚本/服务部署；与 Web 托管采集二选一即可。
+
+`python main.py` 启动后会：
+
 - 连接所有配置的 OPC UA 服务器
 - 初始化数据库连接
-- 启动 HTTP 服务器（如果启用）
-- 按照配置的触发方式采集数据
-- 实时写入数据库
+- 按配置的触发方式采集数据并写入数据库
+
+（主程序内已无 HTTP 推送/内置 HTTP 服务；配置里 `http_server` 若启用会被忽略并打日志警告。）
 
 ### 配置检查
 

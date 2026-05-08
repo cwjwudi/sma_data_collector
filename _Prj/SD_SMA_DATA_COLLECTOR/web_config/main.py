@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
@@ -8,8 +9,10 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from .collector_host import get_collector_host
 from .config_manager import CollectorConfigManager
 from .models import (
+    CollectorStartRequest,
     ConfigExportRequest,
     ConfigValidateRequest,
     ConfigWriteRequest,
@@ -45,7 +48,14 @@ cfg = CollectorConfigManager(
 )
 opcua_browser = OpcUaBrowserService()
 
-app = FastAPI(title="SD SMA Collector Config Web", version="0.1.0")
+
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    yield
+    await get_collector_host().shutdown()
+
+
+app = FastAPI(title="SD SMA Collector Config Web", version="0.1.0", lifespan=_lifespan)
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 
 
@@ -197,4 +207,32 @@ def opcua_node_meta(node_id: str) -> dict[str, Any]:
         return opcua_browser.node_meta(node_id=node_id)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/collector/status")
+def collector_status() -> dict[str, Any]:
+    return get_collector_host().status()
+
+
+@app.get("/api/collector/logs")
+def collector_logs() -> dict[str, Any]:
+    host = get_collector_host()
+    return {"lines": host.get_log_handler().get_lines()}
+
+
+@app.post("/api/collector/start")
+async def collector_start(req: CollectorStartRequest) -> dict[str, Any]:
+    try:
+        return await get_collector_host().start(req.filename, collector_config_dir)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/collector/stop")
+async def collector_stop() -> dict[str, Any]:
+    return await get_collector_host().stop()
 
