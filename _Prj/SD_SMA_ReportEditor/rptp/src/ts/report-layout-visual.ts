@@ -387,7 +387,7 @@ function listForZone(zone: "header" | "footer"): LayoutZoneElement[] {
 /**
  * 纸张预览块在 .lvis-scroll 滚动坐标系下的矩形。
  * 左上角用 #lvis-zoom-outer 的 getBoundingClientRect（视口对齐）；宽高用 outer.offsetWidth/Height，
- * 与 applyLvisZoom 写入的尺寸一致。仅用 inner wrap 的 BCR 在部分布局下 width 会异常偏小（日志曾出现 w≈2）；
+ * 与 applyLvisZoom 写入的尺寸一致。仅用 inner wrap 的 BCR 在部分布局下 width 会异常偏小；
  * 仅用 outer BCR 的宽高则可能与子元素 transform 后的亚像素不一致，二者拆开可避免 frac 爆炸。
  */
 function lvisPaperRectInScrollCoords(sc: HTMLElement): {
@@ -466,33 +466,9 @@ function applyLvisZoomAnchoredAt(clientX: number, clientY: number): void {
   const fracX = (sx - pr.left) / pr.width;
   const fracY = (sy - pr.top) / pr.height;
 
-  // #region agent log
-  fetch("http://127.0.0.1:7384/ingest/8646e41b-c472-492e-9346-8be671be03e0", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "84e945" },
-    body: JSON.stringify({
-      sessionId: "84e945",
-      runId: "post-fix",
-      hypothesisId: "H2",
-      location: "report-layout-visual.ts:applyLvisZoomAnchoredAt",
-      message: "anchored zoom fractions before apply",
-      data: {
-        clientIn: { x: clientX, y: clientY },
-        anchor,
-        fracX,
-        fracY,
-        pr: { left: pr.left, top: pr.top, w: pr.width, h: pr.height },
-        rectBasis: "outer-bcr-pos+offset-wh",
-        scrollBefore: { left: scroll.scrollLeft, top: scroll.scrollTop },
-      },
-      timestamp: Date.now(),
-    }),
-  }).catch(() => {});
-  // #endregion
-
   applyLvisZoom();
 
-  // 连续 ctrl+wheel 会在上一次 rAF 修正 scroll 之前再次进入此处；若仍用陈旧 scrollLeft 与已更新的纸张矩形算 frac，会出现 frac>>1 与视图乱跳（见调试日志）。
+  // 立即同步 scroll，避免连续 wheel 在下一轮仍用陈旧 scrollLeft 与已更新的纸张尺寸算 frac。
   void outer.offsetHeight;
   void scroll.offsetHeight;
 
@@ -505,28 +481,6 @@ function applyLvisZoomAnchoredAt(clientX: number, clientY: number): void {
     const nextTop = Math.round(pr2.top + pr2.height * fracY - (ay - scr.top));
     scroll.scrollLeft = nextLeft;
     scroll.scrollTop = nextTop;
-
-    // #region agent log
-    fetch("http://127.0.0.1:7384/ingest/8646e41b-c472-492e-9346-8be671be03e0", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "84e945" },
-      body: JSON.stringify({
-        sessionId: "84e945",
-        runId: "post-fix",
-        hypothesisId: "H2",
-        location: "report-layout-visual.ts:applyLvisZoomAnchoredAt:sync",
-        message: "scroll applied after zoom (sync)",
-        data: {
-          nextLeft,
-          nextTop,
-          pr2: { left: pr2.left, top: pr2.top, w: pr2.width, h: pr2.height },
-          fracX,
-          fracY,
-        },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {});
-    // #endregion
   }
 }
 
@@ -949,53 +903,10 @@ export function initReportLayoutVisual(d: LayoutVisualDeps): void {
       const now = performance.now();
       const gapElapsed = now - lvisWheelLastTime > LVIS_WHEEL_GESTURE_GAP_MS;
       lvisWheelLastTime = now;
-      const scrollEl = document.querySelector(".lvis-scroll") as HTMLElement | null;
-      const pinch = lvisIsLikelyTrackpadPinchWheel(e);
-      const ecIn =
-        scrollEl != null && lvisClientInScrollViewport(scrollEl, e.clientX, e.clientY);
-      const ptrIn =
-        scrollEl != null &&
-        lvisClientInScrollViewport(scrollEl, lvisLastPointerClient.x, lvisLastPointerClient.y);
 
-      let anchorSource = "locked-session";
       if (gapElapsed || !lvisWheelGestureAnchor) {
         lvisWheelGestureAnchor = lvisComputeWheelGestureAnchor(e);
-        anchorSource =
-          scrollEl && lvisClientInScrollViewport(scrollEl, e.clientX, e.clientY)
-            ? "wheel-client-in-scroll"
-            : lvisIsLikelyTrackpadPinchWheel(e)
-              ? "pinch-fallback-ptr-or-center"
-              : "resolve-wheel";
       }
-
-      // #region agent log
-      fetch("http://127.0.0.1:7384/ingest/8646e41b-c472-492e-9346-8be671be03e0", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "84e945" },
-        body: JSON.stringify({
-          sessionId: "84e945",
-          runId: "post-fix",
-          hypothesisId: "H1",
-          location: "report-layout-visual.ts:wheel",
-          message: "ctrl wheel zoom tick",
-          data: {
-            deltaMode: e.deltaMode,
-            deltaY: e.deltaY,
-            deltaX: e.deltaX,
-            pinch,
-            gapElapsed,
-            ecIn,
-            ptrIn,
-            anchorSource,
-            eventClient: { x: e.clientX, y: e.clientY },
-            lastPtr: { ...lvisLastPointerClient },
-            anchor: lvisWheelGestureAnchor ? { ...lvisWheelGestureAnchor } : null,
-            nz,
-          },
-          timestamp: Date.now(),
-        }),
-      }).catch(() => {});
-      // #endregion
 
       lvisZoom = nz;
       applyLvisZoomAnchoredAt(lvisWheelGestureAnchor.x, lvisWheelGestureAnchor.y);
