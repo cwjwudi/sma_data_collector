@@ -36,6 +36,9 @@ let sel: Sel = { k: "idle" };
 /** 预览缩放（不影响导出几何，仅视图） */
 let lvisZoom = 1;
 
+/** 版式可视化页内最近一次指针屏幕坐标（捏合等场景下 wheel.client 偶发 0,0 时用） */
+let lvisLastPointerClient = { x: 0, y: 0 };
+
 /** 拖拽对齐网格（px） */
 let snapEnabled = true;
 let snapGridPx = 8;
@@ -396,6 +399,19 @@ function lvisPaperRectInScrollCoords(sc: HTMLElement, out: HTMLElement): {
   };
 }
 
+/** 把指针限制在预览滚动控件的可视矩形内（锚点在预览外时投射到最近边缘） */
+function lvisClampClientToScrollViewport(scroll: HTMLElement, clientX: number, clientY: number): {
+  x: number;
+  y: number;
+} {
+  const r = scroll.getBoundingClientRect();
+  const eps = 1e-4;
+  return {
+    x: Math.min(r.right - eps, Math.max(r.left + eps, clientX)),
+    y: Math.min(r.bottom - eps, Math.max(r.top + eps, clientY)),
+  };
+}
+
 function applyLvisZoom(): void {
   const outer = document.getElementById("lvis-zoom-outer");
   const wrap = document.getElementById("lvis-page-scale-wrap");
@@ -414,7 +430,10 @@ function applyLvisZoom(): void {
   if (pct) pct.textContent = `${p}%`;
 }
 
-/** 缩放后以某一屏幕点为锚保持纸张相对位置（可用于预览区中心等可靠坐标） */
+/**
+ * 以视口中的屏幕点为缩放锚点：缩放前后，该点下方的纸张位置（含纸张外侧 extrapolate）保持在同一屏幕像素。
+ * clientX/Y 为浏览器视口坐标（与 WheelEvent / PointerEvent 一致）。
+ */
 function applyLvisZoomAnchoredAt(clientX: number, clientY: number): void {
   const scroll = document.querySelector(".lvis-scroll") as HTMLElement | null;
   const outer = document.getElementById("lvis-zoom-outer");
@@ -427,14 +446,16 @@ function applyLvisZoomAnchoredAt(clientX: number, clientY: number): void {
     applyLvisZoom();
     return;
   }
+
+  const anchor = lvisClampClientToScrollViewport(scroll, clientX, clientY);
   const sr = scroll.getBoundingClientRect();
-  const px = scroll.scrollLeft + (clientX - sr.left);
-  const py = scroll.scrollTop + (clientY - sr.top);
-  let fracX = (px - pr.left) / pr.width;
-  let fracY = (py - pr.top) / pr.height;
-  fracX = Math.min(1, Math.max(0, fracX));
-  fracY = Math.min(1, Math.max(0, fracY));
+  const sx = scroll.scrollLeft + (anchor.x - sr.left);
+  const sy = scroll.scrollTop + (anchor.y - sr.top);
+  const fracX = (sx - pr.left) / pr.width;
+  const fracY = (sy - pr.top) / pr.height;
+
   applyLvisZoom();
+
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
       const sc = document.querySelector(".lvis-scroll") as HTMLElement | null;
@@ -443,8 +464,10 @@ function applyLvisZoomAnchoredAt(clientX: number, clientY: number): void {
       const pr2 = lvisPaperRectInScrollCoords(sc, out);
       if (pr2.width <= 0 || pr2.height <= 0) return;
       const scr = sc.getBoundingClientRect();
-      sc.scrollLeft = Math.round(pr2.left + pr2.width * fracX - (clientX - scr.left));
-      sc.scrollTop = Math.round(pr2.top + pr2.height * fracY - (clientY - scr.top));
+      const ax = anchor.x;
+      const ay = anchor.y;
+      sc.scrollLeft = Math.round(pr2.left + pr2.width * fracX - (ax - scr.left));
+      sc.scrollTop = Math.round(pr2.top + pr2.height * fracY - (ay - scr.top));
     });
   });
 }
@@ -723,6 +746,23 @@ function bindLvisAlignTooltips(): void {
   }
 }
 
+/** 从 wheel 解析缩放锚点的屏幕坐标（无效时用最近 pointermove；仍为 (0,0) 时用预览区中心） */
+function lvisResolveWheelAnchorClient(e: WheelEvent): { x: number; y: number } {
+  let cx = e.clientX;
+  let cy = e.clientY;
+  if (!Number.isFinite(cx) || !Number.isFinite(cy)) {
+    cx = lvisLastPointerClient.x;
+    cy = lvisLastPointerClient.y;
+  }
+  const scroll = document.querySelector(".lvis-scroll") as HTMLElement | null;
+  if (scroll && cx === 0 && cy === 0) {
+    const sr = scroll.getBoundingClientRect();
+    cx = sr.left + sr.width / 2;
+    cy = sr.top + sr.height / 2;
+  }
+  return { x: cx, y: cy };
+}
+
 export function initReportLayoutVisual(d: LayoutVisualDeps): void {
   deps = d;
 
@@ -784,8 +824,18 @@ export function initReportLayoutVisual(d: LayoutVisualDeps): void {
     lvisZoomFit();
   });
 
-  /* 捕获在整页 section 上：避免仅在 .lvis-scroll 外按下 Ctrl+滚轮时触发浏览器整页缩放导致「画面突然出去」 */
-  document.getElementById("page-layout-visual")?.addEventListener(
+  const lvisSection = document.getElementById("page-layout-visual");
+  lvisSection?.addEventListener(
+    "pointermove",
+    (e) => {
+      lvisLastPointerClient.x = e.clientX;
+      lvisLastPointerClient.y = e.clientY;
+    },
+    { passive: true },
+  );
+
+  /* 捕获在整页 section：防止 Ctrl+滚轮在工具条等处触发浏览器整页缩放 */
+  lvisSection?.addEventListener(
     "wheel",
     (e) => {
       if (!draft) return;
@@ -795,12 +845,8 @@ export function initReportLayoutVisual(d: LayoutVisualDeps): void {
       const nz = Math.min(2, Math.max(0.35, lvisZoom * factor));
       if (Math.abs(nz - lvisZoom) < 1e-4) return;
       lvisZoom = nz;
-      /* 捏合与 Ctrl+滚轮在部分浏览器里 clientX/Y 不可靠（视图易偏向一侧）；锚点固定为预览区中心 */
-      const scroll = document.querySelector(".lvis-scroll") as HTMLElement | null;
-      if (scroll) {
-        const sr = scroll.getBoundingClientRect();
-        applyLvisZoomAnchoredAt(sr.left + sr.width / 2, sr.top + sr.height / 2);
-      } else applyLvisZoom();
+      const { x, y } = lvisResolveWheelAnchorClient(e);
+      applyLvisZoomAnchoredAt(x, y);
     },
     { passive: false, capture: true },
   );
