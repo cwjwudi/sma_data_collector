@@ -341,6 +341,7 @@ export function initReportLayoutVisual(d: LayoutVisualDeps): void {
   bindAlign("lvis-match-h", () => matchOthersDimension("h"));
 
   bindDrawerInputs();
+  bindLvisAlignVisualGrid();
 
   document.getElementById("btn-lvis-el-delete")?.addEventListener("click", () => {
     if (!draft || sel.k !== "el") return;
@@ -523,6 +524,38 @@ function onWinMove(e: MouseEvent): void {
   syncElementInputsFromModel();
 }
 
+function syncLvisAlignVisualHighlight(): void {
+  const grid = document.getElementById("lvis-align-visual-grid");
+  if (!grid) return;
+  const ix = document.getElementById("lvis-e-align-x") as HTMLInputElement | null;
+  const iy = document.getElementById("lvis-e-align-y") as HTMLInputElement | null;
+  const ax = ix?.value ?? "start";
+  const ay = iy?.value ?? "center";
+  grid.querySelectorAll<HTMLButtonElement>(".lvis-align-visual-cell").forEach((b) => {
+    const match =
+      b.getAttribute("data-lvis-align-x") === ax && b.getAttribute("data-lvis-align-y") === ay;
+    b.classList.toggle("is-active", match);
+    b.setAttribute("aria-pressed", match ? "true" : "false");
+  });
+}
+
+function bindLvisAlignVisualGrid(): void {
+  document.getElementById("lvis-align-visual-grid")?.addEventListener("click", (e) => {
+    const btn = (e.target as HTMLElement).closest("[data-lvis-align-x]");
+    if (!btn || !draft || sel.k !== "el") return;
+    const ax = btn.getAttribute("data-lvis-align-x");
+    const ay = btn.getAttribute("data-lvis-align-y");
+    if (!ax || !ay) return;
+    const ix = document.getElementById("lvis-e-align-x") as HTMLInputElement | null;
+    const iy = document.getElementById("lvis-e-align-y") as HTMLInputElement | null;
+    if (ix) ix.value = ax;
+    if (iy) iy.value = ay;
+    applyDrawerToDraft();
+    syncLvisAlignVisualHighlight();
+    renderLvis();
+  });
+}
+
 function bindDrawerInputs(): void {
   const onChange = () => {
     applyDrawerToDraft();
@@ -641,6 +674,7 @@ function syncElementInputsFromModel(): void {
   set("lvis-e-align-y", el.alignY);
   set("lvis-e-date-format", el.dateFormat);
   set("lvis-e-img-url", el.imageSrc);
+  syncLvisAlignVisualHighlight();
 }
 
 export function openLayoutVisual(presetId: string): void {

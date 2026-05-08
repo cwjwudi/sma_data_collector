@@ -1299,6 +1299,103 @@ html[data-theme="dark"] .lvis-body-zone {
   right: 1px;
   cursor: nwse-resize;
 }
+
+/* 版式可视化 · 抽屉内九宫格对齐 */
+.drawer-panel .lvis-align-visual-field .layout-edit-sub {
+  display: block;
+  margin-bottom: 0.35rem;
+}
+.lvis-align-visual-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 42px);
+  grid-template-rows: repeat(3, 42px);
+  gap: 6px;
+  width: fit-content;
+}
+.lvis-align-visual-cell {
+  width: 42px;
+  height: 42px;
+  padding: 0;
+  margin: 0;
+  border: var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: inherit;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+}
+.lvis-align-visual-cell:hover {
+  border-color: var(--accent);
+}
+.lvis-align-visual-cell.is-active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+  background: rgba(37, 99, 235, 0.08);
+}
+html[data-theme="dark"] .lvis-align-visual-cell.is-active {
+  background: rgba(96, 165, 250, 0.14);
+}
+.lvis-align-visual-frame {
+  position: relative;
+  width: 24px;
+  height: 17px;
+  border: 1px solid var(--muted);
+  border-radius: 3px;
+  display: block;
+  box-sizing: border-box;
+}
+.lvis-align-visual-dot {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  border-radius: 1px;
+  background: var(--accent);
+}
+.lvis-align-visual-dot--tl {
+  top: 2px;
+  left: 2px;
+}
+.lvis-align-visual-dot--tc {
+  top: 2px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+.lvis-align-visual-dot--tr {
+  top: 2px;
+  right: 2px;
+}
+.lvis-align-visual-dot--ml {
+  top: 50%;
+  left: 2px;
+  transform: translateY(-50%);
+}
+.lvis-align-visual-dot--mc {
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+.lvis-align-visual-dot--mr {
+  top: 50%;
+  right: 2px;
+  transform: translateY(-50%);
+}
+.lvis-align-visual-dot--bl {
+  bottom: 2px;
+  left: 2px;
+}
+.lvis-align-visual-dot--bc {
+  bottom: 2px;
+  left: 50%;
+  transform: translateX(-50%);
+}
+.lvis-align-visual-dot--br {
+  bottom: 2px;
+  right: 2px;
+}
+
 .template-paper-zone-inner .layout-zone-node {
   cursor: default;
 }

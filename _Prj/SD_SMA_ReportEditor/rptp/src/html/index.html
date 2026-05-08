@@ -491,22 +491,43 @@
                 <label for="lvis-e-font">字号 (px)</label>
                 <input id="lvis-e-font" type="number" min="8" max="96" step="1" />
               </div>
-              <div class="field-row">
-                <div class="field">
-                  <label for="lvis-e-align-x">水平对齐</label>
-                  <select id="lvis-e-align-x">
-                    <option value="start">左</option>
-                    <option value="center">中</option>
-                    <option value="end">右</option>
-                  </select>
-                </div>
-                <div class="field">
-                  <label for="lvis-e-align-y">垂直对齐</label>
-                  <select id="lvis-e-align-y">
-                    <option value="start">上</option>
-                    <option value="center">中</option>
-                    <option value="end">下</option>
-                  </select>
+              <div class="field lvis-align-visual-field">
+                <span id="lvis-align-visual-label" class="layout-edit-sub">内容对齐</span>
+                <input type="hidden" id="lvis-e-align-x" value="start" />
+                <input type="hidden" id="lvis-e-align-y" value="center" />
+                <div
+                  class="lvis-align-visual-grid"
+                  id="lvis-align-visual-grid"
+                  role="toolbar"
+                  aria-labelledby="lvis-align-visual-label"
+                >
+                  <button type="button" class="lvis-align-visual-cell" data-lvis-align-x="start" data-lvis-align-y="start" title="左上" aria-label="左上" aria-pressed="false">
+                    <span class="lvis-align-visual-frame" aria-hidden="true"><span class="lvis-align-visual-dot lvis-align-visual-dot--tl"></span></span>
+                  </button>
+                  <button type="button" class="lvis-align-visual-cell" data-lvis-align-x="center" data-lvis-align-y="start" title="上中" aria-label="上中" aria-pressed="false">
+                    <span class="lvis-align-visual-frame" aria-hidden="true"><span class="lvis-align-visual-dot lvis-align-visual-dot--tc"></span></span>
+                  </button>
+                  <button type="button" class="lvis-align-visual-cell" data-lvis-align-x="end" data-lvis-align-y="start" title="右上" aria-label="右上" aria-pressed="false">
+                    <span class="lvis-align-visual-frame" aria-hidden="true"><span class="lvis-align-visual-dot lvis-align-visual-dot--tr"></span></span>
+                  </button>
+                  <button type="button" class="lvis-align-visual-cell" data-lvis-align-x="start" data-lvis-align-y="center" title="左中" aria-label="左中" aria-pressed="false">
+                    <span class="lvis-align-visual-frame" aria-hidden="true"><span class="lvis-align-visual-dot lvis-align-visual-dot--ml"></span></span>
+                  </button>
+                  <button type="button" class="lvis-align-visual-cell" data-lvis-align-x="center" data-lvis-align-y="center" title="正中" aria-label="正中" aria-pressed="false">
+                    <span class="lvis-align-visual-frame" aria-hidden="true"><span class="lvis-align-visual-dot lvis-align-visual-dot--mc"></span></span>
+                  </button>
+                  <button type="button" class="lvis-align-visual-cell" data-lvis-align-x="end" data-lvis-align-y="center" title="右中" aria-label="右中" aria-pressed="false">
+                    <span class="lvis-align-visual-frame" aria-hidden="true"><span class="lvis-align-visual-dot lvis-align-visual-dot--mr"></span></span>
+                  </button>
+                  <button type="button" class="lvis-align-visual-cell" data-lvis-align-x="start" data-lvis-align-y="end" title="左下" aria-label="左下" aria-pressed="false">
+                    <span class="lvis-align-visual-frame" aria-hidden="true"><span class="lvis-align-visual-dot lvis-align-visual-dot--bl"></span></span>
+                  </button>
+                  <button type="button" class="lvis-align-visual-cell" data-lvis-align-x="center" data-lvis-align-y="end" title="下中" aria-label="下中" aria-pressed="false">
+                    <span class="lvis-align-visual-frame" aria-hidden="true"><span class="lvis-align-visual-dot lvis-align-visual-dot--bc"></span></span>
+                  </button>
+                  <button type="button" class="lvis-align-visual-cell" data-lvis-align-x="end" data-lvis-align-y="end" title="右下" aria-label="右下" aria-pressed="false">
+                    <span class="lvis-align-visual-frame" aria-hidden="true"><span class="lvis-align-visual-dot lvis-align-visual-dot--br"></span></span>
+                  </button>
                 </div>
               </div>
               <p class="drawer-panel-hint" style="margin-top: 0.35rem">控件框四角可拖拽改变宽高（单选时显示手柄）。</p>
