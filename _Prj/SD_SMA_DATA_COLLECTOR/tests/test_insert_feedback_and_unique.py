@@ -144,7 +144,7 @@ class TestUniqueAndFeedbackConfig(unittest.TestCase):
         try:
             with self.assertRaises(ValueError) as ctx:
                 ConfigLoader.load_from_file(temp_file)
-            self.assertIn("interval_seconds 必须为数值", str(ctx.exception))
+            self.assertIn("trigger_interval_seconds 必须为数值", str(ctx.exception))
         finally:
             self._cleanup_temp_file(temp_file)
 

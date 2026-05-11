@@ -251,6 +251,12 @@ class DataCollector:
                 await asyncio.sleep(5)  # 错误后等待5秒重试
                 next_deadline = time.monotonic() + interval
 
+    def _get_variable_trigger_poll_interval(self, group: DataGroup) -> float:
+        """获取 variable 类触发模式的触发点轮询间隔（秒）。"""
+        if group.trigger_interval_seconds is not None:
+            return float(group.trigger_interval_seconds)
+        return float(group.interval_seconds)
+
     async def _time_and_variable_collection(
         self,
         group: DataGroup,
@@ -374,6 +380,7 @@ class DataCollector:
                                            trigger_point: DataPoint,
                                            opcua_client: OpcUaClient) -> None:
         """变量触发的数据采集 - 实现上升沿触发逻辑"""
+        poll_interval = self._get_variable_trigger_poll_interval(group)
         # 记录上一次的触发点状态，用于检测上升沿
         previous_trigger_state = False
         
@@ -430,7 +437,7 @@ class DataCollector:
                 previous_trigger_state = current_trigger_value
                 
                 # 短暂等待后继续检查
-                await asyncio.sleep(group.interval_seconds)
+                await asyncio.sleep(poll_interval)
                 
             except asyncio.CancelledError:
                 self.logger.info(f"变量触发采集组 {group.name} 已取消")
@@ -453,6 +460,7 @@ class DataCollector:
                                                        opcua_client: OpcUaClient) -> None:
         """并行变量触发的数据采集 - trigger_point 为布尔数组，data_points 为数组节点，
         检测上升沿索引，提取对应索引的数据"""
+        poll_interval = self._get_variable_trigger_poll_interval(group)
         previous_trigger_state = None
 
         while True:
@@ -463,14 +471,14 @@ class DataCollector:
 
                 if current_trigger_values is None:
                     self.logger.warning(f"并行触发组 {group.name} 读取触发点失败")
-                    await asyncio.sleep(group.interval_seconds)
+                    await asyncio.sleep(poll_interval)
                     continue
 
                 # 首次读取仅初始化状态，不触发
                 if previous_trigger_state is None:
                     previous_trigger_state = list(current_trigger_values)
                     self.logger.info(f"并行触发组 {group.name} 初始化触发状态，数组长度={len(current_trigger_values)}")
-                    await asyncio.sleep(group.interval_seconds)
+                    await asyncio.sleep(poll_interval)
                     continue
 
                 # 检测上升沿索引
@@ -532,7 +540,7 @@ class DataCollector:
                 # 更新上一次的状态
                 previous_trigger_state = list(current_trigger_values)
 
-                await asyncio.sleep(group.interval_seconds)
+                await asyncio.sleep(poll_interval)
 
             except asyncio.CancelledError:
                 self.logger.info(f"并行触发采集组 {group.name} 已取消")
@@ -563,6 +571,7 @@ class DataCollector:
         - output_file: 可选的 CSV 输出路径
         """
         previous_trigger_state = False
+        poll_interval = self._get_variable_trigger_poll_interval(group)
         
         # 获取查询配置
         query_config = getattr(group, 'query_config', None)
@@ -609,7 +618,7 @@ class DataCollector:
                 previous_trigger_state = current_trigger_value
                 
                 # 短暂等待后继续检查
-                await asyncio.sleep(group.interval_seconds)
+                await asyncio.sleep(poll_interval)
                 
             except asyncio.CancelledError:
                 self.logger.info(f"查询任务组 {group.name} 已取消")

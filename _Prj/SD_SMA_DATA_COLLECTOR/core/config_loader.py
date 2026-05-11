@@ -225,15 +225,17 @@ class ConfigLoader:
                     raise ValueError(f"触发类型为variable的数据组 '{group.name}' 必须指定trigger_point")
                 if group.trigger_point not in point_name_set:
                     raise ValueError(f"数据组 '{group.name}' 的触发点不存在: {group.trigger_point}")
+                if group.trigger_interval_seconds is None:
+                    group.trigger_interval_seconds = group.interval_seconds
                 try:
-                    interval = float(group.interval_seconds)
+                    trigger_interval = float(group.trigger_interval_seconds)
                 except (TypeError, ValueError):
                     raise ValueError(
-                        f"数据组 '{group.name}' 的 interval_seconds 必须为数值（trigger=variable）"
+                        f"数据组 '{group.name}' 的 trigger_interval_seconds 必须为数值（trigger=variable）"
                     ) from None
-                if interval <= 0:
+                if trigger_interval <= 0:
                     raise ValueError(
-                        f"数据组 '{group.name}' 的 interval_seconds 必须大于 0（trigger=variable）"
+                        f"数据组 '{group.name}' 的 trigger_interval_seconds 必须大于 0（trigger=variable）"
                     )
 
             if group.trigger == TriggerType.TIME_AND_VARIABLE:
