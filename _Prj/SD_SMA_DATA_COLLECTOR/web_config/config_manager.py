@@ -138,6 +138,8 @@ class CollectorConfigManager:
         if not isinstance(groups, list):
             raise ValueError("groups 必须是数组")
 
+        self._validate_points_unique(payload)
+
         for group in groups:
             if not isinstance(group, dict):
                 raise ValueError("groups 数组元素必须是对象")
@@ -146,6 +148,34 @@ class CollectorConfigManager:
                 raise ValueError("当前配置页面不支持 trigger=query")
             if "query_config" in group:
                 raise ValueError("当前配置页面不支持 groups[].query_config 字段")
+
+    @staticmethod
+    def _validate_points_unique(payload: dict[str, Any]) -> None:
+        points = payload.get("points", [])
+        if not isinstance(points, list):
+            raise ValueError("校验失败：points 必须是数组")
+
+        seen_names: set[str] = set()
+        seen_paths: set[str] = set()
+        for idx, point in enumerate(points):
+            if not isinstance(point, dict):
+                raise ValueError(f"校验失败：points[{idx}] 必须是对象")
+
+            name = str(point.get("name", "")).strip()
+            path = str(point.get("path", "")).strip()
+
+            if not name:
+                raise ValueError(f"校验失败：points[{idx}].name 不能为空")
+            if not path:
+                raise ValueError(f"校验失败：points[{idx}].path 不能为空")
+
+            if name in seen_names:
+                raise ValueError(f"校验失败：points.name 重复：{name}")
+            if path in seen_paths:
+                raise ValueError(f"校验失败：points.path 重复：{path}")
+
+            seen_names.add(name)
+            seen_paths.add(path)
 
     def _validate_by_loader(self, payload: dict[str, Any]) -> None:
         try:
@@ -257,16 +287,27 @@ class CollectorConfigManager:
         if not isinstance(points, list):
             raise ValueError("points 字段不是数组")
 
-        existing_names = {str(item.get("name")) for item in points if isinstance(item, dict)}
-        base_name = str(point_item.get("name", "point")).strip() or "point"
-        name = base_name
-        idx = 1
-        while name in existing_names:
-            idx += 1
-            name = f"{base_name}_{idx}"
-
         point_item = dict(point_item)
-        point_item["name"] = name
+        new_name = str(point_item.get("name", "")).strip()
+        new_path = str(point_item.get("path", "")).strip()
+
+        for item in points:
+            if not isinstance(item, dict):
+                continue
+            name = str(item.get("name", "")).strip()
+            path = str(item.get("path", "")).strip()
+            if new_name and name == new_name:
+                raise ValueError(f"校验失败：points.name 重复：{new_name}")
+            if new_path and path == new_path:
+                raise ValueError(f"校验失败：points.path 重复：{new_path}")
+
+        if not new_name:
+            raise ValueError("校验失败：points.name 不能为空")
+        if not new_path:
+            raise ValueError("校验失败：points.path 不能为空")
+
+        point_item["name"] = new_name
+        point_item["path"] = new_path
         points.append(point_item)
         return new_payload
 

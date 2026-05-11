@@ -375,6 +375,19 @@ function refreshPointRelatedControls() {
   savePageState();
 }
 
+function normalizePointName(rawName) {
+  const base = String(rawName || "").trim() || "point";
+  let normalized = "";
+  for (const ch of base) {
+    normalized += /[a-zA-Z0-9_]/.test(ch) ? ch : "_";
+  }
+  normalized = normalized.replace(/^_+|_+$/g, "") || "point";
+  if (/^[0-9]/.test(normalized)) {
+    normalized = `p_${normalized}`;
+  }
+  return normalized;
+}
+
 function getPointNameOptions() {
   return currentConfig.points
     .map((p) => String((p && p.name) || "").trim())
@@ -835,11 +848,24 @@ function createAddPointButton(item) {
   btn.textContent = "加入 points";
   btn.addEventListener("click", async () => {
     try {
+      const nodeId = String(item.node_id || "").trim();
+      const candidateName = normalizePointName(item.display_name || item.node_id || "");
+      const duplicatedPath = currentConfig.points.some((p) => String((p && p.path) || "").trim() === nodeId);
+      if (duplicatedPath) {
+        setResult(`校验失败：points.path 重复：${nodeId}`);
+        return;
+      }
+      const duplicatedName = currentConfig.points.some((p) => String((p && p.name) || "").trim() === candidateName);
+      if (duplicatedName) {
+        setResult(`校验失败：points.name 重复：${candidateName}`);
+        return;
+      }
+
       const res = await api("/api/config/points/from-node", {
         method: "POST",
         body: JSON.stringify({
           payload: currentConfig,
-          node_id: item.node_id,
+          node_id: nodeId,
           display_name: item.display_name,
           datatype: "",
         }),
