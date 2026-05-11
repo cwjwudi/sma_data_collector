@@ -1,6 +1,6 @@
 # SMA 数据采集系统
 
-一个工业数据采集系统，支持多 OPC UA 控制器连接，具备 MySQL/SQLite 数据库存储、HTTP 数据推送和查询回写功能。
+一个工业数据采集系统，支持多 OPC UA 控制器连接，具备 MySQL/SQLite 数据库存储、Web 配置运维与查询回写（保留）能力。
 
 ## 功能说明
 
@@ -43,9 +43,9 @@
 - 工艺参数变更记录
 - 多工位并行触发快照采集
 
-### 3. 读取数据（查询回写）
+### 3. 读取数据（PLC 回写，仅保留）
 
-查询回写功能从数据库读取历史数据并回写到 OPC UA 缓冲区，支持大批量数据的智能分批传输。
+查询回写功能用于从数据库读取历史数据并回写到 OPC UA 缓冲区。当前阶段该能力仅做存量维护与兼容，原则上不再新增功能开发。
 
 **主要特性：**
 - ✅ **时间范围查询**: 支持按开始/结束时间查询历史数据
@@ -80,7 +80,21 @@
 - 报表数据提取
 - 数据统计分析
 
-### 4. v1.3.0+ 版本增强（重点）
+### 4. Web 配置界面（web_config）
+
+`web_config` 是当前推荐的运行入口，负责“配置管理 + 采集托管 + 运行监视”。
+
+**主要特性：**
+- ✅ **统一入口**: 在浏览器内完成配置编辑、校验、导出与采集控制
+- ✅ **采集托管**: 通过 Web 页面启动/停止采集，避免命令行误操作
+- ✅ **运行监视**: 展示数据库连通、OPC UA 连接状态、主循环状态与最近日志
+- ✅ **配置可视化**: 支持读取/直写 `config/` 下 JSON 与 OPC UA 浏览加点位
+
+**设计边界：**
+- `web_config` 目前仍不支持 `trigger=query` 与 `groups[].query_config` 的可视化编辑
+- PLC 回写链路保持可用，但不作为后续新功能扩展方向
+
+### 5. v1.3.0+ 版本增强（重点）
 
 - **v1.3.0 - 附加查询条件（aux_query）**
   - 在 `query_config` 中支持 `aux_query_field`，可从 OPC UA 读取附加 SQL 条件并拼接到 `WHERE`。
@@ -148,6 +162,7 @@ python -m uvicorn web_config.main:app --host 0.0.0.0 --port 8091
 - 访问地址：`http://127.0.0.1:8091`（或本机 IP:8091）
 - 页面顶部 **采集监视**：选择 `config/` 下 JSON 后点击 **启动采集** / **停止采集**；在此启动前不会进行采集。
 - 监视区会轮询数据库连通、各 OPC UA 连接、采集主循环是否在跑，并展示与 `data_collector.log` / 控制台同源的最近日志（内存环形缓冲）。
+- 作为 v1.5 推荐用法，日常配置变更与运行管理优先通过 `web_config` 完成。
 - 同一进程内请勿再运行 `python main.py` 连接同一数据库做采集，避免重复占库。
 - 其余：读取/编辑/校验配置、导出与直写 `config/`、OPC UA 浏览加点位等。
 - 设计边界：配置网页仍不支持 `trigger=query` 与 `groups[].query_config`
@@ -170,7 +185,7 @@ python main.py --config config/Alarm_Audit.json
 - 初始化数据库连接
 - 按配置的触发方式采集数据并写入数据库
 
-（主程序内已无 HTTP 推送/内置 HTTP 服务；配置里 `http_server` 若启用会被忽略并打日志警告。）
+（主程序内已移除 HTTP 推流/内置 HTTP 服务；配置里 `http_server` 若启用会被忽略并打日志警告。）
 
 ### 配置检查
 
@@ -209,9 +224,12 @@ SD_SMA_DATA_COLLECTOR/
 │   ├── opcua_client.py    # OPC UA 客户端封装
 │   ├── data_collector.py  # 数据采集器（时间/变量/时间+变量/查询触发）
 │   ├── opcua_data_writer.py # OPC UA 数据写入器（查询结果回写）
-│   ├── http_client.py     # HTTP 客户端（数据推送）
 │   ├── heartbeat_manager.py # 心跳管理器（定时写入心跳信号）
 │   └── date_and_time.py   # 日期时间工具函数
+├── web_config/         # Web 配置与采集托管模块（推荐入口）
+│   ├── main.py            # FastAPI 应用入口
+│   ├── static/            # 前端页面与静态资源
+│   └── ...                # Web API 与配置服务实现
 ├── database/           # 数据库模块
 │   ├── db_manager.py      # 数据库管理器（连接/断开/建表）
 │   ├── data_storage.py    # 数据存储处理器（批量插入）
@@ -219,19 +237,14 @@ SD_SMA_DATA_COLLECTOR/
 ├── tests/              # 测试用例
 │   ├── test_core.py              # 核心配置测试
 │   ├── test_multi_communication.py # 多通信连接测试
-│   ├── test_http_server.py       # HTTP 服务器测试
 │   ├── test_opc_write.py         # OPC UA 写入测试
 │   ├── test_mysql.py             # MySQL 数据库测试
 │   └── trigger_query_test.py     # 查询触发测试
 ├── docs/               # 文档目录
 │   ├── MULTI_COMMUNICATION.md   # 多控制器连接配置指南
-│   ├── HTTP_SERVER_GUIDE.md     # HTTP 数据推送使用指南
-│   ├── HTTP_QUICK_START.md      # HTTP 快速入门
 │   ├── OPC_UA_CONFIG.md         # OPC UA 配置说明
 │   ├── OPC_UA_WRITE_FIX.md      # OPC UA 写入问题修复记录
 │   └── CHANGELOG.md             # 系统更新日志
-├── js/                 # 前端资源
-│   └── line_http.html   # HTTP 监控页面
 ├── main.py             # 主程序入口
 ├── init.py             # 依赖安装脚本
 ├── check_config.py     # 配置检查工具
@@ -261,7 +274,7 @@ SD_SMA_DATA_COLLECTOR/
 - `trigger_interval_seconds`: 触发点轮询间隔（仅 `time_and_variable` 必填，必须 > 0）
 - `reset_trigger_after_read`: 读取后是否复位触发信号
 - `is_parallel`: 是否启用并行触发模式（仅 `trigger: variable` 可用）
-- `output_mode`: 查询结果输出方式（`dual` / `opcua_only` / `http_only`）
+- `output_mode`: 查询结果输出方式（当前仅保留 `opcua_only`；历史 HTTP 相关模式不再开发）
 - `recreate_interval_days`: 数据库分表间隔天数
 - `batch_insert_size`: 批量插入大小
 - `unique_key_point`: （可选）组内唯一性校验键（必须在 `data_points` 中）
@@ -310,10 +323,10 @@ SD_SMA_DATA_COLLECTOR/
 - `host/port/username/password`: 连接参数（MySQL 需要）
 - `data_groups`: 要存储的数据组名称列表
 
-### HTTP 服务器配置 (http_server)
-- 主程序已移除全部 HTTP 功能（含数据推送）
-- 若配置文件中存在 `http_server` 且 `enabled=true`，系统会记录 `WARNING` 并自动忽略，不会中断启动
-- 该配置段可保留用于历史兼容，也可删除
+### 历史 HTTP 配置兼容 (http_server)
+- HTTP 推流能力已移除，不再提供任何 HTTP 数据发送功能。
+- 若配置文件中存在 `http_server` 且 `enabled=true`，系统会记录 `WARNING` 并自动忽略，不会中断启动。
+- 该配置段仅用于历史兼容，可逐步从配置中删除。
 
 ### 日志配置 (logging)
 - `level`: 日志级别（`DEBUG/INFO/WARNING/ERROR/CRITICAL`，默认 `INFO`）
@@ -401,14 +414,6 @@ SD_SMA_DATA_COLLECTOR/
     "username": "root",
     "password": "your_password",
     "data_groups": ["sensor_group_1", "trigger_group_1"]
-  },
-  "http_server": {
-    "enabled": true,
-    "base_url": "http://localhost:8080",
-    "endpoint": "/api/data",
-    "timeout": 30,
-    "max_retries": 3,
-    "retry_delay": 1.0
   },
   "logging": {
     "level": "INFO",
@@ -549,7 +554,6 @@ pytest tests/ -v
 
 # 运行特定测试
 pytest tests/test_multi_communication.py -v
-pytest tests/test_http_server.py -v
 ```
 
 ### 核心模块说明
@@ -562,8 +566,7 @@ pytest tests/test_http_server.py -v
    - `communication_manager.py`: 管理多个 OPC UA 客户端连接
    - `opcua_client.py`: OPC UA 客户端封装，支持断线重连
    - `data_collector.py`: 实现时间/变量/查询三种触发采集逻辑
-   - `opcua_data_writer.py`: 查询结果回写到 OPC UA 缓冲区，支持状态反馈
-   - `http_client.py`: HTTP 数据推送客户端
+   - `opcua_data_writer.py`: 查询结果回写到 OPC UA 缓冲区，支持状态反馈（保留维护）
    - `heartbeat_manager.py`: 心跳信号管理，定时写入 OPC UA 保持连接活跃
 
 3. **数据库模块** (`database/`)
@@ -573,7 +576,7 @@ pytest tests/test_http_server.py -v
 
 4. **主程序** (`main.py`)
    - 整合各模块，提供采集和查询两种运行模式
-   - 支持 HTTP 服务器和客户端功能
+   - HTTP 推流功能已移除，`http_server` 配置仅做兼容忽略
    - 集成心跳管理和查询状态反馈
 
 ### 扩展开发
@@ -583,10 +586,10 @@ pytest tests/test_http_server.py -v
 2. 在 `communication/data_collector.py` 中实现相应的触发逻辑
 3. 更新配置验证逻辑
 
-#### 扩展 HTTP 功能
-1. 修改 `communication/http_client.py` 添加自定义请求头或认证
-2. 在 `opcua_data_writer.py` 中调整发送数据格式
-3. 参考 `docs/HTTP_SERVER_GUIDE.md` 实现 WebSocket/SSE 推送
+#### 扩展 Web 配置能力
+1. 在 `web_config/main.py` 增加或调整 API 路由
+2. 在 `web_config/static/` 调整前端页面交互与表单校验
+3. 保持与 `core/config_loader.py` 的配置校验规则一致
 
 ### 性能优化
 
@@ -595,7 +598,7 @@ pytest tests/test_http_server.py -v
 3. **数据库定期维护**: 清理过期数据，优化索引结构
 4. **监控系统资源**: 关注 CPU、内存和磁盘 IO 使用情况
 5. **网络优化**: 对于远程 OPC UA 服务器，考虑网络延迟影响
-6. **HTTP 推送性能**: 调整 timeout 和 max_retries 参数适应网络环境
+6. **Web 运维稳定性**: 通过 `web_config` 统一启停采集并观察日志，避免重复启动
 
 ### 故障排除
 
