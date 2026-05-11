@@ -6,6 +6,37 @@ const MONITOR_CONFIG_KEY = "sd_sma_monitor_config_v1";
 let monitorPollInFlight = false;
 let lastStatusPayload = null;
 let lastLogLines = [];
+let logCursor = 0;
+let logPaused = false;
+let pausedBufferedCount = 0;
+let pausedBufferedLines = [];
+const LOG_FETCH_LIMIT = 200;
+const LOG_FETCH_PAGES_PER_POLL = 3;
+const LOG_RENDER_LIMIT = 500;
+const LOG_PAUSED_BUFFER_LIMIT = 2000;
+
+function appendLogLines(lines) {
+  if (!Array.isArray(lines) || !lines.length) {
+    return;
+  }
+  lastLogLines.push(...lines);
+  if (lastLogLines.length > LOG_RENDER_LIMIT) {
+    lastLogLines = lastLogLines.slice(-LOG_RENDER_LIMIT);
+  }
+}
+
+function updatePauseButtonLabel() {
+  const btn = document.getElementById("btn-log-pause");
+  if (!btn) {
+    return;
+  }
+  if (logPaused) {
+    const suffix = pausedBufferedCount > 0 ? ` (${pausedBufferedCount})` : "";
+    btn.textContent = `继续日志${suffix}`;
+  } else {
+    btn.textContent = "暂停日志";
+  }
+}
 
 async function api(path, options = {}) {
   const response = await fetch(path, {
@@ -117,10 +148,43 @@ function renderMonitor(statusPayload, logLines) {
     const distanceToBottom =
       monitorLogEl.scrollHeight - monitorLogEl.scrollTop - monitorLogEl.clientHeight;
     const shouldStickToBottom = distanceToBottom <= 24;
-    monitorLogEl.textContent = lines.slice(-250).join("\n");
+    monitorLogEl.textContent = lines.slice(-LOG_RENDER_LIMIT).join("\n");
     if (shouldStickToBottom) {
       monitorLogEl.scrollTop = monitorLogEl.scrollHeight;
     }
+  }
+}
+
+async function pullLogsIncremental() {
+  let pageCount = 0;
+  let hasMore = true;
+  while (hasMore && pageCount < LOG_FETCH_PAGES_PER_POLL) {
+    const logs = await api(`/api/collector/logs?cursor=${encodeURIComponent(logCursor)}&limit=${LOG_FETCH_LIMIT}`);
+    const lines = Array.isArray(logs.lines) ? logs.lines : [];
+    const nextCursor = Number(logs.cursor || 0);
+    const reset = Boolean(logs.reset);
+    hasMore = Boolean(logs.has_more);
+
+    if (reset) {
+      lastLogLines = [];
+      pausedBufferedCount = 0;
+      pausedBufferedLines = [];
+    }
+    if (nextCursor >= logCursor) {
+      logCursor = nextCursor;
+    }
+    if (lines.length) {
+      if (logPaused) {
+        pausedBufferedCount += lines.length;
+        pausedBufferedLines.push(...lines);
+        if (pausedBufferedLines.length > LOG_PAUSED_BUFFER_LIMIT) {
+          pausedBufferedLines = pausedBufferedLines.slice(-LOG_PAUSED_BUFFER_LIMIT);
+        }
+      } else {
+        appendLogLines(lines);
+      }
+    }
+    pageCount += 1;
   }
 }
 
@@ -143,11 +207,7 @@ async function pollMonitor() {
         return null;
       });
 
-    const logsPromise = api("/api/collector/logs")
-      .then((logs) => {
-        lastLogLines = Array.isArray(logs.lines) ? logs.lines : [];
-        return logs;
-      })
+    const logsPromise = pullLogsIncremental()
       .catch((err) => {
         if (monitorLogEl) {
           monitorLogEl.textContent = `日志获取失败: ${err.message || err}`;
@@ -157,6 +217,7 @@ async function pollMonitor() {
 
     // 先渲染日志，避免被慢状态接口拖慢
     await logsPromise;
+    updatePauseButtonLabel();
     renderMonitor(lastStatusPayload, lastLogLines);
 
     // 状态返回后再补一帧，更新顶部状态
@@ -197,6 +258,19 @@ document.getElementById("btn-collector-stop")?.addEventListener("click", () => {
     .catch((error) => alert(error.message));
 });
 
+document.getElementById("btn-log-pause")?.addEventListener("click", () => {
+  logPaused = !logPaused;
+  if (!logPaused) {
+    // 恢复后把暂停期间累计的增量显示出来（按游标已消费，不会重复拉取）。
+    appendLogLines(pausedBufferedLines);
+    pausedBufferedLines = [];
+    pausedBufferedCount = 0;
+    renderMonitor(lastStatusPayload, lastLogLines);
+  }
+  updatePauseButtonLabel();
+});
+
 refreshMonitorFileList();
 setInterval(pollMonitor, 1000);
+updatePauseButtonLabel();
 pollMonitor();

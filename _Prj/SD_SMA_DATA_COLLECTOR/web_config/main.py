@@ -225,9 +225,9 @@ def collector_status() -> dict[str, Any]:
 
 
 @app.get("/api/collector/logs")
-def collector_logs() -> dict[str, Any]:
+def collector_logs(cursor: int = 0, limit: int = 200) -> dict[str, Any]:
     host = get_collector_host()
-    return {"lines": host.get_log_handler().get_lines()}
+    return host.get_log_handler().get_lines_since(cursor=cursor, limit=limit)
 
 
 @app.post("/api/collector/start")

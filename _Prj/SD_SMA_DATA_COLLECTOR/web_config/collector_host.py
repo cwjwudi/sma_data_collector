@@ -21,7 +21,8 @@ class RingBufferLogHandler(logging.Handler):
 
     def __init__(self, maxlen: int = 800) -> None:
         super().__init__()
-        self._lines: deque[str] = deque(maxlen=maxlen)
+        self._lines: deque[tuple[int, str]] = deque(maxlen=maxlen)
+        self._next_seq = 1
         self.setFormatter(
             logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
         )
@@ -29,12 +30,50 @@ class RingBufferLogHandler(logging.Handler):
 
     def emit(self, record: logging.LogRecord) -> None:
         try:
-            self._lines.append(self.format(record))
+            self._lines.append((self._next_seq, self.format(record)))
+            self._next_seq += 1
         except Exception:
             pass
 
     def get_lines(self) -> list[str]:
-        return list(self._lines)
+        return [line for _, line in self._lines]
+
+    def get_lines_since(self, cursor: int = 0, limit: int = 200) -> dict[str, Any]:
+        """按游标增量读取日志。cursor 表示“已消费到的序号”。
+
+        返回:
+            lines: 新日志行
+            cursor: 最新消费游标
+            reset: 是否因为游标过旧被重置到缓冲区起点
+            has_more: 当前缓冲区是否还有未返回日志
+        """
+        if limit <= 0:
+            limit = 200
+        limit = min(limit, 1000)
+        cursor = max(int(cursor or 0), 0)
+
+        latest_cursor = self._next_seq - 1
+        if not self._lines:
+            return {"lines": [], "cursor": latest_cursor, "reset": False, "has_more": False}
+
+        earliest_seq = self._lines[0][0]
+        effective_cursor = cursor
+        reset = False
+        if cursor < earliest_seq - 1:
+            effective_cursor = earliest_seq - 1
+            reset = True
+
+        remaining = [(seq, line) for seq, line in self._lines if seq > effective_cursor]
+        chunk = remaining[:limit]
+        lines = [line for _, line in chunk]
+        next_cursor = chunk[-1][0] if chunk else effective_cursor
+        has_more = len(remaining) > len(chunk)
+        return {
+            "lines": lines,
+            "cursor": next_cursor,
+            "reset": reset,
+            "has_more": has_more,
+        }
 
     def clear(self) -> None:
         self._lines.clear()
