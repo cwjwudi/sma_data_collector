@@ -367,6 +367,14 @@ function rerender() {
   savePageState();
 }
 
+function refreshPointRelatedControls() {
+  renderPoints();
+  renderGroups();
+  renderConnections();
+  renderDatabase();
+  savePageState();
+}
+
 function getPointNameOptions() {
   return currentConfig.points
     .map((p) => String((p && p.name) || "").trim())
@@ -836,8 +844,17 @@ function createAddPointButton(item) {
           datatype: "",
         }),
       });
-      currentConfig = normalizeConfig(res.payload || {});
-      renderPoints();
+      const nextConfig = normalizeConfig(res.payload || currentConfig || {});
+      const point = res.point && typeof res.point === "object" ? { ...res.point } : null;
+      if (point) {
+        const pointName = String(point.name || "").trim();
+        const pointExists = nextConfig.points.some((p) => String((p && p.name) || "").trim() === pointName);
+        if (!pointExists) {
+          nextConfig.points.push(point);
+        }
+      }
+      currentConfig = nextConfig;
+      refreshPointRelatedControls();
       setResult(`已加入点位: ${res.point.name}`);
     } catch (error) {
       setResult(error.message);
