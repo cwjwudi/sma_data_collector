@@ -422,7 +422,13 @@ function renderConnections() {
     label: c.name || "(未命名通信)",
   }));
   const groupOptions = getGroupNameOptions();
+  const pointOptions = getPointNameOptions();
   currentConfig.connections.forEach((item, idx) => {
+    const heartbeatValue = String(item.heartbeat || "").trim();
+    const heartbeatOptions = [{ value: "", label: "不启用心跳" }, ...pointOptions];
+    if (heartbeatValue && !heartbeatOptions.some((opt) => String(opt.value) === heartbeatValue)) {
+      heartbeatOptions.push({ value: heartbeatValue, label: `${heartbeatValue} (未在 points 中定义)` });
+    }
     const row = createRow([
       createInput(item.name || "", (v) => (currentConfig.connections[idx].name = v)),
       createSelect(
@@ -433,7 +439,11 @@ function renderConnections() {
       createMultiSelect(groupOptions, item.data_groups || [], (values) => {
         currentConfig.connections[idx].data_groups = values;
       }),
-      createInput(item.heartbeat || "", (v) => (currentConfig.connections[idx].heartbeat = v)),
+      createSelect(
+        heartbeatOptions,
+        heartbeatValue,
+        (v) => (currentConfig.connections[idx].heartbeat = v)
+      ),
       createRemoveButton(() => {
         currentConfig.connections.splice(idx, 1);
         rerender();
@@ -459,6 +469,7 @@ function renderPoints() {
       createInput(item.name || "", (v) => {
         currentConfig.points[idx].name = v;
         renderGroups();
+        renderConnections();
       }),
       createInput(item.path || "", (v) => (currentConfig.points[idx].path = v)),
       createInput(item.description || "", (v) => (currentConfig.points[idx].description = v)),
@@ -479,6 +490,7 @@ function renderPoints() {
   add.addEventListener("click", () => {
     currentConfig.points.push({ name: "", path: "", description: "", datatype: "" });
     renderPoints();
+    renderConnections();
   });
   panel.appendChild(add);
 }

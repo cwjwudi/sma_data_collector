@@ -31,6 +31,8 @@ class HeartbeatManager:
         self.config = config
         self.comm_manager = communication_manager
         self.logger = logging.getLogger(__name__)
+        # 点位名称到 OPC UA 地址映射，用于 heartbeat 通过 points 引用
+        self.point_path_map = {point.name: point.path for point in self.config.points}
         
         # 存储所有心跳任务 {connection_name: asyncio.Task}
         self.heartbeat_tasks: Dict[str, asyncio.Task] = {}
@@ -53,7 +55,16 @@ class HeartbeatManager:
             
             for connection in self.config.connections:
                 if connection.heartbeat:
-                    self.logger.info(f"启动心跳信号：{connection.name}, 目标地址：{connection.heartbeat}")
+                    heartbeat_path = self._resolve_heartbeat_path(connection)
+                    if not heartbeat_path:
+                        self.logger.error(
+                            f"心跳配置无效：{connection.name} -> {connection.heartbeat}，"
+                            f"请使用 points 中已定义的点位名称"
+                        )
+                        continue
+                    self.logger.info(
+                        f"启动心跳信号：{connection.name}, 点位：{connection.heartbeat}, 地址：{heartbeat_path}"
+                    )
                     
                     # 获取对应的通信客户端
                     opcua_client = self.comm_manager.get_client(connection.communication)
@@ -64,7 +75,7 @@ class HeartbeatManager:
                     
                     # 创建心跳任务
                     task = asyncio.create_task(
-                        self._heartbeat_loop(connection.name, connection.heartbeat, opcua_client),
+                        self._heartbeat_loop(connection.name, heartbeat_path, opcua_client),
                         name=f"heartbeat_{connection.name}"
                     )
                     self.heartbeat_tasks[connection.name] = task
@@ -75,6 +86,25 @@ class HeartbeatManager:
             
         except Exception as e:
             self.logger.error(f"启动心跳信号时发生错误：{e}", exc_info=True)
+
+    def _resolve_heartbeat_path(self, connection: Connection) -> Optional[str]:
+        """将连接 heartbeat 配置解析为 OPC UA 节点地址。"""
+        heartbeat_ref = (connection.heartbeat or "").strip()
+        if not heartbeat_ref:
+            return None
+
+        if heartbeat_ref in self.point_path_map:
+            return self.point_path_map[heartbeat_ref]
+
+        # 兼容旧配置：仍允许直接填写 OPC UA 地址，后续建议统一迁移为 points 引用。
+        if heartbeat_ref.startswith("ns="):
+            self.logger.warning(
+                f"连接 {connection.name} 的 heartbeat 仍在使用直接地址配置，"
+                f"建议改为 points 点位名称：{heartbeat_ref}"
+            )
+            return heartbeat_ref
+
+        return None
     
     async def stop_heartbeats(self) -> None:
         """
