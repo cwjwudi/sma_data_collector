@@ -226,6 +226,30 @@ input[type="checkbox"] {
   gap: 8px;
 }
 
+.group-config-dialog {
+  width: 560px;
+}
+
+.group-config-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 60vh;
+  overflow: auto;
+}
+
+.group-config-row {
+  display: grid;
+  grid-template-columns: 170px 1fr;
+  gap: 10px;
+  align-items: center;
+}
+
+.group-config-label {
+  font-size: 13px;
+  color: #334155;
+}
+
 .modal-title {
   margin: 0;
   font-size: 16px;
@@ -343,6 +367,26 @@ button:hover {
   margin-bottom: 8px;
 }
 
+.grid-row.grid-row-cols-1 {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.grid-row.grid-row-cols-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.grid-row.grid-row-cols-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.grid-row.grid-row-cols-4 {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.grid-row.grid-row-cols-5 {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
 .col-header {
   font-size: 12px;
   color: #475569;
@@ -357,5 +401,63 @@ button:hover {
   border-radius: 6px;
   padding: 8px;
   margin-bottom: 8px;
+}
+
+.group-config-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.group-config-actions button {
+  width: 100%;
+}
+
+.group-delete-row {
+  border-top: 1px dashed #e2e8f0;
+  margin-top: 8px;
+  padding-top: 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.group-delete-actions {
+  flex: 1;
+  display: flex;
+}
+
+.group-delete-actions .group-config-actions {
+  flex-direction: row;
+  gap: 8px;
+}
+
+.group-delete-actions .group-config-actions button {
+  width: auto;
+  min-width: 140px;
+}
+
+.group-delete-btn {
+  min-width: 120px;
+}
+
+.locked-field-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.lock-hint {
+  display: inline-block;
+  font-size: 12px;
+  line-height: 1.2;
+  color: #374151;
+  background: #e5e7eb;
+  border: 1px solid #9ca3af;
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-weight: 600;
+  width: fit-content;
 }
 

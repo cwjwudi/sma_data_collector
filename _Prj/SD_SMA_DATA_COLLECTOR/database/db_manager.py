@@ -399,6 +399,33 @@ class DatabaseManager:
             self._log_db_error("插入数据", e)
             return False
 
+    def execute_update(self, sql: str, params: Optional[Dict[str, Any]] = None, _retry_on_disconnect: bool = True) -> int:
+        """
+        执行更新语句并返回受影响行数
+
+        Args:
+            sql: SQL 更新语句
+            params: SQL 参数
+
+        Returns:
+            int: 受影响行数，失败返回 -1
+        """
+        try:
+            self._log_mysql_sql(sql, params)
+            with self.engine.connect() as conn:
+                result = conn.execute(text(sql), params or {})
+                conn.commit()
+            self._connection_healthy = True
+            return int(result.rowcount or 0)
+        except OperationalError as e:
+            self._mark_connection_lost("执行更新", e)
+            if _retry_on_disconnect and self._attempt_reconnect("执行更新"):
+                return self.execute_update(sql, params, _retry_on_disconnect=False)
+            return -1
+        except Exception as e:
+            self._log_db_error("执行更新", e)
+            return -1
+
     def record_exists(self, table_name: str, column_name: str, value: Any) -> bool:
         """
         检查指定列值是否已存在

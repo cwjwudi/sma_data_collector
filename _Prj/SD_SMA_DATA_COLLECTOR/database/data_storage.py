@@ -43,6 +43,7 @@ class DataStorageProcessor:
         self.default_batch_size = batch_size
         self.group_batch_sizes = {}  # 存储各组的batch_size配置
         self.group_unique_key_points = {}  # 存储各组唯一键点配置
+        self.group_batch_upsert_configs = {}  # 存储各组批次更新配置
         self.group_insert_feedback_configs = {}  # 存储各组反馈配置
         self.points_dict = points_dict or {}  # 数据点配置字典
         self.insert_feedback_callback = insert_feedback_callback
@@ -256,6 +257,7 @@ class DataStorageProcessor:
             # 传递group_name给数据库管理器
             table_name = self.db_manager.get_current_table_name(group_name)
             unique_key_point = self.group_unique_key_points.get(group_name)
+            batch_upsert_config = self.group_batch_upsert_configs.get(group_name)
             
             # 准备插入数据
             column_types = self._infer_column_types(sample_data)
@@ -296,12 +298,36 @@ class DataStorageProcessor:
                         outcome_counts[self.STATUS_OTHER_ERROR] += 1
                         continue
                     try:
-                        if self.db_manager.record_exists(table_name, unique_key_point, unique_value):
-                            outcome_counts[self.STATUS_UNIQUE_CONFLICT] += 1
-                            self.logger.warning(
-                                f"组 {group_name} 唯一性冲突，跳过插入: {unique_key_point}={unique_value}"
-                            )
+                        exists = self.db_manager.record_exists(table_name, unique_key_point, unique_value)
+                        if exists:
+                            if batch_upsert_config and batch_upsert_config.get("end_time_point"):
+                                handled_status = self._handle_batch_upsert_conflict(
+                                    group_name,
+                                    table_name,
+                                    unique_key_point,
+                                    unique_value,
+                                    insert_data,
+                                    batch_upsert_config,
+                                )
+                                outcome_counts[handled_status] += 1
+                            else:
+                                outcome_counts[self.STATUS_UNIQUE_CONFLICT] += 1
+                                self.logger.warning(
+                                    f"组 {group_name} 唯一性冲突，跳过插入: {unique_key_point}={unique_value}"
+                                )
                             continue
+
+                        if batch_upsert_config:
+                            end_time_point = batch_upsert_config.get("end_time_point")
+                            if end_time_point:
+                                insert_data[end_time_point] = None
+                                self.logger.info(
+                                    "组 %s 首次插入批次，强制将 %s 置空: %s=%s",
+                                    group_name,
+                                    end_time_point,
+                                    unique_key_point,
+                                    unique_value,
+                                )
                     except Exception as query_error:
                         self.logger.error(
                             f"组 {group_name} 唯一性校验失败: {query_error}",
@@ -312,6 +338,19 @@ class DataStorageProcessor:
 
                 if self.db_manager.execute_insert(table_name, insert_data):
                     outcome_counts[self.STATUS_SUCCESS] += 1
+                    if batch_upsert_config and unique_key_point:
+                        end_time_point = batch_upsert_config.get("end_time_point")
+                        start_time_point = batch_upsert_config.get("start_time_point")
+                        if end_time_point and insert_data.get(end_time_point) is None:
+                            self.logger.info(
+                                "组 %s 开批成功: %s=%s, %s=%s, table=%s",
+                                group_name,
+                                unique_key_point,
+                                insert_data.get(unique_key_point),
+                                start_time_point or "start_time",
+                                insert_data.get(start_time_point) if start_time_point else None,
+                                table_name,
+                            )
                 else:
                     outcome_counts[self.STATUS_DB_ERROR] += 1
 
@@ -633,6 +672,109 @@ class DataStorageProcessor:
                 exc_info=True
             )
             return value
+
+    @staticmethod
+    def _values_equal(left: Any, right: Any) -> bool:
+        """宽松比较两个值是否等价，用于幂等判定。"""
+        if left is None and right is None:
+            return True
+        if isinstance(left, datetime) and isinstance(right, datetime):
+            return left == right
+        return str(left) == str(right)
+
+    def _handle_batch_upsert_conflict(
+        self,
+        group_name: str,
+        table_name: str,
+        unique_key_point: str,
+        unique_value: Any,
+        insert_data: Dict[str, Any],
+        batch_upsert_config: Dict[str, Any],
+    ) -> str:
+        """
+        处理批次唯一冲突场景：
+        - 仅当同批次且 end_time 为空时，允许更新 end_time；
+        - 若 end_time 已存在，按唯一冲突处理；
+        - 可选允许同值 end_time 幂等重放。
+        """
+        end_time_point = batch_upsert_config.get("end_time_point")
+        allow_idempotent = bool(batch_upsert_config.get("allow_idempotent_same_end_time", False))
+        new_end_time = insert_data.get(end_time_point)
+
+        if new_end_time is None:
+            self.logger.warning(
+                "组 %s 批次冲突但未提供结批时间，拒绝写入: %s=%s",
+                group_name,
+                unique_key_point,
+                unique_value,
+            )
+            return self.STATUS_UNIQUE_CONFLICT
+
+        try:
+            update_sql = (
+                f"UPDATE `{table_name}` "
+                f"SET `{end_time_point}` = :new_end_time "
+                f"WHERE `{unique_key_point}` = :unique_value AND `{end_time_point}` IS NULL"
+            )
+            affected_rows = self.db_manager.execute_update(
+                update_sql,
+                {"new_end_time": new_end_time, "unique_value": unique_value},
+            )
+            if affected_rows < 0:
+                self.logger.error(
+                    "组 %s 批次补结批失败(更新语句执行异常): %s=%s",
+                    group_name,
+                    unique_key_point,
+                    unique_value,
+                )
+                return self.STATUS_DB_ERROR
+
+            if affected_rows > 0:
+                self.logger.info(
+                    "组 %s 批次补结批成功: %s=%s, %s=%s",
+                    group_name,
+                    unique_key_point,
+                    unique_value,
+                    end_time_point,
+                    new_end_time,
+                )
+                return self.STATUS_SUCCESS
+
+            if allow_idempotent:
+                check_sql = (
+                    f"SELECT `{end_time_point}` "
+                    f"FROM `{table_name}` "
+                    f"WHERE `{unique_key_point}` = :unique_value LIMIT 1"
+                )
+                rows = self.db_manager.execute_query(check_sql, {"unique_value": unique_value})
+                if rows:
+                    existing_end_time = rows[0][0]
+                    if self._values_equal(existing_end_time, new_end_time):
+                        self.logger.info(
+                            "组 %s 批次结批幂等重放，按成功处理: %s=%s, %s=%s",
+                            group_name,
+                            unique_key_point,
+                            unique_value,
+                            end_time_point,
+                            new_end_time,
+                        )
+                        return self.STATUS_SUCCESS
+
+            self.logger.warning(
+                "组 %s 批次已结批，拒绝重复写入: %s=%s",
+                group_name,
+                unique_key_point,
+                unique_value,
+            )
+            return self.STATUS_UNIQUE_CONFLICT
+        except Exception as update_error:
+            self.logger.error(
+                "组 %s 处理批次冲突失败: %s",
+                group_name,
+                update_error,
+                exc_info=True,
+            )
+            return self.STATUS_DB_ERROR
     
     def get_queue_size(self) -> int:
         """获取队列大小"""

@@ -19,6 +19,7 @@ const confirmModalConfirm = document.getElementById("confirm-modal-confirm");
 let currentConfig = createDefaultConfig();
 let currentFilename = "";
 let multiSelectModal = null;
+let groupConfigModal = null;
 const PAGE_STATE_KEY = "sd_sma_collector_web_state_v1";
 const ALLOWED_DATATYPES = ["bool", "int", "float", "string", "datetime"];
 
@@ -332,9 +333,272 @@ function openMultiSelectDialog({ title, options, selectedValues, onConfirm }) {
   };
 }
 
+function ensureGroupConfigModal() {
+  if (groupConfigModal) {
+    return groupConfigModal;
+  }
+
+  const overlay = document.createElement("div");
+  overlay.className = "modal-overlay";
+  overlay.style.display = "none";
+
+  const dialog = document.createElement("div");
+  dialog.className = "modal-dialog group-config-dialog";
+
+  const titleEl = document.createElement("h3");
+  titleEl.className = "modal-title";
+
+  const body = document.createElement("div");
+  body.className = "group-config-body";
+
+  const footer = document.createElement("div");
+  footer.className = "modal-footer";
+  const cancelBtn = document.createElement("button");
+  cancelBtn.type = "button";
+  cancelBtn.textContent = "取消";
+  const okBtn = document.createElement("button");
+  okBtn.type = "button";
+  okBtn.textContent = "保存";
+  footer.appendChild(cancelBtn);
+  footer.appendChild(okBtn);
+
+  dialog.appendChild(titleEl);
+  dialog.appendChild(body);
+  dialog.appendChild(footer);
+  overlay.appendChild(dialog);
+  document.body.appendChild(overlay);
+
+  groupConfigModal = {
+    overlay,
+    titleEl,
+    body,
+    cancelBtn,
+    okBtn,
+    close: () => {
+      overlay.style.display = "none";
+      body.innerHTML = "";
+    },
+  };
+
+  overlay.addEventListener("click", (e) => {
+    if (e.target === overlay) {
+      groupConfigModal.close();
+    }
+  });
+
+  return groupConfigModal;
+}
+
+function showGroupConfigModal({ title, buildBody, onConfirm }) {
+  const modal = ensureGroupConfigModal();
+  modal.overlay.style.display = "flex";
+  modal.titleEl.textContent = title;
+  modal.body.innerHTML = "";
+  buildBody(modal.body);
+
+  const cleanup = () => {
+    modal.cancelBtn.removeEventListener("click", onCancel);
+    modal.okBtn.removeEventListener("click", onOk);
+    modal.overlay.removeEventListener("click", onOverlayClick);
+  };
+
+  const onCancel = () => {
+    cleanup();
+    modal.close();
+  };
+
+  const onOk = () => {
+    const ok = onConfirm();
+    if (ok === false) {
+      return;
+    }
+    cleanup();
+    modal.close();
+    renderGroups();
+    savePageState();
+  };
+
+  const onOverlayClick = (e) => {
+    if (e.target === modal.overlay) {
+      onCancel();
+    }
+  };
+
+  modal.cancelBtn.addEventListener("click", onCancel);
+  modal.okBtn.addEventListener("click", onOk);
+  modal.overlay.addEventListener("click", onOverlayClick);
+}
+
+function createConfigActionButton(text, onClick) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "secondary-btn";
+  button.textContent = text;
+  button.addEventListener("click", onClick);
+  return button;
+}
+
+function createLockedField(inputNode, locked) {
+  if (!locked) {
+    return inputNode;
+  }
+  const wrapper = document.createElement("div");
+  wrapper.className = "locked-field-wrap";
+  const hint = document.createElement("span");
+  hint.className = "lock-hint";
+  hint.textContent = "由 batch_upsert 锁定";
+  wrapper.appendChild(inputNode);
+  wrapper.appendChild(hint);
+  return wrapper;
+}
+
+function openBatchUpsertConfig(groupIndex) {
+  const group = currentConfig.groups[groupIndex];
+  const pointNames = getPointNameOptions();
+  const draft = {
+    enabled: false,
+    start_time_point: "",
+    end_time_point: "",
+    update_only_when_end_time_is_null: true,
+    reject_when_end_time_exists: true,
+    allow_idempotent_same_end_time: false,
+    ...(group.batch_upsert || {}),
+  };
+
+  showGroupConfigModal({
+    title: "配置 batch_upsert",
+    buildBody: (body) => {
+      const rows = [
+        { label: "启用", type: "checkbox", key: "enabled" },
+        { label: "开批时间点", type: "select", key: "start_time_point", placeholder: "请选择点位" },
+        { label: "结批时间点", type: "select", key: "end_time_point", placeholder: "请选择点位" },
+        { label: "仅空结批可更新", type: "checkbox", key: "update_only_when_end_time_is_null" },
+        { label: "已结批拒绝写入", type: "checkbox", key: "reject_when_end_time_exists" },
+        { label: "允许同值幂等结批", type: "checkbox", key: "allow_idempotent_same_end_time" },
+      ];
+
+      rows.forEach((item) => {
+        const row = document.createElement("div");
+        row.className = "group-config-row";
+        const label = document.createElement("label");
+        label.className = "group-config-label";
+        label.textContent = item.label;
+        row.appendChild(label);
+
+        let field;
+        if (item.type === "checkbox") {
+          field = document.createElement("input");
+          field.type = "checkbox";
+          field.checked = !!draft[item.key];
+          field.addEventListener("change", () => {
+            draft[item.key] = field.checked;
+          });
+        } else {
+          field = document.createElement("select");
+          const emptyOpt = document.createElement("option");
+          emptyOpt.value = "";
+          emptyOpt.textContent = item.placeholder || "请选择";
+          field.appendChild(emptyOpt);
+          pointNames.forEach((opt) => {
+            const option = document.createElement("option");
+            option.value = opt.value;
+            option.textContent = opt.label;
+            field.appendChild(option);
+          });
+          field.value = String(draft[item.key] || "");
+          field.addEventListener("change", () => {
+            draft[item.key] = field.value;
+          });
+        }
+        row.appendChild(field);
+        body.appendChild(row);
+      });
+    },
+    onConfirm: () => {
+      currentConfig.groups[groupIndex].batch_upsert = { ...draft };
+      if (draft.enabled) {
+        currentConfig.groups[groupIndex].batch_insert_size = 1;
+        currentConfig.groups[groupIndex].recreate_interval_days = 10000;
+      }
+      return true;
+    },
+  });
+}
+
+function openInsertFeedbackConfig(groupIndex) {
+  const group = currentConfig.groups[groupIndex];
+  const pointNames = getPointNameOptions();
+  const draft = {
+    feedback_point: "",
+    code_success: 0,
+    code_unique_conflict: 1,
+    code_db_error: 2,
+    code_other_error: 3,
+    ...(group.insert_feedback || {}),
+  };
+
+  showGroupConfigModal({
+    title: "配置 insert_feedback",
+    buildBody: (body) => {
+      const rowDefs = [
+        { label: "反馈点", key: "feedback_point", type: "select", placeholder: "请选择点位" },
+        { label: "成功码", key: "code_success", type: "number" },
+        { label: "唯一冲突码", key: "code_unique_conflict", type: "number" },
+        { label: "数据库错误码", key: "code_db_error", type: "number" },
+        { label: "其他错误码", key: "code_other_error", type: "number" },
+      ];
+
+      rowDefs.forEach((item) => {
+        const row = document.createElement("div");
+        row.className = "group-config-row";
+        const label = document.createElement("label");
+        label.className = "group-config-label";
+        label.textContent = item.label;
+        row.appendChild(label);
+
+        let field;
+        if (item.type === "select") {
+          field = document.createElement("select");
+          const emptyOpt = document.createElement("option");
+          emptyOpt.value = "";
+          emptyOpt.textContent = item.placeholder || "请选择";
+          field.appendChild(emptyOpt);
+          pointNames.forEach((opt) => {
+            const option = document.createElement("option");
+            option.value = opt.value;
+            option.textContent = opt.label;
+            field.appendChild(option);
+          });
+          field.value = String(draft[item.key] || "");
+          field.addEventListener("change", () => {
+            draft[item.key] = field.value;
+          });
+        } else {
+          field = document.createElement("input");
+          field.type = "number";
+          field.step = "1";
+          field.value = String(Number(draft[item.key] ?? 0));
+          field.addEventListener("change", () => {
+            const parsed = Number(field.value);
+            draft[item.key] = Number.isFinite(parsed) ? Math.max(0, Math.trunc(parsed)) : 0;
+            field.value = String(draft[item.key]);
+          });
+        }
+        row.appendChild(field);
+        body.appendChild(row);
+      });
+    },
+    onConfirm: () => {
+      currentConfig.groups[groupIndex].insert_feedback = { ...draft };
+      return true;
+    },
+  });
+}
+
 function createRow(columns) {
   const row = document.createElement("div");
   row.className = "grid-row";
+  row.classList.add(`grid-row-cols-${columns.length}`);
   columns.forEach((node) => row.appendChild(node));
   return row;
 }
@@ -519,11 +783,17 @@ function renderPoints() {
 function renderGroups() {
   const panel = document.getElementById("tab-groups");
   panel.innerHTML = "";
-  appendHeaders(panel, ["名称", "描述", "触发类型", "采集间隔(秒)", ""]);
   const pointOptions = getPointNameOptions();
   currentConfig.groups.forEach((item, idx) => {
+    const batchUpsertEnabled = !!(item.batch_upsert && item.batch_upsert.enabled);
+    if (batchUpsertEnabled) {
+      currentConfig.groups[idx].batch_insert_size = 1;
+      currentConfig.groups[idx].recreate_interval_days = 10000;
+    }
+
     const card = document.createElement("div");
     card.className = "group-card";
+    card.appendChild(createRow([createHeaderCell("名称"), createHeaderCell("描述"), createHeaderCell("触发类型"), createHeaderCell("采集间隔(秒)")]));
     card.appendChild(
       createRow([
         createInput(item.name || "", (v) => {
@@ -544,7 +814,15 @@ function renderGroups() {
         createInput(item.interval_seconds || 1, (v) => (currentConfig.groups[idx].interval_seconds = Number(v) || 1), "number"),
       ])
     );
-    card.appendChild(createRow([createHeaderCell("触发点"), createHeaderCell("触发间隔(秒)"), createHeaderCell("数据点列表(多选)"), createHeaderCell("唯一键点"), createHeaderCell("")]));
+    card.appendChild(createRow([createHeaderCell("触发点"), createHeaderCell("触发间隔(秒)"), createHeaderCell("数据点列表(多选)"), createHeaderCell("唯一键点")]));
+    const advancedActions = document.createElement("div");
+    advancedActions.className = "group-config-actions";
+    advancedActions.appendChild(
+      createConfigActionButton("配置 batch_upsert", () => openBatchUpsertConfig(idx))
+    );
+    advancedActions.appendChild(
+      createConfigActionButton("配置 insert_feedback", () => openInsertFeedbackConfig(idx))
+    );
     card.appendChild(
       createRow([
         createSelect(
@@ -565,19 +843,46 @@ function renderGroups() {
         ),
       ])
     );
-    card.appendChild(createRow([createHeaderCell("读后复位"), createHeaderCell("分表间隔(天)"), createHeaderCell("批量写入"), createHeaderCell("并行触发"), createHeaderCell("操作")]));
+    card.appendChild(createRow([createHeaderCell("读后复位"), createHeaderCell("分表间隔(天)"), createHeaderCell("批量写入"), createHeaderCell("并行触发")]));
+
+    const recreateInput = createInput(
+      currentConfig.groups[idx].recreate_interval_days || 30,
+      (v) => (currentConfig.groups[idx].recreate_interval_days = Number(v) || 30),
+      "number"
+    );
+    recreateInput.disabled = batchUpsertEnabled;
+
+    const batchInsertInput = createInput(
+      currentConfig.groups[idx].batch_insert_size || 100,
+      (v) => (currentConfig.groups[idx].batch_insert_size = Number(v) || 100),
+      "number"
+    );
+    batchInsertInput.disabled = batchUpsertEnabled;
+
     card.appendChild(
       createRow([
         createCheckbox(item.reset_trigger_after_read !== false, (v) => (currentConfig.groups[idx].reset_trigger_after_read = v)),
-        createInput(item.recreate_interval_days || 30, (v) => (currentConfig.groups[idx].recreate_interval_days = Number(v) || 30), "number"),
-        createInput(item.batch_insert_size || 100, (v) => (currentConfig.groups[idx].batch_insert_size = Number(v) || 100), "number"),
+        createLockedField(recreateInput, batchUpsertEnabled),
+        createLockedField(batchInsertInput, batchUpsertEnabled),
         createCheckbox(item.is_parallel === true, (v) => (currentConfig.groups[idx].is_parallel = v)),
-        createRemoveButton(() => {
-          currentConfig.groups.splice(idx, 1);
-          rerender();
-        }),
       ])
     );
+
+    const deleteRow = document.createElement("div");
+    deleteRow.className = "group-delete-row";
+    const actionsWrap = document.createElement("div");
+    actionsWrap.className = "group-delete-actions";
+    actionsWrap.appendChild(advancedActions);
+
+    const deleteBtn = createRemoveButton(() => {
+      currentConfig.groups.splice(idx, 1);
+      rerender();
+    });
+    deleteBtn.classList.add("danger-btn", "group-delete-btn");
+    deleteRow.appendChild(actionsWrap);
+    deleteRow.appendChild(deleteBtn);
+    card.appendChild(deleteRow);
+
     panel.appendChild(card);
   });
   const add = document.createElement("button");

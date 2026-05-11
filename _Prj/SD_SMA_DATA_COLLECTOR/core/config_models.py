@@ -43,6 +43,17 @@ class InsertFeedbackConfig:
 
 
 @dataclass
+class BatchUpsertConfig:
+    """批次更新配置（唯一键冲突时按条件补写结批时间）"""
+    enabled: bool = False
+    start_time_point: Optional[str] = None
+    end_time_point: Optional[str] = None
+    update_only_when_end_time_is_null: bool = True
+    reject_when_end_time_exists: bool = True
+    allow_idempotent_same_end_time: bool = False
+
+
+@dataclass
 class DataGroup:
     """数据组配置"""
     name: str
@@ -60,6 +71,7 @@ class DataGroup:
     is_parallel: bool = False  # 是否启用并行触发模式（trigger_point 和 data_points 为数组节点）
     unique_key_point: Optional[str] = None  # 唯一性校验键（按组）
     insert_feedback: Optional[InsertFeedbackConfig] = None  # 插入反馈配置（UDINT）
+    batch_upsert: Optional[BatchUpsertConfig] = None  # 批次更新配置（唯一冲突时按 end_time 条件更新）
     
     def get_buffer_nodes(self) -> List[str]:
         """获取缓冲区节点列表（从 query_config 中）"""

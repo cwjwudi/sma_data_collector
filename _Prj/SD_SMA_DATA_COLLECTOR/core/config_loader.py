@@ -7,7 +7,8 @@ import json
 from typing import Dict, Any
 from .config_models import (
     DataPoint, DataGroup, OpcUaConfig, DatabaseConfig, AppConfig, 
-    TriggerType, Communication, Connection, HttpServerConfig, LoggingConfig, InsertFeedbackConfig
+    TriggerType, Communication, Connection, HttpServerConfig, LoggingConfig, InsertFeedbackConfig,
+    BatchUpsertConfig
 )
 
 
@@ -66,6 +67,18 @@ class ConfigLoader:
                     code_other_error=feedback_data.get('code_other_error', 3)
                 )
 
+            batch_upsert_data = group_data.get('batch_upsert')
+            batch_upsert = None
+            if batch_upsert_data is not None:
+                batch_upsert = BatchUpsertConfig(
+                    enabled=bool(batch_upsert_data.get('enabled', False)),
+                    start_time_point=batch_upsert_data.get('start_time_point'),
+                    end_time_point=batch_upsert_data.get('end_time_point'),
+                    update_only_when_end_time_is_null=batch_upsert_data.get('update_only_when_end_time_is_null', True),
+                    reject_when_end_time_exists=batch_upsert_data.get('reject_when_end_time_exists', True),
+                    allow_idempotent_same_end_time=batch_upsert_data.get('allow_idempotent_same_end_time', False),
+                )
+
             group = DataGroup(
                 name=group_data['name'],
                 interval_seconds=group_data['interval_seconds'],
@@ -80,7 +93,8 @@ class ConfigLoader:
                 query_config=group_data.get('query_config'),
                 is_parallel=group_data.get('is_parallel', False),
                 unique_key_point=group_data.get('unique_key_point'),
-                insert_feedback=insert_feedback
+                insert_feedback=insert_feedback,
+                batch_upsert=batch_upsert,
             )
             groups.append(group)
         
@@ -219,6 +233,32 @@ class ConfigLoader:
                         raise ValueError(
                             f"数据组 '{group.name}' 的 insert_feedback.{field_name} 超出 UDINT 范围(0~4294967295)"
                         )
+
+            if group.batch_upsert and group.batch_upsert.enabled:
+                if not group.unique_key_point:
+                    raise ValueError(
+                        f"数据组 '{group.name}' 启用了 batch_upsert 时必须配置 unique_key_point"
+                    )
+
+                if not group.batch_upsert.start_time_point or group.batch_upsert.start_time_point not in group.data_points:
+                    raise ValueError(
+                        f"数据组 '{group.name}' 的 batch_upsert.start_time_point 必须配置且存在于 data_points 中"
+                    )
+
+                if not group.batch_upsert.end_time_point or group.batch_upsert.end_time_point not in group.data_points:
+                    raise ValueError(
+                        f"数据组 '{group.name}' 的 batch_upsert.end_time_point 必须配置且存在于 data_points 中"
+                    )
+
+                if not group.batch_upsert.update_only_when_end_time_is_null:
+                    raise ValueError(
+                        f"数据组 '{group.name}' 当前仅支持 batch_upsert.update_only_when_end_time_is_null=true"
+                    )
+
+                if not group.batch_upsert.reject_when_end_time_exists:
+                    raise ValueError(
+                        f"数据组 '{group.name}' 当前仅支持 batch_upsert.reject_when_end_time_exists=true"
+                    )
             
             if group.trigger == TriggerType.VARIABLE:
                 if not group.trigger_point:
