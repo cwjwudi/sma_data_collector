@@ -424,6 +424,8 @@ class DatabaseManager:
         初始化数据库中所有表的日期信息
         扫描现有表，解析日期后缀，为每个group保存最新的日期
         """
+        sql = ""
+        tables = []
         try:
             # 获取所有表名
             if self.db_config['type'].lower() == 'mysql':
@@ -434,29 +436,54 @@ class DatabaseManager:
             tables = self.execute_query(sql)
             # 解析表名并按 group 分类
             group_latest_dates = {}
+            parsed_count = 0
+            skipped_count = 0
             for table_row in tables:
-                table_name = table_row[0] if isinstance(table_row, tuple) else table_row
-                table_name_str = table_name
+                # SQLAlchemy 2.x 通常返回 Row；统一尝试读取第 1 列作为表名
+                try:
+                    table_name = table_row[0]
+                except Exception:
+                    table_name = table_row
+                table_name_str = str(table_name).strip()
+
+                if "_" not in table_name_str:
+                    skipped_count += 1
+                    self.logger.debug("跳过表(无下划线后缀结构): %s", table_name_str)
+                    continue
                 # 取表名最后8位作为日期字符串
                 date_str = table_name_str[-8:]
 
                 # 判断是否为有效日期
                 if len(date_str) != 8 or not date_str.isdigit():
                     # 不是日期格式，跳过
+                    skipped_count += 1
+                    self.logger.debug("跳过表(非8位日期后缀): %s", table_name_str)
                     continue
                 try:
                     # 尝试将字符串解析为日期对象
                     parsed_date = datetime.strptime(date_str, '%Y%m%d')
                     group_name = table_name_str[:-9]  # 去掉下划线和日期
-                    group_latest_dates[group_name] = parsed_date
+                    if not group_name:
+                        skipped_count += 1
+                        self.logger.debug("跳过表(group_name为空): %s", table_name_str)
+                        continue
                     # 更新该group的最新日期
                     if (group_name not in group_latest_dates or
                         parsed_date > group_latest_dates[group_name]):
                         group_latest_dates[group_name] = parsed_date
-                    # print(f"提取的日期: {date_str} 是有效的日期")
+                    parsed_count += 1
                 except ValueError:
                     # 日期格式不匹配，跳过该表
+                    skipped_count += 1
+                    self.logger.debug("跳过表(日期解析失败): %s", table_name_str)
                     continue
+
+            self.logger.debug(
+                "扫描表完成: total=%s, parsed=%s, skipped=%s",
+                len(tables),
+                parsed_count,
+                skipped_count,
+            )
 
             # 更新实例变量
             self.table_created_dates.update(group_latest_dates)
@@ -472,4 +499,6 @@ class DatabaseManager:
                 self.logger.info("未找到符合条件的表，将使用默认表名策略")
                 
         except Exception as e:
+            sample_row_type = type(tables[0]).__name__ if tables else "N/A"
+            self.logger.debug("初始化表日期失败上下文: sql=%s, sample_row_type=%s", sql, sample_row_type)
             self._log_db_error("初始化表日期", e)
