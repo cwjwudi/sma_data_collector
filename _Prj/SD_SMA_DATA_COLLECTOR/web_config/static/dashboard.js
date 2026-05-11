@@ -3,6 +3,9 @@ const monitorStatusEl = document.getElementById("monitor-status");
 const monitorLogEl = document.getElementById("monitor-log");
 
 const MONITOR_CONFIG_KEY = "sd_sma_monitor_config_v1";
+let monitorPollInFlight = false;
+let lastStatusPayload = null;
+let lastLogLines = [];
 
 async function api(path, options = {}) {
   const response = await fetch(path, {
@@ -73,7 +76,12 @@ function renderMonitor(statusPayload, logLines) {
   if (!monitorStatusEl) {
     return;
   }
-  const st = statusPayload;
+  const st = statusPayload || {
+    phase: "unknown",
+    task_active: false,
+    snapshot: null,
+    last_error: "状态暂不可用",
+  };
   const snap = st.snapshot;
   let text = `阶段: ${st.phase}`;
   if (st.task_active) {
@@ -104,8 +112,15 @@ function renderMonitor(statusPayload, logLines) {
   monitorStatusEl.textContent = text.trimEnd();
   if (monitorLogEl) {
     const lines = Array.isArray(logLines) ? logLines : [];
+    // 仅当用户当前在底部附近时，才自动跟随最新日志。
+    // 若用户手动向上查看历史日志，则保持当前位置不被“抢焦点”。
+    const distanceToBottom =
+      monitorLogEl.scrollHeight - monitorLogEl.scrollTop - monitorLogEl.clientHeight;
+    const shouldStickToBottom = distanceToBottom <= 24;
     monitorLogEl.textContent = lines.slice(-250).join("\n");
-    monitorLogEl.scrollTop = monitorLogEl.scrollHeight;
+    if (shouldStickToBottom) {
+      monitorLogEl.scrollTop = monitorLogEl.scrollHeight;
+    }
   }
 }
 
@@ -113,11 +128,44 @@ async function pollMonitor() {
   if (!monitorStatusEl) {
     return;
   }
+  if (monitorPollInFlight) {
+    return;
+  }
+  monitorPollInFlight = true;
   try {
-    const [st, logs] = await Promise.all([api("/api/collector/status"), api("/api/collector/logs")]);
-    renderMonitor(st, logs.lines || []);
+    const statusPromise = api("/api/collector/status")
+      .then((st) => {
+        lastStatusPayload = st;
+        return st;
+      })
+      .catch((err) => {
+        monitorStatusEl.textContent = `状态获取失败: ${err.message || err}`;
+        return null;
+      });
+
+    const logsPromise = api("/api/collector/logs")
+      .then((logs) => {
+        lastLogLines = Array.isArray(logs.lines) ? logs.lines : [];
+        return logs;
+      })
+      .catch((err) => {
+        if (monitorLogEl) {
+          monitorLogEl.textContent = `日志获取失败: ${err.message || err}`;
+        }
+        return null;
+      });
+
+    // 先渲染日志，避免被慢状态接口拖慢
+    await logsPromise;
+    renderMonitor(lastStatusPayload, lastLogLines);
+
+    // 状态返回后再补一帧，更新顶部状态
+    await statusPromise;
+    renderMonitor(lastStatusPayload, lastLogLines);
   } catch (err) {
     monitorStatusEl.textContent = `状态获取失败: ${err.message || err}`;
+  } finally {
+    monitorPollInFlight = false;
   }
 }
 
@@ -150,5 +198,5 @@ document.getElementById("btn-collector-stop")?.addEventListener("click", () => {
 });
 
 refreshMonitorFileList();
-setInterval(pollMonitor, 2000);
+setInterval(pollMonitor, 1000);
 pollMonitor();

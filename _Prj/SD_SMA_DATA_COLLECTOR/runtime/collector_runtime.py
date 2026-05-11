@@ -52,6 +52,8 @@ class DataCollectionSystem:
         self.storage_processor: Optional[DataStorageProcessor] = None
         self.query_processor: Optional[DataQueryProcessor] = None
         self.query_task_processor: Optional[asyncio.Task] = None
+        self.db_health_task: Optional[asyncio.Task] = None
+        self.db_health_check_interval = max(1.0, float(os.getenv("SD_SMA_DB_HEALTH_CHECK_INTERVAL", "5")))
         self.running = False
         self.executor = ThreadPoolExecutor(max_workers=5)
         self.setup_logging()
@@ -242,6 +244,12 @@ class DataCollectionSystem:
             )
             self.logger.info("查询任务处理器已启动")
 
+            self.db_health_task = asyncio.create_task(
+                self._monitor_database_connection(),
+                name="db_health_monitor",
+            )
+            self.logger.info("数据库健康检查任务已启动（间隔 %.1f 秒）", self.db_health_check_interval)
+
             data_points_dict = {point.name: point for point in self.config.points}
 
             target_group_names = self.config.database.data_groups
@@ -278,6 +286,16 @@ class DataCollectionSystem:
                 await self.data_collector.stop_collection()
         except Exception as exc:  # noqa: BLE001
             self.logger.error("停止数据采集器时发生错误：%s", exc, exc_info=True)
+
+        try:
+            if self.db_health_task:
+                self.db_health_task.cancel()
+                try:
+                    await self.db_health_task
+                except asyncio.CancelledError:
+                    self.logger.info("数据库健康检查任务已停止")
+        except Exception as exc:  # noqa: BLE001
+            self.logger.error("停止数据库健康检查任务时发生错误：%s", exc, exc_info=True)
 
         try:
             if self.query_task_processor:
@@ -321,6 +339,19 @@ class DataCollectionSystem:
             self.logger.info("收到 KeyboardInterrupt，准备关闭系统...")
         except asyncio.CancelledError:
             self.logger.info("收到取消信号，准备关闭系统...")
+
+    async def _monitor_database_connection(self) -> None:
+        """后台数据库健康检查：即使无采集数据也能持续输出断连/重连日志。"""
+        while self.running:
+            try:
+                if self.db_manager:
+                    await asyncio.to_thread(self.db_manager.ensure_connection, "后台健康检查")
+                await asyncio.sleep(self.db_health_check_interval)
+            except asyncio.CancelledError:
+                break
+            except Exception as exc:  # noqa: BLE001
+                self.logger.error("数据库健康检查异常：%s", exc, exc_info=True)
+                await asyncio.sleep(self.db_health_check_interval)
 
     def query_data(
         self,

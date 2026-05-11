@@ -5,6 +5,7 @@
 
 import logging
 import os
+import time
 from typing import Optional, Dict, Any
 from datetime import datetime
 import sqlite3
@@ -16,7 +17,7 @@ except ImportError:
 
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import SQLAlchemyError, OperationalError
 
 
 class DatabaseManager:
@@ -39,6 +40,56 @@ class DatabaseManager:
         self.logger = logging.getLogger(__name__)
         # SQL 打印控制：默认 debug；设置 SD_SMA_SQL_LOG_INFO=true 可提升为 info
         self.sql_log_info = os.getenv("SD_SMA_SQL_LOG_INFO", "").lower() in ("1", "true", "yes", "on")
+        # 异常日志控制：默认不打印 traceback，避免日志噪音；需要时可通过环境变量开启
+        self.log_traceback = os.getenv("SD_SMA_DB_TRACEBACK", "").lower() in ("1", "true", "yes", "on")
+        # 断连重连控制：默认尝试 3 次，每次间隔 2 秒
+        self.reconnect_attempts = max(1, int(os.getenv("SD_SMA_DB_RECONNECT_ATTEMPTS", "3")))
+        self.reconnect_interval_seconds = max(0.0, float(os.getenv("SD_SMA_DB_RECONNECT_INTERVAL", "2")))
+        self.disconnect_log_interval_seconds = max(1.0, float(os.getenv("SD_SMA_DB_DISCONNECT_LOG_INTERVAL", "30")))
+        self._connection_healthy = False
+        self._last_disconnect_log_ts = 0.0
+
+    def _log_db_error(self, action: str, exc: Exception) -> None:
+        """以清晰、简短形式记录数据库错误，避免整段 traceback 淹没业务日志。"""
+        db_type = self.db_config.get("type", "unknown")
+        db_host = self.db_config.get("host", "-")
+        db_port = self.db_config.get("port", "-")
+        db_name = self.db_config.get("name", "-")
+
+        if isinstance(exc, OperationalError):
+            # SQLAlchemy OperationalError 通常封装为 (code, message)
+            code = "unknown"
+            message = str(exc)
+            try:
+                if getattr(exc, "orig", None) and getattr(exc.orig, "args", None):
+                    code = exc.orig.args[0]
+                    if len(exc.orig.args) > 1:
+                        message = exc.orig.args[1]
+            except Exception:
+                pass
+            self.logger.error(
+                "数据库%s失败(type=%s host=%s port=%s db=%s code=%s): %s",
+                action,
+                db_type,
+                db_host,
+                db_port,
+                db_name,
+                code,
+                message,
+                exc_info=self.log_traceback,
+            )
+            return
+
+        self.logger.error(
+            "数据库%s失败(type=%s host=%s port=%s db=%s): %s",
+            action,
+            db_type,
+            db_host,
+            db_port,
+            db_name,
+            exc,
+            exc_info=self.log_traceback,
+        )
 
     def _log_mysql_sql(self, sql: str, params: Optional[Dict[str, Any]] = None, force_info: bool = False) -> None:
         """打印 MySQL SQL 语句与参数"""
@@ -52,6 +103,61 @@ class DatabaseManager:
             self.logger.info(message)
         else:
             self.logger.debug(message)
+
+    def _mark_connection_lost(self, action: str, exc: Exception) -> None:
+        """记录数据库断连事件（只在状态从健康变为异常时打印一次断连提示）。"""
+        now = time.time()
+        should_log_detail = self._connection_healthy or (
+            now - self._last_disconnect_log_ts >= self.disconnect_log_interval_seconds
+        )
+        if self._connection_healthy:
+            self.logger.warning("检测到数据库连接断开（动作=%s），将尝试重连", action)
+        self._connection_healthy = False
+        if should_log_detail:
+            self._last_disconnect_log_ts = now
+            self._log_db_error(action, exc)
+
+    def _attempt_reconnect(self, trigger_action: str) -> bool:
+        """尝试重连数据库，并打印重连尝试日志。"""
+        for idx in range(1, self.reconnect_attempts + 1):
+            self.logger.warning(
+                "数据库重连尝试 %s/%s（触发动作=%s）",
+                idx,
+                self.reconnect_attempts,
+                trigger_action,
+            )
+            if self.connect():
+                self._connection_healthy = True
+                self.logger.info("数据库重连成功（触发动作=%s）", trigger_action)
+                return True
+            if idx < self.reconnect_attempts and self.reconnect_interval_seconds > 0:
+                time.sleep(self.reconnect_interval_seconds)
+        self.logger.error("数据库重连失败（触发动作=%s）", trigger_action)
+        return False
+
+    def ensure_connection(self, trigger_action: str = "健康检查") -> bool:
+        """
+        主动探测并确保数据库连接可用。
+        用于后台健康检查场景：即使当前无插入/查询，也能打印断连与重连日志。
+        """
+        if not self.engine:
+            self.logger.warning("数据库引擎未初始化，无法执行%s", trigger_action)
+            self._connection_healthy = False
+            return False
+
+        try:
+            with self.engine.connect() as conn:
+                conn.execute(text("SELECT 1"))
+            if not self._connection_healthy:
+                self.logger.info("数据库连接已恢复（动作=%s）", trigger_action)
+            self._connection_healthy = True
+            return True
+        except OperationalError as e:
+            self._mark_connection_lost(trigger_action, e)
+            return self._attempt_reconnect(trigger_action)
+        except Exception as e:
+            self._mark_connection_lost(trigger_action, e)
+            return self._attempt_reconnect(trigger_action)
         
         
     def connect(self) -> bool:
@@ -100,10 +206,12 @@ class DatabaseManager:
             self._initialize_table_dates()
             
             self.logger.info(f"成功连接到{self.db_config['type']}数据库: {self.db_config['name']}")
+            self._connection_healthy = True
             return True
             
         except Exception as e:
-            self.logger.error(f"数据库连接失败: {e}", exc_info=True)
+            self._log_db_error("连接", e)
+            self._connection_healthy = False
             return False
     
     def disconnect(self) -> None:
@@ -111,6 +219,7 @@ class DatabaseManager:
         if self.engine:
             self.engine.dispose()
             self.logger.info("数据库连接已关闭")
+        self._connection_healthy = False
     
     def get_session(self):
         """
@@ -170,7 +279,7 @@ class DatabaseManager:
             return True
             
         except Exception as e:
-            self.logger.error(f"创建数据表失败: {e}", exc_info=True)
+            self._log_db_error("创建数据表", e)
             return False
     
     def get_recreate_interval_days(self, group_name: str = None) -> int:
@@ -231,7 +340,7 @@ class DatabaseManager:
             
         return self.current_table_names[group_name]
     
-    def execute_query(self, sql: str, params: Optional[Dict] = None) -> list:
+    def execute_query(self, sql: str, params: Optional[Dict] = None, _retry_on_disconnect: bool = True) -> list:
         """
         执行查询语句
         
@@ -246,12 +355,18 @@ class DatabaseManager:
             self._log_mysql_sql(sql, params)
             with self.engine.connect() as conn:
                 result = conn.execute(text(sql), params or {})
+                self._connection_healthy = True
                 return result.fetchall()
+        except OperationalError as e:
+            self._mark_connection_lost("执行查询", e)
+            if _retry_on_disconnect and self._attempt_reconnect("执行查询"):
+                return self.execute_query(sql, params, _retry_on_disconnect=False)
+            raise
         except Exception as e:
-            self.logger.error(f"查询执行失败: {e}", exc_info=True)
+            self._log_db_error("执行查询", e)
             raise
     
-    def execute_insert(self, table_name: str, data: Dict[str, Any]) -> bool:
+    def execute_insert(self, table_name: str, data: Dict[str, Any], _retry_on_disconnect: bool = True) -> bool:
         """
         插入数据
         
@@ -272,10 +387,16 @@ class DatabaseManager:
             with self.engine.connect() as conn:
                 conn.execute(text(sql), data)
                 conn.commit()
+            self._connection_healthy = True
             
             return True
+        except OperationalError as e:
+            self._mark_connection_lost("插入数据", e)
+            if _retry_on_disconnect and self._attempt_reconnect("插入数据"):
+                return self.execute_insert(table_name, data, _retry_on_disconnect=False)
+            return False
         except Exception as e:
-            self.logger.error(f"数据插入失败: {e}", exc_info=True)
+            self._log_db_error("插入数据", e)
             return False
 
     def record_exists(self, table_name: str, column_name: str, value: Any) -> bool:
@@ -351,4 +472,4 @@ class DatabaseManager:
                 self.logger.info("未找到符合条件的表，将使用默认表名策略")
                 
         except Exception as e:
-            self.logger.error(f"初始化表日期信息失败: {e}", exc_info=True)
+            self._log_db_error("初始化表日期", e)
