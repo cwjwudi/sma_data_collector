@@ -2,7 +2,40 @@
 
 本文档记录 SMA 数据采集系统的所有重要更新和变更。
 
-## [v1.5] - 2026-05-11
+## [v1.5.1] - 2026-05-11
+### 配置与校验增强
+- ✅ **点位名称与路径唯一性校验增强**（`web_config/config_manager.py`、`web_config/static/config.js`）
+  - 配置保存与“加入 points”流程新增 `points.name` / `points.path` 重复校验，重复时直接阻止提交并给出明确报错。
+  - Web 端新增点名规范化逻辑，降低非法字符导致的后续配置问题。
+
+- 🔁 **变量触发轮询参数统一**（`core/config_models.py`、`core/config_loader.py`、`communication/data_collector.py`）
+  - `trigger=variable` 与 `trigger=query` 轮询间隔统一支持 `trigger_interval_seconds`。
+  - 当未显式配置时自动回退为 `interval_seconds`，保持历史配置兼容。
+  - 校验与测试断言同步切换为 `trigger_interval_seconds` 语义。
+
+### 心跳与运行监视优化
+- 💓 **heartbeat 配置支持 points 引用**（`communication/heartbeat_manager.py`、`config/Alarm_trend.json`）
+  - `connections[].heartbeat` 支持填写 `points[].name`，启动时自动解析为 OPC UA 地址。
+  - 兼容旧地址直填方式（`ns=...`），同时给出迁移提示日志。
+
+- 🪵 **Web 监视日志增量拉取与暂停能力**（`web_config/collector_host.py`、`web_config/main.py`、`web_config/static/dashboard.*`）
+  - `/api/collector/logs` 新增 `cursor/limit`，支持按序号增量读取，减少重复传输与前端渲染压力。
+  - 仪表盘新增“暂停日志/继续日志”按钮，暂停期间缓存增量，恢复后一次性补显。
+  - 日志渲染与缓冲上限可控，提升长时间运行场景下的可读性与稳定性。
+
+### 稳定性修复
+- 🛠️ **数据库历史表日期初始化兼容修复**（`database/db_manager.py`）
+  - 兼容 SQLAlchemy 2.x `Row` 返回结构，避免扫描历史表时取表名失败。
+  - 增加无效表名跳过与调试信息，提升日期初始化问题定位效率。
+
+### Web 体验改进
+- 🔧 **配置页面联动刷新优化**（`web_config/static/config.js`、`web_config/static/config.html`）
+  - 新增点位后，数据组/连接/数据库相关下拉选项即时刷新，无需整页重载。
+  - 静态资源追加版本参数，降低缓存导致的前端脚本不一致问题。
+
+---
+
+## [v1.5.0] - 2026-05-11
 ### 文档与定位调整
 - 🧭 **`web_config` 升级为推荐主入口**（`README.md`）
   - 强化“配置管理 + 采集托管 + 运行监视”定位说明。

@@ -88,13 +88,23 @@
 - ✅ **统一入口**: 在浏览器内完成配置编辑、校验、导出与采集控制
 - ✅ **采集托管**: 通过 Web 页面启动/停止采集，避免命令行误操作
 - ✅ **运行监视**: 展示数据库连通、OPC UA 连接状态、主循环状态与最近日志
+- ✅ **日志增量拉取**: 监视面板按游标获取日志，降低重复拉取与长时间运行时的卡顿
+- ✅ **日志暂停/继续**: 支持暂停实时日志滚动，恢复后自动补齐暂停期间增量
 - ✅ **配置可视化**: 支持读取/直写 `config/` 下 JSON 与 OPC UA 浏览加点位
+- ✅ **校验增强**: 点位 `name/path` 唯一性校验前置到页面交互与保存阶段
 
 **设计边界：**
 - `web_config` 目前仍不支持 `trigger=query` 与 `groups[].query_config` 的可视化编辑
 - PLC 回写链路保持可用，但不作为后续新功能扩展方向
 
 ### 5. v1.3.0+ 版本增强（重点）
+
+- **v1.5.1 - 近期增强（相对 31b2355）**
+  - `heartbeat` 支持填写 `points` 中的点位名称，运行时自动解析为 OPC UA 地址（仍兼容旧 `ns=...` 直填方式）。
+  - `trigger=variable/query` 轮询统一支持 `trigger_interval_seconds`，未配置时自动回退 `interval_seconds`。
+  - 配置管理器新增 `points.name/path` 重复校验；OPC UA 浏览“加入 points”后相关下拉框即时刷新。
+  - 仪表盘日志接口升级为 `cursor/limit` 增量协议，并新增“暂停日志”能力。
+  - 数据库历史表日期初始化兼容 SQLAlchemy 2.x `Row` 返回结构，降低首次扫描失败风险。
 
 - **v1.3.0 - 附加查询条件（aux_query）**
   - 在 `query_config` 中支持 `aux_query_field`，可从 OPC UA 读取附加 SQL 条件并拼接到 `WHERE`。
@@ -162,7 +172,7 @@ python -m uvicorn web_config.main:app --host 0.0.0.0 --port 8091
 - 访问地址：`http://127.0.0.1:8091`（或本机 IP:8091）
 - 页面顶部 **采集监视**：选择 `config/` 下 JSON 后点击 **启动采集** / **停止采集**；在此启动前不会进行采集。
 - 监视区会轮询数据库连通、各 OPC UA 连接、采集主循环是否在跑，并展示与 `data_collector.log` / 控制台同源的最近日志（内存环形缓冲）。
-- 作为 v1.5 推荐用法，日常配置变更与运行管理优先通过 `web_config` 完成。
+- 作为 v1.5.1 推荐用法，日常配置变更与运行管理优先通过 `web_config` 完成。
 - 同一进程内请勿再运行 `python main.py` 连接同一数据库做采集，避免重复占库。
 - 其余：读取/编辑/校验配置、导出与直写 `config/`、OPC UA 浏览加点位等。
 - 设计边界：配置网页仍不支持 `trigger=query` 与 `groups[].query_config`
@@ -271,7 +281,7 @@ SD_SMA_DATA_COLLECTOR/
   - `query`: 查询任务触发（读取配置并执行数据库查询）
 - `data_points`: 包含的数据点名称列表
 - `trigger_point`: 触发变量名称（仅 variable/query 类型需要）
-- `trigger_interval_seconds`: 触发点轮询间隔（仅 `time_and_variable` 必填，必须 > 0）
+- `trigger_interval_seconds`: 触发点轮询间隔（`time_and_variable` 必填；`variable/query` 可选，未配置时回退 `interval_seconds`）
 - `reset_trigger_after_read`: 读取后是否复位触发信号
 - `is_parallel`: 是否启用并行触发模式（仅 `trigger: variable` 可用）
 - `output_mode`: 查询结果输出方式（当前仅保留 `opcua_only`；历史 HTTP 相关模式不再开发）
@@ -312,10 +322,12 @@ SD_SMA_DATA_COLLECTOR/
 - `name`: 连接配置名称（唯一标识）
 - `communication`: 引用的通信名称
 - `data_groups`: 使用该通信的数据组名称列表
-- `heartbeat`: （可选）心跳信号的 OPC UA 地址，格式：`ns=X;s=节点路径`
+- `heartbeat`: （可选）心跳信号点位，优先填写 `points[].name`
+  - 推荐写法：引用 `points` 中已定义的点位名称（如 `uiHeartBeat`），系统会自动解析成对应 OPC UA 地址
+  - 兼容写法：仍支持直接填写 OPC UA 地址（`ns=X;s=节点路径`）
   - 如果配置了该字段，系统会每隔 1 秒向该地址写入值 1（UInt16 类型）
   - 用于保持 PLC 连接活跃，防止超时断开
-  - 示例：`"heartbeat": "ns=6;s=::DataRev:bHeartBeat"`
+  - 示例：`"heartbeat": "uiHeartBeat"`
 
 ### 数据库配置 (database)
 - `type`: 数据库类型（mysql/sqlite）
@@ -356,7 +368,7 @@ SD_SMA_DATA_COLLECTOR/
       "name": "connection1",
       "communication": "PLC1",
       "data_groups": ["sensor_group_1", "trigger_group_1"],
-      "heartbeat": "ns=6;s=::DataRev:bHeartBeat"
+      "heartbeat": "uiHeartBeat"
     }
   ],
   "points": [
@@ -369,6 +381,11 @@ SD_SMA_DATA_COLLECTOR/
       "name": "bTrigger1",
       "path": "ns=6;s=::DataRev:bTestTriger",
       "description": "触发信号"
+    },
+    {
+      "name": "uiHeartBeat",
+      "path": "ns=6;s=::DataRev:uiHeartBeat",
+      "description": "心跳信号点位"
     },
     {
       "name": "udiInsertFeedBack",
@@ -428,16 +445,22 @@ SD_SMA_DATA_COLLECTOR/
 
 ### 心跳信号配置
 
-在 `connections` 中添加 `heartbeat` 字段：
+推荐先在 `points` 中定义心跳地址，再在 `connections` 里通过点位名引用：
 
 ```json
 {
+  "points": [
+    {
+      "name": "uiHeartBeat",
+      "path": "ns=6;s=::DataRev:bHeartBeat"
+    }
+  ],
   "connections": [
     {
       "name": "connection1",
       "communication": "PLC1",
       "data_groups": ["sensor_group_1", "sensor_group_2"],
-      "heartbeat": "ns=6;s=::DataRev:bHeartBeat"
+      "heartbeat": "uiHeartBeat"
     }
   ]
 }

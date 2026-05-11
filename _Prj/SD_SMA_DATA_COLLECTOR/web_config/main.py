@@ -55,7 +55,7 @@ async def _lifespan(app: FastAPI):
     await get_collector_host().shutdown()
 
 
-app = FastAPI(title="SD SMA Collector Config Web", version="0.1.0", lifespan=_lifespan)
+app = FastAPI(title="SD SMA Collector Config Web", version="1.5.1", lifespan=_lifespan)
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 
 
