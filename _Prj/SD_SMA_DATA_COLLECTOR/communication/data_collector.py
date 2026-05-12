@@ -759,15 +759,19 @@ class DataCollector:
             
         返回:
             function: 接收一个 point 字符串，返回对应的 group 名称（str）或 None（如果不存在）
-            
-        异常:
-            ValueError: 如果某个 point 出现在多个 group 中
         """
         point_to_group = {}
         for group_name, points in groups.items():
             for point in points:
                 if point in point_to_group:
-                    raise ValueError(f"Point '{point}' appears in both '{point_to_group[point]}' and '{group_name}'. Points must be unique to one group.")
+                    self.logger.warning(
+                        "Point '%s' appears in both '%s' and '%s'. Using '%s' for reverse lookup.",
+                        point,
+                        point_to_group[point],
+                        group_name,
+                        point_to_group[point],
+                    )
+                    continue
                 point_to_group[point] = group_name
 
         def _lookup(point):

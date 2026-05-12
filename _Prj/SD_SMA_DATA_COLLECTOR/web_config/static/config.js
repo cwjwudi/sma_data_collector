@@ -519,6 +519,7 @@ function openBatchUpsertConfig(groupIndex) {
       if (draft.enabled) {
         currentConfig.groups[groupIndex].batch_insert_size = 1;
         currentConfig.groups[groupIndex].recreate_interval_days = 10000;
+        currentConfig.groups[groupIndex].is_parallel = false;
       }
       return true;
     },
@@ -785,10 +786,14 @@ function renderGroups() {
   panel.innerHTML = "";
   const pointOptions = getPointNameOptions();
   currentConfig.groups.forEach((item, idx) => {
+    const groupSelectedPointOptions = pointOptions.filter((opt) =>
+      (item.data_points || []).includes(opt.value)
+    );
     const batchUpsertEnabled = !!(item.batch_upsert && item.batch_upsert.enabled);
     if (batchUpsertEnabled) {
       currentConfig.groups[idx].batch_insert_size = 1;
       currentConfig.groups[idx].recreate_interval_days = 10000;
+      currentConfig.groups[idx].is_parallel = false;
     }
 
     const card = document.createElement("div");
@@ -835,9 +840,16 @@ function renderGroups() {
         }, "number"),
         createMultiSelect(pointOptions, item.data_points || [], (values) => {
           currentConfig.groups[idx].data_points = values;
+          if (
+            currentConfig.groups[idx].unique_key_point &&
+            !values.includes(currentConfig.groups[idx].unique_key_point)
+          ) {
+            currentConfig.groups[idx].unique_key_point = "";
+          }
+          renderGroups();
         }),
         createSelect(
-          [{ value: "", label: "请选择点位" }, ...pointOptions],
+          [{ value: "", label: "请选择点位" }, ...groupSelectedPointOptions],
           item.unique_key_point || "",
           (v) => (currentConfig.groups[idx].unique_key_point = v)
         ),
@@ -864,7 +876,17 @@ function renderGroups() {
         createCheckbox(item.reset_trigger_after_read !== false, (v) => (currentConfig.groups[idx].reset_trigger_after_read = v)),
         createLockedField(recreateInput, batchUpsertEnabled),
         createLockedField(batchInsertInput, batchUpsertEnabled),
-        createCheckbox(item.is_parallel === true, (v) => (currentConfig.groups[idx].is_parallel = v)),
+        createLockedField(
+          (() => {
+            const parallelInput = createCheckbox(
+              currentConfig.groups[idx].is_parallel === true,
+              (v) => (currentConfig.groups[idx].is_parallel = v)
+            );
+            parallelInput.disabled = batchUpsertEnabled;
+            return parallelInput;
+          })(),
+          batchUpsertEnabled
+        ),
       ])
     );
 
