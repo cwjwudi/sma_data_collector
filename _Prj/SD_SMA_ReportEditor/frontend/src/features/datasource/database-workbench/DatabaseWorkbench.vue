@@ -45,18 +45,24 @@
         <div v-if="sub === 'data'" class="work-tab-grow data-tab-panel">
           <div class="preview-toolbar">
             <template v-if="activeEngine !== 'mongodb'">
-              <span class="preview-toolbar-label">预览行数上限</span>
-              <select v-model.number="previewSqlLimit" class="preview-limit-select" @change="previewTable">
-                <option v-for="n in previewRowChoices" :key="n" :value="n">{{ n }}</option>
-              </select>
-              <button type="button" class="btn sm" @click="previewTable">按上限加载</button>
+              <button type="button" class="btn sm" :disabled="previewPage <= 1 || !activeTable" @click="previewSqlPrev">
+                上一页
+              </button>
+              <span class="preview-toolbar-label"
+                >第 {{ previewPage }} 页 · 每页 {{ PAGE_SIZE }} 条<span v-if="previewTotal != null"> · 共 {{ previewTotal }} 条</span></span
+              >
+              <button type="button" class="btn sm" :disabled="!canPreviewSqlNext" @click="previewSqlNext">下一页</button>
+              <button type="button" class="btn sm" @click="previewTable(true)">刷新本页</button>
             </template>
             <template v-else>
-              <span class="preview-toolbar-label">文档预览条数</span>
-              <select v-model.number="mongoPreviewLimit" class="preview-limit-select" @change="previewMongo">
-                <option v-for="n in previewRowChoices" :key="'m' + n" :value="n">{{ n }}</option>
-              </select>
-              <button type="button" class="btn sm" @click="previewMongo">按上限加载</button>
+              <button type="button" class="btn sm" :disabled="previewPage <= 1 || !activeCollection" @click="previewMongoPrev">
+                上一页
+              </button>
+              <span class="preview-toolbar-label"
+                >第 {{ previewPage }} 页 · 每页 {{ PAGE_SIZE }} 条<span v-if="previewTotal != null"> · 共 {{ previewTotal }} 条</span></span
+              >
+              <button type="button" class="btn sm" :disabled="!canPreviewMongoNext" @click="previewMongoNext">下一页</button>
+              <button type="button" class="btn sm" @click="previewMongo(true)">刷新本页</button>
             </template>
           </div>
           <DataGrid fill-height :columns="gridCols" :rows="gridRows" :status="gridStatus" />
@@ -141,23 +147,40 @@ const gridCols = ref([])
 const gridRows = ref([])
 const gridStatus = ref('')
 
-const PREVIEW_ROW_CAP = 50000
-/** 与后端 `/database/table/preview` clamp 一致 */
-const previewRowChoices = [100, 500, 1000, 2000, 5000, 10000, 25000, 50000]
+/** 与后端 `/database/table/preview` 单次上限一致 */
+const PAGE_SIZE = 1000
+const previewPage = ref(1)
+/** @type {import('vue').Ref<number|null>} */
+const previewTotal = ref(null)
 
-const previewSqlLimit = ref(100)
-const mongoPreviewLimit = ref(100)
-
-function formatPreviewStatus(loaded, requested, unit = '行') {
-  const req = Math.min(PREVIEW_ROW_CAP, Math.max(1, requested || 100))
-  let s = `已加载 ${loaded} ${unit}（本次请求上限 ${req}）`
-  if (loaded >= req && req >= PREVIEW_ROW_CAP) {
-    s += `；已达服务端预览上限 ${PREVIEW_ROW_CAP}`
-  } else if (loaded >= req) {
-    s += '；若仍少于表中总行数，可提高上限后点「按上限加载」'
+function formatPagedStatus(loaded, page, unitLabel = '条') {
+  const start = (page - 1) * PAGE_SIZE + (loaded > 0 ? 1 : 0)
+  const end = (page - 1) * PAGE_SIZE + loaded
+  let s =
+    loaded > 0 ? `第 ${page} 页，显示 ${start}–${end} ${unitLabel}` : `第 ${page} 页，本页无数据`
+  if (previewTotal.value != null) {
+    s += `（共 ${previewTotal.value} ${unitLabel}）`
   }
   return s
 }
+
+const canPreviewSqlNext = computed(() => {
+  if (!activeTable.value) return false
+  if (gridRows.value.length < PAGE_SIZE) return false
+  if (previewTotal.value != null) {
+    return previewPage.value * PAGE_SIZE < previewTotal.value
+  }
+  return true
+})
+
+const canPreviewMongoNext = computed(() => {
+  if (!activeCollection.value) return false
+  if (gridRows.value.length < PAGE_SIZE) return false
+  if (previewTotal.value != null) {
+    return previewPage.value * PAGE_SIZE < previewTotal.value
+  }
+  return true
+})
 
 const ddlText = ref('')
 const ddlLoading = ref(false)
@@ -229,6 +252,8 @@ async function loadCatalog() {
   gridCols.value = []
   gridRows.value = []
   gridStatus.value = ''
+  previewPage.value = 1
+  previewTotal.value = null
   if (!activeConnId.value) return
   try {
     const conn = connections.value.find((c) => c.id === activeConnId.value)
@@ -267,6 +292,8 @@ async function onPickDatabase(d) {
     catalog.value.collections = cat.collections || []
     gridCols.value = []
     gridRows.value = []
+    previewPage.value = 1
+    previewTotal.value = null
   } catch (e) {
     gridStatus.value = e.message || String(e)
   }
@@ -282,21 +309,27 @@ async function onPickCollection(c) {
   await previewMongo()
 }
 
-async function previewTable() {
+async function previewTable(resetPage = true) {
+  if (!activeConnId.value || !activeTable.value) return
+  if (resetPage) {
+    previewPage.value = 1
+    previewTotal.value = null
+  }
   gridStatus.value = '加载中…'
   try {
-    const lim = Math.min(PREVIEW_ROW_CAP, Math.max(1, Math.floor(Number(previewSqlLimit.value) || 100)))
-    previewSqlLimit.value = lim
     const body = {
       connection_id: activeConnId.value,
       database: activeDatabase.value || undefined,
       table: activeTable.value,
-      limit: lim,
+      limit: PAGE_SIZE,
+      offset: (previewPage.value - 1) * PAGE_SIZE,
+      include_total: previewPage.value === 1,
     }
     const data = await apiFetch('/database/table/preview', { method: 'POST', body })
-    gridCols.value = data.columns || []
+    if (data.columns?.length) gridCols.value = data.columns
     gridRows.value = data.rows || []
-    gridStatus.value = formatPreviewStatus(gridRows.value.length, lim)
+    if (data.total != null) previewTotal.value = data.total
+    gridStatus.value = formatPagedStatus(gridRows.value.length, previewPage.value, '行')
   } catch (e) {
     gridCols.value = []
     gridRows.value = []
@@ -304,26 +337,54 @@ async function previewTable() {
   }
 }
 
-async function previewMongo() {
+function previewSqlPrev() {
+  if (previewPage.value <= 1) return
+  previewPage.value--
+  previewTable(false)
+}
+
+function previewSqlNext() {
+  previewPage.value++
+  previewTable(false)
+}
+
+async function previewMongo(resetPage = true) {
+  if (!activeConnId.value || !activeCollection.value) return
+  if (resetPage) {
+    previewPage.value = 1
+    previewTotal.value = null
+  }
   gridStatus.value = '加载中…'
   try {
-    const lim = Math.min(PREVIEW_ROW_CAP, Math.max(1, Math.floor(Number(mongoPreviewLimit.value) || 100)))
-    mongoPreviewLimit.value = lim
     const body = {
       connection_id: activeConnId.value,
       database: activeDatabase.value,
       table: activeCollection.value,
-      limit: lim,
+      limit: PAGE_SIZE,
+      offset: (previewPage.value - 1) * PAGE_SIZE,
+      include_total: previewPage.value === 1,
     }
     const data = await apiFetch('/database/table/preview', { method: 'POST', body })
-    gridCols.value = data.columns || []
+    if (data.columns?.length) gridCols.value = data.columns
     gridRows.value = data.rows || []
-    gridStatus.value = formatPreviewStatus(gridRows.value.length, lim, '条')
+    if (data.total != null) previewTotal.value = data.total
+    gridStatus.value = formatPagedStatus(gridRows.value.length, previewPage.value, '条')
   } catch (e) {
     gridCols.value = []
     gridRows.value = []
     gridStatus.value = e.message || String(e)
   }
+}
+
+function previewMongoPrev() {
+  if (previewPage.value <= 1) return
+  previewPage.value--
+  previewMongo(false)
+}
+
+function previewMongoNext() {
+  previewPage.value++
+  previewMongo(false)
 }
 
 async function loadDdl(force = false) {
@@ -490,13 +551,6 @@ reloadConnections()
 .preview-toolbar-label {
   font-size: 12px;
   color: #6b7280;
-}
-.preview-limit-select {
-  font-size: 12px;
-  padding: 4px 8px;
-  border-radius: 6px;
-  border: 1px solid #d1d5db;
-  background: #fff;
 }
 .subtabs {
   display: flex;

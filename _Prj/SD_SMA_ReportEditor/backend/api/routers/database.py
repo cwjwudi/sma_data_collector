@@ -307,11 +307,14 @@ async def query_mongo(body: DbMongoAggregateRequest):
 
 @router.post("/database/table/preview")
 async def table_preview(body: DbTablePreviewRequest):
+    PREVIEW_LIMIT_MAX = 1000
+    PREVIEW_OFFSET_MAX = 9_999_999
     try:
         conn = _conn_by_id(body.connection_id)
         engine = (conn.get("engine") or "").lower()
         user, pwd = _credentials(conn)
-        lim = max(1, min(body.limit, 50000))
+        off = max(0, min(int(body.offset), PREVIEW_OFFSET_MAX))
+        lim = max(1, min(int(body.limit), PREVIEW_LIMIT_MAX))
         dbname = body.database or conn.get("database") or ""
         tbl_raw = body.table
         if engine == "mongodb":
@@ -324,20 +327,33 @@ async def table_preview(body: DbTablePreviewRequest):
                 "password": pwd,
                 "auth_source": conn.get("mongo_auth_source") or "admin",
             }
-            return db_readonly_service.mongo_find_sample(vars_, dbname, tbl_raw, lim)
+            return db_readonly_service.mongo_find_sample(
+                vars_,
+                dbname,
+                tbl_raw,
+                lim,
+                off,
+                body.include_total,
+            )
         tbl = _safe_sql_table(tbl_raw)
         if body.pk_filter_column and body.pk_filter_value is not None:
             fcol = _safe_sql_table(body.pk_filter_column)
             lit = _sql_literal_filter(body.pk_filter_value)
-            sql_mysql = f"SELECT * FROM `{tbl}` WHERE `{fcol}` = {lit} LIMIT {lim}"
-            sql_pg = f'SELECT * FROM "{tbl}" WHERE "{fcol}" = {lit} LIMIT {lim}'
-            sql_lite = f"SELECT * FROM {tbl} WHERE {fcol} = {lit} LIMIT {lim}"
+            sql_mysql = f"SELECT * FROM `{tbl}` WHERE `{fcol}` = {lit} LIMIT {lim} OFFSET {off}"
+            sql_pg = f'SELECT * FROM "{tbl}" WHERE "{fcol}" = {lit} LIMIT {lim} OFFSET {off}'
+            sql_lite = f"SELECT * FROM {tbl} WHERE {fcol} = {lit} LIMIT {lim} OFFSET {off}"
+            cnt_mysql = f"SELECT COUNT(*) AS __c FROM `{tbl}` WHERE `{fcol}` = {lit}"
+            cnt_pg = f'SELECT COUNT(*) AS __c FROM "{tbl}" WHERE "{fcol}" = {lit}'
+            cnt_lite = f"SELECT COUNT(*) AS __c FROM {tbl} WHERE {fcol} = {lit}"
         else:
-            sql_mysql = f"SELECT * FROM `{tbl}` LIMIT {lim}"
-            sql_pg = f'SELECT * FROM "{tbl}" LIMIT {lim}'
-            sql_lite = f"SELECT * FROM {tbl} LIMIT {lim}"
+            sql_mysql = f"SELECT * FROM `{tbl}` LIMIT {lim} OFFSET {off}"
+            sql_pg = f'SELECT * FROM "{tbl}" LIMIT {lim} OFFSET {off}'
+            sql_lite = f"SELECT * FROM {tbl} LIMIT {lim} OFFSET {off}"
+            cnt_mysql = f"SELECT COUNT(*) AS __c FROM `{tbl}`"
+            cnt_pg = f'SELECT COUNT(*) AS __c FROM "{tbl}"'
+            cnt_lite = f"SELECT COUNT(*) AS __c FROM {tbl}"
         if _is_mysql_family(engine):
-            return db_readonly_service.run_mysql_readonly(
+            res = db_readonly_service.run_mysql_readonly(
                 conn.get("host") or "127.0.0.1",
                 int(conn.get("port") or 3306),
                 user,
@@ -346,8 +362,18 @@ async def table_preview(body: DbTablePreviewRequest):
                 sql_mysql,
                 lim,
             )
+            if body.include_total:
+                res["total"] = int(db_readonly_service.mysql_scalar(
+                    conn.get("host") or "127.0.0.1",
+                    int(conn.get("port") or 3306),
+                    user,
+                    pwd,
+                    dbname,
+                    cnt_mysql,
+                ) or 0)
+            return res
         if engine == "postgres":
-            return db_readonly_service.run_postgres_readonly(
+            res = db_readonly_service.run_postgres_readonly(
                 conn.get("host") or "127.0.0.1",
                 int(conn.get("port") or 5432),
                 user,
@@ -356,9 +382,22 @@ async def table_preview(body: DbTablePreviewRequest):
                 sql_pg,
                 lim,
             )
+            if body.include_total:
+                res["total"] = int(db_readonly_service.postgres_scalar(
+                    conn.get("host") or "127.0.0.1",
+                    int(conn.get("port") or 5432),
+                    user,
+                    pwd,
+                    dbname or "postgres",
+                    cnt_pg,
+                ) or 0)
+            return res
         if engine == "sqlite":
             path = conn.get("sqlite_path") or ""
-            return db_readonly_service.run_sqlite_readonly(path, sql_lite, lim)
+            res = db_readonly_service.run_sqlite_readonly(path, sql_lite, lim)
+            if body.include_total:
+                res["total"] = int(db_readonly_service.sqlite_scalar(path, cnt_lite) or 0)
+            return res
         raise HTTPException(400, "未知引擎")
     except HTTPException:
         raise

@@ -87,7 +87,10 @@ class DbTablePreviewRequest(BaseModel):
     connection_id: str
     database: str | None = None
     table: str
-    limit: int = 100
+    limit: int = 1000
+    offset: int = 0
+    """为 True 时在响应中包含 total（精确 COUNT），仅建议在首页请求以降低开销"""
+    include_total: bool = False
     pk_filter_column: str | None = None
     pk_filter_value: str | None = None
 

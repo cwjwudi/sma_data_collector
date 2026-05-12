@@ -61,11 +61,14 @@
           <section class="rb-sec rb-preview-sec">
             <h4>数据预览</h4>
             <div class="rb-preview-toolbar">
-              <label class="muted rb-preview-label">行数上限</label>
-              <select v-model.number="previewLimit" class="rb-preview-select" @change="loadPreview">
-                <option v-for="n in previewRowChoices" :key="n" :value="n">{{ n }}</option>
-              </select>
-              <button type="button" class="btn sm" @click="loadPreview">按上限加载</button>
+              <button type="button" class="btn sm" :disabled="previewPage <= 1 || !selectedTable" @click="previewRbPrev">
+                上一页
+              </button>
+              <span class="muted rb-preview-label"
+                >第 {{ previewPage }} 页 · 每页 {{ PAGE_SIZE }} 行<span v-if="previewTotal != null"> · 共 {{ previewTotal }} 行</span></span
+              >
+              <button type="button" class="btn sm" :disabled="!canPreviewRbNext" @click="previewRbNext">下一页</button>
+              <button type="button" class="btn sm" @click="loadPreview({ resetPage: true })">刷新（首页）</button>
             </div>
             <DataGrid
               fill-height
@@ -151,9 +154,9 @@ const previewRows = ref([])
 const previewStatus = ref('')
 const previewFilters = ref({ column: '', value: '' })
 
-const PREVIEW_ROW_CAP = 50000
-const previewRowChoices = [100, 500, 1000, 2000, 5000, 10000, 25000, 50000]
-const previewLimit = ref(100)
+const PAGE_SIZE = 1000
+const previewPage = ref(1)
+const previewTotal = ref(null)
 
 const pendingFkNavigate = ref(null)
 
@@ -241,6 +244,15 @@ const previewFkHints = computed(() => {
   return m
 })
 
+const canPreviewRbNext = computed(() => {
+  if (!selectedTable.value) return false
+  if (previewRows.value.length < PAGE_SIZE) return false
+  if (previewTotal.value != null) {
+    return previewPage.value * PAGE_SIZE < previewTotal.value
+  }
+  return true
+})
+
 const edgePairLabel = computed(() => {
   const e = selectedEdge.value
   if (!e) return ''
@@ -286,14 +298,17 @@ watch(displayNames, (names) => {
   if (changed) positions.value = pos
 })
 
-watch(selectedTable, async (tbl) => {
+watch(selectedTable, async (tbl, prev) => {
   if (!tbl) {
     previewCols.value = []
     previewRows.value = []
     previewStatus.value = ''
+    previewPage.value = 1
+    previewTotal.value = null
     return
   }
   const pend = pendingFkNavigate.value
+  const resetPage = tbl !== prev || Boolean(pend && pend.targetTable === tbl)
   pendingFkNavigate.value = null
   if (pend && pend.targetTable === tbl) {
     previewFilters.value = { column: pend.targetColumn, value: pend.value }
@@ -317,7 +332,7 @@ watch(selectedTable, async (tbl) => {
     colsLoading.value = false
   }
   await loadMeta(tbl)
-  await loadPreview()
+  await loadPreview({ resetPage })
 })
 
 async function loadMeta(tbl) {
@@ -385,35 +400,54 @@ function onCardClick(name) {
   selectedTable.value = name
 }
 
-async function loadPreview() {
+async function loadPreview(opts = { resetPage: false }) {
   const tbl = selectedTable.value
   if (!tbl || !props.connectionId) return
+  if (opts.resetPage) {
+    previewPage.value = 1
+    previewTotal.value = null
+  }
   previewStatus.value = '加载中…'
   try {
-    const lim = Math.min(PREVIEW_ROW_CAP, Math.max(1, Math.floor(Number(previewLimit.value) || 100)))
-    previewLimit.value = lim
     const body = {
       connection_id: props.connectionId,
       database: props.database || undefined,
       table: tbl,
-      limit: lim,
+      limit: PAGE_SIZE,
+      offset: (previewPage.value - 1) * PAGE_SIZE,
+      include_total: previewPage.value === 1,
     }
     if (previewFilters.value.column && previewFilters.value.value !== '') {
       body.pk_filter_column = previewFilters.value.column
       body.pk_filter_value = String(previewFilters.value.value)
     }
     const data = await apiFetch('/database/table/preview', { method: 'POST', body })
-    previewCols.value = data.columns || []
+    if (data.columns?.length) previewCols.value = data.columns
     previewRows.value = data.rows || []
+    if (data.total != null) previewTotal.value = data.total
     const n = previewRows.value.length
-    previewStatus.value = `已加载 ${n} 行（请求上限 ${lim}）${
-      n >= lim && lim >= PREVIEW_ROW_CAP ? `；已达服务端上限 ${PREVIEW_ROW_CAP}` : n >= lim ? '；可提高上限后点「按上限加载」' : ''
-    }`
+    const start = (previewPage.value - 1) * PAGE_SIZE + (n > 0 ? 1 : 0)
+    const end = (previewPage.value - 1) * PAGE_SIZE + n
+    previewStatus.value =
+      n > 0
+        ? `第 ${previewPage.value} 页，显示 ${start}–${end} 行${previewTotal.value != null ? `（共 ${previewTotal.value} 行）` : ''}`
+        : `第 ${previewPage.value} 页，本页无数据`
   } catch (e) {
     previewCols.value = []
     previewRows.value = []
     previewStatus.value = e.message || String(e)
   }
+}
+
+function previewRbPrev() {
+  if (previewPage.value <= 1) return
+  previewPage.value--
+  loadPreview({ resetPage: false })
+}
+
+function previewRbNext() {
+  previewPage.value++
+  loadPreview({ resetPage: false })
 }
 
 function onPreviewCellNavigate({ column, value }) {
@@ -833,13 +867,6 @@ watch(
 }
 .rb-preview-label {
   font-size: 11px;
-}
-.rb-preview-select {
-  font-size: 11px;
-  padding: 4px 8px;
-  border-radius: 6px;
-  border: 1px solid #d1d5db;
-  background: #fff;
 }
 .rb-preview-sec {
   flex: 1;

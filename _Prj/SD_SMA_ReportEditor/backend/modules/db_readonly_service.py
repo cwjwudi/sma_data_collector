@@ -116,6 +116,71 @@ def run_sqlite_readonly(path: str, sql: str, limit: int) -> dict[str, Any]:
         conn.close()
 
 
+def mysql_scalar(host: str, port: int, user: str, password: str, database: str, sql: str) -> Any:
+    import pymysql
+
+    sql_v = validate_readonly_sql(sql)
+    conn = pymysql.connect(
+        host=host,
+        port=port,
+        user=user,
+        password=password,
+        database=database or None,
+        charset="utf8mb4",
+        cursorclass=pymysql.cursors.DictCursor,
+        connect_timeout=10,
+        read_timeout=120,
+    )
+    try:
+        with conn.cursor() as cur:
+            cur.execute(sql_v)
+            row = cur.fetchone()
+            if not row:
+                return 0
+            return next(iter(row.values()))
+    finally:
+        conn.close()
+
+
+def postgres_scalar(host: str, port: int, user: str, password: str, database: str, sql: str) -> Any:
+    import psycopg2
+    import psycopg2.extras
+
+    sql_v = validate_readonly_sql(sql)
+    conn = psycopg2.connect(
+        host=host,
+        port=port,
+        user=user,
+        password=password,
+        dbname=database or "postgres",
+        connect_timeout=10,
+    )
+    try:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(sql_v)
+            row = cur.fetchone()
+            if not row:
+                return 0
+            return next(iter(dict(row).values()))
+    finally:
+        conn.close()
+
+
+def sqlite_scalar(path: str, sql: str) -> Any:
+    sql_v = validate_readonly_sql(sql)
+    uri = f"file:{path}?mode=ro"
+    conn = sqlite3.connect(uri, uri=True, timeout=10)
+    conn.row_factory = sqlite3.Row
+    try:
+        cur = conn.execute(sql_v)
+        row = cur.fetchone()
+        if not row:
+            return 0
+        return row[0]
+    finally:
+        conn.close()
+
+
 def mongo_list_databases(uri_host_vars: dict[str, Any]) -> list[str]:
     from pymongo import MongoClient
 
@@ -144,6 +209,8 @@ def mongo_find_sample(
     database: str,
     collection: str,
     limit: int,
+    offset: int = 0,
+    include_total: bool = False,
 ) -> dict[str, Any]:
     from pymongo import MongoClient
 
@@ -152,12 +219,18 @@ def mongo_find_sample(
     try:
         db = client[database]
         col = db[collection]
-        docs = list(col.find({}, limit=limit))
+        off = max(0, int(offset))
+        lim = max(1, int(limit))
+        cur = col.find({}).skip(off).limit(lim)
+        docs = list(cur)
         for d in docs:
             if "_id" in d:
                 d["_id"] = str(d["_id"])
         cols = sorted({k for d in docs for k in d.keys()}) if docs else []
-        return {"columns": cols, "rows": docs}
+        out: dict[str, Any] = {"columns": cols, "rows": docs}
+        if include_total:
+            out["total"] = col.count_documents({})
+        return out
     finally:
         client.close()
 
