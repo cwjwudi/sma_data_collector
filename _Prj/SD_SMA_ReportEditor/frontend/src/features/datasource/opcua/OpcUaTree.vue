@@ -52,6 +52,8 @@ defineOptions({ name: 'OpcUaTree' })
 
 const props = defineProps({
   nodes: { type: Array, default: () => [] },
+  /** 与 shallowRef 树配合：原地改节点后父组件递增，避免 rows 计算属性用缓存 */
+  treeRev: { type: Number, default: 0 },
   /** 最近一次浏览是否可能因 80 条上限被截断 */
   truncationHint: { type: String, default: '' },
 })
@@ -87,6 +89,7 @@ function buildRows(nodes, depth, out, idGen) {
 }
 
 const rows = computed(() => {
+  void props.treeRev
   const out = []
   buildRows(props.nodes, 0, out, { i: 0 })
   return out

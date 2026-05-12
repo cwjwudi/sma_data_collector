@@ -42,6 +42,7 @@
           <div class="tree-wrap">
             <OpcUaTree
               :nodes="treeNodes"
+              :tree-rev="treeRev"
               :truncation-hint="truncationHint"
               @toggle="onToggleNode"
               @pick="pickNode"
@@ -52,6 +53,14 @@
               <div class="detail-line">
                 <strong>节点</strong>
                 <span class="detail-nid mono">{{ pickedNode.node_id }}</span>
+              </div>
+              <div v-if="pickedNode.node_id" class="copy-block">
+                <div class="copy-block-head">
+                  <span>连接与 NodeId（可复制到其他 OPC UA 客户端）</span>
+                  <button type="button" class="btn sm" @click="copyConnectionInfo">复制全部</button>
+                </div>
+                <pre class="copy-pre mono">{{ connectionInfoText }}</pre>
+                <p v-if="copyFeedback" class="copy-feedback">{{ copyFeedback }}</p>
               </div>
               <button type="button" class="btn sm" @click="readValue">读取数值</button>
               <pre v-if="readOut" class="pre">{{ readOut }}</pre>
@@ -65,7 +74,7 @@
 </template>
 
 <script setup>
-import { onMounted, reactive, ref, shallowRef, triggerRef } from 'vue'
+import { computed, onMounted, reactive, ref, shallowRef, triggerRef } from 'vue'
 import { apiFetch } from '@/api/client.js'
 import OpcUaTree from './OpcUaTree.vue'
 
@@ -82,9 +91,16 @@ const form = reactive({
 })
 const msg = ref('')
 const treeNodes = shallowRef([])
+const treeRev = ref(0)
 const pickedNode = ref(null)
 const readOut = ref('')
 const truncationHint = ref('')
+const copyFeedback = ref('')
+
+function bumpTree() {
+  treeRev.value += 1
+  triggerRef(treeNodes)
+}
 
 function wrapOpcNode(raw) {
   return {
@@ -94,6 +110,57 @@ function wrapOpcNode(raw) {
     loading: false,
     loaded: false,
     errorMessage: null,
+  }
+}
+
+const activeServer = computed(() => servers.value.find((s) => s.id === form.id) || null)
+
+const connectionInfoText = computed(() => {
+  const n = pickedNode.value
+  if (!n?.node_id) return ''
+  const ep = (form.endpoint_url || '').trim()
+  const srv = activeServer.value
+  const meta = {
+    opcua_endpoint_url: ep || null,
+    node_id: n.node_id,
+    browse_name: n.browse_name || null,
+    display_name: n.display_name || null,
+    node_class: n.node_class || null,
+    security_policy: srv?.security_policy ?? null,
+    message_security_mode: srv?.message_security_mode ?? null,
+    username: form.username || null,
+    connection_name: form.name || srv?.name || null,
+  }
+  const json = JSON.stringify(meta, null, 2)
+  const tabLine = ep ? `${ep}\t${n.node_id}` : n.node_id
+  return [
+    '--- 快速粘贴（Endpoint<TAB>NodeId）---',
+    tabLine,
+    '',
+    '--- 可读行 ---',
+    `Endpoint:\t${ep || '（未填写）'}`,
+    `NodeId:\t${n.node_id}`,
+    `BrowseName:\t${n.browse_name || '—'}`,
+    `DisplayName:\t${n.display_name || '—'}`,
+    `NodeClass:\t${n.node_class || '—'}`,
+    '',
+    '--- JSON（程序化对接）---',
+    json,
+  ].join('\n')
+})
+
+async function copyConnectionInfo() {
+  const text = connectionInfoText.value
+  if (!text) return
+  copyFeedback.value = ''
+  try {
+    await navigator.clipboard.writeText(text)
+    copyFeedback.value = '已复制到剪贴板'
+    setTimeout(() => {
+      copyFeedback.value = ''
+    }, 2500)
+  } catch (e) {
+    msg.value = `复制失败：${e.message || String(e)}`
   }
 }
 
@@ -182,11 +249,18 @@ async function refreshRoot() {
   truncationHint.value = ''
   try {
     const res = await apiFetch(`/opcua/browse_saved/${form.id}`, { method: 'POST', body: {} })
+    if (res.ok === false) {
+      msg.value = res.message || '浏览失败'
+      treeNodes.value = []
+      bumpTree()
+      return
+    }
     const list = res.nodes || []
     treeNodes.value = list.map((n) => wrapOpcNode(n))
     if (list.length >= BROWSE_PAGE_LIMIT) {
       truncationHint.value = `根层级仅显示前 ${BROWSE_PAGE_LIMIT} 个子节点（服务器可能还有更多）。`
     }
+    bumpTree()
   } catch (e) {
     msg.value = e.message || String(e)
   }
@@ -196,17 +270,22 @@ async function onToggleNode(node) {
   if (!form.id || !node.node_id || node.loading) return
   if (node.loaded) {
     node.expanded = !node.expanded
-    triggerRef(treeNodes)
+    bumpTree()
     return
   }
   node.loading = true
   node.errorMessage = null
-  triggerRef(treeNodes)
+  bumpTree()
   try {
     const res = await apiFetch(`/opcua/browse_saved/${form.id}`, {
       method: 'POST',
       body: { node_id: node.node_id },
     })
+    if (res.ok === false) {
+      node.errorMessage = res.message || '浏览失败'
+      msg.value = node.errorMessage
+      return
+    }
     const list = res.nodes || []
     node.children = list.map((n) => wrapOpcNode(n))
     node.loaded = true
@@ -219,7 +298,7 @@ async function onToggleNode(node) {
     msg.value = node.errorMessage
   } finally {
     node.loading = false
-    triggerRef(treeNodes)
+    bumpTree()
   }
 }
 
@@ -332,9 +411,11 @@ onMounted(loadServers)
   background: #fafafa;
 }
 .detail-wrap {
-  width: 280px;
+  flex: 0 1 400px;
+  width: min(400px, 42vw);
+  min-width: 260px;
+  max-width: 100%;
   flex-shrink: 0;
-  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -415,6 +496,41 @@ label {
 .detail {
   font-size: 13px;
   padding: 8px 0;
+}
+.copy-block {
+  margin-bottom: 10px;
+  padding: 8px;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+}
+.copy-block-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 6px;
+  font-size: 11px;
+  color: #4b5563;
+  line-height: 1.4;
+}
+.copy-pre {
+  margin: 0;
+  padding: 8px;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: min(320px, 45vh);
+  overflow: auto;
+}
+.copy-feedback {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: #059669;
 }
 .pre {
   background: #111827;
