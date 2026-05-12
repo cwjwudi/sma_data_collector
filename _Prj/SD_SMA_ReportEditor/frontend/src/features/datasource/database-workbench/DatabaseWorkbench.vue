@@ -345,9 +345,12 @@ reloadConnections()
 }
 .main {
   display: grid;
-  grid-template-columns: minmax(260px, 280px) 220px 1fr;
-  gap: 12px;
-  align-items: start;
+  grid-template-columns: minmax(240px, 300px) minmax(300px, 400px) minmax(320px, 1fr);
+  gap: 16px;
+  align-items: stretch;
+}
+.main > * {
+  min-height: 0;
 }
 .work {
   border: 1px solid #e5e7eb;
@@ -355,6 +358,8 @@ reloadConnections()
   padding: 12px;
   background: #fff;
   min-height: 420px;
+  display: flex;
+  flex-direction: column;
 }
 .subtabs {
   display: flex;
