@@ -1,8 +1,8 @@
-﻿@echo off
+@echo off
 setlocal
 title SD_SMA_ReportEditor - Stop dev (web)
 
-rem ASCII-only for reliable cmd parsing on all locales.
+rem ASCII-only; save UTF-8 without BOM - BOM breaks @echo off under cmd.exe.
 
 set "ROOT=%~dp0"
 set "ROOT=%ROOT:~0,-1%"
