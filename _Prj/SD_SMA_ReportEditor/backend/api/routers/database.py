@@ -21,6 +21,11 @@ from schemas.common import (
 router = APIRouter(tags=["database"])
 
 
+def _is_mysql_family(engine: str) -> bool:
+    """MariaDB 与 MySQL 协议兼容，复用 PyMySQL 只读路径。"""
+    return (engine or "").lower() in ("mysql", "mariadb")
+
+
 def _safe_sql_table(name: str) -> str:
     if not name or not re.match(r"^[a-zA-Z0-9_]+$", name):
         raise HTTPException(400, "非法表名")
@@ -69,7 +74,7 @@ async def upsert_connection(body: DbConnectionSave):
         default_port = 27017
     entry: dict[str, Any] = {
         "name": body.name,
-        "engine": body.engine,
+        "engine": eng,
         "host": body.host,
         "port": body.port if body.port is not None else default_port,
         "database": body.database,
@@ -117,7 +122,7 @@ async def test_connection(body: DbConnectionSave):
     try:
         engine = body.engine.lower()
         pwd = body.password or ""
-        if engine == "mysql":
+        if _is_mysql_family(engine):
             db_readonly_service.mysql_list_databases(
                 body.host or "127.0.0.1",
                 int(body.port or 3306),
@@ -165,7 +170,7 @@ async def catalog(payload: dict[str, Any]):
     database = payload.get("database")
     user, pwd = _credentials(conn)
     try:
-        if engine == "mysql":
+        if _is_mysql_family(engine):
             host = conn.get("host") or "127.0.0.1"
             port = int(conn.get("port") or 3306)
             if database:
@@ -214,7 +219,7 @@ async def query_sql(body: DbExecuteSqlRequest):
     user, pwd = _credentials(conn)
     lim = max(1, min(body.limit, 2000))
     try:
-        if engine == "mysql":
+        if _is_mysql_family(engine):
             res = db_readonly_service.run_mysql_readonly(
                 conn.get("host") or "127.0.0.1",
                 int(conn.get("port") or 3306),
@@ -292,7 +297,7 @@ async def table_preview(body: DbTablePreviewRequest):
     tbl = _safe_sql_table(tbl_raw)
     sql_mysql = f"SELECT * FROM `{tbl}` LIMIT {lim}"
     sql_pg = f'SELECT * FROM "{tbl}" LIMIT {lim}'
-    if engine == "mysql":
+    if _is_mysql_family(engine):
         return db_readonly_service.run_mysql_readonly(
             conn.get("host") or "127.0.0.1",
             int(conn.get("port") or 3306),
@@ -327,7 +332,7 @@ async def ddl_preview(body: DbDdlPreviewRequest):
     dbname = body.database or conn.get("database") or ""
     tbl = _safe_sql_table(body.table)
     try:
-        if engine == "mysql":
+        if _is_mysql_family(engine):
             text = db_readonly_service.ddl_preview_mysql(
                 conn.get("host") or "127.0.0.1",
                 int(conn.get("port") or 3306),
@@ -361,7 +366,7 @@ async def ddl_preview(body: DbDdlPreviewRequest):
 async def visual_build(body: VisualQueryBuildRequest):
     conn = _conn_by_id(body.connection_id)
     engine = (conn.get("engine") or "").lower()
-    if engine not in ("mysql", "postgres", "sqlite"):
+    if engine not in ("mysql", "mariadb", "postgres", "sqlite"):
         raise HTTPException(400, "可视化构建仅支持 SQL 引擎")
     try:
         sql = db_readonly_service.build_visual_select(
@@ -379,7 +384,7 @@ async def visual_build(body: VisualQueryBuildRequest):
 async def visual_run(body: VisualQueryBuildRequest):
     conn = _conn_by_id(body.connection_id)
     engine = (conn.get("engine") or "").lower()
-    if engine not in ("mysql", "postgres", "sqlite"):
+    if engine not in ("mysql", "mariadb", "postgres", "sqlite"):
         raise HTTPException(400, "可视化构建仅支持 SQL 引擎")
     try:
         sql = db_readonly_service.build_visual_select(

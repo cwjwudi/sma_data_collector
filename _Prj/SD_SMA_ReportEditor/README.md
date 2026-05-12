@@ -1,6 +1,6 @@
 # SD_SMA_ReportEditor
 
-Markdown 报表编辑器桌面软件。支持读取 MySQL/PostgreSQL 数据库与 OPC UA 变量，通过可视化界面配置报表模板，自动生成 Markdown 报表。
+Markdown 报表编辑器桌面软件。支持读取 MySQL/MariaDB、PostgreSQL 数据库与 OPC UA 变量，通过可视化界面配置报表模板，自动生成 Markdown 报表。
 
 ## 技术栈
 

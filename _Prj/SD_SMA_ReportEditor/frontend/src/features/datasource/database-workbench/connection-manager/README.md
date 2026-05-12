@@ -1,1 +1,1 @@
-管理 MySQL / PostgreSQL / SQLite / MongoDB 连接：新建、编辑、删除、测试；密码仅在后端加密存储。
+管理 MySQL / **MariaDB** / PostgreSQL / SQLite / MongoDB 连接：MariaDB 与 MySQL 共用表单字段与后端驱动（PyMySQL）。

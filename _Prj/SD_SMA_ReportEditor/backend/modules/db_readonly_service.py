@@ -53,6 +53,7 @@ def validate_mongo_aggregate(pipeline: list[Any]) -> None:
 
 
 def run_mysql_readonly(host: str, port: int, user: str, password: str, database: str, sql: str, limit: int) -> dict[str, Any]:
+    """只读执行 SQL（MySQL 与 MariaDB 协议兼容，均使用 PyMySQL）。"""
     import pymysql
 
     sql_v = validate_readonly_sql(sql)

@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
-from core.settings import BACKEND_ROOT, CONFIG_FILE, DATA_DIR, DEFAULT_CONFIG, HISTORY_DIR, TEMPLATES_DIRfrom modules import diagnostics_service
+from core.settings import BACKEND_ROOT, CONFIG_FILE, DATA_DIR, DEFAULT_CONFIG, HISTORY_DIR, TEMPLATES_DIR
+from modules import diagnostics_service
 from schemas.common import FixRequest
 
 router = APIRouter(tags=["environment"])

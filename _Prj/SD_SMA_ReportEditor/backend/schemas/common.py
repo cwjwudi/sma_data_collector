@@ -36,7 +36,7 @@ class OpcUaServerSave(BaseModel):
 class DbConnectionSave(BaseModel):
     id: str | None = None
     name: str = ""
-    engine: str  # mysql postgres sqlite mongodb
+    engine: str  # mysql | mariadb | postgres | sqlite | mongodb
     host: str | None = None
     port: int | None = 3306
     database: str | None = None

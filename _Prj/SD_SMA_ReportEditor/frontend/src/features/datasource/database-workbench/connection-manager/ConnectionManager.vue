@@ -21,6 +21,7 @@
       <label>引擎</label>
       <select v-model="draft.engine" class="input">
         <option value="mysql">MySQL</option>
+        <option value="mariadb">MariaDB</option>
         <option value="postgres">PostgreSQL</option>
         <option value="sqlite">SQLite</option>
         <option value="mongodb">MongoDB</option>
