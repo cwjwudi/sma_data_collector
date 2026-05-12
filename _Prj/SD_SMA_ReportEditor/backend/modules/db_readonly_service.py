@@ -245,6 +245,7 @@ def postgres_list_databases(host: str, port: int, user: str, password: str) -> l
         conn.close()
 
 
+def introspect_mysql_tables(host: str, port: int, user: str, password: str, database: str) -> list[dict[str, Any]]:
     import pymysql
 
     conn = pymysql.connect(
