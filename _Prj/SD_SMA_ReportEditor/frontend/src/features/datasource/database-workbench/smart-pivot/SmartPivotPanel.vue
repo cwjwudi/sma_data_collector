@@ -124,6 +124,11 @@ const lastSortKey = ref('')
 const brushIndices = ref([])
 const exportingPng = ref(false)
 
+/** 切换表/连接加载图表时抑制「维度」重载，避免与 loadProfile 末尾 reset 重复请求 */
+const suppressParamReload = ref(false)
+
+let timeRangeReloadTimer = null
+
 const insightLines = computed(() => {
   const p = chartPayload.value
   if (!p) return []
@@ -200,6 +205,92 @@ function addFilter() {
   filterDraft.value = { column: '', value: '' }
 }
 
+/** 从 brush 的 coordRange 推导类目轴上的连续下标 */
+function indicesFromCoordRange(coordRange, xData) {
+  if (!coordRange || !xData.length) return []
+  let lo
+  let hi
+  if (Array.isArray(coordRange[0])) {
+    lo = coordRange[0][0]
+    hi = coordRange[0][1]
+  } else {
+    lo = coordRange[0]
+    hi = coordRange[1]
+  }
+  if (Number.isFinite(lo) && Number.isFinite(hi)) {
+    const n0 = Number(lo)
+    const n1 = Number(hi)
+    const i0 = Math.max(0, Math.min(xData.length - 1, Math.floor(Math.min(n0, n1))))
+    const i1 = Math.max(0, Math.min(xData.length - 1, Math.ceil(Math.max(n0, n1))))
+    if (i0 <= i1) {
+      const out = []
+      for (let i = i0; i <= i1; i++) out.push(i)
+      return out
+    }
+  }
+  const s0 = lo != null && lo !== '' ? String(lo) : ''
+  const s1 = hi != null && hi !== '' ? String(hi) : ''
+  if (s0 || s1) {
+    let i0 = 0
+    let i1 = xData.length - 1
+    if (s0) {
+      const j = xData.findIndex((x) => String(x) >= s0)
+      if (j >= 0) i0 = j
+    }
+    if (s1) {
+      let j = xData.length - 1
+      while (j >= 0 && String(xData[j]) > s1) j -= 1
+      if (j >= 0) i1 = j
+    }
+    if (i0 <= i1) {
+      const out = []
+      for (let i = i0; i <= i1; i++) out.push(i)
+      return out
+    }
+  }
+  return []
+}
+
+function applyBrushFromEvent(ev) {
+  const p = chartPayload.value
+  if (!p) {
+    brushIndices.value = []
+    return
+  }
+  const xData = (p.x_axis || []).map((x) => (x === null || x === undefined ? '' : String(x)))
+
+  const batch = ev?.batch?.[0]
+  const idxSet = new Set()
+
+  const selected = batch?.selected
+  if (Array.isArray(selected)) {
+    for (const s of selected) {
+      const di = s?.dataIndex
+      if (Array.isArray(di)) {
+        for (const i of di) {
+          if (Number.isFinite(i)) idxSet.add(i)
+        }
+      }
+    }
+  }
+
+  if (idxSet.size === 0) {
+    const areas = batch?.areas || ev?.areas || []
+    for (const area of areas) {
+      const cr = area?.coordRange
+      if (!cr) continue
+      for (const i of indicesFromCoordRange(cr, xData)) idxSet.add(i)
+    }
+  }
+
+  if (idxSet.size === 0) {
+    brushIndices.value = []
+    return
+  }
+
+  brushIndices.value = Array.from(idxSet).sort((a, b) => a - b)
+}
+
 async function loadProfile() {
   profile.value = null
   chartPayload.value = null
@@ -270,15 +361,15 @@ function renderChart() {
 
   chartInstance = echarts.init(el, null, { renderer: 'canvas' })
   const xData = (p.x_axis || []).map((x) => (x === null || x === undefined ? '' : String(x)))
+  const isBar = p.chart_kind === 'bar'
 
   const series = (p.series || []).map((s) => ({
     name: s.name,
-    type: p.chart_kind === 'bar' ? 'bar' : 'line',
+    type: isBar ? 'bar' : 'line',
     data: s.data || [],
     smooth: true,
     showSymbol: xData.length < 80,
-    large: xData.length > 800,
-    largeThreshold: 600,
+    ...(isBar && xData.length > 800 ? { large: true, largeThreshold: 600 } : {}),
   }))
 
   const markMetric = (p.series && p.series[0] && p.series[0].name) || ''
@@ -323,11 +414,9 @@ function renderChart() {
 
   chartInstance.setOption(option)
   chartInstance.off('brushSelected')
-  chartInstance.on('brushSelected', (ev) => {
-    const batch = ev.batch && ev.batch[0]
-    const sel = batch && batch.selected && batch.selected[0]
-    brushIndices.value = (sel && sel.dataIndex) || []
-  })
+  chartInstance.off('brushEnd')
+  chartInstance.on('brushSelected', applyBrushFromEvent)
+  chartInstance.on('brushEnd', applyBrushFromEvent)
 
   window.removeEventListener('resize', onResize)
   window.addEventListener('resize', onResize)
@@ -435,14 +524,39 @@ watch(
     drillCols.value = []
     drillRows.value = []
     drillStatus.value = ''
-    loadProfile().then(() => loadSeries())
+    suppressParamReload.value = true
+    loadProfile()
+      .then(() => loadSeries())
+      .finally(() => {
+        suppressParamReload.value = false
+      })
   },
   { immediate: true },
 )
 
+watch([timeColumn, categoryColumn, sampleLimit], () => {
+  if (suppressParamReload.value) return
+  if (!props.connectionId || !props.tableName || isMongo.value || !profile.value) return
+  loadSeries()
+})
+
+watch([timeStart, timeEnd], () => {
+  if (suppressParamReload.value) return
+  if (!props.connectionId || !props.tableName || isMongo.value || !profile.value) return
+  const tsMode = profile.value.mode === 'timeseries' || timeColumn.value
+  if (!tsMode) return
+  if (timeRangeReloadTimer != null) clearTimeout(timeRangeReloadTimer)
+  timeRangeReloadTimer = setTimeout(() => {
+    timeRangeReloadTimer = null
+    if (suppressParamReload.value) return
+    loadSeries()
+  }, 300)
+})
+
 onUnmounted(() => {
   window.removeEventListener('resize', onResize)
   disposeChart()
+  if (timeRangeReloadTimer != null) clearTimeout(timeRangeReloadTimer)
 })
 </script>
 
