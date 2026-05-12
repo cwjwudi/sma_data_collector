@@ -91,6 +91,8 @@ const treeNodes = shallowRef([])
 const treeRev = ref(0)
 const pickedNode = ref(null)
 const readOut = ref('')
+/** 选中节点切换时递增，丢弃过期的读值请求 */
+const readEpoch = ref(0)
 /** 浏览结果刷新后递增，作废进行中的 Variable 预读请求 */
 const prefetchGen = ref(0)
 
