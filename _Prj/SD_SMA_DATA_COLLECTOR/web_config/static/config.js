@@ -910,7 +910,7 @@ function renderDatabase() {
   const db = currentConfig.database;
   const groupOptions = getGroupNameOptions();
   panel.innerHTML = "";
-  appendHeaders(panel, ["数据库类型", "数据库名", "主机", "端口", ""]);
+  appendHeaders(panel, ["数据库类型", "数据库名", "主机", "端口"]);
   panel.appendChild(
     createRow([
       createSelect(
@@ -926,7 +926,7 @@ function renderDatabase() {
       createInput(db.port || 3306, (v) => (db.port = Number(v) || 3306), "number"),
     ])
   );
-  appendHeaders(panel, ["用户名", "密码", "数据组(data_groups)", "", ""]);
+  appendHeaders(panel, ["用户名", "密码", "数据组(data_groups)"]);
   panel.appendChild(
     createRow([
       createInput(db.username || "", (v) => (db.username = v)),
@@ -942,7 +942,7 @@ function renderLogging() {
   const panel = document.getElementById("tab-logging");
   const logging = currentConfig.logging;
   panel.innerHTML = "";
-  appendHeaders(panel, ["级别(level)", "目录(output_dir)", "保留天数", "", ""]);
+  appendHeaders(panel, ["级别(level)", "目录(output_dir)", "保留天数"]);
   panel.appendChild(
     createRow([
       createSelect(
@@ -960,7 +960,7 @@ function renderLogging() {
       createInput(logging.backup_days || 14, (v) => (logging.backup_days = Number(v) || 14), "number"),
     ])
   );
-  appendHeaders(panel, ["轮转周期(rotation_when)", "轮转间隔", "控制台输出", "", ""]);
+  appendHeaders(panel, ["轮转周期(rotation_when)", "轮转间隔", "控制台输出"]);
   panel.appendChild(
     createRow([
       createSelect(
