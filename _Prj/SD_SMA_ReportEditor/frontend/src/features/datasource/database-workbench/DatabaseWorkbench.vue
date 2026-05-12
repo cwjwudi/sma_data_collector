@@ -42,7 +42,23 @@
           <button :class="{ on: sub === 'visual' }" type="button" @click="sub = 'visual'">关系浏览器</button>
           <button :class="{ on: sub === 'er' }" type="button" @click="sub = 'er'">ER 图</button>
         </div>
-        <div v-if="sub === 'data'" class="work-tab-grow">
+        <div v-if="sub === 'data'" class="work-tab-grow data-tab-panel">
+          <div class="preview-toolbar">
+            <template v-if="activeEngine !== 'mongodb'">
+              <span class="preview-toolbar-label">预览行数上限</span>
+              <select v-model.number="previewSqlLimit" class="preview-limit-select" @change="previewTable">
+                <option v-for="n in previewRowChoices" :key="n" :value="n">{{ n }}</option>
+              </select>
+              <button type="button" class="btn sm" @click="previewTable">按上限加载</button>
+            </template>
+            <template v-else>
+              <span class="preview-toolbar-label">文档预览条数</span>
+              <select v-model.number="mongoPreviewLimit" class="preview-limit-select" @change="previewMongo">
+                <option v-for="n in previewRowChoices" :key="'m' + n" :value="n">{{ n }}</option>
+              </select>
+              <button type="button" class="btn sm" @click="previewMongo">按上限加载</button>
+            </template>
+          </div>
           <DataGrid fill-height :columns="gridCols" :rows="gridRows" :status="gridStatus" />
         </div>
         <div v-else-if="sub === 'query'" class="work-tab-grow">
@@ -124,6 +140,24 @@ const sub = ref('data')
 const gridCols = ref([])
 const gridRows = ref([])
 const gridStatus = ref('')
+
+const PREVIEW_ROW_CAP = 2000
+/** 与后端 `/database/table/preview` clamp 一致 */
+const previewRowChoices = [100, 200, 500, 1000, 1500, 2000]
+
+const previewSqlLimit = ref(100)
+const mongoPreviewLimit = ref(100)
+
+function formatPreviewStatus(loaded, requested, unit = '行') {
+  const req = Math.min(PREVIEW_ROW_CAP, Math.max(1, requested || 100))
+  let s = `已加载 ${loaded} ${unit}（本次请求上限 ${req}）`
+  if (loaded >= req && req >= PREVIEW_ROW_CAP) {
+    s += `；已达服务端预览上限 ${PREVIEW_ROW_CAP}`
+  } else if (loaded >= req) {
+    s += '；若仍少于表中总行数，可提高上限后点「按上限加载」'
+  }
+  return s
+}
 
 const ddlText = ref('')
 const ddlLoading = ref(false)
@@ -211,8 +245,9 @@ async function loadCatalog() {
       activeTable.value = catalog.value.tables[0].name
       await previewTable()
     }
-    if (catalog.value.collections?.length && sub.value === 'data') {
+    if (catalog.value.collections?.length && sub.value === 'data' && activeEngine.value === 'mongodb') {
       activeCollection.value = catalog.value.collections[0]
+      await previewMongo()
     }
   } catch (e) {
     gridStatus.value = e.message || String(e)
@@ -250,16 +285,18 @@ async function onPickCollection(c) {
 async function previewTable() {
   gridStatus.value = '加载中…'
   try {
+    const lim = Math.min(PREVIEW_ROW_CAP, Math.max(1, Math.floor(Number(previewSqlLimit.value) || 100)))
+    previewSqlLimit.value = lim
     const body = {
       connection_id: activeConnId.value,
       database: activeDatabase.value || undefined,
       table: activeTable.value,
-      limit: 100,
+      limit: lim,
     }
     const data = await apiFetch('/database/table/preview', { method: 'POST', body })
     gridCols.value = data.columns || []
     gridRows.value = data.rows || []
-    gridStatus.value = `共 ${gridRows.value.length} 行（最多预览 100）`
+    gridStatus.value = formatPreviewStatus(gridRows.value.length, lim)
   } catch (e) {
     gridCols.value = []
     gridRows.value = []
@@ -270,16 +307,18 @@ async function previewTable() {
 async function previewMongo() {
   gridStatus.value = '加载中…'
   try {
+    const lim = Math.min(PREVIEW_ROW_CAP, Math.max(1, Math.floor(Number(mongoPreviewLimit.value) || 100)))
+    mongoPreviewLimit.value = lim
     const body = {
       connection_id: activeConnId.value,
       database: activeDatabase.value,
       table: activeCollection.value,
-      limit: 50,
+      limit: lim,
     }
     const data = await apiFetch('/database/table/preview', { method: 'POST', body })
     gridCols.value = data.columns || []
     gridRows.value = data.rows || []
-    gridStatus.value = `文档预览 ${gridRows.value.length} 条`
+    gridStatus.value = formatPreviewStatus(gridRows.value.length, lim, '条')
   } catch (e) {
     gridCols.value = []
     gridRows.value = []
@@ -437,6 +476,27 @@ reloadConnections()
   min-height: 0;
   display: flex;
   flex-direction: column;
+}
+.data-tab-panel {
+  gap: 8px;
+}
+.preview-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.preview-toolbar-label {
+  font-size: 12px;
+  color: #6b7280;
+}
+.preview-limit-select {
+  font-size: 12px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid #d1d5db;
+  background: #fff;
 }
 .subtabs {
   display: flex;

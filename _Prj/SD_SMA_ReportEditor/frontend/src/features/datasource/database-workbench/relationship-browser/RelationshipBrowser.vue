@@ -59,7 +59,14 @@
             </div>
           </section>
           <section class="rb-sec rb-preview-sec">
-            <h4>数据预览（最多 100 行）</h4>
+            <h4>数据预览</h4>
+            <div class="rb-preview-toolbar">
+              <label class="muted rb-preview-label">行数上限</label>
+              <select v-model.number="previewLimit" class="rb-preview-select" @change="loadPreview">
+                <option v-for="n in previewRowChoices" :key="n" :value="n">{{ n }}</option>
+              </select>
+              <button type="button" class="btn sm" @click="loadPreview">按上限加载</button>
+            </div>
             <DataGrid
               fill-height
               :columns="previewCols"
@@ -143,6 +150,10 @@ const previewCols = ref([])
 const previewRows = ref([])
 const previewStatus = ref('')
 const previewFilters = ref({ column: '', value: '' })
+
+const PREVIEW_ROW_CAP = 2000
+const previewRowChoices = [100, 200, 500, 1000, 1500, 2000]
+const previewLimit = ref(100)
 
 const pendingFkNavigate = ref(null)
 
@@ -379,11 +390,13 @@ async function loadPreview() {
   if (!tbl || !props.connectionId) return
   previewStatus.value = '加载中…'
   try {
+    const lim = Math.min(PREVIEW_ROW_CAP, Math.max(1, Math.floor(Number(previewLimit.value) || 100)))
+    previewLimit.value = lim
     const body = {
       connection_id: props.connectionId,
       database: props.database || undefined,
       table: tbl,
-      limit: 100,
+      limit: lim,
     }
     if (previewFilters.value.column && previewFilters.value.value !== '') {
       body.pk_filter_column = previewFilters.value.column
@@ -392,7 +405,10 @@ async function loadPreview() {
     const data = await apiFetch('/database/table/preview', { method: 'POST', body })
     previewCols.value = data.columns || []
     previewRows.value = data.rows || []
-    previewStatus.value = `${previewRows.value.length} 行`
+    const n = previewRows.value.length
+    previewStatus.value = `已加载 ${n} 行（请求上限 ${lim}）${
+      n >= lim && lim >= PREVIEW_ROW_CAP ? `；已达服务端上限 ${PREVIEW_ROW_CAP}` : n >= lim ? '；可提高上限后点「按上限加载」' : ''
+    }`
   } catch (e) {
     previewCols.value = []
     previewRows.value = []
@@ -806,6 +822,24 @@ watch(
 .fk-ref {
   color: #4f46e5;
   font-size: 10px;
+}
+.rb-preview-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  flex-shrink: 0;
+}
+.rb-preview-label {
+  font-size: 11px;
+}
+.rb-preview-select {
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid #d1d5db;
+  background: #fff;
 }
 .rb-preview-sec {
   flex: 1;

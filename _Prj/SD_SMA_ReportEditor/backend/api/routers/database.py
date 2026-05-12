@@ -311,7 +311,7 @@ async def table_preview(body: DbTablePreviewRequest):
         conn = _conn_by_id(body.connection_id)
         engine = (conn.get("engine") or "").lower()
         user, pwd = _credentials(conn)
-        lim = max(1, min(body.limit, 500))
+        lim = max(1, min(body.limit, 2000))
         dbname = body.database or conn.get("database") or ""
         tbl_raw = body.table
         if engine == "mongodb":
