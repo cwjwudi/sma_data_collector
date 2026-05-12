@@ -122,9 +122,9 @@ const rows = computed(() => {
 }
 .tree-row {
   display: flex;
-  align-items: flex-start;
-  gap: 4px;
-  min-height: 36px;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
   border-radius: 6px;
 }
 .tree-row:hover {
@@ -132,43 +132,54 @@ const rows = computed(() => {
 }
 .row-gutter {
   flex-shrink: 0;
-  width: 22px;
+  width: 44px;
+  min-height: 44px;
   display: flex;
+  align-items: center;
   justify-content: center;
-  padding-top: 6px;
 }
 .chev {
-  width: 22px;
-  height: 22px;
+  box-sizing: border-box;
+  min-width: 44px;
+  min-height: 44px;
+  width: 44px;
+  height: 44px;
   padding: 0;
+  margin: 0;
   border: none;
   background: transparent;
   cursor: pointer;
-  border-radius: 4px;
+  border-radius: 8px;
   color: #4b5563;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 .chev:hover:not(:disabled) {
   background: #e5e7eb;
+}
+.chev:active:not(:disabled) {
+  background: #d1d5db;
 }
 .chev:disabled {
   cursor: wait;
   opacity: 0.7;
 }
 .chev-icon {
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1;
 }
 .chev-spacer {
   display: inline-block;
-  width: 22px;
-  height: 22px;
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
 }
 .loading-dot {
-  width: 8px;
-  height: 8px;
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
   background: #6366f1;
   animation: pulse 0.9s ease-in-out infinite;
@@ -181,15 +192,19 @@ const rows = computed(() => {
 .row-body {
   flex: 1;
   min-width: 0;
+  min-height: 44px;
   text-align: left;
   border: none;
   background: transparent;
   cursor: pointer;
-  padding: 6px 8px 8px 0;
+  padding: 8px 8px 8px 0;
   display: flex;
   flex-direction: column;
+  justify-content: center;
   gap: 2px;
   border-radius: 4px;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 .row-top {
   display: flex;
