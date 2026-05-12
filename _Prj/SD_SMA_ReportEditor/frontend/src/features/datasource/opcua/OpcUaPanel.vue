@@ -38,11 +38,26 @@
           <span>地址空间</span>
           <button type="button" class="btn sm" @click="refreshRoot">刷新根</button>
         </div>
-        <OpcUaTree :nodes="treeNodes" @expand="loadChildren" @pick="pickNode" />
-        <div v-if="pickedNode" class="detail">
-          <div><strong>节点</strong> {{ pickedNode.node_id }}</div>
-          <button type="button" class="btn sm" @click="readValue">读取数值</button>
-          <pre v-if="readOut" class="pre">{{ readOut }}</pre>
+        <div class="browse-body">
+          <div class="tree-wrap">
+            <OpcUaTree
+              :nodes="treeNodes"
+              :truncation-hint="truncationHint"
+              @toggle="onToggleNode"
+              @pick="pickNode"
+            />
+          </div>
+          <div class="detail-wrap">
+            <div v-if="pickedNode" class="detail">
+              <div class="detail-line">
+                <strong>节点</strong>
+                <span class="detail-nid mono">{{ pickedNode.node_id }}</span>
+              </div>
+              <button type="button" class="btn sm" @click="readValue">读取数值</button>
+              <pre v-if="readOut" class="pre">{{ readOut }}</pre>
+            </div>
+            <div v-else class="detail-placeholder">点击树中节点可选中，并在此读取数值</div>
+          </div>
         </div>
       </div>
     </div>
@@ -50,9 +65,11 @@
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { onMounted, reactive, ref, shallowRef, triggerRef } from 'vue'
 import { apiFetch } from '@/api/client.js'
 import OpcUaTree from './OpcUaTree.vue'
+
+const BROWSE_PAGE_LIMIT = 80
 
 const servers = ref([])
 const selected = ref(null)
@@ -64,9 +81,21 @@ const form = reactive({
   password: '',
 })
 const msg = ref('')
-const treeNodes = ref([])
+const treeNodes = shallowRef([])
 const pickedNode = ref(null)
 const readOut = ref('')
+const truncationHint = ref('')
+
+function wrapOpcNode(raw) {
+  return {
+    ...raw,
+    children: [],
+    expanded: false,
+    loading: false,
+    loaded: false,
+    errorMessage: null,
+  }
+}
 
 async function loadServers() {
   const data = await apiFetch('/opcua/servers')
@@ -84,6 +113,7 @@ function selectServer(s) {
   treeNodes.value = []
   pickedNode.value = null
   readOut.value = ''
+  truncationHint.value = ''
   refreshRoot()
 }
 
@@ -96,6 +126,7 @@ function startNew() {
   form.password = ''
   treeNodes.value = []
   pickedNode.value = null
+  truncationHint.value = ''
 }
 
 async function saveServer() {
@@ -148,25 +179,47 @@ async function testDraft() {
 
 async function refreshRoot() {
   if (!form.id) return
+  truncationHint.value = ''
   try {
     const res = await apiFetch(`/opcua/browse_saved/${form.id}`, { method: 'POST', body: {} })
-    treeNodes.value = (res.nodes || []).map((n) => ({ ...n, children: [] }))
+    const list = res.nodes || []
+    treeNodes.value = list.map((n) => wrapOpcNode(n))
+    if (list.length >= BROWSE_PAGE_LIMIT) {
+      truncationHint.value = `根层级仅显示前 ${BROWSE_PAGE_LIMIT} 个子节点（服务器可能还有更多）。`
+    }
   } catch (e) {
     msg.value = e.message || String(e)
   }
 }
 
-async function loadChildren(node) {
-  if (!form.id || !node.node_id) return
+async function onToggleNode(node) {
+  if (!form.id || !node.node_id || node.loading) return
+  if (node.loaded) {
+    node.expanded = !node.expanded
+    triggerRef(treeNodes)
+    return
+  }
+  node.loading = true
+  node.errorMessage = null
+  triggerRef(treeNodes)
   try {
     const res = await apiFetch(`/opcua/browse_saved/${form.id}`, {
       method: 'POST',
       body: { node_id: node.node_id },
     })
-    node.children = (res.nodes || []).map((n) => ({ ...n, children: [] }))
-    treeNodes.value = [...treeNodes.value]
+    const list = res.nodes || []
+    node.children = list.map((n) => wrapOpcNode(n))
+    node.loaded = true
+    node.expanded = true
+    if (list.length >= BROWSE_PAGE_LIMIT) {
+      truncationHint.value = `节点「${node.display_name || node.browse_name || node.node_id}」下仅显示前 ${BROWSE_PAGE_LIMIT} 个子节点。`
+    }
   } catch (e) {
-    msg.value = e.message || String(e)
+    node.errorMessage = e.message || String(e)
+    msg.value = node.errorMessage
+  } finally {
+    node.loading = false
+    triggerRef(treeNodes)
   }
 }
 
@@ -194,12 +247,19 @@ onMounted(loadServers)
 <style scoped>
 .opcua {
   width: 100%;
+  min-width: 0;
 }
 .cols {
   display: grid;
-  grid-template-columns: 200px 280px 1fr;
+  grid-template-columns: 200px minmax(240px, 280px) minmax(0, 1fr);
   gap: 16px;
   min-height: 420px;
+  align-items: stretch;
+}
+.list-pane,
+.form-pane,
+.browse-pane {
+  min-width: 0;
 }
 .list-pane {
   border: 1px solid #e5e7eb;
@@ -241,7 +301,68 @@ onMounted(loadServers)
   border: 1px solid #e5e7eb;
   border-radius: 8px;
   padding: 12px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+}
+.browse-body {
+  display: flex;
+  flex-direction: row;
+  gap: 16px;
+  flex: 1;
+  min-height: 280px;
+  min-width: 0;
+}
+@media (max-width: 1100px) {
+  .browse-body {
+    flex-direction: column;
+  }
+  .tree-wrap {
+    max-height: 45vh;
+  }
+}
+.tree-wrap {
+  flex: 1;
+  min-width: 0;
   overflow: auto;
+  border: 1px solid #f3f4f6;
+  border-radius: 8px;
+  padding: 8px 4px;
+  background: #fafafa;
+}
+.detail-wrap {
+  width: 280px;
+  flex-shrink: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+@media (max-width: 1100px) {
+  .detail-wrap {
+    width: 100%;
+  }
+}
+.detail-placeholder {
+  font-size: 12px;
+  color: #9ca3af;
+  padding: 8px 0;
+}
+.detail-line {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+  font-size: 13px;
+  word-break: break-all;
+}
+.detail-nid {
+  font-size: 11px;
+  color: #4b5563;
+}
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 label {
   font-size: 12px;
@@ -289,10 +410,11 @@ label {
   justify-content: space-between;
   align-items: center;
   margin-bottom: 8px;
+  flex-shrink: 0;
 }
 .detail {
-  margin-top: 12px;
   font-size: 13px;
+  padding: 8px 0;
 }
 .pre {
   background: #111827;
@@ -300,6 +422,8 @@ label {
   padding: 8px;
   border-radius: 6px;
   overflow: auto;
-  max-height: 200px;
+  max-height: min(240px, 40vh);
+  font-size: 12px;
+  margin-top: 8px;
 }
 </style>

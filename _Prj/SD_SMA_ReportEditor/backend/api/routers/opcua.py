@@ -63,6 +63,7 @@ async def upsert_server(body: OpcUaServerSave):
 
 @router.delete("/opcua/servers/{server_id}")
 async def delete_server(server_id: str):
+    await opcua_service.drop_saved_server_pool(server_id)
     cfg = _load_cfg()
     servers = [s for s in cfg.get("opcua_servers", []) if s.get("id") != server_id]
     cfg["opcua_servers"] = servers
@@ -113,7 +114,8 @@ async def browse_saved(server_id: str, payload: dict = Body(default_factory=dict
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
     node_id = (payload or {}).get("node_id")
-    return await opcua_service.browse_children(
+    return await opcua_service.browse_children_for_saved_server(
+        server_id,
         srv.get("endpoint_url", ""),
         node_id,
         srv.get("username"),
@@ -134,7 +136,8 @@ async def read_saved(server_id: str, payload: dict):
     node_id = payload.get("node_id")
     if not node_id:
         raise HTTPException(400, "缺少 node_id")
-    return await opcua_service.read_node_value(
+    return await opcua_service.read_node_value_for_saved_server(
+        server_id,
         srv.get("endpoint_url", ""),
         node_id,
         srv.get("username"),
