@@ -1,4 +1,4 @@
-@echo off
+﻿@echo off
 setlocal
 title SD_SMA_ReportEditor - Start dev (web)
 
@@ -21,12 +21,11 @@ start "SD_SMA_ReportEditor - Backend" "%SystemRoot%\System32\WindowsPowerShell\v
 
 ping 127.0.0.1 -n 3 >nul
 
-echo [2/3] Starting frontend ^(http://localhost:5173^) ...
+echo [2/3] Starting frontend ^(http://127.0.0.1:5173^) ...
 start "SD_SMA_ReportEditor - Frontend" "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%FRONTEND%\scripts\dev_vite.ps1"
 
-echo [3/3] Waiting for Vite, then opening browser ...
-ping 127.0.0.1 -n 6 >nul
-start "" "http://localhost:5173/"
+echo [3/3] Waiting until Vite responds, then opening browser ...
+"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%FRONTEND%\scripts\wait_vite_then_open_browser.ps1"
 
 echo.
 echo Backend and frontend were started in new windows; browser should open.

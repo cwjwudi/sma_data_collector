@@ -11,7 +11,7 @@ if (-not (Test-Path (Join-Path $FrontendRoot 'package.json'))) {
 $env:NO_COLOR = '1'
 $env:FORCE_COLOR = '0'
 
-Write-Host 'SD_SMA_ReportEditor 前端 http://localhost:5173' -ForegroundColor Cyan
+Write-Host 'SD_SMA_ReportEditor 前端 http://127.0.0.1:5173' -ForegroundColor Cyan
 Write-Host '停止：在本窗口按 Ctrl+C。' -ForegroundColor DarkGray
 Write-Host ''
 
