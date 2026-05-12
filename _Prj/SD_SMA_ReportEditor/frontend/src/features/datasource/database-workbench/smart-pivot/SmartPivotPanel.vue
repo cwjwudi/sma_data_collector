@@ -540,6 +540,16 @@ watch([timeColumn, categoryColumn, sampleLimit], () => {
   loadSeries()
 })
 
+watch(
+  selectedMetrics,
+  () => {
+    if (suppressParamReload.value) return
+    if (!props.connectionId || !props.tableName || isMongo.value || !profile.value) return
+    loadSeries()
+  },
+  { deep: true },
+)
+
 watch([timeStart, timeEnd], () => {
   if (suppressParamReload.value) return
   if (!props.connectionId || !props.tableName || isMongo.value || !profile.value) return
