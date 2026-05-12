@@ -15,7 +15,11 @@ from schemas.common import (
     DbDdlPreviewRequest,
     DbExecuteSqlRequest,
     DbMongoAggregateRequest,
+    DbRelationConsistencyRequest,
+    DbRelationOrphanRequest,
+    DbSchemaForeignKeysRequest,
     DbTableColumnsRequest,
+    DbTableMetaRequest,
     DbTablePreviewRequest,
     QuerySessionsSave,
     VisualQueryBuildRequest,
@@ -57,6 +61,20 @@ def _credentials(conn: dict[str, Any]) -> tuple[str, str]:
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
     return conn.get("username") or "", pwd
+
+
+def _sql_literal_filter(val: str) -> str:
+    """WHERE 单行等值过滤：整数/浮点原样，其余按字符串转义。"""
+    s = (val or "").strip()
+    if not s:
+        raise HTTPException(400, "过滤值为空")
+    if len(s) > 512:
+        raise HTTPException(400, "过滤值过长")
+    if re.match(r"^-?\d+$", s):
+        return s
+    if re.match(r"^-?\d+\.\d+([eE][+-]?\d+)?$", s):
+        return s
+    return "'" + s.replace("'", "''") + "'"
 
 
 def _effective_sql_database(conn: dict[str, Any], body_database: str | None, engine: str) -> str:
@@ -308,8 +326,16 @@ async def table_preview(body: DbTablePreviewRequest):
             }
             return db_readonly_service.mongo_find_sample(vars_, dbname, tbl_raw, lim)
         tbl = _safe_sql_table(tbl_raw)
-        sql_mysql = f"SELECT * FROM `{tbl}` LIMIT {lim}"
-        sql_pg = f'SELECT * FROM "{tbl}" LIMIT {lim}'
+        if body.pk_filter_column and body.pk_filter_value is not None:
+            fcol = _safe_sql_table(body.pk_filter_column)
+            lit = _sql_literal_filter(body.pk_filter_value)
+            sql_mysql = f"SELECT * FROM `{tbl}` WHERE `{fcol}` = {lit} LIMIT {lim}"
+            sql_pg = f'SELECT * FROM "{tbl}" WHERE "{fcol}" = {lit} LIMIT {lim}'
+            sql_lite = f"SELECT * FROM {tbl} WHERE {fcol} = {lit} LIMIT {lim}"
+        else:
+            sql_mysql = f"SELECT * FROM `{tbl}` LIMIT {lim}"
+            sql_pg = f'SELECT * FROM "{tbl}" LIMIT {lim}'
+            sql_lite = f"SELECT * FROM {tbl} LIMIT {lim}"
         if _is_mysql_family(engine):
             return db_readonly_service.run_mysql_readonly(
                 conn.get("host") or "127.0.0.1",
@@ -332,7 +358,6 @@ async def table_preview(body: DbTablePreviewRequest):
             )
         if engine == "sqlite":
             path = conn.get("sqlite_path") or ""
-            sql_lite = f"SELECT * FROM {tbl} LIMIT {lim}"
             return db_readonly_service.run_sqlite_readonly(path, sql_lite, lim)
         raise HTTPException(400, "未知引擎")
     except HTTPException:
@@ -417,6 +442,262 @@ async def table_columns(body: DbTableColumnsRequest):
         else:
             raise HTTPException(400, "未知引擎")
         return {"columns": cols}
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    except Exception as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@router.post("/database/schema/foreign_keys")
+async def schema_foreign_keys(body: DbSchemaForeignKeysRequest):
+    conn = _conn_by_id(body.connection_id)
+    engine = (conn.get("engine") or "").lower()
+    user, pwd = _credentials(conn)
+    dbname = body.database or conn.get("database") or ""
+    safe_tables = [_safe_sql_table(t) for t in (body.tables or [])]
+    try:
+        if engine == "mongodb":
+            return {"edges": []}
+        if _is_mysql_family(engine):
+            edges = db_readonly_service.list_mysql_foreign_keys(
+                conn.get("host") or "127.0.0.1",
+                int(conn.get("port") or 3306),
+                user,
+                pwd,
+                dbname,
+            )
+            return {"edges": edges}
+        if engine == "postgres":
+            edges = db_readonly_service.list_postgres_foreign_keys(
+                conn.get("host") or "127.0.0.1",
+                int(conn.get("port") or 5432),
+                user,
+                pwd,
+                dbname or "postgres",
+            )
+            return {"edges": edges}
+        if engine == "sqlite":
+            path = conn.get("sqlite_path") or ""
+            edges = db_readonly_service.list_sqlite_foreign_keys(path, safe_tables if safe_tables else [])
+            return {"edges": edges}
+        raise HTTPException(400, "未知引擎")
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    except Exception as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@router.post("/database/table/columns_extended")
+async def table_columns_extended(body: DbTableColumnsRequest):
+    conn = _conn_by_id(body.connection_id)
+    engine = (conn.get("engine") or "").lower()
+    user, pwd = _credentials(conn)
+    dbname = body.database or conn.get("database") or ""
+    tbl = _safe_sql_table(body.table)
+    try:
+        if engine == "mongodb":
+            raise HTTPException(400, "MongoDB 不适用")
+        if _is_mysql_family(engine):
+            cols = db_readonly_service.list_mysql_columns_extended(
+                conn.get("host") or "127.0.0.1",
+                int(conn.get("port") or 3306),
+                user,
+                pwd,
+                dbname,
+                tbl,
+            )
+        elif engine == "postgres":
+            cols = db_readonly_service.list_pg_columns_extended(
+                conn.get("host") or "127.0.0.1",
+                int(conn.get("port") or 5432),
+                user,
+                pwd,
+                dbname or "postgres",
+                tbl,
+            )
+        elif engine == "sqlite":
+            path = conn.get("sqlite_path") or ""
+            cols = db_readonly_service.list_sqlite_columns_extended(path, tbl)
+        else:
+            raise HTTPException(400, "未知引擎")
+        return {"columns": cols}
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    except Exception as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@router.post("/database/table/meta")
+async def table_meta(body: DbTableMetaRequest):
+    conn = _conn_by_id(body.connection_id)
+    engine = (conn.get("engine") or "").lower()
+    user, pwd = _credentials(conn)
+    dbname = body.database or conn.get("database") or ""
+    tbl = _safe_sql_table(body.table)
+    try:
+        if _is_mysql_family(engine):
+            meta = db_readonly_service.mysql_table_meta(
+                conn.get("host") or "127.0.0.1",
+                int(conn.get("port") or 3306),
+                user,
+                pwd,
+                dbname,
+                tbl,
+            )
+        elif engine == "postgres":
+            meta = db_readonly_service.pg_table_meta(
+                conn.get("host") or "127.0.0.1",
+                int(conn.get("port") or 5432),
+                user,
+                pwd,
+                dbname or "postgres",
+                tbl,
+            )
+        elif engine == "sqlite":
+            path = conn.get("sqlite_path") or ""
+            meta = db_readonly_service.sqlite_table_meta(path, tbl)
+        else:
+            raise HTTPException(400, "未知引擎或不支持")
+        return meta
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    except Exception as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@router.post("/database/visual/count")
+async def visual_count(body: VisualQueryBuildRequest):
+    conn = _conn_by_id(body.connection_id)
+    engine = (conn.get("engine") or "").lower()
+    if engine not in ("mysql", "mariadb", "postgres", "sqlite"):
+        raise HTTPException(400, "仅支持 SQL 引擎")
+    try:
+        sql = db_readonly_service.build_visual_count_sql(body.base_table, body.joins)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    result = await query_sql(
+        DbExecuteSqlRequest(
+            connection_id=body.connection_id,
+            sql=sql,
+            limit=5,
+            database=body.database,
+        )
+    )
+    cnt = None
+    rows = result.get("rows") or []
+    cols = result.get("columns") or []
+    if rows and cols:
+        key = cols[0].lower() if cols else ""
+        row0 = rows[0]
+        if isinstance(row0, dict):
+            for k, v in row0.items():
+                if str(k).lower() in ("cnt", "count"):
+                    cnt = int(v) if v is not None else None
+                    break
+            if cnt is None and key:
+                cnt = int(row0.get(cols[0])) if row0.get(cols[0]) is not None else None
+    return {"sql": sql, "count": cnt}
+
+
+@router.post("/database/relation/orphan_summary")
+async def relation_orphan_summary(body: DbRelationOrphanRequest):
+    conn = _conn_by_id(body.connection_id)
+    engine = (conn.get("engine") or "").lower()
+    user, pwd = _credentials(conn)
+    dbname = body.database or conn.get("database") or ""
+    ct = _safe_sql_table(body.child_table)
+    pt = _safe_sql_table(body.parent_table)
+    child_cols = [_safe_sql_table(c) for c in body.child_columns]
+    parent_cols = [_safe_sql_table(c) for c in body.parent_columns]
+    try:
+        if _is_mysql_family(engine):
+            sql = db_readonly_service.build_orphan_count_sql_mysql(ct, pt, child_cols, parent_cols)
+            res = db_readonly_service.run_mysql_readonly(
+                conn.get("host") or "127.0.0.1",
+                int(conn.get("port") or 3306),
+                user,
+                pwd,
+                dbname,
+                sql,
+                5,
+            )
+        elif engine == "postgres":
+            sql = db_readonly_service.build_orphan_count_sql_postgres(ct, pt, child_cols, parent_cols)
+            res = db_readonly_service.run_postgres_readonly(
+                conn.get("host") or "127.0.0.1",
+                int(conn.get("port") or 5432),
+                user,
+                pwd,
+                dbname or "postgres",
+                sql,
+                5,
+            )
+        elif engine == "sqlite":
+            sql = db_readonly_service.build_orphan_count_sql_sqlite(ct, pt, child_cols, parent_cols)
+            path = conn.get("sqlite_path") or ""
+            res = db_readonly_service.run_sqlite_readonly(path, sql, 5)
+        else:
+            raise HTTPException(400, "未知引擎")
+        orphan_cnt = None
+        rows = res.get("rows") or []
+        if rows:
+            r0 = rows[0]
+            if isinstance(r0, dict):
+                for k, v in r0.items():
+                    if "orphan" in str(k).lower():
+                        orphan_cnt = int(v) if v is not None else None
+                        break
+                if orphan_cnt is None:
+                    orphan_cnt = int(next(iter(r0.values()))) if r0 else None
+        return {"sql": sql, "orphan_count": orphan_cnt}
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    except Exception as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@router.post("/database/relation/consistency")
+async def relation_consistency(body: DbRelationConsistencyRequest):
+    conn = _conn_by_id(body.connection_id)
+    engine = (conn.get("engine") or "").lower()
+    user, pwd = _credentials(conn)
+    dbname = body.database or conn.get("database") or ""
+    try:
+        if _is_mysql_family(engine):
+            return db_readonly_service.fk_column_type_compare_mysql(
+                conn.get("host") or "127.0.0.1",
+                int(conn.get("port") or 3306),
+                user,
+                pwd,
+                dbname,
+                body.child_table,
+                body.child_column,
+                body.parent_table,
+                body.parent_column,
+            )
+        if engine == "postgres":
+            return db_readonly_service.fk_column_type_compare_postgres(
+                conn.get("host") or "127.0.0.1",
+                int(conn.get("port") or 5432),
+                user,
+                pwd,
+                dbname or "postgres",
+                body.child_table,
+                body.child_column,
+                body.parent_table,
+                body.parent_column,
+            )
+        raise HTTPException(400, "当前引擎不支持一致性扫描（MySQL/MariaDB/PostgreSQL）")
     except HTTPException:
         raise
     except ValueError as e:

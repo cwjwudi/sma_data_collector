@@ -10,7 +10,15 @@
         </thead>
         <tbody>
           <tr v-for="(row, idx) in rows" :key="idx">
-            <td v-for="c in columns" :key="c">{{ formatCell(row[c]) }}</td>
+            <td
+              v-for="c in columns"
+              :key="c"
+              :class="{ 'td-link': Boolean(fkHints && fkHints[c]) }"
+              :title="fkHints && fkHints[c] ? `跳转关联：${fkHints[c].targetTable}` : ''"
+              @click="onCellClick(c, row)"
+            >
+              {{ formatCell(row[c]) }}
+            </td>
           </tr>
         </tbody>
       </table>
@@ -19,16 +27,25 @@
 </template>
 
 <script setup>
-defineProps({
+const props = defineProps({
   columns: { type: Array, default: () => [] },
   rows: { type: Array, default: () => [] },
   status: { type: String, default: '' },
+  /** 列名 -> { targetTable, targetColumn } */
+  fkHints: { type: Object, default: null },
 })
+
+const emit = defineEmits(['cell-click'])
 
 function formatCell(v) {
   if (v === null || v === undefined) return ''
   if (typeof v === 'object') return JSON.stringify(v)
   return String(v)
+}
+
+function onCellClick(column, row) {
+  if (!props.fkHints?.[column]) return
+  emit('cell-click', { column, value: row[column], row })
 }
 </script>
 
@@ -52,6 +69,12 @@ td {
   border: 1px solid #e5e7eb;
   padding: 6px 8px;
   white-space: nowrap;
+}
+.td-link {
+  cursor: pointer;
+  color: #2563eb;
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 thead {
   background: #f9fafb;

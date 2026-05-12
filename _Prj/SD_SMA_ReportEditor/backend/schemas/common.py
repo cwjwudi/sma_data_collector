@@ -88,6 +88,8 @@ class DbTablePreviewRequest(BaseModel):
     database: str | None = None
     table: str
     limit: int = 100
+    pk_filter_column: str | None = None
+    pk_filter_value: str | None = None
 
 
 class DbDdlPreviewRequest(BaseModel):
@@ -102,11 +104,41 @@ class DbTableColumnsRequest(BaseModel):
     table: str
 
 
+class DbSchemaForeignKeysRequest(BaseModel):
+    connection_id: str
+    database: str | None = None
+    tables: list[str] = Field(default_factory=list)
+
+
+class DbTableMetaRequest(BaseModel):
+    connection_id: str
+    database: str | None = None
+    table: str
+
+
+class DbRelationOrphanRequest(BaseModel):
+    connection_id: str
+    database: str | None = None
+    child_table: str
+    parent_table: str
+    child_columns: list[str] = Field(default_factory=list)
+    parent_columns: list[str] = Field(default_factory=list)
+
+
+class DbRelationConsistencyRequest(BaseModel):
+    connection_id: str
+    database: str | None = None
+    child_table: str
+    child_column: str
+    parent_table: str
+    parent_column: str
+
+
 class VisualQueryBuildRequest(BaseModel):
     connection_id: str
     database: str | None = None
     base_table: str
-    joins: list[dict[str, str]] = Field(default_factory=list)
+    joins: list[dict[str, Any]] = Field(default_factory=list)
     columns: list[str] = Field(default_factory=list)
     limit: int = 100
 

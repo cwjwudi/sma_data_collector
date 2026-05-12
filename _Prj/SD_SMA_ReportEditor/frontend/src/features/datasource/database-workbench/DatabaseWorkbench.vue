@@ -39,7 +39,7 @@
           <button :class="{ on: sub === 'data' }" type="button" @click="sub = 'data'">数据</button>
           <button :class="{ on: sub === 'query' }" type="button" @click="sub = 'query'">查询</button>
           <button :class="{ on: sub === 'ddl' }" type="button" @click="sub = 'ddl'">DDL 预览</button>
-          <button :class="{ on: sub === 'visual' }" type="button" @click="sub = 'visual'">可视化 JOIN</button>
+          <button :class="{ on: sub === 'visual' }" type="button" @click="sub = 'visual'">关系浏览器</button>
           <button :class="{ on: sub === 'er' }" type="button" @click="sub = 'er'">ER 图</button>
         </div>
         <DataGrid v-if="sub === 'data'" :columns="gridCols" :rows="gridRows" :status="gridStatus" />
@@ -66,7 +66,13 @@
             :can-preview="canDdl"
           />
         </div>
-        <VisualQueryBuilder v-if="sub === 'visual'" :connection-id="activeConnId" :database="activeDatabase" />
+        <RelationshipBrowser
+          v-if="sub === 'visual'"
+          :connection-id="activeConnId"
+          :database="activeDatabase"
+          :engine="activeEngine"
+          :tables="catalog.tables"
+        />
         <div v-if="sub === 'er'" class="panel">
           <div class="row">
             <textarea v-model="schemaText" class="ta" rows="5" placeholder="粘贴 schema JSON 或 CREATE TABLE SQL" />
@@ -93,7 +99,7 @@ import ConnectionManager from './connection-manager/ConnectionManager.vue'
 import ObjectTree from './object-tree/ObjectTree.vue'
 import DataGrid from './data-grid/DataGrid.vue'
 import QueryEditor from './query-editor/QueryEditor.vue'
-import VisualQueryBuilder from './visual-builder/VisualQueryBuilder.vue'
+import RelationshipBrowser from './relationship-browser/RelationshipBrowser.vue'
 import ErDiagram from './er-diagram/ErDiagram.vue'
 import DdlPreviewPanel from './ddl-preview/DdlPreviewPanel.vue'
 
