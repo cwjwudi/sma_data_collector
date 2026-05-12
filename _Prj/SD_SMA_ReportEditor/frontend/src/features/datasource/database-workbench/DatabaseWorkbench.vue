@@ -49,6 +49,9 @@
           :engine="activeEngine"
           :database="activeDatabase"
           :collection="activeCollection"
+          :tables="catalog.tables"
+          :collections="catalog.collections"
+          :active-table="activeTable"
           @result="applyGrid"
         />
         <div v-if="sub === 'ddl'" class="panel">

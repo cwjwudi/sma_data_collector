@@ -15,6 +15,7 @@ from schemas.common import (
     DbDdlPreviewRequest,
     DbExecuteSqlRequest,
     DbMongoAggregateRequest,
+    DbTableColumnsRequest,
     DbTablePreviewRequest,
     QuerySessionsSave,
     VisualQueryBuildRequest,
@@ -366,6 +367,48 @@ async def ddl_preview(body: DbDdlPreviewRequest):
         else:
             raise HTTPException(400, "未知引擎")
         return {"ddl": text}
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    except Exception as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@router.post("/database/table/columns")
+async def table_columns(body: DbTableColumnsRequest):
+    conn = _conn_by_id(body.connection_id)
+    engine = (conn.get("engine") or "").lower()
+    user, pwd = _credentials(conn)
+    dbname = body.database or conn.get("database") or ""
+    tbl = _safe_sql_table(body.table)
+    try:
+        if engine == "mongodb":
+            raise HTTPException(400, "MongoDB 请使用快捷查询中的集合模板")
+        if _is_mysql_family(engine):
+            cols = db_readonly_service.list_mysql_columns(
+                conn.get("host") or "127.0.0.1",
+                int(conn.get("port") or 3306),
+                user,
+                pwd,
+                dbname,
+                tbl,
+            )
+        elif engine == "postgres":
+            cols = db_readonly_service.list_pg_columns(
+                conn.get("host") or "127.0.0.1",
+                int(conn.get("port") or 5432),
+                user,
+                pwd,
+                dbname or "postgres",
+                tbl,
+            )
+        elif engine == "sqlite":
+            path = conn.get("sqlite_path") or ""
+            cols = db_readonly_service.list_sqlite_columns(path, tbl)
+        else:
+            raise HTTPException(400, "未知引擎")
+        return {"columns": cols}
     except HTTPException:
         raise
     except ValueError as e:

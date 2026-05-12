@@ -4,6 +4,17 @@
       <button type="button" :class="{ on: mode === 'sql' }" @click="mode = 'sql'" :disabled="engine === 'mongodb'">SQL</button>
       <button type="button" :class="{ on: mode === 'mongo' }" @click="mode = 'mongo'" :disabled="engine !== 'mongodb'">Mongo aggregate</button>
     </div>
+    <QuickQueryPanel
+      :connection-id="connectionId"
+      :engine="engine"
+      :database="database"
+      :active-table="activeTable"
+      :active-collection="collection"
+      :tables="tables"
+      :collections="collections"
+      @fill-sql="onFillSql"
+      @fill-mongo="onFillMongo"
+    />
     <textarea v-if="mode === 'sql'" v-model="sqlText" class="ta" rows="8" placeholder="仅 SELECT / SHOW / EXPLAIN 等只读语句" />
     <textarea v-else v-model="mongoPipeline" class="ta" rows="8" placeholder='聚合管道 JSON，如 [{"$match":{}},{"$limit":10}]' />
     <div class="actions">
@@ -27,12 +38,16 @@
 <script setup>
 import { ref, watch } from 'vue'
 import { apiFetch } from '@/api/client.js'
+import QuickQueryPanel from './QuickQueryPanel.vue'
 
 const props = defineProps({
   connectionId: { type: String, default: '' },
   engine: { type: String, default: '' },
   database: { type: String, default: '' },
   collection: { type: String, default: '' },
+  tables: { type: Array, default: () => [] },
+  collections: { type: Array, default: () => [] },
+  activeTable: { type: String, default: '' },
 })
 
 const emit = defineEmits(['result'])
@@ -89,6 +104,16 @@ function loadHist(text) {
     mode.value = 'sql'
     sqlText.value = text
   }
+}
+
+function onFillSql(sql) {
+  mode.value = 'sql'
+  sqlText.value = sql
+}
+
+function onFillMongo(text) {
+  mode.value = 'mongo'
+  mongoPipeline.value = text
 }
 
 async function run() {

@@ -373,6 +373,74 @@ def ddl_preview_sqlite(path: str, table: str) -> str:
         conn.close()
 
 
+def list_mysql_columns(host: str, port: int, user: str, password: str, database: str, table: str) -> list[dict[str, str]]:
+    import pymysql
+
+    tbl = _safe_ident(table)
+    if not database:
+        raise ValueError("MySQL/MariaDB 需要 database")
+    conn = pymysql.connect(
+        host=host,
+        port=port,
+        user=user,
+        password=password,
+        database=database,
+        charset="utf8mb4",
+        connect_timeout=10,
+    )
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT COLUMN_NAME, DATA_TYPE
+                FROM information_schema.COLUMNS
+                WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s
+                ORDER BY ORDINAL_POSITION
+                """,
+                (database, tbl),
+            )
+            rows = cur.fetchall()
+        return [{"name": str(r[0]), "data_type": str(r[1])} for r in rows]
+    finally:
+        conn.close()
+
+
+def list_pg_columns(host: str, port: int, user: str, password: str, database: str, table: str) -> list[dict[str, str]]:
+    import psycopg2
+
+    tbl = _safe_ident(table)
+    conn = psycopg2.connect(
+        host=host, port=port, user=user, password=password, dbname=database or "postgres", connect_timeout=10
+    )
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT column_name, data_type
+                FROM information_schema.columns
+                WHERE table_schema = 'public' AND table_name = %s
+                ORDER BY ordinal_position
+                """,
+                (tbl,),
+            )
+            rows = cur.fetchall()
+        return [{"name": str(r[0]), "data_type": str(r[1])} for r in rows]
+    finally:
+        conn.close()
+
+
+def list_sqlite_columns(path: str, table: str) -> list[dict[str, str]]:
+    uri = f"file:{path}?mode=ro"
+    conn = sqlite3.connect(uri, uri=True)
+    try:
+        tbl = _safe_ident(table)
+        cur = conn.execute("SELECT name, type FROM pragma_table_info(?)", (tbl,))
+        rows = cur.fetchall()
+        return [{"name": str(r[0]), "data_type": str(r[1] or "")} for r in rows]
+    finally:
+        conn.close()
+
+
 def _safe_qualified(ref: str) -> str:
     parts = ref.strip().split(".")
     if len(parts) != 2:

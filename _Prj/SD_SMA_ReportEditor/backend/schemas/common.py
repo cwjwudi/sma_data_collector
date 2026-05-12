@@ -95,6 +95,12 @@ class DbDdlPreviewRequest(BaseModel):
     table: str
 
 
+class DbTableColumnsRequest(BaseModel):
+    connection_id: str
+    database: str | None = None
+    table: str
+
+
 class VisualQueryBuildRequest(BaseModel):
     connection_id: str
     database: str | None = None
