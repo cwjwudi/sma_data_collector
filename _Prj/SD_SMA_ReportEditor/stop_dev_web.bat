@@ -1,4 +1,4 @@
-@echo off
+﻿@echo off
 setlocal
 title SD_SMA_ReportEditor - Stop dev (web)
 
@@ -7,10 +7,10 @@ rem ASCII-only for reliable cmd parsing on all locales.
 set "ROOT=%~dp0"
 set "ROOT=%ROOT:~0,-1%"
 
-echo Stopping listeners on port 8000 ^(backend^) and 5173 ^(frontend^) ...
+echo Cleaning listeners on 8000 ^(backend^) / 5173 ^(frontend^): process tree taskkill + short retries ...
 "%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%ROOT%\stop_dev_web.ps1"
 echo.
-echo If a page still loads, wait a few seconds and refresh, or run this script again.
+echo If a page still loads, wait a moment and refresh, or run this script again ^(admin if access denied^).
 echo.
 pause
 endlocal
