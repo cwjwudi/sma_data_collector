@@ -101,6 +101,19 @@ function startPythonBackend() {
   })
 }
 
+function checkBackendHealthOnce() {
+  return new Promise((resolve) => {
+    const req = http.get(`${BACKEND_URL}/health`, (res) => {
+      resolve(res.statusCode === 200)
+    })
+    req.on('error', () => resolve(false))
+    req.setTimeout(1000, () => {
+      req.destroy()
+      resolve(false)
+    })
+  })
+}
+
 function waitForBackend(maxRetries = 60, interval = 500) {
   return new Promise((resolve, reject) => {
     let retries = 0
@@ -171,7 +184,15 @@ function killPython() {
 
 app.whenReady().then(async () => {
   log('Starting application...')
-  startPythonBackend()
+
+  const isDev = !app.isPackaged
+  if (isDev && (await checkBackendHealthOnce())) {
+    log(
+      `检测到 ${BACKEND_URL} 已有健康后端（例如已运行 start_dev_web.bat 或 uvicorn），跳过启动 Python 子进程，避免端口占用 WinError 10048。`,
+    )
+  } else {
+    startPythonBackend()
+  }
 
   try {
     await waitForBackend()

@@ -13,6 +13,8 @@ export default defineConfig({
   },
   server: {
     port: 5173,
+    // 避免 5173 被占用时静默改到 5174，导致 wait-on / Electron 仍打开 5173 而页面空白或连错实例
+    strictPort: true,
     proxy: {
       '/api': {
         target: 'http://127.0.0.1:8000',
