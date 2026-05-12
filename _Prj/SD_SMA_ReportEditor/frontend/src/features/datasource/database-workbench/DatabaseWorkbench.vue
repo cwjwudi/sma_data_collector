@@ -40,7 +40,7 @@
           <button :class="{ on: sub === 'query' }" type="button" @click="sub = 'query'">查询</button>
           <button :class="{ on: sub === 'ddl' }" type="button" @click="sub = 'ddl'">DDL 预览</button>
           <button :class="{ on: sub === 'visual' }" type="button" @click="sub = 'visual'">关系浏览器</button>
-          <button :class="{ on: sub === 'er' }" type="button" @click="sub = 'er'">ER 图</button>
+          <button :class="{ on: sub === 'pivot' }" type="button" @click="sub = 'pivot'">透视</button>
         </div>
         <div v-if="sub === 'data'" class="work-tab-grow data-tab-panel">
           <div class="preview-toolbar">
@@ -99,20 +99,14 @@
           :engine="activeEngine"
           :tables="catalog.tables"
         />
-        <div v-else-if="sub === 'er'" class="work-tab-grow panel">
-          <div class="row">
-            <textarea v-model="schemaText" class="ta" rows="5" placeholder="粘贴 schema JSON 或 CREATE TABLE SQL" />
-            <div class="col">
-              <button type="button" class="btn sm" @click="parseSchema">解析文件内容</button>
-              <label class="file">
-                <input type="file" accept=".json,.sql,.txt" @change="onSchemaFile" />
-                选择文件
-              </label>
-              <button type="button" class="btn sm" @click="mergeEr">与当前 catalog 合并</button>
-            </div>
-          </div>
-          <ErDiagram :graph="erGraph" />
-        </div>
+        <SmartPivotPanel
+          v-else-if="sub === 'pivot'"
+          class="work-tab-grow pivot-panel"
+          :connection-id="activeConnId"
+          :database="activeDatabase"
+          :engine="activeEngine"
+          :table-name="sqlTableForPivot"
+        />
       </div>
     </div>
   </div>
@@ -126,7 +120,7 @@ import ObjectTree from './object-tree/ObjectTree.vue'
 import DataGrid from './data-grid/DataGrid.vue'
 import QueryEditor from './query-editor/QueryEditor.vue'
 import RelationshipBrowser from './relationship-browser/RelationshipBrowser.vue'
-import ErDiagram from './er-diagram/ErDiagram.vue'
+import SmartPivotPanel from './smart-pivot/SmartPivotPanel.vue'
 import DdlPreviewPanel from './ddl-preview/DdlPreviewPanel.vue'
 
 const connections = ref([])
@@ -186,10 +180,13 @@ const ddlText = ref('')
 const ddlLoading = ref(false)
 const ddlError = ref('')
 const lastDdlFetchKey = ref('')
-const schemaText = ref('')
-const erGraph = ref({ nodes: [], edges: [] })
 
 const activeEngine = computed(() => connections.value.find((c) => c.id === activeConnId.value)?.engine || '')
+
+/** 透视 Tab：SQL 引擎用当前表名；Mongo 由子组件自行提示不可用 */
+const sqlTableForPivot = computed(() =>
+  activeEngine.value === 'mongodb' ? '' : activeTable.value,
+)
 
 const canDdl = computed(() => activeTable.value && activeEngine.value && activeEngine.value !== 'mongodb')
 
@@ -416,45 +413,6 @@ async function loadDdl(force = false) {
     lastDdlFetchKey.value = ''
   } finally {
     ddlLoading.value = false
-  }
-}
-
-async function parseSchema() {
-  try {
-    const fmt = schemaText.value.trim().toUpperCase().startsWith('CREATE TABLE') ? 'sql' : 'json'
-    const data = await apiFetch('/database/schema/parse', {
-      method: 'POST',
-      body: { format: fmt, content: schemaText.value },
-    })
-    erGraph.value = data.graph || { nodes: [], edges: [] }
-  } catch (e) {
-    gridStatus.value = e.message || String(e)
-  }
-}
-
-function onSchemaFile(ev) {
-  const file = ev.target.files?.[0]
-  if (!file) return
-  const reader = new FileReader()
-  reader.onload = () => {
-    schemaText.value = String(reader.result || '')
-  }
-  reader.readAsText(file)
-}
-
-async function mergeEr() {
-  try {
-    const data = await apiFetch('/database/er/merge', {
-      method: 'POST',
-      body: {
-        connection_id: activeConnId.value,
-        database: activeDatabase.value || undefined,
-        graph: erGraph.value,
-      },
-    })
-    erGraph.value = data.graph || erGraph.value
-  } catch (e) {
-    gridStatus.value = e.message || String(e)
   }
 }
 

@@ -9,12 +9,15 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 
 from core.settings import CONFIG_FILE, DATA_DIR, QUERY_SESSION_FILE
-from modules import config_store, db_connection_ops, db_readonly_service
+from modules import config_store, db_connection_ops, db_readonly_service, table_chart_service
 from schemas.common import (
+    DbChartProfileRequest,
+    DbChartSeriesRequest,
     DbConnectionSave,
     DbDdlPreviewRequest,
     DbExecuteSqlRequest,
     DbMongoAggregateRequest,
+    DbPreviewDrillRequest,
     DbRelationConsistencyRequest,
     DbRelationOrphanRequest,
     DbSchemaForeignKeysRequest,
@@ -401,6 +404,99 @@ async def table_preview(body: DbTablePreviewRequest):
         raise HTTPException(400, "未知引擎")
     except HTTPException:
         raise
+    except Exception as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@router.post("/database/table/chart_profile")
+async def table_chart_profile(body: DbChartProfileRequest):
+    conn = _conn_by_id(body.connection_id)
+    engine = (conn.get("engine") or "").lower()
+    if engine == "mongodb":
+        raise HTTPException(400, "MongoDB 暂不支持智能透视图表")
+    user, pwd = _credentials(conn)
+    dbname = _effective_sql_database(conn, body.database, engine)
+    tbl = _safe_sql_table(body.table)
+    try:
+        cols = table_chart_service.fetch_columns_extended(engine, conn, user, pwd, dbname, tbl)
+        return table_chart_service.chart_profile_from_columns(cols)
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    except Exception as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@router.post("/database/table/chart_series")
+async def table_chart_series(body: DbChartSeriesRequest):
+    conn = _conn_by_id(body.connection_id)
+    engine = (conn.get("engine") or "").lower()
+    if engine == "mongodb":
+        raise HTTPException(400, "MongoDB 暂不支持智能透视图表")
+    user, pwd = _credentials(conn)
+    dbname = _effective_sql_database(conn, body.database, engine)
+    tbl = _safe_sql_table(body.table)
+    flist = [x.model_dump() for x in body.filters]
+    try:
+        return table_chart_service.run_chart_series(
+            engine=engine,
+            conn=conn,
+            user=user,
+            pwd=pwd,
+            dbname=dbname,
+            table=tbl,
+            time_column=body.time_column,
+            metric_columns=list(body.metric_columns),
+            sample_limit=int(body.sample_limit),
+            time_start=body.time_start,
+            time_end=body.time_end,
+            filters=flist,
+            category_column=body.category_column,
+        )
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    except Exception as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@router.post("/database/table/preview_drill")
+async def table_preview_drill(body: DbPreviewDrillRequest):
+    conn = _conn_by_id(body.connection_id)
+    engine = (conn.get("engine") or "").lower()
+    if engine == "mongodb":
+        raise HTTPException(400, "MongoDB 请使用数据分页预览")
+    user, pwd = _credentials(conn)
+    dbname = _effective_sql_database(conn, body.database, engine)
+    tbl = _safe_sql_table(body.table)
+    oc = body.order_column
+    if oc and not re.match(r"^[a-zA-Z0-9_]+$", oc):
+        raise HTTPException(400, "非法排序列")
+    if body.time_column and not re.match(r"^[a-zA-Z0-9_]+$", body.time_column):
+        raise HTTPException(400, "非法时间列")
+    flist = [x.model_dump() for x in body.filters]
+    try:
+        return table_chart_service.run_preview_drill(
+            engine=engine,
+            conn=conn,
+            user=user,
+            pwd=pwd,
+            dbname=dbname,
+            table=tbl,
+            limit=int(body.limit),
+            offset=int(body.offset),
+            time_column=body.time_column,
+            time_start=body.time_start,
+            time_end=body.time_end,
+            filters=flist,
+            order_column=oc,
+        )
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
     except Exception as e:
         raise HTTPException(400, str(e)) from e
 

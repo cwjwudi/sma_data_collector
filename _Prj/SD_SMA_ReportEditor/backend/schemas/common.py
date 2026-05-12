@@ -146,6 +146,71 @@ class VisualQueryBuildRequest(BaseModel):
     limit: int = 100
 
 
+class DbChartFilterEquals(BaseModel):
+    column: str = ""
+    value: str = ""
+
+
+class DbChartProfileRequest(BaseModel):
+    connection_id: str
+    database: str | None = None
+    table: str
+
+
+class DbChartSeriesRequest(BaseModel):
+    connection_id: str
+    database: str | None = None
+    table: str
+    time_column: str | None = None
+    metric_columns: list[str] = Field(default_factory=list)
+    sample_limit: int = 2000
+    time_start: str | None = None
+    time_end: str | None = None
+    filters: list[DbChartFilterEquals] = Field(default_factory=list)
+    category_column: str | None = None
+
+    @field_validator("sample_limit", mode="before")
+    @classmethod
+    def _cap_sample(cls, v: Any) -> int:
+        try:
+            n = int(v)
+        except (TypeError, ValueError):
+            return 2000
+        return max(1, min(n, 5000))
+
+
+class DbPreviewDrillRequest(BaseModel):
+    connection_id: str
+    database: str | None = None
+    table: str
+    limit: int = 500
+    offset: int = 0
+    time_column: str | None = None
+    time_start: str | None = None
+    time_end: str | None = None
+    filters: list[DbChartFilterEquals] = Field(default_factory=list)
+    order_column: str | None = None
+
+    @field_validator("limit", mode="before")
+    @classmethod
+    def _cap_lim(cls, v: Any) -> int:
+        try:
+            n = int(v)
+        except (TypeError, ValueError):
+            return 500
+        return max(1, min(n, 5000))
+
+
+    @field_validator("offset", mode="before")
+    @classmethod
+    def _cap_off(cls, v: Any) -> int:
+        try:
+            n = int(v)
+        except (TypeError, ValueError):
+            return 0
+        return max(0, min(n, 9_999_999))
+
+
 class SchemaImportBody(BaseModel):
     format: str = "json"
     content: str
