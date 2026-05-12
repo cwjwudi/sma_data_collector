@@ -26,8 +26,12 @@ function getBundledBackendExe() {
   return path.join(getBackendDir(), 'report_backend.exe')
 }
 
-function getUserDataDirForBackend() {
-  return path.join(app.getPath('userData'), 'backend-data')
+/** 后端持久化目录：正式包写入用户目录；开发模式与仓库 backend/data 对齐，便于与命令行 uvicorn 共用 config.json。 */
+function getReportEditorDataDir() {
+  if (app.isPackaged) {
+    return path.join(app.getPath('userData'), 'backend-data')
+  }
+  return path.join(getBackendDir(), 'data')
 }
 
 function findPython() {
@@ -44,8 +48,9 @@ function findPython() {
 
 function startPythonBackend() {
   const backendDir = getBackendDir()
-  const dataDir = getUserDataDirForBackend()
+  const dataDir = getReportEditorDataDir()
   fs.mkdirSync(dataDir, { recursive: true })
+  log(`REPORT_EDITOR_DATA_DIR=${dataDir}`)
 
   const env = {
     ...process.env,

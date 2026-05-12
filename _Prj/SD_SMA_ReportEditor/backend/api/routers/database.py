@@ -104,7 +104,11 @@ async def upsert_connection(body: DbConnectionSave):
         conns.append(entry)
     cfg["db_connections"] = conns
     _save(cfg)
-    return {"connections": [config_store.mask_connection_for_response(c) for c in conns]}
+    saved_id = entry.get("id")
+    return {
+        "connections": [config_store.mask_connection_for_response(c) for c in conns],
+        "saved_id": saved_id,
+    }
 
 
 @router.delete("/database/connections/{connection_id}")

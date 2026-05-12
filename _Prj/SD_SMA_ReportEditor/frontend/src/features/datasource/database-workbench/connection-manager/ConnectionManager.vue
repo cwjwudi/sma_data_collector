@@ -51,10 +51,11 @@
         <input v-model="draft.mongo_auth_source" class="input" />
       </template>
       <div class="actions">
-        <button type="button" class="btn primary sm" @click="save">保存</button>
+        <button type="button" class="btn primary sm" @click="() => save(false)">保存</button>
         <button type="button" class="btn sm" @click="test">测试</button>
         <button type="button" class="btn danger sm" v-if="draft.id" @click="remove">删除</button>
       </div>
+      <p class="hint">连接信息保存在本地 config.json。测试连接成功后会自动保存；也可直接点「保存」。正式安装包使用应用用户目录下的数据文件夹。</p>
       <div v-if="msg" class="msg">{{ msg }}</div>
     </div>
   </div>
@@ -119,29 +120,37 @@ watch(
   { immediate: true },
 )
 
-async function save() {
+function saveBody() {
+  return {
+    id: draft.id || null,
+    name: draft.name,
+    engine: draft.engine,
+    host: draft.engine === 'sqlite' ? null : draft.host,
+    port: draft.engine === 'sqlite' ? null : draft.port,
+    database: draft.database || null,
+    username: draft.engine === 'sqlite' ? null : draft.username,
+    password: draft.password || null,
+    sqlite_path: draft.sqlite_path || null,
+    mongo_auth_source: draft.mongo_auth_source || 'admin',
+  }
+}
+
+async function save(afterTest = false) {
   msg.value = ''
   try {
     const data = await apiFetch('/database/connections', {
       method: 'POST',
-      body: {
-        id: draft.id || null,
-        name: draft.name,
-        engine: draft.engine,
-        host: draft.engine === 'sqlite' ? null : draft.host,
-        port: draft.engine === 'sqlite' ? null : draft.port,
-        database: draft.database || null,
-        username: draft.engine === 'sqlite' ? null : draft.username,
-        password: draft.password || null,
-        sqlite_path: draft.sqlite_path || null,
-        mongo_auth_source: draft.mongo_auth_source || 'admin',
-      },
+      body: saveBody(),
     })
     const list = data.connections || []
+    const sid = data.saved_id
     const mine =
-      list.find((x) => x.name === draft.name && x.engine === draft.engine) || list[list.length - 1]
-    emit('updated', mine?.id || null)
-    msg.value = '已保存'
+      sid ||
+      list.find((x) => x.name === draft.name && x.engine === draft.engine)?.id ||
+      list[list.length - 1]?.id ||
+      null
+    emit('updated', mine)
+    msg.value = afterTest ? '连接成功，已保存到本地配置' : '已保存'
   } catch (e) {
     msg.value = e.message || String(e)
   }
@@ -152,20 +161,13 @@ async function test() {
   try {
     const res = await apiFetch('/database/test', {
       method: 'POST',
-      body: {
-        id: null,
-        name: draft.name,
-        engine: draft.engine,
-        host: draft.engine === 'sqlite' ? null : draft.host,
-        port: draft.engine === 'sqlite' ? null : draft.port,
-        database: draft.database || null,
-        username: draft.engine === 'sqlite' ? null : draft.username,
-        password: draft.password || null,
-        sqlite_path: draft.sqlite_path || null,
-        mongo_auth_source: draft.mongo_auth_source || 'admin',
-      },
+      body: { id: null, ...saveBody() },
     })
-    msg.value = res.ok ? '连接成功' : res.message || '失败'
+    if (res.ok) {
+      await save(true)
+    } else {
+      msg.value = res.message || '失败'
+    }
   } catch (e) {
     msg.value = e.message || String(e)
   }
@@ -255,6 +257,12 @@ async function remove() {
 .msg {
   font-size: 12px;
   color: #374151;
+}
+.hint {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: #6b7280;
 }
 label {
   font-size: 12px;
