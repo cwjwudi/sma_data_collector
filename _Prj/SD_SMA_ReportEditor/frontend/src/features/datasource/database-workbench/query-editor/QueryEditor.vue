@@ -1,37 +1,46 @@
 <template>
   <div class="qe">
-    <div class="tabs">
-      <button type="button" :class="{ on: mode === 'sql' }" @click="mode = 'sql'" :disabled="engine === 'mongodb'">SQL</button>
-      <button type="button" :class="{ on: mode === 'mongo' }" @click="mode = 'mongo'" :disabled="engine !== 'mongodb'">Mongo aggregate</button>
+    <div class="qe-editor">
+      <div class="tabs">
+        <button type="button" :class="{ on: mode === 'sql' }" @click="mode = 'sql'" :disabled="engine === 'mongodb'">SQL</button>
+        <button type="button" :class="{ on: mode === 'mongo' }" @click="mode = 'mongo'" :disabled="engine !== 'mongodb'">
+          Mongo aggregate
+        </button>
+      </div>
+      <QuickQueryPanel
+        :connection-id="connectionId"
+        :engine="engine"
+        :database="database"
+        :active-table="activeTable"
+        :active-collection="collection"
+        :active-table-kind="activeTableKind"
+        @fill-sql="onFillSql"
+        @fill-mongo="onFillMongo"
+      />
+      <textarea v-if="mode === 'sql'" v-model="sqlText" class="ta" rows="8" placeholder="仅 SELECT / SHOW / EXPLAIN 等只读语句" />
+      <textarea v-else v-model="mongoPipeline" class="ta" rows="8" placeholder='聚合管道 JSON，如 [{"$match":{}},{"$limit":10}]' />
+      <div class="actions">
+        <button type="button" class="btn primary sm" @click="run">运行</button>
+        <button type="button" class="btn sm" @click="favorite">收藏当前</button>
+      </div>
+      <div class="hist">
+        <div class="title">历史</div>
+        <ul>
+          <li v-for="(h, i) in history" :key="i" @click="loadHist(h)">{{ h.slice(0, 80) }}</li>
+        </ul>
+        <div class="title">收藏</div>
+        <ul>
+          <li v-for="(f, i) in favorites" :key="'f' + i" @click="loadHist(f)">{{ f.slice(0, 80) }}</li>
+        </ul>
+      </div>
+      <div v-if="msg" class="msg">{{ msg }}</div>
     </div>
-    <QuickQueryPanel
-      :connection-id="connectionId"
-      :engine="engine"
-      :database="database"
-      :active-table="activeTable"
-      :active-collection="collection"
-      :tables="tables"
-      :collections="collections"
-      @fill-sql="onFillSql"
-      @fill-mongo="onFillMongo"
-    />
-    <textarea v-if="mode === 'sql'" v-model="sqlText" class="ta" rows="8" placeholder="仅 SELECT / SHOW / EXPLAIN 等只读语句" />
-    <textarea v-else v-model="mongoPipeline" class="ta" rows="8" placeholder='聚合管道 JSON，如 [{"$match":{}},{"$limit":10}]' />
-    <div class="actions">
-      <button type="button" class="btn primary sm" @click="run">运行</button>
-      <button type="button" class="btn sm" @click="favorite">收藏当前</button>
+    <div class="qe-results">
+      <div class="qe-results-title">查询结果</div>
+      <div class="qe-results-grid">
+        <DataGrid :columns="queryGridCols" :rows="queryGridRows" :status="queryGridStatus" />
+      </div>
     </div>
-    <div class="hist">
-      <div class="title">历史</div>
-      <ul>
-        <li v-for="(h, i) in history" :key="i" @click="loadHist(h)">{{ h.slice(0, 80) }}</li>
-      </ul>
-      <div class="title">收藏</div>
-      <ul>
-        <li v-for="(f, i) in favorites" :key="'f' + i" @click="loadHist(f)">{{ f.slice(0, 80) }}</li>
-      </ul>
-    </div>
-    <div v-if="msg" class="msg">{{ msg }}</div>
   </div>
 </template>
 
@@ -39,18 +48,16 @@
 import { ref, watch } from 'vue'
 import { apiFetch } from '@/api/client.js'
 import QuickQueryPanel from './QuickQueryPanel.vue'
+import DataGrid from '../data-grid/DataGrid.vue'
 
 const props = defineProps({
   connectionId: { type: String, default: '' },
   engine: { type: String, default: '' },
   database: { type: String, default: '' },
   collection: { type: String, default: '' },
-  tables: { type: Array, default: () => [] },
-  collections: { type: Array, default: () => [] },
   activeTable: { type: String, default: '' },
+  activeTableKind: { type: String, default: '' },
 })
-
-const emit = defineEmits(['result'])
 
 const mode = ref('sql')
 const sqlText = ref('SELECT 1')
@@ -58,6 +65,10 @@ const mongoPipeline = ref('[{"$limit": 10}]')
 const msg = ref('')
 const history = ref([])
 const favorites = ref([])
+
+const queryGridCols = ref([])
+const queryGridRows = ref([])
+const queryGridStatus = ref('')
 
 watch(
   () => props.engine,
@@ -92,6 +103,10 @@ watch(
   () => props.connectionId,
   () => {
     loadSessions()
+    queryGridCols.value = []
+    queryGridRows.value = []
+    queryGridStatus.value = ''
+    msg.value = ''
   },
   { immediate: true },
 )
@@ -137,12 +152,16 @@ async function run() {
         body,
       })
       const n = Array.isArray(data.rows) ? data.rows.length : 0
-      emit('result', { ...data, stayOnQueryTab: true })
+      queryGridCols.value = data.columns || []
+      queryGridRows.value = data.rows || []
+      queryGridStatus.value = `查询完成：${n} 行`
       pushHist(sqlText.value)
-      msg.value = `查询完成：${n} 行。切换到「数据」标签可查看表格。`
     } else {
       if (!props.database || !props.collection) {
         msg.value = 'Mongo 查询需要先在对象树选择 database 与 collection'
+        queryGridCols.value = []
+        queryGridRows.value = []
+        queryGridStatus.value = ''
         return
       }
       let pipe
@@ -150,6 +169,9 @@ async function run() {
         pipe = JSON.parse(mongoPipeline.value || '[]')
       } catch {
         msg.value = '聚合管道 JSON 无效'
+        queryGridCols.value = []
+        queryGridRows.value = []
+        queryGridStatus.value = ''
         return
       }
       const data = await apiFetch('/database/query/mongo_aggregate', {
@@ -163,13 +185,17 @@ async function run() {
         },
       })
       const n = Array.isArray(data.rows) ? data.rows.length : 0
-      emit('result', { ...data, stayOnQueryTab: true })
+      queryGridCols.value = data.columns || []
+      queryGridRows.value = data.rows || []
+      queryGridStatus.value = `查询完成：${n} 行`
       pushHist(mongoPipeline.value)
-      msg.value = `查询完成：${n} 行。切换到「数据」标签可查看表格。`
     }
     await persistSessions()
   } catch (e) {
     msg.value = e.message || String(e)
+    queryGridCols.value = []
+    queryGridRows.value = []
+    queryGridStatus.value = ''
   }
 }
 
@@ -191,7 +217,32 @@ async function favorite() {
 .qe {
   display: flex;
   flex-direction: column;
+  gap: 12px;
+  flex: 1;
+  min-height: 0;
+}
+.qe-editor {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
   gap: 8px;
+}
+.qe-results {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1;
+  min-height: 160px;
+}
+.qe-results-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #374151;
+}
+.qe-results-grid {
+  flex: 1;
+  min-height: 120px;
+  overflow: auto;
 }
 .tabs {
   display: flex;
@@ -250,7 +301,7 @@ async function favorite() {
   border-radius: 6px;
   padding: 8px;
   font-size: 11px;
-  max-height: 220px;
+  max-height: 180px;
   overflow: auto;
 }
 .hist ul {

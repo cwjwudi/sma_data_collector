@@ -49,21 +49,14 @@
           :engine="activeEngine"
           :database="activeDatabase"
           :collection="activeCollection"
-          :tables="catalog.tables"
-          :collections="catalog.collections"
           :active-table="activeTable"
-          @result="applyGrid"
+          :active-table-kind="activeTableKind"
         />
         <div v-if="sub === 'ddl'" class="panel">
           <button type="button" class="btn sm" @click="loadDdl" :disabled="!canDdl">加载 DDL</button>
           <pre class="pre">{{ ddlText }}</pre>
         </div>
-        <VisualQueryBuilder
-          v-if="sub === 'visual'"
-          :connection-id="activeConnId"
-          :database="activeDatabase"
-          @result="applyGrid"
-        />
+        <VisualQueryBuilder v-if="sub === 'visual'" :connection-id="activeConnId" :database="activeDatabase" />
         <div v-if="sub === 'er'" class="panel">
           <div class="row">
             <textarea v-model="schemaText" class="ta" rows="5" placeholder="粘贴 schema JSON 或 CREATE TABLE SQL" />
@@ -118,6 +111,8 @@ const erGraph = ref({ nodes: [], edges: [] })
 const activeEngine = computed(() => connections.value.find((c) => c.id === activeConnId.value)?.engine || '')
 
 const canDdl = computed(() => activeTable.value && activeEngine.value && activeEngine.value !== 'mongodb')
+
+const activeTableKind = computed(() => catalog.value.tables?.find((t) => t.name === activeTable.value)?.kind || '')
 
 async function reloadConnections(preferredId = null) {
   loadError.value = ''
@@ -265,16 +260,6 @@ async function previewMongo() {
     gridCols.value = []
     gridRows.value = []
     gridStatus.value = e.message || String(e)
-  }
-}
-
-function applyGrid(data) {
-  const stayOnQueryTab = data.stayOnQueryTab === true
-  gridCols.value = data.columns || []
-  gridRows.value = data.rows || []
-  gridStatus.value = stayOnQueryTab ? `已就绪 ${gridRows.value.length} 行（「数据」页查看）` : `查询 ${gridRows.value.length} 行`
-  if (!stayOnQueryTab) {
-    sub.value = 'data'
   }
 }
 

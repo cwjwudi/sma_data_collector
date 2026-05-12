@@ -17,6 +17,10 @@
       <button type="button" class="btn primary sm" @click="runVisual">生成并运行</button>
     </div>
     <pre v-if="sqlOut" class="pre">{{ sqlOut }}</pre>
+    <div class="vb-results-title">可视化查询结果</div>
+    <div class="vb-results-grid">
+      <DataGrid :columns="visualCols" :rows="visualRows" :status="visualStatus" />
+    </div>
     <div v-if="msg" class="msg">{{ msg }}</div>
   </div>
 </template>
@@ -24,19 +28,22 @@
 <script setup>
 import { ref } from 'vue'
 import { apiFetch } from '@/api/client.js'
+import DataGrid from '../data-grid/DataGrid.vue'
 
 const props = defineProps({
   connectionId: { type: String, default: '' },
   database: { type: String, default: '' },
 })
 
-const emit = defineEmits(['result'])
-
 const baseTable = ref('')
 const columns = ref('')
 const joins = ref([])
 const sqlOut = ref('')
 const msg = ref('')
+
+const visualCols = ref([])
+const visualRows = ref([])
+const visualStatus = ref('')
 
 async function buildOnly() {
   msg.value = ''
@@ -80,9 +87,15 @@ async function runVisual() {
       },
     })
     sqlOut.value = data.sql || ''
-    emit('result', data)
+    const rows = Array.isArray(data.rows) ? data.rows : []
+    visualCols.value = data.columns || []
+    visualRows.value = rows
+    visualStatus.value = `查询完成：${rows.length} 行`
   } catch (e) {
     msg.value = e.message || String(e)
+    visualCols.value = []
+    visualRows.value = []
+    visualStatus.value = ''
   }
 }
 </script>
@@ -93,6 +106,8 @@ async function runVisual() {
   flex-direction: column;
   gap: 8px;
   font-size: 13px;
+  flex: 1;
+  min-height: 0;
 }
 .input {
   padding: 8px;
@@ -129,6 +144,17 @@ async function runVisual() {
   padding: 8px;
   border-radius: 6px;
   font-size: 12px;
+  overflow: auto;
+}
+.vb-results-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #374151;
+  margin-top: 4px;
+}
+.vb-results-grid {
+  flex: 1;
+  min-height: 140px;
   overflow: auto;
 }
 .msg {
