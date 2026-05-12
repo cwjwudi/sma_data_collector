@@ -1,14 +1,16 @@
 <template>
-  <div class="page" :class="{ 'page-fill-db': tab === 'db' }">
+  <div class="page" :class="{ 'page-fill': tab === 'db' || tab === 'opc' }">
     <h2 class="page-title">数据源配置</h2>
     <div class="tabs-top">
       <button type="button" :class="{ on: tab === 'db' }" @click="tab = 'db'">数据库工作台</button>
       <button type="button" :class="{ on: tab === 'opc' }" @click="tab = 'opc'">OPC UA</button>
     </div>
-    <div v-if="tab === 'db'" class="page-db-body">
+    <div v-if="tab === 'db'" class="page-tab-body">
       <DatabaseWorkbench />
     </div>
-    <OpcUaPanel v-else />
+    <div v-else class="page-tab-body">
+      <OpcUaPanel />
+    </div>
   </div>
 </template>
 
@@ -21,15 +23,17 @@ const tab = ref('db')
 </script>
 
 <style scoped>
-.page-fill-db {
+.page-fill {
   display: flex;
   flex-direction: column;
   flex: 1;
   min-height: calc(100dvh - 160px);
 }
-.page-db-body {
+.page-tab-body {
   flex: 1;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 .page-title {
   font-size: 24px;

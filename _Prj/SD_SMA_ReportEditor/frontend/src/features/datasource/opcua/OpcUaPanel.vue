@@ -43,7 +43,6 @@
             <OpcUaTree
               :nodes="treeNodes"
               :tree-rev="treeRev"
-              :truncation-hint="truncationHint"
               @toggle="onToggleNode"
               @pick="pickNode"
             />
@@ -62,10 +61,10 @@
                 <pre class="copy-pre mono">{{ connectionInfoText }}</pre>
                 <p v-if="copyFeedback" class="copy-feedback">{{ copyFeedback }}</p>
               </div>
-              <button type="button" class="btn sm" @click="readValue">读取数值</button>
+              <button type="button" class="btn sm" @click="readValue">重新读取</button>
               <pre v-if="readOut" class="pre">{{ readOut }}</pre>
             </div>
-            <div v-else class="detail-placeholder">点击树中节点可选中，并在此读取数值</div>
+            <div v-else class="detail-placeholder">点击树中节点，将显示详情并自动读取数值</div>
           </div>
         </div>
       </div>
@@ -77,8 +76,6 @@
 import { computed, onMounted, reactive, ref, shallowRef, triggerRef } from 'vue'
 import { apiFetch } from '@/api/client.js'
 import OpcUaTree from './OpcUaTree.vue'
-
-const BROWSE_PAGE_LIMIT = 80
 
 const servers = ref([])
 const selected = ref(null)
@@ -94,7 +91,8 @@ const treeNodes = shallowRef([])
 const treeRev = ref(0)
 const pickedNode = ref(null)
 const readOut = ref('')
-const truncationHint = ref('')
+/** 选中节点切换时递增，丢弃过期的读值请求 */
+const readEpoch = ref(0)
 const copyFeedback = ref('')
 
 function bumpTree() {
@@ -180,7 +178,7 @@ function selectServer(s) {
   treeNodes.value = []
   pickedNode.value = null
   readOut.value = ''
-  truncationHint.value = ''
+  readEpoch.value += 1
   refreshRoot()
 }
 
@@ -193,7 +191,8 @@ function startNew() {
   form.password = ''
   treeNodes.value = []
   pickedNode.value = null
-  truncationHint.value = ''
+  readOut.value = ''
+  readEpoch.value += 1
 }
 
 async function saveServer() {
@@ -246,7 +245,6 @@ async function testDraft() {
 
 async function refreshRoot() {
   if (!form.id) return
-  truncationHint.value = ''
   try {
     const res = await apiFetch(`/opcua/browse_saved/${form.id}`, { method: 'POST', body: {} })
     if (res.ok === false) {
@@ -257,9 +255,6 @@ async function refreshRoot() {
     }
     const list = res.nodes || []
     treeNodes.value = list.map((n) => wrapOpcNode(n))
-    if (list.length >= BROWSE_PAGE_LIMIT) {
-      truncationHint.value = `根层级仅显示前 ${BROWSE_PAGE_LIMIT} 个子节点（服务器可能还有更多）。`
-    }
     bumpTree()
   } catch (e) {
     msg.value = e.message || String(e)
@@ -290,9 +285,6 @@ async function onToggleNode(node) {
     node.children = list.map((n) => wrapOpcNode(n))
     node.loaded = true
     node.expanded = true
-    if (list.length >= BROWSE_PAGE_LIMIT) {
-      truncationHint.value = `节点「${node.display_name || node.browse_name || node.node_id}」下仅显示前 ${BROWSE_PAGE_LIMIT} 个子节点。`
-    }
   } catch (e) {
     node.errorMessage = e.message || String(e)
     msg.value = node.errorMessage
@@ -305,19 +297,33 @@ async function onToggleNode(node) {
 function pickNode(n) {
   pickedNode.value = n
   readOut.value = ''
+  readEpoch.value += 1
+  const epoch = readEpoch.value
+  if (form.id && n?.node_id) {
+    void fetchNodeValue(n.node_id, epoch)
+  }
+}
+
+async function fetchNodeValue(nodeId, epoch) {
+  if (!form.id || !nodeId) return
+  try {
+    const res = await apiFetch(`/opcua/read_saved/${form.id}`, {
+      method: 'POST',
+      body: { node_id: nodeId },
+    })
+    if (epoch !== readEpoch.value) return
+    readOut.value = JSON.stringify(res, null, 2)
+  } catch (e) {
+    if (epoch !== readEpoch.value) return
+    readOut.value = e.message || String(e)
+  }
 }
 
 async function readValue() {
   if (!form.id || !pickedNode.value?.node_id) return
-  try {
-    const res = await apiFetch(`/opcua/read_saved/${form.id}`, {
-      method: 'POST',
-      body: { node_id: pickedNode.value.node_id },
-    })
-    readOut.value = JSON.stringify(res, null, 2)
-  } catch (e) {
-    readOut.value = e.message || String(e)
-  }
+  readEpoch.value += 1
+  const epoch = readEpoch.value
+  await fetchNodeValue(pickedNode.value.node_id, epoch)
 }
 
 onMounted(loadServers)
@@ -327,18 +333,25 @@ onMounted(loadServers)
 .opcua {
   width: 100%;
   min-width: 0;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 .cols {
   display: grid;
   grid-template-columns: 200px minmax(240px, 280px) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
   gap: 16px;
-  min-height: 420px;
   align-items: stretch;
+  flex: 1;
+  min-height: 0;
 }
 .list-pane,
 .form-pane,
 .browse-pane {
   min-width: 0;
+  min-height: 0;
 }
 .list-pane {
   border: 1px solid #e5e7eb;
@@ -382,29 +395,42 @@ onMounted(loadServers)
   padding: 12px;
   display: flex;
   flex-direction: column;
-  min-height: 0;
   flex: 1;
+  min-height: 0;
+  overflow: hidden;
 }
 .browse-body {
   display: flex;
   flex-direction: row;
   gap: 16px;
   flex: 1;
-  min-height: 280px;
+  min-height: 0;
   min-width: 0;
+  overflow: hidden;
 }
 @media (max-width: 1100px) {
   .browse-body {
     flex-direction: column;
+    overflow-y: auto;
   }
   .tree-wrap {
-    max-height: 45vh;
+    flex: 1 1 auto;
+    max-height: 50vh;
+    min-height: 140px;
+  }
+  .detail-wrap {
+    flex: 1 1 auto;
+    max-height: 50vh;
+    min-height: 140px;
+    width: 100%;
   }
 }
 .tree-wrap {
   flex: 1;
   min-width: 0;
-  overflow: auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
   border: 1px solid #f3f4f6;
   border-radius: 8px;
   padding: 8px 4px;
@@ -415,15 +441,13 @@ onMounted(loadServers)
   width: min(400px, 42vw);
   min-width: 260px;
   max-width: 100%;
+  min-height: 0;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
   gap: 8px;
-}
-@media (max-width: 1100px) {
-  .detail-wrap {
-    width: 100%;
-  }
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 .detail-placeholder {
   font-size: 12px;
@@ -524,8 +548,6 @@ label {
   line-height: 1.45;
   white-space: pre-wrap;
   word-break: break-all;
-  max-height: min(320px, 45vh);
-  overflow: auto;
 }
 .copy-feedback {
   margin: 6px 0 0;
@@ -538,7 +560,6 @@ label {
   padding: 8px;
   border-radius: 6px;
   overflow: auto;
-  max-height: min(240px, 40vh);
   font-size: 12px;
   margin-top: 8px;
 }

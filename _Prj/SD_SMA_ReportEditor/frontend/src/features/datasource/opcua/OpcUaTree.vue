@@ -41,7 +41,6 @@
       </button>
     </div>
     </template>
-    <p v-if="truncationHint" class="trunc-hint">{{ truncationHint }}</p>
   </div>
 </template>
 
@@ -54,8 +53,6 @@ const props = defineProps({
   nodes: { type: Array, default: () => [] },
   /** 与 shallowRef 树配合：原地改节点后父组件递增，避免 rows 计算属性用缓存 */
   treeRev: { type: Number, default: 0 },
-  /** 最近一次浏览是否可能因 80 条上限被截断 */
-  truncationHint: { type: String, default: '' },
 })
 
 defineEmits(['toggle', 'pick'])
@@ -219,14 +216,5 @@ const rows = computed(() => {
 .row-err {
   font-size: 11px;
   color: #b91c1c;
-}
-.trunc-hint {
-  margin: 8px 0 0;
-  padding: 6px 8px;
-  font-size: 11px;
-  color: #92400e;
-  background: #fffbeb;
-  border: 1px solid #fde68a;
-  border-radius: 6px;
 }
 </style>
