@@ -1,0 +1,41 @@
+"""应用路径与全局配置默认值（避免路由与 main 循环导入）。"""
+from __future__ import annotations
+
+import json
+import logging
+import os
+from pathlib import Path
+
+logger = logging.getLogger(__name__)
+
+
+def resolve_data_dir() -> Path:
+    override = os.environ.get("REPORT_EDITOR_DATA_DIR", "").strip()
+    if override:
+        return Path(override)
+    return Path(__file__).resolve().parent.parent / "data"
+
+
+DATA_DIR = resolve_data_dir()
+TEMPLATES_DIR = DATA_DIR / "templates"
+HISTORY_DIR = DATA_DIR / "history"
+CONFIG_FILE = DATA_DIR / "config.json"
+QUERY_SESSION_FILE = DATA_DIR / "query_sessions.json"
+BACKEND_ROOT = Path(__file__).resolve().parent.parent
+
+DEFAULT_CONFIG = {
+    "db_connections": [],
+    "opcua_servers": [],
+}
+
+
+def init_data_dirs() -> None:
+    for d in [DATA_DIR, TEMPLATES_DIR, HISTORY_DIR]:
+        d.mkdir(parents=True, exist_ok=True)
+        logger.info("目录就绪: %s", d)
+
+    if not CONFIG_FILE.exists():
+        CONFIG_FILE.write_text(json.dumps(DEFAULT_CONFIG, ensure_ascii=False, indent=2), encoding="utf-8")
+        logger.info("已创建默认配置: %s", CONFIG_FILE)
+    else:
+        logger.info("配置文件已存在: %s", CONFIG_FILE)

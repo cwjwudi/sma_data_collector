@@ -1,11 +1,45 @@
 <template>
   <div class="page">
     <h2 class="page-title">数据源配置</h2>
-    <p class="page-placeholder">此页面将用于配置数据库连接和 OPC UA 服务器。</p>
+    <div class="tabs-top">
+      <button type="button" :class="{ on: tab === 'db' }" @click="tab = 'db'">数据库工作台</button>
+      <button type="button" :class="{ on: tab === 'opc' }" @click="tab = 'opc'">OPC UA</button>
+    </div>
+    <DatabaseWorkbench v-if="tab === 'db'" />
+    <OpcUaPanel v-else />
   </div>
 </template>
 
+<script setup>
+import { ref } from 'vue'
+import DatabaseWorkbench from '@/features/datasource/database-workbench/DatabaseWorkbench.vue'
+import OpcUaPanel from '@/features/datasource/opcua/OpcUaPanel.vue'
+
+const tab = ref('db')
+</script>
+
 <style scoped>
-.page-title { font-size: 24px; font-weight: 600; margin-bottom: 16px; }
-.page-placeholder { color: #888; font-size: 14px; }
+.page-title {
+  font-size: 24px;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+.tabs-top {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.tabs-top button {
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: 1px solid #d1d5db;
+  background: #fff;
+  cursor: pointer;
+  font-size: 14px;
+}
+.tabs-top button.on {
+  background: #111827;
+  color: #fff;
+  border-color: #111827;
+}
 </style>

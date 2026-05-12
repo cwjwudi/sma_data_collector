@@ -18,7 +18,20 @@ SD_SMA_ReportEditor/
 └── README.md
 ```
 
+## Cursor：UI/UX Pro Max Skill（混合安装）
+
+报表编辑器的界面协作约定位于仓库根 **`.cursor/skills/ui-ux-pro-max-report-editor/SKILL.md`**。通用设计资源请在本仓库根目录执行：
+
+```bash
+cd P000_SD_SMA_SCADA   # 即本仓库 Git 根目录
+npx uipro-cli init --ai cursor
+```
+
+CLI 产物是否提交由团队自定；**请以仓库根作为 Cursor 工作区打开**，以便加载 `.cursor/skills` 与 `.cursor/rules`。
+
 ## 快速开始
+
+可使用项目根目录 **`start_dev_web.bat`** 一键启动后端 + 前端并在浏览器打开（详见脚本内说明）。
 
 ### 后端
 

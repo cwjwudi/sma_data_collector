@@ -3,6 +3,7 @@ uvicorn[standard]
 sqlalchemy
 pymysql
 psycopg2-binary
+pymongo
 asyncua
 pydantic
 cryptography
