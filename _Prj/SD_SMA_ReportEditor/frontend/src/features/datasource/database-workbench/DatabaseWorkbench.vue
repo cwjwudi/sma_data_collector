@@ -269,10 +269,13 @@ async function previewMongo() {
 }
 
 function applyGrid(data) {
+  const stayOnQueryTab = data.stayOnQueryTab === true
   gridCols.value = data.columns || []
   gridRows.value = data.rows || []
-  gridStatus.value = `查询 ${gridRows.value.length} 行`
-  sub.value = 'data'
+  gridStatus.value = stayOnQueryTab ? `已就绪 ${gridRows.value.length} 行（「数据」页查看）` : `查询 ${gridRows.value.length} 行`
+  if (!stayOnQueryTab) {
+    sub.value = 'data'
+  }
 }
 
 async function loadDdl() {

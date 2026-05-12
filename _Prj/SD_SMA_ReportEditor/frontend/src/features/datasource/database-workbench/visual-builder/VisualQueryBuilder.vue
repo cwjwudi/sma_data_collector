@@ -64,7 +64,6 @@ async function buildOnly() {
 
 async function runVisual() {
   msg.value = ''
-  emit('result', { columns: [], rows: [] })
   try {
     const data = await apiFetch('/database/visual/run', {
       method: 'POST',

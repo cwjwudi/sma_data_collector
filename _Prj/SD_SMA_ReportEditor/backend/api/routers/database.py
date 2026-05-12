@@ -59,6 +59,13 @@ def _credentials(conn: dict[str, Any]) -> tuple[str, str]:
     return conn.get("username") or "", pwd
 
 
+def _effective_sql_database(conn: dict[str, Any], body_database: str | None, engine: str) -> str:
+    """只读 SQL 使用的库：优先请求体（对象树选中），否则连接默认。"""
+    if body_database is not None and str(body_database).strip():
+        return str(body_database).strip()
+    return conn.get("database") or ("postgres" if (engine or "").lower() == "postgres" else "")
+
+
 @router.get("/database/connections")
 async def list_connections():
     try:
@@ -214,6 +221,7 @@ async def query_sql(body: DbExecuteSqlRequest):
     engine = (conn.get("engine") or "").lower()
     user, pwd = _credentials(conn)
     lim = max(1, min(body.limit, 2000))
+    eff_db = _effective_sql_database(conn, body.database, engine)
     try:
         if _is_mysql_family(engine):
             res = db_readonly_service.run_mysql_readonly(
@@ -221,7 +229,7 @@ async def query_sql(body: DbExecuteSqlRequest):
                 int(conn.get("port") or 3306),
                 user,
                 pwd,
-                conn.get("database") or "",
+                eff_db,
                 body.sql,
                 lim,
             )
@@ -231,7 +239,7 @@ async def query_sql(body: DbExecuteSqlRequest):
                 int(conn.get("port") or 5432),
                 user,
                 pwd,
-                conn.get("database") or "postgres",
+                eff_db or "postgres",
                 body.sql,
                 lim,
             )
@@ -451,7 +459,12 @@ async def visual_run(body: VisualQueryBuildRequest):
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
     result = await query_sql(
-        DbExecuteSqlRequest(connection_id=body.connection_id, sql=sql, limit=body.limit)
+        DbExecuteSqlRequest(
+            connection_id=body.connection_id,
+            sql=sql,
+            limit=body.limit,
+            database=body.database,
+        )
     )
     return {"sql": sql, **result}
 

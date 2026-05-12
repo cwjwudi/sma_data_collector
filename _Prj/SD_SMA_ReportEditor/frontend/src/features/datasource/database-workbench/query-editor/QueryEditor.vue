@@ -118,19 +118,28 @@ function onFillMongo(text) {
 
 async function run() {
   msg.value = ''
-  emit('result', { columns: [], rows: [] })
   if (!props.connectionId) {
     msg.value = '请选择连接'
     return
   }
   try {
     if (mode.value === 'sql') {
+      const body = {
+        connection_id: props.connectionId,
+        sql: sqlText.value,
+        limit: 500,
+      }
+      if (props.database && String(props.database).trim()) {
+        body.database = props.database.trim()
+      }
       const data = await apiFetch('/database/query/sql', {
         method: 'POST',
-        body: { connection_id: props.connectionId, sql: sqlText.value, limit: 500 },
+        body,
       })
-      emit('result', data)
+      const n = Array.isArray(data.rows) ? data.rows.length : 0
+      emit('result', { ...data, stayOnQueryTab: true })
       pushHist(sqlText.value)
+      msg.value = `查询完成：${n} 行。切换到「数据」标签可查看表格。`
     } else {
       if (!props.database || !props.collection) {
         msg.value = 'Mongo 查询需要先在对象树选择 database 与 collection'
@@ -153,8 +162,10 @@ async function run() {
           limit: 500,
         },
       })
-      emit('result', data)
+      const n = Array.isArray(data.rows) ? data.rows.length : 0
+      emit('result', { ...data, stayOnQueryTab: true })
       pushHist(mongoPipeline.value)
+      msg.value = `查询完成：${n} 行。切换到「数据」标签可查看表格。`
     }
     await persistSessions()
   } catch (e) {

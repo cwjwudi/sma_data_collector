@@ -72,6 +72,7 @@ class DbExecuteSqlRequest(BaseModel):
     connection_id: str
     sql: str
     limit: int = 200
+    database: str | None = None  # 对象树当前库，优先于连接默认 database（MySQL/PG）
 
 
 class DbMongoAggregateRequest(BaseModel):
