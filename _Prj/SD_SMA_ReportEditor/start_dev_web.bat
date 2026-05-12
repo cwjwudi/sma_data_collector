@@ -35,7 +35,8 @@ start "" "http://localhost:5173/"
 echo.
 echo 已在新窗口启动后端与前端；浏览器应已打开报表编辑器页面。
 echo.
-echo 【关服务】请切到标题含 Backend / Frontend 的两个 PowerShell 窗口，Ctrl+C 或直接关闭。
+echo 【关服务】任务栏找「SD_SMA_ReportEditor - Backend/Frontend」或 Windows Terminal 新标签；Ctrl+C 或关窗口。
+echo           若看不到窗口：双击同目录 stop_dev_web.bat 按端口结束进程。
 echo 【本说明窗口】不再等待按键（避免误点结束）；约 12 秒后自动关闭，不影响已启动的服务。
 echo.
 timeout /t 12 /nobreak
