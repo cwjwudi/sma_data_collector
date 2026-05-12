@@ -151,8 +151,8 @@ const previewRows = ref([])
 const previewStatus = ref('')
 const previewFilters = ref({ column: '', value: '' })
 
-const PREVIEW_ROW_CAP = 2000
-const previewRowChoices = [100, 200, 500, 1000, 1500, 2000]
+const PREVIEW_ROW_CAP = 50000
+const previewRowChoices = [100, 500, 1000, 2000, 5000, 10000, 25000, 50000]
 const previewLimit = ref(100)
 
 const pendingFkNavigate = ref(null)
