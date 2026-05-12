@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class FixRequest(BaseModel):
@@ -44,6 +44,28 @@ class DbConnectionSave(BaseModel):
     password: str | None = None
     sqlite_path: str | None = None
     mongo_auth_source: str | None = "admin"
+
+    @field_validator("engine", mode="before")
+    @classmethod
+    def _norm_engine(cls, v: Any) -> str:
+        if v is None:
+            return ""
+        return str(v).strip().lower()
+
+    @field_validator("port", mode="before")
+    @classmethod
+    def _norm_port(cls, v: Any) -> int | None:
+        if v is None or v == "":
+            return None
+        if isinstance(v, bool):
+            raise ValueError("端口无效")
+        try:
+            n = int(v)
+        except (TypeError, ValueError):
+            raise ValueError("端口必须是有效整数") from None
+        if n < 1 or n > 65535:
+            raise ValueError("端口必须在 1–65535 之间")
+        return n
 
 
 class DbExecuteSqlRequest(BaseModel):

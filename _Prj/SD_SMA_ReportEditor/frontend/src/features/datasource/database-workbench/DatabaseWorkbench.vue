@@ -1,5 +1,6 @@
 <template>
   <div class="wb">
+    <div v-if="loadError" class="load-err">{{ loadError }}</div>
     <div class="tabs-conn">
       <button
         v-for="t in openTabs"
@@ -92,6 +93,7 @@ import ErDiagram from './er-diagram/ErDiagram.vue'
 const connections = ref([])
 const activeConnId = ref('')
 const draftConn = ref(null)
+const loadError = ref('')
 
 const openTabs = ref([])
 
@@ -115,23 +117,35 @@ const activeEngine = computed(() => connections.value.find((c) => c.id === activ
 const canDdl = computed(() => activeTable.value && activeEngine.value && activeEngine.value !== 'mongodb')
 
 async function reloadConnections(preferredId = null) {
-  const data = await apiFetch('/database/connections')
-  connections.value = data.connections || []
-  openTabs.value = connections.value.map((c) => ({ id: c.id, label: c.name || c.engine }))
-  if (!connections.value.length) {
+  loadError.value = ''
+  try {
+    const data = await apiFetch('/database/connections')
+    connections.value = data.connections || []
+    openTabs.value = connections.value.map((c) => ({ id: c.id, label: c.name || c.engine }))
+    if (!connections.value.length) {
+      activeConnId.value = ''
+      draftConn.value = null
+      openTabs.value = []
+      catalog.value = { databases: [], tables: [], collections: [] }
+      return
+    }
+    if (preferredId && connections.value.some((c) => c.id === preferredId)) {
+      activeConnId.value = preferredId
+    } else if (!activeConnId.value || !connections.value.some((c) => c.id === activeConnId.value)) {
+      activeConnId.value = connections.value[0].id
+    }
+    draftConn.value = connections.value.find((c) => c.id === activeConnId.value) || null
+    await loadCatalog()
+  } catch (e) {
+    loadError.value =
+      (e.message || String(e)) +
+      '（请确认后端已启动：开发时在项目目录执行 uvicorn，Electron 会拉起 Python；浏览器需能访问 /api 代理到 127.0.0.1:8000）'
+    connections.value = []
+    openTabs.value = []
     activeConnId.value = ''
     draftConn.value = null
-    openTabs.value = []
     catalog.value = { databases: [], tables: [], collections: [] }
-    return
   }
-  if (preferredId && connections.value.some((c) => c.id === preferredId)) {
-    activeConnId.value = preferredId
-  } else if (!activeConnId.value || !connections.value.some((c) => c.id === activeConnId.value)) {
-    activeConnId.value = connections.value[0].id
-  }
-  draftConn.value = connections.value.find((c) => c.id === activeConnId.value) || null
-  await loadCatalog()
 }
 
 function activateTab(id) {
@@ -324,6 +338,16 @@ reloadConnections()
 <style scoped>
 .wb {
   width: 100%;
+}
+.load-err {
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #991b1b;
+  font-size: 13px;
+  line-height: 1.45;
 }
 .tabs-conn {
   display: flex;

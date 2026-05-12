@@ -1,8 +1,8 @@
 <template>
   <div class="cm">
     <div class="row-head">
-      <h4>连接</h4>
-      <button type="button" class="btn sm" @click="$emit('new')">新建连接</button>
+      <h4>数据库连接</h4>
+      <button type="button" class="btn sm" :disabled="busy" @click="$emit('new')">新建</button>
     </div>
     <ul class="conn-list">
       <li
@@ -16,10 +16,10 @@
       </li>
     </ul>
     <div v-if="draft" class="form">
-      <label>名称</label>
-      <input v-model="draft.name" class="input" />
+      <label>显示名称</label>
+      <input v-model="draft.name" class="input" placeholder="例如 产线 MySQL" />
       <label>引擎</label>
-      <select v-model="draft.engine" class="input">
+      <select v-model="draft.engine" class="input" :disabled="busy">
         <option value="mysql">MySQL</option>
         <option value="mariadb">MariaDB</option>
         <option value="postgres">PostgreSQL</option>
@@ -28,41 +28,52 @@
       </select>
       <template v-if="draft.engine !== 'sqlite'">
         <label>主机</label>
-        <input v-model="draft.host" class="input" placeholder="127.0.0.1" />
+        <input v-model="draft.host" class="input" placeholder="IP 或主机名" :disabled="busy" />
         <label>端口</label>
-        <input v-model.number="draft.port" type="number" class="input" />
+        <input v-model="draft.portText" type="text" inputmode="numeric" class="input" placeholder="留空则使用默认端口" :disabled="busy" />
         <label>用户名</label>
-        <input v-model="draft.username" class="input" />
-        <label>密码（可选）</label>
-        <input v-model="draft.password" type="password" class="input" />
+        <input v-model="draft.username" class="input" autocomplete="username" :disabled="busy" />
+        <label>密码</label>
+        <input
+          v-model="draft.password"
+          type="password"
+          class="input"
+          autocomplete="current-password"
+          :placeholder="draft.id && hasSavedPassword ? '留空表示沿用已保存密码' : '可选'"
+          :disabled="busy"
+        />
       </template>
       <template v-if="draft.engine === 'sqlite'">
-        <label>SQLite 文件路径（后端所在机器路径）</label>
-        <input v-model="draft.sqlite_path" class="input" placeholder="D:\\data\\app.db" />
+        <label>SQLite 路径（后端所在机器上的路径）</label>
+        <input v-model="draft.sqlite_path" class="input" placeholder="D:\\data\\app.db" :disabled="busy" />
       </template>
       <template v-if="draft.engine !== 'sqlite' && draft.engine !== 'mongodb'">
-        <label>数据库名（可选， browsing 时可再选）</label>
-        <input v-model="draft.database" class="input" />
+        <label>默认数据库（可选）</label>
+        <input v-model="draft.database" class="input" placeholder="连接后可再选库" :disabled="busy" />
       </template>
       <template v-if="draft.engine === 'mongodb'">
         <label>默认数据库（可选）</label>
-        <input v-model="draft.database" class="input" />
+        <input v-model="draft.database" class="input" :disabled="busy" />
         <label>authSource</label>
-        <input v-model="draft.mongo_auth_source" class="input" />
+        <input v-model="draft.mongo_auth_source" class="input" :disabled="busy" />
       </template>
       <div class="actions">
-        <button type="button" class="btn primary sm" @click="() => save(false)">保存</button>
-        <button type="button" class="btn sm" @click="test">测试</button>
-        <button type="button" class="btn danger sm" v-if="draft.id" @click="remove">删除</button>
+        <button type="button" class="btn sm" :disabled="busy" @click="testOnly">测试连接</button>
+        <button type="button" class="btn primary sm" :disabled="busy" @click="() => save(false)">仅保存</button>
+        <button type="button" class="btn primary sm" :disabled="busy" @click="testAndSave">测试并保存</button>
+        <button type="button" class="btn danger sm" v-if="draft.id" :disabled="busy" @click="remove">删除</button>
       </div>
-      <p class="hint">连接信息保存在本地 config.json。测试连接成功后会自动保存；也可直接点「保存」。正式安装包使用应用用户目录下的数据文件夹。</p>
-      <div v-if="msg" class="msg">{{ msg }}</div>
+      <p class="hint">
+        配置写入本机 data/config.json；密码经本机密钥加密。若曾复制过 config 但未复制同目录下的
+        .report_editor_fernet.key，请重新输入密码再保存。
+      </p>
+      <div v-if="msg" :class="['msg', msgTone]">{{ msg }}</div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { reactive, ref, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 import { apiFetch } from '@/api/client.js'
 
 const props = defineProps({
@@ -77,7 +88,7 @@ const draft = reactive({
   name: '',
   engine: 'mysql',
   host: '127.0.0.1',
-  port: 3306,
+  portText: '3306',
   database: '',
   username: '',
   password: '',
@@ -86,17 +97,41 @@ const draft = reactive({
 })
 
 const msg = ref('')
+const msgTone = ref('')
+const busy = ref(false)
+
+const hasSavedPassword = computed(() => {
+  const v = props.modelValue
+  return !!(v && v.has_password)
+})
+
+function defaultPortForEngine(engine) {
+  if (engine === 'postgres') return 5432
+  if (engine === 'mongodb') return 27017
+  return 3306
+}
+
+function effectivePort() {
+  const raw = String(draft.portText ?? '').trim()
+  if (!raw) return defaultPortForEngine(draft.engine)
+  const n = Number.parseInt(raw, 10)
+  if (!Number.isFinite(n) || n < 1 || n > 65535) {
+    return defaultPortForEngine(draft.engine)
+  }
+  return n
+}
 
 watch(
   () => props.modelValue,
   (v) => {
     msg.value = ''
+    msgTone.value = ''
     if (!v) {
       draft.id = ''
       draft.name = ''
       draft.engine = 'mysql'
       draft.host = '127.0.0.1'
-      draft.port = 3306
+      draft.portText = String(defaultPortForEngine('mysql'))
       draft.database = ''
       draft.username = ''
       draft.password = ''
@@ -104,12 +139,15 @@ watch(
       draft.mongo_auth_source = 'admin'
       return
     }
+    const eng = v.engine || 'mysql'
+    const dp = defaultPortForEngine(eng)
+    const p = v.port != null && v.port !== '' ? String(v.port) : String(dp)
     Object.assign(draft, {
       id: v.id || '',
       name: v.name || '',
-      engine: v.engine || 'mysql',
+      engine: eng,
       host: v.host || '127.0.0.1',
-      port: v.port ?? (v.engine === 'postgres' ? 5432 : v.engine === 'mongodb' ? 27017 : 3306),
+      portText: p,
       database: v.database || '',
       username: v.username || '',
       password: '',
@@ -120,27 +158,56 @@ watch(
   { immediate: true },
 )
 
-function saveBody() {
-  return {
+watch(
+  () => draft.engine,
+  (eng, prev) => {
+    if (!prev || eng === prev) return
+    const cur = String(draft.portText ?? '').trim()
+    const prevDefault = String(defaultPortForEngine(prev))
+    if (!cur || cur === prevDefault) {
+      draft.portText = String(defaultPortForEngine(eng))
+    }
+  },
+)
+
+function buildApiBody() {
+  const engine = draft.engine
+  const port = effectivePort()
+  const common = {
     id: draft.id || null,
-    name: draft.name,
-    engine: draft.engine,
-    host: draft.engine === 'sqlite' ? null : draft.host,
-    port: draft.engine === 'sqlite' ? null : draft.port,
-    database: draft.database || null,
-    username: draft.engine === 'sqlite' ? null : draft.username,
-    password: draft.password || null,
-    sqlite_path: draft.sqlite_path || null,
-    mongo_auth_source: draft.mongo_auth_source || 'admin',
+    name: (draft.name || '').trim(),
+    engine,
+    database: (draft.database || '').trim() || null,
+    mongo_auth_source: (draft.mongo_auth_source || 'admin').trim() || 'admin',
+  }
+  if (engine === 'sqlite') {
+    return {
+      ...common,
+      host: null,
+      port: null,
+      username: null,
+      password: draft.password ? draft.password : null,
+      sqlite_path: (draft.sqlite_path || '').trim() || null,
+    }
+  }
+  return {
+    ...common,
+    host: (draft.host || '').trim() || '127.0.0.1',
+    port,
+    username: (draft.username || '').trim() || null,
+    password: draft.password ? draft.password : null,
+    sqlite_path: null,
   }
 }
 
 async function save(afterTest = false) {
   msg.value = ''
+  msgTone.value = ''
+  busy.value = true
   try {
     const data = await apiFetch('/database/connections', {
       method: 'POST',
-      body: saveBody(),
+      body: buildApiBody(),
     })
     const list = data.connections || []
     const sid = data.saved_id
@@ -150,34 +217,80 @@ async function save(afterTest = false) {
       list[list.length - 1]?.id ||
       null
     emit('updated', mine)
-    msg.value = afterTest ? '连接成功，已保存到本地配置' : '已保存'
+    msg.value = afterTest ? '连接成功，已写入本地配置' : '已保存'
+    msgTone.value = 'ok'
   } catch (e) {
     msg.value = e.message || String(e)
+    msgTone.value = 'err'
+  } finally {
+    busy.value = false
   }
 }
 
-async function test() {
-  msg.value = ''
+async function runTest() {
+  busy.value = true
   try {
     const res = await apiFetch('/database/test', {
       method: 'POST',
-      body: { id: null, ...saveBody() },
+      body: buildApiBody(),
+    })
+    return { ok: !!res.ok, message: res.message || '' }
+  } catch (e) {
+    return { ok: false, message: e.message || String(e) }
+  } finally {
+    busy.value = false
+  }
+}
+
+async function testOnly() {
+  msg.value = ''
+  msgTone.value = ''
+  busy.value = true
+  try {
+    const res = await apiFetch('/database/test', {
+      method: 'POST',
+      body: buildApiBody(),
     })
     if (res.ok) {
-      await save(true)
+      msg.value = '连接成功（尚未保存到配置文件）'
+      msgTone.value = 'ok'
     } else {
-      msg.value = res.message || '失败'
+      msg.value = res.message || '连接失败'
+      msgTone.value = 'err'
     }
   } catch (e) {
     msg.value = e.message || String(e)
+    msgTone.value = 'err'
+  } finally {
+    busy.value = false
   }
+}
+
+async function testAndSave() {
+  msg.value = ''
+  msgTone.value = ''
+  const t = await runTest()
+  if (!t.ok) {
+    msg.value = t.message || '连接失败'
+    msgTone.value = 'err'
+    return
+  }
+  await save(true)
 }
 
 async function remove() {
   if (!draft.id) return
-  await apiFetch(`/database/connections/${draft.id}`, { method: 'DELETE' })
-  emit('updated', null)
-  emit('new')
+  busy.value = true
+  try {
+    await apiFetch(`/database/connections/${draft.id}`, { method: 'DELETE' })
+    emit('updated', null)
+    emit('new')
+  } catch (e) {
+    msg.value = e.message || String(e)
+    msgTone.value = 'err'
+  } finally {
+    busy.value = false
+  }
 }
 </script>
 
@@ -242,6 +355,10 @@ async function remove() {
   cursor: pointer;
   font-size: 13px;
 }
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
 .btn.primary {
   background: #4f46e5;
   color: #fff;
@@ -256,7 +373,13 @@ async function remove() {
 }
 .msg {
   font-size: 12px;
-  color: #374151;
+  line-height: 1.45;
+}
+.msg.ok {
+  color: #047857;
+}
+.msg.err {
+  color: #b91c1c;
 }
 .hint {
   margin: 0;

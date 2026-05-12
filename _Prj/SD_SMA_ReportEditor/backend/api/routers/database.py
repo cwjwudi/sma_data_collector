@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
+import uuid
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
 
 from core.settings import CONFIG_FILE, DATA_DIR, QUERY_SESSION_FILE
-from modules import config_store, db_readonly_service
+from modules import config_store, db_connection_ops, db_readonly_service
 from schemas.common import (
     DbConnectionSave,
     DbDdlPreviewRequest,
@@ -19,6 +21,7 @@ from schemas.common import (
 )
 
 router = APIRouter(tags=["database"])
+logger = logging.getLogger(__name__)
 
 
 def _is_mysql_family(engine: str) -> bool:
@@ -57,114 +60,99 @@ def _credentials(conn: dict[str, Any]) -> tuple[str, str]:
 
 @router.get("/database/connections")
 async def list_connections():
-    cfg = _cfg()
-    conns = config_store.ensure_db_connection_ids(cfg.get("db_connections", []))
-    cfg["db_connections"] = conns
-    _save(cfg)
-    return {"connections": [config_store.mask_connection_for_response(c) for c in conns]}
+    try:
+        cfg = _cfg()
+        conns = list(cfg.get("db_connections", []))
+        dirty = False
+        for c in conns:
+            if not c.get("id"):
+                c["id"] = str(uuid.uuid4())
+                dirty = True
+        if dirty:
+            cfg["db_connections"] = conns
+            _save(cfg)
+        return {"connections": [config_store.mask_connection_for_response(c) for c in conns]}
+    except Exception as e:
+        logger.exception("list_connections")
+        raise HTTPException(503, f"无法读取或写入数据库连接配置: {e}") from e
 
 
 @router.post("/database/connections")
 async def upsert_connection(body: DbConnectionSave):
-    cfg = _cfg()
-    conns = cfg.get("db_connections", [])
-    pwd_plain = body.password
-    eng = (body.engine or "").lower()
-    default_port = 3306
-    if eng == "postgres":
-        default_port = 5432
-    elif eng == "mongodb":
-        default_port = 27017
-    entry: dict[str, Any] = {
-        "name": body.name,
-        "engine": eng,
-        "host": body.host,
-        "port": body.port if body.port is not None else default_port,
-        "database": body.database,
-        "username": body.username,
-        "sqlite_path": body.sqlite_path,
-        "mongo_auth_source": body.mongo_auth_source or "admin",
-    }
-    if body.id:
-        found = False
-        for i, c in enumerate(conns):
-            if c.get("id") == body.id:
-                enc = c.get("password_enc")
-                if pwd_plain is not None:
-                    enc = config_store.encrypt_db_password(DATA_DIR, pwd_plain)
-                entry["password_enc"] = enc
-                entry["id"] = body.id
-                conns[i] = {**c, **entry}
-                found = True
-                break
-        if not found:
-            raise HTTPException(404, "未找到连接")
-    else:
-        import uuid
-
-        entry["id"] = str(uuid.uuid4())
-        entry["password_enc"] = config_store.encrypt_db_password(DATA_DIR, pwd_plain)
-        conns.append(entry)
-    cfg["db_connections"] = conns
-    _save(cfg)
-    saved_id = entry.get("id")
-    return {
-        "connections": [config_store.mask_connection_for_response(c) for c in conns],
-        "saved_id": saved_id,
-    }
+    try:
+        cfg = _cfg()
+        conns = cfg.get("db_connections", [])
+        pwd_plain = body.password
+        eng = (body.engine or "").lower()
+        default_port = 3306
+        if eng == "postgres":
+            default_port = 5432
+        elif eng == "mongodb":
+            default_port = 27017
+        entry: dict[str, Any] = {
+            "name": body.name,
+            "engine": eng,
+            "host": body.host,
+            "port": body.port if body.port is not None else default_port,
+            "database": body.database,
+            "username": body.username,
+            "sqlite_path": body.sqlite_path,
+            "mongo_auth_source": body.mongo_auth_source or "admin",
+        }
+        if body.id:
+            found = False
+            for i, c in enumerate(conns):
+                if c.get("id") == body.id:
+                    enc = c.get("password_enc")
+                    if pwd_plain is not None:
+                        enc = config_store.encrypt_db_password(DATA_DIR, pwd_plain)
+                    entry["password_enc"] = enc
+                    entry["id"] = body.id
+                    conns[i] = {**c, **entry}
+                    found = True
+                    break
+            if not found:
+                raise HTTPException(404, "未找到连接")
+        else:
+            entry["id"] = str(uuid.uuid4())
+            entry["password_enc"] = config_store.encrypt_db_password(DATA_DIR, pwd_plain)
+            conns.append(entry)
+        cfg["db_connections"] = conns
+        _save(cfg)
+        saved_id = entry.get("id")
+        return {
+            "connections": [config_store.mask_connection_for_response(c) for c in conns],
+            "saved_id": saved_id,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("upsert_connection")
+        raise HTTPException(503, f"保存连接失败: {e}") from e
 
 
 @router.delete("/database/connections/{connection_id}")
 async def delete_connection(connection_id: str):
-    cfg = _cfg()
-    conns = [c for c in cfg.get("db_connections", []) if c.get("id") != connection_id]
-    cfg["db_connections"] = conns
-    _save(cfg)
-    return {"ok": True}
+    try:
+        cfg = _cfg()
+        conns = [c for c in cfg.get("db_connections", []) if c.get("id") != connection_id]
+        cfg["db_connections"] = conns
+        _save(cfg)
+        return {"ok": True}
+    except Exception as e:
+        logger.exception("delete_connection")
+        raise HTTPException(503, f"删除连接失败: {e}") from e
 
 
 @router.post("/database/test")
 async def test_connection(body: DbConnectionSave):
-    """不落库的连通性测试。"""
+    """不落库的连通性测试。始终返回 HTTP 200 与 JSON，避免前端收到 4xx/5xx 仅显示 Internal Server Error。"""
     try:
-        engine = body.engine.lower()
-        pwd = body.password or ""
-        if _is_mysql_family(engine):
-            db_readonly_service.mysql_list_databases(
-                body.host or "127.0.0.1",
-                int(body.port or 3306),
-                body.username or "",
-                pwd,
-            )
-        elif engine == "postgres":
-            db_readonly_service.postgres_list_databases(
-                body.host or "127.0.0.1",
-                int(body.port or 5432),
-                body.username or "",
-                pwd,
-            )
-        elif engine == "sqlite":
-            path = body.sqlite_path or ""
-            if not path:
-                raise ValueError("缺少 SQLite 路径")
-            db_readonly_service.introspect_sqlite_tables(path)
-        elif engine == "mongodb":
-            db_readonly_service.mongo_list_databases(
-                {
-                    "host": body.host or "127.0.0.1",
-                    "port": int(body.port or 27017),
-                    "username": body.username or "",
-                    "password": pwd,
-                    "auth_source": body.mongo_auth_source or "admin",
-                }
-            )
-        else:
-            raise HTTPException(400, "未知引擎")
-        return {"ok": True}
-    except HTTPException:
-        raise
+        ok, err = db_connection_ops.run_connectivity_test(body)
+        return {"ok": ok, "message": err}
     except Exception as e:
-        return {"ok": False, "message": str(e)}
+        logger.exception("test_connection")
+        return {"ok": False, "message": f"测试过程异常: {e}"}
 
 
 @router.post("/database/catalog")
