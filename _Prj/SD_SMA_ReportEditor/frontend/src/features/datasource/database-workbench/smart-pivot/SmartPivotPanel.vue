@@ -20,11 +20,11 @@
             <option v-for="c in profile?.columns || []" :key="c.name" :value="c.name">{{ c.name }}</option>
           </select>
           <template v-if="profile?.mode === 'timeseries' || timeColumn">
-            <button type="button" class="btn sm" @click="presetRange('today')">今天</button>
-            <button type="button" class="btn sm" @click="presetRange('week')">本周</button>
-            <button type="button" class="btn sm" @click="presetRange('month')">本月</button>
-            <button type="button" class="btn sm" @click="presetRange('year')">今年</button>
-            <button type="button" class="btn sm" @click="clearRange">时间不限</button>
+            <button type="button" class="btn sm ghost" @click="presetRange('today')">今天</button>
+            <button type="button" class="btn sm ghost" @click="presetRange('week')">本周</button>
+            <button type="button" class="btn sm ghost" @click="presetRange('month')">本月</button>
+            <button type="button" class="btn sm ghost" @click="presetRange('year')">今年</button>
+            <button type="button" class="btn sm ghost" @click="clearRange">时间不限</button>
             <label class="sp-dt">起 <input v-model="timeStart" type="datetime-local" class="sp-input-dt" /></label>
             <label class="sp-dt">止 <input v-model="timeEnd" type="datetime-local" class="sp-input-dt" /></label>
           </template>
@@ -34,8 +34,8 @@
             <option v-for="n in profile?.categorical_columns || []" :key="n" :value="n">{{ n }}</option>
           </select>
           <button type="button" class="btn sm primary" :disabled="loading" @click="loadSeries">刷新图表</button>
-          <button type="button" class="btn sm" :disabled="!chartPayload || exportingPng" @click="exportPng">导出 PNG</button>
-          <button type="button" class="btn sm" :disabled="!drillRows.length" @click="exportCsv">导出 CSV</button>
+          <button type="button" class="btn sm ghost" :disabled="!chartPayload || exportingPng" @click="exportPng">导出 PNG</button>
+          <button type="button" class="btn sm ghost" :disabled="!drillRows.length" @click="exportCsv">导出 CSV</button>
         </div>
         <div class="sp-metrics">
           <span class="sp-label">数值指标（多选）</span>
@@ -51,7 +51,7 @@
             <option v-for="c in profile?.columns || []" :key="c.name" :value="c.name">{{ c.name }}</option>
           </select>
           <input v-model="filterDraft.value" type="text" class="sp-input" placeholder="等于…" />
-          <button type="button" class="btn sm" @click="addFilter">添加</button>
+          <button type="button" class="btn sm ghost" @click="addFilter">添加</button>
           <span v-for="(f, i) in filters" :key="i" class="sp-chip">
             {{ f.column }}={{ f.value }}
             <button type="button" class="sp-chip-x" @click="filters.splice(i, 1)">×</button>
@@ -73,10 +73,7 @@
         </div>
         <div ref="chartEl" class="sp-chart" />
         <div class="sp-drill-bar">
-          <button type="button" class="btn sm" :disabled="!brushIndices.length" @click="drillFromBrush">
-            将框选范围同步到下方表格
-          </button>
-          <span class="sp-muted sp-hint">工具栏中的「横向刷选」框选区间后点击同步。</span>
+          <span class="sp-muted sp-hint">在图表工具栏使用「横向刷选」框选区间，松手后下方表格将自动加载该区间明细。</span>
         </div>
         <DataGrid fill-height :columns="drillCols" :rows="drillRows" :status="drillStatus" />
       </template>
@@ -128,6 +125,10 @@ const exportingPng = ref(false)
 const suppressParamReload = ref(false)
 
 let timeRangeReloadTimer = null
+
+/** 作废进行中的下钻请求，避免快速连选或刷新图表后乱序写回 */
+let drillRequestSeq = 0
+let lastDrillSignature = ''
 
 const insightLines = computed(() => {
   const p = chartPayload.value
@@ -291,6 +292,35 @@ function applyBrushFromEvent(ev) {
   brushIndices.value = Array.from(idxSet).sort((a, b) => a - b)
 }
 
+function buildDrillSignature(idxs, p) {
+  if (!idxs.length || !p) return ''
+  const sorted = [...idxs].sort((a, b) => a - b)
+  const i0 = sorted[0]
+  const i1 = sorted[sorted.length - 1]
+  if (p.mode === 'timeseries') {
+    const xa = p.x_axis || []
+    return `ts:${xa[i0]}|${xa[i1]}`
+  }
+  return `row:${i0}|${i1}`
+}
+
+function onBrushSelected(ev) {
+  applyBrushFromEvent(ev)
+}
+
+function onBrushEnd(ev) {
+  applyBrushFromEvent(ev)
+  if (!brushIndices.value.length) {
+    drillRequestSeq += 1
+    lastDrillSignature = ''
+    drillCols.value = []
+    drillRows.value = []
+    drillStatus.value = '已清除框选'
+    return
+  }
+  void drillFromBrush()
+}
+
 async function loadProfile() {
   profile.value = null
   chartPayload.value = null
@@ -317,9 +347,14 @@ async function loadProfile() {
 
 async function loadSeries() {
   if (!props.connectionId || !props.tableName || isMongo.value) return
+  drillRequestSeq += 1
+  lastDrillSignature = ''
+  brushIndices.value = []
+  drillCols.value = []
+  drillRows.value = []
+  drillStatus.value = ''
   loading.value = true
   lastError.value = ''
-  brushIndices.value = []
   try {
     const body = {
       connection_id: props.connectionId,
@@ -413,10 +448,10 @@ function renderChart() {
   }
 
   chartInstance.setOption(option)
-  chartInstance.off('brushSelected')
-  chartInstance.off('brushEnd')
-  chartInstance.on('brushSelected', applyBrushFromEvent)
-  chartInstance.on('brushEnd', applyBrushFromEvent)
+  chartInstance.off('brushSelected', onBrushSelected)
+  chartInstance.off('brushEnd', onBrushEnd)
+  chartInstance.on('brushSelected', onBrushSelected)
+  chartInstance.on('brushEnd', onBrushEnd)
 
   window.removeEventListener('resize', onResize)
   window.addEventListener('resize', onResize)
@@ -430,6 +465,11 @@ async function drillFromBrush() {
   const idxs = [...brushIndices.value].sort((a, b) => a - b)
   if (!idxs.length || !props.tableName) return
   const p = chartPayload.value
+  if (!p) return
+  const sig = buildDrillSignature(idxs, p)
+  if (sig && sig === lastDrillSignature) return
+
+  const mySeq = ++drillRequestSeq
   const i0 = idxs[0]
   const i1 = idxs[idxs.length - 1]
   drillStatus.value = '加载下钻…'
@@ -454,8 +494,10 @@ async function drillFromBrush() {
         order_column: tc || undefined,
       }
       const data = await apiFetch('/database/table/preview_drill', { method: 'POST', body })
+      if (mySeq !== drillRequestSeq) return
       drillCols.value = data.columns || []
       drillRows.value = data.rows || []
+      lastDrillSignature = sig
       drillStatus.value = `框选下钻 ${drillRows.value.length} 行`
     } else {
       const oc = lastSortKey.value
@@ -469,13 +511,17 @@ async function drillFromBrush() {
         order_column: oc || undefined,
       }
       const data = await apiFetch('/database/table/preview_drill', { method: 'POST', body })
+      if (mySeq !== drillRequestSeq) return
       drillCols.value = data.columns || []
       drillRows.value = data.rows || []
+      lastDrillSignature = sig
       drillStatus.value = `行区间 ${i0}–${i1} · ${drillRows.value.length} 行`
     }
   } catch (e) {
+    if (mySeq !== drillRequestSeq) return
     drillCols.value = []
     drillRows.value = []
+    lastDrillSignature = ''
     drillStatus.value = e.message || String(e)
   }
 }
@@ -706,10 +752,50 @@ onUnmounted(() => {
 .sp-hint {
   font-size: 11px;
 }
+.btn {
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid #d1d5db;
+  background: #fff;
+  color: #374151;
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1.25;
+  font-family: inherit;
+}
+.btn.sm {
+  padding: 4px 8px;
+  font-size: 12px;
+}
+.btn:hover:not(:disabled) {
+  background: #f9fafb;
+  border-color: #9ca3af;
+}
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.btn:focus-visible {
+  outline: 2px solid #2563eb;
+  outline-offset: 1px;
+}
+.btn.ghost {
+  background: #f3f4f6;
+  border-color: #e5e7eb;
+  color: #4b5563;
+}
+.btn.ghost:hover:not(:disabled) {
+  background: #e5e7eb;
+  border-color: #d1d5db;
+}
 .btn.primary {
   background: #111827;
   color: #fff;
   border-color: #111827;
+}
+.btn.primary:hover:not(:disabled) {
+  background: #374151;
+  border-color: #374151;
 }
 .sp-root > :deep(.grid-wrap.grid-fill) {
   flex: 1;
