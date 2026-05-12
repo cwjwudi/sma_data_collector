@@ -1,6 +1,8 @@
 @echo off
 chcp 65001 >nul
 setlocal
+rem 专用标题，避免与「命令提示符」混淆；浏览器打开后本窗口常被挡在后面，请用任务栏或 Alt+Tab 找本标题
+title SD_SMA_ReportEditor 启动说明
 
 rem 一键启动：FastAPI 后端 + Vite 前端（浏览器访问）
 rem 请将本文件放在 SD_SMA_ReportEditor 根目录（与 backend、frontend 同级）
@@ -31,7 +33,11 @@ start "" "http://localhost:5173/"
 
 echo.
 echo 已在新窗口启动后端与前端；浏览器应已打开报表编辑器页面。
-echo 停止服务：切到 Backend / Frontend 的 PowerShell 窗口，按 Ctrl+C；或直接关闭这两个窗口。
+echo.
+echo 【本窗口】任务栏里请找标题为「SD_SMA_ReportEditor 启动说明」的窗口。
+echo        若看不到：按 Alt+Tab 切换，或最小化浏览器再找该窗口。
+echo 【关服务】请关闭或 Ctrl+C 标题含「Backend」「Frontend」的两个 PowerShell 窗口。
+echo 【关本说明】下面按任意键后，本窗口会关闭（不影响已在运行的前后端）。
 echo.
 pause
 endlocal
