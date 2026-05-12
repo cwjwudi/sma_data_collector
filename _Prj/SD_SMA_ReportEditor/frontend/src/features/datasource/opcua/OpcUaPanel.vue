@@ -64,7 +64,7 @@
               <button type="button" class="btn sm" @click="readValue">重新读取</button>
               <pre v-if="readOut" class="pre">{{ readOut }}</pre>
             </div>
-            <div v-else class="detail-placeholder">点击 Variable 节点将自动读取并在左侧显示数值；其它类型可用「重新读取」看 JSON</div>
+            <div v-else class="detail-placeholder">展开层级后 Variable 会在左侧自动显示数值；点击节点可看右侧 JSON</div>
           </div>
         </div>
       </div>
@@ -91,8 +91,9 @@ const treeNodes = shallowRef([])
 const treeRev = ref(0)
 const pickedNode = ref(null)
 const readOut = ref('')
-/** 选中节点切换时递增，丢弃过期的读值请求 */
-const readEpoch = ref(0)
+/** 浏览结果刷新后递增，作废进行中的 Variable 预读请求 */
+const prefetchGen = ref(0)
+
 const copyFeedback = ref('')
 
 function bumpTree() {
@@ -245,6 +246,7 @@ async function testDraft() {
 
 async function refreshRoot() {
   if (!form.id) return
+  prefetchGen.value += 1
   try {
     const res = await apiFetch(`/opcua/browse_saved/${form.id}`, { method: 'POST', body: {} })
     if (res.ok === false) {
@@ -256,6 +258,7 @@ async function refreshRoot() {
     const list = res.nodes || []
     treeNodes.value = list.map((n) => wrapOpcNode(n))
     bumpTree()
+    void prefetchVariableValuesInNodes(treeNodes.value)
   } catch (e) {
     msg.value = e.message || String(e)
   }
@@ -285,6 +288,7 @@ async function onToggleNode(node) {
     node.children = list.map((n) => wrapOpcNode(n))
     node.loaded = true
     node.expanded = true
+    void prefetchVariableValuesInNodes(node.children)
   } catch (e) {
     node.errorMessage = e.message || String(e)
     msg.value = node.errorMessage
@@ -322,6 +326,44 @@ function formatOpcValuePreview(res) {
     return v.length > 72 ? `${v.slice(0, 69)}…` : v
   }
   return String(v)
+}
+
+/** 当前层级加载完成后，为所有 Variable 自动读值并填树行（无需逐节点点击） */
+const VARIABLE_PREFETCH_CONCURRENCY = 4
+
+async function prefetchVariableValuesInNodes(nodes) {
+  if (!form.id || !nodes?.length) return
+  const myGen = prefetchGen.value
+  const targets = nodes.filter((n) => n.node_id && isOpcVariableValueNode(n))
+  for (let i = 0; i < targets.length; i += VARIABLE_PREFETCH_CONCURRENCY) {
+    if (prefetchGen.value !== myGen || !form.id) return
+    const batch = targets.slice(i, i + VARIABLE_PREFETCH_CONCURRENCY)
+    await Promise.all(batch.map((node) => prefetchVariableTreeRow(node, myGen)))
+  }
+}
+
+async function prefetchVariableTreeRow(node, myGen) {
+  if (!form.id || prefetchGen.value !== myGen || !node?.node_id || !isOpcVariableValueNode(node)) return
+  try {
+    const res = await apiFetch(`/opcua/read_saved/${form.id}`, {
+      method: 'POST',
+      body: { node_id: node.node_id },
+    })
+    if (prefetchGen.value !== myGen || !form.id) return
+    if (res.ok === false) {
+      node.valuePreview = ''
+      node.valueReadError = res.message || '读值失败'
+    } else {
+      node.valueReadError = null
+      node.valuePreview = formatOpcValuePreview(res)
+    }
+    bumpTree()
+  } catch (e) {
+    if (prefetchGen.value !== myGen) return
+    node.valuePreview = ''
+    node.valueReadError = e.message || String(e)
+    bumpTree()
+  }
 }
 
 function pickNode(n) {
