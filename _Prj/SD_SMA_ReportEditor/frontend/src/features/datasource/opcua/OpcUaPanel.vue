@@ -62,6 +62,26 @@
                 <p v-if="copyFeedback" class="copy-feedback">{{ copyFeedback }}</p>
               </div>
               <button type="button" class="btn sm" @click="readValue">重新读取</button>
+              <div class="poll-row">
+                <label class="poll-label">
+                  <input v-model="pollEnabled" type="checkbox" />
+                  持续刷新
+                </label>
+                <span v-if="pollEnabled" class="poll-interval">
+                  <label for="opc-poll-interval">间隔</label>
+                  <input
+                    id="opc-poll-interval"
+                    v-model.number="pollIntervalSeconds"
+                    type="number"
+                    min="0.5"
+                    max="300"
+                    step="0.5"
+                    class="input input-tiny"
+                  />
+                  <span class="poll-hint">秒</span>
+                </span>
+              </div>
+              <p v-if="pollEnabled && !canPollCurrent" class="poll-warn">开启后请选中 Variable 节点；仅对该节点定时读值（0.5～300 秒一轮）</p>
               <pre v-if="readOut" class="pre">{{ readOut }}</pre>
             </div>
             <div v-else class="detail-placeholder">展开层级后 Variable 会在左侧自动显示数值；点击节点可看右侧 JSON</div>
@@ -73,7 +93,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref, shallowRef, triggerRef } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, shallowRef, triggerRef, watch } from 'vue'
 import { apiFetch } from '@/api/client.js'
 import OpcUaTree from './OpcUaTree.vue'
 
@@ -97,6 +117,12 @@ const readEpoch = ref(0)
 const prefetchGen = ref(0)
 
 const copyFeedback = ref('')
+
+/** 定时读当前选中 Variable（轮询）；与 readEpoch 无关 */
+const pollEnabled = ref(false)
+const pollIntervalSeconds = ref(2)
+let pollTimerId = null
+let pollInFlight = false
 
 function bumpTree() {
   treeRev.value += 1
@@ -309,6 +335,10 @@ function isOpcVariableValueNode(n) {
   return u === 'VARIABLE'
 }
 
+const canPollCurrent = computed(
+  () => !!(form.id && pickedNode.value?.node_id && isOpcVariableValueNode(pickedNode.value)),
+)
+
 /** 树行快捷展示的读值摘要（不含完整 JSON） */
 function formatOpcValuePreview(res) {
   if (!res || res.ok === false) return ''
@@ -418,6 +448,78 @@ async function readValue() {
   const epoch = readEpoch.value
   await fetchNodeValue(pickedNode.value, epoch, { manual: true })
 }
+
+function clampPollSeconds(v) {
+  const n = Number(v)
+  if (Number.isNaN(n) || n < 0.5) return 0.5
+  if (n > 300) return 300
+  return n
+}
+
+function clearPollTimer() {
+  if (pollTimerId != null) {
+    clearInterval(pollTimerId)
+    pollTimerId = null
+  }
+}
+
+async function pollSelectedVariableOnce() {
+  if (!pollEnabled.value || !form.id || pollInFlight) return
+  const n = pickedNode.value
+  if (!n?.node_id || !isOpcVariableValueNode(n)) return
+  pollInFlight = true
+  try {
+    const res = await apiFetch(`/opcua/read_saved/${form.id}`, {
+      method: 'POST',
+      body: { node_id: n.node_id },
+    })
+    if (!pollEnabled.value || pickedNode.value !== n || !form.id) return
+    readOut.value = JSON.stringify(res, null, 2)
+    if (res.ok === false) {
+      n.valuePreview = ''
+      n.valueReadError = res.message || '读值失败'
+    } else {
+      n.valueReadError = null
+      n.valuePreview = formatOpcValuePreview(res)
+    }
+    bumpTree()
+  } catch (e) {
+    if (!pollEnabled.value || pickedNode.value !== n) return
+    readOut.value = e.message || String(e)
+    n.valuePreview = ''
+    n.valueReadError = e.message || String(e)
+    bumpTree()
+  } finally {
+    pollInFlight = false
+  }
+}
+
+function syncPollTimer() {
+  clearPollTimer()
+  if (!pollEnabled.value || !form.id) return
+  const n = pickedNode.value
+  if (!n?.node_id || !isOpcVariableValueNode(n)) return
+  const ms = Math.round(clampPollSeconds(pollIntervalSeconds.value) * 1000)
+  void pollSelectedVariableOnce()
+  pollTimerId = window.setInterval(() => void pollSelectedVariableOnce(), ms)
+}
+
+watch(
+  [pollEnabled, pollIntervalSeconds, () => form.id, () => pickedNode.value],
+  () => {
+    syncPollTimer()
+  },
+  { flush: 'post' },
+)
+
+watch(pollIntervalSeconds, (v) => {
+  const c = clampPollSeconds(v)
+  if (c !== v) pollIntervalSeconds.value = c
+})
+
+onBeforeUnmount(() => {
+  clearPollTimer()
+})
 
 onMounted(loadServers)
 </script>
@@ -655,5 +757,44 @@ label {
   overflow: auto;
   font-size: 12px;
   margin-top: 8px;
+}
+.poll-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+  font-size: 12px;
+  color: #374151;
+}
+.poll-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  user-select: none;
+}
+.poll-interval {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.poll-interval label {
+  margin: 0;
+}
+.poll-hint {
+  color: #6b7280;
+  font-size: 11px;
+}
+.input-tiny {
+  width: 4.5rem;
+  padding: 6px 8px;
+  font-size: 13px;
+}
+.poll-warn {
+  margin: 6px 0 0;
+  font-size: 11px;
+  color: #92400e;
+  line-height: 1.4;
 }
 </style>
