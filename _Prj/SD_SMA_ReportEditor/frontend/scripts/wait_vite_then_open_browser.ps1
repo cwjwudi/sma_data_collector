@@ -1,4 +1,4 @@
-# Waits until Vite answers on 127.0.0.1:5173, then opens default browser (used by start_dev_web.bat).
+﻿# Waits until Vite answers on 127.0.0.1:5173, then opens default browser (used by start_dev_web.bat).
 # Fast TcpClient probes while the port is closed; Invoke-WebRequest alone costs ~2s per failed attempt on Windows PowerShell 5.1.
 $ErrorActionPreference = 'SilentlyContinue'
 
