@@ -36,6 +36,18 @@
           <span class="browse-part">{{ row.node.browse_name }}</span>
           <span v-if="row.node.node_id" class="nid">{{ row.node.node_id }}</span>
         </span>
+        <span
+          v-if="row.node.valueReadError"
+          class="row-value row-value-err mono"
+          :title="row.node.valueReadError"
+        >⚠ {{ truncateOneLine(row.node.valueReadError, 72) }}</span>
+        <span
+          v-else-if="row.node.valuePreview !== undefined && row.node.valuePreview !== null && row.node.valuePreview !== ''"
+          class="row-value mono"
+          :title="'= ' + row.node.valuePreview"
+        >
+          = {{ row.node.valuePreview }}
+        </span>
         <span v-if="row.node.error" class="row-err">{{ row.node.error }}</span>
         <span v-if="row.node.errorMessage" class="row-err">{{ row.node.errorMessage }}</span>
       </button>
@@ -56,6 +68,11 @@ const props = defineProps({
 })
 
 defineEmits(['toggle', 'pick'])
+
+function truncateOneLine(s, max) {
+  if (!s || typeof s !== 'string') return ''
+  return s.length > max ? `${s.slice(0, max - 1)}…` : s
+}
 
 function classAbbr(n) {
   const c = n.node_class || ''
@@ -202,6 +219,20 @@ const rows = computed(() => {
   gap: 8px;
   font-size: 11px;
   color: #6b7280;
+}
+.row-value {
+  display: block;
+  width: 100%;
+  margin-top: 2px;
+  font-size: 11px;
+  color: #047857;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+.row-value-err {
+  color: #b45309;
 }
 .mono {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;

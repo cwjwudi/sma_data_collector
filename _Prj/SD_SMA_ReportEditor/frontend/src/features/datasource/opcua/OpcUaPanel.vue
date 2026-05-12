@@ -294,28 +294,61 @@ async function onToggleNode(node) {
   }
 }
 
+/** 树行快捷展示的读值摘要（不含完整 JSON） */
+function formatOpcValuePreview(res) {
+  if (!res || res.ok === false) return ''
+  const v = res.value
+  if (v === null) return 'null'
+  if (v === undefined) return 'undefined'
+  const t = typeof v
+  if (t === 'object') {
+    try {
+      const s = JSON.stringify(v)
+      return s.length > 88 ? `${s.slice(0, 85)}…` : s
+    } catch {
+      return String(v)
+    }
+  }
+  if (t === 'string') {
+    return v.length > 72 ? `${v.slice(0, 69)}…` : v
+  }
+  return String(v)
+}
+
 function pickNode(n) {
   pickedNode.value = n
   readOut.value = ''
   readEpoch.value += 1
   const epoch = readEpoch.value
   if (form.id && n?.node_id) {
-    void fetchNodeValue(n.node_id, epoch)
+    void fetchNodeValue(n, epoch)
   }
 }
 
-async function fetchNodeValue(nodeId, epoch) {
-  if (!form.id || !nodeId) return
+async function fetchNodeValue(node, epoch) {
+  if (!form.id || !node?.node_id) return
+  const nodeId = node.node_id
   try {
     const res = await apiFetch(`/opcua/read_saved/${form.id}`, {
       method: 'POST',
       body: { node_id: nodeId },
     })
     if (epoch !== readEpoch.value) return
+    if (res.ok === false) {
+      node.valuePreview = ''
+      node.valueReadError = res.message || '读值失败'
+    } else {
+      node.valueReadError = null
+      node.valuePreview = formatOpcValuePreview(res)
+    }
     readOut.value = JSON.stringify(res, null, 2)
+    bumpTree()
   } catch (e) {
     if (epoch !== readEpoch.value) return
+    node.valuePreview = ''
+    node.valueReadError = e.message || String(e)
     readOut.value = e.message || String(e)
+    bumpTree()
   }
 }
 
@@ -323,7 +356,7 @@ async function readValue() {
   if (!form.id || !pickedNode.value?.node_id) return
   readEpoch.value += 1
   const epoch = readEpoch.value
-  await fetchNodeValue(pickedNode.value.node_id, epoch)
+  await fetchNodeValue(pickedNode.value, epoch)
 }
 
 onMounted(loadServers)
