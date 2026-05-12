@@ -10,10 +10,19 @@
         <button type="button" class="btn ghost sm" :disabled="edgesLoading" @click="loadForeignKeys">
           {{ edgesLoading ? '加载中…' : '刷新关系图' }}
         </button>
-        <span class="rb-hint">滚轮缩放 · 空白拖拽平移 · 拖动表卡片 · 悬停加载摘要 · 点击连线查看孤儿与一致性</span>
+        <span class="rb-hint" v-show="mode === 'structure'">
+          滚轮缩放 · 空白拖拽平移 · 拖动表卡片 · 悬停加载摘要 · 点击连线查看孤儿与一致性
+        </span>
+        <span class="rb-hint" v-show="mode === 'data'">分页预览 · 外键列单元格可跳转关联表 ·「刷新（首页）」更新总行数</span>
       </div>
       <div class="rb-main" :class="{ dataEm: mode === 'data' }">
-        <div ref="canvasWrapRef" class="rb-canvas-wrap" @wheel.prevent="onWheel" @mousedown.self="startPan">
+        <div
+          v-show="mode === 'structure'"
+          ref="canvasWrapRef"
+          class="rb-canvas-wrap"
+          @wheel.prevent="onWheel"
+          @mousedown.self="startPan"
+        >
           <div class="rb-transform" :style="transformStyle">
             <svg class="rb-svg" :width="CANVAS_W" :height="CANVAS_H">
               <path
@@ -42,7 +51,7 @@
             </div>
           </div>
         </div>
-        <aside class="rb-panel" :class="{ dataWide: mode === 'data' }">
+        <aside class="rb-panel">
           <section class="rb-sec">
             <h4>选中表 · 字段</h4>
             <p v-if="!selectedTable" class="muted">点击画布上的表卡片</p>
@@ -58,7 +67,16 @@
               </div>
             </div>
           </section>
-          <section class="rb-sec rb-preview-sec">
+          <section v-show="mode === 'structure'" class="rb-sec rb-preview-placeholder">
+            <h4>数据预览</h4>
+            <p class="muted rb-preview-placeholder-text">
+              结构视图仅显示关系图与字段列表；切换到「数据视图」可分页预览表数据并支持外键穿透。
+            </p>
+            <div class="rb-actions">
+              <button type="button" class="btn sm primary" @click="mode = 'data'">切换到数据视图</button>
+            </div>
+          </section>
+          <section v-show="mode === 'data'" class="rb-sec rb-preview-sec">
             <h4>数据预览</h4>
             <div class="rb-preview-toolbar">
               <button type="button" class="btn sm" :disabled="previewPage <= 1 || !selectedTable" @click="previewRbPrev">
@@ -332,7 +350,14 @@ watch(selectedTable, async (tbl, prev) => {
     colsLoading.value = false
   }
   await loadMeta(tbl)
-  await loadPreview({ resetPage })
+  if (mode.value === 'data') {
+    await loadPreview({ resetPage })
+  }
+})
+
+watch(mode, async (m) => {
+  if (m !== 'data' || !selectedTable.value || !props.connectionId) return
+  await loadPreview({ resetPage: true })
 })
 
 async function loadMeta(tbl) {
@@ -724,7 +749,7 @@ watch(
   min-height: 420px;
 }
 .rb-main.dataEm {
-  grid-template-columns: minmax(240px, 1fr) minmax(380px, 520px);
+  grid-template-columns: 1fr;
 }
 .rb-canvas-wrap {
   overflow: hidden;
@@ -798,9 +823,15 @@ watch(
   flex-direction: column;
   gap: 10px;
   min-height: 0;
+  min-width: 0;
 }
-.rb-main .rb-panel.dataWide {
-  width: 100%;
+.rb-preview-placeholder {
+  flex-shrink: 0;
+}
+.rb-preview-placeholder-text {
+  margin: 0 0 10px;
+  font-size: 12px;
+  line-height: 1.45;
 }
 .rb-sec {
   border: 1px solid #e5e7eb;
