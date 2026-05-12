@@ -21,7 +21,7 @@
           ref="canvasWrapRef"
           class="rb-canvas-wrap"
           @wheel.prevent="onWheel"
-          @mousedown.self="startPan"
+          @mousedown="onPanMouseDown"
         >
           <div class="rb-transform" :style="transformStyle">
             <svg class="rb-svg" :width="CANVAS_W" :height="CANVAS_H">
@@ -643,6 +643,16 @@ function onWheel(ev) {
   scale.value = next
 }
 
+function onPanMouseDown(ev) {
+  if (ev.button !== 0) return
+  const el = ev.target
+  if (typeof el.closest === 'function') {
+    if (el.closest('.rb-card')) return
+    if (el.closest('.rb-edge-path')) return
+  }
+  startPan(ev)
+}
+
 function startPan(ev) {
   panDrag.value = { sx: ev.clientX, sy: ev.clientY, ox: tx.value, oy: ty.value }
 }
@@ -746,13 +756,14 @@ watch(
   grid-template-columns: minmax(280px, 1fr) 340px;
   gap: 12px;
   flex: 1;
-  min-height: 420px;
+  min-height: 0;
 }
 .rb-main.dataEm {
   grid-template-columns: 1fr;
 }
 .rb-canvas-wrap {
   overflow: hidden;
+  min-height: 0;
   border: 1px solid #e5e7eb;
   border-radius: 8px;
   background: #f8fafc;
