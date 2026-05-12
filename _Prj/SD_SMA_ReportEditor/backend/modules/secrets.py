@@ -1,10 +1,9 @@
 """密码字段加密（存储于 config.json 中的 *_enc 字段）。"""
 from __future__ import annotations
 
-import base64
 from pathlib import Path
 
-from cryptography.fernet import Fernet
+from cryptography.fernet import Fernet, InvalidToken
 
 
 def _load_or_create_key(key_file: Path) -> bytes:
@@ -13,7 +12,10 @@ def _load_or_create_key(key_file: Path) -> bytes:
         return key_file.read_bytes().strip()
     key = Fernet.generate_key()
     key_file.write_bytes(key)
-    key_file.chmod(0o600)
+    try:
+        key_file.chmod(0o600)
+    except OSError:
+        pass
     return key
 
 
@@ -33,4 +35,10 @@ def decrypt_secret(data_dir: Path, token: str | None) -> str:
     if not token:
         return ""
     f = get_fernet(data_dir)
-    return f.decrypt(token.encode("ascii")).decode("utf-8")
+    try:
+        return f.decrypt(token.encode("ascii")).decode("utf-8")
+    except InvalidToken as e:
+        raise ValueError(
+            "已保存的密码无法解密（本机 data/.report_editor_fernet.key 与 config 中密文不匹配，"
+            "或密钥已更换）。请在数据源中重新输入密码并保存连接。"
+        ) from e

@@ -108,7 +108,10 @@ async def browse_saved(server_id: str, payload: dict = Body(default_factory=dict
     srv = next((s for s in cfg.get("opcua_servers", []) if s.get("id") == server_id), None)
     if not srv:
         raise HTTPException(404, "未找到服务器配置")
-    pwd = config_store.decrypt_opcua_password(DATA_DIR, srv)
+    try:
+        pwd = config_store.decrypt_opcua_password(DATA_DIR, srv)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
     node_id = (payload or {}).get("node_id")
     return await opcua_service.browse_children(
         srv.get("endpoint_url", ""),
@@ -124,7 +127,10 @@ async def read_saved(server_id: str, payload: dict):
     srv = next((s for s in cfg.get("opcua_servers", []) if s.get("id") == server_id), None)
     if not srv:
         raise HTTPException(404, "未找到服务器配置")
-    pwd = config_store.decrypt_opcua_password(DATA_DIR, srv)
+    try:
+        pwd = config_store.decrypt_opcua_password(DATA_DIR, srv)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
     node_id = payload.get("node_id")
     if not node_id:
         raise HTTPException(400, "缺少 node_id")

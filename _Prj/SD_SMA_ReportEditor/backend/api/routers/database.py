@@ -48,7 +48,10 @@ def _conn_by_id(cid: str) -> dict[str, Any]:
 
 
 def _credentials(conn: dict[str, Any]) -> tuple[str, str]:
-    pwd = config_store.decrypt_db_password(DATA_DIR, conn)
+    try:
+        pwd = config_store.decrypt_db_password(DATA_DIR, conn)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
     return conn.get("username") or "", pwd
 
 
@@ -249,7 +252,11 @@ async def query_sql(body: DbExecuteSqlRequest):
         else:
             raise HTTPException(400, "该引擎请使用 Mongo 查询接口")
         return res
+    except HTTPException:
+        raise
     except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    except Exception as e:
         raise HTTPException(400, str(e)) from e
 
 
@@ -275,57 +282,66 @@ async def query_mongo(body: DbMongoAggregateRequest):
             body.pipeline,
             lim,
         )
+    except HTTPException:
+        raise
     except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    except Exception as e:
         raise HTTPException(400, str(e)) from e
 
 
 @router.post("/database/table/preview")
 async def table_preview(body: DbTablePreviewRequest):
-    conn = _conn_by_id(body.connection_id)
-    engine = (conn.get("engine") or "").lower()
-    user, pwd = _credentials(conn)
-    lim = max(1, min(body.limit, 500))
-    dbname = body.database or conn.get("database") or ""
-    tbl_raw = body.table
-    if engine == "mongodb":
-        if not dbname:
-            raise HTTPException(400, "MongoDB 需要 database")
-        vars_ = {
-            "host": conn.get("host") or "127.0.0.1",
-            "port": int(conn.get("port") or 27017),
-            "username": user,
-            "password": pwd,
-            "auth_source": conn.get("mongo_auth_source") or "admin",
-        }
-        return db_readonly_service.mongo_find_sample(vars_, dbname, tbl_raw, lim)
-    tbl = _safe_sql_table(tbl_raw)
-    sql_mysql = f"SELECT * FROM `{tbl}` LIMIT {lim}"
-    sql_pg = f'SELECT * FROM "{tbl}" LIMIT {lim}'
-    if _is_mysql_family(engine):
-        return db_readonly_service.run_mysql_readonly(
-            conn.get("host") or "127.0.0.1",
-            int(conn.get("port") or 3306),
-            user,
-            pwd,
-            dbname,
-            sql_mysql,
-            lim,
-        )
-    if engine == "postgres":
-        return db_readonly_service.run_postgres_readonly(
-            conn.get("host") or "127.0.0.1",
-            int(conn.get("port") or 5432),
-            user,
-            pwd,
-            dbname or "postgres",
-            sql_pg,
-            lim,
-        )
-    if engine == "sqlite":
-        path = conn.get("sqlite_path") or ""
-        sql_lite = f"SELECT * FROM {tbl} LIMIT {lim}"
-        return db_readonly_service.run_sqlite_readonly(path, sql_lite, lim)
-    raise HTTPException(400, "未知引擎")
+    try:
+        conn = _conn_by_id(body.connection_id)
+        engine = (conn.get("engine") or "").lower()
+        user, pwd = _credentials(conn)
+        lim = max(1, min(body.limit, 500))
+        dbname = body.database or conn.get("database") or ""
+        tbl_raw = body.table
+        if engine == "mongodb":
+            if not dbname:
+                raise HTTPException(400, "MongoDB 需要 database")
+            vars_ = {
+                "host": conn.get("host") or "127.0.0.1",
+                "port": int(conn.get("port") or 27017),
+                "username": user,
+                "password": pwd,
+                "auth_source": conn.get("mongo_auth_source") or "admin",
+            }
+            return db_readonly_service.mongo_find_sample(vars_, dbname, tbl_raw, lim)
+        tbl = _safe_sql_table(tbl_raw)
+        sql_mysql = f"SELECT * FROM `{tbl}` LIMIT {lim}"
+        sql_pg = f'SELECT * FROM "{tbl}" LIMIT {lim}'
+        if _is_mysql_family(engine):
+            return db_readonly_service.run_mysql_readonly(
+                conn.get("host") or "127.0.0.1",
+                int(conn.get("port") or 3306),
+                user,
+                pwd,
+                dbname,
+                sql_mysql,
+                lim,
+            )
+        if engine == "postgres":
+            return db_readonly_service.run_postgres_readonly(
+                conn.get("host") or "127.0.0.1",
+                int(conn.get("port") or 5432),
+                user,
+                pwd,
+                dbname or "postgres",
+                sql_pg,
+                lim,
+            )
+        if engine == "sqlite":
+            path = conn.get("sqlite_path") or ""
+            sql_lite = f"SELECT * FROM {tbl} LIMIT {lim}"
+            return db_readonly_service.run_sqlite_readonly(path, sql_lite, lim)
+        raise HTTPException(400, "未知引擎")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(400, str(e)) from e
 
 
 @router.post("/database/ddl")
@@ -362,7 +378,11 @@ async def ddl_preview(body: DbDdlPreviewRequest):
         else:
             raise HTTPException(400, "未知引擎")
         return {"ddl": text}
+    except HTTPException:
+        raise
     except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    except Exception as e:
         raise HTTPException(400, str(e)) from e
 
 
