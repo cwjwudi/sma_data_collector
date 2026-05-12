@@ -64,8 +64,8 @@
               <button type="button" class="btn sm" @click="readValue">重新读取</button>
               <div class="poll-row">
                 <label class="poll-label">
-                  <input v-model="pollEnabled" type="checkbox" />
-                  持续刷新
+                  <input v-model="pollEnabled" type="checkbox" class="poll-checkbox" />
+                  <span class="poll-label-text">持续刷新</span>
                 </label>
                 <span v-if="pollEnabled" class="poll-interval">
                   <label for="opc-poll-interval">间隔</label>
@@ -770,9 +770,28 @@ label {
 .poll-label {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 12px;
   cursor: pointer;
   user-select: none;
+  min-height: 44px;
+  padding: 6px 10px 6px 8px;
+  margin: 0;
+  border-radius: 8px;
+  box-sizing: border-box;
+}
+.poll-checkbox {
+  width: 22px;
+  height: 22px;
+  min-width: 22px;
+  min-height: 22px;
+  margin: 0;
+  cursor: pointer;
+  accent-color: #2563eb;
+  flex-shrink: 0;
+}
+.poll-label-text {
+  font-size: 14px;
+  line-height: 1.3;
 }
 .poll-interval {
   display: inline-flex;
