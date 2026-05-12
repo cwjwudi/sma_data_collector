@@ -64,7 +64,7 @@
               <button type="button" class="btn sm" @click="readValue">重新读取</button>
               <pre v-if="readOut" class="pre">{{ readOut }}</pre>
             </div>
-            <div v-else class="detail-placeholder">点击树中节点，将显示详情并自动读取数值</div>
+            <div v-else class="detail-placeholder">点击 Variable 节点将自动读取并在左侧显示数值；其它类型可用「重新读取」看 JSON</div>
           </div>
         </div>
       </div>
@@ -294,6 +294,15 @@ async function onToggleNode(node) {
   }
 }
 
+/** 仅 OPC Variable 类节点在树上展示读值；Object/VariableType 等不展示 */
+function isOpcVariableValueNode(n) {
+  const c = (n?.node_class || '').trim()
+  if (!c) return false
+  const u = c.toUpperCase()
+  if (u.includes('VARIABLETYPE')) return false
+  return u === 'VARIABLE'
+}
+
 /** 树行快捷展示的读值摘要（不含完整 JSON） */
 function formatOpcValuePreview(res) {
   if (!res || res.ok === false) return ''
@@ -320,13 +329,16 @@ function pickNode(n) {
   readOut.value = ''
   readEpoch.value += 1
   const epoch = readEpoch.value
-  if (form.id && n?.node_id) {
+  if (form.id && n?.node_id && isOpcVariableValueNode(n)) {
     void fetchNodeValue(n, epoch)
   }
 }
 
-async function fetchNodeValue(node, epoch) {
+async function fetchNodeValue(node, epoch, { manual = false } = {}) {
   if (!form.id || !node?.node_id) return
+  const showInTree = isOpcVariableValueNode(node)
+  if (!manual && !showInTree) return
+
   const nodeId = node.node_id
   try {
     const res = await apiFetch(`/opcua/read_saved/${form.id}`, {
@@ -334,21 +346,25 @@ async function fetchNodeValue(node, epoch) {
       body: { node_id: nodeId },
     })
     if (epoch !== readEpoch.value) return
-    if (res.ok === false) {
-      node.valuePreview = ''
-      node.valueReadError = res.message || '读值失败'
-    } else {
-      node.valueReadError = null
-      node.valuePreview = formatOpcValuePreview(res)
-    }
     readOut.value = JSON.stringify(res, null, 2)
-    bumpTree()
+    if (showInTree) {
+      if (res.ok === false) {
+        node.valuePreview = ''
+        node.valueReadError = res.message || '读值失败'
+      } else {
+        node.valueReadError = null
+        node.valuePreview = formatOpcValuePreview(res)
+      }
+      bumpTree()
+    }
   } catch (e) {
     if (epoch !== readEpoch.value) return
-    node.valuePreview = ''
-    node.valueReadError = e.message || String(e)
     readOut.value = e.message || String(e)
-    bumpTree()
+    if (showInTree) {
+      node.valuePreview = ''
+      node.valueReadError = e.message || String(e)
+      bumpTree()
+    }
   }
 }
 
@@ -356,7 +372,7 @@ async function readValue() {
   if (!form.id || !pickedNode.value?.node_id) return
   readEpoch.value += 1
   const epoch = readEpoch.value
-  await fetchNodeValue(pickedNode.value, epoch)
+  await fetchNodeValue(pickedNode.value, epoch, { manual: true })
 }
 
 onMounted(loadServers)
