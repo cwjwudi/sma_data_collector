@@ -1,5 +1,5 @@
 <template>
-  <div class="grid-wrap">
+  <div class="grid-wrap" :class="{ 'grid-fill': fillHeight }">
     <div class="status" v-if="status">{{ status }}</div>
     <div class="scroll" v-if="columns.length">
       <table class="grid">
@@ -33,6 +33,8 @@ const props = defineProps({
   status: { type: String, default: '' },
   /** 列名 -> { targetTable, targetColumn } */
   fkHints: { type: Object, default: null },
+  /** 父级为纵向 flex 且有余高时撑满，滚动发生在表格内部 */
+  fillHeight: { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['cell-click'])
@@ -55,9 +57,21 @@ function onCellClick(column, row) {
   border-radius: 8px;
   background: #fff;
 }
+.grid-wrap.grid-fill {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
 .scroll {
   overflow: auto;
   max-height: 360px;
+}
+.grid-wrap.grid-fill .scroll {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
 }
 .grid {
   border-collapse: collapse;

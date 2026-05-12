@@ -99,6 +99,9 @@ const navItems = [
 
 .content {
   flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
   overflow-y: auto;
   padding: 32px;
 }

@@ -38,7 +38,7 @@
     <div class="qe-results">
       <div class="qe-results-title">查询结果</div>
       <div class="qe-results-grid">
-        <DataGrid :columns="queryGridCols" :rows="queryGridRows" :status="queryGridStatus" />
+        <DataGrid fill-height :columns="queryGridCols" :rows="queryGridRows" :status="queryGridStatus" />
       </div>
     </div>
   </div>
@@ -242,7 +242,9 @@ async function favorite() {
 .qe-results-grid {
   flex: 1;
   min-height: 120px;
-  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 .tabs {
   display: flex;

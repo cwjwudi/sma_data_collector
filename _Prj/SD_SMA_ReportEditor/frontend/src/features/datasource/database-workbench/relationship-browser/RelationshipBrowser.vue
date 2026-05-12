@@ -59,8 +59,9 @@
             </div>
           </section>
           <section class="rb-sec rb-preview-sec">
-            <h4>数据预览（最多 50 行）</h4>
+            <h4>数据预览（最多 100 行）</h4>
             <DataGrid
+              fill-height
               :columns="previewCols"
               :rows="previewRows"
               :status="previewStatus"
@@ -382,7 +383,7 @@ async function loadPreview() {
       connection_id: props.connectionId,
       database: props.database || undefined,
       table: tbl,
-      limit: 50,
+      limit: 100,
     }
     if (previewFilters.value.column && previewFilters.value.value !== '') {
       body.pk_filter_column = previewFilters.value.column
@@ -761,6 +762,7 @@ watch(
   margin: 0 0 8px;
   font-size: 13px;
   color: #374151;
+  flex-shrink: 0;
 }
 .rb-fields {
   max-height: 200px;
@@ -811,11 +813,9 @@ watch(
   display: flex;
   flex-direction: column;
 }
-.rb-preview-sec :deep(.scroll) {
-  max-height: 320px;
-}
-.rb-main.dataEm .rb-preview-sec :deep(.scroll) {
-  max-height: 520px;
+.rb-preview-sec > :deep(.grid-wrap.grid-fill) {
+  flex: 1;
+  min-height: 0;
 }
 .muted {
   color: #9ca3af;

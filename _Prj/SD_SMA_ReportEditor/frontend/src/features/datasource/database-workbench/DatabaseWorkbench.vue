@@ -42,17 +42,20 @@
           <button :class="{ on: sub === 'visual' }" type="button" @click="sub = 'visual'">关系浏览器</button>
           <button :class="{ on: sub === 'er' }" type="button" @click="sub = 'er'">ER 图</button>
         </div>
-        <DataGrid v-if="sub === 'data'" :columns="gridCols" :rows="gridRows" :status="gridStatus" />
-        <QueryEditor
-          v-if="sub === 'query'"
-          :connection-id="activeConnId"
-          :engine="activeEngine"
-          :database="activeDatabase"
-          :collection="activeCollection"
-          :active-table="activeTable"
-          :active-table-kind="activeTableKind"
-        />
-        <div v-if="sub === 'ddl'" class="panel ddl-panel-wrap">
+        <div v-if="sub === 'data'" class="work-tab-grow">
+          <DataGrid fill-height :columns="gridCols" :rows="gridRows" :status="gridStatus" />
+        </div>
+        <div v-else-if="sub === 'query'" class="work-tab-grow">
+          <QueryEditor
+            :connection-id="activeConnId"
+            :engine="activeEngine"
+            :database="activeDatabase"
+            :collection="activeCollection"
+            :active-table="activeTable"
+            :active-table-kind="activeTableKind"
+          />
+        </div>
+        <div v-else-if="sub === 'ddl'" class="work-tab-grow panel ddl-panel-wrap">
           <div class="ddl-toolbar-row">
             <button type="button" class="btn sm" @click="loadDdl(true)" :disabled="!canDdl || ddlLoading">
               刷新 DDL
@@ -67,13 +70,14 @@
           />
         </div>
         <RelationshipBrowser
-          v-if="sub === 'visual'"
+          v-else-if="sub === 'visual'"
+          class="work-tab-grow"
           :connection-id="activeConnId"
           :database="activeDatabase"
           :engine="activeEngine"
           :tables="catalog.tables"
         />
-        <div v-if="sub === 'er'" class="panel">
+        <div v-else-if="sub === 'er'" class="work-tab-grow panel">
           <div class="row">
             <textarea v-model="schemaText" class="ta" rows="5" placeholder="粘贴 schema JSON 或 CREATE TABLE SQL" />
             <div class="col">
@@ -374,6 +378,10 @@ reloadConnections()
 <style scoped>
 .wb {
   width: 100%;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 .load-err {
   margin-bottom: 10px;
@@ -408,6 +416,8 @@ reloadConnections()
   grid-template-columns: minmax(240px, 300px) minmax(300px, 400px) minmax(320px, 1fr);
   gap: 16px;
   align-items: stretch;
+  flex: 1;
+  min-height: 0;
 }
 .main > * {
   min-height: 0;
@@ -417,7 +427,14 @@ reloadConnections()
   border-radius: 8px;
   padding: 12px;
   background: #fff;
-  min-height: 420px;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 280px;
+}
+.work-tab-grow {
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
 }
