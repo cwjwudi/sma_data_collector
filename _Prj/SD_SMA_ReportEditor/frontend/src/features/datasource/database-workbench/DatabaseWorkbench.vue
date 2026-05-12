@@ -52,9 +52,19 @@
           :active-table="activeTable"
           :active-table-kind="activeTableKind"
         />
-        <div v-if="sub === 'ddl'" class="panel">
-          <button type="button" class="btn sm" @click="loadDdl" :disabled="!canDdl">加载 DDL</button>
-          <pre class="pre">{{ ddlText }}</pre>
+        <div v-if="sub === 'ddl'" class="panel ddl-panel-wrap">
+          <div class="ddl-toolbar-row">
+            <button type="button" class="btn sm" @click="loadDdl(true)" :disabled="!canDdl || ddlLoading">
+              刷新 DDL
+            </button>
+          </div>
+          <DdlPreviewPanel
+            :engine="activeEngine"
+            :ddl-text="ddlText"
+            :loading="ddlLoading"
+            :error-message="ddlError"
+            :can-preview="canDdl"
+          />
         </div>
         <VisualQueryBuilder v-if="sub === 'visual'" :connection-id="activeConnId" :database="activeDatabase" />
         <div v-if="sub === 'er'" class="panel">
@@ -85,6 +95,7 @@ import DataGrid from './data-grid/DataGrid.vue'
 import QueryEditor from './query-editor/QueryEditor.vue'
 import VisualQueryBuilder from './visual-builder/VisualQueryBuilder.vue'
 import ErDiagram from './er-diagram/ErDiagram.vue'
+import DdlPreviewPanel from './ddl-preview/DdlPreviewPanel.vue'
 
 const connections = ref([])
 const activeConnId = ref('')
@@ -105,6 +116,9 @@ const gridRows = ref([])
 const gridStatus = ref('')
 
 const ddlText = ref('')
+const ddlLoading = ref(false)
+const ddlError = ref('')
+const lastDdlFetchKey = ref('')
 const schemaText = ref('')
 const erGraph = ref({ nodes: [], edges: [] })
 
@@ -263,8 +277,18 @@ async function previewMongo() {
   }
 }
 
-async function loadDdl() {
-  ddlText.value = ''
+async function loadDdl(force = false) {
+  if (!canDdl.value) {
+    ddlText.value = ''
+    ddlError.value = ''
+    ddlLoading.value = false
+    return
+  }
+  const key = `${activeConnId.value}|${activeDatabase.value}|${activeTable.value}`
+  if (!force && lastDdlFetchKey.value === key && ddlText.value && !ddlError.value) return
+
+  ddlLoading.value = true
+  ddlError.value = ''
   try {
     const data = await apiFetch('/database/ddl', {
       method: 'POST',
@@ -275,8 +299,13 @@ async function loadDdl() {
       },
     })
     ddlText.value = data.ddl || ''
+    lastDdlFetchKey.value = key
   } catch (e) {
-    ddlText.value = e.message || String(e)
+    ddlError.value = e.message || String(e)
+    ddlText.value = ''
+    lastDdlFetchKey.value = ''
+  } finally {
+    ddlLoading.value = false
   }
 }
 
@@ -321,7 +350,17 @@ async function mergeEr() {
 
 watch(activeConnId, () => {
   ddlText.value = ''
+  ddlError.value = ''
+  lastDdlFetchKey.value = ''
 })
+
+watch(
+  () => [sub.value, activeConnId.value, activeDatabase.value, activeTable.value, activeEngine.value],
+  () => {
+    if (sub.value !== 'ddl') return
+    loadDdl(false)
+  },
+)
 
 reloadConnections()
 </script>
@@ -441,5 +480,14 @@ reloadConnections()
   font-size: 12px;
   cursor: pointer;
   color: #2563eb;
+}
+.ddl-panel-wrap {
+  flex: 1;
+  min-height: 0;
+}
+.ddl-toolbar-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 </style>
