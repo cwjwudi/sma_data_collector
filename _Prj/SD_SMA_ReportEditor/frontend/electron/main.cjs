@@ -55,6 +55,10 @@ function startPythonBackend() {
   const env = {
     ...process.env,
     REPORT_EDITOR_DATA_DIR: dataDir,
+    // 避免 Windows 旧版 conhost 把 ANSI 当乱码；与 dev_uvicorn.ps1 行为一致
+    NO_COLOR: '1',
+    FORCE_COLOR: '0',
+    PYTHONUTF8: '1',
   }
 
   if (app.isPackaged) {

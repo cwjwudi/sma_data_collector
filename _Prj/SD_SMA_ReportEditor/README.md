@@ -31,7 +31,7 @@ CLI 产物是否提交由团队自定；**请以仓库根作为 Cursor 工作区
 
 ## 快速开始
 
-可使用项目根目录 **`start_dev_web.bat`** 一键启动后端 + 前端并在浏览器打开（详见脚本内说明）。
+可使用项目根目录 **`start_dev_web.bat`** 一键启动后端 + 前端并在浏览器打开。脚本会在 **PowerShell** 新窗口中跑 uvicorn / Vite，避免旧版 **cmd** 开启「快速编辑」时点一下窗口就把进程挂起、出现关不掉的情况。
 
 ### 后端
 
@@ -40,6 +40,8 @@ cd backend
 pip install -r requirements.txt
 uvicorn main:app --reload --port 8000
 ```
+
+在 **Windows** 上若习惯手写命令，建议用 **`backend\scripts\dev_uvicorn.ps1`**（与 `start_dev_web.bat` 相同），或在 **Windows Terminal** 里运行上述 `uvicorn`，尽量不要用「裸 cmd + 鼠标在窗口里拖选」长时间占着控制台。
 
 ### 前端
 

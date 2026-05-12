@@ -16,19 +16,14 @@ if not exist "%BACKEND%\main.py" (
   exit /b 1
 )
 
-if exist "%BACKEND%\venv\Scripts\python.exe" (
-  set "PYEXE=%BACKEND%\venv\Scripts\python.exe"
-) else (
-  set "PYEXE=python"
-)
-
 echo [1/3] 启动后端 ^(127.0.0.1:8000^) ...
-start "SD_SMA_ReportEditor - Backend" cmd /k cd /d "%BACKEND%" ^& "%PYEXE%" -m uvicorn main:app --host 127.0.0.1 --port 8000 --reload
+rem 使用 PowerShell 承载 uvicorn，避免旧版 cmd「快速编辑」点选挂起进程、关不掉窗口
+start "SD_SMA_ReportEditor - Backend" powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%BACKEND%\scripts\dev_uvicorn.ps1"
 
 timeout /t 2 /nobreak >nul
 
 echo [2/3] 启动前端 ^(http://localhost:5173^) ...
-start "SD_SMA_ReportEditor - Frontend" cmd /k cd /d "%FRONTEND%" ^& npm.cmd run dev
+start "SD_SMA_ReportEditor - Frontend" powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File "%FRONTEND%\scripts\dev_vite.ps1"
 
 echo [3/3] 等待 Vite 就绪后打开浏览器 ...
 timeout /t 5 /nobreak >nul
@@ -36,7 +31,7 @@ start "" "http://localhost:5173/"
 
 echo.
 echo 已在新窗口启动后端与前端；浏览器应已打开报表编辑器页面。
-echo 关闭标题为 Backend / Frontend 的两个窗口即可停止服务。
+echo 停止服务：切到 Backend / Frontend 的 PowerShell 窗口，按 Ctrl+C；或直接关闭这两个窗口。
 echo.
 pause
 endlocal
