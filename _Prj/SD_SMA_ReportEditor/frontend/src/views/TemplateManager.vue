@@ -28,9 +28,11 @@
           <td>{{ r.name }}</td>
           <td>{{ r.dim }}</td>
           <td>{{ r.updated }}</td>
-          <td>
-            <a href="#" class="lnk" @click.prevent="goEditor(r.id)">编辑</a>
-            <a href="#" class="lnk danger" @click.prevent="delTpl(r.id)">删除</a>
+          <td class="td-act">
+            <div class="foot-actions foot-actions--table">
+              <a href="#" class="lnk" @click.prevent="goEditor(r.id)">编辑</a>
+              <a href="#" class="lnk danger" @click.prevent="delTpl(r.id)">删除</a>
+            </div>
           </td>
         </tr>
       </tbody>
@@ -39,7 +41,7 @@
     <div v-else class="grid">
       <div v-for="r in rows" :key="'g' + r.id" class="card">
         <template v-if="cache[r.id]">
-          <div class="row4">
+          <div class="row3">
             <div class="micro">
               <span class="micro-t">封面</span>
               <div class="micro-body">
@@ -77,20 +79,25 @@
               </div>
               <button type="button" class="b-micro" @click.stop="goLayoutsNew('back')">新建末页版式</button>
             </div>
-            <div class="micro">
-              <span class="micro-t">电子签名</span>
-              <div class="micro-body sig">
-                <TemplateMiniSignatures :template="cache[r.id]" />
-              </div>
-              <button type="button" class="b-micro" @click.stop="goSignaturesNew">新建签名条目…</button>
-            </div>
           </div>
+          <p class="sig-opt">
+            <span class="sig-opt-tag">可选</span>
+            <span class="sig-opt-body">
+              电子签名按需使用：请在编辑器画布添加控件；签名图可在
+              <button type="button" class="sig-opt-btn" @click.stop="goSignaturesLibrary">签名库</button>
+              中管理。
+            </span>
+          </p>
         </template>
         <div v-else class="skel">加载…</div>
         <div class="foot">
-          <b>{{ r.name }}</b> {{ r.dim }} · {{ r.updated }}
-          <a href="#" class="lnk" @click.prevent="goEditor(r.id)">编辑</a>
-          <a href="#" class="lnk danger" @click.prevent="delTpl(r.id)">删</a>
+          <div class="foot-meta">
+            <b>{{ r.name }}</b> {{ r.dim }} · {{ r.updated }}
+          </div>
+          <div class="foot-actions">
+            <a href="#" class="lnk" @click.prevent="goEditor(r.id)">编辑</a>
+            <a href="#" class="lnk danger" @click.prevent="delTpl(r.id)">删除</a>
+          </div>
         </div>
       </div>
     </div>
@@ -108,7 +115,6 @@ import { cloneDeepTemplate } from "@/lib/report-template/snapshot-fingerprint";
 import { loadTemplates as loadLocal, saveTemplates } from "@/lib/report-template/model";
 import TemplateMiniPage from "@/components/report-template/TemplateMiniPage.vue";
 import TemplateMiniBands from "@/components/report-template/TemplateMiniBands.vue";
-import TemplateMiniSignatures from "@/components/report-template/TemplateMiniSignatures.vue";
 import NewTemplateWizardDialog from "@/components/report-template/NewTemplateWizardDialog.vue";
 
 const router = useRouter();
@@ -175,11 +181,8 @@ function goLayoutsNew(role) {
   });
 }
 
-function goSignaturesNew() {
-  router.push({
-    path: "/signatures",
-    query: { new: "1" },
-  });
+function goSignaturesLibrary() {
+  router.push({ path: "/signatures" });
 }
 
 function goEditor(id) {
@@ -280,19 +283,31 @@ onMounted(async () => {
 .lnk {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
+  min-width: 48px;
   min-height: 44px;
-  margin-right: 10px;
-  padding: 2px 2px;
+  padding: 0 14px;
+  box-sizing: border-box;
+  margin: 0;
+  border-radius: 6px;
   color: #4f46e5;
   cursor: pointer;
+  text-decoration: none;
   touch-action: manipulation;
+  -webkit-tap-highlight-color: rgba(79, 70, 229, 0.12);
+}
+.lnk:active {
+  background: rgba(79, 70, 229, 0.08);
 }
 .lnk.danger {
   color: #b91c1c;
 }
+.lnk.danger:active {
+  background: rgba(185, 28, 28, 0.08);
+}
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(620px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(480px, 1fr));
   gap: 14px;
   margin-top: 16px;
 }
@@ -303,16 +318,69 @@ onMounted(async () => {
   background: #fff;
   touch-action: manipulation;
 }
-.row4 {
+.row3 {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
   align-items: stretch;
 }
-@media (max-width: 780px) {
-  .row4 {
+@media (max-width: 920px) {
+  .row3 {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+}
+@media (max-width: 560px) {
+  .row3 {
+    grid-template-columns: 1fr;
+  }
+}
+.sig-opt {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 8px 10px;
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.55;
+  color: #57534e;
+  background: #fafaf9;
+  border: 1px dashed #d6d3d1;
+  border-radius: 8px;
+}
+.sig-opt-tag {
+  flex-shrink: 0;
+  margin-top: 2px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #78716c;
+  background: #e7e5e4;
+  border-radius: 4px;
+}
+.sig-opt-body {
+  flex: 1 1 220px;
+  min-width: 0;
+}
+.sig-opt-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  margin: -4px 2px -4px;
+  padding: 0 14px;
+  vertical-align: middle;
+  border-radius: 6px;
+  border: 1px solid #c7d2fe;
+  background: #eef2ff;
+  color: #3730a3;
+  font-size: 13px;
+  font-family: inherit;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.sig-opt-btn:active {
+  background: #e0e7ff;
 }
 .micro {
   display: flex;
@@ -336,9 +404,6 @@ onMounted(async () => {
   justify-content: center;
   width: 100%;
 }
-.micro-body.sig {
-  align-items: stretch;
-}
 .micro-body.bands {
   margin-top: 4px;
 }
@@ -358,8 +423,34 @@ onMounted(async () => {
   background: #e0e7ff;
 }
 .foot {
-  margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px 16px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #f4f4f5;
   font-size: 12px;
+  line-height: 1.5;
+}
+.foot-meta {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+.foot-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.foot-actions--table {
+  justify-content: flex-end;
+}
+.td-act {
+  white-space: nowrap;
+  vertical-align: middle;
 }
 .skel {
   min-height: 120px;
