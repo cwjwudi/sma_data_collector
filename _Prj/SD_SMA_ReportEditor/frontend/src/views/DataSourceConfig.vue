@@ -1,11 +1,63 @@
 <template>
-  <div class="page">
+  <div class="page" :class="{ 'page-fill': tab === 'db' || tab === 'opc' }">
     <h2 class="page-title">数据源配置</h2>
-    <p class="page-placeholder">此页面将用于配置数据库连接和 OPC UA 服务器。</p>
+    <div class="tabs-top">
+      <button type="button" :class="{ on: tab === 'db' }" @click="tab = 'db'">数据库工作台</button>
+      <button type="button" :class="{ on: tab === 'opc' }" @click="tab = 'opc'">OPC UA</button>
+    </div>
+    <div v-if="tab === 'db'" class="page-tab-body">
+      <DatabaseWorkbench />
+    </div>
+    <div v-else class="page-tab-body">
+      <OpcUaPanel />
+    </div>
   </div>
 </template>
 
+<script setup>
+import { ref } from 'vue'
+import DatabaseWorkbench from '@/features/datasource/database-workbench/DatabaseWorkbench.vue'
+import OpcUaPanel from '@/features/datasource/opcua/OpcUaPanel.vue'
+
+const tab = ref('db')
+</script>
+
 <style scoped>
-.page-title { font-size: 24px; font-weight: 600; margin-bottom: 16px; }
-.page-placeholder { color: #888; font-size: 14px; }
+.page-fill {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: calc(100dvh - 160px);
+}
+.page-tab-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.page-title {
+  font-size: 24px;
+  font-weight: 600;
+  margin-bottom: 12px;
+  flex-shrink: 0;
+}
+.tabs-top {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+  flex-shrink: 0;
+}
+.tabs-top button {
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: 1px solid #d1d5db;
+  background: #fff;
+  cursor: pointer;
+  font-size: 14px;
+}
+.tabs-top button.on {
+  background: #111827;
+  color: #fff;
+  border-color: #111827;
+}
 </style>

@@ -1,4 +1,4 @@
-# Builds backend/dist/report_backend/ for electron-builder extraResources
+﻿# Builds backend/dist/report_backend/ for electron-builder extraResources
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot\..
 

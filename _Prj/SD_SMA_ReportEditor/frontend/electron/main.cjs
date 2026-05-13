@@ -26,8 +26,12 @@ function getBundledBackendExe() {
   return path.join(getBackendDir(), 'report_backend.exe')
 }
 
-function getUserDataDirForBackend() {
-  return path.join(app.getPath('userData'), 'backend-data')
+/** 后端持久化目录：正式包写入用户目录；开发模式与仓库 backend/data 对齐，便于与命令行 uvicorn 共用 config.json。 */
+function getReportEditorDataDir() {
+  if (app.isPackaged) {
+    return path.join(app.getPath('userData'), 'backend-data')
+  }
+  return path.join(getBackendDir(), 'data')
 }
 
 function findPython() {
@@ -44,12 +48,17 @@ function findPython() {
 
 function startPythonBackend() {
   const backendDir = getBackendDir()
-  const dataDir = getUserDataDirForBackend()
+  const dataDir = getReportEditorDataDir()
   fs.mkdirSync(dataDir, { recursive: true })
+  log(`REPORT_EDITOR_DATA_DIR=${dataDir}`)
 
   const env = {
     ...process.env,
     REPORT_EDITOR_DATA_DIR: dataDir,
+    // 避免 Windows 旧版 conhost 把 ANSI 当乱码；与 dev_uvicorn.ps1 行为一致
+    NO_COLOR: '1',
+    FORCE_COLOR: '0',
+    PYTHONUTF8: '1',
   }
 
   if (app.isPackaged) {
@@ -89,6 +98,19 @@ function startPythonBackend() {
   pythonProcess.on('close', (code) => {
     log(`Python backend exited with code ${code}`)
     pythonProcess = null
+  })
+}
+
+function checkBackendHealthOnce() {
+  return new Promise((resolve) => {
+    const req = http.get(`${BACKEND_URL}/health`, (res) => {
+      resolve(res.statusCode === 200)
+    })
+    req.on('error', () => resolve(false))
+    req.setTimeout(1000, () => {
+      req.destroy()
+      resolve(false)
+    })
   })
 }
 
@@ -162,7 +184,15 @@ function killPython() {
 
 app.whenReady().then(async () => {
   log('Starting application...')
-  startPythonBackend()
+
+  const isDev = !app.isPackaged
+  if (isDev && (await checkBackendHealthOnce())) {
+    log(
+      `检测到 ${BACKEND_URL} 已有健康后端（例如已运行 start_dev_web.bat 或 uvicorn），跳过启动 Python 子进程，避免端口占用 WinError 10048。`,
+    )
+  } else {
+    startPythonBackend()
+  }
 
   try {
     await waitForBackend()

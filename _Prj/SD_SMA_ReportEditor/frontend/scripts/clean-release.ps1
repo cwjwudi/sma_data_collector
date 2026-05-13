@@ -1,4 +1,4 @@
-# 释放 win-unpacked 占用后删除目录。
+﻿# 释放 win-unpacked 占用后删除目录。
 # 用法: .\clean-release.ps1           # 默认清理 frontend\release\win-unpacked
 #       .\clean-release.ps1 release-alt  # 清理 frontend\release-alt\win-unpacked
 param(

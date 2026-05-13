@@ -1,11 +1,24 @@
 <template>
   <div class="page">
     <h2 class="page-title">设置</h2>
-    <p class="page-placeholder">此页面将用于全局设置（存储路径、配置导入/导出）。</p>
+    <EnvironmentDiagnostics />
+    <DataPathAndCacheSection />
+    <MigrateLocalDataSection />
+    <ConfigImportExport />
   </div>
 </template>
 
+<script setup>
+import EnvironmentDiagnostics from '@/features/settings/environment-diagnostics/EnvironmentDiagnostics.vue'
+import DataPathAndCacheSection from '@/features/settings/data-path/DataPathAndCacheSection.vue'
+import ConfigImportExport from '@/features/settings/config-import-export/ConfigImportExport.vue'
+import MigrateLocalDataSection from '@/features/settings/migrate-local/MigrateLocalDataSection.vue'
+</script>
+
 <style scoped>
-.page-title { font-size: 24px; font-weight: 600; margin-bottom: 16px; }
-.page-placeholder { color: #888; font-size: 14px; }
+.page-title {
+  font-size: 24px;
+  font-weight: 600;
+  margin-bottom: 16px;
+}
 </style>

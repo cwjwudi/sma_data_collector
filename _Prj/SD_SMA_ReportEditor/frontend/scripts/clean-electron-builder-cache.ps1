@@ -1,4 +1,4 @@
-# 清理 electron-builder NSIS 缓存（损坏时会出现 Plugin not found UAC::_）
+﻿# 清理 electron-builder NSIS 缓存（损坏时会出现 Plugin not found UAC::_）
 $base = Join-Path $env:LOCALAPPDATA "electron-builder\Cache\nsis"
 if (-not (Test-Path $base)) {
     Write-Host "OK: no nsis cache at $base"

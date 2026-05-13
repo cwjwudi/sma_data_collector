@@ -9,8 +9,7 @@
           v-for="item in navItems"
           :key="item.path"
           :to="item.path"
-          class="nav-item"
-          active-class="nav-item--active"
+          :class="['nav-item', { 'nav-item--active': navActive(item.path) }]"
         >
           <span class="nav-icon">{{ item.icon }}</span>
           <span class="nav-label">{{ item.label }}</span>
@@ -24,10 +23,24 @@
 </template>
 
 <script setup>
+import { useRoute } from 'vue-router'
+
+const route = useRoute()
+
+/** 侧边栏「版式与页眉页脚」在列表与编辑页同时高亮 */
+function navActive(path) {
+  const p = route.path
+  if (path === '/') return p === '/' || p === ''
+  if (path === '/layouts') return p.startsWith('/layouts')
+  return p === path || p.startsWith(path + '/')
+}
+
 const navItems = [
   { path: '/', icon: '📊', label: '仪表盘' },
   { path: '/datasource', icon: '🔌', label: '数据源配置' },
   { path: '/templates', icon: '📄', label: '模板管理' },
+  { path: '/layouts', icon: '📐', label: '版式与页眉页脚' },
+  { path: '/signatures', icon: '✒️', label: '签名库' },
   { path: '/generate', icon: '⚡', label: '生成报表' },
   { path: '/history', icon: '📁', label: '历史报表' },
   { path: '/settings', icon: '⚙', label: '设置' },
@@ -99,7 +112,15 @@ const navItems = [
 
 .content {
   flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
   overflow-y: auto;
   padding: 32px;
+}
+.content > * {
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
 }
 </style>

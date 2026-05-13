@@ -1,44 +1,26 @@
-import json
 import logging
-import os
-from pathlib import Path
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+
+from api.routers import database as database_router
+from api.routers import environment as environment_router
+from api.routers import opcua as opcua_router
+from api.routers import settings_config as settings_config_router
+from api.routers import layout_presets as layout_presets_router
+from api.routers import signatures as signatures_router
+from api.routers import templates as templates_router
+from core.settings import (
+    CONFIG_FILE,
+    DATA_DIR,
+    HISTORY_DIR,
+    TEMPLATES_DIR,
+    init_data_dirs,
+)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
-
-def _resolve_data_dir() -> Path:
-    """开发：backend/data；安装版：由 Electron 注入 REPORT_EDITOR_DATA_DIR（用户目录下可写路径）。"""
-    override = os.environ.get("REPORT_EDITOR_DATA_DIR", "").strip()
-    if override:
-        return Path(override)
-    return Path(__file__).resolve().parent / "data"
-
-
-DATA_DIR = _resolve_data_dir()
-TEMPLATES_DIR = DATA_DIR / "templates"
-HISTORY_DIR = DATA_DIR / "history"
-CONFIG_FILE = DATA_DIR / "config.json"
-
-DEFAULT_CONFIG = {
-    "db_connections": [],
-    "opcua_servers": [],
-}
-
-
-def init_data_dirs():
-    for d in [DATA_DIR, TEMPLATES_DIR, HISTORY_DIR]:
-        d.mkdir(parents=True, exist_ok=True)
-        logger.info("目录就绪: %s", d)
-
-    if not CONFIG_FILE.exists():
-        CONFIG_FILE.write_text(json.dumps(DEFAULT_CONFIG, ensure_ascii=False, indent=2), encoding="utf-8")
-        logger.info("已创建默认配置: %s", CONFIG_FILE)
-    else:
-        logger.info("配置文件已存在: %s", CONFIG_FILE)
 
 
 @asynccontextmanager
@@ -51,9 +33,19 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="SD_SMA_ReportEditor API",
-    version="0.1.0",
+    version="0.2.0",
     lifespan=lifespan,
 )
+
+
+@app.middleware("http")
+async def log_request_exceptions(request: Request, call_next):
+    try:
+        return await call_next(request)
+    except Exception:
+        logger.exception("未捕获异常: %s %s", request.method, request.url.path)
+        raise
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -63,10 +55,18 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(environment_router.router)
+app.include_router(settings_config_router.router)
+app.include_router(opcua_router.router)
+app.include_router(database_router.router)
+app.include_router(templates_router.router)
+app.include_router(layout_presets_router.router)
+app.include_router(signatures_router.router)
+
 
 @app.get("/")
 async def root():
-    return {"status": "ok", "app": "SD_SMA_ReportEditor", "version": "0.1.0"}
+    return {"status": "ok", "app": "SD_SMA_ReportEditor", "version": "0.2.0"}
 
 
 @app.get("/health")
@@ -79,3 +79,4 @@ async def health():
         "templates_dir_exists": TEMPLATES_DIR.exists(),
         "history_dir_exists": HISTORY_DIR.exists(),
     }
+
