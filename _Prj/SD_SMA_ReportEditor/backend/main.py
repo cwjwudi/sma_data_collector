@@ -8,6 +8,7 @@ from api.routers import database as database_router
 from api.routers import environment as environment_router
 from api.routers import opcua as opcua_router
 from api.routers import settings_config as settings_config_router
+from api.routers import templates as templates_router
 from core.settings import (
     CONFIG_FILE,
     DATA_DIR,
@@ -56,6 +57,7 @@ app.include_router(environment_router.router)
 app.include_router(settings_config_router.router)
 app.include_router(opcua_router.router)
 app.include_router(database_router.router)
+app.include_router(templates_router.router)
 
 
 @app.get("/")
