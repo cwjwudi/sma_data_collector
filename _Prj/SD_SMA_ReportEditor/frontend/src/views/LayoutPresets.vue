@@ -81,26 +81,33 @@
           </label>
         </div>
         <p class="muted">
-          下边为<strong>可视化编辑区</strong>：切换页眉/页脚/正文区装饰后直接拖拽控件；亦可点「弹出放大」在当前区用大窗口编辑。
+          <strong>画布</strong>与「模板管理」一致：同一页上显示页眉带、正文区、页脚带，可缩放平移。从左侧将控件拖入对应灰色带或正文区。
         </p>
-        <div class="zonetabs">
-          <button
-            type="button"
-            class="zt"
-            :class="{ ztOn: inlineZone === 'header' }"
-            @click="inlineZone = 'header'"
-          >
-            页眉区
-          </button>
-          <button type="button" class="zt" :class="{ ztOn: inlineZone === 'footer' }" @click="inlineZone = 'footer'">
-            页脚区
-          </button>
-          <button type="button" class="zt" :class="{ ztOn: inlineZone === 'body' }" @click="inlineZone = 'body'">
-            正文区装饰
-          </button>
-          <button type="button" class="zt ghost" @click="openPopupZone">弹出放大当前区…</button>
+        <div class="pe-cols">
+          <aside class="pe-left">
+            <h5 class="pe-h5">拖拽到画布</h5>
+            <button
+              v-for="t in presetToolTypes"
+              :key="t"
+              type="button"
+              class="pe-tool"
+              draggable="true"
+              @dragstart="(e) => onPresetToolDragStart(e, t)"
+            >
+              {{ presetToolLabels[t] }}
+            </button>
+            <p class="pe-hint">
+              <strong>Ctrl / ⌘ + 滚轮</strong>缩放画布；拖入后点选可改属性；末页/封面版式同样适用。
+            </p>
+            <button type="button" class="b ghost" @click="openPopupEditor">全屏放大编辑…</button>
+          </aside>
+          <main class="pe-mid">
+            <LayoutPresetPaperCanvas v-model:selected-id="presetCanvasSelId" :preset="working" />
+          </main>
+          <aside class="pe-right">
+            <LayoutPresetElementProps :el="selectedPresetEl" @remove="removeSelectedPresetEl" />
+          </aside>
         </div>
-        <LayoutPresetZoneWorkbench :preset="working" :zone="inlineZone" class="embedded-wb" />
         <div class="foot-actions">
           <button type="button" class="b primary" @click="savePreset" :disabled="saving">保存版式</button>
           <button type="button" class="b danger-outline" @click="removePreset">删除</button>
@@ -112,8 +119,8 @@
     <LayoutPresetZonesDialog
       v-if="working"
       v-model="dlgOpen"
+      v-model:selected-id="presetCanvasSelId"
       :preset="working"
-      :zone="dlgZone"
     />
   </div>
 </template>
@@ -123,8 +130,10 @@ import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import type { LocationQuery } from "vue-router";
 import LayoutPresetZonesDialog from "@/components/report-template/LayoutPresetZonesDialog.vue";
-import LayoutPresetZoneWorkbench from "@/components/report-template/LayoutPresetZoneWorkbench.vue";
+import LayoutPresetPaperCanvas from "@/components/report-template/LayoutPresetPaperCanvas.vue";
+import LayoutPresetElementProps from "@/components/report-template/LayoutPresetElementProps.vue";
 import type { LayoutPageRole, LayoutPreset } from "@/lib/report-template/layout-model";
+import type { LayoutControlType } from "@/lib/report-template/layout-zone-element";
 import {
   createEmptyLayoutPreset,
   hydrateLayoutPreset,
@@ -152,8 +161,46 @@ const working = ref<LayoutPreset | null>(null);
 const offline = computed(() => isLayoutsOffline());
 
 const dlgOpen = ref(false);
-const dlgZone = ref<"header" | "footer" | "body">("header");
-const inlineZone = ref<"header" | "footer" | "body">("header");
+const presetCanvasSelId = ref<string | null>(null);
+
+const presetToolLabels: Record<LayoutControlType, string> = {
+  text: "文本",
+  box: "色块",
+  image: "图片",
+  pageNumber: "页码",
+  date: "日期",
+};
+const presetToolTypes: LayoutControlType[] = ["text", "box", "image", "pageNumber", "date"];
+
+function onPresetToolDragStart(e: DragEvent, t: LayoutControlType) {
+  e.dataTransfer?.setData("application/x-zone-tool", t);
+  e.dataTransfer?.setData("text/plain", t);
+}
+
+const selectedPresetEl = computed(() => {
+  const w = working.value;
+  const id = presetCanvasSelId.value;
+  if (!w || !id) return null;
+  const h = w.headerElements.find((x) => x.id === id);
+  if (h) return h;
+  const f = w.footerElements.find((x) => x.id === id);
+  if (f) return f;
+  return w.bodyElements.find((x) => x.id === id) ?? null;
+});
+
+function removeSelectedPresetEl() {
+  const w = working.value;
+  const id = presetCanvasSelId.value;
+  if (!w || !id) return;
+  for (const arr of [w.headerElements, w.footerElements, w.bodyElements]) {
+    const i = arr.findIndex((x) => x.id === id);
+    if (i >= 0) {
+      arr.splice(i, 1);
+      presetCanvasSelId.value = null;
+      return;
+    }
+  }
+}
 
 const mmFields = [
   { k: "marginTopMm" as const, lab: "上边距" },
@@ -196,7 +243,7 @@ function pick(id: string) {
   selId.value = id;
   const p = presets.value.find((x) => x.id === id);
   working.value = p ? clonePreset(p) : null;
-  inlineZone.value = "header";
+  presetCanvasSelId.value = null;
 }
 
 function parseRouteRole(q: LocationQuery): LayoutPageRole | undefined {
@@ -272,6 +319,7 @@ async function removePreset() {
     await deleteLayoutPresetFlexible(w.id);
     working.value = null;
     selId.value = null;
+    presetCanvasSelId.value = null;
     await reload();
     msg.value = "已删除。";
   } catch (e) {
@@ -279,8 +327,7 @@ async function removePreset() {
   }
 }
 
-function openPopupZone() {
-  dlgZone.value = inlineZone.value;
+function openPopupEditor() {
   dlgOpen.value = true;
 }
 
@@ -318,7 +365,7 @@ onMounted(async () => {
 }
 .split {
   display: grid;
-  grid-template-columns: minmax(280px, 1fr) minmax(360px, 1.35fr);
+  grid-template-columns: minmax(280px, 1fr) minmax(520px, 1.6fr);
   gap: 20px;
   margin-top: 12px;
   align-items: start;
@@ -367,39 +414,74 @@ onMounted(async () => {
   color: #71717a;
   margin: 0 0 10px;
 }
-.zonetabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  align-items: center;
-  margin-bottom: 12px;
-}
-.zt {
-  padding: 6px 12px;
-  border-radius: 8px;
-  border: 1px solid #d4d4d8;
-  background: #fff;
-  cursor: pointer;
-  font-size: 12px;
-}
-.ztOn {
-  border-color: #6366f1;
-  background: rgb(238 242 255);
-  color: #4338ca;
-}
-.zt.ghost {
-  border-style: dashed;
-  margin-left: auto;
-  background: transparent;
-}
-.embedded-wb {
+.pe-cols {
+  display: grid;
+  grid-template-columns: 168px minmax(0, 1fr) 248px;
+  gap: 0;
+  min-height: 480px;
+  margin: 12px 0 0;
   border: 1px solid #e4e4e7;
   border-radius: 10px;
-  padding: 12px;
+  overflow: hidden;
   background: #fff;
-  max-height: min(520px, 55vh);
+}
+@media (max-width: 1100px) {
+  .pe-cols {
+    grid-template-columns: 1fr;
+  }
+  .pe-left,
+  .pe-right {
+    border: none !important;
+    border-bottom: 1px solid #e4e4e7 !important;
+  }
+}
+.pe-left {
+  padding: 10px;
+  border-right: 1px solid #e4e4e7;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: #fafafa;
   overflow: auto;
-  margin-bottom: 12px;
+}
+.pe-h5 {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: #3f3f46;
+}
+.pe-tool {
+  border: 1px dashed #999;
+  background: #fff;
+  cursor: grab;
+  padding: 6px 8px;
+  border-radius: 6px;
+  text-align: left;
+  touch-action: manipulation;
+  font-size: 12px;
+}
+.pe-hint {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: #71717a;
+  line-height: 1.35;
+}
+.pe-mid {
+  min-height: 0;
+  min-width: 0;
+  background: #f4f4f5;
+}
+.pe-right {
+  padding: 10px;
+  border-left: 1px solid #e4e4e7;
+  background: #fafafa;
+  overflow: auto;
+  font-size: 13px;
+}
+.b.ghost {
+  border-style: dashed;
+  background: transparent;
+  font-size: 12px;
 }
 .foot-actions {
   display: flex;

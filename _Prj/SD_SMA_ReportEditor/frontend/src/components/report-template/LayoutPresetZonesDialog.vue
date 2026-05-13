@@ -1,31 +1,45 @@
 <template>
   <div v-if="modelValue" class="hz-overlay" @click.self="close">
-    <div class="hz-modal">
-      <LayoutPresetZoneWorkbench :preset="preset" :zone="zone" />
-      <div class="hz-foot">
-        <button type="button" class="btn" @click="close">关闭</button>
+    <div class="hz-modal" role="dialog" aria-modal="true" aria-labelledby="hz-dlg-title">
+      <div class="hz-head">
+        <span id="hz-dlg-title">放大编辑 · {{ preset.name }}</span>
+        <button type="button" class="hz-close" @click="close">关闭</button>
       </div>
+      <LayoutPresetPaperCanvas :preset="preset" v-model:selected-id="selId" class="hz-canvas" />
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import LayoutPresetZoneWorkbench from "@/components/report-template/LayoutPresetZoneWorkbench.vue";
+import { onMounted, onUnmounted } from "vue";
+import LayoutPresetPaperCanvas from "@/components/report-template/LayoutPresetPaperCanvas.vue";
 import type { LayoutPreset } from "@/lib/report-template/layout-model";
 
-defineProps<{
+const props = defineProps<{
   modelValue: boolean;
   preset: LayoutPreset;
-  zone: "header" | "footer" | "body";
 }>();
 
 const emit = defineEmits<{
   (e: "update:modelValue", v: boolean): void;
 }>();
 
+const selId = defineModel<string | null>("selectedId", { default: null });
+
 function close() {
   emit("update:modelValue", false);
 }
+
+function onKey(ev: KeyboardEvent) {
+  if (!props.modelValue) return;
+  if (ev.key === "Escape") {
+    ev.preventDefault();
+    close();
+  }
+}
+
+onMounted(() => window.addEventListener("keydown", onKey));
+onUnmounted(() => window.removeEventListener("keydown", onKey));
 </script>
 
 <style scoped>
@@ -35,30 +49,48 @@ function close() {
   background: rgb(24 24 27 / 0.5);
   z-index: 950;
   display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 12px;
+  align-items: stretch;
+  justify-content: stretch;
+  padding: 8px;
 }
 .hz-modal {
-  background: #fff;
+  background: #f4f4f5;
   border-radius: 12px;
-  padding: 12px 14px;
-  max-width: 96vw;
-  max-height: 92vh;
-  overflow: auto;
-  width: min(720px, 100%);
-}
-.hz-foot {
   display: flex;
-  justify-content: flex-end;
-  margin-top: 10px;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  width: 100%;
+  max-height: 100%;
+  box-shadow: 0 24px 48px rgb(0 0 0 / 0.2);
+  overflow: hidden;
 }
-.btn {
+.hz-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  background: #fff;
+  border-bottom: 1px solid #e4e4e7;
+  font-size: 14px;
+  font-weight: 600;
+  color: #27272a;
+}
+.hz-close {
   padding: 6px 12px;
   border-radius: 6px;
   border: 1px solid #d4d4d8;
   background: #fafafa;
   cursor: pointer;
   font-size: 13px;
+}
+.hz-canvas {
+  flex: 1;
+  min-height: 0;
+  border: none;
+  border-radius: 0;
 }
 </style>
