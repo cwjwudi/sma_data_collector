@@ -32,12 +32,42 @@
       </tbody>
     </table>
 
-    <SignaturePadDialog v-model="dlg" title="手写签名条目" :subtitle="pendingLabel || undefined" @confirm="onPadOk" />
+    <!-- 命名弹层优先于手写板（不依赖可能被禁用的 window.prompt） -->
+    <div v-if="nameDlg" class="name-backdrop" @click.self="closeNameDlg">
+      <div class="name-modal" role="dialog" aria-modal="true" aria-labelledby="name-modal-title">
+        <h3 id="name-modal-title" class="name-title">新建签名条目</h3>
+        <p class="name-desc">请先输入条目名称。确定后将打开手写板，并按名称在手写区内生成浅色<strong>描摹轮廓</strong>供参照书写。</p>
+        <label class="name-lbl" for="sig-name-input">显示名称</label>
+        <input
+          id="sig-name-input"
+          ref="nameInputEl"
+          v-model.trim="nameInput"
+          type="text"
+          class="name-inp"
+          maxlength="128"
+          autocomplete="off"
+          placeholder="例如：张三签收"
+          @keydown.enter.prevent="confirmNameDlg"
+        />
+        <div class="name-actions">
+          <button type="button" class="b-ghost" @click="closeNameDlg">取消</button>
+          <button type="button" class="b primary" :disabled="!normalizeLabel(nameInput)" @click="confirmNameDlg">下一步：手写板</button>
+        </div>
+      </div>
+    </div>
+
+    <SignaturePadDialog
+      v-model="dlg"
+      title="手写签名条目"
+      :subtitle="pendingLabel || undefined"
+      :guide-outline-text="pendingLabel || undefined"
+      @confirm="onPadOk"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import SignaturePadDialog from "@/components/report-template/SignaturePadDialog.vue";
 import type { SignatureAsset } from "@/api/signatures";
@@ -52,6 +82,10 @@ const route = useRoute();
 const router = useRouter();
 const summaries = ref<Pick<SignatureAsset, "id" | "label" | "updatedAt">[]>([]);
 const previews = ref<Record<string, string>>({});
+const nameDlg = ref(false);
+/** 命名弹窗内输入（未完成确定前不写 pendingLabel） */
+const nameInput = ref("");
+const nameInputEl = ref<HTMLInputElement | null>(null);
 
 const rows = computed(() =>
   summaries.value.map((s) => ({
@@ -87,24 +121,31 @@ async function load() {
   }
 }
 
-/** 手写新建：先起名再开板；取消或空名称不打开手写板 */
-function promptForNewLabel(): string | null {
-  const raw = window.prompt?.(
-    "请输入签名条目显示名称（确定后将打开手写板）",
-    "签名",
-  );
-  if (raw === null) return null;
-  const n = normalizeLabel(raw);
-  if (!n) return null;
-  return n;
+function closeNameDlg() {
+  nameDlg.value = false;
+  nameInput.value = "";
+}
+
+function confirmNameDlg() {
+  const n = normalizeLabel(nameInput.value);
+  if (!n) return;
+  pendingNew.value = true;
+  pendingLabel.value = n;
+  nameDlg.value = false;
+  nameInput.value = "";
+  dlg.value = true;
+}
+
+async function openNameStep() {
+  nameInput.value = "";
+  nameDlg.value = true;
+  await nextTick();
+  nameInputEl.value?.focus();
+  nameInputEl.value?.select();
 }
 
 function openNew() {
-  const name = promptForNewLabel();
-  if (!name) return;
-  pendingNew.value = true;
-  pendingLabel.value = name;
-  dlg.value = true;
+  void openNameStep();
 }
 
 async function openNewFromRoute() {
@@ -114,11 +155,7 @@ async function openNewFromRoute() {
     hash: route.hash,
     query: {},
   });
-  const name = promptForNewLabel();
-  if (!name) return;
-  pendingNew.value = true;
-  pendingLabel.value = name;
-  dlg.value = true;
+  await openNameStep();
 }
 
 async function onPadOk(dataUrl: string) {
@@ -264,8 +301,76 @@ watch(
   color: #fff;
   border-color: #4338ca;
 }
+.b.primary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
 .page-title {
   font-size: 24px;
   font-weight: 600;
+}
+
+.name-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgb(24 24 27 / 0.55);
+  z-index: 1100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+.name-modal {
+  background: #fff;
+  padding: 1.1rem 1.25rem 1rem;
+  border-radius: 10px;
+  max-width: 96vw;
+  width: 400px;
+  box-shadow: 0 20px 50px rgb(0 0 0 / 0.22);
+}
+.name-title {
+  margin: 0 0 0.4rem;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+.name-desc {
+  margin: 0 0 0.85rem;
+  font-size: 12px;
+  color: #52525b;
+  line-height: 1.45;
+}
+.name-lbl {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: #3f3f46;
+  margin-bottom: 4px;
+}
+.name-inp {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid #d4d4d8;
+  font-size: 14px;
+}
+.name-inp:focus {
+  outline: 2px solid rgb(129 140 248 / 0.5);
+  outline-offset: 1px;
+  border-color: #818cf8;
+}
+.name-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  align-items: center;
+  margin-top: 12px;
+}
+.b-ghost {
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid #d4d4d8;
+  background: #fff;
+  cursor: pointer;
 }
 </style>
