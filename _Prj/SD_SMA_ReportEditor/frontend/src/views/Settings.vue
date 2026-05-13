@@ -3,6 +3,7 @@
     <h2 class="page-title">设置</h2>
     <EnvironmentDiagnostics />
     <DataPathAndCacheSection />
+    <MigrateLocalDataSection />
     <ConfigImportExport />
   </div>
 </template>
@@ -11,6 +12,7 @@
 import EnvironmentDiagnostics from '@/features/settings/environment-diagnostics/EnvironmentDiagnostics.vue'
 import DataPathAndCacheSection from '@/features/settings/data-path/DataPathAndCacheSection.vue'
 import ConfigImportExport from '@/features/settings/config-import-export/ConfigImportExport.vue'
+import MigrateLocalDataSection from '@/features/settings/migrate-local/MigrateLocalDataSection.vue'
 </script>
 
 <style scoped>

@@ -10,7 +10,6 @@
       </div>
     </header>
     <p v-if="msg" class="msg">{{ msg }}</p>
-    <button type="button" class="b" @click="doSync" :disabled="syncing">{{ syncing ? "迁移中" : "同步本地到服务器" }}</button>
 
     <table v-if="mode === 'list'" class="tbl">
       <thead>
@@ -66,7 +65,6 @@ import * as api from "@/api/templates";
 import { PAPER_LABEL } from "@/lib/report-template/paper";
 import { cloneDeepTemplate } from "@/lib/report-template/snapshot-fingerprint";
 import { loadTemplates as loadLocal, saveTemplates } from "@/lib/report-template/model";
-import { pushLocalTemplatesToApi } from "@/composables/pushLocalTemplatesToApi";
 import TemplateMiniPage from "@/components/report-template/TemplateMiniPage.vue";
 import NewTemplateWizardDialog from "@/components/report-template/NewTemplateWizardDialog.vue";
 
@@ -74,7 +72,6 @@ const router = useRouter();
 const mode = ref("list");
 const wizard = ref(false);
 const msg = ref("");
-const syncing = ref(false);
 const summaries = ref([]);
 const cache = ref({});
 const offline = ref(false);
@@ -128,21 +125,6 @@ watch(
   },
 );
 
-async function doSync() {
-  syncing.value = true;
-  msg.value = "";
-  try {
-    const { ok, fail } = await pushLocalTemplatesToApi();
-    msg.value = `已尝试上传 ${ok + fail} 条，成功 ${ok}，失败 ${fail}。`;
-    await load();
-    if (mode.value === "thumbs") await hydrateThumbs();
-  } catch (e) {
-    msg.value = "同步失败：" + String(e.message || e);
-  } finally {
-    syncing.value = false;
-  }
-}
-
 function goEditor(id) {
   router.push({ name: "TemplateEditor", params: { id } });
 }
@@ -167,7 +149,7 @@ async function created(t) {
       list.push(t);
       saveTemplates(list);
     }
-    msg.value += " 新建模版已写入本机 localStorage，可稍后「同步到服务器」。";
+    msg.value += " 新建模版已写入本机 localStorage；可在「设置 › 浏览器数据迁移」上传到服务器。";
   }
   cache.value[t.id] = cloneDeepTemplate(t);
   summaries.value = [

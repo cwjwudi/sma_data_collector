@@ -69,6 +69,7 @@ class TemplateElement(BaseModel):
     sqlText: str = ""
     chartKind: ChartKind = "line"
     signerLabel: str = ""
+    signatureAssetId: str = ""
 
 
 class ReportTemplate(BaseModel):

@@ -18,6 +18,8 @@ def resolve_data_dir() -> Path:
 
 DATA_DIR = resolve_data_dir()
 TEMPLATES_DIR = DATA_DIR / "templates"
+LAYOUT_PRESETS_DIR = DATA_DIR / "layout_presets"
+SIGNATURE_ASSETS_DIR = DATA_DIR / "signatures"
 HISTORY_DIR = DATA_DIR / "history"
 CONFIG_FILE = DATA_DIR / "config.json"
 QUERY_SESSION_FILE = DATA_DIR / "query_sessions.json"
@@ -39,7 +41,7 @@ DEFAULT_CONFIG = {
 
 
 def init_data_dirs() -> None:
-    for d in [DATA_DIR, TEMPLATES_DIR, HISTORY_DIR]:
+    for d in [DATA_DIR, TEMPLATES_DIR, LAYOUT_PRESETS_DIR, SIGNATURE_ASSETS_DIR, HISTORY_DIR]:
         d.mkdir(parents=True, exist_ok=True)
         logger.info("目录就绪: %s", d)
 

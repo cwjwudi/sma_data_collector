@@ -61,6 +61,13 @@
         </template>
         <template v-if="sel.type === 'signature'">
           <input v-model="sel.signerLabel" placeholder="签署说明" />
+          <label class="lab">签名库
+            <select :value="sel.signatureAssetId" class="ddl" @change="onPickSigLibrary($event)">
+              <option value="">不使用库条目（手写/粘贴）</option>
+              <option v-for="s in sigChoices" :key="s.id" :value="s.id">{{ s.label }}</option>
+            </select>
+          </label>
+          <small class="muted">手写板仍可覆盖当前预览图的 imageSrc；库 id 会与模版一并保存。</small>
         </template>
         <template v-if="sel.type === 'image'">
           <textarea v-model="sel.imageSrc" rows="2" placeholder="URL / data URL"></textarea>
@@ -82,6 +89,7 @@ import TemplateBodyCanvas from "@/components/report-template/TemplateBodyCanvas.
 import HeaderFooterZoneDialog from "@/components/report-template/HeaderFooterZoneDialog.vue";
 import SignaturePadDialog from "@/components/report-template/SignaturePadDialog.vue";
 import * as api from "@/api/templates";
+import * as sigApi from "@/api/signatures";
 import { ref, computed, onMounted, onUnmounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { PAPER_LABEL } from "@/lib/report-template/paper";
@@ -112,6 +120,7 @@ const dlgHdr = ref(false);
 const dlgFtr = ref(false);
 const dlgSig = ref(false);
 const hint = ref("");
+const sigChoices = ref([]);
 
 const sel = computed(() => {
   const t = editing.value;
@@ -195,6 +204,31 @@ function sigOk(dataUrl) {
   sel.value.imageSrc = dataUrl;
 }
 
+async function refreshSigChoices() {
+  try {
+    sigChoices.value = await sigApi.listSignatures();
+  } catch {
+    sigChoices.value = [];
+  }
+}
+
+async function onPickSigLibrary(ev) {
+  const id = typeof ev.target?.value === "string" ? ev.target.value : "";
+  if (!sel.value || sel.value.type !== "signature") return;
+  sel.value.signatureAssetId = id;
+  if (!id) {
+    hint.value = "已清空签名库绑定。";
+    return;
+  }
+  try {
+    const a = await sigApi.getSignature(id);
+    sel.value.imageSrc = a.imageSrc;
+    hint.value = "已从签名库载入图像。";
+  } catch {
+    hint.value = "读取签名条目失败";
+  }
+}
+
 function onKey(ev) {
   const t = ev.target;
   if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT")) return;
@@ -203,6 +237,7 @@ function onKey(ev) {
 
 onMounted(() => {
   boot();
+  refreshSigChoices();
   window.addEventListener("keydown", onKey);
 });
 onUnmounted(() => window.removeEventListener("keydown", onKey));
@@ -309,6 +344,16 @@ onUnmounted(() => window.removeEventListener("keydown", onKey));
   display: flex;
   gap: 4px;
   align-items: center;
+}
+.right .lab {
+  align-items: stretch;
+  flex-direction: column;
+}
+.right .muted {
+  display: block;
+  font-size: 11px;
+  color: #71717a;
+  line-height: 1.3;
 }
 .del {
   border: 1px solid #fca5a5;

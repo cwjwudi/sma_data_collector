@@ -52,7 +52,9 @@
           <label><input v-model="coverMode" type="radio" value="preset" :disabled="coverPresets.length === 0" /> 选用封面版式</label>
         </div>
         <p v-if="coverPresets.length === 0" class="nt-warn">
-          暂无封面版式。请先在「数据源」侧维护版式的应用外使用 rptp 工具箱，或通过 localStorage key rptp-layout-presets 同步。
+          暂无封面版式。
+          <a href="#/layouts" class="nt-a">前往「版式与页眉页脚」</a>
+          新建一条页面用途为「封面」的记录。
         </p>
         <div v-if="coverMode === 'preset'" class="nt-grid-scroll">
           <div class="nt-grid">
@@ -75,7 +77,11 @@
           <label><input v-model="backMode" type="radio" value="none" /> 不使用末页版式</label>
           <label><input v-model="backMode" type="radio" value="preset" :disabled="backPresets.length === 0" /> 选用末页版式</label>
         </div>
-        <p v-if="backPresets.length === 0" class="nt-warn">暂无末页版式。</p>
+        <p v-if="backPresets.length === 0" class="nt-warn">
+          暂无末页版式。
+          <a href="#/layouts" class="nt-a">前往「版式与页眉页脚」</a>
+          新建「末页」用途记录。
+        </p>
         <div v-if="backMode === 'preset'" class="nt-grid-scroll">
           <div class="nt-grid">
             <button
@@ -107,10 +113,10 @@ import type { PaperKind } from "@/lib/report-template/paper";
 import { PAPER_KIND_SHORT } from "@/lib/report-template/paper";
 import {
   hydrateLayoutPreset,
-  loadLayoutPresets,
   presetZonesSnapshot,
   blankZonesSnapshot,
   type LayoutPreset,
+  type LayoutPageRole,
 } from "@/lib/report-template/layout-model";
 import {
   createTemplate,
@@ -118,6 +124,7 @@ import {
   type ReportTemplate,
 } from "@/lib/report-template/model";
 import { getLayoutPresetById } from "@/lib/report-template/layout-presets-api";
+import { refreshLayoutPresets } from "@/lib/report-template/layout-registry";
 
 const props = defineProps<{ modelValue: boolean }>();
 
@@ -139,11 +146,15 @@ const bodyPresets = ref<LayoutPreset[]>([]);
 const coverPresets = ref<LayoutPreset[]>([]);
 const backPresets = ref<LayoutPreset[]>([]);
 
-function refreshPresets() {
-  const all = loadLayoutPresets().map((p) => hydrateLayoutPreset(p));
-  bodyPresets.value = all.filter((p) => p.pageRole === "normal");
-  coverPresets.value = all.filter((p) => p.pageRole === "cover");
-  backPresets.value = all.filter((p) => p.pageRole === "back");
+function filterByRole(all: LayoutPreset[], role: LayoutPageRole) {
+  return all.filter((p) => p.pageRole === role);
+}
+
+async function refreshPresets() {
+  const all = (await refreshLayoutPresets()).map((p) => hydrateLayoutPreset(p));
+  bodyPresets.value = filterByRole(all, "normal");
+  coverPresets.value = filterByRole(all, "cover");
+  backPresets.value = filterByRole(all, "back");
 }
 
 const papers = ["A5", "A4", "A3", "Letter"] as PaperKind[];
@@ -158,15 +169,14 @@ const blanks = computed(() => {
 
 watch(
   () => props.modelValue,
-  (v) => {
-    if (v) {
-      refreshPresets();
-      if (bodyPresets.value.length > 0 && bodyMode.value === "blank") bodyMode.value = "preset";
-      if (bodyMode.value === "preset" && !selBodyPreset.value && bodyPresets.value.length) {
-        selBodyPreset.value = bodyPresets.value[0]!.id;
-      }
-      if (bodyPresets.value.length === 0) bodyMode.value = "blank";
+  async (v) => {
+    if (!v) return;
+    await refreshPresets();
+    if (bodyPresets.value.length > 0 && bodyMode.value === "blank") bodyMode.value = "preset";
+    if (bodyMode.value === "preset" && !selBodyPreset.value && bodyPresets.value.length) {
+      selBodyPreset.value = bodyPresets.value[0]!.id;
     }
+    if (bodyPresets.value.length === 0) bodyMode.value = "blank";
   },
 );
 
@@ -178,7 +188,7 @@ watch(bodyMode, (m) => {
 
 const bodyHint = computed(() =>
   bodyPresets.value.length === 0
-    ? "暂无「正文页」版式记录于本机；已切换到空白纸张。若需预设版式请将 rptp 中的版式数据同步到同源 localStorage（rptp-layout-presets）。"
+    ? "暂无「正文页」版式。请先在侧栏打开「版式与页眉页脚」新建并保存正文用途的记录，再回到此处选用。"
     : "选择正文：自定义版式（正文用途）或使用空白纸张。",
 );
 
@@ -375,14 +385,18 @@ function submit() {
   flex-wrap: wrap;
   font-size: 13px;
 }
-.nt-hint,
-.nt-warn {
+.nt-hint {
   margin: 0 0 0.5rem;
   font-size: 12px;
   color: #52525b;
 }
 .nt-warn {
+  margin: 0 0 0.5rem;
+  font-size: 12px;
   color: #b45309;
+}
+.nt-a {
+  color: #4338ca;
 }
 .nt-grid-scroll {
   max-height: 160px;

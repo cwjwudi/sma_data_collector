@@ -43,6 +43,8 @@ export interface TemplateElement {
   chartKind: "line" | "bar";
   /** 电子签名：签署人显示名 */
   signerLabel: string;
+  /** 引用签名库条目 id（可与 imageSrc 手写图并存，生成器优先语义以 _Doc 为准） */
+  signatureAssetId: string;
 }
 
 export interface ReportTemplate {
@@ -146,6 +148,7 @@ export function defaultElement(type: TemplateControlType): Omit<TemplateElement,
     sqlText: "",
     chartKind: "line" as const,
     signerLabel: "",
+    signatureAssetId: "",
   };
   if (type === "text") {
     return {
@@ -250,6 +253,8 @@ export function hydrateTemplateElement(raw: Partial<TemplateElement>): TemplateE
     chartKind: normalizeChartKind(raw.chartKind),
     signerLabel:
       typeof raw.signerLabel === "string" ? raw.signerLabel : d.signerLabel,
+    signatureAssetId:
+      typeof raw.signatureAssetId === "string" ? raw.signatureAssetId : d.signatureAssetId,
     imageSrc: typeof raw.imageSrc === "string" ? raw.imageSrc : d.imageSrc,
   };
 }

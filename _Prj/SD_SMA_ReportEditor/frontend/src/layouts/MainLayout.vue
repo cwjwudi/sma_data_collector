@@ -28,6 +28,8 @@ const navItems = [
   { path: '/', icon: '📊', label: '仪表盘' },
   { path: '/datasource', icon: '🔌', label: '数据源配置' },
   { path: '/templates', icon: '📄', label: '模板管理' },
+  { path: '/layouts', icon: '📐', label: '版式与页眉页脚' },
+  { path: '/signatures', icon: '✒️', label: '签名库' },
   { path: '/generate', icon: '⚡', label: '生成报表' },
   { path: '/history', icon: '📁', label: '历史报表' },
   { path: '/settings', icon: '⚙', label: '设置' },
