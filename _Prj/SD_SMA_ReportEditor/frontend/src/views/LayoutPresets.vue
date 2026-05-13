@@ -81,15 +81,26 @@
           </label>
         </div>
         <p class="muted">
-          页眉页脚「条带」高度与四角边距在此处设置；区内小控件请在下方三个编辑器中拖拽布置。
+          下边为<strong>可视化编辑区</strong>：切换页眉/页脚/正文区装饰后直接拖拽控件；亦可点「弹出放大」在当前区用大窗口编辑。
         </p>
-        <div class="zbtns">
-          <button type="button" class="b" @click="openZone('header')">页眉区控件…</button>
-          <button type="button" class="b" @click="openZone('footer')">页脚区控件…</button>
-          <button type="button" class="b" @click="openZone('body')">
-            正文区装饰（封面/末页画布背景区）…
+        <div class="zonetabs">
+          <button
+            type="button"
+            class="zt"
+            :class="{ ztOn: inlineZone === 'header' }"
+            @click="inlineZone = 'header'"
+          >
+            页眉区
           </button>
+          <button type="button" class="zt" :class="{ ztOn: inlineZone === 'footer' }" @click="inlineZone = 'footer'">
+            页脚区
+          </button>
+          <button type="button" class="zt" :class="{ ztOn: inlineZone === 'body' }" @click="inlineZone = 'body'">
+            正文区装饰
+          </button>
+          <button type="button" class="zt ghost" @click="openPopupZone">弹出放大当前区…</button>
         </div>
+        <LayoutPresetZoneWorkbench :preset="working" :zone="inlineZone" class="embedded-wb" />
         <div class="foot-actions">
           <button type="button" class="b primary" @click="savePreset" :disabled="saving">保存版式</button>
           <button type="button" class="b danger-outline" @click="removePreset">删除</button>
@@ -112,6 +123,7 @@ import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import type { LocationQuery } from "vue-router";
 import LayoutPresetZonesDialog from "@/components/report-template/LayoutPresetZonesDialog.vue";
+import LayoutPresetZoneWorkbench from "@/components/report-template/LayoutPresetZoneWorkbench.vue";
 import type { LayoutPageRole, LayoutPreset } from "@/lib/report-template/layout-model";
 import {
   createEmptyLayoutPreset,
@@ -141,6 +153,7 @@ const offline = computed(() => isLayoutsOffline());
 
 const dlgOpen = ref(false);
 const dlgZone = ref<"header" | "footer" | "body">("header");
+const inlineZone = ref<"header" | "footer" | "body">("header");
 
 const mmFields = [
   { k: "marginTopMm" as const, lab: "上边距" },
@@ -183,6 +196,7 @@ function pick(id: string) {
   selId.value = id;
   const p = presets.value.find((x) => x.id === id);
   working.value = p ? clonePreset(p) : null;
+  inlineZone.value = "header";
 }
 
 function parseRouteRole(q: LocationQuery): LayoutPageRole | undefined {
@@ -265,8 +279,8 @@ async function removePreset() {
   }
 }
 
-function openZone(z: "header" | "footer" | "body") {
-  dlgZone.value = z;
+function openPopupZone() {
+  dlgZone.value = inlineZone.value;
   dlgOpen.value = true;
 }
 
@@ -353,10 +367,38 @@ onMounted(async () => {
   color: #71717a;
   margin: 0 0 10px;
 }
-.zbtns {
+.zonetabs {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.zt {
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid #d4d4d8;
+  background: #fff;
+  cursor: pointer;
+  font-size: 12px;
+}
+.ztOn {
+  border-color: #6366f1;
+  background: rgb(238 242 255);
+  color: #4338ca;
+}
+.zt.ghost {
+  border-style: dashed;
+  margin-left: auto;
+  background: transparent;
+}
+.embedded-wb {
+  border: 1px solid #e4e4e7;
+  border-radius: 10px;
+  padding: 12px;
+  background: #fff;
+  max-height: min(520px, 55vh);
+  overflow: auto;
   margin-bottom: 12px;
 }
 .foot-actions {

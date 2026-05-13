@@ -16,7 +16,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, watch } from "vue";
+import { onUnmounted, ref, watch, nextTick } from "vue";
 
 const props = withDefaults(
   defineProps<{
@@ -137,6 +137,7 @@ function attach() {
 }
 
 function detach() {
+  drawing = false;
   const c = canvasRef.value;
   if (!c) return;
   c.removeEventListener("pointerdown", onPointerDown);
@@ -145,21 +146,23 @@ function detach() {
   c.removeEventListener("pointercancel", endStroke);
 }
 
-onMounted(() => {
-  attach();
-  window.addEventListener("resize", resizeCanvas);
-});
-
 watch(
   () => props.modelValue,
-  (v) => {
-    if (v) requestAnimationFrame(resizeCanvas);
+  async (open) => {
+    if (!open) {
+      detach();
+      return;
+    }
+    await nextTick();
+    requestAnimationFrame(() => {
+      resizeCanvas();
+      detach();
+      attach();
+    });
   },
 );
 
-onMounted(() => {
-  requestAnimationFrame(resizeCanvas);
-});
+window.addEventListener("resize", resizeCanvas);
 
 onUnmounted(() => {
   detach();
@@ -206,6 +209,7 @@ onUnmounted(() => {
   height: 100%;
   display: block;
   touch-action: none;
+  cursor: crosshair;
 }
 .sig-actions {
   display: flex;

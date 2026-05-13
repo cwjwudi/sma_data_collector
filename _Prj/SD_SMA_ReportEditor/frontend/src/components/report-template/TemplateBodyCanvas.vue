@@ -5,7 +5,15 @@
         <div v-if="me.hb > 1" class="cv-band hdr" :style="hdrStyle">
           <span class="cv-hint">{{ headerHint }}</span>
         </div>
-        <div class="cv-body surface el-root" :style="bodyStyle" @drop.prevent.stop="onDrop">
+        <div
+          class="cv-body surface el-root"
+          :class="{ 'cv-droptarget': dragOverRoot }"
+          :style="bodyStyle"
+          @dragenter.prevent="dragOverRoot = true"
+          @dragleave="onDragLeaveRoot"
+          @dragover.prevent="onDragOverRoot"
+          @drop.prevent.stop="onDrop"
+        >
           <div
             v-for="el in list"
             :key="el.id"
@@ -52,6 +60,7 @@ const viewportRef = ref<HTMLElement | null>(null);
 const panX = ref(0);
 const panY = ref(0);
 const viewScale = ref(1);
+const dragOverRoot = ref(false);
 
 const me = computed(() => metricsForSheet(props.tmpl, props.sheet));
 const list = computed(() => bodyElementsRef(props.tmpl, props.sheet));
@@ -242,12 +251,24 @@ function onPaperBlank(ev: PointerEvent) {
   if (t.classList.contains("cv-paper") || t.classList.contains("cv-hint")) selId.value = null;
 }
 
+function onDragOverRoot() {
+  dragOverRoot.value = true;
+}
+
+function onDragLeaveRoot(e: DragEvent) {
+  const cur = e.currentTarget as HTMLElement;
+  const rt = e.relatedTarget as Node | null;
+  if (rt && cur.contains(rt)) return;
+  dragOverRoot.value = false;
+}
+
 function toolType(s: string): TemplateControlType | null {
   const ok = ["text", "box", "image", "table", "chart", "parameter", "signature"];
   return ok.includes(s) ? (s as TemplateControlType) : null;
 }
 
 function onDrop(e: DragEvent) {
+  dragOverRoot.value = false;
   const tp = toolType(e.dataTransfer?.getData("application/x-template-tool") || e.dataTransfer?.getData("text/plain") || "");
   if (!tp) return;
   const layer = viewportRef.value?.querySelector(".el-root");
@@ -301,6 +322,11 @@ function onWheel(ev: WheelEvent) {
   position: absolute;
   box-sizing: border-box;
   background: rgb(250 250 252);
+}
+.cv-droptarget {
+  outline: 2px dashed #818cf8;
+  outline-offset: -2px;
+  background: rgb(238 242 255 / 0.45);
 }
 .cv-hint {
   font-size: 11px;

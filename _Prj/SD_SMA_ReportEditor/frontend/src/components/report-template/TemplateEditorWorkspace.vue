@@ -1,6 +1,7 @@
 <template>
   <div class="ted" v-if="editing">
-    <header class="bar">
+    <div class="ted-top">
+      <header class="bar">
       <button type="button" class="link" @click="back">← 模板列表</button>
       <input v-model.trim="editing.name" class="name" aria-label="名称" />
       <select v-model="editing.paperKind" class="ddl" @change="reclamp">
@@ -12,7 +13,47 @@
       </select>
       <button type="button" class="btn" @click="save">保存</button>
       <span class="note">{{ hint }}</span>
-    </header>
+      </header>
+      <div class="preset-bar">
+        <span class="preset-bar-label">引用版式</span>
+        <template v-if="layoutPresetsAll.length">
+        <label class="preset-lbl"
+          >正文
+          <select
+            class="preset-ddl"
+            :value="editing.layoutPresetId || ''"
+            @change="onPresetBind('body', $event)"
+          >
+            <option value="">不绑定 ID（仅占位）</option>
+            <option v-for="p in bodyPresets" :key="'b' + p.id" :value="p.id">{{ p.name }}</option>
+          </select>
+        </label>
+        <label class="preset-lbl"
+          >封面
+          <select
+            class="preset-ddl"
+            :value="editing.coverLayoutPresetId || ''"
+            @change="onPresetBind('cover', $event)"
+          >
+            <option value="">不绑定 ID</option>
+            <option v-for="p in coverPresets" :key="'c' + p.id" :value="p.id">{{ p.name }}</option>
+          </select>
+        </label>
+        <label class="preset-lbl"
+          >末页
+          <select
+            class="preset-ddl"
+            :value="editing.backLayoutPresetId || ''"
+            @change="onPresetBind('back', $event)"
+          >
+            <option value="">不绑定 ID</option>
+            <option v-for="p in backPresets" :key="'k' + p.id" :value="p.id">{{ p.name }}</option>
+          </select>
+        </label>
+        </template>
+        <span v-else class="preset-empty">暂无版式列表（离线或需在「版式与页眉页脚」中建库）。仍可编辑当前快照。</span>
+      </div>
+    </div>
     <div class="cols">
       <aside class="left">
         <h5>拖拽到画布</h5>
@@ -95,6 +136,8 @@ import { useRoute, useRouter } from "vue-router";
 import { PAPER_LABEL } from "@/lib/report-template/paper";
 import { bodyElementsRef, metricsForSheet } from "@/lib/report-template/editor-sheet";
 import { clampElementToLayout, cloneDeepTemplate } from "@/lib/report-template/snapshot-fingerprint";
+import { refreshLayoutPresets } from "@/lib/report-template/layout-registry";
+import { applyLayoutPresetToTemplate } from "@/lib/report-template/layout-apply";
 
 const pkList = /** @type {const} */ (["A5", "A4", "A3", "Letter"]);
 const paperLabel = PAPER_LABEL;
@@ -121,12 +164,50 @@ const dlgFtr = ref(false);
 const dlgSig = ref(false);
 const hint = ref("");
 const sigChoices = ref([]);
+/** @type {import('vue').Ref<import('@/lib/report-template/layout-model').LayoutPreset[]>} */
+const layoutPresetsAll = ref([]);
 
 const sel = computed(() => {
   const t = editing.value;
   if (!t || !selId.value) return null;
   return bodyElementsRef(t, sh.value).find((x) => x.id === selId.value) ?? null;
 });
+
+const bodyPresets = computed(() => layoutPresetsAll.value.filter((p) => p.pageRole === "normal"));
+const coverPresets = computed(() => layoutPresetsAll.value.filter((p) => p.pageRole === "cover"));
+const backPresets = computed(() => layoutPresetsAll.value.filter((p) => p.pageRole === "back"));
+
+async function loadLayoutPresetsList() {
+  layoutPresetsAll.value = await refreshLayoutPresets();
+}
+
+/** @param {'body'|'cover'|'back'} slot */
+function onPresetBind(slot, ev) {
+  const presetId = typeof ev.target?.value === "string" ? ev.target.value : "";
+  const t = editing.value;
+  if (!t) return;
+  if (!presetId) {
+    if (slot === "body") t.layoutPresetId = null;
+    else if (slot === "cover") t.coverLayoutPresetId = null;
+    else t.backLayoutPresetId = null;
+    hint.value = "已断开该项的版式 ID 绑定（沿用当前纸上快照）。";
+    reclamp();
+    return;
+  }
+  const p = layoutPresetsAll.value.find((x) => x.id === presetId);
+  if (!p) {
+    hint.value = "所选版式未找到。";
+    return;
+  }
+  applyLayoutPresetToTemplate(t, p, slot);
+  reclamp();
+  hint.value =
+    slot === "body"
+      ? `已用「${p.name}」替换正文纸张与眉脚布局。`
+      : slot === "cover"
+        ? `已用「${p.name}」替换封面版式区。`
+        : `已用「${p.name}」替换末页封尾版式区。`;
+}
 
 async function boot() {
   const id = String(route.params.id || "");
@@ -135,6 +216,7 @@ async function boot() {
   try {
     const remote = await api.getTemplate(id);
     editing.value = cloneDeepTemplate(remote);
+    await loadLayoutPresetsList();
   } catch {
     hint.value = "无法从后端载入（请开启 FastAPI）。已返回列表。";
     return router.replace({ name: "TemplateManager" });
@@ -235,8 +317,8 @@ function onKey(ev) {
   if (ev.key === "Delete" || ev.key === "Backspace") delSel();
 }
 
-onMounted(() => {
-  boot();
+onMounted(async () => {
+  await boot();
   refreshSigChoices();
   window.addEventListener("keydown", onKey);
 });
@@ -250,6 +332,39 @@ onUnmounted(() => window.removeEventListener("keydown", onKey));
   height: calc(100vh - 48px);
   min-height: 0;
 }
+.ted-top {
+  flex: none;
+  border-bottom: 1px solid #e4e4e7;
+  background: #fafafa;
+}
+.preset-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  padding: 6px 8px 8px;
+  font-size: 12px;
+}
+.preset-bar-label {
+  font-weight: 600;
+  color: #3f3f46;
+}
+.preset-lbl {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #52525b;
+}
+.preset-ddl {
+  min-width: 140px;
+  max-width: 220px;
+  padding: 4px;
+  border-radius: 6px;
+  border: 1px solid #d4d4d8;
+}
+.preset-empty {
+  color: #71717a;
+}
 .wait {
   padding: 2rem;
   color: #71717a;
@@ -261,8 +376,8 @@ onUnmounted(() => window.removeEventListener("keydown", onKey));
   gap: 8px;
   align-items: center;
   padding: 8px;
-  border-bottom: 1px solid #e4e4e7;
-  background: #fafafa;
+  border-bottom: none;
+  background: transparent;
 }
 .link {
   border: none;
