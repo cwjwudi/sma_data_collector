@@ -15,24 +15,25 @@
         <button type="button" class="b" @click="mode = mode === 'list' ? 'thumbs' : 'list'">
           {{ mode === "list" ? "缩略图" : "列表" }}
         </button>
-        <button type="button" class="b primary" @click="handleCreateBlank">新建版式</button>
       </div>
     </header>
     <p v-if="msg" class="msg">{{ msg }}</p>
     <p v-if="offline" class="warn">
       无法连接后端，列表与保存使用浏览器本地（可与「设置 › 浏览器数据迁移」上传到服务器）。
     </p>
+    <p v-if="!presets.length" class="empty-all">
+      当前还没有任何版式。请在下方对应分栏内点击「新建…」按钮创建封面、正文页或末页版式。
+    </p>
 
     <div v-if="mode === 'list'" class="lp-stack">
-      <p v-if="!filteredPresets.length" class="empty-all">暂无版式，请点击「新建版式」。</p>
-      <template v-else>
-        <section
-          v-for="sec in visibleSections"
-          :key="'list-' + sec.role"
-          class="lp-section"
-        >
+      <section v-for="sec in visibleSections" :key="'list-' + sec.role" class="lp-section">
+        <div class="lp-section-head">
           <h3 class="lp-section-h">{{ sec.title }}</h3>
-          <table class="tbl">
+          <button type="button" class="b primary lp-new" @click="createPresetForSection(sec.role)">
+            {{ newPresetButtonLabel(sec.role) }}
+          </button>
+        </div>
+        <table class="tbl">
             <thead>
               <tr>
                 <th>名称</th>
@@ -57,21 +58,19 @@
                 </td>
               </tr>
             </tbody>
-          </table>
-        </section>
-      </template>
+        </table>
+      </section>
     </div>
 
     <div v-else class="lp-stack">
-      <p v-if="!filteredPresets.length" class="empty-all">暂无版式，请点击「新建版式」。</p>
-      <template v-else>
-        <section
-          v-for="sec in visibleSections"
-          :key="'thumbs-' + sec.role"
-          class="lp-section"
-        >
+      <section v-for="sec in visibleSections" :key="'thumbs-' + sec.role" class="lp-section">
+        <div class="lp-section-head">
           <h3 class="lp-section-h">{{ sec.title }}</h3>
-          <div class="grid">
+          <button type="button" class="b primary lp-new" @click="createPresetForSection(sec.role)">
+            {{ newPresetButtonLabel(sec.role) }}
+          </button>
+        </div>
+        <div class="grid">
             <p v-if="!presetGroups[sec.role].length" class="empty-section">此类别暂无版式。</p>
             <div v-for="p in presetGroups[sec.role]" :key="'card-' + p.id" class="card">
               <div class="micro-wrap">
@@ -84,9 +83,8 @@
                 <a href="#" class="lnk danger" @click.prevent="removePreset(p.id)">删除</a>
               </div>
             </div>
-          </div>
-        </section>
-      </template>
+        </div>
+      </section>
     </div>
   </div>
 </template>
@@ -124,11 +122,6 @@ const ROLE_SECTION_META: { role: LayoutPageRole; title: string }[] = [
 const presets = ref<LayoutPreset[]>([]);
 const offline = computed(() => isLayoutsOffline());
 
-const filteredPresets = computed(() => {
-  if (roleFilter.value === "all") return presets.value;
-  return presets.value.filter((p) => p.pageRole === roleFilter.value);
-});
-
 /** 按用途分组，供上下分栏各区块渲染 */
 const presetGroups = computed((): Record<LayoutPageRole, LayoutPreset[]> => {
   const g: Record<LayoutPageRole, LayoutPreset[]> = {
@@ -146,6 +139,12 @@ const visibleSections = computed(() => {
   if (roleFilter.value === "all") return ROLE_SECTION_META;
   return ROLE_SECTION_META.filter((s) => s.role === roleFilter.value);
 });
+
+function newPresetButtonLabel(role: LayoutPageRole): string {
+  if (role === "cover") return "新建封面版式";
+  if (role === "back") return "新建末页版式（封尾）";
+  return "新建正文版式（眉脚）";
+}
 
 function roleLabel(r: LayoutPageRole) {
   return LAYOUT_PAGE_ROLE_LABEL[r];
@@ -186,7 +185,10 @@ function parseRouteRole(q: LocationQuery): LayoutPageRole | undefined {
   return undefined;
 }
 
-async function createPreset(initialRole?: LayoutPageRole): Promise<string | null> {
+async function createPreset(
+  initialRole?: LayoutPageRole,
+  opts?: { snapRoleFilter?: boolean },
+): Promise<string | null> {
   msg.value = "";
   const fresh = createEmptyLayoutPreset();
   if (initialRole) {
@@ -197,8 +199,11 @@ async function createPreset(initialRole?: LayoutPageRole): Promise<string | null
         : initialRole === "back"
           ? "新建末页版式（封尾）"
           : "新建正文版式（页眉页脚）";
-    roleFilter.value =
-      initialRole === "normal" ? "normal" : initialRole === "cover" ? "cover" : "back";
+    const snap = opts?.snapRoleFilter ?? true;
+    if (snap) {
+      roleFilter.value =
+        initialRole === "normal" ? "normal" : initialRole === "cover" ? "cover" : "back";
+    }
   } else {
     fresh.name = "新建版式";
   }
@@ -212,8 +217,10 @@ async function createPreset(initialRole?: LayoutPageRole): Promise<string | null
   }
 }
 
-async function handleCreateBlank() {
-  const id = await createPreset();
+async function createPresetForSection(role: LayoutPageRole) {
+  const id = await createPreset(role, {
+    snapRoleFilter: roleFilter.value !== "all",
+  });
   if (id) goEditor(id);
 }
 
@@ -259,18 +266,35 @@ onMounted(async () => {
   padding-top: 24px;
   border-top: 1px solid #e4e4e7;
 }
+.lp-section-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 12px;
+  margin-bottom: 10px;
+}
 .lp-section-h {
-  margin: 0 0 10px;
+  margin: 0;
+  flex: 1 1 160px;
+  min-width: 0;
   font-size: 15px;
   font-weight: 600;
   color: #27272a;
 }
+.lp-new {
+  flex-shrink: 0;
+}
 .empty-all {
   text-align: center;
   color: #71717a;
-  padding: 32px 16px;
-  margin: 0;
-  font-size: 14px;
+  padding: 16px;
+  margin: 8px 0 0;
+  font-size: 13px;
+  line-height: 1.45;
+  background: #fafafa;
+  border-radius: 8px;
+  border: 1px dashed #d4d4d8;
 }
 .empty-section {
   grid-column: 1 / -1;
