@@ -15,10 +15,10 @@
       <span class="note">{{ hint }}</span>
       </header>
       <div class="preset-bar">
-        <span class="preset-bar-label">引用版式</span>
+        <span class="preset-bar-label">正文版式</span>
         <template v-if="layoutPresetsAll.length">
         <label class="preset-lbl"
-          >正文
+          >选用版式（与模版管理中「正文版式」下拉一致）
           <select
             class="preset-ddl"
             :value="editing.layoutPresetId || ''"
@@ -28,30 +28,9 @@
             <option v-for="p in bodyPresets" :key="'b' + p.id" :value="p.id">{{ p.name }}</option>
           </select>
         </label>
-        <label class="preset-lbl"
-          >封面
-          <select
-            class="preset-ddl"
-            :value="editing.coverLayoutPresetId || ''"
-            @change="onPresetBind('cover', $event)"
-          >
-            <option value="">不绑定 ID</option>
-            <option v-for="p in coverPresets" :key="'c' + p.id" :value="p.id">{{ p.name }}</option>
-          </select>
-        </label>
-        <label class="preset-lbl"
-          >末页
-          <select
-            class="preset-ddl"
-            :value="editing.backLayoutPresetId || ''"
-            @change="onPresetBind('back', $event)"
-          >
-            <option value="">不绑定 ID</option>
-            <option v-for="p in backPresets" :key="'k' + p.id" :value="p.id">{{ p.name }}</option>
-          </select>
-        </label>
         </template>
-        <span v-else class="preset-empty">暂无版式列表（离线或需在「版式与页眉页脚」中建库）。仍可编辑当前快照。</span>
+        <span v-else class="preset-empty">暂无正文版式列表（离线或需在「版式与页眉页脚」中建库）。仍可编辑当前纸上快照。</span>
+        <span class="preset-hint">封面、末页的版式请在「模版管理 › 缩略图」中为该模版卡片下拉选用。</span>
       </div>
     </div>
     <div class="cols">
@@ -67,10 +46,8 @@
         >
           {{ toolNames[tp] }}
         </button>
-        <h5>页</h5>
-        <button type="button" :class="{ on: sh === 'body' }" @click="sh = 'body'">正文</button>
-        <button type="button" :class="{ on: sh === 'cover' }" @click="sh = 'cover'">封面</button>
-        <button type="button" :class="{ on: sh === 'back' }" @click="sh = 'back'">末页</button>
+        <h5>当前画布</h5>
+        <p class="sheet-hint"><strong>正文页</strong>（封面 / 末页仅在「模版管理」缩略图中选用版式，此处不做切换）</p>
         <h5>眉脚</h5>
         <button type="button" class="btn" @click="openHdr">页眉…</button>
         <button type="button" class="btn" @click="openFtr">页脚…</button>
@@ -174,23 +151,19 @@ const sel = computed(() => {
 });
 
 const bodyPresets = computed(() => layoutPresetsAll.value.filter((p) => p.pageRole === "normal"));
-const coverPresets = computed(() => layoutPresetsAll.value.filter((p) => p.pageRole === "cover"));
-const backPresets = computed(() => layoutPresetsAll.value.filter((p) => p.pageRole === "back"));
 
 async function loadLayoutPresetsList() {
   layoutPresetsAll.value = await refreshLayoutPresets();
 }
 
-/** @param {'body'|'cover'|'back'} slot */
+/** @param {'body'} slot */
 function onPresetBind(slot, ev) {
   const presetId = typeof ev.target?.value === "string" ? ev.target.value : "";
   const t = editing.value;
   if (!t) return;
   if (!presetId) {
-    if (slot === "body") t.layoutPresetId = null;
-    else if (slot === "cover") t.coverLayoutPresetId = null;
-    else t.backLayoutPresetId = null;
-    hint.value = "已断开该项的版式 ID 绑定（沿用当前纸上快照）。";
+    t.layoutPresetId = null;
+    hint.value = "已断开正文版式 ID 绑定（沿用当前纸上快照）。";
     reclamp();
     return;
   }
@@ -201,12 +174,7 @@ function onPresetBind(slot, ev) {
   }
   applyLayoutPresetToTemplate(t, p, slot);
   reclamp();
-  hint.value =
-    slot === "body"
-      ? `已用「${p.name}」替换正文纸张与眉脚布局。`
-      : slot === "cover"
-        ? `已用「${p.name}」替换封面版式区。`
-        : `已用「${p.name}」替换末页封尾版式区。`;
+  hint.value = `已用「${p.name}」替换正文纸张与眉脚布局。`;
 }
 
 async function boot() {
@@ -364,6 +332,21 @@ onUnmounted(() => window.removeEventListener("keydown", onKey));
 }
 .preset-empty {
   color: #71717a;
+}
+.preset-hint {
+  flex: 1 1 220px;
+  min-width: 0;
+  color: #78716c;
+  line-height: 1.4;
+}
+.sheet-hint {
+  margin: 0;
+  padding: 8px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: #57534e;
+  background: #f4f4f5;
+  border-radius: 6px;
 }
 .wait {
   padding: 2rem;

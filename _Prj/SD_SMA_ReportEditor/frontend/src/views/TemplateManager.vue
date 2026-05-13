@@ -30,7 +30,13 @@
           <td>{{ r.updated }}</td>
           <td class="td-act">
             <div class="foot-actions foot-actions--table">
-              <a href="#" class="lnk" @click.prevent="goEditor(r.id)">编辑</a>
+              <a
+                href="#"
+                class="lnk"
+                title="仅在编辑器中编排正文画布上的控件与眉脚元素"
+                @click.prevent="goEditor(r.id)"
+                >改正文</a
+              >
               <a href="#" class="lnk danger" @click.prevent="delTpl(r.id)">删除</a>
             </div>
           </td>
@@ -52,10 +58,19 @@
                   :max-height-px="152"
                 />
               </div>
+              <label class="micro-lab">版式</label>
+              <select
+                class="micro-preset"
+                :value="boundPresetId(cache[r.id], 'cover')"
+                @change="onApplyPreset(r.id, 'cover', $event)"
+              >
+                <option value="">选用已建版式…</option>
+                <option v-for="p in coverPresetsList" :key="'pc-' + p.id" :value="p.id">{{ p.name }}</option>
+              </select>
               <button type="button" class="b-micro" @click.stop="goLayoutsNew('cover')">新建封面版式</button>
             </div>
             <div class="micro">
-              <span class="micro-t">页眉 · 页脚</span>
+              <span class="micro-t">页眉 · 页脚 · 正文纸</span>
               <div class="micro-body bands">
                 <TemplateMiniBands
                   :template="cache[r.id]"
@@ -65,6 +80,15 @@
                   :max-height-px="152"
                 />
               </div>
+              <label class="micro-lab">正文版式</label>
+              <select
+                class="micro-preset"
+                :value="boundPresetId(cache[r.id], 'body')"
+                @change="onApplyPreset(r.id, 'body', $event)"
+              >
+                <option value="">选用已建版式…</option>
+                <option v-for="p in bodyPresetsList" :key="'pb-' + p.id" :value="p.id">{{ p.name }}</option>
+              </select>
               <button type="button" class="b-micro" @click.stop="goLayoutsNew('normal')">新建正文版式（眉脚）</button>
             </div>
             <div class="micro">
@@ -77,6 +101,15 @@
                   :max-height-px="152"
                 />
               </div>
+              <label class="micro-lab">版式</label>
+              <select
+                class="micro-preset"
+                :value="boundPresetId(cache[r.id], 'back')"
+                @change="onApplyPreset(r.id, 'back', $event)"
+              >
+                <option value="">选用已建版式…</option>
+                <option v-for="p in backPresetsList" :key="'pk-' + p.id" :value="p.id">{{ p.name }}</option>
+              </select>
               <button type="button" class="b-micro" @click.stop="goLayoutsNew('back')">新建末页版式</button>
             </div>
           </div>
@@ -95,7 +128,13 @@
             <b>{{ r.name }}</b> {{ r.dim }} · {{ r.updated }}
           </div>
           <div class="foot-actions">
-            <a href="#" class="lnk" @click.prevent="goEditor(r.id)">编辑</a>
+            <a
+              href="#"
+              class="lnk"
+              title="仅在编辑器中编排正文画布上的控件与眉脚元素"
+              @click.prevent="goEditor(r.id)"
+              >改正文</a
+            >
             <a href="#" class="lnk danger" @click.prevent="delTpl(r.id)">删除</a>
           </div>
         </div>
@@ -111,7 +150,13 @@ import { ref, computed, watch, onMounted } from "vue";
 import { useRouter } from "vue-router";
 import * as api from "@/api/templates";
 import { PAPER_LABEL } from "@/lib/report-template/paper";
-import { cloneDeepTemplate } from "@/lib/report-template/snapshot-fingerprint";
+import {
+  clampElementToLayout,
+  cloneDeepTemplate,
+} from "@/lib/report-template/snapshot-fingerprint";
+import { bodyElementsRef, metricsForSheet } from "@/lib/report-template/editor-sheet";
+import { applyLayoutPresetToTemplate } from "@/lib/report-template/layout-apply";
+import { refreshLayoutPresets } from "@/lib/report-template/layout-registry";
 import { loadTemplates as loadLocal, saveTemplates } from "@/lib/report-template/model";
 import TemplateMiniPage from "@/components/report-template/TemplateMiniPage.vue";
 import TemplateMiniBands from "@/components/report-template/TemplateMiniBands.vue";
@@ -124,6 +169,18 @@ const msg = ref("");
 const summaries = ref([]);
 const cache = ref({});
 const offline = ref(false);
+/** @type {import('vue').Ref<import('@/lib/report-template/layout-model').LayoutPreset[]>} */
+const layoutPresetsAll = ref([]);
+
+const coverPresetsList = computed(() =>
+  layoutPresetsAll.value.filter((p) => p.pageRole === "cover"),
+);
+const bodyPresetsList = computed(() =>
+  layoutPresetsAll.value.filter((p) => p.pageRole === "normal"),
+);
+const backPresetsList = computed(() =>
+  layoutPresetsAll.value.filter((p) => p.pageRole === "back"),
+);
 
 const rows = computed(() =>
   summaries.value.map((s) => ({
@@ -167,10 +224,88 @@ async function hydrateThumbs() {
   }
 }
 
+async function loadPresets() {
+  try {
+    layoutPresetsAll.value = await refreshLayoutPresets();
+  } catch {
+    layoutPresetsAll.value = [];
+  }
+}
+
+/** @param {import('@/lib/report-template/model').ReportTemplate} t */
+function reclampTemplate(t) {
+  for (const s of /** @type {const} */ (["body", "cover", "back"])) {
+    const m = metricsForSheet(t, s);
+    for (const el of bodyElementsRef(t, s)) clampElementToLayout(el, m.contentW, m.contentH);
+  }
+}
+
+/** @param {import('@/lib/report-template/model').ReportTemplate} t @param {'cover'|'body'|'back'} slot */
+function boundPresetId(t, slot) {
+  if (slot === "cover") return t.coverLayoutPresetId || "";
+  if (slot === "body") return t.layoutPresetId || "";
+  return t.backLayoutPresetId || "";
+}
+
+/** @param {string} templateId @param {'cover'|'body'|'back'} slot */
+async function onApplyPreset(templateId, slot, ev) {
+  const presetId = typeof ev.target?.value === "string" ? ev.target.value : "";
+  const t = cache.value[templateId];
+  if (!t) return;
+  msg.value = "";
+
+  if (!presetId) {
+    if (slot === "body") t.layoutPresetId = null;
+    else if (slot === "cover") t.coverLayoutPresetId = null;
+    else t.backLayoutPresetId = null;
+    reclampTemplate(t);
+    await persistFullTemplate(t);
+    return;
+  }
+
+  const expectedRole = slot === "body" ? "normal" : slot;
+  const p = layoutPresetsAll.value.find((x) => x.id === presetId);
+  if (!p || p.pageRole !== expectedRole) {
+    msg.value = "所选条目与用途不匹配或未找到。";
+    ev.target.value = boundPresetId(t, slot);
+    return;
+  }
+
+  applyLayoutPresetToTemplate(t, p, slot);
+  reclampTemplate(t);
+  await persistFullTemplate(t);
+}
+
+/** @param {import('@/lib/report-template/model').ReportTemplate} t */
+async function persistFullTemplate(t) {
+  t.updatedAt = new Date().toISOString();
+  t.schemaVersion = 2;
+  try {
+    await api.putTemplate(t.id, t);
+    msg.value = "已更新该模版的版式引用并保存。";
+    summaries.value = summaries.value.map((s) =>
+      s.id === t.id ? { ...s, updatedAt: t.updatedAt } : s,
+    );
+  } catch {
+    const list = loadLocal();
+    const ix = list.findIndex((x) => x.id === t.id);
+    if (ix >= 0) list[ix] = t;
+    else list.push(t);
+    saveTemplates(list);
+    offline.value = true;
+    msg.value = "已写入本机模版库并已保存。"
+    summaries.value = summaries.value.map((s) =>
+      s.id === t.id ? { ...s, updatedAt: t.updatedAt } : s,
+    );
+  }
+}
+
 watch(
   () => mode.value,
   async (m) => {
-    if (m === "thumbs" && !offline.value) await hydrateThumbs();
+    if (m !== "thumbs") return;
+    await loadPresets();
+    if (!offline.value) await hydrateThumbs();
   },
 );
 
@@ -227,7 +362,14 @@ async function created(t) {
 
 onMounted(async () => {
   await load();
-  if (mode.value === "thumbs" && !offline.value) await hydrateThumbs();
+  if (mode.value === "thumbs") {
+    await loadPresets();
+    if (!offline.value) await hydrateThumbs();
+    else {
+      const local = loadLocal();
+      cache.value = Object.fromEntries(local.map((x) => [x.id, x]));
+    }
+  }
 });
 </script>
 
@@ -406,6 +548,27 @@ onMounted(async () => {
 }
 .micro-body.bands {
   margin-top: 4px;
+}
+.micro-lab {
+  align-self: stretch;
+  width: 100%;
+  font-size: 11px;
+  font-weight: 600;
+  color: #64748b;
+}
+.micro-preset {
+  align-self: stretch;
+  width: 100%;
+  min-height: 44px;
+  padding: 6px 8px;
+  box-sizing: border-box;
+  border-radius: 6px;
+  border: 1px solid #d4d4d8;
+  background: #fff;
+  font-size: 12px;
+  color: #1e293b;
+  cursor: pointer;
+  touch-action: manipulation;
 }
 .b-micro {
   width: 100%;
