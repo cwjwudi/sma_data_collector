@@ -191,12 +191,67 @@ async function copyConnectionInfo() {
   }
 }
 
-async function loadServers() {
-  const data = await apiFetch('/opcua/servers')
-  servers.value = data.servers || []
+function pickPreferredOpcServerId(prefs, srvs, explicitPreferred) {
+  const list = srvs || []
+  if (explicitPreferred && list.some((s) => s.id === explicitPreferred)) {
+    return explicitPreferred
+  }
+  if (!prefs || prefs.auto_select_last_opcua_server === false) {
+    return null
+  }
+  const def = prefs.default_opcua_server_id
+  if (def && list.some((s) => s.id === def)) {
+    return def
+  }
+  const last = prefs.last_opcua_server_id
+  if (last && list.some((s) => s.id === last)) {
+    return last
+  }
+  return null
 }
 
-function selectServer(s) {
+async function persistLastOpcuaServer(id) {
+  if (!id) return
+  try {
+    await apiFetch('/settings/app_preferences', {
+      method: 'PATCH',
+      body: { last_opcua_server_id: id },
+    })
+  } catch {
+    /* ignore */
+  }
+}
+
+async function loadServers(explicitPreferred = null) {
+  let prefs = {}
+  try {
+    prefs = await apiFetch('/settings/app_preferences')
+  } catch {
+    prefs = {}
+  }
+  const data = await apiFetch('/opcua/servers')
+  servers.value = data.servers || []
+  if (!servers.value.length) {
+    startNew()
+    return
+  }
+  const pid = pickPreferredOpcServerId(prefs, servers.value, explicitPreferred)
+  if (pid) {
+    const s = servers.value.find((x) => x.id === pid)
+    if (s) {
+      selectServer(s, false)
+      return
+    }
+  }
+  const curId = form.id
+  if (curId && servers.value.some((x) => x.id === curId)) {
+    selectServer(servers.value.find((x) => x.id === curId), false)
+    return
+  }
+  selectServer(servers.value[0], false)
+}
+
+function selectServer(s, persist = true) {
   selected.value = s
   form.id = s.id
   form.name = s.name || ''
@@ -208,6 +263,9 @@ function selectServer(s) {
   pickedNode.value = null
   readOut.value = ''
   readEpoch.value += 1
+  if (persist) {
+    void persistLastOpcuaServer(s.id)
+  }
   refreshRoot()
 }
 
@@ -227,7 +285,7 @@ function startNew() {
 async function saveServer() {
   msg.value = ''
   try {
-    await apiFetch('/opcua/servers', {
+    const postRes = await apiFetch('/opcua/servers', {
       method: 'POST',
       body: {
         id: form.id || null,
@@ -237,11 +295,16 @@ async function saveServer() {
         password: form.password || null,
       },
     })
-    await loadServers()
+    const list = postRes.servers || []
+    const nm = String(form.name || '').trim()
+    const ep = String(form.endpoint_url || '').trim()
     const created =
-      servers.value.find((x) => x.name === form.name && x.endpoint_url === form.endpoint_url) ||
-      servers.value.find((x) => x.endpoint_url === form.endpoint_url)
-    if (created) selectServer(created)
+      list.find((x) => String(x.name || '').trim() === nm && String(x.endpoint_url || '').trim() === ep) ||
+      list.find((x) => String(x.endpoint_url || '').trim() === ep)
+    await loadServers(created?.id || null)
+    if (created?.id) {
+      await persistLastOpcuaServer(created.id)
+    }
     msg.value = '已保存'
   } catch (e) {
     msg.value = e.message || String(e)
@@ -517,11 +580,19 @@ watch(pollIntervalSeconds, (v) => {
   if (c !== v) pollIntervalSeconds.value = c
 })
 
-onBeforeUnmount(() => {
-  clearPollTimer()
+function onConfigImported() {
+  void loadServers()
+}
+
+onMounted(() => {
+  void loadServers()
+  window.addEventListener('report-editor-config-imported', onConfigImported)
 })
 
-onMounted(loadServers)
+onBeforeUnmount(() => {
+  clearPollTimer()
+  window.removeEventListener('report-editor-config-imported', onConfigImported)
+})
 </script>
 
 <style scoped>

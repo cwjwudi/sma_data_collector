@@ -23,6 +23,9 @@ def normalize_top_level(cfg: dict[str, Any]) -> dict[str, Any]:
     prefs.setdefault("auto_select_last_connection", True)
     prefs.setdefault("default_connection_id", None)
     prefs.setdefault("last_connection_id", None)
+    prefs.setdefault("auto_select_last_opcua_server", True)
+    prefs.setdefault("default_opcua_server_id", None)
+    prefs.setdefault("last_opcua_server_id", None)
     out["app_preferences"] = prefs
     return out
 
@@ -129,8 +132,16 @@ def apply_import_merge(current: dict[str, Any], incoming: dict[str, Any]) -> dic
     inc_prefs = inc.get("app_preferences")
     if isinstance(inc_prefs, dict):
         base_prefs = dict(cur.get("app_preferences") or {})
+        _pref_keys = (
+            "auto_select_last_connection",
+            "default_connection_id",
+            "last_connection_id",
+            "auto_select_last_opcua_server",
+            "default_opcua_server_id",
+            "last_opcua_server_id",
+        )
         for k, v in inc_prefs.items():
-            if k in ("auto_select_last_connection", "default_connection_id", "last_connection_id"):
+            if k in _pref_keys:
                 base_prefs[k] = v
         cur["app_preferences"] = base_prefs
     if isinstance(inc.get("schema_version"), int):
@@ -147,6 +158,9 @@ def apply_import_replace(incoming: dict[str, Any]) -> dict[str, Any]:
         "auto_select_last_connection": bool(prefs.get("auto_select_last_connection", True)),
         "default_connection_id": prefs.get("default_connection_id"),
         "last_connection_id": prefs.get("last_connection_id"),
+        "auto_select_last_opcua_server": bool(prefs.get("auto_select_last_opcua_server", True)),
+        "default_opcua_server_id": prefs.get("default_opcua_server_id"),
+        "last_opcua_server_id": prefs.get("last_opcua_server_id"),
     }
     sv = inc.get("schema_version")
     if not isinstance(sv, int):

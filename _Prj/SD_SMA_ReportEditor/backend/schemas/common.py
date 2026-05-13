@@ -227,3 +227,6 @@ class AppPreferencesPatch(BaseModel):
     auto_select_last_connection: bool | None = None
     default_connection_id: str | None = None
     last_connection_id: str | None = None
+    auto_select_last_opcua_server: bool | None = None
+    default_opcua_server_id: str | None = None
+    last_opcua_server_id: str | None = None

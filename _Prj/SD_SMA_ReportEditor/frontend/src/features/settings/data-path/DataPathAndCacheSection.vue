@@ -1,38 +1,67 @@
 <template>
   <section class="card muted-card">
-    <h3>数据与路径</h3>
-    <p class="muted">
-      后端数据目录由运行环境决定（开发：<code>backend/data</code>；Electron：用户目录
-      <code>backend-data</code>）。可通过环境变量 <code>REPORT_EDITOR_DATA_DIR</code> 覆盖。当前页面对应<strong>本机正在运行的后端实例</strong>；多窗口共享同一配置文件时，「上次连接」以最后一次切换为准。
-    </p>
-    <div v-if="health.data_dir" class="path-line">
-      <span class="label">当前 data 目录</span>
-      <code class="path">{{ health.data_dir }}</code>
-    </div>
-    <div v-if="healthErr" class="err">{{ healthErr }}</div>
+    <h3>连接偏好</h3>
+    <p class="sync-hint">偏好保存在配置中，多开窗口会自动一致。</p>
 
-    <h4 class="sub">数据库连接偏好</h4>
-    <label class="row-check">
-      <input
-        :checked="prefs.auto_select_last_connection"
-        type="checkbox"
-        @change="onAutoSelectChange"
-      />
-      启动工作台时自动选中上次使用的连接（或下方指定的默认连接）
-    </label>
+    <h4 class="sub">数据库</h4>
+    <div class="row-switch">
+      <button
+        type="button"
+        class="switch-touch"
+        role="switch"
+        :aria-checked="prefs.auto_select_last_connection ? 'true' : 'false'"
+        @click="toggleDbAuto"
+      >
+        <span class="switch-track" :class="{ on: prefs.auto_select_last_connection }">
+          <span class="switch-thumb" />
+        </span>
+        <span class="switch-label">自动选中上次或下方默认连接</span>
+      </button>
+    </div>
     <div class="row-select">
-      <span class="label">默认连接（可选）</span>
-      <select v-model="defaultConnLocal" class="input" @change="onDefaultConnChange">
-        <option value="">（不指定，仅用上次连接）</option>
-        <option v-for="c in connections" :key="c.id" :value="c.id">{{ c.name || c.engine }} — {{ c.engine }}</option>
+      <span class="field-label">默认连接</span>
+      <select v-model="defaultConnLocal" class="select-touch" @change="onDefaultConnChange">
+        <option value="">不指定</option>
+        <option v-for="c in connections" :key="c.id" :value="c.id">
+          {{ c.name || c.engine }} — {{ c.engine }}
+        </option>
       </select>
     </div>
 
-    <h4 class="sub">缓存与会话</h4>
+    <h4 class="sub">OPC UA</h4>
+    <div class="row-switch">
+      <button
+        type="button"
+        class="switch-touch"
+        role="switch"
+        :aria-checked="prefs.auto_select_last_opcua_server ? 'true' : 'false'"
+        @click="toggleOpcAuto"
+      >
+        <span class="switch-track" :class="{ on: prefs.auto_select_last_opcua_server }">
+          <span class="switch-thumb" />
+        </span>
+        <span class="switch-label">自动选中上次或下方默认服务器</span>
+      </button>
+    </div>
+    <div class="row-select">
+      <span class="field-label">默认服务器</span>
+      <select v-model="defaultOpcLocal" class="select-touch" @change="onDefaultOpcChange">
+        <option value="">不指定</option>
+        <option v-for="s in opcServers" :key="s.id" :value="s.id">
+          {{ s.name || s.endpoint_url }}
+        </option>
+      </select>
+    </div>
+
+    <h4 class="sub">缓存</h4>
     <div class="actions">
-      <button type="button" class="btn sm" :disabled="busy" @click="clearQuerySessions">清空查询历史与收藏</button>
-      <button type="button" class="btn sm" :disabled="busy" @click="reloadQuerySessions">重新加载查询会话</button>
-      <button type="button" class="btn sm" :disabled="busy" @click="clearRelLayoutCache">清除关系浏览器布局缓存</button>
+      <button type="button" class="btn-touch" :disabled="busy" @click="clearQuerySessions">
+        清空查询历史与收藏
+      </button>
+      <button type="button" class="btn-touch" :disabled="busy" @click="reloadQuerySessions">重新加载查询会话</button>
+      <button type="button" class="btn-touch" :disabled="busy" @click="clearRelLayoutCache">
+        清除关系浏览器布局
+      </button>
     </div>
     <p v-if="msg" class="msg">{{ msg }}</p>
   </section>
@@ -42,27 +71,20 @@
 import { onMounted, ref } from 'vue'
 import { apiFetch } from '@/api/client.js'
 
-const health = ref({ data_dir: '' })
-const healthErr = ref('')
 const prefs = ref({
   auto_select_last_connection: true,
   default_connection_id: null,
   last_connection_id: null,
+  auto_select_last_opcua_server: true,
+  default_opcua_server_id: null,
+  last_opcua_server_id: null,
 })
 const defaultConnLocal = ref('')
+const defaultOpcLocal = ref('')
 const connections = ref([])
+const opcServers = ref([])
 const busy = ref(false)
 const msg = ref('')
-
-async function loadHealth() {
-  healthErr.value = ''
-  try {
-    const h = await apiFetch('/health')
-    health.value = { data_dir: h.data_dir || '' }
-  } catch (e) {
-    healthErr.value = e.message || String(e)
-  }
-}
 
 async function loadConnections() {
   try {
@@ -73,6 +95,15 @@ async function loadConnections() {
   }
 }
 
+async function loadOpcServers() {
+  try {
+    const data = await apiFetch('/opcua/servers')
+    opcServers.value = data.servers || []
+  } catch {
+    opcServers.value = []
+  }
+}
+
 async function loadPrefs() {
   try {
     const p = await apiFetch('/settings/app_preferences')
@@ -80,37 +111,48 @@ async function loadPrefs() {
       auto_select_last_connection: p.auto_select_last_connection !== false,
       default_connection_id: p.default_connection_id || null,
       last_connection_id: p.last_connection_id || null,
+      auto_select_last_opcua_server: p.auto_select_last_opcua_server !== false,
+      default_opcua_server_id: p.default_opcua_server_id || null,
+      last_opcua_server_id: p.last_opcua_server_id || null,
     }
     defaultConnLocal.value = prefs.value.default_connection_id || ''
+    defaultOpcLocal.value = prefs.value.default_opcua_server_id || ''
   } catch {
     /* ignore */
   }
 }
 
-async function savePrefs() {
+async function savePrefs(patch) {
   msg.value = ''
   try {
     await apiFetch('/settings/app_preferences', {
       method: 'PATCH',
-      body: {
-        auto_select_last_connection: prefs.value.auto_select_last_connection,
-        default_connection_id: prefs.value.default_connection_id || null,
-      },
+      body: patch,
     })
-    msg.value = '已保存偏好。'
+    msg.value = '已保存。'
   } catch (e) {
     msg.value = e.message || String(e)
   }
 }
 
-async function onAutoSelectChange(e) {
-  prefs.value.auto_select_last_connection = !!e.target.checked
-  await savePrefs()
+async function toggleDbAuto() {
+  prefs.value.auto_select_last_connection = !prefs.value.auto_select_last_connection
+  await savePrefs({ auto_select_last_connection: prefs.value.auto_select_last_connection })
+}
+
+async function toggleOpcAuto() {
+  prefs.value.auto_select_last_opcua_server = !prefs.value.auto_select_last_opcua_server
+  await savePrefs({ auto_select_last_opcua_server: prefs.value.auto_select_last_opcua_server })
 }
 
 function onDefaultConnChange() {
   prefs.value.default_connection_id = defaultConnLocal.value || null
-  savePrefs()
+  savePrefs({ default_connection_id: prefs.value.default_connection_id })
+}
+
+function onDefaultOpcChange() {
+  prefs.value.default_opcua_server_id = defaultOpcLocal.value || null
+  savePrefs({ default_opcua_server_id: prefs.value.default_opcua_server_id })
 }
 
 async function clearQuerySessions() {
@@ -129,7 +171,7 @@ async function clearQuerySessions() {
 
 function reloadQuerySessions() {
   window.dispatchEvent(new CustomEvent('report-editor-query-sessions-changed'))
-  msg.value = '已通知各页重新加载查询会话。'
+  msg.value = '已通知重新加载查询会话。'
 }
 
 function clearRelLayoutCache() {
@@ -147,13 +189,11 @@ function clearRelLayoutCache() {
   } catch {
     /* ignore */
   }
-  msg.value = `已清除 ${n} 条关系浏览器布局缓存。`
+  msg.value = `已清除 ${n} 条布局缓存。`
 }
 
 onMounted(async () => {
-  await loadHealth()
-  await loadConnections()
-  await loadPrefs()
+  await Promise.all([loadConnections(), loadOpcServers(), loadPrefs()])
 })
 </script>
 
@@ -165,85 +205,114 @@ onMounted(async () => {
   background: #fff;
   margin-top: 16px;
 }
-.muted {
+.sync-hint {
   color: #6b7280;
-  font-size: 13px;
-  line-height: 1.5;
-  margin-bottom: 12px;
-}
-.path-line {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 12px;
-  font-size: 13px;
-}
-.path {
-  font-size: 12px;
-  background: #f3f4f6;
-  padding: 4px 8px;
-  border-radius: 4px;
-  word-break: break-all;
-}
-.label {
-  color: #374151;
-  font-weight: 500;
+  font-size: 14px;
+  line-height: 1.45;
+  margin-bottom: 16px;
 }
 .sub {
-  font-size: 14px;
-  margin: 16px 0 8px;
+  font-size: 15px;
+  font-weight: 600;
+  margin: 20px 0 12px;
+  color: #111827;
 }
-.row-check {
+.sub:first-of-type {
+  margin-top: 0;
+}
+.row-switch {
+  margin-bottom: 14px;
+}
+.switch-touch {
   display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  font-size: 13px;
-  color: #374151;
+  align-items: center;
+  gap: 14px;
+  min-height: 48px;
+  padding: 0;
+  border: none;
+  background: transparent;
   cursor: pointer;
-  margin-bottom: 10px;
+  text-align: left;
+  width: 100%;
+  -webkit-tap-highlight-color: transparent;
+}
+.switch-track {
+  flex-shrink: 0;
+  width: 52px;
+  height: 32px;
+  border-radius: 16px;
+  background: #d1d5db;
+  position: relative;
+  transition: background 0.15s ease;
+}
+.switch-track.on {
+  background: #4f46e5;
+}
+.switch-thumb {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.2);
+  transition: transform 0.15s ease;
+}
+.switch-track.on .switch-thumb {
+  transform: translateX(20px);
+}
+.switch-label {
+  font-size: 15px;
+  color: #374151;
+  line-height: 1.4;
 }
 .row-select {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
+  flex-direction: column;
+  gap: 8px;
   margin-bottom: 8px;
-  font-size: 13px;
 }
-.input {
-  min-width: 220px;
-  padding: 6px 10px;
+.field-label {
+  font-size: 14px;
+  font-weight: 500;
+  color: #374151;
+}
+.select-touch {
+  width: 100%;
+  max-width: 480px;
+  min-height: 48px;
+  padding: 10px 14px;
   border: 1px solid #d1d5db;
-  border-radius: 6px;
-  font-size: 13px;
+  border-radius: 10px;
+  font-size: 16px;
+  background: #fff;
+  cursor: pointer;
 }
 .actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 12px;
   margin-bottom: 8px;
 }
-.btn {
-  padding: 6px 12px;
-  border-radius: 6px;
+.btn-touch {
+  min-height: 48px;
+  min-width: 48px;
+  padding: 12px 18px;
+  border-radius: 10px;
   border: 1px solid #d1d5db;
   background: #fff;
   cursor: pointer;
-  font-size: 13px;
+  font-size: 16px;
+  -webkit-tap-highlight-color: transparent;
 }
-.btn:disabled {
+.btn-touch:disabled {
   opacity: 0.55;
   cursor: not-allowed;
 }
-.err {
-  color: #b91c1c;
-  font-size: 13px;
-  margin-bottom: 8px;
-}
 .msg {
-  font-size: 13px;
+  font-size: 14px;
   color: #166534;
-  margin-top: 8px;
+  margin-top: 10px;
 }
 </style>
