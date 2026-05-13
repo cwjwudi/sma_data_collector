@@ -10,12 +10,14 @@ from . import secrets as secrets_mod
 
 
 def load_config(config_file: Path, data_dir: Path) -> dict[str, Any]:
+    from modules import config_import_export as cie
+
     if not config_file.exists():
-        return {"db_connections": [], "opcua_servers": []}
+        return cie.normalize_top_level({"db_connections": [], "opcua_servers": []})
     raw = json.loads(config_file.read_text(encoding="utf-8"))
-    raw.setdefault("db_connections", [])
-    raw.setdefault("opcua_servers", [])
-    return raw
+    if not isinstance(raw, dict):
+        return cie.normalize_top_level({"db_connections": [], "opcua_servers": []})
+    return cie.normalize_top_level(raw)
 
 
 def save_config(config_file: Path, data: dict[str, Any]) -> None:

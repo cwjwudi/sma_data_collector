@@ -113,7 +113,7 @@
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { apiFetch } from '@/api/client.js'
 import ConnectionManager from './connection-manager/ConnectionManager.vue'
 import ObjectTree from './object-tree/ObjectTree.vue'
@@ -192,8 +192,45 @@ const canDdl = computed(() => activeTable.value && activeEngine.value && activeE
 
 const activeTableKind = computed(() => catalog.value.tables?.find((t) => t.name === activeTable.value)?.kind || '')
 
+function pickPreferredConnectionId(prefs, conns, explicitPreferred) {
+  const list = conns || []
+  if (explicitPreferred && list.some((c) => c.id === explicitPreferred)) {
+    return explicitPreferred
+  }
+  if (!prefs || prefs.auto_select_last_connection === false) {
+    return null
+  }
+  const def = prefs.default_connection_id
+  if (def && list.some((c) => c.id === def)) {
+    return def
+  }
+  const last = prefs.last_connection_id
+  if (last && list.some((c) => c.id === last)) {
+    return last
+  }
+  return null
+}
+
+async function persistLastConnection(id) {
+  if (!id) return
+  try {
+    await apiFetch('/settings/app_preferences', {
+      method: 'PATCH',
+      body: { last_connection_id: id },
+    })
+  } catch {
+    /* ignore */
+  }
+}
+
 async function reloadConnections(preferredId = null) {
   loadError.value = ''
+  let prefs = {}
+  try {
+    prefs = await apiFetch('/settings/app_preferences')
+  } catch {
+    prefs = {}
+  }
   try {
     const data = await apiFetch('/database/connections')
     connections.value = data.connections || []
@@ -205,8 +242,9 @@ async function reloadConnections(preferredId = null) {
       catalog.value = { databases: [], tables: [], collections: [] }
       return
     }
-    if (preferredId && connections.value.some((c) => c.id === preferredId)) {
-      activeConnId.value = preferredId
+    const pid = pickPreferredConnectionId(prefs, connections.value, preferredId)
+    if (pid) {
+      activeConnId.value = pid
     } else if (!activeConnId.value || !connections.value.some((c) => c.id === activeConnId.value)) {
       activeConnId.value = connections.value[0].id
     }
@@ -227,12 +265,14 @@ async function reloadConnections(preferredId = null) {
 function activateTab(id) {
   activeConnId.value = id
   draftConn.value = connections.value.find((c) => c.id === id) || null
+  persistLastConnection(id)
   loadCatalog()
 }
 
 function onSelectConn(c) {
   activeConnId.value = c.id
   draftConn.value = c
+  persistLastConnection(c.id)
   loadCatalog()
 }
 
@@ -429,6 +469,18 @@ watch(
     loadDdl(false)
   },
 )
+
+function onConfigImported() {
+  reloadConnections(null)
+}
+
+onMounted(() => {
+  window.addEventListener('report-editor-config-imported', onConfigImported)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('report-editor-config-imported', onConfigImported)
+})
 
 reloadConnections()
 </script>

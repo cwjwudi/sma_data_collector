@@ -24,6 +24,12 @@ QUERY_SESSION_FILE = DATA_DIR / "query_sessions.json"
 BACKEND_ROOT = Path(__file__).resolve().parent.parent
 
 DEFAULT_CONFIG = {
+    "schema_version": 1,
+    "app_preferences": {
+        "auto_select_last_connection": True,
+        "default_connection_id": None,
+        "last_connection_id": None,
+    },
     "db_connections": [],
     "opcua_servers": [],
 }

@@ -219,3 +219,11 @@ class SchemaImportBody(BaseModel):
 class QuerySessionsSave(BaseModel):
     favorites: list[str] = Field(default_factory=list)
     history: list[str] = Field(default_factory=list)
+
+
+class AppPreferencesPatch(BaseModel):
+    """仅允许更新白名单字段；未传字段保持不变。"""
+
+    auto_select_last_connection: bool | None = None
+    default_connection_id: str | None = None
+    last_connection_id: str | None = None

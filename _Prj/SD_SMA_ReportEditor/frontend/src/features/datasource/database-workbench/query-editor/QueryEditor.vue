@@ -45,7 +45,7 @@
 </template>
 
 <script setup>
-import { ref, watch } from 'vue'
+import { onMounted, onUnmounted, ref, watch } from 'vue'
 import { apiFetch } from '@/api/client.js'
 import QuickQueryPanel from './QuickQueryPanel.vue'
 import DataGrid from '../data-grid/DataGrid.vue'
@@ -211,6 +211,18 @@ async function favorite() {
   favorites.value = [cur, ...favorites.value.filter((x) => x !== cur)].slice(0, 50)
   await persistSessions()
 }
+
+function onSessionsExternalRefresh() {
+  loadSessions()
+}
+
+onMounted(() => {
+  window.addEventListener('report-editor-query-sessions-changed', onSessionsExternalRefresh)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('report-editor-query-sessions-changed', onSessionsExternalRefresh)
+})
 </script>
 
 <style scoped>
