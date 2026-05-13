@@ -17,6 +17,7 @@ PROGRAM _INIT
 	stDbReadQuery.stConfig.strPointName[1] := 'rF12';
 	stDbReadQuery.stConfig.strStartTime[1] := '2026-03-04 15:21:32';
 	stDbReadQuery.stConfig.strEndTime[1]   := '2026-03-04 15:21:32'; 
+	
 END_PROGRAM
 
 PROGRAM _CYCLIC

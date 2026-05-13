@@ -176,6 +176,10 @@
         <Variable Name="TW" />
         <Variable Name="VPF" />
         <Variable Name="WT" />
+        <Variable Name="bBatchTriger" />
+        <Variable Name="dtBtachEndTime" />
+        <Variable Name="dtBtachStartTime" />
+        <Variable Name="strBatchCode" />
       </Task>
       <Task Name="DataRev">
         <Variable Name="bExecuteRead" />

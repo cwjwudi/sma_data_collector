@@ -1,7 +1,14 @@
 
 PROGRAM _INIT
 	(* Insert code here *)
-	 
+	UtcDTGetTime_0.enable := TRUE;
+	UtcDTGetTime_0();
+	IF UtcDTGetTime_0.status = 0 THEN
+		dtBtachStartTime := UtcDTGetTime_0.DT1;
+		dtBtachEndTime := UtcDTGetTime_0.DT1;
+	END_IF
+	strBatchCode := 'SCP173';
+	bBatchTriger := FALSE;
 END_PROGRAM
 
 PROGRAM _CYCLIC
