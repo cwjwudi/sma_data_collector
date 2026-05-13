@@ -2,7 +2,8 @@
   <div v-if="modelValue" class="sig-backdrop" @click.self="$emit('update:modelValue', false)">
     <div class="sig-modal" role="dialog" aria-modal="true">
       <h3 class="sig-title">{{ title }}</h3>
-      <p class="sig-hint">在下方手写签署；笔触已针对触控优化。</p>
+      <p v-if="subtitle" class="sig-subtitle">条目名称：{{ subtitle }}</p>
+      <p class="sig-hint">在<strong>虚线框内</strong>手写笔画；画布已显示描边书写区示意。</p>
       <div class="sig-canvas-wrap">
         <canvas ref="canvasRef" class="sig-canvas" />
       </div>
@@ -22,8 +23,10 @@ const props = withDefaults(
   defineProps<{
     modelValue: boolean;
     title?: string;
+    /** 例如签名库条目名称（仅展示） */
+    subtitle?: string;
   }>(),
-  { title: "电子签名" },
+  { title: "电子签名", subtitle: undefined },
 );
 
 const emit = defineEmits<{
@@ -55,8 +58,34 @@ function resizeCanvas() {
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
     ctx.strokeStyle = "#111827";
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 2.5;
+    ctx.setLineDash([]);
+    drawWritingGuide();
   }
+}
+
+/** 手写区描边示意（不参与「是否为空」的简单比较时仍保留灰线） */
+function drawWritingGuide() {
+  const c = canvasRef.value;
+  if (!c) return;
+  const ctx = c.getContext("2d");
+  if (!ctx) return;
+  const w = c.width / dpr;
+  const h = c.height / dpr;
+  ctx.save();
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.strokeStyle = "rgb(148 163 184)";
+  ctx.lineWidth = 1;
+  ctx.setLineDash([8, 6]);
+  const margin = 10;
+  ctx.strokeRect(margin + 0.5, margin + 0.5, Math.max(0, w - 2 * margin - 1), Math.max(0, h - 2 * margin - 1));
+  ctx.restore();
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.strokeStyle = "#111827";
+  ctx.lineWidth = 2.5;
+  ctx.setLineDash([]);
 }
 
 function pos(ev: PointerEvent, c: HTMLCanvasElement) {
@@ -110,6 +139,7 @@ function clear() {
   if (!ctx) return;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, c.width / dpr, c.height / dpr);
+  drawWritingGuide();
 }
 
 function confirm() {
@@ -191,6 +221,12 @@ onUnmounted(() => {
 .sig-title {
   margin: 0 0 0.35rem;
   font-size: 1rem;
+}
+.sig-subtitle {
+  margin: 0 0 0.35rem;
+  font-size: 13px;
+  font-weight: 600;
+  color: #3f3f46;
 }
 .sig-hint {
   margin: 0 0 0.65rem;

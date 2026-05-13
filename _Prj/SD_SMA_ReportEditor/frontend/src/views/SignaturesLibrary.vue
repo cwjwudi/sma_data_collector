@@ -32,7 +32,7 @@
       </tbody>
     </table>
 
-    <SignaturePadDialog v-model="dlg" title="手写签名条目" @confirm="onPadOk" />
+    <SignaturePadDialog v-model="dlg" title="手写签名条目" :subtitle="pendingLabel || undefined" @confirm="onPadOk" />
   </div>
 </template>
 
@@ -46,6 +46,8 @@ import * as api from "@/api/signatures";
 const msg = ref("");
 const dlg = ref(false);
 const pendingNew = ref(false);
+/** 新建流程：手写板打开前已输入的名称 */
+const pendingLabel = ref("");
 const route = useRoute();
 const router = useRouter();
 const summaries = ref<Pick<SignatureAsset, "id" | "label" | "updatedAt">[]>([]);
@@ -85,8 +87,23 @@ async function load() {
   }
 }
 
+/** 手写新建：先起名再开板；取消或空名称不打开手写板 */
+function promptForNewLabel(): string | null {
+  const raw = window.prompt?.(
+    "请输入签名条目显示名称（确定后将打开手写板）",
+    "签名",
+  );
+  if (raw === null) return null;
+  const n = normalizeLabel(raw);
+  if (!n) return null;
+  return n;
+}
+
 function openNew() {
+  const name = promptForNewLabel();
+  if (!name) return;
   pendingNew.value = true;
+  pendingLabel.value = name;
   dlg.value = true;
 }
 
@@ -97,17 +114,20 @@ async function openNewFromRoute() {
     hash: route.hash,
     query: {},
   });
+  const name = promptForNewLabel();
+  if (!name) return;
   pendingNew.value = true;
+  pendingLabel.value = name;
   dlg.value = true;
 }
 
 async function onPadOk(dataUrl: string) {
   const wasNew = pendingNew.value;
+  const label = normalizeLabel(pendingLabel.value) || "签名";
   pendingNew.value = false;
+  pendingLabel.value = "";
   dlg.value = false;
   if (!wasNew) return;
-  const label =
-    normalizeLabel(window.prompt?.("条目显示名称", "签名") ?? "签名") || "签名";
   const body: SignatureAsset = {
     id: newId(),
     label,
@@ -116,6 +136,14 @@ async function onPadOk(dataUrl: string) {
   };
   await save(body);
 }
+
+/** 手写板被取消或关闭时清掉待定状态（避免下一次误用旧名称） */
+watch(dlg, (open) => {
+  if (!open) {
+    pendingNew.value = false;
+    pendingLabel.value = "";
+  }
+});
 
 async function save(body: SignatureAsset) {
   msg.value = "";
