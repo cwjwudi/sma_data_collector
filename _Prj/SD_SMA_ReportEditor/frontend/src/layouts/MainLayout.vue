@@ -9,8 +9,7 @@
           v-for="item in navItems"
           :key="item.path"
           :to="item.path"
-          class="nav-item"
-          active-class="nav-item--active"
+          :class="['nav-item', { 'nav-item--active': navActive(item.path) }]"
         >
           <span class="nav-icon">{{ item.icon }}</span>
           <span class="nav-label">{{ item.label }}</span>
@@ -24,6 +23,18 @@
 </template>
 
 <script setup>
+import { useRoute } from 'vue-router'
+
+const route = useRoute()
+
+/** 侧边栏「版式与页眉页脚」在列表与编辑页同时高亮 */
+function navActive(path) {
+  const p = route.path
+  if (path === '/') return p === '/' || p === ''
+  if (path === '/layouts') return p.startsWith('/layouts')
+  return p === path || p.startsWith(path + '/')
+}
+
 const navItems = [
   { path: '/', icon: '📊', label: '仪表盘' },
   { path: '/datasource', icon: '🔌', label: '数据源配置' },
