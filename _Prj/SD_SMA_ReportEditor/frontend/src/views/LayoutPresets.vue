@@ -108,7 +108,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
+import { useRoute, useRouter } from "vue-router";
+import type { LocationQuery } from "vue-router";
 import LayoutPresetZonesDialog from "@/components/report-template/LayoutPresetZonesDialog.vue";
 import type { LayoutPageRole, LayoutPreset } from "@/lib/report-template/layout-model";
 import {
@@ -125,6 +127,9 @@ import {
 } from "@/lib/report-template/layout-registry";
 
 const pkList = ["A5", "A4", "A3", "Letter"] as PaperKind[];
+
+const route = useRoute();
+const router = useRouter();
 
 const roleFilter = ref<"all" | LayoutPageRole>("all");
 const msg = ref("");
@@ -180,14 +185,47 @@ function pick(id: string) {
   working.value = p ? clonePreset(p) : null;
 }
 
-async function createPreset() {
+function parseRouteRole(q: LocationQuery): LayoutPageRole | undefined {
+  const raw = typeof q.role === "string" ? q.role : Array.isArray(q.role) ? q.role[0] : undefined;
+  if (raw === "cover" || raw === "normal" || raw === "back") return raw;
+  return undefined;
+}
+
+async function createPreset(initialRole?: LayoutPageRole) {
   msg.value = "";
   const fresh = createEmptyLayoutPreset();
-  fresh.name = "新建版式";
+  if (initialRole) {
+    fresh.pageRole = initialRole;
+    fresh.name =
+      initialRole === "cover"
+        ? "新建封面版式"
+        : initialRole === "back"
+          ? "新建末页版式（封尾）"
+          : "新建正文版式（页眉页脚）";
+    roleFilter.value = initialRole === "normal" ? "normal" : initialRole === "cover" ? "cover" : "back";
+  } else {
+    fresh.name = "新建版式";
+  }
   await saveLayoutPresetFlexible(fresh);
   await reload();
   pick(fresh.id);
   msg.value = "已创建新版式（已尝试保存到服务器）。可在右侧完善并再次保存。";
+}
+
+/** 模版管理页的「新建 xxx 版式」跳转：?new=1&role=cover|normal|back */
+async function applyRouteIntent() {
+  const roleHint = parseRouteRole(route.query);
+  if (roleHint) roleFilter.value = roleHint;
+  const wantNew = route.query.new === "1" || route.query.new === 1;
+  if (!wantNew) return;
+  const cleaned: Record<string, string | undefined> = {};
+  if (roleHint) cleaned.role = roleHint;
+  await router.replace({
+    path: route.path,
+    hash: route.hash,
+    query: cleaned,
+  });
+  await createPreset(roleHint);
 }
 
 async function savePreset() {
@@ -232,9 +270,18 @@ function openZone(z: "header" | "footer" | "body") {
   dlgOpen.value = true;
 }
 
+watch(
+  () => route.fullPath,
+  async () => {
+    if (route.query.new !== "1" && route.query.new !== 1) return;
+    await applyRouteIntent();
+  },
+);
+
 onMounted(async () => {
   await reload();
-  if (presets.value.length) pick(presets.value[0]!.id);
+  await applyRouteIntent();
+  if (presets.value.length && !selId.value) pick(presets.value[0]!.id);
 });
 </script>
 

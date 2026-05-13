@@ -37,7 +37,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import SignaturePadDialog from "@/components/report-template/SignaturePadDialog.vue";
 import type { SignatureAsset } from "@/api/signatures";
 import * as api from "@/api/signatures";
@@ -45,6 +46,8 @@ import * as api from "@/api/signatures";
 const msg = ref("");
 const dlg = ref(false);
 const pendingNew = ref(false);
+const route = useRoute();
+const router = useRouter();
 const summaries = ref<Pick<SignatureAsset, "id" | "label" | "updatedAt">[]>([]);
 const previews = ref<Record<string, string>>({});
 
@@ -83,6 +86,17 @@ async function load() {
 }
 
 function openNew() {
+  pendingNew.value = true;
+  dlg.value = true;
+}
+
+async function openNewFromRoute() {
+  if (route.query.new !== "1" && route.query.new !== 1) return;
+  await router.replace({
+    path: route.path,
+    hash: route.hash,
+    query: {},
+  });
   pendingNew.value = true;
   dlg.value = true;
 }
@@ -144,7 +158,17 @@ function normalizeLabel(s: string) {
   return s.trim().slice(0, 128);
 }
 
-onMounted(load);
+onMounted(async () => {
+  await load();
+  await openNewFromRoute();
+});
+
+watch(
+  () => route.fullPath,
+  async () => {
+    await openNewFromRoute();
+  },
+);
 </script>
 
 <style scoped>

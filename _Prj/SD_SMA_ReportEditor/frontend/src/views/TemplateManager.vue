@@ -6,7 +6,7 @@
         <button type="button" class="b" @click="mode = mode === 'list' ? 'thumbs' : 'list'">
           {{ mode === "list" ? "缩略图" : "列表" }}
         </button>
-        <button type="button" class="b primary" @click="wizard = true">新建</button>
+        <button type="button" class="b primary" @click="wizard = true">新建整份模版…</button>
       </div>
     </header>
     <p v-if="msg" class="msg">{{ msg }}</p>
@@ -39,10 +39,51 @@
     <div v-else class="grid">
       <div v-for="r in rows" :key="'g' + r.id" class="card">
         <template v-if="cache[r.id]">
-          <div class="row3">
-            <div><small>封面</small><TemplateMiniPage :template="cache[r.id]" sheet="cover" /></div>
-            <div><small>正文</small><TemplateMiniPage :template="cache[r.id]" sheet="body" /></div>
-            <div><small>末页</small><TemplateMiniPage :template="cache[r.id]" sheet="back" /></div>
+          <div class="row4">
+            <div class="micro">
+              <span class="micro-t">封面</span>
+              <div class="micro-body">
+                <TemplateMiniPage
+                  :template="cache[r.id]"
+                  sheet="cover"
+                  :max-width-px="116"
+                  :max-height-px="152"
+                />
+              </div>
+              <button type="button" class="b-micro" @click.stop="goLayoutsNew('cover')">新建封面版式</button>
+            </div>
+            <div class="micro">
+              <span class="micro-t">页眉 · 页脚</span>
+              <div class="micro-body bands">
+                <TemplateMiniBands
+                  :template="cache[r.id]"
+                  sheet="body"
+                  gap-label="正文区（示意省略）"
+                  :max-width-px="116"
+                  :max-height-px="152"
+                />
+              </div>
+              <button type="button" class="b-micro" @click.stop="goLayoutsNew('normal')">新建正文版式（眉脚）</button>
+            </div>
+            <div class="micro">
+              <span class="micro-t">封尾 · 末页</span>
+              <div class="micro-body">
+                <TemplateMiniPage
+                  :template="cache[r.id]"
+                  sheet="back"
+                  :max-width-px="116"
+                  :max-height-px="152"
+                />
+              </div>
+              <button type="button" class="b-micro" @click.stop="goLayoutsNew('back')">新建末页版式</button>
+            </div>
+            <div class="micro">
+              <span class="micro-t">电子签名</span>
+              <div class="micro-body sig">
+                <TemplateMiniSignatures :template="cache[r.id]" />
+              </div>
+              <button type="button" class="b-micro" @click.stop="goSignaturesNew">新建签名条目…</button>
+            </div>
           </div>
         </template>
         <div v-else class="skel">加载…</div>
@@ -66,10 +107,12 @@ import { PAPER_LABEL } from "@/lib/report-template/paper";
 import { cloneDeepTemplate } from "@/lib/report-template/snapshot-fingerprint";
 import { loadTemplates as loadLocal, saveTemplates } from "@/lib/report-template/model";
 import TemplateMiniPage from "@/components/report-template/TemplateMiniPage.vue";
+import TemplateMiniBands from "@/components/report-template/TemplateMiniBands.vue";
+import TemplateMiniSignatures from "@/components/report-template/TemplateMiniSignatures.vue";
 import NewTemplateWizardDialog from "@/components/report-template/NewTemplateWizardDialog.vue";
 
 const router = useRouter();
-const mode = ref("list");
+const mode = ref("thumbs");
 const wizard = ref(false);
 const msg = ref("");
 const summaries = ref([]);
@@ -125,6 +168,20 @@ watch(
   },
 );
 
+function goLayoutsNew(role) {
+  router.push({
+    path: "/layouts",
+    query: role ? { new: "1", role } : { new: "1" },
+  });
+}
+
+function goSignaturesNew() {
+  router.push({
+    path: "/signatures",
+    query: { new: "1" },
+  });
+}
+
 function goEditor(id) {
   router.push({ name: "TemplateEditor", params: { id } });
 }
@@ -165,7 +222,10 @@ async function created(t) {
   goEditor(t.id);
 }
 
-onMounted(load);
+onMounted(async () => {
+  await load();
+  if (mode.value === "thumbs" && !offline.value) await hydrateThumbs();
+});
 </script>
 
 <style scoped>
@@ -223,7 +283,7 @@ onMounted(load);
 }
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(620px, 1fr));
   gap: 14px;
   margin-top: 16px;
 }
@@ -233,16 +293,58 @@ onMounted(load);
   padding: 10px;
   background: #fff;
 }
-.row3 {
+.row4 {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
-  gap: 6px;
-  align-items: start;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  align-items: stretch;
 }
-.row3 small {
-  display: block;
-  color: #71717a;
+@media (max-width: 780px) {
+  .row4 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+.micro {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid #eef0f6;
+  border-radius: 8px;
+  background: #fcfcfd;
+}
+.micro-t {
+  font-size: 12px;
+  font-weight: 600;
+  color: #52525b;
+}
+.micro-body {
+  min-height: 156px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  width: 100%;
+}
+.micro-body.sig {
+  align-items: stretch;
+}
+.micro-body.bands {
+  margin-top: 4px;
+}
+.b-micro {
+  width: 100%;
+  padding: 6px 8px;
   font-size: 11px;
+  border-radius: 6px;
+  border: 1px solid #c7d2fe;
+  background: #eef2ff;
+  color: #3730a3;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.b-micro:hover {
+  background: #e0e7ff;
 }
 .foot {
   margin-top: 8px;
