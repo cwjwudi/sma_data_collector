@@ -1,58 +1,62 @@
 <template>
-  <div class="mini-wrap" :style="wrapStyle">
-    <div class="mini-page" :style="pageBoxStyle">
-      <div v-if="me.hb > 1" class="mini-band mini-band-header" :style="headerBand">
-        <div class="mini-band-inner">
-          <div
-            v-for="el in headerEls"
-            :key="el.id"
-            class="mini-zone-el"
-            :style="miniZoneElStyle(el)"
-          >
-            <template v-if="el.type === 'image'">
-              <img v-if="el.imageSrc" class="mini-img" :src="el.imageSrc" alt="" />
-              <span v-else class="mini-ph">图片</span>
-            </template>
-            <template v-else>{{ previewZoneTxt(el) }}</template>
-          </div>
-        </div>
-        <span v-if="headerEls.length === 0" class="mini-legacy">{{ headerFb }}</span>
-      </div>
-      <div class="mini-body" :style="bodyBand">
-        <div class="mini-body-inner">
-          <div
-            v-for="d in decorationEls"
-            :key="d.id"
-            class="mini-zone-el"
-            :style="miniZoneElStyle(d)"
-          >
-            {{ previewZoneTxt(d) }}
-          </div>
-          <template v-if="sheet !== 'body'">
-            <div v-if="decorationEls.length === 0" class="mini-body-empty">正文</div>
-          </template>
-          <template v-else>
-            <div v-for="el in bodyEls" :key="el.id" class="mini-tpl-el" :style="miniTplElStyle(el)">
-              <span class="mini-tpl-caption">{{ tplCaption(el) }}</span>
+  <MiniPreviewChrome :variant="previewVariant" :show-tag="false">
+    <div class="mini-wrap" :style="wrapStyle">
+      <div class="mini-page mpp-paper" :style="pageBoxStyle">
+        <div v-if="me.hb > 1" class="mini-band mini-band-header" :style="headerBand">
+          <div class="mini-band-inner">
+            <div
+              v-for="el in headerEls"
+              :key="el.id"
+              class="mini-zone-el"
+              :style="miniZoneElStyle(el)"
+            >
+              <template v-if="el.type === 'image'">
+                <img v-if="el.imageSrc" class="mini-img" :src="el.imageSrc" alt="" />
+                <span v-else class="mini-ph">图片</span>
+              </template>
+              <template v-else>{{ previewZoneTxt(el) }}</template>
             </div>
-            <div v-if="bodyEls.length === 0 && decorationEls.length === 0" class="mini-body-empty">画布</div>
-          </template>
+          </div>
+          <span v-if="headerEls.length === 0" class="mini-legacy">{{ headerFb }}</span>
         </div>
-      </div>
-      <div v-if="me.fb > 1" class="mini-band mini-band-footer" :style="footerBand">
-        <div class="mini-band-inner">
-          <div v-for="el in footerEls" :key="el.id" class="mini-zone-el" :style="miniZoneElStyle(el)">
-            {{ previewZoneTxt(el) }}
+        <div class="mini-body" :style="bodyBand">
+          <div class="mini-body-inner">
+            <div
+              v-for="d in decorationEls"
+              :key="d.id"
+              class="mini-zone-el"
+              :style="miniZoneElStyle(d)"
+            >
+              {{ previewZoneTxt(d) }}
+            </div>
+            <template v-if="sheet !== 'body'">
+              <div v-if="decorationEls.length === 0" class="mini-body-empty">正文</div>
+            </template>
+            <template v-else>
+              <div v-for="el in bodyEls" :key="el.id" class="mini-tpl-el" :style="miniTplElStyle(el)">
+                <span class="mini-tpl-caption">{{ tplCaption(el) }}</span>
+              </div>
+              <div v-if="bodyEls.length === 0 && decorationEls.length === 0" class="mini-body-empty">画布</div>
+            </template>
           </div>
         </div>
-        <span v-if="footerEls.length === 0" class="mini-legacy">{{ footerFb }}</span>
+        <div v-if="me.fb > 1" class="mini-band mini-band-footer" :style="footerBand">
+          <div class="mini-band-inner">
+            <div v-for="el in footerEls" :key="el.id" class="mini-zone-el" :style="miniZoneElStyle(el)">
+              {{ previewZoneTxt(el) }}
+            </div>
+          </div>
+          <span v-if="footerEls.length === 0" class="mini-legacy">{{ footerFb }}</span>
+        </div>
       </div>
     </div>
-  </div>
+  </MiniPreviewChrome>
 </template>
 
 <script setup lang="ts">
 import { computed } from "vue";
+import MiniPreviewChrome from "@/components/report-template/MiniPreviewChrome.vue";
+import type { MiniPreviewVariant } from "@/components/report-template/mini-preview-types";
 import type { LayoutZoneElement } from "@/lib/report-template/layout-zone-element";
 import { previewZoneElementDisplay } from "@/lib/report-template/layout-zone-element";
 import type { PaperLayoutMetrics } from "@/lib/report-template/layout-geometry";
@@ -71,6 +75,13 @@ const props = withDefaults(
 );
 
 const sheet = computed(() => props.sheet);
+
+const previewVariant = computed<MiniPreviewVariant>(() => {
+  if (props.sheet === "cover") return "cover";
+  if (props.sheet === "back") return "back";
+  return "normal";
+});
+
 const me = computed(() => metricsForSheet(props.template, props.sheet));
 
 const headerEls = computed(() =>
@@ -124,6 +135,7 @@ const wrapStyle = computed(() => ({
   overflow: "hidden",
 }));
 
+/** 边框与投影由 MiniPreviewChrome 统一（与 LayoutPresetMiniPage / 版式列表一致） */
 const pageBoxStyle = computed(() => ({
   position: "relative" as const,
   width: `${me.value.pageW}px`,
@@ -131,9 +143,6 @@ const pageBoxStyle = computed(() => ({
   transform: `scale(${scale.value})`,
   transformOrigin: "top left",
   boxSizing: "border-box",
-  background: "#fff",
-  border: "1px solid #d4d4d8",
-  boxShadow: "0 2px 6px rgb(24 24 27 / 0.08)",
 }));
 
 function bandStyle(metric: PaperLayoutMetrics, which: "header" | "body" | "footer") {
@@ -238,6 +247,9 @@ function tplCaption(el: TemplateElement): string {
 </script>
 
 <style scoped>
+.mini-wrap {
+  touch-action: manipulation;
+}
 .mini-band-inner,
 .mini-body-inner {
   position: relative;
@@ -247,10 +259,10 @@ function tplCaption(el: TemplateElement): string {
   box-sizing: border-box;
 }
 .mini-band-header {
-  background: rgb(239 239 246 / 0.5);
+  background: rgb(239 239 246 / 0.52);
 }
 .mini-band-footer {
-  background: rgb(239 239 246 / 0.5);
+  background: rgb(239 239 246 / 0.52);
 }
 .mini-body {
   background: rgb(249 249 251);

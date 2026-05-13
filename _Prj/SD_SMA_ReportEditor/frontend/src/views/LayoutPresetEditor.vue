@@ -340,6 +340,8 @@ onMounted(() => {
   gap: 8px;
   background: #fafafa;
   overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
 }
 .pe-h5 {
   margin: 0;
@@ -351,7 +353,9 @@ onMounted(() => {
   border: 1px dashed #999;
   background: #fff;
   cursor: grab;
-  padding: 6px 8px;
+  padding: 10px 8px;
+  min-height: 44px;
+  box-sizing: border-box;
   border-radius: 6px;
   text-align: left;
   touch-action: manipulation;
@@ -374,6 +378,8 @@ onMounted(() => {
   background: #fafafa;
   overflow: auto;
   font-size: 13px;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
 }
 .btn-ghost {
   padding: 6px 10px;

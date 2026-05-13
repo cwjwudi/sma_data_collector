@@ -231,6 +231,7 @@ onMounted(async () => {
 <style scoped>
 .tm {
   padding: 0 4px;
+  touch-action: manipulation;
 }
 .hdr {
   display: flex;
@@ -240,11 +241,14 @@ onMounted(async () => {
 }
 .b {
   margin-left: 8px;
-  padding: 6px 12px;
+  padding: 8px 14px;
+  min-height: 44px;
+  box-sizing: border-box;
   border-radius: 6px;
   border: 1px solid #d4d4d8;
   background: #fff;
   cursor: pointer;
+  touch-action: manipulation;
 }
 .b.primary {
   background: #4f46e5;
@@ -274,9 +278,14 @@ onMounted(async () => {
   text-align: center;
 }
 .lnk {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
   margin-right: 10px;
+  padding: 2px 2px;
   color: #4f46e5;
   cursor: pointer;
+  touch-action: manipulation;
 }
 .lnk.danger {
   color: #b91c1c;
@@ -292,6 +301,7 @@ onMounted(async () => {
   border-radius: 10px;
   padding: 10px;
   background: #fff;
+  touch-action: manipulation;
 }
 .row4 {
   display: grid;
@@ -334,7 +344,8 @@ onMounted(async () => {
 }
 .b-micro {
   width: 100%;
-  padding: 6px 8px;
+  min-height: 44px;
+  padding: 8px 10px;
   font-size: 11px;
   border-radius: 6px;
   border: 1px solid #c7d2fe;

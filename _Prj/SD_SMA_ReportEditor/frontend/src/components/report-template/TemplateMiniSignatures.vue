@@ -1,5 +1,6 @@
 <template>
-  <div class="msx-wrap">
+  <MiniPreviewChrome variant="normal" :show-tag="false">
+    <div class="msx-wrap">
     <template v-if="chunks.length === 0">
       <div class="msx-empty">无签字控件</div>
       <small class="msx-h">正文 / 封面 / 末页画布</small>
@@ -14,10 +15,12 @@
       </div>
       <div v-if="totalCount > chunks.length" class="msx-more">+{{ totalCount - chunks.length }}</div>
     </div>
-  </div>
+    </div>
+  </MiniPreviewChrome>
 </template>
 
 <script setup lang="ts">
+import MiniPreviewChrome from "@/components/report-template/MiniPreviewChrome.vue";
 import { computed } from "vue";
 import type { TemplateElement } from "@/lib/report-template/model";
 import type { ReportTemplate } from "@/lib/report-template/model";
@@ -55,9 +58,6 @@ const chunks = computed(() => allSigs.value.slice(0, 4));
 .msx-wrap {
   min-height: 120px;
   width: 100%;
-  border: 1px solid #e4e4e7;
-  border-radius: 8px;
-  background: #fafafa;
   padding: 6px;
   box-sizing: border-box;
 }

@@ -1,51 +1,66 @@
 <template>
-  <div class="mini-shell" :class="shellRoleClass">
-    <span class="role-tag" :title="roleBadgeText">{{ roleBadgeText }}</span>
+  <MiniPreviewChrome :variant="previewVariant">
     <div class="mini-wrap" :style="wrapStyle">
-      <div class="mini-page" :style="pageBoxStyle">
+      <div class="mini-page mpp-paper" :style="pageBoxStyle">
         <div v-if="me.hb >= 1" class="mini-band mini-band-header" :style="headerBand">
-        <div class="mini-band-inner">
-          <div v-for="el in preset.headerElements" :key="el.id" class="mini-zone-el" :style="miniZoneElStyle(el)">
-            <template v-if="el.type === 'image'">
-              <img v-if="el.imageSrc" class="mini-img" :src="el.imageSrc" alt="" />
-              <span v-else class="mini-ph">图片</span>
-            </template>
-            <template v-else>{{ previewZoneTxt(el) }}</template>
+          <div class="mini-band-inner">
+            <div
+              v-for="el in preset.headerElements"
+              :key="el.id"
+              class="mini-zone-el"
+              :style="miniZoneElStyle(el)"
+            >
+              <template v-if="el.type === 'image'">
+                <img v-if="el.imageSrc" class="mini-img" :src="el.imageSrc" alt="" />
+                <span v-else class="mini-ph">图片</span>
+              </template>
+              <template v-else>{{ previewZoneTxt(el) }}</template>
+            </div>
+          </div>
+          <span v-if="preset.headerElements.length === 0" class="mini-legacy">{{
+            preset.headerText || "(页眉)"
+          }}</span>
+        </div>
+        <div class="mini-body" :style="bodyBand">
+          <div class="mini-body-inner">
+            <div
+              v-for="el in preset.bodyElements"
+              :key="el.id"
+              class="mini-zone-el"
+              :style="miniZoneElStyle(el)"
+            >
+              <template v-if="el.type === 'image'">
+                <img v-if="el.imageSrc" class="mini-img" :src="el.imageSrc" alt="" />
+                <span v-else class="mini-ph">图片</span>
+              </template>
+              <template v-else>{{ previewZoneTxt(el) }}</template>
+            </div>
+            <div v-if="preset.bodyElements.length === 0" class="mini-body-empty">{{ bodyEmptyHint }}</div>
           </div>
         </div>
-        <span v-if="preset.headerElements.length === 0" class="mini-legacy">{{ preset.headerText || "(页眉)" }}</span>
-      </div>
-      <div class="mini-body" :style="bodyBand">
-        <div class="mini-body-inner">
-          <div v-for="el in preset.bodyElements" :key="el.id" class="mini-zone-el" :style="miniZoneElStyle(el)">
-            <template v-if="el.type === 'image'">
-              <img v-if="el.imageSrc" class="mini-img" :src="el.imageSrc" alt="" />
-              <span v-else class="mini-ph">图片</span>
-            </template>
-            <template v-else>{{ previewZoneTxt(el) }}</template>
+        <div v-if="me.fb >= 1" class="mini-band mini-band-footer" :style="footerBand">
+          <div class="mini-band-inner">
+            <div v-for="el in preset.footerElements" :key="el.id" class="mini-zone-el" :style="miniZoneElStyle(el)">
+              <template v-if="el.type === 'image'">
+                <img v-if="el.imageSrc" class="mini-img" :src="el.imageSrc" alt="" />
+                <span v-else class="mini-ph">图片</span>
+              </template>
+              <template v-else>{{ previewZoneTxt(el) }}</template>
+            </div>
           </div>
-          <div v-if="preset.bodyElements.length === 0" class="mini-body-empty">{{ bodyEmptyHint }}</div>
+          <span v-if="preset.footerElements.length === 0" class="mini-legacy">{{
+            preset.footerText || "(页脚)"
+          }}</span>
         </div>
-      </div>
-      <div v-if="me.fb >= 1" class="mini-band mini-band-footer" :style="footerBand">
-        <div class="mini-band-inner">
-          <div v-for="el in preset.footerElements" :key="el.id" class="mini-zone-el" :style="miniZoneElStyle(el)">
-            <template v-if="el.type === 'image'">
-              <img v-if="el.imageSrc" class="mini-img" :src="el.imageSrc" alt="" />
-              <span v-else class="mini-ph">图片</span>
-            </template>
-            <template v-else>{{ previewZoneTxt(el) }}</template>
-          </div>
-        </div>
-        <span v-if="preset.footerElements.length === 0" class="mini-legacy">{{ preset.footerText || "(页脚)" }}</span>
-      </div>
       </div>
     </div>
-  </div>
+  </MiniPreviewChrome>
 </template>
 
 <script setup lang="ts">
 import { computed } from "vue";
+import MiniPreviewChrome from "@/components/report-template/MiniPreviewChrome.vue";
+import type { MiniPreviewVariant } from "@/components/report-template/mini-preview-types";
 import type { PaperLayoutMetrics } from "@/lib/report-template/layout-geometry";
 import { computePaperLayout } from "@/lib/report-template/layout-geometry";
 import type { LayoutPreset } from "@/lib/report-template/layout-model";
@@ -58,22 +73,10 @@ const props = withDefaults(
   { maxWidthPx: 160, maxHeightPx: 210 },
 );
 
-/** 缩略图外框：区分封面 / 末页封尾 / 正文页眉脚 */
-const shellRoleClass = computed(() => {
+const previewVariant = computed<MiniPreviewVariant>(() => {
   const r = props.preset.pageRole;
-  if (r === "cover" || r === "back") return `mini-shell--${r}`;
-  return "mini-shell--normal";
-});
-
-const roleBadgeText = computed(() => {
-  switch (props.preset.pageRole) {
-    case "cover":
-      return "封面";
-    case "back":
-      return "末页 · 封尾";
-    default:
-      return "正文 · 眉脚";
-  }
+  if (r === "cover" || r === "back") return r;
+  return "normal";
 });
 
 const bodyEmptyHint = computed(() => {
@@ -110,6 +113,7 @@ const wrapStyle = computed(() => ({
   overflow: "hidden",
 }));
 
+/** 边框与投影由 MiniPreviewChrome :deep(.mpp-paper) 统一 */
 const pageBoxStyle = computed(() => ({
   position: "relative" as const,
   width: `${me.value.pageW}px`,
@@ -117,9 +121,6 @@ const pageBoxStyle = computed(() => ({
   transform: `scale(${scale.value})`,
   transformOrigin: "top left",
   boxSizing: "border-box",
-  background: "#fff",
-  border: "1px solid #d4d4d8",
-  boxShadow: "0 2px 6px rgb(24 24 27 / 0.08)",
 }));
 
 function bandStyle(metric: PaperLayoutMetrics, which: "header" | "body" | "footer") {
@@ -175,69 +176,8 @@ function miniZoneElStyle(el: LayoutZoneElement): Record<string, string> {
 </script>
 
 <style scoped>
-.mini-shell {
-  position: relative;
-  display: inline-flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 4px;
-  border-radius: 10px;
-  box-sizing: border-box;
-}
-.mini-shell--cover {
-  background: linear-gradient(155deg, rgb(254 249 231) 0%, rgb(253 246 237) 28%, rgb(249 249 251) 55%);
-  outline: 1px solid rgb(251 191 36 / 0.45);
-  outline-offset: 0;
-}
-.mini-shell--back {
-  background: linear-gradient(205deg, rgb(247 239 251) 0%, rgb(245 243 255) 32%, rgb(249 249 251) 58%);
-  outline: 1px solid rgb(167 139 250 / 0.45);
-}
-.mini-shell--normal {
-  background: linear-gradient(180deg, rgb(238 242 255) 0%, rgb(250 250 253) 40%);
-  outline: 1px solid rgb(129 140 248 / 0.35);
-}
-.role-tag {
-  position: absolute;
-  top: 6px;
-  left: 6px;
-  z-index: 2;
-  font-size: 10px;
-  font-weight: 700;
-  line-height: 1.15;
-  padding: 4px 7px;
-  border-radius: 5px;
-  max-width: calc(100% - 12px);
-  text-align: left;
-  box-shadow: 0 1px 3px rgb(24 24 27 / 0.12);
-  pointer-events: none;
-}
-.mini-shell--cover .role-tag {
-  background: #d97706;
-  color: #fff;
-}
-.mini-shell--back .role-tag {
-  background: #6d28d9;
-  color: #fff;
-}
-.mini-shell--normal .role-tag {
-  background: #4338ca;
-  color: #fff;
-}
-.mini-shell--cover .mini-page {
-  border-top-width: 3px;
-  border-top-style: solid;
-  border-top-color: rgb(251 146 60);
-}
-.mini-shell--back .mini-page {
-  border-bottom-width: 3px;
-  border-bottom-style: solid;
-  border-bottom-color: rgb(168 139 246);
-}
-.mini-shell--normal .mini-page {
-  border-left-width: 3px;
-  border-left-style: solid;
-  border-left-color: rgb(99 102 241);
+.mini-wrap {
+  touch-action: manipulation;
 }
 .mini-band-inner,
 .mini-body-inner {
@@ -248,10 +188,10 @@ function miniZoneElStyle(el: LayoutZoneElement): Record<string, string> {
   box-sizing: border-box;
 }
 .mini-band-header {
-  background: rgb(239 239 246 / 0.5);
+  background: rgb(239 239 246 / 0.52);
 }
 .mini-band-footer {
-  background: rgb(239 239 246 / 0.5);
+  background: rgb(239 239 246 / 0.52);
 }
 .mini-body {
   background: rgb(249 249 251);

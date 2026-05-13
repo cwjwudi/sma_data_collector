@@ -303,6 +303,9 @@ function onWheel(ev: WheelEvent) {
   border: 1px solid #e4e4e7;
   border-radius: 10px;
   min-height: 440px;
+  touch-action: pan-x pan-y;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 .cv-scaler {
   transform-origin: 0 0;

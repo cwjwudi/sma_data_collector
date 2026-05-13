@@ -421,6 +421,8 @@ onUnmounted(() => window.removeEventListener("keydown", onKey));
   flex-direction: column;
   gap: 8px;
   overflow: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
 }
 .left h5 {
   margin: 4px 0 0;
@@ -433,7 +435,9 @@ onUnmounted(() => window.removeEventListener("keydown", onKey));
   border: 1px dashed #999;
   background: #fff;
   cursor: grab;
-  padding: 6px;
+  padding: 10px 8px;
+  min-height: 44px;
+  box-sizing: border-box;
   border-radius: 6px;
   text-align: left;
   touch-action: manipulation;

@@ -201,6 +201,7 @@ onMounted(async () => {
 <style scoped>
 .lp {
   padding: 0 4px;
+  touch-action: manipulation;
 }
 .hdr-row {
   display: flex;
@@ -223,12 +224,15 @@ onMounted(async () => {
   gap: 12px;
 }
 .b {
-  padding: 6px 12px;
+  padding: 8px 14px;
+  min-height: 44px;
+  box-sizing: border-box;
   border-radius: 6px;
   border: 1px solid #d4d4d8;
   background: #fff;
   cursor: pointer;
   font-size: 13px;
+  touch-action: manipulation;
 }
 .b.primary {
   background: #4f46e5;
@@ -271,10 +275,14 @@ onMounted(async () => {
   text-align: center;
 }
 .lnk {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
   margin-right: 10px;
   color: #4f46e5;
   cursor: pointer;
   text-decoration: none;
+  touch-action: manipulation;
 }
 .lnk.danger {
   color: #b91c1c;
@@ -290,6 +298,7 @@ onMounted(async () => {
   border-radius: 10px;
   padding: 12px;
   background: #fff;
+  touch-action: manipulation;
 }
 .micro-wrap {
   display: flex;
@@ -299,6 +308,8 @@ onMounted(async () => {
   padding: 8px;
   background: #f4f4f5;
   border-radius: 8px;
+  -webkit-overflow-scrolling: touch;
+  overflow: auto;
 }
 .foot {
   margin-top: 10px;

@@ -1,6 +1,7 @@
 <template>
-  <div class="mb-wrap" :style="wrapStyle">
-    <div class="mb-inner" :style="innerScaled">
+  <MiniPreviewChrome variant="normal" :show-tag="false">
+    <div class="mb-wrap" :style="wrapStyle">
+      <div class="mb-inner mpp-paper" :style="innerScaled">
       <div v-if="me.hb > 1" class="mb-strip mb-hdr" :style="headerBandStyle">
         <div class="mb-strip-rel">
           <div
@@ -34,9 +35,11 @@
       <div v-if="me.hb <= 1 && me.fb <= 1" class="mb-none">无主文页眉脚带高度</div>
     </div>
   </div>
+  </MiniPreviewChrome>
 </template>
 
 <script setup lang="ts">
+import MiniPreviewChrome from "@/components/report-template/MiniPreviewChrome.vue";
 import { computed } from "vue";
 import type { LayoutZoneElement } from "@/lib/report-template/layout-zone-element";
 import { previewZoneElementDisplay } from "@/lib/report-template/layout-zone-element";
@@ -146,19 +149,17 @@ const innerScaled = computed(() => ({
   flexDirection: "column" as const,
   boxSizing: "border-box",
   background: "#fff",
-  border: "1px solid #d4d4d8",
-  borderRadius: "4px",
-  boxShadow: "0 2px 6px rgb(24 24 27 / 0.08)",
+  borderRadius: "6px",
 }));
 
 const headerBandStyle = computed(() => ({
   ...bandAbs(me.value, "header"),
-  background: "rgb(239 239 246 / 0.65)",
+  background: "rgb(239 239 246 / 0.52)",
 }));
 
 const footerBandStyle = computed(() => ({
   ...bandAbs(me.value, "footer"),
-  background: "rgb(239 239 246 / 0.65)",
+  background: "rgb(239 239 246 / 0.52)",
 }));
 
 function previewZoneTxt(el: LayoutZoneElement): string {
@@ -182,6 +183,9 @@ function miniZoneElStyle(el: LayoutZoneElement): Record<string, string> {
 </script>
 
 <style scoped>
+.mb-wrap {
+  touch-action: manipulation;
+}
 .mb-inner {
   position: relative;
 }

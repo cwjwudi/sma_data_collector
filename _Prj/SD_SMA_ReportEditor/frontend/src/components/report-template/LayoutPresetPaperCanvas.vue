@@ -411,6 +411,9 @@ function onWheel(ev: WheelEvent) {
   border-radius: 10px;
   min-height: min(520px, 62vh);
   position: relative;
+  touch-action: pan-x pan-y;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 .lppc-tip {
   position: sticky;
