@@ -540,16 +540,22 @@ reloadConnections()
   display: flex;
   flex-direction: column;
   flex: 1;
-  min-height: 280px;
+  min-height: 0;
+  overflow: hidden;
 }
 .work-tab-grow {
   flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 .data-tab-panel {
   gap: 8px;
+  min-height: 0;
 }
 .preview-toolbar {
   display: flex;
@@ -566,6 +572,7 @@ reloadConnections()
   display: flex;
   gap: 6px;
   margin-bottom: 12px;
+  flex-shrink: 0;
 }
 .subtabs button {
   padding: 6px 10px;
