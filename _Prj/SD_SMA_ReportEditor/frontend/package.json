@@ -13,6 +13,7 @@
     "test": "vitest run",
     "preview": "vite preview",
     "electron:dev": "concurrently -k \"vite\" \"wait-on http://localhost:5173 && electron .\"",
+    "electron:open": "electron .",
     "electron:build": "vite build && electron .",
     "build:backend": "powershell -ExecutionPolicy Bypass -File ../backend/scripts/build-backend-exe.ps1",
     "clean:release": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/clean-release.ps1",
