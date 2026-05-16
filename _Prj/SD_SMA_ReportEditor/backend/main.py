@@ -1,3 +1,11 @@
+"""SD_SMA_ReportEditor FastAPI 入口。"""
+
+# Python 3.9：在加载 Pydantic 模型前先启用 PEP604 注解回退（需安装 requirements 中的 eval-type-backport）
+try:
+    import eval_type_backport  # noqa: F401
+except ImportError:
+    pass
+
 import logging
 from contextlib import asynccontextmanager
 
@@ -26,9 +34,15 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_data_dirs()
+    from core.service_beacon import clear_service_beacon, write_service_beacon
+
+    write_service_beacon(api_version=app.version)
     logger.info("SD_SMA_ReportEditor 后端启动完成")
-    yield
-    logger.info("SD_SMA_ReportEditor 后端关闭")
+    try:
+        yield
+    finally:
+        clear_service_beacon()
+        logger.info("SD_SMA_ReportEditor 后端关闭")
 
 
 app = FastAPI(
@@ -55,22 +69,26 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(environment_router.router)
-app.include_router(settings_config_router.router)
-app.include_router(opcua_router.router)
-app.include_router(database_router.router)
-app.include_router(templates_router.router)
-app.include_router(layout_presets_router.router)
-app.include_router(signatures_router.router)
+def _attach_routes() -> None:
+    """兼容两种路径：前端经 Vite rewrite 后到 /environment/*，或直接请求 /api/environment/*。"""
+    routers = (
+        environment_router.router,
+        settings_config_router.router,
+        opcua_router.router,
+        database_router.router,
+        templates_router.router,
+        layout_presets_router.router,
+        signatures_router.router,
+    )
+    for r in routers:
+        app.include_router(r)
+        app.include_router(r, prefix="/api")
 
 
-@app.get("/")
-async def root():
-    return {"status": "ok", "app": "SD_SMA_ReportEditor", "version": "0.2.0"}
+_attach_routes()
 
 
-@app.get("/health")
-async def health():
+def _health_body() -> dict:
     data_ok = DATA_DIR.exists() and CONFIG_FILE.exists()
     return {
         "status": "healthy" if data_ok else "degraded",
@@ -79,4 +97,25 @@ async def health():
         "templates_dir_exists": TEMPLATES_DIR.exists(),
         "history_dir_exists": HISTORY_DIR.exists(),
     }
+
+
+@app.get("/")
+async def root():
+    return {"status": "ok", "app": "SD_SMA_ReportEditor", "version": app.version}
+
+
+@app.get("/api")
+@app.get("/api/")
+async def root_api_prefixed():
+    return {"status": "ok", "app": "SD_SMA_ReportEditor", "version": app.version}
+
+
+@app.get("/health")
+async def health():
+    return _health_body()
+
+
+@app.get("/api/health")
+async def health_prefixed():
+    return _health_body()
 

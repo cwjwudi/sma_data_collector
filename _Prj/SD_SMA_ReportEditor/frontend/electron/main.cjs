@@ -6,6 +6,8 @@ const fs = require('fs')
 
 let mainWindow
 let pythonProcess
+/** 若为 true：由本 Electron 拉起的后端，exit 时需 kill（避免误杀外部 uvicorn）。 */
+let backendStartedByElectron = false
 
 const BACKEND_PORT = 8000
 const BACKEND_URL = `http://127.0.0.1:${BACKEND_PORT}`
@@ -36,14 +38,20 @@ function getReportEditorDataDir() {
 
 function findPython() {
   const backendDir = getBackendDir()
-  const venvPython = path.join(backendDir, 'venv', 'Scripts', 'python.exe')
-
-  if (fs.existsSync(venvPython)) {
-    log(`Using venv Python: ${venvPython}`)
-    return { cmd: venvPython }
+  const candidates = [
+    path.join(backendDir, 'venv', 'Scripts', 'python.exe'),
+    path.join(backendDir, 'venv', 'bin', 'python3'),
+    path.join(backendDir, 'venv', 'bin', 'python'),
+  ]
+  for (const p of candidates) {
+    if (fs.existsSync(p)) {
+      log(`Using venv Python: ${p}`)
+      return { cmd: p }
+    }
   }
-  log('Using system Python')
-  return { cmd: 'python' }
+  const fallback = process.platform === 'win32' ? 'python' : 'python3'
+  log(`Using system Python (${fallback})`)
+  return { cmd: fallback }
 }
 
 function startPythonBackend() {
@@ -55,13 +63,19 @@ function startPythonBackend() {
   const env = {
     ...process.env,
     REPORT_EDITOR_DATA_DIR: dataDir,
+    REPORT_EDITOR_HTTP_PORT: String(BACKEND_PORT),
     // 避免 Windows 旧版 conhost 把 ANSI 当乱码；与 dev_uvicorn.ps1 行为一致
     NO_COLOR: '1',
     FORCE_COLOR: '0',
     PYTHONUTF8: '1',
+    PYTHONUNBUFFERED: '1',
   }
 
-  if (app.isPackaged) {
+  const useBundledExe = app.isPackaged
+  /** 开发模式继承终端 stdio，便于在 concurrently 里直接看到 uvicorn 报错（pipe 时常被淹没） */
+  const stdioDev = useBundledExe ? 'pipe' : 'inherit'
+
+  if (useBundledExe) {
     const exe = getBundledBackendExe()
     if (!fs.existsSync(exe)) {
       log(`ERROR: 未找到打包后端: ${exe}`)
@@ -79,17 +93,20 @@ function startPythonBackend() {
     pythonProcess = spawn(cmd, pyArgs, {
       cwd: backendDir,
       env,
-      stdio: 'pipe',
+      stdio: stdioDev,
     })
   }
 
-  pythonProcess.stdout.on('data', (data) => {
-    console.log(`[Python] ${data.toString().trim()}`)
-  })
-
-  pythonProcess.stderr.on('data', (data) => {
-    console.log(`[Python] ${data.toString().trim()}`)
-  })
+  if (pythonProcess.stdout) {
+    pythonProcess.stdout.on('data', (data) => {
+      console.log(`[Python] ${data.toString().trim()}`)
+    })
+  }
+  if (pythonProcess.stderr) {
+    pythonProcess.stderr.on('data', (data) => {
+      console.log(`[Python] ${data.toString().trim()}`)
+    })
+  }
 
   pythonProcess.on('error', (err) => {
     console.error(`[Python] Failed to start: ${err.message}`)
@@ -98,6 +115,7 @@ function startPythonBackend() {
   pythonProcess.on('close', (code) => {
     log(`Python backend exited with code ${code}`)
     pythonProcess = null
+    backendStartedByElectron = false
   })
 }
 
@@ -175,10 +193,15 @@ function createWindow() {
 }
 
 function killPython() {
-  if (pythonProcess) {
-    log('Stopping Python backend...')
-    pythonProcess.kill()
+  if (pythonProcess && backendStartedByElectron) {
+    log('Stopping Python backend (Electron 子进程)…')
+    try {
+      pythonProcess.kill()
+    } catch (_) {
+      /* ignore */
+    }
     pythonProcess = null
+    backendStartedByElectron = false
   }
 }
 
@@ -186,12 +209,30 @@ app.whenReady().then(async () => {
   log('Starting application...')
 
   const isDev = !app.isPackaged
-  if (isDev && (await checkBackendHealthOnce())) {
+  /**
+   * 默认：开发模式也由 Electron spawn 后端，关掉窗口/App 时再 killPython，与本机端口绑定一致。
+   * 若在另一终端常驻 `npm run api:dev*` / uvicorn，请设环境变量：
+   *   REPORT_EDITOR_REUSE_BACKEND=1
+   * 这样会跳过拉起子进程（注意：关掉 Electron **不会**停掉你那边的 uvicorn）。
+   */
+  const reuse =
+    ['1', 'true', 'yes'].includes(
+      String(process.env.REPORT_EDITOR_REUSE_BACKEND || '').toLowerCase(),
+    )
+
+  if (isDev && reuse && (await checkBackendHealthOnce())) {
     log(
-      `检测到 ${BACKEND_URL} 已有健康后端（例如已运行 start_dev_web.bat 或 uvicorn），跳过启动 Python 子进程，避免端口占用 WinError 10048。`,
+      `检测到 ${BACKEND_URL} 已有健康后端，且 REPORT_EDITOR_REUSE_BACKEND=1，跳过启动 Python 子进程（请自行在该终端 Ctrl+C）。`,
     )
   } else {
+    if (isDev && (await checkBackendHealthOnce())) {
+      log(
+        `[提示] ${BACKEND_URL} 已在监听；仍由本 Electron 尝试启动后端。若端口被占会失败。\n` +
+          '若在单独终端跑了 uvicorn，请先停掉或使用 REPORT_EDITOR_REUSE_BACKEND=1 复用外部后端（关闭 Electron 不会杀外部进程）。',
+      )
+    }
     startPythonBackend()
+    backendStartedByElectron = Boolean(pythonProcess)
   }
 
   try {
@@ -205,9 +246,8 @@ app.whenReady().then(async () => {
 
 app.on('window-all-closed', () => {
   killPython()
-  if (process.platform !== 'darwin') {
-    app.quit()
-  }
+  // macOS 默认可驻留托盘；为使「关掉开发窗口」与 Windows 一致、并释放 8000，这里直接 quit。
+  app.quit()
 })
 
 app.on('before-quit', () => {

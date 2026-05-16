@@ -1,5 +1,14 @@
 <template>
   <div ref="viewportRef" class="cv-viewport" @wheel.prevent="onWheel">
+    <input
+      ref="tplImgFileRef"
+      type="file"
+      accept="image/*,.svg"
+      class="cv-sr-file"
+      tabindex="-1"
+      aria-hidden="true"
+      @change="onTplBodyImageChosen"
+    />
     <div class="cv-scaler" :style="{ transform: `translate(${panX}px,${panY}px) scale(${viewScale})` }">
       <div ref="paperRef" class="cv-paper" :style="paperBoxStyle" @pointerdown.capture="onPaperBlank">
         <div v-if="me.hb > 1" class="cv-band hdr" :style="hdrStyle">
@@ -22,7 +31,43 @@
             :style="elCss(el)"
             @pointerdown.stop="beginMove($event, el)"
           >
-            <div class="el-inner">{{ displayEl(el) }}</div>
+            <div class="el-inner">
+              <template v-if="el.type === 'image'">
+                <div
+                  class="cv-img-slot"
+                  @dragover.prevent
+                  @drop.prevent.stop="onTplImageDropFile($event, el)"
+                >
+                  <ZoneImageCompose
+                    :image-src="el.imageSrc"
+                    :caption-text="el.text"
+                    :caption-position="el.imageCaptionPosition"
+                    :align-x="el.alignX"
+                    :align-y="el.alignY"
+                    :rotation-deg="el.imageRotationDeg"
+                    :font-size="el.fontSize"
+                    :color="el.color"
+                    @replace-image="beginTplBodyImagePick(el)"
+                  >
+                    <template #placeholder>
+                      <span
+                        class="cv-ph-img"
+                        role="button"
+                        tabindex="0"
+                        title="单击选图（或拖到此处）；数据以 data URL 保存"
+                        @pointerdown.stop
+                        @click.prevent.stop="beginTplBodyImagePick(el)"
+                        @keyup.enter.prevent="beginTplBodyImagePick(el)"
+                        @keyup.space.prevent="beginTplBodyImagePick(el)"
+                      >
+                        图片占位
+                      </span>
+                    </template>
+                  </ZoneImageCompose>
+                </div>
+              </template>
+              <template v-else>{{ displayEl(el) }}</template>
+            </div>
             <button
               v-for="hh in HZ"
               :key="hh"
@@ -48,7 +93,9 @@ import { clampElementToLayout } from "@/lib/report-template/snapshot-fingerprint
 import type { ReportTemplate, TemplateControlType } from "@/lib/report-template/model";
 import type { TemplateElement } from "@/lib/report-template/model";
 import { makeElement } from "@/lib/report-template/model";
-import { computed, onBeforeUnmount, ref } from "vue";
+import { readImageFileAsDataUrl } from "@/lib/report-template/read-image-file";
+import ZoneImageCompose from "@/components/report-template/ZoneImageCompose.vue";
+import { computed, nextTick, onBeforeUnmount, ref } from "vue";
 
 const HZ = ["nw", "n", "ne", "e", "se", "s", "sw", "w"] as const;
 type H = (typeof HZ)[number];
@@ -57,6 +104,8 @@ const props = defineProps<{ tmpl: ReportTemplate; sheet: EditorSheet }>();
 const selId = defineModel<string | null>("selectedId");
 
 const viewportRef = ref<HTMLElement | null>(null);
+const tplImgFileRef = ref<HTMLInputElement | null>(null);
+let tplBodyPendingSid: string | null = null;
 const panX = ref(0);
 const panY = ref(0);
 const viewScale = ref(1);
@@ -294,6 +343,38 @@ function onWheel(ev: WheelEvent) {
   panX.value -= ev.deltaX * 0.5;
   panY.value -= ev.deltaY * 0.5;
 }
+
+async function assignTplBodyImage(el: TemplateElement | null, f?: File | null) {
+  if (!el || el.type !== "image" || !f?.type?.startsWith("image/")) return;
+  try {
+    el.imageSrc = await readImageFileAsDataUrl(f);
+  } catch (e) {
+    window.alert(e instanceof Error ? e.message : String(e));
+  }
+}
+
+function beginTplBodyImagePick(el: TemplateElement) {
+  if (el.type !== "image") return;
+  selId.value = el.id;
+  tplBodyPendingSid = el.id;
+  void nextTick(() => tplImgFileRef.value?.click());
+}
+
+async function onTplBodyImageChosen(ev: Event) {
+  const inp = ev.target as HTMLInputElement;
+  const file = inp.files?.[0];
+  inp.value = "";
+  const id = tplBodyPendingSid;
+  tplBodyPendingSid = null;
+  const el = id ? list.value.find((x) => x.id === id) ?? null : null;
+  await assignTplBodyImage(el, file ?? null);
+}
+
+async function onTplImageDropFile(ev: DragEvent, el: TemplateElement) {
+  if (el.type !== "image") return;
+  selId.value = el.id;
+  await assignTplBodyImage(el, ev.dataTransfer?.files?.[0] ?? null);
+}
 </script>
 
 <style scoped>
@@ -306,6 +387,14 @@ function onWheel(ev: WheelEvent) {
   touch-action: pan-x pan-y;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
+  position: relative;
+}
+.cv-sr-file {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
 }
 .cv-scaler {
   transform-origin: 0 0;
@@ -336,14 +425,44 @@ function onWheel(ev: WheelEvent) {
   color: #71717a;
 }
 .el-inner {
+  display: flex;
+  align-items: center;
+  flex: 1;
   width: 100%;
+  height: 100%;
   overflow: hidden;
   white-space: nowrap;
+}
+.cv-img-slot {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  overflow: hidden;
+}
+.cv-img-fit {
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  display: block;
+}
+.cv-ph-img {
+  font-size: 11px;
+  color: #94a3b8;
+  cursor: pointer;
+  border-bottom: 1px dashed currentcolor;
+}
+.cv-ph-img:hover {
+  color: #475569;
 }
 .el-node {
   box-sizing: border-box;
   display: flex;
-  align-items: center;
+  align-items: stretch;
   padding: 4px;
 }
 .el-node.sel {

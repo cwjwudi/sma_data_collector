@@ -1,6 +1,15 @@
 <template>
   <div v-if="modelValue" class="hz-overlay" @click.self="close">
     <div class="hz-modal">
+      <input
+        ref="hzImgFileRef"
+        type="file"
+        accept="image/*,.svg"
+        class="hz-sr-file"
+        aria-hidden="true"
+        tabindex="-1"
+        @change="hzApplyImagePick"
+      />
       <h3 class="hz-title">{{ zone === "header" ? "编辑页眉" : "编辑页脚" }} · {{ sheetLabel }}</h3>
       <div class="hz-tools">
         <span class="hz-tools-label">拖拽到灰区：</span>
@@ -31,8 +40,39 @@
               @pointerdown.stop="startMove($event, el)"
             >
               <template v-if="el.type === 'image'">
-                <img v-if="el.imageSrc" class="hz-img" :src="el.imageSrc" alt="" />
-                <span v-else class="hz-ph">图片</span>
+                <div
+                  class="hz-img-layer"
+                  title="可从资源管理器拖入图片"
+                  @dragover.prevent
+                  @drop.prevent.stop="hzDropImage($event, el)"
+                >
+                  <ZoneImageCompose
+                    :image-src="el.imageSrc"
+                    :caption-text="el.text"
+                    :caption-position="el.imageCaptionPosition"
+                    :align-x="el.alignX"
+                    :align-y="el.alignY"
+                    :rotation-deg="el.imageRotationDeg"
+                    :font-size="el.fontSize"
+                    :color="el.color"
+                    @replace-image="hzBeginImagePick(el)"
+                  >
+                    <template #placeholder>
+                      <span
+                        role="button"
+                        tabindex="0"
+                        class="hz-ph hz-ph-upload"
+                        title="点击从本机选择（或拖入）"
+                        @pointerdown.stop
+                        @click.prevent.stop="hzBeginImagePick(el)"
+                        @keyup.enter.prevent="hzBeginImagePick(el)"
+                        @keyup.space.prevent="hzBeginImagePick(el)"
+                      >
+                        图片
+                      </span>
+                    </template>
+                  </ZoneImageCompose>
+                </div>
               </template>
               <template v-else>{{ zonePreview(el) }}</template>
               <template v-if="selId === el.id">
@@ -54,15 +94,49 @@
       <details v-if="sel" class="hz-props" open>
         <summary>属性</summary>
         <div class="hz-props-inner">
-          <label v-if="sel.type !== 'pageNumber'"
+          <label v-if="sel.type !== 'pageNumber' && sel.type !== 'image'"
             >文字<input v-model.trim="sel.text" class="hz-inp" />
           </label>
           <label v-if="sel.type === 'date'"
             >日期格式<input v-model.trim="sel.dateFormat" class="hz-inp"
           /></label>
-          <label v-if="sel.type === 'image'"
-            >图片来源 URL / data<input v-model.trim="sel.imageSrc" class="hz-inp"
-          /></label>
+          <template v-if="sel.type === 'image'">
+            <label class="hz-span2">配文<br /><textarea v-model="sel.text" rows="2" class="hz-inp" /></label>
+            <label class="hz-span2"
+              >配文位置<select v-model="sel.imageCaptionPosition" class="hz-inp">
+                <option value="none">无配文</option>
+                <option value="top">图上方</option>
+                <option value="bottom">图下方</option>
+                <option value="left">图左侧</option>
+                <option value="right">图右侧</option>
+              </select></label
+            >
+            <label>水平位置<select v-model="sel.alignX" class="hz-inp">
+              <option value="start">左</option>
+              <option value="center">中</option>
+              <option value="end">右</option>
+            </select></label>
+            <label>垂直位置<select v-model="sel.alignY" class="hz-inp">
+              <option value="start">上</option>
+              <option value="center">中</option>
+              <option value="end">下</option>
+            </select></label>
+            <label class="hz-span2"
+              >旋转（°）<input
+                v-model.number="sel.imageRotationDeg"
+                type="number"
+                min="-360"
+                max="360"
+                class="hz-inp"
+            /></label>
+            <label class="hz-span2"
+              >图片来源 URL / data<input v-model.trim="sel.imageSrc" class="hz-inp"
+            /></label>
+            <button type="button" class="btn hz-img-pick-btn" @click="hzPickFromPanel(sel)">
+              从本机选取图片…
+            </button>
+            <span class="hz-img-hint">本地图片转为 data URL 随模板保存。</span>
+          </template>
           <template v-if="sel.type === 'pageNumber'">
             <label>形式</label>
             <select v-model="sel.pageNumberMode" class="hz-inp">
@@ -97,7 +171,9 @@ import {
 } from "@/lib/report-template/layout-zone-element";
 import { metricsForSheet, type EditorSheet } from "@/lib/report-template/editor-sheet";
 import type { ReportTemplate } from "@/lib/report-template/model";
-import { computed, ref } from "vue";
+import { readImageFileAsDataUrl } from "@/lib/report-template/read-image-file";
+import ZoneImageCompose from "@/components/report-template/ZoneImageCompose.vue";
+import { computed, nextTick, ref } from "vue";
 
 const HANDLES = ["nw", "n", "ne", "e", "se", "s", "sw", "w"] as const;
 
@@ -116,6 +192,8 @@ const emit = defineEmits<{
 
 const selId = ref<string | null>(null);
 const layerRef = ref<HTMLElement | null>(null);
+const hzImgFileRef = ref<HTMLInputElement | null>(null);
+let pendingHzImgEl: LayoutZoneElement | null = null;
 
 let dragMove: {
   sid: string;
@@ -308,6 +386,41 @@ function removeSel() {
 function close() {
   emit("update:modelValue", false);
 }
+
+function hzBeginImagePick(el: LayoutZoneElement) {
+  if (el.type !== "image") return;
+  selId.value = el.id;
+  pendingHzImgEl = el;
+  void nextTick(() => hzImgFileRef.value?.click());
+}
+
+function hzPickFromPanel(el: LayoutZoneElement | null) {
+  if (!el || el.type !== "image") return;
+  hzBeginImagePick(el);
+}
+
+async function hzApplyImagePick(ev: Event) {
+  const inp = ev.target as HTMLInputElement;
+  const f = inp.files?.[0];
+  inp.value = "";
+  const tgt = pendingHzImgEl;
+  pendingHzImgEl = null;
+  await hzAssignImage(tgt, f ?? null);
+}
+
+async function hzDropImage(ev: DragEvent, el: LayoutZoneElement) {
+  selId.value = el.id;
+  await hzAssignImage(el, ev.dataTransfer?.files?.[0] ?? null);
+}
+
+async function hzAssignImage(el: LayoutZoneElement | null, f?: File | null) {
+  if (!el || el.type !== "image" || !f?.type?.startsWith("image/")) return;
+  try {
+    el.imageSrc = await readImageFileAsDataUrl(f);
+  } catch (e) {
+    window.alert(e instanceof Error ? e.message : String(e));
+  }
+}
 </script>
 
 <style scoped>
@@ -329,6 +442,7 @@ function close() {
   max-height: 92vh;
   overflow: auto;
   width: min(640px, 100%);
+  position: relative;
 }
 .hz-title {
   margin: 0 0 8px;
@@ -384,6 +498,39 @@ function close() {
 .hz-ph {
   font-size: 10px;
   color: #94a3b8;
+}
+.hz-ph-upload {
+  cursor: pointer;
+  border-bottom: 1px dashed currentcolor;
+}
+.hz-ph-upload:hover {
+  color: #475569;
+}
+.hz-img-layer {
+  flex: 1;
+  align-self: stretch;
+  width: 100%;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  overflow: hidden;
+}
+.hz-sr-file {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+.hz-img-pick-btn {
+  grid-column: 1 / -1;
+}
+.hz-img-hint {
+  grid-column: 1 / -1;
+  font-size: 11px;
+  color: #71717a;
+  line-height: 1.4;
 }
 .hz-handle {
   position: absolute;
@@ -452,6 +599,13 @@ function close() {
   margin-top: 6px;
   font-size: 12px;
 }
+.hz-span2 {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
 .hz-inp {
   width: 100%;
   box-sizing: border-box;

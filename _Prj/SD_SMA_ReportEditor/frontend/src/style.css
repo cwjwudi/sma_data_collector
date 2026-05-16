@@ -8,9 +8,17 @@
 
 html, body, #app {
   height: 100%;
+  /* 禁止 document 层滚动；仅 MainLayout .content-scroll 内滚动（避免双滚动条与 html 偏移） */
+  overflow: hidden;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
   color: #1a1a2e;
   background: #f5f6fa;
+}
+
+#app {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 
 a {

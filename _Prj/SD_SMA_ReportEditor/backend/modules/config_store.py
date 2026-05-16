@@ -51,6 +51,12 @@ def ensure_opcua_ids(servers: list[dict]) -> list[dict]:
     for s in servers:
         if not s.get("id"):
             s["id"] = str(uuid.uuid4())
+        # 旧配置别名 / 容错：仅用 endpoint 时使用到 endpoint_url
+        ep_main = str(s.get("endpoint_url") or "").strip()
+        if not ep_main:
+            legacy = str(s.get("endpoint") or "").strip()
+            if legacy:
+                s["endpoint_url"] = legacy
     return servers
 
 

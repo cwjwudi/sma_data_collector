@@ -1,5 +1,7 @@
 /** 签名库 `/signatures` */
 
+import { resolveApiHref } from "./apiBase.js";
+
 export interface SignatureAsset {
   id: string;
   label: string;
@@ -9,7 +11,7 @@ export interface SignatureAsset {
 
 function u(p: string) {
   const x = p.startsWith("/") ? p : `/${p}`;
-  return `/api${x}`;
+  return resolveApiHref(x);
 }
 
 async function fj<T>(path: string, init?: RequestInit): Promise<T> {

@@ -50,21 +50,36 @@ export async function saveLayoutPresetRemote(preset: LayoutPreset): Promise<void
   await refreshLayoutPresets();
 }
 
+export type SaveLayoutPresetResult =
+  | { ok: true; source: "remote"; preset: LayoutPreset }
+  | { ok: true; source: "local"; preset: LayoutPreset; warning: string }
+  | { ok: false; message: string };
+
 /** 保存单条版式：在线则 PUT 并刷新缓存；失败则写入 localStorage（迁移/离线）。 */
-export async function saveLayoutPresetFlexible(preset: LayoutPreset): Promise<void> {
+export async function saveLayoutPresetFlexible(preset: LayoutPreset): Promise<SaveLayoutPresetResult> {
   const p = hydrateLayoutPreset({
     ...preset,
     updatedAt: preset.updatedAt || new Date().toISOString(),
   });
   try {
-    await api.putLayoutPreset(p.id, p);
+    const body = await api.putLayoutPreset(p.id, p);
+    const hydrated = hydrateLayoutPreset(body as Partial<LayoutPreset>);
     await refreshLayoutPresets();
-  } catch {
+    offline = false;
+    return { ok: true, source: "remote", preset: hydrated };
+  } catch (e) {
     offline = true;
-    const snap = layoutPresetsSnapshot().filter((x) => x.id !== p.id);
-    snap.push(p);
-    mem = snap;
-    saveLayoutPresets(snap);
+    const reason = e instanceof Error ? e.message : String(e);
+    try {
+      const snap = layoutPresetsSnapshot().filter((x) => x.id !== p.id);
+      snap.push(p);
+      mem = snap;
+      saveLayoutPresets(snap);
+    } catch (persistErr) {
+      const detail = persistErr instanceof Error ? persistErr.message : String(persistErr);
+      return { ok: false, message: `服务器保存失败（${reason}），且写入浏览器缓存也失败：${detail}` };
+    }
+    return { ok: true, source: "local", preset: p, warning: reason };
   }
 }
 

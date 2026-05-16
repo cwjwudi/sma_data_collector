@@ -10,10 +10,21 @@
               class="mini-zone-el"
               :style="miniZoneElStyle(el)"
             >
-              <template v-if="el.type === 'image'">
-                <img v-if="el.imageSrc" class="mini-img" :src="el.imageSrc" alt="" />
-                <span v-else class="mini-ph">图片</span>
-              </template>
+              <ZoneImageCompose
+                v-if="el.type === 'image'"
+                :image-src="el.imageSrc"
+                :caption-text="el.text"
+                :caption-position="el.imageCaptionPosition"
+                :align-x="el.alignX"
+                :align-y="el.alignY"
+                :rotation-deg="el.imageRotationDeg"
+                :font-size="Math.max(6, el.fontSize * 0.85)"
+                :color="el.color"
+              >
+                <template #placeholder>
+                  <span class="mini-ph">图片</span>
+                </template>
+              </ZoneImageCompose>
               <template v-else>{{ previewZoneTxt(el) }}</template>
             </div>
           </div>
@@ -27,14 +38,44 @@
               class="mini-zone-el"
               :style="miniZoneElStyle(d)"
             >
-              {{ previewZoneTxt(d) }}
+              <ZoneImageCompose
+                v-if="d.type === 'image'"
+                :image-src="d.imageSrc"
+                :caption-text="d.text"
+                :caption-position="d.imageCaptionPosition"
+                :align-x="d.alignX"
+                :align-y="d.alignY"
+                :rotation-deg="d.imageRotationDeg"
+                :font-size="Math.max(6, d.fontSize * 0.85)"
+                :color="d.color"
+              >
+                <template #placeholder>
+                  <span class="mini-ph">图</span>
+                </template>
+              </ZoneImageCompose>
+              <template v-else>{{ previewZoneTxt(d) }}</template>
             </div>
             <template v-if="sheet !== 'body'">
               <div v-if="decorationEls.length === 0" class="mini-body-empty">正文</div>
             </template>
             <template v-else>
               <div v-for="el in bodyEls" :key="el.id" class="mini-tpl-el" :style="miniTplElStyle(el)">
-                <span class="mini-tpl-caption">{{ tplCaption(el) }}</span>
+                <ZoneImageCompose
+                  v-if="el.type === 'image'"
+                  :image-src="el.imageSrc"
+                  :caption-text="el.text"
+                  :caption-position="el.imageCaptionPosition"
+                  :align-x="el.alignX"
+                  :align-y="el.alignY"
+                  :rotation-deg="el.imageRotationDeg"
+                  :font-size="Math.max(6, el.fontSize * 0.8)"
+                  :color="el.color"
+                >
+                  <template #placeholder>
+                    <span class="mini-tpl-caption">图</span>
+                  </template>
+                </ZoneImageCompose>
+                <span v-else class="mini-tpl-caption">{{ tplCaption(el) }}</span>
               </div>
               <div v-if="bodyEls.length === 0 && decorationEls.length === 0" class="mini-body-empty">画布</div>
             </template>
@@ -43,7 +84,22 @@
         <div v-if="me.fb > 1" class="mini-band mini-band-footer" :style="footerBand">
           <div class="mini-band-inner">
             <div v-for="el in footerEls" :key="el.id" class="mini-zone-el" :style="miniZoneElStyle(el)">
-              {{ previewZoneTxt(el) }}
+              <ZoneImageCompose
+                v-if="el.type === 'image'"
+                :image-src="el.imageSrc"
+                :caption-text="el.text"
+                :caption-position="el.imageCaptionPosition"
+                :align-x="el.alignX"
+                :align-y="el.alignY"
+                :rotation-deg="el.imageRotationDeg"
+                :font-size="Math.max(6, el.fontSize * 0.85)"
+                :color="el.color"
+              >
+                <template #placeholder>
+                  <span class="mini-ph">图片</span>
+                </template>
+              </ZoneImageCompose>
+              <template v-else>{{ previewZoneTxt(el) }}</template>
             </div>
           </div>
           <span v-if="footerEls.length === 0" class="mini-legacy">{{ footerFb }}</span>
@@ -56,6 +112,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import MiniPreviewChrome from "@/components/report-template/MiniPreviewChrome.vue";
+import ZoneImageCompose from "@/components/report-template/ZoneImageCompose.vue";
 import type { MiniPreviewVariant } from "@/components/report-template/mini-preview-types";
 import type { LayoutZoneElement } from "@/lib/report-template/layout-zone-element";
 import { previewZoneElementDisplay } from "@/lib/report-template/layout-zone-element";
@@ -182,7 +239,7 @@ function previewZoneTxt(el: LayoutZoneElement): string {
 }
 
 function miniZoneElStyle(el: LayoutZoneElement): Record<string, string> {
-  return {
+  const s: Record<string, string> = {
     position: "absolute",
     left: `${el.x}px`,
     top: `${el.y}px`,
@@ -194,10 +251,16 @@ function miniZoneElStyle(el: LayoutZoneElement): Record<string, string> {
     color: el.color,
     fontSize: `${Math.max(6, el.fontSize * 0.85)}px`,
   };
+  if (el.type === "image") {
+    s.display = "flex";
+    s.flexDirection = "column";
+    s.whiteSpace = "normal";
+  }
+  return s;
 }
 
 function miniTplElStyle(el: TemplateElement): Record<string, string> {
-  return {
+  const s: Record<string, string> = {
     position: "absolute",
     left: `${el.x}px`,
     top: `${el.y}px`,
@@ -222,6 +285,13 @@ function miniTplElStyle(el: TemplateElement): Record<string, string> {
           ? el.bgColor
           : "transparent",
   };
+  if (el.type === "image") {
+    s.alignItems = "stretch";
+    s.justifyContent = "stretch";
+    s.padding = "0";
+    s.whiteSpace = "normal";
+  }
+  return s;
 }
 
 function tplCaption(el: TemplateElement): string {

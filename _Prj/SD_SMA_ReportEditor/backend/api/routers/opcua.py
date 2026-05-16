@@ -71,6 +71,27 @@ async def delete_server(server_id: str):
     return {"ok": True}
 
 
+@router.post("/opcua/test_saved/{server_id}")
+async def test_saved_opcua(server_id: str):
+    """对已保存条目做连通测试：使用服务端配置中的 Endpoint 与本机解密后的密码，不依赖当前表单。"""
+    cfg = _load_cfg()
+    srv = next((s for s in cfg.get("opcua_servers", []) if s.get("id") == server_id), None)
+    if not srv:
+        return {"ok": False, "message": "未找到 OPC UA 配置"}
+    endpoint = str(srv.get("endpoint_url") or srv.get("endpoint") or "").strip()
+    if not endpoint:
+        return {"ok": False, "message": "该连接在配置文件中 Endpoint URL 为空，请在工作台填写并保存。"}
+    try:
+        pwd = config_store.decrypt_opcua_password(DATA_DIR, srv)
+    except ValueError as e:
+        return {"ok": False, "message": str(e)}
+    return await opcua_service.test_connection(
+        endpoint,
+        srv.get("username"),
+        pwd,
+    )
+
+
 @router.post("/opcua/test")
 async def test_opcua(body: OpcUaTestRequest):
     res = await opcua_service.test_connection(
@@ -109,6 +130,7 @@ async def browse_saved(server_id: str, payload: dict = Body(default_factory=dict
     srv = next((s for s in cfg.get("opcua_servers", []) if s.get("id") == server_id), None)
     if not srv:
         raise HTTPException(404, "未找到服务器配置")
+    ep = str(srv.get("endpoint_url") or srv.get("endpoint") or "").strip()
     try:
         pwd = config_store.decrypt_opcua_password(DATA_DIR, srv)
     except ValueError as e:
@@ -116,7 +138,7 @@ async def browse_saved(server_id: str, payload: dict = Body(default_factory=dict
     node_id = (payload or {}).get("node_id")
     return await opcua_service.browse_children_for_saved_server(
         server_id,
-        srv.get("endpoint_url", ""),
+        ep,
         node_id,
         srv.get("username"),
         pwd,
@@ -129,6 +151,7 @@ async def read_saved(server_id: str, payload: dict):
     srv = next((s for s in cfg.get("opcua_servers", []) if s.get("id") == server_id), None)
     if not srv:
         raise HTTPException(404, "未找到服务器配置")
+    ep = str(srv.get("endpoint_url") or srv.get("endpoint") or "").strip()
     try:
         pwd = config_store.decrypt_opcua_password(DATA_DIR, srv)
     except ValueError as e:
@@ -138,7 +161,7 @@ async def read_saved(server_id: str, payload: dict):
         raise HTTPException(400, "缺少 node_id")
     return await opcua_service.read_node_value_for_saved_server(
         server_id,
-        srv.get("endpoint_url", ""),
+        ep,
         node_id,
         srv.get("username"),
         pwd,

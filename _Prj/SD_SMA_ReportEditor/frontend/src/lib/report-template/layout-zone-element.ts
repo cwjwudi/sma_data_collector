@@ -43,6 +43,9 @@ export function formatPageNumberDisplay(
 
 export type LayoutAlignAxis = "start" | "center" | "end";
 
+/** 配文相对主体的位置（控件框内排版） */
+export type ImageCaptionPosition = "none" | "left" | "right" | "top" | "bottom";
+
 export interface LayoutZoneElement {
   id: string;
   type: LayoutControlType;
@@ -58,12 +61,50 @@ export interface LayoutZoneElement {
   alignY: LayoutAlignAxis;
   dateFormat: string;
   imageSrc: string;
+  /** 逆时针任意角度皆可；导出与画布一致 */
+  imageRotationDeg: number;
+  /** 配文相对图片主体的位置（需 text 非空时在框内并排/上下布局） */
+  imageCaptionPosition: ImageCaptionPosition;
   pageNumberMode: PageNumberDisplayMode;
 }
 
 export function normalizeAlignAxis(v: unknown, fb: LayoutAlignAxis): LayoutAlignAxis {
   if (v === "center" || v === "end") return v;
   return fb;
+}
+
+export function normalizeImageCaptionPosition(v: unknown, fb: ImageCaptionPosition): ImageCaptionPosition {
+  if (v === "left" || v === "right" || v === "top" || v === "bottom") return v;
+  if (v === "none") return "none";
+  return fb;
+}
+
+export function normalizeImageRotationDeg(v: unknown): number {
+  const n = typeof v === "number" ? v : Number(v);
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(-360, Math.min(360, Math.round(n * 100) / 100));
+}
+
+/** flex 内对齐：用于图片在「绘区」内九宫格占位 */
+export function flexJustifyAlignForAxes(
+  ax: LayoutAlignAxis,
+  ay: LayoutAlignAxis,
+): { justifyContent: string; alignItems: string } {
+  const justifyContent =
+    ax === "center" ? "center" : ax === "end" ? "flex-end" : "flex-start";
+  const alignItems = ay === "center" ? "center" : ay === "end" ? "flex-end" : "flex-start";
+  return { justifyContent, alignItems };
+}
+
+/** 图文外层：列方向时主轴为竖向，不能把「横向 justify / 纵向 align」直接沿用行布局那套赋值。 */
+export function flexComposeOuterRoot(
+  ax: LayoutAlignAxis,
+  ay: LayoutAlignAxis,
+  rowLay: boolean,
+): { justifyContent: string; alignItems: string } {
+  const m = flexJustifyAlignForAxes(ax, ay);
+  if (rowLay) return m;
+  return { justifyContent: m.alignItems, alignItems: m.justifyContent };
 }
 
 export function formatLayoutDate(d: Date, pattern: string): string {
@@ -96,6 +137,8 @@ export function defaultLayoutZoneElement(type: LayoutControlType): Omit<LayoutZo
     fontSize: 13,
     dateFormat: "yyyy-MM-dd HH:mm",
     imageSrc: "",
+    imageRotationDeg: 0,
+    imageCaptionPosition: "none" as ImageCaptionPosition,
     pageNumberMode: "plain" as PageNumberDisplayMode,
   };
   if (type === "text") {
@@ -105,7 +148,18 @@ export function defaultLayoutZoneElement(type: LayoutControlType): Omit<LayoutZo
     return { type: "box", x: 8, y: 8, w: 100, h: 36, ...baseText, ...axCenter };
   }
   if (type === "image") {
-    return { type: "image", x: 8, y: 8, w: 64, h: 64, ...baseText, text: "", ...axCenter };
+    return {
+      type: "image",
+      x: 8,
+      y: 8,
+      w: 64,
+      h: 64,
+      ...baseText,
+      text: "",
+      ...axCenter,
+      imageCaptionPosition: "bottom",
+      imageRotationDeg: 0,
+    };
   }
   if (type === "pageNumber") {
     return {
@@ -120,6 +174,9 @@ export function defaultLayoutZoneElement(type: LayoutControlType): Omit<LayoutZo
       fontSize: 12,
       dateFormat: "",
       imageSrc: "",
+      imageRotationDeg: 0,
+      imageCaptionPosition: "none",
+      pageNumberMode: "plain" as PageNumberDisplayMode,
       ...axStart,
     };
   }
@@ -135,6 +192,9 @@ export function defaultLayoutZoneElement(type: LayoutControlType): Omit<LayoutZo
     fontSize: 12,
     dateFormat: "yyyy-MM-dd",
     imageSrc: "",
+    imageRotationDeg: 0,
+    imageCaptionPosition: "none",
+    pageNumberMode: "plain" as PageNumberDisplayMode,
     ...axStart,
   };
 }
@@ -156,6 +216,8 @@ export function hydrateLayoutZoneElement(raw: Partial<LayoutZoneElement>): Layou
     alignY: normalizeAlignAxis(raw.alignY, d.alignY),
     dateFormat: typeof raw.dateFormat === "string" ? raw.dateFormat : d.dateFormat,
     imageSrc: typeof raw.imageSrc === "string" ? raw.imageSrc : d.imageSrc,
+    imageRotationDeg: normalizeImageRotationDeg(raw.imageRotationDeg ?? d.imageRotationDeg),
+    imageCaptionPosition: normalizeImageCaptionPosition(raw.imageCaptionPosition, d.imageCaptionPosition),
     pageNumberMode: normalizePageNumberMode(raw.pageNumberMode),
   };
 }
@@ -177,5 +239,10 @@ export function previewZoneElementDisplay(el: LayoutZoneElement): string {
     return formatPageNumberDisplay(el.pageNumberMode, 1, PAGE_NUMBER_PREVIEW_TOTAL_FALLBACK);
   }
   if (el.type === "date") return formatLayoutDate(new Date(), el.dateFormat || "yyyy-MM-dd");
+  if (el.type === "image") {
+    const cap = String(el.text || "").trim();
+    if (cap) return cap.length > 24 ? `${cap.slice(0, 21)}…` : cap;
+    return el.imageSrc ? "配图" : "图片";
+  }
   return el.text;
 }

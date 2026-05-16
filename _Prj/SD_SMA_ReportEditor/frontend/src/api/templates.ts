@@ -2,9 +2,11 @@
 
 import type { ReportTemplate } from "@/lib/report-template/model";
 
+import { resolveApiHref } from "./apiBase.js";
+
 function apiUrl(path: string): string {
   const p = path.startsWith("/") ? path : `/${path}`;
-  return `/api${p}`;
+  return resolveApiHref(p);
 }
 
 async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {

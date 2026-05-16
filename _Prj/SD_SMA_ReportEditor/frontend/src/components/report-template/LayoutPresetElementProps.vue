@@ -2,15 +2,65 @@
   <div v-if="el" class="lpep">
     <h5 class="lpep-h">属性</h5>
     <div class="lpep-grid">
-      <label v-if="el.type !== 'pageNumber'" class="lpep-lab"
+      <label
+        v-if="el.type !== 'pageNumber' && el.type !== 'image'"
+        class="lpep-lab"
         >文字<input v-model.trim="el.text" class="lpep-inp"
       /></label>
       <label v-if="el.type === 'date'" class="lpep-lab"
         >日期格式<input v-model.trim="el.dateFormat" class="lpep-inp"
       /></label>
-      <label v-if="el.type === 'image'" class="lpep-lab"
-        >图片来源 URL / data<input v-model.trim="el.imageSrc" class="lpep-inp"
-      /></label>
+      <template v-if="el.type === 'image'">
+        <label class="lpep-lab"
+          >配文<textarea v-model="el.text" rows="2" class="lpep-inp" spellcheck="false" placeholder="与图片同框显示的文字"
+        ></textarea></label>
+        <label class="lpep-lab"
+          >配文位置<select v-model="el.imageCaptionPosition" class="lpep-inp">
+            <option value="none">无配文</option>
+            <option value="top">图上方</option>
+            <option value="bottom">图下方</option>
+            <option value="left">图左侧</option>
+            <option value="right">图右侧</option>
+          </select></label
+        >
+        <label class="lpep-lab"
+          >图片水平位置（九宫格）<select v-model="el.alignX" class="lpep-inp">
+            <option value="start">左</option>
+            <option value="center">中</option>
+            <option value="end">右</option>
+          </select></label
+        >
+        <label class="lpep-lab"
+          >图片垂直位置（九宫格）<select v-model="el.alignY" class="lpep-inp">
+            <option value="start">上</option>
+            <option value="center">中</option>
+            <option value="end">下</option>
+          </select></label
+        >
+        <label class="lpep-lab"
+          >旋转角（°）<input
+            v-model.number="el.imageRotationDeg"
+            type="number"
+            min="-360"
+            max="360"
+            step="1"
+            class="lpep-inp"
+        /></label>
+        <label class="lpep-lab"
+          >图片来源 URL / data<input v-model.trim="el.imageSrc" class="lpep-inp"
+        /></label>
+        <input
+          ref="imgFileEl"
+          type="file"
+          accept="image/*,.svg"
+          class="lpep-sr-file"
+          aria-hidden="true"
+          tabindex="-1"
+          @change="onLocalImageChosen"
+        />
+        <button type="button" class="lpep-file-btn" @click="pickLocalImage">从本机选取图片…</button>
+        <span class="lpep-img-hint">图片将转为 data URL，与预设 JSON 一并保存。水平×垂直对齐控制图片在占位格内的九宫格。</span>
+      </template>
       <template v-if="el.type === 'pageNumber'">
         <label class="lpep-lab">形式</label>
         <select v-model="el.pageNumberMode" class="lpep-inp">
@@ -35,14 +85,38 @@
 
 <script setup lang="ts">
 import type { LayoutZoneElement } from "@/lib/report-template/layout-zone-element";
+import { readImageFileAsDataUrl } from "@/lib/report-template/read-image-file";
+import { nextTick, ref } from "vue";
 
-defineProps<{
+const props = defineProps<{
   el: LayoutZoneElement | null;
 }>();
+
+const imgFileEl = ref<HTMLInputElement | null>(null);
 
 defineEmits<{
   remove: [];
 }>();
+
+async function pickLocalImage() {
+  const row = props.el;
+  if (!row || row.type !== "image") return;
+  await nextTick();
+  imgFileEl.value?.click();
+}
+
+async function onLocalImageChosen(ev: Event) {
+  const row = props.el;
+  const inp = ev.target as HTMLInputElement;
+  const f = inp.files?.[0];
+  inp.value = "";
+  if (!row || row.type !== "image" || !f) return;
+  try {
+    row.imageSrc = await readImageFileAsDataUrl(f);
+  } catch (e) {
+    window.alert(e instanceof Error ? e.message : String(e));
+  }
+}
 </script>
 
 <style scoped>
@@ -77,6 +151,28 @@ defineEmits<{
   color: rgb(185 28 28);
   background: #fff;
   cursor: pointer;
+}
+.lpep-file-btn {
+  padding: 7px 10px;
+  font-size: 12px;
+  border-radius: 6px;
+  border: 1px solid #c7d2fe;
+  background: #eef2ff;
+  color: #3730a3;
+  cursor: pointer;
+  align-self: flex-start;
+}
+.lpep-img-hint {
+  font-size: 11px;
+  color: #71717a;
+  line-height: 1.4;
+}
+.lpep-sr-file {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
 }
 .lpep-grey {
   font-size: 13px;

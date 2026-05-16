@@ -9,6 +9,18 @@ class FixRequest(BaseModel):
     actions: list[str] = Field(default_factory=list)
 
 
+class RebuildEnvironmentRequest(BaseModel):
+    """工控一键重建：必须显式 confirm=true，避免误触。"""
+
+    confirm: bool = False
+
+
+class FixAllWarningsRequest(BaseModel):
+    """一键消除告警表里可自动处理的项（Python/npm 等仍需系统层面操作）。"""
+
+    confirm: bool = False
+
+
 class OpcUaTestRequest(BaseModel):
     endpoint_url: str
     username: str | None = None

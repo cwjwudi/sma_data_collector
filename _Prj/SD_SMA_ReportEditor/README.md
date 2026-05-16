@@ -4,7 +4,7 @@ Markdown 报表编辑器桌面软件。支持读取 MySQL/MariaDB、PostgreSQL �
 
 ## 技术栈
 
-- **后端**：Python 3.10+ / FastAPI / SQLAlchemy / asyncua
+- **后端**：Python 3.9+（推荐 3.10+）、FastAPI、SQLAlchemy、asyncua
 - **前端**：Electron / Vue 3 / Vite / Pinia
 - **桌面壳**：Electron（内嵌 Vue 前端 + 启动 Python 后端子进程）
 
@@ -62,7 +62,7 @@ npm run electron:dev
 
 成品在 `frontend/release/`（不入库）：
 
-1. 前置：已安装 **Node.js**、**Python 3.10+**（含 `py` 启动器）、Windows x64。
+1. 前置：已安装 **Node.js**、**Python 3.9+**（打包环境推荐 **3.10+** 且含 Windows `py` 启动器）、Windows x64。
 2. 在 `frontend/` 安装依赖：`npm install`
 3. **一键完整打包**（先 PyInstaller 打后端，再 electron-builder 打安装包 + 便携 exe）：  
    `npm run dist:win`（PowerShell 可用 **`npm.cmd run dist:win`**）

@@ -1,7 +1,11 @@
 import type { LayoutAlignAxis, LayoutZoneElement } from "./layout-zone-element";
 import {
+  flexComposeOuterRoot,
+  flexJustifyAlignForAxes,
   formatLayoutDate,
   formatPageNumberDisplay,
+  normalizeImageCaptionPosition,
+  normalizeImageRotationDeg,
   PAGE_NUMBER_PREVIEW_TOTAL_FALLBACK,
 } from "./layout-zone-element";
 
@@ -19,12 +23,14 @@ function previewPlainOrDate(el: LayoutZoneElement): string {
   return el.text;
 }
 
-function flexPlaceContent(el: LayoutZoneElement): { justifyContent: string; alignItems: string } {
-  const j =
-    el.alignX === "center" ? "center" : el.alignX === "end" ? "flex-end" : "flex-start";
-  const a =
-    el.alignY === "center" ? "center" : el.alignY === "end" ? "flex-end" : "flex-start";
-  return { justifyContent: j, alignItems: a };
+function flexPlaceAxes(el: LayoutZoneElement): { justifyContent: string; alignItems: string } {
+  return flexJustifyAlignForAxes(el.alignX, el.alignY);
+}
+
+function axisToTextAlign(ax: LayoutAlignAxis): string {
+  if (ax === "center") return "center";
+  if (ax === "end") return "right";
+  return "left";
 }
 
 function appendResizeHandles(node: HTMLElement, elId: string): void {
@@ -50,6 +56,94 @@ function appendResizeHandles(node: HTMLElement, elId: string): void {
     btn.setAttribute("aria-label", label[h]);
     node.appendChild(btn);
   }
+}
+
+function appendImageGlyph(paintWrap: HTMLElement, el: LayoutZoneElement): void {
+  const rot = normalizeImageRotationDeg(el.imageRotationDeg);
+  const imgSrc = typeof el.imageSrc === "string" ? el.imageSrc.trim() : "";
+  if (!imgSrc) {
+    paintWrap.style.border = "1px dashed rgba(0,0,0,0.2)";
+    const ph = document.createElement("span");
+    ph.style.fontSize = "11px";
+    ph.style.color = "inherit";
+    ph.textContent = "图片";
+    paintWrap.appendChild(ph);
+    return;
+  }
+
+  const img = document.createElement("img");
+  img.alt = "";
+  img.src = imgSrc;
+  img.style.display = "block";
+  img.style.objectFit = "contain";
+  img.style.maxWidth = "100%";
+  img.style.maxHeight = "100%";
+  if (Math.abs(rot) > 0.01) img.style.transform = `rotate(${rot}deg)`;
+  paintWrap.appendChild(img);
+}
+
+function makeCaptionChip(el: LayoutZoneElement, text: string, capSide: string): HTMLElement {
+  const s = document.createElement("span");
+  s.style.whiteSpace = "pre-wrap";
+  s.style.lineHeight = "1.25";
+  s.style.flexShrink = "0";
+  s.style.fontSize = `${el.fontSize}px`;
+  s.style.color = el.color;
+
+  if (capSide === "top" || capSide === "bottom") {
+    s.style.width = "100%";
+    s.style.textAlign = axisToTextAlign(el.alignX) as CanvasTextAlign extends string ? string : never;
+  }
+
+  if (capSide === "left" || capSide === "right") {
+    s.style.maxWidth = "48%";
+    s.style.alignSelf = "center";
+    s.style.overflow = "hidden";
+    s.style.wordBreak = "break-word";
+  }
+
+  s.textContent = text;
+  return s;
+}
+
+function appendImageSubtree(node: HTMLElement, el: LayoutZoneElement): void {
+  const capSide = normalizeImageCaptionPosition(el.imageCaptionPosition);
+  const capTxt = String(el.text || "").trim();
+  const hasCap = Boolean(capTxt.length > 0 && capSide !== "none");
+  const rowLay = capSide === "left" || capSide === "right";
+
+  node.style.padding = "2px";
+  node.style.backgroundColor = el.bgColor === "transparent" ? "transparent" : el.bgColor;
+  node.style.display = "flex";
+  node.style.overflow = "hidden";
+  node.style.flexDirection = rowLay ? "row" : "column";
+  node.style.gap = hasCap ? "4px" : "0";
+
+  const outer = flexComposeOuterRoot(el.alignX, el.alignY, rowLay);
+  node.style.justifyContent = outer.justifyContent;
+  node.style.alignItems = outer.alignItems;
+
+  const paint = document.createElement("div");
+  paint.style.flex = "1";
+  paint.style.minWidth = "0";
+  paint.style.minHeight = "0";
+  paint.style.alignSelf = "stretch";
+  paint.style.display = "flex";
+  const ij = flexJustifyAlignForAxes(el.alignX, el.alignY);
+  paint.style.justifyContent = ij.justifyContent;
+  paint.style.alignItems = ij.alignItems;
+  paint.style.overflow = "hidden";
+
+  const capChip = hasCap ? makeCaptionChip(el, capTxt, capSide) : null;
+
+  if (capSide === "top" && capChip) node.appendChild(capChip);
+  if (capSide === "left" && capChip) node.appendChild(capChip);
+
+  appendImageGlyph(paint, el);
+  node.appendChild(paint);
+
+  if (capSide === "right" && capChip) node.appendChild(capChip);
+  if (capSide === "bottom" && capChip) node.appendChild(capChip);
 }
 
 /** 将页眉/页脚区控件渲染为绝对定位子节点 */
@@ -92,31 +186,10 @@ export function renderZoneElementsInto(
     node.style.fontSize = `${el.fontSize}px`;
     node.style.overflow = "hidden";
 
-    const flex = flexPlaceContent(el);
+    const flex = flexPlaceAxes(el);
 
     if (el.type === "image") {
-      node.style.padding = "2px";
-      node.style.backgroundColor = el.bgColor === "transparent" ? "transparent" : el.bgColor;
-      node.style.display = "flex";
-      node.style.justifyContent = flex.justifyContent;
-      node.style.alignItems = flex.alignItems;
-      if (el.imageSrc) {
-        const img = document.createElement("img");
-        img.alt = "";
-        img.src = el.imageSrc;
-        img.style.objectFit = "contain";
-        img.style.maxWidth = "100%";
-        img.style.maxHeight = "100%";
-        img.style.width = "auto";
-        img.style.height = "auto";
-        node.appendChild(img);
-      } else {
-        node.style.border = "1px dashed rgba(0,0,0,0.2)";
-        node.style.fontSize = "11px";
-        const ph = document.createElement("span");
-        ph.textContent = "图片";
-        node.appendChild(ph);
-      }
+      appendImageSubtree(node, el);
     } else if (el.type === "box") {
       node.style.backgroundColor = el.bgColor === "transparent" ? "transparent" : el.bgColor;
       node.style.border = `1px solid ${el.color}40`;

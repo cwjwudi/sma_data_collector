@@ -5,7 +5,9 @@
         <span id="hz-dlg-title">放大编辑 · {{ preset.name }}</span>
         <button type="button" class="hz-close" @click="close">关闭</button>
       </div>
-      <LayoutPresetPaperCanvas :preset="preset" v-model:selected-id="selId" class="hz-canvas" />
+      <div class="hz-body">
+        <LayoutPresetPaperCanvas :preset="preset" v-model:selected-id="selId" class="hz-canvas" />
+      </div>
     </div>
   </div>
 </template>
@@ -87,9 +89,15 @@ onUnmounted(() => window.removeEventListener("keydown", onKey));
   cursor: pointer;
   font-size: 13px;
 }
-.hz-canvas {
+.hz-body {
   flex: 1;
   min-height: 0;
+  overflow: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+.hz-canvas {
   border: none;
   border-radius: 0;
 }

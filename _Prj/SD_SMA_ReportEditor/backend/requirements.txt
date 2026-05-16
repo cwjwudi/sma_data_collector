@@ -1,9 +1,12 @@
+# Python 3.9：Pydantic 对 PEP 604 联合类型注解需此包（3.10+ 可省去）
+eval-type-backport>=0.2.2
 fastapi
 uvicorn[standard]
 sqlalchemy
 pymysql
 psycopg2-binary
 pymongo
-asyncua
+# Python 3.14：1.1.8 在 open_secure_channel 序列化中会触发 issubclass() 报错；≥1.2b1 已修复
+asyncua>=1.2b1
 pydantic
 cryptography

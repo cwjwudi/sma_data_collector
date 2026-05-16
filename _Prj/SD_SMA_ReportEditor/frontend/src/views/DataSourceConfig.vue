@@ -15,19 +15,33 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, watch, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
 import DatabaseWorkbench from '@/features/datasource/database-workbench/DatabaseWorkbench.vue'
 import OpcUaPanel from '@/features/datasource/opcua/OpcUaPanel.vue'
 
+const route = useRoute()
+
 const tab = ref('db')
+
+function syncTabFromRoute() {
+  const q = route.query.tab
+  const s = typeof q === 'string' ? q.trim().toLowerCase() : Array.isArray(q) ? q[0]?.trim().toLowerCase() ?? '' : ''
+  if (s === 'opc' || s === 'opcua') tab.value = 'opc'
+  else if (s === 'db' || s === '' || !s) tab.value = 'db'
+}
+
+watch(() => route.query.tab, syncTabFromRoute, { flush: 'pre' })
+onMounted(syncTabFromRoute)
 </script>
 
 <style scoped>
 .page-fill {
   display: flex;
   flex-direction: column;
-  flex: 1;
-  min-height: calc(100dvh - 160px);
+  /* .content-scroll 为纵向 flex，此处吃掉剩余高度以便工作台内部再滚动 */
+  flex: 1 1 auto;
+  min-height: 0;
 }
 .page-tab-body {
   flex: 1;

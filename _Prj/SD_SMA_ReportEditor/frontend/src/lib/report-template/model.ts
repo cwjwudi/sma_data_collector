@@ -19,7 +19,14 @@ export type BindingKind = "none" | "opcua" | "sql";
 import type { LayoutSnapshot } from "./layout-model";
 import { defaultBlankLayoutSnapshot } from "./layout-model";
 import type { PaperKind } from "./paper";
-import { hydrateLayoutZoneElement, type LayoutZoneElement } from "./layout-zone-element";
+import type { LayoutAlignAxis, ImageCaptionPosition } from "./layout-zone-element";
+import {
+  hydrateLayoutZoneElement,
+  normalizeAlignAxis,
+  normalizeImageCaptionPosition,
+  normalizeImageRotationDeg,
+  type LayoutZoneElement,
+} from "./layout-zone-element";
 
 export interface TemplateElement {
   id: string;
@@ -37,6 +44,14 @@ export interface TemplateElement {
   bindingKind: BindingKind;
   /** OPC UA NodeId（仅 bindingKind === opcua 时用于参数类展示） */
   opcuaNodeId: string;
+  /** 画布控件水平对齐（图片等九宫格占位） */
+  alignX: LayoutAlignAxis;
+  /** 画布控件垂直对齐（图片等九宫格占位） */
+  alignY: LayoutAlignAxis;
+  /** 画布图片旋转角（度） */
+  imageRotationDeg: number;
+  /** 画布图片配文相对图片的位置 */
+  imageCaptionPosition: ImageCaptionPosition;
   /** SQL（表格或图表数据源；可含 {opc.xxx} 占位，由生成器注入） */
   sqlText: string;
   /** 简易图表类型预览 */
@@ -143,6 +158,10 @@ export function defaultElement(type: TemplateControlType): Omit<TemplateElement,
     bgColor: "transparent",
     fontSize: 14,
     imageSrc: "",
+    alignX: "start" as LayoutAlignAxis,
+    alignY: "center" as LayoutAlignAxis,
+    imageRotationDeg: 0,
+    imageCaptionPosition: "none" as ImageCaptionPosition,
     bindingKind: "none" as BindingKind,
     opcuaNodeId: "",
     sqlText: "",
@@ -182,6 +201,10 @@ export function defaultElement(type: TemplateControlType): Omit<TemplateElement,
       h: 80,
       text: "",
       ...base,
+      alignX: "center",
+      alignY: "center",
+      imageCaptionPosition: "bottom",
+      imageRotationDeg: 0,
     };
   }
   if (type === "table") {
@@ -256,6 +279,10 @@ export function hydrateTemplateElement(raw: Partial<TemplateElement>): TemplateE
     signatureAssetId:
       typeof raw.signatureAssetId === "string" ? raw.signatureAssetId : d.signatureAssetId,
     imageSrc: typeof raw.imageSrc === "string" ? raw.imageSrc : d.imageSrc,
+    alignX: normalizeAlignAxis(raw.alignX, d.alignX),
+    alignY: normalizeAlignAxis(raw.alignY, d.alignY),
+    imageRotationDeg: normalizeImageRotationDeg(raw.imageRotationDeg ?? d.imageRotationDeg),
+    imageCaptionPosition: normalizeImageCaptionPosition(raw.imageCaptionPosition, d.imageCaptionPosition),
   };
 }
 

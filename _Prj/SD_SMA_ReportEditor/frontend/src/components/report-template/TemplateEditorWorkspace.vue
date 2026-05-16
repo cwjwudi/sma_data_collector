@@ -58,7 +58,7 @@
       </main>
       <aside class="right" v-if="sel">
         <h5>属性</h5>
-        <textarea v-if="sel.type !== 'signature'" v-model="sel.text" rows="2"></textarea>
+        <textarea v-if="sel.type !== 'signature' && sel.type !== 'image'" v-model="sel.text" rows="2"></textarea>
         <label>h<input v-model.number="sel.fontSize" type="number" min="8" /></label>
         <label>X<input type="number" v-model.number="sel.x" /></label>
         <label>Y<input type="number" v-model.number="sel.y" /></label>
@@ -88,7 +88,50 @@
           <small class="muted">手写板仍可覆盖当前预览图的 imageSrc；库 id 会与模版一并保存。</small>
         </template>
         <template v-if="sel.type === 'image'">
-          <textarea v-model="sel.imageSrc" rows="2" placeholder="URL / data URL"></textarea>
+          <label class="tpl-img-lab">配文
+            <textarea v-model="sel.text" rows="2" placeholder="与图片同框显示"></textarea>
+          </label>
+          <label class="tpl-img-lab thin">配文位置
+            <select v-model="sel.imageCaptionPosition" class="ddl">
+              <option value="none">无配文</option>
+              <option value="top">图上方</option>
+              <option value="bottom">图下方</option>
+              <option value="left">图左侧</option>
+              <option value="right">图右侧</option>
+            </select>
+          </label>
+          <label class="tpl-img-lab thin">水平位置
+            <select v-model="sel.alignX" class="ddl">
+              <option value="start">左</option>
+              <option value="center">中</option>
+              <option value="end">右</option>
+            </select>
+          </label>
+          <label class="tpl-img-lab thin">垂直位置
+            <select v-model="sel.alignY" class="ddl">
+              <option value="start">上</option>
+              <option value="center">中</option>
+              <option value="end">下</option>
+            </select>
+          </label>
+          <label class="tpl-img-lab thin">旋转（°）
+            <input v-model.number="sel.imageRotationDeg" type="number" min="-360" max="360" class="name" />
+          </label>
+          <textarea
+            v-model="sel.imageSrc"
+            rows="2"
+            placeholder="URL / data URL（或下方选取本地文件）"
+          ></textarea>
+          <input
+            ref="tplImageSidebarFileRef"
+            type="file"
+            accept="image/*,.svg"
+            class="img-file-hidden"
+            tabindex="-1"
+            aria-hidden="true"
+            @change="onTplSidebarImageFile"
+          />
+          <button type="button" class="img-file-btn" @click="pickTplSidebarImage">从本机选取图片…</button>
         </template>
         <button type="button" class="del" @click="delSel">删除</button>
       </aside>
@@ -108,7 +151,8 @@ import HeaderFooterZoneDialog from "@/components/report-template/HeaderFooterZon
 import SignaturePadDialog from "@/components/report-template/SignaturePadDialog.vue";
 import * as api from "@/api/templates";
 import * as sigApi from "@/api/signatures";
-import { ref, computed, onMounted, onUnmounted } from "vue";
+import { ref, computed, onMounted, onUnmounted, nextTick } from "vue";
+import { readImageFileAsDataUrl } from "@/lib/report-template/read-image-file";
 import { useRoute, useRouter } from "vue-router";
 import { PAPER_LABEL } from "@/lib/report-template/paper";
 import { bodyElementsRef, metricsForSheet } from "@/lib/report-template/editor-sheet";
@@ -140,6 +184,7 @@ const dlgHdr = ref(false);
 const dlgFtr = ref(false);
 const dlgSig = ref(false);
 const hint = ref("");
+const tplImageSidebarFileRef = ref(null);
 const sigChoices = ref([]);
 /** @type {import('vue').Ref<import('@/lib/report-template/layout-model').LayoutPreset[]>} */
 const layoutPresetsAll = ref([]);
@@ -247,6 +292,25 @@ function openSigIf() {
     return;
   }
   dlgSig.value = true;
+}
+
+function pickTplSidebarImage() {
+  const t = sel.value;
+  if (!t || t.type !== "image") return;
+  void nextTick(() => tplImageSidebarFileRef.value?.click());
+}
+
+async function onTplSidebarImageFile(ev) {
+  const t = sel.value;
+  const inp = ev.target;
+  const f = inp.files?.[0];
+  inp.value = "";
+  if (!t || t.type !== "image" || !f) return;
+  try {
+    t.imageSrc = await readImageFileAsDataUrl(f);
+  } catch (e) {
+    window.alert(e.message || String(e));
+  }
 }
 
 function sigOk(dataUrl) {
@@ -464,5 +528,35 @@ onUnmounted(() => window.removeEventListener("keydown", onKey));
   cursor: pointer;
   padding: 8px;
   border-radius: 6px;
+}
+.tpl-img-lab {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  color: #52525b;
+}
+.tpl-img-lab.thin {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.img-file-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+.img-file-btn {
+  padding: 7px 10px;
+  font-size: 12px;
+  border-radius: 6px;
+  border: 1px solid #c7d2fe;
+  background: #eef2ff;
+  color: #3730a3;
+  cursor: pointer;
+  align-self: flex-start;
 }
 </style>

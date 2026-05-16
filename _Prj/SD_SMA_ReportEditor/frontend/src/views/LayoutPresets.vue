@@ -105,6 +105,7 @@ import {
   refreshLayoutPresets,
   saveLayoutPresetFlexible,
   isLayoutsOffline,
+  layoutPresetsSnapshot,
 } from "@/lib/report-template/layout-registry";
 
 const route = useRoute();
@@ -208,8 +209,17 @@ async function createPreset(
     fresh.name = "新建版式";
   }
   try {
-    await saveLayoutPresetFlexible(fresh);
-    await reload();
+    const r = await saveLayoutPresetFlexible(fresh);
+    if (!r.ok) {
+      msg.value = "创建失败：" + r.message;
+      return null;
+    }
+    if (r.source === "remote") {
+      await reload();
+    } else {
+      presets.value = layoutPresetsSnapshot();
+      msg.value = "已创建但未写入服务器：" + r.warning;
+    }
     return fresh.id;
   } catch (e) {
     msg.value = "创建失败：" + String((e as Error).message || e);

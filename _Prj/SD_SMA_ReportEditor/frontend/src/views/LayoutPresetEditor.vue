@@ -1,9 +1,17 @@
 <template>
   <div v-if="working" class="page lpe">
-    <header class="bar">
-      <button type="button" class="link" @click="back">← 版式列表</button>
-      <span class="bar-title">{{ working.name }}</span>
-      <span class="muted-inline">{{ dimLabel }}</span>
+    <header class="bar bar--sticky">
+      <div class="bar-start">
+        <button type="button" class="link" @click="back">← 版式列表</button>
+        <span class="bar-title">{{ working.name }}</span>
+        <span class="muted-inline">{{ dimLabel }}</span>
+      </div>
+      <div class="bar-actions">
+        <button type="button" class="b primary" :disabled="saving" @click="savePreset">
+          {{ saving ? "保存中…" : "保存版式" }}
+        </button>
+        <button type="button" class="b danger-outline" @click="removePreset">删除版式</button>
+      </div>
     </header>
 
     <p v-if="msg" class="msg">{{ msg }}</p>
@@ -36,8 +44,8 @@
       </label>
     </div>
     <p class="muted">
-      <strong>画布</strong>与「模版管理」一致：页眉带、正文区、页脚带同屏；
-      <strong>Ctrl / ⌘ + 滚轮</strong>缩放。
+      <strong>画布</strong>与「模版管理」一致：页眉、正文区、页脚同一张纵向纸；
+      <strong>Ctrl / ⌘ + 滚轮</strong>可缩放画布，平时用<strong>右侧主滚动条</strong>上下浏览即可。
     </p>
     <div class="pe-cols">
       <aside class="pe-left">
@@ -61,10 +69,6 @@
       <aside class="pe-right">
         <LayoutPresetElementProps :el="selectedPresetEl" @remove="removeSelectedPresetEl" />
       </aside>
-    </div>
-    <div class="foot-actions">
-      <button type="button" class="b primary" :disabled="saving" @click="savePreset">保存版式</button>
-      <button type="button" class="b danger-outline" @click="removePreset">删除版式</button>
     </div>
 
     <LayoutPresetZonesDialog
@@ -209,9 +213,20 @@ async function savePreset() {
   msg.value = "";
   try {
     w.updatedAt = new Date().toISOString();
-    await saveLayoutPresetFlexible(w);
-    await loadWorking();
-    msg.value = "版式已保存。";
+    const r = await saveLayoutPresetFlexible(w);
+    if (!r.ok) {
+      msg.value = r.message;
+      return;
+    }
+    presetCanvasSelId.value = null;
+    if (r.source === "remote") {
+      await loadWorking();
+      msg.value = "版式已保存。";
+    } else {
+      working.value = clonePreset(r.preset);
+      msg.value =
+        `未能写入服务器（${r.warning}）。当前内容已暂存于本浏览器缓存；联网后可在「设置」迁移或再次保存。在未成功写入服务器前，勿依赖多机/多浏览器同步。`;
+    }
   } catch (e) {
     msg.value = "保存失败：" + String((e as Error).message || e);
   } finally {
@@ -259,10 +274,38 @@ onMounted(() => {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  justify-content: space-between;
   gap: 10px;
+  row-gap: 12px;
   margin-bottom: 10px;
-  padding-bottom: 8px;
+  padding: 10px 0;
   border-bottom: 1px solid #e4e4e7;
+}
+.bar--sticky {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  background: rgb(244 244 245 / 0.96);
+  backdrop-filter: blur(8px);
+  margin-left: -2px;
+  margin-right: -2px;
+  padding-left: 6px;
+  padding-right: 6px;
+  box-sizing: border-box;
+}
+.bar-start {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+}
+.bar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
 }
 .link {
   border: none;
@@ -316,10 +359,10 @@ onMounted(() => {
   gap: 0;
   flex: 1;
   min-height: 480px;
-  margin-bottom: 12px;
+  margin-bottom: 4px;
   border: 1px solid #e4e4e7;
   border-radius: 10px;
-  overflow: hidden;
+  overflow: visible;
   background: #fff;
 }
 @media (max-width: 1100px) {
@@ -388,11 +431,6 @@ onMounted(() => {
   background: transparent;
   cursor: pointer;
   font-size: 12px;
-}
-.foot-actions {
-  display: flex;
-  gap: 10px;
-  align-items: center;
 }
 .b {
   padding: 6px 12px;

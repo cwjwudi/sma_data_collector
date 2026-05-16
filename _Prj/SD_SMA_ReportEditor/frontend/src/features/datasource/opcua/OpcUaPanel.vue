@@ -1,7 +1,26 @@
 <template>
-  <div class="opcua">
-    <div class="cols">
-      <aside class="list-pane">
+  <div class="opcua" :class="{ 'opcua-wizard': wizardLayout }">
+    <p v-if="wizardLayout" class="opc-lead">
+      在同一页完成<strong>测试</strong>、<strong>保存</strong>与<strong>浏览地址空间</strong>。可先填 Endpoint 与账号后直接点<strong>刷新根</strong>做草稿浏览（无需先保存）；已保存的连接从下方芯片切换。模板占位
+      <code v-pre>{opc.NodeId}</code>
+      会用到此处确认的 NodeId。若无现场服务器，可随时跳过向导此步或在「数据源」中补齐。
+    </p>
+    <div v-if="wizardLayout" class="wiz-srv-strip">
+      <button type="button" class="btn sm chip-new" @click="startNew">＋ 新建</button>
+      <button
+        v-for="s in servers"
+        :key="'wchip-' + s.id"
+        type="button"
+        class="btn sm srv-chip"
+        :class="{ active: selected?.id === s.id }"
+        @click="selectServer(s)"
+      >
+        {{ s.name || s.endpoint_url }}
+      </button>
+    </div>
+
+    <div class="cols" :class="{ compact: wizardLayout }">
+      <aside v-if="!wizardLayout" class="list-pane">
         <div class="list-head">
           <span>已保存连接</span>
           <button type="button" class="btn sm" @click="startNew">新建</button>
@@ -33,12 +52,44 @@
         </div>
         <div v-if="msg" class="msg">{{ msg }}</div>
       </div>
-      <div class="browse-pane" v-if="form.id">
+      <div v-if="wizardLayout || form.id" class="browse-pane">
         <div class="browse-head">
-          <span>地址空间</span>
-          <button type="button" class="btn sm" @click="refreshRoot">刷新根</button>
+          <div class="browse-head-titles">
+            <span class="browse-title-main">地址空间</span>
+            <span v-if="wizardLayout" class="browse-title-sub">{{ browseHeadSubtitle }}</span>
+          </div>
+          <div class="browse-head-actions">
+            <label class="tree-poll-label" :title="'仅轮询已在左侧展开 subtree 中出现的 Variable（与 OpcUaTree 可视范围一致）'">
+              <input v-model="treeRowPollEnabled" type="checkbox" class="tree-poll-checkbox" />
+              <span class="tree-poll-text">树上读值定时刷新</span>
+            </label>
+            <span v-if="treeRowPollEnabled" class="tree-poll-interval">
+              <label for="opc-tree-row-poll-interval">间隔</label>
+              <input
+                id="opc-tree-row-poll-interval"
+                v-model.number="treeRowPollIntervalSeconds"
+                type="number"
+                min="0.5"
+                max="300"
+                step="0.5"
+                class="input input-tiny"
+              />
+              <span class="poll-hint">秒</span>
+            </span>
+            <button
+              type="button"
+              class="btn sm"
+              :disabled="!browseCapability"
+              :title="
+                browseCapability ? '' : wizardLayout ? '请先填写 Endpoint 或选择已保存连接' : '须先保存连接'
+              "
+              @click="refreshRoot"
+            >
+              刷新根
+            </button>
+          </div>
         </div>
-        <div class="browse-body">
+        <div class="browse-body" :class="{ 'browse-body-wizard': wizardLayout }">
           <div class="tree-wrap">
             <OpcUaTree
               :nodes="treeNodes"
@@ -47,7 +98,7 @@
               @pick="pickNode"
             />
           </div>
-          <div class="detail-wrap">
+          <div v-if="!wizardLayout" class="detail-wrap">
             <div v-if="pickedNode" class="detail">
               <div class="detail-line">
                 <strong>节点</strong>
@@ -97,6 +148,11 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref, shallowRef, trigge
 import { apiFetch } from '@/api/client.js'
 import OpcUaTree from './OpcUaTree.vue'
 
+const props = defineProps({
+  /** 向导内：单列芯片 + 草稿浏览 + 与数据库向导一致的一体化版面 */
+  wizardLayout: { type: Boolean, default: false },
+})
+
 const servers = ref([])
 const selected = ref(null)
 const form = reactive({
@@ -124,6 +180,70 @@ const pollIntervalSeconds = ref(2)
 let pollTimerId = null
 let pollInFlight = false
 
+/** 定时读左侧树上所有「已展开 subtree」中出现的 Variable（与 OpcUaTree 可视范围一致） */
+const treeRowPollEnabled = ref(true)
+const treeRowPollIntervalSeconds = ref(2)
+let treeRowPollTimerId = null
+let treeRowPollInFlight = false
+
+const browseCapability = computed(() => {
+  if (form.id) return { kind: 'saved', serverId: form.id }
+  if (props.wizardLayout && (form.endpoint_url || '').trim()) {
+    return {
+      kind: 'ephemeral',
+      endpoint_url: form.endpoint_url.trim(),
+      username: (form.username || '').trim() || null,
+      password: form.password || null,
+    }
+  }
+  return null
+})
+
+const browseHeadSubtitle = computed(() => {
+  const cap = browseCapability.value
+  if (!cap) return ''
+  return cap.kind === 'saved' ? '已保存连接 · 服务端池化' : '草稿 · 当前表单参数（可先不保存）'
+})
+
+async function opcApiBrowse(parentNodeId) {
+  const cap = browseCapability.value
+  if (!cap) throw new Error('当前无法浏览')
+  if (cap.kind === 'saved') {
+    const body =
+      parentNodeId != null && parentNodeId !== '' ? { node_id: parentNodeId } : {}
+    return await apiFetch(`/opcua/browse_saved/${cap.serverId}`, { method: 'POST', body })
+  }
+  return await apiFetch('/opcua/browse', {
+    method: 'POST',
+    body: {
+      endpoint_url: cap.endpoint_url,
+      node_id: parentNodeId ?? null,
+      username: cap.username,
+      password: cap.password,
+    },
+  })
+}
+
+async function opcApiRead(nodeId) {
+  const cap = browseCapability.value
+  if (!cap || !nodeId) throw new Error('当前无法读取节点')
+  if (cap.kind === 'saved') {
+    return await apiFetch(`/opcua/read_saved/${cap.serverId}`, {
+      method: 'POST',
+      body: { node_id: nodeId },
+    })
+  }
+  return await apiFetch('/opcua/read', {
+    method: 'POST',
+    body: {
+      endpoint_url: cap.endpoint_url,
+      node_id: nodeId,
+      username: cap.username,
+      password: cap.password,
+    },
+  })
+}
+
 function bumpTree() {
   treeRev.value += 1
   triggerRef(treeNodes)
@@ -140,12 +260,26 @@ function wrapOpcNode(raw) {
   }
 }
 
-const activeServer = computed(() => servers.value.find((s) => s.id === form.id) || null)
+function rowForServerId(sid) {
+  if (!sid) return null
+  return servers.value.find((x) => x.id === sid) || null
+}
+
+const activeServer = computed(() => rowForServerId(form.id))
+
+/** 草稿阶段或表单暂未同步时仍需要 URL：优先表单，其次当前列表条目 */
+function resolvedEndpointUrl(serverIdLike) {
+  const fromField = String(form.endpoint_url || '').trim()
+  if (fromField) return fromField
+  const sid = serverIdLike || form.id
+  const row = rowForServerId(sid)
+  return String(row?.endpoint_url || '').trim()
+}
 
 const connectionInfoText = computed(() => {
   const n = pickedNode.value
   if (!n?.node_id) return ''
-  const ep = (form.endpoint_url || '').trim()
+  const ep = resolvedEndpointUrl()
   const srv = activeServer.value
   const meta = {
     opcua_endpoint_url: ep || null,
@@ -252,11 +386,12 @@ async function loadServers(explicitPreferred = null) {
 }
 
 function selectServer(s, persist = true) {
-  selected.value = s
-  form.id = s.id
-  form.name = s.name || ''
-  form.endpoint_url = s.endpoint_url || ''
-  form.username = s.username || ''
+  const row = (s && s.id && servers.value.find((x) => x.id === s.id)) || s
+  selected.value = row
+  form.id = row.id
+  form.name = row.name || ''
+  form.endpoint_url = row.endpoint_url || ''
+  form.username = row.username || ''
   form.password = ''
   msg.value = ''
   treeNodes.value = []
@@ -264,7 +399,7 @@ function selectServer(s, persist = true) {
   readOut.value = ''
   readEpoch.value += 1
   if (persist) {
-    void persistLastOpcuaServer(s.id)
+    void persistLastOpcuaServer(row.id)
   }
   refreshRoot()
 }
@@ -285,19 +420,29 @@ function startNew() {
 async function saveServer() {
   msg.value = ''
   try {
+    let ep = String(form.endpoint_url || '').trim()
+    const nmRaw = String(form.name || '').trim()
+    let nm = nmRaw
+    if (form.id) {
+      const baseline = servers.value.find((x) => x.id === form.id)
+      if (!ep) ep = String(baseline?.endpoint_url || '').trim()
+      if (!nm) nm = String(baseline?.name || '').trim()
+    }
+    if (!ep) {
+      msg.value = '请先填写 Endpoint URL'
+      return
+    }
     const postRes = await apiFetch('/opcua/servers', {
       method: 'POST',
       body: {
         id: form.id || null,
-        name: form.name,
-        endpoint_url: form.endpoint_url,
+        name: nm,
+        endpoint_url: ep,
         username: form.username || null,
         password: form.password || null,
       },
     })
     const list = postRes.servers || []
-    const nm = String(form.name || '').trim()
-    const ep = String(form.endpoint_url || '').trim()
     const created =
       list.find((x) => String(x.name || '').trim() === nm && String(x.endpoint_url || '').trim() === ep) ||
       list.find((x) => String(x.endpoint_url || '').trim() === ep)
@@ -321,10 +466,23 @@ async function removeServer() {
 async function testDraft() {
   msg.value = ''
   try {
+    if (form.id) {
+      const res = await apiFetch(`/opcua/test_saved/${form.id}`, {
+        method: 'POST',
+        body: {},
+      })
+      msg.value = res.ok ? '连接成功' : res.message || '失败'
+      return
+    }
+    const ep = resolvedEndpointUrl()
+    if (!ep) {
+      msg.value = '请先填写 Endpoint URL'
+      return
+    }
     const res = await apiFetch('/opcua/test', {
       method: 'POST',
       body: {
-        endpoint_url: form.endpoint_url,
+        endpoint_url: ep,
         username: form.username || null,
         password: form.password || null,
       },
@@ -336,10 +494,20 @@ async function testDraft() {
 }
 
 async function refreshRoot() {
-  if (!form.id) return
   prefetchGen.value += 1
+  msg.value = ''
+  const cap = browseCapability.value
+  if (!cap) {
+    if (props.wizardLayout) {
+      msg.value =
+        '请先填写 Endpoint URL（可先不保存，直接刷新根预览），或通过上方选一个已保存连接。'
+      treeNodes.value = []
+      bumpTree()
+    }
+    return
+  }
   try {
-    const res = await apiFetch(`/opcua/browse_saved/${form.id}`, { method: 'POST', body: {} })
+    const res = await opcApiBrowse(null)
     if (res.ok === false) {
       msg.value = res.message || '浏览失败'
       treeNodes.value = []
@@ -356,7 +524,7 @@ async function refreshRoot() {
 }
 
 async function onToggleNode(node) {
-  if (!form.id || !node.node_id || node.loading) return
+  if (!browseCapability.value || !node.node_id || node.loading) return
   if (node.loaded) {
     node.expanded = !node.expanded
     bumpTree()
@@ -366,10 +534,7 @@ async function onToggleNode(node) {
   node.errorMessage = null
   bumpTree()
   try {
-    const res = await apiFetch(`/opcua/browse_saved/${form.id}`, {
-      method: 'POST',
-      body: { node_id: node.node_id },
-    })
+    const res = await opcApiBrowse(node.node_id)
     if (res.ok === false) {
       node.errorMessage = res.message || '浏览失败'
       msg.value = node.errorMessage
@@ -399,7 +564,12 @@ function isOpcVariableValueNode(n) {
 }
 
 const canPollCurrent = computed(
-  () => !!(form.id && pickedNode.value?.node_id && isOpcVariableValueNode(pickedNode.value)),
+  () =>
+    !!(
+      browseCapability.value &&
+      pickedNode.value?.node_id &&
+      isOpcVariableValueNode(pickedNode.value)
+    ),
 )
 
 /** 树行快捷展示的读值摘要（不含完整 JSON） */
@@ -427,24 +597,43 @@ function formatOpcValuePreview(res) {
 const VARIABLE_PREFETCH_CONCURRENCY = 4
 
 async function prefetchVariableValuesInNodes(nodes) {
-  if (!form.id || !nodes?.length) return
+  if (!browseCapability.value || !nodes?.length) return
   const myGen = prefetchGen.value
   const targets = nodes.filter((n) => n.node_id && isOpcVariableValueNode(n))
   for (let i = 0; i < targets.length; i += VARIABLE_PREFETCH_CONCURRENCY) {
-    if (prefetchGen.value !== myGen || !form.id) return
+    if (prefetchGen.value !== myGen || !browseCapability.value) return
     const batch = targets.slice(i, i + VARIABLE_PREFETCH_CONCURRENCY)
     await Promise.all(batch.map((node) => prefetchVariableTreeRow(node, myGen)))
   }
 }
 
+/** 递归收集 OpcUaTree 当前会渲染的行中的 Variable（与 OpcUaTree buildRows 规则一致）。 */
+function collectVisibleVariableNodes(nodes) {
+  const acc = []
+  function walk(list) {
+    if (!list?.length) return
+    for (const n of list) {
+      if (n.node_id && isOpcVariableValueNode(n)) acc.push(n)
+      const loaded = !!n.loaded
+      const childCount = n.children?.length ?? 0
+      if (n.expanded && loaded && childCount > 0) walk(n.children)
+    }
+  }
+  walk(nodes)
+  return acc
+}
+
 async function prefetchVariableTreeRow(node, myGen) {
-  if (!form.id || prefetchGen.value !== myGen || !node?.node_id || !isOpcVariableValueNode(node)) return
+  if (
+    !browseCapability.value ||
+    prefetchGen.value !== myGen ||
+    !node?.node_id ||
+    !isOpcVariableValueNode(node)
+  )
+    return
   try {
-    const res = await apiFetch(`/opcua/read_saved/${form.id}`, {
-      method: 'POST',
-      body: { node_id: node.node_id },
-    })
-    if (prefetchGen.value !== myGen || !form.id) return
+    const res = await opcApiRead(node.node_id)
+    if (prefetchGen.value !== myGen || !browseCapability.value) return
     if (res.ok === false) {
       node.valuePreview = ''
       node.valueReadError = res.message || '读值失败'
@@ -454,7 +643,7 @@ async function prefetchVariableTreeRow(node, myGen) {
     }
     bumpTree()
   } catch (e) {
-    if (prefetchGen.value !== myGen) return
+    if (prefetchGen.value !== myGen || !browseCapability.value) return
     node.valuePreview = ''
     node.valueReadError = e.message || String(e)
     bumpTree()
@@ -466,22 +655,19 @@ function pickNode(n) {
   readOut.value = ''
   readEpoch.value += 1
   const epoch = readEpoch.value
-  if (form.id && n?.node_id && isOpcVariableValueNode(n)) {
+  if (browseCapability.value && n?.node_id && isOpcVariableValueNode(n)) {
     void fetchNodeValue(n, epoch)
   }
 }
 
 async function fetchNodeValue(node, epoch, { manual = false } = {}) {
-  if (!form.id || !node?.node_id) return
+  if (!browseCapability.value || !node?.node_id) return
   const showInTree = isOpcVariableValueNode(node)
   if (!manual && !showInTree) return
 
   const nodeId = node.node_id
   try {
-    const res = await apiFetch(`/opcua/read_saved/${form.id}`, {
-      method: 'POST',
-      body: { node_id: nodeId },
-    })
+    const res = await opcApiRead(nodeId)
     if (epoch !== readEpoch.value) return
     readOut.value = JSON.stringify(res, null, 2)
     if (showInTree) {
@@ -506,7 +692,7 @@ async function fetchNodeValue(node, epoch, { manual = false } = {}) {
 }
 
 async function readValue() {
-  if (!form.id || !pickedNode.value?.node_id) return
+  if (!browseCapability.value || !pickedNode.value?.node_id) return
   readEpoch.value += 1
   const epoch = readEpoch.value
   await fetchNodeValue(pickedNode.value, epoch, { manual: true })
@@ -526,17 +712,21 @@ function clearPollTimer() {
   }
 }
 
+function clearTreeRowPollTimer() {
+  if (treeRowPollTimerId != null) {
+    clearInterval(treeRowPollTimerId)
+    treeRowPollTimerId = null
+  }
+}
+
 async function pollSelectedVariableOnce() {
-  if (!pollEnabled.value || !form.id || pollInFlight) return
+  if (!pollEnabled.value || !browseCapability.value || pollInFlight) return
   const n = pickedNode.value
   if (!n?.node_id || !isOpcVariableValueNode(n)) return
   pollInFlight = true
   try {
-    const res = await apiFetch(`/opcua/read_saved/${form.id}`, {
-      method: 'POST',
-      body: { node_id: n.node_id },
-    })
-    if (!pollEnabled.value || pickedNode.value !== n || !form.id) return
+    const res = await opcApiRead(n.node_id)
+    if (!pollEnabled.value || pickedNode.value !== n || !browseCapability.value) return
     readOut.value = JSON.stringify(res, null, 2)
     if (res.ok === false) {
       n.valuePreview = ''
@@ -559,7 +749,7 @@ async function pollSelectedVariableOnce() {
 
 function syncPollTimer() {
   clearPollTimer()
-  if (!pollEnabled.value || !form.id) return
+  if (!pollEnabled.value || !browseCapability.value) return
   const n = pickedNode.value
   if (!n?.node_id || !isOpcVariableValueNode(n)) return
   const ms = Math.round(clampPollSeconds(pollIntervalSeconds.value) * 1000)
@@ -567,8 +757,39 @@ function syncPollTimer() {
   pollTimerId = window.setInterval(() => void pollSelectedVariableOnce(), ms)
 }
 
+async function pollVisibleTreeVariablesOnce() {
+  if (!treeRowPollEnabled.value || !browseCapability.value || treeRowPollInFlight) return
+  const targets = collectVisibleVariableNodes(treeNodes.value)
+  if (!targets.length) return
+  const myGen = prefetchGen.value
+  treeRowPollInFlight = true
+  try {
+    for (let i = 0; i < targets.length; i += VARIABLE_PREFETCH_CONCURRENCY) {
+      if (
+        prefetchGen.value !== myGen ||
+        !browseCapability.value ||
+        !treeRowPollEnabled.value
+      ) {
+        return
+      }
+      const batch = targets.slice(i, i + VARIABLE_PREFETCH_CONCURRENCY)
+      await Promise.all(batch.map((node) => prefetchVariableTreeRow(node, myGen)))
+    }
+  } finally {
+    treeRowPollInFlight = false
+  }
+}
+
+function syncTreeRowPollTimer() {
+  clearTreeRowPollTimer()
+  if (!treeRowPollEnabled.value || !browseCapability.value) return
+  const ms = Math.round(clampPollSeconds(treeRowPollIntervalSeconds.value) * 1000)
+  void pollVisibleTreeVariablesOnce()
+  treeRowPollTimerId = window.setInterval(() => void pollVisibleTreeVariablesOnce(), ms)
+}
+
 watch(
-  [pollEnabled, pollIntervalSeconds, () => form.id, () => pickedNode.value],
+  [pollEnabled, pollIntervalSeconds, browseCapability, () => pickedNode.value],
   () => {
     syncPollTimer()
   },
@@ -578,6 +799,19 @@ watch(
 watch(pollIntervalSeconds, (v) => {
   const c = clampPollSeconds(v)
   if (c !== v) pollIntervalSeconds.value = c
+})
+
+watch(
+  [treeRowPollEnabled, treeRowPollIntervalSeconds, browseCapability],
+  () => {
+    syncTreeRowPollTimer()
+  },
+  { flush: 'post', immediate: true },
+)
+
+watch(treeRowPollIntervalSeconds, (v) => {
+  const c = clampPollSeconds(v)
+  if (c !== v) treeRowPollIntervalSeconds.value = c
 })
 
 function onConfigImported() {
@@ -591,6 +825,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   clearPollTimer()
+  clearTreeRowPollTimer()
   window.removeEventListener('report-editor-config-imported', onConfigImported)
 })
 </script>
@@ -779,9 +1014,77 @@ label {
 .browse-head {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
+  gap: 12px;
   margin-bottom: 8px;
   flex-shrink: 0;
+}
+
+.browse-head-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px 12px;
+  flex-shrink: 0;
+}
+
+.tree-poll-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  cursor: pointer;
+  user-select: none;
+  font-size: 12px;
+  color: #374151;
+  max-width: 100%;
+}
+
+.tree-poll-checkbox {
+  width: 18px;
+  height: 18px;
+  min-width: 18px;
+  min-height: 18px;
+  margin: 0;
+  cursor: pointer;
+  accent-color: #2563eb;
+  flex-shrink: 0;
+}
+
+.tree-poll-text {
+  white-space: nowrap;
+}
+
+.tree-poll-interval {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #374151;
+}
+
+.tree-poll-interval label {
+  margin: 0;
+}
+
+.browse-head-titles {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.browse-title-main {
+  font-size: 14px;
+  font-weight: 600;
+  color: #111827;
+}
+
+.browse-title-sub {
+  font-size: 11px;
+  line-height: 1.35;
+  color: #6b7280;
 }
 .detail {
   font-size: 13px;
@@ -886,5 +1189,67 @@ label {
   font-size: 11px;
   color: #92400e;
   line-height: 1.4;
+}
+
+/* —— 向导一体化布局 —— */
+.opcua-wizard .opc-lead {
+  margin: 0 0 8px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: #64748b;
+}
+
+.opcua-wizard .wiz-srv-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #f8fafc 0%, #fff 70%);
+}
+
+.opcua-wizard .wiz-srv-strip .chip-new {
+  border-style: dashed;
+  border-color: #94a3b8;
+}
+
+.opcua-wizard .wiz-srv-strip .srv-chip {
+  border-radius: 999px;
+  padding: 4px 12px;
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  max-width: 100%;
+}
+
+.opcua-wizard .wiz-srv-strip .srv-chip.active {
+  background: #eef2ff;
+  border-color: #6366f1;
+  color: #3730a3;
+  font-weight: 600;
+}
+
+.opcua-wizard .browse-body-wizard {
+  flex-direction: column;
+}
+
+.opcua-wizard .browse-body-wizard .tree-wrap {
+  flex: 1;
+  width: 100%;
+  min-height: 200px;
+}
+
+.opcua-wizard .cols.compact {
+  display: grid;
+  grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .opcua-wizard .cols.compact {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 </style>

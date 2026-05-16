@@ -58,6 +58,26 @@ def _conn_by_id(cid: str) -> dict[str, Any]:
     raise HTTPException(404, "未找到数据库连接")
 
 
+def _body_with_resolved_password_for_test(body: DbConnectionSave) -> DbConnectionSave:
+    """不落库连通性测试：省略 password（JSON null）时，若携带已保存连接的 id，则使用本机解密后的口令。
+
+    若 password 字段非 None（包括显式传入空字符串），则按字面使用，便于「测试明文无密码」等场景，
+    与保存接口 ``password is not None`` 才更新密文的语义对齐。
+    """
+    if body.password is not None:
+        return body
+    if not body.id:
+        return body.model_copy(update={"password": ""})
+    cfg = _cfg()
+    conn = next((c for c in cfg.get("db_connections", []) if c.get("id") == body.id), None)
+    if not conn:
+        return body.model_copy(update={"password": ""})
+    plain = ""
+    if conn.get("password_enc"):
+        plain = config_store.decrypt_db_password(DATA_DIR, conn)
+    return body.model_copy(update={"password": plain})
+
+
 def _credentials(conn: dict[str, Any]) -> tuple[str, str]:
     try:
         pwd = config_store.decrypt_db_password(DATA_DIR, conn)
@@ -177,7 +197,11 @@ async def delete_connection(connection_id: str):
 async def test_connection(body: DbConnectionSave):
     """不落库的连通性测试。始终返回 HTTP 200 与 JSON，避免前端收到 4xx/5xx 仅显示 Internal Server Error。"""
     try:
-        ok, err = db_connection_ops.run_connectivity_test(body)
+        try:
+            merged = _body_with_resolved_password_for_test(body)
+        except ValueError as e:
+            return {"ok": False, "message": str(e)}
+        ok, err = db_connection_ops.run_connectivity_test(merged)
         return {"ok": ok, "message": err}
     except Exception as e:
         logger.exception("test_connection")

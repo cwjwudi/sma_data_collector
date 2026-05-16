@@ -1,0 +1,26 @@
+# 演示用 OPC UA Server（与本项目 asyncua Client 对齐：匿名、NoSecurity）
+# 构建：在项目根执行 docker compose build opcua-demo
+#
+# Docker Hub 无法访问时可覆盖基础镜像，例如（择一可用即可）：
+#   export PYTHON_BASE_IMAGE=docker.m.daocloud.io/library/python:3.11-slim-bookworm
+#   docker compose build opcua-demo
+
+ARG PYTHON_BASE_IMAGE=docker.io/library/python:3.11-slim-bookworm
+FROM ${PYTHON_BASE_IMAGE}
+WORKDIR /app
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1
+
+# pip 在大陆访问 PyPI 慢/失败时可通过构建参数改用镜像，例如 https://pypi.tuna.tsinghua.edu.cn/simple
+ARG PIP_INDEX_URL=https://pypi.org/simple
+
+RUN pip install --no-cache-dir --upgrade pip -i ${PIP_INDEX_URL} && \
+    pip install --no-cache-dir -i ${PIP_INDEX_URL} "asyncua>=1.1.8,<2"
+
+COPY scripts/demo_opcua_server.py /app/demo_opcua_server.py
+
+EXPOSE 4840
+
+ENTRYPOINT ["python", "/app/demo_opcua_server.py"]
+CMD ["--host", "0.0.0.0", "--port", "4840"]

@@ -12,6 +12,7 @@ if (-not (Test-Path (Join-Path $BackendRoot 'main.py'))) {
 $env:NO_COLOR = '1'
 $env:FORCE_COLOR = '0'
 $env:PYTHONUTF8 = '1'
+$env:REPORT_EDITOR_HTTP_PORT = '8000'
 
 $py = Join-Path $BackendRoot 'venv\Scripts\python.exe'
 if (-not (Test-Path $py)) { $py = 'python' }

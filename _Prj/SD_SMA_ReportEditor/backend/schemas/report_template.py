@@ -15,6 +15,7 @@ LayoutControlType = Literal["text", "box", "image", "pageNumber", "date"]
 TemplateControlType = Literal["text", "box", "image", "table", "chart", "parameter", "signature"]
 PageNumberMode = Literal["plain", "slashTotal", "cnPage", "circle"]
 AlignAxis = Literal["start", "center", "end"]
+ImageCaptionPosition = Literal["none", "top", "bottom", "left", "right"]
 
 TEMPLATE_SCHEMA_VERSION = 2
 
@@ -47,6 +48,8 @@ class LayoutZoneElement(BaseModel):
     alignY: AlignAxis = "center"
     dateFormat: str = "yyyy-MM-dd"
     imageSrc: str = ""
+    imageRotationDeg: float = 0
+    imageCaptionPosition: ImageCaptionPosition = "none"
     pageNumberMode: PageNumberMode = "plain"
 
 
@@ -64,6 +67,10 @@ class TemplateElement(BaseModel):
     bgColor: str = "transparent"
     fontSize: float = 14
     imageSrc: str = ""
+    alignX: AlignAxis = "start"
+    alignY: AlignAxis = "center"
+    imageRotationDeg: float = 0
+    imageCaptionPosition: ImageCaptionPosition = "none"
     bindingKind: BindingKind = "none"
     opcuaNodeId: str = ""
     sqlText: str = ""

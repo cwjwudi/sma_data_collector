@@ -10,10 +10,21 @@
               class="mini-zone-el"
               :style="miniZoneElStyle(el)"
             >
-              <template v-if="el.type === 'image'">
-                <img v-if="el.imageSrc" class="mini-img" :src="el.imageSrc" alt="" />
-                <span v-else class="mini-ph">图片</span>
-              </template>
+              <ZoneImageCompose
+                v-if="el.type === 'image'"
+                :image-src="el.imageSrc"
+                :caption-text="el.text"
+                :caption-position="el.imageCaptionPosition"
+                :align-x="el.alignX"
+                :align-y="el.alignY"
+                :rotation-deg="el.imageRotationDeg"
+                :font-size="Math.max(6, el.fontSize * 0.85)"
+                :color="el.color"
+              >
+                <template #placeholder>
+                  <span class="mini-ph">图片</span>
+                </template>
+              </ZoneImageCompose>
               <template v-else>{{ previewZoneTxt(el) }}</template>
             </div>
           </div>
@@ -29,10 +40,21 @@
               class="mini-zone-el"
               :style="miniZoneElStyle(el)"
             >
-              <template v-if="el.type === 'image'">
-                <img v-if="el.imageSrc" class="mini-img" :src="el.imageSrc" alt="" />
-                <span v-else class="mini-ph">图片</span>
-              </template>
+              <ZoneImageCompose
+                v-if="el.type === 'image'"
+                :image-src="el.imageSrc"
+                :caption-text="el.text"
+                :caption-position="el.imageCaptionPosition"
+                :align-x="el.alignX"
+                :align-y="el.alignY"
+                :rotation-deg="el.imageRotationDeg"
+                :font-size="Math.max(6, el.fontSize * 0.85)"
+                :color="el.color"
+              >
+                <template #placeholder>
+                  <span class="mini-ph">图片</span>
+                </template>
+              </ZoneImageCompose>
               <template v-else>{{ previewZoneTxt(el) }}</template>
             </div>
             <div v-if="preset.bodyElements.length === 0" class="mini-body-empty">{{ bodyEmptyHint }}</div>
@@ -41,10 +63,21 @@
         <div v-if="me.fb >= 1" class="mini-band mini-band-footer" :style="footerBand">
           <div class="mini-band-inner">
             <div v-for="el in preset.footerElements" :key="el.id" class="mini-zone-el" :style="miniZoneElStyle(el)">
-              <template v-if="el.type === 'image'">
-                <img v-if="el.imageSrc" class="mini-img" :src="el.imageSrc" alt="" />
-                <span v-else class="mini-ph">图片</span>
-              </template>
+              <ZoneImageCompose
+                v-if="el.type === 'image'"
+                :image-src="el.imageSrc"
+                :caption-text="el.text"
+                :caption-position="el.imageCaptionPosition"
+                :align-x="el.alignX"
+                :align-y="el.alignY"
+                :rotation-deg="el.imageRotationDeg"
+                :font-size="Math.max(6, el.fontSize * 0.85)"
+                :color="el.color"
+              >
+                <template #placeholder>
+                  <span class="mini-ph">图片</span>
+                </template>
+              </ZoneImageCompose>
               <template v-else>{{ previewZoneTxt(el) }}</template>
             </div>
           </div>
@@ -60,6 +93,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import MiniPreviewChrome from "@/components/report-template/MiniPreviewChrome.vue";
+import ZoneImageCompose from "@/components/report-template/ZoneImageCompose.vue";
 import type { MiniPreviewVariant } from "@/components/report-template/mini-preview-types";
 import type { PaperLayoutMetrics } from "@/lib/report-template/layout-geometry";
 import { computePaperLayout } from "@/lib/report-template/layout-geometry";
@@ -160,7 +194,7 @@ function previewZoneTxt(el: LayoutZoneElement): string {
 }
 
 function miniZoneElStyle(el: LayoutZoneElement): Record<string, string> {
-  return {
+  const s: Record<string, string> = {
     position: "absolute",
     left: `${el.x}px`,
     top: `${el.y}px`,
@@ -172,6 +206,12 @@ function miniZoneElStyle(el: LayoutZoneElement): Record<string, string> {
     color: el.color,
     fontSize: `${Math.max(6, el.fontSize * 0.85)}px`,
   };
+  if (el.type === "image") {
+    s.display = "flex";
+    s.flexDirection = "column";
+    s.whiteSpace = "normal";
+  }
+  return s;
 }
 </script>
 

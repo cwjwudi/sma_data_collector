@@ -1,31 +1,51 @@
 <template>
-  <div class="main-layout">
-    <aside class="sidebar">
-      <div class="sidebar-header">
-        <h1 class="logo">ReportEditor</h1>
-      </div>
-      <nav class="sidebar-nav">
-        <router-link
-          v-for="item in navItems"
-          :key="item.path"
-          :to="item.path"
-          :class="['nav-item', { 'nav-item--active': navActive(item.path) }]"
-        >
-          <span class="nav-icon">{{ item.icon }}</span>
-          <span class="nav-label">{{ item.label }}</span>
-        </router-link>
-      </nav>
-    </aside>
-    <main class="content">
-      <router-view />
-    </main>
+  <div class="main-layout-root">
+    <div class="main-layout">
+      <aside class="sidebar">
+        <div class="sidebar-header">
+          <h1 class="logo">ReportEditor</h1>
+        </div>
+        <nav class="sidebar-nav">
+          <router-link
+            v-for="item in navItems"
+            :key="item.path"
+            :to="item.path"
+            :class="['nav-item', { 'nav-item--active': navActive(item.path) }]"
+          >
+            <span class="nav-icon">{{ item.icon }}</span>
+            <span class="nav-label">{{ item.label }}</span>
+          </router-link>
+        </nav>
+      </aside>
+      <main class="content">
+        <div class="content-scroll">
+          <router-view />
+        </div>
+      </main>
+    </div>
+    <SetupWizard v-model="setupWizardVisible" />
   </div>
 </template>
 
 <script setup>
+import { ref, onMounted, provide } from 'vue'
 import { useRoute } from 'vue-router'
+import SetupWizard from '@/features/onboarding/SetupWizard.vue'
+import { setupWizardCompleted } from '@/features/onboarding/setupWizardStorage'
 
 const route = useRoute()
+
+const setupWizardVisible = ref(false)
+
+onMounted(() => {
+  if (!setupWizardCompleted()) {
+    setupWizardVisible.value = true
+  }
+})
+
+provide('openSetupWizard', () => {
+  setupWizardVisible.value = true
+})
 
 /** 侧边栏「版式与页眉页脚」在列表与编辑页同时高亮 */
 function navActive(path) {
@@ -48,9 +68,21 @@ const navItems = [
 </script>
 
 <style scoped>
+.main-layout-root {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  width: 100%;
+}
+
 .main-layout {
   display: flex;
-  height: 100vh;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  width: 100%;
 }
 
 .sidebar {
@@ -115,12 +147,29 @@ const navItems = [
   display: flex;
   flex-direction: column;
   min-height: 0;
-  overflow-y: auto;
+  min-width: 0;
   padding: 32px;
+  overflow: hidden;
 }
-.content > * {
-  flex: 1 1 auto;
+/* 仅内层滚动：padding 留在外层；子项横向拉满并与「含 padding 的 main」可视宽度对齐 */
+.content-scroll {
+  flex: 1;
   min-height: 0;
   min-width: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+.content-scroll > * {
+  flex: 0 0 auto;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 </style>

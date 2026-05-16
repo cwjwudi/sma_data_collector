@@ -2,9 +2,11 @@
 
 import type { LayoutPreset } from "@/lib/report-template/layout-model";
 
+import { resolveApiHref } from "./apiBase.js";
+
 function url(p: string) {
   const x = p.startsWith("/") ? p : `/${p}`;
-  return `/api${x}`;
+  return resolveApiHref(x);
 }
 
 async function fj<T>(u: string, init?: RequestInit): Promise<T> {
