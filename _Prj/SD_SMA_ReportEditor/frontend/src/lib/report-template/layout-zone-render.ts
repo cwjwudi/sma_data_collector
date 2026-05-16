@@ -89,6 +89,8 @@ function makeCaptionChip(el: LayoutZoneElement, text: string, capSide: string): 
   s.style.flexShrink = "0";
   s.style.fontSize = `${el.fontSize}px`;
   s.style.color = el.color;
+  const ff = typeof el.fontFamily === "string" ? el.fontFamily.trim() : "";
+  if (ff) s.style.fontFamily = ff;
 
   if (capSide === "top" || capSide === "bottom") {
     s.style.width = "100%";
@@ -184,6 +186,8 @@ export function renderZoneElementsInto(
     node.style.boxSizing = "border-box";
     node.style.color = el.color;
     node.style.fontSize = `${el.fontSize}px`;
+    const ff = typeof el.fontFamily === "string" ? el.fontFamily.trim() : "";
+    if (ff) node.style.fontFamily = ff;
     node.style.overflow = "hidden";
 
     const flex = flexPlaceAxes(el);
@@ -227,6 +231,7 @@ export function renderZoneElementsInto(
           el.bgColor !== "transparent" ? el.bgColor : "transparent";
         badge.style.fontSize = `${el.fontSize}px`;
         badge.style.lineHeight = "1";
+        if (ff) badge.style.fontFamily = ff;
         node.appendChild(badge);
       } else {
         node.style.backgroundColor = el.bgColor === "transparent" ? "transparent" : el.bgColor;

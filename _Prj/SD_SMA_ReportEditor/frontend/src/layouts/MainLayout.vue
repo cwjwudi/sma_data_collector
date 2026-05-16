@@ -172,4 +172,10 @@ const navItems = [
   min-width: 0;
   box-sizing: border-box;
 }
+/** 路由页根节点加类名后占满主区竖向高度（内部再分区滚动，避免整页一条长滚动条） */
+.content-scroll > .page-fill-height {
+  flex: 1 1 auto;
+  min-height: 0;
+  align-self: stretch;
+}
 </style>

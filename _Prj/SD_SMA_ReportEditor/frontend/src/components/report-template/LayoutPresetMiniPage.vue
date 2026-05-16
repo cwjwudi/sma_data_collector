@@ -194,6 +194,7 @@ function previewZoneTxt(el: LayoutZoneElement): string {
 }
 
 function miniZoneElStyle(el: LayoutZoneElement): Record<string, string> {
+  const ff = typeof el.fontFamily === "string" ? el.fontFamily.trim() : "";
   const s: Record<string, string> = {
     position: "absolute",
     left: `${el.x}px`,
@@ -205,6 +206,7 @@ function miniZoneElStyle(el: LayoutZoneElement): Record<string, string> {
     whiteSpace: "nowrap",
     color: el.color,
     fontSize: `${Math.max(6, el.fontSize * 0.85)}px`,
+    ...(ff ? { fontFamily: ff } : {}),
   };
   if (el.type === "image") {
     s.display = "flex";

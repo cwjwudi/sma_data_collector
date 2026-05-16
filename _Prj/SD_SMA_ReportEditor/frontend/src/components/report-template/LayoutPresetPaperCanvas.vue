@@ -9,7 +9,7 @@
       tabindex="-1"
       @change="applyLayoutPresetImageSelection"
     />
-    <p class="lppc-tip">随页面上下滚动浏览整张纸 · Ctrl / ⌘ + 滚轮缩放</p>
+    <p class="lppc-tip">随中间画布区域滚动浏览整张纸 · Ctrl / ⌘ + 滚轮缩放</p>
     <div class="lppc-flow" @wheel="onWheel">
       <div class="lppc-scale-frame" :style="canvasFrameStyle">
         <div class="lppc-scaler" :style="{ transform: `scale(${viewScale})`, transformOrigin: '0 0' }">
@@ -48,6 +48,7 @@
                       :align-y="el.alignY"
                       :rotation-deg="el.imageRotationDeg"
                       :font-size="el.fontSize"
+                      :font-family="el.fontFamily"
                       :color="el.color"
                       @replace-image="beginImagePick(el)"
                     >
@@ -119,6 +120,7 @@
                     :align-y="el.alignY"
                     :rotation-deg="el.imageRotationDeg"
                     :font-size="el.fontSize"
+                    :font-family="el.fontFamily"
                     :color="el.color"
                     @replace-image="beginImagePick(el)"
                   >
@@ -190,6 +192,7 @@
                       :align-y="el.alignY"
                       :rotation-deg="el.imageRotationDeg"
                       :font-size="el.fontSize"
+                      :font-family="el.fontFamily"
                       :color="el.color"
                       @replace-image="beginImagePick(el)"
                     >
@@ -241,6 +244,7 @@ import ZoneImageCompose from "@/components/report-template/ZoneImageCompose.vue"
 import { computePaperLayout, type PaperLayoutMetrics } from "@/lib/report-template/layout-geometry";
 import {
   clampZoneElement,
+  flexJustifyAlignForAxes,
   makeLayoutZoneElement,
   previewZoneElementDisplay,
   type LayoutControlType,
@@ -356,6 +360,8 @@ function elementsForZone(z: Zone): LayoutZoneElement[] {
 }
 
 function nodeStyle(el: LayoutZoneElement) {
+  const ff = typeof el.fontFamily === "string" ? el.fontFamily.trim() : "";
+  const flex = flexJustifyAlignForAxes(el.alignX, el.alignY);
   return {
     left: `${el.x}px`,
     top: `${el.y}px`,
@@ -363,6 +369,10 @@ function nodeStyle(el: LayoutZoneElement) {
     height: `${el.h}px`,
     color: el.color,
     fontSize: `${el.fontSize}px`,
+    ...(ff ? { fontFamily: ff } : {}),
+    display: "flex",
+    justifyContent: flex.justifyContent,
+    alignItems: flex.alignItems,
   };
 }
 
@@ -558,11 +568,13 @@ async function onImageFileDrop(ev: DragEvent, el: LayoutZoneElement) {
 .lppc-viewport {
   display: flex;
   flex-direction: column;
-  overflow: visible;
+  flex: 1 1 0;
+  min-height: 0;
+  width: 100%;
+  overflow: hidden;
   background: radial-gradient(rgb(251 251 254), rgb(229 229 237));
   border: 1px solid #e4e4e7;
   border-radius: 10px;
-  min-height: 0;
   position: relative;
   touch-action: manipulation;
 }
@@ -575,12 +587,14 @@ async function onImageFileDrop(ev: DragEvent, el: LayoutZoneElement) {
   background: rgb(255 255 255 / 0.92);
   border-bottom: 1px solid #e4e4e7;
 }
+/* 竖向只在此处滚动，避免与外层 .pe-mid 再叠一条；overflow-x/y 混写会把 y 算成 auto */
 .lppc-flow {
-  flex: 0 0 auto;
+  flex: 1 1 0;
+  min-height: 0;
   width: 100%;
-  overflow-x: auto;
-  overflow-y: visible;
+  overflow: auto;
   -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
 }
 .lppc-scale-frame {
   flex-shrink: 0;

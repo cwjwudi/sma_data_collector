@@ -15,9 +15,10 @@
           class="zic-img"
           alt=""
           :src="imageSrcTrimmed"
+          draggable="false"
           :style="{ transform: rotTransform }"
           @dblclick.prevent.stop="$emit('replace-image')"
-          @pointerdown.stop
+          @dragstart.prevent
         />
       </template>
       <slot v-else name="placeholder" />
@@ -50,6 +51,8 @@ const props = defineProps<{
   rotationDeg: number;
   fontSize: number;
   color: string;
+  /** 配文等文字使用的字体族，空则继承 */
+  fontFamily?: string;
 }>();
 
 defineEmits<{ "replace-image": [] }>();
@@ -104,6 +107,8 @@ const captionBlockStyle = computed(() => {
     whiteSpace: "pre-wrap",
     lineHeight: "1.25",
   };
+  const capFf = String(props.fontFamily || "").trim();
+  if (capFf) base.fontFamily = capFf;
   if (side === "top" || side === "bottom") {
     base.width = "100%";
     base.textAlign = axisToTa(props.alignX);
@@ -160,6 +165,9 @@ const rotTransform = computed(() => {
   height: auto;
   display: block;
   object-fit: contain;
+  /* 禁止浏览器默认拖图（幽灵图）；pointerdown 需冒泡到外层 lppc-node / el-node 才能拖动与选中 */
+  -webkit-user-drag: none;
+  user-select: none;
 }
 
 .zic-caption {

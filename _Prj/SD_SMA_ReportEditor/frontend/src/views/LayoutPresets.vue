@@ -52,9 +52,9 @@
                 <td>{{ roleLabel(p.pageRole) }}</td>
                 <td>{{ dimFor(p) }}</td>
                 <td>{{ fmtUpdated(p.updatedAt) }}</td>
-                <td>
-                  <a href="#" class="lnk" @click.prevent="goEditor(p.id)">编辑</a>
-                  <a href="#" class="lnk danger" @click.prevent="removePreset(p.id)">删除</a>
+                <td class="td-actions">
+                  <button type="button" class="b primary" @click="goEditor(p.id)">编辑</button>
+                  <button type="button" class="b danger" @click="removePreset(p.id)">删除</button>
                 </td>
               </tr>
             </tbody>
@@ -73,14 +73,22 @@
         <div class="grid">
             <p v-if="!presetGroups[sec.role].length" class="empty-section">此类别暂无版式。</p>
             <div v-for="p in presetGroups[sec.role]" :key="'card-' + p.id" class="card">
-              <div class="micro-wrap">
+              <div
+                class="micro-wrap"
+                title="双击进入编辑"
+                @dblclick="goEditor(p.id)"
+              >
                 <LayoutPresetMiniPage :preset="p" :max-width-px="200" :max-height-px="260" />
               </div>
               <div class="foot">
-                <b>{{ p.name }}</b>
-                {{ roleLabel(p.pageRole) }} · {{ dimFor(p) }} · {{ fmtUpdated(p.updatedAt) }}
-                <a href="#" class="lnk" @click.prevent="goEditor(p.id)">编辑</a>
-                <a href="#" class="lnk danger" @click.prevent="removePreset(p.id)">删除</a>
+                <div class="foot-line">
+                  <b>{{ p.name }}</b>
+                  {{ roleLabel(p.pageRole) }} · {{ dimFor(p) }} · {{ fmtUpdated(p.updatedAt) }}
+                </div>
+                <div class="foot-actions">
+                  <button type="button" class="b primary" @click="goEditor(p.id)">编辑</button>
+                  <button type="button" class="b danger" @click="removePreset(p.id)">删除</button>
+                </div>
               </div>
             </div>
         </div>
@@ -353,6 +361,19 @@ onMounted(async () => {
   color: #fff;
   border-color: #4338ca;
 }
+.b.primary:hover {
+  background: #4338ca;
+  border-color: #3730a3;
+}
+.b.danger {
+  background: #dc2626;
+  color: #fff;
+  border-color: #b91c1c;
+}
+.b.danger:hover {
+  background: #b91c1c;
+  border-color: #991b1b;
+}
 .inp {
   border: 1px solid #d4d4d8;
   border-radius: 6px;
@@ -388,18 +409,15 @@ onMounted(async () => {
   padding: 24px;
   text-align: center;
 }
-.lnk {
-  display: inline-flex;
-  align-items: center;
-  min-height: 44px;
-  margin-right: 10px;
-  color: #4f46e5;
-  cursor: pointer;
-  text-decoration: none;
-  touch-action: manipulation;
+.td-actions {
+  white-space: nowrap;
 }
-.lnk.danger {
-  color: #b91c1c;
+.td-actions .b {
+  min-height: 36px;
+  padding: 6px 12px;
+}
+.td-actions .b + .b {
+  margin-left: 8px;
 }
 .grid {
   display: grid;
@@ -424,12 +442,27 @@ onMounted(async () => {
   border-radius: 8px;
   -webkit-overflow-scrolling: touch;
   overflow: auto;
+  cursor: pointer;
 }
 .foot {
   margin-top: 10px;
   font-size: 12px;
   line-height: 1.5;
   color: #3f3f46;
+}
+.foot-line {
+  word-break: break-word;
+}
+.foot-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+.foot-actions .b {
+  min-height: 36px;
+  padding: 6px 12px;
 }
 .page-title {
   font-size: 24px;

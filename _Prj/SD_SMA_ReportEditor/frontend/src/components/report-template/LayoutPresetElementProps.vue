@@ -3,13 +3,32 @@
     <h5 class="lpep-h">属性</h5>
     <div class="lpep-grid">
       <label
-        v-if="el.type !== 'pageNumber' && el.type !== 'image'"
+        v-if="el.type === 'text' || el.type === 'box'"
         class="lpep-lab"
         >文字<input v-model.trim="el.text" class="lpep-inp"
       /></label>
-      <label v-if="el.type === 'date'" class="lpep-lab"
-        >日期格式<input v-model.trim="el.dateFormat" class="lpep-inp"
-      /></label>
+      <template v-if="el.type === 'date'">
+        <label class="lpep-lab"
+          >日期格式
+          <select
+            class="lpep-inp"
+            :value="dateFormatSelectValue"
+            @change="onDateFormatPresetChange($event)"
+          >
+            <option v-for="p in DATE_FORMAT_PRESETS" :key="p.value" :value="p.value">
+              {{ p.label }}
+            </option>
+            <option value="__custom__">自定义…</option>
+          </select>
+        </label>
+        <label v-if="dateFormatIsCustom" class="lpep-lab"
+          >自定义 pattern<input
+            v-model.trim="el.dateFormat"
+            class="lpep-inp"
+            spellcheck="false"
+            placeholder="如 yyyy-MM-dd、yyyy年MM月dd日、含 HH:mm"
+        /></label>
+      </template>
       <template v-if="el.type === 'image'">
         <label class="lpep-lab"
           >配文<textarea v-model="el.text" rows="2" class="lpep-inp" spellcheck="false" placeholder="与图片同框显示的文字"
@@ -61,6 +80,22 @@
         <button type="button" class="lpep-file-btn" @click="pickLocalImage">从本机选取图片…</button>
         <span class="lpep-img-hint">图片将转为 data URL，与预设 JSON 一并保存。水平×垂直对齐控制图片在占位格内的九宫格。</span>
       </template>
+      <template v-if="el.type !== 'image'">
+        <label class="lpep-lab"
+          >水平位置<select v-model="el.alignX" class="lpep-inp">
+            <option value="start">左</option>
+            <option value="center">中</option>
+            <option value="end">右</option>
+          </select></label
+        >
+        <label class="lpep-lab"
+          >垂直位置<select v-model="el.alignY" class="lpep-inp">
+            <option value="start">上</option>
+            <option value="center">中</option>
+            <option value="end">下</option>
+          </select></label
+        >
+      </template>
       <template v-if="el.type === 'pageNumber'">
         <label class="lpep-lab">形式</label>
         <select v-model="el.pageNumberMode" class="lpep-inp">
@@ -70,6 +105,7 @@
           <option value="circle">圆形框</option>
         </select>
       </template>
+      <LayoutFontFamilyField v-model="el.fontFamily" />
       <label class="lpep-lab">字号<input v-model.number="el.fontSize" type="number" min="8" max="72" class="lpep-inp" /></label>
       <label class="lpep-lab">X<input v-model.number="el.x" type="number" class="lpep-inp" /></label>
       <label class="lpep-lab">Y<input v-model.number="el.y" type="number" class="lpep-inp" /></label>
@@ -84,13 +120,31 @@
 </template>
 
 <script setup lang="ts">
-import type { LayoutZoneElement } from "@/lib/report-template/layout-zone-element";
+import { DATE_FORMAT_PRESETS, type LayoutZoneElement } from "@/lib/report-template/layout-zone-element";
+import LayoutFontFamilyField from "@/components/report-template/LayoutFontFamilyField.vue";
 import { readImageFileAsDataUrl } from "@/lib/report-template/read-image-file";
-import { nextTick, ref } from "vue";
+import { computed, nextTick, ref } from "vue";
 
 const props = defineProps<{
   el: LayoutZoneElement | null;
 }>();
+
+const dateFormatSelectValue = computed(() => {
+  const el = props.el;
+  if (!el || el.type !== "date") return "yyyy-MM-dd";
+  const t = (el.dateFormat || "").trim();
+  const hit = DATE_FORMAT_PRESETS.find((p) => p.value === t);
+  return hit ? hit.value : "__custom__";
+});
+
+const dateFormatIsCustom = computed(() => dateFormatSelectValue.value === "__custom__");
+
+function onDateFormatPresetChange(ev: Event) {
+  const v = (ev.target as HTMLSelectElement).value;
+  const el = props.el;
+  if (!el || el.type !== "date" || v === "__custom__") return;
+  el.dateFormat = v;
+}
 
 const imgFileEl = ref<HTMLInputElement | null>(null);
 

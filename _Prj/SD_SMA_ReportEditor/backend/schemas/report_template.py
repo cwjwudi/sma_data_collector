@@ -44,6 +44,7 @@ class LayoutZoneElement(BaseModel):
     color: str = "#18181b"
     bgColor: str = "transparent"
     fontSize: float = 13
+    fontFamily: str = ""
     alignX: AlignAxis = "start"
     alignY: AlignAxis = "center"
     dateFormat: str = "yyyy-MM-dd"

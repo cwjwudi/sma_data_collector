@@ -92,12 +92,15 @@ onUnmounted(() => window.removeEventListener("keydown", onKey));
 .hz-body {
   flex: 1;
   min-height: 0;
-  overflow: auto;
-  overflow-x: hidden;
-  -webkit-overflow-scrolling: touch;
-  overscroll-behavior: contain;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
 }
 .hz-canvas {
+  flex: 1 1 0;
+  min-height: 0;
+  min-width: 0;
   border: none;
   border-radius: 0;
 }

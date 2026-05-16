@@ -1,5 +1,5 @@
 <template>
-  <div v-if="working" class="page lpe">
+  <div v-if="working" class="page lpe page-fill-height">
     <header class="bar bar--sticky">
       <div class="bar-start">
         <button type="button" class="link" @click="back">← 版式列表</button>
@@ -14,8 +14,10 @@
       </div>
     </header>
 
+    <div class="lpe-shell">
     <p v-if="msg" class="msg">{{ msg }}</p>
 
+    <div class="lpe-meta">
     <div class="grid-form">
       <label>名称<input v-model.trim="working.name" class="inp" /></label>
       <label>
@@ -44,9 +46,12 @@
       </label>
     </div>
     <p class="muted">
-      <strong>画布</strong>与「模版管理」一致：页眉、正文区、页脚同一张纵向纸；
-      <strong>Ctrl / ⌘ + 滚轮</strong>可缩放画布，平时用<strong>右侧主滚动条</strong>上下浏览即可。
+      <strong>画布</strong>与「模版管理」一致：页眉、正文区、页脚在同一张纵向纸上；
+      竖向浏览请用<strong>中间画布区域</strong>的滚动条（本页不再整页拉长）。
+      <strong>Ctrl / ⌘ + 滚轮</strong>可缩放画布。
     </p>
+    </div>
+
     <div class="pe-cols">
       <aside class="pe-left">
         <h5 class="pe-h5">拖拽到画布</h5>
@@ -69,6 +74,7 @@
       <aside class="pe-right">
         <LayoutPresetElementProps :el="selectedPresetEl" @remove="removeSelectedPresetEl" />
       </aside>
+    </div>
     </div>
 
     <LayoutPresetZonesDialog
@@ -264,8 +270,27 @@ onMounted(() => {
   padding: 0 4px;
   display: flex;
   flex-direction: column;
-  min-height: calc(100vh - 52px);
+  min-height: 0;
+  max-height: 100%;
   box-sizing: border-box;
+  overflow: hidden;
+}
+.lpe-shell {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  gap: 8px;
+}
+.lpe-meta {
+  flex: 0 1 auto;
+  max-height: min(300px, 40vh);
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 2px;
 }
 .lpe-fail {
   padding: 24px;
@@ -346,7 +371,7 @@ onMounted(() => {
 .muted {
   font-size: 12px;
   color: #71717a;
-  margin: 0 0 10px;
+  margin: 0;
 }
 .msg {
   font-size: 12px;
@@ -356,18 +381,20 @@ onMounted(() => {
 .pe-cols {
   display: grid;
   grid-template-columns: 168px minmax(0, 1fr) 248px;
+  /* 关键：行高允许收缩到 0，否则中间栏里画布会把整格里撑高，外层 .content-scroll 再出一条滚动条 → 双滚动条 */
+  grid-template-rows: minmax(0, 1fr);
   gap: 0;
   flex: 1;
-  min-height: 480px;
-  margin-bottom: 4px;
+  min-height: 0;
   border: 1px solid #e4e4e7;
   border-radius: 10px;
-  overflow: visible;
+  overflow: hidden;
   background: #fff;
 }
 @media (max-width: 1100px) {
   .pe-cols {
     grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr) auto;
   }
   .pe-left,
   .pe-right {
@@ -385,6 +412,7 @@ onMounted(() => {
   overflow: auto;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
+  min-height: 0;
 }
 .pe-h5 {
   margin: 0;
@@ -414,6 +442,10 @@ onMounted(() => {
   min-height: 0;
   min-width: 0;
   background: #f4f4f5;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  overscroll-behavior: contain;
 }
 .pe-right {
   padding: 10px;
@@ -423,6 +455,7 @@ onMounted(() => {
   font-size: 13px;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
+  min-height: 0;
 }
 .btn-ghost {
   padding: 6px 10px;

@@ -54,6 +54,7 @@
                     :align-y="el.alignY"
                     :rotation-deg="el.imageRotationDeg"
                     :font-size="el.fontSize"
+                    :font-family="el.fontFamily"
                     :color="el.color"
                     @replace-image="hzBeginImagePick(el)"
                   >
@@ -94,12 +95,31 @@
       <details v-if="sel" class="hz-props" open>
         <summary>属性</summary>
         <div class="hz-props-inner">
-          <label v-if="sel.type !== 'pageNumber' && sel.type !== 'image'"
+          <label v-if="sel.type === 'text' || sel.type === 'box'"
             >文字<input v-model.trim="sel.text" class="hz-inp" />
           </label>
-          <label v-if="sel.type === 'date'"
-            >日期格式<input v-model.trim="sel.dateFormat" class="hz-inp"
-          /></label>
+          <template v-if="sel.type === 'date'">
+            <label class="hz-span2"
+              >日期格式
+              <select
+                class="hz-inp"
+                :value="hzDateFormatSelectValue"
+                @change="onHzDateFormatPreset($event)"
+              >
+                <option v-for="p in DATE_FORMAT_PRESETS" :key="p.value" :value="p.value">
+                  {{ p.label }}
+                </option>
+                <option value="__custom__">自定义…</option>
+              </select>
+            </label>
+            <label v-if="hzDateFormatIsCustom" class="hz-span2"
+              >自定义 pattern<br /><input
+                v-model.trim="sel.dateFormat"
+                class="hz-inp"
+                spellcheck="false"
+                placeholder="如 yyyy-MM-dd / yyyy年MM月dd日 / 含 HH:mm"
+            /></label>
+          </template>
           <template v-if="sel.type === 'image'">
             <label class="hz-span2">配文<br /><textarea v-model="sel.text" rows="2" class="hz-inp" /></label>
             <label class="hz-span2"
@@ -137,6 +157,18 @@
             </button>
             <span class="hz-img-hint">本地图片转为 data URL 随模板保存。</span>
           </template>
+          <template v-if="sel.type !== 'image'">
+            <label>水平位置<select v-model="sel.alignX" class="hz-inp">
+              <option value="start">左</option>
+              <option value="center">中</option>
+              <option value="end">右</option>
+            </select></label>
+            <label>垂直位置<select v-model="sel.alignY" class="hz-inp">
+              <option value="start">上</option>
+              <option value="center">中</option>
+              <option value="end">下</option>
+            </select></label>
+          </template>
           <template v-if="sel.type === 'pageNumber'">
             <label>形式</label>
             <select v-model="sel.pageNumberMode" class="hz-inp">
@@ -146,6 +178,7 @@
               <option value="circle">圆形框</option>
             </select>
           </template>
+          <LayoutFontFamilyField v-model="sel.fontFamily" />
           <label>字号<input v-model.number="sel.fontSize" type="number" min="8" max="72" class="hz-inp" /></label>
           <label>X<input v-model.number="sel.x" type="number" class="hz-inp" /></label>
           <label>Y<input v-model.number="sel.y" type="number" class="hz-inp" /></label>
@@ -166,6 +199,8 @@ import {
   clampZoneElement,
   makeLayoutZoneElement,
   previewZoneElementDisplay,
+  DATE_FORMAT_PRESETS,
+  flexJustifyAlignForAxes,
   type LayoutControlType,
   type LayoutZoneElement,
 } from "@/lib/report-template/layout-zone-element";
@@ -173,6 +208,7 @@ import { metricsForSheet, type EditorSheet } from "@/lib/report-template/editor-
 import type { ReportTemplate } from "@/lib/report-template/model";
 import { readImageFileAsDataUrl } from "@/lib/report-template/read-image-file";
 import ZoneImageCompose from "@/components/report-template/ZoneImageCompose.vue";
+import LayoutFontFamilyField from "@/components/report-template/LayoutFontFamilyField.vue";
 import { computed, nextTick, ref } from "vue";
 
 const HANDLES = ["nw", "n", "ne", "e", "se", "s", "sw", "w"] as const;
@@ -248,7 +284,26 @@ const sel = computed(() =>
   selId.value ? elements.value.find((x) => x.id === selId.value) ?? null : null,
 );
 
+const hzDateFormatSelectValue = computed(() => {
+  const s = sel.value;
+  if (!s || s.type !== "date") return "yyyy-MM-dd";
+  const t = (s.dateFormat || "").trim();
+  const hit = DATE_FORMAT_PRESETS.find((p) => p.value === t);
+  return hit ? hit.value : "__custom__";
+});
+
+const hzDateFormatIsCustom = computed(() => hzDateFormatSelectValue.value === "__custom__");
+
+function onHzDateFormatPreset(ev: Event) {
+  const v = (ev.target as HTMLSelectElement).value;
+  const s = sel.value;
+  if (!s || s.type !== "date" || v === "__custom__") return;
+  s.dateFormat = v;
+}
+
 function nodeStyle(el: LayoutZoneElement) {
+  const ff = typeof el.fontFamily === "string" ? el.fontFamily.trim() : "";
+  const flex = flexJustifyAlignForAxes(el.alignX, el.alignY);
   return {
     left: `${el.x}px`,
     top: `${el.y}px`,
@@ -256,6 +311,10 @@ function nodeStyle(el: LayoutZoneElement) {
     height: `${el.h}px`,
     color: el.color,
     fontSize: `${el.fontSize}px`,
+    ...(ff ? { fontFamily: ff } : {}),
+    display: "flex",
+    justifyContent: flex.justifyContent,
+    alignItems: flex.alignItems,
   };
 }
 

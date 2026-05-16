@@ -57,6 +57,8 @@ export interface LayoutZoneElement {
   color: string;
   bgColor: string;
   fontSize: number;
+  /** 字体族，如 "Microsoft YaHei"；空字符串则跟随画布默认 */
+  fontFamily: string;
   alignX: LayoutAlignAxis;
   alignY: LayoutAlignAxis;
   dateFormat: string;
@@ -119,6 +121,18 @@ export function formatLayoutDate(d: Date, pattern: string): string {
     .replace(/ss/g, pad(d.getSeconds()));
 }
 
+/** 属性面板「日期格式」下拉选项（值与 formatLayoutDate 中 yyyy MM dd 等占位一致） */
+export const DATE_FORMAT_PRESETS: ReadonlyArray<{ value: string; label: string }> = [
+  { value: "yyyy-MM-dd", label: "2026-05-17（年-月-日）" },
+  { value: "yyyy/MM/dd", label: "2026/05/17（斜杠）" },
+  { value: "dd/MM/yyyy", label: "17/05/2026（日/月/年）" },
+  { value: "MM/dd/yyyy", label: "05/17/2026（月/日/年）" },
+  { value: "yyyy年MM月dd日", label: "2026年05月17日" },
+  { value: "yyyy-MM-dd HH:mm", label: "年-月-日 时:分" },
+  { value: "yyyy-MM-dd HH:mm:ss", label: "含秒" },
+  { value: "yyyyMMdd", label: "20260517（无分隔）" },
+];
+
 function newId(): string {
   try {
     return crypto.randomUUID();
@@ -135,6 +149,7 @@ export function defaultLayoutZoneElement(type: LayoutControlType): Omit<LayoutZo
     color: "#18181b",
     bgColor: type === "box" ? "#e4e4e7" : "transparent",
     fontSize: 13,
+    fontFamily: "",
     dateFormat: "yyyy-MM-dd HH:mm",
     imageSrc: "",
     imageRotationDeg: 0,
@@ -172,6 +187,7 @@ export function defaultLayoutZoneElement(type: LayoutControlType): Omit<LayoutZo
       color: "#52525b",
       bgColor: "transparent",
       fontSize: 12,
+      fontFamily: "",
       dateFormat: "",
       imageSrc: "",
       imageRotationDeg: 0,
@@ -190,6 +206,7 @@ export function defaultLayoutZoneElement(type: LayoutControlType): Omit<LayoutZo
     color: "#52525b",
     bgColor: "transparent",
     fontSize: 12,
+    fontFamily: "",
     dateFormat: "yyyy-MM-dd",
     imageSrc: "",
     imageRotationDeg: 0,
@@ -219,6 +236,8 @@ export function hydrateLayoutZoneElement(raw: Partial<LayoutZoneElement>): Layou
     imageRotationDeg: normalizeImageRotationDeg(raw.imageRotationDeg ?? d.imageRotationDeg),
     imageCaptionPosition: normalizeImageCaptionPosition(raw.imageCaptionPosition, d.imageCaptionPosition),
     pageNumberMode: normalizePageNumberMode(raw.pageNumberMode),
+    fontFamily:
+      typeof raw.fontFamily === "string" ? raw.fontFamily.trim().slice(0, 240) : d.fontFamily,
   };
 }
 

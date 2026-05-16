@@ -1,4 +1,4 @@
-const { app, BrowserWindow } = require('electron')
+const { app, BrowserWindow, ipcMain } = require('electron')
 const { spawn } = require('child_process')
 const path = require('path')
 const http = require('http')
@@ -176,13 +176,13 @@ function createWindow() {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
+      preload: path.join(__dirname, 'preload.cjs'),
     },
   })
 
   const isDev = !app.isPackaged
   if (isDev) {
     mainWindow.loadURL(VITE_DEV_URL)
-    mainWindow.webContents.openDevTools()
   } else {
     mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'))
   }
@@ -191,6 +191,15 @@ function createWindow() {
     mainWindow = null
   })
 }
+
+ipcMain.handle('devtools-set-open', (_event, open) => {
+  if (!mainWindow || mainWindow.isDestroyed()) return
+  if (open) {
+    mainWindow.webContents.openDevTools({ mode: 'right' })
+  } else {
+    mainWindow.webContents.closeDevTools()
+  }
+})
 
 function killPython() {
   if (pythonProcess && backendStartedByElectron) {
