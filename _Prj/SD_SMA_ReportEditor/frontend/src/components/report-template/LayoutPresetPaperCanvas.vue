@@ -70,7 +70,7 @@
                   </div>
                 </template>
                 <template v-else>
-                  <span class="lppc-zone-text" :style="zoneInlineTextAlign(el)">{{ zonePreview(el) }}</span>
+                  <LayoutZoneInlineContent :el="el" text-class="lppc-zone-text" />
                 </template>
                 <template v-if="selId === el.id">
                   <button
@@ -144,7 +144,7 @@
                 </div>
               </template>
               <template v-else>
-                <span class="lppc-zone-text" :style="zoneInlineTextAlign(el)">{{ zonePreview(el) }}</span>
+                <LayoutZoneInlineContent :el="el" text-class="lppc-zone-text" />
               </template>
               <template v-if="selId === el.id">
                 <button
@@ -218,7 +218,7 @@
                   </div>
                 </template>
                 <template v-else>
-                  <span class="lppc-zone-text" :style="zoneInlineTextAlign(el)">{{ zonePreview(el) }}</span>
+                  <LayoutZoneInlineContent :el="el" text-class="lppc-zone-text" />
                 </template>
                 <template v-if="selId === el.id">
                   <button
@@ -246,6 +246,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref } from "vue";
 import { readImageFileAsDataUrl } from "@/lib/report-template/read-image-file";
+import LayoutZoneInlineContent from "@/components/report-template/LayoutZoneInlineContent.vue";
 import ZoneImageCompose from "@/components/report-template/ZoneImageCompose.vue";
 import { computePaperLayout, type PaperLayoutMetrics } from "@/lib/report-template/layout-geometry";
 import {
@@ -253,8 +254,8 @@ import {
   flexJustifyAlignForAxes,
   getZoneTextWrapStyle,
   makeLayoutZoneElement,
+  normalizePageNumberMode,
   normalizeZIndex,
-  previewZoneElementDisplay,
   type LayoutControlType,
   type LayoutZoneElement,
 } from "@/lib/report-template/layout-zone-element";
@@ -385,6 +386,12 @@ function nodeStyle(el: LayoutZoneElement) {
     zIndex: normalizeZIndex(el.zIndex),
     ...(wrap ?? { whiteSpace: "nowrap" }),
   };
+  if (el.type === "pageNumber" && normalizePageNumberMode(el.pageNumberMode) === "circle") {
+    return {
+      ...base,
+      padding: "2px",
+    };
+  }
   if (el.type === "box") {
     const bc = typeof el.color === "string" ? el.color : "#18181b";
     return {
@@ -396,15 +403,6 @@ function nodeStyle(el: LayoutZoneElement) {
     };
   }
   return base;
-}
-
-function zonePreview(el: LayoutZoneElement) {
-  return previewZoneElementDisplay(el);
-}
-
-function zoneInlineTextAlign(el: LayoutZoneElement): { textAlign: "left" | "center" | "right" } {
-  const ax = el.alignX;
-  return { textAlign: ax === "center" ? "center" : ax === "end" ? "right" : "left" };
 }
 
 function onPaperBlank(ev: PointerEvent) {

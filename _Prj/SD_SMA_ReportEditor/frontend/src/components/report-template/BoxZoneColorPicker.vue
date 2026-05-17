@@ -58,10 +58,11 @@
 
 <script setup lang="ts">
 import { computed } from "vue";
+import type { TemplateElement } from "@/lib/report-template/model";
 import type { LayoutZoneElement } from "@/lib/report-template/layout-zone-element";
 
 const props = defineProps<{
-  el: LayoutZoneElement;
+  el: LayoutZoneElement | TemplateElement;
 }>();
 
 /** 与原生取色器兼容的 #rrggbb */

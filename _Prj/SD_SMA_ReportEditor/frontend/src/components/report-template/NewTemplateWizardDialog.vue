@@ -5,6 +5,48 @@
       <form class="nt-form" @submit.prevent="submit">
         <label class="nt-label">模版名称<input v-model.trim="name" class="nt-input" type="text" required /></label>
 
+        <h3 class="nt-h3">封面</h3>
+        <p class="nt-hint">先选封面；不需要封面时选「不使用」。</p>
+        <div class="nt-tabs">
+          <button type="button" class="nt-tab" :class="{ active: coverMode === 'none' }" @click="coverMode = 'none'">
+            不使用封面版式
+          </button>
+          <button
+            type="button"
+            class="nt-tab"
+            :class="{ active: coverMode === 'preset' }"
+            :disabled="coverPresets.length === 0"
+            @click="coverMode = 'preset'"
+          >
+            选用封面版式
+          </button>
+        </div>
+        <p v-if="coverPresets.length === 0" class="nt-warn">
+          暂无封面版式。
+          <a href="#/layouts" class="nt-a">前往「版式与页眉页脚」</a>
+          新建一条页面用途为「封面」的记录。
+        </p>
+        <div v-if="coverMode === 'preset'" class="nt-grid-scroll nt-grid-scroll--thumbs">
+          <div class="nt-grid nt-grid--thumbs">
+            <button
+              v-for="p in coverPresets"
+              :key="p.id"
+              type="button"
+              class="nt-thumb-card"
+              :class="{ sel: selCover === p.id }"
+              @click="selCover = p.id"
+            >
+              <div class="nt-thumb-wrap">
+                <LayoutPresetMiniPage :preset="p" :max-width-px="thumbMaxW" :max-height-px="thumbMaxH" />
+              </div>
+              <div class="nt-thumb-meta">
+                <span class="nt-thumb-title">{{ p.name }}</span>
+                <small>{{ paperShort(p.paperKind) }} · {{ ori(p.orientation) }}</small>
+              </div>
+            </button>
+          </div>
+        </div>
+
         <h3 class="nt-h3">正文</h3>
         <div class="nt-tabs">
           <button type="button" class="nt-tab" :class="{ active: bodyMode === 'preset' }" @click="bodyMode = 'preset'">
@@ -15,85 +57,84 @@
           </button>
         </div>
         <p class="nt-hint">{{ bodyHint }}</p>
-        <div v-show="bodyMode === 'preset'" class="nt-grid-scroll">
-          <div class="nt-grid">
+        <div v-show="bodyMode === 'preset'" class="nt-grid-scroll nt-grid-scroll--thumbs">
+          <div class="nt-grid nt-grid--thumbs">
             <button
               v-for="p in bodyPresets"
               :key="p.id"
               type="button"
-              class="nt-card"
+              class="nt-thumb-card"
               :class="{ sel: selBodyPreset === p.id }"
               @click="selBodyPreset = p.id"
             >
-              {{ p.name }}
-              <small>{{ paperShort(p.paperKind) }} · {{ ori(p.orientation) }}</small>
+              <div class="nt-thumb-wrap">
+                <LayoutPresetMiniPage :preset="p" :max-width-px="thumbMaxW" :max-height-px="thumbMaxH" />
+              </div>
+              <div class="nt-thumb-meta">
+                <span class="nt-thumb-title">{{ p.name }}</span>
+                <small>{{ paperShort(p.paperKind) }} · {{ ori(p.orientation) }}</small>
+              </div>
             </button>
           </div>
         </div>
-        <div v-show="bodyMode === 'blank'" class="nt-grid-scroll">
-          <div class="nt-grid">
+        <div v-show="bodyMode === 'blank'" class="nt-grid-scroll nt-grid-scroll--thumbs">
+          <div class="nt-grid nt-grid--thumbs">
             <button
               v-for="c in blanks"
               :key="`${c.pk}:${c.o}`"
               type="button"
-              class="nt-card"
+              class="nt-thumb-card nt-thumb-card--blank"
               :class="{ sel: selBlankKey === `${c.pk}:${c.o}` }"
               @click="selBlankKey = `${c.pk}:${c.o}`"
             >
-              {{ paperShort(c.pk) }}
-              <small>{{ ori(c.o) }}</small>
-            </button>
-          </div>
-        </div>
-
-        <h3 class="nt-h3">封面</h3>
-        <div class="nt-row">
-          <label><input v-model="coverMode" type="radio" value="none" /> 不使用封面版式</label>
-          <label><input v-model="coverMode" type="radio" value="preset" :disabled="coverPresets.length === 0" /> 选用封面版式</label>
-        </div>
-        <p v-if="coverPresets.length === 0" class="nt-warn">
-          暂无封面版式。
-          <a href="#/layouts" class="nt-a">前往「版式与页眉页脚」</a>
-          新建一条页面用途为「封面」的记录。
-        </p>
-        <div v-if="coverMode === 'preset'" class="nt-grid-scroll">
-          <div class="nt-grid">
-            <button
-              v-for="p in coverPresets"
-              :key="p.id"
-              type="button"
-              class="nt-card"
-              :class="{ sel: selCover === p.id }"
-              @click="selCover = p.id"
-            >
-              {{ p.name }}
-              <small>{{ paperShort(p.paperKind) }} · {{ ori(p.orientation) }}</small>
+              <div class="nt-blank-preview" :class="'nt-blank-preview--' + c.o">
+                <span class="nt-blank-ph">{{ paperShort(c.pk) }}</span>
+              </div>
+              <div class="nt-thumb-meta">
+                <span class="nt-thumb-title">{{ paperShort(c.pk) }} 空白</span>
+                <small>{{ ori(c.o) }}</small>
+              </div>
             </button>
           </div>
         </div>
 
         <h3 class="nt-h3">末页</h3>
-        <div class="nt-row">
-          <label><input v-model="backMode" type="radio" value="none" /> 不使用末页版式</label>
-          <label><input v-model="backMode" type="radio" value="preset" :disabled="backPresets.length === 0" /> 选用末页版式</label>
+        <div class="nt-tabs">
+          <button type="button" class="nt-tab" :class="{ active: backMode === 'none' }" @click="backMode = 'none'">
+            不使用末页版式
+          </button>
+          <button
+            type="button"
+            class="nt-tab"
+            :class="{ active: backMode === 'preset' }"
+            :disabled="backPresets.length === 0"
+            @click="backMode = 'preset'"
+          >
+            选用末页版式
+          </button>
         </div>
         <p v-if="backPresets.length === 0" class="nt-warn">
           暂无末页版式。
           <a href="#/layouts" class="nt-a">前往「版式与页眉页脚」</a>
           新建「末页」用途记录。
         </p>
-        <div v-if="backMode === 'preset'" class="nt-grid-scroll">
-          <div class="nt-grid">
+        <div v-if="backMode === 'preset'" class="nt-grid-scroll nt-grid-scroll--thumbs">
+          <div class="nt-grid nt-grid--thumbs">
             <button
               v-for="p in backPresets"
               :key="p.id"
               type="button"
-              class="nt-card"
+              class="nt-thumb-card"
               :class="{ sel: selBack === p.id }"
               @click="selBack = p.id"
             >
-              {{ p.name }}
-              <small>{{ paperShort(p.paperKind) }} · {{ ori(p.orientation) }}</small>
+              <div class="nt-thumb-wrap">
+                <LayoutPresetMiniPage :preset="p" :max-width-px="thumbMaxW" :max-height-px="thumbMaxH" />
+              </div>
+              <div class="nt-thumb-meta">
+                <span class="nt-thumb-title">{{ p.name }}</span>
+                <small>{{ paperShort(p.paperKind) }} · {{ ori(p.orientation) }}</small>
+              </div>
             </button>
           </div>
         </div>
@@ -125,8 +166,13 @@ import {
 } from "@/lib/report-template/model";
 import { getLayoutPresetById } from "@/lib/report-template/layout-presets-api";
 import { refreshLayoutPresets } from "@/lib/report-template/layout-registry";
+import LayoutPresetMiniPage from "@/components/report-template/LayoutPresetMiniPage.vue";
 
 const props = defineProps<{ modelValue: boolean }>();
+
+/** 向导内版式卡片缩略图最大尺寸（与 LayoutPresetMiniPage 默认成比例略小，便于一屏多列） */
+const thumbMaxW = 112;
+const thumbMaxH = 150;
 
 const emit = defineEmits<{
   (e: "update:modelValue", v: boolean): void;
@@ -186,10 +232,26 @@ watch(bodyMode, (m) => {
   }
 });
 
+watch(coverMode, (m) => {
+  if (m === "preset" && coverPresets.value.length) {
+    if (!selCover.value || !coverPresets.value.some((p) => p.id === selCover.value)) {
+      selCover.value = coverPresets.value[0]!.id;
+    }
+  }
+});
+
+watch(backMode, (m) => {
+  if (m === "preset" && backPresets.value.length) {
+    if (!selBack.value || !backPresets.value.some((p) => p.id === selBack.value)) {
+      selBack.value = backPresets.value[0]!.id;
+    }
+  }
+});
+
 const bodyHint = computed(() =>
   bodyPresets.value.length === 0
     ? "暂无「正文页」版式。请先在侧栏打开「版式与页眉页脚」新建并保存正文用途的记录，再回到此处选用。"
-    : "选择正文：自定义版式（正文用途）或使用空白纸张。",
+    : "选择正文：页眉页脚与所选正文版式一致；或使用空白纸张（无页眉页脚区内容）。",
 );
 
 function paperShort(pk: PaperKind) {
@@ -248,14 +310,13 @@ function submit() {
       orientation: oriV,
       layoutPresetId: null,
       layoutSnapshot: z.layoutSnapshot,
-      headerText: "",
-      footerText: "",
-      headerElements: [],
-      footerElements: [],
+      headerText: z.headerText,
+      footerText: z.footerText,
+      headerElements: z.headerElements.map((x) => ({ ...x })),
+      footerElements: z.footerElements.map((x) => ({ ...x })),
     };
   }
 
-  const emptyZones = blankZonesSnapshot();
   let coverId: string | null = null;
   let coverZ = blankZonesSnapshot();
   if (coverMode.value === "preset") {
@@ -330,7 +391,7 @@ function submit() {
   background: #fff;
   border-radius: 12px;
   padding: 1rem 1.25rem;
-  width: min(720px, 100%);
+  width: min(780px, 100%);
   max-height: 90vh;
   overflow: hidden;
   display: flex;
@@ -379,11 +440,9 @@ function submit() {
   background: rgb(238 242 255);
   color: #4338ca;
 }
-.nt-row {
-  display: flex;
-  gap: 1rem;
-  flex-wrap: wrap;
-  font-size: 13px;
+.nt-tab:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 .nt-hint {
   margin: 0 0 0.5rem;
@@ -406,35 +465,92 @@ function submit() {
   padding: 6px;
   margin-bottom: 0.35rem;
 }
+.nt-grid-scroll--thumbs {
+  max-height: 280px;
+}
 .nt-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(136px, 1fr));
   gap: 6px;
 }
-.nt-card {
-  text-align: left;
-  padding: 8px 10px;
-  border-radius: 8px;
+.nt-grid--thumbs {
+  grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+}
+.nt-thumb-card {
+  text-align: center;
+  padding: 6px 6px 8px;
+  border-radius: 10px;
   border: 1px solid #e4e4e7;
   background: #fff;
   cursor: pointer;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  font-size: 13px;
-  min-height: 56px;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  min-height: 0;
   touch-action: manipulation;
 }
-.nt-card:hover {
+.nt-thumb-card:hover {
   border-color: #c4c4cc;
 }
-.nt-card small {
-  color: #71717a;
-  font-size: 11px;
-}
-.nt-card.sel {
+.nt-thumb-card.sel {
   outline: 2px solid #6366f1;
   border-color: #6366f1;
+}
+.nt-thumb-wrap {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  min-height: 1px;
+  pointer-events: none;
+}
+.nt-thumb-wrap :deep(.mpc-tag) {
+  display: none;
+}
+.nt-thumb-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  min-width: 0;
+}
+.nt-thumb-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #18181b;
+  line-height: 1.25;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+.nt-thumb-meta small {
+  color: #71717a;
+  font-size: 10px;
+}
+.nt-thumb-card--blank .nt-blank-preview {
+  margin-top: 4px;
+}
+.nt-blank-preview {
+  width: 88px;
+  height: 118px;
+  border-radius: 4px;
+  border: 2px dashed #d4d4d8;
+  background: linear-gradient(180deg, #fafafa 0%, #f4f4f5 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+}
+.nt-blank-preview--landscape {
+  width: 118px;
+  height: 88px;
+}
+.nt-blank-ph {
+  font-size: 11px;
+  font-weight: 700;
+  color: #a1a1aa;
 }
 .nt-actions {
   display: flex;

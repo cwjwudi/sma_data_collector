@@ -25,7 +25,7 @@
                   <span class="mini-ph">图片</span>
                 </template>
               </ZoneImageCompose>
-              <template v-else>{{ previewZoneTxt(el) }}</template>
+              <template v-else><LayoutZoneInlineContent :el="el" /></template>
             </div>
           </div>
           <span v-if="headerEls.length === 0" class="mini-legacy">{{ headerFb }}</span>
@@ -53,7 +53,7 @@
                   <span class="mini-ph">图</span>
                 </template>
               </ZoneImageCompose>
-              <template v-else>{{ previewZoneTxt(d) }}</template>
+              <template v-else><LayoutZoneInlineContent :el="d" /></template>
             </div>
             <template v-if="sheet !== 'body'">
               <div v-if="decorationEls.length === 0" class="mini-body-empty">正文</div>
@@ -99,7 +99,7 @@
                   <span class="mini-ph">图片</span>
                 </template>
               </ZoneImageCompose>
-              <template v-else>{{ previewZoneTxt(el) }}</template>
+              <template v-else><LayoutZoneInlineContent :el="el" /></template>
             </div>
           </div>
           <span v-if="footerEls.length === 0" class="mini-legacy">{{ footerFb }}</span>
@@ -111,6 +111,7 @@
 
 <script setup lang="ts">
 import { computed } from "vue";
+import LayoutZoneInlineContent from "@/components/report-template/LayoutZoneInlineContent.vue";
 import MiniPreviewChrome from "@/components/report-template/MiniPreviewChrome.vue";
 import ZoneImageCompose from "@/components/report-template/ZoneImageCompose.vue";
 import type { MiniPreviewVariant } from "@/components/report-template/mini-preview-types";
@@ -118,8 +119,8 @@ import type { LayoutZoneElement } from "@/lib/report-template/layout-zone-elemen
 import {
   flexJustifyAlignForAxes,
   getZoneTextWrapStyle,
+  normalizePageNumberMode,
   normalizeZIndex,
-  previewZoneElementDisplay,
 } from "@/lib/report-template/layout-zone-element";
 import type { PaperLayoutMetrics } from "@/lib/report-template/layout-geometry";
 import {
@@ -239,10 +240,6 @@ const headerBand = computed(() => bandStyle(me.value, "header"));
 const bodyBand = computed(() => bandStyle(me.value, "body"));
 const footerBand = computed(() => bandStyle(me.value, "footer"));
 
-function previewZoneTxt(el: LayoutZoneElement): string {
-  return previewZoneElementDisplay(el);
-}
-
 function miniZoneElStyle(el: LayoutZoneElement): Record<string, string> {
   const ff = typeof el.fontFamily === "string" ? el.fontFamily.trim() : "";
   const flex = flexJustifyAlignForAxes(el.alignX, el.alignY);
@@ -270,6 +267,9 @@ function miniZoneElStyle(el: LayoutZoneElement): Record<string, string> {
     s.alignItems = flex.alignItems;
     if (wrap) Object.assign(s, wrap);
     else s.whiteSpace = "nowrap";
+    if (el.type === "pageNumber" && normalizePageNumberMode(el.pageNumberMode) === "circle") {
+      s.padding = "1px";
+    }
   }
   return s;
 }

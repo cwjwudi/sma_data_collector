@@ -15,22 +15,58 @@
       <span class="note">{{ hint }}</span>
       </header>
       <div class="preset-bar">
-        <span class="preset-bar-label">正文版式</span>
-        <template v-if="layoutPresetsAll.length">
-        <label class="preset-lbl"
-          >选用版式（与模版管理中「正文版式」下拉一致）
-          <select
-            class="preset-ddl"
-            :value="editing.layoutPresetId || ''"
-            @change="onPresetBind('body', $event)"
-          >
-            <option value="">不绑定 ID（仅占位）</option>
-            <option v-for="p in bodyPresets" :key="'b' + p.id" :value="p.id">{{ p.name }}</option>
-          </select>
-        </label>
+        <template v-if="sh === 'body'">
+          <span class="preset-bar-label">正文版式</span>
+          <template v-if="layoutPresetsAll.length">
+            <label class="preset-lbl"
+              >选用版式
+              <select
+                class="preset-ddl"
+                :value="editing.layoutPresetId || ''"
+                @change="onPresetBind('body', $event)"
+              >
+                <option value="">不绑定 ID（仅占位）</option>
+                <option v-for="p in bodyPresets" :key="'b' + p.id" :value="p.id">{{ p.name }}</option>
+              </select>
+            </label>
+          </template>
+          <span v-else class="preset-empty">暂无正文版式列表（离线或需在「版式与页眉页脚」中建库）。仍可编辑当前纸上快照。</span>
         </template>
-        <span v-else class="preset-empty">暂无正文版式列表（离线或需在「版式与页眉页脚」中建库）。仍可编辑当前纸上快照。</span>
-        <span class="preset-hint">封面、末页的版式请在「模版管理 › 缩略图」中为该模版卡片下拉选用。</span>
+        <template v-else-if="sh === 'cover'">
+          <span class="preset-bar-label">封面版式</span>
+          <template v-if="layoutPresetsAll.length">
+            <label class="preset-lbl"
+              >选用版式
+              <select
+                class="preset-ddl"
+                :value="editing.coverLayoutPresetId || ''"
+                @change="onPresetBind('cover', $event)"
+              >
+                <option value="">不绑定 ID（仅占位）</option>
+                <option v-for="p in coverPresets" :key="'c' + p.id" :value="p.id">{{ p.name }}</option>
+              </select>
+            </label>
+          </template>
+          <span v-else class="preset-empty">暂无封面版式列表。</span>
+        </template>
+        <template v-else>
+          <span class="preset-bar-label">末页版式</span>
+          <template v-if="layoutPresetsAll.length">
+            <label class="preset-lbl"
+              >选用版式
+              <select
+                class="preset-ddl"
+                :value="editing.backLayoutPresetId || ''"
+                @change="onPresetBind('back', $event)"
+              >
+                <option value="">不绑定 ID（仅占位）</option>
+                <option v-for="p in backPresets" :key="'k' + p.id" :value="p.id">{{ p.name }}</option>
+              </select>
+            </label>
+          </template>
+          <span v-else class="preset-empty">暂无末页版式列表。</span>
+        </template>
+        <span class="preset-hint">上方「编辑页面」可切换正文 / 封面 / 末页；页眉页脚对话框随当前页生效。</span>
       </div>
     </div>
     <div class="cols">
@@ -46,96 +82,61 @@
         >
           {{ toolNames[tp] }}
         </button>
-        <h5>当前画布</h5>
-        <p class="sheet-hint"><strong>正文页</strong>（封面 / 末页仅在「模版管理」缩略图中选用版式，此处不做切换）</p>
+        <h5>编辑页面</h5>
+        <div class="sheet-tabs" role="tablist" aria-label="模版页面">
+          <button
+            type="button"
+            class="sheet-tab"
+            role="tab"
+            :aria-selected="sh === 'body'"
+            :class="{ active: sh === 'body' }"
+            @click="setSheet('body')"
+          >
+            正文页
+          </button>
+          <button
+            type="button"
+            class="sheet-tab"
+            role="tab"
+            :aria-selected="sh === 'cover'"
+            :class="{ active: sh === 'cover' }"
+            @click="setSheet('cover')"
+          >
+            封面
+          </button>
+          <button
+            type="button"
+            class="sheet-tab"
+            role="tab"
+            :aria-selected="sh === 'back'"
+            :class="{ active: sh === 'back' }"
+            @click="setSheet('back')"
+          >
+            末页
+          </button>
+        </div>
+        <p class="sheet-hint">
+          <template v-if="sh === 'body'"><strong>正文页</strong>：主内容区控件；页眉/页脚带与版式一致。</template>
+          <template v-else-if="sh === 'cover'"><strong>封面</strong>：仅本页画布与封面区眉脚。</template>
+          <template v-else><strong>末页</strong>：封尾页画布与末页眉脚。</template>
+        </p>
         <h5>眉脚</h5>
         <button type="button" class="btn" @click="openHdr">页眉…</button>
         <button type="button" class="btn" @click="openFtr">页脚…</button>
         <button type="button" class="btn" @click="openSigIf">手写签名…</button>
       </aside>
       <main class="mid">
-        <TemplateBodyCanvas v-model:selected-id="selId" :tmpl="editing" :sheet="sh" />
+        <TemplateBodyCanvas
+          v-model:selected-id="selId"
+          :tmpl="editing"
+          :sheet="sh"
+          :interaction-locked="dlgHdr || dlgFtr"
+        />
       </main>
-      <aside class="right" v-if="sel">
-        <h5>属性</h5>
-        <textarea v-if="sel.type !== 'signature' && sel.type !== 'image'" v-model="sel.text" rows="2"></textarea>
-        <label>h<input v-model.number="sel.fontSize" type="number" min="8" /></label>
-        <label>X<input type="number" v-model.number="sel.x" /></label>
-        <label>Y<input type="number" v-model.number="sel.y" /></label>
-        <label>W<input type="number" v-model.number="sel.w" /></label>
-        <label>H<input type="number" v-model.number="sel.h" /></label>
-        <template v-if="sel.type === 'parameter'">
-          <label>绑定
-            <select v-model="sel.bindingKind"><option value="none">无</option><option value="opcua">OPC UA</option><option value="sql">SQL</option></select>
-          </label>
-          <input v-model="sel.opcuaNodeId" placeholder="节点 ID" />
-        </template>
-        <template v-if="sel.type === 'table' || sel.type === 'chart'">
-          <label><select v-model="sel.bindingKind"><option value="none">无</option><option value="sql">SQL</option></select></label>
-          <textarea v-model="sel.sqlText" rows="3"></textarea>
-        </template>
-        <template v-if="sel.type === 'chart'">
-          <select v-model="sel.chartKind"><option value="line">折线</option><option value="bar">柱状</option></select>
-        </template>
-        <template v-if="sel.type === 'signature'">
-          <input v-model="sel.signerLabel" placeholder="签署说明" />
-          <label class="lab">签名库
-            <select :value="sel.signatureAssetId" class="ddl" @change="onPickSigLibrary($event)">
-              <option value="">不使用库条目（手写/粘贴）</option>
-              <option v-for="s in sigChoices" :key="s.id" :value="s.id">{{ s.label }}</option>
-            </select>
-          </label>
-          <small class="muted">手写板仍可覆盖当前预览图的 imageSrc；库 id 会与模版一并保存。</small>
-        </template>
-        <template v-if="sel.type === 'image'">
-          <label class="tpl-img-lab">配文
-            <textarea v-model="sel.text" rows="2" placeholder="与图片同框显示"></textarea>
-          </label>
-          <label class="tpl-img-lab thin">配文位置
-            <select v-model="sel.imageCaptionPosition" class="ddl">
-              <option value="none">无配文</option>
-              <option value="top">图上方</option>
-              <option value="bottom">图下方</option>
-              <option value="left">图左侧</option>
-              <option value="right">图右侧</option>
-            </select>
-          </label>
-          <label class="tpl-img-lab thin">水平位置
-            <select v-model="sel.alignX" class="ddl">
-              <option value="start">左</option>
-              <option value="center">中</option>
-              <option value="end">右</option>
-            </select>
-          </label>
-          <label class="tpl-img-lab thin">垂直位置
-            <select v-model="sel.alignY" class="ddl">
-              <option value="start">上</option>
-              <option value="center">中</option>
-              <option value="end">下</option>
-            </select>
-          </label>
-          <label class="tpl-img-lab thin">旋转（°）
-            <input v-model.number="sel.imageRotationDeg" type="number" min="-360" max="360" class="name" />
-          </label>
-          <textarea
-            v-model="sel.imageSrc"
-            rows="2"
-            placeholder="URL / data URL（或下方选取本地文件）"
-          ></textarea>
-          <input
-            ref="tplImageSidebarFileRef"
-            type="file"
-            accept="image/*,.svg"
-            class="img-file-hidden"
-            tabindex="-1"
-            aria-hidden="true"
-            @change="onTplSidebarImageFile"
-          />
-          <button type="button" class="img-file-btn" @click="pickTplSidebarImage">从本机选取图片…</button>
-        </template>
-        <button type="button" class="del" @click="delSel">删除</button>
+      <aside class="right ted-props" v-if="sel">
+        <TemplateElementProps :el="sel" :sig-choices="sigChoices" @remove="delSel" @pick-sig-library="onPickSigLibrary" />
       </aside>
-      <aside v-else class="right grey"><p>点选画布控件。</p></aside>
+      <aside v-else class="right ted-props ted-props--empty"><p class="ted-props-placeholder">点选画布控件后在此编辑属性。</p></aside>
     </div>
 
     <HeaderFooterZoneDialog v-model="dlgHdr" :tmpl="editing" :sheet="sh" zone="header" />
@@ -147,12 +148,12 @@
 
 <script setup>
 import TemplateBodyCanvas from "@/components/report-template/TemplateBodyCanvas.vue";
+import TemplateElementProps from "@/components/report-template/TemplateElementProps.vue";
 import HeaderFooterZoneDialog from "@/components/report-template/HeaderFooterZoneDialog.vue";
 import SignaturePadDialog from "@/components/report-template/SignaturePadDialog.vue";
 import * as api from "@/api/templates";
 import * as sigApi from "@/api/signatures";
-import { ref, computed, onMounted, onUnmounted, nextTick } from "vue";
-import { readImageFileAsDataUrl } from "@/lib/report-template/read-image-file";
+import { ref, computed, onMounted, onUnmounted } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { PAPER_LABEL } from "@/lib/report-template/paper";
 import { bodyElementsRef, metricsForSheet } from "@/lib/report-template/editor-sheet";
@@ -184,7 +185,6 @@ const dlgHdr = ref(false);
 const dlgFtr = ref(false);
 const dlgSig = ref(false);
 const hint = ref("");
-const tplImageSidebarFileRef = ref(null);
 const sigChoices = ref([]);
 /** @type {import('vue').Ref<import('@/lib/report-template/layout-model').LayoutPreset[]>} */
 const layoutPresetsAll = ref([]);
@@ -196,19 +196,23 @@ const sel = computed(() => {
 });
 
 const bodyPresets = computed(() => layoutPresetsAll.value.filter((p) => p.pageRole === "normal"));
+const coverPresets = computed(() => layoutPresetsAll.value.filter((p) => p.pageRole === "cover"));
+const backPresets = computed(() => layoutPresetsAll.value.filter((p) => p.pageRole === "back"));
 
 async function loadLayoutPresetsList() {
   layoutPresetsAll.value = await refreshLayoutPresets();
 }
 
-/** @param {'body'} slot */
+/** @param {'body'|'cover'|'back'} slot */
 function onPresetBind(slot, ev) {
   const presetId = typeof ev.target?.value === "string" ? ev.target.value : "";
   const t = editing.value;
   if (!t) return;
   if (!presetId) {
-    t.layoutPresetId = null;
-    hint.value = "已断开正文版式 ID 绑定（沿用当前纸上快照）。";
+    if (slot === "body") t.layoutPresetId = null;
+    else if (slot === "cover") t.coverLayoutPresetId = null;
+    else t.backLayoutPresetId = null;
+    hint.value = "已断开该页版式 ID 绑定（沿用当前纸上快照）。";
     reclamp();
     return;
   }
@@ -219,7 +223,13 @@ function onPresetBind(slot, ev) {
   }
   applyLayoutPresetToTemplate(t, p, slot);
   reclamp();
-  hint.value = `已用「${p.name}」替换正文纸张与眉脚布局。`;
+  const label = slot === "body" ? "正文" : slot === "cover" ? "封面" : "末页";
+  hint.value = `已用「${p.name}」替换${label}纸张与眉脚布局。`;
+}
+
+function setSheet(s) {
+  sh.value = s;
+  selId.value = null;
 }
 
 async function boot() {
@@ -279,10 +289,12 @@ function delSel() {
 }
 
 function openHdr() {
+  selId.value = null;
   dlgHdr.value = true;
 }
 
 function openFtr() {
+  selId.value = null;
   dlgFtr.value = true;
 }
 
@@ -292,25 +304,6 @@ function openSigIf() {
     return;
   }
   dlgSig.value = true;
-}
-
-function pickTplSidebarImage() {
-  const t = sel.value;
-  if (!t || t.type !== "image") return;
-  void nextTick(() => tplImageSidebarFileRef.value?.click());
-}
-
-async function onTplSidebarImageFile(ev) {
-  const t = sel.value;
-  const inp = ev.target;
-  const f = inp.files?.[0];
-  inp.value = "";
-  if (!t || t.type !== "image" || !f) return;
-  try {
-    t.imageSrc = await readImageFileAsDataUrl(f);
-  } catch (e) {
-    window.alert(e.message || String(e));
-  }
 }
 
 function sigOk(dataUrl) {
@@ -344,6 +337,7 @@ async function onPickSigLibrary(ev) {
 }
 
 function onKey(ev) {
+  if (dlgHdr.value || dlgFtr.value) return;
   const t = ev.target;
   if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT")) return;
   if (ev.key === "Delete" || ev.key === "Backspace") delSel();
@@ -412,6 +406,28 @@ onUnmounted(() => window.removeEventListener("keydown", onKey));
   background: #f4f4f5;
   border-radius: 6px;
 }
+.sheet-tabs {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.sheet-tab {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid #d4d4d8;
+  background: #fafafa;
+  cursor: pointer;
+  font-size: 11px;
+  touch-action: manipulation;
+}
+.sheet-tab.active {
+  border-color: #6366f1;
+  background: rgb(238 242 255);
+  color: #4338ca;
+  font-weight: 600;
+}
 .wait {
   padding: 2rem;
   color: #71717a;
@@ -458,7 +474,7 @@ onUnmounted(() => window.removeEventListener("keydown", onKey));
 .cols {
   flex: 1;
   display: grid;
-  grid-template-columns: 180px minmax(0, 1fr) 260px;
+  grid-template-columns: 180px minmax(0, 1fr) 248px;
   min-height: 0;
 }
 .left {
@@ -492,71 +508,25 @@ onUnmounted(() => window.removeEventListener("keydown", onKey));
 .mid {
   min-height: 0;
 }
-.right {
+.ted-props {
   border-left: 1px solid #e4e4e7;
-  padding: 8px;
+  padding: 10px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 0;
   overflow: auto;
   font-size: 13px;
-}
-.right.grey {
   background: #fafafa;
+  min-height: 0;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+.ted-props--empty {
   color: #71717a;
 }
-.right label {
-  font-size: 12px;
-  display: flex;
-  gap: 4px;
-  align-items: center;
-}
-.right .lab {
-  align-items: stretch;
-  flex-direction: column;
-}
-.right .muted {
-  display: block;
-  font-size: 11px;
-  color: #71717a;
-  line-height: 1.3;
-}
-.del {
-  border: 1px solid #fca5a5;
-  background: #fff;
-  color: #991b1b;
-  cursor: pointer;
-  padding: 8px;
-  border-radius: 6px;
-}
-.tpl-img-lab {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  font-size: 11px;
-  color: #52525b;
-}
-.tpl-img-lab.thin {
-  flex-direction: row;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-.img-file-hidden {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  opacity: 0;
-  pointer-events: none;
-}
-.img-file-btn {
-  padding: 7px 10px;
-  font-size: 12px;
-  border-radius: 6px;
-  border: 1px solid #c7d2fe;
-  background: #eef2ff;
-  color: #3730a3;
-  cursor: pointer;
-  align-self: flex-start;
+.ted-props-placeholder {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
 }
 </style>

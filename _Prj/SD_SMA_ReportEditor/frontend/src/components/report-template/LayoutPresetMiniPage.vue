@@ -25,7 +25,7 @@
                   <span class="mini-ph">图片</span>
                 </template>
               </ZoneImageCompose>
-              <template v-else>{{ previewZoneTxt(el) }}</template>
+              <template v-else><LayoutZoneInlineContent :el="el" /></template>
             </div>
           </div>
           <span v-if="preset.headerElements.length === 0" class="mini-legacy">{{
@@ -55,7 +55,7 @@
                   <span class="mini-ph">图片</span>
                 </template>
               </ZoneImageCompose>
-              <template v-else>{{ previewZoneTxt(el) }}</template>
+              <template v-else><LayoutZoneInlineContent :el="el" /></template>
             </div>
             <div v-if="preset.bodyElements.length === 0" class="mini-body-empty">{{ bodyEmptyHint }}</div>
           </div>
@@ -78,7 +78,7 @@
                   <span class="mini-ph">图片</span>
                 </template>
               </ZoneImageCompose>
-              <template v-else>{{ previewZoneTxt(el) }}</template>
+              <template v-else><LayoutZoneInlineContent :el="el" /></template>
             </div>
           </div>
           <span v-if="preset.footerElements.length === 0" class="mini-legacy">{{
@@ -92,6 +92,7 @@
 
 <script setup lang="ts">
 import { computed } from "vue";
+import LayoutZoneInlineContent from "@/components/report-template/LayoutZoneInlineContent.vue";
 import MiniPreviewChrome from "@/components/report-template/MiniPreviewChrome.vue";
 import ZoneImageCompose from "@/components/report-template/ZoneImageCompose.vue";
 import type { MiniPreviewVariant } from "@/components/report-template/mini-preview-types";
@@ -103,8 +104,8 @@ import type { LayoutZoneElement } from "@/lib/report-template/layout-zone-elemen
 import {
   flexJustifyAlignForAxes,
   getZoneTextWrapStyle,
+  normalizePageNumberMode,
   normalizeZIndex,
-  previewZoneElementDisplay,
 } from "@/lib/report-template/layout-zone-element";
 
 const props = withDefaults(
@@ -194,10 +195,6 @@ const headerBand = computed(() => bandStyle(me.value, "header"));
 const bodyBand = computed(() => bandStyle(me.value, "body"));
 const footerBand = computed(() => bandStyle(me.value, "footer"));
 
-function previewZoneTxt(el: LayoutZoneElement): string {
-  return previewZoneElementDisplay(el);
-}
-
 function miniZoneElStyle(el: LayoutZoneElement): Record<string, string> {
   const ff = typeof el.fontFamily === "string" ? el.fontFamily.trim() : "";
   const flex = flexJustifyAlignForAxes(el.alignX, el.alignY);
@@ -225,6 +222,9 @@ function miniZoneElStyle(el: LayoutZoneElement): Record<string, string> {
     s.alignItems = flex.alignItems;
     if (wrap) Object.assign(s, wrap);
     else s.whiteSpace = "nowrap";
+    if (el.type === "pageNumber" && normalizePageNumberMode(el.pageNumberMode) === "circle") {
+      s.padding = "1px";
+    }
   }
   return s;
 }

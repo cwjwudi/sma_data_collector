@@ -25,7 +25,7 @@
                 <span class="mb-ph">图</span>
               </template>
             </ZoneImageCompose>
-            <template v-else>{{ previewZoneTxt(el) }}</template>
+            <template v-else><LayoutZoneInlineContent :el="el" /></template>
           </div>
         </div>
         <span v-if="headerEls.length === 0" class="mb-legacy">{{ headerFb }}</span>
@@ -49,7 +49,7 @@
                 <span class="mb-ph">图</span>
               </template>
             </ZoneImageCompose>
-            <template v-else>{{ previewZoneTxt(el) }}</template>
+            <template v-else><LayoutZoneInlineContent :el="el" /></template>
           </div>
         </div>
         <span v-if="footerEls.length === 0" class="mb-legacy">{{ footerFb }}</span>
@@ -61,6 +61,7 @@
 </template>
 
 <script setup lang="ts">
+import LayoutZoneInlineContent from "@/components/report-template/LayoutZoneInlineContent.vue";
 import MiniPreviewChrome from "@/components/report-template/MiniPreviewChrome.vue";
 import ZoneImageCompose from "@/components/report-template/ZoneImageCompose.vue";
 import { computed } from "vue";
@@ -68,8 +69,8 @@ import type { LayoutZoneElement } from "@/lib/report-template/layout-zone-elemen
 import {
   flexJustifyAlignForAxes,
   getZoneTextWrapStyle,
+  normalizePageNumberMode,
   normalizeZIndex,
-  previewZoneElementDisplay,
 } from "@/lib/report-template/layout-zone-element";
 import type { PaperLayoutMetrics } from "@/lib/report-template/layout-geometry";
 import { metricsForSheet, type EditorSheet } from "@/lib/report-template/editor-sheet";
@@ -190,10 +191,6 @@ const footerBandStyle = computed(() => ({
   background: "rgb(239 239 246 / 0.52)",
 }));
 
-function previewZoneTxt(el: LayoutZoneElement): string {
-  return previewZoneElementDisplay(el);
-}
-
 function miniZoneElStyle(el: LayoutZoneElement): Record<string, string> {
   const ff = typeof el.fontFamily === "string" ? el.fontFamily.trim() : "";
   const flex = flexJustifyAlignForAxes(el.alignX, el.alignY);
@@ -221,6 +218,9 @@ function miniZoneElStyle(el: LayoutZoneElement): Record<string, string> {
     s.alignItems = flex.alignItems;
     if (wrap) Object.assign(s, wrap);
     else s.whiteSpace = "nowrap";
+    if (el.type === "pageNumber" && normalizePageNumberMode(el.pageNumberMode) === "circle") {
+      s.padding = "1px";
+    }
   }
   return s;
 }

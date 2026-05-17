@@ -1,5 +1,10 @@
 <template>
-  <div ref="viewportRef" class="cv-viewport" @wheel.prevent="onWheel">
+  <div
+    ref="viewportRef"
+    class="cv-viewport"
+    :class="{ 'cv-viewport--locked': interactionLocked }"
+    @wheel="onWheel"
+  >
     <input
       ref="tplImgFileRef"
       type="file"
@@ -68,14 +73,16 @@
               </template>
               <template v-else>{{ displayEl(el) }}</template>
             </div>
-            <button
-              v-for="hh in HZ"
-              :key="hh"
-              type="button"
-              :class="['hz', 'hz-' + hh]"
-              tabindex="-1"
-              @pointerdown.stop="beginResize($event, el, hh)"
-            />
+            <template v-if="selId === el.id">
+              <button
+                v-for="hh in HZ"
+                :key="hh"
+                type="button"
+                :class="['hz', 'hz-' + hh]"
+                tabindex="-1"
+                @pointerdown.stop="beginResize($event, el, hh)"
+              />
+            </template>
           </div>
         </div>
         <div v-if="me.fb > 1" class="cv-band ftr" :style="ftrStyle">
@@ -100,7 +107,10 @@ import { computed, nextTick, onBeforeUnmount, ref } from "vue";
 const HZ = ["nw", "n", "ne", "e", "se", "s", "sw", "w"] as const;
 type H = (typeof HZ)[number];
 
-const props = defineProps<{ tmpl: ReportTemplate; sheet: EditorSheet }>();
+const props = withDefaults(
+  defineProps<{ tmpl: ReportTemplate; sheet: EditorSheet; interactionLocked?: boolean }>(),
+  { interactionLocked: false },
+);
 const selId = defineModel<string | null>("selectedId");
 
 const viewportRef = ref<HTMLElement | null>(null);
@@ -228,12 +238,14 @@ function clamp(el: TemplateElement): void {
 }
 
 function beginMove(ev: PointerEvent, el: TemplateElement) {
+  if (props.interactionLocked) return;
   selId.value = el.id;
   move = { sid: el.id, sx: ev.clientX, sy: ev.clientY, ox: el.x, oy: el.y };
   bindPtr();
 }
 
 function beginResize(ev: PointerEvent, el: TemplateElement, h: H) {
+  if (props.interactionLocked) return;
   selId.value = el.id;
   resize = { sid: el.id, h, sx: ev.clientX, sy: ev.clientY, ix: el.x, iy: el.y, iw: el.w, ih: el.h };
   bindPtr();
@@ -295,12 +307,15 @@ function ptrUp() {
 onBeforeUnmount(ptrUp);
 
 function onPaperBlank(ev: PointerEvent) {
+  if (props.interactionLocked) return;
   const t = ev.target as HTMLElement;
   if (t.closest(".el-node")) return;
-  if (t.classList.contains("cv-paper") || t.classList.contains("cv-hint")) selId.value = null;
+  /** 点击画布任意空白（含正文区、页眉页脚带，非控件）即取消选中，缩放手柄随选中状态消失 */
+  selId.value = null;
 }
 
 function onDragOverRoot() {
+  if (props.interactionLocked) return;
   dragOverRoot.value = true;
 }
 
@@ -317,6 +332,7 @@ function toolType(s: string): TemplateControlType | null {
 }
 
 function onDrop(e: DragEvent) {
+  if (props.interactionLocked) return;
   dragOverRoot.value = false;
   const tp = toolType(e.dataTransfer?.getData("application/x-template-tool") || e.dataTransfer?.getData("text/plain") || "");
   if (!tp) return;
@@ -335,6 +351,10 @@ function onDrop(e: DragEvent) {
 }
 
 function onWheel(ev: WheelEvent) {
+  if (props.interactionLocked) {
+    ev.preventDefault();
+    return;
+  }
   if (ev.ctrlKey || ev.metaKey) {
     const z = Math.exp(-ev.deltaY * 0.001);
     viewScale.value = Math.min(2.8, Math.max(0.35, +(viewScale.value * z).toFixed(4)));
@@ -354,6 +374,7 @@ async function assignTplBodyImage(el: TemplateElement | null, f?: File | null) {
 }
 
 function beginTplBodyImagePick(el: TemplateElement) {
+  if (props.interactionLocked) return;
   if (el.type !== "image") return;
   selId.value = el.id;
   tplBodyPendingSid = el.id;
@@ -371,6 +392,7 @@ async function onTplBodyImageChosen(ev: Event) {
 }
 
 async function onTplImageDropFile(ev: DragEvent, el: TemplateElement) {
+  if (props.interactionLocked) return;
   if (el.type !== "image") return;
   selId.value = el.id;
   await assignTplBodyImage(el, ev.dataTransfer?.files?.[0] ?? null);
@@ -389,6 +411,15 @@ async function onTplImageDropFile(ev: DragEvent, el: TemplateElement) {
   -webkit-overflow-scrolling: touch;
   position: relative;
 }
+/* 页眉/页脚弹窗打开：禁止操作正文画布并压低中间区高度，减少背后大块留白 */
+.cv-viewport.cv-viewport--locked {
+  pointer-events: none;
+  user-select: none;
+  opacity: 0.82;
+  min-height: 240px;
+  max-height: min(42vh, 360px);
+  filter: saturate(0.9);
+}
 .cv-sr-file {
   position: absolute;
   width: 1px;
@@ -398,7 +429,7 @@ async function onTplImageDropFile(ev: DragEvent, el: TemplateElement) {
 }
 .cv-scaler {
   transform-origin: 0 0;
-  padding: 28px;
+  padding: 20px;
   display: inline-block;
 }
 .cv-band {

@@ -24,14 +24,15 @@
           {{ toolLabels[t] }}
         </button>
       </div>
-      <div
-        class="hz-stage"
-        :style="stageStyle"
-        @pointerdown="onStagePointerDown"
-        @dragover.prevent
-        @drop.prevent="onDrop"
-      >
-        <div ref="layerRef" class="hz-layer" :style="{ width: bandW + 'px', height: bandH + 'px' }">
+      <div class="hz-stage-scroll">
+        <div
+          class="hz-stage"
+          :style="stageStyle"
+          @pointerdown="onStagePointerDown"
+          @dragover.prevent
+          @drop.prevent="onDrop"
+        >
+          <div ref="layerRef" class="hz-layer" :style="{ width: bandW + 'px', height: bandH + 'px' }">
           <template v-for="el in elements" :key="el.id">
             <div
               class="hz-node"
@@ -75,7 +76,9 @@
                   </ZoneImageCompose>
                 </div>
               </template>
-              <template v-else>{{ zonePreview(el) }}</template>
+              <template v-else>
+                <LayoutZoneInlineContent :el="el" />
+              </template>
               <template v-if="selId === el.id">
                 <button
                   v-for="pos in HANDLES"
@@ -91,6 +94,7 @@
             </div>
           </template>
         </div>
+      </div>
       </div>
       <details v-if="sel" class="hz-props" open>
         <summary>属性</summary>
@@ -232,10 +236,10 @@
 import {
   clampZoneElement,
   makeLayoutZoneElement,
-  previewZoneElementDisplay,
   DATE_FORMAT_PRESETS,
   flexJustifyAlignForAxes,
   getZoneTextWrapStyle,
+  normalizePageNumberMode,
   normalizeZIndex,
   type LayoutControlType,
   type LayoutZoneElement,
@@ -245,6 +249,7 @@ import type { ReportTemplate } from "@/lib/report-template/model";
 import { readImageFileAsDataUrl } from "@/lib/report-template/read-image-file";
 import ZoneImageCompose from "@/components/report-template/ZoneImageCompose.vue";
 import LayoutFontFamilyField from "@/components/report-template/LayoutFontFamilyField.vue";
+import LayoutZoneInlineContent from "@/components/report-template/LayoutZoneInlineContent.vue";
 import BoxZoneColorPicker from "@/components/report-template/BoxZoneColorPicker.vue";
 import { computed, nextTick, ref } from "vue";
 
@@ -298,7 +303,6 @@ const sheetLabel = computed(() =>
 );
 
 const stageStyle = computed(() => ({
-  margin: "0 auto",
   width: `${bandW.value}px`,
   height: `${Math.max(props.zone === "header" ? me.value.hb : me.value.fb, 24)}px`,
   overflow: "hidden",
@@ -342,7 +346,7 @@ function nodeStyle(el: LayoutZoneElement) {
   const ff = typeof el.fontFamily === "string" ? el.fontFamily.trim() : "";
   const flex = flexJustifyAlignForAxes(el.alignX, el.alignY);
   const wrap = getZoneTextWrapStyle(el);
-  return {
+  const base: Record<string, string> = {
     left: `${el.x}px`,
     top: `${el.y}px`,
     width: `${el.w}px`,
@@ -353,13 +357,13 @@ function nodeStyle(el: LayoutZoneElement) {
     display: "flex",
     justifyContent: flex.justifyContent,
     alignItems: flex.alignItems,
-    zIndex: normalizeZIndex(el.zIndex),
-    ...(wrap ?? {}),
+    zIndex: String(normalizeZIndex(el.zIndex)),
+    ...(wrap ?? { whiteSpace: "nowrap" }),
   };
-}
-
-function zonePreview(el: LayoutZoneElement) {
-  return previewZoneElementDisplay(el);
+  if (el.type === "pageNumber" && normalizePageNumberMode(el.pageNumberMode) === "circle") {
+    return { ...base, padding: "2px" };
+  }
+  return base;
 }
 
 function onStagePointerDown() {
@@ -527,21 +531,28 @@ async function hzAssignImage(el: LayoutZoneElement | null, f?: File | null) {
   position: fixed;
   inset: 0;
   background: rgb(24 24 27 / 0.5);
-  z-index: 950;
+  z-index: 10000;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
-  padding: 12px;
+  padding: clamp(12px, 3vh, 28px) 12px 12px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 .hz-modal {
   background: #fff;
   border-radius: 12px;
-  padding: 12px 14px;
-  max-width: 96vw;
-  max-height: 92vh;
-  overflow: auto;
-  width: min(640px, 100%);
+  padding: 10px 12px 12px;
+  max-width: min(640px, 96vw);
+  width: 100%;
+  min-width: 0;
+  max-height: none;
+  overflow-x: hidden;
+  box-sizing: border-box;
   position: relative;
+  flex: none;
+  margin-bottom: 16px;
 }
 .hz-title {
   margin: 0 0 8px;
@@ -567,6 +578,17 @@ async function hzAssignImage(el: LayoutZoneElement | null, f?: File | null) {
   font-size: 12px;
   touch-action: manipulation;
   min-height: 36px;
+}
+.hz-stage-scroll {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+  border-radius: 8px;
+  box-sizing: border-box;
 }
 .hz-layer {
   position: relative;
