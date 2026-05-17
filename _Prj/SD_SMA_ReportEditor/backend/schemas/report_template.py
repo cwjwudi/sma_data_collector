@@ -52,6 +52,8 @@ class LayoutZoneElement(BaseModel):
     imageRotationDeg: float = 0
     imageCaptionPosition: ImageCaptionPosition = "none"
     pageNumberMode: PageNumberMode = "plain"
+    zIndex: int = Field(default=0, ge=0, le=10000)
+    textAutoWrap: bool = False
 
 
 class TemplateElement(BaseModel):

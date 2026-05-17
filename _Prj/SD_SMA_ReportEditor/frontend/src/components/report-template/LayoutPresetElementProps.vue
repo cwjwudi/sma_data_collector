@@ -7,6 +7,31 @@
         class="lpep-lab"
         >文字<input v-model.trim="el.text" class="lpep-inp"
       /></label>
+      <div v-if="el.type === 'text' || el.type === 'box'" class="lpep-lab lpep-wrap-row">
+        <span class="lpep-wrap-title">换行</span>
+        <div class="lpep-seg" role="group" aria-label="文本换行方式">
+          <button
+            type="button"
+            class="lpep-seg-btn"
+            :class="{ 'lpep-seg-on': !el.textAutoWrap }"
+            :aria-pressed="!el.textAutoWrap"
+            @click="el.textAutoWrap = false"
+          >
+            单行
+          </button>
+          <button
+            type="button"
+            class="lpep-seg-btn"
+            :class="{ 'lpep-seg-on': el.textAutoWrap }"
+            :aria-pressed="el.textAutoWrap"
+            @click="el.textAutoWrap = true"
+          >
+            自动
+          </button>
+        </div>
+        <p class="lpep-wrap-hint">「自动」表示在框宽内换行，无空格长串也会断行。</p>
+      </div>
+      <BoxZoneColorPicker v-if="el.type === 'box'" :el="el" />
       <template v-if="el.type === 'date'">
         <label class="lpep-lab"
           >日期格式
@@ -28,6 +53,30 @@
             spellcheck="false"
             placeholder="如 yyyy-MM-dd、yyyy年MM月dd日、含 HH:mm"
         /></label>
+        <div class="lpep-lab lpep-wrap-row">
+          <span class="lpep-wrap-title">换行</span>
+          <div class="lpep-seg" role="group" aria-label="日期文本换行方式">
+            <button
+              type="button"
+              class="lpep-seg-btn"
+              :class="{ 'lpep-seg-on': !el.textAutoWrap }"
+              :aria-pressed="!el.textAutoWrap"
+              @click="el.textAutoWrap = false"
+            >
+              单行
+            </button>
+            <button
+              type="button"
+              class="lpep-seg-btn"
+              :class="{ 'lpep-seg-on': el.textAutoWrap }"
+              :aria-pressed="el.textAutoWrap"
+              @click="el.textAutoWrap = true"
+            >
+              自动
+            </button>
+          </div>
+          <p class="lpep-wrap-hint">「自动」表示在框宽内换行，无空格长串也会断行。</p>
+        </div>
       </template>
       <template v-if="el.type === 'image'">
         <label class="lpep-lab"
@@ -105,6 +154,15 @@
           <option value="circle">圆形框</option>
         </select>
       </template>
+      <label class="lpep-lab"
+        >叠放顺序（越大越靠前）<input
+          v-model.number="el.zIndex"
+          type="number"
+          min="0"
+          max="10000"
+          step="1"
+          class="lpep-inp"
+      /></label>
       <LayoutFontFamilyField v-model="el.fontFamily" />
       <label class="lpep-lab">字号<input v-model.number="el.fontSize" type="number" min="8" max="72" class="lpep-inp" /></label>
       <label class="lpep-lab">X<input v-model.number="el.x" type="number" class="lpep-inp" /></label>
@@ -121,6 +179,7 @@
 
 <script setup lang="ts">
 import { DATE_FORMAT_PRESETS, type LayoutZoneElement } from "@/lib/report-template/layout-zone-element";
+import BoxZoneColorPicker from "@/components/report-template/BoxZoneColorPicker.vue";
 import LayoutFontFamilyField from "@/components/report-template/LayoutFontFamilyField.vue";
 import { readImageFileAsDataUrl } from "@/lib/report-template/read-image-file";
 import { computed, nextTick, ref } from "vue";
@@ -188,6 +247,49 @@ async function onLocalImageChosen(ev: Event) {
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+.lpep-wrap-row {
+  gap: 6px;
+}
+.lpep-wrap-title {
+  font-size: 12px;
+  color: #52525b;
+}
+.lpep-seg {
+  display: inline-flex;
+  align-self: flex-start;
+  border-radius: 8px;
+  border: 1px solid #e4e4e7;
+  overflow: hidden;
+  background: #fafafa;
+}
+.lpep-seg-btn {
+  margin: 0;
+  padding: 6px 14px;
+  font-size: 12px;
+  border: none;
+  background: transparent;
+  color: #52525b;
+  cursor: pointer;
+  line-height: 1.2;
+}
+.lpep-seg-btn + .lpep-seg-btn {
+  box-shadow: inset 1px 0 0 #e4e4e7;
+}
+.lpep-seg-btn:hover:not(.lpep-seg-on) {
+  background: rgb(244 244 245 / 0.85);
+  color: #18181b;
+}
+.lpep-seg-on {
+  background: #eef2ff;
+  color: #3730a3;
+  font-weight: 600;
+}
+.lpep-wrap-hint {
+  margin: 0;
+  font-size: 11px;
+  color: #a1a1aa;
+  line-height: 1.35;
 }
 .lpep-inp {
   width: 100%;

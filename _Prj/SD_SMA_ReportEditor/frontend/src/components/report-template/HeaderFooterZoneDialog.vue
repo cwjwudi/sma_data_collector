@@ -98,6 +98,7 @@
           <label v-if="sel.type === 'text' || sel.type === 'box'"
             >文字<input v-model.trim="sel.text" class="hz-inp" />
           </label>
+          <BoxZoneColorPicker v-if="sel.type === 'box'" class="hz-span2" :el="sel" />
           <template v-if="sel.type === 'date'">
             <label class="hz-span2"
               >日期格式
@@ -168,16 +169,49 @@
               <option value="center">中</option>
               <option value="end">下</option>
             </select></label>
+            <div v-if="sel.type === 'text' || sel.type === 'box' || sel.type === 'date'" class="hz-span2 hz-wrap-row">
+              <span class="hz-wrap-title">换行</span>
+              <div class="hz-seg" role="group" aria-label="文本换行方式">
+                <button
+                  type="button"
+                  class="hz-seg-btn"
+                  :class="{ 'hz-seg-on': !sel.textAutoWrap }"
+                  :aria-pressed="!sel.textAutoWrap"
+                  @click="sel.textAutoWrap = false"
+                >
+                  单行
+                </button>
+                <button
+                  type="button"
+                  class="hz-seg-btn"
+                  :class="{ 'hz-seg-on': sel.textAutoWrap }"
+                  :aria-pressed="sel.textAutoWrap"
+                  @click="sel.textAutoWrap = true"
+                >
+                  自动
+                </button>
+              </div>
+              <p class="hz-wrap-hint">「自动」表示在框宽内换行，无空格长串也会断行。</p>
+            </div>
           </template>
           <template v-if="sel.type === 'pageNumber'">
-            <label>形式</label>
-            <select v-model="sel.pageNumberMode" class="hz-inp">
+            <label class="hz-span2">形式</label>
+            <select v-model="sel.pageNumberMode" class="hz-inp hz-span2">
               <option value="plain">仅数字</option>
               <option value="slashTotal">当前页/总页数</option>
               <option value="cnPage">第N页</option>
               <option value="circle">圆形框</option>
             </select>
           </template>
+          <label class="hz-span2"
+            >叠放顺序（越大越靠前）<input
+              v-model.number="sel.zIndex"
+              type="number"
+              min="0"
+              max="10000"
+              step="1"
+              class="hz-inp"
+          /></label>
           <LayoutFontFamilyField v-model="sel.fontFamily" />
           <label>字号<input v-model.number="sel.fontSize" type="number" min="8" max="72" class="hz-inp" /></label>
           <label>X<input v-model.number="sel.x" type="number" class="hz-inp" /></label>
@@ -201,6 +235,8 @@ import {
   previewZoneElementDisplay,
   DATE_FORMAT_PRESETS,
   flexJustifyAlignForAxes,
+  getZoneTextWrapStyle,
+  normalizeZIndex,
   type LayoutControlType,
   type LayoutZoneElement,
 } from "@/lib/report-template/layout-zone-element";
@@ -209,6 +245,7 @@ import type { ReportTemplate } from "@/lib/report-template/model";
 import { readImageFileAsDataUrl } from "@/lib/report-template/read-image-file";
 import ZoneImageCompose from "@/components/report-template/ZoneImageCompose.vue";
 import LayoutFontFamilyField from "@/components/report-template/LayoutFontFamilyField.vue";
+import BoxZoneColorPicker from "@/components/report-template/BoxZoneColorPicker.vue";
 import { computed, nextTick, ref } from "vue";
 
 const HANDLES = ["nw", "n", "ne", "e", "se", "s", "sw", "w"] as const;
@@ -304,6 +341,7 @@ function onHzDateFormatPreset(ev: Event) {
 function nodeStyle(el: LayoutZoneElement) {
   const ff = typeof el.fontFamily === "string" ? el.fontFamily.trim() : "";
   const flex = flexJustifyAlignForAxes(el.alignX, el.alignY);
+  const wrap = getZoneTextWrapStyle(el);
   return {
     left: `${el.x}px`,
     top: `${el.y}px`,
@@ -315,6 +353,8 @@ function nodeStyle(el: LayoutZoneElement) {
     display: "flex",
     justifyContent: flex.justifyContent,
     alignItems: flex.alignItems,
+    zIndex: normalizeZIndex(el.zIndex),
+    ...(wrap ?? {}),
   };
 }
 
@@ -538,8 +578,6 @@ async function hzAssignImage(el: LayoutZoneElement | null, f?: File | null) {
   border: 1px solid transparent;
   background: rgb(255 255 255 / 0.35);
   display: flex;
-  align-items: center;
-  justify-content: flex-start;
   padding: 2px 4px;
   overflow: hidden;
   white-space: nowrap;
@@ -548,6 +586,8 @@ async function hzAssignImage(el: LayoutZoneElement | null, f?: File | null) {
 .hz-node.selected {
   border-color: #6366f1;
   box-shadow: 0 0 0 1px #6366f1 inset;
+  overflow: visible;
+  z-index: 6;
 }
 .hz-img {
   max-width: 100%;
@@ -591,60 +631,108 @@ async function hzAssignImage(el: LayoutZoneElement | null, f?: File | null) {
   color: #71717a;
   line-height: 1.4;
 }
+/* 缩放手柄：与版式画布一致，圆点在控件外侧 */
 .hz-handle {
+  --hz-handle-hit: 44px;
+  --hz-handle-out: 9px;
   position: absolute;
-  width: 44px;
-  height: 44px;
-  margin: -22px;
+  width: var(--hz-handle-hit);
+  height: var(--hz-handle-hit);
+  margin: 0;
   padding: 0;
   border: none;
-  background: radial-gradient(circle, #6366f1 0 28%, transparent 30%);
-  opacity: 0.85;
+  background: transparent;
+  opacity: 1;
   cursor: nwse-resize;
   touch-action: none;
+  z-index: 3;
+}
+.hz-handle:focus {
+  outline: none;
+}
+.hz-handle:focus-visible {
+  outline: 2px solid #6366f1;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.hz-handle::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  margin-left: -6px;
+  margin-top: -6px;
+  box-sizing: border-box;
+  border-radius: 50%;
+  background: linear-gradient(145deg, #818cf8 0%, #6366f1 55%, #4f46e5 100%);
+  border: 2px solid #fff;
+  box-shadow:
+    0 1px 3px rgb(15 23 42 / 0.25),
+    0 0 0 1px rgb(99 102 241 / 0.35);
+  pointer-events: none;
+}
+.hz-handle:hover::after {
+  background: linear-gradient(145deg, #6366f1 0%, #4f46e5 100%);
+  box-shadow:
+    0 2px 6px rgb(15 23 42 / 0.3),
+    0 0 0 1px rgb(79 70 229 / 0.45);
 }
 .hz-handle-nw {
-  top: 0;
-  left: 0;
+  top: calc(-1 * var(--hz-handle-out));
+  left: calc(-1 * var(--hz-handle-out));
+  margin-left: calc(-0.5 * var(--hz-handle-hit));
+  margin-top: calc(-0.5 * var(--hz-handle-hit));
   cursor: nwse-resize;
 }
 .hz-handle-ne {
-  top: 0;
-  right: 0;
+  top: calc(-1 * var(--hz-handle-out));
+  right: calc(-1 * var(--hz-handle-out));
+  margin-right: calc(-0.5 * var(--hz-handle-hit));
+  margin-top: calc(-0.5 * var(--hz-handle-hit));
   cursor: nesw-resize;
 }
 .hz-handle-se {
-  bottom: 0;
-  right: 0;
+  bottom: calc(-1 * var(--hz-handle-out));
+  right: calc(-1 * var(--hz-handle-out));
+  margin-right: calc(-0.5 * var(--hz-handle-hit));
+  margin-bottom: calc(-0.5 * var(--hz-handle-hit));
   cursor: nwse-resize;
 }
 .hz-handle-sw {
-  bottom: 0;
-  left: 0;
+  bottom: calc(-1 * var(--hz-handle-out));
+  left: calc(-1 * var(--hz-handle-out));
+  margin-left: calc(-0.5 * var(--hz-handle-hit));
+  margin-bottom: calc(-0.5 * var(--hz-handle-hit));
   cursor: nesw-resize;
 }
 .hz-handle-n {
-  top: 0;
+  top: calc(-1 * var(--hz-handle-out));
   left: 50%;
-  margin-left: -22px;
+  margin-left: calc(-0.5 * var(--hz-handle-hit));
+  margin-top: calc(-0.5 * var(--hz-handle-hit));
   cursor: ns-resize;
 }
 .hz-handle-s {
-  bottom: 0;
+  bottom: calc(-1 * var(--hz-handle-out));
   left: 50%;
-  margin-left: -22px;
+  margin-left: calc(-0.5 * var(--hz-handle-hit));
+  margin-bottom: calc(-0.5 * var(--hz-handle-hit));
   cursor: ns-resize;
 }
 .hz-handle-e {
-  right: 0;
+  right: calc(-1 * var(--hz-handle-out));
   top: 50%;
-  margin-top: -22px;
+  margin-right: calc(-0.5 * var(--hz-handle-hit));
+  margin-top: calc(-0.5 * var(--hz-handle-hit));
   cursor: ew-resize;
 }
 .hz-handle-w {
-  left: 0;
+  left: calc(-1 * var(--hz-handle-out));
   top: 50%;
-  margin-top: -22px;
+  margin-left: calc(-0.5 * var(--hz-handle-hit));
+  margin-top: calc(-0.5 * var(--hz-handle-hit));
   cursor: ew-resize;
 }
 .hz-props {
@@ -663,6 +751,49 @@ async function hzAssignImage(el: LayoutZoneElement | null, f?: File | null) {
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+.hz-wrap-row {
+  gap: 6px;
+}
+.hz-wrap-title {
+  font-size: 12px;
+  color: #52525b;
+}
+.hz-seg {
+  display: inline-flex;
+  align-self: flex-start;
+  border-radius: 8px;
+  border: 1px solid #e4e4e7;
+  overflow: hidden;
+  background: #fafafa;
+}
+.hz-seg-btn {
+  margin: 0;
+  padding: 6px 14px;
+  font-size: 12px;
+  border: none;
+  background: transparent;
+  color: #52525b;
+  cursor: pointer;
+  line-height: 1.2;
+}
+.hz-seg-btn + .hz-seg-btn {
+  box-shadow: inset 1px 0 0 #e4e4e7;
+}
+.hz-seg-btn:hover:not(.hz-seg-on) {
+  background: rgb(244 244 245 / 0.85);
+  color: #18181b;
+}
+.hz-seg-on {
+  background: #eef2ff;
+  color: #3730a3;
+  font-weight: 600;
+}
+.hz-wrap-hint {
+  margin: 0;
+  font-size: 11px;
+  color: #a1a1aa;
+  line-height: 1.35;
 }
 
 .hz-inp {

@@ -1,32 +1,72 @@
 <template>
-  <section class="card">
-    <h3>配置导入 / 导出</h3>
-    <div class="actions">
-      <button type="button" class="btn-touch primary" :disabled="busy" @click="exportShare">导出（脱敏）</button>
-      <button type="button" class="btn-touch" :disabled="busy" @click="exportBackup">导出（本机备份）</button>
+  <section class="settings-section config-import">
+    <h3 class="settings-section__title">配置导入 / 导出</h3>
+    <div class="config-import-stack">
+      <div class="config-import-grid">
+        <button
+          type="button"
+          class="settings-btn settings-btn--primary settings-btn--block"
+          :disabled="busy"
+          @click="exportShare"
+        >
+          导出（脱敏）
+        </button>
+        <button
+          type="button"
+          class="settings-btn settings-btn--block"
+          :disabled="busy"
+          @click="exportBackup"
+        >
+          导出（本机备份）
+        </button>
+      </div>
+
+      <div class="config-import-grid">
+        <div class="config-import-file-cell">
+          <input
+            id="config-file-input"
+            ref="fileRef"
+            type="file"
+            class="file-input"
+            accept="application/json,.json"
+            @change="onFile"
+          />
+          <label for="config-file-input" class="settings-btn settings-btn--file settings-btn--block file-picker-label">
+            选择配置文件
+          </label>
+        </div>
+        <p class="config-import-status" :title="pendingFileName || undefined">
+          <span v-if="pendingFileName" class="config-import-status-name">{{ pendingFileName }}</span>
+          <span v-else class="config-import-status-placeholder">未选择文件</span>
+        </p>
+      </div>
+
+      <div class="config-import-grid">
+        <button
+          type="button"
+          class="settings-btn settings-btn--block"
+          :disabled="busy || !pendingJson"
+          @click="doImport('merge')"
+        >
+          合并导入
+        </button>
+        <button
+          type="button"
+          class="settings-btn settings-btn--danger settings-btn--block"
+          :disabled="busy || !pendingJson"
+          @click="confirmReplace"
+        >
+          覆盖导入
+        </button>
+      </div>
     </div>
-    <div class="import-row">
-      <input
-        id="config-file-input"
-        ref="fileRef"
-        type="file"
-        class="file-input"
-        accept="application/json,.json"
-        @change="onFile"
-      />
-      <label for="config-file-input" class="btn-touch file-label">选择配置文件</label>
-      <span v-if="pendingFileName" class="file-name">{{ pendingFileName }}</span>
-      <span v-else class="file-hint">未选择文件</span>
-    </div>
-    <div class="import-actions">
-      <button type="button" class="btn-touch" :disabled="busy || !pendingJson" @click="doImport('merge')">
-        合并导入
-      </button>
-      <button type="button" class="btn-touch danger" :disabled="busy || !pendingJson" @click="confirmReplace">
-        覆盖导入
-      </button>
-    </div>
-    <p v-if="msg" :class="['msg', msgTone]">{{ msg }}</p>
+    <p
+      v-if="msg"
+      class="settings-msg"
+      :class="{ 'settings-msg--ok': msgTone === 'ok', 'settings-msg--err': msgTone === 'err' }"
+    >
+      {{ msg }}
+    </p>
   </section>
 </template>
 
@@ -141,26 +181,6 @@ function confirmReplace() {
 </script>
 
 <style scoped>
-.card {
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  padding: 16px;
-  background: #fff;
-  margin-top: 16px;
-}
-.actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  margin-bottom: 18px;
-}
-.import-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 16px;
-}
 .file-input {
   position: absolute;
   width: 1px;
@@ -172,62 +192,57 @@ function confirmReplace() {
   white-space: nowrap;
   border: 0;
 }
-.file-label {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  background: #f3f4f6;
-  border-color: #d1d5db;
-  -webkit-tap-highlight-color: transparent;
+
+/* 三行共用同一两列网格，左缘与列宽对齐，避免「各行按钮长短不一、间距忽大忽小」 */
+.config-import-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-width: 520px;
 }
-.file-name {
-  font-size: 15px;
+
+.config-import-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+}
+
+.config-import-file-cell {
+  position: relative;
+  min-width: 0;
+}
+
+.file-picker-label {
+  display: flex;
+  width: 100%;
+  box-sizing: border-box;
+  cursor: pointer;
+  margin: 0;
+}
+
+.config-import-status {
+  margin: 0;
+  min-width: 0;
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.config-import-status-name {
   color: #374151;
   word-break: break-all;
 }
-.file-hint {
-  font-size: 14px;
+
+.config-import-status-placeholder {
   color: #9ca3af;
 }
-.import-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-}
-.btn-touch {
-  min-height: 48px;
-  min-width: 48px;
-  padding: 12px 20px;
-  border-radius: 10px;
-  border: 1px solid #d1d5db;
-  background: #fff;
-  cursor: pointer;
-  font-size: 16px;
-  -webkit-tap-highlight-color: transparent;
-}
-.btn-touch.primary {
-  background: #4f46e5;
-  color: #fff;
-  border-color: #4f46e5;
-}
-.btn-touch.danger {
-  border-color: #fecaca;
-  background: #fef2f2;
-  color: #991b1b;
-}
-.btn-touch:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-.msg {
-  font-size: 14px;
-  margin-top: 12px;
-}
-.msg.ok {
-  color: #166534;
-}
-.msg.err {
-  color: #b91c1c;
+
+@media (max-width: 480px) {
+  .config-import-grid {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

@@ -4,6 +4,8 @@ import {
   flexJustifyAlignForAxes,
   formatLayoutDate,
   formatPageNumberDisplay,
+  getZoneTextWrapStyle,
+  normalizeZIndex,
   normalizeImageCaptionPosition,
   normalizeImageRotationDeg,
   PAGE_NUMBER_PREVIEW_TOTAL_FALLBACK,
@@ -25,6 +27,13 @@ function previewPlainOrDate(el: LayoutZoneElement): string {
 
 function flexPlaceAxes(el: LayoutZoneElement): { justifyContent: string; alignItems: string } {
   return flexJustifyAlignForAxes(el.alignX, el.alignY);
+}
+
+/** 文本 / 色块 / 日期：自动换行与长串断行 */
+function applyZoneTextWrapStyles(node: HTMLElement, el: LayoutZoneElement) {
+  const st = getZoneTextWrapStyle(el);
+  if (!st) return;
+  Object.assign(node.style, st);
 }
 
 function axisToTextAlign(ax: LayoutAlignAxis): string {
@@ -173,7 +182,14 @@ export function renderZoneElementsInto(
   const resizeSet = opts.resizeHandlesForIds ?? null;
   const chrome = opts.selectionChrome !== false;
 
-  for (const el of elements) {
+  const sorted = [...elements].sort((a, b) => {
+    const za = normalizeZIndex(a.zIndex);
+    const zb = normalizeZIndex(b.zIndex);
+    if (za !== zb) return za - zb;
+    return String(a.id).localeCompare(String(b.id));
+  });
+
+  for (const el of sorted) {
     const node = document.createElement("div");
     node.className = "layout-zone-node";
     if (chrome && idSet?.has(el.id)) node.classList.add("is-selected");
@@ -189,6 +205,7 @@ export function renderZoneElementsInto(
     const ff = typeof el.fontFamily === "string" ? el.fontFamily.trim() : "";
     if (ff) node.style.fontFamily = ff;
     node.style.overflow = "hidden";
+    node.style.zIndex = String(normalizeZIndex(el.zIndex));
 
     const flex = flexPlaceAxes(el);
 
@@ -202,7 +219,7 @@ export function renderZoneElementsInto(
       node.style.justifyContent = flex.justifyContent;
       node.style.alignItems = flex.alignItems;
       node.style.padding = "2px 6px";
-      node.style.whiteSpace = "pre-wrap";
+      applyZoneTextWrapStyles(node, el);
       node.textContent = el.text || "";
     } else if (el.type === "pageNumber") {
       const mode = el.pageNumberMode ?? "plain";
@@ -212,6 +229,18 @@ export function renderZoneElementsInto(
       node.style.alignItems = flex.alignItems;
       node.style.padding = mode === "circle" ? "2px" : "2px 6px";
       node.style.whiteSpace = "nowrap";
+
+      const fill = document.createElement("div");
+      fill.className = "layout-zone-page-fill";
+      fill.style.flex = "1";
+      fill.style.minWidth = "0";
+      fill.style.minHeight = "0";
+      fill.style.width = "100%";
+      fill.style.height = "100%";
+      fill.style.display = "flex";
+      fill.style.alignItems = flex.alignItems;
+      fill.style.justifyContent = flex.justifyContent;
+      fill.style.boxSizing = "border-box";
 
       if (mode === "circle") {
         const badge = document.createElement("span");
@@ -232,18 +261,19 @@ export function renderZoneElementsInto(
         badge.style.fontSize = `${el.fontSize}px`;
         badge.style.lineHeight = "1";
         if (ff) badge.style.fontFamily = ff;
-        node.appendChild(badge);
+        fill.appendChild(badge);
       } else {
-        node.style.backgroundColor = el.bgColor === "transparent" ? "transparent" : el.bgColor;
-        node.textContent = formatPageNumberDisplay(mode, previewPage, previewTotal);
+        fill.style.backgroundColor = el.bgColor === "transparent" ? "transparent" : el.bgColor;
+        fill.textContent = formatPageNumberDisplay(mode, previewPage, previewTotal);
       }
+      node.appendChild(fill);
     } else {
       node.style.backgroundColor = el.bgColor === "transparent" ? "transparent" : el.bgColor;
       node.style.display = "flex";
       node.style.justifyContent = flex.justifyContent;
       node.style.alignItems = flex.alignItems;
       node.style.padding = "2px 6px";
-      node.style.whiteSpace = "nowrap";
+      applyZoneTextWrapStyles(node, el);
       node.textContent = previewPlainOrDate(el);
     }
 

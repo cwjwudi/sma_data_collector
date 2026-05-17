@@ -467,54 +467,110 @@ async function onTplImageDropFile(ev: DragEvent, el: TemplateElement) {
 }
 .el-node.sel {
   outline: 2px solid #6366f1;
+  overflow: visible;
+  z-index: 6;
 }
 .touch {
   touch-action: manipulation;
 }
 .hz {
+  --cv-hz-hit: 44px;
+  --cv-hz-out: 9px;
   position: absolute;
-  width: 44px;
-  height: 44px;
-  margin: -22px;
+  width: var(--cv-hz-hit);
+  height: var(--cv-hz-hit);
+  margin: 0;
   border: none;
   padding: 0;
+  background: transparent;
+  cursor: nwse-resize;
+  touch-action: none;
+  z-index: 3;
+}
+.hz:focus {
+  outline: none;
+}
+.hz:focus-visible {
+  outline: 2px solid #6366f1;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.hz::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  margin-left: -6px;
+  margin-top: -6px;
+  box-sizing: border-box;
   border-radius: 50%;
-  background: radial-gradient(circle, #6366f1 32%, transparent 34%);
+  background: linear-gradient(145deg, #818cf8 0%, #6366f1 55%, #4f46e5 100%);
+  border: 2px solid #fff;
+  box-shadow:
+    0 1px 3px rgb(15 23 42 / 0.25),
+    0 0 0 1px rgb(99 102 241 / 0.35);
+  pointer-events: none;
+}
+.hz:hover::after {
+  background: linear-gradient(145deg, #6366f1 0%, #4f46e5 100%);
+  box-shadow:
+    0 2px 6px rgb(15 23 42 / 0.3),
+    0 0 0 1px rgb(79 70 229 / 0.45);
 }
 .hz-nw {
-  left: 0;
-  top: 0;
+  left: calc(-1 * var(--cv-hz-out));
+  top: calc(-1 * var(--cv-hz-out));
+  margin-left: calc(-0.5 * var(--cv-hz-hit));
+  margin-top: calc(-0.5 * var(--cv-hz-hit));
 }
 .hz-ne {
-  right: 0;
-  top: 0;
+  right: calc(-1 * var(--cv-hz-out));
+  top: calc(-1 * var(--cv-hz-out));
+  margin-right: calc(-0.5 * var(--cv-hz-hit));
+  margin-top: calc(-0.5 * var(--cv-hz-hit));
+  cursor: nesw-resize;
 }
 .hz-se {
-  right: 0;
-  bottom: 0;
+  right: calc(-1 * var(--cv-hz-out));
+  bottom: calc(-1 * var(--cv-hz-out));
+  margin-right: calc(-0.5 * var(--cv-hz-hit));
+  margin-bottom: calc(-0.5 * var(--cv-hz-hit));
 }
 .hz-sw {
-  left: 0;
-  bottom: 0;
+  left: calc(-1 * var(--cv-hz-out));
+  bottom: calc(-1 * var(--cv-hz-out));
+  margin-left: calc(-0.5 * var(--cv-hz-hit));
+  margin-bottom: calc(-0.5 * var(--cv-hz-hit));
+  cursor: nesw-resize;
 }
 .hz-n {
   left: 50%;
-  margin-left: -22px;
-  top: 0;
+  top: calc(-1 * var(--cv-hz-out));
+  margin-left: calc(-0.5 * var(--cv-hz-hit));
+  margin-top: calc(-0.5 * var(--cv-hz-hit));
+  cursor: ns-resize;
 }
 .hz-s {
   left: 50%;
-  margin-left: -22px;
-  bottom: 0;
+  bottom: calc(-1 * var(--cv-hz-out));
+  margin-left: calc(-0.5 * var(--cv-hz-hit));
+  margin-bottom: calc(-0.5 * var(--cv-hz-hit));
+  cursor: ns-resize;
 }
 .hz-e {
+  right: calc(-1 * var(--cv-hz-out));
   top: 50%;
-  margin-top: -22px;
-  right: 0;
+  margin-right: calc(-0.5 * var(--cv-hz-hit));
+  margin-top: calc(-0.5 * var(--cv-hz-hit));
+  cursor: ew-resize;
 }
 .hz-w {
+  left: calc(-1 * var(--cv-hz-out));
   top: 50%;
-  margin-top: -22px;
-  left: 0;
+  margin-left: calc(-0.5 * var(--cv-hz-hit));
+  margin-top: calc(-0.5 * var(--cv-hz-hit));
+  cursor: ew-resize;
 }
 </style>

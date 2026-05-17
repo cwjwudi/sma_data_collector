@@ -1,0 +1,270 @@
+/**
+ * 设置页：区块容器、标题层级、说明文案、按钮与表单控件统一规范。
+ * 在 Settings.vue 中非 scoped 引入一次即可作用于各子组件根节点。
+ */
+
+.settings-page {
+  max-width: 960px;
+}
+
+.settings-section {
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 16px;
+  background: #fff;
+}
+
+.settings-section--featured {
+  border-color: #c7d2fe;
+  background: linear-gradient(180deg, #f8fafc 0%, #ffffff 72%);
+}
+
+.settings-section--featured + .settings-section {
+  margin-top: 0;
+}
+
+.settings-section + .settings-section {
+  margin-top: 16px;
+}
+
+.settings-section__title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #111827;
+  margin: 0 0 8px;
+  line-height: 1.35;
+  letter-spacing: -0.01em;
+}
+
+.settings-hint {
+  margin: 0 0 12px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #6b7280;
+}
+
+.settings-hint strong {
+  color: #374151;
+  font-weight: 600;
+}
+
+.settings-hint code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  background: #f3f4f6;
+  color: #4b5563;
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+.settings-subhead {
+  font-size: 14px;
+  font-weight: 600;
+  color: #111827;
+  margin: 18px 0 10px;
+}
+
+.settings-subhead:first-of-type {
+  margin-top: 0;
+}
+
+.settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.settings-actions--spaced {
+  margin-bottom: 12px;
+}
+
+/* 次要 / 线框按钮 */
+.settings-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: 1px solid #d1d5db;
+  background: #fff;
+  color: #374151;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  box-sizing: border-box;
+}
+
+.settings-btn--block {
+  width: 100%;
+}
+
+.settings-btn:hover:not(:disabled) {
+  border-color: #9ca3af;
+  background: #f9fafb;
+}
+
+.settings-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.settings-btn--primary {
+  background: #4f46e5;
+  border-color: #4f46e5;
+  color: #fff;
+}
+
+.settings-btn--primary:hover:not(:disabled) {
+  background: #4338ca;
+  border-color: #4338ca;
+}
+
+.settings-btn--danger {
+  border-color: #fecaca;
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+.settings-btn--danger:hover:not(:disabled) {
+  background: #fee2e2;
+  border-color: #fca5a5;
+}
+
+.settings-btn--muted {
+  background: #f9fafb;
+}
+
+/* 与隐藏 file input 搭配的「选择文件」外观 */
+.settings-btn--file {
+  background: #f9fafb;
+}
+
+.settings-field-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: #374151;
+}
+
+.settings-field-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.settings-select {
+  width: 100%;
+  max-width: 480px;
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 14px;
+  background: #fff;
+  color: #374151;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+
+.settings-select:focus {
+  outline: none;
+  border-color: #818cf8;
+  box-shadow: 0 0 0 3px rgb(99 102 241 / 0.15);
+}
+
+.settings-msg {
+  font-size: 13px;
+  margin-top: 10px;
+  line-height: 1.45;
+  color: #374151;
+}
+
+.settings-msg--ok {
+  color: #166534;
+}
+
+.settings-msg--err {
+  color: #b91c1c;
+}
+
+.settings-msg--warn {
+  color: #92400e;
+}
+
+.settings-msg--muted {
+  color: #6b7280;
+}
+
+/* 开关行 */
+.settings-switch {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.settings-switch-row {
+  margin-bottom: 12px;
+}
+
+.settings-switch-track {
+  flex-shrink: 0;
+  width: 52px;
+  height: 32px;
+  border-radius: 16px;
+  background: #d1d5db;
+  position: relative;
+  transition: background 0.15s ease;
+}
+
+.settings-switch-track.on {
+  background: #4f46e5;
+}
+
+.settings-switch-thumb {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.2);
+  transition: transform 0.15s ease;
+}
+
+.settings-switch-track.on .settings-switch-thumb {
+  transform: translateX(20px);
+}
+
+.settings-switch-label {
+  font-size: 14px;
+  color: #374151;
+  line-height: 1.4;
+}
+
+.settings-note {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: #6b7280;
+  line-height: 1.45;
+}
+
+.settings-note code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #f3f4f6;
+  color: #4b5563;
+}

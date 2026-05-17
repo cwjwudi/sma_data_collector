@@ -69,7 +69,9 @@
                     </ZoneImageCompose>
                   </div>
                 </template>
-                <template v-else>{{ zonePreview(el) }}</template>
+                <template v-else>
+                  <span class="lppc-zone-text" :style="zoneInlineTextAlign(el)">{{ zonePreview(el) }}</span>
+                </template>
                 <template v-if="selId === el.id">
                   <button
                     v-for="pos in HANDLES"
@@ -141,7 +143,9 @@
                   </ZoneImageCompose>
                 </div>
               </template>
-              <template v-else>{{ zonePreview(el) }}</template>
+              <template v-else>
+                <span class="lppc-zone-text" :style="zoneInlineTextAlign(el)">{{ zonePreview(el) }}</span>
+              </template>
               <template v-if="selId === el.id">
                 <button
                   v-for="pos in HANDLES"
@@ -213,7 +217,9 @@
                     </ZoneImageCompose>
                   </div>
                 </template>
-                <template v-else>{{ zonePreview(el) }}</template>
+                <template v-else>
+                  <span class="lppc-zone-text" :style="zoneInlineTextAlign(el)">{{ zonePreview(el) }}</span>
+                </template>
                 <template v-if="selId === el.id">
                   <button
                     v-for="pos in HANDLES"
@@ -245,7 +251,9 @@ import { computePaperLayout, type PaperLayoutMetrics } from "@/lib/report-templa
 import {
   clampZoneElement,
   flexJustifyAlignForAxes,
+  getZoneTextWrapStyle,
   makeLayoutZoneElement,
+  normalizeZIndex,
   previewZoneElementDisplay,
   type LayoutControlType,
   type LayoutZoneElement,
@@ -362,7 +370,8 @@ function elementsForZone(z: Zone): LayoutZoneElement[] {
 function nodeStyle(el: LayoutZoneElement) {
   const ff = typeof el.fontFamily === "string" ? el.fontFamily.trim() : "";
   const flex = flexJustifyAlignForAxes(el.alignX, el.alignY);
-  return {
+  const wrap = getZoneTextWrapStyle(el);
+  const base: Record<string, string> = {
     left: `${el.x}px`,
     top: `${el.y}px`,
     width: `${el.w}px`,
@@ -373,11 +382,29 @@ function nodeStyle(el: LayoutZoneElement) {
     display: "flex",
     justifyContent: flex.justifyContent,
     alignItems: flex.alignItems,
+    zIndex: normalizeZIndex(el.zIndex),
+    ...(wrap ?? { whiteSpace: "nowrap" }),
   };
+  if (el.type === "box") {
+    const bc = typeof el.color === "string" ? el.color : "#18181b";
+    return {
+      ...base,
+      backgroundColor: el.bgColor === "transparent" ? "transparent" : el.bgColor,
+      border: `1px solid ${bc}40`,
+      borderRadius: "4px",
+      padding: "2px 6px",
+    };
+  }
+  return base;
 }
 
 function zonePreview(el: LayoutZoneElement) {
   return previewZoneElementDisplay(el);
+}
+
+function zoneInlineTextAlign(el: LayoutZoneElement): { textAlign: "left" | "center" | "right" } {
+  const ax = el.alignX;
+  return { textAlign: ax === "center" ? "center" : ax === "end" ? "right" : "left" };
 }
 
 function onPaperBlank(ev: PointerEvent) {
@@ -609,7 +636,8 @@ async function onImageFileDrop(ev: DragEvent, el: LayoutZoneElement) {
 }
 .lppc-band {
   box-sizing: border-box;
-  overflow: hidden;
+  /* 缩放手柄在控件外侧，不可 hidden 以免贴边时被裁切 */
+  overflow: visible;
 }
 .lppc-band.hdr,
 .lppc-band.ftr {
@@ -632,15 +660,24 @@ async function onImageFileDrop(ev: DragEvent, el: LayoutZoneElement) {
   border: 1px solid transparent;
   background: rgb(255 255 255 / 0.35);
   display: flex;
-  align-items: center;
-  justify-content: flex-start;
   padding: 2px 4px;
   overflow: hidden;
-  white-space: nowrap;
+}
+.lppc-zone-text {
+  box-sizing: border-box;
+  /* 父级为 flex + align-items 九宫格时，占满主方向宽度才能按框宽换行 */
+  flex: 1 1 0;
+  min-width: 0;
+  max-height: 100%;
+  overflow: hidden;
+  line-height: 1.25;
 }
 .lppc-node.selected {
   border-color: #6366f1;
   box-shadow: 0 0 0 1px #6366f1 inset;
+  /* 手柄定位在框外，需透出绘制 */
+  overflow: visible;
+  z-index: 6;
 }
 .lppc-img {
   max-width: 100%;
@@ -684,56 +721,105 @@ async function onImageFileDrop(ev: DragEvent, el: LayoutZoneElement) {
 .touch {
   touch-action: manipulation;
 }
+/* 缩放手柄：大尺寸透明点击区，可视小圆在控件边框外侧 */
 .hz {
+  --lppc-hz-hit: 44px;
+  --lppc-hz-out: 9px; /* 手柄中心相对框角的向外偏移，使圆点完全在框外 */
   position: absolute;
-  width: 44px;
-  height: 44px;
-  margin: -22px;
+  width: var(--lppc-hz-hit);
+  height: var(--lppc-hz-hit);
+  margin: 0;
   border: none;
   padding: 0;
-  border-radius: 50%;
-  background: radial-gradient(circle, #6366f1 32%, transparent 34%);
+  background: transparent;
   cursor: nwse-resize;
   touch-action: none;
+  z-index: 3;
+}
+.hz:focus {
+  outline: none;
+}
+.hz:focus-visible {
+  outline: 2px solid #6366f1;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.hz::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 12px;
+  height: 12px;
+  margin-left: -6px;
+  margin-top: -6px;
+  box-sizing: border-box;
+  border-radius: 50%;
+  background: linear-gradient(145deg, #818cf8 0%, #6366f1 55%, #4f46e5 100%);
+  border: 2px solid #fff;
+  box-shadow:
+    0 1px 3px rgb(15 23 42 / 0.25),
+    0 0 0 1px rgb(99 102 241 / 0.35);
+  pointer-events: none;
+}
+.hz:hover::after {
+  background: linear-gradient(145deg, #6366f1 0%, #4f46e5 100%);
+  box-shadow:
+    0 2px 6px rgb(15 23 42 / 0.3),
+    0 0 0 1px rgb(79 70 229 / 0.45);
 }
 .hz-nw {
-  left: 0;
-  top: 0;
+  left: calc(-1 * var(--lppc-hz-out));
+  top: calc(-1 * var(--lppc-hz-out));
+  margin-left: calc(-0.5 * var(--lppc-hz-hit));
+  margin-top: calc(-0.5 * var(--lppc-hz-hit));
 }
 .hz-ne {
-  right: 0;
-  top: 0;
+  right: calc(-1 * var(--lppc-hz-out));
+  top: calc(-1 * var(--lppc-hz-out));
+  margin-right: calc(-0.5 * var(--lppc-hz-hit));
+  margin-top: calc(-0.5 * var(--lppc-hz-hit));
+  cursor: nesw-resize;
 }
 .hz-se {
-  right: 0;
-  bottom: 0;
+  right: calc(-1 * var(--lppc-hz-out));
+  bottom: calc(-1 * var(--lppc-hz-out));
+  margin-right: calc(-0.5 * var(--lppc-hz-hit));
+  margin-bottom: calc(-0.5 * var(--lppc-hz-hit));
 }
 .hz-sw {
-  left: 0;
-  bottom: 0;
+  left: calc(-1 * var(--lppc-hz-out));
+  bottom: calc(-1 * var(--lppc-hz-out));
+  margin-left: calc(-0.5 * var(--lppc-hz-hit));
+  margin-bottom: calc(-0.5 * var(--lppc-hz-hit));
+  cursor: nesw-resize;
 }
 .hz-n {
   left: 50%;
-  margin-left: -22px;
-  top: 0;
+  top: calc(-1 * var(--lppc-hz-out));
+  margin-left: calc(-0.5 * var(--lppc-hz-hit));
+  margin-top: calc(-0.5 * var(--lppc-hz-hit));
   cursor: ns-resize;
 }
 .hz-s {
   left: 50%;
-  margin-left: -22px;
-  bottom: 0;
+  bottom: calc(-1 * var(--lppc-hz-out));
+  margin-left: calc(-0.5 * var(--lppc-hz-hit));
+  margin-bottom: calc(-0.5 * var(--lppc-hz-hit));
   cursor: ns-resize;
 }
 .hz-e {
+  right: calc(-1 * var(--lppc-hz-out));
   top: 50%;
-  margin-top: -22px;
-  right: 0;
+  margin-right: calc(-0.5 * var(--lppc-hz-hit));
+  margin-top: calc(-0.5 * var(--lppc-hz-hit));
   cursor: ew-resize;
 }
 .hz-w {
+  left: calc(-1 * var(--lppc-hz-out));
   top: 50%;
-  margin-top: -22px;
-  left: 0;
+  margin-left: calc(-0.5 * var(--lppc-hz-hit));
+  margin-top: calc(-0.5 * var(--lppc-hz-hit));
   cursor: ew-resize;
 }
 </style>

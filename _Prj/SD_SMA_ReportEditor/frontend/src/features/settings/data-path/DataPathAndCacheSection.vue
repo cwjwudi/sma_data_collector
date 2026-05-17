@@ -1,26 +1,26 @@
 <template>
-  <section class="card muted-card">
-    <h3>连接偏好</h3>
-    <p class="sync-hint">偏好保存在配置中，多开窗口会自动一致。</p>
+  <section class="settings-section">
+    <h3 class="settings-section__title">连接偏好</h3>
+    <p class="settings-hint">偏好保存在配置中，多开窗口会自动一致。</p>
 
-    <h4 class="sub">数据库</h4>
-    <div class="row-switch">
+    <h4 class="settings-subhead">数据库</h4>
+    <div class="settings-switch-row">
       <button
         type="button"
-        class="switch-touch"
+        class="settings-switch"
         role="switch"
         :aria-checked="prefs.auto_select_last_connection ? 'true' : 'false'"
         @click="toggleDbAuto"
       >
-        <span class="switch-track" :class="{ on: prefs.auto_select_last_connection }">
-          <span class="switch-thumb" />
+        <span class="settings-switch-track" :class="{ on: prefs.auto_select_last_connection }">
+          <span class="settings-switch-thumb" />
         </span>
-        <span class="switch-label">自动选中上次或下方默认连接</span>
+        <span class="settings-switch-label">自动选中上次或下方默认连接</span>
       </button>
     </div>
-    <div class="row-select">
-      <span class="field-label">默认连接</span>
-      <select v-model="defaultConnLocal" class="select-touch" @change="onDefaultConnChange">
+    <div class="settings-field-row">
+      <span class="settings-field-label">默认连接</span>
+      <select v-model="defaultConnLocal" class="settings-select" @change="onDefaultConnChange">
         <option value="">不指定</option>
         <option v-for="c in connections" :key="c.id" :value="c.id">
           {{ c.name || c.engine }} — {{ c.engine }}
@@ -28,24 +28,24 @@
       </select>
     </div>
 
-    <h4 class="sub">OPC UA</h4>
-    <div class="row-switch">
+    <h4 class="settings-subhead">OPC UA</h4>
+    <div class="settings-switch-row">
       <button
         type="button"
-        class="switch-touch"
+        class="settings-switch"
         role="switch"
         :aria-checked="prefs.auto_select_last_opcua_server ? 'true' : 'false'"
         @click="toggleOpcAuto"
       >
-        <span class="switch-track" :class="{ on: prefs.auto_select_last_opcua_server }">
-          <span class="switch-thumb" />
+        <span class="settings-switch-track" :class="{ on: prefs.auto_select_last_opcua_server }">
+          <span class="settings-switch-thumb" />
         </span>
-        <span class="switch-label">自动选中上次或下方默认服务器</span>
+        <span class="settings-switch-label">自动选中上次或下方默认服务器</span>
       </button>
     </div>
-    <div class="row-select">
-      <span class="field-label">默认服务器</span>
-      <select v-model="defaultOpcLocal" class="select-touch" @change="onDefaultOpcChange">
+    <div class="settings-field-row">
+      <span class="settings-field-label">默认服务器</span>
+      <select v-model="defaultOpcLocal" class="settings-select" @change="onDefaultOpcChange">
         <option value="">不指定</option>
         <option v-for="s in opcServers" :key="s.id" :value="s.id">
           {{ s.name || s.endpoint_url }}
@@ -53,17 +53,19 @@
       </select>
     </div>
 
-    <h4 class="sub">缓存</h4>
-    <div class="actions">
-      <button type="button" class="btn-touch" :disabled="busy" @click="clearQuerySessions">
+    <h4 class="settings-subhead">缓存</h4>
+    <div class="settings-actions">
+      <button type="button" class="settings-btn" :disabled="busy" @click="clearQuerySessions">
         清空查询历史与收藏
       </button>
-      <button type="button" class="btn-touch" :disabled="busy" @click="reloadQuerySessions">重新加载查询会话</button>
-      <button type="button" class="btn-touch" :disabled="busy" @click="clearRelLayoutCache">
+      <button type="button" class="settings-btn" :disabled="busy" @click="reloadQuerySessions">
+        重新加载查询会话
+      </button>
+      <button type="button" class="settings-btn" :disabled="busy" @click="clearRelLayoutCache">
         清除关系浏览器布局
       </button>
     </div>
-    <p v-if="msg" class="msg">{{ msg }}</p>
+    <p v-if="msg" class="settings-msg">{{ msg }}</p>
   </section>
 </template>
 
@@ -196,123 +198,3 @@ onMounted(async () => {
   await Promise.all([loadConnections(), loadOpcServers(), loadPrefs()])
 })
 </script>
-
-<style scoped>
-.muted-card {
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  padding: 16px;
-  background: #fff;
-  margin-top: 16px;
-}
-.sync-hint {
-  color: #6b7280;
-  font-size: 14px;
-  line-height: 1.45;
-  margin-bottom: 16px;
-}
-.sub {
-  font-size: 15px;
-  font-weight: 600;
-  margin: 20px 0 12px;
-  color: #111827;
-}
-.sub:first-of-type {
-  margin-top: 0;
-}
-.row-switch {
-  margin-bottom: 14px;
-}
-.switch-touch {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  min-height: 48px;
-  padding: 0;
-  border: none;
-  background: transparent;
-  cursor: pointer;
-  text-align: left;
-  width: 100%;
-  -webkit-tap-highlight-color: transparent;
-}
-.switch-track {
-  flex-shrink: 0;
-  width: 52px;
-  height: 32px;
-  border-radius: 16px;
-  background: #d1d5db;
-  position: relative;
-  transition: background 0.15s ease;
-}
-.switch-track.on {
-  background: #4f46e5;
-}
-.switch-thumb {
-  position: absolute;
-  top: 4px;
-  left: 4px;
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  background: #fff;
-  box-shadow: 0 1px 3px rgb(0 0 0 / 0.2);
-  transition: transform 0.15s ease;
-}
-.switch-track.on .switch-thumb {
-  transform: translateX(20px);
-}
-.switch-label {
-  font-size: 15px;
-  color: #374151;
-  line-height: 1.4;
-}
-.row-select {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-.field-label {
-  font-size: 14px;
-  font-weight: 500;
-  color: #374151;
-}
-.select-touch {
-  width: 100%;
-  max-width: 480px;
-  min-height: 48px;
-  padding: 10px 14px;
-  border: 1px solid #d1d5db;
-  border-radius: 10px;
-  font-size: 16px;
-  background: #fff;
-  cursor: pointer;
-}
-.actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  margin-bottom: 8px;
-}
-.btn-touch {
-  min-height: 48px;
-  min-width: 48px;
-  padding: 12px 18px;
-  border-radius: 10px;
-  border: 1px solid #d1d5db;
-  background: #fff;
-  cursor: pointer;
-  font-size: 16px;
-  -webkit-tap-highlight-color: transparent;
-}
-.btn-touch:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-.msg {
-  font-size: 14px;
-  color: #166534;
-  margin-top: 10px;
-}
-</style>

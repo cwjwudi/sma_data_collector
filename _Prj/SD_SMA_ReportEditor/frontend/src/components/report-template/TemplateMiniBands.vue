@@ -65,7 +65,12 @@ import MiniPreviewChrome from "@/components/report-template/MiniPreviewChrome.vu
 import ZoneImageCompose from "@/components/report-template/ZoneImageCompose.vue";
 import { computed } from "vue";
 import type { LayoutZoneElement } from "@/lib/report-template/layout-zone-element";
-import { previewZoneElementDisplay } from "@/lib/report-template/layout-zone-element";
+import {
+  flexJustifyAlignForAxes,
+  getZoneTextWrapStyle,
+  normalizeZIndex,
+  previewZoneElementDisplay,
+} from "@/lib/report-template/layout-zone-element";
 import type { PaperLayoutMetrics } from "@/lib/report-template/layout-geometry";
 import { metricsForSheet, type EditorSheet } from "@/lib/report-template/editor-sheet";
 import type { ReportTemplate } from "@/lib/report-template/model";
@@ -191,6 +196,8 @@ function previewZoneTxt(el: LayoutZoneElement): string {
 
 function miniZoneElStyle(el: LayoutZoneElement): Record<string, string> {
   const ff = typeof el.fontFamily === "string" ? el.fontFamily.trim() : "";
+  const flex = flexJustifyAlignForAxes(el.alignX, el.alignY);
+  const wrap = getZoneTextWrapStyle(el);
   const s: Record<string, string> = {
     position: "absolute",
     left: `${el.x}px`,
@@ -199,15 +206,21 @@ function miniZoneElStyle(el: LayoutZoneElement): Record<string, string> {
     height: `${el.h}px`,
     boxSizing: "border-box",
     overflow: "hidden",
-    whiteSpace: "nowrap",
     color: el.color,
     fontSize: `${Math.max(5, el.fontSize * 0.75)}px`,
     ...(ff ? { fontFamily: ff } : {}),
+    zIndex: String(normalizeZIndex(el.zIndex)),
   };
   if (el.type === "image") {
     s.display = "flex";
     s.flexDirection = "column";
     s.whiteSpace = "normal";
+  } else {
+    s.display = "flex";
+    s.justifyContent = flex.justifyContent;
+    s.alignItems = flex.alignItems;
+    if (wrap) Object.assign(s, wrap);
+    else s.whiteSpace = "nowrap";
   }
   return s;
 }

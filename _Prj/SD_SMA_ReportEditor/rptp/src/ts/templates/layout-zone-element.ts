@@ -67,6 +67,39 @@ export interface LayoutZoneElement {
   imageSrc: string;
   /** type pageNumber：展示形式 */
   pageNumberMode: PageNumberDisplayMode;
+  /** 同区内叠放顺序，越大越靠近用户 */
+  zIndex: number;
+  /** 文本 / 色块 / 日期：框内自动换行 */
+  textAutoWrap: boolean;
+}
+
+export function normalizeZIndex(v: unknown): number {
+  const n = typeof v === "number" ? v : Number(v);
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, Math.min(10000, Math.round(n)));
+}
+
+export function normalizeTextAutoWrap(v: unknown, fallback: boolean): boolean {
+  if (v === true || v === "true" || v === 1 || v === "1") return true;
+  if (v === false || v === "false" || v === 0 || v === "0") return false;
+  return fallback;
+}
+
+export function getZoneTextWrapStyle(el: LayoutZoneElement): Record<string, string> | null {
+  if (el.type !== "text" && el.type !== "box" && el.type !== "date") return null;
+  if (el.textAutoWrap) {
+    return {
+      whiteSpace: "pre-wrap",
+      overflowWrap: "anywhere",
+      wordBreak: "break-word",
+      minWidth: "0",
+    };
+  }
+  return {
+    whiteSpace: "nowrap",
+    overflowWrap: "normal",
+    wordBreak: "normal",
+  };
 }
 
 export function normalizeAlignAxis(v: unknown, fb: LayoutAlignAxis): LayoutAlignAxis {
@@ -105,12 +138,14 @@ export function defaultLayoutZoneElement(type: LayoutControlType): Omit<LayoutZo
     dateFormat: "yyyy-MM-dd HH:mm",
     imageSrc: "",
     pageNumberMode: "plain" as PageNumberDisplayMode,
+    zIndex: 0,
+    textAutoWrap: false,
   };
   if (type === "text") {
     return { type: "text", x: 8, y: 8, w: 160, h: 28, ...baseText, ...axStart };
   }
   if (type === "box") {
-    return { type: "box", x: 8, y: 8, w: 100, h: 36, ...baseText, ...axCenter };
+    return { type: "box", x: 8, y: 8, w: 100, h: 36, ...baseText, textAutoWrap: true, ...axCenter };
   }
   if (type === "image") {
     return { type: "image", x: 8, y: 8, w: 64, h: 64, ...baseText, text: "", ...axCenter };
@@ -122,13 +157,14 @@ export function defaultLayoutZoneElement(type: LayoutControlType): Omit<LayoutZo
       y: 8,
       w: 80,
       h: 26,
+      ...baseText,
       text: "",
       color: "#52525b",
       bgColor: "transparent",
       fontSize: 12,
       dateFormat: "",
       imageSrc: "",
-      ...axStart,
+      ...axCenter,
     };
   }
   return {
@@ -137,6 +173,7 @@ export function defaultLayoutZoneElement(type: LayoutControlType): Omit<LayoutZo
     y: 8,
     w: 180,
     h: 26,
+    ...baseText,
     text: "",
     color: "#52525b",
     bgColor: "transparent",
@@ -165,6 +202,8 @@ export function hydrateLayoutZoneElement(raw: Partial<LayoutZoneElement>): Layou
     dateFormat: typeof raw.dateFormat === "string" ? raw.dateFormat : d.dateFormat,
     imageSrc: typeof raw.imageSrc === "string" ? raw.imageSrc : d.imageSrc,
     pageNumberMode: normalizePageNumberMode(raw.pageNumberMode),
+    zIndex: normalizeZIndex(raw.zIndex ?? d.zIndex),
+    textAutoWrap: normalizeTextAutoWrap(raw.textAutoWrap, d.textAutoWrap),
   };
 }
 

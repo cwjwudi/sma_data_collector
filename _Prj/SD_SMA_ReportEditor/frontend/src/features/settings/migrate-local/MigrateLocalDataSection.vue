@@ -1,16 +1,20 @@
 <template>
-  <section class="msec">
-    <h3 class="mtitle">浏览器数据迁移</h3>
-    <p class="mtx">
+  <section class="settings-section">
+    <h3 class="settings-section__title">浏览器数据迁移</h3>
+    <p class="settings-hint">
       若早年只在浏览器本地（localStorage）里存过模版或版式，可在此一次性上传到后端磁盘，便于备份、换电脑与多人共用同一 FastAPI 服务。
       <strong>不是</strong>
       与数据库或 OPC 的实时同步；日常编辑直接走「保存」即可。
     </p>
-    <div class="mbox">
-      <button type="button" class="b" @click="doTemplates" :disabled="busy">上传本地模版到服务器</button>
-      <button type="button" class="b" @click="doLayouts" :disabled="busy">上传本地版式预设（rptp-layout-presets）到服务器</button>
+    <div class="settings-actions">
+      <button type="button" class="settings-btn" @click="doTemplates" :disabled="busy">
+        上传本地模版到服务器
+      </button>
+      <button type="button" class="settings-btn" @click="doLayouts" :disabled="busy">
+        上传本地版式预设（rptp-layout-presets）到服务器
+      </button>
     </div>
-    <p v-if="line" class="mline">{{ line }}</p>
+    <p v-if="line" class="settings-msg settings-msg--warn">{{ line }}</p>
   </section>
 </template>
 
@@ -56,45 +60,3 @@ async function doLayouts() {
   }
 }
 </script>
-
-<style scoped>
-.msec {
-  margin-top: 2rem;
-  padding: 1rem 1.25rem;
-  border: 1px solid #e4e4e7;
-  border-radius: 10px;
-  background: #fafafa;
-}
-.mtitle {
-  margin: 0 0 0.5rem;
-  font-size: 1rem;
-}
-.mtx {
-  margin: 0 0 0.85rem;
-  font-size: 13px;
-  color: #3f3f46;
-  line-height: 1.5;
-}
-.mbox {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-.b {
-  padding: 8px 14px;
-  border-radius: 6px;
-  border: 1px solid #d4d4d8;
-  background: #fff;
-  cursor: pointer;
-  font-size: 13px;
-}
-.b:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-.mline {
-  margin: 12px 0 0;
-  font-size: 12px;
-  color: #a16207;
-}
-</style>

@@ -68,6 +68,40 @@ export interface LayoutZoneElement {
   /** 配文相对图片主体的位置（需 text 非空时在框内并排/上下布局） */
   imageCaptionPosition: ImageCaptionPosition;
   pageNumberMode: PageNumberDisplayMode;
+  /** 同区内叠放顺序，越大越靠近用户（覆盖下层） */
+  zIndex: number;
+  /** 文本/色块/日期：在框宽内自动换行（长串无空格时也会断行） */
+  textAutoWrap: boolean;
+}
+
+export function normalizeZIndex(v: unknown): number {
+  const n = typeof v === "number" ? v : Number(v);
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, Math.min(10000, Math.round(n)));
+}
+
+export function normalizeTextAutoWrap(v: unknown, fallback: boolean): boolean {
+  if (v === true || v === "true" || v === 1 || v === "1") return true;
+  if (v === false || v === "false" || v === 0 || v === "0") return false;
+  return fallback;
+}
+
+/** 文本 / 色块 / 日期在画布与导出 DOM 上的 white-space 等（其它类型返回 null） */
+export function getZoneTextWrapStyle(el: LayoutZoneElement): Record<string, string> | null {
+  if (el.type !== "text" && el.type !== "box" && el.type !== "date") return null;
+  if (el.textAutoWrap) {
+    return {
+      whiteSpace: "pre-wrap",
+      overflowWrap: "anywhere",
+      wordBreak: "break-word",
+      minWidth: "0",
+    };
+  }
+  return {
+    whiteSpace: "nowrap",
+    overflowWrap: "normal",
+    wordBreak: "normal",
+  };
 }
 
 export function normalizeAlignAxis(v: unknown, fb: LayoutAlignAxis): LayoutAlignAxis {
@@ -155,12 +189,15 @@ export function defaultLayoutZoneElement(type: LayoutControlType): Omit<LayoutZo
     imageRotationDeg: 0,
     imageCaptionPosition: "none" as ImageCaptionPosition,
     pageNumberMode: "plain" as PageNumberDisplayMode,
+    zIndex: 0,
+    textAutoWrap: false,
   };
   if (type === "text") {
     return { type: "text", x: 8, y: 8, w: 160, h: 28, ...baseText, ...axStart };
   }
   if (type === "box") {
-    return { type: "box", x: 8, y: 8, w: 100, h: 36, ...baseText, ...axCenter };
+    /** 色块历来默认多行配文，保持开启换行以兼容旧数据 */
+    return { type: "box", x: 8, y: 8, w: 100, h: 36, ...baseText, textAutoWrap: true, ...axCenter };
   }
   if (type === "image") {
     return {
@@ -183,6 +220,7 @@ export function defaultLayoutZoneElement(type: LayoutControlType): Omit<LayoutZo
       y: 8,
       w: 80,
       h: 26,
+      ...baseText,
       text: "",
       color: "#52525b",
       bgColor: "transparent",
@@ -193,7 +231,7 @@ export function defaultLayoutZoneElement(type: LayoutControlType): Omit<LayoutZo
       imageRotationDeg: 0,
       imageCaptionPosition: "none",
       pageNumberMode: "plain" as PageNumberDisplayMode,
-      ...axStart,
+      ...axCenter,
     };
   }
   return {
@@ -202,6 +240,7 @@ export function defaultLayoutZoneElement(type: LayoutControlType): Omit<LayoutZo
     y: 8,
     w: 180,
     h: 26,
+    ...baseText,
     text: "",
     color: "#52525b",
     bgColor: "transparent",
@@ -238,6 +277,8 @@ export function hydrateLayoutZoneElement(raw: Partial<LayoutZoneElement>): Layou
     pageNumberMode: normalizePageNumberMode(raw.pageNumberMode),
     fontFamily:
       typeof raw.fontFamily === "string" ? raw.fontFamily.trim().slice(0, 240) : d.fontFamily,
+    zIndex: normalizeZIndex(raw.zIndex ?? d.zIndex),
+    textAutoWrap: normalizeTextAutoWrap(raw.textAutoWrap, d.textAutoWrap),
   };
 }
 

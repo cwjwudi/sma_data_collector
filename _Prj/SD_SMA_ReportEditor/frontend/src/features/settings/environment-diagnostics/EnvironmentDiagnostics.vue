@@ -1,14 +1,19 @@
 <template>
-  <section class="card">
-    <h3>运行环境诊断</h3>
-    <p class="hint">
+  <section class="settings-section">
+    <h3 class="settings-section__title">运行环境诊断</h3>
+    <p class="settings-hint">
       <strong>一键环境与风险修复</strong>会顺序执行：<strong>流式</strong>端口诊断与安全目录／venv 条件允许时的重装，
       再执行告警尽力消除（目录、默认配置、按需 <code>pip install</code>）。
       不会在后台擅自杀端口进程。
       Python 过低、npm 缺失、需退出后用脚本处理的 venv 等，仅在日志末尾说明办法。
     </p>
-    <div class="actions">
-      <button type="button" class="btn primary" :disabled="busy" @click="runUnifiedEnvironmentFix">
+    <div class="settings-actions">
+      <button
+        type="button"
+        class="settings-btn settings-btn--primary"
+        :disabled="busy"
+        @click="runUnifiedEnvironmentFix"
+      >
         一键环境与风险修复
       </button>
     </div>
@@ -248,41 +253,6 @@ onMounted(() => {
 </script>
 
 <style scoped>
-.card {
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  padding: 16px;
-  background: #fff;
-}
-.hint {
-  color: #6b7280;
-  font-size: 13px;
-  margin-bottom: 12px;
-  line-height: 1.5;
-}
-.actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 12px;
-}
-.btn {
-  padding: 8px 14px;
-  border-radius: 6px;
-  border: 1px solid #d1d5db;
-  background: #fff;
-  cursor: pointer;
-  font-size: 14px;
-}
-.btn.primary {
-  background: #4f46e5;
-  color: #fff;
-  border-color: #4f46e5;
-}
-.btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
 .busy-strip {
   margin-bottom: 12px;
 }
@@ -400,12 +370,5 @@ onMounted(() => {
   margin-bottom: 8px;
   display: flex;
   gap: 12px;
-}
-code {
-  font-family: ui-monospace, monospace;
-  font-size: 12px;
-  background: #f3f4f6;
-  padding: 1px 4px;
-  border-radius: 3px;
 }
 </style>
