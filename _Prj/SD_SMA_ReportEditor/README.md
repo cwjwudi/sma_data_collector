@@ -2,6 +2,18 @@
 
 Markdown 报表编辑器桌面软件。支持读取 MySQL/MariaDB、PostgreSQL 数据库与 OPC UA 变量，通过可视化界面配置报表模板，自动生成 Markdown 报表。
 
+## 初次上手（必读）
+
+**第一次使用本仓库？** 请先阅读 **[getting-started/](getting-started/README.md)**：
+
+| 文档 | 说明 |
+|------|------|
+| [getting-started/README.md](getting-started/README.md) | 本工程在 `p000_sd_sma_scada` 中的位置、目录含义、三种运行方式 |
+| [getting-started/windows.md](getting-started/windows.md) | Windows：安装 Python/Node、venv、`start_dev_web.bat`、Electron |
+| [getting-started/mac.md](getting-started/mac.md) | macOS：Homebrew、venv、`open-electron-dev-mac.command`、双终端 Web |
+
+跑通后再看下文「快速开始」与打包说明。
+
 ## 技术栈
 
 - **后端**：Python 3.9+（推荐 3.10+）、FastAPI、SQLAlchemy、asyncua
@@ -12,9 +24,12 @@ Markdown 报表编辑器桌面软件。支持读取 MySQL/MariaDB、PostgreSQL �
 
 ```
 SD_SMA_ReportEditor/
-├── _Doc/           # 项目文档（计划、工单、变更记录）
-├── backend/        # Python FastAPI 后端
-├── frontend/       # Electron + Vue 3 前端
+├── getting-started/  # 初次上手（Windows / Mac 环境与启动）
+├── _Doc/             # 项目文档（计划、工单、变更记录）
+├── backend/          # Python FastAPI 后端
+├── frontend/         # Electron + Vue 3 前端
+├── scripts/          # 启动脚本（如 Mac 一键 Electron）
+├── start_dev_web.bat # Windows 浏览器模式一键启动
 └── README.md
 ```
 
@@ -31,7 +46,13 @@ CLI 产物是否提交由团队自定；**请以仓库根作为 Cursor 工作区
 
 ## 快速开始
 
-可使用项目根目录 **`start_dev_web.bat`** 一键启动后端 + 前端并在浏览器打开。脚本会在 **PowerShell** 新窗口中跑 uvicorn / Vite，避免旧版 **cmd** 开启「快速编辑」时点一下窗口就把进程挂起、出现关不掉的情况。
+> 环境未装好时请先完成 [getting-started/](getting-started/README.md) 中的依赖步骤。
+
+**Windows（浏览器）**：项目根目录双击或运行 **`start_dev_web.bat`**，会在 **PowerShell** 新窗口启动后端 + Vite 并打开浏览器。
+
+**macOS（Electron）**：双击 **`scripts/open-electron-dev-mac.command`**，或见 [getting-started/mac.md](getting-started/mac.md)。
+
+下面为分步命令（Windows / Mac 通用逻辑）。
 
 ### 后端
 
@@ -113,5 +134,8 @@ powershell -ExecutionPolicy Bypass -File scripts/build-backend-exe.ps1
 
 ## 文档
 
+- [初次上手 — getting-started/](getting-started/README.md)
 - [项目计划](_Doc/001_项目计划.md)
 - [里程碑与工单](_Doc/002_里程碑与工单.md)
+- [项目框架与常用指令](_Doc/003_项目框架与常用指令.md)
+- [Mac 开发环境准备](_Doc/004_Mac开发环境准备.md)

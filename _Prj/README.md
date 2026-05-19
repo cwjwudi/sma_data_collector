@@ -7,7 +7,7 @@
 | 目录 | 说明 |
 | ---- | ---- |
 | **`SD_SMA_DATA_COLLECTOR/`** | 数据采集相关工程 |
-| **`SD_SMA_ReportEditor/`** | 报表编辑相关工程 |
+| **`SD_SMA_ReportEditor/`** | 报表编辑相关工程（初次上手见其 [**getting-started/**](./SD_SMA_ReportEditor/getting-started/README.md)） |
 | **`SD_SMA_SCADA_DEMO/`** | SCADA 演示 / 主界面类工程 |
 
 具体技术栈、编译方式与运行依赖以各子目录内说明或 `_Doc` 为准。
