@@ -703,10 +703,10 @@ const tableRowHeightModel = computed({
   },
 });
 
-function onOpcPickConfirm(nodeId: string) {
+function onOpcPickConfirm(payload: string | { serverId: string; nodeId: string }) {
   const t = opcPickTarget.value;
   opcPickTarget.value = null;
-  const id = nodeId.trim();
+  const id = (typeof payload === "string" ? payload : payload.nodeId).trim();
   if (!id) return;
   if (t === "parameter" && props.el.type === "parameter") {
     props.el.bindingKind = "opcua";

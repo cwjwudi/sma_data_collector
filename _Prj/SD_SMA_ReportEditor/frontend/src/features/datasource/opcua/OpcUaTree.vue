@@ -64,6 +64,7 @@
 <script setup>
 import { computed } from 'vue'
 import { translateOpcuaMessage } from './opcua-messages.js'
+import { opcTreeNodeHasExpander } from './opcua-tree-utils.js'
 
 defineOptions({ name: 'OpcUaTree' })
 
@@ -100,7 +101,7 @@ function buildRows(nodes, depth, out, idGen) {
     const key = `r-${idGen.i++}-${depth}-${n.node_id || n.browse_name || 'x'}`
     const loaded = !!n.loaded
     const childCount = n.children?.length ?? 0
-    const hasExpander = !loaded || childCount > 0
+    const hasExpander = opcTreeNodeHasExpander(n)
     out.push({ node: n, depth, key, hasExpander })
     if (n.expanded && loaded && childCount > 0) {
       buildRows(n.children, depth + 1, out, idGen)

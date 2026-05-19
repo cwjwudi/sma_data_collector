@@ -41,7 +41,13 @@
                 @change="onPresetBind('body', $event)"
               >
                 <option value="">不绑定 ID（仅占位）</option>
-                <option v-for="p in bodyPresets" :key="'b' + p.id" :value="p.id">{{ p.name }}</option>
+                <option
+                  v-for="row in bodyPresetRows"
+                  :key="'b' + row.preset.id"
+                  :value="row.preset.id"
+                >
+                  {{ layoutPresetSelectLabel(row.seq, row.preset.name) }}
+                </option>
               </select>
             </label>
           </template>
@@ -58,7 +64,13 @@
                 @change="onPresetBind('cover', $event)"
               >
                 <option value="">不绑定 ID（仅占位）</option>
-                <option v-for="p in coverPresets" :key="'c' + p.id" :value="p.id">{{ p.name }}</option>
+                <option
+                  v-for="row in coverPresetRows"
+                  :key="'c' + row.preset.id"
+                  :value="row.preset.id"
+                >
+                  {{ layoutPresetSelectLabel(row.seq, row.preset.name) }}
+                </option>
               </select>
             </label>
           </template>
@@ -75,7 +87,13 @@
                 @change="onPresetBind('back', $event)"
               >
                 <option value="">不绑定 ID（仅占位）</option>
-                <option v-for="p in backPresets" :key="'k' + p.id" :value="p.id">{{ p.name }}</option>
+                <option
+                  v-for="row in backPresetRows"
+                  :key="'k' + row.preset.id"
+                  :value="row.preset.id"
+                >
+                  {{ layoutPresetSelectLabel(row.seq, row.preset.name) }}
+                </option>
               </select>
             </label>
           </template>
@@ -345,6 +363,10 @@ import {
   cloneDeepTemplate,
   stableFingerprintPart,
 } from "@/lib/report-template/snapshot-fingerprint";
+import {
+  layoutPresetSelectLabel,
+  layoutPresetSelectRows,
+} from "@/lib/layout-display-order";
 import { refreshLayoutPresets } from "@/lib/report-template/layout-registry";
 import { applyLayoutPresetToTemplate, resyncTemplateBoundPresets } from "@/lib/report-template/layout-apply";
 import {
@@ -734,9 +756,9 @@ const bodyPageCount = computed(() => {
   return ensureBodyPages(t).length;
 });
 
-const bodyPresets = computed(() => layoutPresetsAll.value.filter((p) => p.pageRole === "normal"));
-const coverPresets = computed(() => layoutPresetsAll.value.filter((p) => p.pageRole === "cover"));
-const backPresets = computed(() => layoutPresetsAll.value.filter((p) => p.pageRole === "back"));
+const bodyPresetRows = computed(() => layoutPresetSelectRows(layoutPresetsAll.value, "normal"));
+const coverPresetRows = computed(() => layoutPresetSelectRows(layoutPresetsAll.value, "cover"));
+const backPresetRows = computed(() => layoutPresetSelectRows(layoutPresetsAll.value, "back"));
 
 /** 编辑画布卡片标题与导出预览页码一致：1 + 正文页数 + 1 */
 const totalEditPages = computed(() => 1 + bodyPageCount.value + 1);

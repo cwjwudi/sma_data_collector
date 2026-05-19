@@ -24,9 +24,11 @@
           <td>{{ r.label }}</td>
           <td class="prev"><img v-if="r.preview" :src="r.preview" alt="" class="thumb" /></td>
           <td>{{ r.updated }}</td>
-          <td>
-            <a href="#" class="lnk" @click.prevent="rename(r.id)">改名</a>
-            <a href="#" class="lnk danger" @click.prevent="remove(r.id)">删除</a>
+          <td class="td-act">
+            <div class="row-actions">
+              <a href="#" class="lnk" @click.prevent="rename(r.id)">改名</a>
+              <a href="#" class="lnk danger" @click.prevent="remove(r.id)">删除</a>
+            </div>
           </td>
         </tr>
       </tbody>
@@ -280,14 +282,53 @@ watch(
   color: #71717a;
   padding: 24px;
 }
+.td-act {
+  white-space: nowrap;
+}
+.row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
 .lnk {
-  margin-right: 10px;
-  color: #4f46e5;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 48px;
+  min-height: 44px;
+  padding: 0 14px;
+  box-sizing: border-box;
+  margin: 0;
+  border-radius: 6px;
+  border: 1px solid #c7d2fe;
+  background: #eef2ff;
+  color: #3730a3;
+  font-size: 13px;
+  font-weight: 600;
   cursor: pointer;
   text-decoration: none;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: rgba(79, 70, 229, 0.12);
+}
+.lnk:hover {
+  background: #e0e7ff;
+  border-color: #a5b4fc;
+}
+.lnk:active {
+  background: #c7d2fe;
 }
 .lnk.danger {
+  border-color: #fecaca;
+  background: #fef2f2;
   color: #b91c1c;
+}
+.lnk.danger:hover {
+  background: #fee2e2;
+  border-color: #fca5a5;
+}
+.lnk.danger:active {
+  background: #fecaca;
 }
 .b {
   padding: 6px 12px;

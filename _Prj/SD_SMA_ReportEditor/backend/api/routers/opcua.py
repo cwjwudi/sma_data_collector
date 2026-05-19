@@ -216,7 +216,8 @@ async def search_saved_variables(server_id: str, body: OpcUaSavedVariableSearch)
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
     q = (body.query or "").strip()
-    if not q:
+    dt = (body.data_type or "").strip() or None
+    if not q and not dt:
         return {"ok": True, "hits": [], "nodes_scanned": 0, "truncated": False}
     return await opcua_service.search_variables_for_saved_server(
         server_id,
@@ -227,4 +228,5 @@ async def search_saved_variables(server_id: str, body: OpcUaSavedVariableSearch)
         body.max_scan,
         body.max_results,
         body.max_depth,
+        dt,
     )

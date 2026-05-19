@@ -15,7 +15,9 @@
         <label class="rg-lbl" for="rg-tpl">报表模版</label>
         <select id="rg-tpl" v-model="prefs.templateId" class="rg-select">
           <option :value="null">请选择…</option>
-          <option v-for="t in summaries" :key="t.id" :value="t.id">{{ t.name }}</option>
+          <option v-for="row in templateRows" :key="row.item.id" :value="row.item.id">
+            {{ templateSelectLabel(row.seq, row.item.name) }}
+          </option>
         </select>
       </div>
       <div class="rg-row rg-row--check">
@@ -31,30 +33,177 @@
 
     <section class="rg-card">
       <h3 class="rg-h3">OPC UA 条件自动导出</h3>
-      <div class="rg-row rg-row--check">
-        <label><input v-model="prefs.auto.enabled" type="checkbox" :disabled="!electronShell" />启用自动导出</label>
+      <div class="rg-switch-row">
+        <span class="rg-switch-label" id="rg-auto-enabled-lbl">启用自动导出</span>
+        <button
+          type="button"
+          class="rg-switch"
+          :class="{ 'rg-switch--on': prefs.auto.enabled }"
+          role="switch"
+          aria-labelledby="rg-auto-enabled-lbl"
+          :aria-checked="prefs.auto.enabled"
+          :disabled="!electronShell"
+          @click="toggleAutoEnabled"
+        />
       </div>
+      <p v-if="!electronShell" class="rg-mini rg-mini--switch">自动导出仅在 Electron 桌面版可用。</p>
 
-      <div class="rg-row">
-        <label class="rg-lbl" for="rg-auto-dir">导出文件夹</label>
-        <div class="rg-inline">
-          <input id="rg-auto-dir" v-model="prefs.autoExportDir" type="text" readonly class="rg-inp rg-inp--grow" placeholder="未选择（点击下方按钮）" />
-          <button type="button" class="btn" :disabled="!electronShell" @click="onPickAutoDir">选择文件夹…</button>
+      <div class="rg-auto-fields" :class="{ 'rg-auto-fields--off': !prefs.auto.enabled }">
+      <div class="rg-export-dir-block">
+        <span class="rg-lbl">导出文件夹</span>
+        <div class="rg-tabs" role="tablist" aria-label="导出文件夹来源">
+          <button
+            type="button"
+            role="tab"
+            class="rg-tab"
+            :class="{ 'rg-tab--on': prefs.autoExportDirSource === 'default' }"
+            :aria-selected="prefs.autoExportDirSource === 'default'"
+            @click="setExportDirTab('default')"
+          >
+            默认文件夹
+          </button>
+          <button
+            type="button"
+            role="tab"
+            class="rg-tab"
+            :class="{ 'rg-tab--on': prefs.autoExportDirSource === 'opcua' }"
+            :aria-selected="prefs.autoExportDirSource === 'opcua'"
+            @click="setExportDirTab('opcua')"
+          >
+            绑定 OPC UA
+          </button>
+        </div>
+
+        <div class="rg-tab-panel" role="tabpanel">
+          <template v-if="prefs.autoExportDirSource === 'default'">
+            <div class="rg-row rg-row--in-panel">
+              <label class="rg-lbl" for="rg-auto-dir">导出目录</label>
+              <div class="rg-inline">
+                <input
+                  id="rg-auto-dir"
+                  v-model="prefs.autoExportDir"
+                  type="text"
+                  readonly
+                  class="rg-inp rg-inp--grow"
+                  placeholder="未选择（点击下方按钮）"
+                />
+                <button type="button" class="btn" :disabled="!electronShell" @click="onPickAutoDir">选择文件夹…</button>
+              </div>
+            </div>
+          </template>
+
+          <template v-else>
+            <div class="rg-row rg-row--in-panel">
+              <label class="rg-lbl" for="rg-auto-dir-fallback">保底目录</label>
+              <div class="rg-inline">
+                <input
+                  id="rg-auto-dir-fallback"
+                  v-model="prefs.autoExportDir"
+                  type="text"
+                  readonly
+                  class="rg-inp rg-inp--grow"
+                  placeholder="未选择（点击下方按钮）"
+                />
+                <button type="button" class="btn" :disabled="!electronShell" @click="onPickAutoDir">选择文件夹…</button>
+              </div>
+              <p class="rg-mini rg-mini--indent">OPC 路径变量为空或读取失败时，导出到此保底目录。</p>
+            </div>
+            <div class="rg-row rg-row--in-panel">
+              <label class="rg-lbl" for="rg-dir-opc-var">OPC 目录变量（String）</label>
+              <div class="rg-inline">
+                <input
+                  id="rg-dir-opc-var"
+                  :value="prefs.autoExportDirOpcNodeId"
+                  type="text"
+                  readonly
+                  class="rg-inp rg-inp--grow rg-mono"
+                  placeholder="未绑定"
+                />
+                <button type="button" class="btn" @click="openRgOpcPick('exportDir')">打开 OPC UA 绑定树</button>
+              </div>
+              <p v-if="exportDirOpcServerLabel" class="rg-mini rg-mini--indent">连接：{{ exportDirOpcServerLabel }}</p>
+              <p class="rg-mini rg-mini--indent">展开地址空间时仅显示 String 类型变量；文件夹节点可继续展开浏览。</p>
+            </div>
+          </template>
         </div>
       </div>
 
-      <div class="rg-row">
-        <label class="rg-lbl" for="rg-pattern">文件名模式</label>
-        <input
-          id="rg-pattern"
-          v-model="prefs.autoFilePattern"
-          type="text"
-          class="rg-inp"
-          spellcheck="false"
-          placeholder="{name}_{ts}.pdf"
-        />
+      <div class="rg-export-dir-block">
+        <span class="rg-lbl">自动导出文件名</span>
+        <div class="rg-tabs" role="tablist" aria-label="自动导出文件名">
+          <button
+            type="button"
+            role="tab"
+            class="rg-tab"
+            :class="{ 'rg-tab--on': prefs.autoFileNameSource === 'segments' }"
+            :aria-selected="prefs.autoFileNameSource === 'segments'"
+            @click="setFileNameTab('segments')"
+          >
+            勾选片段
+          </button>
+          <button
+            type="button"
+            role="tab"
+            class="rg-tab"
+            :class="{ 'rg-tab--on': prefs.autoFileNameSource === 'opcua' }"
+            :aria-selected="prefs.autoFileNameSource === 'opcua'"
+            @click="setFileNameTab('opcua')"
+          >
+            OPC UA + 哈希
+          </button>
+        </div>
+
+        <div class="rg-tab-panel" role="tabpanel">
+          <template v-if="prefs.autoFileNameSource === 'segments'">
+            <div class="rg-row rg-row--in-panel">
+              <span class="rg-lbl">包含片段</span>
+              <div class="rg-seg-grid">
+                <label
+                  v-for="opt in fileNameSegmentOptions"
+                  :key="opt.id"
+                  class="rg-seg-chk"
+                  :title="opt.hint"
+                >
+                  <input
+                    type="checkbox"
+                    :checked="prefs.autoFileNameSegments.includes(opt.id)"
+                    @change="toggleFileNameSegment(opt.id)"
+                  />
+                  {{ opt.label }}
+                </label>
+              </div>
+              <p class="rg-mini rg-mini--indent">至少勾选一项；建议勾选「随机哈希」避免重名覆盖。</p>
+            </div>
+          </template>
+
+          <template v-else>
+            <div class="rg-row rg-row--in-panel">
+              <label class="rg-lbl" for="rg-fn-opc-var">OPC 文件名变量（String）</label>
+              <div class="rg-inline">
+                <input
+                  id="rg-fn-opc-var"
+                  :value="prefs.autoFileNameOpcNodeId"
+                  type="text"
+                  readonly
+                  class="rg-inp rg-inp--grow rg-mono"
+                  placeholder="未绑定"
+                />
+                <button type="button" class="btn" @click="openRgOpcPick('fileName')">打开 OPC UA 绑定树</button>
+              </div>
+              <p v-if="fileNameOpcServerLabel" class="rg-mini rg-mini--indent">连接：{{ fileNameOpcServerLabel }}</p>
+              <p class="rg-mini rg-mini--indent">
+                导出为 <code>基名 + 连接符 + 8位哈希.pdf</code>；OPC 为空或失败时回退「模版名 + 时间戳 + 哈希」。
+              </p>
+            </div>
+          </template>
+
+          <div class="rg-row rg-row--in-panel rg-row--compact">
+            <label class="rg-lbl" for="rg-fn-sep">片段连接符</label>
+            <input id="rg-fn-sep" v-model="prefs.autoFileNameSeparator" type="text" class="rg-inp rg-inp--sep" maxlength="8" spellcheck="false" />
+          </div>
+          <p class="rg-mini rg-mini--indent">预览（示意）：<code>{{ autoFileNamePreview }}</code></p>
+        </div>
       </div>
-      <p class="rg-mini">占位符：<code>{name}</code> 模版名称；<code>{ts}</code> 时间戳 <code>yyyyMMdd_HHmmss</code>（不含扩展名时自动补 .pdf）。</p>
 
       <div class="rg-row">
         <label class="rg-lbl" for="rg-opc-srv">OPC UA 连接</label>
@@ -93,7 +242,18 @@
         <label><input v-model="prefs.auto.openAfter" type="checkbox" :disabled="!electronShell" />导出完成后打开 PDF</label>
       </div>
       <p v-if="autoStatus" class="rg-hint">{{ autoStatus }}</p>
+      </div>
     </section>
+
+    <OpcUaNodePickerModal
+      v-model="opcPickOpen"
+      data-type-filter="String"
+      hide-search
+      title="绑定 OPC UA String 变量"
+      :lead="opcPickLead"
+      :initial-server-id="opcPickInitialServerId"
+      @confirm="onRgOpcPickConfirm"
+    />
   </div>
 </template>
 
@@ -104,10 +264,22 @@ import { apiFetch } from "@/api/client.js";
 import {
   loadReportGeneratorPrefs,
   saveReportGeneratorPrefs,
+  type AutoExportDirSource,
+  type AutoFileNameSource,
   type ReportGeneratorPrefs,
 } from "@/lib/report-generator-prefs";
 import { loadReportExportPrefs, saveReportExportPrefs } from "@/lib/report-export-prefs";
+import { templateSelectLabel, templateSelectRows } from "@/lib/template-display-order";
 import { evaluateAutoOpcTrigger, createOpcTriggerPollState, type OpcTriggerPollState } from "@/lib/auto-opc-trigger";
+import { resolveAutoExportDir } from "@/lib/resolve-auto-export-dir";
+import OpcUaNodePickerModal from "@/features/datasource/opcua/OpcUaNodePickerModal.vue";
+import {
+  AUTO_FILE_NAME_SEGMENT_OPTIONS,
+  buildAutoExportFileName,
+  formatExportTs,
+  previewAutoExportFileName,
+  type AutoFileNameSegment,
+} from "@/lib/auto-export-filename";
 
 const prefs = ref<ReportGeneratorPrefs>(loadReportGeneratorPrefs());
 const exportWatchDir = loadReportExportPrefs().watchDir;
@@ -115,7 +287,39 @@ if (exportWatchDir && !prefs.value.autoExportDir) {
   prefs.value.autoExportDir = exportWatchDir;
 }
 const summaries = ref<TemplateSummary[]>([]);
+const templateRows = computed(() => templateSelectRows(summaries.value));
 const opcServers = ref<{ id: string; name?: string }[]>([]);
+type RgOpcPickTarget = "exportDir" | "fileName";
+const opcPickOpen = ref(false);
+const opcPickTarget = ref<RgOpcPickTarget | null>(null);
+
+const fileNameSegmentOptions = AUTO_FILE_NAME_SEGMENT_OPTIONS;
+
+function opcServerLabel(serverId: string): string {
+  const id = serverId.trim();
+  if (!id) return "";
+  const s = opcServers.value.find((x) => x.id === id);
+  return s?.name?.trim() || s?.id || id;
+}
+
+const exportDirOpcServerLabel = computed(() => opcServerLabel(prefs.value.autoExportDirOpcServerId));
+const fileNameOpcServerLabel = computed(() => opcServerLabel(prefs.value.autoFileNameOpcServerId));
+
+const opcPickInitialServerId = computed(() => {
+  if (opcPickTarget.value === "exportDir") return prefs.value.autoExportDirOpcServerId;
+  if (opcPickTarget.value === "fileName") return prefs.value.autoFileNameOpcServerId;
+  return "";
+});
+
+const opcPickLead = computed(() => {
+  if (opcPickTarget.value === "exportDir") {
+    return "选择已保存的 OPC UA 连接，在地址空间中展开并点击 String 变量作为导出目录路径；非 String 变量在展开时不会显示。确定后写入 NodeId，仍可手工修改。";
+  }
+  if (opcPickTarget.value === "fileName") {
+    return "选择 String 变量作为导出文件名基名（不含扩展名）；系统将自动追加随机哈希与 .pdf。非 String 变量在展开时不会显示。";
+  }
+  return "选择 String 类型变量并绑定。";
+});
 
 const electronShell = computed(() => typeof window !== "undefined" && Boolean(window.electronAPI?.runPdfExport));
 
@@ -148,22 +352,60 @@ watch(
   },
 );
 
+const selectedTemplateName = computed(() => {
+  const tid = prefs.value.templateId;
+  if (!tid) return "模版名";
+  return summaries.value.find((x) => x.id === tid)?.name || tid;
+});
+
+const autoFileNamePreview = computed(() =>
+  previewAutoExportFileName(prefs.value, selectedTemplateName.value),
+);
+
 const canManualExport = computed(() => electronShell.value && Boolean(prefs.value.templateId));
 
-function pad2(n: number): string {
-  return n < 10 ? `0${n}` : String(n);
+function toggleAutoEnabled() {
+  if (!electronShell.value) return;
+  prefs.value.auto.enabled = !prefs.value.auto.enabled;
 }
 
-function formatTs(d = new Date()): string {
-  return `${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}_${pad2(d.getHours())}${pad2(d.getMinutes())}${pad2(d.getSeconds())}`;
+function setExportDirTab(source: AutoExportDirSource) {
+  if (prefs.value.autoExportDirSource === source) return;
+  prefs.value.autoExportDirSource = source;
 }
 
-function buildExportBaseName(templateName: string): string {
-  let s = prefs.value.autoFilePattern || "{name}_{ts}.pdf";
-  s = s.replace(/\{name\}/g, templateName.replace(/[/\\?%*:|"<>]/g, "_"));
-  s = s.replace(/\{ts\}/g, formatTs());
-  if (!s.toLowerCase().endsWith(".pdf")) s += ".pdf";
-  return s;
+function setFileNameTab(source: AutoFileNameSource) {
+  if (prefs.value.autoFileNameSource === source) return;
+  prefs.value.autoFileNameSource = source;
+}
+
+function openRgOpcPick(target: RgOpcPickTarget) {
+  opcPickTarget.value = target;
+  opcPickOpen.value = true;
+}
+
+function onRgOpcPickConfirm(payload: { serverId: string; nodeId: string }) {
+  const sid = payload.serverId.trim();
+  const nid = payload.nodeId.trim();
+  const target = opcPickTarget.value;
+  opcPickTarget.value = null;
+  if (!nid) return;
+  if (target === "exportDir") {
+    if (sid) prefs.value.autoExportDirOpcServerId = sid;
+    prefs.value.autoExportDirOpcNodeId = nid;
+  } else if (target === "fileName") {
+    if (sid) prefs.value.autoFileNameOpcServerId = sid;
+    prefs.value.autoFileNameOpcNodeId = nid;
+  }
+}
+
+function toggleFileNameSegment(id: AutoFileNameSegment) {
+  const cur = prefs.value.autoFileNameSegments;
+  if (cur.includes(id)) {
+    prefs.value.autoFileNameSegments = cur.filter((s) => s !== id);
+  } else {
+    prefs.value.autoFileNameSegments = [...cur, id];
+  }
 }
 
 async function loadSummaries(): Promise<void> {
@@ -194,7 +436,7 @@ async function onManualExport(): Promise<void> {
   if (!tid) return;
 
   const tmeta = summaries.value.find((x) => x.id === tid);
-  const suggestName = `${(tmeta?.name || "报表").replace(/[/\\?%*:|"<>]/g, "_")}_${formatTs()}.pdf`;
+  const suggestName = `${(tmeta?.name || "报表").replace(/[/\\?%*:|"<>]/g, "_")}_${formatExportTs()}.pdf`;
 
   const filePath = await api.showSavePdfDialog({
     title: "导出 PDF",
@@ -221,7 +463,9 @@ async function onManualExport(): Promise<void> {
 }
 
 async function onPickAutoDir(): Promise<void> {
-  const p = await window.electronAPI?.pickExportDirectory?.({ title: "自动导出目录" });
+  const title =
+    prefs.value.autoExportDirSource === "opcua" ? "选择保底导出目录" : "选择导出目录";
+  const p = await window.electronAPI?.pickExportDirectory?.({ title });
   if (p) {
     prefs.value.autoExportDir = p;
     saveReportExportPrefs({ watchDir: p });
@@ -233,12 +477,15 @@ async function runAutoPdfExport(): Promise<void> {
   if (!api?.runPdfExport || !api.pathJoin) return;
 
   const tid = prefs.value.templateId;
-  const dir = (prefs.value.autoExportDir || "").trim();
-  if (!tid || !dir) return;
+  if (!tid) return;
+
+  const resolved = await resolveAutoExportDir(prefs.value);
+  const dir = resolved.dir.trim();
+  if (!dir) return;
 
   const tmeta = summaries.value.find((x) => x.id === tid);
-  const base = buildExportBaseName(tmeta?.name || tid);
-  const filePath = await api.pathJoin(dir, base);
+  const built = await buildAutoExportFileName(prefs.value, tmeta?.name || tid);
+  const filePath = await api.pathJoin(dir, built.base);
 
   await api.runPdfExport({
     templateId: tid,
@@ -246,19 +493,26 @@ async function runAutoPdfExport(): Promise<void> {
     openAfter: prefs.value.auto.openAfter,
   });
   lastExportAt = Date.now();
-  autoStatus.value = `[自动] 已导出 ${filePath}`;
+  const notes = [resolved.note, built.note].filter(Boolean).join("；");
+  const noteSuffix = notes ? `（${notes}）` : "";
+  autoStatus.value = `[自动] 已导出 ${filePath}${noteSuffix}`;
 }
 
 async function pollAutoTriggerOnce(): Promise<void> {
   if (!electronShell.value || !prefs.value.auto.enabled) return;
 
   const tid = prefs.value.templateId;
-  const dir = (prefs.value.autoExportDir || "").trim();
   const srv = prefs.value.auto.serverId.trim();
   const nodeId = prefs.value.auto.nodeId.trim();
 
-  if (!tid || !dir || !srv || !nodeId) {
-    autoStatus.value = "[自动] 等待模版、导出文件夹与 OPC 节点配置完整…";
+  if (!tid || !srv || !nodeId) {
+    autoStatus.value = "[自动] 等待模版与 OPC 触发节点配置完整…";
+    return;
+  }
+
+  const resolved = await resolveAutoExportDir(prefs.value);
+  if (!resolved.dir.trim()) {
+    autoStatus.value = `[自动] ${resolved.note || "请配置默认或 OPC 导出文件夹…"}`;
     return;
   }
 
@@ -372,6 +626,173 @@ onUnmounted(() => {
 }
 .rg-row--check input {
   margin-right: 6px;
+}
+.rg-switch-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  max-width: 520px;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid #e4e4e7;
+  background: #fff;
+}
+.rg-switch-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: #27272a;
+}
+.rg-switch {
+  position: relative;
+  width: 44px;
+  height: 24px;
+  border-radius: 12px;
+  border: 1px solid #d4d4d8;
+  background: #e4e4e7;
+  cursor: pointer;
+  flex-shrink: 0;
+  padding: 0;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
+}
+.rg-switch::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgb(24 24 27 / 0.15);
+  transition: transform 0.15s ease;
+}
+.rg-switch--on {
+  background: #4f46e5;
+  border-color: #4338ca;
+}
+.rg-switch--on::after {
+  transform: translateX(20px);
+}
+.rg-switch:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.rg-mini--switch {
+  margin-top: -6px;
+  margin-bottom: 10px;
+}
+.rg-mini--indent {
+  margin-top: 6px;
+  margin-bottom: 0;
+}
+.rg-mini--warn {
+  color: #b45309;
+}
+.rg-export-dir-block {
+  margin-bottom: 18px;
+}
+.rg-export-dir-block > .rg-lbl {
+  display: block;
+  margin-bottom: 8px;
+}
+.rg-tabs {
+  display: inline-flex;
+  gap: 0;
+  padding: 3px;
+  border-radius: 10px;
+  border: 1px solid #e4e4e7;
+  background: #f4f4f5;
+  margin-bottom: 12px;
+}
+.rg-tab {
+  margin: 0;
+  padding: 8px 16px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  color: #52525b;
+  line-height: 1.2;
+  transition: background 0.12s ease, color 0.12s ease, box-shadow 0.12s ease;
+}
+.rg-tab--on {
+  background: #fff;
+  color: #111827;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+.rg-tab-panel {
+  padding: 14px 16px;
+  border-radius: 10px;
+  border: 1px solid #e4e4e7;
+  background: #fafafa;
+}
+.rg-row--in-panel {
+  margin-bottom: 14px;
+}
+.rg-row--in-panel:last-child {
+  margin-bottom: 0;
+}
+.rg-dir-modes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 20px;
+  margin-top: 4px;
+}
+.rg-radio {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #3f3f46;
+  cursor: pointer;
+}
+.rg-inline--wrap {
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+.rg-select--mt {
+  margin-top: 8px;
+}
+.rg-row--compact {
+  margin-top: -4px;
+}
+.rg-inp--sep {
+  max-width: 72px;
+}
+.rg-mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+}
+.rg-seg-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 18px;
+  margin-top: 6px;
+}
+.rg-seg-chk {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #3f3f46;
+  cursor: pointer;
+}
+.rg-auto-fields {
+  transition: opacity 0.15s ease;
+}
+.rg-auto-fields--off {
+  opacity: 0.45;
+  pointer-events: none;
+  user-select: none;
+}
+.rg-auto-fields--off :is(input, select, button) {
+  cursor: not-allowed;
 }
 .rg-lbl {
   display: block;

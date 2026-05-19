@@ -445,16 +445,39 @@ def _is_opcua_variable_value_class(cls: str) -> bool:
     return token == "VARIABLE" or token == "2"
 
 
+async def _try_node_data_type_name(ch: Any) -> str | None:
+    try:
+        dt = await ch.read_data_type_as_variant_type()
+        nm = getattr(dt, "name", None)
+        if isinstance(nm, str) and nm.strip():
+            return nm.strip()
+    except Exception:
+        pass
+    return None
+
+
+def _data_type_matches_filter(type_name: str | None, filter_name: str) -> bool:
+    t = (type_name or "").strip().lower()
+    f = (filter_name or "").strip().lower()
+    if not f:
+        return True
+    if f in ("string", "str"):
+        return t == "string" or t.endswith(".string")
+    return f in t
+
+
 async def _search_variables_bfs(
     client: Client,
     query: str,
     max_scan: int,
     max_results: int,
     max_depth: int,
+    data_type_filter: str | None = None,
 ) -> dict[str, Any]:
     """从 Objects 起广度优先浏览，匹配 Variable 的显示名 / BrowseName / NodeId 子串。"""
     q_raw = (query or "").strip()
-    if not q_raw:
+    dt_filter = (data_type_filter or "").strip() or None
+    if not q_raw and not dt_filter:
         return {"ok": True, "hits": [], "nodes_scanned": 0, "truncated": False}
 
     q_lower = q_raw.lower()
@@ -503,13 +526,19 @@ async def _search_variables_bfs(
             child_path = path_parts + [label]
             hay = f"{disp} {browse_full} {nid}".lower()
 
-            if _is_opcua_variable_value_class(cls) and q_lower in hay:
+            if _is_opcua_variable_value_class(cls):
+                type_name = await _try_node_data_type_name(ch) if dt_filter else None
+                if dt_filter and not _data_type_matches_filter(type_name, dt_filter):
+                    continue
+                if q_lower and q_lower not in hay:
+                    continue
                 hits.append(
                     {
                         "node_id": nid,
                         "browse_name": browse_full,
                         "display_name": disp,
                         "node_class": cls,
+                        "data_type": type_name,
                         "path_str": " → ".join(child_path),
                     }
                 )
@@ -576,13 +605,14 @@ async def search_variables_for_saved_server(
     max_scan: Any = None,
     max_results: Any = None,
     max_depth: Any = None,
+    data_type_filter: str | None = None,
 ) -> dict[str, Any]:
     ms, mr, md = _clamp_variable_search_params(max_scan, max_results, max_depth)
     entry = _get_entry(server_id)
     async with entry.lock:
         try:
             client = await _ensure_connected(entry, endpoint_url, username, password)
-            return await _search_variables_bfs(client, query, ms, mr, md)
+            return await _search_variables_bfs(client, query, ms, mr, md, data_type_filter)
         except Exception as e:
             logger.exception("OPC UA variable search (pooled) failed")
             await _invalidate_entry_client(entry)

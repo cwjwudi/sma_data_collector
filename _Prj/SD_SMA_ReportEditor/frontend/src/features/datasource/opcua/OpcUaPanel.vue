@@ -213,7 +213,7 @@ import {
 } from './opcua-endpoint-url.js'
 import '../connection-tabs.css'
 import { opcDataTypeLabelFromRead } from './opcua-value-meta.js'
-import { isOpcVariableValueNode } from './opcua-tree-utils.js'
+import { applyOpcBrowseChildren, isOpcVariableValueNode } from './opcua-tree-utils.js'
 import { parseOpcNodeId, opcNodeClassLabel } from './opcua-node-display.js'
 
 const props = defineProps({
@@ -372,6 +372,7 @@ function wrapOpcNode(raw) {
     expanded: false,
     loading: false,
     loaded: false,
+    browseLeaf: false,
     errorMessage: null,
     valueDataTypeLabel: '',
   }
@@ -702,16 +703,18 @@ async function onToggleNode(node) {
     if (res.ok === false) {
       node.errorMessage = res.message || '浏览失败'
       msg.value = node.errorMessage
+      applyOpcBrowseChildren(node, [])
       return
     }
-    const list = res.nodes || []
-    node.children = list.map((n) => wrapOpcNode(n))
-    node.loaded = true
-    node.expanded = true
-    void prefetchVariableValuesInNodes(node.children)
+    const list = (res.nodes || []).map((n) => wrapOpcNode(n))
+    applyOpcBrowseChildren(node, list)
+    if (list.length) {
+      void prefetchVariableValuesInNodes(node.children)
+    }
   } catch (e) {
     node.errorMessage = e.message || String(e)
     msg.value = node.errorMessage
+    applyOpcBrowseChildren(node, [])
   } finally {
     node.loading = false
     bumpTree()

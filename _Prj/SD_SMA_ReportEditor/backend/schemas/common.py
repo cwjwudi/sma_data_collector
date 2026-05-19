@@ -47,6 +47,8 @@ class OpcUaVariableSearchRequest(OpcUaTestRequest):
 
 class OpcUaSavedVariableSearch(BaseModel):
     query: str = ""
+    """仅返回该 OPC 数据类型（如 String）；可与空 query 组合以列出变量。"""
+    data_type: str | None = None
     max_scan: int | None = Field(default=None, ge=400, le=80000)
     max_results: int | None = Field(default=None, ge=1, le=500)
     max_depth: int | None = Field(default=None, ge=8, le=72)

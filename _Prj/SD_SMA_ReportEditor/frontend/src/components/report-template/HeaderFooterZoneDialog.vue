@@ -1008,10 +1008,10 @@ function openHzOpcPicker(target: "parameter" | "table") {
   opcPickOpen.value = true;
 }
 
-function onHzOpcPickConfirm(nodeId: string) {
+function onHzOpcPickConfirm(payload: string | { serverId: string; nodeId: string }) {
   const t = opcPickTarget.value;
   opcPickTarget.value = null;
-  const id = nodeId.trim();
+  const id = (typeof payload === "string" ? payload : payload.nodeId).trim();
   if (!id) return;
   const s = sel.value;
   if (t === "parameter" && s?.type === "parameter") {

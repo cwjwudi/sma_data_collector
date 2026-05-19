@@ -16,6 +16,54 @@ export function isOpcVariableValueNode(n) {
   return token === 'VARIABLE' || token === '2'
 }
 
+/** 地址空间中可能还有可浏览子节点的类型（Object/Folder 等） */
+export function isOpcObjectLikeBrowseNode(n) {
+  if (!n || isOpcVariableValueNode(n)) return false
+  const u = String(n.node_class || '')
+    .trim()
+    .toUpperCase()
+  if (!u) return true
+  if (u.includes('VARIABLETYPE')) return false
+  if (u.includes('METHOD')) return false
+  if (u.includes('DATATYPE')) return false
+  if (u.includes('REFERENCETYPE')) return false
+  return true
+}
+
+/**
+ * 树行是否显示展开箭头：已浏览且无子节点（含过滤后为空）则不显示。
+ * @param {any} node
+ */
+export function opcTreeNodeHasExpander(node) {
+  if (!node) return false
+  if (node.browseLeaf) return false
+  if (node.loading) return true
+  if (node.loaded) {
+    return (node.children?.length ?? 0) > 0
+  }
+  return isOpcObjectLikeBrowseNode(node)
+}
+
+/** 递归收起树中所有已展开节点（保留已加载子节点数据） */
+export function collapseOpcTreeNodes(nodes) {
+  for (const n of nodes || []) {
+    n.expanded = false
+    n.loading = false
+    if (Array.isArray(n.children) && n.children.length) {
+      collapseOpcTreeNodes(n.children)
+    }
+  }
+}
+
+/** 浏览完成后写入子节点，并在无子节点时标记为叶子、收起展开 */
+export function applyOpcBrowseChildren(node, children) {
+  const list = children || []
+  node.children = list
+  node.loaded = true
+  node.browseLeaf = list.length === 0
+  node.expanded = list.length > 0
+}
+
 /**
  * 收集当前内存里「已加载」子树的扁平列表（含路径），用于绑定场景下本地搜索。
  * @param {any[]} nodes
@@ -39,6 +87,22 @@ export function collectOpcLoadedNodesFlat(nodes, pathParts = [], out = []) {
  * @param {string} query
  * @param {number} [max]
  */
+/** 节点上的数据类型标签是否匹配过滤（如 String） */
+export function opcDataTypeLabelMatchesFilter(label, filter) {
+  const f = String(filter || '').trim().toLowerCase()
+  if (!f) return true
+  const l = String(label || '').trim().toLowerCase()
+  if (!l) return false
+  return l === f || l.endsWith(f) || l.includes(f)
+}
+
+/** 浏览子节点在 dataTypeFilter 下是否应显示（非 Variable 始终显示以便展开） */
+export function shouldShowOpcBrowseChild(node, dataTypeFilter) {
+  if (!dataTypeFilter) return true
+  if (!isOpcVariableValueNode(node)) return true
+  return opcDataTypeLabelMatchesFilter(node.valueDataTypeLabel, dataTypeFilter)
+}
+
 export function filterOpcNodesBySearch(nodesRoot, query, max = 250) {
   const q = String(query || '').trim().toLowerCase()
   if (!q) return []

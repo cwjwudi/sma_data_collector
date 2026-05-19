@@ -784,3 +784,17 @@ export function saveTemplates(list: ReportTemplate[]): void {
     /* ignore */
   }
 }
+
+/** 深拷贝整份模版并分配新 id、名称与更新时间（模版管理「复制」）。 */
+export function duplicateReportTemplate(source: ReportTemplate, newName: string): ReportTemplate {
+  const raw = JSON.parse(JSON.stringify(source)) as unknown;
+  const migrated = migrateReportTemplate(raw) as ReportTemplate;
+  migrated.id = newId();
+  migrated.name = newName.trim() || `${source.name}（副本）`;
+  migrated.updatedAt = new Date().toISOString();
+  syncLegacyElementsAlias(migrated);
+  if (!isReportTemplate(migrated)) {
+    throw new Error("模版复制后校验失败");
+  }
+  return migrated;
+}
