@@ -6,6 +6,11 @@ interface Window {
     setDevtoolsOpen: (open: boolean) => Promise<void>;
     showSavePdfDialog: (opts?: { title?: string; defaultPath?: string }) => Promise<string | null>;
     pickExportDirectory: (opts?: { title?: string; defaultPath?: string }) => Promise<string | null>;
+    saveTextFileDialog: (opts?: {
+      title?: string;
+      defaultPath?: string;
+      content: string;
+    }) => Promise<{ ok: boolean; filePath?: string; canceled?: boolean; error?: string }>;
     runPdfExport: (opts: {
       templateId: string;
       filePath: string;

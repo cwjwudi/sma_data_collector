@@ -1,6 +1,8 @@
 /** 已保存 OPC UA 连接下的 String 变量列表（生成报表导出路径等） */
 
 import { apiFetch } from "@/api/client.js";
+import { opcDataTypeLabelFromRead } from "@/features/datasource/opcua/opcua-value-meta.js";
+import { opcDataTypeLabelMatchesFilter } from "@/features/datasource/opcua/opcua-tree-utils.js";
 
 export type OpcStringVariableHit = {
   node_id: string;
@@ -55,10 +57,17 @@ export async function listSavedOpcStringVariables(serverId: string): Promise<{
   }
 }
 
+export type SavedOpcReadResult = {
+  ok: boolean;
+  value?: unknown;
+  message?: string;
+  dataType?: string;
+};
+
 export async function readSavedOpcNodeValue(
   serverId: string,
   nodeId: string,
-): Promise<{ ok: boolean; value?: unknown; message?: string }> {
+): Promise<SavedOpcReadResult> {
   const sid = serverId.trim();
   const nid = nodeId.trim();
   if (!sid || !nid) return { ok: false, message: "缺少连接或节点" };
@@ -66,12 +75,36 @@ export async function readSavedOpcNodeValue(
     const res = (await apiFetch(`/opcua/read_saved/${encodeURIComponent(sid)}`, {
       method: "POST",
       body: { node_id: nid },
-    })) as { ok?: boolean; value?: unknown; message?: string };
+    })) as { ok?: boolean; value?: unknown; message?: string; attributes?: unknown };
     if (res.ok === false) return { ok: false, message: String(res.message || "读取失败") };
-    return { ok: true, value: res.value };
+    const dataType = opcDataTypeLabelFromRead(res) || undefined;
+    return { ok: true, value: res.value, dataType };
   } catch (e) {
     return { ok: false, message: e instanceof Error ? e.message : String(e) };
   }
+}
+
+/** 读取并校验必须为 String 类型（自动导出文件名等） */
+export async function readSavedOpcStringValue(
+  serverId: string,
+  nodeId: string,
+): Promise<SavedOpcReadResult> {
+  const read = await readSavedOpcNodeValue(serverId, nodeId);
+  if (!read.ok) return read;
+  const dt = read.dataType || "";
+  if (dt && !opcDataTypeLabelMatchesFilter(dt, "String")) {
+    return { ok: false, message: `需要 String 类型变量，当前为 ${dt}` };
+  }
+  if (!dt && typeof read.value !== "string") {
+    return { ok: false, message: "需要 String 类型变量" };
+  }
+  return read;
+}
+
+/** 将 OPC 读值规范为文件名字符串（仅接受 string 值） */
+export function coerceOpcFileNameString(value: unknown): string {
+  if (typeof value !== "string") return "";
+  return value.trim();
 }
 
 /** 将 OPC 读值规范为导出目录路径字符串 */

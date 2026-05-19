@@ -10,6 +10,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   /** 选择导出目录（自动导出用） */
   pickExportDirectory: (opts) => ipcRenderer.invoke('dialog-pick-directory', opts || {}),
 
+  /** 保存文本日志（history logger 等） */
+  saveTextFileDialog: (opts) => ipcRenderer.invoke('dialog-save-text', opts || {}),
+
   /** 使用隐藏窗口渲染 "#/pdf-export" 并写入 PDF */
   runPdfExport: (opts) => ipcRenderer.invoke('pdf-export-run', opts),
 

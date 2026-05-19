@@ -93,7 +93,10 @@ export function opcDataTypeLabelMatchesFilter(label, filter) {
   if (!f) return true
   const l = String(label || '').trim().toLowerCase()
   if (!l) return false
-  return l === f || l.endsWith(f) || l.includes(f)
+  if (l === f) return true
+  if (l.endsWith(`.${f}`) || l.endsWith(`:${f}`)) return true
+  const tail = l.split(/[^a-z0-9]+/).pop()
+  return tail === f
 }
 
 /** 浏览子节点在 dataTypeFilter 下是否应显示（非 Variable 始终显示以便展开） */

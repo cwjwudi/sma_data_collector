@@ -611,24 +611,39 @@ async function filterBrowseChildrenForDataType(children) {
   return kept
 }
 
-function pickNode(n) {
+async function pickNode(n) {
   if (dataTypeFilter.value && isOpcVariableValueNode(n)) {
-    if (n.valueDataTypeLabel && !opcDataTypeLabelMatchesFilter(n.valueDataTypeLabel, dataTypeFilter.value)) {
-      msg.value = `请选择数据类型为 ${dataTypeFilter.value} 的变量`
+    if (!n.valueDataTypeLabel) {
+      await prefetchVariableTreeRow(n, prefetchGen.value)
+    }
+    const lbl = n.valueDataTypeLabel || ''
+    if (!lbl) {
+      msg.value = `无法识别节点数据类型，请换选其它节点`
+      return
+    }
+    if (!opcDataTypeLabelMatchesFilter(lbl, dataTypeFilter.value)) {
+      msg.value = `请选择数据类型为 ${dataTypeFilter.value} 的变量（当前：${lbl}）`
       return
     }
   }
   pickedNode.value = n
 }
 
-function confirmPick() {
+async function confirmPick() {
   const id = pickedNode.value?.node_id
   if (!id) return
   const filter = dataTypeFilter.value
   if (filter && isOpcVariableValueNode(pickedNode.value)) {
+    if (!pickedNode.value.valueDataTypeLabel) {
+      await prefetchVariableTreeRow(pickedNode.value, prefetchGen.value)
+    }
     const lbl = pickedNode.value.valueDataTypeLabel || ''
-    if (lbl && !opcDataTypeLabelMatchesFilter(lbl, filter)) {
-      msg.value = `当前节点类型为 ${lbl || '未知'}，需要 ${filter}`
+    if (!lbl) {
+      msg.value = '无法识别节点数据类型，请换选其它节点'
+      return
+    }
+    if (!opcDataTypeLabelMatchesFilter(lbl, filter)) {
+      msg.value = `当前节点类型为 ${lbl}，需要 ${filter}`
       return
     }
   }
@@ -679,6 +694,17 @@ watch(
     }
   },
 )
+
+watch(dataTypeFilter, async (filter, prev) => {
+  if (!props.modelValue || filter === prev) return
+  if (!browseCapability.value) return
+  cancelExpandAll()
+  pickedNode.value = null
+  prefetchGen.value += 1
+  if (treeNodes.value.length) {
+    await refreshRoot()
+  }
+})
 
 onBeforeUnmount(() => {
   clearTimeout(searchDebounceTimer)

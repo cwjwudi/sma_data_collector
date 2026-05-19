@@ -232,6 +232,28 @@ ipcMain.handle('dialog-save-pdf', async (event, opts) => {
   return fp
 })
 
+ipcMain.handle('dialog-save-text', async (event, opts) => {
+  const win = senderBrowserWindow(event.sender) || mainWindow
+  const content = opts && typeof opts.content === 'string' ? opts.content : ''
+  const defaultPath = (opts && opts.defaultPath) || 'history.log'
+  const res = await dialog.showSaveDialog(win && !win.isDestroyed() ? win : undefined, {
+    title: (opts && opts.title) || '保存日志',
+    defaultPath,
+    filters: [
+      { name: 'History Logger', extensions: ['log', 'txt'] },
+      { name: 'JSON', extensions: ['json'] },
+      { name: 'All', extensions: ['*'] },
+    ],
+  })
+  if (res.canceled || !res.filePath) return { ok: false, canceled: true }
+  try {
+    fs.writeFileSync(res.filePath, content, 'utf8')
+    return { ok: true, filePath: res.filePath }
+  } catch (e) {
+    return { ok: false, error: String(e.message || e) }
+  }
+})
+
 ipcMain.handle('dialog-pick-directory', async (event, opts) => {
   const win = senderBrowserWindow(event.sender) || mainWindow
   const res = await dialog.showOpenDialog(win && !win.isDestroyed() ? win : undefined, {
