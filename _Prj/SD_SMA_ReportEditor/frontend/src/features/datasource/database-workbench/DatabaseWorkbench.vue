@@ -1,5 +1,5 @@
 <template>
-  <div class="wb">
+  <div class="wb ds-scope">
     <div v-if="loadError" class="load-err">{{ loadError }}</div>
     <div class="tabs-conn">
       <button type="button" class="tab tab-new" @click="onNewConn">+ 新建</button>
@@ -7,10 +7,11 @@
         v-for="t in openTabs"
         :key="t.id"
         type="button"
-        :class="['tab', { on: t.id === activeConnId }]"
+        :class="['tab', 'tab--with-led', { on: t.id === activeConnId }]"
         @click="activateTab(t.id)"
       >
-        {{ t.label }}
+        <ConnectionTabLed :state="connHealth[t.id] || 'unknown'" />
+        <span class="tab-label">{{ t.label }}</span>
       </button>
     </div>
     <div class="main">
@@ -18,6 +19,7 @@
         :model-value="draftConn"
         @updated="reloadConnections"
         @new="onNewConn"
+        @connection-tested="onConnectionTested"
       />
       <ObjectTree
         v-if="activeConnId"
@@ -33,7 +35,7 @@
         @select-collection="onPickCollection"
       />
       <div class="work" v-if="activeConnId">
-        <div class="subtabs">
+        <div class="subtabs seg-tabs">
           <button :class="{ on: sub === 'data' }" type="button" @click="sub = 'data'">数据</button>
           <button :class="{ on: sub === 'query' }" type="button" @click="sub = 'query'">查询</button>
           <button :class="{ on: sub === 'ddl' }" type="button" @click="sub = 'ddl'">DDL 预览</button>
@@ -111,9 +113,18 @@
 </template>
 
 <script setup>
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, defineExpose, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+
+const emit = defineEmits(['health-summary'])
 import { apiFetch } from '@/api/client.js'
+import '../datasource-ui.css'
 import '../connection-tabs.css'
+import ConnectionTabLed from '@/features/datasource/ConnectionTabLed.vue'
+import {
+  probeConnectionIds,
+  probeDatabaseConnection,
+  summarizeConnectionHealth,
+} from '@/features/datasource/connection-tab-health'
 import { connectionTabLabel } from './connection-tab-label.js'
 import ConnectionManager from './connection-manager/ConnectionManager.vue'
 import ObjectTree from './object-tree/ObjectTree.vue'
@@ -129,6 +140,9 @@ const draftConn = ref(null)
 const loadError = ref('')
 
 const openTabs = ref([])
+
+/** 各已保存连接标签的健康指示灯 */
+const connHealth = reactive({})
 
 const catalog = ref({ databases: [], tables: [], collections: [] })
 const activeDatabase = ref('')
@@ -211,6 +225,41 @@ function pickPreferredConnectionId(prefs, conns, explicitPreferred) {
   return null
 }
 
+function setConnHealth(id, state) {
+  if (!id) return
+  connHealth[id] = state
+}
+
+function pruneConnHealth(validIds) {
+  const keep = new Set(validIds)
+  for (const k of Object.keys(connHealth)) {
+    if (!keep.has(k)) delete connHealth[k]
+  }
+}
+
+function probeAllDatabaseConnections() {
+  const ids = connections.value.map((c) => c.id).filter(Boolean)
+  pruneConnHealth(ids)
+  void probeConnectionIds(ids, probeDatabaseConnection, setConnHealth, 'database')
+}
+
+function onConnectionTested({ id, ok }) {
+  if (id) setConnHealth(id, ok ? 'ok' : 'fail')
+}
+
+const connectionHealthSummary = computed(() =>
+  summarizeConnectionHealth(
+    connections.value.map((c) => c.id).filter(Boolean),
+    connHealth,
+  ),
+)
+
+watch(
+  connectionHealthSummary,
+  (s) => emit('health-summary', s),
+  { immediate: true },
+)
+
 async function persistLastConnection(id) {
   if (!id) return
   try {
@@ -249,6 +298,7 @@ async function reloadConnections(preferredId = null) {
       activeConnId.value = connections.value[0].id
     }
     draftConn.value = connections.value.find((c) => c.id === activeConnId.value) || null
+    probeAllDatabaseConnections()
     await loadCatalog()
   } catch (e) {
     loadError.value =
@@ -266,6 +316,7 @@ function activateTab(id) {
   activeConnId.value = id
   draftConn.value = connections.value.find((c) => c.id === id) || null
   persistLastConnection(id)
+  probeAllDatabaseConnections()
   loadCatalog()
 }
 
@@ -476,6 +527,11 @@ onUnmounted(() => {
 })
 
 reloadConnections()
+
+defineExpose({
+  probeAllConnections: probeAllDatabaseConnections,
+  healthSummary: connectionHealthSummary,
+})
 </script>
 
 <style scoped>
@@ -539,44 +595,14 @@ reloadConnections()
   gap: 8px;
   flex-shrink: 0;
 }
-.preview-toolbar-label {
-  font-size: 12px;
-  color: #6b7280;
-}
 .subtabs {
-  display: flex;
-  gap: 6px;
   margin-bottom: 12px;
   flex-shrink: 0;
-}
-.subtabs button {
-  padding: 6px 10px;
-  border-radius: 6px;
-  border: 1px solid #d1d5db;
-  background: #fff;
-  cursor: pointer;
-  font-size: 12px;
-}
-.subtabs button.on {
-  background: #111827;
-  color: #fff;
-  border-color: #111827;
 }
 .panel {
   display: flex;
   flex-direction: column;
   gap: 8px;
-}
-.btn {
-  padding: 6px 10px;
-  border-radius: 6px;
-  border: 1px solid #d1d5db;
-  background: #fff;
-  cursor: pointer;
-  font-size: 12px;
-}
-.btn.sm {
-  padding: 4px 8px;
 }
 .pre {
   background: #0b1020;

@@ -2,27 +2,75 @@
   <div class="page" :class="{ 'page-fill': tab === 'db' || tab === 'opc' }">
     <h2 class="page-title">数据源配置</h2>
     <div class="tabs-top">
-      <button type="button" :class="{ on: tab === 'db' }" @click="tab = 'db'">数据库工作台</button>
-      <button type="button" :class="{ on: tab === 'opc' }" @click="tab = 'opc'">OPC UA</button>
+      <button type="button" :class="{ on: tab === 'db' }" @click="tab = 'db'">
+        数据库工作台
+        <span class="tab-health-count">({{ dbHealth.ok }}/{{ dbHealth.total }})</span>
+      </button>
+      <button type="button" :class="{ on: tab === 'opc' }" @click="tab = 'opc'">
+        OPC UA
+        <span class="tab-health-count">({{ opcHealth.ok }}/{{ opcHealth.total }})</span>
+      </button>
     </div>
-    <div v-if="tab === 'db'" class="page-tab-body">
-      <DatabaseWorkbench />
+    <div v-show="tab === 'db'" class="page-tab-body">
+      <DatabaseWorkbench ref="dbWorkbenchRef" @health-summary="onDbHealthSummary" />
     </div>
-    <div v-else class="page-tab-body">
-      <OpcUaPanel />
+    <div v-show="tab === 'opc'" class="page-tab-body">
+      <OpcUaPanel ref="opcPanelRef" @health-summary="onOpcHealthSummary" />
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref, watch, onMounted } from 'vue'
+import { ref, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import DatabaseWorkbench from '@/features/datasource/database-workbench/DatabaseWorkbench.vue'
 import OpcUaPanel from '@/features/datasource/opcua/OpcUaPanel.vue'
 
+/** 在数据源配置页内，后台轮询全部连接健康（不依赖当前显示的子页签） */
+const HEALTH_POLL_MS = 5000
+
 const route = useRoute()
 
 const tab = ref('db')
+const dbWorkbenchRef = ref(null)
+const opcPanelRef = ref(null)
+
+const dbHealth = ref({ ok: 0, total: 0 })
+const opcHealth = ref({ ok: 0, total: 0 })
+
+let healthPollTimer = null
+
+function onDbHealthSummary(summary) {
+  dbHealth.value = summary
+}
+
+function onOpcHealthSummary(summary) {
+  opcHealth.value = summary
+}
+
+function probeAllDataSourceHealth() {
+  nextTick(() => {
+    dbWorkbenchRef.value?.probeAllConnections?.()
+    opcPanelRef.value?.probeAllConnections?.()
+  })
+}
+
+function startHealthPolling() {
+  stopHealthPolling()
+  probeAllDataSourceHealth()
+  healthPollTimer = window.setInterval(probeAllDataSourceHealth, HEALTH_POLL_MS)
+}
+
+function stopHealthPolling() {
+  if (healthPollTimer != null) {
+    window.clearInterval(healthPollTimer)
+    healthPollTimer = null
+  }
+}
+
+function onConfigImported() {
+  probeAllDataSourceHealth()
+}
 
 function syncTabFromRoute() {
   const q = route.query.tab
@@ -32,7 +80,17 @@ function syncTabFromRoute() {
 }
 
 watch(() => route.query.tab, syncTabFromRoute, { flush: 'pre' })
-onMounted(syncTabFromRoute)
+
+onMounted(() => {
+  syncTabFromRoute()
+  startHealthPolling()
+  window.addEventListener('report-editor-config-imported', onConfigImported)
+})
+
+onUnmounted(() => {
+  stopHealthPolling()
+  window.removeEventListener('report-editor-config-imported', onConfigImported)
+})
 </script>
 
 <style scoped>
@@ -73,5 +131,14 @@ onMounted(syncTabFromRoute)
   background: #111827;
   color: #fff;
   border-color: #111827;
+}
+.tab-health-count {
+  margin-left: 4px;
+  font-size: 13px;
+  font-weight: 500;
+  opacity: 0.82;
+}
+.tabs-top button.on .tab-health-count {
+  opacity: 0.9;
 }
 </style>

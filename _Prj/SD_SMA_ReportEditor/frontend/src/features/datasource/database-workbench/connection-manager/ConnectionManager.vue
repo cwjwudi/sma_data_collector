@@ -1,10 +1,10 @@
 <template>
-  <div class="cm">
+  <div class="conn-form-pane">
     <div class="row-head">
       <h4>数据库连接</h4>
     </div>
-    <div v-if="draft" class="form">
-      <label>显示名称</label>
+    <template v-if="draft">
+      <label>名称</label>
       <input v-model="draft.name" class="input" placeholder="例如 产线 MySQL" />
       <label>引擎</label>
       <select v-model="draft.engine" class="input" :disabled="busy">
@@ -15,8 +15,8 @@
         <option value="mongodb">MongoDB</option>
       </select>
       <template v-if="draft.engine !== 'sqlite'">
-        <label>主机</label>
-        <input v-model="draft.host" class="input" placeholder="IP 或主机名" :disabled="busy" />
+        <label>主机 / IP</label>
+        <input v-model="draft.host" class="input" placeholder="192.168.1.10" :disabled="busy" />
         <label>端口</label>
         <input v-model="draft.portText" type="text" inputmode="numeric" class="input" placeholder="留空则使用默认端口" :disabled="busy" />
         <label>用户名</label>
@@ -46,18 +46,19 @@
         <button type="button" class="btn danger sm" v-if="draft.id" :disabled="busy" @click="remove">删除</button>
       </div>
       <div v-if="msg" :class="['msg', msgTone]">{{ msg }}</div>
-    </div>
+    </template>
   </div>
 </template>
 
 <script setup>
 import { computed, reactive, ref, watch } from 'vue'
 import { apiFetch } from '@/api/client.js'
+import '../../connection-form-pane.css'
 
 const props = defineProps({
   modelValue: { type: Object, default: null },
 })
-const emit = defineEmits(['updated', 'new'])
+const emit = defineEmits(['updated', 'new', 'connection-tested'])
 
 const draft = reactive({
   id: '',
@@ -193,6 +194,7 @@ async function save(afterTest = false) {
       list[list.length - 1]?.id ||
       null
     emit('updated', mine)
+    if (mine) emit('connection-tested', { id: mine, ok: true })
     msg.value = afterTest ? '连接成功，已写入本地配置' : '已保存'
     msgTone.value = 'ok'
   } catch (e) {
@@ -228,9 +230,11 @@ async function testOnly() {
       body: buildApiBody(),
     })
     if (res.ok) {
+      if (draft.id) emit('connection-tested', { id: draft.id, ok: true })
       msg.value = '连接成功（尚未保存到配置文件）'
       msgTone.value = 'ok'
     } else {
+      if (draft.id) emit('connection-tested', { id: draft.id, ok: false })
       msg.value = res.message || '连接失败'
       msgTone.value = 'err'
     }
@@ -270,72 +274,3 @@ async function remove() {
 }
 </script>
 
-<style scoped>
-.cm {
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  padding: 12px;
-  background: #fafafa;
-  min-width: 260px;
-}
-.row-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-.form {
-  margin-top: 4px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.input {
-  padding: 8px;
-  border: 1px solid #d1d5db;
-  border-radius: 6px;
-  font-size: 13px;
-}
-.actions {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-.btn {
-  padding: 8px 12px;
-  border-radius: 6px;
-  border: 1px solid #d1d5db;
-  background: #fff;
-  cursor: pointer;
-  font-size: 13px;
-}
-.btn:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-.btn.primary {
-  background: #4f46e5;
-  color: #fff;
-  border-color: #4f46e5;
-}
-.btn.danger {
-  color: #b91c1c;
-}
-.btn.sm {
-  padding: 4px 8px;
-  font-size: 12px;
-}
-.msg {
-  font-size: 12px;
-  line-height: 1.45;
-}
-.msg.ok {
-  color: #047857;
-}
-.msg.err {
-  color: #b91c1c;
-}
-label {
-  font-size: 12px;
-  color: #4b5563;
-}
-</style>

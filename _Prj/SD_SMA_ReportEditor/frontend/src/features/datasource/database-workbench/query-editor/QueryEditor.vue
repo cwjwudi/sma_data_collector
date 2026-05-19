@@ -1,7 +1,7 @@
 <template>
   <div class="qe">
     <div class="qe-editor">
-      <div class="tabs">
+      <div class="tabs seg-tabs">
         <button type="button" :class="{ on: mode === 'sql' }" @click="mode = 'sql'" :disabled="engine === 'mongodb'">SQL</button>
         <button type="button" :class="{ on: mode === 'mongo' }" @click="mode = 'mongo'" :disabled="engine !== 'mongodb'">
           Mongo aggregate
@@ -24,11 +24,11 @@
         <button type="button" class="btn sm" @click="favorite">收藏当前</button>
       </div>
       <div class="hist">
-        <div class="title">历史</div>
+        <div class="title panel-title">历史</div>
         <ul>
           <li v-for="(h, i) in history" :key="i" @click="loadHist(h)">{{ h.slice(0, 80) }}</li>
         </ul>
-        <div class="title">收藏</div>
+        <div class="title panel-title">收藏</div>
         <ul>
           <li v-for="(f, i) in favorites" :key="'f' + i" @click="loadHist(f)">{{ f.slice(0, 80) }}</li>
         </ul>
@@ -36,7 +36,7 @@
       <div v-if="msg" class="msg">{{ msg }}</div>
     </div>
     <div class="qe-results">
-      <div class="qe-results-title">查询结果</div>
+      <div class="qe-results-title panel-title">查询结果</div>
       <div class="qe-results-grid">
         <DataGrid fill-height :columns="queryGridCols" :rows="queryGridRows" :status="queryGridStatus" />
       </div>
@@ -246,11 +246,6 @@ onUnmounted(() => {
   flex: 1;
   min-height: 160px;
 }
-.qe-results-title {
-  font-size: 12px;
-  font-weight: 600;
-  color: #374151;
-}
 .qe-results-grid {
   flex: 1;
   min-height: 120px;
@@ -259,44 +254,10 @@ onUnmounted(() => {
   overflow: hidden;
 }
 .tabs {
-  display: flex;
-  gap: 4px;
-}
-.tabs button {
-  padding: 6px 10px;
-  border-radius: 6px;
-  border: 1px solid #d1d5db;
-  background: #fff;
-  cursor: pointer;
-  font-size: 12px;
-}
-.tabs button.on {
-  background: #eef2ff;
-  border-color: #6366f1;
-}
-.tabs button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-.title {
-  font-weight: 600;
   margin-bottom: 4px;
 }
-.btn {
-  padding: 8px 12px;
-  border-radius: 6px;
-  border: 1px solid #d1d5db;
-  background: #fff;
-  cursor: pointer;
-}
-.btn.primary {
-  background: #4f46e5;
-  color: #fff;
-  border-color: #4f46e5;
-}
-.btn.sm {
-  padding: 4px 8px;
-  font-size: 12px;
+.title {
+  margin-bottom: 4px;
 }
 .ta {
   width: 100%;
@@ -314,7 +275,7 @@ onUnmounted(() => {
   border: 1px solid #e5e7eb;
   border-radius: 6px;
   padding: 8px;
-  font-size: 11px;
+  font-size: 12px;
   max-height: 180px;
   overflow: auto;
 }

@@ -7,6 +7,9 @@
       不会在后台擅自杀端口进程。
       Python 过低、npm 缺失、需退出后用脚本处理的 venv 等，仅在日志末尾说明办法。
     </p>
+    <p v-if="showCachedHint" class="settings-hint settings-hint--cache">
+      以下为上次检测结果；再次进入本页不会重复扫描。点击「一键环境与风险修复」后将重新检测并更新上表。
+    </p>
     <div class="settings-actions">
       <button
         type="button"
@@ -65,6 +68,11 @@
 <script setup>
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { apiFetch, apiPostNdjsonStream } from '@/api/client.js'
+import {
+  clearEnvironmentCheckCache,
+  getEnvironmentCheckCache,
+  setEnvironmentCheckCache,
+} from './environment-check-cache.js'
 
 const emit = defineEmits(['after-check'])
 
@@ -81,6 +89,27 @@ const logPre = ref(null)
 const logAnchor = ref(null)
 
 const busy = computed(() => loading.value || fixing.value || rebuilding.value)
+const displayedFromCache = ref(false)
+const showCachedHint = computed(
+  () => displayedFromCache.value && !busy.value && checks.value.length > 0,
+)
+
+function persistCheckCache() {
+  setEnvironmentCheckCache({
+    checks: checks.value,
+    nodeTools: nodeTools.value,
+    errorMsg: errorMsg.value,
+  })
+}
+
+function hydrateFromCache() {
+  const cached = getEnvironmentCheckCache()
+  if (!cached) return false
+  checks.value = cached.checks || []
+  nodeTools.value = cached.nodeTools || { node: null, npm: null }
+  errorMsg.value = cached.errorMsg || ''
+  return true
+}
 
 function appendLog(raw) {
   const s = typeof raw === 'string' ? raw.trim() : String(raw ?? '')
@@ -134,12 +163,17 @@ async function runCheck(opts = {}) {
     const data = await apiFetch('/environment/check')
     checks.value = data.checks || []
     nodeTools.value = data.node_tools || {}
+    persistCheckCache()
     emit('after-check', summarizeChecks(checks.value))
-    appendLog('检查完成：已刷新上表状态。')
+    if (!opts.reuseProgressLabel) {
+      appendLog('检查完成：已刷新上表状态。')
+    }
   } catch (e) {
     errorMsg.value = e.message || String(e)
     emit('after-check', { total: 0, ok: 0, warn: 0, fail: 0, items: [], error: errorMsg.value })
-    appendLog(`检查失败：${errorMsg.value}`)
+    if (!opts.reuseProgressLabel) {
+      appendLog(`检查失败：${errorMsg.value}`)
+    }
   } finally {
     loading.value = false
     if (!opts.reuseProgressLabel) {
@@ -194,6 +228,7 @@ async function runUnifiedEnvironmentFix() {
       '确定继续？',
   )
   if (!ok) return
+  clearEnvironmentCheckCache()
   appendLog('')
   appendLog('════════ 环境与风险 · 一键修复（阶段 1/2 → 阶段 2/2）════════')
   await runFullRepairStream({ skipFinalCheck: true })
@@ -248,7 +283,13 @@ async function runFullRepairStream(opts = {}) {
 }
 
 onMounted(() => {
-  runCheck()
+  if (hydrateFromCache()) {
+    displayedFromCache.value = true
+    emit('after-check', summarizeChecks(checks.value))
+    return
+  }
+  displayedFromCache.value = false
+  void runCheck()
 })
 </script>
 
@@ -370,5 +411,12 @@ onMounted(() => {
   margin-bottom: 8px;
   display: flex;
   gap: 12px;
+}
+.settings-hint--cache {
+  color: #4b5563;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 8px 10px;
 }
 </style>

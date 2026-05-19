@@ -150,106 +150,70 @@ type StoredPrefs = Partial<ReportGeneratorPrefs> & {
 
 
 
+function parseStoredPrefs(o: StoredPrefs, base: ReportGeneratorPrefs): ReportGeneratorPrefs {
+  const dirSource: AutoExportDirSource =
+    o.autoExportDirSource === "opcua" ? "opcua" : base.autoExportDirSource;
+  const fileNameSource: AutoFileNameSource =
+    o.autoFileNameSource === "opcua" ? "opcua" : base.autoFileNameSource;
+  const legacyPattern =
+    typeof o.autoFilePattern === "string" && o.autoFilePattern.trim() ? o.autoFilePattern.trim() : "";
+  const fileNameSegments =
+    o.autoFileNameSegments != null
+      ? normalizeAutoFileNameSegments(o.autoFileNameSegments)
+      : legacyPattern
+        ? segmentsFromLegacyPattern(legacyPattern)
+        : base.autoFileNameSegments;
+  const bindings = loadAutoTriggerBindings(o.auto?.bindings, o.auto, o.templateId);
+  return {
+    templateId: typeof o.templateId === "string" ? o.templateId : base.templateId,
+    autoExportDirSource: dirSource,
+    autoExportDir: typeof o.autoExportDir === "string" ? o.autoExportDir : base.autoExportDir,
+    autoExportDirOpcServerId:
+      typeof o.autoExportDirOpcServerId === "string"
+        ? o.autoExportDirOpcServerId
+        : base.autoExportDirOpcServerId,
+    autoExportDirOpcNodeId:
+      typeof o.autoExportDirOpcNodeId === "string" ? o.autoExportDirOpcNodeId : base.autoExportDirOpcNodeId,
+    autoFileNameSource: fileNameSource,
+    autoFileNameSegments: fileNameSegments,
+    autoFileNameSeparator:
+      typeof o.autoFileNameSeparator === "string" && o.autoFileNameSeparator.length <= 8
+        ? o.autoFileNameSeparator
+        : base.autoFileNameSeparator,
+    autoFileNameOpcServerId:
+      typeof o.autoFileNameOpcServerId === "string" ? o.autoFileNameOpcServerId : base.autoFileNameOpcServerId,
+    autoFileNameOpcNodeId:
+      typeof o.autoFileNameOpcNodeId === "string" ? o.autoFileNameOpcNodeId : base.autoFileNameOpcNodeId,
+    autoFileNameOpcAppendHash:
+      o.autoFileNameOpcAppendHash === false ? false : base.autoFileNameOpcAppendHash,
+    manualOpenAfter: Boolean(o.manualOpenAfter),
+    auto: {
+      enabled: Boolean(o.auto?.enabled),
+      bindings,
+    },
+  };
+}
+
 export function loadReportGeneratorPrefs(): ReportGeneratorPrefs {
-
   const base = defaultReportGeneratorPrefs();
-
   try {
-
     const raw = localStorage.getItem(LS_KEY);
-
     if (!raw) return base;
-
-    const o = JSON.parse(raw) as StoredPrefs;
-
-    const dirSource: AutoExportDirSource =
-
-      o.autoExportDirSource === "opcua" ? "opcua" : base.autoExportDirSource;
-
-    const fileNameSource: AutoFileNameSource =
-
-      o.autoFileNameSource === "opcua" ? "opcua" : base.autoFileNameSource;
-
-    const legacyPattern =
-
-      typeof o.autoFilePattern === "string" && o.autoFilePattern.trim() ? o.autoFilePattern.trim() : "";
-
-    const fileNameSegments =
-
-      o.autoFileNameSegments != null
-
-        ? normalizeAutoFileNameSegments(o.autoFileNameSegments)
-
-        : legacyPattern
-
-          ? segmentsFromLegacyPattern(legacyPattern)
-
-          : base.autoFileNameSegments;
-
-    const bindings = loadAutoTriggerBindings(o.auto?.bindings, o.auto, o.templateId);
-
-    return {
-
-      templateId: typeof o.templateId === "string" ? o.templateId : base.templateId,
-
-      autoExportDirSource: dirSource,
-
-      autoExportDir: typeof o.autoExportDir === "string" ? o.autoExportDir : base.autoExportDir,
-
-      autoExportDirOpcServerId:
-
-        typeof o.autoExportDirOpcServerId === "string"
-
-          ? o.autoExportDirOpcServerId
-
-          : base.autoExportDirOpcServerId,
-
-      autoExportDirOpcNodeId:
-
-        typeof o.autoExportDirOpcNodeId === "string" ? o.autoExportDirOpcNodeId : base.autoExportDirOpcNodeId,
-
-      autoFileNameSource: fileNameSource,
-
-      autoFileNameSegments: fileNameSegments,
-
-      autoFileNameSeparator:
-
-        typeof o.autoFileNameSeparator === "string" && o.autoFileNameSeparator.length <= 8
-
-          ? o.autoFileNameSeparator
-
-          : base.autoFileNameSeparator,
-
-      autoFileNameOpcServerId:
-
-        typeof o.autoFileNameOpcServerId === "string" ? o.autoFileNameOpcServerId : base.autoFileNameOpcServerId,
-
-      autoFileNameOpcNodeId:
-
-        typeof o.autoFileNameOpcNodeId === "string" ? o.autoFileNameOpcNodeId : base.autoFileNameOpcNodeId,
-
-      autoFileNameOpcAppendHash:
-
-        o.autoFileNameOpcAppendHash === false ? false : base.autoFileNameOpcAppendHash,
-
-      manualOpenAfter: Boolean(o.manualOpenAfter),
-
-      auto: {
-
-        enabled: Boolean(o.auto?.enabled),
-
-        bindings,
-
-      },
-
-    };
-
+    return parseStoredPrefs(JSON.parse(raw) as StoredPrefs, base);
   } catch {
-
     return base;
-
   }
+}
 
+/** 从配置包中的 report_generator 字段恢复本机偏好 */
+export function importReportGeneratorPrefsFromExport(raw: unknown): boolean {
+  if (!raw || typeof raw !== "object") return false;
+  try {
+    saveReportGeneratorPrefs(parseStoredPrefs(raw as StoredPrefs, defaultReportGeneratorPrefs()));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 

@@ -1,5 +1,5 @@
 <template>
-  <div class="opcua" :class="{ 'opcua-wizard': wizardLayout }">
+  <div class="opcua ds-scope" :class="{ 'opcua-wizard': wizardLayout }">
     <p v-if="wizardLayout" class="opc-lead">
       在同一页完成<strong>测试</strong>、<strong>保存</strong>与<strong>浏览地址空间</strong>。可先填 IP/端口 与账号后直接点<strong>刷新根</strong>做草稿浏览（无需先保存）；已保存的连接从上方标签切换。模板占位
       <code v-pre>{opc.NodeId}</code>
@@ -11,15 +11,16 @@
         v-for="s in servers"
         :key="'conn-tab-' + s.id"
         type="button"
-        :class="['tab', { on: selected?.id === s.id }]"
-        @click="selectServer(s)"
+        :class="['tab', 'tab--with-led', { on: selected?.id === s.id }]"
+        @click="onOpcConnTabClick(s)"
       >
-        {{ opcServerShortLabel(s) }}
+        <ConnectionTabLed :state="opcHealth[s.id] || 'unknown'" />
+        <span class="tab-label">{{ opcServerShortLabel(s) }}</span>
       </button>
     </div>
 
     <div class="cols compact">
-      <div class="form-pane">
+      <div class="form-pane conn-form-pane">
         <div v-if="!wizardLayout" class="row-head">
           <h4>OPC UA 连接</h4>
         </div>
@@ -39,7 +40,21 @@
         <input v-model="form.username" class="input" />
         <label>密码（可选）</label>
         <input v-model="form.password" type="password" class="input" autocomplete="new-password" />
-                        <div class="node-read-bar">
+        <label for="opc-poll-interval">读值刷新间隔</label>
+        <div class="poll-interval poll-interval--form">
+          <input
+            id="opc-poll-interval"
+            v-model.number="pollIntervalSeconds"
+            type="number"
+            min="0.5"
+            max="300"
+            step="0.5"
+            class="input input-tiny"
+            :disabled="!browseCapability"
+          />
+          <span class="poll-hint">秒（开启持续刷新后，按此间隔更新地址空间可见变量与当前选中变量）</span>
+        </div>
+        <div class="node-read-bar">
           <button
             type="button"
             class="btn sm"
@@ -48,26 +63,24 @@
           >
             重新读取
           </button>
-          <label class="poll-label poll-label-compact">
-            <input v-model="pollEnabled" type="checkbox" class="poll-checkbox" />
-            <span class="poll-label-text">持续刷新</span>
-          </label>
-          <span v-if="pollEnabled" class="poll-interval">
-            <label for="opc-poll-interval">间隔</label>
-            <input
-              id="opc-poll-interval"
-              v-model.number="pollIntervalSeconds"
-              type="number"
-              min="0.5"
-              max="300"
-              step="0.5"
-              class="input input-tiny"
-            />
-            <span class="poll-hint">秒</span>
-          </span>
+          <button
+            type="button"
+            class="btn sm"
+            :class="{ primary: pollEnabled }"
+            :disabled="!browseCapability"
+            :aria-pressed="pollEnabled"
+            :title="
+              pollEnabled
+                ? '停止定时刷新地址空间可见变量与选中变量详情'
+                : '按上方间隔刷新地址空间已展开可见的变量读数，并刷新当前选中变量'
+            "
+            @click="togglePollEnabled"
+          >
+            {{ pollEnabled ? '停止持续刷新' : '持续刷新' }}
+          </button>
         </div>
         <p v-if="pollEnabled && !canPollCurrent" class="poll-warn poll-warn-inline">
-          持续刷新仅对<strong>变量</strong>节点有效；请先在右侧地址空间选中变量。
+          地址空间中已展开可见的变量会定时读值；选中<strong>变量</strong>节点时，左侧详情同步更新。
         </p>
         <div v-if="pickedDisplay" class="picked-summary">
           <div class="picked-summary-head">
@@ -109,38 +122,39 @@
         </div>
         <div v-if="msg" class="msg">{{ translateOpcuaMessage(msg) }}</div>
       </div>
-      <div class="browse-pane">
-        <div class="browse-head">
-          <div class="browse-head-titles">
-            <span class="browse-title-main">地址空间</span>
-            <span v-if="browseHeadSubtitle" class="browse-title-sub">{{ browseHeadSubtitle }}</span>
+      <div class="browse-pane ds-side-pane">
+        <div class="browse-head ds-pane-head">
+          <div class="browse-head-titles ds-pane-head-titles">
+            <span class="browse-title-main ds-pane-title">地址空间</span>
+            <span v-if="browseHeadSubtitle" class="browse-title-sub ds-pane-subtitle">{{ browseHeadSubtitle }}</span>
           </div>
-          <div class="browse-head-actions">
-            <label class="tree-poll-label" :title="'仅轮询已在左侧展开 subtree 中出现的 Variable（与 OpcUaTree 可视范围一致）'">
-              <input v-model="treeRowPollEnabled" type="checkbox" class="tree-poll-checkbox" />
-              <span class="tree-poll-text">树上读值定时刷新</span>
-            </label>
-            <span v-if="treeRowPollEnabled" class="tree-poll-interval">
-              <label for="opc-tree-row-poll-interval">间隔</label>
-              <input
-                id="opc-tree-row-poll-interval"
-                v-model.number="treeRowPollIntervalSeconds"
-                type="number"
-                min="0.5"
-                max="300"
-                step="0.5"
-                class="input input-tiny"
-              />
-              <span class="poll-hint">秒</span>
-            </span>
+          <div class="browse-head-actions ds-pane-head-actions">
             <button
               type="button"
               class="btn sm"
-              :disabled="!browseCapability"
+              :disabled="!browseCapability || expandAllBusy"
               :title="browseCapability ? '' : '请先填写主机与端口，或从上方选择已保存连接'"
               @click="refreshRoot"
             >
               刷新根
+            </button>
+            <button
+              type="button"
+              class="btn sm"
+              :disabled="!browseCapability || expandAllBusy || !!searchTrimmed"
+              :title="searchTrimmed ? '搜索模式下请使用树浏览' : '浏览并展开全部可见分支（可能对 PLC 造成负载）'"
+              @click="confirmExpandAllTree"
+            >
+              {{ expandAllBusy ? '展开中…' : '一键展开' }}
+            </button>
+            <button
+              type="button"
+              class="btn sm"
+              :disabled="!browseCapability || expandAllBusy || !!searchTrimmed"
+              :title="searchTrimmed ? '搜索模式下请使用树浏览' : ''"
+              @click="collapseAllTree"
+            >
+              一键收起
             </button>
           </div>
         </div>
@@ -201,7 +215,13 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, reactive, ref, shallowRef, triggerRef, watch } from 'vue'
+import { computed, defineExpose, onBeforeUnmount, onMounted, reactive, ref, shallowRef, triggerRef, watch } from 'vue'
+import ConnectionTabLed from '@/features/datasource/ConnectionTabLed.vue'
+import {
+  probeConnectionIds,
+  probeOpcSavedConnection,
+  summarizeConnectionHealth,
+} from '@/features/datasource/connection-tab-health'
 import { apiFetch } from '@/api/client.js'
 import OpcUaTree from './OpcUaTree.vue'
 import { translateOpcuaMessage } from './opcua-messages.js'
@@ -211,9 +231,12 @@ import {
   opcServerShortLabel,
   DEFAULT_OPCUA_PORT,
 } from './opcua-endpoint-url.js'
+import '../datasource-ui.css'
 import '../connection-tabs.css'
+import '../connection-form-pane.css'
 import { opcDataTypeLabelFromRead } from './opcua-value-meta.js'
-import { applyOpcBrowseChildren, isOpcVariableValueNode } from './opcua-tree-utils.js'
+import { applyOpcBrowseChildren, collapseOpcTreeNodes, isOpcVariableValueNode } from './opcua-tree-utils.js'
+import { runOpcExpandAllTree } from './opcua-tree-expand-all.js'
 import { parseOpcNodeId, opcNodeClassLabel } from './opcua-node-display.js'
 
 const props = defineProps({
@@ -221,7 +244,10 @@ const props = defineProps({
   wizardLayout: { type: Boolean, default: false },
 })
 
+const emit = defineEmits(['health-summary'])
+
 const servers = ref([])
+const opcHealth = reactive({})
 const selected = ref(null)
 const form = reactive({
   id: '',
@@ -280,6 +306,9 @@ const prefetchGen = ref(0)
 
 const copyFeedback = ref('')
 
+const expandAllBusy = ref(false)
+let expandAllGen = 0
+
 /** 定时读当前选中 Variable（轮询）；与 readEpoch 无关 */
 const pollEnabled = ref(false)
 const pollIntervalSeconds = ref(2)
@@ -287,8 +316,6 @@ let pollTimerId = null
 let pollInFlight = false
 
 /** 定时读左侧树上所有「已展开 subtree」中出现的 Variable（与 OpcUaTree 可视范围一致） */
-const treeRowPollEnabled = ref(true)
-const treeRowPollIntervalSeconds = ref(2)
 let treeRowPollTimerId = null
 let treeRowPollInFlight = false
 
@@ -499,6 +526,37 @@ async function persistLastOpcuaServer(id) {
   }
 }
 
+function setOpcHealth(id, state) {
+  if (!id) return
+  opcHealth[id] = state
+}
+
+function pruneOpcHealth(validIds) {
+  const keep = new Set(validIds)
+  for (const k of Object.keys(opcHealth)) {
+    if (!keep.has(k)) delete opcHealth[k]
+  }
+}
+
+function probeAllOpcConnections() {
+  const ids = servers.value.map((s) => s.id).filter(Boolean)
+  pruneOpcHealth(ids)
+  void probeConnectionIds(ids, probeOpcSavedConnection, setOpcHealth, 'opcua')
+}
+
+const connectionHealthSummary = computed(() =>
+  summarizeConnectionHealth(
+    servers.value.map((s) => s.id).filter(Boolean),
+    opcHealth,
+  ),
+)
+
+watch(
+  connectionHealthSummary,
+  (s) => emit('health-summary', s),
+  { immediate: true },
+)
+
 async function loadServers(explicitPreferred = null) {
   let prefs = {}
   try {
@@ -508,6 +566,7 @@ async function loadServers(explicitPreferred = null) {
   }
   const data = await apiFetch('/opcua/servers')
   servers.value = data.servers || []
+  probeAllOpcConnections()
   if (!servers.value.length) {
     startNew()
     return
@@ -526,6 +585,11 @@ async function loadServers(explicitPreferred = null) {
     return
   }
   selectServer(servers.value[0], false)
+}
+
+function onOpcConnTabClick(s) {
+  selectServer(s)
+  probeAllOpcConnections()
 }
 
 function selectServer(s, persist = true) {
@@ -623,7 +687,9 @@ async function saveServer() {
 
 async function removeServer() {
   if (!form.id) return
-  await apiFetch(`/opcua/servers/${form.id}`, { method: 'DELETE' })
+  const removedId = form.id
+  await apiFetch(`/opcua/servers/${removedId}`, { method: 'DELETE' })
+  delete opcHealth[removedId]
   await loadServers()
   startNew()
 }
@@ -636,6 +702,7 @@ async function testDraft() {
         method: 'POST',
         body: {},
       })
+      setOpcHealth(form.id, res.ok ? 'ok' : 'fail')
       msg.value = res.ok ? '连接成功' : res.message || '失败'
       return
     }
@@ -654,11 +721,93 @@ async function testDraft() {
     })
     msg.value = res.ok ? '连接成功' : res.message || '失败'
   } catch (e) {
+    if (form.id) setOpcHealth(form.id, 'fail')
     msg.value = e.message || String(e)
   }
 }
 
+function cancelExpandAll() {
+  expandAllGen += 1
+  expandAllBusy.value = false
+}
+
+async function fetchAndApplyNodeChildren(node) {
+  const res = await opcApiBrowse(node.node_id)
+  if (res.ok === false) {
+    node.errorMessage = res.message || '浏览失败'
+    applyOpcBrowseChildren(node, [])
+    return
+  }
+  const list = (res.nodes || []).map((n) => wrapOpcNode(n))
+  applyOpcBrowseChildren(node, list)
+  if (list.length) {
+    void prefetchVariableValuesInNodes(node.children)
+  }
+}
+
+function collapseAllTree() {
+  if (!browseCapability.value || expandAllBusy.value || searchTrimmed.value) return
+  cancelExpandAll()
+  if (!treeNodes.value.length) {
+    msg.value = '请先点击「刷新根」加载地址空间'
+    return
+  }
+  collapseOpcTreeNodes(treeNodes.value)
+  msg.value = '已全部收起'
+  bumpTree()
+}
+
+function confirmExpandAllTree() {
+  if (!browseCapability.value || expandAllBusy.value || searchTrimmed.value) return
+  if (!treeNodes.value.length) {
+    msg.value = '请先点击「刷新根」加载地址空间'
+    return
+  }
+  const ok = window.confirm(
+    '一键展开将浏览并展开地址空间中的大量节点，可能对 PLC / OPC 服务器造成较高负载。\n\n' +
+      '请仅在安全、非生产环境下操作。\n\n' +
+      '确认后将自动关闭「持续刷新」。是否继续？',
+  )
+  if (!ok) return
+  pollEnabled.value = false
+  void expandAllTree()
+}
+
+async function expandAllTree() {
+  if (!browseCapability.value || expandAllBusy.value || searchTrimmed.value) return
+  const myGen = ++expandAllGen
+  expandAllBusy.value = true
+  msg.value = '正在一键展开…'
+  try {
+    const result = await runOpcExpandAllTree({
+      rootNodes: treeNodes.value,
+      fetchChildren: fetchAndApplyNodeChildren,
+      bumpTree,
+      shouldAbort: () => myGen !== expandAllGen,
+      onProgress: (text) => {
+        if (myGen === expandAllGen) msg.value = text
+      },
+    })
+    if (myGen !== expandAllGen) return
+    if (result === 'capped') {
+      msg.value = `已浏览较多节点（已达上限，其余请手动展开）`
+    } else if (result === 'done') {
+      msg.value = '已全部展开'
+    }
+  } catch (e) {
+    if (myGen === expandAllGen) {
+      msg.value = translateOpcuaMessage(e.message || String(e))
+    }
+  } finally {
+    if (myGen === expandAllGen) {
+      expandAllBusy.value = false
+      bumpTree()
+    }
+  }
+}
+
 async function refreshRoot() {
+  cancelExpandAll()
   prefetchGen.value += 1
   msg.value = ''
   const cap = browseCapability.value
@@ -689,7 +838,7 @@ async function refreshRoot() {
 }
 
 async function onToggleNode(node) {
-  if (!browseCapability.value || !node.node_id || node.loading) return
+  if (!browseCapability.value || !node.node_id || node.loading || expandAllBusy.value) return
   if (node.loaded) {
     node.expanded = !node.expanded
     bumpTree()
@@ -871,6 +1020,11 @@ function clampPollSeconds(v) {
   return n
 }
 
+function togglePollEnabled() {
+  if (!browseCapability.value) return
+  pollEnabled.value = !pollEnabled.value
+}
+
 function clearPollTimer() {
   if (pollTimerId != null) {
     clearInterval(pollTimerId)
@@ -927,7 +1081,7 @@ function syncPollTimer() {
 }
 
 async function pollVisibleTreeVariablesOnce() {
-  if (!treeRowPollEnabled.value || !browseCapability.value || treeRowPollInFlight) return
+  if (!pollEnabled.value || !browseCapability.value || treeRowPollInFlight) return
   const targets = collectVisibleVariableNodes(treeNodes.value)
   if (!targets.length) return
   const myGen = prefetchGen.value
@@ -937,7 +1091,7 @@ async function pollVisibleTreeVariablesOnce() {
       if (
         prefetchGen.value !== myGen ||
         !browseCapability.value ||
-        !treeRowPollEnabled.value
+        !pollEnabled.value
       ) {
         return
       }
@@ -951,36 +1105,28 @@ async function pollVisibleTreeVariablesOnce() {
 
 function syncTreeRowPollTimer() {
   clearTreeRowPollTimer()
-  if (!treeRowPollEnabled.value || !browseCapability.value) return
-  const ms = Math.round(clampPollSeconds(treeRowPollIntervalSeconds.value) * 1000)
+  if (!pollEnabled.value || !browseCapability.value) return
+  const ms = Math.round(clampPollSeconds(pollIntervalSeconds.value) * 1000)
   void pollVisibleTreeVariablesOnce()
   treeRowPollTimerId = window.setInterval(() => void pollVisibleTreeVariablesOnce(), ms)
+}
+
+function syncAllPollTimers() {
+  syncPollTimer()
+  syncTreeRowPollTimer()
 }
 
 watch(
   [pollEnabled, pollIntervalSeconds, browseCapability, () => pickedNode.value],
   () => {
-    syncPollTimer()
+    syncAllPollTimers()
   },
-  { flush: 'post' },
+  { flush: 'post', immediate: true },
 )
 
 watch(pollIntervalSeconds, (v) => {
   const c = clampPollSeconds(v)
   if (c !== v) pollIntervalSeconds.value = c
-})
-
-watch(
-  [treeRowPollEnabled, treeRowPollIntervalSeconds, browseCapability],
-  () => {
-    syncTreeRowPollTimer()
-  },
-  { flush: 'post', immediate: true },
-)
-
-watch(treeRowPollIntervalSeconds, (v) => {
-  const c = clampPollSeconds(v)
-  if (c !== v) treeRowPollIntervalSeconds.value = c
 })
 
 function onConfigImported() {
@@ -1016,10 +1162,16 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  cancelExpandAll()
   clearTimeout(searchDebounceTimer)
   clearPollTimer()
   clearTreeRowPollTimer()
   window.removeEventListener('report-editor-config-imported', onConfigImported)
+})
+
+defineExpose({
+  probeAllConnections: probeAllOpcConnections,
+  healthSummary: connectionHealthSummary,
 })
 </script>
 
@@ -1034,7 +1186,8 @@ onBeforeUnmount(() => {
 }
 .cols {
   display: grid;
-  grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
+  /* 左侧连接表单宽度与数据库工作台 ConnectionManager 列一致 */
+  grid-template-columns: minmax(240px, 300px) minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr);
   gap: 16px;
   align-items: stretch;
@@ -1051,22 +1204,8 @@ onBeforeUnmount(() => {
   min-width: 0;
   min-height: 0;
 }
-.row-head {
-  margin-bottom: 4px;
-}
-.row-head h4 {
-  margin: 0;
-  font-size: 14px;
-  font-weight: 600;
-  color: #111827;
-}
 .form-pane {
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  padding: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+  min-width: 260px;
 }
 .node-read-bar {
   display: flex;
@@ -1076,10 +1215,6 @@ onBeforeUnmount(() => {
   margin-top: 4px;
   padding-top: 8px;
   border-top: 1px solid #e5e7eb;
-}
-.poll-label-compact {
-  min-height: auto;
-  padding: 0;
 }
 .poll-warn-inline {
   margin: 0;
@@ -1133,14 +1268,8 @@ onBeforeUnmount(() => {
   color: #b91c1c;
 }
 .browse-pane {
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  padding: 12px;
-  display: flex;
-  flex-direction: column;
   flex: 1;
   min-height: 0;
-  overflow: hidden;
 }
 .browse-body {
   display: flex;
@@ -1168,42 +1297,21 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  font-size: 12px;
-  color: #374151;
 }
 .opc-browse-search-inp {
-  padding: 8px 10px;
-  border: 1px solid #d1d5db;
-  border-radius: 8px;
-  font-size: 13px;
   width: 100%;
   box-sizing: border-box;
-  background: #fff;
 }
 .opc-browse-search-hint {
   margin: 8px 0 0;
-  font-size: 11px;
-  color: #6b7280;
-  line-height: 1.45;
 }
-.opc-browse-search-empty {
-  padding: 14px 8px;
-  text-align: center;
-  font-size: 12px;
-  color: #6b7280;
-}
+.opc-browse-search-empty,
 .opc-browse-search-status {
   padding: 14px 8px;
   text-align: center;
-  font-size: 12px;
-  color: #4338ca;
-  font-weight: 600;
 }
 .opc-browse-search-meta {
   margin: 8px 8px 4px;
-  font-size: 11px;
-  color: #92400e;
-  line-height: 1.4;
 }
 .opc-browse-hit-list {
   list-style: none;
@@ -1225,7 +1333,6 @@ onBeforeUnmount(() => {
   border-radius: 8px;
   background: #fff;
   cursor: pointer;
-  font-size: 12px;
   box-sizing: border-box;
 }
 .opc-browse-hit:hover {
@@ -1238,7 +1345,6 @@ onBeforeUnmount(() => {
 }
 .opc-browse-hit-id {
   color: #6366f1;
-  font-size: 11px;
 }
 .detail-wrap {
   flex: 0 1 400px;
@@ -1272,122 +1378,6 @@ onBeforeUnmount(() => {
 }
 .mono {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-}
-label {
-  font-size: 12px;
-  color: #374151;
-}
-.input {
-  padding: 8px;
-  border: 1px solid #d1d5db;
-  border-radius: 6px;
-  font-size: 13px;
-}
-.actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 8px;
-}
-.btn {
-  padding: 8px 12px;
-  border-radius: 6px;
-  border: 1px solid #d1d5db;
-  background: #fff;
-  cursor: pointer;
-  font-size: 13px;
-}
-.btn.primary {
-  background: #4f46e5;
-  color: #fff;
-  border-color: #4f46e5;
-}
-.btn.danger {
-  border-color: #fecaca;
-  color: #b91c1c;
-}
-.btn.sm {
-  padding: 4px 8px;
-  font-size: 12px;
-}
-.msg {
-  font-size: 13px;
-  color: #374151;
-}
-.browse-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 12px;
-  margin-bottom: 8px;
-  flex-shrink: 0;
-}
-
-.browse-head-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 10px 12px;
-  flex-shrink: 0;
-}
-
-.tree-poll-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0;
-  cursor: pointer;
-  user-select: none;
-  font-size: 12px;
-  color: #374151;
-  max-width: 100%;
-}
-
-.tree-poll-checkbox {
-  width: 18px;
-  height: 18px;
-  min-width: 18px;
-  min-height: 18px;
-  margin: 0;
-  cursor: pointer;
-  accent-color: #2563eb;
-  flex-shrink: 0;
-}
-
-.tree-poll-text {
-  white-space: nowrap;
-}
-
-.tree-poll-interval {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: #374151;
-}
-
-.tree-poll-interval label {
-  margin: 0;
-}
-
-.browse-head-titles {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-}
-
-.browse-title-main {
-  font-size: 14px;
-  font-weight: 600;
-  color: #111827;
-}
-
-.browse-title-sub {
-  font-size: 11px;
-  line-height: 1.35;
-  color: #6b7280;
 }
 .detail {
   font-size: 13px;
@@ -1435,45 +1425,21 @@ label {
   font-size: 12px;
   margin-top: 8px;
 }
-.poll-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
-  margin-top: 10px;
-  font-size: 12px;
-  color: #374151;
-}
-.poll-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 12px;
-  cursor: pointer;
-  user-select: none;
-  min-height: 44px;
-  padding: 6px 10px 6px 8px;
-  margin: 0;
-  border-radius: 8px;
-  box-sizing: border-box;
-}
-.poll-checkbox {
-  width: 22px;
-  height: 22px;
-  min-width: 22px;
-  min-height: 22px;
-  margin: 0;
-  cursor: pointer;
-  accent-color: #2563eb;
-  flex-shrink: 0;
-}
-.poll-label-text {
-  font-size: 14px;
-  line-height: 1.3;
-}
 .poll-interval {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+}
+.poll-interval--form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 2px;
+}
+.poll-interval--form .poll-hint {
+  flex: 1 1 12rem;
+  line-height: 1.4;
 }
 .poll-interval label {
   margin: 0;
@@ -1481,11 +1447,6 @@ label {
 .poll-hint {
   color: #6b7280;
   font-size: 11px;
-}
-.input-tiny {
-  width: 4.5rem;
-  padding: 6px 8px;
-  font-size: 13px;
 }
 .poll-warn {
   margin: 6px 0 0;

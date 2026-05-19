@@ -5,6 +5,8 @@ import type { AutoOpcTriggerMode } from "@/lib/report-generator-prefs";
 /** 单条 OPC 触发 → 导出模版 绑定 */
 export interface AutoTriggerBinding {
   id: string;
+  /** 是否参与自动导出轮询与触发（默认启用） */
+  enabled: boolean;
   templateId: string | null;
   serverId: string;
   nodeId: string;
@@ -25,6 +27,7 @@ export function newAutoTriggerBindingId(): string {
 export function createAutoTriggerBinding(partial?: Partial<AutoTriggerBinding>): AutoTriggerBinding {
   return {
     id: partial?.id?.trim() || newAutoTriggerBindingId(),
+    enabled: partial?.enabled === false ? false : true,
     templateId: typeof partial?.templateId === "string" ? partial.templateId : (partial?.templateId ?? null),
     serverId: typeof partial?.serverId === "string" ? partial.serverId : "",
     nodeId: typeof partial?.nodeId === "string" ? partial.nodeId : "",
@@ -53,6 +56,7 @@ export function normalizeAutoTriggerBinding(raw: unknown): AutoTriggerBinding | 
   const o = raw as Record<string, unknown>;
   return createAutoTriggerBinding({
     id: typeof o.id === "string" ? o.id : undefined,
+    enabled: o.enabled === false ? false : true,
     templateId: typeof o.templateId === "string" ? o.templateId : null,
     serverId: typeof o.serverId === "string" ? o.serverId : "",
     nodeId: typeof o.nodeId === "string" ? o.nodeId : "",
@@ -102,13 +106,22 @@ export function loadAutoTriggerBindings(
 }
 
 export function bindingConfigKey(b: AutoTriggerBinding): string {
-  return `${b.id}|${b.serverId}|${b.nodeId}|${b.mode}|${b.compareValue}|${b.templateId || ""}`;
+  return `${b.id}|${b.enabled ? 1 : 0}|${b.serverId}|${b.nodeId}|${b.mode}|${b.compareValue}|${b.templateId || ""}`;
+}
+
+export function isTriggerBindingEnabled(b: AutoTriggerBinding): boolean {
+  return b.enabled !== false;
 }
 
 export function isTriggerBindingComplete(b: AutoTriggerBinding): boolean {
   if (!b.templateId?.trim() || !b.serverId.trim() || !b.nodeId.trim()) return false;
   if (b.mode === "equals" && !b.compareValue.trim()) return false;
   return true;
+}
+
+/** 已启用且配置完整，参与轮询与触发 */
+export function isTriggerBindingActive(b: AutoTriggerBinding): boolean {
+  return isTriggerBindingEnabled(b) && isTriggerBindingComplete(b);
 }
 
 export function parseRgTriggerPickTarget(target: string | null): string | null {

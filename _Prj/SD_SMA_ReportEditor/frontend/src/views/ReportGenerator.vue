@@ -237,17 +237,32 @@
           v-for="(binding, bi) in prefs.auto.bindings"
           :key="binding.id"
           class="rg-binding-card"
+          :class="{ 'rg-binding-card--off': !binding.enabled }"
         >
           <div class="rg-binding-card-head">
             <span class="rg-binding-card-title">绑定 {{ bi + 1 }}</span>
-            <button
-              type="button"
-              class="btn btn--sm btn--ghost"
-              title="删除此绑定"
-              @click="removeAutoTriggerBinding(binding.id)"
-            >
-              删除
-            </button>
+            <div class="rg-binding-card-head-actions">
+              <div class="rg-switch-row rg-switch-row--compact">
+                <span class="rg-switch-label" :id="`rg-bind-en-lbl-${binding.id}`">启用</span>
+                <button
+                  type="button"
+                  class="rg-switch rg-switch--sm"
+                  :class="{ 'rg-switch--on': binding.enabled }"
+                  role="switch"
+                  :aria-labelledby="`rg-bind-en-lbl-${binding.id}`"
+                  :aria-checked="binding.enabled"
+                  @click="binding.enabled = !binding.enabled"
+                />
+              </div>
+              <button
+                type="button"
+                class="btn btn--sm btn--ghost"
+                title="删除此绑定"
+                @click="removeAutoTriggerBinding(binding.id)"
+              >
+                删除
+              </button>
+            </div>
           </div>
           <div class="rg-row rg-row--in-panel">
             <label class="rg-lbl" :for="`rg-bind-tpl-${binding.id}`">导出模版</label>
@@ -304,7 +319,7 @@
             </p>
           </div>
           <div
-            v-if="prefs.auto.enabled && bindingChartUi(binding.id)?.show"
+            v-if="prefs.auto.enabled && binding.enabled && bindingChartUi(binding.id)?.show"
             class="rg-row rg-row--in-panel rg-binding-chart"
           >
             <span class="rg-lbl">近期数值</span>
@@ -433,6 +448,7 @@ import {
   bindingConfigKey,
   AUTO_OPC_POLL_INTERVAL_MS,
   createAutoTriggerBinding,
+  isTriggerBindingActive,
   isTriggerBindingComplete,
   parseRgTriggerPickTarget,
   rgTriggerPickTarget,
@@ -915,14 +931,17 @@ async function pollAutoTriggerOnce(): Promise<void> {
   pruneBindingRuntime();
 
   const bindings = prefs.value.auto.bindings;
-  const complete = bindings.filter(isTriggerBindingComplete);
+  const active = bindings.filter(isTriggerBindingActive);
 
   if (!bindings.length) {
     autoStatus.value = "[自动] 请点击「新建绑定」添加触发变量…";
     return;
   }
-  if (!complete.length) {
-    autoStatus.value = "[自动] 请为每条绑定选择模版、连接与触发节点…";
+  if (!active.length) {
+    const anyComplete = bindings.some(isTriggerBindingComplete);
+    autoStatus.value = anyComplete
+      ? "[自动] 已配置的绑定均未启用，请打开至少一条绑定的「启用」开关…"
+      : "[自动] 请启用绑定并完成模版、连接与触发节点配置…";
     return;
   }
 
@@ -939,7 +958,7 @@ async function pollAutoTriggerOnce(): Promise<void> {
   for (let i = 0; i < bindings.length; i++) {
     const b = bindings[i];
     const label = bindingDisplayLabel(b, i);
-    if (!isTriggerBindingComplete(b)) continue;
+    if (!isTriggerBindingActive(b)) continue;
 
     const srv = b.serverId.trim();
     const nodeId = b.nodeId.trim();
@@ -1010,7 +1029,7 @@ async function pollAutoTriggerOnce(): Promise<void> {
   if (statusParts.length) {
     autoStatus.value = `[自动] ${statusParts.join("；")}`;
   } else if (anyListening) {
-    autoStatus.value = `[自动] 监听 ${complete.length} 条绑定…`;
+    autoStatus.value = `[自动] 监听 ${active.length} 条已启用绑定…`;
   } else {
     autoStatus.value = "[自动] 监听中…";
   }
@@ -1198,6 +1217,10 @@ onUnmounted(() => {
   border: 1px solid #e4e4e7;
   background: #fff;
 }
+.rg-binding-card--off {
+  opacity: 0.72;
+  background: #fafafa;
+}
 .rg-binding-card-head {
   display: flex;
   align-items: center;
@@ -1206,6 +1229,33 @@ onUnmounted(() => {
   margin-bottom: 12px;
   padding-bottom: 8px;
   border-bottom: 1px solid #f4f4f5;
+}
+.rg-binding-card-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+.rg-switch-row--compact {
+  margin-bottom: 0;
+  gap: 8px;
+}
+.rg-switch-row--compact .rg-switch-label {
+  font-size: 12px;
+  font-weight: 500;
+}
+.rg-switch--sm {
+  width: 36px;
+  height: 20px;
+}
+.rg-switch--sm::after {
+  width: 14px;
+  height: 14px;
+  top: 2px;
+  left: 2px;
+}
+.rg-switch--sm.rg-switch--on::after {
+  transform: translateX(16px);
 }
 .rg-binding-card-title {
   font-size: 13px;

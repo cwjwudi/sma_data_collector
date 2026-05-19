@@ -4,7 +4,7 @@
       关系浏览器仅支持 MySQL / MariaDB / PostgreSQL / SQLite；MongoDB 请使用对象树与查询页。
     </div>
     <template v-else>
-      <div class="rb-toolbar">
+      <div class="rb-toolbar seg-tabs">
         <button type="button" :class="{ on: mode === 'structure' }" @click="mode = 'structure'">结构视图</button>
         <button type="button" :class="{ on: mode === 'data' }" @click="mode = 'data'">数据视图</button>
         <button type="button" class="btn ghost sm" :disabled="edgesLoading" @click="loadForeignKeys">
@@ -82,7 +82,7 @@
               <button type="button" class="btn sm" :disabled="previewPage <= 1 || !selectedTable" @click="previewRbPrev">
                 上一页
               </button>
-              <span class="muted rb-preview-label"
+              <span class="muted rb-preview-label toolbar-label"
                 >第 {{ previewPage }} 页 · 每页 {{ PAGE_SIZE }} 行<span v-if="previewTotal != null"> · 共 {{ previewTotal }} 行</span></span
               >
               <button type="button" class="btn sm" :disabled="!canPreviewRbNext" @click="previewRbNext">下一页</button>
@@ -722,8 +722,6 @@ watch(
   padding: 16px;
   background: #f9fafb;
   border-radius: 8px;
-  font-size: 13px;
-  color: #6b7280;
 }
 .rb-toolbar {
   display: flex;
@@ -731,25 +729,8 @@ watch(
   align-items: center;
   gap: 8px;
 }
-.rb-toolbar button {
-  padding: 6px 12px;
-  border-radius: 6px;
-  border: 1px solid #d1d5db;
-  background: #fff;
-  cursor: pointer;
-  font-size: 12px;
-}
-.rb-toolbar button.on {
-  background: #111827;
-  color: #fff;
-  border-color: #111827;
-}
-.rb-toolbar .btn.ghost.sm {
-  padding: 4px 10px;
-}
-.rb-hint {
-  font-size: 11px;
-  color: #9ca3af;
+.rb-toolbar {
+  margin-bottom: 0;
 }
 .rb-main {
   display: grid;
@@ -804,29 +785,19 @@ watch(
   box-shadow: 0 1px 3px rgb(0 0 0 / 0.06);
   cursor: grab;
   padding: 8px;
-  font-size: 11px;
   user-select: none;
 }
 .rb-card.sel {
   border-color: #6366f1;
   box-shadow: 0 0 0 2px rgb(99 102 241 / 0.35);
 }
-.rb-card-head {
-  font-weight: 700;
-  font-size: 12px;
-  color: #111827;
-}
 .rb-card-sub {
-  color: #6b7280;
   margin-top: 4px;
-  line-height: 1.35;
   min-height: 2.6em;
 }
 .rb-card-fields {
   margin-top: 6px;
-  color: #9ca3af;
-  font-family: ui-monospace, monospace;
-  font-size: 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   word-break: break-all;
 }
 .rb-panel {
@@ -841,8 +812,6 @@ watch(
 }
 .rb-preview-placeholder-text {
   margin: 0 0 10px;
-  font-size: 12px;
-  line-height: 1.45;
 }
 .rb-sec {
   border: 1px solid #e5e7eb;
@@ -851,15 +820,11 @@ watch(
   background: #fff;
 }
 .rb-sec h4 {
-  margin: 0 0 8px;
-  font-size: 13px;
-  color: #374151;
   flex-shrink: 0;
 }
 .rb-fields {
   max-height: 200px;
   overflow: auto;
-  font-size: 11px;
 }
 .rb-field-row {
   display: grid;
@@ -877,7 +842,6 @@ watch(
 }
 .rb-dot.pk {
   background: #fef3c7;
-  font-size: 9px;
   text-align: center;
   line-height: 14px;
   font-weight: 700;
@@ -885,19 +849,13 @@ watch(
 }
 .rb-dot.fk {
   background: #dbeafe;
-  font-size: 9px;
   text-align: center;
   line-height: 14px;
   font-weight: 700;
   color: #1d4ed8;
 }
-.typ {
-  color: #9ca3af;
-  font-size: 10px;
-}
 .fk-ref {
   color: #4f46e5;
-  font-size: 10px;
 }
 .rb-preview-toolbar {
   display: flex;
@@ -906,9 +864,6 @@ watch(
   gap: 8px;
   margin-bottom: 8px;
   flex-shrink: 0;
-}
-.rb-preview-label {
-  font-size: 11px;
 }
 .rb-preview-sec {
   flex: 1;
@@ -920,27 +875,18 @@ watch(
   flex: 1;
   min-height: 0;
 }
-.muted {
-  color: #9ca3af;
-  font-size: 12px;
-}
 .rb-edge-pair {
-  font-family: ui-monospace, monospace;
-  font-size: 11px;
-  color: #4b5563;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 .warn {
   color: #b91c1c;
-  font-size: 12px;
 }
 .ok {
   color: #15803d;
-  font-size: 12px;
 }
 .rb-warn-list {
   margin: 0;
   padding-left: 18px;
-  font-size: 11px;
   color: #b45309;
 }
 .rb-actions {
@@ -949,26 +895,11 @@ watch(
   flex-wrap: wrap;
   margin-top: 8px;
 }
-.rb-actions .btn.sm {
-  padding: 5px 10px;
-  border-radius: 6px;
-  border: 1px solid #d1d5db;
-  background: #fff;
-  cursor: pointer;
-  font-size: 11px;
-}
-.rb-actions .btn.sm.primary {
-  background: #4f46e5;
-  color: #fff;
-  border-color: #4f46e5;
-}
 .rb-count {
-  font-size: 12px;
   margin: 8px 0 0;
 }
 .rb-sql-details {
   margin-top: 8px;
-  font-size: 11px;
 }
 .rb-pre {
   margin: 6px 0 0;
@@ -978,6 +909,6 @@ watch(
   border-radius: 6px;
   overflow: auto;
   max-height: 160px;
-  font-size: 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 </style>

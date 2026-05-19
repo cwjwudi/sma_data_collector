@@ -1,0 +1,87 @@
+/* 数据库 ConnectionManager / OPC UA 左侧连接表单 — 共用排版与字体 */
+.conn-form-pane {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 12px;
+  background: #fafafa;
+  min-width: 260px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  line-height: 1.45;
+  color: #111827;
+  font-family: inherit;
+  box-sizing: border-box;
+}
+
+.conn-form-pane .row-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 4px;
+  flex-shrink: 0;
+}
+
+.conn-form-pane .row-head h4 {
+  margin: 0;
+}
+
+.conn-form-pane label {
+  display: block;
+  margin: 0;
+  font-size: 12px;
+  font-weight: 500;
+  color: #374151;
+  line-height: 1.35;
+}
+
+.conn-form-pane .input,
+.conn-form-pane select.input {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 13px;
+  line-height: 1.4;
+  font-family: inherit;
+  color: #111827;
+  background: #fff;
+  box-sizing: border-box;
+}
+
+.conn-form-pane .input:disabled,
+.conn-form-pane select.input:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  background: #f3f4f6;
+}
+
+.conn-form-pane .input.input-tiny {
+  width: 4.5rem;
+  padding: 6px 8px;
+}
+
+.conn-form-pane .actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.conn-form-pane .msg {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #374151;
+}
+
+.conn-form-pane .msg.ok {
+  color: #047857;
+}
+
+.conn-form-pane .msg.err {
+  color: #b91c1c;
+}

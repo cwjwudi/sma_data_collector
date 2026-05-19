@@ -208,6 +208,33 @@ async def test_connection(body: DbConnectionSave):
         return {"ok": False, "message": f"测试过程异常: {e}"}
 
 
+@router.post("/database/test_saved/{connection_id}")
+async def test_saved_connection(connection_id: str):
+    """对已保存连接做连通测试：使用配置中的引擎/主机与本机解密后的密码。"""
+    try:
+        conn = _conn_by_id(connection_id)
+    except HTTPException as e:
+        return {"ok": False, "message": e.detail if isinstance(e.detail, str) else "未找到数据库连接"}
+    body = DbConnectionSave(
+        id=conn.get("id"),
+        name=conn.get("name") or "",
+        engine=conn.get("engine") or "",
+        host=conn.get("host"),
+        port=conn.get("port"),
+        database=conn.get("database"),
+        username=conn.get("username"),
+        password=None,
+        sqlite_path=conn.get("sqlite_path"),
+        mongo_auth_source=conn.get("mongo_auth_source") or "admin",
+    )
+    try:
+        merged = _body_with_resolved_password_for_test(body)
+    except ValueError as e:
+        return {"ok": False, "message": str(e)}
+    ok, err = db_connection_ops.run_connectivity_test(merged)
+    return {"ok": ok, "message": err}
+
+
 @router.post("/database/catalog")
 async def catalog(payload: dict[str, Any]):
     cid = payload.get("connection_id")

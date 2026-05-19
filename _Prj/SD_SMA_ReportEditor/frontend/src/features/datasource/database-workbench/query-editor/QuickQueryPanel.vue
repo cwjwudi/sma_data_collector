@@ -51,7 +51,7 @@
           </div>
 
           <div class="qq-detail">
-            <button type="button" class="btn xs" @click="loadColumns">{{ detailCols.length ? '重新加载列' : '加载列信息' }}</button>
+            <button type="button" class="btn sm" @click="loadColumns">{{ detailCols.length ? '重新加载列' : '加载列信息' }}</button>
             <div v-if="detailLoading" class="qq-muted">加载列…</div>
             <div v-else-if="detailErr" class="qq-err">{{ detailErr }}</div>
             <template v-else-if="detailCols.length">
@@ -59,7 +59,7 @@
                 <span v-for="c in detailCols.slice(0, 16)" :key="c.name" class="chip" :title="c.data_type">{{ c.name }}</span>
                 <span v-if="detailCols.length > 16" class="qq-muted">…共 {{ detailCols.length }} 列</span>
               </div>
-              <button type="button" class="btn xs primary" @click="fillSelectColumns">填充前 {{ Math.min(12, detailCols.length) }} 列</button>
+              <button type="button" class="btn sm primary" @click="fillSelectColumns">填充前 {{ Math.min(12, detailCols.length) }} 列</button>
               <p class="qq-desc">生成 SELECT 列出前几列，可在编辑器中增删字段。</p>
             </template>
           </div>
@@ -396,21 +396,5 @@ function fillSelectColumns() {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.btn {
-  padding: 8px 12px;
-  border-radius: 6px;
-  border: 1px solid #d1d5db;
-  background: #fff;
-  cursor: pointer;
-}
-.btn.xs {
-  padding: 3px 8px;
-  font-size: 11px;
-}
-.btn.primary {
-  background: #4f46e5;
-  color: #fff;
-  border-color: #4f46e5;
 }
 </style>

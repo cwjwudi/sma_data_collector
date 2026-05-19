@@ -1,6 +1,11 @@
 <template>
   <section class="settings-section config-import">
     <h3 class="settings-section__title">配置导入 / 导出</h3>
+    <p class="settings-hint">
+      打包内容包含：<strong>数据源</strong>（数据库与 OPC UA）、<strong>报表模版</strong>、<strong>版式</strong>、<strong>签名库</strong>，
+      以及本机的<strong>生成报表</strong>与<strong>历史报表</strong>配置（自动导出目录、触发绑定、监视文件夹等）。
+      「脱敏」导出会掩码数据库与 OPC 密码；「本机备份」含完整密码（请妥善保管）。
+    </p>
     <div class="config-import-stack">
       <div class="config-import-grid">
         <button
@@ -70,15 +75,21 @@
   </section>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref } from 'vue'
 import { apiFetch } from '@/api/client.js'
+import { refreshLayoutPresets } from '@/lib/report-template/layout-registry'
+import {
+  applyClientPrefsFromBundle,
+  attachClientPrefsToBundle,
+  buildImportDataFromFile,
+} from '@/features/settings/config-import-export/config-bundle-client'
 
 const busy = ref(false)
 const msg = ref('')
 const msgTone = ref('')
-const fileRef = ref(null)
-const pendingJson = ref(null)
+const fileRef = ref<HTMLInputElement | null>(null)
+const pendingJson = ref<unknown>(null)
 const pendingFileName = ref('')
 
 function downloadJson(obj, filename) {
@@ -96,8 +107,10 @@ async function exportShare() {
   msg.value = ''
   msgTone.value = ''
   try {
-    const data = await apiFetch('/settings/config/export?mode=share')
-    downloadJson(data, 'report-editor-config-share.json')
+    const data = attachClientPrefsToBundle(
+      (await apiFetch('/settings/config/export?mode=share')) as Record<string, unknown>,
+    )
+    downloadJson(data, 'report-editor-bundle-share.json')
     msg.value = '已下载。'
     msgTone.value = 'ok'
   } catch (e) {
@@ -113,19 +126,21 @@ async function exportBackup() {
   msg.value = ''
   msgTone.value = ''
   try {
-    const data = await apiFetch('/settings/config/export?mode=backup')
-    downloadJson(data, 'report-editor-config-backup.json')
+    const data = attachClientPrefsToBundle(
+      (await apiFetch('/settings/config/export?mode=backup')) as Record<string, unknown>,
+    )
+    downloadJson(data, 'report-editor-bundle-backup.json')
     msg.value = '已下载。'
     msgTone.value = 'ok'
-  } catch (e) {
-    msg.value = e.message || String(e)
+  } catch (e: unknown) {
+    msg.value = e instanceof Error ? e.message : String(e)
     msgTone.value = 'err'
   } finally {
     busy.value = false
   }
 }
 
-function onFile(ev) {
+function onFile(ev: Event) {
   const f = ev.target.files?.[0]
   pendingJson.value = null
   pendingFileName.value = ''
@@ -153,12 +168,26 @@ async function doImport(mode) {
   msg.value = ''
   msgTone.value = ''
   try {
-    await apiFetch('/settings/config/import', {
+    const { serverPayload, clientPrefs: fileClientPrefs } = buildImportDataFromFile(pendingJson.value)
+    const res = (await apiFetch('/settings/config/import', {
       method: 'POST',
-      body: { mode, data: pendingJson.value },
-    })
+      body: { mode, data: serverPayload },
+    })) as {
+      ok?: boolean
+      imported?: { templates?: number; layout_presets?: number; signature_assets?: number }
+      client_prefs?: unknown
+    }
+    const clientApplied = applyClientPrefsFromBundle(res.client_prefs ?? fileClientPrefs)
+    await refreshLayoutPresets()
     window.dispatchEvent(new CustomEvent('report-editor-config-imported'))
-    msg.value = mode === 'replace' ? '已完成覆盖导入。' : '已完成合并导入。'
+    const parts: string[] = []
+    const imp = res.imported
+    if (imp?.templates) parts.push(`模版 ${imp.templates} 条`)
+    if (imp?.layout_presets) parts.push(`版式 ${imp.layout_presets} 条`)
+    if (imp?.signature_assets) parts.push(`签名 ${imp.signature_assets} 条`)
+    if (clientApplied.length) parts.push(`本机：${clientApplied.join('、')}`)
+    const detail = parts.length ? `（${parts.join('；')}）` : ''
+    msg.value = mode === 'replace' ? `已完成覆盖导入。${detail}` : `已完成合并导入。${detail}`
     msgTone.value = 'ok'
     if (fileRef.value) fileRef.value.value = ''
     pendingJson.value = null
@@ -173,7 +202,11 @@ async function doImport(mode) {
 
 function confirmReplace() {
   if (!pendingJson.value) return
-  if (!window.confirm('覆盖导入将替换当前连接与 OPC UA 列表。确定继续？')) {
+  if (
+    !window.confirm(
+      '覆盖导入将替换当前数据源、模版、版式、签名库及本机生成/历史报表配置。确定继续？',
+    )
+  ) {
     return
   }
   doImport('replace')

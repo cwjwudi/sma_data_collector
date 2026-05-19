@@ -126,18 +126,6 @@ async function runVisual() {
   display: flex;
   gap: 8px;
 }
-.btn {
-  padding: 6px 10px;
-  border-radius: 6px;
-  border: 1px solid #d1d5db;
-  background: #fff;
-  cursor: pointer;
-}
-.btn.primary {
-  background: #4f46e5;
-  color: #fff;
-  border-color: #4f46e5;
-}
 .pre {
   background: #111827;
   color: #e5e7eb;

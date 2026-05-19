@@ -7,6 +7,7 @@ from typing import Any, Literal
 from fastapi import APIRouter, HTTPException, Query, Request
 
 from core.settings import CONFIG_FILE, DATA_DIR, QUERY_SESSION_FILE
+from modules import config_bundle as cbundle
 from modules import config_import_export as cie
 from modules import config_store
 from schemas.common import AppPreferencesPatch
@@ -53,29 +54,28 @@ async def patch_app_preferences(body: AppPreferencesPatch):
 
 @router.get("/settings/config/export")
 async def export_config(mode: Literal["share", "backup"] = Query("share")):
-    if mode == "backup":
-        if not CONFIG_FILE.exists():
-            raise HTTPException(404, "配置文件不存在")
-        try:
-            raw = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
-        except json.JSONDecodeError as e:
-            raise HTTPException(400, f"配置文件损坏: {e}") from e
-        if not isinstance(raw, dict):
-            raise HTTPException(400, "配置文件格式错误")
-        return cie.normalize_top_level(raw)
     cfg = _load()
-    return cie.export_share_shape(
+    if mode == "backup":
+        return cbundle.build_export_bundle(
+            cfg,
+            mask_conn=config_store.mask_connection_for_response,
+            mask_opcua=config_store.mask_opcua_for_response,
+            mode="backup",
+        )
+    return cbundle.build_export_bundle(
         cfg,
-        config_store.mask_connection_for_response,
-        config_store.mask_opcua_for_response,
+        mask_conn=config_store.mask_connection_for_response,
+        mask_opcua=config_store.mask_opcua_for_response,
+        mode="share",
     )
 
 
 @router.post("/settings/config/import")
 async def import_config(request: Request):
     raw_bytes = await request.body()
-    if len(raw_bytes) > cie.MAX_IMPORT_JSON_BYTES:
-        raise HTTPException(400, f"请求体超过 {cie.MAX_IMPORT_JSON_BYTES} 字节")
+    max_bytes = cbundle.MAX_BUNDLE_JSON_BYTES
+    if len(raw_bytes) > max_bytes:
+        raise HTTPException(400, f"请求体超过 {max_bytes} 字节")
     try:
         payload = json.loads(raw_bytes.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as e:
@@ -93,12 +93,18 @@ async def import_config(request: Request):
         raise HTTPException(400, "缺少 db_connections / opcua_servers，或使用 { \"mode\", \"data\" } 包裹")
     try:
         cur = _load()
-        if mode == "replace":
+        client_prefs: dict = {}
+        imported_stats: dict = {}
+        if isinstance(data, dict) and cbundle.is_bundle_payload(data):
+            merged, bundle_result = cbundle.apply_bundle_import(cur, data, mode)
+            client_prefs = bundle_result.get("client_prefs") or {}
+            imported_stats = bundle_result.get("imported") or {}
+        elif mode == "replace":
             merged = cie.apply_import_replace(data)
         else:
             merged = cie.apply_import_merge(cur, data)
         _save(merged)
-        return {"ok": True, "mode": mode}
+        return {"ok": True, "mode": mode, "client_prefs": client_prefs, "imported": imported_stats}
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
     except Exception as e:
