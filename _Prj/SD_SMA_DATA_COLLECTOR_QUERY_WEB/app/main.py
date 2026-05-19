@@ -33,11 +33,56 @@ QUERY_VIEW_CONFIG_PATH = CONFIG_DIR / "query_view_config.json"
 PLUGIN_CONFIG_PATH = CONFIG_DIR / "plugins_config.json"
 
 
+def _normalize_app_settings(data: dict[str, Any] | None) -> dict[str, Any]:
+    source = data if isinstance(data, dict) else {}
+    raw_database = source.get("database")
+    database = raw_database if isinstance(raw_database, dict) else {}
+    raw_query_limits = source.get("query_limits")
+    query_limits = raw_query_limits if isinstance(raw_query_limits, dict) else {}
+    db_type = str(database.get("type", "mysql") or "mysql").lower()
+    if db_type not in {"mysql", "sqlite"}:
+        raise ValueError("database.type 仅支持 mysql 或 sqlite")
+
+    return {
+        "database": {
+            "type": db_type,
+            "name": str(database.get("name", "") or ""),
+            "host": str(database.get("host", "127.0.0.1") or "127.0.0.1"),
+            "port": int(database.get("port", 3306) or 3306),
+            "username": str(database.get("username", "") or ""),
+            "password": str(database.get("password", "") or ""),
+        },
+        "query_limits": {
+            "requests_per_minute": max(int(query_limits.get("requests_per_minute", 120) or 120), 0),
+            "default_window_hours": max(int(query_limits.get("default_window_hours", 24) or 24), 1),
+            "max_window_hours": max(int(query_limits.get("max_window_hours", 168) or 168), 1),
+        },
+    }
+
+
 def _load_app_settings() -> dict[str, Any]:
     if not APP_SETTINGS_PATH.exists():
-        return {}
+        return _normalize_app_settings({})
     with APP_SETTINGS_PATH.open("r", encoding="utf-8") as f:
-        return json.load(f)
+        return _normalize_app_settings(json.load(f))
+
+
+def _save_app_settings(data: dict[str, Any]) -> dict[str, Any]:
+    normalized = _normalize_app_settings(data)
+    with APP_SETTINGS_PATH.open("w", encoding="utf-8") as f:
+        json.dump(normalized, f, ensure_ascii=False, indent=2)
+    return normalized
+
+
+def _apply_runtime_settings(updated_settings: dict[str, Any]) -> None:
+    global settings, db, QUERY_LIMITS, RATE_LIMIT_PER_MINUTE, DEFAULT_WINDOW_HOURS, MAX_WINDOW_HOURS
+
+    settings = updated_settings
+    db = QueryDatabase(settings.get("database", {}))
+    QUERY_LIMITS = settings.get("query_limits", {})
+    RATE_LIMIT_PER_MINUTE = int(QUERY_LIMITS.get("requests_per_minute", 120))
+    DEFAULT_WINDOW_HOURS = int(QUERY_LIMITS.get("default_window_hours", 24))
+    MAX_WINDOW_HOURS = int(QUERY_LIMITS.get("max_window_hours", 168))
 
 
 app = FastAPI(title="SD SMA Query Web", version="0.1.0")
@@ -252,6 +297,21 @@ def check_database(request: Request) -> dict[str, Any]:
         _raise_db_error(exc)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Database check failed: {exc}") from exc
+
+
+@app.get("/api/config/app-settings")
+def get_app_settings() -> dict[str, Any]:
+    return _load_app_settings()
+
+
+@app.post("/api/config/app-settings")
+def save_app_settings(payload: dict[str, Any]) -> dict[str, Any]:
+    try:
+        normalized = _save_app_settings(payload)
+        _apply_runtime_settings(normalized)
+        return {"status": "saved", "settings": normalized}
+    except (TypeError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.get("/api/meta/groups")

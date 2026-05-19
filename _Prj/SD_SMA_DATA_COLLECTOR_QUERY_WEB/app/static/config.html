@@ -14,6 +14,40 @@
     </nav>
     <div class="layout layout-stack">
       <section class="panel">
+        <h2>基础设定</h2>
+        <p class="hint">维护数据库连接与查询窗口限制，内容对应 app_settings.json。</p>
+        <div class="row">
+          <label for="appDbType">数据库类型</label>
+          <select id="appDbType">
+            <option value="mysql">mysql</option>
+            <option value="sqlite">sqlite</option>
+          </select>
+          <label for="appDbName">数据库名</label>
+          <input id="appDbName" type="text" />
+          <label for="appDbHost">Host</label>
+          <input id="appDbHost" type="text" />
+          <label for="appDbPort">Port</label>
+          <input id="appDbPort" class="field-narrow-num" type="number" min="0" />
+        </div>
+        <div class="row">
+          <label for="appDbUsername">用户名</label>
+          <input id="appDbUsername" type="text" />
+          <label for="appDbPassword">密码</label>
+          <input id="appDbPassword" type="password" />
+        </div>
+        <div class="row">
+          <label for="appRequestsPerMinute">每分钟请求数</label>
+          <input id="appRequestsPerMinute" class="field-narrow-num" type="number" min="0" />
+          <label for="appDefaultWindowHours">默认窗口小时数</label>
+          <input id="appDefaultWindowHours" class="field-narrow-num" type="number" min="1" />
+          <label for="appMaxWindowHours">最大窗口小时数</label>
+          <input id="appMaxWindowHours" class="field-narrow-num" type="number" min="1" />
+          <button type="button" id="btnSaveAppSettings">保存基础设定</button>
+        </div>
+        <div id="appSettingsHint" class="muted"></div>
+      </section>
+
+      <section class="panel">
         <h2>Group 与列</h2>
         <p class="hint">配置各表的时间字段、列顺序、排序、分页与列中英文显示名；仅在查询中引用已配置的组。</p>
         <div class="row">

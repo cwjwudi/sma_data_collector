@@ -8,6 +8,38 @@ const CONFIG_STATE_KEY = 'sd_sma_query_config_page_state_v1';
 let deleteConfirmArmed = false;
 let deleteConfirmTimer = null;
 
+function getAppSettingsPayload() {
+  return {
+    database: {
+      type: document.getElementById('appDbType').value || 'mysql',
+      name: document.getElementById('appDbName').value.trim(),
+      host: document.getElementById('appDbHost').value.trim(),
+      port: Number(document.getElementById('appDbPort').value || 0),
+      username: document.getElementById('appDbUsername').value.trim(),
+      password: document.getElementById('appDbPassword').value,
+    },
+    query_limits: {
+      requests_per_minute: Number(document.getElementById('appRequestsPerMinute').value || 0),
+      default_window_hours: Number(document.getElementById('appDefaultWindowHours').value || 24),
+      max_window_hours: Number(document.getElementById('appMaxWindowHours').value || 168),
+    },
+  };
+}
+
+function fillAppSettingsForm(data) {
+  const database = data.database || {};
+  const queryLimits = data.query_limits || {};
+  document.getElementById('appDbType').value = database.type || 'mysql';
+  document.getElementById('appDbName').value = database.name || '';
+  document.getElementById('appDbHost').value = database.host || '';
+  document.getElementById('appDbPort').value = Number(database.port || 3306);
+  document.getElementById('appDbUsername').value = database.username || '';
+  document.getElementById('appDbPassword').value = database.password || '';
+  document.getElementById('appRequestsPerMinute').value = Number(queryLimits.requests_per_minute || 120);
+  document.getElementById('appDefaultWindowHours').value = Number(queryLimits.default_window_hours || 24);
+  document.getElementById('appMaxWindowHours').value = Number(queryLimits.max_window_hours || 168);
+}
+
 async function fetchJson(url, opts) {
   const resp = await fetch(url, opts);
   const data = await resp.json();
@@ -122,6 +154,24 @@ async function loadViews() {
     op.textContent = `${name} - ${view.title || name}`;
     sel.appendChild(op);
   }
+}
+
+async function loadAppSettings() {
+  const data = await fetchJson('/api/config/app-settings');
+  fillAppSettingsForm(data || {});
+  document.getElementById('appSettingsHint').textContent = '已加载基础设定';
+}
+
+async function saveAppSettings() {
+  const payload = getAppSettingsPayload();
+  const result = await fetchJson('/api/config/app-settings', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  fillAppSettingsForm((result && result.settings) || payload);
+  document.getElementById('appSettingsHint').textContent =
+    '基础设定已保存，新的数据库连接与查询限制已生效';
 }
 
 async function loadGroups() {
@@ -432,6 +482,9 @@ async function restoreConfigPageState() {
 document.getElementById('btnLoadTableConfig').addEventListener('click', () => {
   loadTableConfig().catch(err => alert(err.message));
 });
+document.getElementById('btnSaveAppSettings').addEventListener('click', () => {
+  saveAppSettings().catch(err => alert(err.message));
+});
 document.getElementById('btnAddColumns').addEventListener('click', addColumns);
 document.getElementById('btnRemoveColumns').addEventListener('click', removeColumns);
 document.getElementById('btnMoveUp').addEventListener('click', () => moveSelected(true));
@@ -599,6 +652,7 @@ document.getElementById('pluginViewName').addEventListener('change', saveConfigP
 document.getElementById('pluginPageSize').addEventListener('change', saveConfigPageState);
 
 async function initConfigPage() {
+  await loadAppSettings();
   await loadViews();
   await loadGroups();
   enableButtonClickFeedback();
