@@ -44,23 +44,35 @@ export async function probeOpcSavedConnection(serverId: string): Promise<boolean
 
 const probeBatchGenerationByScope = new Map<string, number>();
 
+export type ProbeConnectionOptions = {
+  /**
+   * 静默探测：不先把指示灯设为黄色，保留当前红/绿/灰，待本轮结果返回后再更新。
+   * 用于定时轮询，避免每 5 秒闪黄造成不安。
+   */
+  silent?: boolean;
+};
+
 /** 后台批量探测（并行），逐条回调状态；同 scope 内新一批开始后忽略上一批未完成的结果 */
 export async function probeConnectionIds(
   ids: string[],
   probe: (id: string) => Promise<boolean>,
   onState: (id: string, state: ConnectionHealthState) => void,
   scope = "default",
+  options: ProbeConnectionOptions = { silent: true },
 ): Promise<void> {
   const list = ids.filter((id) => id?.trim());
   if (!list.length) return;
+  const silent = options.silent !== false;
   const batchId = (probeBatchGenerationByScope.get(scope) ?? 0) + 1;
   probeBatchGenerationByScope.set(scope, batchId);
   const emit = (id: string, state: ConnectionHealthState) => {
     if (batchId !== probeBatchGenerationByScope.get(scope)) return;
     onState(id, state);
   };
-  for (const id of list) {
-    emit(id, "checking");
+  if (!silent) {
+    for (const id of list) {
+      emit(id, "checking");
+    }
   }
   await Promise.all(
     list.map(async (id) => {

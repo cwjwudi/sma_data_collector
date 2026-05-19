@@ -53,17 +53,6 @@
 .conn-led--checking {
   background: #fbbf24;
   box-shadow: 0 0 0 1px rgba(217, 119, 6, 0.35);
-  animation: conn-led-pulse 0.9s ease-in-out infinite;
-}
-
-@keyframes conn-led-pulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.45;
-  }
 }
 
 .tabs-conn .tab.on {

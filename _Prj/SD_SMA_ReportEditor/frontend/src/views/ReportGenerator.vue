@@ -20,8 +20,18 @@
           </option>
         </select>
       </div>
-      <div class="rg-row rg-row--check">
-        <label><input v-model="prefs.manualOpenAfter" type="checkbox" />导出完成后打开 PDF（桌面壳）</label>
+      <div class="rg-switch-row">
+        <span class="rg-switch-label" id="rg-manual-open-lbl">导出完成后打开 PDF（桌面壳）</span>
+        <button
+          type="button"
+          class="rg-switch"
+          :class="{ 'rg-switch--on': prefs.manualOpenAfter }"
+          role="switch"
+          aria-labelledby="rg-manual-open-lbl"
+          :aria-checked="prefs.manualOpenAfter"
+          :disabled="!electronShell"
+          @click="toggleManualOpenAfter"
+        />
       </div>
       <div class="rg-actions">
         <button type="button" class="btn primary" :disabled="manualBusy || !canManualExport" @click="onManualExport">
@@ -755,6 +765,11 @@ function toggleAutoEnabled() {
   prefs.value.auto.enabled = !prefs.value.auto.enabled;
 }
 
+function toggleManualOpenAfter() {
+  if (!electronShell.value) return;
+  prefs.value.manualOpenAfter = !prefs.value.manualOpenAfter;
+}
+
 function setExportDirTab(source: AutoExportDirSource) {
   if (prefs.value.autoExportDirSource === source) return;
   prefs.value.autoExportDirSource = source;
@@ -1103,13 +1118,6 @@ onUnmounted(() => {
 }
 .rg-row {
   margin-bottom: 10px;
-}
-.rg-row--check label {
-  font-size: 13px;
-  color: #3f3f46;
-}
-.rg-row--check input {
-  margin-right: 6px;
 }
 .rg-switch-row {
   display: flex;

@@ -57,7 +57,7 @@
         <div class="node-read-bar">
           <button
             type="button"
-            class="btn sm"
+            class="btn seg"
             :disabled="!browseCapability || !pickedNode?.node_id"
             @click="readValue"
           >
@@ -65,7 +65,7 @@
           </button>
           <button
             type="button"
-            class="btn sm"
+            class="btn seg"
             :class="{ primary: pollEnabled }"
             :disabled="!browseCapability"
             :aria-pressed="pollEnabled"
@@ -85,7 +85,7 @@
         <div v-if="pickedDisplay" class="picked-summary">
           <div class="picked-summary-head">
             <span class="picked-summary-title">{{ pickedDisplay.title }}</span>
-            <button type="button" class="btn sm" @click="copyNodeId">复制 NodeId</button>
+            <button type="button" class="btn seg" @click="copyNodeId">复制 NodeId</button>
           </div>
           <dl class="picked-dl">
             <div class="picked-row">
@@ -116,9 +116,9 @@
           <p v-if="copyFeedback" class="copy-feedback">{{ copyFeedback }}</p>
         </div>
         <div class="actions">
-          <button type="button" class="btn primary sm" @click="saveServer">保存</button>
-          <button type="button" class="btn sm" @click="testDraft">测试连接（当前表单）</button>
-          <button type="button" class="btn danger sm" v-if="form.id" @click="removeServer">删除</button>
+          <button type="button" class="btn primary seg" @click="saveServer">保存</button>
+          <button type="button" class="btn seg" @click="testDraft">测试连接（当前表单）</button>
+          <button type="button" class="btn danger seg" v-if="form.id" @click="removeServer">删除</button>
         </div>
         <div v-if="msg" class="msg">{{ translateOpcuaMessage(msg) }}</div>
       </div>
@@ -131,7 +131,7 @@
           <div class="browse-head-actions ds-pane-head-actions">
             <button
               type="button"
-              class="btn sm"
+              class="btn seg"
               :disabled="!browseCapability || expandAllBusy"
               :title="browseCapability ? '' : '请先填写主机与端口，或从上方选择已保存连接'"
               @click="refreshRoot"
@@ -140,7 +140,7 @@
             </button>
             <button
               type="button"
-              class="btn sm"
+              class="btn seg"
               :disabled="!browseCapability || expandAllBusy || !!searchTrimmed"
               :title="searchTrimmed ? '搜索模式下请使用树浏览' : '浏览并展开全部可见分支（可能对 PLC 造成负载）'"
               @click="confirmExpandAllTree"
@@ -149,7 +149,7 @@
             </button>
             <button
               type="button"
-              class="btn sm"
+              class="btn seg"
               :disabled="!browseCapability || expandAllBusy || !!searchTrimmed"
               :title="searchTrimmed ? '搜索模式下请使用树浏览' : ''"
               @click="collapseAllTree"

@@ -40,10 +40,10 @@
         <input v-model="draft.mongo_auth_source" class="input" :disabled="busy" />
       </template>
       <div class="actions">
-        <button type="button" class="btn sm" :disabled="busy" @click="testOnly">测试连接</button>
-        <button type="button" class="btn primary sm" :disabled="busy" @click="() => save(false)">仅保存</button>
-        <button type="button" class="btn primary sm" :disabled="busy" @click="testAndSave">测试并保存</button>
-        <button type="button" class="btn danger sm" v-if="draft.id" :disabled="busy" @click="remove">删除</button>
+        <button type="button" class="btn seg" :disabled="busy" @click="testOnly">测试连接</button>
+        <button type="button" class="btn primary seg" :disabled="busy" @click="() => save(false)">仅保存</button>
+        <button type="button" class="btn primary seg" :disabled="busy" @click="testAndSave">测试并保存</button>
+        <button type="button" class="btn danger seg" v-if="draft.id" :disabled="busy" @click="remove">删除</button>
       </div>
       <div v-if="msg" :class="['msg', msgTone]">{{ msg }}</div>
     </template>
