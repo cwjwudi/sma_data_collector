@@ -48,14 +48,6 @@ class ViewHistoryQueryRequest(BaseModel):
     columns: list[str] | None = None
 
 
-class CollectorWriteRequest(BaseModel):
-    filename: str = Field(..., description="Target filename under collector config directory")
-
-
-class CollectorExportRequest(BaseModel):
-    filename: str = Field(default="collector_config_export.json")
-
-
 class QueryTableColumnConfig(BaseModel):
     name: str
     label_en: str = ""

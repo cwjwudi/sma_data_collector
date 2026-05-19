@@ -7,7 +7,6 @@
     "username": "root",
     "password": "Br54644800@"
   },
-  "collector_config_dir": "D:/projects/50_/P000_SD_SMA_SCADA/_Prj/SD_SMA_DATA_COLLECTOR/config",
   "query_limits": {
     "requests_per_minute": 180,
     "default_window_hours": 24,

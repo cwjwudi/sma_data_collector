@@ -5,7 +5,6 @@
 编辑 `config/app_settings.json`：
 
 - `database`：配置可访问的 MySQL/SQLite。
-- `collector_config_dir`：采集程序 `config` 目录。
 - `query_limits`：
   - `requests_per_minute`：每个客户端每分钟最大请求数
   - `default_window_hours`：未指定时间时默认查询窗口
@@ -44,14 +43,7 @@
 - 若模板字段在目标表不存在，后端会自动忽略并在响应 `warnings`/`missing_columns` 返回提示。
 - 前端会显示提示，不会因为部分字段不存在而直接失败。
 
-## 6. 采集配置输出
-
-- 配置页支持：
-  - 保存采集模板
-  - 导出 JSON
-  - 直写到采集程序 `config` 目录（自动备份）
-
-## 7. 常见问题
+## 6. 常见问题
 
 - **1045 Access denied**
   - 检查数据库账号密码与主机权限。

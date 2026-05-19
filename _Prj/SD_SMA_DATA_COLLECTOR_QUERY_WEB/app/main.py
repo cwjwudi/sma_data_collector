@@ -16,8 +16,6 @@ from sqlalchemy.exc import OperationalError, SQLAlchemyError
 from .config_manager import ConfigManager
 from .database import QueryDatabase
 from .models import (
-    CollectorExportRequest,
-    CollectorWriteRequest,
     GroupBaselineUpdateRequest,
     HistoryQueryRequest,
     HistoryQueryResponse,
@@ -31,7 +29,6 @@ from .models import (
 BASE_DIR = Path(__file__).resolve().parent.parent
 CONFIG_DIR = BASE_DIR / "config"
 APP_SETTINGS_PATH = CONFIG_DIR / "app_settings.json"
-COLLECTOR_TEMPLATE_PATH = CONFIG_DIR / "collector_config_template.json"
 QUERY_VIEW_CONFIG_PATH = CONFIG_DIR / "query_view_config.json"
 PLUGIN_CONFIG_PATH = CONFIG_DIR / "plugins_config.json"
 
@@ -48,7 +45,7 @@ app.mount("/static", StaticFiles(directory=str(BASE_DIR / "app" / "static")), na
 
 settings = _load_app_settings()
 db = QueryDatabase(settings.get("database", {}))
-cfg = ConfigManager(APP_SETTINGS_PATH, COLLECTOR_TEMPLATE_PATH, QUERY_VIEW_CONFIG_PATH)
+cfg = ConfigManager(QUERY_VIEW_CONFIG_PATH)
 QUERY_LIMITS = settings.get("query_limits", {})
 RATE_LIMIT_PER_MINUTE = int(QUERY_LIMITS.get("requests_per_minute", 120))
 DEFAULT_WINDOW_HOURS = int(QUERY_LIMITS.get("default_window_hours", 24))
@@ -540,38 +537,6 @@ def history_by_view(req: ViewHistoryQueryRequest, request: Request) -> HistoryQu
         missing_columns=missing_columns,
         warnings=warnings,
     )
-
-
-@app.get("/api/config/collector-template")
-def get_collector_template() -> dict[str, Any]:
-    return cfg.get_collector_template()
-
-
-@app.post("/api/config/collector-template")
-def save_collector_template(payload: dict[str, Any]) -> dict[str, str]:
-    try:
-        cfg.save_collector_template(payload)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"status": "saved"}
-
-
-@app.post("/api/config/collector/export")
-def export_collector_template(req: CollectorExportRequest) -> dict[str, str]:
-    try:
-        path = cfg.export_collector_template(req.filename)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"status": "exported", "path": str(path)}
-
-
-@app.post("/api/config/collector/write")
-def write_collector_config(req: CollectorWriteRequest) -> dict[str, str]:
-    try:
-        path = cfg.write_collector_config(req.filename)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return {"status": "written", "path": str(path)}
 
 
 @app.get("/api/config/query-view")

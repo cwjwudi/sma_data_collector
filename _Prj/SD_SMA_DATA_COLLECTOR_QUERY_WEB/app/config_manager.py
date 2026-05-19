@@ -1,32 +1,16 @@
 from __future__ import annotations
 
 import json
-import shutil
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 
 class ConfigManager:
-    ALLOWED_COLLECTOR_KEYS = {
-        "communications",
-        "connections",
-        "points",
-        "groups",
-        "database",
-        "logging",
-    }
-
     def __init__(
         self,
-        app_settings_path: Path,
-        collector_template_path: Path,
         query_view_config_path: Path,
     ):
-        self.app_settings_path = app_settings_path
-        self.collector_template_path = collector_template_path
         self.query_view_config_path = query_view_config_path
-        self.app_settings = self._load_json(self.app_settings_path)
 
     @staticmethod
     def _load_json(path: Path) -> dict[str, Any]:
@@ -40,63 +24,6 @@ class ConfigManager:
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
-
-    @staticmethod
-    def _validate_collector_payload(data: dict[str, Any]) -> None:
-        if not isinstance(data, dict):
-            raise ValueError("Collector config payload must be a JSON object")
-
-        unknown_keys = [k for k in data.keys() if k not in ConfigManager.ALLOWED_COLLECTOR_KEYS]
-        if unknown_keys:
-            raise ValueError(f"Collector config contains unsupported keys: {unknown_keys}")
-
-    @staticmethod
-    def _sanitize_filename(filename: str) -> str:
-        candidate = Path(filename).name.strip()
-        if not candidate or candidate in {".", ".."}:
-            raise ValueError("Invalid filename")
-        if not candidate.lower().endswith(".json"):
-            raise ValueError("Filename must end with .json")
-        return candidate
-
-    def get_collector_template(self) -> dict[str, Any]:
-        return self._load_json(self.collector_template_path)
-
-    def save_collector_template(self, data: dict[str, Any]) -> None:
-        self._validate_collector_payload(data)
-        self._write_json(self.collector_template_path, data)
-
-    def export_collector_template(self, filename: str) -> Path:
-        filename = self._sanitize_filename(filename)
-        export_dir = (self.collector_template_path.parent / "exports").resolve()
-        export_dir.mkdir(parents=True, exist_ok=True)
-        target = export_dir / filename
-        self._write_json(target, self.get_collector_template())
-        return target
-
-    def write_collector_config(self, filename: str) -> Path:
-        filename = self._sanitize_filename(filename)
-        collector_config_dir = Path(
-            self.app_settings.get(
-                "collector_config_dir",
-                "D:/projects/50_/P000_SD_SMA_SCADA/_Prj/SD_SMA_DATA_COLLECTOR/config",
-            )
-        )
-        collector_config_dir.mkdir(parents=True, exist_ok=True)
-        target = (collector_config_dir / filename).resolve()
-
-        backup_dir = (collector_config_dir / "_backup").resolve()
-        backup_dir.mkdir(parents=True, exist_ok=True)
-
-        if target.exists():
-            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-            backup_file = backup_dir / f"{target.stem}_{ts}{target.suffix}"
-            shutil.copy2(target, backup_file)
-
-        temp_target = target.with_suffix(f"{target.suffix}.tmp")
-        self._write_json(temp_target, self.get_collector_template())
-        temp_target.replace(target)
-        return target
 
     def get_query_view_config(self) -> dict[str, Any]:
         return self._load_json(self.query_view_config_path)

@@ -92,12 +92,12 @@
             {
               "name": "dtBtachStartTime",
               "label_en": "dtBtachStartTime",
-              "label_zh": "开批时间"
+              "label_zh": "开始时间"
             },
             {
               "name": "dtBtachEndTime",
               "label_en": "dtBtachEndTime",
-              "label_zh": "结批时间"
+              "label_zh": "结束时间"
             },
             {
               "name": "strBatchCode",
@@ -107,18 +107,18 @@
             {
               "name": "ST3",
               "label_en": "ST3",
-              "label_zh": "温度"
+              "label_zh": "ST3"
             },
             {
               "name": "ST4",
               "label_en": "ST4",
-              "label_zh": "湿度"
+              "label_zh": "ST4"
             }
           ],
           "time_field": "dtBtachStartTime",
           "sort_by": "collection_time",
           "sort_dir": "desc",
-          "page_size": 10
+          "page_size": 50
         }
       }
     },
