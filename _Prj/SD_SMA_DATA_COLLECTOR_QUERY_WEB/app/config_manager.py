@@ -242,6 +242,8 @@ class ConfigManager:
                         gcols, glabels = self._normalize_column_defs(group_override["columns"])
                         resolved["columns"] = gcols
                         resolved["column_labels"] = glabels
+                    if "time_field" in group_override and group_override["time_field"]:
+                        resolved["time_field"] = str(group_override["time_field"])
                     if "sort_by" in group_override and group_override["sort_by"]:
                         resolved["sort_by"] = str(group_override["sort_by"])
                     if "sort_dir" in group_override and str(group_override["sort_dir"]).lower() in {"asc", "desc"}:
@@ -376,6 +378,7 @@ class ConfigManager:
             "view_name": view_name,
             "group": group,
             "baseline_table": baseline_table,
+            "time_field": resolved["time_field"],
             "sort_by": resolved["sort_by"],
             "sort_dir": resolved["sort_dir"],
             "page_size": resolved["page_size"],
@@ -386,6 +389,7 @@ class ConfigManager:
         self,
         view_name: str,
         group: str,
+        time_field: str,
         sort_by: str,
         sort_dir: str,
         page_size: int,
@@ -422,6 +426,7 @@ class ConfigManager:
 
         per_group[group] = {
             "columns": normalized_columns,
+            "time_field": str(time_field),
             "sort_by": str(sort_by),
             "sort_dir": "asc" if str(sort_dir).lower() == "asc" else "desc",
             "page_size": max(1, int(page_size)),

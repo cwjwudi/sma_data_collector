@@ -79,6 +79,7 @@ class GroupBaselineUpdateRequest(BaseModel):
 class QueryGroupConfigUpdateRequest(BaseModel):
     view_name: str
     group: str
+    time_field: str = "collection_time"
     sort_by: str
     sort_dir: Literal["asc", "desc"] = "desc"
     page_size: int = 50

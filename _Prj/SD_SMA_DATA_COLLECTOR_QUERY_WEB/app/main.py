@@ -640,6 +640,7 @@ def save_query_group_config(payload: QueryGroupConfigUpdateRequest) -> dict[str,
     cfg.update_query_group_config(
         view_name=payload.view_name,
         group=payload.group,
+        time_field=payload.time_field,
         sort_by=payload.sort_by,
         sort_dir=payload.sort_dir,
         page_size=payload.page_size,

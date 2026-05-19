@@ -111,9 +111,9 @@
       "page_size": 10,
       "pages": {
         "1": {
-          "title": "General Page 1",
+          "title": "批次查询表",
           "enabled": true,
-          "bind_group": "Group1",
+          "bind_group": "BatchGroup",
           "view_name": "table",
           "page_size": 10
         },

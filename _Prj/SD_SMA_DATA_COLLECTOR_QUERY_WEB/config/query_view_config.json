@@ -86,6 +86,39 @@
           "sort_by": "collection_time",
           "sort_dir": "desc",
           "page_size": 10
+        },
+        "BatchGroup": {
+          "columns": [
+            {
+              "name": "dtBtachStartTime",
+              "label_en": "dtBtachStartTime",
+              "label_zh": "开批时间"
+            },
+            {
+              "name": "dtBtachEndTime",
+              "label_en": "dtBtachEndTime",
+              "label_zh": "结批时间"
+            },
+            {
+              "name": "strBatchCode",
+              "label_en": "strBatchCode",
+              "label_zh": "批次号"
+            },
+            {
+              "name": "ST3",
+              "label_en": "ST3",
+              "label_zh": "温度"
+            },
+            {
+              "name": "ST4",
+              "label_en": "ST4",
+              "label_zh": "湿度"
+            }
+          ],
+          "time_field": "dtBtachStartTime",
+          "sort_by": "collection_time",
+          "sort_dir": "desc",
+          "page_size": 10
         }
       }
     },
@@ -205,6 +238,7 @@
     "sensor_group_2": "sensor_group_2_20260326",
     "alarm_group_1": "alarm_group_1_20260407",
     "trend_group_1": "trend_group_1_20260408",
-    "Group1": "Group1_20260507"
+    "Group1": "Group1_20260507",
+    "BatchGroup": "BatchGroup_20260511"
   }
 }

@@ -20,6 +20,7 @@ function saveConfigPageState() {
     viewName: document.getElementById('editViewName').value || '',
     group: document.getElementById('editGroupName').value || '',
     baselineTable: document.getElementById('editTableName').value || '',
+    timeField: document.getElementById('tableTimeField').value || '',
     sortBy: document.getElementById('tableSortBy').value || '',
     sortDir: document.getElementById('tableSortDir').value || 'desc',
     pageSize: document.getElementById('tablePageSize').value || '50',
@@ -63,6 +64,51 @@ function appendOption(select, value) {
 function getSelectedValues(selectId) {
   const sel = document.getElementById(selectId);
   return Array.from(sel.selectedOptions).map(x => x.value);
+}
+
+function populateFieldSelectors(columns, preferredTimeField, preferredSortBy) {
+  const normalizedColumns = Array.isArray(columns) ? columns : [];
+  const timeField = document.getElementById('tableTimeField');
+  const sortBy = document.getElementById('tableSortBy');
+  timeField.innerHTML = '';
+  sortBy.innerHTML = '';
+
+  for (const column of normalizedColumns) {
+    appendOption(timeField, column);
+    appendOption(sortBy, column);
+  }
+
+  if (normalizedColumns.includes(preferredTimeField)) {
+    timeField.value = preferredTimeField;
+  } else if (normalizedColumns.includes('collection_time')) {
+    timeField.value = 'collection_time';
+  } else if (normalizedColumns.length > 0) {
+    timeField.value = normalizedColumns[0];
+  }
+
+  if (normalizedColumns.includes(preferredSortBy)) {
+    sortBy.value = preferredSortBy;
+  } else if (normalizedColumns.includes(timeField.value)) {
+    sortBy.value = timeField.value;
+  } else if (normalizedColumns.length > 0) {
+    sortBy.value = normalizedColumns[0];
+  }
+}
+
+async function loadColumnsForTable(tableName, preferredTimeField, preferredSortBy) {
+  if (!tableName) {
+    availableColumns = [];
+    document.getElementById('availableColumns').innerHTML = '';
+    populateFieldSelectors([], '', '');
+    return;
+  }
+
+  const meta = await fetchJson('/api/meta/columns?table=' + encodeURIComponent(tableName));
+  availableColumns = meta.columns || [];
+  const available = document.getElementById('availableColumns');
+  available.innerHTML = '';
+  for (const c of availableColumns) appendOption(available, c);
+  populateFieldSelectors(availableColumns, preferredTimeField, preferredSortBy);
 }
 
 async function loadViews() {
@@ -111,6 +157,7 @@ async function loadTables() {
     hint.textContent = `group=${group} 检测到结构不一致，请选择基准表。当前基准：${data.baseline_table}`;
     hint.className = 'muted warn';
   }
+  await loadColumnsForTable(sel.value, document.getElementById('tableTimeField').value, document.getElementById('tableSortBy').value);
   saveConfigPageState();
 }
 
@@ -161,11 +208,7 @@ async function loadTableConfig() {
   const baselineTable = document.getElementById('editTableName').value;
   if (!viewName || !group || !baselineTable) return;
 
-  const meta = await fetchJson('/api/meta/columns?table=' + encodeURIComponent(baselineTable));
-  availableColumns = meta.columns || [];
-  const available = document.getElementById('availableColumns');
-  available.innerHTML = '';
-  for (const c of availableColumns) appendOption(available, c);
+  await loadColumnsForTable(baselineTable, '', '');
 
   const cfg = await fetchJson(
     '/api/config/query-group?view_name=' +
@@ -183,14 +226,7 @@ async function loadTableConfig() {
     };
   }
 
-  const sortBy = document.getElementById('tableSortBy');
-  sortBy.innerHTML = '';
-  for (const c of availableColumns) appendOption(sortBy, c);
-  if (availableColumns.includes(cfg.sort_by)) {
-    sortBy.value = cfg.sort_by;
-  } else if (availableColumns.length > 0) {
-    sortBy.value = availableColumns[0];
-  }
+  populateFieldSelectors(availableColumns, cfg.time_field, cfg.sort_by);
   document.getElementById('tableSortDir').value = cfg.sort_dir === 'asc' ? 'asc' : 'desc';
   document.getElementById('tablePageSize').value = Number(cfg.page_size || 50);
   renderOrderedColumns();
@@ -266,6 +302,7 @@ async function saveTableConfig() {
     view_name: viewName,
     group,
     baseline_table: baselineTable,
+    time_field: document.getElementById('tableTimeField').value || 'collection_time',
     sort_by: document.getElementById('tableSortBy').value || 'collection_time',
     sort_dir: document.getElementById('tableSortDir').value || 'desc',
     page_size: Number(document.getElementById('tablePageSize').value || 50),
@@ -353,6 +390,12 @@ async function restoreConfigPageState() {
         }
       }
       await loadTableConfig();
+      if (saved.timeField) {
+        const timeFieldSel = document.getElementById('tableTimeField');
+        if (Array.from(timeFieldSel.options).some(o => o.value === saved.timeField)) {
+          timeFieldSel.value = saved.timeField;
+        }
+      }
       if (saved.sortBy) {
         const sortBySel = document.getElementById('tableSortBy');
         if (Array.from(sortBySel.options).some(o => o.value === saved.sortBy)) {
@@ -404,7 +447,15 @@ document.getElementById('editGroupName').addEventListener('change', () => {
   saveConfigPageState();
 });
 document.getElementById('editViewName').addEventListener('change', saveConfigPageState);
-document.getElementById('editTableName').addEventListener('change', saveConfigPageState);
+document.getElementById('editTableName').addEventListener('change', () => {
+  loadColumnsForTable(
+    document.getElementById('editTableName').value,
+    document.getElementById('tableTimeField').value,
+    document.getElementById('tableSortBy').value,
+  ).catch(err => alert(err.message));
+  saveConfigPageState();
+});
+document.getElementById('tableTimeField').addEventListener('change', saveConfigPageState);
 document.getElementById('tableSortBy').addEventListener('change', saveConfigPageState);
 document.getElementById('tableSortDir').addEventListener('change', saveConfigPageState);
 document.getElementById('tablePageSize').addEventListener('change', saveConfigPageState);
