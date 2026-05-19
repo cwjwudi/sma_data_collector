@@ -162,7 +162,80 @@ async function loadAppSettings() {
   document.getElementById('appSettingsHint').textContent = '已加载基础设定';
 }
 
-async function saveAppSettings() {
+function hasOption(select, value) {
+  return Array.from(select.options).some(option => option.value === value);
+}
+
+function clearGroupConfigEditor() {
+  currentSchema = null;
+  availableColumns = [];
+  orderedColumns = [];
+  columnLabels = {};
+  document.getElementById('editTableName').innerHTML = '';
+  document.getElementById('availableColumns').innerHTML = '';
+  document.getElementById('tableTimeField').innerHTML = '';
+  document.getElementById('tableSortBy').innerHTML = '';
+  document.getElementById('schemaHint').textContent = '当前数据库下没有可用 group，请先检查连接设置。';
+  document.getElementById('schemaHint').className = 'muted warn';
+  document.getElementById('columnEditorHint').textContent = '';
+  renderOrderedColumns();
+}
+
+async function refreshMetadataFromCurrentDatabase() {
+  const viewSel = document.getElementById('editViewName');
+  const groupSel = document.getElementById('editGroupName');
+  const tableSel = document.getElementById('editTableName');
+  const pluginGroupSel = document.getElementById('pluginBindGroup');
+  const previousView = viewSel.value;
+  const previousGroup = groupSel.value;
+  const previousTable = tableSel.value;
+  const previousPluginGroup = pluginGroupSel.value;
+
+  await loadViews();
+  if (previousView && hasOption(viewSel, previousView)) {
+    viewSel.value = previousView;
+  }
+
+  await loadGroups();
+
+  if ((groupSel.options || []).length === 0) {
+    clearGroupConfigEditor();
+    pluginGroupSel.value = '';
+    await updatePluginGroupHint('');
+    saveConfigPageState();
+    return;
+  }
+
+  if (previousGroup && hasOption(groupSel, previousGroup)) {
+    groupSel.value = previousGroup;
+    await loadTables();
+    if (previousTable && hasOption(tableSel, previousTable)) {
+      tableSel.value = previousTable;
+      await loadColumnsForTable(
+        previousTable,
+        document.getElementById('tableTimeField').value,
+        document.getElementById('tableSortBy').value,
+      );
+    }
+  }
+
+  if (groupSel.value && tableSel.value) {
+    await loadTableConfig();
+  } else {
+    clearGroupConfigEditor();
+  }
+
+  if (previousPluginGroup && hasOption(pluginGroupSel, previousPluginGroup)) {
+    pluginGroupSel.value = previousPluginGroup;
+  } else {
+    pluginGroupSel.value = pluginGroupSel.options.length > 0 ? pluginGroupSel.options[0].value : '';
+  }
+  await updatePluginGroupHint(pluginGroupSel.value || '');
+  saveConfigPageState();
+}
+
+async function saveAppSettings(options = {}) {
+  const { refreshMetadata = true, successMessage } = options;
   const payload = getAppSettingsPayload();
   const result = await fetchJson('/api/config/app-settings', {
     method: 'POST',
@@ -170,8 +243,27 @@ async function saveAppSettings() {
     body: JSON.stringify(payload),
   });
   fillAppSettingsForm((result && result.settings) || payload);
+  if (refreshMetadata) {
+    await refreshMetadataFromCurrentDatabase();
+  }
   document.getElementById('appSettingsHint').textContent =
-    '基础设定已保存，新的数据库连接与查询限制已生效';
+    successMessage ||
+    (refreshMetadata
+      ? '基础设定已保存，数据库已重连，Group 与列已按当前数据库刷新'
+      : '基础设定已保存，新的数据库连接与查询限制已生效');
+  return result;
+}
+
+async function connectDatabase() {
+  document.getElementById('appSettingsHint').textContent = '正在保存基础设定并连接数据库...';
+  await saveAppSettings({
+    refreshMetadata: false,
+    successMessage: '基础设定已保存，正在验证数据库连接...',
+  });
+  const check = await fetchJson('/api/db/check');
+  await refreshMetadataFromCurrentDatabase();
+  document.getElementById('appSettingsHint').textContent =
+    `数据库连接成功（${check.database || '-'}），Group 与列已刷新`;
 }
 
 async function loadGroups() {
@@ -484,6 +576,9 @@ document.getElementById('btnLoadTableConfig').addEventListener('click', () => {
 });
 document.getElementById('btnSaveAppSettings').addEventListener('click', () => {
   saveAppSettings().catch(err => alert(err.message));
+});
+document.getElementById('btnConnectDatabase').addEventListener('click', () => {
+  connectDatabase().catch(err => alert(err.message));
 });
 document.getElementById('btnAddColumns').addEventListener('click', addColumns);
 document.getElementById('btnRemoveColumns').addEventListener('click', removeColumns);
