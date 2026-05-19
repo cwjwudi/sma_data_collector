@@ -75,6 +75,7 @@ import {
 import type { PaperLayoutMetrics } from "@/lib/report-template/layout-geometry";
 import { metricsForSheet, type EditorSheet } from "@/lib/report-template/editor-sheet";
 import type { ReportTemplate } from "@/lib/report-template/model";
+import { miniPreviewScale } from "@/lib/report-template/mini-preview-scale";
 
 const props = withDefaults(
   defineProps<{
@@ -140,18 +141,17 @@ const gapH = computed(() =>
 /** 垂直堆叠总高度（与整页宽度同尺） */
 const stackH = computed(() => hdrH.value + gapH.value + ftrH.value);
 
-const scale = computed(() => {
-  const iw = innerW.value;
-  const bh = stackH.value;
-  const sx = props.maxWidthPx / Math.max(1, iw);
-  const sy = props.maxHeightPx / Math.max(1, bh);
-  return Math.min(sx, sy, 1);
-});
+const scale = computed(() =>
+  miniPreviewScale(props.maxWidthPx, props.maxHeightPx, innerW.value, stackH.value),
+);
 
 const wrapStyle = computed(() => ({
   width: `${Math.ceil(innerW.value * scale.value)}px`,
+  maxWidth: "100%",
   height: `${Math.ceil(stackH.value * scale.value)}px`,
+  maxHeight: "100%",
   overflow: "hidden",
+  boxSizing: "border-box",
 }));
 
 function bandAbs(m: PaperLayoutMetrics, kind: "header" | "footer"): Record<string, string> {
@@ -229,6 +229,7 @@ function miniZoneElStyle(el: LayoutZoneElement): Record<string, string> {
 <style scoped>
 .mb-wrap {
   touch-action: manipulation;
+  margin: 0 auto;
 }
 .mb-inner {
   position: relative;

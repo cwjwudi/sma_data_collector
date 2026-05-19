@@ -2,19 +2,7 @@
   <div class="cm">
     <div class="row-head">
       <h4>数据库连接</h4>
-      <button type="button" class="btn sm" :disabled="busy" @click="$emit('new')">新建</button>
     </div>
-    <ul class="conn-list">
-      <li
-        v-for="c in connections"
-        :key="c.id"
-        :class="{ active: c.id === activeId }"
-        @click="$emit('select', c)"
-      >
-        <span class="name">{{ c.name || c.engine }}</span>
-        <span class="badge">{{ c.engine }}</span>
-      </li>
-    </ul>
     <div v-if="draft" class="form">
       <label>显示名称</label>
       <input v-model="draft.name" class="input" placeholder="例如 产线 MySQL" />
@@ -47,13 +35,7 @@
         <label>SQLite 路径（后端所在机器上的路径）</label>
         <input v-model="draft.sqlite_path" class="input" placeholder="D:\\data\\app.db" :disabled="busy" />
       </template>
-      <template v-if="draft.engine !== 'sqlite' && draft.engine !== 'mongodb'">
-        <label>默认数据库（可选）</label>
-        <input v-model="draft.database" class="input" placeholder="连接后可再选库" :disabled="busy" />
-      </template>
       <template v-if="draft.engine === 'mongodb'">
-        <label>默认数据库（可选）</label>
-        <input v-model="draft.database" class="input" :disabled="busy" />
         <label>authSource</label>
         <input v-model="draft.mongo_auth_source" class="input" :disabled="busy" />
       </template>
@@ -63,10 +45,6 @@
         <button type="button" class="btn primary sm" :disabled="busy" @click="testAndSave">测试并保存</button>
         <button type="button" class="btn danger sm" v-if="draft.id" :disabled="busy" @click="remove">删除</button>
       </div>
-      <p class="hint">
-        配置写入本机 data/config.json；密码经本机密钥加密。若曾复制过 config 但未复制同目录下的
-        .report_editor_fernet.key，请重新输入密码再保存。
-      </p>
       <div v-if="msg" :class="['msg', msgTone]">{{ msg }}</div>
     </div>
   </div>
@@ -77,11 +55,9 @@ import { computed, reactive, ref, watch } from 'vue'
 import { apiFetch } from '@/api/client.js'
 
 const props = defineProps({
-  connections: { type: Array, default: () => [] },
-  activeId: { type: String, default: '' },
   modelValue: { type: Object, default: null },
 })
-const emit = defineEmits(['select', 'updated', 'new'])
+const emit = defineEmits(['updated', 'new'])
 
 const draft = reactive({
   id: '',
@@ -307,31 +283,8 @@ async function remove() {
   justify-content: space-between;
   align-items: center;
 }
-.conn-list {
-  list-style: none;
-  padding: 0;
-  margin: 8px 0;
-}
-.conn-list li {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 8px;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 13px;
-}
-.conn-list li.active {
-  background: #eef2ff;
-}
-.badge {
-  font-size: 11px;
-  background: #e5e7eb;
-  padding: 2px 6px;
-  border-radius: 4px;
-}
 .form {
-  margin-top: 12px;
+  margin-top: 4px;
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -380,12 +333,6 @@ async function remove() {
 }
 .msg.err {
   color: #b91c1c;
-}
-.hint {
-  margin: 0;
-  font-size: 11px;
-  line-height: 1.45;
-  color: #6b7280;
 }
 label {
   font-size: 12px;

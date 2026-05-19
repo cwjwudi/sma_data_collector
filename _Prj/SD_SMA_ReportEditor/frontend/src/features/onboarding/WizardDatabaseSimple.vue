@@ -112,13 +112,7 @@
             />
           </template>
 
-          <template v-if="slot.engine !== 'sqlite' && slot.engine !== 'mongodb'">
-            <label>默认数据库名（可选）</label>
-            <input v-model="slot.database" class="inp" placeholder="可先留空" :disabled="slot.busy" />
-          </template>
           <template v-if="slot.engine === 'mongodb'">
-            <label>默认数据库（可选）</label>
-            <input v-model="slot.database" class="inp" :disabled="slot.busy" />
             <label>authSource</label>
             <input v-model="slot.mongo_auth_source" class="inp" placeholder="admin" :disabled="slot.busy" />
           </template>

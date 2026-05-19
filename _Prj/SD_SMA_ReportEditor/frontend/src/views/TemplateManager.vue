@@ -67,7 +67,6 @@
                 <option value="">选用已建版式…</option>
                 <option v-for="p in coverPresetsList" :key="'pc-' + p.id" :value="p.id">{{ p.name }}</option>
               </select>
-              <button type="button" class="b-micro" @click.stop="goLayoutsNew('cover')">新建封面版式</button>
             </div>
             <div class="micro">
               <span class="micro-t">页眉 · 页脚 · 正文纸</span>
@@ -89,7 +88,6 @@
                 <option value="">选用已建版式…</option>
                 <option v-for="p in bodyPresetsList" :key="'pb-' + p.id" :value="p.id">{{ p.name }}</option>
               </select>
-              <button type="button" class="b-micro" @click.stop="goLayoutsNew('normal')">新建正文版式（眉脚）</button>
             </div>
             <div class="micro">
               <span class="micro-t">封尾 · 末页</span>
@@ -110,7 +108,6 @@
                 <option value="">选用已建版式…</option>
                 <option v-for="p in backPresetsList" :key="'pk-' + p.id" :value="p.id">{{ p.name }}</option>
               </select>
-              <button type="button" class="b-micro" @click.stop="goLayoutsNew('back')">新建末页版式</button>
             </div>
           </div>
         </template>
@@ -336,13 +333,6 @@ watch(
   },
 );
 
-function goLayoutsNew(role) {
-  router.push({
-    path: "/layouts",
-    query: role ? { new: "1", role } : { new: "1" },
-  });
-}
-
 function goEditor(id) {
   router.push({ name: "TemplateEditor", params: { id } });
 }
@@ -456,20 +446,34 @@ onMounted(async () => {
   box-sizing: border-box;
   margin: 0;
   border-radius: 6px;
-  color: #4f46e5;
+  border: 1px solid #c7d2fe;
+  background: #eef2ff;
+  color: #3730a3;
+  font-size: 13px;
+  font-weight: 600;
   cursor: pointer;
   text-decoration: none;
   touch-action: manipulation;
   -webkit-tap-highlight-color: rgba(79, 70, 229, 0.12);
 }
+.lnk:hover {
+  background: #e0e7ff;
+  border-color: #a5b4fc;
+}
 .lnk:active {
-  background: rgba(79, 70, 229, 0.08);
+  background: #c7d2fe;
 }
 .lnk.danger {
+  border-color: #fecaca;
+  background: #fef2f2;
   color: #b91c1c;
 }
+.lnk.danger:hover {
+  background: #fee2e2;
+  border-color: #fca5a5;
+}
 .lnk.danger:active {
-  background: rgba(185, 28, 28, 0.08);
+  background: #fecaca;
 }
 .grid {
   display: grid;
@@ -489,6 +493,7 @@ onMounted(async () => {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
   align-items: stretch;
+  min-width: 0;
 }
 @media (max-width: 920px) {
   .row3 {
@@ -509,6 +514,8 @@ onMounted(async () => {
   border: 1px solid #eef0f6;
   border-radius: 8px;
   background: #fcfcfd;
+  min-width: 0;
+  overflow: hidden;
 }
 .micro-t {
   font-size: 12px;
@@ -521,6 +528,9 @@ onMounted(async () => {
   align-items: flex-start;
   justify-content: center;
   width: 100%;
+  max-width: 100%;
+  overflow: hidden;
+  box-sizing: border-box;
 }
 .micro-body.bands {
   margin-top: 4px;
@@ -545,21 +555,6 @@ onMounted(async () => {
   color: #1e293b;
   cursor: pointer;
   touch-action: manipulation;
-}
-.b-micro {
-  width: 100%;
-  min-height: 44px;
-  padding: 8px 10px;
-  font-size: 11px;
-  border-radius: 6px;
-  border: 1px solid #c7d2fe;
-  background: #eef2ff;
-  color: #3730a3;
-  cursor: pointer;
-  touch-action: manipulation;
-}
-.b-micro:hover {
-  background: #e0e7ff;
 }
 .foot {
   display: flex;

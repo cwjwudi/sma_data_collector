@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron')
+const { app, BrowserWindow, ipcMain, dialog, shell, nativeImage } = require('electron')
 const { spawn } = require('child_process')
 const path = require('path')
 const http = require('http')
@@ -252,6 +252,139 @@ ipcMain.handle('shell-open-path', async (_event, fp) => {
 ipcMain.handle('path-join', (_event, parts) => {
   if (!Array.isArray(parts)) return ''
   return path.join(...parts.map(String))
+})
+
+ipcMain.handle('scan-export-pdfs', async (_event, opts) => {
+  const dir = opts && opts.dir
+  if (!dir || typeof dir !== 'string') {
+    return { ok: false, error: '缺少目录路径', files: [] }
+  }
+  let resolved
+  try {
+    resolved = path.resolve(dir.trim())
+  } catch (e) {
+    return { ok: false, error: String(e.message || e), files: [] }
+  }
+  if (!fs.existsSync(resolved)) {
+    return { ok: false, error: '目录不存在', files: [], dir: resolved }
+  }
+  let st
+  try {
+    st = fs.statSync(resolved)
+  } catch (e) {
+    return { ok: false, error: String(e.message || e), files: [] }
+  }
+  if (!st.isDirectory()) {
+    return { ok: false, error: '路径不是文件夹', files: [], dir: resolved }
+  }
+
+  const files = []
+  let entries
+  try {
+    entries = fs.readdirSync(resolved, { withFileTypes: true })
+  } catch (e) {
+    return { ok: false, error: `无法读取目录：${e.message || e}`, files: [], dir: resolved }
+  }
+
+  for (const ent of entries) {
+    if (!ent.isFile()) continue
+    if (!ent.name.toLowerCase().endsWith('.pdf')) continue
+    const filePath = path.join(resolved, ent.name)
+    try {
+      const fst = fs.statSync(filePath)
+      files.push({
+        name: ent.name,
+        filePath,
+        fileUrl: pathToFileURL(filePath).href,
+        sizeBytes: fst.size,
+        modifiedAt: fst.mtime.toISOString(),
+      })
+    } catch {
+      /* skip unreadable */
+    }
+  }
+
+  files.sort((a, b) => {
+    const ta = new Date(a.modifiedAt).getTime()
+    const tb = new Date(b.modifiedAt).getTime()
+    return tb - ta
+  })
+
+  return { ok: true, files, dir: resolved }
+})
+
+ipcMain.handle('delete-export-file', async (_event, opts) => {
+  const filePath = opts && opts.filePath
+  if (!filePath || typeof filePath !== 'string') {
+    return { ok: false, error: '无效路径' }
+  }
+  const resolved = path.resolve(filePath)
+  if (!fs.existsSync(resolved)) {
+    return { ok: false, error: '文件不存在' }
+  }
+  try {
+    const st = fs.statSync(resolved)
+    if (!st.isFile()) {
+      return { ok: false, error: '不是文件' }
+    }
+    fs.unlinkSync(resolved)
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, error: String(e.message || e) }
+  }
+})
+
+ipcMain.handle('show-item-in-folder', async (_event, filePath) => {
+  if (!filePath || typeof filePath !== 'string') {
+    return { ok: false, error: '无效路径' }
+  }
+  const resolved = path.resolve(filePath)
+  if (!fs.existsSync(resolved)) {
+    return { ok: false, error: '文件不存在' }
+  }
+  shell.showItemInFolder(resolved)
+  return { ok: true }
+})
+
+/** 历史报表缩略图：优先系统缩略图，否则返回 base64 供渲染进程 pdf.js 绘制 */
+ipcMain.handle('get-export-pdf-thumbnail', async (_event, opts) => {
+  const filePath = opts && opts.filePath
+  const maxBytes = 35 * 1024 * 1024
+  if (!filePath || typeof filePath !== 'string') {
+    return { ok: false, error: '缺少文件路径' }
+  }
+  const resolved = path.resolve(filePath)
+  if (!fs.existsSync(resolved)) {
+    return { ok: false, error: '文件不存在' }
+  }
+  let st
+  try {
+    st = fs.statSync(resolved)
+  } catch (e) {
+    return { ok: false, error: String(e.message || e) }
+  }
+  if (!st.isFile()) {
+    return { ok: false, error: '不是文件' }
+  }
+  if (st.size > maxBytes) {
+    return { ok: false, error: 'PDF 过大，无法生成缩略图' }
+  }
+
+  try {
+    const thumb = await nativeImage.createThumbnailFromPath(resolved, { width: 400, height: 520 })
+    if (thumb && !thumb.isEmpty()) {
+      return { ok: true, dataUrl: thumb.toDataURL() }
+    }
+  } catch {
+    /* 部分类型（如 PDF）可能无系统缩略图，走 pdf.js */
+  }
+
+  try {
+    const buf = fs.readFileSync(resolved)
+    return { ok: true, base64: buf.toString('base64') }
+  } catch (e) {
+    return { ok: false, error: `读取失败：${e.message || e}` }
+  }
 })
 
 ipcMain.handle('pdf-export-run', async (event, opts) => {

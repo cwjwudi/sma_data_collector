@@ -14,6 +14,26 @@ interface Window {
     shellOpenPath: (filePath: string) => Promise<{ ok: boolean; error?: string }>;
     pathJoin: (...parts: string[]) => Promise<string>;
     notifyPdfExportReady: (payload: { ok: boolean; error?: string }) => void;
+    scanExportPdfs: (opts: { dir: string }) => Promise<{
+      ok: boolean;
+      error?: string;
+      dir?: string;
+      files?: {
+        name: string;
+        filePath: string;
+        fileUrl?: string;
+        sizeBytes: number;
+        modifiedAt: string;
+      }[];
+    }>;
+    deleteExportFile: (opts: { filePath: string }) => Promise<{ ok: boolean; error?: string }>;
+    showItemInFolder: (filePath: string) => Promise<{ ok: boolean; error?: string }>;
+    getExportPdfThumbnail: (opts: { filePath: string }) => Promise<{
+      ok: boolean;
+      error?: string;
+      dataUrl?: string;
+      base64?: string;
+    }>;
   };
 }
 

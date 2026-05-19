@@ -2,6 +2,7 @@
   <div class="wb">
     <div v-if="loadError" class="load-err">{{ loadError }}</div>
     <div class="tabs-conn">
+      <button type="button" class="tab tab-new" @click="onNewConn">+ 新建</button>
       <button
         v-for="t in openTabs"
         :key="t.id"
@@ -14,10 +15,7 @@
     </div>
     <div class="main">
       <ConnectionManager
-        :connections="connections"
-        :active-id="activeConnId"
         :model-value="draftConn"
-        @select="onSelectConn"
         @updated="reloadConnections"
         @new="onNewConn"
       />
@@ -115,6 +113,8 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { apiFetch } from '@/api/client.js'
+import '../connection-tabs.css'
+import { connectionTabLabel } from './connection-tab-label.js'
 import ConnectionManager from './connection-manager/ConnectionManager.vue'
 import ObjectTree from './object-tree/ObjectTree.vue'
 import DataGrid from './data-grid/DataGrid.vue'
@@ -234,7 +234,7 @@ async function reloadConnections(preferredId = null) {
   try {
     const data = await apiFetch('/database/connections')
     connections.value = data.connections || []
-    openTabs.value = connections.value.map((c) => ({ id: c.id, label: c.name || c.engine }))
+    openTabs.value = connections.value.map((c) => ({ id: c.id, label: connectionTabLabel(c) }))
     if (!connections.value.length) {
       activeConnId.value = ''
       draftConn.value = null
@@ -266,13 +266,6 @@ function activateTab(id) {
   activeConnId.value = id
   draftConn.value = connections.value.find((c) => c.id === id) || null
   persistLastConnection(id)
-  loadCatalog()
-}
-
-function onSelectConn(c) {
-  activeConnId.value = c.id
-  draftConn.value = c
-  persistLastConnection(c.id)
   loadCatalog()
 }
 
@@ -502,24 +495,6 @@ reloadConnections()
   color: #991b1b;
   font-size: 13px;
   line-height: 1.45;
-}
-.tabs-conn {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-bottom: 12px;
-}
-.tab {
-  padding: 6px 12px;
-  border-radius: 999px;
-  border: 1px solid #d1d5db;
-  background: #fff;
-  cursor: pointer;
-  font-size: 13px;
-}
-.tab.on {
-  background: #eef2ff;
-  border-color: #6366f1;
 }
 .main {
   display: grid;

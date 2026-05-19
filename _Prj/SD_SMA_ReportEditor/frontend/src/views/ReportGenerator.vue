@@ -106,9 +106,14 @@ import {
   saveReportGeneratorPrefs,
   type ReportGeneratorPrefs,
 } from "@/lib/report-generator-prefs";
+import { loadReportExportPrefs, saveReportExportPrefs } from "@/lib/report-export-prefs";
 import { evaluateAutoOpcTrigger, createOpcTriggerPollState, type OpcTriggerPollState } from "@/lib/auto-opc-trigger";
 
 const prefs = ref<ReportGeneratorPrefs>(loadReportGeneratorPrefs());
+const exportWatchDir = loadReportExportPrefs().watchDir;
+if (exportWatchDir && !prefs.value.autoExportDir) {
+  prefs.value.autoExportDir = exportWatchDir;
+}
 const summaries = ref<TemplateSummary[]>([]);
 const opcServers = ref<{ id: string; name?: string }[]>([]);
 
@@ -133,6 +138,14 @@ watch(
   prefs,
   (p) => saveReportGeneratorPrefs(JSON.parse(JSON.stringify(p)) as ReportGeneratorPrefs),
   { deep: true },
+);
+
+watch(
+  () => prefs.value.autoExportDir,
+  (d) => {
+    const dir = typeof d === "string" && d.trim() ? d.trim() : null;
+    saveReportExportPrefs({ watchDir: dir });
+  },
 );
 
 const canManualExport = computed(() => electronShell.value && Boolean(prefs.value.templateId));
@@ -209,7 +222,10 @@ async function onManualExport(): Promise<void> {
 
 async function onPickAutoDir(): Promise<void> {
   const p = await window.electronAPI?.pickExportDirectory?.({ title: "自动导出目录" });
-  if (p) prefs.value.autoExportDir = p;
+  if (p) {
+    prefs.value.autoExportDir = p;
+    saveReportExportPrefs({ watchDir: p });
+  }
 }
 
 async function runAutoPdfExport(): Promise<void> {

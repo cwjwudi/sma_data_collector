@@ -232,6 +232,7 @@ import {
   templateTableColumnInnerWidthsPx,
 } from "@/lib/report-template/model";
 import { clampTableRowHeightPx } from "@/lib/report-template/table-cell-metrics";
+import { miniPreviewScale } from "@/lib/report-template/mini-preview-scale";
 
 const props = withDefaults(
   defineProps<{
@@ -349,12 +350,9 @@ const miniSqlFillTailDividerStyle = computed((): Record<string, string> | null =
   };
 });
 
-const scale = computed(() => {
-  const m = me.value;
-  const sx = props.maxWidthPx / Math.max(1, m.pageW);
-  const sy = props.maxHeightPx / Math.max(1, m.pageH);
-  return Math.min(sx, sy, 1);
-});
+const scale = computed(() =>
+  miniPreviewScale(props.maxWidthPx, props.maxHeightPx, me.value.pageW, me.value.pageH),
+);
 
 const scaledSize = computed(() => {
   const m = me.value;
@@ -368,8 +366,11 @@ const scaledSize = computed(() => {
 
 const wrapStyle = computed(() => ({
   width: `${scaledSize.value.w}px`,
+  maxWidth: "100%",
   height: `${scaledSize.value.h}px`,
+  maxHeight: "100%",
   overflow: "hidden",
+  boxSizing: "border-box",
 }));
 
 /** 边框与投影由 MiniPreviewChrome 统一（与 LayoutPresetMiniPage / 版式列表一致） */
@@ -757,6 +758,7 @@ function tplCaption(el: TemplateElement): string {
 <style scoped>
 .mini-wrap {
   touch-action: manipulation;
+  margin: 0 auto;
 }
 .mini-band-inner,
 .mini-body-inner {

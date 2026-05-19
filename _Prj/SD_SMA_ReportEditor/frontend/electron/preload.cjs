@@ -21,4 +21,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   /** 仅 PDF 导出隐藏窗口：渲染完成后通知主进程 */
   notifyPdfExportReady: (payload) => ipcRenderer.send('pdf-export-ready', payload),
+
+  /** 扫描目录下 PDF（历史报表） */
+  scanExportPdfs: (opts) => ipcRenderer.invoke('scan-export-pdfs', opts || {}),
+
+  /** 删除磁盘上的导出文件 */
+  deleteExportFile: (opts) => ipcRenderer.invoke('delete-export-file', opts || {}),
+
+  /** 在系统文件管理器中显示文件 */
+  showItemInFolder: (filePath) => ipcRenderer.invoke('show-item-in-folder', filePath),
+
+  /** 历史报表 PDF 缩略图（dataUrl 或 base64 供 pdf.js） */
+  getExportPdfThumbnail: (opts) => ipcRenderer.invoke('get-export-pdf-thumbnail', opts || {}),
 })

@@ -1,0 +1,33 @@
+/* 数据库工作台 / OPC UA 顶部连接切换条 — 共用尺寸 */
+.tabs-conn {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+  flex-shrink: 0;
+}
+
+.tabs-conn .tab {
+  margin: 0;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid #d1d5db;
+  background: #fff;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.2;
+  font-weight: 400;
+  box-sizing: border-box;
+}
+
+.tabs-conn .tab.on {
+  background: #eef2ff;
+  border-color: #6366f1;
+}
+
+.tabs-conn .tab-new {
+  border-style: dashed;
+  border-color: #94a3b8;
+  color: #475569;
+}
