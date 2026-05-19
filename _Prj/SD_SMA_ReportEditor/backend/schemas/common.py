@@ -29,10 +29,27 @@ class OpcUaTestRequest(BaseModel):
 
 class OpcUaBrowseRequest(OpcUaTestRequest):
     node_id: str | None = None
+    max_children: int | None = Field(default=None, ge=1, le=3000)
 
 
 class OpcUaReadRequest(OpcUaTestRequest):
     node_id: str
+
+
+class OpcUaVariableSearchRequest(OpcUaTestRequest):
+    """从 Objects 起广度优先扫描地址空间，按显示名 / BrowseName / NodeId 子串查找 Variable。"""
+
+    query: str = ""
+    max_scan: int | None = Field(default=None, ge=400, le=80000)
+    max_results: int | None = Field(default=None, ge=1, le=500)
+    max_depth: int | None = Field(default=None, ge=8, le=72)
+
+
+class OpcUaSavedVariableSearch(BaseModel):
+    query: str = ""
+    max_scan: int | None = Field(default=None, ge=400, le=80000)
+    max_results: int | None = Field(default=None, ge=1, le=500)
+    max_depth: int | None = Field(default=None, ge=8, le=72)
 
 
 class OpcUaServerSave(BaseModel):

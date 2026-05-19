@@ -1,6 +1,7 @@
 <template>
   <div v-if="el" class="lpep">
     <h5 class="lpep-h">属性</h5>
+    <p class="lpep-type-tag">{{ zoneTypeLabel }}</p>
     <div class="lpep-grid">
       <label
         v-if="el.type === 'text' || el.type === 'box'"
@@ -31,7 +32,7 @@
         </div>
         <p class="lpep-wrap-hint">「自动」表示在框宽内换行，无空格长串也会断行。</p>
       </div>
-      <BoxZoneColorPicker v-if="el.type === 'box'" :el="el" />
+      <BoxZoneColorPicker :el="el" />
       <template v-if="el.type === 'date'">
         <label class="lpep-lab"
           >日期格式
@@ -129,6 +130,248 @@
         <button type="button" class="lpep-file-btn" @click="pickLocalImage">从本机选取图片…</button>
         <span class="lpep-img-hint">图片将转为 data URL，与预设 JSON 一并保存。水平×垂直对齐控制图片在占位格内的九宫格。</span>
       </template>
+      <template v-if="el.type === 'parameter'">
+        <label class="lpep-lab"
+          >绑定方式<select v-model="el.bindingKind" class="lpep-inp">
+            <option value="none">无</option>
+            <option value="opcua">OPC UA</option>
+            <option value="sql">SQL</option>
+          </select></label
+        >
+        <div v-if="el.bindingKind === 'none'" class="lpep-opc-quick">
+          <button type="button" class="lpep-file-btn" @click="openOpcPicker('parameter')">
+            从 OPC UA 地址空间选择节点…
+          </button>
+          <p class="lpep-hint-muted">展开连接后点选节点并确定绑定；亦可先把绑定改为「OPC UA」再选手工填写。</p>
+        </div>
+        <div v-if="el.bindingKind === 'opcua'" class="lpep-opc-row">
+          <label class="lpep-lab lpep-opc-row-grow"
+            >OPC UA 节点 ID<input v-model.trim="el.opcuaNodeId" class="lpep-inp" placeholder="节点 NodeId"
+          /></label>
+          <button type="button" class="lpep-file-btn lpep-opc-pickbtn" @click="openOpcPicker('parameter')">
+            从列表选择…
+          </button>
+        </div>
+        <label v-if="el.bindingKind === 'sql'" class="lpep-lab"
+          >SQL 查询<textarea
+            v-model="el.sqlText"
+            rows="4"
+            class="lpep-inp"
+            spellcheck="false"
+            placeholder="只读查询；导出预览取首行首列作为显示值"
+        /></label>
+        <label class="lpep-lab"
+          >展示占位文字<textarea v-model.trim="el.text" rows="2" class="lpep-inp" placeholder="预览用"
+        /></label>
+      </template>
+      <template v-if="el.type === 'table'">
+        <div class="lpep-table-dims">
+          <div class="lpep-dim-field">
+            <span class="lpep-dim-title">行数</span>
+            <div
+              class="lpep-dim-stepper"
+              role="group"
+              aria-label="表格行数"
+              :title="zoneSqlFillEnabled ? '数据库填充开启时行数随预览查询结果自动同步（1 行表头 + 数据行）。' : ''"
+            >
+              <button
+                type="button"
+                class="lpep-dim-btn"
+                title="减少一行"
+                aria-label="减少一行"
+                :disabled="zoneSqlFillEnabled || tableDimRows <= 1"
+                @click="bumpTableDimRows(-1)"
+              >
+                −
+              </button>
+              <input
+                v-model.number="tableDimRows"
+                type="number"
+                min="1"
+                max="30"
+                class="lpep-dim-val"
+                :disabled="zoneSqlFillEnabled"
+                :readonly="zoneSqlFillEnabled"
+              />
+              <button
+                type="button"
+                class="lpep-dim-btn"
+                title="增加一行"
+                aria-label="增加一行"
+                :disabled="zoneSqlFillEnabled || tableDimRows >= 30"
+                @click="bumpTableDimRows(1)"
+              >
+                +
+              </button>
+            </div>
+          </div>
+          <div class="lpep-dim-field">
+            <span class="lpep-dim-title">列数</span>
+            <div class="lpep-dim-stepper" role="group" aria-label="表格列数">
+              <button
+                type="button"
+                class="lpep-dim-btn"
+                title="减少一列"
+                aria-label="减少一列"
+                :disabled="tableDimCols <= 1"
+                @click="bumpTableDimCols(-1)"
+              >
+                −
+              </button>
+              <input
+                v-model.number="tableDimCols"
+                type="number"
+                min="1"
+                max="30"
+                class="lpep-dim-val"
+              />
+              <button
+                type="button"
+                class="lpep-dim-btn"
+                title="增加一列"
+                aria-label="增加一列"
+                :disabled="tableDimCols >= 30"
+                @click="bumpTableDimCols(1)"
+              >
+                +
+              </button>
+            </div>
+          </div>
+          <div class="lpep-dim-field">
+            <span class="lpep-dim-title">行高（px）</span>
+            <div class="lpep-dim-stepper" role="group" aria-label="表格行高">
+              <button
+                type="button"
+                class="lpep-dim-btn"
+                title="减小行高"
+                aria-label="减小行高"
+                :disabled="zoneTableRowHeightModel <= TABLE_ROW_HEIGHT_MIN_PX"
+                @click="bumpZoneTableRowHeight(-1)"
+              >
+                −
+              </button>
+              <input
+                v-model.number="zoneTableRowHeightModel"
+                type="number"
+                :min="TABLE_ROW_HEIGHT_MIN_PX"
+                :max="TABLE_ROW_HEIGHT_MAX_PX"
+                step="1"
+                class="lpep-dim-val"
+              />
+              <button
+                type="button"
+                class="lpep-dim-btn"
+                title="增大行高"
+                aria-label="增大行高"
+                :disabled="zoneTableRowHeightModel >= TABLE_ROW_HEIGHT_MAX_PX"
+                @click="bumpZoneTableRowHeight(1)"
+              >
+                +
+              </button>
+            </div>
+          </div>
+        </div>
+        <div class="lpep-table-col-widths">
+          <span class="lpep-dim-title">列宽（%）</span>
+          <div class="lpep-table-col-widths-grid">
+            <label v-for="ci in zoneTableColWidthIndices" :key="'lzcw-' + ci" class="lpep-lab lpep-table-col-w-lab"
+              >列 {{ ci + 1 }}
+              <input
+                type="number"
+                :min="TABLE_COLUMN_WIDTH_PERCENT_MIN"
+                :max="zoneTableColPercentMax"
+                step="1"
+                class="lpep-inp lpep-table-col-w-inp"
+                :value="zoneTableColPercentDisplay(ci)"
+                @change="onZoneTableColPercentChange(ci, $event)"
+              />
+            </label>
+          </div>
+          <p class="lpep-hint-muted">
+            整数百分比（每列至少 {{ TABLE_COLUMN_WIDTH_PERCENT_MIN }}%，合计 100%）；修改一列时其余列按当前比例自动调整。
+          </p>
+        </div>
+        <p class="lpep-hint-muted">
+          {{
+            zoneSqlFillEnabled
+              ? "列数、行高变更后立即应用到画布。数据库填充开启时行数随预览查询结果自动同步；单元格静态文字不在此编辑；可视化模式下请在画布第一行选择输出列。"
+              : "行列、行高变更后立即应用到画布。请在画布上单击单元格，在此编辑静态文字或 OPC UA / SQL。"
+          }}
+        </p>
+        <p v-if="zonePresetTableCellMetric" class="lpep-table-metric">
+          单元格高度（推算）：高约 <strong>{{ formatMetricPx(zonePresetTableCellMetric.cellH) }}</strong> px。当前内侧列宽（推算）：{{
+            zonePresetTableColWidthsSummary
+          }}
+        </p>
+        <template v-if="activeTableCell">
+          <div class="lpep-table-cell-fields" :key="'lz-' + editCellRow + '-' + editCellCol">
+            <template v-if="!zoneSqlFillEnabled">
+              <label class="lpep-lab"
+                >静态文字<textarea v-model.trim="activeTableCell.text" rows="2" class="lpep-inp" spellcheck="false"
+              /></label>
+              <label class="lpep-lab"
+                >单元格绑定<select v-model="activeTableCell.bindingKind" class="lpep-inp">
+                  <option value="none">无（仅静态文字）</option>
+                  <option value="opcua">OPC UA</option>
+                  <option value="sql">SQL（数据库）</option>
+                </select></label
+              >
+              <div v-if="activeTableCell.bindingKind === 'none'" class="lpep-opc-quick">
+                <button type="button" class="lpep-file-btn" @click="openOpcPicker('table')">
+                  从 OPC UA 地址空间选择节点…
+                </button>
+              </div>
+              <div v-if="activeTableCell.bindingKind === 'opcua'" class="lpep-opc-row">
+                <label class="lpep-lab lpep-opc-row-grow"
+                  >OPC UA 节点 ID<input
+                    v-model.trim="activeTableCell.opcuaNodeId"
+                    class="lpep-inp"
+                    placeholder="NodeId"
+                /></label>
+                <button type="button" class="lpep-file-btn lpep-opc-pickbtn" @click="openOpcPicker('table')">
+                  从列表选择…
+                </button>
+              </div>
+              <label v-if="activeTableCell.bindingKind === 'sql'" class="lpep-lab"
+                >SQL<textarea
+                  v-model="activeTableCell.sqlText"
+                  rows="4"
+                  class="lpep-inp"
+                  spellcheck="false"
+                  placeholder="例如单行标量查询"
+              /></label>
+            </template>
+            <p v-else class="lpep-hint-muted">
+              数据库填充已开启：表格内容由查询填充，请勿在此编辑静态文字。可视化数据源时请在画布<strong>第一行</strong>下拉选择各列对应字段。
+            </p>
+          </div>
+        </template>
+        <div v-if="el && el.type === 'table'" class="lpep-table-sql-fill-block">
+          <div class="lpep-sql-fill-row">
+            <span class="lpep-sql-fill-title">数据库填充</span>
+            <button
+              type="button"
+              class="lpep-switch"
+              :class="{ 'lpep-switch--on': zoneSqlFillEnabled }"
+              role="switch"
+              :aria-checked="zoneSqlFillEnabled"
+              :disabled="zoneSqlFillSwitchLocked"
+              @click="onZoneSqlFillToggle"
+            />
+          </div>
+          <p v-if="zoneSqlFillSwitchLocked" class="lpep-hint-muted">
+            存在单元格 OPC UA / SQL 绑定时无法开启；请先清空绑定。
+          </p>
+          <TemplateTableSqlFillFields
+            v-if="zoneSqlFillEnabled"
+            :fill="ensureZoneTableSqlFill(el)"
+            :column-count="el.tableCols ?? 4"
+            button-class="lpep-file-btn"
+            @opc-pick-param="openZoneSqlOpcPicker"
+            @sync-headers="onZoneSqlFillSyncHeaders"
+          />
+        </div>
+      </template>
       <template v-if="el.type !== 'image'">
         <label class="lpep-lab"
           >水平位置<select v-model="el.alignX" class="lpep-inp">
@@ -171,6 +414,7 @@
       <label class="lpep-lab">H<input v-model.number="el.h" type="number" class="lpep-inp" /></label>
       <button type="button" class="lpep-del" @click="$emit('remove')">删除选中</button>
     </div>
+    <OpcUaNodePickerModal v-model="opcPickOpen" @confirm="onOpcPickConfirm" />
   </div>
   <div v-else class="lpep-grey">
     <p>在画布上点选控件后在编辑属性。</p>
@@ -178,15 +422,340 @@
 </template>
 
 <script setup lang="ts">
-import { DATE_FORMAT_PRESETS, type LayoutZoneElement } from "@/lib/report-template/layout-zone-element";
+import OpcUaNodePickerModal from "@/features/datasource/opcua/OpcUaNodePickerModal.vue";
+import TemplateTableSqlFillFields from "@/components/report-template/TemplateTableSqlFillFields.vue";
+import {
+  DATE_FORMAT_PRESETS,
+  clampZoneTableOuterSize,
+  ensureZoneTableGrid,
+  zoneTableColumnInnerWidthsPx,
+  type LayoutControlType,
+  type LayoutZoneElement,
+} from "@/lib/report-template/layout-zone-element";
 import BoxZoneColorPicker from "@/components/report-template/BoxZoneColorPicker.vue";
 import LayoutFontFamilyField from "@/components/report-template/LayoutFontFamilyField.vue";
 import { readImageFileAsDataUrl } from "@/lib/report-template/read-image-file";
-import { computed, nextTick, ref } from "vue";
+import {
+  layoutPresetTableCellPickKey,
+} from "@/lib/report-template/template-editor-context";
+import {
+  REPORT_ZONE_TABLE_NODE_PADDING_PX,
+  adjustIntegerColumnPercentsAfterEdit,
+  clampTableRowHeightPx,
+  formatMetricPx,
+  integerColumnPercentsFromInnerWidthsPx,
+  maxTableColumnPercentForEdit,
+  TABLE_COLUMN_WIDTH_PERCENT_MIN,
+  uniformTableCellBoxPx,
+  TABLE_ROW_HEIGHT_DEFAULT_PX,
+  TABLE_ROW_HEIGHT_MAX_PX,
+  TABLE_ROW_HEIGHT_MIN_PX,
+} from "@/lib/report-template/table-cell-metrics";
+import type { TableSqlFillConfig } from "@/lib/report-template/table-sql-fill";
+import {
+  defaultTableSqlFillConfig,
+  ensureMinTableSqlParamSlots,
+  ensureTableSqlResultColumnNames,
+  syncResultColumnNamesFromFirstRow,
+} from "@/lib/report-template/table-sql-fill";
+import { clearGridCellBindings, gridHasNonNoneBinding } from "@/lib/report-template/table-binding-utils";
+import { computed, inject, nextTick, ref, watch } from "vue";
 
 const props = defineProps<{
   el: LayoutZoneElement | null;
 }>();
+
+const layoutTablePick = inject(layoutPresetTableCellPickKey, undefined);
+
+const ZONE_TYPE_LABELS: Record<LayoutControlType, string> = {
+  text: "文本",
+  box: "色块",
+  image: "图片",
+  pageNumber: "页码",
+  date: "日期",
+  table: "表格",
+  parameter: "数据参数",
+};
+
+const zoneTypeLabel = computed(() => {
+  const el = props.el;
+  if (!el) return "";
+  return ZONE_TYPE_LABELS[el.type] ?? el.type;
+});
+
+const opcPickOpen = ref(false);
+const opcPickTarget = ref<"parameter" | "table" | { kind: "tableSql"; slot: number } | null>(null);
+
+function openOpcPicker(target: "parameter" | "table") {
+  opcPickTarget.value = target;
+  opcPickOpen.value = true;
+}
+
+function ensureZoneTableSqlFill(el: LayoutZoneElement): TableSqlFillConfig {
+  if (el.type !== "table") return defaultTableSqlFillConfig();
+  if (!el.tableSqlFill) el.tableSqlFill = defaultTableSqlFillConfig();
+  ensureZoneTableGrid(el);
+  return el.tableSqlFill;
+}
+
+function openZoneSqlOpcPicker(slot: number) {
+  const s = Math.max(0, Math.floor(Number(slot)) || 0);
+  opcPickTarget.value = { kind: "tableSql", slot: s };
+  opcPickOpen.value = true;
+}
+
+function onZoneSqlFillSyncHeaders() {
+  const el = props.el;
+  if (!el || el.type !== "table" || !el.tableSqlFill?.enabled) return;
+  syncResultColumnNamesFromFirstRow(el.tableSqlFill, ensureZoneTableGrid(el), el.tableCols ?? 4);
+}
+
+const tableDimRows = ref(3);
+const tableDimCols = ref(4);
+const editCellRow = ref(0);
+const editCellCol = ref(0);
+
+watch(
+  () => props.el?.id,
+  () => {
+    const el = props.el;
+    if (!el || el.type !== "table") return;
+    ensureZoneTableGrid(el);
+    tableDimRows.value = el.tableRows ?? 3;
+    tableDimCols.value = el.tableCols ?? 4;
+  },
+  { immediate: true },
+);
+
+watch(
+  () => (props.el?.type === "table" ? props.el.tableRows : undefined),
+  (rows) => {
+    const el = props.el;
+    if (!el || el.type !== "table" || rows == null) return;
+    if (tableDimRows.value !== rows) tableDimRows.value = rows;
+  },
+);
+
+watch(
+  () => [layoutTablePick?.value ?? null, props.el?.id, props.el?.type] as const,
+  ([pick, id, typ]) => {
+    if (typ !== "table") return;
+    if (pick && id && pick.elId === id) {
+      editCellRow.value = pick.row;
+      editCellCol.value = pick.col;
+    } else {
+      editCellRow.value = 0;
+      editCellCol.value = 0;
+    }
+  },
+  { immediate: true },
+);
+
+watch(
+  () => (props.el?.type === "table" ? [props.el?.w, props.el?.h] : null),
+  () => {
+    const el = props.el;
+    if (!el || el.type !== "table") return;
+    clampZoneTableOuterSize(el);
+  },
+);
+
+const activeTableCell = computed(() => {
+  const el = props.el;
+  if (!el || el.type !== "table") return null;
+  const g = el.tableCells;
+  if (!Array.isArray(g) || g.length === 0) return null;
+  return g[editCellRow.value]?.[editCellCol.value] ?? null;
+});
+
+const zoneSqlFillEnabled = computed(
+  () => !!props.el && props.el.type === "table" && !!props.el.tableSqlFill?.enabled,
+);
+
+const zoneAnyCellBinding = computed(() => {
+  const el = props.el;
+  if (!el || el.type !== "table") return false;
+  ensureZoneTableGrid(el);
+  return gridHasNonNoneBinding(el.tableCells);
+});
+
+const zoneSqlFillSwitchLocked = computed(() => zoneAnyCellBinding.value && !zoneSqlFillEnabled.value);
+
+function onZoneSqlFillToggle() {
+  const el = props.el;
+  if (!el || el.type !== "table") return;
+  const cfg = ensureZoneTableSqlFill(el);
+  if (cfg.enabled) {
+    cfg.enabled = false;
+    return;
+  }
+  ensureZoneTableGrid(el);
+  if (gridHasNonNoneBinding(el.tableCells)) return;
+  clearGridCellBindings(el.tableCells);
+  cfg.enabled = true;
+}
+
+watch(
+  () => (props.el?.type === "table" ? props.el.tableCells : null),
+  () => {
+    const el = props.el;
+    if (!el || el.type !== "table" || !el.tableSqlFill?.enabled) return;
+    ensureZoneTableGrid(el);
+    if (gridHasNonNoneBinding(el.tableCells)) el.tableSqlFill.enabled = false;
+  },
+  { deep: true },
+);
+
+const zonePresetTableColWidthsSummary = computed(() => {
+  const el = props.el;
+  if (!el || el.type !== "table") return "";
+  const widths = zoneTableColumnInnerWidthsPx(el);
+  return widths.map((w, i) => `列${i + 1} ${formatMetricPx(w)}`).join(" · ");
+});
+
+const zoneTableColWidthIndices = computed(() => {
+  const el = props.el;
+  if (!el || el.type !== "table") return [];
+  ensureZoneTableGrid(el);
+  const n = el.tableCols ?? 4;
+  return Array.from({ length: n }, (_, i) => i);
+});
+
+const zoneTableColPercents = computed(() => {
+  const el = props.el;
+  if (!el || el.type !== "table") return [];
+  ensureZoneTableGrid(el);
+  const u = zonePresetTableCellMetric.value;
+  if (!u) return [];
+  const widths = zoneTableColumnInnerWidthsPx(el);
+  return integerColumnPercentsFromInnerWidthsPx(widths, u.innerW);
+});
+
+const zoneTableColPercentMax = computed(() => {
+  const el = props.el;
+  if (!el || el.type !== "table") return 100;
+  return maxTableColumnPercentForEdit(el.tableCols ?? 4);
+});
+
+function zoneTableColPercentDisplay(ci: number): number {
+  return zoneTableColPercents.value[ci] ?? TABLE_COLUMN_WIDTH_PERCENT_MIN;
+}
+
+function onZoneTableColPercentChange(ci: number, ev: Event) {
+  const el = props.el;
+  if (!el || el.type !== "table") return;
+  ensureZoneTableGrid(el);
+  const raw = (ev.target as HTMLInputElement).value;
+  const prev = zoneTableColPercents.value.slice();
+  const next = adjustIntegerColumnPercentsAfterEdit(prev, ci, raw);
+  el.tableColWidthsPx = next.slice();
+  ensureZoneTableGrid(el);
+  clampZoneTableOuterSize(el);
+}
+
+const zonePresetTableCellMetric = computed(() => {
+  const el = props.el;
+  if (!el || el.type !== "table") return null;
+  ensureZoneTableGrid(el);
+  return uniformTableCellBoxPx({
+    outerW: el.w,
+    outerH: el.h,
+    rowCount: el.tableRows ?? 3,
+    colCount: el.tableCols ?? 4,
+    nodePadding: REPORT_ZONE_TABLE_NODE_PADDING_PX,
+  });
+});
+
+const zoneTableRowHeightModel = computed({
+  get(): number {
+    const el = props.el;
+    if (!el || el.type !== "table") return TABLE_ROW_HEIGHT_DEFAULT_PX;
+    return clampTableRowHeightPx(el.tableRowHeightPx);
+  },
+  set(v: number) {
+    const el = props.el;
+    if (!el || el.type !== "table") return;
+    el.tableRowHeightPx = clampTableRowHeightPx(v);
+    clampZoneTableOuterSize(el);
+  },
+});
+
+function onOpcPickConfirm(nodeId: string) {
+  const t = opcPickTarget.value;
+  opcPickTarget.value = null;
+  const id = nodeId.trim();
+  if (!id) return;
+  const el = props.el;
+  if (t === "parameter" && el?.type === "parameter") {
+    el.bindingKind = "opcua";
+    el.opcuaNodeId = id;
+    return;
+  }
+  if (typeof t === "object" && t?.kind === "tableSql" && el?.type === "table") {
+    const cfg = ensureZoneTableSqlFill(el);
+    ensureMinTableSqlParamSlots(cfg, t.slot + 1);
+    const row = cfg.params[t.slot];
+    if (row) {
+      row.source = "opcua";
+      row.opcuaNodeId = id;
+    }
+    return;
+  }
+  if (t === "table" && el?.type === "table") {
+    const cell = activeTableCell.value;
+    if (cell) {
+      cell.bindingKind = "opcua";
+      cell.opcuaNodeId = id;
+    }
+  }
+}
+
+function clampTableDimInput(n: number): number {
+  if (!Number.isFinite(n)) return 1;
+  return Math.min(30, Math.max(1, Math.floor(n)));
+}
+
+function bumpTableDimRows(delta: number) {
+  const el = props.el;
+  if (!el || el.type !== "table") return;
+  if (zoneSqlFillEnabled.value) return;
+  tableDimRows.value = clampTableDimInput((Number(tableDimRows.value) || 1) + delta);
+}
+
+function bumpTableDimCols(delta: number) {
+  const el = props.el;
+  if (!el || el.type !== "table") return;
+  tableDimCols.value = clampTableDimInput((Number(tableDimCols.value) || 1) + delta);
+}
+
+function bumpZoneTableRowHeight(delta: number) {
+  const el = props.el;
+  if (!el || el.type !== "table") return;
+  const cur = clampTableRowHeightPx(el.tableRowHeightPx);
+  el.tableRowHeightPx = clampTableRowHeightPx(cur + delta);
+  clampZoneTableOuterSize(el);
+}
+
+function applyTableDims() {
+  const el = props.el;
+  if (!el || el.type !== "table") return;
+  if (!zoneSqlFillEnabled.value) {
+    el.tableRows = clampTableDimInput(tableDimRows.value);
+  }
+  el.tableCols = clampTableDimInput(tableDimCols.value);
+  tableDimRows.value = el.tableRows;
+  tableDimCols.value = el.tableCols;
+  ensureZoneTableGrid(el);
+  if (editCellRow.value >= el.tableRows) editCellRow.value = el.tableRows - 1;
+  if (editCellCol.value >= el.tableCols) editCellCol.value = el.tableCols - 1;
+  clampZoneTableOuterSize(el);
+}
+
+watch([tableDimRows, tableDimCols], ([rows, cols]) => {
+  if (props.el?.type !== "table") return;
+  if (!Number.isFinite(rows) || !Number.isFinite(cols)) return;
+  applyTableDims();
+});
 
 const dateFormatSelectValue = computed(() => {
   const el = props.el;
@@ -236,6 +805,18 @@ async function onLocalImageChosen(ev: Event) {
 .lpep-h {
   margin: 0 0 8px;
   font-size: 13px;
+}
+.lpep-type-tag {
+  margin: 0 0 10px;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #4338ca;
+  background: rgb(238 242 255);
+  border: 1px solid rgb(199 210 254 / 0.85);
+  border-radius: 6px;
+  width: fit-content;
+  max-width: 100%;
 }
 .lpep-grid {
   display: flex;
@@ -333,5 +914,207 @@ async function onLocalImageChosen(ev: Event) {
 .lpep-grey {
   font-size: 13px;
   color: #71717a;
+}
+.lpep-hint-muted {
+  margin: 0;
+  font-size: 11px;
+  color: #71717a;
+  line-height: 1.45;
+}
+.lpep-table-metric {
+  margin: 0;
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #3f3f46;
+  background: rgb(244 244 245 / 0.95);
+  border: 1px solid #e4e4e7;
+  border-radius: 8px;
+}
+.lpep-table-metric strong {
+  color: #4338ca;
+  font-weight: 700;
+}
+.lpep-table-dims {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 14px;
+}
+.lpep-table-col-widths {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.lpep-table-col-widths-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  align-items: flex-end;
+}
+.lpep-table-col-w-lab {
+  min-width: 4.5rem;
+  font-weight: 600;
+}
+.lpep-table-col-w-inp {
+  max-width: 5rem;
+}
+.lpep-dim-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.lpep-dim-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #3f3f46;
+}
+.lpep-dim-stepper {
+  display: inline-flex;
+  align-items: stretch;
+  border-radius: 10px;
+  border: 1px solid #d4d4d8;
+  overflow: hidden;
+  background: #fafafa;
+  box-shadow: 0 1px 2px rgb(24 24 27 / 0.06);
+}
+.lpep-dim-btn {
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0 14px;
+  border: none;
+  background: #fff;
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1;
+  color: #4338ca;
+  cursor: pointer;
+  touch-action: manipulation;
+  flex-shrink: 0;
+}
+.lpep-dim-btn:hover:not(:disabled) {
+  background: #eef2ff;
+  color: #3730a3;
+}
+.lpep-dim-btn:active:not(:disabled) {
+  background: #e0e7ff;
+}
+.lpep-dim-btn:disabled {
+  opacity: 0.38;
+  cursor: not-allowed;
+  color: #a1a1aa;
+}
+.lpep-dim-val {
+  width: 3.25rem;
+  box-sizing: border-box;
+  text-align: center;
+  border: none;
+  border-left: 1px solid #e4e4e7;
+  border-right: 1px solid #e4e4e7;
+  font-size: 15px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  background: #fff;
+  color: #18181b;
+  padding: 0 4px;
+  min-height: 44px;
+}
+.lpep-dim-val:focus {
+  outline: none;
+  background: #fafafa;
+}
+.lpep-dim-val::-webkit-outer-spin-button,
+.lpep-dim-val::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.lpep-dim-val {
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+.lpep-inline {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+.lpep-table-cell-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 4px;
+  border-top: 1px dashed #e4e4e7;
+}
+.lpep-opc-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px;
+}
+.lpep-opc-row-grow {
+  flex: 1;
+  min-width: 160px;
+}
+.lpep-opc-pickbtn {
+  flex-shrink: 0;
+  align-self: flex-end;
+}
+.lpep-opc-quick {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.lpep-table-sql-fill-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 6px;
+  border-top: 1px dashed #e4e4e7;
+}
+.lpep-sql-fill-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.lpep-sql-fill-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #3f3f46;
+}
+.lpep-switch {
+  position: relative;
+  width: 40px;
+  height: 22px;
+  border-radius: 11px;
+  border: 1px solid #d4d4d8;
+  background: #e4e4e7;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease;
+}
+.lpep-switch::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgb(24 24 27 / 0.15);
+  transition: transform 0.15s ease;
+}
+.lpep-switch--on {
+  background: #a5b4fc;
+  border-color: #818cf8;
+}
+.lpep-switch--on::after {
+  transform: translateX(18px);
+}
+.lpep-switch:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 </style>

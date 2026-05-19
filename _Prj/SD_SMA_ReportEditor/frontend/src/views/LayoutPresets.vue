@@ -47,13 +47,19 @@
               <tr v-if="!presetGroups[sec.role].length">
                 <td colspan="5" class="empty">此类别暂无版式。</td>
               </tr>
-              <tr v-for="p in presetGroups[sec.role]" :key="p.id">
+              <tr
+                v-for="p in presetGroups[sec.role]"
+                :key="p.id"
+                :id="'lp-preset-' + p.id"
+                :class="{ 'lp-row--hl': highlightId === p.id }"
+              >
                 <td>{{ p.name }}</td>
                 <td>{{ roleLabel(p.pageRole) }}</td>
                 <td>{{ dimFor(p) }}</td>
                 <td>{{ fmtUpdated(p.updatedAt) }}</td>
                 <td class="td-actions">
                   <button type="button" class="b primary" @click="goEditor(p.id)">编辑</button>
+                  <button type="button" class="b" @click="duplicatePreset(p)">复制</button>
                   <button type="button" class="b danger" @click="removePreset(p.id)">删除</button>
                 </td>
               </tr>
@@ -72,7 +78,13 @@
         </div>
         <div class="grid">
             <p v-if="!presetGroups[sec.role].length" class="empty-section">此类别暂无版式。</p>
-            <div v-for="p in presetGroups[sec.role]" :key="'card-' + p.id" class="card">
+            <div
+              v-for="p in presetGroups[sec.role]"
+              :id="'lp-preset-' + p.id"
+              :key="'card-' + p.id"
+              class="card"
+              :class="{ 'card--hl': highlightId === p.id }"
+            >
               <div
                 class="micro-wrap"
                 title="双击进入编辑"
@@ -87,6 +99,7 @@
                 </div>
                 <div class="foot-actions">
                   <button type="button" class="b primary" @click="goEditor(p.id)">编辑</button>
+                  <button type="button" class="b" @click="duplicatePreset(p)">复制</button>
                   <button type="button" class="b danger" @click="removePreset(p.id)">删除</button>
                 </div>
               </div>
@@ -94,17 +107,45 @@
         </div>
       </section>
     </div>
+
+    <!-- Electron 等环境常禁用 window.prompt，复制命名用应用内弹层 -->
+    <div v-if="dupDlg" class="lp-dup-backdrop" @click.self="closeDupDlg">
+      <div class="lp-dup-modal" role="dialog" aria-modal="true" aria-labelledby="lp-dup-title">
+        <h3 id="lp-dup-title" class="lp-dup-title">复制版式</h3>
+        <p class="lp-dup-desc">
+          将复制「{{ dupSource?.name }}」的全部页眉、页脚与装饰控件。确定后会在当前列表中新增一条版式。
+        </p>
+        <label class="lp-dup-lbl" for="lp-dup-name">新版式名称</label>
+        <input
+          id="lp-dup-name"
+          ref="dupNameInputEl"
+          v-model.trim="dupNameInput"
+          type="text"
+          class="lp-dup-inp"
+          maxlength="128"
+          autocomplete="off"
+          @keydown.enter.prevent="confirmDuplicatePreset"
+        />
+        <div class="lp-dup-actions">
+          <button type="button" class="b" @click="closeDupDlg">取消</button>
+          <button type="button" class="b primary" :disabled="!dupNameInput.trim()" @click="confirmDuplicatePreset">
+            复制
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import type { LocationQuery } from "vue-router";
 import LayoutPresetMiniPage from "@/components/report-template/LayoutPresetMiniPage.vue";
 import type { LayoutPageRole, LayoutPreset } from "@/lib/report-template/layout-model";
 import {
   createEmptyLayoutPreset,
+  duplicateLayoutPreset,
   LAYOUT_PAGE_ROLE_LABEL,
 } from "@/lib/report-template/layout-model";
 import { PAPER_LABEL } from "@/lib/report-template/paper";
@@ -130,6 +171,14 @@ const ROLE_SECTION_META: { role: LayoutPageRole; title: string }[] = [
 
 const presets = ref<LayoutPreset[]>([]);
 const offline = computed(() => isLayoutsOffline());
+
+/** 复制版式：应用内命名弹层（避免 Electron 下 window.prompt 无效） */
+const dupDlg = ref(false);
+const dupSource = ref<LayoutPreset | null>(null);
+const dupNameInput = ref("");
+const dupNameInputEl = ref<HTMLInputElement | null>(null);
+/** 复制成功后短暂高亮并滚动到新版式卡片/行 */
+const highlightId = ref<string | null>(null);
 
 /** 按用途分组，供上下分栏各区块渲染 */
 const presetGroups = computed((): Record<LayoutPageRole, LayoutPreset[]> => {
@@ -185,6 +234,65 @@ async function removePreset(id: string) {
     msg.value = "已删除。";
   } catch (e) {
     msg.value = "删除失败：" + String((e as Error).message || e);
+  }
+}
+
+function duplicatePreset(p: LayoutPreset) {
+  dupSource.value = p;
+  dupNameInput.value = `${p.name}（副本）`;
+  dupDlg.value = true;
+  void nextTick(() => {
+    dupNameInputEl.value?.focus();
+    dupNameInputEl.value?.select();
+  });
+}
+
+function closeDupDlg() {
+  dupDlg.value = false;
+  dupSource.value = null;
+}
+
+async function scrollToPresetCard(id: string) {
+  await nextTick();
+  document.getElementById(`lp-preset-${id}`)?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+async function afterDuplicateSaved(newId: string, source: "remote" | "local", warning?: string) {
+  highlightId.value = newId;
+  if (source === "remote") {
+    await reload();
+    msg.value = "已复制为新版式。";
+  } else {
+    presets.value = layoutPresetsSnapshot();
+    msg.value = warning ? "已复制到本地缓存：" + warning : "已复制为新版式（本地缓存）。";
+  }
+  const created = presets.value.find((x) => x.id === newId);
+  if (created && roleFilter.value !== "all" && roleFilter.value !== created.pageRole) {
+    roleFilter.value = created.pageRole;
+  }
+  await scrollToPresetCard(newId);
+}
+
+async function confirmDuplicatePreset() {
+  const p = dupSource.value;
+  const trimmed = dupNameInput.value.trim();
+  if (!p) return;
+  if (!trimmed) {
+    msg.value = "名称不能为空。";
+    return;
+  }
+  closeDupDlg();
+  msg.value = "";
+  try {
+    const copy = duplicateLayoutPreset(p, trimmed);
+    const r = await saveLayoutPresetFlexible(copy);
+    if (!r.ok) {
+      msg.value = "复制失败：" + r.message;
+      return;
+    }
+    await afterDuplicateSaved(copy.id, r.source, r.source === "local" ? r.warning : undefined);
+  } catch (e) {
+    msg.value = "复制失败：" + String((e as Error).message || e);
   }
 }
 
@@ -467,5 +575,72 @@ onMounted(async () => {
 .page-title {
   font-size: 24px;
   font-weight: 600;
+}
+.lp-row--hl td {
+  background: rgb(238 242 255);
+}
+.card--hl {
+  outline: 2px solid rgb(129 140 248 / 0.65);
+  outline-offset: 2px;
+}
+.lp-dup-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgb(24 24 27 / 0.55);
+  z-index: 1100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+.lp-dup-modal {
+  background: #fff;
+  padding: 1.1rem 1.25rem 1rem;
+  border-radius: 10px;
+  max-width: 96vw;
+  width: 420px;
+  box-shadow: 0 20px 50px rgb(0 0 0 / 0.22);
+}
+.lp-dup-title {
+  margin: 0 0 0.4rem;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+.lp-dup-desc {
+  margin: 0 0 0.85rem;
+  font-size: 12px;
+  color: #52525b;
+  line-height: 1.45;
+}
+.lp-dup-lbl {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: #3f3f46;
+  margin-bottom: 4px;
+}
+.lp-dup-inp {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border-radius: 6px;
+  border: 1px solid #d4d4d8;
+  font-size: 14px;
+}
+.lp-dup-inp:focus {
+  outline: 2px solid rgb(129 140 248 / 0.5);
+  outline-offset: 1px;
+  border-color: #818cf8;
+}
+.lp-dup-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  align-items: center;
+  margin-top: 12px;
+}
+.lp-dup-actions .b.primary:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 </style>

@@ -1,13 +1,23 @@
-const { app, BrowserWindow, ipcMain } = require('electron')
+const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron')
 const { spawn } = require('child_process')
 const path = require('path')
 const http = require('http')
 const fs = require('fs')
+const { pathToFileURL } = require('url')
 
 let mainWindow
 let pythonProcess
 /** 若为 true：由本 Electron 拉起的后端，exit 时需 kill（避免误杀外部 uvicorn）。 */
 let backendStartedByElectron = false
+
+/** PDF 导出串行队列，避免并发隐藏窗口冲突 */
+let pdfExportTail = Promise.resolve()
+
+function enqueuePdfExport(fn) {
+  const next = pdfExportTail.then(fn)
+  pdfExportTail = next.catch(() => {})
+  return next
+}
 
 const BACKEND_PORT = 8000
 const BACKEND_URL = `http://127.0.0.1:${BACKEND_PORT}`
@@ -199,6 +209,149 @@ ipcMain.handle('devtools-set-open', (_event, open) => {
   } else {
     mainWindow.webContents.closeDevTools()
   }
+})
+
+function senderBrowserWindow(wc) {
+  try {
+    return BrowserWindow.fromWebContents(wc)
+  } catch {
+    return null
+  }
+}
+
+ipcMain.handle('dialog-save-pdf', async (event, opts) => {
+  const win = senderBrowserWindow(event.sender) || mainWindow
+  const res = await dialog.showSaveDialog(win && !win.isDestroyed() ? win : undefined, {
+    title: (opts && opts.title) || '导出 PDF',
+    defaultPath: (opts && opts.defaultPath) || '报表.pdf',
+    filters: [{ name: 'PDF', extensions: ['pdf'] }],
+  })
+  if (res.canceled || !res.filePath) return null
+  let fp = res.filePath
+  if (!fp.toLowerCase().endsWith('.pdf')) fp += '.pdf'
+  return fp
+})
+
+ipcMain.handle('dialog-pick-directory', async (event, opts) => {
+  const win = senderBrowserWindow(event.sender) || mainWindow
+  const res = await dialog.showOpenDialog(win && !win.isDestroyed() ? win : undefined, {
+    title: (opts && opts.title) || '选择导出文件夹',
+    properties: ['openDirectory', 'createDirectory'],
+    defaultPath: opts && opts.defaultPath,
+  })
+  if (res.canceled || !res.filePaths || !res.filePaths.length) return null
+  return res.filePaths[0]
+})
+
+ipcMain.handle('shell-open-path', async (_event, fp) => {
+  if (!fp || typeof fp !== 'string') return { ok: false, error: '无效路径' }
+  const err = await shell.openPath(fp)
+  return err ? { ok: false, error: err } : { ok: true }
+})
+
+ipcMain.handle('path-join', (_event, parts) => {
+  if (!Array.isArray(parts)) return ''
+  return path.join(...parts.map(String))
+})
+
+ipcMain.handle('pdf-export-run', async (event, opts) => {
+  const filePath = opts && opts.filePath
+  const templateId = opts && opts.templateId
+  const openAfter = Boolean(opts && opts.openAfter)
+  if (!filePath || typeof filePath !== 'string') throw new Error('缺少 filePath')
+  if (!templateId || typeof templateId !== 'string') throw new Error('缺少 templateId')
+
+  return enqueuePdfExport(async () => {
+    let pdfWin = null
+    try {
+      const senderWin = senderBrowserWindow(event.sender)
+      let loadUrl = ''
+
+      if (senderWin && !senderWin.isDestroyed()) {
+        const cur = senderWin.webContents.getURL()
+        if (cur && /^https?:\/\//i.test(cur)) {
+          try {
+            const u = new URL(cur)
+            u.hash = `#/pdf-export?templateId=${encodeURIComponent(templateId)}`
+            loadUrl = u.href
+          } catch {
+            /* ignore */
+          }
+        }
+      }
+
+      if (!loadUrl) {
+        const isDev = !app.isPackaged
+        if (isDev) {
+          loadUrl = `${VITE_DEV_URL}/#/pdf-export?templateId=${encodeURIComponent(templateId)}`
+        } else {
+          const idxHtml = path.join(__dirname, '..', 'dist', 'index.html')
+          loadUrl = `${pathToFileURL(idxHtml).href}#/pdf-export?templateId=${encodeURIComponent(templateId)}`
+        }
+      }
+
+      pdfWin = new BrowserWindow({
+        show: false,
+        width: 1280,
+        height: 1680,
+        webPreferences: {
+          nodeIntegration: false,
+          contextIsolation: true,
+          preload: path.join(__dirname, 'preload.cjs'),
+        },
+      })
+
+      const readyPromise = new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+          ipcMain.removeListener('pdf-export-ready', onReady)
+          reject(new Error('PDF 渲染超时'))
+        }, 120000)
+
+        function onReady(ev, payload) {
+          if (!pdfWin || pdfWin.isDestroyed()) return
+          if (senderBrowserWindow(ev.sender) !== pdfWin) return
+          clearTimeout(timer)
+          ipcMain.removeListener('pdf-export-ready', onReady)
+          resolve(payload || {})
+        }
+
+        ipcMain.on('pdf-export-ready', onReady)
+      })
+
+      await pdfWin.loadURL(loadUrl)
+      const payload = await readyPromise
+      if (!payload || !payload.ok) {
+        throw new Error((payload && payload.error) || 'PDF 渲染失败')
+      }
+
+      const wc = pdfWin.webContents
+      /**
+       * preferCSSPageSize + @page { size: … } 已表达纵向/横向。
+       * 若再传 landscape:true，部分 Chromium 会与 CSS 页尺寸叠加持平原产生多余空白页。
+       */
+      const pdfBuffer = await wc.printToPDF({
+        landscape: false,
+        printBackground: true,
+        marginsType: 1,
+        pageRanges: '',
+        preferCSSPageSize: true,
+      })
+
+      const dir = path.dirname(filePath)
+      fs.mkdirSync(dir, { recursive: true })
+      fs.writeFileSync(filePath, pdfBuffer)
+
+      if (openAfter) {
+        await shell.openPath(filePath)
+      }
+
+      return { ok: true, filePath }
+    } finally {
+      if (pdfWin && !pdfWin.isDestroyed()) {
+        pdfWin.destroy()
+      }
+    }
+  })
 })
 
 function killPython() {

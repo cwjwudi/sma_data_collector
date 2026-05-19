@@ -2,7 +2,7 @@
   <MiniPreviewChrome variant="normal" :show-tag="false">
     <div class="mb-wrap" :style="wrapStyle">
       <div class="mb-inner mpp-paper" :style="innerScaled">
-      <div v-if="me.hb > 1" class="mb-strip mb-hdr" :style="headerBandStyle">
+      <div v-if="me.hb > 0" class="mb-strip mb-hdr" :style="headerBandStyle">
         <div class="mb-strip-rel">
           <div
             v-for="el in headerEls"
@@ -31,7 +31,7 @@
         <span v-if="headerEls.length === 0" class="mb-legacy">{{ headerFb }}</span>
       </div>
       <div class="mb-gap" :style="{ flex: `0 0 ${gapH}px` }">{{ gapLabel }}</div>
-      <div v-if="me.fb > 1" class="mb-strip mb-ftr" :style="footerBandStyle">
+      <div v-if="me.fb > 0" class="mb-strip mb-ftr" :style="footerBandStyle">
         <div class="mb-strip-rel">
           <div v-for="el in footerEls" :key="el.id" class="mb-z" :style="miniZoneElStyle(el)">
             <ZoneImageCompose
@@ -54,7 +54,7 @@
         </div>
         <span v-if="footerEls.length === 0" class="mb-legacy">{{ footerFb }}</span>
       </div>
-      <div v-if="me.hb <= 1 && me.fb <= 1" class="mb-none">无主文页眉脚带高度</div>
+      <div v-if="me.hb <= 0 && me.fb <= 0" class="mb-none">无主文页眉脚带高度</div>
     </div>
   </div>
   </MiniPreviewChrome>

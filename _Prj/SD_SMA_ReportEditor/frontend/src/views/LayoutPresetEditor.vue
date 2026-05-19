@@ -90,7 +90,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, provide, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import LayoutPresetZonesDialog from "@/components/report-template/LayoutPresetZonesDialog.vue";
 import LayoutPresetPaperCanvas from "@/components/report-template/LayoutPresetPaperCanvas.vue";
@@ -98,12 +98,15 @@ import LayoutPresetElementProps from "@/components/report-template/LayoutPresetE
 import type { LayoutPreset } from "@/lib/report-template/layout-model";
 import { hydrateLayoutPreset } from "@/lib/report-template/layout-model";
 import type { LayoutControlType } from "@/lib/report-template/layout-zone-element";
+import { layoutPresetTableCellPickKey, type TemplateTableCellPick } from "@/lib/report-template/template-editor-context";
 import { PAPER_LABEL, type PaperKind } from "@/lib/report-template/paper";
 import {
   deleteLayoutPresetFlexible,
   refreshLayoutPresets,
   saveLayoutPresetFlexible,
 } from "@/lib/report-template/layout-registry";
+import { stableFingerprintPart } from "@/lib/report-template/snapshot-fingerprint";
+import { watchDebounced } from "@vueuse/core";
 
 const pkList = ["A5", "A4", "A3", "Letter"] as PaperKind[];
 
@@ -121,14 +124,34 @@ const loadErr = ref("");
 const dlgOpen = ref(false);
 const presetCanvasSelId = ref<string | null>(null);
 
+const presetUndoStack = ref<LayoutPreset[]>([]);
+const presetRedoStack = ref<LayoutPreset[]>([]);
+const presetHistoryLastRecorded = ref<LayoutPreset | null>(null);
+const presetHistoryReady = ref(false);
+const presetApplyingHistory = ref(false);
+const PRESET_UNDO_CAP = 80;
+
+const layoutPresetTablePick = ref<TemplateTableCellPick | null>(null);
+provide(layoutPresetTableCellPickKey, layoutPresetTablePick);
+
 const presetToolLabels: Record<LayoutControlType, string> = {
   text: "文本",
   box: "色块",
   image: "图片",
   pageNumber: "页码",
   date: "日期",
+  table: "表格",
+  parameter: "数据参数",
 };
-const presetToolTypes: LayoutControlType[] = ["text", "box", "image", "pageNumber", "date"];
+const presetToolTypes: LayoutControlType[] = [
+  "text",
+  "box",
+  "image",
+  "pageNumber",
+  "date",
+  "table",
+  "parameter",
+];
 
 function onPresetToolDragStart(e: DragEvent, t: LayoutControlType) {
   e.dataTransfer?.setData("application/x-zone-tool", t);
@@ -180,6 +203,66 @@ function clonePreset(p: LayoutPreset): LayoutPreset {
   return hydrateLayoutPreset(JSON.parse(JSON.stringify(p)));
 }
 
+function resetPresetHistoryFromWorking(w: LayoutPreset | null) {
+  presetHistoryReady.value = false;
+  presetUndoStack.value = [];
+  presetRedoStack.value = [];
+  presetHistoryLastRecorded.value = w ? clonePreset(w) : null;
+  presetHistoryReady.value = !!w;
+}
+
+watchDebounced(
+  working,
+  () => {
+    if (!presetHistoryReady.value || presetApplyingHistory.value || !working.value) return;
+    const cur = working.value;
+    const prev = presetHistoryLastRecorded.value;
+    if (!prev) return;
+    if (stableFingerprintPart(cur) === stableFingerprintPart(prev)) return;
+    presetUndoStack.value.push(clonePreset(prev));
+    if (presetUndoStack.value.length > PRESET_UNDO_CAP) presetUndoStack.value.shift();
+    presetRedoStack.value = [];
+    presetHistoryLastRecorded.value = clonePreset(cur);
+  },
+  { debounce: 320, maxWait: 4500, deep: true },
+);
+
+function undoPresetEdit() {
+  if (!working.value || presetUndoStack.value.length === 0) return;
+  presetApplyingHistory.value = true;
+  try {
+    presetRedoStack.value.push(clonePreset(working.value));
+    const prev = presetUndoStack.value.pop()!;
+    working.value = clonePreset(prev);
+    presetHistoryLastRecorded.value = clonePreset(working.value);
+  } finally {
+    presetApplyingHistory.value = false;
+  }
+  void nextTick(() => {
+    const id = presetCanvasSelId.value;
+    if (id && !selectedPresetEl.value) presetCanvasSelId.value = null;
+    msg.value = "已撤销。";
+  });
+}
+
+function redoPresetEdit() {
+  if (!working.value || presetRedoStack.value.length === 0) return;
+  presetApplyingHistory.value = true;
+  try {
+    presetUndoStack.value.push(clonePreset(working.value));
+    const next = presetRedoStack.value.pop()!;
+    working.value = clonePreset(next);
+    presetHistoryLastRecorded.value = clonePreset(working.value);
+  } finally {
+    presetApplyingHistory.value = false;
+  }
+  void nextTick(() => {
+    const id = presetCanvasSelId.value;
+    if (id && !selectedPresetEl.value) presetCanvasSelId.value = null;
+    msg.value = "已重做。";
+  });
+}
+
 async function loadWorking() {
   loadErr.value = "";
   msg.value = "";
@@ -187,6 +270,7 @@ async function loadWorking() {
   if (!id) {
     loadErr.value = "缺少版式 ID。";
     working.value = null;
+    resetPresetHistoryFromWorking(null);
     return;
   }
   try {
@@ -195,13 +279,16 @@ async function loadWorking() {
     if (!raw) {
       loadErr.value = "未找到该版式（可能已删除）。";
       working.value = null;
+      resetPresetHistoryFromWorking(null);
       return;
     }
     working.value = clonePreset(raw);
     presetCanvasSelId.value = null;
+    resetPresetHistoryFromWorking(working.value);
   } catch (e) {
     loadErr.value = "加载失败：" + String((e as Error).message || e);
     working.value = null;
+    resetPresetHistoryFromWorking(null);
   }
 }
 
@@ -230,6 +317,7 @@ async function savePreset() {
       msg.value = "版式已保存。";
     } else {
       working.value = clonePreset(r.preset);
+      resetPresetHistoryFromWorking(working.value);
       msg.value =
         `未能写入服务器（${r.warning}）。当前内容已暂存于本浏览器缓存；联网后可在「设置」迁移或再次保存。在未成功写入服务器前，勿依赖多机/多浏览器同步。`;
     }
@@ -260,9 +348,48 @@ watch(
   },
 );
 
+function eventTargetIsTypingField(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  if (target.isContentEditable) return true;
+  if (target.closest('[contenteditable="true"]')) return true;
+  const tag = target.tagName;
+  return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
+}
+
+function onEditorWindowKeydown(ev: KeyboardEvent) {
+  if (!(ev.ctrlKey || ev.metaKey)) return;
+  const key = ev.key.toLowerCase();
+  if (key === "s") {
+    ev.preventDefault();
+    void savePreset();
+    return;
+  }
+  if (key === "z") {
+    if (eventTargetIsTypingField(ev.target)) return;
+    if (ev.shiftKey) {
+      if (presetRedoStack.value.length === 0) return;
+      ev.preventDefault();
+      redoPresetEdit();
+      return;
+    }
+    if (presetUndoStack.value.length === 0) return;
+    ev.preventDefault();
+    undoPresetEdit();
+    return;
+  }
+  if (key === "y") {
+    if (eventTargetIsTypingField(ev.target)) return;
+    if (presetRedoStack.value.length === 0) return;
+    ev.preventDefault();
+    redoPresetEdit();
+  }
+}
+
 onMounted(() => {
   void loadWorking();
+  window.addEventListener("keydown", onEditorWindowKeydown);
 });
+onUnmounted(() => window.removeEventListener("keydown", onEditorWindowKeydown));
 </script>
 
 <style scoped>
@@ -409,10 +536,9 @@ onMounted(() => {
   flex-direction: column;
   gap: 8px;
   background: #fafafa;
-  overflow: auto;
-  -webkit-overflow-scrolling: touch;
-  overscroll-behavior: contain;
   min-height: 0;
+  overflow: hidden;
+  overscroll-behavior: none;
 }
 .pe-h5 {
   margin: 0;

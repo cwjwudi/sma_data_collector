@@ -31,6 +31,11 @@
             classAbbr(row.node)
           }}</span>
           <span class="display-name">{{ row.node.display_name || row.node.browse_name || row.node.node_id || '—' }}</span>
+          <span
+            v-if="row.node.valueDataTypeLabel"
+            class="dtype-badge"
+            :title="'数据类型: ' + row.node.valueDataTypeLabel"
+          >{{ row.node.valueDataTypeLabel }}</span>
         </span>
         <span class="row-sub mono">
           <span class="browse-part">{{ row.node.browse_name }}</span>
@@ -39,8 +44,8 @@
         <span
           v-if="row.node.valueReadError"
           class="row-value row-value-err mono"
-          :title="row.node.valueReadError"
-        >⚠ {{ truncateOneLine(row.node.valueReadError, 72) }}</span>
+          :title="translateOpcuaMessage(row.node.valueReadError)"
+        >⚠ {{ truncateOneLine(translateOpcuaMessage(row.node.valueReadError), 72) }}</span>
         <span
           v-else-if="row.node.valuePreview !== undefined && row.node.valuePreview !== null && row.node.valuePreview !== ''"
           class="row-value mono"
@@ -48,8 +53,8 @@
         >
           = {{ row.node.valuePreview }}
         </span>
-        <span v-if="row.node.error" class="row-err">{{ row.node.error }}</span>
-        <span v-if="row.node.errorMessage" class="row-err">{{ row.node.errorMessage }}</span>
+        <span v-if="row.node.error" class="row-err">{{ translateOpcuaMessage(row.node.error) }}</span>
+        <span v-if="row.node.errorMessage" class="row-err">{{ translateOpcuaMessage(row.node.errorMessage) }}</span>
       </button>
     </div>
     </template>
@@ -58,6 +63,7 @@
 
 <script setup>
 import { computed } from 'vue'
+import { translateOpcuaMessage } from './opcua-messages.js'
 
 defineOptions({ name: 'OpcUaTree' })
 
@@ -224,6 +230,20 @@ const rows = computed(() => {
 .display-name {
   font-weight: 500;
   color: #111827;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dtype-badge {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #ecfdf5;
+  color: #047857;
+  border: 1px solid rgb(16 185 129 / 0.35);
+  max-width: 120px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

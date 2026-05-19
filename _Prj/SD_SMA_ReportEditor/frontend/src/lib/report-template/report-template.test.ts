@@ -8,8 +8,15 @@ import {
 import {
   hydrateTemplateElement,
   createTemplate,
+  ensureBodyPages,
 } from "@/lib/report-template/model";
 import { blankZonesSnapshot } from "@/lib/report-template/layout-model";
+import {
+  adjustIntegerColumnPercentsAfterEdit,
+  applyTableColumnResizeDeltaPx,
+  integerColumnPercentsFromInnerWidthsPx,
+  TABLE_COLUMN_WIDTH_PERCENT_MIN,
+} from "@/lib/report-template/table-cell-metrics";
 
 describe("computePaperLayout", () => {
   it("computes sane A4 portrait content rect", () => {
@@ -42,6 +49,60 @@ describe("hydrateTemplateElement", () => {
     });
     expect(el.bindingKind).toBe("none");
     expect(el.opcuaNodeId).toBe("");
+  });
+
+  it("normalizes signatureDisplayMode for signature and strips it for other types", () => {
+    const sig = hydrateTemplateElement({
+      id: "s",
+      type: "signature",
+      signatureDisplayMode: "handwriting",
+    });
+    expect(sig.type).toBe("signature");
+    expect(sig.signatureDisplayMode).toBe("handwriting");
+
+    const sigLegacy = hydrateTemplateElement({ id: "s2", type: "signature" });
+    expect(sigLegacy.signatureDisplayMode).toBe("both");
+
+    const txt = hydrateTemplateElement({
+      id: "t",
+      type: "text",
+      signatureDisplayMode: "watermark" as never,
+    });
+    expect(txt.type).toBe("text");
+    expect("signatureDisplayMode" in txt ? txt.signatureDisplayMode : undefined).toBeUndefined();
+  });
+
+  it("normalizes tableRowHeightPx for table elements", () => {
+    const tb = hydrateTemplateElement({
+      id: "t",
+      type: "table",
+      tableRowHeightPx: 200,
+    });
+    expect(tb.type).toBe("table");
+    expect(tb.tableRowHeightPx).toBe(120);
+    const txt = hydrateTemplateElement({
+      id: "x",
+      type: "text",
+      tableRowHeightPx: 40 as never,
+    });
+    expect("tableRowHeightPx" in txt ? (txt as { tableRowHeightPx?: number }).tableRowHeightPx : undefined).toBeUndefined();
+  });
+
+  it("hydrates tableColWidthsPx length for tables and strips for non-table", () => {
+    const tb = hydrateTemplateElement({
+      id: "t",
+      type: "table",
+      tableCols: 3,
+      tableColWidthsPx: [50, 0, -1],
+    });
+    expect(tb.tableCols).toBe(3);
+    expect(tb.tableColWidthsPx).toEqual([50, 0, 0]);
+    const txt = hydrateTemplateElement({
+      id: "x",
+      type: "text",
+      tableColWidthsPx: [10, 20] as never,
+    });
+    expect((txt as { tableColWidthsPx?: number[] }).tableColWidthsPx).toBeUndefined();
   });
 });
 
@@ -85,8 +146,54 @@ describe("computeFingerprints", () => {
       backBodyZoneElements: [],
     });
     const a = computeFingerprints(t).body;
-    t.elements.push(hydrateTemplateElement({ type: "text", text: "hi" }));
+    ensureBodyPages(t)[0].push(hydrateTemplateElement({ type: "text", text: "hi" }));
     const b_fp = computeFingerprints(t).body;
     expect(a).not.toBe(b_fp);
+  });
+});
+
+describe("applyTableColumnResizeDeltaPx", () => {
+  it("shifts width between adjacent columns while respecting minimum column width", () => {
+    const inner = 200;
+    const cols = 3;
+    const base = applyTableColumnResizeDeltaPx(inner, cols, null, 0, 30);
+    expect(base).not.toBeNull();
+    expect(base!.length).toBe(3);
+
+    const stepped = applyTableColumnResizeDeltaPx(inner, cols, base, 1, -80);
+    expect(stepped).not.toBeNull();
+    expect(stepped!.every((w) => w >= 26)).toBe(true);
+  });
+
+  it("returns null when delta cannot be applied", () => {
+    expect(applyTableColumnResizeDeltaPx(52, 2, null, 0, 0)).toBeNull();
+    expect(applyTableColumnResizeDeltaPx(52, 2, null, 0, -999)).toBeNull();
+  });
+});
+
+describe("table column width integer percents", () => {
+  it("maps pixel widths to integer percents that sum to 100", () => {
+    const p = integerColumnPercentsFromInnerWidthsPx([40, 30, 30], 100);
+    expect(p.reduce((a, b) => a + b, 0)).toBe(100);
+    expect(p).toEqual([40, 30, 30]);
+  });
+
+  it("redistributes other columns after editing one percent", () => {
+    const prev = [34, 33, 33];
+    const next = adjustIntegerColumnPercentsAfterEdit(prev, 0, 50);
+    expect(next.reduce((a, b) => a + b, 0)).toBe(100);
+    expect(next.every((x) => x >= TABLE_COLUMN_WIDTH_PERCENT_MIN)).toBe(true);
+    expect(next[0]).toBe(50);
+    expect(next[1]).toBe(25);
+    expect(next[2]).toBe(25);
+  });
+
+  it("clamps edited column so peers stay at least 1%", () => {
+    const prev = [34, 33, 33];
+    const next = adjustIntegerColumnPercentsAfterEdit(prev, 0, 100);
+    expect(next.reduce((a, b) => a + b, 0)).toBe(100);
+    expect(next[1]).toBeGreaterThanOrEqual(TABLE_COLUMN_WIDTH_PERCENT_MIN);
+    expect(next[2]).toBeGreaterThanOrEqual(TABLE_COLUMN_WIDTH_PERCENT_MIN);
+    expect(next[0]).toBe(98);
   });
 });

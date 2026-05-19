@@ -146,6 +146,15 @@ export function createEmptyLayoutPreset(): LayoutPreset {
   };
 }
 
+/** 深拷贝版式并分配新 id、名称与更新时间（列表「复制」）。 */
+export function duplicateLayoutPreset(source: LayoutPreset, newName: string): LayoutPreset {
+  const clone = JSON.parse(JSON.stringify(source)) as Partial<LayoutPreset>;
+  clone.id = newId();
+  clone.name = newName.trim();
+  clone.updatedAt = new Date().toISOString();
+  return hydrateLayoutPreset(clone);
+}
+
 export function loadLayoutPresets(): LayoutPreset[] {
   try {
     const raw = localStorage.getItem(LAYOUT_PRESET_STORAGE_KEY);

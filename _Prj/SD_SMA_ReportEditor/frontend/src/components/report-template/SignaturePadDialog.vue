@@ -3,9 +3,10 @@
     <div class="sig-modal" role="dialog" aria-modal="true">
       <h3 class="sig-title">{{ title }}</h3>
       <p v-if="subtitle" class="sig-subtitle">条目名称：{{ subtitle }}</p>
-      <p class="sig-hint">可依浅色<strong>描摹字迹</strong>书写；墨色笔迹为最终保存内容。</p>
-      <div class="sig-canvas-wrap">
-        <canvas ref="canvasRef" class="sig-canvas" />
+      <p class="sig-hint">{{ hintLine }}</p>
+      <div ref="wrapRef" class="sig-canvas-wrap">
+        <canvas ref="guideCanvasRef" class="sig-layer sig-layer--guide" aria-hidden="true" />
+        <canvas ref="inkCanvasRef" class="sig-layer sig-layer--ink" />
       </div>
       <div class="sig-actions">
         <button type="button" class="btn" @click="clear">清除</button>
@@ -17,7 +18,7 @@
 </template>
 
 <script setup lang="ts">
-import { onUnmounted, ref, watch, nextTick } from "vue";
+import { computed, onUnmounted, ref, watch, nextTick } from "vue";
 
 const props = withDefaults(
   defineProps<{
@@ -27,8 +28,15 @@ const props = withDefaults(
     subtitle?: string;
     /** 在非透明画布上绘制浅色空心描摹字（供用户对齐笔迹）；与 subtitle 可同时使用 */
     guideOutlineText?: string;
+    /** 浅色水印：签名库 PNG/data URL，仅在手写板底层显示，导出时可与墨色笔画合成 */
+    guideImageSrc?: string;
   }>(),
-  { title: "电子签名", subtitle: undefined, guideOutlineText: undefined },
+  {
+    title: "电子签名",
+    subtitle: undefined,
+    guideOutlineText: undefined,
+    guideImageSrc: undefined,
+  },
 );
 
 const emit = defineEmits<{
@@ -36,64 +44,125 @@ const emit = defineEmits<{
   (e: "confirm", dataUrl: string): void;
 }>();
 
-const canvasRef = ref<HTMLCanvasElement | null>(null);
+const hintLine = computed(() => {
+  const hasLib = !!(props.guideImageSrc?.trim());
+  if (hasLib) {
+    return "浅色为签名库水印，仅供对齐；墨色为您的手写。确定后自动将手写叠加到库图之上（未手写则仅保存库图）。";
+  }
+  return "可依浅色描摹字迹书写；墨色笔迹为最终保存内容。";
+});
+
+const wrapRef = ref<HTMLElement | null>(null);
+const guideCanvasRef = ref<HTMLCanvasElement | null>(null);
+const inkCanvasRef = ref<HTMLCanvasElement | null>(null);
 let drawing = false;
 let lastX = 0;
 let lastY = 0;
 let dpr = 1;
-/** 是否与初始引导层有明显差异（仅靠灰线/描摹字不可提交） */
+/** 墨色层是否有用户笔迹 */
 let hasInk = false;
+let cachedGuideImg: HTMLImageElement | null = null;
+let cachedGuideImgSrc = "";
 
-function resizeCanvas() {
-  const c = canvasRef.value;
-  if (!c) return;
-  const wrap = c.parentElement!;
+function loadImage(src: string): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const im = new Image();
+    if (!/^data:/i.test(src)) im.crossOrigin = "anonymous";
+    im.onload = () => resolve(im);
+    im.onerror = () => reject(new Error("图像加载失败"));
+    im.src = src;
+  });
+}
+
+function resizeLayers() {
+  const guide = guideCanvasRef.value;
+  const ink = inkCanvasRef.value;
+  const wrap = wrapRef.value ?? guide?.parentElement;
+  if (!guide || !ink || !wrap) return;
   dpr = Math.max(1, window.devicePixelRatio || 1);
   const cssW = Math.floor(wrap.clientWidth);
   const cssH = Math.floor(wrap.clientHeight);
   if (cssW <= 0 || cssH <= 0) return;
-  hasInk = false;
-  c.width = Math.floor(cssW * dpr);
-  c.height = Math.floor(cssH * dpr);
-  c.style.width = `${cssW}px`;
-  c.style.height = `${cssH}px`;
-  const ctx = c.getContext("2d");
-  if (ctx) {
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.lineCap = "round";
-    ctx.lineJoin = "round";
-    ctx.strokeStyle = "#111827";
-    ctx.lineWidth = 2.5;
-    ctx.setLineDash([]);
-    drawWritingGuide();
+
+  for (const c of [guide, ink]) {
+    c.width = Math.floor(cssW * dpr);
+    c.height = Math.floor(cssH * dpr);
+    c.style.width = `${cssW}px`;
+    c.style.height = `${cssH}px`;
   }
+
+  hasInk = false;
+  void drawGuideLayer();
+  prepareInkLayer();
 }
 
-/** 手写区描边示意（不参与「是否为空」的简单比较时仍保留灰线） */
-function drawWritingGuide() {
-  const c = canvasRef.value;
-  if (!c) return;
-  const ctx = c.getContext("2d");
+function prepareInkLayer() {
+  const ink = inkCanvasRef.value;
+  if (!ink) return;
+  const ctx = ink.getContext("2d");
   if (!ctx) return;
-  const w = c.width / dpr;
-  const h = c.height / dpr;
-  ctx.save();
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.strokeStyle = "rgb(148 163 184)";
-  ctx.lineWidth = 1;
-  ctx.setLineDash([8, 6]);
-  const margin = 10;
-  ctx.strokeRect(margin + 0.5, margin + 0.5, Math.max(0, w - 2 * margin - 1), Math.max(0, h - 2 * margin - 1));
-
-  drawTracingOutlineLayer(ctx, w, h, margin);
-
-  ctx.restore();
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, ink.width / dpr, ink.height / dpr);
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
   ctx.strokeStyle = "#111827";
   ctx.lineWidth = 2.5;
   ctx.setLineDash([]);
+}
+
+/** 底层：虚线框 + 可选水印图 + 可选描摹空心字（均不写入墨色层） */
+async function drawGuideLayer() {
+  const guide = guideCanvasRef.value;
+  const wrap = wrapRef.value ?? guide?.parentElement;
+  if (!guide || !wrap) return;
+  const ctx = guide.getContext("2d");
+  if (!ctx) return;
+  const w = guide.width / dpr;
+  const h = guide.height / dpr;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+
+  ctx.strokeStyle = "rgb(148 163 184)";
+  ctx.lineWidth = 1;
+  ctx.setLineDash([8, 6]);
+  const margin = 10;
+  ctx.strokeRect(margin + 0.5, margin + 0.5, Math.max(0, w - 2 * margin - 1), Math.max(0, h - 2 * margin - 1));
+  ctx.setLineDash([]);
+
+  const innerLeft = margin + 2;
+  const innerTop = margin + 2;
+  const innerW = Math.max(0, w - 2 * margin - 4);
+  const innerH = Math.max(0, h - 2 * margin - 4);
+
+  const src = props.guideImageSrc?.trim() ?? "";
+  if (src) {
+    try {
+      if (!cachedGuideImg || cachedGuideImgSrc !== src) {
+        cachedGuideImg = await loadImage(src);
+        cachedGuideImgSrc = src;
+      }
+      const im = cachedGuideImg;
+      if (im?.complete && im.naturalWidth > 0) {
+        ctx.save();
+        ctx.globalAlpha = 0.28;
+        const scale = Math.min(innerW / im.naturalWidth, innerH / im.naturalHeight);
+        const dw = im.naturalWidth * scale;
+        const dh = im.naturalHeight * scale;
+        const dx = innerLeft + (innerW - dw) / 2;
+        const dy = innerTop + (innerH - dh) / 2;
+        ctx.drawImage(im, dx, dy, dw, dh);
+        ctx.restore();
+      }
+    } catch {
+      cachedGuideImg = null;
+      cachedGuideImgSrc = "";
+    }
+  } else {
+    cachedGuideImg = null;
+    cachedGuideImgSrc = "";
+  }
+
+  drawTracingOutlineLayer(ctx, w, h, margin);
 }
 
 /** 条目名称浅色空心字，作为描摹底样 */
@@ -135,7 +204,7 @@ function pos(ev: PointerEvent, c: HTMLCanvasElement) {
 }
 
 function onPointerDown(ev: PointerEvent) {
-  const c = canvasRef.value;
+  const c = inkCanvasRef.value;
   if (!c) return;
   ev.preventDefault();
   c.setPointerCapture(ev.pointerId);
@@ -147,7 +216,7 @@ function onPointerDown(ev: PointerEvent) {
 
 function onPointerMove(ev: PointerEvent) {
   if (!drawing) return;
-  const c = canvasRef.value;
+  const c = inkCanvasRef.value;
   if (!c) return;
   const ctx = c.getContext("2d");
   if (!ctx) return;
@@ -163,7 +232,7 @@ function onPointerMove(ev: PointerEvent) {
 
 function endStroke(ev: PointerEvent) {
   if (!drawing) return;
-  const c = canvasRef.value;
+  const c = inkCanvasRef.value;
   if (c?.releasePointerCapture) {
     try {
       c.releasePointerCapture(ev.pointerId);
@@ -175,30 +244,69 @@ function endStroke(ev: PointerEvent) {
 }
 
 function clear() {
-  const c = canvasRef.value;
-  if (!c) return;
-  const ctx = c.getContext("2d");
-  if (!ctx) return;
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.clearRect(0, 0, c.width / dpr, c.height / dpr);
   hasInk = false;
-  drawWritingGuide();
+  prepareInkLayer();
 }
 
-function confirm() {
-  const c = canvasRef.value;
-  if (!c) return;
-  if (!hasInk) {
-    alert("请先在手写区内落笔书写（墨色笔迹）。");
+/** 将图像按比例填满目标像素画布（contain） */
+function drawImageContainPixels(
+  ctx: CanvasRenderingContext2D,
+  img: HTMLImageElement,
+  pw: number,
+  ph: number,
+) {
+  if (!img.naturalWidth || !img.naturalHeight) return;
+  const scale = Math.min(pw / img.naturalWidth, ph / img.naturalHeight);
+  const dw = img.naturalWidth * scale;
+  const dh = img.naturalHeight * scale;
+  const dx = (pw - dw) / 2;
+  const dy = (ph - dh) / 2;
+  ctx.drawImage(img, dx, dy, dw, dh);
+}
+
+async function confirm() {
+  const ink = inkCanvasRef.value;
+  if (!ink) return;
+  const guideImgSrc = props.guideImageSrc?.trim() ?? "";
+  const hasLib = !!guideImgSrc;
+
+  if (!hasInk && !hasLib) {
+    alert("请先在手写区内落笔书写（墨色笔迹），或先在下拉里关联签名库条目以便使用库图。");
     return;
   }
-  const dataUrl = c.toDataURL("image/png");
+
+  const pw = ink.width;
+  const ph = ink.height;
+  const exportC = document.createElement("canvas");
+  exportC.width = pw;
+  exportC.height = ph;
+  const ex = exportC.getContext("2d");
+  if (!ex) return;
+
+  if (hasLib) {
+    try {
+      let im = cachedGuideImg && cachedGuideImgSrc === guideImgSrc ? cachedGuideImg : null;
+      if (!im) im = await loadImage(guideImgSrc);
+      ex.fillStyle = "#ffffff";
+      ex.fillRect(0, 0, pw, ph);
+      drawImageContainPixels(ex, im, pw, ph);
+    } catch {
+      alert("签名库图像加载失败，无法合成。");
+      return;
+    }
+  }
+
+  if (hasInk) {
+    ex.drawImage(ink, 0, 0);
+  }
+
+  const dataUrl = exportC.toDataURL("image/png");
   emit("confirm", dataUrl);
   emit("update:modelValue", false);
 }
 
 function attach() {
-  const c = canvasRef.value;
+  const c = inkCanvasRef.value;
   if (!c) return;
   c.addEventListener("pointerdown", onPointerDown);
   c.addEventListener("pointermove", onPointerMove);
@@ -208,7 +316,7 @@ function attach() {
 
 function detach() {
   drawing = false;
-  const c = canvasRef.value;
+  const c = inkCanvasRef.value;
   if (!c) return;
   c.removeEventListener("pointerdown", onPointerDown);
   c.removeEventListener("pointermove", onPointerMove);
@@ -226,18 +334,35 @@ watch(
     }
     await nextTick();
     requestAnimationFrame(() => {
-      resizeCanvas();
+      resizeLayers();
+      void drawGuideLayer();
       detach();
       attach();
     });
   },
 );
 
-window.addEventListener("resize", resizeCanvas);
+watch(
+  () => [props.guideOutlineText, props.guideImageSrc] as const,
+  () => {
+    if (!props.modelValue) return;
+    requestAnimationFrame(() => {
+      void drawGuideLayer();
+    });
+  },
+);
+
+function onWinResize() {
+  if (!props.modelValue) return;
+  resizeLayers();
+  attach();
+}
+
+window.addEventListener("resize", onWinResize);
 
 onUnmounted(() => {
   detach();
-  window.removeEventListener("resize", resizeCanvas);
+  window.removeEventListener("resize", onWinResize);
 });
 </script>
 
@@ -273,20 +398,33 @@ onUnmounted(() => {
   margin: 0 0 0.65rem;
   font-size: 12px;
   color: rgb(113 113 122);
+  line-height: 1.45;
 }
 .sig-canvas-wrap {
+  position: relative;
   border: 1px solid #e4e4e7;
   border-radius: 8px;
   height: 180px;
   touch-action: none;
   overflow: hidden;
+  background: #fafafa;
 }
-.sig-canvas {
+.sig-layer {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   display: block;
   touch-action: none;
+}
+.sig-layer--guide {
+  pointer-events: none;
+  z-index: 0;
+}
+.sig-layer--ink {
   cursor: crosshair;
+  z-index: 1;
+  background: transparent;
 }
 .sig-actions {
   display: flex;

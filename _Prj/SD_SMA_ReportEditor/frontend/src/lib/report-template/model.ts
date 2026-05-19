@@ -2,13 +2,14 @@
  * Schema version for persisted template JSON (API + generator).
  * Bump when incompatible field changes occur.
  */
-export const TEMPLATE_SCHEMA_VERSION = 2;
+export const TEMPLATE_SCHEMA_VERSION = 4;
 
 /** 模版正文画布控件类型（扩展后与生成器约定见 _Doc） */
 export type TemplateControlType =
   | "text"
   | "box"
   | "image"
+  | "date"
   | "table"
   | "chart"
   | "parameter"
@@ -16,10 +17,20 @@ export type TemplateControlType =
 
 export type BindingKind = "none" | "opcua" | "sql";
 
+/** 表格单个单元格：静态文字或按绑定拉取展示（生成器按 _Doc 解析） */
+export interface TemplateTableCell {
+  text: string;
+  bindingKind: BindingKind;
+  opcuaNodeId: string;
+  /** 单元格级 SQL：预览占位或单行标量查询等，由生成器约定 */
+  sqlText: string;
+}
+
 import type { LayoutSnapshot } from "./layout-model";
 import { defaultBlankLayoutSnapshot } from "./layout-model";
 import type { PaperKind } from "./paper";
 import type { LayoutAlignAxis, ImageCaptionPosition } from "./layout-zone-element";
+import type { TableSqlFillConfig } from "./table-sql-fill";
 import {
   hydrateLayoutZoneElement,
   normalizeAlignAxis,
@@ -27,6 +38,25 @@ import {
   normalizeImageRotationDeg,
   type LayoutZoneElement,
 } from "./layout-zone-element";
+import {
+  clampTableRowHeightPx,
+  distributeTableColumnInnerWidthsPx,
+  hydratePersistedTableColWidthsPx,
+  REPORT_TEMPLATE_TABLE_NODE_PADDING_PX,
+  TABLE_ROW_HEIGHT_DEFAULT_PX,
+  uniformTableCellBoxPx,
+} from "./table-cell-metrics";
+import {
+  clampSqlFillParamColumnRefs,
+  defaultTableSqlFillConfig,
+  ensureTableSqlResultColumnNames,
+  ensureTwoTableSqlParamSlots,
+  ensureVisualOutputColumnSlots,
+  hydrateTableSqlFill,
+} from "./table-sql-fill";
+
+/** 电子签名阅览：水印描摹 / 手写图 / 二者叠加 */
+export type SignatureDisplayMode = "watermark" | "handwriting" | "both";
 
 export interface TemplateElement {
   id: string;
@@ -60,6 +90,28 @@ export interface TemplateElement {
   signerLabel: string;
   /** 引用签名库条目 id（可与 imageSrc 手写图并存，生成器优先语义以 _Doc 为准） */
   signatureAssetId: string;
+  /** 仅 type===signature：画布/预览显示水印、手写图或同时显示 */
+  signatureDisplayMode?: SignatureDisplayMode;
+  /** 表格：行数（≥1，仅 type===table） */
+  tableRows?: number;
+  /** 表格：列数（≥1，仅 type===table） */
+  tableCols?: number;
+  /** 表格：单元格矩阵 [行][列]（仅 type===table；持久化由 ensureTableGrid 维护形状） */
+  tableCells?: TemplateTableCell[][];
+  /** 表格：每行行高（px），仅 type===table；画布与导出预览按此行高渲染 */
+  tableRowHeightPx?: number;
+  /**
+   * 表格：列宽权重（长度与 tableCols 一致），仅 type===table。
+   * ≤0 与其它 ≤0 列均分剩余内侧宽度；>0 时按比例分配（画布上等比例缩放填充满内侧宽）。
+   */
+  tableColWidthsPx?: number[];
+  /**
+   * 表格整表 SQL 结果动态填充（schema≥4；仅 type===table）。
+   * 导出时由生成器执行 query、扩展行数并处理跨页表头；见 _Doc。
+   */
+  tableSqlFill?: TableSqlFillConfig;
+  /** 仅 type===date：导出时间与画布预览格式（与版式 date 控件相同占位规则） */
+  dateFormat?: string;
 }
 
 export interface ReportTemplate {
@@ -67,7 +119,10 @@ export interface ReportTemplate {
   id: string;
   name: string;
   updatedAt: string;
+  /** 正文第 1 页画布（与 bodyPages[0] 同一引用；兼容 schema≤2 仅含 elements 的旧 JSON） */
   elements: TemplateElement[];
+  /** schema≥3：正文分页，每项为一页独立画布（顺序即导出正文页序） */
+  bodyPages?: TemplateElement[][];
   paperKind: PaperKind;
   orientation: "portrait" | "landscape";
   layoutPresetId: string | null;
@@ -135,14 +190,210 @@ function normalizeBindingKind(v: unknown): BindingKind {
   return "none";
 }
 
+function clampTableDim(v: unknown, fallback: number): number {
+  const n = Math.floor(Number(v));
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(30, Math.max(1, n));
+}
+
+export function defaultTableCell(): TemplateTableCell {
+  return { text: "", bindingKind: "none", opcuaNodeId: "", sqlText: "" };
+}
+
+export function hydrateTableCell(raw: Partial<TemplateTableCell> | undefined): TemplateTableCell {
+  const d = defaultTableCell();
+  if (!raw || typeof raw !== "object") return { ...d };
+  return {
+    text: typeof raw.text === "string" ? raw.text : d.text,
+    bindingKind: normalizeBindingKind(raw.bindingKind),
+    opcuaNodeId: typeof raw.opcuaNodeId === "string" ? raw.opcuaNodeId : d.opcuaNodeId,
+    sqlText: typeof raw.sqlText === "string" ? raw.sqlText : d.sqlText,
+  };
+}
+
+/** 按 tableRows/tableCols 重塑 tableCells，就地写回 el */
+export function ensureTableGrid(el: TemplateElement): TemplateTableCell[][] {
+  if (el.type !== "table") return [];
+  const rows = clampTableDim(el.tableRows, 3);
+  const cols = clampTableDim(el.tableCols, 4);
+  el.tableRows = rows;
+  el.tableCols = cols;
+  const prev = Array.isArray(el.tableCells) ? el.tableCells : [];
+  if (
+    prev.length === rows &&
+    prev.every((row) => Array.isArray(row) && row.length === cols)
+  ) {
+    ensureTableColWidthsPx(el);
+  } else {
+    const grid: TemplateTableCell[][] = [];
+    for (let r = 0; r < rows; r++) {
+      const pr = Array.isArray(prev[r]) ? prev[r] : [];
+      const row: TemplateTableCell[] = [];
+      for (let c = 0; c < cols; c++) {
+        row.push(hydrateTableCell(pr[c]));
+      }
+      grid.push(row);
+    }
+    el.tableCells = grid;
+    ensureTableColWidthsPx(el);
+  }
+  if (el.tableSqlFill) {
+    ensureTwoTableSqlParamSlots(el.tableSqlFill);
+    ensureTableSqlResultColumnNames(el.tableSqlFill, cols);
+    if (el.tableSqlFill.visualSource) ensureVisualOutputColumnSlots(el.tableSqlFill, cols);
+    clampSqlFillParamColumnRefs(el.tableSqlFill, cols);
+  }
+  return el.tableCells as TemplateTableCell[][];
+}
+
+/** 维持 tableColWidthsPx 与 tableCols 同长度；新增列默认权重 0（表示均分） */
+export function ensureTableColWidthsPx(el: TemplateElement): void {
+  if (el.type !== "table") return;
+  const cols = el.tableCols ?? 4;
+  if (!Array.isArray(el.tableColWidthsPx)) el.tableColWidthsPx = [];
+  const arr = el.tableColWidthsPx;
+  while (arr.length < cols) arr.push(0);
+  arr.length = cols;
+}
+
+/** 正文表格当前内侧各列像素宽（与画布 colgroup 一致） */
+export function templateTableColumnInnerWidthsPx(el: TemplateElement): number[] {
+  if (el.type !== "table") return [];
+  ensureTableGrid(el);
+  ensureTableColWidthsPx(el);
+  const cols = el.tableCols ?? 4;
+  const rows = el.tableRows ?? 3;
+  const u = uniformTableCellBoxPx({
+    outerW: el.w,
+    outerH: el.h,
+    rowCount: rows,
+    colCount: cols,
+    nodePadding: REPORT_TEMPLATE_TABLE_NODE_PADDING_PX,
+  });
+  return distributeTableColumnInnerWidthsPx(u.innerW, cols, el.tableColWidthsPx);
+}
+
+/**
+ * 正文画布表格外框的「贴合」高度：节点 padding（`.el-node`）+ 各行固定行高 + `.cv-table-shell` 底侧 1px。
+ * 用于锁定纵向缩放，避免出现表格已固定行高却仍能把外框拉高的空白区。
+ */
+export function intrinsicOuterHeightForTemplateTable(el: TemplateElement): number {
+  if (el.type !== "table") return 20;
+  ensureTableGrid(el);
+  const rows = el.tableRows ?? 3;
+  const rowH = clampTableRowHeightPx(el.tableRowHeightPx);
+  const p = REPORT_TEMPLATE_TABLE_NODE_PADDING_PX;
+  /** 与 TemplateBodyCanvas `.cv-table-shell` padding-bottom 一致 */
+  const shellBottomPadPx = 1;
+  return p.top + p.bottom + rows * rowH + shellBottomPadPx;
+}
+
+/**
+ * SQL 整表填充：编辑器中外框允许小于「同步后的逻辑行数×行高」，
+ * 画布按 `el.h` 裁剪预览；最小高度仍保留表头 + 一行内容区。
+ */
+export function minOuterHeightSqlFillTableEditorPx(el: TemplateElement): number {
+  if (el.type !== "table") return 20;
+  const rowH = clampTableRowHeightPx(el.tableRowHeightPx);
+  const p = REPORT_TEMPLATE_TABLE_NODE_PADDING_PX;
+  const shellBottomPadPx = 1;
+  const chrome = p.top + p.bottom + shellBottomPadPx;
+  return Math.max(20, chrome + 2 * rowH);
+}
+
+/** 表格控件外框在画布上的最小宽高（像素），随行列数增长，避免缩太小无法点格子 */
+export function minOuterSizeForTable(el: TemplateElement): { w: number; h: number } {
+  if (el.type !== "table") return { w: 20, h: 20 };
+  ensureTableGrid(el);
+  const cols = el.tableCols ?? 4;
+  const MIN_CELL_W = 26;
+  const CHROME = 8;
+  const ih = intrinsicOuterHeightForTemplateTable(el);
+  if (el.tableSqlFill?.enabled) {
+    return {
+      w: Math.max(64, cols * MIN_CELL_W + CHROME),
+      h: Math.max(20, minOuterHeightSqlFillTableEditorPx(el)),
+    };
+  }
+  return {
+    w: Math.max(64, cols * MIN_CELL_W + CHROME),
+    h: Math.max(20, ih),
+  };
+}
+
+/**
+ * 保证表格宽度不小于最小列宽推算值；高度固定在「行数×行高+chrome」贴合值，
+ * 且不超过 maxW/maxH（例如正文区边界）。
+ */
+export function clampTableElementOuterSize(
+  el: TemplateElement,
+  maxW = Number.POSITIVE_INFINITY,
+  maxH = Number.POSITIVE_INFINITY,
+): void {
+  if (el.type !== "table") return;
+  const { w: mw } = minOuterSizeForTable(el);
+  const loW = Math.max(20, Math.min(mw, maxW));
+  if (el.w < loW) el.w = loW;
+
+  if (el.tableSqlFill?.enabled) {
+    const loH = Math.max(20, Math.min(minOuterHeightSqlFillTableEditorPx(el), maxH));
+    if (el.h < loH) el.h = loH;
+    if (el.h > maxH) el.h = maxH;
+    return;
+  }
+
+  const ih = intrinsicOuterHeightForTemplateTable(el);
+  const capH = Math.min(ih, maxH);
+  const mh = intrinsicOuterHeightForTemplateTable(el);
+  const loH = Math.max(20, Math.min(mh, maxH));
+  if (el.h < loH) el.h = loH;
+  if (el.h > capH) el.h = capH;
+}
+
 function normalizeChartKind(v: unknown): "line" | "bar" {
   return v === "bar" ? "bar" : "line";
+}
+
+export function normalizeSignatureDisplayMode(v: unknown): SignatureDisplayMode {
+  if (v === "watermark" || v === "handwriting") return v;
+  return "both";
+}
+
+/** 按阅览模式判断是否显示签署说明水印（不校验控件类型） */
+export function signatureDisplayModeShowsWatermark(mode: unknown): boolean {
+  const m = normalizeSignatureDisplayMode(mode);
+  return m === "watermark" || m === "both";
+}
+
+/** 按阅览模式判断是否显示手写图（不校验控件类型） */
+export function signatureDisplayModeShowsHandwriting(mode: unknown): boolean {
+  const m = normalizeSignatureDisplayMode(mode);
+  return m === "handwriting" || m === "both";
+}
+
+/** 签名控件是否显示浅色水印文案 */
+export function signatureShowsWatermark(el: TemplateElement): boolean {
+  if (el.type !== "signature") return false;
+  return signatureDisplayModeShowsWatermark(el.signatureDisplayMode);
+}
+
+/** 签名控件是否显示手写图（imageSrc） */
+export function signatureShowsHandwriting(el: TemplateElement): boolean {
+  if (el.type !== "signature") return false;
+  return signatureDisplayModeShowsHandwriting(el.signatureDisplayMode);
+}
+
+/** 水印用文案（签署说明） */
+export function signatureWatermarkText(el: TemplateElement): string {
+  if (el.type !== "signature") return "";
+  return (el.signerLabel || "").trim() || "签字";
 }
 
 function normalizeTemplateControlType(v: unknown): TemplateControlType {
   if (
     v === "box" ||
     v === "image" ||
+    v === "date" ||
     v === "table" ||
     v === "chart" ||
     v === "parameter" ||
@@ -207,17 +458,36 @@ export function defaultElement(type: TemplateControlType): Omit<TemplateElement,
       imageRotationDeg: 0,
     };
   }
-  if (type === "table") {
+  if (type === "date") {
     return {
+      type: "date",
+      x: 40,
+      y: 40,
+      w: 140,
+      h: 36,
+      text: "",
+      dateFormat: "HH:mm:ss",
+      ...base,
+    };
+  }
+  if (type === "table") {
+    const te: TemplateElement = {
       type: "table",
       x: 40,
       y: 80,
       w: 400,
       h: 200,
       text: "",
-      sqlText: "SELECT 1 AS col1",
+      sqlText: "",
       ...base,
+      tableRows: 3,
+      tableCols: 4,
+      tableCells: [],
+      tableRowHeightPx: TABLE_ROW_HEIGHT_DEFAULT_PX,
+      tableSqlFill: defaultTableSqlFillConfig(),
     };
+    ensureTableGrid(te);
+    return te;
   }
   if (type === "chart") {
     return {
@@ -241,6 +511,8 @@ export function defaultElement(type: TemplateControlType): Omit<TemplateElement,
       h: 36,
       text: "{{value}}",
       ...base,
+      /** 数据参数以 OPC UA 为主路径，与表格单元格绑定一致 */
+      bindingKind: "opcua",
     };
   }
   return {
@@ -252,6 +524,7 @@ export function defaultElement(type: TemplateControlType): Omit<TemplateElement,
     text: "",
     ...base,
     signerLabel: "签署",
+    signatureDisplayMode: "both",
   };
 }
 
@@ -265,7 +538,7 @@ export function hydrateTemplateElement(raw: Partial<TemplateElement>): TemplateE
   const d = defaultElement(type);
   const id =
     typeof raw.id === "string" && raw.id.length > 0 ? raw.id : newId();
-  return {
+  const merged: TemplateElement = {
     ...d,
     ...raw,
     id,
@@ -284,16 +557,93 @@ export function hydrateTemplateElement(raw: Partial<TemplateElement>): TemplateE
     imageRotationDeg: normalizeImageRotationDeg(raw.imageRotationDeg ?? d.imageRotationDeg),
     imageCaptionPosition: normalizeImageCaptionPosition(raw.imageCaptionPosition, d.imageCaptionPosition),
   };
+  if (type === "table") {
+    const missingCells = raw.tableCells == null || !Array.isArray(raw.tableCells);
+    if (missingCells && merged.sqlText.trim()) {
+      merged.tableRows = 1;
+      merged.tableCols = 1;
+      const bk = merged.bindingKind === "opcua" ? "opcua" : "sql";
+      merged.tableCells = [
+        [
+          hydrateTableCell({
+            bindingKind: bk,
+            opcuaNodeId: bk === "opcua" ? merged.opcuaNodeId : "",
+            sqlText: bk === "sql" ? merged.sqlText : "",
+          }),
+        ],
+      ];
+    } else {
+      merged.tableRows = clampTableDim(raw.tableRows ?? merged.tableRows, 3);
+      merged.tableCols = clampTableDim(raw.tableCols ?? merged.tableCols, 4);
+    }
+    merged.tableRowHeightPx = clampTableRowHeightPx(
+      raw.tableRowHeightPx ?? merged.tableRowHeightPx ?? d.tableRowHeightPx,
+    );
+    merged.tableColWidthsPx = hydratePersistedTableColWidthsPx(
+      raw.tableColWidthsPx,
+      merged.tableCols ?? 4,
+    );
+    merged.tableSqlFill = hydrateTableSqlFill(raw.tableSqlFill ?? merged.tableSqlFill);
+    ensureTableGrid(merged);
+  } else {
+    delete merged.tableRowHeightPx;
+    delete merged.tableColWidthsPx;
+    delete merged.tableSqlFill;
+  }
+  if (type === "date") {
+    merged.dateFormat =
+      typeof raw.dateFormat === "string" && raw.dateFormat.trim()
+        ? raw.dateFormat.trim()
+        : typeof merged.dateFormat === "string" && merged.dateFormat.trim()
+          ? merged.dateFormat.trim()
+          : "HH:mm:ss";
+  } else {
+    delete merged.dateFormat;
+  }
+  if (type === "signature") {
+    merged.signatureDisplayMode = normalizeSignatureDisplayMode(
+      raw.signatureDisplayMode ?? merged.signatureDisplayMode,
+    );
+  } else {
+    delete merged.signatureDisplayMode;
+  }
+  return merged;
+}
+
+/** 保证正文分页数组存在且至少一页；并维持 elements 与 bodyPages[0] 引用一致 */
+export function ensureBodyPages(t: ReportTemplate): TemplateElement[][] {
+  if (!Array.isArray(t.bodyPages)) {
+    t.bodyPages = [];
+  }
+  if (t.bodyPages.length === 0) {
+    const legacy = Array.isArray(t.elements) ? t.elements : [];
+    t.bodyPages = [legacy];
+  }
+  syncLegacyElementsAlias(t);
+  return t.bodyPages;
+}
+
+/** elements 始终指向正文第一页（供旧逻辑与生成器兼容字段对齐） */
+export function syncLegacyElementsAlias(t: ReportTemplate): void {
+  const pages = t.bodyPages;
+  if (!pages || pages.length === 0) {
+    t.bodyPages = [[]];
+    t.elements = t.bodyPages[0];
+    return;
+  }
+  t.elements = pages[0];
 }
 
 export function createTemplate(opts: NewTemplateOptions): ReportTemplate {
   const now = new Date().toISOString();
+  const page0: TemplateElement[] = [];
   return {
     schemaVersion: TEMPLATE_SCHEMA_VERSION,
     id: newId(),
     name: opts.name.trim() || "未命名模版",
     updatedAt: now,
-    elements: [],
+    elements: page0,
+    bodyPages: [page0],
     paperKind: opts.paperKind,
     orientation: opts.orientation,
     layoutPresetId: opts.layoutPresetId,
@@ -321,6 +671,19 @@ export function createTemplate(opts: NewTemplateOptions): ReportTemplate {
   };
 }
 
+function normalizeBodyPagesRaw(raw: unknown, legacyPage: TemplateElement[]): TemplateElement[][] {
+  if (!Array.isArray(raw) || raw.length === 0) {
+    return [legacyPage];
+  }
+  const out: TemplateElement[][] = [];
+  for (const row of raw) {
+    if (Array.isArray(row)) {
+      out.push(normalizeTplBodyElements(row));
+    }
+  }
+  return out.length > 0 ? out : [legacyPage];
+}
+
 export function migrateReportTemplate(v: unknown): unknown {
   if (!v || typeof v !== "object") return v;
   const o = v as Record<string, unknown>;
@@ -337,6 +700,9 @@ export function migrateReportTemplate(v: unknown): unknown {
   if (!covSnap || typeof covSnap !== "object") covSnap = defaultBlankLayoutSnapshot();
   let backSnap = o.backLayoutSnapshot as LayoutSnapshot | undefined;
   if (!backSnap || typeof backSnap !== "object") backSnap = defaultBlankLayoutSnapshot();
+
+  const legacyElements = normalizeTplBodyElements(o.elements);
+  const bodyPages = normalizeBodyPagesRaw(o.bodyPages, legacyElements);
 
   return {
     ...o,
@@ -365,7 +731,8 @@ export function migrateReportTemplate(v: unknown): unknown {
     footerElements: normalizeTplZone(o.footerElements),
     coverElements: normalizeTplBodyElements(o.coverElements),
     backElements: normalizeTplBodyElements(o.backElements),
-    elements: normalizeTplBodyElements(o.elements),
+    bodyPages,
+    elements: bodyPages[0],
   };
 }
 
@@ -394,6 +761,7 @@ export function isReportTemplate(v: unknown): v is ReportTemplate {
   if (!Array.isArray(o.backHeaderElements) || !Array.isArray(o.backFooterElements)) return false;
   if (!Array.isArray(o.backBodyZoneElements)) return false;
   if (!Array.isArray(o.coverElements) || !Array.isArray(o.backElements)) return false;
+  if (!Array.isArray(o.bodyPages) || o.bodyPages.length < 1) return false;
   return true;
 }
 

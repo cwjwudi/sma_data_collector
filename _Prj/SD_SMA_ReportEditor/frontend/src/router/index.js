@@ -1,6 +1,12 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
 
 const routes = [
+  /** Electron 隐藏窗口：仅用于 PDF 渲染，无主导航壳 */
+  {
+    path: '/pdf-export',
+    name: 'PdfExport',
+    component: () => import('@/views/PdfExportView.vue'),
+  },
   {
     path: '/',
     component: () => import('@/layouts/MainLayout.vue'),

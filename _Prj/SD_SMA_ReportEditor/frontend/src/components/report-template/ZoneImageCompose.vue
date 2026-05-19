@@ -12,6 +12,7 @@
     <div class="zic-paint" :style="paintStyle">
       <template v-if="imageSrcTrimmed">
         <img
+          :key="imgSrcRenderKey"
           class="zic-img"
           alt=""
           :src="imageSrcTrimmed"
@@ -122,6 +123,13 @@ const captionBlockStyle = computed(() => {
 });
 
 const imageSrcTrimmed = computed(() => String(props.imageSrc || "").trim());
+
+/** 避免占位→有图 / 异步赋值后 <img> 不刷新；不用整段 data URL 作 key（过长） */
+const imgSrcRenderKey = computed(() => {
+  const s = imageSrcTrimmed.value;
+  if (!s.length) return "∅";
+  return `${s.length}:${s.slice(-32)}`;
+});
 
 const rotTransform = computed(() => {
   const r = normalizeImageRotationDeg(props.rotationDeg);

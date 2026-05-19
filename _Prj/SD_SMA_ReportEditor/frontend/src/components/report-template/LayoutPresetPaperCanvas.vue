@@ -9,7 +9,7 @@
       tabindex="-1"
       @change="applyLayoutPresetImageSelection"
     />
-    <p class="lppc-tip">随中间画布区域滚动浏览整张纸 · Ctrl / ⌘ + 滚轮缩放</p>
+    <p class="lppc-tip">随中间画布区域滚动浏览整张纸 · Ctrl / ⌘ + 滚轮缩放 · 拖拽/缩放时靠近中线或其它控件边缘会轻微吸附；按住 Shift 可临时关闭吸附</p>
     <div class="lppc-flow" @wheel="onWheel">
       <div class="lppc-scale-frame" :style="canvasFrameStyle">
         <div class="lppc-scaler" :style="{ transform: `scale(${viewScale})`, transformOrigin: '0 0' }">
@@ -29,7 +29,10 @@
             <template v-for="el in preset.headerElements" :key="el.id">
               <div
                 class="lppc-node touch"
-                :class="{ selected: selId === el.id }"
+                :class="{
+                  selected: selId === el.id,
+                  'lppc-node--inline-textbox': selId === el.id && (el.type === 'text' || el.type === 'box'),
+                }"
                 :style="nodeStyle(el)"
                 @pointerdown.stop="beginMove($event, el, 'header')"
               >
@@ -69,8 +72,77 @@
                     </ZoneImageCompose>
                   </div>
                 </template>
+                <template v-else-if="el.type === 'table'">
+                  <div class="lppc-table-shell">
+                    <table class="lppc-table">
+                      <colgroup>
+                        <col
+                          v-for="(cw, ci) in layoutZoneTableColInnerWidthsPx(el)"
+                          :key="'lzcol-' + el.id + '-' + ci"
+                          :style="{ width: cw + 'px' }"
+                        />
+                      </colgroup>
+                      <tbody>
+                        <tr v-for="(tRow, ri) in layoutTableGrid(el)" :key="ri" :style="layoutZoneTableRowTrStyle(el)">
+                          <td
+                            v-for="(cell, ci) in tRow"
+                            :key="ci"
+                            class="lppc-table-cell"
+                            :class="{ 'lppc-table-cell--hot': isLayoutTableCellHot(el, ri, ci) }"
+                            @pointerdown.stop="pickLayoutTableCell(el, ri, ci)"
+                          >
+                            <template v-if="isVisualSqlFillOutputPickerRow(el, ri)">
+                              <select
+                                class="lppc-table-cell-ddl tbl-sql-ddl"
+                                :value="layoutPresetVisualOutputValue(el, ci)"
+                                @pointerdown.stop="pickLayoutTableCell(el, ri, ci)"
+                                @change="onLayoutPresetVisualOutputChange(el, ci, $event)"
+                              >
+                                <option value="">—</option>
+                                <option
+                                  v-for="opt in layoutPresetVisualSqlCatalog[el.id]"
+                                  :key="'lzfld-' + el.id + '-' + ci + '-' + opt.name"
+                                  :value="opt.name"
+                                >
+                                  {{ opt.name }}
+                                </option>
+                              </select>
+                            </template>
+                            <template v-else-if="el.tableSqlFill?.enabled">
+                              <span class="lppc-table-cell-txt">{{ formatLayoutSqlFillTableCell(el, ri, ci) }}</span>
+                            </template>
+                            <template v-else>
+                              <textarea
+                                v-if="isLayoutTableCellHot(el, ri, ci)"
+                                :key="'lppct-' + el.id + '-' + ri + '-' + ci"
+                                v-model="cell.text"
+                                class="lppc-table-cell-edit"
+                                rows="1"
+                                spellcheck="false"
+                                autofocus
+                                @pointerdown.stop="pickLayoutTableCell(el, ri, ci)"
+                                @keydown.stop
+                              />
+                              <span v-else class="lppc-table-cell-txt">{{ formatLayoutTableCellPreview(cell) }}</span>
+                            </template>
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                    <TableColumnResizeGutters
+                      v-if="selId === el.id"
+                      :column-widths-px="layoutZoneTableColInnerWidthsPx(el)"
+                      :layout-scale="viewScale"
+                      @resize-delta="(bi, dx) => onZoneTableColumnResize(el, 'header', bi, dx)"
+                    />
+                  </div>
+                </template>
                 <template v-else>
-                  <LayoutZoneInlineContent :el="el" text-class="lppc-zone-text" />
+                  <LayoutZoneInlineContent
+                    :el="el"
+                    text-class="lppc-zone-text"
+                    :canvas-inline-edit="selId === el.id && (el.type === 'text' || el.type === 'box')"
+                  />
                 </template>
                 <template v-if="selId === el.id">
                   <button
@@ -86,6 +158,24 @@
                 </template>
               </div>
             </template>
+            <div
+              v-if="layoutSnapOverlay.zone === 'header' && (layoutSnapOverlay.v.length || layoutSnapOverlay.h.length)"
+              class="lppc-snap-guide-layer"
+              aria-hidden="true"
+            >
+              <div
+                v-for="(vx, gi) in layoutSnapOverlay.v"
+                :key="'hsnap-v-' + gi + '-' + vx"
+                class="lppc-snap-line lppc-snap-line--v"
+                :style="{ left: vx + 'px' }"
+              />
+              <div
+                v-for="(hy, gi) in layoutSnapOverlay.h"
+                :key="'hsnap-h-' + gi + '-' + hy"
+                class="lppc-snap-line lppc-snap-line--h"
+                :style="{ top: hy + 'px' }"
+              />
+            </div>
           </div>
         </div>
 
@@ -103,7 +193,10 @@
           <template v-for="el in preset.bodyElements" :key="el.id">
             <div
               class="lppc-node touch"
-              :class="{ selected: selId === el.id }"
+              :class="{
+                selected: selId === el.id,
+                'lppc-node--inline-textbox': selId === el.id && (el.type === 'text' || el.type === 'box'),
+              }"
               :style="nodeStyle(el)"
               @pointerdown.stop="beginMove($event, el, 'body')"
             >
@@ -143,8 +236,77 @@
                   </ZoneImageCompose>
                 </div>
               </template>
+              <template v-else-if="el.type === 'table'">
+                  <div class="lppc-table-shell">
+                    <table class="lppc-table">
+                      <colgroup>
+                        <col
+                          v-for="(cw, ci) in layoutZoneTableColInnerWidthsPx(el)"
+                          :key="'lzcol-' + el.id + '-' + ci"
+                          :style="{ width: cw + 'px' }"
+                        />
+                      </colgroup>
+                      <tbody>
+                        <tr v-for="(tRow, ri) in layoutTableGrid(el)" :key="ri" :style="layoutZoneTableRowTrStyle(el)">
+                          <td
+                            v-for="(cell, ci) in tRow"
+                            :key="ci"
+                            class="lppc-table-cell"
+                            :class="{ 'lppc-table-cell--hot': isLayoutTableCellHot(el, ri, ci) }"
+                            @pointerdown.stop="pickLayoutTableCell(el, ri, ci)"
+                          >
+                            <template v-if="isVisualSqlFillOutputPickerRow(el, ri)">
+                              <select
+                                class="lppc-table-cell-ddl tbl-sql-ddl"
+                                :value="layoutPresetVisualOutputValue(el, ci)"
+                                @pointerdown.stop="pickLayoutTableCell(el, ri, ci)"
+                                @change="onLayoutPresetVisualOutputChange(el, ci, $event)"
+                              >
+                                <option value="">—</option>
+                                <option
+                                  v-for="opt in layoutPresetVisualSqlCatalog[el.id]"
+                                  :key="'lzfld-' + el.id + '-' + ci + '-' + opt.name"
+                                  :value="opt.name"
+                                >
+                                  {{ opt.name }}
+                                </option>
+                              </select>
+                            </template>
+                            <template v-else-if="el.tableSqlFill?.enabled">
+                              <span class="lppc-table-cell-txt">{{ formatLayoutSqlFillTableCell(el, ri, ci) }}</span>
+                            </template>
+                            <template v-else>
+                              <textarea
+                                v-if="isLayoutTableCellHot(el, ri, ci)"
+                                :key="'lppct-' + el.id + '-' + ri + '-' + ci"
+                                v-model="cell.text"
+                                class="lppc-table-cell-edit"
+                                rows="1"
+                                spellcheck="false"
+                                autofocus
+                                @pointerdown.stop="pickLayoutTableCell(el, ri, ci)"
+                                @keydown.stop
+                              />
+                              <span v-else class="lppc-table-cell-txt">{{ formatLayoutTableCellPreview(cell) }}</span>
+                            </template>
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                    <TableColumnResizeGutters
+                      v-if="selId === el.id"
+                      :column-widths-px="layoutZoneTableColInnerWidthsPx(el)"
+                      :layout-scale="viewScale"
+                      @resize-delta="(bi, dx) => onZoneTableColumnResize(el, 'body', bi, dx)"
+                    />
+                  </div>
+                </template>
               <template v-else>
-                <LayoutZoneInlineContent :el="el" text-class="lppc-zone-text" />
+                <LayoutZoneInlineContent
+                  :el="el"
+                  text-class="lppc-zone-text"
+                  :canvas-inline-edit="selId === el.id && (el.type === 'text' || el.type === 'box')"
+                />
               </template>
               <template v-if="selId === el.id">
                 <button
@@ -160,6 +322,24 @@
               </template>
             </div>
           </template>
+          <div
+            v-if="layoutSnapOverlay.zone === 'body' && (layoutSnapOverlay.v.length || layoutSnapOverlay.h.length)"
+            class="lppc-snap-guide-layer"
+            aria-hidden="true"
+          >
+            <div
+              v-for="(vx, gi) in layoutSnapOverlay.v"
+              :key="'bsnap-v-' + gi + '-' + vx"
+              class="lppc-snap-line lppc-snap-line--v"
+              :style="{ left: vx + 'px' }"
+            />
+            <div
+              v-for="(hy, gi) in layoutSnapOverlay.h"
+              :key="'bsnap-h-' + gi + '-' + hy"
+              class="lppc-snap-line lppc-snap-line--h"
+              :style="{ top: hy + 'px' }"
+            />
+          </div>
         </div>
 
         <div v-if="me.fb >= 1" class="lppc-band ftr" :style="ftrBandStyle">
@@ -177,7 +357,10 @@
             <template v-for="el in preset.footerElements" :key="el.id">
               <div
                 class="lppc-node touch"
-                :class="{ selected: selId === el.id }"
+                :class="{
+                  selected: selId === el.id,
+                  'lppc-node--inline-textbox': selId === el.id && (el.type === 'text' || el.type === 'box'),
+                }"
                 :style="nodeStyle(el)"
                 @pointerdown.stop="beginMove($event, el, 'footer')"
               >
@@ -217,8 +400,77 @@
                     </ZoneImageCompose>
                   </div>
                 </template>
+                <template v-else-if="el.type === 'table'">
+                  <div class="lppc-table-shell">
+                    <table class="lppc-table">
+                      <colgroup>
+                        <col
+                          v-for="(cw, ci) in layoutZoneTableColInnerWidthsPx(el)"
+                          :key="'lzcol-' + el.id + '-' + ci"
+                          :style="{ width: cw + 'px' }"
+                        />
+                      </colgroup>
+                      <tbody>
+                        <tr v-for="(tRow, ri) in layoutTableGrid(el)" :key="ri" :style="layoutZoneTableRowTrStyle(el)">
+                          <td
+                            v-for="(cell, ci) in tRow"
+                            :key="ci"
+                            class="lppc-table-cell"
+                            :class="{ 'lppc-table-cell--hot': isLayoutTableCellHot(el, ri, ci) }"
+                            @pointerdown.stop="pickLayoutTableCell(el, ri, ci)"
+                          >
+                            <template v-if="isVisualSqlFillOutputPickerRow(el, ri)">
+                              <select
+                                class="lppc-table-cell-ddl tbl-sql-ddl"
+                                :value="layoutPresetVisualOutputValue(el, ci)"
+                                @pointerdown.stop="pickLayoutTableCell(el, ri, ci)"
+                                @change="onLayoutPresetVisualOutputChange(el, ci, $event)"
+                              >
+                                <option value="">—</option>
+                                <option
+                                  v-for="opt in layoutPresetVisualSqlCatalog[el.id]"
+                                  :key="'lzfld-' + el.id + '-' + ci + '-' + opt.name"
+                                  :value="opt.name"
+                                >
+                                  {{ opt.name }}
+                                </option>
+                              </select>
+                            </template>
+                            <template v-else-if="el.tableSqlFill?.enabled">
+                              <span class="lppc-table-cell-txt">{{ formatLayoutSqlFillTableCell(el, ri, ci) }}</span>
+                            </template>
+                            <template v-else>
+                              <textarea
+                                v-if="isLayoutTableCellHot(el, ri, ci)"
+                                :key="'lppct-' + el.id + '-' + ri + '-' + ci"
+                                v-model="cell.text"
+                                class="lppc-table-cell-edit"
+                                rows="1"
+                                spellcheck="false"
+                                autofocus
+                                @pointerdown.stop="pickLayoutTableCell(el, ri, ci)"
+                                @keydown.stop
+                              />
+                              <span v-else class="lppc-table-cell-txt">{{ formatLayoutTableCellPreview(cell) }}</span>
+                            </template>
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                    <TableColumnResizeGutters
+                      v-if="selId === el.id"
+                      :column-widths-px="layoutZoneTableColInnerWidthsPx(el)"
+                      :layout-scale="viewScale"
+                      @resize-delta="(bi, dx) => onZoneTableColumnResize(el, 'footer', bi, dx)"
+                    />
+                  </div>
+                </template>
                 <template v-else>
-                  <LayoutZoneInlineContent :el="el" text-class="lppc-zone-text" />
+                  <LayoutZoneInlineContent
+                    :el="el"
+                    text-class="lppc-zone-text"
+                    :canvas-inline-edit="selId === el.id && (el.type === 'text' || el.type === 'box')"
+                  />
                 </template>
                 <template v-if="selId === el.id">
                   <button
@@ -234,6 +486,24 @@
                 </template>
               </div>
             </template>
+            <div
+              v-if="layoutSnapOverlay.zone === 'footer' && (layoutSnapOverlay.v.length || layoutSnapOverlay.h.length)"
+              class="lppc-snap-guide-layer"
+              aria-hidden="true"
+            >
+              <div
+                v-for="(vx, gi) in layoutSnapOverlay.v"
+                :key="'fsnap-v-' + gi + '-' + vx"
+                class="lppc-snap-line lppc-snap-line--v"
+                :style="{ left: vx + 'px' }"
+              />
+              <div
+                v-for="(hy, gi) in layoutSnapOverlay.h"
+                :key="'fsnap-h-' + gi + '-' + hy"
+                class="lppc-snap-line lppc-snap-line--h"
+                :style="{ top: hy + 'px' }"
+              />
+            </div>
           </div>
         </div>
       </div>
@@ -244,22 +514,48 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, ref } from "vue";
-import { readImageFileAsDataUrl } from "@/lib/report-template/read-image-file";
+import { computed, inject, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { looksLikeImageFile, pickFirstImageFileFromDataTransfer, readImageFileAsDataUrl } from "@/lib/report-template/read-image-file";
 import LayoutZoneInlineContent from "@/components/report-template/LayoutZoneInlineContent.vue";
+import TableColumnResizeGutters from "@/components/report-template/TableColumnResizeGutters.vue";
 import ZoneImageCompose from "@/components/report-template/ZoneImageCompose.vue";
 import { computePaperLayout, type PaperLayoutMetrics } from "@/lib/report-template/layout-geometry";
 import {
   clampZoneElement,
+  clampZoneTableOuterSize,
+  ensureZoneTableGrid,
+  intrinsicOuterHeightForZoneTable,
+  minOuterSizeForZoneTable,
+  zoneTableColumnInnerWidthsPx,
   flexJustifyAlignForAxes,
   getZoneTextWrapStyle,
   makeLayoutZoneElement,
   normalizePageNumberMode,
   normalizeZIndex,
+  zoneFillBackgroundCss,
   type LayoutControlType,
   type LayoutZoneElement,
+  type LayoutZoneTableCell,
 } from "@/lib/report-template/layout-zone-element";
+import { layoutPresetTableCellPickKey } from "@/lib/report-template/template-editor-context";
 import { presetToSnapshot, type LayoutPreset } from "@/lib/report-template/layout-model";
+import {
+  alignmentGuidesForRect,
+  magneticSnapResize,
+  magneticSnapTranslate,
+  type SnapPeer,
+} from "@/lib/report-template/layout-snap-guides";
+import {
+  applyTableColumnResizeDeltaPx,
+  clampTableRowHeightPx,
+  REPORT_ZONE_TABLE_NODE_PADDING_PX,
+  uniformTableCellBoxPx,
+} from "@/lib/report-template/table-cell-metrics";
+import type { VisualSqlTableColumnMeta } from "@/lib/report-template/table-sql-visual-catalog";
+import { loadVisualSqlTableColumnsCached } from "@/lib/report-template/table-sql-visual-catalog";
+import { applyVisualSqlOutputColumnPick } from "@/lib/report-template/table-sql-visual-compile";
+import { ensureVisualSource, isVisualSqlFillOutputPickerRow } from "@/lib/report-template/table-sql-fill";
+import { formatSqlFillTableCellPreview } from "@/lib/report-template/table-sql-fill-preview";
 
 const HANDLES = ["nw", "n", "ne", "e", "se", "s", "sw", "w"] as const;
 type Handle = (typeof HANDLES)[number];
@@ -270,6 +566,135 @@ const props = defineProps<{
 }>();
 
 const selId = defineModel<string | null>("selectedId");
+
+/** 拖拽/缩放时当前激活对齐线的区域与坐标（相对该眉/正文/脚带） */
+const layoutSnapOverlay = ref<{ zone: Zone | null; v: number[]; h: number[] }>({
+  zone: null,
+  v: [],
+  h: [],
+});
+
+function clearLayoutSnapOverlay() {
+  layoutSnapOverlay.value = { zone: null, v: [], h: [] };
+}
+
+function peersForSnapZone(z: Zone): SnapPeer[] {
+  return elementsForZone(z).map((e) => ({ id: e.id, x: e.x, y: e.y, w: e.w, h: e.h }));
+}
+
+const layoutTablePick = inject(layoutPresetTableCellPickKey, undefined);
+
+watch(selId, (id) => {
+  if (!layoutTablePick) return;
+  const p = layoutTablePick.value;
+  if (!p || !id) return;
+  if (p.elId !== id) layoutTablePick.value = null;
+});
+
+function layoutTableGrid(el: LayoutZoneElement): LayoutZoneTableCell[][] {
+  if (el.type !== "table") return [];
+  return ensureZoneTableGrid(el);
+}
+
+function layoutZoneTableColInnerWidthsPx(el: LayoutZoneElement): number[] {
+  if (el.type !== "table") return [];
+  return zoneTableColumnInnerWidthsPx(el);
+}
+
+function layoutZoneTableRowTrStyle(el: LayoutZoneElement): Record<string, string> | undefined {
+  if (el.type !== "table") return undefined;
+  return { height: `${clampTableRowHeightPx(el.tableRowHeightPx)}px` };
+}
+
+function formatLayoutSqlFillTableCell(el: LayoutZoneElement, ri: number, ci: number): string {
+  const fill = el.tableSqlFill;
+  if (!fill?.enabled) return "\u00a0";
+  return formatSqlFillTableCellPreview({
+    fill,
+    rowIndex: ri,
+    colIndex: ci,
+    preview: null,
+    previewLoading: false,
+  });
+}
+
+function formatLayoutTableCellPreview(cell: LayoutZoneTableCell): string {
+  if (cell.bindingKind === "opcua") {
+    const id = cell.opcuaNodeId.trim();
+    return id ? `⟨UA⟩ ${id.length > 48 ? `${id.slice(0, 45)}…` : id}` : "⟨UA⟩";
+  }
+  if (cell.bindingKind === "sql") {
+    const q = cell.sqlText.trim();
+    return q ? `⟨SQL⟩ ${q.length > 36 ? `${q.slice(0, 33)}…` : q}` : "⟨SQL⟩";
+  }
+  const t = cell.text.trim();
+  return t.length > 0 ? t : "\u00a0";
+}
+
+function pickLayoutTableCell(el: LayoutZoneElement, ri: number, ci: number) {
+  selId.value = el.id;
+  if (layoutTablePick) layoutTablePick.value = { elId: el.id, row: ri, col: ci };
+}
+
+function isLayoutTableCellHot(el: LayoutZoneElement, ri: number, ci: number): boolean {
+  const p = layoutTablePick?.value;
+  return !!(p && p.elId === el.id && p.row === ri && p.col === ci);
+}
+
+const layoutPresetVisualSqlCatalog = ref<Record<string, VisualSqlTableColumnMeta[]>>({});
+
+function layoutPresetAllTableElements(): LayoutZoneElement[] {
+  return [...props.preset.headerElements, ...props.preset.bodyElements, ...props.preset.footerElements].filter(
+    (e) => e.type === "table",
+  );
+}
+
+async function refreshLayoutPresetVisualSqlCatalog(): Promise<void> {
+  const next: Record<string, VisualSqlTableColumnMeta[]> = {};
+  for (const el of layoutPresetAllTableElements()) {
+    const f = el.tableSqlFill;
+    if (!f?.enabled || f.fillMode !== "visual") continue;
+    ensureVisualSource(f);
+    const vs = f.visualSource!;
+    if (!vs.connectionId?.trim() || !vs.table?.trim()) {
+      next[el.id] = [];
+      continue;
+    }
+    try {
+      next[el.id] = await loadVisualSqlTableColumnsCached({
+        connectionId: vs.connectionId.trim(),
+        database: vs.database?.trim(),
+        table: vs.table.trim(),
+      });
+    } catch {
+      next[el.id] = [];
+    }
+  }
+  layoutPresetVisualSqlCatalog.value = next;
+}
+
+watch(
+  () => props.preset,
+  () => {
+    void refreshLayoutPresetVisualSqlCatalog();
+  },
+  { deep: true, immediate: true },
+);
+
+function layoutPresetVisualOutputValue(el: LayoutZoneElement, ci: number): string {
+  const vs = el.tableSqlFill?.visualSource;
+  if (!vs?.columns || ci < 0 || ci >= vs.columns.length) return "";
+  return String(vs.columns[ci] ?? "");
+}
+
+function onLayoutPresetVisualOutputChange(el: LayoutZoneElement, ci: number, ev: Event) {
+  const v = (ev.target as HTMLSelectElement).value;
+  const fill = el.tableSqlFill;
+  if (!fill || fill.fillMode !== "visual" || el.type !== "table") return;
+  const cols = el.tableCols ?? 4;
+  const cell = layoutTableGrid(el)[0]?.[ci];
+  applyVisualSqlOutputColumnPick(fill, cols, ci, v, cell);
+}
 
 const hdrLayerRef = ref<HTMLElement | null>(null);
 const bodyLayerRef = ref<HTMLElement | null>(null);
@@ -368,6 +793,36 @@ function elementsForZone(z: Zone): LayoutZoneElement[] {
   return props.preset.bodyElements;
 }
 
+function eventTargetIsTypingField(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  if (target.isContentEditable) return true;
+  if (target.closest('[contenteditable="true"]')) return true;
+  const tag = target.tagName;
+  return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
+}
+
+function deleteSelectedZoneEl() {
+  const id = selId.value;
+  if (!id) return;
+  const p = props.preset;
+  for (const arr of [p.headerElements, p.bodyElements, p.footerElements]) {
+    const i = arr.findIndex((x) => x.id === id);
+    if (i >= 0) {
+      arr.splice(i, 1);
+      selId.value = null;
+      return;
+    }
+  }
+}
+
+function onWindowKeydown(ev: KeyboardEvent) {
+  if (ev.key !== "Delete" && ev.key !== "Backspace") return;
+  if (eventTargetIsTypingField(ev.target)) return;
+  if (!selId.value) return;
+  ev.preventDefault();
+  deleteSelectedZoneEl();
+}
+
 function nodeStyle(el: LayoutZoneElement) {
   const ff = typeof el.fontFamily === "string" ? el.fontFamily.trim() : "";
   const flex = flexJustifyAlignForAxes(el.alignX, el.alignY);
@@ -386,23 +841,47 @@ function nodeStyle(el: LayoutZoneElement) {
     zIndex: normalizeZIndex(el.zIndex),
     ...(wrap ?? { whiteSpace: "nowrap" }),
   };
+  if (el.type === "table") {
+    return {
+      ...base,
+      display: "flex",
+      flexDirection: "column",
+      alignItems: "stretch",
+      justifyContent: "stretch",
+      padding: "2px",
+      overflow: "hidden",
+      backgroundColor: zoneFillBackgroundCss(el.bgColor),
+      whiteSpace: "normal",
+    };
+  }
   if (el.type === "pageNumber" && normalizePageNumberMode(el.pageNumberMode) === "circle") {
     return {
       ...base,
       padding: "2px",
+      backgroundColor: "transparent",
     };
   }
   if (el.type === "box") {
     const bc = typeof el.color === "string" ? el.color : "#18181b";
     return {
       ...base,
-      backgroundColor: el.bgColor === "transparent" ? "transparent" : el.bgColor,
+      backgroundColor: zoneFillBackgroundCss(el.bgColor),
       border: `1px solid ${bc}40`,
       borderRadius: "4px",
       padding: "2px 6px",
     };
   }
-  return base;
+  if (el.type === "image") {
+    return {
+      ...base,
+      backgroundColor: zoneFillBackgroundCss(el.bgColor),
+    };
+  }
+  return {
+    ...base,
+    backgroundColor: zoneFillBackgroundCss(el.bgColor),
+    padding: "2px 6px",
+  };
 }
 
 function onPaperBlank(ev: PointerEvent) {
@@ -425,13 +904,20 @@ function onDragLeaveZone(e: DragEvent, z: Zone) {
 }
 
 function isControl(t: string): t is LayoutControlType {
-  return t === "text" || t === "box" || t === "image" || t === "pageNumber" || t === "date";
+  return (
+    t === "text" ||
+    t === "box" ||
+    t === "image" ||
+    t === "pageNumber" ||
+    t === "date" ||
+    t === "table" ||
+    t === "parameter"
+  );
 }
 
-function onDrop(e: DragEvent, zone: Zone) {
+async function onDrop(e: DragEvent, zone: Zone) {
   dragOverZone.value = null;
   const t = e.dataTransfer?.getData("application/x-zone-tool") || e.dataTransfer?.getData("text/plain") || "";
-  if (!isControl(t)) return;
   const lay =
     zone === "header" ? hdrLayerRef.value : zone === "footer" ? ftrLayerRef.value : bodyLayerRef.value;
   if (!lay) return;
@@ -439,7 +925,29 @@ function onDrop(e: DragEvent, zone: Zone) {
   const sc = viewScale.value || 1;
   const x = Math.round((e.clientX - r.left) / sc - 16);
   const y = Math.round((e.clientY - r.top) / sc - 12);
-  const el = makeLayoutZoneElement(t);
+
+  if (isControl(t)) {
+    const el = makeLayoutZoneElement(t);
+    el.x = Math.max(0, x);
+    el.y = Math.max(0, y);
+    const { w, h } = bandDims(zone);
+    clampZoneElement(el, w, h);
+    elementsForZone(zone).push(el);
+    selId.value = el.id;
+    return;
+  }
+
+  const imgFile = pickFirstImageFileFromDataTransfer(e.dataTransfer);
+  if (!imgFile) return;
+  let dataUrl: string;
+  try {
+    dataUrl = await readImageFileAsDataUrl(imgFile);
+  } catch (err) {
+    window.alert(err instanceof Error ? err.message : String(err));
+    return;
+  }
+  const el = makeLayoutZoneElement("image");
+  el.imageSrc = dataUrl;
   el.x = Math.max(0, x);
   el.y = Math.max(0, y);
   const { w, h } = bandDims(zone);
@@ -455,6 +963,7 @@ let move: null | {
   sy: number;
   ox: number;
   oy: number;
+  dragStarted: boolean;
 };
 let resize: null | {
   sid: string;
@@ -473,13 +982,50 @@ function clampEl(el: LayoutZoneElement, z: Zone) {
   clampZoneElement(el, w, h);
 }
 
+function onZoneTableColumnResize(
+  el: LayoutZoneElement,
+  z: Zone,
+  boundaryIndex: number,
+  deltaLayoutPx: number,
+) {
+  if (el.type !== "table") return;
+  ensureZoneTableGrid(el);
+  const cols = el.tableCols ?? 4;
+  const rows = el.tableRows ?? 3;
+  const u = uniformTableCellBoxPx({
+    outerW: el.w,
+    outerH: el.h,
+    rowCount: rows,
+    colCount: cols,
+    nodePadding: REPORT_ZONE_TABLE_NODE_PADDING_PX,
+  });
+  const next = applyTableColumnResizeDeltaPx(u.innerW, cols, el.tableColWidthsPx, boundaryIndex, deltaLayoutPx);
+  if (!next) return;
+  el.tableColWidthsPx = next;
+  const { w: bw, h: bh } = bandDims(z);
+  clampZoneTableOuterSize(el, bw, bh);
+}
+
+/** 与模版画布一致：微小位移不计入拖拽 */
+const MOVE_DRAG_THRESHOLD_PX = 5;
+
 function beginMove(ev: PointerEvent, el: LayoutZoneElement, z: Zone) {
+  clearLayoutSnapOverlay();
   selId.value = el.id;
-  move = { sid: el.id, z, sx: ev.clientX, sy: ev.clientY, ox: el.x, oy: el.y };
+  move = {
+    sid: el.id,
+    z,
+    sx: ev.clientX,
+    sy: ev.clientY,
+    ox: el.x,
+    oy: el.y,
+    dragStarted: false,
+  };
   bindPtr();
 }
 
 function beginResize(ev: PointerEvent, el: LayoutZoneElement, z: Zone, h: Handle) {
+  clearLayoutSnapOverlay();
   selId.value = el.id;
   resize = {
     sid: el.id,
@@ -505,9 +1051,28 @@ function ptrMove(ev: PointerEvent) {
   if (move) {
     const el = elementsForZone(move.z).find((x) => x.id === move!.sid);
     if (!el) return;
-    el.x = Math.round(Math.max(0, move.ox + (ev.clientX - move.sx) / sc));
-    el.y = Math.round(Math.max(0, move.oy + (ev.clientY - move.sy) / sc));
+    const dxScr = ev.clientX - move.sx;
+    const dyScr = ev.clientY - move.sy;
+    if (!move.dragStarted) {
+      if (Math.hypot(dxScr, dyScr) < MOVE_DRAG_THRESHOLD_PX) return;
+      move.dragStarted = true;
+    }
+    el.x = Math.round(Math.max(0, move.ox + dxScr / sc));
+    el.y = Math.round(Math.max(0, move.oy + dyScr / sc));
+    const { w: bw, h: bh } = bandDims(move.z);
+    const peers = peersForSnapZone(move.z);
+    if (!ev.shiftKey) {
+      const snapped = magneticSnapTranslate(el.x, el.y, el.w, el.h, bw, bh, peers, el.id);
+      el.x = snapped.x;
+      el.y = snapped.y;
+    }
     clampEl(el, move.z);
+    layoutSnapOverlay.value = ev.shiftKey
+      ? { zone: null, v: [], h: [] }
+      : {
+          zone: move.z,
+          ...alignmentGuidesForRect(el.x, el.y, el.w, el.h, bw, bh, peers, el.id),
+        };
     return;
   }
   if (resize) {
@@ -520,35 +1085,60 @@ function ptrMove(ev: PointerEvent) {
     let y = resize.iy;
     let w = resize.iw;
     let hh = resize.ih;
-    if (h.includes("e")) w = Math.max(16, Math.round(resize.iw + dx));
-    if (h.includes("s")) hh = Math.max(16, Math.round(resize.ih + dy));
+    const floorW = el.type === "table" ? minOuterSizeForZoneTable(el).w : 16;
+    const floorH = el.type === "table" ? minOuterSizeForZoneTable(el).h : 16;
+    const ceilH = el.type === "table" ? intrinsicOuterHeightForZoneTable(el) : Number.POSITIVE_INFINITY;
+    if (h.includes("e")) w = Math.max(floorW, Math.round(resize.iw + dx));
+    if (h.includes("s")) hh = Math.min(ceilH, Math.max(floorH, Math.round(resize.ih + dy)));
     if (h.includes("w")) {
-      const nw = Math.max(16, Math.round(resize.iw - dx));
+      const nw = Math.max(floorW, Math.round(resize.iw - dx));
       x = Math.round(resize.ix + (resize.iw - nw));
       w = nw;
     }
     if (h.includes("n")) {
-      const nh = Math.max(16, Math.round(resize.ih - dy));
+      const nh = Math.min(ceilH, Math.max(floorH, Math.round(resize.ih - dy)));
       y = Math.round(resize.iy + (resize.ih - nh));
       hh = nh;
     }
     if (ev.shiftKey && (h === "se" || h === "nw" || h === "ne" || h === "sw")) {
-      const s = Math.max(w, hh);
-      w = s;
-      hh = s;
+      const s = Math.max(w, hh, floorW, floorH);
+      const capped = el.type === "table" ? Math.min(s, ceilH) : s;
+      w = capped;
+      hh = capped;
     }
     Object.assign(el, { x, y, w, h: hh });
+    const { w: bw, h: bh } = bandDims(resize.z);
+    const peers = peersForSnapZone(resize.z);
+    if (!ev.shiftKey) {
+      const snapped = magneticSnapResize(el.x, el.y, el.w, el.h, h, bw, bh, peers, el.id, floorW, floorH);
+      Object.assign(el, snapped);
+      if (el.type === "table") {
+        const cap = intrinsicOuterHeightForZoneTable(el);
+        if (el.h > cap) el.h = cap;
+      }
+    }
     clampEl(el, resize.z);
+    layoutSnapOverlay.value = ev.shiftKey
+      ? { zone: null, v: [], h: [] }
+      : {
+          zone: resize.z,
+          ...alignmentGuidesForRect(el.x, el.y, el.w, el.h, bw, bh, peers, el.id),
+        };
   }
 }
 
 function ptrUp() {
   move = null;
   resize = null;
+  clearLayoutSnapOverlay();
   window.removeEventListener("pointermove", ptrMove);
 }
 
-onBeforeUnmount(ptrUp);
+onMounted(() => window.addEventListener("keydown", onWindowKeydown));
+onBeforeUnmount(() => {
+  ptrUp();
+  window.removeEventListener("keydown", onWindowKeydown);
+});
 
 function onWheel(ev: WheelEvent) {
   if (!(ev.ctrlKey || ev.metaKey)) return;
@@ -565,9 +1155,11 @@ function beginImagePick(el: LayoutZoneElement) {
 }
 
 async function assignImageSrcFromFileEl(el: LayoutZoneElement | null, f?: File | null) {
-  if (!el || el.type !== "image" || !f?.type?.startsWith("image/")) return;
+  if (!el || el.type !== "image") return;
+  const file = f ?? null;
+  if (!looksLikeImageFile(file)) return;
   try {
-    el.imageSrc = await readImageFileAsDataUrl(f);
+    el.imageSrc = await readImageFileAsDataUrl(file);
   } catch (err) {
     window.alert(err instanceof Error ? err.message : String(err));
   }
@@ -585,7 +1177,7 @@ async function applyLayoutPresetImageSelection(ev: Event) {
 async function onImageFileDrop(ev: DragEvent, el: LayoutZoneElement) {
   if (el.type !== "image") return;
   selId.value = el.id;
-  await assignImageSrcFromFileEl(el, ev.dataTransfer?.files?.[0] ?? null);
+  await assignImageSrcFromFileEl(el, pickFirstImageFileFromDataTransfer(ev.dataTransfer));
 }
 </script>
 
@@ -656,7 +1248,7 @@ async function onImageFileDrop(ev: DragEvent, el: LayoutZoneElement) {
   position: absolute;
   box-sizing: border-box;
   border: 1px solid transparent;
-  background: rgb(255 255 255 / 0.35);
+  background: transparent;
   display: flex;
   padding: 2px 4px;
   overflow: hidden;
@@ -733,6 +1325,8 @@ async function onImageFileDrop(ev: DragEvent, el: LayoutZoneElement) {
   cursor: nwse-resize;
   touch-action: none;
   z-index: 3;
+  /* 大块命中区会盖住就地输入区；仅让小圆点接收指针（与模版画布一致） */
+  pointer-events: none;
 }
 .hz:focus {
   outline: none;
@@ -758,7 +1352,8 @@ async function onImageFileDrop(ev: DragEvent, el: LayoutZoneElement) {
   box-shadow:
     0 1px 3px rgb(15 23 42 / 0.25),
     0 0 0 1px rgb(99 102 241 / 0.35);
-  pointer-events: none;
+  pointer-events: auto;
+  cursor: inherit;
 }
 .hz:hover::after {
   background: linear-gradient(145deg, #6366f1 0%, #4f46e5 100%);
@@ -819,5 +1414,121 @@ async function onImageFileDrop(ev: DragEvent, el: LayoutZoneElement) {
   margin-left: calc(-0.5 * var(--lppc-hz-hit));
   margin-top: calc(-0.5 * var(--lppc-hz-hit));
   cursor: ew-resize;
+}
+.lppc-table-shell {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
+  padding-bottom: 1px;
+}
+.lppc-table {
+  width: 100%;
+  height: auto;
+  max-height: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  table-layout: fixed;
+  background: rgb(255 255 255 / 0.96);
+}
+.lppc-table tbody td {
+  height: inherit;
+  box-sizing: border-box;
+}
+.lppc-table-cell {
+  border-top: 1px solid rgb(212 212 216);
+  border-left: 1px solid rgb(212 212 216);
+  padding: 3px 5px;
+  vertical-align: middle;
+  text-align: center;
+  overflow: hidden;
+  cursor: cell;
+}
+.lppc-table-cell:last-child {
+  border-right: 1px solid rgb(212 212 216);
+}
+.lppc-table tbody tr:last-child .lppc-table-cell {
+  border-bottom: 1px solid rgb(212 212 216);
+}
+.lppc-table-cell--hot {
+  box-shadow: inset 0 0 0 2px #6366f1;
+}
+.lppc-table-cell-txt {
+  display: block;
+  font-size: max(10px, 0.85em);
+  line-height: 1.3;
+  word-break: break-word;
+  white-space: pre-wrap;
+  max-height: 100%;
+  overflow: hidden;
+}
+.lppc-table-cell-edit {
+  display: block;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  resize: none;
+  overflow-y: auto;
+  max-height: 100%;
+  font: inherit;
+  color: inherit;
+  font-size: max(10px, 0.85em);
+  line-height: 1.35;
+  letter-spacing: inherit;
+  text-align: inherit;
+  vertical-align: inherit;
+  background: transparent;
+  outline: none;
+  box-shadow: none;
+  caret-color: #4338ca;
+  field-sizing: fixed;
+  min-height: 0;
+}
+.lppc-table-cell-edit:focus {
+  outline: none;
+}
+.lppc-table-cell-ddl {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 2px 4px;
+  font: inherit;
+  font-size: inherit;
+  line-height: 1.35;
+  text-align: inherit;
+  min-height: 0;
+}
+.lppc-snap-guide-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 50;
+  overflow: visible;
+}
+.lppc-snap-line {
+  position: absolute;
+  background: rgb(99 102 241 / 0.92);
+  box-shadow: 0 0 0 1px rgb(255 255 255 / 0.65);
+}
+.lppc-snap-line--v {
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  transform: translateX(-0.5px);
+}
+.lppc-snap-line--h {
+  left: 0;
+  right: 0;
+  height: 1px;
+  transform: translateY(-0.5px);
 }
 </style>

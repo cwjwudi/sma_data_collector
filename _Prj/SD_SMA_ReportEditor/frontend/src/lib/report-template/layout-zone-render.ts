@@ -1,5 +1,6 @@
-import type { LayoutAlignAxis, LayoutZoneElement } from "./layout-zone-element";
+import type { LayoutAlignAxis, LayoutZoneElement, LayoutZoneTableCell } from "./layout-zone-element";
 import {
+  ensureZoneTableGrid,
   flexComposeOuterRoot,
   flexJustifyAlignForAxes,
   formatLayoutDate,
@@ -9,7 +10,10 @@ import {
   normalizeImageCaptionPosition,
   normalizeImageRotationDeg,
   PAGE_NUMBER_PREVIEW_TOTAL_FALLBACK,
+  previewZoneElementDisplay,
+  zoneTableColumnInnerWidthsPx,
 } from "./layout-zone-element";
+import { clampTableRowHeightPx } from "./table-cell-metrics";
 
 export interface RenderZoneOptions {
   selectedId?: string | null;
@@ -23,6 +27,24 @@ export interface RenderZoneOptions {
 function previewPlainOrDate(el: LayoutZoneElement): string {
   if (el.type === "date") return formatLayoutDate(new Date(), el.dateFormat || "yyyy-MM-dd");
   return el.text;
+}
+
+function truncateZonePreview(s: string, n: number): string {
+  const x = s.replace(/\s+/g, " ");
+  return x.length <= n ? x : `${x.slice(0, n)}…`;
+}
+
+function formatZoneTableCellPreview(cell: LayoutZoneTableCell): string {
+  if (cell.bindingKind === "opcua") {
+    const id = cell.opcuaNodeId.trim();
+    return id ? `⟨UA⟩ ${truncateZonePreview(id, 48)}` : "⟨UA⟩";
+  }
+  if (cell.bindingKind === "sql") {
+    const q = cell.sqlText.trim();
+    return q ? `⟨SQL⟩ ${truncateZonePreview(q, 36)}` : "⟨SQL⟩";
+  }
+  const t = cell.text.trim();
+  return t.length > 0 ? t : "\u00a0";
 }
 
 function flexPlaceAxes(el: LayoutZoneElement): { justifyContent: string; alignItems: string } {
@@ -221,6 +243,69 @@ export function renderZoneElementsInto(
       node.style.padding = "2px 6px";
       applyZoneTextWrapStyles(node, el);
       node.textContent = el.text || "";
+    } else if (el.type === "parameter") {
+      node.style.backgroundColor = el.bgColor === "transparent" ? "transparent" : el.bgColor;
+      node.style.display = "flex";
+      node.style.justifyContent = flex.justifyContent;
+      node.style.alignItems = flex.alignItems;
+      node.style.padding = "2px 6px";
+      applyZoneTextWrapStyles(node, el);
+      node.textContent = previewZoneElementDisplay(el, previewPage, previewTotal);
+    } else if (el.type === "table") {
+      ensureZoneTableGrid(el);
+      node.style.backgroundColor =
+        el.bgColor === "transparent" ? "rgb(250 250 250)" : el.bgColor;
+      node.style.display = "flex";
+      node.style.flexDirection = "column";
+      /** 较默认底侧多 1px，避免表格最后一行底边框被 overflow:hidden 裁掉 */
+      node.style.padding = "2px 2px 3px 2px";
+      node.style.overflow = "hidden";
+      const tbl = document.createElement("table");
+      tbl.style.width = "100%";
+      tbl.style.height = "auto";
+      tbl.style.maxHeight = "100%";
+      tbl.style.borderCollapse = "separate";
+      tbl.style.borderSpacing = "0";
+      tbl.style.tableLayout = "fixed";
+      tbl.style.background = "rgb(255 255 255 / 0.96)";
+      const colWidths = zoneTableColumnInnerWidthsPx(el);
+      const cg = document.createElement("colgroup");
+      for (const cw of colWidths) {
+        const colEl = document.createElement("col");
+        colEl.style.width = `${cw}px`;
+        cg.appendChild(colEl);
+      }
+      tbl.appendChild(cg);
+      const tb = document.createElement("tbody");
+      const grid = el.tableCells ?? [];
+      const rowCount = grid.length;
+      for (let ri = 0; ri < rowCount; ri++) {
+        const tr = document.createElement("tr");
+        tr.style.height = `${clampTableRowHeightPx(el.tableRowHeightPx)}px`;
+        const row = grid[ri] ?? [];
+        const colCount = row.length;
+        for (let ci = 0; ci < colCount; ci++) {
+          const td = document.createElement("td");
+          const edge = "1px solid rgb(212 212 216)";
+          td.style.borderTop = edge;
+          td.style.borderLeft = edge;
+          if (ci === colCount - 1) td.style.borderRight = edge;
+          if (ri === rowCount - 1) td.style.borderBottom = edge;
+          td.style.padding = "2px 4px";
+          td.style.boxSizing = "border-box";
+          td.style.height = "inherit";
+          td.style.textAlign = "center";
+          td.style.verticalAlign = "middle";
+          td.style.overflow = "hidden";
+          td.style.fontSize = "max(10px, 0.85em)";
+          td.style.lineHeight = "1.25";
+          td.textContent = formatZoneTableCellPreview(row[ci]);
+          tr.appendChild(td);
+        }
+        tb.appendChild(tr);
+      }
+      tbl.appendChild(tb);
+      node.appendChild(tbl);
     } else if (el.type === "pageNumber") {
       const mode = el.pageNumberMode ?? "plain";
       node.style.backgroundColor = "transparent";

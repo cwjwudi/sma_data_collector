@@ -4,20 +4,22 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 PaperKind = Literal["A3", "A4", "A5", "Letter"]
 BindingKind = Literal["none", "opcua", "sql"]
+TableSqlParamSource = Literal["opcua", "above_cell", "literal"]
 Orientation = Literal["portrait", "landscape"]
 LayoutPageRole = Literal["normal", "cover", "back"]
 ChartKind = Literal["line", "bar"]
-LayoutControlType = Literal["text", "box", "image", "pageNumber", "date"]
-TemplateControlType = Literal["text", "box", "image", "table", "chart", "parameter", "signature"]
+SignatureDisplayMode = Literal["watermark", "handwriting", "both"]
+LayoutControlType = Literal["text", "box", "image", "pageNumber", "date", "table", "parameter"]
+TemplateControlType = Literal["text", "box", "image", "date", "table", "chart", "parameter", "signature"]
 PageNumberMode = Literal["plain", "slashTotal", "cnPage", "circle"]
 AlignAxis = Literal["start", "center", "end"]
 ImageCaptionPosition = Literal["none", "top", "bottom", "left", "right"]
 
-TEMPLATE_SCHEMA_VERSION = 2
+TEMPLATE_SCHEMA_VERSION = 4
 
 
 class LayoutSnapshot(BaseModel):
@@ -29,6 +31,65 @@ class LayoutSnapshot(BaseModel):
     marginLeftMm: float = Field(ge=0, default=12)
     headerBandMm: float = Field(ge=0, default=0)
     footerBandMm: float = Field(ge=0, default=0)
+
+
+class TemplateTableCell(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    text: str = ""
+    bindingKind: BindingKind = "none"
+    opcuaNodeId: str = ""
+    sqlText: str = ""
+
+
+class TableSqlParamBinding(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    source: TableSqlParamSource = "opcua"
+    opcuaNodeId: str = ""
+    aboveCellColumnIndex: int = Field(default=0, ge=0, le=29)
+    literalFallback: str = ""
+
+
+TableSqlFillMode = Literal["manual_sql", "visual"]
+VisualSqlFilterKind = Literal["equality", "datetime_between", "date_between", "numeric_between"]
+
+
+class TableSqlVisualSource(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    connectionId: str = ""
+    database: str = ""
+    table: str = ""
+    engine: str = ""
+    columns: list[str] = Field(default_factory=list)
+
+
+class TableSqlVisualFilter(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = ""
+    column: str = ""
+    kind: VisualSqlFilterKind = "equality"
+    defaults: list[str] = Field(default_factory=list)
+    bindings: list[TableSqlParamBinding] = Field(default_factory=list)
+
+
+class TableSqlFillConfig(BaseModel):
+    """表格整表按 SQL 结果动态填充（schemaVersion≥4）；导出由生成器执行。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = False
+    fillMode: TableSqlFillMode = "visual"
+    querySql: str = ""
+    params: list[TableSqlParamBinding] = Field(default_factory=list)
+    resultColumnNames: list[str] = Field(default_factory=list)
+    repeatHeaderOnPageBreak: bool = True
+    allowWidgetsBelowSqlFillTable: bool = False
+    maxRows: int = Field(default=2000, ge=1, le=50000)
+    visualSource: TableSqlVisualSource | None = None
+    visualFilters: list[TableSqlVisualFilter] = Field(default_factory=list)
 
 
 class LayoutZoneElement(BaseModel):
@@ -54,6 +115,15 @@ class LayoutZoneElement(BaseModel):
     pageNumberMode: PageNumberMode = "plain"
     zIndex: int = Field(default=0, ge=0, le=10000)
     textAutoWrap: bool = False
+    bindingKind: BindingKind = "none"
+    opcuaNodeId: str = ""
+    sqlText: str = ""
+    tableRows: int = Field(default=3, ge=1, le=30)
+    tableCols: int = Field(default=4, ge=1, le=30)
+    tableCells: list[list[TemplateTableCell]] = Field(default_factory=list)
+    tableRowHeightPx: float = Field(default=28, ge=16, le=120)
+    tableColWidthsPx: list[float] = Field(default_factory=list)
+    tableSqlFill: TableSqlFillConfig | None = None
 
 
 class TemplateElement(BaseModel):
@@ -77,9 +147,17 @@ class TemplateElement(BaseModel):
     bindingKind: BindingKind = "none"
     opcuaNodeId: str = ""
     sqlText: str = ""
+    dateFormat: str = ""
     chartKind: ChartKind = "line"
     signerLabel: str = ""
     signatureAssetId: str = ""
+    signatureDisplayMode: SignatureDisplayMode = "both"
+    tableRows: int = Field(default=3, ge=1, le=30)
+    tableCols: int = Field(default=4, ge=1, le=30)
+    tableCells: list[list[TemplateTableCell]] = Field(default_factory=list)
+    tableRowHeightPx: float = Field(default=28, ge=16, le=120)
+    tableColWidthsPx: list[float] = Field(default_factory=list)
+    tableSqlFill: TableSqlFillConfig | None = None
 
 
 class ReportTemplate(BaseModel):
@@ -92,6 +170,7 @@ class ReportTemplate(BaseModel):
     name: str
     updatedAt: str
     elements: list[TemplateElement] = Field(default_factory=list)
+    bodyPages: list[list[TemplateElement]] = Field(default_factory=list)
     paperKind: PaperKind = "A4"
     orientation: Orientation = "portrait"
     layoutPresetId: str | None = None
@@ -116,6 +195,32 @@ class ReportTemplate(BaseModel):
     footerElements: list[LayoutZoneElement] = Field(default_factory=list)
     coverElements: list[TemplateElement] = Field(default_factory=list)
     backElements: list[TemplateElement] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_body_pages(cls, data: Any) -> Any:
+        """旧 JSON 仅有 elements：自动归一为 bodyPages=[elements]，并与 elements 同步第一页。"""
+        if not isinstance(data, dict):
+            return data
+        d = dict(data)
+        bp = d.get("bodyPages")
+        els = d.get("elements")
+        if not isinstance(bp, list) or len(bp) == 0:
+            row = list(els) if isinstance(els, list) else []
+            d["bodyPages"] = [row]
+        else:
+            norm: list[list[Any]] = []
+            for row in bp:
+                norm.append(list(row) if isinstance(row, list) else [])
+            if not norm:
+                row = list(els) if isinstance(els, list) else []
+                d["bodyPages"] = [row]
+            else:
+                d["bodyPages"] = norm
+        bp2 = d.get("bodyPages")
+        if isinstance(bp2, list) and len(bp2) > 0 and isinstance(bp2[0], list):
+            d["elements"] = list(bp2[0])
+        return d
 
 
 class ReportTemplateSummary(BaseModel):
@@ -148,6 +253,7 @@ def parse_report_template(raw: dict[str, Any]) -> ReportTemplate:
         "headerElements",
         "footerElements",
         "elements",
+        "bodyPages",
         "coverElements",
         "backElements",
     ):

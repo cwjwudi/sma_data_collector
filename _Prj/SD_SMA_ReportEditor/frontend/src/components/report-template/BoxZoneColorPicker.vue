@@ -1,7 +1,7 @@
 <template>
-  <div v-if="el.type === 'box'" class="bzc">
+  <div class="bzc">
     <div class="bzc-block">
-      <span class="bzc-title">填充色</span>
+      <span class="bzc-title">{{ fillBlockTitle }}</span>
       <div class="bzc-swatches" role="group" aria-label="填充色预设">
         <button
           v-for="s in fillPresets"
@@ -28,7 +28,7 @@
         />
       </label>
     </div>
-    <div class="bzc-block">
+    <div v-if="showStrokeBlock" class="bzc-block">
       <span class="bzc-title">边框与文字色</span>
       <div class="bzc-swatches" role="group" aria-label="边框与文字色预设">
         <button
@@ -64,6 +64,10 @@ import type { LayoutZoneElement } from "@/lib/report-template/layout-zone-elemen
 const props = defineProps<{
   el: LayoutZoneElement | TemplateElement;
 }>();
+
+const showStrokeBlock = computed(() => props.el.type === "box");
+
+const fillBlockTitle = computed(() => (props.el.type === "box" ? "填充色" : "填充色（背景）"));
 
 /** 与原生取色器兼容的 #rrggbb */
 const FALLBACK_FILL = "#e4e4e7";

@@ -2,7 +2,7 @@
 
 import type { ReportTemplate } from "./model";
 import type { TemplateElement } from "./model";
-
+import { clampTableElementOuterSize, ensureBodyPages } from "./model";
 function sortKeysDeep(v: unknown): unknown {
   if (v === null || typeof v !== "object") return v;
   if (Array.isArray(v)) return v.map(sortKeysDeep);
@@ -35,7 +35,7 @@ export function computeFingerprints(t: ReportTemplate): TemplateFingerprints {
     footerText: t.footerText,
     headerElements: t.headerElements,
     footerElements: t.footerElements,
-    elements: t.elements,
+    bodyPages: ensureBodyPages(t),
   };
   const coverPack = {
     coverLayoutPresetId: t.coverLayoutPresetId,
@@ -78,14 +78,17 @@ export function clampElementToLayout(
   el.h = Math.max(20, Math.min(el.h, contentH));
   el.x = Math.max(0, Math.min(el.x, contentW - el.w));
   el.y = Math.max(0, Math.min(el.y, contentH - el.h));
+  clampTableElementOuterSize(el, contentW, contentH);
+  el.x = Math.max(0, Math.min(el.x, contentW - el.w));
+  el.y = Math.max(0, Math.min(el.y, contentH - el.h));
 }
-
+/** 按给定正文区尺寸收紧所有正文分页控件（封面/末页请另用对应 metrics） */
 export function clampAllElementsForPaper(
   t: ReportTemplate,
   metrics: import("./layout-geometry").PaperLayoutMetrics,
 ): void {
   const { contentW, contentH } = metrics;
-  for (const arr of [t.elements, t.coverElements, t.backElements]) {
-    arr.forEach((el) => clampElementToLayout(el, contentW, contentH));
+  for (const row of ensureBodyPages(t)) {
+    row.forEach((el) => clampElementToLayout(el, contentW, contentH));
   }
 }

@@ -1,8 +1,45 @@
 /** 页眉/页脚区可视化控件 */
 
+import {
+  clampTableRowHeightPx,
+  distributeTableColumnInnerWidthsPx,
+  hydratePersistedTableColWidthsPx,
+  REPORT_ZONE_TABLE_NODE_PADDING_PX,
+  TABLE_ROW_HEIGHT_DEFAULT_PX,
+  uniformTableCellBoxPx,
+} from "@/lib/report-template/table-cell-metrics";
+
+import type { TableSqlFillConfig } from "@/lib/report-template/table-sql-fill";
+import {
+  clampSqlFillParamColumnRefs,
+  defaultTableSqlFillConfig,
+  ensureTableSqlResultColumnNames,
+  ensureTwoTableSqlParamSlots,
+  ensureVisualOutputColumnSlots,
+  hydrateTableSqlFill,
+} from "@/lib/report-template/table-sql-fill";
+
 export type LayoutZoneKind = "header" | "footer";
 
-export type LayoutControlType = "text" | "box" | "image" | "pageNumber" | "date";
+export type LayoutControlType =
+  | "text"
+  | "box"
+  | "image"
+  | "pageNumber"
+  | "date"
+  | "table"
+  | "parameter";
+
+/** 与模版正文控件一致的绑定枚举（版式区 / 页眉页脚） */
+export type ZoneBindingKind = "none" | "opcua" | "sql";
+
+/** 版式区内表格单元格（结构与 TemplateTableCell 一致） */
+export interface LayoutZoneTableCell {
+  text: string;
+  bindingKind: ZoneBindingKind;
+  opcuaNodeId: string;
+  sqlText: string;
+}
 
 /** 页码在预览/导出时的展示形式（导出时传入真实当前页与总页数） */
 export type PageNumberDisplayMode = "plain" | "slashTotal" | "cnPage" | "circle";
@@ -72,6 +109,20 @@ export interface LayoutZoneElement {
   zIndex: number;
   /** 文本/色块/日期：在框宽内自动换行（长串无空格时也会断行） */
   textAutoWrap: boolean;
+  /** 数据参数（parameter）或预留；其它类型多为 none */
+  bindingKind: ZoneBindingKind;
+  opcuaNodeId: string;
+  sqlText: string;
+  /** 仅 type==="table" 时使用 */
+  tableRows?: number;
+  tableCols?: number;
+  /** 表格行高（px），仅 type===table */
+  tableRowHeightPx?: number;
+  /** 表格列宽权重（长度与 tableCols 一致），语义与正文表格 TemplateElement.tableColWidthsPx 相同 */
+  tableColWidthsPx?: number[];
+  tableCells?: LayoutZoneTableCell[][];
+  /** schema≥4：版式区内表格整表 SQL 动态填充（语义与正文 tableSqlFill 相同） */
+  tableSqlFill?: TableSqlFillConfig;
 }
 
 export function normalizeZIndex(v: unknown): number {
@@ -80,15 +131,22 @@ export function normalizeZIndex(v: unknown): number {
   return Math.max(0, Math.min(10000, Math.round(n)));
 }
 
+/** 与 layout-zone-render、版式画布 nodeStyle 一致：控件填充（含文本背后的底色） */
+export function zoneFillBackgroundCss(bgColor: unknown): string {
+  const v = typeof bgColor === "string" ? bgColor.trim() : "";
+  if (v === "" || v === "transparent") return "transparent";
+  return v;
+}
+
 export function normalizeTextAutoWrap(v: unknown, fallback: boolean): boolean {
   if (v === true || v === "true" || v === 1 || v === "1") return true;
   if (v === false || v === "false" || v === 0 || v === "0") return false;
   return fallback;
 }
 
-/** 文本 / 色块 / 日期在画布与导出 DOM 上的 white-space 等（其它类型返回 null） */
+/** 文本 / 色块 / 日期 / 数据参数在画布与导出 DOM 上的 white-space 等（其它类型返回 null） */
 export function getZoneTextWrapStyle(el: LayoutZoneElement): Record<string, string> | null {
-  if (el.type !== "text" && el.type !== "box" && el.type !== "date") return null;
+  if (el.type !== "text" && el.type !== "box" && el.type !== "date" && el.type !== "parameter") return null;
   if (el.textAutoWrap) {
     return {
       whiteSpace: "pre-wrap",
@@ -157,6 +215,8 @@ export function formatLayoutDate(d: Date, pattern: string): string {
 
 /** 属性面板「日期格式」下拉选项（值与 formatLayoutDate 中 yyyy MM dd 等占位一致） */
 export const DATE_FORMAT_PRESETS: ReadonlyArray<{ value: string; label: string }> = [
+  { value: "HH:mm:ss", label: "14:30:00（当日 · 含秒）" },
+  { value: "HH:mm", label: "14:30（当日 · 时分）" },
   { value: "yyyy-MM-dd", label: "2026-05-17（年-月-日）" },
   { value: "yyyy/MM/dd", label: "2026/05/17（斜杠）" },
   { value: "dd/MM/yyyy", label: "17/05/2026（日/月/年）" },
@@ -175,10 +235,146 @@ function newId(): string {
   }
 }
 
+function normalizeZoneBindingKind(v: unknown): ZoneBindingKind {
+  if (v === "opcua" || v === "sql") return v;
+  return "none";
+}
+
+function clampZoneTableDim(v: unknown, fallback: number): number {
+  const n = Math.floor(Number(v));
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(30, Math.max(1, n));
+}
+
+export function defaultZoneTableCell(): LayoutZoneTableCell {
+  return { text: "", bindingKind: "none", opcuaNodeId: "", sqlText: "" };
+}
+
+export function hydrateZoneTableCell(raw: Partial<LayoutZoneTableCell> | undefined): LayoutZoneTableCell {
+  const d = defaultZoneTableCell();
+  if (!raw || typeof raw !== "object") return { ...d };
+  return {
+    text: typeof raw.text === "string" ? raw.text : d.text,
+    bindingKind: normalizeZoneBindingKind(raw.bindingKind),
+    opcuaNodeId: typeof raw.opcuaNodeId === "string" ? raw.opcuaNodeId : d.opcuaNodeId,
+    sqlText: typeof raw.sqlText === "string" ? raw.sqlText : d.sqlText,
+  };
+}
+
+/** 按 tableRows/tableCols 重塑 tableCells，就地写回（仅 type===table） */
+export function ensureZoneTableGrid(el: LayoutZoneElement): LayoutZoneTableCell[][] {
+  if (el.type !== "table") return [];
+  const rows = clampZoneTableDim(el.tableRows, 3);
+  const cols = clampZoneTableDim(el.tableCols, 4);
+  el.tableRows = rows;
+  el.tableCols = cols;
+  const prev = Array.isArray(el.tableCells) ? el.tableCells : [];
+  if (
+    prev.length === rows &&
+    prev.every((row) => Array.isArray(row) && row.length === cols)
+  ) {
+    ensureZoneTableColWidthsPx(el);
+  } else {
+    const grid: LayoutZoneTableCell[][] = [];
+    for (let r = 0; r < rows; r++) {
+      const pr = Array.isArray(prev[r]) ? prev[r] : [];
+      const row: LayoutZoneTableCell[] = [];
+      for (let c = 0; c < cols; c++) {
+        row.push(hydrateZoneTableCell(pr[c]));
+      }
+      grid.push(row);
+    }
+    el.tableCells = grid;
+    ensureZoneTableColWidthsPx(el);
+  }
+  if (el.tableSqlFill) {
+    ensureTwoTableSqlParamSlots(el.tableSqlFill);
+    ensureTableSqlResultColumnNames(el.tableSqlFill, cols);
+    if (el.tableSqlFill.visualSource) ensureVisualOutputColumnSlots(el.tableSqlFill, cols);
+    clampSqlFillParamColumnRefs(el.tableSqlFill, cols);
+  }
+  return el.tableCells as LayoutZoneTableCell[][];
+}
+
+/** 维持 zone 表格 tableColWidthsPx 与列数一致 */
+export function ensureZoneTableColWidthsPx(el: LayoutZoneElement): void {
+  if (el.type !== "table") return;
+  const cols = el.tableCols ?? 4;
+  if (!Array.isArray(el.tableColWidthsPx)) el.tableColWidthsPx = [];
+  const arr = el.tableColWidthsPx;
+  while (arr.length < cols) arr.push(0);
+  arr.length = cols;
+}
+
+/** 版式区表格当前内侧各列像素宽 */
+export function zoneTableColumnInnerWidthsPx(el: LayoutZoneElement): number[] {
+  if (el.type !== "table") return [];
+  ensureZoneTableGrid(el);
+  ensureZoneTableColWidthsPx(el);
+  const cols = el.tableCols ?? 4;
+  const rows = el.tableRows ?? 3;
+  const u = uniformTableCellBoxPx({
+    outerW: el.w,
+    outerH: el.h,
+    rowCount: rows,
+    colCount: cols,
+    nodePadding: REPORT_ZONE_TABLE_NODE_PADDING_PX,
+  });
+  return distributeTableColumnInnerWidthsPx(u.innerW, cols, el.tableColWidthsPx);
+}
+
+/**
+ * 版式区 / 页眉页脚表格外框的贴合高度：`.lppc-node` / `.hz-node` padding + 各行固定行高 + 表壳底 1px。
+ */
+export function intrinsicOuterHeightForZoneTable(el: LayoutZoneElement): number {
+  if (el.type !== "table") return 20;
+  ensureZoneTableGrid(el);
+  const rows = el.tableRows ?? 3;
+  const rowH = clampTableRowHeightPx(el.tableRowHeightPx);
+  const p = REPORT_ZONE_TABLE_NODE_PADDING_PX;
+  const shellBottomPadPx = 1;
+  return p.top + p.bottom + rows * rowH + shellBottomPadPx;
+}
+
+export function minOuterSizeForZoneTable(el: LayoutZoneElement): { w: number; h: number } {
+  if (el.type !== "table") return { w: 20, h: 20 };
+  ensureZoneTableGrid(el);
+  const cols = el.tableCols ?? 4;
+  const MIN_CELL_W = 26;
+  const CHROME = 8;
+  const ih = intrinsicOuterHeightForZoneTable(el);
+  return {
+    w: Math.max(64, cols * MIN_CELL_W + CHROME),
+    h: Math.max(20, ih),
+  };
+}
+
+export function clampZoneTableOuterSize(
+  el: LayoutZoneElement,
+  maxW = Number.POSITIVE_INFINITY,
+  maxH = Number.POSITIVE_INFINITY,
+): void {
+  if (el.type !== "table") return;
+  const ih = intrinsicOuterHeightForZoneTable(el);
+  const capH = Math.min(ih, maxH);
+  const { w: mw, h: mh } = minOuterSizeForZoneTable(el);
+  const loW = Math.max(20, Math.min(mw, maxW));
+  const loH = Math.max(20, Math.min(mh, maxH));
+  if (el.w < loW) el.w = loW;
+  if (el.h < loH) el.h = loH;
+  if (el.h > capH) el.h = capH;
+}
+
 export function defaultLayoutZoneElement(type: LayoutControlType): Omit<LayoutZoneElement, "id"> {
   const axStart = { alignX: "start" as const, alignY: "center" as const };
   const axCenter = { alignX: "center" as const, alignY: "center" as const };
+  const bindNone = {
+    bindingKind: "none" as ZoneBindingKind,
+    opcuaNodeId: "",
+    sqlText: "",
+  };
   const baseText = {
+    ...bindNone,
     text: type === "text" ? "文本" : "",
     color: "#18181b",
     bgColor: type === "box" ? "#e4e4e7" : "transparent",
@@ -234,6 +430,39 @@ export function defaultLayoutZoneElement(type: LayoutControlType): Omit<LayoutZo
       ...axCenter,
     };
   }
+  if (type === "parameter") {
+    return {
+      type: "parameter",
+      x: 8,
+      y: 8,
+      w: 160,
+      h: 28,
+      ...baseText,
+      text: "{{value}}",
+      bindingKind: "opcua",
+      opcuaNodeId: "",
+      sqlText: "",
+      ...axStart,
+    };
+  }
+  if (type === "table") {
+    const row: Omit<LayoutZoneElement, "id"> = {
+      type: "table",
+      x: 8,
+      y: 8,
+      w: 400,
+      h: 200,
+      ...baseText,
+      text: "",
+      tableRows: 3,
+      tableCols: 4,
+      tableRowHeightPx: TABLE_ROW_HEIGHT_DEFAULT_PX,
+      tableCells: [],
+      tableSqlFill: defaultTableSqlFillConfig(),
+      ...axStart,
+    };
+    return row;
+  }
   return {
     type: "date",
     x: 8,
@@ -257,13 +486,15 @@ export function defaultLayoutZoneElement(type: LayoutControlType): Omit<LayoutZo
 
 export function makeLayoutZoneElement(type: LayoutControlType): LayoutZoneElement {
   const b = defaultLayoutZoneElement(type);
-  return { ...b, id: newId() };
+  const el: LayoutZoneElement = { ...b, id: newId() };
+  if (type === "table") ensureZoneTableGrid(el);
+  return el;
 }
 
 export function hydrateLayoutZoneElement(raw: Partial<LayoutZoneElement>): LayoutZoneElement {
   const type = normalizeControlType(raw.type);
   const d = defaultLayoutZoneElement(type);
-  return {
+  const merged: LayoutZoneElement = {
     ...d,
     ...raw,
     id: typeof raw.id === "string" && raw.id.length > 0 ? raw.id : newId(),
@@ -279,30 +510,91 @@ export function hydrateLayoutZoneElement(raw: Partial<LayoutZoneElement>): Layou
       typeof raw.fontFamily === "string" ? raw.fontFamily.trim().slice(0, 240) : d.fontFamily,
     zIndex: normalizeZIndex(raw.zIndex ?? d.zIndex),
     textAutoWrap: normalizeTextAutoWrap(raw.textAutoWrap, d.textAutoWrap),
+    bindingKind: normalizeZoneBindingKind(raw.bindingKind ?? d.bindingKind),
+    opcuaNodeId: typeof raw.opcuaNodeId === "string" ? raw.opcuaNodeId : d.opcuaNodeId,
+    sqlText: typeof raw.sqlText === "string" ? raw.sqlText : d.sqlText,
   };
+  if (type === "table") {
+    merged.tableRows = clampZoneTableDim(raw.tableRows ?? d.tableRows ?? 3, 3);
+    merged.tableCols = clampZoneTableDim(raw.tableCols ?? d.tableCols ?? 4, 4);
+    merged.tableRowHeightPx = clampTableRowHeightPx(
+      raw.tableRowHeightPx ?? merged.tableRowHeightPx ?? d.tableRowHeightPx,
+    );
+    merged.tableColWidthsPx = hydratePersistedTableColWidthsPx(
+      raw.tableColWidthsPx,
+      merged.tableCols ?? 4,
+    );
+    merged.tableSqlFill = hydrateTableSqlFill(raw.tableSqlFill ?? merged.tableSqlFill);
+    ensureZoneTableGrid(merged);
+  } else {
+    merged.tableRows = undefined;
+    merged.tableCols = undefined;
+    merged.tableRowHeightPx = undefined;
+    merged.tableColWidthsPx = undefined;
+    merged.tableCells = undefined;
+    merged.tableSqlFill = undefined;
+  }
+  return merged;
 }
 
 export function normalizeControlType(v: unknown): LayoutControlType {
-  if (v === "box" || v === "image" || v === "pageNumber" || v === "date") return v;
+  if (
+    v === "box" ||
+    v === "image" ||
+    v === "pageNumber" ||
+    v === "date" ||
+    v === "table" ||
+    v === "parameter"
+  )
+    return v;
   return "text";
 }
 
 export function clampZoneElement(el: LayoutZoneElement, zw: number, zh: number): void {
-  el.w = Math.max(16, Math.min(el.w, zw));
-  el.h = Math.max(16, Math.min(el.h, zh));
+  if (el.type === "table") {
+    clampZoneTableOuterSize(el, zw, zh);
+    const minW = minOuterSizeForZoneTable(el).w;
+    const minH = minOuterSizeForZoneTable(el).h;
+    el.w = Math.max(minW, Math.min(el.w, zw));
+    el.h = Math.max(minH, Math.min(el.h, zh));
+  } else {
+    el.w = Math.max(16, Math.min(el.w, zw));
+    el.h = Math.max(16, Math.min(el.h, zh));
+  }
   el.x = Math.max(0, Math.min(el.x, zw - el.w));
   el.y = Math.max(0, Math.min(el.y, zh - el.h));
 }
 
-export function previewZoneElementDisplay(el: LayoutZoneElement): string {
+export function previewZoneElementDisplay(
+  el: LayoutZoneElement,
+  pageNum = 1,
+  totalPages = PAGE_NUMBER_PREVIEW_TOTAL_FALLBACK,
+): string {
   if (el.type === "pageNumber") {
-    return formatPageNumberDisplay(el.pageNumberMode, 1, PAGE_NUMBER_PREVIEW_TOTAL_FALLBACK);
+    return formatPageNumberDisplay(el.pageNumberMode, pageNum, totalPages);
   }
   if (el.type === "date") return formatLayoutDate(new Date(), el.dateFormat || "yyyy-MM-dd");
   if (el.type === "image") {
     const cap = String(el.text || "").trim();
     if (cap) return cap.length > 24 ? `${cap.slice(0, 21)}…` : cap;
     return el.imageSrc ? "配图" : "图片";
+  }
+  if (el.type === "parameter") {
+    const bk = el.bindingKind ?? "none";
+    if (bk === "opcua") {
+      const id = (el.opcuaNodeId || "").trim();
+      return id ? `[参·UA] ${id.length > 36 ? `${id.slice(0, 33)}…` : id}` : "[参·UA]";
+    }
+    if (bk === "sql") {
+      const q = (el.sqlText || "").trim();
+      return q ? `[参·SQL] ${q.length > 28 ? `${q.slice(0, 25)}…` : q}` : "[参·SQL]";
+    }
+    const t = (el.text || "").trim();
+    return t || "[参数]";
+  }
+  if (el.type === "table") {
+    ensureZoneTableGrid(el);
+    return `[表 ${el.tableRows ?? "?"}×${el.tableCols ?? "?"}]`;
   }
   return el.text;
 }

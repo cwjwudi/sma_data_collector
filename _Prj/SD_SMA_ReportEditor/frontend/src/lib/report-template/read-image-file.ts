@@ -1,3 +1,24 @@
+const IMAGE_NAME_EXT_RE = /\.(png|jpe?g|gif|webp|bmp|svg|avif|ico|heic|heif)$/i;
+
+/** MIME 或扩展名（部分环境拖入时 `type` 为空） */
+export function looksLikeImageFile(file: File | null | undefined): file is File {
+  if (!file) return false;
+  const t = typeof file.type === "string" ? file.type.trim() : "";
+  if (t.startsWith("image/")) return true;
+  return IMAGE_NAME_EXT_RE.test(file.name || "");
+}
+
+/** 从系统文件夹拖入等多文件场景：取首张可识别的图片 */
+export function pickFirstImageFileFromDataTransfer(dt: DataTransfer | null): File | null {
+  if (!dt?.files?.length) return null;
+  const { files } = dt;
+  for (let i = 0; i < files.length; i++) {
+    const f = files[i];
+    if (looksLikeImageFile(f)) return f;
+  }
+  return null;
+}
+
 /**
  * 将用户选取的本地图片读成 data URL，供模版图元 / 预设 `imageSrc` 使用。
  * （无独立上传接口时，内容与模板一并保存）
@@ -7,7 +28,7 @@ export async function readImageFileAsDataUrl(
   opts?: { maxBytes?: number },
 ): Promise<string> {
   const maxBytes = opts?.maxBytes ?? 12 * 1024 * 1024;
-  if (!file.type || !file.type.startsWith('image/')) {
+  if (!looksLikeImageFile(file)) {
     throw new Error('请选择图片文件（JPEG/PNG/WebP/GIF/SVG 等）');
   }
   if (file.size > maxBytes) {

@@ -50,7 +50,7 @@
           <button type="button" class="btn sm" @click="testDraft">测试连接（当前表单）</button>
           <button type="button" class="btn danger sm" v-if="form.id" @click="removeServer">删除</button>
         </div>
-        <div v-if="msg" class="msg">{{ msg }}</div>
+        <div v-if="msg" class="msg">{{ translateOpcuaMessage(msg) }}</div>
       </div>
       <div v-if="wizardLayout || form.id" class="browse-pane">
         <div class="browse-head">
@@ -91,7 +91,48 @@
         </div>
         <div class="browse-body" :class="{ 'browse-body-wizard': wizardLayout }">
           <div class="tree-wrap">
+            <div class="opc-browse-search">
+              <label class="opc-browse-search-lbl">
+                <span>搜索变量</span>
+                <input
+                  v-model="searchQuery"
+                  type="search"
+                  class="opc-browse-search-inp"
+                  placeholder="显示名、BrowseName、NodeId…（从 Objects 扫描全地址空间）"
+                  autocomplete="off"
+                  spellcheck="false"
+                />
+              </label>
+              <p class="opc-browse-search-hint">
+                在后台从 <strong>Objects</strong> 起广度优先扫描 OPC UA 地址空间，匹配<strong>变量（Variable）</strong>的显示名、BrowseName 或
+                NodeId 子串；<strong>无需事先展开左侧树</strong>。节点特别多时可能截断扫描，请缩小关键字。
+              </p>
+            </div>
+            <template v-if="searchTrimmed">
+              <div v-if="searchRemoteLoading" class="opc-browse-search-status">正在搜索地址空间…</div>
+              <div v-else-if="searchRemoteError" class="opc-browse-search-empty">
+                {{ translateOpcuaMessage(searchRemoteError) }}
+              </div>
+              <div v-else-if="!searchHitEntries.length" class="opc-browse-search-empty">
+                无匹配的变量节点，请更换或缩短关键字。
+              </div>
+              <template v-else>
+                <ul class="opc-browse-hit-list" role="listbox">
+                  <li
+                    v-for="(hit, idx) in searchHitEntries"
+                    :key="'pb-' + idx + '-' + (hit.node.node_id || idx)"
+                  >
+                    <button type="button" class="opc-browse-hit" @click="pickNode(hit.node)">
+                      <span class="opc-browse-hit-path">{{ hit.pathStr }}</span>
+                      <span class="opc-browse-hit-id mono">{{ hit.node.node_id }}</span>
+                    </button>
+                  </li>
+                </ul>
+                <p v-if="searchRemoteInfo" class="opc-browse-search-meta">{{ searchRemoteInfo }}</p>
+              </template>
+            </template>
             <OpcUaTree
+              v-else
               :nodes="treeNodes"
               :tree-rev="treeRev"
               @toggle="onToggleNode"
@@ -133,7 +174,7 @@
                 </span>
               </div>
               <p v-if="pollEnabled && !canPollCurrent" class="poll-warn">开启后请选中 Variable 节点；仅对该节点定时读值（0.5～300 秒一轮）</p>
-              <pre v-if="readOut" class="pre">{{ readOut }}</pre>
+              <pre v-if="readOut" class="pre">{{ readOutDisplay }}</pre>
             </div>
             <div v-else class="detail-placeholder">展开层级后 Variable 会在左侧自动显示数值；点击节点可看右侧 JSON</div>
           </div>
@@ -147,6 +188,9 @@
 import { computed, onBeforeUnmount, onMounted, reactive, ref, shallowRef, triggerRef, watch } from 'vue'
 import { apiFetch } from '@/api/client.js'
 import OpcUaTree from './OpcUaTree.vue'
+import { translateOpcuaMessage } from './opcua-messages.js'
+import { opcDataTypeLabelFromRead } from './opcua-value-meta.js'
+import { isOpcVariableValueNode } from './opcua-tree-utils.js'
 
 const props = defineProps({
   /** 向导内：单列芯片 + 草稿浏览 + 与数据库向导一致的一体化版面 */
@@ -163,10 +207,19 @@ const form = reactive({
   password: '',
 })
 const msg = ref('')
+const searchQuery = ref('')
 const treeNodes = shallowRef([])
 const treeRev = ref(0)
 const pickedNode = ref(null)
 const readOut = ref('')
+/** 右侧 JSON 预览保留原文；纯文本异常信息译为中文 */
+const readOutDisplay = computed(() => {
+  const r = readOut.value
+  if (r == null || String(r).trim() === '') return ''
+  const s = String(r).trim()
+  if (s.startsWith('{') || s.startsWith('[')) return readOut.value
+  return translateOpcuaMessage(s)
+})
 /** 选中节点切换时递增，丢弃过期的读值请求 */
 const readEpoch = ref(0)
 /** 浏览结果刷新后递增，作废进行中的 Variable 预读请求 */
@@ -204,6 +257,15 @@ const browseHeadSubtitle = computed(() => {
   if (!cap) return ''
   return cap.kind === 'saved' ? '已保存连接 · 服务端池化' : '草稿 · 当前表单参数（可先不保存）'
 })
+
+const searchTrimmed = computed(() => (searchQuery.value || '').trim())
+
+const searchHitEntries = ref([])
+const searchRemoteLoading = ref(false)
+const searchRemoteError = ref('')
+const searchRemoteInfo = ref('')
+let searchDebounceTimer = null
+let searchRequestGen = 0
 
 async function opcApiBrowse(parentNodeId) {
   const cap = browseCapability.value
@@ -257,6 +319,68 @@ function wrapOpcNode(raw) {
     loading: false,
     loaded: false,
     errorMessage: null,
+    valueDataTypeLabel: '',
+  }
+}
+
+function opcHitToPickEntry(h) {
+  const node = wrapOpcNode({
+    node_id: h.node_id,
+    browse_name: h.browse_name,
+    display_name: h.display_name,
+    node_class: h.node_class,
+  })
+  return { node, pathStr: h.path_str || '' }
+}
+
+async function opcApiSearchVariables(query) {
+  const cap = browseCapability.value
+  if (!cap) throw new Error('当前无法搜索')
+  const q = String(query || '').trim()
+  if (cap.kind === 'saved') {
+    return await apiFetch(`/opcua/search_saved/${cap.serverId}`, {
+      method: 'POST',
+      body: { query: q },
+    })
+  }
+  return await apiFetch('/opcua/search', {
+    method: 'POST',
+    body: {
+      endpoint_url: cap.endpoint_url,
+      username: cap.username,
+      password: cap.password,
+      query: q,
+    },
+  })
+}
+
+async function runAddressSpaceVariableSearch(q, runGen) {
+  if (runGen !== searchRequestGen) return
+  searchRemoteError.value = ''
+  searchRemoteInfo.value = ''
+  searchHitEntries.value = []
+  const cap = browseCapability.value
+  if (!cap) {
+    searchRemoteError.value = '请先保存 OPC UA 连接或（向导内）填写 Endpoint'
+    return
+  }
+  searchRemoteLoading.value = true
+  try {
+    const res = await opcApiSearchVariables(q)
+    if (runGen !== searchRequestGen) return
+    searchRemoteLoading.value = false
+    if (res.ok === false) {
+      searchRemoteError.value = res.message || '搜索失败'
+      return
+    }
+    searchHitEntries.value = (res.hits || []).map(opcHitToPickEntry)
+    if (res.truncated) {
+      searchRemoteInfo.value = `已扫描约 ${res.nodes_scanned ?? '—'} 个节点；范围或结果数量已达上限，请缩小关键字后重试。`
+    }
+  } catch (e) {
+    if (runGen !== searchRequestGen) return
+    searchRemoteLoading.value = false
+    searchRemoteError.value = e.message || String(e)
   }
 }
 
@@ -321,7 +445,7 @@ async function copyConnectionInfo() {
       copyFeedback.value = ''
     }, 2500)
   } catch (e) {
-    msg.value = `复制失败：${e.message || String(e)}`
+    msg.value = `复制失败：${translateOpcuaMessage(e.message || String(e))}`
   }
 }
 
@@ -394,6 +518,7 @@ function selectServer(s, persist = true) {
   form.username = row.username || ''
   form.password = ''
   msg.value = ''
+  searchQuery.value = ''
   treeNodes.value = []
   pickedNode.value = null
   readOut.value = ''
@@ -412,6 +537,7 @@ function startNew() {
   form.username = ''
   form.password = ''
   treeNodes.value = []
+  searchQuery.value = ''
   pickedNode.value = null
   readOut.value = ''
   readEpoch.value += 1
@@ -554,15 +680,6 @@ async function onToggleNode(node) {
   }
 }
 
-/** 仅 OPC Variable 类节点在树上展示读值；Object/VariableType 等不展示 */
-function isOpcVariableValueNode(n) {
-  const c = (n?.node_class || '').trim()
-  if (!c) return false
-  const u = c.toUpperCase()
-  if (u.includes('VARIABLETYPE')) return false
-  return u === 'VARIABLE'
-}
-
 const canPollCurrent = computed(
   () =>
     !!(
@@ -588,6 +705,7 @@ function formatOpcValuePreview(res) {
     }
   }
   if (t === 'string') {
+    if (v.length === 0) return '（空字符串）'
     return v.length > 72 ? `${v.slice(0, 69)}…` : v
   }
   return String(v)
@@ -636,15 +754,18 @@ async function prefetchVariableTreeRow(node, myGen) {
     if (prefetchGen.value !== myGen || !browseCapability.value) return
     if (res.ok === false) {
       node.valuePreview = ''
+      node.valueDataTypeLabel = ''
       node.valueReadError = res.message || '读值失败'
     } else {
       node.valueReadError = null
       node.valuePreview = formatOpcValuePreview(res)
+      node.valueDataTypeLabel = opcDataTypeLabelFromRead(res)
     }
     bumpTree()
   } catch (e) {
     if (prefetchGen.value !== myGen || !browseCapability.value) return
     node.valuePreview = ''
+    node.valueDataTypeLabel = ''
     node.valueReadError = e.message || String(e)
     bumpTree()
   }
@@ -673,10 +794,12 @@ async function fetchNodeValue(node, epoch, { manual = false } = {}) {
     if (showInTree) {
       if (res.ok === false) {
         node.valuePreview = ''
+        node.valueDataTypeLabel = ''
         node.valueReadError = res.message || '读值失败'
       } else {
         node.valueReadError = null
         node.valuePreview = formatOpcValuePreview(res)
+        node.valueDataTypeLabel = opcDataTypeLabelFromRead(res)
       }
       bumpTree()
     }
@@ -685,6 +808,7 @@ async function fetchNodeValue(node, epoch, { manual = false } = {}) {
     readOut.value = e.message || String(e)
     if (showInTree) {
       node.valuePreview = ''
+      node.valueDataTypeLabel = ''
       node.valueReadError = e.message || String(e)
       bumpTree()
     }
@@ -730,16 +854,19 @@ async function pollSelectedVariableOnce() {
     readOut.value = JSON.stringify(res, null, 2)
     if (res.ok === false) {
       n.valuePreview = ''
+      n.valueDataTypeLabel = ''
       n.valueReadError = res.message || '读值失败'
     } else {
       n.valueReadError = null
       n.valuePreview = formatOpcValuePreview(res)
+      n.valueDataTypeLabel = opcDataTypeLabelFromRead(res)
     }
     bumpTree()
   } catch (e) {
     if (!pollEnabled.value || pickedNode.value !== n) return
     readOut.value = e.message || String(e)
     n.valuePreview = ''
+    n.valueDataTypeLabel = ''
     n.valueReadError = e.message || String(e)
     bumpTree()
   } finally {
@@ -818,12 +945,36 @@ function onConfigImported() {
   void loadServers()
 }
 
+watch(searchTrimmed, (q) => {
+  clearTimeout(searchDebounceTimer)
+  searchRemoteError.value = ''
+  searchRemoteInfo.value = ''
+  searchHitEntries.value = []
+  searchRemoteLoading.value = false
+  const runGen = ++searchRequestGen
+  if (!q) return
+  searchDebounceTimer = window.setTimeout(() => void runAddressSpaceVariableSearch(q, runGen), 320)
+})
+
+watch(browseCapability, () => {
+  clearTimeout(searchDebounceTimer)
+  searchHitEntries.value = []
+  searchRemoteError.value = ''
+  searchRemoteInfo.value = ''
+  searchRemoteLoading.value = false
+  const q = searchTrimmed.value
+  const runGen = ++searchRequestGen
+  if (!q) return
+  searchDebounceTimer = window.setTimeout(() => void runAddressSpaceVariableSearch(q, runGen), 120)
+})
+
 onMounted(() => {
   void loadServers()
   window.addEventListener('report-editor-config-imported', onConfigImported)
 })
 
 onBeforeUnmount(() => {
+  clearTimeout(searchDebounceTimer)
   clearPollTimer()
   clearTreeRowPollTimer()
   window.removeEventListener('report-editor-config-imported', onConfigImported)
@@ -936,6 +1087,85 @@ onBeforeUnmount(() => {
   border-radius: 8px;
   padding: 8px 4px;
   background: #fafafa;
+}
+.opc-browse-search {
+  padding: 4px 6px 10px;
+}
+.opc-browse-search-lbl {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  color: #374151;
+}
+.opc-browse-search-inp {
+  padding: 8px 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 13px;
+  width: 100%;
+  box-sizing: border-box;
+  background: #fff;
+}
+.opc-browse-search-hint {
+  margin: 8px 0 0;
+  font-size: 11px;
+  color: #6b7280;
+  line-height: 1.45;
+}
+.opc-browse-search-empty {
+  padding: 14px 8px;
+  text-align: center;
+  font-size: 12px;
+  color: #6b7280;
+}
+.opc-browse-search-status {
+  padding: 14px 8px;
+  text-align: center;
+  font-size: 12px;
+  color: #4338ca;
+  font-weight: 600;
+}
+.opc-browse-search-meta {
+  margin: 8px 8px 4px;
+  font-size: 11px;
+  color: #92400e;
+  line-height: 1.4;
+}
+.opc-browse-hit-list {
+  list-style: none;
+  margin: 0;
+  padding: 0 4px 8px;
+}
+.opc-browse-hit-list li + li {
+  margin-top: 4px;
+}
+.opc-browse-hit {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  text-align: left;
+  padding: 8px 10px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #fff;
+  cursor: pointer;
+  font-size: 12px;
+  box-sizing: border-box;
+}
+.opc-browse-hit:hover {
+  border-color: #a5b4fc;
+  background: #eef2ff;
+}
+.opc-browse-hit-path {
+  color: #111827;
+  word-break: break-all;
+}
+.opc-browse-hit-id {
+  color: #6366f1;
+  font-size: 11px;
 }
 .detail-wrap {
   flex: 0 1 400px;

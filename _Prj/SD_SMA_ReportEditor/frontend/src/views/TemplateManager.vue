@@ -54,8 +54,8 @@
                 <TemplateMiniPage
                   :template="cache[r.id]"
                   sheet="cover"
-                  :max-width-px="116"
-                  :max-height-px="152"
+                  :max-width-px="230"
+                  :max-height-px="300"
                 />
               </div>
               <label class="micro-lab">版式</label>
@@ -76,8 +76,8 @@
                   :template="cache[r.id]"
                   sheet="body"
                   gap-label="正文区（示意省略）"
-                  :max-width-px="116"
-                  :max-height-px="152"
+                  :max-width-px="230"
+                  :max-height-px="300"
                 />
               </div>
               <label class="micro-lab">正文版式</label>
@@ -97,8 +97,8 @@
                 <TemplateMiniPage
                   :template="cache[r.id]"
                   sheet="back"
-                  :max-width-px="116"
-                  :max-height-px="152"
+                  :max-width-px="230"
+                  :max-height-px="300"
                 />
               </div>
               <label class="micro-lab">版式</label>
@@ -113,19 +113,12 @@
               <button type="button" class="b-micro" @click.stop="goLayoutsNew('back')">新建末页版式</button>
             </div>
           </div>
-          <p class="sig-opt">
-            <span class="sig-opt-tag">可选</span>
-            <span class="sig-opt-body">
-              电子签名按需使用：请在编辑器画布添加控件；签名图可在
-              <button type="button" class="sig-opt-btn" @click.stop="goSignaturesLibrary">签名库</button>
-              中管理。
-            </span>
-          </p>
         </template>
         <div v-else class="skel">加载…</div>
         <div class="foot">
           <div class="foot-meta">
-            <b>{{ r.name }}</b> {{ r.dim }} · {{ r.updated }}
+            <b class="foot-template-name">{{ r.name }}</b>
+            <span class="foot-template-meta">{{ r.dim }} · {{ r.updated }}</span>
           </div>
           <div class="foot-actions">
             <a
@@ -155,9 +148,15 @@ import {
   cloneDeepTemplate,
 } from "@/lib/report-template/snapshot-fingerprint";
 import { bodyElementsRef, metricsForSheet } from "@/lib/report-template/editor-sheet";
-import { applyLayoutPresetToTemplate } from "@/lib/report-template/layout-apply";
+import { applyLayoutPresetToTemplate, resyncTemplateBoundPresets } from "@/lib/report-template/layout-apply";
 import { refreshLayoutPresets } from "@/lib/report-template/layout-registry";
-import { loadTemplates as loadLocal, saveTemplates } from "@/lib/report-template/model";
+import {
+  loadTemplates as loadLocal,
+  saveTemplates,
+  ensureBodyPages,
+  syncLegacyElementsAlias,
+  TEMPLATE_SCHEMA_VERSION,
+} from "@/lib/report-template/model";
 import TemplateMiniPage from "@/components/report-template/TemplateMiniPage.vue";
 import TemplateMiniBands from "@/components/report-template/TemplateMiniBands.vue";
 import NewTemplateWizardDialog from "@/components/report-template/NewTemplateWizardDialog.vue";
@@ -232,11 +231,32 @@ async function loadPresets() {
   }
 }
 
+/** 缩略图缓存中的模版：按绑定 ID 拉齐版式库最新快照（仅内存，不写服务器） */
+function resyncAllCachedTemplates() {
+  const presets = layoutPresetsAll.value;
+  if (!presets.length) return;
+  for (const id of Object.keys(cache.value)) {
+    const t = cache.value[id];
+    if (t && typeof t === "object") {
+      resyncTemplateBoundPresets(t, presets);
+      reclampTemplate(t);
+    }
+  }
+}
+
 /** @param {import('@/lib/report-template/model').ReportTemplate} t */
 function reclampTemplate(t) {
+  const pages = ensureBodyPages(t);
+  syncLegacyElementsAlias(t);
   for (const s of /** @type {const} */ (["body", "cover", "back"])) {
     const m = metricsForSheet(t, s);
-    for (const el of bodyElementsRef(t, s)) clampElementToLayout(el, m.contentW, m.contentH);
+    if (s === "body") {
+      for (const row of pages) {
+        for (const el of row) clampElementToLayout(el, m.contentW, m.contentH);
+      }
+    } else {
+      for (const el of bodyElementsRef(t, s)) clampElementToLayout(el, m.contentW, m.contentH);
+    }
   }
 }
 
@@ -278,8 +298,10 @@ async function onApplyPreset(templateId, slot, ev) {
 
 /** @param {import('@/lib/report-template/model').ReportTemplate} t */
 async function persistFullTemplate(t) {
+  ensureBodyPages(t);
+  syncLegacyElementsAlias(t);
   t.updatedAt = new Date().toISOString();
-  t.schemaVersion = 2;
+  t.schemaVersion = TEMPLATE_SCHEMA_VERSION;
   try {
     await api.putTemplate(t.id, t);
     msg.value = "已更新该模版的版式引用并保存。";
@@ -306,6 +328,11 @@ watch(
     if (m !== "thumbs") return;
     await loadPresets();
     if (!offline.value) await hydrateThumbs();
+    else {
+      const local = loadLocal();
+      cache.value = Object.fromEntries(local.map((x) => [x.id, x]));
+    }
+    resyncAllCachedTemplates();
   },
 );
 
@@ -314,10 +341,6 @@ function goLayoutsNew(role) {
     path: "/layouts",
     query: role ? { new: "1", role } : { new: "1" },
   });
-}
-
-function goSignaturesLibrary() {
-  router.push({ path: "/signatures" });
 }
 
 function goEditor(id) {
@@ -369,6 +392,7 @@ onMounted(async () => {
       const local = loadLocal();
       cache.value = Object.fromEntries(local.map((x) => [x.id, x]));
     }
+    resyncAllCachedTemplates();
   }
 });
 </script>
@@ -449,7 +473,7 @@ onMounted(async () => {
 }
 .grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(480px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(700px, 1fr));
   gap: 14px;
   margin-top: 16px;
 }
@@ -476,54 +500,6 @@ onMounted(async () => {
     grid-template-columns: 1fr;
   }
 }
-.sig-opt {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  gap: 8px 10px;
-  margin: 12px 0 0;
-  padding: 10px 12px;
-  font-size: 12px;
-  line-height: 1.55;
-  color: #57534e;
-  background: #fafaf9;
-  border: 1px dashed #d6d3d1;
-  border-radius: 8px;
-}
-.sig-opt-tag {
-  flex-shrink: 0;
-  margin-top: 2px;
-  padding: 2px 8px;
-  font-size: 11px;
-  font-weight: 600;
-  color: #78716c;
-  background: #e7e5e4;
-  border-radius: 4px;
-}
-.sig-opt-body {
-  flex: 1 1 220px;
-  min-width: 0;
-}
-.sig-opt-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 44px;
-  margin: -4px 2px -4px;
-  padding: 0 14px;
-  vertical-align: middle;
-  border-radius: 6px;
-  border: 1px solid #c7d2fe;
-  background: #eef2ff;
-  color: #3730a3;
-  font-size: 13px;
-  font-family: inherit;
-  cursor: pointer;
-  touch-action: manipulation;
-}
-.sig-opt-btn:active {
-  background: #e0e7ff;
-}
 .micro {
   display: flex;
   flex-direction: column;
@@ -540,7 +516,7 @@ onMounted(async () => {
   color: #52525b;
 }
 .micro-body {
-  min-height: 156px;
+  min-height: 312px;
   display: flex;
   align-items: flex-start;
   justify-content: center;
@@ -594,12 +570,26 @@ onMounted(async () => {
   margin-top: 10px;
   padding-top: 10px;
   border-top: 1px solid #f4f4f5;
-  font-size: 12px;
+  font-size: 13px;
   line-height: 1.5;
 }
 .foot-meta {
-  flex: 1 1 200px;
+  flex: 1 1 240px;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.foot-template-name {
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.25;
+  color: #0f172a;
+}
+.foot-template-meta {
+  font-size: 12px;
+  font-weight: 500;
+  color: #64748b;
 }
 .foot-actions {
   display: flex;

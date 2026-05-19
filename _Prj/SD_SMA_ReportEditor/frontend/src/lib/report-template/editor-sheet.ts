@@ -1,4 +1,5 @@
 import type { ReportTemplate } from "./model";
+import { ensureBodyPages } from "./model";
 import type { LayoutSnapshot } from "./layout-model";
 import type { PaperLayoutMetrics } from "./layout-geometry";
 import { computePaperLayout } from "./layout-geometry";
@@ -26,10 +27,13 @@ export function metricsForSheet(
 export function bodyElementsRef(
   t: ReportTemplate,
   sheet: EditorSheet,
+  bodyPageIndex = 0,
 ): TemplateElement[] {
   if (sheet === "cover") return t.coverElements;
   if (sheet === "back") return t.backElements;
-  return t.elements;
+  const pages = ensureBodyPages(t);
+  const idx = Math.max(0, Math.min(bodyPageIndex | 0, pages.length - 1));
+  return pages[idx];
 }
 
 export function zoneBodyDecorRef(t: ReportTemplate, sheet: EditorSheet) {

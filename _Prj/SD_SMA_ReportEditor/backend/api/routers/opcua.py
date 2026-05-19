@@ -2,7 +2,14 @@ from fastapi import APIRouter, Body, HTTPException
 
 from core.settings import CONFIG_FILE, DATA_DIR
 from modules import config_store, opcua_service
-from schemas.common import OpcUaBrowseRequest, OpcUaReadRequest, OpcUaServerSave, OpcUaTestRequest
+from schemas.common import (
+    OpcUaBrowseRequest,
+    OpcUaReadRequest,
+    OpcUaSavedVariableSearch,
+    OpcUaServerSave,
+    OpcUaTestRequest,
+    OpcUaVariableSearchRequest,
+)
 
 router = APIRouter(tags=["opcua"])
 
@@ -102,13 +109,33 @@ async def test_opcua(body: OpcUaTestRequest):
     return res
 
 
+@router.post("/opcua/search")
+async def search_opcua_variables(body: OpcUaVariableSearchRequest):
+    q = (body.query or "").strip()
+    if not q:
+        return {"ok": True, "hits": [], "nodes_scanned": 0, "truncated": False}
+    return await opcua_service.search_variables_ephemeral(
+        body.endpoint_url,
+        body.username,
+        body.password,
+        q,
+        body.max_scan,
+        body.max_results,
+        body.max_depth,
+    )
+
+
 @router.post("/opcua/browse")
 async def browse_opcua(body: OpcUaBrowseRequest):
+    mc = body.max_children
+    if mc is None:
+        mc = opcua_service.DEFAULT_OPCUA_BROWSE_MAX_CHILDREN
     res = await opcua_service.browse_children(
         body.endpoint_url,
         body.node_id,
         body.username,
         body.password,
+        max_children=mc,
     )
     return res
 
@@ -136,12 +163,21 @@ async def browse_saved(server_id: str, payload: dict = Body(default_factory=dict
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
     node_id = (payload or {}).get("node_id")
+    raw_mc = (payload or {}).get("max_children")
+    mc = opcua_service.DEFAULT_OPCUA_BROWSE_MAX_CHILDREN
+    if raw_mc is not None:
+        try:
+            n = int(raw_mc)
+            mc = max(1, min(n, 3000))
+        except (TypeError, ValueError):
+            pass
     return await opcua_service.browse_children_for_saved_server(
         server_id,
         ep,
         node_id,
         srv.get("username"),
         pwd,
+        max_children=mc,
     )
 
 
@@ -165,4 +201,30 @@ async def read_saved(server_id: str, payload: dict):
         node_id,
         srv.get("username"),
         pwd,
+    )
+
+
+@router.post("/opcua/search_saved/{server_id}")
+async def search_saved_variables(server_id: str, body: OpcUaSavedVariableSearch):
+    cfg = _load_cfg()
+    srv = next((s for s in cfg.get("opcua_servers", []) if s.get("id") == server_id), None)
+    if not srv:
+        raise HTTPException(404, "未找到服务器配置")
+    ep = str(srv.get("endpoint_url") or srv.get("endpoint") or "").strip()
+    try:
+        pwd = config_store.decrypt_opcua_password(DATA_DIR, srv)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    q = (body.query or "").strip()
+    if not q:
+        return {"ok": True, "hits": [], "nodes_scanned": 0, "truncated": False}
+    return await opcua_service.search_variables_for_saved_server(
+        server_id,
+        ep,
+        srv.get("username"),
+        pwd,
+        q,
+        body.max_scan,
+        body.max_results,
+        body.max_depth,
     )
