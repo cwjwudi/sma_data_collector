@@ -81,7 +81,9 @@ npm.cmd run dist:win:cn:installer
 
 - 删除安装目录下的程序文件
 - 结束正在运行的主程序与内置后端进程
-- **保留** `%APPDATA%\sd-sma-report-editor\` 中的用户数据（便于重装后恢复；若需彻底删除可手动删该文件夹）
+- **删除** `%APPDATA%\sd-sma-report-editor\`（含 `backend-data\` 里的数据库/OPC 连接、`config.json`、模版/版式，以及本机报表相关 localStorage 偏好）
+
+因此 **卸载后重装** 会得到空白配置。若需保留配置，请在卸载前使用 **设置 → 配置导入/导出 → 导出（本机备份）**。
 
 ---
 

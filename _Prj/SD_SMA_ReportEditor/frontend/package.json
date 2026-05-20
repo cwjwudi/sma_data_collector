@@ -91,7 +91,7 @@
       "uninstallDisplayName": "SD SMA 报表编辑器",
       "menuCategory": "B&R Team",
       "runAfterFinish": true,
-      "deleteAppDataOnUninstall": false,
+      "deleteAppDataOnUninstall": true,
       "displayLanguageSelector": false,
       "installerLanguages": [
         "zh_CN"

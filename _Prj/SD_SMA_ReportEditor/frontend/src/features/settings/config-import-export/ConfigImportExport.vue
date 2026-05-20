@@ -4,7 +4,7 @@
     <p class="settings-hint">
       打包内容包含：<strong>数据源</strong>（数据库与 OPC UA）、<strong>报表模版</strong>、<strong>版式</strong>、<strong>签名库</strong>，
       以及本机的<strong>生成报表</strong>与<strong>历史报表</strong>配置（自动导出目录、触发绑定、监视文件夹等）。
-      「脱敏」导出会掩码数据库与 OPC 密码；「本机备份」含完整密码（请妥善保管）。
+      「脱敏」导出会掩码数据库与 OPC 密码（适合共享结构，目标机需重新填口令）。「本机备份」含明文口令，可迁移到另一台电脑导入后自动按该机密钥加密（请妥善保管 JSON 文件）。
     </p>
     <div class="config-import-stack">
       <div class="config-import-grid">
@@ -68,7 +68,11 @@
     <p
       v-if="msg"
       class="settings-msg"
-      :class="{ 'settings-msg--ok': msgTone === 'ok', 'settings-msg--err': msgTone === 'err' }"
+      :class="{
+        'settings-msg--ok': msgTone === 'ok',
+        'settings-msg--warn': msgTone === 'warn',
+        'settings-msg--err': msgTone === 'err',
+      }"
     >
       {{ msg }}
     </p>
@@ -176,6 +180,7 @@ async function doImport(mode) {
       ok?: boolean
       imported?: { templates?: number; layout_presets?: number; signature_assets?: number }
       client_prefs?: unknown
+      warnings?: string[]
     }
     const clientApplied = applyClientPrefsFromBundle(res.client_prefs ?? fileClientPrefs)
     await refreshLayoutPresets()
@@ -187,8 +192,11 @@ async function doImport(mode) {
     if (imp?.signature_assets) parts.push(`签名 ${imp.signature_assets} 条`)
     if (clientApplied.length) parts.push(`本机：${clientApplied.join('、')}`)
     const detail = parts.length ? `（${parts.join('；')}）` : ''
-    msg.value = mode === 'replace' ? `已完成覆盖导入。${detail}` : `已完成合并导入。${detail}`
-    msgTone.value = 'ok'
+    const warnLines = Array.isArray(res.warnings) ? res.warnings.filter((w) => typeof w === 'string' && w) : []
+    const warnText = warnLines.length ? `\n${warnLines.join('\n')}` : ''
+    msg.value =
+      (mode === 'replace' ? `已完成覆盖导入。${detail}` : `已完成合并导入。${detail}`) + warnText
+    msgTone.value = warnLines.length ? 'warn' : 'ok'
     if (fileRef.value) fileRef.value.value = ''
     pendingJson.value = null
     pendingFileName.value = ''

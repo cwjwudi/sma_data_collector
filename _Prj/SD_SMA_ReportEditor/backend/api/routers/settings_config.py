@@ -61,6 +61,9 @@ async def export_config(mode: Literal["share", "backup"] = Query("share")):
             mask_conn=config_store.mask_connection_for_response,
             mask_opcua=config_store.mask_opcua_for_response,
             mode="backup",
+            data_dir=DATA_DIR,
+            decrypt_db=config_store.decrypt_db_password,
+            decrypt_opcua=config_store.decrypt_opcua_password,
         )
     return cbundle.build_export_bundle(
         cfg,
@@ -95,16 +98,27 @@ async def import_config(request: Request):
         cur = _load()
         client_prefs: dict = {}
         imported_stats: dict = {}
+        warnings: list[str] = []
+        cred = cie.import_credential_kwargs(DATA_DIR)
         if isinstance(data, dict) and cbundle.is_bundle_payload(data):
-            merged, bundle_result = cbundle.apply_bundle_import(cur, data, mode)
+            merged, bundle_result = cbundle.apply_bundle_import(cur, data, mode, **cred)
             client_prefs = bundle_result.get("client_prefs") or {}
             imported_stats = bundle_result.get("imported") or {}
+            warnings = list(bundle_result.get("warnings") or [])
         elif mode == "replace":
-            merged = cie.apply_import_replace(data)
+            merged, raw_warn = cie.apply_import_replace(data, **cred)
+            warnings = cie.format_import_warnings(raw_warn)
         else:
-            merged = cie.apply_import_merge(cur, data)
+            merged, raw_warn = cie.apply_import_merge(cur, data, **cred)
+            warnings = cie.format_import_warnings(raw_warn)
         _save(merged)
-        return {"ok": True, "mode": mode, "client_prefs": client_prefs, "imported": imported_stats}
+        return {
+            "ok": True,
+            "mode": mode,
+            "client_prefs": client_prefs,
+            "imported": imported_stats,
+            "warnings": warnings,
+        }
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
     except Exception as e:

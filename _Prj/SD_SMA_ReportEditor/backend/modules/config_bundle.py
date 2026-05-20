@@ -68,6 +68,9 @@ def build_export_bundle(
     mask_conn,
     mask_opcua,
     mode: str,
+    data_dir: Path | None = None,
+    decrypt_db=None,
+    decrypt_opcua=None,
 ) -> dict[str, Any]:
     share = mode == "share"
     if share:
@@ -77,15 +80,21 @@ def build_export_bundle(
         dbs = []
         for c in base.get("db_connections") or []:
             if isinstance(c, dict):
-                row = dict(c)
-                row.pop("has_password", None)
-                dbs.append(row)
+                if data_dir is not None and decrypt_db is not None:
+                    dbs.append(cie.export_credential_row_for_bundle(data_dir, c, decrypt_db))
+                else:
+                    row = dict(c)
+                    row.pop("has_password", None)
+                    dbs.append(row)
         opcs = []
         for s in base.get("opcua_servers") or []:
             if isinstance(s, dict):
-                row = dict(s)
-                row.pop("has_password", None)
-                opcs.append(row)
+                if data_dir is not None and decrypt_opcua is not None:
+                    opcs.append(cie.export_credential_row_for_bundle(data_dir, s, decrypt_opcua))
+                else:
+                    row = dict(s)
+                    row.pop("has_password", None)
+                    opcs.append(row)
         base["db_connections"] = dbs
         base["opcua_servers"] = opcs
 
@@ -196,15 +205,20 @@ def apply_bundle_import(
     current: dict[str, Any],
     incoming: dict[str, Any],
     mode: str,
+    *,
+    data_dir: Path | None = None,
+    **credential_kwargs: Any,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     bundle = validate_bundle_payload(incoming)
     replace_assets = mode == "replace"
     cfg_slice = extract_config_slice(bundle)
+    cred = credential_kwargs if data_dir is not None else {}
 
+    import_warnings: list[str] = []
     if mode == "replace":
-        merged_cfg = cie.apply_import_replace(cfg_slice)
+        merged_cfg, import_warnings = cie.apply_import_replace(cfg_slice, **cred)
     else:
-        merged_cfg = cie.apply_import_merge(current, cfg_slice)
+        merged_cfg, import_warnings = cie.apply_import_merge(current, cfg_slice, **cred)
 
     counts = _import_asset_lists(bundle, replace_assets=replace_assets)
     client_prefs = copy.deepcopy(bundle.get("client_prefs") or {})
@@ -214,4 +228,8 @@ def apply_bundle_import(
         "signature_assets": counts["signature_assets"],
         "has_client_prefs": bool(client_prefs),
     }
-    return merged_cfg, {"client_prefs": client_prefs, "imported": stats}
+    return merged_cfg, {
+        "client_prefs": client_prefs,
+        "imported": stats,
+        "warnings": cie.format_import_warnings(import_warnings),
+    }

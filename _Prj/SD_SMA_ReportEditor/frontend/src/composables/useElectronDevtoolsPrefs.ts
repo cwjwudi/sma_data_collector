@@ -7,7 +7,7 @@ import {
 
 /** Electron 桌面壳：是否显示右侧 DevTools（与设置页开关同步） */
 export function useElectronDevtoolsPrefs() {
-  const devtoolsOpen = useStorage(ELECTRON_DEVTOOLS_STORAGE_KEY, true);
+  const devtoolsOpen = useStorage(ELECTRON_DEVTOOLS_STORAGE_KEY, false);
   watch(
     devtoolsOpen,
     (v) => {

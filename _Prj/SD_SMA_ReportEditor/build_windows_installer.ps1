@@ -160,7 +160,7 @@ if ($setup) {
   Write-Host 'Install: double-click Setup, choose directory, complete wizard.' -ForegroundColor DarkGray
   Write-Host 'Uninstall: Settings > Apps > Installed apps > "SD SMA Report Editor" > Uninstall' -ForegroundColor DarkGray
   Write-Host '          or Start Menu > B&R Team > Uninstall shortcut.' -ForegroundColor DarkGray
-  Write-Host 'Data dir (kept after uninstall): %APPDATA%\sd-sma-report-editor\backend-data\' -ForegroundColor DarkGray
+  Write-Host 'Uninstall removes: %APPDATA%\sd-sma-report-editor\ (configs, templates, local prefs)' -ForegroundColor DarkGray
 }
 else {
   Write-WarnLine "No *-Setup-*-x64.exe under $outRoot. Check electron-builder log above."

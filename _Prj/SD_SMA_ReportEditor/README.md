@@ -137,7 +137,7 @@ npm.cmd run dist:cn:alt
 
 - **NSIS 安装程序**：`SD SMA Report Editor-Setup-0.1.0-x64.exe` — 向导安装、开始菜单/桌面快捷方式、**控制面板/设置中可卸载**
 - **便携版**：`SD SMA Report Editor-Portable-0.1.0-x64.exe` — 免安装，删除文件夹即移除
-- 安装/解压后，后端为内置的 `report_backend.exe`，**配置文件与模板等** 写在用户目录：`%APPDATA%\sd-sma-report-editor\backend-data\`（环境变量 `REPORT_EDITOR_DATA_DIR`）；卸载程序**默认保留**该用户数据目录。
+- 安装/解压后，后端为内置的 `report_backend.exe`，**配置文件与模板等** 写在用户目录：`%APPDATA%\sd-sma-report-editor\backend-data\`（环境变量 `REPORT_EDITOR_DATA_DIR`）；**卸载时会删除** 整个 `%APPDATA%\sd-sma-report-editor\`（重装后为全新环境；迁移请先导出配置包）。
 
 单独重建后端可执行文件：
 
