@@ -132,18 +132,19 @@ npm --version
 
 ---
 
-## 七、打包 Windows 安装包（可选）
+## 七、打包 Windows 安装包（现场交付）
 
-面向**交付现场**而非日常开发，需已安装 Node、Python（含 `py` 启动器）。在 `frontend/`：
+面向**交付现场**（非日常开发）。**推荐**在项目根双击或执行：
 
-```powershell
-npm install
-npm.cmd run dist:win
+```bat
+build_windows_installer.bat
 ```
 
-或国内镜像：`npm.cmd run dist:win:cn`  
+等价于：安装依赖 → PyInstaller 后端 → Vite 构建 → **仅生成 NSIS 安装程序**（`frontend/release-installer/`）。
 
-详细排错（白屏、NSIS、文件占用等）见项目根 [README.md](../README.md) 的「Windows 安装包」章节。
+也可在 `frontend/` 手动执行：`npm.cmd run dist:win:cn:installer`（仅安装包）或 `npm.cmd run dist:win:cn`（安装包 + 便携版）。
+
+**安装 / 卸载** 说明见 [**windows-installer.md**](windows-installer.md)；排错（白屏、NSIS、文件占用）见 [README.md](../README.md)。
 
 ---
 

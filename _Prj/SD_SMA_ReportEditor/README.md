@@ -81,17 +81,31 @@ npm run electron:dev
 
 ## Windows 安装包 / 绿色便携版（.exe）
 
-成品在 `frontend/release/`（不入库）：
+面向现场交付的 **NSIS 安装程序**（可在「设置 → 应用」中卸载）与可选 **便携版**。详细说明见 [**getting-started/windows-installer.md**](getting-started/windows-installer.md)。
+
+### 推荐：项目根一键打安装包
+
+在 **`SD_SMA_ReportEditor/`**（本目录）执行：
+
+```bat
+build_windows_installer.bat
+```
+
+产物：`frontend/release-installer/SD SMA Report Editor-Setup-<version>-x64.exe`
+
+### 手动 npm 打包
+
+成品默认在 `frontend/release/`（不入库）；仅安装包可用 `release-installer/`：
 
 1. 前置：已安装 **Node.js**、**Python 3.9+**（打包环境推荐 **3.10+** 且含 Windows `py` 启动器）、Windows x64。
 2. 在 `frontend/` 安装依赖：`npm install`
-3. **一键完整打包**（先 PyInstaller 打后端，再 electron-builder 打安装包 + 便携 exe）：  
-   `npm run dist:win`（PowerShell 可用 **`npm.cmd run dist:win`**）
-4. 若 **`electron-v*-win32-x64.zip` 从 GitHub 下载超时**（常见于内网或对 `github.com` 不稳定），使用 **npmmirror 镜像** 再打一次：  
+3. **仅 NSIS 安装程序**（推荐交付）：`npm.cmd run dist:win:cn:installer`
+4. **安装包 + 便携版**：`npm run dist:win`（PowerShell 可用 **`npm.cmd run dist:win`**）
+5. 若 **`electron-v*-win32-x64.zip` 从 GitHub 下载超时**（常见于内网或对 `github.com` 不稳定），使用 **npmmirror 镜像** 再打一次：  
    `npm.cmd run dist:win:cn`  
    若后端已编好、只重打 Electron：  
    `npm.cmd run dist:cn`
-5. 仅打前端包（需已存在 `backend/dist/report_backend/`）：  
+6. 仅打前端包（需已存在 `backend/dist/report_backend/`）：  
    `npm run dist`
 
 **网络说明**：`winCodeSign` 相关下载已通过 `build.win` 中 `signAndEditExecutable` / `signDlls` 关闭。**Electron 本体**仍默认从 GitHub 拉取；镜像失败时可自行设系统/会话代理，或 PowerShell 临时：
@@ -121,9 +135,9 @@ npm.cmd run dist:cn:alt
 
 成品说明：
 
-- **NSIS 安装程序**：`SD SMA Report Editor-Setup-0.1.0-x64.exe`
-- **便携版**：`SD SMA Report Editor-Portable-0.1.0-x64.exe`
-- 安装/解压后，后端为内置的 `report_backend.exe`，**配置文件与模板等** 写在用户目录：`%APPDATA%\sd-sma-report-editor\backend-data\`（环境变量 `REPORT_EDITOR_DATA_DIR`）。
+- **NSIS 安装程序**：`SD SMA Report Editor-Setup-0.1.0-x64.exe` — 向导安装、开始菜单/桌面快捷方式、**控制面板/设置中可卸载**
+- **便携版**：`SD SMA Report Editor-Portable-0.1.0-x64.exe` — 免安装，删除文件夹即移除
+- 安装/解压后，后端为内置的 `report_backend.exe`，**配置文件与模板等** 写在用户目录：`%APPDATA%\sd-sma-report-editor\backend-data\`（环境变量 `REPORT_EDITOR_DATA_DIR`）；卸载程序**默认保留**该用户数据目录。
 
 单独重建后端可执行文件：
 

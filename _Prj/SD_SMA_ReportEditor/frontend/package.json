@@ -31,7 +31,8 @@
     "dist:win": "npm run build:backend && npm run dist",
     "dist:win:cn": "set ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/&& npm run dist:win",
     "dist:win:cn:alt": "npm run build:backend && set ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/&& npm run build && electron-builder --win --config.directories.output=release-alt",
-    "dist:win:cn:fresh": "npm run clean:release && set ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/&& npm run dist:win"
+    "dist:win:cn:fresh": "npm run clean:release && set ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/&& npm run dist:win",
+    "dist:win:cn:installer": "npm run build:backend && set ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/&& npm run build && electron-builder --win nsis --config.directories.output=release-installer"
   },
   "build": {
     "appId": "com.brteam.sd_sma.report_editor",
@@ -82,8 +83,21 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,
+      "allowElevation": true,
       "perMachine": false,
       "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "SD SMA 报表编辑器",
+      "uninstallDisplayName": "SD SMA 报表编辑器",
+      "menuCategory": "B&R Team",
+      "runAfterFinish": true,
+      "deleteAppDataOnUninstall": false,
+      "displayLanguageSelector": false,
+      "installerLanguages": [
+        "zh_CN"
+      ],
+      "language": "2052",
+      "include": "build/installer.nsh",
       "artifactName": "${productName}-Setup-${version}-${arch}.${ext}"
     },
     "portable": {
