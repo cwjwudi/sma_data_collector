@@ -29,4 +29,6 @@ chmod +x build.sh build.command
 output/SD SMA Report Editor-<version>-<arch>.dmg
 ```
 
+产物含 `*.dmg` 与 `mac-arm64/`（或 `mac/`）解包目录，均在 **`output/`** 下，不在 `frontend/release-mac`。
+
 现场安装见 [getting-started/mac-installer.md](../../getting-started/mac-installer.md)。

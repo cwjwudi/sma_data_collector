@@ -1,15 +1,16 @@
 ﻿# 释放 win-unpacked 占用后删除目录。
-# 用法: .\clean-release.ps1           # 默认清理 frontend\release\win-unpacked
-#       .\clean-release.ps1 release-alt  # 清理 frontend\release-alt\win-unpacked
+# 用法: .\clean-release.ps1                              # packaging\windows\output
+#       .\clean-release.ps1 ..\..\packaging\windows\output-alt
 param(
     [Parameter(Position = 0)]
-    [string]$OutputFolderName = 'release'
+    [string]$OutputFolderName = '..\..\packaging\windows\output'
 )
 
 $ErrorActionPreference = 'Continue'
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$FrontendRoot = Resolve-Path (Join-Path $ScriptDir '..')
-$Unpack = Join-Path $FrontendRoot (Join-Path $OutputFolderName 'win-unpacked')
+$FrontendRoot = (Resolve-Path (Join-Path $ScriptDir '..')).Path
+$OutRoot = Join-Path $FrontendRoot $OutputFolderName
+$Unpack = Join-Path $OutRoot 'win-unpacked'
 
 if (-not (Test-Path $Unpack)) {
     Write-Host "OK: nothing to clean ($Unpack)"
@@ -65,6 +66,6 @@ catch {
     Write-Host ""
     Write-Host "Still blocked. Options:"
     Write-Host "  1) Close tabs/preview under frontend/$OutputFolderName/win-unpacked, reload Cursor, retry clean:release."
-    Write-Host "  2) Build to another output folder (avoids locked release/): npm.cmd run dist:cn:alt - artifacts go to frontend/release-alt/"
+    Write-Host "  2) Build to alternate output: npm.cmd run dist:cn:alt - artifacts go to packaging/windows/output-alt/"
     throw
 }

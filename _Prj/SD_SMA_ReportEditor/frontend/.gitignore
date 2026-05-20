@@ -1,3 +1,4 @@
+# Legacy electron-builder output (use packaging/*/output); safe to delete locally
 release/
 release-alt/
 release-installer/

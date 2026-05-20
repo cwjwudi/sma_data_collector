@@ -25,4 +25,6 @@ build.bat
 output/SD SMA Report Editor-Setup-<version>-x64.exe
 ```
 
+安装包与 `win-unpacked/` 均在 **`output/`**；排错备用目录为 **`output-alt/`**（见 `npm run dist:cn:alt`），不在 `frontend/release*`。
+
 现场安装与卸载见 [getting-started/windows-installer.md](../../getting-started/windows-installer.md)。

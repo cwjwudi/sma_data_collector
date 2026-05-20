@@ -1,2 +1,4 @@
 output/*
 !output/.gitkeep
+output-alt/*
+!output-alt/.gitkeep

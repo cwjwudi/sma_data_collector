@@ -24,11 +24,26 @@ packaging/
 ├── README.md           ← 本说明（打包详述入口）
 ├── windows/
 │   ├── build.bat / build.ps1
-│   └── output/         ← Setup.exe（git 忽略）
+│   ├── output/         ← 正式 NSIS 安装包（git 忽略）
+│   └── output-alt/     ← 备用输出（占用 release 时排错，git 忽略）
 └── mac/
     ├── build.sh / build.command
-    └── output/         ← DMG（git 忽略）
+    └── output/         ← DMG 与 mac-arm64 解包目录（git 忽略）
 ```
+
+### 遗留的 `frontend/release*` 目录
+
+早期默认输出在 `frontend/release`、`frontend/release-mac` 等。**现已统一写入 `packaging/*/output`**。若本地仍存在旧目录，可删除：
+
+```bash
+# macOS / Linux（在 frontend/ 下）
+npm run clean:legacy-release
+
+# Windows（在 frontend/ 下）
+npm run clean:legacy-release:win
+```
+
+之后请用 `packaging/windows/build.bat` 或 `packaging/mac/build.sh`，勿再依赖 `frontend/release-mac`。
 
 ---
 
@@ -126,11 +141,11 @@ bash scripts/build-backend-exe.sh
 
 | 现象 | 处理 |
 |------|------|
-| `release\win-unpacked` 被占用 / Cursor 锁住 | `npm.cmd run dist:cn:alt` → 产物在 `frontend/release-alt/`；清理：`npm.cmd run clean:release:alt` |
+| `win-unpacked` 被占用 / Cursor 锁住 | `npm.cmd run dist:cn:alt` → 产物在 `packaging/windows/output-alt/`；清理：`npm.cmd run clean:release:alt` |
 | NSIS `Plugin not found … UAC::_` | 关闭占用后 `npm.cmd run clean:eb-cache`，再 `dist:cn:alt`；或暂用 `dist:cn:portable`（无 NSIS） |
 | 安装版 / 便携版白屏 | `vite.config.js` 已设 `base: './'`，需 **重新** `build` + `electron-builder` |
-| 双击报 `require is not defined` | 拉最新代码后重新 `dist:cn:alt`，勿用旧 `release` / `release-alt` exe |
-| `app.asar` Access denied | `npm.cmd run clean:release`；或改用 `dist:cn:alt` + Reload Cursor 窗口 |
+| 双击报 `require is not defined` | 拉最新代码后重新 `dist:cn:alt`，勿用旧目录里生成的 exe |
+| `app.asar` Access denied | `npm.cmd run clean:release`（清理 `packaging/windows/output`）；或 `dist:cn:alt` + Reload Cursor |
 
 PowerShell 若拦截 `npm.ps1`，统一用 **`npm.cmd`**。
 
