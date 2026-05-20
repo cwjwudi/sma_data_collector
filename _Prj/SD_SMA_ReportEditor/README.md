@@ -1,6 +1,6 @@
 # SD_SMA_ReportEditor
 
-Markdown 报表编辑器桌面软件：连接 MySQL/MariaDB、PostgreSQL 与 OPC UA，可视化配置报表模板，生成 Markdown / PDF。
+报表编辑器桌面软件：连接 MySQL/MariaDB、PostgreSQL 与 OPC UA，可视化配置报表模版，导出 **PDF**（不再生成 `.md` 成品，见 [_Doc/005](_Doc/005_交付格式决策-取消Markdown管线.md)）。
 
 ---
 
@@ -119,4 +119,6 @@ Windows 上避免在旧 **cmd** 里长时间拖选文本（快速编辑会挂进
 
 - [初次上手 — getting-started/](getting-started/README.md)
 - [Windows 环境](getting-started/windows.md) · [macOS 环境](getting-started/mac.md)
+- [交付格式决策（为何不做 Markdown 成品）](_Doc/005_交付格式决策-取消Markdown管线.md)
+- [里程碑与工单](_Doc/002_里程碑与工单.md)
 - [Mac 开发补充](_Doc/004_Mac开发环境准备.md)
