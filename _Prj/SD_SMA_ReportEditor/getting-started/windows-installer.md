@@ -17,30 +17,30 @@
 
 ### 一键打包（推荐）
 
-在 **`SD_SMA_ReportEditor/`** 项目根目录：
+在 **`SD_SMA_ReportEditor/packaging/windows/`**：
+
+```bat
+build.bat
+```
+
+或项目根快捷方式：
 
 ```bat
 build_windows_installer.bat
-```
-
-或 PowerShell：
-
-```powershell
-.\build_windows_installer.ps1
 ```
 
 可选参数：
 
 | 参数 | 作用 |
 |------|------|
-| `-Fresh` | 打包前清理 `frontend/release-installer/` |
+| `-Fresh` | 打包前清理 `packaging/windows/output/` |
 | `-SkipFrontendInstall` | 跳过 `npm ci`（依赖已装好时） |
 | `-SkipBackendBuild` | 跳过 PyInstaller（已有 `backend/dist/report_backend/` 时） |
 
 **产物路径：**
 
 ```text
-frontend/release-installer/SD SMA Report Editor-Setup-0.1.0-x64.exe
+packaging/windows/output/SD SMA Report Editor-Setup-0.1.0-x64.exe
 ```
 
 （版本号随 `frontend/package.json` 的 `version` 变化。）
@@ -104,7 +104,7 @@ npm.cmd run dist:win:cn:installer
 | 现象 | 处理 |
 |------|------|
 | NSIS `Plugin not found UAC::_` | 在 `frontend/` 执行 `npm.cmd run clean:eb-cache` 后重新打包 |
-| `release` 目录被占用 | 使用 `build_windows_installer.ps1`（输出到 `release-installer`）或 `npm.cmd run dist:win:cn:installer` |
+| `release` 目录被占用 | 使用 `packaging\windows\build.bat`（输出到 `packaging\windows\output`） |
 | 安装后窗口白屏 | 确认已用最新代码打包（`vite.config.js` 中 `base: './'`） |
 | 仅要绿色版、不要安装向导 | `npm.cmd run dist:cn:portable` → 便携 exe |
 

@@ -10,8 +10,10 @@
 |------|------|------|
 | 1 | **本文** | 仓库定位、目录含义、开发/运行模式 |
 | 2 | [Windows 环境准备](windows.md) | 安装 Python / Node、首次依赖、启动方式 |
-| 2b | [Windows 安装包](windows-installer.md) | 打 Setup.exe、现场安装与卸载（交付用） |
+| 2b | [packaging/ 打包工具](../packaging/README.md) | Win/Mac 脚本与 `output/` 目录 |
+| 2c | [Windows 安装包](windows-installer.md) | 打 Setup.exe、现场安装与卸载（交付用） |
 | 3 | [macOS 环境准备](mac.md) | Homebrew、venv、一键脚本、Electron 注意点 |
+| 3b | [macOS 安装包](mac-installer.md) | 打 DMG、安装与卸载（交付用，须在 Mac 上打包） |
 
 读完并跑通一次后，可继续查阅：
 

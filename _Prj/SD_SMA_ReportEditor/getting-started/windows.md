@@ -137,10 +137,10 @@ npm --version
 面向**交付现场**（非日常开发）。**推荐**在项目根双击或执行：
 
 ```bat
-build_windows_installer.bat
+packaging\windows\build.bat
 ```
 
-等价于：安装依赖 → PyInstaller 后端 → Vite 构建 → **仅生成 NSIS 安装程序**（`frontend/release-installer/`）。
+等价于：安装依赖 → PyInstaller 后端 → Vite 构建 → **仅生成 NSIS 安装程序**（`packaging\windows\output\`）。
 
 也可在 `frontend/` 手动执行：`npm.cmd run dist:win:cn:installer`（仅安装包）或 `npm.cmd run dist:win:cn`（安装包 + 便携版）。
 

@@ -11,6 +11,7 @@ Markdown 报表编辑器桌面软件。支持读取 MySQL/MariaDB、PostgreSQL �
 | [getting-started/README.md](getting-started/README.md) | 本工程在 `p000_sd_sma_scada` 中的位置、目录含义、三种运行方式 |
 | [getting-started/windows.md](getting-started/windows.md) | Windows：安装 Python/Node、venv、`start_dev_web.bat`、Electron |
 | [getting-started/mac.md](getting-started/mac.md) | macOS：Homebrew、venv、`open-electron-dev-mac.command`、双终端 Web |
+| [getting-started/mac-installer.md](getting-started/mac-installer.md) | macOS：打 DMG、安装与卸载（交付用） |
 
 跑通后再看下文「快速开始」与打包说明。
 
@@ -24,11 +25,12 @@ Markdown 报表编辑器桌面软件。支持读取 MySQL/MariaDB、PostgreSQL �
 
 ```
 SD_SMA_ReportEditor/
+├── packaging/        # Win/Mac 安装包打包工具与 output/ 产物
 ├── getting-started/  # 初次上手（Windows / Mac 环境与启动）
 ├── _Doc/             # 项目文档（计划、工单、变更记录）
 ├── backend/          # Python FastAPI 后端
 ├── frontend/         # Electron + Vue 3 前端
-├── scripts/          # 启动脚本（如 Mac 一键 Electron）
+├── scripts/          # 开发启动脚本（如 Mac 一键 Electron）
 ├── start_dev_web.bat # Windows 浏览器模式一键启动
 └── README.md
 ```
@@ -83,19 +85,19 @@ npm run electron:dev
 
 面向现场交付的 **NSIS 安装程序**（可在「设置 → 应用」中卸载）与可选 **便携版**。详细说明见 [**getting-started/windows-installer.md**](getting-started/windows-installer.md)。
 
-### 推荐：项目根一键打安装包
-
-在 **`SD_SMA_ReportEditor/`**（本目录）执行：
+### 推荐：打包工具目录
 
 ```bat
-build_windows_installer.bat
+packaging\windows\build.bat
 ```
 
-产物：`frontend/release-installer/SD SMA Report Editor-Setup-<version>-x64.exe`
+产物：`packaging\windows\output\SD SMA Report Editor-Setup-<version>-x64.exe`
+
+项目根 `build_windows_installer.bat` 为上述脚本的快捷入口。
 
 ### 手动 npm 打包
 
-成品默认在 `frontend/release/`（不入库）；仅安装包可用 `release-installer/`：
+成品默认在 `packaging/windows/output/`；开发调试仍可用 `frontend/release/`：
 
 1. 前置：已安装 **Node.js**、**Python 3.9+**（打包环境推荐 **3.10+** 且含 Windows `py` 启动器）、Windows x64。
 2. 在 `frontend/` 安装依赖：`npm install`
@@ -144,6 +146,39 @@ npm.cmd run dist:cn:alt
 ```powershell
 cd backend
 powershell -ExecutionPolicy Bypass -File scripts/build-backend-exe.ps1
+```
+
+## macOS 安装包（.dmg）
+
+面向现场交付的 **DMG**。详细说明见 [**getting-started/mac-installer.md**](getting-started/mac-installer.md)。
+
+### 推荐：打包工具目录（须在 Mac 上执行）
+
+```bash
+chmod +x packaging/mac/build.sh packaging/mac/build.command
+./packaging/mac/build.sh
+```
+
+产物：`packaging/mac/output/SD SMA Report Editor-<version>-<arch>.dmg`
+
+项目根 `build_mac_installer.sh` / `build_mac_installer.command` 为快捷入口。详见 [packaging/README.md](packaging/README.md)。
+
+### 手动 npm 打包
+
+```bash
+cd frontend
+npm install
+export ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/   # 可选
+npm run dist:mac:installer
+```
+
+安装后用户数据在 `~/Library/Application Support/sd-sma-report-editor/`；彻底卸载请删除该文件夹。
+
+单独重建 macOS 后端：
+
+```bash
+cd backend
+bash scripts/build-backend-exe.sh
 ```
 
 ## 文档

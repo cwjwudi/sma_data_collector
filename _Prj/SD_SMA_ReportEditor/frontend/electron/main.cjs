@@ -35,7 +35,8 @@ function getBackendDir() {
 }
 
 function getBundledBackendExe() {
-  return path.join(getBackendDir(), 'report_backend.exe')
+  const name = process.platform === 'win32' ? 'report_backend.exe' : 'report_backend'
+  return path.join(getBackendDir(), name)
 }
 
 /** 后端持久化目录：正式包写入用户目录；开发模式与仓库 backend/data 对齐，便于与命令行 uvicorn 共用 config.json。 */

@@ -75,7 +75,7 @@
 | 目录 | 角色 |
 | ---- | ---- |
 | `SD_SMA_DATA_COLLECTOR/` | 数据采集 |
-| `SD_SMA_ReportEditor/` | 报表编辑（Electron 桌面版；**Windows 安装包**见该目录 `build_windows_installer.bat`） |
+| `SD_SMA_ReportEditor/` | 报表编辑；打包见 `packaging/windows/`、`packaging/mac/` |
 | `SD_SMA_SCADA_DEMO/` | SCADA 演示 / 主界面类工程 |
 
 详见 [**_Prj/README.md**](./_Prj/README.md)。
