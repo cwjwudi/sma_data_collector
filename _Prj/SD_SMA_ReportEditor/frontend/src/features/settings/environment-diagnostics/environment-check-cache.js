@@ -14,6 +14,10 @@ export function setEnvironmentCheckCache(payload) {
     checks: Array.isArray(payload.checks) ? [...payload.checks] : [],
     nodeTools: payload.nodeTools ? { ...payload.nodeTools } : { node: null, npm: null },
     errorMsg: typeof payload.errorMsg === 'string' ? payload.errorMsg : '',
+    deploymentMode:
+      payload.deploymentMode === 'packaged' || payload.deploymentMode === 'development'
+        ? payload.deploymentMode
+        : 'development',
   }
 }
 

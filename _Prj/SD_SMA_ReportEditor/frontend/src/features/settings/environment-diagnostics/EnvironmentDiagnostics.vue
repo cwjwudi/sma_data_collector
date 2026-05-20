@@ -1,7 +1,12 @@
 <template>
   <section class="settings-section">
     <h3 class="settings-section__title">运行环境诊断</h3>
-    <p class="settings-hint">
+    <p v-if="isPackagedDeployment" class="settings-hint">
+      当前为 <strong>Windows 安装版</strong>：仅检查内置后端、用户数据目录与端口状态，<strong>不要求</strong>本机安装
+      Python、Node 或 <code>backend/venv</code>。
+      <strong>一键修复</strong>仅创建/补齐数据目录与默认配置，不会重建开发用虚拟环境。
+    </p>
+    <p v-else class="settings-hint">
       <strong>一键环境与风险修复</strong>会顺序执行：<strong>流式</strong>端口诊断与安全目录／venv 条件允许时的重装，
       再执行告警尽力消除（目录、默认配置、按需 <code>pip install</code>）。
       不会在后台擅自杀端口进程。
@@ -17,7 +22,7 @@
         :disabled="busy"
         @click="runUnifiedEnvironmentFix"
       >
-        一键环境与风险修复
+        {{ isPackagedDeployment ? '一键修复数据目录与配置' : '一键环境与风险修复' }}
       </button>
     </div>
 
@@ -36,7 +41,7 @@
       <pre class="log-pre" ref="logPre">{{ logLines.join('\n') }}<span ref="logAnchor" /></pre>
     </div>
 
-    <div v-if="nodeTools.node || nodeTools.npm" class="node-tools">
+    <div v-if="!isPackagedDeployment && (nodeTools.node || nodeTools.npm)" class="node-tools">
       <span v-if="nodeTools.node">Node {{ nodeTools.node }}</span>
       <span v-if="nodeTools.npm">npm {{ nodeTools.npm }}</span>
     </div>
@@ -80,6 +85,7 @@ const loading = ref(false)
 const fixing = ref(false)
 const rebuilding = ref(false)
 const checks = ref([])
+const deploymentMode = ref('development')
 const nodeTools = ref({ node: null, npm: null })
 const errorMsg = ref('')
 const fixResult = ref(null)
@@ -89,6 +95,7 @@ const logPre = ref(null)
 const logAnchor = ref(null)
 
 const busy = computed(() => loading.value || fixing.value || rebuilding.value)
+const isPackagedDeployment = computed(() => deploymentMode.value === 'packaged')
 const displayedFromCache = ref(false)
 const showCachedHint = computed(
   () => displayedFromCache.value && !busy.value && checks.value.length > 0,
@@ -99,6 +106,7 @@ function persistCheckCache() {
     checks: checks.value,
     nodeTools: nodeTools.value,
     errorMsg: errorMsg.value,
+    deploymentMode: deploymentMode.value,
   })
 }
 
@@ -108,6 +116,7 @@ function hydrateFromCache() {
   checks.value = cached.checks || []
   nodeTools.value = cached.nodeTools || { node: null, npm: null }
   errorMsg.value = cached.errorMsg || ''
+  deploymentMode.value = cached.deploymentMode || 'development'
   return true
 }
 
@@ -162,6 +171,10 @@ async function runCheck(opts = {}) {
   try {
     const data = await apiFetch('/environment/check')
     checks.value = data.checks || []
+    deploymentMode.value =
+      data.deployment_mode === 'packaged' || data.deployment_mode === 'development'
+        ? data.deployment_mode
+        : 'development'
     nodeTools.value = data.node_tools || {}
     persistCheckCache()
     emit('after-check', summarizeChecks(checks.value))
@@ -220,12 +233,14 @@ async function execFixAllWarningsCore() {
 
 async function runUnifiedEnvironmentFix() {
   const ok = window.confirm(
-    '将一键执行两个阶段（可能较慢，请勿刷新页面）：\n' +
-      '1）流式：8000/5173 诊断（推断 PID，不杀进程）、安全目录、条件允许时重装 backend/venv 并 pip；\n' +
-      '2）尽力消除剩余告警（目录与默认配置、按需补 venv）。\n\n' +
-      '若正以本仓库 venv 独占运行后端，无法在进程内删掉同一 venv，日志里会给出退出后执行的脚本。\n' +
-      'Python 过低、npm 缺失等只能在本机安装后重试。\n\n' +
-      '确定继续？',
+    isPackagedDeployment.value
+      ? '将检查端口并修复用户数据目录与默认配置（安装版不会重建 backend/venv）。\n\n确定继续？'
+      : '将一键执行两个阶段（可能较慢，请勿刷新页面）：\n' +
+          '1）流式：8000/5173 诊断（推断 PID，不杀进程）、安全目录、条件允许时重装 backend/venv 并 pip；\n' +
+          '2）尽力消除剩余告警（目录与默认配置、按需补 venv）。\n\n' +
+          '若正以本仓库 venv 独占运行后端，无法在进程内删掉同一 venv，日志里会给出退出后执行的脚本。\n' +
+          'Python 过低、npm 缺失等只能在本机安装后重试。\n\n' +
+          '确定继续？',
   )
   if (!ok) return
   clearEnvironmentCheckCache()

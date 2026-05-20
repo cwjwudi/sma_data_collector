@@ -1,6 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
+from core.runtime_mode import deployment_mode_label
 from core.settings import BACKEND_ROOT, CONFIG_FILE, DATA_DIR, DEFAULT_CONFIG, HISTORY_DIR, TEMPLATES_DIR
 from modules import diagnostics_service
 from schemas.common import FixAllWarningsRequest, FixRequest, RebuildEnvironmentRequest
@@ -17,8 +18,13 @@ async def environment_check():
         TEMPLATES_DIR,
         HISTORY_DIR,
     )
-    versions = diagnostics_service.try_node_versions()
-    return {"checks": checks, "node_tools": versions}
+    mode = deployment_mode_label()
+    versions = diagnostics_service.try_node_versions() if mode == "development" else {}
+    return {
+        "checks": checks,
+        "node_tools": versions,
+        "deployment_mode": mode,
+    }
 
 
 @router.post("/environment/fix")
