@@ -32,3 +32,5 @@ output/SD SMA Report Editor-<version>-<arch>.dmg
 产物含 `*.dmg` 与 `mac-arm64/`（或 `mac/`）解包目录，均在 **`output/`** 下，不在 `frontend/release-mac`。
 
 现场安装见 [getting-started/mac-installer.md](../../getting-started/mac-installer.md)。
+
+**经微信发给同事测试**若提示「已损坏」：多为隔离标记 + 未签名，不是文件坏。请同事执行 `xattr -cr "/Applications/SD SMA Report Editor.app"` 或 **右键 → 打开**。详见安装文档第五节。
