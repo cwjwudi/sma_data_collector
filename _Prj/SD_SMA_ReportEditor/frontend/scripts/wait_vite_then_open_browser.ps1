@@ -1,4 +1,4 @@
-﻿# Waits until Vite answers on 127.0.0.1:5173, then opens default browser (used by start_dev_web.bat).
+﻿# Waits until Vite answers on 127.0.0.1:5173, then opens default browser (used by scripts\dev\windows\start_dev_web.bat).
 # Fast TcpClient probes while the port is closed; Invoke-WebRequest alone costs ~2s per failed attempt on Windows PowerShell 5.1.
 $ErrorActionPreference = 'SilentlyContinue'
 
@@ -58,5 +58,5 @@ while ((Get-Date) -lt $deadline) {
 Write-Host ''
 Write-Host "TIMEOUT after ${timeoutSec}s: nothing answered on port 5173." -ForegroundColor Red
 Write-Host 'Check the SD_SMA_ReportEditor - Frontend window: npm errors, or port already in use (strictPort).' -ForegroundColor Yellow
-Write-Host 'If the port is stuck, run stop_dev_web.bat then start again.' -ForegroundColor Yellow
+Write-Host 'If the port is stuck, run scripts\dev\windows\stop_dev_web.bat then start again.' -ForegroundColor Yellow
 exit 1

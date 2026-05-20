@@ -17,7 +17,8 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-$Root = Split-Path -Parent $MyInvocation.MyCommand.Path
+$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$Root = (Resolve-Path (Join-Path $ScriptDir '..\..\..')).Path
 $Backend = Join-Path $Root 'backend'
 $Frontend = Join-Path $Root 'frontend'
 $Rptp = Join-Path $Root 'rptp'
@@ -28,8 +29,8 @@ $RptpPkg = Join-Path $Rptp 'package.json'
 $RptpLock = Join-Path $Rptp 'package-lock.json'
 $VenvDir = Join-Path $Backend 'venv'
 $VenvPy = Join-Path $VenvDir 'Scripts\python.exe'
-$StartBat = Join-Path $Root 'start_dev_web.bat'
-$StopPs1 = Join-Path $Root 'stop_dev_web.ps1'
+$StartBat = Join-Path $ScriptDir 'start_dev_web.bat'
+$StopPs1 = Join-Path $ScriptDir 'stop_dev_web.ps1'
 
 function Write-Step([string]$Text) {
   Write-Host ''
@@ -265,7 +266,7 @@ function Stop-ExistingDevPorts {
   }
 }
 
-Require-Path (Join-Path $Backend 'main.py') 'Run this script from the SD_SMA_ReportEditor repository root.'
+Require-Path (Join-Path $Backend 'main.py') 'SD_SMA_ReportEditor backend/main.py not found (wrong repo layout?).'
 Require-Path $BackendReq 'Backend requirements are required.'
 Require-Path $FrontendPkg 'Frontend package.json is required.'
 

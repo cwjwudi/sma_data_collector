@@ -23,12 +23,6 @@
 build.bat
 ```
 
-或项目根快捷方式：
-
-```bat
-build_windows_installer.bat
-```
-
 可选参数：
 
 | 参数 | 作用 |

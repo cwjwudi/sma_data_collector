@@ -9,12 +9,6 @@ cd packaging\windows
 build.bat
 ```
 
-或从项目根：
-
-```bat
-build_windows_installer.bat
-```
-
 ## 参数（传给 build.ps1）
 
 | 参数 | 作用 |

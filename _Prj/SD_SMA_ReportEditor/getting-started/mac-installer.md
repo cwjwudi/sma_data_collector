@@ -29,7 +29,7 @@ chmod +x build.sh build.command
 
 或在 Finder 中 **双击** `packaging/mac/build.command`。
 
-项目根 `build_mac_installer.sh` / `build_mac_installer.command` 会转发到上述目录。
+也可双击 `packaging/mac/build.command`。
 
 > 若终端报 `bad interpreter: /bin/bash^M`，对 `packaging/mac/*.sh` 执行：  
 > `perl -pi -e 's/\r\n/\n/g' packaging/mac/build.sh packaging/mac/build.command`

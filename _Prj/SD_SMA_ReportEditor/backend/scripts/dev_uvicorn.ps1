@@ -1,5 +1,5 @@
 ﻿# 开发用后端：在 PowerShell 中运行，避免旧版 cmd「快速编辑」点选导致进程挂起、窗口关不掉。
-# 用法：由 start_dev_web.bat 启动，或: powershell -NoProfile -ExecutionPolicy Bypass -File .\dev_uvicorn.ps1
+# 用法：由 scripts\dev\windows\start_dev_web.bat 启动，或: powershell -NoProfile -ExecutionPolicy Bypass -File .\dev_uvicorn.ps1
 $ErrorActionPreference = 'Stop'
 $BackendRoot = Split-Path $PSScriptRoot -Parent
 Set-Location $BackendRoot

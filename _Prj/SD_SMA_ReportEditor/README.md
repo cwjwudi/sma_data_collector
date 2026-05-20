@@ -9,8 +9,8 @@ Markdown 报表编辑器桌面软件。支持读取 MySQL/MariaDB、PostgreSQL �
 | 文档 | 说明 |
 |------|------|
 | [getting-started/README.md](getting-started/README.md) | 本工程在 `p000_sd_sma_scada` 中的位置、目录含义、三种运行方式 |
-| [getting-started/windows.md](getting-started/windows.md) | Windows：安装 Python/Node、venv、`start_dev_web.bat`、Electron |
-| [getting-started/mac.md](getting-started/mac.md) | macOS：Homebrew、venv、`open-electron-dev-mac.command`、双终端 Web |
+| [getting-started/windows.md](getting-started/windows.md) | Windows：安装 Python/Node、venv、Web/Electron 启动 |
+| [getting-started/mac.md](getting-started/mac.md) | macOS：Homebrew、venv、Electron 一键、双终端 Web |
 | [getting-started/mac-installer.md](getting-started/mac-installer.md) | macOS：打 DMG、安装与卸载（交付用） |
 
 跑通后再看下文「快速开始」与打包说明。
@@ -25,13 +25,12 @@ Markdown 报表编辑器桌面软件。支持读取 MySQL/MariaDB、PostgreSQL �
 
 ```
 SD_SMA_ReportEditor/
-├── packaging/        # Win/Mac 安装包打包工具与 output/ 产物
+├── packaging/        # Win/Mac 安装包打包与 output/ 产物
+├── scripts/          # 开发启停（dev/windows、dev/mac）
 ├── getting-started/  # 初次上手（Windows / Mac 环境与启动）
 ├── _Doc/             # 项目文档（计划、工单、变更记录）
 ├── backend/          # Python FastAPI 后端
 ├── frontend/         # Electron + Vue 3 前端
-├── scripts/          # 开发启动脚本（如 Mac 一键 Electron）
-├── start_dev_web.bat # Windows 浏览器模式一键启动
 └── README.md
 ```
 
@@ -50,9 +49,11 @@ CLI 产物是否提交由团队自定；**请以仓库根作为 Cursor 工作区
 
 > 环境未装好时请先完成 [getting-started/](getting-started/README.md) 中的依赖步骤。
 
-**Windows（浏览器）**：项目根目录双击或运行 **`start_dev_web.bat`**，会在 **PowerShell** 新窗口启动后端 + Vite 并打开浏览器。
+**Windows（浏览器）**：运行 **`scripts\dev\windows\start_dev_web.bat`**，会在 **PowerShell** 新窗口启动后端 + Vite 并打开浏览器。
 
-**macOS（Electron）**：双击 **`scripts/open-electron-dev-mac.command`**，或见 [getting-started/mac.md](getting-started/mac.md)。
+**macOS（Electron）**：双击 **`scripts/dev/mac/open-electron-dev-mac.command`**，或见 [getting-started/mac.md](getting-started/mac.md)。
+
+脚本总览：[scripts/README.md](scripts/README.md)。
 
 下面为分步命令（Windows / Mac 通用逻辑）。
 
@@ -64,7 +65,7 @@ pip install -r requirements.txt
 uvicorn main:app --reload --port 8000
 ```
 
-在 **Windows** 上若习惯手写命令，建议用 **`backend\scripts\dev_uvicorn.ps1`**（与 `start_dev_web.bat` 相同），或在 **Windows Terminal** 里运行上述 `uvicorn`，尽量不要用「裸 cmd + 鼠标在窗口里拖选」长时间占着控制台。
+在 **Windows** 上若习惯手写命令，建议用 **`backend\scripts\dev_uvicorn.ps1`**（与 `scripts\dev\windows\start_dev_web.bat` 相同），或在 **Windows Terminal** 里运行上述 `uvicorn`，尽量不要用「裸 cmd + 鼠标在窗口里拖选」长时间占着控制台。
 
 ### 前端
 
@@ -92,8 +93,6 @@ packaging\windows\build.bat
 ```
 
 产物：`packaging\windows\output\SD SMA Report Editor-Setup-<version>-x64.exe`
-
-项目根 `build_windows_installer.bat` 为上述脚本的快捷入口。
 
 ### 手动 npm 打包
 
@@ -161,7 +160,7 @@ chmod +x packaging/mac/build.sh packaging/mac/build.command
 
 产物：`packaging/mac/output/SD SMA Report Editor-<version>-<arch>.dmg`
 
-项目根 `build_mac_installer.sh` / `build_mac_installer.command` 为快捷入口。详见 [packaging/README.md](packaging/README.md)。
+也可双击 `packaging/mac/build.command`。详见 [packaging/README.md](packaging/README.md)。
 
 ### 手动 npm 打包
 

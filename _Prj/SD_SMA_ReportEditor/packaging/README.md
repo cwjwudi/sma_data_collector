@@ -20,12 +20,9 @@ packaging/
 | 平台 | 命令 | 产物目录 |
 |------|------|----------|
 | **Windows** | `packaging\windows\build.bat` | `packaging\windows\output\` |
-| **macOS** | `./packaging/mac/build.sh` | `packaging/mac/output/` |
+| **macOS** | `./packaging/mac/build.sh` 或双击 `build.command` | `packaging/mac/output/` |
 
-项目根目录仍保留 **快捷入口**（转发到上述路径）：
-
-- `build_windows_installer.bat`
-- `build_mac_installer.sh` / `build_mac_installer.command`
+开发启停脚本见 [../scripts/README.md](../scripts/README.md)。
 
 ## 文档
 

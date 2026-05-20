@@ -74,9 +74,8 @@ SD_SMA_ReportEditor/
 │   ├── package.json
 │   ├── electron/        ← 主进程 main.cjs（拉起 Python）
 │   └── src/             ← 页面与组件
-├── scripts/             ← 如 open-electron-dev-mac.command（Mac 一键）
-├── start_dev_web.bat    ← Windows 浏览器模式一键启动
-├── stop_dev_web.bat
+├── scripts/             ← 开发启停（dev/windows、dev/mac）
+├── packaging/           ← Win/Mac 安装包打包
 └── README.md
 ```
 
@@ -88,9 +87,9 @@ SD_SMA_ReportEditor/
 
 | 模式 | 适用场景 | 如何启动 |
 |------|----------|----------|
-| **Web 开发** | 调 UI、对照浏览器 DevTools；后端、前端各看一个终端日志 | Windows：`start_dev_web.bat`；Mac：见 [mac.md](mac.md) 双终端命令 |
-| **Electron 开发** | 接近最终桌面体验；后端常由 Electron 自动启动 | `frontend` 下 `npm run electron:dev`；Mac 可双击 `scripts/open-electron-dev-mac.command` |
-| **Windows 安装包** | 交付现场、无 Python 环境 | `frontend` 下 `npm run dist:win` 等，见根 [README.md](../README.md) |
+| **Web 开发** | 调 UI、对照浏览器 DevTools；后端、前端各看一个终端日志 | Windows：`scripts\dev\windows\start_dev_web.bat`；Mac：见 [mac.md](mac.md) 双终端命令 |
+| **Electron 开发** | 接近最终桌面体验；后端常由 Electron 自动启动 | `frontend` 下 `npm run electron:dev`；Mac 可双击 `scripts/dev/mac/open-electron-dev-mac.command` |
+| **安装包** | 交付现场、无 Python 环境 | `packaging/windows` 或 `packaging/mac`，见 [../packaging/README.md](../packaging/README.md) |
 
 健康检查（后端已启动时）：
 

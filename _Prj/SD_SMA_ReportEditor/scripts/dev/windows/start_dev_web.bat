@@ -4,8 +4,8 @@ title SD_SMA_ReportEditor - Start dev (web)
 
 rem ASCII-only; save UTF-8 without BOM - BOM breaks @echo off under cmd.exe.
 
-set "ROOT=%~dp0"
-set "ROOT=%ROOT:~0,-1%"
+set "SCRIPT_DIR=%~dp0"
+for %%I in ("%SCRIPT_DIR%..\..\..") do set "ROOT=%%~fI"
 set "BACKEND=%ROOT%\backend"
 set "FRONTEND=%ROOT%\frontend"
 
@@ -29,7 +29,7 @@ echo [3/3] Waiting until Vite responds, then opening browser ...
 
 echo.
 echo Backend and frontend were started in new windows; browser should open.
-echo Stop: close those windows or Ctrl+C inside them, or run stop_dev_web.bat
+echo Stop: close those windows or Ctrl+C inside them, or run scripts\dev\windows\stop_dev_web.bat
 echo This window closes in ~12 seconds ^(no key press needed^).
 echo.
 ping 127.0.0.1 -n 13 >nul

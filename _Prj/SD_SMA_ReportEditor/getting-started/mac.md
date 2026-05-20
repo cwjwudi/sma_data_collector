@@ -75,7 +75,7 @@ npm install
 **双击**（Finder 中）或在终端执行：
 
 ```bash
-./scripts/open-electron-dev-mac.command
+./scripts/dev/mac/open-electron-dev-mac.command
 ```
 
 脚本会：释放 **8000 / 5173** 占用 → 必要时 `npm install` → 运行 `npm run electron:dev:unix`。  

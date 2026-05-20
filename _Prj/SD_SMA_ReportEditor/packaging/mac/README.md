@@ -10,11 +10,7 @@ chmod +x build.sh build.command
 ./build.sh
 ```
 
-或双击 `build.command`；或从项目根：
-
-```bash
-./build_mac_installer.sh
-```
+或双击本目录 `build.command`。
 
 ## 参数
 

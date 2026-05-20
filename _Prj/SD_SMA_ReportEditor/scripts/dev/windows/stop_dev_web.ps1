@@ -66,7 +66,7 @@ for ($round = 1; $round -le $maxRounds; $round++) {
   $busyPorts = @(Get-BusyPorts -PortList $ports)
   if ($busyPorts.Count -eq 0) {
     Write-Host ''
-    Write-Host '端口已全部释放，可立即运行 start_dev_web.bat。' -ForegroundColor Green
+    Write-Host '端口已全部释放，可立即运行 scripts\dev\windows\start_dev_web.bat。' -ForegroundColor Green
     exit 0
   }
 
