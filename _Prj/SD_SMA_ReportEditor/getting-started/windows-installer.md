@@ -102,4 +102,4 @@ npm.cmd run dist:win:cn:installer
 | 安装后窗口白屏 | 确认已用最新代码打包（`vite.config.js` 中 `base: './'`） |
 | 仅要绿色版、不要安装向导 | `npm.cmd run dist:cn:portable` → 便携 exe |
 
-更多细节见 [README.md](../README.md) 的「Windows 安装包」章节。
+更多打包细节与排错见 [packaging/README.md](../packaging/README.md)。

@@ -10,14 +10,19 @@
 |------|------|------|
 | 1 | **本文** | 仓库定位、目录含义、开发/运行模式 |
 | 2 | [Windows 环境准备](windows.md) | 安装 Python / Node、首次依赖、启动方式 |
-| 2b | [packaging/ 打包工具](../packaging/README.md) | Win/Mac 脚本与 `output/` 目录 |
-| 2c | [Windows 安装包](windows-installer.md) | 打 Setup.exe、现场安装与卸载（交付用） |
 | 3 | [macOS 环境准备](mac.md) | Homebrew、venv、一键脚本、Electron 注意点 |
-| 3b | [macOS 安装包](mac-installer.md) | 打 DMG、安装与卸载（交付用，须在 Mac 上打包） |
+
+**发版 / 现场交付**（开发跑通后再看）：
+
+| 文档 | 内容 |
+|------|------|
+| [packaging/README.md](../packaging/README.md) | 打包总览、手动 npm、排错 |
+| [Windows 安装包](windows-installer.md) | Setup.exe 与现场装/卸 |
+| [macOS 安装包](mac-installer.md) | DMG 与现场装/卸（须在 Mac 上打包） |
 
 读完并跑通一次后，可继续查阅：
 
-- 项目根 [README.md](../README.md) — 打包发布、故障排除
+- 项目根 [README.md](../README.md) — Cursor、运行、改代码、仓库结构
 - [_Doc/003_项目框架与常用指令.md](../_Doc/003_项目框架与常用指令.md) — 架构、API、路由表
 - [_Doc/004_Mac开发环境准备.md](../_Doc/004_Mac开发环境准备.md) — Mac 补充说明（与 `mac.md` 内容互补）
 - 仓库总览 [../../README.md](../../README.md) — 整个 `p000_sd_sma_scada` 工程与 `_Doc` 需求文档
@@ -61,25 +66,31 @@ p000_sd_sma_scada/                 ← Git 根目录（建议用 Cursor 打开�
 
 ## 本目录（SD_SMA_ReportEditor）结构
 
+与根 [README.md § 理解本仓库](../README.md#理解本仓库) 一致，便于对照：
+
 ```
 SD_SMA_ReportEditor/
-├── getting-started/     ← 初次上手（Windows / Mac 环境、启动）
-├── _Doc/                ← 计划、工单、框架说明（偏项目内部）
-├── backend/             ← FastAPI；运行时数据在 backend/data/（git 忽略）
+├── README.md
+├── getting-started/          ← 你正在读的入门文档
+├── _Doc/                     ← 计划、工单、框架（项目内部）
+├── backend/                  ← FastAPI；数据在 backend/data/（git 忽略）
 │   ├── main.py
-│   ├── requirements.txt
-│   ├── scripts/         ← dev_uvicorn.ps1 / .sh 等
-│   └── venv/            ← 本地虚拟环境（需自行创建，不入库）
-├── frontend/            ← Vue + Electron
-│   ├── package.json
-│   ├── electron/        ← 主进程 main.cjs（拉起 Python）
-│   └── src/             ← 页面与组件
-├── scripts/             ← 开发启停（dev/windows、dev/mac）
-├── packaging/           ← Win/Mac 安装包打包
-└── README.md
+│   ├── modules/              ← DB、OPC UA、模板、报表生成等
+│   ├── scripts/              ← dev_uvicorn.ps1 / .sh、PyInstaller 脚本
+│   └── venv/                 ← 本地虚拟环境（自行创建，不入库）
+├── frontend/                 ← 主应用：Vue + Electron（日常开发主目录）
+│   ├── electron/             ← 主进程（拉起 Python）
+│   ├── src/                  ← 页面与组件
+│   └── build/                ← 安装包资源（NSIS 等）
+├── rptp/                     ← 报表模板/版式原型（Vite+TS 单页，可选）
+│   └── src/ts/               ← 与主应用共享的模板/版式概念，localStorage 键名含 rptp- 前缀
+├── scripts/                  ← 开发启停（见 scripts/README.md）
+│   └── dev/windows | mac/
+├── packaging/                ← Win/Mac 安装包打包与 output/
+└── docker-compose.yml        ← 可选演示用 MariaDB + OPC UA
 ```
 
-可选目录 **`rptp/`**：报表相关 TypeScript 工具/模板源码，日常开发以前端 `frontend/` 与 `backend/` 为主。
+日常开发以 **`backend/` + `frontend/`** 为主；**`rptp/`** 仅在单独调试版式原型或对照旧 localStorage 数据时需要。
 
 ---
 

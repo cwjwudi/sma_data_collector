@@ -148,13 +148,10 @@ npm run electron:dev:unix
 
 ## 九、打包 macOS 安装包（现场交付）
 
-在 **Mac 本机** 项目根目录执行：
+非日常开发。入口：**[packaging/README.md](../packaging/README.md)**。
 
-```bash
-./packaging/mac/build.sh
-```
-
-或双击 `packaging/mac/build.command`。产物为 `packaging/mac/output/*.dmg`。安装、Gatekeeper、卸载与用户数据目录见 [**mac-installer.md**](mac-installer.md)。
+- 一键：`./packaging/mac/build.sh` 或双击 `packaging/mac/build.command` → `packaging/mac/output/*.dmg`
+- 现场装/卸：[mac-installer.md](mac-installer.md)
 
 ---
 
@@ -162,7 +159,7 @@ npm run electron:dev:unix
 
 - 与本文重叠的 Mac 细节：[_Doc/004_Mac开发环境准备.md](../_Doc/004_Mac开发环境准备.md)
 - Windows 同事请看 [windows.md](windows.md)、安装包 [windows-installer.md](windows-installer.md)
-- 仓库总览：[README.md](README.md)
+- 项目根向导：[../README.md](../README.md)
 
 ---
 

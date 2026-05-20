@@ -134,17 +134,10 @@ npm --version
 
 ## 七、打包 Windows 安装包（现场交付）
 
-面向**交付现场**（非日常开发）。**推荐**在项目根双击或执行：
+非日常开发。入口：**[packaging/README.md](../packaging/README.md)**（一键脚本、手动 npm、排错）。
 
-```bat
-packaging\windows\build.bat
-```
-
-等价于：安装依赖 → PyInstaller 后端 → Vite 构建 → **仅生成 NSIS 安装程序**（`packaging\windows\output\`）。
-
-也可在 `frontend/` 手动执行：`npm.cmd run dist:win:cn:installer`（仅安装包）或 `npm.cmd run dist:win:cn`（安装包 + 便携版）。
-
-**安装 / 卸载** 说明见 [**windows-installer.md**](windows-installer.md)；排错（白屏、NSIS、文件占用）见 [README.md](../README.md)。
+- 一键：`packaging\windows\build.bat` → 产物在 `packaging\windows\output\`
+- 现场装/卸：[windows-installer.md](windows-installer.md)
 
 ---
 

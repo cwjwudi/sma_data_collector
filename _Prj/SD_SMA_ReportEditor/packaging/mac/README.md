@@ -2,6 +2,8 @@
 
 在 **macOS** 上生成 DMG，产物写入本目录 **`output/`**。
 
+← 打包总览：[../README.md](../README.md)
+
 ## 运行
 
 ```bash

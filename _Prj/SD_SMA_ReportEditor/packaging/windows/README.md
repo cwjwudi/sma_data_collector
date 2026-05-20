@@ -2,6 +2,8 @@
 
 在 **Windows x64** 上生成 NSIS 安装程序，产物写入本目录 **`output/`**。
 
+← 打包总览与排错：[../README.md](../README.md)
+
 ## 运行
 
 ```bat
