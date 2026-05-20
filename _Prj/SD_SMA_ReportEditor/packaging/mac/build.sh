@@ -82,6 +82,11 @@ npm_run() {
 
 mkdir -p "$OUTPUT_DIR"
 
+if [[ -d "$FRONTEND/release-mac" ]]; then
+  step "Migrate legacy frontend/release-mac -> packaging/mac/output"
+  bash "$FRONTEND/scripts/migrate-legacy-release.sh"
+fi
+
 step "SD SMA Report Editor - macOS DMG build"
 echo "Project root: $PROJECT_ROOT"
 echo "Packaging:    $PACKAGING_DIR"

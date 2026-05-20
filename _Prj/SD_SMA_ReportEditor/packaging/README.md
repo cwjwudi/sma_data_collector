@@ -33,17 +33,28 @@ packaging/
 
 ### 遗留的 `frontend/release*` 目录
 
-早期默认输出在 `frontend/release`、`frontend/release-mac` 等。**现已统一写入 `packaging/*/output`**。若本地仍存在旧目录，可删除：
+早期默认输出在 `frontend/release`、`frontend/release-mac` 等。**现已统一写入 `packaging/*/output`**。
+
+若本地仍有旧目录，**先迁移再删**（在 `frontend/` 下执行）：
 
 ```bash
-# macOS / Linux（在 frontend/ 下）
-npm run clean:legacy-release
+# macOS / Linux：搬到 packaging/windows/output、packaging/mac/output 等
+npm run migrate:legacy-release
 
-# Windows（在 frontend/ 下）
-npm run clean:legacy-release:win
+# Windows
+npm run migrate:legacy-release:win
+
+# 确认 packaging/*/output 已有内容后再删 frontend/release*（可选）
+npm run clean:legacy-release
 ```
 
-之后请用 `packaging/windows/build.bat` 或 `packaging/mac/build.sh`，勿再依赖 `frontend/release-mac`。
+| 旧目录 | 迁移目标 |
+|--------|----------|
+| `frontend/release-mac/` | `packaging/mac/output/`（`.dmg`、`mac-arm64/` 等） |
+| `frontend/release/` | `packaging/windows/output/` |
+| `frontend/release-alt/` | `packaging/windows/output-alt/` |
+
+若 `release-mac` 已被删除且未备份，只能重新打包：`./packaging/mac/build.sh`。
 
 ---
 

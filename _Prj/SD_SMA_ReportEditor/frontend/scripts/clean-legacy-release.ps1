@@ -1,4 +1,4 @@
-# Remove old electron-builder folders under frontend\ (release, release-mac, ...).
+# Delete legacy frontend\release* (run migrate-legacy-release.ps1 first to keep artifacts).
 $ErrorActionPreference = 'Continue'
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $FrontendRoot = (Resolve-Path (Join-Path $ScriptDir '..')).Path

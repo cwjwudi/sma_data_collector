@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Remove old electron-builder folders under frontend/ (before packaging/output layout).
+# Delete legacy frontend/release* (run migrate-legacy-release.sh first if you need to keep artifacts).
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -7,7 +7,7 @@ FRONTEND="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 LEGACY=(release release-mac release-alt release-installer)
 
-echo "Cleaning legacy electron-builder dirs under frontend/ ..."
+echo "Removing legacy electron-builder dirs under frontend/ ..."
 for name in "${LEGACY[@]}"; do
   target="$FRONTEND/$name"
   if [[ -d "$target" ]]; then
@@ -15,4 +15,4 @@ for name in "${LEGACY[@]}"; do
     rm -rf "$target"
   fi
 done
-echo "OK. Use packaging/windows/output and packaging/mac/output for new builds."
+echo "OK. New builds go to packaging/windows/output and packaging/mac/output."

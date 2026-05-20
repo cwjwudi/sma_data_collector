@@ -20,6 +20,8 @@
     "electron:build": "vite build && electron .",
     "build:backend": "powershell -ExecutionPolicy Bypass -File ../backend/scripts/build-backend-exe.ps1",
     "build:backend:mac": "bash ../backend/scripts/build-backend-exe.sh",
+    "migrate:legacy-release": "bash scripts/migrate-legacy-release.sh",
+    "migrate:legacy-release:win": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/migrate-legacy-release.ps1",
     "clean:legacy-release": "bash scripts/clean-legacy-release.sh",
     "clean:legacy-release:win": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/clean-legacy-release.ps1",
     "clean:release:mac": "bash scripts/clean-release.sh ../../packaging/mac/output",

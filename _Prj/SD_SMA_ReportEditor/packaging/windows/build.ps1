@@ -66,6 +66,12 @@ function Invoke-Npm([string[]]$NpmArgs) {
 
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
 
+$MigratePs1 = Join-Path $Frontend 'scripts\migrate-legacy-release.ps1'
+if ((Test-Path -LiteralPath (Join-Path $Frontend 'release')) -or (Test-Path -LiteralPath (Join-Path $Frontend 'release-alt'))) {
+  Write-Step 'Migrate legacy frontend\release* -> packaging\windows\output'
+  & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $MigratePs1
+}
+
 Write-Step 'SD SMA Report Editor - Windows installer build'
 Write-Host "Project root: $Root"
 Write-Host "Output dir:   $OutputDir"
