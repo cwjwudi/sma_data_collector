@@ -2,7 +2,8 @@
   <section class="settings-section">
     <h3 class="settings-section__title">浏览器数据迁移</h3>
     <p class="settings-hint">
-      若早年只在浏览器本地（localStorage）里存过模版或版式，可在此一次性上传到后端磁盘，便于备份、换电脑与多人共用同一 FastAPI 服务。
+      若早年只在浏览器本地（localStorage）里存过模版或版式，可在此一次性上传到本机后端。
+      推荐改用下方「版式云端同步」备份到 Portal。
       <strong>不是</strong>
       与数据库或 OPC 的实时同步；日常编辑直接走「保存」即可。
     </p>

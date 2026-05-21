@@ -12,6 +12,7 @@
     </section>
     <EnvironmentDiagnostics />
     <AppUpdateSection />
+    <LayoutCloudSyncSection />
     <DataPathAndCacheSection />
     <MigrateLocalDataSection />
     <ConfigImportExport />
@@ -24,6 +25,7 @@ import { inject } from 'vue'
 import ElectronDevtoolsSection from '@/features/settings/electron-devtools/ElectronDevtoolsSection.vue'
 import EnvironmentDiagnostics from '@/features/settings/environment-diagnostics/EnvironmentDiagnostics.vue'
 import AppUpdateSection from '@/features/settings/app-update/AppUpdateSection.vue'
+import LayoutCloudSyncSection from '@/features/settings/layout-cloud-sync/LayoutCloudSyncSection.vue'
 import DataPathAndCacheSection from '@/features/settings/data-path/DataPathAndCacheSection.vue'
 import ConfigImportExport from '@/features/settings/config-import-export/ConfigImportExport.vue'
 import MigrateLocalDataSection from '@/features/settings/migrate-local/MigrateLocalDataSection.vue'

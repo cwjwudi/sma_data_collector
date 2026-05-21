@@ -5,6 +5,7 @@ const http = require('http')
 const fs = require('fs')
 const { pathToFileURL } = require('url')
 const { createAppUpdater } = require('./updater.cjs')
+const { createLayoutSync } = require('./layout-sync.cjs')
 
 let mainWindow
 let pythonProcess
@@ -589,11 +590,27 @@ function getAppUpdater() {
   return appUpdater
 }
 
+let layoutSync
+function getLayoutSync() {
+  if (!layoutSync) {
+    layoutSync = createLayoutSync(app)
+  }
+  return layoutSync
+}
+
 ipcMain.handle('app-update-get-config', () => getAppUpdater().getConfig())
 ipcMain.handle('app-update-set-config', (_event, patch) => getAppUpdater().setConfig(patch || {}))
 ipcMain.handle('app-update-check', () => getAppUpdater().check())
 ipcMain.handle('app-update-download', () => getAppUpdater().download())
 ipcMain.handle('app-update-install', () => getAppUpdater().install())
+
+ipcMain.handle('layout-sync-get-config', () => getLayoutSync().getConfig())
+ipcMain.handle('layout-sync-set-config', (_event, patch) => getLayoutSync().setConfig(patch || {}))
+ipcMain.handle('layout-sync-login', (_event, creds) => getLayoutSync().login(creds || {}))
+ipcMain.handle('layout-sync-register', (_event, creds) => getLayoutSync().register(creds || {}))
+ipcMain.handle('layout-sync-download-defaults', () => getLayoutSync().downloadDefaults())
+ipcMain.handle('layout-sync-download-mine', () => getLayoutSync().downloadMine())
+ipcMain.handle('layout-sync-upload', (_event, items) => getLayoutSync().upload(items || []))
 
 app.whenReady().then(async () => {
   log('Starting application...')

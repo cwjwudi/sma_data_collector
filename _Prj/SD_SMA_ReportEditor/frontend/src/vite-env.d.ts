@@ -83,6 +83,54 @@ interface Window {
         percent?: number | null;
       }) => void,
     ) => () => void;
+    getLayoutSyncConfig: () => Promise<{
+      portalBaseUrl: string;
+      defaultPortalBaseUrl: string;
+      username: string;
+      loggedIn: boolean;
+      skipTlsVerify: boolean;
+    }>;
+    setLayoutSyncConfig: (patch: {
+      portalBaseUrl?: string;
+      skipTlsVerify?: boolean;
+      logout?: boolean;
+    }) => Promise<{
+      portalBaseUrl: string;
+      defaultPortalBaseUrl: string;
+      username: string;
+      loggedIn: boolean;
+      skipTlsVerify: boolean;
+    }>;
+    layoutSyncLogin: (creds: { username?: string; password?: string }) => Promise<{
+      ok: boolean;
+      username?: string;
+      expiresAt?: string | null;
+    }>;
+    layoutSyncRegister: (creds: {
+      username?: string;
+      password?: string;
+      passwordConfirm?: string;
+    }) => Promise<{ ok: boolean; username?: string; expiresAt?: string | null }>;
+    layoutSyncDownloadDefaults: () => Promise<{
+      ok: boolean;
+      error?: string;
+      layout_presets?: unknown[];
+      updatedAt?: string | null;
+      source?: string;
+    }>;
+    layoutSyncDownloadMine: () => Promise<{
+      ok: boolean;
+      error?: string;
+      layout_presets?: unknown[];
+      updatedAt?: string | null;
+      source?: string;
+    }>;
+    layoutSyncUpload: (items: unknown[]) => Promise<{
+      ok: boolean;
+      error?: string;
+      count?: number;
+      updatedAt?: string | null;
+    }>;
   };
 }
 
