@@ -152,6 +152,12 @@ if ((Test-Path -LiteralPath $iconPng) -and (-not (Test-Path -LiteralPath $iconIc
 }
 
 Write-Step 'electron-builder (NSIS installer only)'
+# 旧版 signAndEditExecutable 可能留下损坏的 winCodeSign 缓存，导致仍尝试解压并报符号链接错误
+$winCodeSignCache = Join-Path $env:LOCALAPPDATA 'electron-builder\Cache\winCodeSign'
+if (Test-Path -LiteralPath $winCodeSignCache) {
+  Write-WarnLine "Removing stale winCodeSign cache: $winCodeSignCache"
+  Remove-Item -LiteralPath $winCodeSignCache -Recurse -Force -ErrorAction SilentlyContinue
+}
 $env:ELECTRON_MIRROR = $ElectronMirror
 $outConfig = $OutputDir
 Push-Location $Frontend
