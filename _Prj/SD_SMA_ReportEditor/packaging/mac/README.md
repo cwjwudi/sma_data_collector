@@ -12,7 +12,7 @@ chmod +x build.sh build.command
 ./build.sh
 ```
 
-或双击本目录 `build.command`。
+或双击本目录 `build.command`（在「终端.app」中按 Enter 后会自动关窗；在 Cursor / VS Code 集成终端中需手动关闭标签页）。
 
 ## 参数
 
