@@ -270,7 +270,11 @@
             </div>
           </div>
         </template>
-        <div v-else class="skel">加载…</div>
+        <div v-else-if="thumbFailed.has(r.id)" class="skel skel--err">
+          <span>预览加载失败</span>
+          <button type="button" class="skel-retry" @click="retryThumb(r.id)">重试</button>
+        </div>
+        <div v-else class="skel">{{ thumbLoading.has(r.id) ? "加载…" : "等待加载…" }}</div>
         <div class="foot">
           <div class="foot-meta">
             <div class="tpl-name-row tpl-name-row--card">
@@ -363,6 +367,7 @@
 import { ref, computed, watch, onMounted, nextTick } from "vue";
 import { useRouter } from "vue-router";
 import * as api from "@/api/templates";
+import { mapPool, useStaleGuard } from "@/composables/useStaleGuard";
 import { PAPER_LABEL } from "@/lib/report-template/paper";
 import {
   applyDisplayOrder,
@@ -394,6 +399,7 @@ import TemplateMiniBands from "@/components/report-template/TemplateMiniBands.vu
 import NewTemplateWizardDialog from "@/components/report-template/NewTemplateWizardDialog.vue";
 
 const router = useRouter();
+const { begin: beginLoad, isStale: isLoadStale } = useStaleGuard();
 const mode = ref("thumbs");
 const wizard = ref(false);
 const msg = ref("");
@@ -410,6 +416,8 @@ const highlightId = ref(null);
 let highlightTimer = null;
 const summaries = ref([]);
 const cache = ref({});
+const thumbLoading = ref(new Set());
+const thumbFailed = ref(new Set());
 const offline = ref(false);
 /** @type {import('vue').Ref<import('@/lib/report-template/layout-model').LayoutPreset[]>} */
 const layoutPresetsAll = ref([]);
@@ -484,13 +492,30 @@ const rows = computed(() =>
   })),
 );
 
+function markThumbLoading(id, on) {
+  const s = new Set(thumbLoading.value);
+  if (on) s.add(id);
+  else s.delete(id);
+  thumbLoading.value = s;
+}
+
+function markThumbFailed(id, on) {
+  const s = new Set(thumbFailed.value);
+  if (on) s.add(id);
+  else s.delete(id);
+  thumbFailed.value = s;
+}
+
 async function load() {
+  const token = beginLoad();
   msg.value = "";
   try {
     const list = await api.listTemplateSummaries();
+    if (isLoadStale(token)) return;
     applyLoadedSummaries(list);
     offline.value = false;
   } catch {
+    if (isLoadStale(token)) return;
     offline.value = true;
     const local = loadLocal();
     applyLoadedSummaries(
@@ -507,22 +532,67 @@ async function load() {
   }
 }
 
+const THUMB_FETCH_CONCURRENCY = 4;
+
 async function hydrateThumbs() {
-  for (const s of summaries.value) {
-    if (cache.value[s.id]) continue;
+  const token = beginLoad();
+  const pending = summaries.value.filter((s) => !cache.value[s.id]).map((s) => s.id);
+  for (const id of pending) {
+    markThumbFailed(id, false);
+    markThumbLoading(id, true);
+  }
+  await mapPool(pending, THUMB_FETCH_CONCURRENCY, async (id) => {
+    if (isLoadStale(token)) return;
     try {
-      const t = await api.getTemplate(s.id);
-      cache.value[s.id] = t;
+      const t = await api.getTemplate(id);
+      if (isLoadStale(token)) return;
+      cache.value = { ...cache.value, [id]: t };
+      markThumbFailed(id, false);
     } catch {
-      cache.value[s.id] = null;
+      if (isLoadStale(token)) return;
+      markThumbFailed(id, true);
+    } finally {
+      if (!isLoadStale(token)) markThumbLoading(id, false);
     }
+  });
+}
+
+async function retryThumb(id) {
+  markThumbFailed(id, false);
+  markThumbLoading(id, true);
+  const token = beginLoad();
+  try {
+    const t = await api.getTemplate(id);
+    if (isLoadStale(token)) return;
+    cache.value = { ...cache.value, [id]: t };
+  } catch {
+    if (isLoadStale(token)) return;
+    markThumbFailed(id, true);
+  } finally {
+    if (!isLoadStale(token)) markThumbLoading(id, false);
   }
 }
 
+async function refreshThumbsView() {
+  await loadPresets();
+  if (!offline.value) await hydrateThumbs();
+  else {
+    const local = loadLocal();
+    cache.value = Object.fromEntries(local.map((x) => [x.id, x]));
+    thumbLoading.value = new Set();
+    thumbFailed.value = new Set();
+  }
+  resyncAllCachedTemplates();
+}
+
 async function loadPresets() {
+  const token = beginLoad();
   try {
-    layoutPresetsAll.value = await refreshLayoutPresets();
+    const list = await refreshLayoutPresets();
+    if (isLoadStale(token)) return;
+    layoutPresetsAll.value = list;
   } catch {
+    if (isLoadStale(token)) return;
     layoutPresetsAll.value = [];
   }
 }
@@ -673,13 +743,7 @@ watch(
   () => mode.value,
   async (m) => {
     if (m !== "thumbs") return;
-    await loadPresets();
-    if (!offline.value) await hydrateThumbs();
-    else {
-      const local = loadLocal();
-      cache.value = Object.fromEntries(local.map((x) => [x.id, x]));
-    }
-    resyncAllCachedTemplates();
+    await refreshThumbsView();
   },
 );
 
@@ -828,13 +892,7 @@ async function created(t) {
 onMounted(async () => {
   await load();
   if (mode.value === "thumbs") {
-    await loadPresets();
-    if (!offline.value) await hydrateThumbs();
-    else {
-      const local = loadLocal();
-      cache.value = Object.fromEntries(local.map((x) => [x.id, x]));
-    }
-    resyncAllCachedTemplates();
+    await refreshThumbsView();
   }
 });
 </script>
@@ -1314,6 +1372,27 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 13px;
+}
+.skel--err {
+  color: #b45309;
+  background: #fffbeb;
+  border-radius: 8px;
+  border: 1px dashed #fcd34d;
+}
+.skel-retry {
+  padding: 4px 10px;
+  border-radius: 6px;
+  border: 1px solid #d4d4d8;
+  background: #fff;
+  font-size: 12px;
+  cursor: pointer;
+}
+.skel-retry:hover {
+  border-color: #a1a1aa;
+  background: #fafafa;
 }
 .page-title {
   font-size: 24px;

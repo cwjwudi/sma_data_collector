@@ -2,12 +2,12 @@
   <div class="page settings-page">
     <h2 class="page-title">设置</h2>
     <section class="settings-section settings-section--featured">
-      <h3 class="settings-section__title">首次配置向导</h3>
+      <h3 class="settings-section__title">快速入门</h3>
       <p class="settings-hint">
-        若您认为功能入口偏多，可随时重新打开向导，按顺序检查环境或连接数据源。
+        可再次打开首次使用的引导窗口，按步骤检查软件运行、连接数据库或现场数据。
       </p>
       <button type="button" class="settings-btn settings-btn--primary" @click="openSetupWizard">
-        打开首次配置向导
+        打开快速入门
       </button>
     </section>
     <EnvironmentDiagnostics />

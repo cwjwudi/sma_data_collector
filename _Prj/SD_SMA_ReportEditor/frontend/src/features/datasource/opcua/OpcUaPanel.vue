@@ -1,9 +1,8 @@
 <template>
   <div class="opcua ds-scope" :class="{ 'opcua-wizard': wizardLayout }">
     <p v-if="wizardLayout" class="opc-lead">
-      在同一页完成<strong>测试</strong>、<strong>保存</strong>与<strong>浏览地址空间</strong>。可先填 IP/端口 与账号后直接点<strong>刷新根</strong>做草稿浏览（无需先保存）；已保存的连接从上方标签切换。模板占位
-      <code v-pre>{opc.NodeId}</code>
-      会用到此处确认的 NodeId。若无现场服务器，可随时跳过向导此步或在「数据源」中补齐。
+      填写现场 OPC UA 服务器的地址与账号，先<strong>测试连接</strong>，通过后可<strong>浏览</strong>设备变量并保存。
+      若暂时没有现场服务器，可跳过此步，稍后在<strong>数据源配置</strong>中补充。
     </p>
     <div class="tabs-conn">
       <button type="button" class="tab tab-new" @click="startNew">+ 新建</button>
@@ -117,7 +116,9 @@
         </div>
         <div class="actions">
           <button type="button" class="btn primary seg" @click="saveServer">保存</button>
-          <button type="button" class="btn seg" @click="testDraft">测试连接（当前表单）</button>
+          <button type="button" class="btn seg" @click="testDraft">
+            {{ wizardLayout ? '测试连接' : '测试连接（当前表单）' }}
+          </button>
           <button type="button" class="btn danger seg" v-if="form.id" @click="removeServer">删除</button>
         </div>
         <div v-if="msg" class="msg">{{ translateOpcuaMessage(msg) }}</div>
@@ -1461,6 +1462,49 @@ defineExpose({
   font-size: 13px;
   line-height: 1.55;
   color: #64748b;
+}
+
+.opcua-wizard .cols.compact {
+  grid-template-columns: minmax(240px, min(300px, 36%)) minmax(0, 1fr);
+  gap: 12px;
+}
+
+.opcua-wizard .conn-form-pane {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.opcua-wizard .conn-form-pane .actions {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.opcua-wizard .conn-form-pane .actions .btn.seg {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.opcua-wizard .node-read-bar {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.opcua-wizard .node-read-bar .btn.seg {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.opcua-wizard .poll-interval--form .poll-hint {
+  flex-basis: 100%;
 }
 
 .opcua-wizard .browse-body-wizard {

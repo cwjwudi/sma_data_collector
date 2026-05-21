@@ -17,11 +17,12 @@
         </button>
       </div>
     </header>
-    <p v-if="msg" class="msg">{{ msg }}</p>
+    <p v-if="loading" class="loading-hint">正在加载版式，请稍候…</p>
+    <p v-else-if="msg" class="msg">{{ msg }}</p>
     <p v-if="offline" class="warn">
       无法连接后端，列表与保存使用浏览器本地（可与「设置 › 浏览器数据迁移」上传到服务器）。
     </p>
-    <p v-if="!presets.length" class="empty-all">
+    <p v-if="!loading && !presets.length" class="empty-all">
       当前还没有任何版式。请在下方对应分栏内点击「新建…」按钮创建封面、正文页或末页版式。
     </p>
     <p v-else-if="presets.length" class="drag-hint">
@@ -246,13 +247,16 @@ import {
   isLayoutsOffline,
   layoutPresetsSnapshot,
 } from "@/lib/report-template/layout-registry";
+import { useStaleGuard } from "@/composables/useStaleGuard";
 
 const route = useRoute();
 const router = useRouter();
+const { begin: beginLoad, isStale: isLoadStale } = useStaleGuard();
 
 const mode = ref<"list" | "thumbs">("thumbs");
 const roleFilter = ref<"all" | LayoutPageRole>("all");
 const msg = ref("");
+const loading = ref(false);
 const ROLE_SECTION_META: { role: LayoutPageRole; title: string }[] = [
   { role: "cover", title: "封面版式" },
   { role: "normal", title: "正文页版式（页眉页脚区）" },
@@ -310,9 +314,20 @@ function fmtUpdated(at: string) {
 }
 
 async function reload() {
+  const token = beginLoad();
+  loading.value = true;
   msg.value = "";
-  const list = await refreshLayoutPresets();
-  presets.value = applyLayoutPresetDisplayOrders(list);
+  try {
+    const list = await refreshLayoutPresets();
+    if (isLoadStale(token)) return;
+    presets.value = applyLayoutPresetDisplayOrders(list);
+  } catch (e) {
+    if (isLoadStale(token)) return;
+    presets.value = [];
+    msg.value = "加载版式失败：" + String((e as Error).message || e);
+  } finally {
+    if (!isLoadStale(token)) loading.value = false;
+  }
 }
 
 function onDragStart(e: DragEvent, role: LayoutPageRole, id: string) {
@@ -646,6 +661,11 @@ onMounted(async () => {
 .msg {
   font-size: 12px;
   color: #b45309;
+  margin: 8px 0 0;
+}
+.loading-hint {
+  font-size: 13px;
+  color: #64748b;
   margin: 8px 0 0;
 }
 .warn {

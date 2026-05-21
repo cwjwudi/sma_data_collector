@@ -70,3 +70,21 @@ export function saveReportExportPrefs(p: ReportExportPrefs): void {
     /* ignore */
   }
 }
+
+/** 设置默认 PDF 导出/监视目录，并同步「生成报表」页保底路径 */
+export function setDefaultReportExportDir(dir: string | null): void {
+  const watchDir = dir?.trim() || null;
+  saveReportExportPrefs({ watchDir });
+  try {
+    const raw = localStorage.getItem(LEGACY_GENERATOR_KEY);
+    if (!raw) return;
+    const o = JSON.parse(raw) as Record<string, unknown>;
+    o.autoExportDir = watchDir;
+    if (watchDir && o.autoExportDirSource !== "opcua") {
+      o.autoExportDirSource = "default";
+    }
+    localStorage.setItem(LEGACY_GENERATOR_KEY, JSON.stringify(o));
+  } catch {
+    /* ignore */
+  }
+}

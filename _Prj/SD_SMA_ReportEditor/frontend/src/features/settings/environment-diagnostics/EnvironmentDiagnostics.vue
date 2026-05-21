@@ -1,20 +1,19 @@
 <template>
-  <section class="settings-section">
-    <h3 class="settings-section__title">运行环境诊断</h3>
-    <p v-if="isPackagedDeployment" class="settings-hint">
-      当前为 <strong>Windows 安装版</strong>：仅检查内置后端、用户数据目录与端口状态，<strong>不要求</strong>本机安装
-      Python、Node 或 <code>backend/venv</code>。
-      <strong>一键修复</strong>仅创建/补齐数据目录与默认配置，不会重建开发用虚拟环境。
-    </p>
-    <p v-else class="settings-hint">
-      <strong>一键环境与风险修复</strong>会顺序执行：<strong>流式</strong>端口诊断与安全目录／venv 条件允许时的重装，
-      再执行告警尽力消除（目录、默认配置、按需 <code>pip install</code>）。
-      不会在后台擅自杀端口进程。
-      Python 过低、npm 缺失、需退出后用脚本处理的 venv 等，仅在日志末尾说明办法。
-    </p>
-    <p v-if="showCachedHint" class="settings-hint settings-hint--cache">
-      以下为上次检测结果；再次进入本页不会重复扫描。点击「一键环境与风险修复」后将重新检测并更新上表。
-    </p>
+  <section class="settings-section" :class="{ 'env-diag--compact': compact }">
+    <template v-if="!compact">
+      <h3 class="settings-section__title">运行环境诊断</h3>
+      <p v-if="isPackagedDeployment" class="settings-hint">
+        软件会自动检查本机<strong>数据存放位置</strong>、内置服务与<strong>网络端口</strong>是否正常。
+        若提示有问题，可点击下方按钮，自动创建或补齐缺失的文件夹与默认设置（不会删除您已保存的报表与连接）。
+      </p>
+      <p v-else class="settings-hint">
+        用于开发或源码运行时的自检与修复：检查端口、数据目录与运行依赖，并尽力自动补齐可安全修复的项目。
+        无法自动处理的情况会在下方「运行详情」中说明。
+      </p>
+      <p v-if="showCachedHint" class="settings-hint settings-hint--cache">
+        以下为上次检查结果。点击「{{ primaryActionLabel }}」后将重新检查并更新列表。
+      </p>
+    </template>
     <div class="settings-actions">
       <button
         type="button"
@@ -22,7 +21,7 @@
         :disabled="busy"
         @click="runUnifiedEnvironmentFix"
       >
-        {{ isPackagedDeployment ? '一键修复数据目录与配置' : '一键环境与风险修复' }}
+        {{ primaryActionLabel }}
       </button>
     </div>
 
@@ -35,7 +34,7 @@
 
     <div v-if="logLines.length" class="log-shell">
       <div class="log-head">
-        <span>后台输出</span>
+        <span>运行详情</span>
         <button type="button" class="btn-mini" :disabled="busy" @click="clearLogs">清空</button>
       </div>
       <pre class="log-pre" ref="logPre">{{ logLines.join('\n') }}<span ref="logAnchor" /></pre>
@@ -61,7 +60,7 @@
       <tbody>
         <tr v-for="c in checks" :key="c.id">
           <td>{{ c.label }}</td>
-          <td><span :class="['badge', statusClass(c.status)]">{{ c.status }}</span></td>
+          <td><span :class="['badge', statusClass(c.status)]">{{ statusLabel(c.status) }}</span></td>
           <td>{{ c.detail }}</td>
         </tr>
       </tbody>
@@ -78,6 +77,11 @@ import {
   getEnvironmentCheckCache,
   setEnvironmentCheckCache,
 } from './environment-check-cache.js'
+
+const props = defineProps({
+  /** 嵌入快速入门等场景：隐藏区块标题与说明，仅保留操作与结果 */
+  compact: { type: Boolean, default: false },
+})
 
 const emit = defineEmits(['after-check'])
 
@@ -96,6 +100,9 @@ const logAnchor = ref(null)
 
 const busy = computed(() => loading.value || fixing.value || rebuilding.value)
 const isPackagedDeployment = computed(() => deploymentMode.value === 'packaged')
+const primaryActionLabel = computed(() =>
+  isPackagedDeployment.value ? '自动修复常见问题' : '检查并自动修复',
+)
 const displayedFromCache = ref(false)
 const showCachedHint = computed(
   () => displayedFromCache.value && !busy.value && checks.value.length > 0,
@@ -148,6 +155,12 @@ function statusClass(s) {
   return 'fail'
 }
 
+function statusLabel(s) {
+  if (s === 'ok') return '正常'
+  if (s === 'warn') return '提示'
+  return '需处理'
+}
+
 function summarizeChecks(rows) {
   const list = rows || []
   let ok = 0
@@ -165,7 +178,7 @@ async function runCheck(opts = {}) {
   loading.value = true
   errorMsg.value = ''
   if (!opts.reuseProgressLabel) {
-    progressLabel.value = '正在扫描环境、端口与目录…'
+    progressLabel.value = '正在检查软件运行状态…'
     appendLog(progressLabel.value)
   }
   try {
@@ -197,7 +210,9 @@ async function runCheck(opts = {}) {
 
 async function execFixAllWarningsCore() {
   fixing.value = true
-  progressLabel.value = '阶段 2/2：目录、配置与 venv 补齐…'
+  progressLabel.value = isPackagedDeployment.value
+    ? '正在自动修复…'
+    : '阶段 2/2：补齐目录与配置…'
   errorMsg.value = ''
   appendLog('── 阶段 2/2：尽力消除剩余告警 ──')
   try {
@@ -234,26 +249,23 @@ async function execFixAllWarningsCore() {
 async function runUnifiedEnvironmentFix() {
   const ok = window.confirm(
     isPackagedDeployment.value
-      ? '将检查端口并修复用户数据目录与默认配置（安装版不会重建 backend/venv）。\n\n确定继续？'
-      : '将一键执行两个阶段（可能较慢，请勿刷新页面）：\n' +
-          '1）流式：8000/5173 诊断（推断 PID，不杀进程）、安全目录、条件允许时重装 backend/venv 并 pip；\n' +
-          '2）尽力消除剩余告警（目录与默认配置、按需补 venv）。\n\n' +
-          '若正以本仓库 venv 独占运行后端，无法在进程内删掉同一 venv，日志里会给出退出后执行的脚本。\n' +
-          'Python 过低、npm 缺失等只能在本机安装后重试。\n\n' +
-          '确定继续？',
+      ? '将重新检查端口，并自动创建或补齐本机数据目录与默认配置。\n\n确定继续？'
+      : '将依次执行检查与自动修复（可能需要一些时间，请勿关闭窗口）。\n\n无法自动处理的项目会在运行详情中说明。\n\n确定继续？',
   )
   if (!ok) return
   clearEnvironmentCheckCache()
   appendLog('')
-  appendLog('════════ 环境与风险 · 一键修复（阶段 1/2 → 阶段 2/2）════════')
+  appendLog('════════ 开始检查与修复 ════════')
   await runFullRepairStream({ skipFinalCheck: true })
   await execFixAllWarningsCore()
-  appendLog('════════ 环境与风险 · 一键流程结束 ════════')
+  appendLog('════════ 检查与修复结束 ════════')
 }
 
 async function runFullRepairStream(opts = {}) {
   rebuilding.value = true
-  progressLabel.value = '流式任务进行中：端口诊断与安全修复已完成前请勿中断…'
+  progressLabel.value = isPackagedDeployment.value
+    ? '正在检查并修复，请稍候…'
+    : '正在执行修复任务，请稍候…'
   errorMsg.value = ''
   appendLog('')
   appendLog('════════ 工控环境一键 ════════')
@@ -389,12 +401,26 @@ onMounted(() => {
   border: 1px solid #e5e7eb;
   padding: 8px;
   text-align: left;
+  vertical-align: top;
 }
+
+.table th:nth-child(2),
+.table td:nth-child(2) {
+  width: 1%;
+  min-width: 4.2rem;
+  white-space: nowrap;
+  vertical-align: middle;
+  text-align: center;
+}
+
 .badge {
+  display: inline-block;
   padding: 2px 8px;
   border-radius: 4px;
   font-size: 12px;
-  text-transform: uppercase;
+  font-weight: 600;
+  white-space: nowrap;
+  line-height: 1.4;
 }
 .badge.ok {
   background: #dcfce7;
@@ -434,4 +460,18 @@ onMounted(() => {
   border-radius: 8px;
   padding: 8px 10px;
 }
+
+.env-diag--compact {
+  border: none;
+  padding: 0;
+  background: transparent;
+}
+
+.env-diag--compact .settings-actions {
+  margin-bottom: 12px;
+}
+</style>
+
+<style>
+@import '@/features/settings/settings-sections.css';
 </style>

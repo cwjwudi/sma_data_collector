@@ -1,12 +1,12 @@
 <template>
   <div class="wiz-db-root">
     <p v-if="connectionListTruncated" class="db-trunc-banner">
-      服务端配置的连接多于 <strong>{{ MAX_WIZ_DATABASE_SLOTS }}</strong>
-      条，此处仅显示前 {{ MAX_WIZ_DATABASE_SLOTS }} 条；其余请到<strong>数据源配置 › 数据库工作台</strong>管理。
+      已保存的连接较多，本页仅显示前 {{ MAX_WIZ_DATABASE_SLOTS }} 条；其余请在<strong>数据源配置</strong>中查看与管理。
     </p>
     <header class="db-hero">
       <p class="db-lead">
-        一页完成<strong>测试</strong>与<strong>保存</strong>（可多条连接，向导内至多 {{ MAX_WIZ_DATABASE_SLOTS }} 条）。大图示状态；修改表单后请以顶部或卡片内按钮重新验证。
+        请填写数据库地址与账号，先<strong>测试连接</strong>，通过后再<strong>保存</strong>。可添加多条连接（本页最多
+        {{ MAX_WIZ_DATABASE_SLOTS }} 条）；保存后可在「数据源配置」中继续管理。
       </p>
       <div class="db-toolbar">
         <div class="db-toolbar-summary" aria-live="polite">
@@ -98,7 +98,7 @@
             />
           </template>
           <template v-else>
-            <label>SQLite 路径（后端服务器上的路径）</label>
+            <label>数据库文件路径</label>
             <input v-model="slot.sqlite_path" class="inp" placeholder="例如 D:\\data\\app.db" :disabled="slot.busy" />
             <label v-if="slot.engine === 'sqlite'">SQLite 加密密码（如有）</label>
             <input
@@ -144,10 +144,9 @@
     </div>
 
     <p class="db-foot-note">
-      向导会载入<strong>服务端已保存的全部连接</strong>（同一上限内）；与工作台数据源列表一致。
-      Browse 表结构与 SQL 可到<strong>数据源配置 › 数据库工作台</strong>操作。
+      已保存的连接会自动显示在此；更多连接可在<strong>数据源配置</strong>中查看与管理。
       <span v-if="forms.length >= MAX_WIZ_DATABASE_SLOTS" class="db-cap-hint">
-        已达向导内条目上限（{{ MAX_WIZ_DATABASE_SLOTS }}）；更多连接请到数据库工作台。</span>
+        本页最多显示 {{ MAX_WIZ_DATABASE_SLOTS }} 条；其余请在数据源配置中管理。</span>
     </p>
   </div>
 </template>

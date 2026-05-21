@@ -376,6 +376,7 @@ import {
 } from "@/lib/report-template/model";
 import { templateTableCellPickKey, reportBindingPreviewKey } from "@/lib/report-template/template-editor-context";
 import { useReportBindingPreview } from "@/composables/useReportBindingPreview";
+import { useStaleGuard } from "@/composables/useStaleGuard";
 import { watchDebounced } from "@vueuse/core";
 
 const OPC_LIVE_LS_ENABLED = "reportTplOpcUaLiveRefresh";
@@ -408,6 +409,7 @@ const toolNames = {
 
 const route = useRoute();
 const router = useRouter();
+const { begin: beginLoad, isStale: isLoadStale } = useStaleGuard();
 
 const editing = ref(null);
 const bindingPreview = useReportBindingPreview(editing);
@@ -855,28 +857,44 @@ function onBodyPageCountInput(ev) {
 }
 
 async function boot() {
+  const token = beginLoad();
+  editing.value = null;
   const id = String(route.params.id || "");
-  if (!id) return router.replace({ name: "TemplateManager" });
+  if (!id) {
+    if (!isLoadStale(token)) router.replace({ name: "TemplateManager" });
+    return;
+  }
   hint.value = "";
   try {
     const remote = await api.getTemplate(id);
+    if (isLoadStale(token)) return;
     editing.value = cloneDeepTemplate(remote);
     ensureBodyPages(editing.value);
     syncLegacyElementsAlias(editing.value);
     bodyPageIdx.value = 0;
     await loadLayoutPresetsList();
+    if (isLoadStale(token)) return;
     if (layoutPresetsAll.value.length) {
       resyncTemplateBoundPresets(editing.value, layoutPresetsAll.value);
       reclamp();
     }
   } catch {
-    hint.value = "无法从后端载入（请开启 FastAPI）。已返回列表。";
-    return router.replace({ name: "TemplateManager" });
+    if (isLoadStale(token)) return;
+    hint.value = "无法从后端载入模版。";
+    editing.value = null;
+    return;
   }
   selId.value = null;
   resetTplEditHistory();
   void bindingPreview.refresh({ silent: true });
 }
+
+watch(
+  () => route.params.id,
+  () => {
+    void boot();
+  },
+);
 
 function reclamp() {
   const t = editing.value;
