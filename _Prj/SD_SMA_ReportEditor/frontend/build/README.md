@@ -2,12 +2,15 @@
 
 | 文件 | 说明 |
 |------|------|
+| `icon.png` | 应用图标（1024×1024）；打包时自动生成 `.ico` / `.icns` |
 | `installer.nsh` | NSIS 自定义脚本：卸载前结束主程序与后端进程 |
-| `icon.ico`（可选） | 应用与安装程序图标，256×256 推荐；无则使用 Electron 默认图标 |
-| `icon.png`（可选） | 若提供 PNG，electron-builder 可自动生成 `.ico` |
 
-将 `icon.ico` 放入本目录后，在 `package.json` 的 `build.win` 中增加：
+`package.json` → `build.icon` 已指向 `build/icon.png`。
 
-```json
-"icon": "build/icon.ico"
+**更换图标：** 源图可以是任意比例。脚本会**居中裁切**为正方形（不拉伸、不补黑/白边），再缩放到 1024×1024：
+
+```bash
+bash frontend/scripts/make-app-icon.sh /path/to/your-logo.png
 ```
+
+然后重新打包即可。

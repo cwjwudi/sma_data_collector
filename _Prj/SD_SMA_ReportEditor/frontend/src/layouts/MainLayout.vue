@@ -3,7 +3,7 @@
     <div class="main-layout">
       <aside class="sidebar">
         <div class="sidebar-header">
-          <h1 class="logo">ReportEditor</h1>
+          <h1 class="logo">报表编辑器</h1>
         </div>
         <nav class="sidebar-nav">
           <router-link
@@ -12,7 +12,15 @@
             :to="item.path"
             :class="['nav-item', { 'nav-item--active': navActive(item.path) }]"
           >
-            <span class="nav-icon">{{ item.icon }}</span>
+            <span class="nav-icon-wrap">
+              <span class="nav-icon">{{ item.icon }}</span>
+              <span
+                v-if="item.path === '/datasource' && dbHasFailedConnections"
+                class="nav-badge"
+                title="存在连接失败的数据库"
+                aria-label="存在连接失败的数据库"
+              />
+            </span>
             <span class="nav-label">{{ item.label }}</span>
           </router-link>
         </nav>
@@ -28,19 +36,65 @@
 </template>
 
 <script setup>
-import { ref, onMounted, provide } from 'vue'
+import { ref, onMounted, onUnmounted, provide, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import SetupWizard from '@/features/onboarding/SetupWizard.vue'
 import { setupWizardCompleted } from '@/features/onboarding/setupWizardStorage'
+import {
+  dbHasFailedConnections,
+  probeAllDatabaseConnectionsForNav,
+} from '@/features/datasource/database-connection-health'
 
 const route = useRoute()
 
 const setupWizardVisible = ref(false)
 
+/** 离开数据源页时由主导航轮询；在页内由工作台探测并更新同一状态，避免重复请求 */
+const NAV_DB_HEALTH_POLL_MS = 5000
+let navDbHealthTimer = null
+
+function startNavDbHealthPolling() {
+  stopNavDbHealthPolling()
+  if (route.path.startsWith('/datasource')) return
+  void probeAllDatabaseConnectionsForNav()
+  navDbHealthTimer = window.setInterval(() => {
+    if (!route.path.startsWith('/datasource')) {
+      void probeAllDatabaseConnectionsForNav()
+    }
+  }, NAV_DB_HEALTH_POLL_MS)
+}
+
+function stopNavDbHealthPolling() {
+  if (navDbHealthTimer != null) {
+    window.clearInterval(navDbHealthTimer)
+    navDbHealthTimer = null
+  }
+}
+
+function onConfigImported() {
+  if (!route.path.startsWith('/datasource')) {
+    void probeAllDatabaseConnectionsForNav()
+  }
+}
+
+watch(
+  () => route.path,
+  () => {
+    startNavDbHealthPolling()
+  },
+)
+
 onMounted(() => {
   if (!setupWizardCompleted()) {
     setupWizardVisible.value = true
   }
+  startNavDbHealthPolling()
+  window.addEventListener('report-editor-config-imported', onConfigImported)
+})
+
+onUnmounted(() => {
+  stopNavDbHealthPolling()
+  window.removeEventListener('report-editor-config-imported', onConfigImported)
 })
 
 provide('openSetupWizard', () => {
@@ -140,6 +194,29 @@ const navItems = [
   font-size: 18px;
   width: 24px;
   text-align: center;
+}
+
+.nav-icon-wrap {
+  position: relative;
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.nav-badge {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ef4444;
+  border: 2px solid #1a1a2e;
+  box-sizing: content-box;
+  pointer-events: none;
 }
 
 .content {

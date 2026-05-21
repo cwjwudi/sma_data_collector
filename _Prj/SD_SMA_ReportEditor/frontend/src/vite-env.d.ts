@@ -6,6 +6,12 @@ interface Window {
     setDevtoolsOpen: (open: boolean) => Promise<void>;
     showSavePdfDialog: (opts?: { title?: string; defaultPath?: string }) => Promise<string | null>;
     pickExportDirectory: (opts?: { title?: string; defaultPath?: string }) => Promise<string | null>;
+    pickConfigJsonFile: (opts?: { title?: string; defaultPath?: string }) => Promise<
+      | { canceled: true }
+      | { ok: false; error?: string }
+      | { ok: true; filePath: string; fileName: string; content: string }
+      | null
+    >;
     saveTextFileDialog: (opts?: {
       title?: string;
       defaultPath?: string;

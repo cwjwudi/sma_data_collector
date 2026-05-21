@@ -10,6 +10,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   /** 选择导出目录（自动导出用） */
   pickExportDirectory: (opts) => ipcRenderer.invoke('dialog-pick-directory', opts || {}),
 
+  /** 选择配置备份 JSON（桌面版推荐，避免内嵌 file input 白屏） */
+  pickConfigJsonFile: (opts) => ipcRenderer.invoke('dialog-pick-config-json', opts || {}),
+
   /** 保存文本日志（history logger 等） */
   saveTextFileDialog: (opts) => ipcRenderer.invoke('dialog-save-text', opts || {}),
 

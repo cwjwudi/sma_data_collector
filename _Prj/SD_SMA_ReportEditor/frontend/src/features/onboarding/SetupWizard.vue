@@ -25,7 +25,7 @@
           <!-- 欢迎 -->
           <section v-if="stepId === 'welcome'" class="wiz-panel">
             <p class="lead">
-              欢迎使用 <strong>SD SMA 报表编辑器</strong>。您可以用它连接生产数据库与现场设备数据，设计报表版式，并导出
+              欢迎使用 <strong>报表编辑器</strong>。您可以用它连接生产数据库与现场设备数据，设计报表版式，并导出
               <strong>PDF</strong> 供打印与归档。
             </p>
             <p class="wiz-hint">
@@ -259,7 +259,7 @@ function nextArtifactTab() {
 const stepTitle = computed(() => {
   switch (stepId.value) {
     case 'welcome':
-      return '欢迎使用 SD SMA 报表编辑器'
+      return '欢迎使用报表编辑器'
     case 'env':
       return '检查软件是否运行正常'
     case 'db':

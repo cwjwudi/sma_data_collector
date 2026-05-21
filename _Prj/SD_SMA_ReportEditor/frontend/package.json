@@ -1,7 +1,7 @@
 {
   "name": "sd-sma-report-editor",
   "version": "0.1.0",
-  "description": "SD SMA Report Editor — Markdown 报表编辑器（Electron + FastAPI）",
+  "description": "Report Editor — 报表编辑器（Electron + FastAPI）",
   "author": "B&R Team",
   "private": true,
   "type": "module",
@@ -45,8 +45,9 @@
   },
   "build": {
     "appId": "com.brteam.sd_sma.report_editor",
-    "productName": "SD SMA Report Editor",
+    "productName": "Report Editor",
     "copyright": "Copyright © B&R Team",
+    "icon": "build/icon.png",
     "extraMetadata": {
       "main": "electron/main.cjs",
       "type": "commonjs"
@@ -96,8 +97,8 @@
       "perMachine": false,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "SD SMA 报表编辑器",
-      "uninstallDisplayName": "SD SMA 报表编辑器",
+      "shortcutName": "报表编辑器",
+      "uninstallDisplayName": "报表编辑器",
       "menuCategory": "B&R Team",
       "runAfterFinish": true,
       "deleteAppDataOnUninstall": true,

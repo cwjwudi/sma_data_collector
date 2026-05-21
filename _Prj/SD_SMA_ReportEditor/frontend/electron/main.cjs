@@ -178,12 +178,14 @@ function waitForBackend(maxRetries = 60, interval = 500) {
 }
 
 function createWindow() {
+  const appIconPath = path.join(__dirname, '..', 'build', 'icon.png')
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
     minWidth: 1000,
     minHeight: 700,
-    title: 'SD_SMA ReportEditor',
+    title: '报表编辑器',
+    ...(fs.existsSync(appIconPath) ? { icon: appIconPath } : {}),
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -264,6 +266,38 @@ ipcMain.handle('dialog-pick-directory', async (event, opts) => {
   })
   if (res.canceled || !res.filePaths || !res.filePaths.length) return null
   return res.filePaths[0]
+})
+
+/** 选择配置备份 JSON（主进程读文件，避免 Electron 内嵌 <input type=file> 偶发白屏） */
+const MAX_CONFIG_JSON_BYTES = 64 * 1024 * 1024
+
+ipcMain.handle('dialog-pick-config-json', async (event, opts) => {
+  const win = senderBrowserWindow(event.sender) || mainWindow
+  const res = await dialog.showOpenDialog(win && !win.isDestroyed() ? win : undefined, {
+    title: (opts && opts.title) || '选择备份文件',
+    properties: ['openFile'],
+    filters: [{ name: 'JSON 备份', extensions: ['json'] }],
+    defaultPath: opts && opts.defaultPath,
+  })
+  if (res.canceled || !res.filePaths || !res.filePaths.length) {
+    return { canceled: true }
+  }
+  const filePath = res.filePaths[0]
+  try {
+    const stat = fs.statSync(filePath)
+    if (stat.size > MAX_CONFIG_JSON_BYTES) {
+      return { ok: false, error: `备份文件过大（超过 ${Math.round(MAX_CONFIG_JSON_BYTES / 1024 / 1024)} MB）` }
+    }
+    const content = fs.readFileSync(filePath, 'utf8')
+    return {
+      ok: true,
+      filePath,
+      fileName: path.basename(filePath),
+      content,
+    }
+  } catch (e) {
+    return { ok: false, error: String(e.message || e) }
+  }
 })
 
 ipcMain.handle('shell-open-path', async (_event, fp) => {

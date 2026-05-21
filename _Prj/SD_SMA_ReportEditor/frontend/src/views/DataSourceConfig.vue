@@ -25,6 +25,7 @@ import { ref, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import DatabaseWorkbench from '@/features/datasource/database-workbench/DatabaseWorkbench.vue'
 import OpcUaPanel from '@/features/datasource/opcua/OpcUaPanel.vue'
+import { setDbHealthSummary } from '@/features/datasource/database-connection-health'
 
 /** 在数据源配置页内，后台轮询全部连接健康（不依赖当前显示的子页签） */
 const HEALTH_POLL_MS = 5000
@@ -35,13 +36,14 @@ const tab = ref('db')
 const dbWorkbenchRef = ref(null)
 const opcPanelRef = ref(null)
 
-const dbHealth = ref({ ok: 0, total: 0 })
-const opcHealth = ref({ ok: 0, total: 0 })
+const dbHealth = ref({ ok: 0, fail: 0, total: 0 })
+const opcHealth = ref({ ok: 0, fail: 0, total: 0 })
 
 let healthPollTimer = null
 
 function onDbHealthSummary(summary) {
   dbHealth.value = summary
+  setDbHealthSummary(summary)
 }
 
 function onOpcHealthSummary(summary) {

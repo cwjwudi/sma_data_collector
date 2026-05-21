@@ -3,9 +3,9 @@ import { apiFetch } from "@/api/client.js";
 /** 连接标签指示灯：绿=健康，红=失败，灰=未检测，黄=检测中 */
 export type ConnectionHealthState = "unknown" | "checking" | "ok" | "fail";
 
-export type ConnectionHealthSummary = { ok: number; total: number };
+export type ConnectionHealthSummary = { ok: number; fail: number; total: number };
 
-/** 统计已保存连接中健康（ok）数量与总数 */
+/** 统计已保存连接中健康（ok）、失败（fail）数量与总数 */
 export function summarizeConnectionHealth(
   ids: string[],
   healthById: Record<string, ConnectionHealthState | undefined>,
@@ -13,7 +13,8 @@ export function summarizeConnectionHealth(
   const list = ids.filter((id) => id?.trim());
   const total = list.length;
   const ok = list.filter((id) => healthById[id] === "ok").length;
-  return { ok, total };
+  const fail = list.filter((id) => healthById[id] === "fail").length;
+  return { ok, fail, total };
 }
 
 export async function probeDatabaseConnection(connectionId: string): Promise<boolean> {

@@ -110,7 +110,7 @@ export function buildTriggerHistoryLoggerText(
   log: AutoTriggerLogEntry[],
 ): string {
   const lines: string[] = [
-    "# SD SMA Report Editor — Auto Export Trigger History Logger",
+    "# Report Editor — Auto Export Trigger History Logger",
     `# exported_at: ${new Date().toISOString()}`,
     `# binding: ${meta.bindingLabel}`,
     `# binding_id: ${meta.bindingId}`,
