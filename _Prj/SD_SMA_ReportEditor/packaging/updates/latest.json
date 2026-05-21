@@ -1,13 +1,13 @@
 {
-  "version": "0.1.3",
-  "releasedAt": "2026-05-21T12:00:00.000Z",
-  "notes": "Report Editor 0.1.3\n\n- 软件更新界面文案优化，操作说明更易理解\n- Windows 打包与安装体验改进",
+  "version": "0.1.4",
+  "releasedAt": "2026-05-21T14:00:00.000Z",
+  "notes": "Report Editor 0.1.4\n\n- 版式云端同步：登录 Portal 上传/下载版式，br/admin 可下载默认版式\n- 软件更新界面文案优化\n- Windows 打包与安装体验改进",
   "platforms": {
     "darwin-arm64": {
-      "url": "Report Editor-0.1.3-arm64.dmg"
+      "url": "Report Editor-0.1.4-arm64.dmg"
     },
     "win32-x64": {
-      "url": "Report Editor-Setup-0.1.3-x64.exe"
+      "url": "Report Editor-Setup-0.1.4-x64.exe"
     }
   }
 }
