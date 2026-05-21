@@ -15,11 +15,15 @@ param(
 $ErrorActionPreference = 'Stop'
 
 $PackagingDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$Root = (Resolve-Path (Join-Path $PackagingDir '..')).Path
+$Root = (Resolve-Path (Join-Path $PackagingDir '..\..')).Path
 $OutputDir = Join-Path $PackagingDir 'output'
 $Frontend = Join-Path $Root 'frontend'
 $Backend = Join-Path $Root 'backend'
 $BackendExe = Join-Path $Backend 'dist\report_backend\report_backend.exe'
+
+if (-not (Test-Path -LiteralPath (Join-Path $Frontend 'package.json'))) {
+  throw "Project root not found (expected frontend\package.json). Resolved root: $Root"
+}
 
 function Write-Step([string]$Text) {
   Write-Host ''
