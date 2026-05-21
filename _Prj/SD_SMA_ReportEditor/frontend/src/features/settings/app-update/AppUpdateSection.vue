@@ -2,9 +2,7 @@
   <section class="settings-section app-update">
     <h3 class="settings-section__title">软件更新</h3>
     <p class="settings-hint">
-      检查是否有新版本，下载并安装升级包。更新文件建议放在
-      <strong>WebPortal</strong> 的 <code>public/downloads/report-editor/</code>（无需登录）。
-      Windows 会启动安装向导；macOS 会打开安装镜像，需手动拖入「应用程序」文件夹。
+      在线检查是否有新版本。若有更新，可先下载安装包，再点击「一键升级」，按屏幕提示完成安装即可。
     </p>
 
     <dl class="update-meta">
@@ -12,27 +10,28 @@
         <dt>当前版本</dt>
         <dd>{{ config.currentVersion || '—' }}</dd>
       </div>
-      <div v-if="config.platform" class="update-meta-row">
-        <dt>本机平台</dt>
-        <dd>{{ config.platform }}</dd>
+      <div v-if="platformLabel" class="update-meta-row">
+        <dt>本机系统</dt>
+        <dd>{{ platformLabel }}</dd>
       </div>
     </dl>
 
     <details class="update-advanced">
-      <summary>更新源设置（内网可改）</summary>
+      <summary>高级设置</summary>
+      <p class="update-advanced-hint">一般无需修改。若公司内网有专用更新服务器，可由管理员填写。</p>
       <label class="update-field">
-        <span class="update-field-label">更新源（WebPortal 目录，会自动读取 latest.json）</span>
+        <span class="update-field-label">更新服务器</span>
         <input
           v-model="baseUrlDraft"
           type="url"
           class="update-input"
-          placeholder="https://brportal.cpolar.top/downloads/report-editor"
+          placeholder="由管理员提供"
           :disabled="busy"
         />
       </label>
       <label class="update-check-inline">
         <input v-model="skipTlsDraft" type="checkbox" :disabled="busy" />
-        跳过 HTTPS 证书校验（仅内网测试）
+        信任内网证书（一般不需要勾选）
       </label>
       <button
         type="button"
@@ -40,7 +39,7 @@
         :disabled="busy"
         @click="saveConfig"
       >
-        保存更新源
+        保存设置
       </button>
     </details>
 
@@ -101,7 +100,7 @@
     </div>
 
     <p v-if="!isElectron" class="settings-hint settings-hint--muted">
-      浏览器开发模式无法使用应用内升级，请使用桌面安装版。
+      请在桌面安装版中使用此功能。
     </p>
   </section>
 </template>
@@ -120,6 +119,18 @@ type UpdateCheckResult = {
 }
 
 const isElectron = computed(() => Boolean(window.electronAPI?.checkAppUpdate))
+
+const PLATFORM_LABELS: Record<string, string> = {
+  'darwin-arm64': 'macOS（Apple 芯片）',
+  'darwin-x64': 'macOS（Intel）',
+  'win32-x64': 'Windows',
+}
+
+const platformLabel = computed(() => {
+  const key = config.value.platform?.trim()
+  if (!key) return ''
+  return PLATFORM_LABELS[key] || key
+})
 
 const config = ref({
   currentVersion: '',
@@ -170,7 +181,7 @@ async function saveConfig() {
       baseUrl: baseUrlDraft.value,
       skipTlsVerify: skipTlsDraft.value,
     })
-    setMsg('更新源已保存。', 'ok')
+    setMsg('设置已保存。', 'ok')
     checkResult.value = null
     downloadedReady.value = false
   } catch (e) {
@@ -197,7 +208,7 @@ async function checkUpdate() {
     } else if (res.status === 'available') {
       setMsg(`发现新版本 ${res.latestVersion}，可点击下方下载。`, 'ok')
     } else if (res.status === 'dev') {
-      setMsg(res.message || '开发模式不支持升级。', 'warn')
+      setMsg('当前为开发模式，无法在线升级。', 'warn')
     } else if (res.ok === false) {
       setMsg(res.message || '检查更新失败。', 'err')
     } else {
@@ -313,6 +324,13 @@ onUnmounted(() => {
   cursor: pointer;
   margin-bottom: 10px;
   color: #4b5563;
+}
+
+.update-advanced-hint {
+  margin: 0 0 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #6b7280;
 }
 
 .update-field {

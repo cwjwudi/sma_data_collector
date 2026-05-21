@@ -202,9 +202,7 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
     const settings = readSettings(app)
     const baseUrl = resolveBaseUrl(app).replace(/\/+$/, '')
     if (!baseUrl) {
-      throw new Error(
-        '未配置更新源。请在「设置 → 软件更新」填写 Portal 目录地址，例如：https://brportal.cpolar.top/downloads/report-editor',
-      )
+      throw new Error('尚未配置更新服务器。请联系管理员，或在「高级设置」中填写。')
     }
     const manifestUrl = `${baseUrl}/latest.json`
     const skipTlsVerify = Boolean(settings.skipTlsVerify)
@@ -213,10 +211,10 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
     try {
       manifest = JSON.parse(buf.toString('utf8'))
     } catch {
-      throw new Error('更新清单格式无效（非 JSON）')
+      throw new Error('无法读取更新信息，请稍后重试或联系管理员。')
     }
     if (!manifest || typeof manifest.version !== 'string') {
-      throw new Error('更新清单缺少 version 字段')
+      throw new Error('更新信息不完整，请联系管理员。')
     }
     return { manifest, manifestUrl, baseUrl }
   }
@@ -254,7 +252,7 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
           ok: true,
           status: 'dev',
           currentVersion: app.getVersion(),
-          message: '开发模式不支持一键升级，请使用正式安装包。',
+          message: '开发模式无法在线升级，请使用正式安装版。',
         }
       }
       clearDownloaded()
@@ -269,7 +267,7 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
             ok: false,
             status: 'unsupported',
             currentVersion,
-            message: `当前系统（${platformKey}）暂无可用升级包，请联系管理员发布对应安装包。`,
+            message: '当前系统暂无可用升级包，请联系管理员。',
             manifestUrl,
           }
         }
