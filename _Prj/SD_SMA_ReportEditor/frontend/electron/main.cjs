@@ -4,6 +4,7 @@ const path = require('path')
 const http = require('http')
 const fs = require('fs')
 const { pathToFileURL } = require('url')
+const { createAppUpdater } = require('./updater.cjs')
 
 let mainWindow
 let pythonProcess
@@ -556,6 +557,26 @@ function killPython() {
     backendStartedByElectron = false
   }
 }
+
+let appUpdater
+
+function getAppUpdater() {
+  if (!appUpdater) {
+    appUpdater = createAppUpdater({
+      app,
+      shell,
+      getMainWindow: () => mainWindow,
+      stopBackend: killPython,
+    })
+  }
+  return appUpdater
+}
+
+ipcMain.handle('app-update-get-config', () => getAppUpdater().getConfig())
+ipcMain.handle('app-update-set-config', (_event, patch) => getAppUpdater().setConfig(patch || {}))
+ipcMain.handle('app-update-check', () => getAppUpdater().check())
+ipcMain.handle('app-update-download', () => getAppUpdater().download())
+ipcMain.handle('app-update-install', () => getAppUpdater().install())
 
 app.whenReady().then(async () => {
   log('Starting application...')

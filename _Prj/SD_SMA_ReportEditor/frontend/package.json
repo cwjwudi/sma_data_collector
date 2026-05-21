@@ -1,6 +1,6 @@
 {
   "name": "sd-sma-report-editor",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Report Editor — 报表编辑器（Electron + FastAPI）",
   "author": "B&R Team",
   "private": true,
@@ -41,7 +41,8 @@
     "dist:win:cn:installer": "npm run build:backend && set ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/&& npm run build && electron-builder --win nsis --config.directories.output=../../packaging/windows/output",
     "dist:mac": "npm run build && electron-builder --mac dmg --config.directories.output=../../packaging/mac/output",
     "dist:mac:dmg": "npm run build && electron-builder --mac dmg --config.directories.output=../../packaging/mac/output",
-    "dist:mac:installer": "npm run build:backend:mac && npm run build && electron-builder --mac dmg --config.directories.output=../../packaging/mac/output"
+    "dist:mac:installer": "npm run build:backend:mac && npm run build && electron-builder --mac dmg --config.directories.output=../../packaging/mac/output",
+    "generate:update-manifest": "node ../packaging/scripts/generate-update-manifest.mjs"
   },
   "build": {
     "appId": "com.brteam.sd_sma.report_editor",
@@ -58,8 +59,8 @@
     },
     "files": [
       "dist/**/*",
-      "electron/main.cjs",
-      "electron/preload.cjs",
+      "electron/**/*.cjs",
+      "build/icon.png",
       "package.json"
     ],
     "asar": true,

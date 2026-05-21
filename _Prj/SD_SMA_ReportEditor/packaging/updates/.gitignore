@@ -1,0 +1,10 @@
+# 安装包体积大，勿提交 Git；只提交 latest.json 与说明文档
+*.dmg
+*.exe
+*.zip
+*.blockmap
+
+!latest.json
+!latest.json.example
+!README.md
+!.gitignore

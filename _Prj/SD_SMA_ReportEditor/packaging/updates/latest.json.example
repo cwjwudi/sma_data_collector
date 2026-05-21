@@ -1,0 +1,22 @@
+{
+  "version": "0.2.0",
+  "releasedAt": "2026-05-21T00:00:00.000Z",
+  "notes": "示例更新说明：\n- 修复若干问题\n- 新增应用内检查更新",
+  "platforms": {
+    "win32-x64": {
+      "url": "Report Editor-Setup-0.2.0-x64.exe",
+      "sha256": "替换为实际 SHA256",
+      "size": 0
+    },
+    "darwin-arm64": {
+      "url": "Report Editor-0.2.0-arm64.dmg",
+      "sha256": "替换为实际 SHA256",
+      "size": 0
+    },
+    "darwin-x64": {
+      "url": "Report Editor-0.2.0-x64.dmg",
+      "sha256": "替换为实际 SHA256",
+      "size": 0
+    }
+  }
+}

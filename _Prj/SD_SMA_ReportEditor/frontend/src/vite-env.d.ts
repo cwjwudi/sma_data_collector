@@ -45,6 +45,44 @@ interface Window {
       dataUrl?: string;
       base64?: string;
     }>;
+    getAppUpdateConfig: () => Promise<{
+      currentVersion: string;
+      platform: string;
+      baseUrl: string;
+      defaultBaseUrl: string;
+      skipTlsVerify: boolean;
+      packaged: boolean;
+    }>;
+    setAppUpdateConfig: (patch: { baseUrl?: string; skipTlsVerify?: boolean }) => Promise<{
+      currentVersion: string;
+      platform: string;
+      baseUrl: string;
+      defaultBaseUrl: string;
+      skipTlsVerify: boolean;
+      packaged: boolean;
+    }>;
+    checkAppUpdate: () => Promise<{
+      ok?: boolean;
+      status?: string;
+      currentVersion?: string;
+      latestVersion?: string;
+      message?: string;
+      notes?: string;
+      releasedAt?: string | null;
+      downloadUrl?: string;
+      size?: number | null;
+      manifestUrl?: string;
+    }>;
+    downloadAppUpdate: () => Promise<{ ok: boolean; error?: string; path?: string; latestVersion?: string }>;
+    installAppUpdate: () => Promise<{ ok: boolean; error?: string; message?: string; mode?: string }>;
+    onAppUpdateDownloadProgress: (
+      listener: (payload: {
+        phase?: string;
+        received?: number;
+        total?: number;
+        percent?: number | null;
+      }) => void,
+    ) => () => void;
   };
 }
 

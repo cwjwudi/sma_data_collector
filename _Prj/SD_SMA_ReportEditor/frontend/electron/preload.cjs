@@ -39,4 +39,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   /** 历史报表 PDF 缩略图（dataUrl 或 base64 供 pdf.js） */
   getExportPdfThumbnail: (opts) => ipcRenderer.invoke('get-export-pdf-thumbnail', opts || {}),
+
+  /** 应用内检查更新 / 下载 / 安装（仅桌面正式包） */
+  getAppUpdateConfig: () => ipcRenderer.invoke('app-update-get-config'),
+  setAppUpdateConfig: (patch) => ipcRenderer.invoke('app-update-set-config', patch || {}),
+  checkAppUpdate: () => ipcRenderer.invoke('app-update-check'),
+  downloadAppUpdate: () => ipcRenderer.invoke('app-update-download'),
+  installAppUpdate: () => ipcRenderer.invoke('app-update-install'),
+  onAppUpdateDownloadProgress: (listener) => {
+    const fn = (_event, payload) => listener(payload)
+    ipcRenderer.on('update-download-progress', fn)
+    return () => ipcRenderer.removeListener('update-download-progress', fn)
+  },
 })
