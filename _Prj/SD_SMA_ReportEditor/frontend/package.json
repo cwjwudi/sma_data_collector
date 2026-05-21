@@ -5,6 +5,9 @@
   "author": "B&R Team",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=20 <24"
+  },
   "main": "electron/main.cjs",
   "scripts": {
     "dev": "vite",

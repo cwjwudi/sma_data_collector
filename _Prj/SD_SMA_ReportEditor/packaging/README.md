@@ -152,6 +152,7 @@ bash scripts/build-backend-exe.sh
 
 | 现象 | 处理 |
 |------|------|
+| `npm failed: run build` / 日志末尾只有 `Node.js v24.x` | 多为 **Vite 内存不足**；拉最新 `build.ps1`（已设 8GB 堆）或安装 **Node 22 LTS**（勿用 24 Current）后重试 |
 | `win-unpacked` 被占用 / Cursor 锁住 | `npm.cmd run dist:cn:alt` → 产物在 `packaging/windows/output-alt/`；清理：`npm.cmd run clean:release:alt` |
 | NSIS `Plugin not found … UAC::_` | 关闭占用后 `npm.cmd run clean:eb-cache`，再 `dist:cn:alt`；或暂用 `dist:cn:portable`（无 NSIS） |
 | 安装版 / 便携版白屏 | `vite.config.js` 已设 `base: './'`，需 **重新** `build` + `electron-builder` |

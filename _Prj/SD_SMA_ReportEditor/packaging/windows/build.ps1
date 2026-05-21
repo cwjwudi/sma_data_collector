@@ -55,7 +55,7 @@ function Invoke-Npm([string[]]$NpmArgs) {
   try {
     & $npmCmd @NpmArgs
     if ($LASTEXITCODE -ne 0) {
-      throw "npm failed: $($NpmArgs -join ' ')"
+      throw "npm failed: $($NpmArgs -join ' ') (exit $LASTEXITCODE)"
     }
   }
   finally {
@@ -64,6 +64,36 @@ function Invoke-Npm([string[]]$NpmArgs) {
     }
     else {
       $env:NPM_CONFIG_REGISTRY = $prevRegistry
+    }
+  }
+}
+
+function Get-NodeMajorVersion {
+  $raw = (& node -p 'process.versions.node' 2>$null)
+  if (-not $raw) { return 0 }
+  return [int](($raw -split '\.')[0])
+}
+
+function Invoke-ViteBuild([string]$FrontendDir) {
+  $viteJs = Join-Path $FrontendDir 'node_modules\vite\bin\vite.js'
+  if (-not (Test-Path -LiteralPath $viteJs)) {
+    throw "Missing $viteJs — run npm ci in frontend first."
+  }
+  $prevNodeOpts = $env:NODE_OPTIONS
+  # 830+ 模块 + 大 chunk；Windows 默认堆内存不足时 vite 会崩溃且只显示 Node.js 版本行
+  $env:NODE_OPTIONS = '--max-old-space-size=8192'
+  try {
+    & node $viteJs build
+    if ($LASTEXITCODE -ne 0) {
+      throw "vite build failed (exit $LASTEXITCODE)"
+    }
+  }
+  finally {
+    if ($null -eq $prevNodeOpts) {
+      Remove-Item Env:NODE_OPTIONS -ErrorAction SilentlyContinue
+    }
+    else {
+      $env:NODE_OPTIONS = $prevNodeOpts
     }
   }
 }
@@ -82,6 +112,16 @@ Write-Host "Output dir:   $OutputDir"
 
 Require-Command @('node') 'Install Node.js LTS (20.x or 22.x).'
 Require-Command @('py', 'python') 'Install Python 3.10+ with the Windows py launcher.'
+
+$nodeVer = & node -p 'process.versions.node'
+Write-Host "Node.js: $nodeVer"
+$nodeMajor = Get-NodeMajorVersion
+if ($nodeMajor -ge 24) {
+  Write-WarnLine "Node.js $nodeVer is newer than tested (recommend 22.x LTS). If vite build crashes, install Node 22 from https://nodejs.org/"
+}
+elseif ($nodeMajor -lt 20) {
+  throw "Node.js $nodeVer is too old. Install Node.js 20.x or 22.x LTS."
+}
 
 if ($Fresh) {
   Write-Step 'Clean packaging/windows/output'
@@ -127,7 +167,7 @@ elseif (-not (Test-Path -LiteralPath $BackendExe)) {
 Write-Step 'Vite production build'
 Push-Location $Frontend
 try {
-  Invoke-Npm @('run', 'build')
+  Invoke-ViteBuild $Frontend
   Write-Ok 'frontend/dist ready'
 }
 finally {
