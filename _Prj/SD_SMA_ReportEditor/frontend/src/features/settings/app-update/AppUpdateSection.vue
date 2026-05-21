@@ -2,7 +2,9 @@
   <section class="settings-section app-update">
     <h3 class="settings-section__title">软件更新</h3>
     <p class="settings-hint">
-      检查是否有新版本，下载并安装升级包。Windows 会启动安装向导；macOS 会打开安装镜像，需手动拖入「应用程序」文件夹。
+      检查是否有新版本，下载并安装升级包。更新文件建议放在
+      <strong>WebPortal</strong> 的 <code>public/downloads/report-editor/</code>（无需登录）。
+      Windows 会启动安装向导；macOS 会打开安装镜像，需手动拖入「应用程序」文件夹。
     </p>
 
     <dl class="update-meta">
@@ -19,12 +21,12 @@
     <details class="update-advanced">
       <summary>更新源设置（内网可改）</summary>
       <label class="update-field">
-        <span class="update-field-label">更新清单地址（目录，会自动读取 latest.json）</span>
+        <span class="update-field-label">更新源（WebPortal 目录，会自动读取 latest.json）</span>
         <input
           v-model="baseUrlDraft"
           type="url"
           class="update-input"
-          placeholder="https://..."
+          placeholder="https://brportal.cpolar.top/downloads/report-editor"
           :disabled="busy"
         />
       </label>

@@ -6,10 +6,10 @@ const path = require('path')
 const { spawn } = require('child_process')
 const { URL } = require('url')
 
-/** 默认更新源：可通过环境变量 REPORT_EDITOR_UPDATE_BASE_URL 在打包时覆盖 */
+/** 默认更新源：WebPortal 静态目录（https://brportal.cpolar.top/downloads/report-editor） */
 const DEFAULT_UPDATE_BASE_URL =
   process.env.REPORT_EDITOR_UPDATE_BASE_URL ||
-  'https://brsysnology925gitea.cpolar.top/BRTeam/p000_sd_sma_scada/raw/main/_Prj/SD_SMA_ReportEditor/packaging/updates'
+  'https://brportal.cpolar.top/downloads/report-editor'
 
 function compareSemver(a, b) {
   const pa = String(a || '0')
@@ -201,6 +201,11 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
   async function fetchManifest() {
     const settings = readSettings(app)
     const baseUrl = resolveBaseUrl(app).replace(/\/+$/, '')
+    if (!baseUrl) {
+      throw new Error(
+        '未配置更新源。请在「设置 → 软件更新」填写 Portal 目录地址，例如：https://brportal.cpolar.top/downloads/report-editor',
+      )
+    }
     const manifestUrl = `${baseUrl}/latest.json`
     const skipTlsVerify = Boolean(settings.skipTlsVerify)
     const buf = await fetchBuffer(manifestUrl, { skipTlsVerify })

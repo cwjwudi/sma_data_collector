@@ -4,7 +4,7 @@
   "notes": "Report Editor 0.1.1\n\n- 修复打包缺少 updater.cjs\n- 应用内检查更新与一键升级",
   "platforms": {
     "darwin-arm64": {
-      "url": "https://brsysnology925gitea.cpolar.top/BRTeam/p000_sd_sma_scada/raw/main/_Prj/SD_SMA_ReportEditor/packaging/updates/Report%20Editor-0.1.1-arm64.dmg",
+      "url": "Report Editor-0.1.1-arm64.dmg",
       "sha256": "6829e004c31a49a1c4b22aedb816fd6961fec0753b62891bb7c5e96ce8184841",
       "size": 176792086
     }

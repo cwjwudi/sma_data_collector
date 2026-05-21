@@ -4,15 +4,30 @@
 
 ## 检测的是哪个目录？
 
+**推荐：P004_WebPortal 静态目录**（无需 Gitea 登录，适合 Electron 自动更新）
+
 | 项目 | 路径 |
 |------|------|
-| **仓库内本地目录** | `_Prj/SD_SMA_ReportEditor/packaging/updates/` |
-| **应用默认请求的 URL** | `https://brsysnology925gitea.cpolar.top/BRTeam/p000_sd_sma_scada/raw/main/_Prj/SD_SMA_ReportEditor/packaging/updates/latest.json` |
-| **安装包下载地址** | 与 `latest.json` **同一目录**下的 `.exe` / `.dmg`（见清单里 `platforms.*.url`） |
+| **WebPortal 仓库内** | `P004_WebPortal/public/downloads/report-editor/` |
+| **应用内填写的更新源** | `https://你的门户域名/downloads/report-editor` |
+| **实际请求** | `{更新源}/latest.json` |
+
+Apache/Nginx 文档根为 `public/` 时，`public/downloads/` 下的文件**匿名可访问**，不经过门户登录。
+
+**备选：Gitea raw**（仓库需允许匿名 raw，否则客户端会 HTTP 404）
+
+| 项目 | 路径 |
+|------|------|
+| **仓库内** | `_Prj/SD_SMA_ReportEditor/packaging/updates/` |
+| **URL** | `https://…/raw/main/…/packaging/updates/latest.json` |
 
 客户端逻辑：读取 `{更新源}/latest.json` → 比较 `version` 与当前安装包版本 → 从 `platforms[本机平台].url` 下载安装包。
 
-可在应用 **设置 → 软件更新 → 更新源设置** 中改为内网镜像地址（仍指向含 `latest.json` 的目录）。
+若门户地址为 [brportal.cpolar.top](https://brportal.cpolar.top/)，更新源示例：
+
+```
+https://brportal.cpolar.top/downloads/report-editor
+```
 
 ## 打包后文件放哪里？
 
