@@ -30,3 +30,11 @@ sips -Z 1024 "$TMP" --out "$DST" >/dev/null
 FW=$(sips -g pixelWidth "$DST" | awk '/pixelWidth/ {print $2}')
 FH=$(sips -g pixelHeight "$DST" | awk '/pixelHeight/ {print $2}')
 echo "已生成 ${FW}x${FH}（居中裁切，无补边）-> $DST"
+
+ICO="$(dirname "$DST")/icon.ico"
+if command -v npx >/dev/null 2>&1; then
+  npx --yes png-to-ico "$DST" > "$ICO"
+  echo "已生成 Windows 图标 -> $ICO"
+else
+  echo "未找到 npx，请手动生成 $ICO（例如: npx png-to-ico $DST > $ICO）" >&2
+fi

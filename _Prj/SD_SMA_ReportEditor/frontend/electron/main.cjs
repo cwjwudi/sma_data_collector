@@ -178,15 +178,32 @@ function waitForBackend(maxRetries = 60, interval = 500) {
   })
 }
 
+function resolveAppIcon() {
+  const base = path.join(__dirname, '..', 'build')
+  const names =
+    process.platform === 'win32'
+      ? ['icon.ico', 'icon.png']
+      : process.platform === 'darwin'
+        ? ['icon.icns', 'icon.png']
+        : ['icon.png']
+  for (const name of names) {
+    const p = path.join(base, name)
+    if (!fs.existsSync(p)) continue
+    const img = nativeImage.createFromPath(p)
+    if (!img.isEmpty()) return img
+  }
+  return null
+}
+
 function createWindow() {
-  const appIconPath = path.join(__dirname, '..', 'build', 'icon.png')
+  const appIcon = resolveAppIcon()
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
     minWidth: 1000,
     minHeight: 700,
     title: '报表编辑器',
-    ...(fs.existsSync(appIconPath) ? { icon: appIconPath } : {}),
+    ...(appIcon ? { icon: appIcon } : {}),
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -580,6 +597,10 @@ ipcMain.handle('app-update-install', () => getAppUpdater().install())
 
 app.whenReady().then(async () => {
   log('Starting application...')
+
+  if (process.platform === 'win32') {
+    app.setAppUserModelId('com.brteam.sd_sma.report_editor')
+  }
 
   const isDev = !app.isPackaged
   /**

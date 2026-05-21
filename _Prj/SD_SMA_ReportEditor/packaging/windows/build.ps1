@@ -134,6 +134,23 @@ finally {
   Pop-Location
 }
 
+$iconPng = Join-Path $Frontend 'build\icon.png'
+$iconIco = Join-Path $Frontend 'build\icon.ico'
+if ((Test-Path -LiteralPath $iconPng) -and (-not (Test-Path -LiteralPath $iconIco))) {
+  Write-Step 'Generate build/icon.ico from icon.png'
+  Push-Location $Frontend
+  try {
+    cmd /c "npx --yes png-to-ico build\icon.png > build\icon.ico"
+    if (-not (Test-Path -LiteralPath $iconIco)) {
+      throw "Failed to generate $iconIco"
+    }
+    Write-Ok "Windows icon: $iconIco"
+  }
+  finally {
+    Pop-Location
+  }
+}
+
 Write-Step 'electron-builder (NSIS installer only)'
 $env:ELECTRON_MIRROR = $ElectronMirror
 $outConfig = $OutputDir

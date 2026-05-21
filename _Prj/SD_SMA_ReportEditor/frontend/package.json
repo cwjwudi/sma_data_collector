@@ -1,6 +1,6 @@
 {
   "name": "sd-sma-report-editor",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Report Editor — 报表编辑器（Electron + FastAPI）",
   "author": "B&R Team",
   "private": true,
@@ -61,6 +61,7 @@
       "dist/**/*",
       "electron/**/*.cjs",
       "build/icon.png",
+      "build/icon.ico",
       "package.json"
     ],
     "asar": true,
@@ -74,7 +75,9 @@
       }
     ],
     "win": {
-      "signAndEditExecutable": false,
+      "icon": "build/icon.ico",
+      "sign": null,
+      "signAndEditExecutable": true,
       "signDlls": false,
       "target": [
         {
@@ -109,6 +112,9 @@
       ],
       "language": "2052",
       "include": "build/installer.nsh",
+      "installerIcon": "build/icon.ico",
+      "uninstallerIcon": "build/icon.ico",
+      "installerHeaderIcon": "build/icon.ico",
       "artifactName": "${productName}-Setup-${version}-${arch}.${ext}"
     },
     "portable": {

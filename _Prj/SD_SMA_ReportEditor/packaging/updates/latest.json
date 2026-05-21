@@ -1,12 +1,13 @@
 {
-  "version": "0.1.1",
-  "releasedAt": "2026-05-21T07:09:49.183Z",
-  "notes": "Report Editor 0.1.1\n\n- 修复打包缺少 updater.cjs\n- 应用内检查更新与一键升级",
+  "version": "0.1.2",
+  "releasedAt": "2026-05-21T09:30:00.000Z",
+  "notes": "Report Editor 0.1.2\n\n- 修复 Windows / macOS 应用图标（不再显示 Electron 默认图标）\n- 应用内检查更新与一键升级",
   "platforms": {
     "darwin-arm64": {
-      "url": "Report Editor-0.1.1-arm64.dmg",
-      "sha256": "6829e004c31a49a1c4b22aedb816fd6961fec0753b62891bb7c5e96ce8184841",
-      "size": 176792086
+      "url": "Report Editor-0.1.2-arm64.dmg"
+    },
+    "win32-x64": {
+      "url": "Report Editor-Setup-0.1.2-x64.exe"
     }
   }
 }
