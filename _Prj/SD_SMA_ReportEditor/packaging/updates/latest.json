@@ -1,17 +1,12 @@
 {
-  "version": "0.1.11",
-  "releasedAt": "2026-05-22T12:04:00.000Z",
-  "notes": "Report Editor 0.1.11\n\n- 修复 Windows 应用内升级误删用户配置（DB / OPC UA / 模版）\n- 修复「导出结果反馈」OPC UA 连接列表与变量树选择\n- 导出反馈绑定：树/搜索按 Boolean、Int、String 类型筛选\n- 导出反馈绑定：布局修正，绑定后显示 NodeId 与变量名\n- 设置页展示用户数据目录路径\n- 升级前建议导出配置备份；启动时清理 temp 更新下载目录\n- 数据源 Tab 连接状态灯与异常计数（M12 小切片）",
+  "version": "0.1.12",
+  "releasedAt": "2026-05-22T12:39:07.911Z",
+  "notes": "Report Editor 0.1.12\n\n- 连接 Tab 悬停显示最后一次探活/测试错误与时间\n- 设置 → 连接定时探活（默认关，间隔可配）\n- 生成报表 → 测试写回 PLC（不导 PDF）\n- 导出写回失败 Toast + 状态摘要；手动导出前按已绑定项校验\n- 设置页配置备份说明加固",
   "platforms": {
     "darwin-arm64": {
-      "url": "Report Editor-0.1.11-arm64.dmg",
-      "sha256": "b5d2286060ae45d8c5aa35c60ccaaace00601d1f36530970dfa4512835205de5",
-      "size": 176842528
-    },
-    "win32-x64": {
-      "url": "Report Editor-Setup-0.1.11-x64.exe",
-      "sha256": "1b86a7d1c6098921c34037f8e4d7728601932c2be325576924f1c20a72fbdb78",
-      "size": 143115229
+      "url": "Report Editor-0.1.12-arm64.dmg",
+      "sha256": "284a70405fcd6a18088e186b6569a7dde46cae3e7f11b021a506a57c0186b382",
+      "size": 176858465
     }
   }
 }

@@ -10,6 +10,14 @@
         打开快速入门
       </button>
     </section>
+    <section class="settings-section settings-section--featured">
+      <h3 class="settings-section__title">配置备份与迁移</h3>
+      <p class="settings-hint">
+        升级软件、换电脑或重装前，请先<strong>导出完整配置备份</strong>。备份包含数据库/OPC 连接、模版、版式、签名及生成报表页偏好（含导出反馈绑定）。
+      </p>
+    </section>
+    <ConfigImportExport />
+    <ConnectionProbeSection />
     <EnvironmentDiagnostics />
     <section class="settings-section">
       <h3 class="settings-section__title">关于电子签名</h3>
@@ -23,7 +31,6 @@
     <LayoutCloudSyncSection />
     <DataPathAndCacheSection />
     <MigrateLocalDataSection />
-    <ConfigImportExport />
     <ElectronDevtoolsSection />
   </div>
 </template>
@@ -36,6 +43,7 @@ import AppUpdateSection from '@/features/settings/app-update/AppUpdateSection.vu
 import LayoutCloudSyncSection from '@/features/settings/layout-cloud-sync/LayoutCloudSyncSection.vue'
 import DataPathAndCacheSection from '@/features/settings/data-path/DataPathAndCacheSection.vue'
 import ConfigImportExport from '@/features/settings/config-import-export/ConfigImportExport.vue'
+import ConnectionProbeSection from '@/features/settings/connection-probe/ConnectionProbeSection.vue'
 import MigrateLocalDataSection from '@/features/settings/migrate-local/MigrateLocalDataSection.vue'
 
 const openSetupWizard = inject('openSetupWizard', () => {})

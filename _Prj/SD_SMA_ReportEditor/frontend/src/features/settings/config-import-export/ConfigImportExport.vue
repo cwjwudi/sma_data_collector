@@ -1,8 +1,13 @@
 <template>
   <section class="settings-section config-backup">
     <h3 class="settings-section__title">备份与恢复</h3>
+    <div class="backup-callout">
+      <strong>升级 / 换机 / 重装前请先备份。</strong>
+      Windows 应用内升级通常会保留用户数据目录，但导出一份 JSON 备份可在异常情况下快速恢复连接与模版。
+      恢复后请打开「数据源配置」确认连接列表与 Tab 指示灯是否正常。
+    </div>
     <p class="settings-hint">
-      把<strong>数据库连接、现场数据、报表模版、版式、签名</strong>和<strong>默认 PDF 保存位置</strong>等设置，
+      把<strong>数据库连接、现场数据、报表模版、版式、签名</strong>、<strong>生成报表偏好</strong>（含 OPC 导出反馈绑定）和<strong>默认 PDF 保存位置</strong>等设置，
       保存成一个文件，便于换电脑、重装软件或留档。备份文件请自行保管，不要发给无关人员。
     </p>
 
@@ -265,6 +270,17 @@ function confirmReplace() {
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
   border: 0;
+}
+
+.backup-callout {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid #fcd34d;
+  background: #fffbeb;
+  font-size: 13px;
+  line-height: 1.55;
+  color: #78350f;
 }
 
 .backup-block {

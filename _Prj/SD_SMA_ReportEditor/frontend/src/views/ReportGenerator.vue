@@ -146,6 +146,20 @@
         </div>
 
         <p v-if="exportResultOpcServerLabel" class="rg-mini rg-mini--indent">当前连接：{{ exportResultOpcServerLabel }}</p>
+
+        <div class="rg-row rg-row--in-panel rg-test-writeback">
+          <button
+            type="button"
+            class="btn"
+            :disabled="!prefs.exportResultOpc.enabled || testWriteBackBusy || !hasExportResultBinding"
+            @click="onTestExportResultWriteBack"
+          >
+            {{ testWriteBackBusy ? "正在写回…" : "测试写回 PLC" }}
+          </button>
+          <p class="rg-mini rg-mini--indent">
+            向已绑定的 OPC 变量写入一次成功态测试值，不导出 PDF；可在 PLC 侧确认后再做正式导出。
+          </p>
+        </div>
       </div>
     </section>
 
@@ -587,7 +601,10 @@ import { humanizePdfExportError } from "@/lib/pdfExportErrors";
 import { runTemplateExportPreflight } from "@/lib/templateExportPreflight";
 import { showAppToast } from "@/composables/useAppToast";
 import {
+  hasAnyExportResultBinding,
   isExportResultOpcFeedbackConfigured,
+  testWriteExportResultToOpcua,
+  validateExportResultOpcBindings,
   writeExportResultToOpcua,
   type ExportResultWritePayload,
 } from "@/lib/exportResultOpcFeedback";
@@ -651,6 +668,10 @@ const exportResultOpcPathBindingHint = computed(() =>
     prefs.value.exportResultOpc.filePathNodeLabel,
   ),
 );
+
+const hasExportResultBinding = computed(() => hasAnyExportResultBinding(prefs.value.exportResultOpc));
+
+const testWriteBackBusy = ref(false);
 
 const opcPickCloseOnConfirm = computed(() => !isFeedbackPickTarget(opcPickTarget.value));
 
@@ -959,7 +980,10 @@ function toggleExportResultOpc() {
   prefs.value.exportResultOpc.enabled = !prefs.value.exportResultOpc.enabled;
 }
 
-async function notifyExportResultToPlc(payload: ExportResultWritePayload): Promise<void> {
+async function notifyExportResultToPlc(
+  payload: ExportResultWritePayload,
+  context: "manual" | "auto" = "manual",
+): Promise<void> {
   const fb = prefs.value.exportResultOpc;
   if (!isExportResultOpcFeedbackConfigured(fb)) return;
   try {
@@ -967,9 +991,44 @@ async function notifyExportResultToPlc(payload: ExportResultWritePayload): Promi
     if (!res.ok) {
       const hint = res.errors.join("；");
       showAppToast(`导出结果写回 OPC 失败\n${hint}`, { tone: "warn", durationMs: 10000 });
+      const statusLine = `[写回 PLC] 失败：${hint}`;
+      if (context === "auto") {
+        autoStatus.value = autoStatus.value ? `${autoStatus.value} · ${statusLine}` : statusLine;
+      } else {
+        manualHint.value = statusLine;
+      }
     }
   } catch {
     showAppToast("导出结果写回 OPC 失败", { tone: "warn", durationMs: 8000 });
+    const statusLine = "[写回 PLC] 失败：未知错误";
+    if (context === "auto") {
+      autoStatus.value = autoStatus.value ? `${autoStatus.value} · ${statusLine}` : statusLine;
+    } else {
+      manualHint.value = statusLine;
+    }
+  }
+}
+
+async function onTestExportResultWriteBack(): Promise<void> {
+  if (testWriteBackBusy.value) return;
+  testWriteBackBusy.value = true;
+  try {
+    const res = await testWriteExportResultToOpcua(prefs.value.exportResultOpc);
+    if (res.ok) {
+      const nodes = res.written.length ? res.written.join("、") : "已绑定节点";
+      showAppToast(`测试写回成功\n已写入：${nodes}`, { tone: "ok", durationMs: 8000 });
+      autoStatus.value = `[导出反馈] 测试写回成功（${nodes}）`;
+    } else {
+      const hint = res.errors.join("；") || "写回失败";
+      showAppToast(`测试写回失败\n${hint}`, { tone: "err", durationMs: 10000 });
+      autoStatus.value = `[导出反馈] 测试写回失败：${hint}`;
+    }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    showAppToast(`测试写回失败\n${msg}`, { tone: "err", durationMs: 10000 });
+    autoStatus.value = `[导出反馈] 测试写回失败：${msg}`;
+  } finally {
+    testWriteBackBusy.value = false;
   }
 }
 
@@ -1181,6 +1240,21 @@ async function onManualExport(): Promise<void> {
   manualBusy.value = true;
   manualHint.value = "正在检查数据源连接…";
   try {
+    if (isExportResultOpcFeedbackConfigured(prefs.value.exportResultOpc)) {
+      manualHint.value = "正在校验导出反馈绑定…";
+      const opcVal = await validateExportResultOpcBindings(prefs.value.exportResultOpc);
+      if (!opcVal.ok) {
+        const issues = opcVal.issues.map((i) => i.message).join("\n");
+        const proceedOpc = window.confirm(
+          `导出结果写回 OPC 校验未通过：\n${issues}\n\n是否仍继续导出 PDF？（写回 PLC 可能失败）`,
+        );
+        if (!proceedOpc) {
+          manualHint.value = issues;
+          return;
+        }
+      }
+    }
+
     const preflight = await runTemplateExportPreflight(tid);
     if (!preflight.ok) {
       const proceed = window.confirm(
@@ -1203,15 +1277,18 @@ async function onManualExport(): Promise<void> {
       openAfter: prefs.value.manualOpenAfter,
     });
     manualHint.value = `已保存：${filePath}`;
-    void notifyExportResultToPlc({
-      success: true,
-      filePath,
-      fileName: suggestName,
-    });
+    void notifyExportResultToPlc(
+      {
+        success: true,
+        filePath,
+        fileName: suggestName,
+      },
+      "manual",
+    );
   } catch (e) {
     const msg = humanizePdfExportError(e);
     manualHint.value = msg;
-    void notifyExportResultToPlc({ success: false, message: msg });
+    void notifyExportResultToPlc({ success: false, message: msg }, "manual");
   } finally {
     manualBusy.value = false;
   }
@@ -1330,12 +1407,15 @@ async function pollAutoTriggerOnce(): Promise<void> {
           success: true,
           message: result.note,
         });
-        void notifyExportResultToPlc({
-          success: true,
-          filePath: result.filePath,
-          fileName: result.fileName,
-          message: result.note,
-        });
+        void notifyExportResultToPlc(
+          {
+            success: true,
+            filePath: result.filePath,
+            fileName: result.fileName,
+            message: result.note,
+          },
+          "auto",
+        );
         exportedThisPoll = true;
         const noteSuffix = result.note ? `（${result.note}）` : "";
         autoStatus.value = `[自动·${label}] 已导出 ${result.filePath}${noteSuffix}`;
@@ -1354,7 +1434,7 @@ async function pollAutoTriggerOnce(): Promise<void> {
           success: false,
           message: msg,
         });
-        void notifyExportResultToPlc({ success: false, message: msg });
+        void notifyExportResultToPlc({ success: false, message: msg }, "auto");
         autoStatus.value = `[自动·${label}] 导出失败：${msg.split("\n")[0]}`;
         showAppToast(`[自动导出·${label}] 失败\n${msg}`, { tone: "err", durationMs: 14000 });
       } finally {

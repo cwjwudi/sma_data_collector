@@ -266,3 +266,16 @@ class AppPreferencesPatch(BaseModel):
     auto_select_last_opcua_server: bool | None = None
     default_opcua_server_id: str | None = None
     last_opcua_server_id: str | None = None
+    connection_probe_enabled: bool | None = None
+    connection_probe_interval_sec: int | None = None
+
+    @field_validator("connection_probe_interval_sec", mode="before")
+    @classmethod
+    def _cap_probe_interval(cls, v: Any) -> int | None:
+        if v is None:
+            return None
+        try:
+            n = int(v)
+        except (TypeError, ValueError):
+            return 30
+        return max(10, min(n, 3600))

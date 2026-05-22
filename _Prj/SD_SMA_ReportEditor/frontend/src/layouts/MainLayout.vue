@@ -61,31 +61,49 @@ import {
   dbHasFailedConnections,
   probeAllDatabaseConnectionsForNav,
 } from '@/features/datasource/database-connection-health'
+import {
+  connectionProbeIntervalMs,
+  loadConnectionProbePrefs,
+} from '@/features/datasource/connection-probe-prefs'
 
 const route = useRoute()
 
 const setupWizardVisible = ref(false)
 
 /** 离开数据源页时由主导航轮询；在页内由工作台探测并更新同一状态，避免重复请求 */
-const NAV_DB_HEALTH_POLL_MS = 5000
 let navDbHealthTimer = null
-
-function startNavDbHealthPolling() {
-  stopNavDbHealthPolling()
-  if (route.path.startsWith('/datasource')) return
-  void probeAllDatabaseConnectionsForNav()
-  navDbHealthTimer = window.setInterval(() => {
-    if (!route.path.startsWith('/datasource')) {
-      void probeAllDatabaseConnectionsForNav()
-    }
-  }, NAV_DB_HEALTH_POLL_MS)
-}
+let navProbePrefs = { enabled: false, intervalSec: 30 }
 
 function stopNavDbHealthPolling() {
   if (navDbHealthTimer != null) {
     window.clearInterval(navDbHealthTimer)
     navDbHealthTimer = null
   }
+}
+
+function startNavDbHealthPolling() {
+  stopNavDbHealthPolling()
+  if (route.path.startsWith('/datasource') || !navProbePrefs.enabled) return
+  void probeAllDatabaseConnectionsForNav()
+  navDbHealthTimer = window.setInterval(() => {
+    if (!route.path.startsWith('/datasource') && navProbePrefs.enabled) {
+      void probeAllDatabaseConnectionsForNav()
+    }
+  }, connectionProbeIntervalMs(navProbePrefs))
+}
+
+async function reloadNavProbePrefs() {
+  navProbePrefs = await loadConnectionProbePrefs()
+  startNavDbHealthPolling()
+}
+
+function onProbePrefsChanged(ev) {
+  if (ev?.detail) {
+    navProbePrefs = ev.detail
+    startNavDbHealthPolling()
+    return
+  }
+  void reloadNavProbePrefs()
 }
 
 function onConfigImported() {
@@ -121,14 +139,16 @@ onMounted(() => {
   } else {
     scheduleAutoUpdateCheck()
   }
-  startNavDbHealthPolling()
+  void reloadNavProbePrefs()
   window.addEventListener('report-editor-config-imported', onConfigImported)
+  window.addEventListener('report-editor-connection-probe-changed', onProbePrefsChanged)
 })
 
 onUnmounted(() => {
   stopNavDbHealthPolling()
   disposeAppUpdateListeners()
   window.removeEventListener('report-editor-config-imported', onConfigImported)
+  window.removeEventListener('report-editor-connection-probe-changed', onProbePrefsChanged)
 })
 
 provide('openSetupWizard', () => {

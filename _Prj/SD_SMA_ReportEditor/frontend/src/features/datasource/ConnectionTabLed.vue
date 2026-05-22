@@ -9,9 +9,12 @@ import type { ConnectionHealthState } from "@/features/datasource/connection-tab
 const props = withDefaults(
   defineProps<{
     state?: ConnectionHealthState;
+    /** 悬停提示；未传时使用默认文案 */
+    tooltip?: string;
   }>(),
   {
     state: "unknown",
+    tooltip: "",
   },
 );
 
@@ -22,6 +25,8 @@ const ledClass = computed(() => ({
 }));
 
 const title = computed(() => {
+  const custom = props.tooltip?.trim();
+  if (custom) return custom;
   if (props.state === "ok") return "连接正常";
   if (props.state === "fail") return "连接失败";
   if (props.state === "checking") return "正在检测连接…";

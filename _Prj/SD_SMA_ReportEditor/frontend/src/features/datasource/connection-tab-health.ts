@@ -5,6 +5,8 @@ export type ConnectionHealthState = "unknown" | "checking" | "ok" | "fail";
 
 export type ConnectionHealthSummary = { ok: number; fail: number; total: number };
 
+export type ConnectionProbeResult = { ok: boolean; message: string };
+
 /** 统计已保存连接中健康（ok）、失败（fail）数量与总数 */
 export function summarizeConnectionHealth(
   ids: string[],
@@ -17,29 +19,36 @@ export function summarizeConnectionHealth(
   return { ok, fail, total };
 }
 
-export async function probeDatabaseConnection(connectionId: string): Promise<boolean> {
-  if (!connectionId?.trim()) return false;
+function probeMessageFromResponse(res: { ok?: boolean; message?: unknown } | null | undefined): string {
+  if (res?.ok === true) return "";
+  const raw = res?.message;
+  if (typeof raw === "string" && raw.trim()) return raw.trim();
+  return "连接失败";
+}
+
+export async function probeDatabaseConnection(connectionId: string): Promise<ConnectionProbeResult> {
+  if (!connectionId?.trim()) return { ok: false, message: "缺少连接 ID" };
   try {
     const res = (await apiFetch(
       `/database/test_saved/${encodeURIComponent(connectionId.trim())}`,
       { method: "POST", body: {} },
-    )) as { ok?: boolean };
-    return res?.ok === true;
-  } catch {
-    return false;
+    )) as { ok?: boolean; message?: string };
+    return { ok: res?.ok === true, message: probeMessageFromResponse(res) };
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : String(e) };
   }
 }
 
-export async function probeOpcSavedConnection(serverId: string): Promise<boolean> {
-  if (!serverId?.trim()) return false;
+export async function probeOpcSavedConnection(serverId: string): Promise<ConnectionProbeResult> {
+  if (!serverId?.trim()) return { ok: false, message: "缺少连接 ID" };
   try {
     const res = (await apiFetch(`/opcua/test_saved/${encodeURIComponent(serverId.trim())}`, {
       method: "POST",
       body: {},
-    })) as { ok?: boolean };
-    return res?.ok === true;
-  } catch {
-    return false;
+    })) as { ok?: boolean; message?: string };
+    return { ok: res?.ok === true, message: probeMessageFromResponse(res) };
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : String(e) };
   }
 }
 
@@ -56,8 +65,8 @@ export type ProbeConnectionOptions = {
 /** 后台批量探测（并行），逐条回调状态；同 scope 内新一批开始后忽略上一批未完成的结果 */
 export async function probeConnectionIds(
   ids: string[],
-  probe: (id: string) => Promise<boolean>,
-  onState: (id: string, state: ConnectionHealthState) => void,
+  probe: (id: string) => Promise<ConnectionProbeResult>,
+  onState: (id: string, state: ConnectionHealthState, message?: string) => void,
   scope = "default",
   options: ProbeConnectionOptions = { silent: true },
 ): Promise<void> {
@@ -66,9 +75,9 @@ export async function probeConnectionIds(
   const silent = options.silent !== false;
   const batchId = (probeBatchGenerationByScope.get(scope) ?? 0) + 1;
   probeBatchGenerationByScope.set(scope, batchId);
-  const emit = (id: string, state: ConnectionHealthState) => {
+  const emit = (id: string, state: ConnectionHealthState, message = "") => {
     if (batchId !== probeBatchGenerationByScope.get(scope)) return;
-    onState(id, state);
+    onState(id, state, message);
   };
   if (!silent) {
     for (const id of list) {
@@ -77,8 +86,8 @@ export async function probeConnectionIds(
   }
   await Promise.all(
     list.map(async (id) => {
-      const ok = await probe(id);
-      emit(id, ok ? "ok" : "fail");
+      const res = await probe(id);
+      emit(id, res.ok ? "ok" : "fail", res.message);
     }),
   );
 }

@@ -13,7 +13,10 @@
         :class="['tab', 'tab--with-led', { on: selected?.id === s.id }]"
         @click="onOpcConnTabClick(s)"
       >
-        <ConnectionTabLed :state="opcHealth[s.id] || 'unknown'" />
+        <ConnectionTabLed
+          :state="opcHealth[s.id] || 'unknown'"
+          :tooltip="opcConnTabTooltip(s)"
+        />
         <span class="tab-label">{{ opcServerShortLabel(s) }}</span>
       </button>
     </div>
@@ -223,6 +226,12 @@ import {
   probeOpcSavedConnection,
   summarizeConnectionHealth,
 } from '@/features/datasource/connection-tab-health'
+import {
+  formatConnectionHealthTooltip,
+  getOpcConnectionHealth,
+  pruneOpcConnectionHealth,
+  setOpcConnectionHealth,
+} from '@/features/datasource/connection-health-detail'
 import { apiFetch } from '@/api/client.js'
 import OpcUaTree from './OpcUaTree.vue'
 import { translateOpcuaMessage } from './opcua-messages.js'
@@ -527,9 +536,15 @@ async function persistLastOpcuaServer(id) {
   }
 }
 
-function setOpcHealth(id, state) {
+function setOpcHealth(id, state, message = '') {
   if (!id) return
   opcHealth[id] = state
+  setOpcConnectionHealth(id, state, message)
+}
+
+function opcConnTabTooltip(server) {
+  const rec = getOpcConnectionHealth(server.id)
+  return formatConnectionHealthTooltip(rec, opcServerShortLabel(server))
 }
 
 function pruneOpcHealth(validIds) {
@@ -537,6 +552,7 @@ function pruneOpcHealth(validIds) {
   for (const k of Object.keys(opcHealth)) {
     if (!keep.has(k)) delete opcHealth[k]
   }
+  pruneOpcConnectionHealth(validIds)
 }
 
 function probeAllOpcConnections() {
@@ -705,7 +721,7 @@ async function testDraft() {
         method: 'POST',
         body: {},
       })
-      setOpcHealth(form.id, res.ok ? 'ok' : 'fail')
+      setOpcHealth(form.id, res.ok ? 'ok' : 'fail', res.ok ? '' : res.message || '连接失败')
       msg.value = res.ok ? '连接成功' : res.message || '失败'
       return
     }
@@ -724,7 +740,7 @@ async function testDraft() {
     })
     msg.value = res.ok ? '连接成功' : res.message || '失败'
   } catch (e) {
-    if (form.id) setOpcHealth(form.id, 'fail')
+    if (form.id) setOpcHealth(form.id, 'fail', e.message || String(e))
     msg.value = e.message || String(e)
   }
 }

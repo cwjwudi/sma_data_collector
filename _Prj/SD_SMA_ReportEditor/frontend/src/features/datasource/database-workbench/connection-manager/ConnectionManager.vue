@@ -234,7 +234,7 @@ async function testOnly() {
       msg.value = '连接成功（尚未保存到配置文件）'
       msgTone.value = 'ok'
     } else {
-      if (draft.id) emit('connection-tested', { id: draft.id, ok: false })
+      if (draft.id) emit('connection-tested', { id: draft.id, ok: false, message: res.message || '连接失败' })
       msg.value = res.message || '连接失败'
       msgTone.value = 'err'
     }

@@ -10,7 +10,10 @@
         :class="['tab', 'tab--with-led', { on: t.id === activeConnId }]"
         @click="activateTab(t.id)"
       >
-        <ConnectionTabLed :state="connHealth[t.id] || 'unknown'" />
+        <ConnectionTabLed
+          :state="connHealth[t.id] || 'unknown'"
+          :tooltip="dbConnTabTooltip(t)"
+        />
         <span class="tab-label">{{ t.label }}</span>
       </button>
     </div>
@@ -125,6 +128,12 @@ import {
   probeDatabaseConnection,
   summarizeConnectionHealth,
 } from '@/features/datasource/connection-tab-health'
+import {
+  formatConnectionHealthTooltip,
+  getDbConnectionHealth,
+  pruneDbConnectionHealth,
+  setDbConnectionHealth,
+} from '@/features/datasource/connection-health-detail'
 import { connectionTabLabel } from './connection-tab-label.js'
 import ConnectionManager from './connection-manager/ConnectionManager.vue'
 import ObjectTree from './object-tree/ObjectTree.vue'
@@ -225,9 +234,15 @@ function pickPreferredConnectionId(prefs, conns, explicitPreferred) {
   return null
 }
 
-function setConnHealth(id, state) {
+function setConnHealth(id, state, message = '') {
   if (!id) return
   connHealth[id] = state
+  setDbConnectionHealth(id, state, message)
+}
+
+function dbConnTabTooltip(tab) {
+  const rec = getDbConnectionHealth(tab.id)
+  return formatConnectionHealthTooltip(rec, tab.label || tab.id)
 }
 
 function pruneConnHealth(validIds) {
@@ -235,6 +250,7 @@ function pruneConnHealth(validIds) {
   for (const k of Object.keys(connHealth)) {
     if (!keep.has(k)) delete connHealth[k]
   }
+  pruneDbConnectionHealth(validIds)
 }
 
 function probeAllDatabaseConnections() {
@@ -243,8 +259,8 @@ function probeAllDatabaseConnections() {
   void probeConnectionIds(ids, probeDatabaseConnection, setConnHealth, 'database')
 }
 
-function onConnectionTested({ id, ok }) {
-  if (id) setConnHealth(id, ok ? 'ok' : 'fail')
+function onConnectionTested({ id, ok, message }) {
+  if (id) setConnHealth(id, ok ? 'ok' : 'fail', ok ? '' : message || '连接失败')
 }
 
 const connectionHealthSummary = computed(() =>

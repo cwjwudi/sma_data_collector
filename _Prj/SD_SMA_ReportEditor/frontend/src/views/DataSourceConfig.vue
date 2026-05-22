@@ -35,9 +35,10 @@ import DatabaseWorkbench from '@/features/datasource/database-workbench/Database
 import OpcUaPanel from '@/features/datasource/opcua/OpcUaPanel.vue'
 import ConnectionTabLed from '@/features/datasource/ConnectionTabLed.vue'
 import { setDbHealthSummary } from '@/features/datasource/database-connection-health'
-
-/** 在数据源配置页内，后台轮询全部连接健康（不依赖当前显示的子页签） */
-const HEALTH_POLL_MS = 5000
+import {
+  connectionProbeIntervalMs,
+  loadConnectionProbePrefs,
+} from '@/features/datasource/connection-probe-prefs'
 
 const route = useRoute()
 
@@ -49,6 +50,7 @@ const dbHealth = ref({ ok: 0, fail: 0, total: 0 })
 const opcHealth = ref({ ok: 0, fail: 0, total: 0 })
 
 let healthPollTimer = null
+let probePrefs = { enabled: false, intervalSec: 30 }
 
 function aggregateHealthState(summary) {
   if (!summary?.total) return 'unknown'
@@ -73,12 +75,6 @@ function probeAllDataSourceHealth() {
   })
 }
 
-function startHealthPolling() {
-  stopHealthPolling()
-  probeAllDataSourceHealth()
-  healthPollTimer = window.setInterval(probeAllDataSourceHealth, HEALTH_POLL_MS)
-}
-
 function stopHealthPolling() {
   if (healthPollTimer != null) {
     window.clearInterval(healthPollTimer)
@@ -86,8 +82,29 @@ function stopHealthPolling() {
   }
 }
 
+function startHealthPolling() {
+  stopHealthPolling()
+  probeAllDataSourceHealth()
+  if (!probePrefs.enabled) return
+  healthPollTimer = window.setInterval(probeAllDataSourceHealth, connectionProbeIntervalMs(probePrefs))
+}
+
+async function reloadProbePrefs() {
+  probePrefs = await loadConnectionProbePrefs()
+  startHealthPolling()
+}
+
 function onConfigImported() {
   probeAllDataSourceHealth()
+}
+
+function onProbePrefsChanged(ev) {
+  if (ev?.detail) {
+    probePrefs = ev.detail
+    startHealthPolling()
+    return
+  }
+  void reloadProbePrefs()
 }
 
 function syncTabFromRoute() {
@@ -101,13 +118,15 @@ watch(() => route.query.tab, syncTabFromRoute, { flush: 'pre' })
 
 onMounted(() => {
   syncTabFromRoute()
-  startHealthPolling()
+  void reloadProbePrefs()
   window.addEventListener('report-editor-config-imported', onConfigImported)
+  window.addEventListener('report-editor-connection-probe-changed', onProbePrefsChanged)
 })
 
 onUnmounted(() => {
   stopHealthPolling()
   window.removeEventListener('report-editor-config-imported', onConfigImported)
+  window.removeEventListener('report-editor-connection-probe-changed', onProbePrefsChanged)
 })
 </script>
 
