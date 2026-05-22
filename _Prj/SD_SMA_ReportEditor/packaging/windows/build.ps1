@@ -74,6 +74,14 @@ function Get-NodeMajorVersion {
   return [int](($raw -split '\.')[0])
 }
 
+function Get-FrontendVersion {
+  param([string]$PackageJsonPath)
+  # Node reads UTF-8 reliably; PS 5.1 Get-Content default encoding breaks Chinese in package.json
+  $ver = (& node -e "const fs=require('fs');process.stdout.write(JSON.parse(fs.readFileSync(process.argv[1],'utf8')).version)" $PackageJsonPath)
+  if (-not $ver) { throw "Could not read version from $PackageJsonPath" }
+  return $ver.Trim()
+}
+
 function Invoke-NpmCi {
   $nodeMajor = Get-NodeMajorVersion
   $npmCiArgs = @('ci', '--no-audit', '--no-fund')
@@ -118,8 +126,8 @@ if ((Test-Path -LiteralPath (Join-Path $Frontend 'release')) -or (Test-Path -Lit
 }
 
 Write-Step 'SD SMA Report Editor - Windows installer build'
-$pkgJson = Get-Content -LiteralPath (Join-Path $Frontend 'package.json') -Raw | ConvertFrom-Json
-Write-Host "Version:      $($pkgJson.version)"
+$AppVersion = Get-FrontendVersion (Join-Path $Frontend 'package.json')
+Write-Host "Version:      $AppVersion"
 Write-Host "Project root: $Root"
 Write-Host "Output dir:   $OutputDir"
 
