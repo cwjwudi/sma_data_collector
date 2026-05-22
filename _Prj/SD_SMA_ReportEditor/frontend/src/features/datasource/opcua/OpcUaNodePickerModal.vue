@@ -147,6 +147,8 @@ const props = defineProps({
   externalServers: { type: Array, default: () => [] },
   /** 为 true 时不显示全地址空间搜索（仅树浏览） */
   hideSearch: { type: Boolean, default: false },
+  /** 为 false 时由父组件在校验通过后自行关闭弹窗 */
+  closeOnConfirm: { type: Boolean, default: true },
 })
 
 const emit = defineEmits(['update:modelValue', 'confirm'])
@@ -711,8 +713,12 @@ async function confirmPick() {
     }
   }
   const sid = (selectedServerId.value || '').trim()
-  emit('confirm', { serverId: sid, nodeId: String(id) })
-  close()
+  const n = pickedNode.value
+  const nodeLabel =
+    String(n?.display_name || n?.browse_name || '')
+      .trim()
+  emit('confirm', { serverId: sid, nodeId: String(id), nodeLabel })
+  if (props.closeOnConfirm !== false) close()
 }
 
 function close() {

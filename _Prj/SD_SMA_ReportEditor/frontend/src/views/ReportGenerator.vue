@@ -74,53 +74,74 @@
         </p>
 
         <div class="rg-row rg-row--in-panel">
-          <label class="rg-lbl" for="rg-export-opc-status">状态节点（Boolean / Int）</label>
-          <div class="rg-inline">
-            <select v-model="prefs.exportResultOpc.statusKind" class="rg-select">
-              <option value="bool">Boolean（成功 true / 失败 false）</option>
-              <option value="int">Int（成功 1 / 失败 0）</option>
-            </select>
+          <label class="rg-lbl" for="rg-export-opc-status-kind">状态节点（Boolean / Int）</label>
+          <select id="rg-export-opc-status-kind" v-model="prefs.exportResultOpc.statusKind" class="rg-select">
+            <option value="bool">Boolean（成功 true / 失败 false）</option>
+            <option value="int">Int（成功 1 / 失败 0）</option>
+          </select>
+        </div>
+        <div class="rg-row rg-row--in-panel">
+          <label class="rg-lbl" for="rg-export-opc-status">状态变量 NodeId</label>
+          <div class="rg-inline rg-inline--bind">
             <input
               id="rg-export-opc-status"
-              :value="prefs.exportResultOpc.statusNodeId"
+              v-model.trim="prefs.exportResultOpc.statusNodeId"
               type="text"
               readonly
               class="rg-inp rg-inp--grow rg-mono"
-              placeholder="未绑定"
+              :title="prefs.exportResultOpc.statusNodeId || undefined"
+              placeholder="未绑定，请点击右侧从地址空间选择…"
             />
-            <button type="button" class="btn" @click="openRgOpcPick('feedbackStatus')">从地址空间选择…</button>
+            <button type="button" class="btn btn--nowrap" @click="openRgOpcPick('feedbackStatus')">
+              从地址空间选择…
+            </button>
           </div>
+          <p v-if="exportResultOpcStatusBindingHint" class="rg-mini rg-mini--indent rg-bound-hint">
+            已绑定：{{ exportResultOpcStatusBindingHint }}
+          </p>
         </div>
 
         <div class="rg-row rg-row--in-panel">
           <label class="rg-lbl" for="rg-export-opc-msg">信息节点（String）</label>
-          <div class="rg-inline">
+          <div class="rg-inline rg-inline--bind">
             <input
               id="rg-export-opc-msg"
-              :value="prefs.exportResultOpc.messageNodeId"
+              v-model.trim="prefs.exportResultOpc.messageNodeId"
               type="text"
               readonly
               class="rg-inp rg-inp--grow rg-mono"
-              placeholder="未绑定"
+              :title="prefs.exportResultOpc.messageNodeId || undefined"
+              placeholder="未绑定，请点击右侧从地址空间选择…"
             />
-            <button type="button" class="btn" @click="openRgOpcPick('feedbackMessage')">从地址空间选择…</button>
+            <button type="button" class="btn btn--nowrap" @click="openRgOpcPick('feedbackMessage')">
+              从地址空间选择…
+            </button>
           </div>
+          <p v-if="exportResultOpcMessageBindingHint" class="rg-mini rg-mini--indent rg-bound-hint">
+            已绑定：{{ exportResultOpcMessageBindingHint }}
+          </p>
           <p class="rg-mini rg-mini--indent">成功时写入「OK: 文件名」；失败时写入错误摘要（首行）。</p>
         </div>
 
         <div class="rg-row rg-row--in-panel">
           <label class="rg-lbl" for="rg-export-opc-path">路径节点（String，可选）</label>
-          <div class="rg-inline">
+          <div class="rg-inline rg-inline--bind">
             <input
               id="rg-export-opc-path"
-              :value="prefs.exportResultOpc.filePathNodeId"
+              v-model.trim="prefs.exportResultOpc.filePathNodeId"
               type="text"
               readonly
               class="rg-inp rg-inp--grow rg-mono"
-              placeholder="未绑定"
+              :title="prefs.exportResultOpc.filePathNodeId || undefined"
+              placeholder="未绑定，请点击右侧从地址空间选择…"
             />
-            <button type="button" class="btn" @click="openRgOpcPick('feedbackFilePath')">从地址空间选择…</button>
+            <button type="button" class="btn btn--nowrap" @click="openRgOpcPick('feedbackFilePath')">
+              从地址空间选择…
+            </button>
           </div>
+          <p v-if="exportResultOpcPathBindingHint" class="rg-mini rg-mini--indent rg-bound-hint">
+            已绑定：{{ exportResultOpcPathBindingHint }}
+          </p>
           <p class="rg-mini rg-mini--indent">成功时写入完整 PDF 路径；失败时写入空字符串。</p>
         </div>
 
@@ -500,6 +521,7 @@
       :key="opcPickModalKey"
       :data-type-filter="activeOpcDataTypeFilter"
       :hide-search="opcPickHideSearch"
+      :close-on-confirm="opcPickCloseOnConfirm"
       :title="opcPickTitle"
       :lead="opcPickLead"
       :initial-server-id="opcPickInitialServerId"
@@ -602,6 +624,35 @@ function opcServerLabel(serverId: string): string {
 const exportDirOpcServerLabel = computed(() => opcServerLabel(prefs.value.autoExportDirOpcServerId));
 const fileNameOpcServerLabel = computed(() => opcServerLabel(prefs.value.autoFileNameOpcServerId));
 const exportResultOpcServerLabel = computed(() => opcServerLabel(prefs.value.exportResultOpc.serverId));
+
+function exportResultOpcBindingHint(nodeId: string, nodeLabel: string): string {
+  const id = nodeId.trim();
+  if (!id) return "";
+  const label = nodeLabel.trim();
+  if (label && label !== id) return `${label} · ${id}`;
+  return id;
+}
+
+const exportResultOpcStatusBindingHint = computed(() =>
+  exportResultOpcBindingHint(
+    prefs.value.exportResultOpc.statusNodeId,
+    prefs.value.exportResultOpc.statusNodeLabel,
+  ),
+);
+const exportResultOpcMessageBindingHint = computed(() =>
+  exportResultOpcBindingHint(
+    prefs.value.exportResultOpc.messageNodeId,
+    prefs.value.exportResultOpc.messageNodeLabel,
+  ),
+);
+const exportResultOpcPathBindingHint = computed(() =>
+  exportResultOpcBindingHint(
+    prefs.value.exportResultOpc.filePathNodeId,
+    prefs.value.exportResultOpc.filePathNodeLabel,
+  ),
+);
+
+const opcPickCloseOnConfirm = computed(() => !isFeedbackPickTarget(opcPickTarget.value));
 
 function isFeedbackStringPickTarget(t: RgOpcPickTarget | null): boolean {
   return t === "feedbackMessage" || t === "feedbackFilePath";
@@ -971,12 +1022,23 @@ watch(opcPickOpen, (open) => {
   if (!open) resetRgOpcPickSession();
 });
 
-async function onRgOpcPickConfirm(payload: { serverId: string; nodeId: string }) {
+type RgOpcPickConfirmPayload = {
+  serverId: string;
+  nodeId: string;
+  nodeLabel?: string;
+};
+
+function finishRgOpcPickSuccess() {
+  opcPickOpen.value = false;
+}
+
+async function onRgOpcPickConfirm(payload: RgOpcPickConfirmPayload) {
   const sid = payload.serverId.trim();
   const nid = payload.nodeId.trim();
+  const nodeLabel = (payload.nodeLabel || "").trim();
   const target = opcPickTarget.value;
   if (!nid || !target) {
-    resetRgOpcPickSession();
+    finishRgOpcPickSuccess();
     return;
   }
 
@@ -984,19 +1046,19 @@ async function onRgOpcPickConfirm(payload: { serverId: string; nodeId: string })
   if (triggerBindId) {
     const b = findAutoTriggerBinding(triggerBindId);
     if (!b) {
-      resetRgOpcPickSession();
+      finishRgOpcPickSuccess();
       return;
     }
     if (sid) b.serverId = sid;
     b.nodeId = nid;
     getBindingRuntime(triggerBindId).poll = createOpcTriggerPollState();
-    resetRgOpcPickSession();
+    finishRgOpcPickSuccess();
     return;
   }
 
   if (target === "fileName") {
     if (!sid) {
-      resetRgOpcPickSession();
+      finishRgOpcPickSuccess();
       return;
     }
     const check = await readSavedOpcStringValue(sid, nid);
@@ -1006,20 +1068,20 @@ async function onRgOpcPickConfirm(payload: { serverId: string; nodeId: string })
     }
     prefs.value.autoFileNameOpcServerId = sid;
     prefs.value.autoFileNameOpcNodeId = nid;
-    resetRgOpcPickSession();
+    finishRgOpcPickSuccess();
     return;
   }
 
   if (target === "exportDir") {
     if (sid) prefs.value.autoExportDirOpcServerId = sid;
     prefs.value.autoExportDirOpcNodeId = nid;
-    resetRgOpcPickSession();
+    finishRgOpcPickSuccess();
     return;
   }
 
   if (target === "feedbackStatus") {
     if (!sid) {
-      resetRgOpcPickSession();
+      autoStatus.value = "[导出反馈] 请先选择 OPC UA 连接";
       return;
     }
     const check = await readSavedOpcNodeValue(sid, nid);
@@ -1035,13 +1097,15 @@ async function onRgOpcPickConfirm(payload: { serverId: string; nodeId: string })
     }
     prefs.value.exportResultOpc.serverId = sid;
     prefs.value.exportResultOpc.statusNodeId = nid;
-    resetRgOpcPickSession();
+    prefs.value.exportResultOpc.statusNodeLabel = nodeLabel;
+    autoStatus.value = `[导出反馈] 已绑定状态变量`;
+    finishRgOpcPickSuccess();
     return;
   }
 
   if (target === "feedbackMessage" || target === "feedbackFilePath") {
     if (!sid) {
-      resetRgOpcPickSession();
+      autoStatus.value = "[导出反馈] 请先选择 OPC UA 连接";
       return;
     }
     const check = await readSavedOpcStringValue(sid, nid);
@@ -1052,14 +1116,17 @@ async function onRgOpcPickConfirm(payload: { serverId: string; nodeId: string })
     prefs.value.exportResultOpc.serverId = sid;
     if (target === "feedbackMessage") {
       prefs.value.exportResultOpc.messageNodeId = nid;
+      prefs.value.exportResultOpc.messageNodeLabel = nodeLabel;
     } else {
       prefs.value.exportResultOpc.filePathNodeId = nid;
+      prefs.value.exportResultOpc.filePathNodeLabel = nodeLabel;
     }
-    resetRgOpcPickSession();
+    autoStatus.value = `[导出反馈] 已绑定${target === "feedbackMessage" ? "信息" : "路径"}变量`;
+    finishRgOpcPickSuccess();
     return;
   }
 
-  resetRgOpcPickSession();
+  finishRgOpcPickSuccess();
 }
 
 function toggleFileNameSegment(id: AutoFileNameSegment) {
@@ -1804,6 +1871,25 @@ onUnmounted(() => {
   gap: 8px;
   align-items: center;
   max-width: 640px;
+}
+.rg-inline--bind {
+  width: 100%;
+  max-width: 720px;
+}
+.rg-inline--bind .rg-inp--grow {
+  flex: 1 1 12rem;
+  min-width: 8rem;
+  max-width: none;
+  width: auto;
+}
+.btn--nowrap {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+.rg-bound-hint {
+  margin-top: 6px;
+  color: #4338ca;
+  word-break: break-all;
 }
 .rg-split {
   display: grid;

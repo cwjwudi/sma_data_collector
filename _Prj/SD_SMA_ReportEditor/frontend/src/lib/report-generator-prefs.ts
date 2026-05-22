@@ -45,9 +45,12 @@ export interface ExportResultOpcFeedback {
   enabled: boolean;
   serverId: string;
   statusNodeId: string;
+  statusNodeLabel: string;
   statusKind: ExportResultOpcStatusKind;
   messageNodeId: string;
+  messageNodeLabel: string;
   filePathNodeId: string;
+  filePathNodeLabel: string;
   messageMaxLen: number;
 }
 
@@ -55,9 +58,12 @@ export const defaultExportResultOpcFeedback = (): ExportResultOpcFeedback => ({
   enabled: false,
   serverId: "",
   statusNodeId: "",
+  statusNodeLabel: "",
   statusKind: "bool",
   messageNodeId: "",
+  messageNodeLabel: "",
   filePathNodeId: "",
+  filePathNodeLabel: "",
   messageMaxLen: 200,
 });
 
@@ -184,9 +190,12 @@ function parseExportResultOpc(raw: unknown, base: ExportResultOpcFeedback): Expo
     enabled: Boolean(o.enabled),
     serverId: typeof o.serverId === "string" ? o.serverId : base.serverId,
     statusNodeId: typeof o.statusNodeId === "string" ? o.statusNodeId : base.statusNodeId,
+    statusNodeLabel: typeof o.statusNodeLabel === "string" ? o.statusNodeLabel : base.statusNodeLabel,
     statusKind: o.statusKind === "int" ? "int" : base.statusKind,
     messageNodeId: typeof o.messageNodeId === "string" ? o.messageNodeId : base.messageNodeId,
+    messageNodeLabel: typeof o.messageNodeLabel === "string" ? o.messageNodeLabel : base.messageNodeLabel,
     filePathNodeId: typeof o.filePathNodeId === "string" ? o.filePathNodeId : base.filePathNodeId,
+    filePathNodeLabel: typeof o.filePathNodeLabel === "string" ? o.filePathNodeLabel : base.filePathNodeLabel,
     messageMaxLen:
       typeof o.messageMaxLen === "number" && o.messageMaxLen > 0
         ? Math.min(2000, Math.floor(o.messageMaxLen))
