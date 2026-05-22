@@ -67,13 +67,14 @@ https://brportal.cpolar.top/downloads/report-editor
 # 1. 复制安装包到 updates/
 cp "packaging/mac/output/Report Editor-0.2.0-arm64.dmg" packaging/updates/
 
-# 2. 生成 latest.json（版本号与 package.json 一致）
+# 2. 生成 latest.json（版本号与 package.json 一致；打包后带 SHA256）
 node packaging/scripts/generate-update-manifest.mjs \
-  --version 0.2.0 \
   --notes "更新说明" \
-  --base-url "https://brsysnology925gitea.cpolar.top/BRTeam/p000_sd_sma_scada/raw/main/_Prj/SD_SMA_ReportEditor/packaging/updates" \
   --mac-arm64 "packaging/updates/Report Editor-0.2.0-arm64.dmg" \
   --win "packaging/updates/Report Editor-Setup-0.2.0-x64.exe"
+
+# 发布新版本前可先 bump（同步 package.json 与 latest.json 占位）：
+# node packaging/scripts/bump-version.mjs 0.1.6 --notes "更新说明"
 ```
 
 将生成的 `latest.json` 与对应安装包一并发布，确保清单中的 URL 可访问。

@@ -88,6 +88,8 @@ if [[ -d "$FRONTEND/release-mac" ]]; then
 fi
 
 step "SD SMA Report Editor - macOS DMG build"
+PKG_VERSION="$(node -p "require('$FRONTEND/package.json').version" 2>/dev/null || echo '?')"
+echo "Version:      $PKG_VERSION"
 echo "Project root: $PROJECT_ROOT"
 echo "Packaging:    $PACKAGING_DIR"
 echo "Output dir:   $OUTPUT_DIR"

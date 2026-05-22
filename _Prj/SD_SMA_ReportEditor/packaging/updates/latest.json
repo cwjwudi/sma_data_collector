@@ -1,17 +1,13 @@
 {
-  "version": "0.1.4",
-  "releasedAt": "2026-05-21T12:02:01.733Z",
-  "notes": "Report Editor 0.1.4\n\n- 版式云端同步：登录 Portal 上传/下载版式，br/admin 可下载默认版式\n- 软件更新界面文案优化\n- Windows 打包与安装体验改进",
+  "version": "0.1.5",
+  "releasedAt": "2026-05-21T13:00:00.000Z",
+  "notes": "Report Editor 0.1.5\n\n- 表格列宽百分比输入修复\n- 表格填充色作用于单元格内侧\n- 模版与版式编辑器控件属性与渲染对齐",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor-Setup-0.1.4-x64.exe",
-      "sha256": "140acfc625ed69a7a99457cc5974eade1be73f6e81f547485072094a75237c3a",
-      "size": 143096555
+      "url": "Report Editor-Setup-0.1.5-x64.exe"
     },
     "darwin-arm64": {
-      "url": "Report Editor-0.1.4-arm64.dmg",
-      "sha256": "a65f53ba29d10c8cc05e0362ee1aa474a1ad83e8b19d424379f2782850f5617d",
-      "size": 176843728
+      "url": "Report Editor-0.1.5-arm64.dmg"
     }
   }
 }

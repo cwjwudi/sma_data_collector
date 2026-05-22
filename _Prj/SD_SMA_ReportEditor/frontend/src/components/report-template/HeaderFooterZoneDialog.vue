@@ -418,30 +418,13 @@
               </div>
             </div>
             <div class="hz-span2 hz-table-col-widths">
-              <span class="hz-dim-title">列宽（%）</span>
-              <div class="hz-table-col-widths-grid">
-                <label
-                  v-for="ci in hzTableColWidthIndices"
-                  :key="'hzcw-' + ci"
-                  class="hz-table-col-w-label"
-                  >列 {{ ci + 1 }}
-                  <input
-                    type="number"
-                    :min="TABLE_COLUMN_WIDTH_PERCENT_MIN"
-                    :max="hzTableColPercentMax"
-                    step="1"
-                    class="hz-inp hz-col-w-inp"
-                    :value="hzColPercentInput.inputValue(ci)"
-                    @focus="hzColPercentInput.onFocus(ci)"
-                    @input="hzColPercentInput.onInput($event)"
-                    @blur="hzColPercentInput.onBlur()"
-                    @change="hzColPercentInput.onChange(ci, $event, commitHzTableColPercents)"
-                  />
-                </label>
-              </div>
-              <p class="hz-muted">
-                整数百分比（每列至少 {{ TABLE_COLUMN_WIDTH_PERCENT_MIN }}%，合计 100%）；修改一列时其余列按当前比例自动调整。
-              </p>
+              <span class="hz-dim-title">列宽</span>
+              <TableColumnWidthVisualEditor
+                v-if="hzZoneTableCellMetric"
+                :column-widths-px="hzTableColumnInnerWidths"
+                :inner-w="hzZoneTableCellMetric.innerW"
+                @resize-delta="onHzTableColumnResizeFromProps"
+              />
             </div>
             <p class="hz-muted hz-span2">
               {{
@@ -451,9 +434,7 @@
               }}
             </p>
             <p v-if="hzZoneTableCellMetric" class="hz-span2 hz-table-metric">
-              单元格高度（推算）：高约 <strong>{{ formatMetricPx(hzZoneTableCellMetric.cellH) }}</strong> px。当前内侧列宽（推算）：{{
-                hzZoneTableColWidthsSummary
-              }}
+              单元格高度（推算）：高约 <strong>{{ formatMetricPx(hzZoneTableCellMetric.cellH) }}</strong> px
             </p>
             <template v-if="activeHzTableCell">
               <div class="hz-span2 hz-cell-fields" :key="'hzcf-' + hzEditCellRow + '-' + hzEditCellCol">
@@ -584,15 +565,12 @@ import {
   applyTableColumnResizeDeltaPx,
   clampTableRowHeightPx,
   formatMetricPx,
-  integerColumnPercentsFromInnerWidthsPx,
-  maxTableColumnPercentForEdit,
-  TABLE_COLUMN_WIDTH_PERCENT_MIN,
   uniformTableCellBoxPx,
   TABLE_ROW_HEIGHT_DEFAULT_PX,
   TABLE_ROW_HEIGHT_MAX_PX,
   TABLE_ROW_HEIGHT_MIN_PX,
 } from "@/lib/report-template/table-cell-metrics";
-import { useTableColPercentInput } from "@/composables/useTableColPercentInput";
+import TableColumnWidthVisualEditor from "@/components/report-template/TableColumnWidthVisualEditor.vue";
 import { metricsForSheet, type EditorSheet } from "@/lib/report-template/editor-sheet";
 import type { ReportTemplate } from "@/lib/report-template/model";
 import { looksLikeImageFile, pickFirstImageFileFromDataTransfer, readImageFileAsDataUrl } from "@/lib/report-template/read-image-file";
@@ -860,31 +838,17 @@ const hzZoneTableCellMetric = computed(() => {
   });
 });
 
-const hzTableColPercents = computed(() => {
+const hzTableColumnInnerWidths = computed(() => {
   const s = sel.value;
   if (!s || s.type !== "table") return [];
   ensureZoneTableGrid(s);
-  const u = hzZoneTableCellMetric.value;
-  if (!u) return [];
-  const widths = zoneTableColumnInnerWidthsPx(s);
-  return integerColumnPercentsFromInnerWidthsPx(widths, u.innerW);
+  return zoneTableColumnInnerWidthsPx(s);
 });
 
-const hzTableColPercentMax = computed(() => {
-  const s = sel.value;
-  if (!s || s.type !== "table") return 100;
-  return maxTableColumnPercentForEdit(s.tableCols ?? 4);
-});
-
-const hzColPercentInput = useTableColPercentInput(() => hzTableColPercents.value);
-
-function commitHzTableColPercents(next: number[]) {
+function onHzTableColumnResizeFromProps(boundaryIndex: number, deltaLayoutPx: number) {
   const s = sel.value;
   if (!s || s.type !== "table") return;
-  ensureZoneTableGrid(s);
-  s.tableColWidthsPx = next.slice();
-  ensureZoneTableGrid(s);
-  clampZoneTableOuterSize(s);
+  onHzTableColumnResize(s, boundaryIndex, deltaLayoutPx);
 }
 
 const hzTableRowHeightModel = computed({
@@ -899,21 +863,6 @@ const hzTableRowHeightModel = computed({
     s.tableRowHeightPx = clampTableRowHeightPx(v);
     clampZoneTableOuterSize(s);
   },
-});
-
-const hzTableColWidthIndices = computed(() => {
-  const s = sel.value;
-  if (!s || s.type !== "table") return [];
-  ensureZoneTableGrid(s);
-  const n = s.tableCols ?? 4;
-  return Array.from({ length: n }, (_, i) => i);
-});
-
-const hzZoneTableColWidthsSummary = computed(() => {
-  const s = sel.value;
-  if (!s || s.type !== "table") return "";
-  const widths = zoneTableColumnInnerWidthsPx(s);
-  return widths.map((w, i) => `列${i + 1} ${formatMetricPx(w)}`).join(" · ");
 });
 
 function hzLayoutTableGrid(el: LayoutZoneElement): LayoutZoneTableCell[][] {

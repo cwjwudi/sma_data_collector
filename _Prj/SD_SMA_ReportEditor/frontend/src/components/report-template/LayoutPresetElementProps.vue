@@ -272,27 +272,13 @@
           </div>
         </div>
         <div class="lpep-table-col-widths">
-          <span class="lpep-dim-title">列宽（%）</span>
-          <div class="lpep-table-col-widths-grid">
-            <label v-for="ci in zoneTableColWidthIndices" :key="'lzcw-' + ci" class="lpep-lab lpep-table-col-w-lab"
-              >列 {{ ci + 1 }}
-              <input
-                type="number"
-                :min="TABLE_COLUMN_WIDTH_PERCENT_MIN"
-                :max="zoneTableColPercentMax"
-                step="1"
-                class="lpep-inp lpep-table-col-w-inp"
-                :value="zoneColPercentInput.inputValue(ci)"
-                @focus="zoneColPercentInput.onFocus(ci)"
-                @input="zoneColPercentInput.onInput($event)"
-                @blur="zoneColPercentInput.onBlur()"
-                @change="zoneColPercentInput.onChange(ci, $event, commitZoneTableColPercents)"
-              />
-            </label>
-          </div>
-          <p class="lpep-hint-muted">
-            整数百分比（每列至少 {{ TABLE_COLUMN_WIDTH_PERCENT_MIN }}%，合计 100%）；修改一列时其余列按当前比例自动调整。
-          </p>
+          <span class="lpep-dim-title">列宽</span>
+          <TableColumnWidthVisualEditor
+            v-if="zonePresetTableCellMetric"
+            :column-widths-px="zoneTableColumnInnerWidths"
+            :inner-w="zonePresetTableCellMetric.innerW"
+            @resize-delta="onZoneTableColumnResizeFromProps"
+          />
         </div>
         <p class="lpep-hint-muted">
           {{
@@ -302,9 +288,7 @@
           }}
         </p>
         <p v-if="zonePresetTableCellMetric" class="lpep-table-metric">
-          单元格高度（推算）：高约 <strong>{{ formatMetricPx(zonePresetTableCellMetric.cellH) }}</strong> px。当前内侧列宽（推算）：{{
-            zonePresetTableColWidthsSummary
-          }}
+          单元格高度（推算）：高约 <strong>{{ formatMetricPx(zonePresetTableCellMetric.cellH) }}</strong> px
         </p>
         <template v-if="activeTableCell">
           <div class="lpep-table-cell-fields" :key="'lz-' + editCellRow + '-' + editCellCol">
@@ -442,18 +426,16 @@ import {
   layoutPresetTableCellPickKey,
 } from "@/lib/report-template/template-editor-context";
 import {
+  applyTableColumnResizeDeltaPx,
   REPORT_ZONE_TABLE_NODE_PADDING_PX,
   clampTableRowHeightPx,
   formatMetricPx,
-  integerColumnPercentsFromInnerWidthsPx,
-  maxTableColumnPercentForEdit,
-  TABLE_COLUMN_WIDTH_PERCENT_MIN,
   uniformTableCellBoxPx,
   TABLE_ROW_HEIGHT_DEFAULT_PX,
   TABLE_ROW_HEIGHT_MAX_PX,
   TABLE_ROW_HEIGHT_MIN_PX,
 } from "@/lib/report-template/table-cell-metrics";
-import { useTableColPercentInput } from "@/composables/useTableColPercentInput";
+import TableColumnWidthVisualEditor from "@/components/report-template/TableColumnWidthVisualEditor.vue";
 import type { TableSqlFillConfig } from "@/lib/report-template/table-sql-fill";
 import {
   defaultTableSqlFillConfig,
@@ -609,44 +591,23 @@ watch(
   { deep: true },
 );
 
-const zonePresetTableColWidthsSummary = computed(() => {
-  const el = props.el;
-  if (!el || el.type !== "table") return "";
-  const widths = zoneTableColumnInnerWidthsPx(el);
-  return widths.map((w, i) => `列${i + 1} ${formatMetricPx(w)}`).join(" · ");
-});
-
-const zoneTableColWidthIndices = computed(() => {
+const zoneTableColumnInnerWidths = computed(() => {
   const el = props.el;
   if (!el || el.type !== "table") return [];
   ensureZoneTableGrid(el);
-  const n = el.tableCols ?? 4;
-  return Array.from({ length: n }, (_, i) => i);
+  return zoneTableColumnInnerWidthsPx(el);
 });
 
-const zoneTableColPercents = computed(() => {
-  const el = props.el;
-  if (!el || el.type !== "table") return [];
-  ensureZoneTableGrid(el);
-  const u = zonePresetTableCellMetric.value;
-  if (!u) return [];
-  const widths = zoneTableColumnInnerWidthsPx(el);
-  return integerColumnPercentsFromInnerWidthsPx(widths, u.innerW);
-});
-
-const zoneTableColPercentMax = computed(() => {
-  const el = props.el;
-  if (!el || el.type !== "table") return 100;
-  return maxTableColumnPercentForEdit(el.tableCols ?? 4);
-});
-
-const zoneColPercentInput = useTableColPercentInput(() => zoneTableColPercents.value);
-
-function commitZoneTableColPercents(next: number[]) {
+function onZoneTableColumnResizeFromProps(boundaryIndex: number, deltaLayoutPx: number) {
   const el = props.el;
   if (!el || el.type !== "table") return;
   ensureZoneTableGrid(el);
-  el.tableColWidthsPx = next.slice();
+  const u = zonePresetTableCellMetric.value;
+  if (!u) return;
+  const cols = el.tableCols ?? 4;
+  const next = applyTableColumnResizeDeltaPx(u.innerW, cols, el.tableColWidthsPx, boundaryIndex, deltaLayoutPx);
+  if (!next) return;
+  el.tableColWidthsPx = next;
   ensureZoneTableGrid(el);
   clampZoneTableOuterSize(el);
 }

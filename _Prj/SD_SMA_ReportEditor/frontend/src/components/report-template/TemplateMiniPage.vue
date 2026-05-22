@@ -580,7 +580,6 @@ function miniTplTableInnerStyle(el: TemplateElement): Record<string, string> {
   if (el.type !== "table") return {};
   return { background: zoneTableInnerBackgroundCss(el.bgColor) };
 }
-}
 
 function miniTplTableColInnerWidthsPx(el: TemplateElement): number[] {
   if (el.type !== "table") return [];

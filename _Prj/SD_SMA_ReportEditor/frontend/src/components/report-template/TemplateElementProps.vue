@@ -296,27 +296,13 @@
           </div>
         </div>
         <div class="lpep-table-col-widths">
-          <span class="lpep-dim-title">列宽（%）</span>
-          <div class="lpep-table-col-widths-grid">
-            <label v-for="ci in tplTableColWidthIndices" :key="'tplcw-' + ci" class="lpep-lab lpep-table-col-w-lab"
-              >列 {{ ci + 1 }}
-              <input
-                type="number"
-                :min="TABLE_COLUMN_WIDTH_PERCENT_MIN"
-                :max="tplTableColPercentMax"
-                step="1"
-                class="lpep-inp lpep-table-col-w-inp"
-                :value="tplColPercentInput.inputValue(ci)"
-                @focus="tplColPercentInput.onFocus(ci)"
-                @input="tplColPercentInput.onInput($event)"
-                @blur="tplColPercentInput.onBlur()"
-                @change="tplColPercentInput.onChange(ci, $event, commitTplTableColPercents)"
-              />
-            </label>
-          </div>
-          <p class="lpep-hint-muted">
-            整数百分比（每列至少 {{ TABLE_COLUMN_WIDTH_PERCENT_MIN }}%，合计 100%）；修改一列时其余列按当前比例自动调整。
-          </p>
+          <span class="lpep-dim-title">列宽</span>
+          <TableColumnWidthVisualEditor
+            v-if="templateTableCellMetric"
+            :column-widths-px="tplTableColumnInnerWidths"
+            :inner-w="templateTableCellMetric.innerW"
+            @resize-delta="onTplTableColumnResizeFromProps"
+          />
         </div>
         <p class="lpep-hint-muted">
           {{
@@ -326,9 +312,7 @@
           }}
         </p>
         <p v-if="templateTableCellMetric" class="lpep-table-metric">
-          单元格高度（推算）：高约 <strong>{{ formatMetricPx(templateTableCellMetric.cellH) }}</strong> px。当前内侧列宽（推算）：{{
-            templateTableColWidthsSummary
-          }}
+          单元格高度（推算）：高约 <strong>{{ formatMetricPx(templateTableCellMetric.cellH) }}</strong> px
         </p>
         <template v-if="activeTableCell">
           <div class="lpep-table-cell-fields" :key="'tc-' + editCellRow + '-' + editCellCol">
@@ -503,18 +487,16 @@ import {
 import { clearGridCellBindings, gridHasNonNoneBinding } from "@/lib/report-template/table-binding-utils";
 import { DATE_FORMAT_PRESETS } from "@/lib/report-template/layout-zone-element";
 import {
+  applyTableColumnResizeDeltaPx,
   REPORT_TEMPLATE_TABLE_NODE_PADDING_PX,
   clampTableRowHeightPx,
   formatMetricPx,
-  integerColumnPercentsFromInnerWidthsPx,
-  maxTableColumnPercentForEdit,
-  TABLE_COLUMN_WIDTH_PERCENT_MIN,
   uniformTableCellBoxPx,
   TABLE_ROW_HEIGHT_DEFAULT_PX,
   TABLE_ROW_HEIGHT_MAX_PX,
   TABLE_ROW_HEIGHT_MIN_PX,
 } from "@/lib/report-template/table-cell-metrics";
-import { useTableColPercentInput } from "@/composables/useTableColPercentInput";
+import TableColumnWidthVisualEditor from "@/components/report-template/TableColumnWidthVisualEditor.vue";
 import type { TableSqlFillConfig } from "@/lib/report-template/table-sql-fill";
 import {
   defaultTableSqlFillConfig,
@@ -697,41 +679,28 @@ watch(
   { deep: true },
 );
 
-const templateTableColWidthsSummary = computed(() => {
-  const el = props.el;
-  if (el.type !== "table") return "";
-  const widths = templateTableColumnInnerWidthsPx(el);
-  return widths.map((w, i) => `列${i + 1} ${formatMetricPx(w)}`).join(" · ");
-});
-
-const tplTableColWidthIndices = computed(() => {
-  if (props.el.type !== "table") return [];
-  ensureTableGrid(props.el);
-  const n = props.el.tableCols ?? 4;
-  return Array.from({ length: n }, (_, i) => i);
-});
-
-const tplTableColPercents = computed(() => {
+const tplTableColumnInnerWidths = computed(() => {
   const el = props.el;
   if (el.type !== "table") return [];
   ensureTableGrid(el);
-  const u = templateTableCellMetric.value;
-  if (!u) return [];
-  const widths = templateTableColumnInnerWidthsPx(el);
-  return integerColumnPercentsFromInnerWidthsPx(widths, u.innerW);
+  return templateTableColumnInnerWidthsPx(el);
 });
 
-const tplTableColPercentMax = computed(() => {
-  if (props.el.type !== "table") return 100;
-  return maxTableColumnPercentForEdit(props.el.tableCols ?? 4);
-});
-
-const tplColPercentInput = useTableColPercentInput(() => tplTableColPercents.value);
-
-function commitTplTableColPercents(next: number[]) {
+function onTplTableColumnResizeFromProps(boundaryIndex: number, deltaLayoutPx: number) {
   if (props.el.type !== "table") return;
   ensureTableGrid(props.el);
-  props.el.tableColWidthsPx = next.slice();
+  const u = templateTableCellMetric.value;
+  if (!u) return;
+  const cols = props.el.tableCols ?? 4;
+  const next = applyTableColumnResizeDeltaPx(
+    u.innerW,
+    cols,
+    props.el.tableColWidthsPx,
+    boundaryIndex,
+    deltaLayoutPx,
+  );
+  if (!next) return;
+  props.el.tableColWidthsPx = next;
   ensureTableGrid(props.el);
   clampTableElementOuterSize(props.el);
 }

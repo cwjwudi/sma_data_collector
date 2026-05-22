@@ -107,6 +107,8 @@ if ((Test-Path -LiteralPath (Join-Path $Frontend 'release')) -or (Test-Path -Lit
 }
 
 Write-Step 'SD SMA Report Editor - Windows installer build'
+$pkgJson = Get-Content -LiteralPath (Join-Path $Frontend 'package.json') -Raw | ConvertFrom-Json
+Write-Host "Version:      $($pkgJson.version)"
 Write-Host "Project root: $Root"
 Write-Host "Output dir:   $OutputDir"
 

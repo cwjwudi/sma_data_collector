@@ -19,6 +19,15 @@ import { fileURLToPath } from 'node:url'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const root = path.resolve(__dirname, '../..')
 
+function readPackageVersion() {
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(root, 'frontend/package.json'), 'utf8'))
+    return typeof pkg.version === 'string' ? pkg.version.trim() : ''
+  } catch {
+    return ''
+  }
+}
+
 function parseArgs(argv) {
   const out = { notes: '', baseUrl: '', version: '' }
   for (let i = 2; i < argv.length; i++) {
@@ -71,7 +80,10 @@ function artifactEntry(filePath, baseUrl) {
 
 const args = parseArgs(process.argv)
 if (!args.version) {
-  console.error('缺少 --version')
+  args.version = readPackageVersion()
+}
+if (!args.version) {
+  console.error('缺少 --version（或未在 frontend/package.json 中找到 version）')
   process.exit(1)
 }
 
