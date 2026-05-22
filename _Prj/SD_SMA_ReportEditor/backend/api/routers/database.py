@@ -201,7 +201,7 @@ async def test_connection(body: DbConnectionSave):
             merged = _body_with_resolved_password_for_test(body)
         except ValueError as e:
             return {"ok": False, "message": str(e)}
-        ok, err = db_connection_ops.run_connectivity_test(merged)
+        ok, err = db_connection_ops.run_connectivity_test(merged, connection_name=body.name or None)
         return {"ok": ok, "message": err}
     except Exception as e:
         logger.exception("test_connection")
@@ -231,7 +231,10 @@ async def test_saved_connection(connection_id: str):
         merged = _body_with_resolved_password_for_test(body)
     except ValueError as e:
         return {"ok": False, "message": str(e)}
-    ok, err = db_connection_ops.run_connectivity_test(merged)
+    ok, err = db_connection_ops.run_connectivity_test(
+        merged,
+        connection_name=str(conn.get("name") or connection_id),
+    )
     return {"ok": ok, "message": err}
 
 

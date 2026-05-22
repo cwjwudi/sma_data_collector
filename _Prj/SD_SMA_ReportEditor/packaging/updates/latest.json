@@ -1,17 +1,17 @@
 {
-  "version": "0.1.6",
-  "releasedAt": "2026-05-22T07:06:37.444Z",
-  "notes": "Report Editor 0.1.6\n\n- 模版与版式云端同步（下载/上传同时包含模版与版式）\n- 启动自动检查更新，有新版本时弹窗提示\n- 设置入口显示更新红点\n- 更新下载支持暂停，切换页面不中断下载",
+  "version": "0.1.7",
+  "releasedAt": "2026-05-22T08:00:00.000Z",
+  "notes": "Report Editor 0.1.7\n\n- 修复 macOS 安装版「运行环境诊断」误显示为 Windows 安装版\n- 软件更新：SHA256 校验失败提示更清晰；显示更新源与上次检查时间；macOS 升级分步引导\n- 数据库 / OPC UA 连接测试失败时显示更可读的原因与操作建议\n- 设置与签名库：说明「图像签章」与 PDF 数字证书签名的区别",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor-Setup-0.1.6-x64.exe",
-      "sha256": "7121fb2863dcb9a1ae8daf9939c0985f20eee9851f99b8f62b9562ef4c81cce3",
-      "size": 143097715
+      "url": "Report Editor-Setup-0.1.7-x64.exe",
+      "sha256": "",
+      "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor-0.1.6-arm64.dmg",
-      "sha256": "66fdc394bf439a5036ab9299baa766bdcd3bbc429741777c4e1581b773fb479f",
-      "size": 176863571
+      "url": "Report Editor-0.1.7-arm64.dmg",
+      "sha256": "",
+      "size": 0
     }
   }
 }

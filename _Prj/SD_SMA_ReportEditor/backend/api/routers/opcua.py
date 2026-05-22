@@ -96,6 +96,7 @@ async def test_saved_opcua(server_id: str):
         endpoint,
         srv.get("username"),
         pwd,
+        connection_name=str(srv.get("name") or server_id),
     )
 
 

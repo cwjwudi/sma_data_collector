@@ -204,8 +204,13 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
   }
 
   function emitCheckResult(result) {
-    lastCheckResult = result
-    emit('update-check-result', result)
+    const checkedAt = new Date().toISOString()
+    lastCheckResult = { ...result, checkedAt }
+    writeSettings(app, {
+      lastCheckAt: checkedAt,
+      lastCheckStatus: result?.status || null,
+    })
+    emit('update-check-result', lastCheckResult)
   }
 
   function getUpdateDir() {
@@ -264,6 +269,8 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
         defaultBaseUrl: DEFAULT_UPDATE_BASE_URL,
         skipTlsVerify: Boolean(settings.skipTlsVerify),
         packaged: app.isPackaged,
+        lastCheckAt: settings.lastCheckAt || null,
+        lastCheckStatus: settings.lastCheckStatus || null,
       }
     },
 
@@ -433,7 +440,14 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
             downloading = false
             downloadPercent = null
             emit('update-download-progress', { phase: 'error' })
-            return { ok: false, error: '安装包校验失败（SHA256 不匹配），已取消下载。' }
+            return {
+              ok: false,
+              checksumError: true,
+              error:
+                '安装包校验失败（SHA256 不匹配），已删除下载文件。请重新下载；若多次失败，请联系管理员核对更新服务器上的安装包是否与 latest.json 登记一致。',
+              expectedPrefix: expected.slice(0, 12),
+              actualPrefix: hash.toLowerCase().slice(0, 12),
+            }
           }
         }
         downloadedPath = dest
@@ -494,7 +508,7 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
           ok: true,
           mode: 'dmg',
           message:
-            '已打开安装镜像。请将「Report Editor」拖入「应用程序」文件夹完成升级，然后重新打开软件。',
+            '已打开安装镜像。请按下方步骤完成升级：① 在弹出的窗口中将「Report Editor」拖入「应用程序」；② 若系统提示替换，选择「替换」；③ 从启动台重新打开软件。',
         }
       }
 

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from modules import db_readonly_service
+from modules.connection_error_hints import humanize_db_error
 from schemas.common import DbConnectionSave
 
 
@@ -9,7 +10,11 @@ def _mysql_family(engine: str) -> bool:
     return (engine or "").lower() in ("mysql", "mariadb")
 
 
-def run_connectivity_test(body: DbConnectionSave) -> tuple[bool, str | None]:
+def run_connectivity_test(
+    body: DbConnectionSave,
+    *,
+    connection_name: str | None = None,
+) -> tuple[bool, str | None]:
     """
     执行一次不落库的连通性检查。
     返回 (成功, 失败原因)；不因网络/认证错误抛异常。
@@ -52,4 +57,4 @@ def run_connectivity_test(body: DbConnectionSave) -> tuple[bool, str | None]:
             return False, f"不支持的引擎: {body.engine!r}"
         return True, None
     except Exception as e:
-        return False, str(e)
+        return False, humanize_db_error(str(e), connection_name=connection_name)

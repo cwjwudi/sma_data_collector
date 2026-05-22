@@ -14,6 +14,8 @@ from asyncua import Client, ua
 from asyncua.common.node import Node as OpcUaNode
 from asyncua.ua.uaerrors import UaStatusCodeError
 
+from modules.connection_error_hints import humanize_opcua_error
+
 logger = logging.getLogger(__name__)
 
 POOL_IDLE_SEC = 90.0
@@ -118,6 +120,8 @@ async def test_connection(
     username: str | None = None,
     password: str | None = None,
     timeout_sec: float = 8.0,
+    *,
+    connection_name: str | None = None,
 ) -> dict[str, Any]:
     client = Client(url=endpoint_url, timeout=int(timeout_sec))
     try:
@@ -135,7 +139,14 @@ async def test_connection(
             await client.disconnect()
         except Exception:
             pass
-        return {"ok": False, "message": str(e)}
+        return {
+            "ok": False,
+            "message": humanize_opcua_error(
+                str(e),
+                connection_name=connection_name,
+                endpoint=endpoint_url,
+            ),
+        }
 
 
 async def browse_children(

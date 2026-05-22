@@ -11,6 +11,14 @@
       </button>
     </section>
     <EnvironmentDiagnostics />
+    <section class="settings-section">
+      <h3 class="settings-section__title">关于电子签名</h3>
+      <p class="settings-hint">
+        本软件在模版与 PDF 导出中使用的是<strong>图像签章</strong>：将签名库中的手写 PNG 按模版位置打印进 PDF。
+        这与 Adobe Acrobat 等阅读器中的<strong>数字证书电子签名</strong>（可在阅读器中验证证书链）不是同一类能力。
+        若现场需要 PKCS#7 / 国密等可验证 PDF 签章，需另行评估专用方案。
+      </p>
+    </section>
     <AppUpdateSection />
     <LayoutCloudSyncSection />
     <DataPathAndCacheSection />

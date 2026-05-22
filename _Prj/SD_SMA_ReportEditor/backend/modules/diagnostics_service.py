@@ -15,7 +15,7 @@ from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from pathlib import Path
 from typing import Any
 
-from core.runtime_mode import is_packaged_runtime
+from core.runtime_mode import is_packaged_runtime, packaged_runtime_detail
 from core.service_beacon import BACKEND_BEACON_MAGIC, beacon_file_path
 
 # 与 backend/main.py + requirements.txt（eval-type-backport）一致：最低 3.9。
@@ -683,7 +683,7 @@ def _collect_dev_toolchain_checks(backend_root: Path) -> list[dict[str, Any]]:
 
 
 def _collect_packaged_runtime_checks() -> list[dict[str, Any]]:
-    """Electron 安装版内置 report_backend.exe：不检查仓库 venv / npm。"""
+    """Electron 安装版内置 report_backend：不检查仓库 venv / npm。"""
     exe = Path(sys.executable)
     try:
         exe_s = str(exe.resolve())
@@ -695,7 +695,7 @@ def _collect_packaged_runtime_checks() -> list[dict[str, Any]]:
             "id": "deployment_mode",
             "label": "运行模式",
             "status": "ok",
-            "detail": "Windows 安装版（内置后端，无需本机 Python/Node 开发环境）",
+            "detail": packaged_runtime_detail(),
             "fixable": False,
         },
         {

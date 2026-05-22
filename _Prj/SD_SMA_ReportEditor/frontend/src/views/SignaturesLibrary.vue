@@ -5,6 +5,11 @@
       <button type="button" class="b primary" @click="openNew">手写新建</button>
     </header>
     <p class="muted">保存常用签字图（PNG data URL）。模版编辑器中「电子签名」控件可选用库条目并与手写共存。</p>
+    <div class="sg-product-note" role="note">
+      <strong>产品说明：</strong>本软件使用的是<strong>图像签章</strong>——将签字图片渲染并打印进 PDF。
+      这与 Adobe Acrobat 等阅读器中的<strong>数字证书电子签名</strong>（PKCS#7 / 国密可验证签章）不是同一类产品能力；
+      导出的 PDF 上看到的是签字图效果，而非可在阅读器中验证证书链的签章域。
+    </div>
     <p v-if="msg" class="msg">{{ msg }}</p>
 
     <table class="tbl">
@@ -252,6 +257,16 @@ watch(
   font-size: 13px;
   color: #52525b;
   margin: 8px 0;
+}
+.sg-product-note {
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.55;
+  color: #475569;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
 }
 .msg {
   font-size: 12px;
