@@ -3,7 +3,7 @@
     <h3 class="settings-section__title">版式云端同步</h3>
     <p class="settings-hint">
       将本机版式预设备份到 Portal，或从云端恢复。登录后可上传、下载；使用
-      <strong>br</strong> 或 <strong>admin</strong> 账号可下载团队默认版式。
+      <strong>br</strong> 或 <strong>admin</strong> 账号可下载团队版式（<code>team-layout-presets.json</code>）。
     </p>
 
     <dl v-if="config.loggedIn" class="update-meta">
@@ -58,7 +58,7 @@
           :disabled="busy"
           @click="downloadDefaults"
         >
-          {{ busy && phase === 'dl-default' ? '下载中…' : '下载默认版式' }}
+          {{ busy && phase === 'dl-default' ? '下载中…' : '下载团队版式' }}
         </button>
         <button type="button" class="settings-btn settings-btn--primary" :disabled="busy" @click="downloadMine">
           {{ busy && phase === 'dl-mine' ? '下载中…' : '从云端下载我的版式' }}

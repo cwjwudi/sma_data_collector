@@ -3,8 +3,11 @@
 *.exe
 *.zip
 *.blockmap
+report-editor-backup-*.json
 
 !latest.json
 !latest.json.example
 !README.md
+!README-team-layout-presets.md
+!team-layout-presets.json
 !.gitignore
