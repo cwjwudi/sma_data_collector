@@ -39,7 +39,7 @@ const emit = defineEmits<{
 const FALLBACK_FILL = "#e4e4e7";
 
 const fillPresets: { value: string; label: string }[] = [
-  { value: "transparent", label: "继承默认" },
+  { value: "transparent", label: "默认白底" },
   { value: "#fafafa", label: "近白" },
   { value: "#e4e4e7", label: "浅灰" },
   { value: "#fecaca", label: "浅红" },

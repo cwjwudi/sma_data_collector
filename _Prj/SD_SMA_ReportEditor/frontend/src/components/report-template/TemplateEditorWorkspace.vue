@@ -638,9 +638,7 @@ watch([selId, sh], () => {
     return;
   }
   const cur = tableCellPick.value;
-  if (!cur || cur.elId !== id) {
-    tableCellPick.value = { elId: id, row: 0, col: 0 };
-  }
+  if (cur && cur.elId !== id) tableCellPick.value = null;
 }, { immediate: true });
 
 /** 正文编辑：当前列表页序号，用于 v-for */

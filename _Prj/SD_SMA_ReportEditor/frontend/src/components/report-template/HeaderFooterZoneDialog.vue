@@ -191,7 +191,7 @@
           <label v-if="sel.type === 'text' || sel.type === 'box'"
             >文字<input v-model.trim="sel.text" class="hz-inp" />
           </label>
-          <BoxZoneColorPicker v-if="sel" class="hz-span2" :el="sel" />
+          <BoxZoneColorPicker v-if="sel && sel.type !== 'table'" class="hz-span2" :el="sel" />
           <template v-if="sel.type === 'date'">
             <label class="hz-span2"
               >日期格式
@@ -431,18 +431,19 @@
               {{
                 hzSqlFillEnabled
                   ? "数据库填充开启：不在此编辑单元格静态文字；可视化模式下请在画布第一行选择输出列。"
-                  : "在画布上单击单元格后在此编辑绑定。"
+                  : "在画布上单击单元格后，可设置填充色并编辑绑定。"
               }}
+            </p>
+            <p v-if="!hasHzTableCellPicked" class="hz-muted hz-span2">
+              在画布上单击单元格后，可在此设置该单元格的填充色。
             </p>
             <p v-if="hzZoneTableCellMetric" class="hz-span2 hz-table-metric">
               单元格高度（推算）：高约 <strong>{{ formatMetricPx(hzZoneTableCellMetric.cellH) }}</strong> px
             </p>
-            <template v-if="activeHzTableCell">
+            <template v-if="hasHzTableCellPicked && activeHzTableCell">
               <div class="hz-span2 hz-cell-fields" :key="'hzcf-' + hzEditCellRow + '-' + hzEditCellCol">
                 <div class="hz-table-cell-fill-block">
-                  <TableCellFillPicker v-model="activeHzTableCellFill" title="单元格填充" />
-                  <TableCellFillPicker v-model="activeHzTableColFillColor" :title="'列 ' + (hzEditCellCol + 1) + ' 填充'" />
-                  <p class="hz-muted">单元格优先于列；「继承默认」沿用列色或上方表格默认底色。</p>
+                  <TableCellFillPicker v-model="activeHzTableCellFill" title="填充色" />
                 </div>
                 <template v-if="!hzSqlFillEnabled">
                   <label class="hz-span2"
@@ -544,7 +545,6 @@ import {
   clampZoneElement,
   clampZoneTableOuterSize,
   ensureZoneTableGrid,
-  ensureTableColBgColors,
   intrinsicOuterHeightForZoneTable,
   makeLayoutZoneElement,
   minOuterSizeForZoneTable,
@@ -798,6 +798,12 @@ const activeHzTableCell = computed(() => {
   return g[hzEditCellRow.value]?.[hzEditCellCol.value] ?? null;
 });
 
+const hasHzTableCellPicked = computed(() => {
+  const s = sel.value;
+  const pick = hzTablePick.value;
+  return s?.type === "table" && !!pick && pick.elId === s.id;
+});
+
 const activeHzTableCellFill = computed({
   get(): string {
     return activeHzTableCell.value?.bgColor ?? "transparent";
@@ -805,21 +811,6 @@ const activeHzTableCellFill = computed({
   set(v: string) {
     const cell = activeHzTableCell.value;
     if (cell) cell.bgColor = v;
-  },
-});
-
-const activeHzTableColFillColor = computed({
-  get(): string {
-    const s = sel.value;
-    if (!s || s.type !== "table") return "transparent";
-    ensureTableColBgColors(s);
-    return s.tableColBgColors?.[hzEditCellCol.value] ?? "transparent";
-  },
-  set(v: string) {
-    const s = sel.value;
-    if (!s || s.type !== "table") return;
-    ensureTableColBgColors(s);
-    if (s.tableColBgColors) s.tableColBgColors[hzEditCellCol.value] = v;
   },
 });
 

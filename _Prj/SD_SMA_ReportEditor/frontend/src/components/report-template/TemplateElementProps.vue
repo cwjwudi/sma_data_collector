@@ -43,7 +43,7 @@
         <p class="lpep-wrap-hint">「自动」表示在框宽内换行，无空格长串也会断行。</p>
       </div>
 
-      <BoxZoneColorPicker :el="el" />
+      <BoxZoneColorPicker v-if="el.type !== 'table'" :el="el" />
 
       <template v-if="el.type === 'date'">
         <label class="lpep-lab"
@@ -308,18 +308,19 @@
           {{
             tplSqlFillEnabled
               ? "列数、行高修改后即应用到画布（无需另行确认）。数据库填充开启时行数随预览查询结果自动同步；单元格静态文字与绑定均不在此编辑；可视化模式下请在画布第一行选择输出列。"
-              : "行数、列数、行高修改后即应用到画布（无需另行确认）。单击单元格即可直接输入；OPC UA / SQL 模式下此处仍为占位说明字。"
+              : "行数、列数、行高修改后即应用到画布（无需另行确认）。单击单元格可设置填充色、输入文字或绑定 OPC UA / SQL。"
           }}
+        </p>
+        <p v-if="!hasTableCellPicked" class="lpep-hint-muted">
+          在画布上单击单元格后，可在此设置该单元格的填充色。
         </p>
         <p v-if="templateTableCellMetric" class="lpep-table-metric">
           单元格高度（推算）：高约 <strong>{{ formatMetricPx(templateTableCellMetric.cellH) }}</strong> px
         </p>
-        <template v-if="activeTableCell">
+        <template v-if="hasTableCellPicked && activeTableCell">
           <div class="lpep-table-cell-fields" :key="'tc-' + editCellRow + '-' + editCellCol">
             <div class="lpep-table-cell-fill-block">
-              <TableCellFillPicker v-model="activeTableCellFill" title="单元格填充" />
-              <TableCellFillPicker v-model="activeTableColFillColor" :title="'列 ' + (editCellCol + 1) + ' 填充'" />
-              <p class="lpep-hint-muted">单元格优先于列；「继承默认」沿用列色或上方表格默认底色。</p>
+              <TableCellFillPicker v-model="activeTableCellFill" title="填充色" />
             </div>
             <template v-if="!tplSqlFillEnabled">
               <label class="lpep-lab"
@@ -491,7 +492,6 @@ import {
 } from "@/lib/report-template/model";
 import { clearGridCellBindings, gridHasNonNoneBinding } from "@/lib/report-template/table-binding-utils";
 import { DATE_FORMAT_PRESETS } from "@/lib/report-template/layout-zone-element";
-import { ensureTableColBgColors } from "@/lib/report-template/layout-zone-element";
 import {
   applyTableColumnResizeDeltaPx,
   REPORT_TEMPLATE_TABLE_NODE_PADDING_PX,
@@ -649,6 +649,11 @@ const activeTableCell = computed(() => {
   return g[editCellRow.value]?.[editCellCol.value] ?? null;
 });
 
+const hasTableCellPicked = computed(() => {
+  const pick = props.tableCellPick;
+  return props.el.type === "table" && !!pick && pick.elId === props.el.id;
+});
+
 const activeTableCellFill = computed({
   get(): string {
     return activeTableCell.value?.bgColor ?? "transparent";
@@ -656,19 +661,6 @@ const activeTableCellFill = computed({
   set(v: string) {
     const cell = activeTableCell.value;
     if (cell) cell.bgColor = v;
-  },
-});
-
-const activeTableColFillColor = computed({
-  get(): string {
-    if (props.el.type !== "table") return "transparent";
-    ensureTableColBgColors(props.el);
-    return props.el.tableColBgColors?.[editCellCol.value] ?? "transparent";
-  },
-  set(v: string) {
-    if (props.el.type !== "table") return;
-    ensureTableColBgColors(props.el);
-    if (props.el.tableColBgColors) props.el.tableColBgColors[editCellCol.value] = v;
   },
 });
 

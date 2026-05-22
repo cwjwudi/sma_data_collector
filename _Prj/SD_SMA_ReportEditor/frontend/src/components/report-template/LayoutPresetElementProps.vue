@@ -32,7 +32,7 @@
         </div>
         <p class="lpep-wrap-hint">「自动」表示在框宽内换行，无空格长串也会断行。</p>
       </div>
-      <BoxZoneColorPicker :el="el" />
+      <BoxZoneColorPicker v-if="el.type !== 'table'" :el="el" />
       <template v-if="el.type === 'date'">
         <label class="lpep-lab"
           >日期格式
@@ -284,18 +284,19 @@
           {{
             zoneSqlFillEnabled
               ? "列数、行高变更后立即应用到画布。数据库填充开启时行数随预览查询结果自动同步；单元格静态文字不在此编辑；可视化模式下请在画布第一行选择输出列。"
-              : "行列、行高变更后立即应用到画布。请在画布上单击单元格，在此编辑静态文字或 OPC UA / SQL。"
+              : "行列、行高变更后立即应用到画布。单击单元格可设置填充色、编辑静态文字或 OPC UA / SQL。"
           }}
+        </p>
+        <p v-if="!hasTableCellPicked" class="lpep-hint-muted">
+          在画布上单击单元格后，可在此设置该单元格的填充色。
         </p>
         <p v-if="zonePresetTableCellMetric" class="lpep-table-metric">
           单元格高度（推算）：高约 <strong>{{ formatMetricPx(zonePresetTableCellMetric.cellH) }}</strong> px
         </p>
-        <template v-if="activeTableCell">
+        <template v-if="hasTableCellPicked && activeTableCell">
           <div class="lpep-table-cell-fields" :key="'lz-' + editCellRow + '-' + editCellCol">
             <div class="lpep-table-cell-fill-block">
-              <TableCellFillPicker v-model="activeTableCellFill" title="单元格填充" />
-              <TableCellFillPicker v-model="activeTableColFillColor" :title="'列 ' + (editCellCol + 1) + ' 填充'" />
-              <p class="lpep-hint-muted">单元格优先于列；「继承默认」沿用列色或上方表格默认底色。</p>
+              <TableCellFillPicker v-model="activeTableCellFill" title="填充色" />
             </div>
             <template v-if="!zoneSqlFillEnabled">
               <label class="lpep-lab"
@@ -419,7 +420,6 @@ import TemplateTableSqlFillFields from "@/components/report-template/TemplateTab
 import {
   DATE_FORMAT_PRESETS,
   clampZoneTableOuterSize,
-  ensureTableColBgColors,
   ensureZoneTableGrid,
   zoneTableColumnInnerWidthsPx,
   type LayoutControlType,
@@ -560,6 +560,12 @@ const activeTableCell = computed(() => {
   return g[editCellRow.value]?.[editCellCol.value] ?? null;
 });
 
+const hasTableCellPicked = computed(() => {
+  const el = props.el;
+  const pick = layoutTablePick?.value;
+  return !!el && el.type === "table" && !!pick && pick.elId === el.id;
+});
+
 const activeTableCellFill = computed({
   get(): string {
     return activeTableCell.value?.bgColor ?? "transparent";
@@ -567,21 +573,6 @@ const activeTableCellFill = computed({
   set(v: string) {
     const cell = activeTableCell.value;
     if (cell) cell.bgColor = v;
-  },
-});
-
-const activeTableColFillColor = computed({
-  get(): string {
-    const el = props.el;
-    if (!el || el.type !== "table") return "transparent";
-    ensureTableColBgColors(el);
-    return el.tableColBgColors?.[editCellCol.value] ?? "transparent";
-  },
-  set(v: string) {
-    const el = props.el;
-    if (!el || el.type !== "table") return;
-    ensureTableColBgColors(el);
-    if (el.tableColBgColors) el.tableColBgColors[editCellCol.value] = v;
   },
 });
 
