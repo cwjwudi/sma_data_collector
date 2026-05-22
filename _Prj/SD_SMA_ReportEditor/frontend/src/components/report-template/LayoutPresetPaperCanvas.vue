@@ -89,6 +89,7 @@
                             :key="ci"
                             class="lppc-table-cell"
                             :class="{ 'lppc-table-cell--hot': isLayoutTableCellHot(el, ri, ci) }"
+                            :style="layoutZoneTableCellStyle(el, ri, ci)"
                             @pointerdown.stop="pickLayoutTableCell(el, ri, ci)"
                           >
                             <template v-if="isVisualSqlFillOutputPickerRow(el, ri)">
@@ -253,6 +254,7 @@
                             :key="ci"
                             class="lppc-table-cell"
                             :class="{ 'lppc-table-cell--hot': isLayoutTableCellHot(el, ri, ci) }"
+                            :style="layoutZoneTableCellStyle(el, ri, ci)"
                             @pointerdown.stop="pickLayoutTableCell(el, ri, ci)"
                           >
                             <template v-if="isVisualSqlFillOutputPickerRow(el, ri)">
@@ -417,6 +419,7 @@
                             :key="ci"
                             class="lppc-table-cell"
                             :class="{ 'lppc-table-cell--hot': isLayoutTableCellHot(el, ri, ci) }"
+                            :style="layoutZoneTableCellStyle(el, ri, ci)"
                             @pointerdown.stop="pickLayoutTableCell(el, ri, ci)"
                           >
                             <template v-if="isVisualSqlFillOutputPickerRow(el, ri)">
@@ -534,6 +537,7 @@ import {
   normalizeZIndex,
   zoneFillBackgroundCss,
   zoneTableInnerBackgroundCss,
+  resolveTableCellBackgroundCss,
   zoneTableNodeShellBackgroundCss,
   type LayoutControlType,
   type LayoutZoneElement,
@@ -828,6 +832,18 @@ function onWindowKeydown(ev: KeyboardEvent) {
 function layoutZoneTableInnerStyle(el: LayoutZoneElement): Record<string, string> {
   if (el.type !== "table") return {};
   return { background: zoneTableInnerBackgroundCss(el.bgColor) };
+}
+
+function layoutZoneTableCellStyle(el: LayoutZoneElement, ri: number, ci: number): Record<string, string> {
+  if (el.type !== "table") return {};
+  const cell = layoutTableGrid(el)[ri]?.[ci];
+  return {
+    backgroundColor: resolveTableCellBackgroundCss(
+      { tableBgColor: el.bgColor, tableColBgColors: el.tableColBgColors },
+      ci,
+      cell,
+    ),
+  };
 }
 
 function nodeStyle(el: LayoutZoneElement) {

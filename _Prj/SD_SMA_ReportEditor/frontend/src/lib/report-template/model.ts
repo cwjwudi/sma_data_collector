@@ -24,6 +24,8 @@ export interface TemplateTableCell {
   opcuaNodeId: string;
   /** 单元格级 SQL：预览占位或单行标量查询等，由生成器约定 */
   sqlText: string;
+  /** 单元格填充色；transparent 或未设则继承列/表格默认 */
+  bgColor?: string;
 }
 
 import type { LayoutSnapshot } from "./layout-model";
@@ -38,6 +40,8 @@ import {
   normalizeImageRotationDeg,
   normalizeTextAutoWrap,
   normalizeZIndex,
+  ensureTableColBgColors,
+  hydrateTableColBgColors,
   type LayoutZoneElement,
 } from "./layout-zone-element";
 import {
@@ -113,6 +117,8 @@ export interface TemplateElement {
    * ≤0 与其它 ≤0 列均分剩余内侧宽度；>0 时按比例分配（画布上等比例缩放填充满内侧宽）。
    */
   tableColWidthsPx?: number[];
+  /** 表格各列填充色（长度与 tableCols 一致）；transparent 表示继承表格默认底色 */
+  tableColBgColors?: string[];
   /**
    * 表格整表 SQL 结果动态填充（schema≥4；仅 type===table）。
    * 导出时由生成器执行 query、扩展行数并处理跨页表头；见 _Doc。
@@ -205,7 +211,7 @@ function clampTableDim(v: unknown, fallback: number): number {
 }
 
 export function defaultTableCell(): TemplateTableCell {
-  return { text: "", bindingKind: "none", opcuaNodeId: "", sqlText: "" };
+  return { text: "", bindingKind: "none", opcuaNodeId: "", sqlText: "", bgColor: "transparent" };
 }
 
 export function hydrateTableCell(raw: Partial<TemplateTableCell> | undefined): TemplateTableCell {
@@ -216,6 +222,7 @@ export function hydrateTableCell(raw: Partial<TemplateTableCell> | undefined): T
     bindingKind: normalizeBindingKind(raw.bindingKind),
     opcuaNodeId: typeof raw.opcuaNodeId === "string" ? raw.opcuaNodeId : d.opcuaNodeId,
     sqlText: typeof raw.sqlText === "string" ? raw.sqlText : d.sqlText,
+    bgColor: typeof raw.bgColor === "string" ? raw.bgColor : d.bgColor,
   };
 }
 
@@ -232,6 +239,7 @@ export function ensureTableGrid(el: TemplateElement): TemplateTableCell[][] {
     prev.every((row) => Array.isArray(row) && row.length === cols)
   ) {
     ensureTableColWidthsPx(el);
+    ensureTableColBgColors(el);
   } else {
     const grid: TemplateTableCell[][] = [];
     for (let r = 0; r < rows; r++) {
@@ -244,6 +252,7 @@ export function ensureTableGrid(el: TemplateElement): TemplateTableCell[][] {
     }
     el.tableCells = grid;
     ensureTableColWidthsPx(el);
+    ensureTableColBgColors(el);
   }
   if (el.tableSqlFill) {
     ensureTwoTableSqlParamSlots(el.tableSqlFill);
@@ -599,11 +608,13 @@ export function hydrateTemplateElement(raw: Partial<TemplateElement>): TemplateE
       raw.tableColWidthsPx,
       merged.tableCols ?? 4,
     );
+    merged.tableColBgColors = hydrateTableColBgColors(raw.tableColBgColors, merged.tableCols ?? 4);
     merged.tableSqlFill = hydrateTableSqlFill(raw.tableSqlFill ?? merged.tableSqlFill);
     ensureTableGrid(merged);
   } else {
     delete merged.tableRowHeightPx;
     delete merged.tableColWidthsPx;
+    delete merged.tableColBgColors;
     delete merged.tableSqlFill;
   }
   if (type === "date") {

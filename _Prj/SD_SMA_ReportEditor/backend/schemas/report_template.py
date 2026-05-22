@@ -40,6 +40,7 @@ class TemplateTableCell(BaseModel):
     bindingKind: BindingKind = "none"
     opcuaNodeId: str = ""
     sqlText: str = ""
+    bgColor: str = "transparent"
 
 
 class TableSqlParamBinding(BaseModel):
@@ -123,6 +124,7 @@ class LayoutZoneElement(BaseModel):
     tableCells: list[list[TemplateTableCell]] = Field(default_factory=list)
     tableRowHeightPx: float = Field(default=28, ge=16, le=120)
     tableColWidthsPx: list[float] = Field(default_factory=list)
+    tableColBgColors: list[str] = Field(default_factory=list)
     tableSqlFill: TableSqlFillConfig | None = None
 
 
@@ -160,6 +162,7 @@ class TemplateElement(BaseModel):
     tableCells: list[list[TemplateTableCell]] = Field(default_factory=list)
     tableRowHeightPx: float = Field(default=28, ge=16, le=120)
     tableColWidthsPx: list[float] = Field(default_factory=list)
+    tableColBgColors: list[str] = Field(default_factory=list)
     tableSqlFill: TableSqlFillConfig | None = None
 
 

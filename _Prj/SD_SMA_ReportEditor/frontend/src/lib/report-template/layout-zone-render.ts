@@ -13,6 +13,7 @@ import {
   previewZoneElementDisplay,
   zoneTableColumnInnerWidthsPx,
   zoneTableInnerBackgroundCss,
+  resolveTableCellBackgroundCss,
   zoneTableNodeShellBackgroundCss,
 } from "./layout-zone-element";
 import { clampTableRowHeightPx } from "./table-cell-metrics";
@@ -300,6 +301,11 @@ export function renderZoneElementsInto(
           td.style.overflow = "hidden";
           td.style.fontSize = "max(10px, 0.85em)";
           td.style.lineHeight = "1.25";
+          td.style.backgroundColor = resolveTableCellBackgroundCss(
+            { tableBgColor: el.bgColor, tableColBgColors: el.tableColBgColors },
+            ci,
+            row[ci],
+          );
           td.textContent = formatZoneTableCellPreview(row[ci]);
           tr.appendChild(td);
         }

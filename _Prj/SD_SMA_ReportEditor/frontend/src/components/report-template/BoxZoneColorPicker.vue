@@ -67,7 +67,11 @@ const props = defineProps<{
 
 const showStrokeBlock = computed(() => props.el.type === "box");
 
-const fillBlockTitle = computed(() => (props.el.type === "box" ? "填充色" : "填充色（背景）"));
+const fillBlockTitle = computed(() => {
+  if (props.el.type === "box") return "填充色";
+  if (props.el.type === "table") return "表格默认底色";
+  return "填充色（背景）";
+});
 
 /** 与原生取色器兼容的 #rrggbb */
 const FALLBACK_FILL = "#e4e4e7";

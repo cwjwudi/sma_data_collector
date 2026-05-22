@@ -264,7 +264,7 @@
           </template>
           <template v-else>
             <div class="mid-edit-stack">
-              <div class="tee-root">
+              <div ref="editScrollRootRef" class="tee-root">
                 <section
                   class="tee-card"
                   :class="{ 'tee-card--hl': sh === 'cover' }"
@@ -653,6 +653,7 @@ const bodySlots = computed(() => {
 
 /** @type {Record<string, HTMLElement | undefined>} */
 const editAnchors = {};
+const editScrollRootRef = ref(null);
 
 /** @param {string} key @param {unknown} el */
 function setEditAnchor(key, el) {
@@ -661,10 +662,44 @@ function setEditAnchor(key, el) {
   else delete editAnchors[key];
 }
 
+function editAnchorKeyForSheet() {
+  if (sh.value === "cover") return "cover";
+  if (sh.value === "back") return "back";
+  return "body-" + bodyPageIdx.value;
+}
+
 function scrollActiveBodyPageIntoView() {
+  scrollEditSheetIntoView();
+}
+
+function scrollEditSheetIntoView(retry = 0) {
   nextTick(() => {
-    editAnchors["body-" + bodyPageIdx.value]?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    const root = editScrollRootRef.value;
+    const anchor = editAnchors[editAnchorKeyForSheet()];
+    if (root && anchor instanceof HTMLElement) {
+      const pad = 12;
+      const delta = anchor.getBoundingClientRect().top - root.getBoundingClientRect().top + root.scrollTop - pad;
+      root.scrollTo({
+        top: Math.max(0, delta),
+        behavior: retry > 0 ? "auto" : "smooth",
+      });
+      return;
+    }
+    if (retry < 12) {
+      window.setTimeout(() => scrollEditSheetIntoView(retry + 1), 50);
+    }
   });
+}
+
+/** @type {ReturnType<typeof setTimeout> | null} */
+let scrollEditDebounceTimer = null;
+
+function scheduleScrollEditSheetIntoView() {
+  if (scrollEditDebounceTimer) clearTimeout(scrollEditDebounceTimer);
+  scrollEditDebounceTimer = setTimeout(() => {
+    scrollEditDebounceTimer = null;
+    scrollEditSheetIntoView();
+  }, 32);
 }
 
 /** @param {import('@/lib/report-template/export-preview-nav').ExportPreviewNavPayload} payload */
@@ -694,21 +729,6 @@ function onExportPreviewNavigate(payload) {
 function onExportPreviewRequestEdit(payload) {
   applyExportPreviewNavigation(payload);
   midMode.value = "edit";
-}
-
-/** 与左侧「正文 / 封面 / 末页」同步：滚到对应卡片 */
-function scrollEditSheetIntoView() {
-  nextTick(() => {
-    if (sh.value === "cover") {
-      editAnchors.cover?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-      return;
-    }
-    if (sh.value === "back") {
-      editAnchors.back?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-      return;
-    }
-    editAnchors["body-" + bodyPageIdx.value]?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-  });
 }
 
 /** 编辑栈内任一点击（捕获阶段）同步左侧版式绑定上下文 */
@@ -749,7 +769,12 @@ watch([selId, editing], () => {
 
 watch(midMode, (m) => {
   if (m !== "edit") return;
-  nextTick(() => scrollEditSheetIntoView());
+  scheduleScrollEditSheetIntoView();
+});
+
+watch([sh, bodyPageIdx], () => {
+  if (midMode.value !== "edit") return;
+  scheduleScrollEditSheetIntoView();
 });
 
 const bodyPageCount = computed(() => {
@@ -807,7 +832,7 @@ function setSheet(s) {
     const n = ensureBodyPages(t).length;
     if (bodyPageIdx.value >= n) bodyPageIdx.value = Math.max(0, n - 1);
   }
-  if (midMode.value === "edit") scrollEditSheetIntoView();
+  if (midMode.value === "edit") scheduleScrollEditSheetIntoView();
 }
 
 function addBodyPageRow() {
@@ -1457,6 +1482,7 @@ onUnmounted(() => {
 .mid-edit-stack {
   flex: 1 1 auto;
   min-height: 0;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -1465,8 +1491,10 @@ onUnmounted(() => {
   box-sizing: border-box;
   width: 100%;
   min-height: 0;
+  min-width: 0;
   flex: 1 1 auto;
-  overflow: auto;
+  overflow-x: auto;
+  overflow-y: auto;
   padding: 10px 10px 28px;
   display: flex;
   flex-direction: column;

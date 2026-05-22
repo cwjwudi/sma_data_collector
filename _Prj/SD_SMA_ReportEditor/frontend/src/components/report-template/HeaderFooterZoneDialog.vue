@@ -96,6 +96,7 @@
                           :key="ci"
                           class="hz-table-cell"
                           :class="{ 'hz-table-cell--hot': hzIsTableCellHot(el, ri, ci) }"
+                          :style="hzLayoutTableCellStyle(el, ri, ci)"
                           @pointerdown.stop="hzPickTableCell(el, ri, ci)"
                         >
                           <template v-if="isVisualSqlFillOutputPickerRow(el, ri)">
@@ -438,6 +439,11 @@
             </p>
             <template v-if="activeHzTableCell">
               <div class="hz-span2 hz-cell-fields" :key="'hzcf-' + hzEditCellRow + '-' + hzEditCellCol">
+                <div class="hz-table-cell-fill-block">
+                  <TableCellFillPicker v-model="activeHzTableCellFill" title="单元格填充" />
+                  <TableCellFillPicker v-model="activeHzTableColFillColor" :title="'列 ' + (hzEditCellCol + 1) + ' 填充'" />
+                  <p class="hz-muted">单元格优先于列；「继承默认」沿用列色或上方表格默认底色。</p>
+                </div>
                 <template v-if="!hzSqlFillEnabled">
                   <label class="hz-span2"
                     >静态文字<textarea v-model.trim="activeHzTableCell.text" rows="2" class="hz-inp" spellcheck="false"
@@ -538,6 +544,7 @@ import {
   clampZoneElement,
   clampZoneTableOuterSize,
   ensureZoneTableGrid,
+  ensureTableColBgColors,
   intrinsicOuterHeightForZoneTable,
   makeLayoutZoneElement,
   minOuterSizeForZoneTable,
@@ -549,6 +556,7 @@ import {
   normalizeZIndex,
   zoneFillBackgroundCss,
   zoneTableInnerBackgroundCss,
+  resolveTableCellBackgroundCss,
   zoneTableNodeShellBackgroundCss,
   type LayoutControlType,
   type LayoutZoneElement,
@@ -571,6 +579,7 @@ import {
   TABLE_ROW_HEIGHT_MIN_PX,
 } from "@/lib/report-template/table-cell-metrics";
 import TableColumnWidthVisualEditor from "@/components/report-template/TableColumnWidthVisualEditor.vue";
+import TableCellFillPicker from "@/components/report-template/TableCellFillPicker.vue";
 import { metricsForSheet, type EditorSheet } from "@/lib/report-template/editor-sheet";
 import type { ReportTemplate } from "@/lib/report-template/model";
 import { looksLikeImageFile, pickFirstImageFileFromDataTransfer, readImageFileAsDataUrl } from "@/lib/report-template/read-image-file";
@@ -787,6 +796,31 @@ const activeHzTableCell = computed(() => {
   const g = s.tableCells;
   if (!Array.isArray(g) || !g.length) return null;
   return g[hzEditCellRow.value]?.[hzEditCellCol.value] ?? null;
+});
+
+const activeHzTableCellFill = computed({
+  get(): string {
+    return activeHzTableCell.value?.bgColor ?? "transparent";
+  },
+  set(v: string) {
+    const cell = activeHzTableCell.value;
+    if (cell) cell.bgColor = v;
+  },
+});
+
+const activeHzTableColFillColor = computed({
+  get(): string {
+    const s = sel.value;
+    if (!s || s.type !== "table") return "transparent";
+    ensureTableColBgColors(s);
+    return s.tableColBgColors?.[hzEditCellCol.value] ?? "transparent";
+  },
+  set(v: string) {
+    const s = sel.value;
+    if (!s || s.type !== "table") return;
+    ensureTableColBgColors(s);
+    if (s.tableColBgColors) s.tableColBgColors[hzEditCellCol.value] = v;
+  },
 });
 
 const hzSqlFillEnabled = computed(() => sel.value?.type === "table" && !!sel.value.tableSqlFill?.enabled);
@@ -1049,6 +1083,18 @@ function onHzDateFormatPreset(ev: Event) {
 function layoutZoneTableInnerStyle(el: LayoutZoneElement): Record<string, string> {
   if (el.type !== "table") return {};
   return { background: zoneTableInnerBackgroundCss(el.bgColor) };
+}
+
+function hzLayoutTableCellStyle(el: LayoutZoneElement, ri: number, ci: number): Record<string, string> {
+  if (el.type !== "table") return {};
+  const cell = hzLayoutTableGrid(el)[ri]?.[ci];
+  return {
+    backgroundColor: resolveTableCellBackgroundCss(
+      { tableBgColor: el.bgColor, tableColBgColors: el.tableColBgColors },
+      ci,
+      cell,
+    ),
+  };
 }
 
 function nodeStyle(el: LayoutZoneElement) {
@@ -1929,6 +1975,14 @@ async function hzAssignImage(el: LayoutZoneElement | null, f?: File | null) {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+.hz-table-cell-fill-block {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-bottom: 8px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid #e4e4e7;
 }
 .hz-table-col-widths-grid {
   display: flex;

@@ -39,6 +39,8 @@ export interface LayoutZoneTableCell {
   bindingKind: ZoneBindingKind;
   opcuaNodeId: string;
   sqlText: string;
+  /** 单元格填充色；transparent 或未设则继承列/表格默认 */
+  bgColor?: string;
 }
 
 /** 页码在预览/导出时的展示形式（导出时传入真实当前页与总页数） */
@@ -120,6 +122,8 @@ export interface LayoutZoneElement {
   tableRowHeightPx?: number;
   /** 表格列宽权重（长度与 tableCols 一致），语义与正文表格 TemplateElement.tableColWidthsPx 相同 */
   tableColWidthsPx?: number[];
+  /** 表格各列填充色（长度与 tableCols 一致）；transparent 表示继承表格默认底色 */
+  tableColBgColors?: string[];
   tableCells?: LayoutZoneTableCell[][];
   /** schema≥4：版式区内表格整表 SQL 动态填充（语义与正文 tableSqlFill 相同） */
   tableSqlFill?: TableSqlFillConfig;
@@ -146,6 +150,56 @@ export function zoneTableInnerBackgroundCss(bgColor: unknown): string {
   const v = zoneFillBackgroundCss(bgColor);
   if (v === "transparent") return ZONE_TABLE_DEFAULT_INNER_BG;
   return v;
+}
+
+export interface TableFillResolveContext {
+  tableBgColor: unknown;
+  tableColBgColors?: string[];
+}
+
+/** 单元格 > 列 > 表格默认；transparent 或未设则向下一级继承 */
+export function resolveTableCellBackgroundCss(
+  ctx: TableFillResolveContext,
+  colIndex: number,
+  cell: { bgColor?: string } | undefined,
+): string {
+  const cellRaw = cell?.bgColor;
+  if (typeof cellRaw === "string" && cellRaw.trim() !== "" && cellRaw !== "transparent") {
+    return zoneFillBackgroundCss(cellRaw);
+  }
+  const colRaw = ctx.tableColBgColors?.[colIndex];
+  if (typeof colRaw === "string" && colRaw.trim() !== "" && colRaw !== "transparent") {
+    return zoneFillBackgroundCss(colRaw);
+  }
+  return zoneTableInnerBackgroundCss(ctx.tableBgColor);
+}
+
+export function hydrateTableColBgColors(raw: unknown, cols: number): string[] {
+  const arr = Array.isArray(raw)
+    ? raw.map((v) => (typeof v === "string" ? v : "transparent"))
+    : [];
+  while (arr.length < cols) arr.push("transparent");
+  arr.length = cols;
+  return arr;
+}
+
+export function ensureTableColBgColors(el: {
+  type?: string;
+  tableCols?: number;
+  tableColBgColors?: string[];
+}): void {
+  if (el.type !== "table") return;
+  const cols = el.tableCols ?? 4;
+  if (!Array.isArray(el.tableColBgColors)) {
+    el.tableColBgColors = Array.from({ length: cols }, () => "transparent");
+    return;
+  }
+  const arr = el.tableColBgColors;
+  while (arr.length < cols) arr.push("transparent");
+  if (arr.length > cols) arr.length = cols;
+  for (let i = 0; i < cols; i++) {
+    if (typeof arr[i] !== "string") arr[i] = "transparent";
+  }
 }
 
 /** 表格控件外框背景：填充色不作用于 padding 环，仅表格内侧生效 */
@@ -265,7 +319,7 @@ function clampZoneTableDim(v: unknown, fallback: number): number {
 }
 
 export function defaultZoneTableCell(): LayoutZoneTableCell {
-  return { text: "", bindingKind: "none", opcuaNodeId: "", sqlText: "" };
+  return { text: "", bindingKind: "none", opcuaNodeId: "", sqlText: "", bgColor: "transparent" };
 }
 
 export function hydrateZoneTableCell(raw: Partial<LayoutZoneTableCell> | undefined): LayoutZoneTableCell {
@@ -276,6 +330,7 @@ export function hydrateZoneTableCell(raw: Partial<LayoutZoneTableCell> | undefin
     bindingKind: normalizeZoneBindingKind(raw.bindingKind),
     opcuaNodeId: typeof raw.opcuaNodeId === "string" ? raw.opcuaNodeId : d.opcuaNodeId,
     sqlText: typeof raw.sqlText === "string" ? raw.sqlText : d.sqlText,
+    bgColor: typeof raw.bgColor === "string" ? raw.bgColor : d.bgColor,
   };
 }
 
@@ -292,6 +347,7 @@ export function ensureZoneTableGrid(el: LayoutZoneElement): LayoutZoneTableCell[
     prev.every((row) => Array.isArray(row) && row.length === cols)
   ) {
     ensureZoneTableColWidthsPx(el);
+    ensureTableColBgColors(el);
   } else {
     const grid: LayoutZoneTableCell[][] = [];
     for (let r = 0; r < rows; r++) {
@@ -304,6 +360,7 @@ export function ensureZoneTableGrid(el: LayoutZoneElement): LayoutZoneTableCell[
     }
     el.tableCells = grid;
     ensureZoneTableColWidthsPx(el);
+    ensureTableColBgColors(el);
   }
   if (el.tableSqlFill) {
     ensureTwoTableSqlParamSlots(el.tableSqlFill);
@@ -542,6 +599,7 @@ export function hydrateLayoutZoneElement(raw: Partial<LayoutZoneElement>): Layou
       raw.tableColWidthsPx,
       merged.tableCols ?? 4,
     );
+    merged.tableColBgColors = hydrateTableColBgColors(raw.tableColBgColors, merged.tableCols ?? 4);
     merged.tableSqlFill = hydrateTableSqlFill(raw.tableSqlFill ?? merged.tableSqlFill);
     ensureZoneTableGrid(merged);
   } else {
@@ -549,6 +607,7 @@ export function hydrateLayoutZoneElement(raw: Partial<LayoutZoneElement>): Layou
     merged.tableCols = undefined;
     merged.tableRowHeightPx = undefined;
     merged.tableColWidthsPx = undefined;
+    merged.tableColBgColors = undefined;
     merged.tableCells = undefined;
     merged.tableSqlFill = undefined;
   }

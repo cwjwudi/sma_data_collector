@@ -292,6 +292,11 @@
         </p>
         <template v-if="activeTableCell">
           <div class="lpep-table-cell-fields" :key="'lz-' + editCellRow + '-' + editCellCol">
+            <div class="lpep-table-cell-fill-block">
+              <TableCellFillPicker v-model="activeTableCellFill" title="单元格填充" />
+              <TableCellFillPicker v-model="activeTableColFillColor" :title="'列 ' + (editCellCol + 1) + ' 填充'" />
+              <p class="lpep-hint-muted">单元格优先于列；「继承默认」沿用列色或上方表格默认底色。</p>
+            </div>
             <template v-if="!zoneSqlFillEnabled">
               <label class="lpep-lab"
                 >静态文字<textarea v-model.trim="activeTableCell.text" rows="2" class="lpep-inp" spellcheck="false"
@@ -414,6 +419,7 @@ import TemplateTableSqlFillFields from "@/components/report-template/TemplateTab
 import {
   DATE_FORMAT_PRESETS,
   clampZoneTableOuterSize,
+  ensureTableColBgColors,
   ensureZoneTableGrid,
   zoneTableColumnInnerWidthsPx,
   type LayoutControlType,
@@ -436,6 +442,7 @@ import {
   TABLE_ROW_HEIGHT_MIN_PX,
 } from "@/lib/report-template/table-cell-metrics";
 import TableColumnWidthVisualEditor from "@/components/report-template/TableColumnWidthVisualEditor.vue";
+import TableCellFillPicker from "@/components/report-template/TableCellFillPicker.vue";
 import type { TableSqlFillConfig } from "@/lib/report-template/table-sql-fill";
 import {
   defaultTableSqlFillConfig,
@@ -551,6 +558,31 @@ const activeTableCell = computed(() => {
   const g = el.tableCells;
   if (!Array.isArray(g) || g.length === 0) return null;
   return g[editCellRow.value]?.[editCellCol.value] ?? null;
+});
+
+const activeTableCellFill = computed({
+  get(): string {
+    return activeTableCell.value?.bgColor ?? "transparent";
+  },
+  set(v: string) {
+    const cell = activeTableCell.value;
+    if (cell) cell.bgColor = v;
+  },
+});
+
+const activeTableColFillColor = computed({
+  get(): string {
+    const el = props.el;
+    if (!el || el.type !== "table") return "transparent";
+    ensureTableColBgColors(el);
+    return el.tableColBgColors?.[editCellCol.value] ?? "transparent";
+  },
+  set(v: string) {
+    const el = props.el;
+    if (!el || el.type !== "table") return;
+    ensureTableColBgColors(el);
+    if (el.tableColBgColors) el.tableColBgColors[editCellCol.value] = v;
+  },
 });
 
 const zoneSqlFillEnabled = computed(

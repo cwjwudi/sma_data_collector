@@ -158,6 +158,7 @@
                           :key="'tc-' + el.id + '-' + ri + '-' + ci"
                           class="cv-table-cell"
                           :class="{ 'cv-table-cell--hot': isTableCellHot(el, ri, ci) }"
+                          :style="tplTableCellStyle(el, ri, ci)"
                           @pointerdown="pickTableCell(el, ri, ci)"
                         >
                           <template v-if="isVisualSqlFillOutputPickerRow(el, ri)">
@@ -366,6 +367,7 @@ import {
   PAGE_NUMBER_PREVIEW_TOTAL_FALLBACK,
   zoneFillBackgroundCss,
   zoneTableInnerBackgroundCss,
+  resolveTableCellBackgroundCss,
   zoneTableNodeShellBackgroundCss,
   formatLayoutDate,
   type LayoutZoneElement,
@@ -716,6 +718,18 @@ function elInnerClass(el: TemplateElement): string {
 function templateTableInnerStyle(el: TemplateElement): Record<string, string> {
   if (el.type !== "table") return {};
   return { background: zoneTableInnerBackgroundCss(el.bgColor) };
+}
+
+function tplTableCellStyle(el: TemplateElement, ri: number, ci: number): Record<string, string> {
+  if (el.type !== "table") return {};
+  const cell = tableGrid(el)[ri]?.[ci];
+  return {
+    backgroundColor: resolveTableCellBackgroundCss(
+      { tableBgColor: el.bgColor, tableColBgColors: el.tableColBgColors },
+      ci,
+      cell,
+    ),
+  };
 }
 
 function elCss(el: TemplateElement) {
@@ -1371,7 +1385,7 @@ async function onTplImageDropFile(ev: DragEvent, el: TemplateElement) {
 .cv-viewport.cv-viewport--embed-scroll {
   overflow: visible;
   min-height: 0;
-  width: fit-content;
+  width: 100%;
   max-width: 100%;
   margin-left: auto;
   margin-right: auto;
@@ -1380,6 +1394,11 @@ async function onTplImageDropFile(ev: DragEvent, el: TemplateElement) {
   border-radius: 0;
   overscroll-behavior: auto;
   touch-action: manipulation;
+  box-sizing: border-box;
+}
+.cv-viewport.cv-viewport--embed-scroll .cv-scaler {
+  margin-left: auto;
+  margin-right: auto;
 }
 .cv-viewport.cv-viewport--embed-scroll.cv-viewport--locked {
   overflow: auto;

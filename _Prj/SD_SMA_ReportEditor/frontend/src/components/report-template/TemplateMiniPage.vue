@@ -108,6 +108,7 @@
                             v-for="ci in miniTableColIndices(el)"
                             :key="'mc-' + el.id + '-' + ri + '-' + ci"
                             class="mini-tpl-td"
+                            :style="miniTplTableCellStyle(el, ri, ci)"
                             :title="miniTableStaticTitle(el, ri, ci)"
                           >
                             {{ previewTableCellText(el, ri, ci) }}
@@ -207,6 +208,7 @@ import {
   normalizeZIndex,
   zoneFillBackgroundCss,
   zoneTableInnerBackgroundCss,
+  resolveTableCellBackgroundCss,
   zoneTableNodeShellBackgroundCss,
   formatLayoutDate,
 } from "@/lib/report-template/layout-zone-element";
@@ -579,6 +581,19 @@ function miniTplElStyle(el: TemplateElement): Record<string, string> {
 function miniTplTableInnerStyle(el: TemplateElement): Record<string, string> {
   if (el.type !== "table") return {};
   return { background: zoneTableInnerBackgroundCss(el.bgColor) };
+}
+
+function miniTplTableCellStyle(el: TemplateElement, ri: number, ci: number): Record<string, string> {
+  if (el.type !== "table") return {};
+  ensureTableGrid(el);
+  const cell = el.tableCells?.[ri]?.[ci];
+  return {
+    backgroundColor: resolveTableCellBackgroundCss(
+      { tableBgColor: el.bgColor, tableColBgColors: el.tableColBgColors },
+      ci,
+      cell,
+    ),
+  };
 }
 
 function miniTplTableColInnerWidthsPx(el: TemplateElement): number[] {
