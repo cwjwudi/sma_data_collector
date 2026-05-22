@@ -525,6 +525,7 @@ import { templateSelectLabel, templateSelectRows } from "@/lib/template-display-
 import { evaluateAutoOpcTrigger, createOpcTriggerPollState, type OpcTriggerPollState } from "@/lib/auto-opc-trigger";
 import { resolveAutoExportDir } from "@/lib/resolve-auto-export-dir";
 import { readSavedOpcNodeValue, readSavedOpcStringValue } from "@/lib/opcua-string-variables";
+import { opcDataTypeLabelMatchesFilter } from "@/features/datasource/opcua/opcua-tree-utils.js";
 import {
   AUTO_TRIGGER_CHART_MAX_SAMPLES,
   coerceOpcTriggerNumericSample,
@@ -624,11 +625,10 @@ const opcPickModalKey = computed(() => {
 
 const opcPickHideSearch = computed(() => {
   const t = opcPickTarget.value;
-  if (t === "feedbackStatus") return false;
+  if (t === "feedbackStatus" || isFeedbackStringPickTarget(t)) return false;
   return (
     t === "exportDir" ||
     t === "fileName" ||
-    isFeedbackStringPickTarget(t) ||
     Boolean(parseRgTriggerPickTarget(t))
   );
 });
@@ -662,13 +662,14 @@ const opcPickLead = computed(() => {
     return "选择 String 类型变量作为导出文件名基名（不含 .pdf）；绑定树仅显示 String。是否追加随机哈希可在确认后于面板按钮切换。";
   }
   if (opcPickTarget.value === "feedbackStatus") {
-    return "选择 Boolean 或 Int 类型变量；导出成功写入 true/1，失败写入 false/0。可用搜索或展开树浏览。";
+    const kind = prefs.value.exportResultOpc.statusKind === "int" ? "Int" : "Boolean";
+    return `选择 ${kind} 类型变量；导出成功写入 ${kind === "Int" ? "1" : "true"}，失败写入 ${kind === "Int" ? "0" : "false"}。树与搜索仅显示 ${kind} 变量。`;
   }
   if (opcPickTarget.value === "feedbackMessage") {
-    return "选择 String 类型变量；成功时写入「OK: 文件名」，失败时写入错误摘要。";
+    return "选择 String 类型变量；成功时写入「OK: 文件名」，失败时写入错误摘要。树与搜索仅显示 String 变量。";
   }
   if (opcPickTarget.value === "feedbackFilePath") {
-    return "选择 String 类型变量（可选）；成功时写入完整 PDF 路径，失败时写入空字符串。";
+    return "选择 String 类型变量（可选）；成功时写入完整 PDF 路径，失败时写入空字符串。树与搜索仅显示 String 变量。";
   }
   if (parseRgTriggerPickTarget(opcPickTarget.value)) {
     return "选择已保存连接下的变量作为自动导出触发源；支持布尔、数值、字符串等类型。确定后写入 NodeId。";
@@ -937,16 +938,26 @@ function ensureExportResultOpcServerSelected(): void {
   if (first) prefs.value.exportResultOpc.serverId = first;
 }
 
+function exportResultOpcStatusTypeFilter(): string {
+  return prefs.value.exportResultOpc.statusKind === "int" ? "Int" : "Boolean";
+}
+
+function resolveRgOpcPickDataTypeFilter(target: RgOpcPickTarget | null): string {
+  if (!target) return "";
+  if (target === "exportDir" || target === "fileName" || isFeedbackStringPickTarget(target)) {
+    return "String";
+  }
+  if (target === "feedbackStatus") return exportResultOpcStatusTypeFilter();
+  return "";
+}
+
 async function openRgOpcPick(target: RgOpcPickTarget) {
   await loadOpcServers();
   if (isFeedbackPickTarget(target)) {
     ensureExportResultOpcServerSelected();
   }
   opcPickTarget.value = target;
-  activeOpcDataTypeFilter.value =
-    target === "exportDir" || target === "fileName" || isFeedbackStringPickTarget(target)
-      ? "String"
-      : "";
+  activeOpcDataTypeFilter.value = resolveRgOpcPickDataTypeFilter(target);
   await nextTick();
   opcPickOpen.value = true;
 }
@@ -1007,7 +1018,22 @@ async function onRgOpcPickConfirm(payload: { serverId: string; nodeId: string })
   }
 
   if (target === "feedbackStatus") {
-    if (sid) prefs.value.exportResultOpc.serverId = sid;
+    if (!sid) {
+      resetRgOpcPickSession();
+      return;
+    }
+    const check = await readSavedOpcNodeValue(sid, nid);
+    if (!check.ok) {
+      autoStatus.value = `[导出反馈] ${check.message || "读取节点失败"}`;
+      return;
+    }
+    const expectFilter = prefs.value.exportResultOpc.statusKind === "int" ? "Int" : "Boolean";
+    const dt = check.dataType || "";
+    if (dt && !opcDataTypeLabelMatchesFilter(dt, expectFilter)) {
+      autoStatus.value = `[导出反馈] 需要 ${expectFilter} 类型变量，当前为 ${dt}`;
+      return;
+    }
+    prefs.value.exportResultOpc.serverId = sid;
     prefs.value.exportResultOpc.statusNodeId = nid;
     resetRgOpcPickSession();
     return;

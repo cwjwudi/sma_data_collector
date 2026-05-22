@@ -1,12 +1,12 @@
 {
   "version": "0.1.11",
-  "releasedAt": "2026-05-22T11:04:38.826Z",
-  "notes": "Report Editor 0.1.11\n\n- 修复 Windows 应用内升级误删用户配置（DB / OPC UA / 模版）\n- 设置页展示用户数据目录路径\n- 升级前建议导出配置备份；启动时清理 temp 更新下载目录\n- Mac/Win 打包输出路径修正\n- 数据源 Tab 连接状态灯与异常计数（M12 小切片）",
+  "releasedAt": "2026-05-22T11:43:42.489Z",
+  "notes": "Report Editor 0.1.11\n\n- 修复 Windows 应用内升级误删用户配置（DB / OPC UA / 模版）\n- 修复「导出结果反馈」OPC UA 连接列表与变量树选择\n- 导出反馈绑定：树/搜索按 Boolean、Int、String 类型筛选\n- 设置页展示用户数据目录路径\n- 升级前建议导出配置备份；启动时清理 temp 更新下载目录\n- 数据源 Tab 连接状态灯与异常计数（M12 小切片）",
   "platforms": {
     "darwin-arm64": {
       "url": "Report Editor-0.1.11-arm64.dmg",
-      "sha256": "c44c7622543af8a1a701f824de1d5b06bac632e8e853cc12d5eda17c852501fa",
-      "size": 176842650
+      "sha256": "1cefc2fb9bc54ee34a4b69d0a9ee782238d84278dda04f4b1202385504622501",
+      "size": 176844626
     },
     "win32-x64": {
       "url": "Report Editor-Setup-0.1.11-x64.exe",
