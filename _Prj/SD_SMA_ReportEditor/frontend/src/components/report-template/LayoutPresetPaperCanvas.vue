@@ -74,7 +74,7 @@
                 </template>
                 <template v-else-if="el.type === 'table'">
                   <div class="lppc-table-shell">
-                    <table class="lppc-table">
+                    <table class="lppc-table" :style="layoutZoneTableInnerStyle(el)">
                       <colgroup>
                         <col
                           v-for="(cw, ci) in layoutZoneTableColInnerWidthsPx(el)"
@@ -238,7 +238,7 @@
               </template>
               <template v-else-if="el.type === 'table'">
                   <div class="lppc-table-shell">
-                    <table class="lppc-table">
+                    <table class="lppc-table" :style="layoutZoneTableInnerStyle(el)">
                       <colgroup>
                         <col
                           v-for="(cw, ci) in layoutZoneTableColInnerWidthsPx(el)"
@@ -402,7 +402,7 @@
                 </template>
                 <template v-else-if="el.type === 'table'">
                   <div class="lppc-table-shell">
-                    <table class="lppc-table">
+                    <table class="lppc-table" :style="layoutZoneTableInnerStyle(el)">
                       <colgroup>
                         <col
                           v-for="(cw, ci) in layoutZoneTableColInnerWidthsPx(el)"
@@ -533,6 +533,8 @@ import {
   normalizePageNumberMode,
   normalizeZIndex,
   zoneFillBackgroundCss,
+  zoneTableInnerBackgroundCss,
+  zoneTableNodeShellBackgroundCss,
   type LayoutControlType,
   type LayoutZoneElement,
   type LayoutZoneTableCell,
@@ -823,6 +825,11 @@ function onWindowKeydown(ev: KeyboardEvent) {
   deleteSelectedZoneEl();
 }
 
+function layoutZoneTableInnerStyle(el: LayoutZoneElement): Record<string, string> {
+  if (el.type !== "table") return {};
+  return { background: zoneTableInnerBackgroundCss(el.bgColor) };
+}
+
 function nodeStyle(el: LayoutZoneElement) {
   const ff = typeof el.fontFamily === "string" ? el.fontFamily.trim() : "";
   const flex = flexJustifyAlignForAxes(el.alignX, el.alignY);
@@ -850,7 +857,7 @@ function nodeStyle(el: LayoutZoneElement) {
       justifyContent: "stretch",
       padding: "2px",
       overflow: "hidden",
-      backgroundColor: zoneFillBackgroundCss(el.bgColor),
+      backgroundColor: zoneTableNodeShellBackgroundCss(),
       whiteSpace: "normal",
     };
   }

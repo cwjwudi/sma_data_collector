@@ -143,7 +143,7 @@
               </template>
               <template v-else-if="el.type === 'table'">
                 <div class="cv-table-shell">
-                  <table class="cv-table">
+                  <table class="cv-table" :style="templateTableInnerStyle(el)">
                     <colgroup>
                       <col
                         v-for="(cw, ci) in tplTableColInnerWidthsPx(el)"
@@ -365,6 +365,8 @@ import {
   normalizeZIndex,
   PAGE_NUMBER_PREVIEW_TOTAL_FALLBACK,
   zoneFillBackgroundCss,
+  zoneTableInnerBackgroundCss,
+  zoneTableNodeShellBackgroundCss,
   formatLayoutDate,
   type LayoutZoneElement,
 } from "@/lib/report-template/layout-zone-element";
@@ -545,7 +547,7 @@ function canvasZoneElStyle(el: LayoutZoneElement): Record<string, string> {
       alignItems: "stretch",
       justifyContent: "stretch",
       padding: "2px",
-      backgroundColor: zoneFillBackgroundCss(el.bgColor),
+      backgroundColor: zoneTableNodeShellBackgroundCss(),
       whiteSpace: "normal",
     };
   }
@@ -710,6 +712,11 @@ function elInnerClass(el: TemplateElement): string {
   return "";
 }
 
+function templateTableInnerStyle(el: TemplateElement): Record<string, string> {
+  if (el.type !== "table") return {};
+  return { background: zoneTableInnerBackgroundCss(el.bgColor) };
+}
+
 function elCss(el: TemplateElement) {
   const s: Record<string, string> = {
     position: "absolute",
@@ -719,7 +726,12 @@ function elCss(el: TemplateElement) {
     height: `${el.h}px`,
     fontSize: `${el.fontSize}px`,
     color: el.color,
-    background: el.bgColor === "transparent" ? "transparent" : el.bgColor,
+    background:
+      el.type === "table"
+        ? zoneTableNodeShellBackgroundCss()
+        : el.bgColor === "transparent"
+          ? "transparent"
+          : el.bgColor,
   };
   /** 纵坐标越大（越靠页面下方）叠层越高，避免大块表格盖住上方控件导致无法点选、拖动 */
   const yz = Math.min(200000, Math.max(0, Math.floor(el.y)));

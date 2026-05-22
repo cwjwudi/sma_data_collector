@@ -81,7 +81,7 @@
               </template>
               <template v-else-if="el.type === 'table'">
                 <div class="hz-table-shell">
-                  <table class="hz-table">
+                  <table class="hz-table" :style="layoutZoneTableInnerStyle(el)">
                     <colgroup>
                       <col
                         v-for="(cw, ci) in hzZoneTableColInnerWidthsPx(el)"
@@ -567,6 +567,8 @@ import {
   normalizePageNumberMode,
   normalizeZIndex,
   zoneFillBackgroundCss,
+  zoneTableInnerBackgroundCss,
+  zoneTableNodeShellBackgroundCss,
   type LayoutControlType,
   type LayoutZoneElement,
   type LayoutZoneTableCell,
@@ -1095,6 +1097,11 @@ function onHzDateFormatPreset(ev: Event) {
   s.dateFormat = v;
 }
 
+function layoutZoneTableInnerStyle(el: LayoutZoneElement): Record<string, string> {
+  if (el.type !== "table") return {};
+  return { background: zoneTableInnerBackgroundCss(el.bgColor) };
+}
+
 function nodeStyle(el: LayoutZoneElement) {
   const ff = typeof el.fontFamily === "string" ? el.fontFamily.trim() : "";
   const flex = flexJustifyAlignForAxes(el.alignX, el.alignY);
@@ -1122,7 +1129,7 @@ function nodeStyle(el: LayoutZoneElement) {
       justifyContent: "stretch",
       padding: "2px",
       overflow: "hidden",
-      backgroundColor: zoneFillBackgroundCss(el.bgColor),
+      backgroundColor: zoneTableNodeShellBackgroundCss(),
       whiteSpace: "normal",
     };
   }

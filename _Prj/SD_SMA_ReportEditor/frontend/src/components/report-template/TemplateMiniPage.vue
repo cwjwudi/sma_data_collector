@@ -94,7 +94,7 @@
                 </ZoneImageCompose>
                 <template v-else-if="el.type === 'table'">
                   <div class="mini-tpl-table-wrap">
-                    <table class="mini-tpl-table">
+                    <table class="mini-tpl-table" :style="miniTplTableInnerStyle(el)">
                       <colgroup>
                         <col
                           v-for="(cw, ci) in miniTplTableColInnerWidthsPx(el)"
@@ -206,6 +206,8 @@ import {
   normalizePageNumberMode,
   normalizeZIndex,
   zoneFillBackgroundCss,
+  zoneTableInnerBackgroundCss,
+  zoneTableNodeShellBackgroundCss,
   formatLayoutDate,
 } from "@/lib/report-template/layout-zone-element";
 import { cellKey, chartKey, paramKey } from "@/lib/report-template/binding-preview-utils";
@@ -437,6 +439,15 @@ function miniZoneElStyle(el: LayoutZoneElement): Record<string, string> {
     s.flexDirection = "column";
     s.whiteSpace = "normal";
     s.backgroundColor = zoneFillBackgroundCss(el.bgColor);
+  } else if (el.type === "table") {
+    s.display = "flex";
+    s.flexDirection = "column";
+    s.alignItems = "stretch";
+    s.justifyContent = "stretch";
+    s.padding = "2px";
+    s.overflow = "hidden";
+    s.whiteSpace = "normal";
+    s.backgroundColor = zoneTableNodeShellBackgroundCss();
   } else {
     s.display = "flex";
     s.justifyContent = flex.justifyContent;
@@ -551,9 +562,15 @@ function miniTplElStyle(el: TemplateElement): Record<string, string> {
     s.border = "none";
     s.borderRadius = "0";
     s.fontSize = `${el.fontSize}px`;
+    s.background = zoneTableNodeShellBackgroundCss();
     return s;
   }
   return s;
+}
+
+function miniTplTableInnerStyle(el: TemplateElement): Record<string, string> {
+  if (el.type !== "table") return {};
+  return { background: zoneTableInnerBackgroundCss(el.bgColor) };
 }
 
 function miniTplTableColInnerWidthsPx(el: TemplateElement): number[] {

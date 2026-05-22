@@ -138,6 +138,21 @@ export function zoneFillBackgroundCss(bgColor: unknown): string {
   return v;
 }
 
+/** 表格默认内侧背景（bgColor 为 transparent 时） */
+export const ZONE_TABLE_DEFAULT_INNER_BG = "rgb(255 255 255 / 0.96)";
+
+/** 表格单元格区域背景：填充色作用于表格内侧，transparent 时使用默认近白 */
+export function zoneTableInnerBackgroundCss(bgColor: unknown): string {
+  const v = zoneFillBackgroundCss(bgColor);
+  if (v === "transparent") return ZONE_TABLE_DEFAULT_INNER_BG;
+  return v;
+}
+
+/** 表格控件外框背景：填充色不作用于 padding 环，仅表格内侧生效 */
+export function zoneTableNodeShellBackgroundCss(): string {
+  return "transparent";
+}
+
 export function normalizeTextAutoWrap(v: unknown, fallback: boolean): boolean {
   if (v === true || v === "true" || v === 1 || v === "1") return true;
   if (v === false || v === "false" || v === 0 || v === "0") return false;
