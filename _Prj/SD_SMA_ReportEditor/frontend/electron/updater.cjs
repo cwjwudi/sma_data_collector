@@ -619,14 +619,14 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
       return { ok: true }
     },
 
-    openMacApplication() {
+    async openMacApplication() {
       if (process.platform !== 'darwin') {
         return { ok: false, error: '仅 macOS 可用' }
       }
       if (!fs.existsSync(MAC_APP_BUNDLE)) {
         return { ok: false, error: '未在「应用程序」中找到 Report Editor，请先完成拖放安装。' }
       }
-      const err = shell.openPath(MAC_APP_BUNDLE)
+      const err = await shell.openPath(MAC_APP_BUNDLE)
       if (err) {
         return { ok: false, error: err }
       }

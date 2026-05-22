@@ -198,6 +198,7 @@ import {
   startAppUpdateDownload,
   syncAppUpdateState,
 } from './appUpdateState'
+import { auditLog } from '@/lib/auditLog'
 import {
   formatUpdateBytes,
   formatUpdateDuration,
@@ -399,6 +400,11 @@ async function checkUpdate() {
     } else {
       setMsg(res.message || '检查完成。', 'ok')
     }
+    void auditLog({
+      action: 'update.check',
+      result: res.ok === false ? 'fail' : 'ok',
+      summary: res.latestVersion ? `${res.status || 'check'} → ${res.latestVersion}` : res.status || res.message || '',
+    })
     await loadConfig()
   } catch (e) {
     setMsg(e instanceof Error ? e.message : String(e), 'err')
@@ -515,8 +521,10 @@ async function installUpdate() {
     })
     if (!res.ok) {
       setMsg(res.error || '启动升级失败', 'err')
+      void auditLog({ action: 'update.install', result: 'fail', summary: res.error || '启动升级失败' })
       return
     }
+    void auditLog({ action: 'update.install', result: 'ok', summary: res.message || '已启动升级' })
     setMsg(res.message || '已启动升级。', 'ok')
   } catch (e) {
     setMsg(e instanceof Error ? e.message : String(e), 'err')

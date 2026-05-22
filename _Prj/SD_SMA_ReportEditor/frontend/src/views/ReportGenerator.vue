@@ -600,6 +600,7 @@ import {
 import { humanizePdfExportError } from "@/lib/pdfExportErrors";
 import { runTemplateExportPreflight } from "@/lib/templateExportPreflight";
 import { showAppToast } from "@/composables/useAppToast";
+import { auditLog } from "@/lib/auditLog";
 import {
   hasAnyExportResultBinding,
   isExportResultOpcFeedbackConfigured,
@@ -992,11 +993,24 @@ async function notifyExportResultToPlc(
       const hint = res.errors.join("；");
       showAppToast(`导出结果写回 OPC 失败\n${hint}`, { tone: "warn", durationMs: 10000 });
       const statusLine = `[写回 PLC] 失败：${hint}`;
+      void auditLog({
+        action: "export.opc_writeback",
+        result: "fail",
+        summary: hint,
+        detail: { context },
+      });
       if (context === "auto") {
         autoStatus.value = autoStatus.value ? `${autoStatus.value} · ${statusLine}` : statusLine;
       } else {
         manualHint.value = statusLine;
       }
+    } else {
+      void auditLog({
+        action: "export.opc_writeback",
+        result: "ok",
+        summary: context === "auto" ? "自动导出写回" : "手动导出写回",
+        detail: { context },
+      });
     }
   } catch {
     showAppToast("导出结果写回 OPC 失败", { tone: "warn", durationMs: 8000 });
@@ -1018,15 +1032,30 @@ async function onTestExportResultWriteBack(): Promise<void> {
       const nodes = res.written.length ? res.written.join("、") : "已绑定节点";
       showAppToast(`测试写回成功\n已写入：${nodes}`, { tone: "ok", durationMs: 8000 });
       autoStatus.value = `[导出反馈] 测试写回成功（${nodes}）`;
+      void auditLog({
+        action: "export.opc_writeback_test",
+        result: "ok",
+        summary: nodes,
+      });
     } else {
       const hint = res.errors.join("；") || "写回失败";
       showAppToast(`测试写回失败\n${hint}`, { tone: "err", durationMs: 10000 });
       autoStatus.value = `[导出反馈] 测试写回失败：${hint}`;
+      void auditLog({
+        action: "export.opc_writeback_test",
+        result: "fail",
+        summary: hint,
+      });
     }
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     showAppToast(`测试写回失败\n${msg}`, { tone: "err", durationMs: 10000 });
     autoStatus.value = `[导出反馈] 测试写回失败：${msg}`;
+    void auditLog({
+      action: "export.opc_writeback_test",
+      result: "fail",
+      summary: msg,
+    });
   } finally {
     testWriteBackBusy.value = false;
   }
@@ -1277,6 +1306,14 @@ async function onManualExport(): Promise<void> {
       openAfter: prefs.value.manualOpenAfter,
     });
     manualHint.value = `已保存：${filePath}`;
+    void auditLog({
+      action: "export.manual_pdf",
+      result: "ok",
+      summary: suggestName,
+      object_type: "template",
+      object_id: tid,
+      detail: { filePath },
+    });
     void notifyExportResultToPlc(
       {
         success: true,
@@ -1288,6 +1325,13 @@ async function onManualExport(): Promise<void> {
   } catch (e) {
     const msg = humanizePdfExportError(e);
     manualHint.value = msg;
+    void auditLog({
+      action: "export.manual_pdf",
+      result: "fail",
+      summary: msg,
+      object_type: "template",
+      object_id: tid,
+    });
     void notifyExportResultToPlc({ success: false, message: msg }, "manual");
   } finally {
     manualBusy.value = false;

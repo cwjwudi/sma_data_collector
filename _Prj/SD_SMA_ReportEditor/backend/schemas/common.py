@@ -257,6 +257,19 @@ class QuerySessionsSave(BaseModel):
     history: list[str] = Field(default_factory=list)
 
 
+class AuditLogAppend(BaseModel):
+    action: str
+    result: str = "ok"
+    summary: str = ""
+    object_type: str | None = None
+    object_id: str | None = None
+    detail: dict[str, Any] | None = None
+
+
+class DemoApplyRequest(BaseModel):
+    channel: str = "remote"
+
+
 class AppPreferencesPatch(BaseModel):
     """仅允许更新白名单字段；未传字段保持不变。"""
 
@@ -268,6 +281,15 @@ class AppPreferencesPatch(BaseModel):
     last_opcua_server_id: str | None = None
     connection_probe_enabled: bool | None = None
     connection_probe_interval_sec: int | None = None
+    demo_preferred_channel: str | None = None
+    demo_remote_db_host: str | None = None
+    demo_remote_db_port: int | None = None
+    demo_remote_db_name: str | None = None
+    demo_remote_db_user: str | None = None
+    demo_remote_db_password: str | None = None
+    demo_remote_opcua_endpoint: str | None = None
+    demo_remote_opcua_user: str | None = None
+    demo_remote_opcua_password: str | None = None
 
     @field_validator("connection_probe_interval_sec", mode="before")
     @classmethod

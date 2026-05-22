@@ -233,6 +233,7 @@ import {
   setOpcConnectionHealth,
 } from '@/features/datasource/connection-health-detail'
 import { apiFetch } from '@/api/client.js'
+import { auditLog } from '@/lib/auditLog'
 import OpcUaTree from './OpcUaTree.vue'
 import { translateOpcuaMessage } from './opcua-messages.js'
 import {
@@ -698,6 +699,13 @@ async function saveServer() {
     }
     msg.value = '已保存'
     notifyOpcServersChanged()
+    void auditLog({
+      action: 'opcua.connection_save',
+      result: 'ok',
+      summary: nm || ep,
+      object_type: 'opcua_server',
+      object_id: created?.id || undefined,
+    })
   } catch (e) {
     msg.value = e.message || String(e)
   }

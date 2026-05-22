@@ -53,6 +53,7 @@
 <script setup>
 import { computed, reactive, ref, watch } from 'vue'
 import { apiFetch } from '@/api/client.js'
+import { auditLog } from '@/lib/auditLog'
 import '../../connection-form-pane.css'
 
 const props = defineProps({
@@ -197,6 +198,14 @@ async function save(afterTest = false) {
     if (mine) emit('connection-tested', { id: mine, ok: true })
     msg.value = afterTest ? '连接成功，已写入本地配置' : '已保存'
     msgTone.value = 'ok'
+    void auditLog({
+      action: 'db.connection_save',
+      result: 'ok',
+      summary: draft.name || draft.engine || '数据库连接',
+      object_type: 'db_connection',
+      object_id: mine || undefined,
+      detail: { engine: draft.engine, after_test: afterTest },
+    })
   } catch (e) {
     msg.value = e.message || String(e)
     msgTone.value = 'err'

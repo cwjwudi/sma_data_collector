@@ -5,6 +5,7 @@ const http = require('http')
 const fs = require('fs')
 const { pathToFileURL } = require('url')
 const { createAppUpdater } = require('./updater.cjs')
+const { createDemoPackManager } = require('./demo-pack.cjs')
 const { createLayoutSync } = require('./layout-sync.cjs')
 const { humanizePdfExportError } = require('./pdfExportErrors.cjs')
 
@@ -601,6 +602,23 @@ function getLayoutSync() {
   return layoutSync
 }
 
+let demoPackManager
+
+function getDemoPackManager() {
+  if (!demoPackManager) {
+    demoPackManager = createDemoPackManager({
+      app,
+      resolveBaseUrl: () => getAppUpdater().getConfig().baseUrl,
+      readSkipTlsVerify: () => Boolean(getAppUpdater().getConfig().skipTlsVerify),
+    })
+  }
+  return demoPackManager
+}
+
+ipcMain.handle('demo-pack-get-state', () => getDemoPackManager().getState())
+ipcMain.handle('demo-pack-check', () => getDemoPackManager().checkRemote())
+ipcMain.handle('demo-pack-install', () => getDemoPackManager().downloadAndInstall())
+
 ipcMain.handle('app-update-get-config', () => getAppUpdater().getConfig())
 ipcMain.handle('app-update-get-state', () => getAppUpdater().getState())
 ipcMain.handle('app-update-set-config', (_event, patch) => getAppUpdater().setConfig(patch || {}))
@@ -610,7 +628,7 @@ ipcMain.handle('app-update-cancel-download', () => getAppUpdater().cancelDownloa
 ipcMain.handle('app-update-install', (_event, options) => getAppUpdater().install(options || {}))
 ipcMain.handle('app-update-skip-version', () => getAppUpdater().skipAvailableVersion())
 ipcMain.handle('app-update-clear-skipped', () => getAppUpdater().clearSkippedVersions())
-ipcMain.handle('app-update-open-mac-app', () => getAppUpdater().openMacApplication())
+ipcMain.handle('app-update-open-mac-app', async () => getAppUpdater().openMacApplication())
 
 ipcMain.handle('layout-sync-get-config', () => getLayoutSync().getConfig())
 ipcMain.handle('layout-sync-set-config', (_event, patch) => getLayoutSync().setConfig(patch || {}))

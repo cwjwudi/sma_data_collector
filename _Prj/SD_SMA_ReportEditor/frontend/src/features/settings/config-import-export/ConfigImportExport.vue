@@ -91,6 +91,7 @@ import {
   attachClientPrefsToBundle,
   buildImportDataFromFile,
 } from '@/features/settings/config-import-export/config-bundle-client'
+import { auditLog } from '@/lib/auditLog'
 
 const busy = ref(false)
 const msg = ref('')
@@ -121,6 +122,7 @@ async function exportBackup() {
     downloadJson(data, `report-editor-backup-${stamp}.json`)
     msg.value = '备份文件已保存（一般在「下载」文件夹中）。请妥善保管。'
     msgTone.value = 'ok'
+    void auditLog({ action: 'config.export', summary: '导出配置备份', result: 'ok' })
   } catch (e: unknown) {
     msg.value = e instanceof Error ? e.message : String(e)
     msgTone.value = 'err'
@@ -236,6 +238,12 @@ async function doImport(mode: 'merge' | 'replace') {
     msg.value =
       (mode === 'replace' ? `已用备份完全替换当前配置。${detail}` : `已补充恢复配置。${detail}`) + warnText
     msgTone.value = warnLines.length ? 'warn' : 'ok'
+    void auditLog({
+      action: 'config.import',
+      result: 'ok',
+      summary: mode === 'replace' ? '完全替换' : '合并恢复',
+      detail: { mode, parts },
+    })
     resetPendingSelection()
   } catch (e: unknown) {
     msg.value = e instanceof Error ? e.message : String(e)

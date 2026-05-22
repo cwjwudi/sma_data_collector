@@ -79,8 +79,11 @@ export function buildOpcEndpointUrl(fields) {
 export function opcServerShortLabel(server) {
   if (!server) return 'OPC UA'
   const name = String(server.name || '').trim()
-  if (name) return name
-  const p = parseOpcEndpointUrl(server.endpoint_url)
-  if (!p.host) return String(server.endpoint_url || '').trim() || 'OPC UA'
-  return p.path ? `${p.host}:${p.portText}/${p.path}` : `${p.host}:${p.portText}`
+  let base = name
+  if (!base) {
+    const p = parseOpcEndpointUrl(server.endpoint_url)
+    if (!p.host) base = String(server.endpoint_url || '').trim() || 'OPC UA'
+    else base = p.path ? `${p.host}:${p.portText}/${p.path}` : `${p.host}:${p.portText}`
+  }
+  return server.is_demo ? `${base} · 仿真` : base
 }

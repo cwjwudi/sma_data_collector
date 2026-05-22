@@ -18,6 +18,8 @@
     </section>
     <ConfigImportExport />
     <ConnectionProbeSection />
+    <DemoTrainingSection />
+    <AuditLogSection />
     <EnvironmentDiagnostics />
     <section class="settings-section">
       <h3 class="settings-section__title">关于电子签名</h3>
@@ -44,6 +46,8 @@ import LayoutCloudSyncSection from '@/features/settings/layout-cloud-sync/Layout
 import DataPathAndCacheSection from '@/features/settings/data-path/DataPathAndCacheSection.vue'
 import ConfigImportExport from '@/features/settings/config-import-export/ConfigImportExport.vue'
 import ConnectionProbeSection from '@/features/settings/connection-probe/ConnectionProbeSection.vue'
+import DemoTrainingSection from '@/features/settings/demo-training/DemoTrainingSection.vue'
+import AuditLogSection from '@/features/settings/audit/AuditLogSection.vue'
 import MigrateLocalDataSection from '@/features/settings/migrate-local/MigrateLocalDataSection.vue'
 
 const openSetupWizard = inject('openSetupWizard', () => {})

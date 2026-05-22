@@ -12,9 +12,13 @@ export function engineDisplayName(engine: string | null | undefined): string {
   return ENGINE_LABELS[key] || (key ? String(engine) : '数据库')
 }
 
-export function connectionTabLabel(conn: { name?: string | null; engine?: string | null }): string {
+export function connectionTabLabel(conn: {
+  name?: string | null
+  engine?: string | null
+  is_demo?: boolean | null
+}): string {
   const eng = engineDisplayName(conn.engine)
   const name = String(conn.name || '').trim()
-  if (name) return `${name} · ${eng}`
-  return eng
+  const base = name ? `${name} · ${eng}` : eng
+  return conn.is_demo ? `${base} · 仿真` : base
 }

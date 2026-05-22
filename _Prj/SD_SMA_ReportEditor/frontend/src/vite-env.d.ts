@@ -120,6 +120,26 @@ interface Window {
     skipAppUpdateVersion: () => Promise<{ ok: boolean; error?: string; version?: string }>;
     clearAppUpdateSkippedVersions: () => Promise<{ ok: boolean; error?: string }>;
     openMacApplication: () => Promise<{ ok: boolean; error?: string }>;
+    getDemoPackState: () => Promise<{
+      installed: boolean;
+      version: string;
+      installPath: string;
+      installedAt: string | null;
+    }>;
+    checkDemoPack: () => Promise<{
+      ok: boolean;
+      error?: string;
+      version?: string;
+      notes?: string;
+      updateAvailable?: boolean;
+      installedVersion?: string;
+    }>;
+    installDemoPack: () => Promise<{
+      ok: boolean;
+      error?: string;
+      version?: string;
+      installPath?: string;
+    }>;
     onAppUpdateDownloadProgress: (
       listener: (payload: {
         phase?: string
