@@ -52,12 +52,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('update-download-progress', fn)
   },
 
-  /** 版式云端同步（Portal 登录 + 上传/下载） */
+  /** 模版与版式云端同步（Portal 登录 + 上传/下载） */
   getLayoutSyncConfig: () => ipcRenderer.invoke('layout-sync-get-config'),
   setLayoutSyncConfig: (patch) => ipcRenderer.invoke('layout-sync-set-config', patch || {}),
   layoutSyncLogin: (creds) => ipcRenderer.invoke('layout-sync-login', creds || {}),
   layoutSyncRegister: (creds) => ipcRenderer.invoke('layout-sync-register', creds || {}),
   layoutSyncDownloadDefaults: () => ipcRenderer.invoke('layout-sync-download-defaults'),
   layoutSyncDownloadMine: () => ipcRenderer.invoke('layout-sync-download-mine'),
-  layoutSyncUpload: (items) => ipcRenderer.invoke('layout-sync-upload', items || []),
+  layoutSyncUpload: (payload) => ipcRenderer.invoke('layout-sync-upload', payload || {}),
 })

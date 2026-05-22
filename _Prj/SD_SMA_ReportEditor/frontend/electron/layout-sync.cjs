@@ -167,49 +167,85 @@ function createLayoutSync(app) {
     async downloadDefaults() {
       const s = readSettings(app)
       if (!s.token) throw new Error('请先登录')
-      const data = await requestJson('GET', apiUrl(app, '/api/report-editor/layout-presets/defaults'), {
-        token: s.token,
-        skipTlsVerify: Boolean(s.skipTlsVerify),
-      })
-      if (!data || !data.ok) throw new Error((data && data.error) || '下载失败')
+      const opts = { token: s.token, skipTlsVerify: Boolean(s.skipTlsVerify) }
+      const [layouts, templates] = await Promise.all([
+        requestJson('GET', apiUrl(app, '/api/report-editor/layout-presets/defaults'), opts),
+        requestJson('GET', apiUrl(app, '/api/report-editor/templates/defaults'), opts),
+      ])
+      if (!layouts || !layouts.ok) throw new Error((layouts && layouts.error) || '版式下载失败')
+      if (!templates || !templates.ok) throw new Error((templates && templates.error) || '模版下载失败')
       return {
         ok: true,
-        layout_presets: Array.isArray(data.layout_presets) ? data.layout_presets : [],
-        updatedAt: data.updatedAt || null,
-        source: data.source || 'default',
+        layout_presets: Array.isArray(layouts.layout_presets) ? layouts.layout_presets : [],
+        templates: Array.isArray(templates.templates) ? templates.templates : [],
+        layoutUpdatedAt: layouts.updatedAt || null,
+        templateUpdatedAt: templates.updatedAt || null,
+        source: layouts.source || 'team-default',
       }
     },
 
     async downloadMine() {
       const s = readSettings(app)
       if (!s.token) throw new Error('请先登录')
-      const data = await requestJson('GET', apiUrl(app, '/api/report-editor/layout-presets'), {
-        token: s.token,
-        skipTlsVerify: Boolean(s.skipTlsVerify),
-      })
-      if (!data || !data.ok) throw new Error((data && data.error) || '下载失败')
+      const opts = { token: s.token, skipTlsVerify: Boolean(s.skipTlsVerify) }
+      const [layouts, templates] = await Promise.all([
+        requestJson('GET', apiUrl(app, '/api/report-editor/layout-presets'), opts),
+        requestJson('GET', apiUrl(app, '/api/report-editor/templates'), opts),
+      ])
+      if (!layouts || !layouts.ok) throw new Error((layouts && layouts.error) || '版式下载失败')
+      if (!templates || !templates.ok) throw new Error((templates && templates.error) || '模版下载失败')
       return {
         ok: true,
-        layout_presets: Array.isArray(data.layout_presets) ? data.layout_presets : [],
-        updatedAt: data.updatedAt || null,
-        source: data.source || 'user',
+        layout_presets: Array.isArray(layouts.layout_presets) ? layouts.layout_presets : [],
+        templates: Array.isArray(templates.templates) ? templates.templates : [],
+        layoutUpdatedAt: layouts.updatedAt || null,
+        templateUpdatedAt: templates.updatedAt || null,
+        source: layouts.source || 'user',
       }
     },
 
-    async upload(items) {
+    async upload(payload) {
       const s = readSettings(app)
       if (!s.token) throw new Error('请先登录')
-      if (!Array.isArray(items) || !items.length) throw new Error('没有可上传的版式')
-      const data = await requestJson('PUT', apiUrl(app, '/api/report-editor/layout-presets'), {
-        token: s.token,
-        body: { layout_presets: items },
-        skipTlsVerify: Boolean(s.skipTlsVerify),
-      })
-      if (!data || !data.ok) throw new Error((data && data.error) || '上传失败')
+      const layoutPresets = Array.isArray(payload?.layoutPresets)
+        ? payload.layoutPresets
+        : Array.isArray(payload)
+          ? payload
+          : []
+      const templates = Array.isArray(payload?.templates) ? payload.templates : []
+      if (!layoutPresets.length && !templates.length) {
+        throw new Error('没有可上传的模版或版式')
+      }
+      const opts = { token: s.token, skipTlsVerify: Boolean(s.skipTlsVerify) }
+      let layoutCount = 0
+      let templateCount = 0
+      let layoutUpdatedAt = null
+      let templateUpdatedAt = null
+      if (layoutPresets.length) {
+        const data = await requestJson('PUT', apiUrl(app, '/api/report-editor/layout-presets'), {
+          ...opts,
+          body: { layout_presets: layoutPresets },
+        })
+        if (!data || !data.ok) throw new Error((data && data.error) || '版式上传失败')
+        layoutCount = data.count || layoutPresets.length
+        layoutUpdatedAt = data.updatedAt || null
+      }
+      if (templates.length) {
+        const data = await requestJson('PUT', apiUrl(app, '/api/report-editor/templates'), {
+          ...opts,
+          body: { templates },
+        })
+        if (!data || !data.ok) throw new Error((data && data.error) || '模版上传失败')
+        templateCount = data.count || templates.length
+        templateUpdatedAt = data.updatedAt || null
+      }
       return {
         ok: true,
-        count: data.count || items.length,
-        updatedAt: data.updatedAt || null,
+        layoutCount,
+        templateCount,
+        count: layoutCount + templateCount,
+        layoutUpdatedAt,
+        templateUpdatedAt,
       }
     },
   }

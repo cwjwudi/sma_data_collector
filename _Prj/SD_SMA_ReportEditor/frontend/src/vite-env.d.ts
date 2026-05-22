@@ -115,21 +115,31 @@ interface Window {
       ok: boolean;
       error?: string;
       layout_presets?: unknown[];
-      updatedAt?: string | null;
+      templates?: unknown[];
+      layoutUpdatedAt?: string | null;
+      templateUpdatedAt?: string | null;
       source?: string;
     }>;
     layoutSyncDownloadMine: () => Promise<{
       ok: boolean;
       error?: string;
       layout_presets?: unknown[];
-      updatedAt?: string | null;
+      templates?: unknown[];
+      layoutUpdatedAt?: string | null;
+      templateUpdatedAt?: string | null;
       source?: string;
     }>;
-    layoutSyncUpload: (items: unknown[]) => Promise<{
+    layoutSyncUpload: (payload: {
+      layoutPresets?: unknown[];
+      templates?: unknown[];
+    }) => Promise<{
       ok: boolean;
       error?: string;
+      layoutCount?: number;
+      templateCount?: number;
       count?: number;
-      updatedAt?: string | null;
+      layoutUpdatedAt?: string | null;
+      templateUpdatedAt?: string | null;
     }>;
   };
 }

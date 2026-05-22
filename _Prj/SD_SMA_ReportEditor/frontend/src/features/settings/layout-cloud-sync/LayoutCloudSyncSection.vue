@@ -1,9 +1,10 @@
 <template>
   <section class="settings-section app-update">
-    <h3 class="settings-section__title">版式云端同步</h3>
+    <h3 class="settings-section__title">模版与版式云端同步</h3>
     <p class="settings-hint">
-      将本机版式预设备份到 Portal，或从云端恢复。登录后可上传、下载；使用
-      <strong>br</strong> 或 <strong>admin</strong> 账号可下载团队版式（<code>team-layout-presets.json</code>）。
+      将本机报表模版与版式预设备份到 Portal，或从云端恢复。登录后可上传、下载；使用
+      <strong>br</strong> 或 <strong>admin</strong> 账号可下载团队模版与版式（
+      <code>team-templates.json</code>、<code>team-layout-presets.json</code>）。
     </p>
 
     <dl v-if="config.loggedIn" class="update-meta">
@@ -58,13 +59,13 @@
           :disabled="busy"
           @click="downloadDefaults"
         >
-          {{ busy && phase === 'dl-default' ? '下载中…' : '下载团队版式' }}
+          {{ busy && phase === 'dl-default' ? '下载中…' : '下载团队模版与版式' }}
         </button>
         <button type="button" class="settings-btn settings-btn--primary" :disabled="busy" @click="downloadMine">
-          {{ busy && phase === 'dl-mine' ? '下载中…' : '从云端下载我的版式' }}
+          {{ busy && phase === 'dl-mine' ? '下载中…' : '从云端下载我的模版与版式' }}
         </button>
         <button type="button" class="settings-btn settings-btn--primary" :disabled="busy" @click="upload">
-          {{ busy && phase === 'upload' ? '上传中…' : '上传版式到云端' }}
+          {{ busy && phase === 'upload' ? '上传中…' : '上传模版与版式到云端' }}
         </button>
         <button type="button" class="settings-btn settings-btn--secondary" :disabled="busy" @click="logout">
           退出登录
@@ -107,6 +108,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import * as layoutsApi from '@/api/layoutPresets'
+import * as templatesApi from '@/api/templates'
 import { refreshLayoutPresets } from '@/lib/report-template/layout-registry'
 
 const isElectron = computed(() => Boolean(window.electronAPI?.layoutSyncLogin))
@@ -217,14 +219,28 @@ async function register() {
   }
 }
 
-async function importPresets(items: unknown[]) {
-  if (!items.length) {
-    setMsg('云端没有版式数据。', 'warn')
+async function importCloudAssets(layoutPresets: unknown[], templates: unknown[]) {
+  const layoutItems = Array.isArray(layoutPresets) ? layoutPresets : []
+  const templateItems = Array.isArray(templates) ? templates : []
+  if (!layoutItems.length && !templateItems.length) {
+    setMsg('云端没有模版或版式数据。', 'warn')
     return
   }
-  const res = await layoutsApi.importLayoutsBulk(items as never[])
-  await refreshLayoutPresets()
-  setMsg(`已导入 ${res.imported ?? items.length} 条版式到本机。`, 'ok')
+  let layoutImported = 0
+  let templateImported = 0
+  if (layoutItems.length) {
+    const res = await layoutsApi.importLayoutsBulk(layoutItems as never[])
+    layoutImported = res.imported ?? layoutItems.length
+    await refreshLayoutPresets()
+  }
+  if (templateItems.length) {
+    const res = await templatesApi.importTemplatesBulk(templateItems as never[])
+    templateImported = res.imported ?? templateItems.length
+  }
+  const parts: string[] = []
+  if (templateImported) parts.push(`${templateImported} 条模版`)
+  if (layoutImported) parts.push(`${layoutImported} 条版式`)
+  setMsg(`已导入 ${parts.join('、')} 到本机。`, 'ok')
 }
 
 async function downloadDefaults() {
@@ -236,7 +252,7 @@ async function downloadDefaults() {
   try {
     const res = await api.layoutSyncDownloadDefaults()
     if (!res.ok) throw new Error(res.error || '下载失败')
-    await importPresets(res.layout_presets || [])
+    await importCloudAssets(res.layout_presets || [], res.templates || [])
   } catch (e) {
     setMsg(e instanceof Error ? e.message : String(e), 'err')
   } finally {
@@ -254,7 +270,7 @@ async function downloadMine() {
   try {
     const res = await api.layoutSyncDownloadMine()
     if (!res.ok) throw new Error(res.error || '下载失败')
-    await importPresets(res.layout_presets || [])
+    await importCloudAssets(res.layout_presets || [], res.templates || [])
   } catch (e) {
     setMsg(e instanceof Error ? e.message : String(e), 'err')
   } finally {
@@ -270,14 +286,20 @@ async function upload() {
   phase.value = 'upload'
   setMsg('')
   try {
-    const items = await layoutsApi.listLayoutPresetsFull()
-    if (!items.length) {
-      setMsg('本机没有版式可上传，请先在「版式预设」中创建。', 'warn')
+    const [layoutPresets, templates] = await Promise.all([
+      layoutsApi.listLayoutPresetsFull(),
+      templatesApi.listTemplatesFull(),
+    ])
+    if (!layoutPresets.length && !templates.length) {
+      setMsg('本机没有模版或版式可上传，请先在「模版管理」或「版式预设」中创建。', 'warn')
       return
     }
-    const res = await api.layoutSyncUpload(items)
+    const res = await api.layoutSyncUpload({ layoutPresets, templates })
     if (!res.ok) throw new Error(res.error || '上传失败')
-    setMsg(`已上传 ${res.count ?? items.length} 条版式到云端。`, 'ok')
+    const parts: string[] = []
+    if (res.templateCount) parts.push(`${res.templateCount} 条模版`)
+    if (res.layoutCount) parts.push(`${res.layoutCount} 条版式`)
+    setMsg(`已上传 ${parts.join('、')} 到云端。`, 'ok')
   } catch (e) {
     setMsg(e instanceof Error ? e.message : String(e), 'err')
   } finally {

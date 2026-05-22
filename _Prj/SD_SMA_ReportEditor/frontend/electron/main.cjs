@@ -610,7 +610,7 @@ ipcMain.handle('layout-sync-login', (_event, creds) => getLayoutSync().login(cre
 ipcMain.handle('layout-sync-register', (_event, creds) => getLayoutSync().register(creds || {}))
 ipcMain.handle('layout-sync-download-defaults', () => getLayoutSync().downloadDefaults())
 ipcMain.handle('layout-sync-download-mine', () => getLayoutSync().downloadMine())
-ipcMain.handle('layout-sync-upload', (_event, items) => getLayoutSync().upload(items || []))
+ipcMain.handle('layout-sync-upload', (_event, payload) => getLayoutSync().upload(payload || {}))
 
 app.whenReady().then(async () => {
   log('Starting application...')

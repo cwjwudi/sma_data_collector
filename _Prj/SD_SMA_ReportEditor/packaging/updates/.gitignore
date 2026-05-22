@@ -10,4 +10,5 @@ report-editor-backup-*.json
 !README.md
 !README-team-layout-presets.md
 !team-layout-presets.json
+!team-templates.json
 !.gitignore
