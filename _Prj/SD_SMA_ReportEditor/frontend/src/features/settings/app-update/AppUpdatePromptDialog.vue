@@ -14,6 +14,9 @@
         <button type="button" class="settings-btn settings-btn--secondary" @click="goSettings">
           前往设置
         </button>
+        <button type="button" class="settings-btn settings-btn--secondary" @click="skipVersion">
+          跳过此版本
+        </button>
         <button type="button" class="settings-btn settings-btn--secondary" @click="close">
           稍后
         </button>
@@ -29,6 +32,7 @@ import {
   appUpdateLatestVersion,
   appUpdateNotes,
   appUpdateStartupPromptOpen,
+  skipAppUpdateVersion,
   startAppUpdateDownload,
 } from './appUpdateState'
 
@@ -53,6 +57,11 @@ function close() {
 function goSettings() {
   close()
   void router.push('/settings')
+}
+
+async function skipVersion() {
+  await skipAppUpdateVersion()
+  close()
 }
 
 async function downloadNow() {

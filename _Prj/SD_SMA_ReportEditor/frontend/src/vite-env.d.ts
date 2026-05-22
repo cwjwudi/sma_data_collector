@@ -51,7 +51,11 @@ interface Window {
       baseUrl: string;
       defaultBaseUrl: string;
       skipTlsVerify: boolean;
+      macOpenAfterUpgrade?: boolean;
+      skippedVersions?: Record<string, boolean>;
       packaged: boolean;
+      lastCheckAt?: string | null;
+      lastCheckStatus?: string | null;
     }>;
     getAppUpdateState: () => Promise<{
       lastCheck: {
@@ -64,17 +68,26 @@ interface Window {
         releasedAt?: string | null
       } | null
       downloading: boolean
+      downloadPaused: boolean
       downloadPercent: number | null
       downloadedReady: boolean
       latestVersion: string | null
     }>
-    setAppUpdateConfig: (patch: { baseUrl?: string; skipTlsVerify?: boolean }) => Promise<{
+    setAppUpdateConfig: (patch: {
+      baseUrl?: string;
+      skipTlsVerify?: boolean;
+      macOpenAfterUpgrade?: boolean;
+    }) => Promise<{
       currentVersion: string;
       platform: string;
       baseUrl: string;
       defaultBaseUrl: string;
       skipTlsVerify: boolean;
+      macOpenAfterUpgrade?: boolean;
+      skippedVersions?: Record<string, boolean>;
       packaged: boolean;
+      lastCheckAt?: string | null;
+      lastCheckStatus?: string | null;
     }>;
     checkAppUpdate: (options?: { silent?: boolean }) => Promise<{
       ok?: boolean;
@@ -92,12 +105,20 @@ interface Window {
       ok: boolean
       error?: string
       cancelled?: boolean
+      paused?: boolean
       path?: string
       latestVersion?: string
       status?: string
     }>
-    cancelAppUpdateDownload: () => Promise<{ ok: boolean; cancelled?: boolean }>
-    installAppUpdate: () => Promise<{ ok: boolean; error?: string; message?: string; mode?: string }>
+    cancelAppUpdateDownload: () => Promise<{ ok: boolean; cancelled?: boolean; paused?: boolean }>
+    installAppUpdate: (options?: { openAfterUpgrade?: boolean }) => Promise<{
+      ok: boolean;
+      error?: string;
+      message?: string;
+      mode?: string;
+    }>;
+    skipAppUpdateVersion: () => Promise<{ ok: boolean; error?: string; version?: string }>;
+    openMacApplication: () => Promise<{ ok: boolean; error?: string }>;
     onAppUpdateDownloadProgress: (
       listener: (payload: {
         phase?: string

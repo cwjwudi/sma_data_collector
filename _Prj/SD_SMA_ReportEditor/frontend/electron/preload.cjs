@@ -47,7 +47,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   checkAppUpdate: (options) => ipcRenderer.invoke('app-update-check', options || {}),
   downloadAppUpdate: () => ipcRenderer.invoke('app-update-download'),
   cancelAppUpdateDownload: () => ipcRenderer.invoke('app-update-cancel-download'),
-  installAppUpdate: () => ipcRenderer.invoke('app-update-install'),
+  installAppUpdate: (options) => ipcRenderer.invoke('app-update-install', options || {}),
+  skipAppUpdateVersion: () => ipcRenderer.invoke('app-update-skip-version'),
+  openMacApplication: () => ipcRenderer.invoke('app-update-open-mac-app'),
   onAppUpdateDownloadProgress: (listener) => {
     const fn = (_event, payload) => listener(payload)
     ipcRenderer.on('update-download-progress', fn)

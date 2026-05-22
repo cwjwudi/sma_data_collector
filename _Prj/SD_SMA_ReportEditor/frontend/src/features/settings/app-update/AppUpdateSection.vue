@@ -61,13 +61,22 @@
         {{ busy && phase === 'check' ? '正在检查…' : '检查更新' }}
       </button>
       <button
-        v-if="appUpdateAvailable && !appUpdateDownloadedReady"
+        v-if="appUpdateAvailable && !appUpdateDownloadedReady && !appUpdateDownloading"
         type="button"
         class="settings-btn settings-btn--primary"
-        :disabled="busy || appUpdateDownloading"
+        :disabled="busy"
         @click="downloadUpdate"
       >
-        {{ appUpdateDownloading ? `下载中 ${appUpdateDownloadPercent ?? 0}%` : '下载新版本' }}
+        {{ downloadButtonLabel }}
+      </button>
+      <button
+        v-if="appUpdateAvailable && !appUpdateDownloadedReady && !appUpdateDownloading"
+        type="button"
+        class="settings-btn settings-btn--secondary"
+        :disabled="busy"
+        @click="skipVersion"
+      >
+        跳过此版本
       </button>
       <button
         v-if="appUpdateDownloading"
@@ -88,15 +97,27 @@
       </button>
     </div>
 
-    <div v-if="appUpdateDownloading" class="update-progress" aria-live="polite">
+    <label v-if="isMac && appUpdateDownloadedReady" class="update-check-inline update-mac-open">
+      <input v-model="macOpenAfterUpgrade" type="checkbox" :disabled="busy" @change="saveMacOpenPref" />
+      替换完成后尝试自动打开应用
+    </label>
+
+    <div v-if="appUpdateDownloading || appUpdateDownloadPaused" class="update-progress" aria-live="polite">
       <div class="update-progress-track">
         <div
           class="update-progress-bar"
-          :class="{ indeterminate: appUpdateDownloadPercent == null }"
+          :class="{ indeterminate: appUpdateDownloadPercent == null && appUpdateDownloading }"
           :style="appUpdateDownloadPercent != null ? { width: `${appUpdateDownloadPercent}%` } : undefined"
         />
       </div>
-      <p class="update-progress-hint">下载在后台进行，切换页面不会中断。</p>
+      <p class="update-progress-hint">
+        <template v-if="appUpdateDownloadPaused">
+          下载已暂停{{ progressPercentText }}，可点击「继续下载」。
+        </template>
+        <template v-else>
+          正在下载{{ progressPercentText }}，切换页面不会中断。
+        </template>
+      </p>
     </div>
 
     <div v-if="showMacInstallGuide" class="update-mac-guide">
@@ -105,8 +126,16 @@
         <li>点击「一键升级」后，系统会打开已下载的 .dmg 安装镜像。</li>
         <li>将窗口中的「Report Editor」拖入「应用程序」文件夹。</li>
         <li>若提示是否替换现有版本，选择「替换」。</li>
-        <li>从启动台或应用程序文件夹重新打开 Report Editor。</li>
+        <li v-if="macOpenAfterUpgrade">拖放完成后，系统会在后台尝试自动打开新版本（约需数秒）。</li>
+        <li v-else>从启动台或应用程序文件夹重新打开 Report Editor。</li>
       </ol>
+      <button
+        type="button"
+        class="settings-btn settings-btn--secondary update-mac-open-btn"
+        @click="openMacApp"
+      >
+        打开已安装的应用
+      </button>
     </div>
 
     <p
@@ -139,9 +168,11 @@ import {
   appUpdateCheckResult,
   appUpdateDownloadedReady,
   appUpdateDownloading,
+  appUpdateDownloadPaused,
   appUpdateDownloadPercent,
   cancelAppUpdateDownload,
   checkAppUpdateManual,
+  skipAppUpdateVersion,
   startAppUpdateDownload,
   syncAppUpdateState,
 } from './appUpdateState'
@@ -160,6 +191,7 @@ const config = ref({
   baseUrl: '',
   defaultBaseUrl: '',
   skipTlsVerify: false,
+  macOpenAfterUpgrade: true,
   packaged: false,
   lastCheckAt: null as string | null,
   lastCheckStatus: null as string | null,
@@ -167,6 +199,7 @@ const config = ref({
 
 const baseUrlDraft = ref('')
 const skipTlsDraft = ref(false)
+const macOpenAfterUpgrade = ref(true)
 const busy = ref(false)
 const phase = ref<'idle' | 'check' | 'install'>('idle')
 const msg = ref('')
@@ -194,7 +227,9 @@ const lastCheckLabel = computed(() => {
       ? '已是最新'
       : status === 'available'
         ? '有新版本'
-        : status === 'dev'
+        : status === 'skipped'
+          ? '已跳过'
+          : status === 'dev'
           ? '开发模式'
           : status
             ? String(status)
@@ -203,9 +238,24 @@ const lastCheckLabel = computed(() => {
   return statusText ? `${timeText}（${statusText}）` : timeText
 })
 
+const isMac = computed(() => (config.value.platform || '').startsWith('darwin'))
+
+const progressPercentText = computed(() => {
+  const p = appUpdateDownloadPercent.value
+  return p != null ? `（${p}%）` : ''
+})
+
 const showMacInstallGuide = computed(() => {
-  const p = config.value.platform || ''
-  return p.startsWith('darwin') && (appUpdateDownloadedReady.value || appUpdateAvailable.value)
+  return isMac.value && (appUpdateDownloadedReady.value || appUpdateAvailable.value)
+})
+
+const downloadButtonLabel = computed(() => {
+  if (appUpdateDownloadPaused.value) {
+    return appUpdateDownloadPercent.value != null
+      ? `继续下载（${appUpdateDownloadPercent.value}%）`
+      : '继续下载'
+  }
+  return '下载新版本'
 })
 
 function setMsg(text: string, tone: 'ok' | 'warn' | 'err' | '' = '') {
@@ -221,8 +271,19 @@ async function loadConfig() {
     config.value = c
     baseUrlDraft.value = c.baseUrl || ''
     skipTlsDraft.value = Boolean(c.skipTlsVerify)
+    macOpenAfterUpgrade.value = c.macOpenAfterUpgrade !== false
   } catch (e) {
     setMsg(e instanceof Error ? e.message : String(e), 'err')
+  }
+}
+
+async function saveMacOpenPref() {
+  const api = window.electronAPI
+  if (!api?.setAppUpdateConfig) return
+  try {
+    config.value = await api.setAppUpdateConfig({ macOpenAfterUpgrade: macOpenAfterUpgrade.value })
+  } catch {
+    /* ignore */
   }
 }
 
@@ -256,6 +317,8 @@ async function checkUpdate() {
       setMsg(res.message || '当前已是最新版本。', 'ok')
     } else if (res.status === 'available') {
       setMsg(`发现新版本 ${res.latestVersion}，可点击下方下载。`, 'ok')
+    } else if (res.status === 'skipped') {
+      setMsg(res.message || '此版本已跳过。', 'warn')
     } else if (res.status === 'dev') {
       setMsg('当前为开发模式，无法在线升级。', 'warn')
     } else if (res.ok === false) {
@@ -277,8 +340,8 @@ async function downloadUpdate() {
   try {
     const res = await startAppUpdateDownload()
     if (!res) return
-    if (res.cancelled) {
-      setMsg('下载已暂停。', 'warn')
+    if (res.cancelled || res.paused) {
+      setMsg(res.error || '下载已暂停，可点击「继续下载」。', 'warn')
       return
     }
     if (!res.ok) {
@@ -300,7 +363,40 @@ async function downloadUpdate() {
 
 async function pauseDownload() {
   await cancelAppUpdateDownload()
-  setMsg('下载已暂停。', 'warn')
+  setMsg('下载已暂停，可点击「继续下载」。', 'warn')
+}
+
+async function skipVersion() {
+  if (!window.confirm(`确定跳过版本 ${appUpdateCheckResult.value?.latestVersion || ''}？启动时将不再提示，直到发布更高版本。`)) {
+    return
+  }
+  setMsg('')
+  try {
+    const res = await skipAppUpdateVersion()
+    if (!res?.ok) {
+      setMsg(res?.error || '跳过失败', 'err')
+      return
+    }
+    setMsg(`已跳过版本 ${res.version}。`, 'ok')
+    await loadConfig()
+  } catch (e) {
+    setMsg(e instanceof Error ? e.message : String(e), 'err')
+  }
+}
+
+async function openMacApp() {
+  const api = window.electronAPI
+  if (!api?.openMacApplication) return
+  try {
+    const res = await api.openMacApplication()
+    if (!res.ok) {
+      setMsg(res.error || '无法打开应用', 'err')
+      return
+    }
+    setMsg('已打开 Report Editor。', 'ok')
+  } catch (e) {
+    setMsg(e instanceof Error ? e.message : String(e), 'err')
+  }
 }
 
 async function installUpdate() {
@@ -312,7 +408,9 @@ async function installUpdate() {
   busy.value = true
   phase.value = 'install'
   try {
-    const res = await api.installAppUpdate()
+    const res = await api.installAppUpdate({
+      openAfterUpgrade: isMac.value ? macOpenAfterUpgrade.value : undefined,
+    })
     if (!res.ok) {
       setMsg(res.error || '启动升级失败', 'err')
       return
@@ -443,6 +541,14 @@ onMounted(() => {
 
 .update-actions {
   flex-wrap: wrap;
+}
+
+.update-mac-open {
+  margin: 8px 0 0;
+}
+
+.update-mac-open-btn {
+  margin-top: 10px;
 }
 
 .update-progress {

@@ -14,6 +14,7 @@ export const appUpdateAvailable = ref(false)
 export const appUpdateLatestVersion = ref('')
 export const appUpdateNotes = ref('')
 export const appUpdateDownloading = ref(false)
+export const appUpdateDownloadPaused = ref(false)
 export const appUpdateDownloadPercent = ref<number | null>(null)
 export const appUpdateDownloadedReady = ref(false)
 export const appUpdateCheckResult = shallowRef<AppUpdateCheckResult | null>(null)
@@ -42,21 +43,31 @@ export function initAppUpdateListeners() {
 
   if (api.onAppUpdateDownloadProgress) {
     unsubProgress = api.onAppUpdateDownloadProgress((p) => {
-      if (p?.phase === 'start' || p?.phase === 'progress') {
+      if (p?.phase === 'start' || p?.phase === 'progress' || p?.phase === 'resume') {
         appUpdateDownloading.value = true
+        appUpdateDownloadPaused.value = false
+        if (typeof p.percent === 'number') {
+          appUpdateDownloadPercent.value = p.percent
+        }
+      } else if (p?.phase === 'paused') {
+        appUpdateDownloading.value = false
+        appUpdateDownloadPaused.value = true
         if (typeof p.percent === 'number') {
           appUpdateDownloadPercent.value = p.percent
         }
       } else if (p?.phase === 'cancelled') {
         appUpdateDownloading.value = false
+        appUpdateDownloadPaused.value = false
         appUpdateDownloadPercent.value = null
         appUpdateDownloadedReady.value = false
       } else if (p?.phase === 'done') {
         appUpdateDownloading.value = false
+        appUpdateDownloadPaused.value = false
         appUpdateDownloadPercent.value = 100
         appUpdateDownloadedReady.value = true
       } else if (p?.phase === 'error') {
         appUpdateDownloading.value = false
+        appUpdateDownloadPaused.value = false
       }
     })
   }
@@ -83,6 +94,7 @@ export async function syncAppUpdateState() {
     const s = await api.getAppUpdateState()
     applyCheckResult(s.lastCheck)
     appUpdateDownloading.value = Boolean(s.downloading)
+    appUpdateDownloadPaused.value = Boolean(s.downloadPaused)
     appUpdateDownloadPercent.value =
       typeof s.downloadPercent === 'number' ? s.downloadPercent : null
     appUpdateDownloadedReady.value = Boolean(s.downloadedReady)
@@ -122,8 +134,12 @@ export async function checkAppUpdateManual() {
 export async function startAppUpdateDownload() {
   const api = window.electronAPI
   if (!api?.downloadAppUpdate) return null
+  const resume = appUpdateDownloadPaused.value
   appUpdateDownloading.value = true
-  appUpdateDownloadPercent.value = 0
+  appUpdateDownloadPaused.value = false
+  if (!resume) {
+    appUpdateDownloadPercent.value = 0
+  }
   appUpdateDownloadedReady.value = false
   const res = await api.downloadAppUpdate()
   await syncAppUpdateState()
@@ -135,4 +151,12 @@ export async function cancelAppUpdateDownload() {
   if (!api?.cancelAppUpdateDownload) return
   await api.cancelAppUpdateDownload()
   await syncAppUpdateState()
+}
+
+export async function skipAppUpdateVersion() {
+  const api = window.electronAPI
+  if (!api?.skipAppUpdateVersion) return null
+  const res = await api.skipAppUpdateVersion()
+  await syncAppUpdateState()
+  return res
 }
