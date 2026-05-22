@@ -29,6 +29,9 @@
               <option v-for="s in servers" :key="s.id" :value="s.id">{{ labelServer(s) }}</option>
             </select>
           </label>
+          <button type="button" class="opc-pick-btn" :disabled="serversLoading" @click="refreshServerList">
+            刷新连接
+          </button>
           <button type="button" class="opc-pick-btn" :disabled="!browseCapability || expandAllBusy" @click="refreshRoot">
             刷新根
           </button>
@@ -111,7 +114,7 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onBeforeUnmount, ref, shallowRef, triggerRef, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, triggerRef, watch } from 'vue'
 import { apiFetch } from '@/api/client.js'
 import OpcUaTree from './OpcUaTree.vue'
 import { translateOpcuaMessage } from './opcua-messages.js'
@@ -163,6 +166,7 @@ const searchHint = computed(() =>
 )
 
 const servers = ref([])
+const serversLoading = ref(false)
 const selectedServerId = ref('')
 const loadErr = ref('')
 const msg = ref('')
@@ -314,6 +318,21 @@ function mergeServerLists(primary, fallback) {
   return out
 }
 
+async function refreshServerList() {
+  if (serversLoading.value) return
+  await loadServersWhenOpen()
+}
+
+function applyPreferredServerSelection(prefs) {
+  if (!servers.value.length) {
+    selectedServerId.value = ''
+    return
+  }
+  const explicit = (props.initialServerId || '').trim()
+  const pid = pickPreferredOpcServerId(prefs, servers.value, explicit || null)
+  selectedServerId.value = pid || servers.value[0].id
+}
+
 async function loadServersWhenOpen() {
   clearTimeout(searchDebounceTimer)
   searchDebounceTimer = null
@@ -325,12 +344,22 @@ async function loadServersWhenOpen() {
   loadErr.value = ''
   msg.value = ''
   searchQuery.value = ''
-  servers.value = []
-  selectedServerId.value = ''
   treeNodes.value = []
   pickedNode.value = null
   prefetchGen.value += 1
   bumpTree()
+  // 先用父组件已加载列表占位，避免 remount 同 tick 打开时连接下拉短暂为空
+  const cached = mergeServerLists([], props.externalServers)
+  if (cached.length) {
+    servers.value = cached
+    const explicitCached = (props.initialServerId || '').trim()
+    selectedServerId.value =
+      (explicitCached && cached.some((s) => s.id === explicitCached) ? explicitCached : null) ||
+      cached[0].id
+  } else {
+    servers.value = []
+    selectedServerId.value = ''
+  }
   try {
     let prefs = {}
     try {
@@ -338,28 +367,26 @@ async function loadServersWhenOpen() {
     } catch {
       prefs = {}
     }
+    serversLoading.value = true
     const data = await apiFetch('/opcua/servers')
     servers.value = mergeServerLists(data.servers, props.externalServers)
     if (!servers.value.length) {
       return
     }
-    const explicit = (props.initialServerId || '').trim()
-    const pid = pickPreferredOpcServerId(prefs, servers.value, explicit || null)
-    selectedServerId.value = pid || servers.value[0].id
+    applyPreferredServerSelection(prefs)
     await refreshRoot()
   } catch (e) {
     const fallback = mergeServerLists([], props.externalServers)
     if (fallback.length) {
       servers.value = fallback
-      const explicit = (props.initialServerId || '').trim()
-      selectedServerId.value =
-        (explicit && fallback.some((s) => s.id === explicit) ? explicit : null) ||
-        fallback[0].id
+      applyPreferredServerSelection({})
       loadErr.value = ''
       await refreshRoot()
       return
     }
     loadErr.value = translateOpcuaMessage(e.message || String(e))
+  } finally {
+    serversLoading.value = false
   }
 }
 
@@ -729,7 +756,38 @@ watch(
       overlayRef.value?.focus()
     }
   },
+  { immediate: true },
 )
+
+watch(
+  () => props.externalServers,
+  (ext) => {
+    if (!props.modelValue) return
+    const merged = mergeServerLists(servers.value, ext)
+    if (!merged.length) return
+    const prevId = selectedServerId.value
+    servers.value = merged
+    if (!prevId || !merged.some((s) => s.id === prevId)) {
+      const explicit = (props.initialServerId || '').trim()
+      selectedServerId.value =
+        (explicit && merged.some((s) => s.id === explicit) ? explicit : null) || merged[0].id
+    }
+  },
+  { deep: true },
+)
+
+function onOpcServersChanged() {
+  if (props.modelValue) void loadServersWhenOpen()
+}
+
+onMounted(() => {
+  window.addEventListener('report-editor-opcua-servers-changed', onOpcServersChanged)
+})
+
+onBeforeUnmount(() => {
+  clearTimeout(searchDebounceTimer)
+  window.removeEventListener('report-editor-opcua-servers-changed', onOpcServersChanged)
+})
 
 watch(dataTypeFilter, async (filter, prev) => {
   if (!props.modelValue || filter === prev) return
@@ -740,10 +798,6 @@ watch(dataTypeFilter, async (filter, prev) => {
   if (treeNodes.value.length) {
     await refreshRoot()
   }
-})
-
-onBeforeUnmount(() => {
-  clearTimeout(searchDebounceTimer)
 })
 </script>
 

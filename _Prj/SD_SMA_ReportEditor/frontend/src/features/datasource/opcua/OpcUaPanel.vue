@@ -681,6 +681,7 @@ async function saveServer() {
       await persistLastOpcuaServer(created.id)
     }
     msg.value = '已保存'
+    notifyOpcServersChanged()
   } catch (e) {
     msg.value = e.message || String(e)
   }
@@ -693,6 +694,7 @@ async function removeServer() {
   delete opcHealth[removedId]
   await loadServers()
   startNew()
+  notifyOpcServersChanged()
 }
 
 async function testDraft() {
@@ -1129,6 +1131,10 @@ watch(pollIntervalSeconds, (v) => {
   const c = clampPollSeconds(v)
   if (c !== v) pollIntervalSeconds.value = c
 })
+
+function notifyOpcServersChanged() {
+  window.dispatchEvent(new CustomEvent('report-editor-opcua-servers-changed'))
+}
 
 function onConfigImported() {
   void loadServers()

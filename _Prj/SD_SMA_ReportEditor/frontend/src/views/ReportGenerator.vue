@@ -510,7 +510,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { listTemplateSummaries, type TemplateSummary } from "@/api/templates";
 import { apiFetch } from "@/api/client.js";
 import {
@@ -947,6 +947,7 @@ async function openRgOpcPick(target: RgOpcPickTarget) {
     target === "exportDir" || target === "fileName" || isFeedbackStringPickTarget(target)
       ? "String"
       : "";
+  await nextTick();
   opcPickOpen.value = true;
 }
 
@@ -1299,9 +1300,14 @@ onMounted(async () => {
   await Promise.all([loadSummaries(), loadOpcServers()]);
   restartPollLoop();
   window.addEventListener("report-editor-config-imported", onConfigImported);
+  window.addEventListener("report-editor-opcua-servers-changed", onOpcServersChanged);
 });
 
 function onConfigImported() {
+  void loadOpcServers();
+}
+
+function onOpcServersChanged() {
   void loadOpcServers();
 }
 
@@ -1313,6 +1319,7 @@ watch(
 onUnmounted(() => {
   if (pollTimer) clearInterval(pollTimer);
   window.removeEventListener("report-editor-config-imported", onConfigImported);
+  window.removeEventListener("report-editor-opcua-servers-changed", onOpcServersChanged);
 });
 </script>
 
