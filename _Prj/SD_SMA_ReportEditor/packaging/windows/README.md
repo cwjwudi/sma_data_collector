@@ -11,6 +11,18 @@ cd packaging\windows
 build.bat
 ```
 
+成功结束后**不会**再弹出「按任意键继续」。若失败且希望跳过该提示，可加 `-NoPause` 或设置环境变量 `REPORT_EDITOR_BUILD_NO_PAUSE=1`。
+
+## 版本号
+
+安装包版本来自 **`frontend/package.json`** 的 `version` 字段（electron-builder 读取）。发版前请确认：
+
+1. 已 `git pull` 到含目标版本的 main（例如 **0.1.10**）
+2. 或在本机执行：`node packaging/scripts/bump-version.mjs 0.1.10 --notes "说明"`
+3. 打包日志首行应显示 `Version: 0.1.10`；若仍是 0.1.9，说明代码未更新到最新
+
+`npm ci` 使用 `package-lock.json`，**不会**改 `package.json` 版本；锁文件版本滞后时会打印警告，但不影响安装包版本号。
+
 ## 参数（传给 build.ps1）
 
 | 参数 | 作用 |
@@ -18,6 +30,7 @@ build.bat
 | `-Fresh` | 清空 `output/` 后再打包 |
 | `-SkipFrontendInstall` | 跳过 `npm ci` |
 | `-SkipBackendBuild` | 跳过 PyInstaller |
+| `-NoPause` | 失败时也不弹出「按任意键继续」 |
 
 ## 产物
 

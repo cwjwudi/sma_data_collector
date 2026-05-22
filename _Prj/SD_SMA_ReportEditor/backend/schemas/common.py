@@ -54,6 +54,11 @@ class OpcUaSavedVariableSearch(BaseModel):
     max_depth: int | None = Field(default=None, ge=8, le=72)
 
 
+class OpcUaSavedWriteRequest(BaseModel):
+    node_id: str
+    value: Any
+
+
 class OpcUaServerSave(BaseModel):
     id: str | None = None
     name: str = ""

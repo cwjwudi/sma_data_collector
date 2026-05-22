@@ -23,6 +23,11 @@ import type { ReportTemplate } from "@/lib/report-template/model";
 import { useReportBindingPreview } from "@/composables/useReportBindingPreview";
 import { reportBindingPreviewKey } from "@/lib/report-template/template-editor-context";
 import { getPaperPageCssPx, PAPER_PRESETS, type PaperKind } from "@/lib/report-template/paper";
+import { humanizePdfExportError } from "@/lib/pdfExportErrors";
+import {
+  collectBindingPreviewIssues,
+  summarizeBindingPreviewIssues,
+} from "@/lib/bindingPreviewErrors";
 
 const route = useRoute();
 const tmpl = ref<ReportTemplate | null>(null);
@@ -82,14 +87,14 @@ async function waitPaintReady(): Promise<void> {
 async function boot(): Promise<void> {
   const id = String(route.query.templateId || "").trim();
   if (!id) {
-    errText.value = "缺少 templateId";
+    errText.value = humanizePdfExportError("缺少 templateId");
     signalReady(false, errText.value);
     return;
   }
   try {
     tmpl.value = await getTemplate(id);
   } catch (e) {
-    errText.value = e instanceof Error ? e.message : String(e);
+    errText.value = humanizePdfExportError(e);
     signalReady(false, errText.value);
     return;
   }
@@ -98,6 +103,12 @@ async function boot(): Promise<void> {
   injectPrintPageCss(t);
 
   await bindingPreview.refresh({ opc: true, sql: true, silent: true });
+  const bindingIssues = collectBindingPreviewIssues(bindingPreview.values.value);
+  if (bindingIssues.length) {
+    errText.value = humanizePdfExportError(summarizeBindingPreviewIssues(bindingIssues));
+    signalReady(false, errText.value);
+    return;
+  }
   await nextTick();
   await waitPaintReady();
   signalReady(true);

@@ -350,6 +350,40 @@ async def _read_with_client(client: Client, node_id: str) -> dict[str, Any]:
     return {"ok": True, "value": opc_value_to_json_safe(val), "attributes": attrs}
 
 
+async def _write_with_client(client: Client, node_id: str, value: Any) -> dict[str, Any]:
+    """写入变量 Value；BadNotWritable 等转为 ok:false 而不抛栈。"""
+    node = client.get_node(node_id)
+    try:
+        await node.write_value(value)
+        return {"ok": True}
+    except UaStatusCodeError as e:
+        code = int(e.code)
+        logger.warning("OPC UA write_value rejected node_id=%s code=%s (%s)", node_id, code, e)
+        return {"ok": False, "message": str(e), "status_code": code}
+    except Exception as e:
+        logger.exception("OPC UA write_value failed node_id=%s", node_id)
+        return {"ok": False, "message": str(e)}
+
+
+async def write_node_value_for_saved_server(
+    server_id: str,
+    endpoint_url: str,
+    node_id: str,
+    value: Any,
+    username: str | None = None,
+    password: str | None = None,
+) -> dict[str, Any]:
+    entry = _get_entry(server_id)
+    async with entry.lock:
+        try:
+            client = await _ensure_connected(entry, endpoint_url, username, password)
+            return await _write_with_client(client, node_id, value)
+        except Exception as e:
+            logger.exception("OPC UA write (pooled) failed")
+            await _invalidate_entry_client(entry)
+            return {"ok": False, "message": str(e)}
+
+
 def opc_value_to_json_safe(val: Any, _depth: int = 0) -> Any:
     """把 OPC/asyncua 常见 Variant、String、LocalizedText、ByteString 等转成 JSON 安全类型（前端易展示与筛选）。"""
     if _depth > 14:

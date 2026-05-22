@@ -39,6 +39,7 @@
     </div>
     <SetupWizard v-model="setupWizardVisible" />
     <AppUpdatePromptDialog v-if="appUpdateStartupPromptOpen" />
+    <AppToastStack />
   </div>
 </template>
 
@@ -47,6 +48,7 @@ import { ref, onMounted, onUnmounted, provide, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import SetupWizard from '@/features/onboarding/SetupWizard.vue'
 import AppUpdatePromptDialog from '@/features/settings/app-update/AppUpdatePromptDialog.vue'
+import AppToastStack from '@/components/AppToastStack.vue'
 import {
   appUpdateAvailable,
   appUpdateStartupPromptOpen,

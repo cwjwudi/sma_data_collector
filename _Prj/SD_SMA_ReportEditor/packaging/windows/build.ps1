@@ -8,6 +8,7 @@ param(
   [switch]$SkipFrontendInstall,
   [switch]$SkipBackendBuild,
   [switch]$Fresh,
+  [switch]$NoPause,
   [string]$NpmRegistry = 'https://registry.npmmirror.com',
   [string]$ElectronMirror = 'https://npmmirror.com/mirrors/electron/'
 )
@@ -82,6 +83,14 @@ function Get-FrontendVersion {
   return $ver.Trim()
 }
 
+function Get-ManifestVersion {
+  param([string]$ManifestPath)
+  if (-not (Test-Path -LiteralPath $ManifestPath)) { return '' }
+  $ver = (& node -e "const fs=require('fs');const m=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));process.stdout.write(m.version||'')" $ManifestPath)
+  if (-not $ver) { return '' }
+  return $ver.Trim()
+}
+
 function Invoke-NpmCi {
   $nodeMajor = Get-NodeMajorVersion
   $npmCiArgs = @('ci', '--no-audit', '--no-fund')
@@ -91,6 +100,15 @@ function Invoke-NpmCi {
     $npmCiArgs += '--ignore-engines'
   }
   Invoke-Npm $npmCiArgs
+  # npm ci does not rewrite package.json; ensure lockfile root version matches (electron-builder reads package.json)
+  $lockPath = Join-Path $Frontend 'package-lock.json'
+  if (Test-Path -LiteralPath $lockPath) {
+    $lockVer = (& node -e "const fs=require('fs');const l=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));process.stdout.write((l.packages&&l.packages['']&&l.packages[''].version)||l.version||'')" $lockPath)
+    $pkgVer = Get-FrontendVersion (Join-Path $Frontend 'package.json')
+    if ($lockVer -and $pkgVer -and $lockVer -ne $pkgVer) {
+      Write-WarnLine "package-lock.json ($lockVer) != package.json ($pkgVer). Run: node packaging/scripts/bump-version.mjs $pkgVer"
+    }
+  }
 }
 
 function Invoke-ViteBuild([string]$FrontendDir) {
@@ -127,9 +145,17 @@ if ((Test-Path -LiteralPath (Join-Path $Frontend 'release')) -or (Test-Path -Lit
 
 Write-Step 'SD SMA Report Editor - Windows installer build'
 $AppVersion = Get-FrontendVersion (Join-Path $Frontend 'package.json')
+$ManifestPath = Join-Path $Root 'packaging\updates\latest.json'
+$ManifestVersion = Get-ManifestVersion $ManifestPath
 Write-Host "Version:      $AppVersion"
+if ($ManifestVersion -and $ManifestVersion -ne $AppVersion) {
+  Write-WarnLine "package.json ($AppVersion) != packaging/updates/latest.json ($ManifestVersion). Run: node packaging/scripts/bump-version.mjs $ManifestVersion"
+}
 Write-Host "Project root: $Root"
 Write-Host "Output dir:   $OutputDir"
+if ($NoPause) {
+  $env:REPORT_EDITOR_BUILD_NO_PAUSE = '1'
+}
 
 Require-Command @('node') 'Install Node.js LTS (20.x or 22.x).'
 Require-Command @('py', 'python') 'Install Python 3.10+ with the Windows py launcher.'

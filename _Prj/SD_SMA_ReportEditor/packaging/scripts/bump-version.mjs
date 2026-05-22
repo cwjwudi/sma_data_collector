@@ -64,8 +64,8 @@ const manifest = {
   releasedAt: new Date().toISOString(),
   notes,
   platforms: {
-    'win32-x64': { url: `Report Editor-Setup-${version}-x64.exe` },
-    'darwin-arm64': { url: `Report Editor-${version}-arm64.dmg` },
+    'win32-x64': { url: `Report Editor-Setup-${version}-x64.exe`, sha256: '', size: 0 },
+    'darwin-arm64': { url: `Report Editor-${version}-arm64.dmg`, sha256: '', size: 0 },
   },
 }
 fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n', 'utf8')

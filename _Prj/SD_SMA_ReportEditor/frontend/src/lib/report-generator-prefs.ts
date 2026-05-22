@@ -38,6 +38,29 @@ export type AutoOpcTriggerMode = "rising" | "falling" | "equals";
 
 export type AutoExportDirSource = "default" | "opcua";
 
+export type ExportResultOpcStatusKind = "bool" | "int";
+
+/** 导出完成/失败后写回 PLC 的 OPC UA 变量绑定 */
+export interface ExportResultOpcFeedback {
+  enabled: boolean;
+  serverId: string;
+  statusNodeId: string;
+  statusKind: ExportResultOpcStatusKind;
+  messageNodeId: string;
+  filePathNodeId: string;
+  messageMaxLen: number;
+}
+
+export const defaultExportResultOpcFeedback = (): ExportResultOpcFeedback => ({
+  enabled: false,
+  serverId: "",
+  statusNodeId: "",
+  statusKind: "bool",
+  messageNodeId: "",
+  filePathNodeId: "",
+  messageMaxLen: 200,
+});
+
 
 
 export interface ReportGeneratorPrefs {
@@ -75,6 +98,8 @@ export interface ReportGeneratorPrefs {
   autoFileNameOpcAppendHash: boolean;
 
   manualOpenAfter: boolean;
+
+  exportResultOpc: ExportResultOpcFeedback;
 
   auto: {
 
@@ -120,6 +145,8 @@ export const defaultReportGeneratorPrefs = (): ReportGeneratorPrefs => ({
 
   manualOpenAfter: false,
 
+  exportResultOpc: defaultExportResultOpcFeedback(),
+
   auto: {
 
     enabled: false,
@@ -149,6 +176,23 @@ type StoredPrefs = Partial<ReportGeneratorPrefs> & {
 };
 
 
+
+function parseExportResultOpc(raw: unknown, base: ExportResultOpcFeedback): ExportResultOpcFeedback {
+  if (!raw || typeof raw !== "object") return base;
+  const o = raw as Partial<ExportResultOpcFeedback>;
+  return {
+    enabled: Boolean(o.enabled),
+    serverId: typeof o.serverId === "string" ? o.serverId : base.serverId,
+    statusNodeId: typeof o.statusNodeId === "string" ? o.statusNodeId : base.statusNodeId,
+    statusKind: o.statusKind === "int" ? "int" : base.statusKind,
+    messageNodeId: typeof o.messageNodeId === "string" ? o.messageNodeId : base.messageNodeId,
+    filePathNodeId: typeof o.filePathNodeId === "string" ? o.filePathNodeId : base.filePathNodeId,
+    messageMaxLen:
+      typeof o.messageMaxLen === "number" && o.messageMaxLen > 0
+        ? Math.min(2000, Math.floor(o.messageMaxLen))
+        : base.messageMaxLen,
+  };
+}
 
 function parseStoredPrefs(o: StoredPrefs, base: ReportGeneratorPrefs): ReportGeneratorPrefs {
   const dirSource: AutoExportDirSource =
@@ -187,6 +231,7 @@ function parseStoredPrefs(o: StoredPrefs, base: ReportGeneratorPrefs): ReportGen
     autoFileNameOpcAppendHash:
       o.autoFileNameOpcAppendHash === false ? false : base.autoFileNameOpcAppendHash,
     manualOpenAfter: Boolean(o.manualOpenAfter),
+    exportResultOpc: parseExportResultOpc(o.exportResultOpc, base.exportResultOpc),
     auto: {
       enabled: Boolean(o.auto?.enabled),
       bindings,

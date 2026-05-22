@@ -6,6 +6,7 @@ from schemas.common import (
     OpcUaBrowseRequest,
     OpcUaReadRequest,
     OpcUaSavedVariableSearch,
+    OpcUaSavedWriteRequest,
     OpcUaServerSave,
     OpcUaTestRequest,
     OpcUaVariableSearchRequest,
@@ -200,6 +201,33 @@ async def read_saved(server_id: str, payload: dict):
         server_id,
         ep,
         node_id,
+        srv.get("username"),
+        pwd,
+    )
+
+
+@router.post("/opcua/write_saved/{server_id}")
+async def write_saved(server_id: str, body: OpcUaSavedWriteRequest):
+    """对已保存 OPC UA 连接写入变量值（用于导出结果反馈 PLC 等）。"""
+    cfg = _load_cfg()
+    srv = next((s for s in cfg.get("opcua_servers", []) if s.get("id") == server_id), None)
+    if not srv:
+        raise HTTPException(404, "未找到服务器配置")
+    ep = str(srv.get("endpoint_url") or srv.get("endpoint") or "").strip()
+    if not ep:
+        return {"ok": False, "message": "该连接 Endpoint URL 为空，请先保存有效配置。"}
+    node_id = (body.node_id or "").strip()
+    if not node_id:
+        raise HTTPException(400, "缺少 node_id")
+    try:
+        pwd = config_store.decrypt_opcua_password(DATA_DIR, srv)
+    except ValueError as e:
+        return {"ok": False, "message": str(e)}
+    return await opcua_service.write_node_value_for_saved_server(
+        server_id,
+        ep,
+        node_id,
+        body.value,
         srv.get("username"),
         pwd,
     )

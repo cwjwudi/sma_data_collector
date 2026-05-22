@@ -6,6 +6,7 @@ const fs = require('fs')
 const { pathToFileURL } = require('url')
 const { createAppUpdater } = require('./updater.cjs')
 const { createLayoutSync } = require('./layout-sync.cjs')
+const { humanizePdfExportError } = require('./pdfExportErrors.cjs')
 
 let mainWindow
 let pythonProcess
@@ -555,6 +556,8 @@ ipcMain.handle('pdf-export-run', async (event, opts) => {
       }
 
       return { ok: true, filePath }
+    } catch (e) {
+      throw new Error(humanizePdfExportError(e, { phase: 'export' }))
     } finally {
       if (pdfWin && !pdfWin.isDestroyed()) {
         pdfWin.destroy()
