@@ -13,6 +13,7 @@
 | **在本机跑起来（开发）** | [如何运行](#如何运行) → [getting-started/](getting-started/README.md) |
 | **改功能 / 改界面** | [如何修改](#如何修改) → [_Doc/003](_Doc/003_项目框架与常用指令.md) |
 | **打安装包、现场安装卸载** | [packaging/README.md](packaging/README.md)（打包详述在此） |
+| **查每个版本改了什么** | [_Doc/007_版本发布记录.md](_Doc/007_版本发布记录.md) |
 
 技术栈：Python FastAPI · Vue 3 · Vite · Electron · Pinia。
 

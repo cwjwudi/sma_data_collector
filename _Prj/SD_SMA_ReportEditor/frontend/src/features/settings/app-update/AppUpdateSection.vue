@@ -498,7 +498,13 @@ async function openMacApp() {
 async function installUpdate() {
   const api = window.electronAPI
   if (!api?.installAppUpdate) return
-  if (!window.confirm('即将退出本软件并启动升级流程，未保存的编辑请先保存。是否继续？')) {
+  const backupHint =
+    '建议在「设置 → 配置导入/导出」中先导出本机备份。\n\n0.1.11 起 Windows 覆盖升级会保留数据库 / OPC UA 配置与模版；仍建议重要环境升级前备份。'
+  if (
+    !window.confirm(
+      `即将退出本软件并启动升级流程，未保存的编辑请先保存。\n\n${backupHint}\n\n是否继续？`,
+    )
+  ) {
     return
   }
   busy.value = true

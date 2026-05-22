@@ -3,12 +3,20 @@
     <h2 class="page-title">数据源配置</h2>
     <div class="tabs-top">
       <button type="button" :class="{ on: tab === 'db' }" @click="tab = 'db'">
+        <ConnectionTabLed :state="aggregateHealthState(dbHealth)" class="tab-led" />
         数据库工作台
-        <span class="tab-health-count">({{ dbHealth.ok }}/{{ dbHealth.total }})</span>
+        <span class="tab-health-count">
+          ({{ dbHealth.ok }}/{{ dbHealth.total
+          }}<span v-if="dbHealth.fail" class="tab-health-fail"> · {{ dbHealth.fail }} 异常</span>)
+        </span>
       </button>
       <button type="button" :class="{ on: tab === 'opc' }" @click="tab = 'opc'">
+        <ConnectionTabLed :state="aggregateHealthState(opcHealth)" class="tab-led" />
         OPC UA
-        <span class="tab-health-count">({{ opcHealth.ok }}/{{ opcHealth.total }})</span>
+        <span class="tab-health-count">
+          ({{ opcHealth.ok }}/{{ opcHealth.total
+          }}<span v-if="opcHealth.fail" class="tab-health-fail"> · {{ opcHealth.fail }} 异常</span>)
+        </span>
       </button>
     </div>
     <div v-show="tab === 'db'" class="page-tab-body">
@@ -25,6 +33,7 @@ import { ref, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import DatabaseWorkbench from '@/features/datasource/database-workbench/DatabaseWorkbench.vue'
 import OpcUaPanel from '@/features/datasource/opcua/OpcUaPanel.vue'
+import ConnectionTabLed from '@/features/datasource/ConnectionTabLed.vue'
 import { setDbHealthSummary } from '@/features/datasource/database-connection-health'
 
 /** 在数据源配置页内，后台轮询全部连接健康（不依赖当前显示的子页签） */
@@ -40,6 +49,13 @@ const dbHealth = ref({ ok: 0, fail: 0, total: 0 })
 const opcHealth = ref({ ok: 0, fail: 0, total: 0 })
 
 let healthPollTimer = null
+
+function aggregateHealthState(summary) {
+  if (!summary?.total) return 'unknown'
+  if (summary.fail > 0) return 'fail'
+  if (summary.ok === summary.total) return 'ok'
+  return 'unknown'
+}
 
 function onDbHealthSummary(summary) {
   dbHealth.value = summary
@@ -122,6 +138,9 @@ onUnmounted(() => {
   flex-shrink: 0;
 }
 .tabs-top button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   padding: 8px 14px;
   border-radius: 8px;
   border: 1px solid #d1d5db;
@@ -134,13 +153,23 @@ onUnmounted(() => {
   color: #fff;
   border-color: #111827;
 }
+.tab-led {
+  flex-shrink: 0;
+}
 .tab-health-count {
-  margin-left: 4px;
+  margin-left: 2px;
   font-size: 13px;
   font-weight: 500;
   opacity: 0.82;
 }
 .tabs-top button.on .tab-health-count {
   opacity: 0.9;
+}
+.tab-health-fail {
+  color: #dc2626;
+  font-weight: 600;
+}
+.tabs-top button.on .tab-health-fail {
+  color: #fca5a5;
 }
 </style>

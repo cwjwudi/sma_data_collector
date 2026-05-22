@@ -124,7 +124,7 @@ powershell -ExecutionPolicy Bypass -File scripts/build-backend-exe.ps1
 
 - **NSIS**：`SD SMA Report Editor-Setup-<version>-x64.exe` — 设置中可卸载
 - **便携版**：`SD SMA Report Editor-Portable-<version>-x64.exe`
-- 用户数据：`%APPDATA%\sd-sma-report-editor\`（卸载安装版时会删除；迁移请先导出配置包）
+- 用户数据：`%APPDATA%\sd-sma-report-editor\`（**主动卸载**时删除；应用内升级应保留；迁移请先导出配置包）
 
 ### macOS
 

@@ -1,6 +1,6 @@
 {
   "name": "sd-sma-report-editor",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "description": "Report Editor — 报表编辑器（Electron + FastAPI）",
   "author": "B&R Team",
   "private": true,
@@ -27,24 +27,24 @@
     "migrate:legacy-release:win": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/migrate-legacy-release.ps1",
     "clean:legacy-release": "bash scripts/clean-legacy-release.sh",
     "clean:legacy-release:win": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/clean-legacy-release.ps1",
-    "clean:release:mac": "bash scripts/clean-release.sh ../../packaging/mac/output",
-    "clean:release": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/clean-release.ps1 ..\\..\\packaging\\windows\\output",
-    "clean:release:alt": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/clean-release.ps1 ..\\..\\packaging\\windows\\output-alt",
+    "clean:release:mac": "bash scripts/clean-release.sh ../packaging/mac/output",
+    "clean:release": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/clean-release.ps1 ..\\packaging\\windows\\output",
+    "clean:release:alt": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/clean-release.ps1 ..\\packaging\\windows\\output-alt",
     "clean:eb-cache": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/clean-electron-builder-cache.ps1",
-    "dist": "npm run build && electron-builder --win --config.directories.output=../../packaging/windows/output",
-    "dist:alt": "npm run build && electron-builder --win --config.directories.output=../../packaging/windows/output-alt",
+    "dist": "npm run build && electron-builder --win --config.directories.output=../packaging/windows/output",
+    "dist:alt": "npm run build && electron-builder --win --config.directories.output=../packaging/windows/output-alt",
     "dist:cn": "set ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/&& npm run dist",
-    "dist:cn:alt": "set ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/&& npm run build && electron-builder --win --config.directories.output=../../packaging/windows/output-alt",
-    "dist:cn:portable": "set ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/&& npm run build && electron-builder --win portable --config.directories.output=../../packaging/windows/output-alt",
+    "dist:cn:alt": "set ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/&& npm run build && electron-builder --win --config.directories.output=../packaging/windows/output-alt",
+    "dist:cn:portable": "set ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/&& npm run build && electron-builder --win portable --config.directories.output=../packaging/windows/output-alt",
     "dist:cn:fresh": "npm run clean:release && set ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/&& npm run dist",
     "dist:win": "npm run build:backend && npm run dist",
     "dist:win:cn": "set ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/&& npm run dist:win",
-    "dist:win:cn:alt": "npm run build:backend && set ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/&& npm run build && electron-builder --win --config.directories.output=../../packaging/windows/output-alt",
+    "dist:win:cn:alt": "npm run build:backend && set ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/&& npm run build && electron-builder --win --config.directories.output=../packaging/windows/output-alt",
     "dist:win:cn:fresh": "npm run clean:release && set ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/&& npm run dist:win",
-    "dist:win:cn:installer": "npm run build:backend && set ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/&& npm run build && electron-builder --win nsis --config.directories.output=../../packaging/windows/output",
-    "dist:mac": "npm run build && electron-builder --mac dmg --config.directories.output=../../packaging/mac/output",
-    "dist:mac:dmg": "npm run build && electron-builder --mac dmg --config.directories.output=../../packaging/mac/output",
-    "dist:mac:installer": "npm run build:backend:mac && npm run build && electron-builder --mac dmg --config.directories.output=../../packaging/mac/output",
+    "dist:win:cn:installer": "npm run build:backend && set ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/&& npm run build && electron-builder --win nsis --config.directories.output=../packaging/windows/output",
+    "dist:mac": "npm run build && electron-builder --mac dmg --config.directories.output=../packaging/mac/output",
+    "dist:mac:dmg": "npm run build && electron-builder --mac dmg --config.directories.output=../packaging/mac/output",
+    "dist:mac:installer": "npm run build:backend:mac && npm run build && electron-builder --mac dmg --config.directories.output=../packaging/mac/output",
     "generate:update-manifest": "node ../packaging/scripts/generate-update-manifest.mjs",
     "bump:version": "node ../packaging/scripts/bump-version.mjs"
   },
@@ -59,7 +59,7 @@
       "type": "commonjs"
     },
     "directories": {
-      "output": "../../packaging/windows/output",
+      "output": "../packaging/windows/output",
       "buildResources": "build"
     },
     "files": [
@@ -109,7 +109,7 @@
       "uninstallDisplayName": "报表编辑器",
       "menuCategory": "B&R Team",
       "runAfterFinish": true,
-      "deleteAppDataOnUninstall": true,
+      "deleteAppDataOnUninstall": false,
       "displayLanguageSelector": false,
       "installerLanguages": [
         "zh_CN"

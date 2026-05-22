@@ -329,6 +329,49 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
     return path.join(app.getPath('temp'), 'report-editor-updates')
   }
 
+  /** 启动时清理 temp 下历史更新安装包（不影响进行中的下载会话） */
+  function cleanupStaleUpdateArtifacts() {
+    if (!app.isPackaged) return { removed: 0 }
+    const dir = getUpdateDir()
+    if (!fs.existsSync(dir)) return { removed: 0 }
+    let removed = 0
+    for (const name of fs.readdirSync(dir)) {
+      const lower = name.toLowerCase()
+      if (!/\.(exe|dmg|msi|zip)$/.test(lower)) continue
+      const fp = path.join(dir, name)
+      if (downloadedPath && path.resolve(fp) === path.resolve(downloadedPath)) continue
+      if (partialDest && path.resolve(fp) === path.resolve(partialDest)) continue
+      try {
+        fs.unlinkSync(fp)
+        removed += 1
+      } catch {
+        /* 安装程序可能仍占用文件，下次启动再试 */
+      }
+    }
+    return { removed }
+  }
+
+  function runStartupMaintenance() {
+    if (!app.isPackaged) return
+    const settings = readSettings(app)
+    const pending = typeof settings.pendingUpdateArtifactCleanup === 'string'
+      ? settings.pendingUpdateArtifactCleanup.trim()
+      : ''
+    if (pending && fs.existsSync(pending)) {
+      try {
+        fs.unlinkSync(pending)
+      } catch {
+        /* 仍被占用则下次启动再试 */
+      }
+    }
+    if (pending) {
+      writeSettings(app, { pendingUpdateArtifactCleanup: '' })
+    }
+    cleanupStaleUpdateArtifacts()
+  }
+
+  runStartupMaintenance()
+
   function clearPartialDownload() {
     if (partialDest && partialDest !== downloadedPath && fs.existsSync(partialDest)) {
       try {
@@ -385,6 +428,8 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
   }
 
   return {
+    cleanupStaleUpdateArtifacts,
+
     getConfig() {
       const settings = readSettings(app)
       return {
@@ -753,6 +798,13 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
       const openAfterUpgrade =
         process.platform === 'darwin' &&
         Boolean(options.openAfterUpgrade ?? readSettings(app).macOpenAfterUpgrade !== false)
+
+      /** 标记下次启动可清理的安装包（安装程序可能仍占用当前文件） */
+      try {
+        writeSettings(app, { pendingUpdateArtifactCleanup: filePath })
+      } catch {
+        /* ignore */
+      }
 
       try {
         if (process.platform === 'win32' && (ext === '.exe' || ext === '.msi')) {

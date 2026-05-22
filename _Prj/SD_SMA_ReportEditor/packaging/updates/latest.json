@@ -1,17 +1,17 @@
 {
-  "version": "0.1.10",
-  "releasedAt": "2026-05-22T10:04:37.803Z",
-  "notes": "Report Editor 0.1.10\n\n- PDF 导出：失败时显示可读错误与操作建议\n- 手动导出前检查模版用到的数据库 / OPC UA 连接\n- PDF 渲染前检测绑定填充错误，避免静默导出空白或占位错误\n- 自动导出失败时全局 Toast 提示，并写入触发历史\n- 导出结果 OPC UA 写回 PLC：可绑定状态/信息/路径节点，供 PLC 读取导出结果",
+  "version": "0.1.11",
+  "releasedAt": "2026-05-22T11:04:38.826Z",
+  "notes": "Report Editor 0.1.11\n\n- 修复 Windows 应用内升级误删用户配置（DB / OPC UA / 模版）\n- 设置页展示用户数据目录路径\n- 升级前建议导出配置备份；启动时清理 temp 更新下载目录\n- Mac/Win 打包输出路径修正\n- 数据源 Tab 连接状态灯与异常计数（M12 小切片）",
   "platforms": {
+    "darwin-arm64": {
+      "url": "Report Editor-0.1.11-arm64.dmg",
+      "sha256": "c44c7622543af8a1a701f824de1d5b06bac632e8e853cc12d5eda17c852501fa",
+      "size": 176842650
+    },
     "win32-x64": {
-      "url": "Report Editor-Setup-0.1.10-x64.exe",
+      "url": "Report Editor-Setup-0.1.11-x64.exe",
       "sha256": "",
       "size": 0
-    },
-    "darwin-arm64": {
-      "url": "Report Editor-0.1.10-arm64.dmg",
-      "sha256": "692617d7785e1f9da1e0b482bd3211c4f5fdddd7a1f644f30636c1e9d82f9093",
-      "size": 176839589
     }
   }
 }
