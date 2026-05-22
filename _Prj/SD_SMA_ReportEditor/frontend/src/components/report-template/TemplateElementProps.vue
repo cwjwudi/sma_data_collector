@@ -275,8 +275,11 @@
                 :max="tplTableColPercentMax"
                 step="1"
                 class="lpep-inp lpep-table-col-w-inp"
-                :value="tplTableColPercentDisplay(ci)"
-                @change="onTplTableColPercentChange(ci, $event)"
+                :value="tplColPercentInput.inputValue(ci)"
+                @focus="tplColPercentInput.onFocus(ci)"
+                @input="tplColPercentInput.onInput($event)"
+                @blur="tplColPercentInput.onBlur()"
+                @change="tplColPercentInput.onChange(ci, $event, commitTplTableColPercents)"
               />
             </label>
           </div>
@@ -441,7 +444,6 @@ import { clearGridCellBindings, gridHasNonNoneBinding } from "@/lib/report-templ
 import { DATE_FORMAT_PRESETS } from "@/lib/report-template/layout-zone-element";
 import {
   REPORT_TEMPLATE_TABLE_NODE_PADDING_PX,
-  adjustIntegerColumnPercentsAfterEdit,
   clampTableRowHeightPx,
   formatMetricPx,
   integerColumnPercentsFromInnerWidthsPx,
@@ -452,6 +454,7 @@ import {
   TABLE_ROW_HEIGHT_MAX_PX,
   TABLE_ROW_HEIGHT_MIN_PX,
 } from "@/lib/report-template/table-cell-metrics";
+import { useTableColPercentInput } from "@/composables/useTableColPercentInput";
 import type { TableSqlFillConfig } from "@/lib/report-template/table-sql-fill";
 import {
   defaultTableSqlFillConfig,
@@ -663,16 +666,11 @@ const tplTableColPercentMax = computed(() => {
   return maxTableColumnPercentForEdit(props.el.tableCols ?? 4);
 });
 
-function tplTableColPercentDisplay(ci: number): number {
-  return tplTableColPercents.value[ci] ?? TABLE_COLUMN_WIDTH_PERCENT_MIN;
-}
+const tplColPercentInput = useTableColPercentInput(() => tplTableColPercents.value);
 
-function onTplTableColPercentChange(ci: number, ev: Event) {
+function commitTplTableColPercents(next: number[]) {
   if (props.el.type !== "table") return;
   ensureTableGrid(props.el);
-  const raw = (ev.target as HTMLInputElement).value;
-  const prev = tplTableColPercents.value.slice();
-  const next = adjustIntegerColumnPercentsAfterEdit(prev, ci, raw);
   props.el.tableColWidthsPx = next.slice();
   ensureTableGrid(props.el);
   clampTableElementOuterSize(props.el);

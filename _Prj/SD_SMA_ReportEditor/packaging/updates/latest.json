@@ -1,8 +1,13 @@
 {
   "version": "0.1.4",
-  "releasedAt": "2026-05-21T11:49:03.299Z",
+  "releasedAt": "2026-05-21T12:02:01.733Z",
   "notes": "Report Editor 0.1.4\n\n- 版式云端同步：登录 Portal 上传/下载版式，br/admin 可下载默认版式\n- 软件更新界面文案优化\n- Windows 打包与安装体验改进",
   "platforms": {
+    "win32-x64": {
+      "url": "Report Editor-Setup-0.1.4-x64.exe",
+      "sha256": "140acfc625ed69a7a99457cc5974eade1be73f6e81f547485072094a75237c3a",
+      "size": 143096555
+    },
     "darwin-arm64": {
       "url": "Report Editor-0.1.4-arm64.dmg",
       "sha256": "a65f53ba29d10c8cc05e0362ee1aa474a1ad83e8b19d424379f2782850f5617d",

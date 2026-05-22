@@ -431,8 +431,11 @@
                     :max="hzTableColPercentMax"
                     step="1"
                     class="hz-inp hz-col-w-inp"
-                    :value="hzTableColPercentDisplay(ci)"
-                    @change="onHzTableColPercentChange(ci, $event)"
+                    :value="hzColPercentInput.inputValue(ci)"
+                    @focus="hzColPercentInput.onFocus(ci)"
+                    @input="hzColPercentInput.onInput($event)"
+                    @blur="hzColPercentInput.onBlur()"
+                    @change="hzColPercentInput.onChange(ci, $event, commitHzTableColPercents)"
                   />
                 </label>
               </div>
@@ -576,7 +579,6 @@ import {
 } from "@/lib/report-template/layout-snap-guides";
 import {
   REPORT_ZONE_TABLE_NODE_PADDING_PX,
-  adjustIntegerColumnPercentsAfterEdit,
   applyTableColumnResizeDeltaPx,
   clampTableRowHeightPx,
   formatMetricPx,
@@ -588,6 +590,7 @@ import {
   TABLE_ROW_HEIGHT_MAX_PX,
   TABLE_ROW_HEIGHT_MIN_PX,
 } from "@/lib/report-template/table-cell-metrics";
+import { useTableColPercentInput } from "@/composables/useTableColPercentInput";
 import { metricsForSheet, type EditorSheet } from "@/lib/report-template/editor-sheet";
 import type { ReportTemplate } from "@/lib/report-template/model";
 import { looksLikeImageFile, pickFirstImageFileFromDataTransfer, readImageFileAsDataUrl } from "@/lib/report-template/read-image-file";
@@ -871,6 +874,17 @@ const hzTableColPercentMax = computed(() => {
   return maxTableColumnPercentForEdit(s.tableCols ?? 4);
 });
 
+const hzColPercentInput = useTableColPercentInput(() => hzTableColPercents.value);
+
+function commitHzTableColPercents(next: number[]) {
+  const s = sel.value;
+  if (!s || s.type !== "table") return;
+  ensureZoneTableGrid(s);
+  s.tableColWidthsPx = next.slice();
+  ensureZoneTableGrid(s);
+  clampZoneTableOuterSize(s);
+}
+
 const hzTableRowHeightModel = computed({
   get(): number {
     const s = sel.value;
@@ -913,22 +927,6 @@ function hzLayoutTableRowTrStyle(el: LayoutZoneElement): Record<string, string> 
 function hzZoneTableColInnerWidthsPx(el: LayoutZoneElement): number[] {
   if (el.type !== "table") return [];
   return zoneTableColumnInnerWidthsPx(el);
-}
-
-function hzTableColPercentDisplay(ci: number): number {
-  return hzTableColPercents.value[ci] ?? TABLE_COLUMN_WIDTH_PERCENT_MIN;
-}
-
-function onHzTableColPercentChange(ci: number, ev: Event) {
-  const s = sel.value;
-  if (!s || s.type !== "table") return;
-  ensureZoneTableGrid(s);
-  const raw = (ev.target as HTMLInputElement).value;
-  const prev = hzTableColPercents.value.slice();
-  const next = adjustIntegerColumnPercentsAfterEdit(prev, ci, raw);
-  s.tableColWidthsPx = next.slice();
-  ensureZoneTableGrid(s);
-  clampZoneTableOuterSize(s);
 }
 
 function hzFormatSqlFillTableCell(el: LayoutZoneElement, ri: number, ci: number): string {

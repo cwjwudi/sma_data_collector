@@ -282,8 +282,11 @@
                 :max="zoneTableColPercentMax"
                 step="1"
                 class="lpep-inp lpep-table-col-w-inp"
-                :value="zoneTableColPercentDisplay(ci)"
-                @change="onZoneTableColPercentChange(ci, $event)"
+                :value="zoneColPercentInput.inputValue(ci)"
+                @focus="zoneColPercentInput.onFocus(ci)"
+                @input="zoneColPercentInput.onInput($event)"
+                @blur="zoneColPercentInput.onBlur()"
+                @change="zoneColPercentInput.onChange(ci, $event, commitZoneTableColPercents)"
               />
             </label>
           </div>
@@ -440,7 +443,6 @@ import {
 } from "@/lib/report-template/template-editor-context";
 import {
   REPORT_ZONE_TABLE_NODE_PADDING_PX,
-  adjustIntegerColumnPercentsAfterEdit,
   clampTableRowHeightPx,
   formatMetricPx,
   integerColumnPercentsFromInnerWidthsPx,
@@ -451,6 +453,7 @@ import {
   TABLE_ROW_HEIGHT_MAX_PX,
   TABLE_ROW_HEIGHT_MIN_PX,
 } from "@/lib/report-template/table-cell-metrics";
+import { useTableColPercentInput } from "@/composables/useTableColPercentInput";
 import type { TableSqlFillConfig } from "@/lib/report-template/table-sql-fill";
 import {
   defaultTableSqlFillConfig,
@@ -637,17 +640,12 @@ const zoneTableColPercentMax = computed(() => {
   return maxTableColumnPercentForEdit(el.tableCols ?? 4);
 });
 
-function zoneTableColPercentDisplay(ci: number): number {
-  return zoneTableColPercents.value[ci] ?? TABLE_COLUMN_WIDTH_PERCENT_MIN;
-}
+const zoneColPercentInput = useTableColPercentInput(() => zoneTableColPercents.value);
 
-function onZoneTableColPercentChange(ci: number, ev: Event) {
+function commitZoneTableColPercents(next: number[]) {
   const el = props.el;
   if (!el || el.type !== "table") return;
   ensureZoneTableGrid(el);
-  const raw = (ev.target as HTMLInputElement).value;
-  const prev = zoneTableColPercents.value.slice();
-  const next = adjustIntegerColumnPercentsAfterEdit(prev, ci, raw);
   el.tableColWidthsPx = next.slice();
   ensureZoneTableGrid(el);
   clampZoneTableOuterSize(el);
