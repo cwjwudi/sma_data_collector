@@ -1,8 +1,13 @@
 {
   "version": "0.1.6",
-  "releasedAt": "2026-05-22T06:45:12.943Z",
+  "releasedAt": "2026-05-22T07:06:37.444Z",
   "notes": "Report Editor 0.1.6\n\n- 模版与版式云端同步（下载/上传同时包含模版与版式）\n- 启动自动检查更新，有新版本时弹窗提示\n- 设置入口显示更新红点\n- 更新下载支持暂停，切换页面不中断下载",
   "platforms": {
+    "win32-x64": {
+      "url": "Report Editor-Setup-0.1.6-x64.exe",
+      "sha256": "7121fb2863dcb9a1ae8daf9939c0985f20eee9851f99b8f62b9562ef4c81cce3",
+      "size": 143097715
+    },
     "darwin-arm64": {
       "url": "Report Editor-0.1.6-arm64.dmg",
       "sha256": "66fdc394bf439a5036ab9299baa766bdcd3bbc429741777c4e1581b773fb479f",
