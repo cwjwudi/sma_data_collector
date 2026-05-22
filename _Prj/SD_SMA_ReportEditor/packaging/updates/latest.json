@@ -1,8 +1,13 @@
 {
   "version": "0.1.12",
-  "releasedAt": "2026-05-22T12:39:07.911Z",
+  "releasedAt": "2026-05-22T12:53:19.896Z",
   "notes": "Report Editor 0.1.12\n\n- 连接 Tab 悬停显示最后一次探活/测试错误与时间\n- 设置 → 连接定时探活（默认关，间隔可配）\n- 生成报表 → 测试写回 PLC（不导 PDF）\n- 导出写回失败 Toast + 状态摘要；手动导出前按已绑定项校验\n- 设置页配置备份说明加固",
   "platforms": {
+    "win32-x64": {
+      "url": "Report Editor-Setup-0.1.12-x64.exe",
+      "sha256": "b2f420c88e67ab7497a4faa89796a20b575e5f08d4796f2e24d6302389d45283",
+      "size": 143118849
+    },
     "darwin-arm64": {
       "url": "Report Editor-0.1.12-arm64.dmg",
       "sha256": "284a70405fcd6a18088e186b6569a7dde46cae3e7f11b021a506a57c0186b382",
