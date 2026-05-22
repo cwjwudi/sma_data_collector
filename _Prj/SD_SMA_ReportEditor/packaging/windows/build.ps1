@@ -1,7 +1,7 @@
 # Build SD SMA Report Editor Windows NSIS installer (Setup.exe).
 # ASCII-only for Windows PowerShell 5.1 compatibility.
 #
-# Output: packaging/windows/output/SD SMA Report Editor-Setup-<version>-x64.exe
+# Output: packaging/windows/output/Report Editor-Setup-{version}-x64.exe
 
 [CmdletBinding()]
 param(
@@ -68,30 +68,30 @@ function Invoke-Npm([string[]]$NpmArgs) {
   }
 }
 
-function Invoke-NpmCi() {
-  $nodeMajor = Get-NodeMajorVersion
-  $args = @('ci', '--no-audit', '--no-fund')
-  # package.json engines 为 >=20 <24；Node 24+ 默认 npm ci 会 EBADENGINE 退出
-  if ($nodeMajor -ge 24) {
-    Write-WarnLine 'Node.js >=24: npm ci 追加 --ignore-engines（建议打包机使用 22.x LTS）'
-    $args += '--ignore-engines'
-  }
-  Invoke-Npm $args
-}
-
 function Get-NodeMajorVersion {
   $raw = (& node -p 'process.versions.node' 2>$null)
   if (-not $raw) { return 0 }
   return [int](($raw -split '\.')[0])
 }
 
+function Invoke-NpmCi {
+  $nodeMajor = Get-NodeMajorVersion
+  $npmCiArgs = @('ci', '--no-audit', '--no-fund')
+  # package.json engines: node 20-23; npm ci on Node 24+ needs --ignore-engines
+  if ($nodeMajor -ge 24) {
+    Write-WarnLine 'Node.js 24+: npm ci adds --ignore-engines (prefer Node 22 LTS for packaging)'
+    $npmCiArgs += '--ignore-engines'
+  }
+  Invoke-Npm $npmCiArgs
+}
+
 function Invoke-ViteBuild([string]$FrontendDir) {
   $viteJs = Join-Path $FrontendDir 'node_modules\vite\bin\vite.js'
   if (-not (Test-Path -LiteralPath $viteJs)) {
-    throw "Missing $viteJs — run npm ci in frontend first."
+    throw "Missing $viteJs - run npm ci in frontend first."
   }
   $prevNodeOpts = $env:NODE_OPTIONS
-  # 830+ 模块 + 大 chunk；Windows 默认堆内存不足时 vite 会崩溃且只显示 Node.js 版本行
+  # Large Vite graph; raise heap on Windows to avoid silent OOM
   $env:NODE_OPTIONS = '--max-old-space-size=8192'
   try {
     & node $viteJs build
@@ -164,7 +164,7 @@ if (-not $SkipFrontendInstall) {
 $iconPng = Join-Path $Frontend 'build\icon.png'
 $iconIco = Join-Path $Frontend 'build\icon.ico'
 if (-not (Test-Path -LiteralPath $iconPng)) {
-  throw "Missing Windows/macOS icon source: $iconPng (git pull 后应存在；若无则运行 frontend/scripts/make-app-icon.sh)"
+  throw "Missing icon source: $iconPng (run git pull; or frontend/scripts/make-app-icon.sh)"
 }
 
 if (-not $SkipBackendBuild) {
@@ -209,7 +209,7 @@ if ((Test-Path -LiteralPath $iconPng) -and (-not (Test-Path -LiteralPath $iconIc
 }
 
 Write-Step 'electron-builder (NSIS installer only)'
-# 旧版 signAndEditExecutable 可能留下损坏的 winCodeSign 缓存，导致仍尝试解压并报符号链接错误
+# Stale winCodeSign cache can break icon embedding on some Windows setups
 $winCodeSignCache = Join-Path $env:LOCALAPPDATA 'electron-builder\Cache\winCodeSign'
 if (Test-Path -LiteralPath $winCodeSignCache) {
   Write-WarnLine "Removing stale winCodeSign cache: $winCodeSignCache"
@@ -227,13 +227,7 @@ try {
     & $eb '--win', 'nsis', ('--config.directories.output=' + $outConfig)
   }
   if ($LASTEXITCODE -ne 0) {
-    throw @"
-electron-builder failed (exit $LASTEXITCODE).
-常见原因:
-  1. winCodeSign 符号链接: 删除 %LOCALAPPDATA%\electron-builder\Cache\winCodeSign 后重试
-  2. 输出目录被占用: 关闭 Report Editor / 资源管理器中打开的 win-unpacked
-  3. Electron 下载失败: 检查网络或使用默认 npmmirror 镜像
-"@
+    throw "electron-builder failed (exit $LASTEXITCODE). See packaging/windows/README.md (winCodeSign, output lock, mirror)."
   }
 }
 finally {
@@ -251,8 +245,8 @@ if ($setup) {
   Write-Host ''
   Write-Host 'Deliver this Setup.exe to end users (Windows 10/11 x64).' -ForegroundColor White
   Write-Host 'Install: double-click Setup, choose directory, complete wizard.' -ForegroundColor DarkGray
-  Write-Host 'Uninstall: Settings > Apps > Installed apps > "SD SMA Report Editor" > Uninstall' -ForegroundColor DarkGray
-  Write-Host 'Uninstall removes: %APPDATA%\sd-sma-report-editor\' -ForegroundColor DarkGray
+  Write-Host 'Uninstall: Settings - Apps - Installed apps - SD SMA Report Editor' -ForegroundColor DarkGray
+  Write-Host 'Uninstall removes user data under %APPDATA%\sd-sma-report-editor\' -ForegroundColor DarkGray
 }
 else {
   Write-WarnLine "No *-Setup-*-x64.exe under $OutputDir. Check electron-builder log above."
