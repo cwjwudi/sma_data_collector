@@ -139,6 +139,9 @@ class TemplateElement(BaseModel):
     color: str = "#18181b"
     bgColor: str = "transparent"
     fontSize: float = 14
+    fontFamily: str = ""
+    zIndex: int = Field(default=0, ge=0, le=10000)
+    textAutoWrap: bool = False
     imageSrc: str = ""
     alignX: AlignAxis = "start"
     alignY: AlignAxis = "center"

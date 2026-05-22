@@ -681,7 +681,8 @@ function textAlignForCanvasText(el: TemplateElement): Record<string, string> | u
     return undefined;
   const ta =
     el.alignX === "center" ? "center" : el.alignX === "end" ? "right" : "left";
-  return { textAlign: ta };
+  const wrap = getZoneTextWrapStyle(el);
+  return wrap ? { textAlign: ta, ...wrap } : { textAlign: ta };
 }
 
 function signatureStackJustify(el: TemplateElement): Record<string, string> | undefined {
@@ -718,6 +719,10 @@ function templateTableInnerStyle(el: TemplateElement): Record<string, string> {
 }
 
 function elCss(el: TemplateElement) {
+  const ff = typeof el.fontFamily === "string" ? el.fontFamily.trim() : "";
+  const explicitZ = normalizeZIndex(el.zIndex ?? 0);
+  const z =
+    explicitZ !== 0 ? explicitZ : Math.min(200000, Math.max(0, Math.floor(el.y)));
   const s: Record<string, string> = {
     position: "absolute",
     left: `${el.x}px`,
@@ -732,10 +737,11 @@ function elCss(el: TemplateElement) {
         : el.bgColor === "transparent"
           ? "transparent"
           : el.bgColor,
+    ...(ff ? { fontFamily: ff } : {}),
   };
-  /** 纵坐标越大（越靠页面下方）叠层越高，避免大块表格盖住上方控件导致无法点选、拖动 */
-  const yz = Math.min(200000, Math.max(0, Math.floor(el.y)));
-  s.zIndex = selId.value === el.id ? String(400000 + yz) : String(yz);
+  s.zIndex = selId.value === el.id ? String(400000 + z) : String(z);
+  const wrap = getZoneTextWrapStyle(el);
+  if (wrap) Object.assign(s, wrap);
   if (el.type === "box") s.border = `1px solid ${el.color}40`;
   return s;
 }

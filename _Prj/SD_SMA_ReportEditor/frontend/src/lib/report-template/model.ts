@@ -36,6 +36,8 @@ import {
   normalizeAlignAxis,
   normalizeImageCaptionPosition,
   normalizeImageRotationDeg,
+  normalizeTextAutoWrap,
+  normalizeZIndex,
   type LayoutZoneElement,
 } from "./layout-zone-element";
 import {
@@ -69,6 +71,12 @@ export interface TemplateElement {
   color: string;
   bgColor: string;
   fontSize: number;
+  /** 字体族，如 "Microsoft YaHei"；空字符串则跟随画布默认 */
+  fontFamily: string;
+  /** 同页叠放顺序，越大越靠前（与版式编辑器一致） */
+  zIndex: number;
+  /** 文本/色块/日期：在框宽内自动换行 */
+  textAutoWrap: boolean;
   /** 图片控件 / 签名笔迹 base64 data URL */
   imageSrc: string;
   bindingKind: BindingKind;
@@ -408,6 +416,9 @@ export function defaultElement(type: TemplateControlType): Omit<TemplateElement,
     color: "#18181b",
     bgColor: "transparent",
     fontSize: 14,
+    fontFamily: "",
+    zIndex: 0,
+    textAutoWrap: false,
     imageSrc: "",
     alignX: "start" as LayoutAlignAxis,
     alignY: "center" as LayoutAlignAxis,
@@ -441,6 +452,7 @@ export function defaultElement(type: TemplateControlType): Omit<TemplateElement,
       text: "",
       ...base,
       bgColor: "#e4e4e7",
+      textAutoWrap: true,
     };
   }
   if (type === "image") {
@@ -556,6 +568,10 @@ export function hydrateTemplateElement(raw: Partial<TemplateElement>): TemplateE
     alignY: normalizeAlignAxis(raw.alignY, d.alignY),
     imageRotationDeg: normalizeImageRotationDeg(raw.imageRotationDeg ?? d.imageRotationDeg),
     imageCaptionPosition: normalizeImageCaptionPosition(raw.imageCaptionPosition, d.imageCaptionPosition),
+    fontFamily:
+      typeof raw.fontFamily === "string" ? raw.fontFamily.trim().slice(0, 240) : d.fontFamily,
+    zIndex: normalizeZIndex(raw.zIndex ?? d.zIndex),
+    textAutoWrap: normalizeTextAutoWrap(raw.textAutoWrap, d.textAutoWrap),
   };
   if (type === "table") {
     const missingCells = raw.tableCells == null || !Array.isArray(raw.tableCells);

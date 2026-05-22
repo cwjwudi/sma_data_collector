@@ -502,6 +502,10 @@ function miniTplElStyle(el: TemplateElement): Record<string, string> {
     if (h2 != null) heightPx = h2;
     if (cont > 0) topPx = 0;
   }
+  const ff = typeof el.fontFamily === "string" ? el.fontFamily.trim() : "";
+  const explicitZ = normalizeZIndex(el.zIndex ?? 0);
+  const z =
+    explicitZ !== 0 ? explicitZ : Math.min(200000, Math.max(0, Math.floor(el.y)));
   const s: Record<string, string> = {
     position: "absolute",
     left: `${el.x}px`,
@@ -518,15 +522,19 @@ function miniTplElStyle(el: TemplateElement): Record<string, string> {
     padding: "2px",
     color: el.color,
     fontSize: `${Math.max(6, el.fontSize * 0.8)}px`,
-    background:
-      el.type === "box"
-        ? el.bgColor !== "transparent"
-          ? el.bgColor
-          : "#e4e4e766"
-        : el.bgColor !== "transparent"
-          ? el.bgColor
-          : "transparent",
+    ...(ff ? { fontFamily: ff } : {}),
+    zIndex: String(z),
   };
+  const wrap = getZoneTextWrapStyle(el);
+  if (wrap) Object.assign(s, wrap);
+  if (el.type === "box") {
+    s.background =
+      el.bgColor !== "transparent" ? el.bgColor : "#e4e4e766";
+  } else if (el.type === "table") {
+    s.background = zoneTableNodeShellBackgroundCss();
+  } else {
+    s.background = el.bgColor !== "transparent" ? el.bgColor : "transparent";
+  }
   if (el.type === "image") {
     s.alignItems = "stretch";
     s.justifyContent = "stretch";
@@ -571,6 +579,7 @@ function miniTplElStyle(el: TemplateElement): Record<string, string> {
 function miniTplTableInnerStyle(el: TemplateElement): Record<string, string> {
   if (el.type !== "table") return {};
   return { background: zoneTableInnerBackgroundCss(el.bgColor) };
+}
 }
 
 function miniTplTableColInnerWidthsPx(el: TemplateElement): number[] {

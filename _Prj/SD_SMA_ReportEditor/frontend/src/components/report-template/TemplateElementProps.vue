@@ -12,13 +12,38 @@
           <span class="lpep-mini-label">快捷取色</span>
           <input :value="textColorHex" type="color" class="lpep-color-native" @input="onTextColorPick($event)" />
         </div>
-        <BoxZoneColorPicker :el="el" />
       </template>
 
       <template v-if="el.type === 'box'">
         <label class="lpep-lab">文字<input v-model.trim="el.text" class="lpep-inp" /></label>
-        <BoxZoneColorPicker :el="el" />
       </template>
+
+      <div v-if="el.type === 'text' || el.type === 'box'" class="lpep-lab lpep-wrap-row">
+        <span class="lpep-wrap-title">换行</span>
+        <div class="lpep-seg" role="group" aria-label="文本换行方式">
+          <button
+            type="button"
+            class="lpep-seg-btn"
+            :class="{ 'lpep-seg-on': !el.textAutoWrap }"
+            :aria-pressed="!el.textAutoWrap"
+            @click="el.textAutoWrap = false"
+          >
+            单行
+          </button>
+          <button
+            type="button"
+            class="lpep-seg-btn"
+            :class="{ 'lpep-seg-on': el.textAutoWrap }"
+            :aria-pressed="el.textAutoWrap"
+            @click="el.textAutoWrap = true"
+          >
+            自动
+          </button>
+        </div>
+        <p class="lpep-wrap-hint">「自动」表示在框宽内换行，无空格长串也会断行。</p>
+      </div>
+
+      <BoxZoneColorPicker :el="el" />
 
       <template v-if="el.type === 'date'">
         <label class="lpep-lab"
@@ -48,23 +73,30 @@
           <span class="lpep-mini-label">快捷取色</span>
           <input :value="textColorHex" type="color" class="lpep-color-native" @input="onTextColorPick($event)" />
         </div>
-      </template>
-
-      <template v-if="el.type === 'text' || el.type === 'box' || el.type === 'date'">
-        <label class="lpep-lab"
-          >水平位置<select v-model="el.alignX" class="lpep-inp">
-            <option value="start">左</option>
-            <option value="center">中</option>
-            <option value="end">右</option>
-          </select></label
-        >
-        <label class="lpep-lab"
-          >垂直位置<select v-model="el.alignY" class="lpep-inp">
-            <option value="start">上</option>
-            <option value="center">中</option>
-            <option value="end">下</option>
-          </select></label
-        >
+        <div class="lpep-lab lpep-wrap-row">
+          <span class="lpep-wrap-title">换行</span>
+          <div class="lpep-seg" role="group" aria-label="日期文本换行方式">
+            <button
+              type="button"
+              class="lpep-seg-btn"
+              :class="{ 'lpep-seg-on': !el.textAutoWrap }"
+              :aria-pressed="!el.textAutoWrap"
+              @click="el.textAutoWrap = false"
+            >
+              单行
+            </button>
+            <button
+              type="button"
+              class="lpep-seg-btn"
+              :class="{ 'lpep-seg-on': el.textAutoWrap }"
+              :aria-pressed="el.textAutoWrap"
+              @click="el.textAutoWrap = true"
+            >
+              自动
+            </button>
+          </div>
+          <p class="lpep-wrap-hint">「自动」表示在框宽内换行，无空格长串也会断行。</p>
+        </div>
       </template>
 
       <template v-if="el.type === 'image'">
@@ -119,7 +151,6 @@
         <span class="lpep-img-hint"
           >本地图片将转为 data URL 与模版一并保存。九宫格对齐控制图片在占位格内的位置。</span
         >
-        <BoxZoneColorPicker :el="el" />
       </template>
 
       <template v-if="el.type === 'parameter'">
@@ -413,6 +444,34 @@
         </p>
       </template>
 
+      <template v-if="el.type !== 'image'">
+        <label class="lpep-lab"
+          >水平位置<select v-model="el.alignX" class="lpep-inp">
+            <option value="start">左</option>
+            <option value="center">中</option>
+            <option value="end">右</option>
+          </select></label
+        >
+        <label class="lpep-lab"
+          >垂直位置<select v-model="el.alignY" class="lpep-inp">
+            <option value="start">上</option>
+            <option value="center">中</option>
+            <option value="end">下</option>
+          </select></label
+        >
+      </template>
+
+      <label class="lpep-lab"
+        >叠放顺序（越大越靠前）<input
+          v-model.number="el.zIndex"
+          type="number"
+          min="0"
+          max="10000"
+          step="1"
+          class="lpep-inp"
+      /></label>
+      <LayoutFontFamilyField v-model="el.fontFamily" />
+
       <label class="lpep-lab"
         >字号<input v-model.number="el.fontSize" type="number" min="8" max="72" class="lpep-inp"
       /></label>
@@ -432,6 +491,7 @@
 import OpcUaNodePickerModal from "@/features/datasource/opcua/OpcUaNodePickerModal.vue";
 import TemplateTableSqlFillFields from "@/components/report-template/TemplateTableSqlFillFields.vue";
 import BoxZoneColorPicker from "@/components/report-template/BoxZoneColorPicker.vue";
+import LayoutFontFamilyField from "@/components/report-template/LayoutFontFamilyField.vue";
 import { readImageFileAsDataUrl } from "@/lib/report-template/read-image-file";
 import type { SignatureDisplayMode, TemplateControlType, TemplateElement } from "@/lib/report-template/model";
 import {
@@ -839,6 +899,49 @@ async function onLocalImageChosen(ev: Event) {
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+.lpep-wrap-row {
+  gap: 6px;
+}
+.lpep-wrap-title {
+  font-size: 12px;
+  color: #52525b;
+}
+.lpep-seg {
+  display: inline-flex;
+  align-self: flex-start;
+  border-radius: 8px;
+  border: 1px solid #e4e4e7;
+  overflow: hidden;
+  background: #fafafa;
+}
+.lpep-seg-btn {
+  margin: 0;
+  padding: 6px 14px;
+  font-size: 12px;
+  border: none;
+  background: transparent;
+  color: #52525b;
+  cursor: pointer;
+  line-height: 1.2;
+}
+.lpep-seg-btn + .lpep-seg-btn {
+  box-shadow: inset 1px 0 0 #e4e4e7;
+}
+.lpep-seg-btn:hover:not(.lpep-seg-on) {
+  background: rgb(244 244 245 / 0.85);
+  color: #18181b;
+}
+.lpep-seg-on {
+  background: #eef2ff;
+  color: #3730a3;
+  font-weight: 600;
+}
+.lpep-wrap-hint {
+  margin: 0;
+  font-size: 11px;
+  color: #a1a1aa;
+  line-height: 1.35;
 }
 .lpep-inp {
   width: 100%;

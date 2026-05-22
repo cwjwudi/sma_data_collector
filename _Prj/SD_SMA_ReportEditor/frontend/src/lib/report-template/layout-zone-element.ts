@@ -160,7 +160,10 @@ export function normalizeTextAutoWrap(v: unknown, fallback: boolean): boolean {
 }
 
 /** 文本 / 色块 / 日期 / 数据参数在画布与导出 DOM 上的 white-space 等（其它类型返回 null） */
-export function getZoneTextWrapStyle(el: LayoutZoneElement): Record<string, string> | null {
+export function getZoneTextWrapStyle(el: {
+  type: string;
+  textAutoWrap: boolean;
+}): Record<string, string> | null {
   if (el.type !== "text" && el.type !== "box" && el.type !== "date" && el.type !== "parameter") return null;
   if (el.textAutoWrap) {
     return {
