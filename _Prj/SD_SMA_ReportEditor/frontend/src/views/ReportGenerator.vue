@@ -67,6 +67,11 @@
             <option v-for="s in opcServers" :key="s.id" :value="s.id">{{ s.name || s.id }}</option>
           </select>
         </div>
+        <p v-if="prefs.exportResultOpc.enabled && !opcServers.length" class="rg-mini rg-mini--indent rg-mini--warn">
+          暂无已保存的 OPC UA 连接。请先到
+          <router-link :to="{ name: 'DataSourceConfig', query: { tab: 'opc' } }">数据源配置 → OPC UA</router-link>
+          添加并保存连接。
+        </p>
 
         <div class="rg-row rg-row--in-panel">
           <label class="rg-lbl" for="rg-export-opc-status">状态节点（Boolean / Int）</label>
@@ -498,6 +503,7 @@
       :title="opcPickTitle"
       :lead="opcPickLead"
       :initial-server-id="opcPickInitialServerId"
+      :external-servers="opcServers"
       @confirm="onRgOpcPickConfirm"
     />
   </div>
@@ -618,10 +624,11 @@ const opcPickModalKey = computed(() => {
 
 const opcPickHideSearch = computed(() => {
   const t = opcPickTarget.value;
+  if (t === "feedbackStatus") return false;
   return (
     t === "exportDir" ||
     t === "fileName" ||
-    isFeedbackPickTarget(t) ||
+    isFeedbackStringPickTarget(t) ||
     Boolean(parseRgTriggerPickTarget(t))
   );
 });
@@ -655,7 +662,7 @@ const opcPickLead = computed(() => {
     return "选择 String 类型变量作为导出文件名基名（不含 .pdf）；绑定树仅显示 String。是否追加随机哈希可在确认后于面板按钮切换。";
   }
   if (opcPickTarget.value === "feedbackStatus") {
-    return "选择 Boolean 或 Int 类型变量；导出成功写入 true/1，失败写入 false/0。";
+    return "选择 Boolean 或 Int 类型变量；导出成功写入 true/1，失败写入 false/0。可用搜索或展开树浏览。";
   }
   if (opcPickTarget.value === "feedbackMessage") {
     return "选择 String 类型变量；成功时写入「OK: 文件名」，失败时写入错误摘要。";
@@ -924,7 +931,17 @@ function setFileNameTab(source: AutoFileNameSource) {
   prefs.value.autoFileNameSource = source;
 }
 
-function openRgOpcPick(target: RgOpcPickTarget) {
+function ensureExportResultOpcServerSelected(): void {
+  if (prefs.value.exportResultOpc.serverId.trim()) return;
+  const first = opcServers.value[0]?.id?.trim();
+  if (first) prefs.value.exportResultOpc.serverId = first;
+}
+
+async function openRgOpcPick(target: RgOpcPickTarget) {
+  await loadOpcServers();
+  if (isFeedbackPickTarget(target)) {
+    ensureExportResultOpcServerSelected();
+  }
   opcPickTarget.value = target;
   activeOpcDataTypeFilter.value =
     target === "exportDir" || target === "fileName" || isFeedbackStringPickTarget(target)
@@ -946,7 +963,7 @@ async function onRgOpcPickConfirm(payload: { serverId: string; nodeId: string })
   const sid = payload.serverId.trim();
   const nid = payload.nodeId.trim();
   const target = opcPickTarget.value;
-  if (!nid) {
+  if (!nid || !target) {
     resetRgOpcPickSession();
     return;
   }
@@ -954,15 +971,22 @@ async function onRgOpcPickConfirm(payload: { serverId: string; nodeId: string })
   const triggerBindId = parseRgTriggerPickTarget(target);
   if (triggerBindId) {
     const b = findAutoTriggerBinding(triggerBindId);
-    if (!b) return;
+    if (!b) {
+      resetRgOpcPickSession();
+      return;
+    }
     if (sid) b.serverId = sid;
     b.nodeId = nid;
     getBindingRuntime(triggerBindId).poll = createOpcTriggerPollState();
+    resetRgOpcPickSession();
     return;
   }
 
   if (target === "fileName") {
-    if (!sid) return;
+    if (!sid) {
+      resetRgOpcPickSession();
+      return;
+    }
     const check = await readSavedOpcStringValue(sid, nid);
     if (!check.ok) {
       autoStatus.value = `[文件名] ${check.message || "所选节点不是 String 类型"}`;
@@ -970,6 +994,7 @@ async function onRgOpcPickConfirm(payload: { serverId: string; nodeId: string })
     }
     prefs.value.autoFileNameOpcServerId = sid;
     prefs.value.autoFileNameOpcNodeId = nid;
+    resetRgOpcPickSession();
     return;
   }
 
@@ -988,7 +1013,10 @@ async function onRgOpcPickConfirm(payload: { serverId: string; nodeId: string })
   }
 
   if (target === "feedbackMessage" || target === "feedbackFilePath") {
-    if (!sid) return;
+    if (!sid) {
+      resetRgOpcPickSession();
+      return;
+    }
     const check = await readSavedOpcStringValue(sid, nid);
     if (!check.ok) {
       autoStatus.value = `[导出反馈] ${check.message || "所选节点不是 String 类型"}`;
@@ -1270,7 +1298,12 @@ function restartPollLoop(): void {
 onMounted(async () => {
   await Promise.all([loadSummaries(), loadOpcServers()]);
   restartPollLoop();
+  window.addEventListener("report-editor-config-imported", onConfigImported);
 });
+
+function onConfigImported() {
+  void loadOpcServers();
+}
 
 watch(
   () => [prefs.value.auto.enabled, electronShell.value],
@@ -1279,6 +1312,7 @@ watch(
 
 onUnmounted(() => {
   if (pollTimer) clearInterval(pollTimer);
+  window.removeEventListener("report-editor-config-imported", onConfigImported);
 });
 </script>
 

@@ -140,6 +140,8 @@ const props = defineProps({
   },
   /** 打开时预选连接 */
   initialServerId: { type: String, default: '' },
+  /** 父组件已加载的连接列表；API 暂不可用时作回退 */
+  externalServers: { type: Array, default: () => [] },
   /** 为 true 时不显示全地址空间搜索（仅树浏览） */
   hideSearch: { type: Boolean, default: false },
 })
@@ -289,6 +291,29 @@ function pickPreferredOpcServerId(prefs, srvs, explicitPreferred) {
   return null
 }
 
+function normalizeServerRow(s) {
+  if (!s || typeof s !== 'object') return null
+  const id = String(s.id || '').trim()
+  if (!id) return null
+  return {
+    id,
+    name: s.name,
+    endpoint_url: s.endpoint_url,
+  }
+}
+
+function mergeServerLists(primary, fallback) {
+  const out = []
+  const seen = new Set()
+  for (const raw of [...(primary || []), ...(fallback || [])]) {
+    const row = normalizeServerRow(raw)
+    if (!row || seen.has(row.id)) continue
+    seen.add(row.id)
+    out.push(row)
+  }
+  return out
+}
+
 async function loadServersWhenOpen() {
   clearTimeout(searchDebounceTimer)
   searchDebounceTimer = null
@@ -314,7 +339,7 @@ async function loadServersWhenOpen() {
       prefs = {}
     }
     const data = await apiFetch('/opcua/servers')
-    servers.value = data.servers || []
+    servers.value = mergeServerLists(data.servers, props.externalServers)
     if (!servers.value.length) {
       return
     }
@@ -323,6 +348,17 @@ async function loadServersWhenOpen() {
     selectedServerId.value = pid || servers.value[0].id
     await refreshRoot()
   } catch (e) {
+    const fallback = mergeServerLists([], props.externalServers)
+    if (fallback.length) {
+      servers.value = fallback
+      const explicit = (props.initialServerId || '').trim()
+      selectedServerId.value =
+        (explicit && fallback.some((s) => s.id === explicit) ? explicit : null) ||
+        fallback[0].id
+      loadErr.value = ''
+      await refreshRoot()
+      return
+    }
     loadErr.value = translateOpcuaMessage(e.message || String(e))
   }
 }
