@@ -17,7 +17,8 @@
       aria-hidden="true"
       @change="onTplBodyImageChosen"
     />
-    <div class="cv-scaler" :style="{ transform: `translate(${panX}px,${panY}px) scale(${viewScale})` }">
+    <div class="cv-embed-slot" :style="embedSlotStyle">
+    <div class="cv-scaler" :style="scalerTransformStyle">
       <div ref="paperRef" class="cv-paper" :style="paperBoxStyle" @pointerdown.capture="onPaperBlank">
         <div v-if="me.hb > 0" class="cv-band hdr" :style="hdrStyle">
           <div class="cv-band-inner">
@@ -213,7 +214,7 @@
                   <TableColumnResizeGutters
                     v-if="selId === el.id && !interactionLocked"
                     :column-widths-px="tplTableColInnerWidthsPx(el)"
-                    :layout-scale="viewScale"
+                    :layout-scale="canvasScale"
                     @resize-delta="(bi, dx) => onTplTableColumnResize(el, bi, dx)"
                   />
                 </div>
@@ -335,6 +336,7 @@
         </div>
       </div>
     </div>
+    </div>
   </div>
 </template>
 
@@ -410,6 +412,9 @@ import {
   TABLE_SQL_FILL_PREVIEW_ROW_LIMIT,
 } from "@/lib/report-template/table-sql-fill-preview";
 
+/** cv-scaler 左右 padding 合计（与样式 padding: 20px 一致） */
+const EMBED_SCALER_PAD = 40;
+
 const HZ = ["nw", "n", "ne", "e", "se", "s", "sw", "w"] as const;
 type H = (typeof HZ)[number];
 
@@ -458,13 +463,72 @@ const selId = defineModel<string | null>("selectedId");
 const cellPickRef = inject(templateTableCellPickKey, null);
 const bindingPreview = inject(reportBindingPreviewKey, null);
 
+const me = computed(() => metricsForSheet(props.tmpl, props.sheet));
+
 const viewportRef = ref<HTMLElement | null>(null);
 const tplImgFileRef = ref<HTMLInputElement | null>(null);
 let tplBodyPendingSid: string | null = null;
 const panX = ref(0);
 const panY = ref(0);
 const viewScale = ref(1);
+/** 嵌入父级滚动时按视口宽度自适应的缩放比 */
+const embedFitScale = ref(1);
 const dragOverRoot = ref(false);
+
+const canvasScale = computed(() =>
+  props.embedInParentScroll ? embedFitScale.value : viewScale.value,
+);
+
+const embedSlotStyle = computed(() => {
+  if (!props.embedInParentScroll) return undefined;
+  const s = embedFitScale.value;
+  const pad = EMBED_SCALER_PAD;
+  return {
+    width: `${me.value.pageW * s + pad}px`,
+    height: `${me.value.pageH * s + pad}px`,
+    marginLeft: "auto",
+    marginRight: "auto",
+  };
+});
+
+const scalerTransformStyle = computed(() => {
+  const s = canvasScale.value;
+  if (props.embedInParentScroll) {
+    return { transform: `scale(${s})`, transformOrigin: "0 0" };
+  }
+  return { transform: `translate(${panX.value}px,${panY.value}px) scale(${s})` };
+});
+
+let embedResizeObserver: ResizeObserver | null = null;
+
+function syncEmbedFitScale() {
+  if (!props.embedInParentScroll) return;
+  const el = viewportRef.value;
+  if (!el) return;
+  const vw = el.clientWidth;
+  if (vw <= 0) return;
+  const contentW = me.value.pageW + EMBED_SCALER_PAD;
+  const next = Math.min(1, Math.max(0.25, (vw - 2) / contentW));
+  if (Math.abs(next - embedFitScale.value) < 0.001) return;
+  embedFitScale.value = +next.toFixed(4);
+}
+
+function bindEmbedResizeObserver() {
+  embedResizeObserver?.disconnect();
+  embedResizeObserver = null;
+  if (!props.embedInParentScroll) return;
+  const el = viewportRef.value;
+  if (!el) return;
+  embedResizeObserver = new ResizeObserver(() => syncEmbedFitScale());
+  embedResizeObserver.observe(el);
+}
+
+function scheduleEmbedFitSync() {
+  void nextTick(() => {
+    syncEmbedFitScale();
+    bindEmbedResizeObserver();
+  });
+}
 
 /** 正文区内拖拽/缩放时的对齐辅助线（页边界、中带中线、与其它控件边缘对齐时显示） */
 const tplSnapGuides = ref<{ v: number[]; h: number[] }>({ v: [], h: [] });
@@ -486,11 +550,21 @@ watch(
     if (v) {
       panX.value = 0;
       panY.value = 0;
+      scheduleEmbedFitSync();
+    } else {
+      embedResizeObserver?.disconnect();
+      embedResizeObserver = null;
     }
   },
+  { immediate: true },
 );
 
-const me = computed(() => metricsForSheet(props.tmpl, props.sheet));
+watch(viewportRef, () => {
+  if (props.embedInParentScroll) scheduleEmbedFitSync();
+});
+
+watch(() => me.value.pageW, () => syncEmbedFitScale());
+
 const snapBands = computed(() => {
   const s = activeLayoutSnapshotForSheet(props.tmpl, props.sheet);
   return { headerBandMm: s.headerBandMm, footerBandMm: s.footerBandMm };
@@ -1152,7 +1226,7 @@ function bindPtr() {
 }
 
 function ptrMove(ev: PointerEvent) {
-  const sc = viewScale.value || 1;
+  const sc = canvasScale.value || 1;
   if (move) {
     const el = list.value.find((x) => x.id === move!.sid);
     if (!el) return;
@@ -1240,7 +1314,10 @@ function ptrUp() {
   window.removeEventListener("pointermove", ptrMove);
 }
 
-onBeforeUnmount(ptrUp);
+onBeforeUnmount(() => {
+  ptrUp();
+  embedResizeObserver?.disconnect();
+});
 
 function onPaperBlank(ev: PointerEvent) {
   if (props.interactionLocked) return;
@@ -1274,7 +1351,7 @@ async function onDrop(e: DragEvent) {
   const layer = viewportRef.value?.querySelector(".el-root");
   if (!layer) return;
   const r = layer.getBoundingClientRect();
-  const sc = viewScale.value || 1;
+  const sc = canvasScale.value || 1;
   const x = Math.round((e.clientX - r.left) / sc - 20);
   const y = Math.round((e.clientY - r.top) / sc - 16);
 
@@ -1312,6 +1389,10 @@ function onWheel(ev: WheelEvent) {
     return;
   }
   if (ev.ctrlKey || ev.metaKey) {
+    if (props.embedInParentScroll) {
+      ev.preventDefault();
+      return;
+    }
     const z = Math.exp(-ev.deltaY * 0.001);
     viewScale.value = Math.min(2.8, Math.max(0.35, +(viewScale.value * z).toFixed(4)));
     return;
@@ -1396,9 +1477,13 @@ async function onTplImageDropFile(ev: DragEvent, el: TemplateElement) {
   touch-action: manipulation;
   box-sizing: border-box;
 }
+.cv-viewport.cv-viewport--embed-scroll .cv-embed-slot {
+  flex-shrink: 0;
+  box-sizing: border-box;
+}
 .cv-viewport.cv-viewport--embed-scroll .cv-scaler {
-  margin-left: auto;
-  margin-right: auto;
+  margin-left: 0;
+  margin-right: 0;
 }
 .cv-viewport.cv-viewport--embed-scroll.cv-viewport--locked {
   overflow: auto;
