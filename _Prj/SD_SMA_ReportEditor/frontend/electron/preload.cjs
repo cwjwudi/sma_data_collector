@@ -42,14 +42,21 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   /** 应用内检查更新 / 下载 / 安装（仅桌面正式包） */
   getAppUpdateConfig: () => ipcRenderer.invoke('app-update-get-config'),
+  getAppUpdateState: () => ipcRenderer.invoke('app-update-get-state'),
   setAppUpdateConfig: (patch) => ipcRenderer.invoke('app-update-set-config', patch || {}),
-  checkAppUpdate: () => ipcRenderer.invoke('app-update-check'),
+  checkAppUpdate: (options) => ipcRenderer.invoke('app-update-check', options || {}),
   downloadAppUpdate: () => ipcRenderer.invoke('app-update-download'),
+  cancelAppUpdateDownload: () => ipcRenderer.invoke('app-update-cancel-download'),
   installAppUpdate: () => ipcRenderer.invoke('app-update-install'),
   onAppUpdateDownloadProgress: (listener) => {
     const fn = (_event, payload) => listener(payload)
     ipcRenderer.on('update-download-progress', fn)
     return () => ipcRenderer.removeListener('update-download-progress', fn)
+  },
+  onAppUpdateCheckResult: (listener) => {
+    const fn = (_event, payload) => listener(payload)
+    ipcRenderer.on('update-check-result', fn)
+    return () => ipcRenderer.removeListener('update-check-result', fn)
   },
 
   /** 模版与版式云端同步（Portal 登录 + 上传/下载） */

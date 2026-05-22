@@ -2,7 +2,7 @@
   <section class="settings-section app-update">
     <h3 class="settings-section__title">软件更新</h3>
     <p class="settings-hint">
-      在线检查是否有新版本。若有更新，可先下载安装包，再点击「一键升级」，按屏幕提示完成安装即可。
+      启动时会自动检查新版本。若有更新，侧边栏「设置」会显示红点提示；也可在此手动检查、下载并安装。
     </p>
 
     <dl class="update-meta">
@@ -47,22 +47,30 @@
       <button
         type="button"
         class="settings-btn settings-btn--primary"
-        :disabled="busy || !isElectron"
+        :disabled="busy || !isElectron || appUpdateDownloading"
         @click="checkUpdate"
       >
         {{ busy && phase === 'check' ? '正在检查…' : '检查更新' }}
       </button>
       <button
-        v-if="checkResult?.status === 'available'"
+        v-if="appUpdateAvailable && !appUpdateDownloadedReady"
         type="button"
         class="settings-btn settings-btn--primary"
-        :disabled="busy || phase === 'download'"
+        :disabled="busy || appUpdateDownloading"
         @click="downloadUpdate"
       >
-        {{ phase === 'download' ? `下载中 ${downloadPercent ?? 0}%` : '下载新版本' }}
+        {{ appUpdateDownloading ? `下载中 ${appUpdateDownloadPercent ?? 0}%` : '下载新版本' }}
       </button>
       <button
-        v-if="downloadedReady"
+        v-if="appUpdateDownloading"
+        type="button"
+        class="settings-btn settings-btn--secondary"
+        @click="pauseDownload"
+      >
+        暂停下载
+      </button>
+      <button
+        v-if="appUpdateDownloadedReady"
         type="button"
         class="settings-btn settings-btn--primary"
         :disabled="busy"
@@ -72,14 +80,15 @@
       </button>
     </div>
 
-    <div v-if="phase === 'download'" class="update-progress" aria-live="polite">
+    <div v-if="appUpdateDownloading" class="update-progress" aria-live="polite">
       <div class="update-progress-track">
         <div
           class="update-progress-bar"
-          :class="{ indeterminate: downloadPercent == null }"
-          :style="downloadPercent != null ? { width: `${downloadPercent}%` } : undefined"
+          :class="{ indeterminate: appUpdateDownloadPercent == null }"
+          :style="appUpdateDownloadPercent != null ? { width: `${appUpdateDownloadPercent}%` } : undefined"
         />
       </div>
+      <p class="update-progress-hint">下载在后台进行，切换页面不会中断。</p>
     </div>
 
     <p
@@ -94,9 +103,9 @@
       {{ msg }}
     </p>
 
-    <div v-if="checkResult?.notes" class="update-notes">
-      <h4 class="update-notes-title">更新说明（{{ checkResult.latestVersion }}）</h4>
-      <pre class="update-notes-body">{{ checkResult.notes }}</pre>
+    <div v-if="appUpdateCheckResult?.notes" class="update-notes">
+      <h4 class="update-notes-title">更新说明（{{ appUpdateCheckResult.latestVersion }}）</h4>
+      <pre class="update-notes-body">{{ appUpdateCheckResult.notes }}</pre>
     </div>
 
     <p v-if="!isElectron" class="settings-hint settings-hint--muted">
@@ -106,17 +115,18 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
-
-type UpdateCheckResult = {
-  ok?: boolean
-  status?: string
-  currentVersion?: string
-  latestVersion?: string
-  message?: string
-  notes?: string
-  releasedAt?: string | null
-}
+import { computed, onMounted, ref } from 'vue'
+import {
+  appUpdateAvailable,
+  appUpdateCheckResult,
+  appUpdateDownloadedReady,
+  appUpdateDownloading,
+  appUpdateDownloadPercent,
+  cancelAppUpdateDownload,
+  checkAppUpdateManual,
+  startAppUpdateDownload,
+  syncAppUpdateState,
+} from './appUpdateState'
 
 const isElectron = computed(() => Boolean(window.electronAPI?.checkAppUpdate))
 
@@ -125,12 +135,6 @@ const PLATFORM_LABELS: Record<string, string> = {
   'darwin-x64': 'macOS（Intel）',
   'win32-x64': 'Windows',
 }
-
-const platformLabel = computed(() => {
-  const key = config.value.platform?.trim()
-  if (!key) return ''
-  return PLATFORM_LABELS[key] || key
-})
 
 const config = ref({
   currentVersion: '',
@@ -144,14 +148,15 @@ const config = ref({
 const baseUrlDraft = ref('')
 const skipTlsDraft = ref(false)
 const busy = ref(false)
-const phase = ref<'idle' | 'check' | 'download' | 'install'>('idle')
+const phase = ref<'idle' | 'check' | 'install'>('idle')
 const msg = ref('')
 const msgTone = ref<'ok' | 'warn' | 'err' | ''>('')
-const checkResult = ref<UpdateCheckResult | null>(null)
-const downloadPercent = ref<number | null>(null)
-const downloadedReady = ref(false)
 
-let unsubProgress: (() => void) | null = null
+const platformLabel = computed(() => {
+  const key = config.value.platform?.trim()
+  if (!key) return ''
+  return PLATFORM_LABELS[key] || key
+})
 
 function setMsg(text: string, tone: 'ok' | 'warn' | 'err' | '' = '') {
   msg.value = text
@@ -182,8 +187,7 @@ async function saveConfig() {
       skipTlsVerify: skipTlsDraft.value,
     })
     setMsg('设置已保存。', 'ok')
-    checkResult.value = null
-    downloadedReady.value = false
+    await syncAppUpdateState()
   } catch (e) {
     setMsg(e instanceof Error ? e.message : String(e), 'err')
   } finally {
@@ -192,17 +196,12 @@ async function saveConfig() {
 }
 
 async function checkUpdate() {
-  const api = window.electronAPI
-  if (!api?.checkAppUpdate) return
   busy.value = true
   phase.value = 'check'
   setMsg('')
-  checkResult.value = null
-  downloadedReady.value = false
-  downloadPercent.value = null
   try {
-    const res = await api.checkAppUpdate()
-    checkResult.value = res
+    const res = await checkAppUpdateManual()
+    if (!res) return
     if (res.status === 'latest') {
       setMsg(res.message || '当前已是最新版本。', 'ok')
     } else if (res.status === 'available') {
@@ -223,28 +222,27 @@ async function checkUpdate() {
 }
 
 async function downloadUpdate() {
-  const api = window.electronAPI
-  if (!api?.downloadAppUpdate) return
-  busy.value = true
-  phase.value = 'download'
-  downloadPercent.value = 0
   setMsg('正在下载安装包…')
   try {
-    const res = await api.downloadAppUpdate()
-    if (!res.ok) {
-      setMsg(res.error || '下载失败', 'err')
-      downloadedReady.value = false
+    const res = await startAppUpdateDownload()
+    if (!res) return
+    if (res.cancelled) {
+      setMsg('下载已暂停。', 'warn')
       return
     }
-    downloadedReady.value = true
-    downloadPercent.value = 100
+    if (!res.ok) {
+      setMsg(res.error || '下载失败', 'err')
+      return
+    }
     setMsg(`下载完成（${res.latestVersion}），可点击「一键升级」。`, 'ok')
   } catch (e) {
     setMsg(e instanceof Error ? e.message : String(e), 'err')
-  } finally {
-    busy.value = false
-    phase.value = 'idle'
   }
+}
+
+async function pauseDownload() {
+  await cancelAppUpdateDownload()
+  setMsg('下载已暂停。', 'warn')
 }
 
 async function installUpdate() {
@@ -272,18 +270,7 @@ async function installUpdate() {
 
 onMounted(() => {
   void loadConfig()
-  const api = window.electronAPI
-  if (api?.onAppUpdateDownloadProgress) {
-    unsubProgress = api.onAppUpdateDownloadProgress((p) => {
-      if (p?.phase === 'progress' && typeof p.percent === 'number') {
-        downloadPercent.value = p.percent
-      }
-    })
-  }
-})
-
-onUnmounted(() => {
-  unsubProgress?.()
+  void syncAppUpdateState()
 })
 </script>
 
@@ -388,6 +375,12 @@ onUnmounted(() => {
 .update-progress-bar.indeterminate {
   width: 40% !important;
   animation: update-indeterminate 1.2s ease-in-out infinite;
+}
+
+.update-progress-hint {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: #6b7280;
 }
 
 @keyframes update-indeterminate {

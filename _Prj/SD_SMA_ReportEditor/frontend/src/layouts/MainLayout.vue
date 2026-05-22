@@ -20,6 +20,12 @@
                 title="存在连接失败的数据库"
                 aria-label="存在连接失败的数据库"
               />
+              <span
+                v-if="item.path === '/settings' && appUpdateAvailable"
+                class="nav-badge"
+                title="有新版本可更新"
+                aria-label="有新版本可更新"
+              />
             </span>
             <span class="nav-label">{{ item.label }}</span>
           </router-link>
@@ -32,6 +38,7 @@
       </main>
     </div>
     <SetupWizard v-model="setupWizardVisible" />
+    <AppUpdatePromptDialog v-if="appUpdateStartupPromptOpen" />
   </div>
 </template>
 
@@ -39,6 +46,14 @@
 import { ref, onMounted, onUnmounted, provide, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import SetupWizard from '@/features/onboarding/SetupWizard.vue'
+import AppUpdatePromptDialog from '@/features/settings/app-update/AppUpdatePromptDialog.vue'
+import {
+  appUpdateAvailable,
+  appUpdateStartupPromptOpen,
+  disposeAppUpdateListeners,
+  initAppUpdateListeners,
+  runAutoUpdateCheck,
+} from '@/features/settings/app-update/appUpdateState'
 import { setupWizardCompleted } from '@/features/onboarding/setupWizardStorage'
 import {
   dbHasFailedConnections,
@@ -84,9 +99,25 @@ watch(
   },
 )
 
+function scheduleAutoUpdateCheck() {
+  window.setTimeout(() => {
+    void runAutoUpdateCheck()
+  }, 1500)
+}
+
 onMounted(() => {
+  initAppUpdateListeners()
   if (!setupWizardCompleted()) {
     setupWizardVisible.value = true
+    watch(
+      setupWizardVisible,
+      (visible) => {
+        if (!visible) scheduleAutoUpdateCheck()
+      },
+      { once: true },
+    )
+  } else {
+    scheduleAutoUpdateCheck()
   }
   startNavDbHealthPolling()
   window.addEventListener('report-editor-config-imported', onConfigImported)
@@ -94,6 +125,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   stopNavDbHealthPolling()
+  disposeAppUpdateListeners()
   window.removeEventListener('report-editor-config-imported', onConfigImported)
 })
 

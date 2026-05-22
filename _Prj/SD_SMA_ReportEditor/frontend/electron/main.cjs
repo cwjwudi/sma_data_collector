@@ -599,9 +599,11 @@ function getLayoutSync() {
 }
 
 ipcMain.handle('app-update-get-config', () => getAppUpdater().getConfig())
+ipcMain.handle('app-update-get-state', () => getAppUpdater().getState())
 ipcMain.handle('app-update-set-config', (_event, patch) => getAppUpdater().setConfig(patch || {}))
-ipcMain.handle('app-update-check', () => getAppUpdater().check())
+ipcMain.handle('app-update-check', (_event, options) => getAppUpdater().check(options || {}))
 ipcMain.handle('app-update-download', () => getAppUpdater().download())
+ipcMain.handle('app-update-cancel-download', () => getAppUpdater().cancelDownload())
 ipcMain.handle('app-update-install', () => getAppUpdater().install())
 
 ipcMain.handle('layout-sync-get-config', () => getLayoutSync().getConfig())

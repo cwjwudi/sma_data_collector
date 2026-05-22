@@ -53,6 +53,21 @@ interface Window {
       skipTlsVerify: boolean;
       packaged: boolean;
     }>;
+    getAppUpdateState: () => Promise<{
+      lastCheck: {
+        ok?: boolean
+        status?: string
+        currentVersion?: string
+        latestVersion?: string
+        message?: string
+        notes?: string
+        releasedAt?: string | null
+      } | null
+      downloading: boolean
+      downloadPercent: number | null
+      downloadedReady: boolean
+      latestVersion: string | null
+    }>
     setAppUpdateConfig: (patch: { baseUrl?: string; skipTlsVerify?: boolean }) => Promise<{
       currentVersion: string;
       platform: string;
@@ -61,7 +76,7 @@ interface Window {
       skipTlsVerify: boolean;
       packaged: boolean;
     }>;
-    checkAppUpdate: () => Promise<{
+    checkAppUpdate: (options?: { silent?: boolean }) => Promise<{
       ok?: boolean;
       status?: string;
       currentVersion?: string;
@@ -73,16 +88,35 @@ interface Window {
       size?: number | null;
       manifestUrl?: string;
     }>;
-    downloadAppUpdate: () => Promise<{ ok: boolean; error?: string; path?: string; latestVersion?: string }>;
-    installAppUpdate: () => Promise<{ ok: boolean; error?: string; message?: string; mode?: string }>;
+    downloadAppUpdate: () => Promise<{
+      ok: boolean
+      error?: string
+      cancelled?: boolean
+      path?: string
+      latestVersion?: string
+      status?: string
+    }>
+    cancelAppUpdateDownload: () => Promise<{ ok: boolean; cancelled?: boolean }>
+    installAppUpdate: () => Promise<{ ok: boolean; error?: string; message?: string; mode?: string }>
     onAppUpdateDownloadProgress: (
       listener: (payload: {
-        phase?: string;
-        received?: number;
-        total?: number;
-        percent?: number | null;
+        phase?: string
+        received?: number
+        total?: number
+        percent?: number | null
       }) => void,
-    ) => () => void;
+    ) => () => void
+    onAppUpdateCheckResult: (
+      listener: (payload: {
+        ok?: boolean
+        status?: string
+        currentVersion?: string
+        latestVersion?: string
+        message?: string
+        notes?: string
+        releasedAt?: string | null
+      }) => void,
+    ) => () => void
     getLayoutSyncConfig: () => Promise<{
       portalBaseUrl: string;
       defaultPortalBaseUrl: string;

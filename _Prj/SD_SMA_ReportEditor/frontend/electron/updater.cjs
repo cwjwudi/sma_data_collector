@@ -100,7 +100,7 @@ function fetchBuffer(urlStr, { skipTlsVerify = false, timeoutMs = 30000 } = {}) 
   })
 }
 
-function downloadFile(urlStr, destPath, { skipTlsVerify = false, onProgress } = {}) {
+function downloadFile(urlStr, destPath, { skipTlsVerify = false, onProgress, abortRef } = {}) {
   return new Promise((resolve, reject) => {
     let url
     try {
@@ -110,6 +110,12 @@ function downloadFile(urlStr, destPath, { skipTlsVerify = false, onProgress } = 
       return
     }
     const lib = url.protocol === 'https:' ? https : http
+    let settled = false
+    const finish = (fn, arg) => {
+      if (settled) return
+      settled = true
+      fn(arg)
+    }
     const req = lib.request(
       url,
       {
@@ -118,13 +124,13 @@ function downloadFile(urlStr, destPath, { skipTlsVerify = false, onProgress } = 
       },
       (res) => {
         if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-          downloadFile(new URL(res.headers.location, url).href, destPath, { skipTlsVerify, onProgress })
-            .then(resolve)
-            .catch(reject)
+          downloadFile(new URL(res.headers.location, url).href, destPath, { skipTlsVerify, onProgress, abortRef })
+            .then((v) => finish(resolve, v))
+            .catch((e) => finish(reject, e))
           return
         }
         if (!res.statusCode || res.statusCode < 200 || res.statusCode >= 300) {
-          reject(new Error(`下载失败 HTTP ${res.statusCode || '错误'}`))
+          finish(reject, new Error(`下载失败 HTTP ${res.statusCode || '错误'}`))
           res.resume()
           return
         }
@@ -139,13 +145,23 @@ function downloadFile(urlStr, destPath, { skipTlsVerify = false, onProgress } = 
           }
         })
         res.pipe(file)
-        file.on('finish', () => file.close(() => resolve({ path: destPath, size: received })))
+        file.on('finish', () => file.close(() => finish(resolve, { path: destPath, size: received })))
         file.on('error', (err) => {
-          fs.unlink(destPath, () => reject(err))
+          fs.unlink(destPath, () => finish(reject, err))
         })
       },
     )
-    req.on('error', reject)
+    if (abortRef) {
+      abortRef.abort = () => {
+        try {
+          req.destroy()
+        } catch {
+          /* ignore */
+        }
+        finish(reject, new Error('DOWNLOAD_ABORTED'))
+      }
+    }
+    req.on('error', (err) => finish(reject, err))
     req.setTimeout(600000, () => {
       req.destroy(new Error('下载超时'))
     })
@@ -175,12 +191,21 @@ function pickArtifact(manifest, platformKey) {
 function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
   let pending = null
   let downloadedPath = null
+  let lastCheckResult = null
+  let downloading = false
+  let downloadPercent = null
+  let activeDownloadAbort = null
 
   function emit(channel, payload) {
     const win = getMainWindow()
     if (win && !win.isDestroyed()) {
       win.webContents.send(channel, payload)
     }
+  }
+
+  function emitCheckResult(result) {
+    lastCheckResult = result
+    emit('update-check-result', result)
   }
 
   function getUpdateDir() {
@@ -196,6 +221,16 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
       }
     }
     downloadedPath = null
+  }
+
+  function cancelActiveDownload() {
+    if (activeDownloadAbort && typeof activeDownloadAbort.abort === 'function') {
+      activeDownloadAbort.abort()
+      activeDownloadAbort = null
+    }
+    downloading = false
+    downloadPercent = null
+    emit('update-download-progress', { phase: 'cancelled' })
   }
 
   async function fetchManifest() {
@@ -232,6 +267,16 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
       }
     },
 
+    getState() {
+      return {
+        lastCheck: lastCheckResult,
+        downloading,
+        downloadPercent,
+        downloadedReady: Boolean(downloadedPath && fs.existsSync(downloadedPath)),
+        latestVersion: pending?.latestVersion || lastCheckResult?.latestVersion || null,
+      }
+    },
+
     setConfig(patch) {
       const next = {}
       if (typeof patch.baseUrl === 'string') {
@@ -241,40 +286,51 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
         next.skipTlsVerify = patch.skipTlsVerify
       }
       writeSettings(app, next)
+      cancelActiveDownload()
       clearDownloaded()
       pending = null
       return this.getConfig()
     },
 
-    async check() {
+    async check(options = {}) {
+      const silent = Boolean(options.silent)
       if (!app.isPackaged) {
-        return {
+        const devResult = {
           ok: true,
           status: 'dev',
           currentVersion: app.getVersion(),
           message: '开发模式无法在线升级，请使用正式安装版。',
         }
+        emitCheckResult(devResult)
+        return devResult
       }
-      clearDownloaded()
-      pending = null
+      if (!silent) {
+        cancelActiveDownload()
+        clearDownloaded()
+        pending = null
+      } else if (!downloading && !downloadedPath) {
+        pending = null
+      }
       const currentVersion = app.getVersion()
       const platformKey = getPlatformKey()
       try {
         const { manifest, manifestUrl, baseUrl } = await fetchManifest()
         const artifact = pickArtifact(manifest, platformKey)
         if (!artifact || typeof artifact.url !== 'string' || !artifact.url.trim()) {
-          return {
+          const unsupported = {
             ok: false,
             status: 'unsupported',
             currentVersion,
             message: '当前系统暂无可用升级包，请联系管理员。',
             manifestUrl,
           }
+          emitCheckResult(unsupported)
+          return unsupported
         }
         const latestVersion = manifest.version.trim()
         const cmp = compareSemver(latestVersion, currentVersion)
         if (cmp <= 0) {
-          return {
+          const latest = {
             ok: true,
             status: 'latest',
             currentVersion,
@@ -284,6 +340,8 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
             notes: manifest.notes || '',
             manifestUrl,
           }
+          emitCheckResult(latest)
+          return latest
         }
         pending = {
           currentVersion,
@@ -296,7 +354,7 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
           },
           manifestUrl,
         }
-        return {
+        const available = {
           ok: true,
           status: 'available',
           currentVersion,
@@ -307,19 +365,42 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
           size: artifact.size || null,
           manifestUrl,
         }
+        emitCheckResult(available)
+        return available
       } catch (e) {
-        return {
+        const errResult = {
           ok: false,
           status: 'error',
           currentVersion,
           message: e.message || String(e),
         }
+        emitCheckResult(errResult)
+        return errResult
       }
+    },
+
+    cancelDownload() {
+      if (!downloading) {
+        return { ok: true, cancelled: false }
+      }
+      cancelActiveDownload()
+      return { ok: true, cancelled: true }
     },
 
     async download() {
       if (!app.isPackaged) {
         return { ok: false, error: '开发模式不支持下载安装包' }
+      }
+      if (downloading) {
+        return { ok: true, status: 'downloading' }
+      }
+      if (downloadedPath && fs.existsSync(downloadedPath)) {
+        return {
+          ok: true,
+          path: downloadedPath,
+          latestVersion: pending?.latestVersion || lastCheckResult?.latestVersion,
+          status: 'ready',
+        }
       }
       if (!pending || !pending.artifact) {
         return { ok: false, error: '请先检查更新' }
@@ -330,21 +411,34 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
       const url = pending.artifact.url.trim()
       const fileName = path.basename(new URL(url).pathname) || `update-${pending.latestVersion}`
       const dest = path.join(getUpdateDir(), fileName)
+      downloading = true
+      downloadPercent = 0
+      activeDownloadAbort = {}
       try {
         emit('update-download-progress', { phase: 'start', received: 0, total: 0, percent: 0 })
         await downloadFile(url, dest, {
           skipTlsVerify,
-          onProgress: (p) => emit('update-download-progress', { phase: 'progress', ...p }),
+          abortRef: activeDownloadAbort,
+          onProgress: (p) => {
+            downloadPercent = p.percent
+            emit('update-download-progress', { phase: 'progress', ...p })
+          },
         })
+        activeDownloadAbort = null
         if (pending.artifact.sha256) {
           const hash = await sha256File(dest)
           const expected = String(pending.artifact.sha256).trim().toLowerCase()
           if (hash.toLowerCase() !== expected) {
             fs.unlinkSync(dest)
+            downloading = false
+            downloadPercent = null
+            emit('update-download-progress', { phase: 'error' })
             return { ok: false, error: '安装包校验失败（SHA256 不匹配），已取消下载。' }
           }
         }
         downloadedPath = dest
+        downloading = false
+        downloadPercent = 100
         emit('update-download-progress', { phase: 'done', percent: 100 })
         return {
           ok: true,
@@ -352,7 +446,20 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
           latestVersion: pending.latestVersion,
         }
       } catch (e) {
+        activeDownloadAbort = null
+        downloading = false
+        downloadPercent = null
+        if (String(e.message) === 'DOWNLOAD_ABORTED') {
+          try {
+            if (fs.existsSync(dest)) fs.unlinkSync(dest)
+          } catch {
+            /* ignore */
+          }
+          emit('update-download-progress', { phase: 'cancelled' })
+          return { ok: false, cancelled: true, error: '下载已暂停' }
+        }
         clearDownloaded()
+        emit('update-download-progress', { phase: 'error' })
         return { ok: false, error: e.message || String(e) }
       }
     },

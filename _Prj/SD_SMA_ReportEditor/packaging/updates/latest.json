@@ -1,17 +1,12 @@
 {
-  "version": "0.1.5",
-  "releasedAt": "2026-05-22T06:17:06.134Z",
-  "notes": "Report Editor 0.1.5\n\n- 表格列宽百分比输入修复\n- 表格填充色作用于单元格内侧\n- 模版与版式编辑器控件属性与渲染对齐",
+  "version": "0.1.6",
+  "releasedAt": "2026-05-22T06:45:12.943Z",
+  "notes": "Report Editor 0.1.6\n\n- 模版与版式云端同步（下载/上传同时包含模版与版式）\n- 启动自动检查更新，有新版本时弹窗提示\n- 设置入口显示更新红点\n- 更新下载支持暂停，切换页面不中断下载",
   "platforms": {
-    "win32-x64": {
-      "url": "Report Editor-Setup-0.1.5-x64.exe",
-      "sha256": "026b37c6e76b560862c8fe94b8353bea0ab02641f601bc17cd3ce168eaecceb0",
-      "size": 143099496
-    },
     "darwin-arm64": {
-      "url": "Report Editor-0.1.5-arm64.dmg",
-      "sha256": "6bfe29c302e563a292c636cf9ae5fbc546a580d49a490a45d3d5e937f267a2ee",
-      "size": 176861646
+      "url": "Report Editor-0.1.6-arm64.dmg",
+      "sha256": "66fdc394bf439a5036ab9299baa766bdcd3bbc429741777c4e1581b773fb479f",
+      "size": 176863571
     }
   }
 }
