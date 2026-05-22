@@ -33,6 +33,16 @@ output/SD SMA Report Editor-Setup-<version>-x64.exe
 
 若仍出现该错误，请确认已拉取最新代码并执行 `npm ci`；或删除缓存 `%LOCALAPPDATA%\electron-builder\Cache\winCodeSign` 后重试。
 
+## 打包失败：npm ci / EBADENGINE
+
+`frontend/package.json` 声明 `engines.node` 为 `>=20 <24`。若打包机安装 **Node.js 24+**，旧版脚本会在 `npm ci` 阶段以 `EBADENGINE` 退出。
+
+**处理：** 拉取最新 `packaging/windows/build.ps1`（Node 24+ 会自动追加 `--ignore-engines`），或改用 [Node.js 22 LTS](https://nodejs.org/)。
+
+## 打包失败：vite build 只打印 Node 版本
+
+Windows 默认堆内存不足时 Vite 可能静默崩溃。脚本已设置 `NODE_OPTIONS=--max-old-space-size=8192`；若仍失败请换 Node 22 LTS 并重试。
+
 （可选）在 Windows **设置 → 系统 → 开发者选项** 中开启 **开发人员模式**，也可允许创建符号链接。
 
 现场安装与卸载见 [getting-started/windows-installer.md](../../getting-started/windows-installer.md)。

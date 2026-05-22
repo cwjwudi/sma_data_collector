@@ -68,6 +68,17 @@ function Invoke-Npm([string[]]$NpmArgs) {
   }
 }
 
+function Invoke-NpmCi() {
+  $nodeMajor = Get-NodeMajorVersion
+  $args = @('ci', '--no-audit', '--no-fund')
+  # package.json engines 为 >=20 <24；Node 24+ 默认 npm ci 会 EBADENGINE 退出
+  if ($nodeMajor -ge 24) {
+    Write-WarnLine 'Node.js >=24: npm ci 追加 --ignore-engines（建议打包机使用 22.x LTS）'
+    $args += '--ignore-engines'
+  }
+  Invoke-Npm $args
+}
+
 function Get-NodeMajorVersion {
   $raw = (& node -p 'process.versions.node' 2>$null)
   if (-not $raw) { return 0 }
@@ -138,7 +149,7 @@ if (-not $SkipFrontendInstall) {
   Push-Location $Frontend
   try {
     if (Test-Path -LiteralPath 'package-lock.json') {
-      Invoke-Npm @('ci', '--no-audit', '--no-fund')
+      Invoke-NpmCi
     }
     else {
       Invoke-Npm @('install', '--no-audit', '--no-fund')
@@ -148,6 +159,12 @@ if (-not $SkipFrontendInstall) {
   finally {
     Pop-Location
   }
+}
+
+$iconPng = Join-Path $Frontend 'build\icon.png'
+$iconIco = Join-Path $Frontend 'build\icon.ico'
+if (-not (Test-Path -LiteralPath $iconPng)) {
+  throw "Missing Windows/macOS icon source: $iconPng (git pull 后应存在；若无则运行 frontend/scripts/make-app-icon.sh)"
 }
 
 if (-not $SkipBackendBuild) {
@@ -176,8 +193,6 @@ finally {
   Pop-Location
 }
 
-$iconPng = Join-Path $Frontend 'build\icon.png'
-$iconIco = Join-Path $Frontend 'build\icon.ico'
 if ((Test-Path -LiteralPath $iconPng) -and (-not (Test-Path -LiteralPath $iconIco))) {
   Write-Step 'Generate build/icon.ico from icon.png'
   Push-Location $Frontend
@@ -212,7 +227,13 @@ try {
     & $eb '--win', 'nsis', ('--config.directories.output=' + $outConfig)
   }
   if ($LASTEXITCODE -ne 0) {
-    throw 'electron-builder failed'
+    throw @"
+electron-builder failed (exit $LASTEXITCODE).
+常见原因:
+  1. winCodeSign 符号链接: 删除 %LOCALAPPDATA%\electron-builder\Cache\winCodeSign 后重试
+  2. 输出目录被占用: 关闭 Report Editor / 资源管理器中打开的 win-unpacked
+  3. Electron 下载失败: 检查网络或使用默认 npmmirror 镜像
+"@
   }
 }
 finally {
