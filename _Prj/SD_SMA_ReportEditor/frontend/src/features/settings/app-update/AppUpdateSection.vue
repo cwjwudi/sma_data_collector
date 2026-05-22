@@ -2,7 +2,7 @@
   <section class="settings-section app-update">
     <h3 class="settings-section__title">软件更新</h3>
     <p class="settings-hint">
-      启动时会自动检查新版本。若有更新，侧边栏「设置」会显示红点提示；也可在此手动检查、下载并安装。
+      启动时与之后每小时自动检查新版本。若有更新，侧边栏「设置」会显示红点提示；也可在此手动检查、下载并安装。
     </p>
 
     <dl class="update-meta">
@@ -41,6 +41,19 @@
         <input v-model="skipTlsDraft" type="checkbox" :disabled="busy" />
         信任内网证书（一般不需要勾选）
       </label>
+      <div v-if="skippedVersionLabels.length" class="update-skipped-block">
+        <p class="update-skipped-label">
+          已跳过的版本：{{ skippedVersionLabels.join('、') }}
+        </p>
+        <button
+          type="button"
+          class="settings-btn settings-btn--secondary"
+          :disabled="busy"
+          @click="clearSkippedVersions"
+        >
+          清除已跳过版本
+        </button>
+      </div>
       <button
         type="button"
         class="settings-btn settings-btn--secondary"
@@ -118,6 +131,9 @@
           正在下载{{ progressPercentText }}，切换页面不会中断。
         </template>
       </p>
+      <p v-if="downloadStatsText" class="update-progress-stats">
+        {{ downloadStatsText }}
+      </p>
     </div>
 
     <div v-if="showMacInstallGuide" class="update-mac-guide">
@@ -170,12 +186,23 @@ import {
   appUpdateDownloading,
   appUpdateDownloadPaused,
   appUpdateDownloadPercent,
+  appUpdateDownloadReceived,
+  appUpdateDownloadSpeedBps,
+  appUpdateDownloadStartedAt,
+  appUpdateDownloadTotal,
+  appUpdateProgressTick,
   cancelAppUpdateDownload,
   checkAppUpdateManual,
+  clearAppUpdateSkippedVersions,
   skipAppUpdateVersion,
   startAppUpdateDownload,
   syncAppUpdateState,
 } from './appUpdateState'
+import {
+  formatUpdateBytes,
+  formatUpdateDuration,
+  formatUpdateSpeed,
+} from './appUpdateFormat'
 
 const isElectron = computed(() => Boolean(window.electronAPI?.checkAppUpdate))
 
@@ -195,6 +222,7 @@ const config = ref({
   packaged: false,
   lastCheckAt: null as string | null,
   lastCheckStatus: null as string | null,
+  skippedVersions: {} as Record<string, boolean>,
 })
 
 const baseUrlDraft = ref('')
@@ -240,9 +268,54 @@ const lastCheckLabel = computed(() => {
 
 const isMac = computed(() => (config.value.platform || '').startsWith('darwin'))
 
+const skippedVersionLabels = computed(() => {
+  const skipped = config.value.skippedVersions || {}
+  return Object.keys(skipped).filter((v) => skipped[v]).sort()
+})
+
 const progressPercentText = computed(() => {
   const p = appUpdateDownloadPercent.value
   return p != null ? `（${p}%）` : ''
+})
+
+const downloadStatsText = computed(() => {
+  void appUpdateProgressTick.value
+  const received = appUpdateDownloadReceived.value
+  const total = appUpdateDownloadTotal.value
+  const speed = appUpdateDownloadSpeedBps.value
+  const startedAt = appUpdateDownloadStartedAt.value
+  const paused = appUpdateDownloadPaused.value
+  const downloading = appUpdateDownloading.value
+
+  if (!downloading && !paused) return ''
+
+  const sizePart =
+    total > 0
+      ? `${formatUpdateBytes(received)} / ${formatUpdateBytes(total)}`
+      : received > 0
+        ? formatUpdateBytes(received)
+        : ''
+
+  const parts: string[] = []
+  if (sizePart) parts.push(sizePart)
+
+  if (downloading && speed != null && speed > 0) {
+    parts.push(formatUpdateSpeed(speed))
+  }
+
+  if (startedAt && downloading) {
+    const elapsedSec = (Date.now() - startedAt) / 1000
+    if (total > received && speed != null && speed > 0) {
+      const remainingSec = (total - received) / speed
+      parts.push(`已用 ${formatUpdateDuration(elapsedSec)}，剩余约 ${formatUpdateDuration(remainingSec)}`)
+    } else {
+      parts.push(`已用 ${formatUpdateDuration(elapsedSec)}`)
+    }
+  } else if (paused && received > 0) {
+    parts.push(`已下载 ${formatUpdateBytes(received)}`)
+  }
+
+  return parts.join(' · ')
 })
 
 const showMacInstallGuide = computed(() => {
@@ -381,6 +454,29 @@ async function skipVersion() {
     await loadConfig()
   } catch (e) {
     setMsg(e instanceof Error ? e.message : String(e), 'err')
+  }
+}
+
+async function clearSkippedVersions() {
+  if (!window.confirm('清除后，已跳过的版本在下次检查时会重新提示。是否继续？')) {
+    return
+  }
+  setMsg('')
+  busy.value = true
+  try {
+    const res = await clearAppUpdateSkippedVersions()
+    if (!res?.ok) {
+      setMsg(res?.error || '清除失败', 'err')
+      return
+    }
+    setMsg('已清除跳过的版本记录。可点击「检查更新」重新发现新版本。', 'ok')
+    await loadConfig()
+    await checkAppUpdateManual()
+    await loadConfig()
+  } catch (e) {
+    setMsg(e instanceof Error ? e.message : String(e), 'err')
+  } finally {
+    busy.value = false
   }
 }
 
@@ -531,6 +627,20 @@ onMounted(() => {
   font-size: 13px;
 }
 
+.update-skipped-block {
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+}
+
+.update-skipped-label {
+  margin: 0 0 8px;
+  font-size: 12px;
+  color: #6b7280;
+}
+
 .update-check-inline {
   display: flex;
   align-items: center;
@@ -579,6 +689,13 @@ onMounted(() => {
   margin: 8px 0 0;
   font-size: 12px;
   color: #6b7280;
+}
+
+.update-progress-stats {
+  margin: 4px 0 0;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: #374151;
 }
 
 @keyframes update-indeterminate {

@@ -118,6 +118,7 @@ interface Window {
       mode?: string;
     }>;
     skipAppUpdateVersion: () => Promise<{ ok: boolean; error?: string; version?: string }>;
+    clearAppUpdateSkippedVersions: () => Promise<{ ok: boolean; error?: string }>;
     openMacApplication: () => Promise<{ ok: boolean; error?: string }>;
     onAppUpdateDownloadProgress: (
       listener: (payload: {

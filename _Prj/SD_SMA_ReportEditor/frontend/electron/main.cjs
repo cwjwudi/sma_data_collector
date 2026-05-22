@@ -606,6 +606,7 @@ ipcMain.handle('app-update-download', () => getAppUpdater().download())
 ipcMain.handle('app-update-cancel-download', () => getAppUpdater().cancelDownload())
 ipcMain.handle('app-update-install', (_event, options) => getAppUpdater().install(options || {}))
 ipcMain.handle('app-update-skip-version', () => getAppUpdater().skipAvailableVersion())
+ipcMain.handle('app-update-clear-skipped', () => getAppUpdater().clearSkippedVersions())
 ipcMain.handle('app-update-open-mac-app', () => getAppUpdater().openMacApplication())
 
 ipcMain.handle('layout-sync-get-config', () => getLayoutSync().getConfig())

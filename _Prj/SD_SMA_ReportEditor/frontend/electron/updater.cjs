@@ -79,6 +79,50 @@ function resolveBaseUrl(app) {
   return saved || DEFAULT_UPDATE_BASE_URL
 }
 
+function humanizeUpdateError(err, { phase = 'download', destPath, updateDir } = {}) {
+  const code = err && typeof err === 'object' && err.code ? String(err.code) : ''
+  const msg = String(err?.message || err || '')
+  const lower = msg.toLowerCase()
+  const dirHint = updateDir || (destPath ? path.dirname(destPath) : '')
+
+  if (code === 'EPERM' || /eperm|operation not permitted/i.test(msg)) {
+    const lines = [
+      '无法写入下载文件（权限不足或被安全软件拦截）。',
+      '建议：暂时关闭杀毒/安全软件；删除临时目录中残留的安装包后重试。',
+    ]
+    if (dirHint) lines.push(`临时目录：${dirHint}`)
+    if (destPath && destPath.includes('%20')) {
+      lines.push('文件名含异常编码，请使用最新版应用内更新，或从 Portal 手动下载安装包。')
+    }
+    return lines.join('\n')
+  }
+  if (code === 'ENOSPC' || /enospc|no space left/i.test(msg)) {
+    return '磁盘空间不足，无法完成下载。请清理磁盘空间后重新下载。'
+  }
+  if (code === 'EACCES' || /eacces|permission denied/i.test(msg)) {
+    const lines = ['没有权限访问下载目录或安装包。请检查本机用户权限后重试。']
+    if (dirHint) lines.push(`相关目录：${dirHint}`)
+    return lines.join('\n')
+  }
+  if (/etimedout|timeout|下载超时/i.test(msg)) {
+    return phase === 'download'
+      ? '下载超时，请检查网络连接后重试。'
+      : '连接超时，请检查网络后重试。'
+  }
+  if (/enotfound|getaddrinfo|econnrefused|enetunreach/i.test(lower)) {
+    return '无法连接更新服务器，请检查网络或「高级设置」中的更新源地址。'
+  }
+  if (code === 'ENOENT' || /enoent|not found/i.test(lower)) {
+    return phase === 'install'
+      ? '找不到安装包文件，请重新下载后再升级。'
+      : '找不到下载目标路径，请重试或联系管理员。'
+  }
+  if (/EBUSY|ebusy|being used by another process/i.test(msg)) {
+    return '安装包正被其他程序占用。请关闭相关程序后重试。'
+  }
+  return msg || (phase === 'install' ? '启动升级失败，请稍后重试。' : '下载失败，请稍后重试。')
+}
+
 function fetchBuffer(urlStr, { skipTlsVerify = false, timeoutMs = 30000 } = {}) {
   return new Promise((resolve, reject) => {
     let url
@@ -232,6 +276,24 @@ function pickArtifact(manifest, platformKey) {
   if (process.platform === 'darwin' && platforms.darwin) return platforms.darwin
   if (process.platform === 'win32' && platforms.win32) return platforms.win32
   return null
+}
+
+/** 从 manifest 相对路径或完整下载 URL 得到本地文件名（解码 %20 等，避免 Windows EPERM） */
+function artifactFileName(artifactUrl, fallbackVersion) {
+  const raw = typeof artifactUrl === 'string' ? artifactUrl.trim() : ''
+  if (!raw) {
+    return `update-${fallbackVersion || 'unknown'}`
+  }
+  if (!/^https?:\/\//i.test(raw)) {
+    return path.basename(raw)
+  }
+  try {
+    const name = path.basename(decodeURIComponent(new URL(raw).pathname))
+    if (name && name !== '.' && name !== '..') return name
+  } catch {
+    /* ignore */
+  }
+  return `update-${fallbackVersion || 'unknown'}`
 }
 
 function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
@@ -444,6 +506,7 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
           artifact: {
             ...artifact,
             url: new URL(artifact.url.trim(), `${baseUrl}/`).href,
+            fileName: artifactFileName(artifact.url, latestVersion),
           },
           manifestUrl,
         }
@@ -506,6 +569,11 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
       return { ok: true, version }
     },
 
+    clearSkippedVersions() {
+      writeSettings(app, { skippedVersions: {} })
+      return { ok: true }
+    },
+
     openMacApplication() {
       if (process.platform !== 'darwin') {
         return { ok: false, error: '仅 macOS 可用' }
@@ -541,7 +609,8 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
       const settings = readSettings(app)
       const skipTlsVerify = Boolean(settings.skipTlsVerify)
       const url = pending.artifact.url.trim()
-      const fileName = path.basename(new URL(url).pathname) || `update-${pending.latestVersion}`
+      const fileName =
+        pending.artifact.fileName || artifactFileName(url, pending.latestVersion)
       let dest = path.join(getUpdateDir(), fileName)
       let startByte = 0
       const resuming = downloadPaused && partialDest && fs.existsSync(partialDest)
@@ -606,7 +675,14 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
         downloadPaused = false
         downloading = false
         downloadPercent = 100
-        emit('update-download-progress', { phase: 'done', percent: 100 })
+        const finalSize = fs.statSync(dest).size
+        const totalSize = partialTotal || Number(pending?.artifact?.size) || finalSize
+        emit('update-download-progress', {
+          phase: 'done',
+          percent: 100,
+          received: finalSize,
+          total: totalSize,
+        })
         return {
           ok: true,
           path: dest,
@@ -653,7 +729,14 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
         downloadPercent = null
         clearDownloaded()
         emit('update-download-progress', { phase: 'error' })
-        return { ok: false, error: e.message || String(e) }
+        return {
+          ok: false,
+          error: humanizeUpdateError(e, {
+            phase: 'download',
+            destPath: dest,
+            updateDir: getUpdateDir(),
+          }),
+        }
       }
     },
 
@@ -671,61 +754,77 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
         process.platform === 'darwin' &&
         Boolean(options.openAfterUpgrade ?? readSettings(app).macOpenAfterUpgrade !== false)
 
-      if (process.platform === 'win32' && (ext === '.exe' || ext === '.msi')) {
-        spawn(filePath, [], { detached: true, stdio: 'ignore' }).unref()
-        setTimeout(() => app.quit(), 400)
-        return {
-          ok: true,
-          mode: 'installer',
-          message: '已启动安装程序，本软件即将退出，请按安装向导完成升级。',
+      try {
+        if (process.platform === 'win32' && (ext === '.exe' || ext === '.msi')) {
+          spawn(filePath, [], { detached: true, stdio: 'ignore' }).unref()
+          setTimeout(() => app.quit(), 400)
+          return {
+            ok: true,
+            mode: 'installer',
+            message: '已启动安装程序，本软件即将退出，请按安装向导完成升级。',
+          }
         }
-      }
 
-      if (process.platform === 'darwin' && ext === '.dmg') {
+        if (process.platform === 'darwin' && ext === '.dmg') {
+          const err = await shell.openPath(filePath)
+          if (err) {
+            return {
+              ok: false,
+              error: humanizeUpdateError(new Error(err), { phase: 'install', destPath: filePath }),
+            }
+          }
+          if (openAfterUpgrade) {
+            spawnMacOpenAfterUpgradeWatcher()
+          }
+          setTimeout(() => app.quit(), 400)
+          const autoOpenHint = openAfterUpgrade
+            ? '④ 拖放完成后，系统会尝试自动打开新版本（约需数秒）。'
+            : '④ 从启动台或应用程序文件夹重新打开 Report Editor。'
+          return {
+            ok: true,
+            mode: 'dmg',
+            message: `已打开安装镜像，本软件即将退出。请按下方步骤完成升级：① 在弹出的窗口中将「Report Editor」拖入「应用程序」；② 若系统提示替换，选择「替换」；③ 关闭安装窗口；${autoOpenHint}`,
+          }
+        }
+
+        if (process.platform === 'darwin' && ext === '.zip') {
+          const err = await shell.openPath(filePath)
+          if (err) {
+            return {
+              ok: false,
+              error: humanizeUpdateError(new Error(err), { phase: 'install', destPath: filePath }),
+            }
+          }
+          if (openAfterUpgrade) {
+            spawnMacOpenAfterUpgradeWatcher()
+          }
+          setTimeout(() => app.quit(), 400)
+          return {
+            ok: true,
+            mode: 'zip',
+            message: openAfterUpgrade
+              ? '已打开升级包，本软件即将退出。请按说明替换应用程序；完成后系统会尝试自动打开新版本。'
+              : '已打开升级包，本软件即将退出。请按说明替换应用程序后重新打开软件。',
+          }
+        }
+
         const err = await shell.openPath(filePath)
         if (err) {
-          return { ok: false, error: err }
+          return {
+            ok: false,
+            error: humanizeUpdateError(new Error(err), { phase: 'install', destPath: filePath }),
+          }
         }
-        if (openAfterUpgrade) {
-          spawnMacOpenAfterUpgradeWatcher()
-        }
-        setTimeout(() => app.quit(), 400)
-        const autoOpenHint = openAfterUpgrade
-          ? '④ 拖放完成后，系统会尝试自动打开新版本（约需数秒）。'
-          : '④ 从启动台或应用程序文件夹重新打开 Report Editor。'
         return {
           ok: true,
-          mode: 'dmg',
-          message: `已打开安装镜像，本软件即将退出。请按下方步骤完成升级：① 在弹出的窗口中将「Report Editor」拖入「应用程序」；② 若系统提示替换，选择「替换」；③ 关闭安装窗口；${autoOpenHint}`,
+          mode: 'open',
+          message: '已打开安装包，请按系统提示完成升级。',
         }
-      }
-
-      if (process.platform === 'darwin' && ext === '.zip') {
-        const err = await shell.openPath(filePath)
-        if (err) {
-          return { ok: false, error: err }
-        }
-        if (openAfterUpgrade) {
-          spawnMacOpenAfterUpgradeWatcher()
-        }
-        setTimeout(() => app.quit(), 400)
+      } catch (e) {
         return {
-          ok: true,
-          mode: 'zip',
-          message: openAfterUpgrade
-            ? '已打开升级包，本软件即将退出。请按说明替换应用程序；完成后系统会尝试自动打开新版本。'
-            : '已打开升级包，本软件即将退出。请按说明替换应用程序后重新打开软件。',
+          ok: false,
+          error: humanizeUpdateError(e, { phase: 'install', destPath: filePath }),
         }
-      }
-
-      const err = await shell.openPath(filePath)
-      if (err) {
-        return { ok: false, error: err }
-      }
-      return {
-        ok: true,
-        mode: 'open',
-        message: '已打开安装包，请按系统提示完成升级。',
       }
     },
   }
@@ -735,5 +834,7 @@ module.exports = {
   createAppUpdater,
   compareSemver,
   getPlatformKey,
+  artifactFileName,
+  humanizeUpdateError,
   DEFAULT_UPDATE_BASE_URL,
 }
