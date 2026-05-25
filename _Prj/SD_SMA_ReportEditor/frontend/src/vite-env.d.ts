@@ -142,6 +142,14 @@ interface Window {
     }>;
     startDemoPack: () => Promise<{ ok: boolean; error?: string }>;
     stopDemoPack: () => Promise<{ ok: boolean; error?: string }>;
+    getDataSourceStartupSnapshot: () => Promise<{
+      ok: boolean;
+      connections?: Record<string, unknown>[];
+      opcua_servers?: Record<string, unknown>[];
+      app_preferences?: Record<string, unknown>;
+      source?: string;
+      message?: string;
+    }>;
     onAppUpdateDownloadProgress: (
       listener: (payload: {
         phase?: string

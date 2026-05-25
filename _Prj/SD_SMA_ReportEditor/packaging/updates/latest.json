@@ -1,12 +1,12 @@
 {
-  "version": "0.1.14",
-  "releasedAt": "2026-05-25T07:38:14.713Z",
-  "notes": "Report Editor 0.1.14\n\n- 演示与培训：Windows 样式修复；应用内一键启停演示环境\n- 操作审计：高级筛选、CSV 导出、90 天保留；仪表盘/侧边栏入口\n- 连接可观测：Dashboard 探活汇总；异常详情弹窗（DB+OPC）",
+  "version": "0.1.15",
+  "releasedAt": "2026-05-25T09:00:17.642Z",
+  "notes": "Report Editor 0.1.15\n\n- 启动体验：先开窗再等待后端；清理占用 8000 的僵死 report_backend\n- 数据源：启动快照与架构 localStorage 缓存，表/视图秒开\n- OPC UA：修复保存连接 apiFetch 缺失\n- 云端同步：模版/版式下载 TLS/网络重试与友好提示",
   "platforms": {
     "darwin-arm64": {
-      "url": "Report Editor-0.1.14-arm64.dmg",
-      "sha256": "da3eab0360e6207aea2eeee4cf4fed5d9cd8e670b35f90b16d511ebd74e24b6b",
-      "size": 176911567
+      "url": "Report Editor-0.1.15-arm64.dmg",
+      "sha256": "a89b7f0364e6f1d60f2ae70b56e0eb3059dc69a09923157e3408ca5b3b731a31",
+      "size": 176915978
     }
   }
 }
