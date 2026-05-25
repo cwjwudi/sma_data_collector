@@ -1,5 +1,5 @@
 const { app, BrowserWindow, ipcMain, dialog, shell, nativeImage } = require('electron')
-const { spawn } = require('child_process')
+const { execFileSync, spawn } = require('child_process')
 const path = require('path')
 const http = require('http')
 const fs = require('fs')
@@ -49,6 +49,57 @@ function getReportEditorDataDir() {
     return path.join(app.getPath('userData'), 'backend-data')
   }
   return path.join(getBackendDir(), 'data')
+}
+
+function maskDbConnectionForRenderer(conn) {
+  const out = { ...(conn || {}) }
+  out.has_password = Boolean(out.password_enc)
+  delete out.password_enc
+  if (out.is_demo && out.demo_channel === 'remote') {
+    out.host = ''
+    out.port = null
+    out.username = null
+    out.database = ''
+    out.has_password = true
+  }
+  return out
+}
+
+function maskOpcServerForRenderer(server) {
+  const out = { ...(server || {}) }
+  out.has_password = Boolean(out.password_enc)
+  delete out.password_enc
+  if (out.is_demo && out.demo_channel === 'remote') {
+    out.endpoint_url = ''
+    out.username = null
+    out.has_password = false
+  }
+  return out
+}
+
+function readDataSourceStartupSnapshot() {
+  const file = path.join(getReportEditorDataDir(), 'config.json')
+  try {
+    if (!fs.existsSync(file)) {
+      return { connections: [], app_preferences: {}, source: file, ok: true }
+    }
+    const raw = JSON.parse(fs.readFileSync(file, 'utf8'))
+    const connections = Array.isArray(raw.db_connections)
+      ? raw.db_connections.map(maskDbConnectionForRenderer).filter((c) => c.id)
+      : []
+    const opcuaServers = Array.isArray(raw.opcua_servers)
+      ? raw.opcua_servers.map(maskOpcServerForRenderer).filter((s) => s.id)
+      : []
+    return {
+      connections,
+      opcua_servers: opcuaServers,
+      app_preferences: raw.app_preferences && typeof raw.app_preferences === 'object' ? raw.app_preferences : {},
+      source: file,
+      ok: true,
+    }
+  } catch (e) {
+    return { connections: [], app_preferences: {}, source: file, ok: false, message: e.message }
+  }
 }
 
 function findPython() {
@@ -147,6 +198,88 @@ function checkBackendHealthOnce() {
   })
 }
 
+function commandForPid(pid) {
+  try {
+    if (process.platform === 'win32') {
+      const out = execFileSync(
+        'powershell.exe',
+        [
+          '-NoProfile',
+          '-Command',
+          `Get-CimInstance Win32_Process -Filter "ProcessId=${pid}" | Select-Object -ExpandProperty CommandLine`,
+        ],
+        { encoding: 'utf8', windowsHide: true, timeout: 1500 },
+      )
+      return out.trim()
+    }
+    return execFileSync('ps', ['-p', String(pid), '-o', 'command='], {
+      encoding: 'utf8',
+      timeout: 1500,
+    }).trim()
+  } catch {
+    return ''
+  }
+}
+
+function backendListenerPid() {
+  try {
+    if (process.platform === 'win32') {
+      const out = execFileSync('netstat.exe', ['-ano', '-p', 'tcp'], {
+        encoding: 'utf8',
+        windowsHide: true,
+        timeout: 1500,
+      })
+      for (const line of out.split(/\r?\n/)) {
+        if (!line.includes('LISTENING')) continue
+        const parts = line.trim().split(/\s+/)
+        const local = parts[1] || ''
+        const pid = Number(parts[parts.length - 1])
+        if (local.endsWith(`:${BACKEND_PORT}`) && Number.isFinite(pid)) return pid
+      }
+      return 0
+    }
+    const out = execFileSync('lsof', ['-nP', `-iTCP:${BACKEND_PORT}`, '-sTCP:LISTEN', '-t'], {
+      encoding: 'utf8',
+      timeout: 1500,
+    })
+    const pid = Number(out.trim().split(/\s+/)[0])
+    return Number.isFinite(pid) ? pid : 0
+  } catch {
+    return 0
+  }
+}
+
+function isOurBackendCommand(command) {
+  const normalized = String(command || '').replace(/\\/g, '/').toLowerCase()
+  return normalized.includes('/report_backend/report_backend') || normalized.includes('report_backend.exe')
+}
+
+async function stopStaleBundledBackendIfUnhealthy() {
+  const pid = backendListenerPid()
+  if (!pid) return false
+  const command = commandForPid(pid)
+  if (!isOurBackendCommand(command)) return false
+  if (await checkBackendHealthOnce()) return false
+  log(`发现旧后端进程占用 ${BACKEND_PORT} 且健康检查无响应，准备清理: pid=${pid}`)
+  try {
+    process.kill(pid)
+  } catch (e) {
+    log(`清理旧后端失败: ${e.message}`)
+    return false
+  }
+  for (let i = 0; i < 20; i += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    if (!backendListenerPid()) return true
+  }
+  try {
+    process.kill(pid, 'SIGKILL')
+  } catch {
+    /* ignore */
+  }
+  await new Promise((resolve) => setTimeout(resolve, 200))
+  return !backendListenerPid()
+}
+
 function waitForBackend(maxRetries = 60, interval = 500) {
   return new Promise((resolve, reject) => {
     let retries = 0
@@ -234,6 +367,8 @@ ipcMain.handle('devtools-set-open', (_event, open) => {
     mainWindow.webContents.closeDevTools()
   }
 })
+
+ipcMain.handle('datasource-startup-snapshot', () => readDataSourceStartupSnapshot())
 
 function senderBrowserWindow(wc) {
   try {
@@ -647,6 +782,8 @@ app.whenReady().then(async () => {
     app.setAppUserModelId('com.brteam.sd_sma.report_editor')
   }
 
+  createWindow()
+
   const isDev = !app.isPackaged
   /**
    * 默认：开发模式也由 Electron spawn 后端，关掉窗口/App 时再 killPython，与本机端口绑定一致。
@@ -658,13 +795,17 @@ app.whenReady().then(async () => {
     ['1', 'true', 'yes'].includes(
       String(process.env.REPORT_EDITOR_REUSE_BACKEND || '').toLowerCase(),
     )
+  const backendHealthy = await checkBackendHealthOnce()
 
-  if (isDev && reuse && (await checkBackendHealthOnce())) {
+  if (backendHealthy && (!isDev || reuse)) {
     log(
-      `检测到 ${BACKEND_URL} 已有健康后端，且 REPORT_EDITOR_REUSE_BACKEND=1，跳过启动 Python 子进程（请自行在该终端 Ctrl+C）。`,
+      `检测到 ${BACKEND_URL} 已有健康后端，跳过启动 Python 子进程。`,
     )
   } else {
-    if (isDev && (await checkBackendHealthOnce())) {
+    if (!backendHealthy) {
+      await stopStaleBundledBackendIfUnhealthy()
+    }
+    if (isDev && backendHealthy) {
       log(
         `[提示] ${BACKEND_URL} 已在监听；仍由本 Electron 尝试启动后端。若端口被占会失败。\n` +
           '若在单独终端跑了 uvicorn，请先停掉或使用 REPORT_EDITOR_REUSE_BACKEND=1 复用外部后端（关闭 Electron 不会杀外部进程）。',
@@ -674,13 +815,9 @@ app.whenReady().then(async () => {
     backendStartedByElectron = Boolean(pythonProcess)
   }
 
-  try {
-    await waitForBackend()
-  } catch (e) {
-    log(`Warning: ${e.message} — opening window anyway`)
-  }
-
-  createWindow()
+  waitForBackend()
+    .then(() => log('Backend is ready for renderer requests'))
+    .catch((e) => log(`Warning: ${e.message} — renderer remains open with local cached data`))
 })
 
 app.on('window-all-closed', () => {

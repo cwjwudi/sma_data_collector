@@ -1,4 +1,15 @@
 /* 数据库 ConnectionManager / OPC UA 左侧连接表单 — 共用排版与字体 */
+.conn-placeholder {
+  margin: 8px 0 0;
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: #f9fafb;
+  border: 1px dashed #d1d5db;
+  color: #6b7280;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
 .conn-form-pane {
   border: 1px solid #e5e7eb;
   border-radius: 8px;

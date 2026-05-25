@@ -1,17 +1,12 @@
 {
   "version": "0.1.14",
-  "releasedAt": "2026-05-25T05:54:59.471Z",
+  "releasedAt": "2026-05-25T07:38:14.713Z",
   "notes": "Report Editor 0.1.14\n\n- 演示与培训：Windows 样式修复；应用内一键启停演示环境\n- 操作审计：高级筛选、CSV 导出、90 天保留；仪表盘/侧边栏入口\n- 连接可观测：Dashboard 探活汇总；异常详情弹窗（DB+OPC）",
   "platforms": {
-    "win32-x64": {
-      "url": "Report Editor-Setup-0.1.14-x64.exe",
-      "sha256": "",
-      "size": 0
-    },
     "darwin-arm64": {
       "url": "Report Editor-0.1.14-arm64.dmg",
-      "sha256": "",
-      "size": 0
+      "sha256": "da3eab0360e6207aea2eeee4cf4fed5d9cd8e670b35f90b16d511ebd74e24b6b",
+      "size": 176911567
     }
   }
 }

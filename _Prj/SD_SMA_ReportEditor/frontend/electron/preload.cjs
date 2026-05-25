@@ -25,6 +25,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   /** 路径拼接（跟随 OS） */
   pathJoin: (...parts) => ipcRenderer.invoke('path-join', parts),
 
+  /** 启动阶段直读本机配置，避免等待 FastAPI 才能显示已保存连接 */
+  getDataSourceStartupSnapshot: () => ipcRenderer.invoke('datasource-startup-snapshot'),
+
   /** 仅 PDF 导出隐藏窗口：渲染完成后通知主进程 */
   notifyPdfExportReady: (payload) => ipcRenderer.send('pdf-export-ready', payload),
 

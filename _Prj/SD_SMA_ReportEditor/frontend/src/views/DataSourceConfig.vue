@@ -1,5 +1,5 @@
 <template>
-  <div class="page" :class="{ 'page-fill': tab === 'db' || tab === 'opc' }">
+  <div class="page page-fill-height">
     <h2 class="page-title">数据源配置</h2>
     <div class="tabs-top">
       <button type="button" :class="{ on: tab === 'db' }" @click="tab = 'db'">
@@ -40,14 +40,15 @@
 </template>
 
 <script setup>
-import { ref, watch, onMounted, onUnmounted, nextTick } from 'vue'
+defineOptions({ name: 'DataSourceConfig' })
+
+import { nextTick, ref, watch, onMounted, onUnmounted, onActivated } from 'vue'
 import { useRoute } from 'vue-router'
 import DatabaseWorkbench from '@/features/datasource/database-workbench/DatabaseWorkbench.vue'
 import OpcUaPanel from '@/features/datasource/opcua/OpcUaPanel.vue'
 import ConnectionTabLed from '@/features/datasource/ConnectionTabLed.vue'
 import ConnectionHealthFailuresDialog from '@/features/datasource/ConnectionHealthFailuresDialog.vue'
-import { setDbHealthSummary } from '@/features/datasource/database-connection-health'
-import { setOpcHealthSummary } from '@/features/datasource/datasource-nav-health'
+import { dbConnectionHealth, opcHealthSummary } from '@/features/datasource/datasource-nav-health'
 import {
   connectionProbeIntervalMs,
   loadConnectionProbePrefs,
@@ -59,8 +60,8 @@ const tab = ref('db')
 const dbWorkbenchRef = ref(null)
 const opcPanelRef = ref(null)
 
-const dbHealth = ref({ ok: 0, fail: 0, total: 0 })
-const opcHealth = ref({ ok: 0, fail: 0, total: 0 })
+const dbHealth = ref({ ...dbConnectionHealth.value })
+const opcHealth = ref({ ...opcHealthSummary.value })
 const healthDetailOpen = ref(false)
 
 let healthPollTimer = null
@@ -75,12 +76,10 @@ function aggregateHealthState(summary) {
 
 function onDbHealthSummary(summary) {
   dbHealth.value = summary
-  setDbHealthSummary(summary)
 }
 
 function onOpcHealthSummary(summary) {
   opcHealth.value = summary
-  setOpcHealthSummary(summary)
 }
 
 function openHealthDetail() {
@@ -142,6 +141,11 @@ onMounted(() => {
   window.addEventListener('report-editor-connection-probe-changed', onProbePrefsChanged)
 })
 
+/** 页面被 keep-alive 缓存后再次进入：不重新拉连接/架构，仅恢复 Tab */
+onActivated(() => {
+  syncTabFromRoute()
+})
+
 onUnmounted(() => {
   stopHealthPolling()
   window.removeEventListener('report-editor-config-imported', onConfigImported)
@@ -150,11 +154,9 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.page-fill {
+.page.page-fill-height {
   display: flex;
   flex-direction: column;
-  /* .content-scroll 为纵向 flex，此处吃掉剩余高度以便工作台内部再滚动 */
-  flex: 1 1 auto;
   min-height: 0;
 }
 .page-tab-body {

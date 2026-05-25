@@ -518,17 +518,18 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
           emitCheckResult(unsupported)
           return unsupported
         }
-        const latestVersion = manifest.version.trim()
+        const manifestVersion = manifest.version.trim()
         const skipped = readSettings(app).skippedVersions || {}
-        if (skipped[latestVersion]) {
+        const cmp = compareSemver(manifestVersion, currentVersion)
+        if (skipped[manifestVersion] && cmp > 0) {
           const skippedResult = {
             ok: true,
             status: silent ? 'latest' : 'skipped',
             currentVersion,
-            latestVersion,
+            latestVersion: manifestVersion,
             message: silent
               ? '当前已是最新版本。'
-              : `已跳过版本 ${latestVersion}。如需升级请点「检查更新」并重新下载，或等待更高版本发布。`,
+              : `已跳过版本 ${manifestVersion}。如需升级请点「检查更新」并重新下载，或等待更高版本发布。`,
             releasedAt: manifest.releasedAt || null,
             notes: manifest.notes || '',
             manifestUrl,
@@ -536,24 +537,27 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
           emitCheckResult(skippedResult)
           return skippedResult
         }
-        const cmp = compareSemver(latestVersion, currentVersion)
         if (cmp <= 0) {
           if (!silent) {
             clearDownloaded()
           }
+          const aheadOfServer = cmp < 0
           const latest = {
             ok: true,
             status: 'latest',
             currentVersion,
-            latestVersion,
-            message: '当前已是最新版本。',
-            releasedAt: manifest.releasedAt || null,
-            notes: manifest.notes || '',
+            latestVersion: currentVersion,
+            message: aheadOfServer
+              ? `当前版本 ${currentVersion} 较更新源（${manifestVersion}）更新。`
+              : '当前已是最新版本。',
+            releasedAt: aheadOfServer ? null : manifest.releasedAt || null,
+            notes: aheadOfServer ? '' : manifest.notes || '',
             manifestUrl,
           }
           emitCheckResult(latest)
           return latest
         }
+        const latestVersion = manifestVersion
         if (!silent) {
           const canKeepDownload =
             savedDownloadPath &&

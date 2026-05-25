@@ -35,7 +35,51 @@ function resolvePortalBase(app) {
   return (saved || DEFAULT_PORTAL_BASE_URL).replace(/\/+$/, '')
 }
 
-function requestJson(method, urlStr, { token, body, skipTlsVerify = false, timeoutMs = 60000 } = {}) {
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+function isTransientNetworkError(err) {
+  const code = String(err?.code || '')
+  const msg = String(err?.message || '')
+  return (
+    ['ECONNRESET', 'ETIMEDOUT', 'EAI_AGAIN', 'ENOTFOUND', 'ECONNREFUSED', 'EHOSTUNREACH', 'ENETUNREACH'].includes(code) ||
+    msg.includes('Client network socket disconnected before secure TLS connection was established') ||
+    msg.includes('socket hang up') ||
+    msg.includes('请求超时')
+  )
+}
+
+function friendlyNetworkError(err, urlStr) {
+  const raw = String(err?.message || err || '网络请求失败')
+  const code = err?.code ? `（${err.code}）` : ''
+  let host = ''
+  try {
+    host = new URL(urlStr).host
+  } catch {
+    host = 'Portal'
+  }
+  if (raw.includes('Client network socket disconnected before secure TLS connection was established')) {
+    return new Error(
+      `连接 ${host} 时 TLS 握手前被断开${code}。请确认 Portal 地址可访问、网络/代理未拦截；若是内网自签证书可勾选“信任内网证书”后重试。`,
+    )
+  }
+  if (err?.code === 'ENOTFOUND' || err?.code === 'EAI_AGAIN') {
+    return new Error(`无法解析 Portal 域名 ${host}${code}，请检查网络、DNS 或 Portal 地址。`)
+  }
+  if (err?.code === 'ECONNREFUSED') {
+    return new Error(`Portal ${host} 拒绝连接${code}，请确认服务在线且端口正确。`)
+  }
+  if (raw.includes('self-signed certificate') || raw.includes('unable to verify')) {
+    return new Error(`Portal 证书校验失败${code}。若确认是可信内网服务，可勾选“信任内网证书”后重试。`)
+  }
+  if (raw.includes('请求超时') || err?.code === 'ETIMEDOUT') {
+    return new Error(`连接 Portal ${host} 超时${code}，请稍后重试或检查网络代理。`)
+  }
+  return new Error(`${raw}${code}`)
+}
+
+function requestJsonOnce(method, urlStr, { token, body, skipTlsVerify = false, timeoutMs = 60000 } = {}) {
   return new Promise((resolve, reject) => {
     let url
     try {
@@ -60,7 +104,7 @@ function requestJson(method, urlStr, { token, body, skipTlsVerify = false, timeo
       },
       (res) => {
         if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-          requestJson(method, new URL(res.headers.location, url).href, { token, body, skipTlsVerify, timeoutMs })
+          requestJsonOnce(method, new URL(res.headers.location, url).href, { token, body, skipTlsVerify, timeoutMs })
             .then(resolve)
             .catch(reject)
           return
@@ -92,6 +136,21 @@ function requestJson(method, urlStr, { token, body, skipTlsVerify = false, timeo
     if (payload) req.write(payload)
     req.end()
   })
+}
+
+async function requestJson(method, urlStr, options = {}) {
+  const attempts = Math.max(1, Number(options.retries ?? (method === 'GET' ? 3 : 1)))
+  let lastErr = null
+  for (let i = 0; i < attempts; i += 1) {
+    try {
+      return await requestJsonOnce(method, urlStr, options)
+    } catch (err) {
+      lastErr = err
+      if (i >= attempts - 1 || !isTransientNetworkError(err)) break
+      await sleep(450 * (i + 1))
+    }
+  }
+  throw friendlyNetworkError(lastErr, urlStr)
 }
 
 function apiUrl(app, suffix) {
@@ -168,10 +227,8 @@ function createLayoutSync(app) {
       const s = readSettings(app)
       if (!s.token) throw new Error('请先登录')
       const opts = { token: s.token, skipTlsVerify: Boolean(s.skipTlsVerify) }
-      const [layouts, templates] = await Promise.all([
-        requestJson('GET', apiUrl(app, '/api/report-editor/layout-presets/defaults'), opts),
-        requestJson('GET', apiUrl(app, '/api/report-editor/templates/defaults'), opts),
-      ])
+      const layouts = await requestJson('GET', apiUrl(app, '/api/report-editor/layout-presets/defaults'), opts)
+      const templates = await requestJson('GET', apiUrl(app, '/api/report-editor/templates/defaults'), opts)
       if (!layouts || !layouts.ok) throw new Error((layouts && layouts.error) || '版式下载失败')
       if (!templates || !templates.ok) throw new Error((templates && templates.error) || '模版下载失败')
       return {
@@ -188,10 +245,8 @@ function createLayoutSync(app) {
       const s = readSettings(app)
       if (!s.token) throw new Error('请先登录')
       const opts = { token: s.token, skipTlsVerify: Boolean(s.skipTlsVerify) }
-      const [layouts, templates] = await Promise.all([
-        requestJson('GET', apiUrl(app, '/api/report-editor/layout-presets'), opts),
-        requestJson('GET', apiUrl(app, '/api/report-editor/templates'), opts),
-      ])
+      const layouts = await requestJson('GET', apiUrl(app, '/api/report-editor/layout-presets'), opts)
+      const templates = await requestJson('GET', apiUrl(app, '/api/report-editor/templates'), opts)
       if (!layouts || !layouts.ok) throw new Error((layouts && layouts.error) || '版式下载失败')
       if (!templates || !templates.ok) throw new Error((templates && templates.error) || '模版下载失败')
       return {

@@ -166,9 +166,9 @@
       {{ msg }}
     </p>
 
-    <div v-if="appUpdateCheckResult?.notes" class="update-notes">
-      <h4 class="update-notes-title">更新说明（{{ appUpdateCheckResult.latestVersion }}）</h4>
-      <pre class="update-notes-body">{{ appUpdateCheckResult.notes }}</pre>
+    <div v-if="updateNotesText" class="update-notes">
+      <h4 class="update-notes-title">更新说明（{{ updateNotesVersion }}）</h4>
+      <pre class="update-notes-body">{{ updateNotesText }}</pre>
     </div>
 
     <p v-if="!isElectron" class="settings-hint settings-hint--muted">
@@ -265,6 +265,20 @@ const lastCheckLabel = computed(() => {
             : ''
   const timeText = d.toLocaleString()
   return statusText ? `${timeText}（${statusText}）` : timeText
+})
+
+const updateNotesText = computed(() => {
+  const notes = appUpdateCheckResult.value?.notes?.trim()
+  return notes || ''
+})
+
+const updateNotesVersion = computed(() => {
+  const r = appUpdateCheckResult.value
+  if (!r) return ''
+  if (r.status === 'latest' || r.status === 'skipped') {
+    return r.currentVersion || r.latestVersion || ''
+  }
+  return r.latestVersion || r.currentVersion || ''
 })
 
 const isMac = computed(() => (config.value.platform || '').startsWith('darwin'))

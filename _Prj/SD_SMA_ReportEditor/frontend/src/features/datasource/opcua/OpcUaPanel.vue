@@ -220,6 +220,7 @@
 
 <script setup>
 import { computed, defineExpose, onBeforeUnmount, onMounted, reactive, ref, shallowRef, triggerRef, watch } from 'vue'
+import { apiFetch } from '@/api/client.js'
 import ConnectionTabLed from '@/features/datasource/ConnectionTabLed.vue'
 import {
   probeConnectionIds,
@@ -232,7 +233,7 @@ import {
   pruneOpcConnectionHealth,
   setOpcConnectionHealth,
 } from '@/features/datasource/connection-health-detail'
-import { apiFetch } from '@/api/client.js'
+import { setOpcHealthSummary } from '@/features/datasource/datasource-nav-health'
 import { auditLog } from '@/lib/auditLog'
 import OpcUaTree from './OpcUaTree.vue'
 import { translateOpcuaMessage } from './opcua-messages.js'
@@ -258,6 +259,7 @@ const props = defineProps({
 const emit = defineEmits(['health-summary'])
 
 const servers = ref([])
+let loadServersToken = 0
 const opcHealth = reactive({})
 const selected = ref(null)
 const form = reactive({
@@ -556,6 +558,25 @@ function pruneOpcHealth(validIds) {
   pruneOpcConnectionHealth(validIds)
 }
 
+function hydrateOpcServersFromLocalConfig() {
+  const loader = window.electronAPI?.getDataSourceStartupSnapshot
+  if (typeof loader !== 'function' || servers.value.length) return false
+  void loader()
+    .then((snap) => {
+      if (servers.value.length) return
+      const list = Array.isArray(snap?.opcua_servers) ? snap.opcua_servers : []
+      if (!list.length) return
+      servers.value = list.map((s) => ({ ...s }))
+      emit('health-summary', connectionHealthSummary.value)
+      setOpcHealthSummary(connectionHealthSummary.value)
+      const pid = pickPreferredOpcServerId(snap?.app_preferences || {}, servers.value, null)
+      const selectedServer = servers.value.find((s) => s.id === pid) || servers.value[0]
+      if (selectedServer) selectServer(selectedServer, false)
+    })
+    .catch(() => {})
+  return true
+}
+
 function probeAllOpcConnections() {
   const ids = servers.value.map((s) => s.id).filter(Boolean)
   pruneOpcHealth(ids)
@@ -571,38 +592,57 @@ const connectionHealthSummary = computed(() =>
 
 watch(
   connectionHealthSummary,
-  (s) => emit('health-summary', s),
-  { immediate: true },
+  (s) => {
+    if (!servers.value.length && s.total === 0) return
+    emit('health-summary', s)
+    setOpcHealthSummary(s)
+  },
 )
 
-async function loadServers(explicitPreferred = null) {
+async function loadServers(explicitPreferred = null, opts = {}) {
+  const attempt = opts.attempt ?? 0
+  const token = opts.token ?? ++loadServersToken
+
   let prefs = {}
   try {
     prefs = await apiFetch('/settings/app_preferences')
   } catch {
     prefs = {}
   }
-  const data = await apiFetch('/opcua/servers')
-  servers.value = data.servers || []
-  probeAllOpcConnections()
-  if (!servers.value.length) {
-    startNew()
-    return
-  }
-  const pid = pickPreferredOpcServerId(prefs, servers.value, explicitPreferred)
-  if (pid) {
-    const s = servers.value.find((x) => x.id === pid)
-    if (s) {
-      selectServer(s, false)
+  try {
+    const data = await apiFetch('/opcua/servers')
+    if (token !== loadServersToken) return
+    servers.value = data.servers || []
+    probeAllOpcConnections()
+    emit('health-summary', connectionHealthSummary.value)
+    setOpcHealthSummary(connectionHealthSummary.value)
+    if (!servers.value.length) {
+      startNew()
       return
     }
+    const pid = pickPreferredOpcServerId(prefs, servers.value, explicitPreferred)
+    if (pid) {
+      const s = servers.value.find((x) => x.id === pid)
+      if (s) {
+        selectServer(s, false)
+        return
+      }
+    }
+    const curId = form.id
+    if (curId && servers.value.some((x) => x.id === curId)) {
+      selectServer(servers.value.find((x) => x.id === curId), false)
+      return
+    }
+    selectServer(servers.value[0], false)
+  } catch (e) {
+    if (token !== loadServersToken) return
+    if (attempt < 7) {
+      const delayMs = Math.min(350 * 2 ** attempt, 3000)
+      await new Promise((r) => window.setTimeout(r, delayMs))
+      return loadServers(explicitPreferred, { attempt: attempt + 1, token })
+    }
+    msg.value = e.message || String(e)
   }
-  const curId = form.id
-  if (curId && servers.value.some((x) => x.id === curId)) {
-    selectServer(servers.value.find((x) => x.id === curId), false)
-    return
-  }
-  selectServer(servers.value[0], false)
 }
 
 function onOpcConnTabClick(s) {
@@ -1188,11 +1228,13 @@ watch(browseCapability, () => {
 })
 
 onMounted(() => {
+  hydrateOpcServersFromLocalConfig()
   void loadServers()
   window.addEventListener('report-editor-config-imported', onConfigImported)
 })
 
 onBeforeUnmount(() => {
+  loadServersToken += 1
   cancelExpandAll()
   clearTimeout(searchDebounceTimer)
   clearPollTimer()
@@ -1203,6 +1245,7 @@ onBeforeUnmount(() => {
 defineExpose({
   probeAllConnections: probeAllOpcConnections,
   healthSummary: connectionHealthSummary,
+  reloadServers: loadServers,
 })
 </script>
 

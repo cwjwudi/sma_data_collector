@@ -6,6 +6,9 @@
         <p class="ot-sub ds-pane-subtitle">选择库与对象，右侧查看数据或编写查询</p>
       </div>
       <div class="ds-pane-head-actions">
+        <button type="button" class="btn sm ghost" title="重新连接并刷新架构" @click="$emit('refresh-catalog')">
+          刷新架构
+        </button>
         <span class="engine-pill" :title="engine">{{ engineLabel }}</span>
       </div>
     </header>
@@ -192,7 +195,7 @@ const props = defineProps({
   activeTable: { type: String, default: '' },
   activeCollection: { type: String, default: '' },
 })
-defineEmits(['select-database', 'select-table', 'select-collection'])
+defineEmits(['select-database', 'select-table', 'select-collection', 'refresh-catalog'])
 
 const dbQuery = ref('')
 const tableQuery = ref('')

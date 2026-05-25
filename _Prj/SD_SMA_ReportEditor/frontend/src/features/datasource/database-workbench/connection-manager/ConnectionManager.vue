@@ -3,7 +3,8 @@
     <div class="row-head">
       <h4>数据库连接</h4>
     </div>
-    <template v-if="draft">
+    <p v-if="loading" class="conn-placeholder">{{ loadingMessage }}</p>
+    <template v-else-if="modelValue || creatingNew">
       <template v-if="isRemoteDemo">
         <p class="demo-conn-hint">
           此为<strong>远程演示</strong>连接，地址与账号由软件维护，无需填写。可直接浏览左侧数据库与表，或点击「测试连接」确认状态。
@@ -33,6 +34,13 @@
         <input v-model="draft.host" class="input" placeholder="192.168.1.10" :disabled="busy" />
         <label>端口</label>
         <input v-model="draft.portText" type="text" inputmode="numeric" class="input" placeholder="留空则使用默认端口" :disabled="busy" />
+        <label>{{ draft.engine === 'mongodb' ? '默认数据库（可选）' : '数据库（可选）' }}</label>
+        <input
+          v-model="draft.database"
+          class="input"
+          placeholder="留空则打开后自动选择可用库"
+          :disabled="busy"
+        />
         <label>用户名</label>
         <input v-model="draft.username" class="input" autocomplete="username" :disabled="busy" />
         <label>密码</label>
@@ -62,6 +70,7 @@
       </template>
       <div v-if="msg" :class="['msg', msgTone]">{{ msg }}</div>
     </template>
+    <p v-else class="conn-placeholder">请点击上方连接标签查看详情，或点「+ 新建」添加连接。</p>
   </div>
 </template>
 
@@ -73,6 +82,9 @@ import '../../connection-form-pane.css'
 
 const props = defineProps({
   modelValue: { type: Object, default: null },
+  creatingNew: { type: Boolean, default: false },
+  loading: { type: Boolean, default: false },
+  loadingMessage: { type: String, default: '正在加载已保存的连接…' },
 })
 const emit = defineEmits(['updated', 'new', 'connection-tested'])
 
