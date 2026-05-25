@@ -15,6 +15,26 @@ from schemas.common import AppPreferencesPatch
 router = APIRouter(tags=["settings"])
 logger = logging.getLogger(__name__)
 
+# 演示远程连接细节仅在后端维护，不返回给前端
+_DEMO_SENSITIVE_PREF_KEYS = frozenset(
+    {
+        "demo_remote_db_host",
+        "demo_remote_db_port",
+        "demo_remote_db_name",
+        "demo_remote_db_user",
+        "demo_remote_db_password",
+        "demo_remote_opcua_endpoint",
+        "demo_remote_opcua_user",
+        "demo_remote_opcua_password",
+    }
+)
+
+
+def _public_app_preferences(prefs: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(prefs, dict):
+        return {}
+    return {k: v for k, v in prefs.items() if k not in _DEMO_SENSITIVE_PREF_KEYS}
+
 
 def _load() -> dict[str, Any]:
     return config_store.load_config(CONFIG_FILE, DATA_DIR)
@@ -34,7 +54,7 @@ def _save(cfg: dict[str, Any]) -> None:
 @router.get("/settings/app_preferences")
 async def get_app_preferences():
     cfg = _load()
-    return cfg.get("app_preferences", {})
+    return _public_app_preferences(cfg.get("app_preferences") or {})
 
 
 @router.patch("/settings/app_preferences")
@@ -46,7 +66,7 @@ async def patch_app_preferences(body: AppPreferencesPatch):
             prefs[k] = v
         cfg["app_preferences"] = prefs
         _save(cfg)
-        return prefs
+        return _public_app_preferences(prefs)
     except Exception as e:
         logger.exception("patch_app_preferences")
         raise HTTPException(503, f"保存偏好失败: {e}") from e

@@ -1,17 +1,17 @@
 {
-  "version": "0.1.13",
-  "releasedAt": "2026-05-22T13:43:03.797Z",
-  "notes": "Report Editor 0.1.13\n\n- Mac「打开已安装的应用」修复\n- 设置 → 演示与培训（远程/本地双通道、工具包下载）\n- 设置 → 操作审计（列表与导出 JSON）\n- 数据源 Tab 仿真连接标「仿真」\n- 配置导入导出、导出写回、软件更新等关键操作审计埋点",
+  "version": "0.1.14",
+  "releasedAt": "2026-05-25T05:54:59.471Z",
+  "notes": "Report Editor 0.1.14\n\n- 演示与培训：Windows 样式修复；应用内一键启停演示环境\n- 操作审计：高级筛选、CSV 导出、90 天保留；仪表盘/侧边栏入口\n- 连接可观测：Dashboard 探活汇总；异常详情弹窗（DB+OPC）",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor-Setup-0.1.13-x64.exe",
+      "url": "Report Editor-Setup-0.1.14-x64.exe",
       "sha256": "",
       "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor-0.1.13-arm64.dmg",
-      "sha256": "9789b578a9b017bcba2667fa6f2c8a51a6dc0bc1821c0a8a0a756b781a0e4363",
-      "size": 176907647
+      "url": "Report Editor-0.1.14-arm64.dmg",
+      "sha256": "",
+      "size": 0
     }
   }
 }

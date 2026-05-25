@@ -151,6 +151,13 @@ if [[ -n "$DMG" && -f "$DMG" ]]; then
   echo ""
   echo "Deliver this .dmg to Mac users ($ARCH)."
   echo "User data: ~/Library/Application Support/sd-sma-report-editor/"
+
+  step "Update manifest + sync Portal (if mounted)"
+  if node "$PROJECT_ROOT/packaging/scripts/publish-portal-release.mjs" --copy-artifacts; then
+    ok "latest.json synced"
+  else
+    echo "[WARN] publish-portal-release failed; run manually after build." >&2
+  fi
 else
   echo "[WARN] No .dmg under $OUTPUT_DIR." >&2
   exit 1

@@ -258,6 +258,7 @@ export async function checkAppUpdateManual() {
   if (!api?.checkAppUpdate) return null
   const res = await api.checkAppUpdate({ silent: false })
   applyCheckResult(res)
+  await syncAppUpdateState()
   return res
 }
 

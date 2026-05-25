@@ -15,10 +15,10 @@
             <span class="nav-icon-wrap">
               <span class="nav-icon">{{ item.icon }}</span>
               <span
-                v-if="item.path === '/datasource' && dbHasFailedConnections"
+                v-if="item.path === '/datasource' && hasConnectionFailures"
                 class="nav-badge"
-                title="存在连接失败的数据库"
-                aria-label="存在连接失败的数据库"
+                title="存在连接失败的连接"
+                aria-label="存在连接失败的连接"
               />
               <span
                 v-if="item.path === '/settings' && appUpdateAvailable"
@@ -58,9 +58,9 @@ import {
 } from '@/features/settings/app-update/appUpdateState'
 import { setupWizardCompleted } from '@/features/onboarding/setupWizardStorage'
 import {
-  dbHasFailedConnections,
-  probeAllDatabaseConnectionsForNav,
-} from '@/features/datasource/database-connection-health'
+  probeAllConnectionsForNav,
+  hasFailedConnections,
+} from '@/features/datasource/datasource-nav-health'
 import {
   connectionProbeIntervalMs,
   loadConnectionProbePrefs,
@@ -74,6 +74,8 @@ const setupWizardVisible = ref(false)
 let navDbHealthTimer = null
 let navProbePrefs = { enabled: false, intervalSec: 30 }
 
+const hasConnectionFailures = hasFailedConnections
+
 function stopNavDbHealthPolling() {
   if (navDbHealthTimer != null) {
     window.clearInterval(navDbHealthTimer)
@@ -84,10 +86,10 @@ function stopNavDbHealthPolling() {
 function startNavDbHealthPolling() {
   stopNavDbHealthPolling()
   if (route.path.startsWith('/datasource') || !navProbePrefs.enabled) return
-  void probeAllDatabaseConnectionsForNav()
+  void probeAllConnectionsForNav()
   navDbHealthTimer = window.setInterval(() => {
     if (!route.path.startsWith('/datasource') && navProbePrefs.enabled) {
-      void probeAllDatabaseConnectionsForNav()
+      void probeAllConnectionsForNav()
     }
   }, connectionProbeIntervalMs(navProbePrefs))
 }
@@ -108,7 +110,7 @@ function onProbePrefsChanged(ev) {
 
 function onConfigImported() {
   if (!route.path.startsWith('/datasource')) {
-    void probeAllDatabaseConnectionsForNav()
+    void probeAllConnectionsForNav()
   }
 }
 
@@ -171,6 +173,7 @@ const navItems = [
   { path: '/signatures', icon: '✒️', label: '签名库' },
   { path: '/generate', icon: '⚡', label: '生成报表' },
   { path: '/history', icon: '📁', label: '历史报表' },
+  { path: '/audit', icon: '📋', label: '操作审计' },
   { path: '/settings', icon: '⚙', label: '设置' },
 ]
 </script>

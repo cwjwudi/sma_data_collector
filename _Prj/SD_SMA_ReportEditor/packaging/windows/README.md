@@ -35,10 +35,16 @@ build.bat
 ## 产物
 
 ```text
-output/SD SMA Report Editor-Setup-<version>-x64.exe
+output/Report Editor-Setup-<version>-x64.exe
 ```
 
-安装包与 `win-unpacked/` 均在 **`output/`**；排错备用目录为 **`output-alt/`**（见 `npm run dist:cn:alt`），不在 `frontend/release*`。
+打包成功后脚本会自动运行 `publish-portal-release.mjs`：生成 `latest.json`（含 SHA256）并同步到已挂载的 Portal 目录。
+
+手动同步（在仓库根目录）：
+
+```powershell
+node packaging\scripts\publish-portal-release.mjs --copy-artifacts
+```
 
 ## 打包失败：winCodeSign / 符号链接
 

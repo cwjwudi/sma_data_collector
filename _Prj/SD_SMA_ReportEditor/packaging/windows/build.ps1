@@ -281,6 +281,16 @@ if ($setup) {
   Write-Host 'Install: double-click Setup, choose directory, complete wizard.' -ForegroundColor DarkGray
   Write-Host 'Uninstall: Settings - Apps - Installed apps - SD SMA Report Editor' -ForegroundColor DarkGray
   Write-Host 'Uninstall removes user data under %APPDATA%\sd-sma-report-editor\' -ForegroundColor DarkGray
+
+  Write-Step 'Update manifest + sync Portal (if mounted)'
+  $publishScript = Join-Path $Root 'packaging\scripts\publish-portal-release.mjs'
+  & node $publishScript '--copy-artifacts'
+  if ($LASTEXITCODE -ne 0) {
+    Write-WarnLine 'publish-portal-release failed; run manually after build.'
+  }
+  else {
+    Write-Ok 'latest.json synced'
+  }
 }
 else {
   Write-WarnLine "No *-Setup-*-x64.exe under $OutputDir. Check electron-builder log above."

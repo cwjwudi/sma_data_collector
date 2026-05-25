@@ -2,11 +2,11 @@
   <section class="settings-section">
     <h3 class="settings-section__title">演示与培训</h3>
     <p class="settings-hint">
-      无现场产线时，可连接<strong>远程演示服务器</strong>（默认），或在网络不佳时安装<strong>本地演示工具包</strong>（需本机 Docker Desktop）。
-      演示连接会在数据源页 Tab 上标「仿真」，与生产连接区分。
+      没有接入现场产线时，可以用<strong>远程演示服务器</strong>体验完整流程；网络不稳定时，可改用<strong>本地演示工具包</strong>（需先安装 Docker Desktop）。
+      添加的演示连接会在「数据源配置」里标为「仿真」，与正式产线连接区分。
     </p>
 
-    <div class="settings-field-row">
+    <div class="settings-field-row demo-channel-row">
       <span class="settings-field-label">演示通道</span>
       <select v-model="channel" class="settings-select" :disabled="busy" @change="onChannelChange">
         <option value="remote">远程演示服务器</option>
@@ -14,66 +14,50 @@
       </select>
     </div>
 
-    <div v-if="channel === 'remote'" class="demo-remote-fields">
-      <p class="settings-hint settings-hint--muted">由团队维护的演示 DB/OPC；保存后用于健康检查与一键添加连接。</p>
-      <label class="demo-field">
-        <span>数据库主机</span>
-        <input v-model="remoteDbHost" class="settings-input" type="text" placeholder="demo.example.com" :disabled="busy" />
-      </label>
-      <label class="demo-field">
-        <span>数据库端口</span>
-        <input v-model.number="remoteDbPort" class="settings-input settings-input--narrow" type="number" :disabled="busy" />
-      </label>
-      <label class="demo-field">
-        <span>数据库名 / 用户 / 密码</span>
-        <div class="demo-inline">
-          <input v-model="remoteDbName" class="settings-input" placeholder="report" :disabled="busy" />
-          <input v-model="remoteDbUser" class="settings-input" placeholder="demo" :disabled="busy" />
-          <input v-model="remoteDbPassword" class="settings-input" type="password" placeholder="密码" :disabled="busy" />
-        </div>
-      </label>
-      <label class="demo-field">
-        <span>OPC UA Endpoint</span>
-        <input
-          v-model="remoteOpcEndpoint"
-          class="settings-input"
-          type="text"
-          placeholder="opc.tcp://host:4840/..."
-          :disabled="busy"
-        />
-      </label>
-      <button type="button" class="settings-btn settings-btn--secondary" :disabled="busy" @click="saveRemotePrefs">
-        保存远程演示地址
-      </button>
+    <div v-if="channel === 'remote'" class="demo-block">
+      <p class="settings-hint settings-hint--muted">
+        远程演示服务已随软件预置，无需填写地址或账号。请先点击「检测演示环境」，通过后再「一键添加演示连接」。
+      </p>
+      <p class="settings-hint settings-hint--muted">
+        若检测失败，可能是演示服务正在维护或网络受限，可稍后再试，或改用下方的「本地演示工具包」。
+      </p>
     </div>
 
-    <div v-else class="demo-local-block">
+    <div v-else class="demo-block">
       <p class="settings-hint">
-        本地通道使用 <code>127.0.0.1:3306</code> 与 <code>4840</code>（与工具包内 docker-compose 一致）。请先安装 Docker Desktop 并安装工具包。
+        本地演示在本机运行，适合无法访问远程演示服务时使用。请先安装 Docker Desktop，再安装演示工具包并按说明启动。
       </p>
-      <dl v-if="packState.installed" class="update-meta">
-        <div class="update-meta-row">
+      <dl v-if="packState.installed" class="settings-meta">
+        <div class="settings-meta-row">
           <dt>已安装工具包</dt>
           <dd>{{ packState.version || '—' }}</dd>
         </div>
-        <div v-if="packState.installPath" class="update-meta-row">
+        <div v-if="packState.installPath" class="settings-meta-row">
           <dt>路径</dt>
-          <dd class="update-meta-url">{{ packState.installPath }}</dd>
+          <dd class="settings-meta-url">{{ packState.installPath }}</dd>
         </div>
       </dl>
-      <div class="demo-actions">
-        <button type="button" class="settings-btn settings-btn--secondary" :disabled="busy || !electronShell" @click="checkDemoPack">
+      <div class="settings-actions demo-pack-actions">
+        <button type="button" class="settings-btn" :disabled="busy || !electronShell" @click="checkDemoPack">
           检查工具包更新
         </button>
         <button type="button" class="settings-btn settings-btn--primary" :disabled="busy || !electronShell" @click="installDemoPack">
           {{ packCheck?.updateAvailable ? '下载并安装工具包' : '安装/更新工具包' }}
         </button>
       </div>
+      <div v-if="packState.installed && electronShell" class="settings-actions demo-pack-actions">
+        <button type="button" class="settings-btn settings-btn--primary" :disabled="busy || composeBusy" @click="startDemoPack">
+          启动演示环境
+        </button>
+        <button type="button" class="settings-btn" :disabled="busy || composeBusy" @click="stopDemoPack">
+          停止演示环境
+        </button>
+      </div>
       <p v-if="packCheck?.notes" class="settings-hint settings-hint--muted">{{ packCheck.notes }}</p>
     </div>
 
-    <div class="demo-actions">
-      <button type="button" class="settings-btn settings-btn--secondary" :disabled="busy" @click="checkHealth">
+    <div class="settings-actions settings-actions--spaced">
+      <button type="button" class="settings-btn" :disabled="busy" @click="checkHealth">
         检测演示环境
       </button>
       <button type="button" class="settings-btn settings-btn--primary" :disabled="busy" @click="applyDemo">
@@ -102,16 +86,10 @@ import { apiFetch } from "@/api/client.js";
 import { auditLog } from "@/lib/auditLog";
 
 const busy = ref(false);
+const composeBusy = ref(false);
 const msg = ref("");
 const msgTone = ref("");
 const channel = ref<"remote" | "local">("remote");
-
-const remoteDbHost = ref("");
-const remoteDbPort = ref(3306);
-const remoteDbName = ref("report");
-const remoteDbUser = ref("demo");
-const remoteDbPassword = ref("");
-const remoteOpcEndpoint = ref("");
 
 const healthSummary = ref("");
 const healthOk = ref(false);
@@ -141,12 +119,6 @@ async function loadPrefs() {
     const prefs = (await apiFetch("/settings/app_preferences")) as Record<string, unknown>;
     const ch = String(prefs.demo_preferred_channel || "remote");
     channel.value = ch === "local" ? "local" : "remote";
-    remoteDbHost.value = String(prefs.demo_remote_db_host || "");
-    remoteDbPort.value = Number(prefs.demo_remote_db_port) || 3306;
-    remoteDbName.value = String(prefs.demo_remote_db_name || "report");
-    remoteDbUser.value = String(prefs.demo_remote_db_user || "demo");
-    remoteDbPassword.value = String(prefs.demo_remote_db_password || "");
-    remoteOpcEndpoint.value = String(prefs.demo_remote_opcua_endpoint || "");
   } catch {
     /* ignore */
   }
@@ -159,31 +131,6 @@ async function refreshPackState() {
     packState.value = await api.getDemoPackState();
   } catch {
     packState.value = { installed: false, version: "", installPath: "" };
-  }
-}
-
-async function saveRemotePrefs() {
-  busy.value = true;
-  setMsg("", "");
-  try {
-    await apiFetch("/settings/app_preferences", {
-      method: "PATCH",
-      body: {
-        demo_preferred_channel: channel.value,
-        demo_remote_db_host: remoteDbHost.value.trim(),
-        demo_remote_db_port: remoteDbPort.value,
-        demo_remote_db_name: remoteDbName.value.trim(),
-        demo_remote_db_user: remoteDbUser.value.trim(),
-        demo_remote_db_password: remoteDbPassword.value,
-        demo_remote_opcua_endpoint: remoteOpcEndpoint.value.trim(),
-      },
-    });
-    setMsg("远程演示地址已保存。", "ok");
-    void auditLog({ action: "demo.config_save", summary: "保存远程演示地址", result: "ok" });
-  } catch (e: unknown) {
-    setMsg(e instanceof Error ? e.message : String(e), "err");
-  } finally {
-    busy.value = false;
   }
 }
 
@@ -206,10 +153,13 @@ async function checkHealth() {
     };
     healthOk.value = Boolean(res.ok);
     const parts: string[] = [];
-    parts.push(`数据库：${res.db?.ok ? "正常" : res.db?.message || "失败"}`);
-    parts.push(`OPC UA：${res.opcua?.ok ? "正常" : res.opcua?.message || "失败"}`);
+    parts.push(`演示数据库：${res.db?.ok ? "正常" : res.db?.message || "无法连接"}`);
+    parts.push(`演示 OPC：${res.opcua?.ok ? "正常" : res.opcua?.message || "暂未开放"}`);
     healthSummary.value = parts.join("；");
-    setMsg(res.ok ? "演示环境可用。" : "演示环境不可用，请检查网络或本地 Docker。", res.ok ? "ok" : "warn");
+    setMsg(
+      res.ok ? "演示环境可用，可以添加演示连接。" : "演示环境暂不可用，请稍后再试或改用本地演示工具包。",
+      res.ok ? "ok" : "warn",
+    );
     void auditLog({
       action: "demo.health_check",
       result: res.ok ? "ok" : "fail",
@@ -230,8 +180,11 @@ async function applyDemo() {
     const res = (await apiFetch("/demo/apply_connections", {
       method: "POST",
       body: { channel: channel.value },
-    })) as { ok?: boolean; db_id?: string; opc_id?: string };
-    setMsg("已添加演示连接，请到「数据源配置」测试并浏览变量。", "ok");
+    })) as { ok?: boolean; db_id?: string; opc_id?: string | null; opc_skipped?: boolean };
+    const hint = res.opc_skipped
+      ? "已添加演示数据库连接。演示 OPC 尚未开放，可先在数据源中浏览演示库并完成报表练习。"
+      : "已添加演示连接，请到「数据源配置」查看并测试。";
+    setMsg(hint, "ok");
     window.dispatchEvent(new CustomEvent("report-editor-config-imported"));
     void auditLog({
       action: "demo.apply_connections",
@@ -297,7 +250,7 @@ async function installDemoPack() {
     await refreshPackState();
     channel.value = "local";
     await onChannelChange();
-    setMsg(`演示工具包 ${res.version} 已安装。请在本机 Docker 中运行工具包内 start 脚本后检测环境。`, "ok");
+    setMsg(`演示工具包 ${res.version} 已安装。可点击「启动演示环境」，或按工具包说明手动运行脚本。`, "ok");
     void auditLog({
       action: "demo.pack_install",
       result: "ok",
@@ -311,6 +264,54 @@ async function installDemoPack() {
   }
 }
 
+async function startDemoPack() {
+  const api = window.electronAPI;
+  if (!api?.startDemoPack) {
+    setMsg("仅桌面安装版可启动演示环境。", "warn");
+    return;
+  }
+  composeBusy.value = true;
+  setMsg("", "");
+  try {
+    const res = await api.startDemoPack();
+    if (!res.ok) {
+      setMsg(res.error || "启动失败（请确认 Docker Desktop 已运行）", "err");
+      void auditLog({ action: "demo.compose_start", result: "fail", summary: res.error || "启动失败" });
+      return;
+    }
+    setMsg("演示环境已启动，请点击「检测演示环境」确认 DB/OPC 可用。", "ok");
+    void auditLog({ action: "demo.compose_start", result: "ok", summary: "docker compose up" });
+  } catch (e: unknown) {
+    setMsg(e instanceof Error ? e.message : String(e), "err");
+  } finally {
+    composeBusy.value = false;
+  }
+}
+
+async function stopDemoPack() {
+  const api = window.electronAPI;
+  if (!api?.stopDemoPack) {
+    setMsg("仅桌面安装版可停止演示环境。", "warn");
+    return;
+  }
+  composeBusy.value = true;
+  setMsg("", "");
+  try {
+    const res = await api.stopDemoPack();
+    if (!res.ok) {
+      setMsg(res.error || "停止失败", "err");
+      void auditLog({ action: "demo.compose_stop", result: "fail", summary: res.error || "停止失败" });
+      return;
+    }
+    setMsg("演示环境已停止。", "ok");
+    void auditLog({ action: "demo.compose_stop", result: "ok", summary: "docker compose down" });
+  } catch (e: unknown) {
+    setMsg(e instanceof Error ? e.message : String(e), "err");
+  } finally {
+    composeBusy.value = false;
+  }
+}
+
 onMounted(async () => {
   await loadPrefs();
   await refreshPackState();
@@ -318,52 +319,15 @@ onMounted(async () => {
 </script>
 
 <style scoped>
-.demo-remote-fields {
-  margin: 12px 0 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  max-width: 560px;
+.demo-block {
+  margin-bottom: 4px;
 }
-.demo-field {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  font-size: 13px;
+
+.demo-channel-row {
+  max-width: 100%;
 }
-.demo-field span {
-  color: #374151;
-  font-weight: 500;
-}
-.demo-inline {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-.demo-inline .settings-input {
-  flex: 1 1 120px;
-}
-.settings-input--narrow {
-  width: 88px;
-}
-.demo-local-block {
-  margin: 12px 0 16px;
-}
-.demo-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin: 12px 0;
-}
-.settings-hint--muted {
-  color: #6b7280;
-}
-.settings-hint--warn {
-  color: #92400e;
-}
-.demo-field code,
-.settings-hint code {
-  font-family: ui-monospace, monospace;
-  font-size: 12px;
+
+.demo-pack-actions {
+  margin-top: 4px;
 }
 </style>

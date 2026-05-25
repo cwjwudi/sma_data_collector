@@ -140,6 +140,8 @@ interface Window {
       version?: string;
       installPath?: string;
     }>;
+    startDemoPack: () => Promise<{ ok: boolean; error?: string }>;
+    stopDemoPack: () => Promise<{ ok: boolean; error?: string }>;
     onAppUpdateDownloadProgress: (
       listener: (payload: {
         phase?: string

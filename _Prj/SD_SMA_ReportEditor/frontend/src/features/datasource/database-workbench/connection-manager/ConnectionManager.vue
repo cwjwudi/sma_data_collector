@@ -4,6 +4,20 @@
       <h4>数据库连接</h4>
     </div>
     <template v-if="draft">
+      <template v-if="isRemoteDemo">
+        <p class="demo-conn-hint">
+          此为<strong>远程演示</strong>连接，地址与账号由软件维护，无需填写。可直接浏览左侧数据库与表，或点击「测试连接」确认状态。
+        </p>
+        <dl class="demo-conn-meta">
+          <div><dt>名称</dt><dd>{{ draft.name || '演示数据库（远程）' }}</dd></div>
+          <div><dt>类型</dt><dd>MariaDB · 仿真</dd></div>
+        </dl>
+        <div class="actions">
+          <button type="button" class="btn seg" :disabled="busy" @click="testOnly">测试连接</button>
+          <button type="button" class="btn danger seg" v-if="draft.id" :disabled="busy" @click="remove">删除</button>
+        </div>
+      </template>
+      <template v-else>
       <label>名称</label>
       <input v-model="draft.name" class="input" placeholder="例如 产线 MySQL" />
       <label>引擎</label>
@@ -45,6 +59,7 @@
         <button type="button" class="btn primary seg" :disabled="busy" @click="testAndSave">测试并保存</button>
         <button type="button" class="btn danger seg" v-if="draft.id" :disabled="busy" @click="remove">删除</button>
       </div>
+      </template>
       <div v-if="msg" :class="['msg', msgTone]">{{ msg }}</div>
     </template>
   </div>
@@ -81,6 +96,11 @@ const busy = ref(false)
 const hasSavedPassword = computed(() => {
   const v = props.modelValue
   return !!(v && v.has_password)
+})
+
+const isRemoteDemo = computed(() => {
+  const v = props.modelValue
+  return !!(v && v.is_demo && v.demo_channel === 'remote')
 })
 
 function defaultPortForEngine(engine) {
@@ -234,13 +254,18 @@ async function testOnly() {
   msgTone.value = ''
   busy.value = true
   try {
-    const res = await apiFetch('/database/test', {
-      method: 'POST',
-      body: buildApiBody(),
-    })
+    let res
+    if (isRemoteDemo.value && draft.id) {
+      res = await apiFetch(`/database/test_saved/${encodeURIComponent(draft.id)}`, { method: 'POST' })
+    } else {
+      res = await apiFetch('/database/test', {
+        method: 'POST',
+        body: buildApiBody(),
+      })
+    }
     if (res.ok) {
       if (draft.id) emit('connection-tested', { id: draft.id, ok: true })
-      msg.value = '连接成功（尚未保存到配置文件）'
+      msg.value = isRemoteDemo.value ? '连接成功' : '连接成功（尚未保存到配置文件）'
       msgTone.value = 'ok'
     } else {
       if (draft.id) emit('connection-tested', { id: draft.id, ok: false, message: res.message || '连接失败' })

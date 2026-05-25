@@ -40,7 +40,13 @@ https://brportal.cpolar.top/downloads/report-editor
    cp "packaging/mac/output/Report Editor-0.1.0-arm64.dmg" packaging/updates/
    ```
 
-3. **生成或更新** `latest.json`（见下方命令）
+3. **生成或更新** `latest.json`（见下方命令），并同步 Portal：
+
+```bash
+node packaging/scripts/publish-portal-release.mjs --copy-artifacts
+```
+
+`--portal-dir` 可指定 Portal 路径；默认探测 `/Volumes/web/web-portal-demo/...` 或相邻 `P004_WebPortal` 仓库。
 
 4. **发布**  
    - 提交并推送 **`latest.json`** 到 Gitea（已纳入 Git）  

@@ -618,6 +618,8 @@ function getDemoPackManager() {
 ipcMain.handle('demo-pack-get-state', () => getDemoPackManager().getState())
 ipcMain.handle('demo-pack-check', () => getDemoPackManager().checkRemote())
 ipcMain.handle('demo-pack-install', () => getDemoPackManager().downloadAndInstall())
+ipcMain.handle('demo-pack-start', () => getDemoPackManager().startCompose())
+ipcMain.handle('demo-pack-stop', () => getDemoPackManager().stopCompose())
 
 ipcMain.handle('app-update-get-config', () => getAppUpdater().getConfig())
 ipcMain.handle('app-update-get-state', () => getAppUpdater().getState())

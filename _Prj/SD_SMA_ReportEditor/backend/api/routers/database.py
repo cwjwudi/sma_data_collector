@@ -157,7 +157,18 @@ async def upsert_connection(body: DbConnectionSave):
                         enc = config_store.encrypt_db_password(DATA_DIR, pwd_plain)
                     entry["password_enc"] = enc
                     entry["id"] = body.id
-                    conns[i] = {**c, **entry}
+                    merged = {**c, **entry}
+                    if c.get("is_demo") and c.get("demo_channel") == "remote":
+                        merged["host"] = c.get("host")
+                        merged["port"] = c.get("port")
+                        merged["database"] = c.get("database")
+                        merged["username"] = c.get("username")
+                        merged["password_enc"] = c.get("password_enc")
+                        merged["is_demo"] = True
+                        merged["demo_channel"] = "remote"
+                        if body.name:
+                            merged["name"] = body.name
+                    conns[i] = merged
                     found = True
                     break
             if not found:

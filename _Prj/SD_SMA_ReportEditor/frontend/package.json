@@ -1,6 +1,6 @@
 {
   "name": "sd-sma-report-editor",
-  "version": "0.1.13",
+  "version": "0.1.14",
   "description": "Report Editor — 报表编辑器（Electron + FastAPI）",
   "author": "B&R Team",
   "private": true,
@@ -46,6 +46,7 @@
     "dist:mac:dmg": "npm run build && electron-builder --mac dmg --config.directories.output=../packaging/mac/output",
     "dist:mac:installer": "npm run build:backend:mac && npm run build && electron-builder --mac dmg --config.directories.output=../packaging/mac/output",
     "generate:update-manifest": "node ../packaging/scripts/generate-update-manifest.mjs",
+    "publish:portal": "node ../packaging/scripts/publish-portal-release.mjs --copy-artifacts",
     "bump:version": "node ../packaging/scripts/bump-version.mjs"
   },
   "build": {

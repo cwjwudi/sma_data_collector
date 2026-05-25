@@ -182,6 +182,50 @@ function createDemoPackManager({ app, resolveBaseUrl, readSkipTlsVerify }) {
         return { ok: false, error: e instanceof Error ? e.message : String(e) }
       }
     },
+
+    _scriptPath(installRoot, name) {
+      const ext = process.platform === 'win32' ? '.ps1' : '.sh'
+      return path.join(installRoot, 'scripts', `${name}${ext}`)
+    },
+
+    async runComposeScript(name) {
+      const installRoot = getInstallRoot()
+      const meta = readInstalledMeta(installRoot)
+      if (!meta?.version) {
+        return { ok: false, error: '请先安装演示工具包。' }
+      }
+      const scriptPath = this._scriptPath(installRoot, name)
+      if (!fs.existsSync(scriptPath)) {
+        return { ok: false, error: `未找到脚本：${scriptPath}` }
+      }
+      try {
+        if (process.platform === 'win32') {
+          await execFileAsync(
+            'powershell.exe',
+            ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', scriptPath],
+            { cwd: installRoot, windowsHide: true, maxBuffer: 4 * 1024 * 1024 },
+          )
+        } else {
+          await execFileAsync('bash', [scriptPath], {
+            cwd: installRoot,
+            maxBuffer: 4 * 1024 * 1024,
+          })
+        }
+        return { ok: true }
+      } catch (e) {
+        const err = e instanceof Error ? e : new Error(String(e))
+        const stderr = typeof e === 'object' && e && 'stderr' in e ? String(e.stderr || '') : ''
+        return { ok: false, error: stderr.trim() || err.message || '脚本执行失败' }
+      }
+    },
+
+    async startCompose() {
+      return this.runComposeScript('start')
+    },
+
+    async stopCompose() {
+      return this.runComposeScript('stop')
+    },
   }
 }
 

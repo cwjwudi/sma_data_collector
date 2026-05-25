@@ -86,3 +86,38 @@
 .conn-form-pane .msg.err {
   color: #b91c1c;
 }
+
+.conn-form-pane .demo-conn-hint {
+  margin: 0 0 8px;
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #374151;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 6px;
+}
+
+.conn-form-pane .demo-conn-meta {
+  margin: 0 0 4px;
+  display: grid;
+  gap: 6px;
+}
+
+.conn-form-pane .demo-conn-meta div {
+  display: flex;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.conn-form-pane .demo-conn-meta dt {
+  margin: 0;
+  min-width: 2.5rem;
+  font-weight: 500;
+  color: #6b7280;
+}
+
+.conn-form-pane .demo-conn-meta dd {
+  margin: 0;
+  color: #111827;
+}

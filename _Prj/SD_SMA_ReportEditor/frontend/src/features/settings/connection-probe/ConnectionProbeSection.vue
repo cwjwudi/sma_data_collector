@@ -100,11 +100,4 @@ onMounted(async () => {
 .settings-field-row--muted {
   opacity: 0.55;
 }
-.settings-input--narrow {
-  width: 88px;
-}
-.settings-field-hint {
-  font-size: 12px;
-  color: #6b7280;
-}
 </style>

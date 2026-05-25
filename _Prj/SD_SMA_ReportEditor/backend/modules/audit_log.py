@@ -12,6 +12,7 @@ from typing import Any
 AUDIT_DIR_NAME = "audit"
 AUDIT_FILE_NAME = "operations.jsonl"
 MAX_LINES = 5000
+DEFAULT_RETENTION_DAYS = 90
 
 
 def _audit_path(data_dir: Path) -> Path:
@@ -65,17 +66,78 @@ def append_audit(
     return entry
 
 
-def _maybe_trim(path: Path) -> None:
+def _maybe_trim(path: Path, *, retention_days: int = DEFAULT_RETENTION_DAYS) -> None:
     try:
         if not path.exists():
             return
         lines = path.read_text(encoding="utf-8").splitlines()
-        if len(lines) <= MAX_LINES:
+        if not lines:
             return
-        keep = lines[-MAX_LINES:]
-        path.write_text("\n".join(keep) + "\n", encoding="utf-8")
+        cutoff = time.time() - max(1, retention_days) * 86400
+        parsed: list[tuple[float, str]] = []
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+                ts = float(obj.get("ts") or 0)
+            except (json.JSONDecodeError, TypeError, ValueError):
+                ts = 0.0
+            if ts and ts < cutoff:
+                continue
+            parsed.append((ts, line))
+        if len(parsed) > MAX_LINES:
+            parsed.sort(key=lambda x: x[0])
+            parsed = parsed[-MAX_LINES:]
+        else:
+            parsed.sort(key=lambda x: x[0])
+        path.write_text("\n".join(line for _, line in parsed) + ("\n" if parsed else ""), encoding="utf-8")
     except OSError:
         pass
+
+
+def _read_all_rows(path: Path) -> list[dict[str, Any]]:
+    if not path.exists():
+        return []
+    rows: list[dict[str, Any]] = []
+    with path.open("r", encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                obj = json.loads(line)
+                if isinstance(obj, dict):
+                    rows.append(obj)
+            except json.JSONDecodeError:
+                continue
+    return rows
+
+
+def _filter_rows(
+    rows: list[dict[str, Any]],
+    *,
+    action: str | None = None,
+    result: str | None = None,
+    from_ts: float | None = None,
+    to_ts: float | None = None,
+) -> list[dict[str, Any]]:
+    action_filter = (action or "").strip()
+    result_filter = (result or "").strip()
+    out: list[dict[str, Any]] = []
+    for obj in rows:
+        if action_filter and obj.get("action") != action_filter:
+            continue
+        if result_filter and obj.get("result") != result_filter:
+            continue
+        ts = float(obj.get("ts") or 0)
+        if from_ts is not None and ts and ts < from_ts:
+            continue
+        if to_ts is not None and ts and ts > to_ts:
+            continue
+        out.append(obj)
+    return out
 
 
 def list_audit(
@@ -84,29 +146,83 @@ def list_audit(
     limit: int = 100,
     offset: int = 0,
     action: str | None = None,
+    result: str | None = None,
+    from_ts: float | None = None,
+    to_ts: float | None = None,
 ) -> dict[str, Any]:
-    path = _audit_path(data_dir)
-    if not path.exists():
-        return {"entries": [], "total": 0}
-    rows: list[dict[str, Any]] = []
-    action_filter = (action or "").strip()
-    with path.open("r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                obj = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if action_filter and obj.get("action") != action_filter:
-                continue
-            rows.append(obj)
+    rows = _filter_rows(
+        _read_all_rows(_audit_path(data_dir)),
+        action=action,
+        result=result,
+        from_ts=from_ts,
+        to_ts=to_ts,
+    )
     total = len(rows)
     rows.sort(key=lambda x: float(x.get("ts") or 0), reverse=True)
     page = rows[offset : offset + max(1, min(limit, 500))]
     return {"entries": page, "total": total}
 
 
-def export_audit(data_dir: Path, *, action: str | None = None) -> list[dict[str, Any]]:
-    return list_audit(data_dir, limit=MAX_LINES, offset=0, action=action).get("entries") or []
+def export_audit(
+    data_dir: Path,
+    *,
+    action: str | None = None,
+    result: str | None = None,
+    from_ts: float | None = None,
+    to_ts: float | None = None,
+) -> list[dict[str, Any]]:
+    rows = _filter_rows(
+        _read_all_rows(_audit_path(data_dir)),
+        action=action,
+        result=result,
+        from_ts=from_ts,
+        to_ts=to_ts,
+    )
+    rows.sort(key=lambda x: float(x.get("ts") or 0), reverse=True)
+    return rows[:MAX_LINES]
+
+
+def export_audit_csv(
+    data_dir: Path,
+    *,
+    action: str | None = None,
+    result: str | None = None,
+    from_ts: float | None = None,
+    to_ts: float | None = None,
+) -> str:
+    import csv
+    import io
+    from datetime import datetime, timezone
+
+    entries = export_audit(
+        data_dir,
+        action=action,
+        result=result,
+        from_ts=from_ts,
+        to_ts=to_ts,
+    )
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(["time", "action", "result", "summary", "object_type", "object_id", "actor"])
+    for e in entries:
+        ts = float(e.get("ts") or 0)
+        time_str = (
+            datetime.fromtimestamp(ts, tz=timezone.utc).astimezone().strftime("%Y-%m-%d %H:%M:%S")
+            if ts
+            else ""
+        )
+        actor = e.get("actor") if isinstance(e.get("actor"), dict) else {}
+        actor_str = ""
+        if isinstance(actor, dict):
+            parts = [p for p in [actor.get("os_user"), actor.get("hostname")] if p]
+            actor_str = "@".join(parts) if parts else ""
+        writer.writerow([
+            time_str,
+            e.get("action") or "",
+            e.get("result") or "",
+            e.get("summary") or "",
+            e.get("object_type") or "",
+            e.get("object_id") or "",
+            actor_str,
+        ])
+    return buf.getvalue()

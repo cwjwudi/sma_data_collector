@@ -26,10 +26,16 @@ chmod +x build.sh build.command
 ## 产物
 
 ```text
-output/SD SMA Report Editor-<version>-<arch>.dmg
+output/Report Editor-<version>-<arch>.dmg
 ```
 
-产物含 `*.dmg` 与 `mac-arm64/`（或 `mac/`）解包目录，均在 **`output/`** 下，不在 `frontend/release-mac`。
+打包成功后脚本会自动运行 `publish-portal-release.mjs`：生成 `latest.json`（含 SHA256）并同步到已挂载的 Portal 目录（如 `/Volumes/web/web-portal-demo/...`）。
+
+手动同步：
+
+```bash
+node packaging/scripts/publish-portal-release.mjs --copy-artifacts
+```
 
 现场安装见 [getting-started/mac-installer.md](../../getting-started/mac-installer.md)。
 

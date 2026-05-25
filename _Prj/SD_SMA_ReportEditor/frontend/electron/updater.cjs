@@ -299,6 +299,7 @@ function artifactFileName(artifactUrl, fallbackVersion) {
 function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
   let pending = null
   let downloadedPath = null
+  let downloadedVersion = null
   let lastCheckResult = null
   let downloading = false
   let downloadPaused = false
@@ -396,6 +397,7 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
       }
     }
     downloadedPath = null
+    downloadedVersion = null
   }
 
   function pauseActiveDownload() {
@@ -452,7 +454,10 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
         downloading,
         downloadPaused,
         downloadPercent: downloading || downloadPaused ? downloadPercent : null,
-        downloadedReady: Boolean(downloadedPath && fs.existsSync(downloadedPath)),
+        downloadedReady: Boolean(
+          downloadedPath && fs.existsSync(downloadedPath) && downloadedVersion,
+        ),
+        downloadedVersion: downloadedVersion || null,
         latestVersion: pending?.latestVersion || lastCheckResult?.latestVersion || null,
       }
     },
@@ -477,6 +482,10 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
 
     async check(options = {}) {
       const silent = Boolean(options.silent)
+      const savedDownloadPath = downloadedPath
+      const savedDownloadVersion =
+        downloadedVersion || pending?.latestVersion || lastCheckResult?.latestVersion || null
+
       if (!app.isPackaged) {
         const devResult = {
           ok: true,
@@ -489,8 +498,7 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
       }
       if (!silent) {
         pauseActiveDownload()
-        clearDownloaded()
-        pending = null
+        // 手动检查时暂不删除已下载包，待确认远端版本后再决定是否保留
       } else if (!downloading && !downloadedPath && !downloadPaused) {
         pending = null
       }
@@ -530,6 +538,9 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
         }
         const cmp = compareSemver(latestVersion, currentVersion)
         if (cmp <= 0) {
+          if (!silent) {
+            clearDownloaded()
+          }
           const latest = {
             ok: true,
             status: 'latest',
@@ -542,6 +553,19 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
           }
           emitCheckResult(latest)
           return latest
+        }
+        if (!silent) {
+          const canKeepDownload =
+            savedDownloadPath &&
+            fs.existsSync(savedDownloadPath) &&
+            savedDownloadVersion &&
+            savedDownloadVersion === latestVersion
+          if (canKeepDownload) {
+            downloadedPath = savedDownloadPath
+            downloadedVersion = savedDownloadVersion
+          } else {
+            clearDownloaded()
+          }
         }
         pending = {
           currentVersion,
@@ -714,6 +738,7 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
           }
         }
         downloadedPath = dest
+        downloadedVersion = pending.latestVersion
         partialDest = null
         partialReceived = 0
         partialTotal = 0

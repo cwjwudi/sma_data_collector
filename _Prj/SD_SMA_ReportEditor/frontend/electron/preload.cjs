@@ -54,6 +54,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getDemoPackState: () => ipcRenderer.invoke('demo-pack-get-state'),
   checkDemoPack: () => ipcRenderer.invoke('demo-pack-check'),
   installDemoPack: () => ipcRenderer.invoke('demo-pack-install'),
+  startDemoPack: () => ipcRenderer.invoke('demo-pack-start'),
+  stopDemoPack: () => ipcRenderer.invoke('demo-pack-stop'),
   onAppUpdateDownloadProgress: (listener) => {
     const fn = (_event, payload) => listener(payload)
     ipcRenderer.on('update-download-progress', fn)

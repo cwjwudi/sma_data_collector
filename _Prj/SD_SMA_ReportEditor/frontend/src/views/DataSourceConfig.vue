@@ -7,7 +7,12 @@
         数据库工作台
         <span class="tab-health-count">
           ({{ dbHealth.ok }}/{{ dbHealth.total
-          }}<span v-if="dbHealth.fail" class="tab-health-fail"> · {{ dbHealth.fail }} 异常</span>)
+          }}<span
+            v-if="dbHealth.fail"
+            class="tab-health-fail tab-health-fail--click"
+            title="点击查看异常详情"
+            @click.stop="openHealthDetail"
+          > · {{ dbHealth.fail }} 异常</span>)
         </span>
       </button>
       <button type="button" :class="{ on: tab === 'opc' }" @click="tab = 'opc'">
@@ -15,7 +20,12 @@
         OPC UA
         <span class="tab-health-count">
           ({{ opcHealth.ok }}/{{ opcHealth.total
-          }}<span v-if="opcHealth.fail" class="tab-health-fail"> · {{ opcHealth.fail }} 异常</span>)
+          }}<span
+            v-if="opcHealth.fail"
+            class="tab-health-fail tab-health-fail--click"
+            title="点击查看异常详情"
+            @click.stop="openHealthDetail"
+          > · {{ opcHealth.fail }} 异常</span>)
         </span>
       </button>
     </div>
@@ -25,6 +35,7 @@
     <div v-show="tab === 'opc'" class="page-tab-body">
       <OpcUaPanel ref="opcPanelRef" @health-summary="onOpcHealthSummary" />
     </div>
+    <ConnectionHealthFailuresDialog v-model="healthDetailOpen" />
   </div>
 </template>
 
@@ -34,7 +45,9 @@ import { useRoute } from 'vue-router'
 import DatabaseWorkbench from '@/features/datasource/database-workbench/DatabaseWorkbench.vue'
 import OpcUaPanel from '@/features/datasource/opcua/OpcUaPanel.vue'
 import ConnectionTabLed from '@/features/datasource/ConnectionTabLed.vue'
+import ConnectionHealthFailuresDialog from '@/features/datasource/ConnectionHealthFailuresDialog.vue'
 import { setDbHealthSummary } from '@/features/datasource/database-connection-health'
+import { setOpcHealthSummary } from '@/features/datasource/datasource-nav-health'
 import {
   connectionProbeIntervalMs,
   loadConnectionProbePrefs,
@@ -48,6 +61,7 @@ const opcPanelRef = ref(null)
 
 const dbHealth = ref({ ok: 0, fail: 0, total: 0 })
 const opcHealth = ref({ ok: 0, fail: 0, total: 0 })
+const healthDetailOpen = ref(false)
 
 let healthPollTimer = null
 let probePrefs = { enabled: false, intervalSec: 30 }
@@ -66,6 +80,11 @@ function onDbHealthSummary(summary) {
 
 function onOpcHealthSummary(summary) {
   opcHealth.value = summary
+  setOpcHealthSummary(summary)
+}
+
+function openHealthDetail() {
+  healthDetailOpen.value = true
 }
 
 function probeAllDataSourceHealth() {
@@ -190,5 +209,10 @@ onUnmounted(() => {
 }
 .tabs-top button.on .tab-health-fail {
   color: #fca5a5;
+}
+.tab-health-fail--click {
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }
 </style>

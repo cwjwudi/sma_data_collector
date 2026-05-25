@@ -1,15 +1,9 @@
 <template>
-  <section class="settings-section config-backup">
+  <section class="settings-section settings-section--featured config-backup">
     <h3 class="settings-section__title">备份与恢复</h3>
     <div class="backup-callout">
-      <strong>升级 / 换机 / 重装前请先备份。</strong>
-      Windows 应用内升级通常会保留用户数据目录，但导出一份 JSON 备份可在异常情况下快速恢复连接与模版。
-      恢复后请打开「数据源配置」确认连接列表与 Tab 指示灯是否正常。
+      <strong>升级、换电脑或重装前，请先导出备份。</strong>
     </div>
-    <p class="settings-hint">
-      把<strong>数据库连接、现场数据、报表模版、版式、签名</strong>、<strong>生成报表偏好</strong>（含 OPC 导出反馈绑定）和<strong>默认 PDF 保存位置</strong>等设置，
-      保存成一个文件，便于换电脑、重装软件或留档。备份文件请自行保管，不要发给无关人员。
-    </p>
 
     <div class="backup-block">
       <h4 class="backup-subhead">保存备份</h4>
@@ -21,7 +15,6 @@
       >
         {{ busy ? '正在处理…' : '导出备份文件' }}
       </button>
-      <p class="backup-note">会下载一个 JSON 文件，文件名以 <code>report-editor-backup</code> 开头。</p>
     </div>
 
     <div class="backup-block">
