@@ -81,7 +81,7 @@
               </template>
               <template v-else-if="el.type === 'table'">
                 <div class="hz-table-shell">
-                  <table class="hz-table">
+                  <table class="hz-table" :style="layoutZoneTableInnerStyle(el)">
                     <colgroup>
                       <col
                         v-for="(cw, ci) in hzZoneTableColInnerWidthsPx(el)"
@@ -96,6 +96,7 @@
                           :key="ci"
                           class="hz-table-cell"
                           :class="{ 'hz-table-cell--hot': hzIsTableCellHot(el, ri, ci) }"
+                          :style="hzLayoutTableCellStyle(el, ri, ci)"
                           @pointerdown.stop="hzPickTableCell(el, ri, ci)"
                         >
                           <template v-if="isVisualSqlFillOutputPickerRow(el, ri)">
@@ -190,7 +191,7 @@
           <label v-if="sel.type === 'text' || sel.type === 'box'"
             >文字<input v-model.trim="sel.text" class="hz-inp" />
           </label>
-          <BoxZoneColorPicker v-if="sel" class="hz-span2" :el="sel" />
+          <BoxZoneColorPicker v-if="sel && sel.type !== 'table'" class="hz-span2" :el="sel" />
           <template v-if="sel.type === 'date'">
             <label class="hz-span2"
               >日期格式
@@ -418,42 +419,32 @@
               </div>
             </div>
             <div class="hz-span2 hz-table-col-widths">
-              <span class="hz-dim-title">列宽（%）</span>
-              <div class="hz-table-col-widths-grid">
-                <label
-                  v-for="ci in hzTableColWidthIndices"
-                  :key="'hzcw-' + ci"
-                  class="hz-table-col-w-label"
-                  >列 {{ ci + 1 }}
-                  <input
-                    type="number"
-                    :min="TABLE_COLUMN_WIDTH_PERCENT_MIN"
-                    :max="hzTableColPercentMax"
-                    step="1"
-                    class="hz-inp hz-col-w-inp"
-                    :value="hzTableColPercentDisplay(ci)"
-                    @change="onHzTableColPercentChange(ci, $event)"
-                  />
-                </label>
-              </div>
-              <p class="hz-muted">
-                整数百分比（每列至少 {{ TABLE_COLUMN_WIDTH_PERCENT_MIN }}%，合计 100%）；修改一列时其余列按当前比例自动调整。
-              </p>
+              <span class="hz-dim-title">列宽</span>
+              <TableColumnWidthVisualEditor
+                v-if="hzZoneTableCellMetric"
+                :column-widths-px="hzTableColumnInnerWidths"
+                :inner-w="hzZoneTableCellMetric.innerW"
+                @resize-delta="onHzTableColumnResizeFromProps"
+              />
             </div>
             <p class="hz-muted hz-span2">
               {{
                 hzSqlFillEnabled
                   ? "数据库填充开启：不在此编辑单元格静态文字；可视化模式下请在画布第一行选择输出列。"
-                  : "在画布上单击单元格后在此编辑绑定。"
+                  : "在画布上单击单元格后，可设置填充色并编辑绑定。"
               }}
+            </p>
+            <p v-if="!hasHzTableCellPicked" class="hz-muted hz-span2">
+              在画布上单击单元格后，可在此设置该单元格的填充色。
             </p>
             <p v-if="hzZoneTableCellMetric" class="hz-span2 hz-table-metric">
-              单元格高度（推算）：高约 <strong>{{ formatMetricPx(hzZoneTableCellMetric.cellH) }}</strong> px。当前内侧列宽（推算）：{{
-                hzZoneTableColWidthsSummary
-              }}
+              单元格高度（推算）：高约 <strong>{{ formatMetricPx(hzZoneTableCellMetric.cellH) }}</strong> px
             </p>
-            <template v-if="activeHzTableCell">
+            <template v-if="hasHzTableCellPicked && activeHzTableCell">
               <div class="hz-span2 hz-cell-fields" :key="'hzcf-' + hzEditCellRow + '-' + hzEditCellCol">
+                <div class="hz-table-cell-fill-block">
+                  <TableCellFillPicker v-model="activeHzTableCellFill" title="填充色" />
+                </div>
                 <template v-if="!hzSqlFillEnabled">
                   <label class="hz-span2"
                     >静态文字<textarea v-model.trim="activeHzTableCell.text" rows="2" class="hz-inp" spellcheck="false"
@@ -564,6 +555,9 @@ import {
   normalizePageNumberMode,
   normalizeZIndex,
   zoneFillBackgroundCss,
+  zoneTableInnerBackgroundCss,
+  resolveTableCellBackgroundCss,
+  zoneTableNodeShellBackgroundCss,
   type LayoutControlType,
   type LayoutZoneElement,
   type LayoutZoneTableCell,
@@ -576,18 +570,16 @@ import {
 } from "@/lib/report-template/layout-snap-guides";
 import {
   REPORT_ZONE_TABLE_NODE_PADDING_PX,
-  adjustIntegerColumnPercentsAfterEdit,
   applyTableColumnResizeDeltaPx,
   clampTableRowHeightPx,
   formatMetricPx,
-  integerColumnPercentsFromInnerWidthsPx,
-  maxTableColumnPercentForEdit,
-  TABLE_COLUMN_WIDTH_PERCENT_MIN,
   uniformTableCellBoxPx,
   TABLE_ROW_HEIGHT_DEFAULT_PX,
   TABLE_ROW_HEIGHT_MAX_PX,
   TABLE_ROW_HEIGHT_MIN_PX,
 } from "@/lib/report-template/table-cell-metrics";
+import TableColumnWidthVisualEditor from "@/components/report-template/TableColumnWidthVisualEditor.vue";
+import TableCellFillPicker from "@/components/report-template/TableCellFillPicker.vue";
 import { metricsForSheet, type EditorSheet } from "@/lib/report-template/editor-sheet";
 import type { ReportTemplate } from "@/lib/report-template/model";
 import { looksLikeImageFile, pickFirstImageFileFromDataTransfer, readImageFileAsDataUrl } from "@/lib/report-template/read-image-file";
@@ -806,6 +798,22 @@ const activeHzTableCell = computed(() => {
   return g[hzEditCellRow.value]?.[hzEditCellCol.value] ?? null;
 });
 
+const hasHzTableCellPicked = computed(() => {
+  const s = sel.value;
+  const pick = hzTablePick.value;
+  return s?.type === "table" && !!pick && pick.elId === s.id;
+});
+
+const activeHzTableCellFill = computed({
+  get(): string {
+    return activeHzTableCell.value?.bgColor ?? "transparent";
+  },
+  set(v: string) {
+    const cell = activeHzTableCell.value;
+    if (cell) cell.bgColor = v;
+  },
+});
+
 const hzSqlFillEnabled = computed(() => sel.value?.type === "table" && !!sel.value.tableSqlFill?.enabled);
 
 const hzAnyCellBinding = computed(() => {
@@ -855,21 +863,18 @@ const hzZoneTableCellMetric = computed(() => {
   });
 });
 
-const hzTableColPercents = computed(() => {
+const hzTableColumnInnerWidths = computed(() => {
   const s = sel.value;
   if (!s || s.type !== "table") return [];
   ensureZoneTableGrid(s);
-  const u = hzZoneTableCellMetric.value;
-  if (!u) return [];
-  const widths = zoneTableColumnInnerWidthsPx(s);
-  return integerColumnPercentsFromInnerWidthsPx(widths, u.innerW);
+  return zoneTableColumnInnerWidthsPx(s);
 });
 
-const hzTableColPercentMax = computed(() => {
+function onHzTableColumnResizeFromProps(boundaryIndex: number, deltaLayoutPx: number) {
   const s = sel.value;
-  if (!s || s.type !== "table") return 100;
-  return maxTableColumnPercentForEdit(s.tableCols ?? 4);
-});
+  if (!s || s.type !== "table") return;
+  onHzTableColumnResize(s, boundaryIndex, deltaLayoutPx);
+}
 
 const hzTableRowHeightModel = computed({
   get(): number {
@@ -885,21 +890,6 @@ const hzTableRowHeightModel = computed({
   },
 });
 
-const hzTableColWidthIndices = computed(() => {
-  const s = sel.value;
-  if (!s || s.type !== "table") return [];
-  ensureZoneTableGrid(s);
-  const n = s.tableCols ?? 4;
-  return Array.from({ length: n }, (_, i) => i);
-});
-
-const hzZoneTableColWidthsSummary = computed(() => {
-  const s = sel.value;
-  if (!s || s.type !== "table") return "";
-  const widths = zoneTableColumnInnerWidthsPx(s);
-  return widths.map((w, i) => `列${i + 1} ${formatMetricPx(w)}`).join(" · ");
-});
-
 function hzLayoutTableGrid(el: LayoutZoneElement): LayoutZoneTableCell[][] {
   if (el.type !== "table") return [];
   return ensureZoneTableGrid(el);
@@ -913,22 +903,6 @@ function hzLayoutTableRowTrStyle(el: LayoutZoneElement): Record<string, string> 
 function hzZoneTableColInnerWidthsPx(el: LayoutZoneElement): number[] {
   if (el.type !== "table") return [];
   return zoneTableColumnInnerWidthsPx(el);
-}
-
-function hzTableColPercentDisplay(ci: number): number {
-  return hzTableColPercents.value[ci] ?? TABLE_COLUMN_WIDTH_PERCENT_MIN;
-}
-
-function onHzTableColPercentChange(ci: number, ev: Event) {
-  const s = sel.value;
-  if (!s || s.type !== "table") return;
-  ensureZoneTableGrid(s);
-  const raw = (ev.target as HTMLInputElement).value;
-  const prev = hzTableColPercents.value.slice();
-  const next = adjustIntegerColumnPercentsAfterEdit(prev, ci, raw);
-  s.tableColWidthsPx = next.slice();
-  ensureZoneTableGrid(s);
-  clampZoneTableOuterSize(s);
 }
 
 function hzFormatSqlFillTableCell(el: LayoutZoneElement, ri: number, ci: number): string {
@@ -1008,10 +982,10 @@ function openHzOpcPicker(target: "parameter" | "table") {
   opcPickOpen.value = true;
 }
 
-function onHzOpcPickConfirm(nodeId: string) {
+function onHzOpcPickConfirm(payload: string | { serverId: string; nodeId: string }) {
   const t = opcPickTarget.value;
   opcPickTarget.value = null;
-  const id = nodeId.trim();
+  const id = (typeof payload === "string" ? payload : payload.nodeId).trim();
   if (!id) return;
   const s = sel.value;
   if (t === "parameter" && s?.type === "parameter") {
@@ -1097,6 +1071,23 @@ function onHzDateFormatPreset(ev: Event) {
   s.dateFormat = v;
 }
 
+function layoutZoneTableInnerStyle(el: LayoutZoneElement): Record<string, string> {
+  if (el.type !== "table") return {};
+  return { background: zoneTableInnerBackgroundCss(el.bgColor) };
+}
+
+function hzLayoutTableCellStyle(el: LayoutZoneElement, ri: number, ci: number): Record<string, string> {
+  if (el.type !== "table") return {};
+  const cell = hzLayoutTableGrid(el)[ri]?.[ci];
+  return {
+    backgroundColor: resolveTableCellBackgroundCss(
+      { tableBgColor: el.bgColor, tableColBgColors: el.tableColBgColors },
+      ci,
+      cell,
+    ),
+  };
+}
+
 function nodeStyle(el: LayoutZoneElement) {
   const ff = typeof el.fontFamily === "string" ? el.fontFamily.trim() : "";
   const flex = flexJustifyAlignForAxes(el.alignX, el.alignY);
@@ -1124,7 +1115,7 @@ function nodeStyle(el: LayoutZoneElement) {
       justifyContent: "stretch",
       padding: "2px",
       overflow: "hidden",
-      backgroundColor: zoneFillBackgroundCss(el.bgColor),
+      backgroundColor: zoneTableNodeShellBackgroundCss(),
       whiteSpace: "normal",
     };
   }
@@ -1975,6 +1966,14 @@ async function hzAssignImage(el: LayoutZoneElement | null, f?: File | null) {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+.hz-table-cell-fill-block {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-bottom: 8px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid #e4e4e7;
 }
 .hz-table-col-widths-grid {
   display: flex;

@@ -1,0 +1,14 @@
+# 安装包体积大，勿提交 Git；只提交 latest.json 与说明文档
+*.dmg
+*.exe
+*.zip
+*.blockmap
+report-editor-backup-*.json
+
+!latest.json
+!latest.json.example
+!README.md
+!README-team-layout-presets.md
+!team-layout-presets.json
+!team-templates.json
+!.gitignore

@@ -53,6 +53,23 @@
       </select>
     </div>
 
+    <h4 class="settings-subhead">用户数据目录</h4>
+    <p class="settings-hint">
+      数据库 / OPC UA 连接、模版、版式等保存在此目录（与程序安装位置分离）。Windows 应用内升级会保留此目录下的数据。
+    </p>
+    <div v-if="dataDir" class="settings-data-dir">
+      <code class="settings-data-dir-path">{{ dataDir }}</code>
+      <button
+        v-if="canOpenDataDir"
+        type="button"
+        class="settings-btn settings-btn--sm"
+        @click="openDataDir"
+      >
+        在文件管理器中打开
+      </button>
+    </div>
+    <p v-else class="settings-hint settings-hint--muted">正在读取数据目录…</p>
+
     <h4 class="settings-subhead">缓存</h4>
     <div class="settings-actions">
       <button type="button" class="settings-btn" :disabled="busy" @click="clearQuerySessions">
@@ -70,7 +87,7 @@
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { apiFetch } from '@/api/client.js'
 
 const prefs = ref({
@@ -87,6 +104,31 @@ const connections = ref([])
 const opcServers = ref([])
 const busy = ref(false)
 const msg = ref('')
+const dataDir = ref('')
+
+const canOpenDataDir = computed(
+  () => Boolean(dataDir.value) && typeof window.electronAPI?.shellOpenPath === 'function',
+)
+
+async function loadDataDir() {
+  try {
+    const h = await apiFetch('/health')
+    dataDir.value = String(h?.data_dir || '').trim()
+  } catch {
+    dataDir.value = ''
+  }
+}
+
+async function openDataDir() {
+  const dir = dataDir.value.trim()
+  if (!dir || !window.electronAPI?.shellOpenPath) return
+  try {
+    const res = await window.electronAPI.shellOpenPath(dir)
+    if (res && !res.ok) msg.value = res.error || '无法打开目录'
+  } catch (e) {
+    msg.value = e instanceof Error ? e.message : String(e)
+  }
+}
 
 async function loadConnections() {
   try {
@@ -195,6 +237,34 @@ function clearRelLayoutCache() {
 }
 
 onMounted(async () => {
-  await Promise.all([loadConnections(), loadOpcServers(), loadPrefs()])
+  await Promise.all([loadConnections(), loadOpcServers(), loadPrefs(), loadDataDir()])
 })
 </script>
+
+<style scoped>
+.settings-data-dir {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.settings-data-dir-path {
+  flex: 1 1 280px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: #f3f4f6;
+  font-size: 12px;
+  word-break: break-all;
+}
+
+.settings-btn--sm {
+  padding: 6px 12px;
+  font-size: 13px;
+}
+
+.settings-hint--muted {
+  opacity: 0.75;
+}
+</style>

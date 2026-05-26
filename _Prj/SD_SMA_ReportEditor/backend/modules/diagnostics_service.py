@@ -15,6 +15,7 @@ from concurrent.futures import FIRST_COMPLETED, ThreadPoolExecutor, wait
 from pathlib import Path
 from typing import Any
 
+from core.runtime_mode import is_packaged_runtime, packaged_runtime_detail
 from core.service_beacon import BACKEND_BEACON_MAGIC, beacon_file_path
 
 # 与 backend/main.py + requirements.txt（eval-type-backport）一致：最低 3.9。
@@ -553,13 +554,17 @@ def run_warning_autofix_bundle(
     )
     logs.extend(fx.get("logs") or [])
 
-    logs.append(_log_line("══ 按需安装 backend/venv ══"))
-    vin = ensure_repo_venv_installed(backend_root)
-    logs.extend(vin["message_lines"])
-    logs.extend(vin["pip_lines"])
+    if not is_packaged_runtime():
+        logs.append(_log_line("══ 按需安装 backend/venv ══"))
+        vin = ensure_repo_venv_installed(backend_root)
+        logs.extend(vin["message_lines"])
+        logs.extend(vin["pip_lines"])
+    else:
+        vin = {"done": {"success": True, "venv_installed": False, "reason": "packaged_runtime"}}
+        logs.append(_log_line("安装版内置后端：跳过 backend/venv 安装"))
 
     logs.append(_log_line("══ 仅能通过人工/系统层面处理的项 ══"))
-    if (sys.version_info.major, sys.version_info.minor) < _MIN_SUPPORTED_PYTHON:
+    if not is_packaged_runtime() and (sys.version_info.major, sys.version_info.minor) < _MIN_SUPPORTED_PYTHON:
         skipped.append(
             {
                 "id": "python_version",
@@ -576,13 +581,14 @@ def run_warning_autofix_bundle(
             )
         )
 
-    npm = _which("npm") or _which("npm.cmd")
-    if not npm:
-        skipped.append({"id": "npm", "hint": "请在机器安装 Node.js LTS 或将 npm 加入 PATH。"})
-        logs.append(_log_line("⚠ PATH 中无 npm"))
+    if not is_packaged_runtime():
+        npm = _which("npm") or _which("npm.cmd")
+        if not npm:
+            skipped.append({"id": "npm", "hint": "请在机器安装 Node.js LTS 或将 npm 加入 PATH。"})
+            logs.append(_log_line("⚠ PATH 中无 npm"))
 
     vd = vin.get("done") or {}
-    if vd.get("venv_deferred"):
+    if not is_packaged_runtime() and vd.get("venv_deferred"):
         skipped.append(
             {"id": "venv", "hint": str(vd.get("script_path") or "请先退出再用离线脚本重装 venv")}
         )
@@ -636,13 +642,8 @@ def confirm_backend_via_data_beacon(data_dir: Path, port: int) -> tuple[bool, st
     )
 
 
-def collect_checks(
-    data_dir: Path,
-    config_file: Path,
-    backend_root: Path,
-    templates_dir: Path,
-    history_dir: Path,
-) -> list[dict[str, Any]]:
+def _collect_dev_toolchain_checks(backend_root: Path) -> list[dict[str, Any]]:
+    """仅开发/源码运行：venv、npm、解释器版本。"""
     checks: list[dict[str, Any]] = []
 
     py_row = _python_version_diag_row()
@@ -678,6 +679,50 @@ def collect_checks(
             "fixable": False,
         }
     )
+    return checks
+
+
+def _collect_packaged_runtime_checks() -> list[dict[str, Any]]:
+    """Electron 安装版内置 report_backend：不检查仓库 venv / npm。"""
+    exe = Path(sys.executable)
+    try:
+        exe_s = str(exe.resolve())
+    except OSError:
+        exe_s = str(exe)
+    py_row = _python_version_diag_row()
+    checks: list[dict[str, Any]] = [
+        {
+            "id": "deployment_mode",
+            "label": "运行模式",
+            "status": "ok",
+            "detail": packaged_runtime_detail(),
+            "fixable": False,
+        },
+        {
+            "id": "bundled_backend",
+            "label": "内置后端",
+            "status": "ok",
+            "detail": f"{exe_s}（内置 Python {py_row['detail']}）",
+            "fixable": False,
+        },
+    ]
+    return checks
+
+
+def collect_checks(
+    data_dir: Path,
+    config_file: Path,
+    backend_root: Path,
+    templates_dir: Path,
+    history_dir: Path,
+) -> list[dict[str, Any]]:
+    checks: list[dict[str, Any]] = []
+    packaged = is_packaged_runtime()
+
+    if packaged:
+        checks.extend(_collect_packaged_runtime_checks())
+    else:
+        checks.extend(_collect_dev_toolchain_checks(backend_root))
 
     checks.append(
         {
@@ -753,16 +798,26 @@ def collect_checks(
         )
 
     listens5173 = _try_connect("127.0.0.1", 5173)
+    if packaged:
+        vite_detail = (
+            "5173 有监听（本机另有前端开发服务，与安装版无关）。"
+            if listens5173
+            else "安装版使用内置静态前端，无需 Vite 开发服务。"
+        )
+        vite_label = "前端开发服务（Vite，可选）"
+    else:
+        vite_detail = (
+            "5173 有监听（通常为本地 npm run dev / Vite）。"
+            if listens5173
+            else "5173 未监听——Electron 打包运行或仅桌面壳时通常不需 Vite。"
+        )
+        vite_label = "端口 5173（Vite）"
     checks.append(
         {
             "id": "port_5173",
-            "label": "端口 5173（Vite）",
+            "label": vite_label,
             "status": "ok",
-            "detail": (
-                "5173 有监听（通常为本地 npm run dev / Vite）。"
-                if listens5173
-                else "5173 未监听——Electron / 静态打包运行时通常不需 Vite。"
-            ),
+            "detail": vite_detail,
             "fixable": False,
         }
     )
@@ -886,22 +941,26 @@ def iter_environment_repair_stream(
         yield pack({"event": "log", "line": line})
     yield pack({"event": "safe_fix", "result": {"applied": fix_res["applied"], "errors": fix_res["errors"]}})
 
-    yield elog("══ Python 虚拟环境（backend/venv），此处为强制重装 ══")
-    fout = force_repo_venv_reinstall(backend_root)
-    for ln in fout["message_lines"]:
-        yield pack({"event": "log", "line": ln})
-    for pl in fout["pip_lines"]:
-        yield pack({"event": "log", "line": pl})
-    dn = fout["done"]
-    if dn.get("venv_deferred"):
-        yield pack(
-            {
-                "event": "blocked",
-                "reason": str(dn.get("reason") or "venv_deferred"),
-                "script_path": dn.get("script_path"),
-            }
-        )
-    yield pack({"event": "done", **dn})
+    if is_packaged_runtime():
+        yield elog("安装版内置后端：跳过 backend/venv 重建")
+        yield pack({"event": "done", "success": True, "venv_rebuilt": False, "reason": "packaged_runtime"})
+    else:
+        yield elog("══ Python 虚拟环境（backend/venv），此处为强制重装 ══")
+        fout = force_repo_venv_reinstall(backend_root)
+        for ln in fout["message_lines"]:
+            yield pack({"event": "log", "line": ln})
+        for pl in fout["pip_lines"]:
+            yield pack({"event": "log", "line": pl})
+        dn = fout["done"]
+        if dn.get("venv_deferred"):
+            yield pack(
+                {
+                    "event": "blocked",
+                    "reason": str(dn.get("reason") or "venv_deferred"),
+                    "script_path": dn.get("script_path"),
+                }
+            )
+        yield pack({"event": "done", **dn})
 
 
 def try_node_versions() -> dict[str, str | None]:

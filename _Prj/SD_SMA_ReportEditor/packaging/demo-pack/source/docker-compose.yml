@@ -1,0 +1,42 @@
+# Report Editor 演示工具包 — MariaDB + OPC UA 演示服务
+# 127.0.0.1:3306 / root / 密码见 MARIADB_ROOT_PASSWORD
+# OPC: opc.tcp://127.0.0.1:${OPCUA_DEMO_PORT:-4840}/report-editor/demo-opcua/
+
+services:
+  mariadb:
+    image: mariadb:11
+    container_name: report_editor_demo_mariadb
+    restart: unless-stopped
+    environment:
+      MARIADB_ROOT_PASSWORD: "${MARIADB_ROOT_PASSWORD:-Br54644800@}"
+      MARIADB_DATABASE: ${MARIADB_DATABASE:-report}
+      MARIADB_CHARACTER_SET_SERVER: utf8mb4
+      MARIADB_COLLATE_SERVER: utf8mb4_unicode_ci
+    ports:
+      - "${MARIADB_PORT:-3306}:3306"
+    volumes:
+      - mariadb_data:/var/lib/mysql
+      - ./seed:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  opcua-demo:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.opcua-demo
+      args:
+        PYTHON_BASE_IMAGE: ${PYTHON_BASE_IMAGE:-docker.io/library/python:3.11-slim-bookworm}
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.org/simple}
+    image: sd-sma-report-editor-opcua-demo:demo-pack
+    container_name: report_editor_demo_opcua
+    restart: unless-stopped
+    ports:
+      - "${OPCUA_DEMO_PORT:-4840}:4840"
+    command: ["--host", "0.0.0.0", "--port", "4840", "--path", "report-editor/demo-opcua"]
+
+volumes:
+  mariadb_data:

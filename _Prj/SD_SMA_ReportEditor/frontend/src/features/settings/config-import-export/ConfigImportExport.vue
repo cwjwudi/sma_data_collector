@@ -1,87 +1,99 @@
 <template>
-  <section class="settings-section config-import">
-    <h3 class="settings-section__title">配置导入 / 导出</h3>
-    <div class="config-import-stack">
-      <div class="config-import-grid">
-        <button
-          type="button"
-          class="settings-btn settings-btn--primary settings-btn--block"
-          :disabled="busy"
-          @click="exportShare"
-        >
-          导出（脱敏）
-        </button>
-        <button
-          type="button"
-          class="settings-btn settings-btn--block"
-          :disabled="busy"
-          @click="exportBackup"
-        >
-          导出（本机备份）
-        </button>
-      </div>
-
-      <div class="config-import-grid">
-        <div class="config-import-file-cell">
-          <input
-            id="config-file-input"
-            ref="fileRef"
-            type="file"
-            class="file-input"
-            accept="application/json,.json"
-            @change="onFile"
-          />
-          <label for="config-file-input" class="settings-btn settings-btn--file settings-btn--block file-picker-label">
-            选择配置文件
-          </label>
-        </div>
-        <p class="config-import-status" :title="pendingFileName || undefined">
-          <span v-if="pendingFileName" class="config-import-status-name">{{ pendingFileName }}</span>
-          <span v-else class="config-import-status-placeholder">未选择文件</span>
-        </p>
-      </div>
-
-      <div class="config-import-grid">
-        <button
-          type="button"
-          class="settings-btn settings-btn--block"
-          :disabled="busy || !pendingJson"
-          @click="doImport('merge')"
-        >
-          合并导入
-        </button>
-        <button
-          type="button"
-          class="settings-btn settings-btn--danger settings-btn--block"
-          :disabled="busy || !pendingJson"
-          @click="confirmReplace"
-        >
-          覆盖导入
-        </button>
-      </div>
+  <section class="settings-section settings-section--featured config-backup">
+    <h3 class="settings-section__title">备份与恢复</h3>
+    <div class="backup-callout">
+      <strong>升级、换电脑或重装前，请先导出备份。</strong>
     </div>
+
+    <div class="backup-block">
+      <h4 class="backup-subhead">保存备份</h4>
+      <button
+        type="button"
+        class="settings-btn settings-btn--primary settings-btn--block"
+        :disabled="busy"
+        @click="exportBackup"
+      >
+        {{ busy ? '正在处理…' : '导出备份文件' }}
+      </button>
+    </div>
+
+    <div class="backup-block">
+      <h4 class="backup-subhead">从备份恢复</h4>
+      <input
+        ref="fileRef"
+        type="file"
+        class="file-input"
+        accept="application/json,.json"
+        tabindex="-1"
+        aria-hidden="true"
+        @change="onFile"
+      />
+      <button
+        type="button"
+        class="settings-btn settings-btn--file settings-btn--block"
+        :disabled="busy"
+        @click="pickBackupFile"
+      >
+        选择备份文件
+      </button>
+      <p v-if="pendingFileName" class="backup-filename" :title="pendingFileName">{{ pendingFileName }}</p>
+      <button
+        type="button"
+        class="settings-btn settings-btn--primary settings-btn--block"
+        :disabled="busy || !pendingJson"
+        @click="doImport('merge')"
+      >
+        恢复配置（保留现有并补充）
+      </button>
+      <p class="backup-note">
+        适合大多数情况：本机已有的连接和模版会保留，备份里的内容会<strong>补充或更新</strong>。
+      </p>
+      <button
+        type="button"
+        class="settings-btn settings-btn--danger settings-btn--block settings-btn--muted-danger"
+        :disabled="busy || !pendingJson"
+        @click="confirmReplace"
+      >
+        完全替换为本备份
+      </button>
+      <p class="backup-note backup-note--warn">
+        慎用：会<strong>删除</strong>当前所有连接、模版、版式、签名等，只使用备份文件里的内容。操作前请先导出一份当前备份。
+      </p>
+    </div>
+
     <p
       v-if="msg"
       class="settings-msg"
-      :class="{ 'settings-msg--ok': msgTone === 'ok', 'settings-msg--err': msgTone === 'err' }"
+      :class="{
+        'settings-msg--ok': msgTone === 'ok',
+        'settings-msg--warn': msgTone === 'warn',
+        'settings-msg--err': msgTone === 'err',
+      }"
     >
       {{ msg }}
     </p>
   </section>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref } from 'vue'
 import { apiFetch } from '@/api/client.js'
+import { refreshLayoutPresets } from '@/lib/report-template/layout-registry'
+import {
+  applyClientPrefsFromBundle,
+  attachClientPrefsToBundle,
+  buildImportDataFromFile,
+} from '@/features/settings/config-import-export/config-bundle-client'
+import { auditLog } from '@/lib/auditLog'
 
 const busy = ref(false)
 const msg = ref('')
 const msgTone = ref('')
-const fileRef = ref(null)
-const pendingJson = ref(null)
+const fileRef = ref<HTMLInputElement | null>(null)
+const pendingJson = ref<unknown>(null)
 const pendingFileName = ref('')
 
-function downloadJson(obj, filename) {
+function downloadJson(obj: unknown, filename: string) {
   const blob = new Blob([JSON.stringify(obj, null, 2)], { type: 'application/json;charset=utf-8' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
@@ -91,80 +103,143 @@ function downloadJson(obj, filename) {
   URL.revokeObjectURL(url)
 }
 
-async function exportShare() {
-  busy.value = true
-  msg.value = ''
-  msgTone.value = ''
-  try {
-    const data = await apiFetch('/settings/config/export?mode=share')
-    downloadJson(data, 'report-editor-config-share.json')
-    msg.value = '已下载。'
-    msgTone.value = 'ok'
-  } catch (e) {
-    msg.value = e.message || String(e)
-    msgTone.value = 'err'
-  } finally {
-    busy.value = false
-  }
-}
-
 async function exportBackup() {
   busy.value = true
   msg.value = ''
   msgTone.value = ''
   try {
-    const data = await apiFetch('/settings/config/export?mode=backup')
-    downloadJson(data, 'report-editor-config-backup.json')
-    msg.value = '已下载。'
+    const data = attachClientPrefsToBundle(
+      (await apiFetch('/settings/config/export?mode=backup')) as Record<string, unknown>,
+    )
+    const stamp = new Date().toISOString().slice(0, 10)
+    downloadJson(data, `report-editor-backup-${stamp}.json`)
+    msg.value = '备份文件已保存（一般在「下载」文件夹中）。请妥善保管。'
     msgTone.value = 'ok'
-  } catch (e) {
-    msg.value = e.message || String(e)
+    void auditLog({ action: 'config.export', summary: '导出配置备份', result: 'ok' })
+  } catch (e: unknown) {
+    msg.value = e instanceof Error ? e.message : String(e)
     msgTone.value = 'err'
   } finally {
     busy.value = false
   }
 }
 
-function onFile(ev) {
-  const f = ev.target.files?.[0]
+function resetPendingSelection() {
   pendingJson.value = null
   pendingFileName.value = ''
+  if (fileRef.value) fileRef.value.value = ''
+}
+
+function applyPickedBackup(text: string, fileName: string) {
+  pendingFileName.value = fileName
+  try {
+    pendingJson.value = JSON.parse(text)
+    msg.value = '文件已选好，请选择下方恢复方式。'
+    msgTone.value = 'ok'
+  } catch (e: unknown) {
+    pendingJson.value = null
+    msg.value = e instanceof Error ? e.message : '无法读取该文件，请确认是有效的备份文件。'
+    msgTone.value = 'err'
+  }
+}
+
+async function pickBackupFile() {
   msg.value = ''
-  if (!f) return
-  pendingFileName.value = f.name
-  const reader = new FileReader()
-  reader.onload = () => {
+  msgTone.value = ''
+  resetPendingSelection()
+
+  const api = window.electronAPI
+  if (api?.pickConfigJsonFile) {
     try {
-      const text = String(reader.result || '')
-      pendingJson.value = JSON.parse(text)
-      msg.value = '已就绪，可选择导入方式。'
-      msgTone.value = 'ok'
-    } catch (e) {
-      msg.value = e.message || '无法解析文件'
+      const res = await api.pickConfigJsonFile({ title: '选择备份文件' })
+      if (!res || ('canceled' in res && res.canceled)) return
+      if ('ok' in res && res.ok === false) {
+        msg.value = res.error || '无法读取备份文件'
+        msgTone.value = 'err'
+        return
+      }
+      if (!('content' in res) || !res.content) return
+      applyPickedBackup(res.content, res.fileName || 'backup.json')
+    } catch (e: unknown) {
+      msg.value = e instanceof Error ? e.message : '无法打开文件选择对话框'
       msgTone.value = 'err'
     }
+    return
+  }
+
+  fileRef.value?.click()
+}
+
+function onFile(ev: Event) {
+  const f = (ev.target as HTMLInputElement).files?.[0]
+  msg.value = ''
+  msgTone.value = ''
+  resetPendingSelection()
+  if (!f) return
+  const reader = new FileReader()
+  reader.onload = () => {
+    applyPickedBackup(String(reader.result || ''), f.name)
+  }
+  reader.onerror = () => {
+    msg.value = '无法读取该文件，请重试。'
+    msgTone.value = 'err'
   }
   reader.readAsText(f, 'UTF-8')
 }
 
-async function doImport(mode) {
+async function doImport(mode: 'merge' | 'replace') {
   if (!pendingJson.value) return
   busy.value = true
   msg.value = ''
   msgTone.value = ''
   try {
-    await apiFetch('/settings/config/import', {
+    const { serverPayload, clientPrefs: fileClientPrefs } = buildImportDataFromFile(pendingJson.value)
+    const res = (await apiFetch('/settings/config/import', {
       method: 'POST',
-      body: { mode, data: pendingJson.value },
+      body: { mode, data: serverPayload },
+    })) as {
+      ok?: boolean
+      imported?: { templates?: number; layout_presets?: number; signature_assets?: number }
+      client_prefs?: unknown
+      warnings?: string[]
+    }
+    const clientApplied: string[] = []
+    try {
+      clientApplied.push(...applyClientPrefsFromBundle(res.client_prefs ?? fileClientPrefs))
+    } catch (e) {
+      console.warn('[ConfigImportExport] apply client prefs failed', e)
+    }
+    try {
+      await refreshLayoutPresets()
+    } catch (e) {
+      console.warn('[ConfigImportExport] refresh layout presets failed', e)
+    }
+    try {
+      window.dispatchEvent(new CustomEvent('report-editor-config-imported'))
+    } catch (e) {
+      console.warn('[ConfigImportExport] dispatch config-imported failed', e)
+    }
+    const parts: string[] = []
+    const imp = res.imported
+    if (imp?.templates) parts.push(`模版 ${imp.templates} 份`)
+    if (imp?.layout_presets) parts.push(`版式 ${imp.layout_presets} 套`)
+    if (imp?.signature_assets) parts.push(`签名 ${imp.signature_assets} 个`)
+    if (clientApplied.length) parts.push(`本机设置已更新`)
+    const detail = parts.length ? `已恢复：${parts.join('、')}。` : '恢复完成。'
+    const warnLines = Array.isArray(res.warnings) ? res.warnings.filter((w) => typeof w === 'string' && w) : []
+    const warnText = warnLines.length ? `\n${warnLines.join('\n')}` : ''
+    msg.value =
+      (mode === 'replace' ? `已用备份完全替换当前配置。${detail}` : `已补充恢复配置。${detail}`) + warnText
+    msgTone.value = warnLines.length ? 'warn' : 'ok'
+    void auditLog({
+      action: 'config.import',
+      result: 'ok',
+      summary: mode === 'replace' ? '完全替换' : '合并恢复',
+      detail: { mode, parts },
     })
-    window.dispatchEvent(new CustomEvent('report-editor-config-imported'))
-    msg.value = mode === 'replace' ? '已完成覆盖导入。' : '已完成合并导入。'
-    msgTone.value = 'ok'
-    if (fileRef.value) fileRef.value.value = ''
-    pendingJson.value = null
-    pendingFileName.value = ''
-  } catch (e) {
-    msg.value = e.message || String(e)
+    resetPendingSelection()
+  } catch (e: unknown) {
+    msg.value = e instanceof Error ? e.message : String(e)
     msgTone.value = 'err'
   } finally {
     busy.value = false
@@ -173,10 +248,15 @@ async function doImport(mode) {
 
 function confirmReplace() {
   if (!pendingJson.value) return
-  if (!window.confirm('覆盖导入将替换当前连接与 OPC UA 列表。确定继续？')) {
+  if (
+    !window.confirm(
+      '「完全替换」会删除本机现有的连接、模版、版式、签名等，只保留备份文件里的内容。\n\n' +
+        '建议先导出一份当前备份再操作。\n\n确定要继续吗？',
+    )
+  ) {
     return
   }
-  doImport('replace')
+  void doImport('replace')
 }
 </script>
 
@@ -193,56 +273,65 @@ function confirmReplace() {
   border: 0;
 }
 
-/* 三行共用同一两列网格，左缘与列宽对齐，避免「各行按钮长短不一、间距忽大忽小」 */
-.config-import-stack {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  max-width: 520px;
-}
-
-.config-import-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 10px;
-  align-items: center;
-}
-
-.config-import-file-cell {
-  position: relative;
-  min-width: 0;
-}
-
-.file-picker-label {
-  display: flex;
-  width: 100%;
-  box-sizing: border-box;
-  cursor: pointer;
-  margin: 0;
-}
-
-.config-import-status {
-  margin: 0;
-  min-width: 0;
-  min-height: 40px;
-  display: flex;
-  align-items: center;
+.backup-callout {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid #fcd34d;
+  background: #fffbeb;
   font-size: 13px;
-  line-height: 1.35;
+  line-height: 1.55;
+  color: #78350f;
 }
 
-.config-import-status-name {
+.backup-block {
+  max-width: 480px;
+  margin-bottom: 20px;
+}
+
+.backup-block:last-of-type {
+  margin-bottom: 0;
+}
+
+.backup-subhead {
+  margin: 0 0 10px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #111827;
+}
+
+.backup-block .settings-btn--block + .settings-btn--block {
+  margin-top: 10px;
+}
+
+.backup-filename {
+  margin: 0 0 10px;
+  font-size: 13px;
   color: #374151;
   word-break: break-all;
+  line-height: 1.4;
 }
 
-.config-import-status-placeholder {
-  color: #9ca3af;
+.backup-note {
+  margin: 8px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #6b7280;
 }
 
-@media (max-width: 480px) {
-  .config-import-grid {
-    grid-template-columns: 1fr;
-  }
+.backup-note code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  background: #f3f4f6;
+  padding: 1px 4px;
+  border-radius: 4px;
+}
+
+.backup-note--warn {
+  color: #92400e;
+}
+
+.settings-btn--muted-danger {
+  margin-top: 14px;
 }
 </style>

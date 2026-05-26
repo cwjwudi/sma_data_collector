@@ -752,51 +752,6 @@ onUnmounted(() => {
 .sp-hint {
   font-size: 11px;
 }
-.btn {
-  padding: 6px 10px;
-  border-radius: 6px;
-  border: 1px solid #d1d5db;
-  background: #fff;
-  color: #374151;
-  cursor: pointer;
-  font-size: 12px;
-  line-height: 1.25;
-  font-family: inherit;
-}
-.btn.sm {
-  padding: 4px 8px;
-  font-size: 12px;
-}
-.btn:hover:not(:disabled) {
-  background: #f9fafb;
-  border-color: #9ca3af;
-}
-.btn:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-.btn:focus-visible {
-  outline: 2px solid #2563eb;
-  outline-offset: 1px;
-}
-.btn.ghost {
-  background: #f3f4f6;
-  border-color: #e5e7eb;
-  color: #4b5563;
-}
-.btn.ghost:hover:not(:disabled) {
-  background: #e5e7eb;
-  border-color: #d1d5db;
-}
-.btn.primary {
-  background: #111827;
-  color: #fff;
-  border-color: #111827;
-}
-.btn.primary:hover:not(:disabled) {
-  background: #374151;
-  border-color: #374151;
-}
 .sp-root > :deep(.grid-wrap.grid-fill) {
   flex: 1;
   min-height: 160px;

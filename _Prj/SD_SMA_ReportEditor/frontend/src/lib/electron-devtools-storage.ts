@@ -7,10 +7,10 @@ export function applyStoredElectronDevtoolsPref(): void {
   if (!api?.setDevtoolsOpen) return;
   try {
     const raw = localStorage.getItem(ELECTRON_DEVTOOLS_STORAGE_KEY);
-    const open = raw === null ? true : JSON.parse(raw) === true;
+    const open = raw === null ? false : JSON.parse(raw) === true;
     void api.setDevtoolsOpen(open);
   } catch {
-    void api.setDevtoolsOpen(true);
+    void api.setDevtoolsOpen(false);
   }
 }
 

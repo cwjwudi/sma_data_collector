@@ -1,6 +1,7 @@
 <template>
   <div class="page">
     <h2 class="page-title">仪表盘</h2>
+    <DashboardConnectionHealth />
     <div class="card-grid">
       <router-link to="/datasource" class="quick-card">
         <span class="quick-icon">🔌</span>
@@ -26,6 +27,10 @@
         <span class="quick-icon">📁</span>
         <span class="quick-label">历史报表</span>
       </router-link>
+      <router-link to="/audit" class="quick-card">
+        <span class="quick-icon">📋</span>
+        <span class="quick-label">操作审计</span>
+      </router-link>
       <router-link to="/settings" class="quick-card">
         <span class="quick-icon">⚙</span>
         <span class="quick-label">设置</span>
@@ -33,6 +38,10 @@
     </div>
   </div>
 </template>
+
+<script setup>
+import DashboardConnectionHealth from '@/features/dashboard/DashboardConnectionHealth.vue'
+</script>
 
 <style scoped>
 .page-title {

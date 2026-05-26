@@ -1,7 +1,7 @@
 import type { AutoOpcTriggerMode } from "@/lib/report-generator-prefs";
 
 export interface OpcTriggerPollState {
-  /** rising：至少见过一次采样后才评估边沿 */
+  /** 是否已有上一采样（用于边沿检测） */
   primed: boolean;
   prev: unknown;
 }
@@ -36,33 +36,66 @@ function coerceText(v: unknown): string {
   return String(v);
 }
 
+/** OPC 读值是否与比较文本相等（数值与字符串 "5" / 5 视为相等） */
+export function opcValueEqualsCompare(raw: unknown, compareText: string): boolean {
+  const expected = (compareText ?? "").trim();
+  if (raw === null || raw === undefined) return expected === "";
+
+  if (typeof raw === "boolean") {
+    const exp = expected.toLowerCase();
+    if (exp === "true" || exp === "1") return raw === true;
+    if (exp === "false" || exp === "0") return raw === false;
+    return String(raw) === expected;
+  }
+
+  if (typeof raw === "number" && Number.isFinite(raw)) {
+    const n = Number(expected);
+    if (Number.isFinite(n)) return raw === n;
+    return String(raw) === expected;
+  }
+
+  return coerceText(raw).trim() === expected;
+}
+
 /** 是否应在本次采样触发自动导出（上层再结合冷却时间防抖）。 */
 export function evaluateAutoOpcTrigger(
   mode: AutoOpcTriggerMode,
   raw: unknown,
-  equalsText: string,
+  compareValue: string,
   state: OpcTriggerPollState,
 ): boolean {
   if (mode === "equals") {
-    state.prev = raw;
-    state.primed = true;
-    return coerceText(raw).trim() === (equalsText || "").trim();
-  }
-
-  if (mode === "rising") {
+    const match = opcValueEqualsCompare(raw, compareValue);
     if (!state.primed) {
       state.primed = true;
       state.prev = raw;
-      return false;
+      return match;
     }
-    const curT = isTruthyRaw(raw);
-    const prevT = isTruthyRaw(state.prev);
+    const prevMatch = opcValueEqualsCompare(state.prev, compareValue);
     state.prev = raw;
-    return curT && !prevT;
+    return match && !prevMatch;
   }
 
-  // truthy
+  const curT = isTruthyRaw(raw);
+
+  if (mode === "falling") {
+    if (!state.primed) {
+      state.primed = true;
+      state.prev = raw;
+      return !curT;
+    }
+    const prevT = isTruthyRaw(state.prev);
+    state.prev = raw;
+    return !curT && prevT;
+  }
+
+  // rising（默认）
+  if (!state.primed) {
+    state.primed = true;
+    state.prev = raw;
+    return curT;
+  }
+  const prevT = isTruthyRaw(state.prev);
   state.prev = raw;
-  state.primed = true;
-  return isTruthyRaw(raw);
+  return curT && !prevT;
 }

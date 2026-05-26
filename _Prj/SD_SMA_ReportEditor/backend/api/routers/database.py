@@ -157,7 +157,18 @@ async def upsert_connection(body: DbConnectionSave):
                         enc = config_store.encrypt_db_password(DATA_DIR, pwd_plain)
                     entry["password_enc"] = enc
                     entry["id"] = body.id
-                    conns[i] = {**c, **entry}
+                    merged = {**c, **entry}
+                    if c.get("is_demo") and c.get("demo_channel") == "remote":
+                        merged["host"] = c.get("host")
+                        merged["port"] = c.get("port")
+                        merged["database"] = c.get("database")
+                        merged["username"] = c.get("username")
+                        merged["password_enc"] = c.get("password_enc")
+                        merged["is_demo"] = True
+                        merged["demo_channel"] = "remote"
+                        if body.name:
+                            merged["name"] = body.name
+                    conns[i] = merged
                     found = True
                     break
             if not found:
@@ -201,11 +212,41 @@ async def test_connection(body: DbConnectionSave):
             merged = _body_with_resolved_password_for_test(body)
         except ValueError as e:
             return {"ok": False, "message": str(e)}
-        ok, err = db_connection_ops.run_connectivity_test(merged)
+        ok, err = db_connection_ops.run_connectivity_test(merged, connection_name=body.name or None)
         return {"ok": ok, "message": err}
     except Exception as e:
         logger.exception("test_connection")
         return {"ok": False, "message": f"测试过程异常: {e}"}
+
+
+@router.post("/database/test_saved/{connection_id}")
+async def test_saved_connection(connection_id: str):
+    """对已保存连接做连通测试：使用配置中的引擎/主机与本机解密后的密码。"""
+    try:
+        conn = _conn_by_id(connection_id)
+    except HTTPException as e:
+        return {"ok": False, "message": e.detail if isinstance(e.detail, str) else "未找到数据库连接"}
+    body = DbConnectionSave(
+        id=conn.get("id"),
+        name=conn.get("name") or "",
+        engine=conn.get("engine") or "",
+        host=conn.get("host"),
+        port=conn.get("port"),
+        database=conn.get("database"),
+        username=conn.get("username"),
+        password=None,
+        sqlite_path=conn.get("sqlite_path"),
+        mongo_auth_source=conn.get("mongo_auth_source") or "admin",
+    )
+    try:
+        merged = _body_with_resolved_password_for_test(body)
+    except ValueError as e:
+        return {"ok": False, "message": str(e)}
+    ok, err = db_connection_ops.run_connectivity_test(
+        merged,
+        connection_name=str(conn.get("name") or connection_id),
+    )
+    return {"ok": ok, "message": err}
 
 
 @router.post("/database/catalog")

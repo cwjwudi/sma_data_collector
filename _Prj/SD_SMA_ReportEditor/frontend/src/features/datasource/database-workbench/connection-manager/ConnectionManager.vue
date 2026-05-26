@@ -1,22 +1,25 @@
 <template>
-  <div class="cm">
+  <div class="conn-form-pane">
     <div class="row-head">
       <h4>数据库连接</h4>
-      <button type="button" class="btn sm" :disabled="busy" @click="$emit('new')">新建</button>
     </div>
-    <ul class="conn-list">
-      <li
-        v-for="c in connections"
-        :key="c.id"
-        :class="{ active: c.id === activeId }"
-        @click="$emit('select', c)"
-      >
-        <span class="name">{{ c.name || c.engine }}</span>
-        <span class="badge">{{ c.engine }}</span>
-      </li>
-    </ul>
-    <div v-if="draft" class="form">
-      <label>显示名称</label>
+    <p v-if="loading" class="conn-placeholder">{{ loadingMessage }}</p>
+    <template v-else-if="modelValue || creatingNew">
+      <template v-if="isRemoteDemo">
+        <p class="demo-conn-hint">
+          此为<strong>远程演示</strong>连接，地址与账号由软件维护，无需填写。可直接浏览左侧数据库与表，或点击「测试连接」确认状态。
+        </p>
+        <dl class="demo-conn-meta">
+          <div><dt>名称</dt><dd>{{ draft.name || '演示数据库（远程）' }}</dd></div>
+          <div><dt>类型</dt><dd>MariaDB · 仿真</dd></div>
+        </dl>
+        <div class="actions">
+          <button type="button" class="btn seg" :disabled="busy" @click="testOnly">测试连接</button>
+          <button type="button" class="btn danger seg" v-if="draft.id" :disabled="busy" @click="remove">删除</button>
+        </div>
+      </template>
+      <template v-else>
+      <label>名称</label>
       <input v-model="draft.name" class="input" placeholder="例如 产线 MySQL" />
       <label>引擎</label>
       <select v-model="draft.engine" class="input" :disabled="busy">
@@ -27,10 +30,17 @@
         <option value="mongodb">MongoDB</option>
       </select>
       <template v-if="draft.engine !== 'sqlite'">
-        <label>主机</label>
-        <input v-model="draft.host" class="input" placeholder="IP 或主机名" :disabled="busy" />
+        <label>主机 / IP</label>
+        <input v-model="draft.host" class="input" placeholder="192.168.1.10" :disabled="busy" />
         <label>端口</label>
         <input v-model="draft.portText" type="text" inputmode="numeric" class="input" placeholder="留空则使用默认端口" :disabled="busy" />
+        <label>{{ draft.engine === 'mongodb' ? '默认数据库（可选）' : '数据库（可选）' }}</label>
+        <input
+          v-model="draft.database"
+          class="input"
+          placeholder="留空则打开后自动选择可用库"
+          :disabled="busy"
+        />
         <label>用户名</label>
         <input v-model="draft.username" class="input" autocomplete="username" :disabled="busy" />
         <label>密码</label>
@@ -47,41 +57,36 @@
         <label>SQLite 路径（后端所在机器上的路径）</label>
         <input v-model="draft.sqlite_path" class="input" placeholder="D:\\data\\app.db" :disabled="busy" />
       </template>
-      <template v-if="draft.engine !== 'sqlite' && draft.engine !== 'mongodb'">
-        <label>默认数据库（可选）</label>
-        <input v-model="draft.database" class="input" placeholder="连接后可再选库" :disabled="busy" />
-      </template>
       <template v-if="draft.engine === 'mongodb'">
-        <label>默认数据库（可选）</label>
-        <input v-model="draft.database" class="input" :disabled="busy" />
         <label>authSource</label>
         <input v-model="draft.mongo_auth_source" class="input" :disabled="busy" />
       </template>
       <div class="actions">
-        <button type="button" class="btn sm" :disabled="busy" @click="testOnly">测试连接</button>
-        <button type="button" class="btn primary sm" :disabled="busy" @click="() => save(false)">仅保存</button>
-        <button type="button" class="btn primary sm" :disabled="busy" @click="testAndSave">测试并保存</button>
-        <button type="button" class="btn danger sm" v-if="draft.id" :disabled="busy" @click="remove">删除</button>
+        <button type="button" class="btn seg" :disabled="busy" @click="testOnly">测试连接</button>
+        <button type="button" class="btn primary seg" :disabled="busy" @click="() => save(false)">仅保存</button>
+        <button type="button" class="btn primary seg" :disabled="busy" @click="testAndSave">测试并保存</button>
+        <button type="button" class="btn danger seg" v-if="draft.id" :disabled="busy" @click="remove">删除</button>
       </div>
-      <p class="hint">
-        配置写入本机 data/config.json；密码经本机密钥加密。若曾复制过 config 但未复制同目录下的
-        .report_editor_fernet.key，请重新输入密码再保存。
-      </p>
+      </template>
       <div v-if="msg" :class="['msg', msgTone]">{{ msg }}</div>
-    </div>
+    </template>
+    <p v-else class="conn-placeholder">请点击上方连接标签查看详情，或点「+ 新建」添加连接。</p>
   </div>
 </template>
 
 <script setup>
 import { computed, reactive, ref, watch } from 'vue'
 import { apiFetch } from '@/api/client.js'
+import { auditLog } from '@/lib/auditLog'
+import '../../connection-form-pane.css'
 
 const props = defineProps({
-  connections: { type: Array, default: () => [] },
-  activeId: { type: String, default: '' },
   modelValue: { type: Object, default: null },
+  creatingNew: { type: Boolean, default: false },
+  loading: { type: Boolean, default: false },
+  loadingMessage: { type: String, default: '正在加载已保存的连接…' },
 })
-const emit = defineEmits(['select', 'updated', 'new'])
+const emit = defineEmits(['updated', 'new', 'connection-tested'])
 
 const draft = reactive({
   id: '',
@@ -103,6 +108,11 @@ const busy = ref(false)
 const hasSavedPassword = computed(() => {
   const v = props.modelValue
   return !!(v && v.has_password)
+})
+
+const isRemoteDemo = computed(() => {
+  const v = props.modelValue
+  return !!(v && v.is_demo && v.demo_channel === 'remote')
 })
 
 function defaultPortForEngine(engine) {
@@ -217,8 +227,17 @@ async function save(afterTest = false) {
       list[list.length - 1]?.id ||
       null
     emit('updated', mine)
+    if (mine) emit('connection-tested', { id: mine, ok: true })
     msg.value = afterTest ? '连接成功，已写入本地配置' : '已保存'
     msgTone.value = 'ok'
+    void auditLog({
+      action: 'db.connection_save',
+      result: 'ok',
+      summary: draft.name || draft.engine || '数据库连接',
+      object_type: 'db_connection',
+      object_id: mine || undefined,
+      detail: { engine: draft.engine, after_test: afterTest },
+    })
   } catch (e) {
     msg.value = e.message || String(e)
     msgTone.value = 'err'
@@ -247,14 +266,21 @@ async function testOnly() {
   msgTone.value = ''
   busy.value = true
   try {
-    const res = await apiFetch('/database/test', {
-      method: 'POST',
-      body: buildApiBody(),
-    })
+    let res
+    if (isRemoteDemo.value && draft.id) {
+      res = await apiFetch(`/database/test_saved/${encodeURIComponent(draft.id)}`, { method: 'POST' })
+    } else {
+      res = await apiFetch('/database/test', {
+        method: 'POST',
+        body: buildApiBody(),
+      })
+    }
     if (res.ok) {
-      msg.value = '连接成功（尚未保存到配置文件）'
+      if (draft.id) emit('connection-tested', { id: draft.id, ok: true })
+      msg.value = isRemoteDemo.value ? '连接成功' : '连接成功（尚未保存到配置文件）'
       msgTone.value = 'ok'
     } else {
+      if (draft.id) emit('connection-tested', { id: draft.id, ok: false, message: res.message || '连接失败' })
       msg.value = res.message || '连接失败'
       msgTone.value = 'err'
     }
@@ -294,101 +320,3 @@ async function remove() {
 }
 </script>
 
-<style scoped>
-.cm {
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  padding: 12px;
-  background: #fafafa;
-  min-width: 260px;
-}
-.row-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-.conn-list {
-  list-style: none;
-  padding: 0;
-  margin: 8px 0;
-}
-.conn-list li {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 8px;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 13px;
-}
-.conn-list li.active {
-  background: #eef2ff;
-}
-.badge {
-  font-size: 11px;
-  background: #e5e7eb;
-  padding: 2px 6px;
-  border-radius: 4px;
-}
-.form {
-  margin-top: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.input {
-  padding: 8px;
-  border: 1px solid #d1d5db;
-  border-radius: 6px;
-  font-size: 13px;
-}
-.actions {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-.btn {
-  padding: 8px 12px;
-  border-radius: 6px;
-  border: 1px solid #d1d5db;
-  background: #fff;
-  cursor: pointer;
-  font-size: 13px;
-}
-.btn:disabled {
-  opacity: 0.55;
-  cursor: not-allowed;
-}
-.btn.primary {
-  background: #4f46e5;
-  color: #fff;
-  border-color: #4f46e5;
-}
-.btn.danger {
-  color: #b91c1c;
-}
-.btn.sm {
-  padding: 4px 8px;
-  font-size: 12px;
-}
-.msg {
-  font-size: 12px;
-  line-height: 1.45;
-}
-.msg.ok {
-  color: #047857;
-}
-.msg.err {
-  color: #b91c1c;
-}
-.hint {
-  margin: 0;
-  font-size: 11px;
-  line-height: 1.45;
-  color: #6b7280;
-}
-label {
-  font-size: 12px;
-  color: #4b5563;
-}
-</style>

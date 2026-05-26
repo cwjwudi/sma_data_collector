@@ -28,6 +28,17 @@ async def list_templates():
     return [s.model_dump(mode="json") for s in store.list_summaries()]
 
 
+@router.get("/templates/full")
+async def list_templates_full():
+    """完整模版列表（须在 :template_id 之前注册）。"""
+    out = []
+    for s in store.list_summaries():
+        t = store.load_template(s.id)
+        if t:
+            out.append(t.model_dump(mode="json"))
+    return out
+
+
 @router.get("/templates/{template_id}")
 async def get_template(template_id: str):
     try:
@@ -70,3 +81,12 @@ async def delete_template(template_id: str):
     if not ok:
         raise HTTPException(status_code=404, detail="模版不存在")
     return {"ok": True}
+
+
+@router.post("/templates/import-bulk")
+async def import_bulk(request: dict[str, Any]):
+    items = request.get("items")
+    if not isinstance(items, list):
+        raise HTTPException(status_code=400, detail="body.items 必须为数组")
+    n = store.migrate_from_payload_list([x for x in items if isinstance(x, dict)])
+    return {"imported": n}

@@ -29,7 +29,7 @@
         <div v-if="coverMode === 'preset'" class="nt-grid-scroll nt-grid-scroll--thumbs">
           <div class="nt-grid nt-grid--thumbs">
             <button
-              v-for="p in coverPresets"
+              v-for="(p, i) in coverPresets"
               :key="p.id"
               type="button"
               class="nt-thumb-card"
@@ -40,7 +40,7 @@
                 <LayoutPresetMiniPage :preset="p" :max-width-px="thumbMaxW" :max-height-px="thumbMaxH" />
               </div>
               <div class="nt-thumb-meta">
-                <span class="nt-thumb-title">{{ p.name }}</span>
+                <span class="nt-thumb-title">{{ i + 1 }}. {{ p.name }}</span>
                 <small>{{ paperShort(p.paperKind) }} · {{ ori(p.orientation) }}</small>
               </div>
             </button>
@@ -60,7 +60,7 @@
         <div v-show="bodyMode === 'preset'" class="nt-grid-scroll nt-grid-scroll--thumbs">
           <div class="nt-grid nt-grid--thumbs">
             <button
-              v-for="p in bodyPresets"
+              v-for="(p, i) in bodyPresets"
               :key="p.id"
               type="button"
               class="nt-thumb-card"
@@ -71,7 +71,7 @@
                 <LayoutPresetMiniPage :preset="p" :max-width-px="thumbMaxW" :max-height-px="thumbMaxH" />
               </div>
               <div class="nt-thumb-meta">
-                <span class="nt-thumb-title">{{ p.name }}</span>
+                <span class="nt-thumb-title">{{ i + 1 }}. {{ p.name }}</span>
                 <small>{{ paperShort(p.paperKind) }} · {{ ori(p.orientation) }}</small>
               </div>
             </button>
@@ -121,7 +121,7 @@
         <div v-if="backMode === 'preset'" class="nt-grid-scroll nt-grid-scroll--thumbs">
           <div class="nt-grid nt-grid--thumbs">
             <button
-              v-for="p in backPresets"
+              v-for="(p, i) in backPresets"
               :key="p.id"
               type="button"
               class="nt-thumb-card"
@@ -132,7 +132,7 @@
                 <LayoutPresetMiniPage :preset="p" :max-width-px="thumbMaxW" :max-height-px="thumbMaxH" />
               </div>
               <div class="nt-thumb-meta">
-                <span class="nt-thumb-title">{{ p.name }}</span>
+                <span class="nt-thumb-title">{{ i + 1 }}. {{ p.name }}</span>
                 <small>{{ paperShort(p.paperKind) }} · {{ ori(p.orientation) }}</small>
               </div>
             </button>
@@ -165,6 +165,7 @@ import {
   type ReportTemplate,
 } from "@/lib/report-template/model";
 import { getLayoutPresetById } from "@/lib/report-template/layout-presets-api";
+import { layoutPresetsForRoleOrdered } from "@/lib/layout-display-order";
 import { refreshLayoutPresets } from "@/lib/report-template/layout-registry";
 import LayoutPresetMiniPage from "@/components/report-template/LayoutPresetMiniPage.vue";
 
@@ -192,15 +193,11 @@ const bodyPresets = ref<LayoutPreset[]>([]);
 const coverPresets = ref<LayoutPreset[]>([]);
 const backPresets = ref<LayoutPreset[]>([]);
 
-function filterByRole(all: LayoutPreset[], role: LayoutPageRole) {
-  return all.filter((p) => p.pageRole === role);
-}
-
 async function refreshPresets() {
   const all = (await refreshLayoutPresets()).map((p) => hydrateLayoutPreset(p));
-  bodyPresets.value = filterByRole(all, "normal");
-  coverPresets.value = filterByRole(all, "cover");
-  backPresets.value = filterByRole(all, "back");
+  bodyPresets.value = layoutPresetsForRoleOrdered(all, "normal");
+  coverPresets.value = layoutPresetsForRoleOrdered(all, "cover");
+  backPresets.value = layoutPresetsForRoleOrdered(all, "back");
 }
 
 const papers = ["A5", "A4", "A3", "Letter"] as PaperKind[];

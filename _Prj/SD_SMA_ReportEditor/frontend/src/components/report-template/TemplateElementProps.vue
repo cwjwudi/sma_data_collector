@@ -12,13 +12,38 @@
           <span class="lpep-mini-label">快捷取色</span>
           <input :value="textColorHex" type="color" class="lpep-color-native" @input="onTextColorPick($event)" />
         </div>
-        <BoxZoneColorPicker :el="el" />
       </template>
 
       <template v-if="el.type === 'box'">
         <label class="lpep-lab">文字<input v-model.trim="el.text" class="lpep-inp" /></label>
-        <BoxZoneColorPicker :el="el" />
       </template>
+
+      <div v-if="el.type === 'text' || el.type === 'box'" class="lpep-lab lpep-wrap-row">
+        <span class="lpep-wrap-title">换行</span>
+        <div class="lpep-seg" role="group" aria-label="文本换行方式">
+          <button
+            type="button"
+            class="lpep-seg-btn"
+            :class="{ 'lpep-seg-on': !el.textAutoWrap }"
+            :aria-pressed="!el.textAutoWrap"
+            @click="el.textAutoWrap = false"
+          >
+            单行
+          </button>
+          <button
+            type="button"
+            class="lpep-seg-btn"
+            :class="{ 'lpep-seg-on': el.textAutoWrap }"
+            :aria-pressed="el.textAutoWrap"
+            @click="el.textAutoWrap = true"
+          >
+            自动
+          </button>
+        </div>
+        <p class="lpep-wrap-hint">「自动」表示在框宽内换行，无空格长串也会断行。</p>
+      </div>
+
+      <BoxZoneColorPicker v-if="el.type !== 'table'" :el="el" />
 
       <template v-if="el.type === 'date'">
         <label class="lpep-lab"
@@ -48,23 +73,30 @@
           <span class="lpep-mini-label">快捷取色</span>
           <input :value="textColorHex" type="color" class="lpep-color-native" @input="onTextColorPick($event)" />
         </div>
-      </template>
-
-      <template v-if="el.type === 'text' || el.type === 'box' || el.type === 'date'">
-        <label class="lpep-lab"
-          >水平位置<select v-model="el.alignX" class="lpep-inp">
-            <option value="start">左</option>
-            <option value="center">中</option>
-            <option value="end">右</option>
-          </select></label
-        >
-        <label class="lpep-lab"
-          >垂直位置<select v-model="el.alignY" class="lpep-inp">
-            <option value="start">上</option>
-            <option value="center">中</option>
-            <option value="end">下</option>
-          </select></label
-        >
+        <div class="lpep-lab lpep-wrap-row">
+          <span class="lpep-wrap-title">换行</span>
+          <div class="lpep-seg" role="group" aria-label="日期文本换行方式">
+            <button
+              type="button"
+              class="lpep-seg-btn"
+              :class="{ 'lpep-seg-on': !el.textAutoWrap }"
+              :aria-pressed="!el.textAutoWrap"
+              @click="el.textAutoWrap = false"
+            >
+              单行
+            </button>
+            <button
+              type="button"
+              class="lpep-seg-btn"
+              :class="{ 'lpep-seg-on': el.textAutoWrap }"
+              :aria-pressed="el.textAutoWrap"
+              @click="el.textAutoWrap = true"
+            >
+              自动
+            </button>
+          </div>
+          <p class="lpep-wrap-hint">「自动」表示在框宽内换行，无空格长串也会断行。</p>
+        </div>
       </template>
 
       <template v-if="el.type === 'image'">
@@ -119,7 +151,6 @@
         <span class="lpep-img-hint"
           >本地图片将转为 data URL 与模版一并保存。九宫格对齐控制图片在占位格内的位置。</span
         >
-        <BoxZoneColorPicker :el="el" />
       </template>
 
       <template v-if="el.type === 'parameter'">
@@ -265,39 +296,32 @@
           </div>
         </div>
         <div class="lpep-table-col-widths">
-          <span class="lpep-dim-title">列宽（%）</span>
-          <div class="lpep-table-col-widths-grid">
-            <label v-for="ci in tplTableColWidthIndices" :key="'tplcw-' + ci" class="lpep-lab lpep-table-col-w-lab"
-              >列 {{ ci + 1 }}
-              <input
-                type="number"
-                :min="TABLE_COLUMN_WIDTH_PERCENT_MIN"
-                :max="tplTableColPercentMax"
-                step="1"
-                class="lpep-inp lpep-table-col-w-inp"
-                :value="tplTableColPercentDisplay(ci)"
-                @change="onTplTableColPercentChange(ci, $event)"
-              />
-            </label>
-          </div>
-          <p class="lpep-hint-muted">
-            整数百分比（每列至少 {{ TABLE_COLUMN_WIDTH_PERCENT_MIN }}%，合计 100%）；修改一列时其余列按当前比例自动调整。
-          </p>
+          <span class="lpep-dim-title">列宽</span>
+          <TableColumnWidthVisualEditor
+            v-if="templateTableCellMetric"
+            :column-widths-px="tplTableColumnInnerWidths"
+            :inner-w="templateTableCellMetric.innerW"
+            @resize-delta="onTplTableColumnResizeFromProps"
+          />
         </div>
         <p class="lpep-hint-muted">
           {{
             tplSqlFillEnabled
               ? "列数、行高修改后即应用到画布（无需另行确认）。数据库填充开启时行数随预览查询结果自动同步；单元格静态文字与绑定均不在此编辑；可视化模式下请在画布第一行选择输出列。"
-              : "行数、列数、行高修改后即应用到画布（无需另行确认）。单击单元格即可直接输入；OPC UA / SQL 模式下此处仍为占位说明字。"
+              : "行数、列数、行高修改后即应用到画布（无需另行确认）。单击单元格可设置填充色、输入文字或绑定 OPC UA / SQL。"
           }}
+        </p>
+        <p v-if="!hasTableCellPicked" class="lpep-hint-muted">
+          在画布上单击单元格后，可在此设置该单元格的填充色。
         </p>
         <p v-if="templateTableCellMetric" class="lpep-table-metric">
-          单元格高度（推算）：高约 <strong>{{ formatMetricPx(templateTableCellMetric.cellH) }}</strong> px。当前内侧列宽（推算）：{{
-            templateTableColWidthsSummary
-          }}
+          单元格高度（推算）：高约 <strong>{{ formatMetricPx(templateTableCellMetric.cellH) }}</strong> px
         </p>
-        <template v-if="activeTableCell">
+        <template v-if="hasTableCellPicked && activeTableCell">
           <div class="lpep-table-cell-fields" :key="'tc-' + editCellRow + '-' + editCellCol">
+            <div class="lpep-table-cell-fill-block">
+              <TableCellFillPicker v-model="activeTableCellFill" title="填充色" />
+            </div>
             <template v-if="!tplSqlFillEnabled">
               <label class="lpep-lab"
                 >静态文字<textarea v-model.trim="activeTableCell.text" rows="2" class="lpep-inp" spellcheck="false"
@@ -410,6 +434,34 @@
         </p>
       </template>
 
+      <template v-if="el.type !== 'image'">
+        <label class="lpep-lab"
+          >水平位置<select v-model="el.alignX" class="lpep-inp">
+            <option value="start">左</option>
+            <option value="center">中</option>
+            <option value="end">右</option>
+          </select></label
+        >
+        <label class="lpep-lab"
+          >垂直位置<select v-model="el.alignY" class="lpep-inp">
+            <option value="start">上</option>
+            <option value="center">中</option>
+            <option value="end">下</option>
+          </select></label
+        >
+      </template>
+
+      <label class="lpep-lab"
+        >叠放顺序（越大越靠前）<input
+          v-model.number="el.zIndex"
+          type="number"
+          min="0"
+          max="10000"
+          step="1"
+          class="lpep-inp"
+      /></label>
+      <LayoutFontFamilyField v-model="el.fontFamily" />
+
       <label class="lpep-lab"
         >字号<input v-model.number="el.fontSize" type="number" min="8" max="72" class="lpep-inp"
       /></label>
@@ -429,6 +481,7 @@
 import OpcUaNodePickerModal from "@/features/datasource/opcua/OpcUaNodePickerModal.vue";
 import TemplateTableSqlFillFields from "@/components/report-template/TemplateTableSqlFillFields.vue";
 import BoxZoneColorPicker from "@/components/report-template/BoxZoneColorPicker.vue";
+import LayoutFontFamilyField from "@/components/report-template/LayoutFontFamilyField.vue";
 import { readImageFileAsDataUrl } from "@/lib/report-template/read-image-file";
 import type { SignatureDisplayMode, TemplateControlType, TemplateElement } from "@/lib/report-template/model";
 import {
@@ -440,18 +493,17 @@ import {
 import { clearGridCellBindings, gridHasNonNoneBinding } from "@/lib/report-template/table-binding-utils";
 import { DATE_FORMAT_PRESETS } from "@/lib/report-template/layout-zone-element";
 import {
+  applyTableColumnResizeDeltaPx,
   REPORT_TEMPLATE_TABLE_NODE_PADDING_PX,
-  adjustIntegerColumnPercentsAfterEdit,
   clampTableRowHeightPx,
   formatMetricPx,
-  integerColumnPercentsFromInnerWidthsPx,
-  maxTableColumnPercentForEdit,
-  TABLE_COLUMN_WIDTH_PERCENT_MIN,
   uniformTableCellBoxPx,
   TABLE_ROW_HEIGHT_DEFAULT_PX,
   TABLE_ROW_HEIGHT_MAX_PX,
   TABLE_ROW_HEIGHT_MIN_PX,
 } from "@/lib/report-template/table-cell-metrics";
+import TableColumnWidthVisualEditor from "@/components/report-template/TableColumnWidthVisualEditor.vue";
+import TableCellFillPicker from "@/components/report-template/TableCellFillPicker.vue";
 import type { TableSqlFillConfig } from "@/lib/report-template/table-sql-fill";
 import {
   defaultTableSqlFillConfig,
@@ -597,6 +649,21 @@ const activeTableCell = computed(() => {
   return g[editCellRow.value]?.[editCellCol.value] ?? null;
 });
 
+const hasTableCellPicked = computed(() => {
+  const pick = props.tableCellPick;
+  return props.el.type === "table" && !!pick && pick.elId === props.el.id;
+});
+
+const activeTableCellFill = computed({
+  get(): string {
+    return activeTableCell.value?.bgColor ?? "transparent";
+  },
+  set(v: string) {
+    const cell = activeTableCell.value;
+    if (cell) cell.bgColor = v;
+  },
+});
+
 const tplSqlFillEnabled = computed(
   () => props.el.type === "table" && !!props.el.tableSqlFill?.enabled,
 );
@@ -634,46 +701,28 @@ watch(
   { deep: true },
 );
 
-const templateTableColWidthsSummary = computed(() => {
-  const el = props.el;
-  if (el.type !== "table") return "";
-  const widths = templateTableColumnInnerWidthsPx(el);
-  return widths.map((w, i) => `列${i + 1} ${formatMetricPx(w)}`).join(" · ");
-});
-
-const tplTableColWidthIndices = computed(() => {
-  if (props.el.type !== "table") return [];
-  ensureTableGrid(props.el);
-  const n = props.el.tableCols ?? 4;
-  return Array.from({ length: n }, (_, i) => i);
-});
-
-const tplTableColPercents = computed(() => {
+const tplTableColumnInnerWidths = computed(() => {
   const el = props.el;
   if (el.type !== "table") return [];
   ensureTableGrid(el);
-  const u = templateTableCellMetric.value;
-  if (!u) return [];
-  const widths = templateTableColumnInnerWidthsPx(el);
-  return integerColumnPercentsFromInnerWidthsPx(widths, u.innerW);
+  return templateTableColumnInnerWidthsPx(el);
 });
 
-const tplTableColPercentMax = computed(() => {
-  if (props.el.type !== "table") return 100;
-  return maxTableColumnPercentForEdit(props.el.tableCols ?? 4);
-});
-
-function tplTableColPercentDisplay(ci: number): number {
-  return tplTableColPercents.value[ci] ?? TABLE_COLUMN_WIDTH_PERCENT_MIN;
-}
-
-function onTplTableColPercentChange(ci: number, ev: Event) {
+function onTplTableColumnResizeFromProps(boundaryIndex: number, deltaLayoutPx: number) {
   if (props.el.type !== "table") return;
   ensureTableGrid(props.el);
-  const raw = (ev.target as HTMLInputElement).value;
-  const prev = tplTableColPercents.value.slice();
-  const next = adjustIntegerColumnPercentsAfterEdit(prev, ci, raw);
-  props.el.tableColWidthsPx = next.slice();
+  const u = templateTableCellMetric.value;
+  if (!u) return;
+  const cols = props.el.tableCols ?? 4;
+  const next = applyTableColumnResizeDeltaPx(
+    u.innerW,
+    cols,
+    props.el.tableColWidthsPx,
+    boundaryIndex,
+    deltaLayoutPx,
+  );
+  if (!next) return;
+  props.el.tableColWidthsPx = next;
   ensureTableGrid(props.el);
   clampTableElementOuterSize(props.el);
 }
@@ -703,10 +752,10 @@ const tableRowHeightModel = computed({
   },
 });
 
-function onOpcPickConfirm(nodeId: string) {
+function onOpcPickConfirm(payload: string | { serverId: string; nodeId: string }) {
   const t = opcPickTarget.value;
   opcPickTarget.value = null;
-  const id = nodeId.trim();
+  const id = (typeof payload === "string" ? payload : payload.nodeId).trim();
   if (!id) return;
   if (t === "parameter" && props.el.type === "parameter") {
     props.el.bindingKind = "opcua";
@@ -841,6 +890,49 @@ async function onLocalImageChosen(ev: Event) {
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+.lpep-wrap-row {
+  gap: 6px;
+}
+.lpep-wrap-title {
+  font-size: 12px;
+  color: #52525b;
+}
+.lpep-seg {
+  display: inline-flex;
+  align-self: flex-start;
+  border-radius: 8px;
+  border: 1px solid #e4e4e7;
+  overflow: hidden;
+  background: #fafafa;
+}
+.lpep-seg-btn {
+  margin: 0;
+  padding: 6px 14px;
+  font-size: 12px;
+  border: none;
+  background: transparent;
+  color: #52525b;
+  cursor: pointer;
+  line-height: 1.2;
+}
+.lpep-seg-btn + .lpep-seg-btn {
+  box-shadow: inset 1px 0 0 #e4e4e7;
+}
+.lpep-seg-btn:hover:not(.lpep-seg-on) {
+  background: rgb(244 244 245 / 0.85);
+  color: #18181b;
+}
+.lpep-seg-on {
+  background: #eef2ff;
+  color: #3730a3;
+  font-weight: 600;
+}
+.lpep-wrap-hint {
+  margin: 0;
+  font-size: 11px;
+  color: #a1a1aa;
+  line-height: 1.35;
 }
 .lpep-inp {
   width: 100%;

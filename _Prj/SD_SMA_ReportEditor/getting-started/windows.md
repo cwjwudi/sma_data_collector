@@ -50,7 +50,7 @@ python -m venv venv
 
 另开终端访问 `http://127.0.0.1:8000/health` 或 `http://127.0.0.1:8000/docs`。按 `Ctrl+C` 停止。
 
-> **提示**：避免在旧版 **cmd** 窗口里用鼠标拖选文本触发「快速编辑」导致进程假死；请用 PowerShell / Windows Terminal（与 `start_dev_web.bat` 行为一致）。
+> **提示**：避免在旧版 **cmd** 窗口里用鼠标拖选文本触发「快速编辑」导致进程假死；请用 PowerShell / Windows Terminal（与 `scripts\dev\windows\start_dev_web.bat` 行为一致）。
 
 ---
 
@@ -78,7 +78,7 @@ npm install --registry https://registry.npmmirror.com
 在 **项目根目录** `SD_SMA_ReportEditor/` 双击或执行：
 
 ```text
-start_dev_web.bat
+scripts\dev\windows\start_dev_web.bat
 ```
 
 脚本会：
@@ -87,7 +87,7 @@ start_dev_web.bat
 2. 新窗口启动 Vite（`http://127.0.0.1:5173`）
 3. 等待就绪后自动打开浏览器
 
-停止：关闭两个 PowerShell 窗口，或运行 **`stop_dev_web.bat`**。
+停止：关闭两个 PowerShell 窗口，或运行 **`scripts\dev\windows\stop_dev_web.bat`**。
 
 ### 方式 B：Electron 桌面（接近最终产品）
 
@@ -132,18 +132,12 @@ npm --version
 
 ---
 
-## 七、打包 Windows 安装包（可选）
+## 七、打包 Windows 安装包（现场交付）
 
-面向**交付现场**而非日常开发，需已安装 Node、Python（含 `py` 启动器）。在 `frontend/`：
+非日常开发。入口：**[packaging/README.md](../packaging/README.md)**（一键脚本、手动 npm、排错）。
 
-```powershell
-npm install
-npm.cmd run dist:win
-```
-
-或国内镜像：`npm.cmd run dist:win:cn`  
-
-详细排错（白屏、NSIS、文件占用等）见项目根 [README.md](../README.md) 的「Windows 安装包」章节。
+- 一键：`packaging\windows\build.bat` → 产物在 `packaging\windows\output\`
+- 现场装/卸：[windows-installer.md](windows-installer.md)
 
 ---
 
@@ -151,9 +145,9 @@ npm.cmd run dist:win
 
 | 项目 | Windows | macOS |
 |------|---------|--------|
-| 一键 Web 启动 | `start_dev_web.bat` | 无 bat；见 [mac.md](mac.md) |
+| 一键 Web 启动 | `scripts\dev\windows\start_dev_web.bat` | 无 bat；见 [mac.md](mac.md) |
 | Python 路径 | `backend\venv\Scripts\python.exe` | `backend/venv/bin/python3` |
-| Electron 一键 | `npm run electron:dev` | `scripts/open-electron-dev-mac.command` |
+| Electron 一键 | `npm run electron:dev` | `scripts/dev/mac/open-electron-dev-mac.command` |
 
 ---
 

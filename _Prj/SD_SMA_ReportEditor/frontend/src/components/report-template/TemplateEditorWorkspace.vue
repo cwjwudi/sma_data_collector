@@ -41,7 +41,13 @@
                 @change="onPresetBind('body', $event)"
               >
                 <option value="">不绑定 ID（仅占位）</option>
-                <option v-for="p in bodyPresets" :key="'b' + p.id" :value="p.id">{{ p.name }}</option>
+                <option
+                  v-for="row in bodyPresetRows"
+                  :key="'b' + row.preset.id"
+                  :value="row.preset.id"
+                >
+                  {{ layoutPresetSelectLabel(row.seq, row.preset.name) }}
+                </option>
               </select>
             </label>
           </template>
@@ -58,7 +64,13 @@
                 @change="onPresetBind('cover', $event)"
               >
                 <option value="">不绑定 ID（仅占位）</option>
-                <option v-for="p in coverPresets" :key="'c' + p.id" :value="p.id">{{ p.name }}</option>
+                <option
+                  v-for="row in coverPresetRows"
+                  :key="'c' + row.preset.id"
+                  :value="row.preset.id"
+                >
+                  {{ layoutPresetSelectLabel(row.seq, row.preset.name) }}
+                </option>
               </select>
             </label>
           </template>
@@ -75,7 +87,13 @@
                 @change="onPresetBind('back', $event)"
               >
                 <option value="">不绑定 ID（仅占位）</option>
-                <option v-for="p in backPresets" :key="'k' + p.id" :value="p.id">{{ p.name }}</option>
+                <option
+                  v-for="row in backPresetRows"
+                  :key="'k' + row.preset.id"
+                  :value="row.preset.id"
+                >
+                  {{ layoutPresetSelectLabel(row.seq, row.preset.name) }}
+                </option>
               </select>
             </label>
           </template>
@@ -246,7 +264,7 @@
           </template>
           <template v-else>
             <div class="mid-edit-stack">
-              <div class="tee-root">
+              <div ref="editScrollRootRef" class="tee-root">
                 <section
                   class="tee-card"
                   :class="{ 'tee-card--hl': sh === 'cover' }"
@@ -345,6 +363,10 @@ import {
   cloneDeepTemplate,
   stableFingerprintPart,
 } from "@/lib/report-template/snapshot-fingerprint";
+import {
+  layoutPresetSelectLabel,
+  layoutPresetSelectRows,
+} from "@/lib/layout-display-order";
 import { refreshLayoutPresets } from "@/lib/report-template/layout-registry";
 import { applyLayoutPresetToTemplate, resyncTemplateBoundPresets } from "@/lib/report-template/layout-apply";
 import {
@@ -354,6 +376,7 @@ import {
 } from "@/lib/report-template/model";
 import { templateTableCellPickKey, reportBindingPreviewKey } from "@/lib/report-template/template-editor-context";
 import { useReportBindingPreview } from "@/composables/useReportBindingPreview";
+import { useStaleGuard } from "@/composables/useStaleGuard";
 import { watchDebounced } from "@vueuse/core";
 
 const OPC_LIVE_LS_ENABLED = "reportTplOpcUaLiveRefresh";
@@ -386,6 +409,7 @@ const toolNames = {
 
 const route = useRoute();
 const router = useRouter();
+const { begin: beginLoad, isStale: isLoadStale } = useStaleGuard();
 
 const editing = ref(null);
 const bindingPreview = useReportBindingPreview(editing);
@@ -614,9 +638,7 @@ watch([selId, sh], () => {
     return;
   }
   const cur = tableCellPick.value;
-  if (!cur || cur.elId !== id) {
-    tableCellPick.value = { elId: id, row: 0, col: 0 };
-  }
+  if (cur && cur.elId !== id) tableCellPick.value = null;
 }, { immediate: true });
 
 /** 正文编辑：当前列表页序号，用于 v-for */
@@ -629,6 +651,7 @@ const bodySlots = computed(() => {
 
 /** @type {Record<string, HTMLElement | undefined>} */
 const editAnchors = {};
+const editScrollRootRef = ref(null);
 
 /** @param {string} key @param {unknown} el */
 function setEditAnchor(key, el) {
@@ -637,10 +660,44 @@ function setEditAnchor(key, el) {
   else delete editAnchors[key];
 }
 
+function editAnchorKeyForSheet() {
+  if (sh.value === "cover") return "cover";
+  if (sh.value === "back") return "back";
+  return "body-" + bodyPageIdx.value;
+}
+
 function scrollActiveBodyPageIntoView() {
+  scrollEditSheetIntoView();
+}
+
+function scrollEditSheetIntoView(retry = 0) {
   nextTick(() => {
-    editAnchors["body-" + bodyPageIdx.value]?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    const root = editScrollRootRef.value;
+    const anchor = editAnchors[editAnchorKeyForSheet()];
+    if (root && anchor instanceof HTMLElement) {
+      const pad = 12;
+      const delta = anchor.getBoundingClientRect().top - root.getBoundingClientRect().top + root.scrollTop - pad;
+      root.scrollTo({
+        top: Math.max(0, delta),
+        behavior: retry > 0 ? "auto" : "smooth",
+      });
+      return;
+    }
+    if (retry < 12) {
+      window.setTimeout(() => scrollEditSheetIntoView(retry + 1), 50);
+    }
   });
+}
+
+/** @type {ReturnType<typeof setTimeout> | null} */
+let scrollEditDebounceTimer = null;
+
+function scheduleScrollEditSheetIntoView() {
+  if (scrollEditDebounceTimer) clearTimeout(scrollEditDebounceTimer);
+  scrollEditDebounceTimer = setTimeout(() => {
+    scrollEditDebounceTimer = null;
+    scrollEditSheetIntoView();
+  }, 32);
 }
 
 /** @param {import('@/lib/report-template/export-preview-nav').ExportPreviewNavPayload} payload */
@@ -670,21 +727,6 @@ function onExportPreviewNavigate(payload) {
 function onExportPreviewRequestEdit(payload) {
   applyExportPreviewNavigation(payload);
   midMode.value = "edit";
-}
-
-/** 与左侧「正文 / 封面 / 末页」同步：滚到对应卡片 */
-function scrollEditSheetIntoView() {
-  nextTick(() => {
-    if (sh.value === "cover") {
-      editAnchors.cover?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-      return;
-    }
-    if (sh.value === "back") {
-      editAnchors.back?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-      return;
-    }
-    editAnchors["body-" + bodyPageIdx.value]?.scrollIntoView({ behavior: "smooth", block: "nearest" });
-  });
 }
 
 /** 编辑栈内任一点击（捕获阶段）同步左侧版式绑定上下文 */
@@ -725,7 +767,12 @@ watch([selId, editing], () => {
 
 watch(midMode, (m) => {
   if (m !== "edit") return;
-  nextTick(() => scrollEditSheetIntoView());
+  scheduleScrollEditSheetIntoView();
+});
+
+watch([sh, bodyPageIdx], () => {
+  if (midMode.value !== "edit") return;
+  scheduleScrollEditSheetIntoView();
 });
 
 const bodyPageCount = computed(() => {
@@ -734,9 +781,9 @@ const bodyPageCount = computed(() => {
   return ensureBodyPages(t).length;
 });
 
-const bodyPresets = computed(() => layoutPresetsAll.value.filter((p) => p.pageRole === "normal"));
-const coverPresets = computed(() => layoutPresetsAll.value.filter((p) => p.pageRole === "cover"));
-const backPresets = computed(() => layoutPresetsAll.value.filter((p) => p.pageRole === "back"));
+const bodyPresetRows = computed(() => layoutPresetSelectRows(layoutPresetsAll.value, "normal"));
+const coverPresetRows = computed(() => layoutPresetSelectRows(layoutPresetsAll.value, "cover"));
+const backPresetRows = computed(() => layoutPresetSelectRows(layoutPresetsAll.value, "back"));
 
 /** 编辑画布卡片标题与导出预览页码一致：1 + 正文页数 + 1 */
 const totalEditPages = computed(() => 1 + bodyPageCount.value + 1);
@@ -783,7 +830,7 @@ function setSheet(s) {
     const n = ensureBodyPages(t).length;
     if (bodyPageIdx.value >= n) bodyPageIdx.value = Math.max(0, n - 1);
   }
-  if (midMode.value === "edit") scrollEditSheetIntoView();
+  if (midMode.value === "edit") scheduleScrollEditSheetIntoView();
 }
 
 function addBodyPageRow() {
@@ -833,28 +880,44 @@ function onBodyPageCountInput(ev) {
 }
 
 async function boot() {
+  const token = beginLoad();
+  editing.value = null;
   const id = String(route.params.id || "");
-  if (!id) return router.replace({ name: "TemplateManager" });
+  if (!id) {
+    if (!isLoadStale(token)) router.replace({ name: "TemplateManager" });
+    return;
+  }
   hint.value = "";
   try {
     const remote = await api.getTemplate(id);
+    if (isLoadStale(token)) return;
     editing.value = cloneDeepTemplate(remote);
     ensureBodyPages(editing.value);
     syncLegacyElementsAlias(editing.value);
     bodyPageIdx.value = 0;
     await loadLayoutPresetsList();
+    if (isLoadStale(token)) return;
     if (layoutPresetsAll.value.length) {
       resyncTemplateBoundPresets(editing.value, layoutPresetsAll.value);
       reclamp();
     }
   } catch {
-    hint.value = "无法从后端载入（请开启 FastAPI）。已返回列表。";
-    return router.replace({ name: "TemplateManager" });
+    if (isLoadStale(token)) return;
+    hint.value = "无法从后端载入模版。";
+    editing.value = null;
+    return;
   }
   selId.value = null;
   resetTplEditHistory();
   void bindingPreview.refresh({ silent: true });
 }
+
+watch(
+  () => route.params.id,
+  () => {
+    void boot();
+  },
+);
 
 function reclamp() {
   const t = editing.value;
@@ -1417,6 +1480,7 @@ onUnmounted(() => {
 .mid-edit-stack {
   flex: 1 1 auto;
   min-height: 0;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -1425,8 +1489,10 @@ onUnmounted(() => {
   box-sizing: border-box;
   width: 100%;
   min-height: 0;
+  min-width: 0;
   flex: 1 1 auto;
-  overflow: auto;
+  overflow-x: auto;
+  overflow-y: auto;
   padding: 10px 10px 28px;
   display: flex;
   flex-direction: column;

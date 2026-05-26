@@ -74,7 +74,7 @@
                 </template>
                 <template v-else-if="el.type === 'table'">
                   <div class="lppc-table-shell">
-                    <table class="lppc-table">
+                    <table class="lppc-table" :style="layoutZoneTableInnerStyle(el)">
                       <colgroup>
                         <col
                           v-for="(cw, ci) in layoutZoneTableColInnerWidthsPx(el)"
@@ -89,6 +89,7 @@
                             :key="ci"
                             class="lppc-table-cell"
                             :class="{ 'lppc-table-cell--hot': isLayoutTableCellHot(el, ri, ci) }"
+                            :style="layoutZoneTableCellStyle(el, ri, ci)"
                             @pointerdown.stop="pickLayoutTableCell(el, ri, ci)"
                           >
                             <template v-if="isVisualSqlFillOutputPickerRow(el, ri)">
@@ -238,7 +239,7 @@
               </template>
               <template v-else-if="el.type === 'table'">
                   <div class="lppc-table-shell">
-                    <table class="lppc-table">
+                    <table class="lppc-table" :style="layoutZoneTableInnerStyle(el)">
                       <colgroup>
                         <col
                           v-for="(cw, ci) in layoutZoneTableColInnerWidthsPx(el)"
@@ -253,6 +254,7 @@
                             :key="ci"
                             class="lppc-table-cell"
                             :class="{ 'lppc-table-cell--hot': isLayoutTableCellHot(el, ri, ci) }"
+                            :style="layoutZoneTableCellStyle(el, ri, ci)"
                             @pointerdown.stop="pickLayoutTableCell(el, ri, ci)"
                           >
                             <template v-if="isVisualSqlFillOutputPickerRow(el, ri)">
@@ -402,7 +404,7 @@
                 </template>
                 <template v-else-if="el.type === 'table'">
                   <div class="lppc-table-shell">
-                    <table class="lppc-table">
+                    <table class="lppc-table" :style="layoutZoneTableInnerStyle(el)">
                       <colgroup>
                         <col
                           v-for="(cw, ci) in layoutZoneTableColInnerWidthsPx(el)"
@@ -417,6 +419,7 @@
                             :key="ci"
                             class="lppc-table-cell"
                             :class="{ 'lppc-table-cell--hot': isLayoutTableCellHot(el, ri, ci) }"
+                            :style="layoutZoneTableCellStyle(el, ri, ci)"
                             @pointerdown.stop="pickLayoutTableCell(el, ri, ci)"
                           >
                             <template v-if="isVisualSqlFillOutputPickerRow(el, ri)">
@@ -533,6 +536,9 @@ import {
   normalizePageNumberMode,
   normalizeZIndex,
   zoneFillBackgroundCss,
+  zoneTableInnerBackgroundCss,
+  resolveTableCellBackgroundCss,
+  zoneTableNodeShellBackgroundCss,
   type LayoutControlType,
   type LayoutZoneElement,
   type LayoutZoneTableCell,
@@ -823,6 +829,23 @@ function onWindowKeydown(ev: KeyboardEvent) {
   deleteSelectedZoneEl();
 }
 
+function layoutZoneTableInnerStyle(el: LayoutZoneElement): Record<string, string> {
+  if (el.type !== "table") return {};
+  return { background: zoneTableInnerBackgroundCss(el.bgColor) };
+}
+
+function layoutZoneTableCellStyle(el: LayoutZoneElement, ri: number, ci: number): Record<string, string> {
+  if (el.type !== "table") return {};
+  const cell = layoutTableGrid(el)[ri]?.[ci];
+  return {
+    backgroundColor: resolveTableCellBackgroundCss(
+      { tableBgColor: el.bgColor, tableColBgColors: el.tableColBgColors },
+      ci,
+      cell,
+    ),
+  };
+}
+
 function nodeStyle(el: LayoutZoneElement) {
   const ff = typeof el.fontFamily === "string" ? el.fontFamily.trim() : "";
   const flex = flexJustifyAlignForAxes(el.alignX, el.alignY);
@@ -850,7 +873,7 @@ function nodeStyle(el: LayoutZoneElement) {
       justifyContent: "stretch",
       padding: "2px",
       overflow: "hidden",
-      backgroundColor: zoneFillBackgroundCss(el.bgColor),
+      backgroundColor: zoneTableNodeShellBackgroundCss(),
       whiteSpace: "normal",
     };
   }

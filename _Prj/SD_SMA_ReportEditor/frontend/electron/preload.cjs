@@ -10,6 +10,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   /** 选择导出目录（自动导出用） */
   pickExportDirectory: (opts) => ipcRenderer.invoke('dialog-pick-directory', opts || {}),
 
+  /** 选择配置备份 JSON（桌面版推荐，避免内嵌 file input 白屏） */
+  pickConfigJsonFile: (opts) => ipcRenderer.invoke('dialog-pick-config-json', opts || {}),
+
+  /** 保存文本日志（history logger 等） */
+  saveTextFileDialog: (opts) => ipcRenderer.invoke('dialog-save-text', opts || {}),
+
   /** 使用隐藏窗口渲染 "#/pdf-export" 并写入 PDF */
   runPdfExport: (opts) => ipcRenderer.invoke('pdf-export-run', opts),
 
@@ -19,6 +25,57 @@ contextBridge.exposeInMainWorld('electronAPI', {
   /** 路径拼接（跟随 OS） */
   pathJoin: (...parts) => ipcRenderer.invoke('path-join', parts),
 
+  /** 启动阶段直读本机配置，避免等待 FastAPI 才能显示已保存连接 */
+  getDataSourceStartupSnapshot: () => ipcRenderer.invoke('datasource-startup-snapshot'),
+
   /** 仅 PDF 导出隐藏窗口：渲染完成后通知主进程 */
   notifyPdfExportReady: (payload) => ipcRenderer.send('pdf-export-ready', payload),
+
+  /** 扫描目录下 PDF（历史报表） */
+  scanExportPdfs: (opts) => ipcRenderer.invoke('scan-export-pdfs', opts || {}),
+
+  /** 删除磁盘上的导出文件 */
+  deleteExportFile: (opts) => ipcRenderer.invoke('delete-export-file', opts || {}),
+
+  /** 在系统文件管理器中显示文件 */
+  showItemInFolder: (filePath) => ipcRenderer.invoke('show-item-in-folder', filePath),
+
+  /** 历史报表 PDF 缩略图（dataUrl 或 base64 供 pdf.js） */
+  getExportPdfThumbnail: (opts) => ipcRenderer.invoke('get-export-pdf-thumbnail', opts || {}),
+
+  /** 应用内检查更新 / 下载 / 安装（仅桌面正式包） */
+  getAppUpdateConfig: () => ipcRenderer.invoke('app-update-get-config'),
+  getAppUpdateState: () => ipcRenderer.invoke('app-update-get-state'),
+  setAppUpdateConfig: (patch) => ipcRenderer.invoke('app-update-set-config', patch || {}),
+  checkAppUpdate: (options) => ipcRenderer.invoke('app-update-check', options || {}),
+  downloadAppUpdate: () => ipcRenderer.invoke('app-update-download'),
+  cancelAppUpdateDownload: () => ipcRenderer.invoke('app-update-cancel-download'),
+  installAppUpdate: (options) => ipcRenderer.invoke('app-update-install', options || {}),
+  skipAppUpdateVersion: () => ipcRenderer.invoke('app-update-skip-version'),
+  clearAppUpdateSkippedVersions: () => ipcRenderer.invoke('app-update-clear-skipped'),
+  openMacApplication: () => ipcRenderer.invoke('app-update-open-mac-app'),
+  getDemoPackState: () => ipcRenderer.invoke('demo-pack-get-state'),
+  checkDemoPack: () => ipcRenderer.invoke('demo-pack-check'),
+  installDemoPack: () => ipcRenderer.invoke('demo-pack-install'),
+  startDemoPack: () => ipcRenderer.invoke('demo-pack-start'),
+  stopDemoPack: () => ipcRenderer.invoke('demo-pack-stop'),
+  onAppUpdateDownloadProgress: (listener) => {
+    const fn = (_event, payload) => listener(payload)
+    ipcRenderer.on('update-download-progress', fn)
+    return () => ipcRenderer.removeListener('update-download-progress', fn)
+  },
+  onAppUpdateCheckResult: (listener) => {
+    const fn = (_event, payload) => listener(payload)
+    ipcRenderer.on('update-check-result', fn)
+    return () => ipcRenderer.removeListener('update-check-result', fn)
+  },
+
+  /** 模版与版式云端同步（Portal 登录 + 上传/下载） */
+  getLayoutSyncConfig: () => ipcRenderer.invoke('layout-sync-get-config'),
+  setLayoutSyncConfig: (patch) => ipcRenderer.invoke('layout-sync-set-config', patch || {}),
+  layoutSyncLogin: (creds) => ipcRenderer.invoke('layout-sync-login', creds || {}),
+  layoutSyncRegister: (creds) => ipcRenderer.invoke('layout-sync-register', creds || {}),
+  layoutSyncDownloadDefaults: () => ipcRenderer.invoke('layout-sync-download-defaults'),
+  layoutSyncDownloadMine: () => ipcRenderer.invoke('layout-sync-download-mine'),
+  layoutSyncUpload: (payload) => ipcRenderer.invoke('layout-sync-upload', payload || {}),
 })

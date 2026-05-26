@@ -1,0 +1,4 @@
+# macOS/Linux shell entrypoints must use LF (CRLF breaks #!/bin/bash on Mac).
+*.sh text eol=lf
+*.command text eol=lf
+packaging/** text eol=lf

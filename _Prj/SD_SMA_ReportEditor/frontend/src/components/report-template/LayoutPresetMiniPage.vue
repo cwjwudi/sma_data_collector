@@ -98,6 +98,7 @@ import ZoneImageCompose from "@/components/report-template/ZoneImageCompose.vue"
 import type { MiniPreviewVariant } from "@/components/report-template/mini-preview-types";
 import type { PaperLayoutMetrics } from "@/lib/report-template/layout-geometry";
 import { computePaperLayout } from "@/lib/report-template/layout-geometry";
+import { miniPreviewScale } from "@/lib/report-template/mini-preview-scale";
 import type { LayoutPreset } from "@/lib/report-template/layout-model";
 import { presetToSnapshot } from "@/lib/report-template/layout-model";
 import type { LayoutZoneElement } from "@/lib/report-template/layout-zone-element";
@@ -134,23 +135,23 @@ const me = computed(() =>
   computePaperLayout(props.preset.paperKind, props.preset.orientation, presetToSnapshot(props.preset)),
 );
 
-const scale = computed(() => {
-  const m = me.value;
-  const sx = props.maxWidthPx / Math.max(1, m.pageW);
-  const sy = props.maxHeightPx / Math.max(1, m.pageH);
-  return Math.min(sx, sy, 1);
-});
+const scale = computed(() =>
+  miniPreviewScale(props.maxWidthPx, props.maxHeightPx, me.value.pageW, me.value.pageH),
+);
 
 const scaledSize = computed(() => {
   const m = me.value;
   const s = scale.value;
-  return { w: Math.ceil(m.pageW * s), h: Math.ceil(m.pageH * s) };
+  return { w: Math.ceil(m.pageW * s), h: Math.ceil(m.pageH * s) + 3 };
 });
 
 const wrapStyle = computed(() => ({
   width: `${scaledSize.value.w}px`,
+  maxWidth: "100%",
   height: `${scaledSize.value.h}px`,
+  maxHeight: "100%",
   overflow: "hidden",
+  boxSizing: "border-box",
 }));
 
 /** 边框与投影由 MiniPreviewChrome :deep(.mpp-paper) 统一 */

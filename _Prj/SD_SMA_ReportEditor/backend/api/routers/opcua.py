@@ -6,6 +6,7 @@ from schemas.common import (
     OpcUaBrowseRequest,
     OpcUaReadRequest,
     OpcUaSavedVariableSearch,
+    OpcUaSavedWriteRequest,
     OpcUaServerSave,
     OpcUaTestRequest,
     OpcUaVariableSearchRequest,
@@ -96,6 +97,7 @@ async def test_saved_opcua(server_id: str):
         endpoint,
         srv.get("username"),
         pwd,
+        connection_name=str(srv.get("name") or server_id),
     )
 
 
@@ -204,6 +206,33 @@ async def read_saved(server_id: str, payload: dict):
     )
 
 
+@router.post("/opcua/write_saved/{server_id}")
+async def write_saved(server_id: str, body: OpcUaSavedWriteRequest):
+    """对已保存 OPC UA 连接写入变量值（用于导出结果反馈 PLC 等）。"""
+    cfg = _load_cfg()
+    srv = next((s for s in cfg.get("opcua_servers", []) if s.get("id") == server_id), None)
+    if not srv:
+        raise HTTPException(404, "未找到服务器配置")
+    ep = str(srv.get("endpoint_url") or srv.get("endpoint") or "").strip()
+    if not ep:
+        return {"ok": False, "message": "该连接 Endpoint URL 为空，请先保存有效配置。"}
+    node_id = (body.node_id or "").strip()
+    if not node_id:
+        raise HTTPException(400, "缺少 node_id")
+    try:
+        pwd = config_store.decrypt_opcua_password(DATA_DIR, srv)
+    except ValueError as e:
+        return {"ok": False, "message": str(e)}
+    return await opcua_service.write_node_value_for_saved_server(
+        server_id,
+        ep,
+        node_id,
+        body.value,
+        srv.get("username"),
+        pwd,
+    )
+
+
 @router.post("/opcua/search_saved/{server_id}")
 async def search_saved_variables(server_id: str, body: OpcUaSavedVariableSearch):
     cfg = _load_cfg()
@@ -216,7 +245,8 @@ async def search_saved_variables(server_id: str, body: OpcUaSavedVariableSearch)
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
     q = (body.query or "").strip()
-    if not q:
+    dt = (body.data_type or "").strip() or None
+    if not q and not dt:
         return {"ok": True, "hits": [], "nodes_scanned": 0, "truncated": False}
     return await opcua_service.search_variables_for_saved_server(
         server_id,
@@ -227,4 +257,5 @@ async def search_saved_variables(server_id: str, body: OpcUaSavedVariableSearch)
         body.max_scan,
         body.max_results,
         body.max_depth,
+        dt,
     )

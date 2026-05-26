@@ -14,6 +14,8 @@ from asyncua import Client, ua
 from asyncua.common.node import Node as OpcUaNode
 from asyncua.ua.uaerrors import UaStatusCodeError
 
+from modules.connection_error_hints import humanize_opcua_error
+
 logger = logging.getLogger(__name__)
 
 POOL_IDLE_SEC = 90.0
@@ -118,6 +120,8 @@ async def test_connection(
     username: str | None = None,
     password: str | None = None,
     timeout_sec: float = 8.0,
+    *,
+    connection_name: str | None = None,
 ) -> dict[str, Any]:
     client = Client(url=endpoint_url, timeout=int(timeout_sec))
     try:
@@ -135,7 +139,14 @@ async def test_connection(
             await client.disconnect()
         except Exception:
             pass
-        return {"ok": False, "message": str(e)}
+        return {
+            "ok": False,
+            "message": humanize_opcua_error(
+                str(e),
+                connection_name=connection_name,
+                endpoint=endpoint_url,
+            ),
+        }
 
 
 async def browse_children(
@@ -339,6 +350,40 @@ async def _read_with_client(client: Client, node_id: str) -> dict[str, Any]:
     return {"ok": True, "value": opc_value_to_json_safe(val), "attributes": attrs}
 
 
+async def _write_with_client(client: Client, node_id: str, value: Any) -> dict[str, Any]:
+    """写入变量 Value；BadNotWritable 等转为 ok:false 而不抛栈。"""
+    node = client.get_node(node_id)
+    try:
+        await node.write_value(value)
+        return {"ok": True}
+    except UaStatusCodeError as e:
+        code = int(e.code)
+        logger.warning("OPC UA write_value rejected node_id=%s code=%s (%s)", node_id, code, e)
+        return {"ok": False, "message": str(e), "status_code": code}
+    except Exception as e:
+        logger.exception("OPC UA write_value failed node_id=%s", node_id)
+        return {"ok": False, "message": str(e)}
+
+
+async def write_node_value_for_saved_server(
+    server_id: str,
+    endpoint_url: str,
+    node_id: str,
+    value: Any,
+    username: str | None = None,
+    password: str | None = None,
+) -> dict[str, Any]:
+    entry = _get_entry(server_id)
+    async with entry.lock:
+        try:
+            client = await _ensure_connected(entry, endpoint_url, username, password)
+            return await _write_with_client(client, node_id, value)
+        except Exception as e:
+            logger.exception("OPC UA write (pooled) failed")
+            await _invalidate_entry_client(entry)
+            return {"ok": False, "message": str(e)}
+
+
 def opc_value_to_json_safe(val: Any, _depth: int = 0) -> Any:
     """把 OPC/asyncua 常见 Variant、String、LocalizedText、ByteString 等转成 JSON 安全类型（前端易展示与筛选）。"""
     if _depth > 14:
@@ -445,16 +490,39 @@ def _is_opcua_variable_value_class(cls: str) -> bool:
     return token == "VARIABLE" or token == "2"
 
 
+async def _try_node_data_type_name(ch: Any) -> str | None:
+    try:
+        dt = await ch.read_data_type_as_variant_type()
+        nm = getattr(dt, "name", None)
+        if isinstance(nm, str) and nm.strip():
+            return nm.strip()
+    except Exception:
+        pass
+    return None
+
+
+def _data_type_matches_filter(type_name: str | None, filter_name: str) -> bool:
+    t = (type_name or "").strip().lower()
+    f = (filter_name or "").strip().lower()
+    if not f:
+        return True
+    if f in ("string", "str"):
+        return t == "string" or t.endswith(".string")
+    return f in t
+
+
 async def _search_variables_bfs(
     client: Client,
     query: str,
     max_scan: int,
     max_results: int,
     max_depth: int,
+    data_type_filter: str | None = None,
 ) -> dict[str, Any]:
     """从 Objects 起广度优先浏览，匹配 Variable 的显示名 / BrowseName / NodeId 子串。"""
     q_raw = (query or "").strip()
-    if not q_raw:
+    dt_filter = (data_type_filter or "").strip() or None
+    if not q_raw and not dt_filter:
         return {"ok": True, "hits": [], "nodes_scanned": 0, "truncated": False}
 
     q_lower = q_raw.lower()
@@ -503,13 +571,19 @@ async def _search_variables_bfs(
             child_path = path_parts + [label]
             hay = f"{disp} {browse_full} {nid}".lower()
 
-            if _is_opcua_variable_value_class(cls) and q_lower in hay:
+            if _is_opcua_variable_value_class(cls):
+                type_name = await _try_node_data_type_name(ch) if dt_filter else None
+                if dt_filter and not _data_type_matches_filter(type_name, dt_filter):
+                    continue
+                if q_lower and q_lower not in hay:
+                    continue
                 hits.append(
                     {
                         "node_id": nid,
                         "browse_name": browse_full,
                         "display_name": disp,
                         "node_class": cls,
+                        "data_type": type_name,
                         "path_str": " → ".join(child_path),
                     }
                 )
@@ -576,13 +650,14 @@ async def search_variables_for_saved_server(
     max_scan: Any = None,
     max_results: Any = None,
     max_depth: Any = None,
+    data_type_filter: str | None = None,
 ) -> dict[str, Any]:
     ms, mr, md = _clamp_variable_search_params(max_scan, max_results, max_depth)
     entry = _get_entry(server_id)
     async with entry.lock:
         try:
             client = await _ensure_connected(entry, endpoint_url, username, password)
-            return await _search_variables_bfs(client, query, ms, mr, md)
+            return await _search_variables_bfs(client, query, ms, mr, md, data_type_filter)
         except Exception as e:
             logger.exception("OPC UA variable search (pooled) failed")
             await _invalidate_entry_client(entry)

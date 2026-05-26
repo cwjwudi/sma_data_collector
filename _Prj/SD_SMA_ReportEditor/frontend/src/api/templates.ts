@@ -47,6 +47,19 @@ export async function listTemplateSummaries(): Promise<TemplateSummary[]> {
   return fetchJson<TemplateSummary[]>(apiUrl("/templates"));
 }
 
+/** 列表项 + 完整模版数据 */
+export async function listTemplatesFull(): Promise<ReportTemplate[]> {
+  return fetchJson<ReportTemplate[]>(apiUrl("/templates/full"));
+}
+
+export async function importTemplatesBulk(items: ReportTemplate[]) {
+  return fetchJson<{ imported: number }>(apiUrl("/templates/import-bulk"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ items }),
+  });
+}
+
 export async function getTemplate(templateId: string): Promise<ReportTemplate> {
   return fetchJson<ReportTemplate>(apiUrl(`/templates/${encodeURIComponent(templateId)}`));
 }

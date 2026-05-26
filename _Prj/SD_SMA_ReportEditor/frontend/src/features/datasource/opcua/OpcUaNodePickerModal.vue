@@ -17,12 +17,10 @@
         @keydown.esc.stop.prevent="close"
       >
         <header class="opc-pick-head">
-          <h2 id="opc-pick-title">选择 OPC UA 节点</h2>
+          <h2 id="opc-pick-title">{{ title }}</h2>
           <button type="button" class="opc-pick-close" aria-label="关闭" @click="close">×</button>
         </header>
-        <p class="opc-pick-lead">
-          请选择<strong>已保存的连接</strong>（在「数据源」页新增 OPC UA 服务器），展开地址空间后点击节点，再按「确定绑定」写入 NodeId。仍可随后在输入框中手工微调。
-        </p>
+        <p class="opc-pick-lead">{{ lead }}</p>
         <div class="opc-pick-srv">
           <label class="opc-pick-srv-lbl">
             <span>连接</span>
@@ -31,8 +29,29 @@
               <option v-for="s in servers" :key="s.id" :value="s.id">{{ labelServer(s) }}</option>
             </select>
           </label>
-          <button type="button" class="opc-pick-btn" :disabled="!browseCapability" @click="refreshRoot">
+          <button type="button" class="opc-pick-btn" :disabled="serversLoading" @click="refreshServerList">
+            刷新连接
+          </button>
+          <button type="button" class="opc-pick-btn" :disabled="!browseCapability || expandAllBusy" @click="refreshRoot">
             刷新根
+          </button>
+          <button
+            type="button"
+            class="opc-pick-btn"
+            :disabled="!browseCapability || expandAllBusy || !!searchTrimmed"
+            :title="searchTrimmed ? '搜索模式下请使用树浏览' : ''"
+            @click="expandAllTree"
+          >
+            {{ expandAllBusy ? "展开中…" : "一键全部展开" }}
+          </button>
+          <button
+            type="button"
+            class="opc-pick-btn"
+            :disabled="!browseCapability || expandAllBusy || !!searchTrimmed"
+            :title="searchTrimmed ? '搜索模式下请使用树浏览' : ''"
+            @click="collapseAllTree"
+          >
+            一键全部合并
           </button>
         </div>
         <p v-if="servers.length === 0 && !loadErr" class="opc-pick-warn">
@@ -40,21 +59,19 @@
         </p>
         <p v-if="loadErr" class="opc-pick-msg opc-pick-msg-err">{{ translateOpcuaMessage(loadErr) }}</p>
         <p v-else-if="msg" class="opc-pick-msg">{{ translateOpcuaMessage(msg) }}</p>
-        <div class="opc-pick-search">
+        <div v-if="!hideSearch" class="opc-pick-search">
           <label class="opc-pick-search-lbl">
             <span>搜索变量</span>
             <input
               v-model="searchQuery"
               type="search"
               class="opc-pick-search-inp"
-              placeholder="显示名、BrowseName、NodeId…（从 Objects 扫描全地址空间）"
+              :placeholder="searchPlaceholder"
               autocomplete="off"
               spellcheck="false"
             />
           </label>
-          <p class="opc-pick-search-hint">
-            后台从 <strong>Objects</strong> 广度优先扫描，匹配<strong>变量（Variable）</strong>；无需事先展开树。
-          </p>
+          <p class="opc-pick-search-hint">{{ searchHint }}</p>
         </div>
         <div class="opc-pick-tree">
           <template v-if="searchTrimmed">
@@ -97,20 +114,61 @@
 </template>
 
 <script setup>
-import { computed, nextTick, onBeforeUnmount, ref, shallowRef, triggerRef, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, triggerRef, watch } from 'vue'
 import { apiFetch } from '@/api/client.js'
 import OpcUaTree from './OpcUaTree.vue'
 import { translateOpcuaMessage } from './opcua-messages.js'
 import { opcDataTypeLabelFromRead } from './opcua-value-meta.js'
-import { isOpcVariableValueNode } from './opcua-tree-utils.js'
+import {
+  applyOpcBrowseChildren,
+  collapseOpcTreeNodes,
+  isOpcObjectLikeBrowseNode,
+  isOpcVariableValueNode,
+  opcDataTypeLabelMatchesFilter,
+  shouldShowOpcBrowseChild,
+} from './opcua-tree-utils.js'
+
+const EXPAND_ALL_MAX_BROWSE = 350
+const EXPAND_ALL_MAX_DEPTH = 40
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
+  /** 仅展示该数据类型的 Variable（如 String）；展开时隐藏其它类型变量 */
+  dataTypeFilter: { type: String, default: '' },
+  title: { type: String, default: '选择 OPC UA 节点' },
+  lead: {
+    type: String,
+    default:
+      '请选择已保存的连接，展开地址空间后点击节点，再按「确定绑定」。绑定后仍可在输入框中手工微调 NodeId。',
+  },
+  /** 打开时预选连接 */
+  initialServerId: { type: String, default: '' },
+  /** 父组件已加载的连接列表；API 暂不可用时作回退 */
+  externalServers: { type: Array, default: () => [] },
+  /** 为 true 时不显示全地址空间搜索（仅树浏览） */
+  hideSearch: { type: Boolean, default: false },
+  /** 为 false 时由父组件在校验通过后自行关闭弹窗 */
+  closeOnConfirm: { type: Boolean, default: true },
 })
 
 const emit = defineEmits(['update:modelValue', 'confirm'])
 
+const dataTypeFilter = computed(() => (props.dataTypeFilter || '').trim())
+
+const searchPlaceholder = computed(() =>
+  dataTypeFilter.value
+    ? `显示名、BrowseName、NodeId…（仅 ${dataTypeFilter.value} 变量）`
+    : '显示名、BrowseName、NodeId…（从 Objects 扫描全地址空间）',
+)
+
+const searchHint = computed(() =>
+  dataTypeFilter.value
+    ? `后台从 Objects 扫描，仅列出数据类型为 ${dataTypeFilter.value} 的变量。`
+    : '后台从 Objects 广度优先扫描，匹配变量（Variable）；无需事先展开树。',
+)
+
 const servers = ref([])
+const serversLoading = ref(false)
 const selectedServerId = ref('')
 const loadErr = ref('')
 const msg = ref('')
@@ -118,6 +176,8 @@ const treeNodes = shallowRef([])
 const treeRev = ref(0)
 const pickedNode = ref(null)
 const prefetchGen = ref(0)
+const expandAllBusy = ref(false)
+let expandAllGen = 0
 const overlayRef = ref(null)
 const searchQuery = ref('')
 
@@ -154,6 +214,7 @@ function wrapOpcNode(raw) {
     expanded: false,
     loading: false,
     loaded: false,
+    browseLeaf: false,
     errorMessage: null,
     valueDataTypeLabel: '',
   }
@@ -173,9 +234,11 @@ async function opcApiSearchVariables(query) {
   const cap = browseCapability.value
   if (!cap) throw new Error('当前无法搜索')
   const q = String(query || '').trim()
+  const body = { query: q }
+  if (dataTypeFilter.value) body.data_type = dataTypeFilter.value
   return await apiFetch(`/opcua/search_saved/${cap.serverId}`, {
     method: 'POST',
-    body: { query: q },
+    body,
   })
 }
 
@@ -234,6 +297,44 @@ function pickPreferredOpcServerId(prefs, srvs, explicitPreferred) {
   return null
 }
 
+function normalizeServerRow(s) {
+  if (!s || typeof s !== 'object') return null
+  const id = String(s.id || '').trim()
+  if (!id) return null
+  return {
+    id,
+    name: s.name,
+    endpoint_url: s.endpoint_url,
+  }
+}
+
+function mergeServerLists(primary, fallback) {
+  const out = []
+  const seen = new Set()
+  for (const raw of [...(primary || []), ...(fallback || [])]) {
+    const row = normalizeServerRow(raw)
+    if (!row || seen.has(row.id)) continue
+    seen.add(row.id)
+    out.push(row)
+  }
+  return out
+}
+
+async function refreshServerList() {
+  if (serversLoading.value) return
+  await loadServersWhenOpen()
+}
+
+function applyPreferredServerSelection(prefs) {
+  if (!servers.value.length) {
+    selectedServerId.value = ''
+    return
+  }
+  const explicit = (props.initialServerId || '').trim()
+  const pid = pickPreferredOpcServerId(prefs, servers.value, explicit || null)
+  selectedServerId.value = pid || servers.value[0].id
+}
+
 async function loadServersWhenOpen() {
   clearTimeout(searchDebounceTimer)
   searchDebounceTimer = null
@@ -245,12 +346,22 @@ async function loadServersWhenOpen() {
   loadErr.value = ''
   msg.value = ''
   searchQuery.value = ''
-  servers.value = []
-  selectedServerId.value = ''
   treeNodes.value = []
   pickedNode.value = null
   prefetchGen.value += 1
   bumpTree()
+  // 先用父组件已加载列表占位，避免 remount 同 tick 打开时连接下拉短暂为空
+  const cached = mergeServerLists([], props.externalServers)
+  if (cached.length) {
+    servers.value = cached
+    const explicitCached = (props.initialServerId || '').trim()
+    selectedServerId.value =
+      (explicitCached && cached.some((s) => s.id === explicitCached) ? explicitCached : null) ||
+      cached[0].id
+  } else {
+    servers.value = []
+    selectedServerId.value = ''
+  }
   try {
     let prefs = {}
     try {
@@ -258,22 +369,38 @@ async function loadServersWhenOpen() {
     } catch {
       prefs = {}
     }
+    serversLoading.value = true
     const data = await apiFetch('/opcua/servers')
-    servers.value = data.servers || []
+    servers.value = mergeServerLists(data.servers, props.externalServers)
     if (!servers.value.length) {
       return
     }
-    const pid = pickPreferredOpcServerId(prefs, servers.value, null)
-    selectedServerId.value = pid || servers.value[0].id
+    applyPreferredServerSelection(prefs)
     await refreshRoot()
   } catch (e) {
+    const fallback = mergeServerLists([], props.externalServers)
+    if (fallback.length) {
+      servers.value = fallback
+      applyPreferredServerSelection({})
+      loadErr.value = ''
+      await refreshRoot()
+      return
+    }
     loadErr.value = translateOpcuaMessage(e.message || String(e))
+  } finally {
+    serversLoading.value = false
   }
+}
+
+function cancelExpandAll() {
+  expandAllGen += 1
+  expandAllBusy.value = false
 }
 
 function onServerChange() {
   clearTimeout(searchDebounceTimer)
   searchDebounceTimer = null
+  cancelExpandAll()
   msg.value = ''
   pickedNode.value = null
   prefetchGen.value += 1
@@ -292,6 +419,7 @@ function onServerChange() {
 }
 
 async function refreshRoot() {
+  cancelExpandAll()
   prefetchGen.value += 1
   msg.value = ''
   const cap = browseCapability.value
@@ -309,17 +437,40 @@ async function refreshRoot() {
       bumpTree()
       return
     }
-    const list = res.nodes || []
-    treeNodes.value = list.map((n) => wrapOpcNode(n))
+    let list = (res.nodes || []).map((n) => wrapOpcNode(n))
+    if (dataTypeFilter.value) {
+      list = await filterBrowseChildrenForDataType(list)
+    }
+    treeNodes.value = list
     bumpTree()
-    void prefetchVariableValuesInNodes(treeNodes.value)
+    if (!dataTypeFilter.value) {
+      void prefetchVariableValuesInNodes(treeNodes.value)
+    }
   } catch (e) {
     msg.value = translateOpcuaMessage(e.message || String(e))
   }
 }
 
+async function fetchAndApplyNodeChildren(node) {
+  const res = await opcApiBrowse(node.node_id)
+  if (res.ok === false) {
+    node.errorMessage = res.message || '浏览失败'
+    applyOpcBrowseChildren(node, [])
+    return []
+  }
+  let list = (res.nodes || []).map((n) => wrapOpcNode(n))
+  if (dataTypeFilter.value) {
+    list = await filterBrowseChildrenForDataType(list)
+  }
+  applyOpcBrowseChildren(node, list)
+  if (list.length && !dataTypeFilter.value) {
+    void prefetchVariableValuesInNodes(node.children)
+  }
+  return list
+}
+
 async function onToggleNode(node) {
-  if (!browseCapability.value || !node.node_id || node.loading) return
+  if (!browseCapability.value || !node.node_id || node.loading || expandAllBusy.value) return
   if (node.loaded) {
     node.expanded = !node.expanded
     bumpTree()
@@ -329,23 +480,108 @@ async function onToggleNode(node) {
   node.errorMessage = null
   bumpTree()
   try {
-    const res = await opcApiBrowse(node.node_id)
-    if (res.ok === false) {
-      node.errorMessage = res.message || '浏览失败'
-      msg.value = node.errorMessage
-      return
-    }
-    const list = res.nodes || []
-    node.children = list.map((n) => wrapOpcNode(n))
-    node.loaded = true
-    node.expanded = true
-    void prefetchVariableValuesInNodes(node.children)
+    await fetchAndApplyNodeChildren(node)
   } catch (e) {
     node.errorMessage = e.message || String(e)
     msg.value = node.errorMessage
+    applyOpcBrowseChildren(node, [])
   } finally {
     node.loading = false
     bumpTree()
+  }
+}
+
+function enqueueExpandAllChildren(node, depth, queue) {
+  if (!node.expanded || depth >= EXPAND_ALL_MAX_DEPTH) return
+  for (const ch of node.children || []) {
+    if (ch.browseLeaf) continue
+    if (ch.loaded) {
+      if ((ch.children?.length ?? 0) > 0) queue.push({ node: ch, depth: depth + 1 })
+    } else if (isOpcObjectLikeBrowseNode(ch)) {
+      queue.push({ node: ch, depth: depth + 1 })
+    }
+  }
+}
+
+function collapseAllTree() {
+  if (!browseCapability.value || expandAllBusy.value || searchTrimmed.value) return
+  cancelExpandAll()
+  if (!treeNodes.value.length) {
+    msg.value = '请先点击「刷新根」加载地址空间'
+    return
+  }
+  collapseOpcTreeNodes(treeNodes.value)
+  msg.value = '已全部合并'
+  bumpTree()
+}
+
+async function expandAllTree() {
+  if (!browseCapability.value || expandAllBusy.value || searchTrimmed.value) return
+  if (!treeNodes.value.length) {
+    msg.value = '请先点击「刷新根」加载地址空间'
+    return
+  }
+  const myGen = ++expandAllGen
+  expandAllBusy.value = true
+  let browsed = 0
+  msg.value = '正在一键展开…'
+  try {
+    const queue = []
+    for (const n of treeNodes.value) {
+      if (n.browseLeaf) continue
+      if (n.loaded && (n.children?.length ?? 0) > 0) {
+        n.expanded = true
+        enqueueExpandAllChildren(n, 0, queue)
+      } else if (isOpcObjectLikeBrowseNode(n)) {
+        queue.push({ node: n, depth: 0 })
+      }
+    }
+    bumpTree()
+
+    while (queue.length && browsed < EXPAND_ALL_MAX_BROWSE) {
+      if (myGen !== expandAllGen) return
+      const { node, depth } = queue.shift()
+      if (node.browseLeaf || depth > EXPAND_ALL_MAX_DEPTH) continue
+
+      if (!node.loaded) {
+        if (!isOpcObjectLikeBrowseNode(node)) continue
+        browsed += 1
+        node.loading = true
+        bumpTree()
+        try {
+          await fetchAndApplyNodeChildren(node)
+        } catch (e) {
+          node.errorMessage = e.message || String(e)
+          applyOpcBrowseChildren(node, [])
+        } finally {
+          node.loading = false
+        }
+        if (myGen !== expandAllGen) return
+        msg.value = `正在展开…（已浏览 ${browsed} 个节点）`
+        bumpTree()
+      } else if ((node.children?.length ?? 0) > 0) {
+        node.expanded = true
+        bumpTree()
+      }
+
+      enqueueExpandAllChildren(node, depth, queue)
+    }
+
+    if (myGen !== expandAllGen) return
+    if (browsed >= EXPAND_ALL_MAX_BROWSE && queue.length > 0) {
+      msg.value = `已浏览 ${browsed} 个节点（已达上限，其余请手动展开）`
+    } else {
+      msg.value = '已全部展开'
+    }
+  } catch (e) {
+    if (myGen === expandAllGen) {
+      msg.value = translateOpcuaMessage(e.message || String(e))
+    }
+  } finally {
+    if (myGen === expandAllGen) {
+      expandAllBusy.value = false
+      bumpTree()
+    }
   }
 }
 
@@ -422,20 +658,73 @@ async function prefetchVariableTreeRow(node, myGen) {
   }
 }
 
-function pickNode(n) {
+async function filterBrowseChildrenForDataType(children) {
+  const filter = dataTypeFilter.value
+  if (!filter || !children?.length) return children || []
+  const myGen = prefetchGen.value
+  const kept = []
+  for (const n of children) {
+    if (!isOpcVariableValueNode(n)) {
+      kept.push(n)
+      continue
+    }
+    await prefetchVariableTreeRow(n, myGen)
+    if (prefetchGen.value !== myGen) return kept
+    if (shouldShowOpcBrowseChild(n, filter)) kept.push(n)
+  }
+  bumpTree()
+  return kept
+}
+
+async function pickNode(n) {
+  if (dataTypeFilter.value && isOpcVariableValueNode(n)) {
+    if (!n.valueDataTypeLabel) {
+      await prefetchVariableTreeRow(n, prefetchGen.value)
+    }
+    const lbl = n.valueDataTypeLabel || ''
+    if (!lbl) {
+      msg.value = `无法识别节点数据类型，请换选其它节点`
+      return
+    }
+    if (!opcDataTypeLabelMatchesFilter(lbl, dataTypeFilter.value)) {
+      msg.value = `请选择数据类型为 ${dataTypeFilter.value} 的变量（当前：${lbl}）`
+      return
+    }
+  }
   pickedNode.value = n
 }
 
-function confirmPick() {
+async function confirmPick() {
   const id = pickedNode.value?.node_id
   if (!id) return
-  emit('confirm', String(id))
-  close()
+  const filter = dataTypeFilter.value
+  if (filter && isOpcVariableValueNode(pickedNode.value)) {
+    if (!pickedNode.value.valueDataTypeLabel) {
+      await prefetchVariableTreeRow(pickedNode.value, prefetchGen.value)
+    }
+    const lbl = pickedNode.value.valueDataTypeLabel || ''
+    if (!lbl) {
+      msg.value = '无法识别节点数据类型，请换选其它节点'
+      return
+    }
+    if (!opcDataTypeLabelMatchesFilter(lbl, filter)) {
+      msg.value = `当前节点类型为 ${lbl}，需要 ${filter}`
+      return
+    }
+  }
+  const sid = (selectedServerId.value || '').trim()
+  const n = pickedNode.value
+  const nodeLabel =
+    String(n?.display_name || n?.browse_name || '')
+      .trim()
+  emit('confirm', { serverId: sid, nodeId: String(id), nodeLabel })
+  if (props.closeOnConfirm !== false) close()
 }
 
 function close() {
   clearTimeout(searchDebounceTimer)
   searchDebounceTimer = null
+  cancelExpandAll()
   searchRequestGen++
   searchRemoteLoading.value = false
   emit('update:modelValue', false)
@@ -473,10 +762,48 @@ watch(
       overlayRef.value?.focus()
     }
   },
+  { immediate: true },
 )
+
+watch(
+  () => props.externalServers,
+  (ext) => {
+    if (!props.modelValue) return
+    const merged = mergeServerLists(servers.value, ext)
+    if (!merged.length) return
+    const prevId = selectedServerId.value
+    servers.value = merged
+    if (!prevId || !merged.some((s) => s.id === prevId)) {
+      const explicit = (props.initialServerId || '').trim()
+      selectedServerId.value =
+        (explicit && merged.some((s) => s.id === explicit) ? explicit : null) || merged[0].id
+    }
+  },
+  { deep: true },
+)
+
+function onOpcServersChanged() {
+  if (props.modelValue) void loadServersWhenOpen()
+}
+
+onMounted(() => {
+  window.addEventListener('report-editor-opcua-servers-changed', onOpcServersChanged)
+})
 
 onBeforeUnmount(() => {
   clearTimeout(searchDebounceTimer)
+  window.removeEventListener('report-editor-opcua-servers-changed', onOpcServersChanged)
+})
+
+watch(dataTypeFilter, async (filter, prev) => {
+  if (!props.modelValue || filter === prev) return
+  if (!browseCapability.value) return
+  cancelExpandAll()
+  pickedNode.value = null
+  prefetchGen.value += 1
+  if (treeNodes.value.length) {
+    await refreshRoot()
+  }
 })
 </script>
 

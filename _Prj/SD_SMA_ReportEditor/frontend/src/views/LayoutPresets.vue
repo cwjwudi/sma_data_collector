@@ -17,12 +17,20 @@
         </button>
       </div>
     </header>
-    <p v-if="msg" class="msg">{{ msg }}</p>
+    <p v-if="loading" class="loading-hint">正在加载版式，请稍候…</p>
+    <p v-else-if="msg" class="msg">{{ msg }}</p>
     <p v-if="offline" class="warn">
       无法连接后端，列表与保存使用浏览器本地（可与「设置 › 浏览器数据迁移」上传到服务器）。
     </p>
-    <p v-if="!presets.length" class="empty-all">
+    <p v-if="!loading && !presets.length" class="empty-all">
       当前还没有任何版式。请在下方对应分栏内点击「新建…」按钮创建封面、正文页或末页版式。
+    </p>
+    <p v-else-if="presets.length" class="drag-hint">
+      {{
+        mode === "list"
+          ? "在各分类表格中拖动序号列握柄可调整该类别内的排列顺序"
+          : "在各分类卡片上拖动左上角握柄可调整该类别内的排列顺序"
+      }}
     </p>
 
     <div v-if="mode === 'list'" class="lp-stack">
@@ -36,6 +44,7 @@
         <table class="tbl">
             <thead>
               <tr>
+                <th class="col-seq">序号</th>
                 <th>名称</th>
                 <th>用途</th>
                 <th>纸张</th>
@@ -45,14 +54,53 @@
             </thead>
             <tbody>
               <tr v-if="!presetGroups[sec.role].length">
-                <td colspan="5" class="empty">此类别暂无版式。</td>
+                <td colspan="6" class="empty">此类别暂无版式。</td>
               </tr>
               <tr
-                v-for="p in presetGroups[sec.role]"
+                v-for="(p, i) in presetGroups[sec.role]"
                 :key="p.id"
                 :id="'lp-preset-' + p.id"
-                :class="{ 'lp-row--hl': highlightId === p.id }"
+                :class="{
+                  'lp-row--hl': highlightId === p.id,
+                  'lp-row--dragging': dragId === p.id,
+                  'lp-row--drag-over': dragOverId === p.id && dragId !== p.id,
+                }"
+                @dragover.prevent="onDragOver(sec.role, p.id)"
+                @dragleave="onDragLeave(p.id)"
+                @drop.prevent="onDragDrop(sec.role, p.id)"
               >
+                <td class="col-seq">
+                  <div class="row-seq-cell">
+                    <button
+                      type="button"
+                      class="row-drag-handle"
+                      draggable="true"
+                      title="拖动排序"
+                      aria-label="拖动排序"
+                      @dragstart="onDragStart($event, sec.role, p.id)"
+                      @dragend="onDragEnd"
+                      @click.prevent
+                    >
+                      <svg
+                        class="row-drag-handle-icon"
+                        xmlns="http://www.w3.org/2000/svg"
+                        width="12"
+                        height="12"
+                        viewBox="0 0 24 24"
+                        fill="currentColor"
+                        aria-hidden="true"
+                      >
+                        <circle cx="9" cy="6" r="1.5" />
+                        <circle cx="15" cy="6" r="1.5" />
+                        <circle cx="9" cy="12" r="1.5" />
+                        <circle cx="15" cy="12" r="1.5" />
+                        <circle cx="9" cy="18" r="1.5" />
+                        <circle cx="15" cy="18" r="1.5" />
+                      </svg>
+                    </button>
+                    <span class="row-seq-num">{{ i + 1 }}</span>
+                  </div>
+                </td>
                 <td>{{ p.name }}</td>
                 <td>{{ roleLabel(p.pageRole) }}</td>
                 <td>{{ dimFor(p) }}</td>
@@ -79,12 +127,49 @@
         <div class="grid">
             <p v-if="!presetGroups[sec.role].length" class="empty-section">此类别暂无版式。</p>
             <div
-              v-for="p in presetGroups[sec.role]"
+              v-for="(p, i) in presetGroups[sec.role]"
               :id="'lp-preset-' + p.id"
               :key="'card-' + p.id"
               class="card"
-              :class="{ 'card--hl': highlightId === p.id }"
+              :class="{
+                'card--hl': highlightId === p.id,
+                'card--dragging': dragId === p.id,
+                'card--drag-over': dragOverId === p.id && dragId !== p.id,
+              }"
+              @dragover.prevent="onDragOver(sec.role, p.id)"
+              @dragleave="onDragLeave(p.id)"
+              @drop.prevent="onDragDrop(sec.role, p.id)"
             >
+              <div class="lp-card-top">
+                <button
+                  type="button"
+                  class="card-drag-handle"
+                  draggable="true"
+                  title="拖动排序"
+                  aria-label="拖动排序"
+                  @dragstart="onDragStart($event, sec.role, p.id)"
+                  @dragend="onDragEnd"
+                  @click.prevent
+                >
+                  <svg
+                    class="card-drag-handle-icon"
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="currentColor"
+                    aria-hidden="true"
+                  >
+                    <circle cx="9" cy="6" r="1.5" />
+                    <circle cx="15" cy="6" r="1.5" />
+                    <circle cx="9" cy="12" r="1.5" />
+                    <circle cx="15" cy="12" r="1.5" />
+                    <circle cx="9" cy="18" r="1.5" />
+                    <circle cx="15" cy="18" r="1.5" />
+                  </svg>
+                </button>
+                <span class="lp-card-seq" aria-label="序号">{{ i + 1 }}</span>
+              </div>
               <div
                 class="micro-wrap"
                 title="双击进入编辑"
@@ -150,19 +235,28 @@ import {
 } from "@/lib/report-template/layout-model";
 import { PAPER_LABEL } from "@/lib/report-template/paper";
 import {
+  applyLayoutPresetDisplayOrders,
+  insertLayoutPresetAfter,
+  pruneLayoutDisplayOrder,
+  reorderLayoutPresetInRole,
+} from "@/lib/layout-display-order";
+import {
   deleteLayoutPresetFlexible,
   refreshLayoutPresets,
   saveLayoutPresetFlexible,
   isLayoutsOffline,
   layoutPresetsSnapshot,
 } from "@/lib/report-template/layout-registry";
+import { useStaleGuard } from "@/composables/useStaleGuard";
 
 const route = useRoute();
 const router = useRouter();
+const { begin: beginLoad, isStale: isLoadStale } = useStaleGuard();
 
 const mode = ref<"list" | "thumbs">("thumbs");
 const roleFilter = ref<"all" | LayoutPageRole>("all");
 const msg = ref("");
+const loading = ref(false);
 const ROLE_SECTION_META: { role: LayoutPageRole; title: string }[] = [
   { role: "cover", title: "封面版式" },
   { role: "normal", title: "正文页版式（页眉页脚区）" },
@@ -179,6 +273,9 @@ const dupNameInput = ref("");
 const dupNameInputEl = ref<HTMLInputElement | null>(null);
 /** 复制成功后短暂高亮并滚动到新版式卡片/行 */
 const highlightId = ref<string | null>(null);
+const dragRole = ref<LayoutPageRole | null>(null);
+const dragId = ref<string | null>(null);
+const dragOverId = ref<string | null>(null);
 
 /** 按用途分组，供上下分栏各区块渲染 */
 const presetGroups = computed((): Record<LayoutPageRole, LayoutPreset[]> => {
@@ -217,8 +314,64 @@ function fmtUpdated(at: string) {
 }
 
 async function reload() {
+  const token = beginLoad();
+  loading.value = true;
   msg.value = "";
-  presets.value = await refreshLayoutPresets();
+  try {
+    const list = await refreshLayoutPresets();
+    if (isLoadStale(token)) return;
+    presets.value = applyLayoutPresetDisplayOrders(list);
+  } catch (e) {
+    if (isLoadStale(token)) return;
+    presets.value = [];
+    msg.value = "加载版式失败：" + String((e as Error).message || e);
+  } finally {
+    if (!isLoadStale(token)) loading.value = false;
+  }
+}
+
+function onDragStart(e: DragEvent, role: LayoutPageRole, id: string) {
+  dragRole.value = role;
+  dragId.value = id;
+  dragOverId.value = null;
+  if (e.dataTransfer) {
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", id);
+  }
+  const row =
+    e.currentTarget instanceof HTMLElement
+      ? e.currentTarget.closest("tr") || e.currentTarget.closest(".card")
+      : null;
+  if (row && e.dataTransfer) {
+    const offsetX = row instanceof HTMLTableRowElement ? 28 : 40;
+    const offsetY = row instanceof HTMLTableRowElement ? 18 : 24;
+    e.dataTransfer.setDragImage(row, offsetX, offsetY);
+  }
+}
+
+function onDragEnd() {
+  dragRole.value = null;
+  dragId.value = null;
+  dragOverId.value = null;
+}
+
+function onDragOver(role: LayoutPageRole, targetId: string) {
+  if (!dragId.value || dragRole.value !== role || dragId.value === targetId) return;
+  dragOverId.value = targetId;
+}
+
+function onDragLeave(targetId: string) {
+  if (dragOverId.value === targetId) dragOverId.value = null;
+}
+
+function onDragDrop(role: LayoutPageRole, targetId: string) {
+  const fromId = dragId.value;
+  const fromRole = dragRole.value;
+  dragRole.value = null;
+  dragId.value = null;
+  dragOverId.value = null;
+  if (!fromId || fromRole !== role || fromId === targetId) return;
+  presets.value = reorderLayoutPresetInRole(presets.value, role, fromId, targetId);
 }
 
 function goEditor(id: string) {
@@ -228,8 +381,10 @@ function goEditor(id: string) {
 async function removePreset(id: string) {
   if (!confirm("删除此版式？引用它的模版会失去关联 ID，请先确认模版侧已调整。")) return;
   msg.value = "";
+  const victim = presets.value.find((x) => x.id === id);
   try {
     await deleteLayoutPresetFlexible(id);
+    if (victim) pruneLayoutDisplayOrder(id, victim.pageRole);
     await reload();
     msg.value = "已删除。";
   } catch (e) {
@@ -257,16 +412,24 @@ async function scrollToPresetCard(id: string) {
   document.getElementById(`lp-preset-${id}`)?.scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
 
-async function afterDuplicateSaved(newId: string, source: "remote" | "local", warning?: string) {
+async function afterDuplicateSaved(
+  newId: string,
+  sourceId: string,
+  source: "remote" | "local",
+  warning?: string,
+) {
   highlightId.value = newId;
   if (source === "remote") {
     await reload();
     msg.value = "已复制为新版式。";
   } else {
-    presets.value = layoutPresetsSnapshot();
+    presets.value = applyLayoutPresetDisplayOrders(layoutPresetsSnapshot());
     msg.value = warning ? "已复制到本地缓存：" + warning : "已复制为新版式（本地缓存）。";
   }
   const created = presets.value.find((x) => x.id === newId);
+  if (created && sourceId) {
+    presets.value = insertLayoutPresetAfter(presets.value, created.pageRole, newId, sourceId);
+  }
   if (created && roleFilter.value !== "all" && roleFilter.value !== created.pageRole) {
     roleFilter.value = created.pageRole;
   }
@@ -281,6 +444,7 @@ async function confirmDuplicatePreset() {
     msg.value = "名称不能为空。";
     return;
   }
+  const sourceId = p.id;
   closeDupDlg();
   msg.value = "";
   try {
@@ -290,7 +454,12 @@ async function confirmDuplicatePreset() {
       msg.value = "复制失败：" + r.message;
       return;
     }
-    await afterDuplicateSaved(copy.id, r.source, r.source === "local" ? r.warning : undefined);
+    await afterDuplicateSaved(
+      copy.id,
+      sourceId,
+      r.source,
+      r.source === "local" ? r.warning : undefined,
+    );
   } catch (e) {
     msg.value = "复制失败：" + String((e as Error).message || e);
   }
@@ -333,7 +502,7 @@ async function createPreset(
     if (r.source === "remote") {
       await reload();
     } else {
-      presets.value = layoutPresetsSnapshot();
+      presets.value = applyLayoutPresetDisplayOrders(layoutPresetsSnapshot());
       msg.value = "已创建但未写入服务器：" + r.warning;
     }
     return fresh.id;
@@ -494,10 +663,21 @@ onMounted(async () => {
   color: #b45309;
   margin: 8px 0 0;
 }
+.loading-hint {
+  font-size: 13px;
+  color: #64748b;
+  margin: 8px 0 0;
+}
 .warn {
   font-size: 12px;
   color: #a16207;
   margin: 8px 0 0;
+}
+.drag-hint {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: #64748b;
+  line-height: 1.45;
 }
 .tbl {
   width: 100%;
@@ -517,6 +697,61 @@ onMounted(async () => {
   padding: 24px;
   text-align: center;
 }
+.col-seq {
+  width: 88px;
+  text-align: center;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: #64748b;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+.row-seq-cell {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.row-seq-num {
+  min-width: 1.25em;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: #64748b;
+}
+.row-drag-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid #e4e4e7;
+  border-radius: 6px;
+  background: #fafafa;
+  color: #71717a;
+  cursor: grab;
+  touch-action: none;
+  flex-shrink: 0;
+}
+.row-drag-handle:hover {
+  background: #f4f4f5;
+  border-color: #d4d4d8;
+  color: #4f46e5;
+}
+.row-drag-handle:active {
+  cursor: grabbing;
+}
+.row-drag-handle-icon {
+  display: block;
+  pointer-events: none;
+}
+.lp-row--dragging td {
+  opacity: 0.55;
+}
+.lp-row--drag-over td {
+  background: #eef2ff;
+  box-shadow: inset 0 2px 0 #818cf8;
+}
 .td-actions {
   white-space: nowrap;
 }
@@ -534,11 +769,29 @@ onMounted(async () => {
   margin-top: 0;
 }
 .card {
+  position: relative;
   border: 1px solid #e4e4e7;
   border-radius: 10px;
   padding: 12px;
   background: #fff;
   touch-action: manipulation;
+}
+.lp-card-seq {
+  min-width: 28px;
+  height: 28px;
+  padding: 0 8px;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: #475569;
+  line-height: 1;
 }
 .micro-wrap {
   display: flex;
@@ -582,6 +835,46 @@ onMounted(async () => {
 .card--hl {
   outline: 2px solid rgb(129 140 248 / 0.65);
   outline-offset: 2px;
+}
+.card--dragging {
+  opacity: 0.55;
+}
+.card--drag-over {
+  border-color: #818cf8;
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.25);
+}
+.lp-card-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.card-drag-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid #e4e4e7;
+  border-radius: 6px;
+  background: #fafafa;
+  color: #71717a;
+  cursor: grab;
+  touch-action: none;
+  flex-shrink: 0;
+}
+.card-drag-handle:hover {
+  background: #f4f4f5;
+  border-color: #d4d4d8;
+  color: #4f46e5;
+}
+.card-drag-handle:active {
+  cursor: grabbing;
+}
+.card-drag-handle-icon {
+  display: block;
+  pointer-events: none;
 }
 .lp-dup-backdrop {
   position: fixed;

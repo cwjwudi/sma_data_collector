@@ -75,7 +75,7 @@ npm install
 **双击**（Finder 中）或在终端执行：
 
 ```bash
-./scripts/open-electron-dev-mac.command
+./scripts/dev/mac/open-electron-dev-mac.command
 ```
 
 脚本会：释放 **8000 / 5173** 占用 → 必要时 `npm install` → 运行 `npm run electron:dev:unix`。  
@@ -146,11 +146,20 @@ npm run electron:dev:unix
 
 ---
 
-## 九、更多说明
+## 九、打包 macOS 安装包（现场交付）
+
+非日常开发。入口：**[packaging/README.md](../packaging/README.md)**。
+
+- 一键：`./packaging/mac/build.sh` 或双击 `packaging/mac/build.command` → `packaging/mac/output/*.dmg`
+- 现场装/卸：[mac-installer.md](mac-installer.md)
+
+---
+
+## 十、更多说明
 
 - 与本文重叠的 Mac 细节：[_Doc/004_Mac开发环境准备.md](../_Doc/004_Mac开发环境准备.md)
-- Windows 同事请看 [windows.md](windows.md)
-- 仓库总览：[README.md](README.md)
+- Windows 同事请看 [windows.md](windows.md)、安装包 [windows-installer.md](windows-installer.md)
+- 项目根向导：[../README.md](../README.md)
 
 ---
 

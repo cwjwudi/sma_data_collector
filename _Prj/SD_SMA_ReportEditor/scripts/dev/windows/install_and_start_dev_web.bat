@@ -4,9 +4,8 @@ title SD_SMA_ReportEditor - Install and start dev
 
 rem ASCII-only; save UTF-8 without BOM - BOM breaks @echo off under cmd.exe.
 
-set "ROOT=%~dp0"
-set "ROOT=%ROOT:~0,-1%"
-set "PS1=%ROOT%\install_and_start_dev_web.ps1"
+set "SCRIPT_DIR=%~dp0"
+set "PS1=%SCRIPT_DIR%install_and_start_dev_web.ps1"
 
 if not exist "%PS1%" (
   echo [ERROR] Missing "%PS1%".

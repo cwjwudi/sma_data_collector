@@ -1,9 +1,13 @@
-const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron')
-const { spawn } = require('child_process')
+const { app, BrowserWindow, ipcMain, dialog, shell, nativeImage } = require('electron')
+const { execFileSync, spawn } = require('child_process')
 const path = require('path')
 const http = require('http')
 const fs = require('fs')
 const { pathToFileURL } = require('url')
+const { createAppUpdater } = require('./updater.cjs')
+const { createDemoPackManager } = require('./demo-pack.cjs')
+const { createLayoutSync } = require('./layout-sync.cjs')
+const { humanizePdfExportError } = require('./pdfExportErrors.cjs')
 
 let mainWindow
 let pythonProcess
@@ -35,7 +39,8 @@ function getBackendDir() {
 }
 
 function getBundledBackendExe() {
-  return path.join(getBackendDir(), 'report_backend.exe')
+  const name = process.platform === 'win32' ? 'report_backend.exe' : 'report_backend'
+  return path.join(getBackendDir(), name)
 }
 
 /** 后端持久化目录：正式包写入用户目录；开发模式与仓库 backend/data 对齐，便于与命令行 uvicorn 共用 config.json。 */
@@ -44,6 +49,57 @@ function getReportEditorDataDir() {
     return path.join(app.getPath('userData'), 'backend-data')
   }
   return path.join(getBackendDir(), 'data')
+}
+
+function maskDbConnectionForRenderer(conn) {
+  const out = { ...(conn || {}) }
+  out.has_password = Boolean(out.password_enc)
+  delete out.password_enc
+  if (out.is_demo && out.demo_channel === 'remote') {
+    out.host = ''
+    out.port = null
+    out.username = null
+    out.database = ''
+    out.has_password = true
+  }
+  return out
+}
+
+function maskOpcServerForRenderer(server) {
+  const out = { ...(server || {}) }
+  out.has_password = Boolean(out.password_enc)
+  delete out.password_enc
+  if (out.is_demo && out.demo_channel === 'remote') {
+    out.endpoint_url = ''
+    out.username = null
+    out.has_password = false
+  }
+  return out
+}
+
+function readDataSourceStartupSnapshot() {
+  const file = path.join(getReportEditorDataDir(), 'config.json')
+  try {
+    if (!fs.existsSync(file)) {
+      return { connections: [], app_preferences: {}, source: file, ok: true }
+    }
+    const raw = JSON.parse(fs.readFileSync(file, 'utf8'))
+    const connections = Array.isArray(raw.db_connections)
+      ? raw.db_connections.map(maskDbConnectionForRenderer).filter((c) => c.id)
+      : []
+    const opcuaServers = Array.isArray(raw.opcua_servers)
+      ? raw.opcua_servers.map(maskOpcServerForRenderer).filter((s) => s.id)
+      : []
+    return {
+      connections,
+      opcua_servers: opcuaServers,
+      app_preferences: raw.app_preferences && typeof raw.app_preferences === 'object' ? raw.app_preferences : {},
+      source: file,
+      ok: true,
+    }
+  } catch (e) {
+    return { connections: [], app_preferences: {}, source: file, ok: false, message: e.message }
+  }
 }
 
 function findPython() {
@@ -142,6 +198,88 @@ function checkBackendHealthOnce() {
   })
 }
 
+function commandForPid(pid) {
+  try {
+    if (process.platform === 'win32') {
+      const out = execFileSync(
+        'powershell.exe',
+        [
+          '-NoProfile',
+          '-Command',
+          `Get-CimInstance Win32_Process -Filter "ProcessId=${pid}" | Select-Object -ExpandProperty CommandLine`,
+        ],
+        { encoding: 'utf8', windowsHide: true, timeout: 1500 },
+      )
+      return out.trim()
+    }
+    return execFileSync('ps', ['-p', String(pid), '-o', 'command='], {
+      encoding: 'utf8',
+      timeout: 1500,
+    }).trim()
+  } catch {
+    return ''
+  }
+}
+
+function backendListenerPid() {
+  try {
+    if (process.platform === 'win32') {
+      const out = execFileSync('netstat.exe', ['-ano', '-p', 'tcp'], {
+        encoding: 'utf8',
+        windowsHide: true,
+        timeout: 1500,
+      })
+      for (const line of out.split(/\r?\n/)) {
+        if (!line.includes('LISTENING')) continue
+        const parts = line.trim().split(/\s+/)
+        const local = parts[1] || ''
+        const pid = Number(parts[parts.length - 1])
+        if (local.endsWith(`:${BACKEND_PORT}`) && Number.isFinite(pid)) return pid
+      }
+      return 0
+    }
+    const out = execFileSync('lsof', ['-nP', `-iTCP:${BACKEND_PORT}`, '-sTCP:LISTEN', '-t'], {
+      encoding: 'utf8',
+      timeout: 1500,
+    })
+    const pid = Number(out.trim().split(/\s+/)[0])
+    return Number.isFinite(pid) ? pid : 0
+  } catch {
+    return 0
+  }
+}
+
+function isOurBackendCommand(command) {
+  const normalized = String(command || '').replace(/\\/g, '/').toLowerCase()
+  return normalized.includes('/report_backend/report_backend') || normalized.includes('report_backend.exe')
+}
+
+async function stopStaleBundledBackendIfUnhealthy() {
+  const pid = backendListenerPid()
+  if (!pid) return false
+  const command = commandForPid(pid)
+  if (!isOurBackendCommand(command)) return false
+  if (await checkBackendHealthOnce()) return false
+  log(`发现旧后端进程占用 ${BACKEND_PORT} 且健康检查无响应，准备清理: pid=${pid}`)
+  try {
+    process.kill(pid)
+  } catch (e) {
+    log(`清理旧后端失败: ${e.message}`)
+    return false
+  }
+  for (let i = 0; i < 20; i += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    if (!backendListenerPid()) return true
+  }
+  try {
+    process.kill(pid, 'SIGKILL')
+  } catch {
+    /* ignore */
+  }
+  await new Promise((resolve) => setTimeout(resolve, 200))
+  return !backendListenerPid()
+}
+
 function waitForBackend(maxRetries = 60, interval = 500) {
   return new Promise((resolve, reject) => {
     let retries = 0
@@ -176,13 +314,32 @@ function waitForBackend(maxRetries = 60, interval = 500) {
   })
 }
 
+function resolveAppIcon() {
+  const base = path.join(__dirname, '..', 'build')
+  const names =
+    process.platform === 'win32'
+      ? ['icon.ico', 'icon.png']
+      : process.platform === 'darwin'
+        ? ['icon.icns', 'icon.png']
+        : ['icon.png']
+  for (const name of names) {
+    const p = path.join(base, name)
+    if (!fs.existsSync(p)) continue
+    const img = nativeImage.createFromPath(p)
+    if (!img.isEmpty()) return img
+  }
+  return null
+}
+
 function createWindow() {
+  const appIcon = resolveAppIcon()
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
     minWidth: 1000,
     minHeight: 700,
-    title: 'SD_SMA ReportEditor',
+    title: '报表编辑器',
+    ...(appIcon ? { icon: appIcon } : {}),
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -211,6 +368,8 @@ ipcMain.handle('devtools-set-open', (_event, open) => {
   }
 })
 
+ipcMain.handle('datasource-startup-snapshot', () => readDataSourceStartupSnapshot())
+
 function senderBrowserWindow(wc) {
   try {
     return BrowserWindow.fromWebContents(wc)
@@ -232,6 +391,28 @@ ipcMain.handle('dialog-save-pdf', async (event, opts) => {
   return fp
 })
 
+ipcMain.handle('dialog-save-text', async (event, opts) => {
+  const win = senderBrowserWindow(event.sender) || mainWindow
+  const content = opts && typeof opts.content === 'string' ? opts.content : ''
+  const defaultPath = (opts && opts.defaultPath) || 'history.log'
+  const res = await dialog.showSaveDialog(win && !win.isDestroyed() ? win : undefined, {
+    title: (opts && opts.title) || '保存日志',
+    defaultPath,
+    filters: [
+      { name: 'History Logger', extensions: ['log', 'txt'] },
+      { name: 'JSON', extensions: ['json'] },
+      { name: 'All', extensions: ['*'] },
+    ],
+  })
+  if (res.canceled || !res.filePath) return { ok: false, canceled: true }
+  try {
+    fs.writeFileSync(res.filePath, content, 'utf8')
+    return { ok: true, filePath: res.filePath }
+  } catch (e) {
+    return { ok: false, error: String(e.message || e) }
+  }
+})
+
 ipcMain.handle('dialog-pick-directory', async (event, opts) => {
   const win = senderBrowserWindow(event.sender) || mainWindow
   const res = await dialog.showOpenDialog(win && !win.isDestroyed() ? win : undefined, {
@@ -243,6 +424,38 @@ ipcMain.handle('dialog-pick-directory', async (event, opts) => {
   return res.filePaths[0]
 })
 
+/** 选择配置备份 JSON（主进程读文件，避免 Electron 内嵌 <input type=file> 偶发白屏） */
+const MAX_CONFIG_JSON_BYTES = 64 * 1024 * 1024
+
+ipcMain.handle('dialog-pick-config-json', async (event, opts) => {
+  const win = senderBrowserWindow(event.sender) || mainWindow
+  const res = await dialog.showOpenDialog(win && !win.isDestroyed() ? win : undefined, {
+    title: (opts && opts.title) || '选择备份文件',
+    properties: ['openFile'],
+    filters: [{ name: 'JSON 备份', extensions: ['json'] }],
+    defaultPath: opts && opts.defaultPath,
+  })
+  if (res.canceled || !res.filePaths || !res.filePaths.length) {
+    return { canceled: true }
+  }
+  const filePath = res.filePaths[0]
+  try {
+    const stat = fs.statSync(filePath)
+    if (stat.size > MAX_CONFIG_JSON_BYTES) {
+      return { ok: false, error: `备份文件过大（超过 ${Math.round(MAX_CONFIG_JSON_BYTES / 1024 / 1024)} MB）` }
+    }
+    const content = fs.readFileSync(filePath, 'utf8')
+    return {
+      ok: true,
+      filePath,
+      fileName: path.basename(filePath),
+      content,
+    }
+  } catch (e) {
+    return { ok: false, error: String(e.message || e) }
+  }
+})
+
 ipcMain.handle('shell-open-path', async (_event, fp) => {
   if (!fp || typeof fp !== 'string') return { ok: false, error: '无效路径' }
   const err = await shell.openPath(fp)
@@ -252,6 +465,139 @@ ipcMain.handle('shell-open-path', async (_event, fp) => {
 ipcMain.handle('path-join', (_event, parts) => {
   if (!Array.isArray(parts)) return ''
   return path.join(...parts.map(String))
+})
+
+ipcMain.handle('scan-export-pdfs', async (_event, opts) => {
+  const dir = opts && opts.dir
+  if (!dir || typeof dir !== 'string') {
+    return { ok: false, error: '缺少目录路径', files: [] }
+  }
+  let resolved
+  try {
+    resolved = path.resolve(dir.trim())
+  } catch (e) {
+    return { ok: false, error: String(e.message || e), files: [] }
+  }
+  if (!fs.existsSync(resolved)) {
+    return { ok: false, error: '目录不存在', files: [], dir: resolved }
+  }
+  let st
+  try {
+    st = fs.statSync(resolved)
+  } catch (e) {
+    return { ok: false, error: String(e.message || e), files: [] }
+  }
+  if (!st.isDirectory()) {
+    return { ok: false, error: '路径不是文件夹', files: [], dir: resolved }
+  }
+
+  const files = []
+  let entries
+  try {
+    entries = fs.readdirSync(resolved, { withFileTypes: true })
+  } catch (e) {
+    return { ok: false, error: `无法读取目录：${e.message || e}`, files: [], dir: resolved }
+  }
+
+  for (const ent of entries) {
+    if (!ent.isFile()) continue
+    if (!ent.name.toLowerCase().endsWith('.pdf')) continue
+    const filePath = path.join(resolved, ent.name)
+    try {
+      const fst = fs.statSync(filePath)
+      files.push({
+        name: ent.name,
+        filePath,
+        fileUrl: pathToFileURL(filePath).href,
+        sizeBytes: fst.size,
+        modifiedAt: fst.mtime.toISOString(),
+      })
+    } catch {
+      /* skip unreadable */
+    }
+  }
+
+  files.sort((a, b) => {
+    const ta = new Date(a.modifiedAt).getTime()
+    const tb = new Date(b.modifiedAt).getTime()
+    return tb - ta
+  })
+
+  return { ok: true, files, dir: resolved }
+})
+
+ipcMain.handle('delete-export-file', async (_event, opts) => {
+  const filePath = opts && opts.filePath
+  if (!filePath || typeof filePath !== 'string') {
+    return { ok: false, error: '无效路径' }
+  }
+  const resolved = path.resolve(filePath)
+  if (!fs.existsSync(resolved)) {
+    return { ok: false, error: '文件不存在' }
+  }
+  try {
+    const st = fs.statSync(resolved)
+    if (!st.isFile()) {
+      return { ok: false, error: '不是文件' }
+    }
+    fs.unlinkSync(resolved)
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, error: String(e.message || e) }
+  }
+})
+
+ipcMain.handle('show-item-in-folder', async (_event, filePath) => {
+  if (!filePath || typeof filePath !== 'string') {
+    return { ok: false, error: '无效路径' }
+  }
+  const resolved = path.resolve(filePath)
+  if (!fs.existsSync(resolved)) {
+    return { ok: false, error: '文件不存在' }
+  }
+  shell.showItemInFolder(resolved)
+  return { ok: true }
+})
+
+/** 历史报表缩略图：优先系统缩略图，否则返回 base64 供渲染进程 pdf.js 绘制 */
+ipcMain.handle('get-export-pdf-thumbnail', async (_event, opts) => {
+  const filePath = opts && opts.filePath
+  const maxBytes = 35 * 1024 * 1024
+  if (!filePath || typeof filePath !== 'string') {
+    return { ok: false, error: '缺少文件路径' }
+  }
+  const resolved = path.resolve(filePath)
+  if (!fs.existsSync(resolved)) {
+    return { ok: false, error: '文件不存在' }
+  }
+  let st
+  try {
+    st = fs.statSync(resolved)
+  } catch (e) {
+    return { ok: false, error: String(e.message || e) }
+  }
+  if (!st.isFile()) {
+    return { ok: false, error: '不是文件' }
+  }
+  if (st.size > maxBytes) {
+    return { ok: false, error: 'PDF 过大，无法生成缩略图' }
+  }
+
+  try {
+    const thumb = await nativeImage.createThumbnailFromPath(resolved, { width: 400, height: 520 })
+    if (thumb && !thumb.isEmpty()) {
+      return { ok: true, dataUrl: thumb.toDataURL() }
+    }
+  } catch {
+    /* 部分类型（如 PDF）可能无系统缩略图，走 pdf.js */
+  }
+
+  try {
+    const buf = fs.readFileSync(resolved)
+    return { ok: true, base64: buf.toString('base64') }
+  } catch (e) {
+    return { ok: false, error: `读取失败：${e.message || e}` }
+  }
 })
 
 ipcMain.handle('pdf-export-run', async (event, opts) => {
@@ -346,6 +692,8 @@ ipcMain.handle('pdf-export-run', async (event, opts) => {
       }
 
       return { ok: true, filePath }
+    } catch (e) {
+      throw new Error(humanizePdfExportError(e, { phase: 'export' }))
     } finally {
       if (pdfWin && !pdfWin.isDestroyed()) {
         pdfWin.destroy()
@@ -367,8 +715,74 @@ function killPython() {
   }
 }
 
+let appUpdater
+
+function getAppUpdater() {
+  if (!appUpdater) {
+    appUpdater = createAppUpdater({
+      app,
+      shell,
+      getMainWindow: () => mainWindow,
+      stopBackend: killPython,
+    })
+  }
+  return appUpdater
+}
+
+let layoutSync
+function getLayoutSync() {
+  if (!layoutSync) {
+    layoutSync = createLayoutSync(app)
+  }
+  return layoutSync
+}
+
+let demoPackManager
+
+function getDemoPackManager() {
+  if (!demoPackManager) {
+    demoPackManager = createDemoPackManager({
+      app,
+      resolveBaseUrl: () => getAppUpdater().getConfig().baseUrl,
+      readSkipTlsVerify: () => Boolean(getAppUpdater().getConfig().skipTlsVerify),
+    })
+  }
+  return demoPackManager
+}
+
+ipcMain.handle('demo-pack-get-state', () => getDemoPackManager().getState())
+ipcMain.handle('demo-pack-check', () => getDemoPackManager().checkRemote())
+ipcMain.handle('demo-pack-install', () => getDemoPackManager().downloadAndInstall())
+ipcMain.handle('demo-pack-start', () => getDemoPackManager().startCompose())
+ipcMain.handle('demo-pack-stop', () => getDemoPackManager().stopCompose())
+
+ipcMain.handle('app-update-get-config', () => getAppUpdater().getConfig())
+ipcMain.handle('app-update-get-state', () => getAppUpdater().getState())
+ipcMain.handle('app-update-set-config', (_event, patch) => getAppUpdater().setConfig(patch || {}))
+ipcMain.handle('app-update-check', (_event, options) => getAppUpdater().check(options || {}))
+ipcMain.handle('app-update-download', () => getAppUpdater().download())
+ipcMain.handle('app-update-cancel-download', () => getAppUpdater().cancelDownload())
+ipcMain.handle('app-update-install', (_event, options) => getAppUpdater().install(options || {}))
+ipcMain.handle('app-update-skip-version', () => getAppUpdater().skipAvailableVersion())
+ipcMain.handle('app-update-clear-skipped', () => getAppUpdater().clearSkippedVersions())
+ipcMain.handle('app-update-open-mac-app', async () => getAppUpdater().openMacApplication())
+
+ipcMain.handle('layout-sync-get-config', () => getLayoutSync().getConfig())
+ipcMain.handle('layout-sync-set-config', (_event, patch) => getLayoutSync().setConfig(patch || {}))
+ipcMain.handle('layout-sync-login', (_event, creds) => getLayoutSync().login(creds || {}))
+ipcMain.handle('layout-sync-register', (_event, creds) => getLayoutSync().register(creds || {}))
+ipcMain.handle('layout-sync-download-defaults', () => getLayoutSync().downloadDefaults())
+ipcMain.handle('layout-sync-download-mine', () => getLayoutSync().downloadMine())
+ipcMain.handle('layout-sync-upload', (_event, payload) => getLayoutSync().upload(payload || {}))
+
 app.whenReady().then(async () => {
   log('Starting application...')
+
+  if (process.platform === 'win32') {
+    app.setAppUserModelId('com.brteam.sd_sma.report_editor')
+  }
+
+  createWindow()
 
   const isDev = !app.isPackaged
   /**
@@ -381,13 +795,17 @@ app.whenReady().then(async () => {
     ['1', 'true', 'yes'].includes(
       String(process.env.REPORT_EDITOR_REUSE_BACKEND || '').toLowerCase(),
     )
+  const backendHealthy = await checkBackendHealthOnce()
 
-  if (isDev && reuse && (await checkBackendHealthOnce())) {
+  if (backendHealthy && (!isDev || reuse)) {
     log(
-      `检测到 ${BACKEND_URL} 已有健康后端，且 REPORT_EDITOR_REUSE_BACKEND=1，跳过启动 Python 子进程（请自行在该终端 Ctrl+C）。`,
+      `检测到 ${BACKEND_URL} 已有健康后端，跳过启动 Python 子进程。`,
     )
   } else {
-    if (isDev && (await checkBackendHealthOnce())) {
+    if (!backendHealthy) {
+      await stopStaleBundledBackendIfUnhealthy()
+    }
+    if (isDev && backendHealthy) {
       log(
         `[提示] ${BACKEND_URL} 已在监听；仍由本 Electron 尝试启动后端。若端口被占会失败。\n` +
           '若在单独终端跑了 uvicorn，请先停掉或使用 REPORT_EDITOR_REUSE_BACKEND=1 复用外部后端（关闭 Electron 不会杀外部进程）。',
@@ -397,13 +815,9 @@ app.whenReady().then(async () => {
     backendStartedByElectron = Boolean(pythonProcess)
   }
 
-  try {
-    await waitForBackend()
-  } catch (e) {
-    log(`Warning: ${e.message} — opening window anyway`)
-  }
-
-  createWindow()
+  waitForBackend()
+    .then(() => log('Backend is ready for renderer requests'))
+    .catch((e) => log(`Warning: ${e.message} — renderer remains open with local cached data`))
 })
 
 app.on('window-all-closed', () => {

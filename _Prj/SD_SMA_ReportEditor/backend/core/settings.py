@@ -34,6 +34,8 @@ DEFAULT_CONFIG = {
         "auto_select_last_opcua_server": True,
         "default_opcua_server_id": None,
         "last_opcua_server_id": None,
+        "connection_probe_enabled": False,
+        "connection_probe_interval_sec": 30,
     },
     "db_connections": [],
     "opcua_servers": [],

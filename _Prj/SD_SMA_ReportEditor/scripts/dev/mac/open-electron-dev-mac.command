@@ -7,7 +7,7 @@
 export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:$PATH"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+ROOT="$(cd "$SCRIPT_DIR/../../.." && pwd)"
 FRONTEND="$ROOT/frontend"
 
 echo "━━━━━━━━ SD SMA Report Editor · 一键开发启动 ━━━━━━━━"

@@ -1,11 +1,16 @@
 <template>
-  <div class="ot-root" role="navigation" aria-label="数据库对象浏览">
-    <header class="ot-head">
-      <div class="ot-head-text">
-        <h3 class="ot-title">架构浏览</h3>
-        <p class="ot-sub">选择库与对象，右侧查看数据或编写查询</p>
+  <div class="ot-root ds-side-pane" role="navigation" aria-label="数据库对象浏览">
+    <header class="ot-head ds-pane-head">
+      <div class="ot-head-text ds-pane-head-titles">
+        <span class="ot-title ds-pane-title" role="heading" aria-level="3">架构浏览</span>
+        <p class="ot-sub ds-pane-subtitle">选择库与对象，右侧查看数据或编写查询</p>
       </div>
-      <span class="engine-pill" :title="engine">{{ engineLabel }}</span>
+      <div class="ds-pane-head-actions">
+        <button type="button" class="btn sm ghost" title="重新连接并刷新架构" @click="$emit('refresh-catalog')">
+          刷新架构
+        </button>
+        <span class="engine-pill" :title="engine">{{ engineLabel }}</span>
+      </div>
     </header>
 
     <!-- MongoDB -->
@@ -190,7 +195,7 @@ const props = defineProps({
   activeTable: { type: String, default: '' },
   activeCollection: { type: String, default: '' },
 })
-defineEmits(['select-database', 'select-table', 'select-collection'])
+defineEmits(['select-database', 'select-table', 'select-collection', 'refresh-catalog'])
 
 const dbQuery = ref('')
 const tableQuery = ref('')
@@ -273,43 +278,13 @@ function kindSymbol(kind) {
   --ot-muted: #64748b;
   --ot-accent: #4f46e5;
   --ot-accent-soft: #eef2ff;
-  --ot-radius: 10px;
-  --ot-shadow: 0 1px 2px rgb(15 23 42 / 6%);
 
-  display: flex;
-  flex-direction: column;
   min-height: 0;
   height: 100%;
-  border: 1px solid var(--ot-border);
-  border-radius: var(--ot-radius);
-  background: var(--ot-bg);
-  box-shadow: var(--ot-shadow);
-  overflow: hidden;
-}
-
-.ot-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 14px 14px 12px;
-  background: linear-gradient(180deg, var(--ot-bg-sub) 0%, var(--ot-bg) 100%);
-  border-bottom: 1px solid var(--ot-border);
-}
-
-.ot-title {
-  margin: 0;
-  font-size: 15px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
   color: var(--ot-text);
 }
 
 .ot-sub {
-  margin: 4px 0 0;
-  font-size: 12px;
-  line-height: 1.45;
-  color: var(--ot-muted);
   max-width: 36ch;
 }
 

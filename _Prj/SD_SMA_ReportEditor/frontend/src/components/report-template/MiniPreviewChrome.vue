@@ -39,9 +39,10 @@ const tagText = computed(() => {
 /* 模版管理 / 版式列表 缩略图共用外壳 — 触摸屏优化 touch-action */
 .mpc {
   position: relative;
-  display: inline-flex;
+  display: flex;
   flex-direction: column;
   align-items: center;
+  max-width: 100%;
   padding: 4px;
   border-radius: 10px;
   box-sizing: border-box;
@@ -96,6 +97,8 @@ const tagText = computed(() => {
   display: flex;
   flex-direction: column;
   align-items: center;
+  max-width: 100%;
+  overflow: hidden;
 }
 
 /* 整页类缩略图 */

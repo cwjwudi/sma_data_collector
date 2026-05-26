@@ -40,6 +40,7 @@ class TemplateTableCell(BaseModel):
     bindingKind: BindingKind = "none"
     opcuaNodeId: str = ""
     sqlText: str = ""
+    bgColor: str = "transparent"
 
 
 class TableSqlParamBinding(BaseModel):
@@ -123,6 +124,7 @@ class LayoutZoneElement(BaseModel):
     tableCells: list[list[TemplateTableCell]] = Field(default_factory=list)
     tableRowHeightPx: float = Field(default=28, ge=16, le=120)
     tableColWidthsPx: list[float] = Field(default_factory=list)
+    tableColBgColors: list[str] = Field(default_factory=list)
     tableSqlFill: TableSqlFillConfig | None = None
 
 
@@ -139,6 +141,9 @@ class TemplateElement(BaseModel):
     color: str = "#18181b"
     bgColor: str = "transparent"
     fontSize: float = 14
+    fontFamily: str = ""
+    zIndex: int = Field(default=0, ge=0, le=10000)
+    textAutoWrap: bool = False
     imageSrc: str = ""
     alignX: AlignAxis = "start"
     alignY: AlignAxis = "center"
@@ -157,6 +162,7 @@ class TemplateElement(BaseModel):
     tableCells: list[list[TemplateTableCell]] = Field(default_factory=list)
     tableRowHeightPx: float = Field(default=28, ge=16, le=120)
     tableColWidthsPx: list[float] = Field(default_factory=list)
+    tableColBgColors: list[str] = Field(default_factory=list)
     tableSqlFill: TableSqlFillConfig | None = None
 
 

@@ -6,6 +6,17 @@ interface Window {
     setDevtoolsOpen: (open: boolean) => Promise<void>;
     showSavePdfDialog: (opts?: { title?: string; defaultPath?: string }) => Promise<string | null>;
     pickExportDirectory: (opts?: { title?: string; defaultPath?: string }) => Promise<string | null>;
+    pickConfigJsonFile: (opts?: { title?: string; defaultPath?: string }) => Promise<
+      | { canceled: true }
+      | { ok: false; error?: string }
+      | { ok: true; filePath: string; fileName: string; content: string }
+      | null
+    >;
+    saveTextFileDialog: (opts?: {
+      title?: string;
+      defaultPath?: string;
+      content: string;
+    }) => Promise<{ ok: boolean; filePath?: string; canceled?: boolean; error?: string }>;
     runPdfExport: (opts: {
       templateId: string;
       filePath: string;
@@ -14,6 +25,208 @@ interface Window {
     shellOpenPath: (filePath: string) => Promise<{ ok: boolean; error?: string }>;
     pathJoin: (...parts: string[]) => Promise<string>;
     notifyPdfExportReady: (payload: { ok: boolean; error?: string }) => void;
+    scanExportPdfs: (opts: { dir: string }) => Promise<{
+      ok: boolean;
+      error?: string;
+      dir?: string;
+      files?: {
+        name: string;
+        filePath: string;
+        fileUrl?: string;
+        sizeBytes: number;
+        modifiedAt: string;
+      }[];
+    }>;
+    deleteExportFile: (opts: { filePath: string }) => Promise<{ ok: boolean; error?: string }>;
+    showItemInFolder: (filePath: string) => Promise<{ ok: boolean; error?: string }>;
+    getExportPdfThumbnail: (opts: { filePath: string }) => Promise<{
+      ok: boolean;
+      error?: string;
+      dataUrl?: string;
+      base64?: string;
+    }>;
+    getAppUpdateConfig: () => Promise<{
+      currentVersion: string;
+      platform: string;
+      baseUrl: string;
+      defaultBaseUrl: string;
+      skipTlsVerify: boolean;
+      macOpenAfterUpgrade?: boolean;
+      skippedVersions?: Record<string, boolean>;
+      packaged: boolean;
+      lastCheckAt?: string | null;
+      lastCheckStatus?: string | null;
+    }>;
+    getAppUpdateState: () => Promise<{
+      lastCheck: {
+        ok?: boolean
+        status?: string
+        currentVersion?: string
+        latestVersion?: string
+        message?: string
+        notes?: string
+        releasedAt?: string | null
+      } | null
+      downloading: boolean
+      downloadPaused: boolean
+      downloadPercent: number | null
+      downloadedReady: boolean
+      latestVersion: string | null
+    }>
+    setAppUpdateConfig: (patch: {
+      baseUrl?: string;
+      skipTlsVerify?: boolean;
+      macOpenAfterUpgrade?: boolean;
+    }) => Promise<{
+      currentVersion: string;
+      platform: string;
+      baseUrl: string;
+      defaultBaseUrl: string;
+      skipTlsVerify: boolean;
+      macOpenAfterUpgrade?: boolean;
+      skippedVersions?: Record<string, boolean>;
+      packaged: boolean;
+      lastCheckAt?: string | null;
+      lastCheckStatus?: string | null;
+    }>;
+    checkAppUpdate: (options?: { silent?: boolean }) => Promise<{
+      ok?: boolean;
+      status?: string;
+      currentVersion?: string;
+      latestVersion?: string;
+      message?: string;
+      notes?: string;
+      releasedAt?: string | null;
+      downloadUrl?: string;
+      size?: number | null;
+      manifestUrl?: string;
+    }>;
+    downloadAppUpdate: () => Promise<{
+      ok: boolean
+      error?: string
+      cancelled?: boolean
+      paused?: boolean
+      path?: string
+      latestVersion?: string
+      status?: string
+    }>
+    cancelAppUpdateDownload: () => Promise<{ ok: boolean; cancelled?: boolean; paused?: boolean }>
+    installAppUpdate: (options?: { openAfterUpgrade?: boolean }) => Promise<{
+      ok: boolean;
+      error?: string;
+      message?: string;
+      mode?: string;
+    }>;
+    skipAppUpdateVersion: () => Promise<{ ok: boolean; error?: string; version?: string }>;
+    clearAppUpdateSkippedVersions: () => Promise<{ ok: boolean; error?: string }>;
+    openMacApplication: () => Promise<{ ok: boolean; error?: string }>;
+    getDemoPackState: () => Promise<{
+      installed: boolean;
+      version: string;
+      installPath: string;
+      installedAt: string | null;
+    }>;
+    checkDemoPack: () => Promise<{
+      ok: boolean;
+      error?: string;
+      version?: string;
+      notes?: string;
+      updateAvailable?: boolean;
+      installedVersion?: string;
+    }>;
+    installDemoPack: () => Promise<{
+      ok: boolean;
+      error?: string;
+      version?: string;
+      installPath?: string;
+    }>;
+    startDemoPack: () => Promise<{ ok: boolean; error?: string }>;
+    stopDemoPack: () => Promise<{ ok: boolean; error?: string }>;
+    getDataSourceStartupSnapshot: () => Promise<{
+      ok: boolean;
+      connections?: Record<string, unknown>[];
+      opcua_servers?: Record<string, unknown>[];
+      app_preferences?: Record<string, unknown>;
+      source?: string;
+      message?: string;
+    }>;
+    onAppUpdateDownloadProgress: (
+      listener: (payload: {
+        phase?: string
+        received?: number
+        total?: number
+        percent?: number | null
+      }) => void,
+    ) => () => void
+    onAppUpdateCheckResult: (
+      listener: (payload: {
+        ok?: boolean
+        status?: string
+        currentVersion?: string
+        latestVersion?: string
+        message?: string
+        notes?: string
+        releasedAt?: string | null
+      }) => void,
+    ) => () => void
+    getLayoutSyncConfig: () => Promise<{
+      portalBaseUrl: string;
+      defaultPortalBaseUrl: string;
+      username: string;
+      loggedIn: boolean;
+      skipTlsVerify: boolean;
+    }>;
+    setLayoutSyncConfig: (patch: {
+      portalBaseUrl?: string;
+      skipTlsVerify?: boolean;
+      logout?: boolean;
+    }) => Promise<{
+      portalBaseUrl: string;
+      defaultPortalBaseUrl: string;
+      username: string;
+      loggedIn: boolean;
+      skipTlsVerify: boolean;
+    }>;
+    layoutSyncLogin: (creds: { username?: string; password?: string }) => Promise<{
+      ok: boolean;
+      username?: string;
+      expiresAt?: string | null;
+    }>;
+    layoutSyncRegister: (creds: {
+      username?: string;
+      password?: string;
+      passwordConfirm?: string;
+    }) => Promise<{ ok: boolean; username?: string; expiresAt?: string | null }>;
+    layoutSyncDownloadDefaults: () => Promise<{
+      ok: boolean;
+      error?: string;
+      layout_presets?: unknown[];
+      templates?: unknown[];
+      layoutUpdatedAt?: string | null;
+      templateUpdatedAt?: string | null;
+      source?: string;
+    }>;
+    layoutSyncDownloadMine: () => Promise<{
+      ok: boolean;
+      error?: string;
+      layout_presets?: unknown[];
+      templates?: unknown[];
+      layoutUpdatedAt?: string | null;
+      templateUpdatedAt?: string | null;
+      source?: string;
+    }>;
+    layoutSyncUpload: (payload: {
+      layoutPresets?: unknown[];
+      templates?: unknown[];
+    }) => Promise<{
+      ok: boolean;
+      error?: string;
+      layoutCount?: number;
+      templateCount?: number;
+      count?: number;
+      layoutUpdatedAt?: string | null;
+      templateUpdatedAt?: string | null;
+    }>;
   };
 }
 

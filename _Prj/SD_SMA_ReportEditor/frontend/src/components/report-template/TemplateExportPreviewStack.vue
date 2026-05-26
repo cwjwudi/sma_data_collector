@@ -6,7 +6,7 @@
       role="button"
       tabindex="0"
       @click.stop="onCardNavigate(navCover())"
-      @dblclick.stop="onCardEdit(navCover())"
+      @dblclick.capture.stop="onCardEdit(navCover())"
       @keyup.enter.prevent="onCardNavigate(navCover())"
     >
       <div v-if="!pdfExportOmitCaptions" class="tep-cap">封面 · 第 1 / {{ totalPreviewPages }} 页</div>
@@ -28,7 +28,7 @@
       role="button"
       tabindex="0"
       @click.stop="onCardNavigate(navBody(card.bodyPageIndex))"
-      @dblclick.stop="onCardEdit(navBody(card.bodyPageIndex))"
+      @dblclick.capture.stop="onCardEdit(navBody(card.bodyPageIndex))"
       @keyup.enter.prevent="onCardNavigate(navBody(card.bodyPageIndex))"
     >
       <div v-if="!pdfExportOmitCaptions" class="tep-cap">
@@ -66,7 +66,7 @@
       role="button"
       tabindex="0"
       @click.stop="onCardNavigate(navBack())"
-      @dblclick.stop="onCardEdit(navBack())"
+      @dblclick.capture.stop="onCardEdit(navBack())"
       @keyup.enter.prevent="onCardNavigate(navBack())"
     >
       <div v-if="!pdfExportOmitCaptions" class="tep-cap">末页 · 第 {{ totalPreviewPages }} / {{ totalPreviewPages }} 页</div>
@@ -125,6 +125,8 @@ const emit = defineEmits<{
   "request-edit": [payload: ExportPreviewNavPayload];
 }>();
 
+let pendingNavigateTimer: ReturnType<typeof setTimeout> | null = null;
+
 function navCover(): ExportPreviewNavPayload {
   return { sheet: "cover" };
 }
@@ -136,10 +138,19 @@ function navBody(bodyPageIndex: number): ExportPreviewNavPayload {
 }
 
 function onCardNavigate(payload: ExportPreviewNavPayload) {
-  emit("preview-navigate", payload);
+  if (pendingNavigateTimer) clearTimeout(pendingNavigateTimer);
+  pendingNavigateTimer = setTimeout(() => {
+    pendingNavigateTimer = null;
+    emit("preview-navigate", payload);
+  }, 220);
 }
 
 function onCardEdit(payload: ExportPreviewNavPayload) {
+  if (pendingNavigateTimer) {
+    clearTimeout(pendingNavigateTimer);
+    pendingNavigateTimer = null;
+  }
+  emit("preview-navigate", payload);
   emit("request-edit", payload);
 }
 
@@ -179,6 +190,10 @@ onMounted(() => {
 onBeforeUnmount(() => {
   ro?.disconnect();
   ro = null;
+  if (pendingNavigateTimer) {
+    clearTimeout(pendingNavigateTimer);
+    pendingNavigateTimer = null;
+  }
 });
 </script>
 

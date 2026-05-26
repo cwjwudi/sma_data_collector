@@ -1,141 +1,125 @@
 # SD_SMA_ReportEditor
 
-Markdown 报表编辑器桌面软件。支持读取 MySQL/MariaDB、PostgreSQL 数据库与 OPC UA 变量，通过可视化界面配置报表模板，自动生成 Markdown 报表。
+报表编辑器桌面软件：连接 MySQL/MariaDB、PostgreSQL 与 OPC UA，可视化配置报表模版，导出 **PDF**（不再生成 `.md` 成品，见 [_Doc/005](_Doc/005_交付格式决策-取消Markdown管线.md)）。
 
-## 初次上手（必读）
+---
 
-**第一次使用本仓库？** 请先阅读 **[getting-started/](getting-started/README.md)**：
+## 文档导航
 
-| 文档 | 说明 |
-|------|------|
-| [getting-started/README.md](getting-started/README.md) | 本工程在 `p000_sd_sma_scada` 中的位置、目录含义、三种运行方式 |
-| [getting-started/windows.md](getting-started/windows.md) | Windows：安装 Python/Node、venv、`start_dev_web.bat`、Electron |
-| [getting-started/mac.md](getting-started/mac.md) | macOS：Homebrew、venv、`open-electron-dev-mac.command`、双终端 Web |
+| 我想… | 去看 |
+|--------|------|
+| **用 Cursor 打开并协作** | [Cursor 快速开始](#cursor-快速开始) |
+| **弄清仓库里有什么** | [理解本仓库](#理解本仓库) |
+| **在本机跑起来（开发）** | [如何运行](#如何运行) → [getting-started/](getting-started/README.md) |
+| **改功能 / 改界面** | [如何修改](#如何修改) → [_Doc/003](_Doc/003_项目框架与常用指令.md) |
+| **打安装包、现场安装卸载** | [packaging/README.md](packaging/README.md)（打包详述在此） |
+| **查每个版本改了什么** | [_Doc/007_版本发布记录.md](_Doc/007_版本发布记录.md) |
 
-跑通后再看下文「快速开始」与打包说明。
+技术栈：Python FastAPI · Vue 3 · Vite · Electron · Pinia。
 
-## 技术栈
+---
 
-- **后端**：Python 3.9+（推荐 3.10+）、FastAPI、SQLAlchemy、asyncua
-- **前端**：Electron / Vue 3 / Vite / Pinia
-- **桌面壳**：Electron（内嵌 Vue 前端 + 启动 Python 后端子进程）
+## Cursor 快速开始
 
-## 目录结构
-
-```
-SD_SMA_ReportEditor/
-├── getting-started/  # 初次上手（Windows / Mac 环境与启动）
-├── _Doc/             # 项目文档（计划、工单、变更记录）
-├── backend/          # Python FastAPI 后端
-├── frontend/         # Electron + Vue 3 前端
-├── scripts/          # 启动脚本（如 Mac 一键 Electron）
-├── start_dev_web.bat # Windows 浏览器模式一键启动
-└── README.md
-```
-
-## Cursor：UI/UX Pro Max Skill（混合安装）
-
-报表编辑器的界面协作约定位于仓库根 **`.cursor/skills/ui-ux-pro-max-report-editor/SKILL.md`**。通用设计资源请在本仓库根目录执行：
+1. **工作区**：在 Cursor 中打开 Git 根目录 **`p000_sd_sma_scada`**（不要只打开子文件夹），才能加载 `.cursor/skills`、`.cursor/rules`。
+2. **本工程路径**：`_Prj/SD_SMA_ReportEditor/`。
+3. **界面协作 Skill**：`.cursor/skills/ui-ux-pro-max-report-editor/SKILL.md`（报表编辑器专用约定）。
+4. **通用 UI 资源**（可选，在仓库根执行一次）：
 
 ```bash
-cd P000_SD_SMA_SCADA   # 即本仓库 Git 根目录
+cd p000_sd_sma_scada
 npx uipro-cli init --ai cursor
 ```
 
-CLI 产物是否提交由团队自定；**请以仓库根作为 Cursor 工作区打开**，以便加载 `.cursor/skills` 与 `.cursor/rules`。
+5. **第一次跑通**：按系统阅读 [getting-started/README.md](getting-started/README.md)（Windows / Mac 依赖与启动）。
 
-## 快速开始
+---
 
-> 环境未装好时请先完成 [getting-started/](getting-started/README.md) 中的依赖步骤。
+## 理解本仓库
 
-**Windows（浏览器）**：项目根目录双击或运行 **`start_dev_web.bat`**，会在 **PowerShell** 新窗口启动后端 + Vite 并打开浏览器。
+本目录是 **P000 仓库** 下的报表编辑子工程，与 `_Doc/`（业务需求）、`SD_SMA_DATA_COLLECTOR` 等并列。
 
-**macOS（Electron）**：双击 **`scripts/open-electron-dev-mac.command`**，或见 [getting-started/mac.md](getting-started/mac.md)。
-
-下面为分步命令（Windows / Mac 通用逻辑）。
-
-### 后端
-
-```bash
-cd backend
-pip install -r requirements.txt
-uvicorn main:app --reload --port 8000
+```
+SD_SMA_ReportEditor/
+├── README.md                 ← 本文件（开发向导）
+├── getting-started/          ← 环境安装、开发启动、入门说明
+├── packaging/                ← 安装包打包与排错（见 packaging/README.md）
+├── scripts/dev/              ← Win/Mac 一键开发启停
+├── backend/                  ← FastAPI（API、业务、data/ 运行时数据）
+├── frontend/                 ← Vue + Electron 主应用（日常主改这里）
+├── rptp/                     ← 报表版式原型（可选，见下表）
+├── _Doc/                     ← 计划、里程碑、框架与 API 说明
+└── docker-compose.yml        ← 可选演示库 / OPC（开发用）
 ```
 
-在 **Windows** 上若习惯手写命令，建议用 **`backend\scripts\dev_uvicorn.ps1`**（与 `start_dev_web.bat` 相同），或在 **Windows Terminal** 里运行上述 `uvicorn`，尽量不要用「裸 cmd + 鼠标在窗口里拖选」长时间占着控制台。
+| 目录 | 作用 | 日常是否改 |
+|------|------|------------|
+| `backend/` | 数据源、模板、生成、配置导入导出 | 常改 |
+| `frontend/` | 页面、Electron 壳、报表 UI | 常改 |
+| `scripts/` | 开发启停脚本 | 运行即可 |
+| `rptp/` | 早期单页版式原型；主应用已承接其模型与 `rptp-*` 存储键 | 少见 |
+| `packaging/` | NSIS / DMG 打包脚本与 `output/` | 发版时 |
+| `getting-started/` | 新人文档 | 阅读 |
 
-### 前端
+`rptp/`：`cd rptp && npm run dev` 可单独调试版式；与 `frontend/` 无构建依赖。详见 [frontend/src/lib/report-template/](frontend/src/lib/report-template/)。
 
-```bash
-cd frontend
-npm install
-npm run dev
-```
+开发脚本索引：[scripts/README.md](scripts/README.md)。
 
-### Electron 桌面模式
+---
 
-```bash
-cd frontend
-npm run electron:dev
-```
+## 如何运行
 
-## Windows 安装包 / 绿色便携版（.exe）
+> 依赖未装全时，务必先看 [getting-started/](getting-started/README.md)。
 
-成品在 `frontend/release/`（不入库）：
+| 场景 | 做法 |
+|------|------|
+| **Windows · 浏览器开发** | `scripts\dev\windows\start_dev_web.bat`（后端 8000 + Vite 5173） |
+| **Windows · 装依赖并启动** | `scripts\dev\windows\install_and_start_dev_web.bat` |
+| **Windows · 停止端口** | `scripts\dev\windows\stop_dev_web.bat` |
+| **macOS · Electron 开发** | 双击 `scripts/dev/mac/open-electron-dev-mac.command` |
+| **通用 · 手写** | 终端 1：`backend` → `uvicorn main:app --reload --port 8000`；终端 2：`frontend` → `npm run dev` |
+| **桌面接近成品** | `frontend` → `npm run electron:dev` |
 
-1. 前置：已安装 **Node.js**、**Python 3.9+**（打包环境推荐 **3.10+** 且含 Windows `py` 启动器）、Windows x64。
-2. 在 `frontend/` 安装依赖：`npm install`
-3. **一键完整打包**（先 PyInstaller 打后端，再 electron-builder 打安装包 + 便携 exe）：  
-   `npm run dist:win`（PowerShell 可用 **`npm.cmd run dist:win`**）
-4. 若 **`electron-v*-win32-x64.zip` 从 GitHub 下载超时**（常见于内网或对 `github.com` 不稳定），使用 **npmmirror 镜像** 再打一次：  
-   `npm.cmd run dist:win:cn`  
-   若后端已编好、只重打 Electron：  
-   `npm.cmd run dist:cn`
-5. 仅打前端包（需已存在 `backend/dist/report_backend/`）：  
-   `npm run dist`
+健康检查：`curl -s http://127.0.0.1:8000/health` · 开发页 `http://127.0.0.1:5173` · API 文档 `http://127.0.0.1:8000/docs`。
 
-**网络说明**：`winCodeSign` 相关下载已通过 `build.win` 中 `signAndEditExecutable` / `signDlls` 关闭。**Electron 本体**仍默认从 GitHub 拉取；镜像失败时可自行设系统/会话代理，或 PowerShell 临时：
+Windows 上避免在旧 **cmd** 里长时间拖选文本（快速编辑会挂进程）；与一键脚本相同的后端入口：`backend\scripts\dev_uvicorn.ps1`。
 
-```powershell
-$env:ELECTRON_MIRROR = "https://npmmirror.com/mirrors/electron/"
-npm.cmd run dist:win
-```
+---
 
-（与 `dist:win:cn` 等价思路。）PowerShell 若拦截 `npm.ps1`，请统一使用 **`npm.cmd`**。
+## 如何修改
 
-**当 `release\win-unpacked` 被 Cursor 锁住、删/改名都失败时**：改用 **另一输出目录** 打包（不碰 `release/`）：
+| 改什么 | 从哪里入手 |
+|--------|------------|
+| REST API、业务逻辑 | `backend/api/`、`backend/modules/`、`backend/schemas/` |
+| 配置、运行模式、打包识别 | `backend/core/` |
+| 页面与路由 | `frontend/src/views/`、`frontend/src/router/` |
+| 报表模板 / 版式 UI | `frontend/src/lib/report-template/`、`frontend/src/features/` |
+| Electron 启后端、路径 | `frontend/electron/main.cjs` |
+| 架构、路由表、常用命令 | [_Doc/003_项目框架与常用指令.md](_Doc/003_项目框架与常用指令.md) |
+| 需求与里程碑 | [_Doc/001](_Doc/001_项目计划.md)、[_Doc/002](_Doc/002_里程碑与工单.md) |
 
-```powershell
-npm.cmd run dist:cn:alt
-```
+改 UI 前可对照 Cursor Skill：`ui-ux-pro-max-report-editor`。
 
-产物在 **`frontend/release-alt/`**（安装包/便携 exe 与 `win-unpacked` 均在此目录下）。完整流程（含后端）：`npm.cmd run dist:win:cn:alt`。清理备用目录：`npm.cmd run clean:release:alt`。
+---
 
-**NSIS 报错 `Plugin not found, cannot call UAC::_`**：多为 `%LOCALAPPDATA%\electron-builder\Cache\nsis` 不完整（下载后 `rename ... Access is denied` 造成）。先关闭其它正在跑的 electron-builder/杀毒对缓存目录的占用，再执行 **`npm.cmd run clean:eb-cache`**，然后重新 **`npm.cmd run dist:cn:alt`**。若暂时不需要安装包，可只打便携版：**`npm.cmd run dist:cn:portable`**（无 NSIS，仍输出到 `release-alt/`）。
+## 打包与现场安装
 
-**Portable / 安装版窗口空白（白屏）**：Electron 用 `file://` 打开页面时，Vite 默认 **`base: '/'`** 会让资源路径变成 `/assets/...`，从盘符根找文件导致加载失败。`vite.config.js` 已设 **`base: './'`**，请 **重新构建**（`npm.cmd run build` + `electron-builder`，或直接 **`npm.cmd run dist:cn:alt` / `dist:win:cn:alt`**）后再双击新 exe。
+交付用 **Windows Setup.exe** / **macOS DMG** 的脚本、手动 `npm` 命令、内网镜像与排错，均在 **[packaging/README.md](packaging/README.md)**，不在本页展开。
 
-**双击 exe 仍报 `require is not defined`（主进程）**：开发目录的 `package.json` 带 `"type":"module"` 仅服务于 Vite；**安装包内的 `package.json`** 由 **`build.extraMetadata`** 写成 **`type: commonjs`** 并固定 **`main: electron/main.cjs`**。请 **`git pull`** 后务必 **重新执行 `npm.cmd run dist:cn:alt`**，再用 **`release-alt`** 下新生成的 exe；勿继续运行旧次打包的 `release` / `release-alt` 文件。
+| 主题 | 链接 |
+|------|------|
+| 打包总览与排错 | [packaging/README.md](packaging/README.md) |
+| Windows 一键打包 | [packaging/windows/](packaging/windows/README.md) |
+| macOS 一键打包 | [packaging/mac/](packaging/mac/README.md) |
+| 现场安装 / 卸载（Windows） | [getting-started/windows-installer.md](getting-started/windows-installer.md) |
+| 现场安装 / 卸载（macOS） | [getting-started/mac-installer.md](getting-started/mac-installer.md) |
 
-**打包报 `Access is denied` / `app.asar` 仍被占用**：`clean:release` 会多轮结束落在 `win-unpacked` 下的进程；若仍失败会尝试改名 `_trash_`。请配合 **`.cursorignore` + Reload Window**；或直接使用上文 **`dist:cn:alt`**。
+---
 
-成品说明：
-
-- **NSIS 安装程序**：`SD SMA Report Editor-Setup-0.1.0-x64.exe`
-- **便携版**：`SD SMA Report Editor-Portable-0.1.0-x64.exe`
-- 安装/解压后，后端为内置的 `report_backend.exe`，**配置文件与模板等** 写在用户目录：`%APPDATA%\sd-sma-report-editor\backend-data\`（环境变量 `REPORT_EDITOR_DATA_DIR`）。
-
-单独重建后端可执行文件：
-
-```powershell
-cd backend
-powershell -ExecutionPolicy Bypass -File scripts/build-backend-exe.ps1
-```
-
-## 文档
+## 更多文档
 
 - [初次上手 — getting-started/](getting-started/README.md)
-- [项目计划](_Doc/001_项目计划.md)
+- [Windows 环境](getting-started/windows.md) · [macOS 环境](getting-started/mac.md)
+- [交付格式决策（为何不做 Markdown 成品）](_Doc/005_交付格式决策-取消Markdown管线.md)
 - [里程碑与工单](_Doc/002_里程碑与工单.md)
-- [项目框架与常用指令](_Doc/003_项目框架与常用指令.md)
-- [Mac 开发环境准备](_Doc/004_Mac开发环境准备.md)
+- [Mac 开发补充](_Doc/004_Mac开发环境准备.md)

@@ -12,6 +12,9 @@ import {
   PAGE_NUMBER_PREVIEW_TOTAL_FALLBACK,
   previewZoneElementDisplay,
   zoneTableColumnInnerWidthsPx,
+  zoneTableInnerBackgroundCss,
+  resolveTableCellBackgroundCss,
+  zoneTableNodeShellBackgroundCss,
 } from "./layout-zone-element";
 import { clampTableRowHeightPx } from "./table-cell-metrics";
 
@@ -253,8 +256,7 @@ export function renderZoneElementsInto(
       node.textContent = previewZoneElementDisplay(el, previewPage, previewTotal);
     } else if (el.type === "table") {
       ensureZoneTableGrid(el);
-      node.style.backgroundColor =
-        el.bgColor === "transparent" ? "rgb(250 250 250)" : el.bgColor;
+      node.style.backgroundColor = zoneTableNodeShellBackgroundCss();
       node.style.display = "flex";
       node.style.flexDirection = "column";
       /** 较默认底侧多 1px，避免表格最后一行底边框被 overflow:hidden 裁掉 */
@@ -267,7 +269,7 @@ export function renderZoneElementsInto(
       tbl.style.borderCollapse = "separate";
       tbl.style.borderSpacing = "0";
       tbl.style.tableLayout = "fixed";
-      tbl.style.background = "rgb(255 255 255 / 0.96)";
+      tbl.style.background = zoneTableInnerBackgroundCss(el.bgColor);
       const colWidths = zoneTableColumnInnerWidthsPx(el);
       const cg = document.createElement("colgroup");
       for (const cw of colWidths) {
@@ -299,6 +301,11 @@ export function renderZoneElementsInto(
           td.style.overflow = "hidden";
           td.style.fontSize = "max(10px, 0.85em)";
           td.style.lineHeight = "1.25";
+          td.style.backgroundColor = resolveTableCellBackgroundCss(
+            { tableBgColor: el.bgColor, tableColBgColors: el.tableColBgColors },
+            ci,
+            row[ci],
+          );
           td.textContent = formatZoneTableCellPreview(row[ci]);
           tr.appendChild(td);
         }

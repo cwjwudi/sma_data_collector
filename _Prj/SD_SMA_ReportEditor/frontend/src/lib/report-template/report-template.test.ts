@@ -17,6 +17,11 @@ import {
   integerColumnPercentsFromInnerWidthsPx,
   TABLE_COLUMN_WIDTH_PERCENT_MIN,
 } from "@/lib/report-template/table-cell-metrics";
+import {
+  resolveTableCellBackgroundCss,
+  ensureTableColBgColors,
+  ZONE_TABLE_DEFAULT_INNER_BG,
+} from "@/lib/report-template/layout-zone-element";
 
 describe("computePaperLayout", () => {
   it("computes sane A4 portrait content rect", () => {
@@ -195,5 +200,50 @@ describe("table column width integer percents", () => {
     expect(next[1]).toBeGreaterThanOrEqual(TABLE_COLUMN_WIDTH_PERCENT_MIN);
     expect(next[2]).toBeGreaterThanOrEqual(TABLE_COLUMN_WIDTH_PERCENT_MIN);
     expect(next[0]).toBe(98);
+  });
+});
+
+describe("ensureTableColBgColors", () => {
+  it("extends in place without replacing array reference when length matches", () => {
+    const el = { type: "table" as const, tableCols: 3, tableColBgColors: ["#fecaca", "transparent", "transparent"] };
+    const ref = el.tableColBgColors;
+    ensureTableColBgColors(el);
+    expect(el.tableColBgColors).toBe(ref);
+    expect(el.tableColBgColors).toEqual(["#fecaca", "transparent", "transparent"]);
+  });
+});
+
+describe("resolveTableCellBackgroundCss", () => {
+  it("prefers cell over column and table default", () => {
+    const css = resolveTableCellBackgroundCss(
+      { tableBgColor: "transparent", tableColBgColors: ["#fecaca", "transparent"] },
+      0,
+      { bgColor: "#bbf7d0" },
+    );
+    expect(css).toBe("#bbf7d0");
+  });
+
+  it("falls back to column then table default", () => {
+    expect(
+      resolveTableCellBackgroundCss(
+        { tableBgColor: "#fde68a", tableColBgColors: ["#fecaca", "transparent"] },
+        0,
+        { bgColor: "transparent" },
+      ),
+    ).toBe("#fecaca");
+    expect(
+      resolveTableCellBackgroundCss(
+        { tableBgColor: "#fde68a", tableColBgColors: ["transparent", "transparent"] },
+        1,
+        undefined,
+      ),
+    ).toBe("#fde68a");
+    expect(
+      resolveTableCellBackgroundCss(
+        { tableBgColor: "transparent", tableColBgColors: ["transparent"] },
+        0,
+        undefined,
+      ),
+    ).toBe(ZONE_TABLE_DEFAULT_INNER_BG);
   });
 });

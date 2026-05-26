@@ -1,91 +1,164 @@
 <template>
-  <div class="opcua" :class="{ 'opcua-wizard': wizardLayout }">
+  <div class="opcua ds-scope" :class="{ 'opcua-wizard': wizardLayout }">
     <p v-if="wizardLayout" class="opc-lead">
-      在同一页完成<strong>测试</strong>、<strong>保存</strong>与<strong>浏览地址空间</strong>。可先填 Endpoint 与账号后直接点<strong>刷新根</strong>做草稿浏览（无需先保存）；已保存的连接从下方芯片切换。模板占位
-      <code v-pre>{opc.NodeId}</code>
-      会用到此处确认的 NodeId。若无现场服务器，可随时跳过向导此步或在「数据源」中补齐。
+      填写现场 OPC UA 服务器的地址与账号，先<strong>测试连接</strong>，通过后可<strong>浏览</strong>设备变量并保存。
+      若暂时没有现场服务器，可跳过此步，稍后在<strong>数据源配置</strong>中补充。
     </p>
-    <div v-if="wizardLayout" class="wiz-srv-strip">
-      <button type="button" class="btn sm chip-new" @click="startNew">＋ 新建</button>
+    <div class="tabs-conn">
+      <button type="button" class="tab tab-new" @click="startNew">+ 新建</button>
       <button
         v-for="s in servers"
-        :key="'wchip-' + s.id"
+        :key="'conn-tab-' + s.id"
         type="button"
-        class="btn sm srv-chip"
-        :class="{ active: selected?.id === s.id }"
-        @click="selectServer(s)"
+        :class="['tab', 'tab--with-led', { on: selected?.id === s.id }]"
+        @click="onOpcConnTabClick(s)"
       >
-        {{ s.name || s.endpoint_url }}
+        <ConnectionTabLed
+          :state="opcHealth[s.id] || 'unknown'"
+          :tooltip="opcConnTabTooltip(s)"
+        />
+        <span class="tab-label">{{ opcServerShortLabel(s) }}</span>
       </button>
     </div>
 
-    <div class="cols" :class="{ compact: wizardLayout }">
-      <aside v-if="!wizardLayout" class="list-pane">
-        <div class="list-head">
-          <span>已保存连接</span>
-          <button type="button" class="btn sm" @click="startNew">新建</button>
+    <div class="cols compact">
+      <div class="form-pane conn-form-pane">
+        <div v-if="!wizardLayout" class="row-head">
+          <h4>OPC UA 连接</h4>
         </div>
-        <ul class="server-ul">
-          <li
-            v-for="s in servers"
-            :key="s.id"
-            :class="{ active: selected?.id === s.id }"
-            @click="selectServer(s)"
-          >
-            {{ s.name || s.endpoint_url }}
-          </li>
-        </ul>
-      </aside>
-      <div class="form-pane">
         <label>名称</label>
         <input v-model="form.name" class="input" />
-        <label>Endpoint URL</label>
-        <input v-model="form.endpoint_url" class="input" placeholder="opc.tcp://host:4840" />
+        <label>主机 / IP</label>
+        <input v-model="form.host" class="input" placeholder="192.168.1.10" />
+        <label>端口</label>
+        <input
+          v-model="form.portText"
+          type="text"
+          inputmode="numeric"
+          class="input"
+          placeholder="4840"
+        />
         <label>用户名（可选）</label>
         <input v-model="form.username" class="input" />
         <label>密码（可选）</label>
         <input v-model="form.password" type="password" class="input" autocomplete="new-password" />
+        <label for="opc-poll-interval">读值刷新间隔</label>
+        <div class="poll-interval poll-interval--form">
+          <input
+            id="opc-poll-interval"
+            v-model.number="pollIntervalSeconds"
+            type="number"
+            min="0.5"
+            max="300"
+            step="0.5"
+            class="input input-tiny"
+            :disabled="!browseCapability"
+          />
+          <span class="poll-hint">秒（开启持续刷新后，按此间隔更新地址空间可见变量与当前选中变量）</span>
+        </div>
+        <div class="node-read-bar">
+          <button
+            type="button"
+            class="btn seg"
+            :disabled="!browseCapability || !pickedNode?.node_id"
+            @click="readValue"
+          >
+            重新读取
+          </button>
+          <button
+            type="button"
+            class="btn seg"
+            :class="{ primary: pollEnabled }"
+            :disabled="!browseCapability"
+            :aria-pressed="pollEnabled"
+            :title="
+              pollEnabled
+                ? '停止定时刷新地址空间可见变量与选中变量详情'
+                : '按上方间隔刷新地址空间已展开可见的变量读数，并刷新当前选中变量'
+            "
+            @click="togglePollEnabled"
+          >
+            {{ pollEnabled ? '停止持续刷新' : '持续刷新' }}
+          </button>
+        </div>
+        <p v-if="pollEnabled && !canPollCurrent" class="poll-warn poll-warn-inline">
+          地址空间中已展开可见的变量会定时读值；选中<strong>变量</strong>节点时，左侧详情同步更新。
+        </p>
+        <div v-if="pickedDisplay" class="picked-summary">
+          <div class="picked-summary-head">
+            <span class="picked-summary-title">{{ pickedDisplay.title }}</span>
+            <button type="button" class="btn seg" @click="copyNodeId">复制 NodeId</button>
+          </div>
+          <dl class="picked-dl">
+            <div class="picked-row">
+              <dt>节点类型</dt>
+              <dd>{{ pickedDisplay.nodeType }}</dd>
+            </div>
+            <div v-if="pickedDisplay.ns" class="picked-row">
+              <dt>命名空间 ns</dt>
+              <dd>{{ pickedDisplay.ns }}</dd>
+            </div>
+            <div v-if="pickedDisplay.identifier" class="picked-row">
+              <dt>标识 {{ pickedDisplay.idKind }}</dt>
+              <dd class="mono">{{ pickedDisplay.identifier }}</dd>
+            </div>
+            <div v-if="pickedDisplay.dataType" class="picked-row">
+              <dt>数据类型</dt>
+              <dd>{{ pickedDisplay.dataType }}</dd>
+            </div>
+            <div v-if="pickedDisplay.valueText" class="picked-row">
+              <dt>当前值</dt>
+              <dd class="picked-value">{{ pickedDisplay.valueText }}</dd>
+            </div>
+            <div v-else-if="pickedDisplay.readError" class="picked-row">
+              <dt>读值</dt>
+              <dd class="picked-error">{{ translateOpcuaMessage(pickedDisplay.readError) }}</dd>
+            </div>
+          </dl>
+          <p v-if="copyFeedback" class="copy-feedback">{{ copyFeedback }}</p>
+        </div>
         <div class="actions">
-          <button type="button" class="btn primary sm" @click="saveServer">保存</button>
-          <button type="button" class="btn sm" @click="testDraft">测试连接（当前表单）</button>
-          <button type="button" class="btn danger sm" v-if="form.id" @click="removeServer">删除</button>
+          <button type="button" class="btn primary seg" @click="saveServer">保存</button>
+          <button type="button" class="btn seg" @click="testDraft">
+            {{ wizardLayout ? '测试连接' : '测试连接（当前表单）' }}
+          </button>
+          <button type="button" class="btn danger seg" v-if="form.id" @click="removeServer">删除</button>
         </div>
         <div v-if="msg" class="msg">{{ translateOpcuaMessage(msg) }}</div>
       </div>
-      <div v-if="wizardLayout || form.id" class="browse-pane">
-        <div class="browse-head">
-          <div class="browse-head-titles">
-            <span class="browse-title-main">地址空间</span>
-            <span v-if="wizardLayout" class="browse-title-sub">{{ browseHeadSubtitle }}</span>
+      <div class="browse-pane ds-side-pane">
+        <div class="browse-head ds-pane-head">
+          <div class="browse-head-titles ds-pane-head-titles">
+            <span class="browse-title-main ds-pane-title">地址空间</span>
+            <span v-if="browseHeadSubtitle" class="browse-title-sub ds-pane-subtitle">{{ browseHeadSubtitle }}</span>
           </div>
-          <div class="browse-head-actions">
-            <label class="tree-poll-label" :title="'仅轮询已在左侧展开 subtree 中出现的 Variable（与 OpcUaTree 可视范围一致）'">
-              <input v-model="treeRowPollEnabled" type="checkbox" class="tree-poll-checkbox" />
-              <span class="tree-poll-text">树上读值定时刷新</span>
-            </label>
-            <span v-if="treeRowPollEnabled" class="tree-poll-interval">
-              <label for="opc-tree-row-poll-interval">间隔</label>
-              <input
-                id="opc-tree-row-poll-interval"
-                v-model.number="treeRowPollIntervalSeconds"
-                type="number"
-                min="0.5"
-                max="300"
-                step="0.5"
-                class="input input-tiny"
-              />
-              <span class="poll-hint">秒</span>
-            </span>
+          <div class="browse-head-actions ds-pane-head-actions">
             <button
               type="button"
-              class="btn sm"
-              :disabled="!browseCapability"
-              :title="
-                browseCapability ? '' : wizardLayout ? '请先填写 Endpoint 或选择已保存连接' : '须先保存连接'
-              "
+              class="btn seg"
+              :disabled="!browseCapability || expandAllBusy"
+              :title="browseCapability ? '' : '请先填写主机与端口，或从上方选择已保存连接'"
               @click="refreshRoot"
             >
               刷新根
+            </button>
+            <button
+              type="button"
+              class="btn seg"
+              :disabled="!browseCapability || expandAllBusy || !!searchTrimmed"
+              :title="searchTrimmed ? '搜索模式下请使用树浏览' : '浏览并展开全部可见分支（可能对 PLC 造成负载）'"
+              @click="confirmExpandAllTree"
+            >
+              {{ expandAllBusy ? '展开中…' : '一键展开' }}
+            </button>
+            <button
+              type="button"
+              class="btn seg"
+              :disabled="!browseCapability || expandAllBusy || !!searchTrimmed"
+              :title="searchTrimmed ? '搜索模式下请使用树浏览' : ''"
+              @click="collapseAllTree"
+            >
+              一键收起
             </button>
           </div>
         </div>
@@ -139,45 +212,6 @@
               @pick="pickNode"
             />
           </div>
-          <div v-if="!wizardLayout" class="detail-wrap">
-            <div v-if="pickedNode" class="detail">
-              <div class="detail-line">
-                <strong>节点</strong>
-                <span class="detail-nid mono">{{ pickedNode.node_id }}</span>
-              </div>
-              <div v-if="pickedNode.node_id" class="copy-block">
-                <div class="copy-block-head">
-                  <span>连接与 NodeId（可复制到其他 OPC UA 客户端）</span>
-                  <button type="button" class="btn sm" @click="copyConnectionInfo">复制全部</button>
-                </div>
-                <pre class="copy-pre mono">{{ connectionInfoText }}</pre>
-                <p v-if="copyFeedback" class="copy-feedback">{{ copyFeedback }}</p>
-              </div>
-              <button type="button" class="btn sm" @click="readValue">重新读取</button>
-              <div class="poll-row">
-                <label class="poll-label">
-                  <input v-model="pollEnabled" type="checkbox" class="poll-checkbox" />
-                  <span class="poll-label-text">持续刷新</span>
-                </label>
-                <span v-if="pollEnabled" class="poll-interval">
-                  <label for="opc-poll-interval">间隔</label>
-                  <input
-                    id="opc-poll-interval"
-                    v-model.number="pollIntervalSeconds"
-                    type="number"
-                    min="0.5"
-                    max="300"
-                    step="0.5"
-                    class="input input-tiny"
-                  />
-                  <span class="poll-hint">秒</span>
-                </span>
-              </div>
-              <p v-if="pollEnabled && !canPollCurrent" class="poll-warn">开启后请选中 Variable 节点；仅对该节点定时读值（0.5～300 秒一轮）</p>
-              <pre v-if="readOut" class="pre">{{ readOutDisplay }}</pre>
-            </div>
-            <div v-else class="detail-placeholder">展开层级后 Variable 会在左侧自动显示数值；点击节点可看右侧 JSON</div>
-          </div>
         </div>
       </div>
     </div>
@@ -185,40 +219,98 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, reactive, ref, shallowRef, triggerRef, watch } from 'vue'
+import { computed, defineExpose, onBeforeUnmount, onMounted, reactive, ref, shallowRef, triggerRef, watch } from 'vue'
 import { apiFetch } from '@/api/client.js'
+import ConnectionTabLed from '@/features/datasource/ConnectionTabLed.vue'
+import {
+  probeConnectionIds,
+  probeOpcSavedConnection,
+  summarizeConnectionHealth,
+} from '@/features/datasource/connection-tab-health'
+import {
+  formatConnectionHealthTooltip,
+  getOpcConnectionHealth,
+  pruneOpcConnectionHealth,
+  setOpcConnectionHealth,
+} from '@/features/datasource/connection-health-detail'
+import { setOpcHealthSummary } from '@/features/datasource/datasource-nav-health'
+import { auditLog } from '@/lib/auditLog'
 import OpcUaTree from './OpcUaTree.vue'
 import { translateOpcuaMessage } from './opcua-messages.js'
+import {
+  buildOpcEndpointUrl,
+  parseOpcEndpointUrl,
+  opcServerShortLabel,
+  DEFAULT_OPCUA_PORT,
+} from './opcua-endpoint-url.js'
+import '../datasource-ui.css'
+import '../connection-tabs.css'
+import '../connection-form-pane.css'
 import { opcDataTypeLabelFromRead } from './opcua-value-meta.js'
-import { isOpcVariableValueNode } from './opcua-tree-utils.js'
+import { applyOpcBrowseChildren, collapseOpcTreeNodes, isOpcVariableValueNode } from './opcua-tree-utils.js'
+import { runOpcExpandAllTree } from './opcua-tree-expand-all.js'
+import { parseOpcNodeId, opcNodeClassLabel } from './opcua-node-display.js'
 
 const props = defineProps({
   /** 向导内：单列芯片 + 草稿浏览 + 与数据库向导一致的一体化版面 */
   wizardLayout: { type: Boolean, default: false },
 })
 
+const emit = defineEmits(['health-summary'])
+
 const servers = ref([])
+let loadServersToken = 0
+const opcHealth = reactive({})
 const selected = ref(null)
 const form = reactive({
   id: '',
   name: '',
-  endpoint_url: '',
+  host: '',
+  portText: String(DEFAULT_OPCUA_PORT),
+  /** 从已保存 URL 解析出的路径段（如 report-edi），不在表单展示但保存时保留 */
+  path: '',
   username: '',
   password: '',
 })
+
+function applyEndpointFieldsFromUrl(url) {
+  const p = parseOpcEndpointUrl(url)
+  form.host = p.host
+  form.portText = p.portText
+  form.path = p.path
+}
+
+function currentEndpointUrl() {
+  return buildOpcEndpointUrl({
+    host: form.host,
+    portText: form.portText,
+    path: form.path,
+  })
+}
 const msg = ref('')
 const searchQuery = ref('')
 const treeNodes = shallowRef([])
 const treeRev = ref(0)
 const pickedNode = ref(null)
-const readOut = ref('')
-/** 右侧 JSON 预览保留原文；纯文本异常信息译为中文 */
-const readOutDisplay = computed(() => {
-  const r = readOut.value
-  if (r == null || String(r).trim() === '') return ''
-  const s = String(r).trim()
-  if (s.startsWith('{') || s.startsWith('[')) return readOut.value
-  return translateOpcuaMessage(s)
+/** 左侧选中节点的可读读值摘要（非 JSON） */
+const pickedValueText = ref('')
+const pickedReadError = ref('')
+
+const pickedDisplay = computed(() => {
+  const n = pickedNode.value
+  if (!n?.node_id) return null
+  const parsed = parseOpcNodeId(n.node_id)
+  const title = String(n.display_name || n.browse_name || '').trim() || '已选节点'
+  return {
+    title,
+    nodeType: opcNodeClassLabel(n.node_class),
+    ns: parsed.ns,
+    identifier: parsed.identifier,
+    idKind: parsed.idKind || 'i',
+    dataType: String(n.valueDataTypeLabel || '').trim(),
+    valueText: pickedValueText.value || (n.valuePreview ? String(n.valuePreview) : ''),
+    readError: pickedReadError.value || n.valueReadError || '',
+  }
 })
 /** 选中节点切换时递增，丢弃过期的读值请求 */
 const readEpoch = ref(0)
@@ -227,6 +319,9 @@ const prefetchGen = ref(0)
 
 const copyFeedback = ref('')
 
+const expandAllBusy = ref(false)
+let expandAllGen = 0
+
 /** 定时读当前选中 Variable（轮询）；与 readEpoch 无关 */
 const pollEnabled = ref(false)
 const pollIntervalSeconds = ref(2)
@@ -234,17 +329,16 @@ let pollTimerId = null
 let pollInFlight = false
 
 /** 定时读左侧树上所有「已展开 subtree」中出现的 Variable（与 OpcUaTree 可视范围一致） */
-const treeRowPollEnabled = ref(true)
-const treeRowPollIntervalSeconds = ref(2)
 let treeRowPollTimerId = null
 let treeRowPollInFlight = false
 
 const browseCapability = computed(() => {
   if (form.id) return { kind: 'saved', serverId: form.id }
-  if (props.wizardLayout && (form.endpoint_url || '').trim()) {
+  const ep = currentEndpointUrl()
+  if (ep) {
     return {
       kind: 'ephemeral',
-      endpoint_url: form.endpoint_url.trim(),
+      endpoint_url: ep,
       username: (form.username || '').trim() || null,
       password: form.password || null,
     }
@@ -318,6 +412,7 @@ function wrapOpcNode(raw) {
     expanded: false,
     loading: false,
     loaded: false,
+    browseLeaf: false,
     errorMessage: null,
     valueDataTypeLabel: '',
   }
@@ -361,7 +456,7 @@ async function runAddressSpaceVariableSearch(q, runGen) {
   searchHitEntries.value = []
   const cap = browseCapability.value
   if (!cap) {
-    searchRemoteError.value = '请先保存 OPC UA 连接或（向导内）填写 Endpoint'
+    searchRemoteError.value = '请先保存 OPC UA 连接或填写主机与端口'
     return
   }
   searchRemoteLoading.value = true
@@ -389,58 +484,22 @@ function rowForServerId(sid) {
   return servers.value.find((x) => x.id === sid) || null
 }
 
-const activeServer = computed(() => rowForServerId(form.id))
-
 /** 草稿阶段或表单暂未同步时仍需要 URL：优先表单，其次当前列表条目 */
 function resolvedEndpointUrl(serverIdLike) {
-  const fromField = String(form.endpoint_url || '').trim()
-  if (fromField) return fromField
+  const built = currentEndpointUrl()
+  if (built) return built
   const sid = serverIdLike || form.id
   const row = rowForServerId(sid)
   return String(row?.endpoint_url || '').trim()
 }
 
-const connectionInfoText = computed(() => {
-  const n = pickedNode.value
-  if (!n?.node_id) return ''
-  const ep = resolvedEndpointUrl()
-  const srv = activeServer.value
-  const meta = {
-    opcua_endpoint_url: ep || null,
-    node_id: n.node_id,
-    browse_name: n.browse_name || null,
-    display_name: n.display_name || null,
-    node_class: n.node_class || null,
-    security_policy: srv?.security_policy ?? null,
-    message_security_mode: srv?.message_security_mode ?? null,
-    username: form.username || null,
-    connection_name: form.name || srv?.name || null,
-  }
-  const json = JSON.stringify(meta, null, 2)
-  const tabLine = ep ? `${ep}\t${n.node_id}` : n.node_id
-  return [
-    '--- 快速粘贴（Endpoint<TAB>NodeId）---',
-    tabLine,
-    '',
-    '--- 可读行 ---',
-    `Endpoint:\t${ep || '（未填写）'}`,
-    `NodeId:\t${n.node_id}`,
-    `BrowseName:\t${n.browse_name || '—'}`,
-    `DisplayName:\t${n.display_name || '—'}`,
-    `NodeClass:\t${n.node_class || '—'}`,
-    '',
-    '--- JSON（程序化对接）---',
-    json,
-  ].join('\n')
-})
-
-async function copyConnectionInfo() {
-  const text = connectionInfoText.value
-  if (!text) return
+async function copyNodeId() {
+  const nid = pickedNode.value?.node_id
+  if (!nid) return
   copyFeedback.value = ''
   try {
-    await navigator.clipboard.writeText(text)
-    copyFeedback.value = '已复制到剪贴板'
+    await navigator.clipboard.writeText(String(nid))
+    copyFeedback.value = 'NodeId 已复制'
     setTimeout(() => {
       copyFeedback.value = ''
     }, 2500)
@@ -480,33 +539,115 @@ async function persistLastOpcuaServer(id) {
   }
 }
 
-async function loadServers(explicitPreferred = null) {
+function setOpcHealth(id, state, message = '') {
+  if (!id) return
+  opcHealth[id] = state
+  setOpcConnectionHealth(id, state, message)
+}
+
+function opcConnTabTooltip(server) {
+  const rec = getOpcConnectionHealth(server.id)
+  return formatConnectionHealthTooltip(rec, opcServerShortLabel(server))
+}
+
+function pruneOpcHealth(validIds) {
+  const keep = new Set(validIds)
+  for (const k of Object.keys(opcHealth)) {
+    if (!keep.has(k)) delete opcHealth[k]
+  }
+  pruneOpcConnectionHealth(validIds)
+}
+
+function hydrateOpcServersFromLocalConfig() {
+  const loader = window.electronAPI?.getDataSourceStartupSnapshot
+  if (typeof loader !== 'function' || servers.value.length) return false
+  void loader()
+    .then((snap) => {
+      if (servers.value.length) return
+      const list = Array.isArray(snap?.opcua_servers) ? snap.opcua_servers : []
+      if (!list.length) return
+      servers.value = list.map((s) => ({ ...s }))
+      emit('health-summary', connectionHealthSummary.value)
+      setOpcHealthSummary(connectionHealthSummary.value)
+      const pid = pickPreferredOpcServerId(snap?.app_preferences || {}, servers.value, null)
+      const selectedServer = servers.value.find((s) => s.id === pid) || servers.value[0]
+      if (selectedServer) selectServer(selectedServer, false)
+    })
+    .catch(() => {})
+  return true
+}
+
+function probeAllOpcConnections() {
+  const ids = servers.value.map((s) => s.id).filter(Boolean)
+  pruneOpcHealth(ids)
+  void probeConnectionIds(ids, probeOpcSavedConnection, setOpcHealth, 'opcua')
+}
+
+const connectionHealthSummary = computed(() =>
+  summarizeConnectionHealth(
+    servers.value.map((s) => s.id).filter(Boolean),
+    opcHealth,
+  ),
+)
+
+watch(
+  connectionHealthSummary,
+  (s) => {
+    if (!servers.value.length && s.total === 0) return
+    emit('health-summary', s)
+    setOpcHealthSummary(s)
+  },
+)
+
+async function loadServers(explicitPreferred = null, opts = {}) {
+  const attempt = opts.attempt ?? 0
+  const token = opts.token ?? ++loadServersToken
+
   let prefs = {}
   try {
     prefs = await apiFetch('/settings/app_preferences')
   } catch {
     prefs = {}
   }
-  const data = await apiFetch('/opcua/servers')
-  servers.value = data.servers || []
-  if (!servers.value.length) {
-    startNew()
-    return
-  }
-  const pid = pickPreferredOpcServerId(prefs, servers.value, explicitPreferred)
-  if (pid) {
-    const s = servers.value.find((x) => x.id === pid)
-    if (s) {
-      selectServer(s, false)
+  try {
+    const data = await apiFetch('/opcua/servers')
+    if (token !== loadServersToken) return
+    servers.value = data.servers || []
+    probeAllOpcConnections()
+    emit('health-summary', connectionHealthSummary.value)
+    setOpcHealthSummary(connectionHealthSummary.value)
+    if (!servers.value.length) {
+      startNew()
       return
     }
+    const pid = pickPreferredOpcServerId(prefs, servers.value, explicitPreferred)
+    if (pid) {
+      const s = servers.value.find((x) => x.id === pid)
+      if (s) {
+        selectServer(s, false)
+        return
+      }
+    }
+    const curId = form.id
+    if (curId && servers.value.some((x) => x.id === curId)) {
+      selectServer(servers.value.find((x) => x.id === curId), false)
+      return
+    }
+    selectServer(servers.value[0], false)
+  } catch (e) {
+    if (token !== loadServersToken) return
+    if (attempt < 7) {
+      const delayMs = Math.min(350 * 2 ** attempt, 3000)
+      await new Promise((r) => window.setTimeout(r, delayMs))
+      return loadServers(explicitPreferred, { attempt: attempt + 1, token })
+    }
+    msg.value = e.message || String(e)
   }
-  const curId = form.id
-  if (curId && servers.value.some((x) => x.id === curId)) {
-    selectServer(servers.value.find((x) => x.id === curId), false)
-    return
-  }
-  selectServer(servers.value[0], false)
+}
+
+function onOpcConnTabClick(s) {
+  selectServer(s)
+  probeAllOpcConnections()
 }
 
 function selectServer(s, persist = true) {
@@ -514,14 +655,15 @@ function selectServer(s, persist = true) {
   selected.value = row
   form.id = row.id
   form.name = row.name || ''
-  form.endpoint_url = row.endpoint_url || ''
+  applyEndpointFieldsFromUrl(row.endpoint_url || '')
   form.username = row.username || ''
   form.password = ''
   msg.value = ''
   searchQuery.value = ''
   treeNodes.value = []
   pickedNode.value = null
-  readOut.value = ''
+  pickedValueText.value = ''
+  pickedReadError.value = ''
   readEpoch.value += 1
   if (persist) {
     void persistLastOpcuaServer(row.id)
@@ -533,20 +675,39 @@ function startNew() {
   selected.value = null
   form.id = ''
   form.name = ''
-  form.endpoint_url = ''
+  form.host = ''
+  form.portText = String(DEFAULT_OPCUA_PORT)
+  form.path = ''
   form.username = ''
   form.password = ''
   treeNodes.value = []
   searchQuery.value = ''
   pickedNode.value = null
-  readOut.value = ''
+  pickedValueText.value = ''
+  pickedReadError.value = ''
   readEpoch.value += 1
+}
+
+function syncPickedPanelFromRead(node, res, errMsg) {
+  if (pickedNode.value !== node) return
+  if (errMsg) {
+    pickedReadError.value = errMsg
+    pickedValueText.value = ''
+    return
+  }
+  if (res?.ok === false) {
+    pickedReadError.value = res.message || '读值失败'
+    pickedValueText.value = ''
+    return
+  }
+  pickedReadError.value = ''
+  pickedValueText.value = formatOpcValuePreview(res)
 }
 
 async function saveServer() {
   msg.value = ''
   try {
-    let ep = String(form.endpoint_url || '').trim()
+    let ep = currentEndpointUrl()
     const nmRaw = String(form.name || '').trim()
     let nm = nmRaw
     if (form.id) {
@@ -555,7 +716,7 @@ async function saveServer() {
       if (!nm) nm = String(baseline?.name || '').trim()
     }
     if (!ep) {
-      msg.value = '请先填写 Endpoint URL'
+      msg.value = '请先填写主机与端口'
       return
     }
     const postRes = await apiFetch('/opcua/servers', {
@@ -577,6 +738,14 @@ async function saveServer() {
       await persistLastOpcuaServer(created.id)
     }
     msg.value = '已保存'
+    notifyOpcServersChanged()
+    void auditLog({
+      action: 'opcua.connection_save',
+      result: 'ok',
+      summary: nm || ep,
+      object_type: 'opcua_server',
+      object_id: created?.id || undefined,
+    })
   } catch (e) {
     msg.value = e.message || String(e)
   }
@@ -584,9 +753,12 @@ async function saveServer() {
 
 async function removeServer() {
   if (!form.id) return
-  await apiFetch(`/opcua/servers/${form.id}`, { method: 'DELETE' })
+  const removedId = form.id
+  await apiFetch(`/opcua/servers/${removedId}`, { method: 'DELETE' })
+  delete opcHealth[removedId]
   await loadServers()
   startNew()
+  notifyOpcServersChanged()
 }
 
 async function testDraft() {
@@ -597,12 +769,13 @@ async function testDraft() {
         method: 'POST',
         body: {},
       })
+      setOpcHealth(form.id, res.ok ? 'ok' : 'fail', res.ok ? '' : res.message || '连接失败')
       msg.value = res.ok ? '连接成功' : res.message || '失败'
       return
     }
     const ep = resolvedEndpointUrl()
     if (!ep) {
-      msg.value = '请先填写 Endpoint URL'
+      msg.value = '请先填写主机与端口'
       return
     }
     const res = await apiFetch('/opcua/test', {
@@ -615,18 +788,100 @@ async function testDraft() {
     })
     msg.value = res.ok ? '连接成功' : res.message || '失败'
   } catch (e) {
+    if (form.id) setOpcHealth(form.id, 'fail', e.message || String(e))
     msg.value = e.message || String(e)
   }
 }
 
+function cancelExpandAll() {
+  expandAllGen += 1
+  expandAllBusy.value = false
+}
+
+async function fetchAndApplyNodeChildren(node) {
+  const res = await opcApiBrowse(node.node_id)
+  if (res.ok === false) {
+    node.errorMessage = res.message || '浏览失败'
+    applyOpcBrowseChildren(node, [])
+    return
+  }
+  const list = (res.nodes || []).map((n) => wrapOpcNode(n))
+  applyOpcBrowseChildren(node, list)
+  if (list.length) {
+    void prefetchVariableValuesInNodes(node.children)
+  }
+}
+
+function collapseAllTree() {
+  if (!browseCapability.value || expandAllBusy.value || searchTrimmed.value) return
+  cancelExpandAll()
+  if (!treeNodes.value.length) {
+    msg.value = '请先点击「刷新根」加载地址空间'
+    return
+  }
+  collapseOpcTreeNodes(treeNodes.value)
+  msg.value = '已全部收起'
+  bumpTree()
+}
+
+function confirmExpandAllTree() {
+  if (!browseCapability.value || expandAllBusy.value || searchTrimmed.value) return
+  if (!treeNodes.value.length) {
+    msg.value = '请先点击「刷新根」加载地址空间'
+    return
+  }
+  const ok = window.confirm(
+    '一键展开将浏览并展开地址空间中的大量节点，可能对 PLC / OPC 服务器造成较高负载。\n\n' +
+      '请仅在安全、非生产环境下操作。\n\n' +
+      '确认后将自动关闭「持续刷新」。是否继续？',
+  )
+  if (!ok) return
+  pollEnabled.value = false
+  void expandAllTree()
+}
+
+async function expandAllTree() {
+  if (!browseCapability.value || expandAllBusy.value || searchTrimmed.value) return
+  const myGen = ++expandAllGen
+  expandAllBusy.value = true
+  msg.value = '正在一键展开…'
+  try {
+    const result = await runOpcExpandAllTree({
+      rootNodes: treeNodes.value,
+      fetchChildren: fetchAndApplyNodeChildren,
+      bumpTree,
+      shouldAbort: () => myGen !== expandAllGen,
+      onProgress: (text) => {
+        if (myGen === expandAllGen) msg.value = text
+      },
+    })
+    if (myGen !== expandAllGen) return
+    if (result === 'capped') {
+      msg.value = `已浏览较多节点（已达上限，其余请手动展开）`
+    } else if (result === 'done') {
+      msg.value = '已全部展开'
+    }
+  } catch (e) {
+    if (myGen === expandAllGen) {
+      msg.value = translateOpcuaMessage(e.message || String(e))
+    }
+  } finally {
+    if (myGen === expandAllGen) {
+      expandAllBusy.value = false
+      bumpTree()
+    }
+  }
+}
+
 async function refreshRoot() {
+  cancelExpandAll()
   prefetchGen.value += 1
   msg.value = ''
   const cap = browseCapability.value
   if (!cap) {
     if (props.wizardLayout) {
       msg.value =
-        '请先填写 Endpoint URL（可先不保存，直接刷新根预览），或通过上方选一个已保存连接。'
+        '请先填写主机与端口（可先不保存，直接刷新根预览），或通过上方选一个已保存连接。'
       treeNodes.value = []
       bumpTree()
     }
@@ -650,7 +905,7 @@ async function refreshRoot() {
 }
 
 async function onToggleNode(node) {
-  if (!browseCapability.value || !node.node_id || node.loading) return
+  if (!browseCapability.value || !node.node_id || node.loading || expandAllBusy.value) return
   if (node.loaded) {
     node.expanded = !node.expanded
     bumpTree()
@@ -664,16 +919,18 @@ async function onToggleNode(node) {
     if (res.ok === false) {
       node.errorMessage = res.message || '浏览失败'
       msg.value = node.errorMessage
+      applyOpcBrowseChildren(node, [])
       return
     }
-    const list = res.nodes || []
-    node.children = list.map((n) => wrapOpcNode(n))
-    node.loaded = true
-    node.expanded = true
-    void prefetchVariableValuesInNodes(node.children)
+    const list = (res.nodes || []).map((n) => wrapOpcNode(n))
+    applyOpcBrowseChildren(node, list)
+    if (list.length) {
+      void prefetchVariableValuesInNodes(node.children)
+    }
   } catch (e) {
     node.errorMessage = e.message || String(e)
     msg.value = node.errorMessage
+    applyOpcBrowseChildren(node, [])
   } finally {
     node.loading = false
     bumpTree()
@@ -773,7 +1030,8 @@ async function prefetchVariableTreeRow(node, myGen) {
 
 function pickNode(n) {
   pickedNode.value = n
-  readOut.value = ''
+  pickedValueText.value = n?.valuePreview ? String(n.valuePreview) : ''
+  pickedReadError.value = n?.valueReadError ? String(n.valueReadError) : ''
   readEpoch.value += 1
   const epoch = readEpoch.value
   if (browseCapability.value && n?.node_id && isOpcVariableValueNode(n)) {
@@ -790,7 +1048,7 @@ async function fetchNodeValue(node, epoch, { manual = false } = {}) {
   try {
     const res = await opcApiRead(nodeId)
     if (epoch !== readEpoch.value) return
-    readOut.value = JSON.stringify(res, null, 2)
+    syncPickedPanelFromRead(node, res)
     if (showInTree) {
       if (res.ok === false) {
         node.valuePreview = ''
@@ -805,7 +1063,7 @@ async function fetchNodeValue(node, epoch, { manual = false } = {}) {
     }
   } catch (e) {
     if (epoch !== readEpoch.value) return
-    readOut.value = e.message || String(e)
+    syncPickedPanelFromRead(node, null, e.message || String(e))
     if (showInTree) {
       node.valuePreview = ''
       node.valueDataTypeLabel = ''
@@ -827,6 +1085,11 @@ function clampPollSeconds(v) {
   if (Number.isNaN(n) || n < 0.5) return 0.5
   if (n > 300) return 300
   return n
+}
+
+function togglePollEnabled() {
+  if (!browseCapability.value) return
+  pollEnabled.value = !pollEnabled.value
 }
 
 function clearPollTimer() {
@@ -851,7 +1114,7 @@ async function pollSelectedVariableOnce() {
   try {
     const res = await opcApiRead(n.node_id)
     if (!pollEnabled.value || pickedNode.value !== n || !browseCapability.value) return
-    readOut.value = JSON.stringify(res, null, 2)
+    syncPickedPanelFromRead(n, res)
     if (res.ok === false) {
       n.valuePreview = ''
       n.valueDataTypeLabel = ''
@@ -864,7 +1127,7 @@ async function pollSelectedVariableOnce() {
     bumpTree()
   } catch (e) {
     if (!pollEnabled.value || pickedNode.value !== n) return
-    readOut.value = e.message || String(e)
+    syncPickedPanelFromRead(n, null, e.message || String(e))
     n.valuePreview = ''
     n.valueDataTypeLabel = ''
     n.valueReadError = e.message || String(e)
@@ -885,7 +1148,7 @@ function syncPollTimer() {
 }
 
 async function pollVisibleTreeVariablesOnce() {
-  if (!treeRowPollEnabled.value || !browseCapability.value || treeRowPollInFlight) return
+  if (!pollEnabled.value || !browseCapability.value || treeRowPollInFlight) return
   const targets = collectVisibleVariableNodes(treeNodes.value)
   if (!targets.length) return
   const myGen = prefetchGen.value
@@ -895,7 +1158,7 @@ async function pollVisibleTreeVariablesOnce() {
       if (
         prefetchGen.value !== myGen ||
         !browseCapability.value ||
-        !treeRowPollEnabled.value
+        !pollEnabled.value
       ) {
         return
       }
@@ -909,18 +1172,23 @@ async function pollVisibleTreeVariablesOnce() {
 
 function syncTreeRowPollTimer() {
   clearTreeRowPollTimer()
-  if (!treeRowPollEnabled.value || !browseCapability.value) return
-  const ms = Math.round(clampPollSeconds(treeRowPollIntervalSeconds.value) * 1000)
+  if (!pollEnabled.value || !browseCapability.value) return
+  const ms = Math.round(clampPollSeconds(pollIntervalSeconds.value) * 1000)
   void pollVisibleTreeVariablesOnce()
   treeRowPollTimerId = window.setInterval(() => void pollVisibleTreeVariablesOnce(), ms)
+}
+
+function syncAllPollTimers() {
+  syncPollTimer()
+  syncTreeRowPollTimer()
 }
 
 watch(
   [pollEnabled, pollIntervalSeconds, browseCapability, () => pickedNode.value],
   () => {
-    syncPollTimer()
+    syncAllPollTimers()
   },
-  { flush: 'post' },
+  { flush: 'post', immediate: true },
 )
 
 watch(pollIntervalSeconds, (v) => {
@@ -928,18 +1196,9 @@ watch(pollIntervalSeconds, (v) => {
   if (c !== v) pollIntervalSeconds.value = c
 })
 
-watch(
-  [treeRowPollEnabled, treeRowPollIntervalSeconds, browseCapability],
-  () => {
-    syncTreeRowPollTimer()
-  },
-  { flush: 'post', immediate: true },
-)
-
-watch(treeRowPollIntervalSeconds, (v) => {
-  const c = clampPollSeconds(v)
-  if (c !== v) treeRowPollIntervalSeconds.value = c
-})
+function notifyOpcServersChanged() {
+  window.dispatchEvent(new CustomEvent('report-editor-opcua-servers-changed'))
+}
 
 function onConfigImported() {
   void loadServers()
@@ -969,15 +1228,24 @@ watch(browseCapability, () => {
 })
 
 onMounted(() => {
+  hydrateOpcServersFromLocalConfig()
   void loadServers()
   window.addEventListener('report-editor-config-imported', onConfigImported)
 })
 
 onBeforeUnmount(() => {
+  loadServersToken += 1
+  cancelExpandAll()
   clearTimeout(searchDebounceTimer)
   clearPollTimer()
   clearTreeRowPollTimer()
   window.removeEventListener('report-editor-config-imported', onConfigImported)
+})
+
+defineExpose({
+  probeAllConnections: probeAllOpcConnections,
+  healthSummary: connectionHealthSummary,
+  reloadServers: loadServers,
 })
 </script>
 
@@ -992,90 +1260,98 @@ onBeforeUnmount(() => {
 }
 .cols {
   display: grid;
-  grid-template-columns: 200px minmax(240px, 280px) minmax(0, 1fr);
+  /* 左侧连接表单宽度与数据库工作台 ConnectionManager 列一致 */
+  grid-template-columns: minmax(240px, 300px) minmax(0, 1fr);
   grid-template-rows: minmax(0, 1fr);
   gap: 16px;
   align-items: stretch;
   flex: 1;
   min-height: 0;
 }
-.list-pane,
+@media (max-width: 900px) {
+  .cols {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
 .form-pane,
 .browse-pane {
   min-width: 0;
   min-height: 0;
 }
-.list-pane {
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  padding: 8px;
-  background: #fafafa;
+.form-pane {
+  min-width: 260px;
 }
-.list-head {
+.node-read-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid #e5e7eb;
+}
+.poll-warn-inline {
+  margin: 0;
+  font-size: 11px;
+}
+.picked-summary {
+  margin-top: 4px;
+  padding: 10px;
+  border-radius: 8px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+}
+.picked-summary-head {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
+  gap: 8px;
   margin-bottom: 8px;
-  font-size: 13px;
 }
-.server-ul {
-  list-style: none;
-  padding: 0;
+.picked-summary-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #111827;
+  line-height: 1.35;
+}
+.picked-dl {
   margin: 0;
 }
-.server-ul li {
-  padding: 8px;
-  border-radius: 6px;
-  cursor: pointer;
+.picked-row {
+  display: grid;
+  grid-template-columns: 6.5rem 1fr;
+  gap: 6px 10px;
   font-size: 13px;
+  padding: 4px 0;
 }
-.server-ul li.active {
-  background: #eef2ff;
-  color: #4338ca;
+.picked-row dt {
+  margin: 0;
+  color: #6b7280;
+  font-weight: 500;
 }
-.form-pane {
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  padding: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+.picked-row dd {
+  margin: 0;
+  color: #111827;
+  word-break: break-word;
+}
+.picked-value {
+  font-weight: 600;
+  color: #1d4ed8;
+}
+.picked-error {
+  color: #b91c1c;
 }
 .browse-pane {
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  padding: 12px;
-  display: flex;
-  flex-direction: column;
   flex: 1;
   min-height: 0;
-  overflow: hidden;
 }
 .browse-body {
   display: flex;
-  flex-direction: row;
-  gap: 16px;
+  flex-direction: column;
   flex: 1;
   min-height: 0;
   min-width: 0;
   overflow: hidden;
-}
-@media (max-width: 1100px) {
-  .browse-body {
-    flex-direction: column;
-    overflow-y: auto;
-  }
-  .tree-wrap {
-    flex: 1 1 auto;
-    max-height: 50vh;
-    min-height: 140px;
-  }
-  .detail-wrap {
-    flex: 1 1 auto;
-    max-height: 50vh;
-    min-height: 140px;
-    width: 100%;
-  }
 }
 .tree-wrap {
   flex: 1;
@@ -1095,42 +1371,21 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  font-size: 12px;
-  color: #374151;
 }
 .opc-browse-search-inp {
-  padding: 8px 10px;
-  border: 1px solid #d1d5db;
-  border-radius: 8px;
-  font-size: 13px;
   width: 100%;
   box-sizing: border-box;
-  background: #fff;
 }
 .opc-browse-search-hint {
   margin: 8px 0 0;
-  font-size: 11px;
-  color: #6b7280;
-  line-height: 1.45;
 }
-.opc-browse-search-empty {
-  padding: 14px 8px;
-  text-align: center;
-  font-size: 12px;
-  color: #6b7280;
-}
+.opc-browse-search-empty,
 .opc-browse-search-status {
   padding: 14px 8px;
   text-align: center;
-  font-size: 12px;
-  color: #4338ca;
-  font-weight: 600;
 }
 .opc-browse-search-meta {
   margin: 8px 8px 4px;
-  font-size: 11px;
-  color: #92400e;
-  line-height: 1.4;
 }
 .opc-browse-hit-list {
   list-style: none;
@@ -1152,7 +1407,6 @@ onBeforeUnmount(() => {
   border-radius: 8px;
   background: #fff;
   cursor: pointer;
-  font-size: 12px;
   box-sizing: border-box;
 }
 .opc-browse-hit:hover {
@@ -1165,7 +1419,6 @@ onBeforeUnmount(() => {
 }
 .opc-browse-hit-id {
   color: #6366f1;
-  font-size: 11px;
 }
 .detail-wrap {
   flex: 0 1 400px;
@@ -1199,122 +1452,6 @@ onBeforeUnmount(() => {
 }
 .mono {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-}
-label {
-  font-size: 12px;
-  color: #374151;
-}
-.input {
-  padding: 8px;
-  border: 1px solid #d1d5db;
-  border-radius: 6px;
-  font-size: 13px;
-}
-.actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 8px;
-}
-.btn {
-  padding: 8px 12px;
-  border-radius: 6px;
-  border: 1px solid #d1d5db;
-  background: #fff;
-  cursor: pointer;
-  font-size: 13px;
-}
-.btn.primary {
-  background: #4f46e5;
-  color: #fff;
-  border-color: #4f46e5;
-}
-.btn.danger {
-  border-color: #fecaca;
-  color: #b91c1c;
-}
-.btn.sm {
-  padding: 4px 8px;
-  font-size: 12px;
-}
-.msg {
-  font-size: 13px;
-  color: #374151;
-}
-.browse-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 12px;
-  margin-bottom: 8px;
-  flex-shrink: 0;
-}
-
-.browse-head-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 10px 12px;
-  flex-shrink: 0;
-}
-
-.tree-poll-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0;
-  cursor: pointer;
-  user-select: none;
-  font-size: 12px;
-  color: #374151;
-  max-width: 100%;
-}
-
-.tree-poll-checkbox {
-  width: 18px;
-  height: 18px;
-  min-width: 18px;
-  min-height: 18px;
-  margin: 0;
-  cursor: pointer;
-  accent-color: #2563eb;
-  flex-shrink: 0;
-}
-
-.tree-poll-text {
-  white-space: nowrap;
-}
-
-.tree-poll-interval {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  color: #374151;
-}
-
-.tree-poll-interval label {
-  margin: 0;
-}
-
-.browse-head-titles {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-}
-
-.browse-title-main {
-  font-size: 14px;
-  font-weight: 600;
-  color: #111827;
-}
-
-.browse-title-sub {
-  font-size: 11px;
-  line-height: 1.35;
-  color: #6b7280;
 }
 .detail {
   font-size: 13px;
@@ -1362,45 +1499,21 @@ label {
   font-size: 12px;
   margin-top: 8px;
 }
-.poll-row {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
-  margin-top: 10px;
-  font-size: 12px;
-  color: #374151;
-}
-.poll-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 12px;
-  cursor: pointer;
-  user-select: none;
-  min-height: 44px;
-  padding: 6px 10px 6px 8px;
-  margin: 0;
-  border-radius: 8px;
-  box-sizing: border-box;
-}
-.poll-checkbox {
-  width: 22px;
-  height: 22px;
-  min-width: 22px;
-  min-height: 22px;
-  margin: 0;
-  cursor: pointer;
-  accent-color: #2563eb;
-  flex-shrink: 0;
-}
-.poll-label-text {
-  font-size: 14px;
-  line-height: 1.3;
-}
 .poll-interval {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+}
+.poll-interval--form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 2px;
+}
+.poll-interval--form .poll-hint {
+  flex: 1 1 12rem;
+  line-height: 1.4;
 }
 .poll-interval label {
   margin: 0;
@@ -1408,11 +1521,6 @@ label {
 .poll-hint {
   color: #6b7280;
   font-size: 11px;
-}
-.input-tiny {
-  width: 4.5rem;
-  padding: 6px 8px;
-  font-size: 13px;
 }
 .poll-warn {
   margin: 6px 0 0;
@@ -1429,35 +1537,47 @@ label {
   color: #64748b;
 }
 
-.opcua-wizard .wiz-srv-strip {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-  padding: 10px 12px;
-  border: 1px solid #e2e8f0;
-  border-radius: 10px;
-  background: linear-gradient(180deg, #f8fafc 0%, #fff 70%);
+.opcua-wizard .cols.compact {
+  grid-template-columns: minmax(240px, min(300px, 36%)) minmax(0, 1fr);
+  gap: 12px;
 }
 
-.opcua-wizard .wiz-srv-strip .chip-new {
-  border-style: dashed;
-  border-color: #94a3b8;
-}
-
-.opcua-wizard .wiz-srv-strip .srv-chip {
-  border-radius: 999px;
-  padding: 4px 12px;
-  border: 1px solid #cbd5e1;
-  background: #fff;
+.opcua-wizard .conn-form-pane {
+  min-width: 0;
   max-width: 100%;
 }
 
-.opcua-wizard .wiz-srv-strip .srv-chip.active {
-  background: #eef2ff;
-  border-color: #6366f1;
-  color: #3730a3;
-  font-weight: 600;
+.opcua-wizard .conn-form-pane .actions {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.opcua-wizard .conn-form-pane .actions .btn.seg {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.opcua-wizard .node-read-bar {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.opcua-wizard .node-read-bar .btn.seg {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.opcua-wizard .poll-interval--form .poll-hint {
+  flex-basis: 100%;
 }
 
 .opcua-wizard .browse-body-wizard {
@@ -1470,16 +1590,4 @@ label {
   min-height: 200px;
 }
 
-.opcua-wizard .cols.compact {
-  display: grid;
-  grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
-  gap: 16px;
-  align-items: start;
-}
-
-@media (max-width: 900px) {
-  .opcua-wizard .cols.compact {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
 </style>

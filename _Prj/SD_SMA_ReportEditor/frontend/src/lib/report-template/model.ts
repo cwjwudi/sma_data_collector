@@ -24,6 +24,8 @@ export interface TemplateTableCell {
   opcuaNodeId: string;
   /** 单元格级 SQL：预览占位或单行标量查询等，由生成器约定 */
   sqlText: string;
+  /** 单元格填充色；transparent 或未设则继承列/表格默认 */
+  bgColor?: string;
 }
 
 import type { LayoutSnapshot } from "./layout-model";
@@ -36,6 +38,10 @@ import {
   normalizeAlignAxis,
   normalizeImageCaptionPosition,
   normalizeImageRotationDeg,
+  normalizeTextAutoWrap,
+  normalizeZIndex,
+  ensureTableColBgColors,
+  hydrateTableColBgColors,
   type LayoutZoneElement,
 } from "./layout-zone-element";
 import {
@@ -69,6 +75,12 @@ export interface TemplateElement {
   color: string;
   bgColor: string;
   fontSize: number;
+  /** 字体族，如 "Microsoft YaHei"；空字符串则跟随画布默认 */
+  fontFamily: string;
+  /** 同页叠放顺序，越大越靠前（与版式编辑器一致） */
+  zIndex: number;
+  /** 文本/色块/日期：在框宽内自动换行 */
+  textAutoWrap: boolean;
   /** 图片控件 / 签名笔迹 base64 data URL */
   imageSrc: string;
   bindingKind: BindingKind;
@@ -105,6 +117,8 @@ export interface TemplateElement {
    * ≤0 与其它 ≤0 列均分剩余内侧宽度；>0 时按比例分配（画布上等比例缩放填充满内侧宽）。
    */
   tableColWidthsPx?: number[];
+  /** 表格各列填充色（长度与 tableCols 一致）；transparent 表示继承表格默认底色 */
+  tableColBgColors?: string[];
   /**
    * 表格整表 SQL 结果动态填充（schema≥4；仅 type===table）。
    * 导出时由生成器执行 query、扩展行数并处理跨页表头；见 _Doc。
@@ -197,7 +211,7 @@ function clampTableDim(v: unknown, fallback: number): number {
 }
 
 export function defaultTableCell(): TemplateTableCell {
-  return { text: "", bindingKind: "none", opcuaNodeId: "", sqlText: "" };
+  return { text: "", bindingKind: "none", opcuaNodeId: "", sqlText: "", bgColor: "transparent" };
 }
 
 export function hydrateTableCell(raw: Partial<TemplateTableCell> | undefined): TemplateTableCell {
@@ -208,6 +222,7 @@ export function hydrateTableCell(raw: Partial<TemplateTableCell> | undefined): T
     bindingKind: normalizeBindingKind(raw.bindingKind),
     opcuaNodeId: typeof raw.opcuaNodeId === "string" ? raw.opcuaNodeId : d.opcuaNodeId,
     sqlText: typeof raw.sqlText === "string" ? raw.sqlText : d.sqlText,
+    bgColor: typeof raw.bgColor === "string" ? raw.bgColor : d.bgColor,
   };
 }
 
@@ -224,6 +239,7 @@ export function ensureTableGrid(el: TemplateElement): TemplateTableCell[][] {
     prev.every((row) => Array.isArray(row) && row.length === cols)
   ) {
     ensureTableColWidthsPx(el);
+    ensureTableColBgColors(el);
   } else {
     const grid: TemplateTableCell[][] = [];
     for (let r = 0; r < rows; r++) {
@@ -236,6 +252,7 @@ export function ensureTableGrid(el: TemplateElement): TemplateTableCell[][] {
     }
     el.tableCells = grid;
     ensureTableColWidthsPx(el);
+    ensureTableColBgColors(el);
   }
   if (el.tableSqlFill) {
     ensureTwoTableSqlParamSlots(el.tableSqlFill);
@@ -408,6 +425,9 @@ export function defaultElement(type: TemplateControlType): Omit<TemplateElement,
     color: "#18181b",
     bgColor: "transparent",
     fontSize: 14,
+    fontFamily: "",
+    zIndex: 0,
+    textAutoWrap: false,
     imageSrc: "",
     alignX: "start" as LayoutAlignAxis,
     alignY: "center" as LayoutAlignAxis,
@@ -441,6 +461,7 @@ export function defaultElement(type: TemplateControlType): Omit<TemplateElement,
       text: "",
       ...base,
       bgColor: "#e4e4e7",
+      textAutoWrap: true,
     };
   }
   if (type === "image") {
@@ -556,6 +577,10 @@ export function hydrateTemplateElement(raw: Partial<TemplateElement>): TemplateE
     alignY: normalizeAlignAxis(raw.alignY, d.alignY),
     imageRotationDeg: normalizeImageRotationDeg(raw.imageRotationDeg ?? d.imageRotationDeg),
     imageCaptionPosition: normalizeImageCaptionPosition(raw.imageCaptionPosition, d.imageCaptionPosition),
+    fontFamily:
+      typeof raw.fontFamily === "string" ? raw.fontFamily.trim().slice(0, 240) : d.fontFamily,
+    zIndex: normalizeZIndex(raw.zIndex ?? d.zIndex),
+    textAutoWrap: normalizeTextAutoWrap(raw.textAutoWrap, d.textAutoWrap),
   };
   if (type === "table") {
     const missingCells = raw.tableCells == null || !Array.isArray(raw.tableCells);
@@ -583,11 +608,13 @@ export function hydrateTemplateElement(raw: Partial<TemplateElement>): TemplateE
       raw.tableColWidthsPx,
       merged.tableCols ?? 4,
     );
+    merged.tableColBgColors = hydrateTableColBgColors(raw.tableColBgColors, merged.tableCols ?? 4);
     merged.tableSqlFill = hydrateTableSqlFill(raw.tableSqlFill ?? merged.tableSqlFill);
     ensureTableGrid(merged);
   } else {
     delete merged.tableRowHeightPx;
     delete merged.tableColWidthsPx;
+    delete merged.tableColBgColors;
     delete merged.tableSqlFill;
   }
   if (type === "date") {
@@ -783,4 +810,18 @@ export function saveTemplates(list: ReportTemplate[]): void {
   } catch {
     /* ignore */
   }
+}
+
+/** 深拷贝整份模版并分配新 id、名称与更新时间（模版管理「复制」）。 */
+export function duplicateReportTemplate(source: ReportTemplate, newName: string): ReportTemplate {
+  const raw = JSON.parse(JSON.stringify(source)) as unknown;
+  const migrated = migrateReportTemplate(raw) as ReportTemplate;
+  migrated.id = newId();
+  migrated.name = newName.trim() || `${source.name}（副本）`;
+  migrated.updatedAt = new Date().toISOString();
+  syncLegacyElementsAlias(migrated);
+  if (!isReportTemplate(migrated)) {
+    throw new Error("模版复制后校验失败");
+  }
+  return migrated;
 }

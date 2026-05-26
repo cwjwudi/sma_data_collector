@@ -107,11 +107,13 @@ import {
 } from "@/lib/report-template/layout-registry";
 import { stableFingerprintPart } from "@/lib/report-template/snapshot-fingerprint";
 import { watchDebounced } from "@vueuse/core";
+import { useStaleGuard } from "@/composables/useStaleGuard";
 
 const pkList = ["A5", "A4", "A3", "Letter"] as PaperKind[];
 
 const route = useRoute();
 const router = useRouter();
+const { begin: beginLoad, isStale: isLoadStale } = useStaleGuard();
 
 const presetId = computed(() =>
   typeof route.params.id === "string" ? route.params.id : Array.isArray(route.params.id) ? route.params.id[0] ?? "" : "",
@@ -264,17 +266,19 @@ function redoPresetEdit() {
 }
 
 async function loadWorking() {
+  const token = beginLoad();
   loadErr.value = "";
   msg.value = "";
+  working.value = null;
   const id = presetId.value;
   if (!id) {
     loadErr.value = "缺少版式 ID。";
-    working.value = null;
     resetPresetHistoryFromWorking(null);
     return;
   }
   try {
     const list = await refreshLayoutPresets();
+    if (isLoadStale(token)) return;
     const raw = list.find((x) => x.id === id);
     if (!raw) {
       loadErr.value = "未找到该版式（可能已删除）。";
@@ -286,6 +290,7 @@ async function loadWorking() {
     presetCanvasSelId.value = null;
     resetPresetHistoryFromWorking(working.value);
   } catch (e) {
+    if (isLoadStale(token)) return;
     loadErr.value = "加载失败：" + String((e as Error).message || e);
     working.value = null;
     resetPresetHistoryFromWorking(null);

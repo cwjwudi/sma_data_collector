@@ -3,7 +3,7 @@
     <div class="main-layout">
       <aside class="sidebar">
         <div class="sidebar-header">
-          <h1 class="logo">ReportEditor</h1>
+          <h1 class="logo">报表编辑器</h1>
         </div>
         <nav class="sidebar-nav">
           <router-link
@@ -12,35 +12,149 @@
             :to="item.path"
             :class="['nav-item', { 'nav-item--active': navActive(item.path) }]"
           >
-            <span class="nav-icon">{{ item.icon }}</span>
+            <span class="nav-icon-wrap">
+              <span class="nav-icon">{{ item.icon }}</span>
+              <span
+                v-if="item.path === '/datasource' && hasConnectionFailures"
+                class="nav-badge"
+                title="存在连接失败的连接"
+                aria-label="存在连接失败的连接"
+              />
+              <span
+                v-if="item.path === '/settings' && appUpdateAvailable"
+                class="nav-badge"
+                title="有新版本可更新"
+                aria-label="有新版本可更新"
+              />
+            </span>
             <span class="nav-label">{{ item.label }}</span>
           </router-link>
         </nav>
       </aside>
       <main class="content">
         <div class="content-scroll">
-          <router-view />
+          <router-view v-slot="{ Component }">
+            <keep-alive include="DataSourceConfig">
+              <component :is="Component" />
+            </keep-alive>
+          </router-view>
         </div>
       </main>
     </div>
     <SetupWizard v-model="setupWizardVisible" />
+    <AppUpdatePromptDialog v-if="appUpdateStartupPromptOpen" />
+    <AppToastStack />
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, provide } from 'vue'
+import { ref, onMounted, onUnmounted, provide, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import SetupWizard from '@/features/onboarding/SetupWizard.vue'
+import AppUpdatePromptDialog from '@/features/settings/app-update/AppUpdatePromptDialog.vue'
+import AppToastStack from '@/components/AppToastStack.vue'
+import {
+  appUpdateAvailable,
+  appUpdateStartupPromptOpen,
+  disposeAppUpdateListeners,
+  initAppUpdateListeners,
+  runAutoUpdateCheck,
+} from '@/features/settings/app-update/appUpdateState'
 import { setupWizardCompleted } from '@/features/onboarding/setupWizardStorage'
+import {
+  probeAllConnectionsForNav,
+  hasFailedConnections,
+} from '@/features/datasource/datasource-nav-health'
+import {
+  connectionProbeIntervalMs,
+  loadConnectionProbePrefs,
+} from '@/features/datasource/connection-probe-prefs'
 
 const route = useRoute()
 
 const setupWizardVisible = ref(false)
 
+/** 离开数据源页时由主导航轮询；在页内由工作台探测并更新同一状态，避免重复请求 */
+let navDbHealthTimer = null
+let navProbePrefs = { enabled: false, intervalSec: 30 }
+
+const hasConnectionFailures = hasFailedConnections
+
+function stopNavDbHealthPolling() {
+  if (navDbHealthTimer != null) {
+    window.clearInterval(navDbHealthTimer)
+    navDbHealthTimer = null
+  }
+}
+
+function startNavDbHealthPolling() {
+  stopNavDbHealthPolling()
+  if (route.path.startsWith('/datasource') || !navProbePrefs.enabled) return
+  void probeAllConnectionsForNav()
+  navDbHealthTimer = window.setInterval(() => {
+    if (!route.path.startsWith('/datasource') && navProbePrefs.enabled) {
+      void probeAllConnectionsForNav()
+    }
+  }, connectionProbeIntervalMs(navProbePrefs))
+}
+
+async function reloadNavProbePrefs() {
+  navProbePrefs = await loadConnectionProbePrefs()
+  startNavDbHealthPolling()
+}
+
+function onProbePrefsChanged(ev) {
+  if (ev?.detail) {
+    navProbePrefs = ev.detail
+    startNavDbHealthPolling()
+    return
+  }
+  void reloadNavProbePrefs()
+}
+
+function onConfigImported() {
+  if (!route.path.startsWith('/datasource')) {
+    void probeAllConnectionsForNav()
+  }
+}
+
+watch(
+  () => route.path,
+  () => {
+    startNavDbHealthPolling()
+  },
+)
+
+function scheduleAutoUpdateCheck() {
+  window.setTimeout(() => {
+    void runAutoUpdateCheck()
+  }, 1500)
+}
+
 onMounted(() => {
+  initAppUpdateListeners()
   if (!setupWizardCompleted()) {
     setupWizardVisible.value = true
+    watch(
+      setupWizardVisible,
+      (visible) => {
+        if (!visible) scheduleAutoUpdateCheck()
+      },
+      { once: true },
+    )
+  } else {
+    scheduleAutoUpdateCheck()
   }
+  void reloadNavProbePrefs()
+  window.addEventListener('report-editor-config-imported', onConfigImported)
+  window.addEventListener('report-editor-connection-probe-changed', onProbePrefsChanged)
+})
+
+onUnmounted(() => {
+  stopNavDbHealthPolling()
+  disposeAppUpdateListeners()
+  window.removeEventListener('report-editor-config-imported', onConfigImported)
+  window.removeEventListener('report-editor-connection-probe-changed', onProbePrefsChanged)
 })
 
 provide('openSetupWizard', () => {
@@ -63,6 +177,7 @@ const navItems = [
   { path: '/signatures', icon: '✒️', label: '签名库' },
   { path: '/generate', icon: '⚡', label: '生成报表' },
   { path: '/history', icon: '📁', label: '历史报表' },
+  { path: '/audit', icon: '📋', label: '操作审计' },
   { path: '/settings', icon: '⚙', label: '设置' },
 ]
 </script>
@@ -142,6 +257,29 @@ const navItems = [
   text-align: center;
 }
 
+.nav-icon-wrap {
+  position: relative;
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.nav-badge {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ef4444;
+  border: 2px solid #1a1a2e;
+  box-sizing: content-box;
+  pointer-events: none;
+}
+
 .content {
   flex: 1;
   display: flex;
@@ -173,7 +311,8 @@ const navItems = [
   box-sizing: border-box;
 }
 /** 路由页根节点加类名后占满主区竖向高度（内部再分区滚动，避免整页一条长滚动条） */
-.content-scroll > .page-fill-height {
+.content-scroll > .page-fill-height,
+.content-scroll > .page-fill {
   flex: 1 1 auto;
   min-height: 0;
   align-self: stretch;

@@ -30,6 +30,12 @@ def mask_connection_for_response(conn: dict[str, Any]) -> dict[str, Any]:
     out = dict(conn)
     out.pop("password_enc", None)
     out["has_password"] = bool(conn.get("password_enc"))
+    if conn.get("is_demo") and conn.get("demo_channel") == "remote":
+        out["host"] = ""
+        out["port"] = None
+        out["username"] = None
+        out["database"] = ""
+        out["has_password"] = True
     return out
 
 
@@ -37,6 +43,10 @@ def mask_opcua_for_response(srv: dict[str, Any]) -> dict[str, Any]:
     out = dict(srv)
     out.pop("password_enc", None)
     out["has_password"] = bool(srv.get("password_enc"))
+    if srv.get("is_demo") and srv.get("demo_channel") == "remote":
+        out["endpoint_url"] = ""
+        out["username"] = None
+        out["has_password"] = False
     return out
 
 

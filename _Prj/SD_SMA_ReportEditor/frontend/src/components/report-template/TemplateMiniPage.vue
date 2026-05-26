@@ -94,7 +94,7 @@
                 </ZoneImageCompose>
                 <template v-else-if="el.type === 'table'">
                   <div class="mini-tpl-table-wrap">
-                    <table class="mini-tpl-table">
+                    <table class="mini-tpl-table" :style="miniTplTableInnerStyle(el)">
                       <colgroup>
                         <col
                           v-for="(cw, ci) in miniTplTableColInnerWidthsPx(el)"
@@ -108,6 +108,7 @@
                             v-for="ci in miniTableColIndices(el)"
                             :key="'mc-' + el.id + '-' + ri + '-' + ci"
                             class="mini-tpl-td"
+                            :style="miniTplTableCellStyle(el, ri, ci)"
                             :title="miniTableStaticTitle(el, ri, ci)"
                           >
                             {{ previewTableCellText(el, ri, ci) }}
@@ -206,6 +207,9 @@ import {
   normalizePageNumberMode,
   normalizeZIndex,
   zoneFillBackgroundCss,
+  zoneTableInnerBackgroundCss,
+  resolveTableCellBackgroundCss,
+  zoneTableNodeShellBackgroundCss,
   formatLayoutDate,
 } from "@/lib/report-template/layout-zone-element";
 import { cellKey, chartKey, paramKey } from "@/lib/report-template/binding-preview-utils";
@@ -232,6 +236,7 @@ import {
   templateTableColumnInnerWidthsPx,
 } from "@/lib/report-template/model";
 import { clampTableRowHeightPx } from "@/lib/report-template/table-cell-metrics";
+import { miniPreviewScale } from "@/lib/report-template/mini-preview-scale";
 
 const props = withDefaults(
   defineProps<{
@@ -349,12 +354,9 @@ const miniSqlFillTailDividerStyle = computed((): Record<string, string> | null =
   };
 });
 
-const scale = computed(() => {
-  const m = me.value;
-  const sx = props.maxWidthPx / Math.max(1, m.pageW);
-  const sy = props.maxHeightPx / Math.max(1, m.pageH);
-  return Math.min(sx, sy, 1);
-});
+const scale = computed(() =>
+  miniPreviewScale(props.maxWidthPx, props.maxHeightPx, me.value.pageW, me.value.pageH),
+);
 
 const scaledSize = computed(() => {
   const m = me.value;
@@ -368,8 +370,11 @@ const scaledSize = computed(() => {
 
 const wrapStyle = computed(() => ({
   width: `${scaledSize.value.w}px`,
+  maxWidth: "100%",
   height: `${scaledSize.value.h}px`,
+  maxHeight: "100%",
   overflow: "hidden",
+  boxSizing: "border-box",
 }));
 
 /** 边框与投影由 MiniPreviewChrome 统一（与 LayoutPresetMiniPage / 版式列表一致） */
@@ -436,6 +441,15 @@ function miniZoneElStyle(el: LayoutZoneElement): Record<string, string> {
     s.flexDirection = "column";
     s.whiteSpace = "normal";
     s.backgroundColor = zoneFillBackgroundCss(el.bgColor);
+  } else if (el.type === "table") {
+    s.display = "flex";
+    s.flexDirection = "column";
+    s.alignItems = "stretch";
+    s.justifyContent = "stretch";
+    s.padding = "2px";
+    s.overflow = "hidden";
+    s.whiteSpace = "normal";
+    s.backgroundColor = zoneTableNodeShellBackgroundCss();
   } else {
     s.display = "flex";
     s.justifyContent = flex.justifyContent;
@@ -490,6 +504,10 @@ function miniTplElStyle(el: TemplateElement): Record<string, string> {
     if (h2 != null) heightPx = h2;
     if (cont > 0) topPx = 0;
   }
+  const ff = typeof el.fontFamily === "string" ? el.fontFamily.trim() : "";
+  const explicitZ = normalizeZIndex(el.zIndex ?? 0);
+  const z =
+    explicitZ !== 0 ? explicitZ : Math.min(200000, Math.max(0, Math.floor(el.y)));
   const s: Record<string, string> = {
     position: "absolute",
     left: `${el.x}px`,
@@ -506,15 +524,19 @@ function miniTplElStyle(el: TemplateElement): Record<string, string> {
     padding: "2px",
     color: el.color,
     fontSize: `${Math.max(6, el.fontSize * 0.8)}px`,
-    background:
-      el.type === "box"
-        ? el.bgColor !== "transparent"
-          ? el.bgColor
-          : "#e4e4e766"
-        : el.bgColor !== "transparent"
-          ? el.bgColor
-          : "transparent",
+    ...(ff ? { fontFamily: ff } : {}),
+    zIndex: String(z),
   };
+  const wrap = getZoneTextWrapStyle(el);
+  if (wrap) Object.assign(s, wrap);
+  if (el.type === "box") {
+    s.background =
+      el.bgColor !== "transparent" ? el.bgColor : "#e4e4e766";
+  } else if (el.type === "table") {
+    s.background = zoneTableNodeShellBackgroundCss();
+  } else {
+    s.background = el.bgColor !== "transparent" ? el.bgColor : "transparent";
+  }
   if (el.type === "image") {
     s.alignItems = "stretch";
     s.justifyContent = "stretch";
@@ -550,9 +572,28 @@ function miniTplElStyle(el: TemplateElement): Record<string, string> {
     s.border = "none";
     s.borderRadius = "0";
     s.fontSize = `${el.fontSize}px`;
+    s.background = zoneTableNodeShellBackgroundCss();
     return s;
   }
   return s;
+}
+
+function miniTplTableInnerStyle(el: TemplateElement): Record<string, string> {
+  if (el.type !== "table") return {};
+  return { background: zoneTableInnerBackgroundCss(el.bgColor) };
+}
+
+function miniTplTableCellStyle(el: TemplateElement, ri: number, ci: number): Record<string, string> {
+  if (el.type !== "table") return {};
+  ensureTableGrid(el);
+  const cell = el.tableCells?.[ri]?.[ci];
+  return {
+    backgroundColor: resolveTableCellBackgroundCss(
+      { tableBgColor: el.bgColor, tableColBgColors: el.tableColBgColors },
+      ci,
+      cell,
+    ),
+  };
 }
 
 function miniTplTableColInnerWidthsPx(el: TemplateElement): number[] {
@@ -757,6 +798,7 @@ function tplCaption(el: TemplateElement): string {
 <style scoped>
 .mini-wrap {
   touch-action: manipulation;
+  margin: 0 auto;
 }
 .mini-band-inner,
 .mini-body-inner {

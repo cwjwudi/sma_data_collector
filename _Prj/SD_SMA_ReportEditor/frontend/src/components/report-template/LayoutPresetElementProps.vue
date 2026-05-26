@@ -32,7 +32,7 @@
         </div>
         <p class="lpep-wrap-hint">「自动」表示在框宽内换行，无空格长串也会断行。</p>
       </div>
-      <BoxZoneColorPicker :el="el" />
+      <BoxZoneColorPicker v-if="el.type !== 'table'" :el="el" />
       <template v-if="el.type === 'date'">
         <label class="lpep-lab"
           >日期格式
@@ -272,39 +272,32 @@
           </div>
         </div>
         <div class="lpep-table-col-widths">
-          <span class="lpep-dim-title">列宽（%）</span>
-          <div class="lpep-table-col-widths-grid">
-            <label v-for="ci in zoneTableColWidthIndices" :key="'lzcw-' + ci" class="lpep-lab lpep-table-col-w-lab"
-              >列 {{ ci + 1 }}
-              <input
-                type="number"
-                :min="TABLE_COLUMN_WIDTH_PERCENT_MIN"
-                :max="zoneTableColPercentMax"
-                step="1"
-                class="lpep-inp lpep-table-col-w-inp"
-                :value="zoneTableColPercentDisplay(ci)"
-                @change="onZoneTableColPercentChange(ci, $event)"
-              />
-            </label>
-          </div>
-          <p class="lpep-hint-muted">
-            整数百分比（每列至少 {{ TABLE_COLUMN_WIDTH_PERCENT_MIN }}%，合计 100%）；修改一列时其余列按当前比例自动调整。
-          </p>
+          <span class="lpep-dim-title">列宽</span>
+          <TableColumnWidthVisualEditor
+            v-if="zonePresetTableCellMetric"
+            :column-widths-px="zoneTableColumnInnerWidths"
+            :inner-w="zonePresetTableCellMetric.innerW"
+            @resize-delta="onZoneTableColumnResizeFromProps"
+          />
         </div>
         <p class="lpep-hint-muted">
           {{
             zoneSqlFillEnabled
               ? "列数、行高变更后立即应用到画布。数据库填充开启时行数随预览查询结果自动同步；单元格静态文字不在此编辑；可视化模式下请在画布第一行选择输出列。"
-              : "行列、行高变更后立即应用到画布。请在画布上单击单元格，在此编辑静态文字或 OPC UA / SQL。"
+              : "行列、行高变更后立即应用到画布。单击单元格可设置填充色、编辑静态文字或 OPC UA / SQL。"
           }}
+        </p>
+        <p v-if="!hasTableCellPicked" class="lpep-hint-muted">
+          在画布上单击单元格后，可在此设置该单元格的填充色。
         </p>
         <p v-if="zonePresetTableCellMetric" class="lpep-table-metric">
-          单元格高度（推算）：高约 <strong>{{ formatMetricPx(zonePresetTableCellMetric.cellH) }}</strong> px。当前内侧列宽（推算）：{{
-            zonePresetTableColWidthsSummary
-          }}
+          单元格高度（推算）：高约 <strong>{{ formatMetricPx(zonePresetTableCellMetric.cellH) }}</strong> px
         </p>
-        <template v-if="activeTableCell">
+        <template v-if="hasTableCellPicked && activeTableCell">
           <div class="lpep-table-cell-fields" :key="'lz-' + editCellRow + '-' + editCellCol">
+            <div class="lpep-table-cell-fill-block">
+              <TableCellFillPicker v-model="activeTableCellFill" title="填充色" />
+            </div>
             <template v-if="!zoneSqlFillEnabled">
               <label class="lpep-lab"
                 >静态文字<textarea v-model.trim="activeTableCell.text" rows="2" class="lpep-inp" spellcheck="false"
@@ -439,18 +432,17 @@ import {
   layoutPresetTableCellPickKey,
 } from "@/lib/report-template/template-editor-context";
 import {
+  applyTableColumnResizeDeltaPx,
   REPORT_ZONE_TABLE_NODE_PADDING_PX,
-  adjustIntegerColumnPercentsAfterEdit,
   clampTableRowHeightPx,
   formatMetricPx,
-  integerColumnPercentsFromInnerWidthsPx,
-  maxTableColumnPercentForEdit,
-  TABLE_COLUMN_WIDTH_PERCENT_MIN,
   uniformTableCellBoxPx,
   TABLE_ROW_HEIGHT_DEFAULT_PX,
   TABLE_ROW_HEIGHT_MAX_PX,
   TABLE_ROW_HEIGHT_MIN_PX,
 } from "@/lib/report-template/table-cell-metrics";
+import TableColumnWidthVisualEditor from "@/components/report-template/TableColumnWidthVisualEditor.vue";
+import TableCellFillPicker from "@/components/report-template/TableCellFillPicker.vue";
 import type { TableSqlFillConfig } from "@/lib/report-template/table-sql-fill";
 import {
   defaultTableSqlFillConfig,
@@ -568,6 +560,22 @@ const activeTableCell = computed(() => {
   return g[editCellRow.value]?.[editCellCol.value] ?? null;
 });
 
+const hasTableCellPicked = computed(() => {
+  const el = props.el;
+  const pick = layoutTablePick?.value;
+  return !!el && el.type === "table" && !!pick && pick.elId === el.id;
+});
+
+const activeTableCellFill = computed({
+  get(): string {
+    return activeTableCell.value?.bgColor ?? "transparent";
+  },
+  set(v: string) {
+    const cell = activeTableCell.value;
+    if (cell) cell.bgColor = v;
+  },
+});
+
 const zoneSqlFillEnabled = computed(
   () => !!props.el && props.el.type === "table" && !!props.el.tableSqlFill?.enabled,
 );
@@ -606,49 +614,23 @@ watch(
   { deep: true },
 );
 
-const zonePresetTableColWidthsSummary = computed(() => {
-  const el = props.el;
-  if (!el || el.type !== "table") return "";
-  const widths = zoneTableColumnInnerWidthsPx(el);
-  return widths.map((w, i) => `列${i + 1} ${formatMetricPx(w)}`).join(" · ");
-});
-
-const zoneTableColWidthIndices = computed(() => {
+const zoneTableColumnInnerWidths = computed(() => {
   const el = props.el;
   if (!el || el.type !== "table") return [];
   ensureZoneTableGrid(el);
-  const n = el.tableCols ?? 4;
-  return Array.from({ length: n }, (_, i) => i);
+  return zoneTableColumnInnerWidthsPx(el);
 });
 
-const zoneTableColPercents = computed(() => {
-  const el = props.el;
-  if (!el || el.type !== "table") return [];
-  ensureZoneTableGrid(el);
-  const u = zonePresetTableCellMetric.value;
-  if (!u) return [];
-  const widths = zoneTableColumnInnerWidthsPx(el);
-  return integerColumnPercentsFromInnerWidthsPx(widths, u.innerW);
-});
-
-const zoneTableColPercentMax = computed(() => {
-  const el = props.el;
-  if (!el || el.type !== "table") return 100;
-  return maxTableColumnPercentForEdit(el.tableCols ?? 4);
-});
-
-function zoneTableColPercentDisplay(ci: number): number {
-  return zoneTableColPercents.value[ci] ?? TABLE_COLUMN_WIDTH_PERCENT_MIN;
-}
-
-function onZoneTableColPercentChange(ci: number, ev: Event) {
+function onZoneTableColumnResizeFromProps(boundaryIndex: number, deltaLayoutPx: number) {
   const el = props.el;
   if (!el || el.type !== "table") return;
   ensureZoneTableGrid(el);
-  const raw = (ev.target as HTMLInputElement).value;
-  const prev = zoneTableColPercents.value.slice();
-  const next = adjustIntegerColumnPercentsAfterEdit(prev, ci, raw);
-  el.tableColWidthsPx = next.slice();
+  const u = zonePresetTableCellMetric.value;
+  if (!u) return;
+  const cols = el.tableCols ?? 4;
+  const next = applyTableColumnResizeDeltaPx(u.innerW, cols, el.tableColWidthsPx, boundaryIndex, deltaLayoutPx);
+  if (!next) return;
+  el.tableColWidthsPx = next;
   ensureZoneTableGrid(el);
   clampZoneTableOuterSize(el);
 }
@@ -680,10 +662,10 @@ const zoneTableRowHeightModel = computed({
   },
 });
 
-function onOpcPickConfirm(nodeId: string) {
+function onOpcPickConfirm(payload: string | { serverId: string; nodeId: string }) {
   const t = opcPickTarget.value;
   opcPickTarget.value = null;
-  const id = nodeId.trim();
+  const id = (typeof payload === "string" ? payload : payload.nodeId).trim();
   if (!id) return;
   const el = props.el;
   if (t === "parameter" && el?.type === "parameter") {

@@ -1,0 +1,32 @@
+{
+  "version": "0.1.0",
+  "releasedAt": "2026-05-22",
+  "notes": "MariaDB + OPC UA 演示（需 Docker Desktop）",
+  "platforms": {
+    "darwin-arm64": {
+      "url": "report-editor-demo-pack-0.1.0.zip",
+      "sha256": "21905b80babed82a653b4eb3f6cf1d3b002d9d142f3e570e0a44ff518f68b6b8",
+      "size": 7599
+    },
+    "darwin-x64": {
+      "url": "report-editor-demo-pack-0.1.0.zip",
+      "sha256": "21905b80babed82a653b4eb3f6cf1d3b002d9d142f3e570e0a44ff518f68b6b8",
+      "size": 7599
+    },
+    "darwin-universal": {
+      "url": "report-editor-demo-pack-0.1.0.zip",
+      "sha256": "21905b80babed82a653b4eb3f6cf1d3b002d9d142f3e570e0a44ff518f68b6b8",
+      "size": 7599
+    },
+    "win32-x64": {
+      "url": "report-editor-demo-pack-0.1.0.zip",
+      "sha256": "21905b80babed82a653b4eb3f6cf1d3b002d9d142f3e570e0a44ff518f68b6b8",
+      "size": 7599
+    },
+    "linux-x64": {
+      "url": "report-editor-demo-pack-0.1.0.zip",
+      "sha256": "21905b80babed82a653b4eb3f6cf1d3b002d9d142f3e570e0a44ff518f68b6b8",
+      "size": 7599
+    }
+  }
+}

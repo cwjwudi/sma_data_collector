@@ -1,4 +1,4 @@
-﻿# 开发用前端 Vite（由 start_dev_web.bat 启动，避免 cmd /k + 快速编辑导致关不掉）
+﻿# 开发用前端 Vite（由 scripts\dev\windows\start_dev_web.bat 启动，避免 cmd /k + 快速编辑导致关不掉）
 $ErrorActionPreference = 'Stop'
 $FrontendRoot = Split-Path $PSScriptRoot -Parent
 Set-Location $FrontendRoot

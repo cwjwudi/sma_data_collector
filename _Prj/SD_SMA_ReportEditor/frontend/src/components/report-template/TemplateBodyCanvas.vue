@@ -17,7 +17,8 @@
       aria-hidden="true"
       @change="onTplBodyImageChosen"
     />
-    <div class="cv-scaler" :style="{ transform: `translate(${panX}px,${panY}px) scale(${viewScale})` }">
+    <div class="cv-embed-slot" :style="embedSlotStyle">
+    <div class="cv-scaler" :style="scalerTransformStyle">
       <div ref="paperRef" class="cv-paper" :style="paperBoxStyle" @pointerdown.capture="onPaperBlank">
         <div v-if="me.hb > 0" class="cv-band hdr" :style="hdrStyle">
           <div class="cv-band-inner">
@@ -143,7 +144,7 @@
               </template>
               <template v-else-if="el.type === 'table'">
                 <div class="cv-table-shell">
-                  <table class="cv-table">
+                  <table class="cv-table" :style="templateTableInnerStyle(el)">
                     <colgroup>
                       <col
                         v-for="(cw, ci) in tplTableColInnerWidthsPx(el)"
@@ -158,6 +159,7 @@
                           :key="'tc-' + el.id + '-' + ri + '-' + ci"
                           class="cv-table-cell"
                           :class="{ 'cv-table-cell--hot': isTableCellHot(el, ri, ci) }"
+                          :style="tplTableCellStyle(el, ri, ci)"
                           @pointerdown="pickTableCell(el, ri, ci)"
                         >
                           <template v-if="isVisualSqlFillOutputPickerRow(el, ri)">
@@ -212,7 +214,7 @@
                   <TableColumnResizeGutters
                     v-if="selId === el.id && !interactionLocked"
                     :column-widths-px="tplTableColInnerWidthsPx(el)"
-                    :layout-scale="viewScale"
+                    :layout-scale="canvasScale"
                     @resize-delta="(bi, dx) => onTplTableColumnResize(el, bi, dx)"
                   />
                 </div>
@@ -334,6 +336,7 @@
         </div>
       </div>
     </div>
+    </div>
   </div>
 </template>
 
@@ -365,6 +368,9 @@ import {
   normalizeZIndex,
   PAGE_NUMBER_PREVIEW_TOTAL_FALLBACK,
   zoneFillBackgroundCss,
+  zoneTableInnerBackgroundCss,
+  resolveTableCellBackgroundCss,
+  zoneTableNodeShellBackgroundCss,
   formatLayoutDate,
   type LayoutZoneElement,
 } from "@/lib/report-template/layout-zone-element";
@@ -405,6 +411,9 @@ import {
   templateTableSqlFillPreviewKey,
   TABLE_SQL_FILL_PREVIEW_ROW_LIMIT,
 } from "@/lib/report-template/table-sql-fill-preview";
+
+/** cv-scaler 左右 padding 合计（与样式 padding: 20px 一致） */
+const EMBED_SCALER_PAD = 40;
 
 const HZ = ["nw", "n", "ne", "e", "se", "s", "sw", "w"] as const;
 type H = (typeof HZ)[number];
@@ -454,13 +463,72 @@ const selId = defineModel<string | null>("selectedId");
 const cellPickRef = inject(templateTableCellPickKey, null);
 const bindingPreview = inject(reportBindingPreviewKey, null);
 
+const me = computed(() => metricsForSheet(props.tmpl, props.sheet));
+
 const viewportRef = ref<HTMLElement | null>(null);
 const tplImgFileRef = ref<HTMLInputElement | null>(null);
 let tplBodyPendingSid: string | null = null;
 const panX = ref(0);
 const panY = ref(0);
 const viewScale = ref(1);
+/** 嵌入父级滚动时按视口宽度自适应的缩放比 */
+const embedFitScale = ref(1);
 const dragOverRoot = ref(false);
+
+const canvasScale = computed(() =>
+  props.embedInParentScroll ? embedFitScale.value : viewScale.value,
+);
+
+const embedSlotStyle = computed(() => {
+  if (!props.embedInParentScroll) return undefined;
+  const s = embedFitScale.value;
+  const pad = EMBED_SCALER_PAD;
+  return {
+    width: `${me.value.pageW * s + pad}px`,
+    height: `${me.value.pageH * s + pad}px`,
+    marginLeft: "auto",
+    marginRight: "auto",
+  };
+});
+
+const scalerTransformStyle = computed(() => {
+  const s = canvasScale.value;
+  if (props.embedInParentScroll) {
+    return { transform: `scale(${s})`, transformOrigin: "0 0" };
+  }
+  return { transform: `translate(${panX.value}px,${panY.value}px) scale(${s})` };
+});
+
+let embedResizeObserver: ResizeObserver | null = null;
+
+function syncEmbedFitScale() {
+  if (!props.embedInParentScroll) return;
+  const el = viewportRef.value;
+  if (!el) return;
+  const vw = el.clientWidth;
+  if (vw <= 0) return;
+  const contentW = me.value.pageW + EMBED_SCALER_PAD;
+  const next = Math.min(1, Math.max(0.25, (vw - 2) / contentW));
+  if (Math.abs(next - embedFitScale.value) < 0.001) return;
+  embedFitScale.value = +next.toFixed(4);
+}
+
+function bindEmbedResizeObserver() {
+  embedResizeObserver?.disconnect();
+  embedResizeObserver = null;
+  if (!props.embedInParentScroll) return;
+  const el = viewportRef.value;
+  if (!el) return;
+  embedResizeObserver = new ResizeObserver(() => syncEmbedFitScale());
+  embedResizeObserver.observe(el);
+}
+
+function scheduleEmbedFitSync() {
+  void nextTick(() => {
+    syncEmbedFitScale();
+    bindEmbedResizeObserver();
+  });
+}
 
 /** 正文区内拖拽/缩放时的对齐辅助线（页边界、中带中线、与其它控件边缘对齐时显示） */
 const tplSnapGuides = ref<{ v: number[]; h: number[] }>({ v: [], h: [] });
@@ -482,11 +550,21 @@ watch(
     if (v) {
       panX.value = 0;
       panY.value = 0;
+      scheduleEmbedFitSync();
+    } else {
+      embedResizeObserver?.disconnect();
+      embedResizeObserver = null;
     }
   },
+  { immediate: true },
 );
 
-const me = computed(() => metricsForSheet(props.tmpl, props.sheet));
+watch(viewportRef, () => {
+  if (props.embedInParentScroll) scheduleEmbedFitSync();
+});
+
+watch(() => me.value.pageW, () => syncEmbedFitScale());
+
 const snapBands = computed(() => {
   const s = activeLayoutSnapshotForSheet(props.tmpl, props.sheet);
   return { headerBandMm: s.headerBandMm, footerBandMm: s.footerBandMm };
@@ -545,7 +623,7 @@ function canvasZoneElStyle(el: LayoutZoneElement): Record<string, string> {
       alignItems: "stretch",
       justifyContent: "stretch",
       padding: "2px",
-      backgroundColor: zoneFillBackgroundCss(el.bgColor),
+      backgroundColor: zoneTableNodeShellBackgroundCss(),
       whiteSpace: "normal",
     };
   }
@@ -679,7 +757,8 @@ function textAlignForCanvasText(el: TemplateElement): Record<string, string> | u
     return undefined;
   const ta =
     el.alignX === "center" ? "center" : el.alignX === "end" ? "right" : "left";
-  return { textAlign: ta };
+  const wrap = getZoneTextWrapStyle(el);
+  return wrap ? { textAlign: ta, ...wrap } : { textAlign: ta };
 }
 
 function signatureStackJustify(el: TemplateElement): Record<string, string> | undefined {
@@ -710,7 +789,28 @@ function elInnerClass(el: TemplateElement): string {
   return "";
 }
 
+function templateTableInnerStyle(el: TemplateElement): Record<string, string> {
+  if (el.type !== "table") return {};
+  return { background: zoneTableInnerBackgroundCss(el.bgColor) };
+}
+
+function tplTableCellStyle(el: TemplateElement, ri: number, ci: number): Record<string, string> {
+  if (el.type !== "table") return {};
+  const cell = tableGrid(el)[ri]?.[ci];
+  return {
+    backgroundColor: resolveTableCellBackgroundCss(
+      { tableBgColor: el.bgColor, tableColBgColors: el.tableColBgColors },
+      ci,
+      cell,
+    ),
+  };
+}
+
 function elCss(el: TemplateElement) {
+  const ff = typeof el.fontFamily === "string" ? el.fontFamily.trim() : "";
+  const explicitZ = normalizeZIndex(el.zIndex ?? 0);
+  const z =
+    explicitZ !== 0 ? explicitZ : Math.min(200000, Math.max(0, Math.floor(el.y)));
   const s: Record<string, string> = {
     position: "absolute",
     left: `${el.x}px`,
@@ -719,11 +819,17 @@ function elCss(el: TemplateElement) {
     height: `${el.h}px`,
     fontSize: `${el.fontSize}px`,
     color: el.color,
-    background: el.bgColor === "transparent" ? "transparent" : el.bgColor,
+    background:
+      el.type === "table"
+        ? zoneTableNodeShellBackgroundCss()
+        : el.bgColor === "transparent"
+          ? "transparent"
+          : el.bgColor,
+    ...(ff ? { fontFamily: ff } : {}),
   };
-  /** 纵坐标越大（越靠页面下方）叠层越高，避免大块表格盖住上方控件导致无法点选、拖动 */
-  const yz = Math.min(200000, Math.max(0, Math.floor(el.y)));
-  s.zIndex = selId.value === el.id ? String(400000 + yz) : String(yz);
+  s.zIndex = selId.value === el.id ? String(400000 + z) : String(z);
+  const wrap = getZoneTextWrapStyle(el);
+  if (wrap) Object.assign(s, wrap);
   if (el.type === "box") s.border = `1px solid ${el.color}40`;
   return s;
 }
@@ -1120,7 +1226,7 @@ function bindPtr() {
 }
 
 function ptrMove(ev: PointerEvent) {
-  const sc = viewScale.value || 1;
+  const sc = canvasScale.value || 1;
   if (move) {
     const el = list.value.find((x) => x.id === move!.sid);
     if (!el) return;
@@ -1208,7 +1314,10 @@ function ptrUp() {
   window.removeEventListener("pointermove", ptrMove);
 }
 
-onBeforeUnmount(ptrUp);
+onBeforeUnmount(() => {
+  ptrUp();
+  embedResizeObserver?.disconnect();
+});
 
 function onPaperBlank(ev: PointerEvent) {
   if (props.interactionLocked) return;
@@ -1242,7 +1351,7 @@ async function onDrop(e: DragEvent) {
   const layer = viewportRef.value?.querySelector(".el-root");
   if (!layer) return;
   const r = layer.getBoundingClientRect();
-  const sc = viewScale.value || 1;
+  const sc = canvasScale.value || 1;
   const x = Math.round((e.clientX - r.left) / sc - 20);
   const y = Math.round((e.clientY - r.top) / sc - 16);
 
@@ -1280,6 +1389,10 @@ function onWheel(ev: WheelEvent) {
     return;
   }
   if (ev.ctrlKey || ev.metaKey) {
+    if (props.embedInParentScroll) {
+      ev.preventDefault();
+      return;
+    }
     const z = Math.exp(-ev.deltaY * 0.001);
     viewScale.value = Math.min(2.8, Math.max(0.35, +(viewScale.value * z).toFixed(4)));
     return;
@@ -1353,7 +1466,7 @@ async function onTplImageDropFile(ev: DragEvent, el: TemplateElement) {
 .cv-viewport.cv-viewport--embed-scroll {
   overflow: visible;
   min-height: 0;
-  width: fit-content;
+  width: 100%;
   max-width: 100%;
   margin-left: auto;
   margin-right: auto;
@@ -1362,6 +1475,15 @@ async function onTplImageDropFile(ev: DragEvent, el: TemplateElement) {
   border-radius: 0;
   overscroll-behavior: auto;
   touch-action: manipulation;
+  box-sizing: border-box;
+}
+.cv-viewport.cv-viewport--embed-scroll .cv-embed-slot {
+  flex-shrink: 0;
+  box-sizing: border-box;
+}
+.cv-viewport.cv-viewport--embed-scroll .cv-scaler {
+  margin-left: 0;
+  margin-right: 0;
 }
 .cv-viewport.cv-viewport--embed-scroll.cv-viewport--locked {
   overflow: auto;

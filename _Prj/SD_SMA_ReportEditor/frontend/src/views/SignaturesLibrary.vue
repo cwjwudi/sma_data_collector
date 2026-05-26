@@ -5,6 +5,11 @@
       <button type="button" class="b primary" @click="openNew">手写新建</button>
     </header>
     <p class="muted">保存常用签字图（PNG data URL）。模版编辑器中「电子签名」控件可选用库条目并与手写共存。</p>
+    <div class="sg-product-note" role="note">
+      <strong>产品说明：</strong>本软件使用的是<strong>图像签章</strong>——将签字图片渲染并打印进 PDF。
+      这与 Adobe Acrobat 等阅读器中的<strong>数字证书电子签名</strong>（PKCS#7 / 国密可验证签章）不是同一类产品能力；
+      导出的 PDF 上看到的是签字图效果，而非可在阅读器中验证证书链的签章域。
+    </div>
     <p v-if="msg" class="msg">{{ msg }}</p>
 
     <table class="tbl">
@@ -24,9 +29,11 @@
           <td>{{ r.label }}</td>
           <td class="prev"><img v-if="r.preview" :src="r.preview" alt="" class="thumb" /></td>
           <td>{{ r.updated }}</td>
-          <td>
-            <a href="#" class="lnk" @click.prevent="rename(r.id)">改名</a>
-            <a href="#" class="lnk danger" @click.prevent="remove(r.id)">删除</a>
+          <td class="td-act">
+            <div class="row-actions">
+              <a href="#" class="lnk" @click.prevent="rename(r.id)">改名</a>
+              <a href="#" class="lnk danger" @click.prevent="remove(r.id)">删除</a>
+            </div>
           </td>
         </tr>
       </tbody>
@@ -251,6 +258,16 @@ watch(
   color: #52525b;
   margin: 8px 0;
 }
+.sg-product-note {
+  margin: 10px 0 0;
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.55;
+  color: #475569;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+}
 .msg {
   font-size: 12px;
   color: #b45309;
@@ -280,14 +297,53 @@ watch(
   color: #71717a;
   padding: 24px;
 }
+.td-act {
+  white-space: nowrap;
+}
+.row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
 .lnk {
-  margin-right: 10px;
-  color: #4f46e5;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 48px;
+  min-height: 44px;
+  padding: 0 14px;
+  box-sizing: border-box;
+  margin: 0;
+  border-radius: 6px;
+  border: 1px solid #c7d2fe;
+  background: #eef2ff;
+  color: #3730a3;
+  font-size: 13px;
+  font-weight: 600;
   cursor: pointer;
   text-decoration: none;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: rgba(79, 70, 229, 0.12);
+}
+.lnk:hover {
+  background: #e0e7ff;
+  border-color: #a5b4fc;
+}
+.lnk:active {
+  background: #c7d2fe;
 }
 .lnk.danger {
+  border-color: #fecaca;
+  background: #fef2f2;
   color: #b91c1c;
+}
+.lnk.danger:hover {
+  background: #fee2e2;
+  border-color: #fca5a5;
+}
+.lnk.danger:active {
+  background: #fecaca;
 }
 .b {
   padding: 6px 12px;
