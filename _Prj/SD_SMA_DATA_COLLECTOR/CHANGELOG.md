@@ -2,6 +2,12 @@
 
 本文档记录 SMA 数据采集系统的所有重要更新和变更。
 
+## [Unreleased]
+### 删除历史查询回写链路
+- 移除 CLI `--query` 模式、`trigger=query` 采集分支、查询任务队列、数据库历史查询处理器和 OPC UA 查询缓冲区写入器。
+- 配置校验改为拒绝 `trigger=query`、`groups[].query_config`、`groups[].output_mode` 与顶层 `http_server`。
+- 保留并独立化插入反馈写入能力，新增 `communication/opcua_feedback_writer.py`。
+
 ## [v1.5.1] - 2026-05-11
 ### 配置与校验增强
 - ✅ **点位名称与路径唯一性校验增强**（`web_config/config_manager.py`、`web_config/static/config.js`）

@@ -11,7 +11,11 @@
     {
       "name": "connection1",
       "communication": "PLC1",
-      "data_groups": ["sensor_group_1", "sensor_group_2", "trigger_group_1","query_group_1"],
+      "data_groups": [
+        "sensor_group_1",
+        "sensor_group_2",
+        "trigger_group_1"
+      ],
       "heartbeat": "ns=6;s=::DataRev:uiHeartBeat"
     }
   ],
@@ -42,7 +46,7 @@
       "description": "PLC1测试REAL数据"
     },
     {
-      "name": "rF10", 
+      "name": "rF10",
       "path": "ns=6;s=::DataGen:F10",
       "description": "PLC1测试REAL数据"
     },
@@ -118,7 +122,15 @@
       "interval_seconds": 1,
       "trigger": "time",
       "description": "PLC1传感器组，每1秒采集一次",
-      "data_points": ["rEC", "rF10", "rF11", "rF12", "rF13", "rF14", "rF15"],
+      "data_points": [
+        "rEC",
+        "rF10",
+        "rF11",
+        "rF12",
+        "rF13",
+        "rF14",
+        "rF15"
+      ],
       "trigger_point": null,
       "recreate_interval_days": 1,
       "batch_insert_size": 5
@@ -128,76 +140,30 @@
       "interval_seconds": 1,
       "trigger": "time",
       "description": "远程PLC传感器组，每1秒采集一次",
-      "data_points": ["rAIR", "rAP1", "rBP1"],
+      "data_points": [
+        "rAIR",
+        "rAP1",
+        "rBP1"
+      ],
       "trigger_point": null,
       "recreate_interval_days": 1,
       "batch_insert_size": 5
-    },   
+    },
     {
       "name": "trigger_group_1",
       "interval_seconds": 0.5,
       "trigger": "variable",
       "description": "PLC2触发组，由变量触发采集",
-      "data_points": ["rF1", "rF2", "rF3", "rF4"],
+      "data_points": [
+        "rF1",
+        "rF2",
+        "rF3",
+        "rF4"
+      ],
       "trigger_point": "bTrigger1",
       "reset_trigger_after_read": false,
       "recreate_interval_days": 15,
       "batch_insert_size": 1
-    },
-    {
-      "name": "query_group_1",
-      "interval_seconds": 0.5,
-      "trigger": "query",
-      "description": "用于处理查询任务，不要改动该字段，interval_seconds 检查 bTriggerQuery 的轮询时间，单位是秒",
-      "data_points": ["strStartTimes", "strEndTimes", "strPointNames"],
-      "trigger_point": "bTriggerQuery",
-      "query_config": {
-        "start_time_field": "strStartTimes",
-        "end_time_field": "strEndTimes",
-        "query_point_field": "strPointNames",
-        "output_file": null,
-        "feed_back_point": "ns=6;s=::DataRev:uiQueryFeedBack",
-        "buffer_nodes": [
-          "ns=6;s=::DataRev:stDbReadQuery.stRev[0].rRevBuffer",
-          "ns=6;s=::DataRev:stDbReadQuery.stRev[1].rRevBuffer",
-          "ns=6;s=::DataRev:stDbReadQuery.stRev[2].rRevBuffer",
-          "ns=6;s=::DataRev:stDbReadQuery.stRev[3].rRevBuffer",
-          "ns=6;s=::DataRev:stDbReadQuery.stRev[4].rRevBuffer",
-          "ns=6;s=::DataRev:stDbReadQuery.stRev[5].rRevBuffer",
-          "ns=6;s=::DataRev:stDbReadQuery.stRev[6].rRevBuffer",
-          "ns=6;s=::DataRev:stDbReadQuery.stRev[7].rRevBuffer",
-          "ns=6;s=::DataRev:stDbReadQuery.stRev[8].rRevBuffer",
-          "ns=6;s=::DataRev:stDbReadQuery.stRev[9].rRevBuffer"
-        ],
-        "time_nodes": [
-          "ns=6;s=::DataRev:stDbReadQuery.stRev[0].udiRevTime",
-          "ns=6;s=::DataRev:stDbReadQuery.stRev[1].udiRevTime",
-          "ns=6;s=::DataRev:stDbReadQuery.stRev[2].udiRevTime",
-          "ns=6;s=::DataRev:stDbReadQuery.stRev[3].udiRevTime",
-          "ns=6;s=::DataRev:stDbReadQuery.stRev[4].udiRevTime",
-          "ns=6;s=::DataRev:stDbReadQuery.stRev[5].udiRevTime",
-          "ns=6;s=::DataRev:stDbReadQuery.stRev[6].udiRevTime",
-          "ns=6;s=::DataRev:stDbReadQuery.stRev[7].udiRevTime",
-          "ns=6;s=::DataRev:stDbReadQuery.stRev[8].udiRevTime",
-          "ns=6;s=::DataRev:stDbReadQuery.stRev[9].udiRevTime"
-        ],
-        "feed_back_nodes": [
-          "ns=6;s=::DataRev:stDbReadQuery.stRev[0].udiRevFeedBack",
-          "ns=6;s=::DataRev:stDbReadQuery.stRev[1].udiRevFeedBack",
-          "ns=6;s=::DataRev:stDbReadQuery.stRev[2].udiRevFeedBack",
-          "ns=6;s=::DataRev:stDbReadQuery.stRev[3].udiRevFeedBack",
-          "ns=6;s=::DataRev:stDbReadQuery.stRev[4].udiRevFeedBack",
-          "ns=6;s=::DataRev:stDbReadQuery.stRev[5].udiRevFeedBack",
-          "ns=6;s=::DataRev:stDbReadQuery.stRev[6].udiRevFeedBack",
-          "ns=6;s=::DataRev:stDbReadQuery.stRev[7].udiRevFeedBack",
-          "ns=6;s=::DataRev:stDbReadQuery.stRev[8].udiRevFeedBack",
-          "ns=6;s=::DataRev:stDbReadQuery.stRev[9].udiRevFeedBack"
-        ],
-        "cmd_next_nodes": [
-          "ns=6;s=::DataRev:stDbReadQuery.stCmd.bNext"
-        ],
-        "buffer_size": 10000
-      }
     }
   ],
   "database": {
@@ -207,15 +173,11 @@
     "port": 3306,
     "username": "root",
     "password": "Br54644800@",
-    "data_groups": ["sensor_group_1", "sensor_group_2", "trigger_group_1", "query_group_1"]
-  },
-  "http_server": {
-    "enabled": false,
-    "base_url": "http://localhost:8080",
-    "endpoint": "/api/data",
-    "timeout": 30,
-    "max_retries": 3,
-    "retry_delay": 1.0
+    "data_groups": [
+      "sensor_group_1",
+      "sensor_group_2",
+      "trigger_group_1"
+    ]
   },
   "logging": {
     "level": "DEBUG",

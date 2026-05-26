@@ -235,7 +235,7 @@ async function refreshMetadataFromCurrentDatabase() {
 }
 
 async function saveAppSettings(options = {}) {
-  const { refreshMetadata = true, successMessage } = options;
+  const { refreshMetadata = false, successMessage } = options;
   const payload = getAppSettingsPayload();
   const result = await fetchJson('/api/config/app-settings', {
     method: 'POST',
@@ -250,7 +250,7 @@ async function saveAppSettings(options = {}) {
     successMessage ||
     (refreshMetadata
       ? '基础设定已保存，数据库已重连，Group 与列已按当前数据库刷新'
-      : '基础设定已保存，新的数据库连接与查询限制已生效');
+      : '基础设定已保存；如需刷新 Group 与列，请点击“连接数据库”');
   return result;
 }
 

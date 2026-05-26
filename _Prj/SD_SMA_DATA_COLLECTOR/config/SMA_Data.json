@@ -11,7 +11,9 @@
     {
       "name": "connection1",
       "communication": "PLC_TPS",
-      "data_groups": ["Data_Product", "Data_Product_Query"],
+      "data_groups": [
+        "Data_Product"
+      ],
       "heartbeat": "ns=6;s=::AsGlobalPV:gDataSQLHeartBeat"
     }
   ],
@@ -382,63 +384,20 @@
       "interval_seconds": 0.2,
       "trigger": "variable",
       "description": "生产数据采集-事件触发+时间触发",
-      "data_points": ["DataProductTime", "DataProductState", "DataProductCH01", "DataProductCH02", "DataProductCH03", "DataProductCH04", "DataProductCH05", "DataProductCH06"],
+      "data_points": [
+        "DataProductTime",
+        "DataProductState",
+        "DataProductCH01",
+        "DataProductCH02",
+        "DataProductCH03",
+        "DataProductCH04",
+        "DataProductCH05",
+        "DataProductCH06"
+      ],
       "trigger_point": "ProductInsertTrigger",
       "reset_trigger_after_read": true,
       "recreate_interval_days": 1,
       "batch_insert_size": 1
-    },
-    {
-      "name": "Data_Product_Query",
-      "interval_seconds": 0.5,
-      "trigger": "query",
-      "description": "用于处理查询任务（只输出到 OPC UA，不推送 HTTP）",
-      "data_points": ["ProductStartTime", "ProductEndTime", "ProductReadPoint", "ProductAuxQuery"],
-      "trigger_point": "ProductQueryTrigger",
-      "output_mode": "dual",
-      "query_config": {
-        "start_time_field": "ProductStartTime",
-        "end_time_field": "ProductEndTime",
-        "query_point_field": "ProductReadPoint",
-        "aux_query_field": "ProductAuxQuery",
-        "feed_back_point": "ns=6;s=::AsGlobalPV:gDataSQLOperate.ProductReadStatus",
-        "output_file": null,
-        "by_what_time": "DataProductTime",
-        "buffer_nodes": [
-          "ns=6;s=::DataSQLPro:ProductDataSQLRev.TimeStamp",
-          "ns=6;s=::DataSQLPro:ProductDataSQLRev.State",
-          "ns=6;s=::DataSQLPro:ProductDataSQLRev.CH01",
-          "ns=6;s=::DataSQLPro:ProductDataSQLRev.CH02",
-          "ns=6;s=::DataSQLPro:ProductDataSQLRev.CH03",
-          "ns=6;s=::DataSQLPro:ProductDataSQLRev.CH04",
-          "ns=6;s=::DataSQLPro:ProductDataSQLRev.CH05",
-          "ns=6;s=::DataSQLPro:ProductDataSQLRev.CH06"
-        ],
-        "time_nodes": [
-          "ns=6;s=::DataSQLPro:ProductDataSQLRev.TimeStampTS",
-          "ns=6;s=::DataSQLPro:ProductDataSQLRev.StateTS",
-          "ns=6;s=::DataSQLPro:ProductDataSQLRev.TS01",
-          "ns=6;s=::DataSQLPro:ProductDataSQLRev.TS02",
-          "ns=6;s=::DataSQLPro:ProductDataSQLRev.TS03",
-          "ns=6;s=::DataSQLPro:ProductDataSQLRev.TS04",
-          "ns=6;s=::DataSQLPro:ProductDataSQLRev.TS05",
-          "ns=6;s=::DataSQLPro:ProductDataSQLRev.TS06"
-        ],
-        "feed_back_nodes": [
-          "ns=6;s=::DataSQLPro:ProductDataSQLRev.TimeStampFB",
-          "ns=6;s=::DataSQLPro:ProductDataSQLRev.StateFB",
-          "ns=6;s=::DataSQLPro:ProductDataSQLRev.FB01",
-          "ns=6;s=::DataSQLPro:ProductDataSQLRev.FB02",
-          "ns=6;s=::DataSQLPro:ProductDataSQLRev.FB03",
-          "ns=6;s=::DataSQLPro:ProductDataSQLRev.FB04",
-          "ns=6;s=::DataSQLPro:ProductDataSQLRev.FB05",
-          "ns=6;s=::DataSQLPro:ProductDataSQLRev.FB06"
-        ],
-        "cmd_next_nodes": [
-          "ns=6;s=::DataSQLPro:ProductDataSQLQuery.Cmd.Next"
-        ],
-        "buffer_size": 2000
-      }
     }
   ],
   "database": {
@@ -448,15 +407,9 @@
     "port": 3306,
     "username": "root",
     "password": "Br54644800@",
-    "data_groups": ["Data_Product", "Data_Product_Query"]
-  },
-  "http_server": {
-    "enabled": false,
-    "base_url": "http://localhost:8080",
-    "endpoint": "/api/data",
-    "timeout": 30,
-    "max_retries": 3,
-    "retry_delay": 1.0
+    "data_groups": [
+      "Data_Product"
+    ]
   },
   "logging": {
     "level": "DEBUG",

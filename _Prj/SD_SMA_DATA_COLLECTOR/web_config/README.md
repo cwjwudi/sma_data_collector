@@ -14,9 +14,11 @@
 
 - 仅支持采集配置字段：
   - `communications / connections / points / groups / database / logging`
-- 不支持查询任务配置：
+- 已删除历史查询任务配置：
   - 禁止 `trigger=query`
   - 禁止 `groups[].query_config`
+  - 禁止 `groups[].output_mode`
+  - 禁止顶层 `http_server`
 
 ## 启动
 

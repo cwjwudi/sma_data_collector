@@ -8,7 +8,7 @@ import logging
 import sys
 import os
 import time
-from typing import Dict, List, Callable, Any, Optional, Iterator
+from typing import Dict, List, Callable, Any, Iterator
 from datetime import datetime
 
 # 处理相对导入问题
@@ -17,7 +17,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from core.config_models import DataGroup, DataPoint, TriggerType
 from communication.opcua_client import OpcUaClient
 from communication.communication_manager import CommunicationManager
-from database.data_query import DataQueryProcessor
 
 
 def _is_opcua_transient(exc: BaseException) -> bool:
@@ -43,8 +42,6 @@ class DataCollector:
         self.logger = logging.getLogger(__name__)
         self.data_callbacks: List[Callable[[Dict[str, Any]], None]] = []
         self.collectors = {}  # 存储各个数据组的采集任务
-        self.point_to_group = {}  # 数据点到数据组的映射，供查询任务使用
-        self.query_task_queue: asyncio.Queue = asyncio.Queue()  # 查询任务队列
     
     def _iter_scalar_collection_rows(self, collection_data: Dict[str, Any]) -> Iterator[Dict[str, Any]]:
         """
@@ -121,11 +118,7 @@ class DataCollector:
             data_groups: 数据组列表
             data_points_dict: 数据点字典 (name -> DataPoint)
         """
-        data_groups_points_dict = {}
         for group in data_groups:
-            # 存储数据组信息，供查询任务使用
-            data_groups_points_dict[group.name] = group.data_points
-
             # 获取该组对应的通信客户端
             opcua_client = self.comm_manager.get_client_for_group(group.name)
             if not opcua_client:
@@ -169,18 +162,8 @@ class DataCollector:
                 self.collectors[group.name] = task
                 self.logger.info(f"启动时间+变量触发采集组: {group.name}")
 
-            elif group.trigger == TriggerType.QUERY:
-                # 变量触发查询（必须登记到 collectors，否则 stop_collection 无法取消轮询任务）
-                trigger_point = data_points_dict[group.trigger_point]
-                task = asyncio.create_task(
-                    self._query_collection(group, group_points, trigger_point, opcua_client)
-                )
-                self.collectors[group.name] = task
-                self.logger.info(f"启动查询任务组: {group.name}")
-
-        
-        self.point_to_group = self._build_point_to_group_lookup(data_groups_points_dict)
-        self.logger.debug(f"构建数据点到数据组的映射: {self.point_to_group}")
+            else:
+                self.logger.error("不支持的数据组触发类型: %s (%s)", group.trigger, group.name)
 
     
     async def stop_collection(self) -> None:
@@ -557,255 +540,3 @@ class DataCollector:
                     self.logger.error(f"并行触发采集组 {group.name} 发生错误: {e}", exc_info=True)
                 await asyncio.sleep(5)
 
-    async def _query_collection(self, group: DataGroup,
-                              data_points: List[DataPoint],
-                              trigger_point: DataPoint,
-                              opcua_client: OpcUaClient) -> None:
-        """
-        变量触发查询 - 实现上升沿触发数据库查询逻辑
-        
-        查询配置通过 group 的 query_config 字段获取，包括：
-        - start_time_field: 起始时间字段名
-        - end_time_field: 结束时间字段名
-        - query_points: 要查询的数据点列表
-        - output_file: 可选的 CSV 输出路径
-        """
-        previous_trigger_state = False
-        poll_interval = self._get_variable_trigger_poll_interval(group)
-        
-        # 获取查询配置
-        query_config = getattr(group, 'query_config', None)
-        if not query_config:
-            self.logger.warning(f"查询组 {group.name} 没有配置 query_config，使用默认配置")
-            query_config = {
-                'start_time_field': 'strStartTimes',
-                'end_time_field': 'strEndTimes',
-                'query_point_field': 'strPointNames',
-                'output_file': None
-            }
-        
-        while True:
-            try:
-                # 检查触发点状态
-                trigger_data = await opcua_client.read_data_points([trigger_point])
-                current_trigger_value = trigger_data.get(trigger_point.name, {}).get('value', False)
-                
-                # 上升沿检测：从 False 变为 True
-                if not previous_trigger_state and current_trigger_value:
-                    self.logger.info(f"检测到上升沿触发信号，准备执行数据库查询：{group.name}")
-                    
-                    # 读取查询参数（从 OPC UA 或其他数据源）
-                    query_params = await self._read_query_parameters(
-                        data_points, query_config, opcua_client, group
-                    )
-                    
-                    if query_params:
-                        # 将查询任务加入队列
-                        await self.query_task_queue.put({
-                            'start_time': query_params['start_time'],
-                            'end_time': query_params['end_time'],
-                            'point_names': query_params['point_names'],
-                            'group_names': query_params['group_names'],
-                            'output_file': query_params.get('output_file'),
-                            'by_what_time': query_params.get('by_what_time'),  # 支持自定义时间字段
-                            'aux_queries': query_params.get('aux_queries'),  # 支持附加查询条件
-                            'group_name': group.name,
-                            'opcua_client': opcua_client
-                        })
-                        self.logger.debug(f"查询任务已加入队列：{group.name}")
-                
-                # 更新上一次的状态
-                previous_trigger_state = current_trigger_value
-                
-                # 短暂等待后继续检查
-                await asyncio.sleep(poll_interval)
-                
-            except asyncio.CancelledError:
-                self.logger.info(f"查询任务组 {group.name} 已取消")
-                break
-            except Exception as e:
-                if _is_opcua_transient(e):
-                    self.logger.warning(
-                        "查询任务组 %s OPC UA 暂不可用，5s 后重试: %s: %s",
-                        group.name,
-                        type(e).__name__,
-                        e,
-                    )
-                else:
-                    self.logger.error(f"查询任务组 {group.name} 发生错误：{e}", exc_info=True)
-                await asyncio.sleep(5)
-
-    async def _read_query_parameters(self,
-                                   data_points: List[DataPoint],
-                                   query_config: Dict[str, Any],
-                                   opcua_client: OpcUaClient,
-                                   group: DataGroup) -> Optional[Dict[str, Any]]:
-        """
-        读取查询参数（从 OPC UA 服务器读取时间等信息）
-        
-        Args:
-            data_points: 数据点列表
-            query_config: 查询配置
-            opcua_client: OPC UA 客户端
-            group: 数据组对象
-            
-        Returns:
-            查询参数字典，失败时返回 None
-        """
-        try:
-            # 读取所有相关的数据点
-            data = await opcua_client.read_data_points(data_points)
-            
-            # 提取时间参数
-            start_time_str = data.get(query_config['start_time_field'], {}).get('value')
-            end_time_str = data.get(query_config['end_time_field'], {}).get('value')
-            query_point_str = data.get(query_config['query_point_field'], {}).get('value')
-            
-            # 提取附加查询条件
-            aux_query_field = query_config.get('aux_query_field')
-            aux_query_str = None
-            if aux_query_field:
-                aux_query_str = data.get(aux_query_field, {}).get('value')
-            
-            if not start_time_str or not end_time_str:
-                self.logger.error("无法从数据点中获取时间信息")
-                return None
-            
-            def _safe_strptime(s, fmt):
-                try:
-                    return datetime.strptime(s, fmt)
-                except ValueError:
-                    return None  # 或者 raise，或者记录日志等
-                
-            fmt = '%Y-%m-%d %H:%M:%S'
-            # 解析时间字符串（假设格式为 "YYYY-MM-DD HH:MM:SS"）
-            start_time = [_safe_strptime(t, fmt) for t in start_time_str]
-            end_time = [_safe_strptime(t, fmt) for t in end_time_str]
-
-            # 验证时间范围
-            # 构建 invalid_time_indices：1 表示无效，0 表示有效
-            invalid_time_indices = []
-
-            for s, e in zip(start_time, end_time):
-                # 如果任一时间为 None，或起始时间 >= 结束时间，则标记为无效（1）
-                if s is None or e is None or s >= e:
-                    invalid_time_indices.append(1)
-                else:
-                    invalid_time_indices.append(0)
-
-                    
-            invalid_positions = [i for i, val in enumerate(invalid_time_indices) if val == 1]
-
-            # 检查 data_points 中名称为空的情况
-            for i in range(len(query_point_str)):
-                if query_point_str[i] is None or query_point_str[i] == '':
-                    if i not in invalid_positions:
-                        invalid_positions.append(i)
-            
-            # 去重并排序 invalid_positions
-            invalid_positions = sorted(set[int](invalid_positions))
-
-            if invalid_positions:
-                self.logger.error(f"第{invalid_positions}条查询参数设定了无效的时间范围或数据点名称为空")
-
-            for i in invalid_positions:
-                start_time[i] = None
-                end_time[i] = None
-                query_point_str[i] = None
-            
-            group_names = [None] * len(query_point_str)
-            # 反查 Point name 所属的 Group name
-            for i in range(len(query_point_str)):
-                if query_point_str[i] is None:
-                    group_names[i] = None
-                else:
-                    group_name_result = self.point_to_group(query_point_str[i])
-                    if group_name_result is None:
-                        self.logger.error(f"找不到数据点 '{query_point_str[i]}' 对应的数据组")
-                    group_names[i] = group_name_result
-
-            return {
-                'start_time': start_time,
-                'end_time': end_time,
-                'point_names': query_point_str,
-                'group_names': group_names,
-                'output_file': query_config.get('output_file'),
-                'by_what_time': query_config.get('by_what_time'),  # 支持自定义时间字段查询
-                'aux_queries': aux_query_str  # 支持附加查询条件
-            }
-            
-        except ConnectionError as e:
-            self.logger.warning("读取查询参数时 OPC UA 不可用: %s: %s", type(e).__name__, e)
-            return None
-        except TimeoutError as e:
-            self.logger.warning("读取查询参数时 OPC UA 超时: %s: %s", type(e).__name__, e)
-            return None
-        except OSError as e:
-            if _is_opcua_transient(e):
-                self.logger.warning("读取查询参数时 OPC UA 网络错误: %s: %s", type(e).__name__, e)
-                return None
-            self.logger.error(f"读取查询参数失败：{e}", exc_info=True)
-            return None
-        except Exception as e:
-            self.logger.error(f"读取查询参数失败：{e}", exc_info=True)
-            return None
-
-    def _build_point_to_group_lookup(self, groups):
-        """
-        构建一个反向查询函数，用于快速根据 point 查找其所属的 group。
-        
-        参数:
-            groups (dict): {group_name (str): [point1, point2, ...]}
-            
-        返回:
-            function: 接收一个 point 字符串，返回对应的 group 名称（str）或 None（如果不存在）
-        """
-        point_to_group = {}
-        for group_name, points in groups.items():
-            for point in points:
-                if point in point_to_group:
-                    self.logger.warning(
-                        "Point '%s' appears in both '%s' and '%s'. Using '%s' for reverse lookup.",
-                        point,
-                        point_to_group[point],
-                        group_name,
-                        point_to_group[point],
-                    )
-                    continue
-                point_to_group[point] = group_name
-
-        def _lookup(point):
-            return point_to_group.get(point)
-        
-        return _lookup
-    
-    async def _process_query_result(self, 
-                                   query_result: List[Dict[str, Any]],
-                                   group_name: str,
-                                   opcua_client: OpcUaClient) -> None:
-        """
-        处理查询结果
-        
-        Args:
-            query_result: 查询结果列表
-            group_name: 数据组名称
-            opcua_client: OPC UA 客户端
-        """
-        if not query_result:
-            self.logger.debug(f"查询结果为空，跳过处理：{group_name}")
-            return
-        
-        # TODO: 根据业务需求处理查询结果
-        # 以下是可能的处理方式：
-        
-        # 1. 记录查询统计信息
-        self.logger.info(f"处理查询结果：{group_name}, 记录数={len(query_result)}")
-        
-        # 2. 如果需要将查询结果回写到 OPC UA
-        # await self._write_back_to_opcua(query_result, opcua_client)
-        
-        # 3. 如果需要发送到其他系统
-        # await self._send_to_external_system(query_result, group_name)
-        
-        # 4. 如果需要保存到其他格式
-        # self._save_to_custom_format(query_result, group_name)

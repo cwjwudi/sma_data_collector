@@ -11,7 +11,9 @@
     {
       "name": "connection1",
       "communication": "PLC1",
-      "data_groups": ["time_interval_millisecond_group_1"],
+      "data_groups": [
+        "time_interval_millisecond_group_1"
+      ],
       "heartbeat": "ns=6;s=::DataRev:uiHeartBeat"
     }
   ],
@@ -37,7 +39,7 @@
       "description": "PLC1测试REAL数据"
     },
     {
-      "name": "rF5", 
+      "name": "rF5",
       "path": "ns=6;s=::DataGen:F5",
       "description": "PLC1测试REAL数据"
     },
@@ -65,7 +67,15 @@
       "trigger_interval_seconds": null,
       "trigger": "time",
       "description": "PLC1时间触发组，每10秒采集一次",
-      "data_points": ["rF1", "rF2", "rF3", "rF4", "rF5", "ts", "millisecond"],
+      "data_points": [
+        "rF1",
+        "rF2",
+        "rF3",
+        "rF4",
+        "rF5",
+        "ts",
+        "millisecond"
+      ],
       "trigger_point": "bTrigger1",
       "reset_trigger_after_read": null,
       "recreate_interval_days": 15,
@@ -80,14 +90,8 @@
     "port": 3306,
     "username": "root",
     "password": "123456",
-    "data_groups": ["time_interval_millisecond_group_1"]
-  },
-  "http_server": {
-    "enabled": false,
-    "base_url": "http://localhost:8080",
-    "endpoint": "/api/data",
-    "timeout": 30,
-    "max_retries": 3,
-    "retry_delay": 1.0
+    "data_groups": [
+      "time_interval_millisecond_group_1"
+    ]
   }
 }

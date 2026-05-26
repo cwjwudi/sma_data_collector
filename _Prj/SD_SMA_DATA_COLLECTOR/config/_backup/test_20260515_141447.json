@@ -147,19 +147,10 @@
       ],
       "trigger_point": "bTestTriger",
       "reset_trigger_after_read": false,
-      "recreate_interval_days": 10000,
-      "batch_insert_size": 1,
+      "recreate_interval_days": 365,
+      "batch_insert_size": 2,
       "is_parallel": false,
-      "trigger_interval_seconds": 0.3,
-      "batch_upsert": {
-        "enabled": false,
-        "start_time_point": "",
-        "end_time_point": "",
-        "update_only_when_end_time_is_null": true,
-        "reject_when_end_time_exists": true,
-        "allow_idempotent_same_end_time": false
-      },
-      "unique_key_point": "AP1"
+      "trigger_interval_seconds": 0.3
     },
     {
       "name": "BatchGroup",

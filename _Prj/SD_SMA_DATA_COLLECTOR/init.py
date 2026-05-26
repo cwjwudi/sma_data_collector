@@ -65,9 +65,8 @@ def main():
     print("\n使用说明:")
     print("1. 修改 config/sample_config.json 中的配置")
     print("2. 运行采集模式: python main.py")
-    print("3. 运行查询模式: python main.py --query")
     if not args.dev:
-        print("4. 如需开发/测试依赖: python init.py --dev")
+        print("3. 如需开发/测试依赖: python init.py --dev")
     
     return True
 

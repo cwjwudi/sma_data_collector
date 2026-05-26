@@ -12,12 +12,17 @@
       "name": "Connect1",
       "communication": "PLC1",
       "data_groups": [
-        "Group1"
+        "TestGroupSMA"
       ],
       "heartbeat": ""
     }
   ],
   "points": [
+    {
+      "name": "DataGen",
+      "path": "ns=6;s=::DataGen",
+      "description": "DataGen"
+    },
     {
       "name": "AIR",
       "path": "ns=6;s=::DataGen:AIR",
@@ -34,67 +39,57 @@
       "description": "AP2"
     },
     {
-      "name": "CP",
-      "path": "ns=6;s=::DataGen:CP",
-      "description": "CP"
+      "name": "BP1",
+      "path": "ns=6;s=::DataGen:BP1",
+      "description": "BP1"
     },
     {
-      "name": "CT",
-      "path": "ns=6;s=::DataGen:CT",
-      "description": "CT"
+      "name": "bTestTriger",
+      "path": "ns=6;s=::DataRev:bTestTriger",
+      "description": "bTestTriger"
     },
     {
-      "name": "EC",
-      "path": "ns=6;s=::DataGen:EC",
-      "description": "EC"
-    },
-    {
-      "name": "ES",
-      "path": "ns=6;s=::DataGen:ES",
-      "description": "ES"
-    },
-    {
-      "name": "strTimeStamp",
-      "path": "ns=6;s=::DataGen:strTimeStamp",
-      "description": "strTimeStamp"
+      "name": "strBatchCode",
+      "path": "ns=6;s=::DataGen:strBatchCode",
+      "description": "strBatchCode"
     }
   ],
   "groups": [
     {
-      "name": "Group1",
-      "interval_seconds": 1,
-      "trigger": "time",
-      "description": "测试数据1",
+      "name": "TestGroupSMA",
+      "interval_seconds": 10,
+      "trigger": "time_and_variable",
+      "description": "测试用表",
       "data_points": [
+        "DataGen",
         "AIR",
         "AP1",
         "AP2",
-        "CP",
-        "CT",
-        "EC",
-        "ES",
-        "strTimeStamp"
+        "BP1",
+        "strBatchCode"
       ],
-      "trigger_point": "",
-      "reset_trigger_after_read": false,
+      "trigger_point": "bTestTriger",
+      "reset_trigger_after_read": true,
       "recreate_interval_days": 365,
-      "batch_insert_size": 2,
-      "is_parallel": false
+      "batch_insert_size": 1,
+      "is_parallel": false,
+      "trigger_interval_seconds": 0.5,
+      "unique_key_point": "strBatchCode"
     }
   ],
   "database": {
     "type": "mysql",
     "name": "wn_10",
-    "host": "192.168.50.22",
+    "host": "127.0.0.1",
     "port": 3306,
     "username": "root",
-    "password": "Br54644800@",
+    "password": "123456",
     "data_groups": [
-      "Group1"
+      "TestGroupSMA"
     ]
   },
   "logging": {
-    "level": "INFO",
+    "level": "DEBUG",
     "output_dir": "logs",
     "backup_days": 14,
     "rotation_when": "midnight",

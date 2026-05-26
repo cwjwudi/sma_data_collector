@@ -1047,10 +1047,7 @@ async function loadConfigFile() {
   currentFilename = data.filename || filename;
   currentConfig = normalizeConfig(data.payload || {});
   rerender();
-  const hidden = data.hidden || {};
-  setResult(
-    `已读取 ${data.filename}，隐藏查询组 ${hidden.query_groups_hidden || 0} 个，隐藏 query_config ${hidden.query_fields_hidden || 0} 个`
-  );
+  setResult(`已读取 ${data.filename}`);
   savePageState();
 }
 
@@ -1407,4 +1404,3 @@ loadPageState();
 rerender();
 refreshFileList().catch((error) => setResult(error.message));
 window.addEventListener("beforeunload", savePageState);
-

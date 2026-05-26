@@ -7,7 +7,7 @@ import json
 from typing import Dict, Any
 from .config_models import (
     DataPoint, DataGroup, OpcUaConfig, DatabaseConfig, AppConfig, 
-    TriggerType, Communication, Connection, HttpServerConfig, LoggingConfig, InsertFeedbackConfig,
+    TriggerType, Communication, Connection, LoggingConfig, InsertFeedbackConfig,
     BatchUpsertConfig
 )
 
@@ -42,6 +42,9 @@ class ConfigLoader:
     @staticmethod
     def _parse_config(config_data: Dict[str, Any]) -> AppConfig:
         """解析配置数据"""
+        if 'http_server' in config_data:
+            raise ValueError("配置包含已删除的 http_server 字段")
+
         # 解析数据点
         points = []
         for point_data in config_data.get('points', []):
@@ -56,6 +59,19 @@ class ConfigLoader:
         # 解析数据组
         groups = []
         for group_data in config_data.get('groups', []):
+            if group_data.get('trigger') == 'query':
+                raise ValueError(
+                    f"数据组 '{group_data.get('name', '<unknown>')}' 使用了已删除的 trigger=query 功能"
+                )
+            if 'query_config' in group_data:
+                raise ValueError(
+                    f"数据组 '{group_data.get('name', '<unknown>')}' 包含已删除的 query_config 字段"
+                )
+            if 'output_mode' in group_data:
+                raise ValueError(
+                    f"数据组 '{group_data.get('name', '<unknown>')}' 包含已删除的 output_mode 字段"
+                )
+
             feedback_data = group_data.get('insert_feedback')
             insert_feedback = None
             if feedback_data is not None:
@@ -90,7 +106,6 @@ class ConfigLoader:
                 reset_trigger_after_read=group_data.get('reset_trigger_after_read', True),
                 recreate_interval_days=group_data.get('recreate_interval_days', 30),
                 batch_insert_size=group_data.get('batch_insert_size', 100),
-                query_config=group_data.get('query_config'),
                 is_parallel=group_data.get('is_parallel', False),
                 unique_key_point=group_data.get('unique_key_point'),
                 insert_feedback=insert_feedback,
@@ -147,17 +162,6 @@ class ConfigLoader:
             data_groups=data_groups
         )
                 
-        # 解析 HTTP 服务器配置
-        http_server_data = config_data.get('http_server', {})
-        http_server = HttpServerConfig(
-            enabled=http_server_data.get('enabled', False),
-            base_url=http_server_data.get('base_url', 'http://localhost:8080'),
-            endpoint=http_server_data.get('endpoint', '/api/data'),
-            timeout=http_server_data.get('timeout', 30),
-            max_retries=http_server_data.get('max_retries', 3),
-            retry_delay=http_server_data.get('retry_delay', 1.0)
-        )
-
         # 解析日志配置
         logging_data = config_data.get('logging', {})
         logging_config = LoggingConfig(
@@ -177,7 +181,6 @@ class ConfigLoader:
             database=database,
             communications=communications,
             connections=connections,
-            http_server=http_server,
             logging=logging_config
         )
         

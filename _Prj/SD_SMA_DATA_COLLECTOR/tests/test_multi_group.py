@@ -114,7 +114,8 @@ class TestMultiGroupSupport(unittest.TestCase):
                     "trigger": "variable",
                     "description": "组3",
                     "data_points": ["point1"],
-                    "trigger_point": "point3"
+                    "trigger_point": "point3",
+                    "trigger_interval_seconds": 0.5
                 }
             ],
             "database": {

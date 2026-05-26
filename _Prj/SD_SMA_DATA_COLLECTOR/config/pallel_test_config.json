@@ -11,7 +11,9 @@
     {
       "name": "connection1",
       "communication": "PLC1",
-      "data_groups": ["pallel_group_1"],
+      "data_groups": [
+        "pallel_group_1"
+      ],
       "heartbeat": "ns=6;s=::ParallelTe:uiHeartBeat"
     }
   ],
@@ -37,7 +39,7 @@
       "description": "PLC1测试REAL数据"
     },
     {
-      "name": "rF5", 
+      "name": "rF5",
       "path": "ns=6;s=::ParallelTe:F5",
       "description": "PLC1测试REAL数据"
     },
@@ -53,7 +55,13 @@
       "interval_seconds": 0.5,
       "trigger": "variable",
       "description": "PLC2触发组，由变量触发采集",
-      "data_points": ["rF1", "rF2", "rF3", "rF4", "rF5"],
+      "data_points": [
+        "rF1",
+        "rF2",
+        "rF3",
+        "rF4",
+        "rF5"
+      ],
       "trigger_point": "bTrigger1",
       "reset_trigger_after_read": true,
       "recreate_interval_days": 15,
@@ -68,14 +76,8 @@
     "port": 3306,
     "username": "root",
     "password": "123456",
-    "data_groups": ["pallel_group_1"]
-  },
-  "http_server": {
-    "enabled": false,
-    "base_url": "http://localhost:8080",
-    "endpoint": "/api/data",
-    "timeout": 30,
-    "max_retries": 3,
-    "retry_delay": 1.0
+    "data_groups": [
+      "pallel_group_1"
+    ]
   }
 }

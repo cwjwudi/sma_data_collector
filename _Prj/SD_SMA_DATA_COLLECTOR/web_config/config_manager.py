@@ -19,7 +19,7 @@ class CollectorConfigManager:
         "database",
         "logging",
     }
-    DISABLED_TRIGGER_TYPES = {"query"}
+    REMOVED_TRIGGER_TYPES = {"query"}
 
     def __init__(
         self,
@@ -105,13 +105,13 @@ class CollectorConfigManager:
                 if not isinstance(item, dict):
                     continue
                 trigger = str(item.get("trigger", "")).lower()
-                if trigger in cls.DISABLED_TRIGGER_TYPES:
-                    stats["query_groups_hidden"] += 1
-                    continue
+                if trigger in cls.REMOVED_TRIGGER_TYPES:
+                    raise ValueError("当前版本已删除 trigger=query 功能，请先从配置中移除查询组")
                 group_copy = copy.deepcopy(item)
                 if "query_config" in group_copy:
-                    del group_copy["query_config"]
-                    stats["query_fields_hidden"] += 1
+                    raise ValueError("当前版本已删除 groups[].query_config 字段，请先从配置中移除")
+                if "output_mode" in group_copy:
+                    raise ValueError("当前版本已删除 groups[].output_mode 字段，请先从配置中移除")
                 clean_groups.append(group_copy)
             sanitized["groups"] = clean_groups
 
@@ -144,10 +144,12 @@ class CollectorConfigManager:
             if not isinstance(group, dict):
                 raise ValueError("groups 数组元素必须是对象")
             trigger = str(group.get("trigger", "")).lower()
-            if trigger in self.DISABLED_TRIGGER_TYPES:
-                raise ValueError("当前配置页面不支持 trigger=query")
+            if trigger in self.REMOVED_TRIGGER_TYPES:
+                raise ValueError("当前版本已删除 trigger=query")
             if "query_config" in group:
-                raise ValueError("当前配置页面不支持 groups[].query_config 字段")
+                raise ValueError("当前版本已删除 groups[].query_config 字段")
+            if "output_mode" in group:
+                raise ValueError("当前版本已删除 groups[].output_mode 字段")
 
     @staticmethod
     def _validate_points_unique(payload: dict[str, Any]) -> None:

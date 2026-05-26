@@ -12,7 +12,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 try:
-    from runtime.collector_runtime import run_collection_mode, run_query_mode
+    from runtime.collector_runtime import run_collection_mode
 except ImportError as e:
     print(f"导入模块时发生错误: {e}")
     print("请确保所有依赖包已正确安装")
@@ -23,16 +23,12 @@ def main():
     """主函数（仅负责参数解析与调度）"""
     parser = argparse.ArgumentParser(description="BR数据采集系统")
     parser.add_argument("--config", "-c", default="config/sample_config.json", help="配置文件路径")
-    parser.add_argument("--query", "-q", action="store_true", help="进入查询模式")
     args = parser.parse_args()
 
-    if args.query:
-        run_query_mode(args.config)
-    else:
-        try:
-            asyncio.run(run_collection_mode(args.config))
-        except KeyboardInterrupt:
-            print("\n收到中断信号，已退出。")
+    try:
+        asyncio.run(run_collection_mode(args.config))
+    except KeyboardInterrupt:
+        print("\n收到中断信号，已退出。")
 
 
 if __name__ == "__main__":

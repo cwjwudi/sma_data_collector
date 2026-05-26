@@ -11,7 +11,9 @@
     {
       "name": "connection1",
       "communication": "PLC1",
-      "data_groups": ["trend_group", "query_group_1"]
+      "data_groups": [
+        "trend_group"
+      ]
     }
   ],
   "points": [
@@ -47,49 +49,12 @@
       "interval_seconds": 5,
       "trigger": "time",
       "description": "趋势数据采集组，每 5 秒采集一次",
-      "data_points": ["Trenddata"],
+      "data_points": [
+        "Trenddata"
+      ],
       "trigger_point": null,
       "recreate_interval_days": 1,
       "batch_insert_size": 5
-    },
-    {
-      "name": "query_group_1",
-      "interval_seconds": 0.5,
-      "trigger": "query",
-      "description": "用于处理查询任务",
-      "data_points": ["strStartTimes", "strEndTimes", "strPointNames"],
-      "trigger_point": "bTriggerQuery",
-      "query_config": {
-        "start_time_field": "strStartTimes",
-        "end_time_field": "strEndTimes",
-        "query_point_field": "strPointNames",
-        "output_file": null,
-        "buffer_nodes": [
-          "ns=6;s=::Trend:stDbReadQuery.stRev[0].rRevBuffer",
-          "ns=6;s=::Trend:stDbReadQuery.stRev[1].rRevBuffer",
-          "ns=6;s=::Trend:stDbReadQuery.stRev[2].rRevBuffer",
-          "ns=6;s=::Trend:stDbReadQuery.stRev[3].rRevBuffer",
-          "ns=6;s=::Trend:stDbReadQuery.stRev[4].rRevBuffer",
-          "ns=6;s=::Trend:stDbReadQuery.stRev[5].rRevBuffer",
-          "ns=6;s=::Trend:stDbReadQuery.stRev[6].rRevBuffer",
-          "ns=6;s=::Trend:stDbReadQuery.stRev[7].rRevBuffer",
-          "ns=6;s=::Trend:stDbReadQuery.stRev[8].rRevBuffer",
-          "ns=6;s=::Trend:stDbReadQuery.stRev[9].rRevBuffer"
-        ],
-        "time_nodes": [
-          "ns=6;s=::Trend:stDbReadQuery.stRev[0].udiRevTime",
-          "ns=6;s=::Trend:stDbReadQuery.stRev[1].udiRevTime",
-          "ns=6;s=::Trend:stDbReadQuery.stRev[2].udiRevTime",
-          "ns=6;s=::Trend:stDbReadQuery.stRev[3].udiRevTime",
-          "ns=6;s=::Trend:stDbReadQuery.stRev[4].udiRevTime",
-          "ns=6;s=::Trend:stDbReadQuery.stRev[5].udiRevTime",
-          "ns=6;s=::Trend:stDbReadQuery.stRev[6].udiRevTime",
-          "ns=6;s=::Trend:stDbReadQuery.stRev[7].udiRevTime",
-          "ns=6;s=::Trend:stDbReadQuery.stRev[8].udiRevTime",
-          "ns=6;s=::Trend:stDbReadQuery.stRev[9].udiRevTime"
-        ],
-        "buffer_size": 10000
-      }
     }
   ],
   "database": {
@@ -99,15 +64,8 @@
     "port": 3306,
     "username": "root",
     "password": "Br54644800@",
-    "data_groups": ["trend_group", "query_group_1"]
-  },
-  "http_server": {
-    "enabled": true,
-    "base_url": "http://localhost:8080",
-    "endpoint": "/api/data",
-    "port": 8080,
-    "timeout": 30,
-    "max_retries": 3,
-    "retry_delay": 1.0
+    "data_groups": [
+      "trend_group"
+    ]
   }
 }

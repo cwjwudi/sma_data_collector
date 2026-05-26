@@ -8,18 +8,15 @@ import logging
 import os
 import re
 import sys
-from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
 from logging.handlers import TimedRotatingFileHandler
 from typing import Any, Optional
 
 from communication.data_collector import DataCollector
 from communication.communication_manager import CommunicationManager
 from communication.heartbeat_manager import HeartbeatManager
-from communication.opcua_data_writer import OpcUaDataWriter
+from communication.opcua_feedback_writer import OpcUaFeedbackWriter
 from core.config_loader import ConfigLoader
 from core.config_models import AppConfig
-from database.data_query import DataQueryProcessor
 from database.data_storage import DataStorageProcessor
 from database.db_manager import DatabaseManager
 
@@ -50,12 +47,9 @@ class DataCollectionSystem:
         self.data_collector: Optional[DataCollector] = None
         self.db_manager: Optional[DatabaseManager] = None
         self.storage_processor: Optional[DataStorageProcessor] = None
-        self.query_processor: Optional[DataQueryProcessor] = None
-        self.query_task_processor: Optional[asyncio.Task] = None
         self.db_health_task: Optional[asyncio.Task] = None
         self.db_health_check_interval = max(1.0, float(os.getenv("SD_SMA_DB_HEALTH_CHECK_INTERVAL", "5")))
         self.running = False
-        self.executor = ThreadPoolExecutor(max_workers=5)
         self.setup_logging()
 
     def setup_logging(self) -> None:
@@ -206,15 +200,6 @@ class DataCollectionSystem:
                     }
                 self.logger.debug("设置组 %s 的batch_size为 %s", group.name, group.batch_insert_size)
 
-            self.query_processor = DataQueryProcessor(self.db_manager)
-
-            http_config = getattr(self.config, "http_server", None)
-            if http_config and getattr(http_config, "enabled", False):
-                self.logger.warning(
-                    "检测到配置启用了 http_server(enabled=true)，"
-                    "但主程序已移除所有 HTTP 功能，将自动忽略该配置。"
-                )
-
             self.data_collector = DataCollector(self.communication_manager)
             self.data_collector.register_data_callback(self._on_data_received)
 
@@ -245,12 +230,6 @@ class DataCollectionSystem:
                 await self.heartbeat_manager.start_heartbeats()
 
             await self.storage_processor.start_processing()
-
-            self.query_task_processor = asyncio.create_task(
-                self._process_query_tasks(),
-                name="query_task_processor",
-            )
-            self.logger.info("查询任务处理器已启动")
 
             self.db_health_task = asyncio.create_task(
                 self._monitor_database_connection(),
@@ -306,16 +285,6 @@ class DataCollectionSystem:
             self.logger.error("停止数据库健康检查任务时发生错误：%s", exc, exc_info=True)
 
         try:
-            if self.query_task_processor:
-                self.query_task_processor.cancel()
-                try:
-                    await self.query_task_processor
-                except asyncio.CancelledError:
-                    self.logger.info("查询任务处理器已停止")
-        except Exception as exc:  # noqa: BLE001
-            self.logger.error("停止查询任务处理器时发生错误：%s", exc, exc_info=True)
-
-        try:
             if self.storage_processor:
                 await self.storage_processor.stop_processing()
         except Exception as exc:  # noqa: BLE001
@@ -332,10 +301,6 @@ class DataCollectionSystem:
                 self.db_manager.disconnect()
         except Exception as exc:  # noqa: BLE001
             self.logger.error("断开数据库连接时发生错误：%s", exc, exc_info=True)
-
-        if hasattr(self, "executor") and self.executor:
-            self.executor.shutdown(wait=True)
-            self.logger.info("线程池已关闭")
 
         self.logger.info("数据采集系统已停止")
 
@@ -361,35 +326,6 @@ class DataCollectionSystem:
                 self.logger.error("数据库健康检查异常：%s", exc, exc_info=True)
                 await asyncio.sleep(self.db_health_check_interval)
 
-    def query_data(
-        self,
-        start_time: datetime,
-        end_time: datetime,
-        point_names: list,
-        output_file: str,
-    ) -> bool:
-        if not self.query_processor:
-            raise RuntimeError("查询处理器未初始化")
-        return self.query_processor.query_data(start_time, end_time, point_names, output_file)
-
-    def get_available_points(self) -> list:
-        if not self.query_processor:
-            raise RuntimeError("查询处理器未初始化")
-        return self.query_processor.get_available_points()
-
-    async def _write_query_status(self, opcua_client, query_group_config, status: int) -> bool:
-        try:
-            if not query_group_config or not query_group_config.get_feed_back_point():
-                self.logger.debug("未配置反馈点，跳过状态写入")
-                return True
-
-            data_writer = OpcUaDataWriter(opcua_client, query_group_config)
-            return await data_writer._write_feed_back_status(status)
-
-        except Exception as exc:  # noqa: BLE001
-            self.logger.error("写入查询状态失败：%s", exc, exc_info=True)
-            return False
-
     async def _write_insert_feedback(self, group_name: str, feedback_point: str, status_code: int) -> bool:
         try:
             if not self.communication_manager:
@@ -401,7 +337,7 @@ class DataCollectionSystem:
                 self.logger.warning("组 %s 未找到对应通信客户端，无法写入反馈", group_name)
                 return False
 
-            data_writer = OpcUaDataWriter(opcua_client, None)
+            data_writer = OpcUaFeedbackWriter(opcua_client)
             success = await data_writer.write_udint_feedback(feedback_point, status_code)
             if success:
                 self.logger.debug(
@@ -421,98 +357,6 @@ class DataCollectionSystem:
         except Exception as exc:  # noqa: BLE001
             self.logger.error("组 %s 写入插入反馈异常: %s", group_name, exc, exc_info=True)
             return False
-
-    async def _process_query_tasks(self) -> None:
-        self.logger.info("查询任务处理器开始运行")
-
-        while self.running:
-            try:
-                query_task = await asyncio.wait_for(
-                    self.data_collector.query_task_queue.get(),
-                    timeout=1.0,
-                )
-
-                self.logger.info("开始处理查询任务：%s", query_task["group_name"])
-
-                query_group_config = None
-                for group in self.config.groups:
-                    if group.name == query_task["group_name"]:
-                        query_group_config = group
-                        break
-
-                await self._write_query_status(
-                    query_task["opcua_client"],
-                    query_group_config,
-                    OpcUaDataWriter.QUERY_STATUS_RUNNING,
-                )
-
-                loop = asyncio.get_event_loop()
-                query_results, query_time, data_len = await loop.run_in_executor(
-                    self.executor,
-                    lambda: self.query_processor.query_data(
-                        start_times=query_task["start_time"],
-                        end_times=query_task["end_time"],
-                        point_names=query_task["point_names"],
-                        group_names=query_task["group_names"],
-                        output_file=query_task.get("output_file"),
-                        return_data=True,
-                        by_what_time=query_task.get("by_what_time"),
-                        aux_queries=query_task.get("aux_queries"),
-                    ),
-                )
-
-                if query_results is None:
-                    self.logger.error("查询任务失败：%s", query_task["group_name"])
-                    await self._write_query_status(
-                        query_task["opcua_client"],
-                        query_group_config,
-                        OpcUaDataWriter.QUERY_STATUS_ERROR,
-                    )
-                elif data_len == 0:
-                    self.logger.warning("查询结果为空：%s", query_task["group_name"])
-                    await self._write_query_status(
-                        query_task["opcua_client"],
-                        query_group_config,
-                        OpcUaDataWriter.QUERY_STATUS_NO_DATA,
-                    )
-                else:
-                    opcua_client = query_task["opcua_client"]
-                    data_writer = OpcUaDataWriter(opcua_client, query_group_config)
-
-                    success = await data_writer.write_query_results(
-                        query_results,
-                        query_time,
-                        query_task["point_names"],
-                    )
-
-                    if success:
-                        self.logger.info("查询结果已成功写入 OPC UA 缓冲区：%s", query_task["group_name"])
-                        await self._write_query_status(
-                            query_task["opcua_client"],
-                            query_group_config,
-                            OpcUaDataWriter.QUERY_STATUS_SUCCESS,
-                        )
-                    else:
-                        self.logger.warning("写入 OPC UA 缓冲区失败：%s", query_task["group_name"])
-
-                self.data_collector.query_task_queue.task_done()
-
-            except asyncio.TimeoutError:
-                continue
-            except asyncio.CancelledError:
-                self.logger.info("查询任务处理器被取消")
-                break
-            except Exception as exc:  # noqa: BLE001
-                self.logger.error("处理查询任务时发生错误：%s", exc, exc_info=True)
-                try:
-                    await self._write_query_status(
-                        query_task["opcua_client"],
-                        query_group_config,
-                        OpcUaDataWriter.QUERY_STATUS_ERROR,
-                    )
-                except Exception:  # noqa: BLE001
-                    pass
-                await asyncio.sleep(1)
 
     def _get_log_file_path(self) -> str:
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -587,40 +431,3 @@ async def run_collection_mode(config_file: str):
             print(f"停止系统时发生错误: {exc}")
 
 
-def run_query_mode(config_file: str):
-    """运行查询模式"""
-    system = DataCollectionSystem(config_file)
-
-    try:
-        if not asyncio.run(system.initialize()):
-            print("系统初始化失败")
-            return
-
-        points = system.get_available_points()
-        print("可用数据点:")
-        for i, point in enumerate(points, 1):
-            print(f"{i}. {point}")
-
-        if not points:
-            print("没有可用的数据点")
-            return
-
-        print("\n请输入查询参数:")
-        start_time_str = input("开始时间 (YYYY-MM-DD HH:MM:SS): ")
-        end_time_str = input("结束时间 (YYYY-MM-DD HH:MM:SS): ")
-        output_file = input("输出文件路径 (如: output.csv): ")
-
-        start_time = datetime.strptime(start_time_str, "%Y-%m-%d %H:%M:%S")
-        end_time = datetime.strptime(end_time_str, "%Y-%m-%d %H:%M:%S")
-
-        if system.query_data(start_time, end_time, points, output_file):
-            print(f"数据查询成功，已保存到: {output_file}")
-        else:
-            print("数据查询失败")
-
-    except KeyboardInterrupt:
-        print("\n查询被中断")
-    except Exception as exc:  # noqa: BLE001
-        print(f"查询过程中发生错误: {exc}")
-    finally:
-        asyncio.run(system.stop())

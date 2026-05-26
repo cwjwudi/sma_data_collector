@@ -11,7 +11,9 @@
     {
       "name": "connection1",
       "communication": "PLC1",
-      "data_groups": ["sensor_group_1", "query_group_1"]
+      "data_groups": [
+        "sensor_group_1"
+      ]
     }
   ],
   "points": [
@@ -47,24 +49,12 @@
       "interval_seconds": 1,
       "trigger": "time",
       "description": "PLC1传感器组，每1秒采集一次",
-      "data_points": ["msg"],
+      "data_points": [
+        "msg"
+      ],
       "trigger_point": null,
       "recreate_interval_days": 1,
       "batch_insert_size": 5
-    },
-    {
-      "name": "query_group_1",
-      "interval_seconds": 0.5,
-      "trigger": "query",
-      "description": "用于处理查询任务，不要改动该字段，interval_seconds检查bTriggerQuery的轮询时间，单位是秒",
-      "data_points": ["strStartTimes", "strEndTimes", "strPointNames"],
-      "trigger_point": "bTriggerQuery",
-      "query_config": {
-        "start_time_field": "strStartTimes",
-        "end_time_field": "strEndTimes",
-        "query_point_field": "strPointNames",
-        "output_file": null
-      }
     }
   ],
   "database": {
@@ -74,6 +64,8 @@
     "port": 3306,
     "username": "root",
     "password": "Br54644800@",
-    "data_groups": ["sensor_group_1", "query_group_1"]
+    "data_groups": [
+      "sensor_group_1"
+    ]
   }
 }

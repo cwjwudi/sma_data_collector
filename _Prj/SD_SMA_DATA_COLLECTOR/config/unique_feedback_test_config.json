@@ -1,5 +1,5 @@
 {
-"communications": [
+  "communications": [
     {
       "name": "PLC_TPS",
       "type": "opcua",
@@ -11,7 +11,9 @@
     {
       "name": "connection1",
       "communication": "PLC_TPS",
-      "data_groups": ["unique_feedback_group"],
+      "data_groups": [
+        "unique_feedback_group"
+      ],
       "heartbeat": "ns=6;s=::AsGlobalPV:gDataSQLHeartBeat"
     }
   ],
@@ -35,6 +37,11 @@
       "name": "ProductInsertTrigger",
       "path": "ns=6;s=::AsGlobalPV:gDataSQLOperate.ProductInsert",
       "description": "生产数据-存储信号"
+    },
+    {
+      "name": "AIR",
+      "path": "ns=6;s=::DataGen:AIR",
+      "description": "AIR"
     }
   ],
   "groups": [
@@ -63,6 +70,10 @@
   "database": {
     "type": "sqlite",
     "name": "unique_feedback_test.db",
+    "host": "127.0.0.1",
+    "port": 3306,
+    "username": "",
+    "password": "",
     "data_groups": [
       "unique_feedback_group"
     ]
