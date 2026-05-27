@@ -23,10 +23,8 @@ class CollectorConfigManager:
 
     def __init__(
         self,
-        template_path: Path,
         collector_config_dir: Path,
     ):
-        self.template_path = template_path
         self.collector_config_dir = collector_config_dir
 
     @staticmethod
@@ -186,9 +184,7 @@ class CollectorConfigManager:
             raise ValueError(f"配置校验失败: {exc}") from exc
 
     def get_template(self) -> dict[str, Any]:
-        data = self._load_json(self.template_path)
-        sanitized, _ = self.sanitize_for_ui(data)
-        return sanitized
+        return self.default_payload()
 
     def list_config_files(self) -> list[str]:
         self.collector_config_dir.mkdir(parents=True, exist_ok=True)
@@ -227,7 +223,6 @@ class CollectorConfigManager:
     def save_template(self, payload: dict[str, Any]) -> None:
         self._validate_scope(payload)
         self._validate_by_loader(payload)
-        self._write_json(self.template_path, payload)
 
     def validate_template(self, payload: dict[str, Any]) -> dict[str, Any]:
         self._validate_scope(payload)

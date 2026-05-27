@@ -82,6 +82,34 @@ def apply_proxy_env(env: dict[str, str], config: dict[str, Any]) -> None:
     env["no_proxy"] = no_proxy
 
 
+def expand_config_value(value: str) -> str:
+    raw = str(value)
+    raw = raw.replace("${PACKAGE_ROOT}", str(PACKAGE_ROOT))
+    raw = raw.replace("${LAUNCHER_DIR}", str(LAUNCHER_DIR))
+    return os.path.expandvars(raw)
+
+
+def resolve_service_env(service: dict[str, Any]) -> dict[str, str]:
+    raw_env = service.get("env", {})
+    if not isinstance(raw_env, dict):
+        return {}
+
+    resolved: dict[str, str] = {}
+    path_suffixes = ("_DIR", "_PATH", "_FILE")
+    for key, value in raw_env.items():
+        env_key = str(key).strip()
+        if not env_key:
+            continue
+        expanded = expand_config_value(str(value))
+        if env_key.endswith(path_suffixes):
+            path = Path(expanded)
+            if not path.is_absolute():
+                path = PACKAGE_ROOT / path
+            expanded = str(path.resolve())
+        resolved[env_key] = expanded
+    return resolved
+
+
 def run_python(
     python: Path,
     args: list[str],
@@ -256,6 +284,7 @@ def start_services(python: Path, config: dict[str, Any]) -> list[ServiceProcess]
         port = int(service["port"])
         log_path = log_dir / f"{name}.log"
         log_file = log_path.open("a", encoding="utf-8")
+        service_env = resolve_service_env(service)
         command = [
             str(python),
             "-m",
@@ -269,10 +298,12 @@ def start_services(python: Path, config: dict[str, Any]) -> list[ServiceProcess]
 
         print(f"[start] {title}: http://{host}:{port}")
         print(f"[start] log: {log_path}")
+        for env_key, env_value in service_env.items():
+            print(f"[start] env {env_key}={env_value}")
         process = subprocess.Popen(
             command,
             cwd=str(cwd),
-            env=env,
+            env={**env, **service_env},
             stdout=log_file,
             stderr=subprocess.STDOUT,
             text=True,

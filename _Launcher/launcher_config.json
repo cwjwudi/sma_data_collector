@@ -27,7 +27,10 @@
       "host": "127.0.0.1",
       "port": 8091,
       "health_path": "/api/health",
-      "open_url": "http://127.0.0.1:8091/dashboard"
+      "open_url": "http://127.0.0.1:8091/dashboard",
+      "env": {
+        "SD_SMA_COLLECTOR_CONFIG_DIR": "_Prj/SD_SMA_DATA_COLLECTOR/config"
+      }
     },
     {
       "name": "query_web",
@@ -37,7 +40,10 @@
       "host": "127.0.0.1",
       "port": 8092,
       "health_path": "/query",
-      "open_url": "http://127.0.0.1:8092/query"
+      "open_url": "http://127.0.0.1:8092/query",
+      "env": {
+        "SD_SMA_QUERY_WEB_CONFIG_DIR": "_Prj/SD_SMA_DATA_COLLECTOR_QUERY_WEB/config"
+      }
     }
   ]
 }

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import json
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
@@ -22,28 +22,28 @@ from .opcua_browser import OpcUaBrowserService
 
 BASE_DIR = Path(__file__).resolve().parent
 COLLECTOR_ROOT = BASE_DIR.parent
-CONFIG_DIR = BASE_DIR / "config"
-APP_SETTINGS_PATH = CONFIG_DIR / "app_settings.json"
-TEMPLATE_PATH = CONFIG_DIR / "collector_config_template.json"
 
 
-def _load_settings() -> dict[str, Any]:
-    if not APP_SETTINGS_PATH.exists():
-        return {}
-    with APP_SETTINGS_PATH.open("r", encoding="utf-8") as f:
-        data = json.load(f)
-    if not isinstance(data, dict):
-        return {}
-    return data
+def _resolve_config_dir(env_name: str, default: Path, *, base: Path) -> Path:
+    raw = os.getenv(env_name)
+    if not raw:
+        return default.resolve()
+    value = raw.replace("${COLLECTOR_ROOT}", str(COLLECTOR_ROOT))
+    value = value.replace("${WEB_CONFIG_ROOT}", str(BASE_DIR))
+    path = Path(os.path.expandvars(value))
+    if not path.is_absolute():
+        path = base / path
+    return path.resolve()
 
 
-settings = _load_settings()
-# 按需求固定读取当前采集程序 config 目录，不允许切换到其他目录。
-collector_config_dir = (COLLECTOR_ROOT / "config").resolve()
-export_dir = Path(settings.get("export_dir", str((CONFIG_DIR / "exports").resolve())))
+collector_config_dir = _resolve_config_dir(
+    "SD_SMA_COLLECTOR_CONFIG_DIR",
+    COLLECTOR_ROOT / "config",
+    base=COLLECTOR_ROOT,
+)
+export_dir = collector_config_dir / "exports"
 
 cfg = CollectorConfigManager(
-    template_path=TEMPLATE_PATH,
     collector_config_dir=collector_config_dir,
 )
 opcua_browser = OpcUaBrowserService()
@@ -245,4 +245,3 @@ async def collector_start(req: CollectorStartRequest) -> dict[str, Any]:
 @app.post("/api/collector/stop")
 async def collector_stop() -> dict[str, Any]:
     return await get_collector_host().stop()
-

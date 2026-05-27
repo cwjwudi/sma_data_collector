@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 import time
 from collections import defaultdict, deque
@@ -26,7 +27,20 @@ from .models import (
 )
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-CONFIG_DIR = BASE_DIR / "config"
+
+
+def _resolve_config_dir(env_name: str, default: Path) -> Path:
+    raw = os.getenv(env_name)
+    if not raw:
+        return default.resolve()
+    value = raw.replace("${QUERY_WEB_ROOT}", str(BASE_DIR))
+    path = Path(os.path.expandvars(value))
+    if not path.is_absolute():
+        path = BASE_DIR / path
+    return path.resolve()
+
+
+CONFIG_DIR = _resolve_config_dir("SD_SMA_QUERY_WEB_CONFIG_DIR", BASE_DIR / "config")
 APP_SETTINGS_PATH = CONFIG_DIR / "app_settings.json"
 QUERY_VIEW_CONFIG_PATH = CONFIG_DIR / "query_view_config.json"
 PLUGIN_CONFIG_PATH = CONFIG_DIR / "plugins_config.json"
