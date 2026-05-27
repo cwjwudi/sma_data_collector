@@ -5,12 +5,176 @@ from pathlib import Path
 from typing import Any
 
 
-class ConfigManager:
+class UnifiedConfigStore:
     def __init__(
         self,
-        query_view_config_path: Path,
+        config_dir: Path,
+        *,
+        legacy_app_settings_path: Path | None = None,
+        legacy_query_view_config_path: Path | None = None,
+        legacy_plugin_config_path: Path | None = None,
     ):
-        self.query_view_config_path = query_view_config_path
+        self.config_dir = config_dir
+        self.active_profile_path = config_dir / ".active_query_config"
+        self.legacy_app_settings_path = legacy_app_settings_path
+        self.legacy_query_view_config_path = legacy_query_view_config_path
+        self.legacy_plugin_config_path = legacy_plugin_config_path
+        self.legacy_filenames = {
+            "app_settings.json",
+            "query_view_config.json",
+            "plugins_config.json",
+        }
+        self.ensure_default_profile()
+
+    @staticmethod
+    def _load_json(path: Path) -> dict[str, Any]:
+        if not path.exists():
+            return {}
+        with path.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+        if not isinstance(data, dict):
+            return {}
+        return data
+
+    @staticmethod
+    def _write_json(path: Path, data: dict[str, Any]) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+
+    @staticmethod
+    def _safe_profile_name(filename: str) -> str:
+        name = Path(str(filename or "")).name.strip()
+        if not name:
+            raise ValueError("config filename is required")
+        if not name.lower().endswith(".json"):
+            name = f"{name}.json"
+        if name.startswith(".") or "/" in name or "\\" in name:
+            raise ValueError("invalid config filename")
+        return name
+
+    def _profile_path(self, filename: str) -> Path:
+        name = self._safe_profile_name(filename)
+        target = (self.config_dir / name).resolve()
+        if target.parent != self.config_dir.resolve():
+            raise ValueError("invalid config filename")
+        return target
+
+    def _build_legacy_profile(self) -> dict[str, Any]:
+        return {
+            "version": 1,
+            "name": "default",
+            "app_settings": self._load_json(self.legacy_app_settings_path) if self.legacy_app_settings_path else {},
+            "query_view": self._load_json(self.legacy_query_view_config_path) if self.legacy_query_view_config_path else {},
+            "plugins": (
+                self._load_json(self.legacy_plugin_config_path)
+                if self.legacy_plugin_config_path
+                else {"modules": {}}
+            )
+            or {"modules": {}},
+        }
+
+    def _profile_files(self) -> list[Path]:
+        return sorted(
+            path
+            for path in self.config_dir.glob("*.json")
+            if path.name not in self.legacy_filenames
+        )
+
+    def ensure_default_profile(self) -> None:
+        self.config_dir.mkdir(parents=True, exist_ok=True)
+        profiles = self._profile_files()
+        if not profiles:
+            self._write_json(self.config_dir / "default.json", self._build_legacy_profile())
+            profiles = self._profile_files()
+        if not self.active_profile_path.exists():
+            active_name = "default.json" if (self.config_dir / "default.json").exists() else profiles[0].name
+            self.active_profile_path.write_text(active_name, encoding="utf-8")
+
+    def list_profiles(self) -> list[dict[str, Any]]:
+        self.ensure_default_profile()
+        active = self.get_active_profile_name()
+        profiles: list[dict[str, Any]] = []
+        for path in self._profile_files():
+            data = self._load_json(path)
+            profiles.append(
+                {
+                    "filename": path.name,
+                    "name": str(data.get("name", path.stem)),
+                    "active": path.name == active,
+                }
+            )
+        return profiles
+
+    def get_active_profile_name(self) -> str:
+        self.ensure_default_profile()
+        raw = self.active_profile_path.read_text(encoding="utf-8").strip()
+        name = self._safe_profile_name(raw or "default.json")
+        if not self._profile_path(name).exists():
+            profiles = self._profile_files()
+            name = "default.json" if (self.config_dir / "default.json").exists() else profiles[0].name
+            self.active_profile_path.write_text(name, encoding="utf-8")
+        return name
+
+    def set_active_profile(self, filename: str) -> dict[str, Any]:
+        name = self._safe_profile_name(filename)
+        path = self._profile_path(name)
+        if not path.exists():
+            raise FileNotFoundError(f"config profile not found: {name}")
+        self.active_profile_path.write_text(name, encoding="utf-8")
+        return self.get_active_config()
+
+    def get_active_config(self) -> dict[str, Any]:
+        path = self._profile_path(self.get_active_profile_name())
+        data = self._load_json(path)
+        if not data:
+            data = self._build_legacy_profile()
+            self._write_json(path, data)
+        data.setdefault("version", 1)
+        data.setdefault("name", path.stem)
+        data.setdefault("app_settings", {})
+        data.setdefault("query_view", {})
+        data.setdefault("plugins", {"modules": {}})
+        return data
+
+    def save_active_config(self, data: dict[str, Any]) -> None:
+        path = self._profile_path(self.get_active_profile_name())
+        data.setdefault("version", 1)
+        data.setdefault("name", path.stem)
+        data.setdefault("app_settings", {})
+        data.setdefault("query_view", {})
+        data.setdefault("plugins", {"modules": {}})
+        self._write_json(path, data)
+
+    def get_app_settings(self) -> dict[str, Any]:
+        return dict(self.get_active_config().get("app_settings", {}))
+
+    def save_app_settings(self, data: dict[str, Any]) -> None:
+        config = self.get_active_config()
+        config["app_settings"] = data
+        self.save_active_config(config)
+
+    def get_query_view_config(self) -> dict[str, Any]:
+        return dict(self.get_active_config().get("query_view", {}))
+
+    def save_query_view_config(self, data: dict[str, Any]) -> None:
+        config = self.get_active_config()
+        config["query_view"] = data
+        self.save_active_config(config)
+
+    def get_plugins_config(self) -> dict[str, Any]:
+        data = self.get_active_config().get("plugins", {"modules": {}})
+        return data if isinstance(data, dict) else {"modules": {}}
+
+    def save_plugins_config(self, data: dict[str, Any]) -> None:
+        config = self.get_active_config()
+        config["plugins"] = data
+        self.save_active_config(config)
+
+
+class ConfigManager:
+    def __init__(self, config_store: UnifiedConfigStore):
+        self.config_store = config_store
 
     @staticmethod
     def _load_json(path: Path) -> dict[str, Any]:
@@ -26,7 +190,10 @@ class ConfigManager:
             json.dump(data, f, ensure_ascii=False, indent=2)
 
     def get_query_view_config(self) -> dict[str, Any]:
-        return self._load_json(self.query_view_config_path)
+        return self.config_store.get_query_view_config()
+
+    def _write_query_view_config(self, data: dict[str, Any]) -> None:
+        self.config_store.save_query_view_config(data)
 
     @staticmethod
     def _validate_query_view_config(data: dict[str, Any]) -> None:
@@ -108,7 +275,7 @@ class ConfigManager:
 
     def save_query_view_config(self, data: dict[str, Any]) -> None:
         self._validate_query_view_config(data)
-        self._write_json(self.query_view_config_path, data)
+        self._write_query_view_config(data)
 
     def get_query_views(self) -> dict[str, Any]:
         config = self.get_query_view_config()
@@ -219,7 +386,7 @@ class ConfigManager:
             raise ValueError("group_baselines must be an object")
         group_baselines[group] = baseline_table
         self._validate_query_view_config(config)
-        self._write_json(self.query_view_config_path, config)
+        self._write_query_view_config(config)
 
     def get_query_table_config(self, view_name: str, table: str) -> dict[str, Any]:
         resolved = self.resolve_query_view(view_name, table)
@@ -287,7 +454,7 @@ class ConfigManager:
         }
 
         self._validate_query_view_config(config)
-        self._write_json(self.query_view_config_path, config)
+        self._write_query_view_config(config)
 
     def get_query_group_config(self, view_name: str, group: str, baseline_table: str) -> dict[str, Any]:
         resolved = self.resolve_query_view(view_name=view_name, table=baseline_table, group=group)
@@ -366,7 +533,7 @@ class ConfigManager:
             group_baselines[group] = baseline_table
 
         self._validate_query_view_config(config)
-        self._write_json(self.query_view_config_path, config)
+        self._write_query_view_config(config)
 
     def list_configured_groups_by_view(self, view_name: str) -> list[str]:
         config = self.get_query_view_config()
@@ -394,5 +561,5 @@ class ConfigManager:
         if existed:
             del per_group[group]
             self._validate_query_view_config(config)
-            self._write_json(self.query_view_config_path, config)
+            self._write_query_view_config(config)
         return existed

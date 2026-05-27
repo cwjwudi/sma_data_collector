@@ -14,6 +14,17 @@
     </nav>
     <div class="layout layout-stack">
       <section class="panel">
+        <h2>配置文件</h2>
+        <p class="hint">选择一个完整 config 文件进行加载；每个文件包含基础设置、查询视图和插件页面配置。</p>
+        <div class="row">
+          <label for="configProfileSelect">当前 config</label>
+          <select id="configProfileSelect"></select>
+          <button type="button" id="btnReloadConfigProfile">加载 config</button>
+        </div>
+        <div id="configProfileHint" class="muted"></div>
+      </section>
+
+      <section class="panel">
         <h2>基础设定</h2>
         <p class="hint">维护数据库连接与查询窗口限制，内容对应 app_settings.json。</p>
         <div class="row">
@@ -142,6 +153,6 @@
         <div id="pluginConfigHint" class="muted"></div>
       </section>
     </div>
-    <script src="/static/config.js"></script>
+    <script src="/static/config.js?v=20260527_1"></script>
   </body>
 </html>

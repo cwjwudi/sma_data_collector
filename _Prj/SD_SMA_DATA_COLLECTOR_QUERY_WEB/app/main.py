@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import re
 import time
 from collections import defaultdict, deque
@@ -13,7 +12,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.exc import OperationalError, SQLAlchemyError
 
-from .config_manager import ConfigManager
+from .config_manager import ConfigManager, UnifiedConfigStore
 from .database import QueryDatabase
 from .models import (
     GroupBaselineUpdateRequest,
@@ -61,16 +60,12 @@ def _normalize_app_settings(data: dict[str, Any] | None) -> dict[str, Any]:
 
 
 def _load_app_settings() -> dict[str, Any]:
-    if not APP_SETTINGS_PATH.exists():
-        return _normalize_app_settings({})
-    with APP_SETTINGS_PATH.open("r", encoding="utf-8") as f:
-        return _normalize_app_settings(json.load(f))
+    return _normalize_app_settings(config_store.get_app_settings())
 
 
 def _save_app_settings(data: dict[str, Any]) -> dict[str, Any]:
     normalized = _normalize_app_settings(data)
-    with APP_SETTINGS_PATH.open("w", encoding="utf-8") as f:
-        json.dump(normalized, f, ensure_ascii=False, indent=2)
+    config_store.save_app_settings(normalized)
     return normalized
 
 
@@ -85,12 +80,15 @@ def _apply_runtime_settings(updated_settings: dict[str, Any]) -> None:
     MAX_WINDOW_HOURS = int(QUERY_LIMITS.get("max_window_hours", 168))
 
 
-app = FastAPI(title="SD SMA Query Web", version="0.1.0")
-app.mount("/static", StaticFiles(directory=str(BASE_DIR / "app" / "static")), name="static")
-
+config_store = UnifiedConfigStore(
+    CONFIG_DIR,
+    legacy_app_settings_path=APP_SETTINGS_PATH,
+    legacy_query_view_config_path=QUERY_VIEW_CONFIG_PATH,
+    legacy_plugin_config_path=PLUGIN_CONFIG_PATH,
+)
 settings = _load_app_settings()
 db = QueryDatabase(settings.get("database", {}))
-cfg = ConfigManager(QUERY_VIEW_CONFIG_PATH)
+cfg = ConfigManager(config_store)
 QUERY_LIMITS = settings.get("query_limits", {})
 RATE_LIMIT_PER_MINUTE = int(QUERY_LIMITS.get("requests_per_minute", 120))
 DEFAULT_WINDOW_HOURS = int(QUERY_LIMITS.get("default_window_hours", 24))
@@ -98,11 +96,14 @@ MAX_WINDOW_HOURS = int(QUERY_LIMITS.get("max_window_hours", 168))
 _REQUEST_BUCKETS: dict[str, deque[float]] = defaultdict(deque)
 PLUGIN_KEY_PATTERN = re.compile(r"^([A-Za-z0-9_]+)_([1-5])$")
 
+app = FastAPI(title="SD SMA Query Web", version="0.1.0")
+app.mount("/static", StaticFiles(directory=str(BASE_DIR / "app" / "static")), name="static")
+
 
 def _raise_db_error(exc: Exception) -> None:
     detail = (
         "数据库连接失败，请检查 "
-        "config/app_settings.json 中 database 的 host/port/name/username/password 是否正确。"
+        "当前统一 config 中 app_settings.database 的 host/port/name/username/password 是否正确。"
     )
     raise HTTPException(status_code=503, detail=f"{detail} 原因: {exc}") from exc
 
@@ -166,10 +167,7 @@ def _apply_time_guardrails(
 
 
 def _load_plugin_config() -> dict[str, Any]:
-    if not PLUGIN_CONFIG_PATH.exists():
-        return {"modules": {}}
-    with PLUGIN_CONFIG_PATH.open("r", encoding="utf-8") as f:
-        data = json.load(f)
+    data = config_store.get_plugins_config()
     if not isinstance(data, dict):
         return {"modules": {}}
     if "modules" not in data or not isinstance(data["modules"], dict):
@@ -196,8 +194,7 @@ def _save_plugin_config(data: dict[str, Any]) -> None:
             if not isinstance(pages[idx], dict):
                 raise ValueError(f"模块 {module_name} 第 {idx} 页配置无效")
 
-    with PLUGIN_CONFIG_PATH.open("w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    config_store.save_plugins_config(data)
 
 
 def _resolve_plugin_binding(plugin_key: str) -> dict[str, Any]:
@@ -302,6 +299,31 @@ def check_database(request: Request) -> dict[str, Any]:
 @app.get("/api/config/app-settings")
 def get_app_settings() -> dict[str, Any]:
     return _load_app_settings()
+
+
+@app.get("/api/config/profiles")
+def list_config_profiles() -> dict[str, Any]:
+    return {
+        "active": config_store.get_active_profile_name(),
+        "profiles": config_store.list_profiles(),
+    }
+
+
+@app.post("/api/config/profiles/active")
+def set_active_config_profile(payload: dict[str, Any]) -> dict[str, Any]:
+    filename = str(payload.get("filename", "")).strip()
+    try:
+        config_store.set_active_profile(filename)
+        _apply_runtime_settings(_load_app_settings())
+        return {
+            "status": "loaded",
+            "active": config_store.get_active_profile_name(),
+            "profiles": config_store.list_profiles(),
+        }
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.post("/api/config/app-settings")

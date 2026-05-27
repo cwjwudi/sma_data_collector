@@ -7,6 +7,7 @@ let pluginConfigData = { modules: {} };
 const CONFIG_STATE_KEY = 'sd_sma_query_config_page_state_v1';
 let deleteConfirmArmed = false;
 let deleteConfirmTimer = null;
+let currentConfigProfile = '';
 
 function getAppSettingsPayload() {
   return {
@@ -60,6 +61,7 @@ function saveConfigPageState() {
     columnLabels,
     pluginModule: document.getElementById('pluginModule').value || '',
     pluginPageIndex: document.getElementById('pluginPageIndex').value || '1',
+    configProfile: document.getElementById('configProfileSelect').value || currentConfigProfile || '',
   };
   localStorage.setItem(CONFIG_STATE_KEY, JSON.stringify(state));
 }
@@ -160,6 +162,49 @@ async function loadAppSettings() {
   const data = await fetchJson('/api/config/app-settings');
   fillAppSettingsForm(data || {});
   document.getElementById('appSettingsHint').textContent = '已加载基础设定';
+}
+
+async function loadConfigProfiles() {
+  const data = await fetchJson('/api/config/profiles');
+  currentConfigProfile = data.active || '';
+  const sel = document.getElementById('configProfileSelect');
+  sel.innerHTML = '';
+  for (const profile of data.profiles || []) {
+    const op = document.createElement('option');
+    op.value = profile.filename;
+    op.textContent = profile.name && profile.name !== profile.filename
+      ? `${profile.name} (${profile.filename})`
+      : profile.filename;
+    sel.appendChild(op);
+  }
+  if (currentConfigProfile && hasOption(sel, currentConfigProfile)) {
+    sel.value = currentConfigProfile;
+  }
+  document.getElementById('configProfileHint').textContent =
+    currentConfigProfile ? `当前加载: ${currentConfigProfile}` : '未找到可用 config';
+}
+
+async function switchConfigProfile() {
+  const filename = document.getElementById('configProfileSelect').value;
+  if (!filename) return;
+  const result = await fetchJson('/api/config/profiles/active', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ filename }),
+  });
+  currentConfigProfile = result.active || filename;
+  localStorage.removeItem(CONFIG_STATE_KEY);
+  queryViews = {};
+  availableColumns = [];
+  orderedColumns = [];
+  columnLabels = {};
+  currentSchema = null;
+  pluginConfigData = { modules: {} };
+  await loadConfigProfiles();
+  await loadAppSettings();
+  await refreshMetadataFromCurrentDatabase();
+  await loadPluginConfig().catch(() => {});
+  document.getElementById('configProfileHint').textContent = `已加载 config: ${currentConfigProfile}`;
 }
 
 function hasOption(select, value) {
@@ -574,6 +619,12 @@ async function restoreConfigPageState() {
 document.getElementById('btnLoadTableConfig').addEventListener('click', () => {
   loadTableConfig().catch(err => alert(err.message));
 });
+document.getElementById('btnReloadConfigProfile').addEventListener('click', () => {
+  switchConfigProfile().catch(err => alert(err.message));
+});
+document.getElementById('configProfileSelect').addEventListener('change', () => {
+  switchConfigProfile().catch(err => alert(err.message));
+});
 document.getElementById('btnSaveAppSettings').addEventListener('click', () => {
   saveAppSettings().catch(err => alert(err.message));
 });
@@ -747,6 +798,7 @@ document.getElementById('pluginViewName').addEventListener('change', saveConfigP
 document.getElementById('pluginPageSize').addEventListener('change', saveConfigPageState);
 
 async function initConfigPage() {
+  await loadConfigProfiles();
   await loadAppSettings();
   await loadViews();
   await loadGroups();
