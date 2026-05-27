@@ -1,0 +1,43 @@
+{
+  "python": ".venv/Scripts/python.exe",
+  "allow_current_python_fallback": true,
+  "requirements": "_Launcher/requirements-unified.txt",
+  "auto_install_missing": false,
+  "wheelhouse": "wheelhouse",
+  "proxy": {
+    "enabled": true,
+    "url": "http://192.168.50.122:7890",
+    "no_proxy": "localhost,127.0.0.1,::1"
+  },
+  "required_imports": [
+    { "package": "fastapi", "import": "fastapi" },
+    { "package": "uvicorn", "import": "uvicorn" },
+    { "package": "pydantic", "import": "pydantic" },
+    { "package": "sqlalchemy", "import": "sqlalchemy" },
+    { "package": "pymysql", "import": "pymysql" },
+    { "package": "opcua", "import": "opcua" }
+  ],
+  "open_browser": true,
+  "services": [
+    {
+      "name": "collector_web",
+      "title": "SD SMA Collector",
+      "cwd": "_Prj/SD_SMA_DATA_COLLECTOR",
+      "app": "web_config.main:app",
+      "host": "127.0.0.1",
+      "port": 8091,
+      "health_path": "/api/health",
+      "open_url": "http://127.0.0.1:8091/dashboard"
+    },
+    {
+      "name": "query_web",
+      "title": "SD SMA Query Web",
+      "cwd": "_Prj/SD_SMA_DATA_COLLECTOR_QUERY_WEB",
+      "app": "app.main:app",
+      "host": "127.0.0.1",
+      "port": 8092,
+      "health_path": "/query",
+      "open_url": "http://127.0.0.1:8092/query"
+    }
+  ]
+}
