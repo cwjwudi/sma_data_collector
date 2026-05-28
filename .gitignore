@@ -48,6 +48,7 @@ dist-electron/
 _Prj/SD_SMA_ReportEditor/backend/data/
 _Build/
 _Prj/SD_SMA_DATA_COLLECTOR_QUERY_WEB/config/.active_query_config
+_Prj/SD_SMA_DATA_COLLECTOR/config/.collector_runtime_settings.json
 
 # Environment
 .env

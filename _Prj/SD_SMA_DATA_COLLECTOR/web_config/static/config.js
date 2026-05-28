@@ -133,6 +133,20 @@ function setResult(text) {
   resultEl.textContent = text;
 }
 
+function getCurrentConfigFileNames() {
+  return Array.from(configFileSelect.options)
+    .map((opt) => String(opt.value || "").trim())
+    .filter(Boolean);
+}
+
+function formatFileChangeList(names) {
+  if (!names.length) {
+    return "";
+  }
+  const shown = names.slice(0, 5).join(", ");
+  return names.length > 5 ? `${shown} 等 ${names.length} 个` : shown;
+}
+
 function createInput(value, onChange, type = "text") {
   const input = document.createElement("input");
   input.type = type;
@@ -1009,8 +1023,10 @@ function renderLogging() {
   );
 }
 
-async function refreshFileList() {
-  const data = await api("/api/config/files");
+async function refreshFileList(options = {}) {
+  const { showFeedback = false } = options;
+  const beforeFiles = getCurrentConfigFileNames();
+  const data = await api(`/api/config/files?ts=${Date.now()}`);
   const files = data.files || [];
   configFileSelect.innerHTML = "";
   files.forEach((name) => {
@@ -1025,6 +1041,9 @@ async function refreshFileList() {
     opt.textContent = "(config 目录无 JSON 文件)";
     configFileSelect.appendChild(opt);
     currentFilename = "";
+    if (showFeedback) {
+      setResult("文件列表加载成功：config 目录无 JSON 文件");
+    }
     return;
   }
 
@@ -1035,6 +1054,23 @@ async function refreshFileList() {
     configFileSelect.value = currentFilename;
   }
   savePageState();
+  if (showFeedback) {
+    const beforeSet = new Set(beforeFiles);
+    const afterSet = new Set(files);
+    const added = files.filter((name) => !beforeSet.has(name));
+    const removed = beforeFiles.filter((name) => !afterSet.has(name));
+    const details = [];
+    if (added.length) {
+      details.push(`新发现 ${added.length} 个：${formatFileChangeList(added)}`);
+    }
+    if (removed.length) {
+      details.push(`已移除 ${removed.length} 个：${formatFileChangeList(removed)}`);
+    }
+    if (!details.length) {
+      details.push("没有发现新增配置文件");
+    }
+    setResult(`文件列表加载成功：共 ${files.length} 个配置文件；${details.join("；")}`);
+  }
 }
 
 async function loadConfigFile() {
@@ -1372,7 +1408,7 @@ function showConfirmModal({ title, message }) {
 }
 
 document.getElementById("btn-refresh-files").addEventListener("click", () => {
-  refreshFileList().catch((error) => setResult(error.message));
+  refreshFileList({ showFeedback: true }).catch((error) => setResult(error.message));
 });
 document.getElementById("btn-load-file").addEventListener("click", () => {
   loadConfigFile().catch((error) => setResult(error.message));
