@@ -2,7 +2,7 @@
   <div class="rg-page">
     <h2 class="rg-title">生成报表</h2>
     <p class="rg-lead">
-      导出 PDF 与模版编辑器中<strong>导出预览</strong>栈一致（同一套控件缩放与 OPC/SQL 绑定填充）。请在<strong>Electron 桌面版</strong>中使用完整导出能力。
+      {{ RG_UI.manual }}与 OPC UA {{ RG_UI.opcAuto }}所得 PDF，与模版编辑器中<strong>导出预览</strong>栈一致（同一套控件缩放与 OPC/SQL 绑定填充）。请在<strong>Electron 桌面版</strong>中使用完整能力。
     </p>
 
     <div v-if="!electronShell" class="rg-banner rg-banner--warn">
@@ -10,7 +10,7 @@
     </div>
 
     <section class="rg-card">
-      <h3 class="rg-h3">模拟截批（手动导出 PDF）</h3>
+      <h3 class="rg-h3">{{ RG_UI.manual }}</h3>
       <div class="rg-row">
         <label class="rg-lbl" for="rg-tpl">报表模版</label>
         <select id="rg-tpl" v-model="prefs.templateId" class="rg-select">
@@ -21,7 +21,7 @@
         </select>
       </div>
       <div class="rg-switch-row">
-        <span class="rg-switch-label" id="rg-manual-open-lbl">导出完成后打开 PDF（桌面壳）</span>
+        <span class="rg-switch-label" id="rg-manual-open-lbl">{{ RG_UI.manual }}完成后打开 PDF（桌面壳）</span>
         <button
           type="button"
           class="rg-switch"
@@ -35,16 +35,16 @@
       </div>
       <div class="rg-actions">
         <button type="button" class="btn primary" :disabled="manualBusy || !canManualExport" @click="onManualExport">
-          {{ manualBusy ? "导出中…" : "选择保存位置并导出 PDF" }}
+          {{ manualBusy ? `${RG_UI.manual}中…` : `选择保存位置并${RG_UI.manual}` }}
         </button>
       </div>
       <p v-if="manualHint" class="rg-hint">{{ manualHint }}</p>
     </section>
 
     <section class="rg-card">
-      <h3 class="rg-h3">导出结果反馈（OPC UA 写回 PLC）</h3>
+      <h3 class="rg-h3">{{ RG_UI.feedback }}（OPC UA 写回 PLC）</h3>
       <div class="rg-switch-row">
-        <span class="rg-switch-label" id="rg-export-opc-lbl">启用导出结果写回</span>
+        <span class="rg-switch-label" id="rg-export-opc-lbl">启用{{ RG_UI.feedback }}写回</span>
         <button
           type="button"
           class="rg-switch"
@@ -56,7 +56,7 @@
         />
       </div>
       <p class="rg-mini rg-mini--switch">
-        手动或自动导出完成后，将成功/失败状态、摘要信息与文件路径写入下方 OPC 变量，供 PLC 读取。
+        {{ RG_UI.manual }}或 {{ RG_UI.opcAuto }}完成后，将成功/失败状态、摘要信息与文件路径写入下方 OPC 变量，供 PLC 读取。
       </p>
 
       <div class="rg-auto-fields" :class="{ 'rg-auto-fields--off': !prefs.exportResultOpc.enabled }">
@@ -120,7 +120,9 @@
           <p v-if="exportResultOpcMessageBindingHint" class="rg-mini rg-mini--indent rg-bound-hint">
             已绑定：{{ exportResultOpcMessageBindingHint }}
           </p>
-          <p class="rg-mini rg-mini--indent">成功时写入「OK: 文件名」；失败时写入错误摘要（首行）。</p>
+          <p class="rg-mini rg-mini--indent">
+            成功时写入场景标签（{{ RG_UI.manual }} / {{ RG_UI.opcAuto }}）；失败时写入错误摘要（首行）。
+          </p>
         </div>
 
         <div class="rg-row rg-row--in-panel">
@@ -157,16 +159,16 @@
             {{ testWriteBackBusy ? "正在写回…" : "测试写回 PLC" }}
           </button>
           <p class="rg-mini rg-mini--indent">
-            向已绑定的 OPC 变量写入一次成功态测试值，不导出 PDF；可在 PLC 侧确认后再做正式导出。
+            向已绑定的 OPC 变量写入一次成功态测试值，不进行 {{ RG_UI.manual }}；可在 PLC 侧确认后再做正式 {{ RG_UI.manual }}。
           </p>
         </div>
       </div>
     </section>
 
     <section class="rg-card">
-      <h3 class="rg-h3">OPC UA 条件自动导出</h3>
+      <h3 class="rg-h3">{{ RG_UI.opcAuto }}</h3>
       <div class="rg-switch-row">
-        <span class="rg-switch-label" id="rg-auto-enabled-lbl">启用自动导出</span>
+        <span class="rg-switch-label" id="rg-auto-enabled-lbl">启用 {{ RG_UI.opcAuto }}</span>
         <button
           type="button"
           class="rg-switch"
@@ -178,12 +180,12 @@
           @click="toggleAutoEnabled"
         />
       </div>
-      <p v-if="!electronShell" class="rg-mini rg-mini--switch">自动导出仅在 Electron 桌面版可用。</p>
+      <p v-if="!electronShell" class="rg-mini rg-mini--switch">{{ RG_UI.opcAuto }}仅在 Electron 桌面版可用。</p>
 
       <div class="rg-auto-fields" :class="{ 'rg-auto-fields--off': !prefs.auto.enabled }">
       <div class="rg-export-dir-block">
-        <span class="rg-lbl">导出文件夹</span>
-        <div class="rg-tabs" role="tablist" aria-label="导出文件夹来源">
+        <span class="rg-lbl">{{ RG_UI.opcAuto }}保存文件夹</span>
+        <div class="rg-tabs" role="tablist" :aria-label="`${RG_UI.opcAuto}保存文件夹来源`">
           <button
             type="button"
             role="tab"
@@ -209,7 +211,7 @@
         <div class="rg-tab-panel" role="tabpanel">
           <template v-if="prefs.autoExportDirSource === 'default'">
             <div class="rg-row rg-row--in-panel">
-              <label class="rg-lbl" for="rg-auto-dir">导出目录</label>
+              <label class="rg-lbl" for="rg-auto-dir">保存目录</label>
               <div class="rg-inline">
                 <input
                   id="rg-auto-dir"
@@ -238,7 +240,7 @@
                 />
                 <button type="button" class="btn" :disabled="!electronShell" @click="onPickAutoDir">选择文件夹…</button>
               </div>
-              <p class="rg-mini rg-mini--indent">OPC 路径变量为空或读取失败时，导出到此保底目录。</p>
+              <p class="rg-mini rg-mini--indent">OPC 路径变量为空或读取失败时，{{ RG_UI.opcAuto }}保存到此保底目录。</p>
             </div>
             <div class="rg-row rg-row--in-panel">
               <label class="rg-lbl" for="rg-dir-opc-var">OPC 目录变量（String）</label>
@@ -261,8 +263,8 @@
       </div>
 
       <div class="rg-export-dir-block">
-        <span class="rg-lbl">自动导出文件名</span>
-        <div class="rg-tabs" role="tablist" aria-label="自动导出文件名">
+        <span class="rg-lbl">{{ RG_UI.opcAuto }}文件名</span>
+        <div class="rg-tabs" role="tablist" :aria-label="`${RG_UI.opcAuto}文件名`">
           <button
             type="button"
             role="tab"
@@ -323,7 +325,7 @@
               </div>
               <p v-if="fileNameOpcServerLabel" class="rg-mini rg-mini--indent">连接：{{ fileNameOpcServerLabel }}</p>
               <p class="rg-mini rg-mini--indent">
-                绑定树仅显示 String 类型变量；导出值为字符串基名（不含 .pdf）。
+                绑定树仅显示 String 类型变量；文件名为字符串基名（不含 .pdf）。
               </p>
             </div>
             <div class="rg-row rg-row--in-panel">
@@ -333,7 +335,7 @@
                   type="button"
                   class="rg-seg-btn"
                   :class="{ 'rg-seg-btn--on': prefs.autoFileNameOpcAppendHash }"
-                  title="导出时在 OPC 基名后追加时间戳（yyyyMMdd_HHmmss）与 8 位十六进制，降低重名概率"
+                  :title="`${RG_UI.opcAuto}时在 OPC 基名后追加时间戳（yyyyMMdd_HHmmss）与 8 位十六进制，降低重名概率`"
                   :aria-pressed="prefs.autoFileNameOpcAppendHash"
                   @click="prefs.autoFileNameOpcAppendHash = !prefs.autoFileNameOpcAppendHash"
                 >
@@ -341,7 +343,7 @@
                 </button>
               </div>
               <p class="rg-mini rg-mini--indent rg-mini--after-seg">
-                点击按钮切换；开启后导出为 <code>基名_时间戳_哈希.pdf</code>，关闭则为 <code>基名.pdf</code>。
+                点击按钮切换；开启后文件名为 <code>基名_时间戳_哈希.pdf</code>，关闭则为 <code>基名.pdf</code>。
               </p>
             </div>
             <p class="rg-mini rg-mini--indent rg-mini--after-seg">
@@ -363,7 +365,7 @@
           <button type="button" class="btn btn--sm" @click="addAutoTriggerBinding">+ 新建绑定</button>
         </div>
         <p v-if="!prefs.auto.bindings.length" class="rg-mini rg-mini--indent">
-          暂无绑定。点击「新建绑定」添加 OPC 变量，并为每条绑定单独选择要导出的报表模版。
+          暂无绑定。点击「新建绑定」添加 OPC 变量，并为每条绑定单独选择要 {{ RG_UI.opcAuto }} 的报表模版。
         </p>
         <div
           v-for="(binding, bi) in prefs.auto.bindings"
@@ -397,7 +399,7 @@
             </div>
           </div>
           <div class="rg-row rg-row--in-panel">
-            <label class="rg-lbl" :for="`rg-bind-tpl-${binding.id}`">导出模版</label>
+            <label class="rg-lbl" :for="`rg-bind-tpl-${binding.id}`">报表模版</label>
             <select :id="`rg-bind-tpl-${binding.id}`" v-model="binding.templateId" class="rg-select">
               <option :value="null">请选择…</option>
               <option v-for="row in templateRows" :key="row.item.id" :value="row.item.id">
@@ -457,7 +459,7 @@
             <span class="rg-lbl">近期数值</span>
             <AutoTriggerValueSparkline :samples="bindingChartUi(binding.id)?.samples ?? []" />
             <p class="rg-mini rg-mini--indent">
-              自动导出开启后每秒采样；保留最近 {{ triggerChartMaxSamples }} 个点（约
+              启用 {{ RG_UI.opcAuto }}后每秒采样；保留最近 {{ triggerChartMaxSamples }} 个点（约
               {{ triggerChartMaxSamples }} 秒）。String 类型变量不显示曲线。
             </p>
           </div>
@@ -475,7 +477,7 @@
               </button>
               <div v-if="binding.triggerLog.length" class="rg-trigger-log-actions">
                 <button type="button" class="btn btn--sm" @click="exportBindingTriggerHistory(binding, bi)">
-                  导出 history logger
+                  导出触发记录
                 </button>
                 <button type="button" class="btn btn--sm btn--ghost" @click="clearBindingTriggerLog(binding.id)">
                   清空
@@ -483,10 +485,12 @@
               </div>
             </div>
             <div v-show="isTriggerLogExpanded(binding.id)" class="rg-trigger-log-body">
-              <p v-if="!binding.triggerLog.length" class="rg-mini rg-mini--indent">尚无触发记录；条件满足并尝试导出后会写入。</p>
+              <p v-if="!binding.triggerLog.length" class="rg-mini rg-mini--indent">
+                尚无触发记录；条件满足并尝试 {{ RG_UI.opcAuto }} 后会写入。
+              </p>
               <template v-else>
                 <p v-if="binding.triggerLog.length > triggerLogUiMax" class="rg-mini rg-mini--indent">
-                  仅显示最近 {{ triggerLogUiMax }} 条，共 {{ binding.triggerLog.length }} 条；完整记录可点「导出 history logger」。
+                  仅显示最近 {{ triggerLogUiMax }} 条，共 {{ binding.triggerLog.length }} 条；完整记录可点「导出触发记录」。
                 </p>
                 <div class="rg-trigger-log-wrap">
                   <table class="rg-trigger-log-table">
@@ -523,7 +527,7 @@
           </div>
         </div>
         <p class="rg-mini rg-mini--indent rg-mini--bindings-hint">
-          在「数据源 → OPC UA」中保存连接；开启自动导出后每秒检测触发变量，条件满足即导出对应模版，无冷却等待。
+          在「数据源 → OPC UA」中保存连接；启用 {{ RG_UI.opcAuto }} 后每秒检测触发变量，条件满足即生成对应 PDF，无冷却等待。
         </p>
       </div>
       <p v-if="autoStatus" class="rg-hint">{{ autoStatus }}</p>
@@ -609,6 +613,16 @@ import {
   writeExportResultToOpcua,
   type ExportResultWritePayload,
 } from "@/lib/exportResultOpcFeedback";
+
+/** 「生成报表」页用户可见固定用语（勿单独显示「截批」二字；PLC 信息节点标签见 exportResultOpcFeedback） */
+const RG_UI = {
+  manual: "模拟截批",
+  opcAuto: "OPC UA 自动截批",
+  feedback: "截批结果反馈",
+} as const;
+
+const RG_STATUS_OPC_AUTO = `[${RG_UI.opcAuto}]`;
+const RG_STATUS_FEEDBACK = `[${RG_UI.feedback}]`;
 
 const prefs = ref<ReportGeneratorPrefs>(loadReportGeneratorPrefs());
 const exportWatchDir = loadReportExportPrefs().watchDir;
@@ -711,7 +725,7 @@ const opcPickTitle = computed(() => {
   if (opcPickTarget.value === "fileName") return "绑定 OPC UA String 变量（文件名）";
   if (opcPickTarget.value === "exportDir") return "绑定 OPC UA String 变量（目录）";
   if (opcPickTarget.value === "feedbackStatus") return "绑定 OPC UA 状态变量（Boolean / Int）";
-  if (opcPickTarget.value === "feedbackMessage") return "绑定 OPC UA String 变量（导出信息）";
+  if (opcPickTarget.value === "feedbackMessage") return `绑定 OPC UA String 变量（${RG_UI.feedback}信息）`;
   if (opcPickTarget.value === "feedbackFilePath") return "绑定 OPC UA String 变量（文件路径）";
   return "绑定 OPC UA 变量";
 });
@@ -729,14 +743,14 @@ const opcPickInitialServerId = computed(() => {
 
 const opcPickLead = computed(() => {
   if (opcPickTarget.value === "exportDir") {
-    return "选择已保存的 OPC UA 连接，在地址空间中展开并点击 String 变量作为导出目录路径；非 String 变量在展开时不会显示。确定后写入 NodeId，仍可手工修改。";
+    return `选择已保存的 OPC UA 连接，在地址空间中展开并点击 String 变量作为 ${RG_UI.opcAuto} 保存目录；非 String 变量在展开时不会显示。确定后写入 NodeId，仍可手工修改。`;
   }
   if (opcPickTarget.value === "fileName") {
-    return "选择 String 类型变量作为导出文件名基名（不含 .pdf）；绑定树仅显示 String。是否追加随机哈希可在确认后于面板按钮切换。";
+    return `选择 String 类型变量作为 ${RG_UI.opcAuto} 文件名基名（不含 .pdf）；绑定树仅显示 String。是否追加随机哈希可在确认后于面板按钮切换。`;
   }
   if (opcPickTarget.value === "feedbackStatus") {
     const kind = prefs.value.exportResultOpc.statusKind === "int" ? "Int" : "Boolean";
-    return `选择 ${kind} 类型变量；导出成功写入 ${kind === "Int" ? "1" : "true"}，失败写入 ${kind === "Int" ? "0" : "false"}。树与搜索仅显示 ${kind} 变量。`;
+    return `选择 ${kind} 类型变量；${RG_UI.feedback}成功时写入 ${kind === "Int" ? "1" : "true"}，失败写入 ${kind === "Int" ? "0" : "false"}。树与搜索仅显示 ${kind} 变量。`;
   }
   if (opcPickTarget.value === "feedbackMessage") {
     return "选择 String 类型变量；成功时写入「OK: 文件名」，失败时写入错误摘要。树与搜索仅显示 String 变量。";
@@ -745,7 +759,7 @@ const opcPickLead = computed(() => {
     return "选择 String 类型变量（可选）；成功时写入完整 PDF 路径，失败时写入空字符串。树与搜索仅显示 String 变量。";
   }
   if (parseRgTriggerPickTarget(opcPickTarget.value)) {
-    return "选择已保存连接下的变量作为自动导出触发源；支持布尔、数值、字符串等类型。确定后写入 NodeId。";
+    return `选择已保存连接下的变量作为 ${RG_UI.opcAuto} 触发源；支持布尔、数值、字符串等类型。确定后写入 NodeId。`;
   }
   return "选择变量并绑定。";
 });
@@ -925,15 +939,15 @@ async function exportBindingTriggerHistory(binding: AutoTriggerBinding, index: n
   const api = window.electronAPI;
   if (api?.saveTextFileDialog) {
     const res = await api.saveTextFileDialog({
-      title: "导出触发 history logger",
+      title: "导出触发记录",
       defaultPath,
       content,
     });
     if (res.canceled) return;
     if (res.ok && res.filePath) {
-      autoStatus.value = `[记录] 已导出 ${res.filePath}`;
+      autoStatus.value = `[记录] 已保存 ${res.filePath}`;
     } else if (!res.ok) {
-      autoStatus.value = `[记录] 导出失败：${res.error || "未知错误"}`;
+      autoStatus.value = `[记录] 保存失败：${res.error || "未知错误"}`;
     }
     return;
   }
@@ -991,7 +1005,7 @@ async function notifyExportResultToPlc(
     const res = await writeExportResultToOpcua(fb, payload, context);
     if (!res.ok) {
       const hint = res.errors.join("；");
-      showAppToast(`导出结果写回 OPC 失败\n${hint}`, { tone: "warn", durationMs: 10000 });
+      showAppToast(`${RG_UI.feedback}写回 OPC 失败\n${hint}`, { tone: "warn", durationMs: 10000 });
       const statusLine = `[写回 PLC] 失败：${hint}`;
       void auditLog({
         action: "export.opc_writeback",
@@ -1008,12 +1022,12 @@ async function notifyExportResultToPlc(
       void auditLog({
         action: "export.opc_writeback",
         result: "ok",
-        summary: context === "auto" ? "截批写回" : "模拟截批写回",
+        summary: context === "auto" ? `${RG_UI.opcAuto}写回` : `${RG_UI.manual}写回`,
         detail: { context },
       });
     }
   } catch {
-    showAppToast("导出结果写回 OPC 失败", { tone: "warn", durationMs: 8000 });
+    showAppToast(`${RG_UI.feedback}写回 OPC 失败`, { tone: "warn", durationMs: 8000 });
     const statusLine = "[写回 PLC] 失败：未知错误";
     if (context === "auto") {
       autoStatus.value = autoStatus.value ? `${autoStatus.value} · ${statusLine}` : statusLine;
@@ -1031,7 +1045,7 @@ async function onTestExportResultWriteBack(): Promise<void> {
     if (res.ok) {
       const nodes = res.written.length ? res.written.join("、") : "已绑定节点";
       showAppToast(`测试写回成功\n已写入：${nodes}`, { tone: "ok", durationMs: 8000 });
-      autoStatus.value = `[导出反馈] 测试写回成功（${nodes}）`;
+      autoStatus.value = `${RG_STATUS_FEEDBACK} 测试写回成功（${nodes}）`;
       void auditLog({
         action: "export.opc_writeback_test",
         result: "ok",
@@ -1040,7 +1054,7 @@ async function onTestExportResultWriteBack(): Promise<void> {
     } else {
       const hint = res.errors.join("；") || "写回失败";
       showAppToast(`测试写回失败\n${hint}`, { tone: "err", durationMs: 10000 });
-      autoStatus.value = `[导出反馈] 测试写回失败：${hint}`;
+      autoStatus.value = `${RG_STATUS_FEEDBACK} 测试写回失败：${hint}`;
       void auditLog({
         action: "export.opc_writeback_test",
         result: "fail",
@@ -1050,7 +1064,7 @@ async function onTestExportResultWriteBack(): Promise<void> {
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     showAppToast(`测试写回失败\n${msg}`, { tone: "err", durationMs: 10000 });
-    autoStatus.value = `[导出反馈] 测试写回失败：${msg}`;
+    autoStatus.value = `${RG_STATUS_FEEDBACK} 测试写回失败：${msg}`;
     void auditLog({
       action: "export.opc_writeback_test",
       result: "fail",
@@ -1169,36 +1183,36 @@ async function onRgOpcPickConfirm(payload: RgOpcPickConfirmPayload) {
 
   if (target === "feedbackStatus") {
     if (!sid) {
-      autoStatus.value = "[导出反馈] 请先选择 OPC UA 连接";
+      autoStatus.value = `${RG_STATUS_FEEDBACK} 请先选择 OPC UA 连接`;
       return;
     }
     const check = await readSavedOpcNodeValue(sid, nid);
     if (!check.ok) {
-      autoStatus.value = `[导出反馈] ${check.message || "读取节点失败"}`;
+      autoStatus.value = `${RG_STATUS_FEEDBACK} ${check.message || "读取节点失败"}`;
       return;
     }
     const expectFilter = prefs.value.exportResultOpc.statusKind === "int" ? "Int" : "Boolean";
     const dt = check.dataType || "";
     if (dt && !opcDataTypeLabelMatchesFilter(dt, expectFilter)) {
-      autoStatus.value = `[导出反馈] 需要 ${expectFilter} 类型变量，当前为 ${dt}`;
+      autoStatus.value = `${RG_STATUS_FEEDBACK} 需要 ${expectFilter} 类型变量，当前为 ${dt}`;
       return;
     }
     prefs.value.exportResultOpc.serverId = sid;
     prefs.value.exportResultOpc.statusNodeId = nid;
     prefs.value.exportResultOpc.statusNodeLabel = nodeLabel;
-    autoStatus.value = `[导出反馈] 已绑定状态变量`;
+    autoStatus.value = `${RG_STATUS_FEEDBACK} 已绑定状态变量`;
     finishRgOpcPickSuccess();
     return;
   }
 
   if (target === "feedbackMessage" || target === "feedbackFilePath") {
     if (!sid) {
-      autoStatus.value = "[导出反馈] 请先选择 OPC UA 连接";
+      autoStatus.value = `${RG_STATUS_FEEDBACK} 请先选择 OPC UA 连接`;
       return;
     }
     const check = await readSavedOpcStringValue(sid, nid);
     if (!check.ok) {
-      autoStatus.value = `[导出反馈] ${check.message || "所选节点不是 String 类型"}`;
+      autoStatus.value = `${RG_STATUS_FEEDBACK} ${check.message || "所选节点不是 String 类型"}`;
       return;
     }
     prefs.value.exportResultOpc.serverId = sid;
@@ -1209,7 +1223,7 @@ async function onRgOpcPickConfirm(payload: RgOpcPickConfirmPayload) {
       prefs.value.exportResultOpc.filePathNodeId = nid;
       prefs.value.exportResultOpc.filePathNodeLabel = nodeLabel;
     }
-    autoStatus.value = `[导出反馈] 已绑定${target === "feedbackMessage" ? "信息" : "路径"}变量`;
+    autoStatus.value = `${RG_STATUS_FEEDBACK} 已绑定${target === "feedbackMessage" ? "信息" : "路径"}变量`;
     finishRgOpcPickSuccess();
     return;
   }
@@ -1248,7 +1262,7 @@ async function onManualExport(): Promise<void> {
   manualHint.value = "";
   const api = window.electronAPI;
   if (!api?.runPdfExport || !api.showSavePdfDialog) {
-    manualHint.value = "当前环境不支持 PDF 导出。";
+    manualHint.value = `当前环境不支持${RG_UI.manual}。`;
     return;
   }
   const tid = prefs.value.templateId;
@@ -1258,7 +1272,7 @@ async function onManualExport(): Promise<void> {
   const suggestName = `${(tmeta?.name || "报表").replace(/[/\\?%*:|"<>]/g, "_")}_${formatExportTs()}.pdf`;
 
   const filePath = await api.showSavePdfDialog({
-    title: "导出 PDF",
+    title: RG_UI.manual,
     defaultPath: suggestName,
   });
   if (!filePath) {
@@ -1270,12 +1284,12 @@ async function onManualExport(): Promise<void> {
   manualHint.value = "正在检查数据源连接…";
   try {
     if (isExportResultOpcFeedbackConfigured(prefs.value.exportResultOpc)) {
-      manualHint.value = "正在校验导出反馈绑定…";
+      manualHint.value = `正在校验${RG_UI.feedback}绑定…`;
       const opcVal = await validateExportResultOpcBindings(prefs.value.exportResultOpc);
       if (!opcVal.ok) {
         const issues = opcVal.issues.map((i) => i.message).join("\n");
         const proceedOpc = window.confirm(
-          `导出结果写回 OPC 校验未通过：\n${issues}\n\n是否仍继续导出 PDF？（写回 PLC 可能失败）`,
+          `${RG_UI.feedback}写回 OPC 校验未通过：\n${issues}\n\n是否仍继续${RG_UI.manual}？（写回 PLC 可能失败）`,
         );
         if (!proceedOpc) {
           manualHint.value = issues;
@@ -1287,13 +1301,13 @@ async function onManualExport(): Promise<void> {
     const preflight = await runTemplateExportPreflight(tid);
     if (!preflight.ok) {
       const proceed = window.confirm(
-        `${preflight.summary}\n\n是否仍要继续导出？（PDF 中可能出现错误占位或导出失败）`,
+        `${preflight.summary}\n\n是否仍要继续${RG_UI.manual}？（PDF 中可能出现错误占位或生成失败）`,
       );
       if (!proceed) {
         manualHint.value = preflight.summary;
         return;
       }
-      manualHint.value = "正在导出 PDF…";
+      manualHint.value = `正在${RG_UI.manual}…`;
     } else if (preflight.warnings.length) {
       manualHint.value = preflight.warnings.join(" ");
     } else {
@@ -1305,7 +1319,7 @@ async function onManualExport(): Promise<void> {
       filePath,
       openAfter: prefs.value.manualOpenAfter,
     });
-    manualHint.value = `模拟截批 · 已保存：${filePath}`;
+    manualHint.value = `已保存：${filePath}`;
     void auditLog({
       action: "export.manual_pdf",
       result: "ok",
@@ -1340,7 +1354,9 @@ async function onManualExport(): Promise<void> {
 
 async function onPickAutoDir(): Promise<void> {
   const title =
-    prefs.value.autoExportDirSource === "opcua" ? "选择保底导出目录" : "选择导出目录";
+    prefs.value.autoExportDirSource === "opcua"
+      ? `选择${RG_UI.opcAuto}保底目录`
+      : `选择${RG_UI.opcAuto}保存目录`;
   const p = await window.electronAPI?.pickExportDirectory?.({ title });
   if (p) {
     prefs.value.autoExportDir = p;
@@ -1357,15 +1373,15 @@ type AutoPdfExportAttempt = {
 async function runAutoPdfExport(templateId: string): Promise<AutoPdfExportAttempt> {
   const api = window.electronAPI;
   if (!api?.runPdfExport || !api.pathJoin) {
-    throw new Error("当前环境不支持自动导出 PDF");
+    throw new Error(`当前环境不支持${RG_UI.opcAuto}`);
   }
 
   const tid = templateId.trim();
-  if (!tid) throw new Error("未配置导出模版");
+  if (!tid) throw new Error(`未配置${RG_UI.opcAuto}报表模版`);
 
   const resolved = await resolveAutoExportDir(prefs.value);
   const dir = resolved.dir.trim();
-  if (!dir) throw new Error(resolved.note || "未配置导出目录");
+  if (!dir) throw new Error(resolved.note || `未配置${RG_UI.opcAuto}保存目录`);
 
   const tmeta = summaries.value.find((x) => x.id === tid);
   const built = await buildAutoExportFileName(prefs.value, tmeta?.name || tid);
@@ -1390,20 +1406,20 @@ async function pollAutoTriggerOnce(): Promise<void> {
   const active = bindings.filter(isTriggerBindingActive);
 
   if (!bindings.length) {
-    autoStatus.value = "[自动] 请点击「新建绑定」添加触发变量…";
+    autoStatus.value = `${RG_STATUS_OPC_AUTO} 请点击「新建绑定」添加触发变量…`;
     return;
   }
   if (!active.length) {
     const anyComplete = bindings.some(isTriggerBindingComplete);
     autoStatus.value = anyComplete
-      ? "[自动] 已配置的绑定均未启用，请打开至少一条绑定的「启用」开关…"
-      : "[自动] 请启用绑定并完成模版、连接与触发节点配置…";
+      ? `${RG_STATUS_OPC_AUTO} 已配置的绑定均未启用，请打开至少一条绑定的「启用」开关…`
+      : `${RG_STATUS_OPC_AUTO} 请启用绑定并完成模版、连接与触发节点配置…`;
     return;
   }
 
   const resolved = await resolveAutoExportDir(prefs.value);
   if (!resolved.dir.trim()) {
-    autoStatus.value = `[自动] ${resolved.note || "请配置默认或 OPC 导出文件夹…"}`;
+    autoStatus.value = `${RG_STATUS_OPC_AUTO} ${resolved.note || `请配置默认或 OPC ${RG_UI.opcAuto}保存文件夹…`}`;
     return;
   }
 
@@ -1462,7 +1478,7 @@ async function pollAutoTriggerOnce(): Promise<void> {
         );
         exportedThisPoll = true;
         const noteSuffix = result.note ? `（${result.note}）` : "";
-        autoStatus.value = `[自动·${label}] 截批 · 已导出 ${result.filePath}${noteSuffix}`;
+        autoStatus.value = `${RG_STATUS_OPC_AUTO}·${label} 已保存 ${result.filePath}${noteSuffix}`;
       } catch (e) {
         const msg = humanizePdfExportError(e);
         try {
@@ -1479,8 +1495,8 @@ async function pollAutoTriggerOnce(): Promise<void> {
           message: msg,
         });
         void notifyExportResultToPlc({ success: false, message: msg }, "auto");
-        autoStatus.value = `[自动·${label}] 导出失败：${msg.split("\n")[0]}`;
-        showAppToast(`[自动导出·${label}] 失败\n${msg}`, { tone: "err", durationMs: 14000 });
+        autoStatus.value = `${RG_STATUS_OPC_AUTO}·${label} 失败：${msg.split("\n")[0]}`;
+        showAppToast(`${RG_STATUS_OPC_AUTO}·${label} 失败\n${msg}`, { tone: "err", durationMs: 14000 });
       } finally {
         autoExportBusy = false;
       }
@@ -1494,11 +1510,11 @@ async function pollAutoTriggerOnce(): Promise<void> {
     return;
   }
   if (statusParts.length) {
-    autoStatus.value = `[自动] ${statusParts.join("；")}`;
+    autoStatus.value = `${RG_STATUS_OPC_AUTO} ${statusParts.join("；")}`;
   } else if (anyListening) {
-    autoStatus.value = `[自动] 监听 ${active.length} 条已启用绑定…`;
+    autoStatus.value = `${RG_STATUS_OPC_AUTO} 监听 ${active.length} 条已启用绑定…`;
   } else {
-    autoStatus.value = "[自动] 监听中…";
+    autoStatus.value = `${RG_STATUS_OPC_AUTO} 监听中…`;
   }
 }
 
