@@ -5,10 +5,13 @@
 
 [CmdletBinding()]
 param(
+  [string]$Version = '',
+  [string]$Notes = '',
   [switch]$SkipFrontendInstall,
   [switch]$SkipBackendBuild,
   [switch]$Fresh,
   [switch]$NoPause,
+  [switch]$AllowVersionMismatch,
   [string]$NpmRegistry = 'https://registry.npmmirror.com',
   [string]$ElectronMirror = 'https://npmmirror.com/mirrors/electron/'
 )
@@ -157,6 +160,20 @@ function Invoke-ViteBuild([string]$FrontendDir) {
 
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
 
+if ($Version) {
+  Write-Step "Bump version -> $Version"
+  $bumpScript = Join-Path $Root 'packaging\scripts\bump-version.mjs'
+  $bumpArgs = @($bumpScript, $Version)
+  if ($Notes) {
+    $bumpArgs += '--notes', $Notes
+  }
+  & node @bumpArgs
+  if ($LASTEXITCODE -ne 0) {
+    throw "bump-version.mjs failed (exit $LASTEXITCODE)"
+  }
+  Write-Ok 'version bumped'
+}
+
 $MigratePs1 = Join-Path $Frontend 'scripts\migrate-legacy-release.ps1'
 if ((Test-Path -LiteralPath (Join-Path $Frontend 'release')) -or (Test-Path -LiteralPath (Join-Path $Frontend 'release-alt'))) {
   Write-Step 'Migrate legacy frontend\release* -> packaging\windows\output'
@@ -171,7 +188,18 @@ Write-Host "Version:      $AppVersion"
 $ExpectedSetup = "Report Editor-Setup-$AppVersion-x64.exe"
 Write-Host "Expected:     $ExpectedSetup"
 if ($ManifestVersion -and $ManifestVersion -ne $AppVersion) {
-  Write-WarnLine "package.json ($AppVersion) != packaging/updates/latest.json ($ManifestVersion). Run: node packaging/scripts/bump-version.mjs $AppVersion"
+  $msg = "package.json ($AppVersion) != packaging/updates/latest.json ($ManifestVersion)."
+  if ($AllowVersionMismatch) {
+    Write-WarnLine "$msg Continuing because -AllowVersionMismatch."
+  }
+  else {
+    throw @(
+      "ERROR: $msg",
+      "Run: node packaging/scripts/bump-version.mjs $AppVersion",
+      "Or:  .\build.ps1 -Version $ManifestVersion",
+      "Or:  .\build.ps1 -Version $AppVersion -Notes `"...`" -Fresh"
+    ) -join "`n"
+  }
 }
 Write-Host "Project root: $Root"
 Write-Host "Output dir:   $OutputDir"
@@ -291,12 +319,32 @@ finally {
   Remove-Item Env:ELECTRON_MIRROR -ErrorAction SilentlyContinue
 }
 
-$setup = Get-ChildItem -LiteralPath $OutputDir -Filter '*-Setup-*-x64.exe' -ErrorAction SilentlyContinue |
-  Sort-Object LastWriteTime -Descending |
-  Select-Object -First 1
+$expectedSetupName = "Report Editor-Setup-$AppVersion-x64.exe"
+$expectedSetupPath = Join-Path $OutputDir $expectedSetupName
+$setup = $null
+if (Test-Path -LiteralPath $expectedSetupPath) {
+  $setup = Get-Item -LiteralPath $expectedSetupPath
+}
+else {
+  $candidates = Get-ChildItem -LiteralPath $OutputDir -Filter '*-Setup-*-x64.exe' -ErrorAction SilentlyContinue |
+    Sort-Object LastWriteTime -Descending
+  if ($candidates) {
+    $wrong = $candidates | Where-Object { $_.Name -ne $expectedSetupName } | Select-Object -First 1
+    if ($wrong) {
+      throw @(
+        "ERROR: Expected $expectedSetupName but newest installer is $($wrong.Name).",
+        "package.json version is $AppVersion — run bump-version or use -Fresh."
+      ) -join "`n"
+    }
+    $setup = $candidates | Select-Object -First 1
+  }
+}
 
 Write-Step 'Done'
 if ($setup) {
+  if ($setup.Name -ne $expectedSetupName) {
+    throw "Installer name mismatch: $($setup.Name) (expected $expectedSetupName)"
+  }
   Write-Ok "Installer: $($setup.FullName)"
   Write-Host ''
   Write-Host 'Deliver this Setup.exe to end users (Windows 10/11 x64).' -ForegroundColor White

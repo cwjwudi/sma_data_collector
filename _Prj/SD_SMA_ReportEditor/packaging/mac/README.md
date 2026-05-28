@@ -22,12 +22,22 @@ chmod +x build.sh build.command
 | `--skip-frontend-install` | 跳过 `npm ci` |
 | `--skip-backend-build` | 跳过 PyInstaller |
 | `--arch arm64` / `--arch x64` | 指定 CPU 架构 |
+| `--version <semver>` | 打包前自动 bump（写 `package.json` + `latest.json`） |
+| `--notes <text>` | 与 `--version` 写入 manifest 说明 |
 
-发版前请确认 `frontend/package.json` 与 `packaging/updates/latest.json` 版本一致：
+**推荐一发版命令**（避免打出旧版本号安装包）：
+
+```bash
+./build.sh --version 0.1.19 --notes "更新说明" --fresh
+```
+
+也可先手动 bump，再 `./build.sh`：
 
 ```bash
 node packaging/scripts/bump-version.mjs <版本号> --notes "更新说明"
 ```
+
+若 `package.json` 与 `latest.json` 版本不一致，脚本会**报错退出**（可用 `--allow-version-mismatch` 仅警告）。产物文件名必须为 `Report Editor-<version>-<arch>.dmg`。
 
 脚本会执行 `npm test`、Vite 构建、DMG 打包，并调用 `publish-portal-release.mjs --only mac`（**保留** `latest.json` 中同版本的 `win32-x64` 条目）。
 

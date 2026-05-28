@@ -15,22 +15,37 @@ build.bat
 
 ## 版本号
 
-安装包版本来自 **`frontend/package.json`** 的 `version` 字段（electron-builder 读取）。发版前请确认：
+安装包版本来自 **`frontend/package.json`** 的 `version` 字段（electron-builder 读取）。
 
-1. 已 `git pull` 到含目标版本的 main（例如 **0.1.16**）
-2. 或在本机执行：`node packaging/scripts/bump-version.mjs 0.1.16 --notes "说明"`
-3. 打包日志首行应显示 `Version: 0.1.16` 与 `Expected: Report Editor-Setup-0.1.16-x64.exe`；若不一致，说明代码未更新到最新
+**推荐一发版命令**（自动 bump + 清空旧产物，避免仍是 0.1.18 的 exe）：
 
-`npm ci` 使用 `package-lock.json`，**不会**改 `package.json` 版本；若锁文件根版本滞后，脚本会**自动同步** `package-lock.json` 与 `package.json`（仅版本字段）。
+```powershell
+.\build.ps1 -Version 0.1.19 -Notes "更新说明" -Fresh
+```
+
+或：
+
+```bat
+build.bat -Version 0.1.19 -Notes "更新说明" -Fresh
+```
+
+发版前也可手动 bump：`node packaging\scripts\bump-version.mjs 0.1.19 --notes "说明"`
+
+打包日志应显示 `Version: 0.1.19` 与 `Expected: Report Editor-Setup-0.1.19-x64.exe`。若 `package.json` 与 `latest.json` 不一致会**报错退出**（`-AllowVersionMismatch` 可仅警告）。若 `output/` 里残留旧版 exe，脚本会拒绝误认。
+
+`npm ci` **不会**改 `package.json` 版本；锁文件根版本滞后时脚本会**自动同步** `package-lock.json`。
 
 ## 参数（传给 build.ps1）
 
 | 参数 | 作用 |
 |------|------|
+| `-Version <semver>` | 打包前自动 bump |
+| `-Notes <text>` | 与 `-Version` 写入 `latest.json` |
 | `-Fresh` | 清空 `output/` 后再打包 |
 | `-SkipFrontendInstall` | 跳过 `npm ci` |
 | `-SkipBackendBuild` | 跳过 PyInstaller |
 | `-NoPause` | 失败时也不弹出「按任意键继续」 |
+| `-AllowVersionMismatch` | 仅警告版本不一致（不推荐） |
 
 ## 产物
 

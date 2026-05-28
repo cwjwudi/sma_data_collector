@@ -3,7 +3,9 @@
     <div class="main-layout">
       <aside class="sidebar">
         <div class="sidebar-header">
-          <h1 class="logo">报表编辑器</h1>
+          <h1 class="logo">
+            报表编辑器<span v-if="appVersion" class="logo-version">{{ appVersion }}</span>
+          </h1>
         </div>
         <nav class="sidebar-nav">
           <router-link
@@ -30,6 +32,7 @@
             <span class="nav-label">{{ item.label }}</span>
           </router-link>
         </nav>
+        <SidebarAppUpdateBar />
       </aside>
       <main class="content">
         <div class="content-scroll">
@@ -52,12 +55,14 @@ import { ref, onMounted, onUnmounted, provide, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import SetupWizard from '@/features/onboarding/SetupWizard.vue'
 import AppUpdatePromptDialog from '@/features/settings/app-update/AppUpdatePromptDialog.vue'
+import SidebarAppUpdateBar from '@/features/settings/app-update/SidebarAppUpdateBar.vue'
 import AppToastStack from '@/components/AppToastStack.vue'
 import {
   appUpdateAvailable,
   appUpdateStartupPromptOpen,
   disposeAppUpdateListeners,
   initAppUpdateListeners,
+  loadAppCurrentVersion,
   runAutoUpdateCheck,
 } from '@/features/settings/app-update/appUpdateState'
 import { setupWizardCompleted } from '@/features/onboarding/setupWizardStorage'
@@ -73,6 +78,12 @@ import {
 const route = useRoute()
 
 const setupWizardVisible = ref(false)
+const appVersion = ref('')
+
+async function loadAppVersion() {
+  const v = await loadAppCurrentVersion()
+  appVersion.value = v
+}
 
 /** 离开数据源页时由主导航轮询；在页内由工作台探测并更新同一状态，避免重复请求 */
 let navDbHealthTimer = null
@@ -132,6 +143,7 @@ function scheduleAutoUpdateCheck() {
 }
 
 onMounted(() => {
+  void loadAppVersion()
   initAppUpdateListeners()
   if (!setupWizardCompleted()) {
     setupWizardVisible.value = true
@@ -223,10 +235,20 @@ const navItems = [
 
 .sidebar-nav {
   flex: 1;
+  min-height: 0;
   padding: 12px 0;
   display: flex;
   flex-direction: column;
   gap: 2px;
+  overflow-y: auto;
+}
+
+.logo-version {
+  margin-left: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #94a3b8;
+  letter-spacing: 0.02em;
 }
 
 .nav-item {
