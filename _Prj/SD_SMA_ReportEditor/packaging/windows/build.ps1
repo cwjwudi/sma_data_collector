@@ -9,12 +9,34 @@ param(
   [string]$Notes = '',
   [switch]$SkipFrontendInstall,
   [switch]$SkipBackendBuild,
+  [switch]$SkipTests,
   [switch]$Fresh,
   [switch]$NoPause,
   [switch]$AllowVersionMismatch,
+  [switch]$Help,
   [string]$NpmRegistry = 'https://registry.npmmirror.com',
   [string]$ElectronMirror = 'https://npmmirror.com/mirrors/electron/'
 )
+
+if ($Help) {
+  @'
+Usage: .\build.ps1 [options]
+
+  -Version <semver>     Bump package.json + latest.json before build
+  -Notes <text>         Release notes (with -Version)
+  -Fresh                Clear packaging\windows\output first
+  -SkipFrontendInstall  Skip npm ci
+  -SkipBackendBuild     Skip PyInstaller
+  -SkipTests            Skip npm test (not recommended)
+  -AllowVersionMismatch Warn only if package.json != latest.json
+  -NoPause              No "press any key" on failure
+
+Example (0.1.20):
+  .\build.ps1 -Fresh
+  .\build.ps1 -Version 0.1.20 -Notes "release notes" -Fresh
+'@ | Write-Host
+  exit 0
+}
 
 $ErrorActionPreference = 'Stop'
 
@@ -134,6 +156,28 @@ function Invoke-NpmCi {
   }
 }
 
+function Invoke-NpmTest {
+  Write-Step 'Unit tests (vitest)'
+  Push-Location $Frontend
+  try {
+    Invoke-Npm @('run', 'test', '--', '--run')
+    Write-Ok 'npm test passed'
+  }
+  finally {
+    Pop-Location
+  }
+}
+
+function Get-StaleSetupInstallers {
+  param(
+    [string]$Dir,
+    [string]$ExpectedName
+  )
+  if (-not (Test-Path -LiteralPath $Dir)) { return @() }
+  return @(Get-ChildItem -LiteralPath $Dir -Filter 'Report Editor-Setup-*-x64.exe' -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -ne $ExpectedName })
+}
+
 function Invoke-ViteBuild([string]$FrontendDir) {
   $viteJs = Join-Path $FrontendDir 'node_modules\vite\bin\vite.js'
   if (-not (Test-Path -LiteralPath $viteJs)) {
@@ -181,12 +225,16 @@ if ((Test-Path -LiteralPath (Join-Path $Frontend 'release')) -or (Test-Path -Lit
 }
 
 Write-Step 'SD SMA Report Editor - Windows installer build'
-$AppVersion = Get-FrontendVersion (Join-Path $Frontend 'package.json')
+$PkgJsonPath = Join-Path $Frontend 'package.json'
+$AppVersion = Get-FrontendVersion $PkgJsonPath
 $ManifestPath = Join-Path $Root 'packaging\updates\latest.json'
 $ManifestVersion = Get-ManifestVersion $ManifestPath
-Write-Host "Version:      $AppVersion"
 $ExpectedSetup = "Report Editor-Setup-$AppVersion-x64.exe"
+Write-Host "Version:      $AppVersion"
 Write-Host "Expected:     $ExpectedSetup"
+if ($ManifestVersion) {
+  Write-Host "Manifest:     $ManifestVersion (packaging/updates/latest.json)"
+}
 if ($ManifestVersion -and $ManifestVersion -ne $AppVersion) {
   $msg = "package.json ($AppVersion) != packaging/updates/latest.json ($ManifestVersion)."
   if ($AllowVersionMismatch) {
@@ -225,6 +273,14 @@ if ($Fresh) {
   if (Test-Path -LiteralPath $OutputDir) {
     Remove-Item -LiteralPath $OutputDir -Recurse -Force -ErrorAction SilentlyContinue
     New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
+  }
+}
+else {
+  $stale = Get-StaleSetupInstallers -Dir $OutputDir -ExpectedName $ExpectedSetup
+  if ($stale.Count -gt 0) {
+    $names = ($stale | ForEach-Object { $_.Name }) -join ', '
+    Write-WarnLine "output contains older installers: $names"
+    Write-WarnLine "Use -Fresh to avoid picking wrong version, or delete stale exe manually."
   }
 }
 
@@ -266,6 +322,17 @@ if (-not $SkipBackendBuild) {
 elseif (-not (Test-Path -LiteralPath $BackendExe)) {
   throw "SkipBackendBuild set but missing $BackendExe. Run without -SkipBackendBuild first."
 }
+
+if (-not $SkipTests) {
+  Invoke-NpmTest
+}
+else {
+  Write-WarnLine 'Skipping npm test (-SkipTests).'
+}
+
+# Re-read version after npm ci (lockfile sync does not change package.json)
+$AppVersion = Get-FrontendVersion $PkgJsonPath
+$ExpectedSetup = "Report Editor-Setup-$AppVersion-x64.exe"
 
 Write-Step 'Vite production build'
 Push-Location $Frontend
@@ -345,7 +412,8 @@ if ($setup) {
   if ($setup.Name -ne $expectedSetupName) {
     throw "Installer name mismatch: $($setup.Name) (expected $expectedSetupName)"
   }
-  Write-Ok "Installer: $($setup.FullName)"
+  $sizeMb = [math]::Round($setup.Length / 1MB, 1)
+  Write-Ok "Installer: $($setup.FullName) ($sizeMb MB, $($setup.Name))"
   Write-Host ''
   Write-Host 'Deliver this Setup.exe to end users (Windows 10/11 x64).' -ForegroundColor White
   Write-Host 'Install: double-click Setup, choose directory, complete wizard.' -ForegroundColor DarkGray
