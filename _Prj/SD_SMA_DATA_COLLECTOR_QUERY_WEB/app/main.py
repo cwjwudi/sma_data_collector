@@ -340,6 +340,32 @@ def set_active_config_profile(payload: dict[str, Any]) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@app.post("/api/config/profiles/create")
+def create_config_profile(payload: dict[str, Any]) -> dict[str, Any]:
+    filename = str(payload.get("filename", "")).strip()
+    try:
+        result = config_store.create_profile(filename)
+        _apply_runtime_settings(_load_app_settings())
+        return result
+    except FileExistsError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/config/profiles/delete")
+def delete_config_profile(payload: dict[str, Any]) -> dict[str, Any]:
+    filename = str(payload.get("filename", "")).strip()
+    try:
+        result = config_store.delete_profile(filename)
+        _apply_runtime_settings(_load_app_settings())
+        return result
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @app.post("/api/config/app-settings")
 def save_app_settings(payload: dict[str, Any]) -> dict[str, Any]:
     try:

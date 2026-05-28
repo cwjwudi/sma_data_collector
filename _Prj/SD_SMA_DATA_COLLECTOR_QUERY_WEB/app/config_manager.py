@@ -124,6 +124,47 @@ class UnifiedConfigStore:
         self.active_profile_path.write_text(name, encoding="utf-8")
         return self.get_active_config()
 
+    def create_profile(self, filename: str) -> dict[str, Any]:
+        name = self._safe_profile_name(filename)
+        path = self._profile_path(name)
+        if path.exists():
+            raise FileExistsError(f"config profile already exists: {name}")
+
+        data = json.loads(json.dumps(self.get_active_config(), ensure_ascii=False))
+        data["name"] = Path(name).stem
+        self._write_json(path, data)
+        self.active_profile_path.write_text(name, encoding="utf-8")
+
+        return {
+            "status": "created",
+            "filename": name,
+            "active": self.get_active_profile_name(),
+            "profiles": self.list_profiles(),
+        }
+
+    def delete_profile(self, filename: str) -> dict[str, Any]:
+        name = self._safe_profile_name(filename)
+        path = self._profile_path(name)
+        profiles = self._profile_files()
+        if not path.exists() or path not in profiles:
+            raise FileNotFoundError(f"config profile not found: {name}")
+        if len(profiles) <= 1:
+            raise ValueError("cannot delete the last config profile")
+
+        was_active = name == self.get_active_profile_name()
+        path.unlink()
+
+        if was_active:
+            remaining = self._profile_files()
+            self.active_profile_path.write_text(remaining[0].name, encoding="utf-8")
+
+        return {
+            "status": "deleted",
+            "filename": name,
+            "active": self.get_active_profile_name(),
+            "profiles": self.list_profiles(),
+        }
+
     def get_active_config(self) -> dict[str, Any]:
         path = self._profile_path(self.get_active_profile_name())
         data = self._load_json(path)

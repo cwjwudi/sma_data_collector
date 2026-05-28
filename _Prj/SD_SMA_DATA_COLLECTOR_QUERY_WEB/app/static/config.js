@@ -5,8 +5,6 @@ let columnLabels = {};
 let currentSchema = null;
 let pluginConfigData = { modules: {} };
 const CONFIG_STATE_KEY = 'sd_sma_query_config_page_state_v1';
-let deleteConfirmArmed = false;
-let deleteConfirmTimer = null;
 let currentConfigProfile = '';
 
 function getAppSettingsPayload() {
@@ -193,6 +191,83 @@ async function switchConfigProfile() {
     body: JSON.stringify({ filename }),
   });
   currentConfigProfile = result.active || filename;
+  await reloadActiveConfigData(`已加载 config: ${currentConfigProfile}`);
+}
+
+async function refreshConfigProfiles() {
+  await loadConfigProfiles();
+  document.getElementById('configProfileHint').textContent =
+    currentConfigProfile ? `config 列表已刷新，当前加载: ${currentConfigProfile}` : '未找到可用 config';
+}
+
+async function createConfigProfile() {
+  const filename = await showNameModal(suggestConfigBaseName());
+  const hint = document.getElementById('configProfileHint');
+  if (!filename) {
+    hint.textContent = '已取消新建';
+    return;
+  }
+
+  const result = await fetchJson('/api/config/profiles/create', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ filename }),
+  });
+  currentConfigProfile = result.active || filename;
+  await reloadActiveConfigData(`已新建配置文件: ${currentConfigProfile}`);
+}
+
+function suggestConfigBaseName() {
+  const existing = new Set(
+    Array.from(document.getElementById('configProfileSelect').options).map(option =>
+      option.value.replace(/\.json$/i, ''),
+    ),
+  );
+  let base = 'new_config';
+  let idx = 2;
+  while (existing.has(base)) {
+    base = `new_config_${idx}`;
+    idx += 1;
+  }
+  return base;
+}
+
+async function deleteCurrentConfigProfile() {
+  const filename = (document.getElementById('configProfileSelect').value || currentConfigProfile || '').trim();
+  const hint = document.getElementById('configProfileHint');
+  if (!filename) {
+    hint.textContent = '没有可删除的 config';
+    return;
+  }
+
+  const confirmed = await showConfirmModal({
+    title: '删除确认（1/2）',
+    message: `确认删除配置文件 ${filename} 吗？`,
+  });
+  if (!confirmed) {
+    hint.textContent = '已取消删除';
+    return;
+  }
+
+  const confirmedAgain = await showConfirmModal({
+    title: '删除确认（2/2）',
+    message: `二次确认：删除后不可恢复，是否继续删除 ${filename}？`,
+  });
+  if (!confirmedAgain) {
+    hint.textContent = '已取消删除';
+    return;
+  }
+
+  const result = await fetchJson('/api/config/profiles/delete', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ filename }),
+  });
+  currentConfigProfile = result.active || '';
+  await reloadActiveConfigData(`已删除 config: ${filename}；当前加载: ${currentConfigProfile || '-'}`);
+}
+
+async function reloadActiveConfigData(message) {
   localStorage.removeItem(CONFIG_STATE_KEY);
   queryViews = {};
   availableColumns = [];
@@ -202,9 +277,114 @@ async function switchConfigProfile() {
   pluginConfigData = { modules: {} };
   await loadConfigProfiles();
   await loadAppSettings();
+  await loadViews();
+  await loadGroups();
   await refreshMetadataFromCurrentDatabase();
   await loadPluginConfig().catch(() => {});
-  document.getElementById('configProfileHint').textContent = `已加载 config: ${currentConfigProfile}`;
+  document.getElementById('configProfileHint').textContent = message;
+}
+
+function showNameModal(defaultBaseName = 'new_config') {
+  return new Promise(resolve => {
+    const overlay = document.getElementById('name-modal-overlay');
+    const input = document.getElementById('name-modal-input');
+    const hint = document.getElementById('name-modal-hint');
+    const cancelBtn = document.getElementById('name-modal-cancel');
+    const confirmBtn = document.getElementById('name-modal-confirm');
+
+    hint.textContent = '文件后缀固定为 .json';
+    input.value = defaultBaseName;
+    overlay.style.display = 'flex';
+    input.focus();
+    input.select();
+
+    const cleanup = () => {
+      overlay.style.display = 'none';
+      cancelBtn.removeEventListener('click', onCancel);
+      confirmBtn.removeEventListener('click', onConfirm);
+      overlay.removeEventListener('click', onOverlayClick);
+      input.removeEventListener('keydown', onKeyDown);
+    };
+
+    const onCancel = () => {
+      cleanup();
+      resolve('');
+    };
+
+    const onConfirm = () => {
+      const raw = input.value.trim().replace(/\.json$/i, '');
+      if (!raw) {
+        hint.textContent = '文件名不能为空';
+        return;
+      }
+      if (/[\\/:*?"<>|]/.test(raw)) {
+        hint.textContent = '文件名包含非法字符 \\ / : * ? " < > |';
+        return;
+      }
+      cleanup();
+      resolve(`${raw}.json`);
+    };
+
+    const onOverlayClick = event => {
+      if (event.target === overlay) {
+        onCancel();
+      }
+    };
+
+    const onKeyDown = event => {
+      if (event.key === 'Enter') {
+        onConfirm();
+      } else if (event.key === 'Escape') {
+        onCancel();
+      }
+    };
+
+    cancelBtn.addEventListener('click', onCancel);
+    confirmBtn.addEventListener('click', onConfirm);
+    overlay.addEventListener('click', onOverlayClick);
+    input.addEventListener('keydown', onKeyDown);
+  });
+}
+
+function showConfirmModal({ title, message }) {
+  return new Promise(resolve => {
+    const overlay = document.getElementById('confirm-modal-overlay');
+    const modalTitle = document.getElementById('confirm-modal-title');
+    const modalMessage = document.getElementById('confirm-modal-message');
+    const cancelBtn = document.getElementById('confirm-modal-cancel');
+    const confirmBtn = document.getElementById('confirm-modal-confirm');
+
+    modalTitle.textContent = title || '确认';
+    modalMessage.textContent = message || '';
+    overlay.style.display = 'flex';
+
+    const cleanup = () => {
+      overlay.style.display = 'none';
+      cancelBtn.removeEventListener('click', onCancel);
+      confirmBtn.removeEventListener('click', onConfirm);
+      overlay.removeEventListener('click', onOverlayClick);
+    };
+
+    const onCancel = () => {
+      cleanup();
+      resolve(false);
+    };
+
+    const onConfirm = () => {
+      cleanup();
+      resolve(true);
+    };
+
+    const onOverlayClick = event => {
+      if (event.target === overlay) {
+        onCancel();
+      }
+    };
+
+    cancelBtn.addEventListener('click', onCancel);
+    confirmBtn.addEventListener('click', onConfirm);
+    overlay.addEventListener('click', onOverlayClick);
+  });
 }
 
 function hasOption(select, value) {
@@ -518,29 +698,26 @@ async function saveTableConfig() {
 async function deleteGroupConfig() {
   const viewName = document.getElementById('editViewName').value;
   const group = document.getElementById('editGroupName').value;
-  const deleteBtn = document.getElementById('btnDeleteGroupConfig');
   const hint = document.getElementById('columnEditorHint');
   if (!viewName || !group) return alert('请先选择 view、group');
 
-  if (!deleteConfirmArmed) {
-    deleteConfirmArmed = true;
-    deleteBtn.textContent = '再次点击确认删除';
-    hint.textContent = `再次点击“删除当前配置”将删除 view=${viewName}, group=${group}（5秒内有效）`;
-    hint.className = 'muted warn';
-    if (deleteConfirmTimer) clearTimeout(deleteConfirmTimer);
-    deleteConfirmTimer = setTimeout(() => {
-      deleteConfirmArmed = false;
-      deleteConfirmTimer = null;
-      deleteBtn.textContent = '删除当前配置';
-    }, 5000);
+  const confirmed = await showConfirmModal({
+    title: '删除确认（1/2）',
+    message: `确认删除当前 group 配置 view=${viewName}, group=${group} 吗？`,
+  });
+  if (!confirmed) {
+    hint.textContent = '已取消删除';
     return;
   }
-  deleteConfirmArmed = false;
-  if (deleteConfirmTimer) {
-    clearTimeout(deleteConfirmTimer);
-    deleteConfirmTimer = null;
+
+  const confirmedAgain = await showConfirmModal({
+    title: '删除确认（2/2）',
+    message: `二次确认：删除后不可恢复，是否继续删除 view=${viewName}, group=${group}？`,
+  });
+  if (!confirmedAgain) {
+    hint.textContent = '已取消删除';
+    return;
   }
-  deleteBtn.textContent = '删除当前配置';
 
   const result = await fetchJson(
     '/api/config/query-group?view_name=' +
@@ -621,6 +798,15 @@ document.getElementById('btnLoadTableConfig').addEventListener('click', () => {
 });
 document.getElementById('btnReloadConfigProfile').addEventListener('click', () => {
   switchConfigProfile().catch(err => alert(err.message));
+});
+document.getElementById('btnRefreshConfigProfiles').addEventListener('click', () => {
+  refreshConfigProfiles().catch(err => alert(err.message));
+});
+document.getElementById('btnCreateConfigProfile').addEventListener('click', () => {
+  createConfigProfile().catch(err => alert(err.message));
+});
+document.getElementById('btnDeleteConfigProfile').addEventListener('click', () => {
+  deleteCurrentConfigProfile().catch(err => alert(err.message));
 });
 document.getElementById('configProfileSelect').addEventListener('change', () => {
   switchConfigProfile().catch(err => alert(err.message));
