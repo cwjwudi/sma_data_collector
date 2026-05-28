@@ -1,6 +1,6 @@
 {
   "name": "sd-sma-report-editor",
-  "version": "0.1.19",
+  "version": "0.1.20",
   "description": "Report Editor — 报表编辑器（Electron + FastAPI）",
   "author": "B&R Team",
   "private": true,
