@@ -1,12 +1,12 @@
 {
   "version": "0.1.18",
-  "releasedAt": "2026-05-28T13:27:13.737Z",
-  "notes": "封面/封尾可选修复；导出写回 PLC：截批/模拟截批；Mac 打包脚本增强",
+  "releasedAt": "2026-05-28T14:17:10.000Z",
+  "notes": "封面/封尾可选修复；导出写回 PLC：截批/模拟截批；生成报表用语统一；Mac/Win 0.1.18 双平台",
   "platforms": {
     "win32-x64": {
       "url": "Report Editor-Setup-0.1.18-x64.exe",
-      "sha256": "",
-      "size": 0
+      "sha256": "d5e6bb062dbc378d7d3a60f74f470d9988d6ab0b0bf50817c593e9ab76aacc83",
+      "size": 143148399
     },
     "darwin-arm64": {
       "url": "Report Editor-0.1.18-arm64.dmg",
