@@ -41,3 +41,61 @@ export function zoneBodyDecorRef(t: ReportTemplate, sheet: EditorSheet) {
   if (sheet === "back") return t.backBodyZoneElements;
   return [] as ReportTemplate["coverBodyZoneElements"];
 }
+
+function hasBoundLayoutPresetId(presetId: string | null | undefined): boolean {
+  return String(presetId ?? "").trim().length > 0;
+}
+
+function sheetHasUserContent(
+  presetId: string | null,
+  elements: TemplateElement[],
+  headerEls: ReportTemplate["coverHeaderElements"],
+  footerEls: ReportTemplate["coverFooterElements"],
+  bodyZoneEls: ReportTemplate["coverBodyZoneElements"],
+  headerText: string,
+  footerText: string,
+): boolean {
+  if (hasBoundLayoutPresetId(presetId)) return true;
+  if (elements.length > 0) return true;
+  if (headerEls.length > 0 || footerEls.length > 0) return true;
+  if (bodyZoneEls.length > 0) return true;
+  if (String(headerText ?? "").trim()) return true;
+  if (String(footerText ?? "").trim()) return true;
+  return false;
+}
+
+/** 新建向导选「不使用封面」且未再绑版式/加控件时为 false */
+export function templateHasCoverSheet(t: ReportTemplate): boolean {
+  return sheetHasUserContent(
+    t.coverLayoutPresetId,
+    t.coverElements ?? [],
+    t.coverHeaderElements ?? [],
+    t.coverFooterElements ?? [],
+    t.coverBodyZoneElements ?? [],
+    t.coverHeaderText ?? "",
+    t.coverFooterText ?? "",
+  );
+}
+
+/** 新建向导选「不使用末页」且未再绑版式/加控件时为 false */
+export function templateHasBackSheet(t: ReportTemplate): boolean {
+  return sheetHasUserContent(
+    t.backLayoutPresetId,
+    t.backElements ?? [],
+    t.backHeaderElements ?? [],
+    t.backFooterElements ?? [],
+    t.backBodyZoneElements ?? [],
+    t.backHeaderText ?? "",
+    t.backFooterText ?? "",
+  );
+}
+
+export function templateExportPageCount(
+  t: ReportTemplate,
+  expandedBodyCardCount: number,
+): number {
+  let n = expandedBodyCardCount;
+  if (templateHasCoverSheet(t)) n += 1;
+  if (templateHasBackSheet(t)) n += 1;
+  return n;
+}

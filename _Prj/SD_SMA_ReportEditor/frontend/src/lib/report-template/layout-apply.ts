@@ -1,6 +1,7 @@
 import type { LayoutPreset } from "@/lib/report-template/layout-model";
-import { hydrateLayoutPreset, presetZonesSnapshot } from "@/lib/report-template/layout-model";
+import { blankZonesSnapshot, hydrateLayoutPreset, presetZonesSnapshot } from "@/lib/report-template/layout-model";
 import type { ReportTemplate } from "@/lib/report-template/model";
+import { templateHasBackSheet, templateHasCoverSheet } from "@/lib/report-template/editor-sheet";
 
 export type LayoutPresetSlot = "body" | "cover" | "back";
 
@@ -37,6 +38,49 @@ export function applyLayoutPresetToTemplate(
   tmpl.backHeaderElements = z.headerElements.map((e) => ({ ...e }));
   tmpl.backFooterElements = z.footerElements.map((e) => ({ ...e }));
   tmpl.backBodyZoneElements = z.bodyElements.map((e) => ({ ...e }));
+}
+
+/** 取消封面/末页：清空版式绑定、纸上快照、眉脚区与画布控件（与新建向导「不使用」一致）。 */
+export function clearOptionalSheetFromTemplate(tmpl: ReportTemplate, slot: "cover" | "back"): void {
+  const z = blankZonesSnapshot();
+  if (slot === "cover") {
+    tmpl.coverLayoutPresetId = null;
+    tmpl.coverLayoutSnapshot = { ...z.layoutSnapshot };
+    tmpl.coverHeaderText = z.headerText;
+    tmpl.coverFooterText = z.footerText;
+    tmpl.coverHeaderElements = [];
+    tmpl.coverFooterElements = [];
+    tmpl.coverBodyZoneElements = [];
+    tmpl.coverElements = [];
+    return;
+  }
+  tmpl.backLayoutPresetId = null;
+  tmpl.backLayoutSnapshot = { ...z.layoutSnapshot };
+  tmpl.backHeaderText = z.headerText;
+  tmpl.backFooterText = z.footerText;
+  tmpl.backHeaderElements = [];
+  tmpl.backFooterElements = [];
+  tmpl.backBodyZoneElements = [];
+  tmpl.backElements = [];
+}
+
+function hasBoundLayoutPresetId(presetId: string | null | undefined): boolean {
+  return String(presetId ?? "").trim().length > 0;
+}
+
+/**
+ * 旧版「断开版式 ID」会留下眉脚区快照，导致列表缩略图仍显示封面/封尾。
+ * 无绑定 ID、无画布控件时，将残留区段收拢为「未选用」。
+ */
+export function stripStaleOptionalSheetZones(tmpl: ReportTemplate, slot: "cover" | "back"): boolean {
+  const presetId = slot === "cover" ? tmpl.coverLayoutPresetId : tmpl.backLayoutPresetId;
+  if (hasBoundLayoutPresetId(presetId)) return false;
+  const canvas = slot === "cover" ? tmpl.coverElements : tmpl.backElements;
+  if (canvas.length > 0) return false;
+  const hasSheet = slot === "cover" ? templateHasCoverSheet(tmpl) : templateHasBackSheet(tmpl);
+  if (!hasSheet) return false;
+  clearOptionalSheetFromTemplate(tmpl, slot);
+  return true;
 }
 
 /**
