@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -13,6 +14,7 @@ from .collector_host import get_collector_host
 from .config_manager import CollectorConfigManager
 from .models import (
     CollectorStartRequest,
+    CollectorStartupSettingsRequest,
     ConfigExportRequest,
     ConfigValidateRequest,
     ConfigWriteRequest,
@@ -49,10 +51,39 @@ cfg = CollectorConfigManager(
 opcua_browser = OpcUaBrowserService()
 
 
+async def _auto_start_collector() -> None:
+    host = get_collector_host()
+    try:
+        settings = cfg.load_runtime_settings()
+        if not settings.get("auto_start_enabled"):
+            return
+        filename = str(settings.get("auto_start_config") or "").strip()
+        if not filename:
+            host.record_error("自动启动已启用，但未设置配置文件")
+            return
+        delay = int(settings.get("auto_start_delay_seconds", 3) or 0)
+        if delay > 0:
+            await asyncio.sleep(delay)
+        await host.start(filename, collector_config_dir)
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        host.record_error(f"自动启动采集失败: {exc}")
+
+
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
-    yield
-    await get_collector_host().shutdown()
+    startup_task = asyncio.create_task(_auto_start_collector(), name="sd_sma_collector_auto_start")
+    try:
+        yield
+    finally:
+        if not startup_task.done():
+            startup_task.cancel()
+            try:
+                await startup_task
+            except asyncio.CancelledError:
+                pass
+        await get_collector_host().shutdown()
 
 
 app = FastAPI(title="SD SMA Collector Config Web", version="1.5.1", lifespan=_lifespan)
@@ -228,6 +259,23 @@ def collector_status() -> dict[str, Any]:
 def collector_logs(cursor: int = 0, limit: int = 200) -> dict[str, Any]:
     host = get_collector_host()
     return host.get_log_handler().get_lines_since(cursor=cursor, limit=limit)
+
+
+@app.get("/api/collector/startup-settings")
+def get_collector_startup_settings() -> dict[str, Any]:
+    try:
+        return cfg.load_runtime_settings()
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/collector/startup-settings")
+def save_collector_startup_settings(req: CollectorStartupSettingsRequest) -> dict[str, Any]:
+    try:
+        settings = cfg.save_runtime_settings(req.dict())
+        return {"status": "saved", "settings": settings}
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.post("/api/collector/start")

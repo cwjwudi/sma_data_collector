@@ -105,3 +105,23 @@ powershell -NoProfile -ExecutionPolicy Bypass -File _Launcher\scripts\build_port
 - `8092`: 查询 Web
 
 如果端口被占用，启动器会停止并提示。可以在 `launcher_config.json` 修改端口。
+
+## 配置目录
+
+可以在 `_Launcher/launcher_config.json` 的每个服务中修改 `env` 来指定配置目录。相对路径按包根目录解析，绝对路径会直接使用。
+
+采集器：
+
+```json
+"env": {
+  "SD_SMA_COLLECTOR_CONFIG_DIR": "site_config/collector"
+}
+```
+
+查询 Web：
+
+```json
+"env": {
+  "SD_SMA_QUERY_WEB_CONFIG_DIR": "site_config/query_web"
+}
+```

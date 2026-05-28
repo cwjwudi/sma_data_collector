@@ -1,11 +1,19 @@
 const monitorConfigSelect = document.getElementById("monitor-config-select");
 const monitorStatusEl = document.getElementById("monitor-status");
 const monitorLogEl = document.getElementById("monitor-log");
+const startupAutoEnabled = document.getElementById("startup-auto-enabled");
+const startupDelaySeconds = document.getElementById("startup-delay-seconds");
+const startupSettingsHint = document.getElementById("startup-settings-hint");
 
 const MONITOR_CONFIG_KEY = "sd_sma_monitor_config_v1";
 let monitorPollInFlight = false;
 let lastStatusPayload = null;
 let lastLogLines = [];
+let startupSettings = {
+  auto_start_enabled: false,
+  auto_start_config: "",
+  auto_start_delay_seconds: 3,
+};
 let logCursor = 0;
 let logPaused = false;
 let pausedBufferedCount = 0;
@@ -75,7 +83,10 @@ function syncMonitorConfigSelect(files) {
     opt.textContent = name;
     monitorConfigSelect.appendChild(opt);
   });
-  if (saved && files.includes(saved)) {
+  const startupConfig = (startupSettings.auto_start_config || "").trim();
+  if (startupConfig && files.includes(startupConfig)) {
+    monitorConfigSelect.value = startupConfig;
+  } else if (saved && files.includes(saved)) {
     monitorConfigSelect.value = saved;
   } else {
     const preferred = files.find((f) => f === "sample_config.json") || files[0];
@@ -85,6 +96,57 @@ function syncMonitorConfigSelect(files) {
     localStorage.setItem(MONITOR_CONFIG_KEY, monitorConfigSelect.value);
   } catch (_) {
     // ignore
+  }
+}
+
+function renderStartupSettings() {
+  if (startupAutoEnabled) {
+    startupAutoEnabled.checked = Boolean(startupSettings.auto_start_enabled);
+  }
+  if (startupDelaySeconds) {
+    startupDelaySeconds.value = String(startupSettings.auto_start_delay_seconds ?? 3);
+  }
+  if (startupSettingsHint) {
+    const filename = startupSettings.auto_start_config || "未设置";
+    startupSettingsHint.textContent = startupSettings.auto_start_enabled
+      ? `已启用：${filename}`
+      : "未启用自动启动";
+  }
+}
+
+async function loadStartupSettings() {
+  try {
+    startupSettings = await api("/api/collector/startup-settings");
+  } catch (err) {
+    if (startupSettingsHint) {
+      startupSettingsHint.textContent = `启动设置加载失败: ${err.message || err}`;
+    }
+  }
+  renderStartupSettings();
+}
+
+async function saveStartupSettings() {
+  const filename = (monitorConfigSelect?.value || "").trim();
+  const enabled = Boolean(startupAutoEnabled?.checked);
+  if (enabled && !filename) {
+    alert("请先选择配置文件");
+    return;
+  }
+  const delay = Number(startupDelaySeconds?.value || 0);
+  const result = await api("/api/collector/startup-settings", {
+    method: "POST",
+    body: JSON.stringify({
+      auto_start_enabled: enabled,
+      auto_start_config: filename,
+      auto_start_delay_seconds: Number.isFinite(delay) ? delay : 0,
+    }),
+  });
+  startupSettings = result.settings || startupSettings;
+  renderStartupSettings();
+  if (startupSettingsHint) {
+    startupSettingsHint.textContent = enabled
+      ? `已保存：启动 Web 后自动采集 ${startupSettings.auto_start_config}`
+      : "已保存：不自动启动采集";
   }
 }
 
@@ -258,6 +320,10 @@ document.getElementById("btn-collector-stop")?.addEventListener("click", () => {
     .catch((error) => alert(error.message));
 });
 
+document.getElementById("btn-save-startup-settings")?.addEventListener("click", () => {
+  saveStartupSettings().catch((error) => alert(error.message));
+});
+
 document.getElementById("btn-log-pause")?.addEventListener("click", () => {
   logPaused = !logPaused;
   if (!logPaused) {
@@ -270,7 +336,16 @@ document.getElementById("btn-log-pause")?.addEventListener("click", () => {
   updatePauseButtonLabel();
 });
 
-refreshMonitorFileList();
-setInterval(pollMonitor, 1000);
-updatePauseButtonLabel();
-pollMonitor();
+async function initializeDashboard() {
+  await loadStartupSettings();
+  await refreshMonitorFileList();
+  setInterval(pollMonitor, 1000);
+  updatePauseButtonLabel();
+  pollMonitor();
+}
+
+initializeDashboard().catch((error) => {
+  if (monitorStatusEl) {
+    monitorStatusEl.textContent = `初始化失败: ${error.message || error}`;
+  }
+});

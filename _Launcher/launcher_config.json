@@ -5,7 +5,7 @@
   "auto_install_missing": false,
   "wheelhouse": "wheelhouse",
   "proxy": {
-    "enabled": true,
+    "enabled": false,
     "url": "http://192.168.50.122:7890",
     "no_proxy": "localhost,127.0.0.1,::1"
   },
@@ -17,7 +17,7 @@
     { "package": "pymysql", "import": "pymysql" },
     { "package": "opcua", "import": "opcua" }
   ],
-  "open_browser": true,
+  "open_browser": false,
   "services": [
     {
       "name": "collector_web",

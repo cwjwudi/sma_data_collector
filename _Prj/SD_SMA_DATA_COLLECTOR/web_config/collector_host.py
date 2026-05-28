@@ -97,6 +97,19 @@ class CollectorHost:
     def get_log_handler(self) -> RingBufferLogHandler:
         return self._log_handler
 
+    def record_error(self, message: str) -> None:
+        self._last_error = message
+        record = logging.LogRecord(
+            name="web_config.startup",
+            level=logging.ERROR,
+            pathname=__file__,
+            lineno=0,
+            msg=message,
+            args=(),
+            exc_info=None,
+        )
+        self._log_handler.emit(record)
+
     @staticmethod
     def resolve_config_file(filename: str, collector_config_dir: Path) -> Path:
         safe = CollectorConfigManager._sanitize_filename(filename)

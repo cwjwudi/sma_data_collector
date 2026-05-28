@@ -111,6 +111,42 @@ body {
   max-width: 420px;
 }
 
+.startup-settings {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  margin: 6px 0 10px;
+  padding: 8px;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  background: #f8fafc;
+}
+
+.startup-toggle,
+.startup-delay {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.startup-toggle input[type='checkbox'] {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+}
+
+.startup-delay input {
+  width: 72px;
+  flex: 0 0 auto;
+}
+
+.muted {
+  color: #64748b;
+  font-size: 12px;
+}
+
 .subheading {
   font-size: 14px;
   margin: 12px 0 6px;

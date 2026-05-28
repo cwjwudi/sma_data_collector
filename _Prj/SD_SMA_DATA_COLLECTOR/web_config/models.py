@@ -27,3 +27,9 @@ class OpcUaConnectRequest(BaseModel):
 class CollectorStartRequest(BaseModel):
     filename: str = Field(..., min_length=1)
 
+
+class CollectorStartupSettingsRequest(BaseModel):
+    auto_start_enabled: bool = False
+    auto_start_config: str = ""
+    auto_start_delay_seconds: int = Field(default=3, ge=0, le=300)
+

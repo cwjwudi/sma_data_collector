@@ -26,6 +26,7 @@ class CollectorConfigManager:
         collector_config_dir: Path,
     ):
         self.collector_config_dir = collector_config_dir
+        self.runtime_settings_path = collector_config_dir / ".collector_runtime_settings.json"
 
     @staticmethod
     def _load_json(path: Path) -> dict[str, Any]:
@@ -46,7 +47,7 @@ class CollectorConfigManager:
     @staticmethod
     def _sanitize_filename(filename: str) -> str:
         candidate = Path(filename).name.strip()
-        if not candidate or candidate in {".", ".."}:
+        if not candidate or candidate in {".", ".."} or candidate.startswith("."):
             raise ValueError("文件名无效")
         if not candidate.lower().endswith(".json"):
             raise ValueError("文件名必须以 .json 结尾")
@@ -54,6 +55,52 @@ class CollectorConfigManager:
 
     def sanitize_filename(self, filename: str) -> str:
         return self._sanitize_filename(filename)
+
+    @staticmethod
+    def default_runtime_settings() -> dict[str, Any]:
+        return {
+            "auto_start_enabled": False,
+            "auto_start_config": "",
+            "auto_start_delay_seconds": 3,
+        }
+
+    def load_runtime_settings(self) -> dict[str, Any]:
+        raw = self._load_json(self.runtime_settings_path)
+        defaults = self.default_runtime_settings()
+        settings = {
+            **defaults,
+            **{key: raw.get(key) for key in defaults if key in raw},
+        }
+        settings["auto_start_enabled"] = bool(settings.get("auto_start_enabled"))
+        settings["auto_start_config"] = str(settings.get("auto_start_config") or "").strip()
+        try:
+            delay = int(settings.get("auto_start_delay_seconds", defaults["auto_start_delay_seconds"]))
+        except (TypeError, ValueError):
+            delay = defaults["auto_start_delay_seconds"]
+        settings["auto_start_delay_seconds"] = max(0, min(delay, 300))
+        return settings
+
+    def save_runtime_settings(self, settings: dict[str, Any]) -> dict[str, Any]:
+        normalized = self.default_runtime_settings()
+        normalized["auto_start_enabled"] = bool(settings.get("auto_start_enabled"))
+        normalized["auto_start_config"] = str(settings.get("auto_start_config") or "").strip()
+        try:
+            delay = int(settings.get("auto_start_delay_seconds", normalized["auto_start_delay_seconds"]))
+        except (TypeError, ValueError):
+            delay = normalized["auto_start_delay_seconds"]
+        normalized["auto_start_delay_seconds"] = max(0, min(delay, 300))
+
+        if normalized["auto_start_enabled"]:
+            filename = self._sanitize_filename(normalized["auto_start_config"])
+            target = (self.collector_config_dir / filename).resolve()
+            if target.parent != self.collector_config_dir.resolve():
+                raise ValueError("非法路径")
+            if not target.is_file():
+                raise ValueError(f"配置文件不存在: {filename}")
+            normalized["auto_start_config"] = filename
+
+        self._write_json(self.runtime_settings_path, normalized)
+        return normalized
 
     @classmethod
     def default_payload(cls) -> dict[str, Any]:
@@ -190,7 +237,7 @@ class CollectorConfigManager:
         self.collector_config_dir.mkdir(parents=True, exist_ok=True)
         files = []
         for path in self.collector_config_dir.glob("*.json"):
-            if path.is_file():
+            if path.is_file() and not path.name.startswith("."):
                 files.append(path.name)
         return sorted(files)
 
