@@ -66,17 +66,13 @@
                   :preview-total-pages="previewTotalPages"
               /></template>
             </div>
-            <template v-if="sheet !== 'body'">
-              <div v-if="decorationEls.length === 0" class="mini-body-empty">正文</div>
-            </template>
-            <template v-else>
-              <div
-                v-for="el in bodyEls"
-                v-show="miniShowBodyTplEl(el)"
-                :key="(sheet === 'body' ? String(bodyPageIndex) + ':' : '') + el.id"
-                class="mini-tpl-el"
-                :style="miniTplElStyle(el)"
-              >
+            <div
+              v-for="el in bodyEls"
+              v-show="miniShowCanvasTplEl(el)"
+              :key="(sheet === 'body' ? String(bodyPageIndex) + ':' : '') + el.id"
+              class="mini-tpl-el"
+              :style="miniTplElStyle(el)"
+            >
                 <ZoneImageCompose
                   v-if="el.type === 'image'"
                   :image-src="el.imageSrc"
@@ -150,15 +146,16 @@
                 </template>
                 <span v-else class="mini-tpl-caption">{{ tplCaption(el) }}</span>
               </div>
-              <div
-                v-if="miniSqlFillTailDividerStyle"
-                class="mini-sql-tail-hint"
-                :style="miniSqlFillTailDividerStyle"
-              >
-                以下控件将在导出预览中另起一页显示
-              </div>
-              <div v-if="bodyEls.length === 0 && decorationEls.length === 0" class="mini-body-empty">画布</div>
-            </template>
+            <div
+              v-if="miniSqlFillTailDividerStyle"
+              class="mini-sql-tail-hint"
+              :style="miniSqlFillTailDividerStyle"
+            >
+              以下控件将在导出预览中另起一页显示
+            </div>
+            <div v-if="bodyEls.length === 0 && decorationEls.length === 0" class="mini-body-empty">
+              {{ sheet === 'body' ? '画布' : '正文' }}
+            </div>
           </div>
         </div>
         <div v-if="me.fb > 0" class="mini-band mini-band-footer" :style="footerBand">
@@ -464,6 +461,12 @@ function miniZoneElStyle(el: LayoutZoneElement): Record<string, string> {
     }
   }
   return s;
+}
+
+/** 封面/末页画布控件在预览中始终显示；正文区才应用 SQL 续页等裁剪 */
+function miniShowCanvasTplEl(el: TemplateElement): boolean {
+  if (props.sheet !== "body") return true;
+  return miniShowBodyTplEl(el);
 }
 
 function miniShowBodyTplEl(el: TemplateElement): boolean {

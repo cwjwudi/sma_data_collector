@@ -1,12 +1,12 @@
 {
-  "version": "0.1.16",
-  "releasedAt": "2026-05-28T07:58:09.707Z",
-  "notes": "Report Editor 0.1.16\n\n- 数据源：修复「刷新架构」后表与视图被清空的问题（先拉库列表再拉当前库对象）\n- 其它：基于 0.1.15 的补丁发版（当前仅 macOS arm64 安装包）",
+  "version": "0.1.17",
+  "releasedAt": "2026-05-28T09:18:54.705Z",
+  "notes": "Report Editor 0.1.17\n\n- 模版：修复封面/末页控件在预览与缩略图中不显示的问题\n- 数据源：0.1.16 刷新架构修复（延续）\n- 当前安装包：macOS arm64（Windows 仍为 0.1.16，待下一包）",
   "platforms": {
     "darwin-arm64": {
-      "url": "Report Editor-0.1.16-arm64.dmg",
-      "sha256": "5eb71516967ac1d6f785efc7a1cb37a8575ce450404b668f220c73e5f3a2a383",
-      "size": 176915445
+      "url": "Report Editor-0.1.17-arm64.dmg",
+      "sha256": "ffced4a4df1b85f6d73e7928fbaee0a4c926474838b5c794a0b9a6b00a4682f0",
+      "size": 176915748
     }
   }
 }
