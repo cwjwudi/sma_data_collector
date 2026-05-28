@@ -91,6 +91,24 @@ function Get-ManifestVersion {
   return $ver.Trim()
 }
 
+function Sync-LockfileVersion {
+  param(
+    [string]$PackageJsonPath,
+    [string]$LockPath
+  )
+  $pkgVer = Get-FrontendVersion $PackageJsonPath
+  $oneLiner =
+    "const fs=require('fs');const pkg=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));" +
+    "const lock=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));lock.version=pkg.version;" +
+    "if(lock.packages&&lock.packages[''])lock.packages[''].version=pkg.version;" +
+    "fs.writeFileSync(process.argv[2],JSON.stringify(lock,null,2)+'\n','utf8');"
+  & node -e $oneLiner $PackageJsonPath $LockPath
+  if ($LASTEXITCODE -ne 0) {
+    throw 'Failed to sync package-lock.json version'
+  }
+  Write-Ok "package-lock.json version -> $pkgVer"
+}
+
 function Invoke-NpmCi {
   $nodeMajor = Get-NodeMajorVersion
   $npmCiArgs = @('ci', '--no-audit', '--no-fund')
@@ -100,13 +118,15 @@ function Invoke-NpmCi {
     $npmCiArgs += '--ignore-engines'
   }
   Invoke-Npm $npmCiArgs
-  # npm ci does not rewrite package.json; ensure lockfile root version matches (electron-builder reads package.json)
+  # npm ci does not rewrite package.json; sync lockfile root version for consistency
   $lockPath = Join-Path $Frontend 'package-lock.json'
+  $pkgJsonPath = Join-Path $Frontend 'package.json'
   if (Test-Path -LiteralPath $lockPath) {
     $lockVer = (& node -e "const fs=require('fs');const l=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));process.stdout.write((l.packages&&l.packages['']&&l.packages[''].version)||l.version||'')" $lockPath)
-    $pkgVer = Get-FrontendVersion (Join-Path $Frontend 'package.json')
+    $pkgVer = Get-FrontendVersion $pkgJsonPath
     if ($lockVer -and $pkgVer -and $lockVer -ne $pkgVer) {
-      Write-WarnLine "package-lock.json ($lockVer) != package.json ($pkgVer). Run: node packaging/scripts/bump-version.mjs $pkgVer"
+      Write-WarnLine "package-lock.json ($lockVer) != package.json ($pkgVer); syncing lockfile..."
+      Sync-LockfileVersion $pkgJsonPath $lockPath
     }
   }
 }
@@ -148,8 +168,10 @@ $AppVersion = Get-FrontendVersion (Join-Path $Frontend 'package.json')
 $ManifestPath = Join-Path $Root 'packaging\updates\latest.json'
 $ManifestVersion = Get-ManifestVersion $ManifestPath
 Write-Host "Version:      $AppVersion"
+$ExpectedSetup = "Report Editor-Setup-$AppVersion-x64.exe"
+Write-Host "Expected:     $ExpectedSetup"
 if ($ManifestVersion -and $ManifestVersion -ne $AppVersion) {
-  Write-WarnLine "package.json ($AppVersion) != packaging/updates/latest.json ($ManifestVersion). Run: node packaging/scripts/bump-version.mjs $ManifestVersion"
+  Write-WarnLine "package.json ($AppVersion) != packaging/updates/latest.json ($ManifestVersion). Run: node packaging/scripts/bump-version.mjs $AppVersion"
 }
 Write-Host "Project root: $Root"
 Write-Host "Output dir:   $OutputDir"
@@ -284,12 +306,13 @@ if ($setup) {
 
   Write-Step 'Update manifest + sync Portal (if mounted)'
   $publishScript = Join-Path $Root 'packaging\scripts\publish-portal-release.mjs'
-  & node $publishScript '--copy-artifacts'
+  # --only win: 保留 latest.json 中已有 darwin-arm64（分平台发版）
+  & node $publishScript '--copy-artifacts' '--only' 'win'
   if ($LASTEXITCODE -ne 0) {
     Write-WarnLine 'publish-portal-release failed; run manually after build.'
   }
   else {
-    Write-Ok 'latest.json synced'
+    Write-Ok 'latest.json synced (win32-x64; mac 条目已保留若同版本已存在)'
   }
 }
 else {

@@ -1,12 +1,12 @@
 {
-  "version": "0.1.15",
-  "releasedAt": "2026-05-25T09:00:17.642Z",
-  "notes": "Report Editor 0.1.15\n\n- 启动体验：先开窗再等待后端；清理占用 8000 的僵死 report_backend\n- 数据源：启动快照与架构 localStorage 缓存，表/视图秒开\n- OPC UA：修复保存连接 apiFetch 缺失\n- 云端同步：模版/版式下载 TLS/网络重试与友好提示",
+  "version": "0.1.16",
+  "releasedAt": "2026-05-28T07:58:09.707Z",
+  "notes": "Report Editor 0.1.16\n\n- 数据源：修复「刷新架构」后表与视图被清空的问题（先拉库列表再拉当前库对象）\n- 其它：基于 0.1.15 的补丁发版（当前仅 macOS arm64 安装包）",
   "platforms": {
     "darwin-arm64": {
-      "url": "Report Editor-0.1.15-arm64.dmg",
-      "sha256": "a89b7f0364e6f1d60f2ae70b56e0eb3059dc69a09923157e3408ca5b3b731a31",
-      "size": 176915978
+      "url": "Report Editor-0.1.16-arm64.dmg",
+      "sha256": "5eb71516967ac1d6f785efc7a1cb37a8575ce450404b668f220c73e5f3a2a383",
+      "size": 176915445
     }
   }
 }

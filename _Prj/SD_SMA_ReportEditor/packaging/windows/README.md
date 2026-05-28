@@ -17,11 +17,11 @@ build.bat
 
 安装包版本来自 **`frontend/package.json`** 的 `version` 字段（electron-builder 读取）。发版前请确认：
 
-1. 已 `git pull` 到含目标版本的 main（例如 **0.1.10**）
-2. 或在本机执行：`node packaging/scripts/bump-version.mjs 0.1.10 --notes "说明"`
-3. 打包日志首行应显示 `Version: 0.1.10`；若仍是 0.1.9，说明代码未更新到最新
+1. 已 `git pull` 到含目标版本的 main（例如 **0.1.16**）
+2. 或在本机执行：`node packaging/scripts/bump-version.mjs 0.1.16 --notes "说明"`
+3. 打包日志首行应显示 `Version: 0.1.16` 与 `Expected: Report Editor-Setup-0.1.16-x64.exe`；若不一致，说明代码未更新到最新
 
-`npm ci` 使用 `package-lock.json`，**不会**改 `package.json` 版本；锁文件版本滞后时会打印警告，但不影响安装包版本号。
+`npm ci` 使用 `package-lock.json`，**不会**改 `package.json` 版本；若锁文件根版本滞后，脚本会**自动同步** `package-lock.json` 与 `package.json`（仅版本字段）。
 
 ## 参数（传给 build.ps1）
 
@@ -38,12 +38,22 @@ build.bat
 output/Report Editor-Setup-<version>-x64.exe
 ```
 
-打包成功后脚本会自动运行 `publish-portal-release.mjs`：生成 `latest.json`（含 SHA256）并同步到已挂载的 Portal 目录。
+打包成功后脚本会自动运行 `publish-portal-release.mjs --only win`：
+
+- 写入/更新 `packaging/updates/latest.json` 中的 **win32-x64**（含 SHA256）
+- **保留**同版本下已有的 **darwin-arm64** 条目（便于先 Mac 后 Win 分平台发版）
+- 若 Portal 目录已挂载，复制安装包并同步 `latest.json`
 
 手动同步（在仓库根目录）：
 
 ```powershell
-node packaging\scripts\publish-portal-release.mjs --copy-artifacts
+node packaging\scripts\publish-portal-release.mjs --copy-artifacts --only win
+```
+
+仅更新清单、不复制文件：
+
+```powershell
+node packaging\scripts\publish-portal-release.mjs --only win
 ```
 
 ## 打包失败：winCodeSign / 符号链接

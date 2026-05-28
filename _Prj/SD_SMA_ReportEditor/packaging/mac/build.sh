@@ -153,7 +153,7 @@ if [[ -n "$DMG" && -f "$DMG" ]]; then
   echo "User data: ~/Library/Application Support/sd-sma-report-editor/"
 
   step "Update manifest + sync Portal (if mounted)"
-  if node "$PROJECT_ROOT/packaging/scripts/publish-portal-release.mjs" --copy-artifacts; then
+  if node "$PROJECT_ROOT/packaging/scripts/publish-portal-release.mjs" --copy-artifacts --only mac; then
     ok "latest.json synced"
   else
     echo "[WARN] publish-portal-release failed; run manually after build." >&2

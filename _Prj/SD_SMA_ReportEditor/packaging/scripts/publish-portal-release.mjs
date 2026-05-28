@@ -6,6 +6,8 @@
  *   node packaging/scripts/publish-portal-release.mjs
  *   node packaging/scripts/publish-portal-release.mjs --portal-dir /path/to/web-portal-demo/public/downloads/report-editor
  *   node packaging/scripts/publish-portal-release.mjs --copy-artifacts
+ *   node packaging/scripts/publish-portal-release.mjs --copy-artifacts --only win
+ *   node packaging/scripts/publish-portal-release.mjs --copy-artifacts --only mac
  *
  * 环境变量：
  *   REPORT_EDITOR_PORTAL_DIR — Portal 下载目录（覆盖自动探测）
@@ -27,7 +29,7 @@ const DEFAULT_PORTAL_CANDIDATES = [
 ].filter(Boolean)
 
 function parseArgs(argv) {
-  const out = { portalDir: '', copyArtifacts: false, version: '' }
+  const out = { portalDir: '', copyArtifacts: false, version: '', only: '' }
   for (let i = 2; i < argv.length; i++) {
     const a = argv[i]
     const next = argv[i + 1]
@@ -38,6 +40,10 @@ function parseArgs(argv) {
       out.copyArtifacts = true
     } else if (a === '--version' && next) {
       out.version = next
+      i++
+    } else if (a === '--only' && next) {
+      const v = String(next).toLowerCase()
+      if (v === 'mac' || v === 'win' || v === 'all') out.only = v === 'all' ? '' : v
       i++
     }
   }
@@ -103,7 +109,18 @@ function artifactEntryForFile(filePath) {
   }
 }
 
-function buildManifest(version, portalDir) {
+function resolveArtifactPath(version, kind, portalDir) {
+  const name = artifactFileName(version, kind)
+  const searchDirs = [portalDir, path.join(root, 'packaging/updates')].filter(Boolean)
+  for (const dir of searchDirs) {
+    const candidate = path.join(dir, name)
+    if (fs.existsSync(candidate)) return candidate
+  }
+  return findBuildArtifact(version, kind) || ''
+}
+
+function buildManifest(version, portalDir, options = {}) {
+  const only = options.only || ''
   let existing = null
   try {
     existing = JSON.parse(fs.readFileSync(manifestPath, 'utf8'))
@@ -115,30 +132,32 @@ function buildManifest(version, portalDir) {
     readManifestNotes() ||
     `Report Editor ${version}`
 
-  const searchDirs = [portalDir, path.join(root, 'packaging/updates')].filter(Boolean)
-  const platforms = {}
-  for (const kind of ['mac', 'win']) {
+  /** 同版本分平台发版时保留已有平台条目（例如先 Mac 后 Win） */
+  const platforms =
+    existing?.version === version && existing.platforms && typeof existing.platforms === 'object'
+      ? { ...existing.platforms }
+      : {}
+
+  const kinds = only === 'mac' ? ['mac'] : only === 'win' ? ['win'] : ['mac', 'win']
+  const updatedKinds = []
+
+  for (const kind of kinds) {
     const key = kind === 'mac' ? 'darwin-arm64' : 'win32-x64'
-    const name = artifactFileName(version, kind)
-    let filePath = ''
-    for (const dir of searchDirs) {
-      const candidate = path.join(dir, name)
-      if (fs.existsSync(candidate)) {
-        filePath = candidate
-        break
-      }
-    }
-    if (!filePath) {
-      const buildPath = findBuildArtifact(version, kind)
-      if (buildPath) filePath = buildPath
-    }
+    const filePath = resolveArtifactPath(version, kind, portalDir)
     if (filePath) {
       platforms[key] = artifactEntryForFile(filePath)
+      updatedKinds.push(kind)
     }
   }
 
+  if (!updatedKinds.length) {
+    const hint = only ? `（--only ${only}）` : ''
+    console.error(`未找到 ${version} 安装包${hint}。请先打包或复制到 Portal。`)
+    process.exit(1)
+  }
+
   if (!Object.keys(platforms).length) {
-    console.error(`未找到 ${version} 安装包。请先打包或复制到 Portal。`)
+    console.error(`latest.json 无可用平台条目（version=${version}）。`)
     process.exit(1)
   }
 
@@ -187,7 +206,7 @@ if (args.copyArtifacts && portalDir) {
   if (buildWin) copyFileIfNewer(buildWin, path.join(portalDir, path.basename(buildWin)))
 }
 
-buildManifest(version, portalDir)
+buildManifest(version, portalDir, { only: args.only })
 
 if (!portalDir) {
   console.warn('[warn] 未找到 Portal 目录，仅更新了 packaging/updates/latest.json')
