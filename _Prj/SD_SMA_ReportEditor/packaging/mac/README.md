@@ -23,6 +23,14 @@ chmod +x build.sh build.command
 | `--skip-backend-build` | 跳过 PyInstaller |
 | `--arch arm64` / `--arch x64` | 指定 CPU 架构 |
 
+发版前请确认 `frontend/package.json` 与 `packaging/updates/latest.json` 版本一致：
+
+```bash
+node packaging/scripts/bump-version.mjs <版本号> --notes "更新说明"
+```
+
+脚本会执行 `npm test`、Vite 构建、DMG 打包，并调用 `publish-portal-release.mjs --only mac`（**保留** `latest.json` 中同版本的 `win32-x64` 条目）。
+
 ## 产物
 
 ```text
@@ -34,7 +42,7 @@ output/Report Editor-<version>-<arch>.dmg
 手动同步：
 
 ```bash
-node packaging/scripts/publish-portal-release.mjs --copy-artifacts
+node packaging/scripts/publish-portal-release.mjs --copy-artifacts --only mac
 ```
 
 现场安装见 [getting-started/mac-installer.md](../../getting-started/mac-installer.md)。

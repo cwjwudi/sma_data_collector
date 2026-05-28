@@ -16,6 +16,15 @@ export type ExportResultWritePayload = {
   fileName?: string;
 };
 
+/** 写回 PLC「信息」节点时的导出场景（批次结束自动导出 vs 手动模拟截批） */
+export type ExportResultWriteContext = "manual" | "auto";
+
+/** 导出成功时写入 OPC String 的批次语义（与 UI「手动/自动导出」对应） */
+export const EXPORT_RESULT_PLC_EVENT_LABEL: Record<ExportResultWriteContext, string> = {
+  auto: "截批",
+  manual: "模拟截批",
+};
+
 export type ExportResultBindingField = "status" | "message" | "path";
 
 export type ExportResultValidationIssue = {
@@ -30,8 +39,15 @@ function truncateMessage(text: string, maxLen: number): string {
   return `${s.slice(0, Math.max(0, n - 1))}…`;
 }
 
-function buildPlcMessage(payload: ExportResultWritePayload): string {
+/** 构建写回 PLC「信息」节点的字符串 */
+export function buildExportResultPlcMessage(
+  payload: ExportResultWritePayload,
+  context?: ExportResultWriteContext,
+): string {
   if (payload.success) {
+    if (context === "manual" || context === "auto") {
+      return truncateMessage(EXPORT_RESULT_PLC_EVENT_LABEL[context], 500);
+    }
     const name = (payload.fileName || "").trim();
     const path = (payload.filePath || "").trim();
     if (name && path) return truncateMessage(`OK: ${name}`, 500);
@@ -131,6 +147,7 @@ export async function validateExportResultOpcBindings(
 export async function writeExportResultToOpcua(
   feedback: ExportResultOpcFeedback,
   payload: ExportResultWritePayload,
+  context?: ExportResultWriteContext,
 ): Promise<{ ok: boolean; errors: string[] }> {
   if (!isExportResultOpcFeedbackConfigured(feedback)) {
     return { ok: true, errors: [] };
@@ -140,7 +157,7 @@ export async function writeExportResultToOpcua(
   const errors: string[] = [];
   const statusVal =
     feedback.statusKind === "int" ? (payload.success ? 1 : 0) : payload.success;
-  const msgText = buildPlcMessage(payload);
+  const msgText = buildExportResultPlcMessage(payload, context);
   const pathText = payload.success ? (payload.filePath || "").trim() : "";
 
   if (feedback.statusNodeId.trim()) {
@@ -182,12 +199,15 @@ export async function testWriteExportResultToOpcua(
   if (!validation.ok) {
     return { ok: false, written: [], errors: validation.issues.map((i) => i.message) };
   }
-  const res = await writeExportResultToOpcua(feedback, {
-    success: true,
-    fileName: "TEST_REPORT.pdf",
-    filePath: "C:\\TEST\\TEST_REPORT.pdf",
-    message: "OK: TEST_REPORT.pdf",
-  });
+  const res = await writeExportResultToOpcua(
+    feedback,
+    {
+      success: true,
+      fileName: "TEST_REPORT.pdf",
+      filePath: "C:\\TEST\\TEST_REPORT.pdf",
+    },
+    "manual",
+  );
   const written: string[] = [];
   if (feedback.statusNodeId.trim()) written.push(FIELD_LABEL.status);
   if (feedback.messageNodeId.trim()) written.push(FIELD_LABEL.message);

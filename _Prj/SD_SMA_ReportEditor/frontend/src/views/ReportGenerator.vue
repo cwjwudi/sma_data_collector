@@ -10,7 +10,7 @@
     </div>
 
     <section class="rg-card">
-      <h3 class="rg-h3">手动导出 PDF</h3>
+      <h3 class="rg-h3">模拟截批（手动导出 PDF）</h3>
       <div class="rg-row">
         <label class="rg-lbl" for="rg-tpl">报表模版</label>
         <select id="rg-tpl" v-model="prefs.templateId" class="rg-select">
@@ -988,7 +988,7 @@ async function notifyExportResultToPlc(
   const fb = prefs.value.exportResultOpc;
   if (!isExportResultOpcFeedbackConfigured(fb)) return;
   try {
-    const res = await writeExportResultToOpcua(fb, payload);
+    const res = await writeExportResultToOpcua(fb, payload, context);
     if (!res.ok) {
       const hint = res.errors.join("；");
       showAppToast(`导出结果写回 OPC 失败\n${hint}`, { tone: "warn", durationMs: 10000 });
@@ -1008,7 +1008,7 @@ async function notifyExportResultToPlc(
       void auditLog({
         action: "export.opc_writeback",
         result: "ok",
-        summary: context === "auto" ? "自动导出写回" : "手动导出写回",
+        summary: context === "auto" ? "截批写回" : "模拟截批写回",
         detail: { context },
       });
     }
@@ -1305,7 +1305,7 @@ async function onManualExport(): Promise<void> {
       filePath,
       openAfter: prefs.value.manualOpenAfter,
     });
-    manualHint.value = `已保存：${filePath}`;
+    manualHint.value = `模拟截批 · 已保存：${filePath}`;
     void auditLog({
       action: "export.manual_pdf",
       result: "ok",
@@ -1462,7 +1462,7 @@ async function pollAutoTriggerOnce(): Promise<void> {
         );
         exportedThisPoll = true;
         const noteSuffix = result.note ? `（${result.note}）` : "";
-        autoStatus.value = `[自动·${label}] 已导出 ${result.filePath}${noteSuffix}`;
+        autoStatus.value = `[自动·${label}] 截批 · 已导出 ${result.filePath}${noteSuffix}`;
       } catch (e) {
         const msg = humanizePdfExportError(e);
         try {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildExportResultPlcMessage,
   hasAnyExportResultBinding,
   isExportResultOpcFeedbackConfigured,
   listConfiguredExportResultBindings,
@@ -30,6 +31,16 @@ describe("exportResultOpcFeedback", () => {
     expect(listConfiguredExportResultBindings(fb)).toEqual(["status", "path"]);
     expect(hasAnyExportResultBinding(fb)).toBe(true);
     expect(hasAnyExportResultBinding(defaultExportResultOpcFeedback())).toBe(false);
+  });
+
+  it("buildExportResultPlcMessage uses batch labels for manual vs auto", () => {
+    expect(
+      buildExportResultPlcMessage({ success: true, fileName: "a.pdf" }, "manual"),
+    ).toBe("模拟截批");
+    expect(buildExportResultPlcMessage({ success: true, fileName: "a.pdf" }, "auto")).toBe("截批");
+    expect(buildExportResultPlcMessage({ success: false, message: "网络错误" }, "manual")).toBe(
+      "网络错误",
+    );
   });
 
   it("skips write when disabled or unconfigured", async () => {
