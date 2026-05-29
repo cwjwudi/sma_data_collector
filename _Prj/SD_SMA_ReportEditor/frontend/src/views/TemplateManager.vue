@@ -183,10 +183,24 @@
         </div>
         <template v-if="cache[r.id]">
           <div class="row3">
-            <div class="micro">
+            <div class="micro" :class="{ 'micro--sheet-off': !sheetIncluded(cache[r.id], 'cover') }">
               <span class="micro-t">封面</span>
-              <div class="micro-body">
+              <div
+                class="micro-body"
+                :class="{ 'micro-body--absent': !sheetIncluded(cache[r.id], 'cover') }"
+              >
+                <div
+                  v-if="!sheetIncluded(cache[r.id], 'cover')"
+                  class="micro-absent"
+                  role="status"
+                  aria-label="本模版未选用封面"
+                >
+                  <span class="micro-absent-badge">未选用封面</span>
+                  <span class="micro-absent-desc">导出与编辑时不包含此页</span>
+                </div>
                 <TemplateMiniPage
+                  v-else
+                  :key="'cov-' + r.id + '-' + optionalSheetThumbKey(cache[r.id], 'cover')"
                   :template="cache[r.id]"
                   sheet="cover"
                   :max-width-px="230"
@@ -200,7 +214,7 @@
                   :value="boundPresetId(cache[r.id], 'cover')"
                   @change="onApplyPreset(r.id, 'cover', $event)"
                 >
-                  <option value="">选用已建版式…</option>
+                  <option value="">不使用封面</option>
                   <option
                   v-for="row in coverPresetRows"
                   :key="'pc-' + row.preset.id"
@@ -240,10 +254,24 @@
                 </select>
               </div>
             </div>
-            <div class="micro">
+            <div class="micro" :class="{ 'micro--sheet-off': !sheetIncluded(cache[r.id], 'back') }">
               <span class="micro-t">封尾 · 末页</span>
-              <div class="micro-body">
+              <div
+                class="micro-body"
+                :class="{ 'micro-body--absent': !sheetIncluded(cache[r.id], 'back') }"
+              >
+                <div
+                  v-if="!sheetIncluded(cache[r.id], 'back')"
+                  class="micro-absent"
+                  role="status"
+                  aria-label="本模版未选用封尾"
+                >
+                  <span class="micro-absent-badge">未选用封尾</span>
+                  <span class="micro-absent-desc">导出与编辑时不包含此页</span>
+                </div>
                 <TemplateMiniPage
+                  v-else
+                  :key="'back-' + r.id + '-' + optionalSheetThumbKey(cache[r.id], 'back')"
                   :template="cache[r.id]"
                   sheet="back"
                   :max-width-px="230"
@@ -257,7 +285,7 @@
                   :value="boundPresetId(cache[r.id], 'back')"
                   @change="onApplyPreset(r.id, 'back', $event)"
                 >
-                  <option value="">选用已建版式…</option>
+                  <option value="">不使用封尾</option>
                   <option
                   v-for="row in backPresetRows"
                   :key="'pk-' + row.preset.id"
@@ -383,8 +411,18 @@ import {
   clampElementToLayout,
   cloneDeepTemplate,
 } from "@/lib/report-template/snapshot-fingerprint";
-import { bodyElementsRef, metricsForSheet } from "@/lib/report-template/editor-sheet";
-import { applyLayoutPresetToTemplate, resyncTemplateBoundPresets } from "@/lib/report-template/layout-apply";
+import {
+  bodyElementsRef,
+  metricsForSheet,
+  templateHasBackSheet,
+  templateHasCoverSheet,
+} from "@/lib/report-template/editor-sheet";
+import {
+  applyLayoutPresetToTemplate,
+  clearOptionalSheetFromTemplate,
+  resyncTemplateBoundPresets,
+  stripStaleOptionalSheetZones,
+} from "@/lib/report-template/layout-apply";
 import { refreshLayoutPresets } from "@/lib/report-template/layout-registry";
 import {
   loadTemplates as loadLocal,
@@ -425,6 +463,33 @@ const layoutPresetsAll = ref([]);
 const coverPresetRows = computed(() => layoutPresetSelectRows(layoutPresetsAll.value, "cover"));
 const bodyPresetRows = computed(() => layoutPresetSelectRows(layoutPresetsAll.value, "normal"));
 const backPresetRows = computed(() => layoutPresetSelectRows(layoutPresetsAll.value, "back"));
+
+/** @param {import('@/lib/report-template/model').ReportTemplate} t @param {'cover'|'back'} slot */
+function sheetIncluded(t, slot) {
+  if (slot === "cover") return templateHasCoverSheet(t);
+  return templateHasBackSheet(t);
+}
+
+/** @param {import('@/lib/report-template/model').ReportTemplate} t @param {'cover'|'back'} slot */
+function optionalSheetThumbKey(t, slot) {
+  if (!t) return "0";
+  if (slot === "cover") {
+    return [
+      t.coverLayoutPresetId ?? "",
+      t.coverHeaderElements.length,
+      t.coverFooterElements.length,
+      t.coverBodyZoneElements.length,
+      t.coverElements.length,
+    ].join("-");
+  }
+  return [
+    t.backLayoutPresetId ?? "",
+    t.backHeaderElements.length,
+    t.backFooterElements.length,
+    t.backBodyZoneElements.length,
+    t.backElements.length,
+  ].join("-");
+}
 
 function syncDisplayOrderToStorage() {
   saveTemplateDisplayOrder(summaries.value.map((s) => s.id));
@@ -544,8 +609,9 @@ async function hydrateThumbs() {
   await mapPool(pending, THUMB_FETCH_CONCURRENCY, async (id) => {
     if (isLoadStale(token)) return;
     try {
-      const t = await api.getTemplate(id);
+      const t = cloneDeepTemplate(await api.getTemplate(id));
       if (isLoadStale(token)) return;
+      normalizeOptionalSheetsForList(t);
       cache.value = { ...cache.value, [id]: t };
       markThumbFailed(id, false);
     } catch {
@@ -562,8 +628,9 @@ async function retryThumb(id) {
   markThumbLoading(id, true);
   const token = beginLoad();
   try {
-    const t = await api.getTemplate(id);
+    const t = cloneDeepTemplate(await api.getTemplate(id));
     if (isLoadStale(token)) return;
+    normalizeOptionalSheetsForList(t);
     cache.value = { ...cache.value, [id]: t };
   } catch {
     if (isLoadStale(token)) return;
@@ -578,7 +645,13 @@ async function refreshThumbsView() {
   if (!offline.value) await hydrateThumbs();
   else {
     const local = loadLocal();
-    cache.value = Object.fromEntries(local.map((x) => [x.id, x]));
+    cache.value = Object.fromEntries(
+      local.map((x) => {
+        const t = cloneDeepTemplate(x);
+        normalizeOptionalSheetsForList(t);
+        return [t.id, t];
+      }),
+    );
     thumbLoading.value = new Set();
     thumbFailed.value = new Set();
   }
@@ -605,9 +678,16 @@ function resyncAllCachedTemplates() {
     const t = cache.value[id];
     if (t && typeof t === "object") {
       resyncTemplateBoundPresets(t, presets);
+      normalizeOptionalSheetsForList(t);
       reclampTemplate(t);
     }
   }
+}
+
+/** @param {import('@/lib/report-template/model').ReportTemplate} t */
+function normalizeOptionalSheetsForList(t) {
+  stripStaleOptionalSheetZones(t, "cover");
+  stripStaleOptionalSheetZones(t, "back");
 }
 
 /** @param {import('@/lib/report-template/model').ReportTemplate} t */
@@ -641,11 +721,20 @@ async function onApplyPreset(templateId, slot, ev) {
   msg.value = "";
 
   if (!presetId) {
-    if (slot === "body") t.layoutPresetId = null;
-    else if (slot === "cover") t.coverLayoutPresetId = null;
-    else t.backLayoutPresetId = null;
+    if (slot === "body") {
+      t.layoutPresetId = null;
+    } else {
+      clearOptionalSheetFromTemplate(t, slot);
+    }
     reclampTemplate(t);
+    cache.value = { ...cache.value, [templateId]: cloneDeepTemplate(t) };
     await persistFullTemplate(t);
+    msg.value =
+      slot === "cover"
+        ? "已取消封面，本模版不再包含封面页。"
+        : slot === "back"
+          ? "已取消封尾，本模版不再包含末页。"
+          : "已断开正文版式 ID 绑定（沿用当前纸上快照）。";
     return;
   }
 
@@ -659,6 +748,7 @@ async function onApplyPreset(templateId, slot, ev) {
 
   applyLayoutPresetToTemplate(t, p, slot);
   reclampTemplate(t);
+  cache.value = { ...cache.value, [templateId]: cloneDeepTemplate(t) };
   await persistFullTemplate(t);
 }
 
@@ -1226,6 +1316,11 @@ onMounted(async () => {
   font-weight: 600;
   color: #52525b;
 }
+.micro--sheet-off {
+  border-style: dashed;
+  border-color: #d4d4d8;
+  background: #f8fafc;
+}
 .micro-body {
   flex: 1 1 312px;
   min-height: 312px;
@@ -1236,6 +1331,46 @@ onMounted(async () => {
   max-width: 100%;
   overflow: hidden;
   box-sizing: border-box;
+}
+.micro-body--absent {
+  align-items: center;
+  justify-content: center;
+  background: repeating-linear-gradient(
+    -45deg,
+    #f4f4f5,
+    #f4f4f5 8px,
+    #fafafa 8px,
+    #fafafa 16px
+  );
+}
+.micro-absent {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  max-width: 92%;
+  padding: 20px 14px;
+  text-align: center;
+  border-radius: 10px;
+  border: 1px dashed #a1a1aa;
+  background: rgb(255 255 255 / 0.88);
+  box-shadow: 0 1px 0 rgb(24 24 27 / 0.04);
+}
+.micro-absent-badge {
+  display: inline-block;
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: #e4e4e7;
+  color: #3f3f46;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.micro-absent-desc {
+  font-size: 11px;
+  line-height: 1.45;
+  color: #71717a;
 }
 .micro-foot {
   flex: 0 0 auto;

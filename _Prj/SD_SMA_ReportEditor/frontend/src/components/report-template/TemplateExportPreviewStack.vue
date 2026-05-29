@@ -1,6 +1,7 @@
 <template>
   <div ref="hostEl" class="tep-root" title="单击选中页；双击进入编辑画布并跳到该页">
     <div
+      v-if="includeCover"
       class="tep-card"
       :class="{ 'tep-card--hl': activeSheet === 'cover' }"
       role="button"
@@ -33,11 +34,11 @@
     >
       <div v-if="!pdfExportOmitCaptions" class="tep-cap">
         <template v-if="card.tailOnlyBelowBaseline">
-          正文 · 第 {{ idx + 2 }} / {{ totalPreviewPages }} 页（画布 {{ card.bodyPageIndex + 1 }} /
+          正文 · 第 {{ bodyCardPreviewPage(idx) }} / {{ totalPreviewPages }} 页（画布 {{ card.bodyPageIndex + 1 }} /
           {{ bodyPageTotal }} · 表下控件）
         </template>
         <template v-else>
-          正文 · 第 {{ idx + 2 }} / {{ totalPreviewPages }} 页（画布 {{ card.bodyPageIndex + 1 }} /
+          正文 · 第 {{ bodyCardPreviewPage(idx) }} / {{ totalPreviewPages }} 页（画布 {{ card.bodyPageIndex + 1 }} /
           {{ bodyPageTotal }}<template v-if="card.continuationIndex > 0"> · SQL 续表</template>）
         </template>
       </div>
@@ -55,12 +56,13 @@
         :overflow-sql-fill-table-id="card.overflowSqlFillTableId"
         :max-width-px="cardWidth"
         :max-height-px="miniPageMaxHeightPx"
-        :preview-page="idx + 2"
+        :preview-page="bodyCardPreviewPage(idx)"
         :preview-total-pages="totalPreviewPages"
       />
     </div>
 
     <div
+      v-if="includeBack"
       class="tep-card"
       :class="{ 'tep-card--hl': activeSheet === 'back' }"
       role="button"
@@ -86,7 +88,12 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import type { ReportTemplate } from "@/lib/report-template/model";
 import { ensureBodyPages } from "@/lib/report-template/model";
-import type { EditorSheet } from "@/lib/report-template/editor-sheet";
+import {
+  templateHasBackSheet,
+  templateHasCoverSheet,
+  templateExportPageCount,
+  type EditorSheet,
+} from "@/lib/report-template/editor-sheet";
 import type { ExportPreviewNavPayload } from "@/lib/report-template/export-preview-nav";
 import type { BindingPreviewCell } from "@/lib/report-template/binding-preview-utils";
 import { computeExpandedBodyPreviewCards } from "@/lib/report-template/table-sql-fill-export-preview-split";
@@ -171,7 +178,16 @@ const expandedBodyCards = computed(() =>
   computeExpandedBodyPreviewCards(props.tmpl, props.previewBindingValues ?? {}),
 );
 
-const totalPreviewPages = computed(() => 1 + expandedBodyCards.value.length + 1);
+const includeCover = computed(() => templateHasCoverSheet(props.tmpl));
+const includeBack = computed(() => templateHasBackSheet(props.tmpl));
+
+const totalPreviewPages = computed(() =>
+  templateExportPageCount(props.tmpl, expandedBodyCards.value.length),
+);
+
+function bodyCardPreviewPage(bodyCardIndex: number): number {
+  return (includeCover.value ? 1 : 0) + bodyCardIndex + 1;
+}
 
 let ro: ResizeObserver | null = null;
 

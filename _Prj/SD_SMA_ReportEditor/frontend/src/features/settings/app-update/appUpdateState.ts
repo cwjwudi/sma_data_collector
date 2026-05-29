@@ -300,3 +300,20 @@ export async function clearAppUpdateSkippedVersions() {
   await syncAppUpdateState()
   return res
 }
+
+export async function installAppUpdate(options?: { openAfterUpgrade?: boolean }) {
+  const api = window.electronAPI
+  if (!api?.installAppUpdate) return null
+  return api.installAppUpdate(options)
+}
+
+export async function loadAppCurrentVersion(): Promise<string> {
+  const api = window.electronAPI
+  if (!api?.getAppUpdateConfig) return ''
+  try {
+    const c = await api.getAppUpdateConfig()
+    return String(c?.currentVersion || '').trim()
+  } catch {
+    return ''
+  }
+}

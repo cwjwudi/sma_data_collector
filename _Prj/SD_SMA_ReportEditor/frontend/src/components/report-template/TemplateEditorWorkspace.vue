@@ -130,6 +130,7 @@
             正文页
           </button>
           <button
+            v-if="includeCoverSheet"
             type="button"
             class="sheet-tab"
             role="tab"
@@ -140,6 +141,7 @@
             封面
           </button>
           <button
+            v-if="includeBackSheet"
             type="button"
             class="sheet-tab"
             role="tab"
@@ -266,6 +268,7 @@
             <div class="mid-edit-stack">
               <div ref="editScrollRootRef" class="tee-root">
                 <section
+                  v-if="includeCoverSheet"
                   class="tee-card"
                   :class="{ 'tee-card--hl': sh === 'cover' }"
                   :ref="(el) => setEditAnchor('cover', el)"
@@ -290,7 +293,7 @@
                   @pointerdown.capture="onEditCardActivate('body', bp)"
                 >
                   <div class="tee-cap">
-                    正文 · 第 {{ bp + 2 }} / {{ totalEditPages }} 页（画布 {{ bp + 1 }} / {{ bodyPageCount }}）
+                    正文 · 第 {{ bodyEditPreviewPage(bp) }} / {{ totalEditPages }} 页（画布 {{ bp + 1 }} / {{ bodyPageCount }}）
                   </div>
                   <TemplateBodyCanvas
                     v-model:selected-id="selId"
@@ -298,11 +301,12 @@
                     sheet="body"
                     :body-page-index="bp"
                     :embed-in-parent-scroll="true"
-                    :zone-preview-page="bp + 2"
+                    :zone-preview-page="bodyEditPreviewPage(bp)"
                     :zone-preview-total-pages="totalEditPages"
                   />
                 </section>
                 <section
+                  v-if="includeBackSheet"
                   class="tee-card"
                   :class="{ 'tee-card--hl': sh === 'back' }"
                   :ref="(el) => setEditAnchor('back', el)"
@@ -357,7 +361,12 @@ import * as sigApi from "@/api/signatures";
 import { ref, computed, watch, nextTick, onMounted, onUnmounted, provide } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { PAPER_LABEL } from "@/lib/report-template/paper";
-import { bodyElementsRef, metricsForSheet } from "@/lib/report-template/editor-sheet";
+import {
+  bodyElementsRef,
+  metricsForSheet,
+  templateHasBackSheet,
+  templateHasCoverSheet,
+} from "@/lib/report-template/editor-sheet";
 import {
   clampElementToLayout,
   cloneDeepTemplate,
@@ -368,7 +377,11 @@ import {
   layoutPresetSelectRows,
 } from "@/lib/layout-display-order";
 import { refreshLayoutPresets } from "@/lib/report-template/layout-registry";
-import { applyLayoutPresetToTemplate, resyncTemplateBoundPresets } from "@/lib/report-template/layout-apply";
+import {
+  applyLayoutPresetToTemplate,
+  clearOptionalSheetFromTemplate,
+  resyncTemplateBoundPresets,
+} from "@/lib/report-template/layout-apply";
 import {
   ensureBodyPages,
   syncLegacyElementsAlias,
@@ -649,6 +662,33 @@ const bodySlots = computed(() => {
   return Array.from({ length: n }, (_, i) => i);
 });
 
+const bodyPageCount = computed(() => {
+  const t = editing.value;
+  if (!t) return 1;
+  return ensureBodyPages(t).length;
+});
+
+const includeCoverSheet = computed(() => {
+  const t = editing.value;
+  return t ? templateHasCoverSheet(t) : false;
+});
+const includeBackSheet = computed(() => {
+  const t = editing.value;
+  return t ? templateHasBackSheet(t) : false;
+});
+
+/** 编辑画布 / 导出预览页码：仅计已启用的封面、正文、末页 */
+const totalEditPages = computed(() => {
+  let n = bodyPageCount.value;
+  if (includeCoverSheet.value) n += 1;
+  if (includeBackSheet.value) n += 1;
+  return n;
+});
+
+function bodyEditPreviewPage(bodyPageIndex) {
+  return (includeCoverSheet.value ? 1 : 0) + bodyPageIndex + 1;
+}
+
 /** @type {Record<string, HTMLElement | undefined>} */
 const editAnchors = {};
 const editScrollRootRef = ref(null);
@@ -703,11 +743,11 @@ function scheduleScrollEditSheetIntoView() {
 /** @param {import('@/lib/report-template/export-preview-nav').ExportPreviewNavPayload} payload */
 function applyExportPreviewNavigation(payload) {
   if (payload.sheet === "cover") {
-    sh.value = "cover";
+    if (includeCoverSheet.value) sh.value = "cover";
     return;
   }
   if (payload.sheet === "back") {
-    sh.value = "back";
+    if (includeBackSheet.value) sh.value = "back";
     return;
   }
   sh.value = "body";
@@ -756,13 +796,18 @@ watch([selId, editing], () => {
       return;
     }
   }
-  if (bodyElementsRef(t, "cover").some((e) => e.id === id)) {
+  if (templateHasCoverSheet(t) && bodyElementsRef(t, "cover").some((e) => e.id === id)) {
     sh.value = "cover";
     return;
   }
-  if (bodyElementsRef(t, "back").some((e) => e.id === id)) {
+  if (templateHasBackSheet(t) && bodyElementsRef(t, "back").some((e) => e.id === id)) {
     sh.value = "back";
   }
+});
+
+watch([editing, includeCoverSheet, includeBackSheet], () => {
+  if (sh.value === "cover" && !includeCoverSheet.value) sh.value = "body";
+  if (sh.value === "back" && !includeBackSheet.value) sh.value = "body";
 });
 
 watch(midMode, (m) => {
@@ -775,18 +820,9 @@ watch([sh, bodyPageIdx], () => {
   scheduleScrollEditSheetIntoView();
 });
 
-const bodyPageCount = computed(() => {
-  const t = editing.value;
-  if (!t) return 1;
-  return ensureBodyPages(t).length;
-});
-
 const bodyPresetRows = computed(() => layoutPresetSelectRows(layoutPresetsAll.value, "normal"));
 const coverPresetRows = computed(() => layoutPresetSelectRows(layoutPresetsAll.value, "cover"));
 const backPresetRows = computed(() => layoutPresetSelectRows(layoutPresetsAll.value, "back"));
-
-/** 编辑画布卡片标题与导出预览页码一致：1 + 正文页数 + 1 */
-const totalEditPages = computed(() => 1 + bodyPageCount.value + 1);
 
 const templateDimLabel = computed(() => {
   const t = editing.value;
@@ -804,10 +840,15 @@ function onPresetBind(slot, ev) {
   const t = editing.value;
   if (!t) return;
   if (!presetId) {
-    if (slot === "body") t.layoutPresetId = null;
-    else if (slot === "cover") t.coverLayoutPresetId = null;
-    else t.backLayoutPresetId = null;
-    hint.value = "已断开该页版式 ID 绑定（沿用当前纸上快照）。";
+    if (slot === "body") {
+      t.layoutPresetId = null;
+      hint.value = "已断开正文版式 ID 绑定（沿用当前纸上快照）。";
+    } else {
+      clearOptionalSheetFromTemplate(t, slot);
+      if (slot === "cover" && sh.value === "cover") sh.value = "body";
+      if (slot === "back" && sh.value === "back") sh.value = "body";
+      hint.value = slot === "cover" ? "已取消封面，本模版不再包含封面页。" : "已取消末页，本模版不再包含末页。";
+    }
     reclamp();
     return;
   }

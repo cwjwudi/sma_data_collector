@@ -5,13 +5,38 @@
 
 [CmdletBinding()]
 param(
+  [string]$Version = '',
+  [string]$Notes = '',
   [switch]$SkipFrontendInstall,
   [switch]$SkipBackendBuild,
+  [switch]$SkipTests,
   [switch]$Fresh,
   [switch]$NoPause,
+  [switch]$AllowVersionMismatch,
+  [switch]$Help,
   [string]$NpmRegistry = 'https://registry.npmmirror.com',
   [string]$ElectronMirror = 'https://npmmirror.com/mirrors/electron/'
 )
+
+if ($Help) {
+  @'
+Usage: .\build.ps1 [options]
+
+  -Version <semver>     Bump package.json + latest.json before build
+  -Notes <text>         Release notes (with -Version)
+  -Fresh                Clear packaging\windows\output first
+  -SkipFrontendInstall  Skip npm ci
+  -SkipBackendBuild     Skip PyInstaller
+  -SkipTests            Skip npm test (not recommended)
+  -AllowVersionMismatch Warn only if package.json != latest.json
+  -NoPause              No "press any key" on failure
+
+Example (0.1.20):
+  .\build.ps1 -Fresh
+  .\build.ps1 -Version 0.1.20 -Notes "release notes" -Fresh
+'@ | Write-Host
+  exit 0
+}
 
 $ErrorActionPreference = 'Stop'
 
@@ -91,6 +116,24 @@ function Get-ManifestVersion {
   return $ver.Trim()
 }
 
+function Sync-LockfileVersion {
+  param(
+    [string]$PackageJsonPath,
+    [string]$LockPath
+  )
+  $pkgVer = Get-FrontendVersion $PackageJsonPath
+  $oneLiner =
+    "const fs=require('fs');const pkg=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));" +
+    "const lock=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));lock.version=pkg.version;" +
+    "if(lock.packages&&lock.packages[''])lock.packages[''].version=pkg.version;" +
+    "fs.writeFileSync(process.argv[2],JSON.stringify(lock,null,2)+'\n','utf8');"
+  & node -e $oneLiner $PackageJsonPath $LockPath
+  if ($LASTEXITCODE -ne 0) {
+    throw 'Failed to sync package-lock.json version'
+  }
+  Write-Ok "package-lock.json version -> $pkgVer"
+}
+
 function Invoke-NpmCi {
   $nodeMajor = Get-NodeMajorVersion
   $npmCiArgs = @('ci', '--no-audit', '--no-fund')
@@ -100,15 +143,39 @@ function Invoke-NpmCi {
     $npmCiArgs += '--ignore-engines'
   }
   Invoke-Npm $npmCiArgs
-  # npm ci does not rewrite package.json; ensure lockfile root version matches (electron-builder reads package.json)
+  # npm ci does not rewrite package.json; sync lockfile root version for consistency
   $lockPath = Join-Path $Frontend 'package-lock.json'
+  $pkgJsonPath = Join-Path $Frontend 'package.json'
   if (Test-Path -LiteralPath $lockPath) {
     $lockVer = (& node -e "const fs=require('fs');const l=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));process.stdout.write((l.packages&&l.packages['']&&l.packages[''].version)||l.version||'')" $lockPath)
-    $pkgVer = Get-FrontendVersion (Join-Path $Frontend 'package.json')
+    $pkgVer = Get-FrontendVersion $pkgJsonPath
     if ($lockVer -and $pkgVer -and $lockVer -ne $pkgVer) {
-      Write-WarnLine "package-lock.json ($lockVer) != package.json ($pkgVer). Run: node packaging/scripts/bump-version.mjs $pkgVer"
+      Write-WarnLine "package-lock.json ($lockVer) != package.json ($pkgVer); syncing lockfile..."
+      Sync-LockfileVersion $pkgJsonPath $lockPath
     }
   }
+}
+
+function Invoke-NpmTest {
+  Write-Step 'Unit tests (vitest)'
+  Push-Location $Frontend
+  try {
+    Invoke-Npm @('run', 'test', '--', '--run')
+    Write-Ok 'npm test passed'
+  }
+  finally {
+    Pop-Location
+  }
+}
+
+function Get-StaleSetupInstallers {
+  param(
+    [string]$Dir,
+    [string]$ExpectedName
+  )
+  if (-not (Test-Path -LiteralPath $Dir)) { return @() }
+  return @(Get-ChildItem -LiteralPath $Dir -Filter 'Report Editor-Setup-*-x64.exe' -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -ne $ExpectedName })
 }
 
 function Invoke-ViteBuild([string]$FrontendDir) {
@@ -137,6 +204,20 @@ function Invoke-ViteBuild([string]$FrontendDir) {
 
 New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
 
+if ($Version) {
+  Write-Step "Bump version -> $Version"
+  $bumpScript = Join-Path $Root 'packaging\scripts\bump-version.mjs'
+  $bumpArgs = @($bumpScript, $Version)
+  if ($Notes) {
+    $bumpArgs += '--notes', $Notes
+  }
+  & node @bumpArgs
+  if ($LASTEXITCODE -ne 0) {
+    throw "bump-version.mjs failed (exit $LASTEXITCODE)"
+  }
+  Write-Ok 'version bumped'
+}
+
 $MigratePs1 = Join-Path $Frontend 'scripts\migrate-legacy-release.ps1'
 if ((Test-Path -LiteralPath (Join-Path $Frontend 'release')) -or (Test-Path -LiteralPath (Join-Path $Frontend 'release-alt'))) {
   Write-Step 'Migrate legacy frontend\release* -> packaging\windows\output'
@@ -144,12 +225,29 @@ if ((Test-Path -LiteralPath (Join-Path $Frontend 'release')) -or (Test-Path -Lit
 }
 
 Write-Step 'SD SMA Report Editor - Windows installer build'
-$AppVersion = Get-FrontendVersion (Join-Path $Frontend 'package.json')
+$PkgJsonPath = Join-Path $Frontend 'package.json'
+$AppVersion = Get-FrontendVersion $PkgJsonPath
 $ManifestPath = Join-Path $Root 'packaging\updates\latest.json'
 $ManifestVersion = Get-ManifestVersion $ManifestPath
+$ExpectedSetup = "Report Editor-Setup-$AppVersion-x64.exe"
 Write-Host "Version:      $AppVersion"
+Write-Host "Expected:     $ExpectedSetup"
+if ($ManifestVersion) {
+  Write-Host "Manifest:     $ManifestVersion (packaging/updates/latest.json)"
+}
 if ($ManifestVersion -and $ManifestVersion -ne $AppVersion) {
-  Write-WarnLine "package.json ($AppVersion) != packaging/updates/latest.json ($ManifestVersion). Run: node packaging/scripts/bump-version.mjs $ManifestVersion"
+  $msg = "package.json ($AppVersion) != packaging/updates/latest.json ($ManifestVersion)."
+  if ($AllowVersionMismatch) {
+    Write-WarnLine "$msg Continuing because -AllowVersionMismatch."
+  }
+  else {
+    throw @(
+      "ERROR: $msg",
+      "Run: node packaging/scripts/bump-version.mjs $AppVersion",
+      "Or:  .\build.ps1 -Version $ManifestVersion",
+      "Or:  .\build.ps1 -Version $AppVersion -Notes `"...`" -Fresh"
+    ) -join "`n"
+  }
 }
 Write-Host "Project root: $Root"
 Write-Host "Output dir:   $OutputDir"
@@ -175,6 +273,14 @@ if ($Fresh) {
   if (Test-Path -LiteralPath $OutputDir) {
     Remove-Item -LiteralPath $OutputDir -Recurse -Force -ErrorAction SilentlyContinue
     New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
+  }
+}
+else {
+  $stale = Get-StaleSetupInstallers -Dir $OutputDir -ExpectedName $ExpectedSetup
+  if ($stale.Count -gt 0) {
+    $names = ($stale | ForEach-Object { $_.Name }) -join ', '
+    Write-WarnLine "output contains older installers: $names"
+    Write-WarnLine "Use -Fresh to avoid picking wrong version, or delete stale exe manually."
   }
 }
 
@@ -216,6 +322,17 @@ if (-not $SkipBackendBuild) {
 elseif (-not (Test-Path -LiteralPath $BackendExe)) {
   throw "SkipBackendBuild set but missing $BackendExe. Run without -SkipBackendBuild first."
 }
+
+if (-not $SkipTests) {
+  Invoke-NpmTest
+}
+else {
+  Write-WarnLine 'Skipping npm test (-SkipTests).'
+}
+
+# Re-read version after npm ci (lockfile sync does not change package.json)
+$AppVersion = Get-FrontendVersion $PkgJsonPath
+$ExpectedSetup = "Report Editor-Setup-$AppVersion-x64.exe"
 
 Write-Step 'Vite production build'
 Push-Location $Frontend
@@ -269,13 +386,34 @@ finally {
   Remove-Item Env:ELECTRON_MIRROR -ErrorAction SilentlyContinue
 }
 
-$setup = Get-ChildItem -LiteralPath $OutputDir -Filter '*-Setup-*-x64.exe' -ErrorAction SilentlyContinue |
-  Sort-Object LastWriteTime -Descending |
-  Select-Object -First 1
+$expectedSetupName = "Report Editor-Setup-$AppVersion-x64.exe"
+$expectedSetupPath = Join-Path $OutputDir $expectedSetupName
+$setup = $null
+if (Test-Path -LiteralPath $expectedSetupPath) {
+  $setup = Get-Item -LiteralPath $expectedSetupPath
+}
+else {
+  $candidates = Get-ChildItem -LiteralPath $OutputDir -Filter '*-Setup-*-x64.exe' -ErrorAction SilentlyContinue |
+    Sort-Object LastWriteTime -Descending
+  if ($candidates) {
+    $wrong = $candidates | Where-Object { $_.Name -ne $expectedSetupName } | Select-Object -First 1
+    if ($wrong) {
+      throw @(
+        "ERROR: Expected $expectedSetupName but newest installer is $($wrong.Name).",
+        "package.json version is $AppVersion — run bump-version or use -Fresh."
+      ) -join "`n"
+    }
+    $setup = $candidates | Select-Object -First 1
+  }
+}
 
 Write-Step 'Done'
 if ($setup) {
-  Write-Ok "Installer: $($setup.FullName)"
+  if ($setup.Name -ne $expectedSetupName) {
+    throw "Installer name mismatch: $($setup.Name) (expected $expectedSetupName)"
+  }
+  $sizeMb = [math]::Round($setup.Length / 1MB, 1)
+  Write-Ok "Installer: $($setup.FullName) ($sizeMb MB, $($setup.Name))"
   Write-Host ''
   Write-Host 'Deliver this Setup.exe to end users (Windows 10/11 x64).' -ForegroundColor White
   Write-Host 'Install: double-click Setup, choose directory, complete wizard.' -ForegroundColor DarkGray
@@ -284,12 +422,13 @@ if ($setup) {
 
   Write-Step 'Update manifest + sync Portal (if mounted)'
   $publishScript = Join-Path $Root 'packaging\scripts\publish-portal-release.mjs'
-  & node $publishScript '--copy-artifacts'
+  # --only win: 保留 latest.json 中已有 darwin-arm64（分平台发版）
+  & node $publishScript '--copy-artifacts' '--only' 'win'
   if ($LASTEXITCODE -ne 0) {
     Write-WarnLine 'publish-portal-release failed; run manually after build.'
   }
   else {
-    Write-Ok 'latest.json synced'
+    Write-Ok 'latest.json synced (win32-x64; mac 条目已保留若同版本已存在)'
   }
 }
 else {

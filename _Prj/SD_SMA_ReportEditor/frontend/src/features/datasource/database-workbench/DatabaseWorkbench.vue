@@ -650,52 +650,48 @@ async function loadCatalog(opts = {}) {
   try {
     const conn = connections.value.find((c) => c.id === id)
     const engine = (conn?.engine || activeEngine.value || '').toLowerCase()
-    const payload = { connection_id: id }
     const preferredDatabase = activeDatabase.value || conn?.database || ''
-    if (preferredDatabase && engine !== 'sqlite') {
-      payload.database = preferredDatabase
-      activeDatabase.value = preferredDatabase
-    }
-    const cat = await apiFetch('/database/catalog', { method: 'POST', body: payload })
-    if (token !== catalogLoadToken || id !== activeConnId.value) return
 
-    let nextDatabases = cat.databases || []
-    let nextTables = normalizeCatalogTables(cat.tables || [])
-    let nextCollections = cat.collections || []
+    let nextDatabases = []
+    let nextTables = []
+    let nextCollections = []
 
-    if (engine === 'mongodb') {
-      if (!nextCollections.length && nextDatabases.length) {
-        const db = pickPreferredDatabase(conn, nextDatabases, activeDatabase.value)
-        if (db) {
-          activeDatabase.value = db
-          const dbCat = await apiFetch('/database/catalog', {
-            method: 'POST',
-            body: { connection_id: id, database: db },
-          })
-          if (token !== catalogLoadToken || id !== activeConnId.value) return
-          nextDatabases = dbCat.databases || nextDatabases
-          nextCollections = dbCat.collections || []
-        }
+    if (engine === 'sqlite') {
+      const cat = await apiFetch('/database/catalog', { method: 'POST', body: { connection_id: id } })
+      if (token !== catalogLoadToken || id !== activeConnId.value) return
+      nextTables = normalizeCatalogTables(cat.tables || [])
+    } else if (engine === 'mongodb') {
+      const listCat = await apiFetch('/database/catalog', { method: 'POST', body: { connection_id: id } })
+      if (token !== catalogLoadToken || id !== activeConnId.value) return
+      nextDatabases = listCat.databases || []
+      const db = pickPreferredDatabase(conn, nextDatabases, preferredDatabase)
+      if (db) {
+        activeDatabase.value = db
+        const dbCat = await apiFetch('/database/catalog', {
+          method: 'POST',
+          body: { connection_id: id, database: db },
+        })
+        if (token !== catalogLoadToken || id !== activeConnId.value) return
+        nextDatabases = dbCat.databases?.length ? dbCat.databases : nextDatabases
+        nextCollections = dbCat.collections || []
       }
-    } else if (engine !== 'sqlite') {
-      if (!nextTables.length && nextDatabases.length) {
-        const db = pickPreferredDatabase(conn, nextDatabases, activeDatabase.value)
-        if (db) {
-          activeDatabase.value = db
-          const dbCat = await apiFetch('/database/catalog', {
-            method: 'POST',
-            body: { connection_id: id, database: db },
-          })
-          if (token !== catalogLoadToken || id !== activeConnId.value) return
-          nextDatabases = dbCat.databases || nextDatabases
-          nextTables = normalizeCatalogTables(dbCat.tables || [])
-        }
-      } else if (payload.database) {
-        activeDatabase.value = payload.database
+    } else {
+      // MySQL / MariaDB / PostgreSQL：先拉库列表，再拉当前库的表/视图。
+      // 勿在首请求带 database——否则仅返回 tables，若为空则无法触发二次拉取，刷新会清空对象树。
+      const listCat = await apiFetch('/database/catalog', { method: 'POST', body: { connection_id: id } })
+      if (token !== catalogLoadToken || id !== activeConnId.value) return
+      nextDatabases = listCat.databases || []
+      const db = pickPreferredDatabase(conn, nextDatabases, preferredDatabase)
+      if (db) {
+        activeDatabase.value = db
+        const dbCat = await apiFetch('/database/catalog', {
+          method: 'POST',
+          body: { connection_id: id, database: db },
+        })
+        if (token !== catalogLoadToken || id !== activeConnId.value) return
+        nextDatabases = dbCat.databases?.length ? dbCat.databases : nextDatabases
+        nextTables = normalizeCatalogTables(dbCat.tables || [])
       }
-    }
-    if (engine !== 'sqlite' && activeDatabase.value && !nextDatabases.length) {
-      nextDatabases = [activeDatabase.value]
     }
 
     catalog.value.databases = nextDatabases

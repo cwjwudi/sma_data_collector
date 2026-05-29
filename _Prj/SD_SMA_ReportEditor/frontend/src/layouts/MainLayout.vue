@@ -1,9 +1,28 @@
 <template>
   <div class="main-layout-root">
     <div class="main-layout">
-      <aside class="sidebar">
+      <aside class="sidebar" :class="{ 'sidebar--collapsed': sidebarCollapsed }">
         <div class="sidebar-header">
-          <h1 class="logo">报表编辑器</h1>
+          <button
+            type="button"
+            class="sidebar-toggle"
+            :aria-expanded="!sidebarCollapsed"
+            :aria-label="sidebarCollapsed ? '展开导航栏' : '收起导航栏'"
+            :title="sidebarCollapsed ? '展开导航栏' : '收起导航栏'"
+            @click="toggleSidebarCollapsed"
+          >
+            <span class="sidebar-toggle__icon" aria-hidden="true">{{ sidebarCollapsed ? '»' : '«' }}</span>
+          </button>
+          <h1 v-if="!sidebarCollapsed" class="logo">
+            报表编辑器<span v-if="appVersion" class="logo-version">{{ appVersion }}</span>
+          </h1>
+          <p
+            v-else-if="appVersion"
+            class="logo-version-only"
+            :title="`报表编辑器 ${appVersion}`"
+          >
+            {{ appVersion }}
+          </p>
         </div>
         <nav class="sidebar-nav">
           <router-link
@@ -11,6 +30,7 @@
             :key="item.path"
             :to="item.path"
             :class="['nav-item', { 'nav-item--active': navActive(item.path) }]"
+            :title="sidebarCollapsed ? item.label : undefined"
           >
             <span class="nav-icon-wrap">
               <span class="nav-icon">{{ item.icon }}</span>
@@ -27,9 +47,10 @@
                 aria-label="有新版本可更新"
               />
             </span>
-            <span class="nav-label">{{ item.label }}</span>
+            <span v-show="!sidebarCollapsed" class="nav-label">{{ item.label }}</span>
           </router-link>
         </nav>
+        <SidebarAppUpdateBar :collapsed="sidebarCollapsed" />
       </aside>
       <main class="content">
         <div class="content-scroll">
@@ -52,12 +73,14 @@ import { ref, onMounted, onUnmounted, provide, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import SetupWizard from '@/features/onboarding/SetupWizard.vue'
 import AppUpdatePromptDialog from '@/features/settings/app-update/AppUpdatePromptDialog.vue'
+import SidebarAppUpdateBar from '@/features/settings/app-update/SidebarAppUpdateBar.vue'
 import AppToastStack from '@/components/AppToastStack.vue'
 import {
   appUpdateAvailable,
   appUpdateStartupPromptOpen,
   disposeAppUpdateListeners,
   initAppUpdateListeners,
+  loadAppCurrentVersion,
   runAutoUpdateCheck,
 } from '@/features/settings/app-update/appUpdateState'
 import { setupWizardCompleted } from '@/features/onboarding/setupWizardStorage'
@@ -69,10 +92,23 @@ import {
   connectionProbeIntervalMs,
   loadConnectionProbePrefs,
 } from '@/features/datasource/connection-probe-prefs'
+import { loadSidebarCollapsed, saveSidebarCollapsed } from '@/lib/sidebar-layout-prefs'
 
 const route = useRoute()
 
 const setupWizardVisible = ref(false)
+const appVersion = ref('')
+const sidebarCollapsed = ref(loadSidebarCollapsed())
+
+function toggleSidebarCollapsed() {
+  sidebarCollapsed.value = !sidebarCollapsed.value
+  saveSidebarCollapsed(sidebarCollapsed.value)
+}
+
+async function loadAppVersion() {
+  const v = await loadAppCurrentVersion()
+  appVersion.value = v
+}
 
 /** 离开数据源页时由主导航轮询；在页内由工作台探测并更新同一状态，避免重复请求 */
 let navDbHealthTimer = null
@@ -132,6 +168,7 @@ function scheduleAutoUpdateCheck() {
 }
 
 onMounted(() => {
+  void loadAppVersion()
   initAppUpdateListeners()
   if (!setupWizardCompleted()) {
     setupWizardVisible.value = true
@@ -160,6 +197,8 @@ onUnmounted(() => {
 provide('openSetupWizard', () => {
   setupWizardVisible.value = true
 })
+
+provide('sidebarCollapsed', sidebarCollapsed)
 
 /** 侧边栏「版式与页眉页脚」在列表与编辑页同时高亮 */
 function navActive(path) {
@@ -207,26 +246,105 @@ const navItems = [
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
+  transition: width 0.2s ease;
+}
+
+.sidebar--collapsed {
+  width: 64px;
 }
 
 .sidebar-header {
-  padding: 24px 20px 16px;
+  position: relative;
+  padding: 20px 12px 14px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  flex-shrink: 0;
+}
+
+.sidebar--collapsed .sidebar-header {
+  padding: 16px 8px 12px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.sidebar-toggle {
+  position: absolute;
+  top: 12px;
+  right: 8px;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #94a3b8;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+
+.sidebar--collapsed .sidebar-toggle {
+  position: static;
+  width: 32px;
+  height: 32px;
+}
+
+.sidebar-toggle:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #e2e8f0;
+}
+
+.sidebar-toggle__icon {
+  font-size: 14px;
+  line-height: 1;
+  font-weight: 700;
 }
 
 .logo {
+  margin: 0;
+  padding-right: 32px;
   font-size: 18px;
   font-weight: 700;
   color: #fff;
   letter-spacing: 0.5px;
+  line-height: 1.35;
+}
+
+.logo-version {
+  margin-left: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #94a3b8;
+  letter-spacing: 0.02em;
+}
+
+.logo-version-only {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: #94a3b8;
+  text-align: center;
+  line-height: 1.2;
+  word-break: break-all;
 }
 
 .sidebar-nav {
   flex: 1;
+  min-height: 0;
   padding: 12px 0;
   display: flex;
   flex-direction: column;
   gap: 2px;
+  overflow-y: auto;
+}
+
+.sidebar--collapsed .sidebar-nav {
+  padding: 8px 0;
+  align-items: center;
 }
 
 .nav-item {
@@ -236,8 +354,18 @@ const navItems = [
   padding: 12px 20px;
   color: #a0a0b8;
   font-size: 14px;
-  transition: all 0.2s;
+  transition: background 0.2s, color 0.2s, border-color 0.2s;
   border-left: 3px solid transparent;
+}
+
+.sidebar--collapsed .nav-item {
+  justify-content: center;
+  gap: 0;
+  width: 48px;
+  margin: 0 auto;
+  padding: 10px 0;
+  border-left: none;
+  border-radius: 8px;
 }
 
 .nav-item:hover {
@@ -249,6 +377,11 @@ const navItems = [
   background: rgba(99, 102, 241, 0.15);
   color: #818cf8;
   border-left-color: #818cf8;
+}
+
+.sidebar--collapsed .nav-item--active {
+  border-left-color: transparent;
+  background: rgba(99, 102, 241, 0.28);
 }
 
 .nav-icon {
@@ -278,6 +411,10 @@ const navItems = [
   border: 2px solid #1a1a2e;
   box-sizing: content-box;
   pointer-events: none;
+}
+
+.sidebar--collapsed .nav-badge {
+  border-color: #1a1a2e;
 }
 
 .content {
