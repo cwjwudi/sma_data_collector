@@ -15,6 +15,7 @@
     { "package": "pydantic", "import": "pydantic" },
     { "package": "sqlalchemy", "import": "sqlalchemy" },
     { "package": "pymysql", "import": "pymysql" },
+    { "package": "python-multipart", "import": "multipart" },
     { "package": "opcua", "import": "opcua" }
   ],
   "open_browser": false,
@@ -43,6 +44,19 @@
       "open_url": "http://127.0.0.1:8092/query",
       "env": {
         "SD_SMA_QUERY_WEB_CONFIG_DIR": "_Prj/SD_SMA_DATA_COLLECTOR_QUERY_WEB/config"
+      }
+    },
+    {
+      "name": "db_admin",
+      "title": "SD SMA DB Admin",
+      "cwd": "_Prj/SD_SMA_DB_ADMIN",
+      "app": "app.main:app",
+      "host": "127.0.0.1",
+      "port": 8093,
+      "health_path": "/api/health",
+      "open_url": "http://127.0.0.1:8093/admin",
+      "env": {
+        "SD_SMA_DB_ADMIN_CONFIG_DIR": "_Prj/SD_SMA_DB_ADMIN/config"
       }
     }
   ]

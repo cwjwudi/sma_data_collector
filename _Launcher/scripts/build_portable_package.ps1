@@ -94,6 +94,9 @@ Copy-DirectoryFiltered `
 Copy-DirectoryFiltered `
     -Source (Join-Path $RepoRoot "_Prj\SD_SMA_DATA_COLLECTOR_QUERY_WEB") `
     -Destination (Join-Path $PackageProjects "SD_SMA_DATA_COLLECTOR_QUERY_WEB")
+Copy-DirectoryFiltered `
+    -Source (Join-Path $RepoRoot "_Prj\SD_SMA_DB_ADMIN") `
+    -Destination (Join-Path $PackageProjects "SD_SMA_DB_ADMIN")
 
 $RootStart = Join-Path $PackageRoot "start.bat"
 @"

@@ -15,6 +15,17 @@
 _Launcher\start.bat
 ```
 
+## DB Admin
+
+新增数据库管理服务：
+
+- URL: `http://127.0.0.1:8093/admin`
+- Service name: `db_admin`
+- Project dir: `_Prj/SD_SMA_DB_ADMIN`
+- Config env: `SD_SMA_DB_ADMIN_CONFIG_DIR`
+
+便携包会一并复制 `_Prj/SD_SMA_DB_ADMIN`，并使用统一 `.venv` 启动。
+
 默认地址：
 
 - 采集配置/监控：`http://127.0.0.1:8091/dashboard`

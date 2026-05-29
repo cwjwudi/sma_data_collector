@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>数据库管理 - SD SMA DB Admin</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <nav class="page-nav" aria-label="站内导航">
+      <span class="page-nav-current">数据库管理</span>
+    </nav>
+
+    <div class="layout layout-stack">
+      <section class="panel">
+        <h2>连接设置</h2>
+        <p class="hint">维护本次操作使用的数据库连接。备份和恢复依赖 MySQL 客户端工具。</p>
+        <div class="row">
+          <label for="dbHost">Host</label>
+          <input id="dbHost" type="text" />
+          <label for="dbPort">Port</label>
+          <input id="dbPort" class="field-narrow-num" type="number" min="1" />
+          <label for="dbUsername">用户</label>
+          <input id="dbUsername" type="text" />
+          <label for="dbPassword">密码</label>
+          <input id="dbPassword" type="password" />
+          <button type="button" id="btnTestConnection">测试连接</button>
+          <button type="button" id="btnLoadDatabases">读取数据库</button>
+        </div>
+        <div id="connectionHint" class="muted"></div>
+      </section>
+
+      <section class="panel">
+        <h2>备份与导出</h2>
+        <p class="hint">选择数据库、表和输出目录后执行。SQL 备份导出完整库结构与数据；CSV 导出只针对选中的表。</p>
+        <div class="row">
+          <label for="databaseSelect">数据库</label>
+          <select id="databaseSelect"></select>
+          <button type="button" id="btnRefreshTables">刷新表</button>
+          <label for="tableSelect">表</label>
+          <select id="tableSelect"></select>
+        </div>
+        <div class="row">
+          <label for="outputDir">导出目录</label>
+          <input id="outputDir" type="text" />
+          <button type="button" id="btnChooseOutputDir">选择文件夹</button>
+          <button type="button" id="btnUseDefaultOutputDir">使用默认目录</button>
+        </div>
+        <div class="row">
+          <button type="button" id="btnBackupSql">备份当前数据库为 SQL</button>
+          <button type="button" id="btnExportCsv">导出当前表为 CSV</button>
+        </div>
+        <div id="objectHint" class="muted"></div>
+        <div id="backupHint" class="muted"></div>
+      </section>
+
+      <section class="panel">
+        <h2>恢复与导入</h2>
+        <p class="hint">先选择恢复/导入目标，再上传文件。点击执行后会连续弹出两次确认。</p>
+        <div class="row">
+          <label for="restoreDatabaseSelect">恢复到数据库</label>
+          <select id="restoreDatabaseSelect"></select>
+          <label for="restoreSqlFile">SQL 文件</label>
+          <input id="restoreSqlFile" type="file" accept=".sql,.txt" />
+          <button type="button" id="btnRestoreSql" class="danger-btn">恢复 SQL</button>
+        </div>
+        <div class="row">
+          <label for="importDatabaseSelect">导入到数据库</label>
+          <select id="importDatabaseSelect"></select>
+          <button type="button" id="btnRefreshImportTables">刷新目标表</button>
+          <label for="importTableSelect">导入到表</label>
+          <select id="importTableSelect"></select>
+        </div>
+        <div class="row">
+          <label for="importCsvFile">CSV 文件</label>
+          <input id="importCsvFile" type="file" accept=".csv,.txt" />
+          <label for="truncateBeforeImport">清空表</label>
+          <input id="truncateBeforeImport" type="checkbox" />
+          <button type="button" id="btnImportCsv" class="danger-btn">导入 CSV</button>
+        </div>
+        <div id="importHint" class="muted warn"></div>
+      </section>
+
+      <section class="panel">
+        <h2>任务日志</h2>
+        <div class="row">
+          <button type="button" id="btnRefreshJobs">刷新任务</button>
+          <span id="jobSummary" class="muted"></span>
+        </div>
+        <div class="jobs-grid">
+          <table id="jobsTable"></table>
+          <textarea id="jobLog" readonly aria-label="任务日志"></textarea>
+        </div>
+      </section>
+    </div>
+
+    <div id="confirm-modal-overlay" class="modal-overlay" style="display: none">
+      <div class="modal-dialog">
+        <h3 id="confirm-modal-title" class="modal-title">确认</h3>
+        <p id="confirm-modal-message" class="hint"></p>
+        <div class="modal-footer">
+          <button id="confirm-modal-cancel" type="button">取消</button>
+          <button id="confirm-modal-confirm" type="button" class="danger-btn">确认执行</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="/static/admin.js"></script>
+  </body>
+</html>

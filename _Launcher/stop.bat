@@ -2,7 +2,7 @@
 setlocal
 chcp 936 >nul 2>&1
 powershell -NoLogo -NoProfile -ExecutionPolicy Bypass -Command ^
-  "$ports = 8091,8092; " ^
+  "$ports = 8091,8092,8093; " ^
   "$conns = Get-NetTCPConnection -LocalPort $ports -State Listen -ErrorAction SilentlyContinue; " ^
   "if (-not $conns) { Write-Host 'No SD SMA launcher services are listening on 8091/8092.'; exit 0 }; " ^
   "$pids = $conns | Select-Object -ExpandProperty OwningProcess -Unique; " ^

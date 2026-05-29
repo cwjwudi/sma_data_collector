@@ -1,0 +1,17 @@
+{
+  "mysql_tools": {
+    "mysqldump": "mysqldump",
+    "mysql": "mysql"
+  },
+  "backup_dir": "backups",
+  "max_upload_mb": 512,
+  "default_connection": {
+    "engine": "mysql",
+    "host": "127.0.0.1",
+    "port": 3306,
+    "database": "",
+    "username": "root",
+    "password": ""
+  }
+}
+
