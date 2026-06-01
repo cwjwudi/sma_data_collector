@@ -198,6 +198,16 @@ class DataCollectionSystem:
                         "code_db_error": group.insert_feedback.code_db_error,
                         "code_other_error": group.insert_feedback.code_other_error,
                     }
+                if group.indexes:
+                    self.storage_processor.group_indexes_configs[group.name] = [
+                        {
+                            "columns": idx.columns,
+                            "name": idx.name or "",
+                            "unique": idx.unique,
+                            "index_type": idx.index_type,
+                        }
+                        for idx in group.indexes
+                    ]
                 self.logger.debug("设置组 %s 的batch_size为 %s", group.name, group.batch_insert_size)
 
             self.data_collector = DataCollector(self.communication_manager)

@@ -6,7 +6,7 @@
 import logging
 import os
 import time
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from datetime import datetime
 import sqlite3
 try:
@@ -232,14 +232,19 @@ class DatabaseManager:
             raise RuntimeError("数据库未连接")
         return self.SessionLocal()
     
-    def create_data_table(self, table_name: str, columns: Dict[str, str]) -> bool:
+    def create_data_table(self, table_name: str, columns: Dict[str, str],
+                          indexes: Optional[List[Dict[str, Any]]] = None) -> bool:
         """
         创建数据表
-        
+
         Args:
             table_name: 表名
             columns: 列定义字典 {列名: 数据类型}
-            
+            indexes: 索引配置列表，每项包含：
+                - columns: List[str] 索引列
+                - unique: bool 是否唯一索引
+                - index_type: str "btree" / "hash"
+
         Returns:
             bool: 创建是否成功
         """
@@ -248,39 +253,110 @@ class DatabaseManager:
             column_definitions = []
             for col_name, col_type in columns.items():
                 column_definitions.append(f"`{col_name}` {col_type}")
-            
+
             # 添加通用字段
             column_definitions.extend([
                 "`id` INTEGER PRIMARY KEY AUTOINCREMENT",
                 "`collection_time` DATETIME NOT NULL",
                 "`created_at` DATETIME DEFAULT CURRENT_TIMESTAMP"
             ])
-            
+
             if self.db_config['type'].lower() == 'mysql':
                 column_definitions[-3] = "`id` BIGINT AUTO_INCREMENT PRIMARY KEY"
                 auto_increment = "AUTO_INCREMENT"
             else:
                 auto_increment = "AUTOINCREMENT"
-            
+
             create_sql = f"""
             CREATE TABLE IF NOT EXISTS `{table_name}` (
                 {', '.join(column_definitions)}
             )
             """
             self._log_mysql_sql(create_sql, force_info=True)
-            
+
             with self.engine.connect() as conn:
                 conn.execute(text(create_sql))
                 conn.commit()
-            
+
             self.current_table_name = table_name
             self.table_created_date = datetime.now().date()
             self.logger.info(f"成功创建数据表: {table_name}")
+
             return True
-            
+
         except Exception as e:
             self._log_db_error("创建数据表", e)
             return False
+
+    def create_indexes(self, table_name: str, indexes: List[Dict[str, Any]]) -> None:
+        """在指定表上创建索引（MySQL 5.0~8.0 / SQLite 兼容）"""
+        is_mysql = self.db_config.get('type', '').lower() == 'mysql'
+        for idx_cfg in indexes:
+            columns = idx_cfg.get('columns', [])
+            if not columns:
+                continue
+
+            unique = bool(idx_cfg.get('unique', False))
+            index_type = str(idx_cfg.get('index_type', 'btree')).lower()
+
+            # 索引名：优先使用自定义名，否则自动生成
+            custom_name = str(idx_cfg.get('name', '') or '').strip()
+            if custom_name:
+                index_name = custom_name
+            else:
+                col_suffix = '_'.join(columns)
+                prefix = "uidx" if unique else "idx"
+                index_name = f"{prefix}_{table_name}_{col_suffix}"
+                if len(index_name) > 64:
+                    index_name = index_name[:64]
+
+            # USING 子句
+            if is_mysql:
+                using_clause = f" USING {index_type.upper()}"
+            else:
+                # SQLite 仅 btree，hash 降级
+                using_clause = "" if index_type == "hash" else ""
+
+            col_list = ", ".join(f"`{c}`" for c in columns)
+            unique_clause = "UNIQUE" if unique else ""
+
+            def _build_sql(if_not_exists: bool) -> str:
+                ifn = "IF NOT EXISTS " if if_not_exists else ""
+                return (
+                    f"CREATE {unique_clause} INDEX {ifn}`{index_name}` "
+                    f"ON `{table_name}` ({col_list}){using_clause}"
+                )
+
+            self._log_mysql_sql(_build_sql(True), force_info=True)
+
+            try:
+                with self.engine.connect() as conn:
+                    if is_mysql:
+                        # MySQL 5.0~5.6 不支持 IF NOT EXISTS，需要手动检查
+                        check_sql = (
+                            f"SHOW INDEX FROM `{table_name}` WHERE Key_name = :key_name"
+                        )
+                        result = conn.execute(text(check_sql), {"key_name": index_name})
+                        if result.fetchone():
+                            self.logger.debug(
+                                "索引已存在，跳过: %s ON %s", index_name, table_name,
+                            )
+                            continue
+                        conn.execute(text(_build_sql(False)))
+                    else:
+                        conn.execute(text(_build_sql(True)))
+                    conn.commit()
+                self.logger.info(
+                    "成功创建索引: %s ON %s (%s)%s",
+                    index_name, table_name, col_list,
+                    " UNIQUE" if unique else "",
+                )
+            except Exception as e:
+                # 索引创建失败不应阻塞主流程，记录警告即可
+                self.logger.warning(
+                    "创建索引失败: %s ON %s (%s): %s",
+                    index_name, table_name, col_list, e,
+                )
     
     def get_recreate_interval_days(self, group_name: str = None) -> int:
         """

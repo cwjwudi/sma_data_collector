@@ -45,6 +45,7 @@ class DataStorageProcessor:
         self.group_unique_key_points = {}  # 存储各组唯一键点配置
         self.group_batch_upsert_configs = {}  # 存储各组批次更新配置
         self.group_insert_feedback_configs = {}  # 存储各组反馈配置
+        self.group_indexes_configs = {}  # 存储各组索引配置
         self.points_dict = points_dict or {}  # 数据点配置字典
         self.insert_feedback_callback = insert_feedback_callback
         self.data_queue = deque()
@@ -258,12 +259,13 @@ class DataStorageProcessor:
             table_name = self.db_manager.get_current_table_name(group_name)
             unique_key_point = self.group_unique_key_points.get(group_name)
             batch_upsert_config = self.group_batch_upsert_configs.get(group_name)
-            
+            group_indexes = self.group_indexes_configs.get(group_name)
+
             # 准备插入数据
             column_types = self._infer_column_types(sample_data)
-            
+
             # 创建表（如果不存在）
-            if not self._ensure_table_exists(table_name, column_types):
+            if not self._ensure_table_exists(table_name, column_types, indexes=group_indexes):
                 await self._write_insert_feedback_by_outcome(
                     group_name,
                     {
@@ -513,27 +515,33 @@ class DataStorageProcessor:
             self.logger.warning(f"未知的 datatype: {datatype}，使用 VARCHAR(255)")
             return 'VARCHAR(255)'
     
-    def _ensure_table_exists(self, table_name: str, column_types: Dict[str, str]) -> bool:
+    def _ensure_table_exists(self, table_name: str, column_types: Dict[str, str],
+                              indexes: Optional[List[Dict[str, Any]]] = None) -> bool:
         """
         确保数据表存在
-        
+
         Args:
             table_name: 表名
             column_types: 列类型定义
-            
+            indexes: 索引配置列表
+
         Returns:
             bool: 表是否存在或创建成功
         """
         try:
-            if table_name in self.ensured_tables:
-                return True
-
-            # 简化处理：首次使用该表时尝试创建（IF NOT EXISTS）
-            success = self.db_manager.create_data_table(table_name, column_types)
-            if success:
+            if table_name not in self.ensured_tables:
+                # 首次使用该表时尝试创建（IF NOT EXISTS）
+                success = self.db_manager.create_data_table(table_name, column_types)
+                if not success:
+                    return False
                 self.ensured_tables.add(table_name)
-            return success
-            
+
+            # 始终尝试确保索引存在（CREATE INDEX IF NOT EXISTS 幂等）
+            if indexes:
+                self.db_manager.create_indexes(table_name, indexes)
+
+            return True
+
         except Exception as e:
             self.logger.error(f"确保表存在时出错: {e}", exc_info=True)
             return False

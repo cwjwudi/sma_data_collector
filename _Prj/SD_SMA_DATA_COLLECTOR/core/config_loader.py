@@ -6,9 +6,9 @@
 import json
 from typing import Dict, Any
 from .config_models import (
-    DataPoint, DataGroup, OpcUaConfig, DatabaseConfig, AppConfig, 
+    DataPoint, DataGroup, OpcUaConfig, DatabaseConfig, AppConfig,
     TriggerType, Communication, Connection, LoggingConfig, InsertFeedbackConfig,
-    BatchUpsertConfig
+    BatchUpsertConfig, IndexConfig
 )
 
 
@@ -95,6 +95,20 @@ class ConfigLoader:
                     allow_idempotent_same_end_time=batch_upsert_data.get('allow_idempotent_same_end_time', False),
                 )
 
+            # 解析索引配置
+            indexes_data = group_data.get('indexes')
+            indexes = None
+            if indexes_data is not None:
+                indexes = []
+                for idx_entry in indexes_data:
+                    raw_name = idx_entry.get('name', '').strip()
+                    indexes.append(IndexConfig(
+                        columns=idx_entry.get('columns', []),
+                        name=raw_name if raw_name else None,
+                        unique=bool(idx_entry.get('unique', False)),
+                        index_type=idx_entry.get('index_type', 'btree'),
+                    ))
+
             group = DataGroup(
                 name=group_data['name'],
                 interval_seconds=group_data['interval_seconds'],
@@ -110,6 +124,7 @@ class ConfigLoader:
                 unique_key_point=group_data.get('unique_key_point'),
                 insert_feedback=insert_feedback,
                 batch_upsert=batch_upsert,
+                indexes=indexes,
             )
             groups.append(group)
         
@@ -306,7 +321,34 @@ class ConfigLoader:
                     raise ValueError(
                         f"数据组 '{group.name}' 的 trigger_interval_seconds 必须大于 0"
                     )
-        
+
+            # 验证索引配置
+            if group.indexes:
+                seen_names: set[str] = set()
+                for idx_idx, idx_cfg in enumerate(group.indexes):
+                    if not idx_cfg.columns:
+                        raise ValueError(
+                            f"数据组 '{group.name}' 的 indexes[{idx_idx}].columns 不能为空"
+                        )
+                    for col in idx_cfg.columns:
+                        if col not in group.data_points:
+                            raise ValueError(
+                                f"数据组 '{group.name}' 的 indexes[{idx_idx}].columns "
+                                f"引用了不存在的点位: {col}"
+                            )
+                    # 校验自定义索引名
+                    if idx_cfg.name:
+                        if len(idx_cfg.name) > 64:
+                            raise ValueError(
+                                f"数据组 '{group.name}' 的 indexes[{idx_idx}].name "
+                                f"超过 MySQL 64 字符限制: {idx_cfg.name}"
+                            )
+                        if idx_cfg.name in seen_names:
+                            raise ValueError(
+                                f"数据组 '{group.name}' 的 indexes[{idx_idx}].name 重复: {idx_cfg.name}"
+                            )
+                        seen_names.add(idx_cfg.name)
+
         # 检查数据库配置引用的数据组是否存在
         group_names = [group.name for group in config.groups]
         for data_group_name in config.database.data_groups:

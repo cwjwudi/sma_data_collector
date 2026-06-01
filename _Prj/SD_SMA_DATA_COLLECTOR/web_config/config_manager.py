@@ -196,6 +196,38 @@ class CollectorConfigManager:
             if "output_mode" in group:
                 raise ValueError("当前版本已删除 groups[].output_mode 字段")
 
+            # 验证 indexes 配置
+            indexes = group.get("indexes")
+            if indexes is not None:
+                if not isinstance(indexes, list):
+                    raise ValueError(f"数据组 '{group.get('name', '<unknown>')}' 的 indexes 必须是数组")
+                data_points = group.get("data_points", [])
+                seen_names: set[str] = set()
+                for i, idx_def in enumerate(indexes):
+                    if not isinstance(idx_def, dict):
+                        raise ValueError(f"数据组 '{group.get('name', '<unknown>')}' 的 indexes[{i}] 必须是对象")
+                    columns = idx_def.get("columns", [])
+                    if not isinstance(columns, list) or len(columns) == 0:
+                        raise ValueError(f"数据组 '{group.get('name', '<unknown>')}' 的 indexes[{i}].columns 必须是非空数组")
+                    for col in columns:
+                        if col not in data_points:
+                            raise ValueError(
+                                f"数据组 '{group.get('name', '<unknown>')}' 的 indexes[{i}].columns "
+                                f"引用了不存在的点位: {col}"
+                            )
+                    # 校验索引名
+                    name = str(idx_def.get("name", "")).strip()
+                    if name:
+                        if len(name) > 64:
+                            raise ValueError(
+                                f"数据组 '{group.get('name', '<unknown>')}' 的 indexes[{i}].name 超过 64 字符"
+                            )
+                        if name in seen_names:
+                            raise ValueError(
+                                f"数据组 '{group.get('name', '<unknown>')}' 的 indexes[{i}].name 重复: {name}"
+                            )
+                        seen_names.add(name)
+
     @staticmethod
     def _validate_points_unique(payload: dict[str, Any]) -> None:
         points = payload.get("points", [])

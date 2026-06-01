@@ -46,6 +46,19 @@ class BatchUpsertConfig:
 
 
 @dataclass
+class IndexConfig:
+    """索引配置"""
+    columns: List[str]  # 索引列（支持复合索引）
+    name: Optional[str] = None  # 自定义索引名，留空则自动生成
+    unique: bool = False  # 是否唯一索引
+    index_type: str = "btree"  # btree / hash（MySQL 支持 hash，SQLite 仅 btree）
+
+    def __post_init__(self):
+        if self.index_type not in ("btree", "hash"):
+            raise ValueError(f"不支持的索引类型: {self.index_type}，仅支持 btree / hash")
+
+
+@dataclass
 class DataGroup:
     """数据组配置"""
     name: str
@@ -62,6 +75,7 @@ class DataGroup:
     unique_key_point: Optional[str] = None  # 唯一性校验键（按组）
     insert_feedback: Optional[InsertFeedbackConfig] = None  # 插入反馈配置（UDINT）
     batch_upsert: Optional[BatchUpsertConfig] = None  # 批次更新配置（唯一冲突时按 end_time 条件更新）
+    indexes: Optional[List[IndexConfig]] = None  # 索引配置列表
 
 
 @dataclass

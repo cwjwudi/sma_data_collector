@@ -610,6 +610,100 @@ function openInsertFeedbackConfig(groupIndex) {
   });
 }
 
+function openIndexesConfig(groupIndex) {
+  const group = currentConfig.groups[groupIndex];
+  const pointNames = getPointNameOptions();
+  const draft = Array.isArray(group.indexes)
+    ? group.indexes.map((idx) => ({ ...idx, columns: [...(idx.columns || [])] }))
+    : [];
+
+  showGroupConfigModal({
+    title: "配置索引",
+    buildBody: (body) => {
+      function renderIndexList() {
+        body.innerHTML = "";
+
+        draft.forEach((idx, i) => {
+          const row = document.createElement("div");
+          row.className = "group-config-row";
+
+          const nameInput = createInput(idx.name || "", (v) => {
+            draft[i].name = v.trim();
+          });
+          nameInput.placeholder = "索引名(留空自动)";
+          nameInput.style.width = "130px";
+          nameInput.style.flexShrink = "0";
+
+          const colWrapper = document.createElement("div");
+          colWrapper.style.flex = "1";
+          const colWidget = createMultiSelect(pointNames, idx.columns || [], (values) => {
+            draft[i].columns = values;
+          });
+          colWrapper.appendChild(colWidget);
+
+          const uniqueCb = createCheckbox(idx.unique || false, (v) => {
+            draft[i].unique = v;
+          });
+          const uniqueLabel = document.createElement("label");
+          uniqueLabel.style.padding = "0 4px";
+          uniqueLabel.style.fontSize = "12px";
+          uniqueLabel.textContent = "唯一";
+          const uniqueWrap = document.createElement("div");
+          uniqueWrap.style.display = "flex";
+          uniqueWrap.style.alignItems = "center";
+          uniqueWrap.appendChild(uniqueCb);
+          uniqueWrap.appendChild(uniqueLabel);
+
+          const typeSelect = createSelect(
+            [
+              { value: "btree", label: "btree" },
+              { value: "hash", label: "hash" },
+            ],
+            idx.index_type || "btree",
+            (v) => {
+              draft[i].index_type = v;
+            }
+          );
+
+          const delBtn = document.createElement("button");
+          delBtn.type = "button";
+          delBtn.textContent = "删除";
+          delBtn.addEventListener("click", () => {
+            draft.splice(i, 1);
+            renderIndexList();
+          });
+
+          row.appendChild(nameInput);
+          row.appendChild(colWrapper);
+          row.appendChild(uniqueWrap);
+          row.appendChild(typeSelect);
+          row.appendChild(delBtn);
+          body.appendChild(row);
+        });
+
+        const addBtn = document.createElement("button");
+        addBtn.type = "button";
+        addBtn.textContent = "新增索引";
+        addBtn.addEventListener("click", () => {
+          draft.push({ name: "", columns: [], unique: false, index_type: "btree" });
+          renderIndexList();
+        });
+        body.appendChild(addBtn);
+      }
+
+      renderIndexList();
+    },
+    onConfirm: () => {
+      if (draft.length > 0) {
+        currentConfig.groups[groupIndex].indexes = draft.map((idx) => ({ ...idx }));
+      } else {
+        delete currentConfig.groups[groupIndex].indexes;
+      }
+      return true;
+    },
+  });
+}
+
 function createRow(columns) {
   const row = document.createElement("div");
   row.className = "grid-row";
@@ -841,6 +935,9 @@ function renderGroups() {
     );
     advancedActions.appendChild(
       createConfigActionButton("配置 insert_feedback", () => openInsertFeedbackConfig(idx))
+    );
+    advancedActions.appendChild(
+      createConfigActionButton("配置 indexes", () => openIndexesConfig(idx))
     );
     card.appendChild(
       createRow([
