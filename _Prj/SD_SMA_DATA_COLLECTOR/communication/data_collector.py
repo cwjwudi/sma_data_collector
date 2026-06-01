@@ -253,7 +253,7 @@ class DataCollector:
         """
         trigger_interval = float(group.trigger_interval_seconds)
         next_time_deadline = 0.0
-        previous_trigger_state = False
+        previous_trigger_state = None  # None 表示首次读取，只初始化不触发
 
         async def do_time_collect() -> None:
             nonlocal next_time_deadline
@@ -293,6 +293,11 @@ class DataCollector:
 
                 trigger_data = await opcua_client.read_data_points([trigger_point])
                 current_trigger_value = trigger_data.get(trigger_point.name, {}).get('value', False)
+
+                # 首次读取仅初始化状态，不触发采集
+                if previous_trigger_state is None:
+                    previous_trigger_state = current_trigger_value
+                    continue
 
                 if not previous_trigger_state and current_trigger_value:
                     self.logger.info(
@@ -365,14 +370,21 @@ class DataCollector:
         """变量触发的数据采集 - 实现上升沿触发逻辑"""
         poll_interval = self._get_variable_trigger_poll_interval(group)
         # 记录上一次的触发点状态，用于检测上升沿
-        previous_trigger_state = False
-        
+        previous_trigger_state = None  # None 表示首次读取，只初始化不触发
+
         while True:
             try:
                 # 检查触发点状态
                 trigger_data = await opcua_client.read_data_points([trigger_point])
                 current_trigger_value = trigger_data.get(trigger_point.name, {}).get('value', False)
-                
+
+                # 首次读取仅初始化状态，不触发采集
+                if previous_trigger_state is None:
+                    previous_trigger_state = current_trigger_value
+                    self.logger.debug(f"变量触发组 {group.name} 初始化触发状态: {current_trigger_value}")
+                    await asyncio.sleep(poll_interval)
+                    continue
+
                 # 上升沿检测：从False变为True
                 if not previous_trigger_state and current_trigger_value:
                     self.logger.info(f"检测到上升沿触发信号: {group.name}")
