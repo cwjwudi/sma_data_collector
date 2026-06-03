@@ -94,6 +94,43 @@ function setSelectValueIfPresent(id, value) {
   if (value && hasOption(sel, value)) sel.value = value;
 }
 
+function updateQuickChipState() {
+  const host = String(document.getElementById('dbHost').value).trim();
+  const port = String(document.getElementById('dbPort').value).trim();
+  const username = String(document.getElementById('dbUsername').value).trim();
+  for (const chip of document.querySelectorAll('.quick-chip')) {
+    const matchesHost = !chip.dataset.connHost || chip.dataset.connHost === host;
+    const matchesPort = !chip.dataset.connPort || chip.dataset.connPort === port;
+    const matchesUser = !chip.dataset.connUser || chip.dataset.connUser === username;
+    chip.classList.toggle('is-selected', matchesHost && matchesPort && matchesUser);
+  }
+}
+
+function applyConnectionShortcut(chip) {
+  if (chip.dataset.connHost) document.getElementById('dbHost').value = chip.dataset.connHost;
+  if (chip.dataset.connPort) document.getElementById('dbPort').value = chip.dataset.connPort;
+  if (chip.dataset.connUser) document.getElementById('dbUsername').value = chip.dataset.connUser;
+  saveState();
+  updateQuickChipState();
+  setHint('connectionHint', '已套用快捷连接参数，请输入密码后测试连接。');
+}
+
+function togglePasswordVisibility() {
+  const input = document.getElementById('dbPassword');
+  const btn = document.getElementById('btnTogglePassword');
+  const shouldShow = input.type === 'password';
+  input.type = shouldShow ? 'text' : 'password';
+  btn.textContent = shouldShow ? '隐藏' : '显示';
+  btn.setAttribute('aria-label', shouldShow ? '隐藏密码' : '显示密码');
+  input.focus();
+}
+
+function clearPassword() {
+  const input = document.getElementById('dbPassword');
+  input.value = '';
+  input.focus();
+}
+
 function getConnectionPayload() {
   return {
     engine: 'mysql',
@@ -159,6 +196,7 @@ async function loadConfig() {
   document.getElementById('dbPassword').value = conn.password || '';
   document.getElementById('outputDir').value = saved?.outputDir || defaultOutputDir;
   setHint('connectionHint', `默认导出目录: ${defaultOutputDir || '-'}`);
+  updateQuickChipState();
 }
 
 async function testConnection() {
@@ -426,6 +464,11 @@ function watchJob(jobId) {
 }
 
 function bindEvents() {
+  for (const chip of document.querySelectorAll('.quick-chip')) {
+    chip.addEventListener('click', () => applyConnectionShortcut(chip));
+  }
+  document.getElementById('btnTogglePassword').addEventListener('click', togglePasswordVisibility);
+  document.getElementById('btnClearPassword').addEventListener('click', clearPassword);
   document.getElementById('btnTestConnection').addEventListener('click', () => {
     testConnection().catch(err => setHint('connectionHint', err.message, 'muted warn'));
   });
@@ -449,6 +492,7 @@ function bindEvents() {
   }
   for (const id of ['dbHost', 'dbPort', 'dbUsername']) {
     document.getElementById(id).addEventListener('change', saveState);
+    document.getElementById(id).addEventListener('input', updateQuickChipState);
   }
   document.getElementById('btnUseDefaultOutputDir').addEventListener('click', () => {
     document.getElementById('outputDir').value = defaultOutputDir;
