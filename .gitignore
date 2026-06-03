@@ -70,3 +70,6 @@ _Prj/SD_SMA_DATA_COLLECTOR/config/.collector_runtime_settings.json
 *.pkg
 *.deb
 *.rpm
+
+# 误放的 electron-builder 构建产物（正确路径为 _Prj/SD_SMA_ReportEditor/packaging/）
+/_Prj/packaging/
