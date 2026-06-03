@@ -353,16 +353,57 @@ async def _read_with_client(client: Client, node_id: str) -> dict[str, Any]:
 async def _write_with_client(client: Client, node_id: str, value: Any) -> dict[str, Any]:
     """写入变量 Value；BadNotWritable 等转为 ok:false 而不抛栈。"""
     node = client.get_node(node_id)
+    variant_type = await _read_write_variant_type(node)
+    clean_value = _coerce_write_value(value, variant_type)
+    clean_data_value = ua.DataValue(ua.Variant(clean_value, variant_type))
     try:
-        await node.write_value(value)
+        # asyncua.write_value() adds SourceTimestamp. Some strict PLC OPC UA servers
+        # reject that combination with BadWriteNotSupported, so write only Value.
+        await node.write_attribute(ua.AttributeIds.Value, clean_data_value)
         return {"ok": True}
     except UaStatusCodeError as e:
         code = int(e.code)
-        logger.warning("OPC UA write_value rejected node_id=%s code=%s (%s)", node_id, code, e)
+        logger.warning("OPC UA write_attribute(Value) rejected node_id=%s code=%s (%s)", node_id, code, e)
         return {"ok": False, "message": str(e), "status_code": code}
     except Exception as e:
-        logger.exception("OPC UA write_value failed node_id=%s", node_id)
+        logger.exception("OPC UA write_attribute(Value) failed node_id=%s", node_id)
         return {"ok": False, "message": str(e)}
+
+
+async def _read_write_variant_type(node: Any) -> ua.VariantType | None:
+    try:
+        vt = await node.read_data_type_as_variant_type()
+        return vt if isinstance(vt, ua.VariantType) else None
+    except UaStatusCodeError as e:
+        logger.debug("OPC UA write: read_data_type rejected before write: %s", e)
+    except Exception:
+        logger.debug("OPC UA write: read_data_type failed before write", exc_info=True)
+    return None
+
+
+def _coerce_write_value(value: Any, variant_type: ua.VariantType | None) -> Any:
+    if variant_type == ua.VariantType.Boolean:
+        if isinstance(value, str):
+            return value.strip().lower() in ("1", "true", "yes", "y", "on")
+        return bool(value)
+    if variant_type in (
+        ua.VariantType.SByte,
+        ua.VariantType.Byte,
+        ua.VariantType.Int16,
+        ua.VariantType.UInt16,
+        ua.VariantType.Int32,
+        ua.VariantType.UInt32,
+        ua.VariantType.Int64,
+        ua.VariantType.UInt64,
+    ):
+        if isinstance(value, bool):
+            return 1 if value else 0
+        return int(value)
+    if variant_type in (ua.VariantType.Float, ua.VariantType.Double):
+        return float(value)
+    if variant_type == ua.VariantType.String:
+        return "" if value is None else str(value)
+    return value
 
 
 async def write_node_value_for_saved_server(
