@@ -59,4 +59,26 @@ describe("report generator prefs", () => {
     expect(prefs.exportResultOpcByTemplateId.tpl_a.messageNodeId).toBe("ns=1;s=a_message");
     expect(prefs.exportResultOpcByTemplateId.tpl_a.filePathNodeId).toBe("ns=1;s=a_path");
   });
+
+  it("migrates legacy OPC UA file name mode into selected segments", () => {
+    const ok = importReportGeneratorPrefsFromExport({
+      autoFileNameSource: "opcua",
+      autoFileNameSegments: ["name", "hash"],
+      autoFileNameOpcServerId: "srv-name",
+      autoFileNameOpcNodeId: "ns=1;s=file_name",
+      autoFileNameOpcAppendHash: true,
+    });
+
+    expect(ok).toBe(true);
+    const prefs = loadReportGeneratorPrefs();
+
+    expect(prefs.autoFileNameSource).toBe("segments");
+    expect(prefs.autoFileNameSegments).toContain("opcua");
+    expect(prefs.autoFileNameSegments.indexOf("opcua")).toBe(
+      prefs.autoFileNameSegments.indexOf("name") + 1,
+    );
+    expect(prefs.autoFileNameSegments).toContain("hash");
+    expect(prefs.autoFileNameOpcServerId).toBe("srv-name");
+    expect(prefs.autoFileNameOpcNodeId).toBe("ns=1;s=file_name");
+  });
 });

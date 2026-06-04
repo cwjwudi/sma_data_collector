@@ -296,100 +296,53 @@
 
       <div class="rg-export-dir-block">
         <span class="rg-lbl">{{ RG_UI.opcAuto }}文件名</span>
-        <div class="rg-tabs" role="tablist" :aria-label="`${RG_UI.opcAuto}文件名`">
-          <button
-            type="button"
-            role="tab"
-            class="rg-tab"
-            :class="{ 'rg-tab--on': prefs.autoFileNameSource === 'segments' }"
-            :aria-selected="prefs.autoFileNameSource === 'segments'"
-            @click="setFileNameTab('segments')"
-          >
-            勾选片段
-          </button>
-          <button
-            type="button"
-            role="tab"
-            class="rg-tab"
-            :class="{ 'rg-tab--on': prefs.autoFileNameSource === 'opcua' }"
-            :aria-selected="prefs.autoFileNameSource === 'opcua'"
-            @click="setFileNameTab('opcua')"
-          >
-            OPC UA + 哈希
-          </button>
-        </div>
 
-        <div class="rg-tab-panel" role="tabpanel">
-          <template v-if="prefs.autoFileNameSource === 'segments'">
-            <div class="rg-row rg-row--in-panel">
-              <span class="rg-lbl">包含片段</span>
-              <div class="rg-seg-bar" role="group" aria-label="文件名片段">
-                <button
-                  v-for="opt in fileNameSegmentOptions"
-                  :key="opt.id"
-                  type="button"
-                  class="rg-seg-btn"
-                  :class="{ 'rg-seg-btn--on': prefs.autoFileNameSegments.includes(opt.id) }"
-                  :title="opt.hint"
-                  :aria-pressed="prefs.autoFileNameSegments.includes(opt.id)"
-                  @click="toggleFileNameSegment(opt.id)"
-                >
-                  {{ opt.label }}
-                </button>
-              </div>
-              <p class="rg-mini rg-mini--indent rg-mini--after-seg">点击按钮切换片段（至少保留一项）；建议包含「随机哈希」避免重名。</p>
+        <div class="rg-tab-panel" role="group" :aria-label="`${RG_UI.opcAuto}文件名片段`">
+          <div class="rg-row rg-row--in-panel">
+            <span class="rg-lbl">包含片段</span>
+            <div class="rg-seg-bar" role="group" aria-label="文件名片段">
+              <button
+                v-for="opt in fileNameSegmentOptions"
+                :key="opt.id"
+                type="button"
+                class="rg-seg-btn"
+                :class="{ 'rg-seg-btn--on': prefs.autoFileNameSegments.includes(opt.id) }"
+                :title="opt.hint"
+                :aria-pressed="prefs.autoFileNameSegments.includes(opt.id)"
+                @click="toggleFileNameSegment(opt.id)"
+              >
+                {{ opt.label }}
+              </button>
             </div>
-          </template>
+            <p class="rg-mini rg-mini--indent rg-mini--after-seg">点击按钮切换片段（至少保留一项）；勾选「OPC UA变量」后会按片段顺序拼接下方绑定值。</p>
+          </div>
 
-          <template v-else>
-            <div class="rg-row rg-row--in-panel">
-              <label class="rg-lbl" for="rg-fn-opc-var">OPC 文件名变量（String）</label>
-              <div class="rg-inline rg-inline--bind">
-                <input
-                  id="rg-fn-opc-var"
-                  :value="prefs.autoFileNameOpcNodeId"
-                  type="text"
-                  readonly
-                  class="rg-inp rg-inp--grow rg-mono"
-                  placeholder="未绑定"
-                />
-                <button type="button" class="btn" @click="openRgOpcPick('fileName')">打开 OPC UA 绑定树</button>
-                <button
-                  v-if="prefs.autoFileNameOpcNodeId"
-                  type="button"
-                  class="btn btn--sm btn--ghost btn--nowrap"
-                  @click="clearAutoFileNameOpcBinding"
-                >
-                  清除
-                </button>
-              </div>
-              <p v-if="fileNameOpcServerLabel" class="rg-mini rg-mini--indent">连接：{{ fileNameOpcServerLabel }}</p>
-              <p class="rg-mini rg-mini--indent">
-                绑定树仅显示 String 类型变量；文件名为字符串基名（不含 .pdf）。
-              </p>
+          <div class="rg-row rg-row--in-panel">
+            <label class="rg-lbl" for="rg-fn-opc-var">OPC UA变量（String）</label>
+            <div class="rg-inline rg-inline--bind">
+              <input
+                id="rg-fn-opc-var"
+                :value="prefs.autoFileNameOpcNodeId"
+                type="text"
+                readonly
+                class="rg-inp rg-inp--grow rg-mono"
+                placeholder="未绑定"
+              />
+              <button type="button" class="btn" @click="openRgOpcPick('fileName')">打开 OPC UA 绑定树</button>
+              <button
+                v-if="prefs.autoFileNameOpcNodeId"
+                type="button"
+                class="btn btn--sm btn--ghost btn--nowrap"
+                @click="clearAutoFileNameOpcBinding"
+              >
+                清除
+              </button>
             </div>
-            <div class="rg-row rg-row--in-panel">
-              <span class="rg-lbl">随机哈希</span>
-              <div class="rg-seg-bar" role="group" aria-label="追加随机哈希">
-                <button
-                  type="button"
-                  class="rg-seg-btn"
-                  :class="{ 'rg-seg-btn--on': prefs.autoFileNameOpcAppendHash }"
-                  :title="`${RG_UI.opcAuto}时在 OPC 基名后追加时间戳（yyyyMMdd_HHmmss）与 8 位十六进制，降低重名概率`"
-                  :aria-pressed="prefs.autoFileNameOpcAppendHash"
-                  @click="prefs.autoFileNameOpcAppendHash = !prefs.autoFileNameOpcAppendHash"
-                >
-                  追加随机哈希（8 位）
-                </button>
-              </div>
-              <p class="rg-mini rg-mini--indent rg-mini--after-seg">
-                点击按钮切换；开启后文件名为 <code>基名_时间戳_哈希.pdf</code>，关闭则为 <code>基名.pdf</code>。
-              </p>
-            </div>
-            <p class="rg-mini rg-mini--indent rg-mini--after-seg">
-              OPC 为空、非 String 或读取失败时，回退为勾选片段规则。
+            <p v-if="fileNameOpcServerLabel" class="rg-mini rg-mini--indent">连接：{{ fileNameOpcServerLabel }}</p>
+            <p class="rg-mini rg-mini--indent">
+              绑定树仅显示 String 类型变量；未勾选「OPC UA变量」时只保存绑定，不参与文件名。
             </p>
-          </template>
+          </div>
 
           <div class="rg-row rg-row--in-panel rg-row--compact">
             <label class="rg-lbl" for="rg-fn-sep">片段连接符</label>
@@ -606,7 +559,6 @@ import {
   loadReportGeneratorPrefs,
   saveReportGeneratorPrefs,
   type AutoExportDirSource,
-  type AutoFileNameSource,
   type ExportResultOpcFeedback,
   type ReportGeneratorPrefs,
 } from "@/lib/report-generator-prefs";
@@ -839,7 +791,7 @@ const opcPickHideSearch = computed(() => {
 
 const opcPickTitle = computed(() => {
   if (parseRgTriggerPickTarget(opcPickTarget.value)) return "选择 OPC UA 触发变量";
-  if (opcPickTarget.value === "fileName") return "绑定 OPC UA String 变量（文件名）";
+  if (opcPickTarget.value === "fileName") return "绑定 OPC UA String 变量（文件名片段）";
   if (opcPickTarget.value === "exportDir") return "绑定 OPC UA String 变量（目录）";
   if (opcPickTarget.value === "feedbackStatus") return "绑定 OPC UA 状态变量（Boolean / Int）";
   if (opcPickTarget.value === "feedbackMessage") return `绑定 OPC UA String 变量（${RG_UI.feedback}信息）`;
@@ -863,7 +815,7 @@ const opcPickLead = computed(() => {
     return `选择已保存的 OPC UA 连接，在地址空间中展开并点击 String 变量作为 ${RG_UI.opcAuto} 保存目录；非 String 变量在展开时不会显示。确定后写入 NodeId，仍可手工修改。`;
   }
   if (opcPickTarget.value === "fileName") {
-    return `选择 String 类型变量作为 ${RG_UI.opcAuto} 文件名基名（不含 .pdf）；绑定树仅显示 String。是否追加随机哈希可在确认后于面板按钮切换。`;
+    return `选择 String 类型变量作为 ${RG_UI.opcAuto} 文件名片段（不含 .pdf）；绑定树仅显示 String。是否参与拼接由面板中的「OPC UA变量」片段控制。`;
   }
   if (opcPickTarget.value === "feedbackStatus") {
     const kind = activeExportResultOpc.value.statusKind === "int" ? "Int" : "Boolean";
@@ -1220,11 +1172,6 @@ async function onTestExportResultWriteBack(): Promise<void> {
 function setExportDirTab(source: AutoExportDirSource) {
   if (prefs.value.autoExportDirSource === source) return;
   prefs.value.autoExportDirSource = source;
-}
-
-function setFileNameTab(source: AutoFileNameSource) {
-  if (prefs.value.autoFileNameSource === source) return;
-  prefs.value.autoFileNameSource = source;
 }
 
 function ensureExportResultOpcServerSelected(): void {
