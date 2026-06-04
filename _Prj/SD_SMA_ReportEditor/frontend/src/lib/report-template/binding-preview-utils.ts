@@ -3,6 +3,7 @@ import { ensureBodyPages, ensureTableGrid } from "@/lib/report-template/model";
 import type { LayoutZoneElement } from "@/lib/report-template/layout-zone-element";
 import { ensureZoneTableGrid } from "@/lib/report-template/layout-zone-element";
 import { bodyElementsRef, type EditorSheet } from "@/lib/report-template/editor-sheet";
+import type { TableSqlParamBinding } from "@/lib/report-template/table-sql-fill";
 
 /** 表格「整表 SQL 填充」在编辑器中的查询预览（非持久化字段） */
 export interface TableSqlFillPreviewPayload {
@@ -130,7 +131,7 @@ export function formatOpcuaReadPayload(res: unknown): { ok: true; text: string }
 
 export function sqlResponseFirstScalar(data: unknown): string {
   if (!data || typeof data !== "object") return "(空结果)";
-  const d = data as { columns?: { name?: string }[]; rows?: unknown[] };
+  const d = data as { columns?: ({ name?: string } | string)[]; rows?: unknown[] };
   const rows = Array.isArray(d.rows) ? d.rows : [];
   const cols = Array.isArray(d.columns) ? d.columns : [];
   if (!rows.length) return "(空结果)";
@@ -142,7 +143,10 @@ export function sqlResponseFirstScalar(data: unknown): string {
   if (row && typeof row === "object") {
     const keys =
       cols.length > 0
-        ? cols.map((c) => String(c?.name || "").trim()).filter(Boolean)
+        ? cols
+            .map((c) => (typeof c === "string" ? c : String(c?.name || "").trim()))
+            .map((c) => c.trim())
+            .filter(Boolean)
         : Object.keys(row as object);
     const k = keys[0];
     if (k) return formatScalarForPreviewValue((row as Record<string, unknown>)[k]);
@@ -182,7 +186,45 @@ export interface OpcDedupeTask {
 export interface SqlDedupeTask {
   connectionId: string;
   sql: string;
+  params?: TableSqlParamBinding[];
   keys: string[];
+}
+
+export function quoteSqlScalarValue(value: unknown, opts?: { numericStringAsNumber?: boolean }): string {
+  if (value === null || value === undefined) return "NULL";
+  if (typeof value === "number") return Number.isFinite(value) ? String(value) : "NULL";
+  if (typeof value === "boolean") return value ? "1" : "0";
+  if (typeof value === "object") {
+    try {
+      return quoteSqlScalarValue(JSON.stringify(value), opts);
+    } catch {
+      return quoteSqlScalarValue(String(value), opts);
+    }
+  }
+  const s = String(value);
+  if (opts?.numericStringAsNumber && /^-?\d+(\.\d+)?$/.test(s.trim())) return s.trim();
+  return `'${s.replace(/'/g, "''")}'`;
+}
+
+export function substituteScalarSqlParams(
+  sqlRaw: string,
+  params: TableSqlParamBinding[] | undefined,
+  values: Record<number, unknown>,
+): string {
+  const renderParam = (g: string): string => {
+    const i = Number.parseInt(g, 10);
+    const p = params?.[i];
+    if (!p) return "NULL";
+    if (Object.prototype.hasOwnProperty.call(values, i)) {
+      return quoteSqlScalarValue(values[i], { numericStringAsNumber: false });
+    }
+    const lit = (p.literalFallback ?? "").trim();
+    if (!lit) return "NULL";
+    return quoteSqlScalarValue(lit, { numericStringAsNumber: true });
+  };
+  return String(sqlRaw || "")
+    .replace(/(['"])\s*\{\{p(\d+)\}\}\s*\1/gi, (_all, _quote: string, g: string) => renderParam(g))
+    .replace(/\{\{p(\d+)\}\}/gi, (_all, g: string) => renderParam(g));
 }
 
 export function collectBindingDedupeTasks(
@@ -196,7 +238,7 @@ export function collectBindingDedupeTasks(
   const opcMap = new Map<string, OpcDedupeTask>();
   const sqlMap = new Map<string, SqlDedupeTask>();
 
-  function addOpc(nodeId: string, displayKey: string) {
+  function addOpc(nodeId: string, displayKey?: string) {
     if (!opcServerId) return;
     const nk = `${opcServerId}\u0000${nodeId}`;
     let e = opcMap.get(nk);
@@ -204,20 +246,31 @@ export function collectBindingDedupeTasks(
       e = { serverId: opcServerId, nodeId, keys: [] };
       opcMap.set(nk, e);
     }
-    e.keys.push(displayKey);
+    if (displayKey) e.keys.push(displayKey);
   }
 
-  function addSql(sqlRaw: string, displayKey: string) {
+  function addSql(sqlRaw: string, displayKey: string, params?: TableSqlParamBinding[]) {
     if (!sqlConnId) return;
     const sql = sqlRaw.trim();
     if (!sql) return;
-    const nk = `${sqlConnId}\u0000${sql}`;
+    const paramKey = JSON.stringify(
+      (params || []).map((p) => ({
+        source: p.source,
+        opcuaNodeId: p.opcuaNodeId,
+        literalFallback: p.literalFallback,
+      })),
+    );
+    const nk = `${sqlConnId}\u0000${sql}\u0000${paramKey}`;
     let e = sqlMap.get(nk);
     if (!e) {
-      e = { connectionId: sqlConnId, sql, keys: [] };
+      e = { connectionId: sqlConnId, sql, params, keys: [] };
       sqlMap.set(nk, e);
     }
     e.keys.push(displayKey);
+    for (const p of params || []) {
+      const nodeId = p?.source === "opcua" ? (p.opcuaNodeId || "").trim() : "";
+      if (nodeId) addOpc(nodeId);
+    }
   }
 
   forEachTemplateCanvasElement(t, (el) => {
@@ -226,7 +279,7 @@ export function collectBindingDedupeTasks(
         const nid = el.opcuaNodeId.trim();
         if (nid) addOpc(nid, paramKey(el.id));
       } else if (el.bindingKind === "sql") {
-        addSql(el.sqlText, paramKey(el.id));
+        addSql(el.sqlText, paramKey(el.id), el.sqlParams);
       }
     } else if (el.type === "table") {
       const grid = ensureTableGrid(el);
@@ -237,12 +290,12 @@ export function collectBindingDedupeTasks(
             const nid = cell.opcuaNodeId.trim();
             if (nid) addOpc(nid, ck);
           } else if (cell.bindingKind === "sql") {
-            addSql(cell.sqlText, ck);
+            addSql(cell.sqlText, ck, cell.sqlParams);
           }
         }),
       );
     } else if (el.type === "chart" && el.bindingKind === "sql") {
-      addSql(el.sqlText, chartKey(el.id));
+      addSql(el.sqlText, chartKey(el.id), el.sqlParams);
     }
   });
 
@@ -252,7 +305,7 @@ export function collectBindingDedupeTasks(
         const nid = el.opcuaNodeId.trim();
         if (nid) addOpc(nid, `zone-param:${el.id}`);
       } else if (el.bindingKind === "sql") {
-        addSql(el.sqlText, `zone-param:${el.id}`);
+        addSql(el.sqlText, `zone-param:${el.id}`, el.sqlParams);
       }
     } else if (el.type === "table") {
       const grid = ensureZoneTableGrid(el);
@@ -263,7 +316,7 @@ export function collectBindingDedupeTasks(
             const nid = cell.opcuaNodeId.trim();
             if (nid) addOpc(nid, ck);
           } else if (cell.bindingKind === "sql") {
-            addSql(cell.sqlText, ck);
+            addSql(cell.sqlText, ck, cell.sqlParams);
           }
         }),
       );

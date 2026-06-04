@@ -67,6 +67,32 @@ export function defaultSqlParam(): TableSqlParamBinding {
   return { source: "literal", opcuaNodeId: "", aboveCellColumnIndex: 0, literalFallback: "" };
 }
 
+export function hydrateSqlParamBindings(raw: unknown, minSlots = 0): TableSqlParamBinding[] {
+  const paramsRaw = Array.isArray(raw) ? raw : [];
+  const params: TableSqlParamBinding[] = [];
+  for (let i = 0; i < paramsRaw.length; i++) {
+    const pr = paramsRaw[i];
+    if (!pr || typeof pr !== "object") {
+      params.push(defaultSqlParam());
+      continue;
+    }
+    const p = pr as Record<string, unknown>;
+    params.push({
+      source: normalizeParamSource(p.source),
+      opcuaNodeId: typeof p.opcuaNodeId === "string" ? p.opcuaNodeId : "",
+      aboveCellColumnIndex: clampColIndex(p.aboveCellColumnIndex),
+      literalFallback: typeof p.literalFallback === "string" ? p.literalFallback : "",
+    });
+  }
+  ensureSqlParamSlots(params, minSlots);
+  return params;
+}
+
+export function ensureSqlParamSlots(params: TableSqlParamBinding[], minSlots: number): void {
+  const n = Math.max(0, Math.min(32, Math.floor(Number(minSlots)) || 0));
+  while (params.length < n) params.push(defaultSqlParam());
+}
+
 export function defaultVisualSqlFilter(): VisualSqlFilter {
   return {
     id: crypto.randomUUID?.() ?? `flt_${Math.random().toString(36).slice(2, 11)}`,

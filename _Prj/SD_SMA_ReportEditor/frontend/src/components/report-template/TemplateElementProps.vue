@@ -183,6 +183,42 @@
             spellcheck="false"
             placeholder="只读查询；导出预览取首行首列作为显示值"
         /></label>
+        <div v-if="el.bindingKind === 'sql'" class="lpep-scalar-sql-params">
+          <div class="lpep-scalar-sql-title">SQL 参数</div>
+          <div v-for="slot in SCALAR_SQL_PARAM_SLOTS" :key="'param-sql-' + slot" class="lpep-scalar-sql-param">
+            <span class="lpep-scalar-sql-token" v-text="scalarSqlParamToken(slot)" />
+            <select
+              v-model="parameterSqlParams[slot].source"
+              class="lpep-inp lpep-scalar-sql-source"
+              @change="onScalarParamSourceChange(parameterSqlParams[slot])"
+            >
+              <option value="literal">固定值</option>
+              <option value="opcua">OPC UA</option>
+            </select>
+            <input
+              v-if="parameterSqlParams[slot].source === 'literal'"
+              v-model.trim="parameterSqlParams[slot].literalFallback"
+              class="lpep-inp lpep-scalar-sql-value"
+              placeholder="用于替换参数"
+            />
+            <template v-else>
+              <input
+                v-model.trim="parameterSqlParams[slot].opcuaNodeId"
+                class="lpep-inp lpep-scalar-sql-node"
+                placeholder="NodeId"
+                spellcheck="false"
+              />
+              <button type="button" class="lpep-file-btn lpep-scalar-sql-pick" @click="openParameterSqlParamOpcPicker(slot)">
+                选择
+              </button>
+              <input
+                v-model.trim="parameterSqlParams[slot].literalFallback"
+                class="lpep-inp lpep-scalar-sql-fallback"
+                placeholder="兜底"
+              />
+            </template>
+          </div>
+        </div>
         <label class="lpep-lab"
           >展示占位文字<textarea v-model.trim="el.text" rows="2" class="lpep-inp" placeholder="预览用"
         /></label>
@@ -355,8 +391,44 @@
                   rows="4"
                   class="lpep-inp"
                   spellcheck="false"
-                  placeholder="例如单行标量查询；可与 {opc.xxx} 占位配合（生成器约定）"
+                  placeholder="例如：SELECT name FROM batches WHERE id = {{p0}}"
               /></label>
+              <div v-if="activeTableCell.bindingKind === 'sql'" class="lpep-scalar-sql-params">
+                <div class="lpep-scalar-sql-title">SQL 参数</div>
+                <div v-for="slot in SCALAR_SQL_PARAM_SLOTS" :key="'cell-sql-' + slot" class="lpep-scalar-sql-param">
+                  <span class="lpep-scalar-sql-token" v-text="scalarSqlParamToken(slot)" />
+                  <select
+                    v-model="tableCellSqlParams[slot].source"
+                    class="lpep-inp lpep-scalar-sql-source"
+                    @change="onScalarParamSourceChange(tableCellSqlParams[slot])"
+                  >
+                    <option value="literal">固定值</option>
+                    <option value="opcua">OPC UA</option>
+                  </select>
+                  <input
+                    v-if="tableCellSqlParams[slot].source === 'literal'"
+                    v-model.trim="tableCellSqlParams[slot].literalFallback"
+                    class="lpep-inp lpep-scalar-sql-value"
+                    placeholder="用于替换参数"
+                  />
+                  <template v-else>
+                    <input
+                      v-model.trim="tableCellSqlParams[slot].opcuaNodeId"
+                      class="lpep-inp lpep-scalar-sql-node"
+                      placeholder="NodeId"
+                      spellcheck="false"
+                    />
+                    <button type="button" class="lpep-file-btn lpep-scalar-sql-pick" @click="openTableCellSqlParamOpcPicker(slot)">
+                      选择
+                    </button>
+                    <input
+                      v-model.trim="tableCellSqlParams[slot].literalFallback"
+                      class="lpep-inp lpep-scalar-sql-fallback"
+                      placeholder="兜底"
+                    />
+                  </template>
+                </div>
+              </div>
             </template>
             <p v-else class="lpep-hint-muted">
               数据库填充已开启：表格内容由查询填充，请勿在此编辑静态文字。可视化数据源时请在画布<strong>第一行</strong>下拉选择各列对应字段。
@@ -483,7 +555,7 @@ import TemplateTableSqlFillFields from "@/components/report-template/TemplateTab
 import BoxZoneColorPicker from "@/components/report-template/BoxZoneColorPicker.vue";
 import LayoutFontFamilyField from "@/components/report-template/LayoutFontFamilyField.vue";
 import { readImageFileAsDataUrl } from "@/lib/report-template/read-image-file";
-import type { SignatureDisplayMode, TemplateControlType, TemplateElement } from "@/lib/report-template/model";
+import type { SignatureDisplayMode, TemplateControlType, TemplateElement, TemplateTableCell } from "@/lib/report-template/model";
 import {
   ensureTableGrid,
   clampTableElementOuterSize,
@@ -504,9 +576,10 @@ import {
 } from "@/lib/report-template/table-cell-metrics";
 import TableColumnWidthVisualEditor from "@/components/report-template/TableColumnWidthVisualEditor.vue";
 import TableCellFillPicker from "@/components/report-template/TableCellFillPicker.vue";
-import type { TableSqlFillConfig } from "@/lib/report-template/table-sql-fill";
+import type { TableSqlFillConfig, TableSqlParamBinding } from "@/lib/report-template/table-sql-fill";
 import {
   defaultTableSqlFillConfig,
+  ensureSqlParamSlots,
   ensureMinTableSqlParamSlots,
   ensureTableSqlResultColumnNames,
   syncResultColumnNamesFromFirstRow,
@@ -552,7 +625,15 @@ const TYPE_LABELS: Record<TemplateControlType, string> = {
 const typeLabel = computed(() => TYPE_LABELS[props.el.type] ?? props.el.type);
 
 const opcPickOpen = ref(false);
-const opcPickTarget = ref<"parameter" | "table" | { kind: "tableSql"; slot: number } | null>(null);
+const opcPickTarget = ref<
+  | "parameter"
+  | "table"
+  | { kind: "tableSql"; slot: number }
+  | { kind: "scalarSqlParam"; slot: number }
+  | { kind: "scalarSqlCell"; row: number; col: number; slot: number }
+  | null
+>(null);
+const SCALAR_SQL_PARAM_SLOTS = [0, 1] as const;
 
 function openOpcPicker(target: "parameter" | "table") {
   opcPickTarget.value = target;
@@ -569,6 +650,46 @@ function ensureTplTableSqlFill(el: TemplateElement): TableSqlFillConfig {
 function openTplSqlOpcPicker(slot: number) {
   const s = Math.max(0, Math.floor(Number(slot)) || 0);
   opcPickTarget.value = { kind: "tableSql", slot: s };
+  opcPickOpen.value = true;
+}
+
+function ensureElementSqlParams(el: TemplateElement): TableSqlParamBinding[] {
+  if (!Array.isArray(el.sqlParams)) el.sqlParams = [];
+  ensureSqlParamSlots(el.sqlParams, 2);
+  return el.sqlParams;
+}
+
+function ensureTableCellSqlParams(cell: TemplateTableCell): TableSqlParamBinding[] {
+  if (!Array.isArray(cell.sqlParams)) cell.sqlParams = [];
+  ensureSqlParamSlots(cell.sqlParams, 2);
+  return cell.sqlParams;
+}
+
+function onScalarParamSourceChange(param: TableSqlParamBinding | undefined) {
+  if (!param) return;
+  if (param.source === "literal") param.opcuaNodeId = "";
+}
+
+function scalarSqlParamToken(slot: number): string {
+  return `{{p${slot}}}`;
+}
+
+function openParameterSqlParamOpcPicker(slot: number) {
+  ensureElementSqlParams(props.el);
+  opcPickTarget.value = { kind: "scalarSqlParam", slot };
+  opcPickOpen.value = true;
+}
+
+function openTableCellSqlParamOpcPicker(slot: number) {
+  const cell = activeTableCell.value;
+  if (!cell) return;
+  ensureTableCellSqlParams(cell);
+  opcPickTarget.value = {
+    kind: "scalarSqlCell",
+    row: editCellRow.value,
+    col: editCellCol.value,
+    slot,
+  };
   opcPickOpen.value = true;
 }
 
@@ -647,6 +768,17 @@ const activeTableCell = computed(() => {
   const g = props.el.tableCells;
   if (!Array.isArray(g) || g.length === 0) return null;
   return g[editCellRow.value]?.[editCellCol.value] ?? null;
+});
+
+const parameterSqlParams = computed(() => {
+  if (props.el.bindingKind !== "sql") return [];
+  return ensureElementSqlParams(props.el);
+});
+
+const tableCellSqlParams = computed(() => {
+  const cell = activeTableCell.value;
+  if (!cell || cell.bindingKind !== "sql") return [];
+  return ensureTableCellSqlParams(cell);
 });
 
 const hasTableCellPicked = computed(() => {
@@ -760,6 +892,28 @@ function onOpcPickConfirm(payload: string | { serverId: string; nodeId: string }
   if (t === "parameter" && props.el.type === "parameter") {
     props.el.bindingKind = "opcua";
     props.el.opcuaNodeId = id;
+    return;
+  }
+  if (typeof t === "object" && t?.kind === "scalarSqlParam") {
+    const params = ensureElementSqlParams(props.el);
+    ensureSqlParamSlots(params, t.slot + 1);
+    const row = params[t.slot];
+    if (row) {
+      row.source = "opcua";
+      row.opcuaNodeId = id;
+    }
+    return;
+  }
+  if (typeof t === "object" && t?.kind === "scalarSqlCell" && props.el.type === "table") {
+    const cell = ensureTableGrid(props.el)[t.row]?.[t.col];
+    if (!cell) return;
+    const params = ensureTableCellSqlParams(cell);
+    ensureSqlParamSlots(params, t.slot + 1);
+    const row = params[t.slot];
+    if (row) {
+      row.source = "opcua";
+      row.opcuaNodeId = id;
+    }
     return;
   }
   if (typeof t === "object" && t?.kind === "tableSql" && props.el.type === "table") {
@@ -1150,6 +1304,49 @@ async function onLocalImageChosen(ev: Event) {
   font-size: 12px;
   font-weight: 600;
   color: #3f3f46;
+}
+.lpep-scalar-sql-params {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid #e4e4e7;
+  border-radius: 8px;
+  background: #fafafa;
+}
+.lpep-scalar-sql-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #3f3f46;
+}
+.lpep-scalar-sql-param {
+  display: grid;
+  grid-template-columns: auto minmax(86px, 0.8fr) minmax(0, 1fr);
+  gap: 6px;
+  align-items: center;
+}
+.lpep-scalar-sql-token {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  color: #3730a3;
+  white-space: nowrap;
+}
+.lpep-scalar-sql-source,
+.lpep-scalar-sql-value,
+.lpep-scalar-sql-node,
+.lpep-scalar-sql-fallback {
+  min-width: 0;
+}
+.lpep-scalar-sql-node {
+  grid-column: 3;
+}
+.lpep-scalar-sql-pick {
+  grid-column: 2;
+  padding: 6px 8px;
+  justify-self: stretch;
+}
+.lpep-scalar-sql-fallback {
+  grid-column: 3;
 }
 .lpep-switch {
   position: relative;

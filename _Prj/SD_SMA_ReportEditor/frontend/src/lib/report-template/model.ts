@@ -24,6 +24,7 @@ export interface TemplateTableCell {
   opcuaNodeId: string;
   /** 单元格级 SQL：预览占位或单行标量查询等，由生成器约定 */
   sqlText: string;
+  sqlParams: TableSqlParamBinding[];
   /** 单元格填充色；transparent 或未设则继承列/表格默认 */
   bgColor?: string;
 }
@@ -32,7 +33,7 @@ import type { LayoutSnapshot } from "./layout-model";
 import { defaultBlankLayoutSnapshot } from "./layout-model";
 import type { PaperKind } from "./paper";
 import type { LayoutAlignAxis, ImageCaptionPosition } from "./layout-zone-element";
-import type { TableSqlFillConfig } from "./table-sql-fill";
+import type { TableSqlFillConfig, TableSqlParamBinding } from "./table-sql-fill";
 import {
   hydrateLayoutZoneElement,
   normalizeAlignAxis,
@@ -58,6 +59,7 @@ import {
   ensureTableSqlResultColumnNames,
   ensureTwoTableSqlParamSlots,
   ensureVisualOutputColumnSlots,
+  hydrateSqlParamBindings,
   hydrateTableSqlFill,
 } from "./table-sql-fill";
 
@@ -96,6 +98,7 @@ export interface TemplateElement {
   imageCaptionPosition: ImageCaptionPosition;
   /** SQL（表格或图表数据源；可含 {opc.xxx} 占位，由生成器注入） */
   sqlText: string;
+  sqlParams: TableSqlParamBinding[];
   /** 简易图表类型预览 */
   chartKind: "line" | "bar";
   /** 电子签名：签署人显示名 */
@@ -211,7 +214,7 @@ function clampTableDim(v: unknown, fallback: number): number {
 }
 
 export function defaultTableCell(): TemplateTableCell {
-  return { text: "", bindingKind: "none", opcuaNodeId: "", sqlText: "", bgColor: "transparent" };
+  return { text: "", bindingKind: "none", opcuaNodeId: "", sqlText: "", sqlParams: [], bgColor: "transparent" };
 }
 
 export function hydrateTableCell(raw: Partial<TemplateTableCell> | undefined): TemplateTableCell {
@@ -222,6 +225,7 @@ export function hydrateTableCell(raw: Partial<TemplateTableCell> | undefined): T
     bindingKind: normalizeBindingKind(raw.bindingKind),
     opcuaNodeId: typeof raw.opcuaNodeId === "string" ? raw.opcuaNodeId : d.opcuaNodeId,
     sqlText: typeof raw.sqlText === "string" ? raw.sqlText : d.sqlText,
+    sqlParams: hydrateSqlParamBindings((raw as { sqlParams?: unknown }).sqlParams, 0),
     bgColor: typeof raw.bgColor === "string" ? raw.bgColor : d.bgColor,
   };
 }
@@ -436,6 +440,7 @@ export function defaultElement(type: TemplateControlType): Omit<TemplateElement,
     bindingKind: "none" as BindingKind,
     opcuaNodeId: "",
     sqlText: "",
+    sqlParams: [],
     chartKind: "line" as const,
     signerLabel: "",
     signatureAssetId: "",
@@ -567,6 +572,7 @@ export function hydrateTemplateElement(raw: Partial<TemplateElement>): TemplateE
     bindingKind: normalizeBindingKind(raw.bindingKind),
     opcuaNodeId: typeof raw.opcuaNodeId === "string" ? raw.opcuaNodeId : d.opcuaNodeId,
     sqlText: typeof raw.sqlText === "string" ? raw.sqlText : d.sqlText,
+    sqlParams: hydrateSqlParamBindings((raw as { sqlParams?: unknown }).sqlParams, 0),
     chartKind: normalizeChartKind(raw.chartKind),
     signerLabel:
       typeof raw.signerLabel === "string" ? raw.signerLabel : d.signerLabel,

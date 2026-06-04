@@ -40,6 +40,7 @@ class TemplateTableCell(BaseModel):
     bindingKind: BindingKind = "none"
     opcuaNodeId: str = ""
     sqlText: str = ""
+    sqlParams: list["TableSqlParamBinding"] = Field(default_factory=list)
     bgColor: str = "transparent"
 
 
@@ -119,6 +120,7 @@ class LayoutZoneElement(BaseModel):
     bindingKind: BindingKind = "none"
     opcuaNodeId: str = ""
     sqlText: str = ""
+    sqlParams: list[TableSqlParamBinding] = Field(default_factory=list)
     tableRows: int = Field(default=3, ge=1, le=30)
     tableCols: int = Field(default=4, ge=1, le=30)
     tableCells: list[list[TemplateTableCell]] = Field(default_factory=list)
@@ -152,6 +154,7 @@ class TemplateElement(BaseModel):
     bindingKind: BindingKind = "none"
     opcuaNodeId: str = ""
     sqlText: str = ""
+    sqlParams: list[TableSqlParamBinding] = Field(default_factory=list)
     dateFormat: str = ""
     chartKind: ChartKind = "line"
     signerLabel: str = ""
