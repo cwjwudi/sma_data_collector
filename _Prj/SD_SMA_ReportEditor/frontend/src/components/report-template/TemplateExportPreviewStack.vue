@@ -1,86 +1,96 @@
 <template>
-  <div ref="hostEl" class="tep-root" title="单击选中页；双击进入编辑画布并跳到该页">
-    <div
-      v-if="includeCover"
-      class="tep-card"
-      :class="{ 'tep-card--hl': activeSheet === 'cover' }"
-      role="button"
-      tabindex="0"
-      @click.stop="onCardNavigate(navCover())"
-      @dblclick.capture.stop="onCardEdit(navCover())"
-      @keyup.enter.prevent="onCardNavigate(navCover())"
-    >
-      <div v-if="!pdfExportOmitCaptions" class="tep-cap">封面 · 第 1 / {{ totalPreviewPages }} 页</div>
-      <TemplateMiniPage
-        :template="tmpl"
-        sheet="cover"
-        :max-width-px="cardWidth"
-        :max-height-px="miniPageMaxHeightPx"
-        :preview-page="1"
-        :preview-total-pages="totalPreviewPages"
-      />
-    </div>
-
-    <div
-      v-for="(card, idx) in expandedBodyCards"
-      :key="'bp-' + card.bodyPageIndex + '-' + card.continuationIndex"
-      class="tep-card"
-      :class="{ 'tep-card--hl': activeSheet === 'body' && activeBodyPageIndex === card.bodyPageIndex }"
-      role="button"
-      tabindex="0"
-      @click.stop="onCardNavigate(navBody(card.bodyPageIndex))"
-      @dblclick.capture.stop="onCardEdit(navBody(card.bodyPageIndex))"
-      @keyup.enter.prevent="onCardNavigate(navBody(card.bodyPageIndex))"
-    >
-      <div v-if="!pdfExportOmitCaptions" class="tep-cap">
-        <template v-if="card.tailOnlyBelowBaseline">
-          正文 · 第 {{ bodyCardPreviewPage(idx) }} / {{ totalPreviewPages }} 页（画布 {{ card.bodyPageIndex + 1 }} /
-          {{ bodyPageTotal }} · 表下控件）
-        </template>
-        <template v-else>
-          正文 · 第 {{ bodyCardPreviewPage(idx) }} / {{ totalPreviewPages }} 页（画布 {{ card.bodyPageIndex + 1 }} /
-          {{ bodyPageTotal }}<template v-if="card.continuationIndex > 0"> · SQL 续表</template>）
-        </template>
+  <div ref="hostEl" class="tep-root" title="单击选中页面；双击进入编辑画布并跳到该页">
+    <template v-for="(report, reportIdx) in previewReports" :key="'report-' + reportIdx">
+      <div
+        v-if="includeCover"
+        class="tep-card"
+        :class="{ 'tep-card--hl': activeSheet === 'cover' }"
+        role="button"
+        tabindex="0"
+        @click.stop="onCardNavigate(navCover())"
+        @dblclick.capture.stop="onCardEdit(navCover())"
+        @keyup.enter.prevent="onCardNavigate(navCover())"
+      >
+        <div v-if="!pdfExportOmitCaptions" class="tep-cap">
+          封面 · 第 {{ reportCoverPreviewPage(reportIdx) }} / {{ totalPreviewPages }} 页{{ reportSuffix(report) }}
+        </div>
+        <TemplateMiniPage
+          :template="tmpl"
+          sheet="cover"
+          :preview-binding-values="report.previewValues"
+          :max-width-px="cardWidth"
+          :max-height-px="miniPageMaxHeightPx"
+          :preview-page="reportCoverPreviewPage(reportIdx)"
+          :preview-total-pages="totalPreviewPages"
+        />
       </div>
-      <TemplateMiniPage
-        :template="tmpl"
-        sheet="body"
-        :body-page-index="card.bodyPageIndex"
-        :body-continuation-index="card.continuationIndex"
-        :sql-fill-table-slices="card.sqlFillTableSlices"
-        :continuation-hide-other-body-elements="card.continuationHideOtherBodyElements"
-        :sql-fill-hide-below="card.sqlFillHideBelow ?? null"
-        :show-sql-fill-tail-divider-hint="!!card.showSqlFillTailDividerHint"
-        :tail-only-below-baseline="!!card.tailOnlyBelowBaseline"
-        :tail-baseline-y="card.tailBaselineY"
-        :overflow-sql-fill-table-id="card.overflowSqlFillTableId"
-        :max-width-px="cardWidth"
-        :max-height-px="miniPageMaxHeightPx"
-        :preview-page="bodyCardPreviewPage(idx)"
-        :preview-total-pages="totalPreviewPages"
-      />
-    </div>
 
-    <div
-      v-if="includeBack"
-      class="tep-card"
-      :class="{ 'tep-card--hl': activeSheet === 'back' }"
-      role="button"
-      tabindex="0"
-      @click.stop="onCardNavigate(navBack())"
-      @dblclick.capture.stop="onCardEdit(navBack())"
-      @keyup.enter.prevent="onCardNavigate(navBack())"
-    >
-      <div v-if="!pdfExportOmitCaptions" class="tep-cap">末页 · 第 {{ totalPreviewPages }} / {{ totalPreviewPages }} 页</div>
-      <TemplateMiniPage
-        :template="tmpl"
-        sheet="back"
-        :max-width-px="cardWidth"
-        :max-height-px="miniPageMaxHeightPx"
-        :preview-page="totalPreviewPages"
-        :preview-total-pages="totalPreviewPages"
-      />
-    </div>
+      <div
+        v-for="(card, idx) in report.bodyCards"
+        :key="'rp-' + reportIdx + '-bp-' + card.bodyPageIndex + '-' + card.continuationIndex"
+        class="tep-card"
+        :class="{ 'tep-card--hl': activeSheet === 'body' && activeBodyPageIndex === card.bodyPageIndex }"
+        role="button"
+        tabindex="0"
+        @click.stop="onCardNavigate(navBody(card.bodyPageIndex))"
+        @dblclick.capture.stop="onCardEdit(navBody(card.bodyPageIndex))"
+        @keyup.enter.prevent="onCardNavigate(navBody(card.bodyPageIndex))"
+      >
+        <div v-if="!pdfExportOmitCaptions" class="tep-cap">
+          <template v-if="card.tailOnlyBelowBaseline">
+            正文 · 第 {{ reportBodyPreviewPage(reportIdx, idx) }} / {{ totalPreviewPages }} 页（画布
+            {{ card.bodyPageIndex + 1 }} / {{ bodyPageTotal }} · 表下控件）{{ reportSuffix(report) }}
+          </template>
+          <template v-else>
+            正文 · 第 {{ reportBodyPreviewPage(reportIdx, idx) }} / {{ totalPreviewPages }} 页（画布
+            {{ card.bodyPageIndex + 1 }} / {{ bodyPageTotal
+            }}<template v-if="card.continuationIndex > 0"> · SQL 续表</template>）{{ reportSuffix(report) }}
+          </template>
+        </div>
+        <TemplateMiniPage
+          :template="tmpl"
+          sheet="body"
+          :body-page-index="card.bodyPageIndex"
+          :body-continuation-index="card.continuationIndex"
+          :sql-fill-table-slices="card.sqlFillTableSlices"
+          :continuation-hide-other-body-elements="card.continuationHideOtherBodyElements"
+          :sql-fill-hide-below="card.sqlFillHideBelow ?? null"
+          :show-sql-fill-tail-divider-hint="!!card.showSqlFillTailDividerHint"
+          :tail-only-below-baseline="!!card.tailOnlyBelowBaseline"
+          :tail-baseline-y="card.tailBaselineY"
+          :overflow-sql-fill-table-id="card.overflowSqlFillTableId"
+          :preview-binding-values="report.previewValues"
+          :max-width-px="cardWidth"
+          :max-height-px="miniPageMaxHeightPx"
+          :preview-page="reportBodyPreviewPage(reportIdx, idx)"
+          :preview-total-pages="totalPreviewPages"
+        />
+      </div>
+
+      <div
+        v-if="includeBack"
+        class="tep-card"
+        :class="{ 'tep-card--hl': activeSheet === 'back' }"
+        role="button"
+        tabindex="0"
+        @click.stop="onCardNavigate(navBack())"
+        @dblclick.capture.stop="onCardEdit(navBack())"
+        @keyup.enter.prevent="onCardNavigate(navBack())"
+      >
+        <div v-if="!pdfExportOmitCaptions" class="tep-cap">
+          末页 · 第 {{ reportBackPreviewPage(reportIdx) }} / {{ totalPreviewPages }} 页{{ reportSuffix(report) }}
+        </div>
+        <TemplateMiniPage
+          :template="tmpl"
+          sheet="back"
+          :preview-binding-values="report.previewValues"
+          :max-width-px="cardWidth"
+          :max-height-px="miniPageMaxHeightPx"
+          :preview-page="reportBackPreviewPage(reportIdx)"
+          :preview-total-pages="totalPreviewPages"
+        />
+      </div>
+    </template>
   </div>
 </template>
 
@@ -91,33 +101,37 @@ import { ensureBodyPages } from "@/lib/report-template/model";
 import {
   templateHasBackSheet,
   templateHasCoverSheet,
-  templateExportPageCount,
   type EditorSheet,
 } from "@/lib/report-template/editor-sheet";
 import type { ExportPreviewNavPayload } from "@/lib/report-template/export-preview-nav";
 import type { BindingPreviewCell } from "@/lib/report-template/binding-preview-utils";
-import { computeExpandedBodyPreviewCards } from "@/lib/report-template/table-sql-fill-export-preview-split";
+import {
+  computeExpandedBodyPreviewCards,
+  type ExpandedBodyPreviewCard,
+} from "@/lib/report-template/table-sql-fill-export-preview-split";
+import {
+  buildSqlFillSplitReportPlan,
+  previewValuesForSplitReport,
+} from "@/lib/report-template/table-sql-fill-report-split";
 import TemplateMiniPage from "@/components/report-template/TemplateMiniPage.vue";
+
+type PreviewValues = Record<string, BindingPreviewCell | undefined>;
+
+interface PreviewReport {
+  reportIndex: number;
+  totalReports: number;
+  previewValues: PreviewValues;
+  bodyCards: ExpandedBodyPreviewCard[];
+}
 
 const props = defineProps<{
   tmpl: ReportTemplate;
   activeSheet: EditorSheet;
-  /** 左侧当前选中的正文分页（0-based），用于预览卡片高亮 */
   activeBodyPageIndex: number;
-  /** 绑定预览快照（用于 SQL 填充结果集分页） */
   previewBindingValues?: Record<string, BindingPreviewCell | undefined> | null;
-  /**
-   * 若指定则卡片宽度固定为该值（与纸张 CSS 像素宽对齐，用于 PDF 导出），不再监听容器宽度。
-   */
+  reportPartIndex?: number | null;
   fixedCardWidthPx?: number | null;
-  /**
-   * PDF 等场景：省略卡片顶部灰字标题（「封面 · 第 n / m 页」），少占纵向像素。
-   */
   pdfExportOmitCaptions?: boolean;
-  /**
-   * 覆盖 TemplateMiniPage 的 max-height-px（默认 32000）。
-   * PDF 导出时应略小于一纸 CSS 高度，使 scale&lt;1，卡片总高度落入单页，避免「一页内容一页空白」。
-   */
   miniMaxHeightPx?: number | null;
 }>();
 
@@ -173,20 +187,71 @@ watch(
 );
 
 const bodyPageTotal = computed(() => ensureBodyPages(props.tmpl).length);
-
-const expandedBodyCards = computed(() =>
-  computeExpandedBodyPreviewCards(props.tmpl, props.previewBindingValues ?? {}),
-);
-
 const includeCover = computed(() => templateHasCoverSheet(props.tmpl));
 const includeBack = computed(() => templateHasBackSheet(props.tmpl));
 
+const allPreviewReports = computed<PreviewReport[]>(() => {
+  const base = (props.previewBindingValues ?? {}) as PreviewValues;
+  const plan = buildSqlFillSplitReportPlan(props.tmpl, base);
+  if (!plan) {
+    return [
+      {
+        reportIndex: 0,
+        totalReports: 1,
+        previewValues: base,
+        bodyCards: computeExpandedBodyPreviewCards(props.tmpl, base),
+      },
+    ];
+  }
+
+  return plan.chunks.map((_rows, idx) => {
+    const previewValues = previewValuesForSplitReport(base, plan, idx);
+    return {
+      reportIndex: idx,
+      totalReports: plan.chunks.length,
+      previewValues,
+      bodyCards: computeExpandedBodyPreviewCards(props.tmpl, previewValues),
+    };
+  });
+});
+
+const previewReports = computed<PreviewReport[]>(() => {
+  const all = allPreviewReports.value;
+  const idx = props.reportPartIndex;
+  if (idx == null || !Number.isFinite(idx)) return all;
+  const i = Math.trunc(idx);
+  if (i < 0 || i >= all.length) return all;
+  return [all[i]];
+});
+
+function reportPageCount(report: PreviewReport): number {
+  return (includeCover.value ? 1 : 0) + report.bodyCards.length + (includeBack.value ? 1 : 0);
+}
+
+function reportStartPage(reportIdx: number): number {
+  let n = 1;
+  for (let i = 0; i < reportIdx; i++) n += reportPageCount(previewReports.value[i]);
+  return n;
+}
+
 const totalPreviewPages = computed(() =>
-  templateExportPageCount(props.tmpl, expandedBodyCards.value.length),
+  previewReports.value.reduce((sum, report) => sum + reportPageCount(report), 0),
 );
 
-function bodyCardPreviewPage(bodyCardIndex: number): number {
-  return (includeCover.value ? 1 : 0) + bodyCardIndex + 1;
+function reportCoverPreviewPage(reportIdx: number): number {
+  return reportStartPage(reportIdx);
+}
+
+function reportBodyPreviewPage(reportIdx: number, bodyCardIndex: number): number {
+  return reportStartPage(reportIdx) + (includeCover.value ? 1 : 0) + bodyCardIndex;
+}
+
+function reportBackPreviewPage(reportIdx: number): number {
+  return reportStartPage(reportIdx) + reportPageCount(previewReports.value[reportIdx]) - 1;
+}
+
+function reportSuffix(report: PreviewReport): string {
+  return report.totalReports > 1 ? `（第 ${report.reportIndex + 1} / ${report.totalReports} 份）` : "";
 }
 
 let ro: ResizeObserver | null = null;

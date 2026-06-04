@@ -1406,24 +1406,26 @@ async function onManualExport(): Promise<void> {
       manualHint.value = "";
     }
 
-    await api.runPdfExport({
+    const exportRes = await api.runPdfExport({
       templateId: tid,
       filePath,
       openAfter: prefs.value.manualOpenAfter,
     });
-    manualHint.value = `已保存：${filePath}`;
+    const savedPaths = exportRes.filePaths?.length ? exportRes.filePaths : [exportRes.filePath || filePath];
+    manualHint.value =
+      savedPaths.length > 1 ? `已保存 ${savedPaths.length} 个文件：${savedPaths.join("；")}` : `已保存：${savedPaths[0]}`;
     void auditLog({
       action: "export.manual_pdf",
       result: "ok",
       summary: suggestName,
       object_type: "template",
       object_id: tid,
-      detail: { filePath },
+      detail: { filePath: savedPaths[0], filePaths: savedPaths },
     });
     void notifyExportResultToPlc(
       {
         success: true,
-        filePath,
+        filePath: savedPaths[0],
         fileName: suggestName,
       },
       "manual",
@@ -1459,6 +1461,7 @@ async function onPickAutoDir(): Promise<void> {
 type AutoPdfExportAttempt = {
   fileName: string;
   filePath: string;
+  filePaths?: string[];
   note?: string;
 };
 
@@ -1479,14 +1482,15 @@ async function runAutoPdfExport(templateId: string): Promise<AutoPdfExportAttemp
   const built = await buildAutoExportFileName(prefs.value, tmeta?.name || tid);
   const filePath = await api.pathJoin(dir, built.base);
 
-  await api.runPdfExport({
+  const exportRes = await api.runPdfExport({
     templateId: tid,
     filePath,
     openAfter: false,
   });
 
   const notes = [resolved.note, built.note].filter(Boolean).join("；");
-  return { fileName: built.base, filePath, note: notes || undefined };
+  const savedPaths = exportRes.filePaths?.length ? exportRes.filePaths : [exportRes.filePath || filePath];
+  return { fileName: built.base, filePath: savedPaths[0], filePaths: savedPaths, note: notes || undefined };
 }
 
 async function pollAutoTriggerOnce(): Promise<void> {
@@ -1570,7 +1574,11 @@ async function pollAutoTriggerOnce(): Promise<void> {
         );
         exportedThisPoll = true;
         const noteSuffix = result.note ? `（${result.note}）` : "";
-        autoStatus.value = `${RG_STATUS_OPC_AUTO}·${label} 已保存 ${result.filePath}${noteSuffix}`;
+        const fileCount = result.filePaths?.length || 1;
+        autoStatus.value =
+          fileCount > 1
+            ? `${RG_STATUS_OPC_AUTO}·${label} 已保存 ${fileCount} 个文件：${result.filePaths?.join("；")}${noteSuffix}`
+            : `${RG_STATUS_OPC_AUTO}·${label} 已保存 ${result.filePath}${noteSuffix}`;
       } catch (e) {
         const msg = humanizePdfExportError(e);
         try {

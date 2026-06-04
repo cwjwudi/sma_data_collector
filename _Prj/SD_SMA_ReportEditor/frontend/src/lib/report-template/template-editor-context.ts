@@ -23,6 +23,8 @@ export interface BindingPreviewRefreshOptions {
   sql?: boolean;
   /** 为 true 时不设置 loading，避免「刷新中」文案闪烁 */
   silent?: boolean;
+  /** PDF 导出时拉取数据库填充表可拆分报表所需的完整行集；编辑器预览保持轻量 */
+  fullSqlFill?: boolean;
 }
 
 export interface ReportBindingPreviewState {

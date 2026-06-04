@@ -168,7 +168,9 @@ export function useReportBindingPreview(tmplRef: Ref<ReportTemplate | null>): Re
 
         if (gen !== generation) return;
 
-        const fillTasks = buildTableSqlFillPreviewTasks(t, sqlConnId);
+        const fillTasks = buildTableSqlFillPreviewTasks(t, sqlConnId, {
+          fullSqlFill: opts?.fullSqlFill === true,
+        });
         await runPool(fillTasks, 4, async (task) => {
           if (gen !== generation) return;
           try {

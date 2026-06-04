@@ -292,7 +292,7 @@ import {
   zoneTableNodeShellBackgroundCss,
   formatLayoutDate,
 } from "@/lib/report-template/layout-zone-element";
-import { cellKey, chartKey, paramKey } from "@/lib/report-template/binding-preview-utils";
+import { cellKey, chartKey, paramKey, type BindingPreviewCell } from "@/lib/report-template/binding-preview-utils";
 import { reportBindingPreviewKey } from "@/lib/report-template/template-editor-context";
 import {
   sqlFillSliceTableOuterHeightPx,
@@ -347,6 +347,7 @@ const props = withDefaults(
     /** 页眉/页脚区内页码预览 */
     previewPage?: number;
     previewTotalPages?: number;
+    previewBindingValues?: Record<string, BindingPreviewCell | undefined> | null;
   }>(),
   {
     maxWidthPx: 160,
@@ -361,6 +362,8 @@ const props = withDefaults(
 );
 
 const bindingPreview = inject(reportBindingPreviewKey, null);
+
+const previewValues = computed(() => props.previewBindingValues ?? bindingPreview?.values.value ?? {});
 
 const sheet = computed(() => props.sheet);
 
@@ -728,7 +731,7 @@ function zoneCellKey(elId: string, row: number, col: number): string {
 }
 
 function bindingText(key: string): string | null {
-  const hit = bindingPreview?.values.value[key];
+  const hit = previewValues.value[key];
   return hit ? hit.text : null;
 }
 
@@ -783,7 +786,7 @@ function miniZoneTableRowIndices(el: LayoutZoneElement): number[] {
   const g = zoneTableGrid(el);
   const base = g.length;
   const pk = zoneTableSqlFillPreviewKey(el.id);
-  const pv = bindingPreview?.values.value[pk]?.tableSqlFill;
+  const pv = previewValues.value[pk]?.tableSqlFill;
   if (el.type !== "table" || !el.tableSqlFill?.enabled || !pv?.dataRows?.length) {
     return Array.from({ length: base }, (_, i) => i);
   }
@@ -793,7 +796,7 @@ function miniZoneTableRowIndices(el: LayoutZoneElement): number[] {
 
 function miniZoneTableStaticTitle(el: LayoutZoneElement, ri: number, ci: number): string {
   if (el.type === "table" && el.tableSqlFill?.enabled) {
-    const vals = bindingPreview?.values.value;
+    const vals = previewValues.value;
     const pk = zoneTableSqlFillPreviewKey(el.id);
     const fillPv = vals?.[pk]?.tableSqlFill;
     const loading = !!(bindingPreview?.loading.value && !fillPv?.dataRows?.length && !fillPv?.error);
@@ -812,7 +815,7 @@ function miniZoneTableStaticTitle(el: LayoutZoneElement, ri: number, ci: number)
 
 function previewZoneTableCellText(el: LayoutZoneElement, ri: number, ci: number): string {
   const cell = zoneTableGrid(el)[ri]?.[ci] ?? null;
-  const vals = bindingPreview?.values.value;
+  const vals = previewValues.value;
 
   if (el.type === "table" && el.tableSqlFill?.enabled) {
     const fill = el.tableSqlFill;
@@ -846,7 +849,7 @@ function miniTableRowIndices(el: TemplateElement): number[] {
   const g = tableGrid(el);
   const base = g.length;
   const pk = templateTableSqlFillPreviewKey(el.id);
-  const pv = bindingPreview?.values.value[pk]?.tableSqlFill;
+  const pv = previewValues.value[pk]?.tableSqlFill;
   const slice = sqlFillSliceForTpl(el);
   if (el.type !== "table" || !el.tableSqlFill?.enabled || !pv?.dataRows?.length) {
     return Array.from({ length: base }, (_, i) => i);
@@ -861,7 +864,7 @@ function miniTableRowIndices(el: TemplateElement): number[] {
 
 function miniTableStaticTitle(el: TemplateElement, ri: number, ci: number): string {
   if (el.type === "table" && el.tableSqlFill?.enabled) {
-    const vals = bindingPreview?.values.value;
+    const vals = previewValues.value;
     const pk = templateTableSqlFillPreviewKey(el.id);
     const fillPv = vals?.[pk]?.tableSqlFill;
     const loading = !!(bindingPreview?.loading.value && !fillPv?.dataRows?.length && !fillPv?.error);
@@ -881,7 +884,7 @@ function miniTableStaticTitle(el: TemplateElement, ri: number, ci: number): stri
 
 function previewTableCellText(el: TemplateElement, ri: number, ci: number): string {
   const cell = tableGrid(el)[ri]?.[ci] ?? null;
-  const vals = bindingPreview?.values.value;
+  const vals = previewValues.value;
 
   if (el.type === "table" && el.tableSqlFill?.enabled) {
     const fill = el.tableSqlFill;
@@ -908,7 +911,7 @@ function previewTableCellText(el: TemplateElement, ri: number, ci: number): stri
 }
 
 function previewParameterText(el: TemplateElement): string {
-  const vals = bindingPreview?.values.value;
+  const vals = previewValues.value;
   const key = paramKey(el.id);
   if (el.bindingKind === "opcua" || el.bindingKind === "sql") {
     if (vals?.[key]?.text) return vals[key].text;
@@ -923,7 +926,7 @@ function previewParameterText(el: TemplateElement): string {
 }
 
 function previewChartText(el: TemplateElement): string {
-  const vals = bindingPreview?.values.value;
+  const vals = previewValues.value;
   const key = chartKey(el.id);
   if (el.bindingKind === "sql") {
     if (vals?.[key]?.text) return vals[key].text;

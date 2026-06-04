@@ -21,10 +21,10 @@ interface Window {
       templateId: string;
       filePath: string;
       openAfter?: boolean;
-    }) => Promise<{ ok: boolean; filePath: string }>;
+    }) => Promise<{ ok: boolean; filePath: string; filePaths?: string[]; totalReports?: number }>;
     shellOpenPath: (filePath: string) => Promise<{ ok: boolean; error?: string }>;
     pathJoin: (...parts: string[]) => Promise<string>;
-    notifyPdfExportReady: (payload: { ok: boolean; error?: string }) => void;
+    notifyPdfExportReady: (payload: { ok: boolean; error?: string; totalReports?: number }) => void;
     scanExportPdfs: (opts: { dir: string }) => Promise<{
       ok: boolean;
       error?: string;

@@ -88,6 +88,7 @@ class TableSqlFillConfig(BaseModel):
     params: list[TableSqlParamBinding] = Field(default_factory=list)
     resultColumnNames: list[str] = Field(default_factory=list)
     repeatHeaderOnPageBreak: bool = True
+    splitReportsOnMaxRows: bool = False
     allowWidgetsBelowSqlFillTable: bool = False
     maxRows: int = Field(default=2000, ge=1, le=50000)
     visualSource: TableSqlVisualSource | None = None

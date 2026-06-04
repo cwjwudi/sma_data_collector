@@ -145,7 +145,11 @@ export function syncVisualFillQueryAndResultNames(fill: TableSqlFillConfig, colC
   ensureTableSqlResultColumnNames(fill, colCount);
   const n = Math.max(1, Math.min(30, Math.floor(Number(colCount)) || 1));
   const vc = fill.visualSource!.columns;
-  for (let i = 0; i < n; i++) fill.resultColumnNames[i] = vc[i] ?? "";
+  for (let i = 0; i < n; i++) {
+    if (!String(fill.resultColumnNames[i] ?? "").trim()) {
+      fill.resultColumnNames[i] = vc[i] ?? "";
+    }
+  }
   clampSqlFillParamColumnRefs(fill, colCount);
 }
 
@@ -159,7 +163,13 @@ export function applyVisualSqlOutputColumnPick(
 ): void {
   ensureVisualSource(fill);
   ensureVisualOutputColumnSlots(fill, colCount);
+  ensureTableSqlResultColumnNames(fill, colCount);
+  const prevFieldName = String(fill.visualSource!.columns[columnIndex] ?? "").trim();
+  const prevHeaderName = String(fill.resultColumnNames[columnIndex] ?? "").trim();
   fill.visualSource!.columns[columnIndex] = fieldName;
+  if (!prevHeaderName || prevHeaderName === prevFieldName) {
+    fill.resultColumnNames[columnIndex] = fieldName;
+  }
   if (gridHeaderCell && typeof gridHeaderCell.text === "string") gridHeaderCell.text = fieldName;
   syncVisualFillQueryAndResultNames(fill, colCount);
 }

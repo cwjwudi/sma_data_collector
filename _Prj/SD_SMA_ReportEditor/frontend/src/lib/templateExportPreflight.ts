@@ -3,6 +3,8 @@ import { getTemplate } from "@/api/templates";
 import {
   collectBindingDedupeTasks,
   connectionSupportsSql,
+  forEachTemplateCanvasElement,
+  forEachZoneLayoutElement,
   pickPreferredOpcServerId,
   pickPreferredSqlConnectionId,
 } from "@/lib/report-template/binding-preview-utils";
@@ -79,15 +81,49 @@ export async function runTemplateExportPreflight(templateId: string): Promise<Te
 
   const { opcTasks, sqlTasks } = collectBindingDedupeTasks(tmpl, opcServerId, sqlConnId);
 
+  let enabledSqlFillCount = 0;
+  let splitSqlFillCount = 0;
+  const sqlFillConnectionIds = new Set<string>();
+  function collectSqlFill(el: { type?: string; tableSqlFill?: unknown }) {
+    if (el.type !== "table") return;
+    const fill = el.tableSqlFill as
+      | {
+          enabled?: boolean;
+          fillMode?: string;
+          visualSource?: { connectionId?: string };
+          splitReportsOnMaxRows?: boolean;
+        }
+      | null
+      | undefined;
+    if (!fill?.enabled) return;
+    enabledSqlFillCount += 1;
+    if (fill.splitReportsOnMaxRows) splitSqlFillCount += 1;
+    const id =
+      fill.fillMode === "visual"
+        ? String(fill.visualSource?.connectionId || "").trim()
+        : String(sqlConnId || "").trim();
+    if (id) sqlFillConnectionIds.add(id);
+  }
+  forEachTemplateCanvasElement(tmpl, (el) => {
+    collectSqlFill(el);
+  });
+  forEachZoneLayoutElement(tmpl, (el) => {
+    collectSqlFill(el);
+  });
+
+  if (splitSqlFillCount > 0 && enabledSqlFillCount !== 1) {
+    blockers.push("开启“超出最大数量自动分报表”后，模板中只允许保留一个数据库填充表。");
+  }
+
   if (opcTasks.length && !opcServerId) {
     blockers.push("模版含 OPC UA 绑定，但未配置可用的 OPC UA 连接。");
   }
-  if (sqlTasks.length && !sqlConnId) {
+  if ((sqlTasks.length || enabledSqlFillCount > 0) && !sqlConnId && sqlFillConnectionIds.size === 0) {
     blockers.push("模版含 SQL 绑定，但未配置可用的数据库连接（需 MySQL/MariaDB/PostgreSQL/SQLite）。");
   }
 
   const opcIds = [...new Set(opcTasks.map((t) => t.serverId))];
-  const sqlIds = [...new Set(sqlTasks.map((t) => t.connectionId))];
+  const sqlIds = [...new Set([...sqlTasks.map((t) => t.connectionId), ...sqlFillConnectionIds])];
 
   await Promise.all([
     ...opcIds.map(async (id) => {
@@ -104,7 +140,7 @@ export async function runTemplateExportPreflight(templateId: string): Promise<Te
     }),
   ]);
 
-  if (!opcTasks.length && !sqlTasks.length) {
+  if (!opcTasks.length && !sqlTasks.length && enabledSqlFillCount === 0) {
     warnings.push("此模版未检测到 OPC/SQL 绑定，将按静态内容导出。");
   }
 

@@ -455,6 +455,7 @@
             v-if="tplSqlFillEnabled"
             :fill="ensureTplTableSqlFill(el)"
             :column-count="el.tableCols ?? 4"
+            :allow-split-reports="true"
             button-class="lpep-file-btn"
             @opc-pick-param="openTplSqlOpcPicker"
             @sync-headers="onTplSqlFillSyncHeaders"

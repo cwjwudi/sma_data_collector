@@ -50,6 +50,8 @@ export interface TableSqlFillConfig {
   resultColumnNames: string[];
   /** 跨页时在新页重复表头行（第 0 行） */
   repeatHeaderOnPageBreak: boolean;
+  /** 查询结果超过 maxRows 时，按 maxRows 拆成多份报表导出；开启时模板中只能有一个数据库填充表 */
+  splitReportsOnMaxRows: boolean;
   /**
    * 允许在同一正文画布上，把控件摆放在 SQL 动态表格「逻辑底线」之下。
    * 默认关闭：编辑画布会阻止重叠区域内的下移；导出预览中此类控件会另起一页。
@@ -120,6 +122,7 @@ export function defaultTableSqlFillConfig(): TableSqlFillConfig {
     params: [],
     resultColumnNames: [],
     repeatHeaderOnPageBreak: true,
+    splitReportsOnMaxRows: false,
     allowWidgetsBelowSqlFillTable: false,
     maxRows: 2000,
     visualSource: null,
@@ -160,6 +163,8 @@ export function hydrateTableSqlFill(raw: unknown): TableSqlFillConfig {
   const querySql = querySqlEarly;
   const repeatHeaderOnPageBreak =
     o.repeatHeaderOnPageBreak === false || o.repeatHeaderOnPageBreak === "false" ? false : true;
+  const splitReportsOnMaxRows =
+    o.splitReportsOnMaxRows === true || o.splitReportsOnMaxRows === "true" || o.splitReportsOnMaxRows === 1;
   const allowWidgetsBelowSqlFillTable =
     o.allowWidgetsBelowSqlFillTable === true || o.allowWidgetsBelowSqlFillTable === "true" ? true : false;
   let maxRows = Math.round(Number(o.maxRows));
@@ -250,6 +255,7 @@ export function hydrateTableSqlFill(raw: unknown): TableSqlFillConfig {
     params,
     resultColumnNames,
     repeatHeaderOnPageBreak,
+    splitReportsOnMaxRows,
     allowWidgetsBelowSqlFillTable,
     maxRows,
     visualSource,
