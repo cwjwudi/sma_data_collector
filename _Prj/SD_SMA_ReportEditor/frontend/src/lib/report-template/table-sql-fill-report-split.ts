@@ -32,7 +32,7 @@ export function buildSqlFillSplitReportPlan(
   const key = templateTableSqlFillPreviewKey(el.id);
   const pv = previewValues?.[key]?.tableSqlFill;
   const rows = pv?.dataRows;
-  if (!rows?.length || pv.error) return null;
+  if (!rows?.length || pv?.error) return null;
 
   const maxRowsRaw = Math.round(Number(el.tableSqlFill?.maxRows));
   const maxRows = Math.min(50000, Math.max(1, Number.isFinite(maxRowsRaw) ? maxRowsRaw : 2000));

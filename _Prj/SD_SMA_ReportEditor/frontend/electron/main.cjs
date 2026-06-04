@@ -8,6 +8,7 @@ const { createAppUpdater } = require('./updater.cjs')
 const { createDemoPackManager } = require('./demo-pack.cjs')
 const { createLayoutSync } = require('./layout-sync.cjs')
 const { humanizePdfExportError } = require('./pdfExportErrors.cjs')
+const { outputPathForReportPart } = require('./pdf-export-paths.cjs')
 
 let mainWindow
 let pythonProcess
@@ -611,11 +612,7 @@ ipcMain.handle('pdf-export-run', async (event, opts) => {
     let pdfWin = null
     try {
       function outputPathForPart(partIndex, totalReports) {
-        if (totalReports <= 1) return filePath
-        const dir = path.dirname(filePath)
-        const ext = path.extname(filePath) || '.pdf'
-        const stem = path.basename(filePath, ext)
-        return path.join(dir, `${stem}_第${partIndex + 1}份${ext}`)
+        return outputPathForReportPart(filePath, partIndex, totalReports)
       }
 
       function buildLoadUrl(partIndex) {

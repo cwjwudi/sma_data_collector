@@ -21,7 +21,7 @@
         </select>
       </div>
       <div class="rg-switch-row">
-        <span class="rg-switch-label" id="rg-manual-open-lbl">{{ RG_UI.manual }}完成后打开 PDF（桌面壳）</span>
+        <span class="rg-switch-label" id="rg-manual-open-lbl">{{ RG_UI.manual }}完成后打开保存文件夹（桌面壳）</span>
         <button
           type="button"
           class="rg-switch"
@@ -35,7 +35,7 @@
       </div>
       <div class="rg-actions">
         <button type="button" class="btn primary" :disabled="manualBusy || !canManualExport" @click="onManualExport">
-          {{ manualBusy ? `${RG_UI.manual}中…` : `选择保存位置并${RG_UI.manual}` }}
+          {{ manualBusy ? `${RG_UI.manual}中…` : `选择保存文件夹并${RG_UI.manual}` }}
         </button>
       </div>
       <p v-if="manualHint" class="rg-hint">{{ manualHint }}</p>
@@ -1073,6 +1073,30 @@ const autoFileNamePreview = computed(() =>
 
 const canManualExport = computed(() => electronShell.value && Boolean(prefs.value.templateId));
 
+function normalizeSavedPdfPaths(
+  exportRes: { filePath?: string; filePaths?: string[] } | null | undefined,
+  fallbackPath: string,
+): string[] {
+  const paths = Array.isArray(exportRes?.filePaths)
+    ? exportRes.filePaths.map((x) => String(x || "").trim()).filter(Boolean)
+    : [];
+  if (paths.length) return paths;
+  const single = String(exportRes?.filePath || fallbackPath || "").trim();
+  return single ? [single] : [];
+}
+
+function pdfExportSummaryForPaths(savedPaths: string[], note?: string): string | undefined {
+  const parts: string[] = [];
+  if (savedPaths.length > 1) parts.push(`共 ${savedPaths.length} 份 PDF`);
+  const n = (note || "").trim();
+  if (n) parts.push(n);
+  return parts.length ? parts.join("；") : undefined;
+}
+
+function isReportSplitPreflightBlocker(text: string): boolean {
+  return /分报表|数据库填充表|超出最大数量/.test(text);
+}
+
 function toggleAutoEnabled() {
   if (!electronShell.value) return;
   prefs.value.auto.enabled = !prefs.value.auto.enabled;
@@ -1353,7 +1377,7 @@ async function loadOpcServers(): Promise<void> {
 async function onManualExport(): Promise<void> {
   manualHint.value = "";
   const api = window.electronAPI;
-  if (!api?.runPdfExport || !api.showSavePdfDialog) {
+  if (!api?.runPdfExport || !api.pickExportDirectory || !api.pathJoin) {
     manualHint.value = `当前环境不支持${RG_UI.manual}。`;
     return;
   }
@@ -1363,14 +1387,14 @@ async function onManualExport(): Promise<void> {
   const tmeta = summaries.value.find((x) => x.id === tid);
   const suggestName = `${(tmeta?.name || "报表").replace(/[/\\?%*:|"<>]/g, "_")}_${formatExportTs()}.pdf`;
 
-  const filePath = await api.showSavePdfDialog({
-    title: RG_UI.manual,
-    defaultPath: suggestName,
+  const exportDir = await api.pickExportDirectory({
+    title: `选择${RG_UI.manual}保存文件夹`,
   });
-  if (!filePath) {
+  if (!exportDir) {
     manualHint.value = "已取消保存。";
     return;
   }
+  const filePath = await api.pathJoin(exportDir, suggestName);
 
   manualBusy.value = true;
   manualHint.value = "正在检查数据源连接…";
@@ -1392,6 +1416,11 @@ async function onManualExport(): Promise<void> {
 
     const preflight = await runTemplateExportPreflight(tid);
     if (!preflight.ok) {
+      if (preflight.blockers.some(isReportSplitPreflightBlocker)) {
+        manualHint.value = preflight.summary;
+        showAppToast(preflight.summary, { tone: "err", durationMs: 12000 });
+        return;
+      }
       const proceed = window.confirm(
         `${preflight.summary}\n\n是否仍要继续${RG_UI.manual}？（PDF 中可能出现错误占位或生成失败）`,
       );
@@ -1409,24 +1438,30 @@ async function onManualExport(): Promise<void> {
     const exportRes = await api.runPdfExport({
       templateId: tid,
       filePath,
-      openAfter: prefs.value.manualOpenAfter,
+      openAfter: false,
     });
-    const savedPaths = exportRes.filePaths?.length ? exportRes.filePaths : [exportRes.filePath || filePath];
+    const savedPaths = normalizeSavedPdfPaths(exportRes, filePath);
+    const plcMessage = pdfExportSummaryForPaths(savedPaths);
     manualHint.value =
-      savedPaths.length > 1 ? `已保存 ${savedPaths.length} 个文件：${savedPaths.join("；")}` : `已保存：${savedPaths[0]}`;
+      savedPaths.length > 1 ? `已保存到文件夹：${exportDir}（共 ${savedPaths.length} 份 PDF）` : `已保存到文件夹：${exportDir}`;
+    if (prefs.value.manualOpenAfter) {
+      void api.shellOpenPath?.(exportDir);
+    }
     void auditLog({
       action: "export.manual_pdf",
       result: "ok",
       summary: suggestName,
       object_type: "template",
       object_id: tid,
-      detail: { filePath: savedPaths[0], filePaths: savedPaths },
+      detail: { filePath: savedPaths[0], filePaths: savedPaths, totalReports: exportRes.totalReports },
     });
     void notifyExportResultToPlc(
       {
         success: true,
         filePath: savedPaths[0],
+        filePaths: savedPaths,
         fileName: suggestName,
+        message: plcMessage,
       },
       "manual",
     );
@@ -1462,6 +1497,7 @@ type AutoPdfExportAttempt = {
   fileName: string;
   filePath: string;
   filePaths?: string[];
+  totalReports?: number;
   note?: string;
 };
 
@@ -1473,6 +1509,11 @@ async function runAutoPdfExport(templateId: string): Promise<AutoPdfExportAttemp
 
   const tid = templateId.trim();
   if (!tid) throw new Error(`未配置${RG_UI.opcAuto}报表模版`);
+
+  const preflight = await runTemplateExportPreflight(tid);
+  if (!preflight.ok) {
+    throw new Error(preflight.summary);
+  }
 
   const resolved = await resolveAutoExportDir(prefs.value);
   const dir = resolved.dir.trim();
@@ -1489,8 +1530,16 @@ async function runAutoPdfExport(templateId: string): Promise<AutoPdfExportAttemp
   });
 
   const notes = [resolved.note, built.note].filter(Boolean).join("；");
-  const savedPaths = exportRes.filePaths?.length ? exportRes.filePaths : [exportRes.filePath || filePath];
-  return { fileName: built.base, filePath: savedPaths[0], filePaths: savedPaths, note: notes || undefined };
+  const savedPaths = normalizeSavedPdfPaths(exportRes, filePath);
+  const splitNote = pdfExportSummaryForPaths(savedPaths);
+  const exportNote = [preflight.warnings.join(" "), notes, splitNote].filter(Boolean).join("；");
+  return {
+    fileName: built.base,
+    filePath: savedPaths[0],
+    filePaths: savedPaths,
+    totalReports: exportRes.totalReports,
+    note: exportNote || undefined,
+  };
 }
 
 async function pollAutoTriggerOnce(): Promise<void> {
@@ -1567,11 +1616,20 @@ async function pollAutoTriggerOnce(): Promise<void> {
           {
             success: true,
             filePath: result.filePath,
+            filePaths: result.filePaths,
             fileName: result.fileName,
             message: result.note,
           },
           "auto",
         );
+        void auditLog({
+          action: "export.auto_pdf",
+          result: "ok",
+          summary: result.fileName,
+          object_type: "template",
+          object_id: b.templateId || undefined,
+          detail: { filePath: result.filePath, filePaths: result.filePaths, bindingId: b.id, event: eventLabel },
+        });
         exportedThisPoll = true;
         const noteSuffix = result.note ? `（${result.note}）` : "";
         const fileCount = result.filePaths?.length || 1;
@@ -1593,6 +1651,14 @@ async function pollAutoTriggerOnce(): Promise<void> {
           fileName,
           success: false,
           message: msg,
+        });
+        void auditLog({
+          action: "export.auto_pdf",
+          result: "fail",
+          summary: msg,
+          object_type: "template",
+          object_id: b.templateId || undefined,
+          detail: { bindingId: b.id, event: eventLabel },
         });
         void notifyExportResultToPlc({ success: false, message: msg }, "auto");
         autoStatus.value = `${RG_STATUS_OPC_AUTO}·${label} 失败：${msg.split("\n")[0]}`;
