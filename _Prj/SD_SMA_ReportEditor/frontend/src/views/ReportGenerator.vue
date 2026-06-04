@@ -95,6 +95,14 @@
             <button type="button" class="btn btn--nowrap" @click="openRgOpcPick('feedbackStatus')">
               从地址空间选择…
             </button>
+            <button
+              v-if="prefs.exportResultOpc.statusNodeId"
+              type="button"
+              class="btn btn--sm btn--ghost btn--nowrap"
+              @click="clearExportResultOpcBinding('status')"
+            >
+              清除
+            </button>
           </div>
           <p v-if="exportResultOpcStatusBindingHint" class="rg-mini rg-mini--indent rg-bound-hint">
             已绑定：{{ exportResultOpcStatusBindingHint }}
@@ -115,6 +123,14 @@
             />
             <button type="button" class="btn btn--nowrap" @click="openRgOpcPick('feedbackMessage')">
               从地址空间选择…
+            </button>
+            <button
+              v-if="prefs.exportResultOpc.messageNodeId"
+              type="button"
+              class="btn btn--sm btn--ghost btn--nowrap"
+              @click="clearExportResultOpcBinding('message')"
+            >
+              清除
             </button>
           </div>
           <p v-if="exportResultOpcMessageBindingHint" class="rg-mini rg-mini--indent rg-bound-hint">
@@ -139,6 +155,14 @@
             />
             <button type="button" class="btn btn--nowrap" @click="openRgOpcPick('feedbackFilePath')">
               从地址空间选择…
+            </button>
+            <button
+              v-if="prefs.exportResultOpc.filePathNodeId"
+              type="button"
+              class="btn btn--sm btn--ghost btn--nowrap"
+              @click="clearExportResultOpcBinding('filePath')"
+            >
+              清除
             </button>
           </div>
           <p v-if="exportResultOpcPathBindingHint" class="rg-mini rg-mini--indent rg-bound-hint">
@@ -244,7 +268,7 @@
             </div>
             <div class="rg-row rg-row--in-panel">
               <label class="rg-lbl" for="rg-dir-opc-var">OPC 目录变量（String）</label>
-              <div class="rg-inline">
+              <div class="rg-inline rg-inline--bind">
                 <input
                   id="rg-dir-opc-var"
                   :value="prefs.autoExportDirOpcNodeId"
@@ -254,6 +278,14 @@
                   placeholder="未绑定"
                 />
                 <button type="button" class="btn" @click="openRgOpcPick('exportDir')">打开 OPC UA 绑定树</button>
+                <button
+                  v-if="prefs.autoExportDirOpcNodeId"
+                  type="button"
+                  class="btn btn--sm btn--ghost btn--nowrap"
+                  @click="clearAutoExportDirOpcBinding"
+                >
+                  清除
+                </button>
               </div>
               <p v-if="exportDirOpcServerLabel" class="rg-mini rg-mini--indent">连接：{{ exportDirOpcServerLabel }}</p>
               <p class="rg-mini rg-mini--indent">展开地址空间时仅显示 String 类型变量；文件夹节点可继续展开浏览。</p>
@@ -312,7 +344,7 @@
           <template v-else>
             <div class="rg-row rg-row--in-panel">
               <label class="rg-lbl" for="rg-fn-opc-var">OPC 文件名变量（String）</label>
-              <div class="rg-inline">
+              <div class="rg-inline rg-inline--bind">
                 <input
                   id="rg-fn-opc-var"
                   :value="prefs.autoFileNameOpcNodeId"
@@ -322,6 +354,14 @@
                   placeholder="未绑定"
                 />
                 <button type="button" class="btn" @click="openRgOpcPick('fileName')">打开 OPC UA 绑定树</button>
+                <button
+                  v-if="prefs.autoFileNameOpcNodeId"
+                  type="button"
+                  class="btn btn--sm btn--ghost btn--nowrap"
+                  @click="clearAutoFileNameOpcBinding"
+                >
+                  清除
+                </button>
               </div>
               <p v-if="fileNameOpcServerLabel" class="rg-mini rg-mini--indent">连接：{{ fileNameOpcServerLabel }}</p>
               <p class="rg-mini rg-mini--indent">
@@ -416,7 +456,7 @@
           </div>
           <div class="rg-row rg-row--in-panel">
             <label class="rg-lbl" :for="`rg-bind-node-${binding.id}`">触发节点 NodeId</label>
-            <div class="rg-inline">
+            <div class="rg-inline rg-inline--bind">
               <input
                 :id="`rg-bind-node-${binding.id}`"
                 v-model.trim="binding.nodeId"
@@ -427,6 +467,14 @@
               />
               <button type="button" class="btn" @click="openRgOpcPick(rgTriggerPickTarget(binding.id))">
                 从地址空间选择…
+              </button>
+              <button
+                v-if="binding.nodeId"
+                type="button"
+                class="btn btn--sm btn--ghost btn--nowrap"
+                @click="clearAutoTriggerNodeBinding(binding.id)"
+              >
+                清除
               </button>
             </div>
           </div>
@@ -687,6 +735,50 @@ const exportResultOpcPathBindingHint = computed(() =>
 const hasExportResultBinding = computed(() => hasAnyExportResultBinding(prefs.value.exportResultOpc));
 
 const testWriteBackBusy = ref(false);
+
+type ExportResultOpcBindingField = "status" | "message" | "filePath";
+
+function clearExportResultOpcBinding(field: ExportResultOpcBindingField): void {
+  if (field === "status") {
+    prefs.value.exportResultOpc.statusNodeId = "";
+    prefs.value.exportResultOpc.statusNodeLabel = "";
+    autoStatus.value = `${RG_STATUS_FEEDBACK} 已清除状态变量绑定`;
+    return;
+  }
+  if (field === "message") {
+    prefs.value.exportResultOpc.messageNodeId = "";
+    prefs.value.exportResultOpc.messageNodeLabel = "";
+    autoStatus.value = `${RG_STATUS_FEEDBACK} 已清除信息变量绑定`;
+    return;
+  }
+  prefs.value.exportResultOpc.filePathNodeId = "";
+  prefs.value.exportResultOpc.filePathNodeLabel = "";
+  autoStatus.value = `${RG_STATUS_FEEDBACK} 已清除路径变量绑定`;
+}
+
+function clearAutoExportDirOpcBinding(): void {
+  prefs.value.autoExportDirOpcServerId = "";
+  prefs.value.autoExportDirOpcNodeId = "";
+  autoStatus.value = `${RG_STATUS_OPC_AUTO} 已清除保存目录 OPC 变量绑定`;
+}
+
+function clearAutoFileNameOpcBinding(): void {
+  prefs.value.autoFileNameOpcServerId = "";
+  prefs.value.autoFileNameOpcNodeId = "";
+  autoStatus.value = `${RG_STATUS_OPC_AUTO} 已清除文件名 OPC 变量绑定`;
+}
+
+function clearAutoTriggerNodeBinding(bindingId: string): void {
+  const binding = findAutoTriggerBinding(bindingId);
+  if (!binding) return;
+  binding.nodeId = "";
+  const runtime = getBindingRuntime(bindingId);
+  runtime.poll = createOpcTriggerPollState();
+  runtime.history.clear();
+  runtime.chartEligible = null;
+  syncBindingChartUi(bindingId, runtime);
+  autoStatus.value = `${RG_STATUS_OPC_AUTO} 已清除触发节点绑定`;
+}
 
 const opcPickCloseOnConfirm = computed(() => !isFeedbackPickTarget(opcPickTarget.value));
 
@@ -2015,6 +2107,7 @@ onUnmounted(() => {
 .rg-inline--bind {
   width: 100%;
   max-width: 720px;
+  flex-wrap: wrap;
 }
 .rg-inline--bind .rg-inp--grow {
   flex: 1 1 12rem;

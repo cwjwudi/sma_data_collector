@@ -208,6 +208,7 @@ function bumpTree() {
 }
 
 function wrapOpcNode(raw) {
+  const dataTypeLabel = String(raw?.data_type || raw?.valueDataTypeLabel || '').trim()
   return {
     ...raw,
     children: [],
@@ -216,7 +217,7 @@ function wrapOpcNode(raw) {
     loaded: false,
     browseLeaf: false,
     errorMessage: null,
-    valueDataTypeLabel: '',
+    valueDataTypeLabel: dataTypeLabel,
   }
 }
 
@@ -226,6 +227,7 @@ function opcHitToPickEntry(h) {
     browse_name: h.browse_name,
     display_name: h.display_name,
     node_class: h.node_class,
+    data_type: h.data_type,
   })
   return { node, pathStr: h.path_str || '' }
 }
@@ -274,7 +276,9 @@ async function runPickModalVariableSearch(q, runGen) {
 async function opcApiBrowse(parentNodeId) {
   const cap = browseCapability.value
   if (!cap) throw new Error('当前无法浏览')
-  const body = parentNodeId != null && parentNodeId !== '' ? { node_id: parentNodeId } : {}
+  const body = {}
+  if (parentNodeId != null && parentNodeId !== '') body.node_id = parentNodeId
+  if (dataTypeFilter.value) body.data_type = dataTypeFilter.value
   return await apiFetch(`/opcua/browse_saved/${cap.serverId}`, { method: 'POST', body })
 }
 
@@ -437,10 +441,7 @@ async function refreshRoot() {
       bumpTree()
       return
     }
-    let list = (res.nodes || []).map((n) => wrapOpcNode(n))
-    if (dataTypeFilter.value) {
-      list = await filterBrowseChildrenForDataType(list)
-    }
+    const list = filterBrowseChildrenForDataType((res.nodes || []).map((n) => wrapOpcNode(n)))
     treeNodes.value = list
     bumpTree()
     if (!dataTypeFilter.value) {
@@ -458,10 +459,7 @@ async function fetchAndApplyNodeChildren(node) {
     applyOpcBrowseChildren(node, [])
     return []
   }
-  let list = (res.nodes || []).map((n) => wrapOpcNode(n))
-  if (dataTypeFilter.value) {
-    list = await filterBrowseChildrenForDataType(list)
-  }
+  const list = filterBrowseChildrenForDataType((res.nodes || []).map((n) => wrapOpcNode(n)))
   applyOpcBrowseChildren(node, list)
   if (list.length && !dataTypeFilter.value) {
     void prefetchVariableValuesInNodes(node.children)
@@ -658,22 +656,10 @@ async function prefetchVariableTreeRow(node, myGen) {
   }
 }
 
-async function filterBrowseChildrenForDataType(children) {
+function filterBrowseChildrenForDataType(children) {
   const filter = dataTypeFilter.value
   if (!filter || !children?.length) return children || []
-  const myGen = prefetchGen.value
-  const kept = []
-  for (const n of children) {
-    if (!isOpcVariableValueNode(n)) {
-      kept.push(n)
-      continue
-    }
-    await prefetchVariableTreeRow(n, myGen)
-    if (prefetchGen.value !== myGen) return kept
-    if (shouldShowOpcBrowseChild(n, filter)) kept.push(n)
-  }
-  bumpTree()
-  return kept
+  return children.filter((n) => shouldShowOpcBrowseChild(n, filter))
 }
 
 async function pickNode(n) {

@@ -41,6 +41,7 @@ class _PoolEntry:
     endpoint_url: str = ""
     username: str | None = None
     password_fp: str = ""
+    data_type_cache: dict[str, str] = field(default_factory=dict)
 
 
 async def _safe_disconnect(client: Client | None) -> None:
@@ -89,8 +90,10 @@ async def _ensure_connected(
     username: str | None,
     password: str | None,
 ) -> Client:
-    if _config_mismatch(entry, endpoint_url, username, password) and entry.client:
-        await _invalidate_entry_client(entry)
+    if _config_mismatch(entry, endpoint_url, username, password):
+        entry.data_type_cache.clear()
+        if entry.client:
+            await _invalidate_entry_client(entry)
     entry.endpoint_url = endpoint_url
     entry.username = username
     entry.password_fp = _password_fingerprint(password)
@@ -178,13 +181,20 @@ async def browse_children_for_saved_server(
     username: str | None = None,
     password: str | None = None,
     max_children: int = DEFAULT_OPCUA_BROWSE_MAX_CHILDREN,
+    data_type_filter: str | None = None,
 ) -> dict[str, Any]:
     """已保存配置：复用长连接，减少每次握手的卡顿。"""
     entry = _get_entry(server_id)
     async with entry.lock:
         try:
             client = await _ensure_connected(entry, endpoint_url, username, password)
-            return await _browse_with_client(client, node_id, max_children)
+            return await _browse_with_client(
+                client,
+                node_id,
+                max_children,
+                data_type_filter=data_type_filter,
+                data_type_cache=entry.data_type_cache,
+            )
         except Exception as e:
             logger.exception("OPC UA browse (pooled) failed")
             await _invalidate_entry_client(entry)
@@ -260,8 +270,12 @@ async def _browse_with_client(
     client: Client,
     node_id: str | None,
     max_children: int,
+    *,
+    data_type_filter: str | None = None,
+    data_type_cache: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     nodes_out: list[dict[str, Any]] = []
+    dt_filter = (data_type_filter or "").strip() or None
     if node_id:
         parent = client.get_node(node_id)
     else:
@@ -273,14 +287,19 @@ async def _browse_with_client(
             bn = await ch.read_browse_name()
             nid = ch.nodeid.to_string()
             cls = await _try_node_class(ch)
-            nodes_out.append(
-                {
-                    "node_id": nid,
-                    "browse_name": f"{bn.NamespaceIndex}:{bn.Name}",
-                    "display_name": (await ch.read_display_name()).Text,
-                    "node_class": cls,
-                }
-            )
+            row = {
+                "node_id": nid,
+                "browse_name": f"{bn.NamespaceIndex}:{bn.Name}",
+                "display_name": (await ch.read_display_name()).Text,
+                "node_class": cls,
+            }
+            if dt_filter and _is_opcua_variable_value_class(cls):
+                type_name = await _try_node_data_type_name(ch, data_type_cache)
+                if not _data_type_matches_filter(type_name, dt_filter):
+                    continue
+                if type_name:
+                    row["data_type"] = type_name
+            nodes_out.append(row)
         except Exception as ex:
             nodes_out.append({"node_id": "", "browse_name": "", "display_name": "", "error": str(ex)})
     return {"ok": True, "nodes": nodes_out}
@@ -531,15 +550,38 @@ def _is_opcua_variable_value_class(cls: str) -> bool:
     return token == "VARIABLE" or token == "2"
 
 
-async def _try_node_data_type_name(ch: Any) -> str | None:
+async def _try_node_data_type_name(ch: Any, cache: dict[str, str] | None = None) -> str | None:
+    key = ""
+    try:
+        key = ch.nodeid.to_string()
+    except Exception:
+        key = ""
+    if key and cache is not None and key in cache:
+        return cache[key] or None
     try:
         dt = await ch.read_data_type_as_variant_type()
         nm = getattr(dt, "name", None)
         if isinstance(nm, str) and nm.strip():
-            return nm.strip()
+            out = nm.strip()
+        else:
+            out = str(dt).strip()
+        if key and cache is not None:
+            cache[key] = out
+        return out or None
     except Exception:
         pass
     return None
+
+
+def _opcua_data_type_token(type_name: str | None) -> str:
+    t = (type_name or "").strip().lower()
+    if not t:
+        return ""
+    m = re.search(r"(?:varianttype[.:])?(\w+)$", t, flags=re.IGNORECASE)
+    if m and m.group(1):
+        return m.group(1).lower()
+    parts = re.split(r"[^a-z0-9]+", t)
+    return (parts[-1] if parts else t).lower()
 
 
 def _data_type_matches_filter(type_name: str | None, filter_name: str) -> bool:
@@ -547,8 +589,26 @@ def _data_type_matches_filter(type_name: str | None, filter_name: str) -> bool:
     f = (filter_name or "").strip().lower()
     if not f:
         return True
+    token = _opcua_data_type_token(type_name)
+    if f in ("boolean", "bool"):
+        return token == "boolean"
     if f in ("string", "str"):
-        return t == "string" or t.endswith(".string")
+        return token == "string"
+    if f == "int":
+        return token in {
+            "sbyte",
+            "byte",
+            "int",
+            "int16",
+            "int32",
+            "int64",
+            "uint",
+            "uint16",
+            "uint32",
+            "uint64",
+        }
+    if token:
+        return token == f
     return f in t
 
 
@@ -559,6 +619,7 @@ async def _search_variables_bfs(
     max_results: int,
     max_depth: int,
     data_type_filter: str | None = None,
+    data_type_cache: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """从 Objects 起广度优先浏览，匹配 Variable 的显示名 / BrowseName / NodeId 子串。"""
     q_raw = (query or "").strip()
@@ -613,7 +674,7 @@ async def _search_variables_bfs(
             hay = f"{disp} {browse_full} {nid}".lower()
 
             if _is_opcua_variable_value_class(cls):
-                type_name = await _try_node_data_type_name(ch) if dt_filter else None
+                type_name = await _try_node_data_type_name(ch, data_type_cache) if dt_filter else None
                 if dt_filter and not _data_type_matches_filter(type_name, dt_filter):
                     continue
                 if q_lower and q_lower not in hay:
@@ -698,7 +759,15 @@ async def search_variables_for_saved_server(
     async with entry.lock:
         try:
             client = await _ensure_connected(entry, endpoint_url, username, password)
-            return await _search_variables_bfs(client, query, ms, mr, md, data_type_filter)
+            return await _search_variables_bfs(
+                client,
+                query,
+                ms,
+                mr,
+                md,
+                data_type_filter,
+                data_type_cache=entry.data_type_cache,
+            )
         except Exception as e:
             logger.exception("OPC UA variable search (pooled) failed")
             await _invalidate_entry_client(entry)
