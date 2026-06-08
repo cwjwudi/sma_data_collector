@@ -1,0 +1,11 @@
+{
+  "report_source_dir": "C:\\SMA_Report",
+  "destination_folder": "SMA_Report",
+  "allowed_extensions": [
+    ".pdf"
+  ],
+  "copy_subdirectories": true,
+  "overwrite_by_default": false,
+  "allowed_target_roots": [],
+  "log_dir": "${PACKAGE_ROOT}/logs/report_copy"
+}

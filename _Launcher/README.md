@@ -26,10 +26,23 @@ _Launcher\start.bat
 
 便携包会一并复制 `_Prj/SD_SMA_DB_ADMIN`，并使用统一 `.venv` 启动。
 
+## Report Copy
+
+新增报表复制服务：
+
+- URL: `http://127.0.0.1:8094/`
+- Service name: `report_copy`
+- Project dir: `_Prj/SD_SMA_REPORT_COPY`
+- Config env: `SD_SMA_REPORT_COPY_CONFIG_DIR`
+
+用于浏览配置的 `SMA_Report` 报表目录、预览 PDF，并将选中的报表复制到 Windows U 盘。
+
 默认地址：
 
 - 采集配置/监控：`http://127.0.0.1:8091/dashboard`
 - 历史查询：`http://127.0.0.1:8092/query`
+- 数据库管理：`http://127.0.0.1:8093/admin`
+- 报表复制：`http://127.0.0.1:8094/`
 
 启动器配置在：
 
@@ -93,6 +106,8 @@ SD_SMA_Runtime_Package/
   _Prj/
     SD_SMA_DATA_COLLECTOR/
     SD_SMA_DATA_COLLECTOR_QUERY_WEB/
+    SD_SMA_DB_ADMIN/
+    SD_SMA_REPORT_COPY/
   logs/
 ```
 
@@ -114,6 +129,8 @@ powershell -NoProfile -ExecutionPolicy Bypass -File _Launcher\scripts\build_port
 
 - `8091`: 采集配置/监控 Web
 - `8092`: 查询 Web
+- `8093`: 数据库管理 Web
+- `8094`: 报表复制 Web
 
 如果端口被占用，启动器会停止并提示。可以在 `launcher_config.json` 修改端口。
 
