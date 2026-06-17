@@ -9,13 +9,14 @@ import {
   uniformTableCellBoxPx,
 } from "@/lib/report-template/table-cell-metrics";
 
-import type { TableSqlFillConfig } from "@/lib/report-template/table-sql-fill";
+import type { TableSqlFillConfig, TableSqlParamBinding } from "@/lib/report-template/table-sql-fill";
 import {
   clampSqlFillParamColumnRefs,
   defaultTableSqlFillConfig,
   ensureTableSqlResultColumnNames,
   ensureTwoTableSqlParamSlots,
   ensureVisualOutputColumnSlots,
+  hydrateSqlParamBindings,
   hydrateTableSqlFill,
 } from "@/lib/report-template/table-sql-fill";
 
@@ -39,6 +40,7 @@ export interface LayoutZoneTableCell {
   bindingKind: ZoneBindingKind;
   opcuaNodeId: string;
   sqlText: string;
+  sqlParams: TableSqlParamBinding[];
   /** 单元格填充色；transparent 或未设则继承列/表格默认 */
   bgColor?: string;
 }
@@ -115,6 +117,7 @@ export interface LayoutZoneElement {
   bindingKind: ZoneBindingKind;
   opcuaNodeId: string;
   sqlText: string;
+  sqlParams: TableSqlParamBinding[];
   /** 仅 type==="table" 时使用 */
   tableRows?: number;
   tableCols?: number;
@@ -319,7 +322,7 @@ function clampZoneTableDim(v: unknown, fallback: number): number {
 }
 
 export function defaultZoneTableCell(): LayoutZoneTableCell {
-  return { text: "", bindingKind: "none", opcuaNodeId: "", sqlText: "", bgColor: "transparent" };
+  return { text: "", bindingKind: "none", opcuaNodeId: "", sqlText: "", sqlParams: [], bgColor: "transparent" };
 }
 
 export function hydrateZoneTableCell(raw: Partial<LayoutZoneTableCell> | undefined): LayoutZoneTableCell {
@@ -330,6 +333,7 @@ export function hydrateZoneTableCell(raw: Partial<LayoutZoneTableCell> | undefin
     bindingKind: normalizeZoneBindingKind(raw.bindingKind),
     opcuaNodeId: typeof raw.opcuaNodeId === "string" ? raw.opcuaNodeId : d.opcuaNodeId,
     sqlText: typeof raw.sqlText === "string" ? raw.sqlText : d.sqlText,
+    sqlParams: hydrateSqlParamBindings((raw as { sqlParams?: unknown }).sqlParams, 0),
     bgColor: typeof raw.bgColor === "string" ? raw.bgColor : d.bgColor,
   };
 }
@@ -447,6 +451,7 @@ export function defaultLayoutZoneElement(type: LayoutControlType): Omit<LayoutZo
     bindingKind: "none" as ZoneBindingKind,
     opcuaNodeId: "",
     sqlText: "",
+    sqlParams: [],
   };
   const baseText = {
     ...bindNone,
@@ -588,6 +593,7 @@ export function hydrateLayoutZoneElement(raw: Partial<LayoutZoneElement>): Layou
     bindingKind: normalizeZoneBindingKind(raw.bindingKind ?? d.bindingKind),
     opcuaNodeId: typeof raw.opcuaNodeId === "string" ? raw.opcuaNodeId : d.opcuaNodeId,
     sqlText: typeof raw.sqlText === "string" ? raw.sqlText : d.sqlText,
+    sqlParams: hydrateSqlParamBindings((raw as { sqlParams?: unknown }).sqlParams, 0),
   };
   if (type === "table") {
     merged.tableRows = clampZoneTableDim(raw.tableRows ?? d.tableRows ?? 3, 3);

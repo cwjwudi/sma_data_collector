@@ -10,6 +10,8 @@ import {
 
   segmentsFromLegacyPattern,
 
+  withOpcuaFileNameSegment,
+
   type AutoFileNameSegment,
 
   type AutoFileNameSource,
@@ -85,13 +87,13 @@ export interface ReportGeneratorPrefs {
 
   autoExportDirOpcNodeId: string;
 
-  /** 自动导出文件名：勾选片段 或 OPC String 基名 + 随机哈希 */
+  /** 自动导出文件名：按勾选片段拼接；autoFileNameSource 保留兼容旧配置 */
 
   autoFileNameSource: AutoFileNameSource;
 
   autoFileNameSegments: AutoFileNameSegment[];
 
-  /** 片段 / OPC 基名 与哈希 之间的连接符 */
+  /** 片段之间的连接符 */
 
   autoFileNameSeparator: string;
 
@@ -99,13 +101,16 @@ export interface ReportGeneratorPrefs {
 
   autoFileNameOpcNodeId: string;
 
-  /** OPC 文件名模式：是否在基名后追加随机哈希 */
+  /** 旧 OPC 文件名模式兼容字段；新界面用 hash 片段控制 */
 
   autoFileNameOpcAppendHash: boolean;
 
   manualOpenAfter: boolean;
 
   exportResultOpc: ExportResultOpcFeedback;
+
+  /** 按报表模版单独配置的截批结果反馈变量；key 为 templateId */
+  exportResultOpcByTemplateId: Record<string, ExportResultOpcFeedback>;
 
   auto: {
 
@@ -152,6 +157,8 @@ export const defaultReportGeneratorPrefs = (): ReportGeneratorPrefs => ({
   manualOpenAfter: false,
 
   exportResultOpc: defaultExportResultOpcFeedback(),
+
+  exportResultOpcByTemplateId: {},
 
   auto: {
 
@@ -203,20 +210,48 @@ function parseExportResultOpc(raw: unknown, base: ExportResultOpcFeedback): Expo
   };
 }
 
+function cloneExportResultOpcFeedback(fb: ExportResultOpcFeedback): ExportResultOpcFeedback {
+  return { ...fb };
+}
+
+function parseExportResultOpcByTemplateId(
+  raw: unknown,
+  base: ExportResultOpcFeedback,
+): Record<string, ExportResultOpcFeedback> {
+  if (!raw || typeof raw !== "object") return {};
+  const out: Record<string, ExportResultOpcFeedback> = {};
+  for (const [key, val] of Object.entries(raw as Record<string, unknown>)) {
+    const tid = String(key || "").trim();
+    if (!tid) continue;
+    out[tid] = parseExportResultOpc(val, cloneExportResultOpcFeedback(base));
+  }
+  return out;
+}
+
 function parseStoredPrefs(o: StoredPrefs, base: ReportGeneratorPrefs): ReportGeneratorPrefs {
   const dirSource: AutoExportDirSource =
     o.autoExportDirSource === "opcua" ? "opcua" : base.autoExportDirSource;
-  const fileNameSource: AutoFileNameSource =
-    o.autoFileNameSource === "opcua" ? "opcua" : base.autoFileNameSource;
+  const legacyOpcFileNameSource = o.autoFileNameSource === "opcua";
+  const fileNameSource: AutoFileNameSource = base.autoFileNameSource;
+  const fileNameAppendHash =
+    o.autoFileNameOpcAppendHash === false ? false : base.autoFileNameOpcAppendHash;
   const legacyPattern =
     typeof o.autoFilePattern === "string" && o.autoFilePattern.trim() ? o.autoFilePattern.trim() : "";
-  const fileNameSegments =
+  let fileNameSegments =
     o.autoFileNameSegments != null
       ? normalizeAutoFileNameSegments(o.autoFileNameSegments)
       : legacyPattern
         ? segmentsFromLegacyPattern(legacyPattern)
         : base.autoFileNameSegments;
+  if (legacyOpcFileNameSource) {
+    fileNameSegments = withOpcuaFileNameSegment(fileNameSegments);
+    if (fileNameAppendHash) {
+      if (!fileNameSegments.includes("ts")) fileNameSegments.push("ts");
+      if (!fileNameSegments.includes("hash")) fileNameSegments.push("hash");
+    }
+  }
   const bindings = loadAutoTriggerBindings(o.auto?.bindings, o.auto, o.templateId);
+  const exportResultOpc = parseExportResultOpc(o.exportResultOpc, base.exportResultOpc);
   return {
     templateId: typeof o.templateId === "string" ? o.templateId : base.templateId,
     autoExportDirSource: dirSource,
@@ -237,10 +272,13 @@ function parseStoredPrefs(o: StoredPrefs, base: ReportGeneratorPrefs): ReportGen
       typeof o.autoFileNameOpcServerId === "string" ? o.autoFileNameOpcServerId : base.autoFileNameOpcServerId,
     autoFileNameOpcNodeId:
       typeof o.autoFileNameOpcNodeId === "string" ? o.autoFileNameOpcNodeId : base.autoFileNameOpcNodeId,
-    autoFileNameOpcAppendHash:
-      o.autoFileNameOpcAppendHash === false ? false : base.autoFileNameOpcAppendHash,
+    autoFileNameOpcAppendHash: fileNameAppendHash,
     manualOpenAfter: Boolean(o.manualOpenAfter),
-    exportResultOpc: parseExportResultOpc(o.exportResultOpc, base.exportResultOpc),
+    exportResultOpc,
+    exportResultOpcByTemplateId: parseExportResultOpcByTemplateId(
+      o.exportResultOpcByTemplateId,
+      exportResultOpc,
+    ),
     auto: {
       enabled: Boolean(o.auto?.enabled),
       bindings,
@@ -268,6 +306,12 @@ export function importReportGeneratorPrefsFromExport(raw: unknown): boolean {
   } catch {
     return false;
   }
+}
+
+export function cloneExportResultOpcForTemplate(
+  fb: ExportResultOpcFeedback,
+): ExportResultOpcFeedback {
+  return cloneExportResultOpcFeedback(fb);
 }
 
 

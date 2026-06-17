@@ -6,6 +6,7 @@
       active-sheet="cover"
       :active-body-page-index="0"
       :preview-binding-values="bindingPreview.values.value"
+      :report-part-index="reportPartIndex"
       :fixed-card-width-px="fixedCardWidthPx"
       pdf-export-omit-captions
       :mini-max-height-px="pdfMiniMaxHeightPx"
@@ -15,7 +16,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, provide, ref } from "vue";
+import { computed, nextTick, onMounted, provide, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import TemplateExportPreviewStack from "@/components/report-template/TemplateExportPreviewStack.vue";
 import { getTemplate } from "@/api/templates";
@@ -28,6 +29,7 @@ import {
   collectBindingPreviewIssues,
   summarizeBindingPreviewIssues,
 } from "@/lib/bindingPreviewErrors";
+import { splitReportCountForPreview } from "@/lib/report-template/table-sql-fill-report-split";
 
 const route = useRoute();
 const tmpl = ref<ReportTemplate | null>(null);
@@ -35,6 +37,14 @@ const errText = ref<string | null>(null);
 
 const bindingPreview = useReportBindingPreview(tmpl);
 provide(reportBindingPreviewKey, bindingPreview);
+let bootSeq = 0;
+
+const reportPartIndex = computed(() => {
+  const raw = route.query.reportPartIndex;
+  const s = Array.isArray(raw) ? raw[0] : raw;
+  const n = Number.parseInt(String(s ?? ""), 10);
+  return Number.isFinite(n) && n >= 0 ? n : null;
+});
 
 const fixedCardWidthPx = computed(() => {
   const t = tmpl.value;
@@ -70,8 +80,8 @@ function injectPrintPageCss(t: ReportTemplate): void {
 }`;
 }
 
-function signalReady(ok: boolean, error?: string): void {
-  window.electronAPI?.notifyPdfExportReady?.({ ok, error });
+function signalReady(ok: boolean, error?: string, totalReports?: number): void {
+  window.electronAPI?.notifyPdfExportReady?.({ ok, error, totalReports });
 }
 
 async function waitPaintReady(): Promise<void> {
@@ -85,6 +95,9 @@ async function waitPaintReady(): Promise<void> {
 }
 
 async function boot(): Promise<void> {
+  const seq = ++bootSeq;
+  tmpl.value = null;
+  errText.value = null;
   const id = String(route.query.templateId || "").trim();
   if (!id) {
     errText.value = humanizePdfExportError("缺少 templateId");
@@ -92,8 +105,11 @@ async function boot(): Promise<void> {
     return;
   }
   try {
-    tmpl.value = await getTemplate(id);
+    const loaded = await getTemplate(id);
+    if (seq !== bootSeq) return;
+    tmpl.value = loaded;
   } catch (e) {
+    if (seq !== bootSeq) return;
     errText.value = humanizePdfExportError(e);
     signalReady(false, errText.value);
     return;
@@ -102,21 +118,30 @@ async function boot(): Promise<void> {
   const t = tmpl.value;
   injectPrintPageCss(t);
 
-  await bindingPreview.refresh({ opc: true, sql: true, silent: true });
+  await bindingPreview.refresh({ opc: true, sql: true, silent: true, fullSqlFill: true });
+  if (seq !== bootSeq) return;
   const bindingIssues = collectBindingPreviewIssues(bindingPreview.values.value);
   if (bindingIssues.length) {
     errText.value = humanizePdfExportError(summarizeBindingPreviewIssues(bindingIssues));
     signalReady(false, errText.value);
     return;
   }
+  const totalReports = splitReportCountForPreview(t, bindingPreview.values.value);
   await nextTick();
   await waitPaintReady();
-  signalReady(true);
+  signalReady(true, undefined, totalReports);
 }
 
 onMounted(() => {
   void boot();
 });
+
+watch(
+  () => [route.query.templateId, route.query.reportPartIndex],
+  () => {
+    void boot();
+  },
+);
 </script>
 
 <style>

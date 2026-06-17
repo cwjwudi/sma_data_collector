@@ -1,19 +1,21 @@
 import type { ReportGeneratorPrefs } from "@/lib/report-generator-prefs";
 import { coerceOpcFileNameString, readSavedOpcStringValue } from "@/lib/opcua-string-variables";
 
-/** 自动导出文件名：勾选片段 或 OPC String + 时间戳 + 随机哈希 */
+/** 自动导出文件名：按勾选片段拼接，可包含 OPC UA String 变量 */
 export type AutoFileNameSource = "segments" | "opcua";
 
-export type AutoFileNameSegment = "name" | "time" | "ts" | "hash";
+export type AutoFileNameSegment = "name" | "opcua" | "time" | "ts" | "hash";
 
 export const AUTO_FILE_NAME_SEGMENT_OPTIONS: { id: AutoFileNameSegment; label: string; hint: string }[] = [
   { id: "name", label: "模版名称", hint: "当前选中模版的名称（非法文件名字符会替换为 _）" },
+  { id: "opcua", label: "OPC UA变量", hint: "读取绑定的 OPC UA String 变量，作为文件名片段拼接" },
   { id: "time", label: "时间", hint: "yyyy-MM-dd_HH-mm-ss，便于阅读" },
   { id: "ts", label: "时间戳", hint: "yyyyMMdd_HHmmss，紧凑无分隔" },
   { id: "hash", label: "随机哈希", hint: "8 位十六进制，降低重名概率" },
 ];
 
 const DEFAULT_SEGMENTS: AutoFileNameSegment[] = ["name", "ts", "hash"];
+const FILE_NAME_SEGMENT_ORDER: AutoFileNameSegment[] = ["name", "opcua", "time", "ts", "hash"];
 
 export function defaultAutoFileNameSegments(): AutoFileNameSegment[] {
   return [...DEFAULT_SEGMENTS];
@@ -54,10 +56,26 @@ export function appendOpcExportSuffix(stem: string, sep: string, appendHash: boo
   return `${stem}${sep}${formatExportTs()}${sep}${randomExportHash()}`;
 }
 
-function segmentValue(seg: AutoFileNameSegment, templateName: string): string {
+export function legacyOpcAutoFileNameSegments(appendHash = true): AutoFileNameSegment[] {
+  const segs: AutoFileNameSegment[] = ["name", "opcua"];
+  if (appendHash) segs.push("ts", "hash");
+  return segs;
+}
+
+export function withOpcuaFileNameSegment(segments: AutoFileNameSegment[]): AutoFileNameSegment[] {
+  const out = normalizeAutoFileNameSegments(segments);
+  if (out.includes("opcua")) return out;
+  const nameIndex = out.indexOf("name");
+  if (nameIndex < 0) return ["opcua", ...out];
+  return [...out.slice(0, nameIndex + 1), "opcua", ...out.slice(nameIndex + 1)];
+}
+
+function segmentValue(seg: AutoFileNameSegment, templateName: string, opcValue = ""): string {
   switch (seg) {
     case "name":
       return sanitizeFileNamePart(templateName) || "report";
+    case "opcua":
+      return opcValue;
     case "time":
       return formatExportTime();
     case "ts":
@@ -73,10 +91,10 @@ export function buildSegmentsFileName(
   segments: AutoFileNameSegment[],
   templateName: string,
   separator?: string,
+  opcValue = "",
 ): string {
-  const order: AutoFileNameSegment[] = ["name", "time", "ts", "hash"];
-  const picked = order.filter((s) => segments.includes(s));
-  const parts = picked.map((s) => segmentValue(s, templateName)).filter(Boolean);
+  const picked = FILE_NAME_SEGMENT_ORDER.filter((s) => segments.includes(s));
+  const parts = picked.map((s) => segmentValue(s, templateName, opcValue)).filter(Boolean);
   if (!parts.length) {
     parts.push(sanitizeFileNamePart(templateName) || "report", formatExportTs(), randomExportHash());
   }
@@ -89,6 +107,7 @@ export function buildSegmentsFileName(
 export function segmentsFromLegacyPattern(pattern: string): AutoFileNameSegment[] {
   const segs: AutoFileNameSegment[] = [];
   if (pattern.includes("{name}")) segs.push("name");
+  if (pattern.includes("{opcua}")) segs.push("opcua");
   if (pattern.includes("{time}")) segs.push("time");
   if (pattern.includes("{ts}")) segs.push("ts");
   if (pattern.includes("{hash}")) segs.push("hash");
@@ -96,7 +115,7 @@ export function segmentsFromLegacyPattern(pattern: string): AutoFileNameSegment[
 }
 
 export function isAutoFileNameSegment(v: unknown): v is AutoFileNameSegment {
-  return v === "name" || v === "time" || v === "ts" || v === "hash";
+  return v === "name" || v === "opcua" || v === "time" || v === "ts" || v === "hash";
 }
 
 export function normalizeAutoFileNameSegments(raw: unknown): AutoFileNameSegment[] {
@@ -106,6 +125,19 @@ export function normalizeAutoFileNameSegments(raw: unknown): AutoFileNameSegment
     if (isAutoFileNameSegment(x) && !out.includes(x)) out.push(x);
   }
   return out.length ? out : defaultAutoFileNameSegments();
+}
+
+export function effectiveAutoFileNameSegments(prefs: ReportGeneratorPrefs): AutoFileNameSegment[] {
+  const segments = normalizeAutoFileNameSegments(prefs.autoFileNameSegments);
+  if (prefs.autoFileNameSource === "opcua") {
+    const out = withOpcuaFileNameSegment(segments);
+    if (prefs.autoFileNameOpcAppendHash !== false) {
+      if (!out.includes("ts")) out.push("ts");
+      if (!out.includes("hash")) out.push("hash");
+    }
+    return out;
+  }
+  return segments;
 }
 
 export type BuiltAutoExportFileName = {
@@ -119,61 +151,46 @@ export async function buildAutoExportFileName(
   templateName: string,
 ): Promise<BuiltAutoExportFileName> {
   const safeName = sanitizeFileNamePart(templateName) || "report";
+  const segments = effectiveAutoFileNameSegments(prefs);
+  let opcValue = "";
+  let note = "";
 
-  if (prefs.autoFileNameSource === "opcua") {
+  if (segments.includes("opcua")) {
     const srv = (prefs.autoFileNameOpcServerId || "").trim();
     const nodeId = (prefs.autoFileNameOpcNodeId || "").trim();
-    const appendHash = prefs.autoFileNameOpcAppendHash !== false;
-    const fallbackSegs: AutoFileNameSegment[] = appendHash ? ["name", "ts", "hash"] : ["name", "ts"];
     if (!srv || !nodeId) {
-      const base = buildSegmentsFileName(
-        prefs.autoFileNameSegments?.length ? prefs.autoFileNameSegments : fallbackSegs,
-        safeName,
-        prefs.autoFileNameSeparator,
-      );
-      return { base, note: "未绑定 OPC 文件名字段，已用勾选片段规则" };
+      note = "未绑定 OPC 文件名变量，已跳过 OPC UA 变量片段";
+    } else {
+      const read = await readSavedOpcStringValue(srv, nodeId);
+      if (!read.ok) {
+        note = `OPC 文件名变量读取失败（${read.message || "未知"}），已跳过 OPC UA 变量片段`;
+      } else {
+        let stem = sanitizeFileNamePart(coerceOpcFileNameString(read.value));
+        if (stem.toLowerCase().endsWith(".pdf")) stem = stem.slice(0, -4);
+        if (stem) {
+          opcValue = stem;
+        } else {
+          note = "OPC 文件名变量为空，已跳过 OPC UA 变量片段";
+        }
+      }
     }
-    const read = await readSavedOpcStringValue(srv, nodeId);
-    if (!read.ok) {
-      const base = buildSegmentsFileName(fallbackSegs, safeName, prefs.autoFileNameSeparator);
-      return { base, note: `OPC 文件名读取失败（${read.message || "未知"}），已回退默认规则` };
-    }
-    let stem = sanitizeFileNamePart(coerceOpcFileNameString(read.value));
-    if (!stem) {
-      const base = buildSegmentsFileName(fallbackSegs, safeName, prefs.autoFileNameSeparator);
-      return { base, note: "OPC 文件名为空，已回退默认规则" };
-    }
-    if (stem.toLowerCase().endsWith(".pdf")) stem = stem.slice(0, -4);
-    const sep = normalizeSeparator(prefs.autoFileNameSeparator);
-    const core = appendOpcExportSuffix(stem, sep, appendHash);
-    let base = sanitizeFileNamePart(core) + ".pdf";
-    if (!base.toLowerCase().endsWith(".pdf")) base += ".pdf";
-    return { base };
   }
 
   return {
-    base: buildSegmentsFileName(
-      normalizeAutoFileNameSegments(prefs.autoFileNameSegments),
-      safeName,
-      prefs.autoFileNameSeparator,
-    ),
+    base: buildSegmentsFileName(segments, safeName, prefs.autoFileNameSeparator, opcValue),
+    note: note || undefined,
   };
 }
 
-/** 仅用于界面预览（同步，OPC 模式显示占位） */
+/** 仅用于界面预览（同步，OPC 变量显示占位） */
 export function previewAutoExportFileName(prefs: ReportGeneratorPrefs, templateName: string): string {
   const safeName = sanitizeFileNamePart(templateName) || "模版名";
-  if (prefs.autoFileNameSource === "opcua") {
-    const sep = normalizeSeparator(prefs.autoFileNameSeparator);
-    const appendHash = prefs.autoFileNameOpcAppendHash !== false;
-    return appendHash ? `${appendOpcExportSuffix("OPC基名", sep, true)}.pdf` : "OPC基名.pdf";
-  }
-  const segs = normalizeAutoFileNameSegments(prefs.autoFileNameSegments);
-  const order: AutoFileNameSegment[] = ["name", "time", "ts", "hash"];
-  const parts = order
+  const segs = effectiveAutoFileNameSegments(prefs);
+  const parts = FILE_NAME_SEGMENT_ORDER
     .filter((s) => segs.includes(s))
     .map((s) => {
       if (s === "name") return safeName;
+      if (s === "opcua") return "OPC变量";
       if (s === "time") return formatExportTime();
       if (s === "ts") return formatExportTs();
       return "a1b2c3d4";

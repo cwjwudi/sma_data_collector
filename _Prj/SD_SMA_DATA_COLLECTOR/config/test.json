@@ -3,7 +3,7 @@
     {
       "name": "PLC1",
       "type": "opcua",
-      "host": "192.168.50.233",
+      "host": "127.0.0.1",
       "port": 4840
     }
   ],
@@ -143,7 +143,9 @@
         "MCP",
         "ST2",
         "ST3",
-        "ST4"
+        "ST4",
+        "ST5",
+        "ST6"
       ],
       "trigger_point": "bTestTriger",
       "reset_trigger_after_read": false,
@@ -175,7 +177,7 @@
         "bBatchTriger"
       ],
       "trigger_point": "bBatchTriger",
-      "reset_trigger_after_read": true,
+      "reset_trigger_after_read": false,
       "recreate_interval_days": 10000,
       "batch_insert_size": 1,
       "is_parallel": false,
@@ -188,7 +190,16 @@
         "update_only_when_end_time_is_null": true,
         "reject_when_end_time_exists": true,
         "allow_idempotent_same_end_time": true
-      }
+      },
+      "indexes": [
+        {
+          "columns": [
+            "strBatchCode"
+          ],
+          "unique": false,
+          "index_type": "btree"
+        }
+      ]
     },
     {
       "name": "TestGroup3",
@@ -196,6 +207,8 @@
       "trigger": "time",
       "description": "",
       "data_points": [
+        "CT",
+        "EC",
         "ST2",
         "ST3",
         "ST4",
@@ -212,10 +225,10 @@
   "database": {
     "type": "mysql",
     "name": "wn_10",
-    "host": "192.168.50.22",
+    "host": "127.0.0.1",
     "port": 3306,
     "username": "root",
-    "password": "Br54644800@",
+    "password": "123456",
     "data_groups": [
       "TestGroup1",
       "BatchGroup",
@@ -223,7 +236,7 @@
     ]
   },
   "logging": {
-    "level": "INFO",
+    "level": "DEBUG",
     "output_dir": "logs",
     "backup_days": 14,
     "rotation_when": "midnight",

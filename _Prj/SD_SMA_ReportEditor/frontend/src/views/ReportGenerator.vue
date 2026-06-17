@@ -21,7 +21,7 @@
         </select>
       </div>
       <div class="rg-switch-row">
-        <span class="rg-switch-label" id="rg-manual-open-lbl">{{ RG_UI.manual }}完成后打开 PDF（桌面壳）</span>
+        <span class="rg-switch-label" id="rg-manual-open-lbl">{{ RG_UI.manual }}完成后打开保存文件夹（桌面壳）</span>
         <button
           type="button"
           class="rg-switch"
@@ -35,7 +35,7 @@
       </div>
       <div class="rg-actions">
         <button type="button" class="btn primary" :disabled="manualBusy || !canManualExport" @click="onManualExport">
-          {{ manualBusy ? `${RG_UI.manual}中…` : `选择保存位置并${RG_UI.manual}` }}
+          {{ manualBusy ? `${RG_UI.manual}中…` : `选择保存文件夹并${RG_UI.manual}` }}
         </button>
       </div>
       <p v-if="manualHint" class="rg-hint">{{ manualHint }}</p>
@@ -48,26 +48,26 @@
         <button
           type="button"
           class="rg-switch"
-          :class="{ 'rg-switch--on': prefs.exportResultOpc.enabled }"
+          :class="{ 'rg-switch--on': activeExportResultOpc.enabled }"
           role="switch"
           aria-labelledby="rg-export-opc-lbl"
-          :aria-checked="prefs.exportResultOpc.enabled"
+          :aria-checked="activeExportResultOpc.enabled"
           @click="toggleExportResultOpc"
         />
       </div>
       <p class="rg-mini rg-mini--switch">
-        {{ RG_UI.manual }}或 {{ RG_UI.opcAuto }}完成后，将成功/失败状态、摘要信息与文件路径写入下方 OPC 变量，供 PLC 读取。
+        当前配置：{{ activeExportResultTemplateLabel }}。{{ RG_UI.manual }}或 {{ RG_UI.opcAuto }}完成后，将成功/失败状态、摘要信息与文件路径写入该报表自己的 OPC 变量，供 PLC 读取。
       </p>
 
-      <div class="rg-auto-fields" :class="{ 'rg-auto-fields--off': !prefs.exportResultOpc.enabled }">
+      <div class="rg-auto-fields" :class="{ 'rg-auto-fields--off': !activeExportResultOpc.enabled }">
         <div class="rg-row rg-row--in-panel">
           <label class="rg-lbl" for="rg-export-opc-srv">已保存连接</label>
-          <select id="rg-export-opc-srv" v-model="prefs.exportResultOpc.serverId" class="rg-select">
+          <select id="rg-export-opc-srv" v-model="activeExportResultOpc.serverId" class="rg-select">
             <option value="">请选择…</option>
             <option v-for="s in opcServers" :key="s.id" :value="s.id">{{ s.name || s.id }}</option>
           </select>
         </div>
-        <p v-if="prefs.exportResultOpc.enabled && !opcServers.length" class="rg-mini rg-mini--indent rg-mini--warn">
+        <p v-if="activeExportResultOpc.enabled && !opcServers.length" class="rg-mini rg-mini--indent rg-mini--warn">
           暂无已保存的 OPC UA 连接。请先到
           <router-link :to="{ name: 'DataSourceConfig', query: { tab: 'opc' } }">数据源配置 → OPC UA</router-link>
           添加并保存连接。
@@ -75,7 +75,7 @@
 
         <div class="rg-row rg-row--in-panel">
           <label class="rg-lbl" for="rg-export-opc-status-kind">状态节点（Boolean / Int）</label>
-          <select id="rg-export-opc-status-kind" v-model="prefs.exportResultOpc.statusKind" class="rg-select">
+          <select id="rg-export-opc-status-kind" v-model="activeExportResultOpc.statusKind" class="rg-select">
             <option value="bool">Boolean（成功 true / 失败 false）</option>
             <option value="int">Int（成功 1 / 失败 0）</option>
           </select>
@@ -85,15 +85,23 @@
           <div class="rg-inline rg-inline--bind">
             <input
               id="rg-export-opc-status"
-              v-model.trim="prefs.exportResultOpc.statusNodeId"
+              v-model.trim="activeExportResultOpc.statusNodeId"
               type="text"
               readonly
               class="rg-inp rg-inp--grow rg-mono"
-              :title="prefs.exportResultOpc.statusNodeId || undefined"
+              :title="activeExportResultOpc.statusNodeId || undefined"
               placeholder="未绑定，请点击右侧从地址空间选择…"
             />
             <button type="button" class="btn btn--nowrap" @click="openRgOpcPick('feedbackStatus')">
               从地址空间选择…
+            </button>
+            <button
+              v-if="activeExportResultOpc.statusNodeId"
+              type="button"
+              class="btn btn--sm btn--ghost btn--nowrap"
+              @click="clearExportResultOpcBinding('status')"
+            >
+              清除
             </button>
           </div>
           <p v-if="exportResultOpcStatusBindingHint" class="rg-mini rg-mini--indent rg-bound-hint">
@@ -106,15 +114,23 @@
           <div class="rg-inline rg-inline--bind">
             <input
               id="rg-export-opc-msg"
-              v-model.trim="prefs.exportResultOpc.messageNodeId"
+              v-model.trim="activeExportResultOpc.messageNodeId"
               type="text"
               readonly
               class="rg-inp rg-inp--grow rg-mono"
-              :title="prefs.exportResultOpc.messageNodeId || undefined"
+              :title="activeExportResultOpc.messageNodeId || undefined"
               placeholder="未绑定，请点击右侧从地址空间选择…"
             />
             <button type="button" class="btn btn--nowrap" @click="openRgOpcPick('feedbackMessage')">
               从地址空间选择…
+            </button>
+            <button
+              v-if="activeExportResultOpc.messageNodeId"
+              type="button"
+              class="btn btn--sm btn--ghost btn--nowrap"
+              @click="clearExportResultOpcBinding('message')"
+            >
+              清除
             </button>
           </div>
           <p v-if="exportResultOpcMessageBindingHint" class="rg-mini rg-mini--indent rg-bound-hint">
@@ -130,15 +146,23 @@
           <div class="rg-inline rg-inline--bind">
             <input
               id="rg-export-opc-path"
-              v-model.trim="prefs.exportResultOpc.filePathNodeId"
+              v-model.trim="activeExportResultOpc.filePathNodeId"
               type="text"
               readonly
               class="rg-inp rg-inp--grow rg-mono"
-              :title="prefs.exportResultOpc.filePathNodeId || undefined"
+              :title="activeExportResultOpc.filePathNodeId || undefined"
               placeholder="未绑定，请点击右侧从地址空间选择…"
             />
             <button type="button" class="btn btn--nowrap" @click="openRgOpcPick('feedbackFilePath')">
               从地址空间选择…
+            </button>
+            <button
+              v-if="activeExportResultOpc.filePathNodeId"
+              type="button"
+              class="btn btn--sm btn--ghost btn--nowrap"
+              @click="clearExportResultOpcBinding('filePath')"
+            >
+              清除
             </button>
           </div>
           <p v-if="exportResultOpcPathBindingHint" class="rg-mini rg-mini--indent rg-bound-hint">
@@ -153,7 +177,7 @@
           <button
             type="button"
             class="btn"
-            :disabled="!prefs.exportResultOpc.enabled || testWriteBackBusy || !hasExportResultBinding"
+            :disabled="!activeExportResultOpc.enabled || testWriteBackBusy || !hasExportResultBinding"
             @click="onTestExportResultWriteBack"
           >
             {{ testWriteBackBusy ? "正在写回…" : "测试写回 PLC" }}
@@ -244,7 +268,7 @@
             </div>
             <div class="rg-row rg-row--in-panel">
               <label class="rg-lbl" for="rg-dir-opc-var">OPC 目录变量（String）</label>
-              <div class="rg-inline">
+              <div class="rg-inline rg-inline--bind">
                 <input
                   id="rg-dir-opc-var"
                   :value="prefs.autoExportDirOpcNodeId"
@@ -254,6 +278,14 @@
                   placeholder="未绑定"
                 />
                 <button type="button" class="btn" @click="openRgOpcPick('exportDir')">打开 OPC UA 绑定树</button>
+                <button
+                  v-if="prefs.autoExportDirOpcNodeId"
+                  type="button"
+                  class="btn btn--sm btn--ghost btn--nowrap"
+                  @click="clearAutoExportDirOpcBinding"
+                >
+                  清除
+                </button>
               </div>
               <p v-if="exportDirOpcServerLabel" class="rg-mini rg-mini--indent">连接：{{ exportDirOpcServerLabel }}</p>
               <p class="rg-mini rg-mini--indent">展开地址空间时仅显示 String 类型变量；文件夹节点可继续展开浏览。</p>
@@ -264,92 +296,53 @@
 
       <div class="rg-export-dir-block">
         <span class="rg-lbl">{{ RG_UI.opcAuto }}文件名</span>
-        <div class="rg-tabs" role="tablist" :aria-label="`${RG_UI.opcAuto}文件名`">
-          <button
-            type="button"
-            role="tab"
-            class="rg-tab"
-            :class="{ 'rg-tab--on': prefs.autoFileNameSource === 'segments' }"
-            :aria-selected="prefs.autoFileNameSource === 'segments'"
-            @click="setFileNameTab('segments')"
-          >
-            勾选片段
-          </button>
-          <button
-            type="button"
-            role="tab"
-            class="rg-tab"
-            :class="{ 'rg-tab--on': prefs.autoFileNameSource === 'opcua' }"
-            :aria-selected="prefs.autoFileNameSource === 'opcua'"
-            @click="setFileNameTab('opcua')"
-          >
-            OPC UA + 哈希
-          </button>
-        </div>
 
-        <div class="rg-tab-panel" role="tabpanel">
-          <template v-if="prefs.autoFileNameSource === 'segments'">
-            <div class="rg-row rg-row--in-panel">
-              <span class="rg-lbl">包含片段</span>
-              <div class="rg-seg-bar" role="group" aria-label="文件名片段">
-                <button
-                  v-for="opt in fileNameSegmentOptions"
-                  :key="opt.id"
-                  type="button"
-                  class="rg-seg-btn"
-                  :class="{ 'rg-seg-btn--on': prefs.autoFileNameSegments.includes(opt.id) }"
-                  :title="opt.hint"
-                  :aria-pressed="prefs.autoFileNameSegments.includes(opt.id)"
-                  @click="toggleFileNameSegment(opt.id)"
-                >
-                  {{ opt.label }}
-                </button>
-              </div>
-              <p class="rg-mini rg-mini--indent rg-mini--after-seg">点击按钮切换片段（至少保留一项）；建议包含「随机哈希」避免重名。</p>
+        <div class="rg-tab-panel" role="group" :aria-label="`${RG_UI.opcAuto}文件名片段`">
+          <div class="rg-row rg-row--in-panel">
+            <span class="rg-lbl">包含片段</span>
+            <div class="rg-seg-bar" role="group" aria-label="文件名片段">
+              <button
+                v-for="opt in fileNameSegmentOptions"
+                :key="opt.id"
+                type="button"
+                class="rg-seg-btn"
+                :class="{ 'rg-seg-btn--on': prefs.autoFileNameSegments.includes(opt.id) }"
+                :title="opt.hint"
+                :aria-pressed="prefs.autoFileNameSegments.includes(opt.id)"
+                @click="toggleFileNameSegment(opt.id)"
+              >
+                {{ opt.label }}
+              </button>
             </div>
-          </template>
+            <p class="rg-mini rg-mini--indent rg-mini--after-seg">点击按钮切换片段（至少保留一项）；勾选「OPC UA变量」后会按片段顺序拼接下方绑定值。</p>
+          </div>
 
-          <template v-else>
-            <div class="rg-row rg-row--in-panel">
-              <label class="rg-lbl" for="rg-fn-opc-var">OPC 文件名变量（String）</label>
-              <div class="rg-inline">
-                <input
-                  id="rg-fn-opc-var"
-                  :value="prefs.autoFileNameOpcNodeId"
-                  type="text"
-                  readonly
-                  class="rg-inp rg-inp--grow rg-mono"
-                  placeholder="未绑定"
-                />
-                <button type="button" class="btn" @click="openRgOpcPick('fileName')">打开 OPC UA 绑定树</button>
-              </div>
-              <p v-if="fileNameOpcServerLabel" class="rg-mini rg-mini--indent">连接：{{ fileNameOpcServerLabel }}</p>
-              <p class="rg-mini rg-mini--indent">
-                绑定树仅显示 String 类型变量；文件名为字符串基名（不含 .pdf）。
-              </p>
+          <div class="rg-row rg-row--in-panel">
+            <label class="rg-lbl" for="rg-fn-opc-var">OPC UA变量（String）</label>
+            <div class="rg-inline rg-inline--bind">
+              <input
+                id="rg-fn-opc-var"
+                :value="prefs.autoFileNameOpcNodeId"
+                type="text"
+                readonly
+                class="rg-inp rg-inp--grow rg-mono"
+                placeholder="未绑定"
+              />
+              <button type="button" class="btn" @click="openRgOpcPick('fileName')">打开 OPC UA 绑定树</button>
+              <button
+                v-if="prefs.autoFileNameOpcNodeId"
+                type="button"
+                class="btn btn--sm btn--ghost btn--nowrap"
+                @click="clearAutoFileNameOpcBinding"
+              >
+                清除
+              </button>
             </div>
-            <div class="rg-row rg-row--in-panel">
-              <span class="rg-lbl">随机哈希</span>
-              <div class="rg-seg-bar" role="group" aria-label="追加随机哈希">
-                <button
-                  type="button"
-                  class="rg-seg-btn"
-                  :class="{ 'rg-seg-btn--on': prefs.autoFileNameOpcAppendHash }"
-                  :title="`${RG_UI.opcAuto}时在 OPC 基名后追加时间戳（yyyyMMdd_HHmmss）与 8 位十六进制，降低重名概率`"
-                  :aria-pressed="prefs.autoFileNameOpcAppendHash"
-                  @click="prefs.autoFileNameOpcAppendHash = !prefs.autoFileNameOpcAppendHash"
-                >
-                  追加随机哈希（8 位）
-                </button>
-              </div>
-              <p class="rg-mini rg-mini--indent rg-mini--after-seg">
-                点击按钮切换；开启后文件名为 <code>基名_时间戳_哈希.pdf</code>，关闭则为 <code>基名.pdf</code>。
-              </p>
-            </div>
-            <p class="rg-mini rg-mini--indent rg-mini--after-seg">
-              OPC 为空、非 String 或读取失败时，回退为勾选片段规则。
+            <p v-if="fileNameOpcServerLabel" class="rg-mini rg-mini--indent">连接：{{ fileNameOpcServerLabel }}</p>
+            <p class="rg-mini rg-mini--indent">
+              绑定树仅显示 String 类型变量；未勾选「OPC UA变量」时只保存绑定，不参与文件名。
             </p>
-          </template>
+          </div>
 
           <div class="rg-row rg-row--in-panel rg-row--compact">
             <label class="rg-lbl" for="rg-fn-sep">片段连接符</label>
@@ -416,7 +409,7 @@
           </div>
           <div class="rg-row rg-row--in-panel">
             <label class="rg-lbl" :for="`rg-bind-node-${binding.id}`">触发节点 NodeId</label>
-            <div class="rg-inline">
+            <div class="rg-inline rg-inline--bind">
               <input
                 :id="`rg-bind-node-${binding.id}`"
                 v-model.trim="binding.nodeId"
@@ -427,6 +420,14 @@
               />
               <button type="button" class="btn" @click="openRgOpcPick(rgTriggerPickTarget(binding.id))">
                 从地址空间选择…
+              </button>
+              <button
+                v-if="binding.nodeId"
+                type="button"
+                class="btn btn--sm btn--ghost btn--nowrap"
+                @click="clearAutoTriggerNodeBinding(binding.id)"
+              >
+                清除
               </button>
             </div>
           </div>
@@ -554,10 +555,11 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { listTemplateSummaries, type TemplateSummary } from "@/api/templates";
 import { apiFetch } from "@/api/client.js";
 import {
+  cloneExportResultOpcForTemplate,
   loadReportGeneratorPrefs,
   saveReportGeneratorPrefs,
   type AutoExportDirSource,
-  type AutoFileNameSource,
+  type ExportResultOpcFeedback,
   type ReportGeneratorPrefs,
 } from "@/lib/report-generator-prefs";
 import { loadReportExportPrefs, saveReportExportPrefs } from "@/lib/report-export-prefs";
@@ -653,9 +655,31 @@ function opcServerLabel(serverId: string): string {
   return s?.name?.trim() || s?.id || id;
 }
 
+function exportResultOpcForTemplate(templateId: string | null | undefined): ExportResultOpcFeedback {
+  const tid = String(templateId || "").trim();
+  if (!tid) return prefs.value.exportResultOpc;
+  if (!prefs.value.exportResultOpcByTemplateId) {
+    prefs.value.exportResultOpcByTemplateId = {};
+  }
+  let fb = prefs.value.exportResultOpcByTemplateId[tid];
+  if (!fb) {
+    fb = cloneExportResultOpcForTemplate(prefs.value.exportResultOpc);
+    prefs.value.exportResultOpcByTemplateId[tid] = fb;
+  }
+  return fb;
+}
+
+const activeExportResultOpc = computed(() => exportResultOpcForTemplate(prefs.value.templateId));
+
+const activeExportResultTemplateLabel = computed(() => {
+  const tid = prefs.value.templateId;
+  if (!tid) return "默认配置";
+  return summaries.value.find((x) => x.id === tid)?.name || tid;
+});
+
 const exportDirOpcServerLabel = computed(() => opcServerLabel(prefs.value.autoExportDirOpcServerId));
 const fileNameOpcServerLabel = computed(() => opcServerLabel(prefs.value.autoFileNameOpcServerId));
-const exportResultOpcServerLabel = computed(() => opcServerLabel(prefs.value.exportResultOpc.serverId));
+const exportResultOpcServerLabel = computed(() => opcServerLabel(activeExportResultOpc.value.serverId));
 
 function exportResultOpcBindingHint(nodeId: string, nodeLabel: string): string {
   const id = nodeId.trim();
@@ -667,26 +691,71 @@ function exportResultOpcBindingHint(nodeId: string, nodeLabel: string): string {
 
 const exportResultOpcStatusBindingHint = computed(() =>
   exportResultOpcBindingHint(
-    prefs.value.exportResultOpc.statusNodeId,
-    prefs.value.exportResultOpc.statusNodeLabel,
+    activeExportResultOpc.value.statusNodeId,
+    activeExportResultOpc.value.statusNodeLabel,
   ),
 );
 const exportResultOpcMessageBindingHint = computed(() =>
   exportResultOpcBindingHint(
-    prefs.value.exportResultOpc.messageNodeId,
-    prefs.value.exportResultOpc.messageNodeLabel,
+    activeExportResultOpc.value.messageNodeId,
+    activeExportResultOpc.value.messageNodeLabel,
   ),
 );
 const exportResultOpcPathBindingHint = computed(() =>
   exportResultOpcBindingHint(
-    prefs.value.exportResultOpc.filePathNodeId,
-    prefs.value.exportResultOpc.filePathNodeLabel,
+    activeExportResultOpc.value.filePathNodeId,
+    activeExportResultOpc.value.filePathNodeLabel,
   ),
 );
 
-const hasExportResultBinding = computed(() => hasAnyExportResultBinding(prefs.value.exportResultOpc));
+const hasExportResultBinding = computed(() => hasAnyExportResultBinding(activeExportResultOpc.value));
 
 const testWriteBackBusy = ref(false);
+
+type ExportResultOpcBindingField = "status" | "message" | "filePath";
+
+function clearExportResultOpcBinding(field: ExportResultOpcBindingField): void {
+  const fb = activeExportResultOpc.value;
+  if (field === "status") {
+    fb.statusNodeId = "";
+    fb.statusNodeLabel = "";
+    autoStatus.value = `${RG_STATUS_FEEDBACK} 已清除状态变量绑定`;
+    return;
+  }
+  if (field === "message") {
+    fb.messageNodeId = "";
+    fb.messageNodeLabel = "";
+    autoStatus.value = `${RG_STATUS_FEEDBACK} 已清除信息变量绑定`;
+    return;
+  }
+  fb.filePathNodeId = "";
+  fb.filePathNodeLabel = "";
+  autoStatus.value = `${RG_STATUS_FEEDBACK} 已清除路径变量绑定`;
+}
+
+function clearAutoExportDirOpcBinding(): void {
+  prefs.value.autoExportDirOpcServerId = "";
+  prefs.value.autoExportDirOpcNodeId = "";
+  autoStatus.value = `${RG_STATUS_OPC_AUTO} 已清除保存目录 OPC 变量绑定`;
+}
+
+function clearAutoFileNameOpcBinding(): void {
+  prefs.value.autoFileNameOpcServerId = "";
+  prefs.value.autoFileNameOpcNodeId = "";
+  autoStatus.value = `${RG_STATUS_OPC_AUTO} 已清除文件名 OPC 变量绑定`;
+}
+
+function clearAutoTriggerNodeBinding(bindingId: string): void {
+  const binding = findAutoTriggerBinding(bindingId);
+  if (!binding) return;
+  binding.nodeId = "";
+  const runtime = getBindingRuntime(bindingId);
+  runtime.poll = createOpcTriggerPollState();
+  runtime.history.clear();
+  runtime.chartEligible = null;
+  syncBindingChartUi(bindingId, runtime);
+  autoStatus.value = `${RG_STATUS_OPC_AUTO} 已清除触发节点绑定`;
+}
 
 const opcPickCloseOnConfirm = computed(() => !isFeedbackPickTarget(opcPickTarget.value));
 
@@ -722,7 +791,7 @@ const opcPickHideSearch = computed(() => {
 
 const opcPickTitle = computed(() => {
   if (parseRgTriggerPickTarget(opcPickTarget.value)) return "选择 OPC UA 触发变量";
-  if (opcPickTarget.value === "fileName") return "绑定 OPC UA String 变量（文件名）";
+  if (opcPickTarget.value === "fileName") return "绑定 OPC UA String 变量（文件名片段）";
   if (opcPickTarget.value === "exportDir") return "绑定 OPC UA String 变量（目录）";
   if (opcPickTarget.value === "feedbackStatus") return "绑定 OPC UA 状态变量（Boolean / Int）";
   if (opcPickTarget.value === "feedbackMessage") return `绑定 OPC UA String 变量（${RG_UI.feedback}信息）`;
@@ -733,7 +802,7 @@ const opcPickTitle = computed(() => {
 const opcPickInitialServerId = computed(() => {
   if (opcPickTarget.value === "exportDir") return prefs.value.autoExportDirOpcServerId;
   if (opcPickTarget.value === "fileName") return prefs.value.autoFileNameOpcServerId;
-  if (isFeedbackPickTarget(opcPickTarget.value)) return prefs.value.exportResultOpc.serverId;
+  if (isFeedbackPickTarget(opcPickTarget.value)) return activeExportResultOpc.value.serverId;
   const bindId = parseRgTriggerPickTarget(opcPickTarget.value);
   if (bindId) {
     return prefs.value.auto.bindings.find((b) => b.id === bindId)?.serverId || "";
@@ -746,10 +815,10 @@ const opcPickLead = computed(() => {
     return `选择已保存的 OPC UA 连接，在地址空间中展开并点击 String 变量作为 ${RG_UI.opcAuto} 保存目录；非 String 变量在展开时不会显示。确定后写入 NodeId，仍可手工修改。`;
   }
   if (opcPickTarget.value === "fileName") {
-    return `选择 String 类型变量作为 ${RG_UI.opcAuto} 文件名基名（不含 .pdf）；绑定树仅显示 String。是否追加随机哈希可在确认后于面板按钮切换。`;
+    return `选择 String 类型变量作为 ${RG_UI.opcAuto} 文件名片段（不含 .pdf）；绑定树仅显示 String。是否参与拼接由面板中的「OPC UA变量」片段控制。`;
   }
   if (opcPickTarget.value === "feedbackStatus") {
-    const kind = prefs.value.exportResultOpc.statusKind === "int" ? "Int" : "Boolean";
+    const kind = activeExportResultOpc.value.statusKind === "int" ? "Int" : "Boolean";
     return `选择 ${kind} 类型变量；${RG_UI.feedback}成功时写入 ${kind === "Int" ? "1" : "true"}，失败写入 ${kind === "Int" ? "0" : "false"}。树与搜索仅显示 ${kind} 变量。`;
   }
   if (opcPickTarget.value === "feedbackMessage") {
@@ -981,6 +1050,30 @@ const autoFileNamePreview = computed(() =>
 
 const canManualExport = computed(() => electronShell.value && Boolean(prefs.value.templateId));
 
+function normalizeSavedPdfPaths(
+  exportRes: { filePath?: string; filePaths?: string[] } | null | undefined,
+  fallbackPath: string,
+): string[] {
+  const paths = Array.isArray(exportRes?.filePaths)
+    ? exportRes.filePaths.map((x) => String(x || "").trim()).filter(Boolean)
+    : [];
+  if (paths.length) return paths;
+  const single = String(exportRes?.filePath || fallbackPath || "").trim();
+  return single ? [single] : [];
+}
+
+function pdfExportSummaryForPaths(savedPaths: string[], note?: string): string | undefined {
+  const parts: string[] = [];
+  if (savedPaths.length > 1) parts.push(`共 ${savedPaths.length} 份 PDF`);
+  const n = (note || "").trim();
+  if (n) parts.push(n);
+  return parts.length ? parts.join("；") : undefined;
+}
+
+function isReportSplitPreflightBlocker(text: string): boolean {
+  return /分报表|数据库填充表|超出最大数量/.test(text);
+}
+
 function toggleAutoEnabled() {
   if (!electronShell.value) return;
   prefs.value.auto.enabled = !prefs.value.auto.enabled;
@@ -992,14 +1085,15 @@ function toggleManualOpenAfter() {
 }
 
 function toggleExportResultOpc() {
-  prefs.value.exportResultOpc.enabled = !prefs.value.exportResultOpc.enabled;
+  activeExportResultOpc.value.enabled = !activeExportResultOpc.value.enabled;
 }
 
 async function notifyExportResultToPlc(
   payload: ExportResultWritePayload,
   context: "manual" | "auto" = "manual",
+  templateId?: string | null,
 ): Promise<void> {
-  const fb = prefs.value.exportResultOpc;
+  const fb = exportResultOpcForTemplate(templateId ?? prefs.value.templateId);
   if (!isExportResultOpcFeedbackConfigured(fb)) return;
   try {
     const res = await writeExportResultToOpcua(fb, payload, context);
@@ -1011,7 +1105,7 @@ async function notifyExportResultToPlc(
         action: "export.opc_writeback",
         result: "fail",
         summary: hint,
-        detail: { context },
+        detail: { context, templateId: templateId || prefs.value.templateId || undefined },
       });
       if (context === "auto") {
         autoStatus.value = autoStatus.value ? `${autoStatus.value} · ${statusLine}` : statusLine;
@@ -1023,7 +1117,7 @@ async function notifyExportResultToPlc(
         action: "export.opc_writeback",
         result: "ok",
         summary: context === "auto" ? `${RG_UI.opcAuto}写回` : `${RG_UI.manual}写回`,
-        detail: { context },
+        detail: { context, templateId: templateId || prefs.value.templateId || undefined },
       });
     }
   } catch {
@@ -1041,7 +1135,7 @@ async function onTestExportResultWriteBack(): Promise<void> {
   if (testWriteBackBusy.value) return;
   testWriteBackBusy.value = true;
   try {
-    const res = await testWriteExportResultToOpcua(prefs.value.exportResultOpc);
+    const res = await testWriteExportResultToOpcua(activeExportResultOpc.value);
     if (res.ok) {
       const nodes = res.written.length ? res.written.join("、") : "已绑定节点";
       showAppToast(`测试写回成功\n已写入：${nodes}`, { tone: "ok", durationMs: 8000 });
@@ -1080,19 +1174,15 @@ function setExportDirTab(source: AutoExportDirSource) {
   prefs.value.autoExportDirSource = source;
 }
 
-function setFileNameTab(source: AutoFileNameSource) {
-  if (prefs.value.autoFileNameSource === source) return;
-  prefs.value.autoFileNameSource = source;
-}
-
 function ensureExportResultOpcServerSelected(): void {
-  if (prefs.value.exportResultOpc.serverId.trim()) return;
+  const fb = activeExportResultOpc.value;
+  if (fb.serverId.trim()) return;
   const first = opcServers.value[0]?.id?.trim();
-  if (first) prefs.value.exportResultOpc.serverId = first;
+  if (first) fb.serverId = first;
 }
 
 function exportResultOpcStatusTypeFilter(): string {
-  return prefs.value.exportResultOpc.statusKind === "int" ? "Int" : "Boolean";
+  return activeExportResultOpc.value.statusKind === "int" ? "Int" : "Boolean";
 }
 
 function resolveRgOpcPickDataTypeFilter(target: RgOpcPickTarget | null): string {
@@ -1182,6 +1272,7 @@ async function onRgOpcPickConfirm(payload: RgOpcPickConfirmPayload) {
   }
 
   if (target === "feedbackStatus") {
+    const fb = activeExportResultOpc.value;
     if (!sid) {
       autoStatus.value = `${RG_STATUS_FEEDBACK} 请先选择 OPC UA 连接`;
       return;
@@ -1191,21 +1282,22 @@ async function onRgOpcPickConfirm(payload: RgOpcPickConfirmPayload) {
       autoStatus.value = `${RG_STATUS_FEEDBACK} ${check.message || "读取节点失败"}`;
       return;
     }
-    const expectFilter = prefs.value.exportResultOpc.statusKind === "int" ? "Int" : "Boolean";
+    const expectFilter = fb.statusKind === "int" ? "Int" : "Boolean";
     const dt = check.dataType || "";
     if (dt && !opcDataTypeLabelMatchesFilter(dt, expectFilter)) {
       autoStatus.value = `${RG_STATUS_FEEDBACK} 需要 ${expectFilter} 类型变量，当前为 ${dt}`;
       return;
     }
-    prefs.value.exportResultOpc.serverId = sid;
-    prefs.value.exportResultOpc.statusNodeId = nid;
-    prefs.value.exportResultOpc.statusNodeLabel = nodeLabel;
+    fb.serverId = sid;
+    fb.statusNodeId = nid;
+    fb.statusNodeLabel = nodeLabel;
     autoStatus.value = `${RG_STATUS_FEEDBACK} 已绑定状态变量`;
     finishRgOpcPickSuccess();
     return;
   }
 
   if (target === "feedbackMessage" || target === "feedbackFilePath") {
+    const fb = activeExportResultOpc.value;
     if (!sid) {
       autoStatus.value = `${RG_STATUS_FEEDBACK} 请先选择 OPC UA 连接`;
       return;
@@ -1215,13 +1307,13 @@ async function onRgOpcPickConfirm(payload: RgOpcPickConfirmPayload) {
       autoStatus.value = `${RG_STATUS_FEEDBACK} ${check.message || "所选节点不是 String 类型"}`;
       return;
     }
-    prefs.value.exportResultOpc.serverId = sid;
+    fb.serverId = sid;
     if (target === "feedbackMessage") {
-      prefs.value.exportResultOpc.messageNodeId = nid;
-      prefs.value.exportResultOpc.messageNodeLabel = nodeLabel;
+      fb.messageNodeId = nid;
+      fb.messageNodeLabel = nodeLabel;
     } else {
-      prefs.value.exportResultOpc.filePathNodeId = nid;
-      prefs.value.exportResultOpc.filePathNodeLabel = nodeLabel;
+      fb.filePathNodeId = nid;
+      fb.filePathNodeLabel = nodeLabel;
     }
     autoStatus.value = `${RG_STATUS_FEEDBACK} 已绑定${target === "feedbackMessage" ? "信息" : "路径"}变量`;
     finishRgOpcPickSuccess();
@@ -1261,7 +1353,7 @@ async function loadOpcServers(): Promise<void> {
 async function onManualExport(): Promise<void> {
   manualHint.value = "";
   const api = window.electronAPI;
-  if (!api?.runPdfExport || !api.showSavePdfDialog) {
+  if (!api?.runPdfExport || !api.pickExportDirectory || !api.pathJoin) {
     manualHint.value = `当前环境不支持${RG_UI.manual}。`;
     return;
   }
@@ -1271,21 +1363,22 @@ async function onManualExport(): Promise<void> {
   const tmeta = summaries.value.find((x) => x.id === tid);
   const suggestName = `${(tmeta?.name || "报表").replace(/[/\\?%*:|"<>]/g, "_")}_${formatExportTs()}.pdf`;
 
-  const filePath = await api.showSavePdfDialog({
-    title: RG_UI.manual,
-    defaultPath: suggestName,
+  const exportDir = await api.pickExportDirectory({
+    title: `选择${RG_UI.manual}保存文件夹`,
   });
-  if (!filePath) {
+  if (!exportDir) {
     manualHint.value = "已取消保存。";
     return;
   }
+  const filePath = await api.pathJoin(exportDir, suggestName);
 
   manualBusy.value = true;
   manualHint.value = "正在检查数据源连接…";
   try {
-    if (isExportResultOpcFeedbackConfigured(prefs.value.exportResultOpc)) {
+    const feedback = exportResultOpcForTemplate(tid);
+    if (isExportResultOpcFeedbackConfigured(feedback)) {
       manualHint.value = `正在校验${RG_UI.feedback}绑定…`;
-      const opcVal = await validateExportResultOpcBindings(prefs.value.exportResultOpc);
+      const opcVal = await validateExportResultOpcBindings(feedback);
       if (!opcVal.ok) {
         const issues = opcVal.issues.map((i) => i.message).join("\n");
         const proceedOpc = window.confirm(
@@ -1300,6 +1393,11 @@ async function onManualExport(): Promise<void> {
 
     const preflight = await runTemplateExportPreflight(tid);
     if (!preflight.ok) {
+      if (preflight.blockers.some(isReportSplitPreflightBlocker)) {
+        manualHint.value = preflight.summary;
+        showAppToast(preflight.summary, { tone: "err", durationMs: 12000 });
+        return;
+      }
       const proceed = window.confirm(
         `${preflight.summary}\n\n是否仍要继续${RG_UI.manual}？（PDF 中可能出现错误占位或生成失败）`,
       );
@@ -1314,27 +1412,36 @@ async function onManualExport(): Promise<void> {
       manualHint.value = "";
     }
 
-    await api.runPdfExport({
+    const exportRes = await api.runPdfExport({
       templateId: tid,
       filePath,
-      openAfter: prefs.value.manualOpenAfter,
+      openAfter: false,
     });
-    manualHint.value = `已保存：${filePath}`;
+    const savedPaths = normalizeSavedPdfPaths(exportRes, filePath);
+    const plcMessage = pdfExportSummaryForPaths(savedPaths);
+    manualHint.value =
+      savedPaths.length > 1 ? `已保存到文件夹：${exportDir}（共 ${savedPaths.length} 份 PDF）` : `已保存到文件夹：${exportDir}`;
+    if (prefs.value.manualOpenAfter) {
+      void api.shellOpenPath?.(exportDir);
+    }
     void auditLog({
       action: "export.manual_pdf",
       result: "ok",
       summary: suggestName,
       object_type: "template",
       object_id: tid,
-      detail: { filePath },
+      detail: { filePath: savedPaths[0], filePaths: savedPaths, totalReports: exportRes.totalReports },
     });
     void notifyExportResultToPlc(
       {
         success: true,
-        filePath,
+        filePath: savedPaths[0],
+        filePaths: savedPaths,
         fileName: suggestName,
+        message: plcMessage,
       },
       "manual",
+      tid,
     );
   } catch (e) {
     const msg = humanizePdfExportError(e);
@@ -1346,7 +1453,7 @@ async function onManualExport(): Promise<void> {
       object_type: "template",
       object_id: tid,
     });
-    void notifyExportResultToPlc({ success: false, message: msg }, "manual");
+    void notifyExportResultToPlc({ success: false, message: msg }, "manual", tid);
   } finally {
     manualBusy.value = false;
   }
@@ -1367,6 +1474,8 @@ async function onPickAutoDir(): Promise<void> {
 type AutoPdfExportAttempt = {
   fileName: string;
   filePath: string;
+  filePaths?: string[];
+  totalReports?: number;
   note?: string;
 };
 
@@ -1379,6 +1488,11 @@ async function runAutoPdfExport(templateId: string): Promise<AutoPdfExportAttemp
   const tid = templateId.trim();
   if (!tid) throw new Error(`未配置${RG_UI.opcAuto}报表模版`);
 
+  const preflight = await runTemplateExportPreflight(tid);
+  if (!preflight.ok) {
+    throw new Error(preflight.summary);
+  }
+
   const resolved = await resolveAutoExportDir(prefs.value);
   const dir = resolved.dir.trim();
   if (!dir) throw new Error(resolved.note || `未配置${RG_UI.opcAuto}保存目录`);
@@ -1387,14 +1501,23 @@ async function runAutoPdfExport(templateId: string): Promise<AutoPdfExportAttemp
   const built = await buildAutoExportFileName(prefs.value, tmeta?.name || tid);
   const filePath = await api.pathJoin(dir, built.base);
 
-  await api.runPdfExport({
+  const exportRes = await api.runPdfExport({
     templateId: tid,
     filePath,
     openAfter: false,
   });
 
   const notes = [resolved.note, built.note].filter(Boolean).join("；");
-  return { fileName: built.base, filePath, note: notes || undefined };
+  const savedPaths = normalizeSavedPdfPaths(exportRes, filePath);
+  const splitNote = pdfExportSummaryForPaths(savedPaths);
+  const exportNote = [preflight.warnings.join(" "), notes, splitNote].filter(Boolean).join("；");
+  return {
+    fileName: built.base,
+    filePath: savedPaths[0],
+    filePaths: savedPaths,
+    totalReports: exportRes.totalReports,
+    note: exportNote || undefined,
+  };
 }
 
 async function pollAutoTriggerOnce(): Promise<void> {
@@ -1471,14 +1594,28 @@ async function pollAutoTriggerOnce(): Promise<void> {
           {
             success: true,
             filePath: result.filePath,
+            filePaths: result.filePaths,
             fileName: result.fileName,
             message: result.note,
           },
           "auto",
+          b.templateId || null,
         );
+        void auditLog({
+          action: "export.auto_pdf",
+          result: "ok",
+          summary: result.fileName,
+          object_type: "template",
+          object_id: b.templateId || undefined,
+          detail: { filePath: result.filePath, filePaths: result.filePaths, bindingId: b.id, event: eventLabel },
+        });
         exportedThisPoll = true;
         const noteSuffix = result.note ? `（${result.note}）` : "";
-        autoStatus.value = `${RG_STATUS_OPC_AUTO}·${label} 已保存 ${result.filePath}${noteSuffix}`;
+        const fileCount = result.filePaths?.length || 1;
+        autoStatus.value =
+          fileCount > 1
+            ? `${RG_STATUS_OPC_AUTO}·${label} 已保存 ${fileCount} 个文件：${result.filePaths?.join("；")}${noteSuffix}`
+            : `${RG_STATUS_OPC_AUTO}·${label} 已保存 ${result.filePath}${noteSuffix}`;
       } catch (e) {
         const msg = humanizePdfExportError(e);
         try {
@@ -1494,7 +1631,15 @@ async function pollAutoTriggerOnce(): Promise<void> {
           success: false,
           message: msg,
         });
-        void notifyExportResultToPlc({ success: false, message: msg }, "auto");
+        void auditLog({
+          action: "export.auto_pdf",
+          result: "fail",
+          summary: msg,
+          object_type: "template",
+          object_id: b.templateId || undefined,
+          detail: { bindingId: b.id, event: eventLabel },
+        });
+        void notifyExportResultToPlc({ success: false, message: msg }, "auto", b.templateId || null);
         autoStatus.value = `${RG_STATUS_OPC_AUTO}·${label} 失败：${msg.split("\n")[0]}`;
         showAppToast(`${RG_STATUS_OPC_AUTO}·${label} 失败\n${msg}`, { tone: "err", durationMs: 14000 });
       } finally {
@@ -2015,6 +2160,7 @@ onUnmounted(() => {
 .rg-inline--bind {
   width: 100%;
   max-width: 720px;
+  flex-wrap: wrap;
 }
 .rg-inline--bind .rg-inp--grow {
   flex: 1 1 12rem;

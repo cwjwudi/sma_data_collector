@@ -125,6 +125,7 @@ export function substituteTableSqlPlaceholdersForPreview(fill: TableSqlFillConfi
 
 /** 与 backend `api/routers/database.py` 中 PREVIEW_LIMIT_MAX 一致 */
 export const TABLE_SQL_FILL_PREVIEW_ROW_LIMIT = 1000;
+export const TABLE_SQL_FILL_FULL_ROW_LIMIT = 50000;
 
 /**
  * 将正文表格行数同步为「表头 + 预览数据行」；查询结果变少时会缩小行数。
@@ -185,6 +186,7 @@ function buildSingleTableSqlFillTask(
   previewKey: string,
   fallbackSqlConnId: string | null,
   expandRows: (dataRowCount: number) => void,
+  fullSqlFill = false,
 ): TableSqlFillPreviewTask | null {
   if (!fill?.enabled) return null;
   const sqlRaw = (fill.querySql || "").trim();
@@ -203,7 +205,11 @@ function buildSingleTableSqlFillTask(
   const sql = substituteTableSqlPlaceholdersForPreview(fill);
   if (/\{\{p\d+\}\}/.test(sql)) return null;
 
-  const limit = Math.min(Math.max(1, fill.maxRows || 2000), TABLE_SQL_FILL_PREVIEW_ROW_LIMIT);
+  const fillMaxRows = Math.min(Math.max(1, fill.maxRows || 2000), TABLE_SQL_FILL_FULL_ROW_LIMIT);
+  const limit =
+    fullSqlFill && fill.splitReportsOnMaxRows
+      ? TABLE_SQL_FILL_FULL_ROW_LIMIT
+      : Math.min(fillMaxRows, TABLE_SQL_FILL_PREVIEW_ROW_LIMIT);
   const cc = Math.max(1, Math.min(30, Math.floor(colCount) || 1));
 
   return {
@@ -220,6 +226,7 @@ function buildSingleTableSqlFillTask(
 export function buildTableSqlFillPreviewTasks(
   t: ReportTemplate,
   fallbackSqlConnId: string | null,
+  opts?: { fullSqlFill?: boolean },
 ): TableSqlFillPreviewTask[] {
   const tasks: TableSqlFillPreviewTask[] = [];
 
@@ -231,6 +238,7 @@ export function buildTableSqlFillPreviewTasks(
       templateTableSqlFillPreviewKey(el.id),
       fallbackSqlConnId,
       (n) => syncTemplateTableRowsForSqlFillPreview(el, n),
+      opts?.fullSqlFill === true,
     );
     if (task) tasks.push(task);
   });
@@ -243,6 +251,7 @@ export function buildTableSqlFillPreviewTasks(
       zoneTableSqlFillPreviewKey(el.id),
       fallbackSqlConnId,
       (n) => syncZoneTableRowsForSqlFillPreview(el, n),
+      opts?.fullSqlFill === true,
     );
     if (task) tasks.push(task);
   });

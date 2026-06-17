@@ -12,18 +12,55 @@
     </nav>
 
     <div class="layout layout-stack">
-      <section class="panel">
-        <h2>连接设置</h2>
-        <p class="hint">维护本次操作使用的数据库连接。备份和恢复依赖 MySQL 客户端工具。</p>
-        <div class="row">
-          <label for="dbHost">Host</label>
-          <input id="dbHost" type="text" />
-          <label for="dbPort">Port</label>
-          <input id="dbPort" class="field-narrow-num" type="number" min="1" />
-          <label for="dbUsername">用户</label>
-          <input id="dbUsername" type="text" />
-          <label for="dbPassword">密码</label>
-          <input id="dbPassword" type="password" />
+      <section class="panel connection-panel">
+        <div class="panel-heading">
+          <div>
+            <h2>连接设置</h2>
+            <p class="hint">选择常用配置后只需输入密码；需要改 Host、Port、用户时再点对应快捷项或直接编辑。</p>
+          </div>
+          <span class="touch-badge">触屏优化</span>
+        </div>
+        <div class="quick-settings" aria-label="连接快捷设置">
+          <div class="quick-group">
+            <span class="quick-label">常用连接</span>
+            <button type="button" class="quick-chip" data-conn-host="127.0.0.1" data-conn-port="3306" data-conn-user="root">本机 root</button>
+            <button type="button" class="quick-chip" data-conn-host="localhost" data-conn-port="3306" data-conn-user="root">localhost</button>
+          </div>
+          <div class="quick-group">
+            <span class="quick-label">用户</span>
+            <button type="button" class="quick-chip" data-conn-user="root">root</button>
+            <button type="button" class="quick-chip" data-conn-user="admin">admin</button>
+            <button type="button" class="quick-chip" data-conn-user="scada">scada</button>
+          </div>
+          <div class="quick-group">
+            <span class="quick-label">端口</span>
+            <button type="button" class="quick-chip" data-conn-port="3306">3306</button>
+            <button type="button" class="quick-chip" data-conn-port="3307">3307</button>
+          </div>
+        </div>
+        <div class="connection-form">
+          <div class="field-block">
+            <label for="dbHost">Host</label>
+            <input id="dbHost" type="text" inputmode="decimal" autocomplete="off" placeholder="127.0.0.1" />
+          </div>
+          <div class="field-block field-port">
+            <label for="dbPort">Port</label>
+            <input id="dbPort" class="field-narrow-num" type="number" inputmode="numeric" min="1" placeholder="3306" />
+          </div>
+          <div class="field-block">
+            <label for="dbUsername">用户</label>
+            <input id="dbUsername" type="text" autocomplete="username" placeholder="root" />
+          </div>
+          <div class="field-block field-password">
+            <label for="dbPassword">密码</label>
+            <div class="password-control">
+              <input id="dbPassword" type="password" autocomplete="current-password" />
+              <button type="button" id="btnTogglePassword" class="input-action-btn" aria-label="显示密码">显示</button>
+              <button type="button" id="btnClearPassword" class="input-action-btn" aria-label="清空密码">清空</button>
+            </div>
+          </div>
+        </div>
+        <div class="connection-actions">
           <button type="button" id="btnTestConnection">测试连接</button>
           <button type="button" id="btnLoadDatabases">读取数据库</button>
         </div>

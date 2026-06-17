@@ -14,7 +14,7 @@
       "data_groups": [
         "pallel_group_1"
       ],
-      "heartbeat": "ns=6;s=::ParallelTe:uiHeartBeat"
+      "heartbeat": ""
     }
   ],
   "points": [
@@ -79,5 +79,13 @@
     "data_groups": [
       "pallel_group_1"
     ]
+  },
+  "logging": {
+    "level": "INFO",
+    "output_dir": "logs",
+    "backup_days": 14,
+    "rotation_when": "midnight",
+    "rotation_interval": 1,
+    "console_enabled": true
   }
 }

@@ -43,6 +43,20 @@ describe("exportResultOpcFeedback", () => {
     );
   });
 
+  it("buildExportResultPlcMessage includes split pdf count", () => {
+    expect(
+      buildExportResultPlcMessage(
+        {
+          success: true,
+          fileName: "a.pdf",
+          filePath: "C:/report/a_part-1-of-2.pdf",
+          filePaths: ["C:/report/a_part-1-of-2.pdf", "C:/report/a_part-2-of-2.pdf"],
+        },
+        "auto",
+      ),
+    ).toContain("共 2 份 PDF");
+  });
+
   it("skips write when disabled or unconfigured", async () => {
     const res = await writeExportResultToOpcua(defaultExportResultOpcFeedback(), {
       success: true,

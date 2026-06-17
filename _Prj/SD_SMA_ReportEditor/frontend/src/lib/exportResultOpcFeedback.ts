@@ -13,6 +13,7 @@ export type ExportResultWritePayload = {
   success: boolean;
   message?: string;
   filePath?: string;
+  filePaths?: string[];
   fileName?: string;
 };
 
@@ -46,7 +47,11 @@ export function buildExportResultPlcMessage(
 ): string {
   if (payload.success) {
     if (context === "manual" || context === "auto") {
-      return truncateMessage(EXPORT_RESULT_PLC_EVENT_LABEL[context], 500);
+      const label = EXPORT_RESULT_PLC_EVENT_LABEL[context];
+      const msg = (payload.message || "").trim();
+      const paths = Array.isArray(payload.filePaths) ? payload.filePaths.filter((x) => String(x || "").trim()) : [];
+      const suffix = msg || (paths.length > 1 ? `共 ${paths.length} 份 PDF` : "");
+      return truncateMessage(suffix ? `${label}；${suffix}` : label, 500);
     }
     const name = (payload.fileName || "").trim();
     const path = (payload.filePath || "").trim();

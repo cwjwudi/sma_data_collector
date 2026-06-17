@@ -39,12 +39,19 @@ const props = withDefaults(
     previewPage?: number;
     /** 页码类控件预览：总页数（默认使用 PAGE_NUMBER_PREVIEW_TOTAL_FALLBACK） */
     previewTotalPages?: number;
+    displayOverride?: string | null;
     /**
      * 画布内选中时：文本 / 色块可直接输入（与模版编辑器正文画布行为一致）
      */
     canvasInlineEdit?: boolean;
   }>(),
-  { textClass: "", previewPage: undefined, previewTotalPages: undefined, canvasInlineEdit: false },
+  {
+    textClass: "",
+    previewPage: undefined,
+    previewTotalPages: undefined,
+    displayOverride: null,
+    canvasInlineEdit: false,
+  },
 );
 
 const canvasTextBoxEdit = computed(
@@ -52,11 +59,13 @@ const canvasTextBoxEdit = computed(
 );
 
 const display = computed(() =>
-  previewZoneElementDisplay(
-    props.el,
-    props.previewPage ?? 1,
-    props.previewTotalPages ?? PAGE_NUMBER_PREVIEW_TOTAL_FALLBACK,
-  ),
+  props.displayOverride != null
+    ? props.displayOverride
+    : previewZoneElementDisplay(
+        props.el,
+        props.previewPage ?? 1,
+        props.previewTotalPages ?? PAGE_NUMBER_PREVIEW_TOTAL_FALLBACK,
+      ),
 );
 
 const showCircle = computed(() => {

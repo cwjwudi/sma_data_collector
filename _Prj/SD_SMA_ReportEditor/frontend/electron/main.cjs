@@ -8,6 +8,7 @@ const { createAppUpdater } = require('./updater.cjs')
 const { createDemoPackManager } = require('./demo-pack.cjs')
 const { createLayoutSync } = require('./layout-sync.cjs')
 const { humanizePdfExportError } = require('./pdfExportErrors.cjs')
+const { outputPathForReportPart } = require('./pdf-export-paths.cjs')
 
 let mainWindow
 let pythonProcess
@@ -610,32 +611,31 @@ ipcMain.handle('pdf-export-run', async (event, opts) => {
   return enqueuePdfExport(async () => {
     let pdfWin = null
     try {
-      const senderWin = senderBrowserWindow(event.sender)
-      let loadUrl = ''
+      function outputPathForPart(partIndex, totalReports) {
+        return outputPathForReportPart(filePath, partIndex, totalReports)
+      }
 
-      if (senderWin && !senderWin.isDestroyed()) {
-        const cur = senderWin.webContents.getURL()
-        if (cur && /^https?:\/\//i.test(cur)) {
-          try {
-            const u = new URL(cur)
-            u.hash = `#/pdf-export?templateId=${encodeURIComponent(templateId)}`
-            loadUrl = u.href
-          } catch {
-            /* ignore */
+      function buildLoadUrl(partIndex) {
+        const senderWin = senderBrowserWindow(event.sender)
+        if (senderWin && !senderWin.isDestroyed()) {
+          const cur = senderWin.webContents.getURL()
+          if (cur && /^https?:\/\//i.test(cur)) {
+            try {
+              const u = new URL(cur)
+              u.hash = `#/pdf-export?templateId=${encodeURIComponent(templateId)}&reportPartIndex=${partIndex}`
+              return u.href
+            } catch {
+              /* ignore */
+            }
           }
         }
-      }
-
-      if (!loadUrl) {
         const isDev = !app.isPackaged
         if (isDev) {
-          loadUrl = `${VITE_DEV_URL}/#/pdf-export?templateId=${encodeURIComponent(templateId)}`
-        } else {
-          const idxHtml = path.join(__dirname, '..', 'dist', 'index.html')
-          loadUrl = `${pathToFileURL(idxHtml).href}#/pdf-export?templateId=${encodeURIComponent(templateId)}`
+          return `${VITE_DEV_URL}/#/pdf-export?templateId=${encodeURIComponent(templateId)}&reportPartIndex=${partIndex}`
         }
+        const idxHtml = path.join(__dirname, '..', 'dist', 'index.html')
+        return `${pathToFileURL(idxHtml).href}#/pdf-export?templateId=${encodeURIComponent(templateId)}&reportPartIndex=${partIndex}`
       }
-
       pdfWin = new BrowserWindow({
         show: false,
         width: 1280,
@@ -647,51 +647,61 @@ ipcMain.handle('pdf-export-run', async (event, opts) => {
         },
       })
 
-      const readyPromise = new Promise((resolve, reject) => {
-        const timer = setTimeout(() => {
-          ipcMain.removeListener('pdf-export-ready', onReady)
-          reject(new Error('PDF 渲染超时'))
-        }, 120000)
+      async function renderPart(partIndex) {
+        const readyPromise = new Promise((resolve, reject) => {
+          const timer = setTimeout(() => {
+            ipcMain.removeListener('pdf-export-ready', onReady)
+            reject(new Error('PDF render timeout'))
+          }, 120000)
 
-        function onReady(ev, payload) {
-          if (!pdfWin || pdfWin.isDestroyed()) return
-          if (senderBrowserWindow(ev.sender) !== pdfWin) return
-          clearTimeout(timer)
-          ipcMain.removeListener('pdf-export-ready', onReady)
-          resolve(payload || {})
+          function onReady(ev, payload) {
+            if (!pdfWin || pdfWin.isDestroyed()) return
+            if (senderBrowserWindow(ev.sender) !== pdfWin) return
+            clearTimeout(timer)
+            ipcMain.removeListener('pdf-export-ready', onReady)
+            resolve(payload || {})
+          }
+
+          ipcMain.on('pdf-export-ready', onReady)
+        })
+
+        await pdfWin.loadURL(buildLoadUrl(partIndex))
+        const payload = await readyPromise
+        if (!payload || !payload.ok) {
+          throw new Error((payload && payload.error) || 'PDF render failed')
         }
 
-        ipcMain.on('pdf-export-ready', onReady)
-      })
-
-      await pdfWin.loadURL(loadUrl)
-      const payload = await readyPromise
-      if (!payload || !payload.ok) {
-        throw new Error((payload && payload.error) || 'PDF 渲染失败')
+        const pdfBuffer = await pdfWin.webContents.printToPDF({
+          landscape: false,
+          printBackground: true,
+          marginsType: 1,
+          pageRanges: '',
+          preferCSSPageSize: true,
+        })
+        return { pdfBuffer, totalReports: Math.max(1, Math.floor(Number(payload.totalReports) || 1)) }
       }
 
-      const wc = pdfWin.webContents
-      /**
-       * preferCSSPageSize + @page { size: … } 已表达纵向/横向。
-       * 若再传 landscape:true，部分 Chromium 会与 CSS 页尺寸叠加持平原产生多余空白页。
-       */
-      const pdfBuffer = await wc.printToPDF({
-        landscape: false,
-        printBackground: true,
-        marginsType: 1,
-        pageRanges: '',
-        preferCSSPageSize: true,
-      })
+      const first = await renderPart(0)
+      const totalReports = first.totalReports
+      const filePaths = []
+      const firstPath = outputPathForPart(0, totalReports)
+      fs.mkdirSync(path.dirname(firstPath), { recursive: true })
+      fs.writeFileSync(firstPath, first.pdfBuffer)
+      filePaths.push(firstPath)
 
-      const dir = path.dirname(filePath)
-      fs.mkdirSync(dir, { recursive: true })
-      fs.writeFileSync(filePath, pdfBuffer)
+      for (let partIndex = 1; partIndex < totalReports; partIndex++) {
+        const part = await renderPart(partIndex)
+        const outPath = outputPathForPart(partIndex, totalReports)
+        fs.mkdirSync(path.dirname(outPath), { recursive: true })
+        fs.writeFileSync(outPath, part.pdfBuffer)
+        filePaths.push(outPath)
+      }
 
       if (openAfter) {
-        await shell.openPath(filePath)
+        await shell.openPath(filePaths[0])
       }
 
-      return { ok: true, filePath }
+      return { ok: true, filePath: filePaths[0], filePaths, totalReports }
     } catch (e) {
       throw new Error(humanizePdfExportError(e, { phase: 'export' }))
     } finally {

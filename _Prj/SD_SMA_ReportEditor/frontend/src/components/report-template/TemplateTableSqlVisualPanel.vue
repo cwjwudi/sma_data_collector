@@ -41,6 +41,20 @@
       <p class="tsv-muted">输出列请在画布表格<strong>第一行</strong>各列的下拉框中选择字段；顺序与表格列从左到右一致。</p>
     </div>
 
+    <div class="tsv-headers" v-if="vs.columns.some((c) => String(c || '').trim())">
+      <div class="tsv-headers-head">
+        <span class="tsv-subtit">列头名称</span>
+      </div>
+      <label v-for="ci in headerColumnIndices" :key="'th-' + ci" class="tsv-header-row">
+        <span class="tsv-header-field">{{ vs.columns[ci] || `第 ${ci + 1} 列` }}</span>
+        <input
+          v-model.trim="fill.resultColumnNames[ci]"
+          class="tsv-text-inp"
+          :placeholder="vs.columns[ci] || `第 ${ci + 1} 列`"
+        />
+      </label>
+    </div>
+
     <div class="tsv-filters">
       <div class="tsv-filters-head">
         <span class="tsv-subtit">筛选条件（启发式）</span>
@@ -324,7 +338,13 @@ import type {
   TableSqlParamSource,
   VisualSqlFilter,
 } from "@/lib/report-template/table-sql-fill";
-import { defaultVisualSqlFilter, ensureVisualOutputColumnSlots, normalizeVisualSqlFilterShape } from "@/lib/report-template/table-sql-fill";
+import {
+  defaultVisualSqlFilter,
+  ensureTableSqlResultColumnNames,
+  ensureVisualOutputColumnSlots,
+  ensureVisualSource,
+  normalizeVisualSqlFilterShape,
+} from "@/lib/report-template/table-sql-fill";
 import { loadVisualSqlTableColumnsCached } from "@/lib/report-template/table-sql-visual-catalog";
 import { buildDistinctSelectSql, visualFilterParamSlotBase } from "@/lib/report-template/table-sql-visual-compile";
 import { computed, nextTick, ref, watch, withDefaults } from "vue";
@@ -368,8 +388,7 @@ const distinctHints = ref<Record<string, string[]>>({});
 const tablePickOpen = ref(false);
 const tablePickQ = ref("");
 
-/** 由父组件通过 ensureVisualSource 保证非空 */
-const vs = computed(() => props.fill.visualSource!);
+const vs = computed(() => ensureVisualSource(props.fill));
 
 const activeConn = computed(() => connections.value.find((c) => c.id === vs.value.connectionId) ?? null);
 
@@ -410,6 +429,8 @@ const filteredPickTables = computed(() => {
   if (!q) return list;
   return list.filter((x) => x.name.toLowerCase().includes(q));
 });
+
+const headerColumnIndices = computed(() => Array.from({ length: Math.max(1, props.columnCount) }, (_, i) => i));
 
 watch(
   () => vs.value.connectionId,
@@ -589,7 +610,9 @@ watch(
   () => props.columnCount,
   (n) => {
     ensureVisualOutputColumnSlots(props.fill, n);
+    ensureTableSqlResultColumnNames(props.fill, n);
   },
+  { immediate: true },
 );
 
 /** 切换或清空数据表后，筛选条件与画布输出列仍指向旧表，需重置 */
@@ -602,6 +625,9 @@ watch(
     const cols = props.fill.visualSource?.columns;
     if (cols?.length) {
       for (let i = 0; i < cols.length; i++) cols[i] = "";
+    }
+    if (props.fill.resultColumnNames?.length) {
+      for (let i = 0; i < props.fill.resultColumnNames.length; i++) props.fill.resultColumnNames[i] = "";
     }
   },
 );
@@ -694,6 +720,34 @@ void loadConnections();
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+.tsv-headers {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px dashed #d4d4d8;
+  border-radius: 8px;
+}
+.tsv-headers-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.tsv-header-row {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  gap: 8px;
+  align-items: center;
+  font-size: 12px;
+  color: #52525b;
+}
+.tsv-header-field {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #3f3f46;
 }
 .tsv-filter-top {
   display: flex;

@@ -9,7 +9,9 @@ import {
   pickPreferredSqlConnectionId,
   sqlResponseFirstScalar,
   sqlResponseGridSummary,
+  substituteScalarSqlParams,
   type BindingPreviewCell,
+  type SqlDedupeTask,
 } from "@/lib/report-template/binding-preview-utils";
 import {
   buildTableSqlFillPreviewTasks,
@@ -81,6 +83,41 @@ export function useReportBindingPreview(tmplRef: Ref<ReportTemplate | null>): Re
 
       const out: Record<string, BindingPreviewCell> = partial ? { ...values.value } : {};
 
+      async function resolveScalarSqlTask(task: SqlDedupeTask): Promise<string> {
+        const paramValues: Record<number, unknown> = {};
+        const params = task.params || [];
+        for (let i = 0; i < params.length; i++) {
+          const p = params[i];
+          if (p?.source !== "opcua") continue;
+          const nodeId = (p.opcuaNodeId || "").trim();
+          if (!nodeId) {
+            if ((p.literalFallback || "").trim()) continue;
+            throw new Error(`SQL 参数 {{p${i}}} 未绑定 OPC UA 节点`);
+          }
+          if (!opcServerId) {
+            if ((p.literalFallback || "").trim()) continue;
+            throw new Error(`SQL 参数 {{p${i}}} 未配置 OPC UA 连接`);
+          }
+          try {
+            const res = (await apiFetch(`/opcua/read_saved/${opcServerId}`, {
+              method: "POST",
+              body: { node_id: nodeId },
+            })) as { ok?: boolean; message?: string; value?: unknown };
+            if (res?.ok === false) {
+              if ((p.literalFallback || "").trim()) continue;
+              throw new Error(res.message || "OPC 参数读取失败");
+            }
+            if ((res.value === null || res.value === undefined) && (p.literalFallback || "").trim()) continue;
+            paramValues[i] = res.value;
+          } catch (e) {
+            if ((p.literalFallback || "").trim()) continue;
+            const msg = e instanceof Error ? e.message : String(e);
+            throw new Error(`SQL 参数 {{p${i}}} 读取失败：${msg}`);
+          }
+        }
+        return substituteScalarSqlParams(task.sql, params, paramValues);
+      }
+
       if (doOpc) {
         await runPool(opcTasks, 8, async (task) => {
           if (gen !== generation) return;
@@ -106,11 +143,12 @@ export function useReportBindingPreview(tmplRef: Ref<ReportTemplate | null>): Re
         await runPool(sqlTasks, 6, async (task) => {
           if (gen !== generation) return;
           try {
+            const sql = await resolveScalarSqlTask(task);
             const data = await apiFetch("/database/query/sql", {
               method: "POST",
               body: {
                 connection_id: task.connectionId,
-                sql: task.sql,
+                sql,
                 limit: 200,
               },
             });
@@ -130,7 +168,9 @@ export function useReportBindingPreview(tmplRef: Ref<ReportTemplate | null>): Re
 
         if (gen !== generation) return;
 
-        const fillTasks = buildTableSqlFillPreviewTasks(t, sqlConnId);
+        const fillTasks = buildTableSqlFillPreviewTasks(t, sqlConnId, {
+          fullSqlFill: opts?.fullSqlFill === true,
+        });
         await runPool(fillTasks, 4, async (task) => {
           if (gen !== generation) return;
           try {

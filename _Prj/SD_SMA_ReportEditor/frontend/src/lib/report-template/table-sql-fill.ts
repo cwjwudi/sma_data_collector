@@ -50,6 +50,8 @@ export interface TableSqlFillConfig {
   resultColumnNames: string[];
   /** 跨页时在新页重复表头行（第 0 行） */
   repeatHeaderOnPageBreak: boolean;
+  /** 查询结果超过 maxRows 时，按 maxRows 拆成多份报表导出；开启时模板中只能有一个数据库填充表 */
+  splitReportsOnMaxRows: boolean;
   /**
    * 允许在同一正文画布上，把控件摆放在 SQL 动态表格「逻辑底线」之下。
    * 默认关闭：编辑画布会阻止重叠区域内的下移；导出预览中此类控件会另起一页。
@@ -65,6 +67,32 @@ export interface TableSqlFillConfig {
 export function defaultSqlParam(): TableSqlParamBinding {
   /** 新建槽位默认用手写值，便于预览与常见「固定条件」场景 */
   return { source: "literal", opcuaNodeId: "", aboveCellColumnIndex: 0, literalFallback: "" };
+}
+
+export function hydrateSqlParamBindings(raw: unknown, minSlots = 0): TableSqlParamBinding[] {
+  const paramsRaw = Array.isArray(raw) ? raw : [];
+  const params: TableSqlParamBinding[] = [];
+  for (let i = 0; i < paramsRaw.length; i++) {
+    const pr = paramsRaw[i];
+    if (!pr || typeof pr !== "object") {
+      params.push(defaultSqlParam());
+      continue;
+    }
+    const p = pr as Record<string, unknown>;
+    params.push({
+      source: normalizeParamSource(p.source),
+      opcuaNodeId: typeof p.opcuaNodeId === "string" ? p.opcuaNodeId : "",
+      aboveCellColumnIndex: clampColIndex(p.aboveCellColumnIndex),
+      literalFallback: typeof p.literalFallback === "string" ? p.literalFallback : "",
+    });
+  }
+  ensureSqlParamSlots(params, minSlots);
+  return params;
+}
+
+export function ensureSqlParamSlots(params: TableSqlParamBinding[], minSlots: number): void {
+  const n = Math.max(0, Math.min(32, Math.floor(Number(minSlots)) || 0));
+  while (params.length < n) params.push(defaultSqlParam());
 }
 
 export function defaultVisualSqlFilter(): VisualSqlFilter {
@@ -94,6 +122,7 @@ export function defaultTableSqlFillConfig(): TableSqlFillConfig {
     params: [],
     resultColumnNames: [],
     repeatHeaderOnPageBreak: true,
+    splitReportsOnMaxRows: false,
     allowWidgetsBelowSqlFillTable: false,
     maxRows: 2000,
     visualSource: null,
@@ -134,6 +163,8 @@ export function hydrateTableSqlFill(raw: unknown): TableSqlFillConfig {
   const querySql = querySqlEarly;
   const repeatHeaderOnPageBreak =
     o.repeatHeaderOnPageBreak === false || o.repeatHeaderOnPageBreak === "false" ? false : true;
+  const splitReportsOnMaxRows =
+    o.splitReportsOnMaxRows === true || o.splitReportsOnMaxRows === "true" || o.splitReportsOnMaxRows === 1;
   const allowWidgetsBelowSqlFillTable =
     o.allowWidgetsBelowSqlFillTable === true || o.allowWidgetsBelowSqlFillTable === "true" ? true : false;
   let maxRows = Math.round(Number(o.maxRows));
@@ -224,6 +255,7 @@ export function hydrateTableSqlFill(raw: unknown): TableSqlFillConfig {
     params,
     resultColumnNames,
     repeatHeaderOnPageBreak,
+    splitReportsOnMaxRows,
     allowWidgetsBelowSqlFillTable,
     maxRows,
     visualSource,

@@ -58,6 +58,19 @@
       "env": {
         "SD_SMA_DB_ADMIN_CONFIG_DIR": "_Prj/SD_SMA_DB_ADMIN/config"
       }
+    },
+    {
+      "name": "report_copy",
+      "title": "SD SMA Report Copy",
+      "cwd": "_Prj/SD_SMA_REPORT_COPY",
+      "app": "app.main:app",
+      "host": "127.0.0.1",
+      "port": 8094,
+      "health_path": "/api/health",
+      "open_url": "http://127.0.0.1:8094/",
+      "env": {
+        "SD_SMA_REPORT_COPY_CONFIG_DIR": "_Prj/SD_SMA_REPORT_COPY/config"
+      }
     }
   ]
 }

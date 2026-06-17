@@ -97,6 +97,9 @@ Copy-DirectoryFiltered `
 Copy-DirectoryFiltered `
     -Source (Join-Path $RepoRoot "_Prj\SD_SMA_DB_ADMIN") `
     -Destination (Join-Path $PackageProjects "SD_SMA_DB_ADMIN")
+Copy-DirectoryFiltered `
+    -Source (Join-Path $RepoRoot "_Prj\SD_SMA_REPORT_COPY") `
+    -Destination (Join-Path $PackageProjects "SD_SMA_REPORT_COPY")
 
 $RootStart = Join-Path $PackageRoot "start.bat"
 @"

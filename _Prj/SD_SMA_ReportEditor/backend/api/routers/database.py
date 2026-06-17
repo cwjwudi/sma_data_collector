@@ -306,7 +306,7 @@ async def query_sql(body: DbExecuteSqlRequest):
     conn = _conn_by_id(body.connection_id)
     engine = (conn.get("engine") or "").lower()
     user, pwd = _credentials(conn)
-    lim = max(1, min(body.limit, 2000))
+    lim = max(1, min(body.limit, 50000))
     eff_db = _effective_sql_database(conn, body.database, engine)
     try:
         if _is_mysql_family(engine):

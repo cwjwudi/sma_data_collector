@@ -91,6 +91,13 @@
         class="tbl-sql-text-inp tbl-sql-maxrows-num"
       />
     </label>
+    <label v-if="allowSplitReports" class="tbl-sql-fill-minichk">
+      <input v-model="fill.splitReportsOnMaxRows" type="checkbox" />
+      <span>超出最大数量自动分报表</span>
+    </label>
+    <p v-if="allowSplitReports && fill.splitReportsOnMaxRows" class="tbl-sql-fill-policy-hint">
+      开启后，如果查询结果超过最大行数，会按最大行数拆成多份报表；同时模板中只允许保留一个数据库填充表。
+    </p>
     <label class="tbl-sql-fill-minichk">
       <input v-model="fill.repeatHeaderOnPageBreak" type="checkbox" />
       <span>跨页重复表头</span>
@@ -125,11 +132,13 @@ const props = withDefaults(
     /** 下拉框专用 class（勿与多行 textarea 共用同一套样式） */
     selectClass?: string;
     buttonClass?: string;
+    allowSplitReports?: boolean;
   }>(),
   {
     textareaClass: "lpep-inp",
     selectClass: "",
     buttonClass: "",
+    allowSplitReports: false,
   },
 );
 
@@ -144,6 +153,8 @@ const selectFieldClass = computed(() => {
   const c = (props.selectClass || "").trim();
   return c || "tbl-sql-ddl";
 });
+
+const allowSplitReports = computed(() => props.allowSplitReports === true);
 
 const sqlPlaceholder = "SELECT a,b FROM t WHERE x BETWEEN {{p0}} AND {{p1}}";
 
@@ -169,6 +180,14 @@ watch(
   ([en, mode]) => {
     if (en && mode === "visual") ensureVisualSource(props.fill);
     if (en && mode === "manual_sql") ensureMinTableSqlParamSlots(props.fill, 2);
+  },
+  { immediate: true },
+);
+
+watch(
+  () => allowSplitReports.value,
+  (allow) => {
+    if (!allow) props.fill.splitReportsOnMaxRows = false;
   },
   { immediate: true },
 );

@@ -40,6 +40,7 @@ class TemplateTableCell(BaseModel):
     bindingKind: BindingKind = "none"
     opcuaNodeId: str = ""
     sqlText: str = ""
+    sqlParams: list["TableSqlParamBinding"] = Field(default_factory=list)
     bgColor: str = "transparent"
 
 
@@ -87,6 +88,7 @@ class TableSqlFillConfig(BaseModel):
     params: list[TableSqlParamBinding] = Field(default_factory=list)
     resultColumnNames: list[str] = Field(default_factory=list)
     repeatHeaderOnPageBreak: bool = True
+    splitReportsOnMaxRows: bool = False
     allowWidgetsBelowSqlFillTable: bool = False
     maxRows: int = Field(default=2000, ge=1, le=50000)
     visualSource: TableSqlVisualSource | None = None
@@ -119,6 +121,7 @@ class LayoutZoneElement(BaseModel):
     bindingKind: BindingKind = "none"
     opcuaNodeId: str = ""
     sqlText: str = ""
+    sqlParams: list[TableSqlParamBinding] = Field(default_factory=list)
     tableRows: int = Field(default=3, ge=1, le=30)
     tableCols: int = Field(default=4, ge=1, le=30)
     tableCells: list[list[TemplateTableCell]] = Field(default_factory=list)
@@ -152,6 +155,7 @@ class TemplateElement(BaseModel):
     bindingKind: BindingKind = "none"
     opcuaNodeId: str = ""
     sqlText: str = ""
+    sqlParams: list[TableSqlParamBinding] = Field(default_factory=list)
     dateFormat: str = ""
     chartKind: ChartKind = "line"
     signerLabel: str = ""

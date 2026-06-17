@@ -1,5 +1,5 @@
 import type { ReportGeneratorPrefs } from "@/lib/report-generator-prefs";
-import { coerceOpcPathString, readSavedOpcNodeValue } from "@/lib/opcua-string-variables";
+import { coerceOpcFileNameString, readSavedOpcStringValue } from "@/lib/opcua-string-variables";
 
 export type ResolvedExportDirSource = "default" | "opcua" | "opcua-fallback" | "none";
 
@@ -9,13 +9,30 @@ export type ResolvedExportDir = {
   note?: string;
 };
 
-/** 解析自动导出目标文件夹：OPC 模式在空/失败时回退默认文件夹。 */
+const WINDOWS_RESERVED_DIR_NAMES = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
+
+function joinDirSegment(baseDir: string, segment: string): string {
+  const cleanBase = baseDir.trim().replace(/[\\/]+$/, "");
+  const separator = cleanBase.includes("\\") && !cleanBase.includes("/") ? "\\" : "/";
+  return `${cleanBase}${separator}${segment}`;
+}
+
+function normalizeOpcExportDirSegment(value: unknown): string {
+  const segment = coerceOpcFileNameString(value);
+  if (!segment) return "";
+  if (segment === "." || segment === "..") return "";
+  if (/[<>:"|?*\x00-\x1f\\/]/.test(segment)) return "";
+  if (/[. ]$/.test(segment)) return "";
+  if (WINDOWS_RESERVED_DIR_NAMES.test(segment)) return "";
+  return segment;
+}
+
 export async function resolveAutoExportDir(prefs: ReportGeneratorPrefs): Promise<ResolvedExportDir> {
   const fallback = (prefs.autoExportDir || "").trim();
   if (prefs.autoExportDirSource !== "opcua") {
     return fallback
       ? { dir: fallback, source: "default" }
-      : { dir: "", source: "none", note: "未选择导出目录" };
+      : { dir: "", source: "none", note: "No export directory selected" };
   }
 
   const srv = (prefs.autoExportDirOpcServerId || "").trim();
@@ -25,32 +42,36 @@ export async function resolveAutoExportDir(prefs: ReportGeneratorPrefs): Promise
       ? {
           dir: fallback,
           source: "opcua-fallback",
-          note: "未绑定 OPC 路径变量，已使用保底目录",
+          note: "No OPC directory variable is bound; using fallback directory",
         }
-      : { dir: "", source: "none", note: "未配置 OPC 路径变量且无保底目录" };
+      : { dir: "", source: "none", note: "No OPC directory variable or fallback directory configured" };
   }
 
-  const read = await readSavedOpcNodeValue(srv, nodeId);
+  const read = await readSavedOpcStringValue(srv, nodeId);
   if (!read.ok) {
     return fallback
       ? {
           dir: fallback,
           source: "opcua-fallback",
-          note: `OPC 读取失败（${read.message || "未知"}），已使用保底目录`,
+          note: `Failed to read OPC directory variable (${read.message || "unknown"}); using fallback directory`,
         }
-      : { dir: "", source: "none", note: read.message || "OPC 读取失败" };
+      : { dir: "", source: "none", note: read.message || "Failed to read OPC directory variable" };
   }
 
-  const path = coerceOpcPathString(read.value);
-  if (!path) {
+  const segment = normalizeOpcExportDirSegment(read.value);
+  if (!segment) {
     return fallback
       ? {
           dir: fallback,
           source: "opcua-fallback",
-          note: "OPC 路径为空，已使用保底目录",
+          note: "OPC directory segment is empty or invalid; using fallback directory",
         }
-      : { dir: "", source: "none", note: "OPC 路径变量值为空" };
+      : { dir: "", source: "none", note: "OPC directory segment is empty or invalid" };
   }
 
-  return { dir: path, source: "opcua" };
+  if (!fallback) {
+    return { dir: "", source: "none", note: "Missing fallback directory for OPC directory segment" };
+  }
+
+  return { dir: joinDirSegment(fallback, segment), source: "opcua" };
 }

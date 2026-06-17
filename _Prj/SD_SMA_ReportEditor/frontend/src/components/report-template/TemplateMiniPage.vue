@@ -25,11 +25,38 @@
                   <span class="mini-ph">图片</span>
                 </template>
               </ZoneImageCompose>
+              <template v-else-if="el.type === 'table'">
+                <div class="mini-tpl-table-wrap">
+                  <table class="mini-tpl-table" :style="miniZoneTableInnerStyle(el)">
+                    <colgroup>
+                      <col
+                        v-for="(cw, ci) in miniZoneTableColInnerWidthsPx(el)"
+                        :key="'hzcol-' + el.id + '-' + ci"
+                        :style="{ width: cw + 'px' }"
+                      />
+                    </colgroup>
+                    <tbody>
+                      <tr v-for="ri in miniZoneTableRowIndices(el)" :key="'hzr-' + el.id + '-' + ri" :style="miniZoneTableRowTrStyle(el)">
+                        <td
+                          v-for="ci in miniZoneTableColIndices(el)"
+                          :key="'hzc-' + el.id + '-' + ri + '-' + ci"
+                          class="mini-tpl-td"
+                          :style="miniZoneTableCellStyle(el, ri, ci)"
+                          :title="miniZoneTableStaticTitle(el, ri, ci)"
+                        >
+                          {{ previewZoneTableCellText(el, ri, ci) }}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </template>
               <template v-else
                 ><LayoutZoneInlineContent
                   :el="el"
                   :preview-page="previewPage"
                   :preview-total-pages="previewTotalPages"
+                  :display-override="previewZoneInlineText(el)"
               /></template>
             </div>
           </div>
@@ -59,11 +86,38 @@
                   <span class="mini-ph">图</span>
                 </template>
               </ZoneImageCompose>
+              <template v-else-if="d.type === 'table'">
+                <div class="mini-tpl-table-wrap">
+                  <table class="mini-tpl-table" :style="miniZoneTableInnerStyle(d)">
+                    <colgroup>
+                      <col
+                        v-for="(cw, ci) in miniZoneTableColInnerWidthsPx(d)"
+                        :key="'dzcol-' + d.id + '-' + ci"
+                        :style="{ width: cw + 'px' }"
+                      />
+                    </colgroup>
+                    <tbody>
+                      <tr v-for="ri in miniZoneTableRowIndices(d)" :key="'dzr-' + d.id + '-' + ri" :style="miniZoneTableRowTrStyle(d)">
+                        <td
+                          v-for="ci in miniZoneTableColIndices(d)"
+                          :key="'dzc-' + d.id + '-' + ri + '-' + ci"
+                          class="mini-tpl-td"
+                          :style="miniZoneTableCellStyle(d, ri, ci)"
+                          :title="miniZoneTableStaticTitle(d, ri, ci)"
+                        >
+                          {{ previewZoneTableCellText(d, ri, ci) }}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </template>
               <template v-else
                 ><LayoutZoneInlineContent
                   :el="d"
                   :preview-page="previewPage"
                   :preview-total-pages="previewTotalPages"
+                  :display-override="previewZoneInlineText(d)"
               /></template>
             </div>
             <div
@@ -176,11 +230,38 @@
                   <span class="mini-ph">图片</span>
                 </template>
               </ZoneImageCompose>
+              <template v-else-if="el.type === 'table'">
+                <div class="mini-tpl-table-wrap">
+                  <table class="mini-tpl-table" :style="miniZoneTableInnerStyle(el)">
+                    <colgroup>
+                      <col
+                        v-for="(cw, ci) in miniZoneTableColInnerWidthsPx(el)"
+                        :key="'fzcol-' + el.id + '-' + ci"
+                        :style="{ width: cw + 'px' }"
+                      />
+                    </colgroup>
+                    <tbody>
+                      <tr v-for="ri in miniZoneTableRowIndices(el)" :key="'fzr-' + el.id + '-' + ri" :style="miniZoneTableRowTrStyle(el)">
+                        <td
+                          v-for="ci in miniZoneTableColIndices(el)"
+                          :key="'fzc-' + el.id + '-' + ri + '-' + ci"
+                          class="mini-tpl-td"
+                          :style="miniZoneTableCellStyle(el, ri, ci)"
+                          :title="miniZoneTableStaticTitle(el, ri, ci)"
+                        >
+                          {{ previewZoneTableCellText(el, ri, ci) }}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </template>
               <template v-else
                 ><LayoutZoneInlineContent
                   :el="el"
                   :preview-page="previewPage"
                   :preview-total-pages="previewTotalPages"
+                  :display-override="previewZoneInlineText(el)"
               /></template>
             </div>
           </div>
@@ -197,26 +278,32 @@ import LayoutZoneInlineContent from "@/components/report-template/LayoutZoneInli
 import MiniPreviewChrome from "@/components/report-template/MiniPreviewChrome.vue";
 import ZoneImageCompose from "@/components/report-template/ZoneImageCompose.vue";
 import type { MiniPreviewVariant } from "@/components/report-template/mini-preview-types";
-import type { LayoutZoneElement } from "@/lib/report-template/layout-zone-element";
+import type { LayoutZoneElement, LayoutZoneTableCell } from "@/lib/report-template/layout-zone-element";
 import {
+  ensureZoneTableGrid,
   flexJustifyAlignForAxes,
   getZoneTextWrapStyle,
   normalizePageNumberMode,
   normalizeZIndex,
+  zoneTableColumnInnerWidthsPx,
   zoneFillBackgroundCss,
   zoneTableInnerBackgroundCss,
   resolveTableCellBackgroundCss,
   zoneTableNodeShellBackgroundCss,
   formatLayoutDate,
 } from "@/lib/report-template/layout-zone-element";
-import { cellKey, chartKey, paramKey } from "@/lib/report-template/binding-preview-utils";
+import { cellKey, chartKey, paramKey, type BindingPreviewCell } from "@/lib/report-template/binding-preview-utils";
 import { reportBindingPreviewKey } from "@/lib/report-template/template-editor-context";
 import {
   sqlFillSliceTableOuterHeightPx,
   tplElementsHorizontallyOverlap,
 } from "@/lib/report-template/table-sql-fill-layout-utils";
 import type { SqlFillTablePreviewSlice } from "@/lib/report-template/table-sql-fill-export-preview-split";
-import { formatSqlFillTableCellPreview, templateTableSqlFillPreviewKey } from "@/lib/report-template/table-sql-fill-preview";
+import {
+  formatSqlFillTableCellPreview,
+  templateTableSqlFillPreviewKey,
+  zoneTableSqlFillPreviewKey,
+} from "@/lib/report-template/table-sql-fill-preview";
 import type { PaperLayoutMetrics } from "@/lib/report-template/layout-geometry";
 import {
   metricsForSheet,
@@ -260,6 +347,7 @@ const props = withDefaults(
     /** 页眉/页脚区内页码预览 */
     previewPage?: number;
     previewTotalPages?: number;
+    previewBindingValues?: Record<string, BindingPreviewCell | undefined> | null;
   }>(),
   {
     maxWidthPx: 160,
@@ -274,6 +362,8 @@ const props = withDefaults(
 );
 
 const bindingPreview = inject(reportBindingPreviewKey, null);
+
+const previewValues = computed(() => props.previewBindingValues ?? bindingPreview?.values.value ?? {});
 
 const sheet = computed(() => props.sheet);
 
@@ -619,7 +709,7 @@ function truncateStatic(s: string, n: number): string {
   return x.length <= n ? x : `${x.slice(0, n)}…`;
 }
 
-function formatStaticTableCell(cell: TemplateTableCell): string {
+function formatStaticTableCell(cell: TemplateTableCell | LayoutZoneTableCell): string {
   if (cell.bindingKind === "opcua") {
     const id = cell.opcuaNodeId.trim();
     return id ? `⟨UA⟩ ${truncateStatic(id, 48)}` : "⟨UA⟩";
@@ -632,6 +722,124 @@ function formatStaticTableCell(cell: TemplateTableCell): string {
   return t.length > 0 ? t : "\u00a0";
 }
 
+function zoneParamKey(elId: string): string {
+  return `zone-param:${elId}`;
+}
+
+function zoneCellKey(elId: string, row: number, col: number): string {
+  return `zone-cell:${elId}:${row}:${col}`;
+}
+
+function bindingText(key: string): string | null {
+  const hit = previewValues.value[key];
+  return hit ? hit.text : null;
+}
+
+function previewZoneInlineText(el: LayoutZoneElement): string | null {
+  if (el.type !== "parameter") return null;
+  if (el.bindingKind !== "opcua" && el.bindingKind !== "sql") return null;
+  const text = bindingText(zoneParamKey(el.id));
+  if (text != null) return text;
+  if (bindingPreview?.loading.value) return "...";
+  return null;
+}
+
+function miniZoneTableInnerStyle(el: LayoutZoneElement): Record<string, string> {
+  if (el.type !== "table") return {};
+  return { background: zoneTableInnerBackgroundCss(el.bgColor) };
+}
+
+function miniZoneTableCellStyle(el: LayoutZoneElement, ri: number, ci: number): Record<string, string> {
+  if (el.type !== "table") return {};
+  ensureZoneTableGrid(el);
+  const cell = el.tableCells?.[ri]?.[ci];
+  return {
+    backgroundColor: resolveTableCellBackgroundCss(
+      { tableBgColor: el.bgColor, tableColBgColors: el.tableColBgColors },
+      ci,
+      cell,
+    ),
+  };
+}
+
+function miniZoneTableColInnerWidthsPx(el: LayoutZoneElement): number[] {
+  if (el.type !== "table") return [];
+  return zoneTableColumnInnerWidthsPx(el);
+}
+
+function zoneTableGrid(el: LayoutZoneElement): LayoutZoneTableCell[][] {
+  if (el.type !== "table") return [];
+  return ensureZoneTableGrid(el);
+}
+
+function miniZoneTableRowTrStyle(el: LayoutZoneElement): Record<string, string> | undefined {
+  if (el.type !== "table") return undefined;
+  return { height: `${clampTableRowHeightPx(el.tableRowHeightPx)}px` };
+}
+
+function miniZoneTableColIndices(el: LayoutZoneElement): number[] {
+  const n = el.tableCols ?? 4;
+  return Array.from({ length: n }, (_, i) => i);
+}
+
+function miniZoneTableRowIndices(el: LayoutZoneElement): number[] {
+  const g = zoneTableGrid(el);
+  const base = g.length;
+  const pk = zoneTableSqlFillPreviewKey(el.id);
+  const pv = previewValues.value[pk]?.tableSqlFill;
+  if (el.type !== "table" || !el.tableSqlFill?.enabled || !pv?.dataRows?.length) {
+    return Array.from({ length: base }, (_, i) => i);
+  }
+  const total = Math.max(base, 1 + pv.dataRows.length);
+  return Array.from({ length: total }, (_, i) => i);
+}
+
+function miniZoneTableStaticTitle(el: LayoutZoneElement, ri: number, ci: number): string {
+  if (el.type === "table" && el.tableSqlFill?.enabled) {
+    const vals = previewValues.value;
+    const pk = zoneTableSqlFillPreviewKey(el.id);
+    const fillPv = vals?.[pk]?.tableSqlFill;
+    const loading = !!(bindingPreview?.loading.value && !fillPv?.dataRows?.length && !fillPv?.error);
+    return formatSqlFillTableCellPreview({
+      fill: el.tableSqlFill,
+      rowIndex: ri,
+      colIndex: ci,
+      preview: fillPv ?? null,
+      previewLoading: loading,
+      errorMaxLen: 48,
+    });
+  }
+  const c = zoneTableGrid(el)[ri]?.[ci];
+  return c ? formatStaticTableCell(c) : "";
+}
+
+function previewZoneTableCellText(el: LayoutZoneElement, ri: number, ci: number): string {
+  const cell = zoneTableGrid(el)[ri]?.[ci] ?? null;
+  const vals = previewValues.value;
+
+  if (el.type === "table" && el.tableSqlFill?.enabled) {
+    const fill = el.tableSqlFill;
+    const pk = zoneTableSqlFillPreviewKey(el.id);
+    const fillPv = vals?.[pk]?.tableSqlFill;
+    const loading = !!(bindingPreview?.loading.value && !fillPv?.dataRows?.length && !fillPv?.error);
+    return formatSqlFillTableCellPreview({
+      fill,
+      rowIndex: ri,
+      colIndex: ci,
+      preview: fillPv ?? null,
+      previewLoading: loading,
+      errorMaxLen: 36,
+    });
+  }
+
+  const text = bindingText(zoneCellKey(el.id, ri, ci));
+  if (text != null) return text;
+  if ((cell?.bindingKind === "opcua" || cell?.bindingKind === "sql") && bindingPreview?.loading.value) {
+    return "...";
+  }
+  return cell ? formatStaticTableCell(cell) : "\u00a0";
+}
+
 function miniTableColIndices(el: TemplateElement): number[] {
   const n = el.tableCols ?? 4;
   return Array.from({ length: n }, (_, i) => i);
@@ -641,7 +849,7 @@ function miniTableRowIndices(el: TemplateElement): number[] {
   const g = tableGrid(el);
   const base = g.length;
   const pk = templateTableSqlFillPreviewKey(el.id);
-  const pv = bindingPreview?.values.value[pk]?.tableSqlFill;
+  const pv = previewValues.value[pk]?.tableSqlFill;
   const slice = sqlFillSliceForTpl(el);
   if (el.type !== "table" || !el.tableSqlFill?.enabled || !pv?.dataRows?.length) {
     return Array.from({ length: base }, (_, i) => i);
@@ -656,7 +864,7 @@ function miniTableRowIndices(el: TemplateElement): number[] {
 
 function miniTableStaticTitle(el: TemplateElement, ri: number, ci: number): string {
   if (el.type === "table" && el.tableSqlFill?.enabled) {
-    const vals = bindingPreview?.values.value;
+    const vals = previewValues.value;
     const pk = templateTableSqlFillPreviewKey(el.id);
     const fillPv = vals?.[pk]?.tableSqlFill;
     const loading = !!(bindingPreview?.loading.value && !fillPv?.dataRows?.length && !fillPv?.error);
@@ -676,7 +884,7 @@ function miniTableStaticTitle(el: TemplateElement, ri: number, ci: number): stri
 
 function previewTableCellText(el: TemplateElement, ri: number, ci: number): string {
   const cell = tableGrid(el)[ri]?.[ci] ?? null;
-  const vals = bindingPreview?.values.value;
+  const vals = previewValues.value;
 
   if (el.type === "table" && el.tableSqlFill?.enabled) {
     const fill = el.tableSqlFill;
@@ -703,7 +911,7 @@ function previewTableCellText(el: TemplateElement, ri: number, ci: number): stri
 }
 
 function previewParameterText(el: TemplateElement): string {
-  const vals = bindingPreview?.values.value;
+  const vals = previewValues.value;
   const key = paramKey(el.id);
   if (el.bindingKind === "opcua" || el.bindingKind === "sql") {
     if (vals?.[key]?.text) return vals[key].text;
@@ -718,7 +926,7 @@ function previewParameterText(el: TemplateElement): string {
 }
 
 function previewChartText(el: TemplateElement): string {
-  const vals = bindingPreview?.values.value;
+  const vals = previewValues.value;
   const key = chartKey(el.id);
   if (el.bindingKind === "sql") {
     if (vals?.[key]?.text) return vals[key].text;

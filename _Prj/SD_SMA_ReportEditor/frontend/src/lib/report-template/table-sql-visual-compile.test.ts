@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { compileVisualTableSql } from "@/lib/report-template/table-sql-visual-compile";
+import {
+  applyVisualSqlOutputColumnPick,
+  compileVisualTableSql,
+  syncVisualFillQueryAndResultNames,
+} from "@/lib/report-template/table-sql-visual-compile";
 import type { TableSqlFillConfig } from "@/lib/report-template/table-sql-fill";
 import { defaultSqlParam, hydrateTableSqlFill } from "@/lib/report-template/table-sql-fill";
 
@@ -83,5 +87,38 @@ describe("compileVisualTableSql", () => {
     expect(fill.params[0].source).toBe("literal");
     expect(fill.params[0].opcuaNodeId).toBe("");
     expect(fill.params[0].literalFallback).toBe("X");
+  });
+
+  it("defaults visual result header to picked field name", () => {
+    const fill: TableSqlFillConfig = hydrateTableSqlFill({});
+    fill.enabled = true;
+    fill.fillMode = "visual";
+    fill.visualSource = {
+      connectionId: "c1",
+      database: "db1",
+      table: "t_log",
+      engine: "mysql",
+      columns: [""],
+    };
+    applyVisualSqlOutputColumnPick(fill, 1, 0, "status");
+    expect(fill.visualSource.columns[0]).toBe("status");
+    expect(fill.resultColumnNames[0]).toBe("status");
+  });
+
+  it("keeps custom visual result headers when recompiling", () => {
+    const fill: TableSqlFillConfig = hydrateTableSqlFill({});
+    fill.enabled = true;
+    fill.fillMode = "visual";
+    fill.visualSource = {
+      connectionId: "c1",
+      database: "db1",
+      table: "t_log",
+      engine: "mysql",
+      columns: ["status"],
+    };
+    fill.resultColumnNames = ["状态"];
+    syncVisualFillQueryAndResultNames(fill, 1);
+    expect(fill.querySql).toContain("`status`");
+    expect(fill.resultColumnNames[0]).toBe("状态");
   });
 });

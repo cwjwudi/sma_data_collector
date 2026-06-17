@@ -165,6 +165,7 @@ async def browse_saved(server_id: str, payload: dict = Body(default_factory=dict
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
     node_id = (payload or {}).get("node_id")
+    dt = str((payload or {}).get("data_type") or "").strip() or None
     raw_mc = (payload or {}).get("max_children")
     mc = opcua_service.DEFAULT_OPCUA_BROWSE_MAX_CHILDREN
     if raw_mc is not None:
@@ -180,6 +181,7 @@ async def browse_saved(server_id: str, payload: dict = Body(default_factory=dict
         srv.get("username"),
         pwd,
         max_children=mc,
+        data_type_filter=dt,
     )
 
 
