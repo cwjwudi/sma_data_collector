@@ -1,17 +1,17 @@
 {
-  "version": "0.1.20",
-  "releasedAt": "2026-05-28T18:30:00.000Z",
-  "notes": "侧边栏可收起为图标模式；收起仅显示版本号；圆形更新钮（暂停/继续/安装）\n\n当前安装包：macOS arm64 与 Windows x64 均已发布。",
+  "version": "0.1.21",
+  "releasedAt": "2026-06-17T08:53:39.741Z",
+  "notes": "设置页证书验证",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor-Setup-0.1.20-x64.exe",
-      "sha256": "b43fe6735d58f40c876dfa76affd697c9b6bac41e8ad1da04063fa26364a5b00",
-      "size": 143152765
+      "url": "Report Editor-Setup-0.1.21-x64.exe",
+      "sha256": "",
+      "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor-0.1.20-arm64.dmg",
-      "sha256": "d0d918c53afb459ac7ce94ae432b49a1950766fac45e427657749dbbac0c2536",
-      "size": 176930132
+      "url": "Report Editor-0.1.21-arm64.dmg",
+      "sha256": "ada5f31108db147baa5f67d82ebc784682eba6a56deebf7faba8fd30dce3a947",
+      "size": 176931925
     }
   }
 }
