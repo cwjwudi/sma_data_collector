@@ -1,6 +1,8 @@
 # Unified runtime dependencies for:
 # - _Prj/SD_SMA_DATA_COLLECTOR
 # - _Prj/SD_SMA_DATA_COLLECTOR_QUERY_WEB
+# - _Prj/SD_SMA_DB_ADMIN
+# - _Prj/SD_SMA_REPORT_COPY
 fastapi
 uvicorn
 pydantic

@@ -3,7 +3,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 
 const require = createRequire(import.meta.url);
-const { outputPathForReportPart } = require("../../../electron/pdf-export-paths.cjs") as {
+const { outputPathForReportPart } = require("../../electron/pdf-export-paths.cjs") as {
   outputPathForReportPart: (filePath: string, partIndex: number, totalReports: number) => string;
 };
 

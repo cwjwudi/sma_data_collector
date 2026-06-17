@@ -6,9 +6,9 @@
 
 ## 当前目标版本
 
-安装包版本来自 **`frontend/package.json`** 的 `version` 字段（electron-builder 读取）。仓库当前应为 **0.1.20**；打包日志首行须显示 `Version: 0.1.20` 与 `Expected: Report Editor-Setup-0.1.20-x64.exe`。
+安装包版本来自 **`frontend/package.json`** 的 `version` 字段（electron-builder 读取）。仓库当前应为 **0.1.22**；打包日志首行须显示 `Version: 0.1.22` 与 `Expected: Report Editor-Setup-0.1.22-x64.exe`。
 
-若 Portal 上尚无 `0.1.20` 的 exe，在本机打完包后运行 `publish-portal-release.mjs --only win` 同步。
+若 Portal 上尚无 `0.1.22` 的 exe，在本机打完包后运行 `publish-portal-release.mjs --only win` 同步。
 
 ## 运行
 
@@ -35,7 +35,7 @@ git pull
 或指定版本 bump（一般已在 main 上 bump 过则不必再写 `-Version`）：
 
 ```powershell
-.\build.ps1 -Version 0.1.20 -Notes "更新说明" -Fresh
+.\build.ps1 -Version 0.1.22 -Notes "更新说明" -Fresh
 ```
 
 ```bat

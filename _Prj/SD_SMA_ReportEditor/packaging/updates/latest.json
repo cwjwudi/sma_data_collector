@@ -1,17 +1,17 @@
 {
-  "version": "0.1.21",
-  "releasedAt": "2026-06-17T08:53:39.741Z",
-  "notes": "设置页证书验证",
+  "version": "0.1.22",
+  "releasedAt": "2026-06-17T10:20:48.266Z",
+  "notes": "合并 data-report：分文件导出、标量 SQL、报表复制服务；证书验证",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor-Setup-0.1.21-x64.exe",
+      "url": "Report Editor-Setup-0.1.22-x64.exe",
       "sha256": "",
       "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor-0.1.21-arm64.dmg",
-      "sha256": "ada5f31108db147baa5f67d82ebc784682eba6a56deebf7faba8fd30dce3a947",
-      "size": 176931925
+      "url": "Report Editor-0.1.22-arm64.dmg",
+      "sha256": "",
+      "size": 0
     }
   }
 }
