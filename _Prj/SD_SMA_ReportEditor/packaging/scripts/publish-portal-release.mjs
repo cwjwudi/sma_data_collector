@@ -85,6 +85,13 @@ function artifactFileName(version, kind) {
     : `Report Editor-Setup-${version}-x64.exe`
 }
 
+function findFirstExisting(paths) {
+  for (const p of paths) {
+    if (p && fs.existsSync(p)) return p
+  }
+  return ''
+}
+
 function findBuildArtifact(version, kind) {
   const name = artifactFileName(version, kind)
   const dirs = [
@@ -96,6 +103,22 @@ function findBuildArtifact(version, kind) {
     if (fs.existsSync(full)) return full
   }
   return ''
+}
+
+function findWindowsUpdateMetadata(version, name, portalDir = '') {
+  const setupName = artifactFileName(version, 'win')
+  const candidates = {
+    blockmap: `${setupName}.blockmap`,
+    latestYml: 'latest.yml',
+  }
+  const fileName = candidates[name]
+  if (!fileName) return ''
+  return findFirstExisting([
+    portalDir ? path.join(portalDir, fileName) : '',
+    path.join(root, 'packaging/windows/output', fileName),
+    path.join(root, 'packaging/windows/output-alt', fileName),
+    path.join(root, 'packaging/updates', fileName),
+  ])
 }
 
 function artifactEntryForFile(filePath) {
@@ -203,7 +226,17 @@ const buildWin = findBuildArtifact(version, 'win')
 if (args.copyArtifacts && portalDir) {
   console.log(`Portal dir: ${portalDir}`)
   if (buildMac) copyFileIfNewer(buildMac, path.join(portalDir, path.basename(buildMac)))
-  if (buildWin) copyFileIfNewer(buildWin, path.join(portalDir, path.basename(buildWin)))
+  if (buildWin) {
+    copyFileIfNewer(buildWin, path.join(portalDir, path.basename(buildWin)))
+    const blockmap = findWindowsUpdateMetadata(version, 'blockmap')
+    const latestYml = findWindowsUpdateMetadata(version, 'latestYml')
+    if (blockmap) copyFileIfNewer(blockmap, path.join(portalDir, path.basename(blockmap)))
+    if (latestYml) copyFileIfNewer(latestYml, path.join(portalDir, 'latest.yml'))
+    if (!blockmap || !latestYml) {
+      console.warn('[warn] Windows differential metadata missing; full installer update still works.')
+      console.warn('       Expected latest.yml and Report Editor-Setup-<version>-x64.exe.blockmap from electron-builder.')
+    }
+  }
 }
 
 buildManifest(version, portalDir, { only: args.only })
@@ -221,5 +254,10 @@ if (!args.copyArtifacts) {
 
 fs.copyFileSync(manifestPath, path.join(portalDir, 'latest.json'))
 console.log(`[sync] latest.json -> ${path.join(portalDir, 'latest.json')}`)
+const latestYml = findWindowsUpdateMetadata(version, 'latestYml', portalDir)
+if (latestYml) {
+  fs.copyFileSync(latestYml, path.join(portalDir, 'latest.yml'))
+  console.log(`[sync] latest.yml -> ${path.join(portalDir, 'latest.yml')}`)
+}
 console.log('')
 console.log(`Done. 部署 WebPortal 后，Solutions 页与客户端自动更新将指向 ${version}。`)

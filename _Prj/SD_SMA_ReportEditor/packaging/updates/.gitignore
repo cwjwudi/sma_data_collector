@@ -3,6 +3,7 @@
 *.exe
 *.zip
 *.blockmap
+Report Editor-*.txt
 report-editor-backup-*.json
 
 !latest.json

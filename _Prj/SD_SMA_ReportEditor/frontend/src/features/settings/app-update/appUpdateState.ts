@@ -262,7 +262,7 @@ export async function checkAppUpdateManual() {
   return res
 }
 
-export async function startAppUpdateDownload() {
+export async function startAppUpdateDownload(options?: { fullDownload?: boolean }) {
   const api = window.electronAPI
   if (!api?.downloadAppUpdate) return null
   const resume = appUpdateDownloadPaused.value
@@ -273,7 +273,7 @@ export async function startAppUpdateDownload() {
     resetDownloadStats()
   }
   appUpdateDownloadedReady.value = false
-  const res = await api.downloadAppUpdate()
+  const res = await api.downloadAppUpdate(options)
   await syncAppUpdateState()
   return res
 }

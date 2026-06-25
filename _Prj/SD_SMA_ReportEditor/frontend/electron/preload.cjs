@@ -48,7 +48,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getAppUpdateState: () => ipcRenderer.invoke('app-update-get-state'),
   setAppUpdateConfig: (patch) => ipcRenderer.invoke('app-update-set-config', patch || {}),
   checkAppUpdate: (options) => ipcRenderer.invoke('app-update-check', options || {}),
-  downloadAppUpdate: () => ipcRenderer.invoke('app-update-download'),
+  downloadAppUpdate: (options) => ipcRenderer.invoke('app-update-download', options || {}),
   cancelAppUpdateDownload: () => ipcRenderer.invoke('app-update-cancel-download'),
   installAppUpdate: (options) => ipcRenderer.invoke('app-update-install', options || {}),
   skipAppUpdateVersion: () => ipcRenderer.invoke('app-update-skip-version'),
