@@ -5,7 +5,6 @@ const https = require('https')
 const path = require('path')
 const { spawn } = require('child_process')
 const { URL } = require('url')
-const { CancellationToken } = require('builder-util-runtime')
 
 /** 默认更新源：WebPortal 静态目录（https://brportal.cpolar.top/downloads/report-editor） */
 const DEFAULT_UPDATE_BASE_URL =
@@ -321,6 +320,7 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
   let windowsDownloading = false
   let windowsDownloadPercent = null
   let windowsDownloadToken = null
+  let windowsPendingDownloadToken = null
   let windowsDownloadedReady = false
   let windowsDownloadedVersion = null
   let windowsPendingInfo = null
@@ -383,6 +383,7 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
       autoUpdater.on('update-downloaded', (info) => {
         windowsDownloading = false
         windowsDownloadToken = null
+        windowsPendingDownloadToken = null
         windowsDownloadPercent = 100
         windowsDownloadedReady = true
         windowsDownloadedVersion = info?.version || windowsPendingInfo?.version || null
@@ -396,6 +397,7 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
       autoUpdater.on('update-cancelled', () => {
         windowsDownloading = false
         windowsDownloadToken = null
+        windowsPendingDownloadToken = null
         windowsDownloadPercent = null
         emit('update-download-progress', { phase: 'cancelled' })
       })
@@ -403,6 +405,7 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
         if (windowsDownloading) {
           windowsDownloading = false
           windowsDownloadToken = null
+          windowsPendingDownloadToken = null
           windowsDownloadPercent = null
           emit('update-download-progress', { phase: 'error' })
         }
@@ -426,6 +429,7 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
     }
     windowsDownloading = false
     windowsDownloadToken = null
+    windowsPendingDownloadToken = null
     windowsDownloadPercent = null
     windowsDownloadedReady = false
     windowsDownloadedVersion = null
@@ -626,10 +630,12 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
           const autoUpdater = getElectronAutoUpdater()
           const result = await autoUpdater.checkForUpdates()
           const info = result?.updateInfo || result?.versionInfo || null
+          windowsPendingDownloadToken = result?.cancellationToken || null
           const latestVersion = String(info?.version || currentVersion).trim()
           const cmp = compareSemver(latestVersion, currentVersion)
           if (!result?.isUpdateAvailable || cmp <= 0) {
             windowsPendingInfo = null
+            windowsPendingDownloadToken = null
             const latest = {
               ok: true,
               status: 'latest',
@@ -650,6 +656,7 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
           const skipped = readSettings(app).skippedVersions || {}
           if (skipped[latestVersion]) {
             windowsPendingInfo = null
+            windowsPendingDownloadToken = null
             const skippedResult = {
               ok: true,
               status: silent ? 'latest' : 'skipped',
@@ -817,6 +824,7 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
         if (windowsDownloadToken && typeof windowsDownloadToken.cancel === 'function') {
           windowsDownloadToken.cancel()
           windowsDownloadToken = null
+          windowsPendingDownloadToken = null
           windowsDownloading = false
           windowsDownloadPercent = null
           emit('update-download-progress', { phase: 'cancelled' })
@@ -902,7 +910,7 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
         windowsDownloadedReady = false
         windowsDownloadedVersion = null
         windowsDownloadPercent = 0
-        windowsDownloadToken = new CancellationToken()
+        windowsDownloadToken = windowsPendingDownloadToken || null
         try {
           const total = Number(windowsPendingInfo?.files?.[0]?.size) || 0
           emit('update-download-progress', {
@@ -912,9 +920,10 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
             percent: 0,
             mode: fullDownload ? 'full' : 'differential',
           })
-          await autoUpdater.downloadUpdate(windowsDownloadToken)
+          await autoUpdater.downloadUpdate(windowsDownloadToken || undefined)
           windowsDownloading = false
           windowsDownloadToken = null
+          windowsPendingDownloadToken = null
           windowsDownloadedReady = true
           windowsDownloadedVersion = latestVersion
           windowsDownloadPercent = 100
@@ -922,6 +931,7 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
         } catch (e) {
           windowsDownloading = false
           windowsDownloadToken = null
+          windowsPendingDownloadToken = null
           windowsDownloadPercent = null
           if (e && (e.name === 'CancellationError' || /cancel/i.test(String(e.message || e)))) {
             emit('update-download-progress', { phase: 'cancelled' })
