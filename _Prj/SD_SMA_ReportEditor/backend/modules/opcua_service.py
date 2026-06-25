@@ -293,12 +293,15 @@ async def _browse_with_client(
                 "display_name": (await ch.read_display_name()).Text,
                 "node_class": cls,
             }
-            if dt_filter and _is_opcua_variable_value_class(cls):
+            if _is_opcua_variable_value_class(cls):
                 type_name = await _try_node_data_type_name(ch, data_type_cache)
-                if not _data_type_matches_filter(type_name, dt_filter):
-                    continue
+                is_struct_container = _is_structure_like_data_type(type_name)
                 if type_name:
                     row["data_type"] = type_name
+                if is_struct_container:
+                    row["browse_container"] = True
+                if dt_filter and not _data_type_matches_filter(type_name, dt_filter) and not is_struct_container:
+                    continue
             nodes_out.append(row)
         except Exception as ex:
             nodes_out.append({"node_id": "", "browse_name": "", "display_name": "", "error": str(ex)})
@@ -612,6 +615,16 @@ def _data_type_matches_filter(type_name: str | None, filter_name: str) -> bool:
     return f in t
 
 
+def _is_structure_like_data_type(type_name: str | None) -> bool:
+    t = (type_name or "").strip().lower()
+    if not t:
+        return False
+    token = _opcua_data_type_token(type_name)
+    if token in {"extensionobject", "structure", "struct"}:
+        return True
+    return "extensionobject" in t or "structure" in t
+
+
 async def _search_variables_bfs(
     client: Client,
     query: str,
@@ -672,9 +685,11 @@ async def _search_variables_bfs(
             label = (disp or "").strip() or (browse_full or "").strip() or nid
             child_path = path_parts + [label]
             hay = f"{disp} {browse_full} {nid}".lower()
+            is_variable = _is_opcua_variable_value_class(cls)
+            type_name = await _try_node_data_type_name(ch, data_type_cache) if is_variable else None
+            is_struct_container = is_variable and _is_structure_like_data_type(type_name)
 
-            if _is_opcua_variable_value_class(cls):
-                type_name = await _try_node_data_type_name(ch, data_type_cache) if dt_filter else None
+            if is_variable and not is_struct_container:
                 if dt_filter and not _data_type_matches_filter(type_name, dt_filter):
                     continue
                 if q_lower and q_lower not in hay:
@@ -695,7 +710,7 @@ async def _search_variables_bfs(
             if truncated and len(hits) >= max_results:
                 break
 
-            if _is_opcua_variable_value_class(cls):
+            if is_variable and not is_struct_container:
                 continue
 
             nc_up = (cls or "").upper()
