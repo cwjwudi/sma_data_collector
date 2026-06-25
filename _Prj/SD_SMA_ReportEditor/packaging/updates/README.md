@@ -23,6 +23,8 @@ Apache/Nginx 文档根为 `public/` 时，`public/downloads/` 下的文件**匿�
 
 客户端逻辑：读取 `{更新源}/latest.json` → 比较 `version` 与当前安装包版本 → 从 `platforms[本机平台].url` 下载安装包。
 
+自 **0.1.23** 起，Windows 安装版优先读取 `{更新源}/latest.yml` 并使用 NSIS `.blockmap` 做增量下载；若差分不可用，会回退完整 Setup.exe。macOS 继续使用 `latest.json` + `.dmg` 全量更新。
+
 若门户地址为 [brportal.cpolar.top](https://brportal.cpolar.top/)，更新源示例：
 
 ```
@@ -31,11 +33,11 @@ https://brportal.cpolar.top/downloads/report-editor
 
 ## 打包后文件放哪里？
 
-1. **先打包**（产物在各自 output，不会自动进 updates）  
-   - macOS：`packaging/mac/output/Report Editor-<version>-<arch>.dmg`  
+1. **先打包**（产物在各自 output，不会自动进 updates）
+   - macOS：`packaging/mac/output/Report Editor-<version>-<arch>.dmg`
    - Windows：`packaging/windows/output/Report Editor-Setup-<version>-x64.exe`
 
-2. **再复制到本目录** `packaging/updates/`（与 `latest.json` 同级）  
+2. **再复制到本目录** `packaging/updates/`（与 `latest.json` 同级）
    ```bash
    cp "packaging/mac/output/Report Editor-0.1.0-arm64.dmg" packaging/updates/
    ```
@@ -48,9 +50,10 @@ node packaging/scripts/publish-portal-release.mjs --copy-artifacts
 
 `--portal-dir` 可指定 Portal 路径；默认探测 `/Volumes/web/web-portal-demo/...` 或相邻 `P004_WebPortal` 仓库。
 
-4. **发布**  
-   - 提交并推送 **`latest.json`** 到 Gitea（已纳入 Git）  
-   - **安装包**体积大，默认在 `.gitignore` 中；需通过 Gitea 网页上传、Release 附件、内网文件服务器等方式，保证 `latest.json` 里的 `url` 可下载  
+4. **发布**
+   - 提交并推送 **`latest.json`** 到 Gitea（已纳入 Git）
+   - Windows 增量更新需同步 **`latest.yml`** 与 **`Report Editor-Setup-<version>-x64.exe.blockmap`**，`publish-portal-release.mjs --copy-artifacts` 会自动复制
+   - **安装包**体积大，默认在 `.gitignore` 中；需通过 Gitea 网页上传、Release 附件、内网文件服务器等方式，保证 `latest.json` 里的 `url` 可下载
    - 若安装包放在其他服务器，生成清单时用 `--base-url` 指向该服务器，或把 `url` 写成绝对地址
 
 ## 清单格式
