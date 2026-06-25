@@ -435,6 +435,7 @@ import {
 import TemplateMiniPage from "@/components/report-template/TemplateMiniPage.vue";
 import TemplateMiniBands from "@/components/report-template/TemplateMiniBands.vue";
 import NewTemplateWizardDialog from "@/components/report-template/NewTemplateWizardDialog.vue";
+import { appConfirm } from "@/composables/useAppConfirm";
 
 const router = useRouter();
 const { begin: beginLoad, isStale: isLoadStale } = useStaleGuard();
@@ -942,7 +943,16 @@ async function confirmDuplicate() {
 }
 
 async function delTpl(id) {
-  if (!confirm("删除此模版？")) return;
+  if (
+    !(await appConfirm({
+      title: "删除模版",
+      message: "删除此模版？",
+      confirmText: "删除",
+      danger: true,
+    }))
+  ) {
+    return;
+  }
   try {
     await api.deleteTemplate(id);
   } catch {

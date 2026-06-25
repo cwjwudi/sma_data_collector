@@ -108,6 +108,7 @@ import {
 import { stableFingerprintPart } from "@/lib/report-template/snapshot-fingerprint";
 import { watchDebounced } from "@vueuse/core";
 import { useStaleGuard } from "@/composables/useStaleGuard";
+import { appConfirm } from "@/composables/useAppConfirm";
 
 const pkList = ["A5", "A4", "A3", "Letter"] as PaperKind[];
 
@@ -336,7 +337,16 @@ async function savePreset() {
 async function removePreset() {
   const w = working.value;
   if (!w) return;
-  if (!confirm("删除此版式？引用它的模版会失去关联 ID，请先确认模版侧已调整。")) return;
+  if (
+    !(await appConfirm({
+      title: "删除版式",
+      message: "删除此版式？引用它的模版会失去关联 ID，请先确认模版侧已调整。",
+      confirmText: "删除",
+      danger: true,
+    }))
+  ) {
+    return;
+  }
   msg.value = "";
   try {
     await deleteLayoutPresetFlexible(w.id);

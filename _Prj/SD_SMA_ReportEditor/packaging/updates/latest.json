@@ -1,17 +1,17 @@
 {
-  "version": "0.1.23",
-  "releasedAt": "2026-06-25T07:56:24.734Z",
-  "notes": "Windows 增量更新：接入 NSIS 差分下载，保留完整安装包兜底；macOS 继续使用全量 dmg 更新\nOPC UA：修复报表中结构体数据无法展开/显示的问题\n启动修复：修复 0.1.23 Windows 包启动时报 builder-util-runtime 缺失的问题",
+  "version": "0.1.24",
+  "releasedAt": "2026-06-25T08:31:10.323Z",
+  "notes": "焦点修复：删除确认改为应用内弹窗，避免 Electron 原生确认框关闭后输入框无法输入\\n发布验证：用于测试焦点恢复与 Windows 增量更新推送流程",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor-Setup-0.1.23-x64.exe",
+      "url": "Report Editor-Setup-0.1.24-x64.exe",
       "sha256": "",
       "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor-0.1.23-arm64.dmg",
-      "sha256": "dbaaf146ba4beff43dca5b779f68ea9227ba3b199b5db63afd22e272a0ee8c1d",
-      "size": 177236669
+      "url": "Report Editor-0.1.24-arm64.dmg",
+      "sha256": "",
+      "size": 0
     }
   }
 }
