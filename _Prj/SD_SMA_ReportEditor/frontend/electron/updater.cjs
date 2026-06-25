@@ -12,6 +12,14 @@ const DEFAULT_UPDATE_BASE_URL =
   'https://brportal.cpolar.top/downloads/report-editor'
 
 const MAC_APP_BUNDLE = '/Applications/Report Editor.app'
+let electronAutoUpdater = null
+
+function getElectronAutoUpdater() {
+  if (!electronAutoUpdater) {
+    electronAutoUpdater = require('electron-updater').autoUpdater
+  }
+  return electronAutoUpdater
+}
 
 function spawnMacOpenAfterUpgradeWatcher() {
   if (process.platform !== 'darwin') return
@@ -308,6 +316,15 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
   let partialReceived = 0
   let partialTotal = 0
   let activeDownloadAbort = null
+  let windowsUpdaterConfigured = false
+  let windowsDownloading = false
+  let windowsDownloadPercent = null
+  let windowsDownloadToken = null
+  let windowsPendingDownloadToken = null
+  let windowsDownloadedReady = false
+  let windowsDownloadedVersion = null
+  let windowsPendingInfo = null
+  let windowsLastBaseUrl = ''
 
   function emit(channel, payload) {
     const win = getMainWindow()
@@ -324,6 +341,98 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
       lastCheckStatus: result?.status || null,
     })
     emit('update-check-result', lastCheckResult)
+  }
+
+  function isWindowsDifferentialUpdater() {
+    return process.platform === 'win32'
+  }
+
+  function configureWindowsUpdater({ fullDownload = false } = {}) {
+    const autoUpdater = getElectronAutoUpdater()
+    const baseUrl = resolveBaseUrl(app).replace(/\/+$/, '')
+    if (!baseUrl) {
+      throw new Error('尚未配置更新服务器。请联系管理员，或在「高级设置」中填写。')
+    }
+
+    autoUpdater.autoDownload = false
+    autoUpdater.autoInstallOnAppQuit = false
+    autoUpdater.autoRunAppAfterInstall = true
+    autoUpdater.disableWebInstaller = true
+    autoUpdater.disableDifferentialDownload = Boolean(fullDownload)
+    autoUpdater.allowDowngrade = false
+    autoUpdater.logger = {
+      info: (msg) => console.log(`[Updater] ${msg}`),
+      warn: (msg) => console.warn(`[Updater] ${msg}`),
+      error: (msg) => console.error(`[Updater] ${msg}`),
+    }
+
+    if (!windowsUpdaterConfigured) {
+      windowsUpdaterConfigured = true
+      autoUpdater.on('download-progress', (p) => {
+        windowsDownloading = true
+        const percent =
+          typeof p.percent === 'number' ? Math.min(100, Math.round(p.percent)) : null
+        windowsDownloadPercent = percent
+        emit('update-download-progress', {
+          phase: 'progress',
+          received: Number(p.transferred) || 0,
+          total: Number(p.total) || 0,
+          percent,
+        })
+      })
+      autoUpdater.on('update-downloaded', (info) => {
+        windowsDownloading = false
+        windowsDownloadToken = null
+        windowsPendingDownloadToken = null
+        windowsDownloadPercent = 100
+        windowsDownloadedReady = true
+        windowsDownloadedVersion = info?.version || windowsPendingInfo?.version || null
+        emit('update-download-progress', {
+          phase: 'done',
+          percent: 100,
+          received: Number(info?.files?.[0]?.size) || 0,
+          total: Number(info?.files?.[0]?.size) || 0,
+        })
+      })
+      autoUpdater.on('update-cancelled', () => {
+        windowsDownloading = false
+        windowsDownloadToken = null
+        windowsPendingDownloadToken = null
+        windowsDownloadPercent = null
+        emit('update-download-progress', { phase: 'cancelled' })
+      })
+      autoUpdater.on('error', (err) => {
+        if (windowsDownloading) {
+          windowsDownloading = false
+          windowsDownloadToken = null
+          windowsPendingDownloadToken = null
+          windowsDownloadPercent = null
+          emit('update-download-progress', { phase: 'error' })
+        }
+        console.error(`[Updater] ${err?.stack || err?.message || err}`)
+      })
+    }
+
+    if (windowsLastBaseUrl !== baseUrl) {
+      windowsLastBaseUrl = baseUrl
+      autoUpdater.setFeedURL({ provider: 'generic', url: baseUrl, channel: 'latest' })
+    }
+  }
+
+  function resetWindowsDownloadState() {
+    if (windowsDownloadToken && typeof windowsDownloadToken.cancel === 'function') {
+      try {
+        windowsDownloadToken.cancel()
+      } catch {
+        /* ignore */
+      }
+    }
+    windowsDownloading = false
+    windowsDownloadToken = null
+    windowsPendingDownloadToken = null
+    windowsDownloadPercent = null
+    windowsDownloadedReady = false
+    windowsDownloadedVersion = null
   }
 
   function getUpdateDir() {
@@ -437,6 +546,7 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
       return {
         currentVersion: app.getVersion(),
         platform: getPlatformKey(),
+        updateMode: isWindowsDifferentialUpdater() ? 'windows-differential' : 'full-installer',
         baseUrl: resolveBaseUrl(app),
         defaultBaseUrl: DEFAULT_UPDATE_BASE_URL,
         skipTlsVerify: Boolean(settings.skipTlsVerify),
@@ -449,6 +559,17 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
     },
 
     getState() {
+      if (isWindowsDifferentialUpdater()) {
+        return {
+          lastCheck: lastCheckResult,
+          downloading: windowsDownloading,
+          downloadPaused: false,
+          downloadPercent: windowsDownloading ? windowsDownloadPercent : null,
+          downloadedReady: windowsDownloadedReady,
+          downloadedVersion: windowsDownloadedVersion || null,
+          latestVersion: windowsPendingInfo?.version || lastCheckResult?.latestVersion || null,
+        }
+      }
       return {
         lastCheck: lastCheckResult,
         downloading,
@@ -475,8 +596,11 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
       }
       writeSettings(app, next)
       pauseActiveDownload()
+      resetWindowsDownloadState()
       clearDownloaded()
       pending = null
+      windowsPendingInfo = null
+      windowsLastBaseUrl = ''
       return this.getConfig()
     },
 
@@ -495,6 +619,93 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
         }
         emitCheckResult(devResult)
         return devResult
+      }
+      if (isWindowsDifferentialUpdater()) {
+        if (!silent) {
+          resetWindowsDownloadState()
+        }
+        const currentVersion = app.getVersion()
+        try {
+          configureWindowsUpdater()
+          const autoUpdater = getElectronAutoUpdater()
+          const result = await autoUpdater.checkForUpdates()
+          const info = result?.updateInfo || result?.versionInfo || null
+          windowsPendingDownloadToken = result?.cancellationToken || null
+          const latestVersion = String(info?.version || currentVersion).trim()
+          const cmp = compareSemver(latestVersion, currentVersion)
+          if (!result?.isUpdateAvailable || cmp <= 0) {
+            windowsPendingInfo = null
+            windowsPendingDownloadToken = null
+            const latest = {
+              ok: true,
+              status: 'latest',
+              currentVersion,
+              latestVersion: cmp < 0 ? currentVersion : latestVersion,
+              message:
+                cmp < 0
+                  ? `当前版本 ${currentVersion} 较更新源（${latestVersion}）更新。`
+                  : '当前已是最新版本。',
+              releasedAt: info?.releaseDate || null,
+              notes: info?.releaseNotes || '',
+              manifestUrl: `${resolveBaseUrl(app).replace(/\/+$/, '')}/latest.yml`,
+            }
+            emitCheckResult(latest)
+            return latest
+          }
+
+          const skipped = readSettings(app).skippedVersions || {}
+          if (skipped[latestVersion]) {
+            windowsPendingInfo = null
+            windowsPendingDownloadToken = null
+            const skippedResult = {
+              ok: true,
+              status: silent ? 'latest' : 'skipped',
+              currentVersion,
+              latestVersion,
+              message: silent
+                ? '当前已是最新版本。'
+                : `已跳过版本 ${latestVersion}。如需升级请点「检查更新」并重新下载，或等待更高版本发布。`,
+              releasedAt: info?.releaseDate || null,
+              notes: info?.releaseNotes || '',
+              manifestUrl: `${resolveBaseUrl(app).replace(/\/+$/, '')}/latest.yml`,
+            }
+            emitCheckResult(skippedResult)
+            return skippedResult
+          }
+
+          windowsPendingInfo = info
+          windowsDownloadedReady =
+            windowsDownloadedReady && windowsDownloadedVersion === latestVersion
+          if (!windowsDownloadedReady) {
+            windowsDownloadedVersion = null
+          }
+          const size =
+            Number(info?.files?.[0]?.size) ||
+            Number(info?.files?.find?.((f) => String(f?.url || '').endsWith('.exe'))?.size) ||
+            null
+          const available = {
+            ok: true,
+            status: 'available',
+            currentVersion,
+            latestVersion,
+            notes: info?.releaseNotes || '',
+            releasedAt: info?.releaseDate || null,
+            downloadUrl: info?.files?.[0]?.url || '',
+            size,
+            manifestUrl: `${resolveBaseUrl(app).replace(/\/+$/, '')}/latest.yml`,
+          }
+          emitCheckResult(available)
+          return available
+        } catch (e) {
+          const errResult = {
+            ok: false,
+            status: 'error',
+            currentVersion,
+            message: humanizeUpdateError(e, { phase: 'check' }),
+          }
+          emitCheckResult(errResult)
+          return errResult
+        }
       }
       if (!silent) {
         pauseActiveDownload()
@@ -609,6 +820,18 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
     },
 
     pauseDownload() {
+      if (isWindowsDifferentialUpdater()) {
+        if (windowsDownloadToken && typeof windowsDownloadToken.cancel === 'function') {
+          windowsDownloadToken.cancel()
+          windowsDownloadToken = null
+          windowsPendingDownloadToken = null
+          windowsDownloading = false
+          windowsDownloadPercent = null
+          emit('update-download-progress', { phase: 'cancelled' })
+          return { ok: true, cancelled: true }
+        }
+        return { ok: true, cancelled: false }
+      }
       if (!downloading) {
         return { ok: true, paused: false }
       }
@@ -621,7 +844,9 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
     },
 
     skipAvailableVersion() {
-      const version = pending?.latestVersion || lastCheckResult?.latestVersion
+      const version =
+        (isWindowsDifferentialUpdater() ? windowsPendingInfo?.version : pending?.latestVersion) ||
+        lastCheckResult?.latestVersion
       if (!version) {
         return { ok: false, error: '当前没有可跳过的新版本' }
       }
@@ -629,6 +854,8 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
       const skippedVersions = { ...(settings.skippedVersions || {}), [version]: true }
       writeSettings(app, { skippedVersions })
       pending = null
+      windowsPendingInfo = null
+      resetWindowsDownloadState()
       clearDownloaded()
       pauseActiveDownload()
       const skippedResult = {
@@ -661,9 +888,61 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
       return { ok: true }
     },
 
-    async download() {
+    async download(options = {}) {
       if (!app.isPackaged) {
         return { ok: false, error: '开发模式不支持下载安装包' }
+      }
+      if (isWindowsDifferentialUpdater()) {
+        if (windowsDownloading) {
+          return { ok: true, status: 'downloading' }
+        }
+        const latestVersion = windowsPendingInfo?.version || lastCheckResult?.latestVersion || null
+        if (windowsDownloadedReady && latestVersion && windowsDownloadedVersion === latestVersion) {
+          return { ok: true, latestVersion, status: 'ready' }
+        }
+        if (!windowsPendingInfo) {
+          return { ok: false, error: '请先检查更新' }
+        }
+        const fullDownload = Boolean(options.fullDownload)
+        configureWindowsUpdater({ fullDownload })
+        const autoUpdater = getElectronAutoUpdater()
+        windowsDownloading = true
+        windowsDownloadedReady = false
+        windowsDownloadedVersion = null
+        windowsDownloadPercent = 0
+        windowsDownloadToken = windowsPendingDownloadToken || null
+        try {
+          const total = Number(windowsPendingInfo?.files?.[0]?.size) || 0
+          emit('update-download-progress', {
+            phase: 'start',
+            received: 0,
+            total,
+            percent: 0,
+            mode: fullDownload ? 'full' : 'differential',
+          })
+          await autoUpdater.downloadUpdate(windowsDownloadToken || undefined)
+          windowsDownloading = false
+          windowsDownloadToken = null
+          windowsPendingDownloadToken = null
+          windowsDownloadedReady = true
+          windowsDownloadedVersion = latestVersion
+          windowsDownloadPercent = 100
+          return { ok: true, latestVersion, mode: fullDownload ? 'full' : 'differential' }
+        } catch (e) {
+          windowsDownloading = false
+          windowsDownloadToken = null
+          windowsPendingDownloadToken = null
+          windowsDownloadPercent = null
+          if (e && (e.name === 'CancellationError' || /cancel/i.test(String(e.message || e)))) {
+            emit('update-download-progress', { phase: 'cancelled' })
+            return { ok: false, cancelled: true, error: '下载已取消，可重新开始下载。' }
+          }
+          emit('update-download-progress', { phase: 'error' })
+          return {
+            ok: false,
+            error: humanizeUpdateError(e, { phase: 'download' }),
+          }
+        }
       }
       if (downloading) {
         return { ok: true, status: 'downloading' }
@@ -817,6 +1096,27 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
     async install(options = {}) {
       if (!app.isPackaged) {
         return { ok: false, error: '开发模式不支持安装' }
+      }
+      if (isWindowsDifferentialUpdater()) {
+        if (!windowsDownloadedReady) {
+          return { ok: false, error: '请先下载安装包' }
+        }
+        try {
+          stopBackend()
+          const autoUpdater = getElectronAutoUpdater()
+          autoUpdater.quitAndInstall(false, true)
+          setTimeout(() => app.quit(), 400)
+          return {
+            ok: true,
+            mode: 'electron-updater',
+            message: '已启动升级程序，本软件即将退出并安装新版本。',
+          }
+        } catch (e) {
+          return {
+            ok: false,
+            error: humanizeUpdateError(e, { phase: 'install' }),
+          }
+        }
       }
       if (!downloadedPath || !fs.existsSync(downloadedPath)) {
         return { ok: false, error: '请先下载安装包' }

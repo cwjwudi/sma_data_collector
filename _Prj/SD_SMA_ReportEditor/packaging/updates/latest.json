@@ -1,15 +1,15 @@
 {
-  "version": "0.1.22",
-  "releasedAt": "2026-06-17T10:20:48.266Z",
-  "notes": "合并 data-report：分文件导出、标量 SQL、报表复制服务；证书验证",
+  "version": "0.1.24",
+  "releasedAt": "2026-06-25T08:31:10.323Z",
+  "notes": "焦点修复：删除确认改为应用内弹窗，避免 Electron 原生确认框关闭后输入框无法输入\\n发布验证：用于测试焦点恢复与 Windows 增量更新推送流程",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor-Setup-0.1.22-x64.exe",
+      "url": "Report Editor-Setup-0.1.24-x64.exe",
       "sha256": "",
       "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor-0.1.22-arm64.dmg",
+      "url": "Report Editor-0.1.24-arm64.dmg",
       "sha256": "",
       "size": 0
     }

@@ -4,8 +4,10 @@ import router from './router'
 import App from './App.vue'
 import './style.css'
 import { applyStoredElectronDevtoolsPref } from './lib/electron-devtools-storage'
+import { installNativeDialogFocusRecovery } from './lib/native-dialog-focus-recovery'
 
 applyStoredElectronDevtoolsPref()
+installNativeDialogFocusRecovery()
 
 const app = createApp(App)
 app.config.errorHandler = (err, _instance, info) => {

@@ -64,6 +64,7 @@
     </div>
     <SetupWizard v-model="setupWizardVisible" />
     <AppUpdatePromptDialog v-if="appUpdateStartupPromptOpen" />
+    <AppConfirmDialog />
     <AppToastStack />
   </div>
 </template>
@@ -74,6 +75,7 @@ import { useRoute } from 'vue-router'
 import SetupWizard from '@/features/onboarding/SetupWizard.vue'
 import AppUpdatePromptDialog from '@/features/settings/app-update/AppUpdatePromptDialog.vue'
 import SidebarAppUpdateBar from '@/features/settings/app-update/SidebarAppUpdateBar.vue'
+import AppConfirmDialog from '@/components/AppConfirmDialog.vue'
 import AppToastStack from '@/components/AppToastStack.vue'
 import {
   appUpdateAvailable,

@@ -123,7 +123,8 @@ import {
   applyOpcBrowseChildren,
   collapseOpcTreeNodes,
   isOpcObjectLikeBrowseNode,
-  isOpcVariableValueNode,
+  isOpcReadableVariableNode,
+  isOpcStructuredVariableNode,
   opcDataTypeLabelMatchesFilter,
   shouldShowOpcBrowseChild,
 } from './opcua-tree-utils.js'
@@ -618,7 +619,7 @@ async function opcApiRead(nodeId) {
 async function prefetchVariableValuesInNodes(nodes) {
   if (!browseCapability.value || !nodes?.length) return
   const myGen = prefetchGen.value
-  const targets = nodes.filter((n) => n.node_id && isOpcVariableValueNode(n))
+  const targets = nodes.filter((n) => n.node_id && isOpcReadableVariableNode(n))
   for (let i = 0; i < targets.length; i += VARIABLE_PREFETCH_CONCURRENCY) {
     if (prefetchGen.value !== myGen || !browseCapability.value) return
     const batch = targets.slice(i, i + VARIABLE_PREFETCH_CONCURRENCY)
@@ -631,7 +632,7 @@ async function prefetchVariableTreeRow(node, myGen) {
     !browseCapability.value ||
     prefetchGen.value !== myGen ||
     !node?.node_id ||
-    !isOpcVariableValueNode(node)
+    !isOpcReadableVariableNode(node)
   )
     return
   try {
@@ -663,7 +664,15 @@ function filterBrowseChildrenForDataType(children) {
 }
 
 async function pickNode(n) {
-  if (dataTypeFilter.value && isOpcVariableValueNode(n)) {
+  if (isOpcStructuredVariableNode(n)) {
+    pickedNode.value = null
+    msg.value = '这是结构体节点，请继续展开并选择其中的基础数据类型变量'
+    if (browseCapability.value && n?.node_id && (!n.loaded || !n.expanded)) {
+      await onToggleNode(n)
+    }
+    return
+  }
+  if (dataTypeFilter.value && isOpcReadableVariableNode(n)) {
     if (!n.valueDataTypeLabel) {
       await prefetchVariableTreeRow(n, prefetchGen.value)
     }
@@ -683,8 +692,16 @@ async function pickNode(n) {
 async function confirmPick() {
   const id = pickedNode.value?.node_id
   if (!id) return
+  if (isOpcStructuredVariableNode(pickedNode.value)) {
+    msg.value = '结构体节点不能直接绑定，请展开后选择其中的基础数据类型变量'
+    return
+  }
   const filter = dataTypeFilter.value
-  if (filter && isOpcVariableValueNode(pickedNode.value)) {
+  if (filter) {
+    if (!isOpcReadableVariableNode(pickedNode.value)) {
+      msg.value = `请选择数据类型为 ${filter} 的基础变量`
+      return
+    }
     if (!pickedNode.value.valueDataTypeLabel) {
       await prefetchVariableTreeRow(pickedNode.value, prefetchGen.value)
     }

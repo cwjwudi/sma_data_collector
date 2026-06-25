@@ -79,6 +79,7 @@ import { useRoute, useRouter } from "vue-router";
 import SignaturePadDialog from "@/components/report-template/SignaturePadDialog.vue";
 import type { SignatureAsset } from "@/api/signatures";
 import * as api from "@/api/signatures";
+import { appConfirm } from "@/composables/useAppConfirm";
 
 const msg = ref("");
 const dlg = ref(false);
@@ -215,7 +216,16 @@ function rename(id: string) {
 }
 
 async function remove(id: string) {
-  if (!confirm("删除此签名条目？模版里若有 signatureAssetId 引用将断开源文件。")) return;
+  if (
+    !(await appConfirm({
+      title: "删除签名条目",
+      message: "删除此签名条目？模版里若有 signatureAssetId 引用将断开源文件。",
+      confirmText: "删除",
+      danger: true,
+    }))
+  ) {
+    return;
+  }
   msg.value = "";
   try {
     await api.deleteSignature(id);

@@ -60,7 +60,7 @@
           <button
             type="button"
             class="btn seg"
-            :disabled="!browseCapability || !pickedNode?.node_id"
+            :disabled="!canReadPickedNode"
             @click="readValue"
           >
             重新读取
@@ -247,7 +247,12 @@ import '../datasource-ui.css'
 import '../connection-tabs.css'
 import '../connection-form-pane.css'
 import { opcDataTypeLabelFromRead } from './opcua-value-meta.js'
-import { applyOpcBrowseChildren, collapseOpcTreeNodes, isOpcVariableValueNode } from './opcua-tree-utils.js'
+import {
+  applyOpcBrowseChildren,
+  collapseOpcTreeNodes,
+  isOpcReadableVariableNode,
+  isOpcStructuredVariableNode,
+} from './opcua-tree-utils.js'
 import { runOpcExpandAllTree } from './opcua-tree-expand-all.js'
 import { parseOpcNodeId, opcNodeClassLabel } from './opcua-node-display.js'
 
@@ -406,6 +411,7 @@ function bumpTree() {
 }
 
 function wrapOpcNode(raw) {
+  const dataTypeLabel = String(raw?.data_type || raw?.valueDataTypeLabel || '').trim()
   return {
     ...raw,
     children: [],
@@ -414,7 +420,7 @@ function wrapOpcNode(raw) {
     loaded: false,
     browseLeaf: false,
     errorMessage: null,
-    valueDataTypeLabel: '',
+    valueDataTypeLabel: dataTypeLabel,
   }
 }
 
@@ -424,6 +430,7 @@ function opcHitToPickEntry(h) {
     browse_name: h.browse_name,
     display_name: h.display_name,
     node_class: h.node_class,
+    data_type: h.data_type,
   })
   return { node, pathStr: h.path_str || '' }
 }
@@ -937,14 +944,16 @@ async function onToggleNode(node) {
   }
 }
 
-const canPollCurrent = computed(
+const canReadPickedNode = computed(
   () =>
     !!(
       browseCapability.value &&
       pickedNode.value?.node_id &&
-      isOpcVariableValueNode(pickedNode.value)
+      isOpcReadableVariableNode(pickedNode.value)
     ),
 )
+
+const canPollCurrent = computed(() => canReadPickedNode.value)
 
 /** 树行快捷展示的读值摘要（不含完整 JSON） */
 function formatOpcValuePreview(res) {
@@ -974,7 +983,7 @@ const VARIABLE_PREFETCH_CONCURRENCY = 4
 async function prefetchVariableValuesInNodes(nodes) {
   if (!browseCapability.value || !nodes?.length) return
   const myGen = prefetchGen.value
-  const targets = nodes.filter((n) => n.node_id && isOpcVariableValueNode(n))
+  const targets = nodes.filter((n) => n.node_id && isOpcReadableVariableNode(n))
   for (let i = 0; i < targets.length; i += VARIABLE_PREFETCH_CONCURRENCY) {
     if (prefetchGen.value !== myGen || !browseCapability.value) return
     const batch = targets.slice(i, i + VARIABLE_PREFETCH_CONCURRENCY)
@@ -988,7 +997,7 @@ function collectVisibleVariableNodes(nodes) {
   function walk(list) {
     if (!list?.length) return
     for (const n of list) {
-      if (n.node_id && isOpcVariableValueNode(n)) acc.push(n)
+      if (n.node_id && isOpcReadableVariableNode(n)) acc.push(n)
       const loaded = !!n.loaded
       const childCount = n.children?.length ?? 0
       if (n.expanded && loaded && childCount > 0) walk(n.children)
@@ -1003,7 +1012,7 @@ async function prefetchVariableTreeRow(node, myGen) {
     !browseCapability.value ||
     prefetchGen.value !== myGen ||
     !node?.node_id ||
-    !isOpcVariableValueNode(node)
+    !isOpcReadableVariableNode(node)
   )
     return
   try {
@@ -1033,15 +1042,19 @@ function pickNode(n) {
   pickedValueText.value = n?.valuePreview ? String(n.valuePreview) : ''
   pickedReadError.value = n?.valueReadError ? String(n.valueReadError) : ''
   readEpoch.value += 1
+  if (browseCapability.value && n?.node_id && isOpcStructuredVariableNode(n) && (!n.loaded || !n.expanded)) {
+    void onToggleNode(n)
+    return
+  }
   const epoch = readEpoch.value
-  if (browseCapability.value && n?.node_id && isOpcVariableValueNode(n)) {
+  if (browseCapability.value && n?.node_id && isOpcReadableVariableNode(n)) {
     void fetchNodeValue(n, epoch)
   }
 }
 
 async function fetchNodeValue(node, epoch, { manual = false } = {}) {
   if (!browseCapability.value || !node?.node_id) return
-  const showInTree = isOpcVariableValueNode(node)
+  const showInTree = isOpcReadableVariableNode(node)
   if (!manual && !showInTree) return
 
   const nodeId = node.node_id
@@ -1074,7 +1087,7 @@ async function fetchNodeValue(node, epoch, { manual = false } = {}) {
 }
 
 async function readValue() {
-  if (!browseCapability.value || !pickedNode.value?.node_id) return
+  if (!browseCapability.value || !pickedNode.value?.node_id || !isOpcReadableVariableNode(pickedNode.value)) return
   readEpoch.value += 1
   const epoch = readEpoch.value
   await fetchNodeValue(pickedNode.value, epoch, { manual: true })
@@ -1109,7 +1122,7 @@ function clearTreeRowPollTimer() {
 async function pollSelectedVariableOnce() {
   if (!pollEnabled.value || !browseCapability.value || pollInFlight) return
   const n = pickedNode.value
-  if (!n?.node_id || !isOpcVariableValueNode(n)) return
+  if (!n?.node_id || !isOpcReadableVariableNode(n)) return
   pollInFlight = true
   try {
     const res = await opcApiRead(n.node_id)
@@ -1141,7 +1154,7 @@ function syncPollTimer() {
   clearPollTimer()
   if (!pollEnabled.value || !browseCapability.value) return
   const n = pickedNode.value
-  if (!n?.node_id || !isOpcVariableValueNode(n)) return
+  if (!n?.node_id || !isOpcReadableVariableNode(n)) return
   const ms = Math.round(clampPollSeconds(pollIntervalSeconds.value) * 1000)
   void pollSelectedVariableOnce()
   pollTimerId = window.setInterval(() => void pollSelectedVariableOnce(), ms)

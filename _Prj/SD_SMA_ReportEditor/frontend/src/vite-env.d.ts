@@ -48,6 +48,7 @@ interface Window {
     getAppUpdateConfig: () => Promise<{
       currentVersion: string;
       platform: string;
+      updateMode?: string;
       baseUrl: string;
       defaultBaseUrl: string;
       skipTlsVerify: boolean;
@@ -80,6 +81,7 @@ interface Window {
     }) => Promise<{
       currentVersion: string;
       platform: string;
+      updateMode?: string;
       baseUrl: string;
       defaultBaseUrl: string;
       skipTlsVerify: boolean;
@@ -101,11 +103,12 @@ interface Window {
       size?: number | null;
       manifestUrl?: string;
     }>;
-    downloadAppUpdate: () => Promise<{
+    downloadAppUpdate: (options?: { fullDownload?: boolean }) => Promise<{
       ok: boolean
       error?: string
       cancelled?: boolean
       paused?: boolean
+      mode?: string
       path?: string
       latestVersion?: string
       status?: string
@@ -156,6 +159,7 @@ interface Window {
         received?: number
         total?: number
         percent?: number | null
+        mode?: string
       }) => void,
     ) => () => void
     onAppUpdateCheckResult: (

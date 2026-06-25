@@ -16,9 +16,32 @@ export function isOpcVariableValueNode(n) {
   return token === 'VARIABLE' || token === '2'
 }
 
+export function opcNodeDataTypeLabel(n) {
+  return String(n?.valueDataTypeLabel || n?.data_type || '').trim()
+}
+
+export function isOpcStructureDataTypeLabel(label) {
+  const raw = String(label || '').trim().toLowerCase()
+  if (!raw) return false
+  const token = opcDataTypeToken(raw)
+  if (token === 'extensionobject' || token === 'structure' || token === 'struct') return true
+  return raw.includes('extensionobject') || raw.includes('structure')
+}
+
+export function isOpcStructuredVariableNode(n) {
+  if (!isOpcVariableValueNode(n)) return false
+  if (n?.browse_container === true || n?.is_struct === true) return true
+  return isOpcStructureDataTypeLabel(opcNodeDataTypeLabel(n))
+}
+
+export function isOpcReadableVariableNode(n) {
+  return isOpcVariableValueNode(n) && !isOpcStructuredVariableNode(n)
+}
+
 /** 地址空间中可能还有可浏览子节点的类型（Object/Folder 等） */
 export function isOpcObjectLikeBrowseNode(n) {
-  if (!n || isOpcVariableValueNode(n)) return false
+  if (!n) return false
+  if (isOpcVariableValueNode(n)) return isOpcStructuredVariableNode(n)
   const u = String(n.node_class || '')
     .trim()
     .toUpperCase()
@@ -130,8 +153,9 @@ export function opcDataTypeLabelMatchesFilter(label, filter) {
 /** 浏览子节点在 dataTypeFilter 下是否应显示（非 Variable 始终显示以便展开） */
 export function shouldShowOpcBrowseChild(node, dataTypeFilter) {
   if (!dataTypeFilter) return true
+  if (isOpcStructuredVariableNode(node)) return true
   if (!isOpcVariableValueNode(node)) return true
-  return opcDataTypeLabelMatchesFilter(node.valueDataTypeLabel, dataTypeFilter)
+  return opcDataTypeLabelMatchesFilter(opcNodeDataTypeLabel(node), dataTypeFilter)
 }
 
 export function filterOpcNodesBySearch(nodesRoot, query, max = 250) {
