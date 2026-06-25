@@ -227,6 +227,19 @@ function Ensure-RptpDeps([string]$NpmCmd) {
   Write-Ok 'Rptp dependencies are installed.'
 }
 
+function Test-NodeVersion([string]$NodeVersionText) {
+  $normalized = $NodeVersionText.Trim().TrimStart('v')
+  try {
+    $nodeVersion = [version]$normalized
+  } catch {
+    throw "Could not parse Node.js version: $NodeVersionText"
+  }
+
+  if ($nodeVersion.Major -lt 20 -or $nodeVersion.Major -ge 24) {
+    throw "Unsupported Node.js $NodeVersionText. This project requires Node.js >=20 and <24; use Node.js 20 or 22 LTS. Node 24 can leave Electron's binary postinstall incomplete."
+  }
+}
+
 function Show-ToolVersions([string]$NpmCmd, $Launcher) {
   Write-Step 'Tool check'
   Test-PythonVersion $Launcher
@@ -235,7 +248,8 @@ function Show-ToolVersions([string]$NpmCmd, $Launcher) {
   if (-not $node) {
     throw 'Node.js was not found. Install Node.js LTS and add it to PATH.'
   }
-  $nodeVer = & $node --version
+  $nodeVer = (& $node --version).Trim()
+  Test-NodeVersion $nodeVer
   Write-Ok "Node $nodeVer"
 
   $npmVer = & $NpmCmd --version

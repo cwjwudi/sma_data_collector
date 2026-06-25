@@ -31,9 +31,76 @@ if errorlevel 1 (
   exit /b 1
 )
 
+where node >nul 2>nul
+if errorlevel 1 (
+  echo [ERROR] node was not found. Install Node.js 20 or 22 LTS and add it to PATH.
+  echo This window will close in about 30 seconds.
+  ping 127.0.0.1 -n 31 >nul
+  exit /b 1
+)
+
+for /f "usebackq delims=" %%V in (`node -p "process.versions.node" 2^>nul`) do set "NODE_VERSION=%%V"
+for /f "tokens=1 delims=." %%V in ("%NODE_VERSION%") do set "NODE_MAJOR=%%V"
+if not defined NODE_MAJOR (
+  echo [ERROR] Could not detect Node.js version.
+  echo This window will close in about 30 seconds.
+  ping 127.0.0.1 -n 31 >nul
+  exit /b 1
+)
+
+if %NODE_MAJOR% LSS 20 (
+  echo [ERROR] Unsupported Node.js %NODE_VERSION%.
+  echo This project requires Node.js 20.x or 22.x LTS.
+  echo This window will close in about 30 seconds.
+  ping 127.0.0.1 -n 31 >nul
+  exit /b 1
+)
+
+if %NODE_MAJOR% GEQ 24 (
+  echo [ERROR] Unsupported Node.js %NODE_VERSION%.
+  echo This project requires Node.js 20.x or 22.x LTS.
+  echo Node 24 can leave Electron's binary install incomplete.
+  echo This window will close in about 30 seconds.
+  ping 127.0.0.1 -n 31 >nul
+  exit /b 1
+)
+
 if not exist "%FRONTEND%\node_modules\.bin\electron.cmd" (
   echo [ERROR] Frontend dependencies are missing.
   echo Run scripts\dev\windows\install_and_start_dev_web.bat first, or run npm install in "%FRONTEND%".
+  echo This window will close in about 30 seconds.
+  ping 127.0.0.1 -n 31 >nul
+  exit /b 1
+)
+
+set "ELECTRON_PACKAGE=%FRONTEND%\node_modules\electron"
+set "ELECTRON_PATH_FILE=%ELECTRON_PACKAGE%\path.txt"
+if not exist "%ELECTRON_PATH_FILE%" (
+  echo [ERROR] Electron is not installed correctly.
+  echo Missing "%ELECTRON_PATH_FILE%".
+  echo Switch to Node.js 20 or 22 LTS, then run npm install in "%FRONTEND%".
+  echo If npm reuses a bad cache, delete "%ELECTRON_PACKAGE%" first.
+  echo This window will close in about 30 seconds.
+  ping 127.0.0.1 -n 31 >nul
+  exit /b 1
+)
+
+set "ELECTRON_EXE_REL="
+set /p ELECTRON_EXE_REL=<"%ELECTRON_PATH_FILE%"
+if not defined ELECTRON_EXE_REL (
+  echo [ERROR] Electron is not installed correctly.
+  echo "%ELECTRON_PATH_FILE%" is empty.
+  echo Switch to Node.js 20 or 22 LTS, then run npm install in "%FRONTEND%".
+  echo This window will close in about 30 seconds.
+  ping 127.0.0.1 -n 31 >nul
+  exit /b 1
+)
+
+if not exist "%ELECTRON_PACKAGE%\dist\%ELECTRON_EXE_REL%" (
+  echo [ERROR] Electron is not installed correctly.
+  echo Missing "%ELECTRON_PACKAGE%\dist\%ELECTRON_EXE_REL%".
+  echo Switch to Node.js 20 or 22 LTS, then run npm install in "%FRONTEND%".
+  echo If npm reuses a bad cache, delete "%ELECTRON_PACKAGE%" first.
   echo This window will close in about 30 seconds.
   ping 127.0.0.1 -n 31 >nul
   exit /b 1
