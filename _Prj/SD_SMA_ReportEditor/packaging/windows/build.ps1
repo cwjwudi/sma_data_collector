@@ -31,9 +31,9 @@ Usage: .\build.ps1 [options]
   -AllowVersionMismatch Warn only if package.json != latest.json
   -NoPause              No "press any key" on failure
 
-Example (0.1.20):
+Example (0.1.25):
   .\build.ps1 -Fresh
-  .\build.ps1 -Version 0.1.20 -Notes "release notes" -Fresh
+  .\build.ps1 -Version 0.1.25 -Notes "release notes" -Fresh
 '@ | Write-Host
   exit 0
 }

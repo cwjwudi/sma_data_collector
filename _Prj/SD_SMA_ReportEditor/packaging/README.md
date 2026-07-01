@@ -60,10 +60,12 @@ npm run clean:legacy-release
 
 ## 快速开始
 
+> **发版前**在 `_Prj/SD_SMA_ReportEditor` 执行 `git pull origin main`，确认 `frontend/package.json` 的 `version` 为目标版本（当前 **0.1.25**）。打包脚本读取该字段，未 pull 时会仍显示旧版（如 0.1.24）。
+
 | 平台 | 命令 | 产物 |
 |------|------|------|
-| **Windows** | `packaging\windows\build.bat` | `packaging\windows\output\SD SMA Report Editor-Setup-<version>-x64.exe` |
-| **macOS** | `./packaging/mac/build.sh` 或双击 `build.command` | `packaging/mac/output/SD SMA Report Editor-<version>-<arch>.dmg` |
+| **Windows** | `packaging\windows\build.bat -Fresh` | `packaging\windows\output\Report Editor-Setup-<version>-x64.exe` |
+| **macOS** | `./packaging/mac/build.sh --fresh` | `packaging/mac/output/Report Editor-<version>-<arch>.dmg` |
 
 ### Windows 参数（`build.ps1`）
 

@@ -18,6 +18,7 @@ goto parse_args
 :run_build
 echo.
 echo == Report Editor Windows Build ==
+echo Tip: run "git pull" in repo first; version comes from frontend\package.json ^(target 0.1.25^).
 echo Directory: %CD%
 echo.
 

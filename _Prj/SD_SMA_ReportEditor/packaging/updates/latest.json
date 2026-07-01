@@ -1,6 +1,6 @@
 {
   "version": "0.1.25",
-  "releasedAt": "2026-07-01T17:11:51.883Z",
+  "releasedAt": "2026-07-01T17:45:56.191Z",
   "notes": "OPC UA 自动截批在任意页面持续监听，离开生成报表页仍可保存 PDF",
   "platforms": {
     "win32-x64": {
@@ -10,8 +10,8 @@
     },
     "darwin-arm64": {
       "url": "Report Editor-0.1.25-arm64.dmg",
-      "sha256": "",
-      "size": 0
+      "sha256": "dc2779b6d8c0d38d968e129d58ead8edb8c5f48852ebe9128d52042b5f2897b9",
+      "size": 177244081
     }
   }
 }
