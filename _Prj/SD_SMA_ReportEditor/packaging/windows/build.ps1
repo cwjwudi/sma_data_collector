@@ -14,6 +14,7 @@ param(
   [switch]$NoPause,
   [switch]$AllowVersionMismatch,
   [switch]$Help,
+  [string]$PortalDir = '',
   [string]$NpmRegistry = 'https://registry.npmmirror.com',
   [string]$ElectronMirror = 'https://npmmirror.com/mirrors/electron/'
 )
@@ -29,11 +30,12 @@ Usage: .\build.ps1 [options]
   -SkipBackendBuild     Skip PyInstaller
   -SkipTests            Skip npm test (not recommended)
   -AllowVersionMismatch Warn only if package.json != latest.json
+  -PortalDir <path>     Portal downloads/report-editor (or set REPORT_EDITOR_PORTAL_DIR)
   -NoPause              No "press any key" on failure
 
 Example (0.1.25):
   .\build.ps1 -Fresh
-  .\build.ps1 -Version 0.1.25 -Notes "release notes" -Fresh
+  .\build.ps1 -Fresh -PortalDir D:\web-portal-demo\public\downloads\report-editor
 '@ | Write-Host
   exit 0
 }
@@ -114,6 +116,14 @@ function Get-ManifestVersion {
   $ver = (& node -e "const fs=require('fs');const m=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));process.stdout.write(m.version||'')" $ManifestPath)
   if (-not $ver) { return '' }
   return $ver.Trim()
+}
+
+function Get-ManifestNotes {
+  param([string]$ManifestPath)
+  if (-not (Test-Path -LiteralPath $ManifestPath)) { return '' }
+  $notes = (& node -e "const fs=require('fs');const m=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));process.stdout.write(m.notes||'')" $ManifestPath)
+  if (-not $notes) { return '' }
+  return $notes.Trim()
 }
 
 function Sync-LockfileVersion {
@@ -234,6 +244,14 @@ Write-Host "Version:      $AppVersion"
 Write-Host "Expected:     $ExpectedSetup"
 if ($ManifestVersion) {
   Write-Host "Manifest:     $ManifestVersion (packaging/updates/latest.json)"
+}
+$ManifestNotes = Get-ManifestNotes $ManifestPath
+if ($ManifestNotes) {
+  Write-Host "Release notes (应用内更新将展示以下内容):"
+  Write-Host $ManifestNotes -ForegroundColor DarkGray
+}
+elseif (-not $ManifestVersion) {
+  Write-WarnLine 'packaging/updates/latest.json 缺少 notes，客户端检查更新时可能无更新说明。'
 }
 if ($ManifestVersion -and $ManifestVersion -ne $AppVersion) {
   $msg = "package.json ($AppVersion) != packaging/updates/latest.json ($ManifestVersion)."
@@ -422,13 +440,29 @@ if ($setup) {
 
   Write-Step 'Update manifest + sync Portal (if mounted)'
   $publishScript = Join-Path $Root 'packaging\scripts\publish-portal-release.mjs'
+  $publishArgs = @($publishScript, '--copy-artifacts', '--only', 'win')
+  $resolvedPortal = $PortalDir
+  if (-not $resolvedPortal -and $env:REPORT_EDITOR_PORTAL_DIR) {
+    $resolvedPortal = $env:REPORT_EDITOR_PORTAL_DIR
+  }
+  if ($resolvedPortal) {
+    $publishArgs += '--portal-dir', $resolvedPortal
+    Write-Host "Portal dir:   $resolvedPortal"
+  }
+  else {
+    Write-WarnLine '未指定 Portal 目录；仅更新 packaging/updates/latest.json 与 output/latest.yml。'
+    Write-WarnLine '同步到 WebPortal: node packaging\scripts\publish-portal-release.mjs --copy-artifacts --only win --portal-dir <path>'
+  }
   # --only win: 保留 latest.json 中已有 darwin-arm64（分平台发版）
-  & node $publishScript '--copy-artifacts' '--only' 'win'
+  & node @publishArgs
   if ($LASTEXITCODE -ne 0) {
     Write-WarnLine 'publish-portal-release failed; run manually after build.'
   }
   else {
-    Write-Ok 'latest.json synced (win32-x64; mac 条目已保留若同版本已存在)'
+    Write-Ok 'latest.json + latest.yml synced (win32-x64; releaseNotes 来自 latest.json notes)'
+    if ($ManifestNotes) {
+      Write-Host "已写入更新说明: $ManifestNotes" -ForegroundColor DarkGray
+    }
   }
 }
 else {

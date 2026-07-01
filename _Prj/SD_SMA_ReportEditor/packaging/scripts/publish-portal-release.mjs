@@ -169,8 +169,12 @@ function syncLatestYmlToPortal(version, notes, portalDir) {
   return dest
 }
 
-function resolveArtifactPath(version, kind, portalDir) {
+function resolveArtifactPath(version, kind, portalDir, options = {}) {
   const name = artifactFileName(version, kind)
+  if (options.preferBuild) {
+    const built = findBuildArtifact(version, kind)
+    if (built) return built
+  }
   const searchDirs = [portalDir, path.join(root, 'packaging/updates')].filter(Boolean)
   for (const dir of searchDirs) {
     const candidate = path.join(dir, name)
@@ -203,7 +207,9 @@ function buildManifest(version, portalDir, options = {}) {
 
   for (const kind of kinds) {
     const key = kind === 'mac' ? 'darwin-arm64' : 'win32-x64'
-    const filePath = resolveArtifactPath(version, kind, portalDir)
+    const filePath = resolveArtifactPath(version, kind, portalDir, {
+      preferBuild: Boolean(options.preferBuild),
+    })
     if (filePath) {
       platforms[key] = artifactEntryForFile(filePath)
       updatedKinds.push(kind)
@@ -236,8 +242,8 @@ function buildManifest(version, portalDir, options = {}) {
 
 function copyFileIfNewer(src, dest) {
   if (!fs.existsSync(src)) return false
+  const srcStat = fs.statSync(src)
   if (fs.existsSync(dest)) {
-    const srcStat = fs.statSync(src)
     const destStat = fs.statSync(dest)
     if (srcStat.size === destStat.size && srcStat.mtimeMs <= destStat.mtimeMs) {
       console.log(`[skip] ${path.basename(dest)} already up to date`)
@@ -245,7 +251,14 @@ function copyFileIfNewer(src, dest) {
     }
   }
   fs.copyFileSync(src, dest)
-  console.log(`[copy] ${src} -> ${dest}`)
+  const copied = fs.statSync(dest)
+  if (copied.size !== srcStat.size) {
+    console.error(
+      `[error] 拷贝后大小不一致：${path.basename(dest)} 期望 ${srcStat.size}，实际 ${copied.size}`,
+    )
+    process.exit(1)
+  }
+  console.log(`[copy] ${src} -> ${dest} (${copied.size} bytes)`)
   return true
 }
 
@@ -274,7 +287,7 @@ if (args.copyArtifacts && portalDir) {
   }
 }
 
-buildManifest(version, portalDir, { only: args.only })
+buildManifest(version, portalDir, { only: args.only, preferBuild: Boolean(args.copyArtifacts) })
 
 if (!portalDir) {
   console.warn('[warn] 未找到 Portal 目录，仅更新了 packaging/updates/latest.json')

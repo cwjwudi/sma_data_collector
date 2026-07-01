@@ -64,7 +64,9 @@ npm run clean:legacy-release
 
 | 平台 | 命令 | 产物 |
 |------|------|------|
-| **Windows** | `packaging\windows\build.bat -Fresh` | `packaging\windows\output\Report Editor-Setup-<version>-x64.exe` |
+| **Windows** | `packaging\windows\build.bat -Fresh` | `packaging\windows\output\Report Editor-Setup-<version>-x64.exe` + `latest.yml` |
+
+Windows 发版后运行 `publish-portal-release.mjs --only win`（`build.ps1` 已自动调用），将 `latest.json` 的 **notes** 写入 Portal 的 `latest.yml` **releaseNotes**，应用内更新可看到本版说明。
 | **macOS** | `./packaging/mac/build.sh --fresh` | `packaging/mac/output/Report Editor-<version>-<arch>.dmg` |
 
 ### Windows 参数（`build.ps1`）
@@ -74,6 +76,7 @@ npm run clean:legacy-release
 | `-Fresh` | 清空 `output/` 后再打包 |
 | `-SkipFrontendInstall` | 跳过 `npm ci` |
 | `-SkipBackendBuild` | 跳过 PyInstaller |
+| `-PortalDir` | 打包完成后同步到 Portal（或设 `REPORT_EDITOR_PORTAL_DIR`） |
 
 ### macOS 参数（`build.sh`）
 

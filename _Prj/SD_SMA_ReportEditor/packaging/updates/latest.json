@@ -1,6 +1,6 @@
 {
   "version": "0.1.25",
-  "releasedAt": "2026-07-01T19:25:31.023Z",
+  "releasedAt": "2026-07-01T19:50:52.678Z",
   "notes": "修复 0.1.25 启动白屏；OPC UA 自动截批全局监听；Windows 应用内更新改为完整安装包并显示更新说明",
   "platforms": {
     "win32-x64": {
@@ -10,8 +10,8 @@
     },
     "darwin-arm64": {
       "url": "Report Editor-0.1.25-arm64.dmg",
-      "sha256": "dc2779b6d8c0d38d968e129d58ead8edb8c5f48852ebe9128d52042b5f2897b9",
-      "size": 177244081
+      "sha256": "fd052d958e61964f8ace593470648e47bc874d042cc6d48efb34d65f130070b1",
+      "size": 177244363
     }
   }
 }

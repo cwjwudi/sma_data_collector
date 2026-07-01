@@ -4,9 +4,19 @@
 
 ← 打包总览与排错：[../README.md](../README.md)
 
-## 当前目标版本
+## 当前目标版本：0.1.25
 
-安装包版本来自 **`frontend/package.json`** 的 `version` 字段（electron-builder 读取）。仓库当前应为 **0.1.25**；打包日志首行须显示 `Version: 0.1.25` 与 `Expected: Report Editor-Setup-0.1.25-x64.exe`。
+安装包版本来自 **`frontend/package.json`** 的 `version` 字段。打包日志首行须显示 `Version: 0.1.25` 与 `Expected: Report Editor-Setup-0.1.25-x64.exe`。
+
+**本版更新说明**（写入 `packaging/updates/latest.json` 的 `notes`，应用内「检查更新」与 `latest.yml` 的 `releaseNotes` 均会展示）：
+
+> 修复 0.1.25 启动白屏；OPC UA 自动截批全局监听；Windows 应用内更新改为完整安装包并显示更新说明
+
+发版前请 `git pull origin main`，确认上述 `notes` 已在仓库中；若需修改说明：
+
+```powershell
+node packaging\scripts\bump-version.mjs 0.1.25 --notes "你的更新说明"
+```
 
 ## 一发版流程（推荐）
 
@@ -19,17 +29,21 @@ cd packaging\windows
 build.bat -Fresh
 ```
 
-打包成功后同步 Portal（生成 SHA256，保留 Mac 同版本条目）：
+打包成功后脚本会自动运行 `publish-portal-release.mjs --only win`，生成 Win 安装包 SHA256，并将 `notes` 注入 `output/latest.yml` 的 `releaseNotes`。
+
+**同步到 WebPortal**（任选其一）：
 
 ```powershell
+# 方式 A：打包时指定 Portal 目录
+.\build.ps1 -Fresh -PortalDir D:\path\to\web-portal-demo\public\downloads\report-editor
+
+# 方式 B：环境变量
+set REPORT_EDITOR_PORTAL_DIR=D:\path\to\web-portal-demo\public\downloads\report-editor
+build.bat -Fresh
+
+# 方式 C：打包后手动同步
 cd ..\..
-node packaging\scripts\publish-portal-release.mjs --copy-artifacts --only win
-```
-
-若 Portal 目录未自动挂载，指定路径：
-
-```powershell
-node packaging\scripts\publish-portal-release.mjs --copy-artifacts --only win --portal-dir D:\path\to\web-portal-demo\public\downloads\report-editor
+node packaging\scripts\publish-portal-release.mjs --copy-artifacts --only win --portal-dir D:\path\to\...\report-editor
 ```
 
 **务必加 `-Fresh`**，否则 `output/` 里残留旧版 `Report Editor-Setup-*.exe` 会导致脚本报错退出。
@@ -56,28 +70,33 @@ build.bat -Fresh
 | `-Fresh` | 清空 `output/` 后再打包 |
 | `-SkipFrontendInstall` | 跳过 `npm ci` |
 | `-SkipBackendBuild` | 跳过 PyInstaller |
+| `-PortalDir <path>` | 打包完成后同步到 Portal 静态目录 |
 | `-Version <semver>` | 打包前 bump（一般已在 main bump 过则不必） |
 | `-Notes <text>` | 与 `-Version` 写入 `latest.json` 说明 |
 
-示例（需在本机 bump 时）：
+示例：
 
 ```powershell
-.\build.ps1 -Version 0.1.25 -Notes "更新说明" -Fresh
-```
-
-发版前也可在 `_Prj/SD_SMA_ReportEditor` 手动 bump：
-
-```powershell
-node packaging\scripts\bump-version.mjs 0.1.25 --notes "说明"
+.\build.ps1 -Fresh -PortalDir D:\web-portal-demo\public\downloads\report-editor
 ```
 
 ## 产物
 
 ```text
 output/Report Editor-Setup-<version>-x64.exe
-output/latest.yml          ← electron-builder 生成，Windows 增量更新用
-output/*.exe.blockmap      ← 与 Setup 同名的 blockmap
+output/latest.yml          ← electron-builder 生成；publish 时会注入 releaseNotes
 ```
+
+**注意：** 0.1.25 起 Windows 应用内更新**仅使用完整安装包**（不发布 `.blockmap`，客户端 `disableDifferentialDownload=true`）。
+
+## 应用内更新说明如何展示
+
+| 来源 | 用途 |
+|------|------|
+| `packaging/updates/latest.json` → `notes` | 设置页「更新说明」、启动更新提示 |
+| `latest.yml` → `releaseNotes` | electron-updater 读取；由 publish 脚本从 `notes` 自动写入 |
+
+打包前确认 `latest.json` 中 `notes` 非空；`build.ps1` 会在日志中打印当前 `Release notes`。
 
 ## 与 Mac 打包对齐的能力
 
@@ -85,7 +104,8 @@ output/*.exe.blockmap      ← 与 Setup 同名的 blockmap
 |------|------|
 | 版本校验 | `package.json` 与 `packaging/updates/latest.json` 不一致时报错 |
 | 单测门禁 | 打包前执行 `npm test` |
-| Portal 同步 | `publish-portal-release.mjs --only win` |
+| Portal 同步 | `publish-portal-release.mjs --only win`（优先本地新构建的 exe 计算 SHA256） |
+| 拷贝校验 | publish 脚本校验 Portal 拷贝后文件大小一致 |
 
 ## 前置环境
 
