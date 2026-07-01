@@ -94,7 +94,15 @@ import {
   connectionProbeIntervalMs,
   loadConnectionProbePrefs,
 } from '@/features/datasource/connection-probe-prefs'
-import { loadSidebarCollapsed, saveSidebarCollapsed } from '@/lib/sidebar-layout-prefs'
+import {
+  disposeReportAutoExportTrigger,
+  getReportAutoExportBindingRuntime,
+  initReportAutoExportTrigger,
+  invalidateTemplateSummariesCache,
+  notifyReportAutoExportSettingsChanged,
+  reportAutoExportStatus,
+  resetReportAutoExportBindingRuntime,
+} from '@/lib/report-auto-export-trigger-service'
 
 const route = useRoute()
 
@@ -151,6 +159,7 @@ function onProbePrefsChanged(ev) {
 }
 
 function onConfigImported() {
+  invalidateTemplateSummariesCache()
   if (!route.path.startsWith('/datasource')) {
     void probeAllConnectionsForNav()
   }
@@ -185,12 +194,14 @@ onMounted(() => {
     scheduleAutoUpdateCheck()
   }
   void reloadNavProbePrefs()
+  initReportAutoExportTrigger()
   window.addEventListener('report-editor-config-imported', onConfigImported)
   window.addEventListener('report-editor-connection-probe-changed', onProbePrefsChanged)
 })
 
 onUnmounted(() => {
   stopNavDbHealthPolling()
+  disposeReportAutoExportTrigger()
   disposeAppUpdateListeners()
   window.removeEventListener('report-editor-config-imported', onConfigImported)
   window.removeEventListener('report-editor-connection-probe-changed', onProbePrefsChanged)

@@ -1,15 +1,15 @@
 {
-  "version": "0.1.24",
-  "releasedAt": "2026-06-25T08:31:10.323Z",
-  "notes": "焦点修复：删除确认改为应用内弹窗，避免 Electron 原生确认框关闭后输入框无法输入\\n发布验证：用于测试焦点恢复与 Windows 增量更新推送流程",
+  "version": "0.1.25",
+  "releasedAt": "2026-07-01T17:11:51.883Z",
+  "notes": "OPC UA 自动截批在任意页面持续监听，离开生成报表页仍可保存 PDF",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor-Setup-0.1.24-x64.exe",
+      "url": "Report Editor-Setup-0.1.25-x64.exe",
       "sha256": "",
       "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor-0.1.24-arm64.dmg",
+      "url": "Report Editor-0.1.25-arm64.dmg",
       "sha256": "",
       "size": 0
     }

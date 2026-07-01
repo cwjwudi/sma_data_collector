@@ -528,7 +528,7 @@
           </div>
         </div>
         <p class="rg-mini rg-mini--indent rg-mini--bindings-hint">
-          在「数据源 → OPC UA」中保存连接；启用 {{ RG_UI.opcAuto }} 后每秒检测触发变量，条件满足即生成对应 PDF，无冷却等待。
+          在「数据源 → OPC UA」中保存连接；启用 {{ RG_UI.opcAuto }} 后<strong>在任意页面</strong>均会每秒检测触发变量，条件满足即生成对应 PDF，无冷却等待。
         </p>
       </div>
       <p v-if="autoStatus" class="rg-hint">{{ autoStatus }}</p>
@@ -564,7 +564,7 @@ import {
 } from "@/lib/report-generator-prefs";
 import { loadReportExportPrefs, saveReportExportPrefs } from "@/lib/report-export-prefs";
 import { templateSelectLabel, templateSelectRows } from "@/lib/template-display-order";
-import { evaluateAutoOpcTrigger, createOpcTriggerPollState, type OpcTriggerPollState } from "@/lib/auto-opc-trigger";
+import { createOpcTriggerPollState, type OpcTriggerPollState } from "@/lib/auto-opc-trigger";
 import { resolveAutoExportDir } from "@/lib/resolve-auto-export-dir";
 import { readSavedOpcNodeValue, readSavedOpcStringValue } from "@/lib/opcua-string-variables";
 import { opcDataTypeLabelMatchesFilter } from "@/features/datasource/opcua/opcua-tree-utils.js";
@@ -577,7 +577,6 @@ import {
 import AutoTriggerValueSparkline from "@/components/AutoTriggerValueSparkline.vue";
 import {
   appendTriggerLogEntry,
-  autoTriggerEventLabel,
   AUTO_TRIGGER_LOG_UI_MAX,
   buildTriggerHistoryLoggerText,
   defaultTriggerHistoryLoggerFileName,
@@ -587,10 +586,8 @@ import {
 } from "@/lib/auto-trigger-log";
 import {
   bindingConfigKey,
-  AUTO_OPC_POLL_INTERVAL_MS,
   createAutoTriggerBinding,
   isTriggerBindingActive,
-  isTriggerBindingComplete,
   parseRgTriggerPickTarget,
   rgTriggerPickTarget,
   type AutoTriggerBinding,
@@ -598,7 +595,6 @@ import {
 import OpcUaNodePickerModal from "@/features/datasource/opcua/OpcUaNodePickerModal.vue";
 import {
   AUTO_FILE_NAME_SEGMENT_OPTIONS,
-  buildAutoExportFileName,
   formatExportTs,
   previewAutoExportFileName,
   type AutoFileNameSegment,
@@ -615,6 +611,12 @@ import {
   writeExportResultToOpcua,
   type ExportResultWritePayload,
 } from "@/lib/exportResultOpcFeedback";
+import {
+  getReportAutoExportBindingRuntime,
+  notifyReportAutoExportSettingsChanged,
+  reportAutoExportStatus,
+  resetReportAutoExportBindingRuntime,
+} from "@/lib/report-auto-export-trigger-service";
 
 /** 「生成报表」页用户可见固定用语（勿单独显示「截批」二字；PLC 信息节点标签见 exportResultOpcFeedback） */
 const RG_UI = {
@@ -842,8 +844,7 @@ const triggerLogUiMax = AUTO_TRIGGER_LOG_UI_MAX;
 const triggerChartMaxSamples = AUTO_TRIGGER_CHART_MAX_SAMPLES;
 const triggerLogExpanded = ref<Record<string, boolean>>({});
 
-const autoStatus = ref("");
-let pollTimer: ReturnType<typeof setInterval> | null = null;
+const autoStatus = reportAutoExportStatus;
 
 type BindingChartUi = { show: boolean; samples: number[] };
 const bindingChartUiMap = ref<Record<string, BindingChartUi>>({});
@@ -853,24 +854,9 @@ type BindingRuntime = {
   history: NumericSampleRing;
   chartEligible: boolean | null;
 };
-const bindingRuntime = new Map<string, BindingRuntime>();
-let autoExportBusy = false;
-
-function createBindingRuntime(): BindingRuntime {
-  return {
-    poll: createOpcTriggerPollState(),
-    history: new NumericSampleRing(),
-    chartEligible: null,
-  };
-}
 
 function getBindingRuntime(id: string): BindingRuntime {
-  let r = bindingRuntime.get(id);
-  if (!r) {
-    r = createBindingRuntime();
-    bindingRuntime.set(id, r);
-  }
-  return r;
+  return getReportAutoExportBindingRuntime(id);
 }
 
 function syncBindingChartUi(id: string, rt: BindingRuntime): void {
@@ -909,20 +895,23 @@ function recordBindingOpcSample(
 
 function pruneBindingRuntime(): void {
   const ids = new Set(prefs.value.auto.bindings.map((b) => b.id));
-  for (const key of bindingRuntime.keys()) {
-    if (!ids.has(key)) bindingRuntime.delete(key);
+  for (const key of Object.keys(bindingChartUiMap.value)) {
+    if (!ids.has(key)) {
+      const next = { ...bindingChartUiMap.value };
+      delete next[key];
+      bindingChartUiMap.value = next;
+    }
   }
 }
 
 watch(
   () => prefs.value.auto.bindings.map(bindingConfigKey).join("\n"),
   () => {
+    resetReportAutoExportBindingRuntime();
+    notifyReportAutoExportSettingsChanged();
     pruneBindingRuntime();
     for (const b of prefs.value.auto.bindings) {
       const r = getBindingRuntime(b.id);
-      r.poll = createOpcTriggerPollState();
-      r.history.clear();
-      r.chartEligible = null;
       syncBindingChartUi(b.id, r);
     }
   },
@@ -950,10 +939,10 @@ function addAutoTriggerBinding(): void {
 
 function removeAutoTriggerBinding(id: string): void {
   prefs.value.auto.bindings = prefs.value.auto.bindings.filter((b) => b.id !== id);
-  bindingRuntime.delete(id);
   const next = { ...bindingChartUiMap.value };
   delete next[id];
   bindingChartUiMap.value = next;
+  notifyReportAutoExportSettingsChanged();
 }
 
 function recordBindingTriggerLog(
@@ -1025,6 +1014,13 @@ async function exportBindingTriggerHistory(binding: AutoTriggerBinding, index: n
 }
 
 watch(
+  () => prefs.value.autoExportDir,
+  () => {
+    notifyReportAutoExportSettingsChanged();
+  },
+);
+
+watch(
   prefs,
   (p) => saveReportGeneratorPrefs(JSON.parse(JSON.stringify(p)) as ReportGeneratorPrefs),
   { deep: true },
@@ -1077,6 +1073,7 @@ function isReportSplitPreflightBlocker(text: string): boolean {
 function toggleAutoEnabled() {
   if (!electronShell.value) return;
   prefs.value.auto.enabled = !prefs.value.auto.enabled;
+  notifyReportAutoExportSettingsChanged();
 }
 
 function toggleManualOpenAfter() {
@@ -1471,215 +1468,19 @@ async function onPickAutoDir(): Promise<void> {
   }
 }
 
-type AutoPdfExportAttempt = {
-  fileName: string;
-  filePath: string;
-  filePaths?: string[];
-  totalReports?: number;
-  note?: string;
-};
-
-async function runAutoPdfExport(templateId: string): Promise<AutoPdfExportAttempt> {
-  const api = window.electronAPI;
-  if (!api?.runPdfExport || !api.pathJoin) {
-    throw new Error(`当前环境不支持${RG_UI.opcAuto}`);
-  }
-
-  const tid = templateId.trim();
-  if (!tid) throw new Error(`未配置${RG_UI.opcAuto}报表模版`);
-
-  const preflight = await runTemplateExportPreflight(tid);
-  if (!preflight.ok) {
-    throw new Error(preflight.summary);
-  }
-
-  const resolved = await resolveAutoExportDir(prefs.value);
-  const dir = resolved.dir.trim();
-  if (!dir) throw new Error(resolved.note || `未配置${RG_UI.opcAuto}保存目录`);
-
-  const tmeta = summaries.value.find((x) => x.id === tid);
-  const built = await buildAutoExportFileName(prefs.value, tmeta?.name || tid);
-  const filePath = await api.pathJoin(dir, built.base);
-
-  const exportRes = await api.runPdfExport({
-    templateId: tid,
-    filePath,
-    openAfter: false,
-  });
-
-  const notes = [resolved.note, built.note].filter(Boolean).join("；");
-  const savedPaths = normalizeSavedPdfPaths(exportRes, filePath);
-  const splitNote = pdfExportSummaryForPaths(savedPaths);
-  const exportNote = [preflight.warnings.join(" "), notes, splitNote].filter(Boolean).join("；");
-  return {
-    fileName: built.base,
-    filePath: savedPaths[0],
-    filePaths: savedPaths,
-    totalReports: exportRes.totalReports,
-    note: exportNote || undefined,
-  };
-}
-
-async function pollAutoTriggerOnce(): Promise<void> {
-  if (!electronShell.value || !prefs.value.auto.enabled || autoExportBusy) return;
-
-  pruneBindingRuntime();
-
-  const bindings = prefs.value.auto.bindings;
-  const active = bindings.filter(isTriggerBindingActive);
-
-  if (!bindings.length) {
-    autoStatus.value = `${RG_STATUS_OPC_AUTO} 请点击「新建绑定」添加触发变量…`;
-    return;
-  }
-  if (!active.length) {
-    const anyComplete = bindings.some(isTriggerBindingComplete);
-    autoStatus.value = anyComplete
-      ? `${RG_STATUS_OPC_AUTO} 已配置的绑定均未启用，请打开至少一条绑定的「启用」开关…`
-      : `${RG_STATUS_OPC_AUTO} 请启用绑定并完成模版、连接与触发节点配置…`;
-    return;
-  }
-
-  const resolved = await resolveAutoExportDir(prefs.value);
-  if (!resolved.dir.trim()) {
-    autoStatus.value = `${RG_STATUS_OPC_AUTO} ${resolved.note || `请配置默认或 OPC ${RG_UI.opcAuto}保存文件夹…`}`;
-    return;
-  }
-
-  const statusParts: string[] = [];
-  let anyListening = false;
-  let exportedThisPoll = false;
-
-  for (let i = 0; i < bindings.length; i++) {
-    const b = bindings[i];
-    const label = bindingDisplayLabel(b, i);
-    if (!isTriggerBindingActive(b)) continue;
-
-    const srv = b.serverId.trim();
-    const nodeId = b.nodeId.trim();
-    const rt = getBindingRuntime(b.id);
-
-    let raw: unknown;
-    let dataType: string | undefined;
-    try {
-      const read = await readSavedOpcNodeValue(srv, nodeId);
-      if (!read.ok) throw new Error(read.message || "读 OPC 失败");
-      raw = read.value;
-      dataType = read.dataType;
-    } catch (e) {
-      rt.poll = createOpcTriggerPollState();
-      statusParts.push(`${label}：读取失败`);
-      continue;
-    }
-
-    recordBindingOpcSample(b.id, rt, raw, dataType);
-
-    const fire = evaluateAutoOpcTrigger(b.mode, raw, b.compareValue, rt.poll);
-
-    if (fire) {
-      const eventLabel = autoTriggerEventLabel(b.mode, b.compareValue);
-      let fileName = "—";
-      autoExportBusy = true;
-      try {
-        const result = await runAutoPdfExport(b.templateId!);
-        fileName = result.fileName;
-        recordBindingTriggerLog(b, {
-          event: eventLabel,
-          fileName: result.fileName,
-          filePath: result.filePath,
-          success: true,
-          message: result.note,
-        });
-        void notifyExportResultToPlc(
-          {
-            success: true,
-            filePath: result.filePath,
-            filePaths: result.filePaths,
-            fileName: result.fileName,
-            message: result.note,
-          },
-          "auto",
-          b.templateId || null,
-        );
-        void auditLog({
-          action: "export.auto_pdf",
-          result: "ok",
-          summary: result.fileName,
-          object_type: "template",
-          object_id: b.templateId || undefined,
-          detail: { filePath: result.filePath, filePaths: result.filePaths, bindingId: b.id, event: eventLabel },
-        });
-        exportedThisPoll = true;
-        const noteSuffix = result.note ? `（${result.note}）` : "";
-        const fileCount = result.filePaths?.length || 1;
-        autoStatus.value =
-          fileCount > 1
-            ? `${RG_STATUS_OPC_AUTO}·${label} 已保存 ${fileCount} 个文件：${result.filePaths?.join("；")}${noteSuffix}`
-            : `${RG_STATUS_OPC_AUTO}·${label} 已保存 ${result.filePath}${noteSuffix}`;
-      } catch (e) {
-        const msg = humanizePdfExportError(e);
-        try {
-          const tmeta = summaries.value.find((x) => x.id === b.templateId);
-          const built = await buildAutoExportFileName(prefs.value, tmeta?.name || b.templateId || "");
-          fileName = built.base;
-        } catch {
-          /* 文件名构建失败时保持 — */
-        }
-        recordBindingTriggerLog(b, {
-          event: eventLabel,
-          fileName,
-          success: false,
-          message: msg,
-        });
-        void auditLog({
-          action: "export.auto_pdf",
-          result: "fail",
-          summary: msg,
-          object_type: "template",
-          object_id: b.templateId || undefined,
-          detail: { bindingId: b.id, event: eventLabel },
-        });
-        void notifyExportResultToPlc({ success: false, message: msg }, "auto", b.templateId || null);
-        autoStatus.value = `${RG_STATUS_OPC_AUTO}·${label} 失败：${msg.split("\n")[0]}`;
-        showAppToast(`${RG_STATUS_OPC_AUTO}·${label} 失败\n${msg}`, { tone: "err", durationMs: 14000 });
-      } finally {
-        autoExportBusy = false;
-      }
-      continue;
-    }
-
-    anyListening = true;
-  }
-
-  if (exportedThisPoll) {
-    return;
-  }
-  if (statusParts.length) {
-    autoStatus.value = `${RG_STATUS_OPC_AUTO} ${statusParts.join("；")}`;
-  } else if (anyListening) {
-    autoStatus.value = `${RG_STATUS_OPC_AUTO} 监听 ${active.length} 条已启用绑定…`;
-  } else {
-    autoStatus.value = `${RG_STATUS_OPC_AUTO} 监听中…`;
-  }
-}
-
-function restartPollLoop(): void {
-  if (pollTimer) {
-    clearInterval(pollTimer);
-    pollTimer = null;
-  }
-  if (!electronShell.value || !prefs.value.auto.enabled) return;
-
-  void pollAutoTriggerOnce();
-  pollTimer = setInterval(() => void pollAutoTriggerOnce(), AUTO_OPC_POLL_INTERVAL_MS);
-}
-
 onMounted(async () => {
   await Promise.all([loadSummaries(), loadOpcServers()]);
-  restartPollLoop();
+  for (const b of prefs.value.auto.bindings) {
+    syncBindingChartUi(b.id, getBindingRuntime(b.id));
+  }
   window.addEventListener("report-editor-config-imported", onConfigImported);
   window.addEventListener("report-editor-opcua-servers-changed", onOpcServersChanged);
+  window.addEventListener("report-generator-prefs-updated", onExternalPrefsUpdated);
 });
+
+function onExternalPrefsUpdated() {
+  prefs.value = loadReportGeneratorPrefs();
+}
 
 function onConfigImported() {
   void loadOpcServers();
@@ -1689,15 +1490,10 @@ function onOpcServersChanged() {
   void loadOpcServers();
 }
 
-watch(
-  () => [prefs.value.auto.enabled, electronShell.value],
-  () => restartPollLoop(),
-);
-
 onUnmounted(() => {
-  if (pollTimer) clearInterval(pollTimer);
   window.removeEventListener("report-editor-config-imported", onConfigImported);
   window.removeEventListener("report-editor-opcua-servers-changed", onOpcServersChanged);
+  window.removeEventListener("report-generator-prefs-updated", onExternalPrefsUpdated);
 });
 </script>
 

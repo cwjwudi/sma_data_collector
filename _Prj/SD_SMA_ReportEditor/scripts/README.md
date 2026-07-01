@@ -26,6 +26,7 @@ packaging/              ← 安装包打包（见 packaging/README.md）
 | Windows | 停止 8000 / 5173 | `scripts\dev\windows\stop_dev_web.bat` |
 | Windows | 装依赖并启动 Web | `scripts\dev\windows\install_and_start_dev_web.bat` |
 | Windows | Electron 一键开发 | `scripts\dev\windows\start_dev_electron.bat` |
+| Windows | Electron 开发（Node 24+ 用 Node 22 子进程） | `scripts\dev\start_dev_electron_node22.bat` |
 | macOS | Electron 一键开发 | 双击 `scripts/dev/mac/open-electron-dev-mac.command` |
 
 后端 / 前端分脚本仍在 `backend/scripts/`、`frontend/scripts/`（由上述 bat 调用）。
