@@ -83,15 +83,6 @@
         {{ downloadButtonLabel }}
       </button>
       <button
-        v-if="showFullDownloadButton"
-        type="button"
-        class="settings-btn settings-btn--secondary"
-        :disabled="busy"
-        @click="downloadFullUpdate"
-      >
-        下载完整安装包
-      </button>
-      <button
         v-if="appUpdateAvailable && !appUpdateDownloadedReady && !appUpdateDownloading"
         type="button"
         class="settings-btn settings-btn--secondary"
@@ -292,7 +283,6 @@ const updateNotesVersion = computed(() => {
 })
 
 const isMac = computed(() => (config.value.platform || '').startsWith('darwin'))
-const isWindowsDifferential = computed(() => config.value.updateMode === 'windows-differential')
 
 const skippedVersionLabels = computed(() => {
   const skipped = config.value.skippedVersions || {}
@@ -348,23 +338,13 @@ const showMacInstallGuide = computed(() => {
   return isMac.value && (appUpdateDownloadedReady.value || appUpdateAvailable.value)
 })
 
-const showFullDownloadButton = computed(() => {
-  return (
-    isWindowsDifferential.value &&
-    appUpdateAvailable.value &&
-    !appUpdateDownloadedReady.value &&
-    !appUpdateDownloading.value &&
-    !appUpdateDownloadPaused.value
-  )
-})
-
 const downloadButtonLabel = computed(() => {
   if (appUpdateDownloadPaused.value) {
     return appUpdateDownloadPercent.value != null
       ? `继续下载（${appUpdateDownloadPercent.value}%）`
       : '继续下载'
   }
-  return isWindowsDifferential.value ? '下载新版本（增量优先）' : '下载新版本'
+  return '下载新版本'
 })
 
 function setMsg(text: string, tone: 'ok' | 'warn' | 'err' | '' = '') {
@@ -449,10 +429,10 @@ async function checkUpdate() {
   }
 }
 
-async function downloadUpdate(options?: { fullDownload?: boolean }) {
-  setMsg(options?.fullDownload ? '正在下载完整安装包…' : '正在下载更新包…')
+async function downloadUpdate() {
+  setMsg('正在下载安装包…')
   try {
-    const res = await startAppUpdateDownload(options)
+    const res = await startAppUpdateDownload()
     if (!res) return
     if (res.cancelled || res.paused) {
       setMsg(res.error || '下载已取消，可重新开始下载。', 'warn')
@@ -470,19 +450,11 @@ async function downloadUpdate(options?: { fullDownload?: boolean }) {
       return
     }
     const modeText =
-      res.mode === 'full'
-        ? '完整安装包'
-        : res.mode === 'differential'
-          ? '增量更新包'
-          : '安装包'
+      res.mode === 'full' ? '完整安装包' : res.mode === 'differential' ? '增量更新包' : '安装包'
     setMsg(`下载完成（${res.latestVersion}，${modeText}），可点击「一键升级」。`, 'ok')
   } catch (e) {
     setMsg(e instanceof Error ? e.message : String(e), 'err')
   }
-}
-
-async function downloadFullUpdate() {
-  await downloadUpdate({ fullDownload: true })
 }
 
 async function pauseDownload() {

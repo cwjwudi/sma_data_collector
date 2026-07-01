@@ -96,13 +96,10 @@ import {
 } from '@/features/datasource/connection-probe-prefs'
 import {
   disposeReportAutoExportTrigger,
-  getReportAutoExportBindingRuntime,
   initReportAutoExportTrigger,
   invalidateTemplateSummariesCache,
-  notifyReportAutoExportSettingsChanged,
-  reportAutoExportStatus,
-  resetReportAutoExportBindingRuntime,
 } from '@/lib/report-auto-export-trigger-service'
+import { loadSidebarCollapsed, saveSidebarCollapsed } from '@/lib/sidebar-layout-prefs'
 
 const route = useRoute()
 

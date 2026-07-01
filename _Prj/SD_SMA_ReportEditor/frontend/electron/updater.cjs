@@ -287,6 +287,23 @@ function pickArtifact(manifest, platformKey) {
 }
 
 /** 从 manifest 相对路径或完整下载 URL 得到本地文件名（解码 %20 等，避免 Windows EPERM） */
+function normalizeReleaseNotes(notes) {
+  if (!notes) return ''
+  if (typeof notes === 'string') return notes.trim()
+  if (Array.isArray(notes)) {
+    return notes
+      .map((item) => {
+        if (typeof item === 'string') return item
+        if (item && typeof item === 'object') return item.note || item.text || ''
+        return ''
+      })
+      .filter(Boolean)
+      .join('\n')
+      .trim()
+  }
+  return String(notes).trim()
+}
+
 function artifactFileName(artifactUrl, fallbackVersion) {
   const raw = typeof artifactUrl === 'string' ? artifactUrl.trim() : ''
   if (!raw) {
@@ -347,7 +364,7 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
     return process.platform === 'win32'
   }
 
-  function configureWindowsUpdater({ fullDownload = false } = {}) {
+  function configureWindowsUpdater() {
     const autoUpdater = getElectronAutoUpdater()
     const baseUrl = resolveBaseUrl(app).replace(/\/+$/, '')
     if (!baseUrl) {
@@ -358,7 +375,8 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
     autoUpdater.autoInstallOnAppQuit = false
     autoUpdater.autoRunAppAfterInstall = true
     autoUpdater.disableWebInstaller = true
-    autoUpdater.disableDifferentialDownload = Boolean(fullDownload)
+    /** 差分更新曾导致安装后白屏；Windows 始终下载完整 NSIS 安装包 */
+    autoUpdater.disableDifferentialDownload = true
     autoUpdater.allowDowngrade = false
     autoUpdater.logger = {
       info: (msg) => console.log(`[Updater] ${msg}`),
@@ -538,6 +556,21 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
     return { manifest, manifestUrl, baseUrl }
   }
 
+  async function resolveWindowsReleaseNotes(latestVersion, fallbackNotes) {
+    const fromYml = normalizeReleaseNotes(fallbackNotes)
+    try {
+      const { manifest } = await fetchManifest()
+      const manifestVersion = String(manifest?.version || '').trim()
+      const manifestNotes = typeof manifest?.notes === 'string' ? manifest.notes.trim() : ''
+      if (manifestNotes && manifestVersion === latestVersion) {
+        return manifestNotes
+      }
+    } catch {
+      /* latest.json 为可选补充，失败时仍使用 latest.yml */
+    }
+    return fromYml
+  }
+
   return {
     cleanupStaleUpdateArtifacts,
 
@@ -546,7 +579,7 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
       return {
         currentVersion: app.getVersion(),
         platform: getPlatformKey(),
-        updateMode: isWindowsDifferentialUpdater() ? 'windows-differential' : 'full-installer',
+        updateMode: isWindowsDifferentialUpdater() ? 'windows-updater' : 'full-installer',
         baseUrl: resolveBaseUrl(app),
         defaultBaseUrl: DEFAULT_UPDATE_BASE_URL,
         skipTlsVerify: Boolean(settings.skipTlsVerify),
@@ -633,6 +666,7 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
           windowsPendingDownloadToken = result?.cancellationToken || null
           const latestVersion = String(info?.version || currentVersion).trim()
           const cmp = compareSemver(latestVersion, currentVersion)
+          const releaseNotes = await resolveWindowsReleaseNotes(latestVersion, info?.releaseNotes)
           if (!result?.isUpdateAvailable || cmp <= 0) {
             windowsPendingInfo = null
             windowsPendingDownloadToken = null
@@ -646,7 +680,7 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
                   ? `当前版本 ${currentVersion} 较更新源（${latestVersion}）更新。`
                   : '当前已是最新版本。',
               releasedAt: info?.releaseDate || null,
-              notes: info?.releaseNotes || '',
+              notes: releaseNotes,
               manifestUrl: `${resolveBaseUrl(app).replace(/\/+$/, '')}/latest.yml`,
             }
             emitCheckResult(latest)
@@ -666,7 +700,7 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
                 ? '当前已是最新版本。'
                 : `已跳过版本 ${latestVersion}。如需升级请点「检查更新」并重新下载，或等待更高版本发布。`,
               releasedAt: info?.releaseDate || null,
-              notes: info?.releaseNotes || '',
+              notes: releaseNotes,
               manifestUrl: `${resolveBaseUrl(app).replace(/\/+$/, '')}/latest.yml`,
             }
             emitCheckResult(skippedResult)
@@ -688,7 +722,7 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
             status: 'available',
             currentVersion,
             latestVersion,
-            notes: info?.releaseNotes || '',
+            notes: releaseNotes,
             releasedAt: info?.releaseDate || null,
             downloadUrl: info?.files?.[0]?.url || '',
             size,
@@ -903,8 +937,7 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
         if (!windowsPendingInfo) {
           return { ok: false, error: '请先检查更新' }
         }
-        const fullDownload = Boolean(options.fullDownload)
-        configureWindowsUpdater({ fullDownload })
+        configureWindowsUpdater()
         const autoUpdater = getElectronAutoUpdater()
         windowsDownloading = true
         windowsDownloadedReady = false
@@ -918,7 +951,7 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
             received: 0,
             total,
             percent: 0,
-            mode: fullDownload ? 'full' : 'differential',
+            mode: 'full',
           })
           await autoUpdater.downloadUpdate(windowsDownloadToken || undefined)
           windowsDownloading = false
@@ -927,7 +960,7 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
           windowsDownloadedReady = true
           windowsDownloadedVersion = latestVersion
           windowsDownloadPercent = 100
-          return { ok: true, latestVersion, mode: fullDownload ? 'full' : 'differential' }
+          return { ok: true, latestVersion, mode: 'full' }
         } catch (e) {
           windowsDownloading = false
           windowsDownloadToken = null
