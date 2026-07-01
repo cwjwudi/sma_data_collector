@@ -1,17 +1,17 @@
 {
   "version": "0.1.25",
-  "releasedAt": "2026-07-01T18:47:05.569Z",
-  "notes": "OPC UA 自动截批在任意页面持续监听，离开生成报表页仍可保存 PDF",
+  "releasedAt": "2026-07-01T20:41:59.416Z",
+  "notes": "修复 0.1.25 启动白屏；OPC UA 自动截批全局监听；Windows 应用内更新展示 releaseNotes",
   "platforms": {
     "win32-x64": {
       "url": "Report Editor-Setup-0.1.25-x64.exe",
-      "sha256": "d8e109134e29bb88a0512219f7326a17a02e1d4f3aeb5ea5e87e23a0e62b4fb1",
-      "size": 143359045
+      "sha256": "c8781bdeb72409d642da8c8999780739454f72e95432959779d11279c8353cbb",
+      "size": 143359693
     },
     "darwin-arm64": {
       "url": "Report Editor-0.1.25-arm64.dmg",
-      "sha256": "dc2779b6d8c0d38d968e129d58ead8edb8c5f48852ebe9128d52042b5f2897b9",
-      "size": 177244081
+      "sha256": "fd052d958e61964f8ace593470648e47bc874d042cc6d48efb34d65f130070b1",
+      "size": 177244363
     }
   }
 }

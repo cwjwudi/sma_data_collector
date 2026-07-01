@@ -247,11 +247,11 @@ if ($ManifestVersion) {
 }
 $ManifestNotes = Get-ManifestNotes $ManifestPath
 if ($ManifestNotes) {
-  Write-Host "Release notes (应用内更新将展示以下内容):"
+  Write-Host 'Release notes (shown in app update UI):'
   Write-Host $ManifestNotes -ForegroundColor DarkGray
 }
 elseif (-not $ManifestVersion) {
-  Write-WarnLine 'packaging/updates/latest.json 缺少 notes，客户端检查更新时可能无更新说明。'
+  Write-WarnLine 'packaging/updates/latest.json is missing notes; update UI may show no release text.'
 }
 if ($ManifestVersion -and $ManifestVersion -ne $AppVersion) {
   $msg = "package.json ($AppVersion) != packaging/updates/latest.json ($ManifestVersion)."
@@ -436,7 +436,7 @@ if ($setup) {
   Write-Host 'Deliver this Setup.exe to end users (Windows 10/11 x64).' -ForegroundColor White
   Write-Host 'Install: double-click Setup, choose directory, complete wizard.' -ForegroundColor DarkGray
   Write-Host 'Uninstall: Settings - Apps - Installed apps - SD SMA Report Editor' -ForegroundColor DarkGray
-  Write-Host 'Uninstall removes user data under %APPDATA%\sd-sma-report-editor\' -ForegroundColor DarkGray
+  Write-Host 'Uninstall removes user data under %APPDATA%\sd-sma-report-editor' -ForegroundColor DarkGray
 
   Write-Step 'Update manifest + sync Portal (if mounted)'
   $publishScript = Join-Path $Root 'packaging\scripts\publish-portal-release.mjs'
@@ -450,18 +450,18 @@ if ($setup) {
     Write-Host "Portal dir:   $resolvedPortal"
   }
   else {
-    Write-WarnLine '未指定 Portal 目录；仅更新 packaging/updates/latest.json 与 output/latest.yml。'
-    Write-WarnLine '同步到 WebPortal: node packaging\scripts\publish-portal-release.mjs --copy-artifacts --only win --portal-dir <path>'
+    Write-WarnLine 'Portal dir not set; only packaging/updates/latest.json and output/latest.yml will be updated.'
+    Write-WarnLine 'Sync manually: node packaging/scripts/publish-portal-release.mjs --copy-artifacts --only win --portal-dir PATH'
   }
-  # --only win: 保留 latest.json 中已有 darwin-arm64（分平台发版）
+  # --only win: keep darwin-arm64 entry in latest.json when publishing Windows only
   & node @publishArgs
   if ($LASTEXITCODE -ne 0) {
     Write-WarnLine 'publish-portal-release failed; run manually after build.'
   }
   else {
-    Write-Ok 'latest.json + latest.yml synced (win32-x64; releaseNotes 来自 latest.json notes)'
+    Write-Ok "latest.json + latest.yml synced (win32-x64)"
     if ($ManifestNotes) {
-      Write-Host "已写入更新说明: $ManifestNotes" -ForegroundColor DarkGray
+      Write-Host "Release notes written: $ManifestNotes" -ForegroundColor DarkGray
     }
   }
 }

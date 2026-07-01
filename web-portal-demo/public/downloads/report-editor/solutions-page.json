@@ -1,9 +1,9 @@
 {
   "solution_id": "sol-report-editor",
   "latest_version": "0.1.25",
-  "latest_hint": "当前最新版本 0.1.25，下方按钮默认下载最新版；展开可查看历史版本。",
-  "release_notes": "OPC UA 自动截批在任意页面持续监听，离开生成报表页仍可保存 PDF",
-  "released_at": "2026-07-01T18:47:05.569Z",
+  "latest_hint": "当前最新版本 0.1.25（含白屏修复），下方按钮默认下载最新版；展开可查看历史版本。",
+  "release_notes": "修复 0.1.25 启动白屏；OPC UA 自动截批全局监听；Windows 应用内更新展示 releaseNotes",
+  "released_at": "2026-07-01T20:41:59.416Z",
   "downloads": {
     "mac": {
       "label": "macOS 安装包",

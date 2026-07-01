@@ -1,8 +1,10 @@
+releaseNotes: |
+  修复 0.1.25 启动白屏；OPC UA 自动截批全局监听；Windows 应用内更新展示 releaseNotes
 version: 0.1.25
 files:
   - url: Report Editor-Setup-0.1.25-x64.exe
-    sha512: wgk8+M59a1B97GoRemBWZWPnlUgog10otpSbxnREvsjNpeVvfk9Zz03l8Eua/eQbqdjctzlR9MJ9TWDPUU5nqw==
-    size: 143359045
+    sha512: 5cZgc8jLX1lTDrBZY9vmGCojLO1zar22Mj5Zqe3taHMvzb+b0zfn33ocQcPI3thpoqi4PzGlmka5rIr0fVI81A==
+    size: 143359693
 path: Report Editor-Setup-0.1.25-x64.exe
-sha512: wgk8+M59a1B97GoRemBWZWPnlUgog10otpSbxnREvsjNpeVvfk9Zz03l8Eua/eQbqdjctzlR9MJ9TWDPUU5nqw==
-releaseDate: '2026-07-01T18:46:17.638Z'
+sha512: 5cZgc8jLX1lTDrBZY9vmGCojLO1zar22Mj5Zqe3taHMvzb+b0zfn33ocQcPI3thpoqi4PzGlmka5rIr0fVI81A==
+releaseDate: '2026-07-01T20:41:59.033Z'
