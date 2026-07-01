@@ -1,7 +1,7 @@
 {
   "version": "0.1.25",
   "releasedAt": "2026-07-01T19:50:52.678Z",
-  "notes": "修复 0.1.25 启动白屏；OPC UA 自动截批全局监听；Windows 应用内更新改为完整安装包并显示更新说明",
+  "notes": "修复 0.1.25 启动白屏；OPC UA 自动截批全局监听；Windows 应用内更新展示 releaseNotes",
   "platforms": {
     "win32-x64": {
       "url": "Report Editor-Setup-0.1.25-x64.exe",

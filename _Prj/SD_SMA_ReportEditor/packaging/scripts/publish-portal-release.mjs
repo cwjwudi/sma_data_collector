@@ -158,13 +158,6 @@ function syncLatestYmlToPortal(version, notes, portalDir) {
   const dest = path.join(portalDir, 'latest.yml')
   fs.copyFileSync(latestYml, dest)
   injectReleaseNotesIntoYml(dest, notes)
-  /** 移除 blockmap，避免旧版客户端尝试差分更新 */
-  const blockmapName = `${artifactFileName(version, 'win')}.blockmap`
-  const blockmapOnPortal = path.join(portalDir, blockmapName)
-  if (fs.existsSync(blockmapOnPortal)) {
-    fs.unlinkSync(blockmapOnPortal)
-    console.log(`[remove] ${blockmapOnPortal} (disable differential updates on server)`)
-  }
   console.log(`[sync] latest.yml -> ${dest}`)
   return dest
 }
@@ -278,11 +271,13 @@ if (args.copyArtifacts && portalDir) {
   if (buildMac) copyFileIfNewer(buildMac, path.join(portalDir, path.basename(buildMac)))
   if (buildWin) {
     copyFileIfNewer(buildWin, path.join(portalDir, path.basename(buildWin)))
+    const blockmap = findWindowsUpdateMetadata(version, 'blockmap')
     const latestYml = findWindowsUpdateMetadata(version, 'latestYml')
-    if (latestYml) {
-      console.log('[info] Windows 更新仅发布完整安装包（不复制 blockmap，避免差分更新损坏）')
-    } else {
-      console.warn('[warn] 未找到 latest.yml，Windows electron-updater 可能无法检查更新。')
+    if (blockmap) copyFileIfNewer(blockmap, path.join(portalDir, path.basename(blockmap)))
+    if (latestYml) copyFileIfNewer(latestYml, path.join(portalDir, 'latest.yml'))
+    if (!blockmap || !latestYml) {
+      console.warn('[warn] Windows 差分更新元数据缺失；electron-updater 将回退为完整安装包下载。')
+      console.warn('       期望 output/latest.yml 与 Report Editor-Setup-<version>-x64.exe.blockmap')
     }
   }
 }

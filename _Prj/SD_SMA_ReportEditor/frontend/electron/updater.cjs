@@ -364,7 +364,7 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
     return process.platform === 'win32'
   }
 
-  function configureWindowsUpdater() {
+  function configureWindowsUpdater({ fullDownload = false } = {}) {
     const autoUpdater = getElectronAutoUpdater()
     const baseUrl = resolveBaseUrl(app).replace(/\/+$/, '')
     if (!baseUrl) {
@@ -375,8 +375,7 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
     autoUpdater.autoInstallOnAppQuit = false
     autoUpdater.autoRunAppAfterInstall = true
     autoUpdater.disableWebInstaller = true
-    /** 差分更新曾导致安装后白屏；Windows 始终下载完整 NSIS 安装包 */
-    autoUpdater.disableDifferentialDownload = true
+    autoUpdater.disableDifferentialDownload = Boolean(fullDownload)
     autoUpdater.allowDowngrade = false
     autoUpdater.logger = {
       info: (msg) => console.log(`[Updater] ${msg}`),
@@ -579,7 +578,7 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
       return {
         currentVersion: app.getVersion(),
         platform: getPlatformKey(),
-        updateMode: isWindowsDifferentialUpdater() ? 'windows-updater' : 'full-installer',
+        updateMode: isWindowsDifferentialUpdater() ? 'windows-differential' : 'full-installer',
         baseUrl: resolveBaseUrl(app),
         defaultBaseUrl: DEFAULT_UPDATE_BASE_URL,
         skipTlsVerify: Boolean(settings.skipTlsVerify),
@@ -937,7 +936,8 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
         if (!windowsPendingInfo) {
           return { ok: false, error: '请先检查更新' }
         }
-        configureWindowsUpdater()
+        const fullDownload = Boolean(options.fullDownload)
+        configureWindowsUpdater({ fullDownload })
         const autoUpdater = getElectronAutoUpdater()
         windowsDownloading = true
         windowsDownloadedReady = false
@@ -951,7 +951,7 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
             received: 0,
             total,
             percent: 0,
-            mode: 'full',
+            mode: fullDownload ? 'full' : 'differential',
           })
           await autoUpdater.downloadUpdate(windowsDownloadToken || undefined)
           windowsDownloading = false
@@ -960,7 +960,7 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
           windowsDownloadedReady = true
           windowsDownloadedVersion = latestVersion
           windowsDownloadPercent = 100
-          return { ok: true, latestVersion, mode: 'full' }
+          return { ok: true, latestVersion, mode: fullDownload ? 'full' : 'differential' }
         } catch (e) {
           windowsDownloading = false
           windowsDownloadToken = null

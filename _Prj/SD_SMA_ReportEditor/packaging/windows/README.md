@@ -10,7 +10,7 @@
 
 **本版更新说明**（写入 `packaging/updates/latest.json` 的 `notes`，应用内「检查更新」与 `latest.yml` 的 `releaseNotes` 均会展示）：
 
-> 修复 0.1.25 启动白屏；OPC UA 自动截批全局监听；Windows 应用内更新改为完整安装包并显示更新说明
+> 修复 0.1.25 启动白屏；OPC UA 自动截批全局监听；Windows 应用内更新展示 releaseNotes
 
 发版前请 `git pull origin main`，确认上述 `notes` 已在仓库中；若需修改说明：
 
@@ -85,9 +85,10 @@ build.bat -Fresh
 ```text
 output/Report Editor-Setup-<version>-x64.exe
 output/latest.yml          ← electron-builder 生成；publish 时会注入 releaseNotes
+output/*.exe.blockmap      ← Windows 差分更新用（与 Setup 同名）
 ```
 
-**注意：** 0.1.25 起 Windows 应用内更新**仅使用完整安装包**（不发布 `.blockmap`，客户端 `disableDifferentialDownload=true`）。
+Windows 应用内更新默认**增量优先**（`latest.yml` + `.blockmap`），失败或用户选择时可下载完整安装包。
 
 ## 应用内更新说明如何展示
 
