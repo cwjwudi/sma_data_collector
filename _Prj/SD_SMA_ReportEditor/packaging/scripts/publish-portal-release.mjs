@@ -23,6 +23,7 @@ const manifestPath = path.join(root, 'packaging/updates/latest.json')
 
 const DEFAULT_PORTAL_CANDIDATES = [
   process.env.REPORT_EDITOR_PORTAL_DIR,
+  path.resolve(root, '../../../web-portal-demo/public/downloads/report-editor'),
   '/Volumes/web/web-portal-demo/public/downloads/report-editor',
   path.resolve(root, '../../../P004_WebPortal/public/downloads/report-editor'),
   path.resolve(root, '../../../../P004_WebPortal/public/downloads/report-editor'),

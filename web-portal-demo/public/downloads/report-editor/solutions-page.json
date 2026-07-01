@@ -1,0 +1,38 @@
+{
+  "solution_id": "sol-report-editor",
+  "latest_version": "0.1.25",
+  "latest_hint": "当前最新版本 0.1.25，下方按钮默认下载最新版；展开可查看历史版本。",
+  "release_notes": "OPC UA 自动截批在任意页面持续监听，离开生成报表页仍可保存 PDF",
+  "released_at": "2026-07-01T18:47:05.569Z",
+  "downloads": {
+    "mac": {
+      "label": "macOS 安装包",
+      "description": "Apple Silicon · 下载后打开 DMG，拖入「应用程序」即可",
+      "primary_file": "Report Editor-0.1.25-arm64.dmg",
+      "history_prefix": "Report Editor-",
+      "history_suffix": "-arm64.dmg",
+      "history_versions": [
+        "0.1.24",
+        "0.1.23",
+        "0.1.22",
+        "0.1.21",
+        "0.1.20"
+      ]
+    },
+    "win": {
+      "label": "Windows 安装包",
+      "description": "Windows 10/11 x64 · 双击 Setup 安装，可在设置中卸载",
+      "primary_file": "Report Editor-Setup-0.1.25-x64.exe",
+      "history_prefix": "Report Editor-Setup-",
+      "history_suffix": "-x64.exe",
+      "history_versions": [
+        "0.1.24",
+        "0.1.23",
+        "0.1.22",
+        "0.1.21",
+        "0.1.20"
+      ]
+    }
+  },
+  "update_source_path": "/downloads/report-editor"
+}

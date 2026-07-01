@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Report Editor 下载与更新</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f7f8fa;
+      --card: #fff;
+      --text: #111827;
+      --muted: #6b7280;
+      --accent: #2563eb;
+      --border: #e5e7eb;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.55;
+    }
+    main {
+      max-width: 720px;
+      margin: 0 auto;
+      padding: 32px 20px 48px;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px;
+      box-shadow: 0 1px 2px rgb(0 0 0 / 4%);
+    }
+    h1 { margin: 0 0 8px; font-size: 1.5rem; }
+    .meta { color: var(--muted); font-size: 0.92rem; margin-bottom: 16px; }
+    .notes {
+      white-space: pre-wrap;
+      background: #f3f4f6;
+      border-radius: 8px;
+      padding: 12px 14px;
+      margin: 0 0 20px;
+      font-size: 0.95rem;
+    }
+    .actions { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 16px; }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 44px;
+      padding: 0 18px;
+      border-radius: 8px;
+      font-size: 0.95rem;
+      text-decoration: none;
+      border: 1px solid var(--border);
+      background: #fff;
+      color: var(--text);
+    }
+    .btn.primary {
+      background: var(--accent);
+      border-color: #1d4ed8;
+      color: #fff;
+    }
+    code, .mono {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.88rem;
+    }
+    .hint { color: var(--muted); font-size: 0.88rem; }
+    .err { color: #b91c1c; }
+  </style>
+</head>
+<body>
+  <main>
+    <div class="card">
+      <h1>Report Editor</h1>
+      <p class="meta">自定义报表编辑器 · 应用内更新源与本页共用 <code>latest.json</code></p>
+      <p id="status" class="hint">正在读取版本信息…</p>
+      <div id="content" hidden>
+        <p class="meta">当前版本 <strong id="ver">—</strong> · 发布于 <span id="released">—</span></p>
+        <div id="notes" class="notes"></div>
+        <div class="actions">
+          <a id="win-dl" class="btn primary" href="#">下载 Windows 安装包</a>
+          <a id="mac-dl" class="btn" href="#" hidden>下载 macOS 安装包</a>
+        </div>
+        <p class="hint">
+          桌面版：设置 → 软件更新 → 更新源填写
+          <code id="update-src"></code>
+        </p>
+        <p class="hint mono" id="sha"></p>
+      </div>
+    </div>
+  </main>
+  <script>
+    (function () {
+      var base = location.href.replace(/\/[^/]*$/, '/');
+      var updateSrc = location.origin + base.replace(location.origin, '').replace(/\/+$/, '');
+      document.getElementById('update-src').textContent = updateSrc;
+
+      fetch('latest.json', { cache: 'no-store' })
+        .then(function (r) {
+          if (!r.ok) throw new Error('无法读取 latest.json');
+          return r.json();
+        })
+        .then(function (data) {
+          document.getElementById('status').hidden = true;
+          document.getElementById('content').hidden = false;
+          document.getElementById('ver').textContent = data.version || '—';
+          document.getElementById('released').textContent = (data.releasedAt || '').replace('T', ' ').slice(0, 19) + ' UTC';
+          document.getElementById('notes').textContent = data.notes || '（无更新说明）';
+
+          var win = data.platforms && data.platforms['win32-x64'];
+          if (win && win.url) {
+            var winA = document.getElementById('win-dl');
+            winA.href = win.url;
+            winA.textContent = '下载 Windows ' + (data.version || '') + '（' + Math.round((win.size || 0) / 1048576) + ' MB）';
+            if (win.sha256) {
+              document.getElementById('sha').textContent = 'SHA256 (win32-x64): ' + win.sha256;
+            }
+          }
+
+          var mac = data.platforms && data.platforms['darwin-arm64'];
+          if (mac && mac.url) {
+            var macA = document.getElementById('mac-dl');
+            macA.hidden = false;
+            macA.href = mac.url;
+            macA.textContent = '下载 macOS ' + (data.version || '') + '（arm64）';
+          }
+        })
+        .catch(function (e) {
+          document.getElementById('status').innerHTML = '<span class="err">' + e.message + '</span>';
+        });
+    })();
+  </script>
+</body>
+</html>
