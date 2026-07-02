@@ -319,9 +319,45 @@ th {
 }
 
 .subsection-title {
-  margin: 12px 0 6px;
-  font-size: 14px;
+  margin: 0 0 4px;
+  font-size: 8px;
   font-weight: 600;
+  color: #475569;
+}
+
+.subsection-hint {
+  margin: 0 0 8px;
+}
+
+.settings-subsection {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #fafafa;
+}
+
+.settings-subsection:first-of-type {
+  margin-top: 8px;
+}
+
+.settings-subsection-db {
+  border-left: 3px solid #2563eb;
+  background: #f8fafc;
+}
+
+.settings-subsection-limits {
+  border-left: 3px solid #64748b;
+}
+
+.settings-subsection-opcua {
+  border-left: 3px solid #059669;
+  background: #f0fdf4;
+}
+
+.settings-actions {
+  margin-top: 12px;
+  padding-top: 4px;
 }
 
 .opcua-writeback-panel {
