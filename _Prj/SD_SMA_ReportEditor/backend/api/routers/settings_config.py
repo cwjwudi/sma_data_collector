@@ -52,13 +52,13 @@ def _save(cfg: dict[str, Any]) -> None:
 
 
 @router.get("/settings/app_preferences")
-async def get_app_preferences():
+def get_app_preferences():
     cfg = _load()
     return _public_app_preferences(cfg.get("app_preferences") or {})
 
 
 @router.patch("/settings/app_preferences")
-async def patch_app_preferences(body: AppPreferencesPatch):
+def patch_app_preferences(body: AppPreferencesPatch):
     try:
         cfg = _load()
         prefs = dict(cfg.get("app_preferences") or {})
@@ -73,7 +73,7 @@ async def patch_app_preferences(body: AppPreferencesPatch):
 
 
 @router.get("/settings/config/export")
-async def export_config(mode: Literal["share", "backup"] = Query("share")):
+def export_config(mode: Literal["share", "backup"] = Query("share")):
     cfg = _load()
     if mode == "backup":
         return cbundle.build_export_bundle(
@@ -147,7 +147,7 @@ async def import_config(request: Request):
 
 
 @router.delete("/settings/query_sessions")
-async def clear_query_sessions():
+def clear_query_sessions():
     try:
         QUERY_SESSION_FILE.parent.mkdir(parents=True, exist_ok=True)
         empty = {"favorites": [], "history": []}

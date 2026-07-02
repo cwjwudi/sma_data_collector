@@ -20,12 +20,12 @@ def _now_iso() -> str:
 
 
 @router.get("/layout-presets")
-async def list_layout_presets():
+def list_layout_presets():
     return [x.model_dump(mode="json") for x in store.list_summaries()]
 
 
 @router.get("/layout-presets/full")
-async def list_layout_presets_full():
+def list_layout_presets_full():
     """完整版式列表（须在 :layout_id 之前注册）。"""
     out = []
     for s in store.list_summaries():
@@ -36,7 +36,7 @@ async def list_layout_presets_full():
 
 
 @router.get("/layout-presets/{layout_id}")
-async def get_layout_preset(layout_id: str):
+def get_layout_preset(layout_id: str):
     lp = store.load_preset(layout_id)
     if not lp:
         raise HTTPException(status_code=404, detail="版式不存在")
@@ -44,7 +44,7 @@ async def get_layout_preset(layout_id: str):
 
 
 @router.put("/layout-presets/{layout_id}")
-async def put_layout_preset(layout_id: str, body: dict[str, Any]):
+def put_layout_preset(layout_id: str, body: dict[str, Any]):
     try:
         store.sanitize_id(layout_id)
     except ValueError as e:
@@ -65,7 +65,7 @@ async def put_layout_preset(layout_id: str, body: dict[str, Any]):
 
 
 @router.delete("/layout-presets/{layout_id}")
-async def delete_layout_preset(layout_id: str):
+def delete_layout_preset(layout_id: str):
     ok = store.delete_preset(layout_id)
     if not ok:
         raise HTTPException(status_code=404, detail="版式不存在")
@@ -73,7 +73,7 @@ async def delete_layout_preset(layout_id: str):
 
 
 @router.post("/layout-presets/import-bulk")
-async def import_bulk(request: dict[str, Any]):
+def import_bulk(request: dict[str, Any]):
     items = request.get("items")
     if not isinstance(items, list):
         raise HTTPException(status_code=400, detail="body.items 必须为数组")

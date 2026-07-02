@@ -24,12 +24,12 @@ def _now_iso() -> str:
 
 
 @router.get("/templates")
-async def list_templates():
+def list_templates():
     return [s.model_dump(mode="json") for s in store.list_summaries()]
 
 
 @router.get("/templates/full")
-async def list_templates_full():
+def list_templates_full():
     """完整模版列表（须在 :template_id 之前注册）。"""
     out = []
     for s in store.list_summaries():
@@ -40,7 +40,7 @@ async def list_templates_full():
 
 
 @router.get("/templates/{template_id}")
-async def get_template(template_id: str):
+def get_template(template_id: str):
     try:
         t = store.load_template(template_id)
     except ValueError as e:
@@ -51,7 +51,7 @@ async def get_template(template_id: str):
 
 
 @router.put("/templates/{template_id}")
-async def put_template(template_id: str, body: dict[str, Any]):
+def put_template(template_id: str, body: dict[str, Any]):
     try:
         store.sanitize_template_id(template_id)
     except ValueError as e:
@@ -73,7 +73,7 @@ async def put_template(template_id: str, body: dict[str, Any]):
 
 
 @router.delete("/templates/{template_id}")
-async def delete_template(template_id: str):
+def delete_template(template_id: str):
     try:
         ok = store.delete_template(template_id)
     except ValueError as e:
@@ -84,7 +84,7 @@ async def delete_template(template_id: str):
 
 
 @router.post("/templates/import-bulk")
-async def import_bulk(request: dict[str, Any]):
+def import_bulk(request: dict[str, Any]):
     items = request.get("items")
     if not isinstance(items, list):
         raise HTTPException(status_code=400, detail="body.items 必须为数组")
