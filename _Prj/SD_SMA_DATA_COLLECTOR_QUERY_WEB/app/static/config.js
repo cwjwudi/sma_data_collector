@@ -61,6 +61,17 @@ async function fetchJson(url, opts) {
   return data;
 }
 
+function setHintMessage(elementId, message, tone = 'warn') {
+  const el = document.getElementById(elementId);
+  if (!el) return;
+  el.textContent = message;
+  el.className = tone === 'ok' ? 'muted ok' : 'muted warn';
+}
+
+function catchHintError(hintId) {
+  return (err) => setHintMessage(hintId, err?.message || String(err));
+}
+
 function saveConfigPageState() {
   const state = {
     viewName: document.getElementById('editViewName').value || '',
@@ -691,7 +702,10 @@ async function saveTableConfig() {
   const viewName = document.getElementById('editViewName').value;
   const group = document.getElementById('editGroupName').value;
   const baselineTable = document.getElementById('editTableName').value;
-  if (!viewName || !group || !baselineTable) return alert('请先选择 view、group、基准表');
+  if (!viewName || !group || !baselineTable) {
+    setHintMessage('columnEditorHint', '请先选择 view、group、基准表');
+    return;
+  }
 
   const payload = {
     view_name: viewName,
@@ -727,7 +741,11 @@ async function deleteGroupConfig() {
   const viewName = document.getElementById('editViewName').value;
   const group = document.getElementById('editGroupName').value;
   const hint = document.getElementById('columnEditorHint');
-  if (!viewName || !group) return alert('请先选择 view、group');
+  if (!viewName || !group) {
+    hint.textContent = '请先选择 view、group';
+    hint.className = 'muted warn';
+    return;
+  }
 
   const confirmed = await showConfirmModal({
     title: '删除确认（1/2）',
@@ -822,41 +840,41 @@ async function restoreConfigPageState() {
 }
 
 document.getElementById('btnLoadTableConfig').addEventListener('click', () => {
-  loadTableConfig().catch(err => alert(err.message));
+  loadTableConfig().catch(catchHintError('columnEditorHint'));
 });
 document.getElementById('btnReloadConfigProfile').addEventListener('click', () => {
-  switchConfigProfile().catch(err => alert(err.message));
+  switchConfigProfile().catch(catchHintError('configProfileHint'));
 });
 document.getElementById('btnRefreshConfigProfiles').addEventListener('click', () => {
-  refreshConfigProfiles().catch(err => alert(err.message));
+  refreshConfigProfiles().catch(catchHintError('configProfileHint'));
 });
 document.getElementById('btnCreateConfigProfile').addEventListener('click', () => {
-  createConfigProfile().catch(err => alert(err.message));
+  createConfigProfile().catch(catchHintError('configProfileHint'));
 });
 document.getElementById('btnDeleteConfigProfile').addEventListener('click', () => {
-  deleteCurrentConfigProfile().catch(err => alert(err.message));
+  deleteCurrentConfigProfile().catch(catchHintError('configProfileHint'));
 });
 document.getElementById('configProfileSelect').addEventListener('change', () => {
-  switchConfigProfile().catch(err => alert(err.message));
+  switchConfigProfile().catch(catchHintError('configProfileHint'));
 });
 document.getElementById('btnSaveAppSettings').addEventListener('click', () => {
-  saveAppSettings().catch(err => alert(err.message));
+  saveAppSettings().catch(catchHintError('appSettingsHint'));
 });
 document.getElementById('btnConnectDatabase').addEventListener('click', () => {
-  connectDatabase().catch(err => alert(err.message));
+  connectDatabase().catch(catchHintError('appSettingsHint'));
 });
 document.getElementById('btnAddColumns').addEventListener('click', addColumns);
 document.getElementById('btnRemoveColumns').addEventListener('click', removeColumns);
 document.getElementById('btnMoveUp').addEventListener('click', () => moveSelected(true));
 document.getElementById('btnMoveDown').addEventListener('click', () => moveSelected(false));
 document.getElementById('btnSaveTableConfig').addEventListener('click', () => {
-  saveTableConfig().catch(err => alert(err.message));
+  saveTableConfig().catch(catchHintError('columnEditorHint'));
 });
 document.getElementById('btnDeleteGroupConfig').addEventListener('click', () => {
-  deleteGroupConfig().catch(err => alert(err.message));
+  deleteGroupConfig().catch(catchHintError('columnEditorHint'));
 });
 document.getElementById('editGroupName').addEventListener('change', () => {
-  loadTables().catch(err => alert(err.message));
+  loadTables().catch(catchHintError('schemaHint'));
   saveConfigPageState();
 });
 document.getElementById('editViewName').addEventListener('change', saveConfigPageState);
@@ -865,7 +883,7 @@ document.getElementById('editTableName').addEventListener('change', () => {
     document.getElementById('editTableName').value,
     document.getElementById('tableTimeField').value,
     document.getElementById('tableSortBy').value,
-  ).catch(err => alert(err.message));
+  ).catch(catchHintError('columnEditorHint'));
   saveConfigPageState();
 });
 document.getElementById('tableTimeField').addEventListener('change', saveConfigPageState);
@@ -874,11 +892,11 @@ document.getElementById('tableSortDir').addEventListener('change', saveConfigPag
 document.getElementById('tablePageSize').addEventListener('change', saveConfigPageState);
 document.getElementById('pluginModule').addEventListener('change', () => {
   saveConfigPageState();
-  loadPluginPageConfig().catch(err => alert(err.message));
+  loadPluginPageConfig().catch(catchHintError('pluginConfigHint'));
 });
 document.getElementById('pluginPageIndex').addEventListener('change', () => {
   saveConfigPageState();
-  loadPluginPageConfig().catch(err => alert(err.message));
+  loadPluginPageConfig().catch(catchHintError('pluginConfigHint'));
 });
 document.getElementById('pluginBindGroup').addEventListener('change', () => {
   const group = document.getElementById('pluginBindGroup').value || '';
@@ -1108,7 +1126,7 @@ async function savePluginPageConfig() {
   const moduleName = document.getElementById('pluginModule').value;
   const pageIndex = document.getElementById('pluginPageIndex').value || '1';
   if (!moduleName) {
-    alert('请先选择模块');
+    setHintMessage('pluginConfigHint', '请先选择模块');
     return;
   }
   ensurePluginModuleAndPage(moduleName, pageIndex);
@@ -1147,10 +1165,10 @@ async function savePluginPageConfig() {
 }
 
 document.getElementById('btnLoadPluginPage').addEventListener('click', () => {
-  loadPluginPageConfig().catch(err => alert(err.message));
+  loadPluginPageConfig().catch(catchHintError('pluginConfigHint'));
 });
 document.getElementById('btnSavePluginPage').addEventListener('click', () => {
-  savePluginPageConfig().catch(err => alert(err.message));
+  savePluginPageConfig().catch(catchHintError('pluginConfigHint'));
 });
 document.getElementById('pluginEnabled').addEventListener('change', saveConfigPageState);
 document.getElementById('pluginTitle').addEventListener('input', saveConfigPageState);
@@ -1191,4 +1209,4 @@ async function initConfigPage() {
   await restoreConfigPageState();
 }
 
-initConfigPage().catch(err => alert(err.message));
+initConfigPage().catch(catchHintError('configProfileHint'));
