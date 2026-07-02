@@ -53,11 +53,11 @@
 - 不 import 采集程序主流程模块（`main.py`、通信模块）。
 - 数据库侧仍为只读查询；插件页可通过 OPC UA **写回**当前页查询结果（独立 `asyncua` 客户端）。
 
-## 插件页 OPC UA 回写配置（JSON）
+## 插件页 OPC UA 回写配置
 
-在统一 profile（如 `config/测试.json`）中配置：
+在统一 profile（如 `config/测试.json`）中配置，或通过 **配置页** 表单维护。
 
-**全局连接**（profile 顶层）：
+**全局连接**（profile 顶层；配置页 → **基础设定** → OPC Endpoint）：
 
 ```json
 "opcua": {
@@ -69,7 +69,7 @@
 
 `endpoint_url` 为空时不写 OPC。
 
-**每插件页绑定**（`plugins.modules.<module>.pages.<n>.opcua_writeback`）：
+**每插件页绑定**（`plugins.modules.<module>.pages.<n>.opcua_writeback`；配置页 → **插件页面** → OPC UA 回写表单）：
 
 ```json
 "opcua_writeback": {
@@ -85,7 +85,7 @@
 - 键名必须是**数据库字段名**（如 `collection_time`），与表格显示列配置相互独立
 - 翻页/查询后自动写数组，并写 `cursor=-1`（未选中）；点击表格行后写 `cursor=行索引`（0–49，0 起）
 - OPC 写失败只记日志，不影响查询 API 响应
-- 配置页 **高级设定 · OPC UA 回写** 可编辑 `opcua` 与 `opcua_writeback` JSON
+- 配置页表单勾选列 + 填写 NodeId；折叠 JSON 区为只读预览
 
 ## 关键查询接口
 

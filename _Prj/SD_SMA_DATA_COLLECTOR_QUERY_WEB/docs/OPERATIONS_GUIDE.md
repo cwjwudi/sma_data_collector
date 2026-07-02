@@ -52,9 +52,12 @@
 
 ### 6.2 配置
 
-1. 顶层 `opcua.endpoint_url` 指向 PLC OPC UA 服务器
-2. 在对应插件页配置 `opcua_writeback.columns`（仅填写需要回写的列）与 `cursor`
-3. 或在 **配置页 → 插件页面 → 高级设定 · OPC UA 回写** 中直接编辑 JSON 并保存
+1. **配置页 → 基础设定**：填写 OPC Endpoint（及可选用户名/密码），点「保存基础设定」写入 profile 顶层 `opcua`
+2. **配置页 → 插件页面**：选择模块与页码，设置 `bind_group` 后，在「OPC UA 回写」区块勾选列并填写 NodeId，保存当前页配置
+3. 列清单来自 `query_view.per_group[bind_group]`，须先在「Group 与列」中配置该 group
+4. 折叠的 **opcua_writeback JSON 预览** 仅供查看/复制，保存时以表单为准
+
+也可直接编辑 profile JSON：顶层 `opcua` + 各页 `opcua_writeback`。
 
 ### 6.3 运行行为
 

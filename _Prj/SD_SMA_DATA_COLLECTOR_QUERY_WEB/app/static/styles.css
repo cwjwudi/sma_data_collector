@@ -313,6 +313,39 @@ th {
   background: #f3f4f6;
 }
 
+.field-wide {
+  flex: 1 1 280px;
+  min-width: 200px;
+}
+
+.subsection-title {
+  margin: 12px 0 6px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.opcua-writeback-panel {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.opcua-writeback-panel .inline-hint {
+  font-size: 12px;
+}
+
+#pluginOpcuaColumnTable input.opcua-col-nodeid {
+  width: 100%;
+  min-width: 220px;
+  font-family: Consolas, monospace;
+  font-size: 12px;
+}
+
+#pluginOpcuaColumnTable td:first-child {
+  width: 48px;
+  text-align: center;
+}
+
 .muted {
   color: #6b7280;
   font-size: 12px;

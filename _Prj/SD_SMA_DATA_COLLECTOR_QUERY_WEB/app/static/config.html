@@ -31,7 +31,7 @@
 
       <section class="panel">
         <h2>基础设定</h2>
-        <p class="hint">维护数据库连接与查询窗口限制，内容对应 app_settings.json。</p>
+        <p class="hint">维护数据库连接、OPC UA 连接与查询窗口限制；数据库部分对应 app_settings，OPC 连接写入 profile 顶层 opcua。</p>
         <div class="row">
           <label for="appDbType">数据库类型</label>
           <select id="appDbType">
@@ -50,6 +50,14 @@
           <input id="appDbUsername" type="text" />
           <label for="appDbPassword">密码</label>
           <input id="appDbPassword" type="password" />
+        </div>
+        <div class="row">
+          <label for="appOpcuaEndpoint">OPC Endpoint</label>
+          <input id="appOpcuaEndpoint" type="text" class="field-wide" placeholder="opc.tcp://127.0.0.1:4840" />
+          <label for="appOpcuaUsername">OPC 用户名</label>
+          <input id="appOpcuaUsername" type="text" />
+          <label for="appOpcuaPassword">OPC 密码</label>
+          <input id="appOpcuaPassword" type="password" />
         </div>
         <div class="row">
           <label for="appRequestsPerMinute">每分钟请求数</label>
@@ -155,13 +163,27 @@
           <select id="pluginBindGroup"></select>
         </div>
         <div id="pluginGroupHint" class="muted"></div>
-        <details id="pluginOpcuaAdvanced" class="advanced-panel">
-          <summary>高级设定 · OPC UA 回写 (OPCUA_FEEDBACK)</summary>
+        <div id="pluginOpcuaWriteback" class="opcua-writeback-panel">
+          <h3 class="subsection-title">OPC UA 回写</h3>
           <p class="hint">
-            编辑当前插件页的 <code>opcua_writeback</code> 与全局 <code>opcua</code> 连接。
-            <code>columns</code> 中只填写需要回写的列（键为数据库字段名，值为 OPC NodeId）；未列出的列不会写 PLC。
+            勾选需要回写的列并填写 NodeId（B&R 示例：<code>ns=6;s=::DataRev:strStartTime</code>）；
+            仅白名单列写入 PLC 数组（最长 50）。全局 Endpoint 在「基础设定」中配置。
           </p>
-          <textarea id="pluginOpcuaFeedbackJson" class="code-editor" spellcheck="false" rows="14"></textarea>
+          <div class="row">
+            <label for="pluginOpcuaCursor">Cursor NodeId</label>
+            <input id="pluginOpcuaCursor" type="text" class="field-wide" placeholder="ns=6;s=::DataRev:diCursor" />
+            <span class="muted inline-hint">翻页/查询后写 -1；点击行写 0–49</span>
+          </div>
+          <table id="pluginOpcuaColumnTable"></table>
+          <div id="pluginOpcuaWritebackHint" class="muted"></div>
+        </div>
+        <details id="pluginOpcuaAdvanced" class="advanced-panel">
+          <summary>高级 · opcua_writeback JSON 预览</summary>
+          <p class="hint">
+            只读预览，由上方表单生成；保存当前页配置时以表单为准。
+            <code>columns</code> 键为数据库字段名，未列出的列不会写 PLC。
+          </p>
+          <textarea id="pluginOpcuaFeedbackJson" class="code-editor" spellcheck="false" rows="10" readonly></textarea>
           <div id="pluginOpcuaFeedbackHint" class="muted"></div>
         </details>
         <div id="pluginConfigHint" class="muted"></div>
@@ -191,6 +213,6 @@
         </div>
       </div>
     </div>
-    <script src="/static/config.js?v=20260702_1"></script>
+    <script src="/static/config.js?v=20260702_2"></script>
   </body>
 </html>

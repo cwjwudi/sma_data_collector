@@ -39,6 +39,21 @@ function fillAppSettingsForm(data) {
   document.getElementById('appMaxWindowHours').value = Number(queryLimits.max_window_hours || 168);
 }
 
+function getOpcuaPayload() {
+  return {
+    endpoint_url: document.getElementById('appOpcuaEndpoint').value.trim(),
+    username: document.getElementById('appOpcuaUsername').value.trim(),
+    password: document.getElementById('appOpcuaPassword').value,
+  };
+}
+
+function fillOpcuaForm(data) {
+  const settings = data || {};
+  document.getElementById('appOpcuaEndpoint').value = settings.endpoint_url || '';
+  document.getElementById('appOpcuaUsername').value = settings.username || '';
+  document.getElementById('appOpcuaPassword').value = settings.password || '';
+}
+
 async function fetchJson(url, opts) {
   const resp = await fetch(url, opts);
   const data = await resp.json();
@@ -157,9 +172,14 @@ async function loadViews() {
 }
 
 async function loadAppSettings() {
-  const data = await fetchJson('/api/config/app-settings');
+  const [data, opcuaData] = await Promise.all([
+    fetchJson('/api/config/app-settings'),
+    fetchJson('/api/config/opcua').catch(() => ({ endpoint_url: '', username: '', password: '' })),
+  ]);
   fillAppSettingsForm(data || {});
-  document.getElementById('appSettingsHint').textContent = '已加载基础设定';
+  fillOpcuaForm(opcuaData || {});
+  document.getElementById('appSettingsHint').textContent =
+    '已加载基础设定与 OPC UA 连接（保存基础设定时一并写入）';
 }
 
 async function loadConfigProfiles() {
@@ -462,20 +482,28 @@ async function refreshMetadataFromCurrentDatabase() {
 async function saveAppSettings(options = {}) {
   const { refreshMetadata = false, successMessage } = options;
   const payload = getAppSettingsPayload();
+  const opcuaPayload = getOpcuaPayload();
   const result = await fetchJson('/api/config/app-settings', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
+  const opcuaResult = await fetchJson('/api/config/opcua', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(opcuaPayload),
+  });
   fillAppSettingsForm((result && result.settings) || payload);
+  fillOpcuaForm(opcuaResult || opcuaPayload);
   if (refreshMetadata) {
     await refreshMetadataFromCurrentDatabase();
   }
-  document.getElementById('appSettingsHint').textContent =
+  const baseMessage =
     successMessage ||
     (refreshMetadata
-      ? '基础设定已保存，数据库已重连，Group 与列已按当前数据库刷新'
-      : '基础设定已保存；如需刷新 Group 与列，请点击“连接数据库”');
+      ? '基础设定与 OPC UA 已保存，数据库已重连，Group 与列已按当前数据库刷新'
+      : '基础设定与 OPC UA 已保存；如需刷新 Group 与列，请点击“连接数据库”');
+  document.getElementById('appSettingsHint').textContent = baseMessage;
   return result;
 }
 
@@ -488,7 +516,7 @@ async function connectDatabase() {
   const check = await fetchJson('/api/db/check');
   await refreshMetadataFromCurrentDatabase();
   document.getElementById('appSettingsHint').textContent =
-    `数据库连接成功（${check.database || '-'}），Group 与列已刷新`;
+    `数据库连接成功（${check.database || '-'}），Group 与列已刷新；OPC UA 连接已随基础设定保存`;
 }
 
 async function loadGroups() {
@@ -855,6 +883,7 @@ document.getElementById('pluginPageIndex').addEventListener('change', () => {
 document.getElementById('pluginBindGroup').addEventListener('change', () => {
   const group = document.getElementById('pluginBindGroup').value || '';
   updatePluginGroupHint(group).catch(() => {});
+  refreshPluginOpcuaWritebackTable().catch(() => {});
   saveConfigPageState();
 });
 
@@ -918,43 +947,136 @@ async function updatePluginGroupHint(group) {
   }
 }
 
-function buildDefaultOpcuaFeedbackPayload(opcuaSettings, pageCfg) {
+function buildOpcuaWritebackPreview(writebackCfg) {
   return {
-    opcua: {
-      endpoint_url: opcuaSettings?.endpoint_url || '',
-      username: opcuaSettings?.username || '',
-      password: opcuaSettings?.password || '',
-    },
-    opcua_writeback: pageCfg?.opcua_writeback || {
-      cursor: '',
-      columns: {},
-    },
+    cursor: writebackCfg?.cursor || '',
+    columns: writebackCfg?.columns && typeof writebackCfg.columns === 'object' ? writebackCfg.columns : {},
   };
 }
 
-function renderPluginOpcuaFeedbackEditor(opcuaSettings, pageCfg) {
-  const payload = buildDefaultOpcuaFeedbackPayload(opcuaSettings, pageCfg);
-  document.getElementById('pluginOpcuaFeedbackJson').value = JSON.stringify(payload, null, 2);
-  document.getElementById('pluginOpcuaFeedbackHint').textContent =
-    '保存当前页配置时一并写入。columns 键必须是数据库字段名（如 collection_time）。';
+function renderPluginOpcuaColumnTable(columns, writebackCfg) {
+  const table = document.getElementById('pluginOpcuaColumnTable');
+  table.innerHTML = '';
+  const boundColumns = writebackCfg?.columns && typeof writebackCfg.columns === 'object' ? writebackCfg.columns : {};
+  const thead = document.createElement('thead');
+  thead.innerHTML = '<tr><th>回写</th><th>字段名</th><th>显示名</th><th>OPC NodeId</th></tr>';
+  table.appendChild(thead);
+  const tbody = document.createElement('tbody');
+  for (const col of columns) {
+    const name = col.name;
+    const labelZh = col.label_zh || col.label_en || name;
+    const enabled = Object.prototype.hasOwnProperty.call(boundColumns, name);
+    const nodeId = enabled ? boundColumns[name] : '';
+    const tr = document.createElement('tr');
+    tr.setAttribute('data-col', name);
+    tr.innerHTML =
+      `<td><input type="checkbox" class="opcua-col-enabled"${enabled ? ' checked' : ''} /></td>` +
+      `<td>${name}</td>` +
+      `<td>${labelZh}</td>` +
+      `<td><input type="text" class="opcua-col-nodeid field-wide" value="${escapeHtmlAttr(nodeId)}" placeholder="ns=6;s=::DataRev:..." /></td>`;
+    tbody.appendChild(tr);
+  }
+  table.appendChild(tbody);
 }
 
-function applyPluginOpcuaFeedbackEditor(pageCfg) {
-  const raw = document.getElementById('pluginOpcuaFeedbackJson').value.trim();
-  if (!raw) {
-    delete pageCfg.opcua_writeback;
+function escapeHtmlAttr(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+function capturePluginOpcuaMappings() {
+  const cursorEl = document.getElementById('pluginOpcuaCursor');
+  const cursor = cursorEl ? cursorEl.value.trim() : '';
+  const columns = {};
+  const rows = document.querySelectorAll('#pluginOpcuaColumnTable tbody tr[data-col]');
+  for (const tr of rows) {
+    const col = tr.getAttribute('data-col');
+    const enabled = tr.querySelector('.opcua-col-enabled')?.checked;
+    const nodeId = tr.querySelector('.opcua-col-nodeid')?.value.trim() || '';
+    columns[col] = { enabled: !!enabled, nodeId };
+  }
+  return { cursor, columns };
+}
+
+function mergeCapturedMappingsToWriteback(captured) {
+  const columns = {};
+  for (const [name, info] of Object.entries(captured.columns || {})) {
+    if (info.enabled && info.nodeId) {
+      columns[name] = info.nodeId;
+    }
+  }
+  return {
+    cursor: captured.cursor || '',
+    columns,
+  };
+}
+
+function collectPluginOpcuaWriteback() {
+  const captured = capturePluginOpcuaMappings();
+  const writeback = mergeCapturedMappingsToWriteback(captured);
+  if (Object.keys(writeback.columns).length === 0) {
     return null;
   }
-  let parsed;
+  if (!writeback.cursor) {
+    delete writeback.cursor;
+  }
+  return writeback;
+}
+
+async function loadPluginOpcuaWritebackTable(viewName, bindGroup, writebackCfg) {
+  const hint = document.getElementById('pluginOpcuaWritebackHint');
+  const table = document.getElementById('pluginOpcuaColumnTable');
+  const cursorEl = document.getElementById('pluginOpcuaCursor');
+  table.innerHTML = '';
+  cursorEl.value = writebackCfg?.cursor || '';
+
+  if (!bindGroup) {
+    hint.textContent = '请先选择 bind_group；列清单来自该 group 在「Group 与列」中的配置。';
+    hint.className = 'muted warn';
+    return;
+  }
+
   try {
-    parsed = JSON.parse(raw);
+    const cfg = await fetchJson(
+      '/api/config/query-group?view_name=' +
+        encodeURIComponent(viewName) +
+        '&group=' +
+        encodeURIComponent(bindGroup),
+    );
+    const columns = cfg.columns || [];
+    if (columns.length === 0) {
+      hint.textContent = `view=${viewName}, group=${bindGroup} 尚未配置列，请先在「Group 与列」中保存该 group。`;
+      hint.className = 'muted warn';
+      return;
+    }
+    renderPluginOpcuaColumnTable(columns, writebackCfg);
+    const boundCount = Object.keys(writebackCfg?.columns || {}).length;
+    hint.textContent = `已加载 ${columns.length} 列，当前绑定 ${boundCount} 列回写。`;
+    hint.className = 'muted ok';
   } catch (e) {
-    throw new Error(`OPC UA 回写 JSON 解析失败: ${e.message || e}`);
+    hint.textContent = `无法加载 group 列配置：${e.message || e}`;
+    hint.className = 'muted warn';
   }
-  if (!parsed || typeof parsed !== 'object') {
-    throw new Error('OPC UA 回写 JSON 必须是对象');
-  }
-  return parsed;
+}
+
+async function refreshPluginOpcuaWritebackTable() {
+  const captured = capturePluginOpcuaMappings();
+  const viewName = document.getElementById('pluginViewName').value || 'table';
+  const bindGroup = document.getElementById('pluginBindGroup').value || '';
+  const writebackCfg = mergeCapturedMappingsToWriteback(captured);
+  await loadPluginOpcuaWritebackTable(viewName, bindGroup, writebackCfg);
+  renderPluginOpcuaFeedbackEditor();
+}
+
+function renderPluginOpcuaFeedbackEditor() {
+  const writeback = collectPluginOpcuaWriteback();
+  const payload = buildOpcuaWritebackPreview(writeback || { cursor: document.getElementById('pluginOpcuaCursor').value.trim(), columns: {} });
+  document.getElementById('pluginOpcuaFeedbackJson').value = JSON.stringify(payload, null, 2);
+  document.getElementById('pluginOpcuaFeedbackHint').textContent =
+    '只读预览；保存当前页配置时以上方表单为准。';
 }
 
 async function loadPluginPageConfig() {
@@ -973,13 +1095,10 @@ async function loadPluginPageConfig() {
   document.getElementById('pluginBindGroup').value = bindGroup;
   await updatePluginGroupHint(bindGroup);
 
-  let opcuaSettings = { endpoint_url: '', username: '', password: '' };
-  try {
-    opcuaSettings = await fetchJson('/api/config/opcua');
-  } catch (_) {
-    // ignore
-  }
-  renderPluginOpcuaFeedbackEditor(opcuaSettings, pageCfg);
+  const viewName = pageCfg.view_name ?? moduleCfg.view_name ?? 'table';
+  const writebackCfg = pageCfg.opcua_writeback || { cursor: '', columns: {} };
+  await loadPluginOpcuaWritebackTable(viewName, bindGroup, writebackCfg);
+  renderPluginOpcuaFeedbackEditor();
 
   document.getElementById('pluginConfigHint').textContent =
     `当前编辑: module=${moduleName}, page=${pageIndex}`;
@@ -1003,21 +1122,11 @@ async function savePluginPageConfig() {
   pageCfg.bind_group = document.getElementById('pluginBindGroup').value || '';
   delete pageCfg.bind_table;
 
-  const feedbackPayload = applyPluginOpcuaFeedbackEditor(pageCfg);
-  if (feedbackPayload) {
-    if (feedbackPayload.opcua && typeof feedbackPayload.opcua === 'object') {
-      await fetchJson('/api/config/opcua', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(feedbackPayload.opcua),
-      });
-    }
-    const wb = feedbackPayload.opcua_writeback;
-    if (wb && typeof wb === 'object' && Object.keys(wb).length > 0) {
-      pageCfg.opcua_writeback = wb;
-    } else {
-      delete pageCfg.opcua_writeback;
-    }
+  const writeback = collectPluginOpcuaWriteback();
+  if (writeback && Object.keys(writeback.columns).length > 0) {
+    pageCfg.opcua_writeback = writeback;
+  } else {
+    delete pageCfg.opcua_writeback;
   }
 
   moduleCfg.title = moduleCfg.title || moduleName;
@@ -1045,8 +1154,32 @@ document.getElementById('btnSavePluginPage').addEventListener('click', () => {
 });
 document.getElementById('pluginEnabled').addEventListener('change', saveConfigPageState);
 document.getElementById('pluginTitle').addEventListener('input', saveConfigPageState);
-document.getElementById('pluginViewName').addEventListener('change', saveConfigPageState);
+document.getElementById('pluginViewName').addEventListener('change', () => {
+  refreshPluginOpcuaWritebackTable().catch(() => {});
+  saveConfigPageState();
+});
 document.getElementById('pluginPageSize').addEventListener('change', saveConfigPageState);
+document.getElementById('pluginOpcuaCursor').addEventListener('input', () => {
+  renderPluginOpcuaFeedbackEditor();
+  saveConfigPageState();
+});
+document.getElementById('pluginOpcuaAdvanced').addEventListener('toggle', event => {
+  if (event.target.open) {
+    renderPluginOpcuaFeedbackEditor();
+  }
+});
+document.getElementById('pluginOpcuaColumnTable').addEventListener('change', event => {
+  if (event.target.matches('.opcua-col-enabled, .opcua-col-nodeid')) {
+    renderPluginOpcuaFeedbackEditor();
+    saveConfigPageState();
+  }
+});
+document.getElementById('pluginOpcuaColumnTable').addEventListener('input', event => {
+  if (event.target.matches('.opcua-col-nodeid')) {
+    renderPluginOpcuaFeedbackEditor();
+    saveConfigPageState();
+  }
+});
 
 async function initConfigPage() {
   await loadConfigProfiles();
