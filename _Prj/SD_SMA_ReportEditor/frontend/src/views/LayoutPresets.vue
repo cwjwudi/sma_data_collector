@@ -248,6 +248,7 @@ import {
   layoutPresetsSnapshot,
 } from "@/lib/report-template/layout-registry";
 import { useStaleGuard } from "@/composables/useStaleGuard";
+import { appConfirm } from "@/composables/useAppConfirm";
 
 const route = useRoute();
 const router = useRouter();
@@ -379,7 +380,16 @@ function goEditor(id: string) {
 }
 
 async function removePreset(id: string) {
-  if (!confirm("删除此版式？引用它的模版会失去关联 ID，请先确认模版侧已调整。")) return;
+  if (
+    !(await appConfirm({
+      title: "删除版式",
+      message: "删除此版式？引用它的模版会失去关联 ID，请先确认模版侧已调整。",
+      confirmText: "删除",
+      danger: true,
+    }))
+  ) {
+    return;
+  }
   msg.value = "";
   const victim = presets.value.find((x) => x.id === id);
   try {

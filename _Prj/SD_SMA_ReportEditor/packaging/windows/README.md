@@ -4,11 +4,49 @@
 
 ← 打包总览与排错：[../README.md](../README.md)
 
-## 当前目标版本
+## 当前目标版本：0.1.25
 
-安装包版本来自 **`frontend/package.json`** 的 `version` 字段（electron-builder 读取）。仓库当前应为 **0.1.22**；打包日志首行须显示 `Version: 0.1.22` 与 `Expected: Report Editor-Setup-0.1.22-x64.exe`。
+安装包版本来自 **`frontend/package.json`** 的 `version` 字段。打包日志首行须显示 `Version: 0.1.25` 与 `Expected: Report Editor-Setup-0.1.25-x64.exe`。
 
-若 Portal 上尚无 `0.1.22` 的 exe，在本机打完包后运行 `publish-portal-release.mjs --only win` 同步。
+**本版更新说明**（写入 `packaging/updates/latest.json` 的 `notes`，应用内「检查更新」与 `latest.yml` 的 `releaseNotes` 均会展示）：
+
+> 修复 0.1.25 启动白屏；OPC UA 自动截批全局监听；Windows 应用内更新展示 releaseNotes
+
+发版前请 `git pull origin main`，确认上述 `notes` 已在仓库中；若需修改说明：
+
+```powershell
+node packaging\scripts\bump-version.mjs 0.1.25 --notes "你的更新说明"
+```
+
+## 一发版流程（推荐）
+
+在仓库根目录打开 PowerShell 或 cmd：
+
+```bat
+cd _Prj\SD_SMA_ReportEditor
+git pull origin main
+cd packaging\windows
+build.bat -Fresh
+```
+
+打包成功后脚本会自动运行 `publish-portal-release.mjs --only win`，生成 Win 安装包 SHA256，并将 `notes` 注入 `output/latest.yml` 的 `releaseNotes`。
+
+**同步到 WebPortal**（任选其一）：
+
+```powershell
+# 方式 A：打包时指定 Portal 目录
+.\build.ps1 -Fresh -PortalDir D:\path\to\web-portal-demo\public\downloads\report-editor
+
+# 方式 B：环境变量
+set REPORT_EDITOR_PORTAL_DIR=D:\path\to\web-portal-demo\public\downloads\report-editor
+build.bat -Fresh
+
+# 方式 C：打包后手动同步
+cd ..\..
+node packaging\scripts\publish-portal-release.mjs --copy-artifacts --only win --portal-dir D:\path\to\...\report-editor
+```
+
+**务必加 `-Fresh`**，否则 `output/` 里残留旧版 `Report Editor-Setup-*.exe` 会导致脚本报错退出。
 
 ## 运行
 
@@ -25,84 +63,57 @@ build.bat -Fresh
 .\build.ps1 -Help
 ```
 
-## 推荐发版命令
-
-```powershell
-git pull
-.\build.ps1 -Fresh
-```
-
-或指定版本 bump（一般已在 main 上 bump 过则不必再写 `-Version`）：
-
-```powershell
-.\build.ps1 -Version 0.1.22 -Notes "更新说明" -Fresh
-```
-
-```bat
-build.bat -Fresh
-```
-
-**务必加 `-Fresh`**，否则 `output/` 里残留的 `Report Editor-Setup-0.1.19-x64.exe` 等会导致脚本报错退出（防止误发旧版本）。
-
-发版前也可手动 bump：
-
-```powershell
-node packaging\scripts\bump-version.mjs 0.1.20 --notes "说明"
-```
-
-## 与 Mac 打包对齐的能力
-
-| 能力 | 说明 |
-|------|------|
-| `-Version` / `-Notes` | 打包前自动 bump |
-| 版本强校验 | `package.json` 与 `latest.json` 不一致则失败 |
-| 产物文件名校验 | 必须产出 `Report Editor-Setup-<version>-x64.exe` |
-| `npm test` | 默认在 Vite 构建前执行（`-SkipTests` 可跳过） |
-| `-Fresh` | 清空 `output/` |
-| 发布后同步 | 自动 `publish-portal-release.mjs --only win`（保留同版本 Mac 条目） |
-
-## 参数（传给 build.ps1）
+## 参数
 
 | 参数 | 作用 |
 |------|------|
-| `-Version <semver>` | 打包前自动 bump |
-| `-Notes <text>` | 与 `-Version` 写入 `latest.json` |
 | `-Fresh` | 清空 `output/` 后再打包 |
 | `-SkipFrontendInstall` | 跳过 `npm ci` |
 | `-SkipBackendBuild` | 跳过 PyInstaller |
-| `-SkipTests` | 跳过 `npm test`（不推荐） |
-| `-NoPause` | 失败时也不弹出「按任意键继续」 |
-| `-AllowVersionMismatch` | 仅警告版本不一致（不推荐） |
-| `-Help` | 显示用法 |
+| `-PortalDir <path>` | 打包完成后同步到 Portal 静态目录 |
+| `-Version <semver>` | 打包前 bump（一般已在 main bump 过则不必） |
+| `-Notes <text>` | 与 `-Version` 写入 `latest.json` 说明 |
+
+示例：
+
+```powershell
+.\build.ps1 -Fresh -PortalDir D:\web-portal-demo\public\downloads\report-editor
+```
 
 ## 产物
 
 ```text
 output/Report Editor-Setup-<version>-x64.exe
+output/latest.yml          ← electron-builder 生成；publish 时会注入 releaseNotes
+output/*.exe.blockmap      ← Windows 差分更新用（与 Setup 同名）
 ```
 
-打包成功后脚本会自动运行 `publish-portal-release.mjs --only win`：
+Windows 应用内更新默认**增量优先**（`latest.yml` + `.blockmap`），失败或用户选择时可下载完整安装包。
 
-- 写入/更新 `packaging/updates/latest.json` 中的 **win32-x64**（含 SHA256）
-- **保留**同版本下已有的 **darwin-arm64** 条目
-- 若 Portal 目录已挂载，复制安装包并同步 `latest.json`
+## 应用内更新说明如何展示
 
-手动同步（在 `_Prj/SD_SMA_ReportEditor` 目录）：
+| 来源 | 用途 |
+|------|------|
+| `packaging/updates/latest.json` → `notes` | 设置页「更新说明」、启动更新提示 |
+| `latest.yml` → `releaseNotes` | electron-updater 读取；由 publish 脚本从 `notes` 自动写入 |
 
-```powershell
-node packaging\scripts\publish-portal-release.mjs --copy-artifacts --only win
-```
+打包前确认 `latest.json` 中 `notes` 非空；`build.ps1` 会在日志中打印当前 `Release notes`。
 
-## 打包失败：winCodeSign / 符号链接
+## 与 Mac 打包对齐的能力
 
-若日志出现 `Cannot create symbolic link : A required privilege is not held by the client`，删除缓存 `%LOCALAPPDATA%\electron-builder\Cache\winCodeSign` 后重试。脚本也会在构建前尝试清理该缓存。
+| 能力 | 说明 |
+|------|------|
+| 版本校验 | `package.json` 与 `packaging/updates/latest.json` 不一致时报错 |
+| 单测门禁 | 打包前执行 `npm test` |
+| Portal 同步 | `publish-portal-release.mjs --only win`（优先本地新构建的 exe 计算 SHA256） |
+| 拷贝校验 | publish 脚本校验 Portal 拷贝后文件大小一致 |
 
-## 打包失败：npm ci / EBADENGINE
+## 前置环境
 
-`engines.node` 为 `>=20 <24`。Node 24+ 时脚本自动为 `npm ci` 追加 `--ignore-engines`；建议使用 Node 22 LTS。
+- Windows x64
+- Node.js **20.x 或 22.x LTS**（Node 24+ 开发请用 `scripts\dev\start_dev_electron_node22.bat`，打包脚本仍建议 22 LTS）
+- Python 3.10+（含 `py` 启动器）
 
-## 打包失败：vite build 只打印 Node 版本
+内网可设 Electron 镜像后再打包，详见 [../README.md](../README.md)。
 
-脚本已设置 `NODE_OPTIONS=--max-old-space-size=8192`；若仍失败请换 Node 22 LTS。
-
-现场安装与卸载见 [getting-started/windows-installer.md](../../getting-started/windows-installer.md)。
+现场安装见 [getting-started/windows-installer.md](../../getting-started/windows-installer.md)。

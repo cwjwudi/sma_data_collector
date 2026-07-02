@@ -28,7 +28,7 @@ chmod +x build.sh build.command
 **推荐一发版命令**（避免打出旧版本号安装包）：
 
 ```bash
-./build.sh --version 0.1.19 --notes "更新说明" --fresh
+./build.sh --version 0.1.25 --notes "更新说明" --fresh
 ```
 
 也可先手动 bump，再 `./build.sh`：

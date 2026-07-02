@@ -64,6 +64,7 @@
     </div>
     <SetupWizard v-model="setupWizardVisible" />
     <AppUpdatePromptDialog v-if="appUpdateStartupPromptOpen" />
+    <AppConfirmDialog />
     <AppToastStack />
   </div>
 </template>
@@ -74,6 +75,7 @@ import { useRoute } from 'vue-router'
 import SetupWizard from '@/features/onboarding/SetupWizard.vue'
 import AppUpdatePromptDialog from '@/features/settings/app-update/AppUpdatePromptDialog.vue'
 import SidebarAppUpdateBar from '@/features/settings/app-update/SidebarAppUpdateBar.vue'
+import AppConfirmDialog from '@/components/AppConfirmDialog.vue'
 import AppToastStack from '@/components/AppToastStack.vue'
 import {
   appUpdateAvailable,
@@ -92,6 +94,11 @@ import {
   connectionProbeIntervalMs,
   loadConnectionProbePrefs,
 } from '@/features/datasource/connection-probe-prefs'
+import {
+  disposeReportAutoExportTrigger,
+  initReportAutoExportTrigger,
+  invalidateTemplateSummariesCache,
+} from '@/lib/report-auto-export-trigger-service'
 import { loadSidebarCollapsed, saveSidebarCollapsed } from '@/lib/sidebar-layout-prefs'
 
 const route = useRoute()
@@ -149,6 +156,7 @@ function onProbePrefsChanged(ev) {
 }
 
 function onConfigImported() {
+  invalidateTemplateSummariesCache()
   if (!route.path.startsWith('/datasource')) {
     void probeAllConnectionsForNav()
   }
@@ -183,12 +191,14 @@ onMounted(() => {
     scheduleAutoUpdateCheck()
   }
   void reloadNavProbePrefs()
+  initReportAutoExportTrigger()
   window.addEventListener('report-editor-config-imported', onConfigImported)
   window.addEventListener('report-editor-connection-probe-changed', onProbePrefsChanged)
 })
 
 onUnmounted(() => {
   stopNavDbHealthPolling()
+  disposeReportAutoExportTrigger()
   disposeAppUpdateListeners()
   window.removeEventListener('report-editor-config-imported', onConfigImported)
   window.removeEventListener('report-editor-connection-probe-changed', onProbePrefsChanged)

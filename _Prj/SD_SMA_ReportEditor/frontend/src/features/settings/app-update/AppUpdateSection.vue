@@ -470,11 +470,7 @@ async function downloadUpdate(options?: { fullDownload?: boolean }) {
       return
     }
     const modeText =
-      res.mode === 'full'
-        ? '完整安装包'
-        : res.mode === 'differential'
-          ? '增量更新包'
-          : '安装包'
+      res.mode === 'full' ? '完整安装包' : res.mode === 'differential' ? '增量更新包' : '安装包'
     setMsg(`下载完成（${res.latestVersion}，${modeText}），可点击「一键升级」。`, 'ok')
   } catch (e) {
     setMsg(e instanceof Error ? e.message : String(e), 'err')

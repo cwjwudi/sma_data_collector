@@ -23,6 +23,7 @@ const manifestPath = path.join(root, 'packaging/updates/latest.json')
 
 const DEFAULT_PORTAL_CANDIDATES = [
   process.env.REPORT_EDITOR_PORTAL_DIR,
+  path.resolve(root, '../../../web-portal-demo/public/downloads/report-editor'),
   '/Volumes/web/web-portal-demo/public/downloads/report-editor',
   path.resolve(root, '../../../P004_WebPortal/public/downloads/report-editor'),
   path.resolve(root, '../../../../P004_WebPortal/public/downloads/report-editor'),
@@ -132,8 +133,41 @@ function artifactEntryForFile(filePath) {
   }
 }
 
-function resolveArtifactPath(version, kind, portalDir) {
+/** 将 latest.json 中的 notes 写入 latest.yml，供 electron-updater 与设置页展示 */
+function injectReleaseNotesIntoYml(ymlPath, notes) {
+  const text = String(notes || '').trim()
+  if (!text || !fs.existsSync(ymlPath)) return false
+  let content = fs.readFileSync(ymlPath, 'utf8')
+  const block = `releaseNotes: |\n${text
+    .split('\n')
+    .map((line) => `  ${line}`)
+    .join('\n')}\n`
+  if (/^releaseNotes:/m.test(content)) {
+    content = content.replace(/^releaseNotes:[^\n]*\n(?:  .*\n)*/m, block)
+  } else {
+    content = block + content
+  }
+  fs.writeFileSync(ymlPath, content, 'utf8')
+  console.log(`[patch] releaseNotes -> ${ymlPath}`)
+  return true
+}
+
+function syncLatestYmlToPortal(version, notes, portalDir) {
+  const latestYml = findWindowsUpdateMetadata(version, 'latestYml', portalDir)
+  if (!latestYml) return ''
+  const dest = path.join(portalDir, 'latest.yml')
+  fs.copyFileSync(latestYml, dest)
+  injectReleaseNotesIntoYml(dest, notes)
+  console.log(`[sync] latest.yml -> ${dest}`)
+  return dest
+}
+
+function resolveArtifactPath(version, kind, portalDir, options = {}) {
   const name = artifactFileName(version, kind)
+  if (options.preferBuild) {
+    const built = findBuildArtifact(version, kind)
+    if (built) return built
+  }
   const searchDirs = [portalDir, path.join(root, 'packaging/updates')].filter(Boolean)
   for (const dir of searchDirs) {
     const candidate = path.join(dir, name)
@@ -166,7 +200,9 @@ function buildManifest(version, portalDir, options = {}) {
 
   for (const kind of kinds) {
     const key = kind === 'mac' ? 'darwin-arm64' : 'win32-x64'
-    const filePath = resolveArtifactPath(version, kind, portalDir)
+    const filePath = resolveArtifactPath(version, kind, portalDir, {
+      preferBuild: Boolean(options.preferBuild),
+    })
     if (filePath) {
       platforms[key] = artifactEntryForFile(filePath)
       updatedKinds.push(kind)
@@ -199,8 +235,8 @@ function buildManifest(version, portalDir, options = {}) {
 
 function copyFileIfNewer(src, dest) {
   if (!fs.existsSync(src)) return false
+  const srcStat = fs.statSync(src)
   if (fs.existsSync(dest)) {
-    const srcStat = fs.statSync(src)
     const destStat = fs.statSync(dest)
     if (srcStat.size === destStat.size && srcStat.mtimeMs <= destStat.mtimeMs) {
       console.log(`[skip] ${path.basename(dest)} already up to date`)
@@ -208,7 +244,14 @@ function copyFileIfNewer(src, dest) {
     }
   }
   fs.copyFileSync(src, dest)
-  console.log(`[copy] ${src} -> ${dest}`)
+  const copied = fs.statSync(dest)
+  if (copied.size !== srcStat.size) {
+    console.error(
+      `[error] 拷贝后大小不一致：${path.basename(dest)} 期望 ${srcStat.size}，实际 ${copied.size}`,
+    )
+    process.exit(1)
+  }
+  console.log(`[copy] ${src} -> ${dest} (${copied.size} bytes)`)
   return true
 }
 
@@ -233,13 +276,13 @@ if (args.copyArtifacts && portalDir) {
     if (blockmap) copyFileIfNewer(blockmap, path.join(portalDir, path.basename(blockmap)))
     if (latestYml) copyFileIfNewer(latestYml, path.join(portalDir, 'latest.yml'))
     if (!blockmap || !latestYml) {
-      console.warn('[warn] Windows differential metadata missing; full installer update still works.')
-      console.warn('       Expected latest.yml and Report Editor-Setup-<version>-x64.exe.blockmap from electron-builder.')
+      console.warn('[warn] Windows 差分更新元数据缺失；electron-updater 将回退为完整安装包下载。')
+      console.warn('       期望 output/latest.yml 与 Report Editor-Setup-<version>-x64.exe.blockmap')
     }
   }
 }
 
-buildManifest(version, portalDir, { only: args.only })
+buildManifest(version, portalDir, { only: args.only, preferBuild: Boolean(args.copyArtifacts) })
 
 if (!portalDir) {
   console.warn('[warn] 未找到 Portal 目录，仅更新了 packaging/updates/latest.json')
@@ -254,10 +297,7 @@ if (!args.copyArtifacts) {
 
 fs.copyFileSync(manifestPath, path.join(portalDir, 'latest.json'))
 console.log(`[sync] latest.json -> ${path.join(portalDir, 'latest.json')}`)
-const latestYml = findWindowsUpdateMetadata(version, 'latestYml', portalDir)
-if (latestYml) {
-  fs.copyFileSync(latestYml, path.join(portalDir, 'latest.yml'))
-  console.log(`[sync] latest.yml -> ${path.join(portalDir, 'latest.yml')}`)
-}
+const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'))
+syncLatestYmlToPortal(version, manifest.notes || '', portalDir)
 console.log('')
 console.log(`Done. 部署 WebPortal 后，Solutions 页与客户端自动更新将指向 ${version}。`)

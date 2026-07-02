@@ -1,0 +1,3 @@
+# 安装包体积大，仅通过 Portal 静态目录或内网分发；清单 JSON/YML/blockmap 可入库
+public/downloads/report-editor/*.exe
+public/downloads/report-editor/*.dmg

@@ -97,6 +97,7 @@ import {
   loadReportExportPrefs,
   saveReportExportPrefs,
 } from "@/lib/report-export-prefs";
+import { appConfirm } from "@/composables/useAppConfirm";
 
 export interface ExportPdfRow {
   name: string;
@@ -185,7 +186,16 @@ async function revealFile(r: ExportPdfRow): Promise<void> {
 }
 
 async function deleteFile(r: ExportPdfRow): Promise<void> {
-  if (!confirm(`确定删除文件？\n\n${r.name}\n\n此操作不可恢复。`)) return;
+  if (
+    !(await appConfirm({
+      title: "删除文件",
+      message: `确定删除文件？\n\n${r.name}\n\n此操作不可恢复。`,
+      confirmText: "删除",
+      danger: true,
+    }))
+  ) {
+    return;
+  }
   msg.value = "";
   const res = await window.electronAPI?.deleteExportFile?.({ filePath: r.filePath });
   if (!res?.ok) {

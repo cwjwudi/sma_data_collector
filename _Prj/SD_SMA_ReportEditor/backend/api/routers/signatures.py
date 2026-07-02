@@ -20,12 +20,12 @@ def _now_iso() -> str:
 
 
 @router.get("/signatures")
-async def list_assets():
+def list_assets():
     return [x.model_dump(mode="json") for x in store.list_summaries()]
 
 
 @router.get("/signatures/{asset_id}")
-async def get_asset(asset_id: str):
+def get_asset(asset_id: str):
     a = store.load_asset(asset_id)
     if not a:
         raise HTTPException(status_code=404, detail="条目不存在")
@@ -33,7 +33,7 @@ async def get_asset(asset_id: str):
 
 
 @router.put("/signatures/{asset_id}")
-async def put_asset(asset_id: str, body: dict[str, Any]):
+def put_asset(asset_id: str, body: dict[str, Any]):
     if not isinstance(body, dict):
         raise HTTPException(status_code=400, detail="无效请求体")
     data = dict(body)
@@ -49,7 +49,7 @@ async def put_asset(asset_id: str, body: dict[str, Any]):
 
 
 @router.delete("/signatures/{asset_id}")
-async def delete_asset(asset_id: str):
+def delete_asset(asset_id: str):
     if not store.delete_asset(asset_id):
         raise HTTPException(status_code=404, detail="条目不存在")
     return {"ok": True}

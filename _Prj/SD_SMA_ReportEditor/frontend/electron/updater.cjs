@@ -5,7 +5,6 @@ const https = require('https')
 const path = require('path')
 const { spawn } = require('child_process')
 const { URL } = require('url')
-const { CancellationToken } = require('builder-util-runtime')
 
 /** 默认更新源：WebPortal 静态目录（https://brportal.cpolar.top/downloads/report-editor） */
 const DEFAULT_UPDATE_BASE_URL =
@@ -288,6 +287,23 @@ function pickArtifact(manifest, platformKey) {
 }
 
 /** 从 manifest 相对路径或完整下载 URL 得到本地文件名（解码 %20 等，避免 Windows EPERM） */
+function normalizeReleaseNotes(notes) {
+  if (!notes) return ''
+  if (typeof notes === 'string') return notes.trim()
+  if (Array.isArray(notes)) {
+    return notes
+      .map((item) => {
+        if (typeof item === 'string') return item
+        if (item && typeof item === 'object') return item.note || item.text || ''
+        return ''
+      })
+      .filter(Boolean)
+      .join('\n')
+      .trim()
+  }
+  return String(notes).trim()
+}
+
 function artifactFileName(artifactUrl, fallbackVersion) {
   const raw = typeof artifactUrl === 'string' ? artifactUrl.trim() : ''
   if (!raw) {
@@ -321,6 +337,7 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
   let windowsDownloading = false
   let windowsDownloadPercent = null
   let windowsDownloadToken = null
+  let windowsPendingDownloadToken = null
   let windowsDownloadedReady = false
   let windowsDownloadedVersion = null
   let windowsPendingInfo = null
@@ -383,6 +400,7 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
       autoUpdater.on('update-downloaded', (info) => {
         windowsDownloading = false
         windowsDownloadToken = null
+        windowsPendingDownloadToken = null
         windowsDownloadPercent = 100
         windowsDownloadedReady = true
         windowsDownloadedVersion = info?.version || windowsPendingInfo?.version || null
@@ -396,6 +414,7 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
       autoUpdater.on('update-cancelled', () => {
         windowsDownloading = false
         windowsDownloadToken = null
+        windowsPendingDownloadToken = null
         windowsDownloadPercent = null
         emit('update-download-progress', { phase: 'cancelled' })
       })
@@ -403,6 +422,7 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
         if (windowsDownloading) {
           windowsDownloading = false
           windowsDownloadToken = null
+          windowsPendingDownloadToken = null
           windowsDownloadPercent = null
           emit('update-download-progress', { phase: 'error' })
         }
@@ -426,6 +446,7 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
     }
     windowsDownloading = false
     windowsDownloadToken = null
+    windowsPendingDownloadToken = null
     windowsDownloadPercent = null
     windowsDownloadedReady = false
     windowsDownloadedVersion = null
@@ -534,6 +555,21 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
     return { manifest, manifestUrl, baseUrl }
   }
 
+  async function resolveWindowsReleaseNotes(latestVersion, fallbackNotes) {
+    const fromYml = normalizeReleaseNotes(fallbackNotes)
+    try {
+      const { manifest } = await fetchManifest()
+      const manifestVersion = String(manifest?.version || '').trim()
+      const manifestNotes = typeof manifest?.notes === 'string' ? manifest.notes.trim() : ''
+      if (manifestNotes && manifestVersion === latestVersion) {
+        return manifestNotes
+      }
+    } catch {
+      /* latest.json 为可选补充，失败时仍使用 latest.yml */
+    }
+    return fromYml
+  }
+
   return {
     cleanupStaleUpdateArtifacts,
 
@@ -626,10 +662,13 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
           const autoUpdater = getElectronAutoUpdater()
           const result = await autoUpdater.checkForUpdates()
           const info = result?.updateInfo || result?.versionInfo || null
+          windowsPendingDownloadToken = result?.cancellationToken || null
           const latestVersion = String(info?.version || currentVersion).trim()
           const cmp = compareSemver(latestVersion, currentVersion)
+          const releaseNotes = await resolveWindowsReleaseNotes(latestVersion, info?.releaseNotes)
           if (!result?.isUpdateAvailable || cmp <= 0) {
             windowsPendingInfo = null
+            windowsPendingDownloadToken = null
             const latest = {
               ok: true,
               status: 'latest',
@@ -640,7 +679,7 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
                   ? `当前版本 ${currentVersion} 较更新源（${latestVersion}）更新。`
                   : '当前已是最新版本。',
               releasedAt: info?.releaseDate || null,
-              notes: info?.releaseNotes || '',
+              notes: releaseNotes,
               manifestUrl: `${resolveBaseUrl(app).replace(/\/+$/, '')}/latest.yml`,
             }
             emitCheckResult(latest)
@@ -650,6 +689,7 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
           const skipped = readSettings(app).skippedVersions || {}
           if (skipped[latestVersion]) {
             windowsPendingInfo = null
+            windowsPendingDownloadToken = null
             const skippedResult = {
               ok: true,
               status: silent ? 'latest' : 'skipped',
@@ -659,7 +699,7 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
                 ? '当前已是最新版本。'
                 : `已跳过版本 ${latestVersion}。如需升级请点「检查更新」并重新下载，或等待更高版本发布。`,
               releasedAt: info?.releaseDate || null,
-              notes: info?.releaseNotes || '',
+              notes: releaseNotes,
               manifestUrl: `${resolveBaseUrl(app).replace(/\/+$/, '')}/latest.yml`,
             }
             emitCheckResult(skippedResult)
@@ -681,7 +721,7 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
             status: 'available',
             currentVersion,
             latestVersion,
-            notes: info?.releaseNotes || '',
+            notes: releaseNotes,
             releasedAt: info?.releaseDate || null,
             downloadUrl: info?.files?.[0]?.url || '',
             size,
@@ -817,6 +857,7 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
         if (windowsDownloadToken && typeof windowsDownloadToken.cancel === 'function') {
           windowsDownloadToken.cancel()
           windowsDownloadToken = null
+          windowsPendingDownloadToken = null
           windowsDownloading = false
           windowsDownloadPercent = null
           emit('update-download-progress', { phase: 'cancelled' })
@@ -902,7 +943,7 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
         windowsDownloadedReady = false
         windowsDownloadedVersion = null
         windowsDownloadPercent = 0
-        windowsDownloadToken = new CancellationToken()
+        windowsDownloadToken = windowsPendingDownloadToken || null
         try {
           const total = Number(windowsPendingInfo?.files?.[0]?.size) || 0
           emit('update-download-progress', {
@@ -912,9 +953,10 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
             percent: 0,
             mode: fullDownload ? 'full' : 'differential',
           })
-          await autoUpdater.downloadUpdate(windowsDownloadToken)
+          await autoUpdater.downloadUpdate(windowsDownloadToken || undefined)
           windowsDownloading = false
           windowsDownloadToken = null
+          windowsPendingDownloadToken = null
           windowsDownloadedReady = true
           windowsDownloadedVersion = latestVersion
           windowsDownloadPercent = 100
@@ -922,6 +964,7 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
         } catch (e) {
           windowsDownloading = false
           windowsDownloadToken = null
+          windowsPendingDownloadToken = null
           windowsDownloadPercent = null
           if (e && (e.name === 'CancellationError' || /cancel/i.test(String(e.message || e)))) {
             emit('update-download-progress', { phase: 'cancelled' })

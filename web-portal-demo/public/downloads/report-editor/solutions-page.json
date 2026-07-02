@@ -1,0 +1,38 @@
+{
+  "solution_id": "sol-report-editor",
+  "latest_version": "0.1.25",
+  "latest_hint": "当前最新版本 0.1.25（含白屏修复），下方按钮默认下载最新版；展开可查看历史版本。",
+  "release_notes": "修复 0.1.25 启动白屏；OPC UA 自动截批全局监听；Windows 应用内更新展示 releaseNotes",
+  "released_at": "2026-07-01T20:41:59.416Z",
+  "downloads": {
+    "mac": {
+      "label": "macOS 安装包",
+      "description": "Apple Silicon · 下载后打开 DMG，拖入「应用程序」即可",
+      "primary_file": "Report Editor-0.1.25-arm64.dmg",
+      "history_prefix": "Report Editor-",
+      "history_suffix": "-arm64.dmg",
+      "history_versions": [
+        "0.1.24",
+        "0.1.23",
+        "0.1.22",
+        "0.1.21",
+        "0.1.20"
+      ]
+    },
+    "win": {
+      "label": "Windows 安装包",
+      "description": "Windows 10/11 x64 · 双击 Setup 安装，可在设置中卸载",
+      "primary_file": "Report Editor-Setup-0.1.25-x64.exe",
+      "history_prefix": "Report Editor-Setup-",
+      "history_suffix": "-x64.exe",
+      "history_versions": [
+        "0.1.24",
+        "0.1.23",
+        "0.1.22",
+        "0.1.21",
+        "0.1.20"
+      ]
+    }
+  },
+  "update_source_path": "/downloads/report-editor"
+}

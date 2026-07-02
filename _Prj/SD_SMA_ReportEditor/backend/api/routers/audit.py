@@ -15,7 +15,7 @@ def _cfg():
 
 
 @router.post("/audit/log")
-async def append_audit(body: AuditLogAppend):
+def append_audit(body: AuditLogAppend):
     try:
         entry = audit_log.append_audit(
             DATA_DIR,
@@ -34,7 +34,7 @@ async def append_audit(body: AuditLogAppend):
 
 
 @router.get("/audit/entries")
-async def list_audit_entries(
+def list_audit_entries(
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
     action: str | None = Query(None),
@@ -57,7 +57,7 @@ async def list_audit_entries(
 
 
 @router.get("/audit/export")
-async def export_audit(
+def export_audit(
     action: str | None = Query(None),
     result: str | None = Query(None),
     from_ts: float | None = Query(None),
@@ -77,7 +77,7 @@ async def export_audit(
 
 
 @router.get("/audit/export.csv")
-async def export_audit_csv(
+def export_audit_csv(
     action: str | None = Query(None),
     result: str | None = Query(None),
     from_ts: float | None = Query(None),
