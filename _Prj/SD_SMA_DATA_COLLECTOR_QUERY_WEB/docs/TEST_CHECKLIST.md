@@ -28,3 +28,24 @@
 ## E. 文档与边界检查
 
 - [ ] README 与操作手册仅保留查询程序职责说明
+
+## F. OPC UA 回写测试
+
+### 自动化
+
+- [ ] `pytest tests/ -v` 单元测试通过
+- [ ] `pytest tests/ -v -m integration` 集成测试通过（自动启动 mock server 4841）
+
+### 手动（mock server）
+
+- [ ] 启动 `python scripts/query_web_opcua_mock_server.py`
+- [ ] profile 配置 `endpoint_url` 与 `alarm_2` 页 `opcua_writeback`
+- [ ] 打开 `/plugins/alarm_2.html`，查询后 OPC 数组更新
+- [ ] 点击第 N 行，`cursor` 变为对应索引（0 起）
+- [ ] 上一页/下一页后行高亮清除，`diCursor` 为 `-1`
+- [ ] 停止 OPC 服务后查询仍正常、无弹窗
+
+### 现场 PLC
+
+- [ ] 真实 Endpoint 与 NodeId 与 OpcUaMap 一致
+- [ ] 数组前 N 项与表格一致；PLC 侧 `IF cursor >= 0 THEN` 再读行数据

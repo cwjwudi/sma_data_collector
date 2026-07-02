@@ -5,4 +5,11 @@ VAR
 	bTestTriger : BOOL;
 	uiHeartBeat : UINT;
 	uiQueryFeedBack : UINT;
+	udiStartTime : ARRAY[0..50] OF UDINT;
+	udiEndTime : ARRAY[0..50] OF UDINT;
+	strBatchCode : ARRAY[0..50] OF STRING[80];
+	strStartTime : ARRAY[0..50] OF STRING[80];
+	strEndTime : ARRAY[0..50] OF STRING[80];
+	udiCursor : UDINT;
+	diCursor : DINT;
 END_VAR

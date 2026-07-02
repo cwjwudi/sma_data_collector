@@ -22,6 +22,7 @@
   - 页面选择（`1-5`）
   - 启用开关、标题、`view_name`、`bind_group`、`page_size`
 - 插件页右上角手动选择该 `group` 下具体表。
+- **插件页 OPC UA 回写**：查询/翻页后自动将当前页列数据写入 PLC 数组（最长 50）；点击表格行更新 `diCursor`（翻页后重置为 `-1`）。
 - 查询网页：表格查询入口（后续可扩展报警/审计专页）。
 - 配置管理 API：查询页配置（列定义、分页）独立存储
 
@@ -50,7 +51,41 @@
 ## 与采集程序的边界
 
 - 不 import 采集程序主流程模块（`main.py`、通信模块）。
-- 仅通过数据库进行只读查询交互。
+- 数据库侧仍为只读查询；插件页可通过 OPC UA **写回**当前页查询结果（独立 `asyncua` 客户端）。
+
+## 插件页 OPC UA 回写配置（JSON）
+
+在统一 profile（如 `config/测试.json`）中配置：
+
+**全局连接**（profile 顶层）：
+
+```json
+"opcua": {
+  "endpoint_url": "opc.tcp://192.168.x.x:4840",
+  "username": "",
+  "password": ""
+}
+```
+
+`endpoint_url` 为空时不写 OPC。
+
+**每插件页绑定**（`plugins.modules.<module>.pages.<n>.opcua_writeback`）：
+
+```json
+"opcua_writeback": {
+  "cursor": "ns=6;s=::Query:cursor",
+  "columns": {
+    "code": "ns=6;s=::Query:arCode",
+    "msg": "ns=6;s=::Query:arMsg"
+  }
+}
+```
+
+- 仅 `columns` 中出现的列会回写；每项对应 PLC 侧 `ARRAY[0..49]`
+- 键名必须是**数据库字段名**（如 `collection_time`），与表格显示列配置相互独立
+- 翻页/查询后自动写数组，并写 `cursor=-1`（未选中）；点击表格行后写 `cursor=行索引`（0–49，0 起）
+- OPC 写失败只记日志，不影响查询 API 响应
+- 配置页 **高级设定 · OPC UA 回写** 可编辑 `opcua` 与 `opcua_writeback` JSON
 
 ## 关键查询接口
 
@@ -58,6 +93,18 @@
 - `POST /api/history/by-view` 按视图配置执行查询（优先推荐）
 - `POST /api/history` 通用原始查询接口（保留用于联调）
 - `GET /api/db/check` 数据库连通性检查
+- `POST /api/plugins/query/{plugin_key}` 插件页查询（可选 body `cursor`，默认 `-1` 表示未选中）
+- `POST /api/plugins/cursor/{plugin_key}` 仅更新 cursor
+
+## 自动化测试
+
+```bash
+pip install -r requirements.txt
+pytest tests/ -v
+pytest tests/ -v -m integration
+```
+
+集成测试会自动启动 `scripts/query_web_opcua_mock_server.py`（端口 4841）。
 
 ## 运维文档
 

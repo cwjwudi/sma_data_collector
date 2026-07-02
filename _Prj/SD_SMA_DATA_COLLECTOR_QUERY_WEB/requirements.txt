@@ -2,3 +2,7 @@ fastapi
 uvicorn
 sqlalchemy
 pymysql
+asyncua>=1.2b1
+pytest
+pytest-asyncio
+httpx

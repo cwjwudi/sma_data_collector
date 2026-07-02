@@ -5,6 +5,8 @@
   let currentBinding = null;
   let lastStartIso = null;
   let lastEndIso = null;
+  let selectedCursor = -1;
+  let activePluginKey = "";
   const quickButtons = ["btnRange1D", "btnRange1W", "btnRange1M", "btnRange1Y"];
   let pluginStateKey = null;
 
@@ -192,8 +194,22 @@
     table.appendChild(thead);
 
     const tbody = document.createElement("tbody");
-    for (const row of rows || []) {
+    for (let rowIndex = 0; rowIndex < (rows || []).length; rowIndex += 1) {
+      const row = rows[rowIndex];
       const tr = document.createElement("tr");
+      if (rowIndex === selectedCursor) {
+        tr.classList.add("row-selected");
+      }
+      tr.addEventListener("click", () => {
+        selectedCursor = rowIndex;
+        renderTable(columns, displayColumns, rows);
+        if (!activePluginKey) return;
+        fetch(`/api/plugins/cursor/${encodeURIComponent(activePluginKey)}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ cursor: rowIndex }),
+        }).catch(() => {});
+      });
       for (const c of columns || []) {
         const td = document.createElement("td");
         td.textContent = row[c] == null ? "" : String(row[c]);
@@ -210,6 +226,7 @@
       document.getElementById("meta").textContent = "无法识别插件路径";
       return;
     }
+    activePluginKey = pluginKey;
 
     pluginStateKey = `sd_sma_plugin_state_${pluginKey}`;
     currentBinding = await fetchJson(`/api/plugins/resolve/${encodeURIComponent(pluginKey)}`);
@@ -261,6 +278,7 @@
         page: targetPage,
         page_size: currentBinding.page_size || 10,
         table: tableSelector.value || undefined,
+        cursor: -1,
       };
       // datetime-local 是本地时间，直接传递避免 UTC 偏移导致当天数据被过滤
       if (startInput.value) payload.start_time = startInput.value;
@@ -273,6 +291,7 @@
         body: JSON.stringify(payload),
       });
       renderTable(data.columns || [], data.display_columns || [], data.rows || []);
+      selectedCursor = -1;
       totalRecords = Number(data.total || 0);
       const pageSize = Number(data.page_size || currentBinding.page_size || 10);
       totalPages = Math.max(1, Math.ceil(totalRecords / pageSize));
@@ -287,6 +306,7 @@
         page: targetPage,
         page_size: currentBinding.page_size || 10,
         table: tableSelector.value || undefined,
+        cursor: -1,
       };
       if (lastStartIso) payload.start_time = lastStartIso;
       if (lastEndIso) payload.end_time = lastEndIso;
@@ -296,6 +316,7 @@
         body: JSON.stringify(payload),
       });
       renderTable(data.columns || [], data.display_columns || [], data.rows || []);
+      selectedCursor = -1;
       totalRecords = Number(data.total || 0);
       const pageSize = Number(data.page_size || currentBinding.page_size || 10);
       totalPages = Math.max(1, Math.ceil(totalRecords / pageSize));

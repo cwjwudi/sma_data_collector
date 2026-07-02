@@ -85,4 +85,9 @@ class PluginQueryRequest(BaseModel):
     page: int = 1
     page_size: int | None = None
     table: str | None = None
+    cursor: int | None = -1
+
+
+class PluginCursorRequest(BaseModel):
+    cursor: int
 

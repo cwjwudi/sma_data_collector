@@ -277,6 +277,26 @@ textarea {
   font-size: 13px;
 }
 
+.advanced-panel {
+  margin-top: 8px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: #fafafa;
+}
+
+.advanced-panel summary {
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.advanced-panel .code-editor {
+  margin-top: 8px;
+  min-height: 220px;
+  resize: vertical;
+}
+
 table {
   width: 100%;
   border-collapse: collapse;

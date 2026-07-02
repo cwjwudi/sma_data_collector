@@ -43,7 +43,39 @@
 - 若模板字段在目标表不存在，后端会自动忽略并在响应 `warnings`/`missing_columns` 返回提示。
 - 前端会显示提示，不会因为部分字段不存在而直接失败。
 
-## 6. 常见问题
+## 6. 插件页 OPC UA 回写
+
+### 6.1 PLC 变量准备
+
+- 每个需要回写的列：一个长度为 **50** 的数组变量（`ARRAY[0..49]`）
+- 一个 **cursor** 标量（`DINT`，如 `diCursor`）：`-1` = 未选中；`0..49` = 当前页行索引
+
+### 6.2 配置
+
+1. 顶层 `opcua.endpoint_url` 指向 PLC OPC UA 服务器
+2. 在对应插件页配置 `opcua_writeback.columns`（仅填写需要回写的列）与 `cursor`
+3. 或在 **配置页 → 插件页面 → 高级设定 · OPC UA 回写** 中直接编辑 JSON 并保存
+
+### 6.3 运行行为
+
+- 查询、翻页成功后：写当前页各绑定列数组，`diCursor=-1`
+- 点击表格某行：写 `diCursor=行索引`（0 起，最大 49）
+- 写失败：服务端 WARNING 日志，前端与 API 无报错
+
+### 6.4 日志排查
+
+- 成功：`DEBUG` 级别（列名、节点、行数）
+- 失败：`WARNING`，搜索 `OPC UA writeback`
+
+本地联调可启动 mock 服务器：
+
+```bash
+python scripts/query_web_opcua_mock_server.py
+```
+
+并将 profile 中 `endpoint_url` 设为 `opc.tcp://127.0.0.1:4851/query-web/mock/`（默认端口 4851，可用 `--port` 修改）。NodeId 须与 mock 服务启动日志或 `--meta-out` 文件中的实际值一致。
+
+## 7. 常见问题
 
 - **1045 Access denied**
   - 检查数据库账号密码与主机权限。

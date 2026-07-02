@@ -212,6 +212,28 @@ class UnifiedConfigStore:
         config["plugins"] = data
         self.save_active_config(config)
 
+    def get_opcua_settings(self) -> dict[str, Any]:
+        raw = self.get_active_config().get("opcua")
+        if not isinstance(raw, dict):
+            return {"endpoint_url": "", "username": "", "password": ""}
+        return {
+            "endpoint_url": str(raw.get("endpoint_url", "") or "").strip(),
+            "username": str(raw.get("username", "") or ""),
+            "password": str(raw.get("password", "") or ""),
+        }
+
+    def save_opcua_settings(self, data: dict[str, Any]) -> dict[str, Any]:
+        config = self.get_active_config()
+        raw = data if isinstance(data, dict) else {}
+        normalized = {
+            "endpoint_url": str(raw.get("endpoint_url", "") or "").strip(),
+            "username": str(raw.get("username", "") or ""),
+            "password": str(raw.get("password", "") or ""),
+        }
+        config["opcua"] = normalized
+        self.save_active_config(config)
+        return normalized
+
 
 class ConfigManager:
     def __init__(self, config_store: UnifiedConfigStore):

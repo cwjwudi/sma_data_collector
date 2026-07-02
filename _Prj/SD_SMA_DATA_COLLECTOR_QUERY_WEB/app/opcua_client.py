@@ -1,0 +1,323 @@
+"""Lightweight asyncua client with connection reuse for OPC UA writeback."""
+from __future__ import annotations
+
+import asyncio
+import hashlib
+import logging
+import time
+from dataclasses import dataclass, field
+from typing import Any
+
+from asyncua import Client, ua
+from asyncua.ua.uaerrors import UaStatusCodeError
+
+logger = logging.getLogger(__name__)
+
+POOL_IDLE_SEC = 90.0
+CONNECT_TIMEOUT_SEC = 5
+
+
+@dataclass
+class _PoolEntry:
+    lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    client: Client | None = None
+    last_used: float = 0.0
+    endpoint_url: str = ""
+    username: str = ""
+    password_fp: str = ""
+
+
+_pool: _PoolEntry | None = None
+
+
+def _password_fingerprint(password: str) -> str:
+    if not password:
+        return ""
+    return hashlib.sha256(password.encode("utf-8")).hexdigest()
+
+
+async def _safe_disconnect(client: Client | None) -> None:
+    if not client:
+        return
+    try:
+        await client.disconnect()
+    except Exception:
+        logger.debug("OPC UA disconnect ignored", exc_info=True)
+
+
+async def _invalidate_client(entry: _PoolEntry) -> None:
+    client = entry.client
+    entry.client = None
+    await _safe_disconnect(client)
+
+
+async def _prune_if_idle(entry: _PoolEntry) -> None:
+    if entry.client and (time.monotonic() - entry.last_used > POOL_IDLE_SEC):
+        await _invalidate_client(entry)
+
+
+def _config_mismatch(
+    entry: _PoolEntry,
+    endpoint_url: str,
+    username: str,
+    password: str,
+) -> bool:
+    fp = _password_fingerprint(password)
+    return (
+        entry.endpoint_url != endpoint_url
+        or entry.username != username
+        or entry.password_fp != fp
+    )
+
+
+async def _ensure_connected(
+    endpoint_url: str,
+    username: str = "",
+    password: str = "",
+) -> Client | None:
+    global _pool
+
+    if not endpoint_url:
+        return None
+
+    if _pool is None:
+        _pool = _PoolEntry()
+
+    entry = _pool
+    async with entry.lock:
+        if _config_mismatch(entry, endpoint_url, username, password):
+            await _invalidate_client(entry)
+        entry.endpoint_url = endpoint_url
+        entry.username = username
+        entry.password_fp = _password_fingerprint(password)
+
+        await _prune_if_idle(entry)
+
+        if entry.client is None:
+            client = Client(url=endpoint_url, timeout=CONNECT_TIMEOUT_SEC)
+            if username:
+                client.set_user(username)
+                client.set_password(password or "")
+            await client.connect()
+            entry.client = client
+
+        entry.last_used = time.monotonic()
+        return entry.client
+
+
+async def _read_variant_type(node: Any) -> ua.VariantType | None:
+    try:
+        vt = await node.read_data_type_as_variant_type()
+        return vt if isinstance(vt, ua.VariantType) else None
+    except (UaStatusCodeError, Exception):
+        logger.debug("OPC UA read_data_type failed for node", exc_info=True)
+    return None
+
+
+def _coerce_scalar(value: Any, variant_type: ua.VariantType | None) -> Any:
+    if variant_type == ua.VariantType.Boolean:
+        if isinstance(value, str):
+            return value.strip().lower() in ("1", "true", "yes", "y", "on")
+        return bool(value)
+    if variant_type in (
+        ua.VariantType.SByte,
+        ua.VariantType.Byte,
+        ua.VariantType.Int16,
+        ua.VariantType.UInt16,
+        ua.VariantType.Int32,
+        ua.VariantType.UInt32,
+        ua.VariantType.Int64,
+        ua.VariantType.UInt64,
+    ):
+        if isinstance(value, bool):
+            return 1 if value else 0
+        return int(value)
+    if variant_type in (ua.VariantType.Float, ua.VariantType.Double):
+        return float(value)
+    if variant_type == ua.VariantType.String:
+        return "" if value is None else str(value)
+    return value
+
+
+async def _write_value_attribute(node: Any, value: Any) -> bool:
+    variant_type = await _read_variant_type(node)
+    clean_value = _coerce_scalar(value, variant_type)
+    data_value = ua.DataValue(ua.Variant(clean_value, variant_type))
+    try:
+        await node.write_attribute(ua.AttributeIds.Value, data_value)
+        return True
+    except UaStatusCodeError as exc:
+        logger.warning(
+            "OPC UA write rejected node_id=%s code=%s (%s)",
+            node,
+            int(exc.code),
+            exc,
+        )
+        return False
+    except Exception as exc:
+        logger.warning("OPC UA write failed node_id=%s: %s", node, exc)
+        return False
+
+
+async def write_scalar(
+    endpoint_url: str,
+    node_id: str,
+    value: Any,
+    *,
+    username: str = "",
+    password: str = "",
+) -> bool:
+    if not endpoint_url or not node_id:
+        return False
+    try:
+        client = await _ensure_connected(endpoint_url, username, password)
+        if client is None:
+            return False
+        node = client.get_node(node_id)
+        return await _write_value_attribute(node, value)
+    except Exception as exc:
+        logger.warning("OPC UA write_scalar failed node_id=%s: %s", node_id, exc)
+        if _pool is not None:
+            async with _pool.lock:
+                await _invalidate_client(_pool)
+        return False
+
+
+async def _write_array_whole(node: Any, values: list[Any]) -> bool:
+    variant_type = await _read_variant_type(node)
+    element_type = _array_element_type(variant_type) if variant_type is not None else None
+    if element_type is None and variant_type is not None:
+        element_type = variant_type
+
+    coerced: list[Any] = []
+    for item in values:
+        try:
+            coerced.append(_coerce_scalar(item, element_type))
+        except (TypeError, ValueError):
+            coerced.append(_default_for_type(element_type))
+
+    # B&R 等 PLC：整数组写必须走 write_attribute(Value)，write_value 常报 BadWriteNotSupported
+    try:
+        if element_type is not None:
+            data_value = ua.DataValue(ua.Variant(coerced, element_type))
+        else:
+            data_value = ua.DataValue(ua.Variant(coerced))
+        await node.write_attribute(ua.AttributeIds.Value, data_value)
+        return True
+    except UaStatusCodeError as exc:
+        logger.debug("OPC UA whole-array write_attribute rejected: %s", exc)
+        return False
+    except Exception as exc:
+        logger.debug("OPC UA whole-array write_attribute failed: %s", exc)
+        return False
+
+
+def _array_element_type(variant_type: ua.VariantType) -> ua.VariantType | None:
+    name = getattr(variant_type, "name", None) or str(variant_type)
+    mapping = {
+        "Int32Array": ua.VariantType.Int32,
+        "UInt32Array": ua.VariantType.UInt32,
+        "StringArray": ua.VariantType.String,
+        "DoubleArray": ua.VariantType.Double,
+        "FloatArray": ua.VariantType.Float,
+        "BooleanArray": ua.VariantType.Boolean,
+    }
+    if name in mapping:
+        return mapping[name]
+    if name.endswith("Array"):
+        base = name[:-5]
+        try:
+            return ua.VariantType[base]
+        except KeyError:
+            return None
+    return variant_type
+
+
+def _default_for_type(variant_type: ua.VariantType | None) -> Any:
+    if variant_type == ua.VariantType.Boolean:
+        return False
+    if variant_type == ua.VariantType.String:
+        return ""
+    if variant_type is not None:
+        return 0
+    return 0
+
+
+async def _write_array_elementwise(node: Any, values: list[Any]) -> bool:
+    variant_type = await _read_variant_type(node)
+    element_type = _array_element_type(variant_type) if variant_type else None
+    ok = True
+    for idx, item in enumerate(values):
+        try:
+            child = await node.get_child(idx)
+        except Exception:
+            try:
+                child = await node.get_child(str(idx))
+            except Exception as exc:
+                logger.warning("OPC UA array child %d not found: %s", idx, exc)
+                ok = False
+                continue
+        if not await _write_value_attribute(child, item if element_type is None else _coerce_scalar(item, element_type)):
+            ok = False
+    return ok
+
+
+async def write_array(
+    endpoint_url: str,
+    node_id: str,
+    values: list[Any],
+    *,
+    username: str = "",
+    password: str = "",
+) -> bool:
+    if not endpoint_url or not node_id:
+        return False
+    try:
+        client = await _ensure_connected(endpoint_url, username, password)
+        if client is None:
+            return False
+        node = client.get_node(node_id)
+        try:
+            existing = await node.read_value()
+            if isinstance(existing, list):
+                target_len = len(existing)
+                if len(values) < target_len:
+                    element_type = _array_element_type(await _read_variant_type(node))
+                    if element_type is None:
+                        element_type = await _read_variant_type(node)
+                    default = _default_for_type(element_type if isinstance(element_type, ua.VariantType) else None)
+                    values = list(values) + [default] * (target_len - len(values))
+                elif len(values) > target_len:
+                    values = values[:target_len]
+        except Exception:
+            logger.debug("OPC UA could not read array length before write", exc_info=True)
+        if await _write_array_whole(node, values):
+            return True
+        return await _write_array_elementwise(node, values)
+    except Exception as exc:
+        logger.warning("OPC UA write_array failed node_id=%s: %s", node_id, exc)
+        if _pool is not None:
+            async with _pool.lock:
+                await _invalidate_client(_pool)
+        return False
+
+
+async def read_scalar(
+    endpoint_url: str,
+    node_id: str,
+    *,
+    username: str = "",
+    password: str = "",
+) -> Any:
+    """Read a scalar node value (used by integration tests)."""
+    client = await _ensure_connected(endpoint_url, username, password)
+    if client is None:
+        raise RuntimeError("OPC UA not connected")
+    node = client.get_node(node_id)
+    return await node.read_value()
+
+
+def reset_pool_for_tests() -> None:
+    """Clear connection pool (test helper)."""
+    global _pool
+    _pool = None

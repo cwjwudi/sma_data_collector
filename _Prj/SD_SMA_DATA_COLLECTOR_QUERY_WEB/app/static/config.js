@@ -918,6 +918,45 @@ async function updatePluginGroupHint(group) {
   }
 }
 
+function buildDefaultOpcuaFeedbackPayload(opcuaSettings, pageCfg) {
+  return {
+    opcua: {
+      endpoint_url: opcuaSettings?.endpoint_url || '',
+      username: opcuaSettings?.username || '',
+      password: opcuaSettings?.password || '',
+    },
+    opcua_writeback: pageCfg?.opcua_writeback || {
+      cursor: '',
+      columns: {},
+    },
+  };
+}
+
+function renderPluginOpcuaFeedbackEditor(opcuaSettings, pageCfg) {
+  const payload = buildDefaultOpcuaFeedbackPayload(opcuaSettings, pageCfg);
+  document.getElementById('pluginOpcuaFeedbackJson').value = JSON.stringify(payload, null, 2);
+  document.getElementById('pluginOpcuaFeedbackHint').textContent =
+    '保存当前页配置时一并写入。columns 键必须是数据库字段名（如 collection_time）。';
+}
+
+function applyPluginOpcuaFeedbackEditor(pageCfg) {
+  const raw = document.getElementById('pluginOpcuaFeedbackJson').value.trim();
+  if (!raw) {
+    delete pageCfg.opcua_writeback;
+    return null;
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (e) {
+    throw new Error(`OPC UA 回写 JSON 解析失败: ${e.message || e}`);
+  }
+  if (!parsed || typeof parsed !== 'object') {
+    throw new Error('OPC UA 回写 JSON 必须是对象');
+  }
+  return parsed;
+}
+
 async function loadPluginPageConfig() {
   const moduleName = document.getElementById('pluginModule').value;
   const pageIndex = document.getElementById('pluginPageIndex').value || '1';
@@ -933,6 +972,15 @@ async function loadPluginPageConfig() {
   document.getElementById('pluginPageSize').value = Number(pageCfg.page_size ?? moduleCfg.page_size ?? 10);
   document.getElementById('pluginBindGroup').value = bindGroup;
   await updatePluginGroupHint(bindGroup);
+
+  let opcuaSettings = { endpoint_url: '', username: '', password: '' };
+  try {
+    opcuaSettings = await fetchJson('/api/config/opcua');
+  } catch (_) {
+    // ignore
+  }
+  renderPluginOpcuaFeedbackEditor(opcuaSettings, pageCfg);
+
   document.getElementById('pluginConfigHint').textContent =
     `当前编辑: module=${moduleName}, page=${pageIndex}`;
 }
@@ -954,6 +1002,23 @@ async function savePluginPageConfig() {
   pageCfg.page_size = Number(document.getElementById('pluginPageSize').value || 10);
   pageCfg.bind_group = document.getElementById('pluginBindGroup').value || '';
   delete pageCfg.bind_table;
+
+  const feedbackPayload = applyPluginOpcuaFeedbackEditor(pageCfg);
+  if (feedbackPayload) {
+    if (feedbackPayload.opcua && typeof feedbackPayload.opcua === 'object') {
+      await fetchJson('/api/config/opcua', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(feedbackPayload.opcua),
+      });
+    }
+    const wb = feedbackPayload.opcua_writeback;
+    if (wb && typeof wb === 'object' && Object.keys(wb).length > 0) {
+      pageCfg.opcua_writeback = wb;
+    } else {
+      delete pageCfg.opcua_writeback;
+    }
+  }
 
   moduleCfg.title = moduleCfg.title || moduleName;
   moduleCfg.view_name = moduleCfg.view_name || pageCfg.view_name;

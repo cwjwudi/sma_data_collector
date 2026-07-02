@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import re
 import time
@@ -20,11 +21,13 @@ from .models import (
     HistoryQueryRequest,
     HistoryQueryResponse,
     QueryGroupConfigUpdateRequest,
+    PluginCursorRequest,
     PluginQueryRequest,
     QueryTableConfigUpdateRequest,
     QueryFilter,
     ViewHistoryQueryRequest,
 )
+from .opcua_writeback import OpcUaWritebackConfig, write_after_query_async, write_cursor_only_async
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -109,6 +112,8 @@ DEFAULT_WINDOW_HOURS = int(QUERY_LIMITS.get("default_window_hours", 24))
 MAX_WINDOW_HOURS = int(QUERY_LIMITS.get("max_window_hours", 168))
 _REQUEST_BUCKETS: dict[str, deque[float]] = defaultdict(deque)
 PLUGIN_KEY_PATTERN = re.compile(r"^([A-Za-z0-9_]+)_([1-5])$")
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="SD SMA Query Web", version="0.1.0")
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "app" / "static")), name="static")
@@ -243,6 +248,10 @@ def _resolve_plugin_binding(plugin_key: str) -> dict[str, Any]:
     if not bind_group and not bind_table:
         raise ValueError("插件必须至少配置 bind_group 或 bind_table")
 
+    opcua_writeback_raw = page_cfg.get("opcua_writeback")
+    if opcua_writeback_raw is None:
+        opcua_writeback_raw = module_cfg.get("opcua_writeback")
+
     return {
         "plugin_key": plugin_key,
         "module": module_name,
@@ -253,7 +262,49 @@ def _resolve_plugin_binding(plugin_key: str) -> dict[str, Any]:
         "bind_table": bind_table,
         "page_size": max(1, page_size),
         "target": str(page_cfg.get("target", module_cfg.get("target", ""))),
+        "opcua_writeback": opcua_writeback_raw,
     }
+
+
+def _get_opcua_connection() -> dict[str, str]:
+    return config_store.get_opcua_settings()
+
+
+async def _run_plugin_writeback(
+    binding: dict[str, Any],
+    columns: list[str],
+    rows: list[dict[str, Any]],
+    cursor: int,
+) -> None:
+    opcua = _get_opcua_connection()
+    writeback = OpcUaWritebackConfig.from_binding(binding.get("opcua_writeback"))
+    try:
+        await write_after_query_async(
+            opcua.get("endpoint_url", ""),
+            opcua.get("username", ""),
+            opcua.get("password", ""),
+            writeback,
+            columns,
+            rows,
+            cursor,
+        )
+    except Exception as exc:
+        logger.warning("OPC UA writeback hook failed: %s", exc)
+
+
+async def _run_cursor_writeback(binding: dict[str, Any], cursor: int) -> None:
+    opcua = _get_opcua_connection()
+    writeback = OpcUaWritebackConfig.from_binding(binding.get("opcua_writeback"))
+    try:
+        await write_cursor_only_async(
+            opcua.get("endpoint_url", ""),
+            opcua.get("username", ""),
+            opcua.get("password", ""),
+            writeback,
+            cursor,
+        )
+    except Exception as exc:
+        logger.warning("OPC UA cursor writeback failed: %s", exc)
 
 
 @app.get("/")
@@ -494,7 +545,7 @@ def resolve_plugin(plugin_key: str, request: Request) -> dict[str, Any]:
 
 
 @app.post("/api/plugins/query/{plugin_key}", response_model=HistoryQueryResponse)
-def query_plugin(plugin_key: str, payload: PluginQueryRequest, request: Request) -> HistoryQueryResponse:
+async def query_plugin(plugin_key: str, payload: PluginQueryRequest, request: Request) -> HistoryQueryResponse:
     _enforce_rate_limit(request)
     try:
         binding = _resolve_plugin_binding(plugin_key)
@@ -538,6 +589,9 @@ def query_plugin(plugin_key: str, payload: PluginQueryRequest, request: Request)
         if missing_columns:
             warnings.append("部分配置列在当前表中不存在，已自动忽略")
 
+        cursor = -1 if payload.cursor is None else int(payload.cursor)
+        await _run_plugin_writeback(binding, columns, rows, cursor)
+
         return HistoryQueryResponse(
             total=total,
             page=history_req.page,
@@ -557,6 +611,21 @@ def query_plugin(plugin_key: str, payload: PluginQueryRequest, request: Request)
         )
     except (OperationalError, SQLAlchemyError) as exc:
         _raise_db_error(exc)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/plugins/cursor/{plugin_key}")
+async def update_plugin_cursor(
+    plugin_key: str,
+    payload: PluginCursorRequest,
+    request: Request,
+) -> dict[str, str]:
+    _enforce_rate_limit(request)
+    try:
+        binding = _resolve_plugin_binding(plugin_key)
+        await _run_cursor_writeback(binding, int(payload.cursor))
+        return {"status": "ok"}
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -756,5 +825,18 @@ def save_plugins_config(payload: dict[str, Any]) -> dict[str, str]:
     try:
         _save_plugin_config(payload)
         return {"status": "saved"}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/config/opcua")
+def get_opcua_config() -> dict[str, Any]:
+    return config_store.get_opcua_settings()
+
+
+@app.post("/api/config/opcua")
+def save_opcua_config(payload: dict[str, Any]) -> dict[str, Any]:
+    try:
+        return config_store.save_opcua_settings(payload)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

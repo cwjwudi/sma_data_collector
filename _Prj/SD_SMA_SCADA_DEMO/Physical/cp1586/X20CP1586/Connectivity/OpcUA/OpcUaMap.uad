@@ -187,6 +187,13 @@
         <Variable Name="uiHeartBeat" />
         <Variable Name="uiQueryFeedBack" />
         <Variable Name="stDbReadQuery" RecursiveEnable="2" />
+        <Variable Name="strBatchCode" />
+        <Variable Name="udiEndTime" />
+        <Variable Name="udiStartTime" />
+        <Variable Name="strEndTime" />
+        <Variable Name="strStartTime" />
+        <Variable Name="udiCursor" />
+        <Variable Name="diCursor" />
       </Task>
       <Task Name="ParallelTe">
         <Variable Name="F1" />

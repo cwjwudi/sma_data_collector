@@ -5,9 +5,9 @@
     "database": {
       "type": "mysql",
       "name": "wn_9",
-      "host": "192.168.50.122",
+      "host": "127.0.0.1",
       "port": 3306,
-      "username": "user1",
+      "username": "root",
       "password": "123456"
     },
     "query_limits": {
@@ -15,6 +15,11 @@
       "default_window_hours": 24,
       "max_window_hours": 8760
     }
+  },
+  "opcua": {
+    "endpoint_url": "opc.tcp://127.0.0.1:4840",
+    "username": "",
+    "password": ""
   },
   "query_view": {
     "default_page_size": 10,
@@ -138,6 +143,34 @@
             "sort_by": "collection_time",
             "sort_dir": "desc",
             "page_size": 50
+          },
+          "motor_group": {
+            "columns": [
+              {
+                "name": "collection_time",
+                "label_en": "collection_time",
+                "label_zh": "时间"
+              },
+              {
+                "name": "rMotorCurrent",
+                "label_en": "rMotorCurrent",
+                "label_zh": "电流"
+              },
+              {
+                "name": "rMotorSpeed",
+                "label_en": "rMotorSpeed",
+                "label_zh": "速度"
+              },
+              {
+                "name": "id",
+                "label_en": "id",
+                "label_zh": "ID"
+              }
+            ],
+            "time_field": "collection_time",
+            "sort_by": "collection_time",
+            "sort_dir": "desc",
+            "page_size": 10
           }
         }
       },
@@ -258,7 +291,8 @@
       "alarm_group_1": "alarm_group_1_20260407",
       "trend_group_1": "trend_group_1_20260408",
       "Group1": "Group1_20260507",
-      "BatchGroup": "BatchGroup_20260511"
+      "BatchGroup": "BatchGroup_20260511",
+      "motor_group": "motor_group_20260227"
     }
   },
   "plugins": {
@@ -281,7 +315,14 @@
             "enabled": true,
             "bind_group": "alarm_group_1",
             "view_name": "alarm",
-            "page_size": 10
+            "page_size": 10,
+            "opcua_writeback": {
+              "cursor": "ns=2;s=QueryDemo.cursor",
+              "columns": {
+                "code": "ns=2;s=QueryDemo.arCode",
+                "msg": "ns=2;s=QueryDemo.arMsg"
+              }
+            }
           },
           "3": {
             "title": "Alarm Page 3",
@@ -375,9 +416,15 @@
           "1": {
             "title": "批次查询表",
             "enabled": true,
-            "bind_group": "BatchGroup",
+            "bind_group": "motor_group",
             "view_name": "table",
-            "page_size": 10
+            "page_size": 50,
+            "opcua_writeback": {
+              "cursor": "ns=6;s=::DataRev:diCursor",
+              "columns": {
+                "collection_time": "ns=6;s=::DataRev:strStartTime"
+              }
+            }
           },
           "2": {
             "title": "General Page 2",
