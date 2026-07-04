@@ -28,6 +28,32 @@ def preset_path(layout_id: str) -> Path:
     return LAYOUT_PRESETS_DIR / f"{sanitize_id(layout_id)}.json"
 
 
+def _summary_from_raw(raw: dict[str, Any]) -> LayoutPresetSummary | None:
+    """仅取顶层标量字段构建摘要，避免对整份版式（含所有控件）做完整校验。"""
+    pid = raw.get("id")
+    if not isinstance(pid, str) or not pid:
+        return None
+    paper = raw.get("paperKind")
+    if paper not in ("A3", "A4", "A5", "Letter"):
+        paper = "A4"
+    orient = raw.get("orientation")
+    if orient not in ("portrait", "landscape"):
+        orient = "portrait"
+    role = raw.get("pageRole")
+    if role not in ("normal", "cover", "back"):
+        role = "normal"
+    name = raw.get("name")
+    updated = raw.get("updatedAt")
+    return LayoutPresetSummary(
+        id=pid,
+        name=name if isinstance(name, str) else pid,
+        updatedAt=updated if isinstance(updated, str) else "",
+        paperKind=paper,
+        orientation=orient,
+        pageRole=role,
+    )
+
+
 def list_summaries() -> list[LayoutPresetSummary]:
     init_data_dirs()
     out: list[LayoutPresetSummary] = []
@@ -36,17 +62,9 @@ def list_summaries() -> list[LayoutPresetSummary]:
             raw = json.loads(p.read_text(encoding="utf-8"))
             if not isinstance(raw, dict):
                 continue
-            lp = LayoutPreset.model_validate(raw)
-            out.append(
-                LayoutPresetSummary(
-                    id=lp.id,
-                    name=lp.name,
-                    updatedAt=lp.updatedAt,
-                    paperKind=lp.paperKind,
-                    orientation=lp.orientation,
-                    pageRole=lp.pageRole,
-                )
-            )
+            summary = _summary_from_raw(raw)
+            if summary is not None:
+                out.append(summary)
         except Exception:
             logger.warning("跳过损坏的版式文件: %s", p, exc_info=True)
     out.sort(key=lambda x: x.updatedAt or "", reverse=True)

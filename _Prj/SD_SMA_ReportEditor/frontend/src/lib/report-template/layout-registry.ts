@@ -32,6 +32,16 @@ export async function refreshLayoutPresets(): Promise<LayoutPreset[]> {
   }
 }
 
+/**
+ * 已在本会话加载过版式库则直接复用内存快照，不再请求 `/layout-presets/full`。
+ * 版式的新增/编辑/删除都会经由本模块的保存/删除接口刷新 `mem`，故复用是安全的。
+ * 首次调用（`mem` 为空）时才真正拉取。
+ */
+export async function ensureLayoutPresetsLoaded(): Promise<LayoutPreset[]> {
+  if (mem) return mem;
+  return refreshLayoutPresets();
+}
+
 export function layoutPresetsSnapshot(): LayoutPreset[] {
   if (mem) return mem;
   return loadLocal().map((x) => hydrateLayoutPreset(x));

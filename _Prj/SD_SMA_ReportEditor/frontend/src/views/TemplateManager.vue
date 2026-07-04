@@ -140,6 +140,7 @@
       <div
         v-for="r in rows"
         :key="'g' + r.id"
+        :ref="(el) => setCardRef(r.id, el)"
         class="card"
         :id="'tm-card-' + r.id"
         :class="{
@@ -182,7 +183,10 @@
           <span class="card-seq" aria-label="序号">{{ r.seq }}</span>
         </div>
         <template v-if="cache[r.id]">
-          <div class="row3">
+          <div v-if="!isCardVisible(r.id)" class="row3-ph" aria-hidden="true">
+            <span class="row3-ph-hint">预览待显示…</span>
+          </div>
+          <div v-else class="row3">
             <div class="micro" :class="{ 'micro--sheet-off': !sheetIncluded(cache[r.id], 'cover') }">
               <span class="micro-t">封面</span>
               <div
@@ -392,8 +396,18 @@
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted, nextTick } from "vue";
+import {
+  ref,
+  computed,
+  watch,
+  onUnmounted,
+  onActivated,
+  onDeactivated,
+  nextTick,
+} from "vue";
 import { useRouter } from "vue-router";
+
+defineOptions({ name: "TemplateManager" });
 import * as api from "@/api/templates";
 import { mapPool, useStaleGuard } from "@/composables/useStaleGuard";
 import { PAPER_LABEL } from "@/lib/report-template/paper";
@@ -423,7 +437,13 @@ import {
   resyncTemplateBoundPresets,
   stripStaleOptionalSheetZones,
 } from "@/lib/report-template/layout-apply";
-import { refreshLayoutPresets } from "@/lib/report-template/layout-registry";
+import { ensureLayoutPresetsLoaded } from "@/lib/report-template/layout-registry";
+import {
+  getCachedTemplateFullMap,
+  getCachedTemplateSummaries,
+  hasTemplateViewCache,
+  saveTemplateViewCache,
+} from "@/lib/report-template/template-view-cache";
 import {
   loadTemplates as loadLocal,
   saveTemplates,
@@ -439,7 +459,26 @@ import { appConfirm } from "@/composables/useAppConfirm";
 
 const router = useRouter();
 const { begin: beginLoad, isStale: isLoadStale } = useStaleGuard();
-const mode = ref("thumbs");
+
+/** 记住上次的视图模式：默认「列表」以便打开页面即时呈现（缩略图为重加载） */
+const MODE_STORAGE_KEY = "tm-view-mode";
+function readInitialMode() {
+  try {
+    const v = localStorage.getItem(MODE_STORAGE_KEY);
+    if (v === "list" || v === "thumbs") return v;
+  } catch {
+    /* ignore */
+  }
+  return "list";
+}
+const mode = ref(readInitialMode());
+watch(mode, (m) => {
+  try {
+    localStorage.setItem(MODE_STORAGE_KEY, m);
+  } catch {
+    /* ignore */
+  }
+});
 const wizard = ref(false);
 const msg = ref("");
 const renamingId = ref(null);
@@ -453,13 +492,68 @@ const dupNameInput = ref("");
 const dupNameInputEl = ref(null);
 const highlightId = ref(null);
 let highlightTimer = null;
-const summaries = ref([]);
-const cache = ref({});
+const summaries = ref(hasTemplateViewCache() ? getCachedTemplateSummaries() : []);
+const cache = ref(hasTemplateViewCache() ? getCachedTemplateFullMap() : {});
 const thumbLoading = ref(new Set());
 const thumbFailed = ref(new Set());
 const offline = ref(false);
 /** @type {import('vue').Ref<import('@/lib/report-template/layout-model').LayoutPreset[]>} */
 const layoutPresetsAll = ref([]);
+
+/**
+ * 缩略图卡片懒渲染：只有进入（或接近）视口的卡片才构建其微缩预览重 DOM，
+ * 避免模版较多时一次性挂载数十个完整预览。已渲染过的卡片保持渲染，滚回时无需重建。
+ */
+const visibleCards = ref(new Set());
+/** @type {IntersectionObserver | null} */
+let cardObserver = null;
+/** @type {Map<string, HTMLElement>} */
+const cardEls = new Map();
+
+/** @param {string} id */
+function isCardVisible(id) {
+  return visibleCards.value.has(id);
+}
+
+function ensureCardObserver() {
+  if (cardObserver || typeof IntersectionObserver === "undefined") return;
+  cardObserver = new IntersectionObserver(
+    (entries) => {
+      let changed = false;
+      for (const e of entries) {
+        if (!e.isIntersecting) continue;
+        const id = e.target instanceof HTMLElement ? e.target.dataset.tmId : "";
+        if (id && !visibleCards.value.has(id)) {
+          visibleCards.value.add(id);
+          changed = true;
+        }
+      }
+      if (changed) visibleCards.value = new Set(visibleCards.value);
+    },
+    { root: null, rootMargin: "400px 0px", threshold: 0.01 },
+  );
+  for (const el of cardEls.values()) cardObserver.observe(el);
+}
+
+function teardownCardObserver() {
+  if (cardObserver) {
+    cardObserver.disconnect();
+    cardObserver = null;
+  }
+}
+
+/** 模板卡片 DOM 引用回调：注册后交给 IntersectionObserver 观测 */
+function setCardRef(id, el) {
+  if (el instanceof HTMLElement) {
+    el.dataset.tmId = id;
+    cardEls.set(id, el);
+    if (cardObserver) cardObserver.observe(el);
+  } else {
+    const prev = cardEls.get(id);
+    if (prev && cardObserver) cardObserver.unobserve(prev);
+    cardEls.delete(id);
+  }
+}
 
 const coverPresetRows = computed(() => layoutPresetSelectRows(layoutPresetsAll.value, "cover"));
 const bodyPresetRows = computed(() => layoutPresetSelectRows(layoutPresetsAll.value, "normal"));
@@ -602,15 +696,52 @@ const THUMB_FETCH_CONCURRENCY = 4;
 
 async function hydrateThumbs() {
   const token = beginLoad();
-  const pending = summaries.value.filter((s) => !cache.value[s.id]).map((s) => s.id);
+  /** 已缓存且 updatedAt 未变的模板不再重复拉取（切页秒显示）；仅拉新增或已变更的 */
+  const pending = summaries.value
+    .filter((s) => {
+      const cached = cache.value[s.id];
+      if (!cached) return true;
+      return (cached.updatedAt || "") !== (s.updatedAt || "");
+    })
+    .map((s) => s.id);
+  if (!pending.length) return;
   for (const id of pending) {
     markThumbFailed(id, false);
     markThumbLoading(id, true);
   }
+
+  /**
+   * 首次进入（本地尚无任何缓存）且待加载较多时，用一次批量接口替代 N 次 GET，
+   * 显著减少 HTTP 往返；批量失败再回退到逐个并发拉取。
+   * 注：`getTemplate` / `listTemplatesFull` 返回的都是新解析出的对象，无需再深拷贝。
+   */
+  if (Object.keys(cache.value).length === 0 && pending.length > 1) {
+    try {
+      const all = await api.listTemplatesFull();
+      if (isLoadStale(token)) return;
+      const wanted = new Set(pending);
+      const next = { ...cache.value };
+      for (const t of all) {
+        if (!t || !wanted.has(t.id)) continue;
+        normalizeOptionalSheetsForList(t);
+        next[t.id] = t;
+        markThumbFailed(t.id, false);
+        markThumbLoading(t.id, false);
+      }
+      cache.value = next;
+      const remaining = pending.filter((id) => !next[id]);
+      for (const id of remaining) markThumbLoading(id, false);
+      return;
+    } catch {
+      if (isLoadStale(token)) return;
+      /* 回退到逐个拉取 */
+    }
+  }
+
   await mapPool(pending, THUMB_FETCH_CONCURRENCY, async (id) => {
     if (isLoadStale(token)) return;
     try {
-      const t = cloneDeepTemplate(await api.getTemplate(id));
+      const t = await api.getTemplate(id);
       if (isLoadStale(token)) return;
       normalizeOptionalSheetsForList(t);
       cache.value = { ...cache.value, [id]: t };
@@ -629,7 +760,7 @@ async function retryThumb(id) {
   markThumbLoading(id, true);
   const token = beginLoad();
   try {
-    const t = cloneDeepTemplate(await api.getTemplate(id));
+    const t = await api.getTemplate(id);
     if (isLoadStale(token)) return;
     normalizeOptionalSheetsForList(t);
     cache.value = { ...cache.value, [id]: t };
@@ -647,8 +778,7 @@ async function refreshThumbsView() {
   else {
     const local = loadLocal();
     cache.value = Object.fromEntries(
-      local.map((x) => {
-        const t = cloneDeepTemplate(x);
+      local.map((t) => {
         normalizeOptionalSheetsForList(t);
         return [t.id, t];
       }),
@@ -662,7 +792,7 @@ async function refreshThumbsView() {
 async function loadPresets() {
   const token = beginLoad();
   try {
-    const list = await refreshLayoutPresets();
+    const list = await ensureLayoutPresetsLoaded();
     if (isLoadStale(token)) return;
     layoutPresetsAll.value = list;
   } catch {
@@ -989,11 +1119,35 @@ async function created(t) {
   goEditor(t.id);
 }
 
-onMounted(async () => {
+/** 进入本页（首次挂载或从 keep-alive 缓存中被重新激活）时的数据刷新 */
+async function enterView() {
   await load();
   if (mode.value === "thumbs") {
     await refreshThumbsView();
   }
+}
+
+function persistViewCache() {
+  /** 保存当前摘要与缩略图缓存，切回本页时可先秒显示再后台刷新 */
+  saveTemplateViewCache(summaries.value, cache.value);
+}
+
+/**
+ * 组件被 <keep-alive> 缓存：`onActivated` 在首次挂载与每次重新进入时都会触发，
+ * 因此把加载逻辑放在这里即可「切回秒显示 + 后台增量刷新」，无需在 onMounted 再跑一次。
+ */
+onActivated(() => {
+  void enterView();
+  ensureCardObserver();
+});
+
+onDeactivated(() => {
+  persistViewCache();
+});
+
+onUnmounted(() => {
+  persistViewCache();
+  teardownCardObserver();
 });
 </script>
 
@@ -1289,6 +1443,18 @@ onMounted(async () => {
   gap: 10px;
   align-items: stretch;
   min-width: 0;
+}
+/** 懒渲染占位：保留与真实预览接近的高度，避免卡片塌陷导致懒加载一次性全部触发 */
+.row3-ph {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 336px;
+  border: 1px dashed var(--border, #d7dbe0);
+  border-radius: 8px;
+  color: var(--text-muted, #9aa2ad);
+  font-size: 12px;
+  background: var(--surface-subtle, #f7f8fa);
 }
 @media (max-width: 920px) {
   .row3 {
