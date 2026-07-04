@@ -66,13 +66,19 @@
     </table>
 
     <div v-else-if="mode === 'thumbs' && rows.length" class="grid">
-      <div v-for="r in rows" :key="'card-' + r.filePath" class="card">
+      <div
+        v-for="r in rows"
+        :key="'card-' + r.filePath"
+        class="card"
+        :ref="(el) => setCardRef(r.filePath, el as Element | null)"
+      >
         <div
           class="thumb-wrap"
           title="双击打开"
           @dblclick="openFile(r)"
         >
-          <PdfExportThumb :file-path="r.filePath" />
+          <PdfExportThumb v-if="visibleCards.has(r.filePath)" :file-path="r.filePath" />
+          <div v-else class="thumb-lazy-ph">滚动到此加载预览…</div>
         </div>
         <div class="foot">
           <div class="foot-line">
@@ -91,13 +97,15 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onActivated, onUnmounted, ref, watch } from "vue";
 import PdfExportThumb from "@/components/report-history/PdfExportThumb.vue";
 import {
   loadReportExportPrefs,
   saveReportExportPrefs,
 } from "@/lib/report-export-prefs";
 import { appConfirm } from "@/composables/useAppConfirm";
+
+defineOptions({ name: "ReportHistory" });
 
 export interface ExportPdfRow {
   name: string;
@@ -107,7 +115,25 @@ export interface ExportPdfRow {
   modifiedAt: string;
 }
 
-const mode = ref<"list" | "thumbs">("thumbs");
+/** 记住上次视图模式：默认「列表」以便打开页面即时呈现（缩略图逐个渲染 PDF 为重加载） */
+const MODE_STORAGE_KEY = "rh-view-mode";
+function readInitialMode(): "list" | "thumbs" {
+  try {
+    const v = localStorage.getItem(MODE_STORAGE_KEY);
+    if (v === "list" || v === "thumbs") return v;
+  } catch {
+    /* ignore */
+  }
+  return "list";
+}
+const mode = ref<"list" | "thumbs">(readInitialMode());
+watch(mode, (m) => {
+  try {
+    localStorage.setItem(MODE_STORAGE_KEY, m);
+  } catch {
+    /* ignore */
+  }
+});
 const watchDir = ref<string | null>(loadReportExportPrefs().watchDir);
 const rows = ref<ExportPdfRow[]>([]);
 const loading = ref(false);
@@ -206,8 +232,54 @@ async function deleteFile(r: ExportPdfRow): Promise<void> {
   msg.value = "已删除。";
 }
 
-onMounted(async () => {
+/** 缩略图卡片进入视口才挂载 PdfExportThumb（渲染 PDF），避免一次性渲染全部文件 */
+const visibleCards = ref<Set<string>>(new Set());
+const cardObserver = ref<IntersectionObserver | null>(null);
+const cardEls = new Map<string, Element>();
+
+function ensureCardObserver() {
+  if (cardObserver.value || typeof IntersectionObserver === "undefined") return;
+  cardObserver.value = new IntersectionObserver(
+    (entries) => {
+      let changed = false;
+      const next = new Set(visibleCards.value);
+      for (const e of entries) {
+        if (!e.isIntersecting) continue;
+        const fp = e.target instanceof HTMLElement ? e.target.dataset.fp : "";
+        if (fp && !next.has(fp)) {
+          next.add(fp);
+          changed = true;
+        }
+      }
+      if (changed) visibleCards.value = next;
+    },
+    { root: null, rootMargin: "400px 0px", threshold: 0.01 },
+  );
+  for (const el of cardEls.values()) cardObserver.value.observe(el);
+}
+
+function setCardRef(filePath: string, el: Element | null) {
+  if (el instanceof HTMLElement) {
+    el.dataset.fp = filePath;
+    cardEls.set(filePath, el);
+    if (cardObserver.value) cardObserver.value.observe(el);
+  } else {
+    const prev = cardEls.get(filePath);
+    if (prev && cardObserver.value) cardObserver.value.unobserve(prev);
+    cardEls.delete(filePath);
+  }
+}
+
+onActivated(async () => {
+  ensureCardObserver();
   if (watchDir.value) await refresh();
+});
+
+onUnmounted(() => {
+  if (cardObserver.value) {
+    cardObserver.value.disconnect();
+    cardObserver.value = null;
+  }
 });
 </script>
 
@@ -361,6 +433,15 @@ onMounted(async () => {
   background: #f4f4f5;
   border-radius: 8px;
   cursor: pointer;
+}
+.thumb-lazy-ph {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  min-height: 200px;
+  font-size: 12px;
+  color: #a1a1aa;
 }
 .foot {
   margin-top: 10px;

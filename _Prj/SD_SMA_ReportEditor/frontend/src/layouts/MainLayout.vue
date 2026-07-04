@@ -55,7 +55,18 @@
       <main class="content">
         <div class="content-scroll">
           <router-view v-slot="{ Component }">
-            <keep-alive :include="['DataSourceConfig', 'TemplateManager', 'LayoutPresets']">
+            <keep-alive
+              :include="[
+                'Dashboard',
+                'DataSourceConfig',
+                'TemplateManager',
+                'LayoutPresets',
+                'SignaturesLibrary',
+                'ReportGenerator',
+                'ReportHistory',
+                'Settings',
+              ]"
+            >
               <component :is="Component" />
             </keep-alive>
           </router-view>

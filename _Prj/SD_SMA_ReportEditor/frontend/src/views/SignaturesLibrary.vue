@@ -25,9 +25,12 @@
         <tr v-if="!rows.length">
           <td colspan="4" class="empty">暂无签名条目。</td>
         </tr>
-        <tr v-for="r in rows" :key="r.id">
+        <tr v-for="r in rows" :key="r.id" :ref="(el) => setRowRef(r.id, el as Element | null)">
           <td>{{ r.label }}</td>
-          <td class="prev"><img v-if="r.preview" :src="r.preview" alt="" class="thumb" /></td>
+          <td class="prev">
+            <img v-if="r.preview" :src="r.preview" alt="" class="thumb" />
+            <span v-else class="thumb-ph" aria-hidden="true">…</span>
+          </td>
           <td>{{ r.updated }}</td>
           <td class="td-act">
             <div class="row-actions">
@@ -74,12 +77,21 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onActivated, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import SignaturePadDialog from "@/components/report-template/SignaturePadDialog.vue";
 import type { SignatureAsset } from "@/api/signatures";
 import * as api from "@/api/signatures";
+import {
+  ensureSignatureSummaries,
+  getSignatureImage,
+  invalidateSignature,
+  peekSignatureImage,
+  primeSignatureImage,
+} from "@/lib/signature-registry";
 import { appConfirm } from "@/composables/useAppConfirm";
+
+defineOptions({ name: "SignaturesLibrary" });
 
 const msg = ref("");
 const dlg = ref(false);
@@ -114,18 +126,54 @@ function newId(): string {
 async function load() {
   msg.value = "";
   try {
-    summaries.value = await api.listSignatures();
-    previews.value = {};
+    summaries.value = await ensureSignatureSummaries();
+    /** 首屏先回填已缓存的预览；其余按行进入视口时懒加载，避免一次性 N+1 拉全部图 */
+    const seeded: Record<string, string> = {};
     for (const s of summaries.value) {
-      try {
-        const full = await api.getSignature(s.id);
-        previews.value[s.id] = full.imageSrc;
-      } catch {
-        /* skip */
-      }
+      const cached = peekSignatureImage(s.id);
+      if (cached) seeded[s.id] = cached;
     }
+    previews.value = seeded;
   } catch (e) {
     msg.value = "加载失败：" + String((e as Error).message || e);
+  }
+}
+
+/** 行进入视口时才拉取其预览图（懒加载） */
+const rowObserver = ref<IntersectionObserver | null>(null);
+const rowEls = new Map<string, Element>();
+
+function loadPreview(id: string) {
+  if (previews.value[id]) return;
+  void getSignatureImage(id).then((src) => {
+    if (src) previews.value = { ...previews.value, [id]: src };
+  });
+}
+
+function ensureRowObserver() {
+  if (rowObserver.value || typeof IntersectionObserver === "undefined") return;
+  rowObserver.value = new IntersectionObserver(
+    (entries) => {
+      for (const e of entries) {
+        if (!e.isIntersecting) continue;
+        const id = e.target instanceof HTMLElement ? e.target.dataset.sigId : "";
+        if (id) loadPreview(id);
+      }
+    },
+    { root: null, rootMargin: "300px 0px", threshold: 0.01 },
+  );
+  for (const el of rowEls.values()) rowObserver.value.observe(el);
+}
+
+function setRowRef(id: string, el: Element | null) {
+  if (el instanceof HTMLElement) {
+    el.dataset.sigId = id;
+    rowEls.set(id, el);
+    if (rowObserver.value) rowObserver.value.observe(el);
+  } else {
+    const prev = rowEls.get(id);
+    if (prev && rowObserver.value) rowObserver.value.unobserve(prev);
+    rowEls.delete(id);
   }
 }
 
@@ -194,6 +242,8 @@ async function save(body: SignatureAsset) {
   msg.value = "";
   try {
     await api.putSignature(body.id, body);
+    invalidateSignature(body.id);
+    primeSignatureImage(body.id, body.imageSrc);
     msg.value = "已保存签名条目。";
     await load();
   } catch (e) {
@@ -229,6 +279,7 @@ async function remove(id: string) {
   msg.value = "";
   try {
     await api.deleteSignature(id);
+    invalidateSignature(id);
     await load();
     msg.value = "已删除。";
   } catch (e) {
@@ -240,9 +291,17 @@ function normalizeLabel(s: string) {
   return s.trim().slice(0, 128);
 }
 
-onMounted(async () => {
+onActivated(async () => {
+  ensureRowObserver();
   await load();
   await openNewFromRoute();
+});
+
+onUnmounted(() => {
+  if (rowObserver.value) {
+    rowObserver.value.disconnect();
+    rowObserver.value = null;
+  }
 });
 
 watch(
@@ -298,6 +357,17 @@ watch(
   max-height: 48px;
   max-width: 160px;
   object-fit: contain;
+}
+.thumb-ph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 32px;
+  color: #a1a1aa;
+  font-size: 12px;
+  background: #f4f4f5;
+  border-radius: 4px;
 }
 .prev {
   width: 180px;

@@ -551,7 +551,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, nextTick, onActivated, onMounted, onUnmounted, ref, watch } from "vue";
 import { listTemplateSummaries, type TemplateSummary } from "@/api/templates";
 import { apiFetch } from "@/api/client.js";
 import {
@@ -617,6 +617,8 @@ import {
   reportAutoExportStatus,
   resetReportAutoExportBindingRuntime,
 } from "@/lib/report-auto-export-trigger-service";
+
+defineOptions({ name: "ReportGenerator" });
 
 /** 「生成报表」页用户可见固定用语（勿单独显示「截批」二字；PLC 信息节点标签见 exportResultOpcFeedback） */
 const RG_UI = {
@@ -1468,14 +1470,18 @@ async function onPickAutoDir(): Promise<void> {
   }
 }
 
-onMounted(async () => {
-  await Promise.all([loadSummaries(), loadOpcServers()]);
+onMounted(() => {
   for (const b of prefs.value.auto.bindings) {
     syncBindingChartUi(b.id, getBindingRuntime(b.id));
   }
   window.addEventListener("report-editor-config-imported", onConfigImported);
   window.addEventListener("report-editor-opcua-servers-changed", onOpcServersChanged);
   window.addEventListener("report-generator-prefs-updated", onExternalPrefsUpdated);
+});
+
+/** keep-alive：每次进入刷新模版/连接列表，保证下拉项与其它页新增内容同步 */
+onActivated(async () => {
+  await Promise.all([loadSummaries(), loadOpcServers()]);
 });
 
 function onExternalPrefsUpdated() {

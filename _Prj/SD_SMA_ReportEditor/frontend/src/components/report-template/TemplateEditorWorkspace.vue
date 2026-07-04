@@ -357,7 +357,10 @@ import TemplateExportPreviewStack from "@/components/report-template/TemplateExp
 import TemplateElementProps from "@/components/report-template/TemplateElementProps.vue";
 import SignaturePadDialog from "@/components/report-template/SignaturePadDialog.vue";
 import * as api from "@/api/templates";
-import * as sigApi from "@/api/signatures";
+import {
+  ensureSignatureSummaries,
+  getSignatureImage,
+} from "@/lib/signature-registry";
 import { ref, computed, watch, nextTick, onMounted, onUnmounted, provide } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { PAPER_LABEL } from "@/lib/report-template/paper";
@@ -1036,7 +1039,7 @@ function sigOk(dataUrl) {
 
 async function refreshSigChoices() {
   try {
-    sigChoices.value = await sigApi.listSignatures();
+    sigChoices.value = await ensureSignatureSummaries();
   } catch {
     sigChoices.value = [];
   }
@@ -1051,8 +1054,9 @@ async function onPickSigLibrary(ev) {
     return;
   }
   try {
-    const a = await sigApi.getSignature(id);
-    sel.value.imageSrc = a.imageSrc;
+    const src = await getSignatureImage(id);
+    if (src === undefined) throw new Error("empty");
+    sel.value.imageSrc = src;
     hint.value = "已从签名库载入图像。";
   } catch {
     hint.value = "读取签名条目失败";

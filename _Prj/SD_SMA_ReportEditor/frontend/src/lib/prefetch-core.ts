@@ -12,6 +12,7 @@
  */
 import { listTemplateSummaries } from "@/api/templates";
 import { ensureLayoutPresetsLoaded } from "@/lib/report-template/layout-registry";
+import { ensureSignatureSummaries } from "@/lib/signature-registry";
 import {
   getCachedTemplateFullMap,
   hasTemplateViewCache,
@@ -50,12 +51,23 @@ async function warmTemplateSummaries(): Promise<void> {
   }
 }
 
+/** 预热签名摘要：填充签名库会话缓存，使签名库页与模板编辑器签名下拉首屏即时呈现（图片仍按需懒加载）。 */
+async function warmSignatureSummaries(): Promise<void> {
+  try {
+    await ensureSignatureSummaries();
+  } catch {
+    /* ignore */
+  }
+}
+
 /**
  * 由 MainLayout 在应用启动后调用一次。多次调用无副作用（仅首次生效）。
+ * 错峰安排：版式库最先（惠及最多页面），随后模板摘要、签名摘要。
  */
 export function prefetchCoreCatalog(): void {
   if (started) return;
   started = true;
   onIdle(() => void warmLayoutPresets(), 2000);
   onIdle(() => void warmTemplateSummaries(), 3500);
+  onIdle(() => void warmSignatureSummaries(), 5000);
 }

@@ -44,6 +44,8 @@ import ConnectionProbeSection from '@/features/settings/connection-probe/Connect
 import DemoTrainingSection from '@/features/settings/demo-training/DemoTrainingSection.vue'
 import MigrateLocalDataSection from '@/features/settings/migrate-local/MigrateLocalDataSection.vue'
 
+defineOptions({ name: 'Settings' })
+
 const openSetupWizard = inject('openSetupWizard', () => {})
 </script>
 

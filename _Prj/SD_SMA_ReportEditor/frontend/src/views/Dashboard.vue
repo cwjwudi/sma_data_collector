@@ -41,6 +41,8 @@
 
 <script setup>
 import DashboardConnectionHealth from '@/features/dashboard/DashboardConnectionHealth.vue'
+
+defineOptions({ name: 'Dashboard' })
 </script>
 
 <style scoped>
