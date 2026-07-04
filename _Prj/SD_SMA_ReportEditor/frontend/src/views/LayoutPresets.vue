@@ -130,6 +130,7 @@
               v-for="(p, i) in presetGroups[sec.role]"
               :id="'lp-preset-' + p.id"
               :key="'card-' + p.id"
+              :ref="(el) => setCardRef(p.id, el as Element | null)"
               class="card"
               :class="{
                 'card--hl': highlightId === p.id,
@@ -175,7 +176,13 @@
                 title="双击进入编辑"
                 @dblclick="goEditor(p.id)"
               >
-                <LayoutPresetMiniPage :preset="p" :max-width-px="200" :max-height-px="260" />
+                <LayoutPresetMiniPage
+                  v-if="isCardVisible(p.id)"
+                  :preset="p"
+                  :max-width-px="200"
+                  :max-height-px="260"
+                />
+                <span v-else class="micro-ph" aria-hidden="true">预览待显示…</span>
               </div>
               <div class="foot">
                 <div class="foot-line">
@@ -223,7 +230,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onActivated, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import type { LocationQuery } from "vue-router";
 import LayoutPresetMiniPage from "@/components/report-template/LayoutPresetMiniPage.vue";
@@ -242,6 +249,7 @@ import {
 } from "@/lib/layout-display-order";
 import {
   deleteLayoutPresetFlexible,
+  ensureLayoutPresetsLoaded,
   refreshLayoutPresets,
   saveLayoutPresetFlexible,
   isLayoutsOffline,
@@ -250,11 +258,31 @@ import {
 import { useStaleGuard } from "@/composables/useStaleGuard";
 import { appConfirm } from "@/composables/useAppConfirm";
 
+defineOptions({ name: "LayoutPresets" });
+
 const route = useRoute();
 const router = useRouter();
 const { begin: beginLoad, isStale: isLoadStale } = useStaleGuard();
 
-const mode = ref<"list" | "thumbs">("thumbs");
+/** 记住上次的视图模式：默认「列表」以便打开页面即时呈现（缩略图为重渲染） */
+const MODE_STORAGE_KEY = "lp-view-mode";
+function readInitialMode(): "list" | "thumbs" {
+  try {
+    const v = localStorage.getItem(MODE_STORAGE_KEY);
+    if (v === "list" || v === "thumbs") return v;
+  } catch {
+    /* ignore */
+  }
+  return "list";
+}
+const mode = ref<"list" | "thumbs">(readInitialMode());
+watch(mode, (m) => {
+  try {
+    localStorage.setItem(MODE_STORAGE_KEY, m);
+  } catch {
+    /* ignore */
+  }
+});
 const roleFilter = ref<"all" | LayoutPageRole>("all");
 const msg = ref("");
 const loading = ref(false);
@@ -277,6 +305,57 @@ const highlightId = ref<string | null>(null);
 const dragRole = ref<LayoutPageRole | null>(null);
 const dragId = ref<string | null>(null);
 const dragOverId = ref<string | null>(null);
+
+/**
+ * 缩略图卡片懒渲染：只有进入（或接近）视口的卡片才构建 LayoutPresetMiniPage 重 DOM，
+ * 避免版式较多时一次性挂载全部微缩预览。已渲染过的卡片保持渲染。
+ */
+const visibleCards = ref<Set<string>>(new Set());
+let cardObserver: IntersectionObserver | null = null;
+const cardEls = new Map<string, HTMLElement>();
+
+function isCardVisible(id: string): boolean {
+  return visibleCards.value.has(id);
+}
+
+function ensureCardObserver() {
+  if (cardObserver || typeof IntersectionObserver === "undefined") return;
+  cardObserver = new IntersectionObserver(
+    (entries) => {
+      let changed = false;
+      for (const e of entries) {
+        if (!e.isIntersecting) continue;
+        const id = e.target instanceof HTMLElement ? e.target.dataset.lpId : "";
+        if (id && !visibleCards.value.has(id)) {
+          visibleCards.value.add(id);
+          changed = true;
+        }
+      }
+      if (changed) visibleCards.value = new Set(visibleCards.value);
+    },
+    { root: null, rootMargin: "400px 0px", threshold: 0.01 },
+  );
+  for (const el of cardEls.values()) cardObserver.observe(el);
+}
+
+function teardownCardObserver() {
+  if (cardObserver) {
+    cardObserver.disconnect();
+    cardObserver = null;
+  }
+}
+
+function setCardRef(id: string, el: Element | null) {
+  if (el instanceof HTMLElement) {
+    el.dataset.lpId = id;
+    cardEls.set(id, el);
+    if (cardObserver) cardObserver.observe(el);
+  } else {
+    const prev = cardEls.get(id);
+    if (prev && cardObserver) cardObserver.unobserve(prev);
+    cardEls.delete(id);
+  }
+}
 
 /** 按用途分组，供上下分栏各区块渲染 */
 const presetGroups = computed((): Record<LayoutPageRole, LayoutPreset[]> => {
@@ -552,9 +631,36 @@ watch(
   },
 );
 
-onMounted(async () => {
-  await reload();
+/**
+ * 进入本页（首次挂载或从 keep-alive 缓存被重新激活）：
+ * 优先复用本会话已加载的版式库快照「秒显示」，不再每次都请求 /layout-presets/full。
+ * 版式的新增/编辑/删除都会经由 layout-registry 刷新内存快照，故复用是安全的。
+ */
+async function enterView() {
+  const token = beginLoad();
+  loading.value = true;
+  msg.value = "";
+  try {
+    const list = await ensureLayoutPresetsLoaded();
+    if (isLoadStale(token)) return;
+    presets.value = applyLayoutPresetDisplayOrders(list);
+  } catch (e) {
+    if (isLoadStale(token)) return;
+    presets.value = [];
+    msg.value = "加载版式失败：" + String((e as Error).message || e);
+  } finally {
+    if (!isLoadStale(token)) loading.value = false;
+  }
   await applyRouteIntent();
+}
+
+onActivated(() => {
+  void enterView();
+  ensureCardObserver();
+});
+
+onUnmounted(() => {
+  teardownCardObserver();
 });
 </script>
 
@@ -814,6 +920,11 @@ onMounted(async () => {
   -webkit-overflow-scrolling: touch;
   overflow: auto;
   cursor: pointer;
+}
+.micro-ph {
+  align-self: center;
+  color: #9aa2ad;
+  font-size: 12px;
 }
 .foot {
   margin-top: 10px;
