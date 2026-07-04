@@ -166,7 +166,7 @@ import {
 } from "@/lib/report-template/model";
 import { getLayoutPresetById } from "@/lib/report-template/layout-presets-api";
 import { layoutPresetsForRoleOrdered } from "@/lib/layout-display-order";
-import { refreshLayoutPresets } from "@/lib/report-template/layout-registry";
+import { ensureLayoutPresetsLoaded } from "@/lib/report-template/layout-registry";
 import LayoutPresetMiniPage from "@/components/report-template/LayoutPresetMiniPage.vue";
 
 const props = defineProps<{ modelValue: boolean }>();
@@ -194,7 +194,7 @@ const coverPresets = ref<LayoutPreset[]>([]);
 const backPresets = ref<LayoutPreset[]>([]);
 
 async function refreshPresets() {
-  const all = (await refreshLayoutPresets()).map((p) => hydrateLayoutPreset(p));
+  const all = (await ensureLayoutPresetsLoaded()).map((p) => hydrateLayoutPreset(p));
   bodyPresets.value = layoutPresetsForRoleOrdered(all, "normal");
   coverPresets.value = layoutPresetsForRoleOrdered(all, "cover");
   backPresets.value = layoutPresetsForRoleOrdered(all, "back");

@@ -102,7 +102,7 @@ import { layoutPresetTableCellPickKey, type TemplateTableCellPick } from "@/lib/
 import { PAPER_LABEL, type PaperKind } from "@/lib/report-template/paper";
 import {
   deleteLayoutPresetFlexible,
-  refreshLayoutPresets,
+  ensureLayoutPresetsLoaded,
   saveLayoutPresetFlexible,
 } from "@/lib/report-template/layout-registry";
 import { stableFingerprintPart } from "@/lib/report-template/snapshot-fingerprint";
@@ -278,7 +278,7 @@ async function loadWorking() {
     return;
   }
   try {
-    const list = await refreshLayoutPresets();
+    const list = await ensureLayoutPresetsLoaded();
     if (isLoadStale(token)) return;
     const raw = list.find((x) => x.id === id);
     if (!raw) {

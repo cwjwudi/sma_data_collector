@@ -376,7 +376,7 @@ import {
   layoutPresetSelectLabel,
   layoutPresetSelectRows,
 } from "@/lib/layout-display-order";
-import { refreshLayoutPresets } from "@/lib/report-template/layout-registry";
+import { ensureLayoutPresetsLoaded } from "@/lib/report-template/layout-registry";
 import {
   applyLayoutPresetToTemplate,
   clearOptionalSheetFromTemplate,
@@ -831,7 +831,7 @@ const templateDimLabel = computed(() => {
 });
 
 async function loadLayoutPresetsList() {
-  layoutPresetsAll.value = await refreshLayoutPresets();
+  layoutPresetsAll.value = await ensureLayoutPresetsLoaded();
 }
 
 /** @param {'body'|'cover'|'back'} slot */

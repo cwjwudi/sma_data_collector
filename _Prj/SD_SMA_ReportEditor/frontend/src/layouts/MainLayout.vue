@@ -100,6 +100,7 @@ import {
   invalidateTemplateSummariesCache,
 } from '@/lib/report-auto-export-trigger-service'
 import { loadSidebarCollapsed, saveSidebarCollapsed } from '@/lib/sidebar-layout-prefs'
+import { prefetchCoreCatalog } from '@/lib/prefetch-core'
 
 const route = useRoute()
 
@@ -192,6 +193,7 @@ onMounted(() => {
   }
   void reloadNavProbePrefs()
   initReportAutoExportTrigger()
+  prefetchCoreCatalog()
   window.addEventListener('report-editor-config-imported', onConfigImported)
   window.addEventListener('report-editor-connection-probe-changed', onProbePrefsChanged)
 })
