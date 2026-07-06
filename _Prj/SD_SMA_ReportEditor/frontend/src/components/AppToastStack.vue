@@ -7,6 +7,7 @@
       :class="`app-toast--${item.tone}`"
       role="status"
     >
+      <span v-if="item.spinner" class="app-toast-spinner" aria-hidden="true" />
       <pre class="app-toast-body">{{ item.message }}</pre>
       <button type="button" class="app-toast-close" aria-label="关闭" @click="dismissAppToast(item.id)">
         ×
@@ -77,5 +78,22 @@ import { appToasts, dismissAppToast } from "@/composables/useAppToast";
   line-height: 1;
   cursor: pointer;
   padding: 0 2px;
+}
+
+.app-toast-spinner {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  margin-top: 2px;
+  border: 2px solid #c7d2fe;
+  border-top-color: #4f46e5;
+  border-radius: 50%;
+  animation: app-toast-spin 0.7s linear infinite;
+}
+
+@keyframes app-toast-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 </style>

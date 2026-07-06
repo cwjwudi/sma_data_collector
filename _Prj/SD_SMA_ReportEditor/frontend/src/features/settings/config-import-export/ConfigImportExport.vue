@@ -61,6 +61,34 @@
       <p class="backup-note backup-note--warn">
         慎用：会<strong>删除</strong>当前所有连接、模版、版式、签名等，只使用备份文件里的内容。操作前请先导出一份当前备份。
       </p>
+
+      <div v-if="restoreActive" class="restore-progress" aria-live="polite">
+        <div class="restore-progress-head">
+          <span class="restore-progress-title">正在恢复并加载…</span>
+          <span class="restore-progress-pct">{{ restorePercent }}%</span>
+        </div>
+        <div class="restore-progress-track">
+          <div class="restore-progress-bar" :style="{ width: `${restorePercent}%` }" />
+        </div>
+        <ul class="restore-step-list">
+          <li
+            v-for="s in restoreSteps"
+            :key="s.key"
+            class="restore-step"
+            :class="`restore-step--${s.status}`"
+          >
+            <span class="restore-step-icon" aria-hidden="true">
+              <template v-if="s.status === 'done'">✓</template>
+              <template v-else-if="s.status === 'active'">⏳</template>
+              <template v-else>○</template>
+            </span>
+            <span class="restore-step-label">{{ s.label }}</span>
+            <span class="restore-step-state">
+              {{ s.status === 'done' ? '完成' : s.status === 'active' ? '加载中…' : '等待' }}
+            </span>
+          </li>
+        </ul>
+      </div>
     </div>
 
     <div class="backup-block">
@@ -98,13 +126,65 @@ import { computed, ref } from 'vue'
 import { apiFetch } from '@/api/client.js'
 import { resolveApiHref } from '@/api/apiBase.js'
 import { refreshLayoutPresets } from '@/lib/report-template/layout-registry'
+import { listTemplateSummaries } from '@/api/templates'
+import { refreshSignatureSummaries } from '@/lib/signature-registry'
+import {
+  getCachedTemplateFullMap,
+  saveTemplateViewCache,
+} from '@/lib/report-template/template-view-cache'
 import {
   applyClientPrefsFromBundle,
   collectClientPrefs,
   buildImportDataFromFile,
+  invalidateRestoredCaches,
+  dispatchConfigRestoredEvents,
   notifyReportEditorConfigRestored,
 } from '@/features/settings/config-import-export/config-bundle-client'
 import { auditLog } from '@/lib/auditLog'
+
+type RestoreStepKey = 'write' | 'datasource' | 'templates' | 'layouts' | 'signatures' | 'genconfig'
+type RestoreStepStatus = 'pending' | 'active' | 'done'
+type RestoreStep = { key: RestoreStepKey; label: string; status: RestoreStepStatus }
+
+const RESTORE_STEP_DEFS: { key: RestoreStepKey; label: string }[] = [
+  { key: 'write', label: '写入备份数据' },
+  { key: 'datasource', label: '数据源' },
+  { key: 'templates', label: '模版' },
+  { key: 'layouts', label: '版式' },
+  { key: 'signatures', label: '签名' },
+  { key: 'genconfig', label: '生成配置' },
+]
+
+const restoreActive = ref(false)
+const restoreSteps = ref<RestoreStep[]>([])
+
+const restorePercent = computed(() => {
+  const steps = restoreSteps.value
+  if (!steps.length) return 0
+  const done = steps.filter((s) => s.status === 'done').length
+  return Math.round((done / steps.length) * 100)
+})
+
+function initRestoreSteps() {
+  restoreSteps.value = RESTORE_STEP_DEFS.map((d) => ({ ...d, status: 'pending' as RestoreStepStatus }))
+  restoreActive.value = true
+}
+
+function setRestoreStep(key: RestoreStepKey, status: RestoreStepStatus) {
+  restoreSteps.value = restoreSteps.value.map((s) => (s.key === key ? { ...s, status } : s))
+}
+
+/** 执行一个恢复步骤：标记进行中 → 运行 → 标记完成；失败也标记完成（不阻断整体）。 */
+async function runRestoreStep(key: RestoreStepKey, fn: () => Promise<void>): Promise<void> {
+  setRestoreStep(key, 'active')
+  try {
+    await fn()
+  } catch (e) {
+    console.warn(`[ConfigImportExport] restore step ${key} failed`, e)
+  } finally {
+    setRestoreStep(key, 'done')
+  }
+}
 
 const REBAK_MAGIC = 'SDRE1\n'
 
@@ -290,7 +370,10 @@ async function doImport(mode: 'merge' | 'replace') {
   busy.value = true
   msg.value = ''
   msgTone.value = ''
+  initRestoreSteps()
   try {
+    // 步骤 1：写入备份数据（后端一次性导入所有条目）
+    setRestoreStep('write', 'active')
     let res: ImportResponse
     let fileClientPrefs: unknown = null
     if (pendingBytes.value) {
@@ -303,18 +386,33 @@ async function doImport(mode: 'merge' | 'replace') {
         body: { mode, data: built.serverPayload },
       })) as ImportResponse
     }
-    const clientApplied: string[] = []
-    try {
-      clientApplied.push(...applyClientPrefsFromBundle(res.client_prefs ?? fileClientPrefs))
-    } catch (e) {
-      console.warn('[ConfigImportExport] apply client prefs failed', e)
-    }
-    try {
+    setRestoreStep('write', 'done')
+
+    // 写入完成后：先失效各会话缓存，再逐类重新加载，确保「导入完成」时数据确已就绪
+    invalidateRestoredCaches()
+
+    await runRestoreStep('datasource', async () => {
+      await apiFetch('/database/connections')
+    })
+    await runRestoreStep('templates', async () => {
+      const list = await listTemplateSummaries()
+      saveTemplateViewCache(list, getCachedTemplateFullMap())
+    })
+    await runRestoreStep('layouts', async () => {
       await refreshLayoutPresets()
-    } catch (e) {
-      console.warn('[ConfigImportExport] refresh layout presets failed', e)
-    }
-    notifyReportEditorConfigRestored()
+    })
+    await runRestoreStep('signatures', async () => {
+      await refreshSignatureSummaries()
+    })
+
+    const clientApplied: string[] = []
+    await runRestoreStep('genconfig', async () => {
+      clientApplied.push(...applyClientPrefsFromBundle(res.client_prefs ?? fileClientPrefs))
+    })
+
+    // 全部加载完成后再通知已打开的页面刷新（此时缓存已预热，切页即见）
+    dispatchConfigRestoredEvents()
+
     const parts: string[] = []
     const imp = res.imported
     if (imp?.templates) parts.push(`模版 ${imp.templates} 份`)
@@ -328,7 +426,7 @@ async function doImport(mode: 'merge' | 'replace') {
     msg.value =
       (mode === 'replace' ? `已用备份完全替换当前配置。${detail}` : `已补充恢复配置。${detail}`) +
       warnText +
-      (clientApplied.length ? '\n生成报表等页面已自动刷新，无需重启。' : '')
+      '\n全部内容已加载完成，切换页面即可查看，无需重启。'
     msgTone.value = warnLines.length ? 'warn' : 'ok'
     void auditLog({
       action: 'config.import',
@@ -342,6 +440,7 @@ async function doImport(mode: 'merge' | 'replace') {
     msgTone.value = 'err'
   } finally {
     busy.value = false
+    restoreActive.value = false
   }
 }
 
@@ -482,5 +581,86 @@ async function quickReset() {
 
 .settings-btn--muted-danger {
   margin-top: 14px;
+}
+
+.restore-progress {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid #c7d2fe;
+  background: #eef2ff;
+  border-radius: 10px;
+}
+
+.restore-progress-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.restore-progress-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #3730a3;
+}
+
+.restore-progress-pct {
+  font-size: 13px;
+  font-weight: 600;
+  color: #4338ca;
+  font-variant-numeric: tabular-nums;
+}
+
+.restore-progress-track {
+  height: 6px;
+  background: #dbeafe;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.restore-progress-bar {
+  height: 100%;
+  background: #4f46e5;
+  border-radius: 999px;
+  transition: width 0.25s ease;
+}
+
+.restore-step-list {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.restore-step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.restore-step-icon {
+  width: 16px;
+  text-align: center;
+}
+
+.restore-step-label {
+  flex: 1;
+}
+
+.restore-step-state {
+  font-variant-numeric: tabular-nums;
+}
+
+.restore-step--active {
+  color: #4338ca;
+  font-weight: 600;
+}
+
+.restore-step--done {
+  color: #15803d;
 }
 </style>

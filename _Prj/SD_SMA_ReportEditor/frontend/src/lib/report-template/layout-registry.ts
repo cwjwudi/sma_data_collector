@@ -98,7 +98,12 @@ export async function saveLayoutPresetFlexible(preset: LayoutPreset): Promise<Sa
 export async function deleteLayoutPresetFlexible(id: string): Promise<void> {
   try {
     await api.deleteLayoutPreset(id);
-    await refreshLayoutPresets();
+    // 删除后仅从内存快照移除该项，避免重新拉取并解析所有整份版式（含页眉页脚大图）导致卡顿。
+    if (mem) {
+      mem = mem.filter((x) => x.id !== id);
+      mirrorLocalFromMem();
+    }
+    offline = false;
   } catch {
     offline = true;
     const snap = layoutPresetsSnapshot().filter((x) => x.id !== id);

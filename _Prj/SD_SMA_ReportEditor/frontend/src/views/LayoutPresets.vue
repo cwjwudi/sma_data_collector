@@ -474,7 +474,8 @@ async function removePreset(id: string) {
   try {
     await deleteLayoutPresetFlexible(id);
     if (victim) pruneLayoutDisplayOrder(id, victim.pageRole);
-    await reload();
+    // 直接用内存快照更新列表，避免再次整份解析所有版式造成卡顿。
+    presets.value = applyLayoutPresetDisplayOrders(layoutPresetsSnapshot());
     msg.value = "已删除。";
   } catch (e) {
     msg.value = "删除失败：" + String((e as Error).message || e);

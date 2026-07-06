@@ -18,8 +18,45 @@ import {
   hasTemplateViewCache,
   saveTemplateViewCache,
 } from "@/lib/report-template/template-view-cache";
+import { showAppToast, dismissAppToast } from "@/composables/useAppToast";
 
 let started = false;
+
+/** 启动预热进度：右下角持久提示，逐项更新，全部就绪后短暂显示「已就绪」再消失。 */
+const WARMUP_TOAST_ID = "startup-warmup";
+const warmupState = { total: 3, done: 0, active: true };
+
+function warmupTick(label: string): void {
+  warmupState.done += 1;
+  if (warmupState.done >= warmupState.total) {
+    warmupState.active = false;
+    showAppToast("页面数据已就绪，各页面可秒开。", {
+      id: WARMUP_TOAST_ID,
+      tone: "ok",
+      durationMs: 2500,
+    });
+    return;
+  }
+  showAppToast(`正在后台预加载：${label} 已就绪（${warmupState.done}/${warmupState.total}）…`, {
+    id: WARMUP_TOAST_ID,
+    tone: "info",
+    durationMs: 0,
+    spinner: true,
+  });
+}
+
+function warmupStart(): void {
+  showAppToast("正在后台预加载模版、版式与签名，稍候各页面即可秒开…", {
+    id: WARMUP_TOAST_ID,
+    tone: "info",
+    durationMs: 0,
+    spinner: true,
+  });
+}
+
+export function dismissStartupWarmupToast(): void {
+  dismissAppToast(WARMUP_TOAST_ID);
+}
 
 type IdleWindow = {
   requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => void;
@@ -37,17 +74,22 @@ async function warmLayoutPresets(): Promise<void> {
     await ensureLayoutPresetsLoaded();
   } catch {
     /* 预热失败不影响后续手动加载 */
+  } finally {
+    warmupTick("版式");
   }
 }
 
 /** 预热模板摘要：填充模板管理页跨导航缓存，使列表首屏可即时呈现。 */
 async function warmTemplateSummaries(): Promise<void> {
   try {
-    if (hasTemplateViewCache()) return; // 已有缓存则不覆盖用户既有状态
-    const list = await listTemplateSummaries();
-    saveTemplateViewCache(list, getCachedTemplateFullMap());
+    if (!hasTemplateViewCache()) {
+      const list = await listTemplateSummaries();
+      saveTemplateViewCache(list, getCachedTemplateFullMap());
+    }
   } catch {
     /* ignore */
+  } finally {
+    warmupTick("模版");
   }
 }
 
@@ -57,16 +99,20 @@ async function warmSignatureSummaries(): Promise<void> {
     await ensureSignatureSummaries();
   } catch {
     /* ignore */
+  } finally {
+    warmupTick("签名");
   }
 }
 
 /**
  * 由 MainLayout 在应用启动后调用一次。多次调用无副作用（仅首次生效）。
  * 错峰安排：版式库最先（惠及最多页面），随后模板摘要、签名摘要。
+ * 预热期间右下角显示进度提示，全部就绪后自动消失。
  */
 export function prefetchCoreCatalog(): void {
   if (started) return;
   started = true;
+  warmupStart();
   onIdle(() => void warmLayoutPresets(), 2000);
   onIdle(() => void warmTemplateSummaries(), 3500);
   onIdle(() => void warmSignatureSummaries(), 5000);
