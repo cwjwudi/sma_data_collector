@@ -4,18 +4,18 @@
 
 ← 打包总览与排错：[../README.md](../README.md)
 
-## 当前目标版本：0.1.25
+## 当前目标版本：0.1.27
 
-安装包版本来自 **`frontend/package.json`** 的 `version` 字段。打包日志首行须显示 `Version: 0.1.25` 与 `Expected: Report Editor-Setup-0.1.25-x64.exe`。
+安装包版本来自 **`frontend/package.json`** 的 `version` 字段。打包日志首行须显示 `Version: 0.1.27` 与 `Expected: Report Editor-Setup-0.1.27-x64.exe`。
 
 **本版更新说明**（写入 `packaging/updates/latest.json` 的 `notes`，应用内「检查更新」与 `latest.yml` 的 `releaseNotes` 均会展示）：
 
-> 修复 0.1.25 启动白屏；OPC UA 自动截批全局监听；Windows 应用内更新展示 releaseNotes
+> 加密配置备份(.rebak)/快速复位；局域网服务地址；卸载前备份；下载完整安装包；修复升级后模版/版式页卡顿
 
 发版前请 `git pull origin main`，确认上述 `notes` 已在仓库中；若需修改说明：
 
 ```powershell
-node packaging\scripts\bump-version.mjs 0.1.25 --notes "你的更新说明"
+node packaging\scripts\bump-version.mjs 0.1.27 --notes "你的更新说明"
 ```
 
 ## 一发版流程（推荐）
