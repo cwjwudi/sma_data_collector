@@ -4,9 +4,9 @@
 
 ← 打包总览与排错：[../README.md](../README.md)
 
-## 当前目标版本：0.1.27
+## 当前目标版本：0.2.0
 
-安装包版本来自 **`frontend/package.json`** 的 `version` 字段。打包日志首行须显示 `Version: 0.1.27` 与 `Expected: Report Editor-Setup-0.1.27-x64.exe`。
+安装包版本来自 **`frontend/package.json`** 的 `version` 字段。打包日志首行须显示 `Version: 0.2.0` 与 `Expected: Report Editor-Setup-0.2.0-x64.exe`。
 
 **本版更新说明**（写入 `packaging/updates/latest.json` 的 `notes`，应用内「检查更新」与 `latest.yml` 的 `releaseNotes` 均会展示）：
 

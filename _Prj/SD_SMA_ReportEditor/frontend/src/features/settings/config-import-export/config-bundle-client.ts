@@ -158,6 +158,13 @@ export function applyClientPrefsFromBundle(raw: unknown): string[] {
   return applied;
 }
 
+/** 配置/备份恢复后通知各页面刷新（生成报表绑定、模版列表、自动截批等） */
+export function notifyReportEditorConfigRestored(): void {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent("report-generator-prefs-updated"));
+  window.dispatchEvent(new CustomEvent("report-editor-config-imported"));
+}
+
 /** 旧版仅含 db/opc 的 JSON：服务端字段 + 文件内嵌的 client_prefs */
 export function buildImportDataFromFile(parsed: unknown): {
   serverPayload: Record<string, unknown>;

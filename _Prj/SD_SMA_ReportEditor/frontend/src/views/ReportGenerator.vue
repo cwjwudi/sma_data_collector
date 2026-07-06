@@ -81,16 +81,15 @@
           </select>
         </div>
         <div class="rg-row rg-row--in-panel">
-          <label class="rg-lbl" for="rg-export-opc-status">状态变量 NodeId</label>
+          <label class="rg-lbl" for="rg-export-opc-status">状态变量 NodeId（可选）</label>
           <div class="rg-inline rg-inline--bind">
             <input
               id="rg-export-opc-status"
               v-model.trim="activeExportResultOpc.statusNodeId"
               type="text"
-              readonly
               class="rg-inp rg-inp--grow rg-mono"
               :title="activeExportResultOpc.statusNodeId || undefined"
-              placeholder="未绑定，请点击右侧从地址空间选择…"
+              placeholder="可手工填写 NodeId，或从地址空间选择…"
             />
             <button type="button" class="btn btn--nowrap" @click="openRgOpcPick('feedbackStatus')">
               从地址空间选择…
@@ -110,16 +109,15 @@
         </div>
 
         <div class="rg-row rg-row--in-panel">
-          <label class="rg-lbl" for="rg-export-opc-msg">信息节点（String）</label>
+          <label class="rg-lbl" for="rg-export-opc-msg">信息节点（String，可选）</label>
           <div class="rg-inline rg-inline--bind">
             <input
               id="rg-export-opc-msg"
               v-model.trim="activeExportResultOpc.messageNodeId"
               type="text"
-              readonly
               class="rg-inp rg-inp--grow rg-mono"
               :title="activeExportResultOpc.messageNodeId || undefined"
-              placeholder="未绑定，请点击右侧从地址空间选择…"
+              placeholder="可不绑定；需要时手工填写或从地址空间选择…"
             />
             <button type="button" class="btn btn--nowrap" @click="openRgOpcPick('feedbackMessage')">
               从地址空间选择…
@@ -137,7 +135,7 @@
             已绑定：{{ exportResultOpcMessageBindingHint }}
           </p>
           <p class="rg-mini rg-mini--indent">
-            成功时写入场景标签（{{ RG_UI.manual }} / {{ RG_UI.opcAuto }}）；失败时写入错误摘要（首行）。
+            成功时写入场景标签（{{ RG_UI.manual }} / {{ RG_UI.opcAuto }}）；失败时写入错误摘要（首行）。不绑定则跳过写回。
           </p>
         </div>
 
@@ -148,10 +146,9 @@
               id="rg-export-opc-path"
               v-model.trim="activeExportResultOpc.filePathNodeId"
               type="text"
-              readonly
               class="rg-inp rg-inp--grow rg-mono"
               :title="activeExportResultOpc.filePathNodeId || undefined"
-              placeholder="未绑定，请点击右侧从地址空间选择…"
+              placeholder="可不绑定；需要时手工填写或从地址空间选择…"
             />
             <button type="button" class="btn btn--nowrap" @click="openRgOpcPick('feedbackFilePath')">
               从地址空间选择…
@@ -168,7 +165,7 @@
           <p v-if="exportResultOpcPathBindingHint" class="rg-mini rg-mini--indent rg-bound-hint">
             已绑定：{{ exportResultOpcPathBindingHint }}
           </p>
-          <p class="rg-mini rg-mini--indent">成功时写入完整 PDF 路径；失败时写入空字符串。</p>
+          <p class="rg-mini rg-mini--indent">成功时写入完整 PDF 路径；失败时写入空字符串。不绑定则跳过写回。</p>
         </div>
 
         <p v-if="exportResultOpcServerLabel" class="rg-mini rg-mini--indent">当前连接：{{ exportResultOpcServerLabel }}</p>
@@ -183,7 +180,7 @@
             {{ testWriteBackBusy ? "正在写回…" : "测试写回 PLC" }}
           </button>
           <p class="rg-mini rg-mini--indent">
-            向已绑定的 OPC 变量写入一次成功态测试值，不进行 {{ RG_UI.manual }}；可在 PLC 侧确认后再做正式 {{ RG_UI.manual }}。
+            向<strong>已绑定</strong>的 OPC 变量写入一次成功态测试值（状态 true/1；信息为「测试写回」；路径为空），不进行 {{ RG_UI.manual }}。
           </p>
         </div>
       </div>
@@ -606,6 +603,7 @@ import { auditLog } from "@/lib/auditLog";
 import {
   hasAnyExportResultBinding,
   isExportResultOpcFeedbackConfigured,
+  resolveExportResultOpcWriteContext,
   testWriteExportResultToOpcua,
   validateExportResultOpcBindings,
   writeExportResultToOpcua,
@@ -826,7 +824,7 @@ const opcPickLead = computed(() => {
     return `选择 ${kind} 类型变量；${RG_UI.feedback}成功时写入 ${kind === "Int" ? "1" : "true"}，失败写入 ${kind === "Int" ? "0" : "false"}。树与搜索仅显示 ${kind} 变量。`;
   }
   if (opcPickTarget.value === "feedbackMessage") {
-    return "选择 String 类型变量；成功时写入「OK: 文件名」，失败时写入错误摘要。树与搜索仅显示 String 变量。";
+    return `选择 String 类型变量（可选）；成功时写入「${RG_UI.manual}」或「${RG_UI.opcAuto}」场景标签，失败时写入错误摘要。树与搜索仅显示 String 变量。`;
   }
   if (opcPickTarget.value === "feedbackFilePath") {
     return "选择 String 类型变量（可选）；成功时写入完整 PDF 路径，失败时写入空字符串。树与搜索仅显示 String 变量。";
@@ -1093,7 +1091,20 @@ async function notifyExportResultToPlc(
   templateId?: string | null,
 ): Promise<void> {
   const fb = exportResultOpcForTemplate(templateId ?? prefs.value.templateId);
-  if (!isExportResultOpcFeedbackConfigured(fb)) return;
+  const writeCtx = resolveExportResultOpcWriteContext(fb);
+  if (!writeCtx.ok) {
+    if (fb.enabled && hasAnyExportResultBinding(fb) && !fb.serverId.trim()) {
+      const hint = writeCtx.message || "未选择 OPC UA 连接";
+      showAppToast(`${RG_UI.feedback}写回 OPC 失败\n${hint}`, { tone: "warn", durationMs: 10000 });
+      const statusLine = `[写回 PLC] 失败：${hint}`;
+      if (context === "auto") {
+        autoStatus.value = autoStatus.value ? `${autoStatus.value} · ${statusLine}` : statusLine;
+      } else {
+        manualHint.value = statusLine;
+      }
+    }
+    return;
+  }
   try {
     const res = await writeExportResultToOpcua(fb, payload, context);
     if (!res.ok) {
@@ -1484,12 +1495,17 @@ onActivated(async () => {
   await Promise.all([loadSummaries(), loadOpcServers()]);
 });
 
-function onExternalPrefsUpdated() {
+function onConfigImported() {
   prefs.value = loadReportGeneratorPrefs();
+  void loadSummaries();
+  void loadOpcServers();
+  notifyReportAutoExportSettingsChanged();
 }
 
-function onConfigImported() {
-  void loadOpcServers();
+function onExternalPrefsUpdated() {
+  prefs.value = loadReportGeneratorPrefs();
+  void loadSummaries();
+  notifyReportAutoExportSettingsChanged();
 }
 
 function onOpcServersChanged() {

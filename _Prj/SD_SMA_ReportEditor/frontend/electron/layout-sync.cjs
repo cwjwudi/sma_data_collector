@@ -280,6 +280,7 @@ function createLayoutSync(app) {
         const data = await requestJson('PUT', apiUrl(app, '/api/report-editor/layout-presets'), {
           ...opts,
           body: { layout_presets: layoutPresets },
+          timeoutMs: 180000,
         })
         if (!data || !data.ok) throw new Error((data && data.error) || '版式上传失败')
         layoutCount = data.count || layoutPresets.length
@@ -289,6 +290,7 @@ function createLayoutSync(app) {
         const data = await requestJson('PUT', apiUrl(app, '/api/report-editor/templates'), {
           ...opts,
           body: { templates },
+          timeoutMs: 180000,
         })
         if (!data || !data.ok) throw new Error((data && data.error) || '模版上传失败')
         templateCount = data.count || templates.length

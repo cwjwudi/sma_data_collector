@@ -403,6 +403,7 @@ import {
   onUnmounted,
   onActivated,
   onDeactivated,
+  onMounted,
   nextTick,
 } from "vue";
 import { useRouter } from "vue-router";
@@ -443,6 +444,7 @@ import {
   getCachedTemplateSummaries,
   hasTemplateViewCache,
   saveTemplateViewCache,
+  clearTemplateViewCache,
 } from "@/lib/report-template/template-view-cache";
 import {
   loadTemplates as loadLocal,
@@ -1141,6 +1143,15 @@ onActivated(() => {
   ensureCardObserver();
 });
 
+function onExternalConfigRestored() {
+  clearTemplateViewCache();
+  void enterView();
+}
+
+onMounted(() => {
+  window.addEventListener("report-editor-config-imported", onExternalConfigRestored);
+});
+
 onDeactivated(() => {
   persistViewCache();
 });
@@ -1148,6 +1159,7 @@ onDeactivated(() => {
 onUnmounted(() => {
   persistViewCache();
   teardownCardObserver();
+  window.removeEventListener("report-editor-config-imported", onExternalConfigRestored);
 });
 </script>
 

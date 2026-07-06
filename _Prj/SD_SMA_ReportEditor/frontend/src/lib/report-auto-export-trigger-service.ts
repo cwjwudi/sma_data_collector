@@ -27,7 +27,7 @@ import {
   type ReportGeneratorPrefs,
 } from "@/lib/report-generator-prefs";
 import {
-  isExportResultOpcFeedbackConfigured,
+  resolveExportResultOpcWriteContext,
   writeExportResultToOpcua,
   type ExportResultWritePayload,
 } from "@/lib/exportResultOpcFeedback";
@@ -194,7 +194,8 @@ async function notifyExportResultToPlc(
   templateId: string | null,
 ): Promise<void> {
   const fb = resolveExportResultOpc(prefs, templateId || "");
-  if (!isExportResultOpcFeedbackConfigured(fb)) return;
+  const writeCtx = resolveExportResultOpcWriteContext(fb);
+  if (!writeCtx.ok) return;
   try {
     const res = await writeExportResultToOpcua(fb, payload, "auto");
     if (!res.ok) {

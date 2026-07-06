@@ -109,7 +109,9 @@
 import { computed, onMounted, ref } from 'vue'
 import * as layoutsApi from '@/api/layoutPresets'
 import * as templatesApi from '@/api/templates'
-import { refreshLayoutPresets } from '@/lib/report-template/layout-registry'
+import { refreshLayoutPresets, clearLayoutCache } from '@/lib/report-template/layout-registry'
+import { notifyReportEditorConfigRestored } from '@/features/settings/config-import-export/config-bundle-client'
+import { clearTemplateViewCache } from '@/lib/report-template/template-view-cache'
 
 const isElectron = computed(() => Boolean(window.electronAPI?.layoutSyncLogin))
 
@@ -231,12 +233,15 @@ async function importCloudAssets(layoutPresets: unknown[], templates: unknown[])
   if (layoutItems.length) {
     const res = await layoutsApi.importLayoutsBulk(layoutItems as never[])
     layoutImported = res.imported ?? layoutItems.length
+    clearLayoutCache()
     await refreshLayoutPresets()
   }
   if (templateItems.length) {
     const res = await templatesApi.importTemplatesBulk(templateItems as never[])
     templateImported = res.imported ?? templateItems.length
+    clearTemplateViewCache()
   }
+  notifyReportEditorConfigRestored()
   const parts: string[] = []
   if (templateImported) parts.push(`${templateImported} 条模版`)
   if (layoutImported) parts.push(`${layoutImported} 条版式`)

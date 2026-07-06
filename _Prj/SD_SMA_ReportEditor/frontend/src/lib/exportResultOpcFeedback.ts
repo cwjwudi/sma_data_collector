@@ -73,14 +73,26 @@ export function listConfiguredExportResultBindings(
   return out;
 }
 
-export function isExportResultOpcFeedbackConfigured(fb: ExportResultOpcFeedback): boolean {
-  if (!fb.enabled) return false;
-  if (!fb.serverId.trim()) return false;
+export function hasAnyExportResultBinding(fb: ExportResultOpcFeedback): boolean {
   return listConfiguredExportResultBindings(fb).length > 0;
 }
 
-export function hasAnyExportResultBinding(fb: ExportResultOpcFeedback): boolean {
-  return listConfiguredExportResultBindings(fb).length > 0;
+/** 已绑定节点但缺少连接时给出可展示的错误 */
+export function resolveExportResultOpcWriteContext(
+  fb: ExportResultOpcFeedback,
+): { ok: true; serverId: string } | { ok: false; message: string } {
+  if (!fb.enabled) return { ok: false, message: "未启用截批结果反馈写回" };
+  const configured = listConfiguredExportResultBindings(fb);
+  if (!configured.length) return { ok: false, message: "未绑定任何反馈变量" };
+  const serverId = fb.serverId.trim();
+  if (!serverId) {
+    return { ok: false, message: "已绑定反馈变量，但未选择 OPC UA 连接" };
+  }
+  return { ok: true, serverId };
+}
+
+export function isExportResultOpcFeedbackConfigured(fb: ExportResultOpcFeedback): boolean {
+  return resolveExportResultOpcWriteContext(fb).ok;
 }
 
 function statusTypeFilter(kind: ExportResultOpcStatusKind): string {
@@ -153,12 +165,16 @@ export async function writeExportResultToOpcua(
   feedback: ExportResultOpcFeedback,
   payload: ExportResultWritePayload,
   context?: ExportResultWriteContext,
-): Promise<{ ok: boolean; errors: string[] }> {
-  if (!isExportResultOpcFeedbackConfigured(feedback)) {
-    return { ok: true, errors: [] };
+): Promise<{ ok: boolean; errors: string[]; skipped?: boolean; skipReason?: string }> {
+  const writeCtx = resolveExportResultOpcWriteContext(feedback);
+  if (!writeCtx.ok) {
+    if (!feedback.enabled || !hasAnyExportResultBinding(feedback)) {
+      return { ok: true, errors: [], skipped: true };
+    }
+    return { ok: false, errors: [writeCtx.message], skipped: true, skipReason: writeCtx.message };
   }
 
-  const serverId = feedback.serverId.trim();
+  const serverId = writeCtx.serverId;
   const errors: string[] = [];
   const statusVal =
     feedback.statusKind === "int" ? (payload.success ? 1 : 0) : payload.success;
@@ -204,15 +220,15 @@ export async function testWriteExportResultToOpcua(
   if (!validation.ok) {
     return { ok: false, written: [], errors: validation.issues.map((i) => i.message) };
   }
-  const res = await writeExportResultToOpcua(
-    feedback,
-    {
-      success: true,
-      fileName: "TEST_REPORT.pdf",
-      filePath: "C:\\TEST\\TEST_REPORT.pdf",
-    },
-    "manual",
-  );
+  const testPayload: ExportResultWritePayload = {
+    success: true,
+    fileName: "测试导出.pdf",
+    message: "测试写回（未执行真实导出）",
+  };
+  if (feedback.filePathNodeId.trim()) {
+    testPayload.filePath = "";
+  }
+  const res = await writeExportResultToOpcua(feedback, testPayload, "manual");
   const written: string[] = [];
   if (feedback.statusNodeId.trim()) written.push(FIELD_LABEL.status);
   if (feedback.messageNodeId.trim()) written.push(FIELD_LABEL.message);

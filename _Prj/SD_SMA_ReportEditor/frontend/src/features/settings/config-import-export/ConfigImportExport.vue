@@ -4,7 +4,7 @@
     <div class="backup-callout">
       <strong>升级、换电脑或重装前，请先导出备份。</strong>
       导出的备份文件已<strong>加密</strong>（`.rebak`），可防止被随意查看或篡改，换台电脑也能直接导入恢复。
-      macOS 卸载（拖入废纸篓）不会自动备份，请务必先在此导出。
+      卸载或重装前请务必先在此导出，以免本机配置丢失。
     </div>
 
     <div class="backup-block">
@@ -102,6 +102,7 @@ import {
   applyClientPrefsFromBundle,
   collectClientPrefs,
   buildImportDataFromFile,
+  notifyReportEditorConfigRestored,
 } from '@/features/settings/config-import-export/config-bundle-client'
 import { auditLog } from '@/lib/auditLog'
 
@@ -313,11 +314,7 @@ async function doImport(mode: 'merge' | 'replace') {
     } catch (e) {
       console.warn('[ConfigImportExport] refresh layout presets failed', e)
     }
-    try {
-      window.dispatchEvent(new CustomEvent('report-editor-config-imported'))
-    } catch (e) {
-      console.warn('[ConfigImportExport] dispatch config-imported failed', e)
-    }
+    notifyReportEditorConfigRestored()
     const parts: string[] = []
     const imp = res.imported
     if (imp?.templates) parts.push(`模版 ${imp.templates} 份`)
@@ -329,7 +326,9 @@ async function doImport(mode: 'merge' | 'replace') {
     const warnLines = Array.isArray(res.warnings) ? res.warnings.filter((w) => typeof w === 'string' && w) : []
     const warnText = warnLines.length ? `\n${warnLines.join('\n')}` : ''
     msg.value =
-      (mode === 'replace' ? `已用备份完全替换当前配置。${detail}` : `已补充恢复配置。${detail}`) + warnText
+      (mode === 'replace' ? `已用备份完全替换当前配置。${detail}` : `已补充恢复配置。${detail}`) +
+      warnText +
+      (clientApplied.length ? '\n生成报表等页面已自动刷新，无需重启。' : '')
     msgTone.value = warnLines.length ? 'warn' : 'ok'
     void auditLog({
       action: 'config.import',
@@ -396,12 +395,8 @@ async function quickReset() {
     } catch (e) {
       console.warn('[ConfigImportExport] refresh layout presets failed', e)
     }
-    try {
-      window.dispatchEvent(new CustomEvent('report-editor-config-imported'))
-    } catch (e) {
-      console.warn('[ConfigImportExport] dispatch config-imported failed', e)
-    }
-    msg.value = '已恢复到初始状态。部分页面可能需要重新进入以刷新显示。'
+    notifyReportEditorConfigRestored()
+    msg.value = '已恢复到初始状态。各页面将自动刷新显示。'
     msgTone.value = 'ok'
     void auditLog({ action: 'config.reset', summary: '快速复位', result: 'ok' })
     resetPendingSelection()

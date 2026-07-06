@@ -377,19 +377,46 @@ async def _write_with_client(client: Client, node_id: str, value: Any) -> dict[s
     node = client.get_node(node_id)
     variant_type = await _read_write_variant_type(node)
     clean_value = _coerce_write_value(value, variant_type)
-    clean_data_value = ua.DataValue(ua.Variant(clean_value, variant_type))
-    try:
-        # asyncua.write_value() adds SourceTimestamp. Some strict PLC OPC UA servers
-        # reject that combination with BadWriteNotSupported, so write only Value.
-        await node.write_attribute(ua.AttributeIds.Value, clean_data_value)
+
+    async def _try_write(val: Any, vt: ua.VariantType | None) -> dict[str, Any]:
+        coerced = _coerce_write_value(val, vt)
+        data_value = ua.DataValue(ua.Variant(coerced, vt))
+        await node.write_attribute(ua.AttributeIds.Value, data_value)
         return {"ok": True}
-    except UaStatusCodeError as e:
-        code = int(e.code)
-        logger.warning("OPC UA write_attribute(Value) rejected node_id=%s code=%s (%s)", node_id, code, e)
-        return {"ok": False, "message": str(e), "status_code": code}
-    except Exception as e:
-        logger.exception("OPC UA write_attribute(Value) failed node_id=%s", node_id)
-        return {"ok": False, "message": str(e)}
+
+    attempts: list[tuple[Any, ua.VariantType | None]] = [(clean_value, variant_type)]
+    if variant_type is None and isinstance(value, bool):
+        attempts.extend(
+            [
+                (value, ua.VariantType.Boolean),
+                (1 if value else 0, ua.VariantType.Int32),
+                (1 if value else 0, ua.VariantType.UInt16),
+            ],
+        )
+    elif variant_type is None and isinstance(value, int):
+        attempts.extend([(value, ua.VariantType.Int32), (value, ua.VariantType.Int16)])
+
+    last_err: Exception | None = None
+    for val, vt in attempts:
+        try:
+            return await _try_write(val, vt)
+        except UaStatusCodeError as e:
+            code = int(e.code)
+            logger.warning(
+                "OPC UA write_attribute(Value) rejected node_id=%s code=%s (%s)",
+                node_id,
+                code,
+                e,
+            )
+            last_err = e
+        except Exception as e:
+            logger.exception("OPC UA write_attribute(Value) failed node_id=%s", node_id)
+            return {"ok": False, "message": str(e)}
+
+    if last_err is not None:
+        code = int(last_err.code)
+        return {"ok": False, "message": str(last_err), "status_code": code}
+    return {"ok": False, "message": "写入 OPC UA 失败"}
 
 
 async def _read_write_variant_type(node: Any) -> ua.VariantType | None:

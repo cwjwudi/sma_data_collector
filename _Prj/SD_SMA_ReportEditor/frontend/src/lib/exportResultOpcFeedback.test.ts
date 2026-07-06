@@ -4,6 +4,7 @@ import {
   hasAnyExportResultBinding,
   isExportResultOpcFeedbackConfigured,
   listConfiguredExportResultBindings,
+  resolveExportResultOpcWriteContext,
   writeExportResultToOpcua,
 } from "./exportResultOpcFeedback";
 import { defaultExportResultOpcFeedback } from "@/lib/report-generator-prefs";
@@ -64,5 +65,16 @@ describe("exportResultOpcFeedback", () => {
     });
     expect(res.ok).toBe(true);
     expect(res.errors).toEqual([]);
+    expect(res.skipped).toBe(true);
+  });
+
+  it("requires OPC server when nodes are bound", () => {
+    const ctx = resolveExportResultOpcWriteContext({
+      ...defaultExportResultOpcFeedback(),
+      enabled: true,
+      statusNodeId: "ns=1;s=Status",
+    });
+    expect(ctx.ok).toBe(false);
+    if (!ctx.ok) expect(ctx.message).toContain("OPC UA");
   });
 });
