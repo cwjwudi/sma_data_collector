@@ -304,6 +304,10 @@ function normalizeReleaseNotes(notes) {
   return String(notes).trim()
 }
 
+function resolveManifestReleaseNotes(manifest) {
+  return normalizeReleaseNotes(manifest?.notes)
+}
+
 function artifactFileName(artifactUrl, fallbackVersion) {
   const raw = typeof artifactUrl === 'string' ? artifactUrl.trim() : ''
   if (!raw) {
@@ -352,12 +356,28 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
     }
   }
 
+  function getLastCheckSnapshot() {
+    if (lastCheckResult) return lastCheckResult
+    const settings = readSettings(app)
+    if (!settings.lastCheckAt) return null
+    return {
+      ok: true,
+      status: settings.lastCheckStatus || undefined,
+      currentVersion: app.getVersion(),
+      latestVersion: settings.lastCheckLatestVersion || undefined,
+      notes: settings.lastCheckNotes || '',
+      checkedAt: settings.lastCheckAt,
+    }
+  }
+
   function emitCheckResult(result) {
     const checkedAt = new Date().toISOString()
     lastCheckResult = { ...result, checkedAt }
     writeSettings(app, {
       lastCheckAt: checkedAt,
       lastCheckStatus: result?.status || null,
+      lastCheckNotes: normalizeReleaseNotes(result?.notes),
+      lastCheckLatestVersion: result?.latestVersion ? String(result.latestVersion) : null,
     })
     emit('update-check-result', lastCheckResult)
   }
@@ -557,12 +577,33 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
     return { manifest, manifestUrl, baseUrl }
   }
 
+  async function resolveReleaseNotesFromManifest(manifest) {
+    const fromJson = resolveManifestReleaseNotes(manifest)
+    if (fromJson) return fromJson
+    if (process.platform !== 'darwin') return ''
+    const version = String(manifest?.version || '').trim()
+    if (!version) return ''
+    const settings = readSettings(app)
+    const baseUrl = resolveBaseUrl(app).replace(/\/+$/, '')
+    if (!baseUrl) return ''
+    const arch = process.arch === 'arm64' ? 'arm64' : 'x64'
+    const fileName = `Report Editor-${version}-${arch}.txt`
+    try {
+      const buf = await fetchBuffer(`${baseUrl}/${encodeURIComponent(fileName)}`, {
+        skipTlsVerify: Boolean(settings.skipTlsVerify),
+      })
+      return buf.toString('utf8').trim()
+    } catch {
+      return ''
+    }
+  }
+
   async function resolveWindowsReleaseNotes(latestVersion, fallbackNotes) {
     const fromYml = normalizeReleaseNotes(fallbackNotes)
     try {
       const { manifest } = await fetchManifest()
       const manifestVersion = String(manifest?.version || '').trim()
-      const manifestNotes = typeof manifest?.notes === 'string' ? manifest.notes.trim() : ''
+      const manifestNotes = await resolveReleaseNotesFromManifest(manifest)
       if (manifestNotes && manifestVersion === latestVersion) {
         return manifestNotes
       }
@@ -589,23 +630,26 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
         packaged: app.isPackaged,
         lastCheckAt: settings.lastCheckAt || null,
         lastCheckStatus: settings.lastCheckStatus || null,
+        lastCheckNotes: settings.lastCheckNotes || '',
+        lastCheckLatestVersion: settings.lastCheckLatestVersion || null,
       }
     },
 
     getState() {
+      const lastCheck = getLastCheckSnapshot()
       if (isWindowsDifferentialUpdater()) {
         return {
-          lastCheck: lastCheckResult,
+          lastCheck,
           downloading: windowsDownloading,
           downloadPaused: false,
           downloadPercent: windowsDownloading ? windowsDownloadPercent : null,
           downloadedReady: windowsDownloadedReady,
           downloadedVersion: windowsDownloadedVersion || null,
-          latestVersion: windowsPendingInfo?.version || lastCheckResult?.latestVersion || null,
+          latestVersion: windowsPendingInfo?.version || lastCheck?.latestVersion || null,
         }
       }
       return {
-        lastCheck: lastCheckResult,
+        lastCheck,
         downloading,
         downloadPaused,
         downloadPercent: downloading || downloadPaused ? downloadPercent : null,
@@ -613,7 +657,7 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
           downloadedPath && fs.existsSync(downloadedPath) && downloadedVersion,
         ),
         downloadedVersion: downloadedVersion || null,
-        latestVersion: pending?.latestVersion || lastCheckResult?.latestVersion || null,
+        latestVersion: pending?.latestVersion || lastCheck?.latestVersion || null,
       }
     },
 
@@ -752,6 +796,7 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
       const platformKey = getPlatformKey()
       try {
         const { manifest, manifestUrl, baseUrl } = await fetchManifest()
+        const releaseNotes = await resolveReleaseNotesFromManifest(manifest)
         const artifact = pickArtifact(manifest, platformKey)
         if (!artifact || typeof artifact.url !== 'string' || !artifact.url.trim()) {
           const unsupported = {
@@ -777,7 +822,7 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
               ? '当前已是最新版本。'
               : `已跳过版本 ${manifestVersion}。如需升级请点「检查更新」并重新下载，或等待更高版本发布。`,
             releasedAt: manifest.releasedAt || null,
-            notes: manifest.notes || '',
+            notes: releaseNotes,
             manifestUrl,
           }
           emitCheckResult(skippedResult)
@@ -792,12 +837,12 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
             ok: true,
             status: 'latest',
             currentVersion,
-            latestVersion: currentVersion,
+            latestVersion: aheadOfServer ? currentVersion : manifestVersion,
             message: aheadOfServer
               ? `当前版本 ${currentVersion} 较更新源（${manifestVersion}）更新。`
               : '当前已是最新版本。',
-            releasedAt: aheadOfServer ? null : manifest.releasedAt || null,
-            notes: aheadOfServer ? '' : manifest.notes || '',
+            releasedAt: manifest.releasedAt || null,
+            notes: releaseNotes,
             manifestUrl,
           }
           emitCheckResult(latest)
@@ -820,7 +865,7 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
         pending = {
           currentVersion,
           latestVersion,
-          notes: manifest.notes || '',
+          notes: releaseNotes,
           releasedAt: manifest.releasedAt || null,
           artifact: {
             ...artifact,
@@ -1343,5 +1388,7 @@ module.exports = {
   getPlatformKey,
   artifactFileName,
   humanizeUpdateError,
+  normalizeReleaseNotes,
+  resolveManifestReleaseNotes,
   DEFAULT_UPDATE_BASE_URL,
 }

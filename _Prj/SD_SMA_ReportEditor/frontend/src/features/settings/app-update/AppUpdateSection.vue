@@ -271,6 +271,8 @@ const config = ref({
   packaged: false,
   lastCheckAt: null as string | null,
   lastCheckStatus: null as string | null,
+  lastCheckNotes: '',
+  lastCheckLatestVersion: null as string | null,
   skippedVersions: {} as Record<string, boolean>,
 })
 
@@ -322,17 +324,25 @@ const lastCheckLabel = computed(() => {
 })
 
 const updateNotesText = computed(() => {
-  const notes = appUpdateCheckResult.value?.notes?.trim()
-  return notes || ''
+  const fromCheck = appUpdateCheckResult.value?.notes
+  const notes =
+    typeof fromCheck === 'string'
+      ? fromCheck.trim()
+      : Array.isArray(fromCheck)
+        ? fromCheck.join('\n').trim()
+        : ''
+  if (notes) return notes
+  return (config.value.lastCheckNotes || '').trim()
 })
 
 const updateNotesVersion = computed(() => {
   const r = appUpdateCheckResult.value
-  if (!r) return ''
+  const persistedVersion = config.value.lastCheckLatestVersion || ''
+  if (!r) return persistedVersion || config.value.currentVersion || ''
   if (r.status === 'latest' || r.status === 'skipped') {
-    return r.currentVersion || r.latestVersion || ''
+    return r.latestVersion || r.currentVersion || persistedVersion || ''
   }
-  return r.latestVersion || r.currentVersion || ''
+  return r.latestVersion || r.currentVersion || persistedVersion || ''
 })
 
 const isMac = computed(() => (config.value.platform || '').startsWith('darwin'))

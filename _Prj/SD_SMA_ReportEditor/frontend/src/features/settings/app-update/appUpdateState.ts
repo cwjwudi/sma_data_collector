@@ -44,8 +44,29 @@ function applyCheckResult(res: AppUpdateCheckResult | null | undefined) {
   appUpdateCheckResult.value = res
   const available = res.status === 'available'
   appUpdateAvailable.value = available
-  appUpdateLatestVersion.value = available ? String(res.latestVersion || '') : ''
-  appUpdateNotes.value = available ? String(res.notes || '') : ''
+  appUpdateLatestVersion.value = String(res.latestVersion || appUpdateLatestVersion.value || '')
+  const notes = normalizeUpdateNotes(res.notes)
+  appUpdateNotes.value = notes
+}
+
+function normalizeUpdateNotes(notes: unknown): string {
+  if (!notes) return ''
+  if (typeof notes === 'string') return notes.trim()
+  if (Array.isArray(notes)) {
+    return notes
+      .map((item) => {
+        if (typeof item === 'string') return item
+        if (item && typeof item === 'object') {
+          const row = item as { note?: string; text?: string }
+          return row.note || row.text || ''
+        }
+        return ''
+      })
+      .filter(Boolean)
+      .join('\n')
+      .trim()
+  }
+  return String(notes).trim()
 }
 
 function resetDownloadStats() {
@@ -222,8 +243,10 @@ export async function syncAppUpdateState() {
     appUpdateDownloadedReady.value = Boolean(s.downloadedReady)
     if (s.lastCheck?.status === 'available') {
       appUpdateAvailable.value = true
-      appUpdateLatestVersion.value = String(s.lastCheck.latestVersion || '')
-      appUpdateNotes.value = String(s.lastCheck.notes || '')
+    }
+    if (s.lastCheck) {
+      appUpdateLatestVersion.value = String(s.lastCheck.latestVersion || appUpdateLatestVersion.value || '')
+      appUpdateNotes.value = normalizeUpdateNotes(s.lastCheck.notes)
     }
     if (s.downloading) {
       startProgressTick()
