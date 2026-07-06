@@ -230,7 +230,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onActivated, onUnmounted, ref, watch } from "vue";
+import { computed, nextTick, onActivated, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import type { LocationQuery } from "vue-router";
 import LayoutPresetMiniPage from "@/components/report-template/LayoutPresetMiniPage.vue";
@@ -654,13 +654,35 @@ async function enterView() {
   await applyRouteIntent();
 }
 
+/** 备份恢复 / 云端下载后：强制重拉版式库，无需重启即可看到最新版式 */
+async function onConfigRestored() {
+  const token = beginLoad();
+  loading.value = true;
+  msg.value = "";
+  try {
+    const list = await refreshLayoutPresets();
+    if (isLoadStale(token)) return;
+    presets.value = applyLayoutPresetDisplayOrders(list);
+  } catch (e) {
+    if (isLoadStale(token)) return;
+    msg.value = "刷新版式失败：" + String((e as Error).message || e);
+  } finally {
+    if (!isLoadStale(token)) loading.value = false;
+  }
+}
+
 onActivated(() => {
   void enterView();
   ensureCardObserver();
 });
 
+onMounted(() => {
+  window.addEventListener("report-editor-config-imported", onConfigRestored);
+});
+
 onUnmounted(() => {
   teardownCardObserver();
+  window.removeEventListener("report-editor-config-imported", onConfigRestored);
 });
 </script>
 

@@ -10,6 +10,7 @@
       这与 Adobe Acrobat 等阅读器中的<strong>数字证书电子签名</strong>（PKCS#7 / 国密可验证签章）不是同一类产品能力；
       导出的 PDF 上看到的是签字图效果，而非可在阅读器中验证证书链的签章域。
     </div>
+    <p v-if="loading" class="loading-hint">正在加载签名，请稍候…</p>
     <p v-if="msg" class="msg">{{ msg }}</p>
 
     <table class="tbl">
@@ -22,7 +23,10 @@
         </tr>
       </thead>
       <tbody>
-        <tr v-if="!rows.length">
+        <tr v-if="loading && !rows.length">
+          <td colspan="4" class="empty">正在加载签名条目…</td>
+        </tr>
+        <tr v-else-if="!rows.length">
           <td colspan="4" class="empty">暂无签名条目。</td>
         </tr>
         <tr v-for="r in rows" :key="r.id" :ref="(el) => setRowRef(r.id, el as Element | null)">
@@ -77,7 +81,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onActivated, onUnmounted, ref, watch } from "vue";
+import { computed, nextTick, onActivated, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import SignaturePadDialog from "@/components/report-template/SignaturePadDialog.vue";
 import type { SignatureAsset } from "@/api/signatures";
@@ -88,12 +92,14 @@ import {
   invalidateSignature,
   peekSignatureImage,
   primeSignatureImage,
+  refreshSignatureSummaries,
 } from "@/lib/signature-registry";
 import { appConfirm } from "@/composables/useAppConfirm";
 
 defineOptions({ name: "SignaturesLibrary" });
 
 const msg = ref("");
+const loading = ref(false);
 const dlg = ref(false);
 const pendingNew = ref(false);
 /** 新建流程：手写板打开前已输入的名称 */
@@ -123,10 +129,13 @@ function newId(): string {
   }
 }
 
-async function load() {
+async function load(force = false) {
   msg.value = "";
+  if (!summaries.value.length) loading.value = true;
   try {
-    summaries.value = await ensureSignatureSummaries();
+    summaries.value = force
+      ? await refreshSignatureSummaries()
+      : await ensureSignatureSummaries();
     /** 首屏先回填已缓存的预览；其余按行进入视口时懒加载，避免一次性 N+1 拉全部图 */
     const seeded: Record<string, string> = {};
     for (const s of summaries.value) {
@@ -136,7 +145,16 @@ async function load() {
     previews.value = seeded;
   } catch (e) {
     msg.value = "加载失败：" + String((e as Error).message || e);
+  } finally {
+    loading.value = false;
   }
+}
+
+/** 备份恢复 / 云端下载后：清缓存并重新拉取，无需重启即可看到最新签名 */
+async function onConfigRestored() {
+  invalidateSignature();
+  previews.value = {};
+  await load(true);
 }
 
 /** 行进入视口时才拉取其预览图（懒加载） */
@@ -297,11 +315,16 @@ onActivated(async () => {
   await openNewFromRoute();
 });
 
+onMounted(() => {
+  window.addEventListener("report-editor-config-imported", onConfigRestored);
+});
+
 onUnmounted(() => {
   if (rowObserver.value) {
     rowObserver.value.disconnect();
     rowObserver.value = null;
   }
+  window.removeEventListener("report-editor-config-imported", onConfigRestored);
 });
 
 watch(
@@ -340,6 +363,11 @@ watch(
 .msg {
   font-size: 12px;
   color: #b45309;
+}
+.loading-hint {
+  margin: 10px 0 0;
+  font-size: 13px;
+  color: #4f46e5;
 }
 .tbl {
   width: 100%;

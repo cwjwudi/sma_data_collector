@@ -16,6 +16,9 @@ import {
   loadTemplateDisplayOrder,
   saveTemplateDisplayOrder,
 } from "@/lib/template-display-order";
+import { invalidateSignature } from "@/lib/signature-registry";
+import { clearLayoutCache } from "@/lib/report-template/layout-registry";
+import { clearTemplateViewCache } from "@/lib/report-template/template-view-cache";
 
 /** 需要随备份一起迁移的本机 UI 偏好（localStorage 键白名单）。
  * 仅收录「设置类」轻量偏好；模版/版式/数据源等大体量本地缓存由服务端配置包负责，不在此重复。 */
@@ -158,9 +161,25 @@ export function applyClientPrefsFromBundle(raw: unknown): string[] {
   return applied;
 }
 
-/** 配置/备份恢复后通知各页面刷新（生成报表绑定、模版列表、自动截批等） */
+/** 配置/备份恢复后通知各页面刷新（生成报表绑定、模版列表、签名、版式、自动截批等）。
+ * 先失效各会话缓存，再派发事件，确保监听页面拉到的是最新数据而非旧缓存。 */
 export function notifyReportEditorConfigRestored(): void {
   if (typeof window === "undefined") return;
+  try {
+    invalidateSignature();
+  } catch {
+    /* ignore */
+  }
+  try {
+    clearLayoutCache();
+  } catch {
+    /* ignore */
+  }
+  try {
+    clearTemplateViewCache();
+  } catch {
+    /* ignore */
+  }
   window.dispatchEvent(new CustomEvent("report-generator-prefs-updated"));
   window.dispatchEvent(new CustomEvent("report-editor-config-imported"));
 }

@@ -9,6 +9,7 @@
         <button type="button" class="b primary" @click="wizard = true">新建整份模版…</button>
       </div>
     </header>
+    <p v-if="loading" class="loading-hint">正在加载模版，请稍候…</p>
     <p v-if="msg" class="msg">{{ msg }}</p>
     <p v-if="rows.length" class="drag-hint">
       {{
@@ -29,7 +30,10 @@
         </tr>
       </thead>
       <tbody>
-        <tr v-if="!rows.length">
+        <tr v-if="loading && !rows.length">
+          <td colspan="5" class="empty">正在加载模版…</td>
+        </tr>
+        <tr v-else-if="!rows.length">
           <td colspan="5" class="empty">暂无模版</td>
         </tr>
         <tr
@@ -136,7 +140,9 @@
       </tbody>
     </table>
 
-    <div v-else class="grid">
+    <p v-if="mode === 'thumbs' && loading && !rows.length" class="empty">正在加载模版…</p>
+    <p v-else-if="mode === 'thumbs' && !rows.length" class="empty">暂无模版</p>
+    <div v-else-if="mode === 'thumbs'" class="grid">
       <div
         v-for="r in rows"
         :key="'g' + r.id"
@@ -483,6 +489,7 @@ watch(mode, (m) => {
 });
 const wizard = ref(false);
 const msg = ref("");
+const loading = ref(false);
 const renamingId = ref(null);
 const renameDraft = ref("");
 const dragId = ref(null);
@@ -671,6 +678,7 @@ function markThumbFailed(id, on) {
 async function load() {
   const token = beginLoad();
   msg.value = "";
+  if (!summaries.value.length) loading.value = true;
   try {
     const list = await api.listTemplateSummaries();
     if (isLoadStale(token)) return;
@@ -691,6 +699,8 @@ async function load() {
     );
     msg.value = "无法连接后端，已显示本地模版摘要。";
     cache.value = Object.fromEntries(local.map((t) => [t.id, t]));
+  } finally {
+    if (!isLoadStale(token)) loading.value = false;
   }
 }
 
@@ -1194,6 +1204,11 @@ onUnmounted(() => {
   font-size: 12px;
   color: #b45309;
   margin: 8px 0;
+}
+.loading-hint {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: #4f46e5;
 }
 .drag-hint {
   margin: 4px 0 0;
