@@ -97,7 +97,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onActivated, onUnmounted, ref, watch } from "vue";
+import { computed, onActivated, onMounted, onUnmounted, ref, watch } from "vue";
 import PdfExportThumb from "@/components/report-history/PdfExportThumb.vue";
 import {
   loadReportExportPrefs,
@@ -270,9 +270,23 @@ function setCardRef(filePath: string, el: Element | null) {
   }
 }
 
+/** 备份恢复 / 云端下载后：从本机偏好重载监视文件夹并刷新列表，无需重启 */
+async function onConfigRestored() {
+  watchDir.value = loadReportExportPrefs().watchDir;
+  if (watchDir.value) {
+    await refresh();
+  } else {
+    rows.value = [];
+  }
+}
+
 onActivated(async () => {
   ensureCardObserver();
   if (watchDir.value) await refresh();
+});
+
+onMounted(() => {
+  window.addEventListener("report-editor-config-imported", onConfigRestored);
 });
 
 onUnmounted(() => {
@@ -280,6 +294,7 @@ onUnmounted(() => {
     cardObserver.value.disconnect();
     cardObserver.value = null;
   }
+  window.removeEventListener("report-editor-config-imported", onConfigRestored);
 });
 </script>
 
