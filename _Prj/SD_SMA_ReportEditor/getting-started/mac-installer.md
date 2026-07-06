@@ -96,14 +96,18 @@ npx electron-builder --mac dmg --arm64 --config.directories.output=../../packagi
 
 ## 三、卸载与「干净重装」
 
-1. 将 **应用程序** 中的 **SD SMA Report Editor** 移到废纸篓。
-2. 若需清空配置与模版，删除：
+> **重要（先备份再卸载）：** macOS 采用「拖入废纸篓」方式卸载，**不会**弹出备份提示（这一点与 Windows 卸载程序不同）。
+> 卸载或重装前，请务必先在应用内 **设置 → 备份与恢复 → 导出备份文件** 生成加密备份（`.rebak`），避免删除 Application Support 后配置丢失。恢复时用同一界面「选择备份文件」导入即可。
+
+1. **先导出加密备份**（见上方提示）。
+2. 将 **应用程序** 中的 **SD SMA Report Editor** 移到废纸篓。
+3. 若需清空配置与模版，删除：
 
 ```text
 ~/Library/Application Support/sd-sma-report-editor/
 ```
 
-删除上述文件夹后，再安装新 DMG 即为空白环境。迁移配置请先用 **设置 → 配置导入/导出 → 导出（本机备份）**。
+删除上述文件夹后，再安装新 DMG 即为空白环境。重装后用 **设置 → 备份与恢复 → 选择备份文件** 导入之前的 `.rebak` 即可恢复。
 
 ---
 

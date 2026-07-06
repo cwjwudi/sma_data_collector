@@ -38,22 +38,6 @@
             </ul>
           </section>
 
-          <!-- 环境 -->
-          <section v-else-if="stepId === 'env'" class="wiz-panel wiz-panel-grow">
-            <p class="wiz-hint">
-              软件将自动检查本机运行是否正常。
-              <span v-if="envAudit">出现<strong>需处理</strong>时请先按提示解决；<strong>提示</strong>项可根据现场情况决定是否处理。</span>
-            </p>
-            <div v-if="envAudit && !envAudit.error" class="audit-row">
-              <span v-if="envAudit.fail" class="pill fail">需处理 {{ envAudit.fail }}</span>
-              <span v-if="envAudit.warn" class="pill warn">提示 {{ envAudit.warn }}</span>
-              <span v-if="!envAudit.fail && !envAudit.warn && envAudit.total" class="pill ok">
-                检查通过（{{ envAudit.ok }}/{{ envAudit.total }}）</span>
-            </div>
-            <div v-else-if="envAudit?.error" class="pill-box fail-soft">{{ envAudit.error }}</div>
-            <EnvironmentDiagnostics class="wiz-env-card" compact @after-check="onEnvAudit" />
-          </section>
-
           <!-- 数据库（向导内仅连接表单） -->
           <section v-else-if="stepId === 'db'" class="wiz-panel wiz-panel-db">
             <WizardDatabaseSimple />
@@ -127,7 +111,6 @@
             <p class="wiz-hint">
               跳过的步骤可在左侧菜单随时补充。默认 PDF 输出文件夹可在<strong>生成报表</strong>或<strong>历史报表</strong>中修改。
               版式、模版与签名等功能，请关闭本向导后从左侧菜单进入实际操作。
-              若运行检查仍有<strong>需处理</strong>项，请先到<strong>设置 › 运行环境诊断</strong>查看说明。
             </p>
           </section>
         </div>
@@ -151,7 +134,6 @@
 
 <script setup>
 import { computed, ref, watch } from 'vue'
-import EnvironmentDiagnostics from '@/features/settings/environment-diagnostics/EnvironmentDiagnostics.vue'
 import WizardDatabaseSimple from '@/features/onboarding/WizardDatabaseSimple.vue'
 import WizardExportDirPicker from '@/features/onboarding/WizardExportDirPicker.vue'
 import OpcUaPanel from '@/features/datasource/opcua/OpcUaPanel.vue'
@@ -214,7 +196,6 @@ const visible = computed({
 
 const stepDefs = [
   { id: 'welcome', short: '开始' },
-  { id: 'env', short: '运行检查' },
   { id: 'db', short: '数据库' },
   { id: 'opcua', short: '现场数据' },
   { id: 'exportdir', short: '输出目录' },
@@ -225,13 +206,11 @@ const stepDefs = [
 watch(visible, (v) => {
   if (v) {
     stepIndex.value = 0
-    envAudit.value = null
     artifactTab.value = 'layouts'
   }
 })
 
 const stepIndex = ref(0)
-const envAudit = ref(null)
 
 const stepId = computed(() => stepDefs[stepIndex.value]?.id || 'welcome')
 
@@ -260,8 +239,6 @@ const stepTitle = computed(() => {
   switch (stepId.value) {
     case 'welcome':
       return '欢迎使用报表编辑器'
-    case 'env':
-      return '检查软件是否运行正常'
     case 'db':
       return '连接生产数据库'
     case 'opcua':
@@ -274,10 +251,6 @@ const stepTitle = computed(() => {
       return '可以开始使用了'
   }
 })
-
-function onEnvAudit(payload) {
-  envAudit.value = payload
-}
 
 function next() {
   if (stepIndex.value < stepDefs.length - 1) stepIndex.value += 1

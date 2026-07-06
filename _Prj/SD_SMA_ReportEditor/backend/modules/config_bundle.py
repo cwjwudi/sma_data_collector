@@ -7,15 +7,17 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from core.settings import LAYOUT_PRESETS_DIR, SIGNATURE_ASSETS_DIR, TEMPLATES_DIR
+from core.settings import DATA_DIR, LAYOUT_PRESETS_DIR, SIGNATURE_ASSETS_DIR, TEMPLATES_DIR
+from modules import audit_log
 from modules import config_import_export as cie
 from modules import layout_preset_store, signature_asset_store, template_store
 
-BUNDLE_VERSION = 2
+BUNDLE_VERSION = 3
 MAX_BUNDLE_JSON_BYTES = 64 * 1024 * 1024
 MAX_TEMPLATES = 500
 MAX_LAYOUT_PRESETS = 200
 MAX_SIGNATURE_ASSETS = 200
+MAX_AUDIT_ENTRIES = 5000
 
 
 def _load_json_files(directory: Path) -> list[dict[str, Any]]:
@@ -45,11 +47,11 @@ def _clear_json_directory(directory: Path) -> None:
 
 
 def is_bundle_payload(data: dict[str, Any]) -> bool:
-    if int(data.get("bundle_version") or 0) >= BUNDLE_VERSION:
+    if int(data.get("bundle_version") or 0) >= 2:
         return True
     return any(
         isinstance(data.get(key), list)
-        for key in ("templates", "layout_presets", "signature_assets", "client_prefs")
+        for key in ("templates", "layout_presets", "signature_assets", "audit_entries", "client_prefs")
     )
 
 
@@ -71,8 +73,12 @@ def build_export_bundle(
     data_dir: Path | None = None,
     decrypt_db=None,
     decrypt_opcua=None,
+    client_prefs: dict[str, Any] | None = None,
+    include_audit: bool | None = None,
 ) -> dict[str, Any]:
     share = mode == "share"
+    # 分享包默认不含审计与本机口令；本机备份包默认含审计。
+    want_audit = (not share) if include_audit is None else bool(include_audit)
     if share:
         base = cie.export_share_shape(cfg, mask_conn, mask_opcua)
     else:
@@ -98,6 +104,13 @@ def build_export_bundle(
         base["db_connections"] = dbs
         base["opcua_servers"] = opcs
 
+    audit_entries: list[dict[str, Any]] = []
+    if want_audit:
+        try:
+            audit_entries = audit_log.export_audit(data_dir or DATA_DIR)
+        except Exception:
+            audit_entries = []
+
     return {
         "bundle_version": BUNDLE_VERSION,
         "exported_at": datetime.now(timezone.utc).isoformat(),
@@ -109,7 +122,8 @@ def build_export_bundle(
         "templates": _load_json_files(TEMPLATES_DIR),
         "layout_presets": _load_json_files(LAYOUT_PRESETS_DIR),
         "signature_assets": _load_json_files(SIGNATURE_ASSETS_DIR),
-        "client_prefs": {},
+        "audit_entries": audit_entries,
+        "client_prefs": copy.deepcopy(client_prefs) if isinstance(client_prefs, dict) else {},
     }
 
 
@@ -122,6 +136,7 @@ def validate_bundle_payload(data: dict[str, Any]) -> dict[str, Any]:
     templates = data.get("templates")
     layouts = data.get("layout_presets")
     signatures = data.get("signature_assets")
+    audit_entries = data.get("audit_entries")
     client_prefs = data.get("client_prefs")
 
     if templates is None:
@@ -130,12 +145,16 @@ def validate_bundle_payload(data: dict[str, Any]) -> dict[str, Any]:
         layouts = []
     if signatures is None:
         signatures = []
+    if audit_entries is None:
+        audit_entries = []
     if not isinstance(templates, list):
         raise ValueError("templates 须为数组")
     if not isinstance(layouts, list):
         raise ValueError("layout_presets 须为数组")
     if not isinstance(signatures, list):
         raise ValueError("signature_assets 须为数组")
+    if not isinstance(audit_entries, list):
+        raise ValueError("audit_entries 须为数组")
     if client_prefs is not None and not isinstance(client_prefs, dict):
         raise ValueError("client_prefs 须为对象")
 
@@ -145,6 +164,8 @@ def validate_bundle_payload(data: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("版式数量超过上限")
     if len(signatures) > MAX_SIGNATURE_ASSETS:
         raise ValueError("签名库数量超过上限")
+    if len(audit_entries) > MAX_AUDIT_ENTRIES:
+        audit_entries = audit_entries[-MAX_AUDIT_ENTRIES:]
 
     for i, item in enumerate(templates):
         if not isinstance(item, dict):
@@ -160,6 +181,7 @@ def validate_bundle_payload(data: dict[str, Any]) -> dict[str, Any]:
     out["templates"] = templates
     out["layout_presets"] = layouts
     out["signature_assets"] = signatures
+    out["audit_entries"] = audit_entries
     out["client_prefs"] = client_prefs if isinstance(client_prefs, dict) else {}
     return out
 
@@ -168,20 +190,33 @@ def _import_asset_lists(
     incoming: dict[str, Any],
     *,
     replace_assets: bool,
+    data_dir: Path | None = None,
 ) -> dict[str, int]:
     templates = incoming.get("templates") or []
     layouts = incoming.get("layout_presets") or []
     signatures = incoming.get("signature_assets") or []
+    audit_entries = incoming.get("audit_entries") or []
 
     if replace_assets:
         _clear_json_directory(TEMPLATES_DIR)
         _clear_json_directory(LAYOUT_PRESETS_DIR)
         _clear_json_directory(SIGNATURE_ASSETS_DIR)
 
+    audit_count = 0
+    try:
+        audit_count = audit_log.import_audit_entries(
+            data_dir or DATA_DIR,
+            audit_entries,
+            replace=replace_assets,
+        )
+    except Exception:
+        audit_count = 0
+
     return {
         "templates": template_store.migrate_from_payload_list(templates),
         "layout_presets": layout_preset_store.import_presets_bulk(layouts),
         "signature_assets": _import_signatures_bulk(signatures),
+        "audit_entries": audit_count,
     }
 
 
@@ -220,12 +255,13 @@ def apply_bundle_import(
     else:
         merged_cfg, import_warnings = cie.apply_import_merge(current, cfg_slice, **cred)
 
-    counts = _import_asset_lists(bundle, replace_assets=replace_assets)
+    counts = _import_asset_lists(bundle, replace_assets=replace_assets, data_dir=data_dir)
     client_prefs = copy.deepcopy(bundle.get("client_prefs") or {})
     stats = {
         "templates": counts["templates"],
         "layout_presets": counts["layout_presets"],
         "signature_assets": counts["signature_assets"],
+        "audit_entries": counts.get("audit_entries", 0),
         "has_client_prefs": bool(client_prefs),
     }
     return merged_cfg, {

@@ -342,6 +342,8 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
   let windowsDownloadedVersion = null
   let windowsPendingInfo = null
   let windowsLastBaseUrl = ''
+  let installerDownloading = false
+  let installerAbort = null
 
   function emit(channel, payload) {
     const win = getMainWindow()
@@ -905,6 +907,97 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
     clearSkippedVersions() {
       writeSettings(app, { skippedVersions: {} })
       return { ok: true }
+    },
+
+    /** 下载当前平台「完整安装包」到系统「下载」文件夹并在文件管理器中定位；用于重装，不触发安装。 */
+    async downloadInstallerToDownloads() {
+      if (!app.isPackaged) {
+        return { ok: false, error: '开发模式不支持下载安装包' }
+      }
+      if (installerDownloading) {
+        return { ok: true, status: 'downloading' }
+      }
+      let dest = null
+      try {
+        const { manifest, baseUrl } = await fetchManifest()
+        const artifact = pickArtifact(manifest, getPlatformKey())
+        if (!artifact || typeof artifact.url !== 'string' || !artifact.url.trim()) {
+          return { ok: false, error: '当前系统暂无可用安装包，请联系管理员。' }
+        }
+        const url = new URL(artifact.url.trim(), `${baseUrl}/`).href
+        const fileName = artifactFileName(artifact.url, manifest.version)
+        dest = path.join(app.getPath('downloads'), fileName)
+        const settings = readSettings(app)
+        const skipTlsVerify = Boolean(settings.skipTlsVerify)
+
+        installerDownloading = true
+        installerAbort = {}
+        emit('installer-download-progress', {
+          phase: 'start',
+          received: 0,
+          total: Number(artifact.size) || 0,
+          percent: 0,
+        })
+        await downloadFile(url, dest, {
+          skipTlsVerify,
+          abortRef: installerAbort,
+          onProgress: (p) => emit('installer-download-progress', { phase: 'progress', ...p }),
+        })
+        installerAbort = null
+
+        if (artifact.sha256) {
+          const hash = await sha256File(dest)
+          if (hash.toLowerCase() !== String(artifact.sha256).trim().toLowerCase()) {
+            try {
+              fs.unlinkSync(dest)
+            } catch {
+              /* ignore */
+            }
+            installerDownloading = false
+            emit('installer-download-progress', { phase: 'error' })
+            return {
+              ok: false,
+              checksumError: true,
+              error: '安装包校验失败（SHA256 不匹配），已删除下载文件。请稍后重试或联系管理员。',
+            }
+          }
+        }
+
+        installerDownloading = false
+        emit('installer-download-progress', { phase: 'done', percent: 100 })
+        try {
+          shell.showItemInFolder(dest)
+        } catch {
+          /* ignore */
+        }
+        return { ok: true, path: dest, version: manifest.version, fileName }
+      } catch (e) {
+        installerDownloading = false
+        installerAbort = null
+        if (String(e && e.message) === 'DOWNLOAD_ABORTED') {
+          emit('installer-download-progress', { phase: 'cancelled' })
+          return { ok: false, cancelled: true, error: '下载已取消。' }
+        }
+        emit('installer-download-progress', { phase: 'error' })
+        return {
+          ok: false,
+          error: humanizeUpdateError(e, {
+            phase: 'download',
+            destPath: dest,
+            updateDir: dest ? path.dirname(dest) : '',
+          }),
+        }
+      }
+    },
+
+    cancelInstallerDownload() {
+      if (installerAbort && typeof installerAbort.abort === 'function') {
+        installerAbort.abort()
+        installerAbort = null
+        installerDownloading = false
+        return { ok: true, cancelled: true }
+      }
+      return { ok: true, cancelled: false }
     },
 
     async openMacApplication() {

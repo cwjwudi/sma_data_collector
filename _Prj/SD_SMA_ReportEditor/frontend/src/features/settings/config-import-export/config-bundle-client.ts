@@ -17,11 +17,24 @@ import {
   saveTemplateDisplayOrder,
 } from "@/lib/template-display-order";
 
+/** 需要随备份一起迁移的本机 UI 偏好（localStorage 键白名单）。
+ * 仅收录「设置类」轻量偏好；模版/版式/数据源等大体量本地缓存由服务端配置包负责，不在此重复。 */
+export const UI_PREF_KEYS = [
+  "tm-view-mode",
+  "lp-view-mode",
+  "rh-view-mode",
+  "report-editor-sidebar-collapsed",
+  "sd-sma-report-editor:electron-devtools-open",
+  "report_editor_setup_wizard",
+  "report-editor-demo-license",
+] as const;
+
 export type ConfigBundleClientPrefs = {
   report_generator?: unknown;
   report_export?: unknown;
   template_display_order?: string[];
   layout_display_order?: LayoutDisplayOrderMap;
+  ui_prefs?: Record<string, string>;
 };
 
 export type ConfigBundlePayload = {
@@ -50,15 +63,34 @@ export function isConfigBundlePayload(data: unknown): data is ConfigBundlePayloa
   );
 }
 
-/** 合并本机「生成报表 / 历史报表」等偏好进待导出包 */
-export function attachClientPrefsToBundle<T extends Record<string, unknown>>(bundle: T): T {
-  const client_prefs: ConfigBundleClientPrefs = {
+function collectUiPrefs(): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (typeof localStorage === "undefined") return out;
+  for (const key of UI_PREF_KEYS) {
+    try {
+      const val = localStorage.getItem(key);
+      if (val !== null) out[key] = val;
+    } catch {
+      /* ignore */
+    }
+  }
+  return out;
+}
+
+/** 收集本机「生成报表 / 历史报表 / 显示顺序 / UI 偏好」等设置，作为配置包的 client_prefs */
+export function collectClientPrefs(): ConfigBundleClientPrefs {
+  return {
     report_generator: loadReportGeneratorPrefs(),
     report_export: loadReportExportPrefs(),
     template_display_order: loadTemplateDisplayOrder(),
     layout_display_order: loadLayoutDisplayOrder(),
+    ui_prefs: collectUiPrefs(),
   };
-  return { ...bundle, client_prefs };
+}
+
+/** 合并本机「生成报表 / 历史报表」等偏好进待导出包 */
+export function attachClientPrefsToBundle<T extends Record<string, unknown>>(bundle: T): T {
+  return { ...bundle, client_prefs: collectClientPrefs() };
 }
 
 function normalizeReportExportPrefs(raw: unknown): ReportExportPrefs | null {
@@ -105,6 +137,22 @@ export function applyClientPrefsFromBundle(raw: unknown): string[] {
   if (layoutOrder) {
     saveLayoutDisplayOrderMap(layoutOrder);
     applied.push("版式显示顺序");
+  }
+
+  if (prefs.ui_prefs && typeof prefs.ui_prefs === "object" && typeof localStorage !== "undefined") {
+    let n = 0;
+    for (const key of UI_PREF_KEYS) {
+      const val = (prefs.ui_prefs as Record<string, unknown>)[key];
+      if (typeof val === "string") {
+        try {
+          localStorage.setItem(key, val);
+          n += 1;
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+    if (n) applied.push("界面偏好");
   }
 
   return applied;

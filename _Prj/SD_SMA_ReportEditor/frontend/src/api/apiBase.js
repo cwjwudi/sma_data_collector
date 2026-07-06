@@ -17,7 +17,7 @@ export function getApiOrigin() {
 }
 
 /**
- * @param {string} path 如 `/templates` 或 `/environment/check`
+ * @param {string} path 如 `/templates` 或 `/settings/config/export`
  */
 export function resolveApiHref(path) {
   const p = path.startsWith('/') ? path : `/${path}`

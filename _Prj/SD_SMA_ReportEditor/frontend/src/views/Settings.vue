@@ -11,9 +11,9 @@
       </button>
     </section>
     <ConfigImportExport />
+    <ServiceEndpointsSection />
     <ConnectionProbeSection />
     <DemoTrainingSection />
-    <EnvironmentDiagnostics />
     <section class="settings-section">
       <h3 class="settings-section__title">关于电子签名</h3>
       <p class="settings-hint">
@@ -35,7 +35,7 @@
 import { inject } from 'vue'
 import CertificateVerificationSection from '@/features/settings/certificate-verification/CertificateVerificationSection.vue'
 import ElectronDevtoolsSection from '@/features/settings/electron-devtools/ElectronDevtoolsSection.vue'
-import EnvironmentDiagnostics from '@/features/settings/environment-diagnostics/EnvironmentDiagnostics.vue'
+import ServiceEndpointsSection from '@/features/settings/service-endpoints/ServiceEndpointsSection.vue'
 import AppUpdateSection from '@/features/settings/app-update/AppUpdateSection.vue'
 import LayoutCloudSyncSection from '@/features/settings/layout-cloud-sync/LayoutCloudSyncSection.vue'
 import DataPathAndCacheSection from '@/features/settings/data-path/DataPathAndCacheSection.vue'

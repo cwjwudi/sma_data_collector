@@ -5,10 +5,12 @@ from __future__ import annotations
 import json
 import logging
 import re
+import threading
 from pathlib import Path
 from typing import Any
 
 from core.settings import TEMPLATES_DIR, init_data_dirs
+from modules import json_head_scan as jhs
 from schemas.report_template import (
     ReportTemplate,
     ReportTemplateSummary,
@@ -19,6 +21,13 @@ from schemas.report_template import (
 logger = logging.getLogger(__name__)
 
 _SAFE_ID = re.compile(r"^[a-zA-Z0-9_.-]{1,128}$")
+_PAPER_KINDS = ("A3", "A4", "A5", "Letter")
+_ORIENTATIONS = ("portrait", "landscape")
+
+# 后台摘要 sidecar 回填（避免在列表请求内同步解析全部大模版）
+_backfill_lock = threading.Lock()
+_backfill_queue: list[Path] = []
+_backfill_running = False
 
 
 def _ensure_dir() -> Path:
@@ -78,37 +87,131 @@ def _summary_from_raw(raw: dict[str, Any]) -> ReportTemplateSummary | None:
     )
 
 
+def _summary_from_sidecar(p: Path) -> ReportTemplateSummary | None:
+    """sidecar 存在且不比模版旧时采用，避免解析整份大模版（含 base64 图片）。"""
+    meta = _meta_path_for(p)
+    if not meta.is_file():
+        return None
+    try:
+        if meta.stat().st_mtime < p.stat().st_mtime:
+            return None
+        mraw = json.loads(meta.read_text(encoding="utf-8"))
+        if isinstance(mraw, dict):
+            return ReportTemplateSummary.model_validate(mraw)
+    except Exception:
+        return None
+    return None
+
+
+def _fast_summary_from_head(p: Path) -> ReportTemplateSummary | None:
+    """仅读文件头部提取 id/name/updatedAt（顶层且排在大数组之前），
+    paperKind/orientation 位于大数组之后，头部通常取不到，先给默认值，稍后由后台 sidecar 校正。"""
+    try:
+        head = jhs.read_head(p)
+    except OSError:
+        return None
+    tid = jhs.extract_string(head, "id")
+    if not tid:
+        return None
+    name = jhs.extract_string(head, "name") or tid
+    updated = jhs.extract_string(head, "updatedAt") or ""
+    paper = jhs.extract_string(head, "paperKind")
+    orient = jhs.extract_string(head, "orientation")
+    return ReportTemplateSummary(
+        id=tid,
+        name=name,
+        updatedAt=updated,
+        paperKind=paper if paper in _PAPER_KINDS else "A4",
+        orientation=orient if orient in _ORIENTATIONS else "portrait",
+    )
+
+
 def list_summaries() -> list[ReportTemplateSummary]:
     out: list[ReportTemplateSummary] = []
     root = _ensure_dir()
+    needs_sidecar: list[Path] = []
     for p in sorted(root.glob("*.json")):
         if p.name.endswith(".meta.json"):
             continue  # 摘要 sidecar 不是模版文件
         try:
-            summary: ReportTemplateSummary | None = None
-            meta = _meta_path_for(p)
-            # sidecar 存在且不比模版旧时直接采用，避免解析整份大模版（含 base64 图片）
-            if meta.is_file():
-                try:
-                    if meta.stat().st_mtime >= p.stat().st_mtime:
-                        mraw = json.loads(meta.read_text(encoding="utf-8"))
-                        if isinstance(mraw, dict):
-                            summary = ReportTemplateSummary.model_validate(mraw)
-                except Exception:
-                    summary = None  # sidecar 损坏则回退到解析全文件
-            if summary is None:
-                raw = json.loads(p.read_text(encoding="utf-8"))
-                if not isinstance(raw, dict):
-                    continue
-                summary = _summary_from_raw(raw)
-                if summary is not None:
-                    _write_summary_sidecar(summary)  # 回填，下次即可走 sidecar
+            summary = _summary_from_sidecar(p)
             if summary is not None:
                 out.append(summary)
+                continue
+            # 无有效 sidecar：先用「读头部」快速产出摘要，随后交后台线程回填精确 sidecar
+            fast = _fast_summary_from_head(p)
+            if fast is not None:
+                out.append(fast)
+                needs_sidecar.append(p)
+                continue
+            # 头部无法提取（异常/极端格式）：回退整份解析
+            raw = json.loads(p.read_text(encoding="utf-8"))
+            if not isinstance(raw, dict):
+                continue
+            summary = _summary_from_raw(raw)
+            if summary is not None:
+                out.append(summary)
+                _write_summary_sidecar(summary)
         except Exception:
             logger.warning("跳过损坏的模版文件: %s", p, exc_info=True)
     out.sort(key=lambda x: x.updatedAt or "", reverse=True)
+    if needs_sidecar:
+        _schedule_sidecar_backfill(needs_sidecar)
     return out
+
+
+def _schedule_sidecar_backfill(paths: list[Path]) -> None:
+    """将需要精确摘要的模版加入后台队列，由单个守护线程解析并写 sidecar。"""
+    global _backfill_running
+    with _backfill_lock:
+        known = {str(p) for p in _backfill_queue}
+        for p in paths:
+            if str(p) not in known:
+                _backfill_queue.append(p)
+        if _backfill_running:
+            return
+        _backfill_running = True
+    threading.Thread(target=_sidecar_backfill_worker, name="tpl-sidecar-backfill", daemon=True).start()
+
+
+def _sidecar_backfill_worker() -> None:
+    global _backfill_running
+    while True:
+        with _backfill_lock:
+            if not _backfill_queue:
+                _backfill_running = False
+                return
+            p = _backfill_queue.pop(0)
+        try:
+            if not p.is_file():
+                continue
+            meta = _meta_path_for(p)
+            if meta.is_file() and meta.stat().st_mtime >= p.stat().st_mtime:
+                continue  # 已有最新 sidecar
+            raw = json.loads(p.read_text(encoding="utf-8"))
+            if isinstance(raw, dict):
+                summary = _summary_from_raw(raw)
+                if summary is not None:
+                    _write_summary_sidecar(summary)
+        except Exception:
+            logger.warning("后台回填模版摘要失败: %s", p, exc_info=True)
+
+
+def warm_sidecars() -> None:
+    """启动预热：为缺失/过期 sidecar 的模版排队后台生成，降低首屏耗时。"""
+    try:
+        root = _ensure_dir()
+        todo: list[Path] = []
+        for p in sorted(root.glob("*.json")):
+            if p.name.endswith(".meta.json"):
+                continue
+            meta = _meta_path_for(p)
+            if not (meta.is_file() and meta.stat().st_mtime >= p.stat().st_mtime):
+                todo.append(p)
+        if todo:
+            _schedule_sidecar_backfill(todo)
+    except Exception:
+        logger.warning("预热模版摘要失败", exc_info=True)
 
 
 def load_template(template_id: str) -> ReportTemplate | None:

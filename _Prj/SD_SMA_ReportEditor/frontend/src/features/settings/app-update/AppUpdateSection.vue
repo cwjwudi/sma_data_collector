@@ -124,6 +124,44 @@
       替换完成后尝试自动打开应用
     </label>
 
+    <div v-if="isElectron" class="update-reinstall">
+      <h4 class="update-reinstall-title">重装帮助</h4>
+      <p class="update-reinstall-hint">
+        下载当前最新版<strong>完整安装包</strong>到系统「下载」文件夹，便于软件出问题时<strong>手动重装</strong>。下载后不会自动安装。
+      </p>
+      <button
+        type="button"
+        class="settings-btn settings-btn--secondary"
+        :disabled="installerBusy"
+        @click="downloadInstaller"
+      >
+        {{ installerBusy ? '正在下载安装包…' : '下载安装包到「下载」文件夹' }}
+      </button>
+      <div v-if="installerBusy" class="update-progress update-reinstall-progress" aria-live="polite">
+        <div class="update-progress-track">
+          <div
+            class="update-progress-bar"
+            :class="{ indeterminate: installerPercent == null }"
+            :style="installerPercent != null ? { width: `${installerPercent}%` } : undefined"
+          />
+        </div>
+        <p class="update-progress-hint">
+          正在下载安装包{{ installerPercent != null ? `（${installerPercent}%）` : '' }}，可切换页面。
+        </p>
+      </div>
+      <p
+        v-if="installerMsg"
+        class="settings-msg update-reinstall-msg"
+        :class="{
+          'settings-msg--ok': installerMsgTone === 'ok',
+          'settings-msg--warn': installerMsgTone === 'warn',
+          'settings-msg--err': installerMsgTone === 'err',
+        }"
+      >
+        {{ installerMsg }}
+      </p>
+    </div>
+
     <div v-if="appUpdateDownloading || appUpdateDownloadPaused" class="update-progress" aria-live="polite">
       <div class="update-progress-track">
         <div
@@ -187,7 +225,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import {
   appUpdateAvailable,
   appUpdateCheckResult,
@@ -243,6 +281,12 @@ const busy = ref(false)
 const phase = ref<'idle' | 'check' | 'install'>('idle')
 const msg = ref('')
 const msgTone = ref<'ok' | 'warn' | 'err' | ''>('')
+
+const installerBusy = ref(false)
+const installerPercent = ref<number | null>(null)
+const installerMsg = ref('')
+const installerMsgTone = ref<'ok' | 'warn' | 'err' | ''>('')
+let offInstallerProgress: (() => void) | null = null
 
 const platformLabel = computed(() => {
   const key = config.value.platform?.trim()
@@ -575,9 +619,62 @@ async function installUpdate() {
   }
 }
 
+async function downloadInstaller() {
+  const api = window.electronAPI
+  if (!api?.downloadAppInstaller) return
+  installerBusy.value = true
+  installerPercent.value = null
+  installerMsg.value = '正在准备下载安装包…'
+  installerMsgTone.value = ''
+  try {
+    const res = await api.downloadAppInstaller()
+    if (res.status === 'downloading') return
+    if (res.cancelled) {
+      installerMsg.value = res.error || '已取消下载。'
+      installerMsgTone.value = 'warn'
+      return
+    }
+    if (!res.ok) {
+      installerMsg.value = res.error || '下载失败'
+      installerMsgTone.value = 'err'
+      return
+    }
+    installerMsg.value = `安装包已保存到「下载」文件夹${res.fileName ? `：${res.fileName}` : ''}。已为你打开所在位置，可用于重装。`
+    installerMsgTone.value = 'ok'
+    void auditLog({
+      action: 'update.download_installer',
+      result: 'ok',
+      summary: res.fileName || res.version || '',
+    })
+  } catch (e) {
+    installerMsg.value = e instanceof Error ? e.message : String(e)
+    installerMsgTone.value = 'err'
+  } finally {
+    installerBusy.value = false
+    installerPercent.value = null
+  }
+}
+
 onMounted(() => {
   void loadConfig()
   void syncAppUpdateState().then(() => loadConfig())
+  const api = window.electronAPI
+  if (api?.onAppInstallerDownloadProgress) {
+    offInstallerProgress = api.onAppInstallerDownloadProgress((p) => {
+      if (p.phase === 'progress' || p.phase === 'start') {
+        installerPercent.value = typeof p.percent === 'number' ? p.percent : null
+      } else if (p.phase === 'done') {
+        installerPercent.value = 100
+      } else if (p.phase === 'error' || p.phase === 'cancelled') {
+        installerPercent.value = null
+      }
+    })
+  }
+})
+
+onUnmounted(() => {
+  offInstallerProgress?.()
+  offInstallerProgress = null
 })
 </script>
 
@@ -796,5 +893,34 @@ onMounted(() => {
   background: #fff;
   color: #374151;
   border: 1px solid #d1d5db;
+}
+
+.update-reinstall {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px dashed #e5e7eb;
+  max-width: 560px;
+}
+
+.update-reinstall-title {
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #374151;
+}
+
+.update-reinstall-hint {
+  margin: 0 0 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #6b7280;
+}
+
+.update-reinstall-progress {
+  margin-top: 10px;
+}
+
+.update-reinstall-msg {
+  margin-top: 8px;
 }
 </style>

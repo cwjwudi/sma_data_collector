@@ -3,6 +3,7 @@ const { execFileSync, spawn } = require('child_process')
 const path = require('path')
 const http = require('http')
 const fs = require('fs')
+const os = require('os')
 const { pathToFileURL } = require('url')
 const { createAppUpdater } = require('./updater.cjs')
 const { createDemoPackManager } = require('./demo-pack.cjs')
@@ -25,6 +26,8 @@ function enqueuePdfExport(fn) {
 }
 
 const BACKEND_PORT = 8000
+/** 后端绑定地址：0.0.0.0 表示同时监听本机回环与局域网网卡（同网段可访问）。 */
+const BACKEND_BIND_HOST = '0.0.0.0'
 const BACKEND_URL = `http://127.0.0.1:${BACKEND_PORT}`
 const VITE_DEV_URL = 'http://localhost:5173'
 
@@ -131,6 +134,7 @@ function startPythonBackend() {
     ...process.env,
     REPORT_EDITOR_DATA_DIR: dataDir,
     REPORT_EDITOR_HTTP_PORT: String(BACKEND_PORT),
+    REPORT_EDITOR_HTTP_HOST: BACKEND_BIND_HOST,
     // 避免 Windows 旧版 conhost 把 ANSI 当乱码；与 dev_uvicorn.ps1 行为一致
     NO_COLOR: '1',
     FORCE_COLOR: '0',
@@ -156,7 +160,7 @@ function startPythonBackend() {
     })
   } else {
     const { cmd } = findPython()
-    const pyArgs = ['-m', 'uvicorn', 'main:app', '--host', '127.0.0.1', '--port', String(BACKEND_PORT)]
+    const pyArgs = ['-m', 'uvicorn', 'main:app', '--host', BACKEND_BIND_HOST, '--port', String(BACKEND_PORT)]
     pythonProcess = spawn(cmd, pyArgs, {
       cwd: backendDir,
       env,
@@ -371,6 +375,45 @@ ipcMain.handle('devtools-set-open', (_event, open) => {
 
 ipcMain.handle('datasource-startup-snapshot', () => readDataSourceStartupSnapshot())
 
+/** 枚举本机可用的 IPv4 局域网地址（排除回环与未分配），主用地址排在最前。 */
+function collectLanIps() {
+  const ifaces = os.networkInterfaces()
+  const out = []
+  for (const [name, addrs] of Object.entries(ifaces || {})) {
+    for (const a of addrs || []) {
+      if (!a || a.family !== 'IPv4' || a.internal) continue
+      if (!a.address || a.address.startsWith('169.254.')) continue
+      out.push({ address: a.address, iface: name })
+    }
+  }
+  // 常见现场局域网网段优先展示
+  const rank = (ip) => {
+    if (ip.startsWith('192.168.')) return 0
+    if (ip.startsWith('10.')) return 1
+    if (/^172\.(1[6-9]|2\d|3[01])\./.test(ip)) return 2
+    return 3
+  }
+  out.sort((x, y) => rank(x.address) - rank(y.address))
+  return out
+}
+
+ipcMain.handle('app-get-service-endpoints', () => {
+  const lanIps = collectLanIps()
+  const primaryLan = lanIps.length ? lanIps[0].address : null
+  const isDev = !app.isPackaged
+  return {
+    backendHost: BACKEND_BIND_HOST,
+    backendPort: BACKEND_PORT,
+    backendLoopbackUrl: `http://127.0.0.1:${BACKEND_PORT}`,
+    backendLanUrl: primaryLan ? `http://${primaryLan}:${BACKEND_PORT}` : null,
+    rendererMode: isDev ? 'dev' : 'packaged',
+    rendererUrl: isDev ? VITE_DEV_URL : 'file://（本地打包页面）',
+    rendererLanUrl: isDev && primaryLan ? `http://${primaryLan}:5173` : null,
+    lanIps,
+    appVersion: app.getVersion(),
+  }
+})
+
 function senderBrowserWindow(wc) {
   try {
     return BrowserWindow.fromWebContents(wc)
@@ -428,12 +471,18 @@ ipcMain.handle('dialog-pick-directory', async (event, opts) => {
 /** 选择配置备份 JSON（主进程读文件，避免 Electron 内嵌 <input type=file> 偶发白屏） */
 const MAX_CONFIG_JSON_BYTES = 64 * 1024 * 1024
 
+const REBAK_MAGIC = Buffer.from('SDRE1\n', 'utf8')
+
 ipcMain.handle('dialog-pick-config-json', async (event, opts) => {
   const win = senderBrowserWindow(event.sender) || mainWindow
   const res = await dialog.showOpenDialog(win && !win.isDestroyed() ? win : undefined, {
     title: (opts && opts.title) || '选择备份文件',
     properties: ['openFile'],
-    filters: [{ name: 'JSON 备份', extensions: ['json'] }],
+    filters: [
+      { name: '备份文件', extensions: ['rebak', 'json'] },
+      { name: '加密备份', extensions: ['rebak'] },
+      { name: 'JSON 备份', extensions: ['json'] },
+    ],
     defaultPath: opts && opts.defaultPath,
   })
   if (res.canceled || !res.filePaths || !res.filePaths.length) {
@@ -445,12 +494,23 @@ ipcMain.handle('dialog-pick-config-json', async (event, opts) => {
     if (stat.size > MAX_CONFIG_JSON_BYTES) {
       return { ok: false, error: `备份文件过大（超过 ${Math.round(MAX_CONFIG_JSON_BYTES / 1024 / 1024)} MB）` }
     }
-    const content = fs.readFileSync(filePath, 'utf8')
+    const buf = fs.readFileSync(filePath)
+    const encrypted = buf.length >= REBAK_MAGIC.length && buf.subarray(0, REBAK_MAGIC.length).equals(REBAK_MAGIC)
+    if (encrypted) {
+      return {
+        ok: true,
+        filePath,
+        fileName: path.basename(filePath),
+        encrypted: true,
+        contentBase64: buf.toString('base64'),
+      }
+    }
     return {
       ok: true,
       filePath,
       fileName: path.basename(filePath),
-      content,
+      encrypted: false,
+      content: buf.toString('utf8'),
     }
   } catch (e) {
     return { ok: false, error: String(e.message || e) }
@@ -776,6 +836,8 @@ ipcMain.handle('app-update-install', (_event, options) => getAppUpdater().instal
 ipcMain.handle('app-update-skip-version', () => getAppUpdater().skipAvailableVersion())
 ipcMain.handle('app-update-clear-skipped', () => getAppUpdater().clearSkippedVersions())
 ipcMain.handle('app-update-open-mac-app', async () => getAppUpdater().openMacApplication())
+ipcMain.handle('app-update-download-installer', () => getAppUpdater().downloadInstallerToDownloads())
+ipcMain.handle('app-update-cancel-installer-download', () => getAppUpdater().cancelInstallerDownload())
 
 ipcMain.handle('layout-sync-get-config', () => getLayoutSync().getConfig())
 ipcMain.handle('layout-sync-set-config', (_event, patch) => getLayoutSync().setConfig(patch || {}))

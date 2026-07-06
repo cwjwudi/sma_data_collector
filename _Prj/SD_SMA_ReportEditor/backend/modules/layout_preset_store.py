@@ -9,11 +9,15 @@ from pathlib import Path
 from typing import Any
 
 from core.settings import LAYOUT_PRESETS_DIR, init_data_dirs
+from modules import json_head_scan as jhs
 from schemas.layout_preset import LayoutPreset, LayoutPresetSummary
 
 logger = logging.getLogger(__name__)
 
 _SAFE_ID = re.compile(r"^[a-zA-Z0-9_.-]{1,128}$")
+_PAPER_KINDS = ("A3", "A4", "A5", "Letter")
+_ORIENTATIONS = ("portrait", "landscape")
+_PAGE_ROLES = ("normal", "cover", "back")
 
 
 def sanitize_id(layout_id: str) -> str:
@@ -54,15 +58,43 @@ def _summary_from_raw(raw: dict[str, Any]) -> LayoutPresetSummary | None:
     )
 
 
+def _fast_summary_from_head(p: Path) -> LayoutPresetSummary | None:
+    """版式的全部摘要字段（id/name/updatedAt/paperKind/orientation/pageRole）均排在
+    页眉页脚等大数组之前，读文件头部即可完整提取，避免解析整份版式。"""
+    try:
+        head = jhs.read_head(p)
+    except OSError:
+        return None
+    pid = jhs.extract_string(head, "id")
+    if not pid:
+        return None
+    name = jhs.extract_string(head, "name") or pid
+    updated = jhs.extract_string(head, "updatedAt") or ""
+    paper = jhs.extract_string(head, "paperKind")
+    orient = jhs.extract_string(head, "orientation")
+    role = jhs.extract_string(head, "pageRole")
+    return LayoutPresetSummary(
+        id=pid,
+        name=name,
+        updatedAt=updated,
+        paperKind=paper if paper in _PAPER_KINDS else "A4",
+        orientation=orient if orient in _ORIENTATIONS else "portrait",
+        pageRole=role if role in _PAGE_ROLES else "normal",
+    )
+
+
 def list_summaries() -> list[LayoutPresetSummary]:
     init_data_dirs()
     out: list[LayoutPresetSummary] = []
     for p in sorted(LAYOUT_PRESETS_DIR.glob("*.json")):
         try:
-            raw = json.loads(p.read_text(encoding="utf-8"))
-            if not isinstance(raw, dict):
-                continue
-            summary = _summary_from_raw(raw)
+            summary = _fast_summary_from_head(p)
+            if summary is None:
+                # 头部无法提取时回退整份解析
+                raw = json.loads(p.read_text(encoding="utf-8"))
+                if not isinstance(raw, dict):
+                    continue
+                summary = _summary_from_raw(raw)
             if summary is not None:
                 out.append(summary)
         except Exception:

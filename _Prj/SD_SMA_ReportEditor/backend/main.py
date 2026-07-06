@@ -15,7 +15,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from api.routers import audit as audit_router
 from api.routers import database as database_router
 from api.routers import demo as demo_router
-from api.routers import environment as environment_router
 from api.routers import opcua as opcua_router
 from api.routers import settings_config as settings_config_router
 from api.routers import layout_presets as layout_presets_router
@@ -39,6 +38,15 @@ async def lifespan(app: FastAPI):
     from core.service_beacon import clear_service_beacon, write_service_beacon
 
     write_service_beacon(api_version=app.version)
+
+    # 后台预热模版摘要 sidecar：低版本升级后首次进入模版页无需在请求内同步解析全部大模版
+    try:
+        from modules import template_store
+
+        template_store.warm_sidecars()
+    except Exception:
+        logger.warning("预热模版摘要失败", exc_info=True)
+
     logger.info("SD_SMA_ReportEditor 后端启动完成")
     try:
         yield
@@ -72,9 +80,8 @@ app.add_middleware(
 )
 
 def _attach_routes() -> None:
-    """兼容两种路径：前端经 Vite rewrite 后到 /environment/*，或直接请求 /api/environment/*。"""
+    """每个路由同时挂在根路径与 /api 前缀下（兼容 Vite rewrite 与直连 /api/*）。"""
     routers = (
-        environment_router.router,
         settings_config_router.router,
         opcua_router.router,
         database_router.router,

@@ -182,6 +182,54 @@ def export_audit(
     return rows[:MAX_LINES]
 
 
+def import_audit_entries(
+    data_dir: Path,
+    entries: list[Any],
+    *,
+    replace: bool = False,
+) -> int:
+    """导入审计条目（配置包恢复用）。
+
+    - replace=True：清空后写入导入条目。
+    - replace=False：按 id 去重后，把本地缺少的条目追加进去。
+    返回实际写入（新增）的条目数量。
+    """
+    if not isinstance(entries, list):
+        return 0
+    incoming: list[dict[str, Any]] = []
+    for item in entries:
+        if isinstance(item, dict) and (item.get("action") or "").strip():
+            incoming.append(item)
+
+    path = _audit_path(data_dir)
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    if replace:
+        merged = incoming
+        added = len(incoming)
+    else:
+        existing = _read_all_rows(path)
+        seen_ids = {str(r.get("id")) for r in existing if r.get("id")}
+        added_rows: list[dict[str, Any]] = []
+        for item in incoming:
+            iid = str(item.get("id") or "")
+            if iid and iid in seen_ids:
+                continue
+            if iid:
+                seen_ids.add(iid)
+            added_rows.append(item)
+        merged = existing + added_rows
+        added = len(added_rows)
+
+    merged.sort(key=lambda x: float(x.get("ts") or 0))
+    if len(merged) > MAX_LINES:
+        merged = merged[-MAX_LINES:]
+    with path.open("w", encoding="utf-8") as f:
+        for row in merged:
+            f.write(json.dumps(row, ensure_ascii=False) + "\n")
+    return added
+
+
 def export_audit_csv(
     data_dir: Path,
     *,

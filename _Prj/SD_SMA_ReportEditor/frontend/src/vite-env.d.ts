@@ -9,7 +9,8 @@ interface Window {
     pickConfigJsonFile: (opts?: { title?: string; defaultPath?: string }) => Promise<
       | { canceled: true }
       | { ok: false; error?: string }
-      | { ok: true; filePath: string; fileName: string; content: string }
+      | { ok: true; filePath: string; fileName: string; encrypted?: false; content: string }
+      | { ok: true; filePath: string; fileName: string; encrypted: true; contentBase64: string }
       | null
     >;
     saveTextFileDialog: (opts?: {
@@ -123,6 +124,25 @@ interface Window {
     skipAppUpdateVersion: () => Promise<{ ok: boolean; error?: string; version?: string }>;
     clearAppUpdateSkippedVersions: () => Promise<{ ok: boolean; error?: string }>;
     openMacApplication: () => Promise<{ ok: boolean; error?: string }>;
+    downloadAppInstaller: () => Promise<{
+      ok: boolean;
+      error?: string;
+      cancelled?: boolean;
+      checksumError?: boolean;
+      status?: string;
+      path?: string;
+      version?: string;
+      fileName?: string;
+    }>;
+    cancelAppInstallerDownload: () => Promise<{ ok: boolean; cancelled?: boolean }>;
+    onAppInstallerDownloadProgress: (
+      listener: (payload: {
+        phase?: string;
+        received?: number;
+        total?: number;
+        percent?: number | null;
+      }) => void,
+    ) => () => void;
     getDemoPackState: () => Promise<{
       installed: boolean;
       version: string;
@@ -152,6 +172,17 @@ interface Window {
       app_preferences?: Record<string, unknown>;
       source?: string;
       message?: string;
+    }>;
+    getServiceEndpoints: () => Promise<{
+      backendHost: string;
+      backendPort: number;
+      backendLoopbackUrl: string;
+      backendLanUrl: string | null;
+      rendererMode: 'dev' | 'packaged';
+      rendererUrl: string;
+      rendererLanUrl: string | null;
+      lanIps: { address: string; iface: string }[];
+      appVersion: string;
     }>;
     onAppUpdateDownloadProgress: (
       listener: (payload: {

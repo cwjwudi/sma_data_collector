@@ -38,6 +38,28 @@ class AuditLogFilterTest(unittest.TestCase):
         self.assertTrue(lines[0].startswith("time,action,result"))
         self.assertGreaterEqual(len(lines), 2)
 
+    def test_import_entries_merge_dedup(self) -> None:
+        audit_log.append_audit(self.data_dir, action="a.one", summary="local")
+        existing = audit_log.list_audit(self.data_dir)["entries"]
+        existing_id = existing[0]["id"]
+        incoming = [
+            {"id": existing_id, "ts": 1.0, "action": "a.one", "summary": "dup"},
+            {"id": "new-1", "ts": 2.0, "action": "b.two", "summary": "imported"},
+        ]
+        added = audit_log.import_audit_entries(self.data_dir, incoming, replace=False)
+        self.assertEqual(added, 1)  # 已存在的 id 去重，只新增 1 条
+        res = audit_log.list_audit(self.data_dir)
+        self.assertEqual(res["total"], 2)
+
+    def test_import_entries_replace(self) -> None:
+        audit_log.append_audit(self.data_dir, action="a.one", summary="local")
+        incoming = [{"id": "only", "ts": 5.0, "action": "b.two", "summary": "kept"}]
+        added = audit_log.import_audit_entries(self.data_dir, incoming, replace=True)
+        self.assertEqual(added, 1)
+        res = audit_log.list_audit(self.data_dir)
+        self.assertEqual(res["total"], 1)
+        self.assertEqual(res["entries"][0]["action"], "b.two")
+
 
 if __name__ == "__main__":
     unittest.main()

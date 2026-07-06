@@ -28,6 +28,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   /** 启动阶段直读本机配置，避免等待 FastAPI 才能显示已保存连接 */
   getDataSourceStartupSnapshot: () => ipcRenderer.invoke('datasource-startup-snapshot'),
 
+  /** 后端/前端服务地址（含局域网 IP，供设置页展示与复制） */
+  getServiceEndpoints: () => ipcRenderer.invoke('app-get-service-endpoints'),
+
   /** 仅 PDF 导出隐藏窗口：渲染完成后通知主进程 */
   notifyPdfExportReady: (payload) => ipcRenderer.send('pdf-export-ready', payload),
 
@@ -54,6 +57,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   skipAppUpdateVersion: () => ipcRenderer.invoke('app-update-skip-version'),
   clearAppUpdateSkippedVersions: () => ipcRenderer.invoke('app-update-clear-skipped'),
   openMacApplication: () => ipcRenderer.invoke('app-update-open-mac-app'),
+  /** 下载当前平台完整安装包到「下载」文件夹（用于重装，不自动安装） */
+  downloadAppInstaller: () => ipcRenderer.invoke('app-update-download-installer'),
+  cancelAppInstallerDownload: () => ipcRenderer.invoke('app-update-cancel-installer-download'),
+  onAppInstallerDownloadProgress: (listener) => {
+    const fn = (_event, payload) => listener(payload)
+    ipcRenderer.on('installer-download-progress', fn)
+    return () => ipcRenderer.removeListener('installer-download-progress', fn)
+  },
   getDemoPackState: () => ipcRenderer.invoke('demo-pack-get-state'),
   checkDemoPack: () => ipcRenderer.invoke('demo-pack-check'),
   installDemoPack: () => ipcRenderer.invoke('demo-pack-install'),
