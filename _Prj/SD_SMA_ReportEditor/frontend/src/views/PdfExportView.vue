@@ -82,12 +82,14 @@ function injectPrintPageCss(t: ReportTemplate): void {
 
 function signalReady(ok: boolean, error?: string, totalReports?: number): void {
   stopExportHeartbeat();
+  // 注意：stats 须转成纯对象。Vue reactive 代理经 IPC 会抛
+  // "An object could not be cloned"，完成信号丢失导致主进程等到超时（0.2.3~0.2.5 结批失败根因）
+  const s = bindingPreview.lastStats.value;
   window.electronAPI?.notifyPdfExportReady?.({
     ok,
     error,
     totalReports,
-    // 本份报表实际取数统计（结批审计：拿了多少数据）
-    stats: bindingPreview.lastStats.value || undefined,
+    stats: s ? { opcReads: s.opcReads, sqlQueries: s.sqlQueries, sqlRows: s.sqlRows } : undefined,
   });
 }
 
