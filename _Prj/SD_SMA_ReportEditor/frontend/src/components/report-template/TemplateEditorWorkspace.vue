@@ -391,6 +391,7 @@ import {
   TEMPLATE_SCHEMA_VERSION,
 } from "@/lib/report-template/model";
 import { templateTableCellPickKey, reportBindingPreviewKey } from "@/lib/report-template/template-editor-context";
+import { getCachedTemplateFullMap } from "@/lib/report-template/template-view-cache";
 import { useReportBindingPreview } from "@/composables/useReportBindingPreview";
 import { useStaleGuard } from "@/composables/useStaleGuard";
 import { watchDebounced } from "@vueuse/core";
@@ -932,28 +933,57 @@ async function boot() {
     return;
   }
   hint.value = "";
-  try {
-    const remote = await api.getTemplate(id);
-    if (isLoadStale(token)) return;
-    editing.value = cloneDeepTemplate(remote);
+
+  /** @param {import('@/lib/report-template/model').ReportTemplate} tpl */
+  const applyTemplate = async (tpl) => {
+    editing.value = cloneDeepTemplate(tpl);
     ensureBodyPages(editing.value);
     syncLegacyElementsAlias(editing.value);
     bodyPageIdx.value = 0;
     await loadLayoutPresetsList();
-    if (isLoadStale(token)) return;
+    if (isLoadStale(token)) return false;
     if (layoutPresetsAll.value.length) {
       resyncTemplateBoundPresets(editing.value, layoutPresetsAll.value);
       reclamp();
     }
+    selId.value = null;
+    resetTplEditHistory();
+    void bindingPreview.refresh({ silent: true });
+    return true;
+  };
+
+  // 启动预热/模版管理页已有完整缓存时先秒开，再后台校对远端版本
+  const cached = getCachedTemplateFullMap()[id];
+  let seededUpdatedAt = "";
+  if (cached && typeof cached === "object") {
+    const ok = await applyTemplate(/** @type {any} */ (cached));
+    if (!ok) return;
+    seededUpdatedAt = String(editing.value?.updatedAt || "");
+  }
+
+  try {
+    const remote = await api.getTemplate(id);
+    if (isLoadStale(token)) return;
+    if (!seededUpdatedAt) {
+      await applyTemplate(remote);
+      return;
+    }
+    // 缓存与远端一致则不动；远端更新且用户尚未编辑时静默换成远端版本
+    const remoteUpdatedAt = String(remote?.updatedAt || "");
+    if (remoteUpdatedAt && remoteUpdatedAt !== seededUpdatedAt) {
+      if (tplUndoStack.value.length === 0 && tplRedoStack.value.length === 0) {
+        await applyTemplate(remote);
+      } else {
+        hint.value = "此模版在其他端已有更新，当前显示为本机缓存版本；保存将覆盖远端修改。";
+      }
+    }
   } catch {
     if (isLoadStale(token)) return;
-    hint.value = "无法从后端载入模版。";
-    editing.value = null;
-    return;
+    if (!seededUpdatedAt) {
+      hint.value = "无法从后端载入模版。";
+      editing.value = null;
+    }
   }
-  selId.value = null;
-  resetTplEditHistory();
-  void bindingPreview.refresh({ silent: true });
 }
 
 watch(
@@ -990,6 +1020,8 @@ async function save() {
   saving.value = true;
   try {
     await api.putTemplate(t.id, t);
+    // 写回内存缓存：下次进入编辑器直接秒开最新版本
+    getCachedTemplateFullMap()[t.id] = cloneDeepTemplate(t);
     hint.value = "已保存。";
   } catch (e) {
     hint.value = "保存失败：" + String(e.message || e);

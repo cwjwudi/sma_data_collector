@@ -148,7 +148,7 @@ const tablePickQ = ref("");
 const showDatabasePick = computed(() => {
   const c = connections.value.find((x) => x.id === props.visual.connectionId);
   const eng = (c?.engine || "").toLowerCase();
-  return eng === "mysql" || eng === "mariadb" || eng === "postgres";
+  return eng === "mysql" || eng === "mariadb" || eng === "postgres" || eng === "postgresql";
 });
 
 const compiledSql = computed(() => compileScalarVisualSql(props.visual));
@@ -200,29 +200,58 @@ function compile() {
 async function loadConnections() {
   try {
     const data = await apiFetch("/database/connections");
-    connections.value = (data.connections || []).map((x: { id?: string; name?: string; engine?: string }) => ({
-      id: String(x.id ?? ""),
-      name: String(x.name ?? x.id ?? ""),
-      engine: String(x.engine ?? ""),
-    }));
+    connections.value = (data.connections || [])
+      .map((x: { id?: string; name?: string; engine?: string }) => ({
+        id: String(x.id ?? ""),
+        name: String(x.name ?? x.id ?? ""),
+        engine: String(x.engine ?? ""),
+      }))
+      .filter((c: { engine: string }) => {
+        // 标量 SQL 仅支持 SQL 引擎，Mongo 等不可选
+        const e = c.engine.toLowerCase();
+        return e === "mysql" || e === "mariadb" || e === "postgres" || e === "postgresql" || e === "sqlite";
+      });
   } catch (e) {
     catalogErr.value = e instanceof Error ? e.message : String(e);
   }
 }
 
+function normalizeCatalogNames(raw: unknown): string[] {
+  // 后端 databases 为字符串数组；tables 为 {name, kind} 对象数组，两种都兼容
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((x) => (typeof x === "string" ? x : String((x as { name?: unknown })?.name ?? "")))
+    .filter(Boolean);
+}
+
 async function loadCatalog() {
   catalogErr.value = "";
-  catalogDatabases.value = [];
-  catalogTables.value = [];
-  tableColumns.value = [];
   const cid = props.visual.connectionId.trim();
-  if (!cid) return;
+  if (!cid) {
+    catalogDatabases.value = [];
+    catalogTables.value = [];
+    tableColumns.value = [];
+    return;
+  }
   try {
-    const body: Record<string, string> = { connection_id: cid };
-    if (props.visual.database.trim()) body.database = props.visual.database.trim();
-    const cat = await apiFetch("/database/catalog", { method: "POST", body });
-    catalogDatabases.value = (cat.databases || []).map((x: { name?: string }) => String(x.name ?? ""));
-    catalogTables.value = (cat.tables || []).map((x: { name?: string }) => ({ name: String(x.name ?? "") }));
+    // 首请求不带 database：MySQL/PG 返回库列表，SQLite 直接返回表列表
+    const listCat = await apiFetch("/database/catalog", {
+      method: "POST",
+      body: { connection_id: cid },
+    });
+    catalogDatabases.value = normalizeCatalogNames(listCat.databases);
+
+    const db = props.visual.database.trim();
+    if (db) {
+      const dbCat = await apiFetch("/database/catalog", {
+        method: "POST",
+        body: { connection_id: cid, database: db },
+      });
+      catalogTables.value = normalizeCatalogNames(dbCat.tables).map((name) => ({ name }));
+    } else {
+      catalogTables.value = normalizeCatalogNames(listCat.tables).map((name) => ({ name }));
+    }
+
     const c = connections.value.find((x) => x.id === cid);
     if (c?.engine && c.engine !== props.visual.engine) {
       emitVisual({ ...props.visual, engine: c.engine });
