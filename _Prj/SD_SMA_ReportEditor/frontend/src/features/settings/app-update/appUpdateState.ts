@@ -1,4 +1,5 @@
 import { ref, shallowRef } from 'vue'
+import { resolveApiHref } from '@/api/apiBase.js'
 
 export type AppUpdateCheckResult = {
   ok?: boolean
@@ -338,5 +339,65 @@ export async function loadAppCurrentVersion(): Promise<string> {
     return String(c?.currentVersion || '').trim()
   } catch {
     return ''
+  }
+}
+
+const LAST_RUN_VERSION_LS = 'report-editor-last-run-version'
+
+/**
+ * 启动时对比上次运行的版本号：版本变化则写一条 `update.applied` 审计。
+ * 覆盖应用内升级与手动重装安装包两种途径（后者没有任何升级点击可记录）。
+ * 后端首启需数秒，写入失败时保留标记下次重试，成功后才更新标记。
+ */
+export async function auditAppVersionChangeOnce(): Promise<void> {
+  const cur = await loadAppCurrentVersion()
+  if (!cur) return
+  let prev = ''
+  try {
+    prev = localStorage.getItem(LAST_RUN_VERSION_LS) || ''
+  } catch {
+    return
+  }
+  if (prev === cur) return
+
+  const markRecorded = () => {
+    try {
+      localStorage.setItem(LAST_RUN_VERSION_LS, cur)
+    } catch {
+      /* ignore */
+    }
+  }
+
+  if (!prev) {
+    // 首次运行：只记标记，不写审计
+    markRecorded()
+    return
+  }
+
+  const writeOnce = async (): Promise<boolean> => {
+    try {
+      const res = await fetch(resolveApiHref('/audit/log'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'update.applied',
+          result: 'ok',
+          summary: `版本更新 ${prev} → ${cur}`,
+          detail: { from: prev, to: cur },
+        }),
+      })
+      return res.ok
+    } catch {
+      return false
+    }
+  }
+
+  // 后端可能尚未就绪：最多重试约 2 分钟，成功后才更新版本标记
+  for (let i = 0; i < 24; i++) {
+    if (await writeOnce()) {
+      markRecorded()
+      return
+    }
+    await new Promise((r) => setTimeout(r, 5000))
   }
 }

@@ -91,6 +91,7 @@ import AppToastStack from '@/components/AppToastStack.vue'
 import {
   appUpdateAvailable,
   appUpdateStartupPromptOpen,
+  auditAppVersionChangeOnce,
   disposeAppUpdateListeners,
   initAppUpdateListeners,
   loadAppCurrentVersion,
@@ -190,6 +191,7 @@ function scheduleAutoUpdateCheck() {
 
 onMounted(() => {
   void loadAppVersion()
+  void auditAppVersionChangeOnce()
   initAppUpdateListeners()
   if (!setupWizardCompleted()) {
     setupWizardVisible.value = true
