@@ -110,6 +110,7 @@ import {
   initReportAutoExportTrigger,
   invalidateTemplateSummariesCache,
 } from '@/lib/report-auto-export-trigger-service'
+import { disposePlcHeartbeat, initPlcHeartbeat } from '@/lib/plc-heartbeat-service'
 import { loadSidebarCollapsed, saveSidebarCollapsed } from '@/lib/sidebar-layout-prefs'
 import { prefetchCoreCatalog } from '@/lib/prefetch-core'
 
@@ -204,6 +205,7 @@ onMounted(() => {
   }
   void reloadNavProbePrefs()
   initReportAutoExportTrigger()
+  initPlcHeartbeat()
   prefetchCoreCatalog()
   window.addEventListener('report-editor-config-imported', onConfigImported)
   window.addEventListener('report-editor-connection-probe-changed', onProbePrefsChanged)
@@ -212,6 +214,7 @@ onMounted(() => {
 onUnmounted(() => {
   stopNavDbHealthPolling()
   disposeReportAutoExportTrigger()
+  disposePlcHeartbeat()
   disposeAppUpdateListeners()
   window.removeEventListener('report-editor-config-imported', onConfigImported)
   window.removeEventListener('report-editor-connection-probe-changed', onProbePrefsChanged)

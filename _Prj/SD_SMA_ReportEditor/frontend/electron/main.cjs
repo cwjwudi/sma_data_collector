@@ -966,6 +966,8 @@ ipcMain.handle('layout-sync-register', (_event, creds) => getLayoutSync().regist
 ipcMain.handle('layout-sync-download-defaults', () => getLayoutSync().downloadDefaults())
 ipcMain.handle('layout-sync-download-mine', () => getLayoutSync().downloadMine())
 ipcMain.handle('layout-sync-upload', (_event, payload) => getLayoutSync().upload(payload || {}))
+ipcMain.handle('layout-sync-upload-config', (_event, payload) => getLayoutSync().uploadConfigBundle(payload || {}))
+ipcMain.handle('layout-sync-download-config', () => getLayoutSync().downloadConfigBundle())
 
 app.whenReady().then(async () => {
   log('Starting application...')

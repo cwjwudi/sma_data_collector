@@ -193,6 +193,84 @@
     </section>
 
     <section class="rg-card">
+      <h3 class="rg-h3">PLC 心跳（软件可用信号）</h3>
+      <div class="rg-switch-row">
+        <span class="rg-switch-label" id="rg-hb-lbl">启用心跳写入</span>
+        <button
+          type="button"
+          class="rg-switch"
+          :class="{ 'rg-switch--on': heartbeatCfg.enabled }"
+          role="switch"
+          aria-labelledby="rg-hb-lbl"
+          :aria-checked="heartbeatCfg.enabled"
+          @click="heartbeatCfg.enabled = !heartbeatCfg.enabled"
+        />
+      </div>
+      <p class="rg-mini rg-mini--switch">
+        软件运行期间按固定周期向 OPC UA 变量写入信号；PLC 侧看门狗检测到信号超时不变化，即可判定报表软件离线并报警。
+      </p>
+
+      <div class="rg-auto-fields" :class="{ 'rg-auto-fields--off': !heartbeatCfg.enabled }">
+        <div class="rg-row rg-row--in-panel">
+          <label class="rg-lbl" for="rg-hb-srv">已保存连接</label>
+          <select id="rg-hb-srv" v-model="heartbeatCfg.serverId" class="rg-select">
+            <option value="">请选择…</option>
+            <option v-for="s in opcServers" :key="s.id" :value="s.id">{{ s.name || s.id }}</option>
+          </select>
+        </div>
+        <div class="rg-row rg-row--in-panel">
+          <label class="rg-lbl" for="rg-hb-mode">信号方式</label>
+          <select id="rg-hb-mode" v-model="heartbeatCfg.mode" class="rg-select">
+            <option value="toggle">Bool 翻转（true/false 交替）</option>
+            <option value="counter">计数累加（1→32000 循环，Int 变量）</option>
+          </select>
+        </div>
+        <div class="rg-row rg-row--in-panel">
+          <label class="rg-lbl" for="rg-hb-interval">写入周期（秒）</label>
+          <input
+            id="rg-hb-interval"
+            v-model.number="heartbeatCfg.intervalSec"
+            type="number"
+            min="1"
+            max="3600"
+            class="rg-inp rg-inp--num"
+          />
+        </div>
+        <div class="rg-row rg-row--in-panel">
+          <label class="rg-lbl" for="rg-hb-node">心跳变量 NodeId</label>
+          <div class="rg-inline rg-inline--bind">
+            <input
+              id="rg-hb-node"
+              v-model.trim="heartbeatCfg.nodeId"
+              type="text"
+              class="rg-inp rg-inp--grow rg-mono"
+              :title="heartbeatCfg.nodeId || undefined"
+              placeholder="可手工填写 NodeId，或从地址空间选择…"
+            />
+            <button type="button" class="btn btn--nowrap" @click="openRgOpcPick('heartbeat')">
+              从地址空间选择…
+            </button>
+            <button
+              v-if="heartbeatCfg.nodeId"
+              type="button"
+              class="btn btn--sm btn--ghost btn--nowrap"
+              @click="clearHeartbeatBinding"
+            >
+              清除
+            </button>
+          </div>
+          <p v-if="heartbeatBindingHint" class="rg-mini rg-mini--indent rg-bound-hint">已绑定：{{ heartbeatBindingHint }}</p>
+          <p class="rg-mini rg-mini--indent">
+            「Bool 翻转」绑定 Boolean 变量；「计数累加」绑定 Int 变量。仅软件（含最小化）运行时发送心跳，退出后停止。
+          </p>
+        </div>
+        <p v-if="heartbeatStatusLine" class="rg-mini rg-mini--indent" :class="{ 'rg-mini--warn': plcHeartbeatLastOk === false }">
+          {{ heartbeatStatusLine }}
+        </p>
+      </div>
+    </section>
+
+    <section class="rg-card">
       <h3 class="rg-h3">{{ RG_UI.opcAuto }}</h3>
       <div class="rg-switch-row">
         <span class="rg-switch-label" id="rg-auto-enabled-lbl">启用 {{ RG_UI.opcAuto }}</span>
@@ -624,6 +702,7 @@ import {
   reportAutoExportStatus,
   resetReportAutoExportBindingRuntime,
 } from "@/lib/report-auto-export-trigger-service";
+import { notifyPlcHeartbeatSettingsChanged, plcHeartbeatState } from "@/lib/plc-heartbeat-service";
 
 defineOptions({ name: "ReportGenerator" });
 
@@ -651,6 +730,7 @@ type RgOpcPickTarget =
   | "feedbackStatus"
   | "feedbackMessage"
   | "feedbackFilePath"
+  | "heartbeat"
   | string;
 const opcPickOpen = ref(false);
 const opcPickTarget = ref<RgOpcPickTarget | null>(null);
@@ -1065,6 +1145,39 @@ watch(
   { deep: true },
 );
 
+/** PLC 心跳配置：绑定或参数变化后重启心跳定时器（须在保存 watcher 之后声明，保证先落盘再重读） */
+const heartbeatCfg = computed(() => prefs.value.heartbeat);
+
+const heartbeatBindingHint = computed(() => {
+  const hb = heartbeatCfg.value;
+  const nid = hb.nodeId.trim();
+  if (!nid) return "";
+  const label = hb.nodeLabel.trim();
+  return label && label !== nid ? `${label}（${nid}）` : nid;
+});
+
+const heartbeatStatusLine = computed(() => plcHeartbeatState.status.value);
+const plcHeartbeatLastOk = computed(() => plcHeartbeatState.lastOk.value);
+
+watch(
+  () =>
+    [
+      heartbeatCfg.value.enabled,
+      heartbeatCfg.value.serverId,
+      heartbeatCfg.value.nodeId,
+      heartbeatCfg.value.intervalSec,
+      heartbeatCfg.value.mode,
+    ].join("\u0000"),
+  () => {
+    notifyPlcHeartbeatSettingsChanged();
+  },
+);
+
+function clearHeartbeatBinding(): void {
+  heartbeatCfg.value.nodeId = "";
+  heartbeatCfg.value.nodeLabel = "";
+}
+
 watch(
   () => prefs.value.autoExportDir,
   (d) => {
@@ -1241,6 +1354,7 @@ function resolveRgOpcPickDataTypeFilter(target: RgOpcPickTarget | null): string 
     return "String";
   }
   if (target === "feedbackStatus") return exportResultOpcStatusTypeFilter();
+  if (target === "heartbeat") return heartbeatCfg.value.mode === "counter" ? "Int" : "Boolean";
   return "";
 }
 
@@ -1366,6 +1480,15 @@ async function onRgOpcPickConfirm(payload: RgOpcPickConfirmPayload) {
       fb.filePathNodeLabel = nodeLabel;
     }
     autoStatus.value = `${RG_STATUS_FEEDBACK} 已绑定${target === "feedbackMessage" ? "信息" : "路径"}变量`;
+    finishRgOpcPickSuccess();
+    return;
+  }
+
+  if (target === "heartbeat") {
+    const hb = heartbeatCfg.value;
+    if (sid) hb.serverId = sid;
+    hb.nodeId = nid;
+    hb.nodeLabel = nodeLabel;
     finishRgOpcPickSuccess();
     return;
   }

@@ -141,4 +141,26 @@ function onSourceChange(param: TableSqlParamBinding | undefined) {
   line-height: 1.4;
   color: var(--text-muted, #71717a);
 }
+/* 属性面板同款输入/按钮样式（父级 scoped 样式无法作用到本组件内部） */
+.lpep-inp {
+  box-sizing: border-box;
+  border: 1px solid #e4e4e7;
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 12px;
+  font-family: inherit;
+  background: #fff;
+}
+.lpep-file-btn {
+  padding: 7px 10px;
+  font-size: 12px;
+  border-radius: 6px;
+  border: 1px solid #c7d2fe;
+  background: #eef2ff;
+  color: #3730a3;
+  cursor: pointer;
+}
+.lpep-file-btn:hover {
+  background: #e0e7ff;
+}
 </style>

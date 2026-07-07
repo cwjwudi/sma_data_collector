@@ -69,6 +69,28 @@ export const defaultExportResultOpcFeedback = (): ExportResultOpcFeedback => ({
   messageMaxLen: 200,
 });
 
+/** PLC 心跳（软件可用信号）写入模式：Bool 翻转 / 计数累加 */
+export type PlcHeartbeatMode = "toggle" | "counter";
+
+/** 周期向 PLC 写 OPC UA 变量，PLC 侧看门狗判断报表软件是否在线 */
+export interface PlcHeartbeatConfig {
+  enabled: boolean;
+  serverId: string;
+  nodeId: string;
+  nodeLabel: string;
+  intervalSec: number;
+  mode: PlcHeartbeatMode;
+}
+
+export const defaultPlcHeartbeatConfig = (): PlcHeartbeatConfig => ({
+  enabled: false,
+  serverId: "",
+  nodeId: "",
+  nodeLabel: "",
+  intervalSec: 5,
+  mode: "toggle",
+});
+
 
 
 export interface ReportGeneratorPrefs {
@@ -111,6 +133,9 @@ export interface ReportGeneratorPrefs {
 
   /** 按报表模版单独配置的结批结果反馈变量；key 为 templateId */
   exportResultOpcByTemplateId: Record<string, ExportResultOpcFeedback>;
+
+  /** PLC 心跳：周期写 OPC 变量，供 PLC 判断报表软件在线 */
+  heartbeat: PlcHeartbeatConfig;
 
   auto: {
 
@@ -159,6 +184,8 @@ export const defaultReportGeneratorPrefs = (): ReportGeneratorPrefs => ({
   exportResultOpc: defaultExportResultOpcFeedback(),
 
   exportResultOpcByTemplateId: {},
+
+  heartbeat: defaultPlcHeartbeatConfig(),
 
   auto: {
 
@@ -228,6 +255,21 @@ function parseExportResultOpcByTemplateId(
   return out;
 }
 
+function parsePlcHeartbeat(raw: unknown, base: PlcHeartbeatConfig): PlcHeartbeatConfig {
+  if (!raw || typeof raw !== "object") return base;
+  const o = raw as Partial<PlcHeartbeatConfig>;
+  const interval = Number(o.intervalSec);
+  return {
+    enabled: Boolean(o.enabled),
+    serverId: typeof o.serverId === "string" ? o.serverId : base.serverId,
+    nodeId: typeof o.nodeId === "string" ? o.nodeId : base.nodeId,
+    nodeLabel: typeof o.nodeLabel === "string" ? o.nodeLabel : base.nodeLabel,
+    intervalSec:
+      Number.isFinite(interval) && interval >= 1 && interval <= 3600 ? Math.floor(interval) : base.intervalSec,
+    mode: o.mode === "counter" ? "counter" : "toggle",
+  };
+}
+
 function parseStoredPrefs(o: StoredPrefs, base: ReportGeneratorPrefs): ReportGeneratorPrefs {
   const dirSource: AutoExportDirSource =
     o.autoExportDirSource === "opcua" ? "opcua" : base.autoExportDirSource;
@@ -279,6 +321,7 @@ function parseStoredPrefs(o: StoredPrefs, base: ReportGeneratorPrefs): ReportGen
       o.exportResultOpcByTemplateId,
       exportResultOpc,
     ),
+    heartbeat: parsePlcHeartbeat(o.heartbeat, base.heartbeat),
     auto: {
       enabled: Boolean(o.auto?.enabled),
       bindings,

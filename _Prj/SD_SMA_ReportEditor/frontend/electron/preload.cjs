@@ -99,4 +99,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   layoutSyncDownloadDefaults: () => ipcRenderer.invoke('layout-sync-download-defaults'),
   layoutSyncDownloadMine: () => ipcRenderer.invoke('layout-sync-download-mine'),
   layoutSyncUpload: (payload) => ipcRenderer.invoke('layout-sync-upload', payload || {}),
+  /** 整机配置云备份（加密 .rebak 的 base64） */
+  layoutSyncUploadConfig: (payload) => ipcRenderer.invoke('layout-sync-upload-config', payload || {}),
+  layoutSyncDownloadConfig: () => ipcRenderer.invoke('layout-sync-download-config'),
 })

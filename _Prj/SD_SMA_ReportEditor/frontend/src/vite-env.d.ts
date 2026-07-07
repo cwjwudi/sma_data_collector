@@ -284,6 +284,18 @@ interface Window {
       layoutUpdatedAt?: string | null;
       templateUpdatedAt?: string | null;
     }>;
+    layoutSyncUploadConfig?: (payload: { bundleBase64: string }) => Promise<{
+      ok: boolean;
+      error?: string;
+      updatedAt?: string | null;
+      sizeBytes?: number | null;
+    }>;
+    layoutSyncDownloadConfig?: () => Promise<{
+      ok: boolean;
+      error?: string;
+      bundleBase64?: string;
+      updatedAt?: string | null;
+    }>;
   };
 }
 

@@ -161,6 +161,7 @@ const filteredPickTables = computed(() => {
 });
 
 function setFillMode(mode: ScalarSqlFillMode) {
+  if (mode === props.fillMode) return;
   emit("update:fillMode", mode);
   if (mode === "visual") compile();
 }
@@ -169,11 +170,31 @@ function onManualSqlInput(ev: Event) {
   emit("update:sqlText", (ev.target as HTMLTextAreaElement).value);
 }
 
+function visualsEqual(a: ScalarSqlVisualConfig, b: ScalarSqlVisualConfig): boolean {
+  return (
+    a.connectionId === b.connectionId &&
+    a.database === b.database &&
+    a.table === b.table &&
+    a.engine === b.engine &&
+    a.valueColumn === b.valueColumn &&
+    a.whereColumn === b.whereColumn &&
+    a.whereParamSlot === b.whereParamSlot
+  );
+}
+
+let lastEmittedVisual: ScalarSqlVisualConfig | null = null;
+
+function emitVisual(v: ScalarSqlVisualConfig) {
+  if (lastEmittedVisual && visualsEqual(lastEmittedVisual, v)) return;
+  lastEmittedVisual = { ...v };
+  emit("update:visual", v);
+}
+
 function compile() {
-  // 同步回写可视化配置：取值列/筛选列等否则只改到临时副本，保存后丢失
-  emit("update:visual", { ...props.visual });
+  // 同步回写可视化配置（取值列/筛选列由 v-model 写在 props 副本上，需 emit 持久化）
+  emitVisual({ ...props.visual });
   const sql = compileScalarVisualSql(props.visual);
-  if (sql) emit("update:sqlText", sql);
+  if (sql && sql !== props.sqlText) emit("update:sqlText", sql);
 }
 
 async function loadConnections() {
@@ -203,9 +224,8 @@ async function loadCatalog() {
     catalogDatabases.value = (cat.databases || []).map((x: { name?: string }) => String(x.name ?? ""));
     catalogTables.value = (cat.tables || []).map((x: { name?: string }) => ({ name: String(x.name ?? "") }));
     const c = connections.value.find((x) => x.id === cid);
-    if (c?.engine) {
-      const v = { ...props.visual, engine: c.engine };
-      emit("update:visual", v);
+    if (c?.engine && c.engine !== props.visual.engine) {
+      emitVisual({ ...props.visual, engine: c.engine });
     }
   } catch (e) {
     catalogErr.value = e instanceof Error ? e.message : String(e);
@@ -229,14 +249,12 @@ async function loadColumns() {
 }
 
 function onConnChange() {
-  const v = { ...defaultScalarSqlVisual(), connectionId: props.visual.connectionId };
-  emit("update:visual", v);
+  emitVisual({ ...defaultScalarSqlVisual(), connectionId: props.visual.connectionId });
   void loadCatalog();
 }
 
 function onDatabaseChange() {
-  const v = { ...props.visual, table: "", valueColumn: "", whereColumn: "" };
-  emit("update:visual", v);
+  emitVisual({ ...props.visual, table: "", valueColumn: "", whereColumn: "" });
   void loadCatalog();
 }
 
@@ -246,24 +264,22 @@ function openTablePicker() {
 }
 
 async function pickTable(name: string) {
-  const v = { ...props.visual, table: name, valueColumn: "", whereColumn: "" };
-  emit("update:visual", v);
+  emitVisual({ ...props.visual, table: name, valueColumn: "", whereColumn: "" });
   tablePickOpen.value = false;
   await loadColumns();
   compile();
 }
 
+/**
+ * 仅在连接/库/表「值」真正变化时重载目录（如画布上切换选中元素）。
+ * 注意必须用多源数组写法：单个 getter 返回新数组会被 Vue 视为每次都变化，
+ * 若回调再 emit 触发重渲染将形成死循环（0.2.4 曾因此点「点选生成」卡死）。
+ */
 watch(
-  () => [props.visual.connectionId, props.visual.database, props.visual.table],
+  [() => props.visual.connectionId, () => props.visual.database, () => props.visual.table],
   () => {
-    void loadCatalog().then(() => loadColumns()).then(() => compile());
-  },
-);
-
-watch(
-  () => props.fillMode,
-  (m) => {
-    if (m === "visual") compile();
+    lastEmittedVisual = null;
+    void loadCatalog().then(() => loadColumns());
   },
 );
 
@@ -285,20 +301,60 @@ onMounted(() => {
 }
 .ssqb-seg {
   display: inline-flex;
-  border: 1px solid var(--border-subtle, #d4d4d8);
-  border-radius: 6px;
+  align-self: flex-start;
+  border-radius: 8px;
+  border: 1px solid #e4e4e7;
   overflow: hidden;
+  background: #fafafa;
 }
 .ssqb-seg-btn {
-  padding: 4px 10px;
+  margin: 0;
+  padding: 6px 14px;
   font-size: 12px;
   border: none;
-  background: #fff;
+  background: transparent;
+  color: #52525b;
   cursor: pointer;
+  line-height: 1.2;
+}
+.ssqb-seg-btn + .ssqb-seg-btn {
+  box-shadow: inset 1px 0 0 #e4e4e7;
+}
+.ssqb-seg-btn:hover:not(.ssqb-seg-on) {
+  background: rgb(244 244 245 / 0.85);
+  color: #18181b;
 }
 .ssqb-seg-on {
-  background: #2563eb;
-  color: #fff;
+  background: #eef2ff;
+  color: #3730a3;
+  font-weight: 600;
+}
+/* 属性面板同款输入/按钮样式（父级 scoped 样式无法作用到本组件内部） */
+.lpep-inp {
+  width: 100%;
+  box-sizing: border-box;
+  border: 1px solid #e4e4e7;
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-size: 12px;
+  font-family: inherit;
+  background: #fff;
+}
+.lpep-file-btn {
+  padding: 7px 10px;
+  font-size: 12px;
+  border-radius: 6px;
+  border: 1px solid #c7d2fe;
+  background: #eef2ff;
+  color: #3730a3;
+  cursor: pointer;
+}
+.lpep-file-btn:hover:not(:disabled) {
+  background: #e0e7ff;
+}
+.lpep-file-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 .ssqb-lab {
   display: flex;

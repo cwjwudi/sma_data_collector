@@ -1,10 +1,10 @@
 <template>
   <section class="settings-section app-update">
-    <h3 class="settings-section__title">模版与版式云端同步</h3>
+    <h3 class="settings-section__title">云端同步（Portal）</h3>
     <p class="settings-hint">
-      将本机报表模版与版式预设备份到 Portal，或从云端恢复。登录后可上传、下载；使用
-      <strong>br</strong> 或 <strong>admin</strong> 账号可下载团队模版与版式（
-      <code>team-templates.json</code>、<code>team-layout-presets.json</code>）。
+      登录后可：① 上传/下载<strong>我的模版与版式</strong>（内容为你最近一次上传的版本）；②
+      <strong>整机配置云备份</strong>（与「配置备份」相同范围，换机一键恢复）；③ 下载<strong>团队模版与版式</strong>
+      （由团队发版时更新的快照，内容可能滞后于个人最新修改）。
     </p>
 
     <dl v-if="config.loggedIn" class="update-meta">
@@ -71,6 +71,20 @@
           退出登录
         </button>
       </div>
+
+      <h4 class="sync-sub-title">整机配置云备份</h4>
+      <p class="settings-hint">
+        与「配置备份」同等范围：数据源连接、OPC UA 连接、模版、版式、签名与生成报表设置整体打包（加密，云端不可读），
+        可在另一台电脑登录同一账号后一键恢复。
+      </p>
+      <div class="settings-actions update-actions">
+        <button type="button" class="settings-btn settings-btn--primary" :disabled="busy" @click="uploadFullConfig">
+          {{ busy && phase === 'upload-config' ? '上传中…' : '上传整机配置备份' }}
+        </button>
+        <button type="button" class="settings-btn settings-btn--secondary" :disabled="busy" @click="confirmRestoreFullConfig">
+          {{ busy && phase === 'dl-config' ? '恢复中…' : '从云端恢复整机配置' }}
+        </button>
+      </div>
     </template>
 
     <details class="update-advanced">
@@ -109,8 +123,13 @@
 import { computed, onMounted, ref } from 'vue'
 import * as layoutsApi from '@/api/layoutPresets'
 import * as templatesApi from '@/api/templates'
+import { resolveApiHref } from '@/api/apiBase.js'
 import { refreshLayoutPresets, clearLayoutCache } from '@/lib/report-template/layout-registry'
-import { notifyReportEditorConfigRestored } from '@/features/settings/config-import-export/config-bundle-client'
+import {
+  applyClientPrefsFromBundle,
+  collectClientPrefs,
+  notifyReportEditorConfigRestored,
+} from '@/features/settings/config-import-export/config-bundle-client'
 import { clearTemplateViewCache } from '@/lib/report-template/template-view-cache'
 
 const isElectron = computed(() => Boolean(window.electronAPI?.layoutSyncLogin))
@@ -129,7 +148,7 @@ const passwordConfirm = ref('')
 const portalDraft = ref('')
 const skipTlsDraft = ref(false)
 const busy = ref(false)
-const phase = ref<'idle' | 'login' | 'register' | 'dl-default' | 'dl-mine' | 'upload'>('idle')
+const phase = ref<'idle' | 'login' | 'register' | 'dl-default' | 'dl-mine' | 'upload' | 'upload-config' | 'dl-config'>('idle')
 const msg = ref('')
 const msgTone = ref<'ok' | 'warn' | 'err' | ''>('')
 
@@ -322,6 +341,103 @@ async function logout() {
   setMsg('已退出登录。', 'ok')
 }
 
+function bytesToBase64(bytes: Uint8Array): string {
+  let bin = ''
+  const chunk = 0x8000
+  for (let i = 0; i < bytes.length; i += chunk) {
+    bin += String.fromCharCode(...bytes.subarray(i, i + chunk))
+  }
+  return btoa(bin)
+}
+
+function base64ToBytes(b64: string): Uint8Array {
+  const bin = atob(b64)
+  const out = new Uint8Array(bin.length)
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i)
+  return out
+}
+
+/** 与「配置备份」相同范围：后端导出加密 .rebak，整体上传到 Portal */
+async function uploadFullConfig() {
+  const api = window.electronAPI
+  if (!api?.layoutSyncUploadConfig) {
+    setMsg('当前版本不支持整机配置云备份，请升级桌面版。', 'warn')
+    return
+  }
+  busy.value = true
+  phase.value = 'upload-config'
+  setMsg('')
+  try {
+    const res = await fetch(resolveApiHref('/settings/config/export'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode: 'backup', format: 'encrypted', client_prefs: collectClientPrefs() }),
+    })
+    if (!res.ok) throw new Error(`导出本机配置失败（HTTP ${res.status}）`)
+    const bytes = new Uint8Array(await res.arrayBuffer())
+    const up = await api.layoutSyncUploadConfig({ bundleBase64: bytesToBase64(bytes) })
+    if (!up.ok) throw new Error(up.error || '上传失败')
+    const kb = Math.max(1, Math.round(bytes.length / 1024))
+    setMsg(`整机配置备份已上传到云端（约 ${kb} KB，含数据源、模版、版式、签名与生成报表设置）。`, 'ok')
+  } catch (e) {
+    setMsg(e instanceof Error ? e.message : String(e), 'err')
+  } finally {
+    busy.value = false
+    phase.value = 'idle'
+  }
+}
+
+function confirmRestoreFullConfig() {
+  if (
+    !window.confirm(
+      '「从云端恢复整机配置」将用云端备份完全替换本机现有的连接、模版、版式、签名与生成报表设置。\n\n建议先在「配置备份」中导出一份当前备份再操作。\n\n确定要继续吗？',
+    )
+  ) {
+    return
+  }
+  void restoreFullConfig()
+}
+
+async function restoreFullConfig() {
+  const api = window.electronAPI
+  if (!api?.layoutSyncDownloadConfig) {
+    setMsg('当前版本不支持整机配置云备份，请升级桌面版。', 'warn')
+    return
+  }
+  busy.value = true
+  phase.value = 'dl-config'
+  setMsg('')
+  try {
+    const dl = await api.layoutSyncDownloadConfig()
+    if (!dl.ok || !dl.bundleBase64) throw new Error(dl.error || '云端下载失败')
+    const bytes = base64ToBytes(dl.bundleBase64)
+    const res = await fetch(resolveApiHref('/settings/config/import?mode=replace'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/octet-stream' },
+      body: bytes,
+    })
+    const text = await res.text()
+    let data: { ok?: boolean; client_prefs?: unknown; detail?: unknown } | null = null
+    try {
+      data = text ? JSON.parse(text) : null
+    } catch {
+      /* keep text */
+    }
+    if (!res.ok) {
+      throw new Error(data?.detail ? String(data.detail) : text || `恢复失败（HTTP ${res.status}）`)
+    }
+    applyClientPrefsFromBundle(data?.client_prefs)
+    notifyReportEditorConfigRestored()
+    const stamp = dl.updatedAt ? `（云端备份时间：${new Date(dl.updatedAt).toLocaleString()}）` : ''
+    setMsg(`已用云端备份恢复整机配置${stamp}。切换页面即可查看，无需重启。`, 'ok')
+  } catch (e) {
+    setMsg(e instanceof Error ? e.message : String(e), 'err')
+  } finally {
+    busy.value = false
+    phase.value = 'idle'
+  }
+}
+
 onMounted(() => {
   void loadConfig()
 })
@@ -331,6 +447,12 @@ onMounted(() => {
 .sync-form {
   max-width: 360px;
   margin-bottom: 12px;
+}
+
+.sync-sub-title {
+  margin: 18px 0 6px;
+  font-size: 14px;
+  color: #111827;
 }
 
 .update-meta {
