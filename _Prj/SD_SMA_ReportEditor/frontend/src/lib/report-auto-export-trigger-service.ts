@@ -20,10 +20,9 @@ import { runTemplateExportPreflight } from "@/lib/templateExportPreflight";
 import { showAppToast } from "@/composables/useAppToast";
 import { auditLog } from "@/lib/auditLog";
 import {
-  cloneExportResultOpcForTemplate,
   loadReportGeneratorPrefs,
+  resolveExportResultOpcForTemplate,
   saveReportGeneratorPrefs,
-  type ExportResultOpcFeedback,
   type ReportGeneratorPrefs,
 } from "@/lib/report-generator-prefs";
 import {
@@ -113,14 +112,6 @@ async function loadTemplateSummariesCached(): Promise<TemplateSummary[]> {
   return templateSummariesCache;
 }
 
-function resolveExportResultOpc(prefs: ReportGeneratorPrefs, templateId: string): ExportResultOpcFeedback {
-  const tid = templateId.trim();
-  if (!tid) return prefs.exportResultOpc;
-  const existing = prefs.exportResultOpcByTemplateId?.[tid];
-  if (existing) return existing;
-  return cloneExportResultOpcForTemplate(prefs.exportResultOpc);
-}
-
 function normalizeSavedPdfPaths(
   exportRes: { filePath?: string; filePaths?: string[] } | null | undefined,
   fallbackPath: string,
@@ -193,7 +184,7 @@ async function notifyExportResultToPlc(
   payload: ExportResultWritePayload,
   templateId: string | null,
 ): Promise<void> {
-  const fb = resolveExportResultOpc(prefs, templateId || "");
+  const fb = resolveExportResultOpcForTemplate(prefs, templateId || "");
   const writeCtx = resolveExportResultOpcWriteContext(fb);
   if (!writeCtx.ok) return;
   try {

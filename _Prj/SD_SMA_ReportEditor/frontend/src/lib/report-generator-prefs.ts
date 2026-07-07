@@ -314,6 +314,36 @@ export function cloneExportResultOpcForTemplate(
   return cloneExportResultOpcFeedback(fb);
 }
 
+/**
+ * 该反馈配置是否被用户实际配置过（启用、绑定过节点或选过连接）。
+ * 未配置过的按模版条目只是历史上自动生成的空白快照，应沿用默认配置。
+ */
+export function isExportResultOpcCustomized(fb: ExportResultOpcFeedback): boolean {
+  return (
+    fb.enabled ||
+    Boolean(
+      fb.statusNodeId.trim() || fb.messageNodeId.trim() || fb.filePathNodeId.trim(),
+    ) ||
+    Boolean(fb.serverId.trim())
+  );
+}
+
+/**
+ * 写回/校验时解析某模版实际生效的截批结果反馈配置：
+ * 模版有单独配置（用户改过）时用模版配置；否则回退到默认配置。
+ * 修复：仅在「默认配置」下启用反馈时，历史遗留的空白模版快照会让真实截批静默跳过写回。
+ */
+export function resolveExportResultOpcForTemplate(
+  prefs: ReportGeneratorPrefs,
+  templateId: string | null | undefined,
+): ExportResultOpcFeedback {
+  const tid = String(templateId || "").trim();
+  if (!tid) return prefs.exportResultOpc;
+  const existing = prefs.exportResultOpcByTemplateId?.[tid];
+  if (existing && isExportResultOpcCustomized(existing)) return existing;
+  return prefs.exportResultOpc;
+}
+
 
 
 export function saveReportGeneratorPrefs(p: ReportGeneratorPrefs): void {

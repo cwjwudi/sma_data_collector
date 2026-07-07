@@ -553,7 +553,9 @@ import { listTemplateSummaries, type TemplateSummary } from "@/api/templates";
 import { apiFetch } from "@/api/client.js";
 import {
   cloneExportResultOpcForTemplate,
+  isExportResultOpcCustomized,
   loadReportGeneratorPrefs,
+  resolveExportResultOpcForTemplate,
   saveReportGeneratorPrefs,
   type AutoExportDirSource,
   type ExportResultOpcFeedback,
@@ -665,6 +667,11 @@ function exportResultOpcForTemplate(templateId: string | null | undefined): Expo
   }
   let fb = prefs.value.exportResultOpcByTemplateId[tid];
   if (!fb) {
+    fb = cloneExportResultOpcForTemplate(prefs.value.exportResultOpc);
+    prefs.value.exportResultOpcByTemplateId[tid] = fb;
+  } else if (!isExportResultOpcCustomized(fb) && isExportResultOpcCustomized(prefs.value.exportResultOpc)) {
+    // 历史遗留的空白模版快照：默认配置已配好时，同步为默认配置的副本，
+    // 保证界面显示与实际写回（回退默认）一致。
     fb = cloneExportResultOpcForTemplate(prefs.value.exportResultOpc);
     prefs.value.exportResultOpcByTemplateId[tid] = fb;
   }
@@ -1115,7 +1122,8 @@ async function notifyExportResultToPlc(
   context: "manual" | "auto" = "manual",
   templateId?: string | null,
 ): Promise<void> {
-  const fb = exportResultOpcForTemplate(templateId ?? prefs.value.templateId);
+  // 模版没有单独配置时回退默认配置，避免历史空白快照静默跳过写回
+  const fb = resolveExportResultOpcForTemplate(prefs.value, templateId ?? prefs.value.templateId);
   const writeCtx = resolveExportResultOpcWriteContext(fb);
   if (!writeCtx.ok) {
     if (fb.enabled && hasAnyExportResultBinding(fb) && !fb.serverId.trim()) {
@@ -1410,7 +1418,7 @@ async function onManualExport(): Promise<void> {
   manualBusy.value = true;
   manualHint.value = "正在检查数据源连接…";
   try {
-    const feedback = exportResultOpcForTemplate(tid);
+    const feedback = resolveExportResultOpcForTemplate(prefs.value, tid);
     if (isExportResultOpcFeedbackConfigured(feedback)) {
       manualHint.value = `正在校验${RG_UI.feedback}绑定…`;
       const opcVal = await validateExportResultOpcBindings(feedback);
