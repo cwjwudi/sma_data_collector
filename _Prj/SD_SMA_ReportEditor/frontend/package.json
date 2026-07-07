@@ -88,6 +88,13 @@
       {
         "from": "../packaging/updates/latest.json",
         "to": "update-notes/latest.json"
+      },
+      {
+        "from": "dist",
+        "to": "web",
+        "filter": [
+          "**/*"
+        ]
       }
     ],
     "win": {

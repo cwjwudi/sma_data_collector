@@ -124,6 +124,14 @@ function findPython() {
   return { cmd: fallback }
 }
 
+/** 打包后随 extraResources 带入的前端静态页目录（resources/web），供后端 HTTP 挂载 */
+function getWebDistDir() {
+  if (app.isPackaged) {
+    return path.join(process.resourcesPath, 'web')
+  }
+  return path.join(__dirname, '..', 'dist')
+}
+
 function startPythonBackend() {
   const backendDir = getBackendDir()
   const dataDir = getReportEditorDataDir()
@@ -140,6 +148,12 @@ function startPythonBackend() {
     FORCE_COLOR: '0',
     PYTHONUTF8: '1',
     PYTHONUNBUFFERED: '1',
+  }
+  // 前端静态页：让后端在同端口直接服务网页版（浏览器访问 http://<IP>:<端口>/）
+  const webDist = getWebDistDir()
+  if (fs.existsSync(path.join(webDist, 'index.html'))) {
+    env.REPORT_EDITOR_WEB_DIST = webDist
+    log(`REPORT_EDITOR_WEB_DIST=${webDist}`)
   }
 
   const useBundledExe = app.isPackaged
@@ -401,14 +415,28 @@ ipcMain.handle('app-get-service-endpoints', () => {
   const lanIps = collectLanIps()
   const primaryLan = lanIps.length ? lanIps[0].address : null
   const isDev = !app.isPackaged
+  // 后端已挂载前端静态页时，网页版与后端同端口（浏览器直接打开即可）
+  const webServed = fs.existsSync(path.join(getWebDistDir(), 'index.html'))
+  const rendererUrl = isDev
+    ? VITE_DEV_URL
+    : webServed
+      ? `http://127.0.0.1:${BACKEND_PORT}`
+      : 'file://（本地打包页面）'
+  const rendererLanUrl = isDev
+    ? primaryLan
+      ? `http://${primaryLan}:5173`
+      : null
+    : webServed && primaryLan
+      ? `http://${primaryLan}:${BACKEND_PORT}`
+      : null
   return {
     backendHost: BACKEND_BIND_HOST,
     backendPort: BACKEND_PORT,
     backendLoopbackUrl: `http://127.0.0.1:${BACKEND_PORT}`,
     backendLanUrl: primaryLan ? `http://${primaryLan}:${BACKEND_PORT}` : null,
     rendererMode: isDev ? 'dev' : 'packaged',
-    rendererUrl: isDev ? VITE_DEV_URL : 'file://（本地打包页面）',
-    rendererLanUrl: isDev && primaryLan ? `http://${primaryLan}:5173` : null,
+    rendererUrl,
+    rendererLanUrl,
     lanIps,
     appVersion: app.getVersion(),
   }

@@ -2,8 +2,8 @@
   <section class="settings-section">
     <h3 class="settings-section__title">服务地址</h3>
     <p class="settings-hint">
-      本机后端服务已对<strong>局域网开放</strong>。同一网络下的其它电脑可用下方「局域网地址」访问本机后端接口。
-      点击地址右侧的<strong>复制</strong>按钮即可复制。
+      本机后端服务已对<strong>局域网开放</strong>。「前端」地址可直接在<strong>浏览器中打开</strong>使用网页版
+      （本机或同一网络下的其它电脑均可）；「后端」地址供接口调用。点击地址右侧的<strong>复制</strong>按钮即可复制。
     </p>
 
     <div class="ep-list">
@@ -85,11 +85,16 @@ const rows = computed(() => {
     copyable: true,
   })
   if (rendererLanUrl.value) {
-    list.push({ key: 'frontend-lan', label: '前端（局域网）', value: rendererLanUrl.value, copyable: true })
+    list.push({
+      key: 'frontend-lan',
+      label: '前端（局域网·浏览器可开）',
+      value: rendererLanUrl.value,
+      copyable: true,
+    })
   }
   list.push({
     key: 'frontend',
-    label: '前端（本机）',
+    label: '前端（本机·浏览器可开）',
     value: rendererUrl.value || '本地页面',
     copyable: /^https?:\/\//i.test(rendererUrl.value),
   })
