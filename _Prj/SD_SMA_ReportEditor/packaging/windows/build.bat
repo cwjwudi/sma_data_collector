@@ -18,7 +18,7 @@ goto parse_args
 :run_build
 echo.
 echo == Report Editor Windows Build ==
-echo Tip: run "git pull" in repo first; version from frontend\package.json ^(target 0.2.4^).
+echo Tip: run "git pull" in repo first; version from frontend\package.json ^(target 0.2.5^).
 echo       Release notes come from packaging\updates\latest.json - shown in app update UI.
 echo Directory: %CD%
 echo.
