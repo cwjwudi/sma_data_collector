@@ -6,18 +6,18 @@
  *
  * 流程（顺序执行，右下角弹窗实时显示当前步骤与进度）：
  * 1. 等待后端服务就绪（首启 PyInstaller 后端需要数秒，期间显示已等待秒数）；
- * 2. 版式库 → 模版摘要 → 签名摘要，逐项真实加载，失败自动重试；
+ * 2. 版式库 → 模版（含缩略图所需完整数据）→ 签名摘要，逐项真实加载，失败自动重试；
  * 3. 全部真正加载成功后才显示「已就绪」；失败则如实提示，不假装就绪。
  */
-import { listTemplateSummaries } from "@/api/templates";
+import { listTemplatesFull } from "@/api/templates";
 import { resolveApiHref } from "@/api/apiBase.js";
 import {
   ensureLayoutPresetsLoaded,
   isLayoutsOffline,
 } from "@/lib/report-template/layout-registry";
 import { ensureSignatureSummaries } from "@/lib/signature-registry";
+import { stripStaleOptionalSheetZones } from "@/lib/report-template/layout-apply";
 import {
-  getCachedTemplateFullMap,
   hasTemplateViewCache,
   saveTemplateViewCache,
 } from "@/lib/report-template/template-view-cache";
@@ -93,11 +93,29 @@ async function warmLayoutPresets(): Promise<boolean> {
   return !isLayoutsOffline();
 }
 
-/** 模版摘要：请求失败会抛错（视为本次失败，触发重试）。 */
-async function warmTemplateSummaries(): Promise<boolean> {
+/**
+ * 模版：拉取完整数据（含缩略图渲染所需内容），而不仅是摘要——
+ * 否则「模版管理」页首次进入仍要逐张加载缩略图，与「已就绪」提示不符。
+ */
+async function warmTemplates(): Promise<boolean> {
   if (!hasTemplateViewCache()) {
-    const list = await listTemplateSummaries();
-    saveTemplateViewCache(list, getCachedTemplateFullMap());
+    const full = await listTemplatesFull();
+    for (const t of full) {
+      // 与模版管理页 hydrateThumbs 相同的规整，保证缩略图可直接渲染
+      stripStaleOptionalSheetZones(t, "cover");
+      stripStaleOptionalSheetZones(t, "back");
+    }
+    const summaries = full.map((t) => ({
+      id: t.id,
+      name: t.name,
+      updatedAt: t.updatedAt,
+      paperKind: t.paperKind,
+      orientation: t.orientation,
+    }));
+    saveTemplateViewCache(
+      summaries,
+      Object.fromEntries(full.map((t) => [t.id, t])),
+    );
   }
   return true;
 }
@@ -135,7 +153,7 @@ async function runWarmup(): Promise<void> {
 
   const steps: WarmStep[] = [
     { label: "版式", run: warmLayoutPresets },
-    { label: "模版", run: warmTemplateSummaries },
+    { label: "模版", run: warmTemplates },
     { label: "签名", run: warmSignatureSummaries },
   ];
   // 进度总数含「后端服务」一步
@@ -147,6 +165,13 @@ async function runWarmup(): Promise<void> {
     showProgress(`正在加载${step.label}…（${i + 1}/${total} 已完成）`);
     const ok = await runStepWithRetry(step);
     if (!ok) failed.push(step.label);
+  }
+
+  // 通知已打开的页面：预热数据已就绪，若此前因后端未启动而进入离线兜底可立即重载
+  try {
+    window.dispatchEvent(new CustomEvent("report-editor-warmup-complete"));
+  } catch {
+    /* ignore */
   }
 
   if (failed.length) {

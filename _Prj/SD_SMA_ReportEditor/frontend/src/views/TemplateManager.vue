@@ -312,7 +312,7 @@
           <span>预览加载失败</span>
           <button type="button" class="skel-retry" @click="retryThumb(r.id)">重试</button>
         </div>
-        <div v-else class="skel">{{ thumbLoading.has(r.id) ? "加载…" : "等待加载…" }}</div>
+        <div v-else class="skel">正在加载预览…</div>
         <div class="foot">
           <div class="foot-meta">
             <div class="tpl-name-row tpl-name-row--card">
@@ -503,7 +503,6 @@ const highlightId = ref(null);
 let highlightTimer = null;
 const summaries = ref(hasTemplateViewCache() ? getCachedTemplateSummaries() : []);
 const cache = ref(hasTemplateViewCache() ? getCachedTemplateFullMap() : {});
-const thumbLoading = ref(new Set());
 const thumbFailed = ref(new Set());
 const offline = ref(false);
 /** @type {import('vue').Ref<import('@/lib/report-template/layout-model').LayoutPreset[]>} */
@@ -661,13 +660,6 @@ const rows = computed(() =>
   })),
 );
 
-function markThumbLoading(id, on) {
-  const s = new Set(thumbLoading.value);
-  if (on) s.add(id);
-  else s.delete(id);
-  thumbLoading.value = s;
-}
-
 function markThumbFailed(id, on) {
   const s = new Set(thumbFailed.value);
   if (on) s.add(id);
@@ -717,10 +709,7 @@ async function hydrateThumbs() {
     })
     .map((s) => s.id);
   if (!pending.length) return;
-  for (const id of pending) {
-    markThumbFailed(id, false);
-    markThumbLoading(id, true);
-  }
+  for (const id of pending) markThumbFailed(id, false);
 
   /**
    * 首次进入（本地尚无任何缓存）且待加载较多时，用一次批量接口替代 N 次 GET，
@@ -738,11 +727,8 @@ async function hydrateThumbs() {
         normalizeOptionalSheetsForList(t);
         next[t.id] = t;
         markThumbFailed(t.id, false);
-        markThumbLoading(t.id, false);
       }
       cache.value = next;
-      const remaining = pending.filter((id) => !next[id]);
-      for (const id of remaining) markThumbLoading(id, false);
       return;
     } catch {
       if (isLoadStale(token)) return;
@@ -761,15 +747,12 @@ async function hydrateThumbs() {
     } catch {
       if (isLoadStale(token)) return;
       markThumbFailed(id, true);
-    } finally {
-      if (!isLoadStale(token)) markThumbLoading(id, false);
     }
   });
 }
 
 async function retryThumb(id) {
   markThumbFailed(id, false);
-  markThumbLoading(id, true);
   const token = beginLoad();
   try {
     const t = await api.getTemplate(id);
@@ -779,8 +762,6 @@ async function retryThumb(id) {
   } catch {
     if (isLoadStale(token)) return;
     markThumbFailed(id, true);
-  } finally {
-    if (!isLoadStale(token)) markThumbLoading(id, false);
   }
 }
 
@@ -795,7 +776,6 @@ async function refreshThumbsView() {
         return [t.id, t];
       }),
     );
-    thumbLoading.value = new Set();
     thumbFailed.value = new Set();
   }
   resyncAllCachedTemplates();
@@ -1158,8 +1138,20 @@ function onExternalConfigRestored() {
   void enterView();
 }
 
+/** 启动预热完成：若此前因后端未就绪走了离线兜底（或缩略图未加载），立即重载 */
+function onWarmupComplete() {
+  if (hasTemplateViewCache()) {
+    const full = getCachedTemplateFullMap();
+    if (Object.keys(full).length) {
+      cache.value = { ...full, ...cache.value };
+    }
+  }
+  void enterView();
+}
+
 onMounted(() => {
   window.addEventListener("report-editor-config-imported", onExternalConfigRestored);
+  window.addEventListener("report-editor-warmup-complete", onWarmupComplete);
 });
 
 onDeactivated(() => {
@@ -1170,6 +1162,7 @@ onUnmounted(() => {
   persistViewCache();
   teardownCardObserver();
   window.removeEventListener("report-editor-config-imported", onExternalConfigRestored);
+  window.removeEventListener("report-editor-warmup-complete", onWarmupComplete);
 });
 </script>
 
