@@ -11,6 +11,12 @@ import {
 
 import type { TableSqlFillConfig, TableSqlParamBinding } from "@/lib/report-template/table-sql-fill";
 import {
+  hydrateScalarSqlVisual,
+  normalizeScalarSqlFillMode,
+  type ScalarSqlFillMode,
+  type ScalarSqlVisualConfig,
+} from "@/lib/report-template/scalar-sql-visual";
+import {
   clampSqlFillParamColumnRefs,
   defaultTableSqlFillConfig,
   ensureTableSqlResultColumnNames,
@@ -118,6 +124,8 @@ export interface LayoutZoneElement {
   opcuaNodeId: string;
   sqlText: string;
   sqlParams: TableSqlParamBinding[];
+  scalarSqlFillMode?: ScalarSqlFillMode;
+  scalarSqlVisual?: ScalarSqlVisualConfig | null;
   /** 仅 type==="table" 时使用 */
   tableRows?: number;
   tableCols?: number;
@@ -594,6 +602,11 @@ export function hydrateLayoutZoneElement(raw: Partial<LayoutZoneElement>): Layou
     opcuaNodeId: typeof raw.opcuaNodeId === "string" ? raw.opcuaNodeId : d.opcuaNodeId,
     sqlText: typeof raw.sqlText === "string" ? raw.sqlText : d.sqlText,
     sqlParams: hydrateSqlParamBindings((raw as { sqlParams?: unknown }).sqlParams, 0),
+    scalarSqlFillMode: normalizeScalarSqlFillMode(
+      (raw as { scalarSqlFillMode?: unknown }).scalarSqlFillMode,
+      typeof raw.sqlText === "string" ? raw.sqlText : d.sqlText,
+    ),
+    scalarSqlVisual: hydrateScalarSqlVisual((raw as { scalarSqlVisual?: unknown }).scalarSqlVisual),
   };
   if (type === "table") {
     merged.tableRows = clampZoneTableDim(raw.tableRows ?? d.tableRows ?? 3, 3);

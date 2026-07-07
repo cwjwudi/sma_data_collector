@@ -131,38 +131,11 @@
         <span class="lpep-img-hint">图片将转为 data URL，与预设 JSON 一并保存。水平×垂直对齐控制图片在占位格内的九宫格。</span>
       </template>
       <template v-if="el.type === 'parameter'">
-        <label class="lpep-lab"
-          >绑定方式<select v-model="el.bindingKind" class="lpep-inp">
-            <option value="none">无</option>
-            <option value="opcua">OPC UA</option>
-            <option value="sql">SQL</option>
-          </select></label
-        >
-        <div v-if="el.bindingKind === 'none'" class="lpep-opc-quick">
-          <button type="button" class="lpep-file-btn" @click="openOpcPicker('parameter')">
-            从 OPC UA 地址空间选择节点…
-          </button>
-          <p class="lpep-hint-muted">展开连接后点选节点并确定绑定；亦可先把绑定改为「OPC UA」再选手工填写。</p>
-        </div>
-        <div v-if="el.bindingKind === 'opcua'" class="lpep-opc-row">
-          <label class="lpep-lab lpep-opc-row-grow"
-            >OPC UA 节点 ID<input v-model.trim="el.opcuaNodeId" class="lpep-inp" placeholder="节点 NodeId"
-          /></label>
-          <button type="button" class="lpep-file-btn lpep-opc-pickbtn" @click="openOpcPicker('parameter')">
-            从列表选择…
-          </button>
-        </div>
-        <label v-if="el.bindingKind === 'sql'" class="lpep-lab"
-          >SQL 查询<textarea
-            v-model="el.sqlText"
-            rows="4"
-            class="lpep-inp"
-            spellcheck="false"
-            placeholder="只读查询；导出预览取首行首列作为显示值"
-        /></label>
-        <label class="lpep-lab"
-          >展示占位文字<textarea v-model.trim="el.text" rows="2" class="lpep-inp" placeholder="预览用"
-        /></label>
+        <ParameterBindingFields
+          :el="el"
+          @opc-pick-parameter="openOpcPicker('parameter')"
+          @opc-pick-sql-param="openZoneScalarSqlParamOpcPicker"
+        />
       </template>
       <template v-if="el.type === 'table'">
         <div class="lpep-table-dims">
@@ -333,6 +306,11 @@
                   spellcheck="false"
                   placeholder="例如单行标量查询"
               /></label>
+              <ScalarSqlParamBindingsEditor
+                v-if="activeTableCell.bindingKind === 'sql'"
+                :params="zoneTableCellSqlParams"
+                @opc-pick="openZoneTableCellSqlParamOpcPicker"
+              />
             </template>
             <p v-else class="lpep-hint-muted">
               数据库填充已开启：表格内容由查询填充，请勿在此编辑静态文字。可视化数据源时请在画布<strong>第一行</strong>下拉选择各列对应字段。
@@ -443,10 +421,13 @@ import {
 } from "@/lib/report-template/table-cell-metrics";
 import TableColumnWidthVisualEditor from "@/components/report-template/TableColumnWidthVisualEditor.vue";
 import TableCellFillPicker from "@/components/report-template/TableCellFillPicker.vue";
-import type { TableSqlFillConfig } from "@/lib/report-template/table-sql-fill";
+import ParameterBindingFields from "@/components/report-template/ParameterBindingFields.vue";
+import ScalarSqlParamBindingsEditor from "@/components/report-template/ScalarSqlParamBindingsEditor.vue";
+import type { TableSqlFillConfig, TableSqlParamBinding } from "@/lib/report-template/table-sql-fill";
 import {
   defaultTableSqlFillConfig,
   ensureMinTableSqlParamSlots,
+  ensureSqlParamSlots,
   ensureTableSqlResultColumnNames,
   syncResultColumnNamesFromFirstRow,
 } from "@/lib/report-template/table-sql-fill";
@@ -476,7 +457,14 @@ const zoneTypeLabel = computed(() => {
 });
 
 const opcPickOpen = ref(false);
-const opcPickTarget = ref<"parameter" | "table" | { kind: "tableSql"; slot: number } | null>(null);
+const opcPickTarget = ref<
+  | "parameter"
+  | "table"
+  | { kind: "tableSql"; slot: number }
+  | { kind: "scalarSqlParam"; slot: number }
+  | { kind: "scalarSqlCell"; slot: number }
+  | null
+>(null);
 
 function openOpcPicker(target: "parameter" | "table") {
   opcPickTarget.value = target;
@@ -493,6 +481,34 @@ function ensureZoneTableSqlFill(el: LayoutZoneElement): TableSqlFillConfig {
 function openZoneSqlOpcPicker(slot: number) {
   const s = Math.max(0, Math.floor(Number(slot)) || 0);
   opcPickTarget.value = { kind: "tableSql", slot: s };
+  opcPickOpen.value = true;
+}
+
+function ensureZoneElementSqlParams(el: LayoutZoneElement): TableSqlParamBinding[] {
+  if (!Array.isArray(el.sqlParams)) el.sqlParams = [];
+  ensureSqlParamSlots(el.sqlParams, 2);
+  return el.sqlParams;
+}
+
+function ensureZoneTableCellSqlParams(cell: { sqlParams?: TableSqlParamBinding[] }): TableSqlParamBinding[] {
+  if (!Array.isArray(cell.sqlParams)) cell.sqlParams = [];
+  ensureSqlParamSlots(cell.sqlParams, 2);
+  return cell.sqlParams;
+}
+
+function openZoneScalarSqlParamOpcPicker(slot: number) {
+  const el = props.el;
+  if (!el || el.type !== "parameter") return;
+  ensureZoneElementSqlParams(el);
+  opcPickTarget.value = { kind: "scalarSqlParam", slot };
+  opcPickOpen.value = true;
+}
+
+function openZoneTableCellSqlParamOpcPicker(slot: number) {
+  const cell = activeTableCell.value;
+  if (!cell) return;
+  ensureZoneTableCellSqlParams(cell);
+  opcPickTarget.value = { kind: "scalarSqlCell", slot };
   opcPickOpen.value = true;
 }
 
@@ -558,6 +574,12 @@ const activeTableCell = computed(() => {
   const g = el.tableCells;
   if (!Array.isArray(g) || g.length === 0) return null;
   return g[editCellRow.value]?.[editCellCol.value] ?? null;
+});
+
+const zoneTableCellSqlParams = computed(() => {
+  const cell = activeTableCell.value;
+  if (!cell || cell.bindingKind !== "sql") return [];
+  return ensureZoneTableCellSqlParams(cell);
 });
 
 const hasTableCellPicked = computed(() => {
@@ -671,6 +693,28 @@ function onOpcPickConfirm(payload: string | { serverId: string; nodeId: string }
   if (t === "parameter" && el?.type === "parameter") {
     el.bindingKind = "opcua";
     el.opcuaNodeId = id;
+    return;
+  }
+  if (typeof t === "object" && t?.kind === "scalarSqlParam" && el?.type === "parameter") {
+    const params = ensureZoneElementSqlParams(el);
+    ensureSqlParamSlots(params, t.slot + 1);
+    const row = params[t.slot];
+    if (row) {
+      row.source = "opcua";
+      row.opcuaNodeId = id;
+    }
+    return;
+  }
+  if (typeof t === "object" && t?.kind === "scalarSqlCell" && el?.type === "table") {
+    const cell = activeTableCell.value;
+    if (!cell) return;
+    const params = ensureZoneTableCellSqlParams(cell);
+    ensureSqlParamSlots(params, t.slot + 1);
+    const row = params[t.slot];
+    if (row) {
+      row.source = "opcua";
+      row.opcuaNodeId = id;
+    }
     return;
   }
   if (typeof t === "object" && t?.kind === "tableSql" && el?.type === "table") {

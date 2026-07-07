@@ -35,6 +35,12 @@ import type { PaperKind } from "./paper";
 import type { LayoutAlignAxis, ImageCaptionPosition } from "./layout-zone-element";
 import type { TableSqlFillConfig, TableSqlParamBinding } from "./table-sql-fill";
 import {
+  hydrateScalarSqlVisual,
+  normalizeScalarSqlFillMode,
+  type ScalarSqlFillMode,
+  type ScalarSqlVisualConfig,
+} from "./scalar-sql-visual";
+import {
   hydrateLayoutZoneElement,
   normalizeAlignAxis,
   normalizeImageCaptionPosition,
@@ -99,6 +105,9 @@ export interface TemplateElement {
   /** SQL（表格或图表数据源；可含 {opc.xxx} 占位，由生成器注入） */
   sqlText: string;
   sqlParams: TableSqlParamBinding[];
+  /** 数据参数 SQL：手写 / 点选生成 */
+  scalarSqlFillMode?: ScalarSqlFillMode;
+  scalarSqlVisual?: ScalarSqlVisualConfig | null;
   /** 简易图表类型预览 */
   chartKind: "line" | "bar";
   /** 电子签名：签署人显示名 */
@@ -573,6 +582,11 @@ export function hydrateTemplateElement(raw: Partial<TemplateElement>): TemplateE
     opcuaNodeId: typeof raw.opcuaNodeId === "string" ? raw.opcuaNodeId : d.opcuaNodeId,
     sqlText: typeof raw.sqlText === "string" ? raw.sqlText : d.sqlText,
     sqlParams: hydrateSqlParamBindings((raw as { sqlParams?: unknown }).sqlParams, 0),
+    scalarSqlFillMode: normalizeScalarSqlFillMode(
+      (raw as { scalarSqlFillMode?: unknown }).scalarSqlFillMode,
+      typeof raw.sqlText === "string" ? raw.sqlText : d.sqlText,
+    ),
+    scalarSqlVisual: hydrateScalarSqlVisual((raw as { scalarSqlVisual?: unknown }).scalarSqlVisual),
     chartKind: normalizeChartKind(raw.chartKind),
     signerLabel:
       typeof raw.signerLabel === "string" ? raw.signerLabel : d.signerLabel,

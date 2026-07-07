@@ -7,12 +7,15 @@ import {
   formatOpcuaReadPayload,
   pickPreferredOpcServerId,
   pickPreferredSqlConnectionId,
+  resolveSqlParamValues,
   sqlResponseFirstScalar,
   sqlResponseGridSummary,
   substituteScalarSqlParams,
   type BindingPreviewCell,
   type SqlDedupeTask,
 } from "@/lib/report-template/binding-preview-utils";
+import { resolveAutoBatchOpcBinding } from "@/lib/auto-batch-opc-binding";
+import { loadReportGeneratorPrefs } from "@/lib/report-generator-prefs";
 import {
   buildTableSqlFillPreviewTasks,
   sqlResponseToPreviewRows,
@@ -93,38 +96,20 @@ export function useReportBindingPreview(tmplRef: Ref<ReportTemplate | null>): Re
       const out: Record<string, BindingPreviewCell> = partial ? { ...values.value } : {};
 
       async function resolveScalarSqlTask(task: SqlDedupeTask): Promise<string> {
-        const paramValues: Record<number, unknown> = {};
         const params = task.params || [];
-        for (let i = 0; i < params.length; i++) {
-          const p = params[i];
-          if (p?.source !== "opcua") continue;
-          const nodeId = (p.opcuaNodeId || "").trim();
-          if (!nodeId) {
-            if ((p.literalFallback || "").trim()) continue;
-            throw new Error(`SQL 参数 {{p${i}}} 未绑定 OPC UA 节点`);
-          }
-          if (!opcServerId) {
-            if ((p.literalFallback || "").trim()) continue;
-            throw new Error(`SQL 参数 {{p${i}}} 未配置 OPC UA 连接`);
-          }
-          try {
+        const batchBinding = resolveAutoBatchOpcBinding(loadReportGeneratorPrefs());
+        const paramValues = await resolveSqlParamValues(params, {
+          defaultOpcServerId: opcServerId,
+          batchBinding,
+          onOpcRead: () => {
             stats.opcReads += 1;
-            const res = (await apiFetch(`/opcua/read_saved/${opcServerId}`, {
+          },
+          readOpc: async (serverId, nodeId) =>
+            (await apiFetch(`/opcua/read_saved/${serverId}`, {
               method: "POST",
               body: { node_id: nodeId },
-            })) as { ok?: boolean; message?: string; value?: unknown };
-            if (res?.ok === false) {
-              if ((p.literalFallback || "").trim()) continue;
-              throw new Error(res.message || "OPC 参数读取失败");
-            }
-            if ((res.value === null || res.value === undefined) && (p.literalFallback || "").trim()) continue;
-            paramValues[i] = res.value;
-          } catch (e) {
-            if ((p.literalFallback || "").trim()) continue;
-            const msg = e instanceof Error ? e.message : String(e);
-            throw new Error(`SQL 参数 {{p${i}}} 读取失败：${msg}`);
-          }
-        }
+            })) as { ok?: boolean; message?: string; value?: unknown },
+        });
         return substituteScalarSqlParams(task.sql, params, paramValues);
       }
 

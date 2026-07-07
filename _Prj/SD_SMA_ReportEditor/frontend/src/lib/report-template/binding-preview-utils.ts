@@ -4,6 +4,9 @@ import type { LayoutZoneElement } from "@/lib/report-template/layout-zone-elemen
 import { ensureZoneTableGrid } from "@/lib/report-template/layout-zone-element";
 import { bodyElementsRef, type EditorSheet } from "@/lib/report-template/editor-sheet";
 import type { TableSqlParamBinding } from "@/lib/report-template/table-sql-fill";
+import { hydrateScalarSqlVisual, normalizeScalarSqlFillMode, type ScalarSqlVisualConfig } from "@/lib/report-template/scalar-sql-visual";
+import { compileScalarVisualSql } from "@/lib/report-template/scalar-sql-visual-compile";
+import type { AutoBatchOpcBinding } from "@/lib/auto-batch-opc-binding";
 
 /** 表格「整表 SQL 填充」在编辑器中的查询预览（非持久化字段） */
 export interface TableSqlFillPreviewPayload {
@@ -206,6 +209,90 @@ export function quoteSqlScalarValue(value: unknown, opts?: { numericStringAsNumb
   return `'${s.replace(/'/g, "''")}'`;
 }
 
+export function resolveEffectiveScalarSql(
+  sqlText: string,
+  fillMode?: unknown,
+  visual?: ScalarSqlVisualConfig | null,
+): string {
+  const mode = normalizeScalarSqlFillMode(fillMode, sqlText);
+  if (mode === "visual" && visual) {
+    const compiled = compileScalarVisualSql(hydrateScalarSqlVisual(visual));
+    if (compiled.trim()) return compiled;
+  }
+  return String(sqlText || "").trim();
+}
+
+export type OpcReadResult = { ok?: boolean; message?: string; value?: unknown };
+
+/** 解析标量 SQL 的 {{p0}}/{{p1}} 参数值（OPC UA、结批批次号等） */
+export async function resolveSqlParamValues(
+  params: TableSqlParamBinding[],
+  options: {
+    defaultOpcServerId: string | null;
+    readOpc: (serverId: string, nodeId: string) => Promise<OpcReadResult>;
+    batchBinding?: AutoBatchOpcBinding | null;
+    onOpcRead?: () => void;
+  },
+): Promise<Record<number, unknown>> {
+  const paramValues: Record<number, unknown> = {};
+  const batchBinding = options.batchBinding ?? null;
+
+  for (let i = 0; i < params.length; i++) {
+    const p = params[i];
+    if (!p) continue;
+
+    if (p.source === "batch_no") {
+      if (!batchBinding) {
+        if ((p.literalFallback || "").trim()) continue;
+        throw new Error(`SQL 参数 {{p${i}}} 未配置结批批次号 OPC`);
+      }
+      try {
+        options.onOpcRead?.();
+        const res = await options.readOpc(batchBinding.serverId, batchBinding.nodeId);
+        if (res?.ok === false) {
+          if ((p.literalFallback || "").trim()) continue;
+          throw new Error(res.message || "结批批次号读取失败");
+        }
+        if ((res.value === null || res.value === undefined) && (p.literalFallback || "").trim()) continue;
+        paramValues[i] = res.value;
+      } catch (e) {
+        if ((p.literalFallback || "").trim()) continue;
+        const msg = e instanceof Error ? e.message : String(e);
+        throw new Error(`SQL 参数 {{p${i}}} 批次号读取失败：${msg}`);
+      }
+      continue;
+    }
+
+    if (p.source !== "opcua") continue;
+    const nodeId = (p.opcuaNodeId || "").trim();
+    if (!nodeId) {
+      if ((p.literalFallback || "").trim()) continue;
+      throw new Error(`SQL 参数 {{p${i}}} 未绑定 OPC UA 节点`);
+    }
+    const serverId = options.defaultOpcServerId;
+    if (!serverId) {
+      if ((p.literalFallback || "").trim()) continue;
+      throw new Error(`SQL 参数 {{p${i}}} 未配置 OPC UA 连接`);
+    }
+    try {
+      options.onOpcRead?.();
+      const res = await options.readOpc(serverId, nodeId);
+      if (res?.ok === false) {
+        if ((p.literalFallback || "").trim()) continue;
+        throw new Error(res.message || "OPC 参数读取失败");
+      }
+      if ((res.value === null || res.value === undefined) && (p.literalFallback || "").trim()) continue;
+      paramValues[i] = res.value;
+    } catch (e) {
+      if ((p.literalFallback || "").trim()) continue;
+      const msg = e instanceof Error ? e.message : String(e);
+      throw new Error(`SQL 参数 {{p${i}}} 读取失败：${msg}`);
+    }
+  }
+
+  return paramValues;
+}
+
 export function substituteScalarSqlParams(
   sqlRaw: string,
   params: TableSqlParamBinding[] | undefined,
@@ -279,7 +366,11 @@ export function collectBindingDedupeTasks(
         const nid = el.opcuaNodeId.trim();
         if (nid) addOpc(nid, paramKey(el.id));
       } else if (el.bindingKind === "sql") {
-        addSql(el.sqlText, paramKey(el.id), el.sqlParams);
+        addSql(
+          resolveEffectiveScalarSql(el.sqlText, el.scalarSqlFillMode, el.scalarSqlVisual),
+          paramKey(el.id),
+          el.sqlParams,
+        );
       }
     } else if (el.type === "table") {
       const grid = ensureTableGrid(el);
@@ -305,7 +396,11 @@ export function collectBindingDedupeTasks(
         const nid = el.opcuaNodeId.trim();
         if (nid) addOpc(nid, `zone-param:${el.id}`);
       } else if (el.bindingKind === "sql") {
-        addSql(el.sqlText, `zone-param:${el.id}`, el.sqlParams);
+        addSql(
+          resolveEffectiveScalarSql(el.sqlText, el.scalarSqlFillMode, el.scalarSqlVisual),
+          `zone-param:${el.id}`,
+          el.sqlParams,
+        );
       }
     } else if (el.type === "table") {
       const grid = ensureZoneTableGrid(el);
