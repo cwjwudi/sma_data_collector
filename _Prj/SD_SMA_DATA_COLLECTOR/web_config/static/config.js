@@ -532,7 +532,7 @@ function openBatchUpsertConfig(groupIndex) {
       currentConfig.groups[groupIndex].batch_upsert = { ...draft };
       if (draft.enabled) {
         currentConfig.groups[groupIndex].batch_insert_size = 1;
-        currentConfig.groups[groupIndex].recreate_interval_days = 10000;
+        currentConfig.groups[groupIndex].recreate_interval_days = 365;
         currentConfig.groups[groupIndex].is_parallel = false;
       }
       return true;
@@ -900,7 +900,7 @@ function renderGroups() {
     const batchUpsertEnabled = !!(item.batch_upsert && item.batch_upsert.enabled);
     if (batchUpsertEnabled) {
       currentConfig.groups[idx].batch_insert_size = 1;
-      currentConfig.groups[idx].recreate_interval_days = 10000;
+      currentConfig.groups[idx].recreate_interval_days = 365;
       currentConfig.groups[idx].is_parallel = false;
     }
 
@@ -966,11 +966,11 @@ function renderGroups() {
         ),
       ])
     );
-    card.appendChild(createRow([createHeaderCell("读后复位"), createHeaderCell("分表间隔(天)"), createHeaderCell("批量写入"), createHeaderCell("并行触发")]));
+    card.appendChild(createRow([createHeaderCell("读后复位"), createHeaderCell("分表间隔(最少365天)"), createHeaderCell("批量写入"), createHeaderCell("并行触发")]));
 
     const recreateInput = createInput(
-      currentConfig.groups[idx].recreate_interval_days || 30,
-      (v) => (currentConfig.groups[idx].recreate_interval_days = Number(v) || 30),
+      currentConfig.groups[idx].recreate_interval_days || 365,
+      (v) => (currentConfig.groups[idx].recreate_interval_days = Math.max(365, Number(v) || 365)),
       "number"
     );
     recreateInput.disabled = batchUpsertEnabled;
@@ -1029,7 +1029,7 @@ function renderGroups() {
       data_points: [],
       trigger_point: "",
       reset_trigger_after_read: true,
-      recreate_interval_days: 30,
+      recreate_interval_days: 365,
       batch_insert_size: 100,
       is_parallel: false,
     });

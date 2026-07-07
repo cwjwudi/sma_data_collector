@@ -118,7 +118,7 @@ class ConfigLoader:
                 trigger_interval_seconds=group_data.get('trigger_interval_seconds'),
                 trigger_point=group_data.get('trigger_point'),
                 reset_trigger_after_read=group_data.get('reset_trigger_after_read', True),
-                recreate_interval_days=group_data.get('recreate_interval_days', 30),
+                recreate_interval_days=max(365, int(group_data.get('recreate_interval_days', 365) or 365)),
                 batch_insert_size=group_data.get('batch_insert_size', 100),
                 is_parallel=group_data.get('is_parallel', False),
                 unique_key_point=group_data.get('unique_key_point'),
