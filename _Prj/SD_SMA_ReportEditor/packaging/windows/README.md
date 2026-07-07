@@ -4,18 +4,18 @@
 
 ← 打包总览与排错：[../README.md](../README.md)
 
-## 当前目标版本：0.2.2
+## 当前目标版本：0.2.1
 
-安装包版本来自 **`frontend/package.json`** 的 `version` 字段。打包日志首行须显示 `Version: 0.2.2` 与 `Expected: Report Editor-Setup-0.2.2-x64.exe`。
+安装包版本来自 **`frontend/package.json`** 的 `version` 字段。打包日志首行须显示 `Version: 0.2.1` 与 `Expected: Report Editor-Setup-0.2.1-x64.exe`。
 
 **本版更新说明**（写入 `packaging/updates/latest.json` 的 `notes`，应用内「检查更新」与 `latest.yml` 的 `releaseNotes` 均会展示）：
 
-> 签名库新增「重新签名」（为已有条目重画并替换签名图）；延续 0.2.1 的改名弹层、触发折线图、拖拽排序修复
+> 修复签名库改名按钮无效、新增「重新签名」；恢复生成报表 OPC 触发折线图实时刷新；修复模版/版式拖拽排序方向不符直觉
 
 发版前请 `git pull origin main`，确认上述 `notes` 已在仓库中；若需修改说明：
 
 ```powershell
-node packaging\scripts\bump-version.mjs 0.2.2 --notes "你的更新说明"
+node packaging\scripts\bump-version.mjs 0.2.1 --notes "你的更新说明"
 ```
 
 ## 一发版流程（推荐）
