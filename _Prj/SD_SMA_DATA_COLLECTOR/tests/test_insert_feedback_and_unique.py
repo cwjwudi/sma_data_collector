@@ -181,6 +181,93 @@ class TestUniqueAndFeedbackConfig(unittest.TestCase):
         finally:
             self._cleanup_temp_file(temp_file)
 
+    def test_only_one_batch_upsert_group_allowed(self):
+        config_data = {
+            "points": [
+                {"name": "batch_no", "path": "ns=6;s=batch_no", "description": "batch"},
+                {"name": "start_time", "path": "ns=6;s=start_time", "description": "start"},
+                {"name": "end_time", "path": "ns=6;s=end_time", "description": "end"},
+            ],
+            "groups": [
+                {
+                    "name": "batch_a",
+                    "interval_seconds": 1,
+                    "trigger": "time",
+                    "description": "batch a",
+                    "data_points": ["batch_no", "start_time", "end_time"],
+                    "unique_key_point": "batch_no",
+                    "batch_upsert": {
+                        "enabled": True,
+                        "start_time_point": "start_time",
+                        "end_time_point": "end_time",
+                    },
+                },
+                {
+                    "name": "batch_b",
+                    "interval_seconds": 1,
+                    "trigger": "time",
+                    "description": "batch b",
+                    "data_points": ["batch_no", "start_time", "end_time"],
+                    "unique_key_point": "batch_no",
+                    "batch_upsert": {
+                        "enabled": True,
+                        "start_time_point": "start_time",
+                        "end_time_point": "end_time",
+                    },
+                },
+            ],
+            "database": {"type": "sqlite", "name": "test.db", "data_groups": ["batch_a", "batch_b"]},
+        }
+
+        temp_file = self._create_temp_config(config_data)
+        try:
+            with self.assertRaises(ValueError) as ctx:
+                ConfigLoader.load_from_file(temp_file)
+            self.assertIn("只能启用一张 batch_upsert", str(ctx.exception))
+        finally:
+            self._cleanup_temp_file(temp_file)
+
+    def test_detail_group_must_include_master_batch_no(self):
+        config_data = {
+            "points": [
+                {"name": "batch_no", "path": "ns=6;s=batch_no", "description": "batch"},
+                {"name": "start_time", "path": "ns=6;s=start_time", "description": "start"},
+                {"name": "end_time", "path": "ns=6;s=end_time", "description": "end"},
+                {"name": "value", "path": "ns=6;s=value", "description": "value"},
+            ],
+            "groups": [
+                {
+                    "name": "BatchHeader",
+                    "interval_seconds": 1,
+                    "trigger": "time",
+                    "description": "batch",
+                    "data_points": ["batch_no", "start_time", "end_time"],
+                    "unique_key_point": "batch_no",
+                    "batch_upsert": {
+                        "enabled": True,
+                        "start_time_point": "start_time",
+                        "end_time_point": "end_time",
+                    },
+                },
+                {
+                    "name": "Detail",
+                    "interval_seconds": 1,
+                    "trigger": "time",
+                    "description": "detail",
+                    "data_points": ["value"],
+                },
+            ],
+            "database": {"type": "sqlite", "name": "test.db", "data_groups": ["BatchHeader", "Detail"]},
+        }
+
+        temp_file = self._create_temp_config(config_data)
+        try:
+            with self.assertRaises(ValueError) as ctx:
+                ConfigLoader.load_from_file(temp_file)
+            self.assertIn("必须包含批次主表的批次号点位", str(ctx.exception))
+        finally:
+            self._cleanup_temp_file(temp_file)
+
 
 class TestUniqueAndFeedbackRuntime(unittest.IsolatedAsyncioTestCase):
     """入库流程唯一性与反馈测试"""

@@ -46,6 +46,8 @@ class DataStorageProcessor:
         self.group_batch_upsert_configs = {}  # 存储各组批次更新配置
         self.group_batch_time_configs = {}  # 存储各组开批/结批时间点配置
         self.group_open_batch_partition_times = {}  # 存储未结批批次的开批时间
+        self.group_data_points = {}  # 存储各组数据点列表
+        self.group_partition_interval_years = {}  # 存储各组分表间隔年份
         self.group_insert_feedback_configs = {}  # 存储各组反馈配置
         self.group_indexes_configs = {}  # 存储各组索引配置
         self.points_dict = points_dict or {}  # 数据点配置字典
@@ -57,6 +59,12 @@ class DataStorageProcessor:
         self.column_types_cache = {}  # 缓存列类型信息
         self.ensured_tables = set()  # 记录已确保存在的数据表，避免重复 CREATE TABLE
         self._batch_ready_event: Optional[asyncio.Event] = None # 某组达到 batch大小时唤醒处理循环
+        self.batch_master_group_name: Optional[str] = None
+        self.batch_master_config: Dict[str, Any] = {}
+        self.batch_master_unique_key_point: Optional[str] = None
+        self.current_batch_context: Optional[Dict[str, Any]] = None
+        self._closed_batch_context: Optional[Dict[str, Any]] = None
+        self._batch_close_flush_requested = False
     
     def add_data(self, collection_data: Dict[str, Any]) -> None:
         """
@@ -98,6 +106,9 @@ class DataStorageProcessor:
         self._batch_ready_event = None
         self.ensured_tables.clear()
         self.group_open_batch_partition_times.clear()
+        self.current_batch_context = None
+        self._closed_batch_context = None
+        self._batch_close_flush_requested = False
         if self.processing_task:
             self.processing_task.cancel()
             try:
@@ -105,6 +116,121 @@ class DataStorageProcessor:
             except asyncio.CancelledError:
                 pass
         self.logger.info("数据存储处理器已停止")
+
+    def initialize_tables_for_runtime(self) -> bool:
+        """
+        启动时集中检查需要的数据表。
+        启用 batch_upsert 主表时，只先确保主表，并尝试恢复未结批批次上下文；
+        未配置 batch_upsert 的旧配置继续按当前年份做一次兼容建表。
+        """
+        if self.batch_master_group_name:
+            if not self._ensure_group_table(self.batch_master_group_name, fixed_table=True):
+                return False
+            if not self._load_open_batch_context():
+                return True
+            return self._ensure_detail_tables_for_current_batch()
+
+        ok = True
+        for group_name in self.group_data_points:
+            table_name = self.db_manager.get_current_table_name(
+                group_name,
+                partition_time=datetime.now(),
+                partition_interval_years=self.group_partition_interval_years.get(group_name, 1),
+            )
+            ok = self._ensure_group_table(group_name, table_name=table_name) and ok
+        return ok
+
+    def _get_group_column_types(self, group_name: str) -> Dict[str, str]:
+        if group_name in self.column_types_cache:
+            return self.column_types_cache[group_name]
+
+        column_types: Dict[str, str] = {}
+        for point_name in self.group_data_points.get(group_name, []):
+            point_config = self.points_dict.get(point_name)
+            datatype = getattr(point_config, 'datatype', None) if point_config else None
+            column_types[point_name] = (
+                self._get_db_type_from_datatype(datatype)
+                if datatype
+                else "VARCHAR(255)"
+            )
+        self.column_types_cache[group_name] = column_types
+        return column_types
+
+    def _ensure_group_table(
+        self,
+        group_name: str,
+        table_name: Optional[str] = None,
+        fixed_table: bool = False,
+    ) -> bool:
+        if table_name is None:
+            table_name = self.db_manager.get_current_table_name(group_name, fixed_table=fixed_table)
+
+        column_types = self._get_group_column_types(group_name)
+        indexes = self.group_indexes_configs.get(group_name)
+        return self._ensure_table_exists(table_name, column_types, indexes=indexes)
+
+    def _is_table_ready_for_insert(self, table_name: str) -> bool:
+        if table_name in self.ensured_tables:
+            return True
+        # 兼容旧的单元测试/直调场景：未注入 group_data_points 时没有启动期建表上下文。
+        return not self.group_data_points
+
+    def _ensure_detail_tables_for_current_batch(self) -> bool:
+        batch_context = self.current_batch_context or self._closed_batch_context
+        if not batch_context:
+            return True
+
+        ok = True
+        for group_name in self.group_data_points:
+            if group_name == self.batch_master_group_name:
+                continue
+            table_name = self.db_manager.get_current_table_name(
+                group_name,
+                partition_time=batch_context["start_time"],
+                partition_interval_years=self.group_partition_interval_years.get(group_name, 1),
+            )
+            ok = self._ensure_group_table(group_name, table_name=table_name) and ok
+        return ok
+
+    def _load_open_batch_context(self) -> bool:
+        if not self.batch_master_group_name or not self.batch_master_unique_key_point:
+            return False
+
+        start_time_point = self.batch_master_config.get("start_time_point")
+        end_time_point = self.batch_master_config.get("end_time_point")
+        if not start_time_point or not end_time_point:
+            return False
+
+        table_name = self.db_manager.get_current_table_name(
+            self.batch_master_group_name,
+            fixed_table=True,
+        )
+        sql = (
+            f"SELECT `{self.batch_master_unique_key_point}`, `{start_time_point}` "
+            f"FROM `{table_name}` "
+            f"WHERE `{end_time_point}` IS NULL ORDER BY `id` DESC LIMIT 1"
+        )
+        try:
+            rows = self.db_manager.execute_query(sql)
+        except Exception as exc:
+            self.logger.warning("读取未结批批次失败，将等待下一次开批数据: %s", exc)
+            return False
+
+        if not rows:
+            return False
+
+        batch_no, start_time_value = rows[0][0], rows[0][1]
+        start_time = self._parse_datetime_value(start_time_value)
+        if not start_time:
+            self.logger.warning("未结批批次的开批时间无法解析: %s", start_time_value)
+            return False
+
+        self.current_batch_context = {
+            "batch_no": batch_no,
+            "start_time": start_time,
+        }
+        self.logger.info("恢复未结批批次上下文: batch_no=%s, start_time=%s", batch_no, start_time)
+        return True
     
     async def _process_data_loop(self) -> None:
         """数据处理循环"""
@@ -195,19 +321,19 @@ class DataStorageProcessor:
         unprocessable_data = []
         
         group_counts = {}
-        force_flush_groups = set()
+        force_flush_all = False
         for data_item in temp_queue:
             group_name = data_item['group_name']
             group_counts[group_name] = group_counts.get(group_name, 0) + 1
             if self._is_batch_close_record(data_item):
-                force_flush_groups.add(group_name)
+                force_flush_all = True
         
         # 分离可处理和不可处理的数据
         for data_item in temp_queue:
             group_name = data_item['group_name']
             batch_size = self.group_batch_sizes.get(group_name, self.default_batch_size)
             
-            if group_counts[group_name] >= batch_size or group_name in force_flush_groups:
+            if force_flush_all or group_counts[group_name] >= batch_size:
                 processable_data.append(data_item)
             else:
                 unprocessable_data.append(data_item)
@@ -225,9 +351,20 @@ class DataStorageProcessor:
                 grouped_processable[group_name] = []
             grouped_processable[group_name].append(data_item)
         
+        process_order = list(grouped_processable.keys())
+        if self.batch_master_group_name in grouped_processable:
+            process_order.remove(self.batch_master_group_name)
+            process_order.insert(0, self.batch_master_group_name)
+
         # 分别处理每个组的数据
-        for group_name, group_data_list in grouped_processable.items():
+        for group_name in process_order:
+            group_data_list = grouped_processable[group_name]
             await self._process_group_data(group_name, group_data_list)
+
+        if self._batch_close_flush_requested:
+            self.current_batch_context = None
+            self._closed_batch_context = None
+            self._batch_close_flush_requested = False
     
     async def _process_batch(self, batch_data: List[Dict[str, Any]]) -> None:
         """
@@ -248,9 +385,20 @@ class DataStorageProcessor:
                     grouped_data[group_name] = []
                 grouped_data[group_name].append(data_item)
             
+            process_order = list(grouped_data.keys())
+            if self.batch_master_group_name in grouped_data:
+                process_order.remove(self.batch_master_group_name)
+                process_order.insert(0, self.batch_master_group_name)
+
             # 分别处理每个组的数据
-            for group_name, group_data_list in grouped_data.items():
+            for group_name in process_order:
+                group_data_list = grouped_data[group_name]
                 await self._process_group_data(group_name, group_data_list)
+
+            if self._batch_close_flush_requested:
+                self.current_batch_context = None
+                self._closed_batch_context = None
+                self._batch_close_flush_requested = False
             
         except Exception as e:
             self.logger.error(f"批处理数据失败: {e}", exc_info=True)
@@ -273,23 +421,10 @@ class DataStorageProcessor:
             table_name = self._get_table_name_for_data_item(group_name, sample_data)
             unique_key_point = self.group_unique_key_points.get(group_name)
             batch_upsert_config = self.group_batch_upsert_configs.get(group_name)
-            group_indexes = self.group_indexes_configs.get(group_name)
 
             # 准备插入数据
-            column_types = self._infer_column_types(sample_data)
-
-            # 创建表（如果不存在）
-            if not self._ensure_table_exists(table_name, column_types, indexes=group_indexes):
-                await self._write_insert_feedback_by_outcome(
-                    group_name,
-                    {
-                        self.STATUS_SUCCESS: 0,
-                        self.STATUS_UNIQUE_CONFLICT: 0,
-                        self.STATUS_DB_ERROR: 1,
-                        self.STATUS_OTHER_ERROR: 0,
-                    },
-                )
-                return
+            if group_name not in self.column_types_cache:
+                self._infer_column_types(sample_data)
             
             # 转换数据格式并逐条处理（支持唯一性检查）
             outcome_counts = {
@@ -300,7 +435,12 @@ class DataStorageProcessor:
             }
             for data_item in group_data_list:
                 table_name = self._get_table_name_for_data_item(group_name, data_item)
-                if not self._ensure_table_exists(table_name, column_types, indexes=group_indexes):
+                if not self._is_table_ready_for_insert(table_name):
+                    self.logger.error(
+                        "组 %s 的目标表尚未在启动或批次切换时完成检查: %s",
+                        group_name,
+                        table_name,
+                    )
                     outcome_counts[self.STATUS_DB_ERROR] += 1
                     continue
 
@@ -372,6 +512,12 @@ class DataStorageProcessor:
                                 insert_data.get(start_time_point) if start_time_point else None,
                                 table_name,
                             )
+                            if group_name == self.batch_master_group_name:
+                                self._set_current_batch_context(
+                                    insert_data.get(unique_key_point),
+                                    insert_data.get(start_time_point) if start_time_point else None,
+                                    data_item.get('collection_time'),
+                                )
                 else:
                     outcome_counts[self.STATUS_DB_ERROR] += 1
 
@@ -451,6 +597,45 @@ class DataStorageProcessor:
             or self.group_batch_upsert_configs.get(group_name)
         )
 
+    def _set_current_batch_context(
+        self,
+        batch_no: Any,
+        start_time_value: Any,
+        fallback_time: Optional[datetime] = None,
+    ) -> bool:
+        start_time = self._parse_datetime_value(start_time_value) or fallback_time
+        if not start_time:
+            self.logger.error("无法建立批次上下文，开批时间为空或无法解析: %s", start_time_value)
+            return False
+
+        self.current_batch_context = {
+            "batch_no": batch_no,
+            "start_time": start_time,
+        }
+        self._closed_batch_context = None
+        if not self._ensure_detail_tables_for_current_batch():
+            self.logger.error("批次明细表检查失败: batch_no=%s, start_time=%s", batch_no, start_time)
+            return False
+        self.logger.info("当前批次上下文已更新: batch_no=%s, start_time=%s", batch_no, start_time)
+        return True
+
+    def _mark_current_batch_closed(
+        self,
+        batch_no: Any,
+        start_time_value: Any,
+        fallback_time: Optional[datetime] = None,
+    ) -> None:
+        if not self.current_batch_context:
+            self._set_current_batch_context(batch_no, start_time_value, fallback_time)
+
+        if self.current_batch_context:
+            self._closed_batch_context = dict(self.current_batch_context)
+            self._ensure_detail_tables_for_current_batch()
+        self._batch_close_flush_requested = True
+
+    def _get_batch_context_for_writes(self) -> Optional[Dict[str, Any]]:
+        return self.current_batch_context or self._closed_batch_context
+
     @staticmethod
     def _has_data_value(value: Any) -> bool:
         if value is None:
@@ -521,10 +706,10 @@ class DataStorageProcessor:
 
     def _is_batch_close_record(self, collection_data: Dict[str, Any]) -> bool:
         group_name = collection_data.get('group_name')
-        if not group_name:
+        if not group_name or group_name != self.batch_master_group_name:
             return False
 
-        batch_time_config = self._get_batch_time_config(group_name)
+        batch_time_config = self.batch_master_config or self._get_batch_time_config(group_name)
         if not batch_time_config:
             return False
 
@@ -543,27 +728,30 @@ class DataStorageProcessor:
         return True
 
     def _get_table_name_for_data_item(self, group_name: str, collection_data: Dict[str, Any]) -> str:
-        if self.group_batch_upsert_configs.get(group_name):
+        if group_name == self.batch_master_group_name:
             return self.db_manager.get_current_table_name(group_name, fixed_table=True)
 
-        partition_time = self._get_batch_start_time(group_name, collection_data)
-        if partition_time is not None:
-            self.group_open_batch_partition_times[group_name] = partition_time
-        else:
-            partition_time = self.group_open_batch_partition_times.get(group_name)
+        if self.batch_master_group_name:
+            batch_context = self._get_batch_context_for_writes()
+            if not batch_context:
+                raise RuntimeError(
+                    f"数据组 {group_name} 没有可用的批次上下文，无法确定分表年份"
+                )
+            return self.db_manager.get_current_table_name(
+                group_name,
+                partition_time=batch_context["start_time"],
+                partition_interval_years=self.group_partition_interval_years.get(group_name, 1),
+            )
 
+        partition_time = self._get_batch_start_time(group_name, collection_data)
         if partition_time is None:
             partition_time = collection_data.get('collection_time')
 
-        table_name = self.db_manager.get_current_table_name(
+        return self.db_manager.get_current_table_name(
             group_name,
             partition_time=partition_time,
+            partition_interval_years=self.group_partition_interval_years.get(group_name, 1),
         )
-
-        if self._is_batch_close_record(collection_data):
-            self.group_open_batch_partition_times.pop(group_name, None)
-
-        return table_name
     
     def _infer_column_types(self, sample_data: Dict[str, Any]) -> Dict[str, str]:
         """
@@ -845,6 +1033,7 @@ class DataStorageProcessor:
         - 可选允许同值 end_time 幂等重放。
         """
         end_time_point = batch_upsert_config.get("end_time_point")
+        start_time_point = batch_upsert_config.get("start_time_point")
         allow_idempotent = bool(batch_upsert_config.get("allow_idempotent_same_end_time", False))
         new_end_time = insert_data.get(end_time_point)
 
@@ -885,6 +1074,11 @@ class DataStorageProcessor:
                     end_time_point,
                     new_end_time,
                 )
+                if group_name == self.batch_master_group_name:
+                    self._mark_current_batch_closed(
+                        unique_value,
+                        insert_data.get(start_time_point) if start_time_point else None,
+                    )
                 return self.STATUS_SUCCESS
 
             if allow_idempotent:
@@ -905,6 +1099,11 @@ class DataStorageProcessor:
                             end_time_point,
                             new_end_time,
                         )
+                        if group_name == self.batch_master_group_name:
+                            self._mark_current_batch_closed(
+                                unique_value,
+                                insert_data.get(start_time_point) if start_time_point else None,
+                            )
                         return self.STATUS_SUCCESS
 
             self.logger.warning(

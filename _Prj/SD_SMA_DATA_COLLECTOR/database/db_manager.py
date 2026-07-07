@@ -390,8 +390,15 @@ class DatabaseManager:
         return datetime.now()
 
     @staticmethod
-    def _format_year_table_name(group_name: str, partition_time: datetime) -> str:
-        return f"{group_name}_{partition_time.strftime('%Y')}"
+    def _format_year_table_name(
+        group_name: str,
+        partition_time: datetime,
+        partition_interval_years: int = 1,
+    ) -> str:
+        interval = max(1, int(partition_interval_years or 1))
+        year = partition_time.year
+        suffix_year = year - ((year - 1) % interval)
+        return f"{group_name}_{suffix_year:04d}"
 
     @staticmethod
     def _parse_partitioned_table_name(table_name: str) -> Optional[Tuple[str, datetime]]:
@@ -421,6 +428,7 @@ class DatabaseManager:
         group_name: str = None,
         partition_time: Optional[Any] = None,
         fixed_table: bool = False,
+        partition_interval_years: Optional[int] = None,
     ) -> str:
         """
         获取当前使用的表名（根据group_name和日期自动切换）
@@ -439,7 +447,14 @@ class DatabaseManager:
             self.table_created_dates[group_name] = effective_time
             return group_name
 
-        new_table_name = self._format_year_table_name(group_name, effective_time)
+        if partition_interval_years is None and group_name in self.group_configs:
+            partition_interval_years = self.group_configs[group_name].get('partition_interval_years', 1)
+
+        new_table_name = self._format_year_table_name(
+            group_name,
+            effective_time,
+            partition_interval_years or 1,
+        )
         current_table_name = self.current_table_names.get(group_name)
 
         if current_table_name != new_table_name:

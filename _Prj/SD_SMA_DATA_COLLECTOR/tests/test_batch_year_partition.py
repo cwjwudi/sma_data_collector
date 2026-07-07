@@ -6,12 +6,21 @@ from database.data_storage import DataStorageProcessor
 from database.db_manager import DatabaseManager
 
 
-def collection_item(group_name, start_time, end_time=None, collection_time=None, value=1):
+BATCH_CFG = {
+    "start_time_point": "start_time",
+    "end_time_point": "end_time",
+    "update_only_when_end_time_is_null": True,
+    "reject_when_end_time_exists": True,
+    "allow_idempotent_same_end_time": False,
+}
+
+
+def collection_item(group_name, batch_no="B001", start_time=None, end_time=None, collection_time=None, value=1):
     return {
         "group_name": group_name,
         "collection_time": collection_time or datetime(2027, 1, 1, 0, 0, 0),
         "data": {
-            "batch_no": {"value": f"B{value:03d}"},
+            "batch_no": {"value": batch_no},
             "start_time": {"value": start_time},
             "end_time": {"value": end_time},
             "value": {"value": value},
@@ -23,7 +32,7 @@ class TestBatchYearPartition(unittest.IsolatedAsyncioTestCase):
     def make_processor(self):
         db_manager = Mock()
 
-        def resolve_table_name(group_name=None, partition_time=None, fixed_table=False):
+        def resolve_table_name(group_name=None, partition_time=None, fixed_table=False, partition_interval_years=1):
             if fixed_table:
                 return group_name
             return f"{group_name}_{partition_time.strftime('%Y')}"
@@ -36,18 +45,29 @@ class TestBatchYearPartition(unittest.IsolatedAsyncioTestCase):
         db_manager.execute_query.return_value = []
 
         processor = DataStorageProcessor(db_manager, batch_size=10)
+        processor.group_data_points["BatchHeader"] = ["batch_no", "start_time", "end_time"]
+        processor.group_data_points["BatchData"] = ["batch_no", "value"]
+        processor.group_partition_interval_years["BatchHeader"] = 1
+        processor.group_partition_interval_years["BatchData"] = 1
+        processor.group_batch_sizes["BatchHeader"] = 1
+        processor.group_batch_sizes["BatchData"] = 10
+        processor.group_unique_key_points["BatchHeader"] = "batch_no"
+        processor.group_batch_upsert_configs["BatchHeader"] = dict(BATCH_CFG)
+        processor.batch_master_group_name = "BatchHeader"
+        processor.batch_master_config = dict(BATCH_CFG)
+        processor.batch_master_unique_key_point = "batch_no"
         return processor, db_manager
 
-    def test_database_manager_uses_year_suffix(self):
+    def test_database_manager_uses_calendar_year_suffix(self):
         manager = DatabaseManager({"type": "sqlite", "name": ":memory:", "data_groups": ["BatchData"]})
 
         self.assertEqual(
-            manager.get_current_table_name("BatchData", partition_time=datetime(2026, 5, 11)),
-            "BatchData_2026",
+            manager.get_current_table_name("BatchData", partition_time=datetime(2025, 12, 31)),
+            "BatchData_2025",
         )
         self.assertEqual(
-            manager.get_current_table_name("BatchData", partition_time=datetime(2027, 1, 1)),
-            "BatchData_2027",
+            manager.get_current_table_name("BatchData", partition_time=datetime(2026, 1, 1)),
+            "BatchData_2026",
         )
 
     def test_database_manager_fixed_table_has_no_year_suffix(self):
@@ -58,104 +78,90 @@ class TestBatchYearPartition(unittest.IsolatedAsyncioTestCase):
             "BatchHeader",
         )
 
-    async def test_batch_data_uses_start_time_year_not_collection_time(self):
+    async def test_batch_open_creates_detail_table_for_start_year(self):
         processor, db_manager = self.make_processor()
-        processor.group_batch_time_configs["BatchData"] = {
-            "start_time_point": "start_time",
-            "end_time_point": "end_time",
-        }
+        processor.initialize_tables_for_runtime()
+        db_manager.create_data_table.reset_mock()
+
+        await processor._process_group_data(
+            "BatchHeader",
+            [
+                collection_item(
+                    "BatchHeader",
+                    start_time=datetime(2025, 12, 31, 23, 30, 0),
+                    value=1,
+                )
+            ],
+        )
+
+        self.assertEqual(processor.current_batch_context["batch_no"], "B001")
+        self.assertEqual(processor.current_batch_context["start_time"].year, 2025)
+        created_tables = [call.args[0] for call in db_manager.create_data_table.call_args_list]
+        self.assertEqual(created_tables, ["BatchData_2025"])
+
+    async def test_detail_data_uses_master_start_year_not_collection_time(self):
+        processor, db_manager = self.make_processor()
+        processor.initialize_tables_for_runtime()
+        await processor._process_group_data(
+            "BatchHeader",
+            [collection_item("BatchHeader", start_time=datetime(2025, 12, 31, 23, 30, 0))],
+        )
+        db_manager.create_data_table.reset_mock()
 
         await processor._process_group_data(
             "BatchData",
             [
                 collection_item(
                     "BatchData",
-                    start_time=datetime(2026, 12, 31, 23, 30, 0),
-                    collection_time=datetime(2027, 1, 1, 0, 5, 0),
-                    value=1,
-                ),
-                collection_item(
-                    "BatchData",
-                    start_time=datetime(2026, 12, 31, 23, 30, 0),
-                    collection_time=datetime(2027, 1, 1, 0, 10, 0),
+                    start_time=None,
+                    collection_time=datetime(2026, 1, 1, 0, 10, 0),
                     value=2,
-                ),
+                )
             ],
         )
 
         inserted_tables = [call.args[0] for call in db_manager.execute_insert.call_args_list]
-        self.assertEqual(inserted_tables, ["BatchData_2026", "BatchData_2026"])
+        self.assertIn("BatchData_2025", inserted_tables)
+        db_manager.create_data_table.assert_not_called()
 
-    async def test_open_batch_keeps_start_year_when_later_rows_omit_start_time(self):
+    async def test_master_close_flushes_all_groups_even_when_under_batch_size(self):
         processor, db_manager = self.make_processor()
-        processor.group_batch_time_configs["BatchData"] = {
-            "start_time_point": "start_time",
-            "end_time_point": "end_time",
-        }
-
-        later_row = collection_item(
-            "BatchData",
-            start_time=None,
-            collection_time=datetime(2027, 1, 1, 0, 10, 0),
-            value=2,
-        )
-
+        processor.initialize_tables_for_runtime()
         await processor._process_group_data(
-            "BatchData",
-            [
-                collection_item(
-                    "BatchData",
-                    start_time=datetime(2026, 12, 31, 23, 30, 0),
-                    collection_time=datetime(2026, 12, 31, 23, 35, 0),
-                    value=1,
-                ),
-                later_row,
-            ],
+            "BatchHeader",
+            [collection_item("BatchHeader", start_time=datetime(2025, 12, 31, 23, 30, 0))],
         )
+        processor.data_queue.clear()
+        db_manager.record_exists.return_value = True
+        db_manager.execute_insert.reset_mock()
 
-        inserted_tables = [call.args[0] for call in db_manager.execute_insert.call_args_list]
-        self.assertEqual(inserted_tables, ["BatchData_2026", "BatchData_2026"])
-
-    async def test_batch_close_flushes_group_even_when_under_batch_size(self):
-        processor, db_manager = self.make_processor()
-        processor.group_batch_sizes["BatchData"] = 10
-        processor.group_batch_time_configs["BatchData"] = {
-            "start_time_point": "start_time",
-            "end_time_point": "end_time",
-        }
-
-        processor.add_data(collection_item("BatchData", datetime(2026, 5, 1, 8, 0, 0), value=1))
+        processor.add_data(collection_item("BatchData", batch_no="B001", value=10))
         self.assertFalse(processor._has_enough_data_for_batch())
-
         processor.add_data(
             collection_item(
-                "BatchData",
-                datetime(2026, 5, 1, 8, 0, 0),
-                datetime(2026, 5, 1, 9, 0, 0),
-                value=2,
+                "BatchHeader",
+                batch_no="B001",
+                start_time=datetime(2025, 12, 31, 23, 30, 0),
+                end_time=datetime(2026, 1, 1, 1, 0, 0),
+                value=1,
             )
         )
 
         self.assertTrue(processor._has_enough_data_for_batch())
         await processor._process_data_by_groups()
 
+        inserted_tables = [call.args[0] for call in db_manager.execute_insert.call_args_list]
+        self.assertEqual(inserted_tables, ["BatchData_2025"])
         self.assertEqual(processor.get_queue_size(), 0)
-        self.assertEqual(db_manager.execute_insert.call_count, 2)
+        self.assertIsNone(processor.current_batch_context)
 
     async def test_batch_upsert_enabled_uses_fixed_table_name(self):
         processor, db_manager = self.make_processor()
-        processor.group_unique_key_points["BatchHeader"] = "batch_no"
-        processor.group_batch_upsert_configs["BatchHeader"] = {
-            "start_time_point": "start_time",
-            "end_time_point": "end_time",
-            "update_only_when_end_time_is_null": True,
-            "reject_when_end_time_exists": True,
-            "allow_idempotent_same_end_time": False,
-        }
+        processor.initialize_tables_for_runtime()
 
         await processor._process_group_data(
             "BatchHeader",
-            [collection_item("BatchHeader", datetime(2026, 5, 1, 8, 0, 0), value=1)],
+            [collection_item("BatchHeader", start_time=datetime(2026, 5, 1, 8, 0, 0), value=1)],
         )
 
         db_manager.get_current_table_name.assert_any_call("BatchHeader", fixed_table=True)

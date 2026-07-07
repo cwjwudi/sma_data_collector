@@ -118,7 +118,8 @@ class ConfigLoader:
                 trigger_interval_seconds=group_data.get('trigger_interval_seconds'),
                 trigger_point=group_data.get('trigger_point'),
                 reset_trigger_after_read=group_data.get('reset_trigger_after_read', True),
-                recreate_interval_days=max(365, int(group_data.get('recreate_interval_days', 365) or 365)),
+                partition_interval_years=max(1, int(group_data.get('partition_interval_years', 1) or 1)),
+                recreate_interval_days=int(group_data.get('recreate_interval_days', 1) or 1),
                 batch_insert_size=group_data.get('batch_insert_size', 100),
                 is_parallel=group_data.get('is_parallel', False),
                 unique_key_point=group_data.get('unique_key_point'),
@@ -213,8 +214,22 @@ class ConfigLoader:
             raise ValueError("数据点名称必须唯一")
         
         # 检查数据组引用的数据点是否存在
+        batch_upsert_groups = [
+            group for group in config.groups
+            if group.batch_upsert and group.batch_upsert.enabled
+        ]
+        if len(batch_upsert_groups) > 1:
+            names = [group.name for group in batch_upsert_groups]
+            raise ValueError(f"同一配置中只能启用一张 batch_upsert 批次主表: {names}")
+        batch_upsert_master = batch_upsert_groups[0] if batch_upsert_groups else None
+
         point_name_set = set(point_names)
         for group in config.groups:
+            if group.partition_interval_years < 1:
+                raise ValueError(
+                    f"数据组 '{group.name}' 的 partition_interval_years 必须大于等于 1"
+                )
+
             for point_name in group.data_points:
                 if point_name not in point_name_set:
                     raise ValueError(f"数据组 '{group.name}' 引用了不存在的数据点: {point_name}")
@@ -278,6 +293,17 @@ class ConfigLoader:
                         f"数据组 '{group.name}' 当前仅支持 batch_upsert.reject_when_end_time_exists=true"
                     )
             
+            if (
+                batch_upsert_master
+                and group.name != batch_upsert_master.name
+                and batch_upsert_master.unique_key_point
+                and batch_upsert_master.unique_key_point not in group.data_points
+            ):
+                raise ValueError(
+                    f"数据组 '{group.name}' 必须包含批次主表的批次号点位 "
+                    f"{batch_upsert_master.unique_key_point}"
+                )
+
             if group.trigger == TriggerType.VARIABLE:
                 if not group.trigger_point:
                     raise ValueError(f"触发类型为variable的数据组 '{group.name}' 必须指定trigger_point")

@@ -529,10 +529,17 @@ function openBatchUpsertConfig(groupIndex) {
       });
     },
     onConfirm: () => {
+      if (draft.enabled) {
+        currentConfig.groups.forEach((group, idx) => {
+          if (idx !== groupIndex && group.batch_upsert) {
+            group.batch_upsert.enabled = false;
+          }
+        });
+      }
       currentConfig.groups[groupIndex].batch_upsert = { ...draft };
       if (draft.enabled) {
         currentConfig.groups[groupIndex].batch_insert_size = 1;
-        currentConfig.groups[groupIndex].recreate_interval_days = 365;
+        currentConfig.groups[groupIndex].partition_interval_years = 1;
         currentConfig.groups[groupIndex].is_parallel = false;
       }
       return true;
@@ -897,10 +904,16 @@ function renderGroups() {
     const groupSelectedPointOptions = pointOptions.filter((opt) =>
       (item.data_points || []).includes(opt.value)
     );
+    currentConfig.groups[idx].partition_interval_years = Math.max(
+      1,
+      Number(currentConfig.groups[idx].partition_interval_years) || 1
+    );
+    currentConfig.groups[idx].recreate_interval_days =
+      Number(currentConfig.groups[idx].recreate_interval_days) || 1;
     const batchUpsertEnabled = !!(item.batch_upsert && item.batch_upsert.enabled);
     if (batchUpsertEnabled) {
       currentConfig.groups[idx].batch_insert_size = 1;
-      currentConfig.groups[idx].recreate_interval_days = 365;
+      currentConfig.groups[idx].partition_interval_years = 1;
       currentConfig.groups[idx].is_parallel = false;
     }
 
@@ -966,14 +979,14 @@ function renderGroups() {
         ),
       ])
     );
-    card.appendChild(createRow([createHeaderCell("读后复位"), createHeaderCell("分表间隔(最少365天)"), createHeaderCell("批量写入"), createHeaderCell("并行触发")]));
+    card.appendChild(createRow([createHeaderCell("读后复位"), createHeaderCell("分表间隔年份"), createHeaderCell("批量写入"), createHeaderCell("并行触发")]));
 
-    const recreateInput = createInput(
-      currentConfig.groups[idx].recreate_interval_days || 365,
-      (v) => (currentConfig.groups[idx].recreate_interval_days = Math.max(365, Number(v) || 365)),
+    const partitionYearsInput = createInput(
+      currentConfig.groups[idx].partition_interval_years || 1,
+      (v) => (currentConfig.groups[idx].partition_interval_years = Math.max(1, Number(v) || 1)),
       "number"
     );
-    recreateInput.disabled = batchUpsertEnabled;
+    partitionYearsInput.disabled = batchUpsertEnabled;
 
     const batchInsertInput = createInput(
       currentConfig.groups[idx].batch_insert_size || 100,
@@ -985,7 +998,7 @@ function renderGroups() {
     card.appendChild(
       createRow([
         createCheckbox(item.reset_trigger_after_read !== false, (v) => (currentConfig.groups[idx].reset_trigger_after_read = v)),
-        createLockedField(recreateInput, batchUpsertEnabled),
+        createLockedField(partitionYearsInput, batchUpsertEnabled),
         createLockedField(batchInsertInput, batchUpsertEnabled),
         createLockedField(
           (() => {
@@ -1029,7 +1042,8 @@ function renderGroups() {
       data_points: [],
       trigger_point: "",
       reset_trigger_after_read: true,
-      recreate_interval_days: 365,
+      partition_interval_years: 1,
+      recreate_interval_days: 1,
       batch_insert_size: 100,
       is_parallel: false,
     });

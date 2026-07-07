@@ -143,6 +143,7 @@ class DataCollectionSystem:
             for group in self.config.groups:
                 group_configs[group.name] = {
                     "recreate_interval_days": group.recreate_interval_days,
+                    "partition_interval_years": group.partition_interval_years,
                     "batch_insert_size": group.batch_insert_size,
                 }
 
@@ -179,6 +180,8 @@ class DataCollectionSystem:
             for group in self.config.groups:
                 self.storage_processor.group_batch_sizes[group.name] = group.batch_insert_size
                 self.storage_processor.group_unique_key_points[group.name] = group.unique_key_point
+                self.storage_processor.group_data_points[group.name] = list(group.data_points)
+                self.storage_processor.group_partition_interval_years[group.name] = group.partition_interval_years
                 if group.batch_upsert:
                     batch_time_config = {
                         "start_time_point": group.batch_upsert.start_time_point,
@@ -191,6 +194,9 @@ class DataCollectionSystem:
                         self.storage_processor.group_batch_time_configs[group.name] = batch_time_config
                     if group.batch_upsert.enabled:
                         self.storage_processor.group_batch_upsert_configs[group.name] = batch_time_config
+                        self.storage_processor.batch_master_group_name = group.name
+                        self.storage_processor.batch_master_config = batch_time_config
+                        self.storage_processor.batch_master_unique_key_point = group.unique_key_point
                 if group.insert_feedback:
                     feedback_point_name = group.insert_feedback.feedback_point
                     feedback_point_path = points_dict[feedback_point_name].path
@@ -213,6 +219,10 @@ class DataCollectionSystem:
                         for idx in group.indexes
                     ]
                 self.logger.debug("设置组 %s 的batch_size为 %s", group.name, group.batch_insert_size)
+
+            if not self.storage_processor.initialize_tables_for_runtime():
+                self.logger.error("数据表初始化检查失败")
+                return False
 
             self.data_collector = DataCollector(self.communication_manager)
             self.data_collector.register_data_callback(self._on_data_received)
