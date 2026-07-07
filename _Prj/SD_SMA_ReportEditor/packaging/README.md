@@ -60,7 +60,7 @@ npm run clean:legacy-release
 
 ## 快速开始
 
-> **发版前**在 `_Prj/SD_SMA_ReportEditor` 执行 `git pull origin main`，确认 `frontend/package.json` 的 `version` 为目标版本（当前 **0.2.3**）。打包脚本读取该字段，未 pull 时会仍显示旧版（如 0.2.2）。
+> **发版前**在 `_Prj/SD_SMA_ReportEditor` 执行 `git pull origin main`，确认 `frontend/package.json` 的 `version` 为目标版本（当前 **0.2.4**）。打包脚本读取该字段，未 pull 时会仍显示旧版。
 
 | 平台 | 命令 | 产物 |
 |------|------|------|

@@ -4,24 +4,23 @@
 
 ← 打包总览与排错：[../README.md](../README.md)
 
-## 当前目标版本：0.2.3
+## 当前目标版本：0.2.4
 
-安装包版本来自 **`frontend/package.json`** 的 `version` 字段。打包日志首行须显示 `Version: 0.2.3` 与 `Expected: Report Editor-Setup-0.2.3-x64.exe`。
+安装包版本来自 **`frontend/package.json`** 的 `version` 字段。打包日志首行须显示 `Version: 0.2.4` 与 `Expected: Report Editor-Setup-0.2.4-x64.exe`。
 
 **本版更新说明**（写入 `packaging/updates/latest.json` 的 `notes`，应用内「检查更新」与 `latest.yml` 的 `releaseNotes` 均会展示）：
 
-> Report Editor 0.2.3
+> Report Editor 0.2.4
 >
-> - 结批过程弹窗：收到结批指令（OPC UA 自动结批 / 模拟结批）后，右下角弹窗实时显示「检查连接 → 取数渲染（第 X/Y 份）→ 保存 PDF → 写回 PLC → 完成」各阶段进度，完成后显示耗时与取数统计
-> - 结批审计统计：审计新增「收到结批指令」记录；报表生成记录包含耗时、OPC 读取点数、SQL 查询次数与数据行数，可在设置 › 操作审计中筛选查看
-> - 修复最小化/后台运行时 OPC UA 自动结批停止监听的问题：窗口最小化或被遮挡也持续每秒检测触发变量并正常生成报表、写回反馈
-> - 全局用语更正：「截批」统一为「结批」（页面文案、PLC 信息节点写回值同步更新为「结批 / 模拟结批」）
-> - 结批结果反馈：信息/路径节点标注需绑定 WSTRING（宽字符串）变量，绑定弹窗与页面加提示，避免中文写回报 BadEncodingError；地址空间筛选兼容 WString 类型
+> - 数据参数控件统一（模版编辑器与版式预设）：SQL 支持「点选生成」；参数来源新增「结批批次号」（复用自动结批 OPC 变量）
+> - 修复结批失败误报「数据源检查未通过」：实为 PDF 渲染超时，错误提示已更正
+> - PDF 导出渲染改用心跳超时：取数进行中不中断；连续 2 分钟无响应或总超 10 分钟才报错
+> - 修复可视化 SQL 取值列保存丢失、配置缺失误导向数据源页、OPC 目录回退英文提示
 
 发版前请 `git pull origin main`，确认上述 `notes` 已在仓库中；若需修改说明：
 
 ```powershell
-node packaging\scripts\bump-version.mjs 0.2.3 --notes "你的更新说明"
+node packaging\scripts\bump-version.mjs 0.2.4 --notes "你的更新说明"
 ```
 
 ## 一发版流程（推荐）
@@ -78,48 +77,28 @@ build.bat -Fresh
 | `-SkipBackendBuild` | 跳过 PyInstaller |
 | `-PortalDir <path>` | 打包完成后同步到 Portal 静态目录 |
 | `-Version <semver>` | 打包前 bump（一般已在 main bump 过则不必） |
-| `-Notes <text>` | 与 `-Version` 写入 `latest.json` 说明 |
+| `-Notes <text>` | 与 `-Version` 写入 manifest |
+| `-SkipTests` | 跳过 `npm test`（不推荐） |
+| `-AllowVersionMismatch` | 仅警告 package.json 与 latest.json 不一致 |
+| `-NoPause` | 失败时不等待按键 |
 
-示例：
+## 环境要求
 
-```powershell
-.\build.ps1 -Fresh -PortalDir D:\web-portal-demo\public\downloads\report-editor
-```
+- Windows 10/11 x64
+- Node.js 20.x 或 22.x LTS
+- Python 3.10+（PyInstaller 打后端）
+- 首次打包会下载 Electron 与依赖，建议配置镜像（脚本默认 npmmirror）
 
 ## 产物
 
-```text
-output/Report Editor-Setup-<version>-x64.exe
-output/latest.yml          ← electron-builder 生成；publish 时会注入 releaseNotes
-output/*.exe.blockmap      ← Windows 差分更新用（与 Setup 同名）
-```
-
-Windows 应用内更新默认**增量优先**（`latest.yml` + `.blockmap`），失败或用户选择时可下载完整安装包。
-
-## 应用内更新说明如何展示
-
-| 来源 | 用途 |
+| 文件 | 说明 |
 |------|------|
-| `packaging/updates/latest.json` → `notes` | 设置页「更新说明」、启动更新提示 |
-| `latest.yml` → `releaseNotes` | electron-updater 读取；由 publish 脚本从 `notes` 自动写入 |
+| `output/Report Editor-Setup-0.2.4-x64.exe` | NSIS 安装包 |
+| `output/latest.yml` | electron-updater 元数据（含 releaseNotes） |
 
-打包前确认 `latest.json` 中 `notes` 非空；`build.ps1` 会在日志中打印当前 `Release notes`。
+## 排错
 
-## 与 Mac 打包对齐的能力
-
-| 能力 | 说明 |
-|------|------|
-| 版本校验 | `package.json` 与 `packaging/updates/latest.json` 不一致时报错 |
-| 单测门禁 | 打包前执行 `npm test` |
-| Portal 同步 | `publish-portal-release.mjs --only win`（优先本地新构建的 exe 计算 SHA256） |
-| 拷贝校验 | publish 脚本校验 Portal 拷贝后文件大小一致 |
-
-## 前置环境
-
-- Windows x64
-- Node.js **20.x 或 22.x LTS**（Node 24+ 开发请用 `scripts\dev\start_dev_electron_node22.bat`，打包脚本仍建议 22 LTS）
-- Python 3.10+（含 `py` 启动器）
-
-内网可设 Electron 镜像后再打包，详见 [../README.md](../README.md)。
-
-现场安装见 [getting-started/windows-installer.md](../../getting-started/windows-installer.md)。
+- **版本号不对**：先 `git pull`，确认 `frontend/package.json` 为 0.2.4
+- **output 里有多个 Setup.exe**：加 `-Fresh` 清空后重打
+- **PyInstaller 失败**：确认 Python venv 与 `backend/requirements.txt` 已安装
+- **electron-builder 占用**：关闭正在运行的 Report Editor 后重试
