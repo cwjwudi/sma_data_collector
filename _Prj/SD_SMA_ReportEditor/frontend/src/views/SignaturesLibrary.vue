@@ -39,6 +39,7 @@
           <td class="td-act">
             <div class="row-actions">
               <a href="#" class="lnk" @click.prevent="rename(r.id)">改名</a>
+              <a href="#" class="lnk" @click.prevent="openResign(r.id)">重新签名</a>
               <a href="#" class="lnk danger" @click.prevent="remove(r.id)">删除</a>
             </div>
           </td>
@@ -129,6 +130,8 @@ const dlg = ref(false);
 const pendingNew = ref(false);
 /** 新建流程：手写板打开前已输入的名称 */
 const pendingLabel = ref("");
+/** 重新签名：当前正在重画的条目 id（保留其 id 与名称，仅替换签名图） */
+const resignId = ref("");
 const route = useRoute();
 const router = useRouter();
 const summaries = ref<Pick<SignatureAsset, "id" | "label" | "updatedAt">[]>([]);
@@ -265,10 +268,23 @@ async function openNewFromRoute() {
 
 async function onPadOk(dataUrl: string) {
   const wasNew = pendingNew.value;
+  const resignTarget = resignId.value;
   const label = normalizeLabel(pendingLabel.value) || "签名";
   pendingNew.value = false;
   pendingLabel.value = "";
+  resignId.value = "";
   dlg.value = false;
+  if (resignTarget) {
+    /** 重新签名：保留原 id 与名称，仅替换签名图 */
+    const cur = summaries.value.find((x) => x.id === resignTarget);
+    await save({
+      id: resignTarget,
+      label: cur?.label || label,
+      imageSrc: dataUrl,
+      updatedAt: new Date().toISOString(),
+    });
+    return;
+  }
   if (!wasNew) return;
   const body: SignatureAsset = {
     id: newId(),
@@ -279,11 +295,21 @@ async function onPadOk(dataUrl: string) {
   await save(body);
 }
 
+/** 打开手写板为已有条目重画签名（名称不变） */
+function openResign(id: string) {
+  const cur = summaries.value.find((x) => x.id === id);
+  resignId.value = id;
+  pendingNew.value = false;
+  pendingLabel.value = cur?.label || "";
+  dlg.value = true;
+}
+
 /** 手写板被取消或关闭时清掉待定状态（避免下一次误用旧名称） */
 watch(dlg, (open) => {
   if (!open) {
     pendingNew.value = false;
     pendingLabel.value = "";
+    resignId.value = "";
   }
 });
 

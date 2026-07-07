@@ -1,17 +1,17 @@
 {
-  "version": "0.2.1",
-  "releasedAt": "2026-07-07T02:54:41.710Z",
-  "notes": "Report Editor 0.2.1\n\n- 修复签名库「改名」按钮无效（改用应用内弹层，Electron 下可用）\n- 恢复生成报表 OPC 触发变量的近期数值折线图实时刷新\n- 修复模版/版式拖拽排序方向不符直觉：从前往后、从后往前拖动都按方向正确落位",
+  "version": "0.2.2",
+  "releasedAt": "2026-07-07T03:05:49.187Z",
+  "notes": "Report Editor 0.2.2\n\n- 签名库新增「重新签名」：可为已有条目重新手写并替换签名图，保留原名称与引用\n- 延续 0.2.1：签名改名弹层、生成报表触发折线图实时刷新、拖拽排序方向修正",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor-Setup-0.2.1-x64.exe",
+      "url": "Report Editor-Setup-0.2.2-x64.exe",
       "sha256": "",
       "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor-0.2.1-arm64.dmg",
-      "sha256": "c90a1221d5481c5af2ae098856441622f7ebb4ba02b68b0ee98e56cbc9c75dee",
-      "size": 177245898
+      "url": "Report Editor-0.2.2-arm64.dmg",
+      "sha256": "",
+      "size": 0
     }
   }
 }
