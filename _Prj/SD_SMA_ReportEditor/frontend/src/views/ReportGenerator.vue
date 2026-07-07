@@ -221,18 +221,20 @@
         <div class="rg-row rg-row--in-panel">
           <label class="rg-lbl" for="rg-hb-mode">信号方式</label>
           <select id="rg-hb-mode" v-model="heartbeatCfg.mode" class="rg-select">
+            <option value="constant_one">常写 1（PLC 收到后清零，推荐）</option>
             <option value="toggle">Bool 翻转（true/false 交替）</option>
             <option value="counter">计数累加（1→32000 循环，Int 变量）</option>
           </select>
         </div>
         <div class="rg-row rg-row--in-panel">
-          <label class="rg-lbl" for="rg-hb-interval">写入周期（秒）</label>
+          <label class="rg-lbl" for="rg-hb-interval">写入周期（毫秒）</label>
           <input
             id="rg-hb-interval"
-            v-model.number="heartbeatCfg.intervalSec"
+            v-model.number="heartbeatCfg.intervalMs"
             type="number"
-            min="1"
-            max="3600"
+            min="100"
+            max="3600000"
+            step="100"
             class="rg-inp rg-inp--num"
           />
         </div>
@@ -261,6 +263,7 @@
           </div>
           <p v-if="heartbeatBindingHint" class="rg-mini rg-mini--indent rg-bound-hint">已绑定：{{ heartbeatBindingHint }}</p>
           <p class="rg-mini rg-mini--indent">
+            「常写 1」：软件每周期写 1，PLC 程序收到后清零，PLC 侧检测到 1 长时间不出现即判定软件离线（默认 200 毫秒，绑定 Bool 或 Int 变量均可）。
             「Bool 翻转」绑定 Boolean 变量；「计数累加」绑定 Int 变量。仅软件（含最小化）运行时发送心跳，退出后停止。
           </p>
         </div>
@@ -1165,7 +1168,7 @@ watch(
       heartbeatCfg.value.enabled,
       heartbeatCfg.value.serverId,
       heartbeatCfg.value.nodeId,
-      heartbeatCfg.value.intervalSec,
+      heartbeatCfg.value.intervalMs,
       heartbeatCfg.value.mode,
     ].join("\u0000"),
   () => {
@@ -1354,7 +1357,12 @@ function resolveRgOpcPickDataTypeFilter(target: RgOpcPickTarget | null): string 
     return "String";
   }
   if (target === "feedbackStatus") return exportResultOpcStatusTypeFilter();
-  if (target === "heartbeat") return heartbeatCfg.value.mode === "counter" ? "Int" : "Boolean";
+  if (target === "heartbeat") {
+    const m = heartbeatCfg.value.mode;
+    if (m === "counter") return "Int";
+    if (m === "toggle") return "Boolean";
+    return ""; // 常写 1：Bool / Int 均可，不筛类型
+  }
   return "";
 }
 

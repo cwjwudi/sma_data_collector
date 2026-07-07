@@ -25,7 +25,7 @@ const COUNTER_MAX = 32000; // 兼容 PLC INT（16 位有符号）
 export const plcHeartbeatState: PlcHeartbeatState = { status, lastOk };
 
 function heartbeatConfigKey(hb: PlcHeartbeatConfig): string {
-  return [hb.enabled, hb.serverId, hb.nodeId, hb.intervalSec, hb.mode].join("\u0000");
+  return [hb.enabled, hb.serverId, hb.nodeId, hb.intervalMs, hb.mode].join("\u0000");
 }
 
 let activeConfigKey = "";
@@ -35,8 +35,18 @@ function nextValue(mode: PlcHeartbeatConfig["mode"]): boolean | number {
     counterValue = counterValue >= COUNTER_MAX ? 1 : counterValue + 1;
     return counterValue;
   }
-  toggleValue = !toggleValue;
-  return toggleValue;
+  if (mode === "toggle") {
+    toggleValue = !toggleValue;
+    return toggleValue;
+  }
+  // constant_one：软件持续写 1，PLC 收到后清零；后端按节点类型自动转 Bool/Int
+  return 1;
+}
+
+function modeLabel(mode: PlcHeartbeatConfig["mode"]): string {
+  if (mode === "counter") return "计数";
+  if (mode === "toggle") return "Bool 翻转";
+  return "常写 1";
 }
 
 async function beatOnce(hb: PlcHeartbeatConfig): Promise<void> {
@@ -47,7 +57,7 @@ async function beatOnce(hb: PlcHeartbeatConfig): Promise<void> {
     const res = await writeSavedOpcNodeValue(hb.serverId, hb.nodeId, value);
     lastOk.value = res.ok;
     status.value = res.ok
-      ? `[PLC 心跳] 正常（每 ${hb.intervalSec} 秒写入 ${hb.mode === "counter" ? "计数" : "Bool 翻转"}）`
+      ? `[PLC 心跳] 正常（每 ${hb.intervalMs} 毫秒写入 ${modeLabel(hb.mode)}）`
       : `[PLC 心跳] 写入失败：${res.message || "未知错误"}`;
   } catch (e) {
     lastOk.value = false;
@@ -69,7 +79,7 @@ function restart(): void {
     lastOk.value = null;
     return;
   }
-  const intervalMs = Math.max(1, Math.floor(hb.intervalSec)) * 1000;
+  const intervalMs = Math.max(100, Math.floor(hb.intervalMs));
   status.value = "[PLC 心跳] 已启用，等待首次写入…";
   void beatOnce(hb);
   timer = setInterval(() => {

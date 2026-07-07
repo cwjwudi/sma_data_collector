@@ -69,8 +69,8 @@ export const defaultExportResultOpcFeedback = (): ExportResultOpcFeedback => ({
   messageMaxLen: 200,
 });
 
-/** PLC 心跳（软件可用信号）写入模式：Bool 翻转 / 计数累加 */
-export type PlcHeartbeatMode = "toggle" | "counter";
+/** PLC 心跳（软件可用信号）写入模式：常写 1（PLC 清零）/ Bool 翻转 / 计数累加 */
+export type PlcHeartbeatMode = "constant_one" | "toggle" | "counter";
 
 /** 周期向 PLC 写 OPC UA 变量，PLC 侧看门狗判断报表软件是否在线 */
 export interface PlcHeartbeatConfig {
@@ -78,7 +78,8 @@ export interface PlcHeartbeatConfig {
   serverId: string;
   nodeId: string;
   nodeLabel: string;
-  intervalSec: number;
+  /** 写入周期（毫秒） */
+  intervalMs: number;
   mode: PlcHeartbeatMode;
 }
 
@@ -87,8 +88,8 @@ export const defaultPlcHeartbeatConfig = (): PlcHeartbeatConfig => ({
   serverId: "",
   nodeId: "",
   nodeLabel: "",
-  intervalSec: 5,
-  mode: "toggle",
+  intervalMs: 200,
+  mode: "constant_one",
 });
 
 
@@ -255,18 +256,32 @@ function parseExportResultOpcByTemplateId(
   return out;
 }
 
+const HEARTBEAT_MIN_INTERVAL_MS = 100;
+const HEARTBEAT_MAX_INTERVAL_MS = 3_600_000;
+
 function parsePlcHeartbeat(raw: unknown, base: PlcHeartbeatConfig): PlcHeartbeatConfig {
   if (!raw || typeof raw !== "object") return base;
-  const o = raw as Partial<PlcHeartbeatConfig>;
-  const interval = Number(o.intervalSec);
+  const o = raw as Partial<PlcHeartbeatConfig> & { intervalSec?: unknown };
+  // 旧版按秒存储：迁移为毫秒
+  let intervalMs = Number(o.intervalMs);
+  if (!Number.isFinite(intervalMs)) {
+    const legacySec = Number(o.intervalSec);
+    intervalMs = Number.isFinite(legacySec) ? legacySec * 1000 : NaN;
+  }
+  const mode: PlcHeartbeatMode =
+    o.mode === "toggle" || o.mode === "counter" ? o.mode : base.mode;
   return {
     enabled: Boolean(o.enabled),
     serverId: typeof o.serverId === "string" ? o.serverId : base.serverId,
     nodeId: typeof o.nodeId === "string" ? o.nodeId : base.nodeId,
     nodeLabel: typeof o.nodeLabel === "string" ? o.nodeLabel : base.nodeLabel,
-    intervalSec:
-      Number.isFinite(interval) && interval >= 1 && interval <= 3600 ? Math.floor(interval) : base.intervalSec,
-    mode: o.mode === "counter" ? "counter" : "toggle",
+    intervalMs:
+      Number.isFinite(intervalMs) &&
+      intervalMs >= HEARTBEAT_MIN_INTERVAL_MS &&
+      intervalMs <= HEARTBEAT_MAX_INTERVAL_MS
+        ? Math.floor(intervalMs)
+        : base.intervalMs,
+    mode,
   };
 }
 
