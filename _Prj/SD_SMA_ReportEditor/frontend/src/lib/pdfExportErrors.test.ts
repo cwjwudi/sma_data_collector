@@ -34,6 +34,11 @@ describe("humanizePdfExportError", () => {
     const summary = "发现 1 个问题：\n1. OPC UA 连接「PLC」测试失败";
     expect(humanizePdfExportError(summary)).toBe(summary);
   });
+
+  it("配置缺失类错误不包装成数据源检查未通过", () => {
+    const msg = "未配置 OPC UA 自动结批保存目录";
+    expect(humanizePdfExportError(msg)).toBe(msg);
+  });
 });
 
 describe("formatPreflightBlockerSummary", () => {

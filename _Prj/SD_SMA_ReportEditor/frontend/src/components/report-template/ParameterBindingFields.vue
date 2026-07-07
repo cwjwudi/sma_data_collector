@@ -52,7 +52,6 @@ import { computed } from "vue";
 import ScalarSqlParamBindingsEditor from "@/components/report-template/ScalarSqlParamBindingsEditor.vue";
 import ScalarSqlQueryBuilder from "@/components/report-template/ScalarSqlQueryBuilder.vue";
 import {
-  defaultScalarSqlVisual,
   hydrateScalarSqlVisual,
   normalizeScalarSqlFillMode,
   type ScalarSqlFillMode,
@@ -100,9 +99,7 @@ const scalarFillMode = computed<ScalarSqlFillMode>({
 
 const scalarVisual = computed<ScalarSqlVisualConfig>({
   get() {
-    if (!props.el.scalarSqlVisual) {
-      props.el.scalarSqlVisual = defaultScalarSqlVisual();
-    }
+    // 不在 getter 中回写 props.el：仅点选控件不应把模版标记为已修改
     return hydrateScalarSqlVisual(props.el.scalarSqlVisual);
   },
   set(v) {

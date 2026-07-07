@@ -67,6 +67,10 @@ function humanizePdfExportError(raw, context) {
   if (/failed to fetch|network|econnrefused|getaddrinfo|无法连接/i.test(low)) {
     return '无法连接后端或数据源。请确认软件后端已启动，并在「数据源配置」中测试连接。'
   }
+  // 配置缺失类错误：指引在「生成报表」页处理，而不是误导去数据源页
+  if (/未配置|未绑定|请配置|请先/.test(text)) {
+    return text
+  }
   if (/绑定|数据源|连接.*失败|opc|sql/i.test(text)) {
     return [
       '导出前数据源检查未通过。',

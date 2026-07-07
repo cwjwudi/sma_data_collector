@@ -32,7 +32,7 @@ export async function resolveAutoExportDir(prefs: ReportGeneratorPrefs): Promise
   if (prefs.autoExportDirSource !== "opcua") {
     return fallback
       ? { dir: fallback, source: "default" }
-      : { dir: "", source: "none", note: "No export directory selected" };
+      : { dir: "", source: "none", note: "未选择导出保存文件夹" };
   }
 
   const srv = (prefs.autoExportDirOpcServerId || "").trim();
@@ -42,9 +42,9 @@ export async function resolveAutoExportDir(prefs: ReportGeneratorPrefs): Promise
       ? {
           dir: fallback,
           source: "opcua-fallback",
-          note: "No OPC directory variable is bound; using fallback directory",
+          note: "未绑定 OPC 目录变量，已使用保底目录",
         }
-      : { dir: "", source: "none", note: "No OPC directory variable or fallback directory configured" };
+      : { dir: "", source: "none", note: "未绑定 OPC 目录变量，且未配置保底目录" };
   }
 
   const read = await readSavedOpcStringValue(srv, nodeId);
@@ -53,9 +53,9 @@ export async function resolveAutoExportDir(prefs: ReportGeneratorPrefs): Promise
       ? {
           dir: fallback,
           source: "opcua-fallback",
-          note: `Failed to read OPC directory variable (${read.message || "unknown"}); using fallback directory`,
+          note: `OPC 目录变量读取失败（${read.message || "未知"}），已使用保底目录`,
         }
-      : { dir: "", source: "none", note: read.message || "Failed to read OPC directory variable" };
+      : { dir: "", source: "none", note: read.message || "OPC 目录变量读取失败" };
   }
 
   const segment = normalizeOpcExportDirSegment(read.value);
@@ -64,13 +64,13 @@ export async function resolveAutoExportDir(prefs: ReportGeneratorPrefs): Promise
       ? {
           dir: fallback,
           source: "opcua-fallback",
-          note: "OPC directory segment is empty or invalid; using fallback directory",
+          note: "OPC 目录变量为空或含非法字符，已使用保底目录",
         }
-      : { dir: "", source: "none", note: "OPC directory segment is empty or invalid" };
+      : { dir: "", source: "none", note: "OPC 目录变量为空或含非法字符" };
   }
 
   if (!fallback) {
-    return { dir: "", source: "none", note: "Missing fallback directory for OPC directory segment" };
+    return { dir: "", source: "none", note: "已读取 OPC 目录变量，但缺少保底目录无法拼接完整路径" };
   }
 
   return { dir: joinDirSegment(fallback, segment), source: "opcua" };

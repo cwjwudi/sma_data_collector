@@ -170,6 +170,8 @@ function onManualSqlInput(ev: Event) {
 }
 
 function compile() {
+  // 同步回写可视化配置：取值列/筛选列等否则只改到临时副本，保存后丢失
+  emit("update:visual", { ...props.visual });
   const sql = compileScalarVisualSql(props.visual);
   if (sql) emit("update:sqlText", sql);
 }
