@@ -66,7 +66,7 @@ class CommunicationManager:
                 return_exceptions=True
             )
             
-            # 检查连接结果
+            # 检查连接结果。初次连接失败不再阻止系统启动，后台重连会持续等待 PLC 上线。
             success_count = 0
             for i, (name, result) in enumerate(zip(self.clients.keys(), connect_results)):
                 if isinstance(result, Exception):
@@ -76,10 +76,10 @@ class CommunicationManager:
                     self.connection_status[name] = True
                     self.logger.info(f"通信 {name} 连接成功")
                 else:
-                    self.logger.error(f"通信 {name} 连接失败")
+                    self.logger.warning(f"通信 {name} 当前未连接，后台将继续自动重连")
             
             self.logger.info(f"通信连接初始化完成: {success_count}/{len(self.clients)} 成功")
-            return success_count > 0
+            return bool(self.clients)
             
         except Exception as e:
             self.logger.error(f"初始化通信连接时发生错误: {e}", exc_info=True)
@@ -108,7 +108,7 @@ class CommunicationManager:
         
         disconnect_tasks = []
         for name, client in self.clients.items():
-            if client and self.connection_status.get(name, False):
+            if client:
                 disconnect_tasks.append(self._disconnect_client(name, client))
         
         if disconnect_tasks:
@@ -178,7 +178,11 @@ class CommunicationManager:
         Returns:
             Dict[str, bool]: 通信名称到连接状态的映射
         """
-        return self.connection_status.copy()
+        status: Dict[str, bool] = {}
+        for name, client in self.clients.items():
+            status[name] = bool(client and client.is_connected())
+        self.connection_status.update(status)
+        return status
     
     def is_connected(self, communication_name: str) -> bool:
         """

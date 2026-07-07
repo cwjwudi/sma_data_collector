@@ -28,7 +28,7 @@ class OpcUaClient:
         
         Args:
             server_url: OPC UA 服务器地址
-            max_retries: 最大重试次数
+            max_retries: 兼容旧参数；当前版本不会因达到次数上限而停止后台重连
             retry_delay: 重试延迟时间 (秒)，固定为 5 秒
             health_check_interval: 健康检查间隔 (秒)
         """
@@ -45,6 +45,7 @@ class OpcUaClient:
         # 重连状态
         self.current_retry_count = 0
         self.is_reconnecting = False
+        self._reconnect_lock = asyncio.Lock()
         self.health_check_task: Optional[asyncio.Task] = None
     
     async def _ensure_connected(self) -> bool:
@@ -66,22 +67,29 @@ class OpcUaClient:
             self.connected = True
             self.current_retry_count = 0  # 重置重试计数
             self.logger.info(f"成功连接到OPC UA服务器: {self.server_url}")
-            
-            # 启动健康检查任务
-            await self._start_health_check()
-            
             return True
         except Exception as e:
-            self.logger.error(f"连接OPC UA服务器失败: {e}", exc_info=True)
+            if self._is_transient_connect_failure(e):
+                self.logger.warning(
+                    "连接OPC UA服务器失败，后台将继续重连: %s: %s",
+                    type(e).__name__,
+                    e,
+                )
+            else:
+                self.logger.error(f"连接OPC UA服务器失败: {e}", exc_info=True)
             self.connected = False
+            self.client = None
             return False
+        finally:
+            # 即使首次连接失败，也启动后台健康检查/重连任务，支持 PLC 晚启动。
+            await self._start_health_check()
     
     async def disconnect(self) -> None:
         """断开OPC UA服务器连接"""
         # 停止健康检查任务
         await self._stop_health_check()
         
-        if self.client and self.connected:
+        if self.client:
             try:
                 # 在单独的线程中执行阻塞的disconnect操作
                 loop = asyncio.get_event_loop()
@@ -93,6 +101,9 @@ class OpcUaClient:
                 self.connected = False
                 self.client = None
                 self.is_reconnecting = False
+        else:
+            self.connected = False
+            self.is_reconnecting = False
     
     async def _read_data_points_sequential(
         self, data_points: List[DataPoint], timestamp: datetime
@@ -424,7 +435,7 @@ class OpcUaClient:
     
     def is_connected(self) -> bool:
         """检查是否已连接"""
-        return self.connected
+        return self.connected and self.client is not None
     
     def _is_connection_error(self, error: Exception) -> bool:
         """
@@ -465,82 +476,97 @@ class OpcUaClient:
             return self._is_connection_error(error)
         return False
     
-    async def _attempt_reconnect(self) -> bool:
+    async def _attempt_reconnect(self, *, wait_before_attempt: bool = True) -> bool:
         """
         尝试重新连接到OPC UA服务器
         
         Returns:
             bool: 重连是否成功
         """
-        if self.is_reconnecting:
-            self.logger.debug("已在重连过程中，跳过本次重连请求")
-            return False
-        
-        if self.current_retry_count >= self.max_retries:
-            self.logger.error(f"已达到最大重试次数 ({self.max_retries})，停止重连")
-            return False
-        
-        self.is_reconnecting = True
-        
-        try:
-            self.current_retry_count += 1
-            # 使用固定延迟时间，不再使用指数退避
-            delay = self.retry_delay
-            self.logger.info(f"第 {self.current_retry_count} 次重连尝试，等待 {delay:.1f} 秒后重连")
-            
-            await asyncio.sleep(delay)
-            
-            # 断开现有连接（如果存在）
-            if self.client:
-                try:
-                    loop = asyncio.get_event_loop()
-                    await loop.run_in_executor(None, self.client.disconnect)
-                except Exception:
-                    pass  # 忽略断开连接时的错误
-                finally:
-                    self.client = None
-                    self.connected = False
-            
-            # 尝试重新连接
-            self.client = Client(self.server_url)
-            self.client.connect()
-            self.connected = True
-            self.logger.info(f"重连成功，已连接到 {self.server_url}")
-            
-            # 重置重试计数
-            self.current_retry_count = 0
-            
-            # 重启健康检查
-            await self._start_health_check()
-            
+        if self.is_connected():
             return True
-            
-        except Exception as e:
-            if self._is_transient_connect_failure(e):
-                self.logger.warning(
-                    "重连失败（服务器不可达或已断开）: %s: %s",
-                    type(e).__name__,
-                    e,
-                )
-            else:
-                self.logger.error("重连失败: %s", e, exc_info=True)
-            self.connected = False
-            self.client = None
-            return False
-        finally:
-            self.is_reconnecting = False
+
+        if self._reconnect_lock.locked():
+            self.logger.debug("已在重连过程中，等待当前重连结果")
+
+        async with self._reconnect_lock:
+            if self.is_connected():
+                return True
+
+            self.is_reconnecting = True
+
+            try:
+                self.current_retry_count += 1
+                delay = self.retry_delay
+                if wait_before_attempt:
+                    self.logger.info(f"第 {self.current_retry_count} 次重连尝试，等待 {delay:.1f} 秒后重连")
+                    await asyncio.sleep(delay)
+                else:
+                    self.logger.info(f"第 {self.current_retry_count} 次重连尝试")
+
+                # 断开现有连接（如果存在）
+                if self.client:
+                    try:
+                        loop = asyncio.get_event_loop()
+                        await loop.run_in_executor(None, self.client.disconnect)
+                    except Exception:
+                        pass  # 忽略断开连接时的错误
+                    finally:
+                        self.client = None
+                        self.connected = False
+
+                # 尝试重新连接
+                self.client = Client(self.server_url)
+                self.client.connect()
+                self.connected = True
+                self.logger.info(f"重连成功，已连接到 {self.server_url}")
+
+                # 重置重试计数
+                self.current_retry_count = 0
+
+                await self._start_health_check()
+                return True
+
+            except Exception as e:
+                if self._is_transient_connect_failure(e):
+                    self.logger.warning(
+                        "重连失败（服务器不可达或已断开）: %s: %s",
+                        type(e).__name__,
+                        e,
+                    )
+                else:
+                    self.logger.error("重连失败: %s", e, exc_info=True)
+                self.connected = False
+                self.client = None
+                await self._start_health_check()
+                return False
+            finally:
+                self.is_reconnecting = False
     
     async def _start_health_check(self) -> None:
         """启动健康检查任务"""
-        await self._stop_health_check()  # 确保之前的任务已停止
-        
-        if self.health_check_interval > 0:
-            self.health_check_task = asyncio.create_task(self._health_check_loop())
-            self.logger.debug(f"已启动健康检查任务，间隔: {self.health_check_interval}秒")
+        if self.health_check_interval <= 0 and self.retry_delay <= 0:
+            return
+
+        if self.health_check_task and not self.health_check_task.done():
+            return
+
+        self.health_check_task = asyncio.create_task(
+            self._health_check_loop(),
+            name=f"opcua_health_{self.server_url}",
+        )
+        self.logger.debug(
+            "已启动健康检查任务，连接正常间隔: %s 秒，断线重连间隔: %.1f 秒",
+            self.health_check_interval,
+            self.retry_delay,
+        )
     
     async def _stop_health_check(self) -> None:
         """停止健康检查任务"""
         if self.health_check_task and not self.health_check_task.done():
+            if self.health_check_task is asyncio.current_task():
+                self.health_check_task = None
+                return
             self.health_check_task.cancel()
             try:
                 await self.health_check_task
@@ -553,8 +579,9 @@ class OpcUaClient:
         """健康检查循环"""
         while True:
             try:
-                await asyncio.sleep(self.health_check_interval)
-                
+                interval = self.health_check_interval if self.is_connected() else self.retry_delay
+                await asyncio.sleep(max(0.1, float(interval)))
+
                 if self.connected and self.client:
                     # 尝试读取一个简单的节点来检查连接状态
                     try:
@@ -565,14 +592,15 @@ class OpcUaClient:
                     except Exception as e:
                         self.logger.warning(f"健康检查发现连接异常: {e}")
                         if self._is_connection_error(e):
+                            self.connected = False
                             # 触发重连
                             self.logger.info("健康检查触发自动重连")
-                            await self._attempt_reconnect()
+                            await self._attempt_reconnect(wait_before_attempt=False)
                 else:
                     # 如果未连接，尝试重连
                     if not self.is_reconnecting:
                         self.logger.debug("健康检查发现未连接，尝试重连")
-                        await self._attempt_reconnect()
+                        await self._attempt_reconnect(wait_before_attempt=False)
                         
             except asyncio.CancelledError:
                 self.logger.debug("健康检查任务被取消")
