@@ -9,15 +9,27 @@ try:
 except ModuleNotFoundError:
     fake_opcua = types.ModuleType("opcua")
     fake_opcua.Client = object
-    fake_opcua.ua = types.SimpleNamespace()
+    fake_opcua.ua = types.SimpleNamespace(
+        AttributeIds=types.SimpleNamespace(
+            AccessLevel="AccessLevel",
+            UserAccessLevel="UserAccessLevel",
+            Value="Value",
+        ),
+        DataValue=lambda value: value,
+        Variant=lambda value, variant_type: (value, variant_type),
+        VariantType=types.SimpleNamespace(Boolean="Boolean", UInt16="UInt16"),
+    )
     sys.modules["opcua"] = fake_opcua
 
 from communication.communication_manager import CommunicationManager
+from communication.heartbeat_manager import HeartbeatManager
 from communication.opcua_client import OpcUaClient
 from core.config_models import (
     AppConfig,
     Communication,
+    Connection,
     DatabaseConfig,
+    DataPoint,
     OpcUaConfig,
 )
 
@@ -88,6 +100,45 @@ class TestOpcUaReconnect(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(results, [True, True])
         self.assertEqual(client_factory.call_count, 1)
         self.assertTrue(client.is_connected())
+
+    async def test_heartbeat_uses_uint16_client_writer(self):
+        config = AppConfig(
+            points=[
+                DataPoint(
+                    name="gDataSQLHeartBeat",
+                    path="ns=6;s=::AsGlobalPV:gDataSQLHeartBeat",
+                    description="heartbeat",
+                ),
+            ],
+            groups=[],
+            opcua=OpcUaConfig(),
+            database=DatabaseConfig(type="sqlite", name=":memory:"),
+            communications=[
+                Communication(name="PLC_TPS", type="opcua", host="127.0.0.1", port=4840),
+            ],
+            connections=[
+                Connection(
+                    name="Connection_TPS",
+                    communication="PLC_TPS",
+                    data_groups=[],
+                    heartbeat="gDataSQLHeartBeat",
+                ),
+            ],
+        )
+        heartbeat_manager = HeartbeatManager(config, Mock())
+        fake_client = Mock()
+        fake_client.write_uint16_value = AsyncMock(return_value=True)
+
+        success = await heartbeat_manager._write_heartbeat(
+            fake_client,
+            "ns=6;s=::AsGlobalPV:gDataSQLHeartBeat",
+        )
+
+        self.assertTrue(success)
+        fake_client.write_uint16_value.assert_awaited_once_with(
+            "ns=6;s=::AsGlobalPV:gDataSQLHeartBeat",
+            1,
+        )
 
 
 if __name__ == "__main__":

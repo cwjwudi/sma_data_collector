@@ -5,6 +5,7 @@ OPC UA通信客户端
 
 import asyncio
 import logging
+import time
 from typing import Dict, List, Any, Optional
 from datetime import datetime
 from opcua import Client, ua
@@ -47,6 +48,14 @@ class OpcUaClient:
         self.is_reconnecting = False
         self._reconnect_lock = asyncio.Lock()
         self.health_check_task: Optional[asyncio.Task] = None
+        self.log_throttle_interval = max(
+            1.0,
+            float(os.getenv("SD_SMA_OPCUA_LOG_THROTTLE_INTERVAL", "30")),
+        )
+        self._last_reconnect_failure_log_at = 0.0
+        self._suppressed_reconnect_failures = 0
+        self._last_write_failure_log_at: Dict[str, float] = {}
+        self._suppressed_write_failures: Dict[str, int] = {}
     
     async def _ensure_connected(self) -> bool:
         """若已连接则直接返回 True，否则尝试重连（避免与 health check / 断线竞态导致 client 为 None）。"""
@@ -373,65 +382,7 @@ class OpcUaClient:
         Returns:
             bool: 写入是否成功
         """
-        # 检查连接状态，如果需要则尝试重连
-        if not self.connected or not self.client:
-            if not await self._attempt_reconnect():
-                self.logger.error("写入失败：无法连接到OPC UA服务器")
-                return False
-        
-        try:
-            node = self.client.get_node(point_path)
-            
-            # 先检查节点是否可写
-            try:
-                node_attrs = node.get_attributes([
-                    ua.AttributeIds.AccessLevel,
-                    ua.AttributeIds.UserAccessLevel
-                ])
-                
-                # 检查访问级别
-                access_level = node_attrs[0].Value.Value if len(node_attrs) > 0 and node_attrs[0].Value else 0
-                user_access_level = node_attrs[1].Value.Value if len(node_attrs) > 1 and node_attrs[1].Value else 0
-                
-                # 检查是否具有写权限 (bit 1 表示可写)
-                if not (access_level & 2) or not (user_access_level & 2):
-                    self.logger.info(f"节点 {point_path} 不可写，跳过写入操作")
-                    return False
-            except Exception as attr_error:
-                self.logger.debug(f"无法获取节点属性，继续尝试写入: {attr_error}")
-            
-            # 尝试最简单的写入方法
-            try:
-                # OPC UA 服务器对写入要求非常严格，只接受纯值写入
-                node.set_attribute(ua.AttributeIds.Value, ua.DataValue(ua.Variant(value, ua.VariantType.Boolean)))
-                # node.set_value(value)
-                self.logger.debug(f"成功写入布尔值 {value} 到 {point_path}")
-                return True
-            except Exception as write_error:
-                error_str = str(write_error)
-                if "BadWriteNotSupported" in error_str or "not support writing" in error_str.lower():
-                    self.logger.info(f"服务器不支持写入操作: {point_path}，这是正常现象")
-                    return False
-                else:
-                    self.logger.warning(f"写入失败: {write_error}")
-                    return False
-                        
-        except Exception as e:
-            # 检查是否是连接相关的错误
-            if self._is_connection_error(e):
-                self.logger.warning(f"写入时检测到连接错误，准备重连: {e}")
-                if await self._attempt_reconnect():
-                    # 重连成功后重试写入
-                    return await self.write_boolean_value(point_path, value)
-                else:
-                    if self._is_transient_connect_failure(e):
-                        self.logger.warning("写入失败且无法重连（对端可能已断开）: %s: %s", type(e).__name__, e)
-                    else:
-                        self.logger.error(f"写入失败且无法重连: {e}", exc_info=True)
-                    return False
-            else:
-                self.logger.error(f"写入布尔值到 {point_path} 失败: {e}", exc_info=True)
-                return False
+        return await self.write_scalar_value(point_path, value, ua.VariantType.Boolean, "布尔值")
     
     def is_connected(self) -> bool:
         """检查是否已连接"""
@@ -499,10 +450,10 @@ class OpcUaClient:
                 self.current_retry_count += 1
                 delay = self.retry_delay
                 if wait_before_attempt:
-                    self.logger.info(f"第 {self.current_retry_count} 次重连尝试，等待 {delay:.1f} 秒后重连")
+                    self.logger.debug(f"第 {self.current_retry_count} 次重连尝试，等待 {delay:.1f} 秒后重连")
                     await asyncio.sleep(delay)
                 else:
-                    self.logger.info(f"第 {self.current_retry_count} 次重连尝试")
+                    self.logger.debug(f"第 {self.current_retry_count} 次重连尝试")
 
                 # 断开现有连接（如果存在）
                 if self.client:
@@ -519,6 +470,13 @@ class OpcUaClient:
                 self.client = Client(self.server_url)
                 self.client.connect()
                 self.connected = True
+                if self._suppressed_reconnect_failures:
+                    self.logger.info(
+                        "OPC UA 重连恢复，之前合并了 %d 次失败日志",
+                        self._suppressed_reconnect_failures,
+                    )
+                self._last_reconnect_failure_log_at = 0.0
+                self._suppressed_reconnect_failures = 0
                 self.logger.info(f"重连成功，已连接到 {self.server_url}")
 
                 # 重置重试计数
@@ -528,14 +486,7 @@ class OpcUaClient:
                 return True
 
             except Exception as e:
-                if self._is_transient_connect_failure(e):
-                    self.logger.warning(
-                        "重连失败（服务器不可达或已断开）: %s: %s",
-                        type(e).__name__,
-                        e,
-                    )
-                else:
-                    self.logger.error("重连失败: %s", e, exc_info=True)
+                self._log_reconnect_failure(e)
                 self.connected = False
                 self.client = None
                 await self._start_health_check()
@@ -607,3 +558,131 @@ class OpcUaClient:
                 break
             except Exception as e:
                 self.logger.error(f"健康检查过程中发生错误: {e}", exc_info=True)
+
+    def _take_throttled_log(
+        self,
+        last_log_at: Dict[str, float],
+        suppressed: Dict[str, int],
+        key: str,
+    ) -> tuple[bool, int]:
+        now = time.monotonic()
+        last = last_log_at.get(key, 0.0)
+        if not last or now - last >= self.log_throttle_interval:
+            suppressed_count = suppressed.pop(key, 0)
+            last_log_at[key] = now
+            return True, suppressed_count
+
+        suppressed[key] = suppressed.get(key, 0) + 1
+        return False, 0
+
+    def _log_reconnect_failure(self, error: BaseException) -> None:
+        now = time.monotonic()
+        if (
+            self._last_reconnect_failure_log_at
+            and now - self._last_reconnect_failure_log_at < self.log_throttle_interval
+        ):
+            self._suppressed_reconnect_failures += 1
+            self.logger.debug(
+                "重连失败（已合并日志）: %s: %s",
+                type(error).__name__,
+                error,
+            )
+            return
+
+        suppressed = self._suppressed_reconnect_failures
+        self._suppressed_reconnect_failures = 0
+        self._last_reconnect_failure_log_at = now
+        suffix = f"（期间合并 {suppressed} 次同类失败）" if suppressed else ""
+        if self._is_transient_connect_failure(error):
+            self.logger.warning(
+                "重连失败（服务器不可达或已断开）%s: %s: %s",
+                suffix,
+                type(error).__name__,
+                error,
+            )
+        else:
+            self.logger.error("重连失败%s: %s", suffix, error, exc_info=True)
+
+    def _log_write_failure(
+        self,
+        point_path: str,
+        value_label: str,
+        error: BaseException,
+        *,
+        exc_info: bool = False,
+    ) -> None:
+        should_log, suppressed = self._take_throttled_log(
+            self._last_write_failure_log_at,
+            self._suppressed_write_failures,
+            point_path,
+        )
+        if not should_log:
+            self.logger.debug(
+                "写入%s失败（已合并日志）: %s: %s",
+                value_label,
+                point_path,
+                error,
+            )
+            return
+
+        suffix = f"（期间合并 {suppressed} 次同类失败）" if suppressed else ""
+        self.logger.warning(
+            "写入%s失败%s: %s: %s",
+            value_label,
+            suffix,
+            point_path,
+            error,
+            exc_info=exc_info,
+        )
+
+    async def write_scalar_value(self, point_path: str, value: Any, variant_type: Any, value_label: str = "值") -> bool:
+        """写入单个 OPC UA 标量值，由客户端统一处理连接检查、重连与日志。"""
+        if not self.connected or not self.client:
+            if not await self._attempt_reconnect():
+                self.logger.debug("写入%s跳过：OPC UA 未连接: %s", value_label, point_path)
+                return False
+
+        try:
+            node = self.client.get_node(point_path)
+            try:
+                node_attrs = node.get_attributes([
+                    ua.AttributeIds.AccessLevel,
+                    ua.AttributeIds.UserAccessLevel,
+                ])
+                access_level = node_attrs[0].Value.Value if len(node_attrs) > 0 and node_attrs[0].Value else 0
+                user_access_level = node_attrs[1].Value.Value if len(node_attrs) > 1 and node_attrs[1].Value else 0
+                if not (access_level & 2) or not (user_access_level & 2):
+                    self._log_write_failure(point_path, value_label, RuntimeError("节点不可写"))
+                    return False
+            except Exception as attr_error:
+                self.logger.debug(f"无法获取节点属性，继续尝试写入: {attr_error}")
+
+            node.set_attribute(ua.AttributeIds.Value, ua.DataValue(ua.Variant(value, variant_type)))
+            self._last_write_failure_log_at.pop(point_path, None)
+            suppressed = self._suppressed_write_failures.pop(point_path, 0)
+            if suppressed:
+                self.logger.info("OPC UA 写入恢复：%s，之前合并了 %d 次失败日志", point_path, suppressed)
+            self.logger.debug("成功写入%s %s 到 %s", value_label, value, point_path)
+            return True
+        except Exception as e:
+            if self._is_connection_error(e):
+                self.connected = False
+                self._log_write_failure(point_path, value_label, e)
+                if await self._attempt_reconnect():
+                    return await self.write_scalar_value(point_path, value, variant_type, value_label)
+                return False
+
+            error_str = str(e)
+            if "BadWriteNotSupported" in error_str or "not support writing" in error_str.lower():
+                self._log_write_failure(point_path, value_label, e)
+                return False
+
+            self._log_write_failure(point_path, value_label, e, exc_info=True)
+            return False
+
+    async def write_uint16_value(self, point_path: str, value: int) -> bool:
+        """写入 UInt16 标量值。"""
+        if value < 0 or value > 0xFFFF:
+            self.logger.error("UInt16 写入值越界: %s", value)
+            return False
+        return await self.write_scalar_value(point_path, value, ua.VariantType.UInt16, "UInt16")

@@ -7,6 +7,7 @@ import asyncio
 import logging
 import sys
 import os
+import time
 from typing import Dict, List, Optional
 
 # 处理相对导入问题
@@ -14,7 +15,6 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from core.config_models import Connection, AppConfig
 from communication.communication_manager import CommunicationManager
-from opcua import ua
 
 
 class HeartbeatManager:
@@ -39,6 +39,14 @@ class HeartbeatManager:
         
         # 心跳间隔（秒）
         self.heartbeat_interval = 1.0
+        self.log_throttle_interval = max(
+            1.0,
+            float(os.getenv("SD_SMA_HEARTBEAT_LOG_THROTTLE_INTERVAL", "30")),
+        )
+        self._last_skip_log_at: Dict[str, float] = {}
+        self._suppressed_skip_logs: Dict[str, int] = {}
+        self._last_failure_log_at: Dict[str, float] = {}
+        self._suppressed_failure_logs: Dict[str, int] = {}
         
     async def start_heartbeats(self) -> None:
         """
@@ -142,7 +150,13 @@ class HeartbeatManager:
             try:
                 # 检查客户端是否连接
                 if not opcua_client.is_connected():
-                    self.logger.warning(f"通信客户端未连接，跳过心跳写入：{connection_name}")
+                    self._log_throttled_warning(
+                        self._last_skip_log_at,
+                        self._suppressed_skip_logs,
+                        connection_name,
+                        "通信客户端未连接，跳过心跳写入：%s",
+                        connection_name,
+                    )
                     await asyncio.sleep(self.heartbeat_interval)
                     continue
                 
@@ -150,7 +164,17 @@ class HeartbeatManager:
                 success = await self._write_heartbeat(opcua_client, heartbeat_address)
                 
                 if success:
+                    self._clear_throttle_state(connection_name)
                     self.logger.debug(f"心跳信号已写入：{connection_name} -> {heartbeat_address}")
+                else:
+                    self._log_throttled_warning(
+                        self._last_failure_log_at,
+                        self._suppressed_failure_logs,
+                        connection_name,
+                        "心跳写入失败：%s -> %s",
+                        connection_name,
+                        heartbeat_address,
+                    )
                 
                 # 等待下次心跳
                 await asyncio.sleep(self.heartbeat_interval)
@@ -174,25 +198,44 @@ class HeartbeatManager:
             bool: 写入是否成功
         """
         try:
-            if not opcua_client.client:
-                self.logger.error("OPC UA 客户端不可用")
-                return False
-            
-            # 获取节点
-            node = opcua_client.client.get_node(heartbeat_address)
-            
-            # 创建 UInt16 类型的值 1
-            variant = ua.Variant(1, ua.VariantType.UInt16)
-            
-            # 写入数据
-            node.set_attribute(ua.AttributeIds.Value, ua.DataValue(variant))
-            # node.set_attribute(ua.AttributeIds.Value, ua.DataValue(ua.Variant(value, ua.VariantType.Boolean)))
-
-            return True
+            return await opcua_client.write_uint16_value(heartbeat_address, 1)
             
         except Exception as e:
-            self.logger.error(f"写入心跳信号失败：{heartbeat_address}: {e}", exc_info=True)
+            self.logger.warning(f"写入心跳信号失败：{heartbeat_address}: {e}", exc_info=True)
             return False
+
+    def _log_throttled_warning(
+        self,
+        last_log_at: Dict[str, float],
+        suppressed: Dict[str, int],
+        key: str,
+        message: str,
+        *args,
+    ) -> None:
+        now = time.monotonic()
+        last = last_log_at.get(key, 0.0)
+        if not last or now - last >= self.log_throttle_interval:
+            suppressed_count = suppressed.pop(key, 0)
+            suffix = f"（期间合并 {suppressed_count} 次同类日志）" if suppressed_count else ""
+            self.logger.warning(message + suffix, *args)
+            last_log_at[key] = now
+            return
+
+        suppressed[key] = suppressed.get(key, 0) + 1
+        self.logger.debug(message + "（已合并日志）", *args)
+
+    def _clear_throttle_state(self, connection_name: str) -> None:
+        skipped = self._suppressed_skip_logs.pop(connection_name, 0)
+        failures = self._suppressed_failure_logs.pop(connection_name, 0)
+        self._last_skip_log_at.pop(connection_name, None)
+        self._last_failure_log_at.pop(connection_name, None)
+        if skipped or failures:
+            self.logger.info(
+                "心跳恢复：%s，之前合并了 %d 次未连接日志、%d 次写入失败日志",
+                connection_name,
+                skipped,
+                failures,
+            )
     
     def get_heartbeat_status(self) -> Dict[str, bool]:
         """
