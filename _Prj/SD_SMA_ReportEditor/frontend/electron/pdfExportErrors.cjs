@@ -14,14 +14,24 @@ function humanizePdfExportError(raw, context) {
     text = norm(raw.message)
   }
   if (!text) text = '未知错误'
+  // Electron IPC 透传的错误带 "Error invoking remote method 'xxx': Error:" 前缀，先剥掉再分类
+  const stripped = text.replace(/^error invoking remote method '[^']*':\s*(error:\s*)?/i, '').trim()
+  if (stripped) text = stripped
+  // 已可读化过的文案直接透传，避免二次包装被误判成「数据源检查未通过」
+  const alreadyHumanized =
+    /可能原因：|建议：/.test(text) ||
+    /^(导出超时。|无法连接后端|导出前数据源检查未通过|发现 \d+ 个问题：|磁盘空间不足|没有权限写入|无法写入 PDF|未指定|找不到)/.test(text)
+  if (alreadyHumanized) {
+    return text
+  }
   const low = lower(text)
   const phase = (context && context.phase) || 'export'
 
   if (/pdf\s*渲染超时|渲染超时/.test(text)) {
     return [
-      'PDF 渲染超时（超过 2 分钟）。',
-      '可能原因：模版较大、数据源响应慢或网络不稳定。',
-      '建议：检查数据库 / OPC UA 连接是否正常，关闭其他占用资源的程序后重试。',
+      text.startsWith('PDF 渲染超时') ? text : 'PDF 渲染超时。',
+      '可能原因：模版较大、数据源取数慢或渲染窗口无响应。',
+      '建议：在模版编辑器打开「导出预览」定位取数慢的绑定；确认数据库 / OPC UA 连接正常后重试。',
     ].join('\n')
   }
   if (/pdf\s*渲染失败|渲染失败/.test(low)) {

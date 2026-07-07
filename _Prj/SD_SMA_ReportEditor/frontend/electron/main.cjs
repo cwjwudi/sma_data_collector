@@ -764,22 +764,56 @@ ipcMain.handle('pdf-export-run', async (event, opts) => {
         },
       })
 
+      /** 渲染窗口取数期间每 10 秒发一次心跳：连续 2 分钟无心跳视为无响应；总时长上限 10 分钟 */
+      const RENDER_IDLE_TIMEOUT_MS = 120000
+      const RENDER_TOTAL_CAP_MS = 600000
+
       async function renderPart(partIndex) {
         const readyPromise = new Promise((resolve, reject) => {
-          const timer = setTimeout(() => {
+          let idleTimer = null
+          let capTimer = null
+
+          function cleanup() {
+            if (idleTimer) clearTimeout(idleTimer)
+            if (capTimer) clearTimeout(capTimer)
             ipcMain.removeListener('pdf-export-ready', onReady)
-            reject(new Error('PDF render timeout'))
-          }, 120000)
+            ipcMain.removeListener('pdf-export-heartbeat', onHeartbeat)
+          }
+
+          function fail(message) {
+            cleanup()
+            reject(new Error(message))
+          }
+
+          function armIdleTimer() {
+            if (idleTimer) clearTimeout(idleTimer)
+            idleTimer = setTimeout(() => {
+              fail('PDF 渲染超时：渲染窗口约 2 分钟无响应（页面可能加载失败或取数卡住）')
+            }, RENDER_IDLE_TIMEOUT_MS)
+          }
+
+          function isFromPdfWin(ev) {
+            if (!pdfWin || pdfWin.isDestroyed()) return false
+            return senderBrowserWindow(ev.sender) === pdfWin
+          }
+
+          function onHeartbeat(ev) {
+            if (!isFromPdfWin(ev)) return
+            armIdleTimer()
+          }
 
           function onReady(ev, payload) {
-            if (!pdfWin || pdfWin.isDestroyed()) return
-            if (senderBrowserWindow(ev.sender) !== pdfWin) return
-            clearTimeout(timer)
-            ipcMain.removeListener('pdf-export-ready', onReady)
+            if (!isFromPdfWin(ev)) return
+            cleanup()
             resolve(payload || {})
           }
 
+          capTimer = setTimeout(() => {
+            fail('PDF 渲染超时：取数渲染超过 10 分钟仍未完成')
+          }, RENDER_TOTAL_CAP_MS)
+          armIdleTimer()
           ipcMain.on('pdf-export-ready', onReady)
+          ipcMain.on('pdf-export-heartbeat', onHeartbeat)
         })
 
         await pdfWin.loadURL(buildLoadUrl(partIndex))

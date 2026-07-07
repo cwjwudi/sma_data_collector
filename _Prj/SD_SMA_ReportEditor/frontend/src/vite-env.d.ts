@@ -38,6 +38,7 @@ interface Window {
       totalReports?: number;
       stats?: { opcReads: number; sqlQueries: number; sqlRows: number };
     }) => void;
+    notifyPdfExportHeartbeat?: () => void;
     onPdfExportProgress: (
       listener: (payload: {
         phase?: string;

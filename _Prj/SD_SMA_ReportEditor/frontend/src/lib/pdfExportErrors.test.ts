@@ -7,11 +7,32 @@ import {
 
 describe("humanizePdfExportError", () => {
   it("maps render timeout", () => {
-    expect(humanizePdfExportError("PDF 渲染超时")).toContain("超过 2 分钟");
+    expect(humanizePdfExportError("PDF 渲染超时")).toContain("可能原因");
   });
 
   it("maps disk full", () => {
     expect(humanizePdfExportError({ message: "ENOSPC" })).toContain("磁盘空间不足");
+  });
+
+  it("剥掉 IPC 包装前缀，不把已可读化的超时误判为数据源检查未通过", () => {
+    const wrapped =
+      "Error invoking remote method 'pdf-export-run': Error: 导出超时。请检查数据库 / OPC UA 连接与网络，然后重试。";
+    const out = humanizePdfExportError(wrapped);
+    expect(out).toBe("导出超时。请检查数据库 / OPC UA 连接与网络，然后重试。");
+    expect(out).not.toContain("数据源检查未通过");
+  });
+
+  it("主进程渲染超时文案原样透传", () => {
+    const wrapped =
+      "Error invoking remote method 'pdf-export-run': Error: PDF 渲染超时：渲染窗口约 2 分钟无响应（页面可能加载失败或取数卡住）\n可能原因：模版较大、数据源取数慢或渲染窗口无响应。";
+    const out = humanizePdfExportError(wrapped);
+    expect(out.startsWith("PDF 渲染超时：渲染窗口约 2 分钟无响应")).toBe(true);
+    expect(out).not.toContain("数据源检查未通过");
+  });
+
+  it("真正的预检失败摘要保持原样", () => {
+    const summary = "发现 1 个问题：\n1. OPC UA 连接「PLC」测试失败";
+    expect(humanizePdfExportError(summary)).toBe(summary);
   });
 });
 

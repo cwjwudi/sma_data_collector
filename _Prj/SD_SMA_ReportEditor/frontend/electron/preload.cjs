@@ -34,6 +34,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   /** 仅 PDF 导出隐藏窗口：渲染完成后通知主进程 */
   notifyPdfExportReady: (payload) => ipcRenderer.send('pdf-export-ready', payload),
 
+  /** 仅 PDF 导出隐藏窗口：取数期间心跳，避免大模版慢取数被 2 分钟硬超时误杀 */
+  notifyPdfExportHeartbeat: () => ipcRenderer.send('pdf-export-heartbeat'),
+
   /** 订阅 PDF 导出阶段进度（结批弹窗显示「第 X/Y 份」等），返回取消订阅函数 */
   onPdfExportProgress: (listener) => {
     const fn = (_event, payload) => listener(payload)

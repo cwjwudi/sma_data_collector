@@ -81,6 +81,7 @@ function injectPrintPageCss(t: ReportTemplate): void {
 }
 
 function signalReady(ok: boolean, error?: string, totalReports?: number): void {
+  stopExportHeartbeat();
   window.electronAPI?.notifyPdfExportReady?.({
     ok,
     error,
@@ -88,6 +89,24 @@ function signalReady(ok: boolean, error?: string, totalReports?: number): void {
     // 本份报表实际取数统计（结批审计：拿了多少数据）
     stats: bindingPreview.lastStats.value || undefined,
   });
+}
+
+/** 取数期间向主进程发心跳：大模版慢取数不再被固定 2 分钟超时误杀 */
+let exportHeartbeatTimer: ReturnType<typeof setInterval> | null = null;
+
+function startExportHeartbeat(): void {
+  if (exportHeartbeatTimer) return;
+  window.electronAPI?.notifyPdfExportHeartbeat?.();
+  exportHeartbeatTimer = setInterval(() => {
+    window.electronAPI?.notifyPdfExportHeartbeat?.();
+  }, 10_000);
+}
+
+function stopExportHeartbeat(): void {
+  if (exportHeartbeatTimer) {
+    clearInterval(exportHeartbeatTimer);
+    exportHeartbeatTimer = null;
+  }
 }
 
 async function waitPaintReady(): Promise<void> {
@@ -104,6 +123,7 @@ async function boot(): Promise<void> {
   const seq = ++bootSeq;
   tmpl.value = null;
   errText.value = null;
+  startExportHeartbeat();
   const id = String(route.query.templateId || "").trim();
   if (!id) {
     errText.value = humanizePdfExportError("缺少 templateId");
