@@ -44,6 +44,8 @@ class DataStorageProcessor:
         self.group_batch_sizes = {}  # 存储各组的batch_size配置
         self.group_unique_key_points = {}  # 存储各组唯一键点配置
         self.group_batch_upsert_configs = {}  # 存储各组批次更新配置
+        self.group_batch_time_configs = {}  # 存储各组开批/结批时间点配置
+        self.group_open_batch_partition_times = {}  # 存储未结批批次的开批时间
         self.group_insert_feedback_configs = {}  # 存储各组反馈配置
         self.group_indexes_configs = {}  # 存储各组索引配置
         self.points_dict = points_dict or {}  # 数据点配置字典
@@ -68,6 +70,11 @@ class DataStorageProcessor:
         
         group_name = collection_data.get('group_name')
         if group_name is not None:
+            if self._is_batch_close_record(collection_data):
+                ev = self._batch_ready_event
+                if ev is not None and not ev.is_set():
+                    ev.set()
+
             batch_size = self.group_batch_sizes.get(group_name, self.default_batch_size)
             group_count = sum(1 for x in self.data_queue if x.get('group_name') == group_name)
             if group_count >= batch_size:
@@ -90,6 +97,7 @@ class DataStorageProcessor:
         self.running = False
         self._batch_ready_event = None
         self.ensured_tables.clear()
+        self.group_open_batch_partition_times.clear()
         if self.processing_task:
             self.processing_task.cancel()
             try:
@@ -160,6 +168,9 @@ class DataStorageProcessor:
         temp_queue = list(self.data_queue)
         
         for data_item in temp_queue:
+            if self._is_batch_close_record(data_item):
+                return True
+
             group_name = data_item['group_name']
             group_counts[group_name] = group_counts.get(group_name, 0) + 1
         
@@ -184,16 +195,19 @@ class DataStorageProcessor:
         unprocessable_data = []
         
         group_counts = {}
+        force_flush_groups = set()
         for data_item in temp_queue:
             group_name = data_item['group_name']
             group_counts[group_name] = group_counts.get(group_name, 0) + 1
+            if self._is_batch_close_record(data_item):
+                force_flush_groups.add(group_name)
         
         # 分离可处理和不可处理的数据
         for data_item in temp_queue:
             group_name = data_item['group_name']
             batch_size = self.group_batch_sizes.get(group_name, self.default_batch_size)
             
-            if group_counts[group_name] >= batch_size:
+            if group_counts[group_name] >= batch_size or group_name in force_flush_groups:
                 processable_data.append(data_item)
             else:
                 unprocessable_data.append(data_item)
@@ -256,7 +270,7 @@ class DataStorageProcessor:
             # 获取第一个数据项来确定表结构
             sample_data = group_data_list[0]
             # 传递group_name给数据库管理器
-            table_name = self.db_manager.get_current_table_name(group_name)
+            table_name = self._get_table_name_for_data_item(group_name, sample_data)
             unique_key_point = self.group_unique_key_points.get(group_name)
             batch_upsert_config = self.group_batch_upsert_configs.get(group_name)
             group_indexes = self.group_indexes_configs.get(group_name)
@@ -285,6 +299,11 @@ class DataStorageProcessor:
                 self.STATUS_OTHER_ERROR: 0,
             }
             for data_item in group_data_list:
+                table_name = self._get_table_name_for_data_item(group_name, data_item)
+                if not self._ensure_table_exists(table_name, column_types, indexes=group_indexes):
+                    outcome_counts[self.STATUS_DB_ERROR] += 1
+                    continue
+
                 insert_data = self._convert_to_db_format(data_item)
                 if not insert_data:
                     outcome_counts[self.STATUS_OTHER_ERROR] += 1
@@ -425,6 +444,126 @@ class DataStorageProcessor:
                 f"组 {group_name} 写入插入反馈失败: {callback_error}",
                 exc_info=True
             )
+
+    def _get_batch_time_config(self, group_name: str) -> Optional[Dict[str, Any]]:
+        return (
+            self.group_batch_time_configs.get(group_name)
+            or self.group_batch_upsert_configs.get(group_name)
+        )
+
+    @staticmethod
+    def _has_data_value(value: Any) -> bool:
+        if value is None:
+            return False
+        if isinstance(value, str):
+            return bool(value.strip())
+        return True
+
+    @staticmethod
+    def _get_data_point_value(collection_data: Dict[str, Any], point_name: Optional[str]) -> Any:
+        if not point_name:
+            return None
+
+        data_points = collection_data.get('data') or {}
+        point_data = data_points.get(point_name)
+        if isinstance(point_data, dict):
+            return point_data.get('value')
+        return point_data
+
+    @staticmethod
+    def _parse_datetime_value(value: Any) -> Optional[datetime]:
+        if isinstance(value, datetime):
+            return value.replace(tzinfo=None)
+        if value is None:
+            return None
+
+        text_value = str(value).strip()
+        if not text_value:
+            return None
+
+        try:
+            iso_value = text_value.replace("Z", "+00:00")
+            parsed = datetime.fromisoformat(iso_value)
+            return parsed.replace(tzinfo=None)
+        except ValueError:
+            pass
+
+        datetime_formats = [
+            '%Y-%m-%d %H:%M:%S',
+            '%Y-%m-%d %H:%M:%S.%f',
+            '%Y-%m-%dT%H:%M:%S',
+            '%Y-%m-%dT%H:%M:%S.%f',
+            '%Y/%m/%d %H:%M:%S',
+            '%Y%m%d%H%M%S',
+            '%Y-%m-%d',
+            '%Y/%m/%d',
+            '%Y%m%d',
+            'DT#%Y-%m-%d-%H:%M:%S',
+            '%a %b %d %H:%M:%S %Y',
+            '%a %b  %d %H:%M:%S %Y',
+        ]
+        for datetime_format in datetime_formats:
+            try:
+                return datetime.strptime(text_value, datetime_format)
+            except ValueError:
+                continue
+
+        return None
+
+    def _get_batch_start_time(self, group_name: str, collection_data: Dict[str, Any]) -> Optional[datetime]:
+        batch_time_config = self._get_batch_time_config(group_name)
+        if not batch_time_config:
+            return None
+
+        start_time_point = batch_time_config.get("start_time_point")
+        start_time_value = self._get_data_point_value(collection_data, start_time_point)
+        return self._parse_datetime_value(start_time_value)
+
+    def _is_batch_close_record(self, collection_data: Dict[str, Any]) -> bool:
+        group_name = collection_data.get('group_name')
+        if not group_name:
+            return False
+
+        batch_time_config = self._get_batch_time_config(group_name)
+        if not batch_time_config:
+            return False
+
+        end_time_point = batch_time_config.get("end_time_point")
+        end_time_value = self._get_data_point_value(collection_data, end_time_point)
+        if not self._has_data_value(end_time_value):
+            return False
+
+        start_time_point = batch_time_config.get("start_time_point")
+        start_time_value = self._get_data_point_value(collection_data, start_time_point)
+        start_time = self._parse_datetime_value(start_time_value)
+        end_time = self._parse_datetime_value(end_time_value)
+
+        if start_time and end_time:
+            return end_time > start_time
+        return True
+
+    def _get_table_name_for_data_item(self, group_name: str, collection_data: Dict[str, Any]) -> str:
+        if self.group_batch_upsert_configs.get(group_name):
+            return self.db_manager.get_current_table_name(group_name, fixed_table=True)
+
+        partition_time = self._get_batch_start_time(group_name, collection_data)
+        if partition_time is not None:
+            self.group_open_batch_partition_times[group_name] = partition_time
+        else:
+            partition_time = self.group_open_batch_partition_times.get(group_name)
+
+        if partition_time is None:
+            partition_time = collection_data.get('collection_time')
+
+        table_name = self.db_manager.get_current_table_name(
+            group_name,
+            partition_time=partition_time,
+        )
+
+        if self._is_batch_close_record(collection_data):
+            self.group_open_batch_partition_times.pop(group_name, None)
+
+        return table_name
     
     def _infer_column_types(self, sample_data: Dict[str, Any]) -> Dict[str, str]:
         """

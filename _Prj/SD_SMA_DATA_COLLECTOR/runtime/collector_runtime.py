@@ -179,14 +179,18 @@ class DataCollectionSystem:
             for group in self.config.groups:
                 self.storage_processor.group_batch_sizes[group.name] = group.batch_insert_size
                 self.storage_processor.group_unique_key_points[group.name] = group.unique_key_point
-                if group.batch_upsert and group.batch_upsert.enabled:
-                    self.storage_processor.group_batch_upsert_configs[group.name] = {
+                if group.batch_upsert:
+                    batch_time_config = {
                         "start_time_point": group.batch_upsert.start_time_point,
                         "end_time_point": group.batch_upsert.end_time_point,
                         "update_only_when_end_time_is_null": group.batch_upsert.update_only_when_end_time_is_null,
                         "reject_when_end_time_exists": group.batch_upsert.reject_when_end_time_exists,
                         "allow_idempotent_same_end_time": group.batch_upsert.allow_idempotent_same_end_time,
                     }
+                    if group.batch_upsert.start_time_point or group.batch_upsert.end_time_point:
+                        self.storage_processor.group_batch_time_configs[group.name] = batch_time_config
+                    if group.batch_upsert.enabled:
+                        self.storage_processor.group_batch_upsert_configs[group.name] = batch_time_config
                 if group.insert_feedback:
                     feedback_point_name = group.insert_feedback.feedback_point
                     feedback_point_path = points_dict[feedback_point_name].path

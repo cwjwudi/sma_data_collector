@@ -6,8 +6,8 @@
 import logging
 import os
 import time
-from typing import Optional, Dict, Any, List
-from datetime import datetime
+from typing import Optional, Dict, Any, List, Tuple
+from datetime import datetime, date
 import sqlite3
 try:
     import pymysql
@@ -370,9 +370,58 @@ class DatabaseManager:
         """
         # 这里需要通过外部传入group配置来获取参数
         # 暂时返回默认值，后续会通过参数传递解决
-        return 30
+        return 365
+
+    def _resolve_group_name(self, group_name: str = None) -> str:
+        if group_name is not None:
+            return group_name
+
+        data_groups = self.db_config.get('data_groups', [])
+        if data_groups:
+            return data_groups[0]
+        return 'default'
+
+    @staticmethod
+    def _normalize_partition_time(partition_time: Optional[Any] = None) -> datetime:
+        if isinstance(partition_time, datetime):
+            return partition_time
+        if isinstance(partition_time, date):
+            return datetime(partition_time.year, partition_time.month, partition_time.day)
+        return datetime.now()
+
+    @staticmethod
+    def _format_year_table_name(group_name: str, partition_time: datetime) -> str:
+        return f"{group_name}_{partition_time.strftime('%Y')}"
+
+    @staticmethod
+    def _parse_partitioned_table_name(table_name: str) -> Optional[Tuple[str, datetime]]:
+        if "_" not in table_name:
+            return None
+
+        group_name, suffix = table_name.rsplit("_", 1)
+        if not group_name or not suffix.isdigit():
+            return None
+
+        if len(suffix) == 4:
+            try:
+                return group_name, datetime(int(suffix), 1, 1)
+            except ValueError:
+                return None
+
+        if len(suffix) == 8:
+            try:
+                return group_name, datetime.strptime(suffix, '%Y%m%d')
+            except ValueError:
+                return None
+
+        return None
     
-    def get_current_table_name(self, group_name: str = None) -> str:
+    def get_current_table_name(
+        self,
+        group_name: str = None,
+        partition_time: Optional[Any] = None,
+        fixed_table: bool = False,
+    ) -> str:
         """
         获取当前使用的表名（根据group_name和日期自动切换）
         
@@ -382,38 +431,27 @@ class DatabaseManager:
         Returns:
             str: 当前表名
         """
-        today = datetime.now()  # 使用datetime而不是date，保持类型一致
-        
-        # 如果没有指定group_name，使用配置中的第一个数据组
-        if group_name is None:
-            # 从配置中获取data_groups，如果没有则使用'default'
-            data_groups = self.db_config.get('data_groups', [])
-            if data_groups:
-                group_name = data_groups[0]
-            else:
-                group_name = 'default'
-        
-        # 从group_configs获取该组的recreate_interval_days配置
-        recreate_interval = 30  # 默认值
-        if group_name in self.group_configs:
-            recreate_interval = self.group_configs[group_name].get('recreate_interval_days', 30)
-        
-        # 检查该group是否已有表记录
-        current_table_name = self.current_table_names.get(group_name)
-        table_created_date = self.table_created_dates.get(group_name)
-        
-        if (not current_table_name or 
-            not table_created_date or
-            (today.date() - table_created_date.date()).days >= recreate_interval):
+        group_name = self._resolve_group_name(group_name)
+        effective_time = self._normalize_partition_time(partition_time)
 
-            # 生成新的表名：{group_name}_{日期}
-            
-            new_table_name = f"{group_name}_{today.strftime('%Y%m%d')}"
-            
-            self.logger.info(f"Group '{group_name}' 切换到新表: {new_table_name} (间隔: {recreate_interval}天)")
+        if fixed_table:
+            self.current_table_names[group_name] = group_name
+            self.table_created_dates[group_name] = effective_time
+            return group_name
+
+        new_table_name = self._format_year_table_name(group_name, effective_time)
+        current_table_name = self.current_table_names.get(group_name)
+
+        if current_table_name != new_table_name:
+            self.logger.info(
+                "Group '%s' switching to year table %s (partition_time=%s)",
+                group_name,
+                new_table_name,
+                effective_time,
+            )
             self.current_table_names[group_name] = new_table_name
-            self.table_created_dates[group_name] = today
-            
+            self.table_created_dates[group_name] = effective_time
+
         return self.current_table_names[group_name]
     
     def execute_query(self, sql: str, params: Optional[Dict] = None, _retry_on_disconnect: bool = True) -> list:
@@ -549,37 +587,17 @@ class DatabaseManager:
                     table_name = table_row
                 table_name_str = str(table_name).strip()
 
-                if "_" not in table_name_str:
+                parsed_table = self._parse_partitioned_table_name(table_name_str)
+                if not parsed_table:
                     skipped_count += 1
-                    self.logger.debug("跳过表(无下划线后缀结构): %s", table_name_str)
+                    self.logger.debug("Skip non-partitioned table: %s", table_name_str)
                     continue
-                # 取表名最后8位作为日期字符串
-                date_str = table_name_str[-8:]
 
-                # 判断是否为有效日期
-                if len(date_str) != 8 or not date_str.isdigit():
-                    # 不是日期格式，跳过
-                    skipped_count += 1
-                    self.logger.debug("跳过表(非8位日期后缀): %s", table_name_str)
-                    continue
-                try:
-                    # 尝试将字符串解析为日期对象
-                    parsed_date = datetime.strptime(date_str, '%Y%m%d')
-                    group_name = table_name_str[:-9]  # 去掉下划线和日期
-                    if not group_name:
-                        skipped_count += 1
-                        self.logger.debug("跳过表(group_name为空): %s", table_name_str)
-                        continue
-                    # 更新该group的最新日期
-                    if (group_name not in group_latest_dates or
-                        parsed_date > group_latest_dates[group_name]):
-                        group_latest_dates[group_name] = parsed_date
-                    parsed_count += 1
-                except ValueError:
-                    # 日期格式不匹配，跳过该表
-                    skipped_count += 1
-                    self.logger.debug("跳过表(日期解析失败): %s", table_name_str)
-                    continue
+                group_name, parsed_date = parsed_table
+                if (group_name not in group_latest_dates or
+                    parsed_date > group_latest_dates[group_name]):
+                    group_latest_dates[group_name] = parsed_date
+                parsed_count += 1
 
             self.logger.debug(
                 "扫描表完成: total=%s, parsed=%s, skipped=%s",
@@ -593,7 +611,7 @@ class DatabaseManager:
             
             # 为每个group生成对应的当前表名
             for group_name, latest_date in group_latest_dates.items():
-                current_table_name = f"{group_name}_{latest_date.strftime('%Y%m%d')}"
+                current_table_name = self._format_year_table_name(group_name, latest_date)
                 self.current_table_names[group_name] = current_table_name
             
             if group_latest_dates:
