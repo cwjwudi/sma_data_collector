@@ -124,12 +124,24 @@ function findPython() {
   return { cmd: fallback }
 }
 
-/** 打包后随 extraResources 带入的前端静态页目录（resources/web），供后端 HTTP 挂载 */
+/**
+ * 前端静态页目录。打包后位于 resources/web（extraResources 带入，asar 外），
+ * 主窗口/PDF 渲染窗口从这里加载，后端也用它服务网页版。
+ * 注意：electron-builder 会把 extraResources 的来源目录从 asar 中排除，
+ * 因此打包后 asar 内不再有 dist，页面必须从本目录加载。
+ */
 function getWebDistDir() {
   if (app.isPackaged) {
     return path.join(process.resourcesPath, 'web')
   }
   return path.join(__dirname, '..', 'dist')
+}
+
+function getRendererIndexHtml() {
+  const webIndex = path.join(getWebDistDir(), 'index.html')
+  if (fs.existsSync(webIndex)) return webIndex
+  // 兜底：老包（无 resources/web）仍从 asar 内 dist 加载
+  return path.join(__dirname, '..', 'dist', 'index.html')
 }
 
 function startPythonBackend() {
@@ -370,7 +382,7 @@ function createWindow() {
   if (isDev) {
     mainWindow.loadURL(VITE_DEV_URL)
   } else {
-    mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'))
+    mainWindow.loadFile(getRendererIndexHtml())
   }
 
   mainWindow.on('closed', () => {
@@ -721,7 +733,7 @@ ipcMain.handle('pdf-export-run', async (event, opts) => {
         if (isDev) {
           return `${VITE_DEV_URL}/#/pdf-export?templateId=${encodeURIComponent(templateId)}&reportPartIndex=${partIndex}`
         }
-        const idxHtml = path.join(__dirname, '..', 'dist', 'index.html')
+        const idxHtml = getRendererIndexHtml()
         return `${pathToFileURL(idxHtml).href}#/pdf-export?templateId=${encodeURIComponent(templateId)}&reportPartIndex=${partIndex}`
       }
       pdfWin = new BrowserWindow({
