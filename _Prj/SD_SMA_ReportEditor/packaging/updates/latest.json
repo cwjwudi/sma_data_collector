@@ -1,17 +1,17 @@
 {
-  "version": "0.2.1",
-  "releasedAt": "2026-07-07T03:55:01.730Z",
-  "notes": "Report Editor 0.2.1\n\n- 修复签名库「改名」按钮无效（改用应用内弹层，Electron 下可用）\n- 签名库新增「重新签名」：可为已有条目重新手写并替换签名图，保留原名称与引用\n- 恢复生成报表 OPC 触发变量的近期数值折线图实时刷新\n- 修复模版/版式拖拽排序方向不符直觉：从前往后、从后往前拖动都按方向正确落位\n- 启动提示如实反映加载进度：先等后端服务就绪，再逐项加载版式/模版/签名并显示当前步骤，全部完成才提示就绪；模版管理缩略图随就绪提示即刻可见",
+  "version": "0.2.2",
+  "releasedAt": "2026-07-07T04:47:30.626Z",
+  "notes": "Report Editor 0.2.2\n\n- OPC UA 绑定选择体验优化：树节点与搜索结果点选后即时高亮（勾选标记＋描边），底部已选 NodeId 更醒目，所有绑定入口（生成报表反馈/触发、模版与版式控件、页眉页脚）统一生效",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor-Setup-0.2.1-x64.exe",
+      "url": "Report Editor-Setup-0.2.2-x64.exe",
       "sha256": "",
       "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor-0.2.1-arm64.dmg",
-      "sha256": "a8bce2d6781f44e9b7a6ffd180fc043500d37972518aa3c67354c9ec0a98e684",
-      "size": 177252574
+      "url": "Report Editor-0.2.2-arm64.dmg",
+      "sha256": "",
+      "size": 0
     }
   }
 }
