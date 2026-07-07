@@ -70,6 +70,31 @@
       </div>
     </div>
 
+    <!-- 改名弹层（Electron 下 window.prompt 不可用，改用应用内弹层） -->
+    <div v-if="renameDlg" class="name-backdrop" @click.self="closeRenameDlg">
+      <div class="name-modal" role="dialog" aria-modal="true" aria-labelledby="rename-modal-title">
+        <h3 id="rename-modal-title" class="name-title">修改签名名称</h3>
+        <label class="name-lbl" for="sig-rename-input">显示名称</label>
+        <input
+          id="sig-rename-input"
+          ref="renameInputEl"
+          v-model.trim="renameInput"
+          type="text"
+          class="name-inp"
+          maxlength="128"
+          autocomplete="off"
+          placeholder="例如：张三签收"
+          @keydown.enter.prevent="confirmRenameDlg"
+        />
+        <div class="name-actions">
+          <button type="button" class="b-ghost" @click="closeRenameDlg">取消</button>
+          <button type="button" class="b primary" :disabled="!normalizeLabel(renameInput)" @click="confirmRenameDlg">
+            保存
+          </button>
+        </div>
+      </div>
+    </div>
+
     <SignaturePadDialog
       v-model="dlg"
       title="手写签名条目"
@@ -112,6 +137,12 @@ const nameDlg = ref(false);
 /** 命名弹窗内输入（未完成确定前不写 pendingLabel） */
 const nameInput = ref("");
 const nameInputEl = ref<HTMLInputElement | null>(null);
+
+/** 改名弹层状态 */
+const renameDlg = ref(false);
+const renameId = ref("");
+const renameInput = ref("");
+const renameInputEl = ref<HTMLInputElement | null>(null);
 
 const rows = computed(() =>
   summaries.value.map((s) => ({
@@ -269,18 +300,36 @@ async function save(body: SignatureAsset) {
   }
 }
 
-function rename(id: string) {
+async function rename(id: string) {
   const cur = summaries.value.find((x) => x.id === id);
-  const name = normalizeLabel(window.prompt?.("显示名称", cur?.label || "") ?? "");
-  if (!name) return;
-  api
-    .getSignature(id)
-    .then(async (a) => {
-      await save({ ...a, label: name, updatedAt: new Date().toISOString() });
-    })
-    .catch(() => {
-      msg.value = "读取条目失败";
-    });
+  renameId.value = id;
+  renameInput.value = cur?.label || "";
+  renameDlg.value = true;
+  await nextTick();
+  renameInputEl.value?.focus();
+  renameInputEl.value?.select();
+}
+
+function closeRenameDlg() {
+  renameDlg.value = false;
+  renameId.value = "";
+  renameInput.value = "";
+}
+
+async function confirmRenameDlg() {
+  const id = renameId.value;
+  const name = normalizeLabel(renameInput.value);
+  if (!id || !name) return;
+  renameDlg.value = false;
+  try {
+    const a = await api.getSignature(id);
+    await save({ ...a, label: name, updatedAt: new Date().toISOString() });
+  } catch {
+    msg.value = "读取条目失败";
+  } finally {
+    renameId.value = "";
+    renameInput.value = "";
+  }
 }
 
 async function remove(id: string) {

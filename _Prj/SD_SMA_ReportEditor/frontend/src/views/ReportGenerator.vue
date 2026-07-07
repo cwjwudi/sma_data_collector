@@ -548,7 +548,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onActivated, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, nextTick, onActivated, onDeactivated, onMounted, onUnmounted, ref, watch } from "vue";
 import { listTemplateSummaries, type TemplateSummary } from "@/api/templates";
 import { apiFetch } from "@/api/client.js";
 import {
@@ -869,6 +869,31 @@ function syncBindingChartUi(id: string, rt: BindingRuntime): void {
 
 function bindingChartUi(id: string): BindingChartUi | undefined {
   return bindingChartUiMap.value[id];
+}
+
+/**
+ * OPC 采样由应用级 report-auto-export-trigger-service 每秒写入共享 runtime，
+ * 本页需定时把共享 runtime 的最新曲线同步到 UI，否则进入本页后折线图不刷新。
+ */
+let chartRefreshTimer: number | null = null;
+
+function refreshAllBindingCharts(): void {
+  for (const b of prefs.value.auto.bindings) {
+    syncBindingChartUi(b.id, getBindingRuntime(b.id));
+  }
+}
+
+function startChartRefresh(): void {
+  if (chartRefreshTimer != null) return;
+  refreshAllBindingCharts();
+  chartRefreshTimer = window.setInterval(refreshAllBindingCharts, 1000);
+}
+
+function stopChartRefresh(): void {
+  if (chartRefreshTimer != null) {
+    window.clearInterval(chartRefreshTimer);
+    chartRefreshTimer = null;
+  }
 }
 
 function recordBindingOpcSample(
@@ -1492,7 +1517,12 @@ onMounted(() => {
 
 /** keep-alive：每次进入刷新模版/连接列表，保证下拉项与其它页新增内容同步 */
 onActivated(async () => {
+  startChartRefresh();
   await Promise.all([loadSummaries(), loadOpcServers()]);
+});
+
+onDeactivated(() => {
+  stopChartRefresh();
 });
 
 function onConfigImported() {
@@ -1513,6 +1543,7 @@ function onOpcServersChanged() {
 }
 
 onUnmounted(() => {
+  stopChartRefresh();
   window.removeEventListener("report-editor-config-imported", onConfigImported);
   window.removeEventListener("report-editor-opcua-servers-changed", onOpcServersChanged);
   window.removeEventListener("report-generator-prefs-updated", onExternalPrefsUpdated);

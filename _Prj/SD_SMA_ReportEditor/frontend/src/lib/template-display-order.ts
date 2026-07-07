@@ -55,14 +55,21 @@ export function templateSelectLabel(seq: number, name: string): string {
   return `${seq}. ${name}`;
 }
 
-/** 将 fromId 移动到 toId 之前 */
+/**
+ * 将 fromId 拖到 toId 处，按拖拽方向落位（更符合直觉）：
+ * - 从前往后拖（from < to）：落到 toId 之后，占据 toId 原来的位置；
+ * - 从后往前拖（from > to）：落到 toId 之前，占据 toId 原来的位置。
+ * 例如 [1,2,3] 把 1 拖到 2 → [2,1,3]；把 3 拖到 2 → [1,3,2]。
+ */
 export function reorderIdsBefore(ids: string[], fromId: string, toId: string): string[] {
   const from = ids.indexOf(fromId);
   const to = ids.indexOf(toId);
   if (from < 0 || to < 0 || from === to) return ids;
   const next = ids.filter((id) => id !== fromId);
-  const insertAt = next.indexOf(toId);
-  if (insertAt < 0) return ids;
+  const base = next.indexOf(toId);
+  if (base < 0) return ids;
+  // 向后拖时插到目标之后，向前拖时插到目标之前
+  const insertAt = from < to ? base + 1 : base;
   next.splice(insertAt, 0, fromId);
   return next;
 }
