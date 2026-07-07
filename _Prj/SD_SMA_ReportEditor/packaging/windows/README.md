@@ -10,12 +10,12 @@
 
 **本版更新说明**（写入 `packaging/updates/latest.json` 的 `notes`，应用内「检查更新」与 `latest.yml` 的 `releaseNotes` 均会展示）：
 
-> 加密配置备份(.rebak)/快速复位；局域网服务地址；卸载前备份；下载完整安装包；修复升级后模版/版式页卡顿
+> 截批反馈状态/信息/路径节点可选并可手填 NodeId、修复保存后状态未写 true；备份恢复分步进度、加载完成才提示完成、免重启；修复新装后删除版式卡顿；启动预热右下角进度提示
 
 发版前请 `git pull origin main`，确认上述 `notes` 已在仓库中；若需修改说明：
 
 ```powershell
-node packaging\scripts\bump-version.mjs 0.1.27 --notes "你的更新说明"
+node packaging\scripts\bump-version.mjs 0.2.0 --notes "你的更新说明"
 ```
 
 ## 一发版流程（推荐）
