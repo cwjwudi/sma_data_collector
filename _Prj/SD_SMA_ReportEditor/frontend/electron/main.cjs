@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, shell, nativeImage } = require('electron')
+const { app, BrowserWindow, ipcMain, dialog, shell, nativeImage, powerSaveBlocker } = require('electron')
 const { execFileSync, spawn } = require('child_process')
 const path = require('path')
 const http = require('http')
@@ -375,6 +375,8 @@ function createWindow() {
       nodeIntegration: false,
       contextIsolation: true,
       preload: path.join(__dirname, 'preload.cjs'),
+      // 最小化/后台时不节流定时器，保证 OPC UA 自动结批轮询持续运行
+      backgroundThrottling: false,
     },
   })
 
@@ -705,6 +707,7 @@ ipcMain.handle('pdf-export-run', async (event, opts) => {
   const filePath = opts && opts.filePath
   const templateId = opts && opts.templateId
   const openAfter = Boolean(opts && opts.openAfter)
+  const jobId = opts && typeof opts.jobId === 'string' ? opts.jobId : ''
   if (!filePath || typeof filePath !== 'string') throw new Error('缺少 filePath')
   if (!templateId || typeof templateId !== 'string') throw new Error('缺少 templateId')
 
@@ -713,6 +716,18 @@ ipcMain.handle('pdf-export-run', async (event, opts) => {
     try {
       function outputPathForPart(partIndex, totalReports) {
         return outputPathForReportPart(filePath, partIndex, totalReports)
+      }
+
+      /** 向发起导出的窗口推送阶段进度（结批弹窗显示用；窗口已关则忽略） */
+      function sendProgress(payload) {
+        try {
+          const w = senderBrowserWindow(event.sender)
+          if (w && !w.isDestroyed()) {
+            event.sender.send('pdf-export-progress', { ...payload, jobId, templateId })
+          }
+        } catch {
+          /* ignore */
+        }
       }
 
       function buildLoadUrl(partIndex) {
@@ -744,6 +759,8 @@ ipcMain.handle('pdf-export-run', async (event, opts) => {
           nodeIntegration: false,
           contextIsolation: true,
           preload: path.join(__dirname, 'preload.cjs'),
+          // 隐藏窗口默认被节流，关闭以保证后台渲染 PDF 不变慢
+          backgroundThrottling: false,
         },
       })
 
@@ -778,30 +795,59 @@ ipcMain.handle('pdf-export-run', async (event, opts) => {
           pageRanges: '',
           preferCSSPageSize: true,
         })
-        return { pdfBuffer, totalReports: Math.max(1, Math.floor(Number(payload.totalReports) || 1)) }
+        return {
+          pdfBuffer,
+          totalReports: Math.max(1, Math.floor(Number(payload.totalReports) || 1)),
+          stats: payload.stats || null,
+        }
       }
 
+      function mergeStats(total, part) {
+        if (!part || typeof part !== 'object') return total
+        return {
+          opcReads: total.opcReads + (Number(part.opcReads) || 0),
+          sqlQueries: total.sqlQueries + (Number(part.sqlQueries) || 0),
+          sqlRows: total.sqlRows + (Number(part.sqlRows) || 0),
+        }
+      }
+
+      const startedAtMs = Date.now()
+      let stats = { opcReads: 0, sqlQueries: 0, sqlRows: 0 }
+
+      sendProgress({ phase: 'render', partIndex: 0, totalReports: 0 })
       const first = await renderPart(0)
       const totalReports = first.totalReports
+      stats = mergeStats(stats, first.stats)
       const filePaths = []
       const firstPath = outputPathForPart(0, totalReports)
       fs.mkdirSync(path.dirname(firstPath), { recursive: true })
       fs.writeFileSync(firstPath, first.pdfBuffer)
       filePaths.push(firstPath)
+      sendProgress({ phase: 'saved', partIndex: 0, totalReports })
 
       for (let partIndex = 1; partIndex < totalReports; partIndex++) {
+        sendProgress({ phase: 'render', partIndex, totalReports })
         const part = await renderPart(partIndex)
+        stats = mergeStats(stats, part.stats)
         const outPath = outputPathForPart(partIndex, totalReports)
         fs.mkdirSync(path.dirname(outPath), { recursive: true })
         fs.writeFileSync(outPath, part.pdfBuffer)
         filePaths.push(outPath)
+        sendProgress({ phase: 'saved', partIndex, totalReports })
       }
 
       if (openAfter) {
         await shell.openPath(filePaths[0])
       }
 
-      return { ok: true, filePath: filePaths[0], filePaths, totalReports }
+      return {
+        ok: true,
+        filePath: filePaths[0],
+        filePaths,
+        totalReports,
+        stats,
+        durationMs: Date.now() - startedAtMs,
+      }
     } catch (e) {
       throw new Error(humanizePdfExportError(e, { phase: 'export' }))
     } finally {
@@ -892,6 +938,14 @@ app.whenReady().then(async () => {
 
   if (process.platform === 'win32') {
     app.setAppUserModelId('com.brteam.sd_sma.report_editor')
+  }
+
+  // 防止系统挂起本应用（macOS App Nap / Windows 后台省电），
+  // 保证最小化或后台运行时 OPC UA 自动结批仍每秒轮询；不阻止屏幕熄灭。
+  try {
+    powerSaveBlocker.start('prevent-app-suspension')
+  } catch (e) {
+    log(`powerSaveBlocker 启动失败（忽略）：${e.message}`)
   }
 
   createWindow()

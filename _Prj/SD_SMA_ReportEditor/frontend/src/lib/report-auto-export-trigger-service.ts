@@ -1,5 +1,5 @@
 /**
- * OPC UA 自动截批轮询：应用级单例，离开「生成报表」页仍持续监听并导出 PDF。
+ * OPC UA 自动结批轮询：应用级单例，离开「生成报表」页仍持续监听并导出 PDF。
  */
 import { ref, type Ref } from "vue";
 import { listTemplateSummaries, type TemplateSummary } from "@/api/templates";
@@ -33,8 +33,8 @@ import {
 import { NumericSampleRing, coerceOpcTriggerNumericSample, isOpcTriggerChartEligible } from "@/lib/auto-trigger-value-history";
 
 const RG_UI = {
-  opcAuto: "OPC UA 自动截批",
-  feedback: "截批结果反馈",
+  opcAuto: "OPC UA 自动结批",
+  feedback: "结批结果反馈",
 } as const;
 
 const RG_STATUS_OPC_AUTO = `[${RG_UI.opcAuto}]`;
@@ -225,9 +225,26 @@ type AutoPdfExportAttempt = {
   filePaths?: string[];
   totalReports?: number;
   note?: string;
+  stats?: { opcReads: number; sqlQueries: number; sqlRows: number };
+  durationMs?: number;
 };
 
-async function runAutoPdfExport(prefs: ReportGeneratorPrefs, templateId: string): Promise<AutoPdfExportAttempt> {
+/** 结批进度弹窗/审计共用：把取数统计整理成一行可读文本 */
+export function formatExportStatsLine(
+  stats: { opcReads: number; sqlQueries: number; sqlRows: number } | null | undefined,
+): string {
+  if (!stats) return "";
+  const parts: string[] = [];
+  if (stats.opcReads > 0) parts.push(`OPC 读取 ${stats.opcReads} 点`);
+  if (stats.sqlQueries > 0) parts.push(`SQL 查询 ${stats.sqlQueries} 次 / ${stats.sqlRows} 行`);
+  return parts.join(" · ");
+}
+
+async function runAutoPdfExport(
+  prefs: ReportGeneratorPrefs,
+  templateId: string,
+  onStage?: (text: string) => void,
+): Promise<AutoPdfExportAttempt> {
   const api = window.electronAPI;
   if (!api?.runPdfExport || !api.pathJoin) {
     throw new Error(`当前环境不支持${RG_UI.opcAuto}`);
@@ -236,6 +253,7 @@ async function runAutoPdfExport(prefs: ReportGeneratorPrefs, templateId: string)
   const tid = templateId.trim();
   if (!tid) throw new Error(`未配置${RG_UI.opcAuto}报表模版`);
 
+  onStage?.("正在检查数据源连接…");
   const preflight = await runTemplateExportPreflight(tid);
   if (!preflight.ok) {
     throw new Error(preflight.summary);
@@ -250,11 +268,28 @@ async function runAutoPdfExport(prefs: ReportGeneratorPrefs, templateId: string)
   const built = await buildAutoExportFileName(prefs, tmeta?.name || tid);
   const filePath = await api.pathJoin(dir, built.base);
 
-  const exportRes = await api.runPdfExport({
-    templateId: tid,
-    filePath,
-    openAfter: false,
+  onStage?.("正在取数并渲染报表…");
+  const offProgress = api.onPdfExportProgress?.((p) => {
+    if (p.templateId && p.templateId !== tid) return;
+    const total = Number(p.totalReports) || 0;
+    const idx = (Number(p.partIndex) || 0) + 1;
+    if (p.phase === "render") {
+      onStage?.(total > 1 ? `正在取数并渲染第 ${idx}/${total} 份报表…` : "正在取数并渲染报表…");
+    } else if (p.phase === "saved") {
+      onStage?.(total > 1 ? `已保存第 ${idx}/${total} 份 PDF…` : "PDF 已保存，正在收尾…");
+    }
   });
+
+  let exportRes: Awaited<ReturnType<NonNullable<typeof api.runPdfExport>>>;
+  try {
+    exportRes = await api.runPdfExport({
+      templateId: tid,
+      filePath,
+      openAfter: false,
+    });
+  } finally {
+    offProgress?.();
+  }
 
   const notes = [resolved.note, built.note].filter(Boolean).join("；");
   const savedPaths = normalizeSavedPdfPaths(exportRes, filePath);
@@ -266,6 +301,8 @@ async function runAutoPdfExport(prefs: ReportGeneratorPrefs, templateId: string)
     filePaths: savedPaths,
     totalReports: exportRes.totalReports,
     note: exportNote || undefined,
+    stats: exportRes.stats,
+    durationMs: exportRes.durationMs,
   };
 }
 
@@ -335,8 +372,27 @@ async function pollAutoTriggerOnce(): Promise<void> {
       const eventLabel = autoTriggerEventLabel(b.mode, b.compareValue);
       let fileName = "—";
       autoExportBusy = true;
+      const startedAtMs = Date.now();
+      const progressToastId = `batch-progress-${b.id}`;
+      const stage = (text: string): void => {
+        showAppToast(`${RG_STATUS_OPC_AUTO}·${label}\n收到结批指令（${eventLabel}）\n${text}`, {
+          id: progressToastId,
+          tone: "info",
+          durationMs: 0,
+          spinner: true,
+        });
+      };
+      stage("正在准备生成报表…");
+      void auditLog({
+        action: "export.batch_trigger",
+        result: "ok",
+        summary: `${label}：收到结批指令（${eventLabel}）`,
+        object_type: "template",
+        object_id: b.templateId || undefined,
+        detail: { bindingId: b.id, event: eventLabel, nodeId, serverId: srv },
+      });
       try {
-        const result = await runAutoPdfExport(prefs, b.templateId!);
+        const result = await runAutoPdfExport(prefs, b.templateId!, stage);
         fileName = result.fileName;
         recordBindingTriggerLog(prefs, b.id, {
           event: eventLabel,
@@ -345,7 +401,8 @@ async function pollAutoTriggerOnce(): Promise<void> {
           success: true,
           message: result.note,
         });
-        void notifyExportResultToPlc(
+        stage(`正在写回${RG_UI.feedback}…`);
+        await notifyExportResultToPlc(
           prefs,
           {
             success: true,
@@ -356,13 +413,24 @@ async function pollAutoTriggerOnce(): Promise<void> {
           },
           b.templateId || null,
         );
+        const totalMs = Date.now() - startedAtMs;
+        const statsLine = formatExportStatsLine(result.stats);
         void auditLog({
           action: "export.auto_pdf",
           result: "ok",
-          summary: result.fileName,
+          summary: `${result.fileName}（耗时 ${(totalMs / 1000).toFixed(1)} 秒${statsLine ? `；${statsLine}` : ""}）`,
           object_type: "template",
           object_id: b.templateId || undefined,
-          detail: { filePath: result.filePath, filePaths: result.filePaths, bindingId: b.id, event: eventLabel },
+          detail: {
+            filePath: result.filePath,
+            filePaths: result.filePaths,
+            bindingId: b.id,
+            event: eventLabel,
+            durationMs: totalMs,
+            renderMs: result.durationMs,
+            stats: result.stats,
+            totalReports: result.totalReports,
+          },
         });
         exportedThisPoll = true;
         const noteSuffix = result.note ? `（${result.note}）` : "";
@@ -371,12 +439,12 @@ async function pollAutoTriggerOnce(): Promise<void> {
           fileCount > 1
             ? `${RG_STATUS_OPC_AUTO}·${label} 已保存 ${fileCount} 个文件：${result.filePaths?.join("；")}${noteSuffix}`
             : `${RG_STATUS_OPC_AUTO}·${label} 已保存 ${result.filePath}${noteSuffix}`;
-        showAppToast(
-          fileCount > 1
-            ? `${RG_STATUS_OPC_AUTO}·${label}\n已保存 ${fileCount} 个 PDF`
-            : `${RG_STATUS_OPC_AUTO}·${label}\n已保存 ${result.fileName}`,
-          { tone: "ok", durationMs: 8000 },
-        );
+        const doneLines = [
+          `${RG_STATUS_OPC_AUTO}·${label}`,
+          fileCount > 1 ? `结批完成：已保存 ${fileCount} 个 PDF` : `结批完成：已保存 ${result.fileName}`,
+          `耗时 ${(totalMs / 1000).toFixed(1)} 秒${statsLine ? ` · ${statsLine}` : ""}`,
+        ];
+        showAppToast(doneLines.join("\n"), { id: progressToastId, tone: "ok", durationMs: 10000 });
       } catch (e) {
         const msg = humanizePdfExportError(e);
         try {
@@ -398,11 +466,15 @@ async function pollAutoTriggerOnce(): Promise<void> {
           summary: msg,
           object_type: "template",
           object_id: b.templateId || undefined,
-          detail: { bindingId: b.id, event: eventLabel },
+          detail: { bindingId: b.id, event: eventLabel, durationMs: Date.now() - startedAtMs },
         });
         void notifyExportResultToPlc(prefs, { success: false, message: msg }, b.templateId || null);
         reportAutoExportStatus.value = `${RG_STATUS_OPC_AUTO}·${label} 失败：${msg.split("\n")[0]}`;
-        showAppToast(`${RG_STATUS_OPC_AUTO}·${label} 失败\n${msg}`, { tone: "err", durationMs: 14000 });
+        showAppToast(`${RG_STATUS_OPC_AUTO}·${label} 结批失败\n${msg}`, {
+          id: progressToastId,
+          tone: "err",
+          durationMs: 14000,
+        });
       } finally {
         autoExportBusy = false;
       }

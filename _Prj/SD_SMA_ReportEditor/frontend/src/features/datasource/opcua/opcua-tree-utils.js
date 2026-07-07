@@ -124,7 +124,9 @@ export function isOpcBooleanTypeLabel(label) {
 }
 
 export function isOpcStringTypeLabel(label) {
-  return opcDataTypeToken(label) === 'string'
+  const t = opcDataTypeToken(label)
+  // 部分 PLC（如 B&R WSTRING）可能暴露为 WString 标签，同样按字符串处理
+  return t === 'string' || t === 'wstring'
 }
 
 /** 整型变量（Int/UInt/Byte/SByte 等，不含 Float/Double） */

@@ -17,13 +17,13 @@ export type ExportResultWritePayload = {
   fileName?: string;
 };
 
-/** 写回 PLC「信息」节点时的导出场景（批次结束自动导出 vs 手动模拟截批） */
+/** 写回 PLC「信息」节点时的导出场景（批次结束自动导出 vs 手动模拟结批） */
 export type ExportResultWriteContext = "manual" | "auto";
 
 /** 导出成功时写入 OPC String 的批次语义（与 UI「手动/自动导出」对应） */
 export const EXPORT_RESULT_PLC_EVENT_LABEL: Record<ExportResultWriteContext, string> = {
-  auto: "截批",
-  manual: "模拟截批",
+  auto: "结批",
+  manual: "模拟结批",
 };
 
 export type ExportResultBindingField = "status" | "message" | "path";
@@ -81,7 +81,7 @@ export function hasAnyExportResultBinding(fb: ExportResultOpcFeedback): boolean 
 export function resolveExportResultOpcWriteContext(
   fb: ExportResultOpcFeedback,
 ): { ok: true; serverId: string } | { ok: false; message: string } {
-  if (!fb.enabled) return { ok: false, message: "未启用截批结果反馈写回" };
+  if (!fb.enabled) return { ok: false, message: "未启用结批结果反馈写回" };
   const configured = listConfiguredExportResultBindings(fb);
   if (!configured.length) return { ok: false, message: "未绑定任何反馈变量" };
   const serverId = fb.serverId.trim();

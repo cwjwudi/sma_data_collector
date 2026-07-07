@@ -81,7 +81,13 @@ function injectPrintPageCss(t: ReportTemplate): void {
 }
 
 function signalReady(ok: boolean, error?: string, totalReports?: number): void {
-  window.electronAPI?.notifyPdfExportReady?.({ ok, error, totalReports });
+  window.electronAPI?.notifyPdfExportReady?.({
+    ok,
+    error,
+    totalReports,
+    // 本份报表实际取数统计（结批审计：拿了多少数据）
+    stats: bindingPreview.lastStats.value || undefined,
+  });
 }
 
 async function waitPaintReady(): Promise<void> {

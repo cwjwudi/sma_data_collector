@@ -42,8 +42,8 @@ describe("exportResultOpcFeedback", () => {
   it("buildExportResultPlcMessage uses batch labels for manual vs auto", () => {
     expect(
       buildExportResultPlcMessage({ success: true, fileName: "a.pdf" }, "manual"),
-    ).toBe("模拟截批");
-    expect(buildExportResultPlcMessage({ success: true, fileName: "a.pdf" }, "auto")).toBe("截批");
+    ).toBe("模拟结批");
+    expect(buildExportResultPlcMessage({ success: true, fileName: "a.pdf" }, "auto")).toBe("结批");
     expect(buildExportResultPlcMessage({ success: false, message: "网络错误" }, "manual")).toBe(
       "网络错误",
     );

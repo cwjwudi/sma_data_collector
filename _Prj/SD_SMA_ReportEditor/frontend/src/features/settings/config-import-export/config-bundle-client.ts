@@ -187,7 +187,7 @@ export function dispatchConfigRestoredEvents(): void {
   window.dispatchEvent(new CustomEvent("report-editor-config-imported"));
 }
 
-/** 配置/备份恢复后通知各页面刷新（生成报表绑定、模版列表、签名、版式、自动截批等）。
+/** 配置/备份恢复后通知各页面刷新（生成报表绑定、模版列表、签名、版式、自动结批等）。
  * 先失效各会话缓存，再派发事件，确保监听页面拉到的是最新数据而非旧缓存。 */
 export function notifyReportEditorConfigRestored(): void {
   if (typeof window === "undefined") return;

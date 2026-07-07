@@ -109,7 +109,7 @@
         </div>
 
         <div class="rg-row rg-row--in-panel">
-          <label class="rg-lbl" for="rg-export-opc-msg">信息节点（String，可选）</label>
+          <label class="rg-lbl" for="rg-export-opc-msg">信息节点（WSTRING，可选）</label>
           <div class="rg-inline rg-inline--bind">
             <input
               id="rg-export-opc-msg"
@@ -137,10 +137,13 @@
           <p class="rg-mini rg-mini--indent">
             成功时写入场景标签（{{ RG_UI.manual }} / {{ RG_UI.opcAuto }}）；失败时写入错误摘要（首行）。不绑定则跳过写回。
           </p>
+          <p class="rg-mini rg-mini--indent rg-mini--warn">
+            写回内容含中文，请在 PLC 侧使用 <strong>WSTRING</strong>（宽字符串）变量；绑定单字节 STRING 会报 BadEncodingError 写入失败。
+          </p>
         </div>
 
         <div class="rg-row rg-row--in-panel">
-          <label class="rg-lbl" for="rg-export-opc-path">路径节点（String，可选）</label>
+          <label class="rg-lbl" for="rg-export-opc-path">路径节点（WSTRING，可选）</label>
           <div class="rg-inline rg-inline--bind">
             <input
               id="rg-export-opc-path"
@@ -166,6 +169,9 @@
             已绑定：{{ exportResultOpcPathBindingHint }}
           </p>
           <p class="rg-mini rg-mini--indent">成功时写入完整 PDF 路径；失败时写入空字符串。不绑定则跳过写回。</p>
+          <p class="rg-mini rg-mini--indent rg-mini--warn">
+            路径常含中文文件名，请在 PLC 侧使用 <strong>WSTRING</strong>（宽字符串）变量且长度足够；绑定单字节 STRING 会报 BadEncodingError 写入失败。
+          </p>
         </div>
 
         <p v-if="exportResultOpcServerLabel" class="rg-mini rg-mini--indent">当前连接：{{ exportResultOpcServerLabel }}</p>
@@ -600,7 +606,7 @@ import {
 } from "@/lib/auto-export-filename";
 import { humanizePdfExportError } from "@/lib/pdfExportErrors";
 import { runTemplateExportPreflight } from "@/lib/templateExportPreflight";
-import { showAppToast } from "@/composables/useAppToast";
+import { dismissAppToast, showAppToast } from "@/composables/useAppToast";
 import { auditLog } from "@/lib/auditLog";
 import {
   hasAnyExportResultBinding,
@@ -612,6 +618,7 @@ import {
   type ExportResultWritePayload,
 } from "@/lib/exportResultOpcFeedback";
 import {
+  formatExportStatsLine,
   getReportAutoExportBindingRuntime,
   notifyReportAutoExportSettingsChanged,
   reportAutoExportStatus,
@@ -620,11 +627,11 @@ import {
 
 defineOptions({ name: "ReportGenerator" });
 
-/** 「生成报表」页用户可见固定用语（勿单独显示「截批」二字；PLC 信息节点标签见 exportResultOpcFeedback） */
+/** 「生成报表」页用户可见固定用语（勿单独显示「结批」二字；PLC 信息节点标签见 exportResultOpcFeedback） */
 const RG_UI = {
-  manual: "模拟截批",
-  opcAuto: "OPC UA 自动截批",
-  feedback: "截批结果反馈",
+  manual: "模拟结批",
+  opcAuto: "OPC UA 自动结批",
+  feedback: "结批结果反馈",
 } as const;
 
 const RG_STATUS_OPC_AUTO = `[${RG_UI.opcAuto}]`;
@@ -803,8 +810,8 @@ const opcPickTitle = computed(() => {
   if (opcPickTarget.value === "fileName") return "绑定 OPC UA String 变量（文件名片段）";
   if (opcPickTarget.value === "exportDir") return "绑定 OPC UA String 变量（目录）";
   if (opcPickTarget.value === "feedbackStatus") return "绑定 OPC UA 状态变量（Boolean / Int）";
-  if (opcPickTarget.value === "feedbackMessage") return `绑定 OPC UA String 变量（${RG_UI.feedback}信息）`;
-  if (opcPickTarget.value === "feedbackFilePath") return "绑定 OPC UA String 变量（文件路径）";
+  if (opcPickTarget.value === "feedbackMessage") return `绑定 OPC UA WSTRING 变量（${RG_UI.feedback}信息）`;
+  if (opcPickTarget.value === "feedbackFilePath") return "绑定 OPC UA WSTRING 变量（文件路径）";
   return "绑定 OPC UA 变量";
 });
 
@@ -831,10 +838,10 @@ const opcPickLead = computed(() => {
     return `选择 ${kind} 类型变量；${RG_UI.feedback}成功时写入 ${kind === "Int" ? "1" : "true"}，失败写入 ${kind === "Int" ? "0" : "false"}。树与搜索仅显示 ${kind} 变量。`;
   }
   if (opcPickTarget.value === "feedbackMessage") {
-    return `选择 String 类型变量（可选）；成功时写入「${RG_UI.manual}」或「${RG_UI.opcAuto}」场景标签，失败时写入错误摘要。树与搜索仅显示 String 变量。`;
+    return `选择 String 类型变量（可选）；成功时写入「${RG_UI.manual}」或「${RG_UI.opcAuto}」场景标签，失败时写入错误摘要。写回内容含中文，PLC 侧请使用 WSTRING（宽字符串）变量。树与搜索仅显示 String 变量。`;
   }
   if (opcPickTarget.value === "feedbackFilePath") {
-    return "选择 String 类型变量（可选）；成功时写入完整 PDF 路径，失败时写入空字符串。树与搜索仅显示 String 变量。";
+    return "选择 String 类型变量（可选）；成功时写入完整 PDF 路径，失败时写入空字符串。路径常含中文，PLC 侧请使用 WSTRING（宽字符串）变量且长度足够。树与搜索仅显示 String 变量。";
   }
   if (parseRgTriggerPickTarget(opcPickTarget.value)) {
     return `选择已保存连接下的变量作为 ${RG_UI.opcAuto} 触发源；支持布尔、数值、字符串等类型。确定后写入 NodeId。`;
@@ -1417,6 +1424,17 @@ async function onManualExport(): Promise<void> {
 
   manualBusy.value = true;
   manualHint.value = "正在检查数据源连接…";
+  const startedAtMs = Date.now();
+  const progressToastId = "batch-progress-manual";
+  const stage = (text: string): void => {
+    showAppToast(`[${RG_UI.manual}]\n${text}`, {
+      id: progressToastId,
+      tone: "info",
+      durationMs: 0,
+      spinner: true,
+    });
+  };
+  let offProgress: (() => void) | undefined;
   try {
     const feedback = resolveExportResultOpcForTemplate(prefs.value, tid);
     if (isExportResultOpcFeedbackConfigured(feedback)) {
@@ -1434,8 +1452,10 @@ async function onManualExport(): Promise<void> {
       }
     }
 
+    stage("正在检查数据源连接…");
     const preflight = await runTemplateExportPreflight(tid);
     if (!preflight.ok) {
+      dismissAppToast(progressToastId);
       if (preflight.blockers.some(isReportSplitPreflightBlocker)) {
         manualHint.value = preflight.summary;
         showAppToast(preflight.summary, { tone: "err", durationMs: 12000 });
@@ -1455,11 +1475,24 @@ async function onManualExport(): Promise<void> {
       manualHint.value = "";
     }
 
+    stage("正在取数并渲染报表…");
+    offProgress = api.onPdfExportProgress?.((p) => {
+      if (p.templateId && p.templateId !== tid) return;
+      const total = Number(p.totalReports) || 0;
+      const idx = (Number(p.partIndex) || 0) + 1;
+      if (p.phase === "render") {
+        stage(total > 1 ? `正在取数并渲染第 ${idx}/${total} 份报表…` : "正在取数并渲染报表…");
+      } else if (p.phase === "saved") {
+        stage(total > 1 ? `已保存第 ${idx}/${total} 份 PDF…` : "PDF 已保存，正在收尾…");
+      }
+    });
     const exportRes = await api.runPdfExport({
       templateId: tid,
       filePath,
       openAfter: false,
     });
+    offProgress?.();
+    offProgress = undefined;
     const savedPaths = normalizeSavedPdfPaths(exportRes, filePath);
     const plcMessage = pdfExportSummaryForPaths(savedPaths);
     manualHint.value =
@@ -1467,15 +1500,8 @@ async function onManualExport(): Promise<void> {
     if (prefs.value.manualOpenAfter) {
       void api.shellOpenPath?.(exportDir);
     }
-    void auditLog({
-      action: "export.manual_pdf",
-      result: "ok",
-      summary: suggestName,
-      object_type: "template",
-      object_id: tid,
-      detail: { filePath: savedPaths[0], filePaths: savedPaths, totalReports: exportRes.totalReports },
-    });
-    void notifyExportResultToPlc(
+    stage(`正在写回${RG_UI.feedback}…`);
+    await notifyExportResultToPlc(
       {
         success: true,
         filePath: savedPaths[0],
@@ -1486,18 +1512,44 @@ async function onManualExport(): Promise<void> {
       "manual",
       tid,
     );
+    const totalMs = Date.now() - startedAtMs;
+    const statsLine = formatExportStatsLine(exportRes.stats);
+    void auditLog({
+      action: "export.manual_pdf",
+      result: "ok",
+      summary: `${suggestName}（耗时 ${(totalMs / 1000).toFixed(1)} 秒${statsLine ? `；${statsLine}` : ""}）`,
+      object_type: "template",
+      object_id: tid,
+      detail: {
+        filePath: savedPaths[0],
+        filePaths: savedPaths,
+        totalReports: exportRes.totalReports,
+        durationMs: totalMs,
+        renderMs: exportRes.durationMs,
+        stats: exportRes.stats,
+      },
+    });
+    const doneLines = [
+      `[${RG_UI.manual}]`,
+      savedPaths.length > 1 ? `结批完成：已保存 ${savedPaths.length} 个 PDF` : `结批完成：已保存 ${suggestName}`,
+      `耗时 ${(totalMs / 1000).toFixed(1)} 秒${statsLine ? ` · ${statsLine}` : ""}`,
+    ];
+    showAppToast(doneLines.join("\n"), { id: progressToastId, tone: "ok", durationMs: 10000 });
   } catch (e) {
     const msg = humanizePdfExportError(e);
     manualHint.value = msg;
+    showAppToast(`[${RG_UI.manual}] 失败\n${msg}`, { id: progressToastId, tone: "err", durationMs: 14000 });
     void auditLog({
       action: "export.manual_pdf",
       result: "fail",
       summary: msg,
       object_type: "template",
       object_id: tid,
+      detail: { durationMs: Date.now() - startedAtMs },
     });
     void notifyExportResultToPlc({ success: false, message: msg }, "manual", tid);
   } finally {
+    offProgress?.();
     manualBusy.value = false;
   }
 }

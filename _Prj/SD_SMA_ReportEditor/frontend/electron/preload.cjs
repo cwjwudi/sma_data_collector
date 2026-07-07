@@ -34,6 +34,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   /** 仅 PDF 导出隐藏窗口：渲染完成后通知主进程 */
   notifyPdfExportReady: (payload) => ipcRenderer.send('pdf-export-ready', payload),
 
+  /** 订阅 PDF 导出阶段进度（结批弹窗显示「第 X/Y 份」等），返回取消订阅函数 */
+  onPdfExportProgress: (listener) => {
+    const fn = (_event, payload) => listener(payload)
+    ipcRenderer.on('pdf-export-progress', fn)
+    return () => ipcRenderer.removeListener('pdf-export-progress', fn)
+  },
+
   /** 扫描目录下 PDF（历史报表） */
   scanExportPdfs: (opts) => ipcRenderer.invoke('scan-export-pdfs', opts || {}),
 

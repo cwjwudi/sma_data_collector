@@ -109,7 +109,7 @@ export interface ReportGeneratorPrefs {
 
   exportResultOpc: ExportResultOpcFeedback;
 
-  /** 按报表模版单独配置的截批结果反馈变量；key 为 templateId */
+  /** 按报表模版单独配置的结批结果反馈变量；key 为 templateId */
   exportResultOpcByTemplateId: Record<string, ExportResultOpcFeedback>;
 
   auto: {
@@ -329,9 +329,9 @@ export function isExportResultOpcCustomized(fb: ExportResultOpcFeedback): boolea
 }
 
 /**
- * 写回/校验时解析某模版实际生效的截批结果反馈配置：
+ * 写回/校验时解析某模版实际生效的结批结果反馈配置：
  * 模版有单独配置（用户改过）时用模版配置；否则回退到默认配置。
- * 修复：仅在「默认配置」下启用反馈时，历史遗留的空白模版快照会让真实截批静默跳过写回。
+ * 修复：仅在「默认配置」下启用反馈时，历史遗留的空白模版快照会让真实结批静默跳过写回。
  */
 export function resolveExportResultOpcForTemplate(
   prefs: ReportGeneratorPrefs,

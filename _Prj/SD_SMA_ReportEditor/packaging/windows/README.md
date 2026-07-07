@@ -4,22 +4,24 @@
 
 ← 打包总览与排错：[../README.md](../README.md)
 
-## 当前目标版本：0.2.2
+## 当前目标版本：0.2.3
 
-安装包版本来自 **`frontend/package.json`** 的 `version` 字段。打包日志首行须显示 `Version: 0.2.2` 与 `Expected: Report Editor-Setup-0.2.2-x64.exe`。
+安装包版本来自 **`frontend/package.json`** 的 `version` 字段。打包日志首行须显示 `Version: 0.2.3` 与 `Expected: Report Editor-Setup-0.2.3-x64.exe`。
 
 **本版更新说明**（写入 `packaging/updates/latest.json` 的 `notes`，应用内「检查更新」与 `latest.yml` 的 `releaseNotes` 均会展示）：
 
-> Report Editor 0.2.2
+> Report Editor 0.2.3
 >
-> - OPC UA 绑定选择体验优化：树节点与搜索结果点选后即时高亮（勾选标记＋描边），底部已选 NodeId 更醒目，所有绑定入口（生成报表反馈/触发、模版与版式控件、页眉页脚）统一生效
-> - 新增网页版访问：后端同端口直接提供前端页面，浏览器打开 `http://<本机IP>:8000` 即可使用；「设置 › 服务地址」显示可复制的本机/局域网前端地址
-> - 修复截批结果反馈：在「默认配置」下配置的写回变量，真实截批（模拟截批 / OPC UA 自动截批）时未生效的问题；无单独配置的模版自动沿用默认配置
+> - 结批过程弹窗：收到结批指令（OPC UA 自动结批 / 模拟结批）后，右下角弹窗实时显示「检查连接 → 取数渲染（第 X/Y 份）→ 保存 PDF → 写回 PLC → 完成」各阶段进度，完成后显示耗时与取数统计
+> - 结批审计统计：审计新增「收到结批指令」记录；报表生成记录包含耗时、OPC 读取点数、SQL 查询次数与数据行数，可在设置 › 操作审计中筛选查看
+> - 修复最小化/后台运行时 OPC UA 自动结批停止监听的问题：窗口最小化或被遮挡也持续每秒检测触发变量并正常生成报表、写回反馈
+> - 全局用语更正：「截批」统一为「结批」（页面文案、PLC 信息节点写回值同步更新为「结批 / 模拟结批」）
+> - 结批结果反馈：信息/路径节点标注需绑定 WSTRING（宽字符串）变量，绑定弹窗与页面加提示，避免中文写回报 BadEncodingError；地址空间筛选兼容 WString 类型
 
 发版前请 `git pull origin main`，确认上述 `notes` 已在仓库中；若需修改说明：
 
 ```powershell
-node packaging\scripts\bump-version.mjs 0.2.2 --notes "你的更新说明"
+node packaging\scripts\bump-version.mjs 0.2.3 --notes "你的更新说明"
 ```
 
 ## 一发版流程（推荐）
