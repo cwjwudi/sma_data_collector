@@ -42,6 +42,88 @@ class DataCollector:
         self.logger = logging.getLogger(__name__)
         self.data_callbacks: List[Callable[[Dict[str, Any]], None]] = []
         self.collectors = {}  # 存储各个数据组的采集任务
+        self.trigger_reset_confirm_attempts = 3
+        self.trigger_reset_confirm_delay = 0.05
+        self.trigger_stuck_reset_retry_interval = 1.0
+
+    async def _read_boolean_trigger_value(
+        self,
+        trigger_point: DataPoint,
+        opcua_client: OpcUaClient,
+    ) -> Any:
+        try:
+            trigger_data = await opcua_client.read_data_points([trigger_point])
+            return trigger_data.get(trigger_point.name, {}).get('value')
+        except Exception as exc:  # noqa: BLE001
+            self.logger.warning(
+                "读取触发点 %s 用于复位确认失败: %s",
+                trigger_point.name,
+                exc,
+            )
+            return None
+
+    @staticmethod
+    def _is_false_trigger_value(value: Any) -> bool:
+        if value is None:
+            return False
+        if isinstance(value, str):
+            return value.strip().lower() in {"false", "0", "off", ""}
+        return value is False or value == 0
+
+    async def _reset_boolean_trigger_with_confirm(
+        self,
+        group: DataGroup,
+        trigger_point: DataPoint,
+        opcua_client: OpcUaClient,
+        reason: str,
+    ) -> bool:
+        """
+        将布尔触发点复位为 False，并读回确认。
+        返回 True 表示已经确认 PLC/OPC UA 侧为 False，可恢复内部上升沿状态。
+        """
+        attempts = max(1, int(self.trigger_reset_confirm_attempts))
+        delay = max(0.0, float(self.trigger_reset_confirm_delay))
+
+        for attempt in range(1, attempts + 1):
+            success = await opcua_client.write_boolean_value(trigger_point.path, False)
+            if success and delay:
+                await asyncio.sleep(delay)
+
+            confirmed_value = await self._read_boolean_trigger_value(trigger_point, opcua_client)
+            if success and self._is_false_trigger_value(confirmed_value):
+                if attempt > 1 or reason != "上升沿采集后":
+                    self.logger.info(
+                        "触发点复位并确认成功: group=%s, point=%s, reason=%s, attempt=%s",
+                        group.name,
+                        trigger_point.name,
+                        reason,
+                        attempt,
+                    )
+                else:
+                    self.logger.debug(f"已复位触发点：{trigger_point.name}")
+                return True
+
+            self.logger.warning(
+                "触发点复位未确认: group=%s, point=%s, reason=%s, attempt=%s/%s, "
+                "write_success=%s, readback=%r",
+                group.name,
+                trigger_point.name,
+                reason,
+                attempt,
+                attempts,
+                success,
+                confirmed_value,
+            )
+            if attempt < attempts and delay:
+                await asyncio.sleep(delay)
+
+        self.logger.error(
+            "触发点复位最终失败，后续上升沿可能被卡住: group=%s, point=%s, reason=%s",
+            group.name,
+            trigger_point.name,
+            reason,
+        )
+        return False
     
     def _iter_scalar_collection_rows(self, collection_data: Dict[str, Any]) -> Iterator[Dict[str, Any]]:
         """
@@ -264,6 +346,7 @@ class DataCollector:
         trigger_interval = float(group.trigger_interval_seconds)
         next_time_deadline = 0.0
         previous_trigger_state = None  # None 表示首次读取，只初始化不触发
+        last_stuck_reset_attempt_at = 0.0
 
         async def do_time_collect() -> None:
             nonlocal next_time_deadline
@@ -309,6 +392,7 @@ class DataCollector:
                     previous_trigger_state = current_trigger_value
                     continue
 
+                update_previous_state = True
                 if not previous_trigger_state and current_trigger_value:
                     self.logger.info(
                         f"检测到上升沿触发信号（time_and_variable）: {group.name}"
@@ -321,6 +405,12 @@ class DataCollector:
                         self.logger.warning(
                             f"采集组 {group.name}（time_and_variable 变量触发）所有数据点读取失败，跳过本次采集"
                         )
+                        if group.reset_trigger_after_read:
+                            update_previous_state = False
+                            self.logger.warning(
+                                "采集组 %s 本轮变量数据读取失败，保持触发内部状态为 False，下一周期继续重试读取",
+                                group.name,
+                            )
                     else:
                         invalid_points = [
                             name for name, info in data.items() if info.get('value') is None
@@ -330,15 +420,15 @@ class DataCollector:
                                 f"采集组 {group.name}（变量触发）以下数据点读取失败，已过滤：{invalid_points}"
                             )
                         if group.reset_trigger_after_read:
-                            success = await opcua_client.write_boolean_value(
-                                trigger_point.path, False
+                            reset_confirmed = await self._reset_boolean_trigger_with_confirm(
+                                group,
+                                trigger_point,
+                                opcua_client,
+                                "上升沿采集后",
                             )
-                            if success:
-                                self.logger.debug(f"已复位触发点：{trigger_point.name}")
-                            else:
-                                self.logger.warning(
-                                    f"复位触发点失败：{trigger_point.name}，但这不会影响数据采集"
-                                )
+                            if reset_confirmed:
+                                current_trigger_value = False
+                                last_stuck_reset_attempt_at = 0.0
                         else:
                             self.logger.debug(f"根据配置跳过触发点复位：{trigger_point.name}")
 
@@ -352,7 +442,26 @@ class DataCollector:
                         for callback in self.data_callbacks:
                             callback(collection_data)
 
-                previous_trigger_state = current_trigger_value
+                elif group.reset_trigger_after_read and previous_trigger_state and current_trigger_value:
+                    now_for_reset = time.monotonic()
+                    if now_for_reset - last_stuck_reset_attempt_at >= self.trigger_stuck_reset_retry_interval:
+                        last_stuck_reset_attempt_at = now_for_reset
+                        self.logger.warning(
+                            "触发点持续为 True，尝试补复位: group=%s, point=%s",
+                            group.name,
+                            trigger_point.name,
+                        )
+                        reset_confirmed = await self._reset_boolean_trigger_with_confirm(
+                            group,
+                            trigger_point,
+                            opcua_client,
+                            "触发点持续高电平",
+                        )
+                        if reset_confirmed:
+                            current_trigger_value = False
+
+                if update_previous_state:
+                    previous_trigger_state = current_trigger_value
 
                 now = time.monotonic()
                 if now >= next_time_deadline:
@@ -381,6 +490,7 @@ class DataCollector:
         poll_interval = self._get_variable_trigger_poll_interval(group)
         # 记录上一次的触发点状态，用于检测上升沿
         previous_trigger_state = None  # None 表示首次读取，只初始化不触发
+        last_stuck_reset_attempt_at = 0.0
 
         while True:
             try:
@@ -395,6 +505,7 @@ class DataCollector:
                     await asyncio.sleep(poll_interval)
                     continue
 
+                update_previous_state = True
                 # 上升沿检测：从False变为True
                 if not previous_trigger_state and current_trigger_value:
                     self.logger.info(f"检测到上升沿触发信号: {group.name}")
@@ -408,6 +519,12 @@ class DataCollector:
                     # 检查是否有有效数据
                     if not valid_data:
                         self.logger.warning(f"变量触发组 {group.name} 所有数据点读取失败，跳过本次采集")
+                        if group.reset_trigger_after_read:
+                            update_previous_state = False
+                            self.logger.warning(
+                                "变量触发组 %s 本轮数据读取失败，保持触发内部状态为 False，下一周期继续重试读取",
+                                group.name,
+                            )
                     else:
                         # 记录无效数据点（可选）
                         invalid_points = [name for name, info in data.items() if info.get('value') is None]
@@ -416,12 +533,15 @@ class DataCollector:
                                             
                         # 根据配置决定是否复位触发点
                         if group.reset_trigger_after_read:
-                            success = await opcua_client.write_boolean_value(trigger_point.path, False)
-                            if success:
-                                self.logger.debug(f"已复位触发点：{trigger_point.name}")
-                            else:
-                                # 如果复位失败，记录警告但继续处理数据
-                                self.logger.warning(f"复位触发点失败：{trigger_point.name}，但这不会影响数据采集")
+                            reset_confirmed = await self._reset_boolean_trigger_with_confirm(
+                                group,
+                                trigger_point,
+                                opcua_client,
+                                "上升沿采集后",
+                            )
+                            if reset_confirmed:
+                                current_trigger_value = False
+                                last_stuck_reset_attempt_at = 0.0
                         else:
                             self.logger.debug(f"根据配置跳过触发点复位：{trigger_point.name}")
                                             
@@ -437,9 +557,28 @@ class DataCollector:
                         # 调用回调函数
                         for callback in self.data_callbacks:
                             callback(collection_data)
+
+                elif group.reset_trigger_after_read and previous_trigger_state and current_trigger_value:
+                    now_for_reset = time.monotonic()
+                    if now_for_reset - last_stuck_reset_attempt_at >= self.trigger_stuck_reset_retry_interval:
+                        last_stuck_reset_attempt_at = now_for_reset
+                        self.logger.warning(
+                            "触发点持续为 True，尝试补复位: group=%s, point=%s",
+                            group.name,
+                            trigger_point.name,
+                        )
+                        reset_confirmed = await self._reset_boolean_trigger_with_confirm(
+                            group,
+                            trigger_point,
+                            opcua_client,
+                            "触发点持续高电平",
+                        )
+                        if reset_confirmed:
+                            current_trigger_value = False
                 
                 # 更新上一次的状态
-                previous_trigger_state = current_trigger_value
+                if update_previous_state:
+                    previous_trigger_state = current_trigger_value
                 
                 # 短暂等待后继续检查
                 await asyncio.sleep(poll_interval)

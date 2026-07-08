@@ -133,7 +133,8 @@
       ],
       "trigger_point": null,
       "recreate_interval_days": 1,
-      "batch_insert_size": 5
+      "batch_insert_size": 5,
+      "partition_interval_years": 1
     },
     {
       "name": "sensor_group_2",
@@ -147,7 +148,8 @@
       ],
       "trigger_point": null,
       "recreate_interval_days": 1,
-      "batch_insert_size": 5
+      "batch_insert_size": 5,
+      "partition_interval_years": 2
     },
     {
       "name": "trigger_group_1",
@@ -163,7 +165,8 @@
       "trigger_point": "bTrigger1",
       "reset_trigger_after_read": false,
       "recreate_interval_days": 15,
-      "batch_insert_size": 1
+      "batch_insert_size": 1,
+      "partition_interval_years": 1
     }
   ],
   "database": {
