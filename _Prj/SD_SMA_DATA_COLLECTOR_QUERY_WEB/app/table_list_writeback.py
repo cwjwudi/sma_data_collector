@@ -273,8 +273,8 @@ async def write_table_list_async(
     )
     if ok:
         filled = sum(1 for item in values if str(item or "").strip())
-        logger.debug(
-            "OPC UA table list writeback node=%s cursor=%s filled=%d",
+        logger.info(
+            "OPC UA table list writeback ok node=%s cursor=%s filled=%d",
             config.buffer_node,
             cursor,
             filled,

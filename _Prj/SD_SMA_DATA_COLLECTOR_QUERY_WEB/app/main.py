@@ -41,6 +41,9 @@ from .table_list_writeback import (
 )
 from .table_partition import table_group_info, list_tables_for_group
 from .plugin_opcua_monitor import PluginOpcuaMonitor, PluginRuntimeSnapshot
+from .logging_config import setup_logging
+
+setup_logging()
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -360,13 +363,13 @@ def _resolve_lookup_start_time_column(
     raw_config: dict[str, Any] | None,
 ) -> str:
     lookup_column = ""
+    is_advanced = config.is_advanced_mode
     if isinstance(raw_config, dict):
-        lookup_column = str(
-            raw_config.get("lookup_start_time_column")
-            or raw_config.get("start_time_column")
-            or ""
-        ).strip()
-    if not lookup_column:
+        lookup_column = str(raw_config.get("lookup_start_time_column") or "").strip()
+        # 基础模式才使用 UI「开批时间列」；OPC UA 模式忽略 start_time_column
+        if not lookup_column and not is_advanced:
+            lookup_column = str(raw_config.get("start_time_column") or "").strip()
+    if not lookup_column and not is_advanced:
         lookup_column = str(config.start_time_column or "").strip()
 
     if not lookup_column:
@@ -522,6 +525,13 @@ async def _run_advanced_trigger_writeback(binding: dict[str, Any], batch_no: str
             config,
             table_names,
             cursor=0 if batch_value else -1,
+        )
+        filled = sum(1 for item in table_names if str(item or "").strip())
+        logger.info(
+            "OPC UA advanced trigger writeback ok plugin=%s batch=%r tables=%d",
+            binding.get("plugin_key"),
+            batch_value,
+            filled,
         )
         return True
     except Exception as exc:

@@ -1020,13 +1020,32 @@ function buildTableListAdvancedDefaults() {
 
 function updatePluginTableListModeUi() {
   const mode = document.getElementById('pluginTableListMode').value || 'cursor';
+  const isAdvanced = mode === 'advanced';
   const advancedPanel = document.getElementById('pluginTableListAdvancedFields');
   const cursorFields = document.getElementById('pluginTableListCursorFields');
+  const batchSel = document.getElementById('pluginTableListBatchColumn');
+  const startSel = document.getElementById('pluginTableListStartTimeColumn');
+  const cursorHint = document.getElementById('pluginTableListCursorHint');
   if (advancedPanel) {
-    advancedPanel.hidden = mode !== 'advanced';
+    advancedPanel.hidden = !isAdvanced;
   }
   if (cursorFields) {
-    cursorFields.hidden = mode === 'advanced';
+    cursorFields.classList.toggle('fields-locked', isAdvanced);
+  }
+  for (const el of [batchSel, startSel]) {
+    if (el) {
+      el.disabled = isAdvanced;
+    }
+  }
+  if (cursorHint) {
+    cursorHint.textContent = isAdvanced
+      ? 'OPC UA 模式已锁定，不可编辑'
+      : '可选；不选则按批次号反查主表';
+  }
+  const hint = document.getElementById('pluginTableListWritebackHint');
+  if (hint && isAdvanced) {
+    hint.textContent = 'OPC UA 模式：批次号来自 PLC 节点，开批时间由主表反查。';
+    hint.className = 'muted ok';
   }
 }
 
@@ -1123,12 +1142,15 @@ function renderPluginTableListColumnOptions(columns, tableListCfg) {
 
 async function refreshPluginTableListColumnOptions(tableListCfg) {
   const hint = document.getElementById('pluginTableListWritebackHint');
+  const mode = document.getElementById('pluginTableListMode').value || 'cursor';
+  const isAdvanced = mode === 'advanced';
   const viewName = document.getElementById('pluginViewName').value || 'table';
   const bindGroup = document.getElementById('pluginBindGroup').value || '';
   if (!bindGroup) {
     renderPluginTableListColumnOptions([], tableListCfg || {});
     hint.textContent = '请先选择 bind_group；批次列来自该 group 在「Group 与列」中的配置。';
     hint.className = 'muted warn';
+    updatePluginTableListModeUi();
     return [];
   }
   try {
@@ -1143,10 +1165,14 @@ async function refreshPluginTableListColumnOptions(tableListCfg) {
     if (columns.length === 0) {
       hint.textContent = `view=${viewName}, group=${bindGroup} 尚未配置列。`;
       hint.className = 'muted warn';
+    } else if (isAdvanced) {
+      hint.textContent = 'OPC UA 模式：批次号来自 PLC 节点，开批时间由主表反查。';
+      hint.className = 'muted ok';
     } else {
       hint.textContent = `已加载 ${columns.length} 列，可配置批次列与开批时间列。`;
       hint.className = 'muted ok';
     }
+    updatePluginTableListModeUi();
     return columns;
   } catch (e) {
     hint.textContent = `无法加载 group 列配置：${e.message || e}`;
@@ -1158,15 +1184,18 @@ async function refreshPluginTableListColumnOptions(tableListCfg) {
 function collectPluginTableListWriteback() {
   const enabled = document.getElementById('pluginTableListEnabled').checked;
   const mode = document.getElementById('pluginTableListMode').value || 'cursor';
-  let batchColumn = document.getElementById('pluginTableListBatchColumn').value.trim();
-  let startTimeColumn = document.getElementById('pluginTableListStartTimeColumn').value.trim();
   const bufferNode = document.getElementById('pluginTableListBufferNode').value.trim();
+  let batchColumn = '';
+  let startTimeColumn = '';
+  if (mode === 'advanced') {
+    batchColumn = resolveBatchColumnForAdvancedMode('');
+    startTimeColumn = '';
+  } else {
+    batchColumn = document.getElementById('pluginTableListBatchColumn').value.trim();
+    startTimeColumn = document.getElementById('pluginTableListStartTimeColumn').value.trim();
+  }
   if (!enabled) {
     return null;
-  }
-  if (mode === 'advanced') {
-    batchColumn = resolveBatchColumnForAdvancedMode(batchColumn);
-    startTimeColumn = '';
   }
   const payload = mergeTableListAdvancedFields(
     {
@@ -1549,6 +1578,7 @@ document.getElementById('pluginTableListBufferNode').addEventListener('input', (
 document.getElementById('pluginTableListMode').addEventListener('change', () => {
   updatePluginTableListModeUi();
   syncPluginTableListAdvancedCache();
+  refreshPluginTableListColumnOptions().catch(() => {});
   renderPluginTableListWritebackEditor();
   saveConfigPageState();
 });

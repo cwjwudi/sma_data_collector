@@ -135,6 +135,24 @@ h2 {
   margin-bottom: 10px;
 }
 
+#pluginTableListCursorFields.fields-locked {
+  opacity: 0.7;
+}
+
+#pluginTableListCursorFields.fields-locked label {
+  color: #94a3b8;
+}
+
+#pluginTableListCursorFields.fields-locked select {
+  background: #f1f5f9;
+  color: #64748b;
+  cursor: not-allowed;
+}
+
+#pluginTableListCursorFields.fields-locked .inline-hint {
+  color: #94a3b8;
+}
+
 .config-actions {
   justify-content: flex-end;
 }

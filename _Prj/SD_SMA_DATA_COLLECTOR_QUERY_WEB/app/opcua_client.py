@@ -404,7 +404,17 @@ async def read_scalar(
     return await node.read_value()
 
 
+async def close_pool() -> None:
+    """Disconnect pooled client and release the OPC UA session."""
+    global _pool
+    if _pool is None:
+        return
+    async with _pool.lock:
+        await _invalidate_client(_pool)
+    _pool = None
+
+
 def reset_pool_for_tests() -> None:
-    """Clear connection pool (test helper)."""
+    """Clear connection pool without disconnect (legacy test helper)."""
     global _pool
     _pool = None

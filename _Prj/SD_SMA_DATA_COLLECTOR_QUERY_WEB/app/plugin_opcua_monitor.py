@@ -215,11 +215,13 @@ class PluginOpcuaMonitor:
 
         edge_key_prev = f"{plugin_key}:prev"
         if prev_node and self._edges.check(edge_key_prev, values.get("prev")):
+            logger.info("OPC UA prev-page rising edge plugin=%s", plugin_key)
             await self._handle_page_delta(plugin_key, -1)
             await self._reset_bool_node(endpoint, prev_node, username, password, edge_key_prev)
 
         edge_key_next = f"{plugin_key}:next"
         if next_node and self._edges.check(edge_key_next, values.get("next")):
+            logger.info("OPC UA next-page rising edge plugin=%s", plugin_key)
             await self._handle_page_delta(plugin_key, 1)
             await self._reset_bool_node(endpoint, next_node, username, password, edge_key_next)
 
@@ -244,11 +246,22 @@ class PluginOpcuaMonitor:
                         batch_node,
                         exc_info=True,
                     )
+            logger.info(
+                "OPC UA trigger rising edge plugin=%s batch_no=%r",
+                plugin_key,
+                batch_no,
+            )
             ok = await self._on_trigger(plugin_key, batch_no)
             snapshot = self._runtime.setdefault(plugin_key, PluginRuntimeSnapshot(plugin_key=plugin_key))
             snapshot.last_trigger_batch = batch_no
             snapshot.last_writeback_ok = ok
             snapshot.revision += 1
+            logger.info(
+                "OPC UA trigger writeback finished plugin=%s ok=%s batch_no=%r",
+                plugin_key,
+                ok,
+                batch_no,
+            )
             await self._reset_bool_node(endpoint, trigger_node, username, password, edge_key_trigger)
 
     async def _reset_bool_node(
@@ -270,6 +283,7 @@ class PluginOpcuaMonitor:
         )
         if ok:
             self._edges.set_last(edge_key, False)
+            logger.debug("OPC UA reset node=%s to FALSE", node_id)
         else:
             logger.warning("OPC UA reset failed node=%s", node_id)
 
@@ -284,3 +298,10 @@ class PluginOpcuaMonitor:
         if updated is not None:
             updated.revision = (snapshot.revision if snapshot else 0) + 1
             self._runtime[plugin_key] = updated
+            logger.info(
+                "OPC UA page query finished plugin=%s page=%s/%s rows=%d",
+                plugin_key,
+                updated.page,
+                updated.total_pages,
+                len(updated.rows),
+            )

@@ -281,7 +281,7 @@
       }
     },
     "group_baselines": {
-      "sensor_group_1": "sensor_group_1_20260508",
+      "sensor_group_1": "sensor_group_1_y2026_span1",
       "sensor_group_2": "sensor_group_2_20260326",
       "alarm_group_1": "alarm_group_1_20260407",
       "trend_group_1": "trend_group_1_20260408",
@@ -415,7 +415,6 @@
             "view_name": "table",
             "page_size": 10,
             "opcua_writeback": {
-              "cursor": "ns=6;s=::DataRev:diCursor",
               "columns": {
                 "strBatchCode": "ns=6;s=::DataRev:strBatchCode",
                 "dtBtachStartTime": "ns=6;s=::DataRev:strStartTime"
@@ -423,11 +422,18 @@
             },
             "table_list_writeback": {
               "enabled": true,
+              "mode": "advanced",
               "batch_column": "strBatchCode",
-              "start_time_column": "dtBtachStartTime",
+              "lookup_start_time_column": "dtBtachStartTime",
               "buffer_node": "ns=6;s=::DataRev:strListName",
               "max_tables": 50,
-              "string_max_len": 80
+              "string_max_len": 80,
+              "advanced": {
+                "prev_page_node": "ns=6;s=::DataRev:bPrePage",
+                "next_page_node": "ns=6;s=::DataRev:bNextPage",
+                "batch_no_node": "ns=6;s=::DataRev:strBatchCode1",
+                "trigger_node": "ns=6;s=::DataRev:bTriger"
+              }
             }
           },
           "2": {

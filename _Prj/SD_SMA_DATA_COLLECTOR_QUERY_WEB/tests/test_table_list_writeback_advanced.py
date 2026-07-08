@@ -165,6 +165,38 @@ def test_resolve_table_names_for_batch_no_uses_master_lookup_only():
     assert tables[1] == "BatchDetail_y2026_span1"
 
 
+def test_advanced_lookup_ignores_cursor_start_time_column():
+    from app.main import _resolve_lookup_start_time_column
+
+    cfg = TableListWritebackConfig.from_binding(
+        {
+            "enabled": True,
+            "mode": "advanced",
+            "batch_column": "strBatchCode",
+            "start_time_column": "ts",
+            "lookup_start_time_column": "dtBtachStartTime",
+            "buffer_node": "ns=2;s=Demo",
+            "advanced": {
+                "batch_no_node": "ns=2;s=Batch",
+                "trigger_node": "ns=2;s=Trig",
+            },
+        },
+        bind_group="BatchHeader",
+    )
+    assert cfg is not None
+    raw = {
+        "start_time_column": "Status",
+        "lookup_start_time_column": "dtBtachStartTime",
+    }
+    column = _resolve_lookup_start_time_column(
+        {"bind_group": "BatchHeader", "view_name": "table"},
+        cfg,
+        raw,
+    )
+    assert column == "dtBtachStartTime"
+    assert column not in ("ts", "Status")
+
+
 def test_page_delta_at_boundary_refreshes_current_page():
     async def _run() -> int:
         snapshots: list[int] = []
