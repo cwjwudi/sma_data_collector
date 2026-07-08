@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  applyTableSqlFillOpcPick,
   applyVisualSqlOutputColumnPick,
   compileVisualTableSql,
   syncVisualFillQueryAndResultNames,
@@ -114,6 +115,53 @@ describe("compileVisualTableSql", () => {
     expect(fill.params[0].source).toBe("batch_no");
     expect(fill.params[0].opcuaNodeId).toBe("");
     expect(fill.params[0].literalFallback).toBe("B001");
+  });
+
+  it("applyTableSqlFillOpcPick writes into visual filter binding (not only flat params)", () => {
+    const fill: TableSqlFillConfig = hydrateTableSqlFill({});
+    fill.enabled = true;
+    fill.fillMode = "visual";
+    fill.visualSource = {
+      connectionId: "c1",
+      database: "db1",
+      table: "t_log",
+      engine: "mysql",
+      columns: ["id"],
+    };
+    fill.visualFilters = [
+      {
+        id: "f1",
+        column: "ts",
+        kind: "datetime_between",
+        defaults: ["", ""],
+        bindings: [defaultSqlParam(), defaultSqlParam()],
+      },
+      {
+        id: "f2",
+        column: "status",
+        kind: "equality",
+        defaults: [""],
+        bindings: [defaultSqlParam()],
+      },
+    ];
+    // 槽位 2 = 第二条筛选（等值）的绑定 0
+    applyTableSqlFillOpcPick(fill, 2, "ns=2;s=Batch.Status");
+    expect(fill.visualFilters[1].bindings[0].source).toBe("opcua");
+    expect(fill.visualFilters[1].bindings[0].opcuaNodeId).toBe("ns=2;s=Batch.Status");
+    // 编译同步后扁平 params 与 querySql 一并更新
+    expect(fill.params[2].source).toBe("opcua");
+    expect(fill.params[2].opcuaNodeId).toBe("ns=2;s=Batch.Status");
+    expect(fill.querySql).toContain("{{p2}}");
+  });
+
+  it("applyTableSqlFillOpcPick writes flat params in manual_sql mode", () => {
+    const fill: TableSqlFillConfig = hydrateTableSqlFill({});
+    fill.enabled = true;
+    fill.fillMode = "manual_sql";
+    fill.querySql = "SELECT a FROM t WHERE x = {{p0}}";
+    applyTableSqlFillOpcPick(fill, 0, "ns=2;s=X");
+    expect(fill.params[0].source).toBe("opcua");
+    expect(fill.params[0].opcuaNodeId).toBe("ns=2;s=X");
   });
 
   it("defaults visual result header to picked field name", () => {

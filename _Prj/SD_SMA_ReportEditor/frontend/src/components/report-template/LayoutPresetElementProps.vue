@@ -426,11 +426,11 @@ import ScalarSqlParamBindingsEditor from "@/components/report-template/ScalarSql
 import type { TableSqlFillConfig, TableSqlParamBinding } from "@/lib/report-template/table-sql-fill";
 import {
   defaultTableSqlFillConfig,
-  ensureMinTableSqlParamSlots,
   ensureSqlParamSlots,
   ensureTableSqlResultColumnNames,
   syncResultColumnNamesFromFirstRow,
 } from "@/lib/report-template/table-sql-fill";
+import { applyTableSqlFillOpcPick } from "@/lib/report-template/table-sql-visual-compile";
 import { clearGridCellBindings, gridHasNonNoneBinding } from "@/lib/report-template/table-binding-utils";
 import { computed, inject, nextTick, ref, watch } from "vue";
 
@@ -718,13 +718,8 @@ function onOpcPickConfirm(payload: string | { serverId: string; nodeId: string }
     return;
   }
   if (typeof t === "object" && t?.kind === "tableSql" && el?.type === "table") {
-    const cfg = ensureZoneTableSqlFill(el);
-    ensureMinTableSqlParamSlots(cfg, t.slot + 1);
-    const row = cfg.params[t.slot];
-    if (row) {
-      row.source = "opcua";
-      row.opcuaNodeId = id;
-    }
+    // 可视化模式写入筛选条件的绑定（面板显示来源）；手写模式写入 params 槽位
+    applyTableSqlFillOpcPick(ensureZoneTableSqlFill(el), t.slot, id);
     return;
   }
   if (t === "table" && el?.type === "table") {

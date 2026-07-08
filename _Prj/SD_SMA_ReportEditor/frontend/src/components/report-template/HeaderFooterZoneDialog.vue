@@ -593,7 +593,6 @@ import TableColumnResizeGutters from "@/components/report-template/TableColumnRe
 import type { TableSqlFillConfig } from "@/lib/report-template/table-sql-fill";
 import {
   defaultTableSqlFillConfig,
-  ensureMinTableSqlParamSlots,
   ensureTableSqlResultColumnNames,
   ensureVisualSource,
   isVisualSqlFillOutputPickerRow,
@@ -601,7 +600,10 @@ import {
 } from "@/lib/report-template/table-sql-fill";
 import type { VisualSqlTableColumnMeta } from "@/lib/report-template/table-sql-visual-catalog";
 import { loadVisualSqlTableColumnsCached } from "@/lib/report-template/table-sql-visual-catalog";
-import { applyVisualSqlOutputColumnPick } from "@/lib/report-template/table-sql-visual-compile";
+import {
+  applyTableSqlFillOpcPick,
+  applyVisualSqlOutputColumnPick,
+} from "@/lib/report-template/table-sql-visual-compile";
 import { formatSqlFillTableCellPreview } from "@/lib/report-template/table-sql-fill-preview";
 import { clearGridCellBindings, gridHasNonNoneBinding } from "@/lib/report-template/table-binding-utils";
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
@@ -994,13 +996,8 @@ function onHzOpcPickConfirm(payload: string | { serverId: string; nodeId: string
     return;
   }
   if (typeof t === "object" && t?.kind === "tableSql" && s?.type === "table") {
-    const cfg = ensureHzTableSqlFill(s);
-    ensureMinTableSqlParamSlots(cfg, t.slot + 1);
-    const row = cfg.params[t.slot];
-    if (row) {
-      row.source = "opcua";
-      row.opcuaNodeId = id;
-    }
+    // 可视化模式写入筛选条件的绑定（面板显示来源）；手写模式写入 params 槽位
+    applyTableSqlFillOpcPick(ensureHzTableSqlFill(s), t.slot, id);
     return;
   }
   if (t === "table" && s?.type === "table") {

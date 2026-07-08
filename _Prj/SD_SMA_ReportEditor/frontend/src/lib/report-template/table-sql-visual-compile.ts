@@ -16,6 +16,7 @@ import {
   ensureTableSqlResultColumnNames,
   ensureVisualOutputColumnSlots,
   ensureVisualSource,
+  normalizeVisualSqlFilterShape,
   validateSqlIdentifier,
 } from "@/lib/report-template/table-sql-fill";
 
@@ -33,6 +34,48 @@ export function visualFilterParamSlotBase(filters: VisualSqlFilter[], filterInde
     off += filters[i].kind === "equality" ? 1 : 2;
   }
   return off;
+}
+
+/** 把扁平参数槽位映射回可视化筛选的具体绑定（visualFilterParamSlotBase 的逆映射） */
+export function visualFilterBindingAtParamSlot(
+  filters: VisualSqlFilter[],
+  slot: number,
+): TableSqlParamBinding | null {
+  let off = 0;
+  for (const f of filters) {
+    const slots = f.kind === "equality" ? 1 : 2;
+    if (slot < off + slots) {
+      normalizeVisualSqlFilterShape(f);
+      return f.bindings[slot - off] ?? null;
+    }
+    off += slots;
+  }
+  return null;
+}
+
+/**
+ * OPC 节点选择确认后的统一回写。
+ * 可视化模式必须写入 visualFilters 的绑定（面板输入框的数据源），随后 params/querySql
+ * 由编译同步；若误写 params，界面不显示且下次编译会被 bindings 覆盖。
+ */
+export function applyTableSqlFillOpcPick(fill: TableSqlFillConfig, slot: number, nodeId: string): void {
+  const id = String(nodeId ?? "").trim();
+  if (!id) return;
+  if (fill.fillMode === "visual") {
+    const b = visualFilterBindingAtParamSlot(fill.visualFilters || [], slot);
+    if (b) {
+      b.source = "opcua";
+      b.opcuaNodeId = id;
+      compileVisualTableSql(fill);
+    }
+    return;
+  }
+  ensureMinTableSqlParamSlots(fill, slot + 1);
+  const row = fill.params[slot];
+  if (row) {
+    row.source = "opcua";
+    row.opcuaNodeId = id;
+  }
 }
 
 export function buildDistinctSelectSql(engineLower: string, table: string, column: string, limit: number): string {
