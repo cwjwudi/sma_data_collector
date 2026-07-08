@@ -1,15 +1,82 @@
 import type { LayoutPreset } from "@/lib/report-template/layout-model";
 import { blankZonesSnapshot, hydrateLayoutPreset, presetZonesSnapshot } from "@/lib/report-template/layout-model";
-import type { ReportTemplate } from "@/lib/report-template/model";
+import type { ReportTemplate, TemplateElement } from "@/lib/report-template/model";
+import { ensureTableGrid, hydrateTableCell, makeElement } from "@/lib/report-template/model";
+import type { LayoutZoneElement } from "@/lib/report-template/layout-zone-element";
+import { hydrateTableSqlFill } from "@/lib/report-template/table-sql-fill";
 import { templateHasBackSheet, templateHasCoverSheet } from "@/lib/report-template/editor-sheet";
 
 export type LayoutPresetSlot = "body" | "cover" | "back";
 
-/** 将单项版式合并进模版对应槽位（与新建向导语义一致）。 */
+/** 版式区表格 → 封面/末页画布表格控件（字段语义一致，逐项拷贝深副本） */
+export function templateTableFromZoneTable(z: LayoutZoneElement): TemplateElement {
+  const el = makeElement("table");
+  el.id = z.id;
+  el.x = z.x;
+  el.y = z.y;
+  el.w = z.w;
+  el.h = z.h;
+  el.text = z.text;
+  el.color = z.color;
+  el.bgColor = z.bgColor;
+  el.fontSize = z.fontSize;
+  el.fontFamily = z.fontFamily;
+  el.zIndex = z.zIndex;
+  el.textAutoWrap = z.textAutoWrap;
+  el.tableRows = z.tableRows;
+  el.tableCols = z.tableCols;
+  el.tableRowHeightPx = z.tableRowHeightPx;
+  el.tableColWidthsPx = Array.isArray(z.tableColWidthsPx) ? [...z.tableColWidthsPx] : undefined;
+  el.tableColBgColors = Array.isArray(z.tableColBgColors) ? [...z.tableColBgColors] : undefined;
+  el.tableCells = (z.tableCells ?? []).map((row) => row.map((c) => hydrateTableCell(c)));
+  el.tableSqlFill = hydrateTableSqlFill(z.tableSqlFill);
+  ensureTableGrid(el);
+  return el;
+}
+
+/**
+ * 把封面/末页「版式装饰层」中的表格提升为画布控件：
+ * 装饰层只读（拖拽/缩放/单元格绑定均不可用），表格应与正文表格同等可编辑。
+ * 画布已有同 id 控件（此前已提升并可能被用户编辑过）时保留画布版本。
+ */
+export function liftZoneTablesToSheetCanvas(tmpl: ReportTemplate): boolean {
+  let touched = false;
+  for (const slot of ["cover", "back"] as const) {
+    const zoneArr = slot === "cover" ? tmpl.coverBodyZoneElements : tmpl.backBodyZoneElements;
+    if (!Array.isArray(zoneArr) || zoneArr.length === 0) continue;
+    const canvas = slot === "cover" ? tmpl.coverElements : tmpl.backElements;
+    const rest: LayoutZoneElement[] = [];
+    for (const z of zoneArr) {
+      if (z.type !== "table") {
+        rest.push(z);
+        continue;
+      }
+      touched = true;
+      if (!canvas.some((e) => e.id === z.id)) {
+        canvas.push(templateTableFromZoneTable(z));
+      }
+    }
+    if (rest.length !== zoneArr.length) {
+      if (slot === "cover") tmpl.coverBodyZoneElements = rest;
+      else tmpl.backBodyZoneElements = rest;
+    }
+  }
+  return touched;
+}
+
+/**
+ * 将单项版式合并进模版对应槽位（与新建向导语义一致）。
+ *
+ * `mode`（仅封面/末页槽位生效）：
+ * - `"user"`（默认）：用户显式套用版式——版式正文区的表格提升为可编辑画布控件；
+ * - `"resync"`：载入时按版式库静默拉齐——表格从装饰层剔除但不再回填画布，
+ *   保证用户此前删除的表格不会在每次打开时复活。
+ */
 export function applyLayoutPresetToTemplate(
   tmpl: ReportTemplate,
   preset: LayoutPreset,
   slot: LayoutPresetSlot,
+  mode: "user" | "resync" = "user",
 ): void {
   const z = presetZonesSnapshot(hydrateLayoutPreset(preset));
   if (slot === "body") {
@@ -29,6 +96,8 @@ export function applyLayoutPresetToTemplate(
     tmpl.coverHeaderElements = z.headerElements.map((e) => ({ ...e }));
     tmpl.coverFooterElements = z.footerElements.map((e) => ({ ...e }));
     tmpl.coverBodyZoneElements = z.bodyElements.map((e) => ({ ...e }));
+    if (mode === "user") liftZoneTablesToSheetCanvas(tmpl);
+    else dropZoneTablesFromDecor(tmpl);
     return;
   }
   tmpl.backLayoutPresetId = preset.id;
@@ -38,6 +107,14 @@ export function applyLayoutPresetToTemplate(
   tmpl.backHeaderElements = z.headerElements.map((e) => ({ ...e }));
   tmpl.backFooterElements = z.footerElements.map((e) => ({ ...e }));
   tmpl.backBodyZoneElements = z.bodyElements.map((e) => ({ ...e }));
+  if (mode === "user") liftZoneTablesToSheetCanvas(tmpl);
+  else dropZoneTablesFromDecor(tmpl);
+}
+
+/** 重同步时仅剔除装饰层表格（画布中已提升/已删除的以画布为准） */
+function dropZoneTablesFromDecor(tmpl: ReportTemplate): void {
+  tmpl.coverBodyZoneElements = tmpl.coverBodyZoneElements.filter((e) => e.type !== "table");
+  tmpl.backBodyZoneElements = tmpl.backBodyZoneElements.filter((e) => e.type !== "table");
 }
 
 /** 取消封面/末页：清空版式绑定、纸上快照、眉脚区与画布控件（与新建向导「不使用」一致）。 */
@@ -102,7 +179,7 @@ export function resyncTemplateBoundPresets(tmpl: ReportTemplate, presets: Layout
   if (covId) {
     const p = presets.find((x) => x.id === covId && x.pageRole === "cover");
     if (p) {
-      applyLayoutPresetToTemplate(tmpl, p, "cover");
+      applyLayoutPresetToTemplate(tmpl, p, "cover", "resync");
       touched = true;
     }
   }
@@ -110,7 +187,7 @@ export function resyncTemplateBoundPresets(tmpl: ReportTemplate, presets: Layout
   if (backId) {
     const p = presets.find((x) => x.id === backId && x.pageRole === "back");
     if (p) {
-      applyLayoutPresetToTemplate(tmpl, p, "back");
+      applyLayoutPresetToTemplate(tmpl, p, "back", "resync");
       touched = true;
     }
   }

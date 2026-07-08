@@ -165,6 +165,7 @@ import {
   type ReportTemplate,
 } from "@/lib/report-template/model";
 import { getLayoutPresetById } from "@/lib/report-template/layout-presets-api";
+import { liftZoneTablesToSheetCanvas } from "@/lib/report-template/layout-apply";
 import { layoutPresetsForRoleOrdered } from "@/lib/layout-display-order";
 import { ensureLayoutPresetsLoaded } from "@/lib/report-template/layout-registry";
 import LayoutPresetMiniPage from "@/components/report-template/LayoutPresetMiniPage.vue";
@@ -368,6 +369,8 @@ function submit() {
   };
 
   const t = createTemplate(opts);
+  // 封面/末页版式中的表格提升为可编辑画布控件（拖拽/缩放/绑定与正文一致）
+  liftZoneTablesToSheetCanvas(t);
   emit("created", t);
   emit("update:modelValue", false);
 }
