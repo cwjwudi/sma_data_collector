@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import re
 import time
 from collections import defaultdict, deque
+from contextlib import asynccontextmanager
+from dataclasses import replace
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -32,10 +35,12 @@ from . import opcua_client
 from .opcua_writeback import OpcUaWritebackConfig, write_after_query_async, write_cursor_only_async
 from .table_list_writeback import (
     TableListWritebackConfig,
+    resolve_table_names_for_batch_no,
     resolve_table_names_for_row,
     write_table_list_async,
 )
-from .table_partition import table_group_info
+from .table_partition import table_group_info, list_tables_for_group
+from .plugin_opcua_monitor import PluginOpcuaMonitor, PluginRuntimeSnapshot
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -122,10 +127,37 @@ _REQUEST_BUCKETS: dict[str, deque[float]] = defaultdict(deque)
 PLUGIN_KEY_PATTERN = re.compile(r"^([A-Za-z0-9_]+)_([1-5])$")
 DEFAULT_LOOKUP_START_TIME_COLUMN = "dtBatchStartTime"
 _plugin_query_cache: dict[str, dict[str, Any]] = {}
+_plugin_opcua_monitor: PluginOpcuaMonitor | None = None
+_plugin_opcua_monitor_task: asyncio.Task | None = None
 
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="SD SMA Query Web", version="0.1.0")
+
+@asynccontextmanager
+async def _app_lifespan(_app: FastAPI):
+    global _plugin_opcua_monitor, _plugin_opcua_monitor_task
+    if os.getenv("SD_SMA_DISABLE_OPCUA_MONITOR", "").strip().lower() not in {"1", "true", "yes"}:
+        _plugin_opcua_monitor = PluginOpcuaMonitor(
+            iter_bindings=_iter_advanced_plugin_bindings,
+            get_opcua=_get_opcua_connection,
+            on_page_change=_monitor_change_plugin_page,
+            on_trigger=_monitor_trigger_writeback,
+        )
+        _plugin_opcua_monitor_task = asyncio.create_task(_plugin_opcua_monitor.run())
+    yield
+    if _plugin_opcua_monitor is not None:
+        _plugin_opcua_monitor.stop()
+    if _plugin_opcua_monitor_task is not None:
+        _plugin_opcua_monitor_task.cancel()
+        try:
+            await _plugin_opcua_monitor_task
+        except asyncio.CancelledError:
+            pass
+    _plugin_opcua_monitor = None
+    _plugin_opcua_monitor_task = None
+
+
+app = FastAPI(title="SD SMA Query Web", version="0.1.0", lifespan=_app_lifespan)
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "app" / "static")), name="static")
 
 
@@ -298,7 +330,35 @@ def _get_table_list_writeback_config(binding: dict[str, Any]) -> TableListWriteb
     )
 
 
-def _lookup_start_time_factory(config: TableListWritebackConfig, raw_config: dict[str, Any] | None):
+def _resolve_batch_master_table(binding: dict[str, Any], config: TableListWritebackConfig) -> str:
+    explicit = str(config.batch_master_table or "").strip()
+    bind_group = str(binding.get("bind_group") or "").strip()
+    if explicit and (not bind_group or explicit != bind_group):
+        return explicit
+    if not bind_group:
+        return explicit
+
+    try:
+        group_tables = list_tables_for_group(db.list_tables(), bind_group)
+        for table_name in group_tables:
+            info = table_group_info(table_name)
+            if info is not None and info.kind == "fixed":
+                return table_name
+        saved_baseline = cfg.get_group_baseline(bind_group)
+        report = db.get_group_schema_report(bind_group, saved_baseline)
+        baseline = report.get("baseline_table")
+        if baseline:
+            return str(baseline)
+    except Exception:
+        logger.debug("resolve batch master table failed group=%s", bind_group, exc_info=True)
+    return explicit or bind_group
+
+
+def _resolve_lookup_start_time_column(
+    binding: dict[str, Any],
+    config: TableListWritebackConfig,
+    raw_config: dict[str, Any] | None,
+) -> str:
     lookup_column = ""
     if isinstance(raw_config, dict):
         lookup_column = str(
@@ -307,7 +367,48 @@ def _lookup_start_time_factory(config: TableListWritebackConfig, raw_config: dic
             or ""
         ).strip()
     if not lookup_column:
-        lookup_column = config.start_time_column or DEFAULT_LOOKUP_START_TIME_COLUMN
+        lookup_column = str(config.start_time_column or "").strip()
+
+    if not lookup_column:
+        bind_group = str(binding.get("bind_group") or "").strip()
+        view_name = str(binding.get("view_name") or "table").strip()
+        if bind_group:
+            try:
+                master_table = _resolve_batch_master_table(binding, config)
+                view = cfg.resolve_query_view(view_name, table=master_table, group=bind_group)
+                time_field = str(view.get("time_field", "") or "").strip()
+                if time_field:
+                    lookup_column = time_field
+            except Exception:
+                logger.debug("resolve lookup start time from view failed", exc_info=True)
+
+    if not lookup_column:
+        writeback = binding.get("opcua_writeback")
+        if isinstance(writeback, dict):
+            for name in (writeback.get("columns") or {}):
+                lower = str(name).lower()
+                if "start" in lower and ("time" in lower or "btach" in lower or "batch" in lower):
+                    lookup_column = str(name)
+                    break
+
+    if not lookup_column:
+        lookup_column = DEFAULT_LOOKUP_START_TIME_COLUMN
+    return lookup_column
+
+
+def _enrich_table_list_config(binding: dict[str, Any], config: TableListWritebackConfig) -> TableListWritebackConfig:
+    master_table = _resolve_batch_master_table(binding, config)
+    if master_table != config.batch_master_table:
+        return replace(config, batch_master_table=master_table)
+    return config
+
+
+def _lookup_start_time_factory(
+    binding: dict[str, Any],
+    config: TableListWritebackConfig,
+    raw_config: dict[str, Any] | None,
+):
+    lookup_column = _resolve_lookup_start_time_column(binding, config, raw_config)
 
     def _lookup(master_table: str, batch_column: str, batch_value: Any):
         return db.lookup_batch_start_time(
@@ -345,8 +446,10 @@ async def _run_table_list_writeback(
     row: dict[str, Any] | None = None,
 ) -> None:
     config = _get_table_list_writeback_config(binding)
-    if config is None:
+    if config is None or config.is_advanced_mode:
         return
+
+    config = _enrich_table_list_config(binding, config)
 
     opcua = _get_opcua_connection()
     endpoint = opcua.get("endpoint_url", "")
@@ -354,7 +457,11 @@ async def _run_table_list_writeback(
         return
 
     raw_config = binding.get("table_list_writeback")
-    lookup_start_time = _lookup_start_time_factory(config, raw_config if isinstance(raw_config, dict) else None)
+    lookup_start_time = _lookup_start_time_factory(
+        binding,
+        config,
+        raw_config if isinstance(raw_config, dict) else None,
+    )
 
     table_names = None
     if cursor >= 0 and row is not None:
@@ -376,6 +483,257 @@ async def _run_table_list_writeback(
         )
     except Exception as exc:
         logger.warning("OPC UA table list writeback hook failed: %s", exc)
+
+
+async def _run_advanced_trigger_writeback(binding: dict[str, Any], batch_no: str) -> bool:
+    config = _get_table_list_writeback_config(binding)
+    if config is None or not config.is_advanced_mode:
+        return False
+
+    config = _enrich_table_list_config(binding, config)
+    batch_value = str(batch_no or "").strip()
+    if not batch_value:
+        logger.warning("OPC UA advanced trigger skipped: empty batch number plugin=%s", binding.get("plugin_key"))
+        return False
+
+    opcua = _get_opcua_connection()
+    endpoint = opcua.get("endpoint_url", "")
+    if not endpoint:
+        return False
+
+    raw_config = binding.get("table_list_writeback")
+    lookup_start_time = _lookup_start_time_factory(
+        binding,
+        config,
+        raw_config if isinstance(raw_config, dict) else None,
+    )
+    table_names = resolve_table_names_for_batch_no(
+        batch_value,
+        config,
+        list_tables=db.list_tables,
+        lookup_start_time=lookup_start_time,
+    )
+
+    try:
+        await write_table_list_async(
+            endpoint,
+            opcua.get("username", ""),
+            opcua.get("password", ""),
+            config,
+            table_names,
+            cursor=0 if batch_value else -1,
+        )
+        return True
+    except Exception as exc:
+        logger.warning("OPC UA advanced trigger writeback failed: %s", exc)
+        return False
+
+
+def _iter_advanced_plugin_bindings() -> list[dict[str, Any]]:
+    plugin_cfg = _load_plugin_config()
+    modules = plugin_cfg.get("modules", {})
+    if not isinstance(modules, dict):
+        return []
+
+    bindings: list[dict[str, Any]] = []
+    for module_name, module_cfg in modules.items():
+        if not isinstance(module_cfg, dict):
+            continue
+        pages = module_cfg.get("pages", {})
+        if not isinstance(pages, dict):
+            continue
+        for page_index in ["1", "2", "3", "4", "5"]:
+            page_cfg = pages.get(page_index)
+            if not isinstance(page_cfg, dict) or not bool(page_cfg.get("enabled", True)):
+                continue
+            plugin_key = f"{module_name}_{page_index}"
+            try:
+                binding = _resolve_plugin_binding(plugin_key)
+            except ValueError:
+                continue
+            config = _get_table_list_writeback_config(binding)
+            if config is None or not config.is_advanced_mode or config.advanced is None:
+                continue
+            enriched = dict(binding)
+            enriched["_table_list_config"] = config
+            enriched["_table_list_advanced"] = {
+                "prev_page_node": config.advanced.prev_page_node,
+                "next_page_node": config.advanced.next_page_node,
+                "batch_no_node": config.advanced.batch_no_node,
+                "trigger_node": config.advanced.trigger_node,
+            }
+            bindings.append(enriched)
+    return bindings
+
+
+def _plugin_runtime_snapshot(
+    plugin_key: str,
+    *,
+    binding: dict[str, Any],
+    view: dict[str, Any],
+    target_table: str,
+    start_time: datetime | None,
+    end_time: datetime | None,
+    total: int,
+    columns: list[str],
+    rows: list[dict[str, Any]],
+    page: int,
+    page_size: int,
+    warnings: list[str],
+) -> PluginRuntimeSnapshot:
+    start_iso = start_time.isoformat(sep=" ") if isinstance(start_time, datetime) else None
+    end_iso = end_time.isoformat(sep=" ") if isinstance(end_time, datetime) else None
+    total_pages = max(1, (total + page_size - 1) // page_size) if page_size > 0 else 1
+    return PluginRuntimeSnapshot(
+        plugin_key=plugin_key,
+        page=min(max(page, 1), total_pages),
+        total_pages=total_pages,
+        total_records=total,
+        table=target_table,
+        start_time=start_iso,
+        end_time=end_iso,
+        columns=list(columns),
+        rows=list(rows),
+        display_columns=[
+            {
+                "name": c,
+                "label_en": view.get("column_labels", {}).get(c, {}).get("label_en", c),
+                "label_zh": view.get("column_labels", {}).get(c, {}).get("label_zh", c),
+            }
+            for c in columns
+        ],
+        warnings=list(warnings),
+    )
+
+
+def _sync_plugin_runtime(snapshot: PluginRuntimeSnapshot) -> None:
+    if _plugin_opcua_monitor is None:
+        return
+    existing = _plugin_opcua_monitor.get_runtime(snapshot.plugin_key)
+    if existing is not None:
+        snapshot.revision = existing.revision
+        snapshot.last_trigger_batch = existing.last_trigger_batch
+        snapshot.last_writeback_ok = existing.last_writeback_ok
+    _plugin_opcua_monitor.update_runtime(snapshot)
+
+
+def _execute_plugin_query(
+    binding: dict[str, Any],
+    *,
+    page: int,
+    page_size: int | None = None,
+    table: str | None = None,
+    start_time: datetime | None = None,
+    end_time: datetime | None = None,
+    cursor: int = -1,
+) -> tuple[HistoryQueryResponse, PluginRuntimeSnapshot]:
+    plugin_key = binding["plugin_key"]
+    target_table = table or binding["bind_table"]
+    target_group = binding["bind_group"]
+    warnings: list[str] = []
+
+    if target_group:
+        schema_report = db.get_group_schema_report(target_group, cfg.get_group_baseline(target_group))
+        available_tables = schema_report.get("tables", [])
+        if table and table not in available_tables:
+            raise ValueError(f"所选表不属于 group {target_group}: {table}")
+    if not target_table and target_group:
+        saved_baseline = cfg.get_group_baseline(target_group)
+        schema_report = db.get_group_schema_report(target_group, saved_baseline)
+        target_table = schema_report.get("baseline_table")
+        if not schema_report.get("consistent", True):
+            warnings.append("当前 group 表结构不一致，已按基准表查询")
+    if not target_table:
+        raise ValueError("插件未绑定可用数据表")
+
+    view = cfg.resolve_query_view(binding["view_name"], table=target_table, group=target_group)
+    resolved_start, resolved_end, time_warnings = _apply_time_guardrails(start_time, end_time)
+    warnings.extend(time_warnings)
+
+    resolved_page_size = page_size if page_size else int(binding["page_size"])
+    resolved_page_size = min(max(resolved_page_size, 1), int(view["max_page_size"]))
+
+    history_req = HistoryQueryRequest(
+        table=target_table,
+        columns=view.get("columns", []),
+        start_time=resolved_start,
+        end_time=resolved_end,
+        time_field=view["time_field"],
+        filters=[],
+        page=max(page, 1),
+        page_size=resolved_page_size,
+        sort_by=view["sort_by"],
+        sort_dir=view["sort_dir"],
+    )
+    total, columns, rows, missing_columns = db.query_history(history_req)
+    if missing_columns:
+        warnings.append("部分配置列在当前表中不存在，已自动忽略")
+
+    _cache_plugin_query(plugin_key, rows, target_table)
+    snapshot = _plugin_runtime_snapshot(
+        plugin_key,
+        binding=binding,
+        view=view,
+        target_table=target_table,
+        start_time=resolved_start,
+        end_time=resolved_end,
+        total=total,
+        columns=columns,
+        rows=rows,
+        page=history_req.page,
+        page_size=history_req.page_size,
+        warnings=warnings,
+    )
+    _sync_plugin_runtime(snapshot)
+
+    response = HistoryQueryResponse(
+        total=total,
+        page=history_req.page,
+        page_size=history_req.page_size,
+        columns=columns,
+        rows=rows,
+        display_columns=snapshot.display_columns,
+        missing_columns=missing_columns,
+        warnings=warnings,
+    )
+    return response, snapshot
+
+
+async def _monitor_change_plugin_page(plugin_key: str, page: int) -> PluginRuntimeSnapshot | None:
+    try:
+        binding = _resolve_plugin_binding(plugin_key)
+        runtime = _plugin_opcua_monitor.get_runtime(plugin_key) if _plugin_opcua_monitor else None
+        table = runtime.table if runtime and runtime.table else None
+        start_time = None
+        end_time = None
+        if runtime and runtime.start_time:
+            start_time = datetime.fromisoformat(runtime.start_time.replace(" ", "T", 1))
+        if runtime and runtime.end_time:
+            end_time = datetime.fromisoformat(runtime.end_time.replace(" ", "T", 1))
+
+        response, snapshot = _execute_plugin_query(
+            binding,
+            page=page,
+            table=table,
+            start_time=start_time,
+            end_time=end_time,
+            cursor=-1,
+        )
+        await _run_plugin_writeback(binding, response.columns, response.rows, -1)
+        _cache_plugin_query(plugin_key, response.rows, snapshot.table)
+        return snapshot
+    except Exception:
+        logger.warning("OPC UA monitor page change failed plugin=%s page=%s", plugin_key, page, exc_info=True)
+        return None
+
+
+async def _monitor_trigger_writeback(plugin_key: str, batch_no: str) -> bool:
+    try:
+        binding = _resolve_plugin_binding(plugin_key)
+        return await _run_advanced_trigger_writeback(binding, batch_no)
+    except Exception:
+        logger.warning("OPC UA monitor trigger failed plugin=%s", plugin_key, exc_info=True)
+        return False
 
 
 async def _run_plugin_writeback(
@@ -672,77 +1030,57 @@ def resolve_plugin(plugin_key: str, request: Request) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@app.get("/api/plugins/runtime-state/{plugin_key}")
+def get_plugin_runtime_state(plugin_key: str, request: Request) -> dict[str, Any]:
+    _enforce_rate_limit(request)
+    if _plugin_opcua_monitor is None:
+        raise HTTPException(status_code=404, detail="OPC UA monitor not running")
+    snapshot = _plugin_opcua_monitor.get_runtime(plugin_key)
+    if snapshot is None:
+        try:
+            binding = _resolve_plugin_binding(plugin_key)
+            config = _get_table_list_writeback_config(binding)
+            if config is None or not config.is_advanced_mode:
+                raise HTTPException(status_code=404, detail="插件未启用高级 OPC UA 模式")
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {
+            "plugin_key": plugin_key,
+            "mode": "advanced",
+            "page": 1,
+            "total_pages": 1,
+            "total_records": 0,
+            "columns": [],
+            "rows": [],
+            "display_columns": [],
+            "warnings": [],
+            "revision": 0,
+        }
+    return snapshot.to_api_dict()
+
+
 @app.post("/api/plugins/query/{plugin_key}", response_model=HistoryQueryResponse)
 async def query_plugin(plugin_key: str, payload: PluginQueryRequest, request: Request) -> HistoryQueryResponse:
     _enforce_rate_limit(request)
     try:
         binding = _resolve_plugin_binding(plugin_key)
-        target_table = payload.table or binding["bind_table"]
-        target_group = binding["bind_group"]
-        warnings: list[str] = []
-        if target_group:
-            schema_report = db.get_group_schema_report(target_group, cfg.get_group_baseline(target_group))
-            available_tables = schema_report.get("tables", [])
-            if payload.table and payload.table not in available_tables:
-                raise ValueError(f"所选表不属于 group {target_group}: {payload.table}")
-        if not target_table and target_group:
-            saved_baseline = cfg.get_group_baseline(target_group)
-            schema_report = db.get_group_schema_report(target_group, saved_baseline)
-            target_table = schema_report.get("baseline_table")
-            if not schema_report.get("consistent", True):
-                warnings.append("当前 group 表结构不一致，已按基准表查询")
-        if not target_table:
-            raise ValueError("插件未绑定可用数据表")
-
-        view = cfg.resolve_query_view(binding["view_name"], table=target_table, group=target_group)
-        start_time, end_time, time_warnings = _apply_time_guardrails(payload.start_time, payload.end_time)
-        warnings.extend(time_warnings)
-
-        page_size = payload.page_size if payload.page_size else int(binding["page_size"])
-        page_size = min(max(page_size, 1), int(view["max_page_size"]))
-
-        history_req = HistoryQueryRequest(
-            table=target_table,
-            columns=view.get("columns", []),
-            start_time=start_time,
-            end_time=end_time,
-            time_field=view["time_field"],
-            filters=[],
-            page=max(payload.page, 1),
-            page_size=page_size,
-            sort_by=view["sort_by"],
-            sort_dir=view["sort_dir"],
+        response, _snapshot = _execute_plugin_query(
+            binding,
+            page=payload.page,
+            page_size=payload.page_size,
+            table=payload.table,
+            start_time=payload.start_time,
+            end_time=payload.end_time,
+            cursor=-1 if payload.cursor is None else int(payload.cursor),
         )
-        total, columns, rows, missing_columns = db.query_history(history_req)
-        if missing_columns:
-            warnings.append("部分配置列在当前表中不存在，已自动忽略")
-
         cursor = -1 if payload.cursor is None else int(payload.cursor)
-        _cache_plugin_query(plugin_key, rows, target_table)
-        await _run_plugin_writeback(binding, columns, rows, cursor)
+        await _run_plugin_writeback(binding, response.columns, response.rows, cursor)
         await _run_table_list_writeback(
             binding,
             cursor=cursor,
-            row=rows[cursor] if 0 <= cursor < len(rows) else None,
+            row=response.rows[cursor] if 0 <= cursor < len(response.rows) else None,
         )
-
-        return HistoryQueryResponse(
-            total=total,
-            page=history_req.page,
-            page_size=history_req.page_size,
-            columns=columns,
-            rows=rows,
-            display_columns=[
-                {
-                    "name": c,
-                    "label_en": view.get("column_labels", {}).get(c, {}).get("label_en", c),
-                    "label_zh": view.get("column_labels", {}).get(c, {}).get("label_zh", c),
-                }
-                for c in columns
-            ],
-            missing_columns=missing_columns,
-            warnings=warnings,
-        )
+        return response
     except (OperationalError, SQLAlchemyError) as exc:
         _raise_db_error(exc)
     except ValueError as exc:

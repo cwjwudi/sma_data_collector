@@ -213,14 +213,21 @@
         <div id="pluginTableListWriteback" class="opcua-writeback-panel">
           <h3 class="subsection-title">批次表名回写</h3>
           <p class="hint">
-            绑定批次主表时启用；根据 <code>diCursor</code> 选中行的批次号与开批时间，扫描年份分表并写入 PLC
-            <code>STRING[50]</code> 数组（每项最长 80 字符）。未选中行时写空数组。
+            绑定批次主表时启用。基础模式根据 <code>diCursor</code> 选中行写表名数组；高级模式由 PLC
+            OPC UA 上升沿触发翻页与回写。
           </p>
           <div class="row">
             <label for="pluginTableListEnabled">启用</label>
             <input id="pluginTableListEnabled" type="checkbox" />
           </div>
           <div class="row">
+            <label for="pluginTableListMode">回写模式</label>
+            <select id="pluginTableListMode">
+              <option value="cursor">基础 · 选中行 (diCursor)</option>
+              <option value="advanced">高级 · OPC UA 上升沿</option>
+            </select>
+          </div>
+          <div id="pluginTableListCursorFields" class="row">
             <label for="pluginTableListBatchColumn">批次列</label>
             <select id="pluginTableListBatchColumn"></select>
             <label for="pluginTableListStartTimeColumn">开批时间列</label>
@@ -235,6 +242,28 @@
               class="field-wide"
               placeholder="ns=6;s=::DataRev:strListName"
             />
+          </div>
+          <div id="pluginTableListAdvancedFields" class="opcua-writeback-panel nested-panel" hidden>
+            <h4 class="subsection-title">高级 · OPC UA 节点</h4>
+            <p class="hint">
+              上一页/下一页绑定两个 BOOL 节点（上升沿触发，与插件页翻页一致）；批次号节点接收 PLC 字符串；触发节点上升沿时按批次号回写 Buffer。
+            </p>
+            <div class="row">
+              <label for="pluginTableListPrevPageNode">上一页 NodeId</label>
+              <input id="pluginTableListPrevPageNode" type="text" class="field-wide" placeholder="ns=6;s=::DataRev:bPrevPage" />
+            </div>
+            <div class="row">
+              <label for="pluginTableListNextPageNode">下一页 NodeId</label>
+              <input id="pluginTableListNextPageNode" type="text" class="field-wide" placeholder="ns=6;s=::DataRev:bNextPage" />
+            </div>
+            <div class="row">
+              <label for="pluginTableListBatchNoNode">批次号 NodeId</label>
+              <input id="pluginTableListBatchNoNode" type="text" class="field-wide" placeholder="ns=6;s=::DataRev:strBatchNo" />
+            </div>
+            <div class="row">
+              <label for="pluginTableListTriggerNode">触发 NodeId</label>
+              <input id="pluginTableListTriggerNode" type="text" class="field-wide" placeholder="ns=6;s=::DataRev:bTrigger" />
+            </div>
           </div>
           <div id="pluginTableListWritebackHint" class="muted"></div>
         </div>
@@ -270,6 +299,6 @@
         </div>
       </div>
     </div>
-    <script src="/static/config.js?v=20260708_6"></script>
+    <script src="/static/config.js?v=20260708_9"></script>
   </body>
 </html>

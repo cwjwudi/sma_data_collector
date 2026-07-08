@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 from datetime import datetime
 from typing import Any
@@ -9,6 +10,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 
 from .models import HistoryQueryRequest
+from .table_list_writeback import pick_start_time_column
 from .table_partition import (
     default_baseline_table,
     list_group_names_from_tables,
@@ -16,6 +18,8 @@ from .table_partition import (
     normalize_partition_time,
     table_group_info,
 )
+
+logger = logging.getLogger(__name__)
 
 _IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
@@ -133,18 +137,30 @@ class QueryDatabase:
         start_time_column: str,
     ) -> datetime | None:
         table_ident = _safe_ident(master_table)
-        batch_ident = _safe_ident(batch_column)
-        start_ident = _safe_ident(start_time_column)
         available_columns = set(self.list_columns(master_table))
-        if batch_column not in available_columns or start_time_column not in available_columns:
-            raise ValueError(
-                f"批次主表 {master_table} 缺少字段: {batch_column} 或 {start_time_column}"
+        if batch_column not in available_columns:
+            logger.warning(
+                "批次主表 %s 缺少批次字段 %s",
+                master_table,
+                batch_column,
             )
+            return None
 
+        resolved_start_column = pick_start_time_column(available_columns, start_time_column)
+        if not resolved_start_column:
+            logger.warning(
+                "批次主表 %s 缺少开批时间字段（期望 %s）",
+                master_table,
+                start_time_column,
+            )
+            return None
+
+        batch_ident = _safe_ident(batch_column)
+        start_ident = _safe_ident(resolved_start_column)
         sql = (
             f"SELECT {start_ident} FROM {table_ident} "
             f"WHERE {batch_ident} = :batch_value "
-            "ORDER BY {start_ident} DESC LIMIT 1"
+            f"ORDER BY {start_ident} DESC LIMIT 1"
         )
         with self.engine.connect() as conn:
             row = conn.execute(text(sql), {"batch_value": batch_value}).first()

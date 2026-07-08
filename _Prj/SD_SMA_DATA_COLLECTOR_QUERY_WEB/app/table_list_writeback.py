@@ -17,6 +17,60 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_MAX_TABLES = 50
 DEFAULT_STRING_MAX_LEN = 80
+MODE_CURSOR = "cursor"
+MODE_ADVANCED = "advanced"
+MODE_OPCUA_ALIASES = {MODE_ADVANCED, "opcua", "opcua_trigger", "rising_edge"}
+
+_START_TIME_COLUMN_CANDIDATES = (
+    "dtBtachStartTime",
+    "dtBatchStartTime",
+    "batch_start_time",
+    "start_time",
+)
+
+
+def pick_start_time_column(available_columns: set[str], preferred: str) -> str | None:
+    if preferred in available_columns:
+        return preferred
+    pairs = {
+        "dtBatchStartTime": "dtBtachStartTime",
+        "dtBtachStartTime": "dtBatchStartTime",
+    }
+    alt = pairs.get(preferred)
+    if alt and alt in available_columns:
+        return alt
+    for candidate in _START_TIME_COLUMN_CANDIDATES:
+        if candidate in available_columns:
+            return candidate
+    return None
+
+
+@dataclass(frozen=True)
+class AdvancedOpcuaTriggerConfig:
+    prev_page_node: str
+    next_page_node: str
+    batch_no_node: str
+    trigger_node: str
+    poll_interval_ms: int = 200
+
+    @classmethod
+    def from_raw(cls, raw: Any) -> AdvancedOpcuaTriggerConfig | None:
+        if not isinstance(raw, dict):
+            return None
+        prev_page_node = str(raw.get("prev_page_node", "") or "").strip()
+        next_page_node = str(raw.get("next_page_node", "") or "").strip()
+        batch_no_node = str(raw.get("batch_no_node", "") or "").strip()
+        trigger_node = str(raw.get("trigger_node", "") or "").strip()
+        if not trigger_node or not batch_no_node:
+            return None
+        poll_interval_ms = int(raw.get("poll_interval_ms", 200) or 200)
+        return cls(
+            prev_page_node=prev_page_node,
+            next_page_node=next_page_node,
+            batch_no_node=batch_no_node,
+            trigger_node=trigger_node,
+            poll_interval_ms=max(50, min(poll_interval_ms, 5000)),
+        )
 
 
 @dataclass(frozen=True)
@@ -28,6 +82,12 @@ class TableListWritebackConfig:
     batch_master_table: str = ""
     max_tables: int = DEFAULT_MAX_TABLES
     string_max_len: int = DEFAULT_STRING_MAX_LEN
+    mode: str = MODE_CURSOR
+    advanced: AdvancedOpcuaTriggerConfig | None = None
+
+    @property
+    def is_advanced_mode(self) -> bool:
+        return self.mode == MODE_ADVANCED and self.advanced is not None
 
     @classmethod
     def from_binding(cls, raw: Any, *, bind_group: str | None = None) -> TableListWritebackConfig | None:
@@ -48,6 +108,25 @@ class TableListWritebackConfig:
 
         max_tables = int(raw.get("max_tables", DEFAULT_MAX_TABLES) or DEFAULT_MAX_TABLES)
         string_max_len = int(raw.get("string_max_len", DEFAULT_STRING_MAX_LEN) or DEFAULT_STRING_MAX_LEN)
+        mode = str(raw.get("mode", MODE_CURSOR) or MODE_CURSOR).strip().lower()
+        if mode in MODE_OPCUA_ALIASES:
+            mode = MODE_ADVANCED
+        elif mode != MODE_CURSOR:
+            mode = MODE_CURSOR
+
+        advanced = None
+        if mode == MODE_CURSOR:
+            advanced_raw = raw.get("advanced")
+            if isinstance(advanced_raw, dict):
+                trigger_node = str(advanced_raw.get("trigger_node", "") or "").strip()
+                batch_no_node = str(advanced_raw.get("batch_no_node", "") or "").strip()
+                if trigger_node and batch_no_node:
+                    mode = MODE_ADVANCED
+
+        if mode == MODE_ADVANCED:
+            advanced = AdvancedOpcuaTriggerConfig.from_raw(raw.get("advanced"))
+            if advanced is None:
+                return None
 
         return cls(
             enabled=True,
@@ -57,6 +136,8 @@ class TableListWritebackConfig:
             batch_master_table=batch_master_table,
             max_tables=max(1, min(max_tables, DEFAULT_MAX_TABLES)),
             string_max_len=max(1, min(string_max_len, DEFAULT_STRING_MAX_LEN)),
+            mode=mode,
+            advanced=advanced,
         )
 
 
@@ -65,7 +146,9 @@ def should_write_table_list(
     endpoint_url: str,
     cursor: int,
 ) -> bool:
-    return config is not None and bool(endpoint_url) and bool(config.buffer_node) and cursor >= 0
+    if config is None or config.is_advanced_mode:
+        return False
+    return bool(endpoint_url) and bool(config.buffer_node) and cursor >= 0
 
 
 def resolve_batch_start_time(
@@ -84,6 +167,45 @@ def resolve_batch_start_time(
     if batch_value is None or str(batch_value).strip() == "":
         return None
     return lookup_start_time(config.batch_master_table, config.batch_column, batch_value)
+
+
+def resolve_table_names_for_batch_no(
+    batch_no: str,
+    config: TableListWritebackConfig,
+    *,
+    list_tables,
+    lookup_start_time,
+) -> list[str]:
+    """Advanced mode: batch string from PLC → master-table lookup → partition tables."""
+    batch_value = str(batch_no or "").strip()
+    if not batch_value:
+        return empty_table_name_array(config)
+
+    batch_start = lookup_start_time(
+        config.batch_master_table,
+        config.batch_column,
+        batch_value,
+    )
+    if batch_start is None:
+        logger.warning(
+            "Table list writeback skipped: batch %r not found in master table %s",
+            batch_value,
+            config.batch_master_table,
+        )
+        return build_table_name_array(
+            config.batch_master_table,
+            [],
+            max_tables=config.max_tables,
+            string_max_len=config.string_max_len,
+        )
+
+    detail_tables = resolve_matching_partitioned_tables(list_tables(), batch_start)
+    return build_table_name_array(
+        config.batch_master_table,
+        detail_tables,
+        max_tables=config.max_tables,
+        string_max_len=config.string_max_len,
+    )
 
 
 def resolve_table_names_for_row(

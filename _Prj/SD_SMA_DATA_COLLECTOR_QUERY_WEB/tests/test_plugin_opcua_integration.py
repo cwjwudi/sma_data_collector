@@ -45,9 +45,10 @@ def _mock_schema_report(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
 
 
 @pytest.fixture
-def client(test_profile_dir):
+def client(test_profile_dir, monkeypatch):
     import app.main as main_module
 
+    monkeypatch.setenv("SD_SMA_DISABLE_OPCUA_MONITOR", "1")
     main_module.CONFIG_DIR = test_profile_dir
     main_module.config_store = main_module.UnifiedConfigStore(
         test_profile_dir,
@@ -125,7 +126,62 @@ def test_write_failure_is_silent(_mock_q, _mock_s, client: TestClient, test_prof
 @patch("app.main.db.list_tables")
 @patch("app.main.db.get_group_schema_report", side_effect=_mock_schema_report)
 @patch("app.main.db.query_history", side_effect=_mock_query_history)
+def test_advanced_trigger_writeback(_mock_q, _mock_s, mock_list_tables, client: TestClient, opcua_mock_meta: dict):
+    import app.main as main_module
+    from datetime import datetime
+
+    mock_list_tables.return_value = [
+        "BatchHeader",
+        "BatchDetail_y2026_span1",
+        "BatchDetail_2Year_y2025_span2",
+    ]
+
+    profile = main_module.config_store.get_active_config()
+    profile["plugins"]["modules"]["alarm"]["pages"]["4"]["table_list_writeback"] = {
+        "enabled": True,
+        "mode": "advanced",
+        "batch_column": "code",
+        "buffer_node": opcua_mock_meta["strListName"],
+        "advanced": {
+            "batch_no_node": opcua_mock_meta.get("strBatchNo", "ns=2;s=Demo.BatchNo"),
+            "trigger_node": opcua_mock_meta.get("bTrigger", "ns=2;s=Demo.Trigger"),
+        },
+    }
+    main_module.config_store.save_active_config(profile)
+
+    with patch(
+        "app.main.db.lookup_batch_start_time",
+        return_value=datetime(2026, 3, 15, 8, 0, 0),
+    ):
+        async def _run() -> bool:
+            binding = main_module._resolve_plugin_binding("alarm_4")
+            return await main_module._run_advanced_trigger_writeback(binding, "B001")
+
+        ok = asyncio.run(_run())
+        assert ok is True
+
+    table_names = _read_nodes(opcua_mock_meta["endpoint_url"], [opcua_mock_meta["strListName"]])[0]
+    assert table_names[0] == "BatchHeader"
+    assert table_names[1] == "BatchDetail_y2026_span1"
+
+
+@pytest.mark.integration
+@patch("app.main.db.list_tables")
+@patch("app.main.db.get_group_schema_report", side_effect=_mock_schema_report)
+@patch("app.main.db.query_history", side_effect=_mock_query_history)
 def test_table_list_writeback_on_cursor(_mock_q, _mock_s, mock_list_tables, client: TestClient, opcua_mock_meta: dict):
+    import app.main as main_module
+
+    profile = main_module.config_store.get_active_config()
+    profile["plugins"]["modules"]["alarm"]["pages"]["4"]["table_list_writeback"] = {
+        "enabled": True,
+        "mode": "cursor",
+        "batch_column": "code",
+        "start_time_column": "ts",
+        "buffer_node": opcua_mock_meta["strListName"],
+    }
+    main_module.config_store.save_active_config(profile)
+
     mock_list_tables.return_value = [
         "BatchHeader",
         "BatchDetail_y2026_span1",

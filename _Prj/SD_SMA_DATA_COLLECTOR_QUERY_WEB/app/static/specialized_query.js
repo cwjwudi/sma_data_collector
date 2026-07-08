@@ -7,6 +7,9 @@
   let lastEndIso = null;
   let selectedCursor = -1;
   let activePluginKey = "";
+  let advancedOpcuaMode = false;
+  let runtimeRevision = 0;
+  let runtimePollTimer = null;
   const quickButtons = ["btnRange1D", "btnRange1W", "btnRange1M", "btnRange1Y"];
   let pluginStateKey = null;
 
@@ -220,6 +223,44 @@
     table.appendChild(tbody);
   }
 
+  function isAdvancedTableListWriteback(binding) {
+    const cfg = binding && binding.table_list_writeback;
+    if (!cfg || !cfg.enabled) return false;
+    const mode = String(cfg.mode || "").trim().toLowerCase();
+    if (mode === "advanced" || mode === "opcua") return true;
+    const advanced = cfg.advanced && typeof cfg.advanced === "object" ? cfg.advanced : {};
+    return !!(String(advanced.trigger_node || "").trim() && String(advanced.batch_no_node || "").trim());
+  }
+
+  function applyRuntimeState(state) {
+    if (!state) return;
+    renderTable(state.columns || [], state.display_columns || [], state.rows || []);
+    selectedCursor = -1;
+    totalRecords = Number(state.total_records || 0);
+    const pageSize = Number(currentBinding.page_size || 10);
+    totalPages = Math.max(1, Number(state.total_pages || 1));
+    currentPage = Math.min(Math.max(Number(state.page || 1), 1), totalPages);
+    updatePagerMeta(currentBinding, state.warnings || []);
+    savePluginState();
+  }
+
+  function startRuntimeStatePolling(pluginKey) {
+    if (runtimePollTimer) {
+      clearInterval(runtimePollTimer);
+      runtimePollTimer = null;
+    }
+    runtimePollTimer = setInterval(() => {
+      fetchJson(`/api/plugins/runtime-state/${encodeURIComponent(pluginKey)}`)
+        .then((state) => {
+          const revision = Number(state.revision || 0);
+          if (revision === runtimeRevision) return;
+          runtimeRevision = revision;
+          applyRuntimeState(state);
+        })
+        .catch(() => {});
+    }, 300);
+  }
+
   async function run() {
     const pluginKey = getPluginKeyFromPath();
     if (!pluginKey) {
@@ -227,6 +268,7 @@
       return;
     }
     activePluginKey = pluginKey;
+    advancedOpcuaMode = isAdvancedTableListWriteback(currentBinding);
 
     pluginStateKey = `sd_sma_plugin_state_${pluginKey}`;
     currentBinding = await fetchJson(`/api/plugins/resolve/${encodeURIComponent(pluginKey)}`);
@@ -362,6 +404,15 @@
       ? Number(savedState.currentPage || 1)
       : 1;
     query(startPage).catch((e) => (document.getElementById("meta").textContent = e.message));
+
+    if (advancedOpcuaMode) {
+      fetchJson(`/api/plugins/runtime-state/${encodeURIComponent(pluginKey)}`)
+        .then((state) => {
+          runtimeRevision = Number(state.revision || 0);
+        })
+        .catch(() => {});
+      startRuntimeStatePolling(pluginKey);
+    }
   }
 
   run().catch((e) => {

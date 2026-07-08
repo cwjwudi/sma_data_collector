@@ -994,12 +994,65 @@ document.getElementById('pluginBindGroup').addEventListener('change', () => {
 function buildTableListWritebackDefaults() {
   return {
     enabled: false,
+    mode: 'cursor',
     batch_column: '',
     start_time_column: '',
     buffer_node: '',
     max_tables: 50,
     string_max_len: 80,
+    advanced: {
+      prev_page_node: '',
+      next_page_node: '',
+      batch_no_node: '',
+      trigger_node: '',
+    },
   };
+}
+
+function buildTableListAdvancedDefaults() {
+  return {
+    prev_page_node: '',
+    next_page_node: '',
+    batch_no_node: '',
+    trigger_node: '',
+  };
+}
+
+function updatePluginTableListModeUi() {
+  const mode = document.getElementById('pluginTableListMode').value || 'cursor';
+  const advancedPanel = document.getElementById('pluginTableListAdvancedFields');
+  const cursorFields = document.getElementById('pluginTableListCursorFields');
+  if (advancedPanel) {
+    advancedPanel.hidden = mode !== 'advanced';
+  }
+  if (cursorFields) {
+    cursorFields.hidden = mode === 'advanced';
+  }
+}
+
+function resolveBatchColumnForAdvancedMode(batchColumnFromUi) {
+  const fromUi = String(batchColumnFromUi || '').trim();
+  if (fromUi) {
+    return fromUi;
+  }
+  const cached = window.__pluginTableListAdvanced?.batch_column;
+  if (cached) {
+    return String(cached).trim();
+  }
+  const writeback = collectPluginOpcuaWriteback();
+  const preferred = ['strBatchCode', 'Batch', 'batch_code', 'code'];
+  if (writeback?.columns) {
+    for (const name of preferred) {
+      if (writeback.columns[name]) {
+        return name;
+      }
+    }
+    const keys = Object.keys(writeback.columns);
+    if (keys.length === 1) {
+      return keys[0];
+    }
+  }
+  return '';
 }
 
 function mergeTableListAdvancedFields(baseCfg, existingCfg) {
@@ -1007,12 +1060,40 @@ function mergeTableListAdvancedFields(baseCfg, existingCfg) {
   if (!existingCfg || typeof existingCfg !== 'object') {
     return merged;
   }
+  // mode / advanced 以表单为准，不得从缓存覆盖（否则切换高级模式后仍会保存为 cursor）
   for (const key of ['max_tables', 'string_max_len', 'lookup_start_time_column', 'batch_master_table']) {
     if (existingCfg[key] !== undefined && existingCfg[key] !== null && existingCfg[key] !== '') {
       merged[key] = existingCfg[key];
     }
   }
   return merged;
+}
+
+function inferTableListWritebackMode(cfg) {
+  if (!cfg || typeof cfg !== 'object') {
+    return 'cursor';
+  }
+  const mode = String(cfg.mode || '').trim().toLowerCase();
+  if (mode === 'advanced' || mode === 'opcua') {
+    return 'advanced';
+  }
+  const advanced = cfg.advanced && typeof cfg.advanced === 'object' ? cfg.advanced : {};
+  if (String(advanced.trigger_node || '').trim() && String(advanced.batch_no_node || '').trim()) {
+    return 'advanced';
+  }
+  return 'cursor';
+}
+
+function syncPluginTableListAdvancedCache() {
+  const payload = collectPluginTableListWriteback();
+  if (!payload) {
+    window.__pluginTableListAdvanced = null;
+    return;
+  }
+  const cached = { ...payload };
+  delete cached._invalid;
+  delete cached._invalidReason;
+  window.__pluginTableListAdvanced = cached;
 }
 
 function renderPluginTableListColumnOptions(columns, tableListCfg) {
@@ -1076,15 +1157,21 @@ async function refreshPluginTableListColumnOptions(tableListCfg) {
 
 function collectPluginTableListWriteback() {
   const enabled = document.getElementById('pluginTableListEnabled').checked;
-  const batchColumn = document.getElementById('pluginTableListBatchColumn').value.trim();
-  const startTimeColumn = document.getElementById('pluginTableListStartTimeColumn').value.trim();
+  const mode = document.getElementById('pluginTableListMode').value || 'cursor';
+  let batchColumn = document.getElementById('pluginTableListBatchColumn').value.trim();
+  let startTimeColumn = document.getElementById('pluginTableListStartTimeColumn').value.trim();
   const bufferNode = document.getElementById('pluginTableListBufferNode').value.trim();
   if (!enabled) {
     return null;
   }
+  if (mode === 'advanced') {
+    batchColumn = resolveBatchColumnForAdvancedMode(batchColumn);
+    startTimeColumn = '';
+  }
   const payload = mergeTableListAdvancedFields(
     {
       enabled: true,
+      mode,
       batch_column: batchColumn,
       start_time_column: startTimeColumn,
       buffer_node: bufferNode,
@@ -1094,10 +1181,29 @@ function collectPluginTableListWriteback() {
     window.__pluginTableListAdvanced || null,
   );
   if (!payload.batch_column || !payload.buffer_node) {
-    return { ...payload, _invalid: true };
+    return {
+      ...payload,
+      _invalid: true,
+      _invalidReason: mode === 'advanced' && !payload.batch_column ? 'advanced_batch_column' : 'basic_fields',
+    };
   }
   if (!payload.start_time_column) {
     delete payload.start_time_column;
+  }
+  payload.mode = mode;
+  if (mode === 'advanced') {
+    const advanced = {
+      prev_page_node: document.getElementById('pluginTableListPrevPageNode').value.trim(),
+      next_page_node: document.getElementById('pluginTableListNextPageNode').value.trim(),
+      batch_no_node: document.getElementById('pluginTableListBatchNoNode').value.trim(),
+      trigger_node: document.getElementById('pluginTableListTriggerNode').value.trim(),
+    };
+    payload.advanced = advanced;
+    if (!advanced.batch_no_node || !advanced.trigger_node) {
+      return { ...payload, _invalid: true, _invalidReason: 'advanced_nodes' };
+    }
+  } else {
+    delete payload.advanced;
   }
   return payload;
 }
@@ -1111,9 +1217,17 @@ function renderPluginTableListWritebackEditor(existingCfg) {
 
 function loadPluginTableListWritebackForm(tableListCfg) {
   const cfg = tableListCfg && typeof tableListCfg === 'object' ? tableListCfg : {};
-  window.__pluginTableListAdvanced = { ...cfg };
+  const resolvedMode = inferTableListWritebackMode(cfg);
+  window.__pluginTableListAdvanced = { ...cfg, mode: resolvedMode };
   document.getElementById('pluginTableListEnabled').checked = cfg.enabled === true;
+  document.getElementById('pluginTableListMode').value = resolvedMode;
   document.getElementById('pluginTableListBufferNode').value = cfg.buffer_node || '';
+  const advanced = cfg.advanced && typeof cfg.advanced === 'object' ? cfg.advanced : {};
+  document.getElementById('pluginTableListPrevPageNode').value = advanced.prev_page_node || '';
+  document.getElementById('pluginTableListNextPageNode').value = advanced.next_page_node || '';
+  document.getElementById('pluginTableListBatchNoNode').value = advanced.batch_no_node || '';
+  document.getElementById('pluginTableListTriggerNode').value = advanced.trigger_node || '';
+  updatePluginTableListModeUi();
   renderPluginTableListWritebackEditor(cfg);
 }
 
@@ -1365,16 +1479,21 @@ async function savePluginPageConfig() {
     delete pageCfg.opcua_writeback;
   }
 
+  syncPluginTableListAdvancedCache();
   const tableListWriteback = collectPluginTableListWriteback();
   if (tableListWriteback && tableListWriteback.enabled) {
     if (tableListWriteback._invalid) {
-      setHintMessage(
-        'pluginConfigHint',
-        '批次表名回写已启用，请填写批次列与 Buffer NodeId',
-      );
+      const reason =
+        tableListWriteback._invalidReason === 'advanced_nodes'
+          ? '高级模式需填写批次号 NodeId 与触发 NodeId'
+          : tableListWriteback._invalidReason === 'advanced_batch_column'
+            ? '高级模式需保留批次字段：请先在 opcua_writeback 中绑定批次列，或切换基础模式选择批次列后保存'
+            : '批次表名回写已启用，请填写批次列与 Buffer NodeId';
+      setHintMessage('pluginConfigHint', reason);
       return;
     }
     delete tableListWriteback._invalid;
+    delete tableListWriteback._invalidReason;
     pageCfg.table_list_writeback = tableListWriteback;
   } else {
     delete pageCfg.table_list_writeback;
@@ -1427,6 +1546,23 @@ document.getElementById('pluginTableListBufferNode').addEventListener('input', (
   renderPluginTableListWritebackEditor();
   saveConfigPageState();
 });
+document.getElementById('pluginTableListMode').addEventListener('change', () => {
+  updatePluginTableListModeUi();
+  syncPluginTableListAdvancedCache();
+  renderPluginTableListWritebackEditor();
+  saveConfigPageState();
+});
+for (const id of [
+  'pluginTableListPrevPageNode',
+  'pluginTableListNextPageNode',
+  'pluginTableListBatchNoNode',
+  'pluginTableListTriggerNode',
+]) {
+  document.getElementById(id).addEventListener('input', () => {
+    renderPluginTableListWritebackEditor();
+    saveConfigPageState();
+  });
+}
 document.getElementById('pluginTableListAdvanced').addEventListener('toggle', event => {
   if (event.target.open) {
     renderPluginTableListWritebackEditor();
