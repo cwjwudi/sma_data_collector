@@ -101,7 +101,7 @@
         <p class="hint">配置各表的时间字段、列顺序、排序、分页与列中英文显示名；仅在查询中引用已配置的组。</p>
         <div class="row">
           <label for="editViewName">View</label>
-          <select id="editViewName"></select>
+          <select id="editViewName" disabled></select>
           <label for="editGroupName">Group</label>
           <select id="editGroupName"></select>
           <label for="editTableName">基准表</label>
@@ -154,7 +154,7 @@
         <p class="hint">用于 <code>/plugins/{module}_{1-5}.html</code> 动态绑定；每模块预留 1–5 页。</p>
         <div class="row">
           <label for="pluginModule">模块</label>
-          <select id="pluginModule"></select>
+          <select id="pluginModule" disabled></select>
           <label for="pluginPageIndex">页码</label>
           <select id="pluginPageIndex">
             <option value="1">1</option>
@@ -174,10 +174,8 @@
         </div>
         <div class="row">
           <label for="pluginViewName">View</label>
-          <select id="pluginViewName">
+          <select id="pluginViewName" disabled>
             <option value="table">table</option>
-            <option value="alarm">alarm</option>
-            <option value="audit">audit</option>
           </select>
           <label for="pluginPageSize">PageSize</label>
           <input id="pluginPageSize" class="field-narrow-num" type="number" value="10" min="1" max="500" />
@@ -299,6 +297,6 @@
         </div>
       </div>
     </div>
-    <script src="/static/config.js?v=20260708_9"></script>
+    <script src="/static/config.js?v=20260708_10"></script>
   </body>
 </html>

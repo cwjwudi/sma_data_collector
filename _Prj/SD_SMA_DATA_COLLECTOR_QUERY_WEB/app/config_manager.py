@@ -71,6 +71,181 @@ class UnifiedConfigStore:
             json.dump(data, f, ensure_ascii=False, indent=2)
 
     @staticmethod
+    def _clone_json(data: Any) -> Any:
+        return json.loads(json.dumps(data, ensure_ascii=False))
+
+    @staticmethod
+    def _safe_int(value: Any, default: int) -> int:
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return default
+
+    @classmethod
+    def _default_app_settings(cls) -> dict[str, Any]:
+        return {
+            "database": {
+                "type": "mysql",
+                "name": "",
+                "host": "127.0.0.1",
+                "port": 3306,
+                "username": "",
+                "password": "",
+            },
+            "query_limits": {
+                "requests_per_minute": 120,
+                "default_window_hours": 24,
+                "max_window_hours": 168,
+            },
+        }
+
+    @classmethod
+    def _default_opcua_settings(cls) -> dict[str, Any]:
+        return {"endpoint_url": "", "username": "", "password": ""}
+
+    @classmethod
+    def _default_query_view_config(cls) -> dict[str, Any]:
+        return {
+            "default_page_size": 50,
+            "max_page_size": 500,
+            "views": {
+                "table": {
+                    "title": "Table Query",
+                    "description": "Generic table history query",
+                    "time_field": "collection_time",
+                    "columns": [],
+                    "sort_by": "collection_time",
+                    "sort_dir": "desc",
+                    "page_size": 50,
+                    "default_filters": [],
+                    "per_table": {},
+                    "per_group": {},
+                },
+                "alarm": {
+                    "title": "Alarm List",
+                    "description": "Alarm history query",
+                    "time_field": "ts",
+                    "columns": ["ts", "Status", "severity", "code", "msg", "Batch"],
+                    "sort_by": "ts",
+                    "sort_dir": "desc",
+                    "page_size": 100,
+                    "default_filters": [{"field": "Status", "op": "ne", "value": "0"}],
+                    "per_table": {},
+                    "per_group": {},
+                },
+                "audit": {
+                    "title": "Audit List",
+                    "description": "Audit history query",
+                    "time_field": "ts",
+                    "columns": ["ts", "operator", "action", "result", "msg"],
+                    "sort_by": "ts",
+                    "sort_dir": "desc",
+                    "page_size": 100,
+                    "default_filters": [{"field": "action", "op": "like", "value": "%"}],
+                    "per_table": {},
+                    "per_group": {},
+                },
+            },
+            "group_baselines": {},
+        }
+
+    @classmethod
+    def _is_usable_query_view_config(cls, data: Any) -> bool:
+        return isinstance(data, dict) and isinstance(data.get("views"), dict) and bool(data.get("views"))
+
+    @classmethod
+    def _default_profile_template(
+        cls,
+        profile_name: str,
+        *,
+        app_settings: dict[str, Any] | None = None,
+        opcua: dict[str, Any] | None = None,
+        query_view: dict[str, Any] | None = None,
+        plugins: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        return {
+            "version": 1,
+            "name": profile_name,
+            "app_settings": cls._clone_json(app_settings if isinstance(app_settings, dict) else cls._default_app_settings()),
+            "opcua": cls._clone_json(opcua if isinstance(opcua, dict) else cls._default_opcua_settings()),
+            "query_view": cls._clone_json(
+                query_view if cls._is_usable_query_view_config(query_view) else cls._default_query_view_config()
+            ),
+            "plugins": cls._clone_json(plugins if isinstance(plugins, dict) else {"modules": {}}),
+        }
+
+    @classmethod
+    def _blank_query_view_from(cls, source: Any) -> dict[str, Any]:
+        if not cls._is_usable_query_view_config(source):
+            return cls._default_query_view_config()
+
+        source_dict = source if isinstance(source, dict) else {}
+        source_views = source_dict.get("views", {})
+        views: dict[str, Any] = {}
+        for view_name, raw_view in source_views.items():
+            if not isinstance(raw_view, dict):
+                continue
+            views[str(view_name)] = {
+                "title": str(raw_view.get("title", view_name)),
+                "description": str(raw_view.get("description", "")),
+                "time_field": str(raw_view.get("time_field", "collection_time")),
+                "columns": cls._clone_json(raw_view.get("columns", [])) if isinstance(raw_view.get("columns"), list) else [],
+                "sort_by": str(raw_view.get("sort_by", "collection_time")),
+                "sort_dir": "asc" if str(raw_view.get("sort_dir", "desc")).lower() == "asc" else "desc",
+                "page_size": max(1, cls._safe_int(raw_view.get("page_size", 50), 50)),
+                "default_filters": (
+                    cls._clone_json(raw_view.get("default_filters", []))
+                    if isinstance(raw_view.get("default_filters"), list)
+                    else []
+                ),
+                "per_table": {},
+                "per_group": {},
+            }
+
+        if not views:
+            return cls._default_query_view_config()
+
+        default_page_size = max(1, cls._safe_int(source_dict.get("default_page_size", 50), 50))
+        max_page_size = max(default_page_size, cls._safe_int(source_dict.get("max_page_size", 500), 500))
+        return {
+            "default_page_size": default_page_size,
+            "max_page_size": max_page_size,
+            "views": views,
+            "group_baselines": {},
+        }
+
+    def _normalize_profile_data(self, data: Any, profile_name: str) -> tuple[dict[str, Any], bool]:
+        normalized = dict(data) if isinstance(data, dict) else {}
+        changed = not isinstance(data, dict)
+
+        if normalized.get("version") != 1:
+            normalized["version"] = 1
+            changed = True
+        if str(normalized.get("name") or "") != profile_name:
+            normalized["name"] = profile_name
+            changed = True
+
+        if not isinstance(normalized.get("app_settings"), dict):
+            normalized["app_settings"] = self._default_app_settings()
+            changed = True
+        if not isinstance(normalized.get("opcua"), dict):
+            normalized["opcua"] = self._default_opcua_settings()
+            changed = True
+        if not self._is_usable_query_view_config(normalized.get("query_view")):
+            normalized["query_view"] = self._default_query_view_config()
+            changed = True
+
+        plugins = normalized.get("plugins")
+        if not isinstance(plugins, dict):
+            normalized["plugins"] = {"modules": {}}
+            changed = True
+        elif not isinstance(plugins.get("modules"), dict):
+            normalized["plugins"] = {**plugins, "modules": {}}
+            changed = True
+
+        return normalized, changed
+
+    @staticmethod
     def _safe_profile_name(filename: str) -> str:
         name = Path(str(filename or "")).name.strip()
         if not name:
@@ -89,18 +264,12 @@ class UnifiedConfigStore:
         return target
 
     def _build_legacy_profile(self) -> dict[str, Any]:
-        return {
-            "version": 1,
-            "name": "default",
-            "app_settings": self._load_json(self.legacy_app_settings_path) if self.legacy_app_settings_path else {},
-            "query_view": self._load_json(self.legacy_query_view_config_path) if self.legacy_query_view_config_path else {},
-            "plugins": (
-                self._load_json(self.legacy_plugin_config_path)
-                if self.legacy_plugin_config_path
-                else {"modules": {}}
-            )
-            or {"modules": {}},
-        }
+        return self._default_profile_template(
+            "default",
+            app_settings=self._load_json(self.legacy_app_settings_path) if self.legacy_app_settings_path else None,
+            query_view=self._load_json(self.legacy_query_view_config_path) if self.legacy_query_view_config_path else None,
+            plugins=self._load_json(self.legacy_plugin_config_path) if self.legacy_plugin_config_path else {"modules": {}},
+        )
 
     def _profile_files(self) -> list[Path]:
         return sorted(
@@ -113,8 +282,10 @@ class UnifiedConfigStore:
         self.config_dir.mkdir(parents=True, exist_ok=True)
         profiles = self._profile_files()
         if not profiles:
-            self._write_json(self.config_dir / "default.json", self._build_legacy_profile())
-            profiles = self._profile_files()
+            data, _ = self._normalize_profile_data(self._build_legacy_profile(), "default")
+            self._write_json(self.config_dir / "default.json", data)
+            self.active_profile_path.write_text("default.json", encoding="utf-8")
+            return
         if not self.active_profile_path.exists():
             active_name = "default.json" if (self.config_dir / "default.json").exists() else profiles[0].name
             self.active_profile_path.write_text(active_name, encoding="utf-8")
@@ -158,8 +329,14 @@ class UnifiedConfigStore:
         if path.exists():
             raise FileExistsError(f"config profile already exists: {name}")
 
-        data = json.loads(json.dumps(self.get_active_config(), ensure_ascii=False))
-        data["name"] = Path(name).stem
+        active = self.get_active_config()
+        data = self._default_profile_template(
+            Path(name).stem,
+            app_settings=active.get("app_settings") if isinstance(active.get("app_settings"), dict) else None,
+            opcua=active.get("opcua") if isinstance(active.get("opcua"), dict) else None,
+            query_view=self._blank_query_view_from(active.get("query_view")),
+            plugins={"modules": {}},
+        )
         self._write_json(path, data)
         self.active_profile_path.write_text(name, encoding="utf-8")
 
@@ -177,7 +354,16 @@ class UnifiedConfigStore:
         if not path.exists() or path not in profiles:
             raise FileNotFoundError(f"config profile not found: {name}")
         if len(profiles) <= 1:
-            raise ValueError("cannot delete the last config profile")
+            path.unlink()
+            if self.active_profile_path.exists():
+                self.active_profile_path.unlink()
+            self.ensure_default_profile()
+            return {
+                "status": "reset",
+                "filename": name,
+                "active": self.get_active_profile_name(),
+                "profiles": self.list_profiles(),
+            }
 
         was_active = name == self.get_active_profile_name()
         path.unlink()
@@ -196,24 +382,15 @@ class UnifiedConfigStore:
     def get_active_config(self) -> dict[str, Any]:
         path = self._profile_path(self.get_active_profile_name())
         data = self._load_json(path)
-        if not data:
-            data = self._build_legacy_profile()
+        data, changed = self._normalize_profile_data(data, path.stem)
+        if changed:
             self._write_json(path, data)
-        data.setdefault("version", 1)
-        data.setdefault("name", path.stem)
-        data.setdefault("app_settings", {})
-        data.setdefault("query_view", {})
-        data.setdefault("plugins", {"modules": {}})
         return data
 
     def save_active_config(self, data: dict[str, Any]) -> None:
         path = self._profile_path(self.get_active_profile_name())
-        data.setdefault("version", 1)
-        data.setdefault("name", path.stem)
-        data.setdefault("app_settings", {})
-        data.setdefault("query_view", {})
-        data.setdefault("plugins", {"modules": {}})
-        self._write_json(path, data)
+        normalized, _ = self._normalize_profile_data(data, path.stem)
+        self._write_json(path, normalized)
 
     def get_app_settings(self) -> dict[str, Any]:
         return dict(self.get_active_config().get("app_settings", {}))

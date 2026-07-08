@@ -5,7 +5,29 @@ let columnLabels = {};
 let currentSchema = null;
 let pluginConfigData = { modules: {} };
 const CONFIG_STATE_KEY = 'sd_sma_query_config_page_state_v1';
+const LOCKED_GROUP_VIEW = 'table';
+const LOCKED_PLUGIN_MODULE = 'general';
+const LOCKED_PLUGIN_VIEW = 'table';
 let currentConfigProfile = '';
+
+function replaceSelectOptions(select, options, selectedValue) {
+  if (!select) return;
+  select.innerHTML = '';
+  for (const option of options) {
+    appendOption(select, option.value, option.label);
+  }
+  if (selectedValue && hasOption(select, selectedValue)) {
+    select.value = selectedValue;
+  } else if (select.options.length > 0) {
+    select.value = select.options[0].value;
+  }
+}
+
+function lockSelect(selectId, value, label) {
+  const select = document.getElementById(selectId);
+  replaceSelectOptions(select, [{ value, label }], value);
+  select.disabled = true;
+}
 
 function getAppSettingsPayload() {
   return {
@@ -219,14 +241,12 @@ async function loadColumnsForTable(tableName, preferredTimeField, preferredSortB
 async function loadViews() {
   const data = await fetchJson('/api/query/views');
   queryViews = data.views || {};
-  const sel = document.getElementById('editViewName');
-  sel.innerHTML = '';
-  for (const [name, view] of Object.entries(queryViews)) {
-    const op = document.createElement('option');
-    op.value = name;
-    op.textContent = `${name} - ${view.title || name}`;
-    sel.appendChild(op);
-  }
+  const lockedView = queryViews[LOCKED_GROUP_VIEW] || {};
+  lockSelect(
+    'editViewName',
+    LOCKED_GROUP_VIEW,
+    `${LOCKED_GROUP_VIEW} - ${lockedView.title || LOCKED_GROUP_VIEW}`,
+  );
 }
 
 async function loadAppSettings() {
@@ -467,6 +487,14 @@ function showConfirmModal({ title, message }) {
 
 function hasOption(select, value) {
   return Array.from(select.options).some(option => option.value === value);
+}
+
+function initializeLockedControls() {
+  const groupLoadBtn = document.getElementById('btnLoadTableConfig');
+  const pluginLoadBtn = document.getElementById('btnLoadPluginPage');
+  if (groupLoadBtn) groupLoadBtn.hidden = true;
+  if (pluginLoadBtn) pluginLoadBtn.hidden = true;
+  lockSelect('pluginViewName', LOCKED_PLUGIN_VIEW, LOCKED_PLUGIN_VIEW);
 }
 
 function clearGroupConfigEditor() {
@@ -958,9 +986,18 @@ document.getElementById('btnSaveTableConfig').addEventListener('click', () => {
 document.getElementById('btnDeleteGroupConfig').addEventListener('click', () => {
   deleteGroupConfig().catch(catchHintError('columnEditorHint'));
 });
-document.getElementById('editGroupName').addEventListener('change', () => {
-  loadTables().catch(catchHintError('schemaHint'));
-  saveConfigPageState();
+document.getElementById('editGroupName').addEventListener('change', async () => {
+  try {
+    await loadTables();
+    if (document.getElementById('editTableName').value) {
+      await loadTableConfig();
+    } else {
+      clearGroupConfigEditor();
+    }
+    saveConfigPageState();
+  } catch (err) {
+    catchHintError('schemaHint')(err);
+  }
 });
 document.getElementById('editViewName').addEventListener('change', saveConfigPageState);
 document.getElementById('editTableName').addEventListener('change', () => {
@@ -1262,15 +1299,8 @@ function loadPluginTableListWritebackForm(tableListCfg) {
 
 async function loadPluginConfig() {
   pluginConfigData = await fetchJson('/api/config/plugins');
-  const modules = pluginConfigData.modules || {};
-  const sel = document.getElementById('pluginModule');
-  sel.innerHTML = '';
-  for (const name of Object.keys(modules)) {
-    appendOption(sel, name);
-  }
-  if (sel.options.length === 0) {
-    appendOption(sel, 'alarm');
-  }
+  ensurePluginModuleAndPage(LOCKED_PLUGIN_MODULE, '1');
+  lockSelect('pluginModule', LOCKED_PLUGIN_MODULE, LOCKED_PLUGIN_MODULE);
   await loadPluginPageConfig();
   saveConfigPageState();
 }
@@ -1280,7 +1310,7 @@ function ensurePluginModuleAndPage(moduleName, pageIndex) {
   if (!pluginConfigData.modules[moduleName]) {
     pluginConfigData.modules[moduleName] = {
       title: moduleName,
-      view_name: 'table',
+      view_name: LOCKED_PLUGIN_VIEW,
       bind_group: '',
       page_size: 10,
       pages: { '1': {}, '2': {}, '3': {}, '4': {}, '5': {} },
@@ -1455,7 +1485,7 @@ function renderPluginOpcuaFeedbackEditor() {
 }
 
 async function loadPluginPageConfig() {
-  const moduleName = document.getElementById('pluginModule').value;
+  const moduleName = document.getElementById('pluginModule').value || LOCKED_PLUGIN_MODULE;
   const pageIndex = document.getElementById('pluginPageIndex').value || '1';
   if (!moduleName) return;
   ensurePluginModuleAndPage(moduleName, pageIndex);
@@ -1465,12 +1495,12 @@ async function loadPluginPageConfig() {
   const bindGroup = pageCfg.bind_group ?? moduleCfg.bind_group ?? '';
   document.getElementById('pluginEnabled').checked = pageCfg.enabled !== false;
   document.getElementById('pluginTitle').value = pageCfg.title ?? moduleCfg.title ?? `${moduleName}_${pageIndex}`;
-  document.getElementById('pluginViewName').value = pageCfg.view_name ?? moduleCfg.view_name ?? 'table';
+  lockSelect('pluginViewName', LOCKED_PLUGIN_VIEW, LOCKED_PLUGIN_VIEW);
   document.getElementById('pluginPageSize').value = Number(pageCfg.page_size ?? moduleCfg.page_size ?? 10);
   document.getElementById('pluginBindGroup').value = bindGroup;
   await updatePluginGroupHint(bindGroup);
 
-  const viewName = pageCfg.view_name ?? moduleCfg.view_name ?? 'table';
+  const viewName = LOCKED_PLUGIN_VIEW;
   const writebackCfg = pageCfg.opcua_writeback || { cursor: '', columns: {} };
   await loadPluginOpcuaWritebackTable(viewName, bindGroup, writebackCfg);
   renderPluginOpcuaFeedbackEditor();
@@ -1484,7 +1514,7 @@ async function loadPluginPageConfig() {
 }
 
 async function savePluginPageConfig() {
-  const moduleName = document.getElementById('pluginModule').value;
+  const moduleName = document.getElementById('pluginModule').value || LOCKED_PLUGIN_MODULE;
   const pageIndex = document.getElementById('pluginPageIndex').value || '1';
   if (!moduleName) {
     setHintMessage('pluginConfigHint', '请先选择模块');
@@ -1496,7 +1526,7 @@ async function savePluginPageConfig() {
 
   pageCfg.enabled = document.getElementById('pluginEnabled').checked;
   pageCfg.title = document.getElementById('pluginTitle').value || `${moduleName}_${pageIndex}`;
-  pageCfg.view_name = document.getElementById('pluginViewName').value || 'table';
+  pageCfg.view_name = LOCKED_PLUGIN_VIEW;
   pageCfg.page_size = Number(document.getElementById('pluginPageSize').value || 10);
   pageCfg.bind_group = document.getElementById('pluginBindGroup').value || '';
   delete pageCfg.bind_table;
@@ -1529,7 +1559,7 @@ async function savePluginPageConfig() {
   }
 
   moduleCfg.title = moduleCfg.title || moduleName;
-  moduleCfg.view_name = moduleCfg.view_name || pageCfg.view_name;
+  moduleCfg.view_name = LOCKED_PLUGIN_VIEW;
   moduleCfg.page_size = moduleCfg.page_size || pageCfg.page_size;
   moduleCfg.bind_group = moduleCfg.bind_group || pageCfg.bind_group;
   delete moduleCfg.bind_table;
@@ -1621,6 +1651,7 @@ document.getElementById('pluginOpcuaColumnTable').addEventListener('input', even
 });
 
 async function initConfigPage() {
+  initializeLockedControls();
   await loadConfigProfiles();
   await loadAppSettings();
   await loadViews();
