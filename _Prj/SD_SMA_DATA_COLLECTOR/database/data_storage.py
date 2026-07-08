@@ -103,7 +103,10 @@ class DataStorageProcessor:
     async def stop_processing(self) -> None:
         """停止数据处理任务"""
         self.running = False
+        ev = self._batch_ready_event
         self._batch_ready_event = None
+        if ev is not None:
+            ev.set()
         self.ensured_tables.clear()
         self.group_open_batch_partition_times.clear()
         self.current_batch_context = None
@@ -115,6 +118,7 @@ class DataStorageProcessor:
                 await self.processing_task
             except asyncio.CancelledError:
                 pass
+            self.processing_task = None
         self.logger.info("数据存储处理器已停止")
 
     def initialize_tables_for_runtime(self) -> bool:
@@ -243,33 +247,9 @@ class DataStorageProcessor:
                 else:
                     # 队列有数据但未达批量：睡眠或等待 add_data 达到 batch 时的唤醒（避免单次涌入多行仍等满 1 秒）
                     if self.data_queue:
-                        ev = self._batch_ready_event
-                        if ev is not None:
-                            wait_ev = asyncio.create_task(ev.wait())
-                            wait_sleep = asyncio.create_task(asyncio.sleep(1))
-                            done, pending = await asyncio.wait(
-                                {wait_ev, wait_sleep},
-                                return_when=asyncio.FIRST_COMPLETED,
-                            )
-                            for t in pending:
-                                t.cancel()
-                            ev.clear()
-                        else:
-                            await asyncio.sleep(1)
+                        await self._wait_for_batch_ready_or_timeout(1.0)
                     else:
-                        ev = self._batch_ready_event
-                        if ev is not None:
-                            wait_ev = asyncio.create_task(ev.wait())
-                            wait_short = asyncio.create_task(asyncio.sleep(0.1))
-                            done, pending = await asyncio.wait(
-                                {wait_ev, wait_short},
-                                return_when=asyncio.FIRST_COMPLETED,
-                            )
-                            for t in pending:
-                                t.cancel()
-                            ev.clear()
-                        else:
-                            await asyncio.sleep(0.1)
+                        await self._wait_for_batch_ready_or_timeout(0.1)
                         
             except asyncio.CancelledError:
                 # 处理剩余数据
@@ -281,6 +261,25 @@ class DataStorageProcessor:
             except Exception as e:
                 self.logger.error(f"数据处理过程中发生错误: {e}", exc_info=True)
                 await asyncio.sleep(5)
+
+    async def _wait_for_batch_ready_or_timeout(self, timeout: float) -> None:
+        ev = self._batch_ready_event
+        if ev is None:
+            await asyncio.sleep(timeout)
+            return
+
+        wait_ready = asyncio.create_task(ev.wait())
+        wait_timeout = asyncio.create_task(asyncio.sleep(timeout))
+        tasks = {wait_ready, wait_timeout}
+
+        try:
+            await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+        finally:
+            for task in tasks:
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            ev.clear()
     
     def _has_enough_data_for_batch(self) -> bool:
         """

@@ -168,9 +168,19 @@ class DataCollector:
     
     async def stop_collection(self) -> None:
         """停止所有数据采集"""
-        for name, task in self.collectors.items():
+        collectors = list(self.collectors.items())
+        for name, task in collectors:
             task.cancel()
             self.logger.info(f"停止采集组: {name}")
+
+        if collectors:
+            results = await asyncio.gather(
+                *(task for _, task in collectors),
+                return_exceptions=True,
+            )
+            for (name, _), result in zip(collectors, results):
+                if isinstance(result, BaseException) and not isinstance(result, asyncio.CancelledError):
+                    self.logger.error("停止采集组 %s 时发生错误: %s", name, result, exc_info=result)
         self.collectors.clear()
     
     async def _time_triggered_collection(self, group: DataGroup, 
