@@ -383,6 +383,7 @@ import { ensureLayoutPresetsLoaded } from "@/lib/report-template/layout-registry
 import {
   applyLayoutPresetToTemplate,
   clearOptionalSheetFromTemplate,
+  liftZoneTablesToSheetCanvas,
   resyncTemplateBoundPresets,
 } from "@/lib/report-template/layout-apply";
 import {
@@ -939,6 +940,8 @@ async function boot() {
     editing.value = cloneDeepTemplate(tpl);
     ensureBodyPages(editing.value);
     syncLegacyElementsAlias(editing.value);
+    // 旧数据里封面/末页版式装饰层中的表格提升为可编辑画布控件（拖拽/缩放/绑定与正文一致）
+    liftZoneTablesToSheetCanvas(editing.value);
     bodyPageIdx.value = 0;
     await loadLayoutPresetsList();
     if (isLoadStale(token)) return false;

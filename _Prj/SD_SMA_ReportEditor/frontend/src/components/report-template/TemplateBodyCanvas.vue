@@ -43,6 +43,7 @@
                   <span class="cv-zone-ph">图片</span>
                 </template>
               </ZoneImageCompose>
+              <ZoneTableStatic v-else-if="el.type === 'table'" :el="el" />
               <LayoutZoneInlineContent
                 v-else
                 :el="el"
@@ -91,6 +92,7 @@
                   <span class="cv-zone-ph">图</span>
                 </template>
               </ZoneImageCompose>
+              <ZoneTableStatic v-else-if="d.type === 'table'" :el="d" />
               <LayoutZoneInlineContent
                 v-else
                 :el="d"
@@ -317,6 +319,7 @@
                   <span class="cv-zone-ph">图片</span>
                 </template>
               </ZoneImageCompose>
+              <ZoneTableStatic v-else-if="el.type === 'table'" :el="el" />
               <LayoutZoneInlineContent
                 v-else
                 :el="el"
@@ -402,6 +405,7 @@ import {
 } from "@/lib/report-template/table-sql-fill";
 import { looksLikeImageFile, pickFirstImageFileFromDataTransfer, readImageFileAsDataUrl } from "@/lib/report-template/read-image-file";
 import LayoutZoneInlineContent from "@/components/report-template/LayoutZoneInlineContent.vue";
+import ZoneTableStatic from "@/components/report-template/ZoneTableStatic.vue";
 import TableColumnResizeGutters from "@/components/report-template/TableColumnResizeGutters.vue";
 import ZoneImageCompose from "@/components/report-template/ZoneImageCompose.vue";
 import { computed, inject, nextTick, onBeforeUnmount, ref, watch } from "vue";

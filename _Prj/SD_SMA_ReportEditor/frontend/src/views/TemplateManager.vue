@@ -441,6 +441,7 @@ import {
 import {
   applyLayoutPresetToTemplate,
   clearOptionalSheetFromTemplate,
+  liftZoneTablesToSheetCanvas,
   resyncTemplateBoundPresets,
   stripStaleOptionalSheetZones,
 } from "@/lib/report-template/layout-apply";
@@ -800,6 +801,8 @@ function resyncAllCachedTemplates() {
   for (const id of Object.keys(cache.value)) {
     const t = cache.value[id];
     if (t && typeof t === "object") {
+      // 先把旧数据装饰层里的表格提升为画布控件，重同步时才不会把它们连同装饰层一起丢掉
+      liftZoneTablesToSheetCanvas(t);
       resyncTemplateBoundPresets(t, presets);
       normalizeOptionalSheetsForList(t);
       reclampTemplate(t);
