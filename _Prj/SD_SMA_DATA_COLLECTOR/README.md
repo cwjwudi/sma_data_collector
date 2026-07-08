@@ -15,7 +15,7 @@
 - ✅ **多数据点支持**: 每个数据组支持多个数据点同时采集
 - ✅ **灵活配置**: 可为不同数据组设置不同的采集间隔
 - ✅ **批量存储**: 支持批量数据插入，提高数据库写入效率
-- ✅ **自动分表**: 按日期自动创建新表，支持自定义分表周期
+- ✅ **年份分表**: 支持按批次主表开批年份分表；无批次主表的旧配置仍兼容当前年份分表
 - ✅ **按组批量读取 OPC UA**: 优先单次往返批量读取，失败时自动回退逐点读取
 
 **典型应用场景：**
@@ -43,7 +43,25 @@
 - 工艺参数变更记录
 - 多工位并行触发快照采集
 
-### 3. Web 配置界面（web_config）
+### 3. 批次主表与年份分表
+
+面向按生产批次归档的场景，系统支持使用一张 `batch_upsert` 批次主表统一决定其他明细表的年份归属。
+
+**主要特性：**
+- ✅ **单一批次主表**: 同一配置中最多启用一张 `batch_upsert.enabled=true` 的批次主表
+- ✅ **主表固定表名**: 批次主表不加年份后缀，长期维护同一张批次索引表
+- ✅ **明细按开批年份归表**: 所有非主表数据组按批次主表的开批时间年份写入目标表
+- ✅ **未结批不跨表**: 即使自然时间跨年，未结批批次仍写入开批年份表
+- ✅ **结批强制写入**: 结批成功后立即写入队列中的所有明细数据，不等待 `batch_insert_size`
+- ✅ **分表间隔年份**: `partition_interval_years=2` 时，2025/2026 归入 `_2025`，2027/2028 归入 `_2027`
+- ✅ **启动恢复未结批**: 程序启动时会从批次主表恢复 `end_time IS NULL` 的未结批上下文
+
+**典型应用场景：**
+- 批次生产数据归档
+- 跨年生产批次追溯
+- 明细数据与批次主记录统一查询
+
+### 4. Web 配置界面（web_config）
 
 `web_config` 是当前推荐的运行入口，负责“配置管理 + 采集托管 + 运行监视”。
 
@@ -59,7 +77,14 @@
 **设计边界：**
 - 当前版本已删除历史查询回写链路；配置中不再支持 `trigger=query`、`groups[].query_config`、`groups[].output_mode` 与 `http_server`。
 
-### 4. v1.3.0+ 版本增强（重点）
+### 5. v1.3.0+ 版本增强（重点）
+
+- **Unreleased - 批次主表年份分表**
+  - 新增 `partition_interval_years`，配置页显示为“分表间隔年份”，旧字段 `recreate_interval_days` 保留但不再参与分表逻辑。
+  - 一个配置中只能启用一张 `batch_upsert` 批次主表；主表固定表名，其他表按主表开批时间年份归表。
+  - 结批成功时会强制写入所有明细组队列数据，避免明细数据因未达到 `batch_insert_size` 长时间滞留。
+  - 启动时会恢复未结批批次上下文，并提前确保目标年份明细表存在。
+  - 已完成真实 OPC UA + MySQL 测试，报告见 `docs/AI_BATCH_PARTITION_LIVE_TEST_REPORT_20260708.md`。
 
 - **v1.5.1 - 近期增强（相对 31b2355）**
   - `heartbeat` 支持填写 `points` 中的点位名称，运行时自动解析为 OPC UA 地址（仍兼容旧 `ns=...` 直填方式）。
@@ -237,7 +262,8 @@ SD_SMA_DATA_COLLECTOR/
 - `trigger_interval_seconds`: 触发点轮询间隔（`time_and_variable` 必填；`variable` 可选，未配置时回退 `interval_seconds`）
 - `reset_trigger_after_read`: 读取后是否复位触发信号
 - `is_parallel`: 是否启用并行触发模式（仅 `trigger: variable` 可用）
-- `recreate_interval_days`: 数据库分表间隔天数
+- `partition_interval_years`: 数据库分表间隔年份，默认 `1`
+- `recreate_interval_days`: 旧版兼容字段，保留读取与写回，但不再参与分表逻辑
 - `batch_insert_size`: 批量插入大小
 - `unique_key_point`: （可选）组内唯一性校验键（必须在 `data_points` 中）
 - `insert_feedback`: （可选）插入反馈配置（UDINT）
@@ -246,11 +272,22 @@ SD_SMA_DATA_COLLECTOR/
   - `code_unique_conflict`: 唯一性冲突时回写码（默认 `1`）
   - `code_db_error`: 数据库错误时回写码（默认 `2`）
   - `code_other_error`: 其他失败时回写码（默认 `3`）
+- `batch_upsert`: （可选）批次主表配置，用于按唯一批次号开批/结批
+  - `enabled`: 是否启用为批次主表；同一配置中最多只能有一组为 `true`
+  - `start_time_point`: 开批时间点位名称，必须在该组 `data_points` 中
+  - `end_time_point`: 结批时间点位名称，必须在该组 `data_points` 中
+  - `update_only_when_end_time_is_null`: 当前仅支持 `true`
+  - `reject_when_end_time_exists`: 当前仅支持 `true`
+  - `allow_idempotent_same_end_time`: 是否允许相同结批时间的幂等重放
 
 **触发配置约束：**
 - `time_and_variable` 模式下，`trigger_point` 与 `trigger_interval_seconds` 必须配置，且 `is_parallel` 必须为 `false`。
 - 并行触发模式（`trigger: variable` + `is_parallel: true`）下，`trigger_point` 应为布尔数组节点，`data_points` 应为与触发数组同下标语义的数组节点。
 - 配置了 `unique_key_point` 时，系统会在插入前按该列做表内判重，重复数据不落库并返回唯一性冲突码。
+- 启用 `batch_upsert` 的组必须配置 `unique_key_point`，并配置有效的开批/结批时间点位。
+- 启用批次主表后，所有非主表数据组必须包含批次主表的批次号点位，否则配置加载会失败。
+- 批次主表固定表名；所有非主表按批次主表的开批年份与 `partition_interval_years` 计算目标表名。
+- 批次主表结批成功后，系统会立即写入其他数据组队列中的数据，不再等待这些组达到 `batch_insert_size`。
 
 ### 通信配置 (communications)
 - `name`: 通信连接名称（唯一标识）
@@ -335,6 +372,7 @@ SD_SMA_DATA_COLLECTOR/
       "trigger": "time",
       "description": "时间触发组，每 1 秒采集一次",
       "data_points": ["rEC", "rF10", "rF11"],
+      "partition_interval_years": 1,
       "recreate_interval_days": 1,
       "batch_insert_size": 5
     },
@@ -354,6 +392,7 @@ SD_SMA_DATA_COLLECTOR/
         "code_db_error": 2,
         "code_other_error": 3
       },
+      "partition_interval_years": 1,
       "recreate_interval_days": 15,
       "batch_insert_size": 1
     }
@@ -377,6 +416,83 @@ SD_SMA_DATA_COLLECTOR/
   }
 }
 ```
+
+### 批次主表与年份分表示例
+
+以下示例展示最小配置片段。实际使用时，批次号、开批时间、结批时间和触发点都需要先在 `points` 中定义。
+
+```json
+{
+  "groups": [
+    {
+      "name": "BatchHeader",
+      "interval_seconds": 1,
+      "trigger": "variable",
+      "description": "批次主表",
+      "data_points": ["strBatchCode", "dtBatchStartTime", "dtBatchEndTime"],
+      "trigger_point": "bBatchTrigger",
+      "trigger_interval_seconds": 0.2,
+      "reset_trigger_after_read": true,
+      "partition_interval_years": 1,
+      "batch_insert_size": 1,
+      "unique_key_point": "strBatchCode",
+      "batch_upsert": {
+        "enabled": true,
+        "start_time_point": "dtBatchStartTime",
+        "end_time_point": "dtBatchEndTime",
+        "update_only_when_end_time_is_null": true,
+        "reject_when_end_time_exists": true,
+        "allow_idempotent_same_end_time": true
+      }
+    },
+    {
+      "name": "BatchDetail",
+      "interval_seconds": 1,
+      "trigger": "variable",
+      "description": "批次明细表",
+      "data_points": ["strBatchCode", "rEC", "rF10"],
+      "trigger_point": "bDetailTrigger",
+      "trigger_interval_seconds": 0.2,
+      "reset_trigger_after_read": false,
+      "partition_interval_years": 1,
+      "batch_insert_size": 100
+    },
+    {
+      "name": "BatchDetail_2Year",
+      "interval_seconds": 1,
+      "trigger": "variable",
+      "description": "两年一个年份桶的明细表",
+      "data_points": ["strBatchCode", "rAIR", "rAP1"],
+      "trigger_point": "bDetailTrigger",
+      "trigger_interval_seconds": 0.2,
+      "reset_trigger_after_read": false,
+      "partition_interval_years": 2,
+      "batch_insert_size": 100
+    }
+  ]
+}
+```
+
+表名示例：
+
+```text
+BatchHeader 固定写入 BatchHeader
+
+partition_interval_years=1:
+2025 开批 -> BatchDetail_2025
+2026 开批 -> BatchDetail_2026
+
+partition_interval_years=2:
+2025 开批 -> BatchDetail_2Year_2025
+2026 开批 -> BatchDetail_2Year_2025
+2027 开批 -> BatchDetail_2Year_2027
+```
+
+运行要点：
+- `BatchHeader` 中开批成功后，系统会创建或确认当前批次年份对应的所有明细表。
+- 批次未结批时，即使自然时间跨年，明细数据仍写入开批年份表。
+- 结批成功后，所有明细组队列中的数据会立即写入对应年份表。
+- 如果程序重启时主表存在 `end_time IS NULL` 的批次，系统会恢复该批次的开批年份上下文。
 
 ### 心跳信号配置
 
@@ -449,7 +565,15 @@ pytest tests/ -v
 
 # 运行特定测试
 pytest tests/test_multi_communication.py -v
+
+# 批次主表与年份分表重点测试
+pytest tests/test_batch_year_partition.py tests/test_insert_feedback_and_unique.py tests/test_core.py -v
 ```
+
+批次主表年份分表的 AI 测试指令与现场验证报告：
+
+- `docs/AI_TEST_BATCH_MASTER_YEAR_PARTITIONING.md`
+- `docs/AI_BATCH_PARTITION_LIVE_TEST_REPORT_20260708.md`
 
 ### 核心模块说明
 
@@ -465,8 +589,8 @@ pytest tests/test_multi_communication.py -v
    - `heartbeat_manager.py`: 心跳信号管理，定时写入 OPC UA 保持连接活跃
 
 3. **数据库模块** (`database/`)
-   - `db_manager.py`: 数据库连接管理、自动建表
-   - `data_storage.py`: 批量数据插入处理
+   - `db_manager.py`: 数据库连接管理、年份表名计算、建表与索引维护
+   - `data_storage.py`: 批量数据插入处理、批次主表上下文管理、开批/结批表检查
 
 4. **主程序** (`main.py`)
    - 整合各模块，提供采集运行模式
@@ -492,6 +616,7 @@ pytest tests/test_multi_communication.py -v
 4. **监控系统资源**: 关注 CPU、内存和磁盘 IO 使用情况
 5. **网络优化**: 对于远程 OPC UA 服务器，考虑网络延迟影响
 6. **Web 运维稳定性**: 通过 `web_config` 统一启停采集并观察日志，避免重复启动
+7. **批次表设计**: 启用批次主表时，确保所有明细组都包含同一个批次号点位，并按查询需求配置 `partition_interval_years`
 
 ### 故障排除
 

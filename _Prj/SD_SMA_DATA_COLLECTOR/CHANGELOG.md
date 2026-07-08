@@ -3,6 +3,31 @@
 本文档记录 SMA 数据采集系统的所有重要更新和变更。
 
 ## [Unreleased]
+### 批次主表与年份分表
+- ✨ **批次主表驱动的年份分表**（`core/config_models.py`、`core/config_loader.py`、`database/db_manager.py`、`database/data_storage.py`、`runtime/collector_runtime.py`）
+  - 新增 `groups[].partition_interval_years`，用于按日历年份桶分表，默认值为 `1`。
+  - 一个配置中最多允许一张 `batch_upsert.enabled=true` 的批次主表；批次主表固定表名，不再追加年份后缀。
+  - 启用批次主表后，所有非主表数据组都按批次主表的开批时间年份归表，不再区分“普通数据”和“批次数据”。
+  - 未结批批次不跨表：即使自然时间进入新年份，明细数据仍写入该批次开批年份对应的表。
+  - 支持多年份分表间隔，例如 `partition_interval_years=2` 时，2025/2026 归入 `_2025`，2027/2028 归入 `_2027`。
+
+- 🧩 **配置约束与旧配置兼容**
+  - 启用批次主表时，所有非主表数据组必须包含批次主表的 `unique_key_point`，用于确保明细数据可按批次归属。
+  - 旧字段 `recreate_interval_days` 保留读取与写回兼容，但不再参与分表逻辑；旧配置缺少 `partition_interval_years` 时默认按 `1` 年处理。
+  - Web 配置页将原分表字段调整为“分表间隔年份”，并在启用 `batch_upsert` 时锁定主表 `partition_interval_years=1`、`batch_insert_size=1`、`is_parallel=false`。
+
+- 🗄️ **建表时机优化**
+  - 表检查从“插入前逐条检查”调整为启动、开批、结批等切换点集中检查。
+  - 程序启动时会确保批次主表存在，并尝试恢复 `end_time IS NULL` 的未结批上下文。
+  - 开批或恢复未结批上下文后，系统会提前确保所有明细组的目标年份表存在。
+  - 结批成功时会强制写入所有队列中的明细组数据，不再等待 `batch_insert_size` 达标。
+
+- 🧪 **测试与现场验证**
+  - 更新 `tests/test_batch_year_partition.py`，覆盖固定主表、开批年份归表、跨年结批、结批强制写入、启动恢复未结批与不逐条建表。
+  - 更新 `tests/test_insert_feedback_and_unique.py`，覆盖批次主表唯一性和明细组必须包含批次号点位的配置校验。
+  - 新增 AI 测试指令文档：`docs/AI_TEST_BATCH_MASTER_YEAR_PARTITIONING.md`。
+  - 新增现场测试报告：`docs/AI_BATCH_PARTITION_LIVE_TEST_REPORT_20260708.md`，基于 `sample_config.json` 派生配置完成真实 OPC UA + MySQL 验证。
+
 ### 删除历史查询回写链路
 - 移除 CLI `--query` 模式、`trigger=query` 采集分支、查询任务队列、数据库历史查询处理器和 OPC UA 查询缓冲区写入器。
 - 配置校验改为拒绝 `trigger=query`、`groups[].query_config`、`groups[].output_mode` 与顶层 `http_server`。
