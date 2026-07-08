@@ -121,6 +121,29 @@ class TestBatchYearPartition(unittest.IsolatedAsyncioTestCase):
         created_tables = [call.args[0] for call in db_manager.create_data_table.call_args_list]
         self.assertEqual(created_tables, ["BatchData_y2025_span1"])
 
+    async def test_batch_master_rejects_blank_batch_no(self):
+        processor, db_manager = self.make_processor()
+        processor.initialize_tables_for_runtime()
+        db_manager.record_exists.reset_mock()
+        db_manager.execute_insert.reset_mock()
+        db_manager.create_data_table.reset_mock()
+
+        blank_close = collection_item(
+            "BatchHeader",
+            batch_no="   ",
+            start_time=datetime(2025, 12, 31, 23, 30, 0),
+            end_time=datetime(2026, 1, 1, 1, 0, 0),
+        )
+
+        self.assertFalse(processor._is_batch_close_record(blank_close))
+
+        await processor._process_group_data("BatchHeader", [blank_close])
+
+        db_manager.record_exists.assert_not_called()
+        db_manager.execute_insert.assert_not_called()
+        db_manager.create_data_table.assert_not_called()
+        self.assertIsNone(processor.current_batch_context)
+
     async def test_detail_data_uses_master_start_year_not_collection_time(self):
         processor, db_manager = self.make_processor()
         processor.initialize_tables_for_runtime()

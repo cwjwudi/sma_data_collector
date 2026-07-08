@@ -450,11 +450,25 @@ class DataStorageProcessor:
 
                 if unique_key_point:
                     unique_value = insert_data.get(unique_key_point)
-                    if unique_value is None:
-                        self.logger.warning(
-                            f"组 {group_name} 配置了 unique_key_point={unique_key_point}，"
-                            f"但当前记录该值为空，按失败处理"
-                        )
+                    if not self._has_data_value(unique_value):
+                        if batch_upsert_config:
+                            start_time_point = batch_upsert_config.get("start_time_point")
+                            end_time_point = batch_upsert_config.get("end_time_point")
+                            self.logger.error(
+                                "组 %s 批次记录缺少有效批次号，拒绝写入，避免按空批次处理: %s=%r, %s=%r, %s=%r",
+                                group_name,
+                                unique_key_point,
+                                unique_value,
+                                start_time_point or "start_time",
+                                insert_data.get(start_time_point) if start_time_point else None,
+                                end_time_point or "end_time",
+                                insert_data.get(end_time_point) if end_time_point else None,
+                            )
+                        else:
+                            self.logger.warning(
+                                f"组 {group_name} 配置了 unique_key_point={unique_key_point}，"
+                                f"但当前记录该值为空，按失败处理"
+                            )
                         outcome_counts[self.STATUS_OTHER_ERROR] += 1
                         continue
                     try:
@@ -716,6 +730,19 @@ class DataStorageProcessor:
         end_time_value = self._get_data_point_value(collection_data, end_time_point)
         if not self._has_data_value(end_time_value):
             return False
+
+        unique_key_point = self.batch_master_unique_key_point
+        if unique_key_point:
+            unique_value = self._get_data_point_value(collection_data, unique_key_point)
+            if not self._has_data_value(unique_value):
+                self.logger.warning(
+                    "批次主表结批记录缺少有效批次号，忽略本次结批触发: %s=%r, %s=%r",
+                    unique_key_point,
+                    unique_value,
+                    end_time_point or "end_time",
+                    end_time_value,
+                )
+                return False
 
         start_time_point = batch_time_config.get("start_time_point")
         start_time_value = self._get_data_point_value(collection_data, start_time_point)
