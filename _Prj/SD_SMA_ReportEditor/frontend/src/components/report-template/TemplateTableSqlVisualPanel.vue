@@ -90,6 +90,8 @@
           <button type="button" class="tsv-mini-btn danger" @click="removeFilter(fi)">删除</button>
         </div>
 
+        <p v-if="!flt.column.trim()" class="tsv-filter-warn">未选择「列」，此条件不会写入查询 SQL。</p>
+
         <div v-if="flt.column.trim()" class="tsv-dist-row">
           <button
             type="button"
@@ -557,7 +559,7 @@ function onDatabaseChange() {
   vs.value.table = "";
   tableColumns.value = [];
   distinctHints.value = {};
-  void refreshCatalogLevel();
+  // 目录刷新由 vs.database 的 watcher 统一触发，这里不再重复请求
 }
 
 function onConnChange() {
@@ -919,6 +921,16 @@ textarea.tsv-text-inp.tsv-sql-preview {
   min-height: 4.5rem;
   resize: vertical;
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+.tsv-filter-warn {
+  margin: 0;
+  padding: 6px 8px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #92400e;
+  background: rgb(254 252 232 / 0.95);
+  border: 1px solid rgb(253 230 138 / 0.85);
+  border-radius: 6px;
 }
 .tsv-param-legend {
   display: flex;
