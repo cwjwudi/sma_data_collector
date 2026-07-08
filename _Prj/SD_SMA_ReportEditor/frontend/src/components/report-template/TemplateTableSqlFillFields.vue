@@ -36,6 +36,7 @@
             <select v-model="fill.params[0].source" :class="selectFieldClass" @change="onManualParamSourceChange(fill.params[0])">
               <option value="literal">手写固定值</option>
               <option value="opcua">OPC UA</option>
+              <option value="batch_no">结批批次号</option>
             </select>
           </label>
           <template v-if="fill.params[0].source === 'literal'">
@@ -52,6 +53,12 @@
               <input v-model.trim="fill.params[0].literalFallback" class="tbl-sql-text-inp" placeholder="可选" />
             </label>
           </template>
+          <template v-else-if="fill.params[0].source === 'batch_no'">
+            <label class="tbl-sql-fill-inline tbl-sql-fallback">
+              默认（无值时）
+              <input v-model.trim="fill.params[0].literalFallback" class="tbl-sql-text-inp" placeholder="可选" />
+            </label>
+          </template>
         </div>
         <div class="tbl-sql-fill-param">
           <span v-pre class="tbl-sql-fill-param-title">{{p1}}</span>
@@ -60,6 +67,7 @@
             <select v-model="fill.params[1].source" :class="selectFieldClass" @change="onManualParamSourceChange(fill.params[1])">
               <option value="literal">手写固定值</option>
               <option value="opcua">OPC UA</option>
+              <option value="batch_no">结批批次号</option>
             </select>
           </label>
           <template v-if="fill.params[1].source === 'literal'">
@@ -71,6 +79,12 @@
           <template v-else-if="fill.params[1].source === 'opcua'">
             <input v-model.trim="fill.params[1].opcuaNodeId" class="tbl-sql-text-inp tbl-sql-node-inp" placeholder="NodeId" spellcheck="false" />
             <button type="button" :class="pickBtnClass" @click="emitPick(1)">选择节点</button>
+            <label class="tbl-sql-fill-inline tbl-sql-fallback">
+              默认（无值时）
+              <input v-model.trim="fill.params[1].literalFallback" class="tbl-sql-text-inp" placeholder="可选" />
+            </label>
+          </template>
+          <template v-else-if="fill.params[1].source === 'batch_no'">
             <label class="tbl-sql-fill-inline tbl-sql-fallback">
               默认（无值时）
               <input v-model.trim="fill.params[1].literalFallback" class="tbl-sql-text-inp" placeholder="可选" />
@@ -163,7 +177,7 @@ function emitPick(slot: number) {
 }
 
 function onManualParamSourceChange(b: TableSqlParamBinding) {
-  if (b.source === "literal") b.opcuaNodeId = "";
+  if (b.source !== "opcua") b.opcuaNodeId = "";
 }
 
 const maxRowsProxy = computed({

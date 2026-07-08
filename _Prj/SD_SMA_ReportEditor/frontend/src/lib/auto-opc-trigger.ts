@@ -57,20 +57,27 @@ export function opcValueEqualsCompare(raw: unknown, compareText: string): boolea
   return coerceText(raw).trim() === expected;
 }
 
-/** 是否应在本次采样触发自动导出（上层再结合冷却时间防抖）。 */
+/**
+ * 是否应在本次采样触发自动导出（上层再结合冷却时间防抖）。
+ *
+ * 首个采样仅记录基线、一律不触发：打开软件时触发变量往往还保持上一批的置位值，
+ * 若首采样即触发会在启动瞬间打出一发「幽灵结批」，并在导出忙碌期间吞掉用户
+ * 真正的第一批边沿（现场表现为「刚打开软件第一次结批没有输出」）。
+ */
 export function evaluateAutoOpcTrigger(
   mode: AutoOpcTriggerMode,
   raw: unknown,
   compareValue: string,
   state: OpcTriggerPollState,
 ): boolean {
+  if (!state.primed) {
+    state.primed = true;
+    state.prev = raw;
+    return false;
+  }
+
   if (mode === "equals") {
     const match = opcValueEqualsCompare(raw, compareValue);
-    if (!state.primed) {
-      state.primed = true;
-      state.prev = raw;
-      return match;
-    }
     const prevMatch = opcValueEqualsCompare(state.prev, compareValue);
     state.prev = raw;
     return match && !prevMatch;
@@ -79,22 +86,12 @@ export function evaluateAutoOpcTrigger(
   const curT = isTruthyRaw(raw);
 
   if (mode === "falling") {
-    if (!state.primed) {
-      state.primed = true;
-      state.prev = raw;
-      return !curT;
-    }
     const prevT = isTruthyRaw(state.prev);
     state.prev = raw;
     return !curT && prevT;
   }
 
   // rising（默认）
-  if (!state.primed) {
-    state.primed = true;
-    state.prev = raw;
-    return curT;
-  }
   const prevT = isTruthyRaw(state.prev);
   state.prev = raw;
   return curT && !prevT;

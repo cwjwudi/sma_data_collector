@@ -89,6 +89,33 @@ describe("compileVisualTableSql", () => {
     expect(fill.params[0].literalFallback).toBe("X");
   });
 
+  it("keeps batch_no source in compiled flat param and clears node id", () => {
+    const fill: TableSqlFillConfig = hydrateTableSqlFill({});
+    fill.enabled = true;
+    fill.fillMode = "visual";
+    fill.visualSource = {
+      connectionId: "c1",
+      database: "db1",
+      table: "t_log",
+      engine: "mysql",
+      columns: ["id"],
+    };
+    fill.visualFilters = [
+      {
+        id: "f1",
+        column: "batch_no",
+        kind: "equality",
+        defaults: ["B001"],
+        bindings: [{ source: "batch_no", opcuaNodeId: "ns=2;s=x", aboveCellColumnIndex: 0, literalFallback: "" }],
+      },
+    ];
+    expect(compileVisualTableSql(fill)).toBe(true);
+    expect(fill.querySql).toContain("`batch_no` = {{p0}}");
+    expect(fill.params[0].source).toBe("batch_no");
+    expect(fill.params[0].opcuaNodeId).toBe("");
+    expect(fill.params[0].literalFallback).toBe("B001");
+  });
+
   it("defaults visual result header to picked field name", () => {
     const fill: TableSqlFillConfig = hydrateTableSqlFill({});
     fill.enabled = true;

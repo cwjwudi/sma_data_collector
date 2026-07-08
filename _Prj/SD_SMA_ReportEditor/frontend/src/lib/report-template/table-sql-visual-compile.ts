@@ -110,7 +110,7 @@ export function compileVisualTableSql(fill: TableSqlFillConfig): boolean {
       whereParts.push(`${qc} = {{p${pi}}}`);
       const b = { ...f.bindings[0] };
       b.literalFallback = String(f.defaults[0] ?? "").trim();
-      if (b.source === "literal") b.opcuaNodeId = "";
+      if (b.source !== "opcua") b.opcuaNodeId = "";
       flatParams.push(b);
       pi++;
       continue;
@@ -120,10 +120,10 @@ export function compileVisualTableSql(fill: TableSqlFillConfig): boolean {
       whereParts.push(`${qc} >= {{p${pi}}} AND ${qc} <= {{p${pi + 1}}}`);
       const b0 = { ...f.bindings[0] };
       b0.literalFallback = String(f.defaults[0] ?? "").trim();
-      if (b0.source === "literal") b0.opcuaNodeId = "";
+      if (b0.source !== "opcua") b0.opcuaNodeId = "";
       const b1 = { ...f.bindings[1] };
       b1.literalFallback = String(f.defaults[1] ?? "").trim();
-      if (b1.source === "literal") b1.opcuaNodeId = "";
+      if (b1.source !== "opcua") b1.opcuaNodeId = "";
       flatParams.push(b0, b1);
       pi += 2;
     }

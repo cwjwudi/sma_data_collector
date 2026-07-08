@@ -16,6 +16,10 @@
         数据库
         <select v-model="vs.database" :class="selectFieldClass" @change="onDatabaseChange">
           <option value="">请选择…</option>
+          <!-- 目录尚未加载/加载失败时，仍显示已保存的库名，避免下拉框空白 -->
+          <option v-if="vs.database && !catalogDatabases.includes(vs.database)" :value="vs.database">
+            {{ vs.database }}
+          </option>
           <option v-for="d in catalogDatabases" :key="'db-' + d" :value="d">{{ d }}</option>
         </select>
       </label>
@@ -123,6 +127,16 @@
               >
                 OPC UA
               </button>
+              <button
+                type="button"
+                role="tab"
+                class="tsv-seg-btn"
+                :class="{ 'tsv-seg-btn--on': flt.bindings[0].source === 'batch_no' }"
+                :aria-selected="flt.bindings[0].source === 'batch_no'"
+                @click="selectVisualBindingTab(fi, 0, 'batch_no')"
+              >
+                批次号
+              </button>
             </div>
             <div class="tsv-tab-panel" role="tabpanel">
               <template v-if="flt.bindings[0].source === 'literal'">
@@ -153,6 +167,13 @@
                   />
                 </label>
                 <button type="button" :class="actionBtnClass" @click="pickOpc(fi, 0)">选择节点…</button>
+              </template>
+              <template v-else-if="flt.bindings[0].source === 'batch_no'">
+                <p class="tsv-muted">导出时按「结批批次号」筛选，与输出参数控件的批次号来源一致。{{ batchBindingHint }}</p>
+                <label class="tsv-lab">
+                  默认值（批次号读取失败时用）
+                  <input v-model="flt.defaults[0]" :list="'dv-' + flt.id" class="tsv-text-inp" placeholder="可选" />
+                </label>
               </template>
             </div>
           </div>
@@ -345,6 +366,7 @@ import {
   ensureVisualSource,
   normalizeVisualSqlFilterShape,
 } from "@/lib/report-template/table-sql-fill";
+import { formatAutoBatchOpcBindingHint, resolveAutoBatchOpcBinding } from "@/lib/auto-batch-opc-binding";
 import { loadVisualSqlTableColumnsCached } from "@/lib/report-template/table-sql-visual-catalog";
 import { buildDistinctSelectSql, visualFilterParamSlotBase } from "@/lib/report-template/table-sql-visual-compile";
 import { computed, nextTick, ref, watch, withDefaults } from "vue";
@@ -393,9 +415,12 @@ const vs = computed(() => ensureVisualSource(props.fill));
 const activeConn = computed(() => connections.value.find((c) => c.id === vs.value.connectionId) ?? null);
 
 const showDatabasePick = computed(() => {
-  const e = (activeConn.value?.engine || "").toLowerCase();
+  // 连接列表未加载完时回退到已保存的 engine，避免重开面板时数据库一栏闪失
+  const e = (activeConn.value?.engine || vs.value.engine || "").toLowerCase();
   return e === "mysql" || e === "mariadb" || e === "postgres";
 });
+
+const batchBindingHint = computed(() => formatAutoBatchOpcBindingHint(resolveAutoBatchOpcBinding()));
 
 const engineHint = computed(() => {
   const e = (vs.value.engine || "").toLowerCase();
@@ -554,7 +579,7 @@ function onFilterKindChange(flt: VisualSqlFilter) {
 }
 
 function onVisualBindingSourceChange(b: TableSqlParamBinding) {
-  if (b.source === "literal") b.opcuaNodeId = "";
+  if (b.source !== "opcua") b.opcuaNodeId = "";
 }
 
 function selectVisualBindingTab(fi: number, bi: number, source: TableSqlParamSource) {
@@ -632,7 +657,20 @@ watch(
   },
 );
 
-void loadConnections();
+/**
+ * 重开面板时按已保存选择补拉目录与表字段：
+ * 否则数据库下拉与筛选「列」下拉在用户重新更换连接前一直是空列表（表现为不显示库名）。
+ */
+async function initCatalogForSavedSelection() {
+  const v = vs.value;
+  if (!v.connectionId.trim() || (v.engine || "").toLowerCase() === "mongodb") return;
+  await refreshCatalogLevel();
+  if (v.table.trim()) {
+    await loadTableColumns();
+  }
+}
+
+void loadConnections().then(() => initCatalogForSavedSelection());
 </script>
 
 <style scoped>

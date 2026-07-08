@@ -16,6 +16,7 @@ import {
 } from "@/lib/report-template/binding-preview-utils";
 import { resolveAutoBatchOpcBinding } from "@/lib/auto-batch-opc-binding";
 import { loadReportGeneratorPrefs } from "@/lib/report-generator-prefs";
+import type { TableSqlParamBinding } from "@/lib/report-template/table-sql-fill";
 import {
   buildTableSqlFillPreviewTasks,
   sqlResponseToPreviewRows,
@@ -91,9 +92,12 @@ export function useReportBindingPreview(tmplRef: Ref<ReportTemplate | null>): Re
 
       const out: Record<string, BindingPreviewCell> = partial ? { ...values.value } : {};
 
-      async function resolveScalarSqlTask(task: SqlDedupeTask): Promise<string> {
-        const params = task.params || [];
-        const batchBinding = resolveAutoBatchOpcBinding(loadReportGeneratorPrefs());
+      const batchBinding = resolveAutoBatchOpcBinding(loadReportGeneratorPrefs());
+
+      async function substituteSqlWithResolvedParams(
+        sql: string,
+        params: TableSqlParamBinding[],
+      ): Promise<string> {
         const paramValues = await resolveSqlParamValues(params, {
           defaultOpcServerId: opcServerId,
           batchBinding,
@@ -106,7 +110,11 @@ export function useReportBindingPreview(tmplRef: Ref<ReportTemplate | null>): Re
               body: { node_id: nodeId },
             })) as { ok?: boolean; message?: string; value?: unknown },
         });
-        return substituteScalarSqlParams(task.sql, params, paramValues);
+        return substituteScalarSqlParams(sql, params, paramValues);
+      }
+
+      async function resolveScalarSqlTask(task: SqlDedupeTask): Promise<string> {
+        return substituteSqlWithResolvedParams(task.sql, task.params || []);
       }
 
       if (doOpc) {
@@ -168,9 +176,14 @@ export function useReportBindingPreview(tmplRef: Ref<ReportTemplate | null>): Re
         await runPool(fillTasks, 4, async (task) => {
           if (gen !== generation) return;
           try {
+            // 表格填充的筛选参数与标量 SQL 同规则取值：OPC UA / 结批批次号 / 手写兜底
+            let sql = task.sql;
+            if (task.params.length && /\{\{p\d+\}\}/i.test(sql)) {
+              sql = await substituteSqlWithResolvedParams(sql, task.params);
+            }
             const body: Record<string, unknown> = {
               connection_id: task.connectionId,
-              sql: task.sql,
+              sql,
               limit: task.limit,
             };
             if (task.database) body.database = task.database;

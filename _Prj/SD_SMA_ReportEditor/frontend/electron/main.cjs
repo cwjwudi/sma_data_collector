@@ -859,6 +859,12 @@ ipcMain.handle('pdf-export-run', async (event, opts) => {
       const RENDER_TOTAL_CAP_MS = 600000
 
       async function renderPart(partIndex) {
+        const targetUrl = buildPdfExportUrl(event.sender, partHash(partIndex))
+        /** 热切换看门狗：仅改 hash 后渲染页若迟迟没有心跳/完成信号，整页重载一次兜底 */
+        const HOT_NAV_FALLBACK_MS = 8000
+        const flags = { rendererSignal: false, hotNavFellBack: false }
+        let hotNavFallbackTimer = null
+
         const readyPromise = new Promise((resolve, reject) => {
           let idleTimer = null
           let capTimer = null
@@ -866,6 +872,7 @@ ipcMain.handle('pdf-export-run', async (event, opts) => {
           function cleanup() {
             if (idleTimer) clearTimeout(idleTimer)
             if (capTimer) clearTimeout(capTimer)
+            if (hotNavFallbackTimer) clearTimeout(hotNavFallbackTimer)
             ipcMain.removeListener('pdf-export-ready', onReady)
             ipcMain.removeListener('pdf-export-heartbeat', onHeartbeat)
           }
@@ -889,11 +896,13 @@ ipcMain.handle('pdf-export-run', async (event, opts) => {
 
           function onHeartbeat(ev) {
             if (!isFromPdfWin(ev)) return
+            flags.rendererSignal = true
             armIdleTimer()
           }
 
           function onReady(ev, payload) {
             if (!isFromPdfWin(ev)) return
+            flags.rendererSignal = true
             cleanup()
             resolve(payload || {})
           }
@@ -907,8 +916,23 @@ ipcMain.handle('pdf-export-run', async (event, opts) => {
         })
 
         const navStartMs = Date.now()
-        await navigatePdfExportWindow(pdfWin, buildPdfExportUrl(event.sender, partHash(partIndex)))
-        const payload = await readyPromise
+        // 导航与完成信号并行等待：导航报错立即失败；导航悬挂由 readyPromise 的超时兜底，
+        // 避免 readyPromise 先超时时产生无人接收的 unhandled rejection 并卡死后续结批。
+        const payload = await new Promise((resolve, reject) => {
+          readyPromise.then(resolve, reject)
+          navigatePdfExportWindow(pdfWin, targetUrl)
+            .then((hotSwitched) => {
+              if (!hotSwitched) return
+              hotNavFallbackTimer = setTimeout(() => {
+                if (flags.rendererSignal || flags.hotNavFellBack) return
+                if (!pdfWin || pdfWin.isDestroyed()) return
+                flags.hotNavFellBack = true
+                log('PDF export hot hash-switch silent; falling back to full page load')
+                pdfWin.loadURL(targetUrl).catch(() => {})
+              }, HOT_NAV_FALLBACK_MS)
+            })
+            .catch(reject)
+        })
         const readyMs = Date.now() - navStartMs
         if (!payload || !payload.ok) {
           throw new Error((payload && payload.error) || 'PDF render failed')

@@ -11,7 +11,7 @@ import type { LayoutZoneElement } from "@/lib/report-template/layout-zone-elemen
 import { ensureZoneTableGrid } from "@/lib/report-template/layout-zone-element";
 import type { ReportTemplate, TemplateElement } from "@/lib/report-template/model";
 import { ensureTableGrid } from "@/lib/report-template/model";
-import type { TableSqlFillConfig } from "@/lib/report-template/table-sql-fill";
+import type { TableSqlFillConfig, TableSqlParamBinding } from "@/lib/report-template/table-sql-fill";
 import type { TableSqlFillPreviewPayload } from "@/lib/report-template/binding-preview-utils";
 
 export function templateTableSqlFillPreviewKey(elId: string): string {
@@ -26,14 +26,13 @@ export interface TableSqlFillPreviewTask {
   key: string;
   connectionId: string;
   database?: string;
+  /** 原始 SQL，可含 {{p0}}… 占位符；由运行方结合 params 实际取值（OPC/批次号/手写）替换 */
   sql: string;
+  /** 与 {{pN}} 对应的取值绑定（visual 编译或手写模式的 params） */
+  params: TableSqlParamBinding[];
   limit: number;
   colCount: number;
   expandRows: (dataRowCount: number) => void;
-}
-
-function quoteSqlStringLiteral(raw: string): string {
-  return `'${String(raw).replace(/'/g, "''")}'`;
 }
 
 /** 截断填充错误信息，用于画布预览 */
@@ -108,19 +107,6 @@ export function formatSqlFillTableCellPreview(opts: {
     return h !== "\u00a0" ? h : "…";
   }
   return "…";
-}
-
-/** 用手写/可视化同步后的字面量替换 {{p0}}…，供预览查询（非导出）。 */
-export function substituteTableSqlPlaceholdersForPreview(fill: TableSqlFillConfig): string {
-  const sql = fill.querySql || "";
-  return sql.replace(/\{\{p(\d+)\}\}/g, (_, g: string) => {
-    const i = Number.parseInt(g, 10);
-    const p = fill.params?.[i];
-    const lit = (p?.literalFallback ?? "").trim();
-    if (!lit) return "NULL";
-    if (/^-?\d+(\.\d+)?$/.test(lit)) return lit;
-    return quoteSqlStringLiteral(lit);
-  });
 }
 
 /** 与 backend `api/routers/database.py` 中 PREVIEW_LIMIT_MAX 一致 */
@@ -202,9 +188,6 @@ function buildSingleTableSqlFillTask(
   }
   if (!connectionId) return null;
 
-  const sql = substituteTableSqlPlaceholdersForPreview(fill);
-  if (/\{\{p\d+\}\}/.test(sql)) return null;
-
   const fillMaxRows = Math.min(Math.max(1, fill.maxRows || 2000), TABLE_SQL_FILL_FULL_ROW_LIMIT);
   const limit =
     fullSqlFill && fill.splitReportsOnMaxRows
@@ -216,7 +199,8 @@ function buildSingleTableSqlFillTask(
     key: previewKey,
     connectionId,
     database,
-    sql,
+    sql: sqlRaw,
+    params: Array.isArray(fill.params) ? fill.params : [],
     limit,
     colCount: cc,
     expandRows,
