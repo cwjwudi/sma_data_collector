@@ -6,9 +6,11 @@
       v-for="row in rows"
       :key="row.key"
       class="tree-row"
+      :class="{ 'tree-row--selected': isSelectedNode(row.node) }"
       :style="{ paddingLeft: `${10 + row.depth * 18}px` }"
       role="treeitem"
       :aria-expanded="row.hasExpander ? row.node.expanded : undefined"
+      :aria-selected="isSelectedNode(row.node) || undefined"
     >
       <span class="row-gutter">
         <button
@@ -27,6 +29,7 @@
       </span>
       <button type="button" class="row-body" @click="$emit('pick', row.node)">
         <span class="row-top">
+          <span v-if="isSelectedNode(row.node)" class="sel-badge" aria-hidden="true">✓ 已选</span>
           <span v-if="classAbbr(row.node)" class="nc-badge" :title="row.node.node_class || ''">{{
             classAbbr(row.node)
           }}</span>
@@ -72,9 +75,16 @@ const props = defineProps({
   nodes: { type: Array, default: () => [] },
   /** 与 shallowRef 树配合：原地改节点后父组件递增，避免 rows 计算属性用缓存 */
   treeRev: { type: Number, default: 0 },
+  /** 当前已选中节点的 NodeId；匹配的行会高亮显示 */
+  selectedNodeId: { type: String, default: '' },
 })
 
 defineEmits(['toggle', 'pick'])
+
+function isSelectedNode(n) {
+  const sel = (props.selectedNodeId || '').trim()
+  return !!sel && String(n?.node_id || '') === sel
+}
 
 function truncateOneLine(s, max) {
   if (!s || typeof s !== 'string') return ''
@@ -133,9 +143,32 @@ const rows = computed(() => {
   gap: 6px;
   min-height: 44px;
   border-radius: 6px;
+  border: 1px solid transparent;
+  box-sizing: border-box;
 }
 .tree-row:hover {
   background: #f3f4f6;
+}
+.tree-row--selected,
+.tree-row--selected:hover {
+  background: #eef2ff;
+  border-color: #a5b4fc;
+  box-shadow: inset 3px 0 0 0 #4f46e5;
+}
+.tree-row--selected .display-name {
+  color: #3730a3;
+}
+.tree-row--selected .nid {
+  color: #6366f1;
+}
+.sel-badge {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #4f46e5;
+  color: #fff;
 }
 .row-gutter {
   flex-shrink: 0;

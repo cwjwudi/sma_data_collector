@@ -27,10 +27,22 @@ export interface BindingPreviewRefreshOptions {
   fullSqlFill?: boolean;
 }
 
+/** 一次绑定刷新实际取数统计（结批审计用） */
+export interface BindingPreviewStats {
+  /** OPC UA 点位读取次数（含 SQL 参数用到的 OPC 读取） */
+  opcReads: number;
+  /** SQL 查询次数（标量绑定 + 整表填充） */
+  sqlQueries: number;
+  /** SQL 返回数据行数合计 */
+  sqlRows: number;
+}
+
 export interface ReportBindingPreviewState {
   values: Ref<Record<string, BindingPreviewCell>>;
   loading: Ref<boolean>;
   refresh: (opts?: BindingPreviewRefreshOptions) => Promise<void>;
+  /** 最近一次 refresh 的取数统计；未刷新过为 null */
+  lastStats: Ref<BindingPreviewStats | null>;
 }
 
 export const reportBindingPreviewKey: InjectionKey<ReportBindingPreviewState> =

@@ -31,8 +31,26 @@ contextBridge.exposeInMainWorld('electronAPI', {
   /** 后端/前端服务地址（含局域网 IP，供设置页展示与复制） */
   getServiceEndpoints: () => ipcRenderer.invoke('app-get-service-endpoints'),
 
-  /** 仅 PDF 导出隐藏窗口：渲染完成后通知主进程 */
-  notifyPdfExportReady: (payload) => ipcRenderer.send('pdf-export-ready', payload),
+  /** 仅 PDF 导出隐藏窗口：渲染完成后通知主进程（JSON 兜底剥掉 Vue 代理等不可克隆对象） */
+  notifyPdfExportReady: (payload) => {
+    let clean = { ok: false }
+    try {
+      clean = JSON.parse(JSON.stringify(payload || {}))
+    } catch {
+      clean = { ok: Boolean(payload && payload.ok), error: '完成信号序列化失败' }
+    }
+    ipcRenderer.send('pdf-export-ready', clean)
+  },
+
+  /** 仅 PDF 导出隐藏窗口：取数期间心跳，避免大模版慢取数被 2 分钟硬超时误杀 */
+  notifyPdfExportHeartbeat: () => ipcRenderer.send('pdf-export-heartbeat'),
+
+  /** 订阅 PDF 导出阶段进度（结批弹窗显示「第 X/Y 份」等），返回取消订阅函数 */
+  onPdfExportProgress: (listener) => {
+    const fn = (_event, payload) => listener(payload)
+    ipcRenderer.on('pdf-export-progress', fn)
+    return () => ipcRenderer.removeListener('pdf-export-progress', fn)
+  },
 
   /** 扫描目录下 PDF（历史报表） */
   scanExportPdfs: (opts) => ipcRenderer.invoke('scan-export-pdfs', opts || {}),
@@ -89,4 +107,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   layoutSyncDownloadDefaults: () => ipcRenderer.invoke('layout-sync-download-defaults'),
   layoutSyncDownloadMine: () => ipcRenderer.invoke('layout-sync-download-mine'),
   layoutSyncUpload: (payload) => ipcRenderer.invoke('layout-sync-upload', payload || {}),
+  /** 整机配置云备份（加密 .rebak 的 base64） */
+  layoutSyncUploadConfig: (payload) => ipcRenderer.invoke('layout-sync-upload-config', payload || {}),
+  layoutSyncDownloadConfig: () => ipcRenderer.invoke('layout-sync-download-config'),
 })

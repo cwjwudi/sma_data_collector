@@ -8,7 +8,8 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 PaperKind = Literal["A3", "A4", "A5", "Letter"]
 BindingKind = Literal["none", "opcua", "sql"]
-TableSqlParamSource = Literal["opcua", "above_cell", "literal"]
+TableSqlParamSource = Literal["opcua", "above_cell", "literal", "batch_no"]
+ScalarSqlFillMode = Literal["manual", "visual"]
 Orientation = Literal["portrait", "landscape"]
 LayoutPageRole = Literal["normal", "cover", "back"]
 ChartKind = Literal["line", "bar"]
@@ -51,6 +52,18 @@ class TableSqlParamBinding(BaseModel):
     opcuaNodeId: str = ""
     aboveCellColumnIndex: int = Field(default=0, ge=0, le=29)
     literalFallback: str = ""
+
+
+class ScalarSqlVisualConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    connectionId: str = ""
+    database: str = ""
+    table: str = ""
+    engine: str = ""
+    valueColumn: str = ""
+    whereColumn: str = ""
+    whereParamSlot: int = Field(default=0, ge=0, le=1)
 
 
 TableSqlFillMode = Literal["manual_sql", "visual"]
@@ -122,6 +135,8 @@ class LayoutZoneElement(BaseModel):
     opcuaNodeId: str = ""
     sqlText: str = ""
     sqlParams: list[TableSqlParamBinding] = Field(default_factory=list)
+    scalarSqlFillMode: ScalarSqlFillMode | None = None
+    scalarSqlVisual: ScalarSqlVisualConfig | None = None
     tableRows: int = Field(default=3, ge=1, le=30)
     tableCols: int = Field(default=4, ge=1, le=30)
     tableCells: list[list[TemplateTableCell]] = Field(default_factory=list)
@@ -156,6 +171,8 @@ class TemplateElement(BaseModel):
     opcuaNodeId: str = ""
     sqlText: str = ""
     sqlParams: list[TableSqlParamBinding] = Field(default_factory=list)
+    scalarSqlFillMode: ScalarSqlFillMode | None = None
+    scalarSqlVisual: ScalarSqlVisualConfig | None = None
     dateFormat: str = ""
     chartKind: ChartKind = "line"
     signerLabel: str = ""

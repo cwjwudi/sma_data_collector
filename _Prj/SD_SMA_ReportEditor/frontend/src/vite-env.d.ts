@@ -22,10 +22,32 @@ interface Window {
       templateId: string;
       filePath: string;
       openAfter?: boolean;
-    }) => Promise<{ ok: boolean; filePath: string; filePaths?: string[]; totalReports?: number }>;
+    }) => Promise<{
+      ok: boolean;
+      filePath: string;
+      filePaths?: string[];
+      totalReports?: number;
+      stats?: { opcReads: number; sqlQueries: number; sqlRows: number };
+      durationMs?: number;
+    }>;
     shellOpenPath: (filePath: string) => Promise<{ ok: boolean; error?: string }>;
     pathJoin: (...parts: string[]) => Promise<string>;
-    notifyPdfExportReady: (payload: { ok: boolean; error?: string; totalReports?: number }) => void;
+    notifyPdfExportReady: (payload: {
+      ok: boolean;
+      error?: string;
+      totalReports?: number;
+      stats?: { opcReads: number; sqlQueries: number; sqlRows: number };
+    }) => void;
+    notifyPdfExportHeartbeat?: () => void;
+    onPdfExportProgress: (
+      listener: (payload: {
+        phase?: string;
+        partIndex?: number;
+        totalReports?: number;
+        templateId?: string;
+        jobId?: string;
+      }) => void,
+    ) => () => void;
     scanExportPdfs: (opts: { dir: string }) => Promise<{
       ok: boolean;
       error?: string;
@@ -261,6 +283,18 @@ interface Window {
       count?: number;
       layoutUpdatedAt?: string | null;
       templateUpdatedAt?: string | null;
+    }>;
+    layoutSyncUploadConfig?: (payload: { bundleBase64: string }) => Promise<{
+      ok: boolean;
+      error?: string;
+      updatedAt?: string | null;
+      sizeBytes?: number | null;
+    }>;
+    layoutSyncDownloadConfig?: () => Promise<{
+      ok: boolean;
+      error?: string;
+      bundleBase64?: string;
+      updatedAt?: string | null;
     }>;
   };
 }

@@ -308,6 +308,28 @@ function resolveManifestReleaseNotes(manifest) {
   return normalizeReleaseNotes(manifest?.notes)
 }
 
+/**
+ * 读取随安装包内置的本版更新说明（打包时由 extraResources 带入
+ * resources/update-notes/latest.json）。仅当其 version 与正在运行的应用一致时返回，
+ * 用于「本机版本比更新源新（刚装的新包、服务器尚未同步）」时也能正确显示本版说明。
+ */
+function readBundledReleaseNotes(app) {
+  try {
+    const p = app.isPackaged
+      ? path.join(process.resourcesPath, 'update-notes', 'latest.json')
+      : path.join(__dirname, '..', '..', 'packaging', 'updates', 'latest.json')
+    if (!fs.existsSync(p)) return null
+    const data = JSON.parse(fs.readFileSync(p, 'utf8'))
+    const version = String(data?.version || '').trim()
+    const notes = normalizeReleaseNotes(data?.notes)
+    if (!version || !notes) return null
+    if (version !== app.getVersion()) return null
+    return { version, notes }
+  } catch {
+    return null
+  }
+}
+
 function artifactFileName(artifactUrl, fallbackVersion) {
   const raw = typeof artifactUrl === 'string' ? artifactUrl.trim() : ''
   if (!raw) {
@@ -359,13 +381,28 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
   function getLastCheckSnapshot() {
     if (lastCheckResult) return lastCheckResult
     const settings = readSettings(app)
-    if (!settings.lastCheckAt) return null
+    const bundled = readBundledReleaseNotes(app)
+    if (!settings.lastCheckAt) {
+      if (!bundled) return null
+      return {
+        ok: true,
+        status: 'latest',
+        currentVersion: app.getVersion(),
+        latestVersion: bundled.version,
+        notes: bundled.notes,
+        checkedAt: null,
+      }
+    }
+    // 上次检查记录若属于更早的版本（如刚装完新包、更新源尚未同步），改用本包内置说明
+    const persistedVersion = String(settings.lastCheckLatestVersion || '').trim()
+    const useBundled =
+      bundled && (!persistedVersion || compareSemver(bundled.version, persistedVersion) > 0)
     return {
       ok: true,
       status: settings.lastCheckStatus || undefined,
       currentVersion: app.getVersion(),
-      latestVersion: settings.lastCheckLatestVersion || undefined,
-      notes: settings.lastCheckNotes || '',
+      latestVersion: useBundled ? bundled.version : persistedVersion || undefined,
+      notes: useBundled ? bundled.notes : settings.lastCheckNotes || '',
       checkedAt: settings.lastCheckAt,
     }
   }
@@ -618,6 +655,10 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
 
     getConfig() {
       const settings = readSettings(app)
+      const bundled = readBundledReleaseNotes(app)
+      const persistedVersion = String(settings.lastCheckLatestVersion || '').trim()
+      const useBundled =
+        bundled && (!persistedVersion || compareSemver(bundled.version, persistedVersion) > 0)
       return {
         currentVersion: app.getVersion(),
         platform: getPlatformKey(),
@@ -630,8 +671,10 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
         packaged: app.isPackaged,
         lastCheckAt: settings.lastCheckAt || null,
         lastCheckStatus: settings.lastCheckStatus || null,
-        lastCheckNotes: settings.lastCheckNotes || '',
-        lastCheckLatestVersion: settings.lastCheckLatestVersion || null,
+        lastCheckNotes: useBundled ? bundled.notes : settings.lastCheckNotes || '',
+        lastCheckLatestVersion: useBundled
+          ? bundled.version
+          : settings.lastCheckLatestVersion || null,
       }
     },
 
@@ -715,6 +758,8 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
           if (!result?.isUpdateAvailable || cmp <= 0) {
             windowsPendingInfo = null
             windowsPendingDownloadToken = null
+            // 本机版本比更新源新时，服务器上的说明属于旧版；优先用本包内置的本版说明
+            const bundled = cmp < 0 ? readBundledReleaseNotes(app) : null
             const latest = {
               ok: true,
               status: 'latest',
@@ -725,7 +770,7 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
                   ? `当前版本 ${currentVersion} 较更新源（${latestVersion}）更新。`
                   : '当前已是最新版本。',
               releasedAt: info?.releaseDate || null,
-              notes: releaseNotes,
+              notes: bundled ? bundled.notes : releaseNotes,
               manifestUrl: `${resolveBaseUrl(app).replace(/\/+$/, '')}/latest.yml`,
             }
             emitCheckResult(latest)
@@ -833,6 +878,8 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
             clearDownloaded()
           }
           const aheadOfServer = cmp < 0
+          // 本机版本比更新源新时，服务器上的说明属于旧版；优先用本包内置的本版说明
+          const bundled = aheadOfServer ? readBundledReleaseNotes(app) : null
           const latest = {
             ok: true,
             status: 'latest',
@@ -842,7 +889,7 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
               ? `当前版本 ${currentVersion} 较更新源（${manifestVersion}）更新。`
               : '当前已是最新版本。',
             releasedAt: manifest.releasedAt || null,
-            notes: releaseNotes,
+            notes: bundled ? bundled.notes : releaseNotes,
             manifestUrl,
           }
           emitCheckResult(latest)
@@ -1390,5 +1437,6 @@ module.exports = {
   humanizeUpdateError,
   normalizeReleaseNotes,
   resolveManifestReleaseNotes,
+  readBundledReleaseNotes,
   DEFAULT_UPDATE_BASE_URL,
 }

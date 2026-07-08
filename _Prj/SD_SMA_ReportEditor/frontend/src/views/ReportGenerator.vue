@@ -109,7 +109,7 @@
         </div>
 
         <div class="rg-row rg-row--in-panel">
-          <label class="rg-lbl" for="rg-export-opc-msg">信息节点（String，可选）</label>
+          <label class="rg-lbl" for="rg-export-opc-msg">信息节点（WSTRING，可选）</label>
           <div class="rg-inline rg-inline--bind">
             <input
               id="rg-export-opc-msg"
@@ -137,10 +137,13 @@
           <p class="rg-mini rg-mini--indent">
             成功时写入场景标签（{{ RG_UI.manual }} / {{ RG_UI.opcAuto }}）；失败时写入错误摘要（首行）。不绑定则跳过写回。
           </p>
+          <p class="rg-mini rg-mini--indent rg-mini--warn">
+            写回内容含中文，请在 PLC 侧使用 <strong>WSTRING</strong>（宽字符串）变量；绑定单字节 STRING 会报 BadEncodingError 写入失败。
+          </p>
         </div>
 
         <div class="rg-row rg-row--in-panel">
-          <label class="rg-lbl" for="rg-export-opc-path">路径节点（String，可选）</label>
+          <label class="rg-lbl" for="rg-export-opc-path">路径节点（WSTRING，可选）</label>
           <div class="rg-inline rg-inline--bind">
             <input
               id="rg-export-opc-path"
@@ -166,6 +169,9 @@
             已绑定：{{ exportResultOpcPathBindingHint }}
           </p>
           <p class="rg-mini rg-mini--indent">成功时写入完整 PDF 路径；失败时写入空字符串。不绑定则跳过写回。</p>
+          <p class="rg-mini rg-mini--indent rg-mini--warn">
+            路径常含中文文件名，请在 PLC 侧使用 <strong>WSTRING</strong>（宽字符串）变量且长度足够；绑定单字节 STRING 会报 BadEncodingError 写入失败。
+          </p>
         </div>
 
         <p v-if="exportResultOpcServerLabel" class="rg-mini rg-mini--indent">当前连接：{{ exportResultOpcServerLabel }}</p>
@@ -183,6 +189,87 @@
             向<strong>已绑定</strong>的 OPC 变量写入一次成功态测试值（状态 true/1；信息为「测试写回」；路径为空），不进行 {{ RG_UI.manual }}。
           </p>
         </div>
+      </div>
+    </section>
+
+    <section class="rg-card">
+      <h3 class="rg-h3">PLC 心跳（软件可用信号）</h3>
+      <div class="rg-switch-row">
+        <span class="rg-switch-label" id="rg-hb-lbl">启用心跳写入</span>
+        <button
+          type="button"
+          class="rg-switch"
+          :class="{ 'rg-switch--on': heartbeatCfg.enabled }"
+          role="switch"
+          aria-labelledby="rg-hb-lbl"
+          :aria-checked="heartbeatCfg.enabled"
+          @click="heartbeatCfg.enabled = !heartbeatCfg.enabled"
+        />
+      </div>
+      <p class="rg-mini rg-mini--switch">
+        软件运行期间按固定周期向 OPC UA 变量写入信号；PLC 侧看门狗检测到信号超时不变化，即可判定报表软件离线并报警。
+      </p>
+
+      <div class="rg-auto-fields" :class="{ 'rg-auto-fields--off': !heartbeatCfg.enabled }">
+        <div class="rg-row rg-row--in-panel">
+          <label class="rg-lbl" for="rg-hb-srv">已保存连接</label>
+          <select id="rg-hb-srv" v-model="heartbeatCfg.serverId" class="rg-select">
+            <option value="">请选择…</option>
+            <option v-for="s in opcServers" :key="s.id" :value="s.id">{{ s.name || s.id }}</option>
+          </select>
+        </div>
+        <div class="rg-row rg-row--in-panel">
+          <label class="rg-lbl" for="rg-hb-mode">信号方式</label>
+          <select id="rg-hb-mode" v-model="heartbeatCfg.mode" class="rg-select">
+            <option value="constant_one">常写 1（PLC 收到后清零，推荐）</option>
+            <option value="toggle">Bool 翻转（true/false 交替）</option>
+            <option value="counter">计数累加（1→32000 循环，Int 变量）</option>
+          </select>
+        </div>
+        <div class="rg-row rg-row--in-panel">
+          <label class="rg-lbl" for="rg-hb-interval">写入周期（毫秒）</label>
+          <input
+            id="rg-hb-interval"
+            v-model.number="heartbeatCfg.intervalMs"
+            type="number"
+            min="100"
+            max="3600000"
+            step="100"
+            class="rg-inp rg-inp--num"
+          />
+        </div>
+        <div class="rg-row rg-row--in-panel">
+          <label class="rg-lbl" for="rg-hb-node">心跳变量 NodeId</label>
+          <div class="rg-inline rg-inline--bind">
+            <input
+              id="rg-hb-node"
+              v-model.trim="heartbeatCfg.nodeId"
+              type="text"
+              class="rg-inp rg-inp--grow rg-mono"
+              :title="heartbeatCfg.nodeId || undefined"
+              placeholder="可手工填写 NodeId，或从地址空间选择…"
+            />
+            <button type="button" class="btn btn--nowrap" @click="openRgOpcPick('heartbeat')">
+              从地址空间选择…
+            </button>
+            <button
+              v-if="heartbeatCfg.nodeId"
+              type="button"
+              class="btn btn--sm btn--ghost btn--nowrap"
+              @click="clearHeartbeatBinding"
+            >
+              清除
+            </button>
+          </div>
+          <p v-if="heartbeatBindingHint" class="rg-mini rg-mini--indent rg-bound-hint">已绑定：{{ heartbeatBindingHint }}</p>
+          <p class="rg-mini rg-mini--indent">
+            「常写 1」：软件每周期写 1，PLC 程序收到后清零，PLC 侧检测到 1 长时间不出现即判定软件离线（默认 200 毫秒，绑定 Bool 或 Int 变量均可）。
+            「Bool 翻转」绑定 Boolean 变量；「计数累加」绑定 Int 变量。仅软件（含最小化）运行时发送心跳，退出后停止。
+          </p>
+        </div>
+        <p v-if="heartbeatStatusLine" class="rg-mini rg-mini--indent" :class="{ 'rg-mini--warn': plcHeartbeatLastOk === false }">
+          {{ heartbeatStatusLine }}
+        </p>
       </div>
     </section>
 
@@ -553,7 +640,9 @@ import { listTemplateSummaries, type TemplateSummary } from "@/api/templates";
 import { apiFetch } from "@/api/client.js";
 import {
   cloneExportResultOpcForTemplate,
+  isExportResultOpcCustomized,
   loadReportGeneratorPrefs,
+  resolveExportResultOpcForTemplate,
   saveReportGeneratorPrefs,
   type AutoExportDirSource,
   type ExportResultOpcFeedback,
@@ -598,7 +687,7 @@ import {
 } from "@/lib/auto-export-filename";
 import { humanizePdfExportError } from "@/lib/pdfExportErrors";
 import { runTemplateExportPreflight } from "@/lib/templateExportPreflight";
-import { showAppToast } from "@/composables/useAppToast";
+import { dismissAppToast, showAppToast } from "@/composables/useAppToast";
 import { auditLog } from "@/lib/auditLog";
 import {
   hasAnyExportResultBinding,
@@ -610,19 +699,21 @@ import {
   type ExportResultWritePayload,
 } from "@/lib/exportResultOpcFeedback";
 import {
+  formatExportStatsLine,
   getReportAutoExportBindingRuntime,
   notifyReportAutoExportSettingsChanged,
   reportAutoExportStatus,
   resetReportAutoExportBindingRuntime,
 } from "@/lib/report-auto-export-trigger-service";
+import { notifyPlcHeartbeatSettingsChanged, plcHeartbeatState } from "@/lib/plc-heartbeat-service";
 
 defineOptions({ name: "ReportGenerator" });
 
-/** 「生成报表」页用户可见固定用语（勿单独显示「截批」二字；PLC 信息节点标签见 exportResultOpcFeedback） */
+/** 「生成报表」页用户可见固定用语（勿单独显示「结批」二字；PLC 信息节点标签见 exportResultOpcFeedback） */
 const RG_UI = {
-  manual: "模拟截批",
-  opcAuto: "OPC UA 自动截批",
-  feedback: "截批结果反馈",
+  manual: "模拟结批",
+  opcAuto: "OPC UA 自动结批",
+  feedback: "结批结果反馈",
 } as const;
 
 const RG_STATUS_OPC_AUTO = `[${RG_UI.opcAuto}]`;
@@ -642,6 +733,7 @@ type RgOpcPickTarget =
   | "feedbackStatus"
   | "feedbackMessage"
   | "feedbackFilePath"
+  | "heartbeat"
   | string;
 const opcPickOpen = ref(false);
 const opcPickTarget = ref<RgOpcPickTarget | null>(null);
@@ -665,6 +757,11 @@ function exportResultOpcForTemplate(templateId: string | null | undefined): Expo
   }
   let fb = prefs.value.exportResultOpcByTemplateId[tid];
   if (!fb) {
+    fb = cloneExportResultOpcForTemplate(prefs.value.exportResultOpc);
+    prefs.value.exportResultOpcByTemplateId[tid] = fb;
+  } else if (!isExportResultOpcCustomized(fb) && isExportResultOpcCustomized(prefs.value.exportResultOpc)) {
+    // 历史遗留的空白模版快照：默认配置已配好时，同步为默认配置的副本，
+    // 保证界面显示与实际写回（回退默认）一致。
     fb = cloneExportResultOpcForTemplate(prefs.value.exportResultOpc);
     prefs.value.exportResultOpcByTemplateId[tid] = fb;
   }
@@ -796,8 +893,8 @@ const opcPickTitle = computed(() => {
   if (opcPickTarget.value === "fileName") return "绑定 OPC UA String 变量（文件名片段）";
   if (opcPickTarget.value === "exportDir") return "绑定 OPC UA String 变量（目录）";
   if (opcPickTarget.value === "feedbackStatus") return "绑定 OPC UA 状态变量（Boolean / Int）";
-  if (opcPickTarget.value === "feedbackMessage") return `绑定 OPC UA String 变量（${RG_UI.feedback}信息）`;
-  if (opcPickTarget.value === "feedbackFilePath") return "绑定 OPC UA String 变量（文件路径）";
+  if (opcPickTarget.value === "feedbackMessage") return `绑定 OPC UA WSTRING 变量（${RG_UI.feedback}信息）`;
+  if (opcPickTarget.value === "feedbackFilePath") return "绑定 OPC UA WSTRING 变量（文件路径）";
   return "绑定 OPC UA 变量";
 });
 
@@ -824,10 +921,10 @@ const opcPickLead = computed(() => {
     return `选择 ${kind} 类型变量；${RG_UI.feedback}成功时写入 ${kind === "Int" ? "1" : "true"}，失败写入 ${kind === "Int" ? "0" : "false"}。树与搜索仅显示 ${kind} 变量。`;
   }
   if (opcPickTarget.value === "feedbackMessage") {
-    return `选择 String 类型变量（可选）；成功时写入「${RG_UI.manual}」或「${RG_UI.opcAuto}」场景标签，失败时写入错误摘要。树与搜索仅显示 String 变量。`;
+    return `选择 String 类型变量（可选）；成功时写入「${RG_UI.manual}」或「${RG_UI.opcAuto}」场景标签，失败时写入错误摘要。写回内容含中文，PLC 侧请使用 WSTRING（宽字符串）变量。树与搜索仅显示 String 变量。`;
   }
   if (opcPickTarget.value === "feedbackFilePath") {
-    return "选择 String 类型变量（可选）；成功时写入完整 PDF 路径，失败时写入空字符串。树与搜索仅显示 String 变量。";
+    return "选择 String 类型变量（可选）；成功时写入完整 PDF 路径，失败时写入空字符串。路径常含中文，PLC 侧请使用 WSTRING（宽字符串）变量且长度足够。树与搜索仅显示 String 变量。";
   }
   if (parseRgTriggerPickTarget(opcPickTarget.value)) {
     return `选择已保存连接下的变量作为 ${RG_UI.opcAuto} 触发源；支持布尔、数值、字符串等类型。确定后写入 NodeId。`;
@@ -1051,6 +1148,39 @@ watch(
   { deep: true },
 );
 
+/** PLC 心跳配置：绑定或参数变化后重启心跳定时器（须在保存 watcher 之后声明，保证先落盘再重读） */
+const heartbeatCfg = computed(() => prefs.value.heartbeat);
+
+const heartbeatBindingHint = computed(() => {
+  const hb = heartbeatCfg.value;
+  const nid = hb.nodeId.trim();
+  if (!nid) return "";
+  const label = hb.nodeLabel.trim();
+  return label && label !== nid ? `${label}（${nid}）` : nid;
+});
+
+const heartbeatStatusLine = computed(() => plcHeartbeatState.status.value);
+const plcHeartbeatLastOk = computed(() => plcHeartbeatState.lastOk.value);
+
+watch(
+  () =>
+    [
+      heartbeatCfg.value.enabled,
+      heartbeatCfg.value.serverId,
+      heartbeatCfg.value.nodeId,
+      heartbeatCfg.value.intervalMs,
+      heartbeatCfg.value.mode,
+    ].join("\u0000"),
+  () => {
+    notifyPlcHeartbeatSettingsChanged();
+  },
+);
+
+function clearHeartbeatBinding(): void {
+  heartbeatCfg.value.nodeId = "";
+  heartbeatCfg.value.nodeLabel = "";
+}
+
 watch(
   () => prefs.value.autoExportDir,
   (d) => {
@@ -1115,7 +1245,8 @@ async function notifyExportResultToPlc(
   context: "manual" | "auto" = "manual",
   templateId?: string | null,
 ): Promise<void> {
-  const fb = exportResultOpcForTemplate(templateId ?? prefs.value.templateId);
+  // 模版没有单独配置时回退默认配置，避免历史空白快照静默跳过写回
+  const fb = resolveExportResultOpcForTemplate(prefs.value, templateId ?? prefs.value.templateId);
   const writeCtx = resolveExportResultOpcWriteContext(fb);
   if (!writeCtx.ok) {
     if (fb.enabled && hasAnyExportResultBinding(fb) && !fb.serverId.trim()) {
@@ -1226,6 +1357,12 @@ function resolveRgOpcPickDataTypeFilter(target: RgOpcPickTarget | null): string 
     return "String";
   }
   if (target === "feedbackStatus") return exportResultOpcStatusTypeFilter();
+  if (target === "heartbeat") {
+    const m = heartbeatCfg.value.mode;
+    if (m === "counter") return "Int";
+    if (m === "toggle") return "Boolean";
+    return ""; // 常写 1：Bool / Int 均可，不筛类型
+  }
   return "";
 }
 
@@ -1355,6 +1492,15 @@ async function onRgOpcPickConfirm(payload: RgOpcPickConfirmPayload) {
     return;
   }
 
+  if (target === "heartbeat") {
+    const hb = heartbeatCfg.value;
+    if (sid) hb.serverId = sid;
+    hb.nodeId = nid;
+    hb.nodeLabel = nodeLabel;
+    finishRgOpcPickSuccess();
+    return;
+  }
+
   finishRgOpcPickSuccess();
 }
 
@@ -1409,8 +1555,19 @@ async function onManualExport(): Promise<void> {
 
   manualBusy.value = true;
   manualHint.value = "正在检查数据源连接…";
+  const startedAtMs = Date.now();
+  const progressToastId = "batch-progress-manual";
+  const stage = (text: string): void => {
+    showAppToast(`[${RG_UI.manual}]\n${text}`, {
+      id: progressToastId,
+      tone: "info",
+      durationMs: 0,
+      spinner: true,
+    });
+  };
+  let offProgress: (() => void) | undefined;
   try {
-    const feedback = exportResultOpcForTemplate(tid);
+    const feedback = resolveExportResultOpcForTemplate(prefs.value, tid);
     if (isExportResultOpcFeedbackConfigured(feedback)) {
       manualHint.value = `正在校验${RG_UI.feedback}绑定…`;
       const opcVal = await validateExportResultOpcBindings(feedback);
@@ -1426,8 +1583,10 @@ async function onManualExport(): Promise<void> {
       }
     }
 
+    stage("正在检查数据源连接…");
     const preflight = await runTemplateExportPreflight(tid);
     if (!preflight.ok) {
+      dismissAppToast(progressToastId);
       if (preflight.blockers.some(isReportSplitPreflightBlocker)) {
         manualHint.value = preflight.summary;
         showAppToast(preflight.summary, { tone: "err", durationMs: 12000 });
@@ -1447,11 +1606,24 @@ async function onManualExport(): Promise<void> {
       manualHint.value = "";
     }
 
+    stage("正在取数并渲染报表…");
+    offProgress = api.onPdfExportProgress?.((p) => {
+      if (p.templateId && p.templateId !== tid) return;
+      const total = Number(p.totalReports) || 0;
+      const idx = (Number(p.partIndex) || 0) + 1;
+      if (p.phase === "render") {
+        stage(total > 1 ? `正在取数并渲染第 ${idx}/${total} 份报表…` : "正在取数并渲染报表…");
+      } else if (p.phase === "saved") {
+        stage(total > 1 ? `已保存第 ${idx}/${total} 份 PDF…` : "PDF 已保存，正在收尾…");
+      }
+    });
     const exportRes = await api.runPdfExport({
       templateId: tid,
       filePath,
       openAfter: false,
     });
+    offProgress?.();
+    offProgress = undefined;
     const savedPaths = normalizeSavedPdfPaths(exportRes, filePath);
     const plcMessage = pdfExportSummaryForPaths(savedPaths);
     manualHint.value =
@@ -1459,15 +1631,8 @@ async function onManualExport(): Promise<void> {
     if (prefs.value.manualOpenAfter) {
       void api.shellOpenPath?.(exportDir);
     }
-    void auditLog({
-      action: "export.manual_pdf",
-      result: "ok",
-      summary: suggestName,
-      object_type: "template",
-      object_id: tid,
-      detail: { filePath: savedPaths[0], filePaths: savedPaths, totalReports: exportRes.totalReports },
-    });
-    void notifyExportResultToPlc(
+    stage(`正在写回${RG_UI.feedback}…`);
+    await notifyExportResultToPlc(
       {
         success: true,
         filePath: savedPaths[0],
@@ -1478,18 +1643,44 @@ async function onManualExport(): Promise<void> {
       "manual",
       tid,
     );
+    const totalMs = Date.now() - startedAtMs;
+    const statsLine = formatExportStatsLine(exportRes.stats);
+    void auditLog({
+      action: "export.manual_pdf",
+      result: "ok",
+      summary: `${suggestName}（耗时 ${(totalMs / 1000).toFixed(1)} 秒${statsLine ? `；${statsLine}` : ""}）`,
+      object_type: "template",
+      object_id: tid,
+      detail: {
+        filePath: savedPaths[0],
+        filePaths: savedPaths,
+        totalReports: exportRes.totalReports,
+        durationMs: totalMs,
+        renderMs: exportRes.durationMs,
+        stats: exportRes.stats,
+      },
+    });
+    const doneLines = [
+      `[${RG_UI.manual}]`,
+      savedPaths.length > 1 ? `结批完成：已保存 ${savedPaths.length} 个 PDF` : `结批完成：已保存 ${suggestName}`,
+      `耗时 ${(totalMs / 1000).toFixed(1)} 秒${statsLine ? ` · ${statsLine}` : ""}`,
+    ];
+    showAppToast(doneLines.join("\n"), { id: progressToastId, tone: "ok", durationMs: 10000 });
   } catch (e) {
     const msg = humanizePdfExportError(e);
     manualHint.value = msg;
+    showAppToast(`[${RG_UI.manual}] 失败\n${msg}`, { id: progressToastId, tone: "err", durationMs: 14000 });
     void auditLog({
       action: "export.manual_pdf",
       result: "fail",
       summary: msg,
       object_type: "template",
       object_id: tid,
+      detail: { durationMs: Date.now() - startedAtMs },
     });
     void notifyExportResultToPlc({ success: false, message: msg }, "manual", tid);
   } finally {
+    offProgress?.();
     manualBusy.value = false;
   }
 }

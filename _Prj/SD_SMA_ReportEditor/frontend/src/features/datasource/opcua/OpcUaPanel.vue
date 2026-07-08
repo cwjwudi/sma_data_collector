@@ -195,7 +195,14 @@
                     v-for="(hit, idx) in searchHitEntries"
                     :key="'pb-' + idx + '-' + (hit.node.node_id || idx)"
                   >
-                    <button type="button" class="opc-browse-hit" @click="pickNode(hit.node)">
+                    <button
+                      type="button"
+                      class="opc-browse-hit"
+                      :class="{ 'opc-browse-hit--selected': isPickedNodeId(hit.node.node_id) }"
+                      :aria-selected="isPickedNodeId(hit.node.node_id) || undefined"
+                      @click="pickNode(hit.node)"
+                    >
+                      <span v-if="isPickedNodeId(hit.node.node_id)" class="opc-browse-hit-sel" aria-hidden="true">✓ 已选</span>
                       <span class="opc-browse-hit-path">{{ hit.pathStr }}</span>
                       <span class="opc-browse-hit-id mono">{{ hit.node.node_id }}</span>
                     </button>
@@ -208,6 +215,7 @@
               v-else
               :nodes="treeNodes"
               :tree-rev="treeRev"
+              :selected-node-id="pickedNode?.node_id || ''"
               @toggle="onToggleNode"
               @pick="pickNode"
             />
@@ -1037,6 +1045,11 @@ async function prefetchVariableTreeRow(node, myGen) {
   }
 }
 
+function isPickedNodeId(nodeId) {
+  const sel = String(pickedNode.value?.node_id || '')
+  return !!sel && String(nodeId || '') === sel
+}
+
 function pickNode(n) {
   pickedNode.value = n
   pickedValueText.value = n?.valuePreview ? String(n.valuePreview) : ''
@@ -1425,6 +1438,24 @@ defineExpose({
 .opc-browse-hit:hover {
   border-color: #a5b4fc;
   background: #eef2ff;
+}
+.opc-browse-hit--selected,
+.opc-browse-hit--selected:hover {
+  border-color: #4f46e5;
+  background: #eef2ff;
+  box-shadow: inset 3px 0 0 0 #4f46e5;
+}
+.opc-browse-hit--selected .opc-browse-hit-path {
+  color: #3730a3;
+  font-weight: 600;
+}
+.opc-browse-hit-sel {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #4f46e5;
+  color: #fff;
 }
 .opc-browse-hit-path {
   color: #111827;

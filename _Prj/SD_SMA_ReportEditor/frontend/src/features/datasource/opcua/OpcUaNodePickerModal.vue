@@ -88,7 +88,14 @@
                   v-for="(hit, idx) in searchHitEntries"
                   :key="'hit-' + idx + '-' + (hit.node.node_id || idx)"
                 >
-                  <button type="button" class="opc-pick-hit" @click="pickNode(hit.node)">
+                  <button
+                    type="button"
+                    class="opc-pick-hit"
+                    :class="{ 'opc-pick-hit--selected': isPickedNodeId(hit.node.node_id) }"
+                    :aria-selected="isPickedNodeId(hit.node.node_id) || undefined"
+                    @click="pickNode(hit.node)"
+                  >
+                    <span v-if="isPickedNodeId(hit.node.node_id)" class="opc-pick-hit-sel" aria-hidden="true">✓ 已选</span>
                     <span class="opc-pick-hit-path">{{ hit.pathStr }}</span>
                     <span class="opc-pick-hit-id mono">{{ hit.node.node_id }}</span>
                   </button>
@@ -97,10 +104,20 @@
               <p v-if="searchRemoteInfo" class="opc-pick-search-meta">{{ searchRemoteInfo }}</p>
             </template>
           </template>
-          <OpcUaTree v-else :nodes="treeNodes" :tree-rev="treeRev" @toggle="onToggleNode" @pick="pickNode" />
+          <OpcUaTree
+            v-else
+            :nodes="treeNodes"
+            :tree-rev="treeRev"
+            :selected-node-id="pickedNode?.node_id || ''"
+            @toggle="onToggleNode"
+            @pick="pickNode"
+          />
         </div>
         <footer class="opc-pick-foot">
-          <div class="opc-pick-preview mono">{{ pickedNode?.node_id || '（未选择节点）' }}</div>
+          <div class="opc-pick-preview mono" :class="{ 'opc-pick-preview--picked': pickedNode?.node_id }">
+            <span v-if="pickedNode?.node_id" class="opc-pick-preview-badge" aria-hidden="true">已选</span>
+            {{ pickedNode?.node_id || '（未选择节点）' }}
+          </div>
           <div class="opc-pick-actions">
             <button type="button" class="opc-pick-btn" @click="close">取消</button>
             <button type="button" class="opc-pick-btn primary" :disabled="!pickedNode?.node_id" @click="confirmPick">
@@ -201,6 +218,11 @@ function labelServer(s) {
   const n = (s.name || '').trim()
   const ep = (s.endpoint_url || '').trim()
   return n ? `${n} · ${ep}` : ep || s.id
+}
+
+function isPickedNodeId(nodeId) {
+  const sel = String(pickedNode.value?.node_id || '')
+  return !!sel && String(nodeId || '') === sel
 }
 
 function bumpTree() {
@@ -999,6 +1021,24 @@ watch(dataTypeFilter, async (filter, prev) => {
   border-color: #a5b4fc;
   background: #eef2ff;
 }
+.opc-pick-hit--selected,
+.opc-pick-hit--selected:hover {
+  border-color: #4f46e5;
+  background: #eef2ff;
+  box-shadow: inset 3px 0 0 0 #4f46e5;
+}
+.opc-pick-hit--selected .opc-pick-hit-path {
+  color: #3730a3;
+  font-weight: 600;
+}
+.opc-pick-hit-sel {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #4f46e5;
+  color: #fff;
+}
 .opc-pick-hit-path {
   color: #18181b;
   word-break: break-all;
@@ -1030,6 +1070,23 @@ watch(dataTypeFilter, async (filter, prev) => {
   color: #4b5563;
   word-break: break-all;
   min-height: 1.4em;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.opc-pick-preview--picked {
+  color: #3730a3;
+  font-weight: 600;
+}
+.opc-pick-preview-badge {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: #4f46e5;
+  color: #fff;
 }
 .opc-pick-actions {
   display: flex;

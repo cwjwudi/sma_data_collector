@@ -33,7 +33,7 @@ Usage: .\build.ps1 [options]
   -PortalDir <path>     Portal downloads/report-editor (or set REPORT_EDITOR_PORTAL_DIR)
   -NoPause              No "press any key" on failure
 
-Example (0.2.1):
+Example (0.2.5):
   .\build.ps1 -Fresh
   .\build.ps1 -Fresh -PortalDir D:\web-portal-demo\public\downloads\report-editor
 '@ | Write-Host

@@ -81,7 +81,34 @@ function injectPrintPageCss(t: ReportTemplate): void {
 }
 
 function signalReady(ok: boolean, error?: string, totalReports?: number): void {
-  window.electronAPI?.notifyPdfExportReady?.({ ok, error, totalReports });
+  stopExportHeartbeat();
+  // 注意：stats 须转成纯对象。Vue reactive 代理经 IPC 会抛
+  // "An object could not be cloned"，完成信号丢失导致主进程等到超时（0.2.3~0.2.5 结批失败根因）
+  const s = bindingPreview.lastStats.value;
+  window.electronAPI?.notifyPdfExportReady?.({
+    ok,
+    error,
+    totalReports,
+    stats: s ? { opcReads: s.opcReads, sqlQueries: s.sqlQueries, sqlRows: s.sqlRows } : undefined,
+  });
+}
+
+/** 取数期间向主进程发心跳：大模版慢取数不再被固定 2 分钟超时误杀 */
+let exportHeartbeatTimer: ReturnType<typeof setInterval> | null = null;
+
+function startExportHeartbeat(): void {
+  if (exportHeartbeatTimer) return;
+  window.electronAPI?.notifyPdfExportHeartbeat?.();
+  exportHeartbeatTimer = setInterval(() => {
+    window.electronAPI?.notifyPdfExportHeartbeat?.();
+  }, 10_000);
+}
+
+function stopExportHeartbeat(): void {
+  if (exportHeartbeatTimer) {
+    clearInterval(exportHeartbeatTimer);
+    exportHeartbeatTimer = null;
+  }
 }
 
 async function waitPaintReady(): Promise<void> {
@@ -98,6 +125,7 @@ async function boot(): Promise<void> {
   const seq = ++bootSeq;
   tmpl.value = null;
   errText.value = null;
+  startExportHeartbeat();
   const id = String(route.query.templateId || "").trim();
   if (!id) {
     errText.value = humanizePdfExportError("缺少 templateId");

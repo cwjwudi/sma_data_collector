@@ -305,7 +305,57 @@ function createLayoutSync(app) {
         templateUpdatedAt,
       }
     },
+
+    /** 上传整机加密配置备份（.rebak 字节的 base64）到 Portal 个人空间 */
+    async uploadConfigBundle(payload) {
+      const s = readSettings(app)
+      if (!s.token) throw new Error('请先登录')
+      const bundleBase64 = String(payload?.bundleBase64 || '')
+      if (!bundleBase64) throw new Error('没有可上传的配置备份')
+      const opts = { token: s.token, skipTlsVerify: Boolean(s.skipTlsVerify) }
+      let data
+      try {
+        data = await requestJson('PUT', apiUrl(app, '/api/report-editor/config-bundle'), {
+          ...opts,
+          body: { bundle_base64: bundleBase64, format: 'rebak' },
+          timeoutMs: 180000,
+        })
+      } catch (err) {
+        throw normalizeConfigBundleEndpointError(err)
+      }
+      if (!data || !data.ok) throw new Error((data && data.error) || '配置备份上传失败')
+      return { ok: true, updatedAt: data.updatedAt || null, sizeBytes: data.sizeBytes || null }
+    },
+
+    /** 从 Portal 个人空间下载整机加密配置备份 */
+    async downloadConfigBundle() {
+      const s = readSettings(app)
+      if (!s.token) throw new Error('请先登录')
+      const opts = { token: s.token, skipTlsVerify: Boolean(s.skipTlsVerify) }
+      let data
+      try {
+        data = await requestJson('GET', apiUrl(app, '/api/report-editor/config-bundle'), {
+          ...opts,
+          timeoutMs: 180000,
+        })
+      } catch (err) {
+        throw normalizeConfigBundleEndpointError(err)
+      }
+      if (!data || !data.ok) throw new Error((data && data.error) || '配置备份下载失败')
+      const bundleBase64 = String(data.bundle_base64 || '')
+      if (!bundleBase64) throw new Error('云端还没有整机配置备份，请先在本机上传一次。')
+      return { ok: true, bundleBase64, updatedAt: data.updatedAt || null }
+    },
   }
+}
+
+/** Portal 未升级（无 config-bundle 接口）时给出明确指引，而不是裸 404 */
+function normalizeConfigBundleEndpointError(err) {
+  const msg = String(err?.message || err || '')
+  if (msg.includes('404') || msg.includes('HTTP 404')) {
+    return new Error('当前 Portal 版本暂不支持整机配置云备份（缺少 config-bundle 接口），请先升级 Portal 服务。')
+  }
+  return err instanceof Error ? err : new Error(msg)
 }
 
 module.exports = { createLayoutSync }

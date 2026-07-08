@@ -69,6 +69,29 @@ export const defaultExportResultOpcFeedback = (): ExportResultOpcFeedback => ({
   messageMaxLen: 200,
 });
 
+/** PLC 心跳（软件可用信号）写入模式：常写 1（PLC 清零）/ Bool 翻转 / 计数累加 */
+export type PlcHeartbeatMode = "constant_one" | "toggle" | "counter";
+
+/** 周期向 PLC 写 OPC UA 变量，PLC 侧看门狗判断报表软件是否在线 */
+export interface PlcHeartbeatConfig {
+  enabled: boolean;
+  serverId: string;
+  nodeId: string;
+  nodeLabel: string;
+  /** 写入周期（毫秒） */
+  intervalMs: number;
+  mode: PlcHeartbeatMode;
+}
+
+export const defaultPlcHeartbeatConfig = (): PlcHeartbeatConfig => ({
+  enabled: false,
+  serverId: "",
+  nodeId: "",
+  nodeLabel: "",
+  intervalMs: 200,
+  mode: "constant_one",
+});
+
 
 
 export interface ReportGeneratorPrefs {
@@ -109,8 +132,11 @@ export interface ReportGeneratorPrefs {
 
   exportResultOpc: ExportResultOpcFeedback;
 
-  /** 按报表模版单独配置的截批结果反馈变量；key 为 templateId */
+  /** 按报表模版单独配置的结批结果反馈变量；key 为 templateId */
   exportResultOpcByTemplateId: Record<string, ExportResultOpcFeedback>;
+
+  /** PLC 心跳：周期写 OPC 变量，供 PLC 判断报表软件在线 */
+  heartbeat: PlcHeartbeatConfig;
 
   auto: {
 
@@ -159,6 +185,8 @@ export const defaultReportGeneratorPrefs = (): ReportGeneratorPrefs => ({
   exportResultOpc: defaultExportResultOpcFeedback(),
 
   exportResultOpcByTemplateId: {},
+
+  heartbeat: defaultPlcHeartbeatConfig(),
 
   auto: {
 
@@ -228,6 +256,35 @@ function parseExportResultOpcByTemplateId(
   return out;
 }
 
+const HEARTBEAT_MIN_INTERVAL_MS = 100;
+const HEARTBEAT_MAX_INTERVAL_MS = 3_600_000;
+
+function parsePlcHeartbeat(raw: unknown, base: PlcHeartbeatConfig): PlcHeartbeatConfig {
+  if (!raw || typeof raw !== "object") return base;
+  const o = raw as Partial<PlcHeartbeatConfig> & { intervalSec?: unknown };
+  // 旧版按秒存储：迁移为毫秒
+  let intervalMs = Number(o.intervalMs);
+  if (!Number.isFinite(intervalMs)) {
+    const legacySec = Number(o.intervalSec);
+    intervalMs = Number.isFinite(legacySec) ? legacySec * 1000 : NaN;
+  }
+  const mode: PlcHeartbeatMode =
+    o.mode === "toggle" || o.mode === "counter" ? o.mode : base.mode;
+  return {
+    enabled: Boolean(o.enabled),
+    serverId: typeof o.serverId === "string" ? o.serverId : base.serverId,
+    nodeId: typeof o.nodeId === "string" ? o.nodeId : base.nodeId,
+    nodeLabel: typeof o.nodeLabel === "string" ? o.nodeLabel : base.nodeLabel,
+    intervalMs:
+      Number.isFinite(intervalMs) &&
+      intervalMs >= HEARTBEAT_MIN_INTERVAL_MS &&
+      intervalMs <= HEARTBEAT_MAX_INTERVAL_MS
+        ? Math.floor(intervalMs)
+        : base.intervalMs,
+    mode,
+  };
+}
+
 function parseStoredPrefs(o: StoredPrefs, base: ReportGeneratorPrefs): ReportGeneratorPrefs {
   const dirSource: AutoExportDirSource =
     o.autoExportDirSource === "opcua" ? "opcua" : base.autoExportDirSource;
@@ -279,6 +336,7 @@ function parseStoredPrefs(o: StoredPrefs, base: ReportGeneratorPrefs): ReportGen
       o.exportResultOpcByTemplateId,
       exportResultOpc,
     ),
+    heartbeat: parsePlcHeartbeat(o.heartbeat, base.heartbeat),
     auto: {
       enabled: Boolean(o.auto?.enabled),
       bindings,
@@ -312,6 +370,36 @@ export function cloneExportResultOpcForTemplate(
   fb: ExportResultOpcFeedback,
 ): ExportResultOpcFeedback {
   return cloneExportResultOpcFeedback(fb);
+}
+
+/**
+ * 该反馈配置是否被用户实际配置过（启用、绑定过节点或选过连接）。
+ * 未配置过的按模版条目只是历史上自动生成的空白快照，应沿用默认配置。
+ */
+export function isExportResultOpcCustomized(fb: ExportResultOpcFeedback): boolean {
+  return (
+    fb.enabled ||
+    Boolean(
+      fb.statusNodeId.trim() || fb.messageNodeId.trim() || fb.filePathNodeId.trim(),
+    ) ||
+    Boolean(fb.serverId.trim())
+  );
+}
+
+/**
+ * 写回/校验时解析某模版实际生效的结批结果反馈配置：
+ * 模版有单独配置（用户改过）时用模版配置；否则回退到默认配置。
+ * 修复：仅在「默认配置」下启用反馈时，历史遗留的空白模版快照会让真实结批静默跳过写回。
+ */
+export function resolveExportResultOpcForTemplate(
+  prefs: ReportGeneratorPrefs,
+  templateId: string | null | undefined,
+): ExportResultOpcFeedback {
+  const tid = String(templateId || "").trim();
+  if (!tid) return prefs.exportResultOpc;
+  const existing = prefs.exportResultOpcByTemplateId?.[tid];
+  if (existing && isExportResultOpcCustomized(existing)) return existing;
+  return prefs.exportResultOpc;
 }
 
 

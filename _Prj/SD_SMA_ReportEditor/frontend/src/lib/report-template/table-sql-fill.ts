@@ -3,7 +3,7 @@
  * 导出时由生成器执行查询、按行展开并处理跨页续表；编辑器仅持久化配置。
  */
 
-export type TableSqlParamSource = "opcua" | "literal";
+export type TableSqlParamSource = "opcua" | "literal" | "batch_no";
 
 export interface TableSqlParamBinding {
   source: TableSqlParamSource;
@@ -132,6 +132,7 @@ export function defaultTableSqlFillConfig(): TableSqlFillConfig {
 
 function normalizeParamSource(v: unknown): TableSqlParamSource {
   if (v === "literal") return "literal";
+  if (v === "batch_no") return "batch_no";
   /** 旧版「同列上方」已移除，加载时按字面量处理 */
   if (v === "above_cell") return "literal";
   return "opcua";

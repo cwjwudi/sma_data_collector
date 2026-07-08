@@ -7,10 +7,13 @@ except ImportError:
     pass
 
 import logging
+import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from api.routers import audit as audit_router
 from api.routers import database as database_router
@@ -110,11 +113,6 @@ def _health_body() -> dict:
     }
 
 
-@app.get("/")
-async def root():
-    return {"status": "ok", "app": "SD_SMA_ReportEditor", "version": app.version}
-
-
 @app.get("/api")
 @app.get("/api/")
 async def root_api_prefixed():
@@ -129,4 +127,34 @@ async def health():
 @app.get("/api/health")
 async def health_prefixed():
     return _health_body()
+
+
+def _resolve_web_dist() -> Path | None:
+    """前端静态页目录：正式包由 Electron 传入 REPORT_EDITOR_WEB_DIST；
+    开发模式回退到仓库 frontend/dist（若已执行过 vite build）。"""
+    raw = os.environ.get("REPORT_EDITOR_WEB_DIST", "").strip()
+    candidates = (
+        [Path(raw)] if raw else [Path(__file__).resolve().parent.parent / "frontend" / "dist"]
+    )
+    for p in candidates:
+        try:
+            if p.is_dir() and (p / "index.html").is_file():
+                return p
+        except OSError:
+            continue
+    return None
+
+
+_WEB_DIST = _resolve_web_dist()
+
+if _WEB_DIST is not None:
+    # 挂在最后：先匹配上面的 API 路由，未命中的路径交给静态资源（含 / → index.html）。
+    # 前端路由使用 hash 模式，无需额外的 SPA fallback。
+    app.mount("/", StaticFiles(directory=str(_WEB_DIST), html=True), name="web")
+    logger.info("前端静态页已挂载: %s（浏览器可直接访问本服务地址）", _WEB_DIST)
+else:
+
+    @app.get("/")
+    async def root():
+        return {"status": "ok", "app": "SD_SMA_ReportEditor", "version": app.version}
 

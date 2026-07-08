@@ -101,18 +101,25 @@ const fromDate = ref("");
 const toDate = ref("");
 
 const actionOptions = [
+  "config.export",
+  "config.import",
+  "config.reset",
+  "db.connection_save",
+  "opcua.connection_save",
   "demo.apply_connections",
   "demo.health_check",
   "demo.pack_install",
   "demo.compose_start",
   "demo.compose_stop",
-  "config.export",
-  "config.import",
-  "export.pdf_manual",
+  "export.batch_trigger",
+  "export.auto_pdf",
+  "export.manual_pdf",
   "export.opc_writeback",
-  "export.opc_test_write",
-  "app.update.check",
-  "app.update.install",
+  "export.opc_writeback_test",
+  "update.check",
+  "update.install",
+  "update.applied",
+  "update.download_installer",
   "audit.export",
 ];
 

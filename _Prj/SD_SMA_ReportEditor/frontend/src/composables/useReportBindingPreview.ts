@@ -7,20 +7,30 @@ import {
   formatOpcuaReadPayload,
   pickPreferredOpcServerId,
   pickPreferredSqlConnectionId,
+  resolveSqlParamValues,
   sqlResponseFirstScalar,
   sqlResponseGridSummary,
   substituteScalarSqlParams,
   type BindingPreviewCell,
   type SqlDedupeTask,
 } from "@/lib/report-template/binding-preview-utils";
+import { resolveAutoBatchOpcBinding } from "@/lib/auto-batch-opc-binding";
+import { loadReportGeneratorPrefs } from "@/lib/report-generator-prefs";
 import {
   buildTableSqlFillPreviewTasks,
   sqlResponseToPreviewRows,
 } from "@/lib/report-template/table-sql-fill-preview";
 import type {
   BindingPreviewRefreshOptions,
+  BindingPreviewStats,
   ReportBindingPreviewState,
 } from "@/lib/report-template/template-editor-context";
+
+function sqlResponseRowCount(data: unknown): number {
+  if (!data || typeof data !== "object") return 0;
+  const rows = (data as { rows?: unknown[] }).rows;
+  return Array.isArray(rows) ? rows.length : 0;
+}
 
 async function runPool<T>(items: T[], limit: number, fn: (item: T) => Promise<void>): Promise<void> {
   let i = 0;
@@ -38,11 +48,13 @@ async function runPool<T>(items: T[], limit: number, fn: (item: T) => Promise<vo
 export function useReportBindingPreview(tmplRef: Ref<ReportTemplate | null>): ReportBindingPreviewState {
   const values = ref<Record<string, BindingPreviewCell>>({});
   const loading = ref(false);
+  const lastStats = ref<BindingPreviewStats | null>(null);
   let generation = 0;
 
   async function refresh(opts?: BindingPreviewRefreshOptions): Promise<void> {
     const t = tmplRef.value;
     const gen = ++generation;
+    const stats: BindingPreviewStats = { opcReads: 0, sqlQueries: 0, sqlRows: 0 };
     if (!t) {
       values.value = {};
       return;
@@ -84,37 +96,20 @@ export function useReportBindingPreview(tmplRef: Ref<ReportTemplate | null>): Re
       const out: Record<string, BindingPreviewCell> = partial ? { ...values.value } : {};
 
       async function resolveScalarSqlTask(task: SqlDedupeTask): Promise<string> {
-        const paramValues: Record<number, unknown> = {};
         const params = task.params || [];
-        for (let i = 0; i < params.length; i++) {
-          const p = params[i];
-          if (p?.source !== "opcua") continue;
-          const nodeId = (p.opcuaNodeId || "").trim();
-          if (!nodeId) {
-            if ((p.literalFallback || "").trim()) continue;
-            throw new Error(`SQL 参数 {{p${i}}} 未绑定 OPC UA 节点`);
-          }
-          if (!opcServerId) {
-            if ((p.literalFallback || "").trim()) continue;
-            throw new Error(`SQL 参数 {{p${i}}} 未配置 OPC UA 连接`);
-          }
-          try {
-            const res = (await apiFetch(`/opcua/read_saved/${opcServerId}`, {
+        const batchBinding = resolveAutoBatchOpcBinding(loadReportGeneratorPrefs());
+        const paramValues = await resolveSqlParamValues(params, {
+          defaultOpcServerId: opcServerId,
+          batchBinding,
+          onOpcRead: () => {
+            stats.opcReads += 1;
+          },
+          readOpc: async (serverId, nodeId) =>
+            (await apiFetch(`/opcua/read_saved/${serverId}`, {
               method: "POST",
               body: { node_id: nodeId },
-            })) as { ok?: boolean; message?: string; value?: unknown };
-            if (res?.ok === false) {
-              if ((p.literalFallback || "").trim()) continue;
-              throw new Error(res.message || "OPC 参数读取失败");
-            }
-            if ((res.value === null || res.value === undefined) && (p.literalFallback || "").trim()) continue;
-            paramValues[i] = res.value;
-          } catch (e) {
-            if ((p.literalFallback || "").trim()) continue;
-            const msg = e instanceof Error ? e.message : String(e);
-            throw new Error(`SQL 参数 {{p${i}}} 读取失败：${msg}`);
-          }
-        }
+            })) as { ok?: boolean; message?: string; value?: unknown },
+        });
         return substituteScalarSqlParams(task.sql, params, paramValues);
       }
 
@@ -122,6 +117,7 @@ export function useReportBindingPreview(tmplRef: Ref<ReportTemplate | null>): Re
         await runPool(opcTasks, 8, async (task) => {
           if (gen !== generation) return;
           try {
+            stats.opcReads += 1;
             const res = await apiFetch(`/opcua/read_saved/${task.serverId}`, {
               method: "POST",
               body: { node_id: task.nodeId },
@@ -144,6 +140,7 @@ export function useReportBindingPreview(tmplRef: Ref<ReportTemplate | null>): Re
           if (gen !== generation) return;
           try {
             const sql = await resolveScalarSqlTask(task);
+            stats.sqlQueries += 1;
             const data = await apiFetch("/database/query/sql", {
               method: "POST",
               body: {
@@ -153,6 +150,7 @@ export function useReportBindingPreview(tmplRef: Ref<ReportTemplate | null>): Re
               },
             });
             if (gen !== generation) return;
+            stats.sqlRows += sqlResponseRowCount(data);
             for (const k of task.keys) {
               if (k.startsWith("chart:")) {
                 out[k] = { text: sqlResponseGridSummary(data) };
@@ -180,11 +178,13 @@ export function useReportBindingPreview(tmplRef: Ref<ReportTemplate | null>): Re
               limit: task.limit,
             };
             if (task.database) body.database = task.database;
+            stats.sqlQueries += 1;
             const data = await apiFetch("/database/query/sql", {
               method: "POST",
               body,
             });
             if (gen !== generation) return;
+            stats.sqlRows += sqlResponseRowCount(data);
             const grid = sqlResponseToPreviewRows(data, task.colCount);
             task.expandRows(grid.length);
             out[task.key] = {
@@ -204,10 +204,11 @@ export function useReportBindingPreview(tmplRef: Ref<ReportTemplate | null>): Re
 
       if (gen !== generation) return;
       values.value = out;
+      lastStats.value = stats;
     } finally {
       if (!silent && gen === generation) loading.value = false;
     }
   }
 
-  return { values, loading, refresh };
+  return { values, loading, refresh, lastStats };
 }

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, shell, nativeImage } = require('electron')
+const { app, BrowserWindow, ipcMain, dialog, shell, nativeImage, powerSaveBlocker } = require('electron')
 const { execFileSync, spawn } = require('child_process')
 const path = require('path')
 const http = require('http')
@@ -124,6 +124,26 @@ function findPython() {
   return { cmd: fallback }
 }
 
+/**
+ * 前端静态页目录。打包后位于 resources/web（extraResources 带入，asar 外），
+ * 主窗口/PDF 渲染窗口从这里加载，后端也用它服务网页版。
+ * 注意：electron-builder 会把 extraResources 的来源目录从 asar 中排除，
+ * 因此打包后 asar 内不再有 dist，页面必须从本目录加载。
+ */
+function getWebDistDir() {
+  if (app.isPackaged) {
+    return path.join(process.resourcesPath, 'web')
+  }
+  return path.join(__dirname, '..', 'dist')
+}
+
+function getRendererIndexHtml() {
+  const webIndex = path.join(getWebDistDir(), 'index.html')
+  if (fs.existsSync(webIndex)) return webIndex
+  // 兜底：老包（无 resources/web）仍从 asar 内 dist 加载
+  return path.join(__dirname, '..', 'dist', 'index.html')
+}
+
 function startPythonBackend() {
   const backendDir = getBackendDir()
   const dataDir = getReportEditorDataDir()
@@ -140,6 +160,12 @@ function startPythonBackend() {
     FORCE_COLOR: '0',
     PYTHONUTF8: '1',
     PYTHONUNBUFFERED: '1',
+  }
+  // 前端静态页：让后端在同端口直接服务网页版（浏览器访问 http://<IP>:<端口>/）
+  const webDist = getWebDistDir()
+  if (fs.existsSync(path.join(webDist, 'index.html'))) {
+    env.REPORT_EDITOR_WEB_DIST = webDist
+    log(`REPORT_EDITOR_WEB_DIST=${webDist}`)
   }
 
   const useBundledExe = app.isPackaged
@@ -349,6 +375,8 @@ function createWindow() {
       nodeIntegration: false,
       contextIsolation: true,
       preload: path.join(__dirname, 'preload.cjs'),
+      // 最小化/后台时不节流定时器，保证 OPC UA 自动结批轮询持续运行
+      backgroundThrottling: false,
     },
   })
 
@@ -356,7 +384,7 @@ function createWindow() {
   if (isDev) {
     mainWindow.loadURL(VITE_DEV_URL)
   } else {
-    mainWindow.loadFile(path.join(__dirname, '..', 'dist', 'index.html'))
+    mainWindow.loadFile(getRendererIndexHtml())
   }
 
   mainWindow.on('closed', () => {
@@ -401,14 +429,28 @@ ipcMain.handle('app-get-service-endpoints', () => {
   const lanIps = collectLanIps()
   const primaryLan = lanIps.length ? lanIps[0].address : null
   const isDev = !app.isPackaged
+  // 后端已挂载前端静态页时，网页版与后端同端口（浏览器直接打开即可）
+  const webServed = fs.existsSync(path.join(getWebDistDir(), 'index.html'))
+  const rendererUrl = isDev
+    ? VITE_DEV_URL
+    : webServed
+      ? `http://127.0.0.1:${BACKEND_PORT}`
+      : 'file://（本地打包页面）'
+  const rendererLanUrl = isDev
+    ? primaryLan
+      ? `http://${primaryLan}:5173`
+      : null
+    : webServed && primaryLan
+      ? `http://${primaryLan}:${BACKEND_PORT}`
+      : null
   return {
     backendHost: BACKEND_BIND_HOST,
     backendPort: BACKEND_PORT,
     backendLoopbackUrl: `http://127.0.0.1:${BACKEND_PORT}`,
     backendLanUrl: primaryLan ? `http://${primaryLan}:${BACKEND_PORT}` : null,
     rendererMode: isDev ? 'dev' : 'packaged',
-    rendererUrl: isDev ? VITE_DEV_URL : 'file://（本地打包页面）',
-    rendererLanUrl: isDev && primaryLan ? `http://${primaryLan}:5173` : null,
+    rendererUrl,
+    rendererLanUrl,
     lanIps,
     appVersion: app.getVersion(),
   }
@@ -665,6 +707,7 @@ ipcMain.handle('pdf-export-run', async (event, opts) => {
   const filePath = opts && opts.filePath
   const templateId = opts && opts.templateId
   const openAfter = Boolean(opts && opts.openAfter)
+  const jobId = opts && typeof opts.jobId === 'string' ? opts.jobId : ''
   if (!filePath || typeof filePath !== 'string') throw new Error('缺少 filePath')
   if (!templateId || typeof templateId !== 'string') throw new Error('缺少 templateId')
 
@@ -673,6 +716,18 @@ ipcMain.handle('pdf-export-run', async (event, opts) => {
     try {
       function outputPathForPart(partIndex, totalReports) {
         return outputPathForReportPart(filePath, partIndex, totalReports)
+      }
+
+      /** 向发起导出的窗口推送阶段进度（结批弹窗显示用；窗口已关则忽略） */
+      function sendProgress(payload) {
+        try {
+          const w = senderBrowserWindow(event.sender)
+          if (w && !w.isDestroyed()) {
+            event.sender.send('pdf-export-progress', { ...payload, jobId, templateId })
+          }
+        } catch {
+          /* ignore */
+        }
       }
 
       function buildLoadUrl(partIndex) {
@@ -693,7 +748,7 @@ ipcMain.handle('pdf-export-run', async (event, opts) => {
         if (isDev) {
           return `${VITE_DEV_URL}/#/pdf-export?templateId=${encodeURIComponent(templateId)}&reportPartIndex=${partIndex}`
         }
-        const idxHtml = path.join(__dirname, '..', 'dist', 'index.html')
+        const idxHtml = getRendererIndexHtml()
         return `${pathToFileURL(idxHtml).href}#/pdf-export?templateId=${encodeURIComponent(templateId)}&reportPartIndex=${partIndex}`
       }
       pdfWin = new BrowserWindow({
@@ -704,25 +759,61 @@ ipcMain.handle('pdf-export-run', async (event, opts) => {
           nodeIntegration: false,
           contextIsolation: true,
           preload: path.join(__dirname, 'preload.cjs'),
+          // 隐藏窗口默认被节流，关闭以保证后台渲染 PDF 不变慢
+          backgroundThrottling: false,
         },
       })
 
+      /** 渲染窗口取数期间每 10 秒发一次心跳：连续 2 分钟无心跳视为无响应；总时长上限 10 分钟 */
+      const RENDER_IDLE_TIMEOUT_MS = 120000
+      const RENDER_TOTAL_CAP_MS = 600000
+
       async function renderPart(partIndex) {
         const readyPromise = new Promise((resolve, reject) => {
-          const timer = setTimeout(() => {
+          let idleTimer = null
+          let capTimer = null
+
+          function cleanup() {
+            if (idleTimer) clearTimeout(idleTimer)
+            if (capTimer) clearTimeout(capTimer)
             ipcMain.removeListener('pdf-export-ready', onReady)
-            reject(new Error('PDF render timeout'))
-          }, 120000)
+            ipcMain.removeListener('pdf-export-heartbeat', onHeartbeat)
+          }
+
+          function fail(message) {
+            cleanup()
+            reject(new Error(message))
+          }
+
+          function armIdleTimer() {
+            if (idleTimer) clearTimeout(idleTimer)
+            idleTimer = setTimeout(() => {
+              fail('PDF 渲染超时：渲染窗口约 2 分钟无响应（页面可能加载失败或取数卡住）')
+            }, RENDER_IDLE_TIMEOUT_MS)
+          }
+
+          function isFromPdfWin(ev) {
+            if (!pdfWin || pdfWin.isDestroyed()) return false
+            return senderBrowserWindow(ev.sender) === pdfWin
+          }
+
+          function onHeartbeat(ev) {
+            if (!isFromPdfWin(ev)) return
+            armIdleTimer()
+          }
 
           function onReady(ev, payload) {
-            if (!pdfWin || pdfWin.isDestroyed()) return
-            if (senderBrowserWindow(ev.sender) !== pdfWin) return
-            clearTimeout(timer)
-            ipcMain.removeListener('pdf-export-ready', onReady)
+            if (!isFromPdfWin(ev)) return
+            cleanup()
             resolve(payload || {})
           }
 
+          capTimer = setTimeout(() => {
+            fail('PDF 渲染超时：取数渲染超过 10 分钟仍未完成')
+          }, RENDER_TOTAL_CAP_MS)
+          armIdleTimer()
           ipcMain.on('pdf-export-ready', onReady)
+          ipcMain.on('pdf-export-heartbeat', onHeartbeat)
         })
 
         await pdfWin.loadURL(buildLoadUrl(partIndex))
@@ -738,30 +829,59 @@ ipcMain.handle('pdf-export-run', async (event, opts) => {
           pageRanges: '',
           preferCSSPageSize: true,
         })
-        return { pdfBuffer, totalReports: Math.max(1, Math.floor(Number(payload.totalReports) || 1)) }
+        return {
+          pdfBuffer,
+          totalReports: Math.max(1, Math.floor(Number(payload.totalReports) || 1)),
+          stats: payload.stats || null,
+        }
       }
 
+      function mergeStats(total, part) {
+        if (!part || typeof part !== 'object') return total
+        return {
+          opcReads: total.opcReads + (Number(part.opcReads) || 0),
+          sqlQueries: total.sqlQueries + (Number(part.sqlQueries) || 0),
+          sqlRows: total.sqlRows + (Number(part.sqlRows) || 0),
+        }
+      }
+
+      const startedAtMs = Date.now()
+      let stats = { opcReads: 0, sqlQueries: 0, sqlRows: 0 }
+
+      sendProgress({ phase: 'render', partIndex: 0, totalReports: 0 })
       const first = await renderPart(0)
       const totalReports = first.totalReports
+      stats = mergeStats(stats, first.stats)
       const filePaths = []
       const firstPath = outputPathForPart(0, totalReports)
       fs.mkdirSync(path.dirname(firstPath), { recursive: true })
       fs.writeFileSync(firstPath, first.pdfBuffer)
       filePaths.push(firstPath)
+      sendProgress({ phase: 'saved', partIndex: 0, totalReports })
 
       for (let partIndex = 1; partIndex < totalReports; partIndex++) {
+        sendProgress({ phase: 'render', partIndex, totalReports })
         const part = await renderPart(partIndex)
+        stats = mergeStats(stats, part.stats)
         const outPath = outputPathForPart(partIndex, totalReports)
         fs.mkdirSync(path.dirname(outPath), { recursive: true })
         fs.writeFileSync(outPath, part.pdfBuffer)
         filePaths.push(outPath)
+        sendProgress({ phase: 'saved', partIndex, totalReports })
       }
 
       if (openAfter) {
         await shell.openPath(filePaths[0])
       }
 
-      return { ok: true, filePath: filePaths[0], filePaths, totalReports }
+      return {
+        ok: true,
+        filePath: filePaths[0],
+        filePaths,
+        totalReports,
+        stats,
+        durationMs: Date.now() - startedAtMs,
+      }
     } catch (e) {
       throw new Error(humanizePdfExportError(e, { phase: 'export' }))
     } finally {
@@ -846,12 +966,22 @@ ipcMain.handle('layout-sync-register', (_event, creds) => getLayoutSync().regist
 ipcMain.handle('layout-sync-download-defaults', () => getLayoutSync().downloadDefaults())
 ipcMain.handle('layout-sync-download-mine', () => getLayoutSync().downloadMine())
 ipcMain.handle('layout-sync-upload', (_event, payload) => getLayoutSync().upload(payload || {}))
+ipcMain.handle('layout-sync-upload-config', (_event, payload) => getLayoutSync().uploadConfigBundle(payload || {}))
+ipcMain.handle('layout-sync-download-config', () => getLayoutSync().downloadConfigBundle())
 
 app.whenReady().then(async () => {
   log('Starting application...')
 
   if (process.platform === 'win32') {
     app.setAppUserModelId('com.brteam.sd_sma.report_editor')
+  }
+
+  // 防止系统挂起本应用（macOS App Nap / Windows 后台省电），
+  // 保证最小化或后台运行时 OPC UA 自动结批仍每秒轮询；不阻止屏幕熄灭。
+  try {
+    powerSaveBlocker.start('prevent-app-suspension')
+  } catch (e) {
+    log(`powerSaveBlocker 启动失败（忽略）：${e.message}`)
   }
 
   createWindow()
