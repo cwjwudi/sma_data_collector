@@ -121,6 +121,55 @@ def test_write_failure_is_silent(_mock_q, _mock_s, client: TestClient, test_prof
     assert len(resp.json()["rows"]) == 3
 
 
+@pytest.mark.integration
+@patch("app.main.db.list_tables")
+@patch("app.main.db.get_group_schema_report", side_effect=_mock_schema_report)
+@patch("app.main.db.query_history", side_effect=_mock_query_history)
+def test_table_list_writeback_on_cursor(_mock_q, _mock_s, mock_list_tables, client: TestClient, opcua_mock_meta: dict):
+    mock_list_tables.return_value = [
+        "BatchHeader",
+        "BatchDetail_y2026_span1",
+        "BatchDetail_2Year_y2025_span2",
+        "sensor_group_1_20260310",
+    ]
+
+    resp = client.post(
+        "/api/plugins/query/alarm_4",
+        json={"page": 1, "page_size": 10, "cursor": -1},
+    )
+    assert resp.status_code == 200
+
+    empty_names = _read_nodes(opcua_mock_meta["endpoint_url"], [opcua_mock_meta["strListName"]])[0]
+    assert empty_names[0] == ""
+    assert empty_names[1] == ""
+
+    resp = client.post("/api/plugins/cursor/alarm_4", json={"cursor": 1})
+    assert resp.status_code == 200
+
+    table_names = _read_nodes(opcua_mock_meta["endpoint_url"], [opcua_mock_meta["strListName"]])[0]
+    assert table_names[0] == "BatchHeader"
+    assert table_names[1] == "BatchDetail_y2026_span1"
+    assert table_names[2] == "BatchDetail_2Year_y2025_span2"
+    assert table_names[3] == ""
+
+
+@pytest.mark.integration
+def test_opcua_check_endpoint(client: TestClient, opcua_mock_meta: dict):
+    resp = client.post(
+        "/api/config/opcua",
+        json={
+            "endpoint_url": opcua_mock_meta["endpoint_url"],
+            "username": "",
+            "password": "",
+            "test_only": True,
+        },
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data.get("ok") is True
+    assert data.get("status") == "ok"
+
+
 @pytest.mark.asyncio
 @pytest.mark.integration
 async def test_read_scalar_requires_running_server(opcua_mock_meta: dict):

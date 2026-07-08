@@ -9,6 +9,13 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 
 from .models import HistoryQueryRequest
+from .table_partition import (
+    default_baseline_table,
+    list_group_names_from_tables,
+    list_tables_for_group,
+    normalize_partition_time,
+    table_group_info,
+)
 
 _IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
@@ -57,30 +64,37 @@ class QueryDatabase:
             return [str(row[0]) for row in rows]
 
     def list_groups(self) -> list[str]:
-        groups: set[str] = set()
-        pattern = re.compile(r"^(.+)_\d{8}$")
-        for table in self.list_tables():
-            match = pattern.match(table)
-            if match:
-                groups.add(match.group(1))
-        return sorted(groups)
+        return list_group_names_from_tables(self.list_tables())
 
     def list_tables_by_group(self, group: str) -> list[str]:
-        pattern = re.compile(rf"^{re.escape(group)}_\d{{8}}$")
-        return sorted([t for t in self.list_tables() if pattern.match(t)])
+        return list_tables_for_group(self.list_tables(), group)
 
     def get_group_schema_report(self, group: str, baseline_table: str | None = None) -> dict[str, Any]:
         tables = self.list_tables_by_group(group)
+        table_kinds: dict[str, str] = {}
+        for table_name in tables:
+            info = table_group_info(table_name)
+            if info is not None:
+                table_kinds[table_name] = info.kind
+
         if not tables:
             return {
                 "group": group,
                 "tables": [],
+                "table_kinds": {},
                 "consistent": True,
                 "baseline_table": None,
                 "mismatches": [],
             }
 
-        chosen_baseline = baseline_table if baseline_table in tables else tables[-1]
+        chosen_baseline = (
+            baseline_table
+            if baseline_table in tables
+            else default_baseline_table(group, tables)
+        )
+        if not chosen_baseline:
+            chosen_baseline = tables[-1]
+
         baseline_columns = self.list_columns(chosen_baseline)
         baseline_set = set(baseline_columns)
 
@@ -104,11 +118,39 @@ class QueryDatabase:
         return {
             "group": group,
             "tables": tables,
+            "table_kinds": table_kinds,
             "consistent": consistent,
             "baseline_table": chosen_baseline,
             "baseline_columns": baseline_columns,
             "mismatches": mismatches,
         }
+
+    def lookup_batch_start_time(
+        self,
+        master_table: str,
+        batch_column: str,
+        batch_value: Any,
+        start_time_column: str,
+    ) -> datetime | None:
+        table_ident = _safe_ident(master_table)
+        batch_ident = _safe_ident(batch_column)
+        start_ident = _safe_ident(start_time_column)
+        available_columns = set(self.list_columns(master_table))
+        if batch_column not in available_columns or start_time_column not in available_columns:
+            raise ValueError(
+                f"批次主表 {master_table} 缺少字段: {batch_column} 或 {start_time_column}"
+            )
+
+        sql = (
+            f"SELECT {start_ident} FROM {table_ident} "
+            f"WHERE {batch_ident} = :batch_value "
+            "ORDER BY {start_ident} DESC LIMIT 1"
+        )
+        with self.engine.connect() as conn:
+            row = conn.execute(text(sql), {"batch_value": batch_value}).first()
+        if not row:
+            return None
+        return normalize_partition_time(row[0])
 
     def list_columns(self, table: str) -> list[str]:
         table_ident = _safe_ident(table)

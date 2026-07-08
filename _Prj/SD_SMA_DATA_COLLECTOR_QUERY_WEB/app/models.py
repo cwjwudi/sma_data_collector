@@ -91,3 +91,10 @@ class PluginQueryRequest(BaseModel):
 class PluginCursorRequest(BaseModel):
     cursor: int
 
+
+class OpcUaSettingsRequest(BaseModel):
+    endpoint_url: str = ""
+    username: str = ""
+    password: str = ""
+    test_only: bool = False
+

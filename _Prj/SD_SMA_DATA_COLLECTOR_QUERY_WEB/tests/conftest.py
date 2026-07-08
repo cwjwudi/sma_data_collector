@@ -165,7 +165,19 @@ def test_profile_dir(tmp_path: Path, opcua_mock_meta: dict[str, Any]) -> Path:
                             },
                         },
                         "3": {"title": "P3", "enabled": True, "bind_group": "alarm_group_1"},
-                        "4": {"title": "P4", "enabled": False, "bind_group": "alarm_group_1"},
+                        "4": {
+                            "title": "P4",
+                            "enabled": True,
+                            "bind_group": "BatchHeader",
+                            "view_name": "alarm",
+                            "page_size": 10,
+                            "table_list_writeback": {
+                                "enabled": True,
+                                "batch_column": "code",
+                                "start_time_column": "ts",
+                                "buffer_node": opcua_mock_meta["strListName"],
+                            },
+                        },
                         "5": {"title": "P5", "enabled": False, "bind_group": "alarm_group_1"},
                     },
                 }

@@ -11,6 +11,8 @@ from typing import Any
 from asyncua import Client, ua
 from asyncua.ua.uaerrors import UaStatusCodeError
 
+from .config_manager import normalize_opcua_endpoint_url
+
 logger = logging.getLogger(__name__)
 
 POOL_IDLE_SEC = 90.0
@@ -77,7 +79,9 @@ async def _ensure_connected(
 ) -> Client | None:
     global _pool
 
+    endpoint_url = normalize_opcua_endpoint_url(endpoint_url)
     if not endpoint_url:
+        logger.warning("OPC UA endpoint_url is empty or invalid")
         return None
 
     if _pool is None:
@@ -98,7 +102,11 @@ async def _ensure_connected(
             if username:
                 client.set_user(username)
                 client.set_password(password or "")
-            await client.connect()
+            try:
+                await client.connect()
+            except Exception as exc:
+                await _invalidate_client(entry)
+                raise exc
             entry.client = client
 
         entry.last_used = time.monotonic()
@@ -183,7 +191,12 @@ async def write_scalar(
         return False
 
 
-async def _write_array_whole(node: Any, values: list[Any]) -> bool:
+async def _write_array_whole(
+    node: Any,
+    values: list[Any],
+    *,
+    string_max_len: int | None = None,
+) -> bool:
     variant_type = await _read_variant_type(node)
     element_type = _array_element_type(variant_type) if variant_type is not None else None
     if element_type is None and variant_type is not None:
@@ -192,7 +205,8 @@ async def _write_array_whole(node: Any, values: list[Any]) -> bool:
     coerced: list[Any] = []
     for item in values:
         try:
-            coerced.append(_coerce_scalar(item, element_type))
+            clipped = _clip_string(item, string_max_len)
+            coerced.append(_coerce_scalar(clipped, element_type))
         except (TypeError, ValueError):
             coerced.append(_default_for_type(element_type))
 
@@ -243,7 +257,12 @@ def _default_for_type(variant_type: ua.VariantType | None) -> Any:
     return 0
 
 
-async def _write_array_elementwise(node: Any, values: list[Any]) -> bool:
+async def _write_array_elementwise(
+    node: Any,
+    values: list[Any],
+    *,
+    string_max_len: int | None = None,
+) -> bool:
     variant_type = await _read_variant_type(node)
     element_type = _array_element_type(variant_type) if variant_type else None
     ok = True
@@ -257,9 +276,21 @@ async def _write_array_elementwise(node: Any, values: list[Any]) -> bool:
                 logger.warning("OPC UA array child %d not found: %s", idx, exc)
                 ok = False
                 continue
-        if not await _write_value_attribute(child, item if element_type is None else _coerce_scalar(item, element_type)):
+        clipped = _clip_string(item, string_max_len)
+        if not await _write_value_attribute(
+            child,
+            clipped if element_type is None else _coerce_scalar(clipped, element_type),
+        ):
             ok = False
     return ok
+
+
+def _clip_string(value: Any, string_max_len: int | None) -> Any:
+    if string_max_len is None or string_max_len <= 0:
+        return value
+    if isinstance(value, str):
+        return value[:string_max_len]
+    return value
 
 
 async def write_array(
@@ -269,6 +300,7 @@ async def write_array(
     *,
     username: str = "",
     password: str = "",
+    string_max_len: int | None = None,
 ) -> bool:
     if not endpoint_url or not node_id:
         return False
@@ -291,15 +323,70 @@ async def write_array(
                     values = values[:target_len]
         except Exception:
             logger.debug("OPC UA could not read array length before write", exc_info=True)
-        if await _write_array_whole(node, values):
+        if await _write_array_whole(node, values, string_max_len=string_max_len):
             return True
-        return await _write_array_elementwise(node, values)
+        return await _write_array_elementwise(node, values, string_max_len=string_max_len)
     except Exception as exc:
         logger.warning("OPC UA write_array failed node_id=%s: %s", node_id, exc)
         if _pool is not None:
             async with _pool.lock:
                 await _invalidate_client(_pool)
         return False
+
+
+async def check_connection(
+    endpoint_url: str,
+    username: str = "",
+    password: str = "",
+) -> dict[str, Any]:
+    """Connect to OPC UA server, read basic server info, then disconnect (no pool reuse)."""
+    endpoint = normalize_opcua_endpoint_url(endpoint_url)
+    if not endpoint:
+        return {"ok": False, "message": "Endpoint URL 无效或为空，请在配置页填写 IP 与端口后保存"}
+
+    client = Client(url=endpoint, timeout=CONNECT_TIMEOUT_SEC)
+    if username:
+        client.set_user(username)
+        client.set_password(password or "")
+
+    try:
+        await client.connect()
+        namespaces = await client.get_namespace_array()
+        product_name = ""
+        server_state = ""
+        try:
+            product_name = str(
+                await client.get_node(ua.ObjectIds.Server_ServerStatus_BuildInfo_ProductName).read_value()
+                or ""
+            )
+        except Exception:
+            logger.debug("OPC UA test read product name failed", exc_info=True)
+        try:
+            server_state = str(
+                await client.get_node(ua.ObjectIds.Server_ServerStatus_State).read_value()
+            )
+        except Exception:
+            logger.debug("OPC UA test read server state failed", exc_info=True)
+
+        return {
+            "ok": True,
+            "status": "ok",
+            "message": "OPC UA 连接成功",
+            "endpoint_url": endpoint,
+            "product_name": product_name,
+            "server_state": server_state,
+            "namespace_count": len(namespaces) if namespaces else 0,
+        }
+    except Exception as exc:
+        logger.warning("OPC UA test connection failed endpoint=%s: %s", endpoint, exc)
+        return {
+            "ok": False,
+            "status": "error",
+            "message": f"OPC UA 连接失败: {exc}",
+            "endpoint_url": endpoint,
+        }
+    finally:
+        await _safe_disconnect(client)
 
 
 async def read_scalar(

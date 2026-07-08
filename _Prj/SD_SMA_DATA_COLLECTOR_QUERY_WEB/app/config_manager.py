@@ -1,8 +1,36 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
+
+_OPCUA_DEFAULT_HOST = "127.0.0.1"
+_OPCUA_DEFAULT_PORT = 4840
+
+
+def normalize_opcua_endpoint_url(endpoint_url: str) -> str:
+    """Normalize UI/profile endpoint strings to opc.tcp://host:port/."""
+    raw = str(endpoint_url or "").strip()
+    if not raw:
+        return ""
+
+    text = re.sub(r"^opc\s+tcp:", "opc.tcp:", raw, flags=re.IGNORECASE)
+    if not text.lower().startswith("opc.tcp://"):
+        host_port = re.match(r"^([^/:]+):(\d+)(?:/.*)?$", text)
+        if host_port:
+            text = f"opc.tcp://{host_port.group(1)}:{host_port.group(2)}/"
+        elif re.match(r"^[A-Za-z0-9_.-]+$", text):
+            text = f"opc.tcp://{text}:{_OPCUA_DEFAULT_PORT}/"
+        else:
+            return ""
+    elif not text.endswith("/"):
+        text = f"{text}/"
+
+    match = re.match(r"^opc\.tcp://([^/:]+):(\d+)/", text, flags=re.IGNORECASE)
+    if not match or not match.group(1) or int(match.group(2)) <= 0:
+        return ""
+    return text
 
 
 class UnifiedConfigStore:
@@ -217,7 +245,7 @@ class UnifiedConfigStore:
         if not isinstance(raw, dict):
             return {"endpoint_url": "", "username": "", "password": ""}
         return {
-            "endpoint_url": str(raw.get("endpoint_url", "") or "").strip(),
+            "endpoint_url": normalize_opcua_endpoint_url(str(raw.get("endpoint_url", "") or "")),
             "username": str(raw.get("username", "") or ""),
             "password": str(raw.get("password", "") or ""),
         }
@@ -226,7 +254,7 @@ class UnifiedConfigStore:
         config = self.get_active_config()
         raw = data if isinstance(data, dict) else {}
         normalized = {
-            "endpoint_url": str(raw.get("endpoint_url", "") or "").strip(),
+            "endpoint_url": normalize_opcua_endpoint_url(str(raw.get("endpoint_url", "") or "")),
             "username": str(raw.get("username", "") or ""),
             "password": str(raw.get("password", "") or ""),
         }

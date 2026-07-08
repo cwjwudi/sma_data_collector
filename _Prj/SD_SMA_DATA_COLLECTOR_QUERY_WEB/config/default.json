@@ -4,11 +4,11 @@
   "app_settings": {
     "database": {
       "type": "mysql",
-      "name": "wn_9",
-      "host": "192.168.50.122",
+      "name": "wn_10",
+      "host": "192.168.50.22",
       "port": 3306,
-      "username": "user1",
-      "password": "123456"
+      "username": "root",
+      "password": "Br54644800@"
     },
     "query_limits": {
       "requests_per_minute": 180,
@@ -17,7 +17,7 @@
     }
   },
   "opcua": {
-    "endpoint_url": "",
+    "endpoint_url": "opc.tcp://192.168.50.233:4840/",
     "username": "",
     "password": ""
   },
@@ -143,6 +143,29 @@
             "sort_by": "collection_time",
             "sort_dir": "desc",
             "page_size": 50
+          },
+          "ai_bp_0708101057_hdr": {
+            "columns": [
+              {
+                "name": "strBatchCode",
+                "label_en": "strBatchCode",
+                "label_zh": "strBatchCode"
+              },
+              {
+                "name": "dtBtachStartTime",
+                "label_en": "dtBtachStartTime",
+                "label_zh": "dtBtachStartTime"
+              },
+              {
+                "name": "dtBtachEndTime",
+                "label_en": "dtBtachEndTime",
+                "label_zh": "dtBtachEndTime"
+              }
+            ],
+            "time_field": "collection_time",
+            "sort_by": "collection_time",
+            "sort_dir": "desc",
+            "page_size": 10
           }
         }
       },
@@ -258,12 +281,13 @@
       }
     },
     "group_baselines": {
-      "sensor_group_1": "sensor_group_1_20260310",
+      "sensor_group_1": "sensor_group_1_20260508",
       "sensor_group_2": "sensor_group_2_20260326",
       "alarm_group_1": "alarm_group_1_20260407",
       "trend_group_1": "trend_group_1_20260408",
       "Group1": "Group1_20260507",
-      "BatchGroup": "BatchGroup_20260511"
+      "BatchGroup": "BatchGroup_20260511",
+      "ai_bp_0708101057_hdr": "ai_bp_0708101057_hdr"
     }
   },
   "plugins": {
@@ -387,9 +411,24 @@
           "1": {
             "title": "批次查询表",
             "enabled": true,
-            "bind_group": "BatchGroup",
+            "bind_group": "ai_bp_0708101057_hdr",
             "view_name": "table",
-            "page_size": 10
+            "page_size": 10,
+            "opcua_writeback": {
+              "cursor": "ns=6;s=::DataRev:diCursor",
+              "columns": {
+                "strBatchCode": "ns=6;s=::DataRev:strBatchCode",
+                "dtBtachStartTime": "ns=6;s=::DataRev:strStartTime"
+              }
+            },
+            "table_list_writeback": {
+              "enabled": true,
+              "batch_column": "strBatchCode",
+              "start_time_column": "dtBtachStartTime",
+              "buffer_node": "ns=6;s=::DataRev:strListName",
+              "max_tables": 50,
+              "string_max_len": 80
+            }
           },
           "2": {
             "title": "General Page 2",

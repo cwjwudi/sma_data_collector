@@ -238,7 +238,8 @@
     for (const t of groupTables) {
       const op = document.createElement("option");
       op.value = t;
-      op.textContent = t;
+      const kind = schemaReport?.table_kinds?.[t] || "";
+      op.textContent = kind === "fixed" ? `${t}（固定表）` : t;
       tableSelector.appendChild(op);
     }
     if (defaultTable && groupTables.includes(defaultTable)) {

@@ -72,10 +72,13 @@
 
         <div class="settings-subsection settings-subsection-opcua">
           <h3 class="subsection-title">OPC UA 连接</h3>
-          <p class="hint subsection-hint">PLC OPC UA 服务器；插件页列回写共用此连接（profile.opcua）</p>
-          <div class="row">
-            <label for="appOpcuaEndpoint">Endpoint URL</label>
-            <input id="appOpcuaEndpoint" type="text" class="field-wide" placeholder="opc.tcp://127.0.0.1:4840" />
+          <p class="hint subsection-hint">分别填写 PLC 的 IP 与端口（无需写 opc.tcp:// 前缀）；插件页回写共用此连接（profile.opcua）</p>
+          <div class="row opcua-endpoint-row">
+            <label for="appOpcuaHost">IP</label>
+            <input id="appOpcuaHost" type="text" placeholder="127.0.0.1" autocomplete="off" />
+            <label for="appOpcuaPort">端口</label>
+            <input id="appOpcuaPort" class="field-narrow-num" type="number" min="1" max="65535" placeholder="4840" />
+            <span class="muted inline-hint">留空默认 127.0.0.1:4840</span>
           </div>
           <div class="row">
             <label for="appOpcuaUsername">OPC 用户名</label>
@@ -88,6 +91,7 @@
         <div class="row settings-actions">
           <button type="button" id="btnSaveAppSettings">保存基础设定</button>
           <button type="button" id="btnConnectDatabase">连接数据库</button>
+          <button type="button" id="btnTestOpcuaConnection">测试 OPC UA 连接</button>
         </div>
         <div id="appSettingsHint" class="muted"></div>
       </section>
@@ -206,6 +210,39 @@
           <textarea id="pluginOpcuaFeedbackJson" class="code-editor" spellcheck="false" rows="10" readonly></textarea>
           <div id="pluginOpcuaFeedbackHint" class="muted"></div>
         </details>
+        <div id="pluginTableListWriteback" class="opcua-writeback-panel">
+          <h3 class="subsection-title">批次表名回写</h3>
+          <p class="hint">
+            绑定批次主表时启用；根据 <code>diCursor</code> 选中行的批次号与开批时间，扫描年份分表并写入 PLC
+            <code>STRING[50]</code> 数组（每项最长 80 字符）。未选中行时写空数组。
+          </p>
+          <div class="row">
+            <label for="pluginTableListEnabled">启用</label>
+            <input id="pluginTableListEnabled" type="checkbox" />
+          </div>
+          <div class="row">
+            <label for="pluginTableListBatchColumn">批次列</label>
+            <select id="pluginTableListBatchColumn"></select>
+            <label for="pluginTableListStartTimeColumn">开批时间列</label>
+            <select id="pluginTableListStartTimeColumn"></select>
+            <span class="muted inline-hint">可选；不选则按批次号反查主表</span>
+          </div>
+          <div class="row">
+            <label for="pluginTableListBufferNode">Buffer NodeId</label>
+            <input
+              id="pluginTableListBufferNode"
+              type="text"
+              class="field-wide"
+              placeholder="ns=6;s=::DataRev:strListName"
+            />
+          </div>
+          <div id="pluginTableListWritebackHint" class="muted"></div>
+        </div>
+        <details id="pluginTableListAdvanced" class="advanced-panel">
+          <summary>高级 · table_list_writeback JSON 预览</summary>
+          <p class="hint">只读预览；保存当前页配置时以表单为准，可在此复制后手动合并高级字段。</p>
+          <textarea id="pluginTableListJson" class="code-editor" spellcheck="false" rows="8" readonly></textarea>
+        </details>
         <div id="pluginConfigHint" class="muted"></div>
       </section>
     </div>
@@ -233,6 +270,6 @@
         </div>
       </div>
     </div>
-    <script src="/static/config.js?v=20260702_2"></script>
+    <script src="/static/config.js?v=20260708_6"></script>
   </body>
 </html>

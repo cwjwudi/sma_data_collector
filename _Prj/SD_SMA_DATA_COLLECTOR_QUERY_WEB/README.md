@@ -23,6 +23,7 @@
   - 启用开关、标题、`view_name`、`bind_group`、`page_size`
 - 插件页右上角手动选择该 `group` 下具体表。
 - **插件页 OPC UA 回写**：查询/翻页后自动将当前页列数据写入 PLC 数组（最长 50）；点击表格行更新 `diCursor`（翻页后重置为 `-1`）。
+- **插件页批次表名回写**：绑定批次主表时，按 `diCursor` 选中行的批次号/开批时间扫描年份分表，将表名写入 PLC `STRING[50]` 数组（`[0]` 固定为主表名）。
 - 查询网页：表格查询入口（后续可扩展报警/审计专页）。
 - 配置管理 API：查询页配置（列定义、分页）独立存储
 
@@ -86,6 +87,21 @@
 - 翻页/查询后自动写数组，并写 `cursor=-1`（未选中）；点击表格行后写 `cursor=行索引`（0–49，0 起）
 - OPC 写失败只记日志，不影响查询 API 响应
 - 配置页表单勾选列 + 填写 NodeId；折叠 JSON 区为只读预览
+
+**批次表名回写**（`plugins.modules.<module>.pages.<n>.table_list_writeback`；配置页 → **插件页面** → 批次表名回写）：
+
+```json
+"table_list_writeback": {
+  "enabled": true,
+  "batch_column": "strBatchCode",
+  "start_time_column": "dtBatchStartTime",
+  "buffer_node": "ns=6;s=::DataRev:strListName"
+}
+```
+
+- 绑定表须为批次主表；`[0]` 固定写主表名，明细年份分表按 group 名稳定排序填入 `[1..]`
+- `diCursor=-1` 时写空数组；点击行后按该行批次号/开批时间匹配（未配开批时间列则按批次号反查主表）
+- 高级 JSON 可覆盖 `max_tables`、`string_max_len`、`lookup_start_time_column` 等
 
 ## 关键查询接口
 

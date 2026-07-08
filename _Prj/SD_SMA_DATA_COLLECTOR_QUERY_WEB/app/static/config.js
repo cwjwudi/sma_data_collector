@@ -39,9 +39,43 @@ function fillAppSettingsForm(data) {
   document.getElementById('appMaxWindowHours').value = Number(queryLimits.max_window_hours || 168);
 }
 
+const OPCUA_DEFAULT_HOST = '127.0.0.1';
+const OPCUA_DEFAULT_PORT = 4840;
+
+function parseOpcuaEndpoint(endpointUrl) {
+  const raw = String(endpointUrl || '').trim();
+  if (!raw) {
+    return { host: '', port: '' };
+  }
+  const normalized = raw.replace(/^opc\s+tcp:/i, 'opc.tcp:');
+  const match = normalized.match(/^opc\.tcp:\/\/([^/:]+)(?::(\d+))?(?:\/.*)?$/i);
+  if (match) {
+    return {
+      host: match[1],
+      port: match[2] || '',
+    };
+  }
+  const hostPort = normalized.match(/^([^/:]+):(\d+)$/);
+  if (hostPort) {
+    return { host: hostPort[1], port: hostPort[2] };
+  }
+  return { host: '', port: '' };
+}
+
+function buildOpcuaEndpointUrl(host, port) {
+  const resolvedHost = String(host || '').trim() || OPCUA_DEFAULT_HOST;
+  const portText = String(port ?? '').trim();
+  const resolvedPort = portText ? Number(portText) : OPCUA_DEFAULT_PORT;
+  const safePort = Number.isFinite(resolvedPort) && resolvedPort > 0 ? resolvedPort : OPCUA_DEFAULT_PORT;
+  return `opc.tcp://${resolvedHost}:${safePort}/`;
+}
+
 function getOpcuaPayload() {
   return {
-    endpoint_url: document.getElementById('appOpcuaEndpoint').value.trim(),
+    endpoint_url: buildOpcuaEndpointUrl(
+      document.getElementById('appOpcuaHost').value,
+      document.getElementById('appOpcuaPort').value,
+    ),
     username: document.getElementById('appOpcuaUsername').value.trim(),
     password: document.getElementById('appOpcuaPassword').value,
   };
@@ -49,15 +83,28 @@ function getOpcuaPayload() {
 
 function fillOpcuaForm(data) {
   const settings = data || {};
-  document.getElementById('appOpcuaEndpoint').value = settings.endpoint_url || '';
+  const endpoint = parseOpcuaEndpoint(settings.endpoint_url || '');
+  document.getElementById('appOpcuaHost').value = endpoint.host;
+  document.getElementById('appOpcuaPort').value = endpoint.port;
   document.getElementById('appOpcuaUsername').value = settings.username || '';
   document.getElementById('appOpcuaPassword').value = settings.password || '';
 }
 
 async function fetchJson(url, opts) {
   const resp = await fetch(url, opts);
-  const data = await resp.json();
-  if (!resp.ok) throw new Error(data.detail || JSON.stringify(data));
+  let data = {};
+  try {
+    data = await resp.json();
+  } catch {
+    data = {};
+  }
+  if (!resp.ok) {
+    const detail = data.detail || data.message || JSON.stringify(data);
+    if (resp.status === 404) {
+      throw new Error(`${detail}（接口不存在，请重启 Query Web 服务后再试）`);
+    }
+    throw new Error(typeof detail === 'string' ? detail : JSON.stringify(detail));
+  }
   return data;
 }
 
@@ -112,10 +159,10 @@ function enableButtonClickFeedback() {
   }
 }
 
-function appendOption(select, value) {
+function appendOption(select, value, label) {
   const op = document.createElement('option');
   op.value = value;
-  op.textContent = value;
+  op.textContent = label || value;
   select.appendChild(op);
 }
 
@@ -530,6 +577,29 @@ async function connectDatabase() {
     `数据库连接成功（${check.database || '-'}），Group 与列已刷新；OPC UA 连接已随基础设定保存`;
 }
 
+async function testOpcuaConnection() {
+  const hint = document.getElementById('appSettingsHint');
+  const payload = getOpcuaPayload();
+  hint.textContent = '正在测试 OPC UA 连接...';
+  hint.className = 'muted';
+  try {
+    const result = await fetchJson('/api/config/opcua', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...payload, test_only: true }),
+    });
+    const parts = [
+      result.message || 'OPC UA 连接成功',
+      result.endpoint_url ? `endpoint=${result.endpoint_url}` : '',
+      result.product_name ? `product=${result.product_name}` : '',
+      result.namespace_count != null ? `namespaces=${result.namespace_count}` : '',
+    ].filter(Boolean);
+    setHintMessage('appSettingsHint', parts.join('；'), 'ok');
+  } catch (err) {
+    setHintMessage('appSettingsHint', err?.message || String(err), 'warn');
+  }
+}
+
 async function loadGroups() {
   const data = await fetchJson('/api/meta/groups');
   const sel = document.getElementById('editGroupName');
@@ -551,16 +621,28 @@ async function loadTables() {
   currentSchema = data;
   const sel = document.getElementById('editTableName');
   sel.innerHTML = '';
-  for (const t of data.tables || []) appendOption(sel, t);
+  for (const t of data.tables || []) {
+    const kind = data.table_kinds?.[t] || '';
+    const label = kind === 'fixed' ? `${t}（固定表）` : t;
+    appendOption(sel, t, label);
+  }
   if (data.baseline_table && (data.tables || []).includes(data.baseline_table)) {
     sel.value = data.baseline_table;
   }
   const hint = document.getElementById('schemaHint');
+  const fixedCount = (data.tables || []).filter(t => data.table_kinds?.[t] === 'fixed').length;
+  const partitionedCount = (data.tables || []).filter(t => data.table_kinds?.[t] === 'partitioned').length;
+  const legacyCount = (data.tables || []).filter(t => data.table_kinds?.[t] === 'legacy_date').length;
+  const kindSummary = [
+    fixedCount ? `固定表 ${fixedCount}` : '',
+    partitionedCount ? `年份分表 ${partitionedCount}` : '',
+    legacyCount ? `日表 ${legacyCount}` : '',
+  ].filter(Boolean).join('，');
   if (data.consistent) {
-    hint.textContent = `group=${group} 结构一致，共 ${data.tables.length} 张表`;
+    hint.textContent = `group=${group} 结构一致，共 ${data.tables.length} 张表${kindSummary ? `（${kindSummary}）` : ''}`;
     hint.className = 'muted ok';
   } else {
-    hint.textContent = `group=${group} 检测到结构不一致，请选择基准表。当前基准：${data.baseline_table}`;
+    hint.textContent = `group=${group} 检测到结构不一致，请选择基准表。当前基准：${data.baseline_table}${kindSummary ? `；${kindSummary}` : ''}`;
     hint.className = 'muted warn';
   }
   await loadColumnsForTable(sel.value, document.getElementById('tableTimeField').value, document.getElementById('tableSortBy').value);
@@ -863,6 +945,9 @@ document.getElementById('btnSaveAppSettings').addEventListener('click', () => {
 document.getElementById('btnConnectDatabase').addEventListener('click', () => {
   connectDatabase().catch(catchHintError('appSettingsHint'));
 });
+document.getElementById('btnTestOpcuaConnection').addEventListener('click', () => {
+  testOpcuaConnection().catch(catchHintError('appSettingsHint'));
+});
 document.getElementById('btnAddColumns').addEventListener('click', addColumns);
 document.getElementById('btnRemoveColumns').addEventListener('click', removeColumns);
 document.getElementById('btnMoveUp').addEventListener('click', () => moveSelected(true));
@@ -902,8 +987,135 @@ document.getElementById('pluginBindGroup').addEventListener('change', () => {
   const group = document.getElementById('pluginBindGroup').value || '';
   updatePluginGroupHint(group).catch(() => {});
   refreshPluginOpcuaWritebackTable().catch(() => {});
+  refreshPluginTableListColumnOptions().catch(() => {});
   saveConfigPageState();
 });
+
+function buildTableListWritebackDefaults() {
+  return {
+    enabled: false,
+    batch_column: '',
+    start_time_column: '',
+    buffer_node: '',
+    max_tables: 50,
+    string_max_len: 80,
+  };
+}
+
+function mergeTableListAdvancedFields(baseCfg, existingCfg) {
+  const merged = { ...baseCfg };
+  if (!existingCfg || typeof existingCfg !== 'object') {
+    return merged;
+  }
+  for (const key of ['max_tables', 'string_max_len', 'lookup_start_time_column', 'batch_master_table']) {
+    if (existingCfg[key] !== undefined && existingCfg[key] !== null && existingCfg[key] !== '') {
+      merged[key] = existingCfg[key];
+    }
+  }
+  return merged;
+}
+
+function renderPluginTableListColumnOptions(columns, tableListCfg) {
+  const batchSel = document.getElementById('pluginTableListBatchColumn');
+  const startSel = document.getElementById('pluginTableListStartTimeColumn');
+  const previousBatch = batchSel.value;
+  const previousStart = startSel.value;
+  batchSel.innerHTML = '';
+  startSel.innerHTML = '';
+  appendOption(batchSel, '');
+  appendOption(startSel, '');
+  for (const col of columns) {
+    appendOption(batchSel, col.name);
+    appendOption(startSel, col.name);
+  }
+  if (tableListCfg?.batch_column && hasOption(batchSel, tableListCfg.batch_column)) {
+    batchSel.value = tableListCfg.batch_column;
+  } else if (previousBatch && hasOption(batchSel, previousBatch)) {
+    batchSel.value = previousBatch;
+  }
+  if (tableListCfg?.start_time_column && hasOption(startSel, tableListCfg.start_time_column)) {
+    startSel.value = tableListCfg.start_time_column;
+  } else if (previousStart && hasOption(startSel, previousStart)) {
+    startSel.value = previousStart;
+  }
+}
+
+async function refreshPluginTableListColumnOptions(tableListCfg) {
+  const hint = document.getElementById('pluginTableListWritebackHint');
+  const viewName = document.getElementById('pluginViewName').value || 'table';
+  const bindGroup = document.getElementById('pluginBindGroup').value || '';
+  if (!bindGroup) {
+    renderPluginTableListColumnOptions([], tableListCfg || {});
+    hint.textContent = '请先选择 bind_group；批次列来自该 group 在「Group 与列」中的配置。';
+    hint.className = 'muted warn';
+    return [];
+  }
+  try {
+    const cfg = await fetchJson(
+      '/api/config/query-group?view_name=' +
+        encodeURIComponent(viewName) +
+        '&group=' +
+        encodeURIComponent(bindGroup),
+    );
+    const columns = cfg.columns || [];
+    renderPluginTableListColumnOptions(columns, tableListCfg || collectPluginTableListWriteback());
+    if (columns.length === 0) {
+      hint.textContent = `view=${viewName}, group=${bindGroup} 尚未配置列。`;
+      hint.className = 'muted warn';
+    } else {
+      hint.textContent = `已加载 ${columns.length} 列，可配置批次列与开批时间列。`;
+      hint.className = 'muted ok';
+    }
+    return columns;
+  } catch (e) {
+    hint.textContent = `无法加载 group 列配置：${e.message || e}`;
+    hint.className = 'muted warn';
+    return [];
+  }
+}
+
+function collectPluginTableListWriteback() {
+  const enabled = document.getElementById('pluginTableListEnabled').checked;
+  const batchColumn = document.getElementById('pluginTableListBatchColumn').value.trim();
+  const startTimeColumn = document.getElementById('pluginTableListStartTimeColumn').value.trim();
+  const bufferNode = document.getElementById('pluginTableListBufferNode').value.trim();
+  if (!enabled) {
+    return null;
+  }
+  const payload = mergeTableListAdvancedFields(
+    {
+      enabled: true,
+      batch_column: batchColumn,
+      start_time_column: startTimeColumn,
+      buffer_node: bufferNode,
+      max_tables: 50,
+      string_max_len: 80,
+    },
+    window.__pluginTableListAdvanced || null,
+  );
+  if (!payload.batch_column || !payload.buffer_node) {
+    return { ...payload, _invalid: true };
+  }
+  if (!payload.start_time_column) {
+    delete payload.start_time_column;
+  }
+  return payload;
+}
+
+function renderPluginTableListWritebackEditor(existingCfg) {
+  const payload = collectPluginTableListWriteback();
+  const preview = payload ? { ...payload } : buildTableListWritebackDefaults();
+  delete preview._invalid;
+  document.getElementById('pluginTableListJson').value = JSON.stringify(preview, null, 2);
+}
+
+function loadPluginTableListWritebackForm(tableListCfg) {
+  const cfg = tableListCfg && typeof tableListCfg === 'object' ? tableListCfg : {};
+  window.__pluginTableListAdvanced = { ...cfg };
+  document.getElementById('pluginTableListEnabled').checked = cfg.enabled === true;
+  document.getElementById('pluginTableListBufferNode').value = cfg.buffer_node || '';
+  renderPluginTableListWritebackEditor(cfg);
+}
 
 async function loadPluginConfig() {
   pluginConfigData = await fetchJson('/api/config/plugins');
@@ -952,11 +1164,13 @@ async function updatePluginGroupHint(group) {
     const data = await fetchJson('/api/meta/group-schema?group=' + encodeURIComponent(group));
     const tableCount = Array.isArray(data.tables) ? data.tables.length : 0;
     const baseline = data.baseline_table || '-';
+    const fixedTables = (data.tables || []).filter(t => data.table_kinds?.[t] === 'fixed');
+    const fixedHint = fixedTables.length > 0 ? `，含固定表 ${fixedTables.join('、')}` : '';
     if (data.consistent) {
-      hint.textContent = `group=${group}，表数量=${tableCount}，基准表=${baseline}，结构一致`;
+      hint.textContent = `group=${group}，表数量=${tableCount}，基准表=${baseline}，结构一致${fixedHint}`;
       hint.className = 'muted ok';
     } else {
-      hint.textContent = `group=${group}，表数量=${tableCount}，基准表=${baseline}，检测到结构不一致`;
+      hint.textContent = `group=${group}，表数量=${tableCount}，基准表=${baseline}，检测到结构不一致${fixedHint}`;
       hint.className = 'muted warn';
     }
   } catch (e) {
@@ -1118,6 +1332,10 @@ async function loadPluginPageConfig() {
   await loadPluginOpcuaWritebackTable(viewName, bindGroup, writebackCfg);
   renderPluginOpcuaFeedbackEditor();
 
+  const tableListCfg = pageCfg.table_list_writeback || buildTableListWritebackDefaults();
+  loadPluginTableListWritebackForm(tableListCfg);
+  await refreshPluginTableListColumnOptions(tableListCfg);
+
   document.getElementById('pluginConfigHint').textContent =
     `当前编辑: module=${moduleName}, page=${pageIndex}`;
 }
@@ -1147,6 +1365,21 @@ async function savePluginPageConfig() {
     delete pageCfg.opcua_writeback;
   }
 
+  const tableListWriteback = collectPluginTableListWriteback();
+  if (tableListWriteback && tableListWriteback.enabled) {
+    if (tableListWriteback._invalid) {
+      setHintMessage(
+        'pluginConfigHint',
+        '批次表名回写已启用，请填写批次列与 Buffer NodeId',
+      );
+      return;
+    }
+    delete tableListWriteback._invalid;
+    pageCfg.table_list_writeback = tableListWriteback;
+  } else {
+    delete pageCfg.table_list_writeback;
+  }
+
   moduleCfg.title = moduleCfg.title || moduleName;
   moduleCfg.view_name = moduleCfg.view_name || pageCfg.view_name;
   moduleCfg.page_size = moduleCfg.page_size || pageCfg.page_size;
@@ -1174,9 +1407,31 @@ document.getElementById('pluginEnabled').addEventListener('change', saveConfigPa
 document.getElementById('pluginTitle').addEventListener('input', saveConfigPageState);
 document.getElementById('pluginViewName').addEventListener('change', () => {
   refreshPluginOpcuaWritebackTable().catch(() => {});
+  refreshPluginTableListColumnOptions().catch(() => {});
   saveConfigPageState();
 });
 document.getElementById('pluginPageSize').addEventListener('change', saveConfigPageState);
+document.getElementById('pluginTableListEnabled').addEventListener('change', () => {
+  renderPluginTableListWritebackEditor();
+  saveConfigPageState();
+});
+document.getElementById('pluginTableListBatchColumn').addEventListener('change', () => {
+  renderPluginTableListWritebackEditor();
+  saveConfigPageState();
+});
+document.getElementById('pluginTableListStartTimeColumn').addEventListener('change', () => {
+  renderPluginTableListWritebackEditor();
+  saveConfigPageState();
+});
+document.getElementById('pluginTableListBufferNode').addEventListener('input', () => {
+  renderPluginTableListWritebackEditor();
+  saveConfigPageState();
+});
+document.getElementById('pluginTableListAdvanced').addEventListener('toggle', event => {
+  if (event.target.open) {
+    renderPluginTableListWritebackEditor();
+  }
+});
 document.getElementById('pluginOpcuaCursor').addEventListener('input', () => {
   renderPluginOpcuaFeedbackEditor();
   saveConfigPageState();

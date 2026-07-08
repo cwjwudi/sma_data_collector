@@ -14,7 +14,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.exc import OperationalError, SQLAlchemyError
 
-from .config_manager import ConfigManager, UnifiedConfigStore
+from .config_manager import ConfigManager, UnifiedConfigStore, normalize_opcua_endpoint_url
 from .database import QueryDatabase
 from .models import (
     GroupBaselineUpdateRequest,
@@ -23,11 +23,19 @@ from .models import (
     QueryGroupConfigUpdateRequest,
     PluginCursorRequest,
     PluginQueryRequest,
+    OpcUaSettingsRequest,
     QueryTableConfigUpdateRequest,
     QueryFilter,
     ViewHistoryQueryRequest,
 )
+from . import opcua_client
 from .opcua_writeback import OpcUaWritebackConfig, write_after_query_async, write_cursor_only_async
+from .table_list_writeback import (
+    TableListWritebackConfig,
+    resolve_table_names_for_row,
+    write_table_list_async,
+)
+from .table_partition import table_group_info
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -112,6 +120,8 @@ DEFAULT_WINDOW_HOURS = int(QUERY_LIMITS.get("default_window_hours", 24))
 MAX_WINDOW_HOURS = int(QUERY_LIMITS.get("max_window_hours", 168))
 _REQUEST_BUCKETS: dict[str, deque[float]] = defaultdict(deque)
 PLUGIN_KEY_PATTERN = re.compile(r"^([A-Za-z0-9_]+)_([1-5])$")
+DEFAULT_LOOKUP_START_TIME_COLUMN = "dtBatchStartTime"
+_plugin_query_cache: dict[str, dict[str, Any]] = {}
 
 logger = logging.getLogger(__name__)
 
@@ -252,6 +262,10 @@ def _resolve_plugin_binding(plugin_key: str) -> dict[str, Any]:
     if opcua_writeback_raw is None:
         opcua_writeback_raw = module_cfg.get("opcua_writeback")
 
+    table_list_writeback_raw = page_cfg.get("table_list_writeback")
+    if table_list_writeback_raw is None:
+        table_list_writeback_raw = module_cfg.get("table_list_writeback")
+
     return {
         "plugin_key": plugin_key,
         "module": module_name,
@@ -263,11 +277,105 @@ def _resolve_plugin_binding(plugin_key: str) -> dict[str, Any]:
         "page_size": max(1, page_size),
         "target": str(page_cfg.get("target", module_cfg.get("target", ""))),
         "opcua_writeback": opcua_writeback_raw,
+        "table_list_writeback": table_list_writeback_raw,
     }
 
 
 def _get_opcua_connection() -> dict[str, str]:
-    return config_store.get_opcua_settings()
+    settings = config_store.get_opcua_settings()
+    endpoint = normalize_opcua_endpoint_url(str(settings.get("endpoint_url", "") or ""))
+    return {
+        "endpoint_url": endpoint,
+        "username": str(settings.get("username", "") or ""),
+        "password": str(settings.get("password", "") or ""),
+    }
+
+
+def _get_table_list_writeback_config(binding: dict[str, Any]) -> TableListWritebackConfig | None:
+    return TableListWritebackConfig.from_binding(
+        binding.get("table_list_writeback"),
+        bind_group=binding.get("bind_group"),
+    )
+
+
+def _lookup_start_time_factory(config: TableListWritebackConfig, raw_config: dict[str, Any] | None):
+    lookup_column = ""
+    if isinstance(raw_config, dict):
+        lookup_column = str(
+            raw_config.get("lookup_start_time_column")
+            or raw_config.get("start_time_column")
+            or ""
+        ).strip()
+    if not lookup_column:
+        lookup_column = config.start_time_column or DEFAULT_LOOKUP_START_TIME_COLUMN
+
+    def _lookup(master_table: str, batch_column: str, batch_value: Any):
+        return db.lookup_batch_start_time(
+            master_table,
+            batch_column,
+            batch_value,
+            lookup_column,
+        )
+
+    return _lookup
+
+
+def _cache_plugin_query(plugin_key: str, rows: list[dict[str, Any]], target_table: str) -> None:
+    _plugin_query_cache[plugin_key] = {
+        "rows": list(rows),
+        "target_table": target_table,
+    }
+
+
+def _get_cached_plugin_row(plugin_key: str, cursor: int) -> dict[str, Any] | None:
+    cached = _plugin_query_cache.get(plugin_key)
+    if not cached:
+        return None
+    rows = cached.get("rows") or []
+    if cursor < 0 or cursor >= len(rows):
+        return None
+    row = rows[cursor]
+    return row if isinstance(row, dict) else None
+
+
+async def _run_table_list_writeback(
+    binding: dict[str, Any],
+    *,
+    cursor: int,
+    row: dict[str, Any] | None = None,
+) -> None:
+    config = _get_table_list_writeback_config(binding)
+    if config is None:
+        return
+
+    opcua = _get_opcua_connection()
+    endpoint = opcua.get("endpoint_url", "")
+    if not endpoint:
+        return
+
+    raw_config = binding.get("table_list_writeback")
+    lookup_start_time = _lookup_start_time_factory(config, raw_config if isinstance(raw_config, dict) else None)
+
+    table_names = None
+    if cursor >= 0 and row is not None:
+        table_names = resolve_table_names_for_row(
+            row,
+            config,
+            list_tables=db.list_tables,
+            lookup_start_time=lookup_start_time,
+        )
+
+    try:
+        await write_table_list_async(
+            endpoint,
+            opcua.get("username", ""),
+            opcua.get("password", ""),
+            config,
+            table_names,
+            cursor=cursor,
+        )
+    except Exception as exc:
+        logger.warning("OPC UA table list writeback hook failed: %s", exc)
 
 
 async def _run_plugin_writeback(
@@ -277,6 +385,12 @@ async def _run_plugin_writeback(
     cursor: int,
 ) -> None:
     opcua = _get_opcua_connection()
+    endpoint = opcua.get("endpoint_url", "")
+    if not endpoint:
+        logger.warning(
+            "OPC UA writeback skipped: endpoint_url is empty or invalid; save IP/port in config page"
+        )
+        return
     writeback = OpcUaWritebackConfig.from_binding(binding.get("opcua_writeback"))
     try:
         await write_after_query_async(
@@ -292,7 +406,11 @@ async def _run_plugin_writeback(
         logger.warning("OPC UA writeback hook failed: %s", exc)
 
 
-async def _run_cursor_writeback(binding: dict[str, Any], cursor: int) -> None:
+async def _run_cursor_writeback(
+    binding: dict[str, Any],
+    cursor: int,
+    row: dict[str, Any] | None = None,
+) -> None:
     opcua = _get_opcua_connection()
     writeback = OpcUaWritebackConfig.from_binding(binding.get("opcua_writeback"))
     try:
@@ -305,6 +423,10 @@ async def _run_cursor_writeback(binding: dict[str, Any], cursor: int) -> None:
         )
     except Exception as exc:
         logger.warning("OPC UA cursor writeback failed: %s", exc)
+
+    if row is None and cursor >= 0:
+        row = _get_cached_plugin_row(binding["plugin_key"], cursor)
+    await _run_table_list_writeback(binding, cursor=cursor, row=row)
 
 
 @app.get("/")
@@ -442,7 +564,13 @@ def meta_groups(request: Request) -> dict[str, Any]:
 def meta_tables(group: str, request: Request) -> dict[str, Any]:
     _enforce_rate_limit(request)
     try:
-        return {"tables": db.list_tables_by_group(group)}
+        tables = db.list_tables_by_group(group)
+        table_kinds: dict[str, str] = {}
+        for table_name in tables:
+            info = table_group_info(table_name)
+            if info is not None:
+                table_kinds[table_name] = info.kind
+        return {"tables": tables, "table_kinds": table_kinds}
     except (OperationalError, SQLAlchemyError) as exc:
         _raise_db_error(exc)
     except Exception as exc:
@@ -590,7 +718,13 @@ async def query_plugin(plugin_key: str, payload: PluginQueryRequest, request: Re
             warnings.append("部分配置列在当前表中不存在，已自动忽略")
 
         cursor = -1 if payload.cursor is None else int(payload.cursor)
+        _cache_plugin_query(plugin_key, rows, target_table)
         await _run_plugin_writeback(binding, columns, rows, cursor)
+        await _run_table_list_writeback(
+            binding,
+            cursor=cursor,
+            row=rows[cursor] if 0 <= cursor < len(rows) else None,
+        )
 
         return HistoryQueryResponse(
             total=total,
@@ -624,7 +758,9 @@ async def update_plugin_cursor(
     _enforce_rate_limit(request)
     try:
         binding = _resolve_plugin_binding(plugin_key)
-        await _run_cursor_writeback(binding, int(payload.cursor))
+        cursor = int(payload.cursor)
+        row = _get_cached_plugin_row(plugin_key, cursor) if cursor >= 0 else None
+        await _run_cursor_writeback(binding, cursor, row=row)
         return {"status": "ok"}
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -834,9 +970,42 @@ def get_opcua_config() -> dict[str, Any]:
     return config_store.get_opcua_settings()
 
 
+async def _run_opcua_connection_check(
+    endpoint_url: str,
+    username: str,
+    password: str,
+) -> dict[str, Any]:
+    endpoint = normalize_opcua_endpoint_url(endpoint_url)
+    if not endpoint:
+        saved = config_store.get_opcua_settings()
+        endpoint = normalize_opcua_endpoint_url(str(saved.get("endpoint_url", "") or ""))
+        if not username:
+            username = str(saved.get("username", "") or "")
+        if not password:
+            password = str(saved.get("password", "") or "")
+
+    result = await opcua_client.check_connection(endpoint, username, password)
+    if not result.get("ok"):
+        raise HTTPException(status_code=400, detail=str(result.get("message", "OPC UA 连接失败")))
+    return result
+
+
 @app.post("/api/config/opcua")
-def save_opcua_config(payload: dict[str, Any]) -> dict[str, Any]:
+async def save_opcua_config(payload: OpcUaSettingsRequest) -> dict[str, Any]:
     try:
-        return config_store.save_opcua_settings(payload)
+        if payload.test_only:
+            return await _run_opcua_connection_check(
+                payload.endpoint_url,
+                payload.username,
+                payload.password,
+            )
+        return config_store.save_opcua_settings(payload.model_dump(exclude={"test_only"}))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/opcua/check")
+async def check_opcua_connection(request: Request, payload: OpcUaSettingsRequest | None = None) -> dict[str, Any]:
+    _enforce_rate_limit(request)
+    body = payload or OpcUaSettingsRequest()
+    return await _run_opcua_connection_check(body.endpoint_url, body.username, body.password)

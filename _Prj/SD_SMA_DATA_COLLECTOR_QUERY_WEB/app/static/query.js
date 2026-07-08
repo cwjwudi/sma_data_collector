@@ -114,7 +114,8 @@ async function loadTablesForCurrentGroup(preferredTable) {
   for (const table of tables) {
     const op = document.createElement('option');
     op.value = table;
-    op.textContent = table;
+    const kind = data.table_kinds?.[table] || '';
+    op.textContent = kind === 'fixed' ? `${table}（固定表）` : table;
     tableSel.appendChild(op);
   }
   if (preferredTable && tables.includes(preferredTable)) {

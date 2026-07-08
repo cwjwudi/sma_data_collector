@@ -53,12 +53,21 @@ async def _run(args: argparse.Namespace) -> None:
     )
     await ar_msg.set_writable()
 
+    ar_table_names = await demo.add_variable(
+        ns_idx,
+        "strListName",
+        [""] * ARRAY_LEN,
+        varianttype=ua.VariantType.String,
+    )
+    await ar_table_names.set_writable()
+
     meta = {
         "endpoint_url": bind_url.replace(f"{args.host}", "127.0.0.1"),
         "ns": ns_idx,
         "cursor": cursor_var.nodeid.to_string(),
         "arCode": ar_code.nodeid.to_string(),
         "arMsg": ar_msg.nodeid.to_string(),
+        "strListName": ar_table_names.nodeid.to_string(),
     }
     if args.meta_out:
         Path(args.meta_out).write_text(json.dumps(meta, indent=2), encoding="utf-8")
