@@ -27,6 +27,28 @@
 
     <div class="tsv-lab tsv-table-section">
       <span class="tsv-table-section-label">数据表</span>
+      <div class="tsv-seg" role="tablist" aria-label="表名来源">
+        <button
+          type="button"
+          role="tab"
+          class="tsv-seg-btn"
+          :class="{ 'tsv-seg-btn--on': tableSourceKind === 'manual' }"
+          :aria-selected="tableSourceKind === 'manual'"
+          @click="selectTableSource('manual')"
+        >
+          手动选择
+        </button>
+        <button
+          type="button"
+          role="tab"
+          class="tsv-seg-btn"
+          :class="{ 'tsv-seg-btn--on': tableSourceKind === 'opcua' }"
+          :aria-selected="tableSourceKind === 'opcua'"
+          @click="selectTableSource('opcua')"
+        >
+          OPC UA 变量
+        </button>
+      </div>
       <div class="tsv-table-pick-row">
         <div class="tsv-table-picked" :class="{ 'tsv-table-picked--empty': !vs.table.trim() }">
           {{ vs.table.trim() ? vs.table : "未选择（请在列表中点选）" }}
@@ -41,6 +63,23 @@
           浏览…
         </button>
       </div>
+      <template v-if="tableSourceKind === 'opcua'">
+        <label class="tsv-lab">
+          表名节点 ID（变量值须为表名：字母/数字/下划线）
+          <input
+            v-model.trim="tableOpcNodeIdProxy"
+            class="tsv-text-inp tsv-node-id-inp"
+            type="text"
+            placeholder="选择节点后填入，或可手输 NodeId"
+            spellcheck="false"
+            autocomplete="off"
+          />
+        </label>
+        <button type="button" :class="actionBtnClass" @click="pickTableOpc">选择节点…</button>
+        <p class="tsv-muted">
+          导出时读取该变量作为实际表名（如按批次/年月分表）；上方手动选择的表仍需选定——用于设计时列结构，并在变量读取失败或值非法时兜底。各分表结构需与其一致。
+        </p>
+      </template>
       <p class="tsv-muted">从当前连接的库中列出全部表，支持筛选；无需手输表名。</p>
       <p class="tsv-muted">输出列请在画布表格<strong>第一行</strong>各列的下拉框中选择字段；顺序与表格列从左到右一致。</p>
     </div>
@@ -371,6 +410,7 @@ import {
   ensureVisualOutputColumnSlots,
   ensureVisualSource,
   normalizeVisualSqlFilterShape,
+  TABLE_SQL_FILL_TABLE_PICK_SLOT,
 } from "@/lib/report-template/table-sql-fill";
 import { formatAutoBatchOpcBindingHint, resolveAutoBatchOpcBinding } from "@/lib/auto-batch-opc-binding";
 import { loadVisualSqlTableColumnsCached } from "@/lib/report-template/table-sql-visual-catalog";
@@ -428,7 +468,30 @@ const showDatabasePick = computed(() => {
 
 const batchBindingHint = computed(() => formatAutoBatchOpcBindingHint(resolveAutoBatchOpcBinding()));
 
-/** 只读 SQL 下方的占位符取值说明：仅列出 querySql 中实际出现的 {{pN}} */
+const tableSourceKind = computed(() => (vs.value.tableSource === "opcua" ? "opcua" : "manual"));
+
+const tableOpcNodeIdProxy = computed({
+  get(): string {
+    return vs.value.tableOpcNodeId || "";
+  },
+  set(v: string) {
+    vs.value.tableOpcNodeId = v;
+  },
+});
+
+function selectTableSource(kind: "manual" | "opcua") {
+  const prev = tableSourceKind.value;
+  vs.value.tableSource = kind;
+  if (kind === "opcua" && prev !== "opcua" && !(vs.value.tableOpcNodeId || "").trim()) {
+    nextTick(() => pickTableOpc());
+  }
+}
+
+function pickTableOpc() {
+  emit("opcPickParam", TABLE_SQL_FILL_TABLE_PICK_SLOT);
+}
+
+/** 只读 SQL 下方的占位符取值说明：仅列出 querySql 中实际出现的 {{pN}} 与 {{table}} */
 const paramLegend = computed(() => {
   const sql = props.fill.querySql || "";
   const params = props.fill.params || [];
@@ -436,6 +499,11 @@ const paramLegend = computed(() => {
   const re = /\{\{p(\d+)\}\}/g;
   for (let m = re.exec(sql); m; m = re.exec(sql)) used.add(Number(m[1]));
   const lines: string[] = [];
+  if (sql.includes("{{table}}")) {
+    const node = (vs.value.tableOpcNodeId || "").trim() || "（未绑定节点）";
+    const fb = vs.value.table.trim();
+    lines.push(`{{table}} → 导出时读 OPC UA 表名：${node}${fb ? `；读不到时用默认表 ${fb}` : "；未选默认表"}`);
+  }
   for (const i of [...used].sort((a, b) => a - b)) {
     const p = params[i];
     if (!p) continue;

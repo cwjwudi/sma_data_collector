@@ -787,7 +787,8 @@ async function navigatePdfExportWindow(win, targetUrl) {
 function ensurePdfExportWindowPrewarmed(refWc) {
   if (!mainWindow || mainWindow.isDestroyed()) return
   if (isReusablePdfWindow(warmPdfWin)) return
-  warmPdfWin = null
+  // 已崩溃/不可复用的旧窗口先销毁，避免残留渲染进程
+  destroyWarmPdfExportWindow()
   try {
     const win = createPdfExportWindow()
     const url = buildPdfExportUrl(refWc || mainWindow.webContents, PDF_EXPORT_PREWARM_HASH)
@@ -1140,6 +1141,16 @@ app.whenReady().then(async () => {
   }
 
   createWindow()
+
+  // 预热窗口保活：结批可能间隔数天，长期驻留的渲染进程可能被系统回收/崩溃，
+  // 定期检查并重建，保证下一次结批仍能热启动
+  setInterval(() => {
+    if (!mainWindow || mainWindow.isDestroyed()) return
+    if (!isReusablePdfWindow(warmPdfWin)) {
+      log('PDF export warm window unavailable; re-prewarming')
+      ensurePdfExportWindowPrewarmed(mainWindow.webContents)
+    }
+  }, 5 * 60 * 1000)
 
   const isDev = !app.isPackaged
   /**

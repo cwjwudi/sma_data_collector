@@ -16,16 +16,26 @@ export interface TableSqlParamBinding {
 
 export type TableSqlFillMode = "manual_sql" | "visual";
 
+/** 表名来源：manual=设计时选定；opcua=导出时读 OPC 变量（设计表提供结构并作兜底） */
+export type TableSqlTableSource = "manual" | "opcua";
+
+/** OPC 表名选择在 opcPickParam 槽位通道中的专用哨兵值（普通筛选参数槽位从 0 起） */
+export const TABLE_SQL_FILL_TABLE_PICK_SLOT = -1;
+
 /** 已保存连接上的物理库名（SQLite 可留空） */
 export interface TableSqlVisualSource {
   connectionId: string;
   database: string;
-  /** SQL 表名（字母数字下划线） */
+  /** SQL 表名（字母数字下划线）；tableSource=opcua 时作为设计时结构与读取失败的兜底表 */
   table: string;
   /** 保存选型当时的引擎：mysql | mariadb | postgres | sqlite（用于标识符引用） */
   engine: string;
   /** SELECT 列顺序，需与表格数据列、resultColumnNames 对齐 */
   columns: string[];
+  /** 表名来源（默认 manual；opcua 时编译产出 {{table}} 占位符，导出时替换） */
+  tableSource?: TableSqlTableSource;
+  /** tableSource=opcua 时读取表名的 OPC UA 节点（使用默认 OPC 连接） */
+  tableOpcNodeId?: string;
 }
 
 export type VisualSqlFilterKind = "equality" | "datetime_between" | "date_between" | "numeric_between";
@@ -106,7 +116,15 @@ export function defaultVisualSqlFilter(): VisualSqlFilter {
 }
 
 export function defaultVisualSource(): TableSqlVisualSource {
-  return { connectionId: "", database: "", table: "", engine: "", columns: [] };
+  return {
+    connectionId: "",
+    database: "",
+    table: "",
+    engine: "",
+    columns: [],
+    tableSource: "manual",
+    tableOpcNodeId: "",
+  };
 }
 
 export function ensureVisualSource(fill: TableSqlFillConfig): TableSqlVisualSource {
@@ -202,6 +220,8 @@ export function hydrateTableSqlFill(raw: unknown): TableSqlFillConfig {
       table: typeof v.table === "string" ? v.table : "",
       engine: typeof v.engine === "string" ? v.engine : "",
       columns: Array.isArray(v.columns) ? v.columns.map((x) => String(x ?? "")) : [],
+      tableSource: v.tableSource === "opcua" ? "opcua" : "manual",
+      tableOpcNodeId: typeof v.tableOpcNodeId === "string" ? v.tableOpcNodeId : "",
     };
   }
 

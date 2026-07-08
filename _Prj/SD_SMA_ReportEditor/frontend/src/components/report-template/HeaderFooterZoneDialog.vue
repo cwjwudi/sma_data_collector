@@ -968,7 +968,8 @@ function onHzTableColumnResize(el: LayoutZoneElement, boundaryIndex: number, del
 }
 
 function openHzSqlOpcPicker(slot: number) {
-  const s = Math.max(0, Math.floor(Number(slot)) || 0);
+  // 允许负数哨兵槽位（TABLE_SQL_FILL_TABLE_PICK_SLOT = 表名 OPC 变量）
+  const s = Math.floor(Number(slot)) || 0;
   opcPickTarget.value = { kind: "tableSql", slot: s };
   opcPickOpen.value = true;
 }

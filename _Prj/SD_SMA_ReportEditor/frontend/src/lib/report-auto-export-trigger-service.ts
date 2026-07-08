@@ -16,7 +16,7 @@ import {
 } from "@/lib/auto-trigger-bindings";
 import { buildAutoExportFileName } from "@/lib/auto-export-filename";
 import { humanizePdfExportError } from "@/lib/pdfExportErrors";
-import { runTemplateExportPreflight } from "@/lib/templateExportPreflight";
+import { runTemplateExportPreflight, type TemplateExportPreflightResult } from "@/lib/templateExportPreflight";
 import { showAppToast } from "@/composables/useAppToast";
 import { auditLog } from "@/lib/auditLog";
 import {
@@ -53,6 +53,54 @@ let lastBindingConfigKey = "";
 let templateSummariesCache: TemplateSummary[] = [];
 let templateSummariesLoadedAt = 0;
 const TEMPLATE_CACHE_MS = 30_000;
+
+/**
+ * 结批预检保活：两次结批可能间隔数天，后台每 60 秒对已启用绑定的模版跑一次预检——
+ * 既维持 OPC UA 连接池会话（后端 90 秒空闲即断开），又把预检结果缓存下来，
+ * 收到结批指令时直接取用，做到「即结批即渲染」。
+ */
+const PREFLIGHT_WARM_INTERVAL_MS = 60_000;
+const PREFLIGHT_CACHE_TTL_MS = 150_000;
+let preflightWarmupBusy = false;
+let lastPreflightWarmupAt = 0;
+const preflightCache = new Map<string, { at: number; result: TemplateExportPreflightResult }>();
+
+function getFreshPreflightResult(templateId: string): TemplateExportPreflightResult | null {
+  const e = preflightCache.get(templateId);
+  if (!e || !e.result.ok) return null;
+  if (Date.now() - e.at > PREFLIGHT_CACHE_TTL_MS) return null;
+  return e.result;
+}
+
+async function warmupPreflightCache(bindings: AutoTriggerBinding[]): Promise<void> {
+  if (preflightWarmupBusy) return;
+  preflightWarmupBusy = true;
+  try {
+    const tids = [
+      ...new Set(
+        bindings
+          .filter(isTriggerBindingActive)
+          .map((b) => (b.templateId || "").trim())
+          .filter(Boolean),
+      ),
+    ];
+    for (const tid of tids) {
+      if (autoExportBusy) return;
+      try {
+        const result = await runTemplateExportPreflight(tid);
+        if (result.ok) {
+          preflightCache.set(tid, { at: Date.now(), result });
+        } else {
+          preflightCache.delete(tid);
+        }
+      } catch {
+        preflightCache.delete(tid);
+      }
+    }
+  } finally {
+    preflightWarmupBusy = false;
+  }
+}
 
 const bindingRuntime = new Map<string, BindingRuntime>();
 
@@ -296,10 +344,12 @@ async function runAutoPdfExport(
   if (!tid) throw new Error(`未配置${RG_UI.opcAuto}报表模版`);
 
   onStage?.("正在检查数据源连接…");
-  // 预检、导出目录解析、模版列表三者互不依赖：并行执行缩短结批前等待
+  // 预检、导出目录解析、模版列表三者互不依赖：并行执行缩短结批前等待。
+  // 后台保活已缓存的新鲜预检结果直接取用（连接状态刚验证过），预检耗时降为 0
   const preflightStartMs = Date.now();
+  const cachedPreflight = getFreshPreflightResult(tid);
   const [preflight, resolved, summaries] = await Promise.all([
-    runTemplateExportPreflight(tid),
+    cachedPreflight ?? runTemplateExportPreflight(tid),
     resolveAutoExportDir(prefs),
     loadTemplateSummariesCached(),
   ]);
@@ -545,6 +595,12 @@ async function pollAutoTriggerOnce(): Promise<void> {
   } else {
     reportAutoExportStatus.value = `${RG_STATUS_OPC_AUTO} 监听中…`;
   }
+
+  // 空闲期后台保活：预检缓存 + OPC 连接池会话（不阻塞本次轮询）
+  if (Date.now() - lastPreflightWarmupAt > PREFLIGHT_WARM_INTERVAL_MS) {
+    lastPreflightWarmupAt = Date.now();
+    void warmupPreflightCache(bindings);
+  }
 }
 
 function restartPollLoop(): void {
@@ -582,6 +638,7 @@ export function disposeReportAutoExportTrigger(): void {
 
 export function invalidateTemplateSummariesCache(): void {
   templateSummariesLoadedAt = 0;
+  preflightCache.clear();
 }
 
 export function notifyReportAutoExportSettingsChanged(): void {

@@ -17,6 +17,7 @@ import {
   ensureVisualOutputColumnSlots,
   ensureVisualSource,
   normalizeVisualSqlFilterShape,
+  TABLE_SQL_FILL_TABLE_PICK_SLOT,
   validateSqlIdentifier,
 } from "@/lib/report-template/table-sql-fill";
 
@@ -57,10 +58,19 @@ export function visualFilterBindingAtParamSlot(
  * OPC 节点选择确认后的统一回写。
  * 可视化模式必须写入 visualFilters 的绑定（面板输入框的数据源），随后 params/querySql
  * 由编译同步；若误写 params，界面不显示且下次编译会被 bindings 覆盖。
+ * slot=TABLE_SQL_FILL_TABLE_PICK_SLOT 表示写入「表名 OPC 变量」。
  */
 export function applyTableSqlFillOpcPick(fill: TableSqlFillConfig, slot: number, nodeId: string): void {
   const id = String(nodeId ?? "").trim();
   if (!id) return;
+  if (slot === TABLE_SQL_FILL_TABLE_PICK_SLOT) {
+    const vs = ensureVisualSource(fill);
+    vs.tableSource = "opcua";
+    vs.tableOpcNodeId = id;
+    compileVisualTableSql(fill);
+    return;
+  }
+  if (slot < 0) return;
   if (fill.fillMode === "visual") {
     const b = visualFilterBindingAtParamSlot(fill.visualFilters || [], slot);
     if (b) {
@@ -129,7 +139,9 @@ export function compileVisualTableSql(fill: TableSqlFillConfig): boolean {
       return quoteSqlIdentifier(eng, t);
     })
     .join(", ");
-  const qtbl = quoteSqlIdentifier(eng, vs.table.trim());
+  // 表名绑定 OPC 时产出 {{table}} 占位符，导出/预览时读变量替换；设计表仅作结构与兜底
+  const tableOpcBound = vs.tableSource === "opcua" && String(vs.tableOpcNodeId || "").trim().length > 0;
+  const qtbl = tableOpcBound ? "{{table}}" : quoteSqlIdentifier(eng, vs.table.trim());
 
   const whereParts: string[] = [];
   const flatParams: TableSqlParamBinding[] = [];

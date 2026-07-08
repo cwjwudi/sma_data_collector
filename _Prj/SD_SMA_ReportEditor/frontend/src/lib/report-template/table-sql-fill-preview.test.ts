@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { hydrateTableSqlFill } from "@/lib/report-template/table-sql-fill";
+import { formatScalarForPreviewValue } from "@/lib/report-template/binding-preview-utils";
 import {
+  sanitizeOpcTableName,
   sqlFillQueryLimit,
+  substituteSqlFillTableName,
   TABLE_SQL_FILL_FULL_ROW_LIMIT,
   TABLE_SQL_FILL_PREVIEW_ROW_LIMIT,
 } from "@/lib/report-template/table-sql-fill-preview";
@@ -26,5 +29,46 @@ describe("sqlFillQueryLimit", () => {
   it("export with split fetches full rows for chunking", () => {
     const fill = hydrateTableSqlFill({ maxRows: 2000, splitReportsOnMaxRows: true });
     expect(sqlFillQueryLimit(fill, true)).toBe(TABLE_SQL_FILL_FULL_ROW_LIMIT);
+  });
+});
+
+describe("sanitizeOpcTableName", () => {
+  it("accepts valid identifiers and trims", () => {
+    expect(sanitizeOpcTableName(" batch_2026 ")).toBe("batch_2026");
+    expect(sanitizeOpcTableName("_t1")).toBe("_t1");
+  });
+
+  it("rejects illegal names (injection safety)", () => {
+    expect(sanitizeOpcTableName("user; DROP TABLE x")).toBe("");
+    expect(sanitizeOpcTableName("2026table")).toBe("");
+    expect(sanitizeOpcTableName("表")).toBe("");
+    expect(sanitizeOpcTableName("")).toBe("");
+    expect(sanitizeOpcTableName(null)).toBe("");
+  });
+});
+
+describe("substituteSqlFillTableName", () => {
+  it("quotes per engine", () => {
+    expect(substituteSqlFillTableName("SELECT a FROM {{table}}", "mysql", "t1")).toBe(
+      "SELECT a FROM `t1`",
+    );
+    expect(substituteSqlFillTableName("SELECT a FROM {{table}}", "postgres", "t1")).toBe(
+      'SELECT a FROM "t1"',
+    );
+  });
+});
+
+describe("formatScalarForPreviewValue datetime normalization", () => {
+  it("replaces ISO T separator with space", () => {
+    // 回归：数据库 datetime 经 JSON 序列化带 T（2026-07-08T15:19:48），报表应显示空格分隔
+    expect(formatScalarForPreviewValue("2026-07-08T15:19:48")).toBe("2026-07-08 15:19:48");
+    expect(formatScalarForPreviewValue("2026-07-08T15:19:48.123")).toBe("2026-07-08 15:19:48.123");
+    expect(formatScalarForPreviewValue("2026-07-08T15:19:48+08:00")).toBe("2026-07-08 15:19:48+08:00");
+  });
+
+  it("keeps non-datetime strings untouched", () => {
+    expect(formatScalarForPreviewValue("T恤批次")).toBe("T恤批次");
+    expect(formatScalarForPreviewValue("2026-07-08")).toBe("2026-07-08");
+    expect(formatScalarForPreviewValue(42)).toBe("42");
   });
 });

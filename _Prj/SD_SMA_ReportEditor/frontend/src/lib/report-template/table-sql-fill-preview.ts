@@ -13,6 +13,7 @@ import type { ReportTemplate, TemplateElement } from "@/lib/report-template/mode
 import { ensureTableGrid } from "@/lib/report-template/model";
 import type { TableSqlFillConfig, TableSqlParamBinding } from "@/lib/report-template/table-sql-fill";
 import type { TableSqlFillPreviewPayload } from "@/lib/report-template/binding-preview-utils";
+import { quoteSqlIdentifier } from "@/lib/report-template/table-sql-visual-compile";
 
 export function templateTableSqlFillPreviewKey(elId: string): string {
   return `tblfill:${elId}`;
@@ -26,13 +27,34 @@ export interface TableSqlFillPreviewTask {
   key: string;
   connectionId: string;
   database?: string;
-  /** 原始 SQL，可含 {{p0}}… 占位符；由运行方结合 params 实际取值（OPC/批次号/手写）替换 */
+  /** 原始 SQL，可含 {{p0}}…/{{table}} 占位符；由运行方结合实际取值替换 */
   sql: string;
   /** 与 {{pN}} 对应的取值绑定（visual 编译或手写模式的 params） */
   params: TableSqlParamBinding[];
+  /** 表名绑定 OPC 时的读取信息（{{table}} 占位符替换用） */
+  tableOpc?: {
+    nodeId: string;
+    /** 标识符引用风格（mysql/mariadb 反引号；postgres/sqlite 双引号） */
+    engine: string;
+    /** OPC 读取失败或值非法时兜底的设计时表名（可为空） */
+    fallbackTable: string;
+  };
   limit: number;
   colCount: number;
   expandRows: (dataRowCount: number) => void;
+}
+
+/** OPC 表名变量值 → 合法 SQL 标识符（非法时返回空串，由调用方走兜底） */
+export function sanitizeOpcTableName(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  const s = String(value).trim();
+  if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(s)) return "";
+  return s;
+}
+
+/** 将 {{table}} 占位符替换为按引擎引用的表名 */
+export function substituteSqlFillTableName(sql: string, engineLower: string, tableName: string): string {
+  return sql.split("{{table}}").join(quoteSqlIdentifier(engineLower || "mysql", tableName));
 }
 
 /** 截断填充错误信息，用于画布预览 */
@@ -203,12 +225,24 @@ function buildSingleTableSqlFillTask(
   const limit = sqlFillQueryLimit(fill, fullSqlFill);
   const cc = Math.max(1, Math.min(30, Math.floor(colCount) || 1));
 
+  const vsrc = fill.fillMode === "visual" ? fill.visualSource : null;
+  const tableOpcNodeId = String(vsrc?.tableOpcNodeId || "").trim();
+  const tableOpc =
+    vsrc && vsrc.tableSource === "opcua" && tableOpcNodeId && sqlRaw.includes("{{table}}")
+      ? {
+          nodeId: tableOpcNodeId,
+          engine: (vsrc.engine || "mysql").toLowerCase(),
+          fallbackTable: String(vsrc.table || "").trim(),
+        }
+      : undefined;
+
   return {
     key: previewKey,
     connectionId,
     database,
     sql: sqlRaw,
     params: Array.isArray(fill.params) ? fill.params : [],
+    tableOpc,
     limit,
     colCount: cc,
     expandRows,

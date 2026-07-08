@@ -6,7 +6,11 @@ import {
   syncVisualFillQueryAndResultNames,
 } from "@/lib/report-template/table-sql-visual-compile";
 import type { TableSqlFillConfig } from "@/lib/report-template/table-sql-fill";
-import { defaultSqlParam, hydrateTableSqlFill } from "@/lib/report-template/table-sql-fill";
+import {
+  defaultSqlParam,
+  hydrateTableSqlFill,
+  TABLE_SQL_FILL_TABLE_PICK_SLOT,
+} from "@/lib/report-template/table-sql-fill";
 
 describe("compileVisualTableSql", () => {
   it("builds mysql SELECT with placeholders and flattens params", () => {
@@ -152,6 +156,58 @@ describe("compileVisualTableSql", () => {
     expect(fill.params[2].source).toBe("opcua");
     expect(fill.params[2].opcuaNodeId).toBe("ns=2;s=Batch.Status");
     expect(fill.querySql).toContain("{{p2}}");
+  });
+
+  it("emits {{table}} placeholder when table name is opcua-bound", () => {
+    const fill: TableSqlFillConfig = hydrateTableSqlFill({});
+    fill.enabled = true;
+    fill.fillMode = "visual";
+    fill.visualSource = {
+      connectionId: "c1",
+      database: "db1",
+      table: "user",
+      engine: "mysql",
+      columns: ["id"],
+      tableSource: "opcua",
+      tableOpcNodeId: "ns=2;s=TableName",
+    };
+    expect(compileVisualTableSql(fill)).toBe(true);
+    expect(fill.querySql).toContain("FROM {{table}}");
+    expect(fill.querySql).not.toContain("`user`");
+  });
+
+  it("falls back to design table when opcua table binding has no node", () => {
+    const fill: TableSqlFillConfig = hydrateTableSqlFill({});
+    fill.enabled = true;
+    fill.fillMode = "visual";
+    fill.visualSource = {
+      connectionId: "c1",
+      database: "db1",
+      table: "user",
+      engine: "mysql",
+      columns: ["id"],
+      tableSource: "opcua",
+      tableOpcNodeId: "",
+    };
+    expect(compileVisualTableSql(fill)).toBe(true);
+    expect(fill.querySql).toContain("FROM `user`");
+  });
+
+  it("applyTableSqlFillOpcPick with table sentinel slot binds table name", () => {
+    const fill: TableSqlFillConfig = hydrateTableSqlFill({});
+    fill.enabled = true;
+    fill.fillMode = "visual";
+    fill.visualSource = {
+      connectionId: "c1",
+      database: "db1",
+      table: "user",
+      engine: "mysql",
+      columns: ["id"],
+    };
+    applyTableSqlFillOpcPick(fill, TABLE_SQL_FILL_TABLE_PICK_SLOT, "ns=2;s=TableName");
+    expect(fill.visualSource?.tableSource).toBe("opcua");
+    expect(fill.visualSource?.tableOpcNodeId).toBe("ns=2;s=TableName");
+    expect(fill.querySql).toContain("FROM {{table}}");
   });
 
   it("applyTableSqlFillOpcPick writes flat params in manual_sql mode", () => {

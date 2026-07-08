@@ -19,7 +19,9 @@ import { loadReportGeneratorPrefs } from "@/lib/report-generator-prefs";
 import type { TableSqlParamBinding } from "@/lib/report-template/table-sql-fill";
 import {
   buildTableSqlFillPreviewTasks,
+  sanitizeOpcTableName,
   sqlResponseToPreviewRows,
+  substituteSqlFillTableName,
 } from "@/lib/report-template/table-sql-fill-preview";
 import type {
   BindingPreviewRefreshOptions,
@@ -176,8 +178,33 @@ export function useReportBindingPreview(tmplRef: Ref<ReportTemplate | null>): Re
         await runPool(fillTasks, 4, async (task) => {
           if (gen !== generation) return;
           try {
-            // 表格填充的筛选参数与标量 SQL 同规则取值：OPC UA / 结批批次号 / 手写兜底
             let sql = task.sql;
+            // 表名绑定 OPC：读取变量得到实际表名（分表场景），失败回退设计时表
+            if (task.tableOpc && sql.includes("{{table}}")) {
+              let tableName = "";
+              let readErr = "";
+              if (opcServerId) {
+                try {
+                  stats.opcReads += 1;
+                  const res = (await apiFetch(`/opcua/read_saved/${opcServerId}`, {
+                    method: "POST",
+                    body: { node_id: task.tableOpc.nodeId },
+                  })) as { ok?: boolean; message?: string; value?: unknown };
+                  if (res.ok === false) readErr = String(res.message || "读取失败");
+                  else tableName = sanitizeOpcTableName(res.value);
+                } catch (e) {
+                  readErr = e instanceof Error ? e.message : String(e);
+                }
+              } else {
+                readErr = "未配置可用的 OPC UA 连接";
+              }
+              if (!tableName) tableName = sanitizeOpcTableName(task.tableOpc.fallbackTable);
+              if (!tableName) {
+                throw new Error(`表名 OPC 变量不可用${readErr ? `：${readErr}` : ""}，且未选择可用的默认表`);
+              }
+              sql = substituteSqlFillTableName(sql, task.tableOpc.engine, tableName);
+            }
+            // 表格填充的筛选参数与标量 SQL 同规则取值：OPC UA / 结批批次号 / 手写兜底
             if (task.params.length && /\{\{p\d+\}\}/i.test(sql)) {
               sql = await substituteSqlWithResolvedParams(sql, task.params);
             }
