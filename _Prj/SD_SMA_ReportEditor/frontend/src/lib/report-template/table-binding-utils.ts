@@ -10,13 +10,19 @@ export function gridHasNonNoneBinding(grid: { bindingKind: string }[][]): boolea
 }
 
 export function clearGridCellBindings(
-  grid: { bindingKind: string; opcuaNodeId: string; sqlText: string }[][],
+  grid: {
+    bindingKind: string;
+    opcuaNodeId: string;
+    sqlText: string;
+    scalarSqlVisual?: unknown;
+  }[][],
 ): void {
   for (const row of grid) {
     for (const c of row) {
       c.bindingKind = "none";
       c.opcuaNodeId = "";
       c.sqlText = "";
+      if (c.scalarSqlVisual != null) c.scalarSqlVisual = null;
     }
   }
 }

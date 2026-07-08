@@ -469,9 +469,24 @@
                       选择…
                     </button>
                   </div>
-                  <label v-if="activeHzTableCell.bindingKind === 'sql'" class="hz-span2"
-                    >SQL<textarea v-model="activeHzTableCell.sqlText" rows="3" class="hz-inp" spellcheck="false"
-                  /></label>
+                  <template v-if="activeHzTableCell.bindingKind === 'sql'">
+                    <div class="hz-span2">
+                      <ScalarSqlQueryBuilder
+                        :sql-text="activeHzTableCell.sqlText"
+                        :fill-mode="hzTableCellScalarFillMode"
+                        :visual="hzTableCellScalarVisual"
+                        @update:sql-text="activeHzTableCell.sqlText = $event"
+                        @update:fill-mode="hzTableCellScalarFillMode = $event"
+                        @update:visual="hzTableCellScalarVisual = $event"
+                      />
+                    </div>
+                    <div class="hz-span2">
+                      <ScalarSqlParamBindingsEditor
+                        :params="hzTableCellSqlParams"
+                        @opc-pick="openHzTableCellSqlParamOpcPicker"
+                      />
+                    </div>
+                  </template>
                 </template>
                 <p v-else class="hz-muted hz-span2">
                   数据库填充已开启：请勿编辑静态文字；可视化数据源时在画布第一行下拉选择输出字段。
@@ -589,15 +604,24 @@ import LayoutZoneInlineContent from "@/components/report-template/LayoutZoneInli
 import BoxZoneColorPicker from "@/components/report-template/BoxZoneColorPicker.vue";
 import OpcUaNodePickerModal from "@/features/datasource/opcua/OpcUaNodePickerModal.vue";
 import TemplateTableSqlFillFields from "@/components/report-template/TemplateTableSqlFillFields.vue";
+import ScalarSqlParamBindingsEditor from "@/components/report-template/ScalarSqlParamBindingsEditor.vue";
+import ScalarSqlQueryBuilder from "@/components/report-template/ScalarSqlQueryBuilder.vue";
 import TableColumnResizeGutters from "@/components/report-template/TableColumnResizeGutters.vue";
-import type { TableSqlFillConfig } from "@/lib/report-template/table-sql-fill";
+import type { TableSqlFillConfig, TableSqlParamBinding } from "@/lib/report-template/table-sql-fill";
 import {
   defaultTableSqlFillConfig,
+  ensureSqlParamSlots,
   ensureTableSqlResultColumnNames,
   ensureVisualSource,
   isVisualSqlFillOutputPickerRow,
   syncResultColumnNamesFromFirstRow,
 } from "@/lib/report-template/table-sql-fill";
+import {
+  hydrateScalarSqlVisual,
+  normalizeScalarSqlFillMode,
+  type ScalarSqlFillMode,
+  type ScalarSqlVisualConfig,
+} from "@/lib/report-template/scalar-sql-visual";
 import type { VisualSqlTableColumnMeta } from "@/lib/report-template/table-sql-visual-catalog";
 import { loadVisualSqlTableColumnsCached } from "@/lib/report-template/table-sql-visual-catalog";
 import {
@@ -751,7 +775,13 @@ const sel = computed(() =>
 );
 
 const opcPickOpen = ref(false);
-const opcPickTarget = ref<"parameter" | "table" | { kind: "tableSql"; slot: number } | null>(null);
+const opcPickTarget = ref<
+  | "parameter"
+  | "table"
+  | { kind: "tableSql"; slot: number }
+  | { kind: "scalarSqlCell"; slot: number }
+  | null
+>(null);
 
 const hzTableDimRows = ref(3);
 const hzTableDimCols = ref(4);
@@ -815,6 +845,49 @@ const activeHzTableCellFill = computed({
     if (cell) cell.bgColor = v;
   },
 });
+
+function ensureHzTableCellSqlParams(cell: { sqlParams?: TableSqlParamBinding[] }): TableSqlParamBinding[] {
+  if (!Array.isArray(cell.sqlParams)) cell.sqlParams = [];
+  ensureSqlParamSlots(cell.sqlParams, 2);
+  return cell.sqlParams;
+}
+
+const hzTableCellSqlParams = computed(() => {
+  const cell = activeHzTableCell.value;
+  if (!cell || cell.bindingKind !== "sql") return [];
+  return ensureHzTableCellSqlParams(cell);
+});
+
+const hzTableCellScalarFillMode = computed<ScalarSqlFillMode>({
+  get() {
+    const cell = activeHzTableCell.value;
+    if (!cell) return "visual";
+    return normalizeScalarSqlFillMode(cell.scalarSqlFillMode, cell.sqlText);
+  },
+  set(v) {
+    const cell = activeHzTableCell.value;
+    if (cell) cell.scalarSqlFillMode = v;
+  },
+});
+
+const hzTableCellScalarVisual = computed<ScalarSqlVisualConfig>({
+  get() {
+    // 不在 getter 中回写：仅点开面板不应把模版标记为已修改
+    return hydrateScalarSqlVisual(activeHzTableCell.value?.scalarSqlVisual);
+  },
+  set(v) {
+    const cell = activeHzTableCell.value;
+    if (cell) cell.scalarSqlVisual = v;
+  },
+});
+
+function openHzTableCellSqlParamOpcPicker(slot: number) {
+  const cell = activeHzTableCell.value;
+  if (!cell) return;
+  ensureHzTableCellSqlParams(cell);
+  opcPickTarget.value = { kind: "scalarSqlCell", slot };
+  opcPickOpen.value = true;
+}
 
 const hzSqlFillEnabled = computed(() => sel.value?.type === "table" && !!sel.value.tableSqlFill?.enabled);
 
@@ -999,6 +1072,18 @@ function onHzOpcPickConfirm(payload: string | { serverId: string; nodeId: string
   if (typeof t === "object" && t?.kind === "tableSql" && s?.type === "table") {
     // 可视化模式写入筛选条件的绑定（面板显示来源）；手写模式写入 params 槽位
     applyTableSqlFillOpcPick(ensureHzTableSqlFill(s), t.slot, id);
+    return;
+  }
+  if (typeof t === "object" && t?.kind === "scalarSqlCell" && s?.type === "table") {
+    const cell = activeHzTableCell.value;
+    if (!cell) return;
+    const params = ensureHzTableCellSqlParams(cell);
+    ensureSqlParamSlots(params, t.slot + 1);
+    const row = params[t.slot];
+    if (row) {
+      row.source = "opcua";
+      row.opcuaNodeId = id;
+    }
     return;
   }
   if (t === "table" && s?.type === "table") {
