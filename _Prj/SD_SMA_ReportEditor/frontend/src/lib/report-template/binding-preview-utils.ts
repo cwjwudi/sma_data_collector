@@ -388,7 +388,11 @@ export function collectBindingDedupeTasks(
             const nid = cell.opcuaNodeId.trim();
             if (nid) addOpc(nid, ck);
           } else if (cell.bindingKind === "sql") {
-            addSql(cell.sqlText, ck, cell.sqlParams);
+            addSql(
+              resolveEffectiveScalarSql(cell.sqlText, cell.scalarSqlFillMode, cell.scalarSqlVisual),
+              ck,
+              cell.sqlParams,
+            );
           }
         }),
       );
@@ -418,7 +422,11 @@ export function collectBindingDedupeTasks(
             const nid = cell.opcuaNodeId.trim();
             if (nid) addOpc(nid, ck);
           } else if (cell.bindingKind === "sql") {
-            addSql(cell.sqlText, ck, cell.sqlParams);
+            addSql(
+              resolveEffectiveScalarSql(cell.sqlText, cell.scalarSqlFillMode, cell.scalarSqlVisual),
+              ck,
+              cell.sqlParams,
+            );
           }
         }),
       );

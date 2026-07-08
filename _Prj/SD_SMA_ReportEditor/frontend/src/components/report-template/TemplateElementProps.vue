@@ -322,19 +322,20 @@
                   从列表选择…
                 </button>
               </div>
-              <label v-if="activeTableCell.bindingKind === 'sql'" class="lpep-lab"
-                >SQL<textarea
-                  v-model="activeTableCell.sqlText"
-                  rows="4"
-                  class="lpep-inp"
-                  spellcheck="false"
-                  placeholder="例如：SELECT name FROM batches WHERE id = {{p0}}"
-              /></label>
-              <ScalarSqlParamBindingsEditor
-                v-if="activeTableCell.bindingKind === 'sql'"
-                :params="tableCellSqlParams"
-                @opc-pick="openTableCellSqlParamOpcPicker"
-              />
+              <template v-if="activeTableCell.bindingKind === 'sql'">
+                <ScalarSqlQueryBuilder
+                  :sql-text="activeTableCell.sqlText"
+                  :fill-mode="tableCellScalarFillMode"
+                  :visual="tableCellScalarVisual"
+                  @update:sql-text="activeTableCell.sqlText = $event"
+                  @update:fill-mode="tableCellScalarFillMode = $event"
+                  @update:visual="tableCellScalarVisual = $event"
+                />
+                <ScalarSqlParamBindingsEditor
+                  :params="tableCellSqlParams"
+                  @opc-pick="openTableCellSqlParamOpcPicker"
+                />
+              </template>
             </template>
             <p v-else class="lpep-hint-muted">
               数据库填充已开启：表格内容由查询填充，请勿在此编辑静态文字。可视化数据源时请在画布<strong>第一行</strong>下拉选择各列对应字段。
@@ -485,6 +486,13 @@ import TableColumnWidthVisualEditor from "@/components/report-template/TableColu
 import TableCellFillPicker from "@/components/report-template/TableCellFillPicker.vue";
 import ParameterBindingFields from "@/components/report-template/ParameterBindingFields.vue";
 import ScalarSqlParamBindingsEditor from "@/components/report-template/ScalarSqlParamBindingsEditor.vue";
+import ScalarSqlQueryBuilder from "@/components/report-template/ScalarSqlQueryBuilder.vue";
+import {
+  hydrateScalarSqlVisual,
+  normalizeScalarSqlFillMode,
+  type ScalarSqlFillMode,
+  type ScalarSqlVisualConfig,
+} from "@/lib/report-template/scalar-sql-visual";
 import type { TableSqlFillConfig, TableSqlParamBinding } from "@/lib/report-template/table-sql-fill";
 import {
   defaultTableSqlFillConfig,
@@ -674,6 +682,29 @@ const tableCellSqlParams = computed(() => {
   const cell = activeTableCell.value;
   if (!cell || cell.bindingKind !== "sql") return [];
   return ensureTableCellSqlParams(cell);
+});
+
+const tableCellScalarFillMode = computed<ScalarSqlFillMode>({
+  get() {
+    const cell = activeTableCell.value;
+    if (!cell) return "visual";
+    return normalizeScalarSqlFillMode(cell.scalarSqlFillMode, cell.sqlText);
+  },
+  set(v) {
+    const cell = activeTableCell.value;
+    if (cell) cell.scalarSqlFillMode = v;
+  },
+});
+
+const tableCellScalarVisual = computed<ScalarSqlVisualConfig>({
+  get() {
+    // 不在 getter 中回写：仅点开面板不应把模版标记为已修改
+    return hydrateScalarSqlVisual(activeTableCell.value?.scalarSqlVisual);
+  },
+  set(v) {
+    const cell = activeTableCell.value;
+    if (cell) cell.scalarSqlVisual = v;
+  },
 });
 
 const hasTableCellPicked = computed(() => {

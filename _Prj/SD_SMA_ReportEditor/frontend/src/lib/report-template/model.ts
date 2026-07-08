@@ -25,6 +25,9 @@ export interface TemplateTableCell {
   /** 单元格级 SQL：预览占位或单行标量查询等，由生成器约定 */
   sqlText: string;
   sqlParams: TableSqlParamBinding[];
+  /** 单元格标量 SQL：手写 / 点选生成（与数据参数控件一致） */
+  scalarSqlFillMode?: ScalarSqlFillMode;
+  scalarSqlVisual?: ScalarSqlVisualConfig | null;
   /** 单元格填充色；transparent 或未设则继承列/表格默认 */
   bgColor?: string;
 }
@@ -229,12 +232,18 @@ export function defaultTableCell(): TemplateTableCell {
 export function hydrateTableCell(raw: Partial<TemplateTableCell> | undefined): TemplateTableCell {
   const d = defaultTableCell();
   if (!raw || typeof raw !== "object") return { ...d };
+  const sqlText = typeof raw.sqlText === "string" ? raw.sqlText : d.sqlText;
+  const rawMode = (raw as { scalarSqlFillMode?: unknown }).scalarSqlFillMode;
+  const rawVisual = (raw as { scalarSqlVisual?: unknown }).scalarSqlVisual;
   return {
     text: typeof raw.text === "string" ? raw.text : d.text,
     bindingKind: normalizeBindingKind(raw.bindingKind),
     opcuaNodeId: typeof raw.opcuaNodeId === "string" ? raw.opcuaNodeId : d.opcuaNodeId,
-    sqlText: typeof raw.sqlText === "string" ? raw.sqlText : d.sqlText,
+    sqlText,
     sqlParams: hydrateSqlParamBindings((raw as { sqlParams?: unknown }).sqlParams, 0),
+    // 仅在旧数据已有配置时水合，避免为整表每格写入默认对象
+    scalarSqlFillMode: rawMode != null ? normalizeScalarSqlFillMode(rawMode, sqlText) : undefined,
+    scalarSqlVisual: rawVisual != null ? hydrateScalarSqlVisual(rawVisual) : undefined,
     bgColor: typeof raw.bgColor === "string" ? raw.bgColor : d.bgColor,
   };
 }
