@@ -9,7 +9,7 @@ import sys
 import os
 import time
 from typing import Dict, List, Callable, Any, Iterator
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # 处理相对导入问题
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -69,6 +69,52 @@ class DataCollector:
         if isinstance(value, str):
             return value.strip().lower() in {"false", "0", "off", ""}
         return value is False or value == 0
+
+    @staticmethod
+    def _create_fixed_cadence_anchor(
+        now_wall: datetime,
+        now_monotonic: float,
+    ) -> tuple[float, datetime]:
+        anchor_wall = now_wall.replace(microsecond=0)
+        anchor_monotonic = now_monotonic - (now_wall - anchor_wall).total_seconds()
+        return anchor_monotonic, anchor_wall
+
+    @staticmethod
+    def _fixed_cadence_deadline(
+        anchor_monotonic: float,
+        tick_index: int,
+        interval: float,
+    ) -> float:
+        return anchor_monotonic + tick_index * interval
+
+    @staticmethod
+    def _fixed_cadence_collection_time(
+        anchor_wall: datetime,
+        tick_index: int,
+        interval: float,
+    ) -> datetime:
+        return anchor_wall + timedelta(seconds=tick_index * interval)
+
+    @classmethod
+    def _advance_fixed_cadence_tick(
+        cls,
+        anchor_monotonic: float,
+        current_tick_index: int,
+        interval: float,
+        now_monotonic: float,
+    ) -> tuple[int, int]:
+        next_tick_index = current_tick_index + 1
+        next_deadline = cls._fixed_cadence_deadline(
+            anchor_monotonic,
+            next_tick_index,
+            interval,
+        )
+        lag = now_monotonic - next_deadline
+        if lag < interval:
+            return next_tick_index, 0
+
+        skipped_ticks = int(lag // interval)
+        return next_tick_index + skipped_ticks, skipped_ticks
 
     async def _reset_boolean_trigger_with_confirm(
         self,
@@ -270,20 +316,34 @@ class DataCollector:
                                        opcua_client: OpcUaClient) -> None:
         """时间触发的数据采集。
 
-        使用单调时钟维护计划节拍：每轮开始前睡到本组的 next_deadline。
-        本轮结束后将 next_deadline 推进 interval；若实际结束时间已晚于该计划时刻
-        （读点/回调超时），则不再追欠拍，将下一拍重置为「当前时刻 + interval」。
+        使用固定节拍调度：实际读取可以迟到，但 collection_time 使用计划节拍时间。
+        例如计划 18s 采集，实际 18.6s 开始、19.1s 返回，入库时间仍写 18s。
+        如果程序落后超过一个完整周期，只跳过已经错过的节拍，避免无限追赶。
         """
         interval = float(group.interval_seconds)
-        next_deadline = time.monotonic()
+        anchor_monotonic, anchor_wall = self._create_fixed_cadence_anchor(
+            datetime.now(),
+            time.monotonic(),
+        )
+        tick_index = 0
 
         while True:
             try:
+                next_deadline = self._fixed_cadence_deadline(
+                    anchor_monotonic,
+                    tick_index,
+                    interval,
+                )
                 now = time.monotonic()
                 wait = next_deadline - now
                 if wait > 0:
                     await asyncio.sleep(wait)
 
+                planned_collection_time = self._fixed_cadence_collection_time(
+                    anchor_wall,
+                    tick_index,
+                    interval,
+                )
                 data = await opcua_client.read_data_points(data_points)
 
                 valid_data = {name: info for name, info in data.items() if info.get('value') is not None}
@@ -297,7 +357,7 @@ class DataCollector:
 
                     collection_data = {
                         'group_name': group.name,
-                        'collection_time': datetime.now(),
+                        'collection_time': planned_collection_time,
                         'trigger_type': 'time',
                         'data': valid_data
                     }
@@ -305,10 +365,23 @@ class DataCollector:
                     for callback in self.data_callbacks:
                         callback(collection_data)
 
-                now = time.monotonic()
-                next_deadline += interval
-                if now > next_deadline:
-                    next_deadline = now + interval
+                tick_index, skipped_ticks = self._advance_fixed_cadence_tick(
+                    anchor_monotonic,
+                    tick_index,
+                    interval,
+                    time.monotonic(),
+                )
+                if skipped_ticks:
+                    self.logger.warning(
+                        "采集组 %s 固定节拍落后，跳过 %s 个已错过节拍，下一计划时间=%s",
+                        group.name,
+                        skipped_ticks,
+                        self._fixed_cadence_collection_time(
+                            anchor_wall,
+                            tick_index,
+                            interval,
+                        ),
+                    )
 
             except asyncio.CancelledError:
                 self.logger.info(f"时间触发采集组 {group.name} 已取消")
@@ -324,7 +397,23 @@ class DataCollector:
                 else:
                     self.logger.error(f"时间触发采集组 {group.name} 发生错误: {e}", exc_info=True)
                 await asyncio.sleep(5)  # 错误后等待5秒重试
-                next_deadline = time.monotonic() + interval
+                tick_index, skipped_ticks = self._advance_fixed_cadence_tick(
+                    anchor_monotonic,
+                    tick_index,
+                    interval,
+                    time.monotonic(),
+                )
+                if skipped_ticks:
+                    self.logger.warning(
+                        "采集组 %s 异常恢复后跳过 %s 个已错过节拍，下一计划时间=%s",
+                        group.name,
+                        skipped_ticks,
+                        self._fixed_cadence_collection_time(
+                            anchor_wall,
+                            tick_index,
+                            interval,
+                        ),
+                    )
 
     def _get_variable_trigger_poll_interval(self, group: DataGroup) -> float:
         """获取 variable 类触发模式的触发点轮询间隔（秒）。"""
