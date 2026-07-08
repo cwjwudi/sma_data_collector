@@ -32,9 +32,10 @@ async function testSavedDb(connectionId: string, label: string): Promise<string 
   }
 }
 
-async function testSavedOpc(serverId: string, label: string): Promise<string | null> {
+async function pingSavedOpc(serverId: string, label: string): Promise<string | null> {
   try {
-    const res = (await apiFetch(`/opcua/test_saved/${encodeURIComponent(serverId)}`, {
+    // ping_saved 复用后端连接池：常态下毫秒级返回，避免结批预检每次完整握手
+    const res = (await apiFetch(`/opcua/ping_saved/${encodeURIComponent(serverId)}`, {
       method: "POST",
     })) as { ok?: boolean; message?: string };
     if (res?.ok) return null;
@@ -49,26 +50,25 @@ export async function runTemplateExportPreflight(templateId: string): Promise<Te
   const blockers: string[] = [];
   const warnings: string[] = [];
 
-  let tmpl;
-  try {
-    tmpl = await getTemplate(templateId);
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    blockers.push(`无法加载模版：${msg}`);
-    return { ok: false, blockers, warnings, summary: formatPreflightBlockerSummary(blockers) };
-  }
-
-  let prefs: Record<string, unknown> = {};
-  try {
-    prefs = (await apiFetch("/settings/app_preferences")) as Record<string, unknown>;
-  } catch {
-    prefs = {};
-  }
-
-  const [opcPkg, connPkg] = await Promise.all([
+  // 模版、偏好、连接列表并行拉取，缩短结批前的串行等待
+  const [tmplRes, prefs, opcPkg, connPkg] = await Promise.all([
+    getTemplate(templateId).then(
+      (t) => ({ ok: true as const, t }),
+      (e: unknown) => ({ ok: false as const, e }),
+    ),
+    apiFetch("/settings/app_preferences").catch(() => ({}) as Record<string, unknown>) as Promise<
+      Record<string, unknown>
+    >,
     apiFetch("/opcua/servers").catch(() => ({ servers: [] })),
     apiFetch("/database/connections").catch(() => ({ connections: [] })),
   ]);
+
+  if (!tmplRes.ok) {
+    const msg = tmplRes.e instanceof Error ? tmplRes.e.message : String(tmplRes.e);
+    blockers.push(`无法加载模版：${msg}`);
+    return { ok: false, blockers, warnings, summary: formatPreflightBlockerSummary(blockers) };
+  }
+  const tmpl = tmplRes.t;
 
   const servers = ((opcPkg as { servers?: NamedEntity[] }).servers || []) as NamedEntity[];
   const connections = ((connPkg as { connections?: NamedEntity[] }).connections || []) as NamedEntity[];
@@ -129,7 +129,7 @@ export async function runTemplateExportPreflight(templateId: string): Promise<Te
     ...opcIds.map(async (id) => {
       const meta = servers.find((s) => s.id === id);
       const label = meta?.name?.trim() || id;
-      const err = await testSavedOpc(id, label);
+      const err = await pingSavedOpc(id, label);
       if (err) blockers.push(err);
     }),
     ...sqlIds.map(async (id) => {

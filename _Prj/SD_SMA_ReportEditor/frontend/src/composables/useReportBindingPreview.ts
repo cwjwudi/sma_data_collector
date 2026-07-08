@@ -16,9 +16,12 @@ import {
 } from "@/lib/report-template/binding-preview-utils";
 import { resolveAutoBatchOpcBinding } from "@/lib/auto-batch-opc-binding";
 import { loadReportGeneratorPrefs } from "@/lib/report-generator-prefs";
+import type { TableSqlParamBinding } from "@/lib/report-template/table-sql-fill";
 import {
   buildTableSqlFillPreviewTasks,
+  sanitizeOpcTableName,
   sqlResponseToPreviewRows,
+  substituteSqlFillTableName,
 } from "@/lib/report-template/table-sql-fill-preview";
 import type {
   BindingPreviewRefreshOptions,
@@ -67,14 +70,10 @@ export function useReportBindingPreview(tmplRef: Ref<ReportTemplate | null>): Re
 
     if (!silent) loading.value = true;
     try {
-      let prefs: Record<string, unknown> = {};
-      try {
-        prefs = (await apiFetch("/settings/app_preferences")) as Record<string, unknown>;
-      } catch {
-        prefs = {};
-      }
-
-      const [opcPkg, connPkg] = await Promise.all([
+      const [prefs, opcPkg, connPkg] = await Promise.all([
+        apiFetch("/settings/app_preferences").catch(() => ({}) as Record<string, unknown>) as Promise<
+          Record<string, unknown>
+        >,
         apiFetch("/opcua/servers").catch(() => ({ servers: [] })),
         apiFetch("/database/connections").catch(() => ({ connections: [] })),
       ]);
@@ -95,9 +94,12 @@ export function useReportBindingPreview(tmplRef: Ref<ReportTemplate | null>): Re
 
       const out: Record<string, BindingPreviewCell> = partial ? { ...values.value } : {};
 
-      async function resolveScalarSqlTask(task: SqlDedupeTask): Promise<string> {
-        const params = task.params || [];
-        const batchBinding = resolveAutoBatchOpcBinding(loadReportGeneratorPrefs());
+      const batchBinding = resolveAutoBatchOpcBinding(loadReportGeneratorPrefs());
+
+      async function substituteSqlWithResolvedParams(
+        sql: string,
+        params: TableSqlParamBinding[],
+      ): Promise<string> {
         const paramValues = await resolveSqlParamValues(params, {
           defaultOpcServerId: opcServerId,
           batchBinding,
@@ -110,7 +112,11 @@ export function useReportBindingPreview(tmplRef: Ref<ReportTemplate | null>): Re
               body: { node_id: nodeId },
             })) as { ok?: boolean; message?: string; value?: unknown },
         });
-        return substituteScalarSqlParams(task.sql, params, paramValues);
+        return substituteScalarSqlParams(sql, params, paramValues);
+      }
+
+      async function resolveScalarSqlTask(task: SqlDedupeTask): Promise<string> {
+        return substituteSqlWithResolvedParams(task.sql, task.params || []);
       }
 
       if (doOpc) {
@@ -172,9 +178,39 @@ export function useReportBindingPreview(tmplRef: Ref<ReportTemplate | null>): Re
         await runPool(fillTasks, 4, async (task) => {
           if (gen !== generation) return;
           try {
+            let sql = task.sql;
+            // 表名绑定 OPC：读取变量得到实际表名（分表场景），失败回退设计时表
+            if (task.tableOpc && sql.includes("{{table}}")) {
+              let tableName = "";
+              let readErr = "";
+              if (opcServerId) {
+                try {
+                  stats.opcReads += 1;
+                  const res = (await apiFetch(`/opcua/read_saved/${opcServerId}`, {
+                    method: "POST",
+                    body: { node_id: task.tableOpc.nodeId },
+                  })) as { ok?: boolean; message?: string; value?: unknown };
+                  if (res.ok === false) readErr = String(res.message || "读取失败");
+                  else tableName = sanitizeOpcTableName(res.value);
+                } catch (e) {
+                  readErr = e instanceof Error ? e.message : String(e);
+                }
+              } else {
+                readErr = "未配置可用的 OPC UA 连接";
+              }
+              if (!tableName) tableName = sanitizeOpcTableName(task.tableOpc.fallbackTable);
+              if (!tableName) {
+                throw new Error(`表名 OPC 变量不可用${readErr ? `：${readErr}` : ""}，且未选择可用的默认表`);
+              }
+              sql = substituteSqlFillTableName(sql, task.tableOpc.engine, tableName);
+            }
+            // 表格填充的筛选参数与标量 SQL 同规则取值：OPC UA / 结批批次号 / 手写兜底
+            if (task.params.length && /\{\{p\d+\}\}/i.test(sql)) {
+              sql = await substituteSqlWithResolvedParams(sql, task.params);
+            }
             const body: Record<string, unknown> = {
               connection_id: task.connectionId,
-              sql: task.sql,
+              sql,
               limit: task.limit,
             };
             if (task.database) body.database = task.database;

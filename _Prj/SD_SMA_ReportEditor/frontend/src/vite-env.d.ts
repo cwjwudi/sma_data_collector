@@ -29,6 +29,14 @@ interface Window {
       totalReports?: number;
       stats?: { opcReads: number; sqlQueries: number; sqlRows: number };
       durationMs?: number;
+      /** 分阶段耗时（多份报表求和）：warmStart 表示复用了预热窗口 */
+      timings?: {
+        warmStart?: boolean;
+        readyMs?: number;
+        dataMs?: number;
+        printMs?: number;
+        writeMs?: number;
+      };
     }>;
     shellOpenPath: (filePath: string) => Promise<{ ok: boolean; error?: string }>;
     pathJoin: (...parts: string[]) => Promise<string>;
@@ -37,6 +45,7 @@ interface Window {
       error?: string;
       totalReports?: number;
       stats?: { opcReads: number; sqlQueries: number; sqlRows: number };
+      phases?: { tplMs: number; dataMs: number; paintMs: number };
     }) => void;
     notifyPdfExportHeartbeat?: () => void;
     onPdfExportProgress: (

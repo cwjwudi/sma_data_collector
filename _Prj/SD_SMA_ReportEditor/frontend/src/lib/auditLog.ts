@@ -19,24 +19,30 @@ export type AuditQueryParams = {
   toTs?: number;
 };
 
-/** 写入操作审计（失败静默，不阻断主流程）。 */
+/** 写入操作审计（失败重试一次后静默，不阻断主流程）。 */
 export async function auditLog(payload: AuditLogPayload): Promise<void> {
   const action = payload.action?.trim();
   if (!action) return;
-  try {
-    await apiFetch("/audit/log", {
-      method: "POST",
-      body: {
-        action,
-        result: payload.result || "ok",
-        summary: payload.summary || "",
-        object_type: payload.object_type,
-        object_id: payload.object_id,
-        detail: payload.detail || {},
-      },
-    });
-  } catch (e) {
-    console.warn("[auditLog]", e);
+  const body = {
+    action,
+    result: payload.result || "ok",
+    summary: payload.summary || "",
+    object_type: payload.object_type,
+    object_id: payload.object_id,
+    detail: payload.detail || {},
+  };
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      await apiFetch("/audit/log", { method: "POST", body });
+      return;
+    } catch (e) {
+      if (attempt === 0) {
+        // 后端瞬时不可用（如刚启动）时补一次，避免结批记录静默丢失
+        await new Promise((r) => setTimeout(r, 1500));
+        continue;
+      }
+      console.warn("[auditLog]", e);
+    }
   }
 }
 

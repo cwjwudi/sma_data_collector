@@ -16,7 +16,7 @@ import {
 } from "@/lib/auto-trigger-bindings";
 import { buildAutoExportFileName } from "@/lib/auto-export-filename";
 import { humanizePdfExportError } from "@/lib/pdfExportErrors";
-import { runTemplateExportPreflight } from "@/lib/templateExportPreflight";
+import { runTemplateExportPreflight, type TemplateExportPreflightResult } from "@/lib/templateExportPreflight";
 import { showAppToast } from "@/composables/useAppToast";
 import { auditLog } from "@/lib/auditLog";
 import {
@@ -53,6 +53,54 @@ let lastBindingConfigKey = "";
 let templateSummariesCache: TemplateSummary[] = [];
 let templateSummariesLoadedAt = 0;
 const TEMPLATE_CACHE_MS = 30_000;
+
+/**
+ * 结批预检保活：两次结批可能间隔数天，后台每 60 秒对已启用绑定的模版跑一次预检——
+ * 既维持 OPC UA 连接池会话（后端 90 秒空闲即断开），又把预检结果缓存下来，
+ * 收到结批指令时直接取用，做到「即结批即渲染」。
+ */
+const PREFLIGHT_WARM_INTERVAL_MS = 60_000;
+const PREFLIGHT_CACHE_TTL_MS = 150_000;
+let preflightWarmupBusy = false;
+let lastPreflightWarmupAt = 0;
+const preflightCache = new Map<string, { at: number; result: TemplateExportPreflightResult }>();
+
+function getFreshPreflightResult(templateId: string): TemplateExportPreflightResult | null {
+  const e = preflightCache.get(templateId);
+  if (!e || !e.result.ok) return null;
+  if (Date.now() - e.at > PREFLIGHT_CACHE_TTL_MS) return null;
+  return e.result;
+}
+
+async function warmupPreflightCache(bindings: AutoTriggerBinding[]): Promise<void> {
+  if (preflightWarmupBusy) return;
+  preflightWarmupBusy = true;
+  try {
+    const tids = [
+      ...new Set(
+        bindings
+          .filter(isTriggerBindingActive)
+          .map((b) => (b.templateId || "").trim())
+          .filter(Boolean),
+      ),
+    ];
+    for (const tid of tids) {
+      if (autoExportBusy) return;
+      try {
+        const result = await runTemplateExportPreflight(tid);
+        if (result.ok) {
+          preflightCache.set(tid, { at: Date.now(), result });
+        } else {
+          preflightCache.delete(tid);
+        }
+      } catch {
+        preflightCache.delete(tid);
+      }
+    }
+  } finally {
+    preflightWarmupBusy = false;
+  }
+}
 
 const bindingRuntime = new Map<string, BindingRuntime>();
 
@@ -219,6 +267,24 @@ async function notifyExportResultToPlc(
   }
 }
 
+/** 结批全链路分阶段耗时（毫秒），用于审计日志与完成提示的现场定位 */
+export type ExportPhaseTimings = {
+  /** 数据源连通预检（与目录解析、模版列表并行，取最长者） */
+  preflightMs?: number;
+  /** 文件名解析（可能含 OPC 文件名变量读取）与路径拼接 */
+  prepMs?: number;
+  /** 导出窗口从导航到渲染就绪（含窗口内启动 + 取数 + 绘制） */
+  readyMs?: number;
+  /** 其中：窗口内取数（OPC 读 + SQL 查询） */
+  dataMs?: number;
+  /** Chromium printToPDF 排版打印 */
+  printMs?: number;
+  /** PDF 写盘 */
+  writeMs?: number;
+  /** 是否复用了预热窗口（false 表示本次整页冷启动） */
+  warmStart?: boolean;
+};
+
 type AutoPdfExportAttempt = {
   fileName: string;
   filePath: string;
@@ -227,6 +293,7 @@ type AutoPdfExportAttempt = {
   note?: string;
   stats?: { opcReads: number; sqlQueries: number; sqlRows: number };
   durationMs?: number;
+  timings?: ExportPhaseTimings;
 };
 
 /** 结批进度弹窗/审计共用：把取数统计整理成一行可读文本 */
@@ -237,6 +304,29 @@ export function formatExportStatsLine(
   const parts: string[] = [];
   if (stats.opcReads > 0) parts.push(`OPC 读取 ${stats.opcReads} 点`);
   if (stats.sqlQueries > 0) parts.push(`SQL 查询 ${stats.sqlQueries} 次 / ${stats.sqlRows} 行`);
+  return parts.join(" · ");
+}
+
+/** 把分阶段耗时整理成一行可读文本（完成提示与审计摘要用） */
+export function formatExportTimingsLine(t: ExportPhaseTimings | null | undefined): string {
+  if (!t) return "";
+  const sec = (ms: number): string => `${(Math.max(0, ms) / 1000).toFixed(1)}s`;
+  const parts: string[] = [];
+  if (t.preflightMs != null) parts.push(`预检 ${sec(t.preflightMs)}`);
+  if (t.prepMs != null && t.prepMs >= 100) parts.push(`文件名 ${sec(t.prepMs)}`);
+  if (t.readyMs != null) {
+    const dataMs = t.dataMs || 0;
+    if (dataMs > 0) {
+      parts.push(`取数 ${sec(dataMs)}`);
+      parts.push(`渲染 ${sec((t.readyMs || 0) - dataMs)}`);
+    } else {
+      parts.push(`取数渲染 ${sec(t.readyMs)}`);
+    }
+  }
+  if (t.printMs != null || t.writeMs != null) {
+    parts.push(`打印 ${sec((t.printMs || 0) + (t.writeMs || 0))}`);
+  }
+  if (t.warmStart != null) parts.push(t.warmStart ? "窗口已预热" : "窗口冷启动");
   return parts.join(" · ");
 }
 
@@ -254,19 +344,28 @@ async function runAutoPdfExport(
   if (!tid) throw new Error(`未配置${RG_UI.opcAuto}报表模版`);
 
   onStage?.("正在检查数据源连接…");
-  const preflight = await runTemplateExportPreflight(tid);
+  // 预检、导出目录解析、模版列表三者互不依赖：并行执行缩短结批前等待。
+  // 后台保活已缓存的新鲜预检结果直接取用（连接状态刚验证过），预检耗时降为 0
+  const preflightStartMs = Date.now();
+  const cachedPreflight = getFreshPreflightResult(tid);
+  const [preflight, resolved, summaries] = await Promise.all([
+    cachedPreflight ?? runTemplateExportPreflight(tid),
+    resolveAutoExportDir(prefs),
+    loadTemplateSummariesCached(),
+  ]);
+  const preflightMs = Date.now() - preflightStartMs;
   if (!preflight.ok) {
     throw new Error(preflight.summary);
   }
 
-  const resolved = await resolveAutoExportDir(prefs);
   const dir = resolved.dir.trim();
   if (!dir) throw new Error(resolved.note || `未配置${RG_UI.opcAuto}保存目录`);
 
-  const summaries = await loadTemplateSummariesCached();
+  const prepStartMs = Date.now();
   const tmeta = summaries.find((x) => x.id === tid);
   const built = await buildAutoExportFileName(prefs, tmeta?.name || tid);
   const filePath = await api.pathJoin(dir, built.base);
+  const prepMs = Date.now() - prepStartMs;
 
   onStage?.("正在取数并渲染报表…");
   const offProgress = api.onPdfExportProgress?.((p) => {
@@ -303,6 +402,7 @@ async function runAutoPdfExport(
     note: exportNote || undefined,
     stats: exportRes.stats,
     durationMs: exportRes.durationMs,
+    timings: { preflightMs, prepMs, ...(exportRes.timings || {}) },
   };
 }
 
@@ -415,10 +515,11 @@ async function pollAutoTriggerOnce(): Promise<void> {
         );
         const totalMs = Date.now() - startedAtMs;
         const statsLine = formatExportStatsLine(result.stats);
+        const timingsLine = formatExportTimingsLine(result.timings);
         void auditLog({
           action: "export.auto_pdf",
           result: "ok",
-          summary: `${result.fileName}（耗时 ${(totalMs / 1000).toFixed(1)} 秒${statsLine ? `；${statsLine}` : ""}）`,
+          summary: `${result.fileName}（耗时 ${(totalMs / 1000).toFixed(1)} 秒${statsLine ? `；${statsLine}` : ""}${timingsLine ? `；${timingsLine}` : ""}）`,
           object_type: "template",
           object_id: b.templateId || undefined,
           detail: {
@@ -429,6 +530,7 @@ async function pollAutoTriggerOnce(): Promise<void> {
             durationMs: totalMs,
             renderMs: result.durationMs,
             stats: result.stats,
+            timings: result.timings,
             totalReports: result.totalReports,
           },
         });
@@ -444,6 +546,7 @@ async function pollAutoTriggerOnce(): Promise<void> {
           fileCount > 1 ? `结批完成：已保存 ${fileCount} 个 PDF` : `结批完成：已保存 ${result.fileName}`,
           `耗时 ${(totalMs / 1000).toFixed(1)} 秒${statsLine ? ` · ${statsLine}` : ""}`,
         ];
+        if (timingsLine) doneLines.push(timingsLine);
         showAppToast(doneLines.join("\n"), { id: progressToastId, tone: "ok", durationMs: 10000 });
       } catch (e) {
         const msg = humanizePdfExportError(e);
@@ -492,6 +595,12 @@ async function pollAutoTriggerOnce(): Promise<void> {
   } else {
     reportAutoExportStatus.value = `${RG_STATUS_OPC_AUTO} 监听中…`;
   }
+
+  // 空闲期后台保活：预检缓存 + OPC 连接池会话（不阻塞本次轮询）
+  if (Date.now() - lastPreflightWarmupAt > PREFLIGHT_WARM_INTERVAL_MS) {
+    lastPreflightWarmupAt = Date.now();
+    void warmupPreflightCache(bindings);
+  }
 }
 
 function restartPollLoop(): void {
@@ -529,6 +638,7 @@ export function disposeReportAutoExportTrigger(): void {
 
 export function invalidateTemplateSummariesCache(): void {
   templateSummariesLoadedAt = 0;
+  preflightCache.clear();
 }
 
 export function notifyReportAutoExportSettingsChanged(): void {

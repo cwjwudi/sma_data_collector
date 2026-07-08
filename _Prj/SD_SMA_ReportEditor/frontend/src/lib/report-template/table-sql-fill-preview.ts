@@ -11,8 +11,9 @@ import type { LayoutZoneElement } from "@/lib/report-template/layout-zone-elemen
 import { ensureZoneTableGrid } from "@/lib/report-template/layout-zone-element";
 import type { ReportTemplate, TemplateElement } from "@/lib/report-template/model";
 import { ensureTableGrid } from "@/lib/report-template/model";
-import type { TableSqlFillConfig } from "@/lib/report-template/table-sql-fill";
+import type { TableSqlFillConfig, TableSqlParamBinding } from "@/lib/report-template/table-sql-fill";
 import type { TableSqlFillPreviewPayload } from "@/lib/report-template/binding-preview-utils";
+import { quoteSqlIdentifier } from "@/lib/report-template/table-sql-visual-compile";
 
 export function templateTableSqlFillPreviewKey(elId: string): string {
   return `tblfill:${elId}`;
@@ -26,14 +27,34 @@ export interface TableSqlFillPreviewTask {
   key: string;
   connectionId: string;
   database?: string;
+  /** 原始 SQL，可含 {{p0}}…/{{table}} 占位符；由运行方结合实际取值替换 */
   sql: string;
+  /** 与 {{pN}} 对应的取值绑定（visual 编译或手写模式的 params） */
+  params: TableSqlParamBinding[];
+  /** 表名绑定 OPC 时的读取信息（{{table}} 占位符替换用） */
+  tableOpc?: {
+    nodeId: string;
+    /** 标识符引用风格（mysql/mariadb 反引号；postgres/sqlite 双引号） */
+    engine: string;
+    /** OPC 读取失败或值非法时兜底的设计时表名（可为空） */
+    fallbackTable: string;
+  };
   limit: number;
   colCount: number;
   expandRows: (dataRowCount: number) => void;
 }
 
-function quoteSqlStringLiteral(raw: string): string {
-  return `'${String(raw).replace(/'/g, "''")}'`;
+/** OPC 表名变量值 → 合法 SQL 标识符（非法时返回空串，由调用方走兜底） */
+export function sanitizeOpcTableName(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  const s = String(value).trim();
+  if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(s)) return "";
+  return s;
+}
+
+/** 将 {{table}} 占位符替换为按引擎引用的表名 */
+export function substituteSqlFillTableName(sql: string, engineLower: string, tableName: string): string {
+  return sql.split("{{table}}").join(quoteSqlIdentifier(engineLower || "mysql", tableName));
 }
 
 /** 截断填充错误信息，用于画布预览 */
@@ -110,22 +131,21 @@ export function formatSqlFillTableCellPreview(opts: {
   return "…";
 }
 
-/** 用手写/可视化同步后的字面量替换 {{p0}}…，供预览查询（非导出）。 */
-export function substituteTableSqlPlaceholdersForPreview(fill: TableSqlFillConfig): string {
-  const sql = fill.querySql || "";
-  return sql.replace(/\{\{p(\d+)\}\}/g, (_, g: string) => {
-    const i = Number.parseInt(g, 10);
-    const p = fill.params?.[i];
-    const lit = (p?.literalFallback ?? "").trim();
-    if (!lit) return "NULL";
-    if (/^-?\d+(\.\d+)?$/.test(lit)) return lit;
-    return quoteSqlStringLiteral(lit);
-  });
-}
-
 /** 与 backend `api/routers/database.py` 中 PREVIEW_LIMIT_MAX 一致 */
 export const TABLE_SQL_FILL_PREVIEW_ROW_LIMIT = 1000;
 export const TABLE_SQL_FILL_FULL_ROW_LIMIT = 50000;
+
+/**
+ * 单次填充查询的行数上限。
+ * - 编辑器画布预览（fullSqlFill=false）：为响应速度截到 1000 行；
+ * - 正式导出（fullSqlFill=true）：尊重用户配置的 maxRows（分报表模式取全量后再按 maxRows 切分）。
+ *   注意不能沿用预览上限：否则「最大行数 > 1000 且未开分报表」的导出会被静默截断。
+ */
+export function sqlFillQueryLimit(fill: TableSqlFillConfig, fullSqlFill: boolean): number {
+  const fillMaxRows = Math.min(Math.max(1, fill.maxRows || 2000), TABLE_SQL_FILL_FULL_ROW_LIMIT);
+  if (!fullSqlFill) return Math.min(fillMaxRows, TABLE_SQL_FILL_PREVIEW_ROW_LIMIT);
+  return fill.splitReportsOnMaxRows ? TABLE_SQL_FILL_FULL_ROW_LIMIT : fillMaxRows;
+}
 
 /**
  * 将正文表格行数同步为「表头 + 预览数据行」；查询结果变少时会缩小行数。
@@ -202,21 +222,27 @@ function buildSingleTableSqlFillTask(
   }
   if (!connectionId) return null;
 
-  const sql = substituteTableSqlPlaceholdersForPreview(fill);
-  if (/\{\{p\d+\}\}/.test(sql)) return null;
-
-  const fillMaxRows = Math.min(Math.max(1, fill.maxRows || 2000), TABLE_SQL_FILL_FULL_ROW_LIMIT);
-  const limit =
-    fullSqlFill && fill.splitReportsOnMaxRows
-      ? TABLE_SQL_FILL_FULL_ROW_LIMIT
-      : Math.min(fillMaxRows, TABLE_SQL_FILL_PREVIEW_ROW_LIMIT);
+  const limit = sqlFillQueryLimit(fill, fullSqlFill);
   const cc = Math.max(1, Math.min(30, Math.floor(colCount) || 1));
+
+  const vsrc = fill.fillMode === "visual" ? fill.visualSource : null;
+  const tableOpcNodeId = String(vsrc?.tableOpcNodeId || "").trim();
+  const tableOpc =
+    vsrc && vsrc.tableSource === "opcua" && tableOpcNodeId && sqlRaw.includes("{{table}}")
+      ? {
+          nodeId: tableOpcNodeId,
+          engine: (vsrc.engine || "mysql").toLowerCase(),
+          fallbackTable: String(vsrc.table || "").trim(),
+        }
+      : undefined;
 
   return {
     key: previewKey,
     connectionId,
     database,
-    sql,
+    sql: sqlRaw,
+    params: Array.isArray(fill.params) ? fill.params : [],
+    tableOpc,
     limit,
     colCount: cc,
     expandRows,

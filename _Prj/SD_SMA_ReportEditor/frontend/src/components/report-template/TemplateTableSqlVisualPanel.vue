@@ -16,6 +16,10 @@
         数据库
         <select v-model="vs.database" :class="selectFieldClass" @change="onDatabaseChange">
           <option value="">请选择…</option>
+          <!-- 目录尚未加载/加载失败时，仍显示已保存的库名，避免下拉框空白 -->
+          <option v-if="vs.database && !catalogDatabases.includes(vs.database)" :value="vs.database">
+            {{ vs.database }}
+          </option>
           <option v-for="d in catalogDatabases" :key="'db-' + d" :value="d">{{ d }}</option>
         </select>
       </label>
@@ -23,6 +27,28 @@
 
     <div class="tsv-lab tsv-table-section">
       <span class="tsv-table-section-label">数据表</span>
+      <div class="tsv-seg" role="tablist" aria-label="表名来源">
+        <button
+          type="button"
+          role="tab"
+          class="tsv-seg-btn"
+          :class="{ 'tsv-seg-btn--on': tableSourceKind === 'manual' }"
+          :aria-selected="tableSourceKind === 'manual'"
+          @click="selectTableSource('manual')"
+        >
+          手动选择
+        </button>
+        <button
+          type="button"
+          role="tab"
+          class="tsv-seg-btn"
+          :class="{ 'tsv-seg-btn--on': tableSourceKind === 'opcua' }"
+          :aria-selected="tableSourceKind === 'opcua'"
+          @click="selectTableSource('opcua')"
+        >
+          OPC UA 变量
+        </button>
+      </div>
       <div class="tsv-table-pick-row">
         <div class="tsv-table-picked" :class="{ 'tsv-table-picked--empty': !vs.table.trim() }">
           {{ vs.table.trim() ? vs.table : "未选择（请在列表中点选）" }}
@@ -37,6 +63,23 @@
           浏览…
         </button>
       </div>
+      <template v-if="tableSourceKind === 'opcua'">
+        <label class="tsv-lab">
+          表名节点 ID（变量值须为表名：字母/数字/下划线）
+          <input
+            v-model.trim="tableOpcNodeIdProxy"
+            class="tsv-text-inp tsv-node-id-inp"
+            type="text"
+            placeholder="选择节点后填入，或可手输 NodeId"
+            spellcheck="false"
+            autocomplete="off"
+          />
+        </label>
+        <button type="button" :class="actionBtnClass" @click="pickTableOpc">选择节点…</button>
+        <p class="tsv-muted">
+          导出时读取该变量作为实际表名（如按批次/年月分表）；上方手动选择的表仍需选定——用于设计时列结构，并在变量读取失败或值非法时兜底。各分表结构需与其一致。
+        </p>
+      </template>
       <p class="tsv-muted">从当前连接的库中列出全部表，支持筛选；无需手输表名。</p>
       <p class="tsv-muted">输出列请在画布表格<strong>第一行</strong>各列的下拉框中选择字段；顺序与表格列从左到右一致。</p>
     </div>
@@ -86,6 +129,8 @@
           <button type="button" class="tsv-mini-btn danger" @click="removeFilter(fi)">删除</button>
         </div>
 
+        <p v-if="!flt.column.trim()" class="tsv-filter-warn">未选择「列」，此条件不会写入查询 SQL。</p>
+
         <div v-if="flt.column.trim()" class="tsv-dist-row">
           <button
             type="button"
@@ -123,6 +168,16 @@
               >
                 OPC UA
               </button>
+              <button
+                type="button"
+                role="tab"
+                class="tsv-seg-btn"
+                :class="{ 'tsv-seg-btn--on': flt.bindings[0].source === 'batch_no' }"
+                :aria-selected="flt.bindings[0].source === 'batch_no'"
+                @click="selectVisualBindingTab(fi, 0, 'batch_no')"
+              >
+                批次号
+              </button>
             </div>
             <div class="tsv-tab-panel" role="tabpanel">
               <template v-if="flt.bindings[0].source === 'literal'">
@@ -153,6 +208,13 @@
                   />
                 </label>
                 <button type="button" :class="actionBtnClass" @click="pickOpc(fi, 0)">选择节点…</button>
+              </template>
+              <template v-else-if="flt.bindings[0].source === 'batch_no'">
+                <p class="tsv-muted">导出时按「结批批次号」筛选，与输出参数控件的批次号来源一致。{{ batchBindingHint }}</p>
+                <label class="tsv-lab">
+                  默认值（批次号读取失败时用）
+                  <input v-model="flt.defaults[0]" :list="'dv-' + flt.id" class="tsv-text-inp" placeholder="可选" />
+                </label>
               </template>
             </div>
           </div>
@@ -287,9 +349,13 @@
     </div>
 
     <label class="tsv-lab">
-      生成的查询 SQL（只读，保存模板时一并写入）
+      生成的查询 SQL（只读，保存模板时一并写入；p0、p1 等为参数占位符）
       <textarea :value="fill.querySql" class="tsv-text-inp tsv-sql-preview" rows="3" readonly spellcheck="false" />
     </label>
+    <div v-if="paramLegend.length" class="tsv-param-legend">
+      <p class="tsv-muted">占位符在预览 / 导出时按以下来源取实际值：</p>
+      <p v-for="line in paramLegend" :key="line" class="tsv-muted tsv-legend-line">{{ line }}</p>
+    </div>
   </div>
 
   <Teleport to="body">
@@ -344,7 +410,9 @@ import {
   ensureVisualOutputColumnSlots,
   ensureVisualSource,
   normalizeVisualSqlFilterShape,
+  TABLE_SQL_FILL_TABLE_PICK_SLOT,
 } from "@/lib/report-template/table-sql-fill";
+import { formatAutoBatchOpcBindingHint, resolveAutoBatchOpcBinding } from "@/lib/auto-batch-opc-binding";
 import { loadVisualSqlTableColumnsCached } from "@/lib/report-template/table-sql-visual-catalog";
 import { buildDistinctSelectSql, visualFilterParamSlotBase } from "@/lib/report-template/table-sql-visual-compile";
 import { computed, nextTick, ref, watch, withDefaults } from "vue";
@@ -393,8 +461,63 @@ const vs = computed(() => ensureVisualSource(props.fill));
 const activeConn = computed(() => connections.value.find((c) => c.id === vs.value.connectionId) ?? null);
 
 const showDatabasePick = computed(() => {
-  const e = (activeConn.value?.engine || "").toLowerCase();
+  // 连接列表未加载完时回退到已保存的 engine，避免重开面板时数据库一栏闪失
+  const e = (activeConn.value?.engine || vs.value.engine || "").toLowerCase();
   return e === "mysql" || e === "mariadb" || e === "postgres";
+});
+
+const batchBindingHint = computed(() => formatAutoBatchOpcBindingHint(resolveAutoBatchOpcBinding()));
+
+const tableSourceKind = computed(() => (vs.value.tableSource === "opcua" ? "opcua" : "manual"));
+
+const tableOpcNodeIdProxy = computed({
+  get(): string {
+    return vs.value.tableOpcNodeId || "";
+  },
+  set(v: string) {
+    vs.value.tableOpcNodeId = v;
+  },
+});
+
+function selectTableSource(kind: "manual" | "opcua") {
+  const prev = tableSourceKind.value;
+  vs.value.tableSource = kind;
+  if (kind === "opcua" && prev !== "opcua" && !(vs.value.tableOpcNodeId || "").trim()) {
+    nextTick(() => pickTableOpc());
+  }
+}
+
+function pickTableOpc() {
+  emit("opcPickParam", TABLE_SQL_FILL_TABLE_PICK_SLOT);
+}
+
+/** 只读 SQL 下方的占位符取值说明：仅列出 querySql 中实际出现的 {{pN}} 与 {{table}} */
+const paramLegend = computed(() => {
+  const sql = props.fill.querySql || "";
+  const params = props.fill.params || [];
+  const used = new Set<number>();
+  const re = /\{\{p(\d+)\}\}/g;
+  for (let m = re.exec(sql); m; m = re.exec(sql)) used.add(Number(m[1]));
+  const lines: string[] = [];
+  if (sql.includes("{{table}}")) {
+    const node = (vs.value.tableOpcNodeId || "").trim() || "（未绑定节点）";
+    const fb = vs.value.table.trim();
+    lines.push(`{{table}} → 导出时读 OPC UA 表名：${node}${fb ? `；读不到时用默认表 ${fb}` : "；未选默认表"}`);
+  }
+  for (const i of [...used].sort((a, b) => a - b)) {
+    const p = params[i];
+    if (!p) continue;
+    const fb = (p.literalFallback || "").trim();
+    if (p.source === "opcua") {
+      const node = (p.opcuaNodeId || "").trim() || "（未绑定节点）";
+      lines.push(`{{p${i}}} → 导出时读 OPC UA：${node}${fb ? `；读不到时用默认值 ${fb}` : ""}`);
+    } else if (p.source === "batch_no") {
+      lines.push(`{{p${i}}} → 导出时读结批批次号${fb ? `；读不到时用默认值 ${fb}` : ""}`);
+    } else {
+      lines.push(`{{p${i}}} → 手写值 ${fb ? `“${fb}”` : "（空，导出时按 NULL 处理）"}`);
+    }
+  }
+  return lines;
 });
 
 const engineHint = computed(() => {
@@ -504,7 +627,7 @@ function onDatabaseChange() {
   vs.value.table = "";
   tableColumns.value = [];
   distinctHints.value = {};
-  void refreshCatalogLevel();
+  // 目录刷新由 vs.database 的 watcher 统一触发，这里不再重复请求
 }
 
 function onConnChange() {
@@ -554,7 +677,7 @@ function onFilterKindChange(flt: VisualSqlFilter) {
 }
 
 function onVisualBindingSourceChange(b: TableSqlParamBinding) {
-  if (b.source === "literal") b.opcuaNodeId = "";
+  if (b.source !== "opcua") b.opcuaNodeId = "";
 }
 
 function selectVisualBindingTab(fi: number, bi: number, source: TableSqlParamSource) {
@@ -632,7 +755,20 @@ watch(
   },
 );
 
-void loadConnections();
+/**
+ * 重开面板时按已保存选择补拉目录与表字段：
+ * 否则数据库下拉与筛选「列」下拉在用户重新更换连接前一直是空列表（表现为不显示库名）。
+ */
+async function initCatalogForSavedSelection() {
+  const v = vs.value;
+  if (!v.connectionId.trim() || (v.engine || "").toLowerCase() === "mongodb") return;
+  await refreshCatalogLevel();
+  if (v.table.trim()) {
+    await loadTableColumns();
+  }
+}
+
+void loadConnections().then(() => initCatalogForSavedSelection());
 </script>
 
 <style scoped>
@@ -852,6 +988,28 @@ input.tsv-text-inp {
 textarea.tsv-text-inp.tsv-sql-preview {
   min-height: 4.5rem;
   resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+.tsv-filter-warn {
+  margin: 0;
+  padding: 6px 8px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #92400e;
+  background: rgb(254 252 232 / 0.95);
+  border: 1px solid rgb(253 230 138 / 0.85);
+  border-radius: 6px;
+}
+.tsv-param-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 10px;
+  border: 1px dashed #e4e4e7;
+  border-radius: 8px;
+  background: #fafafa;
+}
+.tsv-legend-line {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 .tsv-range-bound {

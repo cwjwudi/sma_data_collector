@@ -489,10 +489,10 @@ import type { TableSqlFillConfig, TableSqlParamBinding } from "@/lib/report-temp
 import {
   defaultTableSqlFillConfig,
   ensureSqlParamSlots,
-  ensureMinTableSqlParamSlots,
   ensureTableSqlResultColumnNames,
   syncResultColumnNamesFromFirstRow,
 } from "@/lib/report-template/table-sql-fill";
+import { applyTableSqlFillOpcPick } from "@/lib/report-template/table-sql-visual-compile";
 import type { TemplateTableCellPick } from "@/lib/report-template/template-editor-context";
 import { computed, nextTick, ref, watch } from "vue";
 
@@ -556,7 +556,8 @@ function ensureTplTableSqlFill(el: TemplateElement): TableSqlFillConfig {
 }
 
 function openTplSqlOpcPicker(slot: number) {
-  const s = Math.max(0, Math.floor(Number(slot)) || 0);
+  // 允许负数哨兵槽位（TABLE_SQL_FILL_TABLE_PICK_SLOT = 表名 OPC 变量）
+  const s = Math.floor(Number(slot)) || 0;
   opcPickTarget.value = { kind: "tableSql", slot: s };
   opcPickOpen.value = true;
 }
@@ -811,13 +812,8 @@ function onOpcPickConfirm(payload: string | { serverId: string; nodeId: string }
     return;
   }
   if (typeof t === "object" && t?.kind === "tableSql" && props.el.type === "table") {
-    const cfg = ensureTplTableSqlFill(props.el);
-    ensureMinTableSqlParamSlots(cfg, t.slot + 1);
-    const row = cfg.params[t.slot];
-    if (row) {
-      row.source = "opcua";
-      row.opcuaNodeId = id;
-    }
+    // 可视化模式写入筛选条件的绑定（面板显示来源）；手写模式写入 params 槽位
+    applyTableSqlFillOpcPick(ensureTplTableSqlFill(props.el), t.slot, id);
     return;
   }
   if (t === "table" && props.el.type === "table") {

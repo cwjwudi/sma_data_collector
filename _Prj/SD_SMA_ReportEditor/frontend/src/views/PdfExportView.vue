@@ -80,7 +80,9 @@ function injectPrintPageCss(t: ReportTemplate): void {
 }`;
 }
 
-function signalReady(ok: boolean, error?: string, totalReports?: number): void {
+type ExportBootPhases = { tplMs: number; dataMs: number; paintMs: number };
+
+function signalReady(ok: boolean, error?: string, totalReports?: number, phases?: ExportBootPhases): void {
   stopExportHeartbeat();
   // 注意：stats 须转成纯对象。Vue reactive 代理经 IPC 会抛
   // "An object could not be cloned"，完成信号丢失导致主进程等到超时（0.2.3~0.2.5 结批失败根因）
@@ -90,6 +92,7 @@ function signalReady(ok: boolean, error?: string, totalReports?: number): void {
     error,
     totalReports,
     stats: s ? { opcReads: s.opcReads, sqlQueries: s.sqlQueries, sqlRows: s.sqlRows } : undefined,
+    phases,
   });
 }
 
@@ -125,13 +128,16 @@ async function boot(): Promise<void> {
   const seq = ++bootSeq;
   tmpl.value = null;
   errText.value = null;
-  startExportHeartbeat();
   const id = String(route.query.templateId || "").trim();
   if (!id) {
+    // 预热待命：主进程预加载本页常驻，结批时仅切 hash 进入导出，静默等待即可
+    if (route.query.prewarm != null) return;
     errText.value = humanizePdfExportError("缺少 templateId");
     signalReady(false, errText.value);
     return;
   }
+  startExportHeartbeat();
+  const tplStartMs = Date.now();
   try {
     const loaded = await getTemplate(id);
     if (seq !== bootSeq) return;
@@ -142,12 +148,15 @@ async function boot(): Promise<void> {
     signalReady(false, errText.value);
     return;
   }
+  const tplMs = Date.now() - tplStartMs;
 
   const t = tmpl.value;
   injectPrintPageCss(t);
 
+  const dataStartMs = Date.now();
   await bindingPreview.refresh({ opc: true, sql: true, silent: true, fullSqlFill: true });
   if (seq !== bootSeq) return;
+  const dataMs = Date.now() - dataStartMs;
   const bindingIssues = collectBindingPreviewIssues(bindingPreview.values.value);
   if (bindingIssues.length) {
     errText.value = humanizePdfExportError(summarizeBindingPreviewIssues(bindingIssues));
@@ -155,17 +164,19 @@ async function boot(): Promise<void> {
     return;
   }
   const totalReports = splitReportCountForPreview(t, bindingPreview.values.value);
+  const paintStartMs = Date.now();
   await nextTick();
   await waitPaintReady();
-  signalReady(true, undefined, totalReports);
+  signalReady(true, undefined, totalReports, { tplMs, dataMs, paintMs: Date.now() - paintStartMs });
 }
 
 onMounted(() => {
   void boot();
 });
 
+// 监听 fullPath：预热窗口热切换（仅改 hash，含 seq 去重参数）也能可靠触发重新取数
 watch(
-  () => [route.query.templateId, route.query.reportPartIndex],
+  () => route.fullPath,
   () => {
     void boot();
   },

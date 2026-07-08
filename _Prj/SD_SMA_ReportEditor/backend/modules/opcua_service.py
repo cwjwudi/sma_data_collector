@@ -152,6 +152,50 @@ async def test_connection(
         }
 
 
+async def ping_saved_server(
+    server_id: str,
+    endpoint_url: str,
+    username: str | None = None,
+    password: str | None = None,
+    *,
+    connection_name: str | None = None,
+) -> dict[str, Any]:
+    """复用连接池的轻量连通检查（结批预检用）。
+
+    与 test_connection 的区别：池中已有会话时仅一次读往返（约几十毫秒），
+    不做完整「握手→浏览→断开」；池会话失效时重连一次再判定，同时为随后的
+    导出取数预热好连接。
+    """
+    entry = _get_entry(server_id)
+
+    async def _try_once() -> None:
+        client = await _ensure_connected(entry, endpoint_url, username, password)
+        await client.nodes.objects.read_browse_name()
+        entry.last_used = time.monotonic()
+
+    async with entry.lock:
+        try:
+            await _try_once()
+            return {"ok": True, "message": "连接可用"}
+        except Exception:
+            # 池中旧会话可能已失效（如服务端重启）：重连一次再判定
+            await _invalidate_entry_client(entry)
+        try:
+            await _try_once()
+            return {"ok": True, "message": "连接可用"}
+        except Exception as e:
+            logger.exception("OPC UA ping (pooled) failed")
+            await _invalidate_entry_client(entry)
+            return {
+                "ok": False,
+                "message": humanize_opcua_error(
+                    str(e),
+                    connection_name=connection_name,
+                    endpoint=endpoint_url,
+                ),
+            }
+
+
 async def browse_children(
     endpoint_url: str,
     node_id: str | None,

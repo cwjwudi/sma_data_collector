@@ -166,6 +166,9 @@ export function sqlResponseGridSummary(data: unknown): string {
   return `${rows.length} 行 × ${cols.length || "?"} 列`;
 }
 
+/** 后端把数据库 datetime JSON 序列化成 ISO 格式（T 分隔），报表显示还原为空格分隔 */
+const ISO_DATETIME_RE = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)$/;
+
 export function formatScalarForPreviewValue(v: unknown): string {
   if (v === null || v === undefined) return String(v);
   if (typeof v === "object") {
@@ -176,7 +179,11 @@ export function formatScalarForPreviewValue(v: unknown): string {
       return String(v);
     }
   }
-  const s = String(v);
+  let s = String(v);
+  if (typeof v === "string") {
+    const m = ISO_DATETIME_RE.exec(s.trim());
+    if (m) s = `${m[1]} ${m[2]}`;
+  }
   return s.length > 120 ? `${s.slice(0, 117)}…` : s;
 }
 
