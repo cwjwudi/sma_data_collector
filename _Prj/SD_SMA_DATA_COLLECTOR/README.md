@@ -53,7 +53,7 @@
 - ✅ **明细按开批年份归表**: 所有非主表数据组按批次主表的开批时间年份写入目标表
 - ✅ **未结批不跨表**: 即使自然时间跨年，未结批批次仍写入开批年份表
 - ✅ **结批强制写入**: 结批成功后立即写入队列中的所有明细数据，不等待 `batch_insert_size`
-- ✅ **分表间隔年份**: `partition_interval_years=2` 时，2025/2026 归入 `_2025`，2027/2028 归入 `_2027`
+- ✅ **分表间隔年份**: `partition_interval_years=2` 时，2025/2026 归入 `_y2025_span2`，2027/2028 归入 `_y2027_span2`
 - ✅ **启动恢复未结批**: 程序启动时会从批次主表恢复 `end_time IS NULL` 的未结批上下文
 
 **典型应用场景：**
@@ -479,13 +479,13 @@ SD_SMA_DATA_COLLECTOR/
 BatchHeader 固定写入 BatchHeader
 
 partition_interval_years=1:
-2025 开批 -> BatchDetail_2025
-2026 开批 -> BatchDetail_2026
+2025 开批 -> BatchDetail_y2025_span1
+2026 开批 -> BatchDetail_y2026_span1
 
 partition_interval_years=2:
-2025 开批 -> BatchDetail_2Year_2025
-2026 开批 -> BatchDetail_2Year_2025
-2027 开批 -> BatchDetail_2Year_2027
+2025 开批 -> BatchDetail_2Year_y2025_span2
+2026 开批 -> BatchDetail_2Year_y2025_span2
+2027 开批 -> BatchDetail_2Year_y2027_span2
 ```
 
 运行要点：

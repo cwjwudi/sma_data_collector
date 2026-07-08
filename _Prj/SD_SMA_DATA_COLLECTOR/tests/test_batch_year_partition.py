@@ -35,7 +35,10 @@ class TestBatchYearPartition(unittest.IsolatedAsyncioTestCase):
         def resolve_table_name(group_name=None, partition_time=None, fixed_table=False, partition_interval_years=1):
             if fixed_table:
                 return group_name
-            return f"{group_name}_{partition_time.strftime('%Y')}"
+            interval = max(1, int(partition_interval_years or 1))
+            year = partition_time.year
+            suffix_year = year - ((year - 1) % interval)
+            return f"{group_name}_y{suffix_year:04d}_span{interval}"
 
         db_manager.get_current_table_name.side_effect = resolve_table_name
         db_manager.create_data_table.return_value = True
@@ -58,16 +61,24 @@ class TestBatchYearPartition(unittest.IsolatedAsyncioTestCase):
         processor.batch_master_unique_key_point = "batch_no"
         return processor, db_manager
 
-    def test_database_manager_uses_calendar_year_suffix(self):
+    def test_database_manager_uses_year_span_suffix(self):
         manager = DatabaseManager({"type": "sqlite", "name": ":memory:", "data_groups": ["BatchData"]})
 
         self.assertEqual(
             manager.get_current_table_name("BatchData", partition_time=datetime(2025, 12, 31)),
-            "BatchData_2025",
+            "BatchData_y2025_span1",
         )
         self.assertEqual(
             manager.get_current_table_name("BatchData", partition_time=datetime(2026, 1, 1)),
-            "BatchData_2026",
+            "BatchData_y2026_span1",
+        )
+        self.assertEqual(
+            manager.get_current_table_name(
+                "BatchData",
+                partition_time=datetime(2026, 1, 1),
+                partition_interval_years=2,
+            ),
+            "BatchData_y2025_span2",
         )
 
     def test_database_manager_fixed_table_has_no_year_suffix(self):
@@ -77,6 +88,17 @@ class TestBatchYearPartition(unittest.IsolatedAsyncioTestCase):
             manager.get_current_table_name("BatchHeader", fixed_table=True),
             "BatchHeader",
         )
+
+    def test_database_manager_ignores_legacy_partition_table_names(self):
+        self.assertIsNone(DatabaseManager._parse_partitioned_table_name("BatchData_2025"))
+        self.assertIsNone(DatabaseManager._parse_partitioned_table_name("BatchData_20260408"))
+
+        parsed = DatabaseManager._parse_partitioned_table_name("BatchData_y2025_span2")
+        self.assertIsNotNone(parsed)
+        group_name, parsed_date, interval = parsed
+        self.assertEqual(group_name, "BatchData")
+        self.assertEqual(parsed_date, datetime(2025, 1, 1))
+        self.assertEqual(interval, 2)
 
     async def test_batch_open_creates_detail_table_for_start_year(self):
         processor, db_manager = self.make_processor()
@@ -97,7 +119,7 @@ class TestBatchYearPartition(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(processor.current_batch_context["batch_no"], "B001")
         self.assertEqual(processor.current_batch_context["start_time"].year, 2025)
         created_tables = [call.args[0] for call in db_manager.create_data_table.call_args_list]
-        self.assertEqual(created_tables, ["BatchData_2025"])
+        self.assertEqual(created_tables, ["BatchData_y2025_span1"])
 
     async def test_detail_data_uses_master_start_year_not_collection_time(self):
         processor, db_manager = self.make_processor()
@@ -121,7 +143,7 @@ class TestBatchYearPartition(unittest.IsolatedAsyncioTestCase):
         )
 
         inserted_tables = [call.args[0] for call in db_manager.execute_insert.call_args_list]
-        self.assertIn("BatchData_2025", inserted_tables)
+        self.assertIn("BatchData_y2025_span1", inserted_tables)
         db_manager.create_data_table.assert_not_called()
 
     async def test_master_close_flushes_all_groups_even_when_under_batch_size(self):
@@ -151,7 +173,7 @@ class TestBatchYearPartition(unittest.IsolatedAsyncioTestCase):
         await processor._process_data_by_groups()
 
         inserted_tables = [call.args[0] for call in db_manager.execute_insert.call_args_list]
-        self.assertEqual(inserted_tables, ["BatchData_2025"])
+        self.assertEqual(inserted_tables, ["BatchData_y2025_span1"])
         self.assertEqual(processor.get_queue_size(), 0)
         self.assertIsNone(processor.current_batch_context)
 

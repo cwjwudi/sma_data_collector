@@ -398,30 +398,26 @@ class DatabaseManager:
         interval = max(1, int(partition_interval_years or 1))
         year = partition_time.year
         suffix_year = year - ((year - 1) % interval)
-        return f"{group_name}_{suffix_year:04d}"
+        return f"{group_name}_y{suffix_year:04d}_span{interval}"
 
     @staticmethod
-    def _parse_partitioned_table_name(table_name: str) -> Optional[Tuple[str, datetime]]:
-        if "_" not in table_name:
+    def _parse_partitioned_table_name(table_name: str) -> Optional[Tuple[str, datetime, int]]:
+        if "_y" not in table_name:
             return None
 
-        group_name, suffix = table_name.rsplit("_", 1)
-        if not group_name or not suffix.isdigit():
+        group_name, suffix = table_name.rsplit("_y", 1)
+        if not group_name or "_span" not in suffix:
             return None
 
-        if len(suffix) == 4:
-            try:
-                return group_name, datetime(int(suffix), 1, 1)
-            except ValueError:
-                return None
+        year_text, interval_text = suffix.split("_span", 1)
+        if len(year_text) != 4 or not year_text.isdigit() or not interval_text.isdigit():
+            return None
 
-        if len(suffix) == 8:
-            try:
-                return group_name, datetime.strptime(suffix, '%Y%m%d')
-            except ValueError:
-                return None
-
-        return None
+        try:
+            interval = max(1, int(interval_text))
+            return group_name, datetime(int(year_text), 1, 1), interval
+        except ValueError:
+            return None
     
     def get_current_table_name(
         self,
@@ -591,7 +587,7 @@ class DatabaseManager:
             
             tables = self.execute_query(sql)
             # 解析表名并按 group 分类
-            group_latest_dates = {}
+            group_latest_tables = {}
             parsed_count = 0
             skipped_count = 0
             for table_row in tables:
@@ -608,10 +604,10 @@ class DatabaseManager:
                     self.logger.debug("Skip non-partitioned table: %s", table_name_str)
                     continue
 
-                group_name, parsed_date = parsed_table
-                if (group_name not in group_latest_dates or
-                    parsed_date > group_latest_dates[group_name]):
-                    group_latest_dates[group_name] = parsed_date
+                group_name, parsed_date, _interval = parsed_table
+                if (group_name not in group_latest_tables or
+                    parsed_date > group_latest_tables[group_name][0]):
+                    group_latest_tables[group_name] = (parsed_date, table_name_str)
                 parsed_count += 1
 
             self.logger.debug(
@@ -622,11 +618,14 @@ class DatabaseManager:
             )
 
             # 更新实例变量
+            group_latest_dates = {
+                group_name: latest[0]
+                for group_name, latest in group_latest_tables.items()
+            }
             self.table_created_dates.update(group_latest_dates)
             
             # 为每个group生成对应的当前表名
-            for group_name, latest_date in group_latest_dates.items():
-                current_table_name = self._format_year_table_name(group_name, latest_date)
+            for group_name, (_latest_date, current_table_name) in group_latest_tables.items():
                 self.current_table_names[group_name] = current_table_name
             
             if group_latest_dates:

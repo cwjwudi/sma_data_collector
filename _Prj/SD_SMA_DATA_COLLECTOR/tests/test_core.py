@@ -123,7 +123,7 @@ class TestDatabaseManager(unittest.TestCase):
         self.db_manager.connect()
         table_name = self.db_manager.get_current_table_name()
         self.assertIsNotNone(table_name)
-        self.assertTrue(table_name.endswith(datetime.now().strftime('%Y')))
+        self.assertTrue(table_name.endswith(f"_y{datetime.now().strftime('%Y')}_span1"))
 
 
 def run_async_test(coro):
