@@ -323,11 +323,15 @@
         table: tableSelector.value || undefined,
         cursor: -1,
       };
-      // datetime-local 是本地时间，直接传递避免 UTC 偏移导致当天数据被过滤
-      if (startInput.value) payload.start_time = startInput.value;
-      if (endInput.value) payload.end_time = endInput.value;
-      lastStartIso = payload.start_time || null;
-      lastEndIso = payload.end_time || null;
+      if (!advancedOpcuaMode) {
+        const startInput = document.getElementById("startDate");
+        const endInput = document.getElementById("endDate");
+        // datetime-local 是本地时间，直接传递避免 UTC 偏移导致当天数据被过滤
+        if (startInput.value) payload.start_time = startInput.value;
+        if (endInput.value) payload.end_time = endInput.value;
+        lastStartIso = payload.start_time || null;
+        lastEndIso = payload.end_time || null;
+      }
       const data = await fetchJson(`/api/plugins/query/${encodeURIComponent(pluginKey)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -351,8 +355,10 @@
         table: tableSelector.value || undefined,
         cursor: -1,
       };
-      if (lastStartIso) payload.start_time = lastStartIso;
-      if (lastEndIso) payload.end_time = lastEndIso;
+      if (!advancedOpcuaMode) {
+        if (lastStartIso) payload.start_time = lastStartIso;
+        if (lastEndIso) payload.end_time = lastEndIso;
+      }
       const data = await fetchJson(`/api/plugins/query/${encodeURIComponent(pluginKey)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },

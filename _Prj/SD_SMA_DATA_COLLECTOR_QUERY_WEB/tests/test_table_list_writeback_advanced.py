@@ -197,6 +197,60 @@ def test_advanced_lookup_ignores_cursor_start_time_column():
     assert column not in ("ts", "Status")
 
 
+def test_advanced_plugin_query_ignores_time_range():
+    from datetime import datetime
+    from unittest.mock import patch
+
+    from app.main import _execute_plugin_query
+
+    binding = {
+        "plugin_key": "general_1",
+        "view_name": "table",
+        "bind_group": "BatchHeader",
+        "bind_table": None,
+        "page_size": 10,
+        "table_list_writeback": {
+            "enabled": True,
+            "mode": "advanced",
+            "batch_column": "strBatchCode",
+            "buffer_node": "ns=2;s=Demo",
+            "advanced": {
+                "batch_no_node": "ns=2;s=Batch",
+                "trigger_node": "ns=2;s=Trig",
+            },
+        },
+    }
+    captured: dict = {}
+
+    def _fake_query(req):
+        captured["start_time"] = req.start_time
+        captured["end_time"] = req.end_time
+        return 0, ["strBatchCode"], [], []
+
+    with (
+        patch("app.main.db.get_group_schema_report", return_value={"tables": ["BatchHeader"], "baseline_table": "BatchHeader", "consistent": True}),
+        patch("app.main.cfg.get_group_baseline", return_value="BatchHeader"),
+        patch("app.main.cfg.resolve_query_view", return_value={
+            "columns": ["strBatchCode"],
+            "time_field": "dtBtachStartTime",
+            "max_page_size": 500,
+            "sort_by": "dtBtachStartTime",
+            "sort_dir": "desc",
+        }),
+        patch("app.main.db.query_history", side_effect=_fake_query),
+        patch("app.main._plugin_opcua_monitor", None),
+    ):
+        _execute_plugin_query(
+            binding,
+            page=1,
+            start_time=datetime(2026, 1, 1),
+            end_time=datetime(2026, 1, 2),
+        )
+
+    assert captured["start_time"] is None
+    assert captured["end_time"] is None
+
+
 def test_page_delta_at_boundary_refreshes_current_page():
     async def _run() -> int:
         snapshots: list[int] = []

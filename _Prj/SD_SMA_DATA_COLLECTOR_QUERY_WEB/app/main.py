@@ -657,8 +657,14 @@ def _execute_plugin_query(
         raise ValueError("插件未绑定可用数据表")
 
     view = cfg.resolve_query_view(binding["view_name"], table=target_table, group=target_group)
-    resolved_start, resolved_end, time_warnings = _apply_time_guardrails(start_time, end_time)
-    warnings.extend(time_warnings)
+    table_list_cfg = _get_table_list_writeback_config(binding)
+    if table_list_cfg is not None and table_list_cfg.is_advanced_mode:
+        resolved_start, resolved_end = None, None
+        if start_time is not None or end_time is not None:
+            warnings.append("高级 OPC UA 模式：已忽略时间范围限制")
+    else:
+        resolved_start, resolved_end, time_warnings = _apply_time_guardrails(start_time, end_time)
+        warnings.extend(time_warnings)
 
     resolved_page_size = page_size if page_size else int(binding["page_size"])
     resolved_page_size = min(max(resolved_page_size, 1), int(view["max_page_size"]))
