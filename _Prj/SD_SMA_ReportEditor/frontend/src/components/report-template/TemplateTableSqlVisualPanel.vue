@@ -308,9 +308,13 @@
     </div>
 
     <label class="tsv-lab">
-      生成的查询 SQL（只读，保存模板时一并写入）
+      生成的查询 SQL（只读，保存模板时一并写入；p0、p1 等为参数占位符）
       <textarea :value="fill.querySql" class="tsv-text-inp tsv-sql-preview" rows="3" readonly spellcheck="false" />
     </label>
+    <div v-if="paramLegend.length" class="tsv-param-legend">
+      <p class="tsv-muted">占位符在预览 / 导出时按以下来源取实际值：</p>
+      <p v-for="line in paramLegend" :key="line" class="tsv-muted tsv-legend-line">{{ line }}</p>
+    </div>
   </div>
 
   <Teleport to="body">
@@ -421,6 +425,30 @@ const showDatabasePick = computed(() => {
 });
 
 const batchBindingHint = computed(() => formatAutoBatchOpcBindingHint(resolveAutoBatchOpcBinding()));
+
+/** 只读 SQL 下方的占位符取值说明：仅列出 querySql 中实际出现的 {{pN}} */
+const paramLegend = computed(() => {
+  const sql = props.fill.querySql || "";
+  const params = props.fill.params || [];
+  const used = new Set<number>();
+  const re = /\{\{p(\d+)\}\}/g;
+  for (let m = re.exec(sql); m; m = re.exec(sql)) used.add(Number(m[1]));
+  const lines: string[] = [];
+  for (const i of [...used].sort((a, b) => a - b)) {
+    const p = params[i];
+    if (!p) continue;
+    const fb = (p.literalFallback || "").trim();
+    if (p.source === "opcua") {
+      const node = (p.opcuaNodeId || "").trim() || "（未绑定节点）";
+      lines.push(`{{p${i}}} → 导出时读 OPC UA：${node}${fb ? `；读不到时用默认值 ${fb}` : ""}`);
+    } else if (p.source === "batch_no") {
+      lines.push(`{{p${i}}} → 导出时读结批批次号${fb ? `；读不到时用默认值 ${fb}` : ""}`);
+    } else {
+      lines.push(`{{p${i}}} → 手写值 ${fb ? `“${fb}”` : "（空，导出时按 NULL 处理）"}`);
+    }
+  }
+  return lines;
+});
 
 const engineHint = computed(() => {
   const e = (vs.value.engine || "").toLowerCase();
@@ -890,6 +918,18 @@ input.tsv-text-inp {
 textarea.tsv-text-inp.tsv-sql-preview {
   min-height: 4.5rem;
   resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+.tsv-param-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 10px;
+  border: 1px dashed #e4e4e7;
+  border-radius: 8px;
+  background: #fafafa;
+}
+.tsv-legend-line {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 .tsv-range-bound {
