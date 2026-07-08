@@ -26,9 +26,17 @@ def _save_cfg(data):
 @router.get("/opcua/servers")
 async def list_servers():
     cfg = _load_cfg()
-    srv = config_store.ensure_opcua_ids(cfg.get("opcua_servers", []))
-    cfg["opcua_servers"] = srv
-    _save_cfg(cfg)
+    raw = cfg.get("opcua_servers", [])
+    # 仅当存在缺 id / 仅旧字段 endpoint 的条目才回写磁盘（此接口被预检与轮询高频调用）
+    needs_fix = any(
+        not s.get("id")
+        or (not str(s.get("endpoint_url") or "").strip() and str(s.get("endpoint") or "").strip())
+        for s in raw
+    )
+    srv = config_store.ensure_opcua_ids(raw)
+    if needs_fix:
+        cfg["opcua_servers"] = srv
+        _save_cfg(cfg)
     return {"servers": [config_store.mask_opcua_for_response(s) for s in srv]}
 
 
@@ -94,6 +102,29 @@ async def test_saved_opcua(server_id: str):
     except ValueError as e:
         return {"ok": False, "message": str(e)}
     return await opcua_service.test_connection(
+        endpoint,
+        srv.get("username"),
+        pwd,
+        connection_name=str(srv.get("name") or server_id),
+    )
+
+
+@router.post("/opcua/ping_saved/{server_id}")
+async def ping_saved_opcua(server_id: str):
+    """结批预检用的轻量连通检查：复用连接池会话，避免每次导出完整握手。"""
+    cfg = _load_cfg()
+    srv = next((s for s in cfg.get("opcua_servers", []) if s.get("id") == server_id), None)
+    if not srv:
+        return {"ok": False, "message": "未找到 OPC UA 配置"}
+    endpoint = str(srv.get("endpoint_url") or srv.get("endpoint") or "").strip()
+    if not endpoint:
+        return {"ok": False, "message": "该连接在配置文件中 Endpoint URL 为空，请在工作台填写并保存。"}
+    try:
+        pwd = config_store.decrypt_opcua_password(DATA_DIR, srv)
+    except ValueError as e:
+        return {"ok": False, "message": str(e)}
+    return await opcua_service.ping_saved_server(
+        server_id,
         endpoint,
         srv.get("username"),
         pwd,

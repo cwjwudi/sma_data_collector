@@ -67,14 +67,10 @@ export function useReportBindingPreview(tmplRef: Ref<ReportTemplate | null>): Re
 
     if (!silent) loading.value = true;
     try {
-      let prefs: Record<string, unknown> = {};
-      try {
-        prefs = (await apiFetch("/settings/app_preferences")) as Record<string, unknown>;
-      } catch {
-        prefs = {};
-      }
-
-      const [opcPkg, connPkg] = await Promise.all([
+      const [prefs, opcPkg, connPkg] = await Promise.all([
+        apiFetch("/settings/app_preferences").catch(() => ({}) as Record<string, unknown>) as Promise<
+          Record<string, unknown>
+        >,
         apiFetch("/opcua/servers").catch(() => ({ servers: [] })),
         apiFetch("/database/connections").catch(() => ({ connections: [] })),
       ]);

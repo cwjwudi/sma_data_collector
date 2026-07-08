@@ -219,6 +219,24 @@ async function notifyExportResultToPlc(
   }
 }
 
+/** 结批全链路分阶段耗时（毫秒），用于审计日志与完成提示的现场定位 */
+export type ExportPhaseTimings = {
+  /** 数据源连通预检（与目录解析、模版列表并行，取最长者） */
+  preflightMs?: number;
+  /** 文件名解析（可能含 OPC 文件名变量读取）与路径拼接 */
+  prepMs?: number;
+  /** 导出窗口从导航到渲染就绪（含窗口内启动 + 取数 + 绘制） */
+  readyMs?: number;
+  /** 其中：窗口内取数（OPC 读 + SQL 查询） */
+  dataMs?: number;
+  /** Chromium printToPDF 排版打印 */
+  printMs?: number;
+  /** PDF 写盘 */
+  writeMs?: number;
+  /** 是否复用了预热窗口（false 表示本次整页冷启动） */
+  warmStart?: boolean;
+};
+
 type AutoPdfExportAttempt = {
   fileName: string;
   filePath: string;
@@ -227,6 +245,7 @@ type AutoPdfExportAttempt = {
   note?: string;
   stats?: { opcReads: number; sqlQueries: number; sqlRows: number };
   durationMs?: number;
+  timings?: ExportPhaseTimings;
 };
 
 /** 结批进度弹窗/审计共用：把取数统计整理成一行可读文本 */
@@ -237,6 +256,29 @@ export function formatExportStatsLine(
   const parts: string[] = [];
   if (stats.opcReads > 0) parts.push(`OPC 读取 ${stats.opcReads} 点`);
   if (stats.sqlQueries > 0) parts.push(`SQL 查询 ${stats.sqlQueries} 次 / ${stats.sqlRows} 行`);
+  return parts.join(" · ");
+}
+
+/** 把分阶段耗时整理成一行可读文本（完成提示与审计摘要用） */
+export function formatExportTimingsLine(t: ExportPhaseTimings | null | undefined): string {
+  if (!t) return "";
+  const sec = (ms: number): string => `${(Math.max(0, ms) / 1000).toFixed(1)}s`;
+  const parts: string[] = [];
+  if (t.preflightMs != null) parts.push(`预检 ${sec(t.preflightMs)}`);
+  if (t.prepMs != null && t.prepMs >= 100) parts.push(`文件名 ${sec(t.prepMs)}`);
+  if (t.readyMs != null) {
+    const dataMs = t.dataMs || 0;
+    if (dataMs > 0) {
+      parts.push(`取数 ${sec(dataMs)}`);
+      parts.push(`渲染 ${sec((t.readyMs || 0) - dataMs)}`);
+    } else {
+      parts.push(`取数渲染 ${sec(t.readyMs)}`);
+    }
+  }
+  if (t.printMs != null || t.writeMs != null) {
+    parts.push(`打印 ${sec((t.printMs || 0) + (t.writeMs || 0))}`);
+  }
+  if (t.warmStart != null) parts.push(t.warmStart ? "窗口已预热" : "窗口冷启动");
   return parts.join(" · ");
 }
 
@@ -254,19 +296,26 @@ async function runAutoPdfExport(
   if (!tid) throw new Error(`未配置${RG_UI.opcAuto}报表模版`);
 
   onStage?.("正在检查数据源连接…");
-  const preflight = await runTemplateExportPreflight(tid);
+  // 预检、导出目录解析、模版列表三者互不依赖：并行执行缩短结批前等待
+  const preflightStartMs = Date.now();
+  const [preflight, resolved, summaries] = await Promise.all([
+    runTemplateExportPreflight(tid),
+    resolveAutoExportDir(prefs),
+    loadTemplateSummariesCached(),
+  ]);
+  const preflightMs = Date.now() - preflightStartMs;
   if (!preflight.ok) {
     throw new Error(preflight.summary);
   }
 
-  const resolved = await resolveAutoExportDir(prefs);
   const dir = resolved.dir.trim();
   if (!dir) throw new Error(resolved.note || `未配置${RG_UI.opcAuto}保存目录`);
 
-  const summaries = await loadTemplateSummariesCached();
+  const prepStartMs = Date.now();
   const tmeta = summaries.find((x) => x.id === tid);
   const built = await buildAutoExportFileName(prefs, tmeta?.name || tid);
   const filePath = await api.pathJoin(dir, built.base);
+  const prepMs = Date.now() - prepStartMs;
 
   onStage?.("正在取数并渲染报表…");
   const offProgress = api.onPdfExportProgress?.((p) => {
@@ -303,6 +352,7 @@ async function runAutoPdfExport(
     note: exportNote || undefined,
     stats: exportRes.stats,
     durationMs: exportRes.durationMs,
+    timings: { preflightMs, prepMs, ...(exportRes.timings || {}) },
   };
 }
 
@@ -415,10 +465,11 @@ async function pollAutoTriggerOnce(): Promise<void> {
         );
         const totalMs = Date.now() - startedAtMs;
         const statsLine = formatExportStatsLine(result.stats);
+        const timingsLine = formatExportTimingsLine(result.timings);
         void auditLog({
           action: "export.auto_pdf",
           result: "ok",
-          summary: `${result.fileName}（耗时 ${(totalMs / 1000).toFixed(1)} 秒${statsLine ? `；${statsLine}` : ""}）`,
+          summary: `${result.fileName}（耗时 ${(totalMs / 1000).toFixed(1)} 秒${statsLine ? `；${statsLine}` : ""}${timingsLine ? `；${timingsLine}` : ""}）`,
           object_type: "template",
           object_id: b.templateId || undefined,
           detail: {
@@ -429,6 +480,7 @@ async function pollAutoTriggerOnce(): Promise<void> {
             durationMs: totalMs,
             renderMs: result.durationMs,
             stats: result.stats,
+            timings: result.timings,
             totalReports: result.totalReports,
           },
         });
@@ -444,6 +496,7 @@ async function pollAutoTriggerOnce(): Promise<void> {
           fileCount > 1 ? `结批完成：已保存 ${fileCount} 个 PDF` : `结批完成：已保存 ${result.fileName}`,
           `耗时 ${(totalMs / 1000).toFixed(1)} 秒${statsLine ? ` · ${statsLine}` : ""}`,
         ];
+        if (timingsLine) doneLines.push(timingsLine);
         showAppToast(doneLines.join("\n"), { id: progressToastId, tone: "ok", durationMs: 10000 });
       } catch (e) {
         const msg = humanizePdfExportError(e);

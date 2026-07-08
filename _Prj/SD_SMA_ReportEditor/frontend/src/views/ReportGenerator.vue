@@ -700,6 +700,7 @@ import {
 } from "@/lib/exportResultOpcFeedback";
 import {
   formatExportStatsLine,
+  formatExportTimingsLine,
   getReportAutoExportBindingRuntime,
   notifyReportAutoExportSettingsChanged,
   reportAutoExportStatus,
@@ -1584,7 +1585,9 @@ async function onManualExport(): Promise<void> {
     }
 
     stage("正在检查数据源连接…");
+    const preflightStartMs = Date.now();
     const preflight = await runTemplateExportPreflight(tid);
+    const preflightMs = Date.now() - preflightStartMs;
     if (!preflight.ok) {
       dismissAppToast(progressToastId);
       if (preflight.blockers.some(isReportSplitPreflightBlocker)) {
@@ -1645,10 +1648,12 @@ async function onManualExport(): Promise<void> {
     );
     const totalMs = Date.now() - startedAtMs;
     const statsLine = formatExportStatsLine(exportRes.stats);
+    const exportTimings = { preflightMs, ...(exportRes.timings || {}) };
+    const timingsLine = formatExportTimingsLine(exportTimings);
     void auditLog({
       action: "export.manual_pdf",
       result: "ok",
-      summary: `${suggestName}（耗时 ${(totalMs / 1000).toFixed(1)} 秒${statsLine ? `；${statsLine}` : ""}）`,
+      summary: `${suggestName}（耗时 ${(totalMs / 1000).toFixed(1)} 秒${statsLine ? `；${statsLine}` : ""}${timingsLine ? `；${timingsLine}` : ""}）`,
       object_type: "template",
       object_id: tid,
       detail: {
@@ -1658,6 +1663,7 @@ async function onManualExport(): Promise<void> {
         durationMs: totalMs,
         renderMs: exportRes.durationMs,
         stats: exportRes.stats,
+        timings: exportTimings,
       },
     });
     const doneLines = [
@@ -1665,6 +1671,7 @@ async function onManualExport(): Promise<void> {
       savedPaths.length > 1 ? `结批完成：已保存 ${savedPaths.length} 个 PDF` : `结批完成：已保存 ${suggestName}`,
       `耗时 ${(totalMs / 1000).toFixed(1)} 秒${statsLine ? ` · ${statsLine}` : ""}`,
     ];
+    if (timingsLine) doneLines.push(timingsLine);
     showAppToast(doneLines.join("\n"), { id: progressToastId, tone: "ok", durationMs: 10000 });
   } catch (e) {
     const msg = humanizePdfExportError(e);

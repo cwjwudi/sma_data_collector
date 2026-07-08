@@ -25,6 +25,15 @@ function enqueuePdfExport(fn) {
   return next
 }
 
+/**
+ * 预热的 PDF 导出隐藏窗口：SPA 常驻待命，结批时仅切 hash 即进入取数渲染，
+ * 省去每次导出整页冷启动（Vue/依赖包解析执行 + 字体加载，Windows 上约 1~3 秒）。
+ */
+let warmPdfWin = null
+const PDF_EXPORT_PREWARM_HASH = '#/pdf-export?prewarm=1'
+/** 复用上限：超过后销毁重建，避免长期驻留的渲染进程累积内存 */
+const PDF_EXPORT_WINDOW_MAX_USES = 30
+
 const BACKEND_PORT = 8000
 /** 后端绑定地址：0.0.0.0 表示同时监听本机回环与局域网网卡（同网段可访问）。 */
 const BACKEND_BIND_HOST = '0.0.0.0'
@@ -387,8 +396,15 @@ function createWindow() {
     mainWindow.loadFile(getRendererIndexHtml())
   }
 
+  // 主页面加载完成后预热导出窗口：结批时省去整套 SPA 冷启动
+  mainWindow.webContents.once('did-finish-load', () => {
+    ensurePdfExportWindowPrewarmed(mainWindow ? mainWindow.webContents : null)
+  })
+
   mainWindow.on('closed', () => {
     mainWindow = null
+    // 预热窗口是隐藏窗口：不销毁会阻止 window-all-closed，导致应用无法退出
+    destroyWarmPdfExportWindow()
   })
 }
 
@@ -703,6 +719,97 @@ ipcMain.handle('get-export-pdf-thumbnail', async (_event, opts) => {
   }
 })
 
+function createPdfExportWindow() {
+  const win = new BrowserWindow({
+    show: false,
+    width: 1280,
+    height: 1680,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      preload: path.join(__dirname, 'preload.cjs'),
+      // 隐藏窗口默认被节流，关闭以保证后台渲染 PDF 不变慢
+      backgroundThrottling: false,
+    },
+  })
+  win.__exportUses = 0
+  return win
+}
+
+/** 以 refWc（发起导出的窗口）的 http 源为准拼导出页 URL；否则回落 dev / 打包路径 */
+function buildPdfExportUrl(refWc, hash) {
+  try {
+    if (refWc && !refWc.isDestroyed()) {
+      const cur = refWc.getURL()
+      if (cur && /^https?:\/\//i.test(cur)) {
+        const u = new URL(cur)
+        u.hash = hash
+        return u.href
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+  if (!app.isPackaged) {
+    return `${VITE_DEV_URL}/${hash}`
+  }
+  return `${pathToFileURL(getRendererIndexHtml()).href}${hash}`
+}
+
+function isReusablePdfWindow(win) {
+  return Boolean(win && !win.isDestroyed() && !win.webContents.isCrashed())
+}
+
+/**
+ * 导航隐藏导出窗口。同源同文档时仅改 location.hash（不整页重载，
+ * 已启动的 SPA 立即进入取数），否则整页 loadURL 冷启动。返回是否走了热切换。
+ */
+async function navigatePdfExportWindow(win, targetUrl) {
+  const cur = String(win.webContents.getURL() || '')
+  const [curBase] = cur.split('#')
+  const [nextBase, nextHash] = targetUrl.split('#')
+  if (curBase && curBase === nextBase && nextHash) {
+    try {
+      await win.webContents.executeJavaScript(
+        `window.location.hash = ${JSON.stringify('#' + nextHash)}; true`,
+        true,
+      )
+      return true
+    } catch {
+      /* 回落整页加载 */
+    }
+  }
+  await win.loadURL(targetUrl)
+  return false
+}
+
+/** 空闲时预热一个导出窗口（应用启动与每次导出收尾后调用），失败静默不影响导出 */
+function ensurePdfExportWindowPrewarmed(refWc) {
+  if (!mainWindow || mainWindow.isDestroyed()) return
+  if (isReusablePdfWindow(warmPdfWin)) return
+  warmPdfWin = null
+  try {
+    const win = createPdfExportWindow()
+    const url = buildPdfExportUrl(refWc || mainWindow.webContents, PDF_EXPORT_PREWARM_HASH)
+    win.loadURL(url).catch(() => {
+      // 预热页加载失败的窗口不能留用（复用时热切换会一直等到超时），直接丢弃
+      if (warmPdfWin === win) warmPdfWin = null
+      if (!win.isDestroyed()) win.destroy()
+    })
+    warmPdfWin = win
+  } catch (e) {
+    log(`预热 PDF 导出窗口失败（忽略）：${e.message}`)
+  }
+}
+
+function destroyWarmPdfExportWindow() {
+  const w = warmPdfWin
+  warmPdfWin = null
+  if (w && !w.isDestroyed()) {
+    w.destroy()
+  }
+}
+
 ipcMain.handle('pdf-export-run', async (event, opts) => {
   const filePath = opts && opts.filePath
   const templateId = opts && opts.templateId
@@ -713,6 +820,7 @@ ipcMain.handle('pdf-export-run', async (event, opts) => {
 
   return enqueuePdfExport(async () => {
     let pdfWin = null
+    let exportOk = false
     try {
       function outputPathForPart(partIndex, totalReports) {
         return outputPathForReportPart(filePath, partIndex, totalReports)
@@ -730,39 +838,21 @@ ipcMain.handle('pdf-export-run', async (event, opts) => {
         }
       }
 
-      function buildLoadUrl(partIndex) {
-        const senderWin = senderBrowserWindow(event.sender)
-        if (senderWin && !senderWin.isDestroyed()) {
-          const cur = senderWin.webContents.getURL()
-          if (cur && /^https?:\/\//i.test(cur)) {
-            try {
-              const u = new URL(cur)
-              u.hash = `#/pdf-export?templateId=${encodeURIComponent(templateId)}&reportPartIndex=${partIndex}`
-              return u.href
-            } catch {
-              /* ignore */
-            }
-          }
-        }
-        const isDev = !app.isPackaged
-        if (isDev) {
-          return `${VITE_DEV_URL}/#/pdf-export?templateId=${encodeURIComponent(templateId)}&reportPartIndex=${partIndex}`
-        }
-        const idxHtml = getRendererIndexHtml()
-        return `${pathToFileURL(idxHtml).href}#/pdf-export?templateId=${encodeURIComponent(templateId)}&reportPartIndex=${partIndex}`
+      /** seq 保证 hash 每次都变化：热切换时可靠触发导出页的路由监听重新取数 */
+      function partHash(partIndex) {
+        return `#/pdf-export?templateId=${encodeURIComponent(templateId)}&reportPartIndex=${partIndex}&seq=${Date.now()}`
       }
-      pdfWin = new BrowserWindow({
-        show: false,
-        width: 1280,
-        height: 1680,
-        webPreferences: {
-          nodeIntegration: false,
-          contextIsolation: true,
-          preload: path.join(__dirname, 'preload.cjs'),
-          // 隐藏窗口默认被节流，关闭以保证后台渲染 PDF 不变慢
-          backgroundThrottling: false,
-        },
-      })
+
+      // 优先复用预热窗口：SPA 已启动，进入取数只差一次 hash 切换
+      let warmStart = false
+      if (isReusablePdfWindow(warmPdfWin)) {
+        pdfWin = warmPdfWin
+        warmPdfWin = null
+        warmStart = true
+      } else {
+        destroyWarmPdfExportWindow()
+        pdfWin = createPdfExportWindow()
+      }
 
       /** 渲染窗口取数期间每 10 秒发一次心跳：连续 2 分钟无心跳视为无响应；总时长上限 10 分钟 */
       const RENDER_IDLE_TIMEOUT_MS = 120000
@@ -816,12 +906,15 @@ ipcMain.handle('pdf-export-run', async (event, opts) => {
           ipcMain.on('pdf-export-heartbeat', onHeartbeat)
         })
 
-        await pdfWin.loadURL(buildLoadUrl(partIndex))
+        const navStartMs = Date.now()
+        await navigatePdfExportWindow(pdfWin, buildPdfExportUrl(event.sender, partHash(partIndex)))
         const payload = await readyPromise
+        const readyMs = Date.now() - navStartMs
         if (!payload || !payload.ok) {
           throw new Error((payload && payload.error) || 'PDF render failed')
         }
 
+        const printStartMs = Date.now()
         const pdfBuffer = await pdfWin.webContents.printToPDF({
           landscape: false,
           printBackground: true,
@@ -829,10 +922,14 @@ ipcMain.handle('pdf-export-run', async (event, opts) => {
           pageRanges: '',
           preferCSSPageSize: true,
         })
+        pdfWin.__exportUses = (pdfWin.__exportUses || 0) + 1
         return {
           pdfBuffer,
           totalReports: Math.max(1, Math.floor(Number(payload.totalReports) || 1)),
           stats: payload.stats || null,
+          phases: payload.phases && typeof payload.phases === 'object' ? payload.phases : null,
+          readyMs,
+          printMs: Date.now() - printStartMs,
         }
       }
 
@@ -847,26 +944,41 @@ ipcMain.handle('pdf-export-run', async (event, opts) => {
 
       const startedAtMs = Date.now()
       let stats = { opcReads: 0, sqlQueries: 0, sqlRows: 0 }
+      /** 分阶段耗时（多份报表求和）：readyMs 含窗口内启动+取数+绘制；dataMs 为其中的取数部分 */
+      const timings = { warmStart, readyMs: 0, dataMs: 0, printMs: 0, writeMs: 0 }
+
+      function mergeTimings(part) {
+        timings.readyMs += Number(part.readyMs) || 0
+        timings.printMs += Number(part.printMs) || 0
+        if (part.phases) {
+          timings.dataMs += Number(part.phases.dataMs) || 0
+        }
+      }
+
+      function writePartPdf(partIndex, totalReports, pdfBuffer) {
+        const outPath = outputPathForPart(partIndex, totalReports)
+        const writeStartMs = Date.now()
+        fs.mkdirSync(path.dirname(outPath), { recursive: true })
+        fs.writeFileSync(outPath, pdfBuffer)
+        timings.writeMs += Date.now() - writeStartMs
+        return outPath
+      }
 
       sendProgress({ phase: 'render', partIndex: 0, totalReports: 0 })
       const first = await renderPart(0)
       const totalReports = first.totalReports
       stats = mergeStats(stats, first.stats)
+      mergeTimings(first)
       const filePaths = []
-      const firstPath = outputPathForPart(0, totalReports)
-      fs.mkdirSync(path.dirname(firstPath), { recursive: true })
-      fs.writeFileSync(firstPath, first.pdfBuffer)
-      filePaths.push(firstPath)
+      filePaths.push(writePartPdf(0, totalReports, first.pdfBuffer))
       sendProgress({ phase: 'saved', partIndex: 0, totalReports })
 
       for (let partIndex = 1; partIndex < totalReports; partIndex++) {
         sendProgress({ phase: 'render', partIndex, totalReports })
         const part = await renderPart(partIndex)
         stats = mergeStats(stats, part.stats)
-        const outPath = outputPathForPart(partIndex, totalReports)
-        fs.mkdirSync(path.dirname(outPath), { recursive: true })
-        fs.writeFileSync(outPath, part.pdfBuffer)
-        filePaths.push(outPath)
+        mergeTimings(part)
+        filePaths.push(writePartPdf(partIndex, totalReports, part.pdfBuffer))
         sendProgress({ phase: 'saved', partIndex, totalReports })
       }
 
@@ -874,19 +986,38 @@ ipcMain.handle('pdf-export-run', async (event, opts) => {
         await shell.openPath(filePaths[0])
       }
 
+      exportOk = true
       return {
         ok: true,
         filePath: filePaths[0],
         filePaths,
         totalReports,
         stats,
+        timings,
         durationMs: Date.now() - startedAtMs,
       }
     } catch (e) {
       throw new Error(humanizePdfExportError(e, { phase: 'export' }))
     } finally {
-      if (pdfWin && !pdfWin.isDestroyed()) {
-        pdfWin.destroy()
+      // 成功且未超复用上限：回到预热待命页，下次结批免冷启动；否则销毁并重新预热
+      let recycled = false
+      if (
+        exportOk &&
+        isReusablePdfWindow(pdfWin) &&
+        (pdfWin.__exportUses || 0) < PDF_EXPORT_WINDOW_MAX_USES &&
+        mainWindow &&
+        !mainWindow.isDestroyed() &&
+        !warmPdfWin
+      ) {
+        navigatePdfExportWindow(pdfWin, buildPdfExportUrl(event.sender, PDF_EXPORT_PREWARM_HASH)).catch(() => {})
+        warmPdfWin = pdfWin
+        recycled = true
+      }
+      if (!recycled) {
+        if (pdfWin && !pdfWin.isDestroyed()) {
+          pdfWin.destroy()
+        }
+        ensurePdfExportWindowPrewarmed(event.sender)
       }
     }
   })
