@@ -91,6 +91,57 @@ class TestUniqueAndFeedbackConfig(unittest.TestCase):
         finally:
             self._cleanup_temp_file(temp_file)
 
+    def test_partition_interval_years_zero_and_ten_are_valid(self):
+        for years in (0, 10):
+            config_data = {
+                "points": [
+                    {"name": "point_value", "path": "ns=6;s=point_value", "description": "值"},
+                ],
+                "groups": [
+                    {
+                        "name": "group1",
+                        "interval_seconds": 1,
+                        "trigger": "time",
+                        "description": "测试组",
+                        "data_points": ["point_value"],
+                        "partition_interval_years": years,
+                    }
+                ],
+                "database": {"type": "sqlite", "name": "test.db", "data_groups": ["group1"]},
+            }
+            temp_file = self._create_temp_config(config_data)
+            try:
+                config = ConfigLoader.load_from_file(temp_file)
+                self.assertEqual(config.groups[0].partition_interval_years, years)
+            finally:
+                self._cleanup_temp_file(temp_file)
+
+    def test_partition_interval_years_out_of_range_rejected(self):
+        for years in (-1, 11):
+            config_data = {
+                "points": [
+                    {"name": "point_value", "path": "ns=6;s=point_value", "description": "值"},
+                ],
+                "groups": [
+                    {
+                        "name": "group1",
+                        "interval_seconds": 1,
+                        "trigger": "time",
+                        "description": "测试组",
+                        "data_points": ["point_value"],
+                        "partition_interval_years": years,
+                    }
+                ],
+                "database": {"type": "sqlite", "name": "test.db", "data_groups": ["group1"]},
+            }
+            temp_file = self._create_temp_config(config_data)
+            try:
+                with self.assertRaises(ValueError) as ctx:
+                    ConfigLoader.load_from_file(temp_file)
+                self.assertIn("partition_interval_years", str(ctx.exception))
+            finally:
+                self._cleanup_temp_file(temp_file)
+
     def test_insert_feedback_point_must_exist_in_points(self):
         config_data = {
             "points": [

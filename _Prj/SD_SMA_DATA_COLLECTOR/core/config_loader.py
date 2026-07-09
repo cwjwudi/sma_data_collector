@@ -118,7 +118,11 @@ class ConfigLoader:
                 trigger_interval_seconds=group_data.get('trigger_interval_seconds'),
                 trigger_point=group_data.get('trigger_point'),
                 reset_trigger_after_read=group_data.get('reset_trigger_after_read', True),
-                partition_interval_years=max(1, int(group_data.get('partition_interval_years', 1) or 1)),
+                partition_interval_years=int(
+                    group_data['partition_interval_years']
+                    if group_data.get('partition_interval_years') is not None
+                    else 1
+                ),
                 recreate_interval_days=int(group_data.get('recreate_interval_days', 1) or 1),
                 batch_insert_size=group_data.get('batch_insert_size', 100),
                 is_parallel=group_data.get('is_parallel', False),
@@ -225,9 +229,10 @@ class ConfigLoader:
 
         point_name_set = set(point_names)
         for group in config.groups:
-            if group.partition_interval_years < 1:
+            if group.partition_interval_years < 0 or group.partition_interval_years > 10:
                 raise ValueError(
-                    f"数据组 '{group.name}' 的 partition_interval_years 必须大于等于 1"
+                    f"数据组 '{group.name}' 的 partition_interval_years 必须在 0 到 10 之间"
+                    f"（0=不分表）"
                 )
 
             for point_name in group.data_points:

@@ -69,7 +69,7 @@ class DataGroup:
     trigger_interval_seconds: Optional[float] = None  # variable/time_and_variable：触发变量采样周期（秒）
     trigger_point: Optional[str] = None
     reset_trigger_after_read: bool = True  # 是否在读取后复位触发点
-    partition_interval_years: int = 1  # 数据库分表间隔年份
+    partition_interval_years: int = 1  # 0=不分表；1..10=分表间隔年份
     recreate_interval_days: int = 365  # 旧版字段：保留兼容，不参与分表逻辑
     batch_insert_size: int = 100  # 批量插入大小
     is_parallel: bool = False  # 是否启用并行触发模式（trigger_point 和 data_points 为数组节点）

@@ -33,7 +33,7 @@ class TestBatchYearPartition(unittest.IsolatedAsyncioTestCase):
         db_manager = Mock()
 
         def resolve_table_name(group_name=None, partition_time=None, fixed_table=False, partition_interval_years=1):
-            if fixed_table:
+            if fixed_table or int(partition_interval_years or 0) == 0:
                 return group_name
             interval = max(1, int(partition_interval_years or 1))
             year = partition_time.year
@@ -87,6 +87,18 @@ class TestBatchYearPartition(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             manager.get_current_table_name("BatchHeader", fixed_table=True),
             "BatchHeader",
+        )
+
+    def test_database_manager_zero_interval_has_no_year_suffix(self):
+        manager = DatabaseManager({"type": "sqlite", "name": ":memory:", "data_groups": ["SensorData"]})
+
+        self.assertEqual(
+            manager.get_current_table_name(
+                "SensorData",
+                partition_time=datetime(2026, 7, 9),
+                partition_interval_years=0,
+            ),
+            "SensorData",
         )
 
     def test_database_manager_ignores_legacy_partition_table_names(self):

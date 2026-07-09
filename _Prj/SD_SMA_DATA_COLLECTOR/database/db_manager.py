@@ -438,18 +438,23 @@ class DatabaseManager:
         group_name = self._resolve_group_name(group_name)
         effective_time = self._normalize_partition_time(partition_time)
 
-        if fixed_table:
+        if partition_interval_years is None and group_name in self.group_configs:
+            partition_interval_years = self.group_configs[group_name].get(
+                'partition_interval_years', 1
+            )
+        if partition_interval_years is None:
+            partition_interval_years = 1
+
+        # fixed_table 或 partition_interval_years=0：不分表，表名无年份后缀
+        if fixed_table or int(partition_interval_years) == 0:
             self.current_table_names[group_name] = group_name
             self.table_created_dates[group_name] = effective_time
             return group_name
 
-        if partition_interval_years is None and group_name in self.group_configs:
-            partition_interval_years = self.group_configs[group_name].get('partition_interval_years', 1)
-
         new_table_name = self._format_year_table_name(
             group_name,
             effective_time,
-            partition_interval_years or 1,
+            partition_interval_years,
         )
         current_table_name = self.current_table_names.get(group_name)
 
