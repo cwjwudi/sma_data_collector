@@ -233,7 +233,51 @@
             >
               <option v-for="i in bodyPageCount" :key="'bp-' + i" :value="i - 1">第 {{ i }} 页</option>
             </select>
-            <button type="button" class="btn btn-mini" @click="addBodyPageRow">＋页</button>
+            <button
+              type="button"
+              class="btn btn-mini"
+              title="在当前页之前插入空白页"
+              :disabled="bodyPageCount >= 30"
+              @click="insertBodyPageBefore"
+            >
+              前插
+            </button>
+            <button
+              type="button"
+              class="btn btn-mini"
+              title="在当前页之后插入空白页"
+              :disabled="bodyPageCount >= 30"
+              @click="insertBodyPageAfter"
+            >
+              后插
+            </button>
+            <button
+              type="button"
+              class="btn btn-mini"
+              title="在末尾追加空白页"
+              :disabled="bodyPageCount >= 30"
+              @click="addBodyPageRow"
+            >
+              末加
+            </button>
+            <button
+              type="button"
+              class="btn btn-mini"
+              title="将本页上移"
+              :disabled="bodyPageIdx <= 0"
+              @click="moveBodyPage(-1)"
+            >
+              ↑
+            </button>
+            <button
+              type="button"
+              class="btn btn-mini"
+              title="将本页下移"
+              :disabled="bodyPageIdx >= bodyPageCount - 1"
+              @click="moveBodyPage(1)"
+            >
+              ↓
+            </button>
             <button type="button" class="btn btn-mini" :disabled="bodyPageCount <= 1" @click="removeBodyPageRow">
               −删本页
             </button>
@@ -241,7 +285,7 @@
         </template>
         <p class="sheet-hint">
           <template v-if="sh === 'body'"
-            ><strong>正文页</strong>：编辑画布中与预览一致为封面→正文各页→末页纵向排列；点左侧标签或正文下拉可滚动到对应卡片。页眉页脚请在「版式与页眉页脚」中维护。</template
+            ><strong>正文页</strong>：编辑画布中与预览一致为封面→正文各页→末页纵向排列；点左侧标签或正文下拉可滚动到对应卡片。可用「前插 / 后插 / 末加」在指定位置增页，「↑ ↓」调整顺序，「−删本页」删除当前页。页眉页脚请在「版式与页眉页脚」中维护。</template
           >
           <template v-else-if="sh === 'cover'"
             ><strong>封面</strong>：导出首页整页；此处编辑封面画布。页眉页脚请在版式编辑器维护。</template
@@ -879,7 +923,12 @@ function setSheet(s) {
   if (midMode.value === "edit") scheduleScrollEditSheetIntoView();
 }
 
-function addBodyPageRow() {
+/**
+ * 在指定索引插入空白正文页，并切到该页。
+ * @param {number} index 0-based 插入位置（可等于 length 表示末尾追加）
+ * @param {string} [okHint]
+ */
+function insertBodyPageAt(index, okHint) {
   const t = editing.value;
   if (!t) return;
   const pages = ensureBodyPages(t);
@@ -887,11 +936,50 @@ function addBodyPageRow() {
     hint.value = "正文分页最多 30 页。";
     return;
   }
-  pages.push([]);
+  const i = Math.max(0, Math.min(pages.length, Math.floor(Number(index))));
+  pages.splice(i, 0, []);
   syncLegacyElementsAlias(t);
-  bodyPageIdx.value = pages.length - 1;
+  bodyPageIdx.value = i;
   selId.value = null;
-  hint.value = `已新增正文第 ${pages.length} 页（空白画布）。`;
+  hint.value = okHint || `已插入正文第 ${i + 1} 页（空白画布）。`;
+  scrollActiveBodyPageIntoView();
+}
+
+function insertBodyPageBefore() {
+  insertBodyPageAt(bodyPageIdx.value, `已在第 ${bodyPageIdx.value + 1} 页前插入空白页。`);
+}
+
+function insertBodyPageAfter() {
+  const cur = bodyPageIdx.value + 1;
+  insertBodyPageAt(bodyPageIdx.value + 1, `已在第 ${cur} 页后插入空白页。`);
+}
+
+/** 末尾追加（兼容原「＋页」） */
+function addBodyPageRow() {
+  const t = editing.value;
+  if (!t) return;
+  const pages = ensureBodyPages(t);
+  insertBodyPageAt(pages.length, `已在末尾新增正文第 ${pages.length + 1} 页（空白画布）。`);
+}
+
+/**
+ * 交换当前正文页与相邻页顺序。
+ * @param {number} delta -1 上移 / +1 下移
+ */
+function moveBodyPage(delta) {
+  const t = editing.value;
+  if (!t) return;
+  const pages = ensureBodyPages(t);
+  const from = bodyPageIdx.value;
+  const to = from + (delta < 0 ? -1 : 1);
+  if (to < 0 || to >= pages.length) return;
+  const tmp = pages[from];
+  pages[from] = pages[to];
+  pages[to] = tmp;
+  syncLegacyElementsAlias(t);
+  bodyPageIdx.value = to;
+  selId.value = null;
+  hint.value = delta < 0 ? `已将正文页上移至第 ${to + 1} 页。` : `已将正文页下移至第 ${to + 1} 页。`;
   scrollActiveBodyPageIntoView();
 }
 
@@ -903,11 +991,13 @@ function removeBodyPageRow() {
     hint.value = "至少保留 1 页正文画布。";
     return;
   }
+  const removed = bodyPageIdx.value + 1;
   pages.splice(bodyPageIdx.value, 1);
   syncLegacyElementsAlias(t);
   if (bodyPageIdx.value >= pages.length) bodyPageIdx.value = pages.length - 1;
   selId.value = null;
-  hint.value = "已删除当前正文页画布。";
+  hint.value = `已删除正文第 ${removed} 页画布。`;
+  scrollActiveBodyPageIntoView();
 }
 
 /** @param {Event & { target: HTMLInputElement }} ev */
@@ -1515,6 +1605,10 @@ onUnmounted(() => {
 .btn-mini {
   padding: 4px 8px;
   font-size: 12px;
+}
+.btn-mini:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 .left button.on {
   outline: 2px solid #6366f1;
