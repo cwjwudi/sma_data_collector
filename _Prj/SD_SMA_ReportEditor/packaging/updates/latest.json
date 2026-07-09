@@ -1,15 +1,15 @@
 {
-  "version": "0.2.18",
-  "releasedAt": "2026-07-09T17:36:09.541Z",
-  "notes": "Report Editor 0.2.18\n\n- 切换「导出预览 / 编辑画布」时延后绑定刷新且不写回表格行数，减轻卡顿\n- 纵表新增「多条结果分页」：同表续表 / 每条结果另起一页\n- 继承 0.2.17：纵表行数可增减",
+  "version": "0.2.19",
+  "releasedAt": "2026-07-09T17:52:19.269Z",
+  "notes": "Report Editor 0.2.19\n\n- 点击「导出预览」时先切换界面并提示「正在读取数据」，避免干等卡顿\n- 继承 0.2.18：画布切换减卡顿；纵表多条结果可另起一页",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor-Setup-0.2.18-x64.exe",
-      "sha256": "988f7be497fb846d516ec928f0e32a48d7687b2d1c82ebb7bb51f9722bdd634b",
-      "size": 144437199
+      "url": "Report Editor-Setup-0.2.19-x64.exe",
+      "sha256": "a1bde94fead9b6310d0bd5b3a8a6ba461c6b24653a82df19b4885688282972c6",
+      "size": 144436362
     },
     "darwin-arm64": {
-      "url": "Report Editor-0.2.18-arm64.dmg",
+      "url": "Report Editor-0.2.19-arm64.dmg",
       "sha256": "",
       "size": 0
     }
