@@ -1,17 +1,17 @@
 {
-  "version": "0.2.20",
-  "releasedAt": "2026-07-09T18:39:44.737Z",
-  "notes": "Report Editor 0.2.20\n\n- 修复数据源等异步页面短暂「未样式化」布局（关闭 CSS 代码分割，避免 Electron 下 FOUC）\n- 继承 0.2.19：导出预览先切界面并提示正在读取数据",
+  "version": "0.2.21",
+  "releasedAt": "2026-07-09T18:53:23.541Z",
+  "notes": "Report Editor 0.2.21\n\n- 修复纵表：配置多字段后画布按逻辑行完整显示，不再被 SQL 行数裁成一行\n- 继承 0.2.20：数据源页 FOUC 修复",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor-Setup-0.2.20-x64.exe",
-      "sha256": "b8e41803a8dfd716f057e9db77acb482043b3a938a7e15695d59eac03b712882",
-      "size": 144410649
+      "url": "Report Editor-Setup-0.2.21-x64.exe",
+      "sha256": "b955524343752d2516de56e39ea60871d2a2d9192ad9f6a3a3cb3b6ed8857a33",
+      "size": 144411003
     },
     "darwin-arm64": {
-      "url": "Report Editor-0.2.20-arm64.dmg",
-      "sha256": "d786e258fe54bc58016b951f897beb94ab6210f1302a009abb34eebe6a7f09c0",
-      "size": 180066823
+      "url": "Report Editor-0.2.21-arm64.dmg",
+      "sha256": "",
+      "size": 0
     }
   }
 }
