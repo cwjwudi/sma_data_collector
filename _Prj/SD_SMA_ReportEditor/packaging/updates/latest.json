@@ -1,17 +1,17 @@
 {
-  "version": "0.2.12",
-  "releasedAt": "2026-07-09T08:41:27.733Z",
-  "notes": "Report Editor 0.2.12\n\n- 修复备份导入后封面/正文/封尾版式全部显示「未选用」：导出不再打入模版 *.meta.json 摘要；导入时过滤摘要并优先保留完整模版，避免版式引用被覆盖清空\n- 版式库缺失对应 ID 时，模版列表下拉显示「版式缺失」提示，不再误显示「不使用封面 / 选用已建版式…」\n- 继承 0.2.11：OPC UA 表名模式强制结构参考表",
+  "version": "0.2.13",
+  "releasedAt": "2026-07-09T09:57:34.739Z",
+  "notes": "Report Editor 0.2.13\n\n- 封面/末页版式控件可拖拽缩放（正文区控件提升到可编辑画布）\n- 属性面板 XY/尺寸失焦或回车后再约束最小值，避免边输入边回弹\n- 修复保存模版失败：后端接受 visualSource.tableSource / tableOpcNodeId\n- 继承 0.2.12：备份导入版式引用修复",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor-Setup-0.2.12-x64.exe",
+      "url": "Report Editor-Setup-0.2.13-x64.exe",
       "sha256": "",
       "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor-0.2.12-arm64.dmg",
-      "sha256": "2cec0e0750017ef812c9f4d65f823dc52f7038994689c6b2e99e3335510da404",
-      "size": 180077425
+      "url": "Report Editor-0.2.13-arm64.dmg",
+      "sha256": "1ee508e5a6fd81bd8a1f6ebc744839bacf1bd773175d909ba2949fcd161ae094",
+      "size": 180083441
     }
   }
 }
