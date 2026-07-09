@@ -889,6 +889,7 @@ function tplSqlFillEditorPreviewLayout(el: TemplateElement): SqlFillEditorPrevie
   const pv = bindingPreview?.values.value[pk]?.tableSqlFill;
   if (!pv?.dataRows?.length || pv.error) return null;
   const n = pv.dataRows.length;
+  const displayN = sqlFillDisplayDataRowCount(el.tableSqlFill, n);
 
   const rowH = clampTableRowHeightPx(el.tableRowHeightPx);
   const chrome =
@@ -899,7 +900,7 @@ function tplSqlFillEditorPreviewLayout(el: TemplateElement): SqlFillEditorPrevie
   const maxTotalRows = Math.max(1, Math.floor(inner / Math.max(1, rowH)));
 
   const paginationNeeded =
-    props.sheet === "body" && sqlFillTableNeedsPreviewPagination(el, n, me.value.contentH);
+    props.sheet === "body" && sqlFillTableNeedsPreviewPagination(el, displayN, me.value.contentH, n);
   const maxRowsCfg = clampTableSqlMaxRows(el.tableSqlFill.maxRows ?? 2000);
   const limitsTrunc =
     n >= TABLE_SQL_FILL_PREVIEW_ROW_LIMIT ||
@@ -1136,14 +1137,19 @@ function tplSqlFillPageHintVisible(el: TemplateElement): boolean {
   if (!n) return false;
   const lay = tplSqlFillEditorPreviewLayout(el);
   if (lay) return lay.showPageHint;
-  return sqlFillTableNeedsPreviewPagination(el, n, me.value.contentH);
+  const pk = templateTableSqlFillPreviewKey(el.id);
+  const sqlN = bindingPreview?.values.value[pk]?.tableSqlFill?.dataRows?.length ?? 0;
+  return sqlFillTableNeedsPreviewPagination(el, n, me.value.contentH, sqlN);
 }
 
 function tplSqlFillPageHintText(el: TemplateElement): string {
   const fill = el.tableSqlFill;
   if (!fill) return "";
-  const base =
-    "导出预览：本表数据将跨页续排；表格最后一页下方留白后，位于表下的控件将单独占一页预览。";
+  const pagePer =
+    fill.layoutMode === "vertical" && fill.verticalMultiRecordMode === "page_per_record";
+  const base = pagePer
+    ? "导出预览：纵表已设为「每条结果另起一页」，多条查询结果将分多页展示。"
+    : "导出预览：本表数据将跨页续排；表格最后一页下方留白后，位于表下的控件将单独占一页预览。";
   if (fill.allowWidgetsBelowSqlFillTable) {
     return `${base} 若需在表下摆放控件，请使用左侧「＋页」新建正文页后再编排；否则预览会与分页规则不一致。`;
   }

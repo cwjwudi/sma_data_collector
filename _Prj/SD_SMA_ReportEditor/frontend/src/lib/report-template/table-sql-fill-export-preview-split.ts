@@ -14,6 +14,11 @@ import {
 } from "@/lib/report-template/table-sql-fill-layout-utils";
 import { templateTableSqlFillPreviewKey } from "@/lib/report-template/table-sql-fill-preview";
 import { sqlFillDisplayDataRowCount } from "@/lib/report-template/table-sql-fill-preview";
+import {
+  isVerticalSqlFill,
+  normalizeTableSqlVerticalMultiRecordMode,
+} from "@/lib/report-template/table-sql-fill";
+import { verticalSqlRecordLogicalRanges, verticalSqlSlotsPerRecord } from "@/lib/report-template/table-sql-vertical";
 
 /** 迷你预览中单张卡片内的表格片段（数据行为预览 payload.dataRows 的下标切片） */
 export interface SqlFillTablePreviewSlice {
@@ -48,8 +53,19 @@ export function sqlFillTableNeedsPreviewPagination(
   el: TemplateElement,
   dataRowCount: number,
   contentH: number,
+  sqlDataRowCount?: number,
 ): boolean {
   if (el.type !== "table" || dataRowCount <= 0) return false;
+  const fill = el.tableSqlFill;
+  // 纵表「每条另起一页」：多条 SQL 结果时强制拆页
+  if (
+    fill &&
+    isVerticalSqlFill(fill) &&
+    normalizeTableSqlVerticalMultiRecordMode(fill.verticalMultiRecordMode) === "page_per_record" &&
+    (sqlDataRowCount ?? 0) > 1
+  ) {
+    return true;
+  }
   const rowH = clampTableRowHeightPx(el.tableRowHeightPx);
   const capFirst = rowsFitInPx(contentH - el.y, rowH);
   return capFirst < 1 + dataRowCount;
@@ -69,7 +85,7 @@ function pickSqlFillTableForPreviewPagination(
     const sqlN = pv?.dataRows?.length ?? 0;
     if (!sqlN || pv?.error) continue;
     const displayN = sqlFillDisplayDataRowCount(el.tableSqlFill, sqlN);
-    if (!sqlFillTableNeedsPreviewPagination(el, displayN, contentH)) continue;
+    if (!sqlFillTableNeedsPreviewPagination(el, displayN, contentH, sqlN)) continue;
     const bottom = estimatedSqlFillTableBottomY(el, displayN);
     if (bottom >= bestBottom) {
       bestBottom = bottom;
@@ -114,6 +130,51 @@ function buildSlicesForOverflowTable(
   return slices;
 }
 
+/**
+ * 纵表「每条结果另起一页」：每条 SQL 记录单独一张预览卡（可再按页高切分该记录内部）。
+ */
+function buildSlicesForVerticalPagePerRecord(
+  el: TemplateElement,
+  sqlDataRowCount: number,
+  contentH: number,
+  repeatHeader: boolean,
+): SqlFillTablePreviewSlice[] {
+  if (el.type !== "table" || !el.tableSqlFill || sqlDataRowCount <= 0) return [];
+  const fill = el.tableSqlFill;
+  const ranges = verticalSqlRecordLogicalRanges(fill, sqlDataRowCount);
+  if (!ranges.length) return [];
+  const rowH = clampTableRowHeightPx(el.tableRowHeightPx);
+  const out: SqlFillTablePreviewSlice[] = [];
+
+  for (let ri = 0; ri < ranges.length; ri++) {
+    const range = ranges[ri];
+    const availFirst = contentH - el.y;
+    const maxRowsFirst = rowsFitInPx(availFirst, rowH);
+    let dataCapFirst = Math.max(0, maxRowsFirst - 1);
+    if (dataCapFirst === 0 && range.dataRowCount > 0) dataCapFirst = 1;
+
+    let cursor = 0;
+    let firstOfRecord = true;
+    while (cursor < range.dataRowCount) {
+      const maxRows = firstOfRecord ? maxRowsFirst : rowsFitInPx(contentH, rowH);
+      const hdr = firstOfRecord || repeatHeader ? 1 : 0;
+      let dataCap = Math.max(0, maxRows - (firstOfRecord ? 1 : hdr));
+      if (firstOfRecord) dataCap = dataCapFirst;
+      if (dataCap === 0) dataCap = 1;
+      const take = Math.min(dataCap, range.dataRowCount - cursor);
+      if (take <= 0) break;
+      out.push({
+        dataRowStart: range.dataRowStart + cursor,
+        dataRowCount: take,
+        includeHeaderRow: firstOfRecord || repeatHeader,
+      });
+      cursor += take;
+      firstOfRecord = false;
+    }
+  }
+  return out;
+}
+
 function hasWidgetsBelowSqlFillTable(
   els: TemplateElement[],
   table: TemplateElement,
@@ -149,11 +210,20 @@ function slicesForBodyPage(
   const pk = templateTableSqlFillPreviewKey(overflowEl.id);
   const rows = previewValues[pk]?.tableSqlFill?.dataRows ?? [];
   const sqlN = rows.length;
-  const displayN = sqlFillDisplayDataRowCount(overflowEl.tableSqlFill!, sqlN);
-  const repeatHeader = overflowEl.tableSqlFill!.repeatHeaderOnPageBreak !== false;
-  // 纵表：切片下标针对逻辑行；横表：针对 SQL 数据行（与 formatSqlFillTableCellPreview 一致）
-  const chunks = buildSlicesForOverflowTable(overflowEl, displayN, contentH, repeatHeader);
-  if (chunks.length <= 1) {
+  const fill = overflowEl.tableSqlFill!;
+  const displayN = sqlFillDisplayDataRowCount(fill, sqlN);
+  const repeatHeader = fill.repeatHeaderOnPageBreak !== false;
+  const pagePerRecord =
+    isVerticalSqlFill(fill) &&
+    normalizeTableSqlVerticalMultiRecordMode(fill.verticalMultiRecordMode) === "page_per_record";
+
+  // 纵表另起一页：按 SQL 记录切卡；续表 / 横表：按逻辑行高切卡
+  const chunks = pagePerRecord
+    ? buildSlicesForVerticalPagePerRecord(overflowEl, sqlN, contentH, repeatHeader)
+    : buildSlicesForOverflowTable(overflowEl, displayN, contentH, repeatHeader);
+
+  // 另起一页：即使单条也能放下，多条时仍要拆成多卡
+  if (chunks.length <= 1 && !(pagePerRecord && sqlN > 1)) {
     return [
       {
         bodyPageIndex,
@@ -164,10 +234,24 @@ function slicesForBodyPage(
     ];
   }
 
+  // page_per_record 且每条都能放下时，chunks 可能已按记录拆好；若仍为 1 且 sqlN>1，强制按记录拆
+  let finalChunks = chunks;
+  if (pagePerRecord && sqlN > 1 && chunks.length <= 1) {
+    const per = verticalSqlSlotsPerRecord(fill);
+    finalChunks = [];
+    for (let i = 0; i < sqlN; i++) {
+      finalChunks.push({
+        dataRowStart: i * per,
+        dataRowCount: per,
+        includeHeaderRow: true,
+      });
+    }
+  }
+
   const logicalBottom = estimatedSqlFillTableBottomY(overflowEl, displayN);
   const hasBelow = hasWidgetsBelowSqlFillTable(els, overflowEl, logicalBottom);
 
-  const cards: ExpandedBodyPreviewCard[] = chunks.map((slice, idx) => ({
+  const cards: ExpandedBodyPreviewCard[] = finalChunks.map((slice, idx) => ({
     bodyPageIndex,
     continuationIndex: idx,
     sqlFillTableSlices: { [overflowEl.id]: slice },
@@ -175,14 +259,14 @@ function slicesForBodyPage(
     sqlFillHideBelow:
       idx === 0 ? { tableId: overflowEl.id, baselineY: logicalBottom } : undefined,
     showSqlFillTailDividerHint:
-      hasBelow && idx === chunks.length - 1 ? true : undefined,
+      hasBelow && idx === finalChunks.length - 1 ? true : undefined,
     overflowSqlFillTableId: overflowEl.id,
   }));
 
   if (hasBelow) {
     cards.push({
       bodyPageIndex,
-      continuationIndex: chunks.length,
+      continuationIndex: finalChunks.length,
       sqlFillTableSlices: {},
       continuationHideOtherBodyElements: true,
       tailOnlyBelowBaseline: true,

@@ -255,7 +255,9 @@ export function syncTemplateTableRowsForSqlFillPreview(el: TemplateElement, data
   } else {
     body = Math.max(0, Math.floor(Number(dataRowCount)) || 0);
   }
-  el.tableRows = headerRows + body;
+  const nextRows = Math.min(30, headerRows + body);
+  if (el.tableRows === nextRows) return;
+  el.tableRows = nextRows;
   ensureTableGrid(el);
 }
 
@@ -274,7 +276,9 @@ export function syncZoneTableRowsForSqlFillPreview(el: LayoutZoneElement, dataRo
   } else {
     body = Math.max(0, Math.floor(Number(dataRowCount)) || 0);
   }
-  el.tableRows = headerRows + body;
+  const nextRows = Math.min(30, headerRows + body);
+  if (el.tableRows === nextRows) return;
+  el.tableRows = nextRows;
   ensureZoneTableGrid(el);
 }
 

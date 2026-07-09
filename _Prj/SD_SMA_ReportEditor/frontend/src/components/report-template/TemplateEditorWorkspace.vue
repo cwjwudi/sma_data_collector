@@ -576,9 +576,15 @@ watchDebounced(
   { debounce: 450, maxWait: 5000, deep: true },
 );
 
+let midModeRefreshToken = 0;
 watch(midMode, () => {
   if (!editing.value) return;
-  void bindingPreview.refresh({ silent: true });
+  const token = ++midModeRefreshToken;
+  // 延后到 DOM 挂载完成后再刷，避免与 v-if 整树重建同帧抢主线程；且不写回 tableRows
+  void nextTick(() => {
+    if (token !== midModeRefreshToken || !editing.value) return;
+    void bindingPreview.refresh({ silent: true, mutateTemplateRows: false });
+  });
 });
 
 watch([opcUaLiveRefreshEnabled, dbLiveRefreshEnabled], () => {

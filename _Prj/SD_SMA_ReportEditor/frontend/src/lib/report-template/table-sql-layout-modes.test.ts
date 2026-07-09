@@ -65,6 +65,28 @@ describe("vertical sql fill", () => {
     expect(logical[3]).toEqual({ label: "a", value: "2", blank: false });
   });
 
+  it("page_per_record skips inter-record blank and counts without separators", () => {
+    const fill = hydrateTableSqlFill({
+      enabled: true,
+      layoutMode: "vertical",
+      verticalMultiRecordMode: "page_per_record",
+      visualSource: {
+        connectionId: "c1",
+        table: "t",
+        engine: "mysql",
+        columns: ["a", "b"],
+        database: "",
+      },
+    });
+    expect(verticalSqlLogicalRowCount(fill, 2)).toBe(4);
+    const logical = buildVerticalSqlLogicalRows(fill, [
+      ["1", "x"],
+      ["2", "y"],
+    ]);
+    expect(logical).toHaveLength(4);
+    expect(logical.every((r) => !r.blank)).toBe(true);
+  });
+
   it("compiles SELECT without blank slots and without NULL placeholders", () => {
     const fill = hydrateTableSqlFill({
       enabled: true,

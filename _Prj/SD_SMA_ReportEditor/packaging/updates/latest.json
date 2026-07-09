@@ -1,17 +1,17 @@
 {
-  "version": "0.2.17",
-  "releasedAt": "2026-07-09T17:24:19.738Z",
-  "notes": "Report Editor 0.2.17\n\n- 纵表开启数据库填充后，属性面板「行数」可增减：行数 = 表头 + 字段槽，增减会同步画布名称列下拉行\n- 纵表列数固定为 2（步进器锁定）\n- 继承 0.2.16：字段行占位修复、画布名称列下拉选字段",
+  "version": "0.2.18",
+  "releasedAt": "2026-07-09T17:36:09.541Z",
+  "notes": "Report Editor 0.2.18\n\n- 切换「导出预览 / 编辑画布」时延后绑定刷新且不写回表格行数，减轻卡顿\n- 纵表新增「多条结果分页」：同表续表 / 每条结果另起一页\n- 继承 0.2.17：纵表行数可增减",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor-Setup-0.2.17-x64.exe",
-      "sha256": "2c6b61e165ce936f58116ec1958f4411d4cfcc78a213885f1439f260166ff0fe",
-      "size": 144433748
+      "url": "Report Editor-Setup-0.2.18-x64.exe",
+      "sha256": "988f7be497fb846d516ec928f0e32a48d7687b2d1c82ebb7bb51f9722bdd634b",
+      "size": 144437199
     },
     "darwin-arm64": {
-      "url": "Report Editor-0.2.17-arm64.dmg",
-      "sha256": "adde93d91d79c6d2fb39bd711297400dc533352d013b1e6d736bc2a6a4157918",
-      "size": 180082524
+      "url": "Report Editor-0.2.18-arm64.dmg",
+      "sha256": "",
+      "size": 0
     }
   }
 }

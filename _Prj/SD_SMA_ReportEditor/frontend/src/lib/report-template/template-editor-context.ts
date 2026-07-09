@@ -25,6 +25,11 @@ export interface BindingPreviewRefreshOptions {
   silent?: boolean;
   /** PDF 导出时拉取数据库填充表可拆分报表所需的完整行集；编辑器预览保持轻量 */
   fullSqlFill?: boolean;
+  /**
+   * 是否把 SQL 填充预览行数写回模版 tableRows（会触发撤销栈 deep watch）。
+   * 切换画布视图时建议 false，避免与 DOM 重建抢主线程。默认 true。
+   */
+  mutateTemplateRows?: boolean;
 }
 
 /** 一次绑定刷新实际取数统计（结批审计用） */

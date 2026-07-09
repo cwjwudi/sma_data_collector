@@ -71,6 +71,7 @@ TableSqlTableSource = Literal["manual", "opcua"]
 TableSqlLayoutMode = Literal["horizontal", "vertical"]
 TableSqlColumnRole = Literal["field", "blank", "sequence"]
 TableSqlSequencePageMode = Literal["continuous", "restart_per_page"]
+TableSqlVerticalMultiRecordMode = Literal["continue", "page_per_record"]
 VisualSqlFilterKind = Literal["equality", "datetime_between", "date_between", "numeric_between"]
 
 
@@ -116,6 +117,7 @@ class TableSqlFillConfig(BaseModel):
     layoutMode: TableSqlLayoutMode = "horizontal"
     columnRoles: list[TableSqlColumnRole] = Field(default_factory=list)
     sequencePageMode: TableSqlSequencePageMode = "continuous"
+    verticalMultiRecordMode: TableSqlVerticalMultiRecordMode = "continue"
     verticalFieldLabels: list[str] = Field(default_factory=list)
 
 

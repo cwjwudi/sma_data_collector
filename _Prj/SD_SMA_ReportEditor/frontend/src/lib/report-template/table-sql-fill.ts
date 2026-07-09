@@ -34,6 +34,13 @@ export type TableSqlColumnRole = "field" | "blank" | "sequence";
 /** 序号跨页策略：continuous=整份连续；restart_per_page=每页从 1 重计 */
 export type TableSqlSequencePageMode = "continuous" | "restart_per_page";
 
+/**
+ * 纵表多条 SQL 结果的分页策略：
+ * - continue：多条记录在同一表内续表（组间可插空白分隔），超出页高再跨页续排
+ * - page_per_record：每条 SQL 结果单独占一页（另起一页）
+ */
+export type TableSqlVerticalMultiRecordMode = "continue" | "page_per_record";
+
 /** 画布/属性面板列下拉中的哨兵值（非真实库字段名） */
 export const TABLE_SQL_COLUMN_PICK_BLANK = "";
 export const TABLE_SQL_COLUMN_PICK_SEQUENCE = "__sequence__";
@@ -129,6 +136,11 @@ export interface TableSqlFillConfig {
   /** 序号列跨页编号策略；缺省 continuous */
   sequencePageMode?: TableSqlSequencePageMode;
   /**
+   * 纵表多条查询结果：continue=同表续表；page_per_record=每条结果另起一页。
+   * 缺省 continue（兼容旧模版）。
+   */
+  verticalMultiRecordMode?: TableSqlVerticalMultiRecordMode;
+  /**
    * 纵表：与 visualSource.columns 对齐的左列显示标签。
    * 空串时回退为字段名；空白分隔行左右皆空。
    */
@@ -209,6 +221,7 @@ export function defaultTableSqlFillConfig(): TableSqlFillConfig {
     layoutMode: "horizontal",
     columnRoles: [],
     sequencePageMode: "continuous",
+    verticalMultiRecordMode: "continue",
     verticalFieldLabels: [],
   };
 }
@@ -224,6 +237,10 @@ export function normalizeTableSqlColumnRole(v: unknown): TableSqlColumnRole {
 
 export function normalizeTableSqlSequencePageMode(v: unknown): TableSqlSequencePageMode {
   return v === "restart_per_page" ? "restart_per_page" : "continuous";
+}
+
+export function normalizeTableSqlVerticalMultiRecordMode(v: unknown): TableSqlVerticalMultiRecordMode {
+  return v === "page_per_record" ? "page_per_record" : "continue";
 }
 
 export function isVerticalSqlFill(fill: TableSqlFillConfig | null | undefined): boolean {
@@ -422,6 +439,7 @@ export function hydrateTableSqlFill(raw: unknown): TableSqlFillConfig {
 
   const layoutMode = normalizeTableSqlLayoutMode(o.layoutMode);
   const sequencePageMode = normalizeTableSqlSequencePageMode(o.sequencePageMode);
+  const verticalMultiRecordMode = normalizeTableSqlVerticalMultiRecordMode(o.verticalMultiRecordMode);
   const rolesIn = Array.isArray(o.columnRoles) ? o.columnRoles : [];
   const columnRoles: TableSqlColumnRole[] = rolesIn.map((x) => normalizeTableSqlColumnRole(x));
   const labelsIn = Array.isArray(o.verticalFieldLabels) ? o.verticalFieldLabels : [];
@@ -449,6 +467,7 @@ export function hydrateTableSqlFill(raw: unknown): TableSqlFillConfig {
     layoutMode,
     columnRoles,
     sequencePageMode,
+    verticalMultiRecordMode,
     verticalFieldLabels,
   };
   ensureMinTableSqlParamSlots(out, Math.max(2, out.params.length));

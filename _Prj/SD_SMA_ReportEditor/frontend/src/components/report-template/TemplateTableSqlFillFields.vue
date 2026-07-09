@@ -124,6 +124,16 @@
     <p v-if="allowSplitReports && fill.splitReportsOnMaxRows" class="tbl-sql-fill-policy-hint">
       开启后，如果查询结果超过最大行数，会按最大行数拆成多份报表；同时模板中只允许保留一个数据库填充表。
     </p>
+    <label v-if="layoutModeProxy === 'vertical'" class="tbl-sql-fill-mode">
+      <span class="tbl-sql-fill-mode-t">多条结果分页</span>
+      <select v-model="verticalMultiRecordModeProxy" :class="selectFieldClass">
+        <option value="continue">同表续表（组间可插空白）</option>
+        <option value="page_per_record">每条结果另起一页</option>
+      </select>
+    </label>
+    <p v-if="layoutModeProxy === 'vertical'" class="tbl-sql-fill-policy-hint">
+      「同表续表」：多条查询结果在同一表内连续展开，超出页高再跨页续排。「另起一页」：每条 SQL 结果单独占一页（适合配方/批次逐条成页）。
+    </p>
     <label class="tbl-sql-fill-minichk">
       <input v-model="fill.repeatHeaderOnPageBreak" type="checkbox" />
       <span>跨页重复表头</span>
@@ -154,9 +164,11 @@ import {
   isVerticalSqlFill,
   normalizeTableSqlLayoutMode,
   normalizeTableSqlSequencePageMode,
+  normalizeTableSqlVerticalMultiRecordMode,
   type TableSqlFillConfig,
   type TableSqlParamBinding,
   type TableSqlSequencePageMode,
+  type TableSqlVerticalMultiRecordMode,
 } from "@/lib/report-template/table-sql-fill";
 import {
   applyTableSqlLayoutMode,
@@ -208,6 +220,15 @@ const sequencePageModeProxy = computed({
   },
   set(v: TableSqlSequencePageMode) {
     props.fill.sequencePageMode = normalizeTableSqlSequencePageMode(v);
+  },
+});
+
+const verticalMultiRecordModeProxy = computed({
+  get(): TableSqlVerticalMultiRecordMode {
+    return normalizeTableSqlVerticalMultiRecordMode(props.fill.verticalMultiRecordMode);
+  },
+  set(v: TableSqlVerticalMultiRecordMode) {
+    props.fill.verticalMultiRecordMode = normalizeTableSqlVerticalMultiRecordMode(v);
   },
 });
 

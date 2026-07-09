@@ -230,14 +230,18 @@ export function useReportBindingPreview(tmplRef: Ref<ReportTemplate | null>): Re
                 ? task.tableCols ?? task.colCount
                 : task.colCount;
             const grid = sqlResponseToPreviewRows(data, mapCols, task.fill);
-            task.expandRows(grid.length);
+            if (opts?.mutateTemplateRows !== false) {
+              task.expandRows(grid.length);
+            }
             out[task.key] = {
               text: `${grid.length}×${task.colCount}`,
               tableSqlFill: { dataRows: grid },
             };
           } catch (e) {
             const msg = e instanceof Error ? e.message : String(e);
-            task.expandRows(0);
+            if (opts?.mutateTemplateRows !== false) {
+              task.expandRows(0);
+            }
             out[task.key] = {
               text: `（填充）${msg}`,
               tableSqlFill: { dataRows: [], error: msg },
