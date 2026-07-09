@@ -47,7 +47,16 @@ class OpcUaClient:
         self.current_retry_count = 0
         self.is_reconnecting = False
         self._reconnect_lock = asyncio.Lock()
+        self._opcua_io_lock = asyncio.Lock()
         self.health_check_task: Optional[asyncio.Task] = None
+        self.operation_timeout = max(
+            0.1,
+            float(os.getenv("SD_SMA_OPCUA_OPERATION_TIMEOUT", "4.0")),
+        )
+        self._async_operation_timeout = self.operation_timeout + max(
+            1.0,
+            self.operation_timeout * 0.25,
+        )
         self.log_throttle_interval = max(
             1.0,
             float(os.getenv("SD_SMA_OPCUA_LOG_THROTTLE_INTERVAL", "30")),
@@ -62,6 +71,40 @@ class OpcUaClient:
         if self.connected and self.client is not None:
             return True
         return await self._attempt_reconnect()
+
+    def _create_client(self) -> Client:
+        """创建同步 OPC UA client，并统一设置底层 socket 超时。"""
+        return Client(self.server_url, timeout=self.operation_timeout)
+
+    def _discard_client(self) -> None:
+        self.connected = False
+        self.client = None
+
+    async def _run_blocking_opcua(self, action: str, func):
+        """
+        在线程中执行 python-opcua 的同步调用，并保证同一 Client 串行访问。
+
+        wait_for 超时不会强制杀死底层线程，因此超时后会废弃当前 client，
+        后续操作通过现有重连流程创建新连接。
+        """
+        async with self._opcua_io_lock:
+            try:
+                return await asyncio.wait_for(
+                    asyncio.to_thread(func),
+                    timeout=self._async_operation_timeout,
+                )
+            except asyncio.TimeoutError as exc:
+                self._discard_client()
+                raise TimeoutError(
+                    f"OPC UA {action}超时（>{self._async_operation_timeout:.1f}s）"
+                ) from exc
+
+    async def _read_node_value(self, client: Client, node_path: str, action: str) -> Any:
+        def _read_sync():
+            node = client.get_node(node_path)
+            return node.get_value()
+
+        return await self._run_blocking_opcua(action, _read_sync)
     
     async def connect(self) -> bool:
         """
@@ -71,8 +114,9 @@ class OpcUaClient:
             bool: 连接是否成功
         """
         try:
-            self.client = Client(self.server_url)
-            self.client.connect()
+            client = self._create_client()
+            await self._run_blocking_opcua("连接", client.connect)
+            self.client = client
             self.connected = True
             self.current_retry_count = 0  # 重置重试计数
             self.logger.info(f"成功连接到OPC UA服务器: {self.server_url}")
@@ -99,16 +143,16 @@ class OpcUaClient:
         await self._stop_health_check()
         
         if self.client:
+            client = self.client
             try:
-                # 在单独的线程中执行阻塞的disconnect操作
-                loop = asyncio.get_event_loop()
-                await loop.run_in_executor(None, self.client.disconnect)
+                await self._run_blocking_opcua("断开连接", client.disconnect)
                 self.logger.info("已断开OPC UA服务器连接")
             except Exception as e:
                 self.logger.error(f"断开连接时发生错误: {e}", exc_info=True)
             finally:
+                if self.client is client:
+                    self.client = None
                 self.connected = False
-                self.client = None
                 self.is_reconnecting = False
         else:
             self.connected = False
@@ -153,8 +197,10 @@ class OpcUaClient:
                     break
 
             try:
-                node = self.client.get_node(point.path)
-                value = node.get_value()
+                client = self.client
+                if not client:
+                    raise ConnectionError("OPC UA 客户端不可用")
+                value = await self._read_node_value(client, point.path, f"读取数据点 {point.name}")
                 results[point.name] = {
                     'value': value,
                     'timestamp': timestamp,
@@ -172,10 +218,14 @@ class OpcUaClient:
                     if await self._attempt_reconnect():
                         await asyncio.sleep(2.0)
                         try:
-                            if not self.client:
+                            client = self.client
+                            if not client:
                                 raise ConnectionError("重连后客户端仍不可用")
-                            node = self.client.get_node(point.path)
-                            value = node.get_value()
+                            value = await self._read_node_value(
+                                client,
+                                point.path,
+                                f"重连后读取数据点 {point.name}",
+                            )
                             results[point.name] = {
                                 'value': value,
                                 'timestamp': timestamp,
@@ -255,16 +305,33 @@ class OpcUaClient:
             if not await self._ensure_connected():
                 return None
             try:
-                nodes = [self.client.get_node(p.path) for p in data_points]
-                values = self.client.get_values(nodes)
+                client = self.client
+                if not client:
+                    raise ConnectionError("OPC UA 客户端不可用")
+
+                def _batch_read_sync():
+                    nodes = [client.get_node(p.path) for p in data_points]
+                    return client.get_values(nodes)
+
+                values = await self._run_blocking_opcua("批量读取", _batch_read_sync)
             except Exception as e:
                 if self._is_connection_error(e):
                     self.logger.warning(f"批量读取遇连接错误，准备重连: {e}")
                     if await self._attempt_reconnect():
                         await asyncio.sleep(2.0)
                         try:
-                            nodes = [self.client.get_node(p.path) for p in data_points]
-                            values = self.client.get_values(nodes)
+                            client = self.client
+                            if not client:
+                                raise ConnectionError("重连后客户端仍不可用")
+
+                            def _retry_batch_read_sync():
+                                nodes = [client.get_node(p.path) for p in data_points]
+                                return client.get_values(nodes)
+
+                            values = await self._run_blocking_opcua(
+                                "重连后批量读取",
+                                _retry_batch_read_sync,
+                            )
                         except Exception as retry_e:
                             self.logger.error(f"重连后批量读取仍失败: {retry_e}", exc_info=True)
                             return None
@@ -296,6 +363,62 @@ class OpcUaClient:
             return batch
 
         return await self._read_data_points_sequential(data_points, timestamp)
+
+    async def _write_node_data_value(self, point_path: str, data_value: Any, value_label: str) -> bool:
+        """统一写入 OPC UA 节点，所有同步读写属性操作都在线程中执行。"""
+        if not self.connected or not self.client:
+            if not await self._attempt_reconnect():
+                self.logger.debug("写入%s跳过：OPC UA 未连接: %s", value_label, point_path)
+                return False
+
+        try:
+            client = self.client
+            if not client:
+                raise ConnectionError("OPC UA 客户端不可用")
+
+            def _write_sync() -> bool:
+                node = client.get_node(point_path)
+                try:
+                    node_attrs = node.get_attributes([
+                        ua.AttributeIds.AccessLevel,
+                        ua.AttributeIds.UserAccessLevel,
+                    ])
+                    access_level = node_attrs[0].Value.Value if len(node_attrs) > 0 and node_attrs[0].Value else 0
+                    user_access_level = node_attrs[1].Value.Value if len(node_attrs) > 1 and node_attrs[1].Value else 0
+                    if not (access_level & 2) or not (user_access_level & 2):
+                        return False
+                except Exception as attr_error:
+                    self.logger.debug(f"无法获取节点属性，继续尝试写入: {attr_error}")
+
+                node.set_attribute(ua.AttributeIds.Value, data_value)
+                return True
+
+            write_ok = await self._run_blocking_opcua(f"写入{value_label}", _write_sync)
+            if not write_ok:
+                self._log_write_failure(point_path, value_label, RuntimeError("节点不可写"))
+                return False
+
+            self._last_write_failure_log_at.pop(point_path, None)
+            suppressed = self._suppressed_write_failures.pop(point_path, 0)
+            if suppressed:
+                self.logger.info("OPC UA 写入恢复：%s，之前合并了 %d 次失败日志", point_path, suppressed)
+            self.logger.debug("成功写入%s到 %s", value_label, point_path)
+            return True
+        except Exception as e:
+            if self._is_connection_error(e):
+                self._discard_client()
+                self._log_write_failure(point_path, value_label, e)
+                if await self._attempt_reconnect():
+                    return await self._write_node_data_value(point_path, data_value, value_label)
+                return False
+
+            error_str = str(e)
+            if "BadWriteNotSupported" in error_str or "not support writing" in error_str.lower():
+                self._log_write_failure(point_path, value_label, e)
+                return False
+
+            self._log_write_failure(point_path, value_label, e, exc_info=True)
+            return False
     
     async def write_array_value(self, point_path: str, values: list) -> bool:
         """
@@ -308,68 +431,17 @@ class OpcUaClient:
         Returns:
             bool: 写入是否成功
         """
-        # 检查连接状态，如果需要则尝试重连
-        if not self.connected or not self.client:
-            if not await self._attempt_reconnect():
-                self.logger.error("写入失败：无法连接到OPC UA服务器")
-                return False
+        if values and isinstance(values[0], bool):
+            variant_type = ua.VariantType.Boolean
+        elif values and isinstance(values[0], int):
+            variant_type = ua.VariantType.Int64
+        elif values and isinstance(values[0], float):
+            variant_type = ua.VariantType.Float
+        else:
+            variant_type = ua.VariantType.Null
 
-        try:
-            node = self.client.get_node(point_path)
-
-            # 先检查节点是否可写
-            try:
-                node_attrs = node.get_attributes([
-                    ua.AttributeIds.AccessLevel,
-                    ua.AttributeIds.UserAccessLevel
-                ])
-
-                access_level = node_attrs[0].Value.Value if len(node_attrs) > 0 and node_attrs[0].Value else 0
-                user_access_level = node_attrs[1].Value.Value if len(node_attrs) > 1 and node_attrs[1].Value else 0
-
-                if not (access_level & 2) or not (user_access_level & 2):
-                    self.logger.info(f"节点 {point_path} 不可写，跳过写入操作")
-                    return False
-            except Exception as attr_error:
-                self.logger.debug(f"无法获取节点属性，继续尝试写入: {attr_error}")
-
-            try:
-                # 根据数组元素类型推断 VariantType
-                if values and isinstance(values[0], bool):
-                    variant_type = ua.VariantType.Boolean
-                elif values and isinstance(values[0], int):
-                    variant_type = ua.VariantType.Int64
-                elif values and isinstance(values[0], float):
-                    variant_type = ua.VariantType.Float
-                else:
-                    variant_type = ua.VariantType.Null
-
-                node.set_attribute(
-                    ua.AttributeIds.Value,
-                    ua.DataValue(ua.Variant(values, variant_type))
-                )
-                self.logger.debug(f"成功写入数组值到 {point_path}, 长度={len(values)}")
-                return True
-            except Exception as write_error:
-                error_str = str(write_error)
-                if "BadWriteNotSupported" in error_str or "not support writing" in error_str.lower():
-                    self.logger.info(f"服务器不支持写入操作: {point_path}")
-                    return False
-                else:
-                    self.logger.warning(f"写入数组失败: {write_error}")
-                    return False
-
-        except Exception as e:
-            if self._is_connection_error(e):
-                self.logger.warning(f"写入数组时检测到连接错误，准备重连: {e}")
-                if await self._attempt_reconnect():
-                    return await self.write_array_value(point_path, values)
-                else:
-                    self.logger.error(f"写入数组失败且无法重连: {e}", exc_info=True)
-                    return False
-            else:
-                self.logger.error(f"写入数组值到 {point_path} 失败: {e}", exc_info=True)
-                return False
+        data_value = ua.DataValue(ua.Variant(values, variant_type))
+        return await self._write_node_data_value(point_path, data_value, "数组值")
 
     async def write_boolean_value(self, point_path: str, value: bool) -> bool:
         """
@@ -398,6 +470,8 @@ class OpcUaClient:
         Returns:
             bool: 是否为连接错误
         """
+        if isinstance(error, (TimeoutError, asyncio.TimeoutError, ConnectionError)):
+            return True
         # 健康检查/重连与采集并发时，可能出现 client 已被置空仍进入读取
         if isinstance(error, AttributeError):
             msg = str(error).lower()
@@ -457,18 +531,18 @@ class OpcUaClient:
 
                 # 断开现有连接（如果存在）
                 if self.client:
+                    client = self.client
+                    self.client = None
+                    self.connected = False
                     try:
-                        loop = asyncio.get_event_loop()
-                        await loop.run_in_executor(None, self.client.disconnect)
+                        await self._run_blocking_opcua("断开旧连接", client.disconnect)
                     except Exception:
                         pass  # 忽略断开连接时的错误
-                    finally:
-                        self.client = None
-                        self.connected = False
 
                 # 尝试重新连接
-                self.client = Client(self.server_url)
-                self.client.connect()
+                client = self._create_client()
+                await self._run_blocking_opcua("重连", client.connect)
+                self.client = client
                 self.connected = True
                 if self._suppressed_reconnect_failures:
                     self.logger.info(
@@ -537,13 +611,15 @@ class OpcUaClient:
                     # 尝试读取一个简单的节点来检查连接状态
                     try:
                         # 这里可以读取一个已知存在的节点或者使用服务器状态节点
-                        server_state_node = self.client.get_node("i=2259")  # ServerState节点
-                        server_state_node.get_value()
+                        client = self.client
+                        if not client:
+                            raise ConnectionError("OPC UA 客户端不可用")
+                        await self._read_node_value(client, "i=2259", "健康检查读取 ServerState")
                         self.logger.debug("健康检查: 连接正常")
                     except Exception as e:
                         self.logger.warning(f"健康检查发现连接异常: {e}")
                         if self._is_connection_error(e):
-                            self.connected = False
+                            self._discard_client()
                             # 触发重连
                             self.logger.info("健康检查触发自动重连")
                             await self._attempt_reconnect(wait_before_attempt=False)
@@ -637,48 +713,8 @@ class OpcUaClient:
 
     async def write_scalar_value(self, point_path: str, value: Any, variant_type: Any, value_label: str = "值") -> bool:
         """写入单个 OPC UA 标量值，由客户端统一处理连接检查、重连与日志。"""
-        if not self.connected or not self.client:
-            if not await self._attempt_reconnect():
-                self.logger.debug("写入%s跳过：OPC UA 未连接: %s", value_label, point_path)
-                return False
-
-        try:
-            node = self.client.get_node(point_path)
-            try:
-                node_attrs = node.get_attributes([
-                    ua.AttributeIds.AccessLevel,
-                    ua.AttributeIds.UserAccessLevel,
-                ])
-                access_level = node_attrs[0].Value.Value if len(node_attrs) > 0 and node_attrs[0].Value else 0
-                user_access_level = node_attrs[1].Value.Value if len(node_attrs) > 1 and node_attrs[1].Value else 0
-                if not (access_level & 2) or not (user_access_level & 2):
-                    self._log_write_failure(point_path, value_label, RuntimeError("节点不可写"))
-                    return False
-            except Exception as attr_error:
-                self.logger.debug(f"无法获取节点属性，继续尝试写入: {attr_error}")
-
-            node.set_attribute(ua.AttributeIds.Value, ua.DataValue(ua.Variant(value, variant_type)))
-            self._last_write_failure_log_at.pop(point_path, None)
-            suppressed = self._suppressed_write_failures.pop(point_path, 0)
-            if suppressed:
-                self.logger.info("OPC UA 写入恢复：%s，之前合并了 %d 次失败日志", point_path, suppressed)
-            self.logger.debug("成功写入%s %s 到 %s", value_label, value, point_path)
-            return True
-        except Exception as e:
-            if self._is_connection_error(e):
-                self.connected = False
-                self._log_write_failure(point_path, value_label, e)
-                if await self._attempt_reconnect():
-                    return await self.write_scalar_value(point_path, value, variant_type, value_label)
-                return False
-
-            error_str = str(e)
-            if "BadWriteNotSupported" in error_str or "not support writing" in error_str.lower():
-                self._log_write_failure(point_path, value_label, e)
-                return False
-
-            self._log_write_failure(point_path, value_label, e, exc_info=True)
-            return False
+        data_value = ua.DataValue(ua.Variant(value, variant_type))
+        return await self._write_node_data_value(point_path, data_value, value_label)
 
     async def write_uint16_value(self, point_path: str, value: int) -> bool:
         """写入 UInt16 标量值。"""
@@ -686,3 +722,10 @@ class OpcUaClient:
             self.logger.error("UInt16 写入值越界: %s", value)
             return False
         return await self.write_scalar_value(point_path, value, ua.VariantType.UInt16, "UInt16")
+
+    async def write_uint32_value(self, point_path: str, value: int) -> bool:
+        """写入 UInt32/UDINT 标量值。"""
+        if value < 0 or value > 0xFFFFFFFF:
+            self.logger.error("UInt32 写入值越界: %s", value)
+            return False
+        return await self.write_scalar_value(point_path, value, ua.VariantType.UInt32, "UInt32")
