@@ -105,6 +105,20 @@ body {
   grid-column: 1 / -1;
 }
 
+.active-config-bar {
+  padding-top: 0.75rem;
+  padding-bottom: 0.75rem;
+}
+
+.active-config-bar .row {
+  align-items: center;
+  margin-bottom: 0;
+}
+
+.active-config-bar #activeConfigSelect {
+  min-width: 14rem;
+}
+
 .panel {
   background: #fff;
   border: 1px solid #dbe1ea;

@@ -260,28 +260,41 @@ async function loadAppSettings() {
     '已加载基础设定与 OPC UA 连接（保存基础设定时一并写入）';
 }
 
-async function loadConfigProfiles() {
-  const data = await fetchJson('/api/config/profiles');
-  currentConfigProfile = data.active || '';
-  const sel = document.getElementById('configProfileSelect');
-  sel.innerHTML = '';
-  for (const profile of data.profiles || []) {
+function fillConfigProfileSelect(select, profiles, activeName) {
+  if (!select) return;
+  select.innerHTML = '';
+  for (const profile of profiles || []) {
     const op = document.createElement('option');
     op.value = profile.filename;
     op.textContent = profile.name && profile.name !== profile.filename
       ? `${profile.name} (${profile.filename})`
       : profile.filename;
-    sel.appendChild(op);
+    select.appendChild(op);
   }
-  if (currentConfigProfile && hasOption(sel, currentConfigProfile)) {
-    sel.value = currentConfigProfile;
+  if (activeName && hasOption(select, activeName)) {
+    select.value = activeName;
   }
-  document.getElementById('configProfileHint').textContent =
-    currentConfigProfile ? `当前加载: ${currentConfigProfile}` : '未找到可用 config';
 }
 
-async function switchConfigProfile() {
-  const filename = document.getElementById('configProfileSelect').value;
+async function loadConfigProfiles() {
+  const data = await fetchJson('/api/config/profiles');
+  currentConfigProfile = data.active || '';
+  const profiles = data.profiles || [];
+  fillConfigProfileSelect(document.getElementById('configProfileSelect'), profiles, currentConfigProfile);
+  fillConfigProfileSelect(document.getElementById('activeConfigSelect'), profiles, currentConfigProfile);
+  document.getElementById('configProfileHint').textContent =
+    currentConfigProfile ? `当前加载: ${currentConfigProfile}` : '未找到可用 config';
+  const activeHint = document.getElementById('activeConfigHint');
+  if (activeHint) {
+    activeHint.textContent = currentConfigProfile
+      ? `服务启动与 OPC 回写均使用此配置：${currentConfigProfile}`
+      : '未找到可用 config';
+  }
+}
+
+async function switchConfigProfile(sourceSelectId) {
+  const selectId = sourceSelectId || 'configProfileSelect';
+  const filename = document.getElementById(selectId).value;
   if (!filename) return;
   const result = await fetchJson('/api/config/profiles/active', {
     method: 'POST',
@@ -289,7 +302,7 @@ async function switchConfigProfile() {
     body: JSON.stringify({ filename }),
   });
   currentConfigProfile = result.active || filename;
-  await reloadActiveConfigData(`已加载 config: ${currentConfigProfile}`);
+  await reloadActiveConfigData(`已激活并加载 config: ${currentConfigProfile}`);
 }
 
 async function refreshConfigProfiles() {
@@ -953,7 +966,7 @@ document.getElementById('btnLoadTableConfig').addEventListener('click', () => {
   loadTableConfig().catch(catchHintError('columnEditorHint'));
 });
 document.getElementById('btnReloadConfigProfile').addEventListener('click', () => {
-  switchConfigProfile().catch(catchHintError('configProfileHint'));
+  switchConfigProfile('configProfileSelect').catch(catchHintError('configProfileHint'));
 });
 document.getElementById('btnRefreshConfigProfiles').addEventListener('click', () => {
   refreshConfigProfiles().catch(catchHintError('configProfileHint'));
@@ -965,7 +978,14 @@ document.getElementById('btnDeleteConfigProfile').addEventListener('click', () =
   deleteCurrentConfigProfile().catch(catchHintError('configProfileHint'));
 });
 document.getElementById('configProfileSelect').addEventListener('change', () => {
-  switchConfigProfile().catch(catchHintError('configProfileHint'));
+  switchConfigProfile('configProfileSelect').catch(catchHintError('configProfileHint'));
+});
+document.getElementById('activeConfigSelect').addEventListener('change', () => {
+  switchConfigProfile('activeConfigSelect').catch(err => {
+    const hint = document.getElementById('activeConfigHint');
+    if (hint) hint.textContent = String(err.message || err);
+    catchHintError('configProfileHint')(err);
+  });
 });
 document.getElementById('btnSaveAppSettings').addEventListener('click', () => {
   saveAppSettings().catch(catchHintError('appSettingsHint'));

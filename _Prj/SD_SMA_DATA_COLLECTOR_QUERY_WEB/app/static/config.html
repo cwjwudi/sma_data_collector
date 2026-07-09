@@ -13,6 +13,14 @@
       <span class="page-nav-current">配置页</span>
     </nav>
     <div class="layout layout-stack">
+      <section class="panel active-config-bar">
+        <div class="row">
+          <label for="activeConfigSelect"><strong>当前激活配置</strong></label>
+          <select id="activeConfigSelect"></select>
+          <span id="activeConfigHint" class="muted">服务启动与 OPC 回写均使用此配置（写入 .active_query_config）</span>
+        </div>
+      </section>
+
       <section class="panel">
         <h2>配置文件</h2>
         <p class="hint">选择一个完整 config 文件进行加载；每个文件包含基础设置、查询视图和插件页面配置。</p>
