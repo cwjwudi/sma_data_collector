@@ -67,6 +67,7 @@ class ScalarSqlVisualConfig(BaseModel):
 
 
 TableSqlFillMode = Literal["manual_sql", "visual"]
+TableSqlTableSource = Literal["manual", "opcua"]
 VisualSqlFilterKind = Literal["equality", "datetime_between", "date_between", "numeric_between"]
 
 
@@ -78,6 +79,9 @@ class TableSqlVisualSource(BaseModel):
     table: str = ""
     engine: str = ""
     columns: list[str] = Field(default_factory=list)
+    # 与前端 table-sql-fill.ts 对齐：manual 用 table；opcua 读 tableOpcNodeId 作运行时表名
+    tableSource: TableSqlTableSource = "manual"
+    tableOpcNodeId: str = ""
 
 
 class TableSqlVisualFilter(BaseModel):
