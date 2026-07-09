@@ -161,7 +161,7 @@
                           :key="'tc-' + el.id + '-' + ri + '-' + ci"
                           class="cv-table-cell"
                           :class="{ 'cv-table-cell--hot': isTableCellHot(el, ri, ci) }"
-                          :style="tplTableCellStyle(el, ri, ci)"
+                          :style="tplTableCellBoxStyle(el, ri, ci)"
                           @pointerdown="pickTableCell(el, ri, ci)"
                         >
                           <template v-if="isVisualSqlFillOutputPickerRow(el, ri)">
@@ -1140,7 +1140,22 @@ function onTplVerticalSlotChange(el: TemplateElement, ri: number, ev: Event) {
 
 function tplTableRowTrStyle(el: TemplateElement): Record<string, string> | undefined {
   if (el.type !== "table") return undefined;
-  return { height: `${clampTableRowHeightPx(el.tableRowHeightPx)}px` };
+  const h = clampTableRowHeightPx(el.tableRowHeightPx);
+  // 固定行高：原生 <select> 默认更高，若不锁死会撑破外框，末行被 overflow 裁掉
+  return {
+    height: `${h}px`,
+    maxHeight: `${h}px`,
+  };
+}
+
+function tplTableCellBoxStyle(el: TemplateElement, ri: number, ci: number): Record<string, string> {
+  if (el.type !== "table") return {};
+  const h = clampTableRowHeightPx(el.tableRowHeightPx);
+  return {
+    ...tplTableCellStyle(el, ri, ci),
+    height: `${h}px`,
+    maxHeight: `${h}px`,
+  };
 }
 
 function tplSqlFillDataRowCount(el: TemplateElement): number {
@@ -1837,20 +1852,27 @@ async function onTplImageDropFile(ev: DragEvent, el: TemplateElement) {
 }
 .cv-table tbody td {
   height: inherit;
+  max-height: inherit;
+  box-sizing: border-box;
+}
+.cv-table tbody tr:not(.cv-table-sql-page-hint-row):not(.cv-table-sql-truncate-hint-row) {
   box-sizing: border-box;
 }
 .cv-table tbody tr.cv-table-sql-page-hint-row,
 .cv-table tbody tr.cv-table-sql-truncate-hint-row {
   height: auto;
+  max-height: none;
+  line-height: normal;
 }
 .cv-table tbody tr.cv-table-sql-page-hint-row td,
 .cv-table tbody tr.cv-table-sql-truncate-hint-row td {
   height: auto;
+  max-height: none;
 }
 .cv-table-cell {
   border-top: 1px solid rgb(212 212 216);
   border-left: 1px solid rgb(212 212 216);
-  padding: 3px 5px;
+  padding: 1px 5px;
   vertical-align: middle;
   text-align: center;
   overflow: hidden;
@@ -1948,14 +1970,22 @@ async function onTplImageDropFile(ev: DragEvent, el: TemplateElement) {
   display: block;
   width: 100%;
   max-width: 100%;
+  height: 100%;
+  max-height: 100%;
   box-sizing: border-box;
   margin: 0;
-  padding: 2px 4px;
+  padding: 0 4px;
   font: inherit;
-  font-size: max(10px, 0.85em);
-  line-height: 1.35;
+  font-size: max(10px, 0.82em);
+  line-height: 1.2;
   text-align: inherit;
   min-height: 0;
+  /* 避免系统原生控件最小高度撑破固定行高 */
+  appearance: none;
+  -webkit-appearance: none;
+  background-color: #fff;
+  border: 1px solid rgb(212 212 216);
+  border-radius: 2px;
 }
 .cv-table-cell-ddl.tbl-sql-ddl--warn {
   border-color: #f59e0b;

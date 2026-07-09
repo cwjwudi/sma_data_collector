@@ -286,7 +286,7 @@ export function syncTemplateTableRowsForSqlFillPreview(el: TemplateElement, data
     el.tableRows = nextRows;
     ensureTableGrid(el);
   }
-  // 纵表：行数变化后撑高外框，否则编辑画布仍按旧 el.h 裁剪可见行
+  // 纵表：始终贴合外框（含行数未变但旧 h 偏矮的情况）
   if (fill && isVerticalSqlFill(fill)) {
     clampTableElementOuterSize(el);
   }

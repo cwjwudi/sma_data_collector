@@ -381,12 +381,10 @@ export function clampTableElementOuterSize(
 
   if (el.tableSqlFill?.enabled) {
     if (isVerticalSqlFill(el.tableSqlFill)) {
-      // 纵表：外框贴合全部行，避免按矮外框裁掉已配置的字段槽
+      // 纵表：外框严格贴合全部行（含增行后），避免矮外框裁掉末行
       const ih = intrinsicOuterHeightForTemplateTable(el);
-      const loH = Math.max(20, Math.min(ih, maxH));
-      if (el.h < loH) el.h = loH;
-      const capH = Math.min(ih, maxH);
-      if (el.h > capH) el.h = capH;
+      const nextH = Math.max(20, Math.min(ih, maxH));
+      el.h = nextH;
       return;
     }
     const loH = Math.max(20, Math.min(minOuterHeightSqlFillTableEditorPx(el), maxH));

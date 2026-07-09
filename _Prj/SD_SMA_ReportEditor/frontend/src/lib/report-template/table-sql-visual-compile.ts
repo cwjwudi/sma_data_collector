@@ -391,7 +391,8 @@ export function syncTableRowsForVerticalSqlSlots(
     const rowH = clampTableRowHeightPx(el.tableRowHeightPx);
     const p = REPORT_TEMPLATE_TABLE_NODE_PADDING_PX;
     const needH = p.top + p.bottom + el.tableRows * rowH + 1;
-    if (el.h < needH) el.h = needH;
+    // 始终贴合槽位行高（增行抬高、减行收矮），避免旧外框偏矮裁切末行
+    el.h = needH;
   }
 }
 
