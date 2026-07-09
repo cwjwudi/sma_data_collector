@@ -2,7 +2,7 @@
   "python": ".venv/Scripts/python.exe",
   "allow_current_python_fallback": true,
   "requirements": "_Launcher/requirements-unified.txt",
-  "auto_install_missing": false,
+  "auto_install_missing": true,
   "wheelhouse": "wheelhouse",
   "proxy": {
     "enabled": false,
@@ -16,7 +16,8 @@
     { "package": "sqlalchemy", "import": "sqlalchemy" },
     { "package": "pymysql", "import": "pymysql" },
     { "package": "python-multipart", "import": "multipart" },
-    { "package": "opcua", "import": "opcua" }
+    { "package": "opcua", "import": "opcua" },
+    { "package": "asyncua", "import": "asyncua" }
   ],
   "open_browser": false,
   "services": [

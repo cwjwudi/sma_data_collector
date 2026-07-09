@@ -84,11 +84,24 @@ _Launcher\stop.bat
 
 ## 生成解压即用包
 
-在仓库根目录执行：
+一键打包（推荐）：双击：
+
+```bat
+_Launcher\一键打包.bat
+```
+
+或在仓库根目录执行：
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File _Launcher\scripts\build_portable_package.ps1
 ```
+
+打包脚本会：
+
+- 只复制 `launcher_config.json` 中配置的 `_Prj` 服务目录
+- 优先选用 Python 3.10–3.12（避免系统默认 3.14）
+- **强制使用国内 PyPI 源**（默认清华：`https://pypi.tuna.tsinghua.edu.cn/simple`）
+- 默认不走代理；如需代理可传 `-HttpProxy http://host:port`
 
 默认输出：
 
@@ -102,13 +115,13 @@ _Build/SD_SMA_Runtime_Package
 SD_SMA_Runtime_Package/
   start.bat
   .venv/
+  _Python/          # 内置 Python 运行时（现场无需预装）
   _Launcher/
   _Prj/
     SD_SMA_DATA_COLLECTOR/
     SD_SMA_DATA_COLLECTOR_QUERY_WEB/
     SD_SMA_DB_ADMIN/
     SD_SMA_REPORT_COPY/
-  logs/
 ```
 
 需要同时生成 zip：
@@ -121,6 +134,15 @@ powershell -NoProfile -ExecutionPolicy Bypass -File _Launcher\scripts\build_port
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File _Launcher\scripts\build_portable_package.ps1 -BuildWheelhouse
+```
+
+指定 Python / 镜像示例：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File _Launcher\scripts\build_portable_package.ps1 `
+  -Python "C:\Path\To\python.exe" `
+  -PipIndexUrl "https://mirrors.aliyun.com/pypi/simple/" `
+  -PipTrustedHost "mirrors.aliyun.com"
 ```
 
 ## 端口

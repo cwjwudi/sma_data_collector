@@ -10,3 +10,4 @@ sqlalchemy==2.0.25
 pymysql==1.1.0
 python-multipart==0.0.9
 opcua==0.98.13
+asyncua>=1.2b1
