@@ -16,12 +16,13 @@ import {
   ensureTableSqlColumnRoles,
   isVerticalSqlFill,
   normalizeTableSqlSequencePageMode,
+  normalizeTableSqlVerticalMultiRecordMode,
 } from "@/lib/report-template/table-sql-fill";
 import type { TableSqlFillPreviewPayload } from "@/lib/report-template/binding-preview-utils";
 import { quoteSqlIdentifier } from "@/lib/report-template/table-sql-visual-compile";
 import { sqlFillPreviewColCount } from "@/lib/report-template/table-sql-visual-compile";
 import { buildVerticalSqlLogicalRows } from "@/lib/report-template/table-sql-vertical";
-import { verticalSqlLogicalRowCount } from "@/lib/report-template/table-sql-vertical";
+import { verticalSqlLogicalRowCount, verticalSqlSlotsPerRecord } from "@/lib/report-template/table-sql-vertical";
 
 export function templateTableSqlFillPreviewKey(elId: string): string {
   return `tblfill:${elId}`;
@@ -137,7 +138,16 @@ function formatVerticalSqlFillCell(opts: {
   headerAt: (c: number) => string;
 }): string {
   const { fill, ri, ci, pv, slice, headerAt } = opts;
-  const logical = buildVerticalSqlLogicalRows(fill, pv?.dataRows);
+  // 编辑画布（无 slice）：「每条另起一页」只预览首条 SQL 结果，避免同表叠多条并出现续表分隔
+  let dataRows = pv?.dataRows;
+  if (
+    !slice &&
+    dataRows?.length &&
+    normalizeTableSqlVerticalMultiRecordMode(fill.verticalMultiRecordMode) === "page_per_record"
+  ) {
+    dataRows = [dataRows[0]];
+  }
+  const logical = buildVerticalSqlLogicalRows(fill, dataRows);
   if (slice) {
     const hdr = slice.includeHeaderRow;
     const sliceRows = (hdr ? 1 : 0) + slice.dataRowCount;
@@ -240,6 +250,22 @@ export function sqlFillDisplayDataRowCount(fill: TableSqlFillConfig, sqlDataRowC
 }
 
 /**
+ * 编辑画布用的显示行数：纵表「每条另起一页」时只按首条 SQL 结果展开，
+ * 避免同表叠多条并出现续表分隔（完整分页见导出预览）。
+ */
+export function sqlFillEditorDisplayDataRowCount(fill: TableSqlFillConfig, sqlDataRowCount: number): number {
+  if (
+    isVerticalSqlFill(fill) &&
+    normalizeTableSqlVerticalMultiRecordMode(fill.verticalMultiRecordMode) === "page_per_record"
+  ) {
+    const n = Math.max(0, Math.floor(Number(sqlDataRowCount)) || 0);
+    if (n <= 0) return 0;
+    return verticalSqlSlotsPerRecord(fill);
+  }
+  return sqlFillDisplayDataRowCount(fill, sqlDataRowCount);
+}
+
+/**
  * 将正文表格行数同步为「表头 + 预览数据行」；查询结果变少时会缩小行数。
  */
 export function syncTemplateTableRowsForSqlFillPreview(el: TemplateElement, dataRowCount: number): void {
@@ -248,7 +274,7 @@ export function syncTemplateTableRowsForSqlFillPreview(el: TemplateElement, data
   const fill = el.tableSqlFill;
   let body: number;
   if (fill && isVerticalSqlFill(fill)) {
-    const logical = sqlFillDisplayDataRowCount(fill, dataRowCount);
+    const logical = sqlFillEditorDisplayDataRowCount(fill, dataRowCount);
     // 无预览数据时保留槽位行，便于画布「名称」列下拉与属性面板改行数
     const slotRows = Math.max(1, fill.visualSource?.columns?.length || 1);
     body = logical > 0 ? logical : slotRows;
@@ -275,7 +301,7 @@ export function syncZoneTableRowsForSqlFillPreview(el: LayoutZoneElement, dataRo
   const fill = el.tableSqlFill;
   let body: number;
   if (fill && isVerticalSqlFill(fill)) {
-    const logical = sqlFillDisplayDataRowCount(fill, dataRowCount);
+    const logical = sqlFillEditorDisplayDataRowCount(fill, dataRowCount);
     const slotRows = Math.max(1, fill.visualSource?.columns?.length || 1);
     body = logical > 0 ? logical : slotRows;
   } else {

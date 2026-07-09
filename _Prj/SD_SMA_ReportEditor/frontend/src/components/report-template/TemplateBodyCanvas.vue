@@ -443,7 +443,7 @@ import { computed, inject, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import { reportBindingPreviewKey, templateTableCellPickKey } from "@/lib/report-template/template-editor-context";
 import {
   formatSqlFillTableCellPreview,
-  sqlFillDisplayDataRowCount,
+  sqlFillEditorDisplayDataRowCount,
   templateTableSqlFillPreviewKey,
   TABLE_SQL_FILL_PREVIEW_ROW_LIMIT,
 } from "@/lib/report-template/table-sql-fill-preview";
@@ -890,8 +890,8 @@ function tplSqlFillEditorPreviewLayout(el: TemplateElement): SqlFillEditorPrevie
   const pv = bindingPreview?.values.value[pk]?.tableSqlFill;
   if (!pv?.dataRows?.length || pv.error) return null;
   const sqlN = pv.dataRows.length;
-  // 纵表：按字段槽展开后的逻辑行数；横表：等于 SQL 行数
-  const displayN = sqlFillDisplayDataRowCount(el.tableSqlFill, sqlN);
+  // 编辑画布：纵表「每条另起一页」只按首条展开；导出分页仍用完整 displayN
+  const displayN = sqlFillEditorDisplayDataRowCount(el.tableSqlFill, sqlN);
 
   const rowH = clampTableRowHeightPx(el.tableRowHeightPx);
   const chrome =
@@ -968,7 +968,7 @@ function tplTableRowIndices(el: TemplateElement): number[] {
     return Array.from({ length: base }, (_, i) => i);
   }
   const lay = tplSqlFillEditorPreviewLayout(el);
-  const fallbackDisplay = sqlFillDisplayDataRowCount(el.tableSqlFill, pv.dataRows.length);
+  const fallbackDisplay = sqlFillEditorDisplayDataRowCount(el.tableSqlFill, pv.dataRows.length);
   const visibleData = lay?.visibleDataRows ?? Math.min(fallbackDisplay, Math.max(0, base - 1));
   const total = Math.max(1, 1 + visibleData);
   return Array.from({ length: total }, (_, i) => i);
@@ -1130,7 +1130,7 @@ function tplSqlFillDataRowCount(el: TemplateElement): number {
   const pk = templateTableSqlFillPreviewKey(el.id);
   const sqlN = bindingPreview?.values.value[pk]?.tableSqlFill?.dataRows?.length ?? 0;
   if (el.tableSqlFill?.enabled && sqlN > 0) {
-    return sqlFillDisplayDataRowCount(el.tableSqlFill, sqlN);
+    return sqlFillEditorDisplayDataRowCount(el.tableSqlFill, sqlN);
   }
   return Math.max(0, (el.tableRows ?? 1) - 1);
 }
@@ -1152,7 +1152,7 @@ function tplSqlFillPageHintText(el: TemplateElement): string {
   const pagePer =
     fill.layoutMode === "vertical" && fill.verticalMultiRecordMode === "page_per_record";
   const base = pagePer
-    ? "导出预览：纵表已设为「每条结果另起一页」，多条查询结果将分多页展示。"
+    ? "编辑画布仅预览首条结果；导出预览将按「每条结果另起一页」分多页展示。"
     : "导出预览：本表数据将跨页续排；表格最后一页下方留白后，位于表下的控件将单独占一页预览。";
   if (fill.allowWidgetsBelowSqlFillTable) {
     return `${base} 若需在表下摆放控件，请使用左侧「＋页」新建正文页后再编排；否则预览会与分页规则不一致。`;

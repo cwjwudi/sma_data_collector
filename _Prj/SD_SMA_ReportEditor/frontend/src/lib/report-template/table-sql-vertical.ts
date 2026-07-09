@@ -12,9 +12,12 @@ import {
   verticalSlotLabel,
 } from "@/lib/report-template/table-sql-fill";
 
+/** 纵表「同表续表」模式下，多条 SQL 结果之间的组间分隔行文案（编辑画布可见） */
+export const VERTICAL_SQL_CONTINUE_RECORD_SEP_LABEL = "— 续表分隔 —";
+
 /** 纵表一条逻辑显示行（对应表格一行，固定两列） */
 export interface VerticalSqlLogicalRow {
-  /** 左列：字段标签；空白分隔行为空 */
+  /** 左列：字段标签；空白分隔行为空；组间续表分隔为 VERTICAL_SQL_CONTINUE_RECORD_SEP_LABEL */
   label: string;
   /** 右列：字段值；空白分隔行为空 */
   value: string;
@@ -63,9 +66,9 @@ export function buildVerticalSqlLogicalRows(
       fieldIdx++;
       out.push({ label, value, blank: false });
     }
-    // 续表模式：多条 SQL 结果之间插入空白分隔；另起一页模式不加（页边界即分隔）
+    // 续表模式：多条 SQL 结果之间插入带文案的组间分隔；另起一页模式不加（页边界即分隔）
     if (!pagePerRecord && ri < rows.length - 1 && slots.length > 0) {
-      out.push({ label: "", value: "", blank: true });
+      out.push({ label: VERTICAL_SQL_CONTINUE_RECORD_SEP_LABEL, value: "", blank: true });
     }
   }
   return out;

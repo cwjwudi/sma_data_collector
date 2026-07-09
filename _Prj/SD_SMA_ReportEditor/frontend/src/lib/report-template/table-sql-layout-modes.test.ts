@@ -16,8 +16,13 @@ import {
 import {
   buildVerticalSqlLogicalRows,
   verticalSqlLogicalRowCount,
+  VERTICAL_SQL_CONTINUE_RECORD_SEP_LABEL,
 } from "@/lib/report-template/table-sql-vertical";
-import { formatSqlFillTableCellPreview, sqlFillDisplayDataRowCount } from "@/lib/report-template/table-sql-fill-preview";
+import {
+  formatSqlFillTableCellPreview,
+  sqlFillDisplayDataRowCount,
+  sqlFillEditorDisplayDataRowCount,
+} from "@/lib/report-template/table-sql-fill-preview";
 
 describe("vertical sql fill", () => {
   it("transposes one SQL row into label/value logical rows with blank separators", () => {
@@ -62,7 +67,11 @@ describe("vertical sql fill", () => {
       ["2", "y"],
     ]);
     expect(logical).toHaveLength(5);
-    expect(logical[2].blank).toBe(true);
+    expect(logical[2]).toEqual({
+      label: VERTICAL_SQL_CONTINUE_RECORD_SEP_LABEL,
+      value: "",
+      blank: true,
+    });
     expect(logical[3]).toEqual({ label: "a", value: "2", blank: false });
   });
 
@@ -86,6 +95,24 @@ describe("vertical sql fill", () => {
     ]);
     expect(logical).toHaveLength(4);
     expect(logical.every((r) => !r.blank)).toBe(true);
+    // 编辑画布只按首条展开，不应出现续表分隔
+    expect(sqlFillEditorDisplayDataRowCount(fill, 2)).toBe(2);
+    expect(
+      formatSqlFillTableCellPreview({
+        fill,
+        rowIndex: 1,
+        colIndex: 0,
+        preview: { dataRows: [["1", "x"], ["2", "y"]] },
+      }),
+    ).toBe("a");
+    expect(
+      formatSqlFillTableCellPreview({
+        fill,
+        rowIndex: 3,
+        colIndex: 0,
+        preview: { dataRows: [["1", "x"], ["2", "y"]] },
+      }),
+    ).toBe("\u00a0");
   });
 
   it("compiles SELECT without blank slots and without NULL placeholders", () => {

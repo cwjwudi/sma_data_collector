@@ -1,12 +1,12 @@
 {
   "version": "0.2.21",
-  "releasedAt": "2026-07-09T19:10:49.370Z",
-  "notes": "Report Editor 0.2.21\n\n- 修复纵表：配置多字段后按逻辑行显示，并自动撑高表格外框，编辑画布完整显示全部字段行\n- 继承 0.2.20：数据源页 FOUC 修复",
+  "releasedAt": "2026-07-09T19:23:37.476Z",
+  "notes": "Report Editor 0.2.21\n\n- 修复纵表：配置多字段后按逻辑行显示并自动撑高外框\n- 修复纵表「每条结果另起一页」时编辑画布仍叠多条并显示续表分隔：编辑态仅预览首条，完整分页见导出预览\n- 继承 0.2.20：数据源页 FOUC 修复",
   "platforms": {
     "win32-x64": {
       "url": "Report Editor-Setup-0.2.21-x64.exe",
-      "sha256": "367428ee7804e1c81bdda0d1e9323463531ef1b3b0091afdbeea1fb6ce42c5d7",
-      "size": 144410658
+      "sha256": "4d405420c3ba9bb731a29ef8515f80592c1ebe9272b8329f04fe90d2af69adc1",
+      "size": 144411157
     },
     "darwin-arm64": {
       "url": "Report Editor-0.2.21-arm64.dmg",
