@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { hydrateTableCell } from "@/lib/report-template/model";
+import { hydrateTableCell, migrateReportTemplate, type ReportTemplate } from "@/lib/report-template/model";
 import { hydrateZoneTableCell } from "@/lib/report-template/layout-zone-element";
-import { resolveEffectiveScalarSql } from "@/lib/report-template/binding-preview-utils";
+import { collectBindingDedupeTasks, resolveEffectiveScalarSql } from "@/lib/report-template/binding-preview-utils";
 import { clearGridCellBindings } from "@/lib/report-template/table-binding-utils";
 import type { ScalarSqlVisualConfig } from "@/lib/report-template/scalar-sql-visual";
 
@@ -49,6 +49,36 @@ describe("单元格标量 SQL 点选配置", () => {
     expect(resolveEffectiveScalarSql("", "visual", visual)).toBe(
       "SELECT `product_name` FROM `product_data` WHERE `batch_no` = {{p0}} LIMIT 1",
     );
+  });
+
+  it("collectBindingDedupeTasks 携带可视化库名与连接，避免 MySQL 1046", () => {
+    const tmpl = migrateReportTemplate({
+      id: "t1",
+      name: "t",
+      updatedAt: "",
+      bodyPages: [
+        [
+          {
+            id: "p1",
+            type: "parameter",
+            x: 0,
+            y: 0,
+            w: 40,
+            h: 20,
+            bindingKind: "sql",
+            sqlText: "",
+            scalarSqlFillMode: "visual",
+            scalarSqlVisual: visual,
+            sqlParams: [],
+          },
+        ],
+      ],
+    }) as ReportTemplate;
+    const { sqlTasks } = collectBindingDedupeTasks(tmpl, null, "fallback-conn");
+    expect(sqlTasks).toHaveLength(1);
+    expect(sqlTasks[0].connectionId).toBe("c1");
+    expect(sqlTasks[0].database).toBe("wn_9");
+    expect(sqlTasks[0].sql).toContain("product_name");
   });
 
   it("clearGridCellBindings 一并清空点选配置", () => {

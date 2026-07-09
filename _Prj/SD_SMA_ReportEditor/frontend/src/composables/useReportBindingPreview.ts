@@ -148,13 +148,16 @@ export function useReportBindingPreview(tmplRef: Ref<ReportTemplate | null>): Re
           try {
             const sql = await resolveScalarSqlTask(task);
             stats.sqlQueries += 1;
+            const body: Record<string, unknown> = {
+              connection_id: task.connectionId,
+              sql,
+              limit: 200,
+            };
+            // 可视化点选生成的标量 SQL 带有库名；连接未设默认库时必须传入，否则 MySQL 1046
+            if (task.database) body.database = task.database;
             const data = await apiFetch("/database/query/sql", {
               method: "POST",
-              body: {
-                connection_id: task.connectionId,
-                sql,
-                limit: 200,
-              },
+              body,
             });
             if (gen !== generation) return;
             stats.sqlRows += sqlResponseRowCount(data);
