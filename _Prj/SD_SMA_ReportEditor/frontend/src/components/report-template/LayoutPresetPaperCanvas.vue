@@ -780,6 +780,7 @@ function onLayoutPresetVerticalSlotChange(el: LayoutZoneElement, ri: number, ev:
   if (!fill || fill.fillMode !== "visual" || el.type !== "table") return;
   applyVerticalSqlSlotField(fill, ri - 1, v);
   syncTableRowsForVerticalSqlSlots(el, () => ensureZoneTableGrid(el));
+  clampZoneTableOuterSize(el);
 }
 
 const hdrLayerRef = ref<HTMLElement | null>(null);

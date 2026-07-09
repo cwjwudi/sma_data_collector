@@ -404,6 +404,7 @@ import {
 import type { ReportTemplate, TemplateControlType } from "@/lib/report-template/model";
 import type { TemplateElement, TemplateTableCell } from "@/lib/report-template/model";
 import {
+  clampTableElementOuterSize,
   ensureTableGrid,
   intrinsicOuterHeightForTemplateTable,
   makeElement,
@@ -1117,6 +1118,7 @@ function onTplVerticalSlotChange(el: TemplateElement, ri: number, ev: Event) {
   if (!fill || fill.fillMode !== "visual" || el.type !== "table") return;
   applyVerticalSqlSlotField(fill, ri - 1, v);
   syncTableRowsForVerticalSqlSlots(el, () => ensureTableGrid(el));
+  clampTableElementOuterSize(el);
 }
 
 function tplTableRowTrStyle(el: TemplateElement): Record<string, string> | undefined {

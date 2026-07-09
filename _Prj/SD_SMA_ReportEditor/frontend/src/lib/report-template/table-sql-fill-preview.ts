@@ -10,7 +10,7 @@ import {
 import type { LayoutZoneElement } from "@/lib/report-template/layout-zone-element";
 import { ensureZoneTableGrid } from "@/lib/report-template/layout-zone-element";
 import type { ReportTemplate, TemplateElement } from "@/lib/report-template/model";
-import { ensureTableGrid } from "@/lib/report-template/model";
+import { clampTableElementOuterSize, ensureTableGrid } from "@/lib/report-template/model";
 import type { TableSqlFillConfig, TableSqlParamBinding } from "@/lib/report-template/table-sql-fill";
 import {
   ensureTableSqlColumnRoles,
@@ -256,9 +256,14 @@ export function syncTemplateTableRowsForSqlFillPreview(el: TemplateElement, data
     body = Math.max(0, Math.floor(Number(dataRowCount)) || 0);
   }
   const nextRows = Math.min(30, headerRows + body);
-  if (el.tableRows === nextRows) return;
-  el.tableRows = nextRows;
-  ensureTableGrid(el);
+  if (el.tableRows !== nextRows) {
+    el.tableRows = nextRows;
+    ensureTableGrid(el);
+  }
+  // 纵表：行数变化后撑高外框，否则编辑画布仍按旧 el.h 裁剪可见行
+  if (fill && isVerticalSqlFill(fill)) {
+    clampTableElementOuterSize(el);
+  }
 }
 
 /**

@@ -11,6 +11,7 @@ import {
   applyVisualSqlOutputColumnPick,
   compileVisualTableSql,
   resizeVerticalSqlSlotsToTableRows,
+  syncTableRowsForVerticalSqlSlots,
 } from "@/lib/report-template/table-sql-visual-compile";
 import {
   buildVerticalSqlLogicalRows,
@@ -212,6 +213,31 @@ describe("horizontal blank + sequence columns", () => {
     expect(fill.visualSource!.columns).toEqual(["a", TABLE_SQL_VERTICAL_FIELD_PENDING]);
     appendVerticalSqlSlot(fill, "blank");
     expect(fill.visualSource!.columns).toEqual(["a", TABLE_SQL_VERTICAL_FIELD_PENDING, ""]);
+  });
+
+  it("syncTableRowsForVerticalSqlSlots grows outer height to fit all slots", () => {
+    const fill = hydrateTableSqlFill({
+      enabled: true,
+      fillMode: "visual",
+      layoutMode: "vertical",
+      visualSource: {
+        connectionId: "c1",
+        table: "t",
+        engine: "mysql",
+        columns: ["USER", "HOST", "PRIV", "WITH_GRANT_OPTION"],
+        database: "",
+      },
+    });
+    const el = {
+      type: "table" as const,
+      tableRows: 2,
+      tableRowHeightPx: 22,
+      h: 60,
+      tableSqlFill: fill,
+    };
+    syncTableRowsForVerticalSqlSlots(el);
+    expect(el.tableRows).toBe(5);
+    expect(el.h).toBeGreaterThanOrEqual(5 * 22);
   });
 
   it("applyVisualSqlOutputColumnPick sets sequence role", () => {

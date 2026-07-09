@@ -29,6 +29,7 @@ import {
   VERTICAL_SQL_FILL_COL_COUNT,
   visualSqlSelectFieldNames,
 } from "@/lib/report-template/table-sql-fill";
+import { clampTableRowHeightPx, REPORT_TEMPLATE_TABLE_NODE_PADDING_PX } from "@/lib/report-template/table-cell-metrics";
 import { verticalSqlSelectColCount } from "@/lib/report-template/table-sql-vertical";
 
 export function quoteSqlIdentifier(engineLower: string, name: string): string {
@@ -367,9 +368,16 @@ export function removeVerticalSqlSlot(fill: TableSqlFillConfig, slotIndex: numbe
 /**
  * 按纵表槽位数同步表格物理行数（表头 + 槽位行），便于无预览数据时在画布上选字段。
  * 有 SQL 预览数据时仍由 syncTemplateTableRowsForSqlFillPreview 覆盖为逻辑行数。
+ * 若元素带有外框高度，则至少撑到贴合全部槽位行（避免编辑画布按矮外框裁剪）。
  */
 export function syncTableRowsForVerticalSqlSlots(
-  el: { type?: string; tableRows?: number; tableSqlFill?: TableSqlFillConfig | null },
+  el: {
+    type?: string;
+    tableRows?: number;
+    tableRowHeightPx?: number;
+    h?: number;
+    tableSqlFill?: TableSqlFillConfig | null;
+  },
   ensureGrid?: () => void,
 ): void {
   if (el.type !== "table") return;
@@ -379,6 +387,12 @@ export function syncTableRowsForVerticalSqlSlots(
   const slots = Math.max(1, fill.visualSource!.columns.length);
   el.tableRows = 1 + slots;
   ensureGrid?.();
+  if (typeof el.h === "number" && Number.isFinite(el.h)) {
+    const rowH = clampTableRowHeightPx(el.tableRowHeightPx);
+    const p = REPORT_TEMPLATE_TABLE_NODE_PADDING_PX;
+    const needH = p.top + p.bottom + el.tableRows * rowH + 1;
+    if (el.h < needH) el.h = needH;
+  }
 }
 
 /**

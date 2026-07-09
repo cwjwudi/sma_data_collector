@@ -70,6 +70,7 @@ import {
   ensureVisualOutputColumnSlots,
   hydrateSqlParamBindings,
   hydrateTableSqlFill,
+  isVerticalSqlFill,
 } from "./table-sql-fill";
 
 /** 电子签名阅览：水印描摹 / 手写图 / 二者叠加 */
@@ -328,11 +329,15 @@ export function intrinsicOuterHeightForTemplateTable(el: TemplateElement): numbe
 }
 
 /**
- * SQL 整表填充：编辑器中外框允许小于「同步后的逻辑行数×行高」，
- * 画布按 `el.h` 裁剪预览；最小高度仍保留表头 + 一行内容区。
+ * SQL 整表填充：编辑器外框最小高度。
+ * - 纵表：贴合「表头 + 全部字段槽/逻辑行」，配置字段后画布完整显示
+ * - 横表：允许矮于全部数据行（按 el.h 裁剪预览），最小保留表头 + 一行内容区
  */
 export function minOuterHeightSqlFillTableEditorPx(el: TemplateElement): number {
   if (el.type !== "table") return 20;
+  if (el.tableSqlFill && isVerticalSqlFill(el.tableSqlFill)) {
+    return Math.max(20, intrinsicOuterHeightForTemplateTable(el));
+  }
   const rowH = clampTableRowHeightPx(el.tableRowHeightPx);
   const p = REPORT_TEMPLATE_TABLE_NODE_PADDING_PX;
   const shellBottomPadPx = 1;
@@ -375,6 +380,15 @@ export function clampTableElementOuterSize(
   if (el.w < loW) el.w = loW;
 
   if (el.tableSqlFill?.enabled) {
+    if (isVerticalSqlFill(el.tableSqlFill)) {
+      // 纵表：外框贴合全部行，避免按矮外框裁掉已配置的字段槽
+      const ih = intrinsicOuterHeightForTemplateTable(el);
+      const loH = Math.max(20, Math.min(ih, maxH));
+      if (el.h < loH) el.h = loH;
+      const capH = Math.min(ih, maxH);
+      if (el.h > capH) el.h = capH;
+      return;
+    }
     const loH = Math.max(20, Math.min(minOuterHeightSqlFillTableEditorPx(el), maxH));
     if (el.h < loH) el.h = loH;
     if (el.h > maxH) el.h = maxH;
