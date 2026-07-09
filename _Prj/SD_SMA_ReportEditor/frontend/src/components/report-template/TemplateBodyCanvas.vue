@@ -167,12 +167,14 @@
                           <template v-if="isVisualSqlFillOutputPickerRow(el, ri)">
                             <select
                               class="cv-table-cell-ddl tbl-sql-ddl"
+                              :class="{ 'tbl-sql-ddl--warn': tplVisualSqlStructureMissing(el) }"
                               :value="tplVisualOutputSelectValue(el, ci)"
                               :disabled="interactionLocked"
+                              :title="tplVisualSqlColumnSelectTitle(el)"
                               @pointerdown.stop="pickTableCell(el, ri, ci)"
                               @change="onTplVisualOutputColumnChange(el, ci, $event)"
                             >
-                              <option value="">—</option>
+                              <option value="">{{ tplVisualSqlEmptyOptionLabel(el) }}</option>
                               <option
                                 v-for="opt in tplVisualSqlColumnCatalog[el.id]"
                                 :key="'fld-' + el.id + '-' + ci + '-' + opt.name"
@@ -402,6 +404,8 @@ import {
   ensureVisualSource,
   isVisualSqlFillOutputPickerRow,
   clampTableSqlMaxRows,
+  visualSqlNeedsStructureTable,
+  visualSqlStructureTableName,
 } from "@/lib/report-template/table-sql-fill";
 import { looksLikeImageFile, pickFirstImageFileFromDataTransfer, readImageFileAsDataUrl } from "@/lib/report-template/read-image-file";
 import LayoutZoneInlineContent from "@/components/report-template/LayoutZoneInlineContent.vue";
@@ -996,7 +1000,8 @@ async function refreshTplVisualSqlColumnCatalog(): Promise<void> {
     if (!f?.enabled || f.fillMode !== "visual") continue;
     ensureVisualSource(f);
     const vs = f.visualSource!;
-    if (!vs.connectionId?.trim() || !vs.table?.trim()) {
+    const structureTable = visualSqlStructureTableName(vs);
+    if (!vs.connectionId?.trim() || !structureTable) {
       next[el.id] = [];
       continue;
     }
@@ -1004,7 +1009,7 @@ async function refreshTplVisualSqlColumnCatalog(): Promise<void> {
       next[el.id] = await loadVisualSqlTableColumnsCached({
         connectionId: vs.connectionId.trim(),
         database: vs.database?.trim(),
-        table: vs.table.trim(),
+        table: structureTable,
       });
     } catch {
       next[el.id] = [];
@@ -1020,6 +1025,31 @@ watch(
   },
   { deep: true, immediate: true },
 );
+
+function tplVisualSqlStructureMissing(el: TemplateElement): boolean {
+  if (el.type !== "table" || !el.tableSqlFill?.enabled || el.tableSqlFill.fillMode !== "visual") return false;
+  return visualSqlNeedsStructureTable(el.tableSqlFill.visualSource);
+}
+
+function tplVisualSqlEmptyOptionLabel(el: TemplateElement): string {
+  if (tplVisualSqlStructureMissing(el)) return "请先选结构参考表…";
+  const opts = tplVisualSqlColumnCatalog.value[el.id];
+  if (opts && opts.length === 0 && visualSqlStructureTableName(el.tableSqlFill?.visualSource)) {
+    return "结构表无列…";
+  }
+  return "—";
+}
+
+function tplVisualSqlColumnSelectTitle(el: TemplateElement): string {
+  if (tplVisualSqlStructureMissing(el)) {
+    return "已绑定 OPC UA 表名时，请在右侧属性中指定一张库中现存的结构参考表，才能选择列名。";
+  }
+  const name = visualSqlStructureTableName(el.tableSqlFill?.visualSource);
+  if (name && !(tplVisualSqlColumnCatalog.value[el.id]?.length)) {
+    return `未能从结构参考表「${name}」加载列名；请确认该表存在。OPC 当前值不用于设计时选列。`;
+  }
+  return "";
+}
 
 function tplVisualOutputSelectValue(el: TemplateElement, ci: number): string {
   const vs = el.tableSqlFill?.visualSource;
@@ -1847,6 +1877,11 @@ async function onTplImageDropFile(ev: DragEvent, el: TemplateElement) {
   line-height: 1.35;
   text-align: inherit;
   min-height: 0;
+}
+.cv-table-cell-ddl.tbl-sql-ddl--warn {
+  border-color: #f59e0b;
+  background: #fffbeb;
+  color: #92400e;
 }
 .cv-img-slot {
   width: 100%;

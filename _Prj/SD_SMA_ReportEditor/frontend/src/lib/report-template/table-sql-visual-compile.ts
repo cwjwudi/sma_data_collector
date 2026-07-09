@@ -139,7 +139,7 @@ export function compileVisualTableSql(fill: TableSqlFillConfig): boolean {
       return quoteSqlIdentifier(eng, t);
     })
     .join(", ");
-  // 表名绑定 OPC 时产出 {{table}} 占位符，导出/预览时读变量替换；设计表仅作结构与兜底
+  // 表名绑定 OPC 时产出 {{table}}；vs.table 仍是结构参考表（设计时选列 + 读失败兜底）
   const tableOpcBound = vs.tableSource === "opcua" && String(vs.tableOpcNodeId || "").trim().length > 0;
   const qtbl = tableOpcBound ? "{{table}}" : quoteSqlIdentifier(eng, vs.table.trim());
 

@@ -207,7 +207,26 @@ describe("compileVisualTableSql", () => {
     applyTableSqlFillOpcPick(fill, TABLE_SQL_FILL_TABLE_PICK_SLOT, "ns=2;s=TableName");
     expect(fill.visualSource?.tableSource).toBe("opcua");
     expect(fill.visualSource?.tableOpcNodeId).toBe("ns=2;s=TableName");
+    // 结构参考表不得被 OPC 节点选择覆盖
+    expect(fill.visualSource?.table).toBe("user");
     expect(fill.querySql).toContain("FROM {{table}}");
+  });
+
+  it("opcua table mode still requires structure table to compile", () => {
+    const fill: TableSqlFillConfig = hydrateTableSqlFill({});
+    fill.enabled = true;
+    fill.fillMode = "visual";
+    fill.visualSource = {
+      connectionId: "c1",
+      database: "db1",
+      table: "",
+      engine: "mysql",
+      columns: ["id"],
+      tableSource: "opcua",
+      tableOpcNodeId: "ns=2;s=TableName",
+    };
+    expect(compileVisualTableSql(fill)).toBe(false);
+    expect(fill.querySql).toBe("");
   });
 
   it("applyTableSqlFillOpcPick writes flat params in manual_sql mode", () => {

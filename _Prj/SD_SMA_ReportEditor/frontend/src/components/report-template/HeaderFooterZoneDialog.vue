@@ -615,6 +615,7 @@ import {
   ensureVisualSource,
   isVisualSqlFillOutputPickerRow,
   syncResultColumnNamesFromFirstRow,
+  visualSqlStructureTableName,
 } from "@/lib/report-template/table-sql-fill";
 import {
   hydrateScalarSqlVisual,
@@ -730,7 +731,8 @@ async function refreshHzVisualSqlColumnCatalog(): Promise<void> {
     if (!f?.enabled || f.fillMode !== "visual") continue;
     ensureVisualSource(f);
     const vs = f.visualSource!;
-    if (!vs.connectionId?.trim() || !vs.table?.trim()) {
+    const structureTable = visualSqlStructureTableName(vs);
+    if (!vs.connectionId?.trim() || !structureTable) {
       next[el.id] = [];
       continue;
     }
@@ -738,7 +740,7 @@ async function refreshHzVisualSqlColumnCatalog(): Promise<void> {
       next[el.id] = await loadVisualSqlTableColumnsCached({
         connectionId: vs.connectionId.trim(),
         database: vs.database?.trim(),
-        table: vs.table.trim(),
+        table: structureTable,
       });
     } catch {
       next[el.id] = [];
