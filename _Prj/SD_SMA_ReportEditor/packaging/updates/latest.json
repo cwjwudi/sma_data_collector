@@ -1,6 +1,6 @@
 {
   "version": "0.2.20",
-  "releasedAt": "2026-07-09T18:27:41.950Z",
+  "releasedAt": "2026-07-09T18:39:44.737Z",
   "notes": "Report Editor 0.2.20\n\n- 修复数据源等异步页面短暂「未样式化」布局（关闭 CSS 代码分割，避免 Electron 下 FOUC）\n- 继承 0.2.19：导出预览先切界面并提示正在读取数据",
   "platforms": {
     "win32-x64": {
@@ -10,8 +10,8 @@
     },
     "darwin-arm64": {
       "url": "Report Editor-0.2.20-arm64.dmg",
-      "sha256": "",
-      "size": 0
+      "sha256": "d786e258fe54bc58016b951f897beb94ab6210f1302a009abb34eebe6a7f09c0",
+      "size": 180066823
     }
   }
 }
