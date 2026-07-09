@@ -1,17 +1,17 @@
 {
-  "version": "0.2.11",
-  "releasedAt": "2026-07-09T06:41:51.728Z",
-  "notes": "Report Editor 0.2.11\n\n- OPC UA 表名模式：必须指定库中现存的「结构参考表」用于设计时选列/筛选；运行时表名仍由 OPC 变量决定，读失败时用参考表兜底\n- 缺结构参考表时侧栏与画布列下拉给出明确提示，避免 OPC 当前值指向不存在分表时无法编辑表格\n- 继承 0.2.10：正文分页前插/后插/末加与调序；单元格 SQL 点选生成；封面/末页表格可编辑对齐正文",
+  "version": "0.2.12",
+  "releasedAt": "2026-07-09T08:41:27.733Z",
+  "notes": "Report Editor 0.2.12\n\n- 修复备份导入后封面/正文/封尾版式全部显示「未选用」：导出不再打入模版 *.meta.json 摘要；导入时过滤摘要并优先保留完整模版，避免版式引用被覆盖清空\n- 版式库缺失对应 ID 时，模版列表下拉显示「版式缺失」提示，不再误显示「不使用封面 / 选用已建版式…」\n- 继承 0.2.11：OPC UA 表名模式强制结构参考表",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor-Setup-0.2.11-x64.exe",
+      "url": "Report Editor-Setup-0.2.12-x64.exe",
       "sha256": "",
       "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor-0.2.11-arm64.dmg",
-      "sha256": "d761b5bede316283136ff6436e3ac90519da8a4ecdbf591d798d5135f31957c5",
-      "size": 177311927
+      "url": "Report Editor-0.2.12-arm64.dmg",
+      "sha256": "2cec0e0750017ef812c9f4d65f823dc52f7038994689c6b2e99e3335510da404",
+      "size": 180077425
     }
   }
 }
