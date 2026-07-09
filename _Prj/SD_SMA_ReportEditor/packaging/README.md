@@ -73,7 +73,7 @@ Windows 发版后运行 `publish-portal-release.mjs --only win`（`build.ps1` �
 
 | 参数 | 作用 |
 |------|------|
-| `-Fresh` | 清空 `output/` 后再打包 |
+| `-Fresh` | 仅清理当前版本产物后重打；保留历史 `Setup-*.exe` |
 | `-SkipFrontendInstall` | 跳过 `npm ci` |
 | `-SkipBackendBuild` | 跳过 PyInstaller |
 | `-PortalDir` | 打包完成后同步到 Portal（或设 `REPORT_EDITOR_PORTAL_DIR`） |
@@ -82,7 +82,7 @@ Windows 发版后运行 `publish-portal-release.mjs --only win`（`build.ps1` �
 
 | 参数 | 作用 |
 |------|------|
-| `--fresh` | 清空 `output/` |
+| `--fresh` | 仅清理当前版本产物后重打；保留历史 `.dmg` |
 | `--skip-frontend-install` | 跳过 `npm ci` |
 | `--skip-backend-build` | 跳过 PyInstaller |
 | `--arch arm64` / `--arch x64` | 指定 CPU |

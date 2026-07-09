@@ -51,7 +51,7 @@ cd ..\..
 node packaging\scripts\publish-portal-release.mjs --copy-artifacts --only win --portal-dir D:\path\to\...\report-editor
 ```
 
-**务必加 `-Fresh`**，否则 `output/` 里残留旧版 `Report Editor-Setup-*.exe` 会导致脚本报错退出。
+推荐加 `-Fresh`：只清掉**当前版本**的安装包 / `win-unpacked` / `latest.yml` 后重打；**其它版本的 `Report Editor-Setup-*.exe` 会保留**在 `output/`。
 
 ## 运行
 
@@ -72,7 +72,7 @@ build.bat -Fresh
 
 | 参数 | 作用 |
 |------|------|
-| `-Fresh` | 清空 `output/` 后再打包 |
+| `-Fresh` | 仅清理当前版本产物后重打；保留历史 `Setup-*.exe` |
 | `-SkipFrontendInstall` | 跳过 `npm ci` |
 | `-SkipBackendBuild` | 跳过 PyInstaller |
 | `-PortalDir <path>` | 打包完成后同步到 Portal 静态目录 |
@@ -99,6 +99,7 @@ build.bat -Fresh
 ## 排错
 
 - **版本号不对**：先 `git pull`，确认 `frontend/package.json` 为 0.2.5
-- **output 里有多个 Setup.exe**：加 `-Fresh` 清空后重打
+- **output 里有多个 Setup.exe**：正常现象（历史版本保留）；发版上传 Portal 时只用当前版本四件套
+- **要彻底清空 output**：手动删除 `packaging\windows\output\` 下文件（脚本默认不再整目录清空）
 - **PyInstaller 失败**：确认 Python venv 与 `backend/requirements.txt` 已安装
 - **electron-builder 占用**：关闭正在运行的 Report Editor 后重试

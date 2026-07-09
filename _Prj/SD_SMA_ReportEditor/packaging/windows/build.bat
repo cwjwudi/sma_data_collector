@@ -37,8 +37,8 @@ if not "%EXITCODE%"=="0" (
   echo   4. Python not installed - https://www.python.org/ ^(check "py launcher"^)
   echo   5. Network blocked npm / Electron download - try again or use VPN
   echo   6. winCodeSign symlink - delete %%LOCALAPPDATA%%\electron-builder\Cache\winCodeSign
-  echo   7. Version mismatch or stale output - use: build.bat -Fresh
-  echo   8. Wrong installer version in output - always use -Fresh for release builds
+  echo   7. Version mismatch - bump package.json / latest.json, then: build.bat -Fresh
+  echo   8. Current version Setup missing - use -Fresh ^(older Setup-*.exe are kept^)
   echo.
   echo Tip: open cmd, cd to this folder, run build.bat to keep the full log.
   echo      Add -NoPause to skip "Press any key" on failure.

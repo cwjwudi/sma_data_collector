@@ -18,7 +18,7 @@ chmod +x build.sh build.command
 
 | 参数 | 作用 |
 |------|------|
-| `--fresh` | 清空 `output/` 后再打包 |
+| `--fresh` | 仅清理当前版本产物后重打；保留历史 `.dmg` |
 | `--skip-frontend-install` | 跳过 `npm ci` |
 | `--skip-backend-build` | 跳过 PyInstaller |
 | `--arch arm64` / `--arch x64` | 指定 CPU 架构 |
