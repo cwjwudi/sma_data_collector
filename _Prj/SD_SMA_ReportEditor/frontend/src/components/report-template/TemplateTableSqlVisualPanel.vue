@@ -26,7 +26,7 @@
     </template>
 
     <div class="tsv-lab tsv-table-section">
-      <span class="tsv-table-section-label">数据表</span>
+      <span class="tsv-table-section-label">表名来源</span>
       <div class="tsv-seg" role="tablist" aria-label="表名来源">
         <button
           type="button"
@@ -36,7 +36,7 @@
           :aria-selected="tableSourceKind === 'manual'"
           @click="selectTableSource('manual')"
         >
-          手动选择
+          固定表名
         </button>
         <button
           type="button"
@@ -49,23 +49,43 @@
           OPC UA 变量
         </button>
       </div>
-      <div class="tsv-table-pick-row">
-        <div class="tsv-table-picked" :class="{ 'tsv-table-picked--empty': !vs.table.trim() }">
-          {{ vs.table.trim() ? vs.table : "未选择（请在列表中点选）" }}
+
+      <div class="tsv-structure-block" :class="{ 'tsv-structure-block--warn': structureTableMissing }">
+        <span class="tsv-table-section-label">
+          {{ tableSourceKind === "opcua" ? "结构参考表（必选）" : "数据表" }}
+        </span>
+        <div class="tsv-table-pick-row">
+          <div class="tsv-table-picked" :class="{ 'tsv-table-picked--empty': !vs.table.trim() }">
+            {{
+              vs.table.trim()
+                ? vs.table
+                : tableSourceKind === "opcua"
+                  ? "未选择——请点选库中现存表，用于编辑列名"
+                  : "未选择（请在列表中点选）"
+            }}
+          </div>
+          <button
+            type="button"
+            class="tsv-table-pick-btn"
+            :class="actionBtnClass"
+            :disabled="tablePickBlocked"
+            @click="openTablePicker"
+          >
+            浏览…
+          </button>
         </div>
-        <button
-          type="button"
-          class="tsv-table-pick-btn"
-          :class="actionBtnClass"
-          :disabled="tablePickBlocked"
-          @click="openTablePicker"
-        >
-          浏览…
-        </button>
+        <p v-if="structureTableMissing" class="tsv-filter-warn">
+          已启用 OPC UA 表名时，仍须指定一张库中<strong>现存</strong>的结构参考表；画布第一行列下拉与筛选「列」均据此表加载。运行时实际表名由下方 OPC 变量决定（分表结构需与参考表一致）。
+        </p>
+        <p v-else-if="tableSourceKind === 'opcua'" class="tsv-muted">
+          结构参考表只用于设计时选列 / 筛选；导出时实际表名读 OPC 变量。各分表字段需与参考表一致；变量读失败时用此表兜底。
+        </p>
+        <p v-else class="tsv-muted">从当前连接的库中列出全部表，支持筛选；无需手输表名。</p>
       </div>
+
       <template v-if="tableSourceKind === 'opcua'">
         <label class="tsv-lab">
-          表名节点 ID（变量值须为表名：字母/数字/下划线）
+          运行时表名 · OPC UA 节点（变量值须为表名：字母/数字/下划线）
           <input
             v-model.trim="tableOpcNodeIdProxy"
             class="tsv-text-inp tsv-node-id-inp"
@@ -76,12 +96,9 @@
           />
         </label>
         <button type="button" :class="actionBtnClass" @click="pickTableOpc">选择节点…</button>
-        <p class="tsv-muted">
-          导出时读取该变量作为实际表名（如按批次/年月分表）；上方手动选择的表仍需选定——用于设计时列结构，并在变量读取失败或值非法时兜底。各分表结构需与其一致。
-        </p>
       </template>
-      <p class="tsv-muted">从当前连接的库中列出全部表，支持筛选；无需手输表名。</p>
       <p class="tsv-muted">输出列请在画布表格<strong>第一行</strong>各列的下拉框中选择字段；顺序与表格列从左到右一致。</p>
+      <p v-if="columnCatalogEmptyHint" class="tsv-filter-warn">{{ columnCatalogEmptyHint }}</p>
     </div>
 
     <div class="tsv-headers" v-if="vs.columns.some((c) => String(c || '').trim())">
@@ -362,7 +379,9 @@
     <div v-if="tablePickOpen" class="tsv-tpick-mask" role="presentation" @click.self="closeTablePicker">
       <div class="tsv-tpick-dialog" role="dialog" aria-modal="true" aria-labelledby="tsv-tpick-title">
         <div class="tsv-tpick-head">
-          <h4 id="tsv-tpick-title" class="tsv-tpick-title">选择数据表</h4>
+          <h4 id="tsv-tpick-title" class="tsv-tpick-title">
+            {{ tableSourceKind === "opcua" ? "选择结构参考表（库中现存表）" : "选择数据表" }}
+          </h4>
           <button type="button" class="tsv-tpick-x" aria-label="关闭" @click="closeTablePicker">×</button>
         </div>
         <input
@@ -411,6 +430,8 @@ import {
   ensureVisualSource,
   normalizeVisualSqlFilterShape,
   TABLE_SQL_FILL_TABLE_PICK_SLOT,
+  visualSqlNeedsStructureTable,
+  visualSqlStructureTableName,
 } from "@/lib/report-template/table-sql-fill";
 import { formatAutoBatchOpcBindingHint, resolveAutoBatchOpcBinding } from "@/lib/auto-batch-opc-binding";
 import { loadVisualSqlTableColumnsCached } from "@/lib/report-template/table-sql-visual-catalog";
@@ -470,6 +491,18 @@ const batchBindingHint = computed(() => formatAutoBatchOpcBindingHint(resolveAut
 
 const tableSourceKind = computed(() => (vs.value.tableSource === "opcua" ? "opcua" : "manual"));
 
+/** OPC 表名模式但未选结构参考表 */
+const structureTableMissing = computed(() => visualSqlNeedsStructureTable(vs.value));
+
+/** 已选结构表但列清单为空时的提示（表不存在 / 权限 / 网络） */
+const columnCatalogEmptyHint = computed(() => {
+  const name = visualSqlStructureTableName(vs.value);
+  if (!name || !vs.value.connectionId.trim()) return "";
+  if (tableColumns.value.length > 0) return "";
+  if (catalogErr.value) return "";
+  return `未能从结构参考表「${name}」加载列名。请确认该表在当前库中存在且结构可读取；OPC 当前值指向的分表不用于设计时选列。`;
+});
+
 const tableOpcNodeIdProxy = computed({
   get(): string {
     return vs.value.tableOpcNodeId || "";
@@ -482,8 +515,13 @@ const tableOpcNodeIdProxy = computed({
 function selectTableSource(kind: "manual" | "opcua") {
   const prev = tableSourceKind.value;
   vs.value.tableSource = kind;
-  if (kind === "opcua" && prev !== "opcua" && !(vs.value.tableOpcNodeId || "").trim()) {
-    nextTick(() => pickTableOpc());
+  // 切到 OPC 时若尚无结构参考表，优先引导选表（列下拉依赖它）；节点可随后再绑
+  if (kind === "opcua" && prev !== "opcua") {
+    if (!visualSqlStructureTableName(vs.value)) {
+      nextTick(() => openTablePicker());
+    } else if (!(vs.value.tableOpcNodeId || "").trim()) {
+      nextTick(() => pickTableOpc());
+    }
   }
 }
 
@@ -501,8 +539,10 @@ const paramLegend = computed(() => {
   const lines: string[] = [];
   if (sql.includes("{{table}}")) {
     const node = (vs.value.tableOpcNodeId || "").trim() || "（未绑定节点）";
-    const fb = vs.value.table.trim();
-    lines.push(`{{table}} → 导出时读 OPC UA 表名：${node}${fb ? `；读不到时用默认表 ${fb}` : "；未选默认表"}`);
+    const fb = visualSqlStructureTableName(vs.value);
+    lines.push(
+      `{{table}} → 导出时读 OPC UA 表名：${node}${fb ? `；读不到时用结构参考表 ${fb}` : "；未选结构参考表"}`,
+    );
   }
   for (const i of [...used].sort((a, b) => a - b)) {
     const p = params[i];
@@ -529,7 +569,7 @@ const engineHint = computed(() => {
 
 const canQueryDistinct = computed(() => {
   const v = vs.value;
-  if (!v.connectionId || !v.table.trim()) return false;
+  if (!v.connectionId || !visualSqlStructureTableName(v)) return false;
   const e = (v.engine || "").toLowerCase();
   if (e === "mongodb") return false;
   if (showDatabasePick.value && !(v.database || "").trim()) return false;
@@ -611,12 +651,13 @@ async function refreshCatalogLevel() {
 async function loadTableColumns() {
   tableColumns.value = [];
   distinctHints.value = {};
-  if (!vs.value.connectionId || !vs.value.table.trim()) return;
+  const structureTable = visualSqlStructureTableName(vs.value);
+  if (!vs.value.connectionId || !structureTable) return;
   try {
     tableColumns.value = await loadVisualSqlTableColumnsCached({
       connectionId: vs.value.connectionId,
       database: vs.value.database,
-      table: vs.value.table.trim(),
+      table: structureTable,
     });
   } catch (e) {
     catalogErr.value = e instanceof Error ? e.message : String(e);
@@ -702,7 +743,7 @@ async function loadDistinctHints(flt: VisualSqlFilter) {
   catalogErr.value = "";
   try {
     const eng = (vs.value.engine || "mysql").toLowerCase();
-    const sql = buildDistinctSelectSql(eng, vs.value.table.trim(), flt.column.trim(), 80);
+    const sql = buildDistinctSelectSql(eng, visualSqlStructureTableName(vs.value), flt.column.trim(), 80);
     const data = await apiFetch("/database/query/sql", {
       method: "POST",
       body: {
@@ -763,7 +804,7 @@ async function initCatalogForSavedSelection() {
   const v = vs.value;
   if (!v.connectionId.trim() || (v.engine || "").toLowerCase() === "mongodb") return;
   await refreshCatalogLevel();
-  if (v.table.trim()) {
+  if (visualSqlStructureTableName(v)) {
     await loadTableColumns();
   }
 }
@@ -1032,6 +1073,19 @@ textarea.tsv-text-inp.tsv-sql-preview {
 .tsv-table-section-label {
   font-size: 12px;
   color: #52525b;
+}
+.tsv-structure-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  border: 1px solid #e4e4e7;
+  border-radius: 8px;
+  background: #fafafa;
+}
+.tsv-structure-block--warn {
+  border-color: #f59e0b;
+  background: #fffbeb;
 }
 .tsv-table-pick-row {
   display: flex;

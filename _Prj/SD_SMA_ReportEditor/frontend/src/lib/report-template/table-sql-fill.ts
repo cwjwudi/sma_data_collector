@@ -16,7 +16,12 @@ export interface TableSqlParamBinding {
 
 export type TableSqlFillMode = "manual_sql" | "visual";
 
-/** 表名来源：manual=设计时选定；opcua=导出时读 OPC 变量（设计表提供结构并作兜底） */
+/**
+ * 表名来源：
+ * - manual：导出/预览直接用 visualSource.table
+ * - opcua：导出/预览读 OPC 变量作实际表名；visualSource.table 仍必须是库中现存表，
+ *   专供设计时拉列清单、筛选列点选，并在 OPC 读失败或值非法时作兜底
+ */
 export type TableSqlTableSource = "manual" | "opcua";
 
 /** OPC 表名选择在 opcPickParam 槽位通道中的专用哨兵值（普通筛选参数槽位从 0 起） */
@@ -26,7 +31,11 @@ export const TABLE_SQL_FILL_TABLE_PICK_SLOT = -1;
 export interface TableSqlVisualSource {
   connectionId: string;
   database: string;
-  /** SQL 表名（字母数字下划线）；tableSource=opcua 时作为设计时结构与读取失败的兜底表 */
+  /**
+   * 结构参考表（库中现存表名，字母数字下划线）。
+   * 无论 tableSource 为何，设计时列下拉 / 筛选列 / DISTINCT 样例均据此表加载；
+   * tableSource=opcua 时同时作为 OPC 读失败时的兜底表名。
+   */
   table: string;
   /** 保存选型当时的引擎：mysql | mariadb | postgres | sqlite（用于标识符引用） */
   engine: string;
@@ -36,6 +45,17 @@ export interface TableSqlVisualSource {
   tableSource?: TableSqlTableSource;
   /** tableSource=opcua 时读取表名的 OPC UA 节点（使用默认 OPC 连接） */
   tableOpcNodeId?: string;
+}
+
+/** 设计时用于拉列清单的表名（始终取 visualSource.table，与 OPC 运行时表名解耦） */
+export function visualSqlStructureTableName(vs: TableSqlVisualSource | null | undefined): string {
+  return String(vs?.table ?? "").trim();
+}
+
+/** OPC 表名模式下是否已选定结构参考表（缺则画布/筛选列下拉为空） */
+export function visualSqlNeedsStructureTable(vs: TableSqlVisualSource | null | undefined): boolean {
+  if (!vs) return false;
+  return vs.tableSource === "opcua" && !visualSqlStructureTableName(vs);
 }
 
 export type VisualSqlFilterKind = "equality" | "datetime_between" | "date_between" | "numeric_between";

@@ -560,7 +560,7 @@ import {
 import type { VisualSqlTableColumnMeta } from "@/lib/report-template/table-sql-visual-catalog";
 import { loadVisualSqlTableColumnsCached } from "@/lib/report-template/table-sql-visual-catalog";
 import { applyVisualSqlOutputColumnPick } from "@/lib/report-template/table-sql-visual-compile";
-import { ensureVisualSource, isVisualSqlFillOutputPickerRow } from "@/lib/report-template/table-sql-fill";
+import { ensureVisualSource, isVisualSqlFillOutputPickerRow, visualSqlStructureTableName } from "@/lib/report-template/table-sql-fill";
 import { formatSqlFillTableCellPreview } from "@/lib/report-template/table-sql-fill-preview";
 
 const HANDLES = ["nw", "n", "ne", "e", "se", "s", "sw", "w"] as const;
@@ -662,7 +662,8 @@ async function refreshLayoutPresetVisualSqlCatalog(): Promise<void> {
     if (!f?.enabled || f.fillMode !== "visual") continue;
     ensureVisualSource(f);
     const vs = f.visualSource!;
-    if (!vs.connectionId?.trim() || !vs.table?.trim()) {
+    const structureTable = visualSqlStructureTableName(vs);
+    if (!vs.connectionId?.trim() || !structureTable) {
       next[el.id] = [];
       continue;
     }
@@ -670,7 +671,7 @@ async function refreshLayoutPresetVisualSqlCatalog(): Promise<void> {
       next[el.id] = await loadVisualSqlTableColumnsCached({
         connectionId: vs.connectionId.trim(),
         database: vs.database?.trim(),
-        table: vs.table.trim(),
+        table: structureTable,
       });
     } catch {
       next[el.id] = [];
