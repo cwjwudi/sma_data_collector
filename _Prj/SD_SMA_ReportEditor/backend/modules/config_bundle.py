@@ -20,11 +20,49 @@ MAX_SIGNATURE_ASSETS = 200
 MAX_AUDIT_ENTRIES = 5000
 
 
+def _is_template_summary_sidecar_name(path: Path) -> bool:
+    """模版目录下的 `{id}.meta.json` 仅为列表摘要，不得进入备份包。"""
+    return path.name.endswith(".meta.json")
+
+
+def _looks_like_template_summary_payload(item: dict[str, Any]) -> bool:
+    """
+    识别误入备份的摘要对象（仅含 id/name/updatedAt/paperKind/orientation）。
+    旧版导出曾把 *.meta.json 打进 templates[]，导入时会按同 id 覆盖完整模版，
+    导致 layoutPresetId / 封面封尾引用全部丢失。
+    """
+    if not isinstance(item, dict):
+        return False
+    # 完整模版必有 schema / 画布 / 版式快照等字段
+    full_markers = (
+        "schemaVersion",
+        "bodyPages",
+        "elements",
+        "layoutSnapshot",
+        "coverLayoutSnapshot",
+        "backLayoutSnapshot",
+        "headerElements",
+        "footerElements",
+        "coverElements",
+        "backElements",
+        "layoutPresetId",
+        "coverLayoutPresetId",
+        "backLayoutPresetId",
+    )
+    if any(k in item for k in full_markers):
+        return False
+    keys = set(item.keys())
+    summary_keys = {"id", "name", "updatedAt", "paperKind", "orientation"}
+    return bool(keys) and keys.issubset(summary_keys)
+
+
 def _load_json_files(directory: Path) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     if not directory.exists():
         return out
     for path in sorted(directory.glob("*.json")):
+        if _is_template_summary_sidecar_name(path):
+            continue
         try:
             raw = path.read_text(encoding="utf-8")
             data = json.loads(raw)
@@ -33,6 +71,33 @@ def _load_json_files(directory: Path) -> list[dict[str, Any]]:
         except Exception:
             continue
     return out
+
+
+def _dedupe_templates_prefer_full(templates: list[Any]) -> list[dict[str, Any]]:
+    """
+    同 id 多份时保留完整模版；跳过摘要 sidecar 误入项。
+    兼容已流出的损坏备份（templates 中同时含完整 JSON 与 meta 摘要）。
+    """
+    by_id: dict[str, dict[str, Any]] = {}
+    order: list[str] = []
+    for item in templates:
+        if not isinstance(item, dict):
+            continue
+        if _looks_like_template_summary_payload(item):
+            continue
+        tid = item.get("id")
+        if not isinstance(tid, str) or not tid.strip():
+            continue
+        tid = tid.strip()
+        prev = by_id.get(tid)
+        if prev is None:
+            by_id[tid] = item
+            order.append(tid)
+            continue
+        # 已有一份时：若新项更「完整」（字段更多），则替换
+        if len(item.keys()) >= len(prev.keys()):
+            by_id[tid] = item
+    return [by_id[i] for i in order]
 
 
 def _clear_json_directory(directory: Path) -> None:
@@ -167,6 +232,10 @@ def validate_bundle_payload(data: dict[str, Any]) -> dict[str, Any]:
     if len(audit_entries) > MAX_AUDIT_ENTRIES:
         audit_entries = audit_entries[-MAX_AUDIT_ENTRIES:]
 
+    # 过滤误入的摘要 sidecar，避免后续导入覆盖完整模版
+    if isinstance(templates, list):
+        templates = _dedupe_templates_prefer_full(templates)
+
     for i, item in enumerate(templates):
         if not isinstance(item, dict):
             raise ValueError(f"templates[{i}] 须为对象")
@@ -192,10 +261,12 @@ def _import_asset_lists(
     replace_assets: bool,
     data_dir: Path | None = None,
 ) -> dict[str, int]:
-    templates = incoming.get("templates") or []
+    templates_raw = incoming.get("templates") or []
     layouts = incoming.get("layout_presets") or []
     signatures = incoming.get("signature_assets") or []
     audit_entries = incoming.get("audit_entries") or []
+    # 先导入版式再导入模版，便于模版引用的版式 ID 已落盘
+    templates = _dedupe_templates_prefer_full(templates_raw if isinstance(templates_raw, list) else [])
 
     if replace_assets:
         _clear_json_directory(TEMPLATES_DIR)
@@ -212,9 +283,11 @@ def _import_asset_lists(
     except Exception:
         audit_count = 0
 
+    layout_n = layout_preset_store.import_presets_bulk(layouts if isinstance(layouts, list) else [])
+    template_n = template_store.migrate_from_payload_list(templates)
     return {
-        "templates": template_store.migrate_from_payload_list(templates),
-        "layout_presets": layout_preset_store.import_presets_bulk(layouts),
+        "templates": template_n,
+        "layout_presets": layout_n,
         "signature_assets": _import_signatures_bulk(signatures),
         "audit_entries": audit_count,
     }
@@ -257,6 +330,25 @@ def apply_bundle_import(
 
     counts = _import_asset_lists(bundle, replace_assets=replace_assets, data_dir=data_dir)
     client_prefs = copy.deepcopy(bundle.get("client_prefs") or {})
+
+    layout_ids = {
+        str(x.get("id")).strip()
+        for x in (bundle.get("layout_presets") or [])
+        if isinstance(x, dict) and isinstance(x.get("id"), str) and str(x.get("id")).strip()
+    }
+    for t in bundle.get("templates") or []:
+        if not isinstance(t, dict):
+            continue
+        name = str(t.get("name") or t.get("id") or "未命名模版")
+        for label, key in (
+            ("正文版式", "layoutPresetId"),
+            ("封面版式", "coverLayoutPresetId"),
+            ("封尾版式", "backLayoutPresetId"),
+        ):
+            rid = t.get(key)
+            if isinstance(rid, str) and rid.strip() and rid.strip() not in layout_ids:
+                import_warnings.append(f"模版「{name}」的{label}引用缺失：{rid.strip()[:8]}…")
+
     stats = {
         "templates": counts["templates"],
         "layout_presets": counts["layout_presets"],
