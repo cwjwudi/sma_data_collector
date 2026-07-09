@@ -124,15 +124,17 @@ class DataStorageProcessor:
     def initialize_tables_for_runtime(self) -> bool:
         """
         启动时集中检查需要的数据表。
-        启用 batch_upsert 主表时，只先确保主表，并尝试恢复未结批批次上下文；
+        启用 batch_upsert 主表时，先确保主表，并确保不分表明细组；
+        若能恢复未结批批次上下文，再按开批年份确保分表明细表。
         未配置 batch_upsert 的旧配置继续按当前年份做一次兼容建表。
         """
         if self.batch_master_group_name:
             if not self._ensure_group_table(self.batch_master_group_name, fixed_table=True):
                 return False
+            ok = self._ensure_non_partitioned_detail_tables()
             if not self._load_open_batch_context():
-                return True
-            return self._ensure_detail_tables_for_current_batch()
+                return ok
+            return self._ensure_detail_tables_for_current_batch() and ok
 
         ok = True
         for group_name in self.group_data_points:
@@ -140,6 +142,22 @@ class DataStorageProcessor:
                 group_name,
                 partition_time=datetime.now(),
                 partition_interval_years=self.group_partition_interval_years.get(group_name, 1),
+            )
+            ok = self._ensure_group_table(group_name, table_name=table_name) and ok
+        return ok
+
+    def _ensure_non_partitioned_detail_tables(self) -> bool:
+        """确保 partition_interval_years=0 的明细组固定表存在（不依赖批次上下文）。"""
+        ok = True
+        for group_name in self.group_data_points:
+            if group_name == self.batch_master_group_name:
+                continue
+            interval = int(self.group_partition_interval_years.get(group_name, 1) or 0)
+            if interval != 0:
+                continue
+            table_name = self.db_manager.get_current_table_name(
+                group_name,
+                partition_interval_years=0,
             )
             ok = self._ensure_group_table(group_name, table_name=table_name) and ok
         return ok
@@ -757,6 +775,14 @@ class DataStorageProcessor:
         if group_name == self.batch_master_group_name:
             return self.db_manager.get_current_table_name(group_name, fixed_table=True)
 
+        interval = int(self.group_partition_interval_years.get(group_name, 1) or 0)
+        # 不分表组不依赖批次开批年份，直接使用固定表名
+        if interval == 0:
+            return self.db_manager.get_current_table_name(
+                group_name,
+                partition_interval_years=0,
+            )
+
         if self.batch_master_group_name:
             batch_context = self._get_batch_context_for_writes()
             if not batch_context:
@@ -766,7 +792,7 @@ class DataStorageProcessor:
             return self.db_manager.get_current_table_name(
                 group_name,
                 partition_time=batch_context["start_time"],
-                partition_interval_years=self.group_partition_interval_years.get(group_name, 1),
+                partition_interval_years=interval,
             )
 
         partition_time = self._get_batch_start_time(group_name, collection_data)
@@ -776,7 +802,7 @@ class DataStorageProcessor:
         return self.db_manager.get_current_table_name(
             group_name,
             partition_time=partition_time,
-            partition_interval_years=self.group_partition_interval_years.get(group_name, 1),
+            partition_interval_years=interval,
         )
     
     def _infer_column_types(self, sample_data: Dict[str, Any]) -> Dict[str, str]:

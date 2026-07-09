@@ -225,6 +225,59 @@ class TestBatchYearPartition(unittest.IsolatedAsyncioTestCase):
         inserted_tables = [call.args[0] for call in db_manager.execute_insert.call_args_list]
         self.assertEqual(inserted_tables, ["BatchHeader"])
 
+    async def test_zero_interval_detail_writes_without_batch_context(self):
+        processor, db_manager = self.make_processor()
+        processor.group_partition_interval_years["BatchData"] = 0
+        processor.ensured_tables.add("BatchData")
+        processor.initialize_tables_for_runtime()
+        self.assertIsNone(processor.current_batch_context)
+
+        await processor._process_group_data(
+            "BatchData",
+            [
+                collection_item(
+                    "BatchData",
+                    start_time=None,
+                    collection_time=datetime(2026, 7, 9, 14, 0, 0),
+                    value=9,
+                )
+            ],
+        )
+
+        inserted_tables = [call.args[0] for call in db_manager.execute_insert.call_args_list]
+        self.assertIn("BatchData", inserted_tables)
+        db_manager.get_current_table_name.assert_any_call(
+            "BatchData",
+            partition_interval_years=0,
+        )
+
+
+class TestEnsureTableColumns(unittest.TestCase):
+    def test_ensure_table_columns_adds_missing_columns(self):
+        manager = DatabaseManager({"type": "sqlite", "name": ":memory:"})
+        self.assertTrue(manager.connect())
+        self.assertTrue(
+            manager.create_data_table(
+                "主表",
+                {"rBP1": "DOUBLE", "strBatchCode": "VARCHAR(255)"},
+            )
+        )
+        self.assertTrue(
+            manager.ensure_table_columns(
+                "主表",
+                {
+                    "rBP1": "DOUBLE",
+                    "strBatchCode": "VARCHAR(255)",
+                    "dtBtachStartTime": "DATETIME",
+                    "dtBtachEndTime": "DATETIME",
+                },
+            )
+        )
+        columns = manager.get_table_column_names("主表")
+        self.assertIn("dtBtachStartTime", columns)
+        self.assertIn("dtBtachEndTime", columns)
+        manager.disconnect()
+
 
 if __name__ == "__main__":
     unittest.main()

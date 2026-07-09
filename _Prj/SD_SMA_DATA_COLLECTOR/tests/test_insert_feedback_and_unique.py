@@ -278,7 +278,7 @@ class TestUniqueAndFeedbackConfig(unittest.TestCase):
         finally:
             self._cleanup_temp_file(temp_file)
 
-    def test_detail_group_must_include_master_batch_no(self):
+    def test_detail_group_may_omit_master_batch_no(self):
         config_data = {
             "points": [
                 {"name": "batch_no", "path": "ns=6;s=batch_no", "description": "batch"},
@@ -313,9 +313,10 @@ class TestUniqueAndFeedbackConfig(unittest.TestCase):
 
         temp_file = self._create_temp_config(config_data)
         try:
-            with self.assertRaises(ValueError) as ctx:
-                ConfigLoader.load_from_file(temp_file)
-            self.assertIn("必须包含批次主表的批次号点位", str(ctx.exception))
+            config = ConfigLoader.load_from_file(temp_file)
+            detail = next(g for g in config.groups if g.name == "Detail")
+            self.assertEqual(detail.data_points, ["value"])
+            self.assertNotIn("batch_no", detail.data_points)
         finally:
             self._cleanup_temp_file(temp_file)
 

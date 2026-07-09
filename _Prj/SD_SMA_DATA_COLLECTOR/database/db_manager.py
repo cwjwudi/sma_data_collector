@@ -117,6 +117,39 @@ class DatabaseManager:
             self._last_disconnect_log_ts = now
             self._log_db_error(action, exc)
 
+    @staticmethod
+    def _is_connection_operational_error(exc: Exception) -> bool:
+        """判断 OperationalError 是否更像连接断开，而非 SQL 语义错误（如缺列 1054）。"""
+        # pymysql / MySQLdb: args[0] 常为 errno
+        code = None
+        if getattr(exc, "orig", None) is not None:
+            orig = exc.orig
+            if getattr(orig, "args", None):
+                code = orig.args[0]
+        if code is None and getattr(exc, "args", None):
+            code = exc.args[0]
+        # 常见连接类错误；1054/1064/1241 等是 SQL 语义错误，不应重连
+        connection_codes = {
+            2006,  # MySQL server has gone away
+            2013,  # Lost connection during query
+            2003,  # Can't connect
+            2002,  # Can't connect via socket
+            1927,  # Connection was killed
+        }
+        if isinstance(code, int):
+            return code in connection_codes
+        text = str(exc).lower()
+        return any(
+            token in text
+            for token in (
+                "server has gone away",
+                "lost connection",
+                "can't connect",
+                "connection refused",
+                "not connected",
+            )
+        )
+
     def _attempt_reconnect(self, trigger_action: str) -> bool:
         """尝试重连数据库，并打印重连尝试日志。"""
         for idx in range(1, self.reconnect_attempts + 1):
@@ -282,10 +315,74 @@ class DatabaseManager:
             self.table_created_date = datetime.now().date()
             self.logger.info(f"成功创建数据表: {table_name}")
 
+            # 表可能已存在（IF NOT EXISTS），补齐配置新增列
+            if not self.ensure_table_columns(table_name, columns):
+                return False
+
             return True
 
         except Exception as e:
             self._log_db_error("创建数据表", e)
+            return False
+
+    def get_table_column_names(self, table_name: str) -> Optional[List[str]]:
+        """读取已有表的列名；表不存在时返回空列表，查询失败返回 None。"""
+        try:
+            is_mysql = self.db_config.get('type', '').lower() == 'mysql'
+            if is_mysql:
+                sql = (
+                    "SELECT COLUMN_NAME FROM information_schema.COLUMNS "
+                    "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = :table_name"
+                )
+                rows = self.execute_query(sql, {"table_name": table_name})
+                return [row[0] for row in rows]
+            sql = f"PRAGMA table_info(`{table_name}`)"
+            rows = self.execute_query(sql)
+            return [row[1] for row in rows]
+        except Exception as e:
+            self._log_db_error("读取表列信息", e)
+            return None
+
+    def ensure_table_columns(self, table_name: str, columns: Dict[str, str]) -> bool:
+        """
+        确保已有表包含配置中的全部业务列；缺失列自动 ALTER TABLE ADD COLUMN。
+        不修改已有列类型，避免破坏历史数据。
+        """
+        if not columns:
+            return True
+
+        existing = self.get_table_column_names(table_name)
+        if existing is None:
+            return False
+
+        existing_lower = {name.lower() for name in existing}
+        missing = [
+            (col_name, col_type)
+            for col_name, col_type in columns.items()
+            if col_name.lower() not in existing_lower
+        ]
+        if not missing:
+            return True
+
+        try:
+            with self.engine.connect() as conn:
+                for col_name, col_type in missing:
+                    alter_sql = (
+                        f"ALTER TABLE `{table_name}` "
+                        f"ADD COLUMN `{col_name}` {col_type}"
+                    )
+                    self._log_mysql_sql(alter_sql, force_info=True)
+                    conn.execute(text(alter_sql))
+                    self.logger.info(
+                        "表 %s 已补齐缺失列: %s %s",
+                        table_name,
+                        col_name,
+                        col_type,
+                    )
+                conn.commit()
+            return True
+        except Exception as e:
+            self._log_db_error("补齐表列", e)
             return False
 
     def create_indexes(self, table_name: str, indexes: List[Dict[str, Any]]) -> None:
@@ -488,9 +585,12 @@ class DatabaseManager:
                 self._connection_healthy = True
                 return result.fetchall()
         except OperationalError as e:
-            self._mark_connection_lost("执行查询", e)
-            if _retry_on_disconnect and self._attempt_reconnect("执行查询"):
-                return self.execute_query(sql, params, _retry_on_disconnect=False)
+            if self._is_connection_operational_error(e):
+                self._mark_connection_lost("执行查询", e)
+                if _retry_on_disconnect and self._attempt_reconnect("执行查询"):
+                    return self.execute_query(sql, params, _retry_on_disconnect=False)
+            else:
+                self._log_db_error("执行查询", e)
             raise
         except Exception as e:
             self._log_db_error("执行查询", e)
@@ -521,9 +621,12 @@ class DatabaseManager:
             
             return True
         except OperationalError as e:
-            self._mark_connection_lost("插入数据", e)
-            if _retry_on_disconnect and self._attempt_reconnect("插入数据"):
-                return self.execute_insert(table_name, data, _retry_on_disconnect=False)
+            if self._is_connection_operational_error(e):
+                self._mark_connection_lost("插入数据", e)
+                if _retry_on_disconnect and self._attempt_reconnect("插入数据"):
+                    return self.execute_insert(table_name, data, _retry_on_disconnect=False)
+            else:
+                self._log_db_error("插入数据", e)
             return False
         except Exception as e:
             self._log_db_error("插入数据", e)

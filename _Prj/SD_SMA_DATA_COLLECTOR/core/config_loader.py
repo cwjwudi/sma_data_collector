@@ -225,7 +225,6 @@ class ConfigLoader:
         if len(batch_upsert_groups) > 1:
             names = [group.name for group in batch_upsert_groups]
             raise ValueError(f"同一配置中只能启用一张 batch_upsert 批次主表: {names}")
-        batch_upsert_master = batch_upsert_groups[0] if batch_upsert_groups else None
 
         point_name_set = set(point_names)
         for group in config.groups:
@@ -297,17 +296,6 @@ class ConfigLoader:
                     raise ValueError(
                         f"数据组 '{group.name}' 当前仅支持 batch_upsert.reject_when_end_time_exists=true"
                     )
-            
-            if (
-                batch_upsert_master
-                and group.name != batch_upsert_master.name
-                and batch_upsert_master.unique_key_point
-                and batch_upsert_master.unique_key_point not in group.data_points
-            ):
-                raise ValueError(
-                    f"数据组 '{group.name}' 必须包含批次主表的批次号点位 "
-                    f"{batch_upsert_master.unique_key_point}"
-                )
 
             if group.trigger == TriggerType.VARIABLE:
                 if not group.trigger_point:
