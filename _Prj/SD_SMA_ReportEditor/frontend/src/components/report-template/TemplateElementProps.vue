@@ -446,10 +446,42 @@
         >字号<input v-model.number="el.fontSize" type="number" min="8" max="72" class="lpep-inp"
       /></label>
 
-      <label class="lpep-lab">X<input v-model.number="el.x" type="number" class="lpep-inp" /></label>
-      <label class="lpep-lab">Y<input v-model.number="el.y" type="number" class="lpep-inp" /></label>
-      <label class="lpep-lab">W<input v-model.number="el.w" type="number" class="lpep-inp" /></label>
-      <label class="lpep-lab">H<input v-model.number="el.h" type="number" class="lpep-inp" /></label>
+      <label class="lpep-lab"
+        >X<input
+          v-model="geomX"
+          type="text"
+          inputmode="decimal"
+          class="lpep-inp"
+          @change="commitGeomX"
+          @keydown.enter.prevent="commitGeomX"
+      /></label>
+      <label class="lpep-lab"
+        >Y<input
+          v-model="geomY"
+          type="text"
+          inputmode="decimal"
+          class="lpep-inp"
+          @change="commitGeomY"
+          @keydown.enter.prevent="commitGeomY"
+      /></label>
+      <label class="lpep-lab"
+        >W<input
+          v-model="geomW"
+          type="text"
+          inputmode="decimal"
+          class="lpep-inp"
+          @change="commitGeomW"
+          @keydown.enter.prevent="commitGeomW"
+      /></label>
+      <label class="lpep-lab"
+        >H<input
+          v-model="geomH"
+          type="text"
+          inputmode="decimal"
+          class="lpep-inp"
+          @change="commitGeomH"
+          @keydown.enter.prevent="commitGeomH"
+      /></label>
 
       <button type="button" class="lpep-del" @click="emit('remove')">删除选中</button>
     </div>
@@ -501,6 +533,7 @@ import {
   syncResultColumnNamesFromFirstRow,
 } from "@/lib/report-template/table-sql-fill";
 import { applyTableSqlFillOpcPick } from "@/lib/report-template/table-sql-visual-compile";
+import { useDeferredGeomField } from "@/lib/report-template/deferred-geom-input";
 import type { TemplateTableCellPick } from "@/lib/report-template/template-editor-context";
 import { computed, nextTick, ref, watch } from "vue";
 
@@ -516,6 +549,23 @@ const emit = defineEmits<{
   "pick-sig-library": [ev: Event];
   "open-signature-pad": [];
 }>();
+
+function commitGeomAndClamp() {
+  if (props.el.type === "table") clampTableElementOuterSize(props.el);
+}
+
+const geomXField = useDeferredGeomField(() => props.el, "x", commitGeomAndClamp);
+const geomYField = useDeferredGeomField(() => props.el, "y", commitGeomAndClamp);
+const geomWField = useDeferredGeomField(() => props.el, "w", commitGeomAndClamp);
+const geomHField = useDeferredGeomField(() => props.el, "h", commitGeomAndClamp);
+const geomX = geomXField.model;
+const geomY = geomYField.model;
+const geomW = geomWField.model;
+const geomH = geomHField.model;
+const commitGeomX = geomXField.commit;
+const commitGeomY = geomYField.commit;
+const commitGeomW = geomWField.commit;
+const commitGeomH = geomHField.commit;
 
 /** 旧数据中可能缺少该字段，下拉始终落在 watermark | handwriting | both */
 const signatureDisplayModeChoice = computed<SignatureDisplayMode>({
@@ -644,14 +694,6 @@ watch(
     }
   },
   { immediate: true },
-);
-
-watch(
-  () => (props.el.type === "table" ? [props.el.w, props.el.h] : null),
-  () => {
-    if (props.el.type !== "table") return;
-    clampTableElementOuterSize(props.el);
-  },
 );
 
 const dateFormatSelectValue = computed(() => {

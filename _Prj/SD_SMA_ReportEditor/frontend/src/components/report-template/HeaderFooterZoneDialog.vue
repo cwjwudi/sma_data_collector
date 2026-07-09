@@ -540,10 +540,42 @@
           /></label>
           <LayoutFontFamilyField v-model="sel.fontFamily" />
           <label>字号<input v-model.number="sel.fontSize" type="number" min="8" max="72" class="hz-inp" /></label>
-          <label>X<input v-model.number="sel.x" type="number" class="hz-inp" /></label>
-          <label>Y<input v-model.number="sel.y" type="number" class="hz-inp" /></label>
-          <label>W<input v-model.number="sel.w" type="number" class="hz-inp" /></label>
-          <label>H<input v-model.number="sel.h" type="number" class="hz-inp" /></label>
+          <label
+            >X<input
+              v-model="hzGeomX"
+              type="text"
+              inputmode="decimal"
+              class="hz-inp"
+              @change="commitHzGeomX"
+              @keydown.enter.prevent="commitHzGeomX"
+          /></label>
+          <label
+            >Y<input
+              v-model="hzGeomY"
+              type="text"
+              inputmode="decimal"
+              class="hz-inp"
+              @change="commitHzGeomY"
+              @keydown.enter.prevent="commitHzGeomY"
+          /></label>
+          <label
+            >W<input
+              v-model="hzGeomW"
+              type="text"
+              inputmode="decimal"
+              class="hz-inp"
+              @change="commitHzGeomW"
+              @keydown.enter.prevent="commitHzGeomW"
+          /></label>
+          <label
+            >H<input
+              v-model="hzGeomH"
+              type="text"
+              inputmode="decimal"
+              class="hz-inp"
+              @change="commitHzGeomH"
+              @keydown.enter.prevent="commitHzGeomH"
+          /></label>
           <button type="button" class="btn btn-danger-outline" @click="removeSel">删除选中</button>
         </div>
       </details>
@@ -625,10 +657,8 @@ import {
 } from "@/lib/report-template/scalar-sql-visual";
 import type { VisualSqlTableColumnMeta } from "@/lib/report-template/table-sql-visual-catalog";
 import { loadVisualSqlTableColumnsCached } from "@/lib/report-template/table-sql-visual-catalog";
-import {
-  applyTableSqlFillOpcPick,
-  applyVisualSqlOutputColumnPick,
-} from "@/lib/report-template/table-sql-visual-compile";
+import { applyTableSqlFillOpcPick, applyVisualSqlOutputColumnPick } from "@/lib/report-template/table-sql-visual-compile";
+import { useDeferredGeomField } from "@/lib/report-template/deferred-geom-input";
 import { formatSqlFillTableCellPreview } from "@/lib/report-template/table-sql-fill-preview";
 import { clearGridCellBindings, gridHasNonNoneBinding } from "@/lib/report-template/table-binding-utils";
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
@@ -776,6 +806,24 @@ const sel = computed(() =>
   selId.value ? elements.value.find((x) => x.id === selId.value) ?? null : null,
 );
 
+function commitHzGeomAndClamp() {
+  const s = sel.value;
+  if (s?.type === "table") clampZoneTableOuterSize(s, bandW.value, bandH.value);
+}
+
+const hzGeomXField = useDeferredGeomField(() => sel.value, "x", commitHzGeomAndClamp);
+const hzGeomYField = useDeferredGeomField(() => sel.value, "y", commitHzGeomAndClamp);
+const hzGeomWField = useDeferredGeomField(() => sel.value, "w", commitHzGeomAndClamp);
+const hzGeomHField = useDeferredGeomField(() => sel.value, "h", commitHzGeomAndClamp);
+const hzGeomX = hzGeomXField.model;
+const hzGeomY = hzGeomYField.model;
+const hzGeomW = hzGeomWField.model;
+const hzGeomH = hzGeomHField.model;
+const commitHzGeomX = hzGeomXField.commit;
+const commitHzGeomY = hzGeomYField.commit;
+const commitHzGeomW = hzGeomWField.commit;
+const commitHzGeomH = hzGeomHField.commit;
+
 const opcPickOpen = ref(false);
 const opcPickTarget = ref<
   | "parameter"
@@ -812,15 +860,6 @@ watch(
       hzEditCellRow.value = 0;
       hzEditCellCol.value = 0;
     }
-  },
-);
-
-watch(
-  () => (sel.value?.type === "table" ? [sel.value?.w, sel.value?.h] : null),
-  () => {
-    const s = sel.value;
-    if (!s || s.type !== "table") return;
-    clampZoneTableOuterSize(s);
   },
 );
 
