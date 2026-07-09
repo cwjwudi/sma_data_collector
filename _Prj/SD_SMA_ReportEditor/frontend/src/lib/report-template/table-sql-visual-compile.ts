@@ -13,13 +13,21 @@ import {
   clampSqlFillParamColumnRefs,
   defaultSqlParam,
   ensureMinTableSqlParamSlots,
+  ensureTableSqlColumnRoles,
   ensureTableSqlResultColumnNames,
+  ensureVerticalFieldLabels,
   ensureVisualOutputColumnSlots,
   ensureVisualSource,
+  isVerticalSqlFill,
   normalizeVisualSqlFilterShape,
+  TABLE_SQL_COLUMN_PICK_BLANK,
+  TABLE_SQL_COLUMN_PICK_SEQUENCE,
   TABLE_SQL_FILL_TABLE_PICK_SLOT,
   validateSqlIdentifier,
+  VERTICAL_SQL_FILL_COL_COUNT,
+  visualSqlSelectFieldNames,
 } from "@/lib/report-template/table-sql-fill";
+import { verticalSqlSelectColCount } from "@/lib/report-template/table-sql-vertical";
 
 export function quoteSqlIdentifier(engineLower: string, name: string): string {
   validateSqlIdentifier(name);
@@ -115,30 +123,23 @@ export function compileVisualTableSql(fill: TableSqlFillConfig): boolean {
     return false;
   }
 
-  const hasAnyOutput = vs.columns.some((c) => String(c ?? "").trim());
-  if (!hasAnyOutput) {
+  const selectFields = visualSqlSelectFieldNames(fill);
+  if (!selectFields.length) {
     fill.querySql = "";
     return false;
   }
 
   try {
     validateSqlIdentifier(vs.table.trim());
-    for (const c of vs.columns) {
-      const t = String(c ?? "").trim();
-      if (t) validateSqlIdentifier(t);
+    for (const c of selectFields) {
+      validateSqlIdentifier(c);
     }
   } catch {
     fill.querySql = "";
     return false;
   }
 
-  const qcols = vs.columns
-    .map((c) => {
-      const t = String(c ?? "").trim();
-      if (!t) return "NULL";
-      return quoteSqlIdentifier(eng, t);
-    })
-    .join(", ");
+  const qcols = selectFields.map((c) => quoteSqlIdentifier(eng, c)).join(", ");
   // 表名绑定 OPC 时产出 {{table}}；vs.table 仍是结构参考表（设计时选列 + 读失败兜底）
   const tableOpcBound = vs.tableSource === "opcua" && String(vs.tableOpcNodeId || "").trim().length > 0;
   const qtbl = tableOpcBound ? "{{table}}" : quoteSqlIdentifier(eng, vs.table.trim());
@@ -195,20 +196,38 @@ export function compileVisualTableSql(fill: TableSqlFillConfig): boolean {
 export function syncVisualFillQueryAndResultNames(fill: TableSqlFillConfig, colCount: number): void {
   if (!fill.enabled || fill.fillMode !== "visual") return;
   ensureVisualSource(fill);
-  ensureVisualOutputColumnSlots(fill, colCount);
+  const cc = isVerticalSqlFill(fill) ? VERTICAL_SQL_FILL_COL_COUNT : colCount;
+  ensureVisualOutputColumnSlots(fill, cc);
+  if (isVerticalSqlFill(fill)) ensureVerticalFieldLabels(fill);
+  else ensureTableSqlColumnRoles(fill, cc);
   compileVisualTableSql(fill);
-  ensureTableSqlResultColumnNames(fill, colCount);
-  const n = Math.max(1, Math.min(30, Math.floor(Number(colCount)) || 1));
-  const vc = fill.visualSource!.columns;
-  for (let i = 0; i < n; i++) {
-    if (!String(fill.resultColumnNames[i] ?? "").trim()) {
-      fill.resultColumnNames[i] = vc[i] ?? "";
+  ensureTableSqlResultColumnNames(fill, cc);
+  if (isVerticalSqlFill(fill)) {
+    if (!String(fill.resultColumnNames[0] ?? "").trim()) fill.resultColumnNames[0] = "名称";
+    if (!String(fill.resultColumnNames[1] ?? "").trim()) fill.resultColumnNames[1] = "值";
+  } else {
+    const n = Math.max(1, Math.min(30, Math.floor(Number(cc)) || 1));
+    const vc = fill.visualSource!.columns;
+    const roles = fill.columnRoles || [];
+    for (let i = 0; i < n; i++) {
+      const role = roles[i] ?? "field";
+      if (role === "sequence") {
+        if (!String(fill.resultColumnNames[i] ?? "").trim()) fill.resultColumnNames[i] = "序号";
+        continue;
+      }
+      if (role === "blank") continue;
+      if (!String(fill.resultColumnNames[i] ?? "").trim()) {
+        fill.resultColumnNames[i] = vc[i] ?? "";
+      }
     }
   }
-  clampSqlFillParamColumnRefs(fill, colCount);
+  clampSqlFillParamColumnRefs(fill, cc);
 }
 
-/** 画布第一行下拉写入某一列的输出字段名 */
+/**
+ * 画布第一行下拉写入某一列。
+ * fieldName 可为库字段名、空串（空白列/纵表分隔槽）、或 TABLE_SQL_COLUMN_PICK_SEQUENCE。
+ */
 export function applyVisualSqlOutputColumnPick(
   fill: TableSqlFillConfig,
   colCount: number,
@@ -217,14 +236,123 @@ export function applyVisualSqlOutputColumnPick(
   gridHeaderCell?: { text?: string },
 ): void {
   ensureVisualSource(fill);
-  ensureVisualOutputColumnSlots(fill, colCount);
-  ensureTableSqlResultColumnNames(fill, colCount);
+  const vertical = isVerticalSqlFill(fill);
+  const cc = vertical ? VERTICAL_SQL_FILL_COL_COUNT : colCount;
+  ensureVisualOutputColumnSlots(fill, cc);
+  ensureTableSqlResultColumnNames(fill, cc);
+
+  if (vertical) {
+    // 纵表：列选择在属性面板按「槽位」配置，画布第一行不走此路径；保留兼容
+    const slots = fill.visualSource!.columns;
+    while (slots.length <= columnIndex) slots.push("");
+    slots[columnIndex] = fieldName === TABLE_SQL_COLUMN_PICK_SEQUENCE ? "" : fieldName;
+    ensureVerticalFieldLabels(fill);
+    syncVisualFillQueryAndResultNames(fill, cc);
+    return;
+  }
+
+  ensureTableSqlColumnRoles(fill, cc);
+  const roles = fill.columnRoles!;
   const prevFieldName = String(fill.visualSource!.columns[columnIndex] ?? "").trim();
   const prevHeaderName = String(fill.resultColumnNames[columnIndex] ?? "").trim();
-  fill.visualSource!.columns[columnIndex] = fieldName;
-  if (!prevHeaderName || prevHeaderName === prevFieldName) {
-    fill.resultColumnNames[columnIndex] = fieldName;
+  const prevRole = roles[columnIndex] ?? "field";
+
+  if (fieldName === TABLE_SQL_COLUMN_PICK_SEQUENCE) {
+    roles[columnIndex] = "sequence";
+    fill.visualSource!.columns[columnIndex] = "";
+    if (!prevHeaderName || prevHeaderName === prevFieldName || prevRole !== "sequence") {
+      fill.resultColumnNames[columnIndex] = "序号";
+    }
+    if (gridHeaderCell && typeof gridHeaderCell.text === "string") gridHeaderCell.text = "序号";
+  } else if (fieldName === TABLE_SQL_COLUMN_PICK_BLANK || !String(fieldName).trim()) {
+    roles[columnIndex] = "blank";
+    fill.visualSource!.columns[columnIndex] = "";
+    if (!prevHeaderName || prevHeaderName === prevFieldName) {
+      fill.resultColumnNames[columnIndex] = "";
+    }
+    if (gridHeaderCell && typeof gridHeaderCell.text === "string") gridHeaderCell.text = "";
+  } else {
+    roles[columnIndex] = "field";
+    fill.visualSource!.columns[columnIndex] = fieldName;
+    if (!prevHeaderName || prevHeaderName === prevFieldName || prevRole !== "field") {
+      fill.resultColumnNames[columnIndex] = fieldName;
+    }
+    if (gridHeaderCell && typeof gridHeaderCell.text === "string") gridHeaderCell.text = fieldName;
   }
-  if (gridHeaderCell && typeof gridHeaderCell.text === "string") gridHeaderCell.text = fieldName;
-  syncVisualFillQueryAndResultNames(fill, colCount);
+  syncVisualFillQueryAndResultNames(fill, cc);
+}
+
+/** 切换横/纵表布局；纵表强制 2 列并补默认表头 */
+export function applyTableSqlLayoutMode(
+  fill: TableSqlFillConfig,
+  mode: "horizontal" | "vertical",
+  setTableCols?: (n: number) => void,
+): void {
+  fill.layoutMode = mode;
+  ensureVisualSource(fill);
+  if (mode === "vertical") {
+    setTableCols?.(VERTICAL_SQL_FILL_COL_COUNT);
+    ensureTableSqlResultColumnNames(fill, VERTICAL_SQL_FILL_COL_COUNT);
+    if (!String(fill.resultColumnNames[0] ?? "").trim()) fill.resultColumnNames[0] = "名称";
+    if (!String(fill.resultColumnNames[1] ?? "").trim()) fill.resultColumnNames[1] = "值";
+    if (!fill.visualSource!.columns.length) {
+      fill.visualSource!.columns = [""];
+    }
+    ensureVerticalFieldLabels(fill);
+  }
+  syncVisualFillQueryAndResultNames(
+    fill,
+    mode === "vertical" ? VERTICAL_SQL_FILL_COL_COUNT : Math.max(1, fill.visualSource!.columns.length || 4),
+  );
+}
+
+/** 纵表：在槽位列表末尾追加字段或空白分隔行 */
+export function appendVerticalSqlSlot(fill: TableSqlFillConfig, kind: "field" | "blank"): void {
+  ensureVisualSource(fill);
+  ensureVerticalFieldLabels(fill);
+  if (kind === "blank") {
+    fill.visualSource!.columns.push("");
+    fill.verticalFieldLabels!.push("");
+  } else {
+    fill.visualSource!.columns.push("");
+    fill.verticalFieldLabels!.push("");
+  }
+  syncVisualFillQueryAndResultNames(fill, VERTICAL_SQL_FILL_COL_COUNT);
+}
+
+/** 纵表：写入某一槽位的库字段（空串=空白分隔行） */
+export function applyVerticalSqlSlotField(
+  fill: TableSqlFillConfig,
+  slotIndex: number,
+  fieldName: string,
+): void {
+  ensureVisualSource(fill);
+  ensureVerticalFieldLabels(fill);
+  const slots = fill.visualSource!.columns;
+  while (slots.length <= slotIndex) {
+    slots.push("");
+    fill.verticalFieldLabels!.push("");
+  }
+  slots[slotIndex] = String(fieldName ?? "").trim();
+  syncVisualFillQueryAndResultNames(fill, VERTICAL_SQL_FILL_COL_COUNT);
+}
+
+/** 纵表：删除槽位 */
+export function removeVerticalSqlSlot(fill: TableSqlFillConfig, slotIndex: number): void {
+  if (!fill.visualSource) return;
+  ensureVerticalFieldLabels(fill);
+  if (slotIndex < 0 || slotIndex >= fill.visualSource.columns.length) return;
+  fill.visualSource.columns.splice(slotIndex, 1);
+  fill.verticalFieldLabels!.splice(slotIndex, 1);
+  if (!fill.visualSource.columns.length) {
+    fill.visualSource.columns.push("");
+    fill.verticalFieldLabels!.push("");
+  }
+  syncVisualFillQueryAndResultNames(fill, VERTICAL_SQL_FILL_COL_COUNT);
+}
+
+/** 查询任务用的结果列数（纵表=SELECT 字段数；横表=物理列数，含 blank/sequence 占位） */
+export function sqlFillPreviewColCount(fill: TableSqlFillConfig, tableCols: number): number {
+  if (isVerticalSqlFill(fill)) return Math.max(1, verticalSqlSelectColCount(fill));
+  return Math.max(1, Math.min(30, Math.floor(Number(tableCols)) || 1));
 }

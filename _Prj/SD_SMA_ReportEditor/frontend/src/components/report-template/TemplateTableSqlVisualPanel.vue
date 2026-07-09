@@ -97,23 +97,79 @@
         </label>
         <button type="button" :class="actionBtnClass" @click="pickTableOpc">选择节点…</button>
       </template>
-      <p class="tsv-muted">输出列请在画布表格<strong>第一行</strong>各列的下拉框中选择字段；顺序与表格列从左到右一致。</p>
-      <p v-if="columnCatalogEmptyHint" class="tsv-filter-warn">{{ columnCatalogEmptyHint }}</p>
     </div>
 
-    <div class="tsv-headers" v-if="vs.columns.some((c) => String(c || '').trim())">
+    <div v-if="isVertical" class="tsv-vert-slots">
       <div class="tsv-headers-head">
-        <span class="tsv-subtit">列头名称</span>
+        <span class="tsv-subtit">纵表行（左标签 / 右字段值）</span>
+        <div class="tsv-vert-slot-actions">
+          <button type="button" :class="actionBtnClass" @click="addVertSlot('field')">＋ 字段行</button>
+          <button type="button" :class="actionBtnClass" @click="addVertSlot('blank')">＋ 空白分隔</button>
+        </div>
       </div>
-      <label v-for="ci in headerColumnIndices" :key="'th-' + ci" class="tsv-header-row">
-        <span class="tsv-header-field">{{ vs.columns[ci] || `第 ${ci + 1} 列` }}</span>
-        <input
-          v-model.trim="fill.resultColumnNames[ci]"
-          class="tsv-text-inp"
-          :placeholder="vs.columns[ci] || `第 ${ci + 1} 列`"
-        />
-      </label>
+      <p class="tsv-muted">
+        每条查询结果会按下列顺序展开为多行；「空白分隔」整行左右皆空，便于阅读。多行结果之间也会自动插入分隔。
+      </p>
+      <div v-for="(slotField, si) in vs.columns" :key="'vslot-' + si" class="tsv-vert-slot-row">
+        <template v-if="!String(slotField || '').trim()">
+          <span class="tsv-vert-blank-tag">空白分隔行</span>
+          <button type="button" class="tsv-mini-btn danger" @click="removeVertSlot(si)">删除</button>
+        </template>
+        <template v-else>
+          <label class="tsv-inline tsv-vert-field">
+            字段
+            <select :value="slotField" :class="selectFieldClass" @change="onVertSlotField(si, $event)">
+              <option value="">— 空白分隔 —</option>
+              <option v-for="c in tableColumns" :key="'vsf-' + si + '-' + c.name" :value="c.name">{{ c.name }}</option>
+            </select>
+          </label>
+          <label class="tsv-inline tsv-vert-label">
+            左列标签
+            <input
+              :value="(fill.verticalFieldLabels || [])[si] || ''"
+              class="tsv-text-inp"
+              :placeholder="slotField || '默认用字段名'"
+              @input="onVertLabelInput(si, $event)"
+            />
+          </label>
+          <button type="button" class="tsv-mini-btn danger" @click="removeVertSlot(si)">删除</button>
+        </template>
+      </div>
+      <p v-if="columnCatalogEmptyHint" class="tsv-filter-warn">{{ columnCatalogEmptyHint }}</p>
+      <div class="tsv-headers" v-if="fill.resultColumnNames.length >= 2">
+        <div class="tsv-headers-head">
+          <span class="tsv-subtit">两列表头</span>
+        </div>
+        <label class="tsv-header-row">
+          <span class="tsv-header-field">左列</span>
+          <input v-model.trim="fill.resultColumnNames[0]" class="tsv-text-inp" placeholder="名称" />
+        </label>
+        <label class="tsv-header-row">
+          <span class="tsv-header-field">右列</span>
+          <input v-model.trim="fill.resultColumnNames[1]" class="tsv-text-inp" placeholder="值" />
+        </label>
+      </div>
     </div>
+
+    <template v-else>
+      <p class="tsv-muted">
+        输出列请在画布表格<strong>第一行</strong>各列的下拉框中选择：库字段、空白列或序号列；顺序与表格列从左到右一致。
+      </p>
+      <p v-if="columnCatalogEmptyHint" class="tsv-filter-warn">{{ columnCatalogEmptyHint }}</p>
+      <div class="tsv-headers" v-if="headerColumnIndices.length">
+        <div class="tsv-headers-head">
+          <span class="tsv-subtit">列头名称</span>
+        </div>
+        <label v-for="ci in headerColumnIndices" :key="'th-' + ci" class="tsv-header-row">
+          <span class="tsv-header-field">{{ headerFieldCaption(ci) }}</span>
+          <input
+            v-model.trim="fill.resultColumnNames[ci]"
+            class="tsv-text-inp"
+            :placeholder="headerFieldCaption(ci)"
+          />
+        </label>
+      </div>
+    </template>
 
     <div class="tsv-filters">
       <div class="tsv-filters-head">
@@ -426,8 +482,10 @@ import type {
 import {
   defaultVisualSqlFilter,
   ensureTableSqlResultColumnNames,
+  ensureVerticalFieldLabels,
   ensureVisualOutputColumnSlots,
   ensureVisualSource,
+  isVerticalSqlFill,
   normalizeVisualSqlFilterShape,
   TABLE_SQL_FILL_TABLE_PICK_SLOT,
   visualSqlNeedsStructureTable,
@@ -435,7 +493,13 @@ import {
 } from "@/lib/report-template/table-sql-fill";
 import { formatAutoBatchOpcBindingHint, resolveAutoBatchOpcBinding } from "@/lib/auto-batch-opc-binding";
 import { loadVisualSqlTableColumnsCached } from "@/lib/report-template/table-sql-visual-catalog";
-import { buildDistinctSelectSql, visualFilterParamSlotBase } from "@/lib/report-template/table-sql-visual-compile";
+import {
+  appendVerticalSqlSlot,
+  applyVerticalSqlSlotField,
+  buildDistinctSelectSql,
+  removeVerticalSqlSlot,
+  visualFilterParamSlotBase,
+} from "@/lib/report-template/table-sql-visual-compile";
 import { computed, nextTick, ref, watch, withDefaults } from "vue";
 
 const props = withDefaults(
@@ -478,6 +542,40 @@ const tablePickOpen = ref(false);
 const tablePickQ = ref("");
 
 const vs = computed(() => ensureVisualSource(props.fill));
+
+const isVertical = computed(() => isVerticalSqlFill(props.fill));
+
+watch(
+  isVertical,
+  (v) => {
+    if (v) ensureVerticalFieldLabels(props.fill);
+  },
+  { immediate: true },
+);
+
+function addVertSlot(kind: "field" | "blank") {
+  appendVerticalSqlSlot(props.fill, kind);
+}
+
+function removeVertSlot(si: number) {
+  removeVerticalSqlSlot(props.fill, si);
+}
+
+function onVertSlotField(si: number, ev: Event) {
+  applyVerticalSqlSlotField(props.fill, si, (ev.target as HTMLSelectElement).value);
+}
+
+function onVertLabelInput(si: number, ev: Event) {
+  ensureVerticalFieldLabels(props.fill);
+  props.fill.verticalFieldLabels![si] = (ev.target as HTMLInputElement).value;
+}
+
+function headerFieldCaption(ci: number): string {
+  const role = props.fill.columnRoles?.[ci] ?? "field";
+  if (role === "sequence") return "序号";
+  if (role === "blank") return `第 ${ci + 1} 列（空白）`;
+  return vs.value.columns[ci] || `第 ${ci + 1} 列`;
+}
 
 const activeConn = computed(() => connections.value.find((c) => c.id === vs.value.connectionId) ?? null);
 
@@ -910,6 +1008,36 @@ void loadConnections().then(() => initCatalogForSavedSelection());
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
+}
+.tsv-vert-slot-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.tsv-vert-slots {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.tsv-vert-slot-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border: 1px dashed #d4d4d8;
+  border-radius: 8px;
+}
+.tsv-vert-blank-tag {
+  font-size: 12px;
+  color: #71717a;
+  flex: 1;
+}
+.tsv-vert-field,
+.tsv-vert-label {
+  flex: 1;
+  min-width: 120px;
 }
 .tsv-header-row {
   display: grid;

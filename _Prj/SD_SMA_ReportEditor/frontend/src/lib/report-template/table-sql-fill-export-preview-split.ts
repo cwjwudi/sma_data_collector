@@ -13,6 +13,7 @@ import {
   tplElementsHorizontallyOverlap,
 } from "@/lib/report-template/table-sql-fill-layout-utils";
 import { templateTableSqlFillPreviewKey } from "@/lib/report-template/table-sql-fill-preview";
+import { sqlFillDisplayDataRowCount } from "@/lib/report-template/table-sql-fill-preview";
 
 /** 迷你预览中单张卡片内的表格片段（数据行为预览 payload.dataRows 的下标切片） */
 export interface SqlFillTablePreviewSlice {
@@ -65,10 +66,11 @@ function pickSqlFillTableForPreviewPagination(
     if (el.type !== "table" || !el.tableSqlFill?.enabled) continue;
     const pk = templateTableSqlFillPreviewKey(el.id);
     const pv = previewValues[pk]?.tableSqlFill;
-    const n = pv?.dataRows?.length ?? 0;
-    if (!n || pv?.error) continue;
-    if (!sqlFillTableNeedsPreviewPagination(el, n, contentH)) continue;
-    const bottom = estimatedSqlFillTableBottomY(el, n);
+    const sqlN = pv?.dataRows?.length ?? 0;
+    if (!sqlN || pv?.error) continue;
+    const displayN = sqlFillDisplayDataRowCount(el.tableSqlFill, sqlN);
+    if (!sqlFillTableNeedsPreviewPagination(el, displayN, contentH)) continue;
+    const bottom = estimatedSqlFillTableBottomY(el, displayN);
     if (bottom >= bestBottom) {
       bestBottom = bottom;
       best = el;
@@ -146,9 +148,11 @@ function slicesForBodyPage(
   }
   const pk = templateTableSqlFillPreviewKey(overflowEl.id);
   const rows = previewValues[pk]?.tableSqlFill?.dataRows ?? [];
-  const n = rows.length;
+  const sqlN = rows.length;
+  const displayN = sqlFillDisplayDataRowCount(overflowEl.tableSqlFill!, sqlN);
   const repeatHeader = overflowEl.tableSqlFill!.repeatHeaderOnPageBreak !== false;
-  const chunks = buildSlicesForOverflowTable(overflowEl, n, contentH, repeatHeader);
+  // 纵表：切片下标针对逻辑行；横表：针对 SQL 数据行（与 formatSqlFillTableCellPreview 一致）
+  const chunks = buildSlicesForOverflowTable(overflowEl, displayN, contentH, repeatHeader);
   if (chunks.length <= 1) {
     return [
       {
@@ -160,7 +164,7 @@ function slicesForBodyPage(
     ];
   }
 
-  const logicalBottom = estimatedSqlFillTableBottomY(overflowEl, n);
+  const logicalBottom = estimatedSqlFillTableBottomY(overflowEl, displayN);
   const hasBelow = hasWidgetsBelowSqlFillTable(els, overflowEl, logicalBottom);
 
   const cards: ExpandedBodyPreviewCard[] = chunks.map((slice, idx) => ({

@@ -68,6 +68,9 @@ class ScalarSqlVisualConfig(BaseModel):
 
 TableSqlFillMode = Literal["manual_sql", "visual"]
 TableSqlTableSource = Literal["manual", "opcua"]
+TableSqlLayoutMode = Literal["horizontal", "vertical"]
+TableSqlColumnRole = Literal["field", "blank", "sequence"]
+TableSqlSequencePageMode = Literal["continuous", "restart_per_page"]
 VisualSqlFilterKind = Literal["equality", "datetime_between", "date_between", "numeric_between"]
 
 
@@ -110,6 +113,10 @@ class TableSqlFillConfig(BaseModel):
     maxRows: int = Field(default=2000, ge=1, le=50000)
     visualSource: TableSqlVisualSource | None = None
     visualFilters: list[TableSqlVisualFilter] = Field(default_factory=list)
+    layoutMode: TableSqlLayoutMode = "horizontal"
+    columnRoles: list[TableSqlColumnRole] = Field(default_factory=list)
+    sequencePageMode: TableSqlSequencePageMode = "continuous"
+    verticalFieldLabels: list[str] = Field(default_factory=list)
 
 
 class LayoutZoneElement(BaseModel):

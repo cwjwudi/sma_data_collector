@@ -366,6 +366,7 @@
             button-class="lpep-file-btn"
             @opc-pick-param="openTplSqlOpcPicker"
             @sync-headers="onTplSqlFillSyncHeaders"
+            @layout-mode-change="onTplSqlLayoutModeChange"
           />
         </div>
         <p class="lpep-hint-muted">预览画布显示静态文字或绑定占位摘要；导出时由生成器按单元格填充。</p>
@@ -655,6 +656,17 @@ function onTplSqlFillSyncHeaders() {
   const el = props.el;
   if (el.type !== "table" || !el.tableSqlFill?.enabled) return;
   syncResultColumnNamesFromFirstRow(el.tableSqlFill, ensureTableGrid(el), el.tableCols ?? 4);
+}
+
+function onTplSqlLayoutModeChange(mode: "horizontal" | "vertical") {
+  const el = props.el;
+  if (el.type !== "table") return;
+  if (mode === "vertical") {
+    el.tableCols = 2;
+    tableDimCols.value = 2;
+    ensureTableGrid(el);
+    clampTableElementOuterSize(el);
+  }
 }
 
 const tableDimRows = ref(3);

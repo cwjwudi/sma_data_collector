@@ -106,7 +106,8 @@
                               @pointerdown.stop="hzPickTableCell(el, ri, ci)"
                               @change="onHzVisualOutputColumnChange(el, ci, $event)"
                             >
-                              <option value="">—</option>
+                              <option value="">— 空白列 —</option>
+                              <option value="__sequence__">＃ 序号列</option>
                               <option
                                 v-for="opt in hzVisualSqlColumnCatalog[el.id]"
                                 :key="'hzfld-' + el.id + '-' + ci + '-' + opt.name"
@@ -517,6 +518,7 @@
                 button-class="hz-soft-btn"
                 @opc-pick-param="openHzSqlOpcPicker"
                 @sync-headers="onHzSqlFillSyncHeaders"
+                @layout-mode-change="onHzSqlLayoutModeChange"
               />
             </div>
           </template>
@@ -646,6 +648,7 @@ import {
   ensureTableSqlResultColumnNames,
   ensureVisualSource,
   isVisualSqlFillOutputPickerRow,
+  visualSqlColumnPickValue,
   syncResultColumnNamesFromFirstRow,
   visualSqlStructureTableName,
 } from "@/lib/report-template/table-sql-fill";
@@ -788,9 +791,9 @@ watch(
 );
 
 function hzVisualOutputSelectValue(el: LayoutZoneElement, ci: number): string {
-  const vs = el.tableSqlFill?.visualSource;
-  if (!vs?.columns || ci < 0 || ci >= vs.columns.length) return "";
-  return String(vs.columns[ci] ?? "");
+  const fill = el.tableSqlFill;
+  if (!fill) return "";
+  return visualSqlColumnPickValue(fill, ci);
 }
 
 function onHzVisualOutputColumnChange(el: LayoutZoneElement, ci: number, ev: Event) {
@@ -1092,6 +1095,16 @@ function onHzSqlFillSyncHeaders() {
   const s = sel.value;
   if (!s || s.type !== "table" || !s.tableSqlFill?.enabled) return;
   syncResultColumnNamesFromFirstRow(s.tableSqlFill, ensureZoneTableGrid(s), s.tableCols ?? 4);
+}
+
+function onHzSqlLayoutModeChange(mode: "horizontal" | "vertical") {
+  const s = sel.value;
+  if (!s || s.type !== "table") return;
+  if (mode === "vertical") {
+    s.tableCols = 2;
+    hzTableDimCols.value = 2;
+    ensureZoneTableGrid(s);
+  }
 }
 
 function openHzOpcPicker(target: "parameter" | "table") {

@@ -23,6 +23,7 @@ import {
   sqlResponseToPreviewRows,
   substituteSqlFillTableName,
 } from "@/lib/report-template/table-sql-fill-preview";
+import { isVerticalSqlFill } from "@/lib/report-template/table-sql-fill";
 import type {
   BindingPreviewRefreshOptions,
   BindingPreviewStats,
@@ -221,7 +222,11 @@ export function useReportBindingPreview(tmplRef: Ref<ReportTemplate | null>): Re
             });
             if (gen !== generation) return;
             stats.sqlRows += sqlResponseRowCount(data);
-            const grid = sqlResponseToPreviewRows(data, task.colCount);
+            const mapCols =
+              task.fill && !isVerticalSqlFill(task.fill)
+                ? task.tableCols ?? task.colCount
+                : task.colCount;
+            const grid = sqlResponseToPreviewRows(data, mapCols, task.fill);
             task.expandRows(grid.length);
             out[task.key] = {
               text: `${grid.length}×${task.colCount}`,

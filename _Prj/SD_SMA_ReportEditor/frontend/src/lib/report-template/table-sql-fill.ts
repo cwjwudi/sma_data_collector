@@ -17,6 +17,28 @@ export interface TableSqlParamBinding {
 export type TableSqlFillMode = "manual_sql" | "visual";
 
 /**
+ * 表格展示形态：
+ * - horizontal：横表（一行 SQL 结果 → 一行表格；多列对应多字段）
+ * - vertical：纵表（固定两列：左字段名、右字段值；一行 SQL 结果展开为多行 KV）
+ */
+export type TableSqlLayoutMode = "horizontal" | "vertical";
+
+/**
+ * 横表物理列角色（与 tableCols / visualSource.columns 对齐）：
+ * - field：绑定库字段
+ * - blank：空白列（不取数，单元格恒空）
+ * - sequence：自动序号列（渲染时计算，不进 SELECT）
+ */
+export type TableSqlColumnRole = "field" | "blank" | "sequence";
+
+/** 序号跨页策略：continuous=整份连续；restart_per_page=每页从 1 重计 */
+export type TableSqlSequencePageMode = "continuous" | "restart_per_page";
+
+/** 画布/属性面板列下拉中的哨兵值（非真实库字段名） */
+export const TABLE_SQL_COLUMN_PICK_BLANK = "";
+export const TABLE_SQL_COLUMN_PICK_SEQUENCE = "__sequence__";
+
+/**
  * 表名来源：
  * - manual：导出/预览直接用 visualSource.table
  * - opcua：导出/预览读 OPC 变量作实际表名；visualSource.table 仍必须是库中现存表，
@@ -76,7 +98,10 @@ export interface TableSqlFillConfig {
   /** 只读 SELECT；可使用占位符 {{p0}}、{{p1}}…（与 params 顺序一致） */
   querySql: string;
   params: TableSqlParamBinding[];
-  /** 与列数一致：每列对应结果集中的列名（或别名） */
+  /**
+   * 横表：与物理列数一致的表头文案。
+   * 纵表：仅使用前两项作为两列表头（如「名称」「值」）；左列字段标签见 verticalFieldLabels。
+   */
   resultColumnNames: string[];
   /** 跨页时在新页重复表头行（第 0 行） */
   repeatHeaderOnPageBreak: boolean;
@@ -92,6 +117,20 @@ export interface TableSqlFillConfig {
   /** fillMode===visual 时的数据源选择（手写模式下可残留但不生效） */
   visualSource?: TableSqlVisualSource | null;
   visualFilters: VisualSqlFilter[];
+  /** 横表 / 纵表；缺省 horizontal（兼容旧模版） */
+  layoutMode?: TableSqlLayoutMode;
+  /**
+   * 横表物理列角色（与 tableCols 对齐）。
+   * 纵表忽略此数组；纵表空白分隔行用 visualSource.columns 中的空串表示。
+   */
+  columnRoles?: TableSqlColumnRole[];
+  /** 序号列跨页编号策略；缺省 continuous */
+  sequencePageMode?: TableSqlSequencePageMode;
+  /**
+   * 纵表：与 visualSource.columns 对齐的左列显示标签。
+   * 空串时回退为字段名；空白分隔行左右皆空。
+   */
+  verticalFieldLabels?: string[];
 }
 
 export function defaultSqlParam(): TableSqlParamBinding {
@@ -165,7 +204,81 @@ export function defaultTableSqlFillConfig(): TableSqlFillConfig {
     maxRows: 2000,
     visualSource: null,
     visualFilters: [],
+    layoutMode: "horizontal",
+    columnRoles: [],
+    sequencePageMode: "continuous",
+    verticalFieldLabels: [],
   };
+}
+
+export function normalizeTableSqlLayoutMode(v: unknown): TableSqlLayoutMode {
+  return v === "vertical" ? "vertical" : "horizontal";
+}
+
+export function normalizeTableSqlColumnRole(v: unknown): TableSqlColumnRole {
+  if (v === "blank" || v === "sequence") return v;
+  return "field";
+}
+
+export function normalizeTableSqlSequencePageMode(v: unknown): TableSqlSequencePageMode {
+  return v === "restart_per_page" ? "restart_per_page" : "continuous";
+}
+
+export function isVerticalSqlFill(fill: TableSqlFillConfig | null | undefined): boolean {
+  return !!fill?.enabled && normalizeTableSqlLayoutMode(fill.layoutMode) === "vertical";
+}
+
+/** 纵表固定两列 */
+export const VERTICAL_SQL_FILL_COL_COUNT = 2;
+
+/** 令横表 columnRoles 与列数对齐；纵表不强制 */
+export function ensureTableSqlColumnRoles(fill: TableSqlFillConfig, colCount: number): void {
+  if (isVerticalSqlFill(fill)) return;
+  const n = Math.max(1, Math.min(30, Math.floor(Number(colCount)) || 1));
+  if (!fill.columnRoles) fill.columnRoles = [];
+  const arr = fill.columnRoles;
+  while (arr.length < n) {
+    const field = String(fill.visualSource?.columns?.[arr.length] ?? "").trim();
+    arr.push(field ? "field" : "blank");
+  }
+  arr.length = n;
+}
+
+/** 纵表：verticalFieldLabels 与 visualSource.columns 对齐 */
+export function ensureVerticalFieldLabels(fill: TableSqlFillConfig): void {
+  if (!fill.visualSource) return;
+  if (!fill.verticalFieldLabels) fill.verticalFieldLabels = [];
+  const n = fill.visualSource.columns.length;
+  const arr = fill.verticalFieldLabels;
+  while (arr.length < n) arr.push("");
+  arr.length = n;
+}
+
+/** 纵表左列标签：自定义标签优先，否则字段名；空白分隔行为空 */
+export function verticalSlotLabel(fill: TableSqlFillConfig, slotIndex: number): string {
+  const field = String(fill.visualSource?.columns?.[slotIndex] ?? "").trim();
+  if (!field) return "";
+  const custom = String(fill.verticalFieldLabels?.[slotIndex] ?? "").trim();
+  return custom || field;
+}
+
+/** SELECT 实际输出的库字段（跳过空白分隔 / 横表 blank·sequence） */
+export function visualSqlSelectFieldNames(fill: TableSqlFillConfig): string[] {
+  const vs = fill.visualSource;
+  if (!vs) return [];
+  if (isVerticalSqlFill(fill)) {
+    return vs.columns.map((c) => String(c ?? "").trim()).filter(Boolean);
+  }
+  ensureTableSqlColumnRoles(fill, vs.columns.length || 1);
+  const roles = fill.columnRoles || [];
+  const out: string[] = [];
+  for (let i = 0; i < vs.columns.length; i++) {
+    const role = roles[i] ?? "field";
+    if (role !== "field") continue;
+    const t = String(vs.columns[i] ?? "").trim();
+    if (t) out.push(t);
+  }
+  return out;
 }
 
 function normalizeParamSource(v: unknown): TableSqlParamSource {
@@ -289,6 +402,20 @@ export function hydrateTableSqlFill(raw: unknown): TableSqlFillConfig {
     return vf;
   });
 
+  const layoutMode = normalizeTableSqlLayoutMode(o.layoutMode);
+  const sequencePageMode = normalizeTableSqlSequencePageMode(o.sequencePageMode);
+  const rolesIn = Array.isArray(o.columnRoles) ? o.columnRoles : [];
+  const columnRoles: TableSqlColumnRole[] = rolesIn.map((x) => normalizeTableSqlColumnRole(x));
+  const labelsIn = Array.isArray(o.verticalFieldLabels) ? o.verticalFieldLabels : [];
+  const verticalFieldLabels = labelsIn.map((x) => (typeof x === "string" ? x : String(x ?? "")));
+
+  // 旧模版无 columnRoles：有字段名 → field，空串 → blank
+  if (!columnRoles.length && visualSource?.columns?.length && layoutMode === "horizontal") {
+    for (const c of visualSource.columns) {
+      columnRoles.push(String(c ?? "").trim() ? "field" : "blank");
+    }
+  }
+
   const out: TableSqlFillConfig = {
     enabled,
     fillMode,
@@ -301,8 +428,13 @@ export function hydrateTableSqlFill(raw: unknown): TableSqlFillConfig {
     maxRows,
     visualSource,
     visualFilters,
+    layoutMode,
+    columnRoles,
+    sequencePageMode,
+    verticalFieldLabels,
   };
   ensureMinTableSqlParamSlots(out, Math.max(2, out.params.length));
+  if (layoutMode === "vertical" && visualSource) ensureVerticalFieldLabels(out);
   return out;
 }
 
@@ -331,10 +463,14 @@ export function ensureTableSqlResultColumnNames(fill: TableSqlFillConfig, colCou
 /** visual 模式下输出列与表格物理列一一对齐（从左到右）；不足的补空串，多出的截断 */
 export function ensureVisualOutputColumnSlots(fill: TableSqlFillConfig, colCount: number): void {
   if (!fill.visualSource) return;
-  const n = Math.max(1, Math.min(30, Math.floor(Number(colCount)) || 1));
+  const n = isVerticalSqlFill(fill)
+    ? Math.max(1, Math.min(30, fill.visualSource.columns.length || 1))
+    : Math.max(1, Math.min(30, Math.floor(Number(colCount)) || 1));
   const arr = fill.visualSource.columns;
   while (arr.length < n) arr.push("");
-  arr.length = n;
+  if (!isVerticalSqlFill(fill)) arr.length = n;
+  ensureTableSqlColumnRoles(fill, n);
+  if (isVerticalSqlFill(fill)) ensureVerticalFieldLabels(fill);
 }
 
 /** 画布第一行：可视化数据库填充时改为下拉选择输出字段（非手写 SQL） */
@@ -345,8 +481,21 @@ export function isVisualSqlFillOutputPickerRow(
   return (
     rowIndex === 0 &&
     el.type === "table" &&
-    !!(el.tableSqlFill?.enabled && el.tableSqlFill.fillMode === "visual")
+    !!(el.tableSqlFill?.enabled && el.tableSqlFill.fillMode === "visual") &&
+    !isVerticalSqlFill(el.tableSqlFill)
   );
+}
+
+/** 画布列下拉当前值：序号哨兵 / 空白 / 字段名 */
+export function visualSqlColumnPickValue(fill: TableSqlFillConfig, colIndex: number): string {
+  if (isVerticalSqlFill(fill)) {
+    return String(fill.visualSource?.columns?.[colIndex] ?? "");
+  }
+  ensureTableSqlColumnRoles(fill, fill.visualSource?.columns?.length || colIndex + 1);
+  const role = fill.columnRoles?.[colIndex] ?? "field";
+  if (role === "sequence") return TABLE_SQL_COLUMN_PICK_SEQUENCE;
+  if (role === "blank") return TABLE_SQL_COLUMN_PICK_BLANK;
+  return String(fill.visualSource?.columns?.[colIndex] ?? "");
 }
 
 /** 至少保留 minSlots 个参数槽（旧模板默认为 2） */

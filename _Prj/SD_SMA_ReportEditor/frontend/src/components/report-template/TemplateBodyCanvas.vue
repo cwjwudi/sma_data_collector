@@ -175,6 +175,7 @@
                               @change="onTplVisualOutputColumnChange(el, ci, $event)"
                             >
                               <option value="">{{ tplVisualSqlEmptyOptionLabel(el) }}</option>
+                              <option :value="'__sequence__'">＃ 序号列</option>
                               <option
                                 v-for="opt in tplVisualSqlColumnCatalog[el.id]"
                                 :key="'fld-' + el.id + '-' + ci + '-' + opt.name"
@@ -404,6 +405,7 @@ import {
   ensureVisualSource,
   isVisualSqlFillOutputPickerRow,
   clampTableSqlMaxRows,
+  visualSqlColumnPickValue,
   visualSqlNeedsStructureTable,
   visualSqlStructureTableName,
 } from "@/lib/report-template/table-sql-fill";
@@ -416,6 +418,7 @@ import { computed, inject, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import { reportBindingPreviewKey, templateTableCellPickKey } from "@/lib/report-template/template-editor-context";
 import {
   formatSqlFillTableCellPreview,
+  sqlFillDisplayDataRowCount,
   templateTableSqlFillPreviewKey,
   TABLE_SQL_FILL_PREVIEW_ROW_LIMIT,
 } from "@/lib/report-template/table-sql-fill-preview";
@@ -1037,7 +1040,7 @@ function tplVisualSqlEmptyOptionLabel(el: TemplateElement): string {
   if (opts && opts.length === 0 && visualSqlStructureTableName(el.tableSqlFill?.visualSource)) {
     return "结构表无列…";
   }
-  return "—";
+  return "— 空白列 —";
 }
 
 function tplVisualSqlColumnSelectTitle(el: TemplateElement): string {
@@ -1052,9 +1055,9 @@ function tplVisualSqlColumnSelectTitle(el: TemplateElement): string {
 }
 
 function tplVisualOutputSelectValue(el: TemplateElement, ci: number): string {
-  const vs = el.tableSqlFill?.visualSource;
-  if (!vs?.columns || ci < 0 || ci >= vs.columns.length) return "";
-  return String(vs.columns[ci] ?? "");
+  const fill = el.tableSqlFill;
+  if (!fill) return "";
+  return visualSqlColumnPickValue(fill, ci);
 }
 
 function onTplVisualOutputColumnChange(el: TemplateElement, ci: number, ev: Event) {
@@ -1073,8 +1076,10 @@ function tplTableRowTrStyle(el: TemplateElement): Record<string, string> | undef
 
 function tplSqlFillDataRowCount(el: TemplateElement): number {
   const pk = templateTableSqlFillPreviewKey(el.id);
-  const n = bindingPreview?.values.value[pk]?.tableSqlFill?.dataRows?.length ?? 0;
-  if (n > 0) return n;
+  const sqlN = bindingPreview?.values.value[pk]?.tableSqlFill?.dataRows?.length ?? 0;
+  if (el.tableSqlFill?.enabled && sqlN > 0) {
+    return sqlFillDisplayDataRowCount(el.tableSqlFill, sqlN);
+  }
   return Math.max(0, (el.tableRows ?? 1) - 1);
 }
 

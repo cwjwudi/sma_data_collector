@@ -340,6 +340,7 @@
             :column-count="el.tableCols ?? 4"
             button-class="lpep-file-btn"
             @opc-pick-param="openZoneSqlOpcPicker"
+            @layout-mode-change="onZoneSqlLayoutModeChange"
             @sync-headers="onZoneSqlFillSyncHeaders"
           />
         </div>
@@ -576,6 +577,16 @@ function onZoneSqlFillSyncHeaders() {
   const el = props.el;
   if (!el || el.type !== "table" || !el.tableSqlFill?.enabled) return;
   syncResultColumnNamesFromFirstRow(el.tableSqlFill, ensureZoneTableGrid(el), el.tableCols ?? 4);
+}
+
+function onZoneSqlLayoutModeChange(mode: "horizontal" | "vertical") {
+  const el = props.el;
+  if (!el || el.type !== "table") return;
+  if (mode === "vertical") {
+    el.tableCols = 2;
+    tableDimCols.value = 2;
+    ensureZoneTableGrid(el);
+  }
 }
 
 const tableDimRows = ref(3);

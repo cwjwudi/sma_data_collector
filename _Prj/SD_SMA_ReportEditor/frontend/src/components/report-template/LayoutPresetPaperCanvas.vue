@@ -99,7 +99,8 @@
                                 @pointerdown.stop="pickLayoutTableCell(el, ri, ci)"
                                 @change="onLayoutPresetVisualOutputChange(el, ci, $event)"
                               >
-                                <option value="">—</option>
+                                <option value="">— 空白列 —</option>
+                                <option value="__sequence__">＃ 序号列</option>
                                 <option
                                   v-for="opt in layoutPresetVisualSqlCatalog[el.id]"
                                   :key="'lzfld-' + el.id + '-' + ci + '-' + opt.name"
@@ -264,7 +265,8 @@
                                 @pointerdown.stop="pickLayoutTableCell(el, ri, ci)"
                                 @change="onLayoutPresetVisualOutputChange(el, ci, $event)"
                               >
-                                <option value="">—</option>
+                                <option value="">— 空白列 —</option>
+                                <option value="__sequence__">＃ 序号列</option>
                                 <option
                                   v-for="opt in layoutPresetVisualSqlCatalog[el.id]"
                                   :key="'lzfld-' + el.id + '-' + ci + '-' + opt.name"
@@ -429,7 +431,8 @@
                                 @pointerdown.stop="pickLayoutTableCell(el, ri, ci)"
                                 @change="onLayoutPresetVisualOutputChange(el, ci, $event)"
                               >
-                                <option value="">—</option>
+                                <option value="">— 空白列 —</option>
+                                <option value="__sequence__">＃ 序号列</option>
                                 <option
                                   v-for="opt in layoutPresetVisualSqlCatalog[el.id]"
                                   :key="'lzfld-' + el.id + '-' + ci + '-' + opt.name"
@@ -560,7 +563,7 @@ import {
 import type { VisualSqlTableColumnMeta } from "@/lib/report-template/table-sql-visual-catalog";
 import { loadVisualSqlTableColumnsCached } from "@/lib/report-template/table-sql-visual-catalog";
 import { applyVisualSqlOutputColumnPick } from "@/lib/report-template/table-sql-visual-compile";
-import { ensureVisualSource, isVisualSqlFillOutputPickerRow, visualSqlStructureTableName } from "@/lib/report-template/table-sql-fill";
+import { ensureVisualSource, isVisualSqlFillOutputPickerRow, visualSqlColumnPickValue, visualSqlStructureTableName } from "@/lib/report-template/table-sql-fill";
 import { formatSqlFillTableCellPreview } from "@/lib/report-template/table-sql-fill-preview";
 
 const HANDLES = ["nw", "n", "ne", "e", "se", "s", "sw", "w"] as const;
@@ -689,9 +692,9 @@ watch(
 );
 
 function layoutPresetVisualOutputValue(el: LayoutZoneElement, ci: number): string {
-  const vs = el.tableSqlFill?.visualSource;
-  if (!vs?.columns || ci < 0 || ci >= vs.columns.length) return "";
-  return String(vs.columns[ci] ?? "");
+  const fill = el.tableSqlFill;
+  if (!fill) return "";
+  return visualSqlColumnPickValue(fill, ci);
 }
 
 function onLayoutPresetVisualOutputChange(el: LayoutZoneElement, ci: number, ev: Event) {

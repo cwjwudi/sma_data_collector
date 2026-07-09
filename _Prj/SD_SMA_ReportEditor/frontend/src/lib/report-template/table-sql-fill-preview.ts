@@ -12,8 +12,16 @@ import { ensureZoneTableGrid } from "@/lib/report-template/layout-zone-element";
 import type { ReportTemplate, TemplateElement } from "@/lib/report-template/model";
 import { ensureTableGrid } from "@/lib/report-template/model";
 import type { TableSqlFillConfig, TableSqlParamBinding } from "@/lib/report-template/table-sql-fill";
+import {
+  ensureTableSqlColumnRoles,
+  isVerticalSqlFill,
+  normalizeTableSqlSequencePageMode,
+} from "@/lib/report-template/table-sql-fill";
 import type { TableSqlFillPreviewPayload } from "@/lib/report-template/binding-preview-utils";
 import { quoteSqlIdentifier } from "@/lib/report-template/table-sql-visual-compile";
+import { sqlFillPreviewColCount } from "@/lib/report-template/table-sql-visual-compile";
+import { buildVerticalSqlLogicalRows } from "@/lib/report-template/table-sql-vertical";
+import { verticalSqlLogicalRowCount } from "@/lib/report-template/table-sql-vertical";
 
 export function templateTableSqlFillPreviewKey(elId: string): string {
   return `tblfill:${elId}`;
@@ -40,7 +48,12 @@ export interface TableSqlFillPreviewTask {
     fallbackTable: string;
   };
   limit: number;
+  /** SELECT 结果列数（纵表）或物理列数（横表展开前用 fill 再映射） */
   colCount: number;
+  /** 用于 blank/sequence 展开与纵表映射 */
+  fill?: TableSqlFillConfig;
+  /** 横表物理列数（blank/sequence 展开目标宽度） */
+  tableCols?: number;
   expandRows: (dataRowCount: number) => void;
 }
 
@@ -65,6 +78,7 @@ export function truncateSqlFillPreviewError(s: string, maxLen: number): string {
 
 /**
  * 数据库整表填充开启时单元格展示文案：仅用 resultColumnNames + 预览数据行，不读取单元格静态 text（避免切换填充前后残留）。
+ * 纵表：左列标签 / 右列值；横表：支持 blank / sequence 列角色。
  */
 export function formatSqlFillTableCellPreview(opts: {
   fill: TableSqlFillConfig;
@@ -107,21 +121,93 @@ export function formatSqlFillTableCellPreview(opts: {
     if (ri === 0 && ci === 0) return `⟨填充⟩ ${truncateSqlFillPreviewError(pv.error, errorMaxLen)}`;
     return "\u00a0";
   }
+
+  if (isVerticalSqlFill(fill)) {
+    return formatVerticalSqlFillCell({ fill, ri, ci, pv, slice, headerAt });
+  }
+  return formatHorizontalSqlFillCell({ fill, ri, ci, pv, slice, headerAt });
+}
+
+function formatVerticalSqlFillCell(opts: {
+  fill: TableSqlFillConfig;
+  ri: number;
+  ci: number;
+  pv?: TableSqlFillPreviewPayload | null;
+  slice?: { dataRowStart: number; dataRowCount: number; includeHeaderRow: boolean };
+  headerAt: (c: number) => string;
+}): string {
+  const { fill, ri, ci, pv, slice, headerAt } = opts;
+  const logical = buildVerticalSqlLogicalRows(fill, pv?.dataRows);
+  if (slice) {
+    const hdr = slice.includeHeaderRow;
+    const sliceRows = (hdr ? 1 : 0) + slice.dataRowCount;
+    if (ri < 0 || ri >= sliceRows) return "\u00a0";
+    if (hdr && ri === 0) return headerAt(ci);
+    const li = slice.dataRowStart + (ri - (hdr ? 1 : 0));
+    const row = logical[li];
+    if (!row) return "\u00a0";
+    if (ci === 0) return row.label || "\u00a0";
+    if (ci === 1) return row.value || "\u00a0";
+    return "\u00a0";
+  }
+  if (logical.length) {
+    if (ri === 0) return headerAt(ci);
+    const row = logical[ri - 1];
+    if (!row) return "\u00a0";
+    if (ci === 0) return row.label || "\u00a0";
+    if (ci === 1) return row.value || "\u00a0";
+    return "\u00a0";
+  }
+  if (ri === 0) {
+    const h = headerAt(ci);
+    return h !== "\u00a0" ? h : "…";
+  }
+  return "…";
+}
+
+function formatHorizontalSqlFillCell(opts: {
+  fill: TableSqlFillConfig;
+  ri: number;
+  ci: number;
+  pv?: TableSqlFillPreviewPayload | null;
+  slice?: { dataRowStart: number; dataRowCount: number; includeHeaderRow: boolean };
+  headerAt: (c: number) => string;
+}): string {
+  const { fill, ri, ci, pv, slice, headerAt } = opts;
+  const rolesLen = Math.max(ci + 1, fill.visualSource?.columns?.length || 0, fill.resultColumnNames?.length || 0);
+  ensureTableSqlColumnRoles(fill, rolesLen);
+  const role = fill.columnRoles?.[ci] ?? "field";
+
+  const seqAt = (dataIndex: number, pageLocalIndex: number): string => {
+    const mode = normalizeTableSqlSequencePageMode(fill.sequencePageMode);
+    const n = mode === "restart_per_page" ? pageLocalIndex + 1 : dataIndex + 1;
+    return String(n);
+  };
+
+  const cellAt = (dataIndex: number, pageLocalIndex: number): string => {
+    if (role === "blank") return "\u00a0";
+    if (role === "sequence") return seqAt(dataIndex, pageLocalIndex);
+    const dr = pv?.dataRows?.[dataIndex];
+    // dataRows 按物理列对齐（blank/sequence 位为空串）
+    if (dr && ci < dr.length) {
+      const v = dr[ci];
+      return v === "" || v == null ? "\u00a0" : v;
+    }
+    return "\u00a0";
+  };
+
   if (pv?.dataRows?.length && slice) {
     const hdr = slice.includeHeaderRow;
     const sliceRows = (hdr ? 1 : 0) + slice.dataRowCount;
     if (ri < 0 || ri >= sliceRows) return "\u00a0";
     if (hdr && ri === 0) return headerAt(ci);
-    const di = slice.dataRowStart + (ri - (hdr ? 1 : 0));
-    const dr = pv.dataRows[di];
-    if (dr && ci < dr.length) return dr[ci];
-    return "\u00a0";
+    const local = ri - (hdr ? 1 : 0);
+    const di = slice.dataRowStart + local;
+    return cellAt(di, local);
   }
   if (pv?.dataRows?.length) {
     if (ri === 0) return headerAt(ci);
-    const dr = pv.dataRows[ri - 1];
-    if (dr && ci < dr.length) return dr[ci];
-    return "\u00a0";
+    return cellAt(ri - 1, ri - 1);
   }
 
   if (ri === 0) {
@@ -147,14 +233,24 @@ export function sqlFillQueryLimit(fill: TableSqlFillConfig, fullSqlFill: boolean
   return fill.splitReportsOnMaxRows ? TABLE_SQL_FILL_FULL_ROW_LIMIT : fillMaxRows;
 }
 
+/** 画布/分页用的「显示数据行数」（纵表=逻辑行；横表=SQL 行） */
+export function sqlFillDisplayDataRowCount(fill: TableSqlFillConfig, sqlDataRowCount: number): number {
+  if (isVerticalSqlFill(fill)) return verticalSqlLogicalRowCount(fill, sqlDataRowCount);
+  return Math.max(0, Math.floor(Number(sqlDataRowCount)) || 0);
+}
+
 /**
  * 将正文表格行数同步为「表头 + 预览数据行」；查询结果变少时会缩小行数。
  */
 export function syncTemplateTableRowsForSqlFillPreview(el: TemplateElement, dataRowCount: number): void {
   if (el.type !== "table") return;
   const headerRows = 1;
-  const dr = Math.max(0, Math.floor(Number(dataRowCount)) || 0);
-  el.tableRows = headerRows + dr;
+  const fill = el.tableSqlFill;
+  const body =
+    fill && isVerticalSqlFill(fill)
+      ? sqlFillDisplayDataRowCount(fill, dataRowCount)
+      : Math.max(0, Math.floor(Number(dataRowCount)) || 0);
+  el.tableRows = headerRows + body;
   ensureTableGrid(el);
 }
 
@@ -164,20 +260,16 @@ export function syncTemplateTableRowsForSqlFillPreview(el: TemplateElement, data
 export function syncZoneTableRowsForSqlFillPreview(el: LayoutZoneElement, dataRowCount: number): void {
   if (el.type !== "table") return;
   const headerRows = 1;
-  const dr = Math.max(0, Math.floor(Number(dataRowCount)) || 0);
-  el.tableRows = headerRows + dr;
+  const fill = el.tableSqlFill;
+  const body =
+    fill && isVerticalSqlFill(fill)
+      ? sqlFillDisplayDataRowCount(fill, dataRowCount)
+      : Math.max(0, Math.floor(Number(dataRowCount)) || 0);
+  el.tableRows = headerRows + body;
   ensureZoneTableGrid(el);
 }
 
-/** 将 /database/query/sql 响应转为与表格列数对齐的字符串矩阵（数据行）。 */
-export function sqlResponseToPreviewRows(data: unknown, colCount: number): string[][] {
-  if (!data || typeof data !== "object") return [];
-  const d = data as { columns?: { name?: string }[]; rows?: unknown[] };
-  const rows = Array.isArray(d.rows) ? d.rows : [];
-  const colsMeta = Array.isArray(d.columns) ? d.columns : [];
-  const keys = colsMeta.map((c) => String(c?.name ?? "").trim()).filter(Boolean);
-  const cc = Math.max(1, Math.min(30, Math.floor(colCount) || 1));
-
+function mapRawSqlRowsToMatrix(rows: unknown[], keys: string[], cc: number): string[][] {
   const out: string[][] = [];
   for (const row of rows) {
     const line: string[] = [];
@@ -198,6 +290,71 @@ export function sqlResponseToPreviewRows(data: unknown, colCount: number): strin
     out.push(line.slice(0, cc));
   }
   return out;
+}
+
+/** SELECT 字段行 → 物理列（blank/sequence 位填空串，序号在渲染层计算） */
+export function expandHorizontalSelectRowToPhysical(
+  selectRow: string[],
+  fill: TableSqlFillConfig,
+  colCount: number,
+): string[] {
+  ensureTableSqlColumnRoles(fill, colCount);
+  const roles = fill.columnRoles || [];
+  const vsCols = fill.visualSource?.columns || [];
+  const line: string[] = [];
+  let si = 0;
+  for (let ci = 0; ci < colCount; ci++) {
+    const role = roles[ci] ?? "field";
+    if (role === "blank" || role === "sequence") {
+      line.push("");
+      continue;
+    }
+    const field = String(vsCols[ci] ?? "").trim();
+    if (!field) {
+      line.push("");
+      continue;
+    }
+    line.push(si < selectRow.length ? selectRow[si] : "");
+    si++;
+  }
+  return line;
+}
+
+/**
+ * 将 /database/query/sql 响应转为预览矩阵。
+ * - 纵表：按 SELECT 字段数对齐（空白分隔槽不在结果中）
+ * - 横表：若有 blank/sequence，先按 SELECT 读入再展开到物理列
+ */
+export function sqlResponseToPreviewRows(
+  data: unknown,
+  colCount: number,
+  fill?: TableSqlFillConfig | null,
+): string[][] {
+  if (!data || typeof data !== "object") return [];
+  const d = data as { columns?: { name?: string }[]; rows?: unknown[] };
+  const rows = Array.isArray(d.rows) ? d.rows : [];
+  const colsMeta = Array.isArray(d.columns) ? d.columns : [];
+  const keys = colsMeta.map((c) => String(c?.name ?? "").trim()).filter(Boolean);
+
+  if (fill && isVerticalSqlFill(fill)) {
+    const cc = Math.max(1, Math.min(30, Math.floor(colCount) || 1));
+    return mapRawSqlRowsToMatrix(rows, keys, cc);
+  }
+
+  if (fill && !isVerticalSqlFill(fill) && fill.visualSource) {
+    ensureTableSqlColumnRoles(fill, colCount);
+    const roles = fill.columnRoles || [];
+    const selectCount = roles.filter((r, i) => {
+      if (r !== "field") return false;
+      return String(fill.visualSource!.columns[i] ?? "").trim().length > 0;
+    }).length;
+    const selectRows = mapRawSqlRowsToMatrix(rows, keys, Math.max(1, selectCount || 1));
+    const cc = Math.max(1, Math.min(30, Math.floor(colCount) || 1));
+    return selectRows.map((sr) => expandHorizontalSelectRowToPhysical(sr, fill, cc));
+  }
+
+  const cc = Math.max(1, Math.min(30, Math.floor(colCount) || 1));
+  return mapRawSqlRowsToMatrix(rows, keys, cc);
 }
 
 function buildSingleTableSqlFillTask(
@@ -223,7 +380,7 @@ function buildSingleTableSqlFillTask(
   if (!connectionId) return null;
 
   const limit = sqlFillQueryLimit(fill, fullSqlFill);
-  const cc = Math.max(1, Math.min(30, Math.floor(colCount) || 1));
+  const cc = sqlFillPreviewColCount(fill, colCount);
 
   const vsrc = fill.fillMode === "visual" ? fill.visualSource : null;
   const tableOpcNodeId = String(vsrc?.tableOpcNodeId || "").trim();
@@ -245,6 +402,8 @@ function buildSingleTableSqlFillTask(
     tableOpc,
     limit,
     colCount: cc,
+    fill,
+    tableCols: colCount,
     expandRows,
   };
 }
