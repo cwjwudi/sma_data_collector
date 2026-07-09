@@ -246,10 +246,15 @@ export function syncTemplateTableRowsForSqlFillPreview(el: TemplateElement, data
   if (el.type !== "table") return;
   const headerRows = 1;
   const fill = el.tableSqlFill;
-  const body =
-    fill && isVerticalSqlFill(fill)
-      ? sqlFillDisplayDataRowCount(fill, dataRowCount)
-      : Math.max(0, Math.floor(Number(dataRowCount)) || 0);
+  let body: number;
+  if (fill && isVerticalSqlFill(fill)) {
+    const logical = sqlFillDisplayDataRowCount(fill, dataRowCount);
+    // 无预览数据时保留槽位行，便于画布「名称」列下拉与属性面板改行数
+    const slotRows = Math.max(1, fill.visualSource?.columns?.length || 1);
+    body = logical > 0 ? logical : slotRows;
+  } else {
+    body = Math.max(0, Math.floor(Number(dataRowCount)) || 0);
+  }
   el.tableRows = headerRows + body;
   ensureTableGrid(el);
 }
@@ -261,10 +266,14 @@ export function syncZoneTableRowsForSqlFillPreview(el: LayoutZoneElement, dataRo
   if (el.type !== "table") return;
   const headerRows = 1;
   const fill = el.tableSqlFill;
-  const body =
-    fill && isVerticalSqlFill(fill)
-      ? sqlFillDisplayDataRowCount(fill, dataRowCount)
-      : Math.max(0, Math.floor(Number(dataRowCount)) || 0);
+  let body: number;
+  if (fill && isVerticalSqlFill(fill)) {
+    const logical = sqlFillDisplayDataRowCount(fill, dataRowCount);
+    const slotRows = Math.max(1, fill.visualSource?.columns?.length || 1);
+    body = logical > 0 ? logical : slotRows;
+  } else {
+    body = Math.max(0, Math.floor(Number(dataRowCount)) || 0);
+  }
   el.tableRows = headerRows + body;
   ensureZoneTableGrid(el);
 }

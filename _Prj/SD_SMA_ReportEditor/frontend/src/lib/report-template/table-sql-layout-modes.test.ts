@@ -10,6 +10,7 @@ import {
   applyTableSqlLayoutMode,
   applyVisualSqlOutputColumnPick,
   compileVisualTableSql,
+  resizeVerticalSqlSlotsToTableRows,
 } from "@/lib/report-template/table-sql-visual-compile";
 import {
   buildVerticalSqlLogicalRows,
@@ -119,6 +120,32 @@ describe("horizontal blank + sequence columns", () => {
     });
     expect(compileVisualTableSql(fill)).toBe(true);
     expect(fill.querySql).toBe("SELECT `name` FROM `t`");
+  });
+
+  it("resizeVerticalSqlSlotsToTableRows grows and shrinks field slots", () => {
+    const fill = hydrateTableSqlFill({
+      enabled: true,
+      fillMode: "visual",
+      layoutMode: "vertical",
+      visualSource: {
+        connectionId: "c1",
+        table: "t",
+        engine: "mysql",
+        columns: ["a"],
+        database: "",
+      },
+    });
+    resizeVerticalSqlSlotsToTableRows(fill, 5);
+    expect(fill.visualSource!.columns).toEqual([
+      "a",
+      TABLE_SQL_VERTICAL_FIELD_PENDING,
+      TABLE_SQL_VERTICAL_FIELD_PENDING,
+      TABLE_SQL_VERTICAL_FIELD_PENDING,
+    ]);
+    resizeVerticalSqlSlotsToTableRows(fill, 3);
+    expect(fill.visualSource!.columns).toEqual(["a", TABLE_SQL_VERTICAL_FIELD_PENDING]);
+    resizeVerticalSqlSlotsToTableRows(fill, 2);
+    expect(fill.visualSource!.columns).toEqual(["a"]);
   });
 
   it("appendVerticalSqlSlot field uses pending sentinel not blank", () => {

@@ -169,14 +169,14 @@
               class="lpep-dim-stepper"
               role="group"
               aria-label="表格行数"
-              :title="tplSqlFillEnabled ? '数据库填充开启时行数随预览查询结果自动同步（1 行表头 + 数据行）。' : ''"
+              :title="tplTableRowsStepperTitle"
             >
               <button
                 type="button"
                 class="lpep-dim-btn"
                 title="减少一行"
                 aria-label="减少一行"
-                :disabled="tplSqlFillEnabled || tableDimRows <= 1"
+                :disabled="tplTableRowsLocked || tableDimRows <= (tplVerticalSqlFill ? 2 : 1)"
                 @click="bumpTableDimRows(-1)"
               >
                 −
@@ -184,18 +184,18 @@
               <input
                 v-model.number="tableDimRows"
                 type="number"
-                min="1"
+                :min="tplVerticalSqlFill ? 2 : 1"
                 max="30"
                 class="lpep-dim-val"
-                :disabled="tplSqlFillEnabled"
-                :readonly="tplSqlFillEnabled"
+                :disabled="tplTableRowsLocked"
+                :readonly="tplTableRowsLocked"
               />
               <button
                 type="button"
                 class="lpep-dim-btn"
                 title="增加一行"
                 aria-label="增加一行"
-                :disabled="tplSqlFillEnabled || tableDimRows >= 30"
+                :disabled="tplTableRowsLocked || tableDimRows >= 30"
                 @click="bumpTableDimRows(1)"
               >
                 +
@@ -210,7 +210,7 @@
                 class="lpep-dim-btn"
                 title="减少一列"
                 aria-label="减少一列"
-                :disabled="tableDimCols <= 1"
+                :disabled="tplVerticalSqlFill || tableDimCols <= 1"
                 @click="bumpTableDimCols(-1)"
               >
                 −
@@ -221,13 +221,15 @@
                 min="1"
                 max="30"
                 class="lpep-dim-val"
+                :disabled="tplVerticalSqlFill"
+                :readonly="tplVerticalSqlFill"
               />
               <button
                 type="button"
                 class="lpep-dim-btn"
                 title="增加一列"
                 aria-label="增加一列"
-                :disabled="tableDimCols >= 30"
+                :disabled="tplVerticalSqlFill || tableDimCols >= 30"
                 @click="bumpTableDimCols(1)"
               >
                 +
@@ -277,13 +279,15 @@
             @resize-delta="onTplTableColumnResizeFromProps"
           />
         </div>
-        <p class="lpep-hint-muted">
-          {{
-            tplSqlFillEnabled
-              ? "列数、行高修改后即应用到画布（无需另行确认）。数据库填充开启时行数随预览查询结果自动同步；单元格静态文字与绑定均不在此编辑；可视化模式下请在画布第一行选择输出列。"
-              : "行数、列数、行高修改后即应用到画布（无需另行确认）。单击单元格可设置填充色、输入文字或绑定 OPC UA / SQL。"
-          }}
-        </p>
+          <p class="lpep-hint-muted">
+            {{
+              tplVerticalSqlFill
+                ? "纵表行数 = 1 行表头 + 字段槽位数；增减行数会增删画布「名称」列下拉行。列数固定为 2。"
+                : tplSqlFillEnabled
+                  ? "列数、行高修改后即应用到画布（无需另行确认）。数据库填充开启时行数随预览查询结果自动同步；单元格静态文字与绑定均不在此编辑；可视化模式下请在画布第一行选择输出列。"
+                  : "行数、列数、行高修改后即应用到画布（无需另行确认）。单击单元格可设置填充色、输入文字或绑定 OPC UA / SQL。"
+            }}
+          </p>
         <p v-if="!hasTableCellPicked" class="lpep-hint-muted">
           在画布上单击单元格后，可在此设置该单元格的填充色。
         </p>
@@ -532,9 +536,14 @@ import {
   defaultTableSqlFillConfig,
   ensureSqlParamSlots,
   ensureTableSqlResultColumnNames,
+  isVerticalSqlFill,
   syncResultColumnNamesFromFirstRow,
 } from "@/lib/report-template/table-sql-fill";
-import { applyTableSqlFillOpcPick, syncTableRowsForVerticalSqlSlots } from "@/lib/report-template/table-sql-visual-compile";
+import {
+  applyTableSqlFillOpcPick,
+  resizeVerticalSqlSlotsToTableRows,
+  syncTableRowsForVerticalSqlSlots,
+} from "@/lib/report-template/table-sql-visual-compile";
 import { useDeferredGeomField } from "@/lib/report-template/deferred-geom-input";
 import type { TemplateTableCellPick } from "@/lib/report-template/template-editor-context";
 import { computed, nextTick, ref, watch } from "vue";
@@ -791,6 +800,28 @@ const tplSqlFillEnabled = computed(
   () => props.el.type === "table" && !!props.el.tableSqlFill?.enabled,
 );
 
+/** 纵表可视化：行数对应字段槽，允许手动增减 */
+const tplVerticalSqlFill = computed(
+  () =>
+    props.el.type === "table" &&
+    !!props.el.tableSqlFill?.enabled &&
+    props.el.tableSqlFill.fillMode === "visual" &&
+    isVerticalSqlFill(props.el.tableSqlFill),
+);
+
+/** 横表 SQL 填充时锁定行数；纵表不锁 */
+const tplTableRowsLocked = computed(() => tplSqlFillEnabled.value && !tplVerticalSqlFill.value);
+
+const tplTableRowsStepperTitle = computed(() => {
+  if (tplVerticalSqlFill.value) {
+    return "纵表：行数 = 表头 + 字段槽；增减会同步增删画布名称列下拉行。";
+  }
+  if (tplSqlFillEnabled.value) {
+    return "数据库填充开启时行数随预览查询结果自动同步（1 行表头 + 数据行）。";
+  }
+  return "";
+});
+
 const tplAnyCellBinding = computed(() => {
   if (props.el.type !== "table") return false;
   ensureTableGrid(props.el);
@@ -928,12 +959,14 @@ function clampTableDimInput(n: number): number {
 
 function bumpTableDimRows(delta: number) {
   if (props.el.type !== "table") return;
-  if (tplSqlFillEnabled.value) return;
-  tableDimRows.value = clampTableDimInput((Number(tableDimRows.value) || 1) + delta);
+  if (tplTableRowsLocked.value) return;
+  const minRows = tplVerticalSqlFill.value ? 2 : 1;
+  tableDimRows.value = Math.max(minRows, clampTableDimInput((Number(tableDimRows.value) || 1) + delta));
 }
 
 function bumpTableDimCols(delta: number) {
   if (props.el.type !== "table") return;
+  if (tplVerticalSqlFill.value) return;
   tableDimCols.value = clampTableDimInput((Number(tableDimCols.value) || 1) + delta);
 }
 
@@ -947,15 +980,26 @@ function bumpTableRowHeight(delta: number) {
 function applyTableDims() {
   const el = props.el;
   if (el.type !== "table") return;
-  if (!tplSqlFillEnabled.value) {
+  if (tplVerticalSqlFill.value) {
+    const rows = Math.max(2, clampTableDimInput(tableDimRows.value));
+    resizeVerticalSqlSlotsToTableRows(el.tableSqlFill!, rows);
+    syncTableRowsForVerticalSqlSlots(el, () => ensureTableGrid(el));
+    tableDimRows.value = el.tableRows ?? rows;
+    el.tableCols = 2;
+    tableDimCols.value = 2;
+  } else if (!tplSqlFillEnabled.value) {
     el.tableRows = clampTableDimInput(tableDimRows.value);
+    el.tableCols = clampTableDimInput(tableDimCols.value);
+    tableDimRows.value = el.tableRows;
+    tableDimCols.value = el.tableCols;
+  } else {
+    el.tableCols = clampTableDimInput(tableDimCols.value);
+    tableDimRows.value = el.tableRows;
+    tableDimCols.value = el.tableCols;
   }
-  el.tableCols = clampTableDimInput(tableDimCols.value);
-  tableDimRows.value = el.tableRows;
-  tableDimCols.value = el.tableCols;
   ensureTableGrid(el);
-  if (editCellRow.value >= el.tableRows) editCellRow.value = el.tableRows - 1;
-  if (editCellCol.value >= el.tableCols) editCellCol.value = el.tableCols - 1;
+  if (editCellRow.value >= (el.tableRows ?? 1)) editCellRow.value = (el.tableRows ?? 1) - 1;
+  if (editCellCol.value >= (el.tableCols ?? 1)) editCellCol.value = (el.tableCols ?? 1) - 1;
   clampTableElementOuterSize(el);
 }
 

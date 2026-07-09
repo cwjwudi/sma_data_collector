@@ -366,7 +366,7 @@ export function removeVerticalSqlSlot(fill: TableSqlFillConfig, slotIndex: numbe
 
 /**
  * 按纵表槽位数同步表格物理行数（表头 + 槽位行），便于无预览数据时在画布上选字段。
- * 有 SQL 预览时仍由 syncTemplateTableRowsForSqlFillPreview 覆盖为逻辑行数。
+ * 有 SQL 预览数据时仍由 syncTemplateTableRowsForSqlFillPreview 覆盖为逻辑行数。
  */
 export function syncTableRowsForVerticalSqlSlots(
   el: { type?: string; tableRows?: number; tableSqlFill?: TableSqlFillConfig | null },
@@ -379,6 +379,32 @@ export function syncTableRowsForVerticalSqlSlots(
   const slots = Math.max(1, fill.visualSource!.columns.length);
   el.tableRows = 1 + slots;
   ensureGrid?.();
+}
+
+/**
+ * 属性面板改「行数」时：纵表将「表头 + 槽位」对齐到 tableRows，增删 visualSource.columns。
+ * tableRows 至少为 2（1 表头 + 1 字段槽）。
+ */
+export function resizeVerticalSqlSlotsToTableRows(fill: TableSqlFillConfig, tableRows: number): void {
+  if (!isVerticalSqlFill(fill) || fill.fillMode !== "visual") return;
+  ensureVisualSource(fill);
+  ensureVerticalFieldLabels(fill);
+  const slotsNeeded = Math.max(1, Math.min(29, (Math.floor(Number(tableRows)) || 2) - 1));
+  const cols = fill.visualSource!.columns;
+  const labels = fill.verticalFieldLabels!;
+  while (cols.length < slotsNeeded) {
+    cols.push(TABLE_SQL_VERTICAL_FIELD_PENDING);
+    labels.push("");
+  }
+  while (cols.length > slotsNeeded) {
+    cols.pop();
+    labels.pop();
+  }
+  if (!cols.length) {
+    cols.push(TABLE_SQL_VERTICAL_FIELD_PENDING);
+    labels.push("");
+  }
+  syncVisualFillQueryAndResultNames(fill, VERTICAL_SQL_FILL_COL_COUNT);
 }
 
 /** 查询任务用的结果列数（纵表=SELECT 字段数；横表=物理列数，含 blank/sequence 占位） */

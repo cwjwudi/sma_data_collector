@@ -347,7 +347,7 @@
                     class="hz-dim-btn"
                     title="减少一行"
                     aria-label="减少一行"
-                    :disabled="hzTableDimRows <= 1"
+                    :disabled="hzTableRowsLocked || hzTableDimRows <= (hzVerticalSqlFill ? 2 : 1)"
                     @click="hzBumpTableDimRows(-1)"
                   >
                     −
@@ -355,16 +355,18 @@
                   <input
                     v-model.number="hzTableDimRows"
                     type="number"
-                    min="1"
+                    :min="hzVerticalSqlFill ? 2 : 1"
                     max="30"
                     class="hz-dim-val"
+                    :disabled="hzTableRowsLocked"
+                    :readonly="hzTableRowsLocked"
                   />
                   <button
                     type="button"
                     class="hz-dim-btn"
                     title="增加一行"
                     aria-label="增加一行"
-                    :disabled="hzTableDimRows >= 30"
+                    :disabled="hzTableRowsLocked || hzTableDimRows >= 30"
                     @click="hzBumpTableDimRows(1)"
                   >
                     +
@@ -667,6 +669,7 @@ import {
   ensureTableSqlResultColumnNames,
   ensureVisualSource,
   isVisualSqlFillOutputPickerRow,
+  isVerticalSqlFill,
   isVerticalSqlFillSlotPickerCell,
   visualSqlColumnPickValue,
   syncResultColumnNamesFromFirstRow,
@@ -682,7 +685,13 @@ import {
 } from "@/lib/report-template/scalar-sql-visual";
 import type { VisualSqlTableColumnMeta } from "@/lib/report-template/table-sql-visual-catalog";
 import { loadVisualSqlTableColumnsCached } from "@/lib/report-template/table-sql-visual-catalog";
-import { applyTableSqlFillOpcPick, applyVisualSqlOutputColumnPick, applyVerticalSqlSlotField, syncTableRowsForVerticalSqlSlots } from "@/lib/report-template/table-sql-visual-compile";
+import {
+  applyTableSqlFillOpcPick,
+  applyVisualSqlOutputColumnPick,
+  applyVerticalSqlSlotField,
+  resizeVerticalSqlSlotsToTableRows,
+  syncTableRowsForVerticalSqlSlots,
+} from "@/lib/report-template/table-sql-visual-compile";
 import { useDeferredGeomField } from "@/lib/report-template/deferred-geom-input";
 import { formatSqlFillTableCellPreview } from "@/lib/report-template/table-sql-fill-preview";
 import { clearGridCellBindings, gridHasNonNoneBinding } from "@/lib/report-template/table-binding-utils";
@@ -971,6 +980,16 @@ function openHzTableCellSqlParamOpcPicker(slot: number) {
 
 const hzSqlFillEnabled = computed(() => sel.value?.type === "table" && !!sel.value.tableSqlFill?.enabled);
 
+const hzVerticalSqlFill = computed(
+  () =>
+    sel.value?.type === "table" &&
+    !!sel.value.tableSqlFill?.enabled &&
+    sel.value.tableSqlFill.fillMode === "visual" &&
+    isVerticalSqlFill(sel.value.tableSqlFill),
+);
+
+const hzTableRowsLocked = computed(() => hzSqlFillEnabled.value && !hzVerticalSqlFill.value);
+
 const hzAnyCellBinding = computed(() => {
   const s = sel.value;
   if (!s || s.type !== "table") return false;
@@ -1201,11 +1220,14 @@ function hzClampTableDimInput(n: number): number {
 
 function hzBumpTableDimRows(delta: number) {
   if (sel.value?.type !== "table") return;
-  hzTableDimRows.value = hzClampTableDimInput((Number(hzTableDimRows.value) || 1) + delta);
+  if (hzTableRowsLocked.value) return;
+  const minRows = hzVerticalSqlFill.value ? 2 : 1;
+  hzTableDimRows.value = Math.max(minRows, hzClampTableDimInput((Number(hzTableDimRows.value) || 1) + delta));
 }
 
 function hzBumpTableDimCols(delta: number) {
   if (sel.value?.type !== "table") return;
+  if (hzVerticalSqlFill.value) return;
   hzTableDimCols.value = hzClampTableDimInput((Number(hzTableDimCols.value) || 1) + delta);
 }
 
@@ -1220,13 +1242,27 @@ function hzBumpTableRowHeight(delta: number) {
 function hzApplyTableDims() {
   const s = sel.value;
   if (!s || s.type !== "table") return;
-  s.tableRows = hzClampTableDimInput(hzTableDimRows.value);
-  s.tableCols = hzClampTableDimInput(hzTableDimCols.value);
-  hzTableDimRows.value = s.tableRows;
-  hzTableDimCols.value = s.tableCols;
+  if (hzVerticalSqlFill.value) {
+    const rows = Math.max(2, hzClampTableDimInput(hzTableDimRows.value));
+    resizeVerticalSqlSlotsToTableRows(s.tableSqlFill!, rows);
+    syncTableRowsForVerticalSqlSlots(s, () => ensureZoneTableGrid(s));
+    hzTableDimRows.value = s.tableRows ?? rows;
+    s.tableCols = 2;
+    hzTableDimCols.value = 2;
+  } else if (hzSqlFillEnabled.value) {
+    // 横表 SQL 填充：行数由预览同步，只改列数
+    s.tableCols = hzClampTableDimInput(hzTableDimCols.value);
+    hzTableDimRows.value = s.tableRows ?? hzTableDimRows.value;
+    hzTableDimCols.value = s.tableCols;
+  } else {
+    s.tableRows = hzClampTableDimInput(hzTableDimRows.value);
+    s.tableCols = hzClampTableDimInput(hzTableDimCols.value);
+    hzTableDimRows.value = s.tableRows;
+    hzTableDimCols.value = s.tableCols;
+  }
   ensureZoneTableGrid(s);
-  if (hzEditCellRow.value >= s.tableRows) hzEditCellRow.value = s.tableRows - 1;
-  if (hzEditCellCol.value >= s.tableCols) hzEditCellCol.value = s.tableCols - 1;
+  if (hzEditCellRow.value >= (s.tableRows ?? 1)) hzEditCellRow.value = (s.tableRows ?? 1) - 1;
+  if (hzEditCellCol.value >= (s.tableCols ?? 1)) hzEditCellCol.value = (s.tableCols ?? 1) - 1;
   clampZoneTableOuterSize(s);
 }
 

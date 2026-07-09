@@ -1,17 +1,29 @@
 {
+<<<<<<< Updated upstream
   "version": "0.2.16",
   "releasedAt": "2026-07-09T17:01:51.736Z",
   "notes": "Report Editor 0.2.16\n\n- 修复纵表「＋字段行」误加为空白分隔行：字段行使用独立待选占位，空白分隔仅手动添加\n- 纵表可在画布「名称」列下拉选择字段（类似横表选列）；属性面板仍可增删行与改左列标签\n- 多条查询结果之间仍会自动插入分隔，无需每字段后都加空白行\n- 继承 0.2.15：标量 SQL 传库名修复（MySQL 1046）",
+=======
+  "version": "0.2.17",
+  "releasedAt": "2026-07-09T17:05:02.460Z",
+  "notes": "Report Editor 0.2.17\n\n- 纵表开启数据库填充后，属性面板「行数」可增减：行数 = 表头 + 字段槽，增减会同步画布名称列下拉行\n- 纵表列数固定为 2（步进器锁定）\n- 继承 0.2.16：字段行占位修复、画布名称列下拉选字段",
+>>>>>>> Stashed changes
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor-Setup-0.2.16-x64.exe",
-      "sha256": "cb42d8f071b6bd60229ef2e40dcf9ce517828fbf435b1e0c2ab04b66ce9255cb",
-      "size": 144434008
+      "url": "Report Editor-Setup-0.2.17-x64.exe",
+      "sha256": "2c6b61e165ce936f58116ec1958f4411d4cfcc78a213885f1439f260166ff0fe",
+      "size": 144433748
     },
     "darwin-arm64": {
+<<<<<<< Updated upstream
       "url": "Report Editor-0.2.16-arm64.dmg",
       "sha256": "8027ce87bced5dde4e0af27a5bae585850743b45f15c2b862274f3cc33bd2712",
       "size": 180075781
+=======
+      "url": "Report Editor-0.2.17-arm64.dmg",
+      "sha256": "",
+      "size": 0
+>>>>>>> Stashed changes
     }
   }
 }
