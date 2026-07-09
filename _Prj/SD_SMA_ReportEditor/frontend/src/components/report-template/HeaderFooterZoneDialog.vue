@@ -117,6 +117,24 @@
                               </option>
                             </select>
                           </template>
+                          <template v-else-if="isVerticalSqlFillSlotPickerCell(el, ri, ci)">
+                            <select
+                              class="hz-table-cell-ddl tbl-sql-ddl"
+                              :value="hzVerticalSlotSelectValue(el, ri)"
+                              @pointerdown.stop="hzPickTableCell(el, ri, ci)"
+                              @change="onHzVerticalSlotChange(el, ri, $event)"
+                            >
+                              <option value="__field__">— 请选择字段 —</option>
+                              <option value="">— 空白分隔 —</option>
+                              <option
+                                v-for="opt in hzVisualSqlColumnCatalog[el.id]"
+                                :key="'hzvfld-' + el.id + '-' + ri + '-' + opt.name"
+                                :value="opt.name"
+                              >
+                                {{ opt.name }}
+                              </option>
+                            </select>
+                          </template>
                           <template v-else-if="el.tableSqlFill?.enabled">
                             <span class="hz-table-cell-txt">{{ hzFormatSqlFillTableCell(el, ri, ci) }}</span>
                           </template>
@@ -519,6 +537,7 @@
                 @opc-pick-param="openHzSqlOpcPicker"
                 @sync-headers="onHzSqlFillSyncHeaders"
                 @layout-mode-change="onHzSqlLayoutModeChange"
+                @vertical-slots-change="onHzVerticalSlotsChange"
               />
             </div>
           </template>
@@ -648,9 +667,12 @@ import {
   ensureTableSqlResultColumnNames,
   ensureVisualSource,
   isVisualSqlFillOutputPickerRow,
+  isVerticalSqlFillSlotPickerCell,
   visualSqlColumnPickValue,
   syncResultColumnNamesFromFirstRow,
   visualSqlStructureTableName,
+  verticalSqlSlotPickValue,
+  TABLE_SQL_VERTICAL_FIELD_PENDING,
 } from "@/lib/report-template/table-sql-fill";
 import {
   hydrateScalarSqlVisual,
@@ -660,7 +682,7 @@ import {
 } from "@/lib/report-template/scalar-sql-visual";
 import type { VisualSqlTableColumnMeta } from "@/lib/report-template/table-sql-visual-catalog";
 import { loadVisualSqlTableColumnsCached } from "@/lib/report-template/table-sql-visual-catalog";
-import { applyTableSqlFillOpcPick, applyVisualSqlOutputColumnPick } from "@/lib/report-template/table-sql-visual-compile";
+import { applyTableSqlFillOpcPick, applyVisualSqlOutputColumnPick, applyVerticalSqlSlotField, syncTableRowsForVerticalSqlSlots } from "@/lib/report-template/table-sql-visual-compile";
 import { useDeferredGeomField } from "@/lib/report-template/deferred-geom-input";
 import { formatSqlFillTableCellPreview } from "@/lib/report-template/table-sql-fill-preview";
 import { clearGridCellBindings, gridHasNonNoneBinding } from "@/lib/report-template/table-binding-utils";
@@ -803,6 +825,20 @@ function onHzVisualOutputColumnChange(el: LayoutZoneElement, ci: number, ev: Eve
   const cols = el.tableCols ?? 4;
   const cell = hzLayoutTableGrid(el)[0]?.[ci];
   applyVisualSqlOutputColumnPick(fill, cols, ci, v, cell);
+}
+
+function hzVerticalSlotSelectValue(el: LayoutZoneElement, ri: number): string {
+  const fill = el.tableSqlFill;
+  if (!fill) return TABLE_SQL_VERTICAL_FIELD_PENDING;
+  return verticalSqlSlotPickValue(fill, ri - 1);
+}
+
+function onHzVerticalSlotChange(el: LayoutZoneElement, ri: number, ev: Event) {
+  const v = (ev.target as HTMLSelectElement).value;
+  const fill = el.tableSqlFill;
+  if (!fill || fill.fillMode !== "visual" || el.type !== "table") return;
+  applyVerticalSqlSlotField(fill, ri - 1, v);
+  syncTableRowsForVerticalSqlSlots(el, () => ensureZoneTableGrid(el));
 }
 
 const sel = computed(() =>
@@ -1104,7 +1140,16 @@ function onHzSqlLayoutModeChange(mode: "horizontal" | "vertical") {
     s.tableCols = 2;
     hzTableDimCols.value = 2;
     ensureZoneTableGrid(s);
+    syncTableRowsForVerticalSqlSlots(s, () => ensureZoneTableGrid(s));
+    hzTableDimRows.value = s.tableRows ?? 3;
   }
+}
+
+function onHzVerticalSlotsChange() {
+  const s = sel.value;
+  if (!s || s.type !== "table" || !s.tableSqlFill) return;
+  syncTableRowsForVerticalSqlSlots(s, () => ensureZoneTableGrid(s));
+  hzTableDimRows.value = s.tableRows ?? 3;
 }
 
 function openHzOpcPicker(target: "parameter" | "table") {

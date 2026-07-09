@@ -19,10 +19,12 @@ import {
   ensureVisualOutputColumnSlots,
   ensureVisualSource,
   isVerticalSqlFill,
+  isVerticalSqlSlotBoundField,
   normalizeVisualSqlFilterShape,
   TABLE_SQL_COLUMN_PICK_BLANK,
   TABLE_SQL_COLUMN_PICK_SEQUENCE,
   TABLE_SQL_FILL_TABLE_PICK_SLOT,
+  TABLE_SQL_VERTICAL_FIELD_PENDING,
   validateSqlIdentifier,
   VERTICAL_SQL_FILL_COL_COUNT,
   visualSqlSelectFieldNames,
@@ -225,8 +227,8 @@ export function syncVisualFillQueryAndResultNames(fill: TableSqlFillConfig, colC
 }
 
 /**
- * 画布第一行下拉写入某一列。
- * fieldName 可为库字段名、空串（空白列/纵表分隔槽）、或 TABLE_SQL_COLUMN_PICK_SEQUENCE。
+ * 画布第一行下拉写入某一列（横表）。
+ * fieldName 可为库字段名、空串（空白列）、或 TABLE_SQL_COLUMN_PICK_SEQUENCE。
  */
 export function applyVisualSqlOutputColumnPick(
   fill: TableSqlFillConfig,
@@ -236,20 +238,14 @@ export function applyVisualSqlOutputColumnPick(
   gridHeaderCell?: { text?: string },
 ): void {
   ensureVisualSource(fill);
-  const vertical = isVerticalSqlFill(fill);
-  const cc = vertical ? VERTICAL_SQL_FILL_COL_COUNT : colCount;
-  ensureVisualOutputColumnSlots(fill, cc);
-  ensureTableSqlResultColumnNames(fill, cc);
-
-  if (vertical) {
-    // 纵表：列选择在属性面板按「槽位」配置，画布第一行不走此路径；保留兼容
-    const slots = fill.visualSource!.columns;
-    while (slots.length <= columnIndex) slots.push("");
-    slots[columnIndex] = fieldName === TABLE_SQL_COLUMN_PICK_SEQUENCE ? "" : fieldName;
-    ensureVerticalFieldLabels(fill);
-    syncVisualFillQueryAndResultNames(fill, cc);
+  if (isVerticalSqlFill(fill)) {
+    // 纵表改走 applyVerticalSqlSlotField（画布名称列按槽位选字段）
+    applyVerticalSqlSlotField(fill, columnIndex, fieldName);
     return;
   }
+  const cc = colCount;
+  ensureVisualOutputColumnSlots(fill, cc);
+  ensureTableSqlResultColumnNames(fill, cc);
 
   ensureTableSqlColumnRoles(fill, cc);
   const roles = fill.columnRoles!;
@@ -296,7 +292,8 @@ export function applyTableSqlLayoutMode(
     if (!String(fill.resultColumnNames[0] ?? "").trim()) fill.resultColumnNames[0] = "名称";
     if (!String(fill.resultColumnNames[1] ?? "").trim()) fill.resultColumnNames[1] = "值";
     if (!fill.visualSource!.columns.length) {
-      fill.visualSource!.columns = [""];
+      // 默认一条待选字段行（非空白分隔），避免一切换纵表就全是分隔行
+      fill.visualSource!.columns = [TABLE_SQL_VERTICAL_FIELD_PENDING];
     }
     ensureVerticalFieldLabels(fill);
   }
@@ -314,13 +311,18 @@ export function appendVerticalSqlSlot(fill: TableSqlFillConfig, kind: "field" | 
     fill.visualSource!.columns.push("");
     fill.verticalFieldLabels!.push("");
   } else {
-    fill.visualSource!.columns.push("");
+    fill.visualSource!.columns.push(TABLE_SQL_VERTICAL_FIELD_PENDING);
     fill.verticalFieldLabels!.push("");
   }
   syncVisualFillQueryAndResultNames(fill, VERTICAL_SQL_FILL_COL_COUNT);
 }
 
-/** 纵表：写入某一槽位的库字段（空串=空白分隔行） */
+/**
+ * 纵表：写入某一槽位。
+ * - 空串 / TABLE_SQL_COLUMN_PICK_BLANK → 空白分隔行
+ * - TABLE_SQL_VERTICAL_FIELD_PENDING → 待选字段行
+ * - 其它 → 库字段名
+ */
 export function applyVerticalSqlSlotField(
   fill: TableSqlFillConfig,
   slotIndex: number,
@@ -330,10 +332,21 @@ export function applyVerticalSqlSlotField(
   ensureVerticalFieldLabels(fill);
   const slots = fill.visualSource!.columns;
   while (slots.length <= slotIndex) {
-    slots.push("");
+    slots.push(TABLE_SQL_VERTICAL_FIELD_PENDING);
     fill.verticalFieldLabels!.push("");
   }
-  slots[slotIndex] = String(fieldName ?? "").trim();
+  const raw = String(fieldName ?? "").trim();
+  if (!raw || raw === TABLE_SQL_COLUMN_PICK_BLANK) {
+    slots[slotIndex] = "";
+  } else if (raw === TABLE_SQL_COLUMN_PICK_SEQUENCE) {
+    slots[slotIndex] = TABLE_SQL_VERTICAL_FIELD_PENDING;
+  } else {
+    slots[slotIndex] = raw;
+  }
+  // 选了真实字段且左列标签仍空时，默认用字段名（可在属性里改）
+  if (isVerticalSqlSlotBoundField(slots[slotIndex]) && !String(fill.verticalFieldLabels![slotIndex] ?? "").trim()) {
+    fill.verticalFieldLabels![slotIndex] = "";
+  }
   syncVisualFillQueryAndResultNames(fill, VERTICAL_SQL_FILL_COL_COUNT);
 }
 
@@ -345,10 +358,27 @@ export function removeVerticalSqlSlot(fill: TableSqlFillConfig, slotIndex: numbe
   fill.visualSource.columns.splice(slotIndex, 1);
   fill.verticalFieldLabels!.splice(slotIndex, 1);
   if (!fill.visualSource.columns.length) {
-    fill.visualSource.columns.push("");
+    fill.visualSource.columns.push(TABLE_SQL_VERTICAL_FIELD_PENDING);
     fill.verticalFieldLabels!.push("");
   }
   syncVisualFillQueryAndResultNames(fill, VERTICAL_SQL_FILL_COL_COUNT);
+}
+
+/**
+ * 按纵表槽位数同步表格物理行数（表头 + 槽位行），便于无预览数据时在画布上选字段。
+ * 有 SQL 预览时仍由 syncTemplateTableRowsForSqlFillPreview 覆盖为逻辑行数。
+ */
+export function syncTableRowsForVerticalSqlSlots(
+  el: { type?: string; tableRows?: number; tableSqlFill?: TableSqlFillConfig | null },
+  ensureGrid?: () => void,
+): void {
+  if (el.type !== "table") return;
+  const fill = el.tableSqlFill;
+  if (!fill || !isVerticalSqlFill(fill) || fill.fillMode !== "visual") return;
+  ensureVisualSource(fill);
+  const slots = Math.max(1, fill.visualSource!.columns.length);
+  el.tableRows = 1 + slots;
+  ensureGrid?.();
 }
 
 /** 查询任务用的结果列数（纵表=SELECT 字段数；横表=物理列数，含 blank/sequence 占位） */

@@ -16,7 +16,7 @@
       </select>
     </label>
     <p v-if="layoutModeProxy === 'vertical'" class="tbl-sql-fill-policy-hint">
-      纵表固定两列：查询结果的每个字段占一行（左标签、右值）；可插入空白分隔行。多行结果会自动跨页续表。
+      纵表固定两列：在画布「名称」列下拉选择字段；空白分隔仅在需要分组时添加。多行结果会自动跨页续表。
     </p>
 
     <TemplateTableSqlVisualPanel
@@ -27,6 +27,7 @@
       :select-class="selectFieldClass"
       :button-class="pickBtnClass"
       @opc-pick-param="$emit('opcPickParam', $event)"
+      @vertical-slots-change="$emit('verticalSlotsChange')"
     />
 
     <template v-if="fill.fillMode === 'manual_sql'">
@@ -185,6 +186,7 @@ const emit = defineEmits<{
   opcPickParam: [slot: number];
   syncHeaders: [];
   layoutModeChange: [mode: "horizontal" | "vertical"];
+  verticalSlotsChange: [];
 }>();
 
 const pickBtnClass = computed(() => props.buttonClass || "tbl-sql-side-btn");

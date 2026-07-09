@@ -3,8 +3,10 @@ import {
   hydrateTableSqlFill,
   isVerticalSqlFill,
   TABLE_SQL_COLUMN_PICK_SEQUENCE,
+  TABLE_SQL_VERTICAL_FIELD_PENDING,
 } from "@/lib/report-template/table-sql-fill";
 import {
+  appendVerticalSqlSlot,
   applyTableSqlLayoutMode,
   applyVisualSqlOutputColumnPick,
   compileVisualTableSql,
@@ -119,6 +121,25 @@ describe("horizontal blank + sequence columns", () => {
     expect(fill.querySql).toBe("SELECT `name` FROM `t`");
   });
 
+  it("appendVerticalSqlSlot field uses pending sentinel not blank", () => {
+    const fill = hydrateTableSqlFill({
+      enabled: true,
+      fillMode: "visual",
+      layoutMode: "vertical",
+      visualSource: {
+        connectionId: "c1",
+        table: "t",
+        engine: "mysql",
+        columns: ["a"],
+        database: "",
+      },
+    });
+    appendVerticalSqlSlot(fill, "field");
+    expect(fill.visualSource!.columns).toEqual(["a", TABLE_SQL_VERTICAL_FIELD_PENDING]);
+    appendVerticalSqlSlot(fill, "blank");
+    expect(fill.visualSource!.columns).toEqual(["a", TABLE_SQL_VERTICAL_FIELD_PENDING, ""]);
+  });
+
   it("applyVisualSqlOutputColumnPick sets sequence role", () => {
     const fill = hydrateTableSqlFill({
       enabled: true,
@@ -208,5 +229,6 @@ describe("horizontal blank + sequence columns", () => {
     expect(fill.layoutMode).toBe("vertical");
     expect(fill.resultColumnNames[0]).toBe("名称");
     expect(fill.resultColumnNames[1]).toBe("值");
+    expect(fill.visualSource!.columns).toEqual([TABLE_SQL_VERTICAL_FIELD_PENDING]);
   });
 });

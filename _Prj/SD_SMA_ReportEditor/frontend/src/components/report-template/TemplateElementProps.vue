@@ -367,6 +367,7 @@
             @opc-pick-param="openTplSqlOpcPicker"
             @sync-headers="onTplSqlFillSyncHeaders"
             @layout-mode-change="onTplSqlLayoutModeChange"
+            @vertical-slots-change="onTplVerticalSlotsChange"
           />
         </div>
         <p class="lpep-hint-muted">预览画布显示静态文字或绑定占位摘要；导出时由生成器按单元格填充。</p>
@@ -533,7 +534,7 @@ import {
   ensureTableSqlResultColumnNames,
   syncResultColumnNamesFromFirstRow,
 } from "@/lib/report-template/table-sql-fill";
-import { applyTableSqlFillOpcPick } from "@/lib/report-template/table-sql-visual-compile";
+import { applyTableSqlFillOpcPick, syncTableRowsForVerticalSqlSlots } from "@/lib/report-template/table-sql-visual-compile";
 import { useDeferredGeomField } from "@/lib/report-template/deferred-geom-input";
 import type { TemplateTableCellPick } from "@/lib/report-template/template-editor-context";
 import { computed, nextTick, ref, watch } from "vue";
@@ -665,8 +666,18 @@ function onTplSqlLayoutModeChange(mode: "horizontal" | "vertical") {
     el.tableCols = 2;
     tableDimCols.value = 2;
     ensureTableGrid(el);
+    syncTableRowsForVerticalSqlSlots(el, () => ensureTableGrid(el));
+    tableDimRows.value = el.tableRows ?? 3;
     clampTableElementOuterSize(el);
   }
+}
+
+function onTplVerticalSlotsChange() {
+  const el = props.el;
+  if (el.type !== "table" || !el.tableSqlFill) return;
+  syncTableRowsForVerticalSqlSlots(el, () => ensureTableGrid(el));
+  tableDimRows.value = el.tableRows ?? 3;
+  clampTableElementOuterSize(el);
 }
 
 const tableDimRows = ref(3);

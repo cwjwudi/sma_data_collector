@@ -341,6 +341,7 @@
             button-class="lpep-file-btn"
             @opc-pick-param="openZoneSqlOpcPicker"
             @layout-mode-change="onZoneSqlLayoutModeChange"
+            @vertical-slots-change="onZoneVerticalSlotsChange"
             @sync-headers="onZoneSqlFillSyncHeaders"
           />
         </div>
@@ -471,7 +472,7 @@ import {
   ensureTableSqlResultColumnNames,
   syncResultColumnNamesFromFirstRow,
 } from "@/lib/report-template/table-sql-fill";
-import { applyTableSqlFillOpcPick } from "@/lib/report-template/table-sql-visual-compile";
+import { applyTableSqlFillOpcPick, syncTableRowsForVerticalSqlSlots } from "@/lib/report-template/table-sql-visual-compile";
 import { useDeferredGeomField } from "@/lib/report-template/deferred-geom-input";
 import { clearGridCellBindings, gridHasNonNoneBinding } from "@/lib/report-template/table-binding-utils";
 import { computed, inject, nextTick, ref, watch } from "vue";
@@ -586,7 +587,16 @@ function onZoneSqlLayoutModeChange(mode: "horizontal" | "vertical") {
     el.tableCols = 2;
     tableDimCols.value = 2;
     ensureZoneTableGrid(el);
+    syncTableRowsForVerticalSqlSlots(el, () => ensureZoneTableGrid(el));
+    tableDimRows.value = el.tableRows ?? 3;
   }
+}
+
+function onZoneVerticalSlotsChange() {
+  const el = props.el;
+  if (!el || el.type !== "table" || !el.tableSqlFill) return;
+  syncTableRowsForVerticalSqlSlots(el, () => ensureZoneTableGrid(el));
+  tableDimRows.value = el.tableRows ?? 3;
 }
 
 const tableDimRows = ref(3);

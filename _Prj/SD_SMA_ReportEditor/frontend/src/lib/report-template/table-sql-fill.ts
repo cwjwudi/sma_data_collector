@@ -37,6 +37,8 @@ export type TableSqlSequencePageMode = "continuous" | "restart_per_page";
 /** 画布/属性面板列下拉中的哨兵值（非真实库字段名） */
 export const TABLE_SQL_COLUMN_PICK_BLANK = "";
 export const TABLE_SQL_COLUMN_PICK_SEQUENCE = "__sequence__";
+/** 纵表：已添加字段行但尚未选择库字段（勿与空白分隔的空串混淆） */
+export const TABLE_SQL_VERTICAL_FIELD_PENDING = "__field__";
 
 /**
  * 表名来源：
@@ -254,20 +256,36 @@ export function ensureVerticalFieldLabels(fill: TableSqlFillConfig): void {
   arr.length = n;
 }
 
-/** 纵表左列标签：自定义标签优先，否则字段名；空白分隔行为空 */
+/** 纵表槽位是否为空白分隔行（空串） */
+export function isVerticalSqlSlotBlank(slotField: string | null | undefined): boolean {
+  return !String(slotField ?? "").trim();
+}
+
+/** 纵表槽位是否为「待选字段」占位 */
+export function isVerticalSqlSlotPending(slotField: string | null | undefined): boolean {
+  return String(slotField ?? "").trim() === TABLE_SQL_VERTICAL_FIELD_PENDING;
+}
+
+/** 纵表槽位是否已绑定真实库字段 */
+export function isVerticalSqlSlotBoundField(slotField: string | null | undefined): boolean {
+  const t = String(slotField ?? "").trim();
+  return !!t && t !== TABLE_SQL_VERTICAL_FIELD_PENDING;
+}
+
+/** 纵表左列标签：自定义标签优先，否则字段名；空白分隔 / 待选行为空或占位文案由调用方处理 */
 export function verticalSlotLabel(fill: TableSqlFillConfig, slotIndex: number): string {
   const field = String(fill.visualSource?.columns?.[slotIndex] ?? "").trim();
-  if (!field) return "";
+  if (!field || field === TABLE_SQL_VERTICAL_FIELD_PENDING) return "";
   const custom = String(fill.verticalFieldLabels?.[slotIndex] ?? "").trim();
   return custom || field;
 }
 
-/** SELECT 实际输出的库字段（跳过空白分隔 / 横表 blank·sequence） */
+/** SELECT 实际输出的库字段（跳过空白分隔 / 待选占位 / 横表 blank·sequence） */
 export function visualSqlSelectFieldNames(fill: TableSqlFillConfig): string[] {
   const vs = fill.visualSource;
   if (!vs) return [];
   if (isVerticalSqlFill(fill)) {
-    return vs.columns.map((c) => String(c ?? "").trim()).filter(Boolean);
+    return vs.columns.map((c) => String(c ?? "").trim()).filter(isVerticalSqlSlotBoundField);
   }
   ensureTableSqlColumnRoles(fill, vs.columns.length || 1);
   const roles = fill.columnRoles || [];
@@ -467,13 +485,13 @@ export function ensureVisualOutputColumnSlots(fill: TableSqlFillConfig, colCount
     ? Math.max(1, Math.min(30, fill.visualSource.columns.length || 1))
     : Math.max(1, Math.min(30, Math.floor(Number(colCount)) || 1));
   const arr = fill.visualSource.columns;
-  while (arr.length < n) arr.push("");
+  while (arr.length < n) arr.push(isVerticalSqlFill(fill) ? TABLE_SQL_VERTICAL_FIELD_PENDING : "");
   if (!isVerticalSqlFill(fill)) arr.length = n;
   ensureTableSqlColumnRoles(fill, n);
   if (isVerticalSqlFill(fill)) ensureVerticalFieldLabels(fill);
 }
 
-/** 画布第一行：可视化数据库填充时改为下拉选择输出字段（非手写 SQL） */
+/** 画布第一行：可视化数据库填充时改为下拉选择输出字段（非手写 SQL；仅横表） */
 export function isVisualSqlFillOutputPickerRow(
   el: { type?: string; tableSqlFill?: TableSqlFillConfig | null | undefined },
   rowIndex: number,
@@ -486,10 +504,33 @@ export function isVisualSqlFillOutputPickerRow(
   );
 }
 
+/**
+ * 纵表画布：名称列（左列）下拉选择字段。
+ * 行 0 为两列表头；行 1..N 对应 visualSource.columns 槽位（与首条记录展开对齐）。
+ */
+export function isVerticalSqlFillSlotPickerCell(
+  el: { type?: string; tableSqlFill?: TableSqlFillConfig | null | undefined },
+  rowIndex: number,
+  colIndex: number,
+): boolean {
+  if (el.type !== "table" || colIndex !== 0 || rowIndex < 1) return false;
+  const fill = el.tableSqlFill;
+  if (!fill?.enabled || fill.fillMode !== "visual" || !isVerticalSqlFill(fill)) return false;
+  const slots = fill.visualSource?.columns?.length ?? 0;
+  return rowIndex - 1 < slots;
+}
+
+/** 纵表画布名称列下拉当前值 */
+export function verticalSqlSlotPickValue(fill: TableSqlFillConfig, slotIndex: number): string {
+  const raw = String(fill.visualSource?.columns?.[slotIndex] ?? "").trim();
+  if (!raw) return TABLE_SQL_COLUMN_PICK_BLANK;
+  return raw;
+}
+
 /** 画布列下拉当前值：序号哨兵 / 空白 / 字段名 */
 export function visualSqlColumnPickValue(fill: TableSqlFillConfig, colIndex: number): string {
   if (isVerticalSqlFill(fill)) {
-    return String(fill.visualSource?.columns?.[colIndex] ?? "");
+    return verticalSqlSlotPickValue(fill, colIndex);
   }
   ensureTableSqlColumnRoles(fill, fill.visualSource?.columns?.length || colIndex + 1);
   const role = fill.columnRoles?.[colIndex] ?? "field";

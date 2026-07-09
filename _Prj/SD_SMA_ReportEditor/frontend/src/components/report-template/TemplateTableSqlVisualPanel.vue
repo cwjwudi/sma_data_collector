@@ -108,18 +108,19 @@
         </div>
       </div>
       <p class="tsv-muted">
-        每条查询结果会按下列顺序展开为多行；「空白分隔」整行左右皆空，便于阅读。多行结果之间也会自动插入分隔。
+        优先在画布「名称」列下拉选择字段（与横表选列类似）。此处可增删行、改左列显示标签；空白分隔仅在需要分组时手动添加，多条查询结果之间会自动插入分隔。
       </p>
       <div v-for="(slotField, si) in vs.columns" :key="'vslot-' + si" class="tsv-vert-slot-row">
-        <template v-if="!String(slotField || '').trim()">
+        <template v-if="isBlankSlot(slotField)">
           <span class="tsv-vert-blank-tag">空白分隔行</span>
           <button type="button" class="tsv-mini-btn danger" @click="removeVertSlot(si)">删除</button>
         </template>
         <template v-else>
           <label class="tsv-inline tsv-vert-field">
             字段
-            <select :value="slotField" :class="selectFieldClass" @change="onVertSlotField(si, $event)">
-              <option value="">— 空白分隔 —</option>
+            <select :value="slotSelectValue(slotField)" :class="selectFieldClass" @change="onVertSlotField(si, $event)">
+              <option :value="pendingSentinel">— 请选择字段 —</option>
+              <option value="">— 改为空白分隔 —</option>
               <option v-for="c in tableColumns" :key="'vsf-' + si + '-' + c.name" :value="c.name">{{ c.name }}</option>
             </select>
           </label>
@@ -128,7 +129,7 @@
             <input
               :value="(fill.verticalFieldLabels || [])[si] || ''"
               class="tsv-text-inp"
-              :placeholder="slotField || '默认用字段名'"
+              :placeholder="boundFieldName(slotField) || '默认用字段名'"
               @input="onVertLabelInput(si, $event)"
             />
           </label>
@@ -486,8 +487,12 @@ import {
   ensureVisualOutputColumnSlots,
   ensureVisualSource,
   isVerticalSqlFill,
+  isVerticalSqlSlotBlank,
+  isVerticalSqlSlotBoundField,
+  isVerticalSqlSlotPending,
   normalizeVisualSqlFilterShape,
   TABLE_SQL_FILL_TABLE_PICK_SLOT,
+  TABLE_SQL_VERTICAL_FIELD_PENDING,
   visualSqlNeedsStructureTable,
   visualSqlStructureTableName,
 } from "@/lib/report-template/table-sql-fill";
@@ -528,6 +533,7 @@ const selectFieldClass = computed(() => {
 
 const emit = defineEmits<{
   opcPickParam: [slot: number];
+  verticalSlotsChange: [];
 }>();
 
 const connections = ref<{ id: string; name: string; engine: string; database?: string }[]>([]);
@@ -545,24 +551,51 @@ const vs = computed(() => ensureVisualSource(props.fill));
 
 const isVertical = computed(() => isVerticalSqlFill(props.fill));
 
+const pendingSentinel = TABLE_SQL_VERTICAL_FIELD_PENDING;
+
 watch(
   isVertical,
   (v) => {
-    if (v) ensureVerticalFieldLabels(props.fill);
+    if (v) {
+      ensureVerticalFieldLabels(props.fill);
+      // 旧模板若槽位全是空串（曾被误当成「字段行」），自动改为一条待选字段行
+      const cols = props.fill.visualSource?.columns;
+      if (cols?.length && cols.every((c) => isVerticalSqlSlotBlank(c))) {
+        cols[0] = TABLE_SQL_VERTICAL_FIELD_PENDING;
+        ensureVerticalFieldLabels(props.fill);
+        emit("verticalSlotsChange");
+      }
+    }
   },
   { immediate: true },
 );
 
+function isBlankSlot(slotField: string) {
+  return isVerticalSqlSlotBlank(slotField);
+}
+
+function slotSelectValue(slotField: string) {
+  if (isVerticalSqlSlotPending(slotField)) return TABLE_SQL_VERTICAL_FIELD_PENDING;
+  return String(slotField ?? "");
+}
+
+function boundFieldName(slotField: string) {
+  return isVerticalSqlSlotBoundField(slotField) ? String(slotField).trim() : "";
+}
+
 function addVertSlot(kind: "field" | "blank") {
   appendVerticalSqlSlot(props.fill, kind);
+  emit("verticalSlotsChange");
 }
 
 function removeVertSlot(si: number) {
   removeVerticalSqlSlot(props.fill, si);
+  emit("verticalSlotsChange");
 }
 
 function onVertSlotField(si: number, ev: Event) {
   applyVerticalSqlSlotField(props.fill, si, (ev.target as HTMLSelectElement).value);
+  emit("verticalSlotsChange");
 }
 
 function onVertLabelInput(si: number, ev: Event) {
@@ -886,7 +919,10 @@ watch(
     props.fill.visualFilters.splice(0, props.fill.visualFilters.length);
     const cols = props.fill.visualSource?.columns;
     if (cols?.length) {
-      for (let i = 0; i < cols.length; i++) cols[i] = "";
+      for (let i = 0; i < cols.length; i++) {
+        cols[i] = isVertical.value ? TABLE_SQL_VERTICAL_FIELD_PENDING : "";
+      }
+      if (isVertical.value) emit("verticalSlotsChange");
     }
     if (props.fill.resultColumnNames?.length) {
       for (let i = 0; i < props.fill.resultColumnNames.length; i++) props.fill.resultColumnNames[i] = "";

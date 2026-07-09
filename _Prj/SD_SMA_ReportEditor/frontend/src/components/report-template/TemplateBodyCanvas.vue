@@ -185,6 +185,27 @@
                               </option>
                             </select>
                           </template>
+                          <template v-else-if="isVerticalSqlFillSlotPickerCell(el, ri, ci)">
+                            <select
+                              class="cv-table-cell-ddl tbl-sql-ddl"
+                              :class="{ 'tbl-sql-ddl--warn': tplVisualSqlStructureMissing(el) }"
+                              :value="tplVerticalSlotSelectValue(el, ri)"
+                              :disabled="interactionLocked"
+                              :title="tplVisualSqlColumnSelectTitle(el)"
+                              @pointerdown.stop="pickTableCell(el, ri, ci)"
+                              @change="onTplVerticalSlotChange(el, ri, $event)"
+                            >
+                              <option :value="'__field__'">{{ tplVerticalPendingOptionLabel(el) }}</option>
+                              <option value="">— 空白分隔 —</option>
+                              <option
+                                v-for="opt in tplVisualSqlColumnCatalog[el.id]"
+                                :key="'vfld-' + el.id + '-' + ri + '-' + opt.name"
+                                :value="opt.name"
+                              >
+                                {{ opt.name }}
+                              </option>
+                            </select>
+                          </template>
                           <template v-else-if="el.tableSqlFill?.enabled">
                             <span class="cv-table-cell-txt">{{ formatTplBodyTableCell(el, ri, ci) }}</span>
                           </template>
@@ -400,14 +421,17 @@ import {
 } from "@/lib/report-template/table-cell-metrics";
 import type { VisualSqlTableColumnMeta } from "@/lib/report-template/table-sql-visual-catalog";
 import { loadVisualSqlTableColumnsCached } from "@/lib/report-template/table-sql-visual-catalog";
-import { applyVisualSqlOutputColumnPick } from "@/lib/report-template/table-sql-visual-compile";
+import { applyVisualSqlOutputColumnPick, applyVerticalSqlSlotField, syncTableRowsForVerticalSqlSlots } from "@/lib/report-template/table-sql-visual-compile";
 import {
   ensureVisualSource,
   isVisualSqlFillOutputPickerRow,
+  isVerticalSqlFillSlotPickerCell,
   clampTableSqlMaxRows,
   visualSqlColumnPickValue,
   visualSqlNeedsStructureTable,
   visualSqlStructureTableName,
+  verticalSqlSlotPickValue,
+  TABLE_SQL_VERTICAL_FIELD_PENDING,
 } from "@/lib/report-template/table-sql-fill";
 import { looksLikeImageFile, pickFirstImageFileFromDataTransfer, readImageFileAsDataUrl } from "@/lib/report-template/read-image-file";
 import LayoutZoneInlineContent from "@/components/report-template/LayoutZoneInlineContent.vue";
@@ -1067,6 +1091,29 @@ function onTplVisualOutputColumnChange(el: TemplateElement, ci: number, ev: Even
   const cols = el.tableCols ?? 4;
   const cell = tableGrid(el)[0]?.[ci];
   applyVisualSqlOutputColumnPick(fill, cols, ci, v, cell);
+}
+
+function tplVerticalPendingOptionLabel(el: TemplateElement): string {
+  if (tplVisualSqlStructureMissing(el)) return "请先选结构参考表…";
+  const opts = tplVisualSqlColumnCatalog.value[el.id];
+  if (opts && opts.length === 0 && visualSqlStructureTableName(el.tableSqlFill?.visualSource)) {
+    return "结构表无列…";
+  }
+  return "— 请选择字段 —";
+}
+
+function tplVerticalSlotSelectValue(el: TemplateElement, ri: number): string {
+  const fill = el.tableSqlFill;
+  if (!fill) return TABLE_SQL_VERTICAL_FIELD_PENDING;
+  return verticalSqlSlotPickValue(fill, ri - 1);
+}
+
+function onTplVerticalSlotChange(el: TemplateElement, ri: number, ev: Event) {
+  const v = (ev.target as HTMLSelectElement).value;
+  const fill = el.tableSqlFill;
+  if (!fill || fill.fillMode !== "visual" || el.type !== "table") return;
+  applyVerticalSqlSlotField(fill, ri - 1, v);
+  syncTableRowsForVerticalSqlSlots(el, () => ensureTableGrid(el));
 }
 
 function tplTableRowTrStyle(el: TemplateElement): Record<string, string> | undefined {

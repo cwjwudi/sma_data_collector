@@ -6,6 +6,8 @@ import type { TableSqlFillConfig } from "@/lib/report-template/table-sql-fill";
 import {
   ensureVerticalFieldLabels,
   isVerticalSqlFill,
+  isVerticalSqlSlotBoundField,
+  isVerticalSqlSlotPending,
   verticalSlotLabel,
 } from "@/lib/report-template/table-sql-fill";
 
@@ -20,8 +22,8 @@ export interface VerticalSqlLogicalRow {
 }
 
 /**
- * 将预览 dataRows（按 SELECT 字段顺序，不含空白槽）展开为纵表逻辑行。
- * visualSource.columns 中的空串表示「整行空白分隔」。
+ * 将预览 dataRows（按 SELECT 字段顺序，不含空白槽 / 待选槽）展开为纵表逻辑行。
+ * visualSource.columns 中的空串表示「整行空白分隔」；待选占位行显示「（待选字段）」。
  */
 export function buildVerticalSqlLogicalRows(
   fill: TableSqlFillConfig,
@@ -40,6 +42,10 @@ export function buildVerticalSqlLogicalRows(
       const field = String(slots[si] ?? "").trim();
       if (!field) {
         out.push({ label: "", value: "", blank: true });
+        continue;
+      }
+      if (isVerticalSqlSlotPending(field)) {
+        out.push({ label: "（待选字段）", value: "", blank: false });
         continue;
       }
       const label = verticalSlotLabel(fill, si);
@@ -69,8 +75,8 @@ export function verticalSqlLogicalRowCount(
   return n * perRecord + Math.max(0, n - 1);
 }
 
-/** SQL 结果列数（仅 field 槽，与 dataRows[i].length 对齐） */
+/** SQL 结果列数（仅已绑定 field 槽，与 dataRows[i].length 对齐） */
 export function verticalSqlSelectColCount(fill: TableSqlFillConfig): number {
   if (!fill.visualSource) return 0;
-  return fill.visualSource.columns.filter((c) => String(c ?? "").trim()).length;
+  return fill.visualSource.columns.filter((c) => isVerticalSqlSlotBoundField(c)).length;
 }
