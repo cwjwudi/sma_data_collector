@@ -16,7 +16,7 @@ import {
   buildVerticalSqlLogicalRows,
   verticalSqlLogicalRowCount,
 } from "@/lib/report-template/table-sql-vertical";
-import { formatSqlFillTableCellPreview } from "@/lib/report-template/table-sql-fill-preview";
+import { formatSqlFillTableCellPreview, sqlFillDisplayDataRowCount } from "@/lib/report-template/table-sql-fill-preview";
 
 describe("vertical sql fill", () => {
   it("transposes one SQL row into label/value logical rows with blank separators", () => {
@@ -122,6 +122,31 @@ describe("vertical sql fill", () => {
     expect(formatSqlFillTableCellPreview({ fill, rowIndex: 0, colIndex: 0, preview })).toBe("名称");
     expect(formatSqlFillTableCellPreview({ fill, rowIndex: 1, colIndex: 0, preview })).toBe("a");
     expect(formatSqlFillTableCellPreview({ fill, rowIndex: 1, colIndex: 1, preview })).toBe("v1");
+  });
+
+  it("expands multi-slot vertical preview from a single SQL row", () => {
+    const fill = hydrateTableSqlFill({
+      enabled: true,
+      fillMode: "visual",
+      layoutMode: "vertical",
+      resultColumnNames: ["名称", "值"],
+      verticalFieldLabels: ["WITH_GRANT_OPT", "USER", "", "WITH_GRANT_OPT"],
+      visualSource: {
+        connectionId: "c1",
+        table: "t",
+        engine: "mysql",
+        columns: ["WITH_GRANT_OPTION", "USER", "", "WITH_GRANT_OPTION"],
+        database: "",
+      },
+    });
+    const preview = { dataRows: [["N", "root", "N"]] };
+    expect(sqlFillDisplayDataRowCount(fill, 1)).toBe(4);
+    expect(formatSqlFillTableCellPreview({ fill, rowIndex: 1, colIndex: 0, preview })).toBe("WITH_GRANT_OPT");
+    expect(formatSqlFillTableCellPreview({ fill, rowIndex: 1, colIndex: 1, preview })).toBe("N");
+    expect(formatSqlFillTableCellPreview({ fill, rowIndex: 2, colIndex: 0, preview })).toBe("USER");
+    expect(formatSqlFillTableCellPreview({ fill, rowIndex: 2, colIndex: 1, preview })).toBe("root");
+    expect(formatSqlFillTableCellPreview({ fill, rowIndex: 3, colIndex: 0, preview })).toBe("\u00a0");
+    expect(formatSqlFillTableCellPreview({ fill, rowIndex: 4, colIndex: 0, preview })).toBe("WITH_GRANT_OPT");
   });
 });
 

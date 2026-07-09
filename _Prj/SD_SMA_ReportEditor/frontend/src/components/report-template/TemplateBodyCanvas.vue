@@ -888,8 +888,9 @@ function tplSqlFillEditorPreviewLayout(el: TemplateElement): SqlFillEditorPrevie
   const pk = templateTableSqlFillPreviewKey(el.id);
   const pv = bindingPreview?.values.value[pk]?.tableSqlFill;
   if (!pv?.dataRows?.length || pv.error) return null;
-  const n = pv.dataRows.length;
-  const displayN = sqlFillDisplayDataRowCount(el.tableSqlFill, n);
+  const sqlN = pv.dataRows.length;
+  // 纵表：按字段槽展开后的逻辑行数；横表：等于 SQL 行数
+  const displayN = sqlFillDisplayDataRowCount(el.tableSqlFill, sqlN);
 
   const rowH = clampTableRowHeightPx(el.tableRowHeightPx);
   const chrome =
@@ -900,21 +901,21 @@ function tplSqlFillEditorPreviewLayout(el: TemplateElement): SqlFillEditorPrevie
   const maxTotalRows = Math.max(1, Math.floor(inner / Math.max(1, rowH)));
 
   const paginationNeeded =
-    props.sheet === "body" && sqlFillTableNeedsPreviewPagination(el, displayN, me.value.contentH, n);
+    props.sheet === "body" && sqlFillTableNeedsPreviewPagination(el, displayN, me.value.contentH, sqlN);
   const maxRowsCfg = clampTableSqlMaxRows(el.tableSqlFill.maxRows ?? 2000);
   const limitsTrunc =
-    n >= TABLE_SQL_FILL_PREVIEW_ROW_LIMIT ||
-    n >= maxRowsCfg ||
-    n > TEMPLATE_BODY_TABLE_MAX_ROWS - 1;
+    sqlN >= TABLE_SQL_FILL_PREVIEW_ROW_LIMIT ||
+    sqlN >= maxRowsCfg ||
+    displayN > TEMPLATE_BODY_TABLE_MAX_ROWS - 1;
 
   let showPageHint = paginationNeeded;
   let showTruncateHint = limitsTrunc;
 
   const visibleFor = (sp: boolean, st: boolean): number =>
-    Math.min(n, Math.max(0, maxTotalRows - 1 - sqlFillEditorFooterRowSlots(sp, st)));
+    Math.min(displayN, Math.max(0, maxTotalRows - 1 - sqlFillEditorFooterRowSlots(sp, st)));
 
   let visible = visibleFor(showPageHint, showTruncateHint);
-  if (visible < n) showTruncateHint = true;
+  if (visible < displayN) showTruncateHint = true;
   visible = visibleFor(showPageHint, showTruncateHint);
 
   while (1 + sqlFillEditorFooterRowSlots(showPageHint, showTruncateHint) > maxTotalRows && showPageHint) {
@@ -927,7 +928,7 @@ function tplSqlFillEditorPreviewLayout(el: TemplateElement): SqlFillEditorPrevie
   }
   visible = visibleFor(showPageHint, showTruncateHint);
 
-  showTruncateHint = showTruncateHint || visible < n || limitsTrunc;
+  showTruncateHint = showTruncateHint || visible < displayN || limitsTrunc;
   while (1 + sqlFillEditorFooterRowSlots(showPageHint, showTruncateHint) > maxTotalRows && showPageHint) {
     showPageHint = false;
   }
@@ -938,7 +939,7 @@ function tplSqlFillEditorPreviewLayout(el: TemplateElement): SqlFillEditorPrevie
   }
   visible = visibleFor(showPageHint, showTruncateHint);
 
-  const mustHint = visible < n || limitsTrunc;
+  const mustHint = visible < displayN || limitsTrunc;
   const minRowsForTruncateOnly = 1 + sqlFillEditorFooterRowSlots(false, true);
   if (mustHint && maxTotalRows >= minRowsForTruncateOnly) {
     showTruncateHint = true;
@@ -949,7 +950,7 @@ function tplSqlFillEditorPreviewLayout(el: TemplateElement): SqlFillEditorPrevie
   }
 
   return {
-    previewRowCount: n,
+    previewRowCount: displayN,
     visibleDataRows: visible,
     showPageHint,
     showTruncateHint,
@@ -966,7 +967,8 @@ function tplTableRowIndices(el: TemplateElement): number[] {
     return Array.from({ length: base }, (_, i) => i);
   }
   const lay = tplSqlFillEditorPreviewLayout(el);
-  const visibleData = lay?.visibleDataRows ?? Math.min(pv.dataRows.length, Math.max(0, base - 1));
+  const fallbackDisplay = sqlFillDisplayDataRowCount(el.tableSqlFill, pv.dataRows.length);
+  const visibleData = lay?.visibleDataRows ?? Math.min(fallbackDisplay, Math.max(0, base - 1));
   const total = Math.max(1, 1 + visibleData);
   return Array.from({ length: total }, (_, i) => i);
 }

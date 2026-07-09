@@ -301,6 +301,7 @@ import {
 import type { SqlFillTablePreviewSlice } from "@/lib/report-template/table-sql-fill-export-preview-split";
 import {
   formatSqlFillTableCellPreview,
+  sqlFillDisplayDataRowCount,
   templateTableSqlFillPreviewKey,
   zoneTableSqlFillPreviewKey,
 } from "@/lib/report-template/table-sql-fill-preview";
@@ -790,7 +791,8 @@ function miniZoneTableRowIndices(el: LayoutZoneElement): number[] {
   if (el.type !== "table" || !el.tableSqlFill?.enabled || !pv?.dataRows?.length) {
     return Array.from({ length: base }, (_, i) => i);
   }
-  const total = Math.max(base, 1 + pv.dataRows.length);
+  const displayN = sqlFillDisplayDataRowCount(el.tableSqlFill, pv.dataRows.length);
+  const total = Math.max(base, 1 + displayN);
   return Array.from({ length: total }, (_, i) => i);
 }
 
@@ -858,7 +860,8 @@ function miniTableRowIndices(el: TemplateElement): number[] {
     const n = (slice.includeHeaderRow ? 1 : 0) + slice.dataRowCount;
     return Array.from({ length: Math.max(1, n) }, (_, i) => i);
   }
-  const total = Math.max(base, 1 + pv.dataRows.length);
+  const displayN = sqlFillDisplayDataRowCount(el.tableSqlFill, pv.dataRows.length);
+  const total = Math.max(base, 1 + displayN);
   return Array.from({ length: total }, (_, i) => i);
 }
 
