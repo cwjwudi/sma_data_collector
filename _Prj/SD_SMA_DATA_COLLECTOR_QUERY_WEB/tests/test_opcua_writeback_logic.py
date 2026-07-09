@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from asyncua import ua
+
+from app.opcua_client import _coerce_scalar
 from app.opcua_writeback import (
     MAX_ARRAY_LEN,
     OpcUaWritebackConfig,
@@ -9,6 +12,32 @@ from app.opcua_writeback import (
     coerce_cell,
     should_writeback,
 )
+
+
+def test_heartbeat_value_coerces_to_one_for_bool_and_integers():
+    from app.opcua_client import _coerce_heartbeat_value
+
+    assert _coerce_heartbeat_value(1, ua.VariantType.Boolean) is True
+    assert _coerce_heartbeat_value(1, ua.VariantType.Byte) == 1
+    assert _coerce_heartbeat_value(1, ua.VariantType.SByte) == 1
+    assert _coerce_heartbeat_value(1, ua.VariantType.Int16) == 1
+    assert _coerce_heartbeat_value(1, ua.VariantType.UInt16) == 1
+    assert _coerce_heartbeat_value(1, ua.VariantType.Int32) == 1
+    assert _coerce_heartbeat_value(1, ua.VariantType.UInt32) == 1
+    assert _coerce_heartbeat_value(1, ua.VariantType.Int64) == 1
+    assert _coerce_heartbeat_value(1, ua.VariantType.UInt64) == 1
+    assert _coerce_heartbeat_value(1, None) == 1
+
+    try:
+        _coerce_heartbeat_value(1, ua.VariantType.String)
+        assert False, "String should be rejected"
+    except TypeError:
+        pass
+    try:
+        _coerce_heartbeat_value(1, ua.VariantType.Float)
+        assert False, "Float should be rejected"
+    except TypeError:
+        pass
 
 
 def test_build_array_values_three_rows():

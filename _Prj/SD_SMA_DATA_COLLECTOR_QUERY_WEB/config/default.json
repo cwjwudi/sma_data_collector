@@ -19,7 +19,9 @@
   "opcua": {
     "endpoint_url": "opc.tcp://192.168.50.233:4840/",
     "username": "",
-    "password": ""
+    "password": "",
+    "heartbeat_node": "ns=6;s=::DataRev:uiHeartBeat",
+    "poll_interval_ms": 500
   },
   "query_view": {
     "default_page_size": 10,

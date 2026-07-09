@@ -101,7 +101,32 @@ class UnifiedConfigStore:
 
     @classmethod
     def _default_opcua_settings(cls) -> dict[str, Any]:
-        return {"endpoint_url": "", "username": "", "password": ""}
+        return {
+            "endpoint_url": "",
+            "username": "",
+            "password": "",
+            "heartbeat_node": "",
+            "poll_interval_ms": 500,
+        }
+
+    @staticmethod
+    def _clamp_poll_interval_ms(raw: Any) -> int:
+        try:
+            value = int(raw if raw is not None else 500)
+        except (TypeError, ValueError):
+            value = 500
+        return max(50, min(value, 5000))
+
+    @classmethod
+    def _normalize_opcua_settings(cls, raw: Any) -> dict[str, Any]:
+        data = raw if isinstance(raw, dict) else {}
+        return {
+            "endpoint_url": normalize_opcua_endpoint_url(str(data.get("endpoint_url", "") or "")),
+            "username": str(data.get("username", "") or ""),
+            "password": str(data.get("password", "") or ""),
+            "heartbeat_node": str(data.get("heartbeat_node", "") or "").strip(),
+            "poll_interval_ms": cls._clamp_poll_interval_ms(data.get("poll_interval_ms", 500)),
+        }
 
     @classmethod
     def _default_query_view_config(cls) -> dict[str, Any]:
@@ -231,6 +256,11 @@ class UnifiedConfigStore:
         if not isinstance(normalized.get("opcua"), dict):
             normalized["opcua"] = self._default_opcua_settings()
             changed = True
+        else:
+            opcua_normalized = self._normalize_opcua_settings(normalized.get("opcua"))
+            if opcua_normalized != normalized.get("opcua"):
+                normalized["opcua"] = opcua_normalized
+                changed = True
         if not self._is_usable_query_view_config(normalized.get("query_view")):
             normalized["query_view"] = self._default_query_view_config()
             changed = True
@@ -418,23 +448,11 @@ class UnifiedConfigStore:
         self.save_active_config(config)
 
     def get_opcua_settings(self) -> dict[str, Any]:
-        raw = self.get_active_config().get("opcua")
-        if not isinstance(raw, dict):
-            return {"endpoint_url": "", "username": "", "password": ""}
-        return {
-            "endpoint_url": normalize_opcua_endpoint_url(str(raw.get("endpoint_url", "") or "")),
-            "username": str(raw.get("username", "") or ""),
-            "password": str(raw.get("password", "") or ""),
-        }
+        return self._normalize_opcua_settings(self.get_active_config().get("opcua"))
 
     def save_opcua_settings(self, data: dict[str, Any]) -> dict[str, Any]:
         config = self.get_active_config()
-        raw = data if isinstance(data, dict) else {}
-        normalized = {
-            "endpoint_url": normalize_opcua_endpoint_url(str(raw.get("endpoint_url", "") or "")),
-            "username": str(raw.get("username", "") or ""),
-            "password": str(raw.get("password", "") or ""),
-        }
+        normalized = self._normalize_opcua_settings(data)
         config["opcua"] = normalized
         self.save_active_config(config)
         return normalized

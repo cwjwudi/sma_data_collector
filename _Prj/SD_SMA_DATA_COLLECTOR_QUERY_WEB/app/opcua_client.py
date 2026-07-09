@@ -122,6 +122,19 @@ async def _read_variant_type(node: Any) -> ua.VariantType | None:
     return None
 
 
+_HEARTBEAT_VARIANT_TYPES = (
+    ua.VariantType.Boolean,
+    ua.VariantType.SByte,
+    ua.VariantType.Byte,
+    ua.VariantType.Int16,
+    ua.VariantType.UInt16,
+    ua.VariantType.Int32,
+    ua.VariantType.UInt32,
+    ua.VariantType.Int64,
+    ua.VariantType.UInt64,
+)
+
+
 def _coerce_scalar(value: Any, variant_type: ua.VariantType | None) -> Any:
     if variant_type == ua.VariantType.Boolean:
         if isinstance(value, str):
@@ -145,6 +158,21 @@ def _coerce_scalar(value: Any, variant_type: ua.VariantType | None) -> Any:
     if variant_type == ua.VariantType.String:
         return "" if value is None else str(value)
     return value
+
+
+def _coerce_heartbeat_value(value: Any, variant_type: ua.VariantType | None) -> Any:
+    """Heartbeat only supports BOOL and integer node types; always write logical 1."""
+    if variant_type is None:
+        # Fallback when datatype cannot be read: prefer integer 1.
+        if isinstance(value, bool):
+            return 1 if value else 0
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return 1
+    if variant_type not in _HEARTBEAT_VARIANT_TYPES:
+        raise TypeError(f"heartbeat unsupported variant type: {variant_type}")
+    return _coerce_scalar(1 if value else 0, variant_type)
 
 
 async def _write_value_attribute(node: Any, value: Any) -> bool:
@@ -185,6 +213,40 @@ async def write_scalar(
         return await _write_value_attribute(node, value)
     except Exception as exc:
         logger.warning("OPC UA write_scalar failed node_id=%s: %s", node_id, exc)
+        if _pool is not None:
+            async with _pool.lock:
+                await _invalidate_client(_pool)
+        return False
+
+
+async def write_heartbeat(
+    endpoint_url: str,
+    node_id: str,
+    *,
+    username: str = "",
+    password: str = "",
+) -> bool:
+    """Write logical 1 adapted to BOOL or integer node types only."""
+    if not endpoint_url or not node_id:
+        return False
+    try:
+        client = await _ensure_connected(endpoint_url, username, password)
+        if client is None:
+            return False
+        node = client.get_node(node_id)
+        variant_type = await _read_variant_type(node)
+        clean_value = _coerce_heartbeat_value(1, variant_type)
+        if variant_type is None:
+            data_value = ua.DataValue(ua.Variant(clean_value))
+        else:
+            data_value = ua.DataValue(ua.Variant(clean_value, variant_type))
+        await node.write_attribute(ua.AttributeIds.Value, data_value)
+        return True
+    except TypeError as exc:
+        logger.warning("OPC UA heartbeat rejected node_id=%s: %s", node_id, exc)
+        return False
+    except Exception as exc:
+        logger.warning("OPC UA write_heartbeat failed node_id=%s: %s", node_id, exc)
         if _pool is not None:
             async with _pool.lock:
                 await _invalidate_client(_pool)

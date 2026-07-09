@@ -387,6 +387,11 @@ th {
   background: #f0fdf4;
 }
 
+.settings-subsection-opcua-monitor {
+  border-left: 3px solid #0f766e;
+  background: #f0fdfa;
+}
+
 .settings-actions {
   margin-top: 12px;
   padding-top: 4px;

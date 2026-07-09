@@ -38,8 +38,8 @@
       </section>
 
       <section class="panel">
-        <h2>基础设定</h2>
-        <p class="hint">数据库与查询限制写入 app_settings；OPC UA 连接写入 profile 顶层 opcua。点「保存基础设定」一并保存。</p>
+        <h2>数据库设定</h2>
+        <p class="hint">数据库与查询限制写入 app_settings。点「保存数据库设定」保存。</p>
 
         <div class="settings-subsection settings-subsection-db">
           <h3 class="subsection-title">数据库连接</h3>
@@ -78,9 +78,23 @@
           </div>
         </div>
 
+        <div class="row settings-actions">
+          <button type="button" id="btnSaveAppSettings">保存数据库设定</button>
+          <button type="button" id="btnConnectDatabase">连接数据库</button>
+        </div>
+        <div id="appSettingsHint" class="muted"></div>
+      </section>
+
+      <section class="panel">
+        <h2>OPCUA设定</h2>
+        <p class="hint">
+          连接信息、全局轮询间隔与心跳写入 profile 顶层 <code>opcua</code>。
+          心跳按轮询间隔写 1（仅 BOOL / 整型）；PLC 清 0/FALSE，超时未再变 1 则判定 Query Web 挂了。
+        </p>
+
         <div class="settings-subsection settings-subsection-opcua">
-          <h3 class="subsection-title">OPC UA 连接</h3>
-          <p class="hint subsection-hint">分别填写 PLC 的 IP 与端口（无需写 opc.tcp:// 前缀）；插件页回写共用此连接（profile.opcua）</p>
+          <h3 class="subsection-title">连接</h3>
+          <p class="hint subsection-hint">分别填写 PLC 的 IP 与端口（无需写 opc.tcp:// 前缀）</p>
           <div class="row opcua-endpoint-row">
             <label for="appOpcuaHost">IP</label>
             <input id="appOpcuaHost" type="text" placeholder="127.0.0.1" autocomplete="off" />
@@ -96,12 +110,38 @@
           </div>
         </div>
 
+        <div class="settings-subsection settings-subsection-opcua-monitor">
+          <h3 class="subsection-title">监控与心跳（全局）</h3>
+          <p class="hint subsection-hint">作用于全局 OPC 轮询与心跳写入；心跳仅支持 BOOL / 整型，写 1</p>
+          <div class="row">
+            <label for="appOpcuaPollIntervalMs">轮询间隔 (ms)</label>
+            <input
+              id="appOpcuaPollIntervalMs"
+              class="field-narrow-num"
+              type="number"
+              min="50"
+              max="5000"
+              step="50"
+              value="500"
+            />
+            <span class="muted inline-hint">范围 50–5000，默认 500</span>
+          </div>
+          <div class="row">
+            <label for="appOpcuaHeartbeatNode">心跳 NodeId</label>
+            <input
+              id="appOpcuaHeartbeatNode"
+              type="text"
+              class="field-wide"
+              placeholder="ns=6;s=::DataRev:bHeartBeat（可选）"
+            />
+          </div>
+        </div>
+
         <div class="row settings-actions">
-          <button type="button" id="btnSaveAppSettings">保存基础设定</button>
-          <button type="button" id="btnConnectDatabase">连接数据库</button>
+          <button type="button" id="btnSaveOpcuaSettings">保存 OPCUA设定</button>
           <button type="button" id="btnTestOpcuaConnection">测试 OPC UA 连接</button>
         </div>
-        <div id="appSettingsHint" class="muted"></div>
+        <div id="opcuaSettingsHint" class="muted"></div>
       </section>
 
       <section class="panel">
@@ -253,6 +293,7 @@
             <h4 class="subsection-title">高级 · OPC UA 节点</h4>
             <p class="hint">
               上一页/下一页绑定两个 BOOL 节点（上升沿触发，与插件页翻页一致）；批次号节点接收 PLC 字符串；触发节点上升沿时按批次号回写 Buffer。
+              轮询间隔与心跳在上方「OPCUA设定」中全局配置。
             </p>
             <div class="row">
               <label for="pluginTableListPrevPageNode">上一页 NodeId</label>
@@ -305,6 +346,6 @@
         </div>
       </div>
     </div>
-    <script src="/static/config.js?v=20260708_10"></script>
+    <script src="/static/config.js?v=20260709_03"></script>
   </body>
 </html>

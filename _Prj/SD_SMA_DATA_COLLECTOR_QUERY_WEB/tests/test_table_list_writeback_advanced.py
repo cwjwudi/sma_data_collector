@@ -20,6 +20,14 @@ def _lookup(_master_table: str, _batch_column: str, batch_value):
     return None
 
 
+async def _noop_page(_plugin_key: str, _page: int):
+    return None
+
+
+async def _noop_trigger(_plugin_key: str, _batch_no: str) -> bool:
+    return False
+
+
 def test_advanced_config_requires_trigger_and_batch_nodes():
     cfg = TableListWritebackConfig.from_binding(
         {
@@ -67,6 +75,31 @@ def test_advanced_opcua_trigger_config_poll_interval_clamped():
     )
     assert advanced is not None
     assert advanced.poll_interval_ms == 50
+
+    advanced_hi = AdvancedOpcuaTriggerConfig.from_raw(
+        {
+            "batch_no_node": "ns=2;s=Batch",
+            "trigger_node": "ns=2;s=Trig",
+            "poll_interval_ms": 99999,
+        }
+    )
+    assert advanced_hi is not None
+    assert advanced_hi.poll_interval_ms == 5000
+
+
+def test_monitor_resolves_poll_interval_from_global_opcua():
+    monitor = PluginOpcuaMonitor(
+        iter_bindings=lambda: [],
+        get_opcua=lambda: {
+            "endpoint_url": "opc.tcp://127.0.0.1:4840/",
+            "poll_interval_ms": 100,
+            "heartbeat_node": "ns=2;s=Heart",
+        },
+        on_page_change=_noop_page,
+        on_trigger=_noop_trigger,
+        poll_interval_ms=200,
+    )
+    assert monitor._resolve_poll_interval_ms() == 100
 
 
 def test_resolve_table_names_for_batch_no():

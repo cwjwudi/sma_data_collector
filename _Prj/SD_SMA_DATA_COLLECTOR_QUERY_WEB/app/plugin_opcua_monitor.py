@@ -10,7 +10,7 @@ from . import opcua_client
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_POLL_INTERVAL_MS = 200
+DEFAULT_POLL_INTERVAL_MS = 500
 
 
 def _as_bool(value: Any) -> bool:
@@ -106,7 +106,7 @@ class PluginOpcuaMonitor:
         self._get_opcua = get_opcua
         self._on_page_change = on_page_change
         self._on_trigger = on_trigger
-        self._poll_interval_ms = max(50, poll_interval_ms)
+        self._poll_interval_ms = max(50, min(int(poll_interval_ms), 5000))
         self._stop = asyncio.Event()
         self._edges = RisingEdgeDetector()
         self._runtime: dict[str, PluginRuntimeSnapshot] = {}
@@ -135,16 +135,26 @@ class PluginOpcuaMonitor:
     def stop(self) -> None:
         self._stop.set()
 
+    def _resolve_poll_interval_ms(self) -> int:
+        """Use global OPC UA poll interval from connection settings."""
+        try:
+            opcua = self._get_opcua() or {}
+            raw = opcua.get("poll_interval_ms", self._poll_interval_ms)
+            return max(50, min(int(raw), 5000))
+        except Exception:
+            return self._poll_interval_ms
+
     async def run(self) -> None:
-        logger.info("Plugin OPC UA monitor started (interval=%dms)", self._poll_interval_ms)
+        logger.info("Plugin OPC UA monitor started (default interval=%dms)", self._poll_interval_ms)
         try:
             while not self._stop.is_set():
                 try:
                     await self._poll_once()
                 except Exception:
                     logger.warning("Plugin OPC UA monitor poll failed", exc_info=True)
+                interval_ms = self._resolve_poll_interval_ms()
                 try:
-                    await asyncio.wait_for(self._stop.wait(), timeout=self._poll_interval_ms / 1000.0)
+                    await asyncio.wait_for(self._stop.wait(), timeout=interval_ms / 1000.0)
                 except asyncio.TimeoutError:
                     pass
         except asyncio.CancelledError:
@@ -154,9 +164,6 @@ class PluginOpcuaMonitor:
 
     async def _poll_once(self) -> None:
         bindings = self._iter_bindings()
-        if not bindings:
-            return
-
         opcua = self._get_opcua()
         endpoint = opcua.get("endpoint_url", "")
         if not endpoint:
@@ -164,9 +171,15 @@ class PluginOpcuaMonitor:
 
         username = opcua.get("username", "")
         password = opcua.get("password", "")
+        heartbeat_node = str(opcua.get("heartbeat_node", "") or "").strip()
 
-        for binding in bindings:
-            await self._poll_binding(binding, endpoint, username, password)
+        if bindings:
+            for binding in bindings:
+                await self._poll_binding(binding, endpoint, username, password)
+
+        # Global heartbeat: write even when no advanced plugin pages are active.
+        if heartbeat_node:
+            await self._write_heartbeat(endpoint, heartbeat_node, username, password, "global")
 
     async def _poll_binding(
         self,
@@ -263,6 +276,28 @@ class PluginOpcuaMonitor:
                 batch_no,
             )
             await self._reset_bool_node(endpoint, trigger_node, username, password, edge_key_trigger)
+
+    async def _write_heartbeat(
+        self,
+        endpoint: str,
+        node_id: str,
+        username: str,
+        password: str,
+        plugin_key: str,
+    ) -> None:
+        """Write logical 1 (typed); PLC clears to 0/FALSE and times out if Query Web stops."""
+        if not node_id:
+            return
+        ok = await opcua_client.write_heartbeat(
+            endpoint,
+            node_id,
+            username=username,
+            password=password,
+        )
+        if ok:
+            logger.debug("OPC UA heartbeat plugin=%s node=%s value=1", plugin_key, node_id)
+        else:
+            logger.warning("OPC UA heartbeat write failed plugin=%s node=%s", plugin_key, node_id)
 
     async def _reset_bool_node(
         self,

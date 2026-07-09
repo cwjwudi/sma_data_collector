@@ -82,6 +82,8 @@ def test_create_profile_uses_blank_query_template_with_current_runtime_settings(
     assert result["active"] == "fresh.json"
     assert created["app_settings"]["database"]["name"] == "prod_db"
     assert created["opcua"]["endpoint_url"] == "opc.tcp://192.168.1.20:4840/"
+    assert created["opcua"]["poll_interval_ms"] == 500
+    assert created["opcua"]["heartbeat_node"] == ""
     assert created["plugins"] == {"modules": {}}
     assert created["query_view"]["group_baselines"] == {}
     assert created["query_view"]["views"]["table"]["per_group"] == {}

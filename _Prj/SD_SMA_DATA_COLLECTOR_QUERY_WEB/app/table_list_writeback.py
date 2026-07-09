@@ -51,7 +51,7 @@ class AdvancedOpcuaTriggerConfig:
     next_page_node: str
     batch_no_node: str
     trigger_node: str
-    poll_interval_ms: int = 200
+    poll_interval_ms: int = 500
 
     @classmethod
     def from_raw(cls, raw: Any) -> AdvancedOpcuaTriggerConfig | None:
@@ -63,7 +63,8 @@ class AdvancedOpcuaTriggerConfig:
         trigger_node = str(raw.get("trigger_node", "") or "").strip()
         if not trigger_node or not batch_no_node:
             return None
-        poll_interval_ms = int(raw.get("poll_interval_ms", 200) or 200)
+        # poll_interval_ms kept for backward-compatible JSON; runtime uses global opcua setting.
+        poll_interval_ms = int(raw.get("poll_interval_ms", 500) or 500)
         return cls(
             prev_page_node=prev_page_node,
             next_page_node=next_page_node,

@@ -92,6 +92,12 @@ function buildOpcuaEndpointUrl(host, port) {
   return `opc.tcp://${resolvedHost}:${safePort}/`;
 }
 
+function clampPollIntervalMs(raw) {
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return 500;
+  return Math.max(50, Math.min(5000, Math.round(n)));
+}
+
 function getOpcuaPayload() {
   return {
     endpoint_url: buildOpcuaEndpointUrl(
@@ -100,6 +106,8 @@ function getOpcuaPayload() {
     ),
     username: document.getElementById('appOpcuaUsername').value.trim(),
     password: document.getElementById('appOpcuaPassword').value,
+    heartbeat_node: document.getElementById('appOpcuaHeartbeatNode').value.trim(),
+    poll_interval_ms: clampPollIntervalMs(document.getElementById('appOpcuaPollIntervalMs').value),
   };
 }
 
@@ -110,7 +118,12 @@ function fillOpcuaForm(data) {
   document.getElementById('appOpcuaPort').value = endpoint.port;
   document.getElementById('appOpcuaUsername').value = settings.username || '';
   document.getElementById('appOpcuaPassword').value = settings.password || '';
+  document.getElementById('appOpcuaHeartbeatNode').value = settings.heartbeat_node || '';
+  document.getElementById('appOpcuaPollIntervalMs').value = clampPollIntervalMs(
+    settings.poll_interval_ms ?? 500,
+  );
 }
+
 
 async function fetchJson(url, opts) {
   const resp = await fetch(url, opts);
@@ -252,12 +265,21 @@ async function loadViews() {
 async function loadAppSettings() {
   const [data, opcuaData] = await Promise.all([
     fetchJson('/api/config/app-settings'),
-    fetchJson('/api/config/opcua').catch(() => ({ endpoint_url: '', username: '', password: '' })),
+    fetchJson('/api/config/opcua').catch(() => ({
+      endpoint_url: '',
+      username: '',
+      password: '',
+      heartbeat_node: '',
+      poll_interval_ms: 500,
+    })),
   ]);
   fillAppSettingsForm(data || {});
   fillOpcuaForm(opcuaData || {});
-  document.getElementById('appSettingsHint').textContent =
-    '已加载基础设定与 OPC UA 连接（保存基础设定时一并写入）';
+  document.getElementById('appSettingsHint').textContent = '已加载数据库设定（数据库与查询限制）';
+  const opcuaHint = document.getElementById('opcuaSettingsHint');
+  if (opcuaHint) {
+    opcuaHint.textContent = '已加载 OPCUA设定（连接、轮询间隔与心跳）';
+  }
 }
 
 function fillConfigProfileSelect(select, profiles, activeName) {
@@ -581,45 +603,58 @@ async function refreshMetadataFromCurrentDatabase() {
 async function saveAppSettings(options = {}) {
   const { refreshMetadata = false, successMessage } = options;
   const payload = getAppSettingsPayload();
-  const opcuaPayload = getOpcuaPayload();
   const result = await fetchJson('/api/config/app-settings', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
-  const opcuaResult = await fetchJson('/api/config/opcua', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(opcuaPayload),
-  });
   fillAppSettingsForm((result && result.settings) || payload);
-  fillOpcuaForm(opcuaResult || opcuaPayload);
   if (refreshMetadata) {
     await refreshMetadataFromCurrentDatabase();
   }
   const baseMessage =
     successMessage ||
     (refreshMetadata
-      ? '基础设定与 OPC UA 已保存，数据库已重连，Group 与列已按当前数据库刷新'
-      : '基础设定与 OPC UA 已保存；如需刷新 Group 与列，请点击“连接数据库”');
+      ? '数据库设定已保存，数据库已重连，Group 与列已按当前数据库刷新'
+      : '数据库设定已保存；如需刷新 Group 与列，请点击“连接数据库”');
   document.getElementById('appSettingsHint').textContent = baseMessage;
   return result;
 }
 
+async function saveOpcuaSettings(options = {}) {
+  const { successMessage } = options;
+  const opcuaPayload = getOpcuaPayload();
+  const opcuaResult = await fetchJson('/api/config/opcua', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(opcuaPayload),
+  });
+  fillOpcuaForm(opcuaResult || opcuaPayload);
+  const hint = document.getElementById('opcuaSettingsHint');
+  if (hint) {
+    hint.textContent =
+      successMessage ||
+      `OPCUA设定已保存（轮询 ${opcuaResult?.poll_interval_ms || opcuaPayload.poll_interval_ms} ms` +
+        `${opcuaResult?.heartbeat_node || opcuaPayload.heartbeat_node ? '，已配置心跳' : '，未配置心跳'}）`;
+    hint.className = 'muted ok';
+  }
+  return opcuaResult;
+}
+
 async function connectDatabase() {
-  document.getElementById('appSettingsHint').textContent = '正在保存基础设定并连接数据库...';
+  document.getElementById('appSettingsHint').textContent = '正在保存数据库设定并连接数据库...';
   await saveAppSettings({
     refreshMetadata: false,
-    successMessage: '基础设定已保存，正在验证数据库连接...',
+    successMessage: '数据库设定已保存，正在验证数据库连接...',
   });
   const check = await fetchJson('/api/db/check');
   await refreshMetadataFromCurrentDatabase();
   document.getElementById('appSettingsHint').textContent =
-    `数据库连接成功（${check.database || '-'}），Group 与列已刷新；OPC UA 连接已随基础设定保存`;
+    `数据库连接成功（${check.database || '-'}），Group 与列已刷新`;
 }
 
 async function testOpcuaConnection() {
-  const hint = document.getElementById('appSettingsHint');
+  const hint = document.getElementById('opcuaSettingsHint') || document.getElementById('appSettingsHint');
   const payload = getOpcuaPayload();
   hint.textContent = '正在测试 OPC UA 连接...';
   hint.className = 'muted';
@@ -635,9 +670,11 @@ async function testOpcuaConnection() {
       result.product_name ? `product=${result.product_name}` : '',
       result.namespace_count != null ? `namespaces=${result.namespace_count}` : '',
     ].filter(Boolean);
-    setHintMessage('appSettingsHint', parts.join('；'), 'ok');
+    hint.textContent = parts.join('；');
+    hint.className = 'muted ok';
   } catch (err) {
-    setHintMessage('appSettingsHint', err?.message || String(err), 'warn');
+    hint.textContent = String(err?.message || err);
+    hint.className = 'muted warn';
   }
 }
 
@@ -990,11 +1027,14 @@ document.getElementById('activeConfigSelect').addEventListener('change', () => {
 document.getElementById('btnSaveAppSettings').addEventListener('click', () => {
   saveAppSettings().catch(catchHintError('appSettingsHint'));
 });
+document.getElementById('btnSaveOpcuaSettings').addEventListener('click', () => {
+  saveOpcuaSettings().catch(catchHintError('opcuaSettingsHint'));
+});
 document.getElementById('btnConnectDatabase').addEventListener('click', () => {
   connectDatabase().catch(catchHintError('appSettingsHint'));
 });
 document.getElementById('btnTestOpcuaConnection').addEventListener('click', () => {
-  testOpcuaConnection().catch(catchHintError('appSettingsHint'));
+  testOpcuaConnection().catch(catchHintError('opcuaSettingsHint'));
 });
 document.getElementById('btnAddColumns').addEventListener('click', addColumns);
 document.getElementById('btnRemoveColumns').addEventListener('click', removeColumns);
