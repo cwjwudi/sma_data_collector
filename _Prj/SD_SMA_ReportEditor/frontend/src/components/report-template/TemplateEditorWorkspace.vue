@@ -203,6 +203,9 @@
         </div>
         <template v-if="midMode === 'preview'">
           <div class="preview-opts-side">
+            <p v-if="bindingPreview.loading.value" class="preview-side-loading" role="status">
+              正在读取数据…
+            </p>
             <label class="preview-side-lbl">
               正文页数
               <input
@@ -297,6 +300,15 @@
         <div class="mid-body">
           <template v-if="midMode === 'preview'">
             <div class="mid-preview-wrap">
+              <div
+                v-if="bindingPreview.loading.value"
+                class="mid-preview-loading"
+                role="status"
+                aria-live="polite"
+              >
+                <span class="mid-preview-loading__spin" aria-hidden="true" />
+                <span>正在读取数据…</span>
+              </div>
               <TemplateExportPreviewStack
                 :tmpl="editing"
                 :active-sheet="sh"
@@ -577,13 +589,22 @@ watchDebounced(
 );
 
 let midModeRefreshToken = 0;
-watch(midMode, () => {
+watch(midMode, (mode) => {
   if (!editing.value) return;
   const token = ++midModeRefreshToken;
-  // 延后到 DOM 挂载完成后再刷，避免与 v-if 整树重建同帧抢主线程；且不写回 tableRows
+  // 本帧先切到预览并亮起「正在读取数据」，下一帧再拉数，避免干等在编辑态
+  if (mode === "preview") {
+    bindingPreview.loading.value = true;
+  } else {
+    bindingPreview.loading.value = false;
+  }
   void nextTick(() => {
     if (token !== midModeRefreshToken || !editing.value) return;
-    void bindingPreview.refresh({ silent: true, mutateTemplateRows: false });
+    if (mode === "preview") {
+      void bindingPreview.refresh({ silent: false, mutateTemplateRows: false });
+    } else {
+      void bindingPreview.refresh({ silent: true, mutateTemplateRows: false });
+    }
   });
 });
 
@@ -1575,6 +1596,15 @@ onUnmounted(() => {
   background: #fff;
   box-sizing: border-box;
 }
+.preview-side-loading {
+  margin: 0 0 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--accent, #2563eb) 12%, transparent);
+  color: var(--text, #1f2937);
+  font-size: 12px;
+  font-weight: 600;
+}
 .preview-side-hint,
 .preview-side-dblhint {
   margin: 0;
@@ -1647,11 +1677,43 @@ onUnmounted(() => {
   overflow: hidden;
 }
 .mid-preview-wrap {
+  position: relative;
   flex: 1 1 auto;
   min-height: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+.mid-preview-loading {
+  position: absolute;
+  z-index: 4;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border, #c5cdd8);
+  background: color-mix(in srgb, var(--panel, #fff) 92%, transparent);
+  box-shadow: 0 2px 10px rgb(0 0 0 / 10%);
+  font-size: 13px;
+  color: var(--text, #1f2937);
+  pointer-events: none;
+}
+.mid-preview-loading__spin {
+  width: 14px;
+  height: 14px;
+  border: 2px solid color-mix(in srgb, var(--accent, #2563eb) 35%, transparent);
+  border-top-color: var(--accent, #2563eb);
+  border-radius: 50%;
+  animation: mid-preview-spin 0.7s linear infinite;
+}
+@keyframes mid-preview-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 .mid-preview-stack {
   flex: 1 1 auto;
