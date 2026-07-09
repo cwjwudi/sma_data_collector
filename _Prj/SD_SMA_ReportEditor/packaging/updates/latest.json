@@ -1,15 +1,15 @@
 {
-  "version": "0.2.19",
-  "releasedAt": "2026-07-09T17:52:19.269Z",
-  "notes": "Report Editor 0.2.19\n\n- 点击「导出预览」时先切换界面并提示「正在读取数据」，避免干等卡顿\n- 继承 0.2.18：画布切换减卡顿；纵表多条结果可另起一页",
+  "version": "0.2.20",
+  "releasedAt": "2026-07-09T18:27:41.950Z",
+  "notes": "Report Editor 0.2.20\n\n- 修复数据源等异步页面短暂「未样式化」布局（关闭 CSS 代码分割，避免 Electron 下 FOUC）\n- 继承 0.2.19：导出预览先切界面并提示正在读取数据",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor-Setup-0.2.19-x64.exe",
-      "sha256": "a1bde94fead9b6310d0bd5b3a8a6ba461c6b24653a82df19b4885688282972c6",
-      "size": 144436362
+      "url": "Report Editor-Setup-0.2.20-x64.exe",
+      "sha256": "b8e41803a8dfd716f057e9db77acb482043b3a938a7e15695d59eac03b712882",
+      "size": 144410649
     },
     "darwin-arm64": {
-      "url": "Report Editor-0.2.19-arm64.dmg",
+      "url": "Report Editor-0.2.20-arm64.dmg",
       "sha256": "",
       "size": 0
     }
