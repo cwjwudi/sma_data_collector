@@ -9,6 +9,7 @@ import shutil
 import socket
 import subprocess
 import sys
+import threading
 import time
 import urllib.parse
 import webbrowser
@@ -23,6 +24,8 @@ PACKAGE_ROOT = LAUNCHER_DIR.parent
 DEFAULT_CONFIG = LAUNCHER_DIR / "launcher_config.json"
 LAUNCHER_LOG_DIR = PACKAGE_ROOT / "logs" / "launcher"
 LAUNCHER_LOG_FILE = LAUNCHER_LOG_DIR / "launcher.log"
+DEFAULT_SERVICE_LOG_MAX_BYTES = 5 * 1024 * 1024
+DEFAULT_SERVICE_LOG_BACKUP_COUNT = 5
 
 # Unified package-root folders used by launcher/portable package.
 SERVICE_DATA_DIRS: dict[str, str] = {
@@ -56,6 +59,96 @@ class ServiceProcess:
     log_path: Path
     process: subprocess.Popen
     log_file: Any
+    log_pump: Any = None
+
+
+class SizeRotatingLogWriter:
+    """Append process output to a size-rotated log file (uvicorn.log, .1, .2, ...)."""
+
+    def __init__(
+        self,
+        path: Path,
+        *,
+        max_bytes: int = DEFAULT_SERVICE_LOG_MAX_BYTES,
+        backup_count: int = DEFAULT_SERVICE_LOG_BACKUP_COUNT,
+        encoding: str = "utf-8",
+    ) -> None:
+        self.path = Path(path)
+        self.max_bytes = max(1024, int(max_bytes))
+        self.backup_count = max(1, int(backup_count))
+        self.encoding = encoding
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._lock = threading.Lock()
+        self._fp = self.path.open("a", encoding=self.encoding, newline="")
+        self._closed = False
+        try:
+            self._bytes_written = self.path.stat().st_size
+        except OSError:
+            self._bytes_written = 0
+
+    def write(self, data: str) -> int:
+        if not data:
+            return 0
+        with self._lock:
+            if self._closed:
+                return 0
+            payload = data.encode(self.encoding, errors="replace")
+            self._rotate_if_needed(len(payload))
+            self._fp.write(data)
+            self._fp.flush()
+            self._bytes_written += len(payload)
+            return len(data)
+
+    def flush(self) -> None:
+        with self._lock:
+            if not self._closed:
+                self._fp.flush()
+
+    def close(self) -> None:
+        with self._lock:
+            if self._closed:
+                return
+            self._closed = True
+            try:
+                self._fp.flush()
+            finally:
+                self._fp.close()
+
+    def _rotate_if_needed(self, incoming_bytes: int) -> None:
+        if self._bytes_written + incoming_bytes < self.max_bytes:
+            return
+        self._fp.flush()
+        self._fp.close()
+        for idx in range(self.backup_count - 1, 0, -1):
+            src = self.path.with_name(f"{self.path.name}.{idx}")
+            dst = self.path.with_name(f"{self.path.name}.{idx + 1}")
+            if src.exists():
+                if dst.exists():
+                    dst.unlink()
+                src.rename(dst)
+        rotated = self.path.with_name(f"{self.path.name}.1")
+        if self.path.exists():
+            if rotated.exists():
+                rotated.unlink()
+            self.path.rename(rotated)
+        self._fp = self.path.open("a", encoding=self.encoding, newline="")
+        self._bytes_written = 0
+
+
+def _pump_process_output(stream: Any, writer: SizeRotatingLogWriter) -> None:
+    try:
+        for line in iter(stream.readline, ""):
+            if not line:
+                break
+            writer.write(line)
+    except Exception:
+        pass
+    finally:
+        try:
+            stream.close()
+        except Exception:
+            pass
+        writer.close()
 
 
 class _TeeTextIO:
@@ -547,8 +640,11 @@ def start_services(python: Path, config: dict[str, Any]) -> list[ServiceProcess]
         log_dir = log_dir_from_service(service)
         log_dir.mkdir(parents=True, exist_ok=True)
         log_path = log_dir / "uvicorn.log"
-        log_file = log_path.open("a", encoding="utf-8")
+        log_writer = SizeRotatingLogWriter(log_path)
         service_env = resolve_service_env(service)
+        # Let query_web also write its own rotated app.log when SD_SMA_LOG_DIR is set.
+        if "SD_SMA_LOG_DIR" not in service_env:
+            service_env = {**service_env, "SD_SMA_LOG_DIR": str(log_dir)}
         command = [
             str(python),
             "-m",
@@ -561,17 +657,27 @@ def start_services(python: Path, config: dict[str, Any]) -> list[ServiceProcess]
         ]
 
         print(f"[start] {title}: http://{host}:{port}")
-        print(f"[start] log: {log_path}")
+        print(f"[start] log: {log_path} (rotate {DEFAULT_SERVICE_LOG_MAX_BYTES // (1024 * 1024)}MB x{DEFAULT_SERVICE_LOG_BACKUP_COUNT})")
         for env_key, env_value in service_env.items():
             print(f"[start] env {env_key}={env_value}")
         process = subprocess.Popen(
             command,
             cwd=str(cwd),
             env={**env, **service_env},
-            stdout=log_file,
+            stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
+            encoding="utf-8",
+            errors="replace",
+            bufsize=1,
         )
+        log_pump = threading.Thread(
+            target=_pump_process_output,
+            args=(process.stdout, log_writer),
+            name=f"log-pump-{name}",
+            daemon=True,
+        )
+        log_pump.start()
         processes.append(
             ServiceProcess(
                 name=name,
@@ -579,7 +685,8 @@ def start_services(python: Path, config: dict[str, Any]) -> list[ServiceProcess]
                 url=str(service.get("open_url", f"http://{host}:{port}")),
                 log_path=log_path,
                 process=process,
-                log_file=log_file,
+                log_file=log_writer,
+                log_pump=log_pump,
             )
         )
 
@@ -624,6 +731,13 @@ def terminate_processes(processes: list[ServiceProcess]) -> None:
         if proc.process.poll() is None:
             print(f"[stop] force kill: {proc.title}")
             proc.process.kill()
+        try:
+            if proc.process.stdout is not None:
+                proc.process.stdout.close()
+        except OSError:
+            pass
+        if proc.log_pump is not None:
+            proc.log_pump.join(timeout=2.0)
         try:
             proc.log_file.close()
         except OSError:

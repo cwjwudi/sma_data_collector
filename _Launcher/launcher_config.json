@@ -45,7 +45,8 @@
       "health_path": "/query",
       "open_url": "http://127.0.0.1:8092/query",
       "env": {
-        "SD_SMA_QUERY_WEB_CONFIG_DIR": "config/query_web"
+        "SD_SMA_QUERY_WEB_CONFIG_DIR": "config/query_web",
+        "SD_SMA_LOG_DIR": "logs/query_web"
       }
     },
     {
