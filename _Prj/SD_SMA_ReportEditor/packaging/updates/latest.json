@@ -1,15 +1,15 @@
 {
-  "version": "0.2.21",
-  "releasedAt": "2026-07-09T19:56:20.420Z",
-  "notes": "Report Editor 0.2.21\n\n- 修复纵表增行后末行被裁切：固定行高约束下拉控件，外框严格贴合行数×行高\n- 修复纵表增行后外框过高、表体被裁短：预览行数与贴合高度对齐，外框不超过正文区剩余高度\n- 修复纵表：配置多字段后按逻辑行显示并自动撑高外框\n- 修复纵表「每条结果另起一页」时编辑画布仍叠多条并显示续表分隔：编辑态仅预览首条，完整分页见导出预览\n- 继承 0.2.20：数据源页 FOUC 修复",
+  "version": "0.2.22",
+  "releasedAt": "2026-07-09T20:14:04.565Z",
+  "notes": "Report Editor 0.2.22\n\n- 模版编辑与版式编辑：支持复制 / 剪切 / 粘贴 / 撤销 / 重做（顶栏按钮 + Ctrl/⌘+C/X/V/Z/Y）\n- 粘贴保留控件全部属性配置（绑定、SQL、样式、表格字段等），偏移落点便于复用提速\n- 继承 0.2.21：纵表增行贴合与末行裁切修复",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor-Setup-0.2.21-x64.exe",
-      "sha256": "14ebee0481196a1cf2c55630bafbbed9b0f1d7777b1681991b2fd87f05daebcb",
-      "size": 144411698
+      "url": "Report Editor-Setup-0.2.22-x64.exe",
+      "sha256": "8662b7c7a77896148beebaa03da12f88674733f631e53b7b33fe8e8202de48e4",
+      "size": 144412351
     },
     "darwin-arm64": {
-      "url": "Report Editor-0.2.21-arm64.dmg",
+      "url": "Report Editor-0.2.22-arm64.dmg",
       "sha256": "",
       "size": 0
     }

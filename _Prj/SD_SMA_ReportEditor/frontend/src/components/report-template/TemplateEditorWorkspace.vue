@@ -8,6 +8,53 @@
           <span class="muted-inline">{{ templateDimLabel }}</span>
         </div>
         <div class="bar-actions">
+          <button
+            type="button"
+            class="b"
+            title="撤销 (Ctrl+Z)"
+            :disabled="tplUndoStack.length === 0"
+            @click="undoTplEdit"
+          >
+            撤销
+          </button>
+          <button
+            type="button"
+            class="b"
+            title="重做 (Ctrl+Y / Ctrl+Shift+Z)"
+            :disabled="tplRedoStack.length === 0"
+            @click="redoTplEdit"
+          >
+            重做
+          </button>
+          <span class="bar-sep" aria-hidden="true" />
+          <button
+            type="button"
+            class="b"
+            title="复制选中控件（含全部属性）(Ctrl+C)"
+            :disabled="!sel"
+            @click="copySel"
+          >
+            复制
+          </button>
+          <button
+            type="button"
+            class="b"
+            title="剪切选中控件 (Ctrl+X)"
+            :disabled="!sel"
+            @click="cutSel"
+          >
+            剪切
+          </button>
+          <button
+            type="button"
+            class="b"
+            title="粘贴控件（保留属性配置）(Ctrl+V)"
+            :disabled="!canPasteTpl"
+            @click="pasteSel"
+          >
+            粘贴
+          </button>
+          <span class="bar-sep" aria-hidden="true" />
           <button type="button" class="b primary" :disabled="saving" @click="save">
             {{ saving ? "保存中…" : "保存模版" }}
           </button>
@@ -449,6 +496,12 @@ import {
   syncLegacyElementsAlias,
   TEMPLATE_SCHEMA_VERSION,
 } from "@/lib/report-template/model";
+import {
+  copyTemplateElementToClipboard,
+  eventTargetIsTypingField,
+  hasTemplateElementClipboard,
+  takeTemplateElementPasteClone,
+} from "@/lib/report-template/editor-element-clipboard";
 import { templateTableCellPickKey, reportBindingPreviewKey } from "@/lib/report-template/template-editor-context";
 import { getCachedTemplateFullMap } from "@/lib/report-template/template-view-cache";
 import { useReportBindingPreview } from "@/composables/useReportBindingPreview";
@@ -709,6 +762,17 @@ const propsContentH = computed(() => {
   if (!t) return Number.POSITIVE_INFINITY;
   return metricsForSheet(t, sh.value).contentH;
 });
+
+/** 粘贴按钮：模块级剪贴板非响应式，用 tick 驱动 UI 刷新 */
+const clipboardTick = ref(0);
+const canPasteTpl = computed(() => {
+  void clipboardTick.value;
+  return hasTemplateElementClipboard();
+});
+
+function bumpClipboardUi() {
+  clipboardTick.value += 1;
+}
 
 /** 手写板副标题与描摹字：优先签名库名称，否则签署说明 */
 const sigPadGuideLabel = computed(() => {
@@ -1198,6 +1262,44 @@ function delSel() {
   }
 }
 
+function copySel() {
+  const el = sel.value;
+  if (!el) return;
+  midMode.value = "edit";
+  copyTemplateElementToClipboard(el);
+  bumpClipboardUi();
+  hint.value = "已复制控件（含属性配置）。";
+}
+
+function cutSel() {
+  const el = sel.value;
+  if (!el) return;
+  midMode.value = "edit";
+  copyTemplateElementToClipboard(el);
+  bumpClipboardUi();
+  delSel();
+  hint.value = "已剪切控件。";
+}
+
+function pasteSel() {
+  const t = editing.value;
+  if (!t || !hasTemplateElementClipboard()) return;
+  midMode.value = "edit";
+  const m = metricsForSheet(t, sh.value);
+  const el = takeTemplateElementPasteClone(m.contentW, m.contentH);
+  if (!el) return;
+  bumpClipboardUi();
+  if (sh.value === "body") {
+    const pages = ensureBodyPages(t);
+    const ix = Math.max(0, Math.min(bodyPageIdx.value, pages.length - 1));
+    pages[ix].push(el);
+  } else {
+    bodyElementsRef(t, sh.value).push(el);
+  }
+  selId.value = el.id;
+  hint.value = "已粘贴控件（属性已保留）。";
+}
+
 function sigOk(dataUrl) {
   if (!sel.value || sel.value.type !== "signature") return;
   sel.value.imageSrc = dataUrl;
@@ -1229,14 +1331,6 @@ async function onPickSigLibrary(ev) {
   }
 }
 
-function eventTargetIsTypingField(target) {
-  if (!(target instanceof HTMLElement)) return false;
-  if (target.isContentEditable) return true;
-  if (target.closest('[contenteditable="true"]')) return true;
-  const tag = target.tagName;
-  return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
-}
-
 function onKey(ev) {
   if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "s") {
     ev.preventDefault();
@@ -1261,6 +1355,27 @@ function onKey(ev) {
     if (tplRedoStack.value.length === 0) return;
     ev.preventDefault();
     redoTplEdit();
+    return;
+  }
+  if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "c") {
+    if (eventTargetIsTypingField(ev.target)) return;
+    if (!sel.value) return;
+    ev.preventDefault();
+    copySel();
+    return;
+  }
+  if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "x") {
+    if (eventTargetIsTypingField(ev.target)) return;
+    if (!sel.value) return;
+    ev.preventDefault();
+    cutSel();
+    return;
+  }
+  if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "v") {
+    if (eventTargetIsTypingField(ev.target)) return;
+    if (!hasTemplateElementClipboard()) return;
+    ev.preventDefault();
+    pasteSel();
     return;
   }
   if (eventTargetIsTypingField(ev.target)) return;
@@ -1416,6 +1531,12 @@ onUnmounted(() => {
   align-items: center;
   gap: 8px;
   flex-shrink: 0;
+}
+.bar-sep {
+  width: 1px;
+  height: 22px;
+  background: #e4e4e7;
+  margin: 0 2px;
 }
 .bar-name-inp {
   min-width: 120px;
