@@ -329,7 +329,7 @@ function Set-VenvHome {
     Set-Content -LiteralPath $cfgPath -Value $rewritten -Encoding ASCII
 }
 
-function Get-ServiceProjectNames {
+function Get-LauncherServices {
     if (-not (Test-Path -LiteralPath $LauncherConfig)) {
         throw "launcher_config.json not found: $LauncherConfig"
     }
@@ -338,28 +338,152 @@ function Get-ServiceProjectNames {
     if (-not $config.services) {
         throw "launcher_config.json has no services array."
     }
+    return @($config.services)
+}
 
+function Get-ServiceFolderName {
+    param([Parameter(Mandatory = $true)]$Service)
+
+    $map = @{
+        "collector_web" = "collector"
+        "query_web"     = "query_web"
+        "db_admin"      = "db_admin"
+        "report_copy"   = "report_copy"
+    }
+    $name = [string]$Service.name
+    if ($map.ContainsKey($name)) {
+        return $map[$name]
+    }
+    if ([string]::IsNullOrWhiteSpace($name)) {
+        return "service"
+    }
+    return $name
+}
+
+function Get-ServiceProjectName {
+    param([Parameter(Mandatory = $true)]$Service)
+
+    $cwd = [string]$Service.cwd
+    if ([string]::IsNullOrWhiteSpace($cwd)) {
+        throw "Service '$($Service.name)' has empty cwd."
+    }
+    $normalized = $cwd.Replace("/", "\").Trim("\")
+    $parts = $normalized -split "\\"
+    if ($parts.Count -lt 2 -or $parts[0] -ne "_Prj") {
+        throw "Service '$($Service.name)' cwd must be under _Prj/: $cwd"
+    }
+    return $parts[1]
+}
+
+function Get-ServiceProjectNames {
     $names = New-Object System.Collections.Generic.List[string]
-    foreach ($service in $config.services) {
-        $cwd = [string]$service.cwd
-        if ([string]::IsNullOrWhiteSpace($cwd)) {
-            continue
-        }
-        $normalized = $cwd.Replace("/", "\").Trim("\")
-        $parts = $normalized -split "\\"
-        if ($parts.Count -lt 2 -or $parts[0] -ne "_Prj") {
-            throw "Service '$($service.name)' cwd must be under _Prj/: $cwd"
-        }
-        $projectName = $parts[1]
+    foreach ($service in (Get-LauncherServices)) {
+        $projectName = Get-ServiceProjectName -Service $service
         if (-not $names.Contains($projectName)) {
             $names.Add($projectName)
         }
     }
-
     if ($names.Count -eq 0) {
         throw "No project directories resolved from launcher_config.json services."
     }
     return $names
+}
+
+function Set-ReportCopyLogDir {
+    param([Parameter(Mandatory = $true)][string]$ConfigFile)
+
+    if (-not (Test-Path -LiteralPath $ConfigFile)) {
+        return
+    }
+
+    $raw = Get-Content -LiteralPath $ConfigFile -Raw -Encoding UTF8
+    $data = $raw | ConvertFrom-Json
+    $desired = '${PACKAGE_ROOT}/logs/report_copy'
+    if ($data.log_dir -eq $desired) {
+        return
+    }
+    $data | Add-Member -NotePropertyName log_dir -NotePropertyValue $desired -Force
+    $json = $data | ConvertTo-Json -Depth 20
+    [System.IO.File]::WriteAllText($ConfigFile, $json + "`r`n", [System.Text.UTF8Encoding]::new($false))
+    Write-Host "[config] report_copy log_dir -> $desired"
+}
+
+function Clear-CollectorRelativeLogDirs {
+    param([Parameter(Mandatory = $true)][string]$ConfigDir)
+
+    if (-not (Test-Path -LiteralPath $ConfigDir)) {
+        return
+    }
+
+    $changed = 0
+    Get-ChildItem -LiteralPath $ConfigDir -Filter "*.json" -File | ForEach-Object {
+        try {
+            $data = Get-Content -LiteralPath $_.FullName -Raw -Encoding UTF8 | ConvertFrom-Json
+        }
+        catch {
+            return
+        }
+        if (-not $data.logging) {
+            return
+        }
+        $outputDir = [string]$data.logging.output_dir
+        if ([string]::IsNullOrWhiteSpace($outputDir)) {
+            return
+        }
+        if ([System.IO.Path]::IsPathRooted($outputDir) -or $outputDir.StartsWith('${')) {
+            return
+        }
+        $data.logging.output_dir = ""
+        $json = $data | ConvertTo-Json -Depth 40
+        [System.IO.File]::WriteAllText($_.FullName, $json + "`r`n", [System.Text.UTF8Encoding]::new($false))
+        $changed += 1
+    }
+    if ($changed -gt 0) {
+        Write-Host "[config] cleared relative logging.output_dir in $changed collector config file(s)"
+    }
+}
+
+function Materialize-UnifiedRuntimeDirs {
+    $packageConfigRoot = Join-Path $PackageRoot "config"
+    $packageLogsRoot = Join-Path $PackageRoot "logs"
+
+    if (Test-Path -LiteralPath $packageConfigRoot) {
+        Remove-Item -LiteralPath $packageConfigRoot -Recurse -Force
+    }
+    New-Item -ItemType Directory -Force -Path $packageConfigRoot | Out-Null
+    New-Item -ItemType Directory -Force -Path $packageLogsRoot | Out-Null
+    New-Item -ItemType Directory -Force -Path (Join-Path $packageLogsRoot "launcher") | Out-Null
+
+    foreach ($service in (Get-LauncherServices)) {
+        $folder = Get-ServiceFolderName -Service $service
+        $projectName = Get-ServiceProjectName -Service $service
+        $sourceConfig = Join-Path $RepoRoot "_Prj\$projectName\config"
+        $targetConfig = Join-Path $packageConfigRoot $folder
+        $targetLogs = Join-Path $packageLogsRoot $folder
+
+        New-Item -ItemType Directory -Force -Path $targetLogs | Out-Null
+        if (Test-Path -LiteralPath $sourceConfig) {
+            Write-Host "[config] materialize $folder from _Prj/$projectName/config"
+            Copy-DirectoryFiltered `
+                -Source $sourceConfig `
+                -Destination $targetConfig `
+                -SkipDirectoryNames @(
+                    ".git", ".pytest_cache", ".mypy_cache", "__pycache__", "venv", ".venv",
+                    "logs", "dist", "node_modules", "_backup", "exports", "backups"
+                )
+        }
+        else {
+            Write-Host "[config] source missing for $folder, creating empty: $targetConfig"
+            New-Item -ItemType Directory -Force -Path $targetConfig | Out-Null
+        }
+
+        if ($folder -eq "report_copy") {
+            Set-ReportCopyLogDir -ConfigFile (Join-Path $targetConfig "default.json")
+        }
+        if ($folder -eq "collector") {
+            Clear-CollectorRelativeLogDirs -ConfigDir $targetConfig
+        }
+    }
 }
 
 Set-OptionalProxyEnv -ProxyUrl $HttpProxy
@@ -400,6 +524,8 @@ foreach ($projectName in $projectNames) {
         -Source $source `
         -Destination (Join-Path $PackageProjects $projectName)
 }
+
+Materialize-UnifiedRuntimeDirs
 
 $RootStart = Join-Path $PackageRoot "start.bat"
 @"

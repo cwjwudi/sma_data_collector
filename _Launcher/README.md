@@ -116,6 +116,8 @@ SD_SMA_Runtime_Package/
   start.bat
   .venv/
   _Python/          # 内置 Python 运行时（现场无需预装）
+  config/           # 统一配置：collector / query_web / db_admin / report_copy
+  logs/             # 统一日志骨架
   _Launcher/
   _Prj/
     SD_SMA_DATA_COLLECTOR/
@@ -158,20 +160,54 @@ powershell -NoProfile -ExecutionPolicy Bypass -File _Launcher\scripts\build_port
 
 ## 配置目录
 
-可以在 `_Launcher/launcher_config.json` 的每个服务中修改 `env` 来指定配置目录。相对路径按包根目录解析，绝对路径会直接使用。
+Launcher / 便携包统一使用包根下的目录：
 
-采集器：
+```text
+config/
+  collector/
+  query_web/
+  db_admin/
+  report_copy/
+logs/
+  launcher/      # 启动器自身日志：launcher.log
+  collector/     # 采集器应用日志 + uvicorn.log
+  query_web/     # query_web uvicorn.log
+  db_admin/      # db_admin uvicorn.log
+  report_copy/   # 报表复制业务日志 + uvicorn.log
+```
+
+默认环境变量（见 `launcher_config.json`）：
 
 ```json
 "env": {
-  "SD_SMA_COLLECTOR_CONFIG_DIR": "site_config/collector"
+  "SD_SMA_COLLECTOR_CONFIG_DIR": "config/collector",
+  "SD_SMA_LOG_DIR": "logs/collector"
 }
 ```
-
-查询 Web：
 
 ```json
 "env": {
-  "SD_SMA_QUERY_WEB_CONFIG_DIR": "site_config/query_web"
+  "SD_SMA_QUERY_WEB_CONFIG_DIR": "config/query_web"
 }
 ```
+
+```json
+"env": {
+  "SD_SMA_DB_ADMIN_CONFIG_DIR": "config/db_admin"
+}
+```
+
+```json
+"env": {
+  "SD_SMA_REPORT_COPY_CONFIG_DIR": "config/report_copy"
+}
+```
+
+相对路径按包根目录解析，绝对路径会直接使用。
+
+分工：
+
+- **现场 / Launcher 启动**：读写包根 `config/<服务>/` 与 `logs/<服务>/`
+- **单独开发某个工程**：仍使用该工程自己的 `_Prj/<工程>/config`（不设上述环境变量时的默认行为）
+
+首次用 Launcher 启动时，若某个 `config/<服务>/` 为空，会自动从对应 `_Prj/<工程>/config` 复制一份作为初始配置。便携包打包时也会预先物化这些目录。

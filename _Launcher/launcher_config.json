@@ -31,7 +31,8 @@
       "health_path": "/api/health",
       "open_url": "http://127.0.0.1:8091/dashboard",
       "env": {
-        "SD_SMA_COLLECTOR_CONFIG_DIR": "_Prj/SD_SMA_DATA_COLLECTOR/config"
+        "SD_SMA_COLLECTOR_CONFIG_DIR": "config/collector",
+        "SD_SMA_LOG_DIR": "logs/collector"
       }
     },
     {
@@ -44,7 +45,7 @@
       "health_path": "/query",
       "open_url": "http://127.0.0.1:8092/query",
       "env": {
-        "SD_SMA_QUERY_WEB_CONFIG_DIR": "_Prj/SD_SMA_DATA_COLLECTOR_QUERY_WEB/config"
+        "SD_SMA_QUERY_WEB_CONFIG_DIR": "config/query_web"
       }
     },
     {
@@ -57,7 +58,7 @@
       "health_path": "/api/health",
       "open_url": "http://127.0.0.1:8093/admin",
       "env": {
-        "SD_SMA_DB_ADMIN_CONFIG_DIR": "_Prj/SD_SMA_DB_ADMIN/config"
+        "SD_SMA_DB_ADMIN_CONFIG_DIR": "config/db_admin"
       }
     },
     {
@@ -70,7 +71,7 @@
       "health_path": "/api/health",
       "open_url": "http://127.0.0.1:8094/",
       "env": {
-        "SD_SMA_REPORT_COPY_CONFIG_DIR": "_Prj/SD_SMA_REPORT_COPY/config"
+        "SD_SMA_REPORT_COPY_CONFIG_DIR": "config/report_copy"
       }
     }
   ]
