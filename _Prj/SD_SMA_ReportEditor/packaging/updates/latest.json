@@ -1,6 +1,6 @@
 {
   "version": "0.2.15",
-  "releasedAt": "2026-07-09T16:23:41.577Z",
+  "releasedAt": "2026-07-09T16:38:10.746Z",
   "notes": "Report Editor 0.2.15\n\n- 修复结批/导出标量 SQL（参数、单元格、页眉页脚）未传库名导致 MySQL 1046 No database selected；点选生成的连接与数据库会随查询一并提交\n- 1046 报错提示更明确：检查连接默认库，或用点选生成重新选择数据库\n- 继承 0.2.14：纵表、空白列、序号列与跨页续表",
   "platforms": {
     "win32-x64": {
@@ -10,8 +10,8 @@
     },
     "darwin-arm64": {
       "url": "Report Editor-0.2.15-arm64.dmg",
-      "sha256": "",
-      "size": 0
+      "sha256": "dff43a43f32d88db1cd7d4908f353243ae3cecdf5f08ee87cf21d89b4fc3501d",
+      "size": 180077217
     }
   }
 }
