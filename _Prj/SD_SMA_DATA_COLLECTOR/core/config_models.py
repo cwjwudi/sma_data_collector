@@ -72,7 +72,7 @@ class DataGroup:
     partition_interval_years: int = 1  # 0=不分表；1..10=分表间隔年份
     recreate_interval_days: int = 365  # 旧版字段：保留兼容，不参与分表逻辑
     batch_insert_size: int = 100  # 批量插入大小
-    is_parallel: bool = False  # 是否启用并行触发模式（trigger_point 和 data_points 为数组节点）
+    is_parallel: bool = False  # 并行触发：trigger 为布尔数组；data_points 可为数组或标量（标量广播到各触发行）
     unique_key_point: Optional[str] = None  # 唯一性校验键（按组）
     insert_feedback: Optional[InsertFeedbackConfig] = None  # 插入反馈配置（UDINT）
     batch_upsert: Optional[BatchUpsertConfig] = None  # 批次更新配置（唯一冲突时按 end_time 条件更新）

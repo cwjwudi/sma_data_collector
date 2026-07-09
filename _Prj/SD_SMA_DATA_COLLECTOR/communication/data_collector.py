@@ -8,7 +8,7 @@ import logging
 import sys
 import os
 import time
-from typing import Dict, List, Callable, Any, Iterator
+from typing import Dict, List, Callable, Any, Iterator, Optional
 from datetime import datetime, timedelta
 
 # 处理相对导入问题
@@ -171,6 +171,46 @@ class DataCollector:
         )
         return False
     
+    def _extract_parallel_point_values(
+        self,
+        group_name: str,
+        point_name: str,
+        point_data: Dict[str, Any],
+        triggered_indices: List[int],
+    ) -> Optional[Dict[str, Any]]:
+        """
+        从并行触发读取结果中提取与触发索引对齐的值列表。
+
+        - 数组：按触发索引取值
+        - 标量（如全局 BatchCode）：广播到每个触发索引
+        - None：跳过该点
+        """
+        raw_value = point_data.get('value')
+        if raw_value is None:
+            self.logger.warning(
+                f"并行触发组 {group_name} 数据点 {point_name} 值为 None，跳过该点"
+            )
+            return None
+
+        if isinstance(raw_value, (list, tuple)):
+            extracted = [raw_value[i] for i in triggered_indices if i < len(raw_value)]
+        else:
+            # 标量点（如当前批次号）广播到本次所有触发行
+            extracted = [raw_value] * len(triggered_indices)
+            self.logger.debug(
+                "并行触发组 %s 数据点 %s 为标量，已广播到 %s 个触发索引",
+                group_name,
+                point_name,
+                len(triggered_indices),
+            )
+
+        return {
+            'value': extracted,
+            'timestamp': point_data.get('timestamp'),
+            'path': point_data.get('path'),
+            'triggered_indices': triggered_indices,
+        }
+
     def _iter_scalar_collection_rows(self, collection_data: Dict[str, Any]) -> Iterator[Dict[str, Any]]:
         """
         将并行采集结果（各数据点 value 为等长列表）拆成多行，每行各点为标量。
@@ -746,8 +786,8 @@ class DataCollector:
                                                        data_points: List[DataPoint],
                                                        trigger_point: DataPoint,
                                                        opcua_client: OpcUaClient) -> None:
-        """并行变量触发的数据采集 - trigger_point 为布尔数组，data_points 为数组节点，
-        检测上升沿索引，提取对应索引的数据"""
+        """并行变量触发的数据采集 - trigger_point 为布尔数组；
+        data_points 可为数组（按索引取值）或标量（广播到每个触发索引）。"""
         poll_interval = self._get_variable_trigger_poll_interval(group)
         previous_trigger_state = None
 
@@ -778,24 +818,21 @@ class DataCollector:
                 if triggered_indices:
                     self.logger.info(f"并行触发组 {group.name} 检测到上升沿，触发索引: {triggered_indices}")
 
-                    # 读取所有数据点（每个返回数组）
+                    # 读取所有数据点（数组按索引提取，标量广播到各触发行）
                     data = await opcua_client.read_data_points(data_points)
 
                     # 构建合并的 collection_data
                     indexed_data = {}
                     for point in data_points:
                         point_data = data.get(point.name, {})
-                        array_value = point_data.get('value')
-                        if array_value is not None and isinstance(array_value, (list, tuple)):
-                            extracted = [array_value[i] for i in triggered_indices if i < len(array_value)]
-                            indexed_data[point.name] = {
-                                'value': extracted,
-                                'timestamp': point_data.get('timestamp'),
-                                'path': point_data.get('path'),
-                                'triggered_indices': triggered_indices
-                            }
-                        else:
-                            self.logger.warning(f"并行触发组 {group.name} 数据点 {point.name} 不是数组或值为 None")
+                        extracted = self._extract_parallel_point_values(
+                            group.name,
+                            point.name,
+                            point_data,
+                            triggered_indices,
+                        )
+                        if extracted is not None:
+                            indexed_data[point.name] = extracted
 
                     if indexed_data:
                         collection_data = {
