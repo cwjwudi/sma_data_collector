@@ -553,6 +553,9 @@ const props = defineProps<{
   sigChoices: { id: string; label: string }[];
   /** 由 TemplateEditorWorkspace 传入，与画布共用同一选中格状态（避免仅靠 inject 时右侧属性不刷新） */
   tableCellPick?: TemplateTableCellPick | null;
+  /** 当前页正文区宽高（像素），用于表格外框贴合时不超过页边界 */
+  contentW?: number;
+  contentH?: number;
 }>();
 
 const emit = defineEmits<{
@@ -561,8 +564,17 @@ const emit = defineEmits<{
   "open-signature-pad": [];
 }>();
 
+/** 表格外框 clamp：纵表增行后贴合行高，且不超过正文区剩余高度 */
+function clampSelectedTableOuter() {
+  if (props.el.type !== "table") return;
+  const maxW = Number.isFinite(props.contentW) ? props.contentW! : Number.POSITIVE_INFINITY;
+  const pageH = Number.isFinite(props.contentH) ? props.contentH! : Number.POSITIVE_INFINITY;
+  const maxH = Number.isFinite(pageH) ? Math.max(20, pageH - props.el.y) : Number.POSITIVE_INFINITY;
+  clampTableElementOuterSize(props.el, maxW, maxH);
+}
+
 function commitGeomAndClamp() {
-  if (props.el.type === "table") clampTableElementOuterSize(props.el);
+  if (props.el.type === "table") clampSelectedTableOuter();
 }
 
 const geomXField = useDeferredGeomField(() => props.el, "x", commitGeomAndClamp);
@@ -677,7 +689,7 @@ function onTplSqlLayoutModeChange(mode: "horizontal" | "vertical") {
     ensureTableGrid(el);
     syncTableRowsForVerticalSqlSlots(el, () => ensureTableGrid(el));
     tableDimRows.value = el.tableRows ?? 3;
-    clampTableElementOuterSize(el);
+    clampSelectedTableOuter();
   }
 }
 
@@ -686,7 +698,7 @@ function onTplVerticalSlotsChange() {
   if (el.type !== "table" || !el.tableSqlFill) return;
   syncTableRowsForVerticalSqlSlots(el, () => ensureTableGrid(el));
   tableDimRows.value = el.tableRows ?? 3;
-  clampTableElementOuterSize(el);
+  clampSelectedTableOuter();
 }
 
 const tableDimRows = ref(3);
@@ -878,7 +890,7 @@ function onTplTableColumnResizeFromProps(boundaryIndex: number, deltaLayoutPx: n
   if (!next) return;
   props.el.tableColWidthsPx = next;
   ensureTableGrid(props.el);
-  clampTableElementOuterSize(props.el);
+  clampSelectedTableOuter();
 }
 
 const templateTableCellMetric = computed(() => {
@@ -902,7 +914,7 @@ const tableRowHeightModel = computed({
   set(v: number) {
     if (props.el.type !== "table") return;
     props.el.tableRowHeightPx = clampTableRowHeightPx(v);
-    clampTableElementOuterSize(props.el);
+    clampSelectedTableOuter();
   },
 });
 
@@ -974,7 +986,7 @@ function bumpTableRowHeight(delta: number) {
   if (props.el.type !== "table") return;
   const cur = clampTableRowHeightPx(props.el.tableRowHeightPx);
   props.el.tableRowHeightPx = clampTableRowHeightPx(cur + delta);
-  clampTableElementOuterSize(props.el);
+  clampSelectedTableOuter();
 }
 
 function applyTableDims() {
@@ -1000,7 +1012,7 @@ function applyTableDims() {
   ensureTableGrid(el);
   if (editCellRow.value >= (el.tableRows ?? 1)) editCellRow.value = (el.tableRows ?? 1) - 1;
   if (editCellCol.value >= (el.tableCols ?? 1)) editCellCol.value = (el.tableCols ?? 1) - 1;
-  clampTableElementOuterSize(el);
+  clampSelectedTableOuter();
 }
 
 watch([tableDimRows, tableDimCols], ([rows, cols]) => {

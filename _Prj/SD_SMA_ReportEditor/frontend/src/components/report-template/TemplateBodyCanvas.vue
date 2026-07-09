@@ -426,6 +426,7 @@ import { applyVisualSqlOutputColumnPick, applyVerticalSqlSlotField, syncTableRow
 import {
   ensureVisualSource,
   isVisualSqlFillOutputPickerRow,
+  isVerticalSqlFill,
   isVerticalSqlFillSlotPickerCell,
   clampTableSqlMaxRows,
   visualSqlColumnPickValue,
@@ -447,6 +448,7 @@ import {
   templateTableSqlFillPreviewKey,
   TABLE_SQL_FILL_PREVIEW_ROW_LIMIT,
 } from "@/lib/report-template/table-sql-fill-preview";
+import { tableSqlFillVerticalChromePx } from "@/lib/report-template/table-sql-fill-layout-utils";
 
 /** cv-scaler 左右 padding 合计（与样式 padding: 20px 一致） */
 const EMBED_SCALER_PAD = 40;
@@ -894,11 +896,9 @@ function tplSqlFillEditorPreviewLayout(el: TemplateElement): SqlFillEditorPrevie
   const displayN = sqlFillEditorDisplayDataRowCount(el.tableSqlFill, sqlN);
 
   const rowH = clampTableRowHeightPx(el.tableRowHeightPx);
-  const chrome =
-    REPORT_TEMPLATE_TABLE_NODE_PADDING_PX.top +
-    REPORT_TEMPLATE_TABLE_NODE_PADDING_PX.bottom +
-    1;
-  const inner = Math.max(0, el.h - chrome - 2);
+  // 与 intrinsicOuterHeightForTemplateTable / tableSqlFillVerticalChromePx 对齐，勿再减额外余量
+  const chrome = tableSqlFillVerticalChromePx();
+  const inner = Math.max(0, el.h - chrome);
   const maxTotalRows = Math.max(1, Math.floor(inner / Math.max(1, rowH)));
 
   const paginationNeeded =
@@ -908,6 +908,22 @@ function tplSqlFillEditorPreviewLayout(el: TemplateElement): SqlFillEditorPrevie
     sqlN >= TABLE_SQL_FILL_PREVIEW_ROW_LIMIT ||
     sqlN >= maxRowsCfg ||
     displayN > TEMPLATE_BODY_TABLE_MAX_ROWS - 1;
+
+  /**
+   * 纵表：外框已按「表头+字段槽」贴合撑高；编辑态须完整显示这些行。
+   * 分页/截断提示不再从行高预算里扣减（否则会出现蓝框很高、表体被裁短、底部大片空白）。
+   * 提示改在表外/属性说明；此处仅在外框矮于内容时裁剪可见行。
+   */
+  if (isVerticalSqlFill(el.tableSqlFill)) {
+    const visible = Math.min(displayN, Math.max(0, maxTotalRows - 1));
+    return {
+      previewRowCount: displayN,
+      visibleDataRows: visible,
+      showPageHint: false,
+      // 仅在外框矮于内容时提示；勿因 limitsTrunc/分页占用行高，否则蓝框底部会留白挡住表体
+      showTruncateHint: visible < displayN,
+    };
+  }
 
   let showPageHint = paginationNeeded;
   let showTruncateHint = limitsTrunc;
@@ -1118,7 +1134,8 @@ function onTplVerticalSlotChange(el: TemplateElement, ri: number, ev: Event) {
   if (!fill || fill.fillMode !== "visual" || el.type !== "table") return;
   applyVerticalSqlSlotField(fill, ri - 1, v);
   syncTableRowsForVerticalSqlSlots(el, () => ensureTableGrid(el));
-  clampTableElementOuterSize(el);
+  const maxH = Math.max(20, me.value.contentH - el.y);
+  clampTableElementOuterSize(el, me.value.contentW, maxH);
 }
 
 function tplTableRowTrStyle(el: TemplateElement): Record<string, string> | undefined {

@@ -78,7 +78,10 @@ export function clampElementToLayout(
   el.h = Math.max(20, Math.min(el.h, contentH));
   el.x = Math.max(0, Math.min(el.x, contentW - el.w));
   el.y = Math.max(0, Math.min(el.y, contentH - el.h));
-  clampTableElementOuterSize(el, contentW, contentH);
+  // 表格贴合高度不得超过「从控件顶边到正文底」的剩余空间（勿用整页 contentH）
+  clampTableElementOuterSize(el, contentW, Math.max(20, contentH - el.y));
+  el.w = Math.max(20, Math.min(el.w, contentW));
+  el.h = Math.max(20, Math.min(el.h, contentH - el.y));
   el.x = Math.max(0, Math.min(el.x, contentW - el.w));
   el.y = Math.max(0, Math.min(el.y, contentH - el.h));
 }

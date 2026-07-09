@@ -388,6 +388,8 @@
           :el="sel"
           :table-cell-pick="tableCellPick"
           :sig-choices="sigChoices"
+          :content-w="propsContentW"
+          :content-h="propsContentH"
           @remove="delSel"
           @pick-sig-library="onPickSigLibrary"
           @open-signature-pad="dlgSig = true"
@@ -694,6 +696,18 @@ const sel = computed(() => {
   const coverFound = bodyElementsRef(t, "cover").find((x) => x.id === id);
   if (coverFound) return coverFound;
   return bodyElementsRef(t, "back").find((x) => x.id === id) ?? null;
+});
+
+/** 属性面板改表格尺寸时与画布共用正文区边界 */
+const propsContentW = computed(() => {
+  const t = editing.value;
+  if (!t) return Number.POSITIVE_INFINITY;
+  return metricsForSheet(t, sh.value).contentW;
+});
+const propsContentH = computed(() => {
+  const t = editing.value;
+  if (!t) return Number.POSITIVE_INFINITY;
+  return metricsForSheet(t, sh.value).contentH;
 });
 
 /** 手写板副标题与描摹字：优先签名库名称，否则签署说明 */
