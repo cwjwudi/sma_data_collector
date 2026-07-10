@@ -1,17 +1,17 @@
 {
-  "version": "0.2.29",
-  "releasedAt": "2026-07-10T07:30:03.737Z",
-  "notes": "Report Editor 0.2.29\n\n- 绑定 REAL/浮点可配置小数位数（参数、单元格、数据库填充）\n- 留空不强制；0–10 位按 toFixed 显示",
+  "version": "0.2.30",
+  "releasedAt": "2026-07-10T07:55:13.410Z",
+  "notes": "Report Editor 0.2.30\n\n- 侧栏切换先显示加载提示，再跳转页面，避免点了没反应\n- 数据源页拆包懒加载：先出工作台壳与遮罩，OPC 仅在切到该 Tab 时挂载\n- 修复 0.2.28 回归：数据参数 SQL 的 {{p0}}/{{p1}} 配置区消失，并恢复绑定区样式",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor-Setup-0.2.29-x64.exe",
-      "sha256": "969f473dc4c3fc4a1b07f44c01f2fd0fc24b312915e278d269bf891fd5583530",
-      "size": 144425055
+      "url": "Report Editor-Setup-0.2.30-x64.exe",
+      "sha256": "d7a3681862f6526c9fc47a38d0a4b854a79a4617a803eba87886e1f28d41b3eb",
+      "size": 144447309
     },
     "darwin-arm64": {
-      "url": "Report Editor-0.2.29-arm64.dmg",
-      "sha256": "5438482f37786f63cb6270fd07c6fe43d5625ab4bc2c1d019aeae634bdccdc16",
-      "size": 180077444
+      "url": "Report Editor-0.2.30-arm64.dmg",
+      "sha256": "",
+      "size": 0
     }
   }
 }
