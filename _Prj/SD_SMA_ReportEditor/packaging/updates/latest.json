@@ -1,12 +1,12 @@
 {
   "version": "0.3.4",
-  "releasedAt": "2026-07-10T11:48:56.928Z",
+  "releasedAt": "2026-07-10T11:59:13.032Z",
   "notes": "Report Editor 0.3.4: Cursor business tools, AI tools catalog page, template/layout/config/export pending actions",
   "platforms": {
     "win32-x64": {
       "url": "Report Editor-Setup-0.3.4-x64.exe",
-      "sha256": "51f29209ea3cf30a4d87758d59bd6a4d16a5f7b26a83580dad142bf7a7810905",
-      "size": 144963774
+      "sha256": "0d1576e245e1fa12753d7d28971891310bb9dd09c47c9d0c5db52abf0374285d",
+      "size": 144965395
     },
     "darwin-arm64": {
       "url": "Report Editor-0.3.4-arm64.dmg",
