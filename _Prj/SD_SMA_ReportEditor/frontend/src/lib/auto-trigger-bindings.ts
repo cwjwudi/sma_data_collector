@@ -1,8 +1,8 @@
 import type { AutoTriggerLogEntry } from "@/lib/auto-trigger-log";
 import { normalizeTriggerLog } from "@/lib/auto-trigger-log";
-import type { AutoOpcTriggerMode } from "@/lib/report-generator-prefs";
+import type { AutoOpcTriggerMode, ExportResultOpcFeedback } from "@/lib/report-generator-prefs";
 
-/** 单条 OPC 触发 → 导出模版 绑定 */
+/** 单条 OPC 触发 → 导出模版 绑定（可附带本路结批结果写回 PLC） */
 export interface AutoTriggerBinding {
   id: string;
   /** 是否参与自动导出轮询与触发（默认启用） */
@@ -15,6 +15,11 @@ export interface AutoTriggerBinding {
   compareValue: string;
   /** 触发与导出记录（最新在前，最多保留 AUTO_TRIGGER_LOG_MAX 条） */
   triggerLog: AutoTriggerLogEntry[];
+  /**
+   * 本绑定独立的结批结果写回 PLC（INT 状态 / 信息 / 路径）。
+   * 未配置时回退到按模版 → 页面默认反馈。
+   */
+  exportResultOpc?: ExportResultOpcFeedback;
 }
 
 export function newAutoTriggerBindingId(): string {
@@ -25,7 +30,7 @@ export function newAutoTriggerBindingId(): string {
 }
 
 export function createAutoTriggerBinding(partial?: Partial<AutoTriggerBinding>): AutoTriggerBinding {
-  return {
+  const out: AutoTriggerBinding = {
     id: partial?.id?.trim() || newAutoTriggerBindingId(),
     enabled: partial?.enabled === false ? false : true,
     templateId: typeof partial?.templateId === "string" ? partial.templateId : (partial?.templateId ?? null),
@@ -35,6 +40,10 @@ export function createAutoTriggerBinding(partial?: Partial<AutoTriggerBinding>):
     compareValue: typeof partial?.compareValue === "string" ? partial.compareValue : "1",
     triggerLog: partial?.triggerLog ? [...partial.triggerLog] : [],
   };
+  if (partial?.exportResultOpc) {
+    out.exportResultOpc = { ...partial.exportResultOpc };
+  }
+  return out;
 }
 
 function normalizeMode(v: unknown): AutoOpcTriggerMode {
@@ -63,6 +72,8 @@ export function normalizeAutoTriggerBinding(raw: unknown): AutoTriggerBinding | 
     mode: normalizeMode(o.mode),
     compareValue: normalizeCompareValue(o),
     triggerLog: normalizeTriggerLog(o.triggerLog),
+    // 原始对象先挂上，由 prefs 层 parseExportResultOpc 规范化
+    exportResultOpc: o.exportResultOpc as ExportResultOpcFeedback | undefined,
   });
 }
 

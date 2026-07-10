@@ -1,7 +1,12 @@
 import type { ReportTemplate, TemplateElement } from "@/lib/report-template/model";
 import { ensureBodyPages, ensureTableGrid } from "@/lib/report-template/model";
 import type { LayoutZoneElement } from "@/lib/report-template/layout-zone-element";
-import { ensureZoneTableGrid } from "@/lib/report-template/layout-zone-element";
+import {
+  ensureZoneTableGrid,
+  normalizeDecimalPlaces,
+  normalizeNullDisplayMode,
+  type NullDisplayMode,
+} from "@/lib/report-template/layout-zone-element";
 import { bodyElementsRef, type EditorSheet } from "@/lib/report-template/editor-sheet";
 import type { TableSqlParamBinding } from "@/lib/report-template/table-sql-fill";
 import { hydrateScalarSqlVisual, normalizeScalarSqlFillMode, type ScalarSqlVisualConfig } from "@/lib/report-template/scalar-sql-visual";
@@ -12,6 +17,93 @@ import type { AutoBatchOpcBinding } from "@/lib/auto-batch-opc-binding";
 export interface TableSqlFillPreviewPayload {
   dataRows: string[][];
   error?: string;
+}
+
+export type { NullDisplayMode };
+export { normalizeNullDisplayMode, normalizeDecimalPlaces };
+
+export function zoneParamKey(elId: string): string {
+  return `zone-param:${elId}`;
+}
+
+/** 绑定读数是否视为空（null / 空串 / 历史 OPC 字面量 null） */
+export function isBoundValueEmpty(text: string | null | undefined): boolean {
+  if (text === null || text === undefined) return true;
+  const t = text.trim();
+  return t === "" || t === "null" || t === "undefined";
+}
+
+/** 预览/导出中的 OPC/SQL 错误文案，不走空值显示模式 */
+export function isBindingPreviewErrorText(text: string): boolean {
+  const t = text.trim();
+  return t.startsWith("（OPC）") || t.startsWith("（SQL）") || t.startsWith("(OPC)") || t.startsWith("(SQL)");
+}
+
+export function resolveParameterDisplayText(opts: {
+  boundText: string | null | undefined;
+  hasBoundResult: boolean;
+  mode: NullDisplayMode;
+  fallbackText: string;
+}): string {
+  const { boundText, hasBoundResult, mode, fallbackText } = opts;
+  if (!hasBoundResult) return "";
+  const text = boundText ?? "";
+  if (isBindingPreviewErrorText(text)) return text;
+  if (!isBoundValueEmpty(text)) return text;
+  switch (mode) {
+    case "emptyLabel":
+      return "空值";
+    case "fallbackText":
+      return fallbackText.trim();
+    default:
+      return "";
+  }
+}
+
+export function resolveBoundParameterPreviewText(opts: {
+  bindingKind: "none" | "opcua" | "sql";
+  text: string;
+  nullDisplayMode?: NullDisplayMode;
+  decimalPlaces?: number | null;
+  previewCell: BindingPreviewCell | undefined;
+  loading: boolean;
+  unboundHint?: string;
+}): string {
+  const { bindingKind, text, nullDisplayMode, decimalPlaces, previewCell, loading, unboundHint } = opts;
+  if (bindingKind === "opcua" || bindingKind === "sql") {
+    if (previewCell != null) {
+      const resolved = resolveParameterDisplayText({
+        boundText: previewCell.text,
+        hasBoundResult: true,
+        mode: normalizeNullDisplayMode(nullDisplayMode),
+        fallbackText: text,
+      });
+      return applyDecimalPlacesToDisplayText(resolved, decimalPlaces);
+    }
+    if (loading) {
+      return `${text.trim() || "参数"}（加载中…）`;
+    }
+    return unboundHint ?? (text.trim() || "（绑定预览：请确认 OPC / SQL 已配置）");
+  }
+  const t = text.trim();
+  return t;
+}
+
+/**
+ * 对已解析的显示文案应用小数位（仅当文本可解析为有限数字时）。
+ * 空值文案、错误文案、日期时间串等保持原样。
+ */
+export function applyDecimalPlacesToDisplayText(
+  text: string,
+  decimalPlaces?: number | null,
+): string {
+  const places = normalizeDecimalPlaces(decimalPlaces);
+  if (places === undefined) return text;
+  if (isBoundValueEmpty(text) || isBindingPreviewErrorText(text)) return text;
+  if (/^\d{4}-\d{2}-\d{2}/.test(text.trim())) return text;
+  const n = Number(String(text).trim().replace(/,/g, ""));
+  if (!Number.isFinite(n)) return text;
+  return n.toFixed(places);
 }
 
 export interface BindingPreviewCell {
@@ -114,8 +206,8 @@ export function formatOpcuaReadPayload(res: unknown): { ok: true; text: string }
   const r = res as { ok?: boolean; message?: string; value?: unknown };
   if (r.ok === false) return { ok: false, err: String(r.message || "读值失败") };
   const v = r.value;
-  if (v === null) return { ok: true, text: "null" };
-  if (v === undefined) return { ok: true, text: "undefined" };
+  if (v === null) return { ok: true, text: "" };
+  if (v === undefined) return { ok: true, text: "" };
   const t = typeof v;
   if (t === "object") {
     try {
@@ -125,19 +217,15 @@ export function formatOpcuaReadPayload(res: unknown): { ok: true; text: string }
       return { ok: true, text: String(v) };
     }
   }
-  if (t === "string") {
-    const s = v as string;
-    return { ok: true, text: s.length > 120 ? `${s.slice(0, 117)}…` : s };
-  }
-  return { ok: true, text: String(v) };
+  return { ok: true, text: formatScalarForPreviewValue(v) };
 }
 
 export function sqlResponseFirstScalar(data: unknown): string {
-  if (!data || typeof data !== "object") return "(空结果)";
+  if (!data || typeof data !== "object") return "";
   const d = data as { columns?: ({ name?: string } | string)[]; rows?: unknown[] };
   const rows = Array.isArray(d.rows) ? d.rows : [];
   const cols = Array.isArray(d.columns) ? d.columns : [];
-  if (!rows.length) return "(空结果)";
+  if (!rows.length) return "";
   const row = rows[0];
   if (Array.isArray(row)) {
     const x = row[0];
@@ -166,11 +254,25 @@ export function sqlResponseGridSummary(data: unknown): string {
   return `${rows.length} 行 × ${cols.length || "?"} 列`;
 }
 
-/** 后端把数据库 datetime JSON 序列化成 ISO 格式（T 分隔），报表显示还原为空格分隔 */
-const ISO_DATETIME_RE = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)$/;
+/**
+ * 后端/驱动常把数据库 DATETIME 序列化成 ISO（`T` 分隔、带 `Z`/`+00:00`）。
+ * 报表与数据参数控件按库工具习惯显示为 `YYYY-MM-DD HH:MM:SS[.fff]`（去掉时区后缀）。
+ */
+const ISO_DATETIME_RE =
+  /^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?)(?:Z|[+-]\d{2}:?\d{2})?$/i;
 
-export function formatScalarForPreviewValue(v: unknown): string {
-  if (v === null || v === undefined) return String(v);
+/** 将 ISO / 带时区的日期时间字符串规范为库侧常见显示格式；非日期时间则原样返回 */
+export function normalizeDbDatetimeDisplay(raw: string): string {
+  const m = ISO_DATETIME_RE.exec(raw.trim());
+  if (!m) return raw;
+  return `${m[1]} ${m[2]}`;
+}
+
+export function formatScalarForPreviewValue(
+  v: unknown,
+  opts?: { decimalPlaces?: number | null },
+): string {
+  if (v === null || v === undefined) return "";
   if (typeof v === "object") {
     try {
       const s = JSON.stringify(v);
@@ -179,10 +281,17 @@ export function formatScalarForPreviewValue(v: unknown): string {
       return String(v);
     }
   }
+  if (typeof v === "number" && Number.isFinite(v)) {
+    const places = normalizeDecimalPlaces(opts?.decimalPlaces);
+    if (places !== undefined) return v.toFixed(places);
+    let s = String(v);
+    return s.length > 120 ? `${s.slice(0, 117)}…` : s;
+  }
   let s = String(v);
   if (typeof v === "string") {
-    const m = ISO_DATETIME_RE.exec(s.trim());
-    if (m) s = `${m[1]} ${m[2]}`;
+    s = normalizeDbDatetimeDisplay(s);
+    const places = normalizeDecimalPlaces(opts?.decimalPlaces);
+    if (places !== undefined) s = applyDecimalPlacesToDisplayText(s, places);
   }
   return s.length > 120 ? `${s.slice(0, 117)}…` : s;
 }

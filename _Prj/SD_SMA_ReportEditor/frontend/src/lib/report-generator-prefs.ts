@@ -26,6 +26,11 @@ import {
 
 } from "@/lib/auto-trigger-bindings";
 
+import {
+  AUTO_EXPORT_MAX_PARALLEL_DEFAULT,
+  clampAutoExportMaxParallel,
+} from "@/lib/auto-export-status-codes";
+
 
 
 export type { AutoFileNameSegment, AutoFileNameSource, AutoTriggerBinding };
@@ -146,6 +151,12 @@ export interface ReportGeneratorPrefs {
 
     bindings: AutoTriggerBinding[];
 
+    /**
+     * 同时并行导出上限（人工设置）。
+     * 实际并行 = min(本值, 已启用绑定数, 硬顶 16)。
+     */
+    maxParallelExports: number;
+
   };
 
 }
@@ -193,6 +204,8 @@ export const defaultReportGeneratorPrefs = (): ReportGeneratorPrefs => ({
     enabled: false,
 
     bindings: [],
+
+    maxParallelExports: AUTO_EXPORT_MAX_PARALLEL_DEFAULT,
 
   },
 
@@ -307,8 +320,17 @@ function parseStoredPrefs(o: StoredPrefs, base: ReportGeneratorPrefs): ReportGen
       if (!fileNameSegments.includes("hash")) fileNameSegments.push("hash");
     }
   }
-  const bindings = loadAutoTriggerBindings(o.auto?.bindings, o.auto, o.templateId);
+  const bindingsRaw = loadAutoTriggerBindings(o.auto?.bindings, o.auto, o.templateId);
   const exportResultOpc = parseExportResultOpc(o.exportResultOpc, base.exportResultOpc);
+  const bindingFbBase = defaultExportResultOpcFeedback();
+  bindingFbBase.statusKind = "int";
+  const bindings = bindingsRaw.map((b) => {
+    if (!b.exportResultOpc) return b;
+    return {
+      ...b,
+      exportResultOpc: parseExportResultOpc(b.exportResultOpc, cloneExportResultOpcFeedback(bindingFbBase)),
+    };
+  });
   return {
     templateId: typeof o.templateId === "string" ? o.templateId : base.templateId,
     autoExportDirSource: dirSource,
@@ -340,6 +362,10 @@ function parseStoredPrefs(o: StoredPrefs, base: ReportGeneratorPrefs): ReportGen
     auto: {
       enabled: Boolean(o.auto?.enabled),
       bindings,
+      maxParallelExports: clampAutoExportMaxParallel(
+        (o.auto as { maxParallelExports?: unknown } | undefined)?.maxParallelExports ??
+          base.auto.maxParallelExports,
+      ),
     },
   };
 }
@@ -400,6 +426,26 @@ export function resolveExportResultOpcForTemplate(
   const existing = prefs.exportResultOpcByTemplateId?.[tid];
   if (existing && isExportResultOpcCustomized(existing)) return existing;
   return prefs.exportResultOpc;
+}
+
+/**
+ * 自动结批写回：优先本绑定独立配置，否则按模版 → 默认。
+ */
+export function resolveExportResultOpcForBinding(
+  prefs: ReportGeneratorPrefs,
+  binding: AutoTriggerBinding | null | undefined,
+): ExportResultOpcFeedback {
+  if (binding?.exportResultOpc && isExportResultOpcCustomized(binding.exportResultOpc)) {
+    return binding.exportResultOpc;
+  }
+  return resolveExportResultOpcForTemplate(prefs, binding?.templateId);
+}
+
+/** 新建绑定卡片用的默认反馈（自动结批强制 INT 状态码） */
+export function defaultBindingExportResultOpcFeedback(): ExportResultOpcFeedback {
+  const fb = defaultExportResultOpcFeedback();
+  fb.statusKind = "int";
+  return fb;
 }
 
 

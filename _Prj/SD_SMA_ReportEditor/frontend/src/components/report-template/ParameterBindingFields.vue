@@ -40,10 +40,62 @@
       <ScalarSqlParamBindingsEditor :params="sqlParams" @opc-pick="(slot) => emit('opc-pick-sql-param', slot)" />
     </template>
 
-    <label class="lpep-lab">
-      展示占位文字
-      <textarea v-model.trim="el.text" rows="2" class="lpep-inp" placeholder="预览用" />
-    </label>
+    <div v-if="el.bindingKind === 'opcua' || el.bindingKind === 'sql'" class="pbf-null-mode">
+      <span class="lpep-lab lpep-lab--block">空值显示</span>
+      <div class="pbf-null-seg" role="group" aria-label="绑定为空时的显示方式">
+        <button
+          type="button"
+          class="pbf-null-seg-btn"
+          :class="{ 'pbf-null-seg-btn--on': nullMode === 'blank' }"
+          @click="nullMode = 'blank'"
+        >
+          空白
+        </button>
+        <button
+          type="button"
+          class="pbf-null-seg-btn"
+          :class="{ 'pbf-null-seg-btn--on': nullMode === 'emptyLabel' }"
+          @click="nullMode = 'emptyLabel'"
+        >
+          显示「空值」
+        </button>
+        <button
+          type="button"
+          class="pbf-null-seg-btn"
+          :class="{ 'pbf-null-seg-btn--on': nullMode === 'fallbackText' }"
+          @click="nullMode = 'fallbackText'"
+        >
+          默认文字
+        </button>
+      </div>
+      <p class="lpep-hint-muted">
+        数据库或 OPC 读数为 null / 空串 / 无行时生效；有真实值时仍显示读数。
+      </p>
+      <label v-if="nullMode === 'fallbackText'" class="lpep-lab">
+        空值时默认文字
+        <textarea
+          v-model.trim="el.text"
+          rows="2"
+          class="lpep-inp"
+          placeholder="例如：待填写、N/A"
+          spellcheck="false"
+        />
+      </label>
+      <label class="lpep-lab">
+        小数位数（REAL）
+        <input
+          :value="decimalPlacesInput"
+          type="number"
+          min="0"
+          max="10"
+          step="1"
+          class="lpep-inp"
+          placeholder="留空=不强制"
+          @change="onDecimalPlacesChange"
+        />
+      </label>
+      <p class="lpep-hint-muted">仅对可解析为数字的读数生效（如 OPC REAL / 数据库浮点）；留空则按原样显示。</p>
+    </div>
   </div>
 </template>
 
@@ -51,6 +103,9 @@
 import { computed } from "vue";
 import ScalarSqlParamBindingsEditor from "@/components/report-template/ScalarSqlParamBindingsEditor.vue";
 import ScalarSqlQueryBuilder from "@/components/report-template/ScalarSqlQueryBuilder.vue";
+import type { NullDisplayMode } from "@/lib/report-template/layout-zone-element";
+import { normalizeNullDisplayMode } from "@/lib/report-template/layout-zone-element";
+import { DECIMAL_PLACES_MAX, normalizeDecimalPlaces } from "@/lib/report-template/numeric-display";
 import {
   hydrateScalarSqlVisual,
   normalizeScalarSqlFillMode,
@@ -69,6 +124,8 @@ export type ParameterBindingElement = {
   sqlText: string;
   sqlParams: TableSqlParamBinding[];
   text: string;
+  nullDisplayMode?: NullDisplayMode;
+  decimalPlaces?: number;
   scalarSqlFillMode?: ScalarSqlFillMode;
   scalarSqlVisual?: ScalarSqlVisualConfig | null;
 };
@@ -82,92 +139,92 @@ const emit = defineEmits<{
   "opc-pick-sql-param": [slot: number];
 }>();
 
-const sqlParams = computed(() => {
-  if (!Array.isArray(props.el.sqlParams)) props.el.sqlParams = [];
-  ensureSqlParamSlots(props.el.sqlParams, 2);
-  return props.el.sqlParams;
+const nullMode = computed({
+  get: () => normalizeNullDisplayMode(props.el.nullDisplayMode),
+  set: (v: NullDisplayMode) => {
+    props.el.nullDisplayMode = v;
+  },
 });
 
-const scalarFillMode = computed<ScalarSqlFillMode>({
-  get() {
-    return normalizeScalarSqlFillMode(props.el.scalarSqlFillMode, props.el.sqlText);
-  },
-  set(v) {
+const decimalPlacesInput = computed(() => {
+  const n = normalizeDecimalPlaces(props.el.decimalPlaces);
+  return n === undefined ? "" : String(n);
+});
+
+function onDecimalPlacesChange(ev: Event): void {
+  const raw = (ev.target as HTMLInputElement).value;
+  if (raw.trim() === "") {
+    props.el.decimalPlaces = undefined;
+    return;
+  }
+  props.el.decimalPlaces = normalizeDecimalPlaces(raw) ?? 0;
+  if ((props.el.decimalPlaces ?? 0) > DECIMAL_PLACES_MAX) {
+    props.el.decimalPlaces = DECIMAL_PLACES_MAX;
+  }
+}
+
+const scalarFillMode = computed({
+  get: () => normalizeScalarSqlFillMode(props.el.scalarSqlFillMode, props.el.sqlText),
+  set: (v: ScalarSqlFillMode) => {
     props.el.scalarSqlFillMode = v;
   },
 });
 
-const scalarVisual = computed<ScalarSqlVisualConfig>({
-  get() {
-    // 不在 getter 中回写 props.el：仅点选控件不应把模版标记为已修改
-    return hydrateScalarSqlVisual(props.el.scalarSqlVisual);
-  },
-  set(v) {
+const scalarVisual = computed({
+  get: () => hydrateScalarSqlVisual(props.el.scalarSqlVisual),
+  set: (v: ScalarSqlVisualConfig) => {
     props.el.scalarSqlVisual = v;
+  },
+});
+
+const sqlParams = computed({
+  get: () => ensureSqlParamSlots(props.el.sqlParams, 2),
+  set: (v: TableSqlParamBinding[]) => {
+    props.el.sqlParams = v;
   },
 });
 </script>
 
 <style scoped>
-/* 父组件（TemplateElementProps / LayoutPresetElementProps）的 scoped 样式
-   不会作用到子组件内部，此处按属性面板同款样式本地定义。 */
 .pbf {
   display: flex;
   flex-direction: column;
+  gap: 10px;
+}
+.pbf-null-mode {
+  display: flex;
+  flex-direction: column;
   gap: 8px;
-  font-size: 12px;
+  padding-top: 4px;
+  border-top: 1px dashed #e4e4e7;
 }
-.pbf .lpep-lab {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+.lpep-lab--block {
+  display: block;
+  margin-bottom: 2px;
 }
-.pbf .lpep-inp {
-  width: 100%;
-  box-sizing: border-box;
-  border: 1px solid #e4e4e7;
-  border-radius: 6px;
-  padding: 6px 8px;
-  font-size: 12px;
-  font-family: inherit;
-  background: #fff;
-}
-.pbf .lpep-file-btn {
-  padding: 7px 10px;
-  font-size: 12px;
-  border-radius: 6px;
-  border: 1px solid #c7d2fe;
-  background: #eef2ff;
-  color: #3730a3;
-  cursor: pointer;
-  align-self: flex-start;
-}
-.pbf .lpep-file-btn:hover {
-  background: #e0e7ff;
-}
-.pbf .lpep-hint-muted {
-  margin: 0;
-  font-size: 11px;
-  color: #71717a;
-  line-height: 1.45;
-}
-.pbf .lpep-opc-quick {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.pbf .lpep-opc-row {
-  display: flex;
+.pbf-null-seg {
+  display: inline-flex;
   flex-wrap: wrap;
-  align-items: flex-end;
-  gap: 8px;
+  gap: 0;
+  padding: 2px;
+  border-radius: 8px;
+  border: 1px solid #e4e4e7;
+  background: #f4f4f5;
 }
-.pbf .lpep-opc-row-grow {
-  flex: 1;
-  min-width: 160px;
+.pbf-null-seg-btn {
+  margin: 0;
+  padding: 6px 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  color: #52525b;
 }
-.pbf .lpep-opc-pickbtn {
-  flex-shrink: 0;
-  align-self: flex-end;
+.pbf-null-seg-btn--on {
+  background: #fff;
+  color: #18181b;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 8%);
 }
 </style>

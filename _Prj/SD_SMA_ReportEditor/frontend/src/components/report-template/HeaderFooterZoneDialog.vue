@@ -333,6 +333,22 @@
             <label v-if="sel.bindingKind === 'sql'" class="hz-span2"
               >SQL<textarea v-model="sel.sqlText" rows="4" class="hz-inp" spellcheck="false"
             /></label>
+            <label
+              v-if="sel.bindingKind === 'opcua' || sel.bindingKind === 'sql'"
+              class="hz-span2"
+            >
+              小数位数（REAL）
+              <input
+                :value="sel.decimalPlaces ?? ''"
+                type="number"
+                min="0"
+                max="10"
+                step="1"
+                class="hz-inp"
+                placeholder="留空=不强制"
+                @change="onSelDecimalPlacesChange"
+              />
+            </label>
             <label class="hz-span2"
               >占位文字<input v-model.trim="sel.text" class="hz-inp" placeholder="预览"
             /></label>
@@ -508,6 +524,22 @@
                       />
                     </div>
                   </template>
+                  <label
+                    v-if="activeHzTableCell.bindingKind === 'opcua' || activeHzTableCell.bindingKind === 'sql'"
+                    class="hz-span2"
+                  >
+                    小数位数（REAL）
+                    <input
+                      :value="activeHzTableCell.decimalPlaces ?? ''"
+                      type="number"
+                      min="0"
+                      max="10"
+                      step="1"
+                      class="hz-inp"
+                      placeholder="留空=不强制"
+                      @change="onActiveHzTableCellDecimalPlacesChange"
+                    />
+                  </label>
                 </template>
                 <p v-else class="hz-muted hz-span2">
                   数据库填充已开启：请勿编辑静态文字；可视化数据源时在画布第一行下拉选择输出字段。
@@ -632,6 +664,7 @@ import {
   type LayoutZoneElement,
   type LayoutZoneTableCell,
 } from "@/lib/report-template/layout-zone-element";
+import { normalizeDecimalPlaces } from "@/lib/report-template/numeric-display";
 import {
   alignmentGuidesForRect,
   magneticSnapResize,
@@ -978,6 +1011,28 @@ function openHzTableCellSqlParamOpcPicker(slot: number) {
   ensureHzTableCellSqlParams(cell);
   opcPickTarget.value = { kind: "scalarSqlCell", slot };
   opcPickOpen.value = true;
+}
+
+function onActiveHzTableCellDecimalPlacesChange(ev: Event): void {
+  const cell = activeHzTableCell.value;
+  if (!cell) return;
+  const raw = (ev.target as HTMLInputElement).value;
+  if (raw.trim() === "") {
+    cell.decimalPlaces = undefined;
+    return;
+  }
+  cell.decimalPlaces = normalizeDecimalPlaces(raw) ?? 0;
+}
+
+function onSelDecimalPlacesChange(ev: Event): void {
+  const el = sel.value;
+  if (!el || el.type !== "parameter") return;
+  const raw = (ev.target as HTMLInputElement).value;
+  if (raw.trim() === "") {
+    el.decimalPlaces = undefined;
+    return;
+  }
+  el.decimalPlaces = normalizeDecimalPlaces(raw) ?? 0;
 }
 
 const hzSqlFillEnabled = computed(() => sel.value?.type === "table" && !!sel.value.tableSqlFill?.enabled);

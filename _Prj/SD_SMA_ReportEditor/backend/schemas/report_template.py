@@ -7,6 +7,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 PaperKind = Literal["A3", "A4", "A5", "Letter"]
+NullDisplayMode = Literal["blank", "emptyLabel", "fallbackText"]
 BindingKind = Literal["none", "opcua", "sql"]
 TableSqlParamSource = Literal["opcua", "above_cell", "literal", "batch_no"]
 ScalarSqlFillMode = Literal["manual", "visual"]
@@ -43,6 +44,7 @@ class TemplateTableCell(BaseModel):
     sqlText: str = ""
     sqlParams: list["TableSqlParamBinding"] = Field(default_factory=list)
     bgColor: str = "transparent"
+    decimalPlaces: int | None = Field(default=None, ge=0, le=10)
 
 
 class TableSqlParamBinding(BaseModel):
@@ -119,6 +121,7 @@ class TableSqlFillConfig(BaseModel):
     sequencePageMode: TableSqlSequencePageMode = "continuous"
     verticalMultiRecordMode: TableSqlVerticalMultiRecordMode = "continue"
     verticalFieldLabels: list[str] = Field(default_factory=list)
+    decimalPlaces: int | None = Field(default=None, ge=0, le=10)
 
 
 class LayoutZoneElement(BaseModel):
@@ -150,6 +153,8 @@ class LayoutZoneElement(BaseModel):
     sqlParams: list[TableSqlParamBinding] = Field(default_factory=list)
     scalarSqlFillMode: ScalarSqlFillMode | None = None
     scalarSqlVisual: ScalarSqlVisualConfig | None = None
+    nullDisplayMode: NullDisplayMode | None = None
+    decimalPlaces: int | None = Field(default=None, ge=0, le=10)
     tableRows: int = Field(default=3, ge=1, le=100)
     tableCols: int = Field(default=4, ge=1, le=30)
     tableCells: list[list[TemplateTableCell]] = Field(default_factory=list)
@@ -186,6 +191,8 @@ class TemplateElement(BaseModel):
     sqlParams: list[TableSqlParamBinding] = Field(default_factory=list)
     scalarSqlFillMode: ScalarSqlFillMode | None = None
     scalarSqlVisual: ScalarSqlVisualConfig | None = None
+    nullDisplayMode: NullDisplayMode | None = None
+    decimalPlaces: int | None = Field(default=None, ge=0, le=10)
     dateFormat: str = ""
     chartKind: ChartKind = "line"
     signerLabel: str = ""

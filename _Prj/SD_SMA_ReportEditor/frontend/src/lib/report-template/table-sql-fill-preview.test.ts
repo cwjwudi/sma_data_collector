@@ -114,16 +114,19 @@ describe("substituteSqlFillTableName", () => {
 });
 
 describe("formatScalarForPreviewValue datetime normalization", () => {
-  it("replaces ISO T separator with space", () => {
-    // 回归：数据库 datetime 经 JSON 序列化带 T（2026-07-08T15:19:48），报表应显示空格分隔
+  it("normalizes ISO datetime to DB-style display (space, no timezone)", () => {
+    // 回归：数据库 DATETIME 经 JSON 变成 ISO（T / +00:00），数据参数与表格应显示空格分隔
     expect(formatScalarForPreviewValue("2026-07-08T15:19:48")).toBe("2026-07-08 15:19:48");
     expect(formatScalarForPreviewValue("2026-07-08T15:19:48.123")).toBe("2026-07-08 15:19:48.123");
-    expect(formatScalarForPreviewValue("2026-07-08T15:19:48+08:00")).toBe("2026-07-08 15:19:48+08:00");
+    expect(formatScalarForPreviewValue("2026-07-10T13:00:51+00:00")).toBe("2026-07-10 13:00:51");
+    expect(formatScalarForPreviewValue("2026-07-08T15:19:48+08:00")).toBe("2026-07-08 15:19:48");
+    expect(formatScalarForPreviewValue("2026-07-08T15:19:48Z")).toBe("2026-07-08 15:19:48");
   });
 
   it("keeps non-datetime strings untouched", () => {
     expect(formatScalarForPreviewValue("T恤批次")).toBe("T恤批次");
     expect(formatScalarForPreviewValue("2026-07-08")).toBe("2026-07-08");
     expect(formatScalarForPreviewValue(42)).toBe("42");
+    expect(formatScalarForPreviewValue(null)).toBe("");
   });
 });
