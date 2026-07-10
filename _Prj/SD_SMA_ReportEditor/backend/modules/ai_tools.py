@@ -433,8 +433,8 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "function": {
             "name": "create_binding_smoke_template",
             "description": (
-                "创建/覆盖绑定冒烟模版：页眉页脚、OPC/SQL 参数与混合单元格表、"
-                "可视化 SQL 横表与纵表填充（筛选 batch_no 绑定 OPC，literalFallback 兜底）。"
+                "创建/覆盖绑定冒烟模版：封面封尾、页眉页脚、OPC/SQL 参数与混合单元格表、"
+                "可视化 SQL 横表与纵表填充（筛选 batch_no 绑定 OPC 批次号节点并写入演示值）。"
                 "默认顺带确保用户演示库，并标记前端模版列表 reload。"
             ),
             "parameters": {
@@ -448,6 +448,26 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                         "description": "是否先创建/刷新用户演示库，默认 true",
                     },
                 },
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "apply_template_sheet_layouts",
+            "description": (
+                "为已有模版套用封面/封尾版式（可提升控件落到画布）。"
+                "不传版式 id 时默认选用「数据记录报表封面」与「通用封尾」。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "template_id": {"type": "string", "description": "模版 id"},
+                    "cover_layout_id": {"type": "string", "description": "可选封面版式 id"},
+                    "back_layout_id": {"type": "string", "description": "可选封尾版式 id"},
+                },
+                "required": ["template_id"],
                 "additionalProperties": False,
             },
         },
@@ -833,6 +853,12 @@ async def execute_tool(name: str, arguments: dict[str, Any] | None, *, page_cont
             connection_id=str(args.get("connection_id")).strip() if args.get("connection_id") else None,
             opc_server_id=str(args.get("opc_server_id")).strip() if args.get("opc_server_id") else None,
             ensure_schema=bool(args["ensure_schema"]) if "ensure_schema" in args else True,
+        )
+    elif name == "apply_template_sheet_layouts":
+        result = ai_demo_template_ops.apply_template_sheet_layouts(
+            str(args.get("template_id") or ""),
+            cover_layout_id=str(args.get("cover_layout_id")).strip() if args.get("cover_layout_id") else None,
+            back_layout_id=str(args.get("back_layout_id")).strip() if args.get("back_layout_id") else None,
         )
     elif name == "delete_template":
         result = ai_asset_ops.request_delete_template(str(args.get("template_id") or ""))

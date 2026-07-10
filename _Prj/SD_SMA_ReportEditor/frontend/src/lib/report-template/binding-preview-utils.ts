@@ -397,6 +397,13 @@ export function resolveEffectiveScalarSql(
 
 export type OpcReadResult = { ok?: boolean; message?: string; value?: unknown };
 
+/** OPC/批次号读到的值是否视为「无有效值」（可回退 literalFallback） */
+export function isMissingSqlParamOpcValue(value: unknown): boolean {
+  if (value === null || value === undefined) return true;
+  if (typeof value === "string" && !value.trim()) return true;
+  return false;
+}
+
 /** 解析标量 SQL 的 {{p0}}/{{p1}} 参数值（OPC UA、结批批次号等） */
 export async function resolveSqlParamValues(
   params: TableSqlParamBinding[],
@@ -413,23 +420,24 @@ export async function resolveSqlParamValues(
   for (let i = 0; i < params.length; i++) {
     const p = params[i];
     if (!p) continue;
+    const hasFallback = Boolean((p.literalFallback || "").trim());
 
     if (p.source === "batch_no") {
       if (!batchBinding) {
-        if ((p.literalFallback || "").trim()) continue;
+        if (hasFallback) continue;
         throw new Error(`SQL 参数 {{p${i}}} 未配置结批批次号 OPC`);
       }
       try {
         options.onOpcRead?.();
         const res = await options.readOpc(batchBinding.serverId, batchBinding.nodeId);
         if (res?.ok === false) {
-          if ((p.literalFallback || "").trim()) continue;
+          if (hasFallback) continue;
           throw new Error(res.message || "结批批次号读取失败");
         }
-        if ((res.value === null || res.value === undefined) && (p.literalFallback || "").trim()) continue;
+        if (isMissingSqlParamOpcValue(res.value) && hasFallback) continue;
         paramValues[i] = res.value;
       } catch (e) {
-        if ((p.literalFallback || "").trim()) continue;
+        if (hasFallback) continue;
         const msg = e instanceof Error ? e.message : String(e);
         throw new Error(`SQL 参数 {{p${i}}} 批次号读取失败：${msg}`);
       }
@@ -439,25 +447,25 @@ export async function resolveSqlParamValues(
     if (p.source !== "opcua") continue;
     const nodeId = (p.opcuaNodeId || "").trim();
     if (!nodeId) {
-      if ((p.literalFallback || "").trim()) continue;
+      if (hasFallback) continue;
       throw new Error(`SQL 参数 {{p${i}}} 未绑定 OPC UA 节点`);
     }
     const serverId = options.defaultOpcServerId;
     if (!serverId) {
-      if ((p.literalFallback || "").trim()) continue;
+      if (hasFallback) continue;
       throw new Error(`SQL 参数 {{p${i}}} 未配置 OPC UA 连接`);
     }
     try {
       options.onOpcRead?.();
       const res = await options.readOpc(serverId, nodeId);
       if (res?.ok === false) {
-        if ((p.literalFallback || "").trim()) continue;
+        if (hasFallback) continue;
         throw new Error(res.message || "OPC 参数读取失败");
       }
-      if ((res.value === null || res.value === undefined) && (p.literalFallback || "").trim()) continue;
+      if (isMissingSqlParamOpcValue(res.value) && hasFallback) continue;
       paramValues[i] = res.value;
     } catch (e) {
-      if ((p.literalFallback || "").trim()) continue;
+      if (hasFallback) continue;
       const msg = e instanceof Error ? e.message : String(e);
       throw new Error(`SQL 参数 {{p${i}}} 读取失败：${msg}`);
     }

@@ -26,4 +26,22 @@ describe("resolveSqlParamValues", () => {
       }),
     ).rejects.toThrow(/结批批次号/);
   });
+
+  it("OPC 读到空串时回退 literalFallback", async () => {
+    const readOpc = vi.fn(async () => ({ ok: true, value: "  " }));
+    const values = await resolveSqlParamValues(
+      [{ ...defaultSqlParam(), source: "opcua", opcuaNodeId: "ns=2;s=x", literalFallback: "B20260710" }],
+      { defaultOpcServerId: "s1", readOpc },
+    );
+    expect(values).toEqual({});
+  });
+
+  it("OPC 读失败时回退 literalFallback", async () => {
+    const readOpc = vi.fn(async () => ({ ok: false, message: "offline" }));
+    const values = await resolveSqlParamValues(
+      [{ ...defaultSqlParam(), source: "opcua", opcuaNodeId: "ns=2;s=x", literalFallback: "B20260710" }],
+      { defaultOpcServerId: "s1", readOpc },
+    );
+    expect(values).toEqual({});
+  });
 });

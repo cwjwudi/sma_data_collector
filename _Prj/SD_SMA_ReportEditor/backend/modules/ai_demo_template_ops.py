@@ -8,7 +8,7 @@ from typing import Any
 import pymysql
 
 from core.settings import CONFIG_FILE, DATA_DIR
-from modules import ai_asset_ops, config_store, opcua_service, template_store
+from modules import ai_asset_ops, config_store, layout_preset_store, opcua_service, template_store
 from schemas.report_template import parse_report_template
 
 DEMO_DB = "report_user_lib"
@@ -22,9 +22,15 @@ DEFAULT_OPC_NODES = {
     "uint16": "ns=6;s=::Program:SegTempCalcValidCnt",
     "int32": "ns=6;s=::Program:SegTempStatus.SegTempSetScanInterval",
     "float_avg": "ns=6;s=::Program:SegTempStatus.ActAvgTemp",
-    # String：筛选绑定时用；literalFallback 保证预览仍能命中演示批次
+    # 批次号 String：优先 DataGen；本机 ARSim 常无 StepAction.Text.Main（创建时写入演示批次）
     "string": "ns=6;s=::Program:StepAction.Text.Main",
 }
+
+LIFTABLE_ZONE_TYPES = frozenset({"text", "box", "image", "date", "parameter", "table"})
+# TemplateElement 不允许的版式区字段（extra=forbid）
+_TEMPLATE_ELEMENT_DROP_KEYS = frozenset({"pageNumberMode"})
+PREFERRED_COVER_NAMES = ("数据记录报表封面", "审计追踪报表封面", "批次配方报表封面")
+PREFERRED_BACK_NAMES = ("通用封尾",)
 
 
 def _now_iso() -> str:
@@ -159,8 +165,8 @@ def ensure_user_demo_database(connection_id: str | None = None) -> dict[str, Any
         return {"ok": False, "error": str(e)}
 
 
-async def _resolve_opc_nodes(server: dict[str, Any], *, live_search: bool = False) -> dict[str, str]:
-    """默认使用 ARSim Program 节点；可选 live_search 从现有 OPC 搜索补齐。"""
+async def _resolve_opc_nodes(server: dict[str, Any], *, live_search: bool = True) -> dict[str, str]:
+    """默认节点；live_search 时优先定位批次号 String（strBatchCode / Batch）。"""
     nodes = dict(DEFAULT_OPC_NODES)
     if not live_search:
         return nodes
@@ -175,7 +181,7 @@ async def _resolve_opc_nodes(server: dict[str, Any], *, live_search: bool = Fals
             ("uint16", "SegTempCalcValidCnt", "UInt16"),
             ("int32", "SegTempSetScanInterval", "Int32"),
             ("float_avg", "ActAvgTemp", "Float"),
-            ("string", "StepAction.Text.Main", "String"),
+            ("string", "strBatchCode", "String"),
         ):
             res = await opcua_service.search_variables_for_saved_server(
                 server_id=sid,
@@ -191,10 +197,261 @@ async def _resolve_opc_nodes(server: dict[str, Any], *, live_search: bool = Fals
             hits = res.get("hits") or []
             if hits and hits[0].get("node_id"):
                 nodes[key] = str(hits[0]["node_id"])
+        # 批次号：优先真实 Batch 节点，否则保留可写的 StepAction.Text.Main
+        batch_hit = None
+        for query in ("strBatchCode", "BatchCode", "batch_no", "BatchNo", "strBatch"):
+            res = await opcua_service.search_variables_for_saved_server(
+                server_id=sid,
+                endpoint_url=endpoint,
+                username=user,
+                password=pwd,
+                query=query,
+                max_scan=800,
+                max_results=3,
+                max_depth=8,
+                data_type_filter="String",
+            )
+            hits = res.get("hits") or []
+            if hits and hits[0].get("node_id"):
+                batch_hit = str(hits[0]["node_id"])
+                break
+        if batch_hit:
+            nodes["string"] = batch_hit
+        elif not nodes.get("string"):
+            nodes["string"] = DEFAULT_OPC_NODES["string"]
     except Exception:
         pass
     return nodes
 
+
+async def _seed_batch_opc_value(server: dict[str, Any], node_id: str, value: str) -> dict[str, Any]:
+    """把演示批次号写入 OPC String，保证可视化 SQL 筛选能命中演示数据。"""
+    nid = (node_id or "").strip()
+    if not nid:
+        return {"ok": False, "error": "未指定批次号 OPC 节点"}
+    sid = str(server.get("id") or "")
+    endpoint = str(server.get("endpoint_url") or "")
+    user = server.get("username")
+    pwd = config_store.decrypt_opcua_password(DATA_DIR, server) if server.get("password_enc") else None
+    try:
+        res = await opcua_service.write_node_value_for_saved_server(
+            server_id=sid,
+            endpoint_url=endpoint,
+            node_id=nid,
+            value=value,
+            username=user,
+            password=pwd,
+        )
+        if isinstance(res, dict) and res.get("ok"):
+            return {"ok": True, "node_id": nid, "value": value}
+        return {"ok": False, "node_id": nid, "error": (res or {}).get("message") or "OPC 写入失败"}
+    except Exception as e:
+        return {"ok": False, "node_id": nid, "error": str(e)}
+
+
+def _preset_layout_snapshot(preset: Any) -> dict[str, Any]:
+    return {
+        "marginTopMm": float(getattr(preset, "marginTopMm", 15) or 15),
+        "marginRightMm": float(getattr(preset, "marginRightMm", 15) or 15),
+        "marginBottomMm": float(getattr(preset, "marginBottomMm", 15) or 15),
+        "marginLeftMm": float(getattr(preset, "marginLeftMm", 15) or 15),
+        "headerBandMm": float(getattr(preset, "headerBandMm", 22) or 22),
+        "footerBandMm": float(getattr(preset, "footerBandMm", 18) or 18),
+    }
+
+
+def _dump_zone_list(items: list[Any] | None) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for e in items or []:
+        if hasattr(e, "model_dump"):
+            out.append(e.model_dump())
+        elif isinstance(e, dict):
+            out.append(dict(e))
+    return out
+
+
+def _lift_body_zone_to_canvas(body_zones: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """与前端 liftZoneBodyElementsToSheetCanvas 对齐：可提升类型进画布，其余留装饰层。"""
+    canvas: list[dict[str, Any]] = []
+    rest: list[dict[str, Any]] = []
+    for z in body_zones:
+        t = str(z.get("type") or "")
+        if t in LIFTABLE_ZONE_TYPES:
+            cleaned = {k: v for k, v in z.items() if k not in _TEMPLATE_ELEMENT_DROP_KEYS}
+            canvas.append(cleaned)
+        else:
+            rest.append(z)
+    return canvas, rest
+
+
+def _pick_layout_by_names(names: tuple[str, ...], *, page_role: str | None = None) -> Any | None:
+    summaries = list(layout_preset_store.list_summaries())
+    by_name = {s.name: s for s in summaries}
+    for name in names:
+        s = by_name.get(name)
+        if not s:
+            continue
+        try:
+            p = layout_preset_store.load_preset(s.id)
+            if p:
+                return p
+        except Exception:
+            continue
+    if page_role:
+        for s in summaries:
+            if getattr(s, "pageRole", None) == page_role:
+                try:
+                    p = layout_preset_store.load_preset(s.id)
+                    if p:
+                        return p
+                except Exception:
+                    continue
+    return None
+
+def _apply_sheet_preset(raw: dict[str, Any], preset: Any, slot: str) -> None:
+    snap = _preset_layout_snapshot(preset)
+    header = _dump_zone_list(getattr(preset, "headerElements", None))
+    footer = _dump_zone_list(getattr(preset, "footerElements", None))
+    body = _dump_zone_list(getattr(preset, "bodyElements", None))
+    canvas, rest = _lift_body_zone_to_canvas(body)
+    if slot == "cover":
+        raw["coverLayoutPresetId"] = preset.id
+        raw["coverLayoutSnapshot"] = snap
+        raw["coverHeaderText"] = getattr(preset, "headerText", "") or ""
+        raw["coverFooterText"] = getattr(preset, "footerText", "") or ""
+        raw["coverHeaderElements"] = header
+        raw["coverFooterElements"] = footer
+        raw["coverBodyZoneElements"] = rest
+        raw["coverElements"] = canvas
+        if getattr(preset, "paperKind", None):
+            raw["paperKind"] = preset.paperKind
+        if getattr(preset, "orientation", None):
+            raw["orientation"] = preset.orientation
+        return
+    raw["backLayoutPresetId"] = preset.id
+    raw["backLayoutSnapshot"] = snap
+    raw["backHeaderText"] = getattr(preset, "headerText", "") or ""
+    raw["backFooterText"] = getattr(preset, "footerText", "") or ""
+    raw["backHeaderElements"] = header
+    raw["backFooterElements"] = footer
+    raw["backBodyZoneElements"] = rest
+    raw["backElements"] = canvas
+
+
+def _minimal_cover_back(raw: dict[str, Any], snap: dict[str, Any]) -> None:
+    """无版式库时的最小封面/封尾。"""
+    raw["coverLayoutPresetId"] = None
+    raw["coverLayoutSnapshot"] = dict(snap)
+    raw["coverHeaderText"] = ""
+    raw["coverFooterText"] = ""
+    raw["coverHeaderElements"] = []
+    raw["coverFooterElements"] = []
+    raw["coverBodyZoneElements"] = []
+    raw["coverElements"] = [
+        {
+            "id": _nid(),
+            "type": "text",
+            "x": 80,
+            "y": 200,
+            "w": 400,
+            "h": 40,
+            "text": "绑定冒烟测试 · 封面",
+            "color": "#0f172a",
+            "bgColor": "transparent",
+            "fontSize": 22,
+            "fontFamily": "",
+            "zIndex": 1,
+            "showBorder": False,
+            "alignX": "center",
+            "alignY": "center",
+            "bindingKind": "none",
+            "opcuaNodeId": "",
+            "sqlText": "",
+            "sqlParams": [],
+        }
+    ]
+    raw["backLayoutPresetId"] = None
+    raw["backLayoutSnapshot"] = dict(snap)
+    raw["backHeaderText"] = ""
+    raw["backFooterText"] = ""
+    raw["backHeaderElements"] = []
+    raw["backFooterElements"] = [_zone_page_number(x=460, y=4)]
+    raw["backBodyZoneElements"] = []
+    raw["backElements"] = [
+        {
+            "id": _nid(),
+            "type": "text",
+            "x": 80,
+            "y": 280,
+            "w": 400,
+            "h": 32,
+            "text": "绑定冒烟测试 · 封尾",
+            "color": "#334155",
+            "bgColor": "transparent",
+            "fontSize": 16,
+            "fontFamily": "",
+            "zIndex": 1,
+            "showBorder": False,
+            "alignX": "center",
+            "alignY": "center",
+            "bindingKind": "none",
+            "opcuaNodeId": "",
+            "sqlText": "",
+            "sqlParams": [],
+        }
+    ]
+
+
+def apply_template_sheet_layouts(
+    template_id: str,
+    *,
+    cover_layout_id: str | None = None,
+    back_layout_id: str | None = None,
+) -> dict[str, Any]:
+    """为已有模版套用封面/封尾版式（可提升控件落到画布）。"""
+    tid = (template_id or "").strip()
+    if not tid:
+        return {"ok": False, "error": "缺少 template_id"}
+    try:
+        tpl = template_store.load_template(tid)
+    except Exception as e:
+        return {"ok": False, "error": f"模版不存在: {e}"}
+    raw = tpl.model_dump()
+    cover = None
+    back = None
+    if cover_layout_id:
+        cover = layout_preset_store.load_preset(str(cover_layout_id).strip())
+        if not cover:
+            return {"ok": False, "error": "封面版式无效"}
+    else:
+        cover = _pick_layout_by_names(PREFERRED_COVER_NAMES, page_role="cover")
+    if back_layout_id:
+        back = layout_preset_store.load_preset(str(back_layout_id).strip())
+        if not back:
+            return {"ok": False, "error": "封尾版式无效"}
+    else:
+        back = _pick_layout_by_names(PREFERRED_BACK_NAMES, page_role="back")
+
+    if cover:
+        _apply_sheet_preset(raw, cover, "cover")
+    if back:
+        _apply_sheet_preset(raw, back, "back")
+    if not cover and not back:
+        return {"ok": False, "error": "未找到可用的封面/封尾版式"}
+
+    updated = parse_report_template(raw)
+    template_store.save_template(updated)
+    ai_asset_ops.mark_ui_reload(assets=True, reason="apply_template_sheet_layouts")
+    return {
+        "ok": True,
+        "template_id": updated.id,
+        "cover_layout_id": updated.coverLayoutPresetId,
+        "back_layout_id": updated.backLayoutPresetId,
+        "cover_elements": len(updated.coverElements),
+        "back_elements": len(updated.backElements),
+        "ui_reload": True,
+        "message": "已套用封面/封尾版式，前端将刷新模版列表",
+    }
 
 def _nid() -> str:
     return str(uuid.uuid4())
@@ -497,7 +754,9 @@ async def create_binding_smoke_template(
 
     cid = str(conn.get("id") or "")
     eng = (conn.get("engine") or "mysql").lower()
-    nodes = await _resolve_opc_nodes(opc, live_search=False)
+    nodes = await _resolve_opc_nodes(opc, live_search=True)
+    seed_info = await _seed_batch_opc_value(opc, nodes.get("string") or "", DEMO_BATCH_NO)
+    # 写入失败时仍保留 OPC 绑定 + defaults/literalFallback；空串会走兜底
     tpl_name = (name or "").strip() or SMOKE_TEMPLATE_NAME
     existing_id = _find_existing_smoke_id(tpl_name)
 
@@ -718,7 +977,7 @@ async def create_binding_smoke_template(
         "h": 40,
         "text": (
             f"DB={conn.get('name')}/{DEMO_DB}；OPC={opc.get('name')}；"
-            f"横表/纵表均为可视化 SQL，筛选 batch_no←OPC（兜底 {DEMO_BATCH_NO}）"
+            f"横表/纵表可视化 SQL，筛选 batch_no←OPC 批次号（写入/兜底 {DEMO_BATCH_NO}）；含封面封尾"
         ),
         "color": "#64748b",
         "bgColor": "transparent",
@@ -791,6 +1050,46 @@ async def create_binding_smoke_template(
         "backFooterElements": [],
         "backBodyZoneElements": [],
     }
+
+    cover_preset = _pick_layout_by_names(PREFERRED_COVER_NAMES, page_role="cover")
+    back_preset = _pick_layout_by_names(PREFERRED_BACK_NAMES, page_role="back")
+    if cover_preset:
+        _apply_sheet_preset(raw, cover_preset, "cover")
+    if back_preset:
+        _apply_sheet_preset(raw, back_preset, "back")
+    if not cover_preset or not back_preset:
+        # 缺一则补最小封面/封尾，避免导出无封面页
+        if not cover_preset and not back_preset:
+            _minimal_cover_back(raw, snap)
+        elif not cover_preset:
+            tmp = {"coverLayoutSnapshot": snap}
+            _minimal_cover_back(tmp, snap)
+            for k in (
+                "coverLayoutPresetId",
+                "coverLayoutSnapshot",
+                "coverHeaderText",
+                "coverFooterText",
+                "coverHeaderElements",
+                "coverFooterElements",
+                "coverBodyZoneElements",
+                "coverElements",
+            ):
+                raw[k] = tmp[k]
+        elif not back_preset:
+            tmp = {"backLayoutSnapshot": snap}
+            _minimal_cover_back(tmp, snap)
+            for k in (
+                "backLayoutPresetId",
+                "backLayoutSnapshot",
+                "backHeaderText",
+                "backFooterText",
+                "backHeaderElements",
+                "backFooterElements",
+                "backBodyZoneElements",
+                "backElements",
+            ):
+                raw[k] = tmp[k]
+
     tpl = parse_report_template(raw)
     template_store.save_template(tpl)
 
@@ -812,8 +1111,11 @@ async def create_binding_smoke_template(
         "database": DEMO_DB,
         "opc_server_id": opc.get("id"),
         "opc_nodes": nodes,
+        "batch_opc_seed": seed_info,
         "batch_no": DEMO_BATCH_NO,
         "schema": schema_info,
+        "cover_layout_id": tpl.coverLayoutPresetId,
+        "back_layout_id": tpl.backLayoutPresetId,
         "summary": {
             "parameters": 5,
             "tables": 3,
@@ -821,11 +1123,13 @@ async def create_binding_smoke_template(
             "visual_horizontal_fill": True,
             "visual_vertical_fill": True,
             "header_footer": True,
+            "cover_back": True,
             "opc_filter": True,
+            "batch_opc_written": bool(seed_info.get("ok")),
         },
         "ui_reload": True,
         "message": (
             f"已{'更新' if existing_id else '创建'}模版「{tpl.name}」"
-            "（页眉页脚 + 横/纵可视化 SQL，筛选走 OPC）。前端将自动刷新列表。"
+            "（封面封尾 + 页眉页脚 + 横/纵可视化 SQL，筛选走 OPC 批次号）。前端将自动刷新列表。"
         ),
     }
