@@ -43,6 +43,7 @@ class TestBatchYearPartition(unittest.IsolatedAsyncioTestCase):
         db_manager.get_current_table_name.side_effect = resolve_table_name
         db_manager.create_data_table.return_value = True
         db_manager.execute_insert.return_value = True
+        db_manager.execute_insert_many.side_effect = lambda _table, rows: len(rows)
         db_manager.record_exists.return_value = False
         db_manager.execute_update.return_value = 1
         db_manager.execute_query.return_value = []
@@ -177,7 +178,7 @@ class TestBatchYearPartition(unittest.IsolatedAsyncioTestCase):
             ],
         )
 
-        inserted_tables = [call.args[0] for call in db_manager.execute_insert.call_args_list]
+        inserted_tables = [call.args[0] for call in db_manager.execute_insert_many.call_args_list]
         self.assertIn("BatchData_y2025_span1", inserted_tables)
         db_manager.create_data_table.assert_not_called()
 
@@ -207,7 +208,7 @@ class TestBatchYearPartition(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(processor._has_enough_data_for_batch())
         await processor._process_data_by_groups()
 
-        inserted_tables = [call.args[0] for call in db_manager.execute_insert.call_args_list]
+        inserted_tables = [call.args[0] for call in db_manager.execute_insert_many.call_args_list]
         self.assertEqual(inserted_tables, ["BatchData_y2025_span1"])
         self.assertEqual(processor.get_queue_size(), 0)
         self.assertIsNone(processor.current_batch_context)
@@ -230,8 +231,10 @@ class TestBatchYearPartition(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(processor._has_enough_data_for_batch())
         await processor._process_data_by_groups()
 
-        inserted_tables = [call.args[0] for call in db_manager.execute_insert.call_args_list]
-        self.assertEqual(inserted_tables, ["BatchHeader", "BatchData_y2026_span1"])
+        master_tables = [call.args[0] for call in db_manager.execute_insert.call_args_list]
+        detail_tables = [call.args[0] for call in db_manager.execute_insert_many.call_args_list]
+        self.assertEqual(master_tables, ["BatchHeader"])
+        self.assertEqual(detail_tables, ["BatchData_y2026_span1"])
         self.assertEqual(processor.get_queue_size(), 0)
         self.assertEqual(processor.current_batch_context["batch_no"], "B002")
 
@@ -252,7 +255,7 @@ class TestBatchYearPartition(unittest.IsolatedAsyncioTestCase):
         )
         await processor._process_data_by_groups()
 
-        inserted_tables = [call.args[0] for call in db_manager.execute_insert.call_args_list]
+        inserted_tables = [call.args[0] for call in db_manager.execute_insert_many.call_args_list]
         self.assertEqual(inserted_tables, ["BatchData"])
         self.assertEqual(processor.get_queue_size(), 0)
 
@@ -279,7 +282,7 @@ class TestBatchYearPartition(unittest.IsolatedAsyncioTestCase):
         )
         await processor._process_data_by_groups()
 
-        inserted_tables = [call.args[0] for call in db_manager.execute_insert.call_args_list]
+        inserted_tables = [call.args[0] for call in db_manager.execute_insert_many.call_args_list]
         self.assertEqual(inserted_tables, ["BatchData_y2026_span1"])
         self.assertEqual(processor.get_queue_size(), 0)
         self.assertIsNotNone(processor.current_batch_context)
@@ -316,12 +319,32 @@ class TestBatchYearPartition(unittest.IsolatedAsyncioTestCase):
             ],
         )
 
-        inserted_tables = [call.args[0] for call in db_manager.execute_insert.call_args_list]
+        inserted_tables = [call.args[0] for call in db_manager.execute_insert_many.call_args_list]
         self.assertIn("BatchData", inserted_tables)
         db_manager.get_current_table_name.assert_any_call(
             "BatchData",
             partition_interval_years=0,
         )
+
+    async def test_plain_group_uses_one_bulk_call_for_multiple_rows(self):
+        processor, db_manager = self.make_processor()
+        processor.group_partition_interval_years["BatchData"] = 0
+        processor.initialize_tables_for_runtime()
+        db_manager.execute_insert.reset_mock()
+        db_manager.execute_insert_many.reset_mock()
+        db_manager.execute_insert_many.side_effect = lambda _table, rows: len(rows)
+
+        rows = [
+            collection_item("BatchData", batch_no="BULK", value=value)
+            for value in range(5)
+        ]
+        await processor._process_group_data("BatchData", rows)
+
+        db_manager.execute_insert.assert_not_called()
+        db_manager.execute_insert_many.assert_called_once()
+        table_name, inserted_rows = db_manager.execute_insert_many.call_args.args
+        self.assertEqual(table_name, "BatchData")
+        self.assertEqual(len(inserted_rows), 5)
 
 
 class TestEnsureTableColumns(unittest.TestCase):

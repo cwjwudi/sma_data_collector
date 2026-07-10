@@ -9,7 +9,9 @@ import tempfile
 import os
 import json
 from datetime import datetime
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
+from sqlalchemy import text
+from sqlalchemy.exc import OperationalError
 
 # 导入被测试的模块
 from core.config_models import DataPoint, DataGroup, DatabaseConfig, AppConfig, TriggerType
@@ -124,6 +126,64 @@ class TestDatabaseManager(unittest.TestCase):
         table_name = self.db_manager.get_current_table_name()
         self.assertIsNotNone(table_name)
         self.assertTrue(table_name.endswith(f"_y{datetime.now().strftime('%Y')}_span1"))
+
+    def test_execute_insert_many_commits_all_rows(self):
+        self.assertTrue(self.db_manager.connect())
+        with self.db_manager.engine.begin() as conn:
+            conn.execute(text(
+                "CREATE TABLE bulk_insert_test (id INTEGER PRIMARY KEY, value TEXT)"
+            ))
+
+        rows = [
+            {"id": 1, "value": "A"},
+            {"id": 2, "value": "B"},
+            {"id": 3, "value": "C"},
+        ]
+        self.assertEqual(
+            self.db_manager.execute_insert_many("bulk_insert_test", rows),
+            3,
+        )
+        result = self.db_manager.execute_query(
+            "SELECT id, value FROM bulk_insert_test ORDER BY id"
+        )
+        self.assertEqual(result, [(1, "A"), (2, "B"), (3, "C")])
+
+    def test_execute_insert_many_rolls_back_entire_batch(self):
+        self.assertTrue(self.db_manager.connect())
+        with self.db_manager.engine.begin() as conn:
+            conn.execute(text(
+                "CREATE TABLE bulk_rollback_test (id INTEGER PRIMARY KEY, value TEXT UNIQUE)"
+            ))
+
+        rows = [
+            {"id": 1, "value": "duplicate"},
+            {"id": 2, "value": "duplicate"},
+        ]
+        self.assertEqual(
+            self.db_manager.execute_insert_many("bulk_rollback_test", rows),
+            -1,
+        )
+        result = self.db_manager.execute_query(
+            "SELECT COUNT(*) FROM bulk_rollback_test"
+        )
+        self.assertEqual(result[0][0], 0)
+
+    def test_execute_insert_many_retries_entire_batch_after_disconnect(self):
+        manager = DatabaseManager(self.db_config)
+        manager.engine = MagicMock()
+        disconnected = OperationalError(
+            "INSERT",
+            {},
+            Exception(2006, "server has gone away"),
+        )
+        successful_transaction = MagicMock()
+        manager.engine.begin.side_effect = [disconnected, successful_transaction]
+        manager._attempt_reconnect = Mock(return_value=True)
+
+        rows = [{"id": 1, "value": "A"}, {"id": 2, "value": "B"}]
+        self.assertEqual(manager.execute_insert_many("bulk_retry_test", rows), 2)
+        self.assertEqual(manager.engine.begin.call_count, 2)
+        manager._attempt_reconnect.assert_called_once_with("批量插入数据")
 
 
 def run_async_test(coro):

@@ -632,6 +632,70 @@ class DatabaseManager:
             self._log_db_error("插入数据", e)
             return False
 
+    def execute_insert_many(
+        self,
+        table_name: str,
+        rows: List[Dict[str, Any]],
+        _retry_on_disconnect: bool = True,
+    ) -> int:
+        """
+        使用同一连接和同一事务批量插入多条数据。
+
+        SQLAlchemy 会将参数列表交给数据库驱动的 executemany；事务成功时统一提交，
+        任一记录失败时整批回滚。成功返回写入条数，失败返回 -1。
+        """
+        if not rows:
+            return 0
+
+        columns = list(rows[0].keys())
+        if not columns:
+            self.logger.error("批量插入失败: table=%s, 首条记录没有字段", table_name)
+            return -1
+
+        expected_columns = set(columns)
+        if any(set(row.keys()) != expected_columns for row in rows):
+            self.logger.error(
+                "批量插入失败: table=%s, 同一批次记录字段集合不一致",
+                table_name,
+            )
+            return -1
+
+        normalized_rows = [
+            {column: row[column] for column in columns}
+            for row in rows
+        ]
+        quoted_columns = ', '.join(f"`{column}`" for column in columns)
+        placeholders = ', '.join(f":{column}" for column in columns)
+        sql = f"INSERT INTO `{table_name}` ({quoted_columns}) VALUES ({placeholders})"
+
+        try:
+            self._log_mysql_sql(sql)
+            self.logger.debug(
+                "执行批量插入: table=%s, rows=%s, columns=%s",
+                table_name,
+                len(normalized_rows),
+                len(columns),
+            )
+            with self.engine.begin() as conn:
+                conn.execute(text(sql), normalized_rows)
+            self._connection_healthy = True
+            return len(normalized_rows)
+        except OperationalError as e:
+            if self._is_connection_operational_error(e):
+                self._mark_connection_lost("批量插入数据", e)
+                if _retry_on_disconnect and self._attempt_reconnect("批量插入数据"):
+                    return self.execute_insert_many(
+                        table_name,
+                        rows,
+                        _retry_on_disconnect=False,
+                    )
+            else:
+                self._log_db_error("批量插入数据", e)
+            return -1
+        except Exception as e:
+            self._log_db_error("批量插入数据", e)
+            return -1
+
     def execute_update(self, sql: str, params: Optional[Dict[str, Any]] = None, _retry_on_disconnect: bool = True) -> int:
         """
         执行更新语句并返回受影响行数

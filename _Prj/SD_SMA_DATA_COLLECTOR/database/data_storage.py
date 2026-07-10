@@ -460,6 +460,24 @@ class DataStorageProcessor:
                 self.STATUS_DB_ERROR: 0,
                 self.STATUS_OTHER_ERROR: 0,
             }
+
+            # 普通数据组不需要逐条唯一性检查或批次 upsert，先完成转换，
+            # 再按目标表和列集合交给数据库驱动 executemany，一批只提交一次事务。
+            if not unique_key_point and not batch_upsert_config:
+                outcome_counts = self._bulk_insert_group_data(group_name, group_data_list)
+                total_records = sum(outcome_counts.values())
+                self.logger.debug(
+                    "组 %s 批量插入完成: success=%s, unique_conflict=%s, db_error=%s, other_error=%s, total=%s",
+                    group_name,
+                    outcome_counts[self.STATUS_SUCCESS],
+                    outcome_counts[self.STATUS_UNIQUE_CONFLICT],
+                    outcome_counts[self.STATUS_DB_ERROR],
+                    outcome_counts[self.STATUS_OTHER_ERROR],
+                    total_records,
+                )
+                await self._write_insert_feedback_by_outcome(group_name, outcome_counts)
+                return
+
             for data_item in group_data_list:
                 table_name = self._get_table_name_for_data_item(group_name, data_item)
                 if not self._is_table_ready_for_insert(table_name):
@@ -587,6 +605,81 @@ class DataStorageProcessor:
                     self.STATUS_OTHER_ERROR: 1,
                 },
             )
+
+    def _bulk_insert_group_data(
+        self,
+        group_name: str,
+        group_data_list: List[Dict[str, Any]],
+    ) -> Dict[str, int]:
+        """转换普通组记录，并按目标表与列集合执行批量插入。"""
+        outcome_counts = {
+            self.STATUS_SUCCESS: 0,
+            self.STATUS_UNIQUE_CONFLICT: 0,
+            self.STATUS_DB_ERROR: 0,
+            self.STATUS_OTHER_ERROR: 0,
+        }
+        rows_by_target: Dict[tuple, List[Dict[str, Any]]] = {}
+
+        for data_item in group_data_list:
+            try:
+                table_name = self._get_table_name_for_data_item(group_name, data_item)
+            except Exception as exc:
+                self.logger.error(
+                    "组 %s 无法确定批量插入目标表: %s",
+                    group_name,
+                    exc,
+                    exc_info=True,
+                )
+                outcome_counts[self.STATUS_DB_ERROR] += 1
+                continue
+
+            if not self._is_table_ready_for_insert(table_name):
+                self.logger.error(
+                    "组 %s 的目标表尚未在启动或批次切换时完成检查: %s",
+                    group_name,
+                    table_name,
+                )
+                outcome_counts[self.STATUS_DB_ERROR] += 1
+                continue
+
+            insert_data = self._convert_to_db_format(data_item)
+            if not insert_data:
+                outcome_counts[self.STATUS_OTHER_ERROR] += 1
+                continue
+
+            target_key = (table_name, tuple(insert_data.keys()))
+            rows_by_target.setdefault(target_key, []).append(insert_data)
+
+        for (table_name, _columns), rows in rows_by_target.items():
+            inserted_count = self.db_manager.execute_insert_many(table_name, rows)
+            if inserted_count == len(rows):
+                outcome_counts[self.STATUS_SUCCESS] += inserted_count
+                self.logger.debug(
+                    "组 %s 批量写入成功: table=%s, rows=%s",
+                    group_name,
+                    table_name,
+                    inserted_count,
+                )
+            elif isinstance(inserted_count, int) and inserted_count >= 0:
+                outcome_counts[self.STATUS_SUCCESS] += inserted_count
+                outcome_counts[self.STATUS_DB_ERROR] += len(rows) - inserted_count
+                self.logger.error(
+                    "组 %s 批量写入数量不完整: table=%s, expected=%s, inserted=%s",
+                    group_name,
+                    table_name,
+                    len(rows),
+                    inserted_count,
+                )
+            else:
+                outcome_counts[self.STATUS_DB_ERROR] += len(rows)
+                self.logger.error(
+                    "组 %s 批量写入失败: table=%s, rows=%s",
+                    group_name,
+                    table_name,
+                    len(rows),
+                )
+
+        return outcome_counts
 
     async def _write_insert_feedback_by_outcome(self, group_name: str, outcome_counts: Dict[str, int]) -> None:
         """
