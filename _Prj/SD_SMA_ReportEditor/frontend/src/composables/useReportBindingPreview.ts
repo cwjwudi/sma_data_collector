@@ -52,6 +52,7 @@ async function runPool<T>(items: T[], limit: number, fn: (item: T) => Promise<vo
 export function useReportBindingPreview(tmplRef: Ref<ReportTemplate | null>): ReportBindingPreviewState {
   const values = ref<Record<string, BindingPreviewCell>>({});
   const loading = ref(false);
+  const statusText = ref("");
   const lastStats = ref<BindingPreviewStats | null>(null);
   let generation = 0;
 
@@ -61,6 +62,7 @@ export function useReportBindingPreview(tmplRef: Ref<ReportTemplate | null>): Re
     const stats: BindingPreviewStats = { opcReads: 0, sqlQueries: 0, sqlRows: 0 };
     if (!t) {
       values.value = {};
+      statusText.value = "";
       return;
     }
 
@@ -69,7 +71,10 @@ export function useReportBindingPreview(tmplRef: Ref<ReportTemplate | null>): Re
     const silent = opts?.silent === true;
     const partial = !doOpc || !doSql;
 
-    if (!silent) loading.value = true;
+    if (!silent) {
+      loading.value = true;
+      statusText.value = "正在连接数据源…";
+    }
     try {
       const [prefs, opcPkg, connPkg] = await Promise.all([
         apiFetch("/settings/app_preferences").catch(() => ({}) as Record<string, unknown>) as Promise<
@@ -121,6 +126,9 @@ export function useReportBindingPreview(tmplRef: Ref<ReportTemplate | null>): Re
       }
 
       if (doOpc) {
+        if (!silent && opcTasks.length) {
+          statusText.value = `正在读取 OPC UA（${opcTasks.length} 项）…`;
+        }
         await runPool(opcTasks, 8, async (task) => {
           if (gen !== generation) return;
           try {
@@ -143,6 +151,9 @@ export function useReportBindingPreview(tmplRef: Ref<ReportTemplate | null>): Re
       if (gen !== generation) return;
 
       if (doSql) {
+        if (!silent && sqlTasks.length) {
+          statusText.value = `正在查询数据库绑定（${sqlTasks.length} 项）…`;
+        }
         await runPool(sqlTasks, 6, async (task) => {
           if (gen !== generation) return;
           try {
@@ -179,6 +190,9 @@ export function useReportBindingPreview(tmplRef: Ref<ReportTemplate | null>): Re
         const fillTasks = buildTableSqlFillPreviewTasks(t, sqlConnId, {
           fullSqlFill: opts?.fullSqlFill === true,
         });
+        if (!silent && fillTasks.length) {
+          statusText.value = `正在读取表格填充数据（${fillTasks.length} 张表）…`;
+        }
         await runPool(fillTasks, 4, async (task) => {
           if (gen !== generation) return;
           try {
@@ -254,9 +268,12 @@ export function useReportBindingPreview(tmplRef: Ref<ReportTemplate | null>): Re
       values.value = out;
       lastStats.value = stats;
     } finally {
-      if (!silent && gen === generation) loading.value = false;
+      if (!silent && gen === generation) {
+        loading.value = false;
+        statusText.value = "";
+      }
     }
   }
 
-  return { values, loading, refresh, lastStats };
+  return { values, loading, statusText, refresh, lastStats };
 }

@@ -1,5 +1,15 @@
 <template>
-  <div class="ted" v-if="editing">
+  <div v-if="!editing" class="ted ted--boot" role="status" aria-live="polite">
+    <div class="ted-boot-card">
+      <span class="ted-boot-spin" aria-hidden="true" />
+      <div class="ted-boot-copy">
+        <p class="ted-boot-title">{{ bootStatus || "正在打开模版…" }}</p>
+        <p class="ted-boot-sub">首次打开或数据源较慢时可能需要数秒，请稍候。</p>
+      </div>
+      <button type="button" class="link ted-boot-back" @click="back">← 返回模板列表</button>
+    </div>
+  </div>
+  <div class="ted" v-else>
     <div class="ted-top">
       <header class="bar bar--sticky">
         <div class="bar-start">
@@ -251,7 +261,7 @@
         <template v-if="midMode === 'preview'">
           <div class="preview-opts-side">
             <p v-if="bindingPreview.loading.value" class="preview-side-loading" role="status">
-              正在读取数据…
+              {{ bindingPreview.statusText.value || "正在读取数据…" }}
             </p>
             <label class="preview-side-lbl">
               正文页数
@@ -354,7 +364,7 @@
                 aria-live="polite"
               >
                 <span class="mid-preview-loading__spin" aria-hidden="true" />
-                <span>正在读取数据…</span>
+                <span>{{ bindingPreview.statusText.value || "正在读取数据…" }}</span>
               </div>
               <TemplateExportPreviewStack
                 :tmpl="editing"
@@ -453,7 +463,6 @@
       @confirm="sigOk"
     />
   </div>
-  <div v-else class="wait">载入中…</div>
 </template>
 
 <script setup>
@@ -547,10 +556,13 @@ const selId = ref(null);
 const sh = ref("body");
 const dlgSig = ref(false);
 /** @type {import('vue').Ref<'preview'|'edit'>} */
-const midMode = ref("preview");
+/** 默认进编辑画布，避免一打开就卡在导出预览的 SQL/OPC 拉取且无反馈 */
+const midMode = ref("edit");
 /** 正文分页编辑：当前画布索引（0-based） */
 const bodyPageIdx = ref(0);
 const hint = ref("");
+/** 模版尚未挂载时的打开进度文案 */
+const bootStatus = ref("正在打开模版…");
 const saving = ref(false);
 /** @type {import('vue').Ref<import('@/lib/report-template/model').ReportTemplate[]>} */
 const tplUndoStack = ref([]);
@@ -1123,6 +1135,7 @@ function onBodyPageCountInput(ev) {
 async function boot() {
   const token = beginLoad();
   editing.value = null;
+  bootStatus.value = "正在打开模版…";
   const id = String(route.params.id || "");
   if (!id) {
     if (!isLoadStale(token)) router.replace({ name: "TemplateManager" });
@@ -1130,14 +1143,31 @@ async function boot() {
   }
   hint.value = "";
 
+  /** 模版挂载后按当前视图刷新绑定；预览态显示「正在读取…」，且不写回 tableRows */
+  const refreshBindingsAfterOpen = () => {
+    void nextTick(() => {
+      if (isLoadStale(token) || !editing.value) return;
+      if (midMode.value === "preview") {
+        bindingPreview.loading.value = true;
+        void bindingPreview.refresh({ silent: false, mutateTemplateRows: false });
+      } else {
+        void bindingPreview.refresh({ silent: true, mutateTemplateRows: false });
+      }
+    });
+  };
+
   /** @param {import('@/lib/report-template/model').ReportTemplate} tpl */
   const applyTemplate = async (tpl) => {
+    bootStatus.value = "正在解析模版…";
+    await nextTick();
     editing.value = cloneDeepTemplate(tpl);
     ensureBodyPages(editing.value);
     syncLegacyElementsAlias(editing.value);
     // 旧数据里封面/末页版式装饰层中的表格提升为可编辑画布控件（拖拽/缩放/绑定与正文一致）
     liftZoneTablesToSheetCanvas(editing.value);
     bodyPageIdx.value = 0;
+    bootStatus.value = "正在加载版式列表…";
+    await nextTick();
     await loadLayoutPresetsList();
     if (isLoadStale(token)) return false;
     if (layoutPresetsAll.value.length) {
@@ -1146,7 +1176,7 @@ async function boot() {
     }
     selId.value = null;
     resetTplEditHistory();
-    void bindingPreview.refresh({ silent: true });
+    refreshBindingsAfterOpen();
     return true;
   };
 
@@ -1154,12 +1184,17 @@ async function boot() {
   const cached = getCachedTemplateFullMap()[id];
   let seededUpdatedAt = "";
   if (cached && typeof cached === "object") {
+    bootStatus.value = "正在从本机缓存打开…";
+    await nextTick();
     const ok = await applyTemplate(/** @type {any} */ (cached));
     if (!ok) return;
     seededUpdatedAt = String(editing.value?.updatedAt || "");
   }
 
   try {
+    if (!seededUpdatedAt) bootStatus.value = "正在从服务器加载模版…";
+    else bootStatus.value = "正在核对服务器版本…";
+    await nextTick();
     const remote = await api.getTemplate(id);
     if (isLoadStale(token)) return;
     if (!seededUpdatedAt) {
@@ -1170,6 +1205,7 @@ async function boot() {
     const remoteUpdatedAt = String(remote?.updatedAt || "");
     if (remoteUpdatedAt && remoteUpdatedAt !== seededUpdatedAt) {
       if (tplUndoStack.value.length === 0 && tplRedoStack.value.length === 0) {
+        bootStatus.value = "服务器有更新，正在载入最新模版…";
         await applyTemplate(remote);
       } else {
         hint.value = "此模版在其他端已有更新，当前显示为本机缓存版本；保存将覆盖远端修改。";
@@ -1178,6 +1214,7 @@ async function boot() {
   } catch {
     if (isLoadStale(token)) return;
     if (!seededUpdatedAt) {
+      bootStatus.value = "无法从后端载入模版";
       hint.value = "无法从后端载入模版。";
       editing.value = null;
     }
@@ -1420,6 +1457,54 @@ onUnmounted(() => {
   flex-direction: column;
   height: calc(100vh - 48px);
   min-height: 0;
+}
+.ted--boot {
+  align-items: center;
+  justify-content: center;
+  background: #f4f4f5;
+  padding: 24px;
+  box-sizing: border-box;
+}
+.ted-boot-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  max-width: 420px;
+  padding: 28px 32px;
+  border-radius: 12px;
+  border: 1px solid #e4e4e7;
+  background: #fff;
+  box-shadow: 0 8px 28px rgb(0 0 0 / 6%);
+  text-align: center;
+}
+.ted-boot-spin {
+  width: 28px;
+  height: 28px;
+  border: 3px solid color-mix(in srgb, var(--accent, #2563eb) 28%, transparent);
+  border-top-color: var(--accent, #2563eb);
+  border-radius: 50%;
+  animation: mid-preview-spin 0.7s linear infinite;
+}
+.ted-boot-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ted-boot-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 650;
+  color: #18181b;
+}
+.ted-boot-sub {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #71717a;
+}
+.ted-boot-back {
+  margin-top: 4px;
 }
 .ted-top {
   flex: none;

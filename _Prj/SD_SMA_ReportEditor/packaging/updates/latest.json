@@ -1,15 +1,15 @@
 {
-  "version": "0.2.24",
-  "releasedAt": "2026-07-10T04:25:33.894Z",
-  "notes": "Report Editor 0.2.24\n\n- 纵表/表格行数上限由 30 提升至 100（含表头；字段槽最多 99）\n- 后端校验与前端 clamp/UI 同步放宽，超过 30 行可继续添加字段与空白分隔\n- 列数上限仍为 30",
+  "version": "0.2.25",
+  "releasedAt": "2026-07-10T04:43:21.241Z",
+  "notes": "Report Editor 0.2.25\n\n- 打开模版编辑时显示加载阶段（缓存/服务器/版式），不再空白干等\n- 默认进入「编辑画布」，避免一打开就卡在导出预览取数\n- 导出预览刷新显示阶段文案（连接数据源 / OPC / SQL / 表格填充）\n- 打开时绑定刷新不写回表格行数，减轻卡顿",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor-Setup-0.2.24-x64.exe",
-      "sha256": "a6c3d3f35036c286dd6feb727893ea06bcde55bb1e62317cd157b15f1ef8a762",
-      "size": 144414284
+      "url": "Report Editor-Setup-0.2.25-x64.exe",
+      "sha256": "61576c572645f0c87bc00fc81fb414bc75f2d356f6f4d88a126f949b5319eff0",
+      "size": 144413748
     },
     "darwin-arm64": {
-      "url": "Report Editor-0.2.24-arm64.dmg",
+      "url": "Report Editor-0.2.25-arm64.dmg",
       "sha256": "",
       "size": 0
     }

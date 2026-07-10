@@ -45,6 +45,8 @@ export interface BindingPreviewStats {
 export interface ReportBindingPreviewState {
   values: Ref<Record<string, BindingPreviewCell>>;
   loading: Ref<boolean>;
+  /** 非 silent 刷新时的阶段文案（如「正在查询数据库…」） */
+  statusText: Ref<string>;
   refresh: (opts?: BindingPreviewRefreshOptions) => Promise<void>;
   /** 最近一次 refresh 的取数统计；未刷新过为 null */
   lastStats: Ref<BindingPreviewStats | null>;
