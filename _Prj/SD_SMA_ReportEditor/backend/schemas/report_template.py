@@ -7,6 +7,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 PaperKind = Literal["A3", "A4", "A5", "Letter"]
+NullDisplayMode = Literal["blank", "emptyLabel", "fallbackText"]
 BindingKind = Literal["none", "opcua", "sql"]
 TableSqlParamSource = Literal["opcua", "above_cell", "literal", "batch_no"]
 ScalarSqlFillMode = Literal["manual", "visual"]
@@ -150,6 +151,7 @@ class LayoutZoneElement(BaseModel):
     sqlParams: list[TableSqlParamBinding] = Field(default_factory=list)
     scalarSqlFillMode: ScalarSqlFillMode | None = None
     scalarSqlVisual: ScalarSqlVisualConfig | None = None
+    nullDisplayMode: NullDisplayMode | None = None
     tableRows: int = Field(default=3, ge=1, le=100)
     tableCols: int = Field(default=4, ge=1, le=30)
     tableCells: list[list[TemplateTableCell]] = Field(default_factory=list)
@@ -186,6 +188,7 @@ class TemplateElement(BaseModel):
     sqlParams: list[TableSqlParamBinding] = Field(default_factory=list)
     scalarSqlFillMode: ScalarSqlFillMode | None = None
     scalarSqlVisual: ScalarSqlVisualConfig | None = None
+    nullDisplayMode: NullDisplayMode | None = None
     dateFormat: str = ""
     chartKind: ChartKind = "line"
     signerLabel: str = ""

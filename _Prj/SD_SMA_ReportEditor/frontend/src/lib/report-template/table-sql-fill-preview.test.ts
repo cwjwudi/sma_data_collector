@@ -127,5 +127,6 @@ describe("formatScalarForPreviewValue datetime normalization", () => {
     expect(formatScalarForPreviewValue("T恤批次")).toBe("T恤批次");
     expect(formatScalarForPreviewValue("2026-07-08")).toBe("2026-07-08");
     expect(formatScalarForPreviewValue(42)).toBe("42");
+    expect(formatScalarForPreviewValue(null)).toBe("");
   });
 });

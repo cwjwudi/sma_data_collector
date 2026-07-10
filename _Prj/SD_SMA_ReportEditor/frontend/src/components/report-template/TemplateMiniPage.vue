@@ -292,7 +292,14 @@ import {
   zoneTableNodeShellBackgroundCss,
   formatLayoutDate,
 } from "@/lib/report-template/layout-zone-element";
-import { cellKey, chartKey, paramKey, type BindingPreviewCell } from "@/lib/report-template/binding-preview-utils";
+import {
+  cellKey,
+  chartKey,
+  paramKey,
+  resolveBoundParameterPreviewText,
+  zoneParamKey,
+  type BindingPreviewCell,
+} from "@/lib/report-template/binding-preview-utils";
 import { reportBindingPreviewKey } from "@/lib/report-template/template-editor-context";
 import {
   sqlFillSliceTableOuterHeightPx,
@@ -723,24 +730,33 @@ function formatStaticTableCell(cell: TemplateTableCell | LayoutZoneTableCell): s
   return t.length > 0 ? t : "\u00a0";
 }
 
-function zoneParamKey(elId: string): string {
-  return `zone-param:${elId}`;
-}
-
 function zoneCellKey(elId: string, row: number, col: number): string {
   return `zone-cell:${elId}:${row}:${col}`;
 }
 
+function bindingPreviewCell(key: string): BindingPreviewCell | undefined {
+  return previewValues.value[key];
+}
+
 function bindingText(key: string): string | null {
-  const hit = previewValues.value[key];
-  return hit ? hit.text : null;
+  const hit = bindingPreviewCell(key);
+  if (hit == null) return null;
+  return hit.text;
 }
 
 function previewZoneInlineText(el: LayoutZoneElement): string | null {
   if (el.type !== "parameter") return null;
   if (el.bindingKind !== "opcua" && el.bindingKind !== "sql") return null;
-  const text = bindingText(zoneParamKey(el.id));
-  if (text != null) return text;
+  const hit = bindingPreviewCell(zoneParamKey(el.id));
+  if (hit != null) {
+    return resolveBoundParameterPreviewText({
+      bindingKind: el.bindingKind,
+      text: el.text,
+      nullDisplayMode: el.nullDisplayMode,
+      previewCell: hit,
+      loading: false,
+    });
+  }
   if (bindingPreview?.loading.value) return "...";
   return null;
 }
@@ -914,15 +930,25 @@ function previewTableCellText(el: TemplateElement, ri: number, ci: number): stri
 }
 
 function previewParameterText(el: TemplateElement): string {
-  const vals = previewValues.value;
   const key = paramKey(el.id);
   if (el.bindingKind === "opcua" || el.bindingKind === "sql") {
-    if (vals?.[key]?.text) return vals[key].text;
-    if (bindingPreview?.loading.value) {
-      return `${el.text.trim() || "参数"}（加载中…）`;
+    const hit = bindingPreviewCell(key);
+    if (hit != null) {
+      return resolveBoundParameterPreviewText({
+        bindingKind: el.bindingKind,
+        text: el.text,
+        nullDisplayMode: el.nullDisplayMode,
+        previewCell: hit,
+        loading: false,
+      });
     }
-    const fb = el.text.trim();
-    return fb || "（绑定预览：请确认 OPC / SQL 已配置）";
+    return resolveBoundParameterPreviewText({
+      bindingKind: el.bindingKind,
+      text: el.text,
+      nullDisplayMode: el.nullDisplayMode,
+      previewCell: undefined,
+      loading: !!bindingPreview?.loading.value,
+    });
   }
   const t = el.text.trim();
   return t ? truncateStatic(t, 120) : tplCaption(el);

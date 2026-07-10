@@ -15,7 +15,8 @@ export type TemplateControlType =
   | "parameter"
   | "signature";
 
-export type BindingKind = "none" | "opcua" | "sql";
+export type { NullDisplayMode } from "./layout-zone-element";
+
 
 /** 表格单个单元格：静态文字或按绑定拉取展示（生成器按 _Doc 解析） */
 export interface TemplateTableCell {
@@ -35,7 +36,7 @@ export interface TemplateTableCell {
 import type { LayoutSnapshot } from "./layout-model";
 import { defaultBlankLayoutSnapshot } from "./layout-model";
 import type { PaperKind } from "./paper";
-import type { LayoutAlignAxis, ImageCaptionPosition } from "./layout-zone-element";
+import type { LayoutAlignAxis, ImageCaptionPosition, NullDisplayMode } from "./layout-zone-element";
 import type { TableSqlFillConfig, TableSqlParamBinding } from "./table-sql-fill";
 import {
   hydrateScalarSqlVisual,
@@ -52,6 +53,7 @@ import {
   normalizeZIndex,
   ensureTableColBgColors,
   hydrateTableColBgColors,
+  normalizeNullDisplayMode,
   type LayoutZoneElement,
 } from "./layout-zone-element";
 import {
@@ -114,6 +116,8 @@ export interface TemplateElement {
   /** 数据参数 SQL：手写 / 点选生成 */
   scalarSqlFillMode?: ScalarSqlFillMode;
   scalarSqlVisual?: ScalarSqlVisualConfig | null;
+  /** 绑定为空时：空白 / 「空值」/ 手填默认文案 */
+  nullDisplayMode?: NullDisplayMode;
   /** 简易图表类型预览 */
   chartKind: "line" | "bar";
   /** 电子签名：签署人显示名 */
@@ -576,7 +580,7 @@ export function defaultElement(type: TemplateControlType): Omit<TemplateElement,
       y: 40,
       w: 160,
       h: 36,
-      text: "{{value}}",
+      text: "",
       ...base,
       /** 数据参数以 OPC UA 为主路径，与表格单元格绑定一致 */
       bindingKind: "opcua",
@@ -619,6 +623,10 @@ export function hydrateTemplateElement(raw: Partial<TemplateElement>): TemplateE
       typeof raw.sqlText === "string" ? raw.sqlText : d.sqlText,
     ),
     scalarSqlVisual: hydrateScalarSqlVisual((raw as { scalarSqlVisual?: unknown }).scalarSqlVisual),
+    nullDisplayMode:
+      type === "parameter"
+        ? normalizeNullDisplayMode((raw as { nullDisplayMode?: unknown }).nullDisplayMode)
+        : undefined,
     chartKind: normalizeChartKind(raw.chartKind),
     signerLabel:
       typeof raw.signerLabel === "string" ? raw.signerLabel : d.signerLabel,
@@ -678,6 +686,9 @@ export function hydrateTemplateElement(raw: Partial<TemplateElement>): TemplateE
           : "HH:mm:ss";
   } else {
     delete merged.dateFormat;
+  }
+  if (type !== "parameter") {
+    delete merged.nullDisplayMode;
   }
   if (type === "signature") {
     merged.signatureDisplayMode = normalizeSignatureDisplayMode(

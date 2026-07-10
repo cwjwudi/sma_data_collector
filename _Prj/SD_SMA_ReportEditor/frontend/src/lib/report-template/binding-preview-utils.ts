@@ -1,7 +1,11 @@
 import type { ReportTemplate, TemplateElement } from "@/lib/report-template/model";
 import { ensureBodyPages, ensureTableGrid } from "@/lib/report-template/model";
 import type { LayoutZoneElement } from "@/lib/report-template/layout-zone-element";
-import { ensureZoneTableGrid } from "@/lib/report-template/layout-zone-element";
+import {
+  ensureZoneTableGrid,
+  normalizeNullDisplayMode,
+  type NullDisplayMode,
+} from "@/lib/report-template/layout-zone-element";
 import { bodyElementsRef, type EditorSheet } from "@/lib/report-template/editor-sheet";
 import type { TableSqlParamBinding } from "@/lib/report-template/table-sql-fill";
 import { hydrateScalarSqlVisual, normalizeScalarSqlFillMode, type ScalarSqlVisualConfig } from "@/lib/report-template/scalar-sql-visual";
@@ -12,6 +16,74 @@ import type { AutoBatchOpcBinding } from "@/lib/auto-batch-opc-binding";
 export interface TableSqlFillPreviewPayload {
   dataRows: string[][];
   error?: string;
+}
+
+export type { NullDisplayMode };
+export { normalizeNullDisplayMode };
+
+export function zoneParamKey(elId: string): string {
+  return `zone-param:${elId}`;
+}
+
+/** 绑定读数是否视为空（null / 空串 / 历史 OPC 字面量 null） */
+export function isBoundValueEmpty(text: string | null | undefined): boolean {
+  if (text === null || text === undefined) return true;
+  const t = text.trim();
+  return t === "" || t === "null" || t === "undefined";
+}
+
+/** 预览/导出中的 OPC/SQL 错误文案，不走空值显示模式 */
+export function isBindingPreviewErrorText(text: string): boolean {
+  const t = text.trim();
+  return t.startsWith("（OPC）") || t.startsWith("（SQL）") || t.startsWith("(OPC)") || t.startsWith("(SQL)");
+}
+
+export function resolveParameterDisplayText(opts: {
+  boundText: string | null | undefined;
+  hasBoundResult: boolean;
+  mode: NullDisplayMode;
+  fallbackText: string;
+}): string {
+  const { boundText, hasBoundResult, mode, fallbackText } = opts;
+  if (!hasBoundResult) return "";
+  const text = boundText ?? "";
+  if (isBindingPreviewErrorText(text)) return text;
+  if (!isBoundValueEmpty(text)) return text;
+  switch (mode) {
+    case "emptyLabel":
+      return "空值";
+    case "fallbackText":
+      return fallbackText.trim();
+    default:
+      return "";
+  }
+}
+
+export function resolveBoundParameterPreviewText(opts: {
+  bindingKind: "none" | "opcua" | "sql";
+  text: string;
+  nullDisplayMode?: NullDisplayMode;
+  previewCell: BindingPreviewCell | undefined;
+  loading: boolean;
+  unboundHint?: string;
+}): string {
+  const { bindingKind, text, nullDisplayMode, previewCell, loading, unboundHint } = opts;
+  if (bindingKind === "opcua" || bindingKind === "sql") {
+    if (previewCell != null) {
+      return resolveParameterDisplayText({
+        boundText: previewCell.text,
+        hasBoundResult: true,
+        mode: normalizeNullDisplayMode(nullDisplayMode),
+        fallbackText: text,
+      });
+    }
+    if (loading) {
+      return `${text.trim() || "参数"}（加载中…）`;
+    }
+    return unboundHint ?? (text.trim() || "（绑定预览：请确认 OPC / SQL 已配置）");
+  }
+  const t = text.trim();
+  return t;
 }
 
 export interface BindingPreviewCell {
@@ -114,8 +186,8 @@ export function formatOpcuaReadPayload(res: unknown): { ok: true; text: string }
   const r = res as { ok?: boolean; message?: string; value?: unknown };
   if (r.ok === false) return { ok: false, err: String(r.message || "读值失败") };
   const v = r.value;
-  if (v === null) return { ok: true, text: "null" };
-  if (v === undefined) return { ok: true, text: "undefined" };
+  if (v === null) return { ok: true, text: "" };
+  if (v === undefined) return { ok: true, text: "" };
   const t = typeof v;
   if (t === "object") {
     try {
@@ -129,11 +201,11 @@ export function formatOpcuaReadPayload(res: unknown): { ok: true; text: string }
 }
 
 export function sqlResponseFirstScalar(data: unknown): string {
-  if (!data || typeof data !== "object") return "(空结果)";
+  if (!data || typeof data !== "object") return "";
   const d = data as { columns?: ({ name?: string } | string)[]; rows?: unknown[] };
   const rows = Array.isArray(d.rows) ? d.rows : [];
   const cols = Array.isArray(d.columns) ? d.columns : [];
-  if (!rows.length) return "(空结果)";
+  if (!rows.length) return "";
   const row = rows[0];
   if (Array.isArray(row)) {
     const x = row[0];
@@ -177,7 +249,7 @@ export function normalizeDbDatetimeDisplay(raw: string): string {
 }
 
 export function formatScalarForPreviewValue(v: unknown): string {
-  if (v === null || v === undefined) return String(v);
+  if (v === null || v === undefined) return "";
   if (typeof v === "object") {
     try {
       const s = JSON.stringify(v);

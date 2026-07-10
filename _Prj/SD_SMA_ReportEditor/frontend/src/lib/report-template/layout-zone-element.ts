@@ -28,7 +28,14 @@ import {
   hydrateTableSqlFill,
 } from "@/lib/report-template/table-sql-fill";
 
-export type LayoutZoneKind = "header" | "footer";
+/** 绑定结果为空时的显示策略（数据参数控件） */
+export type NullDisplayMode = "blank" | "emptyLabel" | "fallbackText";
+
+export function normalizeNullDisplayMode(v: unknown): NullDisplayMode {
+  if (v === "emptyLabel" || v === "fallbackText") return v;
+  return "blank";
+}
+
 
 export type LayoutControlType =
   | "text"
@@ -131,6 +138,8 @@ export interface LayoutZoneElement {
   sqlParams: TableSqlParamBinding[];
   scalarSqlFillMode?: ScalarSqlFillMode;
   scalarSqlVisual?: ScalarSqlVisualConfig | null;
+  /** 绑定为空时：空白 / 「空值」/ 手填默认文案（仅 parameter） */
+  nullDisplayMode?: NullDisplayMode;
   /** 仅 type==="table" 时使用 */
   tableRows?: number;
   tableCols?: number;
@@ -543,7 +552,7 @@ export function defaultLayoutZoneElement(type: LayoutControlType): Omit<LayoutZo
       w: 160,
       h: 28,
       ...baseText,
-      text: "{{value}}",
+      text: "",
       bindingKind: "opcua",
       opcuaNodeId: "",
       sqlText: "",
@@ -624,6 +633,10 @@ export function hydrateLayoutZoneElement(raw: Partial<LayoutZoneElement>): Layou
       typeof raw.sqlText === "string" ? raw.sqlText : d.sqlText,
     ),
     scalarSqlVisual: hydrateScalarSqlVisual((raw as { scalarSqlVisual?: unknown }).scalarSqlVisual),
+    nullDisplayMode:
+      type === "parameter"
+        ? normalizeNullDisplayMode((raw as { nullDisplayMode?: unknown }).nullDisplayMode)
+        : undefined,
   };
   if (type === "table") {
     merged.tableRows = clampZoneTableDim(raw.tableRows ?? d.tableRows ?? 3, 3);
@@ -646,6 +659,9 @@ export function hydrateLayoutZoneElement(raw: Partial<LayoutZoneElement>): Layou
     merged.tableColBgColors = undefined;
     merged.tableCells = undefined;
     merged.tableSqlFill = undefined;
+  }
+  if (type !== "parameter") {
+    merged.nullDisplayMode = undefined;
   }
   return merged;
 }
