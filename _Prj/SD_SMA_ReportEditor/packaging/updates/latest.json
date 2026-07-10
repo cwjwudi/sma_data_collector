@@ -1,15 +1,15 @@
 {
-  "version": "0.2.33",
-  "releasedAt": "2026-07-10T08:57:48.503Z",
-  "notes": "Report Editor 0.2.33\n\n- 修复字体下拉：展开时显示全部字体并可滚动（不再被当前选中值过滤成只剩一项）\n- Electron 放行本机字体权限；刷新后提示加载数量\n- 可清除字体恢复系统默认",
+  "version": "0.3.0",
+  "releasedAt": "2026-07-10T09:23:48.275Z",
+  "notes": "Report Editor 0.3.0\n\n- AI 助手与 OpenAI 兼容 /v1 网关；Cursor 可用 Agent Token 接入\n- 只读诊断工具：审计、连接探活、模版摘要、导出诊断解析\n- 全页 AI 浮层；设置页配置 LLM / Agent 令牌\n- 修复连接异常详情与 Tab 红点不一致\n- 版式列表改用摘要接口，打开更快",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor-Setup-0.2.33-x64.exe",
-      "sha256": "640578eef51266f23fa1aecba68c8b59e7f10f7a8c189ad4583fd25fd471a30e",
-      "size": 144460433
+      "url": "Report Editor-Setup-0.3.0-x64.exe",
+      "sha256": "",
+      "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor-0.2.33-arm64.dmg",
+      "url": "Report Editor-0.3.0-arm64.dmg",
       "sha256": "",
       "size": 0
     }
