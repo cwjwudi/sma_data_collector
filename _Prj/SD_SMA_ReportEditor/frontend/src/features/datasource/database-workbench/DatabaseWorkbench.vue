@@ -120,7 +120,7 @@
 </template>
 
 <script setup>
-import { computed, defineExpose, onDeactivated, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, defineExpose, onDeactivated, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 
 const emit = defineEmits(['health-summary'])
 import { apiFetch } from '@/api/client.js'
@@ -154,10 +154,11 @@ import { connectionTabLabel } from './connection-tab-label.js'
 import ConnectionManager from './connection-manager/ConnectionManager.vue'
 import ObjectTree from './object-tree/ObjectTree.vue'
 import DataGrid from './data-grid/DataGrid.vue'
-import QueryEditor from './query-editor/QueryEditor.vue'
-import RelationshipBrowser from './relationship-browser/RelationshipBrowser.vue'
-import SmartPivotPanel from './smart-pivot/SmartPivotPanel.vue'
-import DdlPreviewPanel from './ddl-preview/DdlPreviewPanel.vue'
+
+const QueryEditor = defineAsyncComponent(() => import('./query-editor/QueryEditor.vue'))
+const RelationshipBrowser = defineAsyncComponent(() => import('./relationship-browser/RelationshipBrowser.vue'))
+const SmartPivotPanel = defineAsyncComponent(() => import('./smart-pivot/SmartPivotPanel.vue'))
+const DdlPreviewPanel = defineAsyncComponent(() => import('./ddl-preview/DdlPreviewPanel.vue'))
 
 const connections = ref([])
 const activeConnId = ref('')
