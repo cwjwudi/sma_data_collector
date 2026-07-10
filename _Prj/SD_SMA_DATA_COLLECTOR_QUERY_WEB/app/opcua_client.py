@@ -458,12 +458,23 @@ async def read_scalar(
     username: str = "",
     password: str = "",
 ) -> Any:
-    """Read a scalar node value (used by integration tests)."""
-    client = await _ensure_connected(endpoint_url, username, password)
-    if client is None:
-        raise RuntimeError("OPC UA not connected")
-    node = client.get_node(node_id)
-    return await node.read_value()
+    """Read a scalar node value; invalidate the pool on failure so the next call reconnects."""
+    try:
+        client = await _ensure_connected(endpoint_url, username, password)
+        if client is None:
+            raise RuntimeError("OPC UA not connected")
+        node = client.get_node(node_id)
+        return await node.read_value()
+    except Exception:
+        if _pool is not None:
+            async with _pool.lock:
+                await _invalidate_client(_pool)
+        raise
+
+
+def is_connected() -> bool:
+    """Return True when the pooled OPC UA client is present."""
+    return _pool is not None and _pool.client is not None
 
 
 async def close_pool() -> None:

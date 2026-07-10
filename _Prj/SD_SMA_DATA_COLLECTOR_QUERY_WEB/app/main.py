@@ -158,6 +158,7 @@ async def _app_lifespan(_app: FastAPI):
             pass
     _plugin_opcua_monitor = None
     _plugin_opcua_monitor_task = None
+    await opcua_client.close_pool()
 
 
 app = FastAPI(title="SD SMA Query Web", version="0.1.0", lifespan=_app_lifespan)
