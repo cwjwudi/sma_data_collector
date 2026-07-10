@@ -1,12 +1,12 @@
 {
   "version": "0.3.12",
-  "releasedAt": "2026-07-10T17:25:55.653Z",
+  "releasedAt": "2026-07-10T17:33:33.371Z",
   "notes": "绑定冒烟模版：页眉页脚、可视化横/纵表 OPC 筛选；创建后 UI reload",
   "platforms": {
     "win32-x64": {
       "url": "Report Editor-Setup-0.3.12-x64.exe",
-      "sha256": "",
-      "size": 0
+      "sha256": "18d964535e75dcc3e0ecb56ba75efb29092df0205a1d964b2c553df329ee9f33",
+      "size": 145027429
     },
     "darwin-arm64": {
       "url": "Report Editor-0.3.12-arm64.dmg",
