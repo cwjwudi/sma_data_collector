@@ -17,6 +17,24 @@ import type { AutoBatchOpcBinding } from "@/lib/auto-batch-opc-binding";
 export interface TableSqlFillPreviewPayload {
   dataRows: string[][];
   error?: string;
+  /** 取数失败/成功时的诊断信息（供导出失败审计） */
+  diagnostics?: TableSqlFillDiagnostics;
+}
+
+/** 表格填充运行时诊断（导出失败写入审计，便于对照预览） */
+export interface TableSqlFillDiagnostics {
+  connectionId?: string;
+  database?: string;
+  /** 最终用于 SQL 的表名（OPC 值或结构参考表兜底） */
+  resolvedTable?: string;
+  tableOpcNodeId?: string;
+  /** OPC 原始读数（未 sanitize） */
+  tableOpcRawValue?: string;
+  usedFallbackTable?: boolean;
+  fallbackTable?: string;
+  tableOpcReadError?: string;
+  /** 实际下发的 SQL（截断） */
+  sqlExecuted?: string;
 }
 
 export type { NullDisplayMode };

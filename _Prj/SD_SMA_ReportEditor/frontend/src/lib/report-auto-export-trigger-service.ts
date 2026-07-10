@@ -16,6 +16,10 @@ import {
 } from "@/lib/auto-trigger-bindings";
 import { buildAutoExportFileName } from "@/lib/auto-export-filename";
 import { humanizePdfExportError } from "@/lib/pdfExportErrors";
+import {
+  exportFailureAuditDetail,
+  parseExportFailureDiagnostics,
+} from "@/lib/bindingPreviewErrors";
 import { runTemplateExportPreflight, type TemplateExportPreflightResult } from "@/lib/templateExportPreflight";
 import { showAppToast } from "@/composables/useAppToast";
 import { auditLog } from "@/lib/auditLog";
@@ -604,7 +608,8 @@ async function executeBindingExport(job: QueuedExportJob): Promise<void> {
     if (timingsLine) doneLines.push(timingsLine);
     showAppToast(doneLines.join("\n"), { id: progressToastId, tone: "ok", durationMs: 10000 });
   } catch (e) {
-    const msg = humanizePdfExportError(e);
+    const parsed = parseExportFailureDiagnostics(e);
+    const msg = humanizePdfExportError(parsed.message || e);
     try {
       const summaries = await loadTemplateSummariesCached();
       const tmeta = summaries.find((x) => x.id === templateId);
@@ -622,10 +627,22 @@ async function executeBindingExport(job: QueuedExportJob): Promise<void> {
     void auditLog({
       action: "export.auto_pdf",
       result: "fail",
-      summary: msg,
+      summary: msg.split("\n").slice(0, 8).join("；"),
       object_type: "template",
       object_id: templateId || undefined,
-      detail: { bindingId, event: eventLabel, durationMs: Date.now() - startedAtMs },
+      detail: exportFailureAuditDetail({
+        errorMessage: msg,
+        diagnostics: parsed.diagnostics,
+        extra: {
+          bindingId,
+          event: eventLabel,
+          nodeId,
+          serverId,
+          label,
+          durationMs: Date.now() - startedAtMs,
+          fileName,
+        },
+      }),
     });
     await setBindingExportStatus(prefs, binding, AUTO_EXPORT_STATUS.FAILED, msg.split("\n")[0] || msg, {
       success: false,

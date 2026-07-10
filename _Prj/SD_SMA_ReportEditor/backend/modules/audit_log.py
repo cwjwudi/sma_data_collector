@@ -251,7 +251,7 @@ def export_audit_csv(
     )
     buf = io.StringIO()
     writer = csv.writer(buf)
-    writer.writerow(["time", "action", "result", "summary", "object_type", "object_id", "actor"])
+    writer.writerow(["time", "action", "result", "summary", "object_type", "object_id", "actor", "detail"])
     for e in entries:
         ts = float(e.get("ts") or 0)
         time_str = (
@@ -264,6 +264,11 @@ def export_audit_csv(
         if isinstance(actor, dict):
             parts = [p for p in [actor.get("os_user"), actor.get("hostname")] if p]
             actor_str = "@".join(parts) if parts else ""
+        detail = e.get("detail") if isinstance(e.get("detail"), dict) else {}
+        try:
+            detail_str = json.dumps(detail or {}, ensure_ascii=False)
+        except (TypeError, ValueError):
+            detail_str = ""
         writer.writerow([
             time_str,
             e.get("action") or "",
@@ -272,5 +277,6 @@ def export_audit_csv(
             e.get("object_type") or "",
             e.get("object_id") or "",
             actor_str,
+            detail_str,
         ])
     return buf.getvalue()

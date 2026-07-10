@@ -19,6 +19,9 @@ export function humanizePdfExportError(raw: unknown, context?: { phase?: string 
   // Electron IPC 透传的错误带 "Error invoking remote method 'xxx': Error:" 前缀，先剥掉再分类
   const stripped = text.replace(/^error invoking remote method '[^']*':\s*(error:\s*)?/i, "").trim();
   if (stripped) text = stripped;
+  // 主进程附带的结构化诊断留给审计解析，人读文案只保留前半段
+  const diagIdx = text.indexOf("---EXPORT_DIAGNOSTICS---");
+  if (diagIdx >= 0) text = text.slice(0, diagIdx).trim() || text;
   // 主进程已可读化过的文案直接透传，避免二次包装被误判成「数据源检查未通过」
   const alreadyHumanized =
     /可能原因：|建议：/.test(text) ||

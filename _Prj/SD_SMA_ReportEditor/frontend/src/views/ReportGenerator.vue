@@ -839,6 +839,10 @@ import {
   type AutoFileNameSegment,
 } from "@/lib/auto-export-filename";
 import { humanizePdfExportError } from "@/lib/pdfExportErrors";
+import {
+  exportFailureAuditDetail,
+  parseExportFailureDiagnostics,
+} from "@/lib/bindingPreviewErrors";
 import { runTemplateExportPreflight } from "@/lib/templateExportPreflight";
 import { dismissAppToast, showAppToast } from "@/composables/useAppToast";
 import { auditLog } from "@/lib/auditLog";
@@ -1991,16 +1995,21 @@ async function onManualExport(): Promise<void> {
     if (timingsLine) doneLines.push(timingsLine);
     showAppToast(doneLines.join("\n"), { id: progressToastId, tone: "ok", durationMs: 10000 });
   } catch (e) {
-    const msg = humanizePdfExportError(e);
+    const parsed = parseExportFailureDiagnostics(e);
+    const msg = humanizePdfExportError(parsed.message || e);
     manualHint.value = msg;
     showAppToast(`[${RG_UI.manual}] 失败\n${msg}`, { id: progressToastId, tone: "err", durationMs: 14000 });
     void auditLog({
       action: "export.manual_pdf",
       result: "fail",
-      summary: msg,
+      summary: msg.split("\n").slice(0, 8).join("；"),
       object_type: "template",
       object_id: tid,
-      detail: { durationMs: Date.now() - startedAtMs },
+      detail: exportFailureAuditDetail({
+        errorMessage: msg,
+        diagnostics: parsed.diagnostics,
+        extra: { durationMs: Date.now() - startedAtMs, context: "manual" },
+      }),
     });
     void notifyExportResultToPlc({ success: false, message: msg }, "manual", tid);
   } finally {

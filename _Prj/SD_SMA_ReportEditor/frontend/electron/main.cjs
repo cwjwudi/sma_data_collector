@@ -1012,7 +1012,20 @@ ipcMain.handle('pdf-export-run', async (event, opts) => {
         })
         const readyMs = Date.now() - navStartMs
         if (!payload || !payload.ok) {
-          throw new Error((payload && payload.error) || 'PDF render failed')
+          const baseErr = (payload && payload.error) || 'PDF render failed'
+          const diag = payload && payload.diagnostics
+          if (diag && typeof diag === 'object') {
+            let diagJson = ''
+            try {
+              diagJson = JSON.stringify(diag)
+            } catch {
+              diagJson = ''
+            }
+            if (diagJson) {
+              throw new Error(`${baseErr}\n\n---EXPORT_DIAGNOSTICS---\n${diagJson}`)
+            }
+          }
+          throw new Error(baseErr)
         }
 
         const printStartMs = Date.now()

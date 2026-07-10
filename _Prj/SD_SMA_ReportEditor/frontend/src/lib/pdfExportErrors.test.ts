@@ -3,6 +3,7 @@ import { humanizePdfExportError, formatPreflightBlockerSummary } from "./pdfExpo
 import {
   collectBindingPreviewIssues,
   summarizeBindingPreviewIssues,
+  parseExportFailureDiagnostics,
 } from "./bindingPreviewErrors";
 
 describe("humanizePdfExportError", () => {
@@ -60,5 +61,34 @@ describe("bindingPreviewErrors", () => {
     });
     expect(issues.length).toBeGreaterThanOrEqual(3);
     expect(summarizeBindingPreviewIssues(issues)).toContain("数据源填充失败");
+  });
+
+  it("includes table diagnostics in issue lines", () => {
+    const issues = collectBindingPreviewIssues({
+      "tblfill:1": {
+        text: "（填充）Table missing",
+        tableSqlFill: {
+          dataRows: [],
+          error: "Table missing",
+          diagnostics: {
+            resolvedTable: "data_batchinfo_20260707",
+            tableOpcNodeId: "ns=6;s=Table",
+            database: "sma_data_test",
+            sqlExecuted: "SELECT * FROM `data_batchinfo_20260707`",
+          },
+        },
+      },
+    });
+    expect(issues[0]).toContain("运行时表名=data_batchinfo_20260707");
+    expect(issues[0]).toContain("表名OPC=");
+  });
+
+  it("parses export diagnostics marker from error message", () => {
+    const { message, diagnostics } = parseExportFailureDiagnostics(
+      "导出前数据源检查未通过。\n\n---EXPORT_DIAGNOSTICS---\n{\"issueCount\":1,\"issues\":[{\"key\":\"a\",\"kind\":\"fill\",\"message\":\"x\"}]}",
+    );
+    expect(message).toContain("导出前数据源检查未通过");
+    expect(diagnostics?.issueCount).toBe(1);
+    expect(diagnostics?.issues?.[0]?.key).toBe("a");
   });
 });

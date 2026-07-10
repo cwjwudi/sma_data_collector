@@ -26,8 +26,9 @@ import { reportBindingPreviewKey } from "@/lib/report-template/template-editor-c
 import { getPaperPageCssPx, PAPER_PRESETS, type PaperKind } from "@/lib/report-template/paper";
 import { humanizePdfExportError } from "@/lib/pdfExportErrors";
 import {
-  collectBindingPreviewIssues,
-  summarizeBindingPreviewIssues,
+  collectBindingPreviewIssueDetails,
+  summarizeBindingPreviewIssueDetails,
+  type ExportFailureDiagnostics,
 } from "@/lib/bindingPreviewErrors";
 import { splitReportCountForPreview } from "@/lib/report-template/table-sql-fill-report-split";
 
@@ -82,7 +83,13 @@ function injectPrintPageCss(t: ReportTemplate): void {
 
 type ExportBootPhases = { tplMs: number; dataMs: number; paintMs: number };
 
-function signalReady(ok: boolean, error?: string, totalReports?: number, phases?: ExportBootPhases): void {
+function signalReady(
+  ok: boolean,
+  error?: string,
+  totalReports?: number,
+  phases?: ExportBootPhases,
+  diagnostics?: ExportFailureDiagnostics,
+): void {
   stopExportHeartbeat();
   // 注意：stats 须转成纯对象。Vue reactive 代理经 IPC 会抛
   // "An object could not be cloned"，完成信号丢失导致主进程等到超时（0.2.3~0.2.5 结批失败根因）
@@ -93,6 +100,7 @@ function signalReady(ok: boolean, error?: string, totalReports?: number, phases?
     totalReports,
     stats: s ? { opcReads: s.opcReads, sqlQueries: s.sqlQueries, sqlRows: s.sqlRows } : undefined,
     phases,
+    diagnostics: diagnostics || undefined,
   });
 }
 
@@ -157,10 +165,17 @@ async function boot(): Promise<void> {
   await bindingPreview.refresh({ opc: true, sql: true, silent: true, fullSqlFill: true });
   if (seq !== bootSeq) return;
   const dataMs = Date.now() - dataStartMs;
-  const bindingIssues = collectBindingPreviewIssues(bindingPreview.values.value);
-  if (bindingIssues.length) {
-    errText.value = humanizePdfExportError(summarizeBindingPreviewIssues(bindingIssues));
-    signalReady(false, errText.value);
+  const issueDetails = collectBindingPreviewIssueDetails(bindingPreview.values.value);
+  if (issueDetails.length) {
+    errText.value = humanizePdfExportError(summarizeBindingPreviewIssueDetails(issueDetails));
+    const s = bindingPreview.lastStats.value;
+    signalReady(false, errText.value, undefined, { tplMs, dataMs, paintMs: 0 }, {
+      stage: "binding_fill",
+      issueCount: issueDetails.length,
+      issues: issueDetails.slice(0, 40),
+      stats: s ? { opcReads: s.opcReads, sqlQueries: s.sqlQueries, sqlRows: s.sqlRows } : undefined,
+      templateId: id,
+    });
     return;
   }
   const totalReports = splitReportCountForPreview(t, bindingPreview.values.value);

@@ -2,7 +2,7 @@
   <section class="settings-section">
     <p class="settings-hint">
       记录本机关键操作（配置变更、导出、写回 PLC、演示与更新等），便于现场追溯。不含 OPC 树浏览等只读操作。
-      默认保留最近 90 天、最多 5000 条。
+      默认保留最近 90 天、最多 5000 条。导出失败时会写入绑定/表名/SQL 等诊断字段，可点开行查看。
     </p>
 
     <div class="audit-filters">
@@ -49,6 +49,7 @@
       <table class="audit-table">
         <thead>
           <tr>
+            <th class="audit-col-expand" />
             <th>时间</th>
             <th>操作</th>
             <th>结果</th>
@@ -56,12 +57,31 @@
           </tr>
         </thead>
         <tbody>
-          <tr v-for="e in entries" :key="e.id">
-            <td class="audit-ts">{{ formatAuditTime(e.ts) }}</td>
-            <td><code>{{ e.action }}</code></td>
-            <td :class="e.result === 'ok' ? 'audit-ok' : 'audit-fail'">{{ e.result }}</td>
-            <td class="audit-summary">{{ e.summary || '—' }}</td>
-          </tr>
+          <template v-for="e in entries" :key="e.id">
+            <tr
+              class="audit-row"
+              :class="{ 'audit-row--open': expandedId === e.id, 'audit-row--clickable': hasDetail(e) }"
+              @click="toggleExpand(e)"
+            >
+              <td class="audit-col-expand">
+                <span v-if="hasDetail(e)" class="audit-caret" aria-hidden="true">{{
+                  expandedId === e.id ? "▾" : "▸"
+                }}</span>
+              </td>
+              <td class="audit-ts">{{ formatAuditTime(e.ts) }}</td>
+              <td><code>{{ e.action }}</code></td>
+              <td :class="e.result === 'ok' ? 'audit-ok' : 'audit-fail'">{{ e.result }}</td>
+              <td class="audit-summary">{{ e.summary || "—" }}</td>
+            </tr>
+            <tr v-if="expandedId === e.id && hasDetail(e)" class="audit-detail-row">
+              <td colspan="5" class="audit-detail-cell">
+                <div v-if="e.object_id" class="audit-detail-meta">
+                  对象：{{ e.object_type || "—" }} / <code>{{ e.object_id }}</code>
+                </div>
+                <pre class="audit-detail-pre">{{ formatDetail(e) }}</pre>
+              </td>
+            </tr>
+          </template>
         </tbody>
       </table>
       <p class="settings-hint settings-hint--muted">共 {{ total }} 条，显示最近 {{ entries.length }} 条</p>
@@ -99,6 +119,7 @@ const actionFilter = ref("");
 const resultFilter = ref("");
 const fromDate = ref("");
 const toDate = ref("");
+const expandedId = ref("");
 
 const actionOptions = [
   "config.export",
@@ -137,9 +158,30 @@ function currentQuery() {
   };
 }
 
+function hasDetail(e: AuditEntry): boolean {
+  const d = e.detail;
+  if (!d || typeof d !== "object") return false;
+  return Object.keys(d).length > 0;
+}
+
+function toggleExpand(e: AuditEntry) {
+  if (!hasDetail(e)) return;
+  expandedId.value = expandedId.value === e.id ? "" : e.id;
+}
+
+function formatDetail(e: AuditEntry): string {
+  const d = e.detail || {};
+  try {
+    return JSON.stringify(d, null, 2);
+  } catch {
+    return String(d);
+  }
+}
+
 async function reload() {
   busy.value = true;
   setMsg("", "");
+  expandedId.value = "";
   try {
     const res = await fetchAuditEntries({
       limit: 100,
@@ -148,8 +190,8 @@ async function reload() {
     });
     entries.value = res.entries || [];
     total.value = res.total || 0;
-  } catch (e: unknown) {
-    setMsg(e instanceof Error ? e.message : String(e), "err");
+  } catch (err: unknown) {
+    setMsg(err instanceof Error ? err.message : String(err), "err");
   } finally {
     busy.value = false;
   }
@@ -168,8 +210,8 @@ async function exportJson() {
     URL.revokeObjectURL(url);
     setMsg(`已导出 ${res.entries.length} 条记录。`, "ok");
     void auditLog({ action: "audit.export", summary: `JSON ${res.entries.length} 条` });
-  } catch (e: unknown) {
-    setMsg(e instanceof Error ? e.message : String(e), "err");
+  } catch (err: unknown) {
+    setMsg(err instanceof Error ? err.message : String(err), "err");
   } finally {
     busy.value = false;
   }
@@ -190,8 +232,8 @@ async function exportCsv() {
     const count = Math.max(0, lines - 1);
     setMsg(`已导出 ${count} 条记录（CSV）。`, "ok");
     void auditLog({ action: "audit.export", summary: `CSV ${count} 条` });
-  } catch (e: unknown) {
-    setMsg(e instanceof Error ? e.message : String(e), "err");
+  } catch (err: unknown) {
+    setMsg(err instanceof Error ? err.message : String(err), "err");
   } finally {
     busy.value = false;
   }
@@ -252,6 +294,58 @@ onMounted(() => {
   font-weight: 600;
 }
 
+.audit-col-expand {
+  width: 28px;
+  padding-left: 6px;
+  padding-right: 4px;
+}
+
+.audit-caret {
+  color: #6b7280;
+  font-size: 12px;
+}
+
+.audit-row--clickable {
+  cursor: pointer;
+}
+
+.audit-row--clickable:hover {
+  background: #f8fafc;
+}
+
+.audit-row--open {
+  background: #f1f5f9;
+}
+
+.audit-detail-row td {
+  background: #f8fafc;
+}
+
+.audit-detail-cell {
+  padding: 10px 12px 14px !important;
+}
+
+.audit-detail-meta {
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.audit-detail-pre {
+  margin: 0;
+  max-height: 420px;
+  overflow: auto;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
 .audit-ts {
   white-space: nowrap;
   color: #6b7280;
@@ -259,7 +353,8 @@ onMounted(() => {
 
 .audit-summary {
   word-break: break-word;
-  max-width: 360px;
+  max-width: 420px;
+  white-space: pre-wrap;
 }
 
 .audit-ok {

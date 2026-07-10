@@ -195,6 +195,11 @@ export function useReportBindingPreview(tmplRef: Ref<ReportTemplate | null>): Re
         }
         await runPool(fillTasks, 4, async (task) => {
           if (gen !== generation) return;
+          let resolvedTable = "";
+          let tableOpcRawValue = "";
+          let usedFallbackTable = false;
+          let tableOpcReadError = "";
+          let sqlForDiag = task.sql;
           try {
             let sql = task.sql;
             // 表名绑定 OPC：读取变量得到实际表名（分表场景），失败回退设计时表
@@ -209,23 +214,33 @@ export function useReportBindingPreview(tmplRef: Ref<ReportTemplate | null>): Re
                     body: { node_id: task.tableOpc.nodeId },
                   })) as { ok?: boolean; message?: string; value?: unknown };
                   if (res.ok === false) readErr = String(res.message || "读取失败");
-                  else tableName = sanitizeOpcTableName(res.value);
+                  else {
+                    tableOpcRawValue =
+                      res.value === null || res.value === undefined ? "" : String(res.value);
+                    tableName = sanitizeOpcTableName(res.value);
+                  }
                 } catch (e) {
                   readErr = e instanceof Error ? e.message : String(e);
                 }
               } else {
                 readErr = "未配置可用的 OPC UA 连接";
               }
-              if (!tableName) tableName = sanitizeOpcTableName(task.tableOpc.fallbackTable);
+              tableOpcReadError = readErr;
+              if (!tableName) {
+                tableName = sanitizeOpcTableName(task.tableOpc.fallbackTable);
+                usedFallbackTable = Boolean(tableName);
+              }
               if (!tableName) {
                 throw new Error(`表名 OPC 变量不可用${readErr ? `：${readErr}` : ""}，且未选择可用的默认表`);
               }
+              resolvedTable = tableName;
               sql = substituteSqlFillTableName(sql, task.tableOpc.engine, tableName);
             }
             // 表格填充的筛选参数与标量 SQL 同规则取值：OPC UA / 结批批次号 / 手写兜底
             if (task.params.length && /\{\{p\d+\}\}/i.test(sql)) {
               sql = await substituteSqlWithResolvedParams(sql, task.params);
             }
+            sqlForDiag = sql;
             const body: Record<string, unknown> = {
               connection_id: task.connectionId,
               sql,
@@ -258,7 +273,21 @@ export function useReportBindingPreview(tmplRef: Ref<ReportTemplate | null>): Re
             }
             out[task.key] = {
               text: `（填充）${msg}`,
-              tableSqlFill: { dataRows: [], error: msg },
+              tableSqlFill: {
+                dataRows: [],
+                error: msg,
+                diagnostics: {
+                  connectionId: task.connectionId,
+                  database: task.database || "",
+                  resolvedTable: resolvedTable || undefined,
+                  tableOpcNodeId: task.tableOpc?.nodeId || undefined,
+                  tableOpcRawValue: tableOpcRawValue || undefined,
+                  usedFallbackTable: task.tableOpc ? usedFallbackTable : undefined,
+                  fallbackTable: task.tableOpc?.fallbackTable || undefined,
+                  tableOpcReadError: tableOpcReadError || undefined,
+                  sqlExecuted: sqlForDiag ? String(sqlForDiag).slice(0, 2000) : undefined,
+                },
+              },
             };
           }
         });
