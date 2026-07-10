@@ -80,12 +80,13 @@ function coverPresetWithTable(): LayoutPreset {
 }
 
 describe("liftZoneTablesToSheetCanvas", () => {
-  it("套用封面版式时表格提升为可编辑画布控件，非表格保留在装饰层", () => {
+  it("套用封面版式时正文区控件全部提升为可编辑画布控件", () => {
     const t = blankTemplate();
     applyLayoutPresetToTemplate(t, coverPresetWithTable(), "cover");
 
     expect(t.coverBodyZoneElements.some((e) => e.type === "table")).toBe(false);
-    expect(t.coverBodyZoneElements.some((e) => e.id === "ztext")).toBe(true);
+    expect(t.coverBodyZoneElements.some((e) => e.id === "ztext")).toBe(false);
+    expect(t.coverBodyZoneElements).toHaveLength(0);
 
     const tbl = t.coverElements.find((e) => e.id === "ztbl");
     expect(tbl).toBeTruthy();
@@ -95,6 +96,11 @@ describe("liftZoneTablesToSheetCanvas", () => {
     expect(tbl?.tableRowHeightPx).toBe(30);
     expect(tbl?.tableCells?.[0]?.[2]?.bindingKind).toBe("sql");
     expect(tbl?.tableCells?.[0]?.[2]?.sqlText).toBe("SELECT 1");
+
+    const text = t.coverElements.find((e) => e.id === "ztext");
+    expect(text).toBeTruthy();
+    expect(text?.type).toBe("text");
+    expect(text?.text).toBe("标题");
   });
 
   it("重复套用（重同步）保留画布上已编辑的表格，不产生重复控件", () => {
@@ -111,29 +117,30 @@ describe("liftZoneTablesToSheetCanvas", () => {
     expect(t.coverBodyZoneElements.some((e) => e.type === "table")).toBe(false);
   });
 
-  it("对旧数据直接调用：装饰层表格迁移到画布", () => {
+  it("对旧数据直接调用：装饰层表格与文本迁移到画布", () => {
     const t = blankTemplate();
     const preset = coverPresetWithTable();
     // 模拟旧版本落库的装饰层数据（含表格）
     applyLayoutPresetToTemplate(t, preset, "cover");
     const lifted = t.coverElements.find((e) => e.id === "ztbl");
     expect(lifted).toBeTruthy();
+    expect(t.coverElements.some((e) => e.id === "ztext")).toBe(true);
     // 再次调用无副作用
     expect(liftZoneTablesToSheetCanvas(t)).toBe(false);
     expect(t.coverElements.filter((e) => e.id === "ztbl")).toHaveLength(1);
   });
 
-  it("resync 模式：用户删除画布表格后不复活，装饰层也不残留表格", () => {
+  it("resync 模式：用户删除画布控件后不复活，装饰层也不残留可提升类型", () => {
     const t = blankTemplate();
     const preset = coverPresetWithTable();
     applyLayoutPresetToTemplate(t, preset, "cover");
-    t.coverElements = t.coverElements.filter((e) => e.id !== "ztbl");
+    t.coverElements = t.coverElements.filter((e) => e.id !== "ztbl" && e.id !== "ztext");
 
     applyLayoutPresetToTemplate(t, preset, "cover", "resync");
     expect(t.coverElements.some((e) => e.id === "ztbl")).toBe(false);
+    expect(t.coverElements.some((e) => e.id === "ztext")).toBe(false);
     expect(t.coverBodyZoneElements.some((e) => e.type === "table")).toBe(false);
-    // 非表格装饰仍随版式同步
-    expect(t.coverBodyZoneElements.some((e) => e.id === "ztext")).toBe(true);
+    expect(t.coverBodyZoneElements.some((e) => e.id === "ztext")).toBe(false);
   });
 });
 

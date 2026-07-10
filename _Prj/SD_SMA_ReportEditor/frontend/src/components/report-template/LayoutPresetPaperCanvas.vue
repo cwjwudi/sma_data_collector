@@ -99,10 +99,29 @@
                                 @pointerdown.stop="pickLayoutTableCell(el, ri, ci)"
                                 @change="onLayoutPresetVisualOutputChange(el, ci, $event)"
                               >
-                                <option value="">—</option>
+                                <option value="">— 空白列 —</option>
+                                <option value="__sequence__">＃ 序号列</option>
                                 <option
                                   v-for="opt in layoutPresetVisualSqlCatalog[el.id]"
                                   :key="'lzfld-' + el.id + '-' + ci + '-' + opt.name"
+                                  :value="opt.name"
+                                >
+                                  {{ opt.name }}
+                                </option>
+                              </select>
+                            </template>
+                            <template v-else-if="isVerticalSqlFillSlotPickerCell(el, ri, ci)">
+                              <select
+                                class="lppc-table-cell-ddl tbl-sql-ddl"
+                                :value="layoutPresetVerticalSlotValue(el, ri)"
+                                @pointerdown.stop="pickLayoutTableCell(el, ri, ci)"
+                                @change="onLayoutPresetVerticalSlotChange(el, ri, $event)"
+                              >
+                                <option value="__field__">— 请选择字段 —</option>
+                                <option value="">— 空白分隔 —</option>
+                                <option
+                                  v-for="opt in layoutPresetVisualSqlCatalog[el.id]"
+                                  :key="'lzvfld-' + el.id + '-' + ri + '-' + opt.name"
                                   :value="opt.name"
                                 >
                                   {{ opt.name }}
@@ -264,10 +283,29 @@
                                 @pointerdown.stop="pickLayoutTableCell(el, ri, ci)"
                                 @change="onLayoutPresetVisualOutputChange(el, ci, $event)"
                               >
-                                <option value="">—</option>
+                                <option value="">— 空白列 —</option>
+                                <option value="__sequence__">＃ 序号列</option>
                                 <option
                                   v-for="opt in layoutPresetVisualSqlCatalog[el.id]"
                                   :key="'lzfld-' + el.id + '-' + ci + '-' + opt.name"
+                                  :value="opt.name"
+                                >
+                                  {{ opt.name }}
+                                </option>
+                              </select>
+                            </template>
+                            <template v-else-if="isVerticalSqlFillSlotPickerCell(el, ri, ci)">
+                              <select
+                                class="lppc-table-cell-ddl tbl-sql-ddl"
+                                :value="layoutPresetVerticalSlotValue(el, ri)"
+                                @pointerdown.stop="pickLayoutTableCell(el, ri, ci)"
+                                @change="onLayoutPresetVerticalSlotChange(el, ri, $event)"
+                              >
+                                <option value="__field__">— 请选择字段 —</option>
+                                <option value="">— 空白分隔 —</option>
+                                <option
+                                  v-for="opt in layoutPresetVisualSqlCatalog[el.id]"
+                                  :key="'lzvfld-' + el.id + '-' + ri + '-' + opt.name"
                                   :value="opt.name"
                                 >
                                   {{ opt.name }}
@@ -429,10 +467,29 @@
                                 @pointerdown.stop="pickLayoutTableCell(el, ri, ci)"
                                 @change="onLayoutPresetVisualOutputChange(el, ci, $event)"
                               >
-                                <option value="">—</option>
+                                <option value="">— 空白列 —</option>
+                                <option value="__sequence__">＃ 序号列</option>
                                 <option
                                   v-for="opt in layoutPresetVisualSqlCatalog[el.id]"
                                   :key="'lzfld-' + el.id + '-' + ci + '-' + opt.name"
+                                  :value="opt.name"
+                                >
+                                  {{ opt.name }}
+                                </option>
+                              </select>
+                            </template>
+                            <template v-else-if="isVerticalSqlFillSlotPickerCell(el, ri, ci)">
+                              <select
+                                class="lppc-table-cell-ddl tbl-sql-ddl"
+                                :value="layoutPresetVerticalSlotValue(el, ri)"
+                                @pointerdown.stop="pickLayoutTableCell(el, ri, ci)"
+                                @change="onLayoutPresetVerticalSlotChange(el, ri, $event)"
+                              >
+                                <option value="__field__">— 请选择字段 —</option>
+                                <option value="">— 空白分隔 —</option>
+                                <option
+                                  v-for="opt in layoutPresetVisualSqlCatalog[el.id]"
+                                  :key="'lzvfld-' + el.id + '-' + ri + '-' + opt.name"
                                   :value="opt.name"
                                 >
                                   {{ opt.name }}
@@ -559,8 +616,16 @@ import {
 } from "@/lib/report-template/table-cell-metrics";
 import type { VisualSqlTableColumnMeta } from "@/lib/report-template/table-sql-visual-catalog";
 import { loadVisualSqlTableColumnsCached } from "@/lib/report-template/table-sql-visual-catalog";
-import { applyVisualSqlOutputColumnPick } from "@/lib/report-template/table-sql-visual-compile";
-import { ensureVisualSource, isVisualSqlFillOutputPickerRow, visualSqlStructureTableName } from "@/lib/report-template/table-sql-fill";
+import { applyVisualSqlOutputColumnPick, applyVerticalSqlSlotField, syncTableRowsForVerticalSqlSlots } from "@/lib/report-template/table-sql-visual-compile";
+import {
+  ensureVisualSource,
+  isVisualSqlFillOutputPickerRow,
+  isVerticalSqlFillSlotPickerCell,
+  visualSqlColumnPickValue,
+  visualSqlStructureTableName,
+  verticalSqlSlotPickValue,
+  TABLE_SQL_VERTICAL_FIELD_PENDING,
+} from "@/lib/report-template/table-sql-fill";
 import { formatSqlFillTableCellPreview } from "@/lib/report-template/table-sql-fill-preview";
 
 const HANDLES = ["nw", "n", "ne", "e", "se", "s", "sw", "w"] as const;
@@ -689,9 +754,9 @@ watch(
 );
 
 function layoutPresetVisualOutputValue(el: LayoutZoneElement, ci: number): string {
-  const vs = el.tableSqlFill?.visualSource;
-  if (!vs?.columns || ci < 0 || ci >= vs.columns.length) return "";
-  return String(vs.columns[ci] ?? "");
+  const fill = el.tableSqlFill;
+  if (!fill) return "";
+  return visualSqlColumnPickValue(fill, ci);
 }
 
 function onLayoutPresetVisualOutputChange(el: LayoutZoneElement, ci: number, ev: Event) {
@@ -701,6 +766,21 @@ function onLayoutPresetVisualOutputChange(el: LayoutZoneElement, ci: number, ev:
   const cols = el.tableCols ?? 4;
   const cell = layoutTableGrid(el)[0]?.[ci];
   applyVisualSqlOutputColumnPick(fill, cols, ci, v, cell);
+}
+
+function layoutPresetVerticalSlotValue(el: LayoutZoneElement, ri: number): string {
+  const fill = el.tableSqlFill;
+  if (!fill) return TABLE_SQL_VERTICAL_FIELD_PENDING;
+  return verticalSqlSlotPickValue(fill, ri - 1);
+}
+
+function onLayoutPresetVerticalSlotChange(el: LayoutZoneElement, ri: number, ev: Event) {
+  const v = (ev.target as HTMLSelectElement).value;
+  const fill = el.tableSqlFill;
+  if (!fill || fill.fillMode !== "visual" || el.type !== "table") return;
+  applyVerticalSqlSlotField(fill, ri - 1, v);
+  syncTableRowsForVerticalSqlSlots(el, () => ensureZoneTableGrid(el));
+  clampZoneTableOuterSize(el);
 }
 
 const hdrLayerRef = ref<HTMLElement | null>(null);

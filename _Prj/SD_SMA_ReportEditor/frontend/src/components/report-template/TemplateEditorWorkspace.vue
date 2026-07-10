@@ -8,6 +8,53 @@
           <span class="muted-inline">{{ templateDimLabel }}</span>
         </div>
         <div class="bar-actions">
+          <button
+            type="button"
+            class="b"
+            title="撤销 (Ctrl+Z)"
+            :disabled="tplUndoStack.length === 0"
+            @click="undoTplEdit"
+          >
+            撤销
+          </button>
+          <button
+            type="button"
+            class="b"
+            title="重做 (Ctrl+Y / Ctrl+Shift+Z)"
+            :disabled="tplRedoStack.length === 0"
+            @click="redoTplEdit"
+          >
+            重做
+          </button>
+          <span class="bar-sep" aria-hidden="true" />
+          <button
+            type="button"
+            class="b"
+            title="复制选中控件（含全部属性）(Ctrl+C)"
+            :disabled="!sel"
+            @click="copySel"
+          >
+            复制
+          </button>
+          <button
+            type="button"
+            class="b"
+            title="剪切选中控件 (Ctrl+X)"
+            :disabled="!sel"
+            @click="cutSel"
+          >
+            剪切
+          </button>
+          <button
+            type="button"
+            class="b"
+            title="粘贴控件（保留属性配置）(Ctrl+V)"
+            :disabled="!canPasteTpl"
+            @click="pasteSel"
+          >
+            粘贴
+          </button>
+          <span class="bar-sep" aria-hidden="true" />
           <button type="button" class="b primary" :disabled="saving" @click="save">
             {{ saving ? "保存中…" : "保存模版" }}
           </button>
@@ -203,6 +250,9 @@
         </div>
         <template v-if="midMode === 'preview'">
           <div class="preview-opts-side">
+            <p v-if="bindingPreview.loading.value" class="preview-side-loading" role="status">
+              正在读取数据…
+            </p>
             <label class="preview-side-lbl">
               正文页数
               <input
@@ -297,6 +347,15 @@
         <div class="mid-body">
           <template v-if="midMode === 'preview'">
             <div class="mid-preview-wrap">
+              <div
+                v-if="bindingPreview.loading.value"
+                class="mid-preview-loading"
+                role="status"
+                aria-live="polite"
+              >
+                <span class="mid-preview-loading__spin" aria-hidden="true" />
+                <span>正在读取数据…</span>
+              </div>
               <TemplateExportPreviewStack
                 :tmpl="editing"
                 :active-sheet="sh"
@@ -376,6 +435,8 @@
           :el="sel"
           :table-cell-pick="tableCellPick"
           :sig-choices="sigChoices"
+          :content-w="propsContentW"
+          :content-h="propsContentH"
           @remove="delSel"
           @pick-sig-library="onPickSigLibrary"
           @open-signature-pad="dlgSig = true"
@@ -435,6 +496,12 @@ import {
   syncLegacyElementsAlias,
   TEMPLATE_SCHEMA_VERSION,
 } from "@/lib/report-template/model";
+import {
+  copyTemplateElementToClipboard,
+  eventTargetIsTypingField,
+  hasTemplateElementClipboard,
+  takeTemplateElementPasteClone,
+} from "@/lib/report-template/editor-element-clipboard";
 import { templateTableCellPickKey, reportBindingPreviewKey } from "@/lib/report-template/template-editor-context";
 import { getCachedTemplateFullMap } from "@/lib/report-template/template-view-cache";
 import { useReportBindingPreview } from "@/composables/useReportBindingPreview";
@@ -576,9 +643,24 @@ watchDebounced(
   { debounce: 450, maxWait: 5000, deep: true },
 );
 
-watch(midMode, () => {
+let midModeRefreshToken = 0;
+watch(midMode, (mode) => {
   if (!editing.value) return;
-  void bindingPreview.refresh({ silent: true });
+  const token = ++midModeRefreshToken;
+  // 本帧先切到预览并亮起「正在读取数据」，下一帧再拉数，避免干等在编辑态
+  if (mode === "preview") {
+    bindingPreview.loading.value = true;
+  } else {
+    bindingPreview.loading.value = false;
+  }
+  void nextTick(() => {
+    if (token !== midModeRefreshToken || !editing.value) return;
+    if (mode === "preview") {
+      void bindingPreview.refresh({ silent: false, mutateTemplateRows: false });
+    } else {
+      void bindingPreview.refresh({ silent: true, mutateTemplateRows: false });
+    }
+  });
 });
 
 watch([opcUaLiveRefreshEnabled, dbLiveRefreshEnabled], () => {
@@ -668,6 +750,29 @@ const sel = computed(() => {
   if (coverFound) return coverFound;
   return bodyElementsRef(t, "back").find((x) => x.id === id) ?? null;
 });
+
+/** 属性面板改表格尺寸时与画布共用正文区边界 */
+const propsContentW = computed(() => {
+  const t = editing.value;
+  if (!t) return Number.POSITIVE_INFINITY;
+  return metricsForSheet(t, sh.value).contentW;
+});
+const propsContentH = computed(() => {
+  const t = editing.value;
+  if (!t) return Number.POSITIVE_INFINITY;
+  return metricsForSheet(t, sh.value).contentH;
+});
+
+/** 粘贴按钮：模块级剪贴板非响应式，用 tick 驱动 UI 刷新 */
+const clipboardTick = ref(0);
+const canPasteTpl = computed(() => {
+  void clipboardTick.value;
+  return hasTemplateElementClipboard();
+});
+
+function bumpClipboardUi() {
+  clipboardTick.value += 1;
+}
 
 /** 手写板副标题与描摹字：优先签名库名称，否则签署说明 */
 const sigPadGuideLabel = computed(() => {
@@ -1157,6 +1262,44 @@ function delSel() {
   }
 }
 
+function copySel() {
+  const el = sel.value;
+  if (!el) return;
+  midMode.value = "edit";
+  copyTemplateElementToClipboard(el);
+  bumpClipboardUi();
+  hint.value = "已复制控件（含属性配置）。";
+}
+
+function cutSel() {
+  const el = sel.value;
+  if (!el) return;
+  midMode.value = "edit";
+  copyTemplateElementToClipboard(el);
+  bumpClipboardUi();
+  delSel();
+  hint.value = "已剪切控件。";
+}
+
+function pasteSel() {
+  const t = editing.value;
+  if (!t || !hasTemplateElementClipboard()) return;
+  midMode.value = "edit";
+  const m = metricsForSheet(t, sh.value);
+  const el = takeTemplateElementPasteClone(m.contentW, m.contentH);
+  if (!el) return;
+  bumpClipboardUi();
+  if (sh.value === "body") {
+    const pages = ensureBodyPages(t);
+    const ix = Math.max(0, Math.min(bodyPageIdx.value, pages.length - 1));
+    pages[ix].push(el);
+  } else {
+    bodyElementsRef(t, sh.value).push(el);
+  }
+  selId.value = el.id;
+  hint.value = "已粘贴控件（属性已保留）。";
+}
+
 function sigOk(dataUrl) {
   if (!sel.value || sel.value.type !== "signature") return;
   sel.value.imageSrc = dataUrl;
@@ -1188,14 +1331,6 @@ async function onPickSigLibrary(ev) {
   }
 }
 
-function eventTargetIsTypingField(target) {
-  if (!(target instanceof HTMLElement)) return false;
-  if (target.isContentEditable) return true;
-  if (target.closest('[contenteditable="true"]')) return true;
-  const tag = target.tagName;
-  return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
-}
-
 function onKey(ev) {
   if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "s") {
     ev.preventDefault();
@@ -1220,6 +1355,27 @@ function onKey(ev) {
     if (tplRedoStack.value.length === 0) return;
     ev.preventDefault();
     redoTplEdit();
+    return;
+  }
+  if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "c") {
+    if (eventTargetIsTypingField(ev.target)) return;
+    if (!sel.value) return;
+    ev.preventDefault();
+    copySel();
+    return;
+  }
+  if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "x") {
+    if (eventTargetIsTypingField(ev.target)) return;
+    if (!sel.value) return;
+    ev.preventDefault();
+    cutSel();
+    return;
+  }
+  if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "v") {
+    if (eventTargetIsTypingField(ev.target)) return;
+    if (!hasTemplateElementClipboard()) return;
+    ev.preventDefault();
+    pasteSel();
     return;
   }
   if (eventTargetIsTypingField(ev.target)) return;
@@ -1375,6 +1531,12 @@ onUnmounted(() => {
   align-items: center;
   gap: 8px;
   flex-shrink: 0;
+}
+.bar-sep {
+  width: 1px;
+  height: 22px;
+  background: #e4e4e7;
+  margin: 0 2px;
 }
 .bar-name-inp {
   min-width: 120px;
@@ -1569,6 +1731,15 @@ onUnmounted(() => {
   background: #fff;
   box-sizing: border-box;
 }
+.preview-side-loading {
+  margin: 0 0 8px;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--accent, #2563eb) 12%, transparent);
+  color: var(--text, #1f2937);
+  font-size: 12px;
+  font-weight: 600;
+}
 .preview-side-hint,
 .preview-side-dblhint {
   margin: 0;
@@ -1641,11 +1812,43 @@ onUnmounted(() => {
   overflow: hidden;
 }
 .mid-preview-wrap {
+  position: relative;
   flex: 1 1 auto;
   min-height: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
+}
+.mid-preview-loading {
+  position: absolute;
+  z-index: 4;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border, #c5cdd8);
+  background: color-mix(in srgb, var(--panel, #fff) 92%, transparent);
+  box-shadow: 0 2px 10px rgb(0 0 0 / 10%);
+  font-size: 13px;
+  color: var(--text, #1f2937);
+  pointer-events: none;
+}
+.mid-preview-loading__spin {
+  width: 14px;
+  height: 14px;
+  border: 2px solid color-mix(in srgb, var(--accent, #2563eb) 35%, transparent);
+  border-top-color: var(--accent, #2563eb);
+  border-radius: 50%;
+  animation: mid-preview-spin 0.7s linear infinite;
+}
+@keyframes mid-preview-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 .mid-preview-stack {
   flex: 1 1 auto;

@@ -145,14 +145,14 @@
               class="lpep-dim-stepper"
               role="group"
               aria-label="表格行数"
-              :title="zoneSqlFillEnabled ? '数据库填充开启时行数随预览查询结果自动同步（1 行表头 + 数据行）。' : ''"
+              :title="zoneTableRowsStepperTitle"
             >
               <button
                 type="button"
                 class="lpep-dim-btn"
                 title="减少一行"
                 aria-label="减少一行"
-                :disabled="zoneSqlFillEnabled || tableDimRows <= 1"
+                :disabled="zoneTableRowsLocked || tableDimRows <= (zoneVerticalSqlFill ? 2 : 1)"
                 @click="bumpTableDimRows(-1)"
               >
                 −
@@ -160,18 +160,18 @@
               <input
                 v-model.number="tableDimRows"
                 type="number"
-                min="1"
+                :min="zoneVerticalSqlFill ? 2 : 1"
                 max="30"
                 class="lpep-dim-val"
-                :disabled="zoneSqlFillEnabled"
-                :readonly="zoneSqlFillEnabled"
+                :disabled="zoneTableRowsLocked"
+                :readonly="zoneTableRowsLocked"
               />
               <button
                 type="button"
                 class="lpep-dim-btn"
                 title="增加一行"
                 aria-label="增加一行"
-                :disabled="zoneSqlFillEnabled || tableDimRows >= 30"
+                :disabled="zoneTableRowsLocked || tableDimRows >= 30"
                 @click="bumpTableDimRows(1)"
               >
                 +
@@ -186,7 +186,7 @@
                 class="lpep-dim-btn"
                 title="减少一列"
                 aria-label="减少一列"
-                :disabled="tableDimCols <= 1"
+                :disabled="zoneVerticalSqlFill || tableDimCols <= 1"
                 @click="bumpTableDimCols(-1)"
               >
                 −
@@ -197,13 +197,15 @@
                 min="1"
                 max="30"
                 class="lpep-dim-val"
+                :disabled="zoneVerticalSqlFill"
+                :readonly="zoneVerticalSqlFill"
               />
               <button
                 type="button"
                 class="lpep-dim-btn"
                 title="增加一列"
                 aria-label="增加一列"
-                :disabled="tableDimCols >= 30"
+                :disabled="zoneVerticalSqlFill || tableDimCols >= 30"
                 @click="bumpTableDimCols(1)"
               >
                 +
@@ -255,9 +257,11 @@
         </div>
         <p class="lpep-hint-muted">
           {{
-            zoneSqlFillEnabled
-              ? "列数、行高变更后立即应用到画布。数据库填充开启时行数随预览查询结果自动同步；单元格静态文字不在此编辑；可视化模式下请在画布第一行选择输出列。"
-              : "行列、行高变更后立即应用到画布。单击单元格可设置填充色、编辑静态文字或 OPC UA / SQL。"
+            zoneVerticalSqlFill
+              ? "纵表行数 = 1 行表头 + 字段槽位数；增减行数会增删画布「名称」列下拉行。列数固定为 2。"
+              : zoneSqlFillEnabled
+                ? "列数、行高变更后立即应用到画布。数据库填充开启时行数随预览查询结果自动同步；单元格静态文字不在此编辑；可视化模式下请在画布第一行选择输出列。"
+                : "行列、行高变更后立即应用到画布。单击单元格可设置填充色、编辑静态文字或 OPC UA / SQL。"
           }}
         </p>
         <p v-if="!hasTableCellPicked" class="lpep-hint-muted">
@@ -340,6 +344,8 @@
             :column-count="el.tableCols ?? 4"
             button-class="lpep-file-btn"
             @opc-pick-param="openZoneSqlOpcPicker"
+            @layout-mode-change="onZoneSqlLayoutModeChange"
+            @vertical-slots-change="onZoneVerticalSlotsChange"
             @sync-headers="onZoneSqlFillSyncHeaders"
           />
         </div>
@@ -380,10 +386,42 @@
       /></label>
       <LayoutFontFamilyField v-model="el.fontFamily" />
       <label class="lpep-lab">字号<input v-model.number="el.fontSize" type="number" min="8" max="72" class="lpep-inp" /></label>
-      <label class="lpep-lab">X<input v-model.number="el.x" type="number" class="lpep-inp" /></label>
-      <label class="lpep-lab">Y<input v-model.number="el.y" type="number" class="lpep-inp" /></label>
-      <label class="lpep-lab">W<input v-model.number="el.w" type="number" class="lpep-inp" /></label>
-      <label class="lpep-lab">H<input v-model.number="el.h" type="number" class="lpep-inp" /></label>
+      <label class="lpep-lab"
+        >X<input
+          v-model="geomX"
+          type="text"
+          inputmode="decimal"
+          class="lpep-inp"
+          @change="commitGeomX"
+          @keydown.enter.prevent="commitGeomX"
+      /></label>
+      <label class="lpep-lab"
+        >Y<input
+          v-model="geomY"
+          type="text"
+          inputmode="decimal"
+          class="lpep-inp"
+          @change="commitGeomY"
+          @keydown.enter.prevent="commitGeomY"
+      /></label>
+      <label class="lpep-lab"
+        >W<input
+          v-model="geomW"
+          type="text"
+          inputmode="decimal"
+          class="lpep-inp"
+          @change="commitGeomW"
+          @keydown.enter.prevent="commitGeomW"
+      /></label>
+      <label class="lpep-lab"
+        >H<input
+          v-model="geomH"
+          type="text"
+          inputmode="decimal"
+          class="lpep-inp"
+          @change="commitGeomH"
+          @keydown.enter.prevent="commitGeomH"
+      /></label>
       <button type="button" class="lpep-del" @click="$emit('remove')">删除选中</button>
     </div>
     <OpcUaNodePickerModal v-model="opcPickOpen" @confirm="onOpcPickConfirm" />
@@ -436,15 +474,39 @@ import {
   defaultTableSqlFillConfig,
   ensureSqlParamSlots,
   ensureTableSqlResultColumnNames,
+  isVerticalSqlFill,
   syncResultColumnNamesFromFirstRow,
 } from "@/lib/report-template/table-sql-fill";
-import { applyTableSqlFillOpcPick } from "@/lib/report-template/table-sql-visual-compile";
+import {
+  applyTableSqlFillOpcPick,
+  resizeVerticalSqlSlotsToTableRows,
+  syncTableRowsForVerticalSqlSlots,
+} from "@/lib/report-template/table-sql-visual-compile";
+import { useDeferredGeomField } from "@/lib/report-template/deferred-geom-input";
 import { clearGridCellBindings, gridHasNonNoneBinding } from "@/lib/report-template/table-binding-utils";
 import { computed, inject, nextTick, ref, watch } from "vue";
 
 const props = defineProps<{
   el: LayoutZoneElement | null;
 }>();
+
+function commitZoneGeomAndClamp() {
+  const el = props.el;
+  if (el?.type === "table") clampZoneTableOuterSize(el);
+}
+
+const geomXField = useDeferredGeomField(() => props.el, "x", commitZoneGeomAndClamp);
+const geomYField = useDeferredGeomField(() => props.el, "y", commitZoneGeomAndClamp);
+const geomWField = useDeferredGeomField(() => props.el, "w", commitZoneGeomAndClamp);
+const geomHField = useDeferredGeomField(() => props.el, "h", commitZoneGeomAndClamp);
+const geomX = geomXField.model;
+const geomY = geomYField.model;
+const geomW = geomWField.model;
+const geomH = geomHField.model;
+const commitGeomX = geomXField.commit;
+const commitGeomY = geomYField.commit;
+const commitGeomW = geomWField.commit;
+const commitGeomH = geomHField.commit;
 
 const layoutTablePick = inject(layoutPresetTableCellPickKey, undefined);
 
@@ -527,6 +589,25 @@ function onZoneSqlFillSyncHeaders() {
   syncResultColumnNamesFromFirstRow(el.tableSqlFill, ensureZoneTableGrid(el), el.tableCols ?? 4);
 }
 
+function onZoneSqlLayoutModeChange(mode: "horizontal" | "vertical") {
+  const el = props.el;
+  if (!el || el.type !== "table") return;
+  if (mode === "vertical") {
+    el.tableCols = 2;
+    tableDimCols.value = 2;
+    ensureZoneTableGrid(el);
+    syncTableRowsForVerticalSqlSlots(el, () => ensureZoneTableGrid(el));
+    tableDimRows.value = el.tableRows ?? 3;
+  }
+}
+
+function onZoneVerticalSlotsChange() {
+  const el = props.el;
+  if (!el || el.type !== "table" || !el.tableSqlFill) return;
+  syncTableRowsForVerticalSqlSlots(el, () => ensureZoneTableGrid(el));
+  tableDimRows.value = el.tableRows ?? 3;
+}
+
 const tableDimRows = ref(3);
 const tableDimCols = ref(4);
 const editCellRow = ref(0);
@@ -566,15 +647,6 @@ watch(
     }
   },
   { immediate: true },
-);
-
-watch(
-  () => (props.el?.type === "table" ? [props.el?.w, props.el?.h] : null),
-  () => {
-    const el = props.el;
-    if (!el || el.type !== "table") return;
-    clampZoneTableOuterSize(el);
-  },
 );
 
 const activeTableCell = computed(() => {
@@ -633,6 +705,27 @@ const activeTableCellFill = computed({
 const zoneSqlFillEnabled = computed(
   () => !!props.el && props.el.type === "table" && !!props.el.tableSqlFill?.enabled,
 );
+
+const zoneVerticalSqlFill = computed(
+  () =>
+    !!props.el &&
+    props.el.type === "table" &&
+    !!props.el.tableSqlFill?.enabled &&
+    props.el.tableSqlFill.fillMode === "visual" &&
+    isVerticalSqlFill(props.el.tableSqlFill),
+);
+
+const zoneTableRowsLocked = computed(() => zoneSqlFillEnabled.value && !zoneVerticalSqlFill.value);
+
+const zoneTableRowsStepperTitle = computed(() => {
+  if (zoneVerticalSqlFill.value) {
+    return "纵表：行数 = 表头 + 字段槽；增减会同步增删画布名称列下拉行。";
+  }
+  if (zoneSqlFillEnabled.value) {
+    return "数据库填充开启时行数随预览查询结果自动同步（1 行表头 + 数据行）。";
+  }
+  return "";
+});
 
 const zoneAnyCellBinding = computed(() => {
   const el = props.el;
@@ -771,13 +864,15 @@ function clampTableDimInput(n: number): number {
 function bumpTableDimRows(delta: number) {
   const el = props.el;
   if (!el || el.type !== "table") return;
-  if (zoneSqlFillEnabled.value) return;
-  tableDimRows.value = clampTableDimInput((Number(tableDimRows.value) || 1) + delta);
+  if (zoneTableRowsLocked.value) return;
+  const minRows = zoneVerticalSqlFill.value ? 2 : 1;
+  tableDimRows.value = Math.max(minRows, clampTableDimInput((Number(tableDimRows.value) || 1) + delta));
 }
 
 function bumpTableDimCols(delta: number) {
   const el = props.el;
   if (!el || el.type !== "table") return;
+  if (zoneVerticalSqlFill.value) return;
   tableDimCols.value = clampTableDimInput((Number(tableDimCols.value) || 1) + delta);
 }
 
@@ -792,15 +887,26 @@ function bumpZoneTableRowHeight(delta: number) {
 function applyTableDims() {
   const el = props.el;
   if (!el || el.type !== "table") return;
-  if (!zoneSqlFillEnabled.value) {
+  if (zoneVerticalSqlFill.value) {
+    const rows = Math.max(2, clampTableDimInput(tableDimRows.value));
+    resizeVerticalSqlSlotsToTableRows(el.tableSqlFill!, rows);
+    syncTableRowsForVerticalSqlSlots(el, () => ensureZoneTableGrid(el));
+    tableDimRows.value = el.tableRows ?? rows;
+    el.tableCols = 2;
+    tableDimCols.value = 2;
+  } else if (!zoneSqlFillEnabled.value) {
     el.tableRows = clampTableDimInput(tableDimRows.value);
+    el.tableCols = clampTableDimInput(tableDimCols.value);
+    tableDimRows.value = el.tableRows;
+    tableDimCols.value = el.tableCols;
+  } else {
+    el.tableCols = clampTableDimInput(tableDimCols.value);
+    tableDimRows.value = el.tableRows;
+    tableDimCols.value = el.tableCols;
   }
-  el.tableCols = clampTableDimInput(tableDimCols.value);
-  tableDimRows.value = el.tableRows;
-  tableDimCols.value = el.tableCols;
   ensureZoneTableGrid(el);
-  if (editCellRow.value >= el.tableRows) editCellRow.value = el.tableRows - 1;
-  if (editCellCol.value >= el.tableCols) editCellCol.value = el.tableCols - 1;
+  if (editCellRow.value >= (el.tableRows ?? 1)) editCellRow.value = (el.tableRows ?? 1) - 1;
+  if (editCellCol.value >= (el.tableCols ?? 1)) editCellCol.value = (el.tableCols ?? 1) - 1;
   clampZoneTableOuterSize(el);
 }
 

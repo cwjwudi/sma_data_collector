@@ -67,6 +67,11 @@ class ScalarSqlVisualConfig(BaseModel):
 
 
 TableSqlFillMode = Literal["manual_sql", "visual"]
+TableSqlTableSource = Literal["manual", "opcua"]
+TableSqlLayoutMode = Literal["horizontal", "vertical"]
+TableSqlColumnRole = Literal["field", "blank", "sequence"]
+TableSqlSequencePageMode = Literal["continuous", "restart_per_page"]
+TableSqlVerticalMultiRecordMode = Literal["continue", "page_per_record"]
 VisualSqlFilterKind = Literal["equality", "datetime_between", "date_between", "numeric_between"]
 
 
@@ -78,6 +83,9 @@ class TableSqlVisualSource(BaseModel):
     table: str = ""
     engine: str = ""
     columns: list[str] = Field(default_factory=list)
+    # 与前端 table-sql-fill.ts 对齐：manual 用 table；opcua 读 tableOpcNodeId 作运行时表名
+    tableSource: TableSqlTableSource = "manual"
+    tableOpcNodeId: str = ""
 
 
 class TableSqlVisualFilter(BaseModel):
@@ -106,6 +114,11 @@ class TableSqlFillConfig(BaseModel):
     maxRows: int = Field(default=2000, ge=1, le=50000)
     visualSource: TableSqlVisualSource | None = None
     visualFilters: list[TableSqlVisualFilter] = Field(default_factory=list)
+    layoutMode: TableSqlLayoutMode = "horizontal"
+    columnRoles: list[TableSqlColumnRole] = Field(default_factory=list)
+    sequencePageMode: TableSqlSequencePageMode = "continuous"
+    verticalMultiRecordMode: TableSqlVerticalMultiRecordMode = "continue"
+    verticalFieldLabels: list[str] = Field(default_factory=list)
 
 
 class LayoutZoneElement(BaseModel):
