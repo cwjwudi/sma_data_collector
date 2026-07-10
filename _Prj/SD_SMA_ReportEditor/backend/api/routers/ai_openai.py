@@ -11,8 +11,8 @@ import httpx
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 
-from modules import ai_config, ai_tools
-from schemas.ai import AiChatRequest, AiSettingsPatch, OpenAiChatCompletionRequest
+from modules import ai_config, ai_datasource_ops, ai_pending_prompts, ai_tools
+from schemas.ai import AiChatRequest, AiPendingConfirmSubmit, AiPendingCredentialSubmit, AiSettingsPatch, OpenAiChatCompletionRequest
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +23,9 @@ MAX_TOOL_ROUNDS = 8
 SYSTEM_PROMPT = (
     "你是 SD_SMA_ReportEditor（报表编辑器）的 AI 助手，帮助用户诊断数据库/OPC UA 连接、"
     "导出/结批失败与模版配置。优先调用工具获取事实，不要编造连接状态或审计内容。"
-    "不要输出或请求数据库/OPC 密码明文。"
+    "开发/排障时优先 get_dev_runtime_snapshot 或 diagnose_work_chain；改数据源相关代码前先跑链路对齐现场。"
+    "禁止向用户索要或输出数据库/OPC 密码明文；密码与删除确认仅在报表软件 UI 弹框完成。"
+    "收到 awaiting_user_credentials 或 awaiting_user_confirm 时，提示用户到本机报表软件内操作。"
 )
 
 
@@ -240,3 +242,44 @@ def ai_status():
     port = ai_config.resolve_backend_port()
     pub = ai_config.public_ai_settings(port=port)
     return JSONResponse(pub)
+
+
+def _require_loopback(request: Request) -> None:
+    client_host = request.client.host if request.client else None
+    if not ai_config.is_loopback_host(client_host):
+        raise HTTPException(403, "此 API 仅允许本机访问。")
+
+
+@settings_router.get("/settings/ai/pending_prompts")
+def list_pending_prompts(request: Request):
+    _require_loopback(request)
+    return {"prompts": ai_pending_prompts.list_pending(), "count": ai_pending_prompts.count_pending()}
+
+
+@settings_router.post("/settings/ai/pending_prompts/submit_credential")
+def submit_pending_credential(request: Request, body: AiPendingCredentialSubmit):
+    _require_loopback(request)
+    if not body.password:
+        raise HTTPException(400, "密码不能为空")
+    result = ai_datasource_ops.apply_credential(body.prompt_id, body.password)
+    if not result.get("ok"):
+        raise HTTPException(400, result.get("error") or "提交失败")
+    return result
+
+
+@settings_router.post("/settings/ai/pending_prompts/submit_confirm")
+async def submit_pending_confirm(request: Request, body: AiPendingConfirmSubmit):
+    _require_loopback(request)
+    result = await ai_datasource_ops.apply_confirm_delete(body.prompt_id, body.confirmed)
+    if not result.get("ok"):
+        raise HTTPException(400, result.get("error") or "提交失败")
+    return result
+
+
+@settings_router.post("/settings/ai/pending_prompts/cancel")
+def cancel_pending_prompt(request: Request, body: dict[str, Any]):
+    _require_loopback(request)
+    pid = str(body.get("prompt_id") or "").strip()
+    if not pid:
+        raise HTTPException(400, "缺少 prompt_id")
+    return ai_pending_prompts.cancel_prompt(pid)

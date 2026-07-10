@@ -35,6 +35,44 @@ export type AiPageContext = {
   recentError?: string | null
 }
 
+export type AiPendingPrompt = {
+  id: string
+  kind: 'credential' | 'confirm_delete'
+  target_kind?: 'db' | 'opcua'
+  connection_id?: string
+  connection_name?: string
+  title?: string
+  message?: string
+  status?: string
+  username_hint?: string
+  created_at?: number
+}
+
+export async function fetchAiPendingPrompts(): Promise<{ prompts: AiPendingPrompt[]; count: number }> {
+  return apiFetch('/settings/ai/pending_prompts')
+}
+
+export async function submitAiPendingCredential(promptId: string, password: string): Promise<{ ok: boolean }> {
+  return apiFetch('/settings/ai/pending_prompts/submit_credential', {
+    method: 'POST',
+    body: { prompt_id: promptId, password },
+  })
+}
+
+export async function submitAiPendingConfirm(promptId: string, confirmed: boolean): Promise<{ ok: boolean }> {
+  return apiFetch('/settings/ai/pending_prompts/submit_confirm', {
+    method: 'POST',
+    body: { prompt_id: promptId, confirmed },
+  })
+}
+
+export async function cancelAiPendingPrompt(promptId: string): Promise<{ ok: boolean }> {
+  return apiFetch('/settings/ai/pending_prompts/cancel', {
+    method: 'POST',
+    body: { prompt_id: promptId },
+  })
+}
+
 export async function fetchAiSettings(): Promise<AiSettingsPublic> {
   return apiFetch('/settings/ai')
 }

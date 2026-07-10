@@ -30,3 +30,13 @@ class OpenAiChatCompletionRequest(BaseModel):
     temperature: float | None = None
     max_tokens: int | None = None
     report_editor_page_context: dict[str, Any] | None = None
+
+
+class AiPendingCredentialSubmit(BaseModel):
+    prompt_id: str
+    password: str
+
+
+class AiPendingConfirmSubmit(BaseModel):
+    prompt_id: str
+    confirmed: bool = False

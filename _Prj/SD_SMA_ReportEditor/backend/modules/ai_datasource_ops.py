@@ -1,0 +1,403 @@
+"""AI 数据源 CRUD（密码/删除确认走 pending，永不进入 LLM）。"""
+from __future__ import annotations
+
+import uuid
+from typing import Any, Literal
+
+from core.settings import CONFIG_FILE, DATA_DIR
+from modules import ai_pending_prompts, config_store, db_readonly_service, opcua_service
+from schemas.common import DbConnectionSave, OpcUaServerSave
+
+TargetKind = Literal["db", "opcua"]
+
+
+def _cfg() -> dict[str, Any]:
+    return config_store.load_config(CONFIG_FILE, DATA_DIR)
+
+
+def _save(data: dict[str, Any]) -> None:
+    config_store.save_config(CONFIG_FILE, data)
+
+
+def _is_mysql_family(engine: str) -> bool:
+    return (engine or "").lower() in ("mysql", "mariadb")
+
+
+def _conn_by_id(cid: str) -> dict[str, Any] | None:
+    for c in _cfg().get("db_connections") or []:
+        if c.get("id") == cid:
+            return c
+    return None
+
+
+def _opc_by_id(sid: str) -> dict[str, Any] | None:
+    for s in _cfg().get("opcua_servers") or []:
+        if s.get("id") == sid:
+            return s
+    return None
+
+
+def _engine_needs_password(engine: str) -> bool:
+    return (engine or "").lower() in ("mysql", "mariadb", "postgres", "mongodb")
+
+
+def get_db_connection_detail(connection_id: str) -> dict[str, Any]:
+    conn = _conn_by_id(connection_id)
+    if not conn:
+        return {"ok": False, "error": "未找到数据库连接"}
+    return {"ok": True, "connection": config_store.mask_connection_for_response(conn)}
+
+
+def get_opc_server_detail(server_id: str) -> dict[str, Any]:
+    srv = _opc_by_id(server_id)
+    if not srv:
+        return {"ok": False, "error": "未找到 OPC UA 配置"}
+    return {"ok": True, "server": config_store.mask_opcua_for_response(srv)}
+
+
+def list_db_catalog(connection_id: str, database: str | None = None) -> dict[str, Any]:
+    conn = _conn_by_id(connection_id)
+    if not conn:
+        return {"ok": False, "error": "未找到数据库连接"}
+    if conn.get("is_demo") and conn.get("demo_channel") == "remote":
+        return {"ok": False, "error": "演示远程连接不支持目录查询"}
+    engine = (conn.get("engine") or "").lower()
+    try:
+        user, pwd = conn.get("username") or "", config_store.decrypt_db_password(DATA_DIR, conn) if conn.get("password_enc") else ""
+    except ValueError as e:
+        return {"ok": False, "error": str(e)}
+    try:
+        if _is_mysql_family(engine):
+            host = conn.get("host") or "127.0.0.1"
+            port = int(conn.get("port") or 3306)
+            if database:
+                tables = db_readonly_service.introspect_mysql_tables(host, port, user, pwd, database)
+                return {"ok": True, "engine": engine, "tables": tables}
+            dbs = db_readonly_service.mysql_list_databases(host, port, user, pwd)
+            return {"ok": True, "engine": engine, "databases": dbs}
+        if engine == "postgres":
+            host = conn.get("host") or "127.0.0.1"
+            port = int(conn.get("port") or 5432)
+            if database:
+                tables = db_readonly_service.introspect_pg_tables(host, port, user, pwd, database)
+                return {"ok": True, "engine": engine, "tables": tables}
+            dbs = db_readonly_service.postgres_list_databases(host, port, user, pwd)
+            return {"ok": True, "engine": engine, "databases": dbs}
+        if engine == "sqlite":
+            path = conn.get("sqlite_path") or ""
+            tables = db_readonly_service.introspect_sqlite_tables(path)
+            return {"ok": True, "engine": engine, "tables": tables}
+        if engine == "mongodb":
+            host = conn.get("host") or "127.0.0.1"
+            port = int(conn.get("port") or 27017)
+            vars_ = {
+                "host": host,
+                "port": port,
+                "username": user,
+                "password": pwd,
+                "auth_source": conn.get("mongo_auth_source") or "admin",
+            }
+            if database:
+                cols = db_readonly_service.mongo_list_collections(vars_, database)
+                return {"ok": True, "engine": engine, "collections": cols}
+            dbs = db_readonly_service.mongo_list_databases(vars_)
+            return {"ok": True, "engine": engine, "databases": dbs}
+        return {"ok": False, "error": f"未知引擎: {engine}"}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+def _needs_db_credential(*, conn: dict[str, Any] | None, engine: str, username: str | None) -> bool:
+    if not _engine_needs_password(engine):
+        return False
+    if not conn:
+        return bool((username or "").strip())
+    if not conn.get("password_enc"):
+        return True
+    if username is not None and str(username).strip() != str(conn.get("username") or "").strip():
+        return True
+    return False
+
+
+def upsert_db_connection(args: dict[str, Any]) -> dict[str, Any]:
+    body = DbConnectionSave(
+        id=args.get("id"),
+        name=str(args.get("name") or ""),
+        engine=str(args.get("engine") or ""),
+        host=args.get("host"),
+        port=args.get("port"),
+        database=args.get("database"),
+        username=args.get("username"),
+        password=None,
+        sqlite_path=args.get("sqlite_path"),
+        mongo_auth_source=args.get("mongo_auth_source") or "admin",
+    )
+    if not body.engine:
+        return {"ok": False, "error": "缺少 engine"}
+    cfg = _cfg()
+    conns = list(cfg.get("db_connections") or [])
+    existing = _conn_by_id(body.id) if body.id else None
+    if existing and existing.get("is_demo") and existing.get("demo_channel") == "remote":
+        return {"ok": False, "error": "演示远程连接仅可改名称，请在 UI 中操作"}
+
+    eng = body.engine.lower()
+    default_port = 3306
+    if eng == "postgres":
+        default_port = 5432
+    elif eng == "mongodb":
+        default_port = 27017
+    entry: dict[str, Any] = {
+        "name": body.name,
+        "engine": eng,
+        "host": body.host,
+        "port": body.port if body.port is not None else default_port,
+        "database": body.database,
+        "username": body.username,
+        "sqlite_path": body.sqlite_path,
+        "mongo_auth_source": body.mongo_auth_source or "admin",
+    }
+    saved_id = body.id
+    if body.id:
+        found = False
+        for i, c in enumerate(conns):
+            if c.get("id") == body.id:
+                entry["password_enc"] = c.get("password_enc")
+                entry["id"] = body.id
+                conns[i] = {**c, **entry}
+                found = True
+                break
+        if not found:
+            return {"ok": False, "error": "未找到连接"}
+    else:
+        saved_id = str(uuid.uuid4())
+        entry["id"] = saved_id
+        entry["password_enc"] = None
+        conns.append(entry)
+
+    cfg["db_connections"] = conns
+    _save(cfg)
+    masked = config_store.mask_connection_for_response(_conn_by_id(saved_id) or entry)
+    needs_cred = _needs_db_credential(conn=existing, engine=eng, username=body.username)
+    if needs_cred:
+        prompt = ai_pending_prompts.create_prompt(
+            kind="credential",
+            target_kind="db",
+            connection_id=str(saved_id),
+            connection_name=str(body.name or saved_id),
+            title="填写数据库密码",
+            message=f"AI 助手请求保存连接「{body.name or saved_id}」的非敏感字段，请在弹框中填写密码（密码不会发送给 LLM）。",
+            username_hint=str(body.username or ""),
+        )
+        return {
+            "ok": True,
+            "status": "awaiting_user_credentials",
+            "saved_id": saved_id,
+            "connection": masked,
+            "prompt": prompt,
+            "message": "非敏感字段已保存。请在报表软件弹出的密码框中填写密码。",
+        }
+    return {"ok": True, "status": "saved", "saved_id": saved_id, "connection": masked}
+
+
+def upsert_opc_server(args: dict[str, Any]) -> dict[str, Any]:
+    body = OpcUaServerSave(
+        id=args.get("id"),
+        name=str(args.get("name") or ""),
+        endpoint_url=str(args.get("endpoint_url") or ""),
+        security_policy=args.get("security_policy"),
+        message_security_mode=args.get("message_security_mode"),
+        username=args.get("username"),
+        password=None,
+    )
+    if not body.endpoint_url.strip():
+        return {"ok": False, "error": "缺少 endpoint_url"}
+    cfg = _cfg()
+    servers = list(cfg.get("opcua_servers") or [])
+    existing = _opc_by_id(body.id) if body.id else None
+    entry: dict[str, Any] = {
+        "name": body.name,
+        "endpoint_url": body.endpoint_url,
+        "security_policy": body.security_policy,
+        "message_security_mode": body.message_security_mode,
+        "username": body.username,
+    }
+    saved_id = body.id
+    if body.id:
+        found = False
+        for i, s in enumerate(servers):
+            if s.get("id") == body.id:
+                entry["password_enc"] = s.get("password_enc")
+                entry["id"] = body.id
+                servers[i] = {**s, **entry}
+                found = True
+                break
+        if not found:
+            return {"ok": False, "error": "未找到 OPC UA 配置"}
+    else:
+        saved_id = str(uuid.uuid4())
+        entry["id"] = saved_id
+        entry["password_enc"] = None
+        servers.append(entry)
+
+    cfg["opcua_servers"] = servers
+    _save(cfg)
+    masked = config_store.mask_opcua_for_response(_opc_by_id(saved_id) or entry)
+    needs_cred = False
+    if body.username and str(body.username).strip():
+        if not existing or not existing.get("password_enc"):
+            needs_cred = True
+        elif str(body.username).strip() != str(existing.get("username") or "").strip():
+            needs_cred = True
+    if needs_cred:
+        prompt = ai_pending_prompts.create_prompt(
+            kind="credential",
+            target_kind="opcua",
+            connection_id=str(saved_id),
+            connection_name=str(body.name or saved_id),
+            title="填写 OPC UA 密码",
+            message=f"AI 助手请求保存 OPC 连接「{body.name or saved_id}」，请在弹框中填写密码。",
+            username_hint=str(body.username or ""),
+        )
+        return {
+            "ok": True,
+            "status": "awaiting_user_credentials",
+            "saved_id": saved_id,
+            "server": masked,
+            "prompt": prompt,
+            "message": "非敏感字段已保存。请在报表软件弹出的密码框中填写密码。",
+        }
+    return {"ok": True, "status": "saved", "saved_id": saved_id, "server": masked}
+
+
+def request_connection_credentials(args: dict[str, Any]) -> dict[str, Any]:
+    kind = str(args.get("kind") or "").strip().lower()
+    cid = str(args.get("connection_id") or "").strip()
+    if not cid:
+        return {"ok": False, "error": "缺少 connection_id"}
+    if kind == "db":
+        conn = _conn_by_id(cid)
+        if not conn:
+            return {"ok": False, "error": "未找到数据库连接"}
+        prompt = ai_pending_prompts.create_prompt(
+            kind="credential",
+            target_kind="db",
+            connection_id=cid,
+            connection_name=str(conn.get("name") or cid),
+            title="填写数据库密码",
+            message=f"请在弹框中为连接「{conn.get('name') or cid}」填写密码。",
+            username_hint=str(conn.get("username") or ""),
+        )
+        return {"ok": True, "status": "awaiting_user_credentials", "prompt": prompt}
+    if kind in ("opcua", "opc"):
+        srv = _opc_by_id(cid)
+        if not srv:
+            return {"ok": False, "error": "未找到 OPC UA 配置"}
+        prompt = ai_pending_prompts.create_prompt(
+            kind="credential",
+            target_kind="opcua",
+            connection_id=cid,
+            connection_name=str(srv.get("name") or cid),
+            title="填写 OPC UA 密码",
+            message=f"请在弹框中为 OPC 连接「{srv.get('name') or cid}」填写密码。",
+            username_hint=str(srv.get("username") or ""),
+        )
+        return {"ok": True, "status": "awaiting_user_credentials", "prompt": prompt}
+    return {"ok": False, "error": "kind 须为 db 或 opcua"}
+
+
+def delete_db_connection(connection_id: str) -> dict[str, Any]:
+    conn = _conn_by_id(connection_id)
+    if not conn:
+        return {"ok": False, "error": "未找到数据库连接"}
+    if conn.get("is_demo"):
+        return {"ok": False, "error": "演示连接不可通过 AI 删除"}
+    prompt = ai_pending_prompts.create_prompt(
+        kind="confirm_delete",
+        target_kind="db",
+        connection_id=connection_id,
+        connection_name=str(conn.get("name") or connection_id),
+        title="确认删除数据库连接",
+        message=f"AI 助手请求删除数据库连接「{conn.get('name') or connection_id}」。此操作不可撤销，请确认。",
+    )
+    return {
+        "ok": True,
+        "status": "awaiting_user_confirm",
+        "prompt": prompt,
+        "message": "请在报表软件弹出的确认框中确认删除。",
+    }
+
+
+def delete_opc_server(server_id: str) -> dict[str, Any]:
+    srv = _opc_by_id(server_id)
+    if not srv:
+        return {"ok": False, "error": "未找到 OPC UA 配置"}
+    prompt = ai_pending_prompts.create_prompt(
+        kind="confirm_delete",
+        target_kind="opcua",
+        connection_id=server_id,
+        connection_name=str(srv.get("name") or server_id),
+        title="确认删除 OPC UA 连接",
+        message=f"AI 助手请求删除 OPC 连接「{srv.get('name') or server_id}」。此操作不可撤销，请确认。",
+    )
+    return {
+        "ok": True,
+        "status": "awaiting_user_confirm",
+        "prompt": prompt,
+        "message": "请在报表软件弹出的确认框中确认删除。",
+    }
+
+
+def apply_credential(prompt_id: str, password: str) -> dict[str, Any]:
+    item = ai_pending_prompts.get_prompt(prompt_id)
+    if not item or item.get("status") != "pending" or item.get("kind") != "credential":
+        return {"ok": False, "error": "待办不存在或已过期"}
+    cid = str(item.get("connection_id") or "")
+    target = str(item.get("target_kind") or "")
+    cfg = _cfg()
+    if target == "db":
+        conns = cfg.get("db_connections") or []
+        for i, c in enumerate(conns):
+            if c.get("id") == cid:
+                conns[i] = {**c, "password_enc": config_store.encrypt_db_password(DATA_DIR, password)}
+                cfg["db_connections"] = conns
+                _save(cfg)
+                ai_pending_prompts.complete_prompt(prompt_id, result={"ok": True})
+                return {"ok": True, "connection_id": cid}
+        return {"ok": False, "error": "连接已不存在"}
+    if target == "opcua":
+        servers = cfg.get("opcua_servers") or []
+        for i, s in enumerate(servers):
+            if s.get("id") == cid:
+                servers[i] = {**s, "password_enc": config_store.encrypt_opcua_password(DATA_DIR, password)}
+                cfg["opcua_servers"] = servers
+                _save(cfg)
+                ai_pending_prompts.complete_prompt(prompt_id, result={"ok": True})
+                return {"ok": True, "connection_id": cid}
+        return {"ok": False, "error": "OPC 连接已不存在"}
+    return {"ok": False, "error": "未知 target_kind"}
+
+
+async def apply_confirm_delete(prompt_id: str, confirmed: bool) -> dict[str, Any]:
+    item = ai_pending_prompts.get_prompt(prompt_id)
+    if not item or item.get("status") != "pending" or item.get("kind") != "confirm_delete":
+        return {"ok": False, "error": "待办不存在或已过期"}
+    if not confirmed:
+        ai_pending_prompts.cancel_prompt(prompt_id)
+        return {"ok": True, "cancelled": True}
+    cid = str(item.get("connection_id") or "")
+    target = str(item.get("target_kind") or "")
+    cfg = _cfg()
+    if target == "db":
+        conns = [c for c in cfg.get("db_connections") or [] if c.get("id") != cid]
+        cfg["db_connections"] = conns
+        _save(cfg)
+        ai_pending_prompts.complete_prompt(prompt_id, result={"ok": True, "deleted": cid})
+        return {"ok": True, "deleted": cid, "kind": "db"}
+    if target == "opcua":
+        await opcua_service.drop_saved_server_pool(cid)
+        servers = [s for s in cfg.get("opcua_servers") or [] if s.get("id") != cid]
+        cfg["opcua_servers"] = servers
+        _save(cfg)
+        ai_pending_prompts.complete_prompt(prompt_id, result={"ok": True, "deleted": cid})
+        return {"ok": True, "deleted": cid, "kind": "opcua"}
+    return {"ok": False, "error": "未知 target_kind"}

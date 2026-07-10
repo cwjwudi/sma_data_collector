@@ -88,8 +88,17 @@ curl -s http://127.0.0.1:8000/v1/chat/completions \
 
 ### 0.3.2 增量
 
-- `update_connection_probe_settings` 等受控写入（需开启「允许 AI 写入工具」）。
-- 每次 tool 调用写审计 `ai.tool_call`。
+- **数据源 CRUD 工具**（需开启「允许 AI 写入工具」）：`get_db_connection_detail`、`get_opc_server_detail`、`list_db_catalog`、`upsert_db_connection`、`upsert_opc_server`、`delete_db_connection`、`delete_opc_server`、`request_connection_credentials`
+- **密码与删除确认**不在 tool 参数中传递；后端写入 `pending_prompts` 队列，**MainLayout 轮询弹框**由用户在本机 UI 完成
+- **工作链路诊断**：`diagnose_work_chain`、`get_dev_runtime_snapshot`、`inspect_template_bindings`（开发/排障优先调用）
+- API：`GET/POST /api/settings/ai/pending_prompts`（submit_credential / submit_confirm / cancel）
+
+### 示例提示词（0.3.2+）
+
+- 「跑一遍工作链路诊断，告诉我现在卡在哪一环」
+- 「检查模版 XXX 的绑定是否都指向有效连接」
+- 「给开发者一份运行时快照，方便我改结批相关代码」
+- 「新建一条 MariaDB 连接（主机/端口/用户名），密码我在软件里填」
 
 ---
 
@@ -97,7 +106,7 @@ curl -s http://127.0.0.1:8000/v1/chat/completions \
 
 - **本机免令牌**（对齐 LM Studio）；**局域网**须开启开关并携带 Agent Token。
 - **Tool 默认只读；** 写操作需开启「允许 AI 写入工具」。
-- **不向 LLM 发送** 数据库密码、OPC 密码明文。
+- **不向 LLM 发送** 数据库密码、OPC 密码明文；密码/删除须在报表软件 UI 弹框完成。
 - 局域网 Agent Token 泄露等同于诊断 API 被滥用；请定期轮换。
 
 ---

@@ -6,7 +6,7 @@ import logging
 from typing import Any
 
 from core.settings import CONFIG_FILE, DATA_DIR
-from modules import ai_config, audit_log, config_store, template_store
+from modules import ai_config, ai_datasource_ops, ai_work_chain, audit_log, config_store, template_store
 from modules import db_connection_ops, opcua_service
 from schemas.common import DbConnectionSave
 
@@ -160,6 +160,167 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_db_connection_detail",
+            "description": "获取单个数据库连接脱敏详情（不含密码）。",
+            "parameters": {
+                "type": "object",
+                "properties": {"connection_id": {"type": "string"}},
+                "required": ["connection_id"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_opc_server_detail",
+            "description": "获取单个 OPC UA 连接脱敏详情（不含密码）。",
+            "parameters": {
+                "type": "object",
+                "properties": {"connection_id": {"type": "string", "description": "OPC 服务器 id"}},
+                "required": ["connection_id"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_db_catalog",
+            "description": "列出已保存数据库连接的库/表目录（只读）。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "connection_id": {"type": "string"},
+                    "database": {"type": "string", "description": "可选，指定库则返回表列表"},
+                },
+                "required": ["connection_id"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "upsert_db_connection",
+            "description": "新建或更新数据库连接（不含 password 参数；需密时在 UI 弹框填写，0.3.2）。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string", "description": "更新时必填"},
+                    "name": {"type": "string"},
+                    "engine": {"type": "string", "enum": ["mysql", "mariadb", "postgres", "sqlite", "mongodb"]},
+                    "host": {"type": "string"},
+                    "port": {"type": "integer"},
+                    "database": {"type": "string"},
+                    "username": {"type": "string"},
+                    "sqlite_path": {"type": "string"},
+                    "mongo_auth_source": {"type": "string"},
+                },
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "upsert_opc_server",
+            "description": "新建或更新 OPC UA 连接（不含 password；需密时在 UI 弹框，0.3.2）。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string"},
+                    "name": {"type": "string"},
+                    "endpoint_url": {"type": "string"},
+                    "security_policy": {"type": "string"},
+                    "message_security_mode": {"type": "string"},
+                    "username": {"type": "string"},
+                },
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "delete_db_connection",
+            "description": "请求删除数据库连接（需用户在 UI 确认，0.3.2）。",
+            "parameters": {
+                "type": "object",
+                "properties": {"connection_id": {"type": "string"}},
+                "required": ["connection_id"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "delete_opc_server",
+            "description": "请求删除 OPC UA 连接（需用户在 UI 确认，0.3.2）。",
+            "parameters": {
+                "type": "object",
+                "properties": {"connection_id": {"type": "string", "description": "OPC 服务器 id"}},
+                "required": ["connection_id"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "request_connection_credentials",
+            "description": "请求用户在 UI 弹框填写连接密码（不向 LLM 传递密码，0.3.2）。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "kind": {"type": "string", "enum": ["db", "opcua"]},
+                    "connection_id": {"type": "string"},
+                },
+                "required": ["kind", "connection_id"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "diagnose_work_chain",
+            "description": "分阶段诊断工作链路（Runtime→Datasource→Assets→Bindings→Export→AI），供开发排障。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "live_probe": {"type": "boolean", "default": False},
+                    "template_id": {"type": "string", "description": "可选，深查该模版绑定"},
+                },
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_dev_runtime_snapshot",
+            "description": "开发向轻量运行时快照：版本、健康、计数、最近失败审计。",
+            "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "inspect_template_bindings",
+            "description": "解析指定模版的 DB/OPC 绑定并对照已保存连接（只读）。",
+            "parameters": {
+                "type": "object",
+                "properties": {"template_id": {"type": "string"}},
+                "required": ["template_id"],
+                "additionalProperties": False,
+            },
+        },
+    },
 ]
 
 
@@ -179,12 +340,24 @@ def _mask_audit_entry(entry: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+_WRITE_TOOLS = frozenset(
+    {
+        "update_connection_probe_settings",
+        "upsert_db_connection",
+        "upsert_opc_server",
+        "delete_db_connection",
+        "delete_opc_server",
+        "request_connection_credentials",
+    }
+)
+
+
 async def execute_tool(name: str, arguments: dict[str, Any] | None, *, page_context: dict[str, Any] | None = None) -> Any:
     args = arguments if isinstance(arguments, dict) else {}
     settings = ai_config.load_ai_settings()
     write_ok = bool(settings.get("write_tools_enabled"))
 
-    if name in ("update_connection_probe_settings",) and not write_ok:
+    if name in _WRITE_TOOLS and not write_ok:
         return {"ok": False, "error": "AI 写入工具未启用。请在设置 → AI 助手中开启「允许 AI 写入工具」。"}
 
     result: Any
@@ -210,6 +383,34 @@ async def execute_tool(name: str, arguments: dict[str, Any] | None, *, page_cont
         result = _tool_suggest_config(args, page_context=page_context)
     elif name == "update_connection_probe_settings":
         result = _tool_update_probe(args)
+    elif name == "get_db_connection_detail":
+        result = ai_datasource_ops.get_db_connection_detail(str(args.get("connection_id") or ""))
+    elif name == "get_opc_server_detail":
+        result = ai_datasource_ops.get_opc_server_detail(str(args.get("connection_id") or ""))
+    elif name == "list_db_catalog":
+        result = ai_datasource_ops.list_db_catalog(
+            str(args.get("connection_id") or ""),
+            str(args.get("database")).strip() if args.get("database") else None,
+        )
+    elif name == "upsert_db_connection":
+        result = ai_datasource_ops.upsert_db_connection(args)
+    elif name == "upsert_opc_server":
+        result = ai_datasource_ops.upsert_opc_server(args)
+    elif name == "delete_db_connection":
+        result = ai_datasource_ops.delete_db_connection(str(args.get("connection_id") or ""))
+    elif name == "delete_opc_server":
+        result = ai_datasource_ops.delete_opc_server(str(args.get("connection_id") or ""))
+    elif name == "request_connection_credentials":
+        result = ai_datasource_ops.request_connection_credentials(args)
+    elif name == "diagnose_work_chain":
+        result = await ai_work_chain.diagnose_work_chain(
+            live_probe=bool(args.get("live_probe")),
+            template_id=str(args.get("template_id")).strip() if args.get("template_id") else None,
+        )
+    elif name == "get_dev_runtime_snapshot":
+        result = await ai_work_chain.get_dev_runtime_snapshot()
+    elif name == "inspect_template_bindings":
+        result = ai_work_chain.inspect_template_bindings(str(args.get("template_id") or ""))
     else:
         result = {"ok": False, "error": f"未知工具: {name}"}
 

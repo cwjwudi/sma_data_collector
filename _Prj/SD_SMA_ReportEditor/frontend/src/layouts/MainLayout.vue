@@ -91,11 +91,13 @@
     <AppConfirmDialog />
     <AppToastStack />
     <AiDrawer />
+    <AiPendingPromptDialog />
   </div>
 </template>
 
 <script setup>
 import AiDrawer from '@/features/ai-assistant/AiDrawer.vue'
+import AiPendingPromptDialog from '@/features/ai-assistant/AiPendingPromptDialog.vue'
 import { ref, nextTick, onMounted, onUnmounted, provide, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import SetupWizard from '@/features/onboarding/SetupWizard.vue'
