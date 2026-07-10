@@ -10,7 +10,7 @@ import {
 import type { LayoutZoneElement } from "@/lib/report-template/layout-zone-element";
 import { ensureZoneTableGrid } from "@/lib/report-template/layout-zone-element";
 import type { ReportTemplate, TemplateElement } from "@/lib/report-template/model";
-import { clampTableElementOuterSize, ensureTableGrid } from "@/lib/report-template/model";
+import { clampTableElementOuterSize, ensureTableGrid, TEMPLATE_TABLE_MAX_COLS, TEMPLATE_TABLE_MAX_ROWS } from "@/lib/report-template/model";
 import type { TableSqlFillConfig, TableSqlParamBinding } from "@/lib/report-template/table-sql-fill";
 import {
   ensureTableSqlColumnRoles,
@@ -281,7 +281,7 @@ export function syncTemplateTableRowsForSqlFillPreview(el: TemplateElement, data
   } else {
     body = Math.max(0, Math.floor(Number(dataRowCount)) || 0);
   }
-  const nextRows = Math.min(30, headerRows + body);
+  const nextRows = Math.min(TEMPLATE_TABLE_MAX_ROWS, headerRows + body);
   if (el.tableRows !== nextRows) {
     el.tableRows = nextRows;
     ensureTableGrid(el);
@@ -307,7 +307,7 @@ export function syncZoneTableRowsForSqlFillPreview(el: LayoutZoneElement, dataRo
   } else {
     body = Math.max(0, Math.floor(Number(dataRowCount)) || 0);
   }
-  const nextRows = Math.min(30, headerRows + body);
+  const nextRows = Math.min(TEMPLATE_TABLE_MAX_ROWS, headerRows + body);
   if (el.tableRows === nextRows) return;
   el.tableRows = nextRows;
   ensureZoneTableGrid(el);
@@ -381,7 +381,7 @@ export function sqlResponseToPreviewRows(
   const keys = colsMeta.map((c) => String(c?.name ?? "").trim()).filter(Boolean);
 
   if (fill && isVerticalSqlFill(fill)) {
-    const cc = Math.max(1, Math.min(30, Math.floor(colCount) || 1));
+    const cc = Math.max(1, Math.min(TEMPLATE_TABLE_MAX_COLS, Math.floor(colCount) || 1));
     return mapRawSqlRowsToMatrix(rows, keys, cc);
   }
 
@@ -393,11 +393,11 @@ export function sqlResponseToPreviewRows(
       return String(fill.visualSource!.columns[i] ?? "").trim().length > 0;
     }).length;
     const selectRows = mapRawSqlRowsToMatrix(rows, keys, Math.max(1, selectCount || 1));
-    const cc = Math.max(1, Math.min(30, Math.floor(colCount) || 1));
+    const cc = Math.max(1, Math.min(TEMPLATE_TABLE_MAX_COLS, Math.floor(colCount) || 1));
     return selectRows.map((sr) => expandHorizontalSelectRowToPhysical(sr, fill, cc));
   }
 
-  const cc = Math.max(1, Math.min(30, Math.floor(colCount) || 1));
+  const cc = Math.max(1, Math.min(TEMPLATE_TABLE_MAX_COLS, Math.floor(colCount) || 1));
   return mapRawSqlRowsToMatrix(rows, keys, cc);
 }
 

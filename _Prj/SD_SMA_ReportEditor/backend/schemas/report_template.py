@@ -150,7 +150,7 @@ class LayoutZoneElement(BaseModel):
     sqlParams: list[TableSqlParamBinding] = Field(default_factory=list)
     scalarSqlFillMode: ScalarSqlFillMode | None = None
     scalarSqlVisual: ScalarSqlVisualConfig | None = None
-    tableRows: int = Field(default=3, ge=1, le=30)
+    tableRows: int = Field(default=3, ge=1, le=100)
     tableCols: int = Field(default=4, ge=1, le=30)
     tableCells: list[list[TemplateTableCell]] = Field(default_factory=list)
     tableRowHeightPx: float = Field(default=28, ge=16, le=120)
@@ -191,7 +191,7 @@ class TemplateElement(BaseModel):
     signerLabel: str = ""
     signatureAssetId: str = ""
     signatureDisplayMode: SignatureDisplayMode = "both"
-    tableRows: int = Field(default=3, ge=1, le=30)
+    tableRows: int = Field(default=3, ge=1, le=100)
     tableCols: int = Field(default=4, ge=1, le=30)
     tableCells: list[list[TemplateTableCell]] = Field(default_factory=list)
     tableRowHeightPx: float = Field(default=28, ge=16, le=120)

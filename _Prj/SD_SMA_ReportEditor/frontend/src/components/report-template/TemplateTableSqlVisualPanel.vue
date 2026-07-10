@@ -103,8 +103,24 @@
       <div class="tsv-headers-head">
         <span class="tsv-subtit">纵表行（左标签 / 右字段值）</span>
         <div class="tsv-vert-slot-actions">
-          <button type="button" :class="actionBtnClass" @click="addVertSlot('field')">＋ 字段行</button>
-          <button type="button" :class="actionBtnClass" @click="addVertSlot('blank')">＋ 空白分隔</button>
+          <button
+            type="button"
+            :class="actionBtnClass"
+            :disabled="vertSlotsAtMax"
+            :title="vertSlotsAtMax ? `纵表最多 ${TEMPLATE_TABLE_MAX_ROWS - 1} 个字段槽（含空白分隔）` : undefined"
+            @click="addVertSlot('field')"
+          >
+            ＋ 字段行
+          </button>
+          <button
+            type="button"
+            :class="actionBtnClass"
+            :disabled="vertSlotsAtMax"
+            :title="vertSlotsAtMax ? `纵表最多 ${TEMPLATE_TABLE_MAX_ROWS - 1} 个字段槽（含空白分隔）` : undefined"
+            @click="addVertSlot('blank')"
+          >
+            ＋ 空白分隔
+          </button>
         </div>
       </div>
       <p class="tsv-muted">
@@ -505,6 +521,7 @@ import {
   removeVerticalSqlSlot,
   visualFilterParamSlotBase,
 } from "@/lib/report-template/table-sql-visual-compile";
+import { TEMPLATE_TABLE_MAX_ROWS } from "@/lib/report-template/table-cell-metrics";
 import { computed, nextTick, ref, watch, withDefaults } from "vue";
 
 const props = withDefaults(
@@ -573,6 +590,10 @@ watch(
 function isBlankSlot(slotField: string) {
   return isVerticalSqlSlotBlank(slotField);
 }
+
+const vertSlotsAtMax = computed(
+  () => (vs.value.columns?.length || 0) >= TEMPLATE_TABLE_MAX_ROWS - 1,
+);
 
 function slotSelectValue(slotField: string) {
   if (isVerticalSqlSlotPending(slotField)) return TABLE_SQL_VERTICAL_FIELD_PENDING;

@@ -356,7 +356,7 @@
                     v-model.number="hzTableDimRows"
                     type="number"
                     :min="hzVerticalSqlFill ? 2 : 1"
-                    max="30"
+                    :max="TEMPLATE_TABLE_MAX_ROWS"
                     class="hz-dim-val"
                     :disabled="hzTableRowsLocked"
                     :readonly="hzTableRowsLocked"
@@ -366,7 +366,7 @@
                     class="hz-dim-btn"
                     title="增加一行"
                     aria-label="增加一行"
-                    :disabled="hzTableRowsLocked || hzTableDimRows >= 30"
+                    :disabled="hzTableRowsLocked || hzTableDimRows >= TEMPLATE_TABLE_MAX_ROWS"
                     @click="hzBumpTableDimRows(1)"
                   >
                     +
@@ -390,7 +390,7 @@
                     v-model.number="hzTableDimCols"
                     type="number"
                     min="1"
-                    max="30"
+                    :max="TEMPLATE_TABLE_MAX_COLS"
                     class="hz-dim-val"
                   />
                   <button
@@ -398,7 +398,7 @@
                     class="hz-dim-btn"
                     title="增加一列"
                     aria-label="增加一列"
-                    :disabled="hzTableDimCols >= 30"
+                    :disabled="hzTableDimCols >= TEMPLATE_TABLE_MAX_COLS"
                     @click="hzBumpTableDimCols(1)"
                   >
                     +
@@ -647,6 +647,8 @@ import {
   TABLE_ROW_HEIGHT_DEFAULT_PX,
   TABLE_ROW_HEIGHT_MAX_PX,
   TABLE_ROW_HEIGHT_MIN_PX,
+  TEMPLATE_TABLE_MAX_COLS,
+  TEMPLATE_TABLE_MAX_ROWS,
 } from "@/lib/report-template/table-cell-metrics";
 import TableColumnWidthVisualEditor from "@/components/report-template/TableColumnWidthVisualEditor.vue";
 import TableCellFillPicker from "@/components/report-template/TableCellFillPicker.vue";
@@ -1215,7 +1217,12 @@ function onHzOpcPickConfirm(payload: string | { serverId: string; nodeId: string
 
 function hzClampTableDimInput(n: number): number {
   if (!Number.isFinite(n)) return 1;
-  return Math.min(30, Math.max(1, Math.floor(n)));
+  return Math.min(TEMPLATE_TABLE_MAX_ROWS, Math.max(1, Math.floor(n)));
+}
+
+function hzClampTableColDimInput(n: number): number {
+  if (!Number.isFinite(n)) return 1;
+  return Math.min(TEMPLATE_TABLE_MAX_COLS, Math.max(1, Math.floor(n)));
 }
 
 function hzBumpTableDimRows(delta: number) {
@@ -1228,7 +1235,7 @@ function hzBumpTableDimRows(delta: number) {
 function hzBumpTableDimCols(delta: number) {
   if (sel.value?.type !== "table") return;
   if (hzVerticalSqlFill.value) return;
-  hzTableDimCols.value = hzClampTableDimInput((Number(hzTableDimCols.value) || 1) + delta);
+  hzTableDimCols.value = hzClampTableColDimInput((Number(hzTableDimCols.value) || 1) + delta);
 }
 
 function hzBumpTableRowHeight(delta: number) {
@@ -1251,12 +1258,12 @@ function hzApplyTableDims() {
     hzTableDimCols.value = 2;
   } else if (hzSqlFillEnabled.value) {
     // 横表 SQL 填充：行数由预览同步，只改列数
-    s.tableCols = hzClampTableDimInput(hzTableDimCols.value);
+    s.tableCols = hzClampTableColDimInput(hzTableDimCols.value);
     hzTableDimRows.value = s.tableRows ?? hzTableDimRows.value;
     hzTableDimCols.value = s.tableCols;
   } else {
     s.tableRows = hzClampTableDimInput(hzTableDimRows.value);
-    s.tableCols = hzClampTableDimInput(hzTableDimCols.value);
+    s.tableCols = hzClampTableColDimInput(hzTableDimCols.value);
     hzTableDimRows.value = s.tableRows;
     hzTableDimCols.value = s.tableCols;
   }

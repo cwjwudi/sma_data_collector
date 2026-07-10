@@ -29,7 +29,7 @@ import {
   VERTICAL_SQL_FILL_COL_COUNT,
   visualSqlSelectFieldNames,
 } from "@/lib/report-template/table-sql-fill";
-import { clampTableRowHeightPx, REPORT_TEMPLATE_TABLE_NODE_PADDING_PX } from "@/lib/report-template/table-cell-metrics";
+import { clampTableRowHeightPx, REPORT_TEMPLATE_TABLE_NODE_PADDING_PX, TEMPLATE_TABLE_MAX_COLS, TEMPLATE_TABLE_MAX_ROWS } from "@/lib/report-template/table-cell-metrics";
 import { verticalSqlSelectColCount } from "@/lib/report-template/table-sql-vertical";
 
 export function quoteSqlIdentifier(engineLower: string, name: string): string {
@@ -209,7 +209,7 @@ export function syncVisualFillQueryAndResultNames(fill: TableSqlFillConfig, colC
     if (!String(fill.resultColumnNames[0] ?? "").trim()) fill.resultColumnNames[0] = "名称";
     if (!String(fill.resultColumnNames[1] ?? "").trim()) fill.resultColumnNames[1] = "值";
   } else {
-    const n = Math.max(1, Math.min(30, Math.floor(Number(cc)) || 1));
+    const n = Math.max(1, Math.min(TEMPLATE_TABLE_MAX_COLS, Math.floor(Number(cc)) || 1));
     const vc = fill.visualSource!.columns;
     const roles = fill.columnRoles || [];
     for (let i = 0; i < n; i++) {
@@ -308,6 +308,7 @@ export function applyTableSqlLayoutMode(
 export function appendVerticalSqlSlot(fill: TableSqlFillConfig, kind: "field" | "blank"): void {
   ensureVisualSource(fill);
   ensureVerticalFieldLabels(fill);
+  if ((fill.visualSource!.columns.length || 0) >= TEMPLATE_TABLE_MAX_ROWS - 1) return;
   if (kind === "blank") {
     fill.visualSource!.columns.push("");
     fill.verticalFieldLabels!.push("");
@@ -404,7 +405,10 @@ export function resizeVerticalSqlSlotsToTableRows(fill: TableSqlFillConfig, tabl
   if (!isVerticalSqlFill(fill) || fill.fillMode !== "visual") return;
   ensureVisualSource(fill);
   ensureVerticalFieldLabels(fill);
-  const slotsNeeded = Math.max(1, Math.min(29, (Math.floor(Number(tableRows)) || 2) - 1));
+  const slotsNeeded = Math.max(
+    1,
+    Math.min(TEMPLATE_TABLE_MAX_ROWS - 1, (Math.floor(Number(tableRows)) || 2) - 1),
+  );
   const cols = fill.visualSource!.columns;
   const labels = fill.verticalFieldLabels!;
   while (cols.length < slotsNeeded) {
@@ -425,5 +429,5 @@ export function resizeVerticalSqlSlotsToTableRows(fill: TableSqlFillConfig, tabl
 /** 查询任务用的结果列数（纵表=SELECT 字段数；横表=物理列数，含 blank/sequence 占位） */
 export function sqlFillPreviewColCount(fill: TableSqlFillConfig, tableCols: number): number {
   if (isVerticalSqlFill(fill)) return Math.max(1, verticalSqlSelectColCount(fill));
-  return Math.max(1, Math.min(30, Math.floor(Number(tableCols)) || 1));
+  return Math.max(1, Math.min(TEMPLATE_TABLE_MAX_COLS, Math.floor(Number(tableCols)) || 1));
 }

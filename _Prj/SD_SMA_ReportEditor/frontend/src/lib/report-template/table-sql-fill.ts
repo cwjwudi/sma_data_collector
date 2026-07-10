@@ -3,6 +3,8 @@
  * 导出时由生成器执行查询、按行展开并处理跨页续表；编辑器仅持久化配置。
  */
 
+import { TEMPLATE_TABLE_MAX_COLS, TEMPLATE_TABLE_MAX_ROWS } from "@/lib/report-template/table-cell-metrics";
+
 export type TableSqlParamSource = "opcua" | "literal" | "batch_no";
 
 export interface TableSqlParamBinding {
@@ -253,7 +255,7 @@ export const VERTICAL_SQL_FILL_COL_COUNT = 2;
 /** 令横表 columnRoles 与列数对齐；纵表不强制 */
 export function ensureTableSqlColumnRoles(fill: TableSqlFillConfig, colCount: number): void {
   if (isVerticalSqlFill(fill)) return;
-  const n = Math.max(1, Math.min(30, Math.floor(Number(colCount)) || 1));
+  const n = Math.max(1, Math.min(TEMPLATE_TABLE_MAX_COLS, Math.floor(Number(colCount)) || 1));
   if (!fill.columnRoles) fill.columnRoles = [];
   const arr = fill.columnRoles;
   while (arr.length < n) {
@@ -487,12 +489,12 @@ export function normalizeVisualSqlFilterShape(f: VisualSqlFilter): void {
 function clampColIndex(v: unknown): number {
   const n = Math.floor(Number(v));
   if (!Number.isFinite(n)) return 0;
-  return Math.max(0, Math.min(29, n));
+  return Math.max(0, Math.min(TEMPLATE_TABLE_MAX_COLS - 1, n));
 }
 
 /** 令结果列名数组长度与列数一致 */
 export function ensureTableSqlResultColumnNames(fill: TableSqlFillConfig, colCount: number): void {
-  const n = Math.max(1, Math.min(30, Math.floor(Number(colCount)) || 1));
+  const n = Math.max(1, Math.min(TEMPLATE_TABLE_MAX_COLS, Math.floor(Number(colCount)) || 1));
   while (fill.resultColumnNames.length < n) fill.resultColumnNames.push("");
   fill.resultColumnNames.length = n;
 }
@@ -501,8 +503,8 @@ export function ensureTableSqlResultColumnNames(fill: TableSqlFillConfig, colCou
 export function ensureVisualOutputColumnSlots(fill: TableSqlFillConfig, colCount: number): void {
   if (!fill.visualSource) return;
   const n = isVerticalSqlFill(fill)
-    ? Math.max(1, Math.min(30, fill.visualSource.columns.length || 1))
-    : Math.max(1, Math.min(30, Math.floor(Number(colCount)) || 1));
+    ? Math.max(1, Math.min(TEMPLATE_TABLE_MAX_ROWS - 1, fill.visualSource.columns.length || 1))
+    : Math.max(1, Math.min(TEMPLATE_TABLE_MAX_COLS, Math.floor(Number(colCount)) || 1));
   const arr = fill.visualSource.columns;
   while (arr.length < n) arr.push(isVerticalSqlFill(fill) ? TABLE_SQL_VERTICAL_FIELD_PENDING : "");
   if (!isVerticalSqlFill(fill)) arr.length = n;
@@ -582,7 +584,7 @@ export function syncResultColumnNamesFromFirstRow(
   colCount: number,
 ): void {
   ensureTableSqlResultColumnNames(fill, colCount);
-  const cols = Math.max(1, Math.min(30, Math.floor(Number(colCount)) || 1));
+  const cols = Math.max(1, Math.min(TEMPLATE_TABLE_MAX_COLS, Math.floor(Number(colCount)) || 1));
   const row0 = Array.isArray(grid[0]) ? grid[0] : [];
   for (let c = 0; c < cols; c++) {
     fill.resultColumnNames[c] = String(row0[c]?.text ?? "").trim();
@@ -599,7 +601,7 @@ export function syncFirstRowTextsFromColumnNames(grid: { text?: string }[][], na
 
 /** 列数减少时收紧「同列上方」引用索引 */
 export function clampSqlFillParamColumnRefs(fill: TableSqlFillConfig, colCount: number): void {
-  const cols = Math.max(1, Math.min(30, Math.floor(Number(colCount)) || 1));
+  const cols = Math.max(1, Math.min(TEMPLATE_TABLE_MAX_COLS, Math.floor(Number(colCount)) || 1));
   const maxIdx = Math.max(0, cols - 1);
   for (const p of fill.params) {
     if (p.aboveCellColumnIndex > maxIdx) p.aboveCellColumnIndex = maxIdx;

@@ -185,7 +185,7 @@
                 v-model.number="tableDimRows"
                 type="number"
                 :min="tplVerticalSqlFill ? 2 : 1"
-                max="30"
+                :max="TEMPLATE_TABLE_MAX_ROWS"
                 class="lpep-dim-val"
                 :disabled="tplTableRowsLocked"
                 :readonly="tplTableRowsLocked"
@@ -195,7 +195,7 @@
                 class="lpep-dim-btn"
                 title="增加一行"
                 aria-label="增加一行"
-                :disabled="tplTableRowsLocked || tableDimRows >= 30"
+                :disabled="tplTableRowsLocked || tableDimRows >= TEMPLATE_TABLE_MAX_ROWS"
                 @click="bumpTableDimRows(1)"
               >
                 +
@@ -219,7 +219,7 @@
                 v-model.number="tableDimCols"
                 type="number"
                 min="1"
-                max="30"
+                :max="TEMPLATE_TABLE_MAX_COLS"
                 class="lpep-dim-val"
                 :disabled="tplVerticalSqlFill"
                 :readonly="tplVerticalSqlFill"
@@ -229,7 +229,7 @@
                 class="lpep-dim-btn"
                 title="增加一列"
                 aria-label="增加一列"
-                :disabled="tplVerticalSqlFill || tableDimCols >= 30"
+                :disabled="tplVerticalSqlFill || tableDimCols >= TEMPLATE_TABLE_MAX_COLS"
                 @click="bumpTableDimCols(1)"
               >
                 +
@@ -507,6 +507,8 @@ import {
   clampTableElementOuterSize,
   normalizeSignatureDisplayMode,
   templateTableColumnInnerWidthsPx,
+  TEMPLATE_TABLE_MAX_COLS,
+  TEMPLATE_TABLE_MAX_ROWS,
 } from "@/lib/report-template/model";
 import { clearGridCellBindings, gridHasNonNoneBinding } from "@/lib/report-template/table-binding-utils";
 import { DATE_FORMAT_PRESETS } from "@/lib/report-template/layout-zone-element";
@@ -966,7 +968,12 @@ function onOpcPickConfirm(payload: string | { serverId: string; nodeId: string }
 
 function clampTableDimInput(n: number): number {
   if (!Number.isFinite(n)) return 1;
-  return Math.min(30, Math.max(1, Math.floor(n)));
+  return Math.min(TEMPLATE_TABLE_MAX_ROWS, Math.max(1, Math.floor(n)));
+}
+
+function clampTableColDimInput(n: number): number {
+  if (!Number.isFinite(n)) return 1;
+  return Math.min(TEMPLATE_TABLE_MAX_COLS, Math.max(1, Math.floor(n)));
 }
 
 function bumpTableDimRows(delta: number) {
@@ -979,7 +986,7 @@ function bumpTableDimRows(delta: number) {
 function bumpTableDimCols(delta: number) {
   if (props.el.type !== "table") return;
   if (tplVerticalSqlFill.value) return;
-  tableDimCols.value = clampTableDimInput((Number(tableDimCols.value) || 1) + delta);
+  tableDimCols.value = clampTableColDimInput((Number(tableDimCols.value) || 1) + delta);
 }
 
 function bumpTableRowHeight(delta: number) {
@@ -1001,11 +1008,11 @@ function applyTableDims() {
     tableDimCols.value = 2;
   } else if (!tplSqlFillEnabled.value) {
     el.tableRows = clampTableDimInput(tableDimRows.value);
-    el.tableCols = clampTableDimInput(tableDimCols.value);
+    el.tableCols = clampTableColDimInput(tableDimCols.value);
     tableDimRows.value = el.tableRows;
     tableDimCols.value = el.tableCols;
   } else {
-    el.tableCols = clampTableDimInput(tableDimCols.value);
+    el.tableCols = clampTableColDimInput(tableDimCols.value);
     tableDimRows.value = el.tableRows;
     tableDimCols.value = el.tableCols;
   }

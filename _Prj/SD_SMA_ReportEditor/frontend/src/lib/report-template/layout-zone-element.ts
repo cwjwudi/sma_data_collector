@@ -6,6 +6,8 @@ import {
   hydratePersistedTableColWidthsPx,
   REPORT_ZONE_TABLE_NODE_PADDING_PX,
   TABLE_ROW_HEIGHT_DEFAULT_PX,
+  TEMPLATE_TABLE_MAX_COLS,
+  TEMPLATE_TABLE_MAX_ROWS,
   uniformTableCellBoxPx,
 } from "@/lib/report-template/table-cell-metrics";
 
@@ -329,7 +331,13 @@ function normalizeZoneBindingKind(v: unknown): ZoneBindingKind {
 function clampZoneTableDim(v: unknown, fallback: number): number {
   const n = Math.floor(Number(v));
   if (!Number.isFinite(n)) return fallback;
-  return Math.min(30, Math.max(1, n));
+  return Math.min(TEMPLATE_TABLE_MAX_ROWS, Math.max(1, n));
+}
+
+function clampZoneTableColDim(v: unknown, fallback: number): number {
+  const n = Math.floor(Number(v));
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(TEMPLATE_TABLE_MAX_COLS, Math.max(1, n));
 }
 
 export function defaultZoneTableCell(): LayoutZoneTableCell {
@@ -359,7 +367,7 @@ export function hydrateZoneTableCell(raw: Partial<LayoutZoneTableCell> | undefin
 export function ensureZoneTableGrid(el: LayoutZoneElement): LayoutZoneTableCell[][] {
   if (el.type !== "table") return [];
   const rows = clampZoneTableDim(el.tableRows, 3);
-  const cols = clampZoneTableDim(el.tableCols, 4);
+  const cols = clampZoneTableColDim(el.tableCols, 4);
   el.tableRows = rows;
   el.tableCols = cols;
   const prev = Array.isArray(el.tableCells) ? el.tableCells : [];
@@ -619,7 +627,7 @@ export function hydrateLayoutZoneElement(raw: Partial<LayoutZoneElement>): Layou
   };
   if (type === "table") {
     merged.tableRows = clampZoneTableDim(raw.tableRows ?? d.tableRows ?? 3, 3);
-    merged.tableCols = clampZoneTableDim(raw.tableCols ?? d.tableCols ?? 4, 4);
+    merged.tableCols = clampZoneTableColDim(raw.tableCols ?? d.tableCols ?? 4, 4);
     merged.tableRowHeightPx = clampTableRowHeightPx(
       raw.tableRowHeightPx ?? merged.tableRowHeightPx ?? d.tableRowHeightPx,
     );

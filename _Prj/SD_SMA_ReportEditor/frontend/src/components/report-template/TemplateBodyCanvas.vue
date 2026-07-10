@@ -404,6 +404,13 @@ import {
 import type { ReportTemplate, TemplateControlType } from "@/lib/report-template/model";
 import type { TemplateElement, TemplateTableCell } from "@/lib/report-template/model";
 import {
+  applyTableColumnResizeDeltaPx,
+  clampTableRowHeightPx,
+  REPORT_TEMPLATE_TABLE_NODE_PADDING_PX,
+  TEMPLATE_TABLE_MAX_ROWS,
+  uniformTableCellBoxPx,
+} from "@/lib/report-template/table-cell-metrics";
+import {
   clampTableElementOuterSize,
   ensureTableGrid,
   intrinsicOuterHeightForTemplateTable,
@@ -414,12 +421,6 @@ import {
   signatureWatermarkText,
   templateTableColumnInnerWidthsPx,
 } from "@/lib/report-template/model";
-import {
-  applyTableColumnResizeDeltaPx,
-  clampTableRowHeightPx,
-  REPORT_TEMPLATE_TABLE_NODE_PADDING_PX,
-  uniformTableCellBoxPx,
-} from "@/lib/report-template/table-cell-metrics";
 import type { VisualSqlTableColumnMeta } from "@/lib/report-template/table-sql-visual-catalog";
 import { loadVisualSqlTableColumnsCached } from "@/lib/report-template/table-sql-visual-catalog";
 import { applyVisualSqlOutputColumnPick, applyVerticalSqlSlotField, syncTableRowsForVerticalSqlSlots } from "@/lib/report-template/table-sql-visual-compile";
@@ -459,8 +460,8 @@ type H = (typeof HZ)[number];
 /** 编辑画布 SQL 预览截断时表格末尾提示（置于分页提示行之后） */
 const TPL_SQL_FILL_EDITOR_TRUNCATE_HINT = "未完全显示，将在导出预览中优化";
 
-/** 与 `ensureTableGrid` / clampTableDim 一致：正文表格最多 30 行（含表头），数据格最多 29 */
-const TEMPLATE_BODY_TABLE_MAX_ROWS = 30;
+/** 与 `ensureTableGrid` / clampTableDim 一致：正文表格最多 TEMPLATE_TABLE_MAX_ROWS 行（含表头） */
+const TEMPLATE_BODY_TABLE_MAX_ROWS = TEMPLATE_TABLE_MAX_ROWS;
 
 /**
  * 编辑画布行数预算：分页灰字说明实际为多行，不能用 1×数据行高计入，否则尾部黄色提示会被 shell overflow 裁掉。

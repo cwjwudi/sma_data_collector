@@ -161,7 +161,7 @@
                 v-model.number="tableDimRows"
                 type="number"
                 :min="zoneVerticalSqlFill ? 2 : 1"
-                max="30"
+                :max="TEMPLATE_TABLE_MAX_ROWS"
                 class="lpep-dim-val"
                 :disabled="zoneTableRowsLocked"
                 :readonly="zoneTableRowsLocked"
@@ -171,7 +171,7 @@
                 class="lpep-dim-btn"
                 title="增加一行"
                 aria-label="增加一行"
-                :disabled="zoneTableRowsLocked || tableDimRows >= 30"
+                :disabled="zoneTableRowsLocked || tableDimRows >= TEMPLATE_TABLE_MAX_ROWS"
                 @click="bumpTableDimRows(1)"
               >
                 +
@@ -195,7 +195,7 @@
                 v-model.number="tableDimCols"
                 type="number"
                 min="1"
-                max="30"
+                :max="TEMPLATE_TABLE_MAX_COLS"
                 class="lpep-dim-val"
                 :disabled="zoneVerticalSqlFill"
                 :readonly="zoneVerticalSqlFill"
@@ -205,7 +205,7 @@
                 class="lpep-dim-btn"
                 title="增加一列"
                 aria-label="增加一列"
-                :disabled="zoneVerticalSqlFill || tableDimCols >= 30"
+                :disabled="zoneVerticalSqlFill || tableDimCols >= TEMPLATE_TABLE_MAX_COLS"
                 @click="bumpTableDimCols(1)"
               >
                 +
@@ -457,6 +457,8 @@ import {
   TABLE_ROW_HEIGHT_DEFAULT_PX,
   TABLE_ROW_HEIGHT_MAX_PX,
   TABLE_ROW_HEIGHT_MIN_PX,
+  TEMPLATE_TABLE_MAX_COLS,
+  TEMPLATE_TABLE_MAX_ROWS,
 } from "@/lib/report-template/table-cell-metrics";
 import TableColumnWidthVisualEditor from "@/components/report-template/TableColumnWidthVisualEditor.vue";
 import TableCellFillPicker from "@/components/report-template/TableCellFillPicker.vue";
@@ -858,7 +860,12 @@ function onOpcPickConfirm(payload: string | { serverId: string; nodeId: string }
 
 function clampTableDimInput(n: number): number {
   if (!Number.isFinite(n)) return 1;
-  return Math.min(30, Math.max(1, Math.floor(n)));
+  return Math.min(TEMPLATE_TABLE_MAX_ROWS, Math.max(1, Math.floor(n)));
+}
+
+function clampTableColDimInput(n: number): number {
+  if (!Number.isFinite(n)) return 1;
+  return Math.min(TEMPLATE_TABLE_MAX_COLS, Math.max(1, Math.floor(n)));
 }
 
 function bumpTableDimRows(delta: number) {
@@ -873,7 +880,7 @@ function bumpTableDimCols(delta: number) {
   const el = props.el;
   if (!el || el.type !== "table") return;
   if (zoneVerticalSqlFill.value) return;
-  tableDimCols.value = clampTableDimInput((Number(tableDimCols.value) || 1) + delta);
+  tableDimCols.value = clampTableColDimInput((Number(tableDimCols.value) || 1) + delta);
 }
 
 function bumpZoneTableRowHeight(delta: number) {
@@ -896,11 +903,11 @@ function applyTableDims() {
     tableDimCols.value = 2;
   } else if (!zoneSqlFillEnabled.value) {
     el.tableRows = clampTableDimInput(tableDimRows.value);
-    el.tableCols = clampTableDimInput(tableDimCols.value);
+    el.tableCols = clampTableColDimInput(tableDimCols.value);
     tableDimRows.value = el.tableRows;
     tableDimCols.value = el.tableCols;
   } else {
-    el.tableCols = clampTableDimInput(tableDimCols.value);
+    el.tableCols = clampTableColDimInput(tableDimCols.value);
     tableDimRows.value = el.tableRows;
     tableDimCols.value = el.tableCols;
   }

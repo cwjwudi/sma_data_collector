@@ -8,6 +8,11 @@ export const TABLE_ROW_HEIGHT_DEFAULT_PX = 28;
 export const TABLE_ROW_HEIGHT_MIN_PX = 16;
 export const TABLE_ROW_HEIGHT_MAX_PX = 120;
 
+/** 正文/版式表格行数上限（含表头）；纵表字段槽可达 MAX_ROWS-1 */
+export const TEMPLATE_TABLE_MAX_ROWS = 100;
+/** 表格列数上限（横表）；纵表固定 2 列 */
+export const TEMPLATE_TABLE_MAX_COLS = 30;
+
 /** 列宽权重下限（px）；参与比例换算时保证单列不小于该值，并与 minOuterSizeForTable 的单元格最小宽约一致 */
 export const TABLE_COL_WIDTH_MIN_PX = 26;
 

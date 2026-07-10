@@ -1,15 +1,15 @@
 {
-  "version": "0.2.23",
-  "releasedAt": "2026-07-10T02:33:06.805Z",
-  "notes": "Report Editor 0.2.23\n\n- 模版管理：客户端分页（每页 20），翻页立刻切换，只渲染当前页\n- 缩略图按本页渐进加载（加载几个显示几个），不再一次拉全量完整模版\n- 启动预热改为只预取模版摘要，模版很多时进页更快\n- 继承 0.2.22：模版/版式复制粘贴剪切与撤销重做",
+  "version": "0.2.24",
+  "releasedAt": "2026-07-10T04:25:33.894Z",
+  "notes": "Report Editor 0.2.24\n\n- 纵表/表格行数上限由 30 提升至 100（含表头；字段槽最多 99）\n- 后端校验与前端 clamp/UI 同步放宽，超过 30 行可继续添加字段与空白分隔\n- 列数上限仍为 30",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor-Setup-0.2.23-x64.exe",
-      "sha256": "cba72a93faafbffe2930a5ea3716c802a72c5c8db3385a6f42e7d53426b42933",
-      "size": 144412584
+      "url": "Report Editor-Setup-0.2.24-x64.exe",
+      "sha256": "a6c3d3f35036c286dd6feb727893ea06bcde55bb1e62317cd157b15f1ef8a762",
+      "size": 144414284
     },
     "darwin-arm64": {
-      "url": "Report Editor-0.2.23-arm64.dmg",
+      "url": "Report Editor-0.2.24-arm64.dmg",
       "sha256": "",
       "size": 0
     }

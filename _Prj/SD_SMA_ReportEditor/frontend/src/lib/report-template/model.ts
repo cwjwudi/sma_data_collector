@@ -60,6 +60,8 @@ import {
   hydratePersistedTableColWidthsPx,
   REPORT_TEMPLATE_TABLE_NODE_PADDING_PX,
   TABLE_ROW_HEIGHT_DEFAULT_PX,
+  TEMPLATE_TABLE_MAX_COLS,
+  TEMPLATE_TABLE_MAX_ROWS,
   uniformTableCellBoxPx,
 } from "./table-cell-metrics";
 import {
@@ -220,10 +222,19 @@ function normalizeBindingKind(v: unknown): BindingKind {
   return "none";
 }
 
+/** 正文/版式表格行数上限（含表头）；纵表字段槽可达 MAX_ROWS-1 */
+export { TEMPLATE_TABLE_MAX_ROWS, TEMPLATE_TABLE_MAX_COLS } from "./table-cell-metrics";
+
 function clampTableDim(v: unknown, fallback: number): number {
   const n = Math.floor(Number(v));
   if (!Number.isFinite(n)) return fallback;
-  return Math.min(30, Math.max(1, n));
+  return Math.min(TEMPLATE_TABLE_MAX_ROWS, Math.max(1, n));
+}
+
+function clampTableColDim(v: unknown, fallback: number): number {
+  const n = Math.floor(Number(v));
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(TEMPLATE_TABLE_MAX_COLS, Math.max(1, n));
 }
 
 export function defaultTableCell(): TemplateTableCell {
@@ -253,7 +264,7 @@ export function hydrateTableCell(raw: Partial<TemplateTableCell> | undefined): T
 export function ensureTableGrid(el: TemplateElement): TemplateTableCell[][] {
   if (el.type !== "table") return [];
   const rows = clampTableDim(el.tableRows, 3);
-  const cols = clampTableDim(el.tableCols, 4);
+  const cols = clampTableColDim(el.tableCols, 4);
   el.tableRows = rows;
   el.tableCols = cols;
   const prev = Array.isArray(el.tableCells) ? el.tableCells : [];
@@ -640,7 +651,7 @@ export function hydrateTemplateElement(raw: Partial<TemplateElement>): TemplateE
       ];
     } else {
       merged.tableRows = clampTableDim(raw.tableRows ?? merged.tableRows, 3);
-      merged.tableCols = clampTableDim(raw.tableCols ?? merged.tableCols, 4);
+      merged.tableCols = clampTableColDim(raw.tableCols ?? merged.tableCols, 4);
     }
     merged.tableRowHeightPx = clampTableRowHeightPx(
       raw.tableRowHeightPx ?? merged.tableRowHeightPx ?? d.tableRowHeightPx,
