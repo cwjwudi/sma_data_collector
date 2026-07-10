@@ -1,15 +1,15 @@
 {
-  "version": "0.2.25",
-  "releasedAt": "2026-07-10T04:43:21.241Z",
-  "notes": "Report Editor 0.2.25\n\n- 打开模版编辑时显示加载阶段（缓存/服务器/版式），不再空白干等\n- 默认进入「编辑画布」，避免一打开就卡在导出预览取数\n- 导出预览刷新显示阶段文案（连接数据源 / OPC / SQL / 表格填充）\n- 打开时绑定刷新不写回表格行数，减轻卡顿",
+  "version": "0.2.26",
+  "releasedAt": "2026-07-10T05:33:32.789Z",
+  "notes": "Report Editor 0.2.26\n\n- 多路结批真正并行，并行上限可配（默认4，1–16）\n- 每绑定独立 PLC 反馈（INT 阶段码/信息/路径）与状态折线\n- 目录与批次号仍全局共用；顶部反馈主要服务模拟结批\n- INT：0失败 1成功 2监听 3排队 4预检 5取数 6渲染 7保存 8写回",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor-Setup-0.2.25-x64.exe",
-      "sha256": "61576c572645f0c87bc00fc81fb414bc75f2d356f6f4d88a126f949b5319eff0",
-      "size": 144413748
+      "url": "Report Editor-Setup-0.2.26-x64.exe",
+      "sha256": "47f1ffe95f99510ac6597748c3c89a05aa070e951796838be3bbdd2dd1e15796",
+      "size": 144419511
     },
     "darwin-arm64": {
-      "url": "Report Editor-0.2.25-arm64.dmg",
+      "url": "Report Editor-0.2.26-arm64.dmg",
       "sha256": "",
       "size": 0
     }

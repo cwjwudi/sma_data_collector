@@ -38,6 +38,7 @@ interface Window {
         writeMs?: number;
       };
     }>;
+    setPdfExportMaxParallel: (max: number) => Promise<{ max: number }>;
     shellOpenPath: (filePath: string) => Promise<{ ok: boolean; error?: string }>;
     pathJoin: (...parts: string[]) => Promise<string>;
     notifyPdfExportReady: (payload: {

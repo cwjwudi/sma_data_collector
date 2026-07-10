@@ -56,7 +56,9 @@
         />
       </div>
       <p class="rg-mini rg-mini--switch">
-        当前配置：{{ activeExportResultTemplateLabel }}。{{ RG_UI.manual }}或 {{ RG_UI.opcAuto }}完成后，将成功/失败状态、摘要信息与文件路径写入该报表自己的 OPC 变量，供 PLC 读取。
+        本区主要用于<strong>{{ RG_UI.manual }}</strong>（及未单独配置时的兜底）。
+        {{ RG_UI.opcAuto }}请在下方各「触发绑定」卡片内配置<strong>本路独立</strong>的写回节点，避免多路互相覆盖。
+        当前配置：{{ activeExportResultTemplateLabel }}。
       </p>
 
       <div class="rg-auto-fields" :class="{ 'rg-auto-fields--off': !activeExportResultOpc.enabled }">
@@ -289,10 +291,34 @@
         />
       </div>
       <p v-if="!electronShell" class="rg-mini rg-mini--switch">{{ RG_UI.opcAuto }}仅在 Electron 桌面版可用。</p>
+      <p class="rg-mini rg-mini--switch">
+        多路触发视为<strong>同一批次</strong>：保存目录、文件名/批次号 OPC
+        <strong>全局共用</strong>（不在绑定卡片内单独配置）。每条绑定只配触发条件、报表模版与本路 PLC 反馈。
+      </p>
 
       <div class="rg-auto-fields" :class="{ 'rg-auto-fields--off': !prefs.auto.enabled }">
+      <div class="rg-row rg-row--in-panel">
+        <label class="rg-lbl" for="rg-auto-max-parallel">同时并行导出上限</label>
+        <div class="rg-inline">
+          <input
+            id="rg-auto-max-parallel"
+            v-model.number="prefs.auto.maxParallelExports"
+            type="number"
+            min="1"
+            max="16"
+            class="rg-inp rg-inp--sep"
+            @change="onMaxParallelChange"
+          />
+          <span class="rg-mini">路（1–16）</span>
+        </div>
+        <p class="rg-mini rg-mini--indent">
+          实际并行 = min(本设置, 已启用绑定数)。超出上限的触发会排队（状态码 3），有空槽再开跑。
+        </p>
+      </div>
+
       <div class="rg-export-dir-block">
-        <span class="rg-lbl">{{ RG_UI.opcAuto }}保存文件夹</span>
+        <span class="rg-lbl">{{ RG_UI.opcAuto }}保存文件夹（全部绑定共用）</span>
+        <p class="rg-mini rg-mini--indent">所有触发绑定写入同一批次目录；多路并行时仍落在此文件夹。</p>
         <div class="rg-tabs" role="tablist" :aria-label="`${RG_UI.opcAuto}保存文件夹来源`">
           <button
             type="button"
@@ -379,7 +405,8 @@
       </div>
 
       <div class="rg-export-dir-block">
-        <span class="rg-lbl">{{ RG_UI.opcAuto }}文件名</span>
+        <span class="rg-lbl">{{ RG_UI.opcAuto }}文件名（全部绑定共用）</span>
+        <p class="rg-mini rg-mini--indent">批次号与文件名片段规则全局共用，不按绑定拆分。</p>
 
         <div class="rg-tab-panel" role="group" :aria-label="`${RG_UI.opcAuto}文件名片段`">
           <div class="rg-row rg-row--in-panel">
@@ -441,6 +468,9 @@
           <span class="rg-lbl">保存触发变量绑定</span>
           <button type="button" class="btn btn--sm" @click="addAutoTriggerBinding">+ 新建绑定</button>
         </div>
+        <p class="rg-mini rg-mini--indent">
+          此处配置触发条件、报表模版与<strong>本路 PLC 反馈</strong>；目录/批次号见上方全局配置。建几条触发即可配几套反馈。
+        </p>
         <p v-if="!prefs.auto.bindings.length" class="rg-mini rg-mini--indent">
           暂无绑定。点击「新建绑定」添加 OPC 变量，并为每条绑定单独选择要 {{ RG_UI.opcAuto }} 的报表模版。
         </p>
@@ -538,6 +568,15 @@
             </p>
           </div>
           <div
+            v-if="prefs.auto.enabled && binding.enabled"
+            class="rg-row rg-row--in-panel"
+          >
+            <span class="rg-lbl">本路状态</span>
+            <p class="rg-binding-live-status">
+              {{ bindingLiveStatusText(binding.id) }}
+            </p>
+          </div>
+          <div
             v-if="prefs.auto.enabled && binding.enabled && bindingChartUi(binding.id)?.show"
             class="rg-row rg-row--in-panel rg-binding-chart"
           >
@@ -548,6 +587,115 @@
               {{ triggerChartMaxSamples }} 秒）。String 类型变量不显示曲线。
             </p>
           </div>
+          <div
+            v-if="prefs.auto.enabled && binding.enabled"
+            class="rg-row rg-row--in-panel rg-binding-chart"
+          >
+            <span class="rg-lbl">状态折线（INT）</span>
+            <AutoTriggerValueSparkline :samples="bindingStatusChartSamples(binding.id)" />
+            <p class="rg-mini rg-mini--indent">
+              纵轴为写回 PLC 的状态码：0失败 1成功 2监听 3排队 4预检 5取数 6渲染 7保存 8写回。
+            </p>
+          </div>
+
+          <div class="rg-row rg-row--in-panel rg-binding-feedback">
+            <div class="rg-binding-feedback-head">
+              <button
+                type="button"
+                class="rg-trigger-log-toggle"
+                :aria-expanded="isBindingFeedbackExpanded(binding.id)"
+                @click="toggleBindingFeedbackExpanded(binding.id)"
+              >
+                <span
+                  class="rg-trigger-log-chevron"
+                  :class="{ 'rg-trigger-log-chevron--open': isBindingFeedbackExpanded(binding.id) }"
+                  aria-hidden="true"
+                  >▸</span
+                >
+                <span class="rg-lbl rg-lbl--inline">本绑定结批结果写回 PLC</span>
+              </button>
+            </div>
+            <div v-show="isBindingFeedbackExpanded(binding.id)" class="rg-binding-feedback-body">
+              <p class="rg-mini rg-mini--indent">
+                本路独立状态/信息/路径节点；文件仍保存到上方全局目录，路径节点仅写回本路生成的 PDF 路径。
+              </p>
+              <div class="rg-switch-row rg-switch-row--compact">
+                <span class="rg-switch-label" :id="`rg-bind-fb-en-${binding.id}`">启用本路写回</span>
+                <button
+                  type="button"
+                  class="rg-switch rg-switch--sm"
+                  :class="{ 'rg-switch--on': ensureBindingFeedback(binding).enabled }"
+                  role="switch"
+                  :aria-labelledby="`rg-bind-fb-en-${binding.id}`"
+                  :aria-checked="ensureBindingFeedback(binding).enabled"
+                  @click="ensureBindingFeedback(binding).enabled = !ensureBindingFeedback(binding).enabled"
+                />
+              </div>
+              <div class="rg-row rg-row--in-panel">
+                <label class="rg-lbl" :for="`rg-bind-fb-srv-${binding.id}`">已保存连接</label>
+                <select
+                  :id="`rg-bind-fb-srv-${binding.id}`"
+                  v-model="ensureBindingFeedback(binding).serverId"
+                  class="rg-select"
+                >
+                  <option value="">请选择…</option>
+                  <option v-for="s in opcServers" :key="s.id" :value="s.id">{{ s.name || s.id }}</option>
+                </select>
+              </div>
+              <div class="rg-row rg-row--in-panel">
+                <label class="rg-lbl" :for="`rg-bind-fb-status-${binding.id}`">状态 INT NodeId</label>
+                <div class="rg-inline rg-inline--bind">
+                  <input
+                    :id="`rg-bind-fb-status-${binding.id}`"
+                    v-model.trim="ensureBindingFeedback(binding).statusNodeId"
+                    type="text"
+                    class="rg-inp rg-inp--grow rg-mono"
+                    placeholder="ns=…;s=…（INT）"
+                  />
+                  <button type="button" class="btn btn--nowrap" @click="openBindingFeedbackPick(binding.id, 'status')">
+                    从地址空间选择…
+                  </button>
+                </div>
+                <p class="rg-mini rg-mini--indent">自动结批固定写 INT 阶段码（见上方状态折线说明）。</p>
+              </div>
+              <div class="rg-row rg-row--in-panel">
+                <label class="rg-lbl" :for="`rg-bind-fb-msg-${binding.id}`">信息 WSTRING（可选）</label>
+                <div class="rg-inline rg-inline--bind">
+                  <input
+                    :id="`rg-bind-fb-msg-${binding.id}`"
+                    v-model.trim="ensureBindingFeedback(binding).messageNodeId"
+                    type="text"
+                    class="rg-inp rg-inp--grow rg-mono"
+                    placeholder="可选"
+                  />
+                  <button type="button" class="btn btn--nowrap" @click="openBindingFeedbackPick(binding.id, 'message')">
+                    从地址空间选择…
+                  </button>
+                </div>
+              </div>
+              <div class="rg-row rg-row--in-panel">
+                <label class="rg-lbl" :for="`rg-bind-fb-path-${binding.id}`">路径 WSTRING（可选）</label>
+                <div class="rg-inline rg-inline--bind">
+                  <input
+                    :id="`rg-bind-fb-path-${binding.id}`"
+                    v-model.trim="ensureBindingFeedback(binding).filePathNodeId"
+                    type="text"
+                    class="rg-inp rg-inp--grow rg-mono"
+                    placeholder="可选；成功时写本路 PDF 路径"
+                  />
+                  <button type="button" class="btn btn--nowrap" @click="openBindingFeedbackPick(binding.id, 'path')">
+                    从地址空间选择…
+                  </button>
+                </div>
+              </div>
+              <div class="rg-row rg-row--in-panel">
+                <button type="button" class="btn btn--sm" @click="testBindingFeedbackWrite(binding)">
+                  测试写回本路
+                </button>
+              </div>
+            </div>
+          </div>
+
           <div class="rg-row rg-row--in-panel rg-trigger-log-block">
             <div class="rg-trigger-log-head">
               <button
@@ -640,6 +788,7 @@ import { listTemplateSummaries, type TemplateSummary } from "@/api/templates";
 import { apiFetch } from "@/api/client.js";
 import {
   cloneExportResultOpcForTemplate,
+  defaultBindingExportResultOpcFeedback,
   isExportResultOpcCustomized,
   loadReportGeneratorPrefs,
   resolveExportResultOpcForTemplate,
@@ -648,6 +797,10 @@ import {
   type ExportResultOpcFeedback,
   type ReportGeneratorPrefs,
 } from "@/lib/report-generator-prefs";
+import {
+  autoExportStatusLabel,
+  clampAutoExportMaxParallel,
+} from "@/lib/auto-export-status-codes";
 import { loadReportExportPrefs, saveReportExportPrefs } from "@/lib/report-export-prefs";
 import { templateSelectLabel, templateSelectRows } from "@/lib/template-display-order";
 import { createOpcTriggerPollState, type OpcTriggerPollState } from "@/lib/auto-opc-trigger";
@@ -857,7 +1010,23 @@ function clearAutoTriggerNodeBinding(bindingId: string): void {
   autoStatus.value = `${RG_STATUS_OPC_AUTO} 已清除触发节点绑定`;
 }
 
-const opcPickCloseOnConfirm = computed(() => !isFeedbackPickTarget(opcPickTarget.value));
+function parseBindingFeedbackPick(
+  target: string | null,
+): { bindingId: string; field: "status" | "message" | "path" } | null {
+  if (!target?.startsWith("bindFb:")) return null;
+  const rest = target.slice("bindFb:".length);
+  const idx = rest.lastIndexOf(":");
+  if (idx <= 0) return null;
+  const bindingId = rest.slice(0, idx).trim();
+  const field = rest.slice(idx + 1).trim();
+  if (!bindingId) return null;
+  if (field !== "status" && field !== "message" && field !== "path") return null;
+  return { bindingId, field };
+}
+
+const opcPickCloseOnConfirm = computed(
+  () => !isFeedbackPickTarget(opcPickTarget.value) && !parseBindingFeedbackPick(opcPickTarget.value),
+);
 
 function isFeedbackStringPickTarget(t: RgOpcPickTarget | null): boolean {
   return t === "feedbackMessage" || t === "feedbackFilePath";
@@ -876,12 +1045,15 @@ const opcPickModalKey = computed(() => {
   if (t === "feedbackFilePath") return "pick-feedbackFilePath";
   const bid = parseRgTriggerPickTarget(t);
   if (bid) return `pick-trigger-${bid}`;
+  const bf = parseBindingFeedbackPick(t);
+  if (bf) return `pick-bindFb-${bf.bindingId}-${bf.field}`;
   return "pick-idle";
 });
 
 const opcPickHideSearch = computed(() => {
   const t = opcPickTarget.value;
   if (t === "feedbackStatus" || isFeedbackStringPickTarget(t)) return false;
+  if (parseBindingFeedbackPick(t)) return false;
   return (
     t === "exportDir" ||
     t === "fileName" ||
@@ -891,6 +1063,10 @@ const opcPickHideSearch = computed(() => {
 
 const opcPickTitle = computed(() => {
   if (parseRgTriggerPickTarget(opcPickTarget.value)) return "选择 OPC UA 触发变量";
+  const bf = parseBindingFeedbackPick(opcPickTarget.value);
+  if (bf?.field === "status") return "绑定本路 INT 状态变量";
+  if (bf?.field === "message") return "绑定本路信息 WSTRING";
+  if (bf?.field === "path") return "绑定本路路径 WSTRING";
   if (opcPickTarget.value === "fileName") return "绑定 OPC UA String 变量（文件名片段）";
   if (opcPickTarget.value === "exportDir") return "绑定 OPC UA String 变量（目录）";
   if (opcPickTarget.value === "feedbackStatus") return "绑定 OPC UA 状态变量（Boolean / Int）";
@@ -903,6 +1079,11 @@ const opcPickInitialServerId = computed(() => {
   if (opcPickTarget.value === "exportDir") return prefs.value.autoExportDirOpcServerId;
   if (opcPickTarget.value === "fileName") return prefs.value.autoFileNameOpcServerId;
   if (isFeedbackPickTarget(opcPickTarget.value)) return activeExportResultOpc.value.serverId;
+  const bf = parseBindingFeedbackPick(opcPickTarget.value);
+  if (bf) {
+    const b = prefs.value.auto.bindings.find((x) => x.id === bf.bindingId);
+    return b ? ensureBindingFeedback(b).serverId || b.serverId : "";
+  }
   const bindId = parseRgTriggerPickTarget(opcPickTarget.value);
   if (bindId) {
     return prefs.value.auto.bindings.find((b) => b.id === bindId)?.serverId || "";
@@ -916,6 +1097,16 @@ const opcPickLead = computed(() => {
   }
   if (opcPickTarget.value === "fileName") {
     return `选择 String 类型变量作为 ${RG_UI.opcAuto} 文件名片段（不含 .pdf）；绑定树仅显示 String。是否参与拼接由面板中的「OPC UA变量」片段控制。`;
+  }
+  const bf = parseBindingFeedbackPick(opcPickTarget.value);
+  if (bf?.field === "status") {
+    return "选择 Int 类型变量作为本绑定结批状态码（0失败 1成功 2监听 3排队 4预检 5取数 6渲染 7保存 8写回）。";
+  }
+  if (bf?.field === "message") {
+    return "选择 String/WSTRING 变量写入本路阶段/结果摘要。";
+  }
+  if (bf?.field === "path") {
+    return "选择 String/WSTRING 变量；成功时写入本路 PDF 路径（文件仍在全局共用目录）。";
   }
   if (opcPickTarget.value === "feedbackStatus") {
     const kind = activeExportResultOpc.value.statusKind === "int" ? "Int" : "Boolean";
@@ -946,11 +1137,16 @@ const autoStatus = reportAutoExportStatus;
 
 type BindingChartUi = { show: boolean; samples: number[] };
 const bindingChartUiMap = ref<Record<string, BindingChartUi>>({});
+const bindingFeedbackExpanded = ref<Record<string, boolean>>({});
+const bindingStatusSamplesMap = ref<Record<string, number[]>>({});
 
 type BindingRuntime = {
   poll: OpcTriggerPollState;
   history: NumericSampleRing;
   chartEligible: boolean | null;
+  statusHistory?: NumericSampleRing;
+  lastStatusCode?: number;
+  lastStatusText?: string;
 };
 
 function getBindingRuntime(id: string): BindingRuntime {
@@ -963,10 +1159,65 @@ function syncBindingChartUi(id: string, rt: BindingRuntime): void {
     ...bindingChartUiMap.value,
     [id]: { show, samples: show ? rt.history.toArray() : [] },
   };
+  bindingStatusSamplesMap.value = {
+    ...bindingStatusSamplesMap.value,
+    [id]: rt.statusHistory ? rt.statusHistory.toArray() : [],
+  };
 }
 
 function bindingChartUi(id: string): BindingChartUi | undefined {
   return bindingChartUiMap.value[id];
+}
+
+function bindingStatusChartSamples(id: string): number[] {
+  return bindingStatusSamplesMap.value[id] || [];
+}
+
+function bindingLiveStatusText(id: string): string {
+  const rt = getBindingRuntime(id);
+  const code = rt.lastStatusCode ?? 2;
+  const text = rt.lastStatusText || autoExportStatusLabel(code);
+  return `${text}（${code}）`;
+}
+
+function ensureBindingFeedback(binding: AutoTriggerBinding): ExportResultOpcFeedback {
+  if (!binding.exportResultOpc) {
+    binding.exportResultOpc = defaultBindingExportResultOpcFeedback();
+  }
+  binding.exportResultOpc.statusKind = "int";
+  return binding.exportResultOpc;
+}
+
+function isBindingFeedbackExpanded(bindingId: string): boolean {
+  return Boolean(bindingFeedbackExpanded.value[bindingId]);
+}
+
+function toggleBindingFeedbackExpanded(bindingId: string): void {
+  bindingFeedbackExpanded.value = {
+    ...bindingFeedbackExpanded.value,
+    [bindingId]: !bindingFeedbackExpanded.value[bindingId],
+  };
+}
+
+function onMaxParallelChange(): void {
+  prefs.value.auto.maxParallelExports = clampAutoExportMaxParallel(prefs.value.auto.maxParallelExports);
+  notifyReportAutoExportSettingsChanged();
+}
+
+function openBindingFeedbackPick(bindingId: string, field: "status" | "message" | "path"): void {
+  openRgOpcPick(`bindFb:${bindingId}:${field}`);
+}
+
+async function testBindingFeedbackWrite(binding: AutoTriggerBinding): Promise<void> {
+  const fb = ensureBindingFeedback(binding);
+  const res = await testWriteExportResultToOpcua(fb);
+  if (res.ok) {
+    autoStatus.value = `${RG_STATUS_FEEDBACK} 绑定「${bindingDisplayLabel(binding, prefs.value.auto.bindings.indexOf(binding))}」测试写回成功`;
+    showAppToast(`本路写回测试成功：${res.written.join("、")}`, { tone: "ok", durationMs: 6000 });
+  } else {
+    autoStatus.value = `${RG_STATUS_FEEDBACK} 测试写回失败：${res.errors.join("；")}`;
+    showAppToast(`本路写回测试失败\n${res.errors.join("\n")}`, { tone: "err", durationMs: 10000 });
+  }
 }
 
 /**
@@ -1025,6 +1276,13 @@ function pruneBindingRuntime(): void {
       bindingChartUiMap.value = next;
     }
   }
+  for (const key of Object.keys(bindingStatusSamplesMap.value)) {
+    if (!ids.has(key)) {
+      const next = { ...bindingStatusSamplesMap.value };
+      delete next[key];
+      bindingStatusSamplesMap.value = next;
+    }
+  }
 }
 
 watch(
@@ -1056,7 +1314,11 @@ function addAutoTriggerBinding(): void {
   const templateId = prefs.value.templateId;
   prefs.value.auto.bindings = [
     ...prev,
-    createAutoTriggerBinding({ serverId, templateId: templateId || null }),
+    createAutoTriggerBinding({
+      serverId,
+      templateId: templateId || null,
+      exportResultOpc: defaultBindingExportResultOpcFeedback(),
+    }),
   ];
 }
 
@@ -1065,6 +1327,12 @@ function removeAutoTriggerBinding(id: string): void {
   const next = { ...bindingChartUiMap.value };
   delete next[id];
   bindingChartUiMap.value = next;
+  const statusNext = { ...bindingStatusSamplesMap.value };
+  delete statusNext[id];
+  bindingStatusSamplesMap.value = statusNext;
+  const fbNext = { ...bindingFeedbackExpanded.value };
+  delete fbNext[id];
+  bindingFeedbackExpanded.value = fbNext;
   notifyReportAutoExportSettingsChanged();
 }
 
@@ -1358,6 +1626,9 @@ function resolveRgOpcPickDataTypeFilter(target: RgOpcPickTarget | null): string 
     return "String";
   }
   if (target === "feedbackStatus") return exportResultOpcStatusTypeFilter();
+  const bf = parseBindingFeedbackPick(target);
+  if (bf?.field === "status") return "Int";
+  if (bf?.field === "message" || bf?.field === "path") return "String";
   if (target === "heartbeat") {
     const m = heartbeatCfg.value.mode;
     if (m === "counter") return "Int";
@@ -1417,6 +1688,52 @@ async function onRgOpcPickConfirm(payload: RgOpcPickConfirmPayload) {
     if (sid) b.serverId = sid;
     b.nodeId = nid;
     getBindingRuntime(triggerBindId).poll = createOpcTriggerPollState();
+    finishRgOpcPickSuccess();
+    return;
+  }
+
+  const bindFb = parseBindingFeedbackPick(target);
+  if (bindFb) {
+    const b = findAutoTriggerBinding(bindFb.bindingId);
+    if (!b || !sid) {
+      finishRgOpcPickSuccess();
+      return;
+    }
+    const fb = ensureBindingFeedback(b);
+    if (bindFb.field === "status") {
+      const check = await readSavedOpcNodeValue(sid, nid);
+      if (!check.ok) {
+        autoStatus.value = `${RG_STATUS_FEEDBACK} ${check.message || "读取节点失败"}`;
+        return;
+      }
+      const dt = check.dataType || "";
+      if (dt && !opcDataTypeLabelMatchesFilter(dt, "Int")) {
+        autoStatus.value = `${RG_STATUS_FEEDBACK} 本路状态需要 Int，当前为 ${dt}`;
+        return;
+      }
+      fb.serverId = sid;
+      fb.statusNodeId = nid;
+      fb.statusNodeLabel = nodeLabel;
+      fb.statusKind = "int";
+      autoStatus.value = `${RG_STATUS_FEEDBACK} 已绑定本路 INT 状态`;
+      finishRgOpcPickSuccess();
+      return;
+    }
+    const check = await readSavedOpcStringValue(sid, nid);
+    if (!check.ok) {
+      autoStatus.value = `${RG_STATUS_FEEDBACK} ${check.message || "所选节点不是 String 类型"}`;
+      return;
+    }
+    fb.serverId = sid;
+    if (bindFb.field === "message") {
+      fb.messageNodeId = nid;
+      fb.messageNodeLabel = nodeLabel;
+      autoStatus.value = `${RG_STATUS_FEEDBACK} 已绑定本路信息节点`;
+    } else {
+      fb.filePathNodeId = nid;
+      fb.filePathNodeLabel = nodeLabel;
+      autoStatus.value = `${RG_STATUS_FEEDBACK} 已绑定本路路径节点`;
+    }
     finishRgOpcPickSuccess();
     return;
   }
@@ -2049,6 +2366,30 @@ onUnmounted(() => {
 .rg-mini--bindings-hint {
   margin-top: 4px;
   margin-bottom: 0;
+}
+.rg-binding-live-status {
+  margin: 0;
+  padding: 6px 10px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--accent, #2563eb) 10%, #f4f4f5);
+  font-size: 13px;
+  font-weight: 600;
+  color: #18181b;
+}
+.rg-binding-feedback {
+  border-top: 1px dashed #e4e4e7;
+  padding-top: 8px;
+}
+.rg-binding-feedback-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.rg-binding-feedback-body {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 .rg-binding-chart .rg-lbl {
   display: block;

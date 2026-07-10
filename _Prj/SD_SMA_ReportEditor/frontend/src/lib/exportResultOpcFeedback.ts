@@ -15,6 +15,11 @@ export type ExportResultWritePayload = {
   filePath?: string;
   filePaths?: string[];
   fileName?: string;
+  /**
+   * 显式 INT 状态码（自动结批阶段/终态）。
+   * 若提供且 statusKind===int，优先写入此码；否则仍用 success→1/0。
+   */
+  statusCode?: number;
 };
 
 /** 写回 PLC「信息」节点时的导出场景（批次结束自动导出 vs 手动模拟结批） */
@@ -176,9 +181,20 @@ export async function writeExportResultToOpcua(
 
   const serverId = writeCtx.serverId;
   const errors: string[] = [];
-  const statusVal =
-    feedback.statusKind === "int" ? (payload.success ? 1 : 0) : payload.success;
-  const msgText = buildExportResultPlcMessage(payload, context);
+  let statusVal: boolean | number;
+  if (feedback.statusKind === "int") {
+    if (typeof payload.statusCode === "number" && Number.isFinite(payload.statusCode)) {
+      statusVal = Math.floor(payload.statusCode);
+    } else {
+      statusVal = payload.success ? 1 : 0;
+    }
+  } else {
+    statusVal = payload.success;
+  }
+  const msgText =
+    typeof payload.statusCode === "number" && payload.message
+      ? truncateMessage(payload.message, feedback.messageMaxLen)
+      : buildExportResultPlcMessage(payload, context);
   const pathText = payload.success ? (payload.filePath || "").trim() : "";
 
   if (feedback.statusNodeId.trim()) {
