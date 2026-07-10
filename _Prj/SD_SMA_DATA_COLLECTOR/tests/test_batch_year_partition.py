@@ -212,6 +212,78 @@ class TestBatchYearPartition(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(processor.get_queue_size(), 0)
         self.assertIsNone(processor.current_batch_context)
 
+    async def test_master_open_flushes_all_groups_even_when_under_batch_size(self):
+        processor, db_manager = self.make_processor()
+        processor.initialize_tables_for_runtime()
+        db_manager.execute_insert.reset_mock()
+
+        processor.add_data(collection_item("BatchData", batch_no="B002", value=20))
+        self.assertFalse(processor._has_enough_data_for_batch())
+        processor.add_data(
+            collection_item(
+                "BatchHeader",
+                batch_no="B002",
+                start_time=datetime(2026, 2, 1, 8, 0, 0),
+            )
+        )
+
+        self.assertTrue(processor._has_enough_data_for_batch())
+        await processor._process_data_by_groups()
+
+        inserted_tables = [call.args[0] for call in db_manager.execute_insert.call_args_list]
+        self.assertEqual(inserted_tables, ["BatchHeader", "BatchData_y2026_span1"])
+        self.assertEqual(processor.get_queue_size(), 0)
+        self.assertEqual(processor.current_batch_context["batch_no"], "B002")
+
+    async def test_rejected_master_open_still_flushes_non_partitioned_detail(self):
+        processor, db_manager = self.make_processor()
+        processor.group_partition_interval_years["BatchData"] = 0
+        processor.initialize_tables_for_runtime()
+        db_manager.record_exists.return_value = True
+        db_manager.execute_insert.reset_mock()
+
+        processor.add_data(collection_item("BatchData", batch_no="B003", value=30))
+        processor.add_data(
+            collection_item(
+                "BatchHeader",
+                batch_no="B003",
+                start_time=datetime(2026, 3, 1, 8, 0, 0),
+            )
+        )
+        await processor._process_data_by_groups()
+
+        inserted_tables = [call.args[0] for call in db_manager.execute_insert.call_args_list]
+        self.assertEqual(inserted_tables, ["BatchData"])
+        self.assertEqual(processor.get_queue_size(), 0)
+
+    async def test_rejected_master_close_still_flushes_all_groups(self):
+        processor, db_manager = self.make_processor()
+        processor.initialize_tables_for_runtime()
+        await processor._process_group_data(
+            "BatchHeader",
+            [collection_item("BatchHeader", start_time=datetime(2026, 4, 1, 8, 0, 0))],
+        )
+        processor.data_queue.clear()
+        db_manager.record_exists.return_value = True
+        db_manager.execute_update.return_value = 0
+        db_manager.execute_insert.reset_mock()
+
+        processor.add_data(collection_item("BatchData", batch_no="B001", value=40))
+        processor.add_data(
+            collection_item(
+                "BatchHeader",
+                batch_no="B001",
+                start_time=datetime(2026, 4, 1, 8, 0, 0),
+                end_time=datetime(2026, 4, 1, 9, 0, 0),
+            )
+        )
+        await processor._process_data_by_groups()
+
+        inserted_tables = [call.args[0] for call in db_manager.execute_insert.call_args_list]
+        self.assertEqual(inserted_tables, ["BatchData_y2026_span1"])
+        self.assertEqual(processor.get_queue_size(), 0)
+        self.assertIsNotNone(processor.current_batch_context)
+
     async def test_batch_upsert_enabled_uses_fixed_table_name(self):
         processor, db_manager = self.make_processor()
         processor.initialize_tables_for_runtime()

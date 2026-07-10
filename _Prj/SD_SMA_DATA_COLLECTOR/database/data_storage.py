@@ -78,7 +78,9 @@ class DataStorageProcessor:
         
         group_name = collection_data.get('group_name')
         if group_name is not None:
-            if self._is_batch_close_record(collection_data):
+            # 批次主表的任何一次触发（开批、结批或后续被数据库拒绝）
+            # 都必须立即唤醒处理循环，以便强制刷写当前队列快照。
+            if self._is_batch_master_record(collection_data):
                 ev = self._batch_ready_event
                 if ev is not None and not ev.is_set():
                     ev.set()
@@ -311,7 +313,7 @@ class DataStorageProcessor:
         temp_queue = list(self.data_queue)
         
         for data_item in temp_queue:
-            if self._is_batch_close_record(data_item):
+            if self._is_batch_master_record(data_item):
                 return True
 
             group_name = data_item['group_name']
@@ -342,8 +344,16 @@ class DataStorageProcessor:
         for data_item in temp_queue:
             group_name = data_item['group_name']
             group_counts[group_name] = group_counts.get(group_name, 0) + 1
-            if self._is_batch_close_record(data_item):
+            if self._is_batch_master_record(data_item):
                 force_flush_all = True
+
+        if force_flush_all:
+            self.logger.info(
+                "批次主表触发全队列立即写入: master_group=%s, queue_size=%s, group_counts=%s",
+                self.batch_master_group_name,
+                len(temp_queue),
+                group_counts,
+            )
         
         # 分离可处理和不可处理的数据
         for data_item in temp_queue:
@@ -770,6 +780,14 @@ class DataStorageProcessor:
         if start_time and end_time:
             return end_time > start_time
         return True
+
+    def _is_batch_master_record(self, collection_data: Dict[str, Any]) -> bool:
+        """判断记录是否来自已配置的批次主表，不区分开批、结批或处理结果。"""
+        group_name = collection_data.get('group_name')
+        return bool(
+            self.batch_master_group_name
+            and group_name == self.batch_master_group_name
+        )
 
     def _get_table_name_for_data_item(self, group_name: str, collection_data: Dict[str, Any]) -> str:
         if group_name == self.batch_master_group_name:
