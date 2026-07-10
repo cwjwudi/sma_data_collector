@@ -6,18 +6,19 @@
  *
  * 流程（顺序执行，右下角弹窗实时显示当前步骤与进度）：
  * 1. 等待后端服务就绪（首启 PyInstaller 后端需要数秒，期间显示已等待秒数）；
- * 2. 版式库 → 模版（含缩略图所需完整数据）→ 签名摘要，逐项真实加载，失败自动重试；
+ * 2. 版式库 → 模版摘要 → 签名摘要，逐项真实加载，失败自动重试；
+ *    （缩略图完整 JSON 改由模版管理页按当前页渐进加载，避免模版很多时启动卡顿）
  * 3. 全部真正加载成功后才显示「已就绪」；失败则如实提示，不假装就绪。
  */
-import { listTemplatesFull } from "@/api/templates";
+import { listTemplateSummaries } from "@/api/templates";
 import { resolveApiHref } from "@/api/apiBase.js";
 import {
   ensureLayoutPresetsLoaded,
   isLayoutsOffline,
 } from "@/lib/report-template/layout-registry";
 import { ensureSignatureSummaries } from "@/lib/signature-registry";
-import { stripStaleOptionalSheetZones } from "@/lib/report-template/layout-apply";
 import {
+  getCachedTemplateFullMap,
   hasTemplateViewCache,
   saveTemplateViewCache,
 } from "@/lib/report-template/template-view-cache";
@@ -94,29 +95,13 @@ async function warmLayoutPresets(): Promise<boolean> {
 }
 
 /**
- * 模版：拉取完整数据（含缩略图渲染所需内容），而不仅是摘要——
- * 否则「模版管理」页首次进入仍要逐张加载缩略图，与「已就绪」提示不符。
+ * 模版：只预热摘要列表（轻量）。
+ * 完整 JSON / 缩略图改由「模版管理」按当前页渐进加载，避免模版很多时启动与进页卡死。
  */
 async function warmTemplates(): Promise<boolean> {
-  if (!hasTemplateViewCache()) {
-    const full = await listTemplatesFull();
-    for (const t of full) {
-      // 与模版管理页 hydrateThumbs 相同的规整，保证缩略图可直接渲染
-      stripStaleOptionalSheetZones(t, "cover");
-      stripStaleOptionalSheetZones(t, "back");
-    }
-    const summaries = full.map((t) => ({
-      id: t.id,
-      name: t.name,
-      updatedAt: t.updatedAt,
-      paperKind: t.paperKind,
-      orientation: t.orientation,
-    }));
-    saveTemplateViewCache(
-      summaries,
-      Object.fromEntries(full.map((t) => [t.id, t])),
-    );
-  }
+  if (hasTemplateViewCache()) return true;
+  const summaries = await listTemplateSummaries();
+  saveTemplateViewCache(summaries, getCachedTemplateFullMap());
   return true;
 }
 

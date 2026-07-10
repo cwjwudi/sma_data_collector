@@ -1,15 +1,15 @@
 {
-  "version": "0.2.22",
-  "releasedAt": "2026-07-09T20:14:04.565Z",
-  "notes": "Report Editor 0.2.22\n\n- 模版编辑与版式编辑：支持复制 / 剪切 / 粘贴 / 撤销 / 重做（顶栏按钮 + Ctrl/⌘+C/X/V/Z/Y）\n- 粘贴保留控件全部属性配置（绑定、SQL、样式、表格字段等），偏移落点便于复用提速\n- 继承 0.2.21：纵表增行贴合与末行裁切修复",
+  "version": "0.2.23",
+  "releasedAt": "2026-07-10T02:33:06.805Z",
+  "notes": "Report Editor 0.2.23\n\n- 模版管理：客户端分页（每页 20），翻页立刻切换，只渲染当前页\n- 缩略图按本页渐进加载（加载几个显示几个），不再一次拉全量完整模版\n- 启动预热改为只预取模版摘要，模版很多时进页更快\n- 继承 0.2.22：模版/版式复制粘贴剪切与撤销重做",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor-Setup-0.2.22-x64.exe",
-      "sha256": "8662b7c7a77896148beebaa03da12f88674733f631e53b7b33fe8e8202de48e4",
-      "size": 144412351
+      "url": "Report Editor-Setup-0.2.23-x64.exe",
+      "sha256": "cba72a93faafbffe2930a5ea3716c802a72c5c8db3385a6f42e7d53426b42933",
+      "size": 144412584
     },
     "darwin-arm64": {
-      "url": "Report Editor-0.2.22-arm64.dmg",
+      "url": "Report Editor-0.2.23-arm64.dmg",
       "sha256": "",
       "size": 0
     }

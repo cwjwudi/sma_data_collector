@@ -37,7 +37,7 @@
           <td colspan="5" class="empty">暂无模版</td>
         </tr>
         <tr
-          v-for="r in rows"
+          v-for="r in pagedRows"
           :key="r.id"
           :class="{
             'tr--hl': highlightId === r.id,
@@ -144,7 +144,7 @@
     <p v-else-if="mode === 'thumbs' && !rows.length" class="empty">暂无模版</p>
     <div v-else-if="mode === 'thumbs'" class="grid">
       <div
-        v-for="r in rows"
+        v-for="r in pagedRows"
         :key="'g' + r.id"
         :ref="(el) => setCardRef(r.id, el)"
         class="card"
@@ -391,6 +391,39 @@
         </div>
       </div>
     </div>
+
+    <nav v-if="rows.length > PAGE_SIZE" class="tm-pager" aria-label="模版列表分页">
+      <button type="button" class="b tm-pager-btn" :disabled="pageIndex <= 0" @click="goPage(pageIndex - 1)">
+        上一页
+      </button>
+      <span class="tm-pager-info">
+        第 {{ pageIndex + 1 }} / {{ totalPages }} 页 · 本页 {{ pagedRows.length }} / 共 {{ rows.length }} 个
+      </span>
+      <button
+        type="button"
+        class="b tm-pager-btn"
+        :disabled="pageIndex >= totalPages - 1"
+        @click="goPage(pageIndex + 1)"
+      >
+        下一页
+      </button>
+      <label class="tm-pager-jump">
+        跳至
+        <input
+          v-model.number="pageJumpDraft"
+          type="number"
+          min="1"
+          :max="totalPages"
+          class="tm-pager-inp"
+          @keydown.enter.prevent="commitPageJump"
+        />
+        页
+        <button type="button" class="b tm-pager-btn" @click="commitPageJump">确定</button>
+      </label>
+    </nav>
+    <p v-if="mode === 'thumbs' && thumbsLoadingPage" class="tm-pager-loading">
+      正在加载本页预览（已就绪 {{ pageThumbReadyCount }} / {{ pagedRows.length }}）…
+    </p>
 
     <div v-if="dupDlg" class="tm-dup-backdrop" @click.self="closeDupDlg">
       <div class="tm-dup-modal" role="dialog" aria-modal="true" aria-labelledby="tm-dup-title">
@@ -682,6 +715,50 @@ const rows = computed(() =>
   })),
 );
 
+/** 每页条数：翻页立刻切页，只渲染当前页，缩略图也只按本页渐进加载 */
+const PAGE_SIZE = 20;
+const pageIndex = ref(0);
+const pageJumpDraft = ref(1);
+const thumbsLoadingPage = ref(false);
+
+const totalPages = computed(() => Math.max(1, Math.ceil(rows.value.length / PAGE_SIZE)));
+
+const pagedRows = computed(() => {
+  const start = pageIndex.value * PAGE_SIZE;
+  return rows.value.slice(start, start + PAGE_SIZE);
+});
+
+const pageThumbReadyCount = computed(() =>
+  pagedRows.value.reduce((n, r) => n + (cache.value[r.id] ? 1 : 0), 0),
+);
+
+function clampPageIndex(i) {
+  const max = Math.max(0, totalPages.value - 1);
+  return Math.max(0, Math.min(max, Math.floor(Number(i)) || 0));
+}
+
+function goPage(i) {
+  const next = clampPageIndex(i);
+  if (next === pageIndex.value) return;
+  pageIndex.value = next;
+  pageJumpDraft.value = next + 1;
+  // 翻页立刻切 UI；缩略图后台按本页加载，不阻塞
+  if (mode.value === "thumbs") void refreshThumbsView({ pageOnly: true });
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+function commitPageJump() {
+  goPage((Number(pageJumpDraft.value) || 1) - 1);
+}
+
+watch(
+  () => rows.value.length,
+  () => {
+    pageIndex.value = clampPageIndex(pageIndex.value);
+    pageJumpDraft.value = pageIndex.value + 1;
+  },
+);
+
 function markThumbFailed(id, on) {
   const s = new Set(thumbFailed.value);
   if (on) s.add(id);
@@ -720,50 +797,37 @@ async function load() {
 
 const THUMB_FETCH_CONCURRENCY = 4;
 
-async function hydrateThumbs() {
+/**
+ * 按需加载缩略图完整模版。
+ * @param {{ ids?: string[] }} [opts] 不传则按当前页 id；传 ids 则只拉这些
+ */
+async function hydrateThumbs(opts = {}) {
   const token = beginLoad();
-  /** 已缓存且 updatedAt 未变的模板不再重复拉取（切页秒显示）；仅拉新增或已变更的 */
-  const pending = summaries.value
-    .filter((s) => {
-      const cached = cache.value[s.id];
-      if (!cached) return true;
-      return (cached.updatedAt || "") !== (s.updatedAt || "");
-    })
-    .map((s) => s.id);
+  const scopeIds =
+    Array.isArray(opts.ids) && opts.ids.length
+      ? opts.ids
+      : pagedRows.value.map((r) => r.id);
+  if (!scopeIds.length) return;
+
+  /** 已缓存且 updatedAt 未变的不再重复拉取；本页缺什么就拉什么，加载几个显示几个 */
+  const pending = scopeIds.filter((id) => {
+    const s = summaries.value.find((x) => x.id === id);
+    if (!s) return !cache.value[id];
+    const cached = cache.value[id];
+    if (!cached) return true;
+    return (cached.updatedAt || "") !== (s.updatedAt || "");
+  });
   if (!pending.length) return;
   for (const id of pending) markThumbFailed(id, false);
 
-  /**
-   * 首次进入（本地尚无任何缓存）且待加载较多时，用一次批量接口替代 N 次 GET，
-   * 显著减少 HTTP 往返；批量失败再回退到逐个并发拉取。
-   * 注：`getTemplate` / `listTemplatesFull` 返回的都是新解析出的对象，无需再深拷贝。
-   */
-  if (Object.keys(cache.value).length === 0 && pending.length > 1) {
-    try {
-      const all = await api.listTemplatesFull();
-      if (isLoadStale(token)) return;
-      const wanted = new Set(pending);
-      const next = { ...cache.value };
-      for (const t of all) {
-        if (!t || !wanted.has(t.id)) continue;
-        normalizeOptionalSheetsForList(t);
-        next[t.id] = t;
-        markThumbFailed(t.id, false);
-      }
-      cache.value = next;
-      return;
-    } catch {
-      if (isLoadStale(token)) return;
-      /* 回退到逐个拉取 */
-    }
-  }
-
+  // 不再走 /templates/full 全量包：模版多时会卡住整页；改为按本页并发渐进写入 cache
   await mapPool(pending, THUMB_FETCH_CONCURRENCY, async (id) => {
     if (isLoadStale(token)) return;
     try {
       const t = await api.getTemplate(id);
       if (isLoadStale(token)) return;
       normalizeOptionalSheetsForList(t);
+      resyncOneCachedTemplate(t);
       cache.value = { ...cache.value, [id]: t };
       markThumbFailed(id, false);
     } catch {
@@ -780,6 +844,7 @@ async function retryThumb(id) {
     const t = await api.getTemplate(id);
     if (isLoadStale(token)) return;
     normalizeOptionalSheetsForList(t);
+    resyncOneCachedTemplate(t);
     cache.value = { ...cache.value, [id]: t };
   } catch {
     if (isLoadStale(token)) return;
@@ -787,20 +852,32 @@ async function retryThumb(id) {
   }
 }
 
-async function refreshThumbsView() {
-  await loadPresets();
-  if (!offline.value) await hydrateThumbs();
-  else {
-    const local = loadLocal();
-    cache.value = Object.fromEntries(
-      local.map((t) => {
+/**
+ * @param {{ pageOnly?: boolean }} [opts]
+ * pageOnly=true：只刷新当前页预览（翻页/进入用）；不阻塞 UI
+ */
+async function refreshThumbsView(opts = {}) {
+  thumbsLoadingPage.value = true;
+  try {
+    await loadPresets();
+    if (!offline.value) {
+      await hydrateThumbs({ ids: pagedRows.value.map((r) => r.id) });
+    } else {
+      const local = loadLocal();
+      const pageIds = new Set(pagedRows.value.map((r) => r.id));
+      const next = { ...cache.value };
+      for (const t of local) {
+        if (!pageIds.has(t.id)) continue;
         normalizeOptionalSheetsForList(t);
-        return [t.id, t];
-      }),
-    );
-    thumbFailed.value = new Set();
+        resyncOneCachedTemplate(t);
+        next[t.id] = t;
+      }
+      cache.value = next;
+      thumbFailed.value = new Set();
+    }
+  } finally {
+    thumbsLoadingPage.value = false;
   }
-  resyncAllCachedTemplates();
 }
 
 async function loadPresets() {
@@ -815,20 +892,14 @@ async function loadPresets() {
   }
 }
 
-/** 缩略图缓存中的模版：按绑定 ID 拉齐版式库最新快照（仅内存，不写服务器） */
-function resyncAllCachedTemplates() {
+/** 单份模版：按绑定 ID 拉齐版式库最新快照（仅内存） */
+function resyncOneCachedTemplate(t) {
   const presets = layoutPresetsAll.value;
-  if (!presets.length) return;
-  for (const id of Object.keys(cache.value)) {
-    const t = cache.value[id];
-    if (t && typeof t === "object") {
-      // 先把旧数据装饰层里的表格提升为画布控件，重同步时才不会把它们连同装饰层一起丢掉
-      liftZoneTablesToSheetCanvas(t);
-      resyncTemplateBoundPresets(t, presets);
-      normalizeOptionalSheetsForList(t);
-      reclampTemplate(t);
-    }
-  }
+  if (!t || typeof t !== "object" || !presets.length) return;
+  liftZoneTablesToSheetCanvas(t);
+  resyncTemplateBoundPresets(t, presets);
+  normalizeOptionalSheetsForList(t);
+  reclampTemplate(t);
 }
 
 /** @param {import('@/lib/report-template/model').ReportTemplate} t */
@@ -1000,9 +1071,10 @@ async function commitRename(id) {
 
 watch(
   () => mode.value,
-  async (m) => {
+  (m) => {
     if (m !== "thumbs") return;
-    await refreshThumbsView();
+    // 切到缩略图：立刻显示本页卡片骨架，预览后台按页加载
+    void refreshThumbsView({ pageOnly: true });
   },
 );
 
@@ -1058,6 +1130,15 @@ function flashHighlight(id) {
 }
 
 async function scrollToTemplateCard(id) {
+  const ix = rows.value.findIndex((r) => r.id === id);
+  if (ix >= 0) {
+    const targetPage = Math.floor(ix / PAGE_SIZE);
+    if (targetPage !== pageIndex.value) {
+      pageIndex.value = targetPage;
+      pageJumpDraft.value = targetPage + 1;
+      if (mode.value === "thumbs") void refreshThumbsView({ pageOnly: true });
+    }
+  }
   await nextTick();
   if (mode.value === "thumbs") {
     document.getElementById(`tm-card-${id}`)?.scrollIntoView({ behavior: "smooth", block: "nearest" });
@@ -1161,7 +1242,8 @@ async function created(t) {
 async function enterView() {
   await load();
   if (mode.value === "thumbs") {
-    await refreshThumbsView();
+    // 不 await 全量：摘要到了立刻显示本页，预览按页后台补齐
+    void refreshThumbsView({ pageOnly: true });
   }
 }
 
@@ -1216,6 +1298,48 @@ onUnmounted(() => {
 .tm {
   padding: 0 4px;
   touch-action: manipulation;
+}
+.tm-pager {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 14px 0 8px;
+  padding: 8px 4px;
+  border-top: 1px solid #e4e4e7;
+}
+.tm-pager-info {
+  font-size: 13px;
+  color: #52525b;
+}
+.tm-pager-btn {
+  margin-left: 0 !important;
+  min-height: 36px;
+  padding: 6px 12px;
+}
+.tm-pager-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.tm-pager-jump {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: #52525b;
+  margin-left: auto;
+}
+.tm-pager-inp {
+  width: 64px;
+  padding: 6px 8px;
+  border: 1px solid #d4d4d8;
+  border-radius: 6px;
+  font-size: 13px;
+}
+.tm-pager-loading {
+  margin: 0 4px 10px;
+  font-size: 12px;
+  color: #a16207;
 }
 .hdr {
   display: flex;
