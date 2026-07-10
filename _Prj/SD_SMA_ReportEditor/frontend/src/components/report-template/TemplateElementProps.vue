@@ -340,6 +340,22 @@
                   @opc-pick="openTableCellSqlParamOpcPicker"
                 />
               </template>
+              <label
+                v-if="activeTableCell.bindingKind === 'opcua' || activeTableCell.bindingKind === 'sql'"
+                class="lpep-lab"
+              >
+                小数位数（REAL）
+                <input
+                  :value="activeTableCell.decimalPlaces ?? ''"
+                  type="number"
+                  min="0"
+                  max="10"
+                  step="1"
+                  class="lpep-inp"
+                  placeholder="留空=不强制"
+                  @change="onActiveTableCellDecimalPlacesChange"
+                />
+              </label>
             </template>
             <p v-else class="lpep-hint-muted">
               数据库填充已开启：表格内容由查询填充，请勿在此编辑静态文字。可视化数据源时请在画布<strong>第一行</strong>下拉选择各列对应字段。
@@ -512,6 +528,7 @@ import {
 } from "@/lib/report-template/model";
 import { clearGridCellBindings, gridHasNonNoneBinding } from "@/lib/report-template/table-binding-utils";
 import { DATE_FORMAT_PRESETS } from "@/lib/report-template/layout-zone-element";
+import { normalizeDecimalPlaces } from "@/lib/report-template/numeric-display";
 import {
   applyTableColumnResizeDeltaPx,
   REPORT_TEMPLATE_TABLE_NODE_PADDING_PX,
@@ -674,6 +691,17 @@ function openTableCellSqlParamOpcPicker(slot: number) {
     slot,
   };
   opcPickOpen.value = true;
+}
+
+function onActiveTableCellDecimalPlacesChange(ev: Event): void {
+  const cell = activeTableCell.value;
+  if (!cell) return;
+  const raw = (ev.target as HTMLInputElement).value;
+  if (raw.trim() === "") {
+    cell.decimalPlaces = undefined;
+    return;
+  }
+  cell.decimalPlaces = normalizeDecimalPlaces(raw) ?? 0;
 }
 
 function onTplSqlFillSyncHeaders() {

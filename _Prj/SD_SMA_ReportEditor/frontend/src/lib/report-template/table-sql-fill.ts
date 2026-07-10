@@ -4,6 +4,7 @@
  */
 
 import { TEMPLATE_TABLE_MAX_COLS, TEMPLATE_TABLE_MAX_ROWS } from "@/lib/report-template/table-cell-metrics";
+import { normalizeDecimalPlaces } from "@/lib/report-template/numeric-display";
 
 export type TableSqlParamSource = "opcua" | "literal" | "batch_no";
 
@@ -147,6 +148,11 @@ export interface TableSqlFillConfig {
    * 空串时回退为字段名；空白分隔行左右皆空。
    */
   verticalFieldLabels?: string[];
+  /**
+   * 数据库填充结果中数值列的小数位数；未设则保持查询原样。
+   * 对可解析为有限数字的单元格生效（REAL/浮点）。
+   */
+  decimalPlaces?: number;
 }
 
 export function defaultSqlParam(): TableSqlParamBinding {
@@ -446,6 +452,7 @@ export function hydrateTableSqlFill(raw: unknown): TableSqlFillConfig {
   const columnRoles: TableSqlColumnRole[] = rolesIn.map((x) => normalizeTableSqlColumnRole(x));
   const labelsIn = Array.isArray(o.verticalFieldLabels) ? o.verticalFieldLabels : [];
   const verticalFieldLabels = labelsIn.map((x) => (typeof x === "string" ? x : String(x ?? "")));
+  const decimalPlaces = normalizeDecimalPlaces(o.decimalPlaces);
 
   // 旧模版无 columnRoles：有字段名 → field，空串 → blank
   if (!columnRoles.length && visualSource?.columns?.length && layoutMode === "horizontal") {
@@ -471,6 +478,7 @@ export function hydrateTableSqlFill(raw: unknown): TableSqlFillConfig {
     sequencePageMode,
     verticalMultiRecordMode,
     verticalFieldLabels,
+    decimalPlaces,
   };
   ensureMinTableSqlParamSlots(out, Math.max(2, out.params.length));
   if (layoutMode === "vertical" && visualSource) ensureVerticalFieldLabels(out);

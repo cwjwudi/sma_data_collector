@@ -117,6 +117,22 @@
         class="tbl-sql-text-inp tbl-sql-maxrows-num"
       />
     </label>
+    <label class="tbl-sql-fill-lab tbl-sql-fill-maxrows">
+      小数位数（REAL）
+      <input
+        :value="decimalPlacesInput"
+        type="number"
+        min="0"
+        max="10"
+        step="1"
+        class="tbl-sql-text-inp tbl-sql-maxrows-num"
+        placeholder="留空"
+        @change="onDecimalPlacesChange"
+      />
+    </label>
+    <p class="tbl-sql-fill-policy-hint">
+      对查询结果中可解析为数字的单元格生效；留空则按数据库原样显示。
+    </p>
     <label v-if="allowSplitReports" class="tbl-sql-fill-minichk">
       <input v-model="fill.splitReportsOnMaxRows" type="checkbox" />
       <span>超出最大数量自动分报表</span>
@@ -170,6 +186,7 @@ import {
   type TableSqlSequencePageMode,
   type TableSqlVerticalMultiRecordMode,
 } from "@/lib/report-template/table-sql-fill";
+import { normalizeDecimalPlaces } from "@/lib/report-template/numeric-display";
 import {
   applyTableSqlLayoutMode,
   syncVisualFillQueryAndResultNames,
@@ -256,6 +273,20 @@ const maxRowsProxy = computed({
     props.fill.maxRows = clampTableSqlMaxRows(v);
   },
 });
+
+const decimalPlacesInput = computed(() => {
+  const n = normalizeDecimalPlaces(props.fill.decimalPlaces);
+  return n === undefined ? "" : String(n);
+});
+
+function onDecimalPlacesChange(ev: Event): void {
+  const raw = (ev.target as HTMLInputElement).value;
+  if (raw.trim() === "") {
+    props.fill.decimalPlaces = undefined;
+    return;
+  }
+  props.fill.decimalPlaces = normalizeDecimalPlaces(raw) ?? 0;
+}
 
 watch(
   () => [props.fill.enabled, props.fill.fillMode] as const,

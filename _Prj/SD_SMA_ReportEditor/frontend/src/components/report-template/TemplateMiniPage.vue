@@ -293,6 +293,7 @@ import {
   formatLayoutDate,
 } from "@/lib/report-template/layout-zone-element";
 import {
+  applyDecimalPlacesToDisplayText,
   cellKey,
   chartKey,
   paramKey,
@@ -753,6 +754,7 @@ function previewZoneInlineText(el: LayoutZoneElement): string | null {
       bindingKind: el.bindingKind,
       text: el.text,
       nullDisplayMode: el.nullDisplayMode,
+      decimalPlaces: el.decimalPlaces,
       previewCell: hit,
       loading: false,
     });
@@ -851,7 +853,7 @@ function previewZoneTableCellText(el: LayoutZoneElement, ri: number, ci: number)
   }
 
   const text = bindingText(zoneCellKey(el.id, ri, ci));
-  if (text != null) return text;
+  if (text != null) return applyDecimalPlacesToDisplayText(text, cell?.decimalPlaces);
   if ((cell?.bindingKind === "opcua" || cell?.bindingKind === "sql") && bindingPreview?.loading.value) {
     return "...";
   }
@@ -922,7 +924,8 @@ function previewTableCellText(el: TemplateElement, ri: number, ci: number): stri
   }
 
   const key = cellKey(el.id, ri, ci);
-  if (vals?.[key]?.text) return vals[key].text;
+  const hit = vals?.[key];
+  if (hit != null) return applyDecimalPlacesToDisplayText(hit.text, cell?.decimalPlaces);
   if ((cell?.bindingKind === "opcua" || cell?.bindingKind === "sql") && bindingPreview?.loading.value) {
     return "…";
   }
@@ -938,6 +941,7 @@ function previewParameterText(el: TemplateElement): string {
         bindingKind: el.bindingKind,
         text: el.text,
         nullDisplayMode: el.nullDisplayMode,
+        decimalPlaces: el.decimalPlaces,
         previewCell: hit,
         loading: false,
       });
@@ -946,6 +950,7 @@ function previewParameterText(el: TemplateElement): string {
       bindingKind: el.bindingKind,
       text: el.text,
       nullDisplayMode: el.nullDisplayMode,
+      decimalPlaces: el.decimalPlaces,
       previewCell: undefined,
       loading: !!bindingPreview?.loading.value,
     });

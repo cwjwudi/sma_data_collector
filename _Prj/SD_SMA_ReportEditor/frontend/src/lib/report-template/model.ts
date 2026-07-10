@@ -31,6 +31,8 @@ export interface TemplateTableCell {
   scalarSqlVisual?: ScalarSqlVisualConfig | null;
   /** 单元格填充色；transparent 或未设则继承列/表格默认 */
   bgColor?: string;
+  /** REAL/浮点显示小数位数；未设则保持原样 */
+  decimalPlaces?: number;
 }
 
 import type { LayoutSnapshot } from "./layout-model";
@@ -54,6 +56,7 @@ import {
   ensureTableColBgColors,
   hydrateTableColBgColors,
   normalizeNullDisplayMode,
+  normalizeDecimalPlaces,
   type LayoutZoneElement,
 } from "./layout-zone-element";
 import {
@@ -118,6 +121,8 @@ export interface TemplateElement {
   scalarSqlVisual?: ScalarSqlVisualConfig | null;
   /** 绑定为空时：空白 / 「空值」/ 手填默认文案 */
   nullDisplayMode?: NullDisplayMode;
+  /** REAL/浮点显示小数位数；未设则保持原样 */
+  decimalPlaces?: number;
   /** 简易图表类型预览 */
   chartKind: "line" | "bar";
   /** 电子签名：签署人显示名 */
@@ -261,6 +266,7 @@ export function hydrateTableCell(raw: Partial<TemplateTableCell> | undefined): T
     scalarSqlFillMode: rawMode != null ? normalizeScalarSqlFillMode(rawMode, sqlText) : undefined,
     scalarSqlVisual: rawVisual != null ? hydrateScalarSqlVisual(rawVisual) : undefined,
     bgColor: typeof raw.bgColor === "string" ? raw.bgColor : d.bgColor,
+    decimalPlaces: normalizeDecimalPlaces((raw as { decimalPlaces?: unknown }).decimalPlaces),
   };
 }
 
@@ -627,6 +633,10 @@ export function hydrateTemplateElement(raw: Partial<TemplateElement>): TemplateE
       type === "parameter"
         ? normalizeNullDisplayMode((raw as { nullDisplayMode?: unknown }).nullDisplayMode)
         : undefined,
+    decimalPlaces:
+      type === "parameter"
+        ? normalizeDecimalPlaces((raw as { decimalPlaces?: unknown }).decimalPlaces)
+        : undefined,
     chartKind: normalizeChartKind(raw.chartKind),
     signerLabel:
       typeof raw.signerLabel === "string" ? raw.signerLabel : d.signerLabel,
@@ -689,6 +699,7 @@ export function hydrateTemplateElement(raw: Partial<TemplateElement>): TemplateE
   }
   if (type !== "parameter") {
     delete merged.nullDisplayMode;
+    delete merged.decimalPlaces;
   }
   if (type === "signature") {
     merged.signatureDisplayMode = normalizeSignatureDisplayMode(

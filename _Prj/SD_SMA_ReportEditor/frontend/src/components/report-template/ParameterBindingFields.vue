@@ -81,6 +81,20 @@
           spellcheck="false"
         />
       </label>
+      <label class="lpep-lab">
+        小数位数（REAL）
+        <input
+          :value="decimalPlacesInput"
+          type="number"
+          min="0"
+          max="10"
+          step="1"
+          class="lpep-inp"
+          placeholder="留空=不强制"
+          @change="onDecimalPlacesChange"
+        />
+      </label>
+      <p class="lpep-hint-muted">仅对可解析为数字的读数生效（如 OPC REAL / 数据库浮点）；留空则按原样显示。</p>
     </div>
   </div>
 </template>
@@ -91,6 +105,7 @@ import ScalarSqlParamBindingsEditor from "@/components/report-template/ScalarSql
 import ScalarSqlQueryBuilder from "@/components/report-template/ScalarSqlQueryBuilder.vue";
 import type { NullDisplayMode } from "@/lib/report-template/layout-zone-element";
 import { normalizeNullDisplayMode } from "@/lib/report-template/layout-zone-element";
+import { DECIMAL_PLACES_MAX, normalizeDecimalPlaces } from "@/lib/report-template/numeric-display";
 import {
   hydrateScalarSqlVisual,
   normalizeScalarSqlFillMode,
@@ -110,6 +125,7 @@ export type ParameterBindingElement = {
   sqlParams: TableSqlParamBinding[];
   text: string;
   nullDisplayMode?: NullDisplayMode;
+  decimalPlaces?: number;
   scalarSqlFillMode?: ScalarSqlFillMode;
   scalarSqlVisual?: ScalarSqlVisualConfig | null;
 };
@@ -129,6 +145,23 @@ const nullMode = computed({
     props.el.nullDisplayMode = v;
   },
 });
+
+const decimalPlacesInput = computed(() => {
+  const n = normalizeDecimalPlaces(props.el.decimalPlaces);
+  return n === undefined ? "" : String(n);
+});
+
+function onDecimalPlacesChange(ev: Event): void {
+  const raw = (ev.target as HTMLInputElement).value;
+  if (raw.trim() === "") {
+    props.el.decimalPlaces = undefined;
+    return;
+  }
+  props.el.decimalPlaces = normalizeDecimalPlaces(raw) ?? 0;
+  if ((props.el.decimalPlaces ?? 0) > DECIMAL_PLACES_MAX) {
+    props.el.decimalPlaces = DECIMAL_PLACES_MAX;
+  }
+}
 
 const scalarFillMode = computed({
   get: () => normalizeScalarSqlFillMode(props.el.scalarSqlFillMode, props.el.sqlText),

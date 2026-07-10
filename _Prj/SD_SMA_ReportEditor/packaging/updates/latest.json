@@ -1,17 +1,17 @@
 {
-  "version": "0.2.28",
-  "releasedAt": "2026-07-10T06:49:12.739Z",
-  "notes": "Report Editor 0.2.28\n\n- 数据参数空值默认空白，不再显示 {{value}}\n- 空值显示可选：空白 / 「空值」/ 手填默认文字",
+  "version": "0.2.29",
+  "releasedAt": "2026-07-10T06:48:13.825Z",
+  "notes": "Report Editor 0.2.29\n\n- 绑定 REAL/浮点可配置小数位数（参数、单元格、数据库填充）\n- 留空不强制；0–10 位按 toFixed 显示",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor-Setup-0.2.28-x64.exe",
-      "sha256": "43243eeb205be9deb47c486e3a17f234f919b5941e425f7647be59c19890193c",
-      "size": 144422581
+      "url": "Report Editor-Setup-0.2.29-x64.exe",
+      "sha256": "969f473dc4c3fc4a1b07f44c01f2fd0fc24b312915e278d269bf891fd5583530",
+      "size": 144425055
     },
     "darwin-arm64": {
-      "url": "Report Editor-0.2.28-arm64.dmg",
-      "sha256": "b31101de4e6fbe5caf9cd190a640529f2ae2592c45b1d98fa47ae6500746b400",
-      "size": 180070314
+      "url": "Report Editor-0.2.29-arm64.dmg",
+      "sha256": "",
+      "size": 0
     }
   }
 }

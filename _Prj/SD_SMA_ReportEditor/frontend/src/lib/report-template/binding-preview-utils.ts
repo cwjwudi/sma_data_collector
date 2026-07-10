@@ -3,6 +3,7 @@ import { ensureBodyPages, ensureTableGrid } from "@/lib/report-template/model";
 import type { LayoutZoneElement } from "@/lib/report-template/layout-zone-element";
 import {
   ensureZoneTableGrid,
+  normalizeDecimalPlaces,
   normalizeNullDisplayMode,
   type NullDisplayMode,
 } from "@/lib/report-template/layout-zone-element";
@@ -19,7 +20,7 @@ export interface TableSqlFillPreviewPayload {
 }
 
 export type { NullDisplayMode };
-export { normalizeNullDisplayMode };
+export { normalizeNullDisplayMode, normalizeDecimalPlaces };
 
 export function zoneParamKey(elId: string): string {
   return `zone-param:${elId}`;
@@ -63,19 +64,21 @@ export function resolveBoundParameterPreviewText(opts: {
   bindingKind: "none" | "opcua" | "sql";
   text: string;
   nullDisplayMode?: NullDisplayMode;
+  decimalPlaces?: number | null;
   previewCell: BindingPreviewCell | undefined;
   loading: boolean;
   unboundHint?: string;
 }): string {
-  const { bindingKind, text, nullDisplayMode, previewCell, loading, unboundHint } = opts;
+  const { bindingKind, text, nullDisplayMode, decimalPlaces, previewCell, loading, unboundHint } = opts;
   if (bindingKind === "opcua" || bindingKind === "sql") {
     if (previewCell != null) {
-      return resolveParameterDisplayText({
+      const resolved = resolveParameterDisplayText({
         boundText: previewCell.text,
         hasBoundResult: true,
         mode: normalizeNullDisplayMode(nullDisplayMode),
         fallbackText: text,
       });
+      return applyDecimalPlacesToDisplayText(resolved, decimalPlaces);
     }
     if (loading) {
       return `${text.trim() || "参数"}（加载中…）`;
@@ -84,6 +87,23 @@ export function resolveBoundParameterPreviewText(opts: {
   }
   const t = text.trim();
   return t;
+}
+
+/**
+ * 对已解析的显示文案应用小数位（仅当文本可解析为有限数字时）。
+ * 空值文案、错误文案、日期时间串等保持原样。
+ */
+export function applyDecimalPlacesToDisplayText(
+  text: string,
+  decimalPlaces?: number | null,
+): string {
+  const places = normalizeDecimalPlaces(decimalPlaces);
+  if (places === undefined) return text;
+  if (isBoundValueEmpty(text) || isBindingPreviewErrorText(text)) return text;
+  if (/^\d{4}-\d{2}-\d{2}/.test(text.trim())) return text;
+  const n = Number(String(text).trim().replace(/,/g, ""));
+  if (!Number.isFinite(n)) return text;
+  return n.toFixed(places);
 }
 
 export interface BindingPreviewCell {
@@ -248,7 +268,10 @@ export function normalizeDbDatetimeDisplay(raw: string): string {
   return `${m[1]} ${m[2]}`;
 }
 
-export function formatScalarForPreviewValue(v: unknown): string {
+export function formatScalarForPreviewValue(
+  v: unknown,
+  opts?: { decimalPlaces?: number | null },
+): string {
   if (v === null || v === undefined) return "";
   if (typeof v === "object") {
     try {
@@ -258,9 +281,17 @@ export function formatScalarForPreviewValue(v: unknown): string {
       return String(v);
     }
   }
+  if (typeof v === "number" && Number.isFinite(v)) {
+    const places = normalizeDecimalPlaces(opts?.decimalPlaces);
+    if (places !== undefined) return v.toFixed(places);
+    let s = String(v);
+    return s.length > 120 ? `${s.slice(0, 117)}…` : s;
+  }
   let s = String(v);
   if (typeof v === "string") {
     s = normalizeDbDatetimeDisplay(s);
+    const places = normalizeDecimalPlaces(opts?.decimalPlaces);
+    if (places !== undefined) s = applyDecimalPlacesToDisplayText(s, places);
   }
   return s.length > 120 ? `${s.slice(0, 117)}…` : s;
 }

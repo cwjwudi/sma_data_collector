@@ -316,6 +316,22 @@
                   @opc-pick="openZoneTableCellSqlParamOpcPicker"
                 />
               </template>
+              <label
+                v-if="activeTableCell.bindingKind === 'opcua' || activeTableCell.bindingKind === 'sql'"
+                class="lpep-lab"
+              >
+                小数位数（REAL）
+                <input
+                  :value="activeTableCell.decimalPlaces ?? ''"
+                  type="number"
+                  min="0"
+                  max="10"
+                  step="1"
+                  class="lpep-inp"
+                  placeholder="留空=不强制"
+                  @change="onActiveZoneTableCellDecimalPlacesChange"
+                />
+              </label>
             </template>
             <p v-else class="lpep-hint-muted">
               数据库填充已开启：表格内容由查询填充，请勿在此编辑静态文字。可视化数据源时请在画布<strong>第一行</strong>下拉选择各列对应字段。
@@ -442,6 +458,7 @@ import {
   type LayoutControlType,
   type LayoutZoneElement,
 } from "@/lib/report-template/layout-zone-element";
+import { normalizeDecimalPlaces } from "@/lib/report-template/numeric-display";
 import BoxZoneColorPicker from "@/components/report-template/BoxZoneColorPicker.vue";
 import LayoutFontFamilyField from "@/components/report-template/LayoutFontFamilyField.vue";
 import { readImageFileAsDataUrl } from "@/lib/report-template/read-image-file";
@@ -583,6 +600,17 @@ function openZoneTableCellSqlParamOpcPicker(slot: number) {
   ensureZoneTableCellSqlParams(cell);
   opcPickTarget.value = { kind: "scalarSqlCell", slot };
   opcPickOpen.value = true;
+}
+
+function onActiveZoneTableCellDecimalPlacesChange(ev: Event): void {
+  const cell = activeTableCell.value;
+  if (!cell) return;
+  const raw = (ev.target as HTMLInputElement).value;
+  if (raw.trim() === "") {
+    cell.decimalPlaces = undefined;
+    return;
+  }
+  cell.decimalPlaces = normalizeDecimalPlaces(raw) ?? 0;
 }
 
 function onZoneSqlFillSyncHeaders() {

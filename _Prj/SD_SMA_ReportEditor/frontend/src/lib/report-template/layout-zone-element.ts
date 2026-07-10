@@ -27,6 +27,7 @@ import {
   hydrateSqlParamBindings,
   hydrateTableSqlFill,
 } from "@/lib/report-template/table-sql-fill";
+import { normalizeDecimalPlaces } from "@/lib/report-template/numeric-display";
 
 /** 绑定结果为空时的显示策略（数据参数控件） */
 export type NullDisplayMode = "blank" | "emptyLabel" | "fallbackText";
@@ -35,6 +36,9 @@ export function normalizeNullDisplayMode(v: unknown): NullDisplayMode {
   if (v === "emptyLabel" || v === "fallbackText") return v;
   return "blank";
 }
+
+/** REAL/浮点显示小数位数：undefined=不强制；0–10 */
+export { DECIMAL_PLACES_MAX, normalizeDecimalPlaces } from "./numeric-display";
 
 
 export type LayoutControlType =
@@ -61,6 +65,8 @@ export interface LayoutZoneTableCell {
   scalarSqlVisual?: ScalarSqlVisualConfig | null;
   /** 单元格填充色；transparent 或未设则继承列/表格默认 */
   bgColor?: string;
+  /** REAL/浮点显示小数位数；未设则保持原样 */
+  decimalPlaces?: number;
 }
 
 /** 页码在预览/导出时的展示形式（导出时传入真实当前页与总页数） */
@@ -140,6 +146,8 @@ export interface LayoutZoneElement {
   scalarSqlVisual?: ScalarSqlVisualConfig | null;
   /** 绑定为空时：空白 / 「空值」/ 手填默认文案（仅 parameter） */
   nullDisplayMode?: NullDisplayMode;
+  /** REAL/浮点显示小数位数；未设则保持原样（parameter） */
+  decimalPlaces?: number;
   /** 仅 type==="table" 时使用 */
   tableRows?: number;
   tableCols?: number;
@@ -369,6 +377,7 @@ export function hydrateZoneTableCell(raw: Partial<LayoutZoneTableCell> | undefin
     scalarSqlFillMode: rawMode != null ? normalizeScalarSqlFillMode(rawMode, sqlText) : undefined,
     scalarSqlVisual: rawVisual != null ? hydrateScalarSqlVisual(rawVisual) : undefined,
     bgColor: typeof raw.bgColor === "string" ? raw.bgColor : d.bgColor,
+    decimalPlaces: normalizeDecimalPlaces((raw as { decimalPlaces?: unknown }).decimalPlaces),
   };
 }
 
@@ -637,6 +646,10 @@ export function hydrateLayoutZoneElement(raw: Partial<LayoutZoneElement>): Layou
       type === "parameter"
         ? normalizeNullDisplayMode((raw as { nullDisplayMode?: unknown }).nullDisplayMode)
         : undefined,
+    decimalPlaces:
+      type === "parameter"
+        ? normalizeDecimalPlaces((raw as { decimalPlaces?: unknown }).decimalPlaces)
+        : undefined,
   };
   if (type === "table") {
     merged.tableRows = clampZoneTableDim(raw.tableRows ?? d.tableRows ?? 3, 3);
@@ -662,6 +675,7 @@ export function hydrateLayoutZoneElement(raw: Partial<LayoutZoneElement>): Layou
   }
   if (type !== "parameter") {
     merged.nullDisplayMode = undefined;
+    merged.decimalPlaces = undefined;
   }
   return merged;
 }

@@ -313,19 +313,25 @@ export function syncZoneTableRowsForSqlFillPreview(el: LayoutZoneElement, dataRo
   ensureZoneTableGrid(el);
 }
 
-function mapRawSqlRowsToMatrix(rows: unknown[], keys: string[], cc: number): string[][] {
+function mapRawSqlRowsToMatrix(
+  rows: unknown[],
+  keys: string[],
+  cc: number,
+  decimalPlaces?: number | null,
+): string[][] {
+  const opts = { decimalPlaces };
   const out: string[][] = [];
   for (const row of rows) {
     const line: string[] = [];
     if (Array.isArray(row)) {
-      for (let ci = 0; ci < cc; ci++) line.push(formatScalarForPreviewValue(row[ci]));
+      for (let ci = 0; ci < cc; ci++) line.push(formatScalarForPreviewValue(row[ci], opts));
     } else if (row && typeof row === "object") {
       const o = row as Record<string, unknown>;
       if (keys.length >= cc) {
-        for (let ci = 0; ci < cc; ci++) line.push(formatScalarForPreviewValue(o[keys[ci]]));
+        for (let ci = 0; ci < cc; ci++) line.push(formatScalarForPreviewValue(o[keys[ci]], opts));
       } else {
         const vals = Object.values(o);
-        for (let ci = 0; ci < cc; ci++) line.push(formatScalarForPreviewValue(vals[ci]));
+        for (let ci = 0; ci < cc; ci++) line.push(formatScalarForPreviewValue(vals[ci], opts));
       }
     } else {
       for (let ci = 0; ci < cc; ci++) line.push("");
@@ -380,9 +386,11 @@ export function sqlResponseToPreviewRows(
   const colsMeta = Array.isArray(d.columns) ? d.columns : [];
   const keys = colsMeta.map((c) => String(c?.name ?? "").trim()).filter(Boolean);
 
+  const places = fill?.decimalPlaces;
+
   if (fill && isVerticalSqlFill(fill)) {
     const cc = Math.max(1, Math.min(TEMPLATE_TABLE_MAX_COLS, Math.floor(colCount) || 1));
-    return mapRawSqlRowsToMatrix(rows, keys, cc);
+    return mapRawSqlRowsToMatrix(rows, keys, cc, places);
   }
 
   if (fill && !isVerticalSqlFill(fill) && fill.visualSource) {
@@ -392,13 +400,13 @@ export function sqlResponseToPreviewRows(
       if (r !== "field") return false;
       return String(fill.visualSource!.columns[i] ?? "").trim().length > 0;
     }).length;
-    const selectRows = mapRawSqlRowsToMatrix(rows, keys, Math.max(1, selectCount || 1));
+    const selectRows = mapRawSqlRowsToMatrix(rows, keys, Math.max(1, selectCount || 1), places);
     const cc = Math.max(1, Math.min(TEMPLATE_TABLE_MAX_COLS, Math.floor(colCount) || 1));
     return selectRows.map((sr) => expandHorizontalSelectRowToPhysical(sr, fill, cc));
   }
 
   const cc = Math.max(1, Math.min(TEMPLATE_TABLE_MAX_COLS, Math.floor(colCount) || 1));
-  return mapRawSqlRowsToMatrix(rows, keys, cc);
+  return mapRawSqlRowsToMatrix(rows, keys, cc, places);
 }
 
 function buildSingleTableSqlFillTask(
