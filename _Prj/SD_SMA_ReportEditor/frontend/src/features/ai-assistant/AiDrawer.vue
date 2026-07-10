@@ -280,7 +280,6 @@ onUnmounted(() => {
   border: none;
   border-radius: 0;
   background: transparent;
-  color: #fff;
   font-weight: 700;
   font-size: 13px;
   letter-spacing: 0.06em;
@@ -352,7 +351,12 @@ onUnmounted(() => {
 .ai-fab__label {
   position: relative;
   z-index: 1;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+  background: linear-gradient(180deg, hsl(353, 98%, 41%) 0%, hsl(37, 91%, 55%) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  filter: drop-shadow(0 1px 1px rgba(127, 29, 29, 0.35));
 }
 
 .ai-fab:hover {
