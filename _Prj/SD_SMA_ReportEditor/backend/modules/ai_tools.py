@@ -205,6 +205,29 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "get_datasource_inventory",
+            "description": "汇总数据源库存：数据库连接数、库/表数量、OPC UA 连接数与可绑定变量数量（现场探查，只读）。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "include_system_databases": {
+                        "type": "boolean",
+                        "description": "明细是否包含 mysql/sys 等系统库（默认 false；合计仍统计系统库）",
+                    },
+                    "count_opc_variables": {
+                        "type": "boolean",
+                        "description": "是否扫描 OPC 地址空间统计变量（默认 true）",
+                    },
+                    "opc_max_scan": {"type": "integer", "description": "OPC 扫描节点上限，默认 50000"},
+                    "opc_max_depth": {"type": "integer", "description": "OPC 浏览深度上限，默认 56"},
+                },
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "upsert_db_connection",
             "description": "新建或更新数据库连接（不含 password 参数；需密时在 UI 弹框填写，0.3.2）。",
             "parameters": {
@@ -582,6 +605,13 @@ async def execute_tool(name: str, arguments: dict[str, Any] | None, *, page_cont
         result = ai_datasource_ops.list_db_catalog(
             str(args.get("connection_id") or ""),
             str(args.get("database")).strip() if args.get("database") else None,
+        )
+    elif name == "get_datasource_inventory":
+        result = await ai_datasource_ops.get_datasource_inventory(
+            include_system_databases=bool(args.get("include_system_databases")),
+            count_opc_variables=bool(args["count_opc_variables"]) if "count_opc_variables" in args else True,
+            opc_max_scan=int(args.get("opc_max_scan") or 50000),
+            opc_max_depth=int(args.get("opc_max_depth") or 56),
         )
     elif name == "upsert_db_connection":
         result = ai_datasource_ops.upsert_db_connection(args)

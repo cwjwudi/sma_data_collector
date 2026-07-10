@@ -401,3 +401,190 @@ async def apply_confirm_delete(prompt_id: str, confirmed: bool) -> dict[str, Any
         ai_pending_prompts.complete_prompt(prompt_id, result={"ok": True, "deleted": cid})
         return {"ok": True, "deleted": cid, "kind": "opcua"}
     return {"ok": False, "error": "未知 target_kind"}
+
+
+_SYSTEM_DB_NAMES = frozenset(
+    {
+        "information_schema",
+        "mysql",
+        "performance_schema",
+        "sys",
+        "postgres",
+        "template0",
+        "template1",
+    }
+)
+
+
+def _is_system_db_name(name: str) -> bool:
+    return (name or "").strip().lower() in _SYSTEM_DB_NAMES
+
+
+async def get_datasource_inventory(
+    *,
+    include_system_databases: bool = False,
+    count_opc_variables: bool = True,
+    opc_max_scan: int = 50000,
+    opc_max_depth: int = 56,
+) -> dict[str, Any]:
+    """汇总：连接数、库/表数量、OPC 变量数量（现场探查，只读）。"""
+    cfg = _cfg()
+    db_conns = list(cfg.get("db_connections") or [])
+    opc_servers = list(cfg.get("opcua_servers") or [])
+
+    db_rows: list[dict[str, Any]] = []
+    total_databases = 0
+    total_tables = 0
+    total_user_databases = 0
+    total_user_tables = 0
+
+    for conn in db_conns:
+        cid = str(conn.get("id") or "")
+        name = str(conn.get("name") or cid)
+        engine = str(conn.get("engine") or "").lower()
+        row: dict[str, Any] = {
+            "id": cid,
+            "name": name,
+            "engine": engine,
+            "ok": False,
+            "databases": [],
+            "database_count": 0,
+            "table_count": 0,
+            "user_database_count": 0,
+            "user_table_count": 0,
+        }
+        cat = list_db_catalog(cid)
+        if not cat.get("ok"):
+            row["error"] = cat.get("error") or "目录查询失败"
+            db_rows.append(row)
+            continue
+
+        row["ok"] = True
+        if engine == "sqlite":
+            tables = cat.get("tables") or []
+            n = len(tables) if isinstance(tables, list) else 0
+            row["databases"] = [{"name": "(sqlite)", "table_count": n, "system": False}]
+            row["database_count"] = 1
+            row["table_count"] = n
+            row["user_database_count"] = 1
+            row["user_table_count"] = n
+        else:
+            dbs = cat.get("databases") or []
+            db_names: list[str] = []
+            for d in dbs:
+                if isinstance(d, str):
+                    db_names.append(d)
+                elif isinstance(d, dict):
+                    db_names.append(str(d.get("name") or d.get("database") or ""))
+            details: list[dict[str, Any]] = []
+            for dbn in db_names:
+                if not dbn:
+                    continue
+                is_sys = _is_system_db_name(dbn)
+                if is_sys and not include_system_databases:
+                    continue
+                tr = list_db_catalog(cid, dbn)
+                tn = 0
+                if tr.get("ok"):
+                    tn = len(tr.get("tables") or tr.get("collections") or [])
+                details.append(
+                    {
+                        "name": dbn,
+                        "table_count": tn,
+                        "system": is_sys,
+                        "ok": bool(tr.get("ok")),
+                        "error": tr.get("error"),
+                    }
+                )
+            # 若默认跳过系统库，再单独扫一遍系统库计入全量（可选）
+            all_details = list(details)
+            if not include_system_databases:
+                for dbn in db_names:
+                    if not dbn or not _is_system_db_name(dbn):
+                        continue
+                    tr = list_db_catalog(cid, dbn)
+                    tn = len(tr.get("tables") or tr.get("collections") or []) if tr.get("ok") else 0
+                    all_details.append(
+                        {
+                            "name": dbn,
+                            "table_count": tn,
+                            "system": True,
+                            "ok": bool(tr.get("ok")),
+                            "error": tr.get("error"),
+                        }
+                    )
+            row["databases"] = all_details if include_system_databases else details
+            row["database_count"] = len(all_details)
+            row["table_count"] = sum(int(x.get("table_count") or 0) for x in all_details)
+            user_details = [x for x in all_details if not x.get("system")]
+            row["user_database_count"] = len(user_details)
+            row["user_table_count"] = sum(int(x.get("table_count") or 0) for x in user_details)
+            if not include_system_databases:
+                row["databases"] = user_details
+                row["note"] = "明细仅含用户库；summary 含系统库合计"
+
+        total_databases += int(row["database_count"])
+        total_tables += int(row["table_count"])
+        total_user_databases += int(row["user_database_count"])
+        total_user_tables += int(row["user_table_count"])
+        db_rows.append(row)
+
+    opc_rows: list[dict[str, Any]] = []
+    total_opc_variables = 0
+    for srv in opc_servers:
+        sid = str(srv.get("id") or "")
+        sname = str(srv.get("name") or sid)
+        ep = str(srv.get("endpoint_url") or srv.get("endpoint") or "").strip()
+        orow: dict[str, Any] = {
+            "id": sid,
+            "name": sname,
+            "endpoint_url": ep,
+            "ok": False,
+            "variable_count": 0,
+        }
+        if not count_opc_variables:
+            orow["ok"] = True
+            orow["skipped"] = True
+            opc_rows.append(orow)
+            continue
+        try:
+            pwd = config_store.decrypt_opcua_password(DATA_DIR, srv) if srv.get("password_enc") else ""
+        except ValueError as e:
+            orow["error"] = str(e)
+            opc_rows.append(orow)
+            continue
+        counted = await opcua_service.count_variables_for_saved_server(
+            sid,
+            ep,
+            srv.get("username"),
+            pwd,
+            max_scan=opc_max_scan,
+            max_depth=opc_max_depth,
+        )
+        if not counted.get("ok"):
+            orow["error"] = counted.get("message") or "OPC 变量统计失败"
+            opc_rows.append(orow)
+            continue
+        orow["ok"] = True
+        orow["variable_count"] = int(counted.get("variable_count") or 0)
+        orow["structure_containers"] = int(counted.get("structure_containers") or 0)
+        orow["nodes_scanned"] = counted.get("nodes_scanned")
+        orow["truncated"] = bool(counted.get("truncated"))
+        total_opc_variables += int(orow["variable_count"])
+        opc_rows.append(orow)
+
+    return {
+        "ok": True,
+        "summary": {
+            "db_connection_count": len(db_conns),
+            "opc_connection_count": len(opc_servers),
+            "database_count": total_databases,
+            "table_count": total_tables,
+            "user_database_count": total_user_databases,
+            "user_table_count": total_user_tables,
+            "opc_variable_count": total_opc_variables,
+            "include_system_databases": bool(include_system_databases),
+        },
+        "databases": db_rows,
+        "opcua_servers": opc_rows,
+    }

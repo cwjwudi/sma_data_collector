@@ -17,6 +17,12 @@ TOOL_META: dict[str, dict[str, Any]] = {
     "get_db_connection_detail": {"category": "datasource", "title_zh": "数据库连接详情", "description_zh": "单个 DB 连接脱敏详情", "risk": "read"},
     "get_opc_server_detail": {"category": "datasource", "title_zh": "OPC 连接详情", "description_zh": "单个 OPC 连接脱敏详情", "risk": "read"},
     "list_db_catalog": {"category": "datasource", "title_zh": "数据库目录", "description_zh": "库/表目录只读查询", "risk": "read"},
+    "get_datasource_inventory": {
+        "category": "datasource",
+        "title_zh": "数据源库存汇总",
+        "description_zh": "统计连接数、库/表数量、OPC 变量数量",
+        "risk": "read",
+    },
     "upsert_db_connection": {"category": "datasource", "title_zh": "保存数据库连接", "description_zh": "新建/更新 DB（密码走 UI 弹框）", "risk": "write"},
     "upsert_opc_server": {"category": "datasource", "title_zh": "保存 OPC 连接", "description_zh": "新建/更新 OPC（密码走 UI 弹框）", "risk": "write"},
     "delete_db_connection": {"category": "datasource", "title_zh": "删除数据库连接", "description_zh": "需 UI 确认后删除", "risk": "confirm"},

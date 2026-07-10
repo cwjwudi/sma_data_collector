@@ -860,6 +860,112 @@ async def search_variables_for_saved_server(
             return {"ok": False, "message": str(e), "hits": [], "nodes_scanned": 0, "truncated": False}
 
 
+async def _count_variables_bfs(
+    client: Client,
+    max_scan: int,
+    max_depth: int,
+    data_type_cache: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """BFS 统计可绑定 Variable 数量（不含 VariableType；结构体容器继续下钻）。"""
+    queue: deque[tuple[str | None, int]] = deque()
+    queue.append((None, 0))
+    expanded_parents: set[str] = set()
+    queued_expand: set[str] = set()
+    variable_count = 0
+    structure_containers = 0
+    nodes_scanned = 0
+    truncated = False
+
+    while queue and nodes_scanned < max_scan:
+        parent_key, depth = queue.popleft()
+        ek = SEARCH_ROOT_TOKEN if parent_key is None else parent_key
+        if ek in expanded_parents:
+            continue
+        expanded_parents.add(ek)
+
+        try:
+            parent = client.nodes.objects if parent_key is None else client.get_node(parent_key)
+            children = await _merged_hierarchical_and_property_children(
+                parent,
+                DEFAULT_OPCUA_BROWSE_MAX_CHILDREN,
+            )
+        except Exception as ex:
+            logger.debug("OPC UA variable count: browse parent=%s failed: %s", parent_key, ex)
+            continue
+
+        for ch in children:
+            if nodes_scanned >= max_scan:
+                truncated = True
+                break
+            nodes_scanned += 1
+            try:
+                nid = ch.nodeid.to_string()
+                cls = await _try_node_class(ch)
+            except Exception:
+                continue
+
+            is_variable = _is_opcua_variable_value_class(cls)
+            type_name = await _try_node_data_type_name(ch, data_type_cache) if is_variable else None
+            is_struct_container = is_variable and _is_structure_like_data_type(type_name)
+
+            if is_variable and not is_struct_container:
+                variable_count += 1
+                continue
+
+            if is_struct_container:
+                structure_containers += 1
+
+            nc_up = (cls or "").upper()
+            if "METHOD" in nc_up:
+                continue
+            if depth + 1 >= max_depth:
+                continue
+            if nid in queued_expand:
+                continue
+            queued_expand.add(nid)
+            queue.append((nid, depth + 1))
+
+        if nodes_scanned >= max_scan:
+            truncated = True
+
+    return {
+        "ok": True,
+        "variable_count": variable_count,
+        "structure_containers": structure_containers,
+        "nodes_scanned": nodes_scanned,
+        "parents_expanded": len(expanded_parents),
+        "truncated": truncated,
+        "max_scan": max_scan,
+        "max_depth": max_depth,
+    }
+
+
+async def count_variables_for_saved_server(
+    server_id: str,
+    endpoint_url: str,
+    username: str | None,
+    password: str | None,
+    max_scan: Any = None,
+    max_depth: Any = None,
+) -> dict[str, Any]:
+    ms, _, md = _clamp_variable_search_params(max_scan, None, max_depth)
+    # 计数场景允许更大扫描上限
+    try:
+        raw = int(max_scan) if max_scan is not None else SEARCH_VARS_DEFAULT_MAX_SCAN
+    except (TypeError, ValueError):
+        raw = SEARCH_VARS_DEFAULT_MAX_SCAN
+    ms = max(1, min(raw, 100000))
+    entry = _get_entry(server_id)
+    async with entry.lock:
+        try:
+            client = await _ensure_connected(entry, endpoint_url, username, password)
+            return await _count_variables_bfs(client, ms, md, data_type_cache=entry.data_type_cache)
+        except Exception as e:
+            logger.exception("OPC UA variable count (pooled) failed")
+            await _invalidate_entry_client(entry)
+            return {"ok": False, "message": str(e), "variable_count": 0, "nodes_scanned": 0, "truncated": False}
+
+
 async def drop_saved_server_pool(server_id: str) -> None:
     """删除已保存服务器配置时释放对应连接，避免持有无效会话。"""
     entry = _pool.pop(server_id, None)
