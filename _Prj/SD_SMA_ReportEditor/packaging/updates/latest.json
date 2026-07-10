@@ -1,15 +1,15 @@
 {
-  "version": "0.2.30",
-  "releasedAt": "2026-07-10T07:55:13.410Z",
-  "notes": "Report Editor 0.2.30\n\n- 侧栏切换先显示加载提示，再跳转页面，避免点了没反应\n- 数据源页拆包懒加载：先出工作台壳与遮罩，OPC 仅在切到该 Tab 时挂载\n- 修复 0.2.28 回归：数据参数 SQL 的 {{p0}}/{{p1}} 配置区消失，并恢复绑定区样式",
+  "version": "0.2.31",
+  "releasedAt": "2026-07-10T08:26:47.197Z",
+  "notes": "Report Editor 0.2.31\n\n- 控件属性新增「边框」开关：可隐藏预览与导出 PDF 中的控件外框（默认仍显示，兼容旧模版）\n- 表格单元格换行时按内容抬高行高，避免文字被裁切\n- 导出失败审计写入绑定/表名/SQL 等详细诊断，便于排查结批问题",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor-Setup-0.2.30-x64.exe",
-      "sha256": "d7a3681862f6526c9fc47a38d0a4b854a79a4617a803eba87886e1f28d41b3eb",
-      "size": 144447309
+      "url": "Report Editor-Setup-0.2.31-x64.exe",
+      "sha256": "abfcb6a2ebf8e79b789098364378d3b8fd47ef644cf0b0edbea949dc8fc35d80",
+      "size": 144455743
     },
     "darwin-arm64": {
-      "url": "Report Editor-0.2.30-arm64.dmg",
+      "url": "Report Editor-0.2.31-arm64.dmg",
       "sha256": "",
       "size": 0
     }
