@@ -3,8 +3,9 @@
     <label class="tbl-sql-fill-mode">
       <span class="tbl-sql-fill-mode-t">来源</span>
       <select v-model="fill.fillMode" :class="selectFieldClass">
-        <option value="visual">数据连接（可视化）</option>
+        <option value="visual">数据连接（可视化 SQL）</option>
         <option value="manual_sql">手写 SQL</option>
+        <option value="mongo">MongoDB</option>
       </select>
     </label>
 
@@ -30,8 +31,14 @@
       @vertical-slots-change="$emit('verticalSlotsChange')"
     />
 
-    <template v-if="fill.fillMode === 'manual_sql'">
-      <label class="tbl-sql-fill-lab"
+    <div v-else-if="fill.fillMode === 'mongo'" class="tbl-sql-mongo">
+      <p class="tbl-sql-fill-policy-hint">
+        使用 MongoDB find / aggregate 填充表格。filter 与 pipeline 中可用 <code v-pre>{{p0}}</code>、<code v-pre>{{p1}}</code>。
+      </p>
+      <MongoQueryFields v-model="mongoQueryProxy" />
+    </div>
+
+    <template v-if="fill.fillMode === 'manual_sql'">      <label class="tbl-sql-fill-lab"
         >SELECT
         <textarea
           v-model="fill.querySql"
@@ -173,6 +180,7 @@
 
 <script setup lang="ts">
 import TemplateTableSqlVisualPanel from "@/components/report-template/TemplateTableSqlVisualPanel.vue";
+import MongoQueryFields from "@/components/report-template/MongoQueryFields.vue";
 import {
   clampTableSqlMaxRows,
   ensureMinTableSqlParamSlots,
@@ -186,6 +194,7 @@ import {
   type TableSqlSequencePageMode,
   type TableSqlVerticalMultiRecordMode,
 } from "@/lib/report-template/table-sql-fill";
+import { defaultMongoQueryConfig, type MongoQueryConfig } from "@/lib/report-template/mongo-query";
 import { normalizeDecimalPlaces } from "@/lib/report-template/numeric-display";
 import {
   applyTableSqlLayoutMode,
@@ -219,6 +228,15 @@ const emit = defineEmits<{
 }>();
 
 const pickBtnClass = computed(() => props.buttonClass || "tbl-sql-side-btn");
+
+const mongoQueryProxy = computed({
+  get(): MongoQueryConfig {
+    return props.fill.mongoQuery || defaultMongoQueryConfig();
+  },
+  set(v: MongoQueryConfig) {
+    props.fill.mongoQuery = v;
+  },
+});
 
 const selectFieldClass = computed(() => {
   const c = (props.selectClass || "").trim();

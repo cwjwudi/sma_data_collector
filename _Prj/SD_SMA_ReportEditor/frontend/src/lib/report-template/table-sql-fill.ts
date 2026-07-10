@@ -5,6 +5,7 @@
 
 import { TEMPLATE_TABLE_MAX_COLS, TEMPLATE_TABLE_MAX_ROWS } from "@/lib/report-template/table-cell-metrics";
 import { normalizeDecimalPlaces } from "@/lib/report-template/numeric-display";
+import { hydrateMongoQueryOptional, type MongoQueryConfig } from "@/lib/report-template/mongo-query";
 
 export type TableSqlParamSource = "opcua" | "literal" | "batch_no";
 
@@ -17,7 +18,7 @@ export interface TableSqlParamBinding {
   literalFallback?: string;
 }
 
-export type TableSqlFillMode = "manual_sql" | "visual";
+export type TableSqlFillMode = "manual_sql" | "visual" | "mongo";
 
 /**
  * 表格展示形态：
@@ -129,6 +130,8 @@ export interface TableSqlFillConfig {
   /** fillMode===visual 时的数据源选择（手写模式下可残留但不生效） */
   visualSource?: TableSqlVisualSource | null;
   visualFilters: VisualSqlFilter[];
+  /** 可选：整表 MongoDB 填充（与 SQL 路径二选一；有 connectionId 时预览走 Mongo） */
+  mongoQuery?: MongoQueryConfig | null;
   /** 横表 / 纵表；缺省 horizontal（兼容旧模版） */
   layoutMode?: TableSqlLayoutMode;
   /**
@@ -226,6 +229,7 @@ export function defaultTableSqlFillConfig(): TableSqlFillConfig {
     maxRows: 2000,
     visualSource: null,
     visualFilters: [],
+    mongoQuery: null,
     layoutMode: "horizontal",
     columnRoles: [],
     sequencePageMode: "continuous",
@@ -350,11 +354,13 @@ export function hydrateTableSqlFill(raw: unknown): TableSqlFillConfig {
   const enabled = o.enabled === true || o.enabled === "true" || o.enabled === 1;
   const querySqlEarly = typeof o.querySql === "string" ? o.querySql : "";
   const fillMode: TableSqlFillMode =
-    o.fillMode === "visual" || o.fillMode === "manual_sql"
+    o.fillMode === "visual" || o.fillMode === "manual_sql" || o.fillMode === "mongo"
       ? (o.fillMode as TableSqlFillMode)
-      : querySqlEarly.trim().length > 0
-        ? "manual_sql"
-        : "visual";
+      : o.mongoQuery
+        ? "mongo"
+        : querySqlEarly.trim().length > 0
+          ? "manual_sql"
+          : "visual";
   const querySql = querySqlEarly;
   const repeatHeaderOnPageBreak =
     o.repeatHeaderOnPageBreak === false || o.repeatHeaderOnPageBreak === "false" ? false : true;
@@ -473,6 +479,7 @@ export function hydrateTableSqlFill(raw: unknown): TableSqlFillConfig {
     maxRows,
     visualSource,
     visualFilters,
+    mongoQuery: hydrateMongoQueryOptional(o.mongoQuery) ?? null,
     layoutMode,
     columnRoles,
     sequencePageMode,

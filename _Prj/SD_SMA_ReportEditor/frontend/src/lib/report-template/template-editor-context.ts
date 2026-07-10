@@ -40,6 +40,8 @@ export interface BindingPreviewStats {
   sqlQueries: number;
   /** SQL 返回数据行数合计 */
   sqlRows: number;
+  /** MongoDB 查询次数（find / aggregate） */
+  mongoQueries: number;
 }
 
 export interface ReportBindingPreviewState {

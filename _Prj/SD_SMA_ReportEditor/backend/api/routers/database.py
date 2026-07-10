@@ -17,6 +17,7 @@ from schemas.common import (
     DbDdlPreviewRequest,
     DbExecuteSqlRequest,
     DbMongoAggregateRequest,
+    DbMongoFindRequest,
     DbPreviewDrillRequest,
     DbRelationConsistencyRequest,
     DbRelationOrphanRequest,
@@ -38,9 +39,18 @@ def _is_mysql_family(engine: str) -> bool:
 
 
 def _safe_sql_table(name: str) -> str:
-    if not name or not re.match(r"^[a-zA-Z0-9_]+$", name):
+    """允许 `table` 或 PostgreSQL `schema.table`。"""
+    raw = (name or "").strip()
+    if not raw:
         raise HTTPException(400, "非法表名")
-    return name
+    if "." in raw:
+        parts = raw.split(".", 1)
+        if len(parts) != 2 or not all(re.match(r"^[a-zA-Z0-9_]+$", p) for p in parts):
+            raise HTTPException(400, "非法表名")
+        return raw
+    if not re.match(r"^[a-zA-Z0-9_]+$", raw):
+        raise HTTPException(400, "非法表名")
+    return raw
 
 
 def _cfg():
@@ -364,6 +374,40 @@ async def query_mongo(body: DbMongoAggregateRequest):
             body.collection,
             body.pipeline,
             lim,
+        )
+    except HTTPException:
+        raise
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    except Exception as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@router.post("/database/query/mongo_find")
+async def query_mongo_find(body: DbMongoFindRequest):
+    conn = _conn_by_id(body.connection_id)
+    if (conn.get("engine") or "").lower() != "mongodb":
+        raise HTTPException(400, "非 MongoDB 连接")
+    user, pwd = _credentials(conn)
+    vars_ = {
+        "host": conn.get("host") or "127.0.0.1",
+        "port": int(conn.get("port") or 27017),
+        "username": user,
+        "password": pwd,
+        "auth_source": conn.get("mongo_auth_source") or "admin",
+    }
+    lim = max(1, min(body.limit, 5000))
+    try:
+        return db_readonly_service.mongo_find_readonly(
+            vars_,
+            body.database,
+            body.collection,
+            filter_doc=body.filter or {},
+            projection=body.projection,
+            sort=body.sort,
+            limit=lim,
+            offset=max(0, body.offset),
+            include_total=body.include_total,
         )
     except HTTPException:
         raise
@@ -780,7 +824,7 @@ async def visual_count(body: VisualQueryBuildRequest):
     if engine not in ("mysql", "mariadb", "postgres", "sqlite"):
         raise HTTPException(400, "仅支持 SQL 引擎")
     try:
-        sql = db_readonly_service.build_visual_count_sql(body.base_table, body.joins)
+        sql = db_readonly_service.build_visual_count_sql(body.base_table, body.joins, engine)
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
     result = await query_sql(
@@ -897,7 +941,18 @@ async def relation_consistency(body: DbRelationConsistencyRequest):
                 body.parent_table,
                 body.parent_column,
             )
-        raise HTTPException(400, "当前引擎不支持一致性扫描（MySQL/MariaDB/PostgreSQL）")
+        if engine == "sqlite":
+            path = conn.get("sqlite_path") or ""
+            if not path:
+                raise HTTPException(400, "SQLite 连接缺少 sqlite_path")
+            return db_readonly_service.fk_column_type_compare_sqlite(
+                path,
+                body.child_table,
+                body.child_column,
+                body.parent_table,
+                body.parent_column,
+            )
+        raise HTTPException(400, "当前引擎不支持一致性扫描（MySQL/MariaDB/PostgreSQL/SQLite）")
     except HTTPException:
         raise
     except ValueError as e:
@@ -918,6 +973,7 @@ async def visual_build(body: VisualQueryBuildRequest):
             body.joins,
             body.columns,
             body.limit,
+            engine,
         )
         return {"sql": sql}
     except ValueError as e:
@@ -936,6 +992,7 @@ async def visual_run(body: VisualQueryBuildRequest):
             body.joins,
             body.columns,
             body.limit,
+            engine,
         )
     except ValueError as e:
         raise HTTPException(400, str(e)) from e

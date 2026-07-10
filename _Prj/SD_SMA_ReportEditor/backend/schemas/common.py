@@ -103,6 +103,18 @@ class DbMongoAggregateRequest(BaseModel):
     limit: int = 200
 
 
+class DbMongoFindRequest(BaseModel):
+    connection_id: str
+    database: str
+    collection: str
+    filter: dict[str, Any] = Field(default_factory=dict)
+    projection: dict[str, Any] | None = None
+    sort: dict[str, int] | None = None
+    limit: int = 200
+    offset: int = 0
+    include_total: bool = False
+
+
 class DbTablePreviewRequest(BaseModel):
     connection_id: str
     database: str | None = None

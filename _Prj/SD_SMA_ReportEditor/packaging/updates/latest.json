@@ -1,15 +1,15 @@
 {
-  "version": "0.3.9",
-  "releasedAt": "2026-07-10T13:34:04.937Z",
-  "notes": "Report Editor 0.3.9: dashboard export/trigger/fail/PDF overview; AI FAB ghost breathe + scrollbar clearance",
+  "version": "0.4.0",
+  "releasedAt": "2026-07-10T16:25:30.985Z",
+  "notes": "PostgreSQL/SQLite/MongoDB 完全适配：方言启发式、schema、报表 Mongo 绑定与预览导出调度",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor-Setup-0.3.9-x64.exe",
-      "sha256": "0f6147e00a1a8c1ff27cbb97e0b4b4b8a1852130123c1f3e71483993302ff58a",
-      "size": 144999952
+      "url": "Report Editor-Setup-0.4.0-x64.exe",
+      "sha256": "b9b500289b66582b66cecf2e843caceef7585a57b705cefb1909514781d5df35",
+      "size": 145011129
     },
     "darwin-arm64": {
-      "url": "Report Editor-0.3.9-arm64.dmg",
+      "url": "Report Editor-0.4.0-arm64.dmg",
       "sha256": "",
       "size": 0
     }

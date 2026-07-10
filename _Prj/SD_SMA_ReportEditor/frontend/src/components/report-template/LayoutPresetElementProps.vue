@@ -310,6 +310,7 @@
                   <option value="none">无（仅静态文字）</option>
                   <option value="opcua">OPC UA</option>
                   <option value="sql">SQL（数据库）</option>
+                  <option value="mongo">MongoDB</option>
                 </select></label
               >
               <div v-if="activeTableCell.bindingKind === 'none'" class="lpep-opc-quick">
@@ -342,8 +343,22 @@
                   @opc-pick="openZoneTableCellSqlParamOpcPicker"
                 />
               </template>
+              <template v-if="activeTableCell.bindingKind === 'mongo'">
+                <MongoQueryFields
+                  :model-value="activeTableCell.mongoQuery"
+                  @update:model-value="activeTableCell.mongoQuery = $event"
+                />
+                <ScalarSqlParamBindingsEditor
+                  :params="zoneTableCellSqlParams"
+                  @opc-pick="openZoneTableCellSqlParamOpcPicker"
+                />
+              </template>
               <label
-                v-if="activeTableCell.bindingKind === 'opcua' || activeTableCell.bindingKind === 'sql'"
+                v-if="
+                  activeTableCell.bindingKind === 'opcua' ||
+                  activeTableCell.bindingKind === 'sql' ||
+                  activeTableCell.bindingKind === 'mongo'
+                "
                 class="lpep-lab"
               >
                 小数位数（REAL）
@@ -508,6 +523,7 @@ import TableCellFillPicker from "@/components/report-template/TableCellFillPicke
 import ParameterBindingFields from "@/components/report-template/ParameterBindingFields.vue";
 import ScalarSqlParamBindingsEditor from "@/components/report-template/ScalarSqlParamBindingsEditor.vue";
 import ScalarSqlQueryBuilder from "@/components/report-template/ScalarSqlQueryBuilder.vue";
+import MongoQueryFields from "@/components/report-template/MongoQueryFields.vue";
 import {
   hydrateScalarSqlVisual,
   normalizeScalarSqlFillMode,

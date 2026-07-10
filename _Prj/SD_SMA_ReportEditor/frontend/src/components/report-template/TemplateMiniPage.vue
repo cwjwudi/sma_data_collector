@@ -774,6 +774,10 @@ function formatStaticTableCell(cell: TemplateTableCell | LayoutZoneTableCell): s
     const q = cell.sqlText.trim();
     return q ? `⟨SQL⟩ ${truncateStatic(q, 36)}` : "⟨SQL⟩";
   }
+  if (cell.bindingKind === "mongo") {
+    const col = cell.mongoQuery?.collection?.trim() || "";
+    return col ? `⟨Mongo⟩ ${truncateStatic(col, 36)}` : "⟨Mongo⟩";
+  }
   const t = cell.text.trim();
   return t.length > 0 ? t : "\u00a0";
 }
@@ -794,7 +798,7 @@ function bindingText(key: string): string | null {
 
 function previewZoneInlineText(el: LayoutZoneElement): string | null {
   if (el.type !== "parameter") return null;
-  if (el.bindingKind !== "opcua" && el.bindingKind !== "sql") return null;
+  if (el.bindingKind !== "opcua" && el.bindingKind !== "sql" && el.bindingKind !== "mongo") return null;
   const hit = bindingPreviewCell(zoneParamKey(el.id));
   if (hit != null) {
     return resolveBoundParameterPreviewText({
@@ -902,7 +906,7 @@ function previewZoneTableCellText(el: LayoutZoneElement, ri: number, ci: number)
 
   const text = bindingText(zoneCellKey(el.id, ri, ci));
   if (text != null) return applyDecimalPlacesToDisplayText(text, cell?.decimalPlaces);
-  if ((cell?.bindingKind === "opcua" || cell?.bindingKind === "sql") && bindingPreview?.loading.value) {
+  if ((cell?.bindingKind === "opcua" || cell?.bindingKind === "sql" || cell?.bindingKind === "mongo") && bindingPreview?.loading.value) {
     return "...";
   }
   return cell ? formatStaticTableCell(cell) : "\u00a0";
@@ -974,7 +978,7 @@ function previewTableCellText(el: TemplateElement, ri: number, ci: number): stri
   const key = cellKey(el.id, ri, ci);
   const hit = vals?.[key];
   if (hit != null) return applyDecimalPlacesToDisplayText(hit.text, cell?.decimalPlaces);
-  if ((cell?.bindingKind === "opcua" || cell?.bindingKind === "sql") && bindingPreview?.loading.value) {
+  if ((cell?.bindingKind === "opcua" || cell?.bindingKind === "sql" || cell?.bindingKind === "mongo") && bindingPreview?.loading.value) {
     return "…";
   }
   return cell ? formatStaticTableCell(cell) : "\u00a0";
@@ -982,7 +986,7 @@ function previewTableCellText(el: TemplateElement, ri: number, ci: number): stri
 
 function previewParameterText(el: TemplateElement): string {
   const key = paramKey(el.id);
-  if (el.bindingKind === "opcua" || el.bindingKind === "sql") {
+  if (el.bindingKind === "opcua" || el.bindingKind === "sql" || el.bindingKind === "mongo") {
     const hit = bindingPreviewCell(key);
     if (hit != null) {
       return resolveBoundParameterPreviewText({
@@ -1010,7 +1014,7 @@ function previewParameterText(el: TemplateElement): string {
 function previewChartText(el: TemplateElement): string {
   const vals = previewValues.value;
   const key = chartKey(el.id);
-  if (el.bindingKind === "sql") {
+  if (el.bindingKind === "sql" || el.bindingKind === "mongo") {
     if (vals?.[key]?.text) return vals[key].text;
     if (bindingPreview?.loading.value) {
       return `${el.chartKind === "bar" ? "柱图" : "折线"}（加载中…）`;
@@ -1069,7 +1073,13 @@ function tplCaption(el: TemplateElement): string {
     case "date":
       return formatTplDate(el);
     case "parameter":
-      return el.bindingKind === "opcua" ? "OPC参数" : el.bindingKind === "sql" ? "SQL参数" : "参数";
+      return el.bindingKind === "opcua"
+        ? "OPC参数"
+        : el.bindingKind === "sql"
+          ? "SQL参数"
+          : el.bindingKind === "mongo"
+            ? "Mongo参数"
+            : "参数";
     case "signature": {
       const wm = signatureShowsWatermark(el) ? signatureWatermarkText(el) : "";
       const hw = signatureShowsHandwriting(el);

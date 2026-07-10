@@ -68,7 +68,7 @@ export function sanitizeOpcTableName(value: unknown): string {
 
 /** 将 {{table}} 占位符替换为按引擎引用的表名 */
 export function substituteSqlFillTableName(sql: string, engineLower: string, tableName: string): string {
-  return sql.split("{{table}}").join(quoteSqlIdentifier(engineLower || "mysql", tableName));
+  return sql.split("{{table}}").join(quoteSqlIdentifier(engineLower || "", tableName));
 }
 
 /** 截断填充错误信息，用于画布预览 */
@@ -384,7 +384,9 @@ export function sqlResponseToPreviewRows(
   const d = data as { columns?: { name?: string }[]; rows?: unknown[] };
   const rows = Array.isArray(d.rows) ? d.rows : [];
   const colsMeta = Array.isArray(d.columns) ? d.columns : [];
-  const keys = colsMeta.map((c) => String(c?.name ?? "").trim()).filter(Boolean);
+  const keys = colsMeta
+    .map((c) => (typeof c === "string" ? c.trim() : String((c as { name?: string })?.name ?? "").trim()))
+    .filter(Boolean);
 
   const places = fill?.decimalPlaces;
 
@@ -418,6 +420,8 @@ function buildSingleTableSqlFillTask(
   fullSqlFill = false,
 ): TableSqlFillPreviewTask | null {
   if (!fill?.enabled) return null;
+  // Mongo 填充走 mongoTasks，不发 SQL
+  if (fill.fillMode === "mongo") return null;
   const sqlRaw = (fill.querySql || "").trim();
   if (!sqlRaw) return null;
 
@@ -436,11 +440,12 @@ function buildSingleTableSqlFillTask(
 
   const vsrc = fill.fillMode === "visual" ? fill.visualSource : null;
   const tableOpcNodeId = String(vsrc?.tableOpcNodeId || "").trim();
+  const eng = (vsrc?.engine || "").toLowerCase();
   const tableOpc =
-    vsrc && vsrc.tableSource === "opcua" && tableOpcNodeId && sqlRaw.includes("{{table}}")
+    vsrc && vsrc.tableSource === "opcua" && tableOpcNodeId && sqlRaw.includes("{{table}}") && eng && eng !== "mongodb"
       ? {
           nodeId: tableOpcNodeId,
-          engine: (vsrc.engine || "mysql").toLowerCase(),
+          engine: eng,
           fallbackTable: String(vsrc.table || "").trim(),
         }
       : undefined;

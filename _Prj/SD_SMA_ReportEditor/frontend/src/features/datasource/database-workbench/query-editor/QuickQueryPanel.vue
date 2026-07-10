@@ -148,13 +148,22 @@ const sqlPresetsTable = computed(() => {
       desc: 'PostgreSQL 对该查询的 EXPLAIN 文本。',
       sql: `EXPLAIN SELECT * FROM ${qi} LIMIT 1`,
     })
-    const tl = String(t).replace(/'/g, "''")
+    const parts = String(t).split('.')
+    const schema = parts.length > 1 ? parts[0] : 'public'
+    const tableOnly = parts.length > 1 ? parts.slice(1).join('.') : String(t)
+    const schemaLit = schema.replace(/'/g, "''")
+    const tableLit = tableOnly.replace(/'/g, "''")
     list.push({
       title: '列清单（系统目录）',
-      desc: '从 information_schema 读取列名与类型（默认 public）。',
-      sql: `SELECT column_name, data_type FROM information_schema.columns WHERE table_schema = 'public' AND table_name = '${tl}' ORDER BY ordinal_position`,
+      desc: `从 information_schema 读取列名与类型（schema=${schema}）。`,
+      sql: `SELECT column_name, data_type FROM information_schema.columns WHERE table_schema = '${schemaLit}' AND table_name = '${tableLit}' ORDER BY ordinal_position`,
     })
   } else if (e === 'sqlite') {
+    list.push({
+      title: '查看结构',
+      desc: 'PRAGMA table_info：列出列名、类型与主键标记。',
+      sql: `PRAGMA table_info(${qi})`,
+    })
     list.push({
       title: '执行计划',
       desc: 'SQLite 对该查询的逻辑执行计划（EXPLAIN QUERY PLAN）。',
@@ -200,6 +209,11 @@ const sqlPresetsGeneric = computed(() => {
         title: '列出表与视图',
         desc: '从 sqlite_master 读取对象清单（最多 200 条）。',
         sql: "SELECT name, type FROM sqlite_master WHERE type IN ('table','view') ORDER BY name LIMIT 200",
+      },
+      {
+        title: 'sqlite_master 详情',
+        desc: '含 sql 建表语句的对象清单（最多 100 条）。',
+        sql: "SELECT name, type, sql FROM sqlite_master WHERE type IN ('table','view') ORDER BY name LIMIT 100",
       },
       {
         title: '连通性测试',

@@ -6,6 +6,7 @@
         <option value="none">无</option>
         <option value="opcua">OPC UA</option>
         <option value="sql">SQL</option>
+        <option value="mongo">MongoDB</option>
       </select>
     </label>
 
@@ -40,7 +41,12 @@
       <ScalarSqlParamBindingsEditor :params="sqlParams" @opc-pick="(slot) => emit('opc-pick-sql-param', slot)" />
     </template>
 
-    <div v-if="el.bindingKind === 'opcua' || el.bindingKind === 'sql'" class="pbf-null-mode">
+    <template v-if="el.bindingKind === 'mongo'">
+      <MongoQueryFields v-model="mongoQuery" />
+      <ScalarSqlParamBindingsEditor :params="sqlParams" @opc-pick="(slot) => emit('opc-pick-sql-param', slot)" />
+    </template>
+
+    <div v-if="el.bindingKind === 'opcua' || el.bindingKind === 'sql' || el.bindingKind === 'mongo'" class="pbf-null-mode">
       <span class="lpep-lab lpep-lab--block">空值显示</span>
       <div class="pbf-null-seg" role="group" aria-label="绑定为空时的显示方式">
         <button
@@ -103,6 +109,7 @@
 import { computed } from "vue";
 import ScalarSqlParamBindingsEditor from "@/components/report-template/ScalarSqlParamBindingsEditor.vue";
 import ScalarSqlQueryBuilder from "@/components/report-template/ScalarSqlQueryBuilder.vue";
+import MongoQueryFields from "@/components/report-template/MongoQueryFields.vue";
 import type { NullDisplayMode } from "@/lib/report-template/layout-zone-element";
 import { normalizeNullDisplayMode } from "@/lib/report-template/layout-zone-element";
 import { DECIMAL_PLACES_MAX, normalizeDecimalPlaces } from "@/lib/report-template/numeric-display";
@@ -116,10 +123,15 @@ import {
   ensureSqlParamSlots,
   type TableSqlParamBinding,
 } from "@/lib/report-template/table-sql-fill";
+import {
+  defaultMongoQueryConfig,
+  hydrateMongoQuery,
+  type MongoQueryConfig,
+} from "@/lib/report-template/mongo-query";
 
 /** 模版 / 版式共用的数据参数绑定字段 */
 export type ParameterBindingElement = {
-  bindingKind: "none" | "opcua" | "sql";
+  bindingKind: "none" | "opcua" | "sql" | "mongo";
   opcuaNodeId: string;
   sqlText: string;
   sqlParams: TableSqlParamBinding[];
@@ -128,6 +140,7 @@ export type ParameterBindingElement = {
   decimalPlaces?: number;
   scalarSqlFillMode?: ScalarSqlFillMode;
   scalarSqlVisual?: ScalarSqlVisualConfig | null;
+  mongoQuery?: MongoQueryConfig | null;
 };
 
 const props = defineProps<{
@@ -185,6 +198,13 @@ const sqlParams = computed({
   },
   set: (v: TableSqlParamBinding[]) => {
     props.el.sqlParams = v;
+  },
+});
+
+const mongoQuery = computed({
+  get: () => hydrateMongoQuery(props.el.mongoQuery ?? defaultMongoQueryConfig()),
+  set: (v: MongoQueryConfig) => {
+    props.el.mongoQuery = v;
   },
 });
 </script>

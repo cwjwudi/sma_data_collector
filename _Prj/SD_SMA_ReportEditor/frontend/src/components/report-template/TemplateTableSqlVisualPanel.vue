@@ -7,7 +7,7 @@
       数据源连接
       <select v-model="vs.connectionId" :class="selectFieldClass" @change="onConnChange">
         <option value="">请选择…</option>
-        <option v-for="c in connections" :key="c.id" :value="c.id">{{ c.name }}（{{ c.engine }}）</option>
+        <option v-for="c in sqlConnections" :key="c.id" :value="c.id">{{ c.name }}（{{ c.engine }}）</option>
       </select>
     </label>
 
@@ -559,6 +559,12 @@ const emit = defineEmits<{
 }>();
 
 const connections = ref<{ id: string; name: string; engine: string; database?: string }[]>([]);
+const sqlConnections = computed(() =>
+  connections.value.filter((c) => {
+    const e = (c.engine || "").toLowerCase();
+    return e === "mysql" || e === "mariadb" || e === "postgres" || e === "postgresql" || e === "sqlite";
+  }),
+);
 const catalogDatabases = ref<string[]>([]);
 const catalogTables = ref<{ name: string }[]>([]);
 const tableColumns = ref<{ name: string; type?: string }[]>([]);
@@ -720,7 +726,9 @@ const paramLegend = computed(() => {
 const engineHint = computed(() => {
   const e = (vs.value.engine || "").toLowerCase();
   if (!vs.value.connectionId) return "";
-  if (e === "mongodb") return "MongoDB 不支持 SQL 可视化，请改用「手写 SQL」模式。";
+  if (e === "mongodb") {
+    return "当前连接为 MongoDB：本面板仅支持 SQL 引擎（MySQL / MariaDB / PostgreSQL / SQLite）。请改选 SQL 连接，或在数据参数/单元格上使用「MongoDB」绑定。";
+  }
   return "";
 });
 
@@ -728,17 +736,17 @@ const canQueryDistinct = computed(() => {
   const v = vs.value;
   if (!v.connectionId || !visualSqlStructureTableName(v)) return false;
   const e = (v.engine || "").toLowerCase();
-  if (e === "mongodb") return false;
+  if (e === "mongodb" || !e) return false;
   if (showDatabasePick.value && !(v.database || "").trim()) return false;
   return true;
 });
 
-/** 不可打开表浏览时的禁用条件（连接未选 / MySQL·Pg 未选库 / Mongo） */
+/** 不可打开表浏览时的禁用条件（连接未选 / MySQL·Pg 未选库 / 非 SQL 引擎） */
 const tablePickBlocked = computed(() => {
   const v = vs.value;
   if (!v.connectionId.trim()) return true;
   const eng = (v.engine || "").toLowerCase();
-  if (eng === "mongodb") return true;
+  if (!eng || eng === "mongodb") return true;
   if (showDatabasePick.value && !(v.database || "").trim()) return true;
   return false;
 });
@@ -899,7 +907,8 @@ async function loadDistinctHints(flt: VisualSqlFilter) {
   distinctBusy.value = flt.id;
   catalogErr.value = "";
   try {
-    const eng = (vs.value.engine || "mysql").toLowerCase();
+    const eng = (vs.value.engine || "").toLowerCase();
+    if (!eng || eng === "mongodb") return;
     const sql = buildDistinctSelectSql(eng, visualSqlStructureTableName(vs.value), flt.column.trim(), 80);
     const data = await apiFetch("/database/query/sql", {
       method: "POST",

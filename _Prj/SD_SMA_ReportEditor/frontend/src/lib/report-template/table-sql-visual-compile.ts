@@ -34,8 +34,20 @@ import { verticalSqlSelectColCount } from "@/lib/report-template/table-sql-verti
 
 export function quoteSqlIdentifier(engineLower: string, name: string): string {
   validateSqlIdentifier(name);
-  if (engineLower === "postgres" || engineLower === "sqlite") return `"${name.replace(/"/g, '""')}"`;
+  if (engineLower === "postgres" || engineLower === "postgresql" || engineLower === "sqlite")
+    return `"${name.replace(/"/g, '""')}"`;
   return `\`${name.replace(/`/g, "")}\``;
+}
+
+/** PostgreSQL 支持 schema.table；其它引擎仅单段标识符 */
+export function quoteSqlTableRef(engineLower: string, table: string): string {
+  const eng = (engineLower || "").toLowerCase();
+  const raw = table.trim();
+  if ((eng === "postgres" || eng === "postgresql") && raw.includes(".")) {
+    const [schema, name] = raw.split(".", 2);
+    return `${quoteSqlIdentifier(eng, schema)}.${quoteSqlIdentifier(eng, name)}`;
+  }
+  return quoteSqlIdentifier(eng, raw);
 }
 
 /** 第 fi 条筛选条件在扁平 params 中的起始下标（与 compileVisualTableSql 一致） */
@@ -100,10 +112,8 @@ export function applyTableSqlFillOpcPick(fill: TableSqlFillConfig, slot: number,
 }
 
 export function buildDistinctSelectSql(engineLower: string, table: string, column: string, limit: number): string {
-  validateSqlIdentifier(table);
-  validateSqlIdentifier(column);
   const lim = Math.min(200, Math.max(1, Math.round(limit)));
-  const qt = quoteSqlIdentifier(engineLower, table.trim());
+  const qt = quoteSqlTableRef(engineLower, table.trim());
   const qc = quoteSqlIdentifier(engineLower, column.trim());
   return `SELECT DISTINCT ${qc} AS __dv FROM ${qt} WHERE ${qc} IS NOT NULL LIMIT ${lim}`;
 }
@@ -120,8 +130,8 @@ export function compileVisualTableSql(fill: TableSqlFillConfig): boolean {
     fill.querySql = "";
     return false;
   }
-  const eng = (vs.engine || "mysql").toLowerCase();
-  if (eng === "mongodb") {
+  const eng = (vs.engine || "").trim().toLowerCase();
+  if (!eng || eng === "mongodb") {
     fill.querySql = "";
     return false;
   }
@@ -133,7 +143,13 @@ export function compileVisualTableSql(fill: TableSqlFillConfig): boolean {
   }
 
   try {
-    validateSqlIdentifier(vs.table.trim());
+    if ((eng === "postgres" || eng === "postgresql") && vs.table.trim().includes(".")) {
+      const [schema, name] = vs.table.trim().split(".", 2);
+      validateSqlIdentifier(schema);
+      validateSqlIdentifier(name);
+    } else {
+      validateSqlIdentifier(vs.table.trim());
+    }
     for (const c of selectFields) {
       validateSqlIdentifier(c);
     }
@@ -145,7 +161,7 @@ export function compileVisualTableSql(fill: TableSqlFillConfig): boolean {
   const qcols = selectFields.map((c) => quoteSqlIdentifier(eng, c)).join(", ");
   // 表名绑定 OPC 时产出 {{table}}；vs.table 仍是结构参考表（设计时选列 + 读失败兜底）
   const tableOpcBound = vs.tableSource === "opcua" && String(vs.tableOpcNodeId || "").trim().length > 0;
-  const qtbl = tableOpcBound ? "{{table}}" : quoteSqlIdentifier(eng, vs.table.trim());
+  const qtbl = tableOpcBound ? "{{table}}" : quoteSqlTableRef(eng, vs.table.trim());
 
   const whereParts: string[] = [];
   const flatParams: TableSqlParamBinding[] = [];

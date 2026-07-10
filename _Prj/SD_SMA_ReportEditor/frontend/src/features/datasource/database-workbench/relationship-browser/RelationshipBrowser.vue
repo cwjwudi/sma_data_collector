@@ -579,7 +579,7 @@ async function selectEdge(edge) {
       consistencyWarnings.value = cmp.warnings || []
       consistencyDone.value = true
     } catch {
-      consistencyWarnings.value = ['一致性扫描不可用（引擎或非 PG/MySQL）']
+      consistencyWarnings.value = ['一致性扫描失败或当前引擎暂不可用（已支持 MySQL / MariaDB / PostgreSQL / SQLite）']
       consistencyDone.value = true
     } finally {
       consistencyLoading.value = false

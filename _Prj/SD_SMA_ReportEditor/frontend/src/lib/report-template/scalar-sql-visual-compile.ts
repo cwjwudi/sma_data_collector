@@ -7,17 +7,29 @@ export function compileScalarVisualSql(visual: ScalarSqlVisualConfig): string {
   const table = visual.table.trim();
   const col = visual.valueColumn.trim();
   if (!table || !col) return "";
-  const eng = (visual.engine || "mysql").toLowerCase();
-  if (eng === "mongodb") return "";
+  const eng = (visual.engine || "").trim().toLowerCase();
+  if (!eng || eng === "mongodb") return "";
 
   try {
-    validateSqlIdentifier(table);
+    if ((eng === "postgres" || eng === "postgresql") && table.includes(".")) {
+      const [schema, name] = table.split(".", 2);
+      validateSqlIdentifier(schema);
+      validateSqlIdentifier(name);
+    } else {
+      validateSqlIdentifier(table);
+    }
     validateSqlIdentifier(col);
   } catch {
     return "";
   }
 
-  const qt = quoteSqlIdentifier(eng, table);
+  const qt =
+    (eng === "postgres" || eng === "postgresql") && table.includes(".")
+      ? table
+          .split(".", 2)
+          .map((p) => quoteSqlIdentifier(eng, p))
+          .join(".")
+      : quoteSqlIdentifier(eng, table);
   const qc = quoteSqlIdentifier(eng, col);
   const whereCol = visual.whereColumn.trim();
   if (whereCol) {

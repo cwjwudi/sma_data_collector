@@ -253,6 +253,31 @@ def mongo_find_sample(
     offset: int = 0,
     include_total: bool = False,
 ) -> dict[str, Any]:
+    return mongo_find_readonly(
+        uri_host_vars,
+        database,
+        collection,
+        filter_doc={},
+        projection=None,
+        sort=None,
+        limit=limit,
+        offset=offset,
+        include_total=include_total,
+    )
+
+
+def mongo_find_readonly(
+    uri_host_vars: dict[str, Any],
+    database: str,
+    collection: str,
+    filter_doc: dict[str, Any] | None = None,
+    projection: dict[str, Any] | None = None,
+    sort: list[tuple[str, int]] | dict[str, int] | None = None,
+    limit: int = 100,
+    offset: int = 0,
+    include_total: bool = False,
+) -> dict[str, Any]:
+    """只读 find：支持 filter / projection / sort，供报表绑定与工作台预览共用。"""
     from pymongo import MongoClient
 
     uri = _mongo_uri(**uri_host_vars)
@@ -261,16 +286,20 @@ def mongo_find_sample(
         db = client[database]
         col = db[collection]
         off = max(0, int(offset))
-        lim = max(1, int(limit))
-        cur = col.find({}).skip(off).limit(lim)
-        docs = list(cur)
+        lim = max(1, min(int(limit), 5000))
+        filt = filter_doc if isinstance(filter_doc, dict) else {}
+        cursor = col.find(filt, projection if isinstance(projection, dict) else None)
+        if sort:
+            cursor = cursor.sort(list(sort.items()) if isinstance(sort, dict) else list(sort))
+        cursor = cursor.skip(off).limit(lim)
+        docs = list(cursor)
         for d in docs:
             if "_id" in d:
                 d["_id"] = str(d["_id"])
         cols = sorted({k for d in docs for k in d.keys()}) if docs else []
         out: dict[str, Any] = {"columns": cols, "rows": docs}
         if include_total:
-            out["total"] = col.count_documents({})
+            out["total"] = col.count_documents(filt)
         return out
     finally:
         client.close()
@@ -396,14 +425,21 @@ def introspect_pg_tables(host: str, port: int, user: str, password: str, databas
         with conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT table_name, table_type
+                SELECT table_schema, table_name, table_type
                 FROM information_schema.tables
                 WHERE table_schema NOT IN ('pg_catalog','information_schema')
-                ORDER BY table_name
+                ORDER BY table_schema, table_name
                 """
             )
             rows = cur.fetchall()
-        return [{"name": r[0], "kind": r[1]} for r in rows]
+        out: list[dict[str, Any]] = []
+        for schema, name, kind in rows:
+            sch = str(schema)
+            tbl = str(name)
+            # 非 public 用 schema.table，避免与其它 schema 重名冲突
+            display = tbl if sch == "public" else f"{sch}.{tbl}"
+            out.append({"name": display, "schema": sch, "kind": kind})
+        return out
     finally:
         conn.close()
 
@@ -424,6 +460,38 @@ def _safe_ident(name: str) -> str:
     if not name or not re.match(r"^[a-zA-Z0-9_]+$", name):
         raise ValueError("非法表名/标识符")
     return name
+
+
+def quote_sql_ident(engine: str, name: str) -> str:
+    """按引擎引用已校验的标识符。"""
+    ident = _safe_ident(name)
+    eng = (engine or "").lower()
+    if eng in ("mysql", "mariadb"):
+        return f"`{ident}`"
+    if eng in ("postgres", "postgresql", "sqlite"):
+        return f'"{ident}"'
+    return ident
+
+
+def parse_pg_table_ref(table: str) -> tuple[str, str]:
+    """解析 PostgreSQL 表引用：`table` 或 `schema.table` → (schema, table)。默认 schema=public。"""
+    raw = (table or "").strip()
+    if not raw:
+        raise ValueError("表名不能为空")
+    if "." in raw:
+        schema, name = raw.split(".", 1)
+        return _safe_ident(schema), _safe_ident(name)
+    return "public", _safe_ident(raw)
+
+
+def quote_sql_table_ref(engine: str, table: str) -> str:
+    """引用表名；PostgreSQL 支持 schema.table。"""
+    eng = (engine or "").lower()
+    raw = (table or "").strip()
+    if eng in ("postgres", "postgresql") and "." in raw:
+        schema, name = parse_pg_table_ref(raw)
+        return f"{quote_sql_ident(eng, schema)}.{quote_sql_ident(eng, name)}"
+    return quote_sql_ident(engine, _safe_ident(raw))
 
 
 def ddl_preview_mysql(host: str, port: int, user: str, password: str, database: str, table: str) -> str:
@@ -451,7 +519,7 @@ def ddl_preview_mysql(host: str, port: int, user: str, password: str, database: 
 def ddl_preview_pg(host: str, port: int, user: str, password: str, database: str, table: str) -> str:
     import psycopg2
 
-    table = _safe_ident(table)
+    schema, tbl = parse_pg_table_ref(table)
     conn = psycopg2.connect(host=host, port=port, user=user, password=password, dbname=database, connect_timeout=10)
     try:
         with conn.cursor() as cur:
@@ -459,16 +527,17 @@ def ddl_preview_pg(host: str, port: int, user: str, password: str, database: str
                 """
                 SELECT column_name, data_type
                 FROM information_schema.columns
-                WHERE table_schema='public' AND table_name=%s
+                WHERE table_schema=%s AND table_name=%s
                 ORDER BY ordinal_position
                 """,
-                (table,),
+                (schema, tbl),
             )
             rows = cur.fetchall()
-        lines = [f"  {r[0]} {r[1]}" for r in rows]
+        lines = [f'  "{r[0]}" {r[1]}' for r in rows]
         if not lines:
-            return f"-- 未找到表 {table} 的列信息"
-        return f"-- 近似 DDL（只读预览）\nCREATE TABLE {table} (\n" + ",\n".join(lines) + "\n);"
+            return f"-- 未找到表 {schema}.{tbl} 的列信息"
+        qname = f'"{schema}"."{tbl}"'
+        return f"-- 近似 DDL（只读预览）\nCREATE TABLE {qname} (\n" + ",\n".join(lines) + "\n);"
     finally:
         conn.close()
 
@@ -522,7 +591,7 @@ def list_mysql_columns(host: str, port: int, user: str, password: str, database:
 def list_pg_columns(host: str, port: int, user: str, password: str, database: str, table: str) -> list[dict[str, str]]:
     import psycopg2
 
-    tbl = _safe_ident(table)
+    schema, tbl = parse_pg_table_ref(table)
     conn = psycopg2.connect(
         host=host, port=port, user=user, password=password, dbname=database or "postgres", connect_timeout=10
     )
@@ -532,10 +601,10 @@ def list_pg_columns(host: str, port: int, user: str, password: str, database: st
                 """
                 SELECT column_name, data_type
                 FROM information_schema.columns
-                WHERE table_schema = 'public' AND table_name = %s
+                WHERE table_schema = %s AND table_name = %s
                 ORDER BY ordinal_position
                 """,
-                (tbl,),
+                (schema, tbl),
             )
             rows = cur.fetchall()
         return [{"name": str(r[0]), "data_type": str(r[1])} for r in rows]
@@ -555,26 +624,33 @@ def list_sqlite_columns(path: str, table: str) -> list[dict[str, str]]:
         conn.close()
 
 
-def _safe_qualified(ref: str) -> str:
+def _safe_qualified(ref: str, engine: str = "mysql") -> str:
     parts = ref.strip().split(".")
-    if len(parts) != 2:
-        raise ValueError("JOIN ON 须为 table.column 形式")
-    return f"{_safe_ident(parts[0])}.{_safe_ident(parts[1])}"
+    if len(parts) == 2:
+        return f"{quote_sql_ident(engine, parts[0])}.{quote_sql_ident(engine, parts[1])}"
+    if len(parts) == 3 and (engine or "").lower() in ("postgres", "postgresql"):
+        # schema.table.column
+        return (
+            f"{quote_sql_ident(engine, parts[0])}."
+            f"{quote_sql_ident(engine, parts[1])}."
+            f"{quote_sql_ident(engine, parts[2])}"
+        )
+    raise ValueError("JOIN ON 须为 table.column 形式")
 
 
-def _join_on_clause(j: dict[str, Any]) -> str:
+def _join_on_clause(j: dict[str, Any], engine: str = "mysql") -> str:
     pairs: list[str] = []
     raw_pairs = j.get("on_pairs")
     if isinstance(raw_pairs, list) and raw_pairs:
         for pair in raw_pairs:
             if not isinstance(pair, (list, tuple)) or len(pair) != 2:
                 continue
-            pairs.append(f"{_safe_qualified(str(pair[0]))} = {_safe_qualified(str(pair[1]))}")
+            pairs.append(f"{_safe_qualified(str(pair[0]), engine)} = {_safe_qualified(str(pair[1]), engine)}")
     else:
         left = j.get("on_left", "")
         right = j.get("on_right", "")
         if left and right:
-            pairs.append(f"{_safe_qualified(left)} = {_safe_qualified(right)}")
+            pairs.append(f"{_safe_qualified(left, engine)} = {_safe_qualified(right, engine)}")
     if not pairs:
         raise ValueError("JOIN 缺少 ON 条件")
     return " AND ".join(pairs)
@@ -585,35 +661,42 @@ def build_visual_select(
     joins: list[dict[str, Any]],
     columns: list[str],
     limit: int,
+    engine: str = "mysql",
 ) -> str:
-    bt = _safe_ident(base_table)
+    eng = (engine or "mysql").lower()
+    bt = quote_sql_table_ref(eng, base_table)
     cols_sql: list[str] = []
     for c in columns:
         c = c.strip()
         if not c:
             continue
         if "." in c:
-            a, b = c.split(".", 1)
-            cols_sql.append(f"{_safe_ident(a)}.{_safe_ident(b)}")
+            cols_sql.append(_safe_qualified(c, eng))
         else:
-            cols_sql.append(f"{bt}.{_safe_ident(c)}")
+            # 无限定列：挂到基表；PG schema.table 时用末段别名不便，直接用完整引用.col
+            if eng in ("postgres", "postgresql") and "." in (base_table or ""):
+                cols_sql.append(f"{bt}.{quote_sql_ident(eng, c)}")
+            else:
+                bare = _safe_ident(base_table.split(".")[-1])
+                cols_sql.append(f"{quote_sql_ident(eng, bare)}.{quote_sql_ident(eng, c)}")
     if not cols_sql:
         cols_sql = [f"{bt}.*"]
     sql = f"SELECT {', '.join(cols_sql)} FROM {bt}"
     for j in joins:
-        jt = _safe_ident(j.get("table", ""))
-        sql += f" INNER JOIN {jt} ON {_join_on_clause(j)}"
+        jt = quote_sql_table_ref(eng, str(j.get("table", "")))
+        sql += f" INNER JOIN {jt} ON {_join_on_clause(j, eng)}"
     lim = max(1, min(int(limit), 5000))
     sql += f" LIMIT {lim}"
     return sql
 
 
-def build_visual_count_sql(base_table: str, joins: list[dict[str, Any]]) -> str:
-    bt = _safe_ident(base_table)
+def build_visual_count_sql(base_table: str, joins: list[dict[str, Any]], engine: str = "mysql") -> str:
+    eng = (engine or "mysql").lower()
+    bt = quote_sql_table_ref(eng, base_table)
     sql = f"SELECT COUNT(*) AS cnt FROM {bt}"
     for j in joins:
-        jt = _safe_ident(j.get("table", ""))
-        sql += f" INNER JOIN {jt} ON {_join_on_clause(j)}"
+        jt = quote_sql_table_ref(eng, str(j.get("table", "")))
+        sql += f" INNER JOIN {jt} ON {_join_on_clause(j, eng)}"
     return sql
 
 
@@ -685,35 +768,42 @@ def list_postgres_foreign_keys(host: str, port: int, user: str, password: str, d
             cur.execute(
                 """
                 SELECT c.conname,
+                       ns.nspname AS child_schema,
                        cl.relname AS child_table,
                        a.attname AS child_col,
+                       nsf.nspname AS parent_schema,
                        cf.relname AS parent_table,
                        af.attname AS parent_col,
                        ord.idx
                 FROM pg_constraint c
                 JOIN pg_class cl ON cl.oid = c.conrelid
-                JOIN pg_namespace ns ON ns.oid = cl.relnamespace AND ns.nspname = 'public'
+                JOIN pg_namespace ns ON ns.oid = cl.relnamespace
+                   AND ns.nspname NOT IN ('pg_catalog', 'information_schema')
                 JOIN LATERAL unnest(c.conkey) WITH ORDINALITY AS ord(attnum, idx) ON TRUE
                 JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = ord.attnum
                 JOIN pg_class cf ON cf.oid = c.confrelid
+                JOIN pg_namespace nsf ON nsf.oid = cf.relnamespace
                 JOIN LATERAL unnest(c.confkey) WITH ORDINALITY AS ord2(attnum2, idx2) ON ord.idx = ord2.idx2
                 JOIN pg_attribute af ON af.attrelid = c.confrelid AND af.attnum = ord2.attnum2
                 WHERE c.contype = 'f'
-                ORDER BY child_table, c.conname, ord.idx
+                ORDER BY ns.nspname, cl.relname, c.conname, ord.idx
                 """
             )
             rows = cur.fetchall()
     finally:
         conn.close()
 
+    def _disp(schema: str, table: str) -> str:
+        return table if schema == "public" else f"{schema}.{table}"
+
     grouped: dict[tuple[str, str], list[tuple[int, str, str, str]]] = {}
     for r in rows:
         cname = str(r[0])
-        child_t = str(r[1])
-        child_c = str(r[2])
-        parent_t = str(r[3])
-        parent_c = str(r[4])
-        idx = int(r[5])
+        child_t = _disp(str(r[1]), str(r[2]))
+        child_c = str(r[3])
+        parent_t = _disp(str(r[4]), str(r[5]))
+        parent_c = str(r[6])
+        idx = int(r[7])
         grouped.setdefault((child_t, cname), []).append((idx, child_c, parent_t, parent_c))
 
     out: list[dict[str, Any]] = []
@@ -900,7 +990,7 @@ def list_mysql_columns_extended(host: str, port: int, user: str, password: str, 
 def list_pg_columns_extended(host: str, port: int, user: str, password: str, database: str, table: str) -> list[dict[str, Any]]:
     import psycopg2
 
-    tbl = _safe_ident(table)
+    schema, tbl = parse_pg_table_ref(table)
     conn = psycopg2.connect(
         host=host, port=port, user=user, password=password, dbname=database or "postgres", connect_timeout=10
     )
@@ -910,10 +1000,10 @@ def list_pg_columns_extended(host: str, port: int, user: str, password: str, dat
                 """
                 SELECT column_name, data_type
                 FROM information_schema.columns
-                WHERE table_schema = 'public' AND table_name = %s
+                WHERE table_schema = %s AND table_name = %s
                 ORDER BY ordinal_position
                 """,
-                (tbl,),
+                (schema, tbl),
             )
             base_rows = cur.fetchall()
             cur.execute(
@@ -923,27 +1013,29 @@ def list_pg_columns_extended(host: str, port: int, user: str, password: str, dat
                 JOIN information_schema.key_column_usage ku
                   ON tc.constraint_schema = ku.constraint_schema
                   AND tc.constraint_name = ku.constraint_name
-                WHERE tc.table_schema = 'public' AND tc.table_name = %s AND tc.constraint_type = 'PRIMARY KEY'
+                WHERE tc.table_schema = %s AND tc.table_name = %s AND tc.constraint_type = 'PRIMARY KEY'
                 """,
-                (tbl,),
+                (schema, tbl),
             )
             pk_cols = {str(r[0]) for r in cur.fetchall()}
             cur.execute(
                 """
-                SELECT kcu.column_name, ccu.table_name AS ft, ccu.column_name AS fc
+                SELECT kcu.column_name, ccu.table_schema AS fs, ccu.table_name AS ft, ccu.column_name AS fc
                 FROM information_schema.table_constraints tc
                 JOIN information_schema.key_column_usage kcu
                   ON tc.constraint_schema = kcu.constraint_schema AND tc.constraint_name = kcu.constraint_name
                 JOIN information_schema.constraint_column_usage ccu
                   ON ccu.constraint_schema = tc.constraint_schema AND ccu.constraint_name = tc.constraint_name
                 WHERE tc.constraint_type = 'FOREIGN KEY'
-                  AND tc.table_schema = 'public' AND tc.table_name = %s
+                  AND tc.table_schema = %s AND tc.table_name = %s
                 """,
-                (tbl,),
+                (schema, tbl),
             )
             fk_map: dict[str, tuple[str, str]] = {}
             for r in cur.fetchall():
-                fk_map[str(r[0])] = (str(r[1]), str(r[2]))
+                ft_schema, ft_name = str(r[1]), str(r[2])
+                ft_display = ft_name if ft_schema == "public" else f"{ft_schema}.{ft_name}"
+                fk_map[str(r[0])] = (ft_display, str(r[3]))
         out: list[dict[str, Any]] = []
         for r in base_rows:
             name = str(r[0])
@@ -1033,7 +1125,7 @@ def mysql_table_meta(host: str, port: int, user: str, password: str, database: s
 def pg_table_meta(host: str, port: int, user: str, password: str, database: str, table: str) -> dict[str, Any]:
     import psycopg2
 
-    tbl = _safe_ident(table)
+    schema, tbl = parse_pg_table_ref(table)
     conn = psycopg2.connect(
         host=host, port=port, user=user, password=password, dbname=database or "postgres", connect_timeout=10
     )
@@ -1044,9 +1136,9 @@ def pg_table_meta(host: str, port: int, user: str, password: str, database: str,
                 SELECT c.reltuples::bigint, obj_description(c.oid)
                 FROM pg_class c
                 JOIN pg_namespace n ON n.oid = c.relnamespace
-                WHERE n.nspname = 'public' AND c.relname = %s AND c.relkind = 'r'
+                WHERE n.nspname = %s AND c.relname = %s AND c.relkind = 'r'
                 """,
-                (tbl,),
+                (schema, tbl),
             )
             row = cur.fetchone()
             if not row:
@@ -1141,9 +1233,9 @@ def fk_column_type_compare_postgres(
 ) -> dict[str, Any]:
     import psycopg2
 
-    ct = _safe_ident(child_table)
+    cs, ct = parse_pg_table_ref(child_table)
+    ps, pt = parse_pg_table_ref(parent_table)
     cc = _safe_ident(child_col)
-    pt = _safe_ident(parent_table)
     pc = _safe_ident(parent_col)
     conn = psycopg2.connect(
         host=host, port=port, user=user, password=password, dbname=database or "postgres", connect_timeout=10
@@ -1154,25 +1246,69 @@ def fk_column_type_compare_postgres(
                 """
                 SELECT data_type, udt_name
                 FROM information_schema.columns
-                WHERE table_schema='public' AND table_name=%s AND column_name=%s
+                WHERE table_schema=%s AND table_name=%s AND column_name=%s
                 """,
-                (ct, cc),
+                (cs, ct, cc),
             )
             cr = cur.fetchone()
             cur.execute(
                 """
                 SELECT data_type, udt_name
                 FROM information_schema.columns
-                WHERE table_schema='public' AND table_name=%s AND column_name=%s
+                WHERE table_schema=%s AND table_name=%s AND column_name=%s
                 """,
-                (pt, pc),
+                (ps, pt, pc),
             )
             pr = cur.fetchone()
         if not cr or not pr:
-            return {"match": False, "warnings": ["未找到列类型"]}
-        warnings = []
-        if str(cr[0]) != str(pr[0]) or str(cr[1]) != str(pr[1]):
-            warnings.append(f"类型不一致：{cc} {cr[0]}/{cr[1]} vs {pc} {pr[0]}/{pr[1]}")
-        return {"match": len(warnings) == 0, "child": {"data_type": cr[0]}, "parent": {"data_type": pr[0]}, "warnings": warnings}
+            return {"match": False, "warnings": ["无法在 information_schema 中找到列定义"]}
+        warnings: list[str] = []
+        if str(cr[0]).upper() != str(pr[0]).upper() or str(cr[1]).upper() != str(pr[1]).upper():
+            warnings.append(f"类型不一致：子列 {cc}={cr[0]}/{cr[1]}，父列 {pc}={pr[0]}/{pr[1]}")
+        return {
+            "match": len(warnings) == 0,
+            "child": {"column_type": f"{cr[0]} ({cr[1]})"},
+            "parent": {"column_type": f"{pr[0]} ({pr[1]})"},
+            "warnings": warnings,
+        }
+    finally:
+        conn.close()
+
+
+def fk_column_type_compare_sqlite(
+    path: str,
+    child_table: str,
+    child_col: str,
+    parent_table: str,
+    parent_col: str,
+) -> dict[str, Any]:
+    uri = f"file:{path}?mode=ro"
+    conn = sqlite3.connect(uri, uri=True)
+    try:
+        ct = _safe_ident(child_table)
+        pt = _safe_ident(parent_table)
+        cc = _safe_ident(child_col)
+        pc = _safe_ident(parent_col)
+
+        def _col_type(table: str, col: str) -> str | None:
+            rows = conn.execute("SELECT name, type FROM pragma_table_info(?)", (table,)).fetchall()
+            for name, typ in rows:
+                if str(name) == col:
+                    return str(typ or "")
+            return None
+
+        child_t = _col_type(ct, cc)
+        parent_t = _col_type(pt, pc)
+        if child_t is None or parent_t is None:
+            return {"match": False, "warnings": ["无法在 PRAGMA table_info 中找到列定义"]}
+        warnings: list[str] = []
+        if child_t.upper() != parent_t.upper():
+            warnings.append(f"类型不一致：子列 {cc}={child_t}，父列 {pc}={parent_t}")
+        return {
+            "match": len(warnings) == 0,
+            "child": {"column_type": child_t},
+            "parent": {"column_type": parent_t},
+            "warnings": warnings,
+        }
     finally:
         conn.close()

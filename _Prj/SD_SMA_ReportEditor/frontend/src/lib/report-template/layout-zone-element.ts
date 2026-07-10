@@ -28,6 +28,7 @@ import {
   hydrateTableSqlFill,
 } from "@/lib/report-template/table-sql-fill";
 import { normalizeDecimalPlaces } from "@/lib/report-template/numeric-display";
+import { hydrateMongoQueryOptional, type MongoQueryConfig } from "@/lib/report-template/mongo-query";
 
 /** 绑定结果为空时的显示策略（数据参数控件） */
 export type NullDisplayMode = "blank" | "emptyLabel" | "fallbackText";
@@ -51,7 +52,7 @@ export type LayoutControlType =
   | "parameter";
 
 /** 与模版正文控件一致的绑定枚举（版式区 / 页眉页脚） */
-export type ZoneBindingKind = "none" | "opcua" | "sql";
+export type ZoneBindingKind = "none" | "opcua" | "sql" | "mongo";
 
 /** 版式区内表格单元格（结构与 TemplateTableCell 一致） */
 export interface LayoutZoneTableCell {
@@ -63,6 +64,8 @@ export interface LayoutZoneTableCell {
   /** 单元格标量 SQL：手写 / 点选生成（与数据参数控件一致） */
   scalarSqlFillMode?: ScalarSqlFillMode;
   scalarSqlVisual?: ScalarSqlVisualConfig | null;
+  /** 单元格 MongoDB 查询（bindingKind === mongo） */
+  mongoQuery?: MongoQueryConfig | null;
   /** 单元格填充色；transparent 或未设则继承列/表格默认 */
   bgColor?: string;
   /** REAL/浮点显示小数位数；未设则保持原样 */
@@ -149,6 +152,8 @@ export interface LayoutZoneElement {
   sqlParams: TableSqlParamBinding[];
   scalarSqlFillMode?: ScalarSqlFillMode;
   scalarSqlVisual?: ScalarSqlVisualConfig | null;
+  /** MongoDB 查询（bindingKind === mongo） */
+  mongoQuery?: MongoQueryConfig | null;
   /** 绑定为空时：空白 / 「空值」/ 手填默认文案（仅 parameter） */
   nullDisplayMode?: NullDisplayMode;
   /** REAL/浮点显示小数位数；未设则保持原样（parameter） */
@@ -353,7 +358,7 @@ function newId(): string {
 }
 
 function normalizeZoneBindingKind(v: unknown): ZoneBindingKind {
-  if (v === "opcua" || v === "sql") return v;
+  if (v === "opcua" || v === "sql" || v === "mongo") return v;
   return "none";
 }
 
@@ -379,6 +384,7 @@ export function hydrateZoneTableCell(raw: Partial<LayoutZoneTableCell> | undefin
   const sqlText = typeof raw.sqlText === "string" ? raw.sqlText : d.sqlText;
   const rawMode = (raw as { scalarSqlFillMode?: unknown }).scalarSqlFillMode;
   const rawVisual = (raw as { scalarSqlVisual?: unknown }).scalarSqlVisual;
+  const mongoQuery = hydrateMongoQueryOptional((raw as { mongoQuery?: unknown }).mongoQuery);
   return {
     text: typeof raw.text === "string" ? raw.text : d.text,
     bindingKind: normalizeZoneBindingKind(raw.bindingKind),
@@ -388,6 +394,7 @@ export function hydrateZoneTableCell(raw: Partial<LayoutZoneTableCell> | undefin
     // 仅在旧数据已有配置时水合，避免为整表每格写入默认对象
     scalarSqlFillMode: rawMode != null ? normalizeScalarSqlFillMode(rawMode, sqlText) : undefined,
     scalarSqlVisual: rawVisual != null ? hydrateScalarSqlVisual(rawVisual) : undefined,
+    mongoQuery,
     bgColor: typeof raw.bgColor === "string" ? raw.bgColor : d.bgColor,
     decimalPlaces: normalizeDecimalPlaces((raw as { decimalPlaces?: unknown }).decimalPlaces),
   };
@@ -656,6 +663,7 @@ export function hydrateLayoutZoneElement(raw: Partial<LayoutZoneElement>): Layou
       typeof raw.sqlText === "string" ? raw.sqlText : d.sqlText,
     ),
     scalarSqlVisual: hydrateScalarSqlVisual((raw as { scalarSqlVisual?: unknown }).scalarSqlVisual),
+    mongoQuery: hydrateMongoQueryOptional((raw as { mongoQuery?: unknown }).mongoQuery),
     nullDisplayMode:
       type === "parameter"
         ? normalizeNullDisplayMode((raw as { nullDisplayMode?: unknown }).nullDisplayMode)

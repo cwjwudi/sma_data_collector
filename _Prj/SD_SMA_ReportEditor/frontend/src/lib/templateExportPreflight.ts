@@ -2,6 +2,7 @@ import { apiFetch } from "@/api/client.js";
 import { getTemplate } from "@/api/templates";
 import {
   collectBindingDedupeTasks,
+  connectionSupportsMongo,
   connectionSupportsSql,
   forEachTemplateCanvasElement,
   forEachZoneLayoutElement,
@@ -17,7 +18,7 @@ export type TemplateExportPreflightResult = {
   summary: string;
 };
 
-type NamedEntity = { id: string; name?: string };
+type NamedEntity = { id: string; name?: string; engine?: string };
 
 async function testSavedDb(connectionId: string, label: string): Promise<string | null> {
   try {
@@ -74,16 +75,16 @@ export async function runTemplateExportPreflight(templateId: string): Promise<Te
   const connections = ((connPkg as { connections?: NamedEntity[] }).connections || []) as NamedEntity[];
 
   const opcServerId = pickPreferredOpcServerId(prefs, servers);
-  const sqlCapable = connections.filter((c) =>
-    connectionSupportsSql(String((c as { engine?: string }).engine || "")),
-  );
+  const sqlCapable = connections.filter((c) => connectionSupportsSql(String(c.engine || "")));
+  const mongoCapable = connections.filter((c) => connectionSupportsMongo(String(c.engine || "")));
   const sqlConnId = pickPreferredSqlConnectionId(prefs, sqlCapable as { id: string; engine?: string }[]);
 
-  const { opcTasks, sqlTasks } = collectBindingDedupeTasks(tmpl, opcServerId, sqlConnId);
+  const { opcTasks, sqlTasks, mongoTasks } = collectBindingDedupeTasks(tmpl, opcServerId, sqlConnId);
 
   let enabledSqlFillCount = 0;
   let splitSqlFillCount = 0;
   const sqlFillConnectionIds = new Set<string>();
+  const mongoFillConnectionIds = new Set<string>();
   function collectSqlFill(el: { type?: string; tableSqlFill?: unknown }) {
     if (el.type !== "table") return;
     const fill = el.tableSqlFill as
@@ -91,6 +92,7 @@ export async function runTemplateExportPreflight(templateId: string): Promise<Te
           enabled?: boolean;
           fillMode?: string;
           visualSource?: { connectionId?: string };
+          mongoQuery?: { connectionId?: string };
           splitReportsOnMaxRows?: boolean;
         }
       | null
@@ -98,6 +100,11 @@ export async function runTemplateExportPreflight(templateId: string): Promise<Te
     if (!fill?.enabled) return;
     enabledSqlFillCount += 1;
     if (fill.splitReportsOnMaxRows) splitSqlFillCount += 1;
+    if (fill.fillMode === "mongo") {
+      const mongoId = String(fill.mongoQuery?.connectionId || "").trim();
+      if (mongoId) mongoFillConnectionIds.add(mongoId);
+      return;
+    }
     const id =
       fill.fillMode === "visual"
         ? String(fill.visualSource?.connectionId || "").trim()
@@ -118,12 +125,28 @@ export async function runTemplateExportPreflight(templateId: string): Promise<Te
   if (opcTasks.length && !opcServerId) {
     blockers.push("模版含 OPC UA 绑定，但未配置可用的 OPC UA 连接。");
   }
-  if ((sqlTasks.length || enabledSqlFillCount > 0) && !sqlConnId && sqlFillConnectionIds.size === 0) {
-    blockers.push("模版含 SQL 绑定，但未配置可用的数据库连接（需 MySQL/MariaDB/PostgreSQL/SQLite）。");
+  const needsSql =
+    sqlTasks.length > 0 || [...sqlFillConnectionIds].some((id) => !connectionSupportsMongo(
+      String(connections.find((c) => c.id === id)?.engine || ""),
+    ));
+  if (needsSql && !sqlConnId && sqlFillConnectionIds.size === 0) {
+    blockers.push(
+      "模版含 SQL 绑定，但未配置可用的数据库连接（需 MySQL / MariaDB / PostgreSQL / SQLite）。",
+    );
+  }
+  if ((mongoTasks.length > 0 || mongoFillConnectionIds.size > 0) && mongoCapable.length === 0) {
+    blockers.push("模版含 MongoDB 绑定，但未配置可用的 MongoDB 连接。");
   }
 
   const opcIds = [...new Set(opcTasks.map((t) => t.serverId))];
-  const sqlIds = [...new Set([...sqlTasks.map((t) => t.connectionId), ...sqlFillConnectionIds])];
+  const dbIds = [
+    ...new Set([
+      ...sqlTasks.map((t) => t.connectionId),
+      ...mongoTasks.map((t) => t.connectionId),
+      ...sqlFillConnectionIds,
+      ...mongoFillConnectionIds,
+    ]),
+  ];
 
   await Promise.all([
     ...opcIds.map(async (id) => {
@@ -132,16 +155,18 @@ export async function runTemplateExportPreflight(templateId: string): Promise<Te
       const err = await pingSavedOpc(id, label);
       if (err) blockers.push(err);
     }),
-    ...sqlIds.map(async (id) => {
+    ...dbIds.map(async (id) => {
       const meta = connections.find((c) => c.id === id);
       const label = meta?.name?.trim() || id;
-      const err = await testSavedDb(id, label);
+      const eng = String(meta?.engine || "").toLowerCase();
+      const kind = connectionSupportsMongo(eng) ? "MongoDB" : "SQL";
+      const err = await testSavedDb(id, `${label}（${kind}）`);
       if (err) blockers.push(err);
     }),
   ]);
 
-  if (!opcTasks.length && !sqlTasks.length && enabledSqlFillCount === 0) {
-    warnings.push("此模版未检测到 OPC/SQL 绑定，将按静态内容导出。");
+  if (!opcTasks.length && !sqlTasks.length && !mongoTasks.length && enabledSqlFillCount === 0) {
+    warnings.push("此模版未检测到 OPC / SQL / Mongo 绑定，将按静态内容导出。");
   }
 
   const ok = blockers.length === 0;

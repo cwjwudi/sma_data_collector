@@ -4,6 +4,8 @@ import type { ReportTemplate } from "@/lib/report-template/model";
 import {
   collectBindingDedupeTasks,
   connectionSupportsSql,
+  forEachTemplateCanvasElement,
+  forEachZoneLayoutElement,
   formatOpcuaReadPayload,
   pickPreferredOpcServerId,
   pickPreferredSqlConnectionId,
@@ -12,6 +14,7 @@ import {
   sqlResponseGridSummary,
   substituteScalarSqlParams,
   type BindingPreviewCell,
+  type MongoDedupeTask,
   type SqlDedupeTask,
 } from "@/lib/report-template/binding-preview-utils";
 import { resolveAutoBatchOpcBinding } from "@/lib/auto-batch-opc-binding";
@@ -22,6 +25,8 @@ import {
   sanitizeOpcTableName,
   sqlResponseToPreviewRows,
   substituteSqlFillTableName,
+  syncTemplateTableRowsForSqlFillPreview,
+  syncZoneTableRowsForSqlFillPreview,
 } from "@/lib/report-template/table-sql-fill-preview";
 import { isVerticalSqlFill } from "@/lib/report-template/table-sql-fill";
 import {
@@ -36,6 +41,14 @@ import type {
   BindingPreviewStats,
   ReportBindingPreviewState,
 } from "@/lib/report-template/template-editor-context";
+import {
+  mongoResponseScalar,
+  parseMongoFilterJson,
+  parseMongoPipelineJson,
+  parseMongoProjectionJson,
+  parseMongoSortJson,
+  substituteMongoCollection,
+} from "@/lib/report-template/mongo-query";
 
 function sqlResponseRowCount(data: unknown): number {
   if (!data || typeof data !== "object") return 0;
@@ -66,7 +79,7 @@ export function useReportBindingPreview(tmplRef: Ref<ReportTemplate | null>): Re
   async function refresh(opts?: BindingPreviewRefreshOptions): Promise<void> {
     const t = tmplRef.value;
     const gen = ++generation;
-    const stats: BindingPreviewStats = { opcReads: 0, sqlQueries: 0, sqlRows: 0 };
+    const stats: BindingPreviewStats = { opcReads: 0, sqlQueries: 0, sqlRows: 0, mongoQueries: 0 };
     if (!t) {
       values.value = {};
       statusText.value = "";
@@ -103,7 +116,7 @@ export function useReportBindingPreview(tmplRef: Ref<ReportTemplate | null>): Re
       let sqlConnId = pickPreferredSqlConnectionId(prefs, sqlCapableAll);
       if (!sqlConnId && sqlCapableAll.length) sqlConnId = sqlCapableAll[0].id;
 
-      const { opcTasks, sqlTasks } = collectBindingDedupeTasks(t, opcServerId, sqlConnId);
+      const { opcTasks, sqlTasks, mongoTasks } = collectBindingDedupeTasks(t, opcServerId, sqlConnId);
 
       const out: Record<string, BindingPreviewCell> = partial ? { ...values.value } : {};
 
@@ -130,6 +143,89 @@ export function useReportBindingPreview(tmplRef: Ref<ReportTemplate | null>): Re
 
       async function resolveScalarSqlTask(task: SqlDedupeTask): Promise<string> {
         return substituteSqlWithResolvedParams(task.sql, task.params || []);
+      }
+
+      async function resolveMongoParamValues(params: TableSqlParamBinding[]): Promise<Record<number, unknown>> {
+        return resolveSqlParamValues(params, {
+          defaultOpcServerId: opcServerId,
+          batchBinding,
+          onOpcRead: () => {
+            stats.opcReads += 1;
+          },
+          readOpc: async (serverId, nodeId) =>
+            (await apiFetch(`/opcua/read_saved/${serverId}`, {
+              method: "POST",
+              body: { node_id: nodeId },
+            })) as { ok?: boolean; message?: string; value?: unknown },
+        });
+      }
+
+      async function executeMongoTask(task: MongoDedupeTask): Promise<unknown> {
+        const paramValues = await resolveMongoParamValues(task.params || []);
+        let collection = task.collection.trim();
+        const collOpc = task.collectionOpcNodeId.trim();
+        if (collOpc) {
+          if (!opcServerId) throw new Error("集合名 OPC 未配置可用的 OPC UA 连接");
+          stats.opcReads += 1;
+          const res = (await apiFetch(`/opcua/read_saved/${opcServerId}`, {
+            method: "POST",
+            body: { node_id: collOpc },
+          })) as { ok?: boolean; message?: string; value?: unknown };
+          if (res.ok === false) throw new Error(res.message || "集合名 OPC 读取失败");
+          collection = substituteMongoCollection(collection, res.value);
+          if (!collection) throw new Error("集合名 OPC 值非法或为空");
+        }
+        if (!task.database.trim()) throw new Error("未配置 MongoDB 数据库名");
+        if (!collection) throw new Error("未配置 MongoDB 集合名");
+
+        stats.mongoQueries += 1;
+        if (task.mode === "aggregate") {
+          const pipeline = parseMongoPipelineJson(task.pipelineJson, paramValues);
+          return apiFetch("/database/query/mongo_aggregate", {
+            method: "POST",
+            body: {
+              connection_id: task.connectionId,
+              database: task.database.trim(),
+              collection,
+              pipeline,
+              limit: task.limit,
+            },
+          });
+        }
+        const filter = parseMongoFilterJson(task.filterJson, paramValues);
+        const projection = parseMongoProjectionJson(task.projectionJson, paramValues);
+        const sort = parseMongoSortJson(task.sortJson, paramValues);
+        const body: Record<string, unknown> = {
+          connection_id: task.connectionId,
+          database: task.database.trim(),
+          collection,
+          filter,
+          limit: task.limit,
+        };
+        if (projection) body.projection = projection;
+        if (sort) body.sort = sort;
+        return apiFetch("/database/query/mongo_find", { method: "POST", body });
+      }
+
+      function applyMongoTableFill(key: string, data: unknown, colCount: number): void {
+        const grid = sqlResponseToPreviewRows(data, colCount);
+        if (opts?.mutateTemplateRows !== false) {
+          if (key.startsWith("tblfill:")) {
+            const id = key.slice("tblfill:".length);
+            forEachTemplateCanvasElement(t, (el) => {
+              if (el.id === id && el.type === "table") syncTemplateTableRowsForSqlFillPreview(el, grid.length);
+            });
+          } else if (key.startsWith("ztblfill:")) {
+            const id = key.slice("ztblfill:".length);
+            forEachZoneLayoutElement(t, (el) => {
+              if (el.id === id && el.type === "table") syncZoneTableRowsForSqlFillPreview(el, grid.length);
+            });
+          }
+        }
+        out[key] = {
+          text: `${grid.length}×${colCount}`,
+          tableSqlFill: { dataRows: grid },
+        };
       }
 
       if (doOpc) {
@@ -189,6 +285,41 @@ export function useReportBindingPreview(tmplRef: Ref<ReportTemplate | null>): Re
           } catch (e) {
             const msg = e instanceof Error ? e.message : String(e);
             for (const k of task.keys) out[k] = { text: `（SQL）${msg}` };
+          }
+        });
+
+        if (gen !== generation) return;
+
+        if (!silent && mongoTasks.length) {
+          statusText.value = `正在查询 MongoDB 绑定（${mongoTasks.length} 项）…`;
+        }
+        await runPool(mongoTasks, 6, async (task) => {
+          if (gen !== generation) return;
+          try {
+            const data = await executeMongoTask(task);
+            if (gen !== generation) return;
+            stats.sqlRows += sqlResponseRowCount(data);
+            for (const k of task.keys) {
+              if (k.startsWith("tblfill:") || k.startsWith("ztblfill:")) {
+                applyMongoTableFill(k, data, task.tableFillColCount ?? 4);
+              } else if (k.startsWith("chart:")) {
+                out[k] = { text: sqlResponseGridSummary(data) };
+              } else {
+                out[k] = { text: mongoResponseScalar(data, task.valueField) };
+              }
+            }
+          } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            for (const k of task.keys) {
+              if (k.startsWith("tblfill:") || k.startsWith("ztblfill:")) {
+                out[k] = {
+                  text: `（填充）${msg}`,
+                  tableSqlFill: { dataRows: [], error: msg },
+                };
+              } else {
+                out[k] = { text: `（Mongo）${msg}` };
+              }
+            }
           }
         });
 

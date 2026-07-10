@@ -105,7 +105,9 @@ function signalReady(
     ok,
     error,
     totalReports,
-    stats: s ? { opcReads: s.opcReads, sqlQueries: s.sqlQueries, sqlRows: s.sqlRows } : undefined,
+    stats: s
+      ? { opcReads: s.opcReads, sqlQueries: s.sqlQueries, sqlRows: s.sqlRows, mongoQueries: s.mongoQueries }
+      : undefined,
     phases,
     diagnostics: diagnostics || undefined,
   });
@@ -194,7 +196,9 @@ async function boot(): Promise<void> {
       stage: "binding_fill",
       issueCount: issueDetails.length,
       issues: issueDetails.slice(0, 40),
-      stats: s ? { opcReads: s.opcReads, sqlQueries: s.sqlQueries, sqlRows: s.sqlRows } : undefined,
+      stats: s
+      ? { opcReads: s.opcReads, sqlQueries: s.sqlQueries, sqlRows: s.sqlRows, mongoQueries: s.mongoQueries }
+      : undefined,
       templateId: id,
       fillAttempts: fillAttempt,
     });

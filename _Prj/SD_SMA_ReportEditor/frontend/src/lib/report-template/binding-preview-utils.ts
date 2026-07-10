@@ -12,6 +12,7 @@ import type { TableSqlParamBinding } from "@/lib/report-template/table-sql-fill"
 import { hydrateScalarSqlVisual, normalizeScalarSqlFillMode, type ScalarSqlVisualConfig } from "@/lib/report-template/scalar-sql-visual";
 import { compileScalarVisualSql } from "@/lib/report-template/scalar-sql-visual-compile";
 import type { AutoBatchOpcBinding } from "@/lib/auto-batch-opc-binding";
+import { hydrateMongoQuery, type MongoQueryConfig } from "@/lib/report-template/mongo-query";
 
 /** 表格「整表 SQL 填充」在编辑器中的查询预览（非持久化字段） */
 export interface TableSqlFillPreviewPayload {
@@ -58,7 +59,14 @@ export function isBoundValueEmpty(text: string | null | undefined): boolean {
 /** 预览/导出中的 OPC/SQL 错误文案，不走空值显示模式 */
 export function isBindingPreviewErrorText(text: string): boolean {
   const t = text.trim();
-  return t.startsWith("（OPC）") || t.startsWith("（SQL）") || t.startsWith("(OPC)") || t.startsWith("(SQL)");
+  return (
+    t.startsWith("（OPC）") ||
+    t.startsWith("（SQL）") ||
+    t.startsWith("（Mongo）") ||
+    t.startsWith("(OPC)") ||
+    t.startsWith("(SQL)") ||
+    t.startsWith("(Mongo)")
+  );
 }
 
 export function resolveParameterDisplayText(opts: {
@@ -83,7 +91,7 @@ export function resolveParameterDisplayText(opts: {
 }
 
 export function resolveBoundParameterPreviewText(opts: {
-  bindingKind: "none" | "opcua" | "sql";
+  bindingKind: "none" | "opcua" | "sql" | "mongo";
   text: string;
   nullDisplayMode?: NullDisplayMode;
   decimalPlaces?: number | null;
@@ -92,7 +100,7 @@ export function resolveBoundParameterPreviewText(opts: {
   unboundHint?: string;
 }): string {
   const { bindingKind, text, nullDisplayMode, decimalPlaces, previewCell, loading, unboundHint } = opts;
-  if (bindingKind === "opcua" || bindingKind === "sql") {
+  if (bindingKind === "opcua" || bindingKind === "sql" || bindingKind === "mongo") {
     if (previewCell != null) {
       const resolved = resolveParameterDisplayText({
         boundText: previewCell.text,
@@ -105,7 +113,7 @@ export function resolveBoundParameterPreviewText(opts: {
     if (loading) {
       return `${text.trim() || "参数"}（加载中…）`;
     }
-    return unboundHint ?? (text.trim() || "（绑定预览：请确认 OPC / SQL 已配置）");
+    return unboundHint ?? (text.trim() || "（绑定预览：请确认 OPC / SQL / Mongo 已配置）");
   }
   const t = text.trim();
   return t;
@@ -154,6 +162,10 @@ export function connectionSupportsSql(engine: string): boolean {
     e === "postgresql" ||
     e === "sqlite"
   );
+}
+
+export function connectionSupportsMongo(engine: string): boolean {
+  return (engine || "").toLowerCase() === "mongodb";
 }
 
 export function pickPreferredOpcServerId(
@@ -336,6 +348,24 @@ export interface SqlDedupeTask {
   database?: string;
 }
 
+export interface MongoDedupeTask {
+  connectionId: string;
+  database: string;
+  collection: string;
+  mode: "find" | "aggregate";
+  filterJson: string;
+  projectionJson: string;
+  sortJson: string;
+  pipelineJson: string;
+  limit: number;
+  valueField: string;
+  collectionOpcNodeId: string;
+  params?: TableSqlParamBinding[];
+  keys: string[];
+  /** 整表 Mongo 填充：结果映射列数（物理列或纵表 SELECT 列） */
+  tableFillColCount?: number;
+}
+
 export function quoteSqlScalarValue(value: unknown, opts?: { numericStringAsNumber?: boolean }): string {
   if (value === null || value === undefined) return "NULL";
   if (typeof value === "number") return Number.isFinite(value) ? String(value) : "NULL";
@@ -464,9 +494,11 @@ export function collectBindingDedupeTasks(
 ): {
   opcTasks: OpcDedupeTask[];
   sqlTasks: SqlDedupeTask[];
+  mongoTasks: MongoDedupeTask[];
 } {
   const opcMap = new Map<string, OpcDedupeTask>();
   const sqlMap = new Map<string, SqlDedupeTask>();
+  const mongoMap = new Map<string, MongoDedupeTask>();
 
   function addOpc(nodeId: string, displayKey?: string) {
     if (!opcServerId) return;
@@ -511,6 +543,72 @@ export function collectBindingDedupeTasks(
     }
   }
 
+  function addMongo(
+    mqRaw: MongoQueryConfig | null | undefined,
+    displayKey: string,
+    params?: TableSqlParamBinding[],
+    tableFillColCount?: number,
+  ) {
+    if (!mqRaw) return;
+    const mq = hydrateMongoQuery(mqRaw);
+    const connectionId = mq.connectionId.trim();
+    if (!connectionId) return;
+    const database = mq.database.trim();
+    const collection = mq.collection.trim();
+    if (!database && !mq.collectionOpcNodeId.trim()) {
+      // 仍允许仅有 connectionId 时收集，运行时再报错
+    }
+    const paramKey = JSON.stringify(
+      (params || []).map((p) => ({
+        source: p.source,
+        opcuaNodeId: p.opcuaNodeId,
+        literalFallback: p.literalFallback,
+      })),
+    );
+    const nk = [
+      connectionId,
+      database,
+      collection,
+      mq.mode,
+      mq.filterJson,
+      mq.projectionJson,
+      mq.sortJson,
+      mq.pipelineJson,
+      String(mq.limit),
+      mq.valueField,
+      mq.collectionOpcNodeId,
+      paramKey,
+      tableFillColCount != null ? String(tableFillColCount) : "",
+    ].join("\u0000");
+    let e = mongoMap.get(nk);
+    if (!e) {
+      e = {
+        connectionId,
+        database,
+        collection,
+        mode: mq.mode,
+        filterJson: mq.filterJson,
+        projectionJson: mq.projectionJson,
+        sortJson: mq.sortJson,
+        pipelineJson: mq.pipelineJson,
+        limit: mq.limit,
+        valueField: mq.valueField,
+        collectionOpcNodeId: mq.collectionOpcNodeId,
+        params,
+        keys: [],
+        tableFillColCount,
+      };
+      mongoMap.set(nk, e);
+    }
+    e.keys.push(displayKey);
+    for (const p of params || []) {
+      const nodeId = p?.source === "opcua" ? (p.opcuaNodeId || "").trim() : "";
+      if (nodeId) addOpc(nodeId);
+    }
+    const collOpc = mq.collectionOpcNodeId.trim();
+    if (collOpc) addOpc(collOpc);
+  }
+
   forEachTemplateCanvasElement(t, (el) => {
     if (el.type === "parameter") {
       if (el.bindingKind === "opcua") {
@@ -523,6 +621,8 @@ export function collectBindingDedupeTasks(
           el.sqlParams,
           el.scalarSqlVisual,
         );
+      } else if (el.bindingKind === "mongo") {
+        addMongo(el.mongoQuery, paramKey(el.id), el.sqlParams);
       }
     } else if (el.type === "table") {
       const grid = ensureTableGrid(el);
@@ -539,11 +639,19 @@ export function collectBindingDedupeTasks(
               cell.sqlParams,
               cell.scalarSqlVisual,
             );
+          } else if (cell.bindingKind === "mongo") {
+            addMongo(cell.mongoQuery, ck, cell.sqlParams);
           }
         }),
       );
+      const fill = el.tableSqlFill;
+      if (fill?.enabled && fill.fillMode === "mongo" && fill.mongoQuery?.connectionId?.trim()) {
+        addMongo(fill.mongoQuery, `tblfill:${el.id}`, fill.params, el.tableCols ?? 4);
+      }
     } else if (el.type === "chart" && el.bindingKind === "sql") {
       addSql(el.sqlText, chartKey(el.id), el.sqlParams);
+    } else if (el.type === "chart" && el.bindingKind === "mongo") {
+      addMongo(el.mongoQuery, chartKey(el.id), el.sqlParams);
     }
   });
 
@@ -559,6 +667,8 @@ export function collectBindingDedupeTasks(
           el.sqlParams,
           el.scalarSqlVisual,
         );
+      } else if (el.bindingKind === "mongo") {
+        addMongo(el.mongoQuery, `zone-param:${el.id}`, el.sqlParams);
       }
     } else if (el.type === "table") {
       const grid = ensureZoneTableGrid(el);
@@ -575,14 +685,21 @@ export function collectBindingDedupeTasks(
               cell.sqlParams,
               cell.scalarSqlVisual,
             );
+          } else if (cell.bindingKind === "mongo") {
+            addMongo(cell.mongoQuery, ck, cell.sqlParams);
           }
         }),
       );
+      const fill = el.tableSqlFill;
+      if (fill?.enabled && fill.fillMode === "mongo" && fill.mongoQuery?.connectionId?.trim()) {
+        addMongo(fill.mongoQuery, `ztblfill:${el.id}`, fill.params, el.tableCols ?? 4);
+      }
     }
   });
 
   return {
     opcTasks: [...opcMap.values()],
     sqlTasks: [...sqlMap.values()],
+    mongoTasks: [...mongoMap.values()],
   };
 }

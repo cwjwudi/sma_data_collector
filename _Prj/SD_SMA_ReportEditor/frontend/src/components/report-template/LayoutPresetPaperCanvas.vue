@@ -698,6 +698,10 @@ function formatLayoutTableCellPreview(cell: LayoutZoneTableCell): string {
     const q = cell.sqlText.trim();
     return q ? `⟨SQL⟩ ${q.length > 36 ? `${q.slice(0, 33)}…` : q}` : "⟨SQL⟩";
   }
+  if (cell.bindingKind === "mongo") {
+    const col = cell.mongoQuery?.collection?.trim() || "";
+    return col ? `⟨Mongo⟩ ${col.length > 36 ? `${col.slice(0, 33)}…` : col}` : "⟨Mongo⟩";
+  }
   const t = cell.text.trim();
   return t.length > 0 ? t : "\u00a0";
 }

@@ -8,9 +8,10 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 PaperKind = Literal["A3", "A4", "A5", "Letter"]
 NullDisplayMode = Literal["blank", "emptyLabel", "fallbackText"]
-BindingKind = Literal["none", "opcua", "sql"]
+BindingKind = Literal["none", "opcua", "sql", "mongo"]
 TableSqlParamSource = Literal["opcua", "above_cell", "literal", "batch_no"]
 ScalarSqlFillMode = Literal["manual", "visual"]
+MongoQueryMode = Literal["find", "aggregate"]
 Orientation = Literal["portrait", "landscape"]
 LayoutPageRole = Literal["normal", "cover", "back"]
 ChartKind = Literal["line", "bar"]
@@ -43,6 +44,7 @@ class TemplateTableCell(BaseModel):
     opcuaNodeId: str = ""
     sqlText: str = ""
     sqlParams: list["TableSqlParamBinding"] = Field(default_factory=list)
+    mongoQuery: MongoQueryConfig | None = None
     bgColor: str = "transparent"
     decimalPlaces: int | None = Field(default=None, ge=0, le=10)
 
@@ -68,7 +70,27 @@ class ScalarSqlVisualConfig(BaseModel):
     whereParamSlot: int = Field(default=0, ge=0, le=1)
 
 
-TableSqlFillMode = Literal["manual_sql", "visual"]
+class MongoQueryConfig(BaseModel):
+    """MongoDB 报表取数：find（默认）或 aggregate pipeline。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    connectionId: str = ""
+    database: str = ""
+    collection: str = ""
+    mode: MongoQueryMode = "find"
+    filterJson: str = "{}"
+    projectionJson: str = ""
+    sortJson: str = ""
+    pipelineJson: str = "[]"
+    limit: int = Field(default=200, ge=1, le=5000)
+    """标量取值字段名；空则取首行首列。"""
+    valueField: str = ""
+    """可选：运行时用 OPC 节点值替换集合名（对齐 SQL {{table}}）。"""
+    collectionOpcNodeId: str = ""
+
+
+TableSqlFillMode = Literal["manual_sql", "visual", "mongo"]
 TableSqlTableSource = Literal["manual", "opcua"]
 TableSqlLayoutMode = Literal["horizontal", "vertical"]
 TableSqlColumnRole = Literal["field", "blank", "sequence"]
@@ -116,6 +138,7 @@ class TableSqlFillConfig(BaseModel):
     maxRows: int = Field(default=2000, ge=1, le=50000)
     visualSource: TableSqlVisualSource | None = None
     visualFilters: list[TableSqlVisualFilter] = Field(default_factory=list)
+    mongoQuery: MongoQueryConfig | None = None
     layoutMode: TableSqlLayoutMode = "horizontal"
     columnRoles: list[TableSqlColumnRole] = Field(default_factory=list)
     sequencePageMode: TableSqlSequencePageMode = "continuous"
@@ -154,6 +177,7 @@ class LayoutZoneElement(BaseModel):
     sqlParams: list[TableSqlParamBinding] = Field(default_factory=list)
     scalarSqlFillMode: ScalarSqlFillMode | None = None
     scalarSqlVisual: ScalarSqlVisualConfig | None = None
+    mongoQuery: MongoQueryConfig | None = None
     nullDisplayMode: NullDisplayMode | None = None
     decimalPlaces: int | None = Field(default=None, ge=0, le=10)
     tableRows: int = Field(default=3, ge=1, le=100)
@@ -193,6 +217,7 @@ class TemplateElement(BaseModel):
     sqlParams: list[TableSqlParamBinding] = Field(default_factory=list)
     scalarSqlFillMode: ScalarSqlFillMode | None = None
     scalarSqlVisual: ScalarSqlVisualConfig | None = None
+    mongoQuery: MongoQueryConfig | None = None
     nullDisplayMode: NullDisplayMode | None = None
     decimalPlaces: int | None = Field(default=None, ge=0, le=10)
     dateFormat: str = ""

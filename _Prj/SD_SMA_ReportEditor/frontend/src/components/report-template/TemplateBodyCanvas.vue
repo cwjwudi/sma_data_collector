@@ -1238,6 +1238,10 @@ function formatTableCellPreview(cell: TemplateTableCell): string {
     const q = cell.sqlText.trim();
     return q ? `⟨SQL⟩ ${truncatePreview(q, 56)}` : "⟨SQL⟩";
   }
+  if (cell.bindingKind === "mongo") {
+    const col = cell.mongoQuery?.collection?.trim() || "";
+    return col ? `⟨Mongo⟩ ${truncatePreview(col, 48)}` : "⟨Mongo⟩";
+  }
   const t = cell.text.trim();
   return t.length > 0 ? t : "\u00a0";
 }

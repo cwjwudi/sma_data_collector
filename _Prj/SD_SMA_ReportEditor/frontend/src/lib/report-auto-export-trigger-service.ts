@@ -399,19 +399,20 @@ type AutoPdfExportAttempt = {
   filePaths?: string[];
   totalReports?: number;
   note?: string;
-  stats?: { opcReads: number; sqlQueries: number; sqlRows: number };
+  stats?: { opcReads: number; sqlQueries: number; sqlRows: number; mongoQueries?: number };
   durationMs?: number;
   timings?: ExportPhaseTimings;
 };
 
 /** 结批进度弹窗/审计共用：把取数统计整理成一行可读文本 */
 export function formatExportStatsLine(
-  stats: { opcReads: number; sqlQueries: number; sqlRows: number } | null | undefined,
+  stats: { opcReads: number; sqlQueries: number; sqlRows: number; mongoQueries?: number } | null | undefined,
 ): string {
   if (!stats) return "";
   const parts: string[] = [];
   if (stats.opcReads > 0) parts.push(`OPC 读取 ${stats.opcReads} 点`);
   if (stats.sqlQueries > 0) parts.push(`SQL 查询 ${stats.sqlQueries} 次 / ${stats.sqlRows} 行`);
+  if (stats.mongoQueries && stats.mongoQueries > 0) parts.push(`Mongo 查询 ${stats.mongoQueries} 次`);
   return parts.join(" · ");
 }
 

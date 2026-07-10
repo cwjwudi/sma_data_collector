@@ -17,6 +17,8 @@ export type TemplateControlType =
 
 export type { NullDisplayMode } from "./layout-zone-element";
 
+/** 控件/单元格数据绑定方式 */
+export type BindingKind = "none" | "opcua" | "sql" | "mongo";
 
 /** 表格单个单元格：静态文字或按绑定拉取展示（生成器按 _Doc 解析） */
 export interface TemplateTableCell {
@@ -29,6 +31,8 @@ export interface TemplateTableCell {
   /** 单元格标量 SQL：手写 / 点选生成（与数据参数控件一致） */
   scalarSqlFillMode?: ScalarSqlFillMode;
   scalarSqlVisual?: ScalarSqlVisualConfig | null;
+  /** 单元格 MongoDB 查询（bindingKind === mongo） */
+  mongoQuery?: MongoQueryConfig | null;
   /** 单元格填充色；transparent 或未设则继承列/表格默认 */
   bgColor?: string;
   /** REAL/浮点显示小数位数；未设则保持原样 */
@@ -80,6 +84,7 @@ import {
   hydrateTableSqlFill,
   isVerticalSqlFill,
 } from "./table-sql-fill";
+import { hydrateMongoQueryOptional, type MongoQueryConfig } from "./mongo-query";
 
 /** 电子签名阅览：水印描摹 / 手写图 / 二者叠加 */
 export type SignatureDisplayMode = "watermark" | "handwriting" | "both";
@@ -125,6 +130,8 @@ export interface TemplateElement {
   /** 数据参数 SQL：手写 / 点选生成 */
   scalarSqlFillMode?: ScalarSqlFillMode;
   scalarSqlVisual?: ScalarSqlVisualConfig | null;
+  /** MongoDB 查询（bindingKind === mongo） */
+  mongoQuery?: MongoQueryConfig | null;
   /** 绑定为空时：空白 / 「空值」/ 手填默认文案 */
   nullDisplayMode?: NullDisplayMode;
   /** REAL/浮点显示小数位数；未设则保持原样 */
@@ -233,7 +240,7 @@ function newId(): string {
 }
 
 function normalizeBindingKind(v: unknown): BindingKind {
-  if (v === "opcua" || v === "sql") return v;
+  if (v === "opcua" || v === "sql" || v === "mongo") return v;
   return "none";
 }
 
@@ -262,6 +269,7 @@ export function hydrateTableCell(raw: Partial<TemplateTableCell> | undefined): T
   const sqlText = typeof raw.sqlText === "string" ? raw.sqlText : d.sqlText;
   const rawMode = (raw as { scalarSqlFillMode?: unknown }).scalarSqlFillMode;
   const rawVisual = (raw as { scalarSqlVisual?: unknown }).scalarSqlVisual;
+  const mongoQuery = hydrateMongoQueryOptional((raw as { mongoQuery?: unknown }).mongoQuery);
   return {
     text: typeof raw.text === "string" ? raw.text : d.text,
     bindingKind: normalizeBindingKind(raw.bindingKind),
@@ -271,6 +279,7 @@ export function hydrateTableCell(raw: Partial<TemplateTableCell> | undefined): T
     // 仅在旧数据已有配置时水合，避免为整表每格写入默认对象
     scalarSqlFillMode: rawMode != null ? normalizeScalarSqlFillMode(rawMode, sqlText) : undefined,
     scalarSqlVisual: rawVisual != null ? hydrateScalarSqlVisual(rawVisual) : undefined,
+    mongoQuery,
     bgColor: typeof raw.bgColor === "string" ? raw.bgColor : d.bgColor,
     decimalPlaces: normalizeDecimalPlaces((raw as { decimalPlaces?: unknown }).decimalPlaces),
   };
@@ -636,6 +645,7 @@ export function hydrateTemplateElement(raw: Partial<TemplateElement>): TemplateE
       typeof raw.sqlText === "string" ? raw.sqlText : d.sqlText,
     ),
     scalarSqlVisual: hydrateScalarSqlVisual((raw as { scalarSqlVisual?: unknown }).scalarSqlVisual),
+    mongoQuery: hydrateMongoQueryOptional((raw as { mongoQuery?: unknown }).mongoQuery),
     nullDisplayMode:
       type === "parameter"
         ? normalizeNullDisplayMode((raw as { nullDisplayMode?: unknown }).nullDisplayMode)

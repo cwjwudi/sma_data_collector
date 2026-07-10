@@ -315,6 +315,7 @@
                 <option value="none">无</option>
                 <option value="opcua">OPC UA</option>
                 <option value="sql">SQL</option>
+                <option value="mongo">MongoDB</option>
               </select></label
             >
             <div v-if="sel.bindingKind === 'none'" class="hz-span2">
@@ -333,8 +334,14 @@
             <label v-if="sel.bindingKind === 'sql'" class="hz-span2"
               >SQL<textarea v-model="sel.sqlText" rows="4" class="hz-inp" spellcheck="false"
             /></label>
+            <div v-if="sel.bindingKind === 'mongo'" class="hz-span2">
+              <MongoQueryFields
+                :model-value="sel.mongoQuery"
+                @update:model-value="sel.mongoQuery = $event"
+              />
+            </div>
             <label
-              v-if="sel.bindingKind === 'opcua' || sel.bindingKind === 'sql'"
+              v-if="sel.bindingKind === 'opcua' || sel.bindingKind === 'sql' || sel.bindingKind === 'mongo'"
               class="hz-span2"
             >
               小数位数（REAL）
@@ -491,6 +498,7 @@
                       <option value="none">无</option>
                       <option value="opcua">OPC UA</option>
                       <option value="sql">SQL</option>
+                      <option value="mongo">MongoDB</option>
                     </select></label
                   >
                   <div v-if="activeHzTableCell.bindingKind === 'none'" class="hz-span2">
@@ -524,8 +532,26 @@
                       />
                     </div>
                   </template>
+                  <template v-if="activeHzTableCell.bindingKind === 'mongo'">
+                    <div class="hz-span2">
+                      <MongoQueryFields
+                        :model-value="activeHzTableCell.mongoQuery"
+                        @update:model-value="activeHzTableCell.mongoQuery = $event"
+                      />
+                    </div>
+                    <div class="hz-span2">
+                      <ScalarSqlParamBindingsEditor
+                        :params="hzTableCellSqlParams"
+                        @opc-pick="openHzTableCellSqlParamOpcPicker"
+                      />
+                    </div>
+                  </template>
                   <label
-                    v-if="activeHzTableCell.bindingKind === 'opcua' || activeHzTableCell.bindingKind === 'sql'"
+                    v-if="
+                      activeHzTableCell.bindingKind === 'opcua' ||
+                      activeHzTableCell.bindingKind === 'sql' ||
+                      activeHzTableCell.bindingKind === 'mongo'
+                    "
                     class="hz-span2"
                   >
                     小数位数（REAL）
@@ -696,6 +722,7 @@ import OpcUaNodePickerModal from "@/features/datasource/opcua/OpcUaNodePickerMod
 import TemplateTableSqlFillFields from "@/components/report-template/TemplateTableSqlFillFields.vue";
 import ScalarSqlParamBindingsEditor from "@/components/report-template/ScalarSqlParamBindingsEditor.vue";
 import ScalarSqlQueryBuilder from "@/components/report-template/ScalarSqlQueryBuilder.vue";
+import MongoQueryFields from "@/components/report-template/MongoQueryFields.vue";
 import TableColumnResizeGutters from "@/components/report-template/TableColumnResizeGutters.vue";
 import type { TableSqlFillConfig, TableSqlParamBinding } from "@/lib/report-template/table-sql-fill";
 import {
@@ -1156,6 +1183,10 @@ function hzFormatTableCellPreview(cell: LayoutZoneTableCell): string {
   if (cell.bindingKind === "sql") {
     const q = cell.sqlText.trim();
     return q ? `⟨SQL⟩ ${q.length > 36 ? `${q.slice(0, 33)}…` : q}` : "⟨SQL⟩";
+  }
+  if (cell.bindingKind === "mongo") {
+    const col = cell.mongoQuery?.collection?.trim() || "";
+    return col ? `⟨Mongo⟩ ${col.length > 36 ? `${col.slice(0, 33)}…` : col}` : "⟨Mongo⟩";
   }
   const t = cell.text.trim();
   return t.length > 0 ? t : "\u00a0";

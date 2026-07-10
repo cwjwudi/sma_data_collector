@@ -70,6 +70,10 @@ function cellText(ri: number, ci: number, cell: LayoutZoneTableCell): string {
     const q = cell.sqlText.trim();
     return q ? `⟨SQL⟩ ${truncate(q, 36)}` : "⟨SQL⟩";
   }
+  if (cell.bindingKind === "mongo") {
+    const col = cell.mongoQuery?.collection?.trim() || "";
+    return col ? `⟨Mongo⟩ ${truncate(col, 36)}` : "⟨Mongo⟩";
+  }
   const t = cell.text.trim();
   return t.length > 0 ? t : "\u00a0";
 }

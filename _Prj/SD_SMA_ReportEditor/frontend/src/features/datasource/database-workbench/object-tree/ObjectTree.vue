@@ -237,7 +237,13 @@ const filteredDatabases = computed(() =>
 )
 
 const filteredTables = computed(() =>
-  (props.tables || []).filter((t) => includes(t.name, tableQuery.value)),
+  (props.tables || []).filter((t) => {
+    const q = tableQuery.value
+    if (!q.trim()) return true
+    const name = t.name || ''
+    const schema = t.schema || ''
+    return includes(name, q) || includes(schema, q) || includes(`${schema}.${name}`, q)
+  }),
 )
 
 const filteredMongoDbs = computed(() =>

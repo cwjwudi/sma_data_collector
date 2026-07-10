@@ -333,6 +333,7 @@
                   <option value="none">无（仅静态文字）</option>
                   <option value="opcua">OPC UA</option>
                   <option value="sql">SQL（数据库）</option>
+                  <option value="mongo">MongoDB</option>
                 </select></label
               >
               <div v-if="activeTableCell.bindingKind === 'none'" class="lpep-opc-quick">
@@ -365,8 +366,22 @@
                   @opc-pick="openTableCellSqlParamOpcPicker"
                 />
               </template>
+              <template v-if="activeTableCell.bindingKind === 'mongo'">
+                <MongoQueryFields
+                  :model-value="activeTableCell.mongoQuery"
+                  @update:model-value="activeTableCell.mongoQuery = $event"
+                />
+                <ScalarSqlParamBindingsEditor
+                  :params="tableCellSqlParams"
+                  @opc-pick="openTableCellSqlParamOpcPicker"
+                />
+              </template>
               <label
-                v-if="activeTableCell.bindingKind === 'opcua' || activeTableCell.bindingKind === 'sql'"
+                v-if="
+                  activeTableCell.bindingKind === 'opcua' ||
+                  activeTableCell.bindingKind === 'sql' ||
+                  activeTableCell.bindingKind === 'mongo'
+                "
                 class="lpep-lab"
               >
                 小数位数（REAL）
@@ -423,11 +438,20 @@
           >绑定<select v-model="el.bindingKind" class="lpep-inp">
             <option value="none">无</option>
             <option value="sql">SQL</option>
+            <option value="mongo">MongoDB</option>
           </select></label
         >
-        <label class="lpep-lab"
-          >SQL<textarea v-model="el.sqlText" rows="4" class="lpep-inp" spellcheck="false" placeholder="SELECT …"
-        /></label>
+        <template v-if="el.bindingKind === 'sql'">
+          <label class="lpep-lab"
+            >SQL<textarea v-model="el.sqlText" rows="4" class="lpep-inp" spellcheck="false" placeholder="SELECT …"
+          /></label>
+        </template>
+        <template v-else-if="el.bindingKind === 'mongo'">
+          <MongoQueryFields
+            :model-value="el.mongoQuery"
+            @update:model-value="el.mongoQuery = $event"
+          />
+        </template>
         <label class="lpep-lab"
           >图表类型<select v-model="el.chartKind" class="lpep-inp">
             <option value="line">折线</option>
@@ -569,6 +593,7 @@ import TableCellFillPicker from "@/components/report-template/TableCellFillPicke
 import ParameterBindingFields from "@/components/report-template/ParameterBindingFields.vue";
 import ScalarSqlParamBindingsEditor from "@/components/report-template/ScalarSqlParamBindingsEditor.vue";
 import ScalarSqlQueryBuilder from "@/components/report-template/ScalarSqlQueryBuilder.vue";
+import MongoQueryFields from "@/components/report-template/MongoQueryFields.vue";
 import {
   hydrateScalarSqlVisual,
   normalizeScalarSqlFillMode,
