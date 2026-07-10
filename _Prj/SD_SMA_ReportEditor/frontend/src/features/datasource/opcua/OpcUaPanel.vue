@@ -1226,6 +1226,11 @@ function notifyOpcServersChanged() {
   window.dispatchEvent(new CustomEvent('report-editor-opcua-servers-changed'))
 }
 
+function onDatasourceChanged(ev) {
+  const scope = ev?.detail?.scope
+  if (!scope || scope === 'all' || scope === 'opcua') void loadServers()
+}
+
 function onConfigImported() {
   void loadServers()
 }
@@ -1257,6 +1262,7 @@ onMounted(() => {
   hydrateOpcServersFromLocalConfig()
   void loadServers()
   window.addEventListener('report-editor-config-imported', onConfigImported)
+  window.addEventListener('report-editor-datasource-changed', onDatasourceChanged)
 })
 
 onBeforeUnmount(() => {
@@ -1266,6 +1272,7 @@ onBeforeUnmount(() => {
   clearPollTimer()
   clearTreeRowPollTimer()
   window.removeEventListener('report-editor-config-imported', onConfigImported)
+  window.removeEventListener('report-editor-datasource-changed', onDatasourceChanged)
 })
 
 defineExpose({

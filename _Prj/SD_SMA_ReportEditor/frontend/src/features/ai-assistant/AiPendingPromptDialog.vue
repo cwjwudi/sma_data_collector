@@ -69,6 +69,7 @@
 
 <script setup lang="ts">
 import { nextTick, onMounted, onUnmounted, ref } from 'vue'
+import { apiFetch } from '@/api/client.js'
 import {
   cancelAiPendingPrompt,
   fetchAiPendingPrompts,
@@ -76,6 +77,11 @@ import {
   submitAiPendingCredential,
   type AiPendingPrompt,
 } from '@/api/aiSettings'
+import {
+  fingerprintDatasourceLists,
+  notifyDatasourceChanged,
+  type DatasourceSyncScope,
+} from '@/lib/datasource-sync-events'
 
 defineOptions({ name: 'AiPendingPromptDialog' })
 
@@ -90,11 +96,35 @@ const dialogTitleId = 'ai-pending-title'
 const passwordInputId = 'ai-pending-password'
 
 let pollTimer: ReturnType<typeof setInterval> | null = null
+let listFingerprint = ''
+
+function scopeFromPrompt(prompt: AiPendingPrompt | null): DatasourceSyncScope {
+  if (prompt?.target_kind === 'db') return 'db'
+  if (prompt?.target_kind === 'opcua') return 'opcua'
+  return 'all'
+}
+
+async function syncDatasourceFingerprint(reason: string) {
+  try {
+    const [dbData, opcData] = await Promise.all([
+      apiFetch('/database/connections') as Promise<{ connections?: Array<{ id?: string }> }>,
+      apiFetch('/opcua/servers') as Promise<{ servers?: Array<{ id?: string }> }>,
+    ])
+    const fp = fingerprintDatasourceLists(dbData.connections || [], opcData.servers || [])
+    if (listFingerprint && fp !== listFingerprint) {
+      notifyDatasourceChanged('all', reason)
+    }
+    listFingerprint = fp
+  } catch {
+    /* 后端未起时静默 */
+  }
+}
 
 async function poll() {
   if (submitting.value) return
   try {
     const data = await fetchAiPendingPrompts()
+    await syncDatasourceFingerprint('config_poll')
     const pending = (data.prompts || []).filter((p) => p.status === 'pending')
     if (!pending.length) {
       activePrompt.value = null
@@ -119,8 +149,10 @@ async function onSubmitCredential() {
   if (!activePrompt.value || !password.value) return
   submitting.value = true
   errorMsg.value = ''
+  const scope = scopeFromPrompt(activePrompt.value)
   try {
     await submitAiPendingCredential(activePrompt.value.id, password.value)
+    notifyDatasourceChanged(scope, 'ai_pending_credential')
     password.value = ''
     activePrompt.value = null
     await poll()
@@ -135,8 +167,10 @@ async function onSubmitConfirm(confirmed: boolean) {
   if (!activePrompt.value) return
   submitting.value = true
   errorMsg.value = ''
+  const scope = scopeFromPrompt(activePrompt.value)
   try {
     await submitAiPendingConfirm(activePrompt.value.id, confirmed)
+    if (confirmed) notifyDatasourceChanged(scope, 'ai_pending_delete')
     activePrompt.value = null
     await poll()
   } catch (e) {
@@ -160,6 +194,7 @@ async function onCancel() {
 }
 
 onMounted(() => {
+  void syncDatasourceFingerprint('init')
   void poll()
   pollTimer = setInterval(() => void poll(), POLL_MS)
 })

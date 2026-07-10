@@ -913,6 +913,13 @@ function onConfigImported() {
   void reloadConnections(null, { force: true })
 }
 
+function onDatasourceChanged(ev) {
+  const scope = ev?.detail?.scope
+  if (!scope || scope === 'all' || scope === 'db') {
+    void reloadConnections(null, { force: true, background: true })
+  }
+}
+
 function startLoadWatch() {
   if (loadWatchTimer != null) return
   let ticks = 0
@@ -942,6 +949,7 @@ const sessionHydrated = hydrateFromSession()
 
 onMounted(() => {
   window.addEventListener('report-editor-config-imported', onConfigImported)
+  window.addEventListener('report-editor-datasource-changed', onDatasourceChanged)
   if (sessionHydrated || connections.value.length) {
     void reloadConnections(null, { background: true })
   } else {
@@ -968,6 +976,7 @@ onUnmounted(() => {
     loadWatchTimer = null
   }
   window.removeEventListener('report-editor-config-imported', onConfigImported)
+  window.removeEventListener('report-editor-datasource-changed', onDatasourceChanged)
 })
 
 defineExpose({

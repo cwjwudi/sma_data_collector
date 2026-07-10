@@ -1,15 +1,15 @@
 {
-  "version": "0.3.2",
-  "releasedAt": "2026-07-10T10:39:01.404Z",
-  "notes": "Report Editor 0.3.2: AI datasource CRUD + work chain diagnostics",
+  "version": "0.3.3",
+  "releasedAt": "2026-07-10T11:03:00.806Z",
+  "notes": "Report Editor 0.3.3: auto-refresh datasource list after AI/Cursor config changes",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor-Setup-0.3.2-x64.exe",
-      "sha256": "999dc6e786523a2416765514f408ec182a0d360df339b52256065aeadbb96917",
-      "size": 144932800
+      "url": "Report Editor-Setup-0.3.3-x64.exe",
+      "sha256": "c144e087d6b83fbd34145195731118124dd10ac8d06a14156ac53aa33d3c548a",
+      "size": 144932506
     },
     "darwin-arm64": {
-      "url": "Report Editor-0.3.2-arm64.dmg",
+      "url": "Report Editor-0.3.3-arm64.dmg",
       "sha256": "",
       "size": 0
     }
