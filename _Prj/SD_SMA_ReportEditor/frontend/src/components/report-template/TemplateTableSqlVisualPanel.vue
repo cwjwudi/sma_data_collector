@@ -230,9 +230,6 @@
           >
             从数据库加载该列样例值
           </button>
-          <datalist :id="'dv-' + flt.id">
-            <option v-for="(s, di) in distinctHints[flt.id] || []" :key="'dv-' + flt.id + '-' + di" :value="s" />
-          </datalist>
         </div>
 
         <template v-if="flt.kind === 'equality'">
@@ -273,10 +270,9 @@
               <template v-if="flt.bindings[0].source === 'literal'">
                 <label class="tsv-lab">
                   筛选值
-                  <input
+                  <SuggestCombobox
                     v-model="flt.defaults[0]"
-                    :list="'dv-' + flt.id"
-                    class="tsv-text-inp"
+                    :options="distinctHints[flt.id] || []"
                     placeholder="如状态码、编号"
                   />
                 </label>
@@ -284,7 +280,11 @@
               <template v-else-if="flt.bindings[0].source === 'opcua'">
                 <label class="tsv-lab">
                   默认值（OPC 无值时用）
-                  <input v-model="flt.defaults[0]" :list="'dv-' + flt.id" class="tsv-text-inp" placeholder="可选" />
+                  <SuggestCombobox
+                    v-model="flt.defaults[0]"
+                    :options="distinctHints[flt.id] || []"
+                    placeholder="可选"
+                  />
                 </label>
                 <label class="tsv-lab">
                   节点 ID
@@ -303,7 +303,11 @@
                 <p class="tsv-muted">导出时按「结批批次号」筛选，与输出参数控件的批次号来源一致。{{ batchBindingHint }}</p>
                 <label class="tsv-lab">
                   默认值（批次号读取失败时用）
-                  <input v-model="flt.defaults[0]" :list="'dv-' + flt.id" class="tsv-text-inp" placeholder="可选" />
+                  <SuggestCombobox
+                    v-model="flt.defaults[0]"
+                    :options="distinctHints[flt.id] || []"
+                    placeholder="可选"
+                  />
                 </label>
               </template>
             </div>
@@ -490,6 +494,7 @@
 
 <script setup lang="ts">
 import { apiFetch } from "@/api/client.js";
+import SuggestCombobox from "@/components/report-template/SuggestCombobox.vue";
 import type {
   TableSqlFillConfig,
   TableSqlParamBinding,

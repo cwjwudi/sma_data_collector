@@ -1,18 +1,13 @@
 <template>
   <label class="lff">
     <span class="lff-lab">字体</span>
-    <input
+    <SuggestCombobox
       v-model="model"
-      type="text"
-      class="lff-inp"
-      :list="listId"
+      :options="options"
       placeholder="留空则跟随系统默认"
-      spellcheck="false"
-      autocomplete="off"
+      :opt-preview-style="fontPreviewStyle"
+      :max-list-height="300"
     />
-    <datalist :id="listId">
-      <option v-for="f in options" :key="f" :value="f" />
-    </datalist>
     <button type="button" class="lff-btn" :disabled="loading" @click="onRefresh">
       {{ loading ? "读取中…" : "刷新本机字体列表" }}
     </button>
@@ -21,17 +16,25 @@
 </template>
 
 <script setup lang="ts">
+import { onMounted } from "vue";
+import SuggestCombobox from "@/components/report-template/SuggestCombobox.vue";
 import { useLayoutFontChoices } from "@/composables/useLayoutFontChoices";
 
 const model = defineModel<string>({ default: "" });
 
-const listId = `lff-dl-${Math.random().toString(36).slice(2, 11)}`;
-
 const { options, loading, hint, refresh } = useLayoutFontChoices();
+
+function fontPreviewStyle(opt: string): Record<string, string> {
+  return { fontFamily: opt };
+}
 
 function onRefresh() {
   void refresh();
 }
+
+onMounted(() => {
+  void refresh();
+});
 </script>
 
 <style scoped>
@@ -43,14 +46,6 @@ function onRefresh() {
 .lff-lab {
   font-size: 12px;
   color: #52525b;
-}
-.lff-inp {
-  width: 100%;
-  box-sizing: border-box;
-  border: 1px solid #e4e4e7;
-  border-radius: 6px;
-  padding: 6px 8px;
-  font-size: 12px;
 }
 .lff-btn {
   align-self: flex-start;
