@@ -31,7 +31,7 @@ async def apply_confirm(prompt_id: str, confirmed: bool) -> dict[str, Any]:
     if kind == "confirm_import_merge":
         return ai_config_ops.apply_import_merge(prompt_id, item)
 
-    if kind in ("confirm_manual_export", "pick_export_dir", "check_update"):
+    if kind in ("confirm_manual_export", "pick_export_dir", "check_update", "open_editor"):
         ai_pending_prompts.complete_prompt(prompt_id, result={"ok": True, "client_action": kind})
         return {"ok": True, "client_action": kind, "payload": item.get("payload") or {}}
 

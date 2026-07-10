@@ -15,7 +15,7 @@
 ## 写入总闸与单工具开关
 
 - **设置 → AI 助手**：`write_tools_enabled`（允许 AI 写入工具）为写入/确认类工具总闸。
-- **侧栏 → AI 工具**（`/ai-tools`）：39 项工具按分组展示，可单独禁用；禁用后 Cursor 上游 `tools` 列表不含该项，调用返回明确错误。
+- **侧栏 → AI 工具**（`/ai-tools`）：全部已注册工具按分组展示，可单独禁用；禁用后 Cursor 上游 `tools` 列表不含该项，调用返回明确错误。
 
 ## Pending 弹框（本机 UI 执行）
 
@@ -30,8 +30,19 @@
 | `confirm_manual_export` | 模拟结批 → UI 调 `runPdfExport` |
 | `pick_export_dir` | 选 PDF 输出目录或另存 `.rebak` 备份 |
 | `check_update` | 检查软件更新（**不自动安装**） |
+| `open_editor` | 打开模版/版式编辑器 |
 
 **禁止**向 LLM 返回密码明文或 `.rebak` 备份内容。
+
+## 0.3.6 运行时工具
+
+- `get_template_display_order` / `set_template_display_order`
+- `request_open_template` / `request_open_layout`
+- `get_export_result_feedback` / `set_export_result_feedback`
+- `explain_plc_heartbeat`、`analyze_export_parallel_health`、`set_max_parallel_exports`
+- `check_auto_trigger_bindings`、`summarize_report_history`
+
+应用内 AI 助手：Enter 发送，Shift+Enter 换行；消息自动滚到底。
 
 ## 0.3.4 新增工具摘要
 

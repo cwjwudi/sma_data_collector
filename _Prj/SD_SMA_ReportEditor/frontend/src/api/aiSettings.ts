@@ -43,6 +43,7 @@ export type AiPendingPromptKind =
   | 'confirm_manual_export'
   | 'pick_export_dir'
   | 'check_update'
+  | 'open_editor'
 
 export type AiPendingPrompt = {
   id: string

@@ -81,6 +81,15 @@
           </div>
         </template>
 
+        <template v-else-if="activePrompt.kind === 'open_editor'">
+          <div class="ai-pending-actions">
+            <button type="button" class="ai-pending-btn" :disabled="submitting" @click="onCancel">取消</button>
+            <button type="button" class="ai-pending-btn ai-pending-btn--primary" :disabled="submitting" @click="onSubmitConfirm(true)">
+              打开
+            </button>
+          </div>
+        </template>
+
         <p v-if="errorMsg" class="ai-pending-error">{{ errorMsg }}</p>
       </div>
     </div>
@@ -89,6 +98,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { apiFetch } from '@/api/client.js'
 import { resolveApiHref } from '@/api/apiBase.js'
 import {
@@ -114,6 +124,7 @@ import { loadReportGeneratorPrefs } from '@/lib/report-generator-prefs'
 
 defineOptions({ name: 'AiPendingPromptDialog' })
 
+const router = useRouter()
 const POLL_MS = 2500
 
 const activePrompt = ref<AiPendingPrompt | null>(null)
@@ -240,6 +251,17 @@ async function handleClientAction(action: string, payload: Record<string, unknow
   }
   if (action === 'check_update') {
     await checkAppUpdateManual()
+    return
+  }
+  if (action === 'open_editor') {
+    const editor = String(payload.editor || prompt.payload?.editor || '')
+    const id = String(payload.id || prompt.payload?.id || prompt.connection_id || '')
+    if (!id) throw new Error('缺少编辑目标 id')
+    if (editor === 'layout') {
+      await router.push({ name: 'LayoutPresetEditor', params: { id } })
+    } else {
+      await router.push({ name: 'TemplateEditor', params: { id } })
+    }
     return
   }
   if (action === 'pick_export_dir') {

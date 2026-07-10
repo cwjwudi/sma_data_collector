@@ -6,7 +6,7 @@ import logging
 from typing import Any
 
 from core.settings import CONFIG_FILE, DATA_DIR
-from modules import ai_asset_ops, ai_config, ai_config_ops, ai_datasource_ops, ai_tool_catalog, ai_work_chain, audit_log, config_store, template_store
+from modules import ai_asset_ops, ai_config, ai_config_ops, ai_datasource_ops, ai_runtime_ops, ai_tool_catalog, ai_work_chain, audit_log, config_store, template_store
 from modules import db_connection_ops, opcua_service
 from schemas.common import DbConnectionSave
 
@@ -534,6 +534,143 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_template_display_order",
+            "description": "读取模版管理页本机展示排序。",
+            "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "set_template_display_order",
+            "description": "设置模版展示顺序：传完整 ordered_ids，或 move={from_id,to_id} 拖拽式调整。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "ordered_ids": {"type": "array", "items": {"type": "string"}},
+                    "move": {
+                        "type": "object",
+                        "properties": {
+                            "from_id": {"type": "string"},
+                            "to_id": {"type": "string"},
+                        },
+                    },
+                },
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "request_open_template",
+            "description": "请求在 UI 打开指定模版编辑器（需用户确认后跳转）。",
+            "parameters": {
+                "type": "object",
+                "properties": {"template_id": {"type": "string"}},
+                "required": ["template_id"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "request_open_layout",
+            "description": "请求在 UI 打开指定版式编辑器（需用户确认后跳转）。",
+            "parameters": {
+                "type": "object",
+                "properties": {"layout_id": {"type": "string"}},
+                "required": ["layout_id"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_export_result_feedback",
+            "description": "读取结批结果反馈（写回 PLC）配置。",
+            "parameters": {
+                "type": "object",
+                "properties": {"template_id": {"type": "string"}},
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "set_export_result_feedback",
+            "description": "写入结批结果反馈 OPC 绑定（enabled/serverId/statusNodeId 等）。可指定 template_id 做按模版覆盖。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "template_id": {"type": "string"},
+                    "enabled": {"type": "boolean"},
+                    "serverId": {"type": "string"},
+                    "statusNodeId": {"type": "string"},
+                    "statusKind": {"type": "string", "enum": ["bool", "int"]},
+                    "messageNodeId": {"type": "string"},
+                    "filePathNodeId": {"type": "string"},
+                    "messageMaxLen": {"type": "integer"},
+                },
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "explain_plc_heartbeat",
+            "description": "介绍 PLC 心跳机制，并返回当前心跳配置摘要。",
+            "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "analyze_export_parallel_health",
+            "description": "根据近期导出审计耗时分析并行参数建议与工控机健康度。",
+            "parameters": {
+                "type": "object",
+                "properties": {"limit": {"type": "integer", "description": "审计样本上限，默认 40"}},
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "set_max_parallel_exports",
+            "description": "设置自动结批并行上限（1–16）。",
+            "parameters": {
+                "type": "object",
+                "properties": {"max_parallel": {"type": "integer"}},
+                "required": ["max_parallel"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "check_auto_trigger_bindings",
+            "description": "检查保存的自动结批触发变量配置是否完整、模版是否存在。",
+            "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "summarize_report_history",
+            "description": "汇总历史报表目录中的 PDF 数量、体积与最近文件。",
+            "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
+        },
+    },
 ]
 
 
@@ -667,6 +804,37 @@ async def execute_tool(name: str, arguments: dict[str, Any] | None, *, page_cont
         result = await ai_config_ops.preflight_export(str(args.get("template_id") or ""))
     elif name == "request_manual_export":
         result = ai_config_ops.request_manual_export(str(args.get("template_id") or ""))
+    elif name == "get_template_display_order":
+        result = ai_runtime_ops.get_template_display_order()
+    elif name == "set_template_display_order":
+        result = ai_runtime_ops.set_template_display_order(
+            args.get("ordered_ids") if isinstance(args.get("ordered_ids"), list) else None,
+            args.get("move") if isinstance(args.get("move"), dict) else None,
+        )
+    elif name == "request_open_template":
+        result = ai_runtime_ops.request_open_template(str(args.get("template_id") or ""))
+    elif name == "request_open_layout":
+        result = ai_runtime_ops.request_open_layout(str(args.get("layout_id") or ""))
+    elif name == "get_export_result_feedback":
+        result = ai_runtime_ops.get_export_result_feedback(
+            str(args.get("template_id")).strip() if args.get("template_id") else None
+        )
+    elif name == "set_export_result_feedback":
+        patch = {k: v for k, v in args.items() if k != "template_id"}
+        result = ai_runtime_ops.set_export_result_feedback(
+            patch,
+            str(args.get("template_id")).strip() if args.get("template_id") else None,
+        )
+    elif name == "explain_plc_heartbeat":
+        result = ai_runtime_ops.explain_plc_heartbeat()
+    elif name == "analyze_export_parallel_health":
+        result = ai_runtime_ops.analyze_export_parallel_health(int(args.get("limit") or 40))
+    elif name == "set_max_parallel_exports":
+        result = ai_runtime_ops.set_max_parallel_exports(args.get("max_parallel"))
+    elif name == "check_auto_trigger_bindings":
+        result = ai_runtime_ops.check_auto_trigger_bindings()
+    elif name == "summarize_report_history":
+        result = ai_runtime_ops.summarize_report_history()
     else:
         result = {"ok": False, "error": f"未知工具: {name}"}
 

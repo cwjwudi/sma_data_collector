@@ -346,13 +346,17 @@ def mirror_client_prefs(request: Request, body: dict[str, Any]):
     import json
 
     merged = dict(body) if isinstance(body, dict) else {}
-    if path.is_file() and not merged.get("pending_apply"):
+    incoming_sets_pending = isinstance(body, dict) and "pending_apply" in body
+    if path.is_file() and not incoming_sets_pending:
         try:
             existing = json.loads(path.read_text(encoding="utf-8"))
             if isinstance(existing, dict) and existing.get("pending_apply"):
+                # 保留 AI 写入的 pending 补丁，避免被前端常规镜像冲掉
                 merged = {**merged, **existing}
         except (OSError, json.JSONDecodeError):
             pass
+    if merged.get("pending_apply") is False:
+        merged["pending_apply"] = False
     path.write_text(json.dumps(merged, ensure_ascii=False, indent=2), encoding="utf-8")
     return {"ok": True}
 

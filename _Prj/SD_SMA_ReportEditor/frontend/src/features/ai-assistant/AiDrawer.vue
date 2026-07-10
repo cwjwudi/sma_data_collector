@@ -22,7 +22,7 @@
           <p>请先在 <router-link to="/settings" @click="closeDrawer">设置</router-link> 中启用 AI、配置 LLM Key 并生成 Agent 令牌。</p>
         </div>
 
-        <div ref="scrollEl" class="ai-drawer__messages">
+        <div ref="scrollEl" class="ai-drawer__messages" @scroll.passive="onMessagesScroll">
           <div v-if="!messages.length && ready" class="ai-drawer__empty">
             可询问：连接探活、最近导出失败、模版列表等。当前页上下文会自动附带。
           </div>
@@ -43,11 +43,13 @@
 
         <form class="ai-drawer__composer" @submit.prevent="onSend">
           <textarea
+            ref="inputEl"
             v-model="input"
             class="ai-drawer__input"
             rows="3"
-            placeholder="描述问题，例如：检查 OPC 连接是否正常"
+            placeholder="Enter 发送，Shift+Enter 换行"
             :disabled="loading"
+            @keydown="onInputKeydown"
           />
           <div class="ai-drawer__actions">
             <button type="button" class="ai-drawer__btn ai-drawer__btn--muted" :disabled="loading" @click="clearChat">
@@ -84,6 +86,8 @@ const input = ref('')
 const errorMsg = ref('')
 const messages = ref<AiChatMessage[]>([])
 const scrollEl = ref<HTMLElement | null>(null)
+const inputEl = ref<HTMLTextAreaElement | null>(null)
+let stickToBottom = true
 
 const route = useRoute()
 
@@ -109,6 +113,11 @@ async function refreshStatus() {
 function openDrawer() {
   open.value = true
   void refreshStatus()
+  void nextTick(async () => {
+    stickToBottom = true
+    await scrollToBottom(true)
+    inputEl.value?.focus({ preventScroll: true })
+  })
 }
 
 function closeDrawer() {
@@ -118,12 +127,34 @@ function closeDrawer() {
 function clearChat() {
   messages.value = []
   errorMsg.value = ''
+  stickToBottom = true
+  void scrollToBottom(true)
 }
 
-async function scrollToBottom() {
+function onMessagesScroll() {
+  const el = scrollEl.value
+  if (!el) return
+  const gap = el.scrollHeight - el.scrollTop - el.clientHeight
+  stickToBottom = gap < 48
+}
+
+async function scrollToBottom(force = false) {
   await nextTick()
   const el = scrollEl.value
-  if (el) el.scrollTop = el.scrollHeight
+  if (!el) return
+  if (!force && !stickToBottom) return
+  el.scrollTop = el.scrollHeight
+  // 二次对齐：思考中占位 / pre 换行后高度可能再变
+  requestAnimationFrame(() => {
+    if (force || stickToBottom) el.scrollTop = el.scrollHeight
+  })
+}
+
+function onInputKeydown(ev: KeyboardEvent) {
+  if (ev.key !== 'Enter') return
+  if (ev.shiftKey || ev.isComposing) return
+  ev.preventDefault()
+  void onSend()
 }
 
 async function onSend() {
@@ -134,7 +165,8 @@ async function onSend() {
   messages.value = [...messages.value, userMsg]
   input.value = ''
   loading.value = true
-  await scrollToBottom()
+  stickToBottom = true
+  await scrollToBottom(true)
   try {
     const payloadMessages = messages.value.filter((m) => m.role === 'user' || m.role === 'assistant')
     const data = await sendAiChat({
@@ -147,7 +179,7 @@ async function onSend() {
     errorMsg.value = e instanceof Error ? e.message : String(e)
   } finally {
     loading.value = false
-    await scrollToBottom()
+    await scrollToBottom(true)
   }
 }
 
@@ -156,8 +188,18 @@ function onSettingsChanged() {
 }
 
 watch(open, (v) => {
-  if (v) void refreshStatus()
+  if (v) {
+    void refreshStatus()
+    void scrollToBottom(true)
+  }
 })
+
+watch(
+  () => [messages.value.length, loading.value] as const,
+  () => {
+    void scrollToBottom()
+  },
+)
 
 onMounted(() => {
   window.addEventListener('report-editor-ai-settings-changed', onSettingsChanged)

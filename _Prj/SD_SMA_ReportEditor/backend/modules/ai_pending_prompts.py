@@ -18,6 +18,7 @@ PromptKind = Literal[
     "confirm_manual_export",
     "pick_export_dir",
     "check_update",
+    "open_editor",
 ]
 PromptStatus = Literal["pending", "done", "cancelled", "expired"]
 
