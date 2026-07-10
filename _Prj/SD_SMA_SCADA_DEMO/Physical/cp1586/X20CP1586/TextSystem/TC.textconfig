@@ -10,8 +10,5 @@
         <Property ID="TargetLanguage[2]" Value="zh-CHS" />
       </Group>
     </Group>
-    <Group ID="TargetFiles">
-      <Property ID="TargetFile[1]" Value="AlarmQuerry.AlarmMsg.tmx" />
-    </Group>
   </Element>
 </Configuration>

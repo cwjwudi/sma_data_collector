@@ -1,0 +1,8 @@
+(*Recipe query + random insert - OPC ::DataSQLRec: / ::AsGlobalPV:gDataSQLRecipe*)
+VAR
+	RecipeDataSQLQuery : DataSQLQuery_typ;
+	UtcDTGetTime_0 : UtcDTGetTime;
+	tonRecipe : TON;
+	dtNow : DATE_AND_TIME;
+	bSimEnable : BOOL := TRUE;
+END_VAR

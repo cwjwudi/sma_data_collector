@@ -4,21 +4,10 @@
   <Objects>
     <Object Type="File" Description="Global data types">Global.typ</Object>
     <Object Type="File" Description="Global variables">Global.var</Object>
-    <Object Type="File" Description="DataSQL types">GlobalDataSQL.typ</Object>
-    <Object Type="File" Description="DataSQL globals">GlobalDataSQL.var</Object>
     <Object Type="Package" Description="Global libraries">Libraries</Object>
-    <Object Type="Program" Language="IEC">DataGen</Object>
     <Object Type="Package">mappView</Object>
-    <Object Type="Program" Language="IEC">DataRev</Object>
-    <Object Type="Program" Language="IEC" Description="报警查询">AlarmQuerry</Object>
-    <Object Type="Program" Language="IEC" Description="追溯查询">AuditQuerry</Object>
     <Object Type="File">Project.language</Object>
-    <Object Type="Program" Language="IEC">Trend</Object>
-    <Object Type="Program" Language="IEC" Description="并发触发测试">ParallelTest</Object>
-    <Object Type="Program" Language="ANSIC">TimeSt</Object>
-    <Object Type="Program" Language="IEC" Description="报警插入缓冲">DataSQLAla</Object>
-    <Object Type="Program" Language="IEC" Description="审计插入缓冲">DataSQLAud</Object>
-    <Object Type="Program" Language="IEC" Description="配方查询配置">DataSQLRec</Object>
-    <Object Type="Program" Language="IEC" Description="生产查询配置">DataSQLPro</Object>
+    <Object Type="Package">Archive</Object>
+    <Object Type="Package" Description="SMA DataSQL demo">SMA</Object>
   </Objects>
 </Package>

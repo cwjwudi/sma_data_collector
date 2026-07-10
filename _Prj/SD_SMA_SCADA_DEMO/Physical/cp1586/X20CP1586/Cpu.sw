@@ -2,20 +2,21 @@
 <?AutomationStudio FileVersion="4.9"?>
 <SwConfiguration CpuAddress="SL1" xmlns="http://br-automation.co.at/AS/SwConfiguration">
   <TaskClass Name="Cyclic#1">
-    <Task Name="TimeSt" Source="TimeSt.prg" Memory="UserROM" Language="ANSIC" Debugging="true" />
+    <Task Name="TimeSt" Source="Archive.TimeSt.prg" Memory="UserROM" Language="ANSIC" Debugging="true" />
   </TaskClass>
   <TaskClass Name="Cyclic#2" />
   <TaskClass Name="Cyclic#3" />
   <TaskClass Name="Cyclic#4">
-    <Task Name="DataGen" Source="DataGen.prg" Memory="UserROM" Language="IEC" Debugging="true" />
-    <Task Name="DataRev" Source="DataRev.prg" Memory="UserROM" Language="IEC" Debugging="true" />
-    <Task Name="AlarmQuerr" Source="AlarmQuerry.prg" Memory="UserROM" Language="IEC" Debugging="true" />
-    <Task Name="Trend" Source="Trend.prg" Memory="UserROM" Language="IEC" Debugging="true" />
-    <Task Name="ParallelTe" Source="ParallelTest.prg" Memory="UserROM" Language="IEC" Debugging="true" />
-    <Task Name="DataSQLAla" Source="DataSQLAla.prg" Memory="UserROM" Language="IEC" Debugging="true" />
-    <Task Name="DataSQLAud" Source="DataSQLAud.prg" Memory="UserROM" Language="IEC" Debugging="true" />
-    <Task Name="DataSQLRec" Source="DataSQLRec.prg" Memory="UserROM" Language="IEC" Debugging="true" />
-    <Task Name="DataSQLPro" Source="DataSQLPro.prg" Memory="UserROM" Language="IEC" Debugging="true" />
+    <Task Name="DataGen" Source="Archive.DataGen.prg" Memory="UserROM" Language="IEC" Debugging="true" />
+    <Task Name="DataRev" Source="Archive.DataRev.prg" Memory="UserROM" Language="IEC" Debugging="true" />
+    <Task Name="AlarmQuerr" Source="Archive.AlarmQuerry.prg" Memory="UserROM" Language="IEC" Debugging="true" />
+    <Task Name="Trend" Source="Archive.Trend.prg" Memory="UserROM" Language="IEC" Debugging="true" />
+    <Task Name="ParallelTe" Source="Archive.ParallelTest.prg" Memory="UserROM" Language="IEC" Debugging="true" />
+    <Task Name="DataSQLAla" Source="SMA.DataSQLAla.prg" Memory="UserROM" Language="IEC" Debugging="true" />
+    <Task Name="DataSQLAud" Source="SMA.DataSQLAud.prg" Memory="UserROM" Language="IEC" Debugging="true" />
+    <Task Name="DataSQLRec" Source="SMA.DataSQLRec.prg" Memory="UserROM" Language="IEC" Debugging="true" />
+    <Task Name="DataSQLPro" Source="SMA.DataSQLPro.prg" Memory="UserROM" Language="IEC" Debugging="true" />
+    <Task Name="DataSQLBat" Source="SMA.DataSQLBat.prg" Memory="UserROM" Language="IEC" Debugging="true" />
   </TaskClass>
   <TaskClass Name="Cyclic#5" />
   <TaskClass Name="Cyclic#6" />

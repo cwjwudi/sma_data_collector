@@ -1,0 +1,8 @@
+(*Product query + random insert - OPC ::DataSQLPro: / ::AsGlobalPV:gDataSQLProduct*)
+VAR
+	ProductDataSQLQuery : DataSQLQuery_typ;
+	UtcDTGetTime_0 : UtcDTGetTime;
+	tonProduct : TON;
+	dtNow : DATE_AND_TIME;
+	bSimEnable : BOOL := TRUE;
+END_VAR
