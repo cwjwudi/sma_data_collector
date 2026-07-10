@@ -9,6 +9,10 @@
     <Task Name="DataRev" Source="DataRev.prg" Memory="UserROM" Language="IEC" Debugging="true" />
     <Task Name="AlarmQuerr" Source="AlarmQuerry.prg" Memory="UserROM" Language="IEC" Debugging="true" Disabled="true" />
     <Task Name="Trend" Source="Trend.prg" Memory="UserROM" Language="IEC" Debugging="true" Disabled="true" />
+    <Task Name="DataSQLAla" Source="DataSQLAla.prg" Memory="UserROM" Language="IEC" Debugging="true" />
+    <Task Name="DataSQLAud" Source="DataSQLAud.prg" Memory="UserROM" Language="IEC" Debugging="true" />
+    <Task Name="DataSQLRec" Source="DataSQLRec.prg" Memory="UserROM" Language="IEC" Debugging="true" />
+    <Task Name="DataSQLPro" Source="DataSQLPro.prg" Memory="UserROM" Language="IEC" Debugging="true" />
   </TaskClass>
   <TaskClass Name="Cyclic#5" />
   <TaskClass Name="Cyclic#6" />
@@ -47,5 +51,6 @@
     <LibraryObject Name="astime" Source="" Memory="UserROM" Language="Binary" Debugging="true" />
     <LibraryObject Name="asieccon" Source="" Memory="UserROM" Language="Binary" Debugging="true" />
     <LibraryObject Name="brsystem" Source="" Memory="UserROM" Language="Binary" Debugging="true" />
+    <LibraryObject Name="standard" Source="Libraries.standard.lby" Memory="UserROM" Language="binary" Debugging="true" />
   </Libraries>
 </SwConfiguration>

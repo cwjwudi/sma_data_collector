@@ -12,6 +12,10 @@
     <Task Name="AlarmQuerr" Source="AlarmQuerry.prg" Memory="UserROM" Language="IEC" Debugging="true" />
     <Task Name="Trend" Source="Trend.prg" Memory="UserROM" Language="IEC" Debugging="true" />
     <Task Name="ParallelTe" Source="ParallelTest.prg" Memory="UserROM" Language="IEC" Debugging="true" />
+    <Task Name="DataSQLAla" Source="DataSQLAla.prg" Memory="UserROM" Language="IEC" Debugging="true" />
+    <Task Name="DataSQLAud" Source="DataSQLAud.prg" Memory="UserROM" Language="IEC" Debugging="true" />
+    <Task Name="DataSQLRec" Source="DataSQLRec.prg" Memory="UserROM" Language="IEC" Debugging="true" />
+    <Task Name="DataSQLPro" Source="DataSQLPro.prg" Memory="UserROM" Language="IEC" Debugging="true" />
   </TaskClass>
   <TaskClass Name="Cyclic#5" />
   <TaskClass Name="Cyclic#6" />

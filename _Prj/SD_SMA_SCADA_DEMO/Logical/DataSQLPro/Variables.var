@@ -1,0 +1,4 @@
+(*Product query config - OPC ::DataSQLPro:*)
+VAR
+	ProductDataSQLQuery : DataSQLQuery_typ;
+END_VAR

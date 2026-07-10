@@ -97,3 +97,18 @@ VAR
 	TF : REAL;
 	TW : REAL;
 END_VAR
+(*DataSQL 随机数据仿真*)
+VAR
+	bDataSQLSimEnable : BOOL := TRUE;
+	dtSQLNow : DATE_AND_TIME;
+	tonRecipe : TON;
+	tonProduct : TON;
+	tonBatch : TON;
+	tonBatchInfo : TON;
+	diBatchSeq : DINT;
+	strTmp : STRING[16];
+	udiPieceAccept : UDINT;
+	udiPieceDebug : UDINT;
+	udiPieceTotal : UDINT;
+	bBatchOpened : BOOL;
+END_VAR

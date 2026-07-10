@@ -9,6 +9,15 @@
   </Aliases>
   <DefaultView>
     <Module Name="&lt;Default&gt;">
+      <GlobalVariables Name="Global Variables">
+        <Variable Name="gDataSQLHeartBeat" />
+        <Variable Name="gDataSQLCommFault" />
+        <Variable Name="gDataSQLOperate" RecursiveEnable="2" />
+        <Variable Name="gDataSQLRecipe" RecursiveEnable="2" />
+        <Variable Name="gDataSQLProduct" RecursiveEnable="2" />
+        <Variable Name="gDataSQLBatch" RecursiveEnable="2" />
+        <Variable Name="gDataSQLBatchInfo" RecursiveEnable="2" />
+      </GlobalVariables>
       <Task Name="AlarmQuerr">
         <Variable Name="HMIAlarmQuerryIndex" RecursiveEnable="2" />
         <Variable Name="HMIAlarmQuerryMBBtn" />
@@ -188,6 +197,20 @@
         </Variable>
         <Variable Name="uiHeartBeat" />
         <Variable Name="uiQueryFeedBack" />
+      </Task>
+      <Task Name="DataSQLAla">
+        <Variable Name="AlarmInsertBuffer" RecursiveEnable="2" />
+        <Variable Name="AlarmDataSQLQuery" RecursiveEnable="2" />
+      </Task>
+      <Task Name="DataSQLAud">
+        <Variable Name="AuditInsertBuffer" RecursiveEnable="2" />
+        <Variable Name="AuditDataSQLQuery" RecursiveEnable="2" />
+      </Task>
+      <Task Name="DataSQLRec">
+        <Variable Name="RecipeDataSQLQuery" RecursiveEnable="2" />
+      </Task>
+      <Task Name="DataSQLPro">
+        <Variable Name="ProductDataSQLQuery" RecursiveEnable="2" />
       </Task>
     </Module>
   </DefaultView>

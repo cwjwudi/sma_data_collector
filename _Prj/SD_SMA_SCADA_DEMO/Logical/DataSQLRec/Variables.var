@@ -1,0 +1,4 @@
+(*Recipe query config - OPC ::DataSQLRec:*)
+VAR
+	RecipeDataSQLQuery : DataSQLQuery_typ;
+END_VAR
