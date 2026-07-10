@@ -1,15 +1,15 @@
 {
-  "version": "0.2.32",
-  "releasedAt": "2026-07-10T08:41:47.831Z",
-  "notes": "Report Editor 0.2.32\n\n- 字体选择改为可滚动下拉，本机字体多时也能翻到底部\n- 表格 SQL 样例值建议同样可滚动\n- 结批遇缺表(1146)/填充失败时重读 OPC 表名并主动重试，降低 PLC 表名滞后导致的偶发失败",
+  "version": "0.2.33",
+  "releasedAt": "2026-07-10T08:57:48.503Z",
+  "notes": "Report Editor 0.2.33\n\n- 修复字体下拉：展开时显示全部字体并可滚动（不再被当前选中值过滤成只剩一项）\n- Electron 放行本机字体权限；刷新后提示加载数量\n- 可清除字体恢复系统默认",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor-Setup-0.2.32-x64.exe",
-      "sha256": "2c9e68460e062dac4b0f842bfaa45e1ed25318e923056f24db7e18980675bb41",
-      "size": 144459196
+      "url": "Report Editor-Setup-0.2.33-x64.exe",
+      "sha256": "640578eef51266f23fa1aecba68c8b59e7f10f7a8c189ad4583fd25fd471a30e",
+      "size": 144460433
     },
     "darwin-arm64": {
-      "url": "Report Editor-0.2.32-arm64.dmg",
+      "url": "Report Editor-0.2.33-arm64.dmg",
       "sha256": "",
       "size": 0
     }

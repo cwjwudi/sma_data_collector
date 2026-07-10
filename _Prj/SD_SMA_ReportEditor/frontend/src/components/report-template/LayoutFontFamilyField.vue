@@ -4,19 +4,22 @@
     <SuggestCombobox
       v-model="model"
       :options="options"
-      placeholder="留空则跟随系统默认"
+      placeholder="留空则跟随系统默认；点 ▾ 浏览全部"
       :opt-preview-style="fontPreviewStyle"
-      :max-list-height="300"
+      :max-list-height="320"
     />
-    <button type="button" class="lff-btn" :disabled="loading" @click="onRefresh">
-      {{ loading ? "读取中…" : "刷新本机字体列表" }}
-    </button>
+    <div class="lff-actions">
+      <button type="button" class="lff-btn" :disabled="loading" @click="onRefresh">
+        {{ loading ? "读取中…" : "刷新本机字体列表" }}
+      </button>
+      <button v-if="model" type="button" class="lff-btn lff-btn-muted" @click="model = ''">清除</button>
+    </div>
     <p v-if="hint" class="lff-hint">{{ hint }}</p>
+    <p v-else class="lff-hint lff-hint-muted">点 ▾ 可浏览全部字体并滚动；输入文字可过滤。刷新需允许访问本机字体。</p>
   </label>
 </template>
 
 <script setup lang="ts">
-import { onMounted } from "vue";
 import SuggestCombobox from "@/components/report-template/SuggestCombobox.vue";
 import { useLayoutFontChoices } from "@/composables/useLayoutFontChoices";
 
@@ -25,16 +28,12 @@ const model = defineModel<string>({ default: "" });
 const { options, loading, hint, refresh } = useLayoutFontChoices();
 
 function fontPreviewStyle(opt: string): Record<string, string> {
-  return { fontFamily: opt };
+  return { fontFamily: `"${opt.replace(/"/g, "")}", sans-serif` };
 }
 
 function onRefresh() {
   void refresh();
 }
-
-onMounted(() => {
-  void refresh();
-});
 </script>
 
 <style scoped>
@@ -47,6 +46,11 @@ onMounted(() => {
   font-size: 12px;
   color: #52525b;
 }
+.lff-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
 .lff-btn {
   align-self: flex-start;
   padding: 6px 10px;
@@ -57,6 +61,11 @@ onMounted(() => {
   color: #3730a3;
   cursor: pointer;
 }
+.lff-btn-muted {
+  border-color: #e4e4e7;
+  background: #fafafa;
+  color: #52525b;
+}
 .lff-btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
@@ -66,5 +75,8 @@ onMounted(() => {
   font-size: 11px;
   color: #a16207;
   line-height: 1.4;
+}
+.lff-hint-muted {
+  color: #a1a1aa;
 }
 </style>

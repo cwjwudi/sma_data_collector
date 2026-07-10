@@ -32,6 +32,7 @@ export function useLayoutFontChoices() {
   const fromOs = shallowRef<string[]>([]);
   const loading = ref(false);
   const hint = ref("");
+  const lastOsCount = ref(0);
 
   const options = computed(() => {
     const s = new Set<string>([...LAYOUT_FONT_FALLBACK, ...fromOs.value]);
@@ -46,12 +47,13 @@ export function useLayoutFontChoices() {
     const q = w.queryLocalFonts;
     if (typeof q !== "function") {
       hint.value =
-        "当前浏览器不支持列举本机字体（需 Chromium / Electron 等且为安全上下文）。可直接输入字体名，或使用上方列表中的常见字体。";
+        "当前环境不支持列举本机字体。仍可使用常见字体列表，或直接输入字体名（如 Microsoft YaHei）。";
       return;
     }
     loading.value = true;
     hint.value = "";
     try {
+      // 须由用户点击触发；Electron 需放行 local-fonts 权限
       const fonts = await q.call(w);
       const fam = new Set<string>();
       for (const f of fonts) {
@@ -59,14 +61,20 @@ export function useLayoutFontChoices() {
         if (n) fam.add(n);
       }
       fromOs.value = Array.from(fam);
+      lastOsCount.value = fam.size;
+      if (fam.size === 0) {
+        hint.value =
+          "本机字体枚举结果为空（可能未授权 local-fonts）。已保留常见字体列表，也可直接输入字体名。";
+      } else {
+        hint.value = `已加载 ${fam.size} 个本机字体族（含常见字体共 ${options.value.length} 项）。展开下拉可滚动浏览；输入可过滤。`;
+      }
     } catch (e) {
-      hint.value =
-        (e instanceof Error ? e.message : String(e)) +
-        "（若首次使用，请在浏览器权限提示中允许访问本机字体。）";
+      const msg = e instanceof Error ? e.message : String(e);
+      hint.value = `${msg}（请点击「刷新本机字体列表」并允许访问字体；也可直接输入字体名。）`;
     } finally {
       loading.value = false;
     }
   }
 
-  return { options, loading, hint, refresh };
+  return { options, loading, hint, refresh, lastOsCount };
 }

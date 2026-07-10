@@ -3,7 +3,7 @@
     <div class="scb-row">
       <input
         ref="inputRef"
-        :value="model"
+        :value="inputDisplay"
         type="text"
         class="scb-inp"
         :class="inputClass"
@@ -38,6 +38,7 @@
         role="listbox"
         :style="listStyle"
         @mousedown.prevent
+        @wheel.stop
       >
         <li v-if="filtered.length === 0" class="scb-empty" role="presentation">无匹配项</li>
         <li
@@ -45,7 +46,7 @@
           :key="opt"
           class="scb-opt"
           role="option"
-          :class="{ 'scb-opt--active': i === activeIndex }"
+          :class="{ 'scb-opt--active': i === activeIndex, 'scb-opt--selected': opt === model }"
           :aria-selected="opt === model"
           :style="optPreviewStyle?.(opt)"
           @mouseenter="activeIndex = i"
@@ -82,6 +83,8 @@ const props = withDefaults(
 const model = defineModel<string>({ default: "" });
 
 const open = ref(false);
+/** 仅在用户输入时启用过滤；展开列表时不过滤当前选中值，避免只剩一项 */
+const filterQuery = ref<string | null>(null);
 const activeIndex = ref(0);
 const rootRef = ref<HTMLElement | null>(null);
 const inputRef = ref<HTMLInputElement | null>(null);
@@ -89,8 +92,10 @@ const listRef = ref<HTMLElement | null>(null);
 const listStyle = ref<Record<string, string>>({});
 const listboxId = `scb-lb-${Math.random().toString(36).slice(2, 11)}`;
 
+const inputDisplay = computed(() => (filterQuery.value !== null ? filterQuery.value : model.value));
+
 const filtered = computed(() => {
-  const q = model.value.trim().toLowerCase();
+  const q = (filterQuery.value ?? "").trim().toLowerCase();
   if (!q) return [...props.options];
   return props.options.filter((o) => o.toLowerCase().includes(q));
 });
@@ -99,19 +104,22 @@ function placeList() {
   const el = inputRef.value ?? rootRef.value;
   if (!el) return;
   const r = el.getBoundingClientRect();
-  const maxH = Math.max(120, props.maxListHeight);
+  const maxH = Math.max(160, props.maxListHeight);
   const spaceBelow = window.innerHeight - r.bottom - 8;
   const spaceAbove = r.top - 8;
-  const openUp = spaceBelow < Math.min(160, maxH) && spaceAbove > spaceBelow;
-  const avail = Math.max(100, openUp ? spaceAbove : spaceBelow);
+  const openUp = spaceBelow < Math.min(180, maxH) && spaceAbove > spaceBelow;
+  const avail = Math.max(160, openUp ? spaceAbove : spaceBelow);
   const height = Math.min(maxH, avail);
-  const width = Math.max(r.width, rootRef.value?.getBoundingClientRect().width ?? r.width);
+  const rowW = rootRef.value?.getBoundingClientRect().width ?? r.width;
+  const width = Math.max(r.width, rowW);
   listStyle.value = {
     position: "fixed",
     left: `${Math.max(8, Math.min(r.left, window.innerWidth - width - 8))}px`,
     width: `${width}px`,
     maxHeight: `${height}px`,
+    height: "auto",
     overflowY: "auto",
+    overflowX: "hidden",
     zIndex: "10050",
     ...(openUp
       ? { bottom: `${window.innerHeight - r.top + 4}px`, top: "auto" }
@@ -119,17 +127,26 @@ function placeList() {
   };
 }
 
+function indexOfCurrent(): number {
+  const cur = model.value;
+  if (!cur) return 0;
+  const i = filtered.value.indexOf(cur);
+  return i >= 0 ? i : 0;
+}
+
 function openList() {
   open.value = true;
-  activeIndex.value = 0;
+  filterQuery.value = null;
+  activeIndex.value = indexOfCurrent();
   void nextTick(() => {
     placeList();
-    listRef.value?.scrollTo({ top: 0 });
+    scrollActiveIntoView();
   });
 }
 
 function closeList() {
   open.value = false;
+  filterQuery.value = null;
   activeIndex.value = 0;
 }
 
@@ -144,14 +161,20 @@ function onFocus() {
 
 function onInput(e: Event) {
   const t = e.target as HTMLInputElement;
+  filterQuery.value = t.value;
   model.value = t.value;
-  if (!open.value) openList();
-  else placeList();
+  if (!open.value) {
+    open.value = true;
+    void nextTick(() => placeList());
+  } else {
+    placeList();
+  }
   activeIndex.value = 0;
 }
 
 function pick(opt: string) {
   model.value = opt;
+  filterQuery.value = null;
   closeList();
   inputRef.value?.focus();
 }
@@ -160,6 +183,7 @@ function onKeydown(e: KeyboardEvent) {
   if (e.key === "Escape") {
     if (open.value) {
       e.preventDefault();
+      filterQuery.value = null;
       closeList();
     }
     return;
@@ -206,9 +230,12 @@ function onWinChange() {
   if (open.value) placeList();
 }
 
-watch(filtered, () => {
-  if (open.value) placeList();
-});
+watch(
+  () => props.options.length,
+  () => {
+    if (open.value) placeList();
+  },
+);
 
 onMounted(() => {
   document.addEventListener("pointerdown", onDocPointerDown, true);
@@ -268,7 +295,6 @@ onBeforeUnmount(() => {
 }
 </style>
 
-<!-- list teleported to body: unscoped needed for positioning chrome -->
 <style>
 .scb-list {
   margin: 0;
@@ -295,6 +321,9 @@ onBeforeUnmount(() => {
 .scb-opt:hover {
   background: #eef2ff;
   color: #3730a3;
+}
+.scb-opt--selected {
+  font-weight: 600;
 }
 .scb-empty {
   padding: 10px;

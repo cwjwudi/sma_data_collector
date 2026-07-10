@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, shell, nativeImage, powerSaveBlocker } = require('electron')
+const { app, BrowserWindow, ipcMain, dialog, shell, nativeImage, powerSaveBlocker, session } = require('electron')
 const { execFileSync, spawn } = require('child_process')
 const path = require('path')
 const http = require('http')
@@ -1218,6 +1218,22 @@ app.whenReady().then(async () => {
 
   if (process.platform === 'win32') {
     app.setAppUserModelId('com.brteam.sd_sma.report_editor')
+  }
+
+  // 字体选择器：允许 Local Font Access API（queryLocalFonts）
+  // Chromium 走 setPermissionCheckHandler（同步），不一定进 RequestHandler
+  try {
+    const allowLocalFonts = (permission) =>
+      permission === 'local-fonts' || permission === 'font-access'
+    session.defaultSession.setPermissionCheckHandler((_wc, permission) => {
+      if (allowLocalFonts(permission)) return true
+      return true
+    })
+    session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
+      callback(true)
+    })
+  } catch (e) {
+    log(`local-fonts permission handler 安装失败（忽略）：${e.message}`)
   }
 
   // 防止系统挂起本应用（macOS App Nap / Windows 后台省电），
