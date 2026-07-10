@@ -1,12 +1,12 @@
 {
   "version": "0.3.0",
-  "releasedAt": "2026-07-10T09:23:48.275Z",
+  "releasedAt": "2026-07-10T09:27:20.795Z",
   "notes": "Report Editor 0.3.0\n\n- AI 助手与 OpenAI 兼容 /v1 网关；Cursor 可用 Agent Token 接入\n- 只读诊断工具：审计、连接探活、模版摘要、导出诊断解析\n- 全页 AI 浮层；设置页配置 LLM / Agent 令牌\n- 修复连接异常详情与 Tab 红点不一致\n- 版式列表改用摘要接口，打开更快",
   "platforms": {
     "win32-x64": {
       "url": "Report Editor-Setup-0.3.0-x64.exe",
-      "sha256": "",
-      "size": 0
+      "sha256": "8f7e8e587c4e736cb21a708c3794a2fe3d172304da887b5d342d125e9e70820d",
+      "size": 144904806
     },
     "darwin-arm64": {
       "url": "Report Editor-0.3.0-arm64.dmg",
