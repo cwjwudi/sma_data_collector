@@ -1,15 +1,15 @@
 {
-  "version": "0.4.0",
-  "releasedAt": "2026-07-10T16:25:30.985Z",
-  "notes": "PostgreSQL/SQLite/MongoDB 完全适配：方言启发式、schema、报表 Mongo 绑定与预览导出调度",
+  "version": "0.3.10",
+  "releasedAt": "2026-07-10T16:31:39.164Z",
+  "notes": "PostgreSQL/SQLite/MongoDB 完全适配；AI 钮文字红橙渐变",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor-Setup-0.4.0-x64.exe",
-      "sha256": "b9b500289b66582b66cecf2e843caceef7585a57b705cefb1909514781d5df35",
-      "size": 145011129
+      "url": "Report Editor-Setup-0.3.10-x64.exe",
+      "sha256": "e22cd9fbf792638723d13828491a060e4f4a65576aac45ebc8d1a1aec95992ca",
+      "size": 145011688
     },
     "darwin-arm64": {
-      "url": "Report Editor-0.4.0-arm64.dmg",
+      "url": "Report Editor-0.3.10-arm64.dmg",
       "sha256": "",
       "size": 0
     }
