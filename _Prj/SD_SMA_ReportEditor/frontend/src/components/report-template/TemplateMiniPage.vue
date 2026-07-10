@@ -153,7 +153,11 @@
                         />
                       </colgroup>
                       <tbody>
-                        <tr v-for="ri in miniTableRowIndices(el)" :key="'mr-' + el.id + '-' + ri" :style="miniTplTableRowTrStyle(el)">
+                        <tr
+                          v-for="ri in miniTableRowIndices(el)"
+                          :key="'mr-' + el.id + '-' + ri"
+                          :style="miniTplTableRowTrStyle(el, ri)"
+                        >
                           <td
                             v-for="ci in miniTableColIndices(el)"
                             :key="'mc-' + el.id + '-' + ri + '-' + ci"
@@ -303,7 +307,9 @@ import {
 } from "@/lib/report-template/binding-preview-utils";
 import { reportBindingPreviewKey } from "@/lib/report-template/template-editor-context";
 import {
+  computeSqlFillLogicalRowHeightsPx,
   sqlFillSliceTableOuterHeightPx,
+  tableSqlFillVerticalChromePx,
   tplElementsHorizontallyOverlap,
 } from "@/lib/report-template/table-sql-fill-layout-utils";
 import type { SqlFillTablePreviewSlice } from "@/lib/report-template/table-sql-fill-export-preview-split";
@@ -328,7 +334,11 @@ import {
   signatureWatermarkText,
   templateTableColumnInnerWidthsPx,
 } from "@/lib/report-template/model";
-import { clampTableRowHeightPx } from "@/lib/report-template/table-cell-metrics";
+import {
+  clampTableRowHeightPx,
+  computeContentAwareTableRowHeightsPx,
+  sumTableRowHeightsPx,
+} from "@/lib/report-template/table-cell-metrics";
 import { miniPreviewScale } from "@/lib/report-template/mini-preview-scale";
 
 const props = withDefaults(
@@ -430,7 +440,7 @@ const miniSqlFillTailDividerStyle = computed((): Record<string, string> | null =
   if (!tbl || tbl.type !== "table") return null;
   const slice = props.sqlFillTableSlices?.[tid];
   if (!slice) return null;
-  const h = sqlFillSliceTableOuterHeightPx(tbl, slice);
+  const h = sqlFillSliceTableOuterHeightPx(tbl, slice, miniTplTableRowHeights(tbl));
   if (h == null) return null;
   return {
     position: "absolute",
@@ -602,9 +612,15 @@ function miniTplElStyle(el: TemplateElement): Record<string, string> {
     topPx = el.y - props.tailBaselineY;
   }
   if (slice) {
-    const h2 = sqlFillSliceTableOuterHeightPx(el, slice);
+    const heights = miniTplTableRowHeights(el);
+    const h2 = sqlFillSliceTableOuterHeightPx(el, slice, heights);
     if (h2 != null) heightPx = h2;
     if (cont > 0) topPx = 0;
+  } else if (el.type === "table") {
+    const heights = miniTplTableRowHeights(el);
+    if (heights.length) {
+      heightPx = Math.max(heightPx, tableSqlFillVerticalChromePx() + sumTableRowHeightsPx(heights, clampTableRowHeightPx(el.tableRowHeightPx), heights.length));
+    }
   }
   const ff = typeof el.fontFamily === "string" ? el.fontFamily.trim() : "";
   const explicitZ = normalizeZIndex(el.zIndex ?? 0);
@@ -670,7 +686,7 @@ function miniTplElStyle(el: TemplateElement): Record<string, string> {
     s.justifyContent = "stretch";
     /** 与 TemplateBodyCanvas：.el-node{padding:4px} + 表格外框无 border，表格铺满内容区 */
     s.padding = "4px";
-    s.overflow = "hidden";
+    s.overflow = "visible";
     s.border = "none";
     s.borderRadius = "0";
     s.fontSize = `${el.fontSize}px`;
@@ -708,9 +724,40 @@ function tableGrid(el: TemplateElement): TemplateTableCell[][] {
   return ensureTableGrid(el);
 }
 
-function miniTplTableRowTrStyle(el: TemplateElement): Record<string, string> | undefined {
+function miniTplTableRowHeights(el: TemplateElement): number[] {
+  if (el.type !== "table") return [];
+  const rowIndices = miniTableRowIndices(el);
+  const minH = clampTableRowHeightPx(el.tableRowHeightPx);
+  const colWidths = miniTplTableColInnerWidthsPx(el);
+  const fontSize = Math.max(10, (el.fontSize || 12) * 0.85);
+  const slice = sqlFillSliceForTpl(el);
+  const pk = templateTableSqlFillPreviewKey(el.id);
+  const pv = previewValues.value[pk]?.tableSqlFill;
+
+  if (el.tableSqlFill?.enabled && (pv?.dataRows?.length || slice)) {
+    const displayN = pv?.dataRows?.length
+      ? sqlFillDisplayDataRowCount(el.tableSqlFill, pv.dataRows.length)
+      : Math.max(0, rowIndices.length - (slice?.includeHeaderRow === false ? 0 : 1));
+    return computeSqlFillLogicalRowHeightsPx(el, pv, displayN, slice);
+  }
+
+  return computeContentAwareTableRowHeightsPx({
+    rowCount: rowIndices.length,
+    colWidthsPx: colWidths,
+    fontSizePx: fontSize,
+    minRowHeightPx: minH,
+    lineHeight: 1.3,
+    paddingX: 10,
+    paddingY: 6,
+    cellTextAt: (ri, ci) => previewTableCellText(el, rowIndices[ri] ?? ri, ci),
+  });
+}
+
+function miniTplTableRowTrStyle(el: TemplateElement, ri: number): Record<string, string> | undefined {
   if (el.type !== "table") return undefined;
-  return { height: `${clampTableRowHeightPx(el.tableRowHeightPx)}px` };
+  const heights = miniTplTableRowHeights(el);
+  const h = heights[ri] ?? clampTableRowHeightPx(el.tableRowHeightPx);
+  return { height: `${h}px`, minHeight: `${h}px` };
 }
 
 function truncateStatic(s: string, n: number): string {
@@ -793,7 +840,8 @@ function zoneTableGrid(el: LayoutZoneElement): LayoutZoneTableCell[][] {
 
 function miniZoneTableRowTrStyle(el: LayoutZoneElement): Record<string, string> | undefined {
   if (el.type !== "table") return undefined;
-  return { height: `${clampTableRowHeightPx(el.tableRowHeightPx)}px` };
+  const h = clampTableRowHeightPx(el.tableRowHeightPx);
+  return { height: "auto", minHeight: `${h}px` };
 }
 
 function miniZoneTableColIndices(el: LayoutZoneElement): number[] {
@@ -1076,7 +1124,7 @@ function tplCaption(el: TemplateElement): string {
 .mini-tpl-table-wrap {
   width: 100%;
   height: 100%;
-  overflow: hidden;
+  overflow: visible;
   box-sizing: border-box;
   /* 避免 overflow:hidden + height:100% 表格最后一行底边框落在裁剪边上被吃掉（导出预览常见） */
   padding-bottom: 1px;
@@ -1084,7 +1132,7 @@ function tplCaption(el: TemplateElement): string {
 .mini-tpl-table {
   width: 100%;
   height: auto;
-  max-height: 100%;
+  max-height: none;
   /* separate：避免 collapse + 缩放预览时最下行外侧横线被算法吃掉 */
   border-collapse: separate;
   border-spacing: 0;
@@ -1099,11 +1147,12 @@ function tplCaption(el: TemplateElement): string {
   border-top: 1px solid rgb(212 212 216);
   border-left: 1px solid rgb(212 212 216);
   padding: 3px 5px;
-  vertical-align: middle;
+  vertical-align: top;
   text-align: center;
   font-size: max(10px, 0.85em);
   line-height: 1.3;
-  overflow: hidden;
+  overflow: visible;
+  white-space: pre-wrap;
   word-break: break-word;
 }
 .mini-tpl-td:last-child {

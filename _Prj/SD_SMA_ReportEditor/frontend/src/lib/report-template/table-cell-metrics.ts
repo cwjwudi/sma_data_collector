@@ -7,6 +7,8 @@
 export const TABLE_ROW_HEIGHT_DEFAULT_PX = 28;
 export const TABLE_ROW_HEIGHT_MIN_PX = 16;
 export const TABLE_ROW_HEIGHT_MAX_PX = 120;
+/** 内容换行后单行允许的最大高度（避免单格撑满整页） */
+export const TABLE_CONTENT_ROW_HEIGHT_MAX_PX = 240;
 
 /** 正文/版式表格行数上限（含表头）；纵表字段槽可达 MAX_ROWS-1 */
 export const TEMPLATE_TABLE_MAX_ROWS = 100;
@@ -20,6 +22,110 @@ export function clampTableRowHeightPx(v: unknown): number {
   const n = Math.round(Number(v));
   if (!Number.isFinite(n)) return TABLE_ROW_HEIGHT_DEFAULT_PX;
   return Math.min(TABLE_ROW_HEIGHT_MAX_PX, Math.max(TABLE_ROW_HEIGHT_MIN_PX, n));
+}
+
+/**
+ * 按列宽估算单元格换行后的高度（CJK 约 1em，其它约 0.55em）。
+ * 用于预览/导出：固定 `tableRowHeightPx` 作下限，内容折行时抬高该行。
+ */
+export function estimateWrappedTextHeightPx(opts: {
+  text: string;
+  widthPx: number;
+  fontSizePx: number;
+  lineHeight?: number;
+  paddingX?: number;
+  paddingY?: number;
+  minHeightPx: number;
+  maxHeightPx?: number;
+}): number {
+  const minH = Math.max(1, Math.round(Number(opts.minHeightPx) || TABLE_ROW_HEIGHT_DEFAULT_PX));
+  const maxH = Math.max(
+    minH,
+    Math.round(Number(opts.maxHeightPx) || TABLE_CONTENT_ROW_HEIGHT_MAX_PX),
+  );
+  const fontSize = Math.max(6, Number(opts.fontSizePx) || 12);
+  const lineHeight = Number(opts.lineHeight) > 0 ? Number(opts.lineHeight) : 1.3;
+  const lineH = fontSize * lineHeight;
+  const padX = Number.isFinite(Number(opts.paddingX)) ? Number(opts.paddingX) : 10;
+  const padY = Number.isFinite(Number(opts.paddingY)) ? Number(opts.paddingY) : 6;
+  const availW = Math.max(8, Number(opts.widthPx) - padX);
+  const raw = String(opts.text ?? "");
+  // 空白占位仍用最小行高
+  if (!raw.replace(/\u00a0/g, " ").trim()) return minH;
+
+  const paragraphs = raw.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
+  let lines = 0;
+  for (const p of paragraphs) {
+    if (!p) {
+      lines += 1;
+      continue;
+    }
+    let w = 0;
+    let lineCount = 1;
+    for (const ch of p) {
+      const cw = /[\u2e80-\u9fff\uf900-\ufaff\uff00-\uffef]/.test(ch)
+        ? fontSize
+        : ch === "\t"
+          ? fontSize * 2
+          : fontSize * 0.55;
+      if (w + cw > availW && w > 0) {
+        lineCount += 1;
+        w = cw;
+      } else {
+        w += cw;
+      }
+    }
+    lines += lineCount;
+  }
+  const needed = Math.ceil(padY + lines * lineH);
+  return Math.min(maxH, Math.max(minH, needed));
+}
+
+/**
+ * 根据各列文本与列宽，计算每一逻辑行的高度（取该行各列估算高度的最大值）。
+ */
+export function computeContentAwareTableRowHeightsPx(opts: {
+  rowCount: number;
+  colWidthsPx: number[];
+  cellTextAt: (row: number, col: number) => string;
+  fontSizePx: number;
+  minRowHeightPx: number;
+  lineHeight?: number;
+  paddingX?: number;
+  paddingY?: number;
+  maxRowHeightPx?: number;
+}): number[] {
+  const rows = Math.max(0, Math.floor(Number(opts.rowCount) || 0));
+  const cols = opts.colWidthsPx.length;
+  const minH = clampTableRowHeightPx(opts.minRowHeightPx);
+  if (rows <= 0) return [];
+  if (cols <= 0) return Array.from({ length: rows }, () => minH);
+  const out: number[] = [];
+  for (let ri = 0; ri < rows; ri++) {
+    let h = minH;
+    for (let ci = 0; ci < cols; ci++) {
+      const text = opts.cellTextAt(ri, ci);
+      const est = estimateWrappedTextHeightPx({
+        text,
+        widthPx: opts.colWidthsPx[ci] || 40,
+        fontSizePx: opts.fontSizePx,
+        lineHeight: opts.lineHeight,
+        paddingX: opts.paddingX,
+        paddingY: opts.paddingY,
+        minHeightPx: minH,
+        maxHeightPx: opts.maxRowHeightPx,
+      });
+      if (est > h) h = est;
+    }
+    out.push(h);
+  }
+  return out;
+}
+
+export function sumTableRowHeightsPx(heights: number[], fallbackRowH: number, rowCount: number): number {
+  if (heights.length > 0) return heights.reduce((a, b) => a + b, 0);
+  const n = Math.max(0, Math.floor(Number(rowCount) || 0));
+  return n * clampTableRowHeightPx(fallbackRowH);
 }
 
 export const REPORT_TEMPLATE_TABLE_NODE_PADDING_PX = {

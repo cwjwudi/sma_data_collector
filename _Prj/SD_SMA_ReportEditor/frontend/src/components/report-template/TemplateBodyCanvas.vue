@@ -1142,10 +1142,10 @@ function onTplVerticalSlotChange(el: TemplateElement, ri: number, ev: Event) {
 function tplTableRowTrStyle(el: TemplateElement): Record<string, string> | undefined {
   if (el.type !== "table") return undefined;
   const h = clampTableRowHeightPx(el.tableRowHeightPx);
-  // 固定行高：原生 <select> 默认更高，若不锁死会撑破外框，末行被 overflow 裁掉
+  // 最小行高：内容换行时可撑高；原生 select 另有 CSS 限制
   return {
-    height: `${h}px`,
-    maxHeight: `${h}px`,
+    height: "auto",
+    minHeight: `${h}px`,
   };
 }
 
@@ -1154,8 +1154,9 @@ function tplTableCellBoxStyle(el: TemplateElement, ri: number, ci: number): Reco
   const h = clampTableRowHeightPx(el.tableRowHeightPx);
   return {
     ...tplTableCellStyle(el, ri, ci),
-    height: `${h}px`,
-    maxHeight: `${h}px`,
+    height: "auto",
+    minHeight: `${h}px`,
+    maxHeight: "none",
   };
 }
 
@@ -1839,13 +1840,13 @@ async function onTplImageDropFile(ev: DragEvent, el: TemplateElement) {
   width: 100%;
   height: 100%;
   box-sizing: border-box;
-  overflow: hidden;
+  overflow: visible;
   padding-bottom: 1px;
 }
 .cv-table {
   width: 100%;
   height: auto;
-  max-height: 100%;
+  max-height: none;
   border-collapse: separate;
   border-spacing: 0;
   table-layout: fixed;
@@ -1874,9 +1875,9 @@ async function onTplImageDropFile(ev: DragEvent, el: TemplateElement) {
   border-top: 1px solid rgb(212 212 216);
   border-left: 1px solid rgb(212 212 216);
   padding: 1px 5px;
-  vertical-align: middle;
+  vertical-align: top;
   text-align: center;
-  overflow: hidden;
+  overflow: visible;
   cursor: cell;
 }
 .cv-table-cell:last-child {
@@ -1935,8 +1936,8 @@ async function onTplImageDropFile(ev: DragEvent, el: TemplateElement) {
   line-height: 1.3;
   word-break: break-word;
   white-space: pre-wrap;
-  max-height: 100%;
-  overflow: hidden;
+  max-height: none;
+  overflow: visible;
 }
 .cv-table-cell-edit {
   display: block;

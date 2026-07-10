@@ -9,6 +9,7 @@ import { ensureBodyPages } from "@/lib/report-template/model";
 import { clampTableRowHeightPx } from "@/lib/report-template/table-cell-metrics";
 import {
   estimatedSqlFillTableBottomY,
+  computeSqlFillLogicalRowHeightsPx,
   tableSqlFillVerticalChromePx,
   tplElementsHorizontallyOverlap,
 } from "@/lib/report-template/table-sql-fill-layout-utils";
@@ -42,9 +43,23 @@ export interface ExpandedBodyPreviewCard {
   overflowSqlFillTableId?: string;
 }
 
-function rowsFitInPx(availPx: number, rowH: number): number {
+/** 按可变行高累计，返回在 availPx 内能放下的行数（至少 1） */
+function rowsFitWithHeights(availPx: number, heights: number[], fallbackRowH: number): number {
   const usable = Math.max(0, availPx - tableSqlFillVerticalChromePx());
-  const n = Math.floor(usable / Math.max(1, rowH));
+  if (!heights.length) {
+    const n = Math.floor(usable / Math.max(1, fallbackRowH));
+    return Math.max(1, n);
+  }
+  let used = 0;
+  let n = 0;
+  for (const h of heights) {
+    const hh = Math.max(1, h);
+    if (n > 0 && used + hh > usable) break;
+    if (n === 0 && hh > usable) return 1;
+    used += hh;
+    n += 1;
+    if (used >= usable && n > 0) break;
+  }
   return Math.max(1, n);
 }
 
@@ -54,6 +69,7 @@ export function sqlFillTableNeedsPreviewPagination(
   dataRowCount: number,
   contentH: number,
   sqlDataRowCount?: number,
+  rowHeightsPx?: number[] | null,
 ): boolean {
   if (el.type !== "table" || dataRowCount <= 0) return false;
   const fill = el.tableSqlFill;
@@ -67,7 +83,8 @@ export function sqlFillTableNeedsPreviewPagination(
     return true;
   }
   const rowH = clampTableRowHeightPx(el.tableRowHeightPx);
-  const capFirst = rowsFitInPx(contentH - el.y, rowH);
+  const heights = rowHeightsPx?.length ? rowHeightsPx : Array.from({ length: 1 + dataRowCount }, () => rowH);
+  const capFirst = rowsFitWithHeights(contentH - el.y, heights, rowH);
   return capFirst < 1 + dataRowCount;
 }
 
@@ -85,8 +102,9 @@ function pickSqlFillTableForPreviewPagination(
     const sqlN = pv?.dataRows?.length ?? 0;
     if (!sqlN || pv?.error) continue;
     const displayN = sqlFillDisplayDataRowCount(el.tableSqlFill, sqlN);
-    if (!sqlFillTableNeedsPreviewPagination(el, displayN, contentH, sqlN)) continue;
-    const bottom = estimatedSqlFillTableBottomY(el, displayN);
+    const heights = computeSqlFillLogicalRowHeightsPx(el, pv, displayN);
+    if (!sqlFillTableNeedsPreviewPagination(el, displayN, contentH, sqlN, heights)) continue;
+    const bottom = estimatedSqlFillTableBottomY(el, displayN, heights);
     if (bottom >= bestBottom) {
       bestBottom = bottom;
       best = el;
@@ -100,13 +118,18 @@ function buildSlicesForOverflowTable(
   dataRowCount: number,
   contentH: number,
   repeatHeader: boolean,
+  allRowHeights: number[],
 ): SqlFillTablePreviewSlice[] {
   if (el.type !== "table" || dataRowCount <= 0) return [];
   const rowH = clampTableRowHeightPx(el.tableRowHeightPx);
   const slices: SqlFillTablePreviewSlice[] = [];
+  // allRowHeights: [header, data0, data1, ...]
+  const headerH = allRowHeights[0] ?? rowH;
+  const dataHeights = allRowHeights.slice(1);
 
   const availFirst = contentH - el.y;
-  const maxRowsFirst = rowsFitInPx(availFirst, rowH);
+  const firstHeights = [headerH, ...dataHeights];
+  const maxRowsFirst = rowsFitWithHeights(availFirst, firstHeights, rowH);
   let dataCapFirst = Math.max(0, maxRowsFirst - 1);
   if (dataCapFirst === 0 && dataRowCount > 0) dataCapFirst = 1;
   const take0 = Math.min(dataCapFirst, dataRowCount);
@@ -114,7 +137,9 @@ function buildSlicesForOverflowTable(
 
   let cursor = take0;
   while (cursor < dataRowCount) {
-    const maxRows = rowsFitInPx(contentH, rowH);
+    const rest = dataHeights.slice(cursor);
+    const pageHeights = repeatHeader ? [headerH, ...rest] : rest;
+    const maxRows = rowsFitWithHeights(contentH, pageHeights, rowH);
     const hdr = repeatHeader ? 1 : 0;
     let dataCap = Math.max(0, maxRows - hdr);
     if (dataCap === 0) dataCap = 1;
@@ -138,25 +163,32 @@ function buildSlicesForVerticalPagePerRecord(
   sqlDataRowCount: number,
   contentH: number,
   repeatHeader: boolean,
+  preview: BindingPreviewCell["tableSqlFill"] | null | undefined,
 ): SqlFillTablePreviewSlice[] {
   if (el.type !== "table" || !el.tableSqlFill || sqlDataRowCount <= 0) return [];
   const fill = el.tableSqlFill;
   const ranges = verticalSqlRecordLogicalRanges(fill, sqlDataRowCount);
   if (!ranges.length) return [];
   const rowH = clampTableRowHeightPx(el.tableRowHeightPx);
+  const allHeights = computeSqlFillLogicalRowHeightsPx(el, preview, sqlFillDisplayDataRowCount(fill, sqlDataRowCount));
+  const headerH = allHeights[0] ?? rowH;
   const out: SqlFillTablePreviewSlice[] = [];
 
   for (let ri = 0; ri < ranges.length; ri++) {
     const range = ranges[ri];
     const availFirst = contentH - el.y;
-    const maxRowsFirst = rowsFitInPx(availFirst, rowH);
+    const rangeHeights = allHeights.slice(range.dataRowStart + 1, range.dataRowStart + 1 + range.dataRowCount);
+    const firstPageHeights = [headerH, ...rangeHeights];
+    const maxRowsFirst = rowsFitWithHeights(availFirst, firstPageHeights, rowH);
     let dataCapFirst = Math.max(0, maxRowsFirst - 1);
     if (dataCapFirst === 0 && range.dataRowCount > 0) dataCapFirst = 1;
 
     let cursor = 0;
     let firstOfRecord = true;
     while (cursor < range.dataRowCount) {
-      const maxRows = firstOfRecord ? maxRowsFirst : rowsFitInPx(contentH, rowH);
+      const rest = rangeHeights.slice(cursor);
+      const pageHeights = firstOfRecord || repeatHeader ? [headerH, ...rest] : rest;
+      const maxRows = rowsFitWithHeights(firstOfRecord ? availFirst : contentH, pageHeights, rowH);
       const hdr = firstOfRecord || repeatHeader ? 1 : 0;
       let dataCap = Math.max(0, maxRows - (firstOfRecord ? 1 : hdr));
       if (firstOfRecord) dataCap = dataCapFirst;
@@ -208,7 +240,8 @@ function slicesForBodyPage(
     ];
   }
   const pk = templateTableSqlFillPreviewKey(overflowEl.id);
-  const rows = previewValues[pk]?.tableSqlFill?.dataRows ?? [];
+  const fillPv = previewValues[pk]?.tableSqlFill;
+  const rows = fillPv?.dataRows ?? [];
   const sqlN = rows.length;
   const fill = overflowEl.tableSqlFill!;
   const displayN = sqlFillDisplayDataRowCount(fill, sqlN);
@@ -216,11 +249,12 @@ function slicesForBodyPage(
   const pagePerRecord =
     isVerticalSqlFill(fill) &&
     normalizeTableSqlVerticalMultiRecordMode(fill.verticalMultiRecordMode) === "page_per_record";
+  const allHeights = computeSqlFillLogicalRowHeightsPx(overflowEl, fillPv, displayN);
 
   // 纵表另起一页：按 SQL 记录切卡；续表 / 横表：按逻辑行高切卡
   const chunks = pagePerRecord
-    ? buildSlicesForVerticalPagePerRecord(overflowEl, sqlN, contentH, repeatHeader)
-    : buildSlicesForOverflowTable(overflowEl, displayN, contentH, repeatHeader);
+    ? buildSlicesForVerticalPagePerRecord(overflowEl, sqlN, contentH, repeatHeader, fillPv)
+    : buildSlicesForOverflowTable(overflowEl, displayN, contentH, repeatHeader, allHeights);
 
   // 另起一页：即使单条也能放下，多条时仍要拆成多卡
   if (chunks.length <= 1 && !(pagePerRecord && sqlN > 1)) {
@@ -248,7 +282,7 @@ function slicesForBodyPage(
     }
   }
 
-  const logicalBottom = estimatedSqlFillTableBottomY(overflowEl, displayN);
+  const logicalBottom = estimatedSqlFillTableBottomY(overflowEl, displayN, allHeights);
   const hasBelow = hasWidgetsBelowSqlFillTable(els, overflowEl, logicalBottom);
 
   const cards: ExpandedBodyPreviewCard[] = finalChunks.map((slice, idx) => ({
