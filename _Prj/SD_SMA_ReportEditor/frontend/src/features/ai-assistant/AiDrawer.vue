@@ -8,7 +8,8 @@
       aria-label="打开 AI 助手"
       @click="openDrawer"
     >
-      AI
+      <img class="ai-fab__glow" src="@/assets/icons/ai-fab-neon.svg" alt="" aria-hidden="true" />
+      <span class="ai-fab__label">AI</span>
     </button>
 
     <div v-if="open" class="ai-drawer-backdrop" @click.self="closeDrawer">
@@ -213,24 +214,46 @@ onUnmounted(() => {
 <style scoped>
 .ai-fab {
   position: fixed;
-  right: 20px;
-  bottom: 20px;
+  right: 12px;
+  bottom: 12px;
   z-index: 9000;
-  width: 48px;
-  height: 48px;
+  width: 72px;
+  height: 72px;
+  padding: 0;
   border: none;
-  border-radius: 999px;
-  background: linear-gradient(145deg, #0f766e, #115e59);
+  border-radius: 0;
+  background: transparent;
   color: #fff;
   font-weight: 700;
-  font-size: 14px;
-  letter-spacing: 0.04em;
+  font-size: 13px;
+  letter-spacing: 0.06em;
   cursor: pointer;
-  box-shadow: 0 8px 24px rgba(15, 118, 110, 0.35);
+  display: grid;
+  place-items: center;
+  overflow: visible;
+  filter: drop-shadow(0 10px 18px rgba(220, 38, 38, 0.28));
+  transition: transform 0.15s ease, filter 0.15s ease;
+}
+
+.ai-fab__glow {
+  position: absolute;
+  inset: -8px;
+  width: calc(100% + 16px);
+  height: calc(100% + 16px);
+  object-fit: contain;
+  pointer-events: none;
+  user-select: none;
+}
+
+.ai-fab__label {
+  position: relative;
+  z-index: 1;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
 }
 
 .ai-fab:hover {
-  filter: brightness(1.05);
+  transform: scale(1.06);
+  filter: drop-shadow(0 12px 22px rgba(249, 115, 22, 0.4)) brightness(1.06);
 }
 
 .ai-drawer-backdrop {

@@ -132,6 +132,11 @@ import {
 import { disposePlcHeartbeat, initPlcHeartbeat } from '@/lib/plc-heartbeat-service'
 import { loadSidebarCollapsed, saveSidebarCollapsed } from '@/lib/sidebar-layout-prefs'
 import { prefetchCoreCatalog } from '@/lib/prefetch-core'
+import sidebarFlurryUrl from '@/assets/backgrounds/sidebar-flurry.svg'
+import contentFluxUrl from '@/assets/backgrounds/content-flux.svg'
+
+const sidebarBgImage = `url("${sidebarFlurryUrl}")`
+const contentBgImage = `url("${contentFluxUrl}")`
 
 const route = useRoute()
 const router = useRouter()
@@ -377,7 +382,11 @@ const navItems = [
 
 .sidebar {
   width: 220px;
-  background: #1a1a2e;
+  background-color: hsl(238, 82%, 13%);
+  background-image: v-bind(sidebarBgImage);
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
   color: #e0e0e0;
   display: flex;
   flex-direction: column;
@@ -544,13 +553,13 @@ const navItems = [
   height: 8px;
   border-radius: 50%;
   background: #ef4444;
-  border: 2px solid #1a1a2e;
+  border: 2px solid hsl(238, 82%, 13%);
   box-sizing: content-box;
   pointer-events: none;
 }
 
 .sidebar--collapsed .nav-badge {
-  border-color: #1a1a2e;
+  border-color: hsl(238, 82%, 13%);
 }
 
 .content {
@@ -562,6 +571,11 @@ const navItems = [
   padding: 32px;
   overflow: hidden;
   position: relative;
+  background-color: hsl(227, 45%, 72%);
+  background-image: v-bind(contentBgImage);
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
 }
 
 .route-loading {

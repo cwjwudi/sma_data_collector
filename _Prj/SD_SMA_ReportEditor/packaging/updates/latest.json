@@ -1,15 +1,15 @@
 {
-  "version": "0.3.6",
-  "releasedAt": "2026-07-10T12:51:14.890Z",
-  "notes": "Report Editor 0.3.6: AI chat Enter/scroll, template order/open, export feedback, PLC heartbeat, parallel health, trigger check, history summary",
+  "version": "0.3.7",
+  "releasedAt": "2026-07-10T13:01:33.247Z",
+  "notes": "Report Editor 0.3.7: sidebar flurry + content flux backgrounds; AI FAB neon hexagon",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor-Setup-0.3.6-x64.exe",
-      "sha256": "12f60eb532df031510872aa52e109abdd845c96d6e94d0636551d45e6c532e5e",
-      "size": 144983863
+      "url": "Report Editor-Setup-0.3.7-x64.exe",
+      "sha256": "a5fd1570c20584cebe36e893d5bd3f48e4042ab40304e048ad89c3dcd8b4ed15",
+      "size": 144990522
     },
     "darwin-arm64": {
-      "url": "Report Editor-0.3.6-arm64.dmg",
+      "url": "Report Editor-0.3.7-arm64.dmg",
       "sha256": "",
       "size": 0
     }
