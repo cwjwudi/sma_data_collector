@@ -1,12 +1,12 @@
 {
   "version": "0.3.1",
-  "releasedAt": "2026-07-10T09:49:43.184Z",
+  "releasedAt": "2026-07-10T09:54:35.154Z",
   "notes": "Report Editor 0.3.1\n\n- 本机 /v1 对齐 LM Studio：Cursor/Codex 无需 Agent 令牌\n- 局域网仍需 Agent Token\n- 就绪条件仅需启用 AI + LLM Key",
   "platforms": {
     "win32-x64": {
       "url": "Report Editor-Setup-0.3.1-x64.exe",
-      "sha256": "",
-      "size": 0
+      "sha256": "e24031edc8834139b1d7491b7e94fa3e2c17d5a2014c5dadf91411a3ad2a9b3d",
+      "size": 144904818
     },
     "darwin-arm64": {
       "url": "Report Editor-0.3.1-arm64.dmg",
