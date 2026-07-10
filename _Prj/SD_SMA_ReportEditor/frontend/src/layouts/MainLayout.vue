@@ -90,10 +90,12 @@
     <AppUpdatePromptDialog v-if="appUpdateStartupPromptOpen" />
     <AppConfirmDialog />
     <AppToastStack />
+    <AiDrawer />
   </div>
 </template>
 
 <script setup>
+import AiDrawer from '@/features/ai-assistant/AiDrawer.vue'
 import { ref, nextTick, onMounted, onUnmounted, provide, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import SetupWizard from '@/features/onboarding/SetupWizard.vue'

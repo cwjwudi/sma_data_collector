@@ -1,0 +1,337 @@
+<template>
+  <section class="settings-section">
+    <h3 class="settings-section__title">AI 助手与 Cursor 接入</h3>
+    <p class="settings-hint">
+      配置 OpenAI 兼容 LLM 后，可在任意页面使用 AI 助手诊断连接与导出问题；Cursor 等 Agent 可将 Base URL 指向本机
+      <code>/v1</code> 并使用 <strong>Agent 令牌</strong>（与用户 LLM Key 分离）。详见
+      <a class="ai-doc-link" href="#" @click.prevent="openDocHint">接入说明</a>。
+    </p>
+
+    <div class="settings-switch-row">
+      <button
+        type="button"
+        class="settings-switch"
+        role="switch"
+        :aria-checked="form.enabled ? 'true' : 'false'"
+        @click="toggleEnabled"
+      >
+        <span class="settings-switch-track" :class="{ on: form.enabled }">
+          <span class="settings-switch-thumb" />
+        </span>
+        <span class="settings-switch-label">启用 AI 助手</span>
+      </button>
+    </div>
+
+    <div class="settings-field-row" :class="{ 'settings-field-row--muted': !form.enabled }">
+      <span class="settings-field-label">LLM Base URL</span>
+      <input v-model="form.llm_base_url" class="settings-input" type="url" :disabled="busy || !form.enabled" />
+    </div>
+    <div class="settings-field-row" :class="{ 'settings-field-row--muted': !form.enabled }">
+      <span class="settings-field-label">模型</span>
+      <input v-model="form.llm_model" class="settings-input settings-input--narrow" :disabled="busy || !form.enabled" />
+    </div>
+    <div class="settings-field-row" :class="{ 'settings-field-row--muted': !form.enabled }">
+      <span class="settings-field-label">LLM API Key</span>
+      <input
+        v-model="llmKeyInput"
+        class="settings-input"
+        type="password"
+        autocomplete="off"
+        :placeholder="settings.has_llm_api_key ? '已配置（留空则不修改）' : 'sk-…'"
+        :disabled="busy || !form.enabled"
+      />
+    </div>
+
+    <div class="settings-switch-row" :class="{ 'settings-field-row--muted': !form.enabled }">
+      <button
+        type="button"
+        class="settings-switch"
+        role="switch"
+        :aria-checked="form.allow_lan_access ? 'true' : 'false'"
+        :disabled="!form.enabled || busy"
+        @click="form.allow_lan_access = !form.allow_lan_access"
+      >
+        <span class="settings-switch-track" :class="{ on: form.allow_lan_access }">
+          <span class="settings-switch-thumb" />
+        </span>
+        <span class="settings-switch-label">允许局域网访问 Agent API（Cursor）</span>
+      </button>
+    </div>
+
+    <div class="settings-switch-row" :class="{ 'settings-field-row--muted': !form.enabled }">
+      <button
+        type="button"
+        class="settings-switch"
+        role="switch"
+        :aria-checked="form.write_tools_enabled ? 'true' : 'false'"
+        :disabled="!form.enabled || busy"
+        @click="form.write_tools_enabled = !form.write_tools_enabled"
+      >
+        <span class="settings-switch-track" :class="{ on: form.write_tools_enabled }">
+          <span class="settings-switch-thumb" />
+        </span>
+        <span class="settings-switch-label">允许 AI 写入工具（0.3.2 · 探活间隔等）</span>
+      </button>
+    </div>
+
+    <div class="ai-token-row">
+      <button type="button" class="settings-btn settings-btn--primary" :disabled="busy || !form.enabled" @click="onSave">
+        保存 AI 设置
+      </button>
+      <button type="button" class="settings-btn settings-btn--muted" :disabled="busy || !form.enabled" @click="onRegenerate">
+        生成 Agent 令牌
+      </button>
+    </div>
+
+    <div v-if="settings.has_agent_token" class="settings-note">
+      当前 Agent 令牌尾号：<code>{{ settings.agent_token_hint || '****' }}</code>
+    </div>
+    <div v-if="newAgentToken" class="ai-token-box">
+      <p class="settings-note">新 Agent 令牌（仅显示一次，请立即复制）：</p>
+      <code class="ai-token-value">{{ newAgentToken }}</code>
+      <button type="button" class="settings-btn settings-btn--muted" @click="copyToken">复制令牌</button>
+    </div>
+
+    <div class="ep-list ai-endpoints">
+      <div class="ep-row">
+        <div class="ep-row__label">Chat API（本机）</div>
+        <div class="ep-row__value">
+          <code class="ep-row__addr">{{ settings.agent_chat_url_loopback || '—' }}</code>
+          <button type="button" class="settings-btn settings-btn--muted ep-copy" @click="copyUrl(settings.agent_chat_url_loopback)">
+            复制
+          </button>
+        </div>
+      </div>
+      <div v-if="settings.agent_chat_url_lan" class="ep-row">
+        <div class="ep-row__label">Chat API（局域网）</div>
+        <div class="ep-row__value">
+          <code class="ep-row__addr">{{ settings.agent_chat_url_lan }}</code>
+          <button type="button" class="settings-btn settings-btn--muted ep-copy" @click="copyUrl(settings.agent_chat_url_lan)">
+            复制
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <p v-if="settings.ready" class="settings-msg settings-msg--ok">AI 已就绪：应用内助手与 Cursor 均可接入。</p>
+    <p v-else-if="form.enabled" class="settings-hint settings-hint--warn">请保存 LLM Key 并生成 Agent 令牌以完成配置。</p>
+
+    <p v-if="msg" class="settings-msg" :class="{ 'settings-msg--ok': msgTone === 'ok', 'settings-msg--err': msgTone === 'err' }">
+      {{ msg }}
+    </p>
+  </section>
+</template>
+
+<script setup lang="ts">
+import { onMounted, reactive, ref } from 'vue'
+import {
+  fetchAiSettings,
+  patchAiSettings,
+  regenerateAgentToken,
+  type AiSettingsPublic,
+} from '@/api/aiSettings'
+
+defineOptions({ name: 'AiSettingsSection' })
+
+const settings = ref<AiSettingsPublic>({
+  enabled: false,
+  llm_base_url: 'https://api.openai.com/v1',
+  llm_model: 'gpt-4o-mini',
+  has_llm_api_key: false,
+  has_agent_token: false,
+  agent_token_hint: '',
+  allow_lan_access: false,
+  write_tools_enabled: false,
+  agent_chat_url_loopback: 'http://127.0.0.1:8000/v1',
+  agent_chat_url_lan: null,
+  ready: false,
+})
+
+const form = reactive({
+  enabled: false,
+  llm_base_url: 'https://api.openai.com/v1',
+  llm_model: 'gpt-4o-mini',
+  allow_lan_access: false,
+  write_tools_enabled: false,
+})
+
+const llmKeyInput = ref('')
+const busy = ref(false)
+const msg = ref('')
+const msgTone = ref<'ok' | 'err' | ''>('')
+const newAgentToken = ref('')
+
+function applyPublic(s: AiSettingsPublic) {
+  settings.value = s
+  form.enabled = s.enabled
+  form.llm_base_url = s.llm_base_url
+  form.llm_model = s.llm_model
+  form.allow_lan_access = s.allow_lan_access
+  form.write_tools_enabled = s.write_tools_enabled
+}
+
+async function load() {
+  try {
+    applyPublic(await fetchAiSettings())
+  } catch (e: unknown) {
+    msg.value = e instanceof Error ? e.message : String(e)
+    msgTone.value = 'err'
+  }
+}
+
+function toggleEnabled() {
+  form.enabled = !form.enabled
+}
+
+async function onSave() {
+  busy.value = true
+  msg.value = ''
+  msgTone.value = ''
+  try {
+    const patch: Record<string, unknown> = {
+      enabled: form.enabled,
+      llm_base_url: form.llm_base_url.trim(),
+      llm_model: form.llm_model.trim(),
+      allow_lan_access: form.allow_lan_access,
+      write_tools_enabled: form.write_tools_enabled,
+    }
+    if (llmKeyInput.value.trim()) {
+      patch.llm_api_key = llmKeyInput.value.trim()
+    }
+    applyPublic(await patchAiSettings(patch))
+    llmKeyInput.value = ''
+    msg.value = '已保存'
+    msgTone.value = 'ok'
+    window.dispatchEvent(new CustomEvent('report-editor-ai-settings-changed'))
+  } catch (e: unknown) {
+    msg.value = e instanceof Error ? e.message : String(e)
+    msgTone.value = 'err'
+  } finally {
+    busy.value = false
+  }
+}
+
+async function onRegenerate() {
+  busy.value = true
+  msg.value = ''
+  msgTone.value = ''
+  newAgentToken.value = ''
+  try {
+    const res = await regenerateAgentToken()
+    applyPublic(res)
+    newAgentToken.value = res.agent_token || ''
+    msg.value = res.note || '已生成新 Agent 令牌'
+    msgTone.value = 'ok'
+    window.dispatchEvent(new CustomEvent('report-editor-ai-settings-changed'))
+  } catch (e: unknown) {
+    msg.value = e instanceof Error ? e.message : String(e)
+    msgTone.value = 'err'
+  } finally {
+    busy.value = false
+  }
+}
+
+async function copyToken() {
+  if (!newAgentToken.value) return
+  await copyUrl(newAgentToken.value)
+}
+
+async function copyUrl(text: string | null | undefined) {
+  if (!text) return
+  try {
+    await navigator.clipboard.writeText(text)
+    msg.value = '已复制'
+    msgTone.value = 'ok'
+  } catch {
+    msg.value = '复制失败'
+    msgTone.value = 'err'
+  }
+}
+
+function openDocHint() {
+  msg.value = '完整说明见仓库 _Doc/008_Cursor与OpenAI接入.md'
+  msgTone.value = 'ok'
+}
+
+onMounted(() => {
+  void load()
+})
+</script>
+
+<style scoped>
+.ai-token-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.ai-token-box {
+  margin-top: 12px;
+  padding: 10px 12px;
+  background: #f9fafb;
+  border-radius: 8px;
+}
+
+.ai-token-value {
+  display: block;
+  word-break: break-all;
+  font-size: 12px;
+  margin: 8px 0;
+}
+
+.ai-doc-link {
+  color: #2563eb;
+}
+
+.ai-endpoints {
+  margin-top: 16px;
+}
+
+.ep-list {
+  display: grid;
+  gap: 8px;
+}
+
+.ep-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.ep-row__label {
+  min-width: 140px;
+  font-size: 13px;
+  color: #6b7280;
+}
+
+.ep-row__value {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.ep-row__addr {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 13px;
+  background: #f3f4f6;
+  color: #111827;
+  padding: 4px 8px;
+  border-radius: 6px;
+  word-break: break-all;
+}
+
+.ep-copy {
+  min-height: 30px;
+  padding: 4px 12px;
+  font-size: 13px;
+}
+</style>
+
+<style>
+@import '@/features/settings/settings-sections.css';
+</style>

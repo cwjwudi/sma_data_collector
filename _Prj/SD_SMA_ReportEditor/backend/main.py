@@ -15,6 +15,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
+from api.routers import ai_openai as ai_openai_router
 from api.routers import audit as audit_router
 from api.routers import database as database_router
 from api.routers import demo as demo_router
@@ -24,6 +25,7 @@ from api.routers import layout_presets as layout_presets_router
 from api.routers import signatures as signatures_router
 from api.routers import templates as templates_router
 from core.settings import (
+    APP_VERSION,
     CONFIG_FILE,
     DATA_DIR,
     HISTORY_DIR,
@@ -60,7 +62,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="SD_SMA_ReportEditor API",
-    version="0.2.0",
+    version=APP_VERSION,
     lifespan=lifespan,
 )
 
@@ -86,6 +88,7 @@ def _attach_routes() -> None:
     """每个路由同时挂在根路径与 /api 前缀下（兼容 Vite rewrite 与直连 /api/*）。"""
     routers = (
         settings_config_router.router,
+        ai_openai_router.settings_router,
         opcua_router.router,
         database_router.router,
         templates_router.router,
@@ -100,6 +103,9 @@ def _attach_routes() -> None:
 
 
 _attach_routes()
+
+# OpenAI 兼容 /v1（Cursor 接入，不带 /api 前缀）
+app.include_router(ai_openai_router.openai_router)
 
 
 def _health_body() -> dict:

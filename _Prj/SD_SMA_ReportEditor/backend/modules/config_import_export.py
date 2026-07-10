@@ -29,6 +29,15 @@ def normalize_top_level(cfg: dict[str, Any]) -> dict[str, Any]:
     prefs.setdefault("default_opcua_server_id", None)
     prefs.setdefault("last_opcua_server_id", None)
     out["app_preferences"] = prefs
+    ai = out.get("ai_settings")
+    if not isinstance(ai, dict):
+        ai = {}
+    ai.setdefault("enabled", False)
+    ai.setdefault("llm_base_url", "https://api.openai.com/v1")
+    ai.setdefault("llm_model", "gpt-4o-mini")
+    ai.setdefault("allow_lan_access", False)
+    ai.setdefault("write_tools_enabled", False)
+    out["ai_settings"] = ai
     return out
 
 

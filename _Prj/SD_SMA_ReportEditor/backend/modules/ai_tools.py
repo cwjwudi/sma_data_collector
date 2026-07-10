@@ -1,0 +1,483 @@
+"""Report Editor AI 诊断工具（只读为主；0.3.2 受控写入）。"""
+from __future__ import annotations
+
+import json
+import logging
+from typing import Any
+
+from core.settings import CONFIG_FILE, DATA_DIR
+from modules import ai_config, audit_log, config_store, template_store
+from modules import db_connection_ops, opcua_service
+from schemas.common import DbConnectionSave
+
+logger = logging.getLogger(__name__)
+
+EXPORT_DIAG_MARKER = "---EXPORT_DIAGNOSTICS---"
+
+TOOL_DEFINITIONS: list[dict[str, Any]] = [
+    {
+        "type": "function",
+        "function": {
+            "name": "list_db_connections",
+            "description": "列出已保存的数据库连接（脱敏，不含密码）。",
+            "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_opc_servers",
+            "description": "列出已保存的 OPC UA 服务器连接（脱敏）。",
+            "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "probe_connection",
+            "description": "对已保存的数据库或 OPC UA 连接做连通测试。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "kind": {"type": "string", "enum": ["db", "opcua"], "description": "连接类型"},
+                    "connection_id": {"type": "string", "description": "连接 id"},
+                },
+                "required": ["kind", "connection_id"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_connection_health_summary",
+            "description": "汇总已保存连接与探活设置；可选 live_probe 对每个连接做测试。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "live_probe": {
+                        "type": "boolean",
+                        "description": "是否对每个连接执行实时探活（较慢）",
+                        "default": False,
+                    }
+                },
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "query_audit_log",
+            "description": "查询最近操作审计记录。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "limit": {"type": "integer", "minimum": 1, "maximum": 100, "default": 20},
+                    "action": {"type": "string", "description": "按 action 过滤，如 export.batch"},
+                    "result": {"type": "string", "enum": ["ok", "fail", "error"], "description": "按结果过滤"},
+                },
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_templates",
+            "description": "列出报表模版摘要。",
+            "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_template_summary",
+            "description": "获取单个模版的摘要信息。",
+            "parameters": {
+                "type": "object",
+                "properties": {"template_id": {"type": "string"}},
+                "required": ["template_id"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "explain_export_diagnostics",
+            "description": "解析导出失败消息中的 EXPORT_DIAGNOSTICS JSON 块并给出可读说明。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "text": {"type": "string", "description": "含 ---EXPORT_DIAGNOSTICS--- 的完整错误文本或 JSON"},
+                },
+                "required": ["text"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_app_version_and_endpoints",
+            "description": "返回应用版本与本机 OpenAI 兼容 /v1 地址。",
+            "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "suggest_config_change",
+            "description": "根据目标生成配置修改建议 JSON，不直接写入（0.3.1）。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "target": {
+                        "type": "string",
+                        "enum": ["connection_probe", "ai_settings", "app_preferences"],
+                        "description": "建议针对的配置域",
+                    },
+                    "intent": {"type": "string", "description": "用户意图的自然语言描述"},
+                },
+                "required": ["target", "intent"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "update_connection_probe_settings",
+            "description": "更新连接定时探活开关与间隔（需设置中启用 AI 写入工具，0.3.2）。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "enabled": {"type": "boolean"},
+                    "interval_sec": {"type": "integer", "minimum": 10, "maximum": 3600},
+                },
+                "additionalProperties": False,
+            },
+        },
+    },
+]
+
+
+def _cfg() -> dict[str, Any]:
+    return config_store.load_config(CONFIG_FILE, DATA_DIR)
+
+
+def _mask_audit_entry(entry: dict[str, Any]) -> dict[str, Any]:
+    out = dict(entry)
+    detail = out.get("detail")
+    if isinstance(detail, dict):
+        safe = dict(detail)
+        for k in list(safe.keys()):
+            if "password" in k.lower() or "secret" in k.lower() or "token" in k.lower():
+                safe[k] = "[redacted]"
+        out["detail"] = safe
+    return out
+
+
+async def execute_tool(name: str, arguments: dict[str, Any] | None, *, page_context: dict[str, Any] | None = None) -> Any:
+    args = arguments if isinstance(arguments, dict) else {}
+    settings = ai_config.load_ai_settings()
+    write_ok = bool(settings.get("write_tools_enabled"))
+
+    if name in ("update_connection_probe_settings",) and not write_ok:
+        return {"ok": False, "error": "AI 写入工具未启用。请在设置 → AI 助手中开启「允许 AI 写入工具」。"}
+
+    result: Any
+    if name == "list_db_connections":
+        result = _tool_list_db_connections()
+    elif name == "list_opc_servers":
+        result = _tool_list_opc_servers()
+    elif name == "probe_connection":
+        result = await _tool_probe_connection(args)
+    elif name == "get_connection_health_summary":
+        result = await _tool_health_summary(args)
+    elif name == "query_audit_log":
+        result = _tool_query_audit(args)
+    elif name == "list_templates":
+        result = _tool_list_templates()
+    elif name == "get_template_summary":
+        result = _tool_get_template_summary(args)
+    elif name == "explain_export_diagnostics":
+        result = _tool_explain_export_diagnostics(args)
+    elif name == "get_app_version_and_endpoints":
+        result = _tool_app_version()
+    elif name == "suggest_config_change":
+        result = _tool_suggest_config(args, page_context=page_context)
+    elif name == "update_connection_probe_settings":
+        result = _tool_update_probe(args)
+    else:
+        result = {"ok": False, "error": f"未知工具: {name}"}
+
+    try:
+        audit_log.append_audit(
+            DATA_DIR,
+            action="ai.tool_call",
+            result="ok" if not (isinstance(result, dict) and result.get("ok") is False) else "fail",
+            summary=f"{name}",
+            object_type="ai_tool",
+            object_id=name,
+            detail={"arguments": args, "page_context": page_context or {}, "result_preview": _preview(result)},
+        )
+    except Exception:
+        logger.warning("写入 ai.tool_call 审计失败", exc_info=True)
+
+    return result
+
+
+def _preview(obj: Any, max_len: int = 2000) -> Any:
+    try:
+        text = json.dumps(obj, ensure_ascii=False)
+    except (TypeError, ValueError):
+        text = str(obj)
+    if len(text) > max_len:
+        return text[: max_len - 1] + "…"
+    return obj
+
+
+def _tool_list_db_connections() -> dict[str, Any]:
+    cfg = _cfg()
+    conns = [
+        config_store.mask_connection_for_response(c)
+        for c in (cfg.get("db_connections") or [])
+        if isinstance(c, dict)
+    ]
+    return {"connections": conns, "count": len(conns)}
+
+
+def _tool_list_opc_servers() -> dict[str, Any]:
+    cfg = _cfg()
+    servers = [
+        config_store.mask_opcua_for_response(s)
+        for s in (cfg.get("opcua_servers") or [])
+        if isinstance(s, dict)
+    ]
+    return {"servers": servers, "count": len(servers)}
+
+
+async def _tool_probe_connection(args: dict[str, Any]) -> dict[str, Any]:
+    kind = str(args.get("kind") or "").strip().lower()
+    cid = str(args.get("connection_id") or "").strip()
+    if not cid:
+        return {"ok": False, "message": "缺少 connection_id"}
+    cfg = _cfg()
+    if kind == "db":
+        conn = next((c for c in cfg.get("db_connections") or [] if c.get("id") == cid), None)
+        if not conn:
+            return {"ok": False, "message": "未找到数据库连接"}
+        body = DbConnectionSave(
+            id=conn.get("id"),
+            name=conn.get("name") or "",
+            engine=conn.get("engine") or "",
+            host=conn.get("host"),
+            port=conn.get("port"),
+            database=conn.get("database"),
+            username=conn.get("username"),
+            password=None,
+            sqlite_path=conn.get("sqlite_path"),
+            mongo_auth_source=conn.get("mongo_auth_source") or "admin",
+        )
+        try:
+            enc = conn.get("password_enc")
+            pwd = config_store.decrypt_db_password(DATA_DIR, conn) if enc else ""
+            merged = body.model_copy(update={"password": pwd or None})
+        except ValueError as e:
+            return {"ok": False, "message": str(e)}
+        ok, err = db_connection_ops.run_connectivity_test(
+            merged,
+            connection_name=str(conn.get("name") or cid),
+        )
+        return {"ok": ok, "message": err, "kind": "db", "connection_id": cid, "name": conn.get("name")}
+    if kind in ("opcua", "opc"):
+        srv = next((s for s in cfg.get("opcua_servers") or [] if s.get("id") == cid), None)
+        if not srv:
+            return {"ok": False, "message": "未找到 OPC UA 配置"}
+        endpoint = str(srv.get("endpoint_url") or srv.get("endpoint") or "").strip()
+        if not endpoint:
+            return {"ok": False, "message": "Endpoint URL 为空"}
+        try:
+            pwd = config_store.decrypt_opcua_password(DATA_DIR, srv)
+        except ValueError as e:
+            return {"ok": False, "message": str(e)}
+        res = await opcua_service.test_connection(
+            endpoint,
+            srv.get("username"),
+            pwd,
+            connection_name=str(srv.get("name") or cid),
+        )
+        return {**res, "kind": "opcua", "connection_id": cid, "name": srv.get("name")}
+    return {"ok": False, "message": "kind 须为 db 或 opcua"}
+
+
+async def _tool_health_summary(args: dict[str, Any]) -> dict[str, Any]:
+    cfg = _cfg()
+    prefs = cfg.get("app_preferences") or {}
+    dbs = _tool_list_db_connections()["connections"]
+    opcs = _tool_list_opc_servers()["servers"]
+    out: dict[str, Any] = {
+        "db_count": len(dbs),
+        "opc_count": len(opcs),
+        "connection_probe_enabled": bool(prefs.get("connection_probe_enabled")),
+        "connection_probe_interval_sec": prefs.get("connection_probe_interval_sec", 30),
+        "databases": [{"id": c.get("id"), "name": c.get("name"), "engine": c.get("engine")} for c in dbs],
+        "opc_servers": [{"id": s.get("id"), "name": s.get("name"), "endpoint_url": s.get("endpoint_url")} for s in opcs],
+    }
+    if args.get("live_probe"):
+        probes = []
+        for c in dbs:
+            cid = c.get("id")
+            if cid:
+                probes.append(await _tool_probe_connection({"kind": "db", "connection_id": cid}))
+        for s in opcs:
+            sid = s.get("id")
+            if sid:
+                probes.append(await _tool_probe_connection({"kind": "opcua", "connection_id": sid}))
+        out["live_probe_results"] = probes
+    return out
+
+
+def _tool_query_audit(args: dict[str, Any]) -> dict[str, Any]:
+    limit = int(args.get("limit") or 20)
+    limit = max(1, min(limit, 100))
+    data = audit_log.list_audit(
+        DATA_DIR,
+        limit=limit,
+        offset=0,
+        action=str(args.get("action")).strip() if args.get("action") else None,
+        result=str(args.get("result")).strip() if args.get("result") else None,
+    )
+    entries = [_mask_audit_entry(e) for e in (data.get("entries") or [])]
+    return {"entries": entries, "total": data.get("total", len(entries))}
+
+
+def _tool_list_templates() -> dict[str, Any]:
+    summaries = [s.model_dump(mode="json") for s in template_store.list_summaries()]
+    return {"templates": summaries, "count": len(summaries)}
+
+
+def _tool_get_template_summary(args: dict[str, Any]) -> dict[str, Any]:
+    tid = str(args.get("template_id") or "").strip()
+    if not tid:
+        return {"ok": False, "error": "缺少 template_id"}
+    for s in template_store.list_summaries():
+        if s.id == tid:
+            return {"ok": True, "summary": s.model_dump(mode="json")}
+    return {"ok": False, "error": "模版不存在"}
+
+
+def _tool_explain_export_diagnostics(args: dict[str, Any]) -> dict[str, Any]:
+    text = str(args.get("text") or "")
+    idx = text.find(EXPORT_DIAG_MARKER)
+    payload: dict[str, Any] | None = None
+    message = text
+    if idx >= 0:
+        message = text[:idx].strip()
+        json_part = text[idx + len(EXPORT_DIAG_MARKER) :].strip()
+        try:
+            parsed = json.loads(json_part)
+            if isinstance(parsed, dict):
+                payload = parsed
+        except json.JSONDecodeError as e:
+            return {"ok": False, "message": message, "parse_error": str(e)}
+    elif text.strip().startswith("{"):
+        try:
+            parsed = json.loads(text)
+            if isinstance(parsed, dict):
+                payload = parsed
+                message = ""
+        except json.JSONDecodeError as e:
+            return {"ok": False, "parse_error": str(e)}
+    if not payload:
+        return {"ok": False, "message": message or text, "hint": "未找到 EXPORT_DIAGNOSTICS 块"}
+    issues = payload.get("issues") or []
+    lines = []
+    if message:
+        lines.append(f"主消息：{message}")
+    lines.append(f"问题数：{payload.get('issueCount', len(issues))}")
+    for i, issue in enumerate(issues[:20], 1):
+        if not isinstance(issue, dict):
+            continue
+        key = issue.get("key", "?")
+        kind = issue.get("kind", "other")
+        msg = issue.get("message", "")
+        lines.append(f"{i}. [{kind}] {key}: {msg}")
+    stats = payload.get("stats")
+    if isinstance(stats, dict):
+        lines.append(f"统计：{json.dumps(stats, ensure_ascii=False)}")
+    return {
+        "ok": True,
+        "human_summary": "\n".join(lines),
+        "diagnostics": payload,
+    }
+
+
+def _tool_app_version() -> dict[str, Any]:
+    from core.settings import APP_VERSION
+
+    port = ai_config.resolve_backend_port()
+    pub = ai_config.public_ai_settings(port=port)
+    return {
+        "app": "SD_SMA_ReportEditor",
+        "version": APP_VERSION,
+        "agent_chat_url_loopback": pub.get("agent_chat_url_loopback"),
+        "agent_chat_url_lan": pub.get("agent_chat_url_lan"),
+        "ai_enabled": pub.get("enabled"),
+        "ai_ready": pub.get("ready"),
+    }
+
+
+def _tool_suggest_config(args: dict[str, Any], *, page_context: dict[str, Any] | None) -> dict[str, Any]:
+    target = str(args.get("target") or "").strip()
+    intent = str(args.get("intent") or "").strip()
+    cfg = _cfg()
+    prefs = cfg.get("app_preferences") or {}
+    suggestion: dict[str, Any] = {"target": target, "intent": intent, "apply": False, "patch": {}}
+    low = intent.lower()
+    if target == "connection_probe":
+        if any(w in intent for w in ("开启", "启用", "打开", "enable")):
+            suggestion["patch"] = {"connection_probe_enabled": True}
+        elif any(w in intent for w in ("关闭", "禁用", "disable")):
+            suggestion["patch"] = {"connection_probe_enabled": False}
+        for token in ("30", "60", "120", "300"):
+            if token in intent:
+                suggestion["patch"]["connection_probe_interval_sec"] = int(token)
+                break
+        suggestion["current"] = {
+            "connection_probe_enabled": prefs.get("connection_probe_enabled"),
+            "connection_probe_interval_sec": prefs.get("connection_probe_interval_sec"),
+        }
+    elif target == "ai_settings":
+        ai = ai_config.public_ai_settings()
+        suggestion["current"] = ai
+        suggestion["notes"] = "请在设置页手动修改 LLM Key / Agent Token；助手仅建议不写入密钥。"
+    elif target == "app_preferences":
+        suggestion["current"] = {k: prefs.get(k) for k in ("default_connection_id", "default_opcua_server_id")}
+        suggestion["notes"] = "根据 intent 生成 patch 供人工确认。"
+    else:
+        return {"ok": False, "error": f"未知 target: {target}"}
+    if page_context:
+        suggestion["page_context"] = page_context
+    return {"ok": True, "suggestion": suggestion}
+
+
+def _tool_update_probe(args: dict[str, Any]) -> dict[str, Any]:
+    cfg = _cfg()
+    prefs = dict(cfg.get("app_preferences") or {})
+    if "enabled" in args:
+        prefs["connection_probe_enabled"] = bool(args["enabled"])
+    if args.get("interval_sec") is not None:
+        sec = int(args["interval_sec"])
+        prefs["connection_probe_interval_sec"] = max(10, min(sec, 3600))
+    cfg["app_preferences"] = prefs
+    config_store.save_config(CONFIG_FILE, cfg)
+    return {
+        "ok": True,
+        "applied": {
+            "connection_probe_enabled": prefs.get("connection_probe_enabled"),
+            "connection_probe_interval_sec": prefs.get("connection_probe_interval_sec"),
+        },
+    }
