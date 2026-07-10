@@ -1,12 +1,12 @@
 {
   "version": "0.3.13",
-  "releasedAt": "2026-07-10T18:03:46.771Z",
+  "releasedAt": "2026-07-10T18:18:36.484Z",
   "notes": "修复表格SQL OPC空串兜底；冒烟模版封面封尾+写入批次OPC",
   "platforms": {
     "win32-x64": {
       "url": "Report Editor-Setup-0.3.13-x64.exe",
-      "sha256": "",
-      "size": 0
+      "sha256": "41384bca94fd7f9ccd6f8372a618f05241e48e58c7853af4b066e5dcf474d1be",
+      "size": 145034493
     },
     "darwin-arm64": {
       "url": "Report Editor-0.3.13-arm64.dmg",
