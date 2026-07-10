@@ -161,7 +161,9 @@ onUnmounted(() => {
 .ai-tools-row {
   display: flex;
   align-items: flex-start;
+  justify-content: space-between;
   gap: 16px;
+  width: 100%;
   padding: 12px 0;
   border-bottom: 1px solid #f3f4f6;
 }
@@ -172,8 +174,9 @@ onUnmounted(() => {
 }
 
 .ai-tools-row__main {
-  flex: 1;
+  flex: 1 1 auto;
   min-width: 0;
+  max-width: 100%;
 }
 
 .ai-tools-row__head {
@@ -224,10 +227,16 @@ onUnmounted(() => {
   font-size: 13px;
   line-height: 1.45;
   color: #6b7280;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
-.ai-tools-switch {
-  flex-shrink: 0;
+/* 覆盖 settings-switch 的 width:100%，避免把左侧文案挤成竖排 */
+.ai-tools-switch.settings-switch {
+  flex: 0 0 auto;
+  width: auto;
+  min-width: 52px;
+  min-height: 32px;
   margin-top: 4px;
 }
 </style>
