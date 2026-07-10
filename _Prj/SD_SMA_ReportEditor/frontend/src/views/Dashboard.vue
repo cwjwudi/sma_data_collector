@@ -2,6 +2,7 @@
   <div class="page">
     <h2 class="page-title">仪表盘</h2>
     <DashboardConnectionHealth />
+    <DashboardFieldOps />
     <div class="card-grid">
       <router-link to="/datasource" class="quick-card">
         <span class="quick-icon">🔌</span>
@@ -41,6 +42,7 @@
 
 <script setup>
 import DashboardConnectionHealth from '@/features/dashboard/DashboardConnectionHealth.vue'
+import DashboardFieldOps from '@/features/dashboard/DashboardFieldOps.vue'
 
 defineOptions({ name: 'Dashboard' })
 </script>
@@ -65,15 +67,16 @@ defineOptions({ name: 'Dashboard' })
   justify-content: center;
   gap: 12px;
   padding: 32px 16px;
-  background: #fff;
+  background: rgb(255 255 255 / 0.92);
   border-radius: 12px;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  border: 1px solid rgb(228 228 231 / 0.95);
+  box-shadow: 0 8px 24px rgb(15 23 42 / 0.05);
   transition: all 0.2s;
   cursor: pointer;
 }
 
 .quick-card:hover {
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+  box-shadow: 0 10px 28px rgb(15 23 42 / 0.1);
   transform: translateY(-2px);
 }
 

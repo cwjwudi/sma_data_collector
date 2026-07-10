@@ -8,7 +8,63 @@
       aria-label="打开 AI 助手"
       @click="openDrawer"
     >
-      <img class="ai-fab__glow" src="@/assets/icons/ai-fab-neon.svg" alt="" aria-hidden="true" />
+      <svg
+        class="ai-fab__neon"
+        xmlns="http://www.w3.org/2000/svg"
+        viewBox="0 0 800 800"
+        aria-hidden="true"
+        focusable="false"
+      >
+        <defs>
+          <linearGradient id="ai-fab-grad" x1="50%" y1="0%" x2="50%" y2="100%">
+            <stop stop-color="hsl(353, 98%, 41%)" offset="0%" />
+            <stop stop-color="hsl(37, 91%, 55%)" offset="100%" />
+          </linearGradient>
+          <filter
+            id="ai-fab-blur"
+            x="-100%"
+            y="-100%"
+            width="400%"
+            height="400%"
+            color-interpolation-filters="sRGB"
+          >
+            <feGaussianBlur stdDeviation="27" in="SourceGraphic" result="blur" />
+          </filter>
+          <filter
+            id="ai-fab-blur2"
+            x="-100%"
+            y="-100%"
+            width="400%"
+            height="400%"
+            color-interpolation-filters="sRGB"
+          >
+            <feGaussianBlur stdDeviation="10 17" in="SourceGraphic" result="blur" />
+          </filter>
+        </defs>
+        <g class="ai-fab__stroke" stroke="url(#ai-fab-grad)" fill="none" stroke-width="44">
+          <path
+            class="ai-fab__core-glow"
+            d="M381.14 127.99C392.81 121.25 407.19 121.25 418.86 127.99L626.14 247.66C637.81 254.4 645 266.85 645 280.33V519.67C645 533.15 637.81 545.6 626.14 552.34L418.86 672.01C407.19 678.75 392.81 678.75 381.14 672.01L173.86 552.34C162.19 545.6 155 533.15 155 519.67V280.33C155 266.85 162.19 254.4 173.86 247.66L381.14 127.99Z"
+            filter="url(#ai-fab-blur)"
+          />
+          <path
+            class="ai-fab__ghost ai-fab__ghost--right"
+            d="M381.14 127.99C392.81 121.25 407.19 121.25 418.86 127.99L626.14 247.66C637.81 254.4 645 266.85 645 280.33V519.67C645 533.15 637.81 545.6 626.14 552.34L418.86 672.01C407.19 678.75 392.81 678.75 381.14 672.01L173.86 552.34C162.19 545.6 155 533.15 155 519.67V280.33C155 266.85 162.19 254.4 173.86 247.66L381.14 127.99Z"
+            filter="url(#ai-fab-blur2)"
+            opacity="0.48"
+          />
+          <path
+            class="ai-fab__ghost ai-fab__ghost--left"
+            d="M381.14 127.99C392.81 121.25 407.19 121.25 418.86 127.99L626.14 247.66C637.81 254.4 645 266.85 645 280.33V519.67C645 533.15 637.81 545.6 626.14 552.34L418.86 672.01C407.19 678.75 392.81 678.75 381.14 672.01L173.86 552.34C162.19 545.6 155 533.15 155 519.67V280.33C155 266.85 162.19 254.4 173.86 247.66L381.14 127.99Z"
+            filter="url(#ai-fab-blur2)"
+            opacity="0.48"
+          />
+          <path
+            class="ai-fab__core"
+            d="M381.14 127.99C392.81 121.25 407.19 121.25 418.86 127.99L626.14 247.66C637.81 254.4 645 266.85 645 280.33V519.67C645 533.15 637.81 545.6 626.14 552.34L418.86 672.01C407.19 678.75 392.81 678.75 381.14 672.01L173.86 552.34C162.19 545.6 155 533.15 155 519.67V280.33C155 266.85 162.19 254.4 173.86 247.66L381.14 127.99Z"
+          />
+        </g>
+      </svg>
       <span class="ai-fab__label">AI</span>
     </button>
 
@@ -214,8 +270,9 @@ onUnmounted(() => {
 <style scoped>
 .ai-fab {
   position: fixed;
-  right: 12px;
-  bottom: 12px;
+  /* 避开主区右侧滚动条（约 6–16px）与 gutter，避免叠在滑块上 */
+  right: max(28px, calc(12px + 16px));
+  bottom: 20px;
   z-index: 9000;
   width: 72px;
   height: 72px;
@@ -235,14 +292,61 @@ onUnmounted(() => {
   transition: transform 0.15s ease, filter 0.15s ease;
 }
 
-.ai-fab__glow {
+.ai-fab__neon {
   position: absolute;
-  inset: -8px;
-  width: calc(100% + 16px);
-  height: calc(100% + 16px);
-  object-fit: contain;
+  inset: -10px;
+  width: calc(100% + 20px);
+  height: calc(100% + 20px);
   pointer-events: none;
-  user-select: none;
+  overflow: visible;
+}
+
+.ai-fab__ghost--right {
+  transform-origin: 400px 400px;
+  animation: ai-fab-ghost-right 2.8s ease-in-out infinite;
+}
+
+.ai-fab__ghost--left {
+  transform-origin: 400px 400px;
+  animation: ai-fab-ghost-left 2.8s ease-in-out infinite;
+}
+
+.ai-fab__core-glow {
+  animation: ai-fab-core-breathe 2.8s ease-in-out infinite;
+}
+
+@keyframes ai-fab-ghost-right {
+  0%,
+  100% {
+    transform: translateX(52px);
+    opacity: 0.32;
+  }
+  50% {
+    transform: translateX(108px);
+    opacity: 0.55;
+  }
+}
+
+@keyframes ai-fab-ghost-left {
+  0%,
+  100% {
+    transform: translateX(-52px);
+    opacity: 0.32;
+  }
+  50% {
+    transform: translateX(-108px);
+    opacity: 0.55;
+  }
+}
+
+@keyframes ai-fab-core-breathe {
+  0%,
+  100% {
+    opacity: 0.72;
+  }
+  50% {
+    opacity: 1;
+  }
 }
 
 .ai-fab__label {
@@ -254,6 +358,28 @@ onUnmounted(() => {
 .ai-fab:hover {
   transform: scale(1.06);
   filter: drop-shadow(0 12px 22px rgba(249, 115, 22, 0.4)) brightness(1.06);
+}
+
+.ai-fab:hover .ai-fab__ghost--right,
+.ai-fab:hover .ai-fab__ghost--left,
+.ai-fab:hover .ai-fab__core-glow {
+  animation-duration: 1.6s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ai-fab__ghost--right,
+  .ai-fab__ghost--left,
+  .ai-fab__core-glow {
+    animation: none;
+  }
+  .ai-fab__ghost--right {
+    transform: translateX(80px);
+    opacity: 0.48;
+  }
+  .ai-fab__ghost--left {
+    transform: translateX(-80px);
+    opacity: 0.48;
+  }
 }
 
 .ai-drawer-backdrop {
