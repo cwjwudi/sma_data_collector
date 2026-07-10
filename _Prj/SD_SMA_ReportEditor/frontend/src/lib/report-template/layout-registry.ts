@@ -54,15 +54,11 @@ export async function refreshLayoutPresets(): Promise<LayoutPreset[]> {
 }
 
 /**
- * 已在本会话成功加载过版式库则直接复用内存快照，不再请求 `/layout-presets/full`。
- * 版式的新增/编辑/删除都会经由本模块的保存/删除接口刷新 `mem`，故复用是安全的。
- *
- * 注意：若上次加载是「离线兜底」（如应用刚启动、后端尚未就绪导致预热失败），
- * 不复用该离线快照，而是重新尝试联网拉取，避免被空/过期数据卡住。
+ * 已在本会话成功加载过**完整**版式库则直接复用内存快照。
+ * 仅摘要（memSummaries）不能用于缩略图/编辑器等需要页眉页脚控件的场景。
  */
 export async function ensureLayoutPresetsLoaded(): Promise<LayoutPreset[]> {
   if (mem && !offline) return mem;
-  if (memSummaries && !offline) return memSummaries;
   return refreshLayoutPresets();
 }
 

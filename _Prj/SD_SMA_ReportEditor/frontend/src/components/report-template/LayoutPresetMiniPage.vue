@@ -234,6 +234,8 @@ function miniZoneElStyle(el: LayoutZoneElement): Record<string, string> {
 <style scoped>
 .mini-wrap {
   touch-action: manipulation;
+  flex-shrink: 0;
+  margin: 0 auto;
 }
 .mini-band-inner,
 .mini-body-inner {

@@ -97,6 +97,8 @@ const tagText = computed(() => {
   display: flex;
   flex-direction: column;
   align-items: center;
+  flex-shrink: 0;
+  width: fit-content;
   max-width: 100%;
   overflow: hidden;
 }

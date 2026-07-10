@@ -253,7 +253,6 @@ import {
 import {
   deleteLayoutPresetFlexible,
   ensureLayoutPresetSummariesLoaded,
-  ensureLayoutPresetsLoaded,
   refreshLayoutPresets,
   saveLayoutPresetFlexible,
   isLayoutsOffline,
@@ -651,7 +650,7 @@ watch(
  */
 async function loadPresetsForView(opts: { full?: boolean } = {}) {
   if (opts.full || mode.value === "thumbs") {
-    return ensureLayoutPresetsLoaded();
+    return refreshLayoutPresets();
   }
   return ensureLayoutPresetSummariesLoaded();
 }
@@ -685,7 +684,7 @@ watch(mode, async (m, prev) => {
   const token = beginLoad();
   loading.value = true;
   try {
-    const list = await ensureLayoutPresetsLoaded();
+    const list = await refreshLayoutPresets();
     if (isLoadStale(token)) return;
     presets.value = applyLayoutPresetDisplayOrders(list);
     await nextTick();
@@ -985,6 +984,7 @@ onUnmounted(() => {
   display: flex;
   justify-content: center;
   align-items: flex-start;
+  width: 100%;
   min-height: 200px;
   padding: 8px;
   background: #f4f4f5;
@@ -992,6 +992,11 @@ onUnmounted(() => {
   -webkit-overflow-scrolling: touch;
   overflow: auto;
   cursor: pointer;
+}
+.micro-wrap :deep(.mpc) {
+  flex-shrink: 0;
+  width: fit-content;
+  max-width: 100%;
 }
 .micro-ph {
   align-self: center;

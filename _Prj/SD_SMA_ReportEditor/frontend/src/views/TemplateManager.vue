@@ -19,17 +19,25 @@
       }}
     </p>
 
-    <table v-if="mode === 'list'" class="tbl">
-      <thead>
-        <tr>
-          <th class="col-seq">序号</th>
-          <th>名称</th>
-          <th>纸张</th>
-          <th>更新</th>
-          <th></th>
-        </tr>
-      </thead>
-      <tbody>
+    <div v-if="mode === 'list'" class="tbl-panel">
+      <table class="tbl">
+        <colgroup>
+          <col class="col-seq" />
+          <col class="col-name" />
+          <col class="col-dim" />
+          <col class="col-updated" />
+          <col class="col-act" />
+        </colgroup>
+        <thead>
+          <tr>
+            <th class="col-seq">序号</th>
+            <th class="col-name">名称</th>
+            <th class="col-dim">纸张</th>
+            <th class="col-updated">更新</th>
+            <th class="col-act th-act">操作</th>
+          </tr>
+        </thead>
+        <tbody>
         <tr v-if="loading && !rows.length">
           <td colspan="5" class="empty">正在加载模版…</td>
         </tr>
@@ -80,7 +88,7 @@
               <span class="row-seq-num">{{ r.seq }}</span>
             </div>
           </td>
-          <td>
+          <td class="col-name">
             <div class="tpl-name-row">
               <input
                 v-if="renamingId === r.id"
@@ -121,9 +129,9 @@
               </template>
             </div>
           </td>
-          <td>{{ r.dim }}</td>
-          <td>{{ r.updated }}</td>
-          <td class="td-act">
+          <td class="col-dim">{{ r.dim }}</td>
+          <td class="col-updated">{{ r.updated }}</td>
+          <td class="col-act td-act">
             <div class="foot-actions foot-actions--table">
               <a
                 href="#"
@@ -137,8 +145,9 @@
             </div>
           </td>
         </tr>
-      </tbody>
-    </table>
+        </tbody>
+      </table>
+    </div>
 
     <p v-if="mode === 'thumbs' && loading && !rows.length" class="empty">正在加载模版…</p>
     <p v-else-if="mode === 'thumbs' && !rows.length" class="empty">暂无模版</p>
@@ -1384,17 +1393,78 @@ onUnmounted(() => {
   font-size: 12px;
   color: #64748b;
 }
+.tbl-panel {
+  margin-top: 12px;
+  border-radius: 12px;
+  border: 1px solid rgb(228 228 231 / 0.95);
+  background: rgb(255 255 255 / 0.92);
+  box-shadow: 0 8px 24px rgb(15 23 42 / 0.06);
+  overflow-x: auto;
+}
 .tbl {
   width: 100%;
+  min-width: 760px;
   border-collapse: collapse;
-  margin-top: 12px;
+  table-layout: fixed;
   font-size: 14px;
 }
-.tbl th,
-.tbl td {
-  border: 1px solid #e4e4e7;
-  padding: 8px;
+.tbl thead th {
+  padding: 11px 14px;
   text-align: left;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: #64748b;
+  background: #f8fafc;
+  border-bottom: 1px solid #e2e8f0;
+}
+.tbl tbody td {
+  padding: 12px 14px;
+  text-align: left;
+  vertical-align: middle;
+  border-bottom: 1px solid #f1f5f9;
+  color: #334155;
+}
+.tbl tbody tr:last-child td {
+  border-bottom: none;
+}
+.tbl tbody tr:hover td {
+  background: #f8fafc;
+}
+.tbl .col-seq {
+  width: 88px;
+}
+.tbl .col-name {
+  width: 34%;
+}
+.tbl .col-dim {
+  width: 24%;
+}
+.tbl .col-updated {
+  width: 180px;
+}
+.tbl .col-act {
+  width: 220px;
+}
+.th-act {
+  text-align: right;
+}
+.col-seq {
+  text-align: center;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+.col-name {
+  overflow: hidden;
+}
+.col-dim,
+.col-updated {
+  white-space: nowrap;
+  color: #64748b;
+  font-size: 13px;
+}
+.col-updated {
+  font-variant-numeric: tabular-nums;
 }
 .empty {
   color: #71717a;
@@ -1420,6 +1490,31 @@ onUnmounted(() => {
   text-decoration: none;
   touch-action: manipulation;
   -webkit-tap-highlight-color: rgba(79, 70, 229, 0.12);
+}
+.foot-actions--table .lnk {
+  min-width: 0;
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border-color: #e2e8f0;
+  background: #fff;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 600;
+}
+.foot-actions--table .lnk:hover {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+  color: #1e293b;
+}
+.foot-actions--table .lnk.danger {
+  border-color: #fecaca;
+  background: #fff;
+  color: #dc2626;
+}
+.foot-actions--table .lnk.danger:hover {
+  background: #fef2f2;
+  border-color: #fca5a5;
 }
 .lnk:hover {
   background: #e0e7ff;
@@ -1517,12 +1612,6 @@ onUnmounted(() => {
 .row-drag-handle-icon {
   display: block;
   pointer-events: none;
-}
-.col-seq {
-  width: 88px;
-  text-align: center;
-  vertical-align: middle;
-  white-space: nowrap;
 }
 .tm-dup-backdrop {
   position: fixed;
@@ -1805,6 +1894,9 @@ onUnmounted(() => {
 .tpl-name {
   font-weight: 600;
   color: #0f172a;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .tpl-name-input {
   flex: 1 1 auto;
@@ -1868,10 +1960,12 @@ onUnmounted(() => {
 }
 .foot-actions--table {
   justify-content: flex-end;
+  gap: 6px;
 }
 .td-act {
   white-space: nowrap;
   vertical-align: middle;
+  text-align: right;
 }
 .skel {
   min-height: 120px;

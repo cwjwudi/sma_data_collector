@@ -1,15 +1,15 @@
 {
-  "version": "0.3.10",
-  "releasedAt": "2026-07-10T16:31:39.164Z",
-  "notes": "PostgreSQL/SQLite/MongoDB 完全适配；AI 钮文字红橙渐变",
+  "version": "0.3.11",
+  "releasedAt": "2026-07-10T16:56:32.882Z",
+  "notes": "模版列表表格美化；版式缩略图居中与完整版式加载修复",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor-Setup-0.3.10-x64.exe",
-      "sha256": "e22cd9fbf792638723d13828491a060e4f4a65576aac45ebc8d1a1aec95992ca",
-      "size": 145011688
+      "url": "Report Editor-Setup-0.3.11-x64.exe",
+      "sha256": "ef26cc0a84bd265fae9bd70bd87833dc43d82eca5f2c3a7ea6ccde7b67746455",
+      "size": 145013539
     },
     "darwin-arm64": {
-      "url": "Report Editor-0.3.10-arm64.dmg",
+      "url": "Report Editor-0.3.11-arm64.dmg",
       "sha256": "",
       "size": 0
     }
