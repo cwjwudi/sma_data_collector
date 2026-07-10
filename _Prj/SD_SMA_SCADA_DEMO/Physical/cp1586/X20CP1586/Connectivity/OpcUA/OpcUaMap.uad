@@ -11,6 +11,7 @@
     <Module Name="&lt;Default&gt;">
       <GlobalVariables Name="Global Variables">
         <Variable Name="guiDBHeartBeat" />
+        <Variable Name="guiDQHeartBeat" />
       </GlobalVariables>
       <Task Name="AlarmQuerr">
         <Variable Name="HMIAlarmQuerryIndex" RecursiveEnable="2" />
@@ -194,6 +195,11 @@
         <Variable Name="strStartTime" />
         <Variable Name="udiCursor" />
         <Variable Name="diCursor" />
+        <Variable Name="bNextPage" />
+        <Variable Name="bPrePage" />
+        <Variable Name="strBatchCode1" />
+        <Variable Name="strListName" />
+        <Variable Name="bTriger" />
       </Task>
       <Task Name="ParallelTe">
         <Variable Name="F1" />

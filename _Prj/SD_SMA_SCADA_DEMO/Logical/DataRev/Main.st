@@ -24,7 +24,7 @@ PROGRAM _CYCLIC
 	(* Insert code here *)
 	
 		
-
+	guiDQHeartBeat;
 
 END_PROGRAM
 

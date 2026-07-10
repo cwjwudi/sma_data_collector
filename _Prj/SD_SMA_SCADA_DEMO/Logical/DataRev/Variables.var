@@ -12,4 +12,9 @@ VAR
 	strEndTime : ARRAY[0..50] OF STRING[80];
 	udiCursor : UDINT;
 	diCursor : DINT;
+	bNextPage : BOOL;
+	bPrePage : BOOL;
+	strBatchCode1 : STRING[80];
+	strListName : ARRAY[0..50] OF STRING[80];
+	bTriger : BOOL;
 END_VAR

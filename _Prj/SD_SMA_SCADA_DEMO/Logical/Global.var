@@ -7,4 +7,5 @@ END_VAR
 (*Insert your comment here.*)
 VAR
 	guiDBHeartBeat : UINT;
+	guiDQHeartBeat : UINT;
 END_VAR
