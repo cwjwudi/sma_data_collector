@@ -44,9 +44,15 @@ def _require_agent_auth(request: Request) -> None:
             403,
             "Agent API 默认仅允许本机访问。若需局域网接入 Cursor，请在设置中开启「允许局域网访问 Agent API」。",
         )
+    # 本机（loopback）对齐 LM Studio：无需 Agent Token，任意/空 Bearer 均可
+    if ai_config.is_loopback_host(client_host):
+        return
     token = _extract_bearer(request)
     if not ai_config.verify_agent_token(token, settings):
-        raise HTTPException(401, "无效的 Agent Token。请在设置中生成或重新生成令牌。")
+        raise HTTPException(
+            401,
+            "局域网访问需要有效的 Agent Token。请在设置中生成令牌，或改用本机 http://127.0.0.1:8000/v1。",
+        )
 
 
 def _ensure_llm_ready() -> tuple[dict[str, Any], str]:

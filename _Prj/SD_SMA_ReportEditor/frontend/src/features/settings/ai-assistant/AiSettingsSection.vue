@@ -2,8 +2,9 @@
   <section class="settings-section">
     <h3 class="settings-section__title">AI 助手与 Cursor 接入</h3>
     <p class="settings-hint">
-      配置 OpenAI 兼容 LLM 后，可在任意页面使用 AI 助手诊断连接与导出问题；Cursor 等 Agent 可将 Base URL 指向本机
-      <code>/v1</code> 并使用 <strong>Agent 令牌</strong>（与用户 LLM Key 分离）。详见
+      配置 OpenAI 兼容 LLM 后，可在任意页面使用 AI 助手诊断连接与导出问题。
+      <strong>本机 Cursor / Codex</strong> 可像接 LM Studio 一样：只需把 Base URL 指到下方「Chat API（本机）」，
+      API Key 可填任意占位（本机不校验令牌）。局域网接入才需要 Agent 令牌。详见
       <a class="ai-doc-link" href="#" @click.prevent="openDocHint">接入说明</a>。
     </p>
 
@@ -113,8 +114,10 @@
       </div>
     </div>
 
-    <p v-if="settings.ready" class="settings-msg settings-msg--ok">AI 已就绪：应用内助手与 Cursor 均可接入。</p>
-    <p v-else-if="form.enabled" class="settings-hint settings-hint--warn">请保存 LLM Key 并生成 Agent 令牌以完成配置。</p>
+    <p v-if="settings.ready" class="settings-msg settings-msg--ok">
+      AI 已就绪：本机 Cursor 只需 Base URL（无需令牌）；应用内助手可用。
+    </p>
+    <p v-else-if="form.enabled" class="settings-hint settings-hint--warn">请保存 LLM Key 以完成配置。</p>
 
     <p v-if="msg" class="settings-msg" :class="{ 'settings-msg--ok': msgTone === 'ok', 'settings-msg--err': msgTone === 'err' }">
       {{ msg }}

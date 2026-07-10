@@ -10,9 +10,12 @@
 | 通道 | 入口 | 鉴权 |
 |------|------|------|
 | **应用内助手** | 任意页面右下角「AI」浮层 | 本机 `/api/settings/ai/chat`（无需 Bearer） |
-| **Cursor / Agent** | `POST /v1/chat/completions` | `Authorization: Bearer <Agent Token>` |
+| **Cursor / Agent（本机）** | `POST /v1/chat/completions` | **无需令牌**（与 LM Studio 相同：只填 Base URL） |
+| **Cursor / Agent（局域网）** | 同上 | `Authorization: Bearer <Agent Token>` + 开启「允许局域网访问」 |
 
 后端将对话转发至用户在设置中配置的 **OpenAI 兼容 LLM**（`baseUrl` + `apiKey` + `model`），并在模型返回 `tool_calls` 时执行本地只读诊断工具（数据库/OPC 探活、审计查询、模版摘要等）。
+
+> **与 LM Studio 的差异：** LM Studio 本身就是模型，不需要上游 Key。报表软件仍要在设置里配置一次 **LLM API Key**（用于调用 OpenAI 等）；Cursor 侧本机接入则不必再配 Agent 令牌。
 
 **首版不做独立 MCP Server**；后续若需要，可薄封装复用同一 tool 层。
 
@@ -22,29 +25,28 @@
 
 1. 打开 **设置 → AI 助手与 Cursor 接入**。
 2. 开启 **启用 AI 助手**。
-3. 填写 **LLM Base URL**（默认 `https://api.openai.com/v1`）、**API Key**、**模型名**（如 `gpt-4o-mini`）。
-4. 点击 **生成 Agent 令牌**，复制保存（仅显示一次；丢失需重新生成）。
-5. 记录本机 Chat 地址，例如：`http://127.0.0.1:8000/v1`（端口以设置页「服务地址」为准）。
+3. 填写 **LLM Base URL**（默认 `https://api.openai.com/v1`）、**API Key**、**模型名**（如 `gpt-4o-mini`），点 **保存**。
+4. （可选）仅当要从**其它电脑**的 Cursor 接入时：生成 Agent 令牌，并开启「允许局域网访问 Agent API」。
+5. 本机 Chat 地址：`http://127.0.0.1:8000/v1`。
 
-> **安全：** 用户 LLM API Key 与 Agent Token **分开存储**，均经 Fernet 加密写入 `config.json`，不会进入审计 CSV 或 Toast 全文。
+> **安全：** 用户 LLM API Key 与 Agent Token **分开存储**；本机免令牌，局域网仍需令牌。密钥不会进入审计 CSV 或 Toast 全文。
 
 ---
 
-## 3. Cursor 配置示例
-
-在 Cursor 自定义模型 / OpenAI 兼容提供商中：
+## 3. Cursor / Codex 配置（本机，对齐 LM Studio）
 
 | 项 | 值 |
 |----|-----|
-| **Base URL** | `http://127.0.0.1:8000/v1`（或局域网地址，需开启「允许局域网访问 Agent API」） |
-| **API Key** | 设置页生成的 **Agent Token**（非 OpenAI Key） |
-| **Model** | 与设置页模型名一致（或任意字符串；网关会替换为已配置模型） |
+| **Override OpenAI Base URL** | `http://127.0.0.1:8000/v1` |
+| **OpenAI API Key** | 可填任意占位（如 `local` / `report-editor`）；本机**不校验**。Cursor 若强制非空，随便填即可 |
+| **Model** | 与设置页模型名一致（如 `gpt-4o-mini`） |
 
-### curl  smoke 测试
+**重要：** Cursor 的「Override OpenAI Base URL」是**全局**的。打开后，走 OpenAI 通道的请求都会进报表软件；用 Grok 等其它模型写代码时请**关掉 Override**，测报表诊断时再临时打开（与接 LM Studio 时的用法相同：需要时再指过去）。
+
+### curl smoke（本机无需 Token）
 
 ```bash
 curl -s http://127.0.0.1:8000/v1/chat/completions \
-  -H "Authorization: Bearer YOUR_AGENT_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gpt-4o-mini",
@@ -52,6 +54,7 @@ curl -s http://127.0.0.1:8000/v1/chat/completions \
   }'
 ```
 
+局域网示例需加：`-H "Authorization: Bearer YOUR_AGENT_TOKEN"`。
 ---
 
 ## 4. 示例提示词（Cursor）
@@ -92,10 +95,10 @@ curl -s http://127.0.0.1:8000/v1/chat/completions \
 
 ## 6. 安全与网络
 
-- **默认仅本机：** 非 loopback 来源访问 `/v1/*` 时，需在设置中显式开启 **允许局域网访问 Agent API**。
-- **Tool 默认只读；** 写操作默认关闭，直到 0.3.2 且用户开启写入开关。
+- **本机免令牌**（对齐 LM Studio）；**局域网**须开启开关并携带 Agent Token。
+- **Tool 默认只读；** 写操作需开启「允许 AI 写入工具」。
 - **不向 LLM 发送** 数据库密码、OPC 密码明文。
-- Agent Token 泄露等同于本机诊断 API 被滥用；请定期轮换。
+- 局域网 Agent Token 泄露等同于诊断 API 被滥用；请定期轮换。
 
 ---
 
@@ -103,15 +106,16 @@ curl -s http://127.0.0.1:8000/v1/chat/completions \
 
 | 现象 | 处理 |
 |------|------|
-| HTTP 401 | Agent Token 错误或已轮换 |
+| HTTP 401 | 多半是局域网访问且 Token 错误；本机应无需 Token |
 | HTTP 403 + LAN | 自局域网访问但未开启 LAN 开关 |
 | HTTP 503 AI 未配置 | 设置页未启用或未填 LLM Key |
+| Grok / 其它模型无回复 | 关掉 Cursor 的 Override OpenAI Base URL（全局覆盖会抢走请求） |
 | 工具无结果 | 确认 `config.json` 中已有对应连接/模版 |
-| Cursor 连不上 | 确认后端端口、防火墙；先用 curl 验证 |
+| Cursor 连不上 | 确认后端端口；本机先用无 Token 的 curl 验证 |
 
 ---
 
 ## 8. 相关文档
 
 - [002_里程碑与工单.md](002_里程碑与工单.md) — **M16**
-- [007_版本发布记录.md](007_版本发布记录.md) — 0.3.0 变更
+- [007_版本发布记录.md](007_版本发布记录.md) — 0.3.x 变更

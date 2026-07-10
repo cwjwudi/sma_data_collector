@@ -106,7 +106,7 @@ def public_ai_settings(settings: dict[str, Any] | None = None, *, port: int = DE
         "write_tools_enabled": bool(s.get("write_tools_enabled")),
         "agent_chat_url_loopback": loopback,
         "agent_chat_url_lan": lan_url,
-        "ready": bool(s.get("enabled") and s.get("llm_api_key_enc") and s.get("agent_token_enc")),
+        "ready": bool(s.get("enabled") and s.get("llm_api_key_enc")),
     }
 
 
