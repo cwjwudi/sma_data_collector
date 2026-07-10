@@ -125,11 +125,7 @@ export function formatOpcuaReadPayload(res: unknown): { ok: true; text: string }
       return { ok: true, text: String(v) };
     }
   }
-  if (t === "string") {
-    const s = v as string;
-    return { ok: true, text: s.length > 120 ? `${s.slice(0, 117)}…` : s };
-  }
-  return { ok: true, text: String(v) };
+  return { ok: true, text: formatScalarForPreviewValue(v) };
 }
 
 export function sqlResponseFirstScalar(data: unknown): string {
@@ -166,8 +162,19 @@ export function sqlResponseGridSummary(data: unknown): string {
   return `${rows.length} 行 × ${cols.length || "?"} 列`;
 }
 
-/** 后端把数据库 datetime JSON 序列化成 ISO 格式（T 分隔），报表显示还原为空格分隔 */
-const ISO_DATETIME_RE = /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?)$/;
+/**
+ * 后端/驱动常把数据库 DATETIME 序列化成 ISO（`T` 分隔、带 `Z`/`+00:00`）。
+ * 报表与数据参数控件按库工具习惯显示为 `YYYY-MM-DD HH:MM:SS[.fff]`（去掉时区后缀）。
+ */
+const ISO_DATETIME_RE =
+  /^(\d{4}-\d{2}-\d{2})[T ](\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?)(?:Z|[+-]\d{2}:?\d{2})?$/i;
+
+/** 将 ISO / 带时区的日期时间字符串规范为库侧常见显示格式；非日期时间则原样返回 */
+export function normalizeDbDatetimeDisplay(raw: string): string {
+  const m = ISO_DATETIME_RE.exec(raw.trim());
+  if (!m) return raw;
+  return `${m[1]} ${m[2]}`;
+}
 
 export function formatScalarForPreviewValue(v: unknown): string {
   if (v === null || v === undefined) return String(v);
@@ -181,8 +188,7 @@ export function formatScalarForPreviewValue(v: unknown): string {
   }
   let s = String(v);
   if (typeof v === "string") {
-    const m = ISO_DATETIME_RE.exec(s.trim());
-    if (m) s = `${m[1]} ${m[2]}`;
+    s = normalizeDbDatetimeDisplay(s);
   }
   return s.length > 120 ? `${s.slice(0, 117)}…` : s;
 }

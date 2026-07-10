@@ -4,7 +4,48 @@ from __future__ import annotations
 import json
 import re
 import sqlite3
+from datetime import date, datetime, time
+from decimal import Decimal
 from typing import Any
+
+
+def json_safe_sql_value(v: Any) -> Any:
+    """将驱动返回的 datetime/Decimal 等转为 JSON 友好、报表可读的标量。
+
+    DATETIME 不用 ISO（避免前端出现 ``2026-07-10T13:00:51+00:00``），
+    与 MySQL Workbench 等工具一致为 ``YYYY-MM-DD HH:MM:SS``。
+    """
+    if isinstance(v, datetime):
+        # 去掉时区信息，按墙钟时间格式化（库内 DATETIME 多为无时区）
+        naive = v.replace(tzinfo=None) if v.tzinfo is not None else v
+        if naive.microsecond:
+            return naive.strftime("%Y-%m-%d %H:%M:%S.%f").rstrip("0").rstrip(".")
+        return naive.strftime("%Y-%m-%d %H:%M:%S")
+    if isinstance(v, date) and not isinstance(v, datetime):
+        return v.isoformat()
+    if isinstance(v, time):
+        if v.microsecond:
+            return v.strftime("%H:%M:%S.%f").rstrip("0").rstrip(".")
+        return v.strftime("%H:%M:%S")
+    if isinstance(v, Decimal):
+        # 保持可 JSON 序列化；整数 Decimal 用 int，避免 1.0 变 1.0 浮点噪声时仍可读
+        if v == v.to_integral_value():
+            return int(v)
+        return float(v)
+    if isinstance(v, bytes):
+        try:
+            return v.decode("utf-8")
+        except UnicodeDecodeError:
+            return v.hex()
+    if isinstance(v, dict):
+        return {str(k): json_safe_sql_value(val) for k, val in v.items()}
+    if isinstance(v, (list, tuple)):
+        return [json_safe_sql_value(x) for x in v]
+    return v
+
+
+def json_safe_sql_rows(rows: list[Any]) -> list[Any]:
+    return [json_safe_sql_value(r) for r in rows]
 
 FORBIDDEN_SQL_TOKENS = (
     "INSERT ",
@@ -73,7 +114,7 @@ def run_mysql_readonly(host: str, port: int, user: str, password: str, database:
             cur.execute(sql_v)
             rows = cur.fetchmany(limit)
             cols = [d[0] for d in cur.description] if cur.description else []
-        return {"columns": cols, "rows": rows}
+        return {"columns": cols, "rows": json_safe_sql_rows(rows)}
     finally:
         conn.close()
 
@@ -97,7 +138,7 @@ def run_postgres_readonly(host: str, port: int, user: str, password: str, databa
             rows = cur.fetchmany(limit)
             cols = [c.name for c in cur.description] if cur.description else []
             rows_list = [dict(r) for r in rows]
-        return {"columns": cols, "rows": rows_list}
+        return {"columns": cols, "rows": json_safe_sql_rows(rows_list)}
     finally:
         conn.close()
 
@@ -111,7 +152,7 @@ def run_sqlite_readonly(path: str, sql: str, limit: int) -> dict[str, Any]:
         cur = conn.execute(sql_v)
         rows = cur.fetchmany(limit)
         cols = [d[0] for d in cur.description] if cur.description else []
-        return {"columns": cols, "rows": [dict(zip(cols, row)) for row in rows]}
+        return {"columns": cols, "rows": json_safe_sql_rows([dict(zip(cols, row)) for row in rows])}
     finally:
         conn.close()
 
@@ -137,7 +178,7 @@ def mysql_scalar(host: str, port: int, user: str, password: str, database: str, 
             row = cur.fetchone()
             if not row:
                 return 0
-            return next(iter(row.values()))
+            return json_safe_sql_value(next(iter(row.values())))
     finally:
         conn.close()
 
@@ -161,7 +202,7 @@ def postgres_scalar(host: str, port: int, user: str, password: str, database: st
             row = cur.fetchone()
             if not row:
                 return 0
-            return next(iter(dict(row).values()))
+            return json_safe_sql_value(next(iter(dict(row).values())))
     finally:
         conn.close()
 
@@ -176,7 +217,7 @@ def sqlite_scalar(path: str, sql: str) -> Any:
         row = cur.fetchone()
         if not row:
             return 0
-        return row[0]
+        return json_safe_sql_value(row[0])
     finally:
         conn.close()
 
