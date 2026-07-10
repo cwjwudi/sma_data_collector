@@ -8,19 +8,22 @@ from typing import Any
 import pymysql
 
 from core.settings import CONFIG_FILE, DATA_DIR
-from modules import config_store, opcua_service, template_store
-from schemas.report_template import LayoutSnapshot, parse_report_template
+from modules import ai_asset_ops, config_store, opcua_service, template_store
+from schemas.report_template import parse_report_template
 
 DEMO_DB = "report_user_lib"
 DEMO_BATCH_NO = "B20260710"
+SMOKE_TEMPLATE_NAME = "绑定冒烟测试（OPC+SQL）"
 
-# ARSim（本机现有 OPC）常用 Program 变量：覆盖 Boolean / Float / UInt16 / Int32
+# ARSim（本机现有 OPC）常用 Program 变量
 DEFAULT_OPC_NODES = {
     "bool": "ns=6;s=::Program:SegTempStatus.ActProtectActive",
     "float": "ns=6;s=::Program:SegTempActValue",
     "uint16": "ns=6;s=::Program:SegTempCalcValidCnt",
     "int32": "ns=6;s=::Program:SegTempStatus.SegTempSetScanInterval",
     "float_avg": "ns=6;s=::Program:SegTempStatus.ActAvgTemp",
+    # String：筛选绑定时用；literalFallback 保证预览仍能命中演示批次
+    "string": "ns=6;s=::Program:StepAction.Text.Main",
 }
 
 
@@ -143,6 +146,7 @@ def ensure_user_demo_database(connection_id: str | None = None) -> dict[str, Any
                     "VALUES (%s,%s,%s,%s)",
                     rows,
                 )
+        ai_asset_ops.mark_ui_reload(datasource=True, reason="ensure_user_demo_database")
         return {
             "ok": True,
             "connection_id": conn.get("id"),
@@ -171,6 +175,7 @@ async def _resolve_opc_nodes(server: dict[str, Any], *, live_search: bool = Fals
             ("uint16", "SegTempCalcValidCnt", "UInt16"),
             ("int32", "SegTempSetScanInterval", "Int32"),
             ("float_avg", "ActAvgTemp", "Float"),
+            ("string", "StepAction.Text.Main", "String"),
         ):
             res = await opcua_service.search_variables_for_saved_server(
                 server_id=sid,
@@ -210,6 +215,24 @@ def _cell(
         "sqlText": sql,
         "sqlParams": sql_params or [],
         "bgColor": "transparent",
+    }
+
+
+def _opc_binding(node_id: str, fallback: str = "") -> dict[str, Any]:
+    return {
+        "source": "opcua",
+        "opcuaNodeId": node_id,
+        "aboveCellColumnIndex": 0,
+        "literalFallback": fallback,
+    }
+
+
+def _lit_binding(value: str) -> dict[str, Any]:
+    return {
+        "source": "literal",
+        "opcuaNodeId": "",
+        "aboveCellColumnIndex": 0,
+        "literalFallback": value,
     }
 
 
@@ -266,6 +289,184 @@ def _param_el(
     return el
 
 
+def _zone_text(
+    *,
+    x: float,
+    y: float,
+    w: float,
+    h: float,
+    text: str,
+    font_size: float = 12,
+    binding_kind: str = "none",
+    opcua: str = "",
+) -> dict[str, Any]:
+    return {
+        "id": _nid(),
+        "type": "parameter" if binding_kind != "none" else "text",
+        "x": x,
+        "y": y,
+        "w": w,
+        "h": h,
+        "text": text,
+        "color": "#334155",
+        "bgColor": "transparent",
+        "fontSize": font_size,
+        "fontFamily": "",
+        "zIndex": 1,
+        "showBorder": False,
+        "alignX": "start",
+        "alignY": "center",
+        "bindingKind": binding_kind,
+        "opcuaNodeId": opcua,
+        "sqlText": "",
+        "sqlParams": [],
+        "nullDisplayMode": "blank",
+    }
+
+
+def _zone_page_number(*, x: float, y: float) -> dict[str, Any]:
+    return {
+        "id": _nid(),
+        "type": "pageNumber",
+        "x": x,
+        "y": y,
+        "w": 80,
+        "h": 18,
+        "text": "",
+        "color": "#64748b",
+        "bgColor": "transparent",
+        "fontSize": 11,
+        "fontFamily": "",
+        "zIndex": 1,
+        "showBorder": False,
+        "alignX": "end",
+        "alignY": "center",
+        "pageNumberMode": "slashTotal",
+        "bindingKind": "none",
+        "opcuaNodeId": "",
+        "sqlText": "",
+        "sqlParams": [],
+    }
+
+
+def _zone_date(*, x: float, y: float) -> dict[str, Any]:
+    return {
+        "id": _nid(),
+        "type": "date",
+        "x": x,
+        "y": y,
+        "w": 120,
+        "h": 18,
+        "text": "",
+        "color": "#64748b",
+        "bgColor": "transparent",
+        "fontSize": 11,
+        "fontFamily": "",
+        "zIndex": 1,
+        "showBorder": False,
+        "alignX": "start",
+        "alignY": "center",
+        "dateFormat": "yyyy-MM-dd HH:mm",
+        "bindingKind": "none",
+        "opcuaNodeId": "",
+        "sqlText": "",
+        "sqlParams": [],
+    }
+
+
+def _visual_batch_filter(nodes: dict[str, str]) -> dict[str, Any]:
+    """可视化等值筛选：batch_no，取值来自 OPC String（无值时用演示批次号兜底）。"""
+    return {
+        "id": _nid(),
+        "column": "batch_no",
+        "kind": "equality",
+        "defaults": [DEMO_BATCH_NO],
+        "bindings": [_opc_binding(nodes["string"], DEMO_BATCH_NO)],
+    }
+
+
+def _visual_horizontal_fill(cid: str, eng: str, nodes: dict[str, str]) -> dict[str, Any]:
+    cols = ["metric_name", "metric_value", "unit", "recorded_at"]
+    filt = _visual_batch_filter(nodes)
+    # 与前端 compileVisualTableSql 对齐
+    query_sql = (
+        "SELECT `metric_name`, `metric_value`, `unit`, `recorded_at` "
+        "FROM `demo_metrics` WHERE `batch_no` = {{p0}}"
+    )
+    return {
+        "enabled": True,
+        "fillMode": "visual",
+        "querySql": query_sql,
+        "params": [_opc_binding(nodes["string"], DEMO_BATCH_NO)],
+        "resultColumnNames": list(cols),
+        "repeatHeaderOnPageBreak": True,
+        "splitReportsOnMaxRows": False,
+        "allowWidgetsBelowSqlFillTable": True,
+        "maxRows": 2000,
+        "visualSource": {
+            "connectionId": cid,
+            "database": DEMO_DB,
+            "table": "demo_metrics",
+            "engine": eng,
+            "columns": list(cols),
+            "tableSource": "manual",
+            "tableOpcNodeId": "",
+        },
+        "visualFilters": [filt],
+        "mongoQuery": None,
+        "layoutMode": "horizontal",
+        "columnRoles": ["field", "field", "field", "field"],
+        "sequencePageMode": "continuous",
+        "verticalMultiRecordMode": "continue",
+        "verticalFieldLabels": [],
+    }
+
+
+def _visual_vertical_fill(cid: str, eng: str, nodes: dict[str, str]) -> dict[str, Any]:
+    """纵表：左名称右值；筛选 batch_no 走 OPC。"""
+    field_cols = ["metric_name", "metric_value", "unit"]
+    labels = ["指标名", "数值", "单位"]
+    filt = _visual_batch_filter(nodes)
+    query_sql = (
+        "SELECT `metric_name`, `metric_value`, `unit` "
+        "FROM `demo_metrics` WHERE `batch_no` = {{p0}}"
+    )
+    return {
+        "enabled": True,
+        "fillMode": "visual",
+        "querySql": query_sql,
+        "params": [_opc_binding(nodes["string"], DEMO_BATCH_NO)],
+        "resultColumnNames": ["名称", "值"],
+        "repeatHeaderOnPageBreak": True,
+        "splitReportsOnMaxRows": False,
+        "allowWidgetsBelowSqlFillTable": True,
+        "maxRows": 2000,
+        "visualSource": {
+            "connectionId": cid,
+            "database": DEMO_DB,
+            "table": "demo_metrics",
+            "engine": eng,
+            "columns": list(field_cols),
+            "tableSource": "manual",
+            "tableOpcNodeId": "",
+        },
+        "visualFilters": [filt],
+        "mongoQuery": None,
+        "layoutMode": "vertical",
+        "columnRoles": ["field", "field"],
+        "sequencePageMode": "continuous",
+        "verticalMultiRecordMode": "continue",
+        "verticalFieldLabels": list(labels),
+    }
+
+
+def _find_existing_smoke_id(name: str) -> str | None:
+    for s in template_store.list_summaries():
+        if s.name == name:
+            return s.id
+    return None
+
+
 async def create_binding_smoke_template(
     *,
     name: str | None = None,
@@ -274,8 +475,12 @@ async def create_binding_smoke_template(
     ensure_schema: bool = True,
 ) -> dict[str, Any]:
     """
-    创建测试模版：参数（OPC 多类型 + SQL）+ 混合绑定表格 + SQL 整表填充。
-    依赖现有 DB/OPC；可选先 ensure 用户库。
+    创建/覆盖绑定冒烟模版：
+    - 页眉页脚（含 OPC 参数、日期、页码）
+    - 参数（OPC 多类型 + SQL）
+    - 混合单元格绑定表
+    - 可视化 SQL 横表填充（OPC 筛选 batch_no）
+    - 可视化 SQL 纵表填充（OPC 筛选 batch_no）
     """
     conn = _pick_db_connection(connection_id)
     if not conn:
@@ -293,32 +498,23 @@ async def create_binding_smoke_template(
     cid = str(conn.get("id") or "")
     eng = (conn.get("engine") or "mysql").lower()
     nodes = await _resolve_opc_nodes(opc, live_search=False)
+    tpl_name = (name or "").strip() or SMOKE_TEMPLATE_NAME
+    existing_id = _find_existing_smoke_id(tpl_name)
 
-    lit_batch = {
-        "source": "literal",
-        "opcuaNodeId": "",
-        "aboveCellColumnIndex": 0,
-        "literalFallback": DEMO_BATCH_NO,
-    }
-    # SQL 参数也可绑 OPC（UInt16 作演示）；字面量兜底批次号
-    opc_or_lit = {
-        "source": "opcua",
-        "opcuaNodeId": nodes["uint16"],
-        "aboveCellColumnIndex": 0,
-        "literalFallback": DEMO_BATCH_NO,
-    }
+    lit_batch = _lit_binding(DEMO_BATCH_NO)
+    opc_str_batch = _opc_binding(nodes["string"], DEMO_BATCH_NO)
 
     title = {
         "id": _nid(),
         "type": "text",
         "x": 40,
-        "y": 28,
+        "y": 24,
         "w": 520,
-        "h": 36,
+        "h": 32,
         "text": "绑定冒烟测试（OPC UA + SQL）",
         "color": "#0f172a",
         "bgColor": "transparent",
-        "fontSize": 20,
+        "fontSize": 18,
         "fontFamily": "",
         "zIndex": 1,
         "showBorder": False,
@@ -331,49 +527,18 @@ async def create_binding_smoke_template(
     }
 
     params = [
+        _param_el(x=40, y=68, w=240, label="OPC·温度(Float)", binding_kind="opcua", opcua=nodes["float"]),
+        _param_el(x=300, y=68, w=240, label="OPC·保护(Boolean)", binding_kind="opcua", opcua=nodes["bool"]),
+        _param_el(x=40, y=108, w=240, label="OPC·有效段(UInt16)", binding_kind="opcua", opcua=nodes["uint16"]),
+        _param_el(x=300, y=108, w=240, label="OPC·扫描间隔(Int32)", binding_kind="opcua", opcua=nodes["int32"]),
         _param_el(
             x=40,
-            y=80,
-            w=240,
-            label="OPC·温度(Float)",
-            binding_kind="opcua",
-            opcua=nodes["float"],
-        ),
-        _param_el(
-            x=300,
-            y=80,
-            w=240,
-            label="OPC·保护(Boolean)",
-            binding_kind="opcua",
-            opcua=nodes["bool"],
-        ),
-        _param_el(
-            x=40,
-            y=124,
-            w=240,
-            label="OPC·有效段(UInt16)",
-            binding_kind="opcua",
-            opcua=nodes["uint16"],
-        ),
-        _param_el(
-            x=300,
-            y=124,
-            w=240,
-            label="OPC·扫描间隔(Int32)",
-            binding_kind="opcua",
-            opcua=nodes["int32"],
-        ),
-        _param_el(
-            x=40,
-            y=168,
+            y=148,
             w=500,
             label="SQL·批次名",
             binding_kind="sql",
-            sql=(
-                f"SELECT batch_name FROM `{DEMO_DB}`.`demo_batches` "
-                "WHERE batch_no = {{p0}} LIMIT 1"
-            ),
-            sql_params=[lit_batch],
+            sql=f"SELECT batch_name FROM `{DEMO_DB}`.`demo_batches` WHERE batch_no = {{{{p0}}}} LIMIT 1",
+            sql_params=[opc_str_batch],
             connection_id=cid,
             database=DEMO_DB,
             table="demo_batches",
@@ -387,9 +552,9 @@ async def create_binding_smoke_template(
         "id": _nid(),
         "type": "table",
         "x": 40,
-        "y": 220,
+        "y": 196,
         "w": 520,
-        "h": 160,
+        "h": 140,
         "text": "",
         "color": "#18181b",
         "bgColor": "#ffffff",
@@ -410,12 +575,12 @@ async def create_binding_smoke_template(
         "tableColBgColors": [],
         "tableCells": [
             [
-                _cell(text="项目", binding_kind="none"),
-                _cell(text="OPC UA", binding_kind="none"),
-                _cell(text="SQL", binding_kind="none"),
+                _cell(text="项目"),
+                _cell(text="OPC UA"),
+                _cell(text="SQL"),
             ],
             [
-                _cell(text="温度", binding_kind="none"),
+                _cell(text="温度"),
                 _cell(binding_kind="opcua", opcua=nodes["float"]),
                 _cell(
                     binding_kind="sql",
@@ -423,11 +588,11 @@ async def create_binding_smoke_template(
                         f"SELECT metric_value FROM `{DEMO_DB}`.`demo_metrics` "
                         "WHERE metric_name='temp' AND batch_no={{p0}} LIMIT 1"
                     ),
-                    sql_params=[lit_batch],
+                    sql_params=[opc_str_batch],
                 ),
             ],
             [
-                _cell(text="保护激活", binding_kind="none"),
+                _cell(text="保护激活"),
                 _cell(binding_kind="opcua", opcua=nodes["bool"]),
                 _cell(
                     binding_kind="sql",
@@ -435,11 +600,11 @@ async def create_binding_smoke_template(
                         f"SELECT status FROM `{DEMO_DB}`.`demo_batches` "
                         "WHERE batch_no={{p0}} LIMIT 1"
                     ),
-                    sql_params=[lit_batch],
+                    sql_params=[opc_str_batch],
                 ),
             ],
             [
-                _cell(text="平均温度", binding_kind="none"),
+                _cell(text="平均温度"),
                 _cell(binding_kind="opcua", opcua=nodes["float_avg"]),
                 _cell(
                     binding_kind="sql",
@@ -447,13 +612,13 @@ async def create_binding_smoke_template(
                         f"SELECT metric_value FROM `{DEMO_DB}`.`demo_metrics` "
                         "WHERE metric_name='pressure' AND batch_no={{p0}} LIMIT 1"
                     ),
-                    sql_params=[opc_or_lit],
+                    sql_params=[lit_batch],
                 ),
             ],
         ],
         "tableSqlFill": {
             "enabled": False,
-            "fillMode": "manual_sql",
+            "fillMode": "visual",
             "querySql": "",
             "params": [],
             "resultColumnNames": [],
@@ -472,13 +637,14 @@ async def create_binding_smoke_template(
         },
     }
 
-    fill_table = {
+    h_fill = _visual_horizontal_fill(cid, eng, nodes)
+    horizontal_fill_table = {
         "id": _nid(),
         "type": "table",
         "x": 40,
-        "y": 400,
+        "y": 352,
         "w": 520,
-        "h": 200,
+        "h": 168,
         "text": "",
         "color": "#18181b",
         "bgColor": "#ffffff",
@@ -498,64 +664,65 @@ async def create_binding_smoke_template(
         "tableColWidthsPx": [130, 120, 80, 190],
         "tableColBgColors": [],
         "tableCells": [
-            [
-                _cell(text="metric_name"),
-                _cell(text="metric_value"),
-                _cell(text="unit"),
-                _cell(text="recorded_at"),
-            ],
+            [_cell(text="metric_name"), _cell(text="metric_value"), _cell(text="unit"), _cell(text="recorded_at")],
             [_cell(), _cell(), _cell(), _cell()],
             [_cell(), _cell(), _cell(), _cell()],
             [_cell(), _cell(), _cell(), _cell()],
             [_cell(), _cell(), _cell(), _cell()],
         ],
-        "tableSqlFill": {
-            "enabled": True,
-            "fillMode": "manual_sql",
-            "querySql": (
-                f"SELECT metric_name, metric_value, unit, recorded_at "
-                f"FROM `{DEMO_DB}`.`demo_metrics` "
-                "WHERE batch_no = {{p0}} ORDER BY id LIMIT 50"
-            ),
-            "params": [lit_batch, {**lit_batch}],
-            "resultColumnNames": ["metric_name", "metric_value", "unit", "recorded_at"],
-            "repeatHeaderOnPageBreak": True,
-            "splitReportsOnMaxRows": False,
-            "allowWidgetsBelowSqlFillTable": True,
-            "maxRows": 2000,
-            "visualSource": {
-                "connectionId": cid,
-                "database": DEMO_DB,
-                "table": "demo_metrics",
-                "engine": eng,
-                "columns": ["metric_name", "metric_value", "unit", "recorded_at"],
-                "tableSource": "manual",
-                "tableOpcNodeId": "",
-            },
-            "visualFilters": [],
-            "mongoQuery": None,
-            "layoutMode": "horizontal",
-            "columnRoles": ["field", "field", "field", "field"],
-            "sequencePageMode": "continuous",
-            "verticalMultiRecordMode": "continue",
-            "verticalFieldLabels": [],
-        },
+        "tableSqlFill": h_fill,
+    }
+
+    v_fill = _visual_vertical_fill(cid, eng, nodes)
+    # 纵表：表头 + 3 字段槽
+    vertical_fill_table = {
+        "id": _nid(),
+        "type": "table",
+        "x": 40,
+        "y": 540,
+        "w": 320,
+        "h": 140,
+        "text": "",
+        "color": "#18181b",
+        "bgColor": "#ffffff",
+        "fontSize": 12,
+        "fontFamily": "",
+        "zIndex": 1,
+        "showBorder": True,
+        "alignX": "start",
+        "alignY": "center",
+        "bindingKind": "none",
+        "opcuaNodeId": "",
+        "sqlText": "",
+        "sqlParams": [],
+        "tableRows": 4,
+        "tableCols": 2,
+        "tableRowHeightPx": 28,
+        "tableColWidthsPx": [120, 180],
+        "tableColBgColors": [],
+        "tableCells": [
+            [_cell(text="名称"), _cell(text="值")],
+            [_cell(text="指标名"), _cell()],
+            [_cell(text="数值"), _cell()],
+            [_cell(text="单位"), _cell()],
+        ],
+        "tableSqlFill": v_fill,
     }
 
     note = {
         "id": _nid(),
         "type": "text",
         "x": 40,
-        "y": 620,
+        "y": 700,
         "w": 520,
-        "h": 48,
+        "h": 40,
         "text": (
-            f"数据源：DB={conn.get('name')} / `{DEMO_DB}`；"
-            f"OPC={opc.get('name')}；演示批次={DEMO_BATCH_NO}"
+            f"DB={conn.get('name')}/{DEMO_DB}；OPC={opc.get('name')}；"
+            f"横表/纵表均为可视化 SQL，筛选 batch_no←OPC（兜底 {DEMO_BATCH_NO}）"
         ),
         "color": "#64748b",
         "bgColor": "transparent",
-        "fontSize": 11,
+        "fontSize": 10,
         "fontFamily": "",
         "zIndex": 1,
         "showBorder": False,
@@ -568,12 +735,41 @@ async def create_binding_smoke_template(
         "sqlParams": [],
     }
 
-    body = [title, *params, mixed_table, fill_table, note]
-    snap = LayoutSnapshot().model_dump()
+    body = [title, *params, mixed_table, horizontal_fill_table, vertical_fill_table, note]
+
+    # 页眉 / 页脚（需 headerBandMm / footerBandMm > 0）
+    header_elements = [
+        _zone_text(x=12, y=6, w=220, h=20, text="Report Editor · Binding Smoke", font_size=12),
+        _zone_text(
+            x=240,
+            y=6,
+            w=160,
+            h=20,
+            text="OPC·温度",
+            font_size=11,
+            binding_kind="opcua",
+            opcua=nodes["float"],
+        ),
+        _zone_date(x=420, y=6),
+    ]
+    footer_elements = [
+        _zone_text(x=12, y=4, w=280, h=18, text="测试模版 · 请勿用于生产结批", font_size=10),
+        _zone_page_number(x=460, y=4),
+    ]
+
+    snap = {
+        "marginTopMm": 12,
+        "marginRightMm": 12,
+        "marginBottomMm": 12,
+        "marginLeftMm": 12,
+        "headerBandMm": 22,
+        "footerBandMm": 18,
+    }
+    tpl_id = existing_id or str(uuid.uuid4())
     raw = {
         "schemaVersion": 4,
-        "id": str(uuid.uuid4()),
-        "name": (name or "").strip() or "绑定冒烟测试（OPC+SQL）",
+        "id": tpl_id,
+        "name": tpl_name,
         "updatedAt": _now_iso(),
         "paperKind": "A4",
         "orientation": "portrait",
@@ -582,10 +778,10 @@ async def create_binding_smoke_template(
         "backLayoutSnapshot": snap,
         "elements": body,
         "bodyPages": [body],
-        "headerText": "Report Editor · Binding Smoke",
-        "footerText": "测试模版 · 请勿用于生产结批",
-        "headerElements": [],
-        "footerElements": [],
+        "headerText": "",
+        "footerText": "",
+        "headerElements": header_elements,
+        "footerElements": footer_elements,
         "coverElements": [],
         "backElements": [],
         "coverHeaderElements": [],
@@ -598,7 +794,6 @@ async def create_binding_smoke_template(
     tpl = parse_report_template(raw)
     template_store.save_template(tpl)
 
-    # 偏好：记住本次连接，便于预览取数
     cfg = _cfg()
     prefs = dict(cfg.get("app_preferences") or {})
     prefs["last_connection_id"] = cid
@@ -606,10 +801,13 @@ async def create_binding_smoke_template(
     cfg["app_preferences"] = prefs
     config_store.save_config(CONFIG_FILE, cfg)
 
+    ai_asset_ops.mark_ui_reload(assets=True, datasource=True, reason="create_binding_smoke_template")
+
     return {
         "ok": True,
         "template_id": tpl.id,
         "name": tpl.name,
+        "replaced_existing": bool(existing_id),
         "connection_id": cid,
         "database": DEMO_DB,
         "opc_server_id": opc.get("id"),
@@ -618,9 +816,16 @@ async def create_binding_smoke_template(
         "schema": schema_info,
         "summary": {
             "parameters": 5,
-            "tables": 2,
+            "tables": 3,
             "mixed_binding_table": True,
-            "sql_fill_table": True,
+            "visual_horizontal_fill": True,
+            "visual_vertical_fill": True,
+            "header_footer": True,
+            "opc_filter": True,
         },
-        "message": f"已创建模版「{tpl.name}」，可在模版管理中打开预览。",
+        "ui_reload": True,
+        "message": (
+            f"已{'更新' if existing_id else '创建'}模版「{tpl.name}」"
+            "（页眉页脚 + 横/纵可视化 SQL，筛选走 OPC）。前端将自动刷新列表。"
+        ),
     }

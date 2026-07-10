@@ -232,6 +232,9 @@ async function onSend() {
     })
     const reply = extractAssistantText(data) || '（无文本回复）'
     messages.value = [...messages.value, { role: 'assistant', content: reply }]
+    // AI 工具可能已新建/改模版或数据源：立即拉取 mirror 触发列表 reload
+    const { syncPendingClientPrefsFromBackend } = await import('@/lib/client-prefs-mirror')
+    await syncPendingClientPrefsFromBackend()
   } catch (e: unknown) {
     errorMsg.value = e instanceof Error ? e.message : String(e)
   } finally {

@@ -433,8 +433,9 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "function": {
             "name": "create_binding_smoke_template",
             "description": (
-                "创建含参数与表格的绑定冒烟测试模版：OPC UA（Boolean/Float/UInt16/Int32）"
-                "与 SQL 单元格绑定，以及一张 SQL 整表填充表。默认顺带确保用户演示库。"
+                "创建/覆盖绑定冒烟模版：页眉页脚、OPC/SQL 参数与混合单元格表、"
+                "可视化 SQL 横表与纵表填充（筛选 batch_no 绑定 OPC，literalFallback 兜底）。"
+                "默认顺带确保用户演示库，并标记前端模版列表 reload。"
             ),
             "parameters": {
                 "type": "object",

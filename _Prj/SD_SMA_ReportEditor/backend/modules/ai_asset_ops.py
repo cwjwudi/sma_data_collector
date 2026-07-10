@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 import copy
+import json
 import uuid
 from datetime import datetime, timezone
 from typing import Any
 
+from core.settings import DATA_DIR
 from modules import ai_pending_prompts, layout_preset_store, template_store
 from schemas.layout_preset import LayoutPreset
 from schemas.report_template import LayoutSnapshot, ReportTemplate, parse_report_template, template_to_jsonable
@@ -34,6 +36,7 @@ def copy_template(source_id: str, new_name: str) -> dict[str, Any]:
     dup["updatedAt"] = _now_iso()
     parsed = parse_report_template(dup)
     template_store.save_template(parsed)
+    mark_ui_reload(assets=True, reason="copy_template")
     return {"ok": True, "template_id": parsed.id, "name": parsed.name}
 
 
@@ -51,7 +54,32 @@ def copy_layout_preset(source_id: str, new_name: str) -> dict[str, Any]:
     dup["updatedAt"] = _now_iso()
     preset = LayoutPreset.model_validate(dup)
     layout_preset_store.save_preset(preset)
+    mark_ui_reload(assets=True, reason="copy_layout_preset")
     return {"ok": True, "layout_id": preset.id, "name": preset.name}
+
+
+def mark_ui_reload(*, assets: bool = False, datasource: bool = False, reason: str = "") -> None:
+    """写入 client_prefs 镜像，供前端轮询后主动 reload 模版/数据源列表。"""
+    path = DATA_DIR / "client_prefs_mirror.json"
+    data: dict[str, Any] = {}
+    if path.is_file():
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(raw, dict):
+                data = raw
+        except (OSError, json.JSONDecodeError):
+            data = {}
+    data["pending_apply"] = True
+    reload = data.get("ui_reload") if isinstance(data.get("ui_reload"), dict) else {}
+    if assets:
+        reload["assets"] = True
+    if datasource:
+        reload["datasource"] = True
+    if reason:
+        reload["reason"] = reason
+    data["ui_reload"] = reload
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def create_blank_template(name: str) -> dict[str, Any]:
@@ -66,6 +94,7 @@ def create_blank_template(name: str) -> dict[str, Any]:
         backLayoutSnapshot=LayoutSnapshot.model_validate(snap),
     )
     template_store.save_template(tpl)
+    mark_ui_reload(assets=True, reason="create_blank_template")
     return {"ok": True, "template_id": tpl.id, "name": tpl.name}
 
 
@@ -76,6 +105,7 @@ def create_blank_layout(name: str) -> dict[str, Any]:
         updatedAt=_now_iso(),
     )
     layout_preset_store.save_preset(preset)
+    mark_ui_reload(assets=True, reason="create_blank_layout")
     return {"ok": True, "layout_id": preset.id, "name": preset.name}
 
 
@@ -117,6 +147,7 @@ def apply_delete_template(prompt_id: str, item: dict[str, Any]) -> dict[str, Any
     tid = str(item.get("connection_id") or "")
     if not template_store.delete_template(tid):
         return {"ok": False, "error": "模版不存在或已删除"}
+    mark_ui_reload(assets=True, reason="delete_template")
     ai_pending_prompts.complete_prompt(prompt_id, result={"ok": True, "deleted": tid})
     return {"ok": True, "deleted": tid, "kind": "template"}
 
@@ -127,5 +158,6 @@ def apply_delete_layout(prompt_id: str, item: dict[str, Any]) -> dict[str, Any]:
     lid = str(item.get("connection_id") or "")
     if not layout_preset_store.delete_preset(lid):
         return {"ok": False, "error": "版式不存在或已删除"}
+    mark_ui_reload(assets=True, reason="delete_layout")
     ai_pending_prompts.complete_prompt(prompt_id, result={"ok": True, "deleted": lid})
     return {"ok": True, "deleted": lid, "kind": "layout"}

@@ -4,7 +4,7 @@ import { loadLayoutDisplayOrder, saveLayoutDisplayOrderMap } from '@/lib/layout-
 import { loadReportExportPrefs } from '@/lib/report-export-prefs'
 import { loadReportGeneratorPrefs, saveReportGeneratorPrefs } from '@/lib/report-generator-prefs'
 import { loadTemplateDisplayOrder, saveTemplateDisplayOrder } from '@/lib/template-display-order'
-import { notifyAssetsChanged } from '@/lib/datasource-sync-events'
+import { notifyAssetsChanged, notifyDatasourceChanged } from '@/lib/datasource-sync-events'
 
 async function buildExportHistorySummary(): Promise<Record<string, unknown> | null> {
   try {
@@ -41,12 +41,13 @@ export async function syncPendingClientPrefsFromBackend(): Promise<void> {
       report_export?: Record<string, unknown>
       template_display_order?: string[]
       layout_display_order?: Record<string, string[]>
+      ui_reload?: { assets?: boolean; datasource?: boolean; reason?: string }
     }
     if (data?.pending_apply) {
       applyPendingMirrorFromBackend(data)
       await apiFetch('/settings/client_prefs/mirror', {
         method: 'POST',
-        body: { ...(await buildMirrorBody()), pending_apply: false },
+        body: { ...(await buildMirrorBody()), pending_apply: false, ui_reload: {} },
       })
     }
   } catch {
@@ -87,6 +88,7 @@ export function applyPendingMirrorFromBackend(data: {
   template_display_order?: string[]
   layout_display_order?: Record<string, string[]>
   pending_apply?: boolean
+  ui_reload?: { assets?: boolean; datasource?: boolean; reason?: string }
 }): void {
   if (!data?.pending_apply) return
   try {
@@ -115,6 +117,13 @@ export function applyPendingMirrorFromBackend(data: {
     if (data.layout_display_order && typeof data.layout_display_order === 'object') {
       saveLayoutDisplayOrderMap(data.layout_display_order as Parameters<typeof saveLayoutDisplayOrderMap>[0])
       notifyAssetsChanged('layout_order')
+    }
+    const reload = data.ui_reload
+    if (reload?.assets) {
+      notifyAssetsChanged(reload.reason || 'ui_reload')
+    }
+    if (reload?.datasource) {
+      notifyDatasourceChanged('all', reload.reason || 'ui_reload')
     }
   } catch {
     /* ignore */

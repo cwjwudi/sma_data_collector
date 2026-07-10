@@ -50,7 +50,7 @@ TOOL_META: dict[str, dict[str, Any]] = {
     "create_binding_smoke_template": {
         "category": "assets",
         "title_zh": "创建绑定冒烟模版",
-        "description_zh": "含参数/表格的 OPC+SQL 绑定测试模版（可顺带建演示库）",
+        "description_zh": "页眉页脚+参数/混合表+可视化横/纵表（OPC 筛选），可顺带建演示库并触发列表 reload",
         "risk": "write",
     },
     "delete_template": {"category": "assets", "title_zh": "删除模版", "description_zh": "需 UI 确认后删除", "risk": "confirm"},
