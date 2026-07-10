@@ -1,6 +1,6 @@
 {
   "version": "0.2.29",
-  "releasedAt": "2026-07-10T06:48:13.825Z",
+  "releasedAt": "2026-07-10T07:30:03.737Z",
   "notes": "Report Editor 0.2.29\n\n- 绑定 REAL/浮点可配置小数位数（参数、单元格、数据库填充）\n- 留空不强制；0–10 位按 toFixed 显示",
   "platforms": {
     "win32-x64": {
@@ -10,8 +10,8 @@
     },
     "darwin-arm64": {
       "url": "Report Editor-0.2.29-arm64.dmg",
-      "sha256": "",
-      "size": 0
+      "sha256": "5438482f37786f63cb6270fd07c6fe43d5625ab4bc2c1d019aeae634bdccdc16",
+      "size": 180077444
     }
   }
 }

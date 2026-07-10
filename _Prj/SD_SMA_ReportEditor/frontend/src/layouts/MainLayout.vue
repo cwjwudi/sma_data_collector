@@ -31,6 +31,7 @@
             :to="item.path"
             :class="['nav-item', { 'nav-item--active': navActive(item.path) }]"
             :title="sidebarCollapsed ? item.label : undefined"
+            @click="onNavClick($event, item)"
           >
             <span class="nav-icon-wrap">
               <span class="nav-icon">{{ item.icon }}</span>
@@ -53,6 +54,18 @@
         <SidebarAppUpdateBar :collapsed="sidebarCollapsed" />
       </aside>
       <main class="content">
+        <div
+          v-if="routeTransitionPending"
+          class="route-loading"
+          role="status"
+          aria-live="polite"
+          aria-busy="true"
+        >
+          <div class="route-loading__bar" aria-hidden="true">
+            <div class="route-loading__indeterminate" />
+          </div>
+          <p class="route-loading__text">{{ routeLoadingLabel }}</p>
+        </div>
         <div class="content-scroll">
           <router-view v-slot="{ Component }">
             <keep-alive
@@ -81,8 +94,8 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, provide, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { ref, nextTick, onMounted, onUnmounted, provide, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import SetupWizard from '@/features/onboarding/SetupWizard.vue'
 import AppUpdatePromptDialog from '@/features/settings/app-update/AppUpdatePromptDialog.vue'
 import SidebarAppUpdateBar from '@/features/settings/app-update/SidebarAppUpdateBar.vue'
@@ -116,10 +129,84 @@ import { loadSidebarCollapsed, saveSidebarCollapsed } from '@/lib/sidebar-layout
 import { prefetchCoreCatalog } from '@/lib/prefetch-core'
 
 const route = useRoute()
+const router = useRouter()
 
 const setupWizardVisible = ref(false)
 const appVersion = ref('')
 const sidebarCollapsed = ref(loadSidebarCollapsed())
+/** 侧栏切换路由时的全局加载提示（先绘制再跳转，避免「点了没反应」） */
+const routeTransitionPending = ref(false)
+const routeLoadingLabel = ref('正在加载页面…')
+
+let routeShowTimer = null
+let routeHideTimer = null
+let removeBeforeEach = null
+let removeAfterEach = null
+let removeOnError = null
+
+function clearRouteLoadingTimers() {
+  if (routeShowTimer != null) {
+    window.clearTimeout(routeShowTimer)
+    routeShowTimer = null
+  }
+  if (routeHideTimer != null) {
+    window.clearTimeout(routeHideTimer)
+    routeHideTimer = null
+  }
+}
+
+function labelForRoutePath(path) {
+  if (path.startsWith('/datasource')) return '正在打开数据源配置…'
+  if (path.startsWith('/editor')) return '正在打开模版编辑器…'
+  if (path.startsWith('/templates')) return '正在打开模板管理…'
+  if (path.startsWith('/layouts')) return '正在打开版式与页眉页脚…'
+  if (path.startsWith('/signatures')) return '正在打开签名库…'
+  if (path.startsWith('/generate')) return '正在打开生成报表…'
+  if (path.startsWith('/history')) return '正在打开历史报表…'
+  if (path.startsWith('/audit')) return '正在打开操作审计…'
+  if (path.startsWith('/settings')) return '正在打开设置…'
+  if (path === '/' || path === '') return '正在打开仪表盘…'
+  return '正在加载页面…'
+}
+
+function beginRouteLoading(path, { immediate = false } = {}) {
+  clearRouteLoadingTimers()
+  routeLoadingLabel.value = labelForRoutePath(path)
+  if (immediate || path.startsWith('/datasource') || path.startsWith('/editor')) {
+    routeTransitionPending.value = true
+    return
+  }
+  routeShowTimer = window.setTimeout(() => {
+    routeTransitionPending.value = true
+    routeShowTimer = null
+  }, 120)
+}
+
+function endRouteLoading() {
+  clearRouteLoadingTimers()
+  routeHideTimer = window.setTimeout(() => {
+    routeTransitionPending.value = false
+    routeHideTimer = null
+  }, 60)
+}
+
+/** 先让加载条完成一帧绘制，再执行路由跳转，减轻大 chunk 解析时的「假死」感 */
+async function onNavClick(e, item) {
+  const targetPath = item.path
+  if (navActive(targetPath) && route.path === targetPath) return
+  e.preventDefault()
+  beginRouteLoading(targetPath, { immediate: true })
+  await nextTick()
+  await new Promise((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(resolve))
+  })
+  try {
+    await router.push(targetPath)
+  } catch (err) {
+    routeTransitionPending.value = false
+    throw err
+  }
+}
 
 function toggleSidebarCollapsed() {
   sidebarCollapsed.value = !sidebarCollapsed.value
@@ -190,6 +277,17 @@ function scheduleAutoUpdateCheck() {
 }
 
 onMounted(() => {
+  removeBeforeEach = router.beforeEach((to, from) => {
+    if (to.path === from.path) return
+    beginRouteLoading(to.path)
+  })
+  removeAfterEach = router.afterEach(() => {
+    endRouteLoading()
+  })
+  removeOnError = router.onError(() => {
+    clearRouteLoadingTimers()
+    routeTransitionPending.value = false
+  })
   void loadAppVersion()
   void auditAppVersionChangeOnce()
   initAppUpdateListeners()
@@ -214,6 +312,10 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  clearRouteLoadingTimers()
+  removeBeforeEach?.()
+  removeAfterEach?.()
+  removeOnError?.()
   stopNavDbHealthPolling()
   disposeReportAutoExportTrigger()
   disposePlcHeartbeat()
@@ -453,7 +555,55 @@ const navItems = [
   min-width: 0;
   padding: 32px;
   overflow: hidden;
+  position: relative;
 }
+
+.route-loading {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 0 8px;
+}
+
+.route-loading__bar {
+  height: 3px;
+  width: 100%;
+  overflow: hidden;
+  background: rgba(99, 102, 241, 0.12);
+}
+
+.route-loading__indeterminate {
+  height: 100%;
+  width: 40%;
+  background: linear-gradient(90deg, #6366f1, #818cf8, #6366f1);
+  border-radius: 0 2px 2px 0;
+  animation: route-loading-slide 0.9s ease-in-out infinite;
+}
+
+.route-loading__text {
+  margin: 0;
+  padding: 0 4px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #4f46e5;
+  line-height: 1.3;
+}
+
+@keyframes route-loading-slide {
+  0% {
+    transform: translateX(-30%);
+  }
+  100% {
+    transform: translateX(280%);
+  }
+}
+
 /* 仅内层滚动：padding 留在外层；子项横向拉满并与「含 padding 的 main」可视宽度对齐 */
 .content-scroll {
   flex: 1;

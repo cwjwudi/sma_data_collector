@@ -29,12 +29,35 @@
         </span>
       </button>
     </div>
-    <div v-show="tab === 'db'" class="page-tab-body">
-      <DatabaseWorkbench ref="dbWorkbenchRef" @health-summary="onDbHealthSummary" />
+
+    <div class="page-tab-stage">
+      <div
+        v-if="pageBooting || panelChunkLoading"
+        class="page-boot"
+        role="status"
+        aria-live="polite"
+        aria-busy="true"
+      >
+        <div class="page-boot__spinner" aria-hidden="true" />
+        <p class="page-boot__text">{{ bootMessage }}</p>
+      </div>
+
+      <div v-show="tab === 'db' && dbMounted" class="page-tab-body">
+        <DatabaseWorkbench
+          v-if="dbMounted"
+          ref="dbWorkbenchRef"
+          @health-summary="onDbHealthSummary"
+        />
+      </div>
+      <div v-show="tab === 'opc' && opcMounted" class="page-tab-body">
+        <OpcUaPanel
+          v-if="opcMounted"
+          ref="opcPanelRef"
+          @health-summary="onOpcHealthSummary"
+        />
+      </div>
     </div>
-    <div v-show="tab === 'opc'" class="page-tab-body">
-      <OpcUaPanel ref="opcPanelRef" @health-summary="onOpcHealthSummary" />
-    </div>
+
     <ConnectionHealthFailuresDialog v-model="healthDetailOpen" />
   </div>
 </template>
@@ -42,10 +65,16 @@
 <script setup>
 defineOptions({ name: 'DataSourceConfig' })
 
-import { nextTick, ref, watch, onMounted, onUnmounted, onActivated } from 'vue'
+import {
+  defineAsyncComponent,
+  nextTick,
+  ref,
+  watch,
+  onMounted,
+  onUnmounted,
+  onActivated,
+} from 'vue'
 import { useRoute } from 'vue-router'
-import DatabaseWorkbench from '@/features/datasource/database-workbench/DatabaseWorkbench.vue'
-import OpcUaPanel from '@/features/datasource/opcua/OpcUaPanel.vue'
 import ConnectionTabLed from '@/features/datasource/ConnectionTabLed.vue'
 import ConnectionHealthFailuresDialog from '@/features/datasource/ConnectionHealthFailuresDialog.vue'
 import { dbConnectionHealth, opcHealthSummary } from '@/features/datasource/datasource-nav-health'
@@ -59,6 +88,12 @@ const route = useRoute()
 const tab = ref('db')
 const dbWorkbenchRef = ref(null)
 const opcPanelRef = ref(null)
+/** 首次只挂载当前 Tab；切过一次后保留，避免反复销毁重建 */
+const dbMounted = ref(false)
+const opcMounted = ref(false)
+const pageBooting = ref(true)
+const panelChunkLoading = ref(true)
+const bootMessage = ref('正在加载数据源工作台…')
 
 const dbHealth = ref({ ...dbConnectionHealth.value })
 const opcHealth = ref({ ...opcHealthSummary.value })
@@ -66,6 +101,26 @@ const healthDetailOpen = ref(false)
 
 let healthPollTimer = null
 let probePrefs = { enabled: false, intervalSec: 30 }
+let bootWatchTimer = null
+let bootSafetyTimer = null
+
+/** 拆包：先渲染本页壳与加载提示，再异步加载重面板，避免侧栏点击后主线程长时间无反馈 */
+const DatabaseWorkbench = defineAsyncComponent({
+  loader: () => import('@/features/datasource/database-workbench/DatabaseWorkbench.vue'),
+  delay: 0,
+  onError() {
+    panelChunkLoading.value = false
+    bootMessage.value = '数据库工作台加载失败，请刷新重试'
+  },
+})
+const OpcUaPanel = defineAsyncComponent({
+  loader: () => import('@/features/datasource/opcua/OpcUaPanel.vue'),
+  delay: 0,
+  onError() {
+    panelChunkLoading.value = false
+    bootMessage.value = 'OPC UA 面板加载失败，请刷新重试'
+  },
+})
 
 function aggregateHealthState(summary) {
   if (!summary?.total) return 'unknown'
@@ -102,7 +157,7 @@ function stopHealthPolling() {
 
 function startHealthPolling() {
   stopHealthPolling()
-  probeAllDataSourceHealth()
+  // 子面板挂载时会自行探活；此处只按偏好做定时轮询，避免进入页时重复探测叠压
   if (!probePrefs.enabled) return
   healthPollTimer = window.setInterval(probeAllDataSourceHealth, connectionProbeIntervalMs(probePrefs))
 }
@@ -132,10 +187,103 @@ function syncTabFromRoute() {
   else if (s === 'db' || s === '' || !s) tab.value = 'db'
 }
 
+function ensureActivePanelMounted() {
+  if (tab.value === 'opc') {
+    if (!opcMounted.value) {
+      panelChunkLoading.value = true
+      bootMessage.value = '正在加载 OPC UA 面板…'
+      opcMounted.value = true
+    }
+  } else if (!dbMounted.value) {
+    panelChunkLoading.value = true
+    bootMessage.value = '正在加载数据库工作台…'
+    dbMounted.value = true
+  }
+}
+
+function clearBootTimers() {
+  if (bootWatchTimer != null) {
+    window.clearInterval(bootWatchTimer)
+    bootWatchTimer = null
+  }
+  if (bootSafetyTimer != null) {
+    window.clearTimeout(bootSafetyTimer)
+    bootSafetyTimer = null
+  }
+}
+
+function finishPageBoot() {
+  pageBooting.value = false
+  panelChunkLoading.value = false
+  clearBootTimers()
+}
+
+/** 仅当「当前 Tab」对应面板已就绪时收起遮罩，避免切 Tab 时被另一侧误关 */
+function tryFinishBootForActiveTab() {
+  if (tab.value === 'opc') {
+    if (!opcPanelRef.value) return false
+    finishPageBoot()
+    return true
+  }
+  if (!dbWorkbenchRef.value) return false
+  if (dbWorkbenchRef.value.connectionsLoading === true) return false
+  finishPageBoot()
+  return true
+}
+
+function scheduleBootWatch() {
+  clearBootTimers()
+  bootWatchTimer = window.setInterval(() => {
+    tryFinishBootForActiveTab()
+  }, 80)
+  bootSafetyTimer = window.setTimeout(() => {
+    finishPageBoot()
+  }, 12000)
+}
+
+function onDbPanelReady() {
+  if (tab.value === 'db') {
+    panelChunkLoading.value = false
+    bootMessage.value = '正在加载已保存的连接…'
+  }
+  scheduleBootWatch()
+  nextTick(() => {
+    if (tab.value === 'db') tryFinishBootForActiveTab()
+  })
+}
+
+function onOpcPanelReady() {
+  if (tab.value !== 'opc') return
+  panelChunkLoading.value = false
+  bootMessage.value = '正在连接 OPC UA…'
+  window.setTimeout(() => {
+    tryFinishBootForActiveTab()
+  }, 280)
+}
+
+watch(dbWorkbenchRef, (v) => {
+  if (v) onDbPanelReady()
+})
+
+watch(opcPanelRef, (v) => {
+  if (v) onOpcPanelReady()
+})
+
+watch(tab, () => {
+  ensureActivePanelMounted()
+  if (tab.value === 'opc' && opcPanelRef.value) {
+    tryFinishBootForActiveTab()
+  } else if (tab.value === 'db' && dbWorkbenchRef.value) {
+    scheduleBootWatch()
+    tryFinishBootForActiveTab()
+  }
+})
+
 watch(() => route.query.tab, syncTabFromRoute, { flush: 'pre' })
 
 onMounted(() => {
   syncTabFromRoute()
+  ensureActivePanelMounted()
   void reloadProbePrefs()
   window.addEventListener('report-editor-config-imported', onConfigImported)
   window.addEventListener('report-editor-connection-probe-changed', onProbePrefsChanged)
@@ -144,10 +292,20 @@ onMounted(() => {
 /** 页面被 keep-alive 缓存后再次进入：不重新拉连接/架构，仅恢复 Tab */
 onActivated(() => {
   syncTabFromRoute()
+  ensureActivePanelMounted()
+  // 二次进入：目标 Tab 已挂载则不再挡全页；首次挂载的另一 Tab 仍走 panelChunkLoading
+  if (tab.value === 'db' && dbMounted.value && dbWorkbenchRef.value) {
+    pageBooting.value = false
+    panelChunkLoading.value = false
+  } else if (tab.value === 'opc' && opcMounted.value && opcPanelRef.value) {
+    pageBooting.value = false
+    panelChunkLoading.value = false
+  }
 })
 
 onUnmounted(() => {
   stopHealthPolling()
+  clearBootTimers()
   window.removeEventListener('report-editor-config-imported', onConfigImported)
   window.removeEventListener('report-editor-connection-probe-changed', onProbePrefsChanged)
 })
@@ -158,6 +316,13 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   min-height: 0;
+}
+.page-tab-stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 .page-tab-body {
   flex: 1;
@@ -216,5 +381,39 @@ onUnmounted(() => {
   cursor: pointer;
   text-decoration: underline;
   text-underline-offset: 2px;
+}
+
+.page-boot {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: rgba(248, 250, 252, 0.88);
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  backdrop-filter: blur(2px);
+}
+.page-boot__spinner {
+  width: 28px;
+  height: 28px;
+  border: 3px solid #c7d2fe;
+  border-top-color: #4f46e5;
+  border-radius: 50%;
+  animation: page-boot-spin 0.75s linear infinite;
+}
+.page-boot__text {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 500;
+  color: #4338ca;
+}
+@keyframes page-boot-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 </style>
