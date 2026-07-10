@@ -1,15 +1,15 @@
 {
-  "version": "0.2.31",
-  "releasedAt": "2026-07-10T08:26:47.197Z",
-  "notes": "Report Editor 0.2.31\n\n- 控件属性新增「边框」开关：可隐藏预览与导出 PDF 中的控件外框（默认仍显示，兼容旧模版）\n- 表格单元格换行时按内容抬高行高，避免文字被裁切\n- 导出失败审计写入绑定/表名/SQL 等详细诊断，便于排查结批问题",
+  "version": "0.2.32",
+  "releasedAt": "2026-07-10T08:41:47.831Z",
+  "notes": "Report Editor 0.2.32\n\n- 字体选择改为可滚动下拉，本机字体多时也能翻到底部\n- 表格 SQL 样例值建议同样可滚动\n- 结批遇缺表(1146)/填充失败时重读 OPC 表名并主动重试，降低 PLC 表名滞后导致的偶发失败",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor-Setup-0.2.31-x64.exe",
-      "sha256": "abfcb6a2ebf8e79b789098364378d3b8fd47ef644cf0b0edbea949dc8fc35d80",
-      "size": 144455743
+      "url": "Report Editor-Setup-0.2.32-x64.exe",
+      "sha256": "2c9e68460e062dac4b0f842bfaa45e1ed25318e923056f24db7e18980675bb41",
+      "size": 144459196
     },
     "darwin-arm64": {
-      "url": "Report Editor-0.2.31-arm64.dmg",
+      "url": "Report Editor-0.2.32-arm64.dmg",
       "sha256": "",
       "size": 0
     }
