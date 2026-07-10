@@ -970,7 +970,7 @@ function nodeStyle(el: LayoutZoneElement) {
     return {
       ...base,
       backgroundColor: zoneFillBackgroundCss(el.bgColor),
-      border: `1px solid ${bc}40`,
+      border: el.showBorder === false ? "none" : `1px solid ${bc}40`,
       borderRadius: "4px",
       padding: "2px 6px",
     };

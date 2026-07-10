@@ -40,6 +40,7 @@ export function templateTableFromZoneTable(z: LayoutZoneElement): TemplateElemen
   el.fontFamily = z.fontFamily;
   el.zIndex = z.zIndex;
   el.textAutoWrap = z.textAutoWrap;
+  el.showBorder = z.showBorder;
   el.tableRows = z.tableRows;
   el.tableCols = z.tableCols;
   el.tableRowHeightPx = z.tableRowHeightPx;
@@ -69,6 +70,7 @@ export function templateElementFromZoneElement(z: LayoutZoneElement): TemplateEl
   el.fontFamily = z.fontFamily;
   el.zIndex = z.zIndex;
   el.textAutoWrap = z.textAutoWrap;
+  el.showBorder = z.showBorder;
   el.alignX = z.alignX;
   el.alignY = z.alignY;
   el.dateFormat = z.dateFormat;

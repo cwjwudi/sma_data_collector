@@ -678,7 +678,7 @@ function canvasZoneElStyle(el: LayoutZoneElement): Record<string, string> {
     return {
       ...base,
       backgroundColor: zoneFillBackgroundCss(el.bgColor),
-      border: `1px solid ${bc}40`,
+      border: el.showBorder === false ? "none" : `1px solid ${bc}40`,
       borderRadius: "4px",
       padding: "2px 6px",
     };
@@ -869,7 +869,7 @@ function elCss(el: TemplateElement) {
   s.zIndex = selId.value === el.id ? String(400000 + z) : String(z);
   const wrap = getZoneTextWrapStyle(el);
   if (wrap) Object.assign(s, wrap);
-  if (el.type === "box") s.border = `1px solid ${el.color}40`;
+  if (el.type === "box") s.border = el.showBorder === false ? "none" : `1px solid ${el.color}40`;
   return s;
 }
 

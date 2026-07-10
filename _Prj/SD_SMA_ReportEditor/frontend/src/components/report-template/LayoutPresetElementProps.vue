@@ -33,6 +33,32 @@
         <p class="lpep-wrap-hint">「自动」表示在框宽内换行，无空格长串也会断行。</p>
       </div>
       <BoxZoneColorPicker v-if="el.type !== 'table'" :el="el" />
+
+      <div v-if="el.type !== 'table'" class="lpep-lab lpep-wrap-row">
+        <span class="lpep-wrap-title">边框</span>
+        <div class="lpep-seg" role="group" aria-label="控件外框显示">
+          <button
+            type="button"
+            class="lpep-seg-btn"
+            :class="{ 'lpep-seg-on': el.showBorder !== false }"
+            :aria-pressed="el.showBorder !== false"
+            @click="el.showBorder = true"
+          >
+            显示
+          </button>
+          <button
+            type="button"
+            class="lpep-seg-btn"
+            :class="{ 'lpep-seg-on': el.showBorder === false }"
+            :aria-pressed="el.showBorder === false"
+            @click="el.showBorder = false"
+          >
+            隐藏
+          </button>
+        </div>
+        <p class="lpep-wrap-hint">预览与导出 PDF 时是否绘制控件外框；编辑选中描边不受影响。</p>
+      </div>
+
       <template v-if="el.type === 'date'">
         <label class="lpep-lab"
           >日期格式

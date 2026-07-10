@@ -52,6 +52,7 @@ import {
   normalizeImageCaptionPosition,
   normalizeImageRotationDeg,
   normalizeTextAutoWrap,
+  normalizeShowBorder,
   normalizeZIndex,
   ensureTableColBgColors,
   hydrateTableColBgColors,
@@ -100,6 +101,11 @@ export interface TemplateElement {
   zIndex: number;
   /** 文本/色块/日期：在框宽内自动换行 */
   textAutoWrap: boolean;
+  /**
+   * 预览与导出是否绘制控件外框（编辑选中描边不受影响）。
+   * 默认 true；设为 false 可去掉 PDF/预览中的浅灰边框。
+   */
+  showBorder: boolean;
   /** 图片控件 / 签名笔迹 base64 data URL */
   imageSrc: string;
   bindingKind: BindingKind;
@@ -483,6 +489,7 @@ export function defaultElement(type: TemplateControlType): Omit<TemplateElement,
     fontFamily: "",
     zIndex: 0,
     textAutoWrap: false,
+    showBorder: true,
     imageSrc: "",
     alignX: "start" as LayoutAlignAxis,
     alignY: "center" as LayoutAlignAxis,
@@ -651,6 +658,7 @@ export function hydrateTemplateElement(raw: Partial<TemplateElement>): TemplateE
       typeof raw.fontFamily === "string" ? raw.fontFamily.trim().slice(0, 240) : d.fontFamily,
     zIndex: normalizeZIndex(raw.zIndex ?? d.zIndex),
     textAutoWrap: normalizeTextAutoWrap(raw.textAutoWrap, d.textAutoWrap),
+    showBorder: normalizeShowBorder(raw.showBorder, d.showBorder),
   };
   if (type === "table") {
     const missingCells = raw.tableCells == null || !Array.isArray(raw.tableCells);

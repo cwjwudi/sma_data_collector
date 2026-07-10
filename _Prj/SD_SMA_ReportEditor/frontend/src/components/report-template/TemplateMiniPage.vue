@@ -633,7 +633,7 @@ function miniTplElStyle(el: TemplateElement): Record<string, string> {
     width: `${el.w}px`,
     height: `${heightPx}px`,
     boxSizing: "border-box",
-    border: "1px solid rgb(24 24 27 / 0.15)",
+    border: el.showBorder === false ? "none" : "1px solid rgb(24 24 27 / 0.15)",
     borderRadius: "2px",
     overflow: "hidden",
     display: "flex",
@@ -662,7 +662,7 @@ function miniTplElStyle(el: TemplateElement): Record<string, string> {
     s.whiteSpace = "normal";
   } else if (el.type === "box") {
     const bc = typeof el.color === "string" ? el.color : "#18181b";
-    s.border = `1px solid ${bc}40`;
+    s.border = el.showBorder === false ? "none" : `1px solid ${bc}40`;
     s.borderRadius = "4px";
     s.padding = "2px 6px";
     const flex = flexJustifyAlignForAxes(el.alignX, el.alignY);

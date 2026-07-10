@@ -147,6 +147,7 @@ class LayoutZoneElement(BaseModel):
     pageNumberMode: PageNumberMode = "plain"
     zIndex: int = Field(default=0, ge=0, le=10000)
     textAutoWrap: bool = False
+    showBorder: bool = True
     bindingKind: BindingKind = "none"
     opcuaNodeId: str = ""
     sqlText: str = ""
@@ -180,6 +181,7 @@ class TemplateElement(BaseModel):
     fontFamily: str = ""
     zIndex: int = Field(default=0, ge=0, le=10000)
     textAutoWrap: bool = False
+    showBorder: bool = True
     imageSrc: str = ""
     alignX: AlignAxis = "start"
     alignY: AlignAxis = "center"

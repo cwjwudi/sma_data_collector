@@ -137,6 +137,11 @@ export interface LayoutZoneElement {
   zIndex: number;
   /** 文本/色块/日期：在框宽内自动换行（长串无空格时也会断行） */
   textAutoWrap: boolean;
+  /**
+   * 预览与导出是否绘制控件外框（编辑选中描边不受影响）。
+   * 默认 true；设为 false 可去掉浅灰边框。
+   */
+  showBorder: boolean;
   /** 数据参数（parameter）或预留；其它类型多为 none */
   bindingKind: ZoneBindingKind;
   opcuaNodeId: string;
@@ -241,6 +246,13 @@ export function zoneTableNodeShellBackgroundCss(): string {
 }
 
 export function normalizeTextAutoWrap(v: unknown, fallback: boolean): boolean {
+  if (v === true || v === "true" || v === 1 || v === "1") return true;
+  if (v === false || v === "false" || v === 0 || v === "0") return false;
+  return fallback;
+}
+
+/** 预览/导出控件外框：缺省 true（兼容旧模版） */
+export function normalizeShowBorder(v: unknown, fallback: boolean): boolean {
   if (v === true || v === "true" || v === 1 || v === "1") return true;
   if (v === false || v === "false" || v === 0 || v === "0") return false;
   return fallback;
@@ -510,6 +522,7 @@ export function defaultLayoutZoneElement(type: LayoutControlType): Omit<LayoutZo
     pageNumberMode: "plain" as PageNumberDisplayMode,
     zIndex: 0,
     textAutoWrap: false,
+    showBorder: true,
   };
   if (type === "text") {
     return { type: "text", x: 8, y: 8, w: 160, h: 28, ...baseText, ...axStart };
@@ -633,6 +646,7 @@ export function hydrateLayoutZoneElement(raw: Partial<LayoutZoneElement>): Layou
       typeof raw.fontFamily === "string" ? raw.fontFamily.trim().slice(0, 240) : d.fontFamily,
     zIndex: normalizeZIndex(raw.zIndex ?? d.zIndex),
     textAutoWrap: normalizeTextAutoWrap(raw.textAutoWrap, d.textAutoWrap),
+    showBorder: normalizeShowBorder(raw.showBorder, d.showBorder),
     bindingKind: normalizeZoneBindingKind(raw.bindingKind ?? d.bindingKind),
     opcuaNodeId: typeof raw.opcuaNodeId === "string" ? raw.opcuaNodeId : d.opcuaNodeId,
     sqlText: typeof raw.sqlText === "string" ? raw.sqlText : d.sqlText,
