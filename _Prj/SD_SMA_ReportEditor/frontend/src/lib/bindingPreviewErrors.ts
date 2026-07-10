@@ -119,6 +119,8 @@ export type ExportFailureDiagnostics = {
   phases?: Record<string, number>;
   templateId?: string;
   note?: string;
+  /** 导出窗口内绑定填充整轮重试次数 */
+  fillAttempts?: number;
 };
 
 export function attachExportDiagnosticsToErrorMessage(

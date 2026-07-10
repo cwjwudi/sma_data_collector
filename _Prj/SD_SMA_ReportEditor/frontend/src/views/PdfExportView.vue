@@ -31,6 +31,13 @@ import {
   type ExportFailureDiagnostics,
 } from "@/lib/bindingPreviewErrors";
 import { splitReportCountForPreview } from "@/lib/report-template/table-sql-fill-report-split";
+import {
+  BINDING_FILL_OUTER_RETRY_DELAYS_MS,
+  BINDING_FILL_OUTER_RETRY_MAX,
+  isRetryableBindingFillSummary,
+  retryDelayMs,
+  sleepMs,
+} from "@/lib/report-template/sql-fill-retry";
 
 const route = useRoute();
 const tmpl = ref<ReportTemplate | null>(null);
@@ -162,10 +169,24 @@ async function boot(): Promise<void> {
   injectPrintPageCss(t);
 
   const dataStartMs = Date.now();
-  await bindingPreview.refresh({ opc: true, sql: true, silent: true, fullSqlFill: true });
-  if (seq !== bootSeq) return;
+  let issueDetails = collectBindingPreviewIssueDetails({});
+  let fillAttempt = 0;
+  while (fillAttempt < BINDING_FILL_OUTER_RETRY_MAX) {
+    fillAttempt += 1;
+    if (fillAttempt > 1) {
+      await sleepMs(retryDelayMs(fillAttempt - 2, BINDING_FILL_OUTER_RETRY_DELAYS_MS));
+      if (seq !== bootSeq) return;
+    }
+    await bindingPreview.refresh({ opc: true, sql: true, silent: true, fullSqlFill: true });
+    if (seq !== bootSeq) return;
+    issueDetails = collectBindingPreviewIssueDetails(bindingPreview.values.value);
+    if (!issueDetails.length) break;
+    const summary = summarizeBindingPreviewIssueDetails(issueDetails);
+    if (fillAttempt >= BINDING_FILL_OUTER_RETRY_MAX || !isRetryableBindingFillSummary(summary)) {
+      break;
+    }
+  }
   const dataMs = Date.now() - dataStartMs;
-  const issueDetails = collectBindingPreviewIssueDetails(bindingPreview.values.value);
   if (issueDetails.length) {
     errText.value = humanizePdfExportError(summarizeBindingPreviewIssueDetails(issueDetails));
     const s = bindingPreview.lastStats.value;
@@ -175,6 +196,7 @@ async function boot(): Promise<void> {
       issues: issueDetails.slice(0, 40),
       stats: s ? { opcReads: s.opcReads, sqlQueries: s.sqlQueries, sqlRows: s.sqlRows } : undefined,
       templateId: id,
+      fillAttempts: fillAttempt,
     });
     return;
   }

@@ -20,6 +20,13 @@ import {
   exportFailureAuditDetail,
   parseExportFailureDiagnostics,
 } from "@/lib/bindingPreviewErrors";
+import {
+  BINDING_FILL_OUTER_RETRY_DELAYS_MS,
+  BINDING_FILL_OUTER_RETRY_MAX,
+  isRetryableBindingFillSummary,
+  retryDelayMs,
+  sleepMs,
+} from "@/lib/report-template/sql-fill-retry";
 import { runTemplateExportPreflight, type TemplateExportPreflightResult } from "@/lib/templateExportPreflight";
 import { showAppToast } from "@/composables/useAppToast";
 import { auditLog } from "@/lib/auditLog";
@@ -486,13 +493,31 @@ async function runAutoPdfExport(
     }
   });
 
-  let exportRes: Awaited<ReturnType<NonNullable<typeof api.runPdfExport>>>;
+  let exportRes: Awaited<ReturnType<NonNullable<typeof api.runPdfExport>>> | undefined;
   try {
-    exportRes = await api.runPdfExport({
-      templateId: tid,
-      filePath,
-      openAfter: false,
-    });
+    for (let attempt = 1; attempt <= BINDING_FILL_OUTER_RETRY_MAX; attempt++) {
+      if (attempt > 1) {
+        onStage?.(
+          `数据源取数未就绪，正在重试（${attempt}/${BINDING_FILL_OUTER_RETRY_MAX}）…`,
+          AUTO_EXPORT_STATUS.READING,
+        );
+        await sleepMs(retryDelayMs(attempt - 2, BINDING_FILL_OUTER_RETRY_DELAYS_MS));
+      }
+      try {
+        exportRes = await api.runPdfExport({
+          templateId: tid,
+          filePath,
+          openAfter: false,
+        });
+        break;
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        if (attempt >= BINDING_FILL_OUTER_RETRY_MAX || !isRetryableBindingFillSummary(msg)) {
+          throw e;
+        }
+      }
+    }
+    if (!exportRes) throw new Error("导出未返回结果");
   } finally {
     offProgress?.();
   }

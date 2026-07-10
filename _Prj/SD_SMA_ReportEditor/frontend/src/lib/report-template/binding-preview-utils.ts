@@ -35,6 +35,10 @@ export interface TableSqlFillDiagnostics {
   tableOpcReadError?: string;
   /** 实际下发的 SQL（截断） */
   sqlExecuted?: string;
+  /** 缺表/OPC 瞬时失败时的重试次数（含首次） */
+  retryAttempts?: number;
+  /** 重试过程中读到的表名序列（便于对照 PLC 是否滞后） */
+  retriedTables?: string[];
 }
 
 export type { NullDisplayMode };
