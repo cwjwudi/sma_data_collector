@@ -23,6 +23,7 @@ import {
   sqlResponseToPreviewRows,
   substituteSqlFillTableName,
 } from "@/lib/report-template/table-sql-fill-preview";
+import { isVerticalSqlFill } from "@/lib/report-template/table-sql-fill";
 import type {
   BindingPreviewRefreshOptions,
   BindingPreviewStats,
@@ -147,13 +148,16 @@ export function useReportBindingPreview(tmplRef: Ref<ReportTemplate | null>): Re
           try {
             const sql = await resolveScalarSqlTask(task);
             stats.sqlQueries += 1;
+            const body: Record<string, unknown> = {
+              connection_id: task.connectionId,
+              sql,
+              limit: 200,
+            };
+            // 可视化点选生成的标量 SQL 带有库名；连接未设默认库时必须传入，否则 MySQL 1046
+            if (task.database) body.database = task.database;
             const data = await apiFetch("/database/query/sql", {
               method: "POST",
-              body: {
-                connection_id: task.connectionId,
-                sql,
-                limit: 200,
-              },
+              body,
             });
             if (gen !== generation) return;
             stats.sqlRows += sqlResponseRowCount(data);
@@ -221,15 +225,23 @@ export function useReportBindingPreview(tmplRef: Ref<ReportTemplate | null>): Re
             });
             if (gen !== generation) return;
             stats.sqlRows += sqlResponseRowCount(data);
-            const grid = sqlResponseToPreviewRows(data, task.colCount);
-            task.expandRows(grid.length);
+            const mapCols =
+              task.fill && !isVerticalSqlFill(task.fill)
+                ? task.tableCols ?? task.colCount
+                : task.colCount;
+            const grid = sqlResponseToPreviewRows(data, mapCols, task.fill);
+            if (opts?.mutateTemplateRows !== false) {
+              task.expandRows(grid.length);
+            }
             out[task.key] = {
               text: `${grid.length}×${task.colCount}`,
               tableSqlFill: { dataRows: grid },
             };
           } catch (e) {
             const msg = e instanceof Error ? e.message : String(e);
-            task.expandRows(0);
+            if (opts?.mutateTemplateRows !== false) {
+              task.expandRows(0);
+            }
             out[task.key] = {
               text: `（填充）${msg}`,
               tableSqlFill: { dataRows: [], error: msg },

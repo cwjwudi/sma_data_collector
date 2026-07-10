@@ -22,6 +22,24 @@ let multiSelectModal = null;
 let groupConfigModal = null;
 const PAGE_STATE_KEY = "sd_sma_collector_web_state_v1";
 const ALLOWED_DATATYPES = ["bool", "int", "float", "string", "datetime"];
+const PARTITION_INTERVAL_YEAR_OPTIONS = [
+  { value: "0", label: "不分表" },
+  ...Array.from({ length: 10 }, (_, i) => {
+    const years = i + 1;
+    return { value: String(years), label: String(years) };
+  }),
+];
+
+function normalizePartitionIntervalYears(value, { forceNoPartition = false } = {}) {
+  if (forceNoPartition) {
+    return 0;
+  }
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 0 || parsed > 10) {
+    return 1;
+  }
+  return parsed;
+}
 
 function createDefaultConfig() {
   return {
@@ -539,7 +557,7 @@ function openBatchUpsertConfig(groupIndex) {
       currentConfig.groups[groupIndex].batch_upsert = { ...draft };
       if (draft.enabled) {
         currentConfig.groups[groupIndex].batch_insert_size = 1;
-        currentConfig.groups[groupIndex].partition_interval_years = 1;
+        currentConfig.groups[groupIndex].partition_interval_years = 0;
         currentConfig.groups[groupIndex].is_parallel = false;
       }
       return true;
@@ -904,16 +922,15 @@ function renderGroups() {
     const groupSelectedPointOptions = pointOptions.filter((opt) =>
       (item.data_points || []).includes(opt.value)
     );
-    currentConfig.groups[idx].partition_interval_years = Math.max(
-      1,
-      Number(currentConfig.groups[idx].partition_interval_years) || 1
-    );
     currentConfig.groups[idx].recreate_interval_days =
       Number(currentConfig.groups[idx].recreate_interval_days) || 1;
     const batchUpsertEnabled = !!(item.batch_upsert && item.batch_upsert.enabled);
+    currentConfig.groups[idx].partition_interval_years = normalizePartitionIntervalYears(
+      currentConfig.groups[idx].partition_interval_years,
+      { forceNoPartition: batchUpsertEnabled }
+    );
     if (batchUpsertEnabled) {
       currentConfig.groups[idx].batch_insert_size = 1;
-      currentConfig.groups[idx].partition_interval_years = 1;
       currentConfig.groups[idx].is_parallel = false;
     }
 
@@ -981,10 +998,14 @@ function renderGroups() {
     );
     card.appendChild(createRow([createHeaderCell("读后复位"), createHeaderCell("分表间隔年份"), createHeaderCell("批量写入"), createHeaderCell("并行触发")]));
 
-    const partitionYearsInput = createInput(
-      currentConfig.groups[idx].partition_interval_years || 1,
-      (v) => (currentConfig.groups[idx].partition_interval_years = Math.max(1, Number(v) || 1)),
-      "number"
+    const partitionYearsInput = createSelect(
+      PARTITION_INTERVAL_YEAR_OPTIONS,
+      String(currentConfig.groups[idx].partition_interval_years),
+      (v) => {
+        currentConfig.groups[idx].partition_interval_years = normalizePartitionIntervalYears(v, {
+          forceNoPartition: batchUpsertEnabled,
+        });
+      }
     );
     partitionYearsInput.disabled = batchUpsertEnabled;
 

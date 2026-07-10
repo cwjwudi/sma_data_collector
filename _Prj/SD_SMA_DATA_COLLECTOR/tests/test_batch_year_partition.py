@@ -33,7 +33,7 @@ class TestBatchYearPartition(unittest.IsolatedAsyncioTestCase):
         db_manager = Mock()
 
         def resolve_table_name(group_name=None, partition_time=None, fixed_table=False, partition_interval_years=1):
-            if fixed_table:
+            if fixed_table or int(partition_interval_years or 0) == 0:
                 return group_name
             interval = max(1, int(partition_interval_years or 1))
             year = partition_time.year
@@ -87,6 +87,18 @@ class TestBatchYearPartition(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             manager.get_current_table_name("BatchHeader", fixed_table=True),
             "BatchHeader",
+        )
+
+    def test_database_manager_zero_interval_has_no_year_suffix(self):
+        manager = DatabaseManager({"type": "sqlite", "name": ":memory:", "data_groups": ["SensorData"]})
+
+        self.assertEqual(
+            manager.get_current_table_name(
+                "SensorData",
+                partition_time=datetime(2026, 7, 9),
+                partition_interval_years=0,
+            ),
+            "SensorData",
         )
 
     def test_database_manager_ignores_legacy_partition_table_names(self):
@@ -212,6 +224,59 @@ class TestBatchYearPartition(unittest.IsolatedAsyncioTestCase):
         db_manager.get_current_table_name.assert_any_call("BatchHeader", fixed_table=True)
         inserted_tables = [call.args[0] for call in db_manager.execute_insert.call_args_list]
         self.assertEqual(inserted_tables, ["BatchHeader"])
+
+    async def test_zero_interval_detail_writes_without_batch_context(self):
+        processor, db_manager = self.make_processor()
+        processor.group_partition_interval_years["BatchData"] = 0
+        processor.ensured_tables.add("BatchData")
+        processor.initialize_tables_for_runtime()
+        self.assertIsNone(processor.current_batch_context)
+
+        await processor._process_group_data(
+            "BatchData",
+            [
+                collection_item(
+                    "BatchData",
+                    start_time=None,
+                    collection_time=datetime(2026, 7, 9, 14, 0, 0),
+                    value=9,
+                )
+            ],
+        )
+
+        inserted_tables = [call.args[0] for call in db_manager.execute_insert.call_args_list]
+        self.assertIn("BatchData", inserted_tables)
+        db_manager.get_current_table_name.assert_any_call(
+            "BatchData",
+            partition_interval_years=0,
+        )
+
+
+class TestEnsureTableColumns(unittest.TestCase):
+    def test_ensure_table_columns_adds_missing_columns(self):
+        manager = DatabaseManager({"type": "sqlite", "name": ":memory:"})
+        self.assertTrue(manager.connect())
+        self.assertTrue(
+            manager.create_data_table(
+                "主表",
+                {"rBP1": "DOUBLE", "strBatchCode": "VARCHAR(255)"},
+            )
+        )
+        self.assertTrue(
+            manager.ensure_table_columns(
+                "主表",
+                {
+                    "rBP1": "DOUBLE",
+                    "strBatchCode": "VARCHAR(255)",
+                    "dtBtachStartTime": "DATETIME",
+                    "dtBtachEndTime": "DATETIME",
+                },
+            )
+        )
+        columns = manager.get_table_column_names("主表")
+        self.assertIn("dtBtachStartTime", columns)
+        self.assertIn("dtBtachEndTime", columns)
+        manager.disconnect()
 
 
 if __name__ == "__main__":

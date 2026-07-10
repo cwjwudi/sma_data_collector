@@ -71,6 +71,14 @@ function humanizePdfExportError(raw, context) {
   if (/未配置|未绑定|请配置|请先/.test(text)) {
     return text
   }
+  if (/1046|no database selected/i.test(text)) {
+    return [
+      '导出前数据源检查未通过。',
+      text,
+      '可能原因：MySQL/MariaDB 连接未设置默认库，且标量 SQL（参数/单元格）查询未带上库名。',
+      '建议：在「数据源配置」为该连接填写默认数据库；或在模版里用「点选生成」重新选择连接与数据库后保存。',
+    ].join('\n')
+  }
   if (/绑定|数据源|连接.*失败|opc|sql/i.test(text)) {
     return [
       '导出前数据源检查未通过。',

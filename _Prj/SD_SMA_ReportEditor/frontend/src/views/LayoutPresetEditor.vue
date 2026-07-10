@@ -7,6 +7,53 @@
         <span class="muted-inline">{{ dimLabel }}</span>
       </div>
       <div class="bar-actions">
+        <button
+          type="button"
+          class="b"
+          title="撤销 (Ctrl+Z)"
+          :disabled="presetUndoStack.length === 0"
+          @click="undoPresetEdit"
+        >
+          撤销
+        </button>
+        <button
+          type="button"
+          class="b"
+          title="重做 (Ctrl+Y / Ctrl+Shift+Z)"
+          :disabled="presetRedoStack.length === 0"
+          @click="redoPresetEdit"
+        >
+          重做
+        </button>
+        <span class="bar-sep" aria-hidden="true" />
+        <button
+          type="button"
+          class="b"
+          title="复制选中控件（含全部属性）(Ctrl+C)"
+          :disabled="!selectedPresetEl"
+          @click="copySelectedPresetEl"
+        >
+          复制
+        </button>
+        <button
+          type="button"
+          class="b"
+          title="剪切选中控件 (Ctrl+X)"
+          :disabled="!selectedPresetEl"
+          @click="cutSelectedPresetEl"
+        >
+          剪切
+        </button>
+        <button
+          type="button"
+          class="b"
+          title="粘贴控件（保留属性配置）(Ctrl+V)"
+          :disabled="!canPasteLayout"
+          @click="pastePresetEl"
+        >
+          粘贴
+        </button>
+        <span class="bar-sep" aria-hidden="true" />
         <button type="button" class="b primary" :disabled="saving" @click="savePreset">
           {{ saving ? "保存中…" : "保存版式" }}
         </button>
@@ -98,6 +145,13 @@ import LayoutPresetElementProps from "@/components/report-template/LayoutPresetE
 import type { LayoutPreset } from "@/lib/report-template/layout-model";
 import { hydrateLayoutPreset } from "@/lib/report-template/layout-model";
 import type { LayoutControlType } from "@/lib/report-template/layout-zone-element";
+import {
+  copyLayoutZoneElementToClipboard,
+  eventTargetIsTypingField,
+  findLayoutElementZone,
+  hasLayoutElementClipboard,
+  pasteLayoutZoneElementIntoPreset,
+} from "@/lib/report-template/editor-element-clipboard";
 import { layoutPresetTableCellPickKey, type TemplateTableCellPick } from "@/lib/report-template/template-editor-context";
 import { PAPER_LABEL, type PaperKind } from "@/lib/report-template/paper";
 import {
@@ -191,6 +245,48 @@ function removeSelectedPresetEl() {
       return;
     }
   }
+}
+
+const clipboardTick = ref(0);
+const canPasteLayout = computed(() => {
+  void clipboardTick.value;
+  return hasLayoutElementClipboard();
+});
+
+function bumpClipboardUi() {
+  clipboardTick.value += 1;
+}
+
+function copySelectedPresetEl() {
+  const w = working.value;
+  const el = selectedPresetEl.value;
+  if (!w || !el) return;
+  const zone = findLayoutElementZone(w, el.id) || "body";
+  copyLayoutZoneElementToClipboard(el, zone);
+  bumpClipboardUi();
+  msg.value = "已复制控件（含属性配置）。";
+}
+
+function cutSelectedPresetEl() {
+  const w = working.value;
+  const el = selectedPresetEl.value;
+  if (!w || !el) return;
+  const zone = findLayoutElementZone(w, el.id) || "body";
+  copyLayoutZoneElementToClipboard(el, zone);
+  bumpClipboardUi();
+  removeSelectedPresetEl();
+  msg.value = "已剪切控件。";
+}
+
+function pastePresetEl() {
+  const w = working.value;
+  if (!w || !hasLayoutElementClipboard()) return;
+  const preferred = presetCanvasSelId.value ? findLayoutElementZone(w, presetCanvasSelId.value) : null;
+  const newId = pasteLayoutZoneElementIntoPreset(w, preferred);
+  bumpClipboardUi();
+  if (!newId) return;
+  presetCanvasSelId.value = newId;
+  msg.value = "已粘贴控件（属性已保留）。";
 }
 
 const mmFields = [
@@ -363,23 +459,13 @@ watch(
   },
 );
 
-function eventTargetIsTypingField(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false;
-  if (target.isContentEditable) return true;
-  if (target.closest('[contenteditable="true"]')) return true;
-  const tag = target.tagName;
-  return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
-}
-
 function onEditorWindowKeydown(ev: KeyboardEvent) {
-  if (!(ev.ctrlKey || ev.metaKey)) return;
-  const key = ev.key.toLowerCase();
-  if (key === "s") {
+  if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "s") {
     ev.preventDefault();
     void savePreset();
     return;
   }
-  if (key === "z") {
+  if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "z") {
     if (eventTargetIsTypingField(ev.target)) return;
     if (ev.shiftKey) {
       if (presetRedoStack.value.length === 0) return;
@@ -392,11 +478,39 @@ function onEditorWindowKeydown(ev: KeyboardEvent) {
     undoPresetEdit();
     return;
   }
-  if (key === "y") {
+  if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "y") {
     if (eventTargetIsTypingField(ev.target)) return;
     if (presetRedoStack.value.length === 0) return;
     ev.preventDefault();
     redoPresetEdit();
+    return;
+  }
+  if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "c") {
+    if (eventTargetIsTypingField(ev.target)) return;
+    if (!selectedPresetEl.value) return;
+    ev.preventDefault();
+    copySelectedPresetEl();
+    return;
+  }
+  if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "x") {
+    if (eventTargetIsTypingField(ev.target)) return;
+    if (!selectedPresetEl.value) return;
+    ev.preventDefault();
+    cutSelectedPresetEl();
+    return;
+  }
+  if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "v") {
+    if (eventTargetIsTypingField(ev.target)) return;
+    if (!hasLayoutElementClipboard()) return;
+    ev.preventDefault();
+    pastePresetEl();
+    return;
+  }
+  if (eventTargetIsTypingField(ev.target)) return;
+  if (ev.key === "Delete" || ev.key === "Backspace") {
+    if (!presetCanvasSelId.value) return;
+    ev.preventDefault();
+    removeSelectedPresetEl();
   }
 }
 
@@ -473,6 +587,12 @@ onUnmounted(() => window.removeEventListener("keydown", onEditorWindowKeydown));
   align-items: center;
   gap: 8px;
   flex-shrink: 0;
+}
+.bar-sep {
+  width: 1px;
+  height: 22px;
+  background: #e4e4e7;
+  margin: 0 2px;
 }
 .link {
   border: none;
@@ -613,6 +733,10 @@ onUnmounted(() => window.removeEventListener("keydown", onEditorWindowKeydown));
   background: #fff;
   cursor: pointer;
   font-size: 13px;
+}
+.b:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 .b.primary {
   background: #4f46e5;

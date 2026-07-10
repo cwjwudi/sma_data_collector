@@ -226,6 +226,13 @@
                 >
                   <option value="">不使用封面</option>
                   <option
+                    v-if="orphanBoundPresetOption(cache[r.id], 'cover')"
+                    :value="orphanBoundPresetOption(cache[r.id], 'cover').id"
+                    disabled
+                  >
+                    {{ orphanBoundPresetOption(cache[r.id], 'cover').label }}
+                  </option>
+                  <option
                   v-for="row in coverPresetRows"
                   :key="'pc-' + row.preset.id"
                   :value="row.preset.id"
@@ -254,6 +261,13 @@
                   @change="onApplyPreset(r.id, 'body', $event)"
                 >
                   <option value="">选用已建版式…</option>
+                  <option
+                    v-if="orphanBoundPresetOption(cache[r.id], 'body')"
+                    :value="orphanBoundPresetOption(cache[r.id], 'body').id"
+                    disabled
+                  >
+                    {{ orphanBoundPresetOption(cache[r.id], 'body').label }}
+                  </option>
                   <option
                   v-for="row in bodyPresetRows"
                   :key="'pb-' + row.preset.id"
@@ -296,6 +310,13 @@
                   @change="onApplyPreset(r.id, 'back', $event)"
                 >
                   <option value="">不使用封尾</option>
+                  <option
+                    v-if="orphanBoundPresetOption(cache[r.id], 'back')"
+                    :value="orphanBoundPresetOption(cache[r.id], 'back').id"
+                    disabled
+                  >
+                    {{ orphanBoundPresetOption(cache[r.id], 'back').label }}
+                  </option>
                   <option
                   v-for="row in backPresetRows"
                   :key="'pk-' + row.preset.id"
@@ -837,6 +858,28 @@ function boundPresetId(t, slot) {
   if (slot === "cover") return t.coverLayoutPresetId || "";
   if (slot === "body") return t.layoutPresetId || "";
   return t.backLayoutPresetId || "";
+}
+
+/**
+ * 模版绑定了版式 ID，但当前版式库中找不到对应条目（或用途不匹配）时，
+ * 下拉增加禁用项，避免误显示「不使用封面 / 选用已建版式…」。
+ * @param {import('@/lib/report-template/model').ReportTemplate} t
+ * @param {'cover'|'body'|'back'} slot
+ */
+function orphanBoundPresetOption(t, slot) {
+  const id = boundPresetId(t, slot);
+  if (!id) return null;
+  const expectedRole = slot === "body" ? "normal" : slot;
+  const hit = layoutPresetsAll.value.find((x) => x.id === id && x.pageRole === expectedRole);
+  if (hit) return null;
+  const short = id.length > 8 ? `${id.slice(0, 8)}…` : id;
+  const label =
+    slot === "cover"
+      ? `版式缺失（封面 ${short}）`
+      : slot === "back"
+        ? `版式缺失（封尾 ${short}）`
+        : `版式缺失（正文 ${short}）`;
+  return { id, label };
 }
 
 /** @param {string} templateId @param {'cover'|'body'|'back'} slot */

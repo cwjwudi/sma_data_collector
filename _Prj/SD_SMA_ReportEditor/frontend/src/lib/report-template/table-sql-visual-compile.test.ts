@@ -51,7 +51,7 @@ describe("compileVisualTableSql", () => {
     expect(fill.params[2].source).toBe("literal");
   });
 
-  it("uses NULL for empty visual output column slots", () => {
+  it("skips empty visual output column slots (blank) from SELECT", () => {
     const fill: TableSqlFillConfig = hydrateTableSqlFill({});
     fill.enabled = true;
     fill.fillMode = "visual";
@@ -62,10 +62,10 @@ describe("compileVisualTableSql", () => {
       engine: "mysql",
       columns: ["id", "", "name"],
     };
+    fill.columnRoles = ["field", "blank", "field"];
     expect(compileVisualTableSql(fill)).toBe(true);
-    expect(fill.querySql).toContain("NULL");
-    expect(fill.querySql).toContain("`id`");
-    expect(fill.querySql).toContain("`name`");
+    expect(fill.querySql).not.toContain("NULL");
+    expect(fill.querySql).toBe("SELECT `id`, `name` FROM `t_log`");
   });
 
   it("strips opcua node id from compiled flat param when binding source is literal", () => {
@@ -207,7 +207,26 @@ describe("compileVisualTableSql", () => {
     applyTableSqlFillOpcPick(fill, TABLE_SQL_FILL_TABLE_PICK_SLOT, "ns=2;s=TableName");
     expect(fill.visualSource?.tableSource).toBe("opcua");
     expect(fill.visualSource?.tableOpcNodeId).toBe("ns=2;s=TableName");
+    // 结构参考表不得被 OPC 节点选择覆盖
+    expect(fill.visualSource?.table).toBe("user");
     expect(fill.querySql).toContain("FROM {{table}}");
+  });
+
+  it("opcua table mode still requires structure table to compile", () => {
+    const fill: TableSqlFillConfig = hydrateTableSqlFill({});
+    fill.enabled = true;
+    fill.fillMode = "visual";
+    fill.visualSource = {
+      connectionId: "c1",
+      database: "db1",
+      table: "",
+      engine: "mysql",
+      columns: ["id"],
+      tableSource: "opcua",
+      tableOpcNodeId: "ns=2;s=TableName",
+    };
+    expect(compileVisualTableSql(fill)).toBe(false);
+    expect(fill.querySql).toBe("");
   });
 
   it("applyTableSqlFillOpcPick writes flat params in manual_sql mode", () => {

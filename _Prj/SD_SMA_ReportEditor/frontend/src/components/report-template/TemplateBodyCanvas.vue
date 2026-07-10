@@ -161,21 +161,45 @@
                           :key="'tc-' + el.id + '-' + ri + '-' + ci"
                           class="cv-table-cell"
                           :class="{ 'cv-table-cell--hot': isTableCellHot(el, ri, ci) }"
-                          :style="tplTableCellStyle(el, ri, ci)"
+                          :style="tplTableCellBoxStyle(el, ri, ci)"
                           @pointerdown="pickTableCell(el, ri, ci)"
                         >
                           <template v-if="isVisualSqlFillOutputPickerRow(el, ri)">
                             <select
                               class="cv-table-cell-ddl tbl-sql-ddl"
+                              :class="{ 'tbl-sql-ddl--warn': tplVisualSqlStructureMissing(el) }"
                               :value="tplVisualOutputSelectValue(el, ci)"
                               :disabled="interactionLocked"
+                              :title="tplVisualSqlColumnSelectTitle(el)"
                               @pointerdown.stop="pickTableCell(el, ri, ci)"
                               @change="onTplVisualOutputColumnChange(el, ci, $event)"
                             >
-                              <option value="">—</option>
+                              <option value="">{{ tplVisualSqlEmptyOptionLabel(el) }}</option>
+                              <option :value="'__sequence__'">＃ 序号列</option>
                               <option
                                 v-for="opt in tplVisualSqlColumnCatalog[el.id]"
                                 :key="'fld-' + el.id + '-' + ci + '-' + opt.name"
+                                :value="opt.name"
+                              >
+                                {{ opt.name }}
+                              </option>
+                            </select>
+                          </template>
+                          <template v-else-if="isVerticalSqlFillSlotPickerCell(el, ri, ci)">
+                            <select
+                              class="cv-table-cell-ddl tbl-sql-ddl"
+                              :class="{ 'tbl-sql-ddl--warn': tplVisualSqlStructureMissing(el) }"
+                              :value="tplVerticalSlotSelectValue(el, ri)"
+                              :disabled="interactionLocked"
+                              :title="tplVisualSqlColumnSelectTitle(el)"
+                              @pointerdown.stop="pickTableCell(el, ri, ci)"
+                              @change="onTplVerticalSlotChange(el, ri, $event)"
+                            >
+                              <option :value="'__field__'">{{ tplVerticalPendingOptionLabel(el) }}</option>
+                              <option value="">— 空白分隔 —</option>
+                              <option
+                                v-for="opt in tplVisualSqlColumnCatalog[el.id]"
+                                :key="'vfld-' + el.id + '-' + ri + '-' + opt.name"
                                 :value="opt.name"
                               >
                                 {{ opt.name }}
@@ -380,6 +404,7 @@ import {
 import type { ReportTemplate, TemplateControlType } from "@/lib/report-template/model";
 import type { TemplateElement, TemplateTableCell } from "@/lib/report-template/model";
 import {
+  clampTableElementOuterSize,
   ensureTableGrid,
   intrinsicOuterHeightForTemplateTable,
   makeElement,
@@ -397,11 +422,18 @@ import {
 } from "@/lib/report-template/table-cell-metrics";
 import type { VisualSqlTableColumnMeta } from "@/lib/report-template/table-sql-visual-catalog";
 import { loadVisualSqlTableColumnsCached } from "@/lib/report-template/table-sql-visual-catalog";
-import { applyVisualSqlOutputColumnPick } from "@/lib/report-template/table-sql-visual-compile";
+import { applyVisualSqlOutputColumnPick, applyVerticalSqlSlotField, syncTableRowsForVerticalSqlSlots } from "@/lib/report-template/table-sql-visual-compile";
 import {
   ensureVisualSource,
   isVisualSqlFillOutputPickerRow,
+  isVerticalSqlFill,
+  isVerticalSqlFillSlotPickerCell,
   clampTableSqlMaxRows,
+  visualSqlColumnPickValue,
+  visualSqlNeedsStructureTable,
+  visualSqlStructureTableName,
+  verticalSqlSlotPickValue,
+  TABLE_SQL_VERTICAL_FIELD_PENDING,
 } from "@/lib/report-template/table-sql-fill";
 import { looksLikeImageFile, pickFirstImageFileFromDataTransfer, readImageFileAsDataUrl } from "@/lib/report-template/read-image-file";
 import LayoutZoneInlineContent from "@/components/report-template/LayoutZoneInlineContent.vue";
@@ -412,9 +444,11 @@ import { computed, inject, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import { reportBindingPreviewKey, templateTableCellPickKey } from "@/lib/report-template/template-editor-context";
 import {
   formatSqlFillTableCellPreview,
+  sqlFillEditorDisplayDataRowCount,
   templateTableSqlFillPreviewKey,
   TABLE_SQL_FILL_PREVIEW_ROW_LIMIT,
 } from "@/lib/report-template/table-sql-fill-preview";
+import { tableSqlFillVerticalChromePx } from "@/lib/report-template/table-sql-fill-layout-utils";
 
 /** cv-scaler 左右 padding 合计（与样式 padding: 20px 一致） */
 const EMBED_SCALER_PAD = 40;
@@ -857,32 +891,48 @@ function tplSqlFillEditorPreviewLayout(el: TemplateElement): SqlFillEditorPrevie
   const pk = templateTableSqlFillPreviewKey(el.id);
   const pv = bindingPreview?.values.value[pk]?.tableSqlFill;
   if (!pv?.dataRows?.length || pv.error) return null;
-  const n = pv.dataRows.length;
+  const sqlN = pv.dataRows.length;
+  // 编辑画布：纵表「每条另起一页」只按首条展开；导出分页仍用完整 displayN
+  const displayN = sqlFillEditorDisplayDataRowCount(el.tableSqlFill, sqlN);
 
   const rowH = clampTableRowHeightPx(el.tableRowHeightPx);
-  const chrome =
-    REPORT_TEMPLATE_TABLE_NODE_PADDING_PX.top +
-    REPORT_TEMPLATE_TABLE_NODE_PADDING_PX.bottom +
-    1;
-  const inner = Math.max(0, el.h - chrome - 2);
+  // 与 intrinsicOuterHeightForTemplateTable / tableSqlFillVerticalChromePx 对齐，勿再减额外余量
+  const chrome = tableSqlFillVerticalChromePx();
+  const inner = Math.max(0, el.h - chrome);
   const maxTotalRows = Math.max(1, Math.floor(inner / Math.max(1, rowH)));
 
   const paginationNeeded =
-    props.sheet === "body" && sqlFillTableNeedsPreviewPagination(el, n, me.value.contentH);
+    props.sheet === "body" && sqlFillTableNeedsPreviewPagination(el, displayN, me.value.contentH, sqlN);
   const maxRowsCfg = clampTableSqlMaxRows(el.tableSqlFill.maxRows ?? 2000);
   const limitsTrunc =
-    n >= TABLE_SQL_FILL_PREVIEW_ROW_LIMIT ||
-    n >= maxRowsCfg ||
-    n > TEMPLATE_BODY_TABLE_MAX_ROWS - 1;
+    sqlN >= TABLE_SQL_FILL_PREVIEW_ROW_LIMIT ||
+    sqlN >= maxRowsCfg ||
+    displayN > TEMPLATE_BODY_TABLE_MAX_ROWS - 1;
+
+  /**
+   * 纵表：外框已按「表头+字段槽」贴合撑高；编辑态须完整显示这些行。
+   * 分页/截断提示不再从行高预算里扣减（否则会出现蓝框很高、表体被裁短、底部大片空白）。
+   * 提示改在表外/属性说明；此处仅在外框矮于内容时裁剪可见行。
+   */
+  if (isVerticalSqlFill(el.tableSqlFill)) {
+    const visible = Math.min(displayN, Math.max(0, maxTotalRows - 1));
+    return {
+      previewRowCount: displayN,
+      visibleDataRows: visible,
+      showPageHint: false,
+      // 仅在外框矮于内容时提示；勿因 limitsTrunc/分页占用行高，否则蓝框底部会留白挡住表体
+      showTruncateHint: visible < displayN,
+    };
+  }
 
   let showPageHint = paginationNeeded;
   let showTruncateHint = limitsTrunc;
 
   const visibleFor = (sp: boolean, st: boolean): number =>
-    Math.min(n, Math.max(0, maxTotalRows - 1 - sqlFillEditorFooterRowSlots(sp, st)));
+    Math.min(displayN, Math.max(0, maxTotalRows - 1 - sqlFillEditorFooterRowSlots(sp, st)));
 
   let visible = visibleFor(showPageHint, showTruncateHint);
-  if (visible < n) showTruncateHint = true;
+  if (visible < displayN) showTruncateHint = true;
   visible = visibleFor(showPageHint, showTruncateHint);
 
   while (1 + sqlFillEditorFooterRowSlots(showPageHint, showTruncateHint) > maxTotalRows && showPageHint) {
@@ -895,7 +945,7 @@ function tplSqlFillEditorPreviewLayout(el: TemplateElement): SqlFillEditorPrevie
   }
   visible = visibleFor(showPageHint, showTruncateHint);
 
-  showTruncateHint = showTruncateHint || visible < n || limitsTrunc;
+  showTruncateHint = showTruncateHint || visible < displayN || limitsTrunc;
   while (1 + sqlFillEditorFooterRowSlots(showPageHint, showTruncateHint) > maxTotalRows && showPageHint) {
     showPageHint = false;
   }
@@ -906,7 +956,7 @@ function tplSqlFillEditorPreviewLayout(el: TemplateElement): SqlFillEditorPrevie
   }
   visible = visibleFor(showPageHint, showTruncateHint);
 
-  const mustHint = visible < n || limitsTrunc;
+  const mustHint = visible < displayN || limitsTrunc;
   const minRowsForTruncateOnly = 1 + sqlFillEditorFooterRowSlots(false, true);
   if (mustHint && maxTotalRows >= minRowsForTruncateOnly) {
     showTruncateHint = true;
@@ -917,7 +967,7 @@ function tplSqlFillEditorPreviewLayout(el: TemplateElement): SqlFillEditorPrevie
   }
 
   return {
-    previewRowCount: n,
+    previewRowCount: displayN,
     visibleDataRows: visible,
     showPageHint,
     showTruncateHint,
@@ -934,7 +984,8 @@ function tplTableRowIndices(el: TemplateElement): number[] {
     return Array.from({ length: base }, (_, i) => i);
   }
   const lay = tplSqlFillEditorPreviewLayout(el);
-  const visibleData = lay?.visibleDataRows ?? Math.min(pv.dataRows.length, Math.max(0, base - 1));
+  const fallbackDisplay = sqlFillEditorDisplayDataRowCount(el.tableSqlFill, pv.dataRows.length);
+  const visibleData = lay?.visibleDataRows ?? Math.min(fallbackDisplay, Math.max(0, base - 1));
   const total = Math.max(1, 1 + visibleData);
   return Array.from({ length: total }, (_, i) => i);
 }
@@ -996,7 +1047,8 @@ async function refreshTplVisualSqlColumnCatalog(): Promise<void> {
     if (!f?.enabled || f.fillMode !== "visual") continue;
     ensureVisualSource(f);
     const vs = f.visualSource!;
-    if (!vs.connectionId?.trim() || !vs.table?.trim()) {
+    const structureTable = visualSqlStructureTableName(vs);
+    if (!vs.connectionId?.trim() || !structureTable) {
       next[el.id] = [];
       continue;
     }
@@ -1004,7 +1056,7 @@ async function refreshTplVisualSqlColumnCatalog(): Promise<void> {
       next[el.id] = await loadVisualSqlTableColumnsCached({
         connectionId: vs.connectionId.trim(),
         database: vs.database?.trim(),
-        table: vs.table.trim(),
+        table: structureTable,
       });
     } catch {
       next[el.id] = [];
@@ -1021,10 +1073,35 @@ watch(
   { deep: true, immediate: true },
 );
 
+function tplVisualSqlStructureMissing(el: TemplateElement): boolean {
+  if (el.type !== "table" || !el.tableSqlFill?.enabled || el.tableSqlFill.fillMode !== "visual") return false;
+  return visualSqlNeedsStructureTable(el.tableSqlFill.visualSource);
+}
+
+function tplVisualSqlEmptyOptionLabel(el: TemplateElement): string {
+  if (tplVisualSqlStructureMissing(el)) return "请先选结构参考表…";
+  const opts = tplVisualSqlColumnCatalog.value[el.id];
+  if (opts && opts.length === 0 && visualSqlStructureTableName(el.tableSqlFill?.visualSource)) {
+    return "结构表无列…";
+  }
+  return "— 空白列 —";
+}
+
+function tplVisualSqlColumnSelectTitle(el: TemplateElement): string {
+  if (tplVisualSqlStructureMissing(el)) {
+    return "已绑定 OPC UA 表名时，请在右侧属性中指定一张库中现存的结构参考表，才能选择列名。";
+  }
+  const name = visualSqlStructureTableName(el.tableSqlFill?.visualSource);
+  if (name && !(tplVisualSqlColumnCatalog.value[el.id]?.length)) {
+    return `未能从结构参考表「${name}」加载列名；请确认该表存在。OPC 当前值不用于设计时选列。`;
+  }
+  return "";
+}
+
 function tplVisualOutputSelectValue(el: TemplateElement, ci: number): string {
-  const vs = el.tableSqlFill?.visualSource;
-  if (!vs?.columns || ci < 0 || ci >= vs.columns.length) return "";
-  return String(vs.columns[ci] ?? "");
+  const fill = el.tableSqlFill;
+  if (!fill) return "";
+  return visualSqlColumnPickValue(fill, ci);
 }
 
 function onTplVisualOutputColumnChange(el: TemplateElement, ci: number, ev: Event) {
@@ -1036,15 +1113,57 @@ function onTplVisualOutputColumnChange(el: TemplateElement, ci: number, ev: Even
   applyVisualSqlOutputColumnPick(fill, cols, ci, v, cell);
 }
 
+function tplVerticalPendingOptionLabel(el: TemplateElement): string {
+  if (tplVisualSqlStructureMissing(el)) return "请先选结构参考表…";
+  const opts = tplVisualSqlColumnCatalog.value[el.id];
+  if (opts && opts.length === 0 && visualSqlStructureTableName(el.tableSqlFill?.visualSource)) {
+    return "结构表无列…";
+  }
+  return "— 请选择字段 —";
+}
+
+function tplVerticalSlotSelectValue(el: TemplateElement, ri: number): string {
+  const fill = el.tableSqlFill;
+  if (!fill) return TABLE_SQL_VERTICAL_FIELD_PENDING;
+  return verticalSqlSlotPickValue(fill, ri - 1);
+}
+
+function onTplVerticalSlotChange(el: TemplateElement, ri: number, ev: Event) {
+  const v = (ev.target as HTMLSelectElement).value;
+  const fill = el.tableSqlFill;
+  if (!fill || fill.fillMode !== "visual" || el.type !== "table") return;
+  applyVerticalSqlSlotField(fill, ri - 1, v);
+  syncTableRowsForVerticalSqlSlots(el, () => ensureTableGrid(el));
+  const maxH = Math.max(20, me.value.contentH - el.y);
+  clampTableElementOuterSize(el, me.value.contentW, maxH);
+}
+
 function tplTableRowTrStyle(el: TemplateElement): Record<string, string> | undefined {
   if (el.type !== "table") return undefined;
-  return { height: `${clampTableRowHeightPx(el.tableRowHeightPx)}px` };
+  const h = clampTableRowHeightPx(el.tableRowHeightPx);
+  // 固定行高：原生 <select> 默认更高，若不锁死会撑破外框，末行被 overflow 裁掉
+  return {
+    height: `${h}px`,
+    maxHeight: `${h}px`,
+  };
+}
+
+function tplTableCellBoxStyle(el: TemplateElement, ri: number, ci: number): Record<string, string> {
+  if (el.type !== "table") return {};
+  const h = clampTableRowHeightPx(el.tableRowHeightPx);
+  return {
+    ...tplTableCellStyle(el, ri, ci),
+    height: `${h}px`,
+    maxHeight: `${h}px`,
+  };
 }
 
 function tplSqlFillDataRowCount(el: TemplateElement): number {
   const pk = templateTableSqlFillPreviewKey(el.id);
-  const n = bindingPreview?.values.value[pk]?.tableSqlFill?.dataRows?.length ?? 0;
-  if (n > 0) return n;
+  const sqlN = bindingPreview?.values.value[pk]?.tableSqlFill?.dataRows?.length ?? 0;
+  if (el.tableSqlFill?.enabled && sqlN > 0) {
+    return sqlFillEditorDisplayDataRowCount(el.tableSqlFill, sqlN);
+  }
   return Math.max(0, (el.tableRows ?? 1) - 1);
 }
 
@@ -1054,14 +1173,19 @@ function tplSqlFillPageHintVisible(el: TemplateElement): boolean {
   if (!n) return false;
   const lay = tplSqlFillEditorPreviewLayout(el);
   if (lay) return lay.showPageHint;
-  return sqlFillTableNeedsPreviewPagination(el, n, me.value.contentH);
+  const pk = templateTableSqlFillPreviewKey(el.id);
+  const sqlN = bindingPreview?.values.value[pk]?.tableSqlFill?.dataRows?.length ?? 0;
+  return sqlFillTableNeedsPreviewPagination(el, n, me.value.contentH, sqlN);
 }
 
 function tplSqlFillPageHintText(el: TemplateElement): string {
   const fill = el.tableSqlFill;
   if (!fill) return "";
-  const base =
-    "导出预览：本表数据将跨页续排；表格最后一页下方留白后，位于表下的控件将单独占一页预览。";
+  const pagePer =
+    fill.layoutMode === "vertical" && fill.verticalMultiRecordMode === "page_per_record";
+  const base = pagePer
+    ? "编辑画布仅预览首条结果；导出预览将按「每条结果另起一页」分多页展示。"
+    : "导出预览：本表数据将跨页续排；表格最后一页下方留白后，位于表下的控件将单独占一页预览。";
   if (fill.allowWidgetsBelowSqlFillTable) {
     return `${base} 若需在表下摆放控件，请使用左侧「＋页」新建正文页后再编排；否则预览会与分页规则不一致。`;
   }
@@ -1728,20 +1852,27 @@ async function onTplImageDropFile(ev: DragEvent, el: TemplateElement) {
 }
 .cv-table tbody td {
   height: inherit;
+  max-height: inherit;
+  box-sizing: border-box;
+}
+.cv-table tbody tr:not(.cv-table-sql-page-hint-row):not(.cv-table-sql-truncate-hint-row) {
   box-sizing: border-box;
 }
 .cv-table tbody tr.cv-table-sql-page-hint-row,
 .cv-table tbody tr.cv-table-sql-truncate-hint-row {
   height: auto;
+  max-height: none;
+  line-height: normal;
 }
 .cv-table tbody tr.cv-table-sql-page-hint-row td,
 .cv-table tbody tr.cv-table-sql-truncate-hint-row td {
   height: auto;
+  max-height: none;
 }
 .cv-table-cell {
   border-top: 1px solid rgb(212 212 216);
   border-left: 1px solid rgb(212 212 216);
-  padding: 3px 5px;
+  padding: 1px 5px;
   vertical-align: middle;
   text-align: center;
   overflow: hidden;
@@ -1839,14 +1970,27 @@ async function onTplImageDropFile(ev: DragEvent, el: TemplateElement) {
   display: block;
   width: 100%;
   max-width: 100%;
+  height: 100%;
+  max-height: 100%;
   box-sizing: border-box;
   margin: 0;
-  padding: 2px 4px;
+  padding: 0 4px;
   font: inherit;
-  font-size: max(10px, 0.85em);
-  line-height: 1.35;
+  font-size: max(10px, 0.82em);
+  line-height: 1.2;
   text-align: inherit;
   min-height: 0;
+  /* 避免系统原生控件最小高度撑破固定行高 */
+  appearance: none;
+  -webkit-appearance: none;
+  background-color: #fff;
+  border: 1px solid rgb(212 212 216);
+  border-radius: 2px;
+}
+.cv-table-cell-ddl.tbl-sql-ddl--warn {
+  border-color: #f59e0b;
+  background: #fffbeb;
+  color: #92400e;
 }
 .cv-img-slot {
   width: 100%;

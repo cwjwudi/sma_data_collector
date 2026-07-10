@@ -25,7 +25,7 @@ Usage: .\build.ps1 [options]
 
   -Version <semver>     Bump package.json + latest.json before build
   -Notes <text>         Release notes (with -Version)
-  -Fresh                Clear packaging\windows\output first
+  -Fresh                Rebuild current version only; keep older Setup-*.exe in output/
   -SkipFrontendInstall  Skip npm ci
   -SkipBackendBuild     Skip PyInstaller
   -SkipTests            Skip npm test (not recommended)
@@ -188,6 +188,40 @@ function Get-StaleSetupInstallers {
     Where-Object { $_.Name -ne $ExpectedName })
 }
 
+# -Fresh: remove only current-version artifacts + rebuild intermediates; keep older Setup-*.exe
+function Clear-CurrentVersionBuildArtifacts {
+  param(
+    [string]$Dir,
+    [string]$AppVersion,
+    [string]$ExpectedSetupName
+  )
+  if (-not (Test-Path -LiteralPath $Dir)) {
+    New-Item -ItemType Directory -Force -Path $Dir | Out-Null
+    return
+  }
+  $toRemove = @(
+    (Join-Path $Dir $ExpectedSetupName),
+    (Join-Path $Dir ($ExpectedSetupName + '.blockmap')),
+    (Join-Path $Dir 'latest.yml'),
+    (Join-Path $Dir 'builder-debug.yml'),
+    (Join-Path $Dir 'win-unpacked')
+  )
+  foreach ($p in $toRemove) {
+    if (Test-Path -LiteralPath $p) {
+      Remove-Item -LiteralPath $p -Recurse -Force -ErrorAction SilentlyContinue
+    }
+  }
+  # electron-builder may leave versioned leftovers with slightly different names
+  Get-ChildItem -LiteralPath $Dir -Force -ErrorAction SilentlyContinue |
+    Where-Object {
+      $_.Name -like ("Report Editor-Setup-$AppVersion*") -or
+      $_.Name -like ("*$AppVersion*blockmap*")
+    } |
+    ForEach-Object {
+      Remove-Item -LiteralPath $_.FullName -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
 function Invoke-ViteBuild([string]$FrontendDir) {
   $viteJs = Join-Path $FrontendDir 'node_modules\vite\bin\vite.js'
   if (-not (Test-Path -LiteralPath $viteJs)) {
@@ -287,18 +321,22 @@ elseif ($nodeMajor -lt 20) {
 }
 
 if ($Fresh) {
-  Write-Step 'Clean packaging/windows/output'
-  if (Test-Path -LiteralPath $OutputDir) {
-    Remove-Item -LiteralPath $OutputDir -Recurse -Force -ErrorAction SilentlyContinue
-    New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
+  Write-Step "Fresh rebuild for $AppVersion (keep older Setup-*.exe in output/)"
+  Clear-CurrentVersionBuildArtifacts -Dir $OutputDir -AppVersion $AppVersion -ExpectedSetupName $ExpectedSetup
+  $kept = Get-StaleSetupInstallers -Dir $OutputDir -ExpectedName $ExpectedSetup
+  if ($kept.Count -gt 0) {
+    $names = ($kept | ForEach-Object { $_.Name }) -join ', '
+    Write-Ok "Preserved older installers: $names"
+  }
+  else {
+    Write-Ok 'No older installers to preserve'
   }
 }
 else {
   $stale = Get-StaleSetupInstallers -Dir $OutputDir -ExpectedName $ExpectedSetup
   if ($stale.Count -gt 0) {
     $names = ($stale | ForEach-Object { $_.Name }) -join ', '
-    Write-WarnLine "output contains older installers: $names"
-    Write-WarnLine "Use -Fresh to avoid picking wrong version, or delete stale exe manually."
+    Write-Host "Note: output also has older installers (kept): $names" -ForegroundColor DarkGray
   }
 }
 
@@ -417,8 +455,8 @@ else {
     $wrong = $candidates | Where-Object { $_.Name -ne $expectedSetupName } | Select-Object -First 1
     if ($wrong) {
       throw @(
-        "ERROR: Expected $expectedSetupName but newest installer is $($wrong.Name).",
-        "package.json version is $AppVersion — run bump-version or use -Fresh."
+        "ERROR: Expected $expectedSetupName was not produced; newest other installer is $($wrong.Name).",
+        "package.json version is $AppVersion — run bump-version, then rebuild with -Fresh."
       ) -join "`n"
     }
     $setup = $candidates | Select-Object -First 1

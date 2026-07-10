@@ -26,7 +26,7 @@ Usage: ./build.sh [options]
 Options:
   --version <semver>      发版前 bump（写 package.json + latest.json 占位）
   --notes <text>          与 --version 一并写入 latest.json notes
-  --fresh                 Remove packaging/mac/output before build
+  --fresh                 Rebuild current version only; keep older .dmg in output/
   --skip-frontend-install Skip npm ci
   --skip-backend-build    Skip PyInstaller
   --arch arm64|x64        Target CPU (default: native)
@@ -192,8 +192,47 @@ require_cmd npm "Install npm"
 require_cmd python3 "Install Python 3.10+"
 
 if [[ "$FRESH" == "1" ]]; then
-  step "Clean packaging/mac/output"
-  rm -rf "$OUTPUT_DIR"/*
+  step "Fresh rebuild for $PKG_VERSION (keep older .dmg in output/)"
+  mkdir -p "$OUTPUT_DIR"
+  # Current-version artifacts + rebuild intermediates only
+  rm -rf \
+    "$OUTPUT_DIR/$EXPECTED_DMG" \
+    "$OUTPUT_DIR/${EXPECTED_DMG}.blockmap" \
+    "$OUTPUT_DIR/latest-mac.yml" \
+    "$OUTPUT_DIR/builder-debug.yml" \
+    "$OUTPUT_DIR/mac" \
+    "$OUTPUT_DIR/mac-arm64" \
+    "$OUTPUT_DIR/mac-x64"
+  # Versioned leftovers (any arch for this version)
+  shopt -s nullglob
+  for f in "$OUTPUT_DIR"/Report\ Editor-"$PKG_VERSION"-*.dmg \
+           "$OUTPUT_DIR"/Report\ Editor-"$PKG_VERSION"-*.dmg.blockmap \
+           "$OUTPUT_DIR"/Report\ Editor-"$PKG_VERSION"-*.zip \
+           "$OUTPUT_DIR"/Report\ Editor-"$PKG_VERSION"-*.zip.blockmap; do
+    rm -rf "$f"
+  done
+  shopt -u nullglob
+  kept=()
+  shopt -s nullglob
+  for f in "$OUTPUT_DIR"/Report\ Editor-*-*.dmg; do
+    base="$(basename "$f")"
+    if [[ "$base" != "$EXPECTED_DMG" && "$base" != Report\ Editor-"$PKG_VERSION"-*.dmg ]]; then
+      kept+=("$base")
+    fi
+  done
+  shopt -u nullglob
+  # Re-scan kept after cleanup (any remaining other-version dmgs)
+  kept=()
+  shopt -s nullglob
+  for f in "$OUTPUT_DIR"/Report\ Editor-*-*.dmg; do
+    kept+=("$(basename "$f")")
+  done
+  shopt -u nullglob
+  if [[ ${#kept[@]} -gt 0 ]]; then
+    ok "Preserved older installers: ${kept[*]}"
+  else
+    ok "No older installers to preserve"
+  fi
 fi
 
 if [[ "$SKIP_FRONTEND" == "0" ]]; then

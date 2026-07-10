@@ -8,8 +8,8 @@ import logging
 import sys
 import os
 import time
-from typing import Dict, List, Callable, Any, Iterator
-from datetime import datetime
+from typing import Dict, List, Callable, Any, Iterator, Optional
+from datetime import datetime, timedelta
 
 # 处理相对导入问题
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -70,6 +70,52 @@ class DataCollector:
             return value.strip().lower() in {"false", "0", "off", ""}
         return value is False or value == 0
 
+    @staticmethod
+    def _create_fixed_cadence_anchor(
+        now_wall: datetime,
+        now_monotonic: float,
+    ) -> tuple[float, datetime]:
+        anchor_wall = now_wall.replace(microsecond=0)
+        anchor_monotonic = now_monotonic - (now_wall - anchor_wall).total_seconds()
+        return anchor_monotonic, anchor_wall
+
+    @staticmethod
+    def _fixed_cadence_deadline(
+        anchor_monotonic: float,
+        tick_index: int,
+        interval: float,
+    ) -> float:
+        return anchor_monotonic + tick_index * interval
+
+    @staticmethod
+    def _fixed_cadence_collection_time(
+        anchor_wall: datetime,
+        tick_index: int,
+        interval: float,
+    ) -> datetime:
+        return anchor_wall + timedelta(seconds=tick_index * interval)
+
+    @classmethod
+    def _advance_fixed_cadence_tick(
+        cls,
+        anchor_monotonic: float,
+        current_tick_index: int,
+        interval: float,
+        now_monotonic: float,
+    ) -> tuple[int, int]:
+        next_tick_index = current_tick_index + 1
+        next_deadline = cls._fixed_cadence_deadline(
+            anchor_monotonic,
+            next_tick_index,
+            interval,
+        )
+        lag = now_monotonic - next_deadline
+        if lag < interval:
+            return next_tick_index, 0
+
+        skipped_ticks = int(lag // interval)
+        return next_tick_index + skipped_ticks, skipped_ticks
+
     async def _reset_boolean_trigger_with_confirm(
         self,
         group: DataGroup,
@@ -125,6 +171,46 @@ class DataCollector:
         )
         return False
     
+    def _extract_parallel_point_values(
+        self,
+        group_name: str,
+        point_name: str,
+        point_data: Dict[str, Any],
+        triggered_indices: List[int],
+    ) -> Optional[Dict[str, Any]]:
+        """
+        从并行触发读取结果中提取与触发索引对齐的值列表。
+
+        - 数组：按触发索引取值
+        - 标量（如全局 BatchCode）：广播到每个触发索引
+        - None：跳过该点
+        """
+        raw_value = point_data.get('value')
+        if raw_value is None:
+            self.logger.warning(
+                f"并行触发组 {group_name} 数据点 {point_name} 值为 None，跳过该点"
+            )
+            return None
+
+        if isinstance(raw_value, (list, tuple)):
+            extracted = [raw_value[i] for i in triggered_indices if i < len(raw_value)]
+        else:
+            # 标量点（如当前批次号）广播到本次所有触发行
+            extracted = [raw_value] * len(triggered_indices)
+            self.logger.debug(
+                "并行触发组 %s 数据点 %s 为标量，已广播到 %s 个触发索引",
+                group_name,
+                point_name,
+                len(triggered_indices),
+            )
+
+        return {
+            'value': extracted,
+            'timestamp': point_data.get('timestamp'),
+            'path': point_data.get('path'),
+            'triggered_indices': triggered_indices,
+        }
+
     def _iter_scalar_collection_rows(self, collection_data: Dict[str, Any]) -> Iterator[Dict[str, Any]]:
         """
         将并行采集结果（各数据点 value 为等长列表）拆成多行，每行各点为标量。
@@ -270,20 +356,34 @@ class DataCollector:
                                        opcua_client: OpcUaClient) -> None:
         """时间触发的数据采集。
 
-        使用单调时钟维护计划节拍：每轮开始前睡到本组的 next_deadline。
-        本轮结束后将 next_deadline 推进 interval；若实际结束时间已晚于该计划时刻
-        （读点/回调超时），则不再追欠拍，将下一拍重置为「当前时刻 + interval」。
+        使用固定节拍调度：实际读取可以迟到，但 collection_time 使用计划节拍时间。
+        例如计划 18s 采集，实际 18.6s 开始、19.1s 返回，入库时间仍写 18s。
+        如果程序落后超过一个完整周期，只跳过已经错过的节拍，避免无限追赶。
         """
         interval = float(group.interval_seconds)
-        next_deadline = time.monotonic()
+        anchor_monotonic, anchor_wall = self._create_fixed_cadence_anchor(
+            datetime.now(),
+            time.monotonic(),
+        )
+        tick_index = 0
 
         while True:
             try:
+                next_deadline = self._fixed_cadence_deadline(
+                    anchor_monotonic,
+                    tick_index,
+                    interval,
+                )
                 now = time.monotonic()
                 wait = next_deadline - now
                 if wait > 0:
                     await asyncio.sleep(wait)
 
+                planned_collection_time = self._fixed_cadence_collection_time(
+                    anchor_wall,
+                    tick_index,
+                    interval,
+                )
                 data = await opcua_client.read_data_points(data_points)
 
                 valid_data = {name: info for name, info in data.items() if info.get('value') is not None}
@@ -297,7 +397,7 @@ class DataCollector:
 
                     collection_data = {
                         'group_name': group.name,
-                        'collection_time': datetime.now(),
+                        'collection_time': planned_collection_time,
                         'trigger_type': 'time',
                         'data': valid_data
                     }
@@ -305,10 +405,23 @@ class DataCollector:
                     for callback in self.data_callbacks:
                         callback(collection_data)
 
-                now = time.monotonic()
-                next_deadline += interval
-                if now > next_deadline:
-                    next_deadline = now + interval
+                tick_index, skipped_ticks = self._advance_fixed_cadence_tick(
+                    anchor_monotonic,
+                    tick_index,
+                    interval,
+                    time.monotonic(),
+                )
+                if skipped_ticks:
+                    self.logger.warning(
+                        "采集组 %s 固定节拍落后，跳过 %s 个已错过节拍，下一计划时间=%s",
+                        group.name,
+                        skipped_ticks,
+                        self._fixed_cadence_collection_time(
+                            anchor_wall,
+                            tick_index,
+                            interval,
+                        ),
+                    )
 
             except asyncio.CancelledError:
                 self.logger.info(f"时间触发采集组 {group.name} 已取消")
@@ -324,7 +437,23 @@ class DataCollector:
                 else:
                     self.logger.error(f"时间触发采集组 {group.name} 发生错误: {e}", exc_info=True)
                 await asyncio.sleep(5)  # 错误后等待5秒重试
-                next_deadline = time.monotonic() + interval
+                tick_index, skipped_ticks = self._advance_fixed_cadence_tick(
+                    anchor_monotonic,
+                    tick_index,
+                    interval,
+                    time.monotonic(),
+                )
+                if skipped_ticks:
+                    self.logger.warning(
+                        "采集组 %s 异常恢复后跳过 %s 个已错过节拍，下一计划时间=%s",
+                        group.name,
+                        skipped_ticks,
+                        self._fixed_cadence_collection_time(
+                            anchor_wall,
+                            tick_index,
+                            interval,
+                        ),
+                    )
 
     def _get_variable_trigger_poll_interval(self, group: DataGroup) -> float:
         """获取 variable 类触发模式的触发点轮询间隔（秒）。"""
@@ -343,13 +472,17 @@ class DataCollector:
         按 interval_seconds 定时采集；同时以 trigger_interval_seconds 为周期采样 trigger_point，
         上升沿时立即采集一次（行为与同组 variable 模式一致，含可选复位）。
         """
+        interval = float(group.interval_seconds)
         trigger_interval = float(group.trigger_interval_seconds)
-        next_time_deadline = 0.0
+        anchor_monotonic, anchor_wall = self._create_fixed_cadence_anchor(
+            datetime.now(),
+            time.monotonic(),
+        )
+        tick_index = 0
         previous_trigger_state = None  # None 表示首次读取，只初始化不触发
         last_stuck_reset_attempt_at = 0.0
 
-        async def do_time_collect() -> None:
-            nonlocal next_time_deadline
+        async def do_time_collect(planned_collection_time: datetime) -> None:
             data = await opcua_client.read_data_points(data_points)
             valid_data = {
                 name: info for name, info in data.items() if info.get('value') is not None
@@ -366,20 +499,56 @@ class DataCollector:
                     )
                 collection_data = {
                     'group_name': group.name,
-                    'collection_time': datetime.now(),
+                    'collection_time': planned_collection_time,
                     'trigger_type': 'time',
                     'data': valid_data,
                 }
                 for callback in self.data_callbacks:
                     callback(collection_data)
-            next_time_deadline = time.monotonic() + float(group.interval_seconds)
+        async def collect_time_if_due() -> None:
+            nonlocal tick_index
+            next_deadline = self._fixed_cadence_deadline(
+                anchor_monotonic,
+                tick_index,
+                interval,
+            )
+            if time.monotonic() < next_deadline:
+                return
+
+            planned_collection_time = self._fixed_cadence_collection_time(
+                anchor_wall,
+                tick_index,
+                interval,
+            )
+            await do_time_collect(planned_collection_time)
+
+            tick_index, skipped_ticks = self._advance_fixed_cadence_tick(
+                anchor_monotonic,
+                tick_index,
+                interval,
+                time.monotonic(),
+            )
+            if skipped_ticks:
+                self.logger.warning(
+                    "采集组 %s（time_and_variable 定时）固定节拍落后，跳过 %s 个已错过节拍，下一个计划时间=%s",
+                    group.name,
+                    skipped_ticks,
+                    self._fixed_cadence_collection_time(
+                        anchor_wall,
+                        tick_index,
+                        interval,
+                    ),
+                )
 
         while True:
             try:
-                now = time.monotonic()
-                if now >= next_time_deadline:
-                    await do_time_collect()
+                await collect_time_if_due()
 
+                next_time_deadline = self._fixed_cadence_deadline(
+                    anchor_monotonic,
+                    tick_index,
+                    interval,
+                )
                 until_next = next_time_deadline - time.monotonic()
                 sleep_for = min(trigger_interval, max(0.001, until_next))
                 await asyncio.sleep(sleep_for)
@@ -463,9 +632,7 @@ class DataCollector:
                 if update_previous_state:
                     previous_trigger_state = current_trigger_value
 
-                now = time.monotonic()
-                if now >= next_time_deadline:
-                    await do_time_collect()
+                await collect_time_if_due()
 
             except asyncio.CancelledError:
                 self.logger.info(f"time_and_variable 采集组 {group.name} 已取消")
@@ -481,6 +648,23 @@ class DataCollector:
                 else:
                     self.logger.error(f"time_and_variable 采集组 {group.name} 发生错误: {e}", exc_info=True)
                 await asyncio.sleep(5)
+                tick_index, skipped_ticks = self._advance_fixed_cadence_tick(
+                    anchor_monotonic,
+                    tick_index,
+                    interval,
+                    time.monotonic(),
+                )
+                if skipped_ticks:
+                    self.logger.warning(
+                        "采集组 %s（time_and_variable 定时）异常恢复后跳过 %s 个已错过节拍，下一个计划时间=%s",
+                        group.name,
+                        skipped_ticks,
+                        self._fixed_cadence_collection_time(
+                            anchor_wall,
+                            tick_index,
+                            interval,
+                        ),
+                    )
     
     async def _variable_triggered_collection(self, group: DataGroup,
                                            data_points: List[DataPoint],
@@ -602,8 +786,8 @@ class DataCollector:
                                                        data_points: List[DataPoint],
                                                        trigger_point: DataPoint,
                                                        opcua_client: OpcUaClient) -> None:
-        """并行变量触发的数据采集 - trigger_point 为布尔数组，data_points 为数组节点，
-        检测上升沿索引，提取对应索引的数据"""
+        """并行变量触发的数据采集 - trigger_point 为布尔数组；
+        data_points 可为数组（按索引取值）或标量（广播到每个触发索引）。"""
         poll_interval = self._get_variable_trigger_poll_interval(group)
         previous_trigger_state = None
 
@@ -634,24 +818,21 @@ class DataCollector:
                 if triggered_indices:
                     self.logger.info(f"并行触发组 {group.name} 检测到上升沿，触发索引: {triggered_indices}")
 
-                    # 读取所有数据点（每个返回数组）
+                    # 读取所有数据点（数组按索引提取，标量广播到各触发行）
                     data = await opcua_client.read_data_points(data_points)
 
                     # 构建合并的 collection_data
                     indexed_data = {}
                     for point in data_points:
                         point_data = data.get(point.name, {})
-                        array_value = point_data.get('value')
-                        if array_value is not None and isinstance(array_value, (list, tuple)):
-                            extracted = [array_value[i] for i in triggered_indices if i < len(array_value)]
-                            indexed_data[point.name] = {
-                                'value': extracted,
-                                'timestamp': point_data.get('timestamp'),
-                                'path': point_data.get('path'),
-                                'triggered_indices': triggered_indices
-                            }
-                        else:
-                            self.logger.warning(f"并行触发组 {group.name} 数据点 {point.name} 不是数组或值为 None")
+                        extracted = self._extract_parallel_point_values(
+                            group.name,
+                            point.name,
+                            point_data,
+                            triggered_indices,
+                        )
+                        if extracted is not None:
+                            indexed_data[point.name] = extracted
 
                     if indexed_data:
                         collection_data = {

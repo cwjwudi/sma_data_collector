@@ -1,12 +1,29 @@
 import type { LayoutPreset } from "@/lib/report-template/layout-model";
 import { blankZonesSnapshot, hydrateLayoutPreset, presetZonesSnapshot } from "@/lib/report-template/layout-model";
-import type { ReportTemplate, TemplateElement } from "@/lib/report-template/model";
+import type { ReportTemplate, TemplateControlType, TemplateElement } from "@/lib/report-template/model";
 import { ensureTableGrid, hydrateTableCell, makeElement } from "@/lib/report-template/model";
-import type { LayoutZoneElement } from "@/lib/report-template/layout-zone-element";
+import type { LayoutControlType, LayoutZoneElement } from "@/lib/report-template/layout-zone-element";
 import { hydrateTableSqlFill } from "@/lib/report-template/table-sql-fill";
 import { templateHasBackSheet, templateHasCoverSheet } from "@/lib/report-template/editor-sheet";
 
 export type LayoutPresetSlot = "body" | "cover" | "back";
+
+/**
+ * 封面/末页版式正文区可提升到模版画布的类型（与 TemplateControlType 交集）。
+ * pageNumber 仅存在于版式区，不进入模版画布。
+ */
+const LIFTABLE_ZONE_TO_TEMPLATE: ReadonlySet<LayoutControlType> = new Set([
+  "text",
+  "box",
+  "image",
+  "date",
+  "parameter",
+  "table",
+]);
+
+function isLiftableZoneType(type: LayoutControlType): boolean {
+  return LIFTABLE_ZONE_TO_TEMPLATE.has(type);
+}
 
 /** 版式区表格 → 封面/末页画布表格控件（字段语义一致，逐项拷贝深副本） */
 export function templateTableFromZoneTable(z: LayoutZoneElement): TemplateElement {
@@ -34,12 +51,45 @@ export function templateTableFromZoneTable(z: LayoutZoneElement): TemplateElemen
   return el;
 }
 
+/** 版式区非表格控件 → 模版画布控件（可拖拽/缩放/属性编辑） */
+export function templateElementFromZoneElement(z: LayoutZoneElement): TemplateElement | null {
+  if (!isLiftableZoneType(z.type)) return null;
+  if (z.type === "table") return templateTableFromZoneTable(z);
+
+  const el = makeElement(z.type as TemplateControlType);
+  el.id = z.id;
+  el.x = z.x;
+  el.y = z.y;
+  el.w = z.w;
+  el.h = z.h;
+  el.text = z.text;
+  el.color = z.color;
+  el.bgColor = z.bgColor;
+  el.fontSize = z.fontSize;
+  el.fontFamily = z.fontFamily;
+  el.zIndex = z.zIndex;
+  el.textAutoWrap = z.textAutoWrap;
+  el.alignX = z.alignX;
+  el.alignY = z.alignY;
+  el.dateFormat = z.dateFormat;
+  el.imageSrc = z.imageSrc;
+  el.imageRotationDeg = z.imageRotationDeg;
+  el.imageCaptionPosition = z.imageCaptionPosition;
+  el.bindingKind = z.bindingKind === "opcua" || z.bindingKind === "sql" ? z.bindingKind : "none";
+  el.opcuaNodeId = z.opcuaNodeId;
+  el.sqlText = z.sqlText;
+  el.sqlParams = Array.isArray(z.sqlParams) ? z.sqlParams.map((p) => ({ ...p })) : [];
+  el.scalarSqlFillMode = z.scalarSqlFillMode;
+  el.scalarSqlVisual = z.scalarSqlVisual ? { ...z.scalarSqlVisual } : undefined;
+  return el;
+}
+
 /**
- * 把封面/末页「版式装饰层」中的表格提升为画布控件：
- * 装饰层只读（拖拽/缩放/单元格绑定均不可用），表格应与正文表格同等可编辑。
- * 画布已有同 id 控件（此前已提升并可能被用户编辑过）时保留画布版本。
+ * 把封面/末页「版式装饰层」中的可编辑控件提升到画布：
+ * 装饰层 pointer-events:none，无法拖拽/缩放；提升后与正文控件同等可交互。
+ * 画布已有同 id 控件时保留画布版本（用户可能已改过）。
  */
-export function liftZoneTablesToSheetCanvas(tmpl: ReportTemplate): boolean {
+export function liftZoneBodyElementsToSheetCanvas(tmpl: ReportTemplate): boolean {
   let touched = false;
   for (const slot of ["cover", "back"] as const) {
     const zoneArr = slot === "cover" ? tmpl.coverBodyZoneElements : tmpl.backBodyZoneElements;
@@ -47,13 +97,14 @@ export function liftZoneTablesToSheetCanvas(tmpl: ReportTemplate): boolean {
     const canvas = slot === "cover" ? tmpl.coverElements : tmpl.backElements;
     const rest: LayoutZoneElement[] = [];
     for (const z of zoneArr) {
-      if (z.type !== "table") {
+      if (!isLiftableZoneType(z.type)) {
         rest.push(z);
         continue;
       }
       touched = true;
       if (!canvas.some((e) => e.id === z.id)) {
-        canvas.push(templateTableFromZoneTable(z));
+        const te = templateElementFromZoneElement(z);
+        if (te) canvas.push(te);
       }
     }
     if (rest.length !== zoneArr.length) {
@@ -64,13 +115,18 @@ export function liftZoneTablesToSheetCanvas(tmpl: ReportTemplate): boolean {
   return touched;
 }
 
+/** @deprecated 使用 liftZoneBodyElementsToSheetCanvas；保留别名兼容旧调用 */
+export function liftZoneTablesToSheetCanvas(tmpl: ReportTemplate): boolean {
+  return liftZoneBodyElementsToSheetCanvas(tmpl);
+}
+
 /**
  * 将单项版式合并进模版对应槽位（与新建向导语义一致）。
  *
  * `mode`（仅封面/末页槽位生效）：
- * - `"user"`（默认）：用户显式套用版式——版式正文区的表格提升为可编辑画布控件；
- * - `"resync"`：载入时按版式库静默拉齐——表格从装饰层剔除但不再回填画布，
- *   保证用户此前删除的表格不会在每次打开时复活。
+ * - `"user"`（默认）：用户显式套用版式——版式正文区可提升控件落到可编辑画布；
+ * - `"resync"`：载入时按版式库静默拉齐——可提升类型从装饰层剔除但不再回填画布，
+ *   保证用户此前删除的控件不会在每次打开时复活。
  */
 export function applyLayoutPresetToTemplate(
   tmpl: ReportTemplate,
@@ -96,8 +152,8 @@ export function applyLayoutPresetToTemplate(
     tmpl.coverHeaderElements = z.headerElements.map((e) => ({ ...e }));
     tmpl.coverFooterElements = z.footerElements.map((e) => ({ ...e }));
     tmpl.coverBodyZoneElements = z.bodyElements.map((e) => ({ ...e }));
-    if (mode === "user") liftZoneTablesToSheetCanvas(tmpl);
-    else dropZoneTablesFromDecor(tmpl);
+    if (mode === "user") liftZoneBodyElementsToSheetCanvas(tmpl);
+    else dropZoneLiftableFromDecor(tmpl);
     return;
   }
   tmpl.backLayoutPresetId = preset.id;
@@ -107,14 +163,14 @@ export function applyLayoutPresetToTemplate(
   tmpl.backHeaderElements = z.headerElements.map((e) => ({ ...e }));
   tmpl.backFooterElements = z.footerElements.map((e) => ({ ...e }));
   tmpl.backBodyZoneElements = z.bodyElements.map((e) => ({ ...e }));
-  if (mode === "user") liftZoneTablesToSheetCanvas(tmpl);
-  else dropZoneTablesFromDecor(tmpl);
+  if (mode === "user") liftZoneBodyElementsToSheetCanvas(tmpl);
+  else dropZoneLiftableFromDecor(tmpl);
 }
 
-/** 重同步时仅剔除装饰层表格（画布中已提升/已删除的以画布为准） */
-function dropZoneTablesFromDecor(tmpl: ReportTemplate): void {
-  tmpl.coverBodyZoneElements = tmpl.coverBodyZoneElements.filter((e) => e.type !== "table");
-  tmpl.backBodyZoneElements = tmpl.backBodyZoneElements.filter((e) => e.type !== "table");
+/** 重同步时剔除装饰层中可提升类型（画布中已提升/已删除的以画布为准） */
+function dropZoneLiftableFromDecor(tmpl: ReportTemplate): void {
+  tmpl.coverBodyZoneElements = tmpl.coverBodyZoneElements.filter((e) => !isLiftableZoneType(e.type));
+  tmpl.backBodyZoneElements = tmpl.backBodyZoneElements.filter((e) => !isLiftableZoneType(e.type));
 }
 
 /** 取消封面/末页：清空版式绑定、纸上快照、眉脚区与画布控件（与新建向导「不使用」一致）。 */

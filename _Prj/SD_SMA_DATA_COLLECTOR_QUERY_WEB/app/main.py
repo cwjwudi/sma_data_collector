@@ -316,13 +316,15 @@ def _resolve_plugin_binding(plugin_key: str) -> dict[str, Any]:
     }
 
 
-def _get_opcua_connection() -> dict[str, str]:
+def _get_opcua_connection() -> dict[str, Any]:
     settings = config_store.get_opcua_settings()
     endpoint = normalize_opcua_endpoint_url(str(settings.get("endpoint_url", "") or ""))
     return {
         "endpoint_url": endpoint,
         "username": str(settings.get("username", "") or ""),
         "password": str(settings.get("password", "") or ""),
+        "heartbeat_node": str(settings.get("heartbeat_node", "") or "").strip(),
+        "poll_interval_ms": int(settings.get("poll_interval_ms", 500) or 500),
     }
 
 

@@ -1,23 +1,54 @@
 from __future__ import annotations
 
 import argparse
+import atexit
 import http.client
 import json
 import os
+import shutil
 import socket
 import subprocess
 import sys
+import threading
 import time
 import urllib.parse
 import webbrowser
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, TextIO
 
 
 LAUNCHER_DIR = Path(__file__).resolve().parent
 PACKAGE_ROOT = LAUNCHER_DIR.parent
 DEFAULT_CONFIG = LAUNCHER_DIR / "launcher_config.json"
+LAUNCHER_LOG_DIR = PACKAGE_ROOT / "logs" / "launcher"
+LAUNCHER_LOG_FILE = LAUNCHER_LOG_DIR / "launcher.log"
+DEFAULT_SERVICE_LOG_MAX_BYTES = 5 * 1024 * 1024
+DEFAULT_SERVICE_LOG_BACKUP_COUNT = 5
+
+# Unified package-root folders used by launcher/portable package.
+SERVICE_DATA_DIRS: dict[str, str] = {
+    "collector_web": "collector",
+    "query_web": "query_web",
+    "db_admin": "db_admin",
+    "report_copy": "report_copy",
+}
+CONFIG_SEED_SKIP_DIR_NAMES = {
+    ".git",
+    ".pytest_cache",
+    ".mypy_cache",
+    "__pycache__",
+    "venv",
+    ".venv",
+    "logs",
+    "dist",
+    "node_modules",
+    "_backup",
+    "exports",
+    "backups",
+}
+CONFIG_SEED_SKIP_FILE_SUFFIXES = {".pyc", ".pyo", ".log"}
 
 
 @dataclass
@@ -28,6 +59,176 @@ class ServiceProcess:
     log_path: Path
     process: subprocess.Popen
     log_file: Any
+    log_pump: Any = None
+
+
+class SizeRotatingLogWriter:
+    """Append process output to a size-rotated log file (uvicorn.log, .1, .2, ...)."""
+
+    def __init__(
+        self,
+        path: Path,
+        *,
+        max_bytes: int = DEFAULT_SERVICE_LOG_MAX_BYTES,
+        backup_count: int = DEFAULT_SERVICE_LOG_BACKUP_COUNT,
+        encoding: str = "utf-8",
+    ) -> None:
+        self.path = Path(path)
+        self.max_bytes = max(1024, int(max_bytes))
+        self.backup_count = max(1, int(backup_count))
+        self.encoding = encoding
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._lock = threading.Lock()
+        self._fp = self.path.open("a", encoding=self.encoding, newline="")
+        self._closed = False
+        try:
+            self._bytes_written = self.path.stat().st_size
+        except OSError:
+            self._bytes_written = 0
+
+    def write(self, data: str) -> int:
+        if not data:
+            return 0
+        with self._lock:
+            if self._closed:
+                return 0
+            payload = data.encode(self.encoding, errors="replace")
+            self._rotate_if_needed(len(payload))
+            self._fp.write(data)
+            self._fp.flush()
+            self._bytes_written += len(payload)
+            return len(data)
+
+    def flush(self) -> None:
+        with self._lock:
+            if not self._closed:
+                self._fp.flush()
+
+    def close(self) -> None:
+        with self._lock:
+            if self._closed:
+                return
+            self._closed = True
+            try:
+                self._fp.flush()
+            finally:
+                self._fp.close()
+
+    def _rotate_if_needed(self, incoming_bytes: int) -> None:
+        if self._bytes_written + incoming_bytes < self.max_bytes:
+            return
+        self._fp.flush()
+        self._fp.close()
+        for idx in range(self.backup_count - 1, 0, -1):
+            src = self.path.with_name(f"{self.path.name}.{idx}")
+            dst = self.path.with_name(f"{self.path.name}.{idx + 1}")
+            if src.exists():
+                if dst.exists():
+                    dst.unlink()
+                src.rename(dst)
+        rotated = self.path.with_name(f"{self.path.name}.1")
+        if self.path.exists():
+            if rotated.exists():
+                rotated.unlink()
+            self.path.rename(rotated)
+        self._fp = self.path.open("a", encoding=self.encoding, newline="")
+        self._bytes_written = 0
+
+
+def _pump_process_output(stream: Any, writer: SizeRotatingLogWriter) -> None:
+    try:
+        for line in iter(stream.readline, ""):
+            if not line:
+                break
+            writer.write(line)
+    except Exception:
+        pass
+    finally:
+        try:
+            stream.close()
+        except Exception:
+            pass
+        writer.close()
+
+
+class _TeeTextIO:
+    """Write the same text to console and launcher log file."""
+
+    def __init__(self, primary: TextIO, secondary: TextIO) -> None:
+        self._primary = primary
+        self._secondary = secondary
+
+    def write(self, data: str) -> int:
+        written = self._primary.write(data)
+        try:
+            self._secondary.write(data)
+            self._secondary.flush()
+        except OSError:
+            pass
+        return written
+
+    def flush(self) -> None:
+        self._primary.flush()
+        try:
+            self._secondary.flush()
+        except OSError:
+            pass
+
+    def isatty(self) -> bool:
+        return bool(getattr(self._primary, "isatty", lambda: False)())
+
+    @property
+    def encoding(self) -> str:
+        return getattr(self._primary, "encoding", "utf-8") or "utf-8"
+
+    def fileno(self) -> int:
+        return self._primary.fileno()
+
+
+_LAUNCHER_LOG_HANDLE: TextIO | None = None
+_ORIGINAL_STDOUT: TextIO | None = None
+_ORIGINAL_STDERR: TextIO | None = None
+
+
+def setup_launcher_file_logging() -> Path:
+    """Mirror launcher stdout/stderr into logs/launcher/launcher.log."""
+    global _LAUNCHER_LOG_HANDLE, _ORIGINAL_STDOUT, _ORIGINAL_STDERR
+
+    LAUNCHER_LOG_DIR.mkdir(parents=True, exist_ok=True)
+    if _LAUNCHER_LOG_HANDLE is not None:
+        return LAUNCHER_LOG_FILE
+
+    log_handle = LAUNCHER_LOG_FILE.open("a", encoding="utf-8")
+    log_handle.write("\n")
+    log_handle.write(f"===== launcher start {datetime.now():%Y-%m-%d %H:%M:%S} =====\n")
+    log_handle.flush()
+
+    _LAUNCHER_LOG_HANDLE = log_handle
+    _ORIGINAL_STDOUT = sys.stdout
+    _ORIGINAL_STDERR = sys.stderr
+    sys.stdout = _TeeTextIO(_ORIGINAL_STDOUT, log_handle)
+    sys.stderr = _TeeTextIO(_ORIGINAL_STDERR, log_handle)
+    atexit.register(close_launcher_file_logging)
+    return LAUNCHER_LOG_FILE
+
+
+def close_launcher_file_logging() -> None:
+    global _LAUNCHER_LOG_HANDLE, _ORIGINAL_STDOUT, _ORIGINAL_STDERR
+
+    if _ORIGINAL_STDOUT is not None:
+        sys.stdout = _ORIGINAL_STDOUT
+        _ORIGINAL_STDOUT = None
+    if _ORIGINAL_STDERR is not None:
+        sys.stderr = _ORIGINAL_STDERR
+        _ORIGINAL_STDERR = None
+    if _LAUNCHER_LOG_HANDLE is not None:
+        try:
+            _LAUNCHER_LOG_HANDLE.write(f"===== launcher end {datetime.now():%Y-%m-%d %H:%M:%S} =====\n")
+            _LAUNCHER_LOG_HANDLE.flush()
+            _LAUNCHER_LOG_HANDLE.close()
+        except OSError:
+            pass
+        _LAUNCHER_LOG_HANDLE = None
 
 
 def load_json(path: Path) -> dict[str, Any]:
@@ -108,6 +309,162 @@ def resolve_service_env(service: dict[str, Any]) -> dict[str, str]:
             expanded = str(path.resolve())
         resolved[env_key] = expanded
     return resolved
+
+
+def service_folder_name(service: dict[str, Any]) -> str:
+    name = str(service.get("name", "")).strip()
+    if name in SERVICE_DATA_DIRS:
+        return SERVICE_DATA_DIRS[name]
+    return name or "service"
+
+
+def config_dir_from_service(service: dict[str, Any]) -> Path:
+    env = resolve_service_env(service)
+    for key, value in env.items():
+        if key.endswith("_CONFIG_DIR"):
+            return Path(value)
+    return PACKAGE_ROOT / "config" / service_folder_name(service)
+
+
+def log_dir_from_service(service: dict[str, Any]) -> Path:
+    env = resolve_service_env(service)
+    if "SD_SMA_LOG_DIR" in env:
+        return Path(env["SD_SMA_LOG_DIR"])
+    return PACKAGE_ROOT / "logs" / service_folder_name(service)
+
+
+def _config_dir_is_empty(path: Path) -> bool:
+    if not path.exists():
+        return True
+    if not path.is_dir():
+        return False
+    for item in path.rglob("*"):
+        if item.is_file():
+            return False
+    return True
+
+
+def _should_skip_seed_path(relative: Path) -> bool:
+    for part in relative.parts:
+        if part in CONFIG_SEED_SKIP_DIR_NAMES:
+            return True
+    if relative.suffix.lower() in CONFIG_SEED_SKIP_FILE_SUFFIXES:
+        return True
+    return False
+
+
+def seed_config_dir(target: Path, source: Path) -> int:
+    """Copy initial config files from project config into unified config dir.
+
+    Returns number of files copied.
+    """
+    if not source.is_dir():
+        return 0
+
+    copied = 0
+    target.mkdir(parents=True, exist_ok=True)
+    for item in source.rglob("*"):
+        relative = item.relative_to(source)
+        if _should_skip_seed_path(relative):
+            continue
+        dest = target / relative
+        if item.is_dir():
+            dest.mkdir(parents=True, exist_ok=True)
+            continue
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(item, dest)
+        copied += 1
+    return copied
+
+
+def ensure_report_copy_log_dir(config_dir: Path) -> None:
+    config_file = config_dir / "default.json"
+    if not config_file.is_file():
+        return
+    try:
+        data = load_json(config_file)
+    except (OSError, ValueError, json.JSONDecodeError):
+        return
+
+    desired = "${PACKAGE_ROOT}/logs/report_copy"
+    if data.get("log_dir") == desired:
+        return
+    data["log_dir"] = desired
+    tmp = config_file.with_suffix(".json.tmp")
+    with tmp.open("w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+        f.write("\n")
+    tmp.replace(config_file)
+
+
+def neutralize_collector_relative_log_dirs(config_dir: Path) -> int:
+    """Clear relative logging.output_dir so SD_SMA_LOG_DIR can take effect."""
+    changed = 0
+    if not config_dir.is_dir():
+        return changed
+    for path in config_dir.glob("*.json"):
+        try:
+            data = load_json(path)
+        except (OSError, ValueError, json.JSONDecodeError):
+            continue
+        logging_cfg = data.get("logging")
+        if not isinstance(logging_cfg, dict):
+            continue
+        output_dir = logging_cfg.get("output_dir")
+        if not isinstance(output_dir, str):
+            continue
+        raw = output_dir.strip()
+        if not raw:
+            continue
+        # Keep absolute paths; clear relative ones so launcher env wins.
+        if Path(raw).is_absolute() or raw.startswith("${"):
+            continue
+        logging_cfg["output_dir"] = ""
+        data["logging"] = logging_cfg
+        tmp = path.with_suffix(".json.tmp")
+        with tmp.open("w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+            f.write("\n")
+        tmp.replace(path)
+        changed += 1
+    return changed
+
+
+def bootstrap_runtime_dirs(config: dict[str, Any]) -> None:
+    """Create unified config/logs folders and seed empty configs from _Prj."""
+    LAUNCHER_LOG_DIR.mkdir(parents=True, exist_ok=True)
+
+    for service in config.get("services", []):
+        if not isinstance(service, dict):
+            continue
+        name = str(service.get("name", "")).strip() or "service"
+        folder = service_folder_name(service)
+        config_dir = config_dir_from_service(service)
+        log_dir = log_dir_from_service(service)
+        config_dir.mkdir(parents=True, exist_ok=True)
+        log_dir.mkdir(parents=True, exist_ok=True)
+        # Always keep a reserved per-service log folder under logs/<folder>.
+        (PACKAGE_ROOT / "logs" / folder).mkdir(parents=True, exist_ok=True)
+
+        if _config_dir_is_empty(config_dir):
+            cwd = resolve_path(str(service.get("cwd", "")))
+            source = cwd / "config"
+            copied = seed_config_dir(config_dir, source)
+            if copied:
+                print(f"[bootstrap] seeded {name} config from {source} -> {config_dir} ({copied} files)")
+            else:
+                print(f"[bootstrap] created empty config dir for {name}: {config_dir}")
+        else:
+            print(f"[bootstrap] using existing config for {name}: {config_dir}")
+
+        if name == "report_copy":
+            ensure_report_copy_log_dir(config_dir)
+        if name == "collector_web":
+            cleared = neutralize_collector_relative_log_dirs(config_dir)
+            if cleared:
+                print(f"[bootstrap] cleared relative logging.output_dir in {cleared} collector config file(s)")
+
+        print(f"[bootstrap] logs for {name}: {log_dir}")
 
 
 def run_python(
@@ -267,9 +624,6 @@ def wait_for_http(url: str, timeout_seconds: float) -> bool:
 
 
 def start_services(python: Path, config: dict[str, Any]) -> list[ServiceProcess]:
-    log_dir = resolve_path("logs/launcher")
-    log_dir.mkdir(parents=True, exist_ok=True)
-
     env = os.environ.copy()
     env["PYTHONUNBUFFERED"] = "1"
     apply_proxy_env(env, config)
@@ -282,9 +636,15 @@ def start_services(python: Path, config: dict[str, Any]) -> list[ServiceProcess]
         app = str(service["app"])
         host = str(service.get("host", "127.0.0.1"))
         port = int(service["port"])
-        log_path = log_dir / f"{name}.log"
-        log_file = log_path.open("a", encoding="utf-8")
+        # Process stdout/stderr go under logs/<service>/, not logs/launcher/.
+        log_dir = log_dir_from_service(service)
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log_path = log_dir / "uvicorn.log"
+        log_writer = SizeRotatingLogWriter(log_path)
         service_env = resolve_service_env(service)
+        # Let query_web also write its own rotated app.log when SD_SMA_LOG_DIR is set.
+        if "SD_SMA_LOG_DIR" not in service_env:
+            service_env = {**service_env, "SD_SMA_LOG_DIR": str(log_dir)}
         command = [
             str(python),
             "-m",
@@ -297,17 +657,27 @@ def start_services(python: Path, config: dict[str, Any]) -> list[ServiceProcess]
         ]
 
         print(f"[start] {title}: http://{host}:{port}")
-        print(f"[start] log: {log_path}")
+        print(f"[start] log: {log_path} (rotate {DEFAULT_SERVICE_LOG_MAX_BYTES // (1024 * 1024)}MB x{DEFAULT_SERVICE_LOG_BACKUP_COUNT})")
         for env_key, env_value in service_env.items():
             print(f"[start] env {env_key}={env_value}")
         process = subprocess.Popen(
             command,
             cwd=str(cwd),
             env={**env, **service_env},
-            stdout=log_file,
+            stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
+            encoding="utf-8",
+            errors="replace",
+            bufsize=1,
         )
+        log_pump = threading.Thread(
+            target=_pump_process_output,
+            args=(process.stdout, log_writer),
+            name=f"log-pump-{name}",
+            daemon=True,
+        )
+        log_pump.start()
         processes.append(
             ServiceProcess(
                 name=name,
@@ -315,7 +685,8 @@ def start_services(python: Path, config: dict[str, Any]) -> list[ServiceProcess]
                 url=str(service.get("open_url", f"http://{host}:{port}")),
                 log_path=log_path,
                 process=process,
-                log_file=log_file,
+                log_file=log_writer,
+                log_pump=log_pump,
             )
         )
 
@@ -361,6 +732,13 @@ def terminate_processes(processes: list[ServiceProcess]) -> None:
             print(f"[stop] force kill: {proc.title}")
             proc.process.kill()
         try:
+            if proc.process.stdout is not None:
+                proc.process.stdout.close()
+        except OSError:
+            pass
+        if proc.log_pump is not None:
+            proc.log_pump.join(timeout=2.0)
+        try:
             proc.log_file.close()
         except OSError:
             pass
@@ -391,6 +769,9 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
+    launcher_log = setup_launcher_file_logging()
+    print(f"[log] launcher file: {launcher_log}")
+
     config_path = resolve_path(args.config, base=Path.cwd()) if args.config != str(DEFAULT_CONFIG) else DEFAULT_CONFIG
     config = load_json(config_path)
     install_missing = args.install_missing or bool(config.get("auto_install_missing", False))
@@ -399,6 +780,7 @@ def main() -> int:
     try:
         check_environment(python, config, install_missing=install_missing)
         assert_service_paths(config)
+        bootstrap_runtime_dirs(config)
         if args.check:
             print("[check] ok")
             return 0
@@ -421,6 +803,8 @@ def main() -> int:
         print("")
         print(f"[error] {exc}")
         return 1
+    finally:
+        close_launcher_file_logging()
 
 
 if __name__ == "__main__":

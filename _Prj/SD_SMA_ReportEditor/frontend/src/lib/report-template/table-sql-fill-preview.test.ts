@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { hydrateTableSqlFill } from "@/lib/report-template/table-sql-fill";
+import {
+  hydrateTableSqlFill,
+  visualSqlNeedsStructureTable,
+  visualSqlStructureTableName,
+} from "@/lib/report-template/table-sql-fill";
 import { formatScalarForPreviewValue } from "@/lib/report-template/binding-preview-utils";
 import {
   sanitizeOpcTableName,
@@ -8,6 +12,57 @@ import {
   TABLE_SQL_FILL_FULL_ROW_LIMIT,
   TABLE_SQL_FILL_PREVIEW_ROW_LIMIT,
 } from "@/lib/report-template/table-sql-fill-preview";
+
+describe("visualSqlStructureTableName / visualSqlNeedsStructureTable", () => {
+  it("uses visualSource.table as structure table regardless of opcua runtime name", () => {
+    expect(
+      visualSqlStructureTableName({
+        connectionId: "c1",
+        database: "db",
+        table: "sensor_tpl",
+        engine: "mysql",
+        columns: [],
+        tableSource: "opcua",
+        tableOpcNodeId: "ns=2;s=DynTable",
+      }),
+    ).toBe("sensor_tpl");
+  });
+
+  it("flags missing structure table only in opcua mode", () => {
+    expect(
+      visualSqlNeedsStructureTable({
+        connectionId: "c1",
+        database: "db",
+        table: "",
+        engine: "mysql",
+        columns: [],
+        tableSource: "opcua",
+        tableOpcNodeId: "ns=2;s=DynTable",
+      }),
+    ).toBe(true);
+    expect(
+      visualSqlNeedsStructureTable({
+        connectionId: "c1",
+        database: "db",
+        table: "sensor_tpl",
+        engine: "mysql",
+        columns: [],
+        tableSource: "opcua",
+        tableOpcNodeId: "ns=2;s=DynTable",
+      }),
+    ).toBe(false);
+    expect(
+      visualSqlNeedsStructureTable({
+        connectionId: "c1",
+        database: "db",
+        table: "",
+        engine: "mysql",
+        columns: [],
+        tableSource: "manual",
+      }),
+    ).toBe(false);
+  });
+});
 
 describe("sqlFillQueryLimit", () => {
   it("editor preview caps at preview limit", () => {

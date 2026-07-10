@@ -198,6 +198,11 @@ export interface SqlDedupeTask {
   sql: string;
   params?: TableSqlParamBinding[];
   keys: string[];
+  /**
+   * 可视化标量 SQL 选中的库名。MySQL/MariaDB 连接若未配置默认库，
+   * 请求必须带上此字段，否则会报 1046 No database selected。
+   */
+  database?: string;
 }
 
 export function quoteSqlScalarValue(value: unknown, opts?: { numericStringAsNumber?: boolean }): string {
@@ -343,10 +348,18 @@ export function collectBindingDedupeTasks(
     if (displayKey) e.keys.push(displayKey);
   }
 
-  function addSql(sqlRaw: string, displayKey: string, params?: TableSqlParamBinding[]) {
-    if (!sqlConnId) return;
+  function addSql(
+    sqlRaw: string,
+    displayKey: string,
+    params?: TableSqlParamBinding[],
+    visual?: ScalarSqlVisualConfig | null,
+  ) {
+    const visualConn = (visual?.connectionId || "").trim();
+    const connectionId = visualConn || sqlConnId;
+    if (!connectionId) return;
     const sql = sqlRaw.trim();
     if (!sql) return;
+    const database = (visual?.database || "").trim() || undefined;
     const paramKey = JSON.stringify(
       (params || []).map((p) => ({
         source: p.source,
@@ -354,10 +367,10 @@ export function collectBindingDedupeTasks(
         literalFallback: p.literalFallback,
       })),
     );
-    const nk = `${sqlConnId}\u0000${sql}\u0000${paramKey}`;
+    const nk = `${connectionId}\u0000${database || ""}\u0000${sql}\u0000${paramKey}`;
     let e = sqlMap.get(nk);
     if (!e) {
-      e = { connectionId: sqlConnId, sql, params, keys: [] };
+      e = { connectionId, sql, params, keys: [], database };
       sqlMap.set(nk, e);
     }
     e.keys.push(displayKey);
@@ -377,6 +390,7 @@ export function collectBindingDedupeTasks(
           resolveEffectiveScalarSql(el.sqlText, el.scalarSqlFillMode, el.scalarSqlVisual),
           paramKey(el.id),
           el.sqlParams,
+          el.scalarSqlVisual,
         );
       }
     } else if (el.type === "table") {
@@ -392,6 +406,7 @@ export function collectBindingDedupeTasks(
               resolveEffectiveScalarSql(cell.sqlText, cell.scalarSqlFillMode, cell.scalarSqlVisual),
               ck,
               cell.sqlParams,
+              cell.scalarSqlVisual,
             );
           }
         }),
@@ -411,6 +426,7 @@ export function collectBindingDedupeTasks(
           resolveEffectiveScalarSql(el.sqlText, el.scalarSqlFillMode, el.scalarSqlVisual),
           `zone-param:${el.id}`,
           el.sqlParams,
+          el.scalarSqlVisual,
         );
       }
     } else if (el.type === "table") {
@@ -426,6 +442,7 @@ export function collectBindingDedupeTasks(
               resolveEffectiveScalarSql(cell.sqlText, cell.scalarSqlFillMode, cell.scalarSqlVisual),
               ck,
               cell.sqlParams,
+              cell.scalarSqlVisual,
             );
           }
         }),

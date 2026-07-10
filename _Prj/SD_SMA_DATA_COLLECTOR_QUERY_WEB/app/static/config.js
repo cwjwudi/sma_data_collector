@@ -5,7 +5,29 @@ let columnLabels = {};
 let currentSchema = null;
 let pluginConfigData = { modules: {} };
 const CONFIG_STATE_KEY = 'sd_sma_query_config_page_state_v1';
+const LOCKED_GROUP_VIEW = 'table';
+const LOCKED_PLUGIN_MODULE = 'general';
+const LOCKED_PLUGIN_VIEW = 'table';
 let currentConfigProfile = '';
+
+function replaceSelectOptions(select, options, selectedValue) {
+  if (!select) return;
+  select.innerHTML = '';
+  for (const option of options) {
+    appendOption(select, option.value, option.label);
+  }
+  if (selectedValue && hasOption(select, selectedValue)) {
+    select.value = selectedValue;
+  } else if (select.options.length > 0) {
+    select.value = select.options[0].value;
+  }
+}
+
+function lockSelect(selectId, value, label) {
+  const select = document.getElementById(selectId);
+  replaceSelectOptions(select, [{ value, label }], value);
+  select.disabled = true;
+}
 
 function getAppSettingsPayload() {
   return {
@@ -70,6 +92,12 @@ function buildOpcuaEndpointUrl(host, port) {
   return `opc.tcp://${resolvedHost}:${safePort}/`;
 }
 
+function clampPollIntervalMs(raw) {
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return 500;
+  return Math.max(50, Math.min(5000, Math.round(n)));
+}
+
 function getOpcuaPayload() {
   return {
     endpoint_url: buildOpcuaEndpointUrl(
@@ -78,6 +106,8 @@ function getOpcuaPayload() {
     ),
     username: document.getElementById('appOpcuaUsername').value.trim(),
     password: document.getElementById('appOpcuaPassword').value,
+    heartbeat_node: document.getElementById('appOpcuaHeartbeatNode').value.trim(),
+    poll_interval_ms: clampPollIntervalMs(document.getElementById('appOpcuaPollIntervalMs').value),
   };
 }
 
@@ -88,7 +118,12 @@ function fillOpcuaForm(data) {
   document.getElementById('appOpcuaPort').value = endpoint.port;
   document.getElementById('appOpcuaUsername').value = settings.username || '';
   document.getElementById('appOpcuaPassword').value = settings.password || '';
+  document.getElementById('appOpcuaHeartbeatNode').value = settings.heartbeat_node || '';
+  document.getElementById('appOpcuaPollIntervalMs').value = clampPollIntervalMs(
+    settings.poll_interval_ms ?? 500,
+  );
 }
+
 
 async function fetchJson(url, opts) {
   const resp = await fetch(url, opts);
@@ -219,49 +254,69 @@ async function loadColumnsForTable(tableName, preferredTimeField, preferredSortB
 async function loadViews() {
   const data = await fetchJson('/api/query/views');
   queryViews = data.views || {};
-  const sel = document.getElementById('editViewName');
-  sel.innerHTML = '';
-  for (const [name, view] of Object.entries(queryViews)) {
-    const op = document.createElement('option');
-    op.value = name;
-    op.textContent = `${name} - ${view.title || name}`;
-    sel.appendChild(op);
-  }
+  const lockedView = queryViews[LOCKED_GROUP_VIEW] || {};
+  lockSelect(
+    'editViewName',
+    LOCKED_GROUP_VIEW,
+    `${LOCKED_GROUP_VIEW} - ${lockedView.title || LOCKED_GROUP_VIEW}`,
+  );
 }
 
 async function loadAppSettings() {
   const [data, opcuaData] = await Promise.all([
     fetchJson('/api/config/app-settings'),
-    fetchJson('/api/config/opcua').catch(() => ({ endpoint_url: '', username: '', password: '' })),
+    fetchJson('/api/config/opcua').catch(() => ({
+      endpoint_url: '',
+      username: '',
+      password: '',
+      heartbeat_node: '',
+      poll_interval_ms: 500,
+    })),
   ]);
   fillAppSettingsForm(data || {});
   fillOpcuaForm(opcuaData || {});
-  document.getElementById('appSettingsHint').textContent =
-    '已加载基础设定与 OPC UA 连接（保存基础设定时一并写入）';
+  document.getElementById('appSettingsHint').textContent = '已加载数据库设定（数据库与查询限制）';
+  const opcuaHint = document.getElementById('opcuaSettingsHint');
+  if (opcuaHint) {
+    opcuaHint.textContent = '已加载 OPCUA设定（连接、轮询间隔与心跳）';
+  }
 }
 
-async function loadConfigProfiles() {
-  const data = await fetchJson('/api/config/profiles');
-  currentConfigProfile = data.active || '';
-  const sel = document.getElementById('configProfileSelect');
-  sel.innerHTML = '';
-  for (const profile of data.profiles || []) {
+function fillConfigProfileSelect(select, profiles, activeName) {
+  if (!select) return;
+  select.innerHTML = '';
+  for (const profile of profiles || []) {
     const op = document.createElement('option');
     op.value = profile.filename;
     op.textContent = profile.name && profile.name !== profile.filename
       ? `${profile.name} (${profile.filename})`
       : profile.filename;
-    sel.appendChild(op);
+    select.appendChild(op);
   }
-  if (currentConfigProfile && hasOption(sel, currentConfigProfile)) {
-    sel.value = currentConfigProfile;
+  if (activeName && hasOption(select, activeName)) {
+    select.value = activeName;
   }
-  document.getElementById('configProfileHint').textContent =
-    currentConfigProfile ? `当前加载: ${currentConfigProfile}` : '未找到可用 config';
 }
 
-async function switchConfigProfile() {
-  const filename = document.getElementById('configProfileSelect').value;
+async function loadConfigProfiles() {
+  const data = await fetchJson('/api/config/profiles');
+  currentConfigProfile = data.active || '';
+  const profiles = data.profiles || [];
+  fillConfigProfileSelect(document.getElementById('configProfileSelect'), profiles, currentConfigProfile);
+  fillConfigProfileSelect(document.getElementById('activeConfigSelect'), profiles, currentConfigProfile);
+  document.getElementById('configProfileHint').textContent =
+    currentConfigProfile ? `当前加载: ${currentConfigProfile}` : '未找到可用 config';
+  const activeHint = document.getElementById('activeConfigHint');
+  if (activeHint) {
+    activeHint.textContent = currentConfigProfile
+      ? `服务启动与 OPC 回写均使用此配置：${currentConfigProfile}`
+      : '未找到可用 config';
+  }
+}
+
+async function switchConfigProfile(sourceSelectId) {
+  const selectId = sourceSelectId || 'configProfileSelect';
+  const filename = document.getElementById(selectId).value;
   if (!filename) return;
   const result = await fetchJson('/api/config/profiles/active', {
     method: 'POST',
@@ -269,7 +324,7 @@ async function switchConfigProfile() {
     body: JSON.stringify({ filename }),
   });
   currentConfigProfile = result.active || filename;
-  await reloadActiveConfigData(`已加载 config: ${currentConfigProfile}`);
+  await reloadActiveConfigData(`已激活并加载 config: ${currentConfigProfile}`);
 }
 
 async function refreshConfigProfiles() {
@@ -469,6 +524,14 @@ function hasOption(select, value) {
   return Array.from(select.options).some(option => option.value === value);
 }
 
+function initializeLockedControls() {
+  const groupLoadBtn = document.getElementById('btnLoadTableConfig');
+  const pluginLoadBtn = document.getElementById('btnLoadPluginPage');
+  if (groupLoadBtn) groupLoadBtn.hidden = true;
+  if (pluginLoadBtn) pluginLoadBtn.hidden = true;
+  lockSelect('pluginViewName', LOCKED_PLUGIN_VIEW, LOCKED_PLUGIN_VIEW);
+}
+
 function clearGroupConfigEditor() {
   currentSchema = null;
   availableColumns = [];
@@ -540,45 +603,58 @@ async function refreshMetadataFromCurrentDatabase() {
 async function saveAppSettings(options = {}) {
   const { refreshMetadata = false, successMessage } = options;
   const payload = getAppSettingsPayload();
-  const opcuaPayload = getOpcuaPayload();
   const result = await fetchJson('/api/config/app-settings', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
-  const opcuaResult = await fetchJson('/api/config/opcua', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(opcuaPayload),
-  });
   fillAppSettingsForm((result && result.settings) || payload);
-  fillOpcuaForm(opcuaResult || opcuaPayload);
   if (refreshMetadata) {
     await refreshMetadataFromCurrentDatabase();
   }
   const baseMessage =
     successMessage ||
     (refreshMetadata
-      ? '基础设定与 OPC UA 已保存，数据库已重连，Group 与列已按当前数据库刷新'
-      : '基础设定与 OPC UA 已保存；如需刷新 Group 与列，请点击“连接数据库”');
+      ? '数据库设定已保存，数据库已重连，Group 与列已按当前数据库刷新'
+      : '数据库设定已保存；如需刷新 Group 与列，请点击“连接数据库”');
   document.getElementById('appSettingsHint').textContent = baseMessage;
   return result;
 }
 
+async function saveOpcuaSettings(options = {}) {
+  const { successMessage } = options;
+  const opcuaPayload = getOpcuaPayload();
+  const opcuaResult = await fetchJson('/api/config/opcua', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(opcuaPayload),
+  });
+  fillOpcuaForm(opcuaResult || opcuaPayload);
+  const hint = document.getElementById('opcuaSettingsHint');
+  if (hint) {
+    hint.textContent =
+      successMessage ||
+      `OPCUA设定已保存（轮询 ${opcuaResult?.poll_interval_ms || opcuaPayload.poll_interval_ms} ms` +
+        `${opcuaResult?.heartbeat_node || opcuaPayload.heartbeat_node ? '，已配置心跳' : '，未配置心跳'}）`;
+    hint.className = 'muted ok';
+  }
+  return opcuaResult;
+}
+
 async function connectDatabase() {
-  document.getElementById('appSettingsHint').textContent = '正在保存基础设定并连接数据库...';
+  document.getElementById('appSettingsHint').textContent = '正在保存数据库设定并连接数据库...';
   await saveAppSettings({
     refreshMetadata: false,
-    successMessage: '基础设定已保存，正在验证数据库连接...',
+    successMessage: '数据库设定已保存，正在验证数据库连接...',
   });
   const check = await fetchJson('/api/db/check');
   await refreshMetadataFromCurrentDatabase();
   document.getElementById('appSettingsHint').textContent =
-    `数据库连接成功（${check.database || '-'}），Group 与列已刷新；OPC UA 连接已随基础设定保存`;
+    `数据库连接成功（${check.database || '-'}），Group 与列已刷新`;
 }
 
 async function testOpcuaConnection() {
-  const hint = document.getElementById('appSettingsHint');
+  const hint = document.getElementById('opcuaSettingsHint') || document.getElementById('appSettingsHint');
   const payload = getOpcuaPayload();
   hint.textContent = '正在测试 OPC UA 连接...';
   hint.className = 'muted';
@@ -594,9 +670,11 @@ async function testOpcuaConnection() {
       result.product_name ? `product=${result.product_name}` : '',
       result.namespace_count != null ? `namespaces=${result.namespace_count}` : '',
     ].filter(Boolean);
-    setHintMessage('appSettingsHint', parts.join('；'), 'ok');
+    hint.textContent = parts.join('；');
+    hint.className = 'muted ok';
   } catch (err) {
-    setHintMessage('appSettingsHint', err?.message || String(err), 'warn');
+    hint.textContent = String(err?.message || err);
+    hint.className = 'muted warn';
   }
 }
 
@@ -925,7 +1003,7 @@ document.getElementById('btnLoadTableConfig').addEventListener('click', () => {
   loadTableConfig().catch(catchHintError('columnEditorHint'));
 });
 document.getElementById('btnReloadConfigProfile').addEventListener('click', () => {
-  switchConfigProfile().catch(catchHintError('configProfileHint'));
+  switchConfigProfile('configProfileSelect').catch(catchHintError('configProfileHint'));
 });
 document.getElementById('btnRefreshConfigProfiles').addEventListener('click', () => {
   refreshConfigProfiles().catch(catchHintError('configProfileHint'));
@@ -937,16 +1015,26 @@ document.getElementById('btnDeleteConfigProfile').addEventListener('click', () =
   deleteCurrentConfigProfile().catch(catchHintError('configProfileHint'));
 });
 document.getElementById('configProfileSelect').addEventListener('change', () => {
-  switchConfigProfile().catch(catchHintError('configProfileHint'));
+  switchConfigProfile('configProfileSelect').catch(catchHintError('configProfileHint'));
+});
+document.getElementById('activeConfigSelect').addEventListener('change', () => {
+  switchConfigProfile('activeConfigSelect').catch(err => {
+    const hint = document.getElementById('activeConfigHint');
+    if (hint) hint.textContent = String(err.message || err);
+    catchHintError('configProfileHint')(err);
+  });
 });
 document.getElementById('btnSaveAppSettings').addEventListener('click', () => {
   saveAppSettings().catch(catchHintError('appSettingsHint'));
+});
+document.getElementById('btnSaveOpcuaSettings').addEventListener('click', () => {
+  saveOpcuaSettings().catch(catchHintError('opcuaSettingsHint'));
 });
 document.getElementById('btnConnectDatabase').addEventListener('click', () => {
   connectDatabase().catch(catchHintError('appSettingsHint'));
 });
 document.getElementById('btnTestOpcuaConnection').addEventListener('click', () => {
-  testOpcuaConnection().catch(catchHintError('appSettingsHint'));
+  testOpcuaConnection().catch(catchHintError('opcuaSettingsHint'));
 });
 document.getElementById('btnAddColumns').addEventListener('click', addColumns);
 document.getElementById('btnRemoveColumns').addEventListener('click', removeColumns);
@@ -958,9 +1046,18 @@ document.getElementById('btnSaveTableConfig').addEventListener('click', () => {
 document.getElementById('btnDeleteGroupConfig').addEventListener('click', () => {
   deleteGroupConfig().catch(catchHintError('columnEditorHint'));
 });
-document.getElementById('editGroupName').addEventListener('change', () => {
-  loadTables().catch(catchHintError('schemaHint'));
-  saveConfigPageState();
+document.getElementById('editGroupName').addEventListener('change', async () => {
+  try {
+    await loadTables();
+    if (document.getElementById('editTableName').value) {
+      await loadTableConfig();
+    } else {
+      clearGroupConfigEditor();
+    }
+    saveConfigPageState();
+  } catch (err) {
+    catchHintError('schemaHint')(err);
+  }
 });
 document.getElementById('editViewName').addEventListener('change', saveConfigPageState);
 document.getElementById('editTableName').addEventListener('change', () => {
@@ -1262,15 +1359,8 @@ function loadPluginTableListWritebackForm(tableListCfg) {
 
 async function loadPluginConfig() {
   pluginConfigData = await fetchJson('/api/config/plugins');
-  const modules = pluginConfigData.modules || {};
-  const sel = document.getElementById('pluginModule');
-  sel.innerHTML = '';
-  for (const name of Object.keys(modules)) {
-    appendOption(sel, name);
-  }
-  if (sel.options.length === 0) {
-    appendOption(sel, 'alarm');
-  }
+  ensurePluginModuleAndPage(LOCKED_PLUGIN_MODULE, '1');
+  lockSelect('pluginModule', LOCKED_PLUGIN_MODULE, LOCKED_PLUGIN_MODULE);
   await loadPluginPageConfig();
   saveConfigPageState();
 }
@@ -1280,7 +1370,7 @@ function ensurePluginModuleAndPage(moduleName, pageIndex) {
   if (!pluginConfigData.modules[moduleName]) {
     pluginConfigData.modules[moduleName] = {
       title: moduleName,
-      view_name: 'table',
+      view_name: LOCKED_PLUGIN_VIEW,
       bind_group: '',
       page_size: 10,
       pages: { '1': {}, '2': {}, '3': {}, '4': {}, '5': {} },
@@ -1455,7 +1545,7 @@ function renderPluginOpcuaFeedbackEditor() {
 }
 
 async function loadPluginPageConfig() {
-  const moduleName = document.getElementById('pluginModule').value;
+  const moduleName = document.getElementById('pluginModule').value || LOCKED_PLUGIN_MODULE;
   const pageIndex = document.getElementById('pluginPageIndex').value || '1';
   if (!moduleName) return;
   ensurePluginModuleAndPage(moduleName, pageIndex);
@@ -1465,12 +1555,12 @@ async function loadPluginPageConfig() {
   const bindGroup = pageCfg.bind_group ?? moduleCfg.bind_group ?? '';
   document.getElementById('pluginEnabled').checked = pageCfg.enabled !== false;
   document.getElementById('pluginTitle').value = pageCfg.title ?? moduleCfg.title ?? `${moduleName}_${pageIndex}`;
-  document.getElementById('pluginViewName').value = pageCfg.view_name ?? moduleCfg.view_name ?? 'table';
+  lockSelect('pluginViewName', LOCKED_PLUGIN_VIEW, LOCKED_PLUGIN_VIEW);
   document.getElementById('pluginPageSize').value = Number(pageCfg.page_size ?? moduleCfg.page_size ?? 10);
   document.getElementById('pluginBindGroup').value = bindGroup;
   await updatePluginGroupHint(bindGroup);
 
-  const viewName = pageCfg.view_name ?? moduleCfg.view_name ?? 'table';
+  const viewName = LOCKED_PLUGIN_VIEW;
   const writebackCfg = pageCfg.opcua_writeback || { cursor: '', columns: {} };
   await loadPluginOpcuaWritebackTable(viewName, bindGroup, writebackCfg);
   renderPluginOpcuaFeedbackEditor();
@@ -1484,7 +1574,7 @@ async function loadPluginPageConfig() {
 }
 
 async function savePluginPageConfig() {
-  const moduleName = document.getElementById('pluginModule').value;
+  const moduleName = document.getElementById('pluginModule').value || LOCKED_PLUGIN_MODULE;
   const pageIndex = document.getElementById('pluginPageIndex').value || '1';
   if (!moduleName) {
     setHintMessage('pluginConfigHint', '请先选择模块');
@@ -1496,7 +1586,7 @@ async function savePluginPageConfig() {
 
   pageCfg.enabled = document.getElementById('pluginEnabled').checked;
   pageCfg.title = document.getElementById('pluginTitle').value || `${moduleName}_${pageIndex}`;
-  pageCfg.view_name = document.getElementById('pluginViewName').value || 'table';
+  pageCfg.view_name = LOCKED_PLUGIN_VIEW;
   pageCfg.page_size = Number(document.getElementById('pluginPageSize').value || 10);
   pageCfg.bind_group = document.getElementById('pluginBindGroup').value || '';
   delete pageCfg.bind_table;
@@ -1529,7 +1619,7 @@ async function savePluginPageConfig() {
   }
 
   moduleCfg.title = moduleCfg.title || moduleName;
-  moduleCfg.view_name = moduleCfg.view_name || pageCfg.view_name;
+  moduleCfg.view_name = LOCKED_PLUGIN_VIEW;
   moduleCfg.page_size = moduleCfg.page_size || pageCfg.page_size;
   moduleCfg.bind_group = moduleCfg.bind_group || pageCfg.bind_group;
   delete moduleCfg.bind_table;
@@ -1621,6 +1711,7 @@ document.getElementById('pluginOpcuaColumnTable').addEventListener('input', even
 });
 
 async function initConfigPage() {
+  initializeLockedControls();
   await loadConfigProfiles();
   await loadAppSettings();
   await loadViews();

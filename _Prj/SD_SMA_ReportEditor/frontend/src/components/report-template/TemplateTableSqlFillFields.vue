@@ -8,6 +8,17 @@
       </select>
     </label>
 
+    <label class="tbl-sql-fill-mode">
+      <span class="tbl-sql-fill-mode-t">表格形态</span>
+      <select :value="layoutModeProxy" :class="selectFieldClass" @change="onLayoutModeChange">
+        <option value="horizontal">横表（多列字段）</option>
+        <option value="vertical">纵表（左名称 / 右值）</option>
+      </select>
+    </label>
+    <p v-if="layoutModeProxy === 'vertical'" class="tbl-sql-fill-policy-hint">
+      纵表固定两列：在画布「名称」列下拉选择字段；空白分隔仅在需要分组时添加。多行结果会自动跨页续表。
+    </p>
+
     <TemplateTableSqlVisualPanel
       v-if="fill.fillMode === 'visual'"
       :fill="fill"
@@ -16,6 +27,7 @@
       :select-class="selectFieldClass"
       :button-class="pickBtnClass"
       @opc-pick-param="$emit('opcPickParam', $event)"
+      @vertical-slots-change="$emit('verticalSlotsChange')"
     />
 
     <template v-if="fill.fillMode === 'manual_sql'">
@@ -112,9 +124,26 @@
     <p v-if="allowSplitReports && fill.splitReportsOnMaxRows" class="tbl-sql-fill-policy-hint">
       开启后，如果查询结果超过最大行数，会按最大行数拆成多份报表；同时模板中只允许保留一个数据库填充表。
     </p>
+    <label v-if="layoutModeProxy === 'vertical'" class="tbl-sql-fill-mode">
+      <span class="tbl-sql-fill-mode-t">多条结果分页</span>
+      <select v-model="verticalMultiRecordModeProxy" :class="selectFieldClass">
+        <option value="continue">同表续表（组间可插空白）</option>
+        <option value="page_per_record">每条结果另起一页</option>
+      </select>
+    </label>
+    <p v-if="layoutModeProxy === 'vertical'" class="tbl-sql-fill-policy-hint">
+      「同表续表」：多条查询结果在同一表内连续展开，超出页高再跨页续排。「另起一页」：每条 SQL 结果单独占一页（适合配方/批次逐条成页）。
+    </p>
     <label class="tbl-sql-fill-minichk">
       <input v-model="fill.repeatHeaderOnPageBreak" type="checkbox" />
       <span>跨页重复表头</span>
+    </label>
+    <label v-if="layoutModeProxy === 'horizontal' && hasSequenceColumn" class="tbl-sql-fill-mode">
+      <span class="tbl-sql-fill-mode-t">序号跨页</span>
+      <select v-model="sequencePageModeProxy" :class="selectFieldClass">
+        <option value="continuous">整份报表连续编号</option>
+        <option value="restart_per_page">每页从 1 重新编号</option>
+      </select>
     </label>
     <label class="tbl-sql-fill-minichk">
       <input v-model="fill.allowWidgetsBelowSqlFillTable" type="checkbox" />
@@ -132,10 +161,19 @@ import {
   clampTableSqlMaxRows,
   ensureMinTableSqlParamSlots,
   ensureVisualSource,
+  isVerticalSqlFill,
+  normalizeTableSqlLayoutMode,
+  normalizeTableSqlSequencePageMode,
+  normalizeTableSqlVerticalMultiRecordMode,
   type TableSqlFillConfig,
   type TableSqlParamBinding,
+  type TableSqlSequencePageMode,
+  type TableSqlVerticalMultiRecordMode,
 } from "@/lib/report-template/table-sql-fill";
-import { syncVisualFillQueryAndResultNames } from "@/lib/report-template/table-sql-visual-compile";
+import {
+  applyTableSqlLayoutMode,
+  syncVisualFillQueryAndResultNames,
+} from "@/lib/report-template/table-sql-visual-compile";
 import { computed, watch } from "vue";
 
 const props = withDefaults(
@@ -159,6 +197,8 @@ const props = withDefaults(
 const emit = defineEmits<{
   opcPickParam: [slot: number];
   syncHeaders: [];
+  layoutModeChange: [mode: "horizontal" | "vertical"];
+  verticalSlotsChange: [];
 }>();
 
 const pickBtnClass = computed(() => props.buttonClass || "tbl-sql-side-btn");
@@ -169,6 +209,34 @@ const selectFieldClass = computed(() => {
 });
 
 const allowSplitReports = computed(() => props.allowSplitReports === true);
+
+const layoutModeProxy = computed(() => normalizeTableSqlLayoutMode(props.fill.layoutMode));
+
+const hasSequenceColumn = computed(() => (props.fill.columnRoles || []).includes("sequence"));
+
+const sequencePageModeProxy = computed({
+  get(): TableSqlSequencePageMode {
+    return normalizeTableSqlSequencePageMode(props.fill.sequencePageMode);
+  },
+  set(v: TableSqlSequencePageMode) {
+    props.fill.sequencePageMode = normalizeTableSqlSequencePageMode(v);
+  },
+});
+
+const verticalMultiRecordModeProxy = computed({
+  get(): TableSqlVerticalMultiRecordMode {
+    return normalizeTableSqlVerticalMultiRecordMode(props.fill.verticalMultiRecordMode);
+  },
+  set(v: TableSqlVerticalMultiRecordMode) {
+    props.fill.verticalMultiRecordMode = normalizeTableSqlVerticalMultiRecordMode(v);
+  },
+});
+
+function onLayoutModeChange(ev: Event) {
+  const v = (ev.target as HTMLSelectElement).value === "vertical" ? "vertical" : "horizontal";
+  applyTableSqlLayoutMode(props.fill, v);
+  emit("layoutModeChange", v);
+}
 
 const sqlPlaceholder = "SELECT a,b FROM t WHERE x BETWEEN {{p0}} AND {{p1}}";
 
@@ -196,6 +264,22 @@ watch(
     if (en && mode === "manual_sql") ensureMinTableSqlParamSlots(props.fill, 2);
   },
   { immediate: true },
+);
+
+watch(
+  () => props.fill.fillMode,
+  (mode) => {
+    if (mode === "visual" && props.fill.enabled) {
+      syncVisualFillQueryAndResultNames(props.fill, props.columnCount);
+    }
+  },
+);
+
+watch(
+  () => isVerticalSqlFill(props.fill),
+  (vert) => {
+    if (vert) emit("layoutModeChange", "vertical");
+  },
 );
 
 watch(
