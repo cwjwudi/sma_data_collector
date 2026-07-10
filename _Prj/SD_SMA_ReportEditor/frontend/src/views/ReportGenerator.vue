@@ -2076,7 +2076,9 @@ onUnmounted(() => {
 
 <style scoped>
 .rg-page {
-  max-width: 820px;
+  width: 100%;
+  max-width: none;
+  box-sizing: border-box;
 }
 .rg-title {
   font-size: 24px;
@@ -2122,12 +2124,14 @@ onUnmounted(() => {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  max-width: 520px;
+  width: 100%;
+  max-width: none;
   margin-bottom: 12px;
   padding: 10px 12px;
   border-radius: 8px;
   border: 1px solid #e4e4e7;
   background: #fff;
+  box-sizing: border-box;
 }
 .rg-switch-label {
   font-size: 14px;
@@ -2533,7 +2537,7 @@ onUnmounted(() => {
 .rg-select,
 .rg-inp {
   width: 100%;
-  max-width: 520px;
+  max-width: none;
   box-sizing: border-box;
   padding: 7px 9px;
   border-radius: 8px;
@@ -2546,17 +2550,19 @@ onUnmounted(() => {
   min-width: 0;
 }
 .rg-inp--num {
+  width: auto;
   max-width: 140px;
 }
 .rg-inline {
   display: flex;
   gap: 8px;
   align-items: center;
-  max-width: 640px;
+  width: 100%;
+  max-width: none;
 }
 .rg-inline--bind {
   width: 100%;
-  max-width: 720px;
+  max-width: none;
   flex-wrap: wrap;
 }
 .rg-inline--bind .rg-inp--grow {
@@ -2578,7 +2584,8 @@ onUnmounted(() => {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 12px;
-  max-width: 520px;
+  width: 100%;
+  max-width: none;
 }
 @media (max-width: 640px) {
   .rg-split {

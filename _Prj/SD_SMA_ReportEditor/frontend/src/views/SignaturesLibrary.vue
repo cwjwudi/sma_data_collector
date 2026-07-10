@@ -13,39 +13,43 @@
     <p v-if="loading" class="loading-hint">正在加载签名，请稍候…</p>
     <p v-if="msg" class="msg">{{ msg }}</p>
 
-    <table class="tbl">
-      <thead>
-        <tr>
-          <th>名称</th>
-          <th>预览</th>
-          <th>更新</th>
-          <th></th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr v-if="loading && !rows.length">
-          <td colspan="4" class="empty">正在加载签名条目…</td>
-        </tr>
-        <tr v-else-if="!rows.length">
-          <td colspan="4" class="empty">暂无签名条目。</td>
-        </tr>
-        <tr v-for="r in rows" :key="r.id" :ref="(el) => setRowRef(r.id, el as Element | null)">
-          <td>{{ r.label }}</td>
-          <td class="prev">
-            <img v-if="r.preview" :src="r.preview" alt="" class="thumb" />
-            <span v-else class="thumb-ph" aria-hidden="true">…</span>
-          </td>
-          <td>{{ r.updated }}</td>
-          <td class="td-act">
-            <div class="row-actions">
-              <a href="#" class="lnk" @click.prevent="rename(r.id)">改名</a>
-              <a href="#" class="lnk" @click.prevent="openResign(r.id)">重新签名</a>
-              <a href="#" class="lnk danger" @click.prevent="remove(r.id)">删除</a>
-            </div>
-          </td>
-        </tr>
-      </tbody>
-    </table>
+    <div class="tbl-panel">
+      <table class="tbl">
+        <thead>
+          <tr>
+            <th>名称</th>
+            <th>预览</th>
+            <th>更新</th>
+            <th class="th-act">操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-if="loading && !rows.length">
+            <td colspan="4" class="empty">正在加载签名条目…</td>
+          </tr>
+          <tr v-else-if="!rows.length">
+            <td colspan="4" class="empty">暂无签名条目。</td>
+          </tr>
+          <tr v-for="r in rows" :key="r.id" :ref="(el) => setRowRef(r.id, el as Element | null)">
+            <td class="td-name">{{ r.label }}</td>
+            <td class="prev">
+              <div class="thumb-box">
+                <img v-if="r.preview" :src="r.preview" alt="" class="thumb" />
+                <span v-else class="thumb-ph" aria-hidden="true">暂无预览</span>
+              </div>
+            </td>
+            <td class="td-meta">{{ r.updated }}</td>
+            <td class="td-act">
+              <div class="row-actions">
+                <button type="button" class="lnk" @click="rename(r.id)">改名</button>
+                <button type="button" class="lnk" @click="openResign(r.id)">重新签名</button>
+                <button type="button" class="lnk danger" @click="remove(r.id)">删除</button>
+              </div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
 
     <!-- 命名弹层优先于手写板（不依赖可能被禁用的 window.prompt） -->
     <div v-if="nameDlg" class="name-backdrop" @click.self="closeNameDlg">
@@ -431,9 +435,10 @@ watch(
   font-size: 12px;
   line-height: 1.55;
   color: #475569;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
+  background: rgb(255 255 255 / 0.72);
+  border: 1px solid rgb(226 232 240 / 0.9);
+  border-radius: 10px;
+  backdrop-filter: blur(6px);
 }
 .msg {
   font-size: 12px;
@@ -444,89 +449,123 @@ watch(
   font-size: 13px;
   color: #4f46e5;
 }
+.tbl-panel {
+  margin-top: 14px;
+  border-radius: 12px;
+  border: 1px solid rgb(228 228 231 / 0.95);
+  background: rgb(255 255 255 / 0.92);
+  box-shadow: 0 8px 24px rgb(15 23 42 / 0.06);
+  overflow: hidden;
+}
 .tbl {
   width: 100%;
   border-collapse: collapse;
-  margin-top: 12px;
   font-size: 14px;
 }
-.tbl th,
-.tbl td {
-  border: 1px solid #e4e4e7;
-  padding: 8px;
+.tbl thead th {
+  padding: 11px 14px;
+  text-align: left;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: #64748b;
+  background: #f8fafc;
+  border-bottom: 1px solid #e2e8f0;
+}
+.tbl tbody td {
+  padding: 12px 14px;
   vertical-align: middle;
+  border-bottom: 1px solid #f1f5f9;
+  color: #334155;
 }
-.thumb {
-  max-height: 48px;
-  max-width: 160px;
-  object-fit: contain;
+.tbl tbody tr:last-child td {
+  border-bottom: none;
 }
-.thumb-ph {
+.tbl tbody tr:hover td {
+  background: #f8fafc;
+}
+.th-act {
+  text-align: right;
+}
+.td-name {
+  font-weight: 600;
+  color: #1e293b;
+}
+.td-meta {
+  color: #64748b;
+  font-size: 13px;
+  white-space: nowrap;
+}
+.thumb-box {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 64px;
-  height: 32px;
-  color: #a1a1aa;
+  min-width: 120px;
+  min-height: 52px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+}
+.thumb {
+  max-height: 44px;
+  max-width: 148px;
+  object-fit: contain;
+}
+.thumb-ph {
+  color: #94a3b8;
   font-size: 12px;
-  background: #f4f4f5;
-  border-radius: 4px;
 }
 .prev {
   width: 180px;
 }
 .empty {
   text-align: center;
-  color: #71717a;
-  padding: 24px;
+  color: #94a3b8;
+  padding: 36px 16px !important;
+  background: transparent !important;
 }
 .td-act {
   white-space: nowrap;
+  text-align: right;
 }
 .row-actions {
-  display: flex;
+  display: inline-flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
+  justify-content: flex-end;
+  gap: 6px;
 }
 .lnk {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 48px;
-  min-height: 44px;
-  padding: 0 14px;
+  min-height: 32px;
+  padding: 0 12px;
   box-sizing: border-box;
   margin: 0;
-  border-radius: 6px;
-  border: 1px solid #c7d2fe;
-  background: #eef2ff;
-  color: #3730a3;
-  font-size: 13px;
+  border-radius: 999px;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  color: #475569;
+  font-size: 12px;
   font-weight: 600;
   cursor: pointer;
-  text-decoration: none;
   touch-action: manipulation;
-  -webkit-tap-highlight-color: rgba(79, 70, 229, 0.12);
 }
 .lnk:hover {
-  background: #e0e7ff;
-  border-color: #a5b4fc;
-}
-.lnk:active {
-  background: #c7d2fe;
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+  color: #1e293b;
 }
 .lnk.danger {
-  border-color: #fecaca;
-  background: #fef2f2;
-  color: #b91c1c;
+  border-color: transparent;
+  background: transparent;
+  color: #dc2626;
 }
 .lnk.danger:hover {
-  background: #fee2e2;
-  border-color: #fca5a5;
-}
-.lnk.danger:active {
-  background: #fecaca;
+  background: #fef2f2;
+  border-color: #fecaca;
 }
 .b {
   padding: 6px 12px;

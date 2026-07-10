@@ -42,28 +42,30 @@
       文件夹内暂无 PDF 文件。
     </p>
 
-    <table v-if="mode === 'list' && rows.length" class="tbl">
-      <thead>
-        <tr>
-          <th>文件名</th>
-          <th>大小</th>
-          <th>修改时间</th>
-          <th></th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr v-for="r in rows" :key="r.filePath">
-          <td class="rh-name-cell" :title="r.filePath">{{ r.name }}</td>
-          <td>{{ formatSize(r.sizeBytes) }}</td>
-          <td>{{ formatTime(r.modifiedAt) }}</td>
-          <td class="td-actions">
-            <button type="button" class="b" @click="openFile(r)">打开</button>
-            <button type="button" class="b" @click="revealFile(r)">所在位置</button>
-            <button type="button" class="b danger" @click="deleteFile(r)">删除</button>
-          </td>
-        </tr>
-      </tbody>
-    </table>
+    <div v-if="mode === 'list' && rows.length" class="tbl-panel">
+      <table class="tbl">
+        <thead>
+          <tr>
+            <th>文件名</th>
+            <th>大小</th>
+            <th>修改时间</th>
+            <th class="th-act">操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="r in rows" :key="r.filePath">
+            <td class="rh-name-cell" :title="r.filePath">{{ r.name }}</td>
+            <td class="td-meta">{{ formatSize(r.sizeBytes) }}</td>
+            <td class="td-meta">{{ formatTime(r.modifiedAt) }}</td>
+            <td class="td-actions">
+              <button type="button" class="b ghost" @click="openFile(r)">打开</button>
+              <button type="button" class="b ghost" @click="revealFile(r)">所在位置</button>
+              <button type="button" class="b danger-soft" @click="deleteFile(r)">删除</button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
 
     <div v-else-if="mode === 'thumbs' && rows.length" class="grid">
       <div
@@ -352,16 +354,17 @@ onUnmounted(() => {
   display: flex;
   gap: 8px;
   align-items: center;
-  max-width: 720px;
+  width: 100%;
 }
 .rh-dir-inp {
   flex: 1;
   min-width: 0;
-  padding: 8px 10px;
-  border: 1px solid #d4d4d8;
-  border-radius: 6px;
+  padding: 9px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
   font-size: 13px;
-  background: #fafafa;
+  background: rgb(255 255 255 / 0.9);
+  color: #334155;
 }
 .rh-empty-hint {
   color: #71717a;
@@ -397,33 +400,89 @@ onUnmounted(() => {
   color: #fff;
   border-color: #b91c1c;
 }
+.b.ghost {
+  background: #fff;
+  border-color: #e2e8f0;
+  color: #475569;
+}
+.b.ghost:hover {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+  color: #1e293b;
+}
+.b.danger-soft {
+  background: transparent;
+  border-color: transparent;
+  color: #dc2626;
+}
+.b.danger-soft:hover {
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+.tbl-panel {
+  margin-top: 10px;
+  border-radius: 12px;
+  border: 1px solid rgb(228 228 231 / 0.95);
+  background: rgb(255 255 255 / 0.92);
+  box-shadow: 0 8px 24px rgb(15 23 42 / 0.06);
+  overflow: hidden;
+}
 .tbl {
   width: 100%;
   border-collapse: collapse;
-  margin-top: 8px;
   font-size: 14px;
-  background: #fff;
 }
-.tbl th,
-.tbl td {
-  border: 1px solid #e4e4e7;
-  padding: 8px;
+.tbl thead th {
+  padding: 11px 14px;
+  text-align: left;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: #64748b;
+  background: #f8fafc;
+  border-bottom: 1px solid #e2e8f0;
+}
+.tbl tbody td {
+  padding: 12px 14px;
   text-align: left;
   vertical-align: middle;
+  border-bottom: 1px solid #f1f5f9;
+  color: #334155;
+}
+.tbl tbody tr:last-child td {
+  border-bottom: none;
+}
+.tbl tbody tr:hover td {
+  background: #f8fafc;
+}
+.th-act {
+  text-align: right;
+}
+.td-meta {
+  color: #64748b;
+  font-size: 13px;
+  white-space: nowrap;
 }
 .rh-name-cell {
-  max-width: 320px;
+  max-width: 0;
+  width: 46%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-weight: 600;
+  color: #1e293b;
 }
 .td-actions {
   white-space: nowrap;
+  text-align: right;
 }
 .td-actions .b {
-  min-height: 34px;
-  padding: 6px 10px;
-  margin-right: 6px;
+  min-height: 32px;
+  padding: 0 12px;
+  margin-left: 6px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
 }
 .grid {
   display: grid;
@@ -432,10 +491,11 @@ onUnmounted(() => {
   margin-top: 12px;
 }
 .card {
-  border: 1px solid #e4e4e7;
-  border-radius: 10px;
-  padding: 10px;
-  background: #fff;
+  border: 1px solid rgb(228 228 231 / 0.95);
+  border-radius: 12px;
+  padding: 12px;
+  background: rgb(255 255 255 / 0.92);
+  box-shadow: 0 8px 24px rgb(15 23 42 / 0.05);
 }
 .thumb-wrap {
   display: flex;

@@ -25,3 +25,31 @@ a {
   text-decoration: none;
   color: inherit;
 }
+
+/* 全局简约滚动条：细长、圆角、灰色（Electron / Chromium + Firefox） */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #b0b0be transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background-color: #b0b0be;
+  border-radius: 999px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-color: #8e8e9e;
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
