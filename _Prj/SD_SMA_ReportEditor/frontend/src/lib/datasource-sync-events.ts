@@ -20,6 +20,12 @@ export function notifyDatasourceChanged(
   )
 }
 
+export const ASSETS_CHANGED_EVENT = 'report-editor-assets-changed'
+
+export function notifyAssetsChanged(reason?: string): void {
+  window.dispatchEvent(new CustomEvent('report-editor-assets-changed', { detail: { reason } }))
+}
+
 export function fingerprintDatasourceLists(
   db: Array<{ id?: string }>,
   opc: Array<{ id?: string }>,

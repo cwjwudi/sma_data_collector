@@ -715,6 +715,10 @@ async function onConfigRestored() {
   }
 }
 
+function onAssetsChanged() {
+  void onConfigRestored();
+}
+
 onActivated(() => {
   void enterView();
   ensureCardObserver();
@@ -722,11 +726,13 @@ onActivated(() => {
 
 onMounted(() => {
   window.addEventListener("report-editor-config-imported", onConfigRestored);
+  window.addEventListener("report-editor-assets-changed", onAssetsChanged);
 });
 
 onUnmounted(() => {
   teardownCardObserver();
   window.removeEventListener("report-editor-config-imported", onConfigRestored);
+  window.removeEventListener("report-editor-assets-changed", onAssetsChanged);
 });
 </script>
 

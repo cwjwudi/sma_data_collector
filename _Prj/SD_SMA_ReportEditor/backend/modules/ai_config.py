@@ -19,6 +19,7 @@ DEFAULT_AI_SETTINGS: dict[str, Any] = {
     "agent_token_hint": "",
     "allow_lan_access": False,
     "write_tools_enabled": False,
+    "disabled_tools": [],
 }
 
 DEFAULT_BACKEND_PORT = 8000
@@ -35,6 +36,11 @@ def normalize_ai_settings(raw: dict[str, Any] | None) -> dict[str, Any]:
     model = str(out.get("llm_model") or "").strip()
     out["llm_model"] = model or DEFAULT_AI_SETTINGS["llm_model"]
     out["agent_token_hint"] = str(out.get("agent_token_hint") or "")[:8]
+    raw_disabled = out.get("disabled_tools")
+    if isinstance(raw_disabled, list):
+        out["disabled_tools"] = sorted({str(x).strip() for x in raw_disabled if str(x).strip()})
+    else:
+        out["disabled_tools"] = []
     return out
 
 
@@ -57,6 +63,8 @@ def save_ai_settings(patch: dict[str, Any]) -> dict[str, Any]:
     for k, v in patch.items():
         if k in DEFAULT_AI_SETTINGS and k not in ("llm_api_key_enc", "agent_token_enc"):
             cur[k] = v
+    if "disabled_tools" in patch and isinstance(patch.get("disabled_tools"), list):
+        cur["disabled_tools"] = sorted({str(x).strip() for x in patch["disabled_tools"] if str(x).strip()})
     if "llm_api_key" in patch:
         plain = patch.get("llm_api_key")
         if plain is None:

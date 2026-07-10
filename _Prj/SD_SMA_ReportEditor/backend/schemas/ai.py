@@ -40,3 +40,9 @@ class AiPendingCredentialSubmit(BaseModel):
 class AiPendingConfirmSubmit(BaseModel):
     prompt_id: str
     confirmed: bool = False
+
+
+class AiToolTogglePatch(BaseModel):
+    tool: str | None = None
+    enabled: bool | None = None
+    disabled_tools: list[str] | None = None

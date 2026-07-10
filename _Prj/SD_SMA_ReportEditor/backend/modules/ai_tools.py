@@ -6,7 +6,7 @@ import logging
 from typing import Any
 
 from core.settings import CONFIG_FILE, DATA_DIR
-from modules import ai_config, ai_datasource_ops, ai_work_chain, audit_log, config_store, template_store
+from modules import ai_asset_ops, ai_config, ai_config_ops, ai_datasource_ops, ai_tool_catalog, ai_work_chain, audit_log, config_store, template_store
 from modules import db_connection_ops, opcua_service
 from schemas.common import DbConnectionSave
 
@@ -321,6 +321,196 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "list_layout_presets",
+            "description": "列出已保存的版式预设摘要。",
+            "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "copy_template",
+            "description": "复制报表模版（新 id 与新名称）。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "source_id": {"type": "string"},
+                    "new_name": {"type": "string"},
+                },
+                "required": ["source_id"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "copy_layout_preset",
+            "description": "复制版式预设。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "source_id": {"type": "string"},
+                    "new_name": {"type": "string"},
+                },
+                "required": ["source_id"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_blank_template",
+            "description": "创建空白报表模版。",
+            "parameters": {
+                "type": "object",
+                "properties": {"name": {"type": "string"}},
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_blank_layout",
+            "description": "创建空白版式。",
+            "parameters": {
+                "type": "object",
+                "properties": {"name": {"type": "string"}},
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "delete_template",
+            "description": "请求删除模版（需用户在 UI 确认）。",
+            "parameters": {
+                "type": "object",
+                "properties": {"template_id": {"type": "string"}},
+                "required": ["template_id"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "delete_layout_preset",
+            "description": "请求删除版式（需用户在 UI 确认）。",
+            "parameters": {
+                "type": "object",
+                "properties": {"layout_id": {"type": "string"}},
+                "required": ["layout_id"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "export_config_share_summary",
+            "description": "脱敏配置包摘要（不含口令）。",
+            "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "request_config_backup_export",
+            "description": "请求在 UI 另存加密 .rebak 备份。",
+            "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "request_config_import_merge",
+            "description": "请求 merge 导入配置（需 UI 确认）。",
+            "parameters": {
+                "type": "object",
+                "properties": {"bundle": {"type": "object", "description": "配置 JSON 对象"}},
+                "required": ["bundle"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "request_config_reset",
+            "description": "请求快速复位清空数据（需 UI 确认）。",
+            "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "get_export_dir_prefs",
+            "description": "读取 PDF 输出/监视目录偏好。",
+            "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "set_export_dir",
+            "description": "设置 PDF 默认输出目录路径。",
+            "parameters": {
+                "type": "object",
+                "properties": {"path": {"type": "string"}},
+                "required": ["path"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "request_pick_export_dir",
+            "description": "唤起本机目录选择器设置输出路径。",
+            "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "request_check_app_update",
+            "description": "请求检查软件更新（不自动安装）。",
+            "parameters": {"type": "object", "properties": {}, "additionalProperties": False},
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "preflight_export",
+            "description": "结批/导出前预检模版绑定。",
+            "parameters": {
+                "type": "object",
+                "properties": {"template_id": {"type": "string"}},
+                "required": ["template_id"],
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "request_manual_export",
+            "description": "请求一次模拟结批 PDF 导出（需 UI 确认）。",
+            "parameters": {
+                "type": "object",
+                "properties": {"template_id": {"type": "string"}},
+                "required": ["template_id"],
+                "additionalProperties": False,
+            },
+        },
+    },
 ]
 
 
@@ -340,16 +530,12 @@ def _mask_audit_entry(entry: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
-_WRITE_TOOLS = frozenset(
-    {
-        "update_connection_probe_settings",
-        "upsert_db_connection",
-        "upsert_opc_server",
-        "delete_db_connection",
-        "delete_opc_server",
-        "request_connection_credentials",
-    }
-)
+def filtered_tool_definitions() -> list[dict[str, Any]]:
+    return ai_tool_catalog.filter_tool_definitions()
+
+
+_WRITE_TOOLS = ai_tool_catalog.WRITE_TOOLS
+_CONFIRM_TOOLS = ai_tool_catalog.CONFIRM_TOOLS
 
 
 async def execute_tool(name: str, arguments: dict[str, Any] | None, *, page_context: dict[str, Any] | None = None) -> Any:
@@ -357,8 +543,13 @@ async def execute_tool(name: str, arguments: dict[str, Any] | None, *, page_cont
     settings = ai_config.load_ai_settings()
     write_ok = bool(settings.get("write_tools_enabled"))
 
+    if not ai_tool_catalog.is_tool_enabled(name, settings):
+        return {"ok": False, "error": f"工具「{name}」已在 AI 工具页禁用。"}
+
     if name in _WRITE_TOOLS and not write_ok:
         return {"ok": False, "error": "AI 写入工具未启用。请在设置 → AI 助手中开启「允许 AI 写入工具」。"}
+    if name in _CONFIRM_TOOLS and not write_ok:
+        return {"ok": False, "error": "AI 写入/确认类工具未启用。请在设置中开启「允许 AI 写入工具」。"}
 
     result: Any
     if name == "list_db_connections":
@@ -411,6 +602,41 @@ async def execute_tool(name: str, arguments: dict[str, Any] | None, *, page_cont
         result = await ai_work_chain.get_dev_runtime_snapshot()
     elif name == "inspect_template_bindings":
         result = ai_work_chain.inspect_template_bindings(str(args.get("template_id") or ""))
+    elif name == "list_layout_presets":
+        result = ai_asset_ops.list_layout_presets()
+    elif name == "copy_template":
+        result = ai_asset_ops.copy_template(str(args.get("source_id") or ""), str(args.get("new_name") or ""))
+    elif name == "copy_layout_preset":
+        result = ai_asset_ops.copy_layout_preset(str(args.get("source_id") or ""), str(args.get("new_name") or ""))
+    elif name == "create_blank_template":
+        result = ai_asset_ops.create_blank_template(str(args.get("name") or ""))
+    elif name == "create_blank_layout":
+        result = ai_asset_ops.create_blank_layout(str(args.get("name") or ""))
+    elif name == "delete_template":
+        result = ai_asset_ops.request_delete_template(str(args.get("template_id") or ""))
+    elif name == "delete_layout_preset":
+        result = ai_asset_ops.request_delete_layout(str(args.get("layout_id") or ""))
+    elif name == "export_config_share_summary":
+        result = ai_config_ops.export_config_share_summary()
+    elif name == "request_config_backup_export":
+        result = ai_config_ops.request_config_backup_export()
+    elif name == "request_config_import_merge":
+        bundle = args.get("bundle")
+        result = ai_config_ops.request_config_import_merge(bundle if isinstance(bundle, dict) else {})
+    elif name == "request_config_reset":
+        result = ai_config_ops.request_config_reset()
+    elif name == "get_export_dir_prefs":
+        result = ai_config_ops.get_export_dir_prefs()
+    elif name == "set_export_dir":
+        result = ai_config_ops.set_export_dir(str(args.get("path") or ""))
+    elif name == "request_pick_export_dir":
+        result = ai_config_ops.request_pick_export_dir()
+    elif name == "request_check_app_update":
+        result = ai_config_ops.request_check_app_update()
+    elif name == "preflight_export":
+        result = await ai_config_ops.preflight_export(str(args.get("template_id") or ""))
+    elif name == "request_manual_export":
+        result = ai_config_ops.request_manual_export(str(args.get("template_id") or ""))
     else:
         result = {"ok": False, "error": f"未知工具: {name}"}
 

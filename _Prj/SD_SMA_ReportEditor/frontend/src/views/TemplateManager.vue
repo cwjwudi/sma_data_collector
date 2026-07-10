@@ -1266,6 +1266,10 @@ function onExternalConfigRestored() {
   void enterView();
 }
 
+function onAssetsChanged() {
+  void enterView();
+}
+
 /** 启动预热完成：若此前因后端未就绪走了离线兜底（或缩略图未加载），立即重载 */
 function onWarmupComplete() {
   if (hasTemplateViewCache()) {
@@ -1280,6 +1284,7 @@ function onWarmupComplete() {
 onMounted(() => {
   window.addEventListener("report-editor-config-imported", onExternalConfigRestored);
   window.addEventListener("report-editor-warmup-complete", onWarmupComplete);
+  window.addEventListener("report-editor-assets-changed", onAssetsChanged);
 });
 
 onDeactivated(() => {
@@ -1291,6 +1296,7 @@ onUnmounted(() => {
   teardownCardObserver();
   window.removeEventListener("report-editor-config-imported", onExternalConfigRestored);
   window.removeEventListener("report-editor-warmup-complete", onWarmupComplete);
+  window.removeEventListener("report-editor-assets-changed", onAssetsChanged);
 });
 </script>
 

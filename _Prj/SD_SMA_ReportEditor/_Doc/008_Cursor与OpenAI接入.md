@@ -1,130 +1,70 @@
-# Cursor 与 OpenAI 兼容 API 接入
+# Cursor 与 OpenAI 接入
 
-> **适用版本：** 0.3.0+  
-> 应用内全页 AI 助手与 Cursor / 自定义 Agent 共用同一套本机工具层。
+> Report Editor **0.3.x** 起支持本机 OpenAI 兼容 `/v1` 网关，供应用内 AI 助手与 **Cursor / Codex** 调用。
 
----
-
-## 1. 能力概览
-
-| 通道 | 入口 | 鉴权 |
-|------|------|------|
-| **应用内助手** | 任意页面右下角「AI」浮层 | 本机 `/api/settings/ai/chat`（无需 Bearer） |
-| **Cursor / Agent（本机）** | `POST /v1/chat/completions` | **无需令牌**（与 LM Studio 相同：只填 Base URL） |
-| **Cursor / Agent（局域网）** | 同上 | `Authorization: Bearer <Agent Token>` + 开启「允许局域网访问」 |
-
-后端将对话转发至用户在设置中配置的 **OpenAI 兼容 LLM**（`baseUrl` + `apiKey` + `model`），并在模型返回 `tool_calls` 时执行本地只读诊断工具（数据库/OPC 探活、审计查询、模版摘要等）。
-
-> **与 LM Studio 的差异：** LM Studio 本身就是模型，不需要上游 Key。报表软件仍要在设置里配置一次 **LLM API Key**（用于调用 OpenAI 等）；Cursor 侧本机接入则不必再配 Agent 令牌。
-
-**首版不做独立 MCP Server**；后续若需要，可薄封装复用同一 tool 层。
-
----
-
-## 2. 设置步骤
-
-1. 打开 **设置 → AI 助手与 Cursor 接入**。
-2. 开启 **启用 AI 助手**。
-3. 填写 **LLM Base URL**（默认 `https://api.openai.com/v1`）、**API Key**、**模型名**（如 `gpt-4o-mini`），点 **保存**。
-4. （可选）仅当要从**其它电脑**的 Cursor 接入时：生成 Agent 令牌，并开启「允许局域网访问 Agent API」。
-5. 本机 Chat 地址：`http://127.0.0.1:8000/v1`。
-
-> **安全：** 用户 LLM API Key 与 Agent Token **分开存储**；本机免令牌，局域网仍需令牌。密钥不会进入审计 CSV 或 Toast 全文。
-
----
-
-## 3. Cursor / Codex 配置（本机，对齐 LM Studio）
+## 本机 Cursor 快速配置
 
 | 项 | 值 |
-|----|-----|
-| **Override OpenAI Base URL** | `http://127.0.0.1:8000/v1` |
-| **OpenAI API Key** | 可填任意占位（如 `local` / `report-editor`）；本机**不校验**。Cursor 若强制非空，随便填即可 |
-| **Model** | 与设置页模型名一致（如 `gpt-4o-mini`） |
+|---|---|
+| Base URL | `http://127.0.0.1:8000/v1`（设置页「Chat API（本机）」可复制） |
+| API Key | 任意占位（本机 loopback **不校验** Agent Token） |
+| 模型 | 与设置页 LLM 模型一致 |
 
-**重要：** Cursor 的「Override OpenAI Base URL」是**全局**的。打开后，走 OpenAI 通道的请求都会进报表软件；用 Grok 等其它模型写代码时请**关掉 Override**，测报表诊断时再临时打开（与接 LM Studio 时的用法相同：需要时再指过去）。
+局域网接入需在设置中开启「允许局域网访问 Agent API」并配置 **Agent Token**。
 
-### curl smoke（本机无需 Token）
+## 写入总闸与单工具开关
 
-```bash
-curl -s http://127.0.0.1:8000/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "gpt-4o-mini",
-    "messages": [{"role":"user","content":"列出已保存的数据库连接名称"}]
-  }'
-```
+- **设置 → AI 助手**：`write_tools_enabled`（允许 AI 写入工具）为写入/确认类工具总闸。
+- **侧栏 → AI 工具**（`/ai-tools`）：39 项工具按分组展示，可单独禁用；禁用后 Cursor 上游 `tools` 列表不含该项，调用返回明确错误。
 
-局域网示例需加：`-H "Authorization: Bearer YOUR_AGENT_TOKEN"`。
----
+## Pending 弹框（本机 UI 执行）
 
-## 4. 示例提示词（Cursor）
+以下操作**不会**在 Cursor 内直接完成，而是进入 `pending_prompts` 队列，由 `AiPendingPromptDialog` 轮询并弹框：
 
-- 「检查最近结批/导出失败的审计记录，并解释 EXPORT_DIAGNOSTICS。」
-- 「对名为 XXX 的 OPC UA 连接做 probe，并汇总健康状态。」
-- 「列出所有报表模版摘要，并说明哪个模版绑定了 SQL。」
-- 「当前应用版本与本机 /v1 地址是什么？」
-
-0.3.1+ 可在应用内助手附带 **页面上下文**（路由、模版 ID）；Cursor 可在 `messages` 中自行说明当前关注点。
-
----
-
-## 5. 工具清单（只读 · 0.3.0）
-
-| 工具 | 说明 |
+| kind | 说明 |
 |------|------|
-| `list_db_connections` | 已保存数据库连接（脱敏） |
-| `list_opc_servers` | 已保存 OPC UA 连接（脱敏） |
-| `probe_connection` | 对指定 DB/OPC 连接做连通测试 |
-| `get_connection_health_summary` | 连接清单 + 探活设置摘要 |
-| `query_audit_log` | 最近审计（可按 action/result 过滤） |
-| `list_templates` / `get_template_summary` | 模版列表 / 单模版摘要 |
-| `explain_export_diagnostics` | 解析 `---EXPORT_DIAGNOSTICS---` JSON |
-| `get_app_version_and_endpoints` | 版本与本机 `/v1` 地址 |
+| `credential` | 填写 DB/OPC 密码 |
+| `confirm_delete` | 删除数据源 / 模版 / 版式 |
+| `confirm_reset` | 快速复位（清空配置与资产） |
+| `confirm_import_merge` | merge 导入配置包 |
+| `confirm_manual_export` | 模拟结批 → UI 调 `runPdfExport` |
+| `pick_export_dir` | 选 PDF 输出目录或另存 `.rebak` 备份 |
+| `check_update` | 检查软件更新（**不自动安装**） |
 
-### 0.3.1 增量
+**禁止**向 LLM 返回密码明文或 `.rebak` 备份内容。
 
-- 请求体 `report_editor_page_context`：路由、templateId、最近错误摘要注入 system prompt。
-- `suggest_config_change`：生成配置建议 JSON，**不直接写入**。
+## 0.3.4 新增工具摘要
 
-### 0.3.2 增量
+### 模版与版式
+- `list_layout_presets`、`copy_template`、`copy_layout_preset`
+- `create_blank_template`、`create_blank_layout`
+- `delete_template`、`delete_layout_preset`（需确认）
 
-- **数据源 CRUD 工具**（需开启「允许 AI 写入工具」）：`get_db_connection_detail`、`get_opc_server_detail`、`list_db_catalog`、`upsert_db_connection`、`upsert_opc_server`、`delete_db_connection`、`delete_opc_server`、`request_connection_credentials`
-- **密码与删除确认**不在 tool 参数中传递；后端写入 `pending_prompts` 队列，**MainLayout 轮询弹框**由用户在本机 UI 完成
-- **工作链路诊断**：`diagnose_work_chain`、`get_dev_runtime_snapshot`、`inspect_template_bindings`（开发/排障优先调用）
-- API：`GET/POST /api/settings/ai/pending_prompts`（submit_credential / submit_confirm / cancel）
+### 配置与备份
+- `export_config_share_summary`（只读脱敏）
+- `request_config_backup_export` → UI 另存加密 `.rebak`
+- `request_config_import_merge`、`request_config_reset`（需确认）
+- `get_export_dir_prefs`、`set_export_dir`、`request_pick_export_dir`
 
-### 示例提示词（0.3.2+）
+### 导出与系统
+- `preflight_export`、`request_manual_export`（Electron 运行中）
+- `request_check_app_update`
 
-- 「跑一遍工作链路诊断，告诉我现在卡在哪一环」
-- 「检查模版 XXX 的绑定是否都指向有效连接」
-- 「给开发者一份运行时快照，方便我改结批相关代码」
-- 「新建一条 MariaDB 连接（主机/端口/用户名），密码我在软件里填」
+## 客户端偏好镜像
 
----
+前端定期将 `localStorage` 中的输出目录等偏好 POST 到 `/settings/client_prefs/mirror`，供 `get_export_dir_prefs` 读取。AI 通过 `set_export_dir` 写入时带 `pending_apply`，轮询时应用至本机。
 
-## 6. 安全与网络
+## 相关 API（本机 loopback）
 
-- **本机免令牌**（对齐 LM Studio）；**局域网**须开启开关并携带 Agent Token。
-- **Tool 默认只读；** 写操作需开启「允许 AI 写入工具」。
-- **不向 LLM 发送** 数据库密码、OPC 密码明文；密码/删除须在报表软件 UI 弹框完成。
-- 局域网 Agent Token 泄露等同于诊断 API 被滥用；请定期轮换。
+- `GET/PATCH /settings/ai`
+- `GET/PATCH /settings/ai/tools`
+- `GET/POST /settings/ai/pending_prompts/*`
+- `POST /v1/chat/completions`（OpenAI 兼容，含 tools）
 
----
+## 验收要点（0.3.4）
 
-## 7. 故障排查
-
-| 现象 | 处理 |
-|------|------|
-| HTTP 401 | 多半是局域网访问且 Token 错误；本机应无需 Token |
-| HTTP 403 + LAN | 自局域网访问但未开启 LAN 开关 |
-| HTTP 503 AI 未配置 | 设置页未启用或未填 LLM Key |
-| Grok / 其它模型无回复 | 关掉 Cursor 的 Override OpenAI Base URL（全局覆盖会抢走请求） |
-| 工具无结果 | 确认 `config.json` 中已有对应连接/模版 |
-| Cursor 连不上 | 确认后端端口；本机先用无 Token 的 curl 验证 |
-
----
-
-## 8. 相关文档
-
-- [002_里程碑与工单.md](002_里程碑与工单.md) — **M16**
-- [007_版本发布记录.md](007_版本发布记录.md) — 0.3.x 变更
+1. Cursor 调用 `copy_template` 后模版列表多一条；`delete_template` 确认后消失并刷新。
+2. `request_config_reset` 取消无变更；确认后连接/模版清空。
+3. `request_manual_export` 确认后生成 PDF（Electron 运行中）。
+4. `request_check_app_update` 触发设置页同款检查，不安装。
+5. 关闭某工具后 Cursor 无法调用，且上游 tools 不含该项。

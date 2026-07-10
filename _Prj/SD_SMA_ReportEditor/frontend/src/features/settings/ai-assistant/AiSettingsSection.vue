@@ -75,6 +75,10 @@
       </button>
     </div>
 
+    <p class="settings-hint">
+      <router-link class="ai-doc-link" to="/ai-tools">管理单个工具开关 →</router-link>
+    </p>
+
     <div class="ai-token-row">
       <button type="button" class="settings-btn settings-btn--primary" :disabled="busy || !form.enabled" @click="onSave">
         保存 AI 设置

@@ -25,6 +25,7 @@ const routes = [
       { path: 'generate', name: 'ReportGenerator', component: () => import('@/views/ReportGenerator.vue') },
       { path: 'history', name: 'ReportHistory', component: () => import('@/views/ReportHistory.vue') },
       { path: 'audit', name: 'AuditLog', component: () => import('@/views/AuditLog.vue') },
+      { path: 'ai-tools', name: 'AiTools', component: () => import('@/views/AiToolsPage.vue') },
       { path: 'settings', name: 'Settings', component: () => import('@/views/Settings.vue') },
     ],
   },

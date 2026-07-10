@@ -77,6 +77,7 @@
                 'SignaturesLibrary',
                 'ReportGenerator',
                 'ReportHistory',
+                'AiTools',
                 'Settings',
               ]"
             >
@@ -351,6 +352,7 @@ const navItems = [
   { path: '/generate', icon: '⚡', label: '生成报表' },
   { path: '/history', icon: '📁', label: '历史报表' },
   { path: '/audit', icon: '📋', label: '操作审计' },
+  { path: '/ai-tools', icon: '🤖', label: 'AI 工具' },
   { path: '/settings', icon: '⚙', label: '设置' },
 ]
 </script>

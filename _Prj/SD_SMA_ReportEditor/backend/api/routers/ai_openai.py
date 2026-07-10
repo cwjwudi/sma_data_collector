@@ -11,8 +11,15 @@ import httpx
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 
-from modules import ai_config, ai_datasource_ops, ai_pending_prompts, ai_tools
-from schemas.ai import AiChatRequest, AiPendingConfirmSubmit, AiPendingCredentialSubmit, AiSettingsPatch, OpenAiChatCompletionRequest
+from modules import ai_config, ai_datasource_ops, ai_pending_actions, ai_pending_prompts, ai_tools
+from schemas.ai import (
+    AiChatRequest,
+    AiPendingConfirmSubmit,
+    AiPendingCredentialSubmit,
+    AiSettingsPatch,
+    AiToolTogglePatch,
+    OpenAiChatCompletionRequest,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -24,8 +31,11 @@ SYSTEM_PROMPT = (
     "你是 SD_SMA_ReportEditor（报表编辑器）的 AI 助手，帮助用户诊断数据库/OPC UA 连接、"
     "导出/结批失败与模版配置。优先调用工具获取事实，不要编造连接状态或审计内容。"
     "开发/排障时优先 get_dev_runtime_snapshot 或 diagnose_work_chain；改数据源相关代码前先跑链路对齐现场。"
-    "禁止向用户索要或输出数据库/OPC 密码明文；密码与删除确认仅在报表软件 UI 弹框完成。"
+    "禁止向用户索要或输出数据库/OPC 密码明文；密码与删除/复位/导入/结批确认仅在报表软件 UI 弹框完成。"
     "收到 awaiting_user_credentials 或 awaiting_user_confirm 时，提示用户到本机报表软件内操作。"
+    "模拟结批 request_manual_export 仅排队，需本机 Electron 运行并由用户在弹框确认后执行 PDF 导出。"
+    "加密 .rebak 备份含口令，仅能通过 request_config_backup_export 唤起 UI 另存，不得把备份内容或口令返回给 LLM。"
+    "request_check_app_update 只检查更新，不会自动安装。"
 )
 
 
@@ -129,7 +139,7 @@ async def run_chat_completion(
     messages: list[dict[str, Any]] = _build_system_messages(page_context) + user_messages
 
     model = (body.model or settings.get("llm_model") or "gpt-4o-mini").strip()
-    tools = body.tools if body.tools is not None else ai_tools.TOOL_DEFINITIONS
+    tools = body.tools if body.tools is not None else ai_tools.filtered_tool_definitions()
 
     upstream_payload: dict[str, Any] = {
         "model": model,
@@ -270,10 +280,81 @@ def submit_pending_credential(request: Request, body: AiPendingCredentialSubmit)
 @settings_router.post("/settings/ai/pending_prompts/submit_confirm")
 async def submit_pending_confirm(request: Request, body: AiPendingConfirmSubmit):
     _require_loopback(request)
-    result = await ai_datasource_ops.apply_confirm_delete(body.prompt_id, body.confirmed)
+    result = await ai_pending_actions.apply_confirm(body.prompt_id, body.confirmed)
     if not result.get("ok"):
         raise HTTPException(400, result.get("error") or "提交失败")
     return result
+
+
+@settings_router.get("/settings/ai/tools")
+def list_ai_tools(request: Request):
+    _require_loopback(request)
+    from modules import ai_tool_catalog
+
+    settings = ai_config.load_ai_settings()
+    return {
+        "tools": ai_tool_catalog.catalog_entries(settings),
+        "write_tools_enabled": bool(settings.get("write_tools_enabled")),
+        "categories": ai_tool_catalog.CATEGORY_LABELS,
+    }
+
+
+@settings_router.patch("/settings/ai/tools")
+def patch_ai_tool_toggle(request: Request, body: AiToolTogglePatch):
+    _require_loopback(request)
+    from modules import ai_tool_catalog
+
+    if body.tool:
+        result = ai_tool_catalog.set_tool_enabled(body.tool, bool(body.enabled))
+        return {"ok": True, **result, "tools": ai_tool_catalog.catalog_entries()}
+    if body.disabled_tools is not None:
+        ai_config.save_ai_settings({"disabled_tools": body.disabled_tools})
+        return {"ok": True, "tools": ai_tool_catalog.catalog_entries()}
+    raise HTTPException(400, "需提供 tool+enabled 或 disabled_tools")
+
+
+@settings_router.get("/settings/client_prefs/mirror")
+def get_client_prefs_mirror(request: Request):
+    _require_loopback(request)
+    from pathlib import Path
+
+    from core.settings import DATA_DIR
+
+    path = Path(DATA_DIR) / "client_prefs_mirror.json"
+    if not path.is_file():
+        return {"ok": True, "mirror_exists": False}
+    import json
+
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {"ok": False, "error": "镜像读取失败"}
+    if not isinstance(data, dict):
+        return {"ok": True, "mirror_exists": False}
+    return {"ok": True, "mirror_exists": True, **data}
+
+
+@settings_router.post("/settings/client_prefs/mirror")
+def mirror_client_prefs(request: Request, body: dict[str, Any]):
+    _require_loopback(request)
+    from pathlib import Path
+
+    from core.settings import DATA_DIR
+
+    path = Path(DATA_DIR) / "client_prefs_mirror.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    import json
+
+    merged = dict(body) if isinstance(body, dict) else {}
+    if path.is_file() and not merged.get("pending_apply"):
+        try:
+            existing = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(existing, dict) and existing.get("pending_apply"):
+                merged = {**merged, **existing}
+        except (OSError, json.JSONDecodeError):
+            pass
+    path.write_text(json.dumps(merged, ensure_ascii=False, indent=2), encoding="utf-8")
+    return {"ok": True}
 
 
 @settings_router.post("/settings/ai/pending_prompts/cancel")

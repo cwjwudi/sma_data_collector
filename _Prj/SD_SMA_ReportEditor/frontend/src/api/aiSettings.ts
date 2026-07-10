@@ -35,17 +35,47 @@ export type AiPageContext = {
   recentError?: string | null
 }
 
+export type AiPendingPromptKind =
+  | 'credential'
+  | 'confirm_delete'
+  | 'confirm_reset'
+  | 'confirm_import_merge'
+  | 'confirm_manual_export'
+  | 'pick_export_dir'
+  | 'check_update'
+
 export type AiPendingPrompt = {
   id: string
-  kind: 'credential' | 'confirm_delete'
-  target_kind?: 'db' | 'opcua'
+  kind: AiPendingPromptKind
+  target_kind?: 'db' | 'opcua' | 'template' | 'layout' | 'config' | 'export' | 'app'
   connection_id?: string
   connection_name?: string
   title?: string
   message?: string
   status?: string
   username_hint?: string
+  payload?: Record<string, unknown>
   created_at?: number
+}
+
+export type AiToolRisk = 'read' | 'write' | 'confirm'
+
+export type AiToolCatalogEntry = {
+  name: string
+  category: string
+  category_label: string
+  title_zh: string
+  description_zh: string
+  risk: AiToolRisk
+  enabled: boolean
+  can_toggle: boolean
+  toggle_disabled_reason?: string
+}
+
+export type AiToolsCatalogResponse = {
+  tools: AiToolCatalogEntry[]
+  write_tools_enabled: boolean
+  categories: Record<string, string>
 }
 
 export async function fetchAiPendingPrompts(): Promise<{ prompts: AiPendingPrompt[]; count: number }> {
@@ -59,10 +89,24 @@ export async function submitAiPendingCredential(promptId: string, password: stri
   })
 }
 
-export async function submitAiPendingConfirm(promptId: string, confirmed: boolean): Promise<{ ok: boolean }> {
+export async function submitAiPendingConfirm(
+  promptId: string,
+  confirmed: boolean,
+): Promise<{ ok: boolean; client_action?: string; payload?: Record<string, unknown> }> {
   return apiFetch('/settings/ai/pending_prompts/submit_confirm', {
     method: 'POST',
     body: { prompt_id: promptId, confirmed },
+  })
+}
+
+export async function fetchAiToolsCatalog(): Promise<AiToolsCatalogResponse> {
+  return apiFetch('/settings/ai/tools')
+}
+
+export async function patchAiToolToggle(tool: string, enabled: boolean): Promise<{ ok: boolean; tools: AiToolCatalogEntry[] }> {
+  return apiFetch('/settings/ai/tools', {
+    method: 'PATCH',
+    body: { tool, enabled },
   })
 }
 
