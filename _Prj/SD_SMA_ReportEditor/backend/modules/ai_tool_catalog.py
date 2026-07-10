@@ -41,6 +41,18 @@ TOOL_META: dict[str, dict[str, Any]] = {
     "copy_layout_preset": {"category": "assets", "title_zh": "复制版式", "description_zh": "深拷贝版式并分配新 id", "risk": "write"},
     "create_blank_template": {"category": "assets", "title_zh": "新建空模版", "description_zh": "创建最小合法空模版", "risk": "write"},
     "create_blank_layout": {"category": "assets", "title_zh": "新建空版式", "description_zh": "创建默认版式", "risk": "write"},
+    "ensure_user_demo_database": {
+        "category": "datasource",
+        "title_zh": "创建用户演示库",
+        "description_zh": "在 MySQL 上创建 report_user_lib 与演示表/数据",
+        "risk": "write",
+    },
+    "create_binding_smoke_template": {
+        "category": "assets",
+        "title_zh": "创建绑定冒烟模版",
+        "description_zh": "含参数/表格的 OPC+SQL 绑定测试模版（可顺带建演示库）",
+        "risk": "write",
+    },
     "delete_template": {"category": "assets", "title_zh": "删除模版", "description_zh": "需 UI 确认后删除", "risk": "confirm"},
     "delete_layout_preset": {"category": "assets", "title_zh": "删除版式", "description_zh": "需 UI 确认后删除", "risk": "confirm"},
     "export_config_share_summary": {"category": "config", "title_zh": "配置摘要（脱敏）", "description_zh": "share 模式配置包统计", "risk": "read"},

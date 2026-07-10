@@ -6,7 +6,7 @@ import logging
 from typing import Any
 
 from core.settings import CONFIG_FILE, DATA_DIR
-from modules import ai_asset_ops, ai_config, ai_config_ops, ai_datasource_ops, ai_runtime_ops, ai_tool_catalog, ai_work_chain, audit_log, config_store, template_store
+from modules import ai_asset_ops, ai_config, ai_config_ops, ai_datasource_ops, ai_demo_template_ops, ai_runtime_ops, ai_tool_catalog, ai_work_chain, audit_log, config_store, template_store
 from modules import db_connection_ops, opcua_service
 from schemas.common import DbConnectionSave
 
@@ -411,6 +411,49 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
+            "name": "ensure_user_demo_database",
+            "description": (
+                "在已保存的 MySQL/MariaDB 连接上创建用户库 report_user_lib，"
+                "并写入 demo_batches / demo_metrics 演示数据，供绑定冒烟测试使用。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "connection_id": {
+                        "type": "string",
+                        "description": "可选；默认取偏好/首个非演示 MySQL 连接",
+                    },
+                },
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "create_binding_smoke_template",
+            "description": (
+                "创建含参数与表格的绑定冒烟测试模版：OPC UA（Boolean/Float/UInt16/Int32）"
+                "与 SQL 单元格绑定，以及一张 SQL 整表填充表。默认顺带确保用户演示库。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string", "description": "模版名称"},
+                    "connection_id": {"type": "string", "description": "可选数据库连接 id"},
+                    "opc_server_id": {"type": "string", "description": "可选 OPC UA 连接 id"},
+                    "ensure_schema": {
+                        "type": "boolean",
+                        "description": "是否先创建/刷新用户演示库，默认 true",
+                    },
+                },
+                "additionalProperties": False,
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "delete_template",
             "description": "请求删除模版（需用户在 UI 确认）。",
             "parameters": {
@@ -779,6 +822,17 @@ async def execute_tool(name: str, arguments: dict[str, Any] | None, *, page_cont
         result = ai_asset_ops.create_blank_template(str(args.get("name") or ""))
     elif name == "create_blank_layout":
         result = ai_asset_ops.create_blank_layout(str(args.get("name") or ""))
+    elif name == "ensure_user_demo_database":
+        result = ai_demo_template_ops.ensure_user_demo_database(
+            str(args.get("connection_id")).strip() if args.get("connection_id") else None
+        )
+    elif name == "create_binding_smoke_template":
+        result = await ai_demo_template_ops.create_binding_smoke_template(
+            name=str(args.get("name") or "") or None,
+            connection_id=str(args.get("connection_id")).strip() if args.get("connection_id") else None,
+            opc_server_id=str(args.get("opc_server_id")).strip() if args.get("opc_server_id") else None,
+            ensure_schema=bool(args["ensure_schema"]) if "ensure_schema" in args else True,
+        )
     elif name == "delete_template":
         result = ai_asset_ops.request_delete_template(str(args.get("template_id") or ""))
     elif name == "delete_layout_preset":
