@@ -292,7 +292,7 @@ async def create_binding_smoke_template(
 
     cid = str(conn.get("id") or "")
     eng = (conn.get("engine") or "mysql").lower()
-    nodes = await _resolve_opc_nodes(opc)
+    nodes = await _resolve_opc_nodes(opc, live_search=False)
 
     lit_batch = {
         "source": "literal",
