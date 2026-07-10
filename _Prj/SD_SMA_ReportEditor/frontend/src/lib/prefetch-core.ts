@@ -13,7 +13,7 @@
 import { listTemplateSummaries } from "@/api/templates";
 import { resolveApiHref } from "@/api/apiBase.js";
 import {
-  ensureLayoutPresetsLoaded,
+  ensureLayoutPresetSummariesLoaded,
   isLayoutsOffline,
 } from "@/lib/report-template/layout-registry";
 import { ensureSignatureSummaries } from "@/lib/signature-registry";
@@ -88,9 +88,9 @@ async function waitBackendReady(): Promise<boolean> {
   }
 }
 
-/** 版式库：成功标准为非离线兜底（真正从后端拉到）。 */
+/** 版式库：预热摘要列表（轻量）；完整版式在缩略图/编辑时再拉。 */
 async function warmLayoutPresets(): Promise<boolean> {
-  await ensureLayoutPresetsLoaded();
+  await ensureLayoutPresetSummariesLoaded();
   return !isLayoutsOffline();
 }
 

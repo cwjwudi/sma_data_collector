@@ -364,7 +364,12 @@ function hydrateFromSession() {
     ? null
     : connections.value.find((c) => c.id === activeConnId.value) || null
   for (const [id, state] of Object.entries(s.connHealth || {})) {
-    connHealth[id] = state
+    const st = state === 'ok' || state === 'fail' || state === 'checking' ? state : 'unknown'
+    setConnHealth(
+      id,
+      st,
+      st === 'fail' ? '连接失败（上次检测结果，可点击「测试连接」重新验证）' : '',
+    )
   }
   const cat = getCatalogSnapshot(activeConnId.value)
   if (cat) applyCatalogSnapshot(cat)

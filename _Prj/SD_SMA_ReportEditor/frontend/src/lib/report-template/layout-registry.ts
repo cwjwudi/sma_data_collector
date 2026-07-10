@@ -9,6 +9,7 @@ import {
 } from "@/lib/report-template/layout-model";
 
 let mem: LayoutPreset[] | null = null;
+let memSummaries: LayoutPreset[] | null = null;
 let offline = false;
 
 export function isLayoutsOffline(): boolean {
@@ -17,17 +18,37 @@ export function isLayoutsOffline(): boolean {
 
 export function clearLayoutCache(): void {
   mem = null;
+  memSummaries = null;
+}
+
+/** 列表页专用：仅拉摘要（不解析页眉页脚大数组），显著快于 /full */
+export async function ensureLayoutPresetSummariesLoaded(): Promise<LayoutPreset[]> {
+  if (memSummaries && !offline) return memSummaries;
+  if (mem && !offline) return mem;
+  try {
+    const summaries = await api.listLayoutPresetSummaries();
+    memSummaries = (summaries as Partial<LayoutPreset>[]).map((x) => hydrateLayoutPreset(x));
+    offline = false;
+    return memSummaries;
+  } catch {
+    offline = true;
+    const local = loadLocal().map((x) => hydrateLayoutPreset(x));
+    memSummaries = local;
+    return local;
+  }
 }
 
 export async function refreshLayoutPresets(): Promise<LayoutPreset[]> {
   try {
     const full = await api.listLayoutPresetsFull();
     mem = full.map((x) => hydrateLayoutPreset(x as Partial<LayoutPreset>));
+    memSummaries = mem;
     offline = false;
     return mem;
   } catch {
     offline = true;
     mem = loadLocal().map((x) => hydrateLayoutPreset(x));
+    memSummaries = mem;
     return mem;
   }
 }
@@ -41,6 +62,7 @@ export async function refreshLayoutPresets(): Promise<LayoutPreset[]> {
  */
 export async function ensureLayoutPresetsLoaded(): Promise<LayoutPreset[]> {
   if (mem && !offline) return mem;
+  if (memSummaries && !offline) return memSummaries;
   return refreshLayoutPresets();
 }
 

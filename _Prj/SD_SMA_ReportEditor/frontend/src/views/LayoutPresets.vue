@@ -230,14 +230,17 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onActivated, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, defineAsyncComponent, nextTick, onActivated, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import type { LocationQuery } from "vue-router";
-import LayoutPresetMiniPage from "@/components/report-template/LayoutPresetMiniPage.vue";
+const LayoutPresetMiniPage = defineAsyncComponent(
+  () => import("@/components/report-template/LayoutPresetMiniPage.vue"),
+);
 import type { LayoutPageRole, LayoutPreset } from "@/lib/report-template/layout-model";
 import {
   createEmptyLayoutPreset,
   duplicateLayoutPreset,
+  hydrateLayoutPreset,
   LAYOUT_PAGE_ROLE_LABEL,
 } from "@/lib/report-template/layout-model";
 import { PAPER_LABEL } from "@/lib/report-template/paper";
@@ -249,12 +252,14 @@ import {
 } from "@/lib/layout-display-order";
 import {
   deleteLayoutPresetFlexible,
+  ensureLayoutPresetSummariesLoaded,
   ensureLayoutPresetsLoaded,
   refreshLayoutPresets,
   saveLayoutPresetFlexible,
   isLayoutsOffline,
   layoutPresetsSnapshot,
 } from "@/lib/report-template/layout-registry";
+import { getLayoutPreset } from "@/api/layoutPresets";
 import { useStaleGuard } from "@/composables/useStaleGuard";
 import { appConfirm } from "@/composables/useAppConfirm";
 
@@ -538,7 +543,14 @@ async function confirmDuplicatePreset() {
   closeDupDlg();
   msg.value = "";
   try {
-    const copy = duplicateLayoutPreset(p, trimmed);
+    let source = p;
+    try {
+      const full = await getLayoutPreset(p.id);
+      source = hydrateLayoutPreset(full as Partial<LayoutPreset>);
+    } catch {
+      /* 离线或已缓存完整版式时沿用列表项 */
+    }
+    const copy = duplicateLayoutPreset(source, trimmed);
     const r = await saveLayoutPresetFlexible(copy);
     if (!r.ok) {
       msg.value = "复制失败：" + r.message;
@@ -637,12 +649,25 @@ watch(
  * 优先复用本会话已加载的版式库快照「秒显示」，不再每次都请求 /layout-presets/full。
  * 版式的新增/编辑/删除都会经由 layout-registry 刷新内存快照，故复用是安全的。
  */
+async function loadPresetsForView(opts: { full?: boolean } = {}) {
+  if (opts.full || mode.value === "thumbs") {
+    return ensureLayoutPresetsLoaded();
+  }
+  return ensureLayoutPresetSummariesLoaded();
+}
+
 async function enterView() {
   const token = beginLoad();
-  loading.value = true;
+  const cached = layoutPresetsSnapshot();
+  if (cached.length) {
+    presets.value = applyLayoutPresetDisplayOrders(cached);
+    loading.value = false;
+  } else {
+    loading.value = true;
+  }
   msg.value = "";
   try {
-    const list = await ensureLayoutPresetsLoaded();
+    const list = await loadPresetsForView();
     if (isLoadStale(token)) return;
     presets.value = applyLayoutPresetDisplayOrders(list);
   } catch (e) {
@@ -654,6 +679,24 @@ async function enterView() {
   }
   await applyRouteIntent();
 }
+
+watch(mode, async (m, prev) => {
+  if (m !== "thumbs" || prev === "thumbs") return;
+  const token = beginLoad();
+  loading.value = true;
+  try {
+    const list = await ensureLayoutPresetsLoaded();
+    if (isLoadStale(token)) return;
+    presets.value = applyLayoutPresetDisplayOrders(list);
+    await nextTick();
+    ensureCardObserver();
+  } catch (e) {
+    if (isLoadStale(token)) return;
+    msg.value = "加载缩略图数据失败：" + String((e as Error).message || e);
+  } finally {
+    if (!isLoadStale(token)) loading.value = false;
+  }
+});
 
 /** 备份恢复 / 云端下载后：强制重拉版式库，无需重启即可看到最新版式 */
 async function onConfigRestored() {

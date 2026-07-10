@@ -29,6 +29,8 @@ import {
   getDbConnectionHealth,
   getOpcConnectionHealth,
 } from "@/features/datasource/connection-health-detail";
+import { dbConnectionHealth, opcHealthSummary } from "@/features/datasource/datasource-nav-health";
+import { getWorkbenchSession } from "@/features/datasource/datasource-workbench-cache";
 
 const props = defineProps<{ modelValue: boolean }>();
 const emit = defineEmits<{ "update:modelValue": [boolean] }>();
@@ -66,12 +68,20 @@ async function loadFailures() {
       apiFetch("/opcua/servers") as Promise<{ servers?: Array<{ id?: string; name?: string }> }>,
     ]);
     const rows: FailureRow[] = [];
+    const seen = new Set<string>();
+
+    const pushFail = (item: FailureRow) => {
+      if (seen.has(item.key)) return;
+      seen.add(item.key);
+      rows.push(item);
+    };
+
     for (const c of dbData.connections || []) {
       const id = String(c.id || "");
       if (!id) continue;
       const rec = getDbConnectionHealth(id);
       if (rec.state !== "fail") continue;
-      rows.push({
+      pushFail({
         key: `db-${id}`,
         kind: "数据库",
         name: String(c.name || id),
@@ -84,7 +94,7 @@ async function loadFailures() {
       if (!id) continue;
       const rec = getOpcConnectionHealth(id);
       if (rec.state !== "fail") continue;
-      rows.push({
+      pushFail({
         key: `opc-${id}`,
         kind: "OPC UA",
         name: String(s.name || id),
@@ -92,6 +102,35 @@ async function loadFailures() {
         checkedAt: formatCheckedAt(rec.checkedAt),
       });
     }
+
+    // 兜底：Tab 计数来自工作台会话缓存时，详情 store 可能尚未同步
+    const session = getWorkbenchSession();
+    for (const c of dbData.connections || []) {
+      const id = String(c.id || "");
+      if (!id) continue;
+      const st = session?.connHealth?.[id];
+      if (st !== "fail") continue;
+      pushFail({
+        key: `db-${id}`,
+        kind: "数据库",
+        name: String(c.name || id),
+        message: getDbConnectionHealth(id).message || "连接失败（上次检测结果）",
+        checkedAt: formatCheckedAt(getDbConnectionHealth(id).checkedAt),
+      });
+    }
+
+    // 若汇总显示有异常但上面仍为空，给出可读提示（避免「有红点却空白」）
+    const combinedFail = dbConnectionHealth.value.fail + opcHealthSummary.value.fail;
+    if (!rows.length && combinedFail > 0) {
+      pushFail({
+        key: "summary-hint",
+        kind: "提示",
+        name: "连接状态",
+        message: `检测到 ${combinedFail} 条连接异常，详情尚未同步。请稍候或在工作台点击「测试连接」刷新状态。`,
+        checkedAt: "",
+      });
+    }
+
     failures.value = rows;
   } catch {
     failures.value = [];
