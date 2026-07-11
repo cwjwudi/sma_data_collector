@@ -1,12 +1,12 @@
 {
   "version": "0.3.27",
-  "releasedAt": "2026-07-11T08:07:44.579Z",
+  "releasedAt": "2026-07-11T08:12:34.474Z",
   "notes": "仪表盘主动扫描模版与版式潜在问题",
   "platforms": {
     "win32-x64": {
       "url": "Report Editor AI-Setup-0.3.27-x64.exe",
-      "sha256": "",
-      "size": 0
+      "sha256": "1ed8a7fdba4e7d57a945cda62a249ded4b41a33ab95fc62ee0387ebf883a9c30",
+      "size": 145456866
     },
     "darwin-arm64": {
       "url": "Report Editor AI-0.3.27-arm64.dmg",
