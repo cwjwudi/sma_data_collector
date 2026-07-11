@@ -144,473 +144,621 @@
       </p>
 
       <div class="rg-auto-fields" :class="{ 'rg-auto-fields--off': !prefs.auto.enabled }">
-      <div class="rg-row rg-row--in-panel">
-        <label class="rg-lbl" for="rg-auto-max-parallel">同时并行导出上限</label>
-        <div class="rg-inline">
-          <input
-            id="rg-auto-max-parallel"
-            v-model.number="prefs.auto.maxParallelExports"
-            type="number"
-            min="1"
-            max="16"
-            class="rg-inp rg-inp--sep"
-            @change="onMaxParallelChange"
-          />
-          <span class="rg-mini">路（1–16）</span>
-        </div>
-        <p class="rg-mini rg-mini--indent">
-          实际并行 = min(本设置, 已启用绑定数)。超出上限的触发会排队（状态码 3），有空槽再开跑。
-        </p>
-      </div>
-
-      <div class="rg-export-dir-block">
-        <span class="rg-lbl">{{ RG_UI.opcAuto }}保存文件夹（全部绑定共用）</span>
-        <p class="rg-mini rg-mini--indent">所有触发绑定写入同一批次目录；多路并行时仍落在此文件夹。</p>
-        <div class="rg-tabs" role="tablist" :aria-label="`${RG_UI.opcAuto}保存文件夹来源`">
-          <button
-            type="button"
-            role="tab"
-            class="rg-tab"
-            :class="{ 'rg-tab--on': prefs.autoExportDirSource === 'default' }"
-            :aria-selected="prefs.autoExportDirSource === 'default'"
-            @click="setExportDirTab('default')"
+        <div class="rg-row rg-row--in-panel">
+          <label class="rg-lbl" for="rg-auto-default-opc">默认 OPC 连接</label>
+          <select
+            id="rg-auto-default-opc"
+            v-model="prefs.auto.defaultOpcServerId"
+            class="rg-select"
+            @change="onDefaultOpcServerChange"
           >
-            默认文件夹
-          </button>
-          <button
-            type="button"
-            role="tab"
-            class="rg-tab"
-            :class="{ 'rg-tab--on': prefs.autoExportDirSource === 'opcua' }"
-            :aria-selected="prefs.autoExportDirSource === 'opcua'"
-            @click="setExportDirTab('opcua')"
-          >
-            绑定 OPC UA
-          </button>
+            <option value="">请选择…</option>
+            <option v-for="s in opcServers" :key="s.id" :value="s.id">{{ s.name || s.id }}</option>
+          </select>
+          <p class="rg-mini rg-mini--indent">
+            新建绑定与本路写回默认使用此连接；单条绑定可在展开后「改用其它连接」。
+          </p>
         </div>
 
-        <div class="rg-tab-panel" role="tabpanel">
-          <template v-if="prefs.autoExportDirSource === 'default'">
+        <div class="rg-export-dir-block">
+          <button
+            type="button"
+            class="rg-trigger-log-toggle rg-advanced-toggle"
+            :aria-expanded="advancedAutoExpanded"
+            @click="advancedAutoExpanded = !advancedAutoExpanded"
+          >
+            <span
+              class="rg-trigger-log-chevron"
+              :class="{ 'rg-trigger-log-chevron--open': advancedAutoExpanded }"
+              aria-hidden="true"
+              >▸</span
+            >
+            <span class="rg-lbl rg-lbl--inline">高级设置</span>
+            <span class="rg-mini rg-advanced-hint">并行上限 · 保存目录 · 文件名</span>
+          </button>
+          <div v-show="advancedAutoExpanded" class="rg-advanced-body">
             <div class="rg-row rg-row--in-panel">
-              <label class="rg-lbl" for="rg-auto-dir">保存目录</label>
+              <label class="rg-lbl" for="rg-auto-max-parallel">同时并行导出上限</label>
               <div class="rg-inline">
                 <input
-                  id="rg-auto-dir"
-                  v-model="prefs.autoExportDir"
-                  type="text"
-                  readonly
-                  class="rg-inp rg-inp--grow"
-                  placeholder="未选择（点击下方按钮）"
+                  id="rg-auto-max-parallel"
+                  v-model.number="prefs.auto.maxParallelExports"
+                  type="number"
+                  min="1"
+                  max="16"
+                  class="rg-inp rg-inp--sep"
+                  @change="onMaxParallelChange"
                 />
-                <button type="button" class="btn" :disabled="!electronShell" @click="onPickAutoDir">选择文件夹…</button>
+                <span class="rg-mini">路（1–16）</span>
               </div>
+              <p class="rg-mini rg-mini--indent">
+                实际并行 = min(本设置, 已启用绑定数)。超出上限的触发会排队（状态码 3），有空槽再开跑。
+              </p>
             </div>
-          </template>
 
-          <template v-else>
-            <div class="rg-row rg-row--in-panel">
-              <label class="rg-lbl" for="rg-auto-dir-fallback">保底目录</label>
-              <div class="rg-inline">
-                <input
-                  id="rg-auto-dir-fallback"
-                  v-model="prefs.autoExportDir"
-                  type="text"
-                  readonly
-                  class="rg-inp rg-inp--grow"
-                  placeholder="未选择（点击下方按钮）"
-                />
-                <button type="button" class="btn" :disabled="!electronShell" @click="onPickAutoDir">选择文件夹…</button>
-              </div>
-              <p class="rg-mini rg-mini--indent">OPC 路径变量为空或读取失败时，{{ RG_UI.opcAuto }}保存到此保底目录。</p>
-            </div>
-            <div class="rg-row rg-row--in-panel">
-              <label class="rg-lbl" for="rg-dir-opc-var">OPC 目录变量（String）</label>
-              <div class="rg-inline rg-inline--bind">
-                <input
-                  id="rg-dir-opc-var"
-                  :value="prefs.autoExportDirOpcNodeId"
-                  type="text"
-                  readonly
-                  class="rg-inp rg-inp--grow rg-mono"
-                  placeholder="未绑定"
-                />
-                <button type="button" class="btn" @click="openRgOpcPick('exportDir')">打开 OPC UA 绑定树</button>
+            <div class="rg-export-dir-block rg-export-dir-block--nested">
+              <span class="rg-lbl">{{ RG_UI.opcAuto }}保存文件夹（全部绑定共用）</span>
+              <p class="rg-mini rg-mini--indent">所有触发绑定写入同一批次目录；多路并行时仍落在此文件夹。</p>
+              <div class="rg-tabs" role="tablist" :aria-label="`${RG_UI.opcAuto}保存文件夹来源`">
                 <button
-                  v-if="prefs.autoExportDirOpcNodeId"
                   type="button"
-                  class="btn btn--sm btn--ghost btn--nowrap"
-                  @click="clearAutoExportDirOpcBinding"
+                  role="tab"
+                  class="rg-tab"
+                  :class="{ 'rg-tab--on': prefs.autoExportDirSource === 'default' }"
+                  :aria-selected="prefs.autoExportDirSource === 'default'"
+                  @click="setExportDirTab('default')"
                 >
-                  清除
+                  默认文件夹
+                </button>
+                <button
+                  type="button"
+                  role="tab"
+                  class="rg-tab"
+                  :class="{ 'rg-tab--on': prefs.autoExportDirSource === 'opcua' }"
+                  :aria-selected="prefs.autoExportDirSource === 'opcua'"
+                  @click="setExportDirTab('opcua')"
+                >
+                  绑定 OPC UA
                 </button>
               </div>
-              <p v-if="exportDirOpcServerLabel" class="rg-mini rg-mini--indent">连接：{{ exportDirOpcServerLabel }}</p>
-              <p class="rg-mini rg-mini--indent">展开地址空间时仅显示 String 类型变量；文件夹节点可继续展开浏览。</p>
-            </div>
-          </template>
-        </div>
-      </div>
 
-      <div class="rg-export-dir-block">
-        <span class="rg-lbl">{{ RG_UI.opcAuto }}文件名（全部绑定共用）</span>
-        <p class="rg-mini rg-mini--indent">批次号与文件名片段规则全局共用，不按绑定拆分。</p>
+              <div class="rg-tab-panel" role="tabpanel">
+                <template v-if="prefs.autoExportDirSource === 'default'">
+                  <div class="rg-row rg-row--in-panel">
+                    <label class="rg-lbl" for="rg-auto-dir">保存目录</label>
+                    <div class="rg-inline">
+                      <input
+                        id="rg-auto-dir"
+                        v-model="prefs.autoExportDir"
+                        type="text"
+                        readonly
+                        class="rg-inp rg-inp--grow"
+                        placeholder="未选择（点击下方按钮）"
+                      />
+                      <button type="button" class="btn" :disabled="!electronShell" @click="onPickAutoDir">
+                        选择文件夹…
+                      </button>
+                    </div>
+                  </div>
+                </template>
 
-        <div class="rg-tab-panel" role="group" :aria-label="`${RG_UI.opcAuto}文件名片段`">
-          <div class="rg-row rg-row--in-panel">
-            <span class="rg-lbl">包含片段</span>
-            <div class="rg-seg-bar" role="group" aria-label="文件名片段">
-              <button
-                v-for="opt in fileNameSegmentOptions"
-                :key="opt.id"
-                type="button"
-                class="rg-seg-btn"
-                :class="{ 'rg-seg-btn--on': prefs.autoFileNameSegments.includes(opt.id) }"
-                :title="opt.hint"
-                :aria-pressed="prefs.autoFileNameSegments.includes(opt.id)"
-                @click="toggleFileNameSegment(opt.id)"
-              >
-                {{ opt.label }}
-              </button>
-            </div>
-            <p class="rg-mini rg-mini--indent rg-mini--after-seg">点击按钮切换片段（至少保留一项）；勾选「OPC UA变量」后会按片段顺序拼接下方绑定值。</p>
-          </div>
-
-          <div class="rg-row rg-row--in-panel">
-            <label class="rg-lbl" for="rg-fn-opc-var">OPC UA变量（String）</label>
-            <div class="rg-inline rg-inline--bind">
-              <input
-                id="rg-fn-opc-var"
-                :value="prefs.autoFileNameOpcNodeId"
-                type="text"
-                readonly
-                class="rg-inp rg-inp--grow rg-mono"
-                placeholder="未绑定"
-              />
-              <button type="button" class="btn" @click="openRgOpcPick('fileName')">打开 OPC UA 绑定树</button>
-              <button
-                v-if="prefs.autoFileNameOpcNodeId"
-                type="button"
-                class="btn btn--sm btn--ghost btn--nowrap"
-                @click="clearAutoFileNameOpcBinding"
-              >
-                清除
-              </button>
-            </div>
-            <p v-if="fileNameOpcServerLabel" class="rg-mini rg-mini--indent">连接：{{ fileNameOpcServerLabel }}</p>
-            <p class="rg-mini rg-mini--indent">
-              绑定树仅显示 String 类型变量；未勾选「OPC UA变量」时只保存绑定，不参与文件名。
-            </p>
-          </div>
-
-          <div class="rg-row rg-row--in-panel rg-row--compact">
-            <label class="rg-lbl" for="rg-fn-sep">片段连接符</label>
-            <input id="rg-fn-sep" v-model="prefs.autoFileNameSeparator" type="text" class="rg-inp rg-inp--sep" maxlength="8" spellcheck="false" />
-          </div>
-          <p class="rg-mini rg-mini--indent">预览（示意）：<code>{{ autoFileNamePreview }}</code></p>
-        </div>
-      </div>
-
-      <div class="rg-export-dir-block">
-        <div class="rg-binding-block-head">
-          <span class="rg-lbl">保存触发变量绑定</span>
-          <button type="button" class="btn btn--sm" @click="addAutoTriggerBinding">+ 新建绑定</button>
-        </div>
-        <p class="rg-mini rg-mini--indent">
-          此处配置触发条件、报表模版与<strong>本路 PLC 反馈</strong>；目录/批次号见上方全局配置。建几条触发即可配几套反馈。
-        </p>
-        <p v-if="!prefs.auto.bindings.length" class="rg-mini rg-mini--indent">
-          暂无绑定。点击「新建绑定」添加 OPC 变量，并为每条绑定单独选择要 {{ RG_UI.opcAuto }} 的报表模版。
-        </p>
-        <div
-          v-for="(binding, bi) in prefs.auto.bindings"
-          :key="binding.id"
-          class="rg-binding-card"
-          :class="{ 'rg-binding-card--off': !binding.enabled }"
-        >
-          <div class="rg-binding-card-head">
-            <span class="rg-binding-card-title">绑定 {{ bi + 1 }}</span>
-            <div class="rg-binding-card-head-actions">
-              <div class="rg-switch-row rg-switch-row--compact">
-                <span class="rg-switch-label" :id="`rg-bind-en-lbl-${binding.id}`">启用</span>
-                <button
-                  type="button"
-                  class="rg-switch rg-switch--sm"
-                  :class="{ 'rg-switch--on': binding.enabled }"
-                  role="switch"
-                  :aria-labelledby="`rg-bind-en-lbl-${binding.id}`"
-                  :aria-checked="binding.enabled"
-                  @click="binding.enabled = !binding.enabled"
-                />
+                <template v-else>
+                  <div class="rg-row rg-row--in-panel">
+                    <label class="rg-lbl" for="rg-auto-dir-fallback">保底目录</label>
+                    <div class="rg-inline">
+                      <input
+                        id="rg-auto-dir-fallback"
+                        v-model="prefs.autoExportDir"
+                        type="text"
+                        readonly
+                        class="rg-inp rg-inp--grow"
+                        placeholder="未选择（点击下方按钮）"
+                      />
+                      <button type="button" class="btn" :disabled="!electronShell" @click="onPickAutoDir">
+                        选择文件夹…
+                      </button>
+                    </div>
+                    <p class="rg-mini rg-mini--indent">
+                      OPC 路径变量为空或读取失败时，{{ RG_UI.opcAuto }}保存到此保底目录。
+                    </p>
+                  </div>
+                  <div class="rg-row rg-row--in-panel">
+                    <label class="rg-lbl" for="rg-dir-opc-var">OPC 目录变量（String）</label>
+                    <div class="rg-inline rg-inline--bind">
+                      <input
+                        id="rg-dir-opc-var"
+                        :value="prefs.autoExportDirOpcNodeId"
+                        type="text"
+                        readonly
+                        class="rg-inp rg-inp--grow rg-mono"
+                        placeholder="未绑定"
+                      />
+                      <button type="button" class="btn" @click="openRgOpcPick('exportDir')">
+                        打开 OPC UA 绑定树
+                      </button>
+                      <button
+                        v-if="prefs.autoExportDirOpcNodeId"
+                        type="button"
+                        class="btn btn--sm btn--ghost btn--nowrap"
+                        @click="clearAutoExportDirOpcBinding"
+                      >
+                        清除
+                      </button>
+                    </div>
+                    <p v-if="exportDirOpcServerLabel" class="rg-mini rg-mini--indent">
+                      连接：{{ exportDirOpcServerLabel }}
+                    </p>
+                    <p class="rg-mini rg-mini--indent">
+                      展开地址空间时仅显示 String 类型变量；文件夹节点可继续展开浏览。
+                    </p>
+                  </div>
+                </template>
               </div>
-              <button
-                type="button"
-                class="btn btn--sm btn--ghost"
-                title="删除此绑定"
-                @click="removeAutoTriggerBinding(binding.id)"
-              >
-                删除
-              </button>
             </div>
-          </div>
-          <div class="rg-row rg-row--in-panel">
-            <label class="rg-lbl" :for="`rg-bind-tpl-${binding.id}`">报表模版</label>
-            <select :id="`rg-bind-tpl-${binding.id}`" v-model="binding.templateId" class="rg-select">
-              <option :value="null">请选择…</option>
-              <option v-for="row in templateRows" :key="row.item.id" :value="row.item.id">
-                {{ templateSelectLabel(row.seq, row.item.name) }}
-              </option>
-            </select>
-          </div>
-          <div class="rg-row rg-row--in-panel">
-            <label class="rg-lbl" :for="`rg-bind-srv-${binding.id}`">已保存连接</label>
-            <select :id="`rg-bind-srv-${binding.id}`" v-model="binding.serverId" class="rg-select">
-              <option value="">请选择…</option>
-              <option v-for="s in opcServers" :key="s.id" :value="s.id">{{ s.name || s.id }}</option>
-            </select>
-          </div>
-          <div class="rg-row rg-row--in-panel">
-            <label class="rg-lbl" :for="`rg-bind-node-${binding.id}`">触发节点 NodeId</label>
-            <div class="rg-inline rg-inline--bind">
-              <input
-                :id="`rg-bind-node-${binding.id}`"
-                v-model.trim="binding.nodeId"
-                type="text"
-                class="rg-inp rg-inp--grow rg-mono"
-                spellcheck="false"
-                placeholder="例如 ns=2;s=..."
-              />
-              <button type="button" class="btn" @click="openRgOpcPick(rgTriggerPickTarget(binding.id))">
-                从地址空间选择…
-              </button>
-              <button
-                v-if="binding.nodeId"
-                type="button"
-                class="btn btn--sm btn--ghost btn--nowrap"
-                @click="clearAutoTriggerNodeBinding(binding.id)"
-              >
-                清除
-              </button>
-            </div>
-          </div>
-          <div class="rg-row rg-row--in-panel">
-            <label class="rg-lbl" :for="`rg-bind-mode-${binding.id}`">触发条件</label>
-            <select :id="`rg-bind-mode-${binding.id}`" v-model="binding.mode" class="rg-select">
-              <option value="rising">上升沿（假→真；首次采样为真时也触发）</option>
-              <option value="falling">下降沿（真→假；首次采样为假时也触发）</option>
-              <option value="equals">值等于（与下方比较值相等时触发）</option>
-            </select>
-          </div>
-          <div v-if="binding.mode === 'equals'" class="rg-row rg-row--in-panel">
-            <label class="rg-lbl" :for="`rg-bind-cmp-${binding.id}`">比较值</label>
-            <input
-              :id="`rg-bind-cmp-${binding.id}`"
-              v-model.trim="binding.compareValue"
-              type="text"
-              class="rg-inp"
-              spellcheck="false"
-              placeholder="例如 1、true、OK"
-            />
-            <p class="rg-mini rg-mini--indent">
-              与 OPC 变量读数按文本/数值比较；首次采样已相等，或由不等变为相等时触发。
-            </p>
-          </div>
-          <div
-            v-if="prefs.auto.enabled && binding.enabled"
-            class="rg-row rg-row--in-panel"
-          >
-            <span class="rg-lbl">本路状态</span>
-            <p class="rg-binding-live-status">
-              {{ bindingLiveStatusText(binding.id) }}
-            </p>
-          </div>
-          <div
-            v-if="prefs.auto.enabled && binding.enabled && bindingChartUi(binding.id)?.show"
-            class="rg-row rg-row--in-panel rg-binding-chart"
-          >
-            <span class="rg-lbl">近期数值</span>
-            <AutoTriggerValueSparkline :samples="bindingChartUi(binding.id)?.samples ?? []" />
-            <p class="rg-mini rg-mini--indent">
-              启用 {{ RG_UI.opcAuto }}后每秒采样；保留最近 {{ triggerChartMaxSamples }} 个点（约
-              {{ triggerChartMaxSamples }} 秒）。String 类型变量不显示曲线。
-            </p>
-          </div>
-          <div
-            v-if="prefs.auto.enabled && binding.enabled"
-            class="rg-row rg-row--in-panel rg-binding-chart"
-          >
-            <span class="rg-lbl">状态折线（INT）</span>
-            <AutoTriggerValueSparkline :samples="bindingStatusChartSamples(binding.id)" />
-            <p class="rg-mini rg-mini--indent">
-              纵轴为写回 PLC 的状态码：0失败 1成功 2监听 3排队 4预检 5取数 6渲染 7保存 8写回。
-            </p>
-          </div>
 
-          <div class="rg-row rg-row--in-panel rg-binding-feedback">
-            <div class="rg-binding-feedback-head">
+            <div class="rg-export-dir-block rg-export-dir-block--nested">
+              <span class="rg-lbl">{{ RG_UI.opcAuto }}文件名（全部绑定共用）</span>
+              <p class="rg-mini rg-mini--indent">批次号与文件名片段规则全局共用，不按绑定拆分。</p>
+
+              <div class="rg-tab-panel" role="group" :aria-label="`${RG_UI.opcAuto}文件名片段`">
+                <div class="rg-row rg-row--in-panel">
+                  <span class="rg-lbl">包含片段</span>
+                  <div class="rg-seg-bar" role="group" aria-label="文件名片段">
+                    <button
+                      v-for="opt in fileNameSegmentOptions"
+                      :key="opt.id"
+                      type="button"
+                      class="rg-seg-btn"
+                      :class="{ 'rg-seg-btn--on': prefs.autoFileNameSegments.includes(opt.id) }"
+                      :title="opt.hint"
+                      :aria-pressed="prefs.autoFileNameSegments.includes(opt.id)"
+                      @click="toggleFileNameSegment(opt.id)"
+                    >
+                      {{ opt.label }}
+                    </button>
+                  </div>
+                  <p class="rg-mini rg-mini--indent rg-mini--after-seg">
+                    点击按钮切换片段（至少保留一项）；勾选「OPC UA变量」后会按片段顺序拼接下方绑定值。
+                  </p>
+                </div>
+
+                <div class="rg-row rg-row--in-panel">
+                  <label class="rg-lbl" for="rg-fn-opc-var">OPC UA变量（String）</label>
+                  <div class="rg-inline rg-inline--bind">
+                    <input
+                      id="rg-fn-opc-var"
+                      :value="prefs.autoFileNameOpcNodeId"
+                      type="text"
+                      readonly
+                      class="rg-inp rg-inp--grow rg-mono"
+                      placeholder="未绑定"
+                    />
+                    <button type="button" class="btn" @click="openRgOpcPick('fileName')">
+                      打开 OPC UA 绑定树
+                    </button>
+                    <button
+                      v-if="prefs.autoFileNameOpcNodeId"
+                      type="button"
+                      class="btn btn--sm btn--ghost btn--nowrap"
+                      @click="clearAutoFileNameOpcBinding"
+                    >
+                      清除
+                    </button>
+                  </div>
+                  <p v-if="fileNameOpcServerLabel" class="rg-mini rg-mini--indent">
+                    连接：{{ fileNameOpcServerLabel }}
+                  </p>
+                  <p class="rg-mini rg-mini--indent">
+                    绑定树仅显示 String 类型变量；未勾选「OPC UA变量」时只保存绑定，不参与文件名。
+                  </p>
+                </div>
+
+                <div class="rg-row rg-row--in-panel rg-row--compact">
+                  <label class="rg-lbl" for="rg-fn-sep">片段连接符</label>
+                  <input
+                    id="rg-fn-sep"
+                    v-model="prefs.autoFileNameSeparator"
+                    type="text"
+                    class="rg-inp rg-inp--sep"
+                    maxlength="8"
+                    spellcheck="false"
+                  />
+                </div>
+                <p class="rg-mini rg-mini--indent">
+                  预览（示意）：<code>{{ autoFileNamePreview }}</code>
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="rg-export-dir-block">
+          <div class="rg-binding-block-head">
+            <span class="rg-lbl">保存触发变量绑定</span>
+            <button type="button" class="btn btn--sm" @click="addAutoTriggerBinding">+ 新建绑定</button>
+          </div>
+          <p class="rg-mini rg-mini--indent">
+            常规只需配模版、触发节点与条件；目录/文件名见「高级设置」。点卡片标题展开编辑。
+          </p>
+          <p v-if="!prefs.auto.bindings.length" class="rg-mini rg-mini--indent">
+            暂无绑定。点击「新建绑定」添加 OPC 变量，并为每条绑定单独选择要 {{ RG_UI.opcAuto }} 的报表模版。
+          </p>
+          <div
+            v-for="(binding, bi) in prefs.auto.bindings"
+            :key="binding.id"
+            :id="`rg-bind-card-${binding.id}`"
+            class="rg-binding-card"
+            :class="{
+              'rg-binding-card--off': !binding.enabled,
+              'rg-binding-card--collapsed': isBindingCardExpanded(binding.id),
+            }"
+          >
+            <div class="rg-binding-card-head">
               <button
                 type="button"
-                class="rg-trigger-log-toggle"
-                :aria-expanded="isBindingFeedbackExpanded(binding.id)"
-                @click="toggleBindingFeedbackExpanded(binding.id)"
+                class="rg-binding-card-summary"
+                :aria-expanded="isBindingCardExpanded(binding.id)"
+                @click="toggleBindingCardExpanded(binding.id)"
               >
                 <span
                   class="rg-trigger-log-chevron"
-                  :class="{ 'rg-trigger-log-chevron--open': isBindingFeedbackExpanded(binding.id) }"
+                  :class="{ 'rg-trigger-log-chevron--open': isBindingCardExpanded(binding.id) }"
                   aria-hidden="true"
                   >▸</span
                 >
-                <span class="rg-lbl rg-lbl--inline">本绑定结批结果写回 PLC</span>
+                <span class="rg-binding-card-title">绑定 {{ bi + 1 }}</span>
+                <span class="rg-binding-card-meta">{{ bindingSummaryMeta(binding) }}</span>
               </button>
-            </div>
-            <div v-show="isBindingFeedbackExpanded(binding.id)" class="rg-binding-feedback-body">
-              <p class="rg-mini rg-mini--indent">
-                本路独立状态/信息/路径节点；文件仍保存到上方全局目录，路径节点仅写回本路生成的 PDF 路径。
-              </p>
-              <div class="rg-switch-row rg-switch-row--compact">
-                <span class="rg-switch-label" :id="`rg-bind-fb-en-${binding.id}`">启用本路写回</span>
+              <div class="rg-binding-card-head-actions">
+                <div class="rg-switch-row rg-switch-row--compact">
+                  <span class="rg-switch-label" :id="`rg-bind-en-lbl-${binding.id}`">启用</span>
+                  <button
+                    type="button"
+                    class="rg-switch rg-switch--sm"
+                    :class="{ 'rg-switch--on': binding.enabled }"
+                    role="switch"
+                    :aria-labelledby="`rg-bind-en-lbl-${binding.id}`"
+                    :aria-checked="binding.enabled"
+                    @click.stop="binding.enabled = !binding.enabled"
+                  />
+                </div>
                 <button
                   type="button"
-                  class="rg-switch rg-switch--sm"
-                  :class="{ 'rg-switch--on': ensureBindingFeedback(binding).enabled }"
-                  role="switch"
-                  :aria-labelledby="`rg-bind-fb-en-${binding.id}`"
-                  :aria-checked="ensureBindingFeedback(binding).enabled"
-                  @click="ensureBindingFeedback(binding).enabled = !ensureBindingFeedback(binding).enabled"
-                />
+                  class="btn btn--sm btn--ghost"
+                  title="删除此绑定"
+                  @click.stop="removeAutoTriggerBinding(binding.id)"
+                >
+                  删除
+                </button>
+              </div>
+            </div>
+            <p
+              v-if="!isBindingCardExpanded(binding.id) && prefs.auto.enabled && binding.enabled"
+              class="rg-binding-live-status rg-binding-live-status--summary"
+            >
+              {{ bindingLiveStatusText(binding.id) }}
+            </p>
+
+            <div v-show="isBindingCardExpanded(binding.id)" class="rg-binding-card-body">
+              <div class="rg-row rg-row--in-panel">
+                <label class="rg-lbl" :for="`rg-bind-tpl-${binding.id}`">报表模版</label>
+                <select :id="`rg-bind-tpl-${binding.id}`" v-model="binding.templateId" class="rg-select">
+                  <option :value="null">请选择…</option>
+                  <option v-for="row in templateRows" :key="row.item.id" :value="row.item.id">
+                    {{ templateSelectLabel(row.seq, row.item.name) }}
+                  </option>
+                </select>
               </div>
               <div class="rg-row rg-row--in-panel">
-                <label class="rg-lbl" :for="`rg-bind-fb-srv-${binding.id}`">已保存连接</label>
+                <span class="rg-lbl">OPC 连接</span>
+                <p class="rg-mini rg-mini--indent rg-conn-line">
+                  {{ opcServerLabel(effectiveBindingServerId(binding)) || "未选择（请先设默认连接）" }}
+                  <button
+                    type="button"
+                    class="btn btn--sm btn--ghost"
+                    @click="toggleServerOverrideExpanded(binding.id)"
+                  >
+                    {{ isServerOverrideExpanded(binding.id) ? "收起" : "改用其它连接" }}
+                  </button>
+                </p>
                 <select
-                  :id="`rg-bind-fb-srv-${binding.id}`"
-                  v-model="ensureBindingFeedback(binding).serverId"
+                  v-if="isServerOverrideExpanded(binding.id)"
+                  :id="`rg-bind-srv-${binding.id}`"
+                  v-model="binding.serverId"
                   class="rg-select"
                 >
-                  <option value="">请选择…</option>
+                  <option value="">使用默认连接</option>
                   <option v-for="s in opcServers" :key="s.id" :value="s.id">{{ s.name || s.id }}</option>
                 </select>
               </div>
               <div class="rg-row rg-row--in-panel">
-                <label class="rg-lbl" :for="`rg-bind-fb-status-${binding.id}`">状态 INT NodeId</label>
+                <label class="rg-lbl" :for="`rg-bind-node-${binding.id}`">触发节点 NodeId</label>
                 <div class="rg-inline rg-inline--bind">
                   <input
-                    :id="`rg-bind-fb-status-${binding.id}`"
-                    v-model.trim="ensureBindingFeedback(binding).statusNodeId"
+                    :id="`rg-bind-node-${binding.id}`"
+                    v-model.trim="binding.nodeId"
                     type="text"
                     class="rg-inp rg-inp--grow rg-mono"
-                    placeholder="ns=…;s=…（INT）"
+                    spellcheck="false"
+                    placeholder="例如 ns=2;s=..."
                   />
-                  <button type="button" class="btn btn--nowrap" @click="openBindingFeedbackPick(binding.id, 'status')">
+                  <button type="button" class="btn" @click="openRgOpcPick(rgTriggerPickTarget(binding.id))">
                     从地址空间选择…
                   </button>
-                </div>
-                <p class="rg-mini rg-mini--indent">自动结批固定写 INT 阶段码（见上方状态折线说明）。</p>
-              </div>
-              <div class="rg-row rg-row--in-panel">
-                <label class="rg-lbl" :for="`rg-bind-fb-msg-${binding.id}`">信息 WSTRING（可选）</label>
-                <div class="rg-inline rg-inline--bind">
-                  <input
-                    :id="`rg-bind-fb-msg-${binding.id}`"
-                    v-model.trim="ensureBindingFeedback(binding).messageNodeId"
-                    type="text"
-                    class="rg-inp rg-inp--grow rg-mono"
-                    placeholder="可选"
-                  />
-                  <button type="button" class="btn btn--nowrap" @click="openBindingFeedbackPick(binding.id, 'message')">
-                    从地址空间选择…
+                  <button
+                    v-if="binding.nodeId"
+                    type="button"
+                    class="btn btn--sm btn--ghost btn--nowrap"
+                    @click="clearAutoTriggerNodeBinding(binding.id)"
+                  >
+                    清除
                   </button>
                 </div>
               </div>
               <div class="rg-row rg-row--in-panel">
-                <label class="rg-lbl" :for="`rg-bind-fb-path-${binding.id}`">路径 WSTRING（可选）</label>
-                <div class="rg-inline rg-inline--bind">
-                  <input
-                    :id="`rg-bind-fb-path-${binding.id}`"
-                    v-model.trim="ensureBindingFeedback(binding).filePathNodeId"
-                    type="text"
-                    class="rg-inp rg-inp--grow rg-mono"
-                    placeholder="可选；成功时写本路 PDF 路径"
-                  />
-                  <button type="button" class="btn btn--nowrap" @click="openBindingFeedbackPick(binding.id, 'path')">
-                    从地址空间选择…
-                  </button>
-                </div>
+                <label class="rg-lbl" :for="`rg-bind-mode-${binding.id}`">触发条件</label>
+                <select :id="`rg-bind-mode-${binding.id}`" v-model="binding.mode" class="rg-select">
+                  <option value="rising">上升沿（假→真；首次采样为真时也触发）</option>
+                  <option value="falling">下降沿（真→假；首次采样为假时也触发）</option>
+                  <option value="equals">值等于（与下方比较值相等时触发）</option>
+                </select>
               </div>
-              <div class="rg-row rg-row--in-panel">
-                <button type="button" class="btn btn--sm" @click="testBindingFeedbackWrite(binding)">
-                  测试写回本路
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <div class="rg-row rg-row--in-panel rg-trigger-log-block">
-            <div class="rg-trigger-log-head">
-              <button
-                type="button"
-                class="rg-trigger-log-toggle"
-                :aria-expanded="isTriggerLogExpanded(binding.id)"
-                @click="toggleTriggerLogExpanded(binding.id)"
-              >
-                <span class="rg-trigger-log-chevron" :class="{ 'rg-trigger-log-chevron--open': isTriggerLogExpanded(binding.id) }" aria-hidden="true">▸</span>
-                <span class="rg-lbl rg-lbl--inline">触发记录</span>
-                <span class="rg-trigger-log-count">（{{ binding.triggerLog.length }}）</span>
-              </button>
-              <div v-if="binding.triggerLog.length" class="rg-trigger-log-actions">
-                <button type="button" class="btn btn--sm" @click="exportBindingTriggerHistory(binding, bi)">
-                  导出触发记录
-                </button>
-                <button type="button" class="btn btn--sm btn--ghost" @click="clearBindingTriggerLog(binding.id)">
-                  清空
-                </button>
-              </div>
-            </div>
-            <div v-show="isTriggerLogExpanded(binding.id)" class="rg-trigger-log-body">
-              <p v-if="!binding.triggerLog.length" class="rg-mini rg-mini--indent">
-                尚无触发记录；条件满足并尝试 {{ RG_UI.opcAuto }} 后会写入。
-              </p>
-              <template v-else>
-                <p v-if="binding.triggerLog.length > triggerLogUiMax" class="rg-mini rg-mini--indent">
-                  仅显示最近 {{ triggerLogUiMax }} 条，共 {{ binding.triggerLog.length }} 条；完整记录可点「导出触发记录」。
+              <div v-if="binding.mode === 'equals'" class="rg-row rg-row--in-panel">
+                <label class="rg-lbl" :for="`rg-bind-cmp-${binding.id}`">比较值</label>
+                <input
+                  :id="`rg-bind-cmp-${binding.id}`"
+                  v-model.trim="binding.compareValue"
+                  type="text"
+                  class="rg-inp"
+                  spellcheck="false"
+                  placeholder="例如 1、true、OK"
+                />
+                <p class="rg-mini rg-mini--indent">
+                  与 OPC 变量读数按文本/数值比较；首次采样已相等，或由不等变为相等时触发。
                 </p>
-                <div class="rg-trigger-log-wrap">
-                  <table class="rg-trigger-log-table">
-                    <thead>
-                      <tr>
-                        <th>时间</th>
-                        <th>触发事件</th>
-                        <th>生成文件名</th>
-                        <th>结果</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      <tr v-for="row in triggerLogUiSlice(binding.triggerLog)" :key="row.id">
-                        <td class="rg-trigger-log-time">{{ formatTriggerLogTime(row.at) }}</td>
-                        <td>{{ row.event }}</td>
-                        <td class="rg-trigger-log-file" :title="row.filePath || row.fileName">
-                          <code>{{ row.fileName }}</code>
-                        </td>
-                        <td>
-                          <span
-                            class="rg-trigger-log-status"
-                            :class="row.success ? 'rg-trigger-log-status--ok' : 'rg-trigger-log-status--fail'"
-                            :title="row.message"
-                          >
-                            {{ row.success ? "成功" : "失败" }}
-                          </span>
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
+              </div>
+
+              <div class="rg-row rg-row--in-panel rg-binding-monitor">
+                <button
+                  type="button"
+                  class="rg-trigger-log-toggle"
+                  :aria-expanded="isBindingMonitorExpanded(binding.id)"
+                  @click="toggleBindingMonitorExpanded(binding.id)"
+                >
+                  <span
+                    class="rg-trigger-log-chevron"
+                    :class="{ 'rg-trigger-log-chevron--open': isBindingMonitorExpanded(binding.id) }"
+                    aria-hidden="true"
+                    >▸</span
+                  >
+                  <span class="rg-lbl rg-lbl--inline">监控</span>
+                  <span class="rg-mini rg-advanced-hint">本路状态 · 曲线</span>
+                </button>
+                <div v-show="isBindingMonitorExpanded(binding.id)" class="rg-binding-monitor-body">
+                  <div v-if="prefs.auto.enabled && binding.enabled" class="rg-row rg-row--in-panel">
+                    <span class="rg-lbl">本路状态</span>
+                    <p class="rg-binding-live-status">
+                      {{ bindingLiveStatusText(binding.id) }}
+                    </p>
+                  </div>
+                  <div
+                    v-if="prefs.auto.enabled && binding.enabled && bindingChartUi(binding.id)?.show"
+                    class="rg-row rg-row--in-panel rg-binding-chart"
+                  >
+                    <span class="rg-lbl">近期数值</span>
+                    <AutoTriggerValueSparkline :samples="bindingChartUi(binding.id)?.samples ?? []" />
+                    <p class="rg-mini rg-mini--indent">
+                      启用 {{ RG_UI.opcAuto }}后每秒采样；保留最近 {{ triggerChartMaxSamples }} 个点（约
+                      {{ triggerChartMaxSamples }} 秒）。String 类型变量不显示曲线。
+                    </p>
+                  </div>
+                  <div
+                    v-if="prefs.auto.enabled && binding.enabled"
+                    class="rg-row rg-row--in-panel rg-binding-chart"
+                  >
+                    <span class="rg-lbl">状态折线（INT）</span>
+                    <AutoTriggerValueSparkline :samples="bindingStatusChartSamples(binding.id)" />
+                    <p class="rg-mini rg-mini--indent">
+                      纵轴为写回 PLC 的状态码：0失败 1成功 2监听 3排队 4预检 5取数 6渲染 7保存 8写回。
+                    </p>
+                  </div>
+                  <p
+                    v-if="!(prefs.auto.enabled && binding.enabled)"
+                    class="rg-mini rg-mini--indent"
+                  >
+                    启用自动结批与本绑定后显示状态与曲线。
+                  </p>
                 </div>
-              </template>
+              </div>
+
+              <div class="rg-row rg-row--in-panel rg-binding-feedback">
+                <div class="rg-binding-feedback-head">
+                  <button
+                    type="button"
+                    class="rg-trigger-log-toggle"
+                    :aria-expanded="isBindingFeedbackExpanded(binding.id)"
+                    @click="toggleBindingFeedbackExpanded(binding.id)"
+                  >
+                    <span
+                      class="rg-trigger-log-chevron"
+                      :class="{ 'rg-trigger-log-chevron--open': isBindingFeedbackExpanded(binding.id) }"
+                      aria-hidden="true"
+                      >▸</span
+                    >
+                    <span class="rg-lbl rg-lbl--inline">本绑定结批结果写回 PLC</span>
+                  </button>
+                </div>
+                <div v-show="isBindingFeedbackExpanded(binding.id)" class="rg-binding-feedback-body">
+                  <p class="rg-mini rg-mini--indent">
+                    本路独立状态/信息/路径节点；未单独选连接时沿用触发连接（或页级默认连接）。
+                  </p>
+                  <div class="rg-switch-row rg-switch-row--compact">
+                    <span class="rg-switch-label" :id="`rg-bind-fb-en-${binding.id}`">启用本路写回</span>
+                    <button
+                      type="button"
+                      class="rg-switch rg-switch--sm"
+                      :class="{ 'rg-switch--on': ensureBindingFeedback(binding).enabled }"
+                      role="switch"
+                      :aria-labelledby="`rg-bind-fb-en-${binding.id}`"
+                      :aria-checked="ensureBindingFeedback(binding).enabled"
+                      @click="
+                        ensureBindingFeedback(binding).enabled = !ensureBindingFeedback(binding).enabled
+                      "
+                    />
+                  </div>
+                  <p class="rg-mini rg-mini--indent">
+                    写回连接：{{
+                      opcServerLabel(
+                        ensureBindingFeedback(binding).serverId || effectiveBindingServerId(binding),
+                      ) || "同触发/默认连接"
+                    }}
+                  </p>
+                  <div class="rg-row rg-row--in-panel">
+                    <label class="rg-lbl" :for="`rg-bind-fb-status-${binding.id}`">状态 INT NodeId</label>
+                    <div class="rg-inline rg-inline--bind">
+                      <input
+                        :id="`rg-bind-fb-status-${binding.id}`"
+                        v-model.trim="ensureBindingFeedback(binding).statusNodeId"
+                        type="text"
+                        class="rg-inp rg-inp--grow rg-mono"
+                        placeholder="ns=…;s=…（INT）"
+                      />
+                      <button
+                        type="button"
+                        class="btn btn--nowrap"
+                        @click="openBindingFeedbackPick(binding.id, 'status')"
+                      >
+                        从地址空间选择…
+                      </button>
+                    </div>
+                    <p class="rg-mini rg-mini--indent">自动结批固定写 INT 阶段码（见监控区说明）。</p>
+                  </div>
+                  <div class="rg-row rg-row--in-panel">
+                    <label class="rg-lbl" :for="`rg-bind-fb-msg-${binding.id}`">信息 WSTRING（可选）</label>
+                    <div class="rg-inline rg-inline--bind">
+                      <input
+                        :id="`rg-bind-fb-msg-${binding.id}`"
+                        v-model.trim="ensureBindingFeedback(binding).messageNodeId"
+                        type="text"
+                        class="rg-inp rg-inp--grow rg-mono"
+                        placeholder="可选"
+                      />
+                      <button
+                        type="button"
+                        class="btn btn--nowrap"
+                        @click="openBindingFeedbackPick(binding.id, 'message')"
+                      >
+                        从地址空间选择…
+                      </button>
+                    </div>
+                  </div>
+                  <div class="rg-row rg-row--in-panel">
+                    <label class="rg-lbl" :for="`rg-bind-fb-path-${binding.id}`">路径 WSTRING（可选）</label>
+                    <div class="rg-inline rg-inline--bind">
+                      <input
+                        :id="`rg-bind-fb-path-${binding.id}`"
+                        v-model.trim="ensureBindingFeedback(binding).filePathNodeId"
+                        type="text"
+                        class="rg-inp rg-inp--grow rg-mono"
+                        placeholder="可选；成功时写本路 PDF 路径"
+                      />
+                      <button
+                        type="button"
+                        class="btn btn--nowrap"
+                        @click="openBindingFeedbackPick(binding.id, 'path')"
+                      >
+                        从地址空间选择…
+                      </button>
+                    </div>
+                  </div>
+                  <div class="rg-row rg-row--in-panel">
+                    <button type="button" class="btn btn--sm" @click="testBindingFeedbackWrite(binding)">
+                      测试写回本路
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="rg-row rg-row--in-panel rg-trigger-log-block">
+                <div class="rg-trigger-log-head">
+                  <button
+                    type="button"
+                    class="rg-trigger-log-toggle"
+                    :aria-expanded="isTriggerLogExpanded(binding.id)"
+                    @click="toggleTriggerLogExpanded(binding.id)"
+                  >
+                    <span
+                      class="rg-trigger-log-chevron"
+                      :class="{ 'rg-trigger-log-chevron--open': isTriggerLogExpanded(binding.id) }"
+                      aria-hidden="true"
+                      >▸</span
+                    >
+                    <span class="rg-lbl rg-lbl--inline">触发记录</span>
+                    <span class="rg-trigger-log-count">（{{ binding.triggerLog.length }}）</span>
+                  </button>
+                  <div v-if="binding.triggerLog.length" class="rg-trigger-log-actions">
+                    <button type="button" class="btn btn--sm" @click="exportBindingTriggerHistory(binding, bi)">
+                      导出触发记录
+                    </button>
+                    <button
+                      type="button"
+                      class="btn btn--sm btn--ghost"
+                      @click="clearBindingTriggerLog(binding.id)"
+                    >
+                      清空
+                    </button>
+                  </div>
+                </div>
+                <div v-show="isTriggerLogExpanded(binding.id)" class="rg-trigger-log-body">
+                  <p v-if="!binding.triggerLog.length" class="rg-mini rg-mini--indent">
+                    尚无触发记录；条件满足并尝试 {{ RG_UI.opcAuto }} 后会写入。
+                  </p>
+                  <template v-else>
+                    <p v-if="binding.triggerLog.length > triggerLogUiMax" class="rg-mini rg-mini--indent">
+                      仅显示最近 {{ triggerLogUiMax }} 条，共 {{ binding.triggerLog.length }} 条；完整记录可点「导出触发记录」。
+                    </p>
+                    <div class="rg-trigger-log-wrap">
+                      <table class="rg-trigger-log-table">
+                        <thead>
+                          <tr>
+                            <th>时间</th>
+                            <th>触发事件</th>
+                            <th>生成文件名</th>
+                            <th>结果</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr v-for="row in triggerLogUiSlice(binding.triggerLog)" :key="row.id">
+                            <td class="rg-trigger-log-time">{{ formatTriggerLogTime(row.at) }}</td>
+                            <td>{{ row.event }}</td>
+                            <td class="rg-trigger-log-file" :title="row.filePath || row.fileName">
+                              <code>{{ row.fileName }}</code>
+                            </td>
+                            <td>
+                              <span
+                                class="rg-trigger-log-status"
+                                :class="
+                                  row.success ? 'rg-trigger-log-status--ok' : 'rg-trigger-log-status--fail'
+                                "
+                                :title="row.message"
+                              >
+                                {{ row.success ? "成功" : "失败" }}
+                              </span>
+                            </td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </template>
+                </div>
+              </div>
             </div>
           </div>
+          <p class="rg-mini rg-mini--indent rg-mini--bindings-hint">
+            在「数据源 → OPC UA」中保存连接；启用 {{ RG_UI.opcAuto }} 后<strong>在任意页面</strong>均会每秒检测触发变量，条件满足即生成对应 PDF，无冷却等待。
+          </p>
         </div>
-        <p class="rg-mini rg-mini--indent rg-mini--bindings-hint">
-          在「数据源 → OPC UA」中保存连接；启用 {{ RG_UI.opcAuto }} 后<strong>在任意页面</strong>均会每秒检测触发变量，条件满足即生成对应 PDF，无冷却等待。
-        </p>
-      </div>
-      <p v-if="autoStatus" class="rg-hint">{{ autoStatus }}</p>
+        <p v-if="autoStatus" class="rg-hint">{{ autoStatus }}</p>
       </div>
     </section>
 
@@ -636,11 +784,13 @@ import { apiFetch } from "@/api/client.js";
 import {
   defaultBindingExportResultOpcFeedback,
   loadReportGeneratorPrefs,
+  resolveEffectiveOpcServerIdForBinding,
   saveReportGeneratorPrefs,
   type AutoExportDirSource,
   type ExportResultOpcFeedback,
   type ReportGeneratorPrefs,
 } from "@/lib/report-generator-prefs";
+import { pickPreferredOpcServerId } from "@/lib/report-template/binding-preview-utils";
 import {
   autoExportStatusLabel,
   clampAutoExportMaxParallel,
@@ -742,6 +892,13 @@ function opcServerLabel(serverId: string): string {
   return s?.name?.trim() || s?.id || id;
 }
 
+const exportDirOpcServerLabel = computed(() => opcServerLabel(prefs.value.autoExportDirOpcServerId));
+const fileNameOpcServerLabel = computed(() => opcServerLabel(prefs.value.autoFileNameOpcServerId));
+
+const advancedAutoExpanded = ref(false);
+const bindingCardExpanded = ref<Record<string, boolean>>({});
+const bindingMonitorExpanded = ref<Record<string, boolean>>({});
+const serverOverrideExpanded = ref<Record<string, boolean>>({});
 
 function clearAutoExportDirOpcBinding(): void {
   prefs.value.autoExportDirOpcServerId = "";
@@ -820,18 +977,29 @@ const opcPickTitle = computed(() => {
 });
 
 const opcPickInitialServerId = computed(() => {
-  if (opcPickTarget.value === "exportDir") return prefs.value.autoExportDirOpcServerId;
-  if (opcPickTarget.value === "fileName") return prefs.value.autoFileNameOpcServerId;
+  const fallback = () => String(prefs.value.auto.defaultOpcServerId || "").trim();
+  if (opcPickTarget.value === "exportDir") {
+    return prefs.value.autoExportDirOpcServerId.trim() || fallback();
+  }
+  if (opcPickTarget.value === "fileName") {
+    return prefs.value.autoFileNameOpcServerId.trim() || fallback();
+  }
   const bf = parseBindingFeedbackPick(opcPickTarget.value);
   if (bf) {
     const b = prefs.value.auto.bindings.find((x) => x.id === bf.bindingId);
-    return b ? ensureBindingFeedback(b).serverId || b.serverId : "";
+    if (!b) return fallback();
+    return (
+      ensureBindingFeedback(b).serverId.trim() ||
+      resolveEffectiveOpcServerIdForBinding(prefs.value, b) ||
+      fallback()
+    );
   }
   const bindId = parseRgTriggerPickTarget(opcPickTarget.value);
   if (bindId) {
-    return prefs.value.auto.bindings.find((b) => b.id === bindId)?.serverId || "";
+    const b = prefs.value.auto.bindings.find((x) => x.id === bindId);
+    return (b ? resolveEffectiveOpcServerIdForBinding(prefs.value, b) : "") || fallback();
   }
-  return "";
+  return fallback();
 });
 
 const opcPickLead = computed(() => {
@@ -911,6 +1079,75 @@ function bindingLiveStatusText(id: string): string {
   const code = rt.lastStatusCode ?? 2;
   const text = rt.lastStatusText || autoExportStatusLabel(code);
   return `${text}（${code}）`;
+}
+
+function effectiveBindingServerId(binding: AutoTriggerBinding): string {
+  return resolveEffectiveOpcServerIdForBinding(prefs.value, binding);
+}
+
+function shortNodeLabel(nodeId: string): string {
+  const raw = nodeId.trim();
+  if (!raw) return "";
+  const parts = raw.split(/[./\\]/);
+  const last = parts[parts.length - 1] || raw;
+  return last.length > 36 ? `${last.slice(0, 34)}…` : last;
+}
+
+function bindingSummaryMeta(binding: AutoTriggerBinding): string {
+  const tpl = summaries.value.find((x) => x.id === binding.templateId);
+  const tplName = tpl?.name?.trim() || "未选模版";
+  const node = shortNodeLabel(binding.nodeId) || "未选节点";
+  return `${tplName} · ${node}`;
+}
+
+function isBindingCardExpanded(bindingId: string): boolean {
+  return Boolean(bindingCardExpanded.value[bindingId]);
+}
+
+function toggleBindingCardExpanded(bindingId: string): void {
+  bindingCardExpanded.value = {
+    ...bindingCardExpanded.value,
+    [bindingId]: !bindingCardExpanded.value[bindingId],
+  };
+}
+
+function isBindingMonitorExpanded(bindingId: string): boolean {
+  return Boolean(bindingMonitorExpanded.value[bindingId]);
+}
+
+function toggleBindingMonitorExpanded(bindingId: string): void {
+  bindingMonitorExpanded.value = {
+    ...bindingMonitorExpanded.value,
+    [bindingId]: !bindingMonitorExpanded.value[bindingId],
+  };
+}
+
+function isServerOverrideExpanded(bindingId: string): boolean {
+  return Boolean(serverOverrideExpanded.value[bindingId]);
+}
+
+function toggleServerOverrideExpanded(bindingId: string): void {
+  serverOverrideExpanded.value = {
+    ...serverOverrideExpanded.value,
+    [bindingId]: !serverOverrideExpanded.value[bindingId],
+  };
+}
+
+function onDefaultOpcServerChange(): void {
+  notifyReportAutoExportSettingsChanged();
+}
+
+async function ensureDefaultOpcServerId(): Promise<void> {
+  const current = String(prefs.value.auto.defaultOpcServerId || "").trim();
+  if (current && opcServers.value.some((s) => s.id === current)) return;
+  let appPrefs: Record<string, unknown> = {};
+  try {
+    appPrefs = (await apiFetch("/settings/app_preferences")) as Record<string, unknown>;
+  } catch {
+    /* ignore */
+  }
+  const picked = pickPreferredOpcServerId(appPrefs, opcServers.value);
+  if (picked) prefs.value.auto.defaultOpcServerId = picked;
 }
 
 function ensureBindingFeedback(binding: AutoTriggerBinding): ExportResultOpcFeedback {
@@ -1043,16 +1280,25 @@ function bindingDisplayLabel(b: AutoTriggerBinding, index: number): string {
 
 function addAutoTriggerBinding(): void {
   const prev = prefs.value.auto.bindings;
-  const serverId = prev.length ? prev[prev.length - 1].serverId : "";
+  const defaultId = String(prefs.value.auto.defaultOpcServerId || "").trim();
+  const serverId =
+    defaultId || (prev.length ? String(prev[prev.length - 1].serverId || "").trim() : "");
   const templateId = prefs.value.templateId;
-  prefs.value.auto.bindings = [
-    ...prev,
-    createAutoTriggerBinding({
-      serverId,
-      templateId: templateId || null,
-      exportResultOpc: defaultBindingExportResultOpcFeedback(),
-    }),
-  ];
+  const exportResultOpc = defaultBindingExportResultOpcFeedback();
+  if (serverId) exportResultOpc.serverId = serverId;
+  const binding = createAutoTriggerBinding({
+    serverId,
+    templateId: templateId || null,
+    exportResultOpc,
+  });
+  prefs.value.auto.bindings = [...prev, binding];
+  bindingCardExpanded.value = { ...bindingCardExpanded.value, [binding.id]: true };
+  void nextTick(() => {
+    document.getElementById(`rg-bind-card-${binding.id}`)?.scrollIntoView({
+      behavior: "smooth",
+      block: "nearest",
+    });
+  });
 }
 
 function removeAutoTriggerBinding(id: string): void {
@@ -1066,6 +1312,18 @@ function removeAutoTriggerBinding(id: string): void {
   const fbNext = { ...bindingFeedbackExpanded.value };
   delete fbNext[id];
   bindingFeedbackExpanded.value = fbNext;
+  const cardNext = { ...bindingCardExpanded.value };
+  delete cardNext[id];
+  bindingCardExpanded.value = cardNext;
+  const monNext = { ...bindingMonitorExpanded.value };
+  delete monNext[id];
+  bindingMonitorExpanded.value = monNext;
+  const ovNext = { ...serverOverrideExpanded.value };
+  delete ovNext[id];
+  serverOverrideExpanded.value = ovNext;
+  const logNext = { ...triggerLogExpanded.value };
+  delete logNext[id];
+  triggerLogExpanded.value = logNext;
   notifyReportAutoExportSettingsChanged();
 }
 
@@ -1413,6 +1671,7 @@ async function loadOpcServers(): Promise<void> {
   } catch {
     opcServers.value = [];
   }
+  await ensureDefaultOpcServerId();
 }
 
 async function onManualExport(): Promise<void> {
@@ -1752,9 +2011,27 @@ onUnmounted(() => {
   color: #b91c1c;
   background: #fef2f2;
 }
+.rg-advanced-toggle {
+  width: 100%;
+  margin-bottom: 4px;
+}
+.rg-advanced-hint {
+  margin: 0 0 0 4px;
+  font-weight: normal;
+  color: #a1a1aa;
+}
+.rg-advanced-body {
+  margin-top: 8px;
+  padding-top: 4px;
+}
+.rg-export-dir-block--nested {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px dashed #e4e4e7;
+}
 .rg-binding-card {
   margin-bottom: 12px;
-  padding: 12px 14px;
+  padding: 10px 12px;
   border-radius: 10px;
   border: 1px solid #e4e4e7;
   background: #fff;
@@ -1763,14 +2040,65 @@ onUnmounted(() => {
   opacity: 0.72;
   background: #fafafa;
 }
+.rg-binding-card--collapsed {
+  padding-bottom: 8px;
+}
 .rg-binding-card-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  margin-bottom: 12px;
+  margin-bottom: 0;
+  padding-bottom: 0;
+  border-bottom: none;
+}
+.rg-binding-card--expanded .rg-binding-card-head {
+  margin-bottom: 10px;
   padding-bottom: 8px;
   border-bottom: 1px solid #f4f4f5;
+}
+.rg-binding-card-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+  margin: 0;
+  padding: 2px 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+}
+.rg-binding-card-meta {
+  font-size: 12px;
+  font-weight: 400;
+  color: #71717a;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rg-binding-card-body {
+  margin-top: 4px;
+}
+.rg-binding-live-status--summary {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  font-size: 12px;
+  color: #52525b;
+}
+.rg-conn-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+}
+.rg-binding-monitor-body {
+  margin-top: 6px;
+  padding-left: 4px;
 }
 .rg-binding-card-head-actions {
   display: flex;

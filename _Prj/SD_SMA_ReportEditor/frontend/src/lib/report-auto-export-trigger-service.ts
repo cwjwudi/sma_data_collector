@@ -769,13 +769,16 @@ async function pollAutoTriggerOnceBody(): Promise<void> {
   const summaries = await loadTemplateSummariesCached();
   const statusParts: string[] = [];
   let anyListening = false;
+  const defaultSrv = String(prefs.auto.defaultOpcServerId || "").trim();
 
   for (let i = 0; i < bindings.length; i++) {
     const b = bindings[i];
+    // 未单独覆盖连接时沿用页级默认，保证旧数据与「默认连接」一致
+    if (!b.serverId.trim() && defaultSrv) b.serverId = defaultSrv;
     const label = bindingDisplayLabel(b, i, summaries);
     if (!isTriggerBindingActive(b)) continue;
 
-    const srv = b.serverId.trim();
+    const srv = b.serverId.trim() || defaultSrv;
     const nodeId = b.nodeId.trim();
     const rt = getReportAutoExportBindingRuntime(b.id);
 

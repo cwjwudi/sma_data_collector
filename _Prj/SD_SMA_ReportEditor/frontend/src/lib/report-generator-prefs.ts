@@ -157,6 +157,12 @@ export interface ReportGeneratorPrefs {
      */
     maxParallelExports: number;
 
+    /**
+     * 本页默认 OPC 连接：新建绑定与写回回退共用。
+     * 单条绑定可通过 binding.serverId 覆盖。
+     */
+    defaultOpcServerId: string;
+
   };
 
 }
@@ -206,6 +212,8 @@ export const defaultReportGeneratorPrefs = (): ReportGeneratorPrefs => ({
     bindings: [],
 
     maxParallelExports: AUTO_EXPORT_MAX_PARALLEL_DEFAULT,
+
+    defaultOpcServerId: "",
 
   },
 
@@ -366,6 +374,13 @@ function parseStoredPrefs(o: StoredPrefs, base: ReportGeneratorPrefs): ReportGen
         (o.auto as { maxParallelExports?: unknown } | undefined)?.maxParallelExports ??
           base.auto.maxParallelExports,
       ),
+      defaultOpcServerId: (() => {
+        const raw = (o.auto as { defaultOpcServerId?: unknown } | undefined)?.defaultOpcServerId;
+        if (typeof raw === "string" && raw.trim()) return raw.trim();
+        // 兼容旧配置：取第一条绑定的连接
+        const fromBinding = bindings.find((b) => b.serverId.trim())?.serverId.trim();
+        return fromBinding || base.auto.defaultOpcServerId;
+      })(),
     },
   };
 }
@@ -428,17 +443,32 @@ export function resolveExportResultOpcForTemplate(
   return prefs.exportResultOpc;
 }
 
+/** 触发轮询 / 写回回退用的有效 OPC 连接：绑定覆盖 → 页级默认 */
+export function resolveEffectiveOpcServerIdForBinding(
+  prefs: ReportGeneratorPrefs,
+  binding: AutoTriggerBinding | null | undefined,
+): string {
+  const fromBinding = String(binding?.serverId || "").trim();
+  if (fromBinding) return fromBinding;
+  return String(prefs.auto.defaultOpcServerId || "").trim();
+}
+
 /**
  * 自动结批写回：优先本绑定独立配置，否则按模版 → 默认。
+ * 若反馈未选连接，回退 binding.serverId → auto.defaultOpcServerId。
  */
 export function resolveExportResultOpcForBinding(
   prefs: ReportGeneratorPrefs,
   binding: AutoTriggerBinding | null | undefined,
 ): ExportResultOpcFeedback {
-  if (binding?.exportResultOpc && isExportResultOpcCustomized(binding.exportResultOpc)) {
-    return binding.exportResultOpc;
-  }
-  return resolveExportResultOpcForTemplate(prefs, binding?.templateId);
+  const base =
+    binding?.exportResultOpc && isExportResultOpcCustomized(binding.exportResultOpc)
+      ? binding.exportResultOpc
+      : resolveExportResultOpcForTemplate(prefs, binding?.templateId);
+  if (base.serverId.trim()) return base;
+  const fallback = resolveEffectiveOpcServerIdForBinding(prefs, binding);
+  if (!fallback) return base;
+  return { ...base, serverId: fallback };
 }
 
 /** 新建绑定卡片用的默认反馈（自动结批强制 INT 状态码） */

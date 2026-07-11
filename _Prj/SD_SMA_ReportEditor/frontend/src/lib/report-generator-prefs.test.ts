@@ -1,8 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  defaultBindingExportResultOpcFeedback,
   importReportGeneratorPrefsFromExport,
   loadReportGeneratorPrefs,
+  resolveEffectiveOpcServerIdForBinding,
+  resolveExportResultOpcForBinding,
+  type ReportGeneratorPrefs,
 } from "@/lib/report-generator-prefs";
+import { createAutoTriggerBinding } from "@/lib/auto-trigger-bindings";
 
 class MemoryStorage {
   private data = new Map<string, string>();
@@ -80,5 +85,22 @@ describe("report generator prefs", () => {
     expect(prefs.autoFileNameSegments).toContain("hash");
     expect(prefs.autoFileNameOpcServerId).toBe("srv-name");
     expect(prefs.autoFileNameOpcNodeId).toBe("ns=1;s=file_name");
+  });
+
+  it("resolves default OPC server and export feedback serverId fallback", () => {
+    const prefs = {
+      auto: { defaultOpcServerId: "srv-default", bindings: [], enabled: false, maxParallelExports: 2 },
+    } as ReportGeneratorPrefs;
+    const withOverride = createAutoTriggerBinding({ serverId: "srv-bind" });
+    const without = createAutoTriggerBinding({ serverId: "" });
+    expect(resolveEffectiveOpcServerIdForBinding(prefs, withOverride)).toBe("srv-bind");
+    expect(resolveEffectiveOpcServerIdForBinding(prefs, without)).toBe("srv-default");
+
+    const fb = defaultBindingExportResultOpcFeedback();
+    fb.serverId = "";
+    fb.enabled = true;
+    fb.statusNodeId = "ns=1;s=st";
+    without.exportResultOpc = fb;
+    expect(resolveExportResultOpcForBinding(prefs, without).serverId).toBe("srv-default");
   });
 });

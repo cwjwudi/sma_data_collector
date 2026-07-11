@@ -1,15 +1,15 @@
 {
-  "version": "0.3.45",
-  "releasedAt": "2026-07-11T14:40:34.763Z",
-  "notes": "修复结批预检未定义变量；修正 OPC 限流唤醒竞态",
+  "version": "0.3.46",
+  "releasedAt": "2026-07-11T15:53:04.529Z",
+  "notes": "Report Editor 0.3.46\n\n- 生成报表页：默认 OPC 连接，减少每条绑定重复选连接\n- 高级设置/监控曲线默认折叠；绑定卡片摘要折叠\n- 写回 serverId 回退到绑定/页级默认连接",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.45-x64.exe",
-      "sha256": "c9cbaa7459ba84ecf120d12804e431011fa8291fb9f022b90fe3e454e1050643",
-      "size": 145405667
+      "url": "Report Editor AI-Setup-0.3.46-x64.exe",
+      "sha256": "e137369cf5613405cf572c6997c1315cf1965796241522eff499af9f51967ff1",
+      "size": 145408766
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.45-arm64.dmg",
+      "url": "Report Editor AI-0.3.46-arm64.dmg",
       "sha256": "",
       "size": 0
     }
