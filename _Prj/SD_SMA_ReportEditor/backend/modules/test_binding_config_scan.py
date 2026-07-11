@@ -14,18 +14,75 @@ def test_opc_node_format():
 
 def test_empty_opc_binding():
     raw = {
-        "elements": [
-            {
-                "id": "e1",
-                "type": "parameter",
-                "bindingKind": "opcua",
-                "opcuaNodeId": "",
-                "text": "x",
-            }
+        "bodyPages": [
+            [
+                {
+                    "id": "e1",
+                    "type": "parameter",
+                    "bindingKind": "opcua",
+                    "opcuaNodeId": "",
+                    "text": "批次号",
+                }
+            ]
         ]
     }
     issues = scan_binding_config(raw, asset_kind="template", asset_id="t1", asset_name="T")
-    assert any(i["kind"] == "opc_binding_empty_node" for i in issues)
+    hit = next(i for i in issues if i["kind"] == "opc_binding_empty_node")
+    assert "正文第1页" in hit["message"]
+    assert "数据参数" in hit["message"]
+    assert "批次号" in hit["message"]
+    assert hit["meta"]["location"] == "正文第1页"
+
+
+def test_empty_opc_binding_on_page2_header():
+    raw = {
+        "bodyPages": [[], []],
+        "headerElements": [
+            {
+                "id": "h1",
+                "type": "parameter",
+                "bindingKind": "opcua",
+                "opcuaNodeId": "",
+                "text": "页眉参数",
+            }
+        ],
+    }
+    issues = scan_binding_config(raw, asset_kind="template", asset_id="t1", asset_name="T")
+    hit = next(i for i in issues if i["kind"] == "opc_binding_empty_node")
+    assert "页眉" in hit["message"]
+    assert "页眉参数" in hit["message"]
+
+
+def test_table_cell_opc_location():
+    raw = {
+        "bodyPages": [
+            [
+                {
+                    "id": "tbl1",
+                    "type": "table",
+                    "text": "配方表",
+                    "tableCells": [
+                        [
+                            {"text": "a", "bindingKind": "none", "opcuaNodeId": "", "sqlText": "", "sqlParams": []},
+                            {
+                                "text": "",
+                                "bindingKind": "opcua",
+                                "opcuaNodeId": "",
+                                "sqlText": "",
+                                "sqlParams": [],
+                            },
+                        ]
+                    ],
+                }
+            ]
+        ]
+    }
+    issues = scan_binding_config(raw, asset_kind="template", asset_id="t1", asset_name="T")
+    hit = next(i for i in issues if i["kind"] == "opc_binding_empty_node")
+    assert "正文第1页" in hit["message"]
+    assert "表格" in hit["message"]
+    assert "第1行" in hit["message"]
+    assert "第2列" in hit["message"]
 
 
 def test_table_opc_placeholder_mismatch():

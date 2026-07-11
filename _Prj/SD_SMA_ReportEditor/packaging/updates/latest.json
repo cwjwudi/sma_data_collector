@@ -1,15 +1,15 @@
 {
-  "version": "0.3.31",
-  "releasedAt": "2026-07-11T09:59:40.474Z",
-  "notes": "Report Editor AI 0.3.31\n\n- 多张表可同时开启「超出最大数量自动分报表」，按份序号对齐切分\n- 「绑定的数据库连接不存在」降为警告，仪表盘可忽略\n- 不再因多表分报表拦截导出",
+  "version": "0.3.32",
+  "releasedAt": "2026-07-11T10:11:40.157Z",
+  "notes": "Report Editor AI 0.3.32\n\n- 绑定问题提示带页码与控件名称（如：正文第1页 · 数据参数「批次号」）\n- 表格单元格问题标明第几行第几列",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.31-x64.exe",
-      "sha256": "3687a89421fc4f09229ff65d4569fef590f36db84751e5d24373d9db9b061f59",
-      "size": 145473570
+      "url": "Report Editor AI-Setup-0.3.32-x64.exe",
+      "sha256": "703a02aeaf9db158bf89291bda6a938610edc22c7757382b95d58892b69dd207",
+      "size": 145475936
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.31-arm64.dmg",
+      "url": "Report Editor AI-0.3.32-arm64.dmg",
       "sha256": "",
       "size": 0
     }

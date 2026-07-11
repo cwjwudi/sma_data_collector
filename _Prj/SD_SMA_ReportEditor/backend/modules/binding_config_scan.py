@@ -14,12 +14,85 @@ _PARAM_PLACEHOLDER_RE = re.compile(r"\{\{p(\d+)\}\}", re.IGNORECASE)
 _SQL_IDENT_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]*$")
 _VERTICAL_PENDING = "__field__"
 
+_CONTROL_TYPE_ZH: dict[str, str] = {
+    "parameter": "数据参数",
+    "text": "文本",
+    "box": "色块",
+    "image": "图片",
+    "table": "表格",
+    "chart": "图表",
+    "signature": "签名",
+    "pageNumber": "页码",
+    "date": "日期",
+}
+
 
 def looks_like_opc_node_id(node_id: str) -> bool:
     s = (node_id or "").strip()
     if not s:
         return False
     return bool(_OPC_NODE_RE.match(s))
+
+
+def _short_text(s: str, max_len: int = 20) -> str:
+    t = re.sub(r"\s+", " ", (s or "").strip())
+    if not t:
+        return ""
+    return t if len(t) <= max_len else t[: max_len - 1] + "…"
+
+
+def _control_type_zh(type_name: str) -> str:
+    t = (type_name or "").strip()
+    return _CONTROL_TYPE_ZH.get(t, t or "控件")
+
+
+def describe_element_location(path: str) -> str:
+    """把 JSON 路径转成用户可读位置，如「正文第2页」「页眉」「封面」。"""
+    p = path or ""
+    m = re.search(r"bodyPages\[(\d+)\]", p)
+    if m:
+        return f"正文第{int(m.group(1)) + 1}页"
+    if "coverBodyZoneElements" in p:
+        return "封面"
+    if "coverHeaderElements" in p:
+        return "封面页眉"
+    if "coverFooterElements" in p:
+        return "封面页脚"
+    if "backBodyZoneElements" in p:
+        return "末页"
+    if "backHeaderElements" in p:
+        return "末页页眉"
+    if "backFooterElements" in p:
+        return "末页页脚"
+    if re.search(r"(^|\.)headerElements(\[|$)", p):
+        return "页眉"
+    if re.search(r"(^|\.)footerElements(\[|$)", p):
+        return "页脚"
+    if re.search(r"(^|\.)elements(\[|$)", p):
+        return "正文"
+    if p.startswith("zones.") or ".zones." in p:
+        return "版式区"
+    return "模版"
+
+
+def describe_control_label(el: dict[str, Any], path: str) -> str:
+    """生成「正文第1页 · 数据参数「批次号」」这类控件标签。"""
+    loc = describe_element_location(path)
+    et = str(el.get("type") or "")
+    type_zh = _control_type_zh(et)
+    name = _short_text(str(el.get("text") or ""))
+    if name:
+        return f"{loc} · {type_zh}「{name}」"
+    eid = str(el.get("id") or "").strip()
+    if eid:
+        short_id = eid if len(eid) <= 10 else eid[:8] + "…"
+        return f"{loc} · {type_zh}（{short_id}）"
+    return f"{loc} · {type_zh}"
+
+
+def describe_table_cell_label(el: dict[str, Any], path: str, row: int, col: int) -> str:
+    base = describe_control_label(el, path)
+    return f"{base} · 单元格[第{row + 1}行,第{col + 1}列]"
 
 
 def _param_indices(text: str) -> list[int]:
@@ -175,11 +248,16 @@ def _visual_select_fields(vs: dict[str, Any], layout_mode: str) -> list[str]:
     return [str(c or "").strip() for c in cols if str(c or "").strip()]
 
 
-def _check_table_sql_fill(make: IssueBuilder, *, path: str, fill: dict[str, Any]) -> list[dict[str, Any]]:
+def _check_table_sql_fill(
+    make: IssueBuilder,
+    *,
+    path: str,
+    fill: dict[str, Any],
+    label: str = "表格 · 数据库填充",
+) -> list[dict[str, Any]]:
     if fill.get("enabled") is not True:
         return []
     issues: list[dict[str, Any]] = []
-    label = "表格 SQL 填充"
     mode = str(fill.get("fillMode") or "visual").strip() or "visual"
     query = str(fill.get("querySql") or "").strip()
     vs = fill.get("visualSource") if isinstance(fill.get("visualSource"), dict) else {}
@@ -460,21 +538,30 @@ def _check_element(make: IssueBuilder, *, path: str, el: dict[str, Any]) -> list
     issues: list[dict[str, Any]] = []
     et = str(el.get("type") or "")
     bk = str(el.get("bindingKind") or "none")
-    label = f"控件[{et or '?'}]"
+    label = describe_control_label(el, path)
+    loc_meta = {
+        "path": path,
+        "location": describe_element_location(path),
+        "elementType": et,
+        "elementId": str(el.get("id") or ""),
+    }
 
     if et in ("parameter", "text", "box", "chart") or bk in ("opcua", "sql", "mongo"):
         if bk == "opcua":
-            issues.extend(
-                _check_opc_node(
-                    make,
-                    kind_empty="opc_binding_empty_node",
-                    kind_bad="opc_node_id_malformed",
-                    label=label,
-                    path=path,
-                    binding_kind=bk,
-                    node_id=str(el.get("opcuaNodeId") or ""),
-                )
+            opc_issues = _check_opc_node(
+                make,
+                kind_empty="opc_binding_empty_node",
+                kind_bad="opc_node_id_malformed",
+                label=label,
+                path=path,
+                binding_kind=bk,
+                node_id=str(el.get("opcuaNodeId") or ""),
             )
+            for it in opc_issues:
+                meta = dict(it.get("meta") or {})
+                meta.update(loc_meta)
+                it["meta"] = meta
+            issues.extend(opc_issues)
         elif bk == "sql":
             sql = str(el.get("sqlText") or "").strip()
             visual = el.get("scalarSqlVisual") if isinstance(el.get("scalarSqlVisual"), dict) else None
@@ -489,7 +576,7 @@ def _check_element(make: IssueBuilder, *, path: str, el: dict[str, Any]) -> list
                             kind="sql_binding_empty",
                             message=f"{label}：SQL 绑定未配置完整（连接/表）",
                             hint="请用点选生成 SQL，或改为手写 SQL。",
-                            meta={"path": path},
+                            meta=dict(loc_meta),
                         )
                     )
             elif not sql:
@@ -500,7 +587,7 @@ def _check_element(make: IssueBuilder, *, path: str, el: dict[str, Any]) -> list
                         kind="sql_binding_empty",
                         message=f"{label}：已选 SQL 绑定但 SQL 为空",
                         hint="请填写 SQL，或改回「无绑定」。",
-                        meta={"path": path},
+                        meta=dict(loc_meta),
                     )
                 )
             if sql:
@@ -515,7 +602,7 @@ def _check_element(make: IssueBuilder, *, path: str, el: dict[str, Any]) -> list
                         severity="error",
                         kind="mongo_binding_incomplete",
                         message=f"{label}：Mongo 绑定缺少连接",
-                        meta={"path": path},
+                        meta=dict(loc_meta),
                     )
                 )
 
@@ -530,20 +617,29 @@ def _check_element(make: IssueBuilder, *, path: str, el: dict[str, Any]) -> list
                     if not isinstance(cell, dict):
                         continue
                     cbk = str(cell.get("bindingKind") or "none")
-                    clabel = f"表格单元格[{ri},{ci}]"
+                    clabel = describe_table_cell_label(el, path, ri, ci)
                     cpath = f"{path}.tableCells[{ri}][{ci}]"
+                    cell_meta = {
+                        **loc_meta,
+                        "path": cpath,
+                        "row": ri,
+                        "col": ci,
+                    }
                     if cbk == "opcua":
-                        issues.extend(
-                            _check_opc_node(
-                                make,
-                                kind_empty="opc_binding_empty_node",
-                                kind_bad="opc_node_id_malformed",
-                                label=clabel,
-                                path=cpath,
-                                binding_kind=cbk,
-                                node_id=str(cell.get("opcuaNodeId") or ""),
-                            )
+                        cell_issues = _check_opc_node(
+                            make,
+                            kind_empty="opc_binding_empty_node",
+                            kind_bad="opc_node_id_malformed",
+                            label=clabel,
+                            path=cpath,
+                            binding_kind=cbk,
+                            node_id=str(cell.get("opcuaNodeId") or ""),
                         )
+                        for it in cell_issues:
+                            meta = dict(it.get("meta") or {})
+                            meta.update(cell_meta)
+                            it["meta"] = meta
+                        issues.extend(cell_issues)
                     elif cbk == "sql":
                         csql = str(cell.get("sqlText") or "").strip()
                         if not csql:
@@ -553,7 +649,7 @@ def _check_element(make: IssueBuilder, *, path: str, el: dict[str, Any]) -> list
                                     severity="error",
                                     kind="sql_binding_empty",
                                     message=f"{clabel}：已选 SQL 但 SQL 为空",
-                                    meta={"path": cpath},
+                                    meta=cell_meta,
                                 )
                             )
                         else:
@@ -565,7 +661,8 @@ def _check_element(make: IssueBuilder, *, path: str, el: dict[str, Any]) -> list
                             issues.extend(_check_readonly_sql(make, label=clabel, path=cpath, sql=csql))
         fill = el.get("tableSqlFill")
         if isinstance(fill, dict):
-            issues.extend(_check_table_sql_fill(make, path=f"{path}.tableSqlFill", fill=fill))
+            fill_label = f"{label} · 数据库填充"
+            issues.extend(_check_table_sql_fill(make, path=f"{path}.tableSqlFill", fill=fill, label=fill_label))
 
     return issues
 
