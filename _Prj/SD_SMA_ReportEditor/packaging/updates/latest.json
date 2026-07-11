@@ -1,15 +1,15 @@
 {
-  "version": "0.3.42",
-  "releasedAt": "2026-07-11T13:15:11.197Z",
-  "notes": "修复模版管理并发加载竞态：旧失败请求不再清空已成功列表；Electron 等后端就绪后再开窗口",
+  "version": "0.3.43",
+  "releasedAt": "2026-07-11T13:46:29.518Z",
+  "notes": "修复模版缩略图：并发刷新不再丢弃已拉取的预览，避免卡在加载失败",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.42-x64.exe",
-      "sha256": "f17bdc547be997c7227433029311860ba607cd46f87b41579dc522709caaea32",
-      "size": 145405199
+      "url": "Report Editor AI-Setup-0.3.43-x64.exe",
+      "sha256": "a10b05115d1ae3449b322e0ea41d5843aea10126f94b59c99cf462edfe9fbb6a",
+      "size": 145404144
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.42-arm64.dmg",
+      "url": "Report Editor AI-0.3.43-arm64.dmg",
       "sha256": "",
       "size": 0
     }

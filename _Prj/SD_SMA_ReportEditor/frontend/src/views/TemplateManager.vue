@@ -534,9 +534,8 @@ import NewTemplateWizardDialog from "@/components/report-template/NewTemplateWiz
 import { appConfirm } from "@/composables/useAppConfirm";
 
 const router = useRouter();
-/** 列表与缩略图分两套 generation，避免 hydrate/重试把刚成功的列表结果标成 stale */
+/** 列表拉取用 generation，避免旧失败覆盖新成功；缩略图另用 thumbHydrateGen，成功结果始终写入 */
 const { begin: beginListLoad, isStale: isListLoadStale } = useStaleGuard();
-const { begin: beginThumbLoad, isStale: isThumbLoadStale } = useStaleGuard();
 
 /** 记住上次的视图模式：默认「列表」以便打开页面即时呈现（缩略图为重加载） */
 const MODE_STORAGE_KEY = "tm-view-mode";
@@ -850,13 +849,15 @@ async function load() {
 }
 
 const THUMB_FETCH_CONCURRENCY = 4;
+/** 缩略图整页刷新代数：仅用于忽略过期失败标记，成功结果始终写入 cache */
+let thumbHydrateGen = 0;
 
 /**
  * 按需加载缩略图完整模版。
  * @param {{ ids?: string[] }} [opts] 不传则按当前页 id；传 ids 则只拉这些
  */
 async function hydrateThumbs(opts = {}) {
-  const token = beginThumbLoad();
+  const gen = ++thumbHydrateGen;
   const scopeIds =
     Array.isArray(opts.ids) && opts.ids.length
       ? opts.ids
@@ -875,34 +876,40 @@ async function hydrateThumbs(opts = {}) {
   for (const id of pending) markThumbFailed(id, false);
 
   // 不再走 /templates/full 全量包：模版多时会卡住整页；改为按本页并发渐进写入 cache
+  // 注意：成功结果必须写入 cache，不可因「更新一轮刷新」丢弃，否则会永久停在「正在加载预览…」
   await mapPool(pending, THUMB_FETCH_CONCURRENCY, async (id) => {
-    if (isThumbLoadStale(token)) return;
     try {
       const t = await api.getTemplate(id);
-      if (isThumbLoadStale(token)) return;
-      normalizeOptionalSheetsForList(t);
-      resyncOneCachedTemplate(t);
+      try {
+        normalizeOptionalSheetsForList(t);
+        resyncOneCachedTemplate(t);
+      } catch (normErr) {
+        console.warn("[TemplateManager] normalize thumb failed", id, normErr);
+      }
       cache.value = { ...cache.value, [id]: t };
       markThumbFailed(id, false);
     } catch {
-      if (isThumbLoadStale(token)) return;
-      markThumbFailed(id, true);
+      // 仅当本轮仍是最新且该卡仍无缓存时标失败，避免旧请求失败盖掉已成功预览
+      if (gen === thumbHydrateGen && !cache.value[id]) {
+        markThumbFailed(id, true);
+      }
     }
   });
 }
 
 async function retryThumb(id) {
   markThumbFailed(id, false);
-  const token = beginThumbLoad();
   try {
     const t = await api.getTemplate(id);
-    if (isThumbLoadStale(token)) return;
-    normalizeOptionalSheetsForList(t);
-    resyncOneCachedTemplate(t);
+    try {
+      normalizeOptionalSheetsForList(t);
+      resyncOneCachedTemplate(t);
+    } catch (normErr) {
+      console.warn("[TemplateManager] normalize thumb failed", id, normErr);
+    }
     cache.value = { ...cache.value, [id]: t };
   } catch {
-    if (isThumbLoadStale(token)) return;
-    markThumbFailed(id, true);
+    if (!cache.value[id]) markThumbFailed(id, true);
   }
 }
 
@@ -935,13 +942,10 @@ async function refreshThumbsView(opts = {}) {
 }
 
 async function loadPresets() {
-  const token = beginThumbLoad();
   try {
     const list = await ensureLayoutPresetsLoaded();
-    if (isThumbLoadStale(token)) return;
     layoutPresetsAll.value = list;
   } catch {
-    if (isThumbLoadStale(token)) return;
     layoutPresetsAll.value = [];
   }
 }
