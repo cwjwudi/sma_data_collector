@@ -819,16 +819,25 @@ function miniZoneTableInnerStyle(el: LayoutZoneElement): Record<string, string> 
   return { background: zoneTableInnerBackgroundCss(el.bgColor) };
 }
 
+function miniZoneTableRowTrStyle(el: LayoutZoneElement): Record<string, string> | undefined {
+  if (el.type !== "table") return undefined;
+  const h = clampTableRowHeightPx(el.tableRowHeightPx);
+  return { height: `${h}px`, maxHeight: `${h}px` };
+}
+
 function miniZoneTableCellStyle(el: LayoutZoneElement, ri: number, ci: number): Record<string, string> {
   if (el.type !== "table") return {};
   ensureZoneTableGrid(el);
   const cell = el.tableCells?.[ri]?.[ci];
+  const h = clampTableRowHeightPx(el.tableRowHeightPx);
   return {
     backgroundColor: resolveTableCellBackgroundCss(
       { tableBgColor: el.bgColor, tableColBgColors: el.tableColBgColors },
       ci,
       cell,
     ),
+    height: `${h}px`,
+    maxHeight: `${h}px`,
   };
 }
 
@@ -840,12 +849,6 @@ function miniZoneTableColInnerWidthsPx(el: LayoutZoneElement): number[] {
 function zoneTableGrid(el: LayoutZoneElement): LayoutZoneTableCell[][] {
   if (el.type !== "table") return [];
   return ensureZoneTableGrid(el);
-}
-
-function miniZoneTableRowTrStyle(el: LayoutZoneElement): Record<string, string> | undefined {
-  if (el.type !== "table") return undefined;
-  const h = clampTableRowHeightPx(el.tableRowHeightPx);
-  return { height: "auto", minHeight: `${h}px` };
 }
 
 function miniZoneTableColIndices(el: LayoutZoneElement): number[] {

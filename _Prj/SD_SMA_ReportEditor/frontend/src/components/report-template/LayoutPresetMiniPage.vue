@@ -375,28 +375,32 @@ function miniZoneTableInnerStyle(el: LayoutZoneElement): Record<string, string> 
   return { background: zoneTableInnerBackgroundCss(el.bgColor) };
 }
 
+function miniZoneTableRowTrStyle(el: LayoutZoneElement): Record<string, string> | undefined {
+  if (el.type !== "table") return undefined;
+  const h = clampTableRowHeightPx(el.tableRowHeightPx);
+  // 与版式编辑画布一致：固定行高（tr 的 min-height/auto 在表格布局下常被忽略）
+  return { height: `${h}px`, maxHeight: `${h}px` };
+}
+
 function miniZoneTableCellStyle(el: LayoutZoneElement, ri: number, ci: number): Record<string, string> {
   if (el.type !== "table") return {};
   ensureZoneTableGrid(el);
   const cell = el.tableCells?.[ri]?.[ci];
+  const h = clampTableRowHeightPx(el.tableRowHeightPx);
   return {
     backgroundColor: resolveTableCellBackgroundCss(
       { tableBgColor: el.bgColor, tableColBgColors: el.tableColBgColors },
       ci,
       cell,
     ),
+    height: `${h}px`,
+    maxHeight: `${h}px`,
   };
 }
 
 function miniZoneTableColInnerWidthsPx(el: LayoutZoneElement): number[] {
   if (el.type !== "table") return [];
   return zoneTableColumnInnerWidthsPx(el);
-}
-
-function miniZoneTableRowTrStyle(el: LayoutZoneElement): Record<string, string> | undefined {
-  if (el.type !== "table") return undefined;
-  const h = clampTableRowHeightPx(el.tableRowHeightPx);
-  return { height: "auto", minHeight: `${h}px` };
 }
 
 function miniZoneTableColIndices(el: LayoutZoneElement): number[] {
@@ -496,14 +500,15 @@ function miniZoneTableCellText(el: LayoutZoneElement, ri: number, ci: number): s
 .mini-tpl-td {
   border-top: 1px solid rgb(212 212 216);
   border-left: 1px solid rgb(212 212 216);
-  padding: 3px 5px;
-  vertical-align: top;
+  padding: 2px 4px;
+  vertical-align: middle;
   text-align: center;
   font-size: max(10px, 0.85em);
-  line-height: 1.3;
-  overflow: visible;
-  white-space: pre-wrap;
-  word-break: break-word;
+  line-height: 1.25;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  box-sizing: border-box;
 }
 .mini-tpl-td:last-child {
   border-right: 1px solid rgb(212 212 216);
