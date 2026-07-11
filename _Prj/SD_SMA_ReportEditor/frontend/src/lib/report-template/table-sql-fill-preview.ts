@@ -17,11 +17,15 @@ import {
   isVerticalSqlFill,
   normalizeTableSqlSequencePageMode,
   normalizeTableSqlVerticalMultiRecordMode,
+  resolveResultColumnName,
 } from "@/lib/report-template/table-sql-fill";
 import type { TableSqlFillPreviewPayload } from "@/lib/report-template/binding-preview-utils";
 import { quoteSqlIdentifier } from "@/lib/report-template/table-sql-visual-compile";
 import { sqlFillPreviewColCount } from "@/lib/report-template/table-sql-visual-compile";
-import { buildVerticalSqlLogicalRows } from "@/lib/report-template/table-sql-vertical";
+import {
+  buildVerticalSqlLogicalRows,
+  type VerticalSqlLabelPreviewCtx,
+} from "@/lib/report-template/table-sql-vertical";
 import { verticalSqlLogicalRowCount, verticalSqlSlotsPerRecord } from "@/lib/report-template/table-sql-vertical";
 
 export function templateTableSqlFillPreviewKey(elId: string): string {
@@ -95,6 +99,13 @@ export function formatSqlFillTableCellPreview(opts: {
     dataRowCount: number;
     includeHeaderRow: boolean;
   };
+  /** 列头/左列标签 OPC 预览上下文 */
+  labelPreview?: {
+    elId: string;
+    zone?: boolean;
+    values?: Record<string, { text?: string } | undefined>;
+    loading?: boolean;
+  };
 }): string {
   const {
     fill,
@@ -104,10 +115,25 @@ export function formatSqlFillTableCellPreview(opts: {
     previewLoading,
     errorMaxLen = 72,
     previewSlice: slice,
+    labelPreview,
   } = opts;
 
   const headerAt = (c: number): string => {
-    const name = String(fill.resultColumnNames?.[c] ?? "").trim();
+    const name = resolveResultColumnName(
+      fill,
+      c,
+      labelPreview?.elId
+        ? {
+            previewText:
+              labelPreview.values?.[
+                labelPreview.zone
+                  ? `ztblfill-hdr:${labelPreview.elId}:${c}`
+                  : `tblfill-hdr:${labelPreview.elId}:${c}`
+              ]?.text ?? null,
+            loading: labelPreview.loading || previewLoading,
+          }
+        : undefined,
+    );
     return name || "\u00a0";
   };
 
@@ -124,7 +150,7 @@ export function formatSqlFillTableCellPreview(opts: {
   }
 
   if (isVerticalSqlFill(fill)) {
-    return formatVerticalSqlFillCell({ fill, ri, ci, pv, slice, headerAt });
+    return formatVerticalSqlFillCell({ fill, ri, ci, pv, slice, headerAt, labelPreview });
   }
   return formatHorizontalSqlFillCell({ fill, ri, ci, pv, slice, headerAt });
 }
@@ -136,8 +162,9 @@ function formatVerticalSqlFillCell(opts: {
   pv?: TableSqlFillPreviewPayload | null;
   slice?: { dataRowStart: number; dataRowCount: number; includeHeaderRow: boolean };
   headerAt: (c: number) => string;
+  labelPreview?: VerticalSqlLabelPreviewCtx;
 }): string {
-  const { fill, ri, ci, pv, slice, headerAt } = opts;
+  const { fill, ri, ci, pv, slice, headerAt, labelPreview } = opts;
   // 编辑画布（无 slice）：「每条另起一页」只预览首条 SQL 结果，避免同表叠多条并出现续表分隔
   let dataRows = pv?.dataRows;
   if (
@@ -147,7 +174,7 @@ function formatVerticalSqlFillCell(opts: {
   ) {
     dataRows = [dataRows[0]];
   }
-  const logical = buildVerticalSqlLogicalRows(fill, dataRows);
+  const logical = buildVerticalSqlLogicalRows(fill, dataRows, labelPreview);
   if (slice) {
     const hdr = slice.includeHeaderRow;
     const sliceRows = (hdr ? 1 : 0) + slice.dataRowCount;

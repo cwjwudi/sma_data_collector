@@ -61,6 +61,30 @@ export type TableSqlTableSource = "manual" | "opcua";
 
 /** OPC 表名选择在 opcPickParam 槽位通道中的专用哨兵值（普通筛选参数槽位从 0 起） */
 export const TABLE_SQL_FILL_TABLE_PICK_SLOT = -1;
+/** 列头名称 OPC：slot = BASE - ci */
+export const TABLE_SQL_FILL_HDR_PICK_BASE = -1000;
+/** 纵表左列标签 OPC：slot = BASE - si */
+export const TABLE_SQL_FILL_VLABEL_PICK_BASE = -2000;
+/** 纵表续表分隔文案 OPC */
+export const TABLE_SQL_FILL_SEP_PICK_SLOT = -50;
+
+export function tableSqlFillHdrPickSlot(ci: number): number {
+  return TABLE_SQL_FILL_HDR_PICK_BASE - Math.max(0, Math.floor(ci) || 0);
+}
+
+export function tableSqlFillVlabelPickSlot(si: number): number {
+  return TABLE_SQL_FILL_VLABEL_PICK_BASE - Math.max(0, Math.floor(si) || 0);
+}
+
+export function parseTableSqlFillHdrPickSlot(slot: number): number | null {
+  if (slot > TABLE_SQL_FILL_HDR_PICK_BASE || slot <= TABLE_SQL_FILL_HDR_PICK_BASE - 200) return null;
+  return TABLE_SQL_FILL_HDR_PICK_BASE - slot;
+}
+
+export function parseTableSqlFillVlabelPickSlot(slot: number): number | null {
+  if (slot > TABLE_SQL_FILL_VLABEL_PICK_BASE || slot <= TABLE_SQL_FILL_VLABEL_PICK_BASE - 200) return null;
+  return TABLE_SQL_FILL_VLABEL_PICK_BASE - slot;
+}
 
 /** 已保存连接上的物理库名（SQLite 可留空） */
 export interface TableSqlVisualSource {
@@ -103,6 +127,12 @@ export interface VisualSqlFilter {
   defaults: string[];
   bindings: TableSqlParamBinding[];
 }
+
+/** 列头 / 左列标签 / 续表分隔：手工文案 + 可选 OPC 覆盖 */
+export type TableSqlLabelBinding = {
+  bindingKind: "none" | "opcua";
+  opcuaNodeId: string;
+};
 
 export interface TableSqlFillConfig {
   enabled: boolean;
@@ -152,10 +182,80 @@ export interface TableSqlFillConfig {
    */
   verticalFieldLabels?: string[];
   /**
+   * 与 resultColumnNames 对齐的可选 OPC 绑定（多语言列头）。
+   * bindingKind=opcua 时运行时用节点值覆盖手工文案；空值回退手工串。
+   */
+  resultColumnNameBindings?: TableSqlLabelBinding[];
+  /** 与 verticalFieldLabels 对齐的可选 OPC 绑定（多语言左列标签） */
+  verticalFieldLabelBindings?: TableSqlLabelBinding[];
+  /**
+   * 纵表「同表续表」多记录间分隔行文案；空则用默认「— 续表分隔 —」。
+   */
+  continueRecordSepLabel?: string;
+  continueRecordSepLabelBinding?: TableSqlLabelBinding;
+  /**
    * 数据库填充结果中数值列的小数位数；未设则保持查询原样。
    * 对可解析为有限数字的单元格生效（REAL/浮点）。
    */
   decimalPlaces?: number;
+}
+
+export function defaultTableSqlLabelBinding(): TableSqlLabelBinding {
+  return { bindingKind: "none", opcuaNodeId: "" };
+}
+
+export function hydrateTableSqlLabelBinding(raw: unknown): TableSqlLabelBinding {
+  if (!raw || typeof raw !== "object") return defaultTableSqlLabelBinding();
+  const o = raw as Record<string, unknown>;
+  const kind = o.bindingKind === "opcua" ? "opcua" : "none";
+  return {
+    bindingKind: kind,
+    opcuaNodeId: typeof o.opcuaNodeId === "string" ? o.opcuaNodeId : "",
+  };
+}
+
+export function ensureTableSqlLabelBindings(
+  arr: TableSqlLabelBinding[] | undefined,
+  n: number,
+): TableSqlLabelBinding[] {
+  const out = Array.isArray(arr) ? arr.map(hydrateTableSqlLabelBinding) : [];
+  while (out.length < n) out.push(defaultTableSqlLabelBinding());
+  out.length = Math.max(0, n);
+  return out;
+}
+
+/**
+ * 手工文案 + 可选 OPC：有有效 OPC 读数用读数，否则回退手工（或 emptyFallback）。
+ */
+export function resolveTableSqlLabelDisplay(opts: {
+  staticText: string;
+  binding?: TableSqlLabelBinding | null;
+  opcPreviewText?: string | null;
+  loading?: boolean;
+  emptyFallback?: string;
+}): string {
+  const staticText = String(opts.staticText ?? "").trim();
+  const fallback = staticText || String(opts.emptyFallback ?? "").trim();
+  const b = opts.binding;
+  const nid = b?.bindingKind === "opcua" ? String(b.opcuaNodeId || "").trim() : "";
+  if (nid) {
+    const opc = opts.opcPreviewText != null ? String(opts.opcPreviewText).trim() : "";
+    if (opc) return opc;
+    if (opts.loading) return "…";
+  }
+  return fallback;
+}
+
+export function tblfillHdrKey(elId: string, ci: number, zone = false): string {
+  return `${zone ? "ztblfill" : "tblfill"}-hdr:${elId}:${ci}`;
+}
+
+export function tblfillVlabelKey(elId: string, si: number, zone = false): string {
+  return `${zone ? "ztblfill" : "tblfill"}-vlabel:${elId}:${si}`;
+}
+
+export function tblfillSepKey(elId: string, zone = false): string {
+  return `${zone ? "ztblfill" : "tblfill"}-sep:${elId}`;
 }
 
 export function defaultSqlParam(): TableSqlParamBinding {
@@ -235,6 +335,10 @@ export function defaultTableSqlFillConfig(): TableSqlFillConfig {
     sequencePageMode: "continuous",
     verticalMultiRecordMode: "continue",
     verticalFieldLabels: [],
+    resultColumnNameBindings: [],
+    verticalFieldLabelBindings: [],
+    continueRecordSepLabel: "",
+    continueRecordSepLabelBinding: defaultTableSqlLabelBinding(),
   };
 }
 
@@ -275,7 +379,7 @@ export function ensureTableSqlColumnRoles(fill: TableSqlFillConfig, colCount: nu
   arr.length = n;
 }
 
-/** 纵表：verticalFieldLabels 与 visualSource.columns 对齐 */
+/** 纵表：verticalFieldLabels / bindings 与 visualSource.columns 对齐 */
 export function ensureVerticalFieldLabels(fill: TableSqlFillConfig): void {
   if (!fill.visualSource) return;
   if (!fill.verticalFieldLabels) fill.verticalFieldLabels = [];
@@ -283,6 +387,7 @@ export function ensureVerticalFieldLabels(fill: TableSqlFillConfig): void {
   const arr = fill.verticalFieldLabels;
   while (arr.length < n) arr.push("");
   arr.length = n;
+  fill.verticalFieldLabelBindings = ensureTableSqlLabelBindings(fill.verticalFieldLabelBindings, n);
 }
 
 /** 纵表槽位是否为空白分隔行（空串） */
@@ -301,12 +406,54 @@ export function isVerticalSqlSlotBoundField(slotField: string | null | undefined
   return !!t && t !== TABLE_SQL_VERTICAL_FIELD_PENDING;
 }
 
-/** 纵表左列标签：自定义标签优先，否则字段名；空白分隔 / 待选行为空或占位文案由调用方处理 */
-export function verticalSlotLabel(fill: TableSqlFillConfig, slotIndex: number): string {
+/** 纵表左列标签：OPC > 自定义标签 > 字段名；空白分隔 / 待选行为空或占位文案由调用方处理 */
+export function verticalSlotLabel(
+  fill: TableSqlFillConfig,
+  slotIndex: number,
+  opc?: { previewText?: string | null; loading?: boolean },
+): string {
   const field = String(fill.visualSource?.columns?.[slotIndex] ?? "").trim();
   if (!field || field === TABLE_SQL_VERTICAL_FIELD_PENDING) return "";
   const custom = String(fill.verticalFieldLabels?.[slotIndex] ?? "").trim();
-  return custom || field;
+  return resolveTableSqlLabelDisplay({
+    staticText: custom,
+    binding: fill.verticalFieldLabelBindings?.[slotIndex],
+    opcPreviewText: opc?.previewText,
+    loading: opc?.loading,
+    emptyFallback: field,
+  });
+}
+
+/** 纵表续表分隔行文案（OPC > 手工 > 默认常量） */
+export function resolveContinueRecordSepLabel(
+  fill: TableSqlFillConfig,
+  opc?: { previewText?: string | null; loading?: boolean },
+  defaultLabel = "— 续表分隔 —",
+): string {
+  const staticText = String(fill.continueRecordSepLabel ?? "").trim();
+  return resolveTableSqlLabelDisplay({
+    staticText,
+    binding: fill.continueRecordSepLabelBinding,
+    opcPreviewText: opc?.previewText,
+    loading: opc?.loading,
+    emptyFallback: defaultLabel,
+  });
+}
+
+/** 列头文案（OPC > 手工） */
+export function resolveResultColumnName(
+  fill: TableSqlFillConfig,
+  colIndex: number,
+  opc?: { previewText?: string | null; loading?: boolean },
+): string {
+  const staticText = String(fill.resultColumnNames?.[colIndex] ?? "").trim();
+  return resolveTableSqlLabelDisplay({
+    staticText,
+    binding: fill.resultColumnNameBindings?.[colIndex],
+    opcPreviewText: opc?.previewText,
+    loading: opc?.loading,
+    emptyFallback: "",
+  });
 }
 
 /** SELECT 实际输出的库字段（跳过空白分隔 / 待选占位 / 横表 blank·sequence） */
@@ -459,6 +606,17 @@ export function hydrateTableSqlFill(raw: unknown): TableSqlFillConfig {
   const labelsIn = Array.isArray(o.verticalFieldLabels) ? o.verticalFieldLabels : [];
   const verticalFieldLabels = labelsIn.map((x) => (typeof x === "string" ? x : String(x ?? "")));
   const decimalPlaces = normalizeDecimalPlaces(o.decimalPlaces);
+  const resultColumnNameBindings = ensureTableSqlLabelBindings(
+    Array.isArray(o.resultColumnNameBindings) ? (o.resultColumnNameBindings as TableSqlLabelBinding[]) : [],
+    resultColumnNames.length,
+  );
+  const verticalFieldLabelBindings = ensureTableSqlLabelBindings(
+    Array.isArray(o.verticalFieldLabelBindings) ? (o.verticalFieldLabelBindings as TableSqlLabelBinding[]) : [],
+    verticalFieldLabels.length,
+  );
+  const continueRecordSepLabel =
+    typeof o.continueRecordSepLabel === "string" ? o.continueRecordSepLabel : "";
+  const continueRecordSepLabelBinding = hydrateTableSqlLabelBinding(o.continueRecordSepLabelBinding);
 
   // 旧模版无 columnRoles：有字段名 → field，空串 → blank
   if (!columnRoles.length && visualSource?.columns?.length && layoutMode === "horizontal") {
@@ -485,10 +643,15 @@ export function hydrateTableSqlFill(raw: unknown): TableSqlFillConfig {
     sequencePageMode,
     verticalMultiRecordMode,
     verticalFieldLabels,
+    resultColumnNameBindings,
+    verticalFieldLabelBindings,
+    continueRecordSepLabel,
+    continueRecordSepLabelBinding,
     decimalPlaces,
   };
   ensureMinTableSqlParamSlots(out, Math.max(2, out.params.length));
   if (layoutMode === "vertical" && visualSource) ensureVerticalFieldLabels(out);
+  ensureTableSqlResultColumnNames(out, Math.max(1, out.resultColumnNames.length || 1));
   return out;
 }
 
@@ -512,6 +675,7 @@ export function ensureTableSqlResultColumnNames(fill: TableSqlFillConfig, colCou
   const n = Math.max(1, Math.min(TEMPLATE_TABLE_MAX_COLS, Math.floor(Number(colCount)) || 1));
   while (fill.resultColumnNames.length < n) fill.resultColumnNames.push("");
   fill.resultColumnNames.length = n;
+  fill.resultColumnNameBindings = ensureTableSqlLabelBindings(fill.resultColumnNameBindings, n);
 }
 
 /** visual 模式下输出列与表格物理列一一对齐（从左到右）；不足的补空串，多出的截断 */

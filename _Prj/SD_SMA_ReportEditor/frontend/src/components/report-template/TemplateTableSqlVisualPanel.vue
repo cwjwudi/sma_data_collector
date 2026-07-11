@@ -148,6 +148,28 @@
               :placeholder="boundFieldName(slotField) || '默认用字段名'"
               @input="onVertLabelInput(si, $event)"
             />
+            <div class="tsv-label-opc">
+              <button
+                type="button"
+                class="tsv-mini-btn"
+                :class="{ on: isVlabelOpc(si) }"
+                :title="isVlabelOpc(si) ? '已绑 OPC，点击清除' : '绑定 OPC UA（多语言）'"
+                @click="toggleVlabelOpc(si)"
+              >
+                OPC
+              </button>
+              <template v-if="isVlabelOpc(si)">
+                <input
+                  class="tsv-text-inp tsv-opc-nid"
+                  :value="vlabelOpcNode(si)"
+                  placeholder="节点 NodeId"
+                  @input="onVlabelOpcNodeInput(si, $event)"
+                />
+                <button type="button" class="tsv-mini-btn" @click="emit('opcPickParam', tableSqlFillVlabelPickSlot(si))">
+                  选择…
+                </button>
+              </template>
+            </div>
           </label>
           <button type="button" class="tsv-mini-btn danger" @click="removeVertSlot(si)">删除</button>
         </template>
@@ -160,10 +182,44 @@
         <label class="tsv-header-row">
           <span class="tsv-header-field">左列</span>
           <input v-model.trim="fill.resultColumnNames[0]" class="tsv-text-inp" placeholder="名称" />
+          <div class="tsv-label-opc">
+            <button type="button" class="tsv-mini-btn" :class="{ on: isHdrOpc(0) }" @click="toggleHdrOpc(0)">OPC</button>
+            <template v-if="isHdrOpc(0)">
+              <input class="tsv-text-inp tsv-opc-nid" :value="hdrOpcNode(0)" placeholder="节点 NodeId" @input="onHdrOpcNodeInput(0, $event)" />
+              <button type="button" class="tsv-mini-btn" @click="emit('opcPickParam', tableSqlFillHdrPickSlot(0))">选择…</button>
+            </template>
+          </div>
         </label>
         <label class="tsv-header-row">
           <span class="tsv-header-field">右列</span>
           <input v-model.trim="fill.resultColumnNames[1]" class="tsv-text-inp" placeholder="值" />
+          <div class="tsv-label-opc">
+            <button type="button" class="tsv-mini-btn" :class="{ on: isHdrOpc(1) }" @click="toggleHdrOpc(1)">OPC</button>
+            <template v-if="isHdrOpc(1)">
+              <input class="tsv-text-inp tsv-opc-nid" :value="hdrOpcNode(1)" placeholder="节点 NodeId" @input="onHdrOpcNodeInput(1, $event)" />
+              <button type="button" class="tsv-mini-btn" @click="emit('opcPickParam', tableSqlFillHdrPickSlot(1))">选择…</button>
+            </template>
+          </div>
+        </label>
+      </div>
+      <div v-if="fill.verticalMultiRecordMode !== 'page_per_record'" class="tsv-headers tsv-sep-block">
+        <div class="tsv-headers-head">
+          <span class="tsv-subtit">续表分隔文案</span>
+        </div>
+        <label class="tsv-header-row">
+          <span class="tsv-header-field">分隔行</span>
+          <input
+            v-model.trim="sepLabelModel"
+            class="tsv-text-inp"
+            placeholder="— 续表分隔 —"
+          />
+          <div class="tsv-label-opc">
+            <button type="button" class="tsv-mini-btn" :class="{ on: isSepOpc }" @click="toggleSepOpc">OPC</button>
+            <template v-if="isSepOpc">
+              <input class="tsv-text-inp tsv-opc-nid" :value="sepOpcNode" placeholder="节点 NodeId" @input="onSepOpcNodeInput($event)" />
+              <button type="button" class="tsv-mini-btn" @click="emit('opcPickParam', TABLE_SQL_FILL_SEP_PICK_SLOT)">选择…</button>
+            </template>
+          </div>
         </label>
       </div>
     </div>
@@ -184,6 +240,13 @@
             class="tsv-text-inp"
             :placeholder="headerFieldCaption(ci)"
           />
+          <div class="tsv-label-opc">
+            <button type="button" class="tsv-mini-btn" :class="{ on: isHdrOpc(ci) }" @click="toggleHdrOpc(ci)">OPC</button>
+            <template v-if="isHdrOpc(ci)">
+              <input class="tsv-text-inp tsv-opc-nid" :value="hdrOpcNode(ci)" placeholder="节点 NodeId" @input="onHdrOpcNodeInput(ci, $event)" />
+              <button type="button" class="tsv-mini-btn" @click="emit('opcPickParam', tableSqlFillHdrPickSlot(ci))">选择…</button>
+            </template>
+          </div>
         </label>
       </div>
     </template>
@@ -513,6 +576,10 @@ import {
   isVerticalSqlSlotPending,
   normalizeVisualSqlFilterShape,
   TABLE_SQL_FILL_TABLE_PICK_SLOT,
+  TABLE_SQL_FILL_SEP_PICK_SLOT,
+  tableSqlFillHdrPickSlot,
+  tableSqlFillVlabelPickSlot,
+  defaultTableSqlLabelBinding,
   TABLE_SQL_VERTICAL_FIELD_PENDING,
   visualSqlNeedsStructureTable,
   visualSqlStructureTableName,
@@ -633,6 +700,87 @@ function onVertSlotField(si: number, ev: Event) {
 function onVertLabelInput(si: number, ev: Event) {
   ensureVerticalFieldLabels(props.fill);
   props.fill.verticalFieldLabels![si] = (ev.target as HTMLInputElement).value;
+}
+
+function isHdrOpc(ci: number): boolean {
+  ensureTableSqlResultColumnNames(props.fill, Math.max(ci + 1, props.fill.resultColumnNames.length || 1));
+  return props.fill.resultColumnNameBindings?.[ci]?.bindingKind === "opcua";
+}
+
+function hdrOpcNode(ci: number): string {
+  return props.fill.resultColumnNameBindings?.[ci]?.opcuaNodeId || "";
+}
+
+function toggleHdrOpc(ci: number) {
+  ensureTableSqlResultColumnNames(props.fill, Math.max(ci + 1, props.fill.resultColumnNames.length || 1));
+  const arr = props.fill.resultColumnNameBindings!;
+  if (arr[ci]?.bindingKind === "opcua") {
+    arr[ci] = defaultTableSqlLabelBinding();
+  } else {
+    arr[ci] = { bindingKind: "opcua", opcuaNodeId: arr[ci]?.opcuaNodeId || "" };
+  }
+}
+
+function onHdrOpcNodeInput(ci: number, ev: Event) {
+  ensureTableSqlResultColumnNames(props.fill, Math.max(ci + 1, props.fill.resultColumnNames.length || 1));
+  const arr = props.fill.resultColumnNameBindings!;
+  arr[ci] = { bindingKind: "opcua", opcuaNodeId: (ev.target as HTMLInputElement).value };
+}
+
+function isVlabelOpc(si: number): boolean {
+  ensureVerticalFieldLabels(props.fill);
+  return props.fill.verticalFieldLabelBindings?.[si]?.bindingKind === "opcua";
+}
+
+function vlabelOpcNode(si: number): string {
+  return props.fill.verticalFieldLabelBindings?.[si]?.opcuaNodeId || "";
+}
+
+function toggleVlabelOpc(si: number) {
+  ensureVerticalFieldLabels(props.fill);
+  const arr = props.fill.verticalFieldLabelBindings!;
+  if (arr[si]?.bindingKind === "opcua") {
+    arr[si] = defaultTableSqlLabelBinding();
+  } else {
+    arr[si] = { bindingKind: "opcua", opcuaNodeId: arr[si]?.opcuaNodeId || "" };
+  }
+}
+
+function onVlabelOpcNodeInput(si: number, ev: Event) {
+  ensureVerticalFieldLabels(props.fill);
+  const arr = props.fill.verticalFieldLabelBindings!;
+  arr[si] = { bindingKind: "opcua", opcuaNodeId: (ev.target as HTMLInputElement).value };
+}
+
+const isSepOpc = computed(
+  () => props.fill.continueRecordSepLabelBinding?.bindingKind === "opcua",
+);
+
+const sepOpcNode = computed(() => props.fill.continueRecordSepLabelBinding?.opcuaNodeId || "");
+
+const sepLabelModel = computed({
+  get: () => props.fill.continueRecordSepLabel || "",
+  set: (v: string) => {
+    props.fill.continueRecordSepLabel = v;
+  },
+});
+
+function toggleSepOpc() {
+  if (props.fill.continueRecordSepLabelBinding?.bindingKind === "opcua") {
+    props.fill.continueRecordSepLabelBinding = defaultTableSqlLabelBinding();
+  } else {
+    props.fill.continueRecordSepLabelBinding = {
+      bindingKind: "opcua",
+      opcuaNodeId: props.fill.continueRecordSepLabelBinding?.opcuaNodeId || "",
+    };
+  }
+}
+
+function onSepOpcNodeInput(ev: Event) {
+  props.fill.continueRecordSepLabelBinding = {
+    bindingKind: "opcua",
+    opcuaNodeId: (ev.target as HTMLInputElement).value,
+  };
 }
 
 function headerFieldCaption(ci: number): string {
@@ -1112,9 +1260,9 @@ void loadConnections().then(() => initCatalogForSavedSelection());
 }
 .tsv-header-row {
   display: grid;
-  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  grid-template-columns: minmax(72px, 0.7fr) minmax(0, 1fr) minmax(0, 1.2fr);
   gap: 8px;
-  align-items: center;
+  align-items: start;
   font-size: 12px;
   color: #52525b;
 }
@@ -1124,6 +1272,31 @@ void loadConnections().then(() => initCatalogForSavedSelection());
   text-overflow: ellipsis;
   white-space: nowrap;
   color: #3f3f46;
+  padding-top: 8px;
+}
+.tsv-label-opc {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+}
+.tsv-label-opc .tsv-mini-btn.on {
+  border-color: #4f46e5;
+  color: #4338ca;
+  background: #eef2ff;
+}
+.tsv-opc-nid {
+  flex: 1 1 120px;
+  min-width: 100px;
+}
+.tsv-sep-block {
+  margin-top: 10px;
+}
+.tsv-vert-label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 .tsv-filter-top {
   display: flex;

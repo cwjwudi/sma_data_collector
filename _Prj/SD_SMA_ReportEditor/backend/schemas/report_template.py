@@ -122,6 +122,15 @@ class TableSqlVisualFilter(BaseModel):
     bindings: list[TableSqlParamBinding] = Field(default_factory=list)
 
 
+class TableSqlLabelBinding(BaseModel):
+    """列头 / 左列标签 / 续表分隔：手工文案的可选 OPC 覆盖。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    bindingKind: Literal["none", "opcua"] = "none"
+    opcuaNodeId: str = ""
+
+
 class TableSqlFillConfig(BaseModel):
     """表格整表按 SQL 结果动态填充（schemaVersion≥4）；导出由生成器执行。"""
 
@@ -132,6 +141,7 @@ class TableSqlFillConfig(BaseModel):
     querySql: str = ""
     params: list[TableSqlParamBinding] = Field(default_factory=list)
     resultColumnNames: list[str] = Field(default_factory=list)
+    resultColumnNameBindings: list[TableSqlLabelBinding] = Field(default_factory=list)
     repeatHeaderOnPageBreak: bool = True
     splitReportsOnMaxRows: bool = False
     allowWidgetsBelowSqlFillTable: bool = False
@@ -144,6 +154,9 @@ class TableSqlFillConfig(BaseModel):
     sequencePageMode: TableSqlSequencePageMode = "continuous"
     verticalMultiRecordMode: TableSqlVerticalMultiRecordMode = "continue"
     verticalFieldLabels: list[str] = Field(default_factory=list)
+    verticalFieldLabelBindings: list[TableSqlLabelBinding] = Field(default_factory=list)
+    continueRecordSepLabel: str = ""
+    continueRecordSepLabelBinding: TableSqlLabelBinding | None = None
     decimalPlaces: int | None = Field(default=None, ge=0, le=10)
 
 

@@ -8,6 +8,16 @@
         class="lpep-lab"
         >文字<input v-model.trim="el.text" class="lpep-inp"
       /></label>
+      <ParameterBindingFields
+        v-if="el.type === 'text' || el.type === 'box'"
+        :el="el"
+        opc-only
+        hide-fallback-textarea
+        @opc-pick-parameter="openOpcPicker('parameter')"
+      />
+      <p v-if="el.type === 'text' || el.type === 'box'" class="lpep-hint-muted">
+        绑 OPC UA 后显示节点值；空值回退上方「文字」（多语言标题常用）。
+      </p>
       <div v-if="el.type === 'text' || el.type === 'box'" class="lpep-lab lpep-wrap-row">
         <span class="lpep-wrap-title">换行</span>
         <div class="lpep-seg" role="group" aria-label="文本换行方式">
@@ -887,9 +897,12 @@ function onOpcPickConfirm(payload: string | { serverId: string; nodeId: string }
   const id = (typeof payload === "string" ? payload : payload.nodeId).trim();
   if (!id) return;
   const el = props.el;
-  if (t === "parameter" && el?.type === "parameter") {
+  if (t === "parameter" && el && (el.type === "parameter" || el.type === "text" || el.type === "box")) {
     el.bindingKind = "opcua";
     el.opcuaNodeId = id;
+    if (el.type === "text" || el.type === "box") {
+      el.nullDisplayMode = el.nullDisplayMode || "fallbackText";
+    }
     return;
   }
   if (typeof t === "object" && t?.kind === "scalarSqlParam" && el?.type === "parameter") {

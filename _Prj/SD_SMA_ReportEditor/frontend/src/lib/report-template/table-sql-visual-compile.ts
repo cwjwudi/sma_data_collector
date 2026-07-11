@@ -24,6 +24,9 @@ import {
   TABLE_SQL_COLUMN_PICK_BLANK,
   TABLE_SQL_COLUMN_PICK_SEQUENCE,
   TABLE_SQL_FILL_TABLE_PICK_SLOT,
+  TABLE_SQL_FILL_SEP_PICK_SLOT,
+  parseTableSqlFillHdrPickSlot,
+  parseTableSqlFillVlabelPickSlot,
   TABLE_SQL_VERTICAL_FIELD_PENDING,
   validateSqlIdentifier,
   VERTICAL_SQL_FILL_COL_COUNT,
@@ -91,6 +94,24 @@ export function applyTableSqlFillOpcPick(fill: TableSqlFillConfig, slot: number,
     vs.tableSource = "opcua";
     vs.tableOpcNodeId = id;
     compileVisualTableSql(fill);
+    return;
+  }
+  if (slot === TABLE_SQL_FILL_SEP_PICK_SLOT) {
+    fill.continueRecordSepLabelBinding = { bindingKind: "opcua", opcuaNodeId: id };
+    return;
+  }
+  const hdrCi = parseTableSqlFillHdrPickSlot(slot);
+  if (hdrCi != null) {
+    ensureTableSqlResultColumnNames(fill, Math.max(hdrCi + 1, fill.resultColumnNames.length || 1));
+    const arr = fill.resultColumnNameBindings!;
+    arr[hdrCi] = { bindingKind: "opcua", opcuaNodeId: id };
+    return;
+  }
+  const vSi = parseTableSqlFillVlabelPickSlot(slot);
+  if (vSi != null) {
+    ensureVerticalFieldLabels(fill);
+    const arr = fill.verticalFieldLabelBindings!;
+    arr[vSi] = { bindingKind: "opcua", opcuaNodeId: id };
     return;
   }
   if (slot < 0) return;

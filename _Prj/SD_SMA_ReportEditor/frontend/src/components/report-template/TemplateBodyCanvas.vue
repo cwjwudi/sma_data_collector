@@ -450,6 +450,10 @@ import {
   TABLE_SQL_FILL_PREVIEW_ROW_LIMIT,
 } from "@/lib/report-template/table-sql-fill-preview";
 import { tableSqlFillVerticalChromePx } from "@/lib/report-template/table-sql-fill-layout-utils";
+import {
+  paramKey,
+  resolveBoundParameterPreviewText,
+} from "@/lib/report-template/binding-preview-utils";
 
 /** cv-scaler 左右 padding 合计（与样式 padding: 20px 一致） */
 const EMBED_SCALER_PAD = 40;
@@ -1014,6 +1018,11 @@ function formatTplBodyTableCell(el: TemplateElement, ri: number, ci: number): st
       colIndex: ci,
       preview: pv ?? null,
       previewLoading: loading,
+      labelPreview: {
+        elId: el.id,
+        values: bindingPreview?.values.value,
+        loading: !!bindingPreview?.loading.value,
+      },
     });
   }
   const cell = tableGrid(el)[ri]?.[ci] ?? null;
@@ -1264,8 +1273,21 @@ function formatTplDate(el: TemplateElement): string {
 function displayEl(el: TemplateElement): string {
   switch (el.type) {
     case "text":
-    case "box":
+    case "box": {
+      if (el.bindingKind === "opcua") {
+        const key = paramKey(el.id);
+        const hit = bindingPreview?.values.value[key];
+        return resolveBoundParameterPreviewText({
+          bindingKind: "opcua",
+          text: el.text,
+          nullDisplayMode: el.nullDisplayMode || "fallbackText",
+          decimalPlaces: el.decimalPlaces,
+          previewCell: hit,
+          loading: !!bindingPreview?.loading.value && !hit,
+        });
+      }
       return el.text || "(空)";
+    }
     case "date":
       return formatTplDate(el);
     case "table":

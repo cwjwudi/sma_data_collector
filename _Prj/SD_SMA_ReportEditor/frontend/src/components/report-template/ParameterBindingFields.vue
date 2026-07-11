@@ -5,8 +5,8 @@
       <select v-model="el.bindingKind" class="lpep-inp">
         <option value="none">无</option>
         <option value="opcua">OPC UA</option>
-        <option value="sql">SQL</option>
-        <option value="mongo">MongoDB</option>
+        <option v-if="!opcOnly" value="sql">SQL</option>
+        <option v-if="!opcOnly" value="mongo">MongoDB</option>
       </select>
     </label>
 
@@ -29,7 +29,7 @@
       </button>
     </div>
 
-    <template v-if="el.bindingKind === 'sql'">
+    <template v-if="!opcOnly && el.bindingKind === 'sql'">
       <ScalarSqlQueryBuilder
         :sql-text="el.sqlText"
         :fill-mode="scalarFillMode"
@@ -41,7 +41,7 @@
       <ScalarSqlParamBindingsEditor :params="sqlParams" @opc-pick="(slot) => emit('opc-pick-sql-param', slot)" />
     </template>
 
-    <template v-if="el.bindingKind === 'mongo'">
+    <template v-if="!opcOnly && el.bindingKind === 'mongo'">
       <MongoQueryFields v-model="mongoQuery" />
       <ScalarSqlParamBindingsEditor :params="sqlParams" @opc-pick="(slot) => emit('opc-pick-sql-param', slot)" />
     </template>
@@ -77,7 +77,7 @@
       <p class="lpep-hint-muted">
         数据库或 OPC 读数为 null / 空串 / 无行时生效；有真实值时仍显示读数。
       </p>
-      <label v-if="nullMode === 'fallbackText'" class="lpep-lab">
+      <label v-if="nullMode === 'fallbackText' && !hideFallbackTextarea" class="lpep-lab">
         空值时默认文字
         <textarea
           v-model.trim="el.text"
@@ -87,6 +87,9 @@
           spellcheck="false"
         />
       </label>
+      <p v-else-if="nullMode === 'fallbackText' && hideFallbackTextarea" class="lpep-hint-muted">
+        空值时回退为上方「文字」内容。
+      </p>
       <label class="lpep-lab">
         小数位数（REAL）
         <input
@@ -143,9 +146,16 @@ export type ParameterBindingElement = {
   mongoQuery?: MongoQueryConfig | null;
 };
 
-const props = defineProps<{
-  el: ParameterBindingElement;
-}>();
+const props = withDefaults(
+  defineProps<{
+    el: ParameterBindingElement;
+    /** 文本/色块等多语言场景：仅暴露无 / OPC UA */
+    opcOnly?: boolean;
+    /** 父级已有「文字」输入时隐藏空值默认文字框，避免重复 */
+    hideFallbackTextarea?: boolean;
+  }>(),
+  { opcOnly: false, hideFallbackTextarea: false },
+);
 
 const emit = defineEmits<{
   "opc-pick-parameter": [];

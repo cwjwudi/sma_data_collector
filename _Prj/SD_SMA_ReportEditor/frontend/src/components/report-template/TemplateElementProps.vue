@@ -12,10 +12,24 @@
           <span class="lpep-mini-label">快捷取色</span>
           <input :value="textColorHex" type="color" class="lpep-color-native" @input="onTextColorPick($event)" />
         </div>
+        <ParameterBindingFields
+          :el="el"
+          opc-only
+          hide-fallback-textarea
+          @opc-pick-parameter="openOpcPicker('parameter')"
+        />
+        <p class="lpep-hint-muted">绑 OPC UA 后，预览/导出显示节点值；空值回退上方「文字」（多语言表头/标题常用）。</p>
       </template>
 
       <template v-if="el.type === 'box'">
         <label class="lpep-lab">文字<input v-model.trim="el.text" class="lpep-inp" /></label>
+        <ParameterBindingFields
+          :el="el"
+          opc-only
+          hide-fallback-textarea
+          @opc-pick-parameter="openOpcPicker('parameter')"
+        />
+        <p class="lpep-hint-muted">绑 OPC UA 后，预览/导出显示节点值；空值回退上方「文字」。</p>
       </template>
 
       <div v-if="el.type === 'text' || el.type === 'box'" class="lpep-lab lpep-wrap-row">
@@ -1018,9 +1032,15 @@ function onOpcPickConfirm(payload: string | { serverId: string; nodeId: string }
   opcPickTarget.value = null;
   const id = (typeof payload === "string" ? payload : payload.nodeId).trim();
   if (!id) return;
-  if (t === "parameter" && props.el.type === "parameter") {
+  if (
+    t === "parameter" &&
+    (props.el.type === "parameter" || props.el.type === "text" || props.el.type === "box")
+  ) {
     props.el.bindingKind = "opcua";
     props.el.opcuaNodeId = id;
+    if (props.el.type === "text" || props.el.type === "box") {
+      props.el.nullDisplayMode = props.el.nullDisplayMode || "fallbackText";
+    }
     return;
   }
   if (typeof t === "object" && t?.kind === "scalarSqlParam") {

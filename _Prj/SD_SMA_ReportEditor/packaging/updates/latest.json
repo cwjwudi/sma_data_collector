@@ -1,15 +1,15 @@
 {
-  "version": "0.3.23",
-  "releasedAt": "2026-07-11T07:13:49.935Z",
-  "notes": "版式缩略图表格行高与编辑画布一致（固定行高）",
+  "version": "0.3.24",
+  "releasedAt": "2026-07-11T07:27:59.589Z",
+  "notes": "SQL列头/左列标签与文本色块支持 OPC UA 多语言绑定",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.23-x64.exe",
+      "url": "Report Editor AI-Setup-0.3.24-x64.exe",
       "sha256": "",
       "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.23-arm64.dmg",
+      "url": "Report Editor AI-0.3.24-arm64.dmg",
       "sha256": "",
       "size": 0
     }

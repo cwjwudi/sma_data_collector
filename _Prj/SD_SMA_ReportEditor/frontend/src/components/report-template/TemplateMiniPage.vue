@@ -175,6 +175,9 @@
                 <span v-else-if="el.type === 'parameter'" class="mini-tpl-caption mini-tpl-param">{{
                   previewParameterText(el)
                 }}</span>
+                <span v-else-if="el.type === 'text' || el.type === 'box'" class="mini-tpl-caption">{{
+                  previewParameterText(el)
+                }}</span>
                 <span v-else-if="el.type === 'date'" class="mini-tpl-caption">{{ formatTplDate(el) }}</span>
                 <span v-else-if="el.type === 'chart'" class="mini-tpl-caption">{{ previewChartText(el) }}</span>
                 <template v-else-if="el.type === 'signature'">
@@ -797,8 +800,14 @@ function bindingText(key: string): string | null {
 }
 
 function previewZoneInlineText(el: LayoutZoneElement): string | null {
-  if (el.type !== "parameter") return null;
-  if (el.bindingKind !== "opcua" && el.bindingKind !== "sql" && el.bindingKind !== "mongo") return null;
+  const isTextBox = el.type === "text" || el.type === "box";
+  if (isTextBox) {
+    if (el.bindingKind !== "opcua") return null;
+  } else if (el.type !== "parameter") {
+    return null;
+  } else if (el.bindingKind !== "opcua" && el.bindingKind !== "sql" && el.bindingKind !== "mongo") {
+    return null;
+  }
   const hit = bindingPreviewCell(zoneParamKey(el.id));
   if (hit != null) {
     return resolveBoundParameterPreviewText({
@@ -810,8 +819,14 @@ function previewZoneInlineText(el: LayoutZoneElement): string | null {
       loading: false,
     });
   }
-  if (bindingPreview?.loading.value) return "...";
-  return null;
+  return resolveBoundParameterPreviewText({
+    bindingKind: el.bindingKind,
+    text: el.text,
+    nullDisplayMode: el.nullDisplayMode,
+    decimalPlaces: el.decimalPlaces,
+    previewCell: undefined,
+    loading: !!bindingPreview?.loading.value,
+  });
 }
 
 function miniZoneTableInnerStyle(el: LayoutZoneElement): Record<string, string> {
@@ -882,6 +897,12 @@ function miniZoneTableStaticTitle(el: LayoutZoneElement, ri: number, ci: number)
       preview: fillPv ?? null,
       previewLoading: loading,
       errorMaxLen: 48,
+      labelPreview: {
+        elId: el.id,
+        zone: true,
+        values: previewValues.value,
+        loading: !!bindingPreview?.loading.value,
+      },
     });
   }
   const c = zoneTableGrid(el)[ri]?.[ci];
@@ -904,6 +925,12 @@ function previewZoneTableCellText(el: LayoutZoneElement, ri: number, ci: number)
       preview: fillPv ?? null,
       previewLoading: loading,
       errorMaxLen: 36,
+      labelPreview: {
+        elId: el.id,
+        zone: true,
+        values: vals,
+        loading: !!bindingPreview?.loading.value,
+      },
     });
   }
 
@@ -952,6 +979,11 @@ function miniTableStaticTitle(el: TemplateElement, ri: number, ci: number): stri
       previewLoading: loading,
       errorMaxLen: 48,
       previewSlice: sqlFillSliceForTpl(el),
+      labelPreview: {
+        elId: el.id,
+        values: vals,
+        loading: !!bindingPreview?.loading.value,
+      },
     });
   }
   const c = tableGrid(el)[ri]?.[ci];
@@ -975,6 +1007,11 @@ function previewTableCellText(el: TemplateElement, ri: number, ci: number): stri
       previewLoading: loading,
       errorMaxLen: 36,
       previewSlice: sqlFillSliceForTpl(el),
+      labelPreview: {
+        elId: el.id,
+        values: vals,
+        loading: !!bindingPreview?.loading.value,
+      },
     });
   }
 

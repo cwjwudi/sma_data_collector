@@ -43,9 +43,9 @@ describe("vertical sql fill", () => {
     expect(isVerticalSqlFill(fill)).toBe(true);
     const logical = buildVerticalSqlLogicalRows(fill, [["泵A", "OK"]]);
     expect(logical).toEqual([
-      { label: "名称", value: "泵A", blank: false },
+      { label: "名称", value: "泵A", blank: false, slotIndex: 0 },
       { label: "", value: "", blank: true },
-      { label: "状态", value: "OK", blank: false },
+      { label: "状态", value: "OK", blank: false, slotIndex: 2 },
     ]);
   });
 
@@ -71,8 +71,9 @@ describe("vertical sql fill", () => {
       label: VERTICAL_SQL_CONTINUE_RECORD_SEP_LABEL,
       value: "",
       blank: true,
+      continueSep: true,
     });
-    expect(logical[3]).toEqual({ label: "a", value: "2", blank: false });
+    expect(logical[3]).toEqual({ label: "a", value: "2", blank: false, slotIndex: 0 });
   });
 
   it("page_per_record skips inter-record blank and counts without separators", () => {

@@ -8,7 +8,14 @@ import {
   type NullDisplayMode,
 } from "@/lib/report-template/layout-zone-element";
 import { bodyElementsRef, type EditorSheet } from "@/lib/report-template/editor-sheet";
-import type { TableSqlParamBinding } from "@/lib/report-template/table-sql-fill";
+import type { TableSqlParamBinding, TableSqlFillConfig } from "@/lib/report-template/table-sql-fill";
+import {
+  ensureTableSqlResultColumnNames,
+  ensureVerticalFieldLabels,
+  tblfillHdrKey,
+  tblfillSepKey,
+  tblfillVlabelKey,
+} from "@/lib/report-template/table-sql-fill";
 import { hydrateScalarSqlVisual, normalizeScalarSqlFillMode, type ScalarSqlVisualConfig } from "@/lib/report-template/scalar-sql-visual";
 import { compileScalarVisualSql } from "@/lib/report-template/scalar-sql-visual-compile";
 import type { AutoBatchOpcBinding } from "@/lib/auto-batch-opc-binding";
@@ -495,6 +502,39 @@ export function substituteScalarSqlParams(
     .replace(/\{\{p(\d+)\}\}/gi, (_all, g: string) => renderParam(g));
 }
 
+function collectTableSqlFillLabelOpc(
+  fill: TableSqlFillConfig,
+  elId: string,
+  zone: boolean,
+  addOpc: (nodeId: string, displayKey?: string) => void,
+): void {
+  ensureTableSqlResultColumnNames(fill, Math.max(1, fill.resultColumnNames?.length || 1));
+  const hdrs = fill.resultColumnNameBindings || [];
+  for (let ci = 0; ci < hdrs.length; ci++) {
+    const b = hdrs[ci];
+    if (b?.bindingKind === "opcua") {
+      const nid = String(b.opcuaNodeId || "").trim();
+      if (nid) addOpc(nid, tblfillHdrKey(elId, ci, zone));
+    }
+  }
+  if (fill.layoutMode === "vertical" || fill.verticalFieldLabels?.length) {
+    ensureVerticalFieldLabels(fill);
+    const labs = fill.verticalFieldLabelBindings || [];
+    for (let si = 0; si < labs.length; si++) {
+      const b = labs[si];
+      if (b?.bindingKind === "opcua") {
+        const nid = String(b.opcuaNodeId || "").trim();
+        if (nid) addOpc(nid, tblfillVlabelKey(elId, si, zone));
+      }
+    }
+    const sep = fill.continueRecordSepLabelBinding;
+    if (sep?.bindingKind === "opcua") {
+      const nid = String(sep.opcuaNodeId || "").trim();
+      if (nid) addOpc(nid, tblfillSepKey(elId, zone));
+    }
+  }
+}
+
 export function collectBindingDedupeTasks(
   t: ReportTemplate,
   opcServerId: string | null,
@@ -618,18 +658,18 @@ export function collectBindingDedupeTasks(
   }
 
   forEachTemplateCanvasElement(t, (el) => {
-    if (el.type === "parameter") {
+    if (el.type === "parameter" || el.type === "text" || el.type === "box") {
       if (el.bindingKind === "opcua") {
         const nid = el.opcuaNodeId.trim();
         if (nid) addOpc(nid, paramKey(el.id));
-      } else if (el.bindingKind === "sql") {
+      } else if (el.type === "parameter" && el.bindingKind === "sql") {
         addSql(
           resolveEffectiveScalarSql(el.sqlText, el.scalarSqlFillMode, el.scalarSqlVisual),
           paramKey(el.id),
           el.sqlParams,
           el.scalarSqlVisual,
         );
-      } else if (el.bindingKind === "mongo") {
+      } else if (el.type === "parameter" && el.bindingKind === "mongo") {
         addMongo(el.mongoQuery, paramKey(el.id), el.sqlParams);
       }
     } else if (el.type === "table") {
@@ -653,8 +693,11 @@ export function collectBindingDedupeTasks(
         }),
       );
       const fill = el.tableSqlFill;
-      if (fill?.enabled && fill.fillMode === "mongo" && fill.mongoQuery?.connectionId?.trim()) {
-        addMongo(fill.mongoQuery, `tblfill:${el.id}`, fill.params, el.tableCols ?? 4);
+      if (fill?.enabled) {
+        collectTableSqlFillLabelOpc(fill, el.id, false, addOpc);
+        if (fill.fillMode === "mongo" && fill.mongoQuery?.connectionId?.trim()) {
+          addMongo(fill.mongoQuery, `tblfill:${el.id}`, fill.params, el.tableCols ?? 4);
+        }
       }
     } else if (el.type === "chart" && el.bindingKind === "sql") {
       addSql(el.sqlText, chartKey(el.id), el.sqlParams);
@@ -664,18 +707,18 @@ export function collectBindingDedupeTasks(
   });
 
   forEachZoneLayoutElement(t, (el) => {
-    if (el.type === "parameter") {
+    if (el.type === "parameter" || el.type === "text" || el.type === "box") {
       if (el.bindingKind === "opcua") {
         const nid = el.opcuaNodeId.trim();
-        if (nid) addOpc(nid, `zone-param:${el.id}`);
-      } else if (el.bindingKind === "sql") {
+        if (nid) addOpc(nid, el.type === "parameter" ? `zone-param:${el.id}` : `zone-param:${el.id}`);
+      } else if (el.type === "parameter" && el.bindingKind === "sql") {
         addSql(
           resolveEffectiveScalarSql(el.sqlText, el.scalarSqlFillMode, el.scalarSqlVisual),
           `zone-param:${el.id}`,
           el.sqlParams,
           el.scalarSqlVisual,
         );
-      } else if (el.bindingKind === "mongo") {
+      } else if (el.type === "parameter" && el.bindingKind === "mongo") {
         addMongo(el.mongoQuery, `zone-param:${el.id}`, el.sqlParams);
       }
     } else if (el.type === "table") {
@@ -699,8 +742,11 @@ export function collectBindingDedupeTasks(
         }),
       );
       const fill = el.tableSqlFill;
-      if (fill?.enabled && fill.fillMode === "mongo" && fill.mongoQuery?.connectionId?.trim()) {
-        addMongo(fill.mongoQuery, `ztblfill:${el.id}`, fill.params, el.tableCols ?? 4);
+      if (fill?.enabled) {
+        collectTableSqlFillLabelOpc(fill, el.id, true, addOpc);
+        if (fill.fillMode === "mongo" && fill.mongoQuery?.connectionId?.trim()) {
+          addMongo(fill.mongoQuery, `ztblfill:${el.id}`, fill.params, el.tableCols ?? 4);
+        }
       }
     }
   });

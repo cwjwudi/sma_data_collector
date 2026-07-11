@@ -9,20 +9,45 @@ import {
   isVerticalSqlSlotBoundField,
   isVerticalSqlSlotPending,
   normalizeTableSqlVerticalMultiRecordMode,
+  resolveContinueRecordSepLabel,
   verticalSlotLabel,
 } from "@/lib/report-template/table-sql-fill";
 
 /** 纵表「同表续表」模式下，多条 SQL 结果之间的组间分隔行文案（编辑画布可见） */
 export const VERTICAL_SQL_CONTINUE_RECORD_SEP_LABEL = "— 续表分隔 —";
 
+export type VerticalSqlLabelPreviewCtx = {
+  elId: string;
+  zone?: boolean;
+  /** bindingPreview.values 或等价 map */
+  values?: Record<string, { text?: string } | undefined>;
+  loading?: boolean;
+};
+
+function opcTextFromCtx(
+  ctx: VerticalSqlLabelPreviewCtx | undefined,
+  key: string,
+): { previewText?: string | null; loading?: boolean } | undefined {
+  if (!ctx) return undefined;
+  const hit = ctx.values?.[key];
+  return {
+    previewText: hit?.text ?? null,
+    loading: ctx.loading,
+  };
+}
+
 /** 纵表一条逻辑显示行（对应表格一行，固定两列） */
 export interface VerticalSqlLogicalRow {
-  /** 左列：字段标签；空白分隔行为空；组间续表分隔为 VERTICAL_SQL_CONTINUE_RECORD_SEP_LABEL */
+  /** 左列：字段标签；空白分隔行为空；组间续表分隔为分隔文案 */
   label: string;
   /** 右列：字段值；空白分隔行为空 */
   value: string;
   /** 是否为空白分隔行 */
   blank: boolean;
+  /** 是否为组间续表分隔（便于 OPC 解析） */
+  continueSep?: boolean;
+  /** 对应 visualSource.columns 槽位（字段行） */
+  slotIndex?: number;
 }
 
 /** 单条 SQL 结果展开后的逻辑行数（不含组间分隔） */
@@ -39,6 +64,7 @@ export function verticalSqlSlotsPerRecord(fill: TableSqlFillConfig): number {
 export function buildVerticalSqlLogicalRows(
   fill: TableSqlFillConfig,
   dataRows: string[][] | null | undefined,
+  labelCtx?: VerticalSqlLabelPreviewCtx,
 ): VerticalSqlLogicalRow[] {
   if (!isVerticalSqlFill(fill) || !fill.visualSource) return [];
   ensureVerticalFieldLabels(fill);
@@ -47,6 +73,8 @@ export function buildVerticalSqlLogicalRows(
   const out: VerticalSqlLogicalRow[] = [];
   const pagePerRecord =
     normalizeTableSqlVerticalMultiRecordMode(fill.verticalMultiRecordMode) === "page_per_record";
+  const zone = !!labelCtx?.zone;
+  const elId = labelCtx?.elId || "";
 
   for (let ri = 0; ri < rows.length; ri++) {
     const dr = rows[ri] || [];
@@ -58,17 +86,32 @@ export function buildVerticalSqlLogicalRows(
         continue;
       }
       if (isVerticalSqlSlotPending(field)) {
-        out.push({ label: "（待选字段）", value: "", blank: false });
+        out.push({ label: "（待选字段）", value: "", blank: false, slotIndex: si });
         continue;
       }
-      const label = verticalSlotLabel(fill, si);
+      const label = verticalSlotLabel(
+        fill,
+        si,
+        elId
+          ? opcTextFromCtx(
+              labelCtx,
+              zone ? `ztblfill-vlabel:${elId}:${si}` : `tblfill-vlabel:${elId}:${si}`,
+            )
+          : undefined,
+      );
       const value = fieldIdx < dr.length ? String(dr[fieldIdx] ?? "") : "";
       fieldIdx++;
-      out.push({ label, value, blank: false });
+      out.push({ label, value, blank: false, slotIndex: si });
     }
-    // 续表模式：多条 SQL 结果之间插入带文案的组间分隔；另起一页模式不加（页边界即分隔）
     if (!pagePerRecord && ri < rows.length - 1 && slots.length > 0) {
-      out.push({ label: VERTICAL_SQL_CONTINUE_RECORD_SEP_LABEL, value: "", blank: true });
+      const sep = resolveContinueRecordSepLabel(
+        fill,
+        elId
+          ? opcTextFromCtx(labelCtx, zone ? `ztblfill-sep:${elId}` : `tblfill-sep:${elId}`)
+          : undefined,
+        VERTICAL_SQL_CONTINUE_RECORD_SEP_LABEL,
+      );
+      out.push({ label: sep, value: "", blank: true, continueSep: true });
     }
   }
   return out;
