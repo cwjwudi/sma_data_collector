@@ -1,12 +1,12 @@
 {
   "version": "0.3.24",
-  "releasedAt": "2026-07-11T07:27:59.589Z",
+  "releasedAt": "2026-07-11T07:33:45.332Z",
   "notes": "SQL列头/左列标签与文本色块支持 OPC UA 多语言绑定",
   "platforms": {
     "win32-x64": {
       "url": "Report Editor AI-Setup-0.3.24-x64.exe",
-      "sha256": "",
-      "size": 0
+      "sha256": "cb535cc4b33ad1c1b81981ea5c64a204e2aa7b68e434d1512ee9b889609084e5",
+      "size": 145442931
     },
     "darwin-arm64": {
       "url": "Report Editor AI-0.3.24-arm64.dmg",
