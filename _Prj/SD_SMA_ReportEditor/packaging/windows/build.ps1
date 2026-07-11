@@ -474,7 +474,7 @@ if ($setup) {
   Write-Host 'Deliver this Setup.exe to end users (Windows 10/11 x64).' -ForegroundColor White
   Write-Host 'Install: double-click Setup, choose directory, complete wizard.' -ForegroundColor DarkGray
   Write-Host 'Uninstall: Settings - Apps - Installed apps - Report Editor AI' -ForegroundColor DarkGray
-  Write-Host 'Uninstall removes user data under %APPDATA%\sd-sma-report-editor' -ForegroundColor DarkGray
+  Write-Host 'Uninstall removes user data under %APPDATA%\sd-sma-report-editor-ai' -ForegroundColor DarkGray
 
   Write-Step 'Update manifest + sync Portal (if mounted)'
   $publishScript = Join-Path $Root 'packaging\scripts\publish-portal-release.mjs'
