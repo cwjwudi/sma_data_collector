@@ -5,7 +5,7 @@
         <col v-for="(cw, ci) in colWidths" :key="'ztsc-' + el.id + '-' + ci" :style="{ width: cw + 'px' }" />
       </colgroup>
       <tbody>
-        <tr v-for="(row, ri) in grid" :key="'ztsr-' + el.id + '-' + ri" :style="trStyle">
+        <tr v-for="(row, ri) in grid" :key="'ztsr-' + el.id + '-' + ri" :style="trStyleAt(ri)">
           <td
             v-for="(cell, ci) in row"
             :key="'ztsd-' + el.id + '-' + ri + '-' + ci"
@@ -23,6 +23,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import {
+  computeZoneTableContentRowHeightsPx,
   ensureZoneTableGrid,
   resolveTableCellBackgroundCss,
   zoneTableColumnInnerWidthsPx,
@@ -44,7 +45,19 @@ const colWidths = computed(() => zoneTableColumnInnerWidthsPx(props.el));
 
 const innerBg = computed(() => zoneTableInnerBackgroundCss(props.el.bgColor));
 
-const trStyle = computed(() => ({ height: `${clampTableRowHeightPx(props.el.tableRowHeightPx)}px` }));
+const rowHeights = computed(() => {
+  if (props.el.tableSqlFill?.enabled) {
+    const n = Math.max(1, props.el.tableRows ?? 1);
+    const h = clampTableRowHeightPx(props.el.tableRowHeightPx);
+    return Array.from({ length: n }, () => h);
+  }
+  return computeZoneTableContentRowHeightsPx(props.el);
+});
+
+function trStyleAt(ri: number): Record<string, string> {
+  const h = rowHeights.value[ri] ?? clampTableRowHeightPx(props.el.tableRowHeightPx);
+  return { height: `${h}px`, minHeight: `${h}px` };
+}
 
 function truncate(s: string, n: number): string {
   const x = s.replace(/\s+/g, " ");
@@ -122,7 +135,7 @@ function tdStyle(ri: number, ci: number, cell: LayoutZoneTableCell): Record<stri
   overflow: hidden;
   font-size: max(10px, 0.85em);
   line-height: 1.25;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 </style>

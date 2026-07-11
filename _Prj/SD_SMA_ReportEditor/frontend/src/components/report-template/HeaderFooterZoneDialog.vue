@@ -90,7 +90,7 @@
                       />
                     </colgroup>
                     <tbody>
-                      <tr v-for="(tRow, ri) in hzLayoutTableGrid(el)" :key="ri" :style="hzLayoutTableRowTrStyle(el)">
+                      <tr v-for="(tRow, ri) in hzLayoutTableGrid(el)" :key="ri" :style="hzLayoutTableRowTrStyle(el, ri)">
                         <td
                           v-for="(cell, ci) in tRow"
                           :key="ci"
@@ -171,7 +171,7 @@
               </template>
               <template v-if="selId === el.id">
                 <button
-                  v-for="pos in HANDLES"
+                  v-for="pos in handlesFor(el)"
                   :key="pos"
                   type="button"
                   class="hz-handle"
@@ -429,13 +429,13 @@
                 </div>
               </div>
               <div class="hz-dim-field">
-                <span class="hz-dim-title">行高（px）</span>
-                <div class="hz-dim-stepper" role="group" aria-label="表格行高">
+                <span class="hz-dim-title">最小行高（px）</span>
+                <div class="hz-dim-stepper" role="group" aria-label="表格最小行高">
                   <button
                     type="button"
                     class="hz-dim-btn"
-                    title="减小行高"
-                    aria-label="减小行高"
+                    title="减小最小行高"
+                    aria-label="减小最小行高"
                     :disabled="hzTableRowHeightModel <= TABLE_ROW_HEIGHT_MIN_PX"
                     @click="hzBumpTableRowHeight(-1)"
                   >
@@ -452,8 +452,8 @@
                   <button
                     type="button"
                     class="hz-dim-btn"
-                    title="增大行高"
-                    aria-label="增大行高"
+                    title="增大最小行高"
+                    aria-label="增大最小行高"
                     :disabled="hzTableRowHeightModel >= TABLE_ROW_HEIGHT_MAX_PX"
                     @click="hzBumpTableRowHeight(1)"
                   >
@@ -482,7 +482,7 @@
               在画布上单击单元格后，可在此设置该单元格的填充色。
             </p>
             <p v-if="hzZoneTableCellMetric" class="hz-span2 hz-table-metric">
-              单元格高度（推算）：高约 <strong>{{ formatMetricPx(hzZoneTableCellMetric.cellH) }}</strong> px
+              最小行高 <strong>{{ formatMetricPx(hzTableRowHeightModel) }}</strong> px；外框随内容换行贴合。表格仅可左右改宽。
             </p>
             <template v-if="hasHzTableCellPicked && activeHzTableCell">
               <div class="hz-span2 hz-cell-fields" :key="'hzcf-' + hzEditCellRow + '-' + hzEditCellCol">
@@ -673,8 +673,7 @@ import {
   clampZoneElement,
   clampZoneTableOuterSize,
   ensureZoneTableGrid,
-  applyZoneTableOuterHeight,
-  minOuterHeightForZoneTableResizePx,
+  computeZoneTableContentRowHeightsPx,
   makeLayoutZoneElement,
   minOuterSizeForZoneTable,
   DATE_FORMAT_PRESETS,
@@ -761,8 +760,14 @@ import { clearGridCellBindings, gridHasNonNoneBinding } from "@/lib/report-templ
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 
 const HANDLES = ["nw", "n", "ne", "e", "se", "s", "sw", "w"] as const;
+const TABLE_HANDLES = ["e", "w"] as const;
 
 type Handle = (typeof HANDLES)[number];
+
+function handlesFor(el: LayoutZoneElement): readonly Handle[] {
+  if (el.type === "table") return TABLE_HANDLES;
+  return HANDLES;
+}
 
 const props = defineProps<{
   modelValue: boolean;
@@ -1154,9 +1159,14 @@ function hzLayoutTableGrid(el: LayoutZoneElement): LayoutZoneTableCell[][] {
   return ensureZoneTableGrid(el);
 }
 
-function hzLayoutTableRowTrStyle(el: LayoutZoneElement): Record<string, string> | undefined {
+function hzLayoutTableRowTrStyle(el: LayoutZoneElement, ri = 0): Record<string, string> | undefined {
   if (el.type !== "table") return undefined;
-  return { height: `${clampTableRowHeightPx(el.tableRowHeightPx)}px` };
+  const heights =
+    el.tableSqlFill?.enabled
+      ? Array.from({ length: Math.max(1, el.tableRows ?? 1) }, () => clampTableRowHeightPx(el.tableRowHeightPx))
+      : computeZoneTableContentRowHeightsPx(el);
+  const h = heights[ri] ?? clampTableRowHeightPx(el.tableRowHeightPx);
+  return { height: `${h}px`, minHeight: `${h}px` };
 }
 
 function hzZoneTableColInnerWidthsPx(el: LayoutZoneElement): number[] {
@@ -1593,46 +1603,41 @@ function onMove(ev: PointerEvent) {
     let w = dragResize.iw;
     let hh = dragResize.ih;
     const floorW = el.type === "table" ? minOuterSizeForZoneTable(el).w : 16;
-    const floorH = el.type === "table" ? minOuterHeightForZoneTableResizePx(el) : 16;
+    const floorH = el.type === "table" ? minOuterSizeForZoneTable(el).h : 16;
     const bw = bandW.value;
     const bh = bandH.value;
-    const ceilH = el.type === "table" ? Math.max(floorH, bh) : Number.POSITIVE_INFINITY;
+    const isTable = el.type === "table";
     if (h.includes("e")) w = Math.max(floorW, dragResize.iw + dx);
-    if (h.includes("s")) hh = Math.min(ceilH, Math.max(floorH, dragResize.ih + dy));
+    if (!isTable && h.includes("s")) hh = Math.max(floorH, dragResize.ih + dy);
     if (h.includes("w")) {
       const nw = Math.max(floorW, dragResize.iw - dx);
       x = dragResize.ix + (dragResize.iw - nw);
       w = nw;
     }
-    if (h.includes("n")) {
-      const nh = Math.min(ceilH, Math.max(floorH, dragResize.ih - dy));
+    if (!isTable && h.includes("n")) {
+      const nh = Math.max(floorH, dragResize.ih - dy);
       y = dragResize.iy + (dragResize.ih - nh);
       hh = nh;
     }
-    if (ev.shiftKey && (h === "se" || h === "nw" || h === "ne" || h === "sw")) {
+    if (!isTable && ev.shiftKey && (h === "se" || h === "nw" || h === "ne" || h === "sw")) {
       const s = Math.max(w, hh, floorW, floorH);
-      const capped = el.type === "table" ? Math.min(s, ceilH) : s;
-      w = capped;
-      hh = capped;
+      w = s;
+      hh = s;
     }
     el.x = x;
     el.y = y;
     el.w = w;
-    el.h = hh;
+    el.h = isTable ? dragResize.ih : hh;
     const peers = hzSnapPeers();
     if (!ev.shiftKey) {
       const snapped = magneticSnapResize(el.x, el.y, el.w, el.h, h, bw, bh, peers, el.id, floorW, floorH);
       el.x = snapped.x;
       el.y = snapped.y;
       el.w = snapped.w;
-      el.h = snapped.h;
+      el.h = isTable ? dragResize.ih : snapped.h;
     }
-    if (el.type === "table" && (h.includes("n") || h.includes("s") || (ev.shiftKey && /nw|ne|sw|se/.test(h)))) {
-      const maxH = Math.max(floorH, bh - Math.max(0, el.y));
-      applyZoneTableOuterHeight(el, el.h, maxH);
-      if (h.includes("n")) {
-        el.y = Math.round(dragResize.iy + (dragResize.ih - el.h));
-      }
+    if (isTable) {
+      clampZoneTableOuterSize(el, bw, Math.max(16, bh - Math.max(0, el.y)));
     }
     clampZoneElement(el, bandW.value, bandH.value);
     hzSnapGuides.value = ev.shiftKey

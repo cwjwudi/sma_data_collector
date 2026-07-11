@@ -744,6 +744,7 @@ function miniTplTableRowHeights(el: TemplateElement): number[] {
     return computeSqlFillLogicalRowHeightsPx(el, pv, displayN, slice);
   }
 
+  // 静态表：按可见行（含跨页切片）估算高度
   return computeContentAwareTableRowHeightsPx({
     rowCount: rowIndices.length,
     colWidthsPx: colWidths,
@@ -953,6 +954,10 @@ function miniTableRowIndices(el: TemplateElement): number[] {
   const pk = templateTableSqlFillPreviewKey(el.id);
   const pv = previewValues.value[pk]?.tableSqlFill;
   const slice = sqlFillSliceForTpl(el);
+  // 静态表跨页切片：dataRowStart 为网格绝对行下标
+  if (el.type === "table" && slice && !el.tableSqlFill?.enabled) {
+    return Array.from({ length: Math.max(1, slice.dataRowCount) }, (_, i) => slice.dataRowStart + i);
+  }
   if (el.type !== "table" || !el.tableSqlFill?.enabled || !pv?.dataRows?.length) {
     return Array.from({ length: base }, (_, i) => i);
   }

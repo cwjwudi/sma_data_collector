@@ -3,9 +3,10 @@
  */
 
 import type { BindingPreviewCell } from "@/lib/report-template/binding-preview-utils";
+import { cellKey } from "@/lib/report-template/binding-preview-utils";
 import { bodyElementsRef, metricsForSheet } from "@/lib/report-template/editor-sheet";
 import type { ReportTemplate, TemplateElement } from "@/lib/report-template/model";
-import { ensureBodyPages } from "@/lib/report-template/model";
+import { ensureBodyPages, ensureTableGrid } from "@/lib/report-template/model";
 import { clampTableRowHeightPx } from "@/lib/report-template/table-cell-metrics";
 import {
   estimatedSqlFillTableBottomY,
@@ -13,8 +14,17 @@ import {
   tableSqlFillVerticalChromePx,
   tplElementsHorizontallyOverlap,
 } from "@/lib/report-template/table-sql-fill-layout-utils";
-import { templateTableSqlFillPreviewKey } from "@/lib/report-template/table-sql-fill-preview";
-import { sqlFillDisplayDataRowCount } from "@/lib/report-template/table-sql-fill-preview";
+import {
+  buildLogicalRowSlicesForOverflow,
+  computeTemplateTableContentRowHeightsPx,
+  formatTableCellTextForHeightEstimate,
+  outerHeightFromTableRowHeightsPx,
+  templateTableExceedsPageRemaining,
+} from "@/lib/report-template/table-content-layout";
+import {
+  sqlFillDisplayDataRowCount,
+  templateTableSqlFillPreviewKey,
+} from "@/lib/report-template/table-sql-fill-preview";
 import {
   isVerticalSqlFill,
   normalizeTableSqlVerticalMultiRecordMode,
@@ -220,6 +230,90 @@ function hasWidgetsBelowSqlFillTable(
   );
 }
 
+function staticTableRowHeightsForPreview(
+  el: TemplateElement,
+  previewValues: Record<string, BindingPreviewCell | undefined>,
+): number[] {
+  ensureTableGrid(el);
+  const grid = el.tableCells || [];
+  return computeTemplateTableContentRowHeightsPx(el, (ri, ci) => {
+    const hit = previewValues[cellKey(el.id, ri, ci)];
+    if (hit?.text != null && String(hit.text).length) return String(hit.text);
+    return formatTableCellTextForHeightEstimate(grid[ri]?.[ci]);
+  });
+}
+
+function pickStaticTableForPreviewPagination(
+  els: TemplateElement[],
+  contentH: number,
+  previewValues: Record<string, BindingPreviewCell | undefined>,
+): { el: TemplateElement; heights: number[] } | null {
+  let best: { el: TemplateElement; heights: number[] } | null = null;
+  let bestBottom = -Infinity;
+  for (const el of els) {
+    if (el.type !== "table" || el.tableSqlFill?.enabled) continue;
+    const heights = staticTableRowHeightsForPreview(el, previewValues);
+    if (!templateTableExceedsPageRemaining(el, contentH, heights)) continue;
+    const bottom = el.y + outerHeightFromTableRowHeightsPx(heights, el.tableRowHeightPx);
+    if (bottom >= bestBottom) {
+      bestBottom = bottom;
+      best = { el, heights };
+    }
+  }
+  return best;
+}
+
+function cardsForStaticTableOverflow(
+  els: TemplateElement[],
+  bodyPageIndex: number,
+  contentH: number,
+  overflowEl: TemplateElement,
+  allHeights: number[],
+): ExpandedBodyPreviewCard[] {
+  const rowH = clampTableRowHeightPx(overflowEl.tableRowHeightPx);
+  const chunks = buildLogicalRowSlicesForOverflow({
+    rowHeights: allHeights,
+    firstPageAvailOuterPx: contentH - overflowEl.y,
+    nextPageAvailOuterPx: contentH,
+    fallbackRowH: rowH,
+  });
+  if (chunks.length <= 1) {
+    return [
+      {
+        bodyPageIndex,
+        continuationIndex: 0,
+        sqlFillTableSlices: {},
+        continuationHideOtherBodyElements: false,
+      },
+    ];
+  }
+  const logicalBottom = overflowEl.y + outerHeightFromTableRowHeightsPx(allHeights, rowH);
+  const hasBelow = hasWidgetsBelowSqlFillTable(els, overflowEl, logicalBottom);
+  const cards: ExpandedBodyPreviewCard[] = chunks.map((slice, idx) => ({
+    bodyPageIndex,
+    continuationIndex: idx,
+    sqlFillTableSlices: { [overflowEl.id]: slice },
+    continuationHideOtherBodyElements: idx > 0,
+    sqlFillHideBelow:
+      idx === 0 ? { tableId: overflowEl.id, baselineY: logicalBottom } : undefined,
+    showSqlFillTailDividerHint:
+      hasBelow && idx === chunks.length - 1 ? true : undefined,
+    overflowSqlFillTableId: overflowEl.id,
+  }));
+  if (hasBelow) {
+    cards.push({
+      bodyPageIndex,
+      continuationIndex: chunks.length,
+      sqlFillTableSlices: {},
+      continuationHideOtherBodyElements: true,
+      tailOnlyBelowBaseline: true,
+      tailBaselineY: logicalBottom,
+      overflowSqlFillTableId: overflowEl.id,
+    });
+  }
+  return cards;
+}
+
 function slicesForBodyPage(
   tmpl: ReportTemplate,
   bodyPageIndex: number,
@@ -230,6 +324,16 @@ function slicesForBodyPage(
   const els = bodyElementsRef(tmpl, "body", bodyPageIndex);
   const overflowEl = pickSqlFillTableForPreviewPagination(els, contentH, previewValues);
   if (!overflowEl || overflowEl.type !== "table") {
+    const staticHit = pickStaticTableForPreviewPagination(els, contentH, previewValues);
+    if (staticHit) {
+      return cardsForStaticTableOverflow(
+        els,
+        bodyPageIndex,
+        contentH,
+        staticHit.el,
+        staticHit.heights,
+      );
+    }
     return [
       {
         bodyPageIndex,

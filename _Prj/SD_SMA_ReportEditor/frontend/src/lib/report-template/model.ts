@@ -66,9 +66,11 @@ import {
 } from "./layout-zone-element";
 import {
   clampTableRowHeightPx,
+  computeContentAwareTableRowHeightsPx,
   distributeTableColumnInnerWidthsPx,
   hydratePersistedTableColWidthsPx,
   REPORT_TEMPLATE_TABLE_NODE_PADDING_PX,
+  sumTableRowHeightsPx,
   TABLE_ROW_HEIGHT_DEFAULT_PX,
   TABLE_ROW_HEIGHT_MIN_PX,
   TEMPLATE_TABLE_MAX_COLS,
@@ -360,18 +362,60 @@ export function templateTableVerticalChromePx(): number {
 }
 
 /**
- * 正文画布表格外框的「贴合」高度：节点 padding（`.el-node`）+ 各行固定行高 + `.cv-table-shell` 底侧 1px。
- * 改行数/行高后用于把外框 snug 到内容；纵向拖拽缩放时改为改行高，不再把外框锁死在该值。
+ * 正文画布表格外框贴合高度：chrome + 各行内容换行感知高度（下限为 tableRowHeightPx）。
+ * 可选 cellTextAt 注入绑定预览实值；缺省用网格配置文案（含 OPC/SQL 标签）。
  */
-export function intrinsicOuterHeightForTemplateTable(el: TemplateElement): number {
+export function intrinsicOuterHeightForTemplateTable(
+  el: TemplateElement,
+  cellTextAt?: (ri: number, ci: number) => string,
+): number {
   if (el.type !== "table") return 20;
   ensureTableGrid(el);
   const rows = Math.max(1, el.tableRows ?? 3);
-  const rowH = clampTableRowHeightPx(el.tableRowHeightPx);
-  return templateTableVerticalChromePx() + rows * rowH;
+  const minH = clampTableRowHeightPx(el.tableRowHeightPx);
+  let colWidths: number[] = [];
+  try {
+    colWidths = templateTableColumnInnerWidthsPx(el);
+  } catch {
+    colWidths = [];
+  }
+  if (!colWidths.length) {
+    const cols = el.tableCols ?? 4;
+    const inner = Math.max(40, (el.w || 200) - 8);
+    colWidths = Array.from({ length: cols }, () => Math.floor(inner / cols));
+  }
+  const grid = el.tableCells || [];
+  const heights = computeContentAwareTableRowHeightsPx({
+    rowCount: rows,
+    colWidthsPx: colWidths,
+    fontSizePx: Math.max(10, (el.fontSize || 12) * 0.85),
+    minRowHeightPx: minH,
+    lineHeight: 1.3,
+    paddingX: 10,
+    paddingY: 6,
+    cellTextAt: (ri, ci) => {
+      if (cellTextAt) return cellTextAt(ri, ci);
+      const cell = grid[ri]?.[ci];
+      if (!cell) return "";
+      if (cell.bindingKind === "opcua") {
+        const id = cell.opcuaNodeId.trim();
+        return id ? `⟨UA⟩ ${id}` : "⟨UA⟩";
+      }
+      if (cell.bindingKind === "sql") {
+        const q = cell.sqlText.trim();
+        return q ? `⟨SQL⟩ ${q}` : "⟨SQL⟩";
+      }
+      if (cell.bindingKind === "mongo") {
+        const col = cell.mongoQuery?.collection?.trim() || "";
+        return col ? `⟨Mongo⟩ ${col}` : "⟨Mongo⟩";
+      }
+      return (cell.text || "").trim();
+    },
+  });
+  return templateTableVerticalChromePx() + sumTableRowHeightsPx(heights, minH, rows);
 }
 
-/** 静态表纵向缩放下限：按最小行高推算外框高度 */
+/** @deprecated 纵向拖外框已禁用；保留供测试兼容 */
 export function minOuterHeightForTemplateTableResizePx(el: TemplateElement): number {
   if (el.type !== "table") return 20;
   ensureTableGrid(el);
@@ -380,7 +424,7 @@ export function minOuterHeightForTemplateTableResizePx(el: TemplateElement): num
 }
 
 /**
- * 按外框目标高度反推行高（静态表整体拖拽缩放用），并写回贴合后的 `el.h`。
+ * @deprecated 表格不再通过纵向拖外框反推行高；请改 tableRowHeightPx 后 clamp。
  */
 export function applyTemplateTableOuterHeight(
   el: TemplateElement,
@@ -394,7 +438,7 @@ export function applyTemplateTableOuterHeight(
   const capped = Math.max(chrome + rows * TABLE_ROW_HEIGHT_MIN_PX, Math.min(Number(outerH) || 0, maxH));
   const rowH = clampTableRowHeightPx((capped - chrome) / rows);
   el.tableRowHeightPx = rowH;
-  el.h = chrome + rows * rowH;
+  el.h = intrinsicOuterHeightForTemplateTable(el);
 }
 
 /**
@@ -435,8 +479,8 @@ export function minOuterSizeForTable(el: TemplateElement): { w: number; h: numbe
 }
 
 /**
- * 保证表格宽度不小于最小列宽推算值；高度固定在「行数×行高+chrome」贴合值，
- * 且不超过 maxW/maxH（例如正文区边界）。
+ * 保证表格宽度不小于最小列宽推算值；
+ * 静态表/纵表高度贴合「内容换行行高之和」（编辑态可被 maxH 限制画布壳，导出另走跨页）。
  */
 export function clampTableElementOuterSize(
   el: TemplateElement,
@@ -450,22 +494,20 @@ export function clampTableElementOuterSize(
 
   if (el.tableSqlFill?.enabled) {
     if (isVerticalSqlFill(el.tableSqlFill)) {
-      // 老模版可能残留偏大的 tableRows/h；先按字段槽收齐，再贴合外框
       syncTableRowsForVerticalSqlSlots(el, () => ensureTableGrid(el));
-      // 纵表：外框严格贴合全部行（含增行后），避免矮外框裁掉末行
       const ih = intrinsicOuterHeightForTemplateTable(el);
       const nextH = Math.max(20, Math.min(ih, maxH));
       el.h = nextH;
       return;
     }
-    // 横表 SQL：外框为可视窗口；至少表头+1 行，允许矮于全部数据行
+    // 横表 SQL：外框为可视窗口；至少表头+1 行，允许矮于全部数据行（导出跨页）
     const loH = Math.max(20, Math.min(minOuterHeightSqlFillTableEditorPx(el), maxH));
     if (el.h < loH) el.h = loH;
     if (el.h > maxH) el.h = maxH;
     return;
   }
 
-  // 静态表：外框始终等于「行数 × 行高 + chrome」，改行数/行高即变高度
+  // 静态表：贴合内容换行行高；maxH 仅限制编辑画布壳
   const ih = intrinsicOuterHeightForTemplateTable(el);
   const nextH = Math.max(20, Math.min(ih, maxH));
   el.h = nextH;

@@ -1,12 +1,17 @@
 {
-  "version": "0.3.29",
-  "releasedAt": "2026-07-11T09:02:41.600Z",
-  "notes": "修复表格换行裁切末行；恢复表格整体拖拽缩放手柄",
+  "version": "0.3.30",
+  "releasedAt": "2026-07-11T09:40:46.550Z",
+  "notes": "Report Editor AI 0.3.30\n\n- 表格「行高」改为最小行高：换行抬高该行，外框贴合内容高度\n- 表格仅可左右改宽，高度随行数与内容\n- 绑定/换行超页时导出预览跨页续表，禁止裁掉",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.29-x64.exe",
-      "sha256": "313d92c7aeacd7be4212abfcfd340a7c920f629389c2b39768976dd83614f3fd",
-      "size": 145469491
+      "url": "Report Editor AI-Setup-0.3.30-x64.exe",
+      "sha256": "33ab662c85ee149df436a920995c3774ed22f593f359026dd67db33ab9080b26",
+      "size": 145472098
+    },
+    "darwin-arm64": {
+      "url": "Report Editor AI-0.3.30-arm64.dmg",
+      "sha256": "",
+      "size": 0
     }
   }
 }

@@ -155,7 +155,7 @@
                       />
                     </colgroup>
                     <tbody>
-                      <tr v-for="ri in tplTableRowIndices(el)" :key="'tr-' + el.id + '-' + ri" :style="tplTableRowTrStyle(el)">
+                      <tr v-for="ri in tplTableRowIndices(el)" :key="'tr-' + el.id + '-' + ri" :style="tplTableRowTrStyle(el, ri)">
                         <td
                           v-for="ci in tplTableColIndices(el)"
                           :key="'tc-' + el.id + '-' + ri + '-' + ci"
@@ -244,6 +244,12 @@
                     @resize-delta="(bi, dx) => onTplTableColumnResize(el, bi, dx)"
                   />
                 </div>
+                <div
+                  v-if="tplTablePageOverflowHint(el)"
+                  class="cv-table-page-overflow-hint cv-table-page-overflow-hint--below"
+                >
+                  绑定/换行后高度超出本页，导出预览将跨页续排（不裁切内容）
+                </div>
               </template>
               <template v-else-if="el.type === 'date'">
                 <span class="cv-text-display" :style="textAlignForCanvasText(el)">{{ formatTplDate(el) }}</span>
@@ -292,7 +298,7 @@
             </div>
             <template v-if="selId === el.id">
               <button
-                v-for="hh in HZ"
+                v-for="hh in resizeHandlesFor(el)"
                 :key="hh"
                 type="button"
                 :class="['hz', 'hz-' + hh]"
@@ -413,15 +419,17 @@ import {
 import {
   clampTableElementOuterSize,
   ensureTableGrid,
-  applyTemplateTableOuterHeight,
   makeElement,
-  minOuterHeightForTemplateTableResizePx,
   minOuterSizeForTable,
   signatureShowsHandwriting,
   signatureShowsWatermark,
   signatureWatermarkText,
   templateTableColumnInnerWidthsPx,
 } from "@/lib/report-template/model";
+import {
+  computeTemplateTableContentRowHeightsPx,
+  templateTableExceedsPageRemaining,
+} from "@/lib/report-template/table-content-layout";
 import type { VisualSqlTableColumnMeta } from "@/lib/report-template/table-sql-visual-catalog";
 import { loadVisualSqlTableColumnsCached } from "@/lib/report-template/table-sql-visual-catalog";
 import { applyVisualSqlOutputColumnPick, applyVerticalSqlSlotField, syncTableRowsForVerticalSqlSlots } from "@/lib/report-template/table-sql-visual-compile";
@@ -1159,24 +1167,52 @@ function onTplVerticalSlotChange(el: TemplateElement, ri: number, ev: Event) {
   clampTableElementOuterSize(el, me.value.contentW, maxH);
 }
 
-function tplTableRowTrStyle(el: TemplateElement): Record<string, string> | undefined {
+function resizeHandlesFor(el: TemplateElement): readonly H[] {
+  // 表格高度由行数+内容换行贴合，仅允许左右改宽
+  if (el.type === "table") return ["e", "w"] as const;
+  return HZ;
+}
+
+/** 编辑画布：静态表各行内容感知高度（含绑定标签文案） */
+function tplTableContentRowHeights(el: TemplateElement): number[] {
+  if (el.type !== "table") return [];
+  if (el.tableSqlFill?.enabled) {
+    // SQL 填充仍用固定最小行高估（预览行由其它逻辑裁剪）；纵表贴合字段槽用 intrinsic
+    const n = Math.max(1, el.tableRows ?? 1);
+    const h = clampTableRowHeightPx(el.tableRowHeightPx);
+    return Array.from({ length: n }, () => h);
+  }
+  return computeTemplateTableContentRowHeightsPx(el, (ri, ci) => {
+    const cell = tableGrid(el)[ri]?.[ci];
+    return cell ? formatTableCellPreview(cell) : "";
+  });
+}
+
+function tplTableRowTrStyle(el: TemplateElement, ri: number): Record<string, string> | undefined {
   if (el.type !== "table") return undefined;
-  const h = clampTableRowHeightPx(el.tableRowHeightPx);
-  // 编辑态固定行高，与属性「行高」及外框 h=行数×行高 对齐；预览/导出仍可按内容折行抬高
+  const heights = tplTableContentRowHeights(el);
+  const h = heights[ri] ?? clampTableRowHeightPx(el.tableRowHeightPx);
   return {
     height: `${h}px`,
-    maxHeight: `${h}px`,
+    minHeight: `${h}px`,
   };
 }
 
 function tplTableCellBoxStyle(el: TemplateElement, ri: number, ci: number): Record<string, string> {
   if (el.type !== "table") return {};
-  const h = clampTableRowHeightPx(el.tableRowHeightPx);
+  const heights = tplTableContentRowHeights(el);
+  const h = heights[ri] ?? clampTableRowHeightPx(el.tableRowHeightPx);
   return {
     ...tplTableCellStyle(el, ri, ci),
     height: `${h}px`,
-    maxHeight: `${h}px`,
+    minHeight: `${h}px`,
   };
+}
+
+function tplTablePageOverflowHint(el: TemplateElement): boolean {
+  if (el.type !== "table" || el.tableSqlFill?.enabled) return false;
+  const heights = tplTableContentRowHeights(el);
+  return templateTableExceedsPageRemaining(el, me.value.contentH, heights);
 }
 
 function tplSqlFillDataRowCount(el: TemplateElement): number {
@@ -1229,10 +1265,8 @@ function minTableResizeW(el: TemplateElement): number {
 }
 
 function minTableResizeH(el: TemplateElement): number {
-  if (el.type !== "table") return 20;
-  // 静态表：纵向拖拽改行高，下限按最小行高；SQL 填充仍用贴合/可视窗口下限
-  if (!el.tableSqlFill?.enabled) return minOuterHeightForTemplateTableResizePx(el);
-  return minOuterSizeForTable(el).h;
+  // 表格不再纵向拖外框；保留函数供其它路径
+  return el.type === "table" ? minOuterSizeForTable(el).h : 20;
 }
 
 function pickTableCell(el: TemplateElement, ri: number, ci: number) {
@@ -1433,27 +1467,25 @@ function ptrMove(ev: PointerEvent) {
     let hh = resize.ih;
     const floorW = el.type === "table" ? minTableResizeW(el) : 20;
     const floorH = el.type === "table" ? minTableResizeH(el) : 20;
-    const staticTable = el.type === "table" && !el.tableSqlFill?.enabled;
-    // 静态表：纵向拖到页内上限即可（改行高）；SQL 横表同；勿再锁死在「当前贴合高度」
-    const ceilH =
-      el.type === "table" ? Math.max(floorH, me.value.contentH) : Number.POSITIVE_INFINITY;
+    const isTable = el.type === "table";
+    // 表格：忽略纵向分量，高度随后由内容贴合
+    const ceilH = isTable ? hh : Number.POSITIVE_INFINITY;
     if (h.includes("e")) w = Math.max(floorW, Math.round(resize.iw + dx));
-    if (h.includes("s")) hh = Math.min(ceilH, Math.max(floorH, Math.round(resize.ih + dy)));
+    if (!isTable && h.includes("s")) hh = Math.min(ceilH, Math.max(floorH, Math.round(resize.ih + dy)));
     if (h.includes("w")) {
       const nw = Math.max(floorW, Math.round(resize.iw - dx));
       x = Math.round(resize.ix + (resize.iw - nw));
       w = nw;
     }
-    if (h.includes("n")) {
+    if (!isTable && h.includes("n")) {
       const nh = Math.min(ceilH, Math.max(floorH, Math.round(resize.ih - dy)));
       y = Math.round(resize.iy + (resize.ih - nh));
       hh = nh;
     }
-    if (ev.shiftKey && /nw|ne|sw|se/.test(h)) {
+    if (!isTable && ev.shiftKey && /nw|ne|sw|se/.test(h)) {
       const s = Math.max(w, hh, floorW, floorH);
-      const capped = el.type === "table" ? Math.min(s, ceilH) : s;
-      w = capped;
-      hh = capped;
+      w = s;
+      hh = s;
     }
     Object.assign(el, { x, y, w, h: hh });
     const bw = me.value.contentW;
@@ -1462,14 +1494,14 @@ function ptrMove(ev: PointerEvent) {
     if (!ev.shiftKey) {
       const snapped = magneticSnapResize(el.x, el.y, el.w, el.h, h, bw, bh, peers, el.id, floorW, floorH);
       Object.assign(el, snapped);
-    }
-    // 静态表纵向/等比缩放：外框高度反推「行高」，再贴合 snug，避免空白底或裁切
-    if (staticTable && (h.includes("n") || h.includes("s") || (ev.shiftKey && /nw|ne|sw|se/.test(h)))) {
-      const maxH = Math.max(floorH, bh - Math.max(0, el.y));
-      applyTemplateTableOuterHeight(el, el.h, maxH);
-      if (h.includes("n")) {
-        el.y = Math.round(resize.iy + (resize.ih - el.h));
+      if (isTable) {
+        // 磁吸可能改 h，表格改宽后一律按内容重新贴合高度
+        el.h = resize.ih;
       }
+    }
+    if (isTable) {
+      const maxH = Math.max(20, bh - Math.max(0, el.y));
+      clampTableElementOuterSize(el, bw, maxH);
     }
     clamp(el);
     tplSnapGuides.value = ev.shiftKey
@@ -1886,8 +1918,8 @@ async function onTplImageDropFile(ev: DragEvent, el: TemplateElement) {
 }
 .cv-table {
   width: 100%;
-  height: 100%;
-  max-height: 100%;
+  height: auto;
+  max-height: none;
   border-collapse: separate;
   border-spacing: 0;
   table-layout: fixed;
@@ -1918,10 +1950,7 @@ async function onTplImageDropFile(ev: DragEvent, el: TemplateElement) {
   padding: 1px 5px;
   vertical-align: middle;
   text-align: center;
-  position: relative;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   cursor: cell;
 }
 .cv-table-cell:last-child {
@@ -1975,18 +2004,31 @@ async function onTplImageDropFile(ev: DragEvent, el: TemplateElement) {
   box-shadow: inset 0 0 0 2px #6366f1;
 }
 .cv-table-cell-txt {
-  /* 绝对铺满单元格：换行文案不再把 tr 撑高，避免「行数对但底部被裁」 */
-  position: absolute;
-  inset: 1px 5px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  display: block;
   font-size: max(10px, 0.85em);
   line-height: 1.3;
   word-break: break-word;
   white-space: pre-wrap;
   overflow: hidden;
-  text-align: center;
+  max-height: 100%;
+}
+.cv-table-page-overflow-hint {
+  padding: 4px 6px;
+  font-size: 10px;
+  line-height: 1.35;
+  color: #713f12;
+  background: rgb(254 249 195 / 0.95);
+  border: 1px solid rgb(234 179 8 / 0.55);
+  border-radius: 4px;
+  pointer-events: none;
+}
+.cv-table-page-overflow-hint--below {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  margin-top: 4px;
+  z-index: 8;
 }
 .cv-table-cell-edit {
   display: block;

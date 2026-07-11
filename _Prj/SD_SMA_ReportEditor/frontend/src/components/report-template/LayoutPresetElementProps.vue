@@ -249,13 +249,13 @@
             </div>
           </div>
           <div class="lpep-dim-field">
-            <span class="lpep-dim-title">行高（px）</span>
-            <div class="lpep-dim-stepper" role="group" aria-label="表格行高">
+            <span class="lpep-dim-title">最小行高（px）</span>
+            <div class="lpep-dim-stepper" role="group" aria-label="表格最小行高">
               <button
                 type="button"
                 class="lpep-dim-btn"
-                title="减小行高"
-                aria-label="减小行高"
+                title="减小最小行高"
+                aria-label="减小最小行高"
                 :disabled="zoneTableRowHeightModel <= TABLE_ROW_HEIGHT_MIN_PX"
                 @click="bumpZoneTableRowHeight(-1)"
               >
@@ -272,8 +272,8 @@
               <button
                 type="button"
                 class="lpep-dim-btn"
-                title="增大行高"
-                aria-label="增大行高"
+                title="增大最小行高"
+                aria-label="增大最小行高"
                 :disabled="zoneTableRowHeightModel >= TABLE_ROW_HEIGHT_MAX_PX"
                 @click="bumpZoneTableRowHeight(1)"
               >
@@ -297,7 +297,7 @@
               ? "纵表行数 = 1 行表头 + 字段槽位数；增减行数会增删画布「名称」列下拉行。列数固定为 2。"
               : zoneSqlFillEnabled
                 ? "列数、行高变更后立即应用到画布。数据库填充开启时行数随预览查询结果自动同步；单元格静态文字不在此编辑；可视化模式下请在画布第一行选择输出列。"
-                : "行列、行高变更后立即应用到画布。单击单元格可设置填充色、编辑静态文字或 OPC UA / SQL。"
+                  : "行列、最小行高变更后立即应用到画布。最小行高为各行下限；换行时该行抬高，外框贴合。表格仅可左右改宽。单击单元格可设置填充色、编辑静态文字或 OPC UA / SQL。"
           }}
         </p>
         <p v-if="!hasTableCellPicked" class="lpep-hint-muted">

@@ -138,7 +138,7 @@ describe("hydrateTemplateElement", () => {
     expect(tb.h).toBeLessThan(700);
   });
 
-  it("clampTableElementOuterSize sets static table h to rows×rowHeight", () => {
+  it("clampTableElementOuterSize sets static table h to content-aware intrinsic height", () => {
     const tb = hydrateTemplateElement({
       id: "st",
       type: "table",

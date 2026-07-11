@@ -83,7 +83,7 @@
                         />
                       </colgroup>
                       <tbody>
-                        <tr v-for="(tRow, ri) in layoutTableGrid(el)" :key="ri" :style="layoutZoneTableRowTrStyle(el)">
+                        <tr v-for="(tRow, ri) in layoutTableGrid(el)" :key="ri" :style="layoutZoneTableRowTrStyle(el, ri)">
                           <td
                             v-for="(cell, ci) in tRow"
                             :key="ci"
@@ -166,7 +166,7 @@
                 </template>
                 <template v-if="selId === el.id">
                   <button
-                    v-for="pos in HANDLES"
+                    v-for="pos in handlesFor(el)"
                     :key="pos"
                     type="button"
                     class="hz"
@@ -267,7 +267,7 @@
                         />
                       </colgroup>
                       <tbody>
-                        <tr v-for="(tRow, ri) in layoutTableGrid(el)" :key="ri" :style="layoutZoneTableRowTrStyle(el)">
+                        <tr v-for="(tRow, ri) in layoutTableGrid(el)" :key="ri" :style="layoutZoneTableRowTrStyle(el, ri)">
                           <td
                             v-for="(cell, ci) in tRow"
                             :key="ci"
@@ -350,7 +350,7 @@
               </template>
               <template v-if="selId === el.id">
                 <button
-                  v-for="pos in HANDLES"
+                  v-for="pos in handlesFor(el)"
                   :key="pos"
                   type="button"
                   class="hz"
@@ -451,7 +451,7 @@
                         />
                       </colgroup>
                       <tbody>
-                        <tr v-for="(tRow, ri) in layoutTableGrid(el)" :key="ri" :style="layoutZoneTableRowTrStyle(el)">
+                        <tr v-for="(tRow, ri) in layoutTableGrid(el)" :key="ri" :style="layoutZoneTableRowTrStyle(el, ri)">
                           <td
                             v-for="(cell, ci) in tRow"
                             :key="ci"
@@ -534,7 +534,7 @@
                 </template>
                 <template v-if="selId === el.id">
                   <button
-                    v-for="pos in HANDLES"
+                    v-for="pos in handlesFor(el)"
                     :key="pos"
                     type="button"
                     class="hz"
@@ -583,9 +583,8 @@ import { computePaperLayout, type PaperLayoutMetrics } from "@/lib/report-templa
 import {
   clampZoneElement,
   clampZoneTableOuterSize,
+  computeZoneTableContentRowHeightsPx,
   ensureZoneTableGrid,
-  applyZoneTableOuterHeight,
-  minOuterHeightForZoneTableResizePx,
   minOuterSizeForZoneTable,
   zoneTableColumnInnerWidthsPx,
   flexJustifyAlignForAxes,
@@ -631,6 +630,12 @@ import { formatSqlFillTableCellPreview } from "@/lib/report-template/table-sql-f
 
 const HANDLES = ["nw", "n", "ne", "e", "se", "s", "sw", "w"] as const;
 type Handle = (typeof HANDLES)[number];
+const TABLE_HANDLES = ["e", "w"] as const;
+
+function handlesFor(el: LayoutZoneElement): readonly Handle[] {
+  if (el.type === "table") return TABLE_HANDLES;
+  return HANDLES;
+}
 type Zone = "header" | "footer" | "body";
 
 const props = defineProps<{
@@ -673,9 +678,14 @@ function layoutZoneTableColInnerWidthsPx(el: LayoutZoneElement): number[] {
   return zoneTableColumnInnerWidthsPx(el);
 }
 
-function layoutZoneTableRowTrStyle(el: LayoutZoneElement): Record<string, string> | undefined {
+function layoutZoneTableRowTrStyle(el: LayoutZoneElement, ri = 0): Record<string, string> | undefined {
   if (el.type !== "table") return undefined;
-  return { height: `${clampTableRowHeightPx(el.tableRowHeightPx)}px` };
+  const heights =
+    el.tableSqlFill?.enabled
+      ? Array.from({ length: Math.max(1, el.tableRows ?? 1) }, () => clampTableRowHeightPx(el.tableRowHeightPx))
+      : computeZoneTableContentRowHeightsPx(el);
+  const h = heights[ri] ?? clampTableRowHeightPx(el.tableRowHeightPx);
+  return { height: `${h}px`, minHeight: `${h}px` };
 }
 
 function formatLayoutSqlFillTableCell(el: LayoutZoneElement, ri: number, ci: number): string {
@@ -1195,39 +1205,35 @@ function ptrMove(ev: PointerEvent) {
     let w = resize.iw;
     let hh = resize.ih;
     const floorW = el.type === "table" ? minOuterSizeForZoneTable(el).w : 16;
-    const floorH = el.type === "table" ? minOuterHeightForZoneTableResizePx(el) : 16;
+    const floorH = el.type === "table" ? minOuterSizeForZoneTable(el).h : 16;
     const { w: bw, h: bh } = bandDims(resize.z);
-    const ceilH = el.type === "table" ? Math.max(floorH, bh) : Number.POSITIVE_INFINITY;
+    const isTable = el.type === "table";
     if (h.includes("e")) w = Math.max(floorW, Math.round(resize.iw + dx));
-    if (h.includes("s")) hh = Math.min(ceilH, Math.max(floorH, Math.round(resize.ih + dy)));
+    if (!isTable && h.includes("s")) hh = Math.max(floorH, Math.round(resize.ih + dy));
     if (h.includes("w")) {
       const nw = Math.max(floorW, Math.round(resize.iw - dx));
       x = Math.round(resize.ix + (resize.iw - nw));
       w = nw;
     }
-    if (h.includes("n")) {
-      const nh = Math.min(ceilH, Math.max(floorH, Math.round(resize.ih - dy)));
+    if (!isTable && h.includes("n")) {
+      const nh = Math.max(floorH, Math.round(resize.ih - dy));
       y = Math.round(resize.iy + (resize.ih - nh));
       hh = nh;
     }
-    if (ev.shiftKey && (h === "se" || h === "nw" || h === "ne" || h === "sw")) {
+    if (!isTable && ev.shiftKey && (h === "se" || h === "nw" || h === "ne" || h === "sw")) {
       const s = Math.max(w, hh, floorW, floorH);
-      const capped = el.type === "table" ? Math.min(s, ceilH) : s;
-      w = capped;
-      hh = capped;
+      w = s;
+      hh = s;
     }
-    Object.assign(el, { x, y, w, h: hh });
+    Object.assign(el, { x, y, w, h: isTable ? resize.ih : hh });
     const peers = peersForSnapZone(resize.z);
     if (!ev.shiftKey) {
       const snapped = magneticSnapResize(el.x, el.y, el.w, el.h, h, bw, bh, peers, el.id, floorW, floorH);
       Object.assign(el, snapped);
+      if (isTable) el.h = resize.ih;
     }
-    if (el.type === "table" && (h.includes("n") || h.includes("s") || (ev.shiftKey && /nw|ne|sw|se/.test(h)))) {
-      const maxH = Math.max(floorH, bh - Math.max(0, el.y));
-      applyZoneTableOuterHeight(el, el.h, maxH);
-      if (h.includes("n")) {
-        el.y = Math.round(resize.iy + (resize.ih - el.h));
-      }
+    if (isTable) {
+      clampZoneTableOuterSize(el, bw, Math.max(16, bh - Math.max(0, el.y)));
     }
     clampEl(el, resize.z);
     layoutSnapOverlay.value = ev.shiftKey

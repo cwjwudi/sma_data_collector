@@ -2,9 +2,11 @@
 
 import {
   clampTableRowHeightPx,
+  computeContentAwareTableRowHeightsPx,
   distributeTableColumnInnerWidthsPx,
   hydratePersistedTableColWidthsPx,
   REPORT_ZONE_TABLE_NODE_PADDING_PX,
+  sumTableRowHeightsPx,
   TABLE_ROW_HEIGHT_DEFAULT_PX,
   TABLE_ROW_HEIGHT_MIN_PX,
   TEMPLATE_TABLE_MAX_COLS,
@@ -474,18 +476,80 @@ export function zoneTableVerticalChromePx(): number {
   return p.top + p.bottom + shellBottomPadPx;
 }
 
+/** 估算用单元格文案（与编辑画布绑定标签口径接近） */
+export function formatZoneTableCellTextForHeightEstimate(cell: LayoutZoneTableCell | null | undefined): string {
+  if (!cell) return "";
+  if (cell.bindingKind === "opcua") {
+    const id = cell.opcuaNodeId.trim();
+    return id ? `⟨UA⟩ ${id}` : "⟨UA⟩";
+  }
+  if (cell.bindingKind === "sql") {
+    const q = cell.sqlText.trim();
+    return q ? `⟨SQL⟩ ${q}` : "⟨SQL⟩";
+  }
+  if (cell.bindingKind === "mongo") {
+    const col = cell.mongoQuery?.collection?.trim() || "";
+    return col ? `⟨Mongo⟩ ${col}` : "⟨Mongo⟩";
+  }
+  return (cell.text || "").trim();
+}
+
+/** 版式/页眉页脚静态表：按列宽估算各逻辑行高度 */
+export function computeZoneTableContentRowHeightsPx(
+  el: LayoutZoneElement,
+  cellTextAt?: (ri: number, ci: number) => string,
+): number[] {
+  if (el.type !== "table") return [];
+  ensureZoneTableGrid(el);
+  const rows = Math.max(1, el.tableRows ?? 3);
+  const minH = clampTableRowHeightPx(el.tableRowHeightPx);
+  let colWidths: number[] = [];
+  try {
+    colWidths = zoneTableColumnInnerWidthsPx(el);
+  } catch {
+    colWidths = [];
+  }
+  if (!colWidths.length) {
+    const cols = el.tableCols ?? 4;
+    const inner = Math.max(40, (el.w || 200) - 8);
+    colWidths = Array.from({ length: cols }, () => Math.floor(inner / cols));
+  }
+  const fontSize = Math.max(10, (el.fontSize || 12) * 0.85);
+  const grid = el.tableCells || [];
+  return computeContentAwareTableRowHeightsPx({
+    rowCount: rows,
+    colWidthsPx: colWidths,
+    fontSizePx: fontSize,
+    minRowHeightPx: minH,
+    lineHeight: 1.3,
+    paddingX: 10,
+    paddingY: 6,
+    cellTextAt: (ri, ci) => {
+      if (cellTextAt) return cellTextAt(ri, ci);
+      return formatZoneTableCellTextForHeightEstimate(grid[ri]?.[ci]);
+    },
+  });
+}
+
 /**
- * 版式区 / 页眉页脚表格外框的贴合高度：`.lppc-node` / `.hz-node` padding + 各行固定行高 + 表壳底 1px。
+ * 版式区 / 页眉页脚表格外框贴合高度：chrome + 各行内容换行感知高度。
  */
-export function intrinsicOuterHeightForZoneTable(el: LayoutZoneElement): number {
+export function intrinsicOuterHeightForZoneTable(
+  el: LayoutZoneElement,
+  cellTextAt?: (ri: number, ci: number) => string,
+): number {
   if (el.type !== "table") return 20;
   ensureZoneTableGrid(el);
   const rows = Math.max(1, el.tableRows ?? 3);
-  const rowH = clampTableRowHeightPx(el.tableRowHeightPx);
-  return zoneTableVerticalChromePx() + rows * rowH;
+  const minH = clampTableRowHeightPx(el.tableRowHeightPx);
+  if (el.tableSqlFill?.enabled) {
+    return zoneTableVerticalChromePx() + rows * minH;
+  }
+  const heights = computeZoneTableContentRowHeightsPx(el, cellTextAt);
+  return zoneTableVerticalChromePx() + sumTableRowHeightsPx(heights, minH, rows);
 }
 
-/** 版式表纵向缩放下限：按最小行高推算 */
+/** @deprecated 纵向拖外框已禁用；保留供测试兼容 */
 export function minOuterHeightForZoneTableResizePx(el: LayoutZoneElement): number {
   if (el.type !== "table") return 20;
   ensureZoneTableGrid(el);
@@ -493,7 +557,9 @@ export function minOuterHeightForZoneTableResizePx(el: LayoutZoneElement): numbe
   return Math.max(20, zoneTableVerticalChromePx() + rows * TABLE_ROW_HEIGHT_MIN_PX);
 }
 
-/** 按外框目标高度反推行高（版式表整体拖拽缩放） */
+/**
+ * @deprecated 表格不再通过纵向拖外框反推行高；请改 tableRowHeightPx 后 clamp。
+ */
 export function applyZoneTableOuterHeight(
   el: LayoutZoneElement,
   outerH: number,
@@ -506,7 +572,7 @@ export function applyZoneTableOuterHeight(
   const capped = Math.max(chrome + rows * TABLE_ROW_HEIGHT_MIN_PX, Math.min(Number(outerH) || 0, maxH));
   const rowH = clampTableRowHeightPx((capped - chrome) / rows);
   el.tableRowHeightPx = rowH;
-  el.h = chrome + rows * rowH;
+  el.h = intrinsicOuterHeightForZoneTable(el);
 }
 
 export function minOuterSizeForZoneTable(el: LayoutZoneElement): { w: number; h: number } {
@@ -528,17 +594,26 @@ export function clampZoneTableOuterSize(
   maxH = Number.POSITIVE_INFINITY,
 ): void {
   if (el.type !== "table") return;
-  if (el.tableSqlFill?.enabled && isVerticalSqlFill(el.tableSqlFill)) {
-    syncTableRowsForVerticalSqlSlots(el, () => ensureZoneTableGrid(el));
-  }
-  const ih = intrinsicOuterHeightForZoneTable(el);
-  const capH = Math.min(ih, maxH);
-  const { w: mw, h: mh } = minOuterSizeForZoneTable(el);
+  const { w: mw } = minOuterSizeForZoneTable(el);
   const loW = Math.max(20, Math.min(mw, maxW));
-  const loH = Math.max(20, Math.min(mh, maxH));
   if (el.w < loW) el.w = loW;
-  if (el.h < loH) el.h = loH;
-  if (el.h > capH) el.h = capH;
+
+  if (el.tableSqlFill?.enabled) {
+    if (isVerticalSqlFill(el.tableSqlFill)) {
+      syncTableRowsForVerticalSqlSlots(el, () => ensureZoneTableGrid(el));
+      const ih = intrinsicOuterHeightForZoneTable(el);
+      el.h = Math.max(20, Math.min(ih, maxH));
+      return;
+    }
+    const rowH = clampTableRowHeightPx(el.tableRowHeightPx);
+    const loH = Math.max(20, Math.min(zoneTableVerticalChromePx() + 2 * rowH, maxH));
+    if (el.h < loH) el.h = loH;
+    if (el.h > maxH) el.h = maxH;
+    return;
+  }
+
+  const ih = intrinsicOuterHeightForZoneTable(el);
+  el.h = Math.max(20, Math.min(ih, maxH));
 }
 
 export function defaultLayoutZoneElement(type: LayoutControlType): Omit<LayoutZoneElement, "id"> {

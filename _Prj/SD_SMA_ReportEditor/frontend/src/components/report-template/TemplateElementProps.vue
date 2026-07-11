@@ -276,8 +276,8 @@
             </div>
           </div>
           <div class="lpep-dim-field">
-            <span class="lpep-dim-title">行高（px）</span>
-            <div class="lpep-dim-stepper" role="group" aria-label="表格行高">
+            <span class="lpep-dim-title">最小行高（px）</span>
+            <div class="lpep-dim-stepper" role="group" aria-label="表格最小行高">
               <button
                 type="button"
                 class="lpep-dim-btn"
@@ -324,14 +324,16 @@
                 ? "纵表行数 = 1 行表头 + 字段槽位数；增减行数会增删画布「名称」列下拉行。列数固定为 2。"
                 : tplSqlFillEnabled
                   ? "列数、行高修改后即应用到画布（无需另行确认）。数据库填充开启时行数随预览查询结果自动同步；单元格静态文字与绑定均不在此编辑；可视化模式下请在画布第一行选择输出列。"
-                  : "行数、列数、行高修改后即应用到画布（无需另行确认）。单击单元格可设置填充色、输入文字或绑定 OPC UA / SQL。"
+                  : "行数、列数修改后即应用到画布。最小行高为各行下限；单元格换行时该行会抬高，外框自动贴合。表格仅可左右改宽。绑定内容超出本页时，导出预览将跨页续排。"
             }}
           </p>
         <p v-if="!hasTableCellPicked" class="lpep-hint-muted">
           在画布上单击单元格后，可在此设置该单元格的填充色。
         </p>
         <p v-if="templateTableCellMetric" class="lpep-table-metric">
-          单元格高度（推算）：高约 <strong>{{ formatMetricPx(templateTableCellMetric.cellH) }}</strong> px
+          最小行高 <strong>{{ formatMetricPx(tableRowHeightModel) }}</strong> px；
+          外框均分行高约 <strong>{{ formatMetricPx(templateTableCellMetric.cellH) }}</strong> px
+          <span v-if="tableContentMaxRowH != null">；当前内容最高行约 <strong>{{ formatMetricPx(tableContentMaxRowH) }}</strong> px</span>
         </p>
         <template v-if="hasTableCellPicked && activeTableCell">
           <div class="lpep-table-cell-fields" :key="'tc-' + editCellRow + '-' + editCellCol">
@@ -602,6 +604,7 @@ import {
   TABLE_ROW_HEIGHT_MAX_PX,
   TABLE_ROW_HEIGHT_MIN_PX,
 } from "@/lib/report-template/table-cell-metrics";
+import { computeTemplateTableContentRowHeightsPx } from "@/lib/report-template/table-content-layout";
 import TableColumnWidthVisualEditor from "@/components/report-template/TableColumnWidthVisualEditor.vue";
 import TableCellFillPicker from "@/components/report-template/TableCellFillPicker.vue";
 import ParameterBindingFields from "@/components/report-template/ParameterBindingFields.vue";
@@ -1014,6 +1017,13 @@ const templateTableCellMetric = computed(() => {
     colCount: el.tableCols ?? 4,
     nodePadding: REPORT_TEMPLATE_TABLE_NODE_PADDING_PX,
   });
+});
+
+const tableContentMaxRowH = computed((): number | null => {
+  if (props.el.type !== "table" || props.el.tableSqlFill?.enabled) return null;
+  const heights = computeTemplateTableContentRowHeightsPx(props.el);
+  if (!heights.length) return null;
+  return Math.max(...heights);
 });
 
 const tableRowHeightModel = computed({
