@@ -1,12 +1,12 @@
 {
   "version": "0.3.21",
-  "releasedAt": "2026-07-11T06:25:53.938Z",
+  "releasedAt": "2026-07-11T06:32:12.338Z",
   "notes": "编辑模版/版式有未保存更改时，返回列表或切换页面会提示是否保存",
   "platforms": {
     "win32-x64": {
       "url": "Report Editor AI-Setup-0.3.21-x64.exe",
-      "sha256": "",
-      "size": 0
+      "sha256": "bc5dd842208cca2950c35adaf176ec191f945178d3e104212091b6f67dfa0acb",
+      "size": 145438619
     },
     "darwin-arm64": {
       "url": "Report Editor AI-0.3.21-arm64.dmg",
