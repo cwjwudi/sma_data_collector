@@ -1,12 +1,12 @@
 {
   "version": "0.3.25",
-  "releasedAt": "2026-07-11T07:46:21.632Z",
+  "releasedAt": "2026-07-11T07:50:49.629Z",
   "notes": "修复模版管理缩略图因标签绑定数组反复重建导致卡死",
   "platforms": {
     "win32-x64": {
       "url": "Report Editor AI-Setup-0.3.25-x64.exe",
-      "sha256": "",
-      "size": 0
+      "sha256": "2fe6da321d0933864d99e3d0c700a0cf43e32d71dce76b200a1c754b12d8beb4",
+      "size": 145443528
     },
     "darwin-arm64": {
       "url": "Report Editor AI-0.3.25-arm64.dmg",
