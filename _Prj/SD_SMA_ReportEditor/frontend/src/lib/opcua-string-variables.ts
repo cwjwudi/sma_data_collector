@@ -64,8 +64,6 @@ export type SavedOpcReadResult = {
   dataType?: string;
 };
 
-import { apiFetch } from "@/api/client.js";
-
 export async function readSavedOpcNodeValue(
   serverId: string,
   nodeId: string,
