@@ -1,12 +1,12 @@
 {
   "version": "0.3.36",
-  "releasedAt": "2026-07-11T11:07:50.500Z",
+  "releasedAt": "2026-07-11T11:48:11.025Z",
   "notes": "应用图标四角黑底改为透明",
   "platforms": {
     "win32-x64": {
       "url": "Report Editor AI-Setup-0.3.36-x64.exe",
-      "sha256": "",
-      "size": 0
+      "sha256": "a1e4186c1f957030a0f95508a5cddd7c4ea9d689a77127978cbfa90e8c278c23",
+      "size": 145399669
     },
     "darwin-arm64": {
       "url": "Report Editor AI-0.3.36-arm64.dmg",
