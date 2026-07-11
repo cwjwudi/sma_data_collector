@@ -109,6 +109,31 @@ describe("hydrateTemplateElement", () => {
     });
     expect((txt as { tableColWidthsPx?: number[] }).tableColWidthsPx).toBeUndefined();
   });
+
+  it("normalizes stale vertical SQL tableRows/h on hydrate (legacy upgrade)", () => {
+    const tb = hydrateTemplateElement({
+      id: "vt",
+      type: "table",
+      tableRows: 30,
+      tableCols: 2,
+      tableRowHeightPx: 22,
+      h: 700,
+      tableSqlFill: {
+        enabled: true,
+        fillMode: "visual",
+        layoutMode: "vertical",
+        visualSource: {
+          connectionId: "c1",
+          table: "demo",
+          engine: "mysql",
+          columns: ["name", "value", ""],
+          database: "",
+        },
+      },
+    });
+    expect(tb.tableRows).toBe(4);
+    expect(tb.h).toBeLessThan(700);
+  });
 });
 
 describe("clampElementToLayout", () => {

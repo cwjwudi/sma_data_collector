@@ -26,7 +26,9 @@ import {
   ensureVisualOutputColumnSlots,
   hydrateSqlParamBindings,
   hydrateTableSqlFill,
+  isVerticalSqlFill,
 } from "@/lib/report-template/table-sql-fill";
+import { syncTableRowsForVerticalSqlSlots } from "@/lib/report-template/table-sql-visual-compile";
 import { normalizeDecimalPlaces } from "@/lib/report-template/numeric-display";
 import { hydrateMongoQueryOptional, type MongoQueryConfig } from "@/lib/report-template/mongo-query";
 
@@ -496,6 +498,9 @@ export function clampZoneTableOuterSize(
   maxH = Number.POSITIVE_INFINITY,
 ): void {
   if (el.type !== "table") return;
+  if (el.tableSqlFill?.enabled && isVerticalSqlFill(el.tableSqlFill)) {
+    syncTableRowsForVerticalSqlSlots(el, () => ensureZoneTableGrid(el));
+  }
   const ih = intrinsicOuterHeightForZoneTable(el);
   const capH = Math.min(ih, maxH);
   const { w: mw, h: mh } = minOuterSizeForZoneTable(el);
@@ -686,6 +691,7 @@ export function hydrateLayoutZoneElement(raw: Partial<LayoutZoneElement>): Layou
     merged.tableColBgColors = hydrateTableColBgColors(raw.tableColBgColors, merged.tableCols ?? 4);
     merged.tableSqlFill = hydrateTableSqlFill(raw.tableSqlFill ?? merged.tableSqlFill);
     ensureZoneTableGrid(merged);
+    syncTableRowsForVerticalSqlSlots(merged, () => ensureZoneTableGrid(merged));
   } else {
     merged.tableRows = undefined;
     merged.tableCols = undefined;

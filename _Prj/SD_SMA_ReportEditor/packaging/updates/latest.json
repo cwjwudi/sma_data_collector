@@ -1,15 +1,15 @@
 {
-  "version": "0.3.16",
-  "releasedAt": "2026-07-11T05:05:11.968Z",
-  "notes": "AI 版默认安装目录改为 Programs\\\\ReportEditorAI，避免覆盖原版",
+  "version": "0.3.17",
+  "releasedAt": "2026-07-11T05:34:51.640Z",
+  "notes": "打开模版时自动收齐老纵表偏高的 tableRows/外框高度",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.16-x64.exe",
-      "sha256": "032b7df637137f56e7dbcd5299106aea12726eae8e155e67831bccc4008ffa12",
-      "size": 145224025
+      "url": "Report Editor AI-Setup-0.3.17-x64.exe",
+      "sha256": "39bb76031f0962bea08e6423aa1467d0baf5964cc707077c0e2cc2da8130e767",
+      "size": 145222882
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.16-arm64.dmg",
+      "url": "Report Editor AI-0.3.17-arm64.dmg",
       "sha256": "",
       "size": 0
     }

@@ -84,6 +84,7 @@ import {
   hydrateTableSqlFill,
   isVerticalSqlFill,
 } from "./table-sql-fill";
+import { syncTableRowsForVerticalSqlSlots } from "./table-sql-visual-compile";
 import { hydrateMongoQueryOptional, type MongoQueryConfig } from "./mongo-query";
 
 /** 电子签名阅览：水印描摹 / 手写图 / 二者叠加 */
@@ -417,6 +418,8 @@ export function clampTableElementOuterSize(
 
   if (el.tableSqlFill?.enabled) {
     if (isVerticalSqlFill(el.tableSqlFill)) {
+      // 老模版可能残留偏大的 tableRows/h；先按字段槽收齐，再贴合外框
+      syncTableRowsForVerticalSqlSlots(el, () => ensureTableGrid(el));
       // 纵表：外框严格贴合全部行（含增行后），避免矮外框裁掉末行
       const ih = intrinsicOuterHeightForTemplateTable(el);
       const nextH = Math.max(20, Math.min(ih, maxH));
@@ -699,6 +702,8 @@ export function hydrateTemplateElement(raw: Partial<TemplateElement>): TemplateE
     merged.tableColBgColors = hydrateTableColBgColors(raw.tableColBgColors, merged.tableCols ?? 4);
     merged.tableSqlFill = hydrateTableSqlFill(raw.tableSqlFill ?? merged.tableSqlFill);
     ensureTableGrid(merged);
+    // 打开/迁移时收齐纵表物理行数与外框高度（避免旧 tableRows 撑出空白底）
+    syncTableRowsForVerticalSqlSlots(merged, () => ensureTableGrid(merged));
   } else {
     delete merged.tableRowHeightPx;
     delete merged.tableColWidthsPx;

@@ -1172,8 +1172,9 @@ async function boot() {
     if (isLoadStale(token)) return false;
     if (layoutPresetsAll.value.length) {
       resyncTemplateBoundPresets(editing.value, layoutPresetsAll.value);
-      reclamp();
     }
+    // 始终 reclamp：收齐老纵表残留的偏大 tableRows/h（不依赖是否有版式列表）
+    reclamp();
     selId.value = null;
     resetTplEditHistory();
     refreshBindingsAfterOpen();

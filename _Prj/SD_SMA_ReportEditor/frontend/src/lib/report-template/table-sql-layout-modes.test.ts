@@ -267,6 +267,31 @@ describe("horizontal blank + sequence columns", () => {
     expect(el.h).toBeGreaterThanOrEqual(5 * 22);
   });
 
+  it("syncTableRowsForVerticalSqlSlots shrinks stale tall tableRows from legacy templates", () => {
+    const fill = hydrateTableSqlFill({
+      enabled: true,
+      fillMode: "visual",
+      layoutMode: "vertical",
+      visualSource: {
+        connectionId: "c1",
+        table: "t",
+        engine: "mysql",
+        columns: ["a", "b", ""],
+        database: "",
+      },
+    });
+    const el = {
+      type: "table" as const,
+      tableRows: 28,
+      tableRowHeightPx: 22,
+      h: 28 * 22 + 20,
+      tableSqlFill: fill,
+    };
+    syncTableRowsForVerticalSqlSlots(el);
+    expect(el.tableRows).toBe(4); // 1 header + 3 slots
+    expect(el.h).toBeLessThan(28 * 22);
+  });
+
   it("applyVisualSqlOutputColumnPick sets sequence role", () => {
     const fill = hydrateTableSqlFill({
       enabled: true,
