@@ -1,15 +1,15 @@
 {
-  "version": "0.3.33",
-  "releasedAt": "2026-07-11T10:23:39.695Z",
-  "notes": "Report Editor AI 0.3.33\n\n- 绑定报警标明页面、坐标与控件 ID（不再用 {{value}} 当名称）\n- 仪表盘点击模版名可跳转并自动选中问题控件",
+  "version": "0.3.34",
+  "releasedAt": "2026-07-11T10:43:18.119Z",
+  "notes": "Report Editor AI 0.3.34\n\n- 云端同步：未填账号密码时提示更清晰\n- 去掉 Electron IPC 原始错误包装文案",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.33-x64.exe",
-      "sha256": "aa5323af3d3e83d87cb315baf71c29a71a09b733243ec1cde5e6dfb79c55d1ee",
-      "size": 145478695
+      "url": "Report Editor AI-Setup-0.3.34-x64.exe",
+      "sha256": "3248b6924286247f02e0813ef9675851c9968417046d63bee9e13b84914a93dc",
+      "size": 145479251
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.33-arm64.dmg",
+      "url": "Report Editor AI-0.3.34-arm64.dmg",
       "sha256": "",
       "size": 0
     }

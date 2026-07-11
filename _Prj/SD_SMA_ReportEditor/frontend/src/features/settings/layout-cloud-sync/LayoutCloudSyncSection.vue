@@ -18,21 +18,39 @@
       <div class="sync-form">
         <label class="update-field">
           <span class="update-field-label">用户名</span>
-          <input v-model="username" type="text" class="update-input" autocomplete="username" :disabled="busy" />
-        </label>
-        <label class="update-field">
-          <span class="update-field-label">密码</span>
           <input
-            v-model="password"
-            type="password"
+            ref="usernameInputRef"
+            v-model="username"
+            type="text"
             class="update-input"
-            autocomplete="current-password"
+            name="username"
+            autocomplete="username"
             :disabled="busy"
           />
         </label>
         <label class="update-field">
+          <span class="update-field-label">密码</span>
+          <input
+            ref="passwordInputRef"
+            v-model="password"
+            type="password"
+            class="update-input"
+            name="password"
+            autocomplete="current-password"
+            :disabled="busy"
+            @keydown.enter.prevent="login"
+          />
+        </label>
+        <label class="update-field">
           <span class="update-field-label">确认密码（注册时填写）</span>
-          <input v-model="passwordConfirm" type="password" class="update-input" :disabled="busy" />
+          <input
+            v-model="passwordConfirm"
+            type="password"
+            class="update-input"
+            name="password-confirm"
+            autocomplete="new-password"
+            :disabled="busy"
+          />
         </label>
       </div>
       <div class="settings-actions update-actions">
@@ -145,6 +163,8 @@ const config = ref({
 const username = ref('')
 const password = ref('')
 const passwordConfirm = ref('')
+const usernameInputRef = ref<HTMLInputElement | null>(null)
+const passwordInputRef = ref<HTMLInputElement | null>(null)
 const portalDraft = ref('')
 const skipTlsDraft = ref(false)
 const busy = ref(false)
@@ -155,6 +175,26 @@ const msgTone = ref<'ok' | 'warn' | 'err' | ''>('')
 function setMsg(text: string, tone: 'ok' | 'warn' | 'err' | '' = '') {
   msg.value = text
   msgTone.value = tone
+}
+
+/** Electron IPC 错误常带 “Error invoking remote method …”，截成可读中文 */
+function formatSyncError(e: unknown): string {
+  const raw = e instanceof Error ? e.message : String(e || '')
+  const m = raw.match(/Error invoking remote method '[^']+':\s*(?:Error:\s*)?(.*)$/i)
+  const core = (m?.[1] || raw).trim()
+  return core || '操作失败'
+}
+
+/** 密码管理器自动填充时，偶发视觉已填但 v-model 仍空：提交前从 DOM 回读 */
+function syncCredsFromDom() {
+  const uEl = usernameInputRef.value
+  const pEl = passwordInputRef.value
+  if (uEl && typeof uEl.value === 'string' && uEl.value.trim() && !username.value.trim()) {
+    username.value = uEl.value
+  }
+  if (pEl && typeof pEl.value === 'string' && pEl.value && !password.value) {
+    password.value = pEl.value
+  }
 }
 
 async function loadConfig() {
@@ -168,7 +208,7 @@ async function loadConfig() {
       username.value = config.value.username
     }
   } catch (e) {
-    setMsg(e instanceof Error ? e.message : String(e), 'err')
+    setMsg(formatSyncError(e), 'err')
   }
 }
 
@@ -184,7 +224,7 @@ async function savePortal() {
     })
     setMsg('设置已保存。', 'ok')
   } catch (e) {
-    setMsg(e instanceof Error ? e.message : String(e), 'err')
+    setMsg(formatSyncError(e), 'err')
   } finally {
     busy.value = false
   }
@@ -193,19 +233,26 @@ async function savePortal() {
 async function login() {
   const api = window.electronAPI
   if (!api?.layoutSyncLogin) return
+  syncCredsFromDom()
+  const u = username.value.trim()
+  const p = password.value
+  if (!u || !p) {
+    setMsg('请先填写用户名和密码后再登录。', 'warn')
+    return
+  }
   busy.value = true
   phase.value = 'login'
   setMsg('')
   try {
     const res = await api.layoutSyncLogin({
-      username: username.value.trim(),
-      password: password.value,
+      username: u,
+      password: p,
     })
     password.value = ''
     await loadConfig()
-    setMsg(`已登录为 ${res.username || username.value}。`, 'ok')
+    setMsg(`已登录为 ${res.username || u}。`, 'ok')
   } catch (e) {
-    setMsg(e instanceof Error ? e.message : String(e), 'err')
+    setMsg(formatSyncError(e), 'err')
   } finally {
     busy.value = false
     phase.value = 'idle'
@@ -215,6 +262,11 @@ async function login() {
 async function register() {
   const api = window.electronAPI
   if (!api?.layoutSyncRegister) return
+  syncCredsFromDom()
+  if (!username.value.trim() || !password.value) {
+    setMsg('注册前请填写用户名和密码。', 'warn')
+    return
+  }
   if (!passwordConfirm.value) {
     setMsg('注册时请填写确认密码。', 'warn')
     return
@@ -233,7 +285,7 @@ async function register() {
     await loadConfig()
     setMsg(`注册并登录成功：${res.username || username.value}。`, 'ok')
   } catch (e) {
-    setMsg(e instanceof Error ? e.message : String(e), 'err')
+    setMsg(formatSyncError(e), 'err')
   } finally {
     busy.value = false
     phase.value = 'idle'
@@ -278,7 +330,7 @@ async function downloadDefaults() {
     if (!res.ok) throw new Error(res.error || '下载失败')
     await importCloudAssets(res.layout_presets || [], res.templates || [])
   } catch (e) {
-    setMsg(e instanceof Error ? e.message : String(e), 'err')
+    setMsg(formatSyncError(e), 'err')
   } finally {
     busy.value = false
     phase.value = 'idle'
@@ -296,7 +348,7 @@ async function downloadMine() {
     if (!res.ok) throw new Error(res.error || '下载失败')
     await importCloudAssets(res.layout_presets || [], res.templates || [])
   } catch (e) {
-    setMsg(e instanceof Error ? e.message : String(e), 'err')
+    setMsg(formatSyncError(e), 'err')
   } finally {
     busy.value = false
     phase.value = 'idle'
@@ -325,7 +377,7 @@ async function upload() {
     if (res.layoutCount) parts.push(`${res.layoutCount} 条版式`)
     setMsg(`已上传 ${parts.join('、')} 到云端。`, 'ok')
   } catch (e) {
-    setMsg(e instanceof Error ? e.message : String(e), 'err')
+    setMsg(formatSyncError(e), 'err')
   } finally {
     busy.value = false
     phase.value = 'idle'
@@ -380,7 +432,7 @@ async function uploadFullConfig() {
     const kb = Math.max(1, Math.round(bytes.length / 1024))
     setMsg(`整机配置备份已上传到云端（约 ${kb} KB，含数据源、模版、版式、签名与生成报表设置）。`, 'ok')
   } catch (e) {
-    setMsg(e instanceof Error ? e.message : String(e), 'err')
+    setMsg(formatSyncError(e), 'err')
   } finally {
     busy.value = false
     phase.value = 'idle'
@@ -431,7 +483,7 @@ async function restoreFullConfig() {
     const stamp = dl.updatedAt ? `（云端备份时间：${new Date(dl.updatedAt).toLocaleString()}）` : ''
     setMsg(`已用云端备份恢复整机配置${stamp}。切换页面即可查看，无需重启。`, 'ok')
   } catch (e) {
-    setMsg(e instanceof Error ? e.message : String(e), 'err')
+    setMsg(formatSyncError(e), 'err')
   } finally {
     busy.value = false
     phase.value = 'idle'

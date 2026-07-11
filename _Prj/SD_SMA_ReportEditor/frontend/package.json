@@ -1,6 +1,6 @@
 {
   "name": "sd-sma-report-editor-ai",
-  "version": "0.3.33",
+  "version": "0.3.34",
   "description": "Report Editor AI — 报表编辑器 AI 版（Electron + FastAPI）",
   "author": "B&R Team",
   "private": true,
