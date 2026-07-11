@@ -22,6 +22,8 @@ def test_empty_opc_binding():
                     "bindingKind": "opcua",
                     "opcuaNodeId": "",
                     "text": "批次号",
+                    "x": 120,
+                    "y": 48,
                 }
             ]
         ]
@@ -31,7 +33,33 @@ def test_empty_opc_binding():
     assert "正文第1页" in hit["message"]
     assert "数据参数" in hit["message"]
     assert "批次号" in hit["message"]
+    assert "坐标约(120,48)" in hit["message"]
+    assert "ID=e1" in hit["message"]
     assert hit["meta"]["location"] == "正文第1页"
+    assert hit["meta"]["elementId"] == "e1"
+
+
+def test_placeholder_text_not_used_as_name():
+    raw = {
+        "coverElements": [
+            {
+                "id": "p-cover-1",
+                "type": "parameter",
+                "bindingKind": "opcua",
+                "opcuaNodeId": "",
+                "text": "{{value}}",
+                "x": 200,
+                "y": 80,
+            }
+        ]
+    }
+    issues = scan_binding_config(raw, asset_kind="template", asset_id="t1", asset_name="审计")
+    hit = next(i for i in issues if i["kind"] == "opc_binding_empty_node")
+    assert "封面画布" in hit["message"]
+    assert "{{value}}" not in hit["message"]
+    assert "坐标约(200,80)" in hit["message"]
+    assert "ID=p-cover-1" in hit["message"]
+    assert "封面画布" in (hit.get("hint") or "")
 
 
 def test_empty_opc_binding_on_page2_header():
@@ -44,6 +72,8 @@ def test_empty_opc_binding_on_page2_header():
                 "bindingKind": "opcua",
                 "opcuaNodeId": "",
                 "text": "页眉参数",
+                "x": 10,
+                "y": 5,
             }
         ],
     }
@@ -61,6 +91,8 @@ def test_table_cell_opc_location():
                     "id": "tbl1",
                     "type": "table",
                     "text": "配方表",
+                    "x": 40,
+                    "y": 100,
                     "tableCells": [
                         [
                             {"text": "a", "bindingKind": "none", "opcuaNodeId": "", "sqlText": "", "sqlParams": []},

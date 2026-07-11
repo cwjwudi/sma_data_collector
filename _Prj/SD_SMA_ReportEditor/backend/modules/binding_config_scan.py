@@ -26,6 +26,22 @@ _CONTROL_TYPE_ZH: dict[str, str] = {
     "date": "日期",
 }
 
+# 占位文案（如 {{value}}）不能当作控件显示名
+_PLACEHOLDER_NAME_RE = re.compile(r"^\{\{[^}]+\}\}$")
+
+_SHEET_ARRAYS: tuple[tuple[str, str, str], ...] = (
+    ("coverElements", "封面画布", "cover"),
+    ("backElements", "末页画布", "back"),
+    ("headerElements", "页眉", "header"),
+    ("footerElements", "页脚", "footer"),
+    ("coverHeaderElements", "封面页眉", "coverHeader"),
+    ("coverFooterElements", "封面页脚", "coverFooter"),
+    ("coverBodyZoneElements", "封面版式区", "coverZone"),
+    ("backHeaderElements", "末页页眉", "backHeader"),
+    ("backFooterElements", "末页页脚", "backFooter"),
+    ("backBodyZoneElements", "末页版式区", "backZone"),
+)
+
 
 def looks_like_opc_node_id(node_id: str) -> bool:
     s = (node_id or "").strip()
@@ -46,20 +62,43 @@ def _control_type_zh(type_name: str) -> str:
     return _CONTROL_TYPE_ZH.get(t, t or "控件")
 
 
+def _control_display_name(el: dict[str, Any]) -> str:
+    """可读显示名；过滤 {{value}} 等占位符。"""
+    name = _short_text(str(el.get("text") or ""))
+    if not name:
+        return ""
+    if _PLACEHOLDER_NAME_RE.match(name) or name.lower() in ("{{value}}", "value"):
+        return ""
+    return name
+
+
+def _fmt_xy(el: dict[str, Any]) -> str:
+    try:
+        x = int(round(float(el.get("x") or 0)))
+        y = int(round(float(el.get("y") or 0)))
+    except (TypeError, ValueError):
+        return ""
+    return f"坐标约({x},{y})"
+
+
 def describe_element_location(path: str) -> str:
-    """把 JSON 路径转成用户可读位置，如「正文第2页」「页眉」「封面」。"""
+    """把 JSON 路径转成用户可读位置，如「正文第2页」「页眉」「封面画布」。"""
     p = path or ""
     m = re.search(r"bodyPages\[(\d+)\]", p)
     if m:
         return f"正文第{int(m.group(1)) + 1}页"
+    if re.search(r"(^|\.)coverElements(\[|$)", p):
+        return "封面画布"
+    if re.search(r"(^|\.)backElements(\[|$)", p):
+        return "末页画布"
     if "coverBodyZoneElements" in p:
-        return "封面"
+        return "封面版式区"
     if "coverHeaderElements" in p:
         return "封面页眉"
     if "coverFooterElements" in p:
         return "封面页脚"
     if "backBodyZoneElements" in p:
-        return "末页"
+        return "末页版式区"
     if "backHeaderElements" in p:
         return "末页页眉"
     if "backFooterElements" in p:
@@ -69,30 +108,133 @@ def describe_element_location(path: str) -> str:
     if re.search(r"(^|\.)footerElements(\[|$)", p):
         return "页脚"
     if re.search(r"(^|\.)elements(\[|$)", p):
-        return "正文"
+        return "正文第1页"
+    if "coverLayoutSnapshot" in p:
+        return "封面版式快照"
+    if "backLayoutSnapshot" in p:
+        return "末页版式快照"
+    if "layoutSnapshot" in p:
+        return "正文版式快照"
     if p.startswith("zones.") or ".zones." in p:
         return "版式区"
-    return "模版"
+    if p:
+        # 仍给出路径前缀，避免只显示「模版」无法定位
+        top = re.split(r"[.\[]", p, maxsplit=1)[0] or p
+        return f"未识别区（{top}）"
+    return "未知位置"
 
 
-def describe_control_label(el: dict[str, Any], path: str) -> str:
-    """生成「正文第1页 · 数据参数「批次号」」这类控件标签。"""
-    loc = describe_element_location(path)
-    et = str(el.get("type") or "")
-    type_zh = _control_type_zh(et)
-    name = _short_text(str(el.get("text") or ""))
-    if name:
-        return f"{loc} · {type_zh}「{name}」"
+def resolve_element_placement(
+    raw: dict[str, Any] | None,
+    el: dict[str, Any],
+    fallback_path: str,
+) -> dict[str, Any]:
+    """按控件 id 在模版结构中反查所在页，比 walk 路径更可靠。"""
     eid = str(el.get("id") or "").strip()
+    et = str(el.get("type") or "")
+    base = {
+        "path": fallback_path,
+        "elementId": eid,
+        "elementType": et,
+        "x": el.get("x"),
+        "y": el.get("y"),
+        "w": el.get("w"),
+        "h": el.get("h"),
+        "sheet": "",
+        "bodyPageIndex": None,
+        "location": describe_element_location(fallback_path),
+    }
+    if not raw or not eid:
+        return base
+
+    def _contains(arr: Any) -> bool:
+        if not isinstance(arr, list):
+            return False
+        return any(isinstance(e, dict) and str(e.get("id") or "") == eid for e in arr)
+
+    pages = raw.get("bodyPages")
+    if isinstance(pages, list):
+        for i, page in enumerate(pages):
+            if _contains(page):
+                base.update(
+                    {
+                        "location": f"正文第{i + 1}页",
+                        "sheet": "body",
+                        "bodyPageIndex": i,
+                        "path": f"bodyPages[{i}]",
+                    }
+                )
+                return base
+
+    # 兼容旧结构：elements 即正文第 1 页
+    if _contains(raw.get("elements")):
+        base.update(
+            {
+                "location": "正文第1页",
+                "sheet": "body",
+                "bodyPageIndex": 0,
+                "path": "elements",
+            }
+        )
+        return base
+
+    for key, loc, sheet in _SHEET_ARRAYS:
+        if _contains(raw.get(key)):
+            base.update({"location": loc, "sheet": sheet, "path": key})
+            return base
+
+    return base
+
+
+def describe_control_label(el: dict[str, Any], path: str, placement: dict[str, Any] | None = None) -> str:
+    """生成「正文第1页 · 数据参数 · 坐标约(120,40) · ID=…」这类控件标签。"""
+    place = placement or {
+        "location": describe_element_location(path),
+        "elementId": str(el.get("id") or ""),
+    }
+    loc = str(place.get("location") or describe_element_location(path))
+    type_zh = _control_type_zh(str(el.get("type") or ""))
+    parts = [loc, type_zh]
+    name = _control_display_name(el)
+    if name:
+        parts[-1] = f"{type_zh}「{name}」"
+    xy = _fmt_xy(el)
+    if xy:
+        parts.append(xy)
+    eid = str(place.get("elementId") or el.get("id") or "").strip()
     if eid:
-        short_id = eid if len(eid) <= 10 else eid[:8] + "…"
-        return f"{loc} · {type_zh}（{short_id}）"
-    return f"{loc} · {type_zh}"
+        parts.append(f"ID={eid}")
+    return " · ".join(parts)
 
 
-def describe_table_cell_label(el: dict[str, Any], path: str, row: int, col: int) -> str:
-    base = describe_control_label(el, path)
+def describe_table_cell_label(
+    el: dict[str, Any],
+    path: str,
+    row: int,
+    col: int,
+    placement: dict[str, Any] | None = None,
+) -> str:
+    base = describe_control_label(el, path, placement)
     return f"{base} · 单元格[第{row + 1}行,第{col + 1}列]"
+
+
+def _binding_fix_hint(placement: dict[str, Any], *, kind: str = "opc") -> str:
+    loc = str(placement.get("location") or "对应页面")
+    xy = ""
+    try:
+        x = int(round(float(placement.get("x") or 0)))
+        y = int(round(float(placement.get("y") or 0)))
+        xy = f"，坐标约 ({x}, {y})"
+    except (TypeError, ValueError):
+        pass
+    eid = str(placement.get("elementId") or "").strip()
+    id_part = f"；控件 ID：{eid}" if eid else ""
+    if kind == "opc":
+        return (
+            f"打开模版 → 切换到「{loc}」{xy}，选中该数据参数/控件并绑定 OPC 节点；"
+            f"或将绑定方式改回「无绑定」。仪表盘点击模版名可跳转并自动选中{id_part}。"
+        )
+    return f"打开模版 → 切换到「{loc}」{xy} 检查该控件配置{id_part}。"
 
 
 def _param_indices(text: str) -> list[int]:
@@ -124,6 +266,7 @@ def _check_opc_node(
     path: str,
     binding_kind: str | None,
     node_id: str,
+    hint_empty: str = "",
 ) -> list[dict[str, Any]]:
     if (binding_kind or "").strip() != "opcua":
         return []
@@ -135,7 +278,8 @@ def _check_opc_node(
                 severity="error",
                 kind=kind_empty,
                 message=f"{label}：已选 OPC UA 但未填写节点 ID",
-                hint="请选择 OPC 节点，或将绑定方式改回「无绑定」。",
+                hint=hint_empty
+                or "请选择 OPC 节点，或将绑定方式改回「无绑定」。",
                 meta={"path": path},
             )
         ]
@@ -532,19 +676,22 @@ def _check_table_sql_fill(
     return issues
 
 
-def _check_element(make: IssueBuilder, *, path: str, el: dict[str, Any]) -> list[dict[str, Any]]:
+def _check_element(
+    make: IssueBuilder,
+    *,
+    path: str,
+    el: dict[str, Any],
+    raw: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
     if not isinstance(el, dict):
         return []
     issues: list[dict[str, Any]] = []
     et = str(el.get("type") or "")
     bk = str(el.get("bindingKind") or "none")
-    label = describe_control_label(el, path)
-    loc_meta = {
-        "path": path,
-        "location": describe_element_location(path),
-        "elementType": et,
-        "elementId": str(el.get("id") or ""),
-    }
+    placement = resolve_element_placement(raw, el, path)
+    label = describe_control_label(el, path, placement)
+    loc_meta = dict(placement)
+    opc_hint = _binding_fix_hint(placement, kind="opc")
 
     if et in ("parameter", "text", "box", "chart") or bk in ("opcua", "sql", "mongo"):
         if bk == "opcua":
@@ -553,9 +700,10 @@ def _check_element(make: IssueBuilder, *, path: str, el: dict[str, Any]) -> list
                 kind_empty="opc_binding_empty_node",
                 kind_bad="opc_node_id_malformed",
                 label=label,
-                path=path,
+                path=str(placement.get("path") or path),
                 binding_kind=bk,
                 node_id=str(el.get("opcuaNodeId") or ""),
+                hint_empty=opc_hint,
             )
             for it in opc_issues:
                 meta = dict(it.get("meta") or {})
@@ -566,7 +714,6 @@ def _check_element(make: IssueBuilder, *, path: str, el: dict[str, Any]) -> list
             sql = str(el.get("sqlText") or "").strip()
             visual = el.get("scalarSqlVisual") if isinstance(el.get("scalarSqlVisual"), dict) else None
             mode = el.get("scalarSqlFillMode")
-            # 可视化标量：无 sqlText 时若 visual 也不完整则报空
             if not sql and mode == "visual" and visual:
                 if not str(visual.get("connectionId") or "").strip() or not str(visual.get("table") or "").strip():
                     issues.append(
@@ -575,7 +722,7 @@ def _check_element(make: IssueBuilder, *, path: str, el: dict[str, Any]) -> list
                             severity="error",
                             kind="sql_binding_empty",
                             message=f"{label}：SQL 绑定未配置完整（连接/表）",
-                            hint="请用点选生成 SQL，或改为手写 SQL。",
+                            hint=_binding_fix_hint(placement, kind="sql"),
                             meta=dict(loc_meta),
                         )
                     )
@@ -586,7 +733,7 @@ def _check_element(make: IssueBuilder, *, path: str, el: dict[str, Any]) -> list
                         severity="error",
                         kind="sql_binding_empty",
                         message=f"{label}：已选 SQL 绑定但 SQL 为空",
-                        hint="请填写 SQL，或改回「无绑定」。",
+                        hint=_binding_fix_hint(placement, kind="sql"),
                         meta=dict(loc_meta),
                     )
                 )
@@ -607,7 +754,6 @@ def _check_element(make: IssueBuilder, *, path: str, el: dict[str, Any]) -> list
                 )
 
     if et == "table":
-        # 单元格绑定
         cells = el.get("tableCells")
         if isinstance(cells, list):
             for ri, row in enumerate(cells):
@@ -617,14 +763,9 @@ def _check_element(make: IssueBuilder, *, path: str, el: dict[str, Any]) -> list
                     if not isinstance(cell, dict):
                         continue
                     cbk = str(cell.get("bindingKind") or "none")
-                    clabel = describe_table_cell_label(el, path, ri, ci)
+                    clabel = describe_table_cell_label(el, path, ri, ci, placement)
                     cpath = f"{path}.tableCells[{ri}][{ci}]"
-                    cell_meta = {
-                        **loc_meta,
-                        "path": cpath,
-                        "row": ri,
-                        "col": ci,
-                    }
+                    cell_meta = {**loc_meta, "path": cpath, "row": ri, "col": ci}
                     if cbk == "opcua":
                         cell_issues = _check_opc_node(
                             make,
@@ -634,6 +775,7 @@ def _check_element(make: IssueBuilder, *, path: str, el: dict[str, Any]) -> list
                             path=cpath,
                             binding_kind=cbk,
                             node_id=str(cell.get("opcuaNodeId") or ""),
+                            hint_empty=opc_hint,
                         )
                         for it in cell_issues:
                             meta = dict(it.get("meta") or {})
@@ -720,5 +862,5 @@ def scan_binding_config(
         if key in seen:
             continue
         seen.add(key)
-        issues.extend(_check_element(make, path=path or eid, el=el))
+        issues.extend(_check_element(make, path=path or eid, el=el, raw=raw))
     return issues

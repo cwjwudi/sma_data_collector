@@ -977,8 +977,37 @@ watch([selId, editing], () => {
   }
   if (templateHasBackSheet(t) && bodyElementsRef(t, "back").some((e) => e.id === id)) {
     sh.value = "back";
+    return;
+  }
+  // 版式装饰层 / 页眉页脚：至少切到对应画布页，便于用户继续找
+  if ((t.coverBodyZoneElements || []).some((e) => e.id === id) || (t.coverHeaderElements || []).some((e) => e.id === id) || (t.coverFooterElements || []).some((e) => e.id === id)) {
+    if (templateHasCoverSheet(t)) sh.value = "cover";
+    return;
+  }
+  if ((t.backBodyZoneElements || []).some((e) => e.id === id) || (t.backHeaderElements || []).some((e) => e.id === id) || (t.backFooterElements || []).some((e) => e.id === id)) {
+    if (templateHasBackSheet(t)) sh.value = "back";
+    return;
+  }
+  if ((t.headerElements || []).some((e) => e.id === id) || (t.footerElements || []).some((e) => e.id === id)) {
+    sh.value = "body";
   }
 });
+
+/** 仪表盘健康问题「focus=控件ID」跳转后自动选中 */
+function applyFocusFromRouteQuery() {
+  const focus = String(route.query.focus || "").trim();
+  if (!focus || !editing.value) return;
+  midMode.value = "edit";
+  selId.value = focus;
+  void nextTick(() => scheduleScrollEditSheetIntoView());
+}
+
+watch(
+  () => route.query.focus,
+  () => {
+    applyFocusFromRouteQuery();
+  },
+);
 
 watch([editing, includeCoverSheet, includeBackSheet], () => {
   if (sh.value === "cover" && !includeCoverSheet.value) sh.value = "body";
@@ -1189,6 +1218,8 @@ async function boot() {
     resetTplEditHistory();
     markTemplateClean();
     refreshBindingsAfterOpen();
+    await nextTick();
+    applyFocusFromRouteQuery();
     return true;
   };
 

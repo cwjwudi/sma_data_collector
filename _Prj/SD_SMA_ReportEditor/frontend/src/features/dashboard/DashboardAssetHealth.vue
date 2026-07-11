@@ -65,7 +65,7 @@
             <span class="sev" :class="'sev--' + it.severity">{{ severityLabel(it.severity) }}</span>
             <span class="dash-list__title">
               <template v-if="it.assetKind === 'template'">
-                <router-link class="dash-asset-link" :to="{ name: 'TemplateEditor', params: { id: it.assetId } }">
+                <router-link class="dash-asset-link" :to="templateEditorLink(it)">
                   {{ it.assetName || it.assetId }}
                 </router-link>
               </template>
@@ -168,6 +168,15 @@ function formatTime(iso: string): string {
 
 function canIgnore(it: AssetHealthIssue): boolean {
   return isAssetHealthIssueDismissible(it);
+}
+
+function templateEditorLink(it: AssetHealthIssue) {
+  const focus = typeof it.meta?.elementId === "string" ? it.meta.elementId.trim() : "";
+  return {
+    name: "TemplateEditor",
+    params: { id: it.assetId },
+    query: focus ? { focus } : {},
+  };
 }
 
 function issueKey(it: AssetHealthIssue, idx: number): string {

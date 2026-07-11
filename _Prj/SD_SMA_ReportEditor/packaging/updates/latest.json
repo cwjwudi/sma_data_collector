@@ -1,15 +1,15 @@
 {
-  "version": "0.3.32",
-  "releasedAt": "2026-07-11T10:11:40.157Z",
-  "notes": "Report Editor AI 0.3.32\n\n- 绑定问题提示带页码与控件名称（如：正文第1页 · 数据参数「批次号」）\n- 表格单元格问题标明第几行第几列",
+  "version": "0.3.33",
+  "releasedAt": "2026-07-11T10:23:39.695Z",
+  "notes": "Report Editor AI 0.3.33\n\n- 绑定报警标明页面、坐标与控件 ID（不再用 {{value}} 当名称）\n- 仪表盘点击模版名可跳转并自动选中问题控件",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.32-x64.exe",
-      "sha256": "703a02aeaf9db158bf89291bda6a938610edc22c7757382b95d58892b69dd207",
-      "size": 145475936
+      "url": "Report Editor AI-Setup-0.3.33-x64.exe",
+      "sha256": "aa5323af3d3e83d87cb315baf71c29a71a09b733243ec1cde5e6dfb79c55d1ee",
+      "size": 145478695
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.32-arm64.dmg",
+      "url": "Report Editor AI-0.3.33-arm64.dmg",
       "sha256": "",
       "size": 0
     }
