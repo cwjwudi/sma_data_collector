@@ -1,15 +1,15 @@
 {
-  "version": "0.3.39",
-  "releasedAt": "2026-07-11T12:41:32.904Z",
-  "notes": "完整软件状态备份：含 AI/OPC/偏好/查询会话；云端与本地恢复清单对齐",
+  "version": "0.3.40",
+  "releasedAt": "2026-07-11T12:48:43.174Z",
+  "notes": "移除模拟结批用的全局结批结果反馈；写回仅保留各触发绑定内配置",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.39-x64.exe",
-      "sha256": "e634900a30e025e22ba5bd3f7dd08d7b96b23561e9a2a148a14e36c4f7c9f8f2",
-      "size": 145408387
+      "url": "Report Editor AI-Setup-0.3.40-x64.exe",
+      "sha256": "810d6d9bbdf5b257135fe813b23e869fad8d4b3219bc7fb75c0f79d925646253",
+      "size": 145404395
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.39-arm64.dmg",
+      "url": "Report Editor AI-0.3.40-arm64.dmg",
       "sha256": "",
       "size": 0
     }

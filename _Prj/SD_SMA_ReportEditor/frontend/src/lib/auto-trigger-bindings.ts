@@ -17,7 +17,7 @@ export interface AutoTriggerBinding {
   triggerLog: AutoTriggerLogEntry[];
   /**
    * 本绑定独立的结批结果写回 PLC（INT 状态 / 信息 / 路径）。
-   * 未配置时回退到按模版 → 页面默认反馈。
+   * 未配置时回退到按模版 → 历史默认反馈（若有）。
    */
   exportResultOpc?: ExportResultOpcFeedback;
 }
