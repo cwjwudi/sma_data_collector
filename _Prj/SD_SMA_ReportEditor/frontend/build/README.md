@@ -8,6 +8,8 @@
 
 `package.json` → `build.icon` 指向 `build/icon.png`；Windows 目标额外指定 `build/icon.ico`。
 
+**Report Editor AI（0.3.14+）** 图标在原版「纸张+图表+铅笔」基础上增加星芒与右下角 **AI** 角标，便于与原版并装区分。
+
 **更换图标：** 源图可以是任意比例。脚本会**居中裁切**为正方形（不拉伸、不补黑/白边），再缩放到 1024×1024：
 
 ```bash
