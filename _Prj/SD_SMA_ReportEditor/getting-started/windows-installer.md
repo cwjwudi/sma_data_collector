@@ -60,6 +60,15 @@ npm.cmd run dist:win:cn:installer
    `%APPDATA%\sd-sma-report-editor-ai\backend-data\`  
    （模版、数据库连接、OPC 配置等，与程序安装目录分离；与原版 `%APPDATA%\sd-sma-report-editor\` 互不影响。）
 
+**默认程序安装目录（与原版分离）：**
+
+| 安装模式 | AI 版默认路径 | 原版典型路径 |
+|----------|---------------|--------------|
+| 仅当前用户 | `%LOCALAPPDATA%\Programs\ReportEditorAI` | `%LOCALAPPDATA%\Programs\Report Editor` |
+| 所有用户 | `%ProgramFiles%\ReportEditorAI` | `%ProgramFiles%\Report Editor` |
+
+安装向导仍可改目录，但请勿选到原版已有目录。
+
 ### 从原版迁移配置
 
 1. 在原版中：**设置 → 备份与恢复 → 导出备份文件**（得到 `.rebak`）。

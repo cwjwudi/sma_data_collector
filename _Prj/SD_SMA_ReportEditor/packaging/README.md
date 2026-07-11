@@ -2,7 +2,7 @@
 
 桌面版 **Report Editor AI（报表编辑器 AI 版）** 的发布构建：与 `frontend/`、`backend/` 源码分离，产物写入各平台 `output/`（不入库）。
 
-可与原版 Report Editor 并装；用户数据目录为 `%APPDATA%\sd-sma-report-editor-ai\`（macOS：`~/Library/Application Support/sd-sma-report-editor-ai/`）。Portal 更新地址仍为 `/downloads/report-editor`。
+可与原版 Report Editor 并装；用户数据目录为 `%APPDATA%\sd-sma-report-editor-ai\`（macOS：`~/Library/Application Support/sd-sma-report-editor-ai/`）。Windows 默认程序目录为 `%LOCALAPPDATA%\Programs\ReportEditorAI`（与原版 `Report Editor` 分离）。Portal 更新地址仍为 `/downloads/report-editor`。
 
 开发启停见 [../scripts/README.md](../scripts/README.md)。工程总览见 [../README.md](../README.md)。
 

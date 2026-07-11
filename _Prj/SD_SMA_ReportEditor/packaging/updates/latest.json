@@ -1,15 +1,15 @@
 {
-  "version": "0.3.15",
-  "releasedAt": "2026-07-11T04:37:45.143Z",
-  "notes": "修复与原版并装：独立快捷方式/卸载名/GUID/AppUserModelId",
+  "version": "0.3.16",
+  "releasedAt": "2026-07-11T05:05:11.968Z",
+  "notes": "AI 版默认安装目录改为 Programs\\\\ReportEditorAI，避免覆盖原版",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.15-x64.exe",
-      "sha256": "ed53a63c26aec2dfa35928bc3385dbe74999c12043fe8677ab6591a10f6cd093",
-      "size": 145223634
+      "url": "Report Editor AI-Setup-0.3.16-x64.exe",
+      "sha256": "032b7df637137f56e7dbcd5299106aea12726eae8e155e67831bccc4008ffa12",
+      "size": 145224025
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.15-arm64.dmg",
+      "url": "Report Editor AI-0.3.16-arm64.dmg",
       "sha256": "",
       "size": 0
     }

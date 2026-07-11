@@ -1,5 +1,16 @@
 ; Custom NSIS hooks for Report Editor AI (electron-builder)
 ; Ensures running app/backend are stopped before uninstall.
+; Default install dir is distinct from classic Report Editor to avoid overwrite.
+
+!macro preInit
+  ; 默认安装路径与原版（…\Programs\Report Editor）分离，降低选错目录覆盖风险
+  SetRegView 64
+  WriteRegExpandStr HKLM "${INSTALL_REGISTRY_KEY}" InstallLocation "$PROGRAMFILES64\ReportEditorAI"
+  WriteRegExpandStr HKCU "${INSTALL_REGISTRY_KEY}" InstallLocation "$LOCALAPPDATA\Programs\ReportEditorAI"
+  SetRegView 32
+  WriteRegExpandStr HKLM "${INSTALL_REGISTRY_KEY}" InstallLocation "$PROGRAMFILES\ReportEditorAI"
+  WriteRegExpandStr HKCU "${INSTALL_REGISTRY_KEY}" InstallLocation "$LOCALAPPDATA\Programs\ReportEditorAI"
+!macroend
 
 !macro customUnInstall
   nsExec::ExecToLog 'taskkill /F /IM "Report Editor AI.exe" /T 2>nul'
