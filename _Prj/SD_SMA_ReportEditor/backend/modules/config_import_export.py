@@ -12,6 +12,133 @@ MAX_OPCUA_SERVERS = 200
 MAX_IMPORT_JSON_BYTES = 2 * 1024 * 1024
 CURRENT_SCHEMA_VERSION = 1
 
+# 与 AppPreferencesPatch / DEFAULT_CONFIG 对齐的可迁移偏好键
+APP_PREFERENCE_KEYS: tuple[str, ...] = (
+    "auto_select_last_connection",
+    "default_connection_id",
+    "last_connection_id",
+    "auto_select_last_opcua_server",
+    "default_opcua_server_id",
+    "last_opcua_server_id",
+    "connection_probe_enabled",
+    "connection_probe_interval_sec",
+    "demo_preferred_channel",
+    "demo_remote_db_host",
+    "demo_remote_db_port",
+    "demo_remote_db_name",
+    "demo_remote_db_user",
+    "demo_remote_db_password",
+    "demo_remote_opcua_endpoint",
+    "demo_remote_opcua_user",
+    "demo_remote_opcua_password",
+)
+
+
+def merge_app_preferences(
+    current: dict[str, Any] | None,
+    incoming: dict[str, Any] | None,
+    *,
+    replace: bool = False,
+) -> dict[str, Any]:
+    """合并 app_preferences：保留探测/演示等全部白名单字段。"""
+    base: dict[str, Any] = {} if replace else dict(current or {})
+    if not isinstance(incoming, dict):
+        return base
+    for k in APP_PREFERENCE_KEYS:
+        if k in incoming:
+            base[k] = incoming[k]
+    return base
+
+
+def export_ai_settings_for_bundle(data_dir: Path, ai_raw: dict[str, Any] | None) -> dict[str, Any]:
+    """本机备份：AI 密钥解成明文临时字段，便于跨机重加密。"""
+    from modules import secrets as secrets_mod
+    from modules.ai_config import normalize_ai_settings
+
+    out = normalize_ai_settings(ai_raw if isinstance(ai_raw, dict) else {})
+    enc_key = out.pop("llm_api_key_enc", None)
+    if enc_key:
+        try:
+            plain = secrets_mod.decrypt_secret(data_dir, enc_key)
+            if plain:
+                out["llm_api_key"] = plain
+        except ValueError:
+            pass
+    enc_token = out.pop("agent_token_enc", None)
+    if enc_token:
+        try:
+            plain = secrets_mod.decrypt_secret(data_dir, enc_token)
+            if plain:
+                out["agent_token"] = plain
+                if not out.get("agent_token_hint") and len(plain) >= 4:
+                    out["agent_token_hint"] = plain[-4:]
+        except ValueError:
+            pass
+    return out
+
+
+def import_ai_settings(
+    data_dir: Path | None,
+    incoming: dict[str, Any] | None,
+    old: dict[str, Any] | None = None,
+) -> tuple[dict[str, Any], str | None]:
+    """导入 AI 设置；明文密钥用当前 data_dir 重加密。"""
+    from modules import secrets as secrets_mod
+    from modules.ai_config import DEFAULT_AI_SETTINGS, normalize_ai_settings
+
+    base = normalize_ai_settings(old if isinstance(old, dict) else {})
+    if not isinstance(incoming, dict):
+        return base, None
+
+    warn: str | None = None
+    merged = dict(base)
+    for k in DEFAULT_AI_SETTINGS:
+        if k in ("llm_api_key_enc", "agent_token_enc"):
+            continue
+        if k in incoming:
+            merged[k] = incoming[k]
+
+    def _import_secret(plain_key: str, enc_key: str) -> None:
+        nonlocal warn
+        if plain_key in incoming:
+            plain = incoming.get(plain_key)
+            if plain is None:
+                return
+            if plain == "" or data_dir is None:
+                merged[enc_key] = None
+            else:
+                merged[enc_key] = secrets_mod.encrypt_secret(data_dir, str(plain))
+            return
+        enc = incoming.get(enc_key)
+        if not enc:
+            return
+        if data_dir is None:
+            merged[enc_key] = enc
+            return
+        try:
+            secrets_mod.decrypt_secret(data_dir, enc)
+            merged[enc_key] = enc
+        except ValueError:
+            if old and old.get(enc_key):
+                try:
+                    secrets_mod.decrypt_secret(data_dir, old[enc_key])
+                    merged[enc_key] = old[enc_key]
+                    warn = "ai:kept_local_secrets"
+                    return
+                except ValueError:
+                    pass
+            merged[enc_key] = None
+            warn = "ai:foreign_secrets"
+
+    _import_secret("llm_api_key", "llm_api_key_enc")
+    _import_secret("agent_token", "agent_token_enc")
+    if merged.get("agent_token_enc") and not merged.get("agent_token_hint"):
+        # hint 仅展示用；无明文时保留导入值
+        pass
+    merged.pop("llm_api_key", None)
+    merged.pop("agent_token", None)
+    return normalize_ai_settings(merged), warn
+
 
 def normalize_top_level(cfg: dict[str, Any]) -> dict[str, Any]:
     """保证顶层键存在（就地修改副本）。"""
@@ -22,12 +149,20 @@ def normalize_top_level(cfg: dict[str, Any]) -> dict[str, Any]:
     prefs = out.get("app_preferences")
     if not isinstance(prefs, dict):
         prefs = {}
-    prefs.setdefault("auto_select_last_connection", True)
-    prefs.setdefault("default_connection_id", None)
-    prefs.setdefault("last_connection_id", None)
-    prefs.setdefault("auto_select_last_opcua_server", True)
-    prefs.setdefault("default_opcua_server_id", None)
-    prefs.setdefault("last_opcua_server_id", None)
+    for k in (
+        "auto_select_last_connection",
+        "default_connection_id",
+        "last_connection_id",
+        "auto_select_last_opcua_server",
+        "default_opcua_server_id",
+        "last_opcua_server_id",
+    ):
+        if k.startswith("auto_"):
+            prefs.setdefault(k, True)
+        else:
+            prefs.setdefault(k, None)
+    prefs.setdefault("connection_probe_enabled", False)
+    prefs.setdefault("connection_probe_interval_sec", 30)
     out["app_preferences"] = prefs
     ai = out.get("ai_settings")
     if not isinstance(ai, dict):
@@ -277,21 +412,19 @@ def apply_import_merge(
     cur["opcua_servers"] = opcs
     warnings.extend(w1)
     warnings.extend(w2)
-    inc_prefs = inc.get("app_preferences")
-    if isinstance(inc_prefs, dict):
-        base_prefs = dict(cur.get("app_preferences") or {})
-        _pref_keys = (
-            "auto_select_last_connection",
-            "default_connection_id",
-            "last_connection_id",
-            "auto_select_last_opcua_server",
-            "default_opcua_server_id",
-            "last_opcua_server_id",
-        )
-        for k, v in inc_prefs.items():
-            if k in _pref_keys:
-                base_prefs[k] = v
-        cur["app_preferences"] = base_prefs
+    cur["app_preferences"] = merge_app_preferences(
+        cur.get("app_preferences"),
+        inc.get("app_preferences") if isinstance(inc.get("app_preferences"), dict) else None,
+        replace=False,
+    )
+    ai_merged, ai_warn = import_ai_settings(
+        data_dir,
+        inc.get("ai_settings") if isinstance(inc.get("ai_settings"), dict) else None,
+        cur.get("ai_settings") if isinstance(cur.get("ai_settings"), dict) else None,
+    )
+    cur["ai_settings"] = ai_merged
+    if ai_warn:
+        warnings.append(ai_warn)
     if isinstance(inc.get("schema_version"), int):
         cur["schema_version"] = max(int(cur.get("schema_version") or 1), int(inc["schema_version"]))
     return cur, warnings
@@ -307,17 +440,14 @@ def apply_import_replace(
     decrypt_opcua: DecryptFn | None = None,
 ) -> tuple[dict[str, Any], list[str]]:
     inc = validate_import_payload(incoming)
-    prefs = inc.get("app_preferences")
-    if not isinstance(prefs, dict):
-        prefs = {}
-    normalized_prefs = {
-        "auto_select_last_connection": bool(prefs.get("auto_select_last_connection", True)),
-        "default_connection_id": prefs.get("default_connection_id"),
-        "last_connection_id": prefs.get("last_connection_id"),
-        "auto_select_last_opcua_server": bool(prefs.get("auto_select_last_opcua_server", True)),
-        "default_opcua_server_id": prefs.get("default_opcua_server_id"),
-        "last_opcua_server_id": prefs.get("last_opcua_server_id"),
-    }
+    prefs = merge_app_preferences(
+        None,
+        inc.get("app_preferences") if isinstance(inc.get("app_preferences"), dict) else {},
+        replace=True,
+    )
+    # 核心连接选中字段默认值
+    prefs.setdefault("auto_select_last_connection", True)
+    prefs.setdefault("auto_select_last_opcua_server", True)
     sv = inc.get("schema_version")
     if not isinstance(sv, int):
         sv = CURRENT_SCHEMA_VERSION
@@ -340,11 +470,19 @@ def apply_import_replace(
     )
     warnings.extend(w1)
     warnings.extend(w2)
+    ai_merged, ai_warn = import_ai_settings(
+        data_dir,
+        inc.get("ai_settings") if isinstance(inc.get("ai_settings"), dict) else {},
+        None,
+    )
+    if ai_warn:
+        warnings.append(ai_warn)
     out: dict[str, Any] = {
         "schema_version": int(sv),
-        "app_preferences": normalized_prefs,
+        "app_preferences": prefs,
         "db_connections": dbs,
         "opcua_servers": opcs,
+        "ai_settings": ai_merged,
     }
     return normalize_top_level(out), warnings
 
@@ -368,6 +506,8 @@ def format_import_warnings(warnings: list[str]) -> list[str]:
     foreign_db = 0
     foreign_opc = 0
     kept = 0
+    ai_foreign = False
+    ai_kept = False
     for w in warnings:
         if w.endswith(":foreign_password_enc"):
             if w.startswith("db:"):
@@ -376,10 +516,18 @@ def format_import_warnings(warnings: list[str]) -> list[str]:
                 foreign_opc += 1
         elif w.endswith(":kept_local_password"):
             kept += 1
+        elif w == "ai:foreign_secrets":
+            ai_foreign = True
+        elif w == "ai:kept_local_secrets":
+            ai_kept = True
     if foreign_db:
         out.append(f"{foreign_db} 条数据库连接口令来自其它电脑且无法解密，已清空密文，请在数据源中重新输入密码。")
     if foreign_opc:
         out.append(f"{foreign_opc} 条 OPC UA 口令来自其它电脑且无法解密，已清空密文，请重新输入。")
     if kept:
         out.append(f"{kept} 条连接保留了本机原有口令（导入包中的旧密文无效）。")
+    if ai_foreign:
+        out.append("AI 助手密钥来自其它电脑且无法解密，已清空，请在设置中重新填写。")
+    if ai_kept:
+        out.append("AI 助手密钥保留了本机原有密文（导入包中的旧密文无效）。")
     return out

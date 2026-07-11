@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from core.settings import DATA_DIR, LAYOUT_PRESETS_DIR, SIGNATURE_ASSETS_DIR, TEMPLATES_DIR
+from core.settings import DATA_DIR, LAYOUT_PRESETS_DIR, QUERY_SESSION_FILE, SIGNATURE_ASSETS_DIR, TEMPLATES_DIR
 from modules import audit_log
 from modules import config_import_export as cie
 from modules import layout_preset_store, signature_asset_store, template_store
@@ -126,7 +126,97 @@ def extract_config_slice(data: dict[str, Any]) -> dict[str, Any]:
         "app_preferences": data.get("app_preferences"),
         "db_connections": data.get("db_connections"),
         "opcua_servers": data.get("opcua_servers"),
+        "ai_settings": data.get("ai_settings"),
     }
+
+
+def bundle_content_counts(bundle: dict[str, Any]) -> dict[str, Any]:
+    """导出/导入清单用的内容计数。"""
+    qs = bundle.get("query_sessions") if isinstance(bundle.get("query_sessions"), dict) else {}
+    fav = qs.get("favorites") if isinstance(qs.get("favorites"), list) else []
+    hist = qs.get("history") if isinstance(qs.get("history"), list) else []
+    ai = bundle.get("ai_settings")
+    return {
+        "db_connections": len(bundle.get("db_connections") or [])
+        if isinstance(bundle.get("db_connections"), list)
+        else 0,
+        "opcua_servers": len(bundle.get("opcua_servers") or [])
+        if isinstance(bundle.get("opcua_servers"), list)
+        else 0,
+        "templates": len(bundle.get("templates") or []) if isinstance(bundle.get("templates"), list) else 0,
+        "layout_presets": len(bundle.get("layout_presets") or [])
+        if isinstance(bundle.get("layout_presets"), list)
+        else 0,
+        "signature_assets": len(bundle.get("signature_assets") or [])
+        if isinstance(bundle.get("signature_assets"), list)
+        else 0,
+        "audit_entries": len(bundle.get("audit_entries") or [])
+        if isinstance(bundle.get("audit_entries"), list)
+        else 0,
+        "query_session_favorites": len(fav),
+        "query_session_history": len(hist),
+        "has_ai_settings": isinstance(ai, dict) and bool(ai),
+        "has_client_prefs": bool(bundle.get("client_prefs")),
+    }
+
+
+def _query_sessions_path(data_dir: Path | None) -> Path:
+    if data_dir is not None:
+        return Path(data_dir) / "query_sessions.json"
+    return QUERY_SESSION_FILE
+
+
+def _load_query_sessions(data_dir: Path | None) -> dict[str, Any]:
+    path = _query_sessions_path(data_dir)
+    empty = {"favorites": [], "history": []}
+    if not path.exists():
+        return empty
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(raw, dict):
+            return empty
+        fav = raw.get("favorites") if isinstance(raw.get("favorites"), list) else []
+        hist = raw.get("history") if isinstance(raw.get("history"), list) else []
+        return {
+            "favorites": [str(x) for x in fav if isinstance(x, str)][:200],
+            "history": [str(x) for x in hist if isinstance(x, str)][:500],
+        }
+    except Exception:
+        return empty
+
+
+def _save_query_sessions(
+    data_dir: Path | None,
+    incoming: dict[str, Any] | None,
+    *,
+    replace: bool,
+) -> dict[str, int]:
+    path = _query_sessions_path(data_dir)
+    empty = {"favorites": [], "history": []}
+    if not isinstance(incoming, dict):
+        if replace:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(empty, ensure_ascii=False, indent=2), encoding="utf-8")
+            return {"favorites": 0, "history": 0}
+        return {"favorites": 0, "history": 0}
+
+    fav_in = incoming.get("favorites") if isinstance(incoming.get("favorites"), list) else []
+    hist_in = incoming.get("history") if isinstance(incoming.get("history"), list) else []
+    fav_in = [str(x) for x in fav_in if isinstance(x, str)]
+    hist_in = [str(x) for x in hist_in if isinstance(x, str)]
+
+    if replace:
+        data = {"favorites": fav_in[:200], "history": hist_in[:500]}
+    else:
+        cur = _load_query_sessions(data_dir)
+        # 去重保序：导入项优先靠前
+        fav = list(dict.fromkeys([*fav_in, *cur["favorites"]]))[:200]
+        hist = list(dict.fromkeys([*hist_in, *cur["history"]]))[:500]
+        data = {"favorites": fav, "history": hist}
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    return {"favorites": len(data["favorites"]), "history": len(data["history"])}
 
 
 def build_export_bundle(
@@ -146,6 +236,8 @@ def build_export_bundle(
     want_audit = (not share) if include_audit is None else bool(include_audit)
     if share:
         base = cie.export_share_shape(cfg, mask_conn, mask_opcua)
+        ai_settings: dict[str, Any] = {}
+        query_sessions: dict[str, Any] = {"favorites": [], "history": []}
     else:
         base = cie.normalize_top_level(copy.deepcopy(cfg))
         dbs = []
@@ -168,6 +260,14 @@ def build_export_bundle(
                     opcs.append(row)
         base["db_connections"] = dbs
         base["opcua_servers"] = opcs
+        if data_dir is not None:
+            ai_settings = cie.export_ai_settings_for_bundle(data_dir, base.get("ai_settings"))
+        else:
+            ai_settings = copy.deepcopy(base.get("ai_settings") or {})
+            if isinstance(ai_settings, dict):
+                ai_settings.pop("llm_api_key_enc", None)
+                ai_settings.pop("agent_token_enc", None)
+        query_sessions = _load_query_sessions(data_dir)
 
     audit_entries: list[dict[str, Any]] = []
     if want_audit:
@@ -184,6 +284,8 @@ def build_export_bundle(
         "app_preferences": copy.deepcopy(base.get("app_preferences") or {}),
         "db_connections": copy.deepcopy(base.get("db_connections") or []),
         "opcua_servers": copy.deepcopy(base.get("opcua_servers") or []),
+        "ai_settings": copy.deepcopy(ai_settings) if isinstance(ai_settings, dict) else {},
+        "query_sessions": copy.deepcopy(query_sessions),
         "templates": _load_json_files(TEMPLATES_DIR),
         "layout_presets": _load_json_files(LAYOUT_PRESETS_DIR),
         "signature_assets": _load_json_files(SIGNATURE_ASSETS_DIR),
@@ -335,6 +437,11 @@ def apply_bundle_import(
         )
 
     counts = _import_asset_lists(bundle, replace_assets=replace_assets, data_dir=data_dir)
+    qs_counts = _save_query_sessions(
+        data_dir,
+        bundle.get("query_sessions") if isinstance(bundle.get("query_sessions"), dict) else None,
+        replace=replace_assets,
+    )
     client_prefs = copy.deepcopy(bundle.get("client_prefs") or {})
 
     layout_ids = {
@@ -356,10 +463,15 @@ def apply_bundle_import(
                 import_warnings.append(f"模版「{name}」的{label}引用缺失：{rid.strip()[:8]}…")
 
     stats = {
+        "db_connections": len(merged_cfg.get("db_connections") or []),
+        "opcua_servers": len(merged_cfg.get("opcua_servers") or []),
         "templates": counts["templates"],
         "layout_presets": counts["layout_presets"],
         "signature_assets": counts["signature_assets"],
         "audit_entries": counts.get("audit_entries", 0),
+        "query_session_favorites": qs_counts.get("favorites", 0),
+        "query_session_history": qs_counts.get("history", 0),
+        "has_ai_settings": bool(merged_cfg.get("ai_settings")),
         "has_client_prefs": bool(client_prefs),
     }
     return merged_cfg, {

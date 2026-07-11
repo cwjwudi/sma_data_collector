@@ -94,10 +94,121 @@ def test_bundle_import_passes_data_dir_for_password_reencrypt():
         "opcua_servers": [],
     }
     # 用 merge 避免清空本机 TEMPLATES_DIR 等真实目录
-    merged, _result = cbundle.apply_bundle_import(
+    merged, result = cbundle.apply_bundle_import(
         current, incoming, "merge", **cie.import_credential_kwargs(dst)
     )
     stored = merged["db_connections"][0]
     assert stored.get("password_enc"), "导入后应有 password_enc"
     assert "password" not in stored
     assert config_store.decrypt_db_password(dst, stored) == plain
+    assert result["imported"].get("db_connections") == 1
+    assert result["imported"].get("opcua_servers") == 0
+
+
+def test_opcua_and_ai_and_prefs_roundtrip_via_bundle():
+    from modules import config_bundle as cbundle
+    from modules import secrets as secrets_mod
+
+    src = _make_data_dir()
+    dst = _make_data_dir()
+    opc_plain = "opc-secret"
+    ai_key = "sk-test-key"
+    cfg = {
+        "schema_version": 1,
+        "app_preferences": {
+            "auto_select_last_connection": True,
+            "connection_probe_enabled": True,
+            "connection_probe_interval_sec": 45,
+            "demo_preferred_channel": "remote",
+        },
+        "db_connections": [],
+        "opcua_servers": [
+            {
+                "id": "opc1",
+                "name": "PLC",
+                "endpoint_url": "opc.tcp://127.0.0.1:4840",
+                "password_enc": config_store.encrypt_opcua_password(src, opc_plain),
+            }
+        ],
+        "ai_settings": {
+            "enabled": True,
+            "llm_base_url": "https://example.com/v1",
+            "llm_model": "demo-model",
+            "llm_api_key_enc": secrets_mod.encrypt_secret(src, ai_key),
+            "allow_lan_access": True,
+            "write_tools_enabled": False,
+            "disabled_tools": [],
+        },
+    }
+    # 写入查询会话到 src
+    qs_path = src / "query_sessions.json"
+    qs_path.write_text(
+        '{"favorites": ["SELECT 1"], "history": ["SELECT 2"]}',
+        encoding="utf-8",
+    )
+
+    bundle = cbundle.build_export_bundle(
+        cfg,
+        mask_conn=config_store.mask_connection_for_response,
+        mask_opcua=config_store.mask_opcua_for_response,
+        mode="backup",
+        data_dir=src,
+        decrypt_db=config_store.decrypt_db_password,
+        decrypt_opcua=config_store.decrypt_opcua_password,
+        client_prefs={},
+        include_audit=False,
+    )
+    assert bundle["opcua_servers"][0].get("password") == opc_plain
+    assert bundle["ai_settings"].get("llm_api_key") == ai_key
+    assert "llm_api_key_enc" not in bundle["ai_settings"]
+    assert bundle["app_preferences"].get("connection_probe_enabled") is True
+    assert bundle["query_sessions"]["favorites"] == ["SELECT 1"]
+
+    counts = cbundle.bundle_content_counts(bundle)
+    assert counts["opcua_servers"] == 1
+    assert counts["query_session_favorites"] == 1
+    assert counts["has_ai_settings"] is True
+
+    current = {
+        "schema_version": 1,
+        "app_preferences": {},
+        "db_connections": [],
+        "opcua_servers": [],
+    }
+    merged, result = cbundle.apply_bundle_import(
+        current, bundle, "merge", **cie.import_credential_kwargs(dst)
+    )
+    assert merged["app_preferences"].get("connection_probe_enabled") is True
+    assert merged["app_preferences"].get("connection_probe_interval_sec") == 45
+    assert config_store.decrypt_opcua_password(dst, merged["opcua_servers"][0]) == opc_plain
+    assert secrets_mod.decrypt_secret(dst, merged["ai_settings"]["llm_api_key_enc"]) == ai_key
+    assert merged["ai_settings"].get("enabled") is True
+    assert result["imported"].get("opcua_servers") == 1
+    assert result["imported"].get("has_ai_settings") is True
+
+    qs_dst = dst / "query_sessions.json"
+    assert qs_dst.exists()
+    import json
+
+    qs = json.loads(qs_dst.read_text(encoding="utf-8"))
+    assert "SELECT 1" in qs["favorites"]
+
+
+def test_app_preferences_replace_keeps_probe_fields():
+    merged, _ = cie.apply_import_replace(
+        {
+            "schema_version": 1,
+            "app_preferences": {
+                "connection_probe_enabled": True,
+                "connection_probe_interval_sec": 60,
+                "demo_preferred_channel": "local",
+            },
+            "db_connections": [],
+            "opcua_servers": [],
+        },
+        **cie.import_credential_kwargs(_make_data_dir()),
+    )
+    prefs = merged["app_preferences"]
+    assert prefs.get("connection_probe_enabled") is True
+    assert prefs.get("connection_probe_interval_sec") == 60
+    assert prefs.get("demo_preferred_channel") == "local"

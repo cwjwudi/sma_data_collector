@@ -2,8 +2,8 @@
   <section class="settings-section app-update">
     <h3 class="settings-section__title">云端同步（Portal）</h3>
     <p class="settings-hint">
-      登录后可：① 上传/下载<strong>我的模版与版式</strong>（内容为你最近一次上传的版本）；②
-      <strong>整机配置云备份</strong>（与「配置备份」相同范围，换机一键恢复）；③ 下载<strong>团队模版与版式</strong>
+      登录后可：① 上传/下载<strong>我的模版与版式</strong>（仅设计内容，不含数据库/OPC/AI 等配置）；②
+      <strong>整机配置云备份</strong>（与「备份与恢复」相同的完整软件状态，换机一键恢复）；③ 下载<strong>团队模版与版式</strong>
       （由团队发版时更新的快照，内容可能滞后于个人最新修改）。
     </p>
 
@@ -92,8 +92,8 @@
 
       <h4 class="sync-sub-title">整机配置云备份</h4>
       <p class="settings-hint">
-        与「配置备份」同等范围：数据源连接、OPC UA 连接、模版、版式、签名与生成报表设置整体打包（加密，云端不可读），
-        可在另一台电脑登录同一账号后一键恢复。
+        与「备份与恢复」同等完整范围：数据库、OPC UA、模版、版式、签名、AI 设置、查询收藏、生成报表与界面偏好等整体打包（加密，云端不可读），
+        可在另一台电脑登录同一账号后一键恢复。注意：上方「模版与版式」同步<strong>不包含</strong>数据源与 OPC。
       </p>
       <div class="settings-actions update-actions">
         <button type="button" class="settings-btn settings-btn--primary" :disabled="busy" @click="uploadFullConfig">
@@ -144,9 +144,12 @@ import * as templatesApi from '@/api/templates'
 import { resolveApiHref } from '@/api/apiBase.js'
 import { refreshLayoutPresets, clearLayoutCache } from '@/lib/report-template/layout-registry'
 import {
-  applyClientPrefsFromBundle,
-  collectClientPrefs,
+  collectClientPrefsFull,
+  finalizeConfigRestore,
+  formatBackupCountSummary,
+  formatImportStatsSummary,
   notifyReportEditorConfigRestored,
+  type ImportStats,
 } from '@/features/settings/config-import-export/config-bundle-client'
 import { clearTemplateViewCache } from '@/lib/report-template/template-view-cache'
 
@@ -409,7 +412,7 @@ function base64ToBytes(b64: string): Uint8Array {
   return out
 }
 
-/** 与「配置备份」相同范围：后端导出加密 .rebak，整体上传到 Portal */
+/** 与「备份与恢复」相同完整范围：后端导出加密 .rebak，整体上传到 Portal */
 async function uploadFullConfig() {
   const api = window.electronAPI
   if (!api?.layoutSyncUploadConfig) {
@@ -420,17 +423,19 @@ async function uploadFullConfig() {
   phase.value = 'upload-config'
   setMsg('')
   try {
+    const clientPrefs = await collectClientPrefsFull()
     const res = await fetch(resolveApiHref('/settings/config/export'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mode: 'backup', format: 'encrypted', client_prefs: collectClientPrefs() }),
+      body: JSON.stringify({ mode: 'backup', format: 'encrypted', client_prefs: clientPrefs }),
     })
     if (!res.ok) throw new Error(`导出本机配置失败（HTTP ${res.status}）`)
+    const summary = formatBackupCountSummary(res.headers)
     const bytes = new Uint8Array(await res.arrayBuffer())
     const up = await api.layoutSyncUploadConfig({ bundleBase64: bytesToBase64(bytes) })
     if (!up.ok) throw new Error(up.error || '上传失败')
     const kb = Math.max(1, Math.round(bytes.length / 1024))
-    setMsg(`整机配置备份已上传到云端（约 ${kb} KB，含数据源、模版、版式、签名与生成报表设置）。`, 'ok')
+    setMsg(`完整软件状态已上传到云端（约 ${kb} KB）：${summary}。`, 'ok')
   } catch (e) {
     setMsg(formatSyncError(e), 'err')
   } finally {
@@ -442,7 +447,7 @@ async function uploadFullConfig() {
 function confirmRestoreFullConfig() {
   if (
     !window.confirm(
-      '「从云端恢复整机配置」将用云端备份完全替换本机现有的连接、模版、版式、签名与生成报表设置。\n\n建议先在「配置备份」中导出一份当前备份再操作。\n\n确定要继续吗？',
+      '「从云端恢复整机配置」将用云端备份完全替换本机现有的连接（含 OPC UA）、模版、版式、签名、AI 与生成报表等设置。\n\n建议先在「备份与恢复」中导出一份当前备份再操作。\n\n确定要继续吗？',
     )
   ) {
     return
@@ -469,7 +474,13 @@ async function restoreFullConfig() {
       body: bytes,
     })
     const text = await res.text()
-    let data: { ok?: boolean; client_prefs?: unknown; detail?: unknown } | null = null
+    let data: {
+      ok?: boolean
+      client_prefs?: unknown
+      imported?: ImportStats
+      warnings?: string[]
+      detail?: unknown
+    } | null = null
     try {
       data = text ? JSON.parse(text) : null
     } catch {
@@ -478,10 +489,16 @@ async function restoreFullConfig() {
     if (!res.ok) {
       throw new Error(data?.detail ? String(data.detail) : text || `恢复失败（HTTP ${res.status}）`)
     }
-    applyClientPrefsFromBundle(data?.client_prefs)
-    notifyReportEditorConfigRestored()
+    const clientApplied = await finalizeConfigRestore({ clientPrefs: data?.client_prefs })
+    const parts = formatImportStatsSummary(data?.imported)
+    if (clientApplied.length) parts.push('本机设置已更新')
+    const detail = parts.length ? `已恢复：${parts.join('、')}。` : '恢复完成。'
+    const warnLines = Array.isArray(data?.warnings)
+      ? data.warnings.filter((w) => typeof w === 'string' && w)
+      : []
+    const warnText = warnLines.length ? `\n${warnLines.join('\n')}` : ''
     const stamp = dl.updatedAt ? `（云端备份时间：${new Date(dl.updatedAt).toLocaleString()}）` : ''
-    setMsg(`已用云端备份恢复整机配置${stamp}。切换页面即可查看，无需重启。`, 'ok')
+    setMsg(`已用云端备份恢复完整软件状态${stamp}。${detail}${warnText}\n切换页面即可查看，无需重启。`, warnLines.length ? 'warn' : 'ok')
   } catch (e) {
     setMsg(formatSyncError(e), 'err')
   } finally {

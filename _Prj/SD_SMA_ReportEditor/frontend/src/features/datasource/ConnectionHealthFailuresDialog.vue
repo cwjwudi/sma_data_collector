@@ -77,11 +77,11 @@ async function apiFetchWithTimeout<T>(path: string): Promise<T> {
 type DbConnRow = { id?: string; name?: string; has_password?: boolean };
 type OpcServerRow = { id?: string; name?: string; has_password?: boolean };
 
-function missingPasswordHint(hasPassword: boolean | undefined): string {
-  if (hasPassword === false) {
-    return "未保存数据库密码（备份导入后可能丢失）。请在左侧重新填写密码后点「测试并保存」。";
-  }
-  return "";
+function missingPasswordHint(kind: "db" | "opc", hasPassword: boolean | undefined): string {
+  if (hasPassword !== false) return "";
+  return kind === "opc"
+    ? "未保存 OPC UA 密码（备份导入后可能丢失）。请在左侧重新填写密码后点「测试并保存」。"
+    : "未保存数据库密码（备份导入后可能丢失）。请在左侧重新填写密码后点「测试并保存」。";
 }
 
 async function loadFailures() {
@@ -105,7 +105,7 @@ async function loadFailures() {
       const id = String(c.id || "");
       if (!id) continue;
       const rec = getDbConnectionHealth(id);
-      const pwdHint = missingPasswordHint(c.has_password);
+      const pwdHint = missingPasswordHint("db", c.has_password);
       if (rec.state !== "fail" && !pwdHint) continue;
       if (rec.state !== "fail" && pwdHint) {
         // 无健康记录但缺密码：仍展示，避免「红点 + 加载中」无结果
@@ -130,12 +130,23 @@ async function loadFailures() {
       const id = String(s.id || "");
       if (!id) continue;
       const rec = getOpcConnectionHealth(id);
-      if (rec.state !== "fail") continue;
+      const pwdHint = missingPasswordHint("opc", s.has_password);
+      if (rec.state !== "fail" && !pwdHint) continue;
+      if (rec.state !== "fail" && pwdHint) {
+        pushFail({
+          key: `opc-${id}`,
+          kind: "OPC UA",
+          name: String(s.name || id),
+          message: pwdHint,
+          checkedAt: "",
+        });
+        continue;
+      }
       pushFail({
         key: `opc-${id}`,
         kind: "OPC UA",
         name: String(s.name || id),
-        message: rec.message || "连接失败",
+        message: rec.message || pwdHint || "连接失败",
         checkedAt: formatCheckedAt(rec.checkedAt),
       });
     }
@@ -147,7 +158,7 @@ async function loadFailures() {
       if (!id) continue;
       const st = session?.connHealth?.[id];
       if (st !== "fail") continue;
-      const pwdHint = missingPasswordHint(c.has_password);
+      const pwdHint = missingPasswordHint("db", c.has_password);
       pushFail({
         key: `db-${id}`,
         kind: "数据库",

@@ -19,9 +19,10 @@ import {
 import { invalidateSignature } from "@/lib/signature-registry";
 import { clearLayoutCache } from "@/lib/report-template/layout-registry";
 import { clearTemplateViewCache } from "@/lib/report-template/template-view-cache";
+import { apiFetch } from "@/api/client.js";
+import { notifyDatasourceChanged } from "@/lib/datasource-sync-events";
 
-/** 需要随备份一起迁移的本机 UI 偏好（localStorage 键白名单）。
- * 仅收录「设置类」轻量偏好；模版/版式/数据源等大体量本地缓存由服务端配置包负责，不在此重复。 */
+/** 需要随备份一起迁移的本机 UI 偏好（localStorage 键白名单）。 */
 export const UI_PREF_KEYS = [
   "tm-view-mode",
   "lp-view-mode",
@@ -30,7 +31,21 @@ export const UI_PREF_KEYS = [
   "sd-sma-report-editor:electron-devtools-open",
   "report_editor_setup_wizard",
   "report-editor-demo-license",
+  "reportTplBindingPollIntervalSec",
+  "reportTplOpcUaLiveRefresh",
+  "reportTplDbLiveRefresh",
+  "sd-sma-report-editor:ignored-asset-health-issues:v1",
 ] as const;
+
+const REL_BROWSER_LAYOUT_PREFIX = "relBrowserLayout:";
+
+export type ElectronBackupPrefs = {
+  portalBaseUrl?: string;
+  portalSkipTlsVerify?: boolean;
+  updateBaseUrl?: string;
+  updateSkipTlsVerify?: boolean;
+  macOpenAfterUpgrade?: boolean;
+};
 
 export type ConfigBundleClientPrefs = {
   report_generator?: unknown;
@@ -38,6 +53,8 @@ export type ConfigBundleClientPrefs = {
   template_display_order?: string[];
   layout_display_order?: LayoutDisplayOrderMap;
   ui_prefs?: Record<string, string>;
+  rel_browser_layouts?: Record<string, string>;
+  electron_prefs?: ElectronBackupPrefs;
 };
 
 export type ConfigBundlePayload = {
@@ -48,10 +65,25 @@ export type ConfigBundlePayload = {
   app_preferences?: unknown;
   db_connections?: unknown[];
   opcua_servers?: unknown[];
+  ai_settings?: unknown;
+  query_sessions?: unknown;
   templates?: unknown[];
   layout_presets?: unknown[];
   signature_assets?: unknown[];
   client_prefs?: ConfigBundleClientPrefs;
+};
+
+export type ImportStats = {
+  db_connections?: number;
+  opcua_servers?: number;
+  templates?: number;
+  layout_presets?: number;
+  signature_assets?: number;
+  audit_entries?: number;
+  query_session_favorites?: number;
+  query_session_history?: number;
+  has_ai_settings?: boolean;
+  has_client_prefs?: boolean;
 };
 
 export function isConfigBundlePayload(data: unknown): data is ConfigBundlePayload {
@@ -80,7 +112,94 @@ function collectUiPrefs(): Record<string, string> {
   return out;
 }
 
-/** 收集本机「生成报表 / 历史报表 / 显示顺序 / UI 偏好」等设置，作为配置包的 client_prefs */
+function collectRelBrowserLayouts(): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (typeof localStorage === "undefined") return out;
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key || !key.startsWith(REL_BROWSER_LAYOUT_PREFIX)) continue;
+      const val = localStorage.getItem(key);
+      if (val !== null) out[key] = val;
+    }
+  } catch {
+    /* ignore */
+  }
+  return out;
+}
+
+async function collectElectronPrefs(): Promise<ElectronBackupPrefs | undefined> {
+  const api = typeof window !== "undefined" ? window.electronAPI : undefined;
+  if (!api) return undefined;
+  const out: ElectronBackupPrefs = {};
+  try {
+    if (typeof api.getLayoutSyncConfig === "function") {
+      const c = await api.getLayoutSyncConfig();
+      if (c && typeof c === "object") {
+        if (typeof c.portalBaseUrl === "string" && c.portalBaseUrl.trim()) {
+          out.portalBaseUrl = c.portalBaseUrl.trim();
+        }
+        if (typeof c.skipTlsVerify === "boolean") out.portalSkipTlsVerify = c.skipTlsVerify;
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+  try {
+    if (typeof api.getAppUpdateConfig === "function") {
+      const c = await api.getAppUpdateConfig();
+      if (c && typeof c === "object") {
+        if (typeof c.baseUrl === "string" && c.baseUrl.trim()) out.updateBaseUrl = c.baseUrl.trim();
+        if (typeof c.skipTlsVerify === "boolean") out.updateSkipTlsVerify = c.skipTlsVerify;
+        if (typeof c.macOpenAfterUpgrade === "boolean") out.macOpenAfterUpgrade = c.macOpenAfterUpgrade;
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+  return Object.keys(out).length ? out : undefined;
+}
+
+async function applyElectronPrefs(prefs: ElectronBackupPrefs | undefined): Promise<boolean> {
+  if (!prefs || typeof window === "undefined") return false;
+  const api = window.electronAPI;
+  if (!api) return false;
+  let applied = false;
+  try {
+    if (
+      typeof api.setLayoutSyncConfig === "function" &&
+      (prefs.portalBaseUrl !== undefined || prefs.portalSkipTlsVerify !== undefined)
+    ) {
+      const patch: Record<string, unknown> = {};
+      if (prefs.portalBaseUrl !== undefined) patch.portalBaseUrl = prefs.portalBaseUrl;
+      if (prefs.portalSkipTlsVerify !== undefined) patch.skipTlsVerify = prefs.portalSkipTlsVerify;
+      await api.setLayoutSyncConfig(patch);
+      applied = true;
+    }
+  } catch {
+    /* ignore */
+  }
+  try {
+    if (
+      typeof api.setAppUpdateConfig === "function" &&
+      (prefs.updateBaseUrl !== undefined ||
+        prefs.updateSkipTlsVerify !== undefined ||
+        prefs.macOpenAfterUpgrade !== undefined)
+    ) {
+      const patch: Record<string, unknown> = {};
+      if (prefs.updateBaseUrl !== undefined) patch.baseUrl = prefs.updateBaseUrl;
+      if (prefs.updateSkipTlsVerify !== undefined) patch.skipTlsVerify = prefs.updateSkipTlsVerify;
+      if (prefs.macOpenAfterUpgrade !== undefined) patch.macOpenAfterUpgrade = prefs.macOpenAfterUpgrade;
+      await api.setAppUpdateConfig(patch);
+      applied = true;
+    }
+  } catch {
+    /* ignore */
+  }
+  return applied;
+}
+
+/** 同步收集本机偏好（不含需 await 的 Electron 项）。 */
 export function collectClientPrefs(): ConfigBundleClientPrefs {
   return {
     report_generator: loadReportGeneratorPrefs(),
@@ -88,7 +207,15 @@ export function collectClientPrefs(): ConfigBundleClientPrefs {
     template_display_order: loadTemplateDisplayOrder(),
     layout_display_order: loadLayoutDisplayOrder(),
     ui_prefs: collectUiPrefs(),
+    rel_browser_layouts: collectRelBrowserLayouts(),
   };
+}
+
+/** 完整收集：含 Electron Portal/更新源地址（不含登录 token）。 */
+export async function collectClientPrefsFull(): Promise<ConfigBundleClientPrefs> {
+  const base = collectClientPrefs();
+  const electron_prefs = await collectElectronPrefs();
+  return electron_prefs ? { ...base, electron_prefs } : base;
 }
 
 /** 合并本机「生成报表 / 历史报表」等偏好进待导出包 */
@@ -158,6 +285,34 @@ export function applyClientPrefsFromBundle(raw: unknown): string[] {
     if (n) applied.push("界面偏好");
   }
 
+  if (
+    prefs.rel_browser_layouts &&
+    typeof prefs.rel_browser_layouts === "object" &&
+    typeof localStorage !== "undefined"
+  ) {
+    let n = 0;
+    for (const [key, val] of Object.entries(prefs.rel_browser_layouts)) {
+      if (!key.startsWith(REL_BROWSER_LAYOUT_PREFIX) || typeof val !== "string") continue;
+      try {
+        localStorage.setItem(key, val);
+        n += 1;
+      } catch {
+        /* ignore */
+      }
+    }
+    if (n) applied.push("ER 图布局");
+  }
+
+  return applied;
+}
+
+/** 应用 client_prefs（含 Electron）；返回已应用项标签。 */
+export async function applyClientPrefsFromBundleFull(raw: unknown): Promise<string[]> {
+  const applied = applyClientPrefsFromBundle(raw);
+  if (raw && typeof raw === "object") {
+    const ep = (raw as ConfigBundleClientPrefs).electron_prefs;
+    if (await applyElectronPrefs(ep)) applied.push("Portal/更新源地址");
+  }
   return applied;
 }
 
@@ -187,12 +342,71 @@ export function dispatchConfigRestoredEvents(): void {
   window.dispatchEvent(new CustomEvent("report-editor-config-imported"));
 }
 
-/** 配置/备份恢复后通知各页面刷新（生成报表绑定、模版列表、签名、版式、自动结批等）。
- * 先失效各会话缓存，再派发事件，确保监听页面拉到的是最新数据而非旧缓存。 */
+/** 配置/备份恢复后通知各页面刷新。 */
 export function notifyReportEditorConfigRestored(): void {
   if (typeof window === "undefined") return;
   invalidateRestoredCaches();
   dispatchConfigRestoredEvents();
+}
+
+/** 恢复写入后：失效缓存 → 预拉数据源 → 应用偏好 → 派发事件。 */
+export async function finalizeConfigRestore(opts: {
+  clientPrefs?: unknown;
+}): Promise<string[]> {
+  invalidateRestoredCaches();
+  try {
+    await Promise.all([apiFetch("/database/connections"), apiFetch("/opcua/servers")]);
+  } catch {
+    /* 预拉失败不阻断恢复 */
+  }
+  const applied = await applyClientPrefsFromBundleFull(opts.clientPrefs);
+  dispatchConfigRestoredEvents();
+  notifyDatasourceChanged("all", "config-restore");
+  return applied;
+}
+
+/** 从导出响应头拼装内容清单文案。 */
+export function formatBackupCountSummary(headers: Headers): string {
+  const n = (key: string) => {
+    const v = headers.get(key);
+    const num = v != null ? Number(v) : NaN;
+    return Number.isFinite(num) ? num : 0;
+  };
+  const parts: string[] = [];
+  const db = n("X-Backup-Db-Count");
+  const opc = n("X-Backup-Opcua-Count");
+  const tpl = n("X-Backup-Templates");
+  const lay = n("X-Backup-Layouts");
+  const sig = n("X-Backup-Signatures");
+  const fav = n("X-Backup-Query-Favorites");
+  const hasAi = headers.get("X-Backup-Has-Ai") === "1";
+  if (db) parts.push(`数据库 ${db} 条`);
+  if (opc) parts.push(`OPC UA ${opc} 条`);
+  if (tpl) parts.push(`模版 ${tpl} 份`);
+  if (lay) parts.push(`版式 ${lay} 套`);
+  if (sig) parts.push(`签名 ${sig} 个`);
+  if (fav) parts.push(`查询收藏 ${fav} 条`);
+  if (hasAi) parts.push("AI 设置");
+  return parts.length ? parts.join("、") : "完整软件状态";
+}
+
+/** 从导入 imported 统计拼装恢复清单。 */
+export function formatImportStatsSummary(imp: ImportStats | null | undefined): string[] {
+  const parts: string[] = [];
+  if (!imp) return parts;
+  if (imp.db_connections) parts.push(`数据库 ${imp.db_connections} 条`);
+  if (imp.opcua_servers) parts.push(`OPC UA ${imp.opcua_servers} 条`);
+  if (imp.templates) parts.push(`模版 ${imp.templates} 份`);
+  if (imp.layout_presets) parts.push(`版式 ${imp.layout_presets} 套`);
+  if (imp.signature_assets) parts.push(`签名 ${imp.signature_assets} 个`);
+  if (imp.audit_entries) parts.push(`审计 ${imp.audit_entries} 条`);
+  if (imp.query_session_favorites || imp.query_session_history) {
+    const fav = imp.query_session_favorites || 0;
+    const hist = imp.query_session_history || 0;
+    parts.push(`查询会话（收藏 ${fav} / 历史 ${hist}）`);
+  }
+  if (imp.has_ai_settings) parts.push("AI 设置");
+  return parts;
 }
 
 /** 旧版仅含 db/opc 的 JSON：服务端字段 + 文件内嵌的 client_prefs */

@@ -152,10 +152,27 @@ async def export_config_post(request: Request):
         raise HTTPException(503, f"生成加密备份失败: {e}") from e
     stamp = datetime.now().strftime("%Y-%m-%d")
     filename = f"report-editor-backup-{stamp}.rebak"
+    counts = cbundle.bundle_content_counts(bundle)
+    headers = {
+        "Content-Disposition": f'attachment; filename="{filename}"',
+        "X-Backup-Db-Count": str(counts.get("db_connections", 0)),
+        "X-Backup-Opcua-Count": str(counts.get("opcua_servers", 0)),
+        "X-Backup-Templates": str(counts.get("templates", 0)),
+        "X-Backup-Layouts": str(counts.get("layout_presets", 0)),
+        "X-Backup-Signatures": str(counts.get("signature_assets", 0)),
+        "X-Backup-Query-Favorites": str(counts.get("query_session_favorites", 0)),
+        "X-Backup-Has-Ai": "1" if counts.get("has_ai_settings") else "0",
+        # CORS / 前端可读自定义头
+        "Access-Control-Expose-Headers": (
+            "Content-Disposition, X-Backup-Db-Count, X-Backup-Opcua-Count, "
+            "X-Backup-Templates, X-Backup-Layouts, X-Backup-Signatures, "
+            "X-Backup-Query-Favorites, X-Backup-Has-Ai"
+        ),
+    }
     return Response(
         content=blob,
         media_type="application/octet-stream",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers=headers,
     )
 
 
@@ -222,6 +239,12 @@ async def import_config(request: Request, mode: str | None = Query(None)):
             merged, raw_warn = cie.apply_import_merge(cur, data, **cred)
             warnings = cie.format_import_warnings(raw_warn)
         _save(merged)
+        if not imported_stats:
+            imported_stats = {
+                "db_connections": len(merged.get("db_connections") or []),
+                "opcua_servers": len(merged.get("opcua_servers") or []),
+                "has_ai_settings": bool(merged.get("ai_settings")),
+            }
         return {
             "ok": True,
             "mode": mode,

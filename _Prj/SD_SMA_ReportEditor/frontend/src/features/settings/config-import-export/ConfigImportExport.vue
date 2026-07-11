@@ -2,11 +2,10 @@
   <section class="settings-section settings-section--featured config-backup">
     <h3 class="settings-section__title">备份与恢复</h3>
     <div class="backup-callout">
-      <strong>升级、换电脑或重装前，请先导出备份。</strong>
-      导出的备份文件已<strong>加密</strong>（`.rebak`），可防止被随意查看或篡改，换台电脑也能直接导入恢复。
+      <strong>升级、换电脑或重装前，请先导出完整备份。</strong>
+      导出的备份文件已<strong>加密</strong>（`.rebak`），包含：数据库与 <strong>OPC UA</strong> 连接、模版、版式、签名、AI 设置、查询收藏、生成报表与界面偏好等，便于一键恢复到备份时的编辑状态。
       亦可导入<strong>原版报表编辑器</strong>导出的 `.rebak`（与 AI 版数据格式互通）。
       卸载或重装前请务必先在此导出，以免本机配置丢失。
-      客户端偏好（输出目录、模版排序等）若不在备份内，导入后需在本机再设一次。
     </div>
 
     <div class="backup-block">
@@ -135,13 +134,17 @@ import {
   saveTemplateViewCache,
 } from '@/lib/report-template/template-view-cache'
 import {
-  applyClientPrefsFromBundle,
-  collectClientPrefs,
+  applyClientPrefsFromBundleFull,
+  collectClientPrefsFull,
   buildImportDataFromFile,
   invalidateRestoredCaches,
   dispatchConfigRestoredEvents,
   notifyReportEditorConfigRestored,
+  formatBackupCountSummary,
+  formatImportStatsSummary,
+  type ImportStats,
 } from '@/features/settings/config-import-export/config-bundle-client'
+import { notifyDatasourceChanged } from '@/lib/datasource-sync-events'
 import { auditLog } from '@/lib/auditLog'
 
 type RestoreStepKey = 'write' | 'datasource' | 'templates' | 'layouts' | 'signatures' | 'genconfig'
@@ -150,7 +153,7 @@ type RestoreStep = { key: RestoreStepKey; label: string; status: RestoreStepStat
 
 const RESTORE_STEP_DEFS: { key: RestoreStepKey; label: string }[] = [
   { key: 'write', label: '写入备份数据' },
-  { key: 'datasource', label: '数据源' },
+  { key: 'datasource', label: '数据源（数据库 / OPC UA）' },
   { key: 'templates', label: '模版' },
   { key: 'layouts', label: '版式' },
   { key: 'signatures', label: '签名' },
@@ -231,21 +234,23 @@ async function exportBackup() {
   msg.value = ''
   msgTone.value = ''
   try {
+    const clientPrefs = await collectClientPrefsFull()
     const res = await fetch(resolveApiHref('/settings/config/export'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mode: 'backup', format: 'encrypted', client_prefs: collectClientPrefs() }),
+      body: JSON.stringify({ mode: 'backup', format: 'encrypted', client_prefs: clientPrefs }),
     })
     if (!res.ok) {
       const text = await res.text().catch(() => '')
       throw new Error(text || `导出失败（HTTP ${res.status}）`)
     }
+    const summary = formatBackupCountSummary(res.headers)
     const blob = await res.blob()
     const stamp = new Date().toISOString().slice(0, 10)
     downloadBlob(blob, `report-editor-backup-${stamp}.rebak`)
-    msg.value = '加密备份文件已保存（一般在「下载」文件夹中）。文件已加密，请妥善保管。'
+    msg.value = `完整软件状态备份已保存（一般在「下载」文件夹）：${summary}。文件已加密，请妥善保管。`
     msgTone.value = 'ok'
-    void auditLog({ action: 'config.export', summary: '导出加密配置备份', result: 'ok' })
+    void auditLog({ action: 'config.export', summary: '导出加密完整配置备份', result: 'ok' })
   } catch (e: unknown) {
     msg.value = e instanceof Error ? e.message : String(e)
     msgTone.value = 'err'
@@ -335,12 +340,7 @@ async function onFile(ev: Event) {
 
 type ImportResponse = {
   ok?: boolean
-  imported?: {
-    templates?: number
-    layout_presets?: number
-    signature_assets?: number
-    audit_entries?: number
-  }
+  imported?: ImportStats
   client_prefs?: unknown
   warnings?: string[]
 }
@@ -394,7 +394,7 @@ async function doImport(mode: 'merge' | 'replace') {
     invalidateRestoredCaches()
 
     await runRestoreStep('datasource', async () => {
-      await apiFetch('/database/connections')
+      await Promise.all([apiFetch('/database/connections'), apiFetch('/opcua/servers')])
     })
     await runRestoreStep('templates', async () => {
       const list = await listTemplateSummaries()
@@ -409,18 +409,14 @@ async function doImport(mode: 'merge' | 'replace') {
 
     const clientApplied: string[] = []
     await runRestoreStep('genconfig', async () => {
-      clientApplied.push(...applyClientPrefsFromBundle(res.client_prefs ?? fileClientPrefs))
+      clientApplied.push(...(await applyClientPrefsFromBundleFull(res.client_prefs ?? fileClientPrefs)))
     })
 
     // 全部加载完成后再通知已打开的页面刷新（此时缓存已预热，切页即见）
     dispatchConfigRestoredEvents()
+    notifyDatasourceChanged('all', 'config-restore')
 
-    const parts: string[] = []
-    const imp = res.imported
-    if (imp?.templates) parts.push(`模版 ${imp.templates} 份`)
-    if (imp?.layout_presets) parts.push(`版式 ${imp.layout_presets} 套`)
-    if (imp?.signature_assets) parts.push(`签名 ${imp.signature_assets} 个`)
-    if (imp?.audit_entries) parts.push(`审计 ${imp.audit_entries} 条`)
+    const parts = formatImportStatsSummary(res.imported)
     if (clientApplied.length) parts.push(`本机设置已更新`)
     const detail = parts.length ? `已恢复：${parts.join('、')}。` : '恢复完成。'
     const warnLines = Array.isArray(res.warnings) ? res.warnings.filter((w) => typeof w === 'string' && w) : []
