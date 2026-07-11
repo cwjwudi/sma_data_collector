@@ -584,7 +584,8 @@ import {
   clampZoneElement,
   clampZoneTableOuterSize,
   ensureZoneTableGrid,
-  intrinsicOuterHeightForZoneTable,
+  applyZoneTableOuterHeight,
+  minOuterHeightForZoneTableResizePx,
   minOuterSizeForZoneTable,
   zoneTableColumnInnerWidthsPx,
   flexJustifyAlignForAxes,
@@ -1194,8 +1195,9 @@ function ptrMove(ev: PointerEvent) {
     let w = resize.iw;
     let hh = resize.ih;
     const floorW = el.type === "table" ? minOuterSizeForZoneTable(el).w : 16;
-    const floorH = el.type === "table" ? minOuterSizeForZoneTable(el).h : 16;
-    const ceilH = el.type === "table" ? intrinsicOuterHeightForZoneTable(el) : Number.POSITIVE_INFINITY;
+    const floorH = el.type === "table" ? minOuterHeightForZoneTableResizePx(el) : 16;
+    const { w: bw, h: bh } = bandDims(resize.z);
+    const ceilH = el.type === "table" ? Math.max(floorH, bh) : Number.POSITIVE_INFINITY;
     if (h.includes("e")) w = Math.max(floorW, Math.round(resize.iw + dx));
     if (h.includes("s")) hh = Math.min(ceilH, Math.max(floorH, Math.round(resize.ih + dy)));
     if (h.includes("w")) {
@@ -1215,14 +1217,16 @@ function ptrMove(ev: PointerEvent) {
       hh = capped;
     }
     Object.assign(el, { x, y, w, h: hh });
-    const { w: bw, h: bh } = bandDims(resize.z);
     const peers = peersForSnapZone(resize.z);
     if (!ev.shiftKey) {
       const snapped = magneticSnapResize(el.x, el.y, el.w, el.h, h, bw, bh, peers, el.id, floorW, floorH);
       Object.assign(el, snapped);
-      if (el.type === "table") {
-        const cap = intrinsicOuterHeightForZoneTable(el);
-        if (el.h > cap) el.h = cap;
+    }
+    if (el.type === "table" && (h.includes("n") || h.includes("s") || (ev.shiftKey && /nw|ne|sw|se/.test(h)))) {
+      const maxH = Math.max(floorH, bh - Math.max(0, el.y));
+      applyZoneTableOuterHeight(el, el.h, maxH);
+      if (h.includes("n")) {
+        el.y = Math.round(resize.iy + (resize.ih - el.h));
       }
     }
     clampEl(el, resize.z);

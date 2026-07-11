@@ -1,15 +1,15 @@
 {
-  "version": "0.3.28",
-  "releasedAt": "2026-07-11T08:32:27.890Z",
-  "notes": "仪表盘扫描绑定语法错误（OPC空节点/表名占位符/SQL参数等）",
+  "version": "0.3.29",
+  "releasedAt": "2026-07-11T08:57:19.784Z",
+  "notes": "修复表格换行裁切末行；恢复表格整体拖拽缩放手柄",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.28-x64.exe",
-      "sha256": "f34f8d1987b82ae0c0fd8c54a9ac81bb037d0833da312ec6a4289cfd20440ac1",
-      "size": 145468781
+      "url": "Report Editor AI-Setup-0.3.29-x64.exe",
+      "sha256": "",
+      "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.28-arm64.dmg",
+      "url": "Report Editor AI-0.3.29-arm64.dmg",
       "sha256": "",
       "size": 0
     }

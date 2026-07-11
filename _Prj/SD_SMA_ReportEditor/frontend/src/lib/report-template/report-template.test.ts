@@ -10,6 +10,8 @@ import {
   createTemplate,
   ensureBodyPages,
   clampTableElementOuterSize,
+  applyTemplateTableOuterHeight,
+  intrinsicOuterHeightForTemplateTable,
 } from "@/lib/report-template/model";
 import { blankZonesSnapshot } from "@/lib/report-template/layout-model";
 import {
@@ -154,6 +156,22 @@ describe("hydrateTemplateElement", () => {
     tb.tableRowHeightPx = 40;
     clampTableElementOuterSize(tb, 800, 2000);
     expect(tb.h).toBeGreaterThan(h1! / 2);
+  });
+
+  it("applyTemplateTableOuterHeight maps drag height into row height", () => {
+    const tb = hydrateTemplateElement({
+      id: "rz",
+      type: "table",
+      tableRows: 4,
+      tableCols: 2,
+      tableRowHeightPx: 28,
+      h: 100,
+    });
+    clampTableElementOuterSize(tb, 800, 2000);
+    const before = tb.tableRowHeightPx!;
+    applyTemplateTableOuterHeight(tb, (tb.h ?? 0) + 80, 2000);
+    expect(tb.tableRowHeightPx).toBeGreaterThan(before);
+    expect(tb.h).toBe(intrinsicOuterHeightForTemplateTable(tb));
   });
 });
 

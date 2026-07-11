@@ -413,8 +413,9 @@ import {
 import {
   clampTableElementOuterSize,
   ensureTableGrid,
-  intrinsicOuterHeightForTemplateTable,
+  applyTemplateTableOuterHeight,
   makeElement,
+  minOuterHeightForTemplateTableResizePx,
   minOuterSizeForTable,
   signatureShowsHandwriting,
   signatureShowsWatermark,
@@ -1228,7 +1229,10 @@ function minTableResizeW(el: TemplateElement): number {
 }
 
 function minTableResizeH(el: TemplateElement): number {
-  return el.type === "table" ? minOuterSizeForTable(el).h : 20;
+  if (el.type !== "table") return 20;
+  // 静态表：纵向拖拽改行高，下限按最小行高；SQL 填充仍用贴合/可视窗口下限
+  if (!el.tableSqlFill?.enabled) return minOuterHeightForTemplateTableResizePx(el);
+  return minOuterSizeForTable(el).h;
 }
 
 function pickTableCell(el: TemplateElement, ri: number, ci: number) {
@@ -1429,12 +1433,10 @@ function ptrMove(ev: PointerEvent) {
     let hh = resize.ih;
     const floorW = el.type === "table" ? minTableResizeW(el) : 20;
     const floorH = el.type === "table" ? minTableResizeH(el) : 20;
+    const staticTable = el.type === "table" && !el.tableSqlFill?.enabled;
+    // 静态表：纵向拖到页内上限即可（改行高）；SQL 横表同；勿再锁死在「当前贴合高度」
     const ceilH =
-      el.type === "table"
-        ? el.tableSqlFill?.enabled
-          ? me.value.contentH
-          : intrinsicOuterHeightForTemplateTable(el)
-        : Number.POSITIVE_INFINITY;
+      el.type === "table" ? Math.max(floorH, me.value.contentH) : Number.POSITIVE_INFINITY;
     if (h.includes("e")) w = Math.max(floorW, Math.round(resize.iw + dx));
     if (h.includes("s")) hh = Math.min(ceilH, Math.max(floorH, Math.round(resize.ih + dy)));
     if (h.includes("w")) {
@@ -1460,9 +1462,13 @@ function ptrMove(ev: PointerEvent) {
     if (!ev.shiftKey) {
       const snapped = magneticSnapResize(el.x, el.y, el.w, el.h, h, bw, bh, peers, el.id, floorW, floorH);
       Object.assign(el, snapped);
-      if (el.type === "table" && !el.tableSqlFill?.enabled) {
-        const cap = intrinsicOuterHeightForTemplateTable(el);
-        if (el.h > cap) el.h = cap;
+    }
+    // 静态表纵向/等比缩放：外框高度反推「行高」，再贴合 snug，避免空白底或裁切
+    if (staticTable && (h.includes("n") || h.includes("s") || (ev.shiftKey && /nw|ne|sw|se/.test(h)))) {
+      const maxH = Math.max(floorH, bh - Math.max(0, el.y));
+      applyTemplateTableOuterHeight(el, el.h, maxH);
+      if (h.includes("n")) {
+        el.y = Math.round(resize.iy + (resize.ih - el.h));
       }
     }
     clamp(el);
@@ -1880,8 +1886,8 @@ async function onTplImageDropFile(ev: DragEvent, el: TemplateElement) {
 }
 .cv-table {
   width: 100%;
-  height: auto;
-  max-height: none;
+  height: 100%;
+  max-height: 100%;
   border-collapse: separate;
   border-spacing: 0;
   table-layout: fixed;
@@ -1912,6 +1918,7 @@ async function onTplImageDropFile(ev: DragEvent, el: TemplateElement) {
   padding: 1px 5px;
   vertical-align: middle;
   text-align: center;
+  position: relative;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1968,13 +1975,18 @@ async function onTplImageDropFile(ev: DragEvent, el: TemplateElement) {
   box-shadow: inset 0 0 0 2px #6366f1;
 }
 .cv-table-cell-txt {
-  display: block;
+  /* 绝对铺满单元格：换行文案不再把 tr 撑高，避免「行数对但底部被裁」 */
+  position: absolute;
+  inset: 1px 5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   font-size: max(10px, 0.85em);
   line-height: 1.3;
   word-break: break-word;
   white-space: pre-wrap;
-  max-height: none;
-  overflow: visible;
+  overflow: hidden;
+  text-align: center;
 }
 .cv-table-cell-edit {
   display: block;
@@ -2066,6 +2078,7 @@ async function onTplImageDropFile(ev: DragEvent, el: TemplateElement) {
   z-index: 1;
 }
 .el-node--table {
+  /* 未选中时裁切表体；选中态见下方，需露出缩放手柄 */
   overflow: hidden;
 }
 .el-node.sel {
@@ -2074,7 +2087,8 @@ async function onTplImageDropFile(ev: DragEvent, el: TemplateElement) {
   z-index: 6;
 }
 .el-node--table.sel {
-  overflow: hidden;
+  /* 手柄在节点外缘，必须 visible；表体裁切交给 .cv-table-shell */
+  overflow: visible;
 }
 .touch {
   touch-action: manipulation;

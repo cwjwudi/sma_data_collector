@@ -6,6 +6,7 @@ import {
   hydratePersistedTableColWidthsPx,
   REPORT_ZONE_TABLE_NODE_PADDING_PX,
   TABLE_ROW_HEIGHT_DEFAULT_PX,
+  TABLE_ROW_HEIGHT_MIN_PX,
   TEMPLATE_TABLE_MAX_COLS,
   TEMPLATE_TABLE_MAX_ROWS,
   uniformTableCellBoxPx,
@@ -466,17 +467,46 @@ export function zoneTableColumnInnerWidthsPx(el: LayoutZoneElement): number[] {
   return distributeTableColumnInnerWidthsPx(u.innerW, cols, el.tableColWidthsPx);
 }
 
+/** 版式区表格外框纵向 chrome（节点 padding + 表壳底 1px） */
+export function zoneTableVerticalChromePx(): number {
+  const p = REPORT_ZONE_TABLE_NODE_PADDING_PX;
+  const shellBottomPadPx = 1;
+  return p.top + p.bottom + shellBottomPadPx;
+}
+
 /**
  * 版式区 / 页眉页脚表格外框的贴合高度：`.lppc-node` / `.hz-node` padding + 各行固定行高 + 表壳底 1px。
  */
 export function intrinsicOuterHeightForZoneTable(el: LayoutZoneElement): number {
   if (el.type !== "table") return 20;
   ensureZoneTableGrid(el);
-  const rows = el.tableRows ?? 3;
+  const rows = Math.max(1, el.tableRows ?? 3);
   const rowH = clampTableRowHeightPx(el.tableRowHeightPx);
-  const p = REPORT_ZONE_TABLE_NODE_PADDING_PX;
-  const shellBottomPadPx = 1;
-  return p.top + p.bottom + rows * rowH + shellBottomPadPx;
+  return zoneTableVerticalChromePx() + rows * rowH;
+}
+
+/** 版式表纵向缩放下限：按最小行高推算 */
+export function minOuterHeightForZoneTableResizePx(el: LayoutZoneElement): number {
+  if (el.type !== "table") return 20;
+  ensureZoneTableGrid(el);
+  const rows = Math.max(1, el.tableRows ?? 3);
+  return Math.max(20, zoneTableVerticalChromePx() + rows * TABLE_ROW_HEIGHT_MIN_PX);
+}
+
+/** 按外框目标高度反推行高（版式表整体拖拽缩放） */
+export function applyZoneTableOuterHeight(
+  el: LayoutZoneElement,
+  outerH: number,
+  maxH = Number.POSITIVE_INFINITY,
+): void {
+  if (el.type !== "table") return;
+  ensureZoneTableGrid(el);
+  const rows = Math.max(1, el.tableRows ?? 3);
+  const chrome = zoneTableVerticalChromePx();
+  const capped = Math.max(chrome + rows * TABLE_ROW_HEIGHT_MIN_PX, Math.min(Number(outerH) || 0, maxH));
+  const rowH = clampTableRowHeightPx((capped - chrome) / rows);
+  el.tableRowHeightPx = rowH;
+  el.h = chrome + rows * rowH;
 }
 
 export function minOuterSizeForZoneTable(el: LayoutZoneElement): { w: number; h: number } {

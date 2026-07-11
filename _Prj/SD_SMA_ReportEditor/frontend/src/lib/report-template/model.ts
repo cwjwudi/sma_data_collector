@@ -70,6 +70,7 @@ import {
   hydratePersistedTableColWidthsPx,
   REPORT_TEMPLATE_TABLE_NODE_PADDING_PX,
   TABLE_ROW_HEIGHT_DEFAULT_PX,
+  TABLE_ROW_HEIGHT_MIN_PX,
   TEMPLATE_TABLE_MAX_COLS,
   TEMPLATE_TABLE_MAX_ROWS,
   uniformTableCellBoxPx,
@@ -350,19 +351,50 @@ export function templateTableColumnInnerWidthsPx(el: TemplateElement): number[] 
   return distributeTableColumnInnerWidthsPx(u.innerW, cols, el.tableColWidthsPx);
 }
 
+/** 正文表格外框纵向 chrome（节点 padding + 表壳底 1px） */
+export function templateTableVerticalChromePx(): number {
+  const p = REPORT_TEMPLATE_TABLE_NODE_PADDING_PX;
+  /** 与 TemplateBodyCanvas `.cv-table-shell` padding-bottom 一致 */
+  const shellBottomPadPx = 1;
+  return p.top + p.bottom + shellBottomPadPx;
+}
+
 /**
  * 正文画布表格外框的「贴合」高度：节点 padding（`.el-node`）+ 各行固定行高 + `.cv-table-shell` 底侧 1px。
- * 用于锁定纵向缩放，避免出现表格已固定行高却仍能把外框拉高的空白区。
+ * 改行数/行高后用于把外框 snug 到内容；纵向拖拽缩放时改为改行高，不再把外框锁死在该值。
  */
 export function intrinsicOuterHeightForTemplateTable(el: TemplateElement): number {
   if (el.type !== "table") return 20;
   ensureTableGrid(el);
-  const rows = el.tableRows ?? 3;
+  const rows = Math.max(1, el.tableRows ?? 3);
   const rowH = clampTableRowHeightPx(el.tableRowHeightPx);
-  const p = REPORT_TEMPLATE_TABLE_NODE_PADDING_PX;
-  /** 与 TemplateBodyCanvas `.cv-table-shell` padding-bottom 一致 */
-  const shellBottomPadPx = 1;
-  return p.top + p.bottom + rows * rowH + shellBottomPadPx;
+  return templateTableVerticalChromePx() + rows * rowH;
+}
+
+/** 静态表纵向缩放下限：按最小行高推算外框高度 */
+export function minOuterHeightForTemplateTableResizePx(el: TemplateElement): number {
+  if (el.type !== "table") return 20;
+  ensureTableGrid(el);
+  const rows = Math.max(1, el.tableRows ?? 3);
+  return Math.max(20, templateTableVerticalChromePx() + rows * TABLE_ROW_HEIGHT_MIN_PX);
+}
+
+/**
+ * 按外框目标高度反推行高（静态表整体拖拽缩放用），并写回贴合后的 `el.h`。
+ */
+export function applyTemplateTableOuterHeight(
+  el: TemplateElement,
+  outerH: number,
+  maxH = Number.POSITIVE_INFINITY,
+): void {
+  if (el.type !== "table") return;
+  ensureTableGrid(el);
+  const rows = Math.max(1, el.tableRows ?? 3);
+  const chrome = templateTableVerticalChromePx();
+  const capped = Math.max(chrome + rows * TABLE_ROW_HEIGHT_MIN_PX, Math.min(Number(outerH) || 0, maxH));
+  const rowH = clampTableRowHeightPx((capped - chrome) / rows);
+  el.tableRowHeightPx = rowH;
+  el.h = chrome + rows * rowH;
 }
 
 /**

@@ -673,7 +673,8 @@ import {
   clampZoneElement,
   clampZoneTableOuterSize,
   ensureZoneTableGrid,
-  intrinsicOuterHeightForZoneTable,
+  applyZoneTableOuterHeight,
+  minOuterHeightForZoneTableResizePx,
   makeLayoutZoneElement,
   minOuterSizeForZoneTable,
   DATE_FORMAT_PRESETS,
@@ -1592,8 +1593,10 @@ function onMove(ev: PointerEvent) {
     let w = dragResize.iw;
     let hh = dragResize.ih;
     const floorW = el.type === "table" ? minOuterSizeForZoneTable(el).w : 16;
-    const floorH = el.type === "table" ? minOuterSizeForZoneTable(el).h : 16;
-    const ceilH = el.type === "table" ? intrinsicOuterHeightForZoneTable(el) : Number.POSITIVE_INFINITY;
+    const floorH = el.type === "table" ? minOuterHeightForZoneTableResizePx(el) : 16;
+    const bw = bandW.value;
+    const bh = bandH.value;
+    const ceilH = el.type === "table" ? Math.max(floorH, bh) : Number.POSITIVE_INFINITY;
     if (h.includes("e")) w = Math.max(floorW, dragResize.iw + dx);
     if (h.includes("s")) hh = Math.min(ceilH, Math.max(floorH, dragResize.ih + dy));
     if (h.includes("w")) {
@@ -1616,8 +1619,6 @@ function onMove(ev: PointerEvent) {
     el.y = y;
     el.w = w;
     el.h = hh;
-    const bw = bandW.value;
-    const bh = bandH.value;
     const peers = hzSnapPeers();
     if (!ev.shiftKey) {
       const snapped = magneticSnapResize(el.x, el.y, el.w, el.h, h, bw, bh, peers, el.id, floorW, floorH);
@@ -1625,9 +1626,12 @@ function onMove(ev: PointerEvent) {
       el.y = snapped.y;
       el.w = snapped.w;
       el.h = snapped.h;
-      if (el.type === "table") {
-        const cap = intrinsicOuterHeightForZoneTable(el);
-        if (el.h > cap) el.h = cap;
+    }
+    if (el.type === "table" && (h.includes("n") || h.includes("s") || (ev.shiftKey && /nw|ne|sw|se/.test(h)))) {
+      const maxH = Math.max(floorH, bh - Math.max(0, el.y));
+      applyZoneTableOuterHeight(el, el.h, maxH);
+      if (h.includes("n")) {
+        el.y = Math.round(dragResize.iy + (dragResize.ih - el.h));
       }
     }
     clampZoneElement(el, bandW.value, bandH.value);
