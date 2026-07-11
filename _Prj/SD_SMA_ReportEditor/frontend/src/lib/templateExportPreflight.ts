@@ -81,8 +81,6 @@ export async function runTemplateExportPreflight(templateId: string): Promise<Te
 
   const { opcTasks, sqlTasks, mongoTasks } = collectBindingDedupeTasks(tmpl, opcServerId, sqlConnId);
 
-  let enabledSqlFillCount = 0;
-  let splitSqlFillCount = 0;
   const sqlFillConnectionIds = new Set<string>();
   const mongoFillConnectionIds = new Set<string>();
   function collectSqlFill(el: { type?: string; tableSqlFill?: unknown }) {
@@ -93,13 +91,10 @@ export async function runTemplateExportPreflight(templateId: string): Promise<Te
           fillMode?: string;
           visualSource?: { connectionId?: string };
           mongoQuery?: { connectionId?: string };
-          splitReportsOnMaxRows?: boolean;
         }
       | null
       | undefined;
     if (!fill?.enabled) return;
-    enabledSqlFillCount += 1;
-    if (fill.splitReportsOnMaxRows) splitSqlFillCount += 1;
     if (fill.fillMode === "mongo") {
       const mongoId = String(fill.mongoQuery?.connectionId || "").trim();
       if (mongoId) mongoFillConnectionIds.add(mongoId);
@@ -117,10 +112,6 @@ export async function runTemplateExportPreflight(templateId: string): Promise<Te
   forEachZoneLayoutElement(tmpl, (el) => {
     collectSqlFill(el);
   });
-
-  if (splitSqlFillCount > 0 && enabledSqlFillCount !== 1) {
-    blockers.push("开启“超出最大数量自动分报表”后，模板中只允许保留一个数据库填充表。");
-  }
 
   if (opcTasks.length && !opcServerId) {
     blockers.push("模版含 OPC UA 绑定，但未配置可用的 OPC UA 连接。");

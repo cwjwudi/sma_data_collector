@@ -285,7 +285,13 @@ def _scan_one_template(
     bindings = extract_template_bindings(raw)
     for bi in validate_bindings_against_config(bindings, db_by_id=db_by_id, opc_by_id=opc_by_id):
         kind = str(bi.get("kind") or "binding")
-        severity: Severity = "error" if kind == "missing_db" else "warn"
+        # missing_db：连接配置缺失/未同步；断网等场景也可能误报，降为警告并允许仪表盘忽略
+        severity: Severity = "warn"
+        hint = (
+            "连接可能已删除或尚未同步。断网时也可能短暂看不到连接；可在仪表盘忽略后稍后重试。"
+            if kind == "missing_db"
+            else "请检查该连接的密码与默认数据库。"
+        )
         issues.append(
             _issue(
                 severity=severity,
@@ -294,7 +300,7 @@ def _scan_one_template(
                 asset_kind="template",
                 asset_id=tid,
                 asset_name=name,
-                hint="请在数据源配置中恢复连接，或在模版属性中重选数据源。",
+                hint=hint,
                 meta={k: v for k, v in bi.items() if k not in ("kind", "message")},
             )
         )
@@ -313,20 +319,7 @@ def _scan_one_template(
             )
         )
 
-    split_n = _count_sql_fill_split_tables(raw)
-    if split_n > 1:
-        issues.append(
-            _issue(
-                severity="error",
-                kind="multi_split_sql_fill",
-                message=f"启用「按行数分报表」的 SQL 填充表有 {split_n} 个，导出规则仅允许 1 个",
-                asset_kind="template",
-                asset_id=tid,
-                asset_name=name,
-                hint="请只保留一张表开启分报表，或关闭多余表的该选项。",
-                meta={"count": split_n},
-            )
-        )
+    # 多表「按行数分报表」已支持按份序号对齐，不再报错
 
     issues.extend(
         scan_binding_config(raw, asset_kind="template", asset_id=tid, asset_name=name)
@@ -403,13 +396,13 @@ def _scan_one_layout(
             continue
         issues.append(
             _issue(
-                severity="error",
+                severity="warn",
                 kind=kind,
                 message=str(bi.get("message") or kind),
                 asset_kind="layout",
                 asset_id=lid,
                 asset_name=name,
-                hint="版式中的表格/参数绑定了已删除的数据库连接。",
+                hint="版式中的表格/参数绑定了已删除或不存在的数据库连接；断网时也可能短暂误报，可在仪表盘忽略。",
                 meta={k: v for k, v in bi.items() if k not in ("kind", "message")},
             )
         )

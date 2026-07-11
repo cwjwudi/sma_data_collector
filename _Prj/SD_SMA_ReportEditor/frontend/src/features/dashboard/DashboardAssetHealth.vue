@@ -38,23 +38,29 @@
         <div class="dash-metric">
           <span class="dash-metric__label">问题</span>
           <strong class="dash-metric__value" :class="{ bad: hasErrors, warn: !hasErrors && hasWarns }">
-            {{ result.issueCount }}
+            {{ displayCounts.issueCount }}
           </strong>
           <span class="dash-metric__sub muted">
-            {{ result.errorCount }} 错误 · {{ result.warnCount }} 警告 · {{ result.infoCount }} 提示
+            {{ displayCounts.errorCount }} 错误 · {{ displayCounts.warnCount }} 警告 ·
+            {{ displayCounts.infoCount }} 提示
+            <template v-if="ignoredCount"> · 已忽略 {{ ignoredCount }}</template>
           </span>
         </div>
       </div>
 
-      <p v-if="result.issueCount === 0" class="dash-card__status ok">
-        未发现潜在问题（已检查绑定语法、连接引用、版式、schema 与文件完整性）。
+      <p v-if="displayCounts.issueCount === 0" class="dash-card__status ok">
+        <template v-if="ignoredCount">
+          当前无未处理问题（已忽略 {{ ignoredCount }} 条）。
+          <button type="button" class="dash-asset-text-btn" @click="restoreIgnored">恢复已忽略</button>
+        </template>
+        <template v-else>未发现潜在问题（已检查绑定语法、连接引用、版式、schema 与文件完整性）。</template>
       </p>
       <p v-else class="dash-card__status">
-        以下含绑定语法/配置问题（不探活数据源）。优先处理标红项。
+        以下含绑定语法/配置问题（不探活数据源）。优先处理标红项。连接引用类警告可忽略（例如断网误报）。
       </p>
 
       <ul v-if="visibleIssues.length" class="dash-list">
-        <li v-for="(it, idx) in visibleIssues" :key="idx" class="dash-list__item">
+        <li v-for="(it, idx) in visibleIssues" :key="issueKey(it, idx)" class="dash-list__item">
           <div class="dash-list__row">
             <span class="sev" :class="'sev--' + it.severity">{{ severityLabel(it.severity) }}</span>
             <span class="dash-list__title">
@@ -68,19 +74,32 @@
                 <span class="muted">（版式）</span>
               </template>
             </span>
+            <button
+              v-if="canIgnore(it)"
+              type="button"
+              class="dash-asset-ignore"
+              title="忽略此警告（保存在本机）"
+              @click="onIgnore(it)"
+            >
+              忽略
+            </button>
           </div>
           <p class="dash-list__msg">{{ it.message }}</p>
           <p v-if="it.hint" class="dash-list__hint">{{ it.hint }}</p>
         </li>
       </ul>
       <button
-        v-if="result.issues.length > maxVisible"
+        v-if="activeIssues.length > maxVisible"
         type="button"
         class="dash-asset-more"
         @click="expanded = !expanded"
       >
-        {{ expanded ? "收起" : `显示全部 ${result.issues.length} 条` }}
+        {{ expanded ? "收起" : `显示全部 ${activeIssues.length} 条` }}
       </button>
+      <p v-if="ignoredCount && displayCounts.issueCount > 0" class="dash-card__foot">
+        已忽略 {{ ignoredCount }} 条
+        <button type="button" class="dash-asset-text-btn" @click="restoreIgnored">恢复</button>
+      </p>
       <p v-if="result.scannedAt" class="dash-card__foot">上次扫描 {{ formatTime(result.scannedAt) }}</p>
     </template>
 
@@ -92,9 +111,18 @@
 import { computed, onActivated, onMounted, onUnmounted, ref } from "vue";
 import {
   fetchAssetHealthScan,
+  type AssetHealthIssue,
   type AssetHealthScanResult,
   type AssetHealthSeverity,
 } from "@/api/assets";
+import {
+  clearIgnoredAssetHealthIssues,
+  filterVisibleAssetHealthIssues,
+  ignoreAssetHealthIssue,
+  isAssetHealthIssueDismissible,
+  loadIgnoredAssetHealthFingerprints,
+  recountAssetHealthSeverities,
+} from "@/lib/asset-health-ignore";
 
 defineOptions({ name: "DashboardAssetHealth" });
 
@@ -103,13 +131,26 @@ const error = ref("");
 const result = ref<AssetHealthScanResult | null>(null);
 const expanded = ref(false);
 const maxVisible = 8;
+const ignored = ref<Set<string>>(loadIgnoredAssetHealthFingerprints());
 
-const hasErrors = computed(() => (result.value?.errorCount ?? 0) > 0);
-const hasWarns = computed(() => (result.value?.warnCount ?? 0) > 0);
-const hasInfos = computed(() => (result.value?.infoCount ?? 0) > 0);
+const activeIssues = computed(() =>
+  filterVisibleAssetHealthIssues(result.value?.issues || [], ignored.value),
+);
+
+const displayCounts = computed(() => recountAssetHealthSeverities(activeIssues.value));
+
+const ignoredCount = computed(() => {
+  const all = result.value?.issues || [];
+  if (!all.length || !ignored.value.size) return 0;
+  return all.length - activeIssues.value.length;
+});
+
+const hasErrors = computed(() => displayCounts.value.errorCount > 0);
+const hasWarns = computed(() => displayCounts.value.warnCount > 0);
+const hasInfos = computed(() => displayCounts.value.infoCount > 0);
 
 const visibleIssues = computed(() => {
-  const list = result.value?.issues || [];
+  const list = activeIssues.value;
   if (expanded.value) return list;
   return list.slice(0, maxVisible);
 });
@@ -125,6 +166,22 @@ function formatTime(iso: string): string {
   return t.length > 22 ? t.slice(0, 19) : t;
 }
 
+function canIgnore(it: AssetHealthIssue): boolean {
+  return isAssetHealthIssueDismissible(it);
+}
+
+function issueKey(it: AssetHealthIssue, idx: number): string {
+  return `${it.assetKind}-${it.assetId}-${it.kind}-${idx}`;
+}
+
+function onIgnore(it: AssetHealthIssue) {
+  ignored.value = ignoreAssetHealthIssue(it);
+}
+
+function restoreIgnored() {
+  ignored.value = clearIgnoredAssetHealthIssues();
+}
+
 let gen = 0;
 
 async function refresh() {
@@ -135,6 +192,7 @@ async function refresh() {
     const data = await fetchAssetHealthScan();
     if (token !== gen) return;
     result.value = data;
+    ignored.value = loadIgnoredAssetHealthFingerprints();
   } catch (e) {
     if (token !== gen) return;
     error.value = e instanceof Error ? e.message : String(e);
@@ -354,6 +412,39 @@ onUnmounted(() => {
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+.dash-asset-ignore {
+  margin-left: auto;
+  padding: 2px 8px;
+  border-radius: 6px;
+  border: 1px solid #d1d5db;
+  background: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  color: #64748b;
+  cursor: pointer;
+}
+
+.dash-asset-ignore:hover {
+  background: #f8fafc;
+  color: #334155;
+}
+
+.dash-asset-text-btn {
+  margin-left: 6px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: #4f46e5;
+  font-size: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.dash-asset-text-btn:hover {
+  color: #4338ca;
 }
 
 .sev {

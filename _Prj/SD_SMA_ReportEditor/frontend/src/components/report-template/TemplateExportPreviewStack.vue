@@ -204,11 +204,11 @@ const allPreviewReports = computed<PreviewReport[]>(() => {
     ];
   }
 
-  return plan.chunks.map((_rows, idx) => {
+  return Array.from({ length: plan.reportCount }, (_x, idx) => {
     const previewValues = previewValuesForSplitReport(base, plan, idx);
     return {
       reportIndex: idx,
-      totalReports: plan.chunks.length,
+      totalReports: plan.reportCount,
       previewValues,
       bodyCards: computeExpandedBodyPreviewCards(props.tmpl, previewValues),
     };

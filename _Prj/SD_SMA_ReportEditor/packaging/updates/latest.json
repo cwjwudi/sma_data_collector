@@ -1,15 +1,15 @@
 {
-  "version": "0.3.30",
-  "releasedAt": "2026-07-11T09:40:46.550Z",
-  "notes": "Report Editor AI 0.3.30\n\n- 表格「行高」改为最小行高：换行抬高该行，外框贴合内容高度\n- 表格仅可左右改宽，高度随行数与内容\n- 绑定/换行超页时导出预览跨页续表，禁止裁掉",
+  "version": "0.3.31",
+  "releasedAt": "2026-07-11T09:59:40.474Z",
+  "notes": "Report Editor AI 0.3.31\n\n- 多张表可同时开启「超出最大数量自动分报表」，按份序号对齐切分\n- 「绑定的数据库连接不存在」降为警告，仪表盘可忽略\n- 不再因多表分报表拦截导出",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.30-x64.exe",
-      "sha256": "33ab662c85ee149df436a920995c3774ed22f593f359026dd67db33ab9080b26",
-      "size": 145472098
+      "url": "Report Editor AI-Setup-0.3.31-x64.exe",
+      "sha256": "3687a89421fc4f09229ff65d4569fef590f36db84751e5d24373d9db9b061f59",
+      "size": 145473570
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.30-arm64.dmg",
+      "url": "Report Editor AI-0.3.31-arm64.dmg",
       "sha256": "",
       "size": 0
     }

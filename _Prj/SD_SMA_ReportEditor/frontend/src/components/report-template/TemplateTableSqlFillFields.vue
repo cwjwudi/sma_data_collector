@@ -145,7 +145,7 @@
       <span>超出最大数量自动分报表</span>
     </label>
     <p v-if="allowSplitReports && fill.splitReportsOnMaxRows" class="tbl-sql-fill-policy-hint">
-      开启后，如果查询结果超过最大行数，会按最大行数拆成多份报表；同时模板中只允许保留一个数据库填充表。
+      开启后，如果查询结果超过最大行数，会按最大行数拆成多份报表；多张表可同时开启，同序号份内各表取对应切片对齐。
     </p>
     <label v-if="layoutModeProxy === 'vertical'" class="tbl-sql-fill-mode">
       <span class="tbl-sql-fill-mode-t">多条结果分页</span>
