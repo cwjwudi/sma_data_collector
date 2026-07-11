@@ -1,12 +1,12 @@
 {
   "version": "0.3.26",
-  "releasedAt": "2026-07-11T07:57:25.534Z",
+  "releasedAt": "2026-07-11T08:02:10.766Z",
   "notes": "修正数据库404误报；失效连接提示；冒烟模版连接可重绑",
   "platforms": {
     "win32-x64": {
       "url": "Report Editor AI-Setup-0.3.26-x64.exe",
-      "sha256": "",
-      "size": 0
+      "sha256": "37c82d79bac8cb02d1150a70039622a6520dd88c826708e65235fa9047b0ca9a",
+      "size": 145443992
     },
     "darwin-arm64": {
       "url": "Report Editor AI-0.3.26-arm64.dmg",
