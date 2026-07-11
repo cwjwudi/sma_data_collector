@@ -1392,6 +1392,7 @@ function pasteSel() {
 }
 
 function sigOk(dataUrl) {
+  dlgSig.value = false;
   if (!sel.value || sel.value.type !== "signature") return;
   sel.value.imageSrc = dataUrl;
 }

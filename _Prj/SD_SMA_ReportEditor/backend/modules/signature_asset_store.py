@@ -67,6 +67,8 @@ def list_summaries() -> list[SignatureAssetSummary]:
     init_data_dirs()
     out: list[SignatureAssetSummary] = []
     for f in sorted(SIGNATURE_ASSETS_DIR.glob("*.json")):
+        if f.name.endswith(".tmp.json"):
+            continue
         try:
             a = SignatureAsset.model_validate(json.loads(f.read_text(encoding="utf-8")))
             out.append(SignatureAssetSummary(id=a.id, label=a.label, updatedAt=a.updatedAt))

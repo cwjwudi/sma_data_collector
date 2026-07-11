@@ -1,15 +1,15 @@
 {
-  "version": "0.3.34",
-  "releasedAt": "2026-07-11T10:43:18.119Z",
-  "notes": "Report Editor AI 0.3.34\n\n- 云端同步：未填账号密码时提示更清晰\n- 去掉 Electron IPC 原始错误包装文案",
+  "version": "0.3.35",
+  "releasedAt": "2026-07-11T10:49:41.152Z",
+  "notes": "修复签名库新建不落盘与预览/删除刷新异常",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.34-x64.exe",
-      "sha256": "3248b6924286247f02e0813ef9675851c9968417046d63bee9e13b84914a93dc",
-      "size": 145479251
+      "url": "Report Editor AI-Setup-0.3.35-x64.exe",
+      "sha256": "",
+      "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.34-arm64.dmg",
+      "url": "Report Editor AI-0.3.35-arm64.dmg",
       "sha256": "",
       "size": 0
     }

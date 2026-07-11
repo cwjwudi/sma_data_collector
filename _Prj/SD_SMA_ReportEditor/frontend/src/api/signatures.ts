@@ -40,5 +40,18 @@ export async function putSignature(id: string, body: SignatureAsset) {
 }
 
 export async function deleteSignature(id: string) {
-  await fj(`/signatures/${encodeURIComponent(id)}`, { method: "DELETE" });
+  const r = await fetch(u(`/signatures/${encodeURIComponent(id)}`), {
+    method: "DELETE",
+    headers: { Accept: "application/json" },
+  });
+  if (!r.ok) throw new Error(await r.text().catch(() => String(r.status)));
+  /** 部分网关可能返回空 body；有内容时再解析，避免误抛导致「已删但 UI 当失败」 */
+  const text = await r.text().catch(() => "");
+  if (text.trim()) {
+    try {
+      JSON.parse(text);
+    } catch {
+      /* 非 JSON 但 2xx：仍视为成功 */
+    }
+  }
 }

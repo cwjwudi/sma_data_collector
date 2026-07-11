@@ -4,6 +4,7 @@
       <h3 class="sig-title">{{ title }}</h3>
       <p v-if="subtitle" class="sig-subtitle">条目名称：{{ subtitle }}</p>
       <p class="sig-hint">{{ hintLine }}</p>
+      <p v-if="localError" class="sig-error" role="alert">{{ localError }}</p>
       <div ref="wrapRef" class="sig-canvas-wrap">
         <canvas ref="guideCanvasRef" class="sig-layer sig-layer--guide" aria-hidden="true" />
         <canvas ref="inkCanvasRef" class="sig-layer sig-layer--ink" />
@@ -55,6 +56,7 @@ const hintLine = computed(() => {
 const wrapRef = ref<HTMLElement | null>(null);
 const guideCanvasRef = ref<HTMLCanvasElement | null>(null);
 const inkCanvasRef = ref<HTMLCanvasElement | null>(null);
+const localError = ref("");
 let drawing = false;
 let lastX = 0;
 let lastY = 0;
@@ -267,11 +269,12 @@ function drawImageContainPixels(
 async function confirm() {
   const ink = inkCanvasRef.value;
   if (!ink) return;
+  localError.value = "";
   const guideImgSrc = props.guideImageSrc?.trim() ?? "";
   const hasLib = !!guideImgSrc;
 
   if (!hasInk && !hasLib) {
-    alert("请先在手写区内落笔书写（墨色笔迹），或先在下拉里关联签名库条目以便使用库图。");
+    localError.value = "请先在手写区内落笔书写（墨色笔迹），或先关联签名库条目。";
     return;
   }
 
@@ -291,7 +294,7 @@ async function confirm() {
       ex.fillRect(0, 0, pw, ph);
       drawImageContainPixels(ex, im, pw, ph);
     } catch {
-      alert("签名库图像加载失败，无法合成。");
+      localError.value = "签名库图像加载失败，无法合成。";
       return;
     }
   }
@@ -301,8 +304,8 @@ async function confirm() {
   }
 
   const dataUrl = exportC.toDataURL("image/png");
+  /** 只发 confirm；由父组件关板，避免先关 v-model 清掉父级意图 */
   emit("confirm", dataUrl);
-  emit("update:modelValue", false);
 }
 
 function attach() {
@@ -329,9 +332,11 @@ watch(
   async (open) => {
     if (!open) {
       hasInk = false;
+      localError.value = "";
       detach();
       return;
     }
+    localError.value = "";
     await nextTick();
     requestAnimationFrame(() => {
       resizeLayers();
@@ -399,6 +404,12 @@ onUnmounted(() => {
   font-size: 12px;
   color: rgb(113 113 122);
   line-height: 1.45;
+}
+.sig-error {
+  margin: -0.35rem 0 0.65rem;
+  font-size: 12px;
+  color: #dc2626;
+  line-height: 1.4;
 }
 .sig-canvas-wrap {
   position: relative;

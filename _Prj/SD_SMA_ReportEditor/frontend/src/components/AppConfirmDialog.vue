@@ -65,7 +65,7 @@ watch(
 .app-confirm-backdrop {
   position: fixed;
   inset: 0;
-  z-index: 13000;
+  z-index: 15000;
   display: grid;
   place-items: center;
   padding: 20px;

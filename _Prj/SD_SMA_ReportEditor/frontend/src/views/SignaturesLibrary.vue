@@ -103,8 +103,8 @@
     <SignaturePadDialog
       v-model="dlg"
       title="手写签名条目"
-      :subtitle="pendingLabel || undefined"
-      :guide-outline-text="pendingLabel || undefined"
+      :subtitle="padLabel || undefined"
+      :guide-outline-text="padLabel || undefined"
       @confirm="onPadOk"
     />
   </div>
@@ -131,17 +131,22 @@ defineOptions({ name: "SignaturesLibrary" });
 const msg = ref("");
 const loading = ref(false);
 const dlg = ref(false);
-const pendingNew = ref(false);
-/** 新建流程：手写板打开前已输入的名称 */
-const pendingLabel = ref("");
-/** 重新签名：当前正在重画的条目 id（保留其 id 与名称，仅替换签名图） */
-const resignId = ref("");
+/**
+ * 手写板意图：打开时写入，确认时消费；取消关闭时丢弃。
+ * 不用零散的 pendingNew/resignId —— 避免 v-model 关板与 @confirm 竞态导致「确定了却不保存」。
+ */
+type PadIntent =
+  | { mode: "new"; label: string }
+  | { mode: "resign"; id: string; label: string };
+const padIntent = ref<PadIntent | null>(null);
+/** 手写板副标题 / 描摹字（与 padIntent 同步展示） */
+const padLabel = computed(() => padIntent.value?.label || "");
 const route = useRoute();
 const router = useRouter();
 const summaries = ref<Pick<SignatureAsset, "id" | "label" | "updatedAt">[]>([]);
 const previews = ref<Record<string, string>>({});
 const nameDlg = ref(false);
-/** 命名弹窗内输入（未完成确定前不写 pendingLabel） */
+/** 命名弹窗内输入（未完成确定前不写 padIntent） */
 const nameInput = ref("");
 const nameInputEl = ref<HTMLInputElement | null>(null);
 
@@ -168,19 +173,23 @@ function newId(): string {
 }
 
 async function load(force = false) {
-  msg.value = "";
   if (!summaries.value.length) loading.value = true;
   try {
     summaries.value = force
       ? await refreshSignatureSummaries()
       : await ensureSignatureSummaries();
-    /** 首屏先回填已缓存的预览；其余按行进入视口时懒加载，避免一次性 N+1 拉全部图 */
+    /** 首屏先回填已缓存的预览；未命中的条目立即拉取（签名库条目通常很少，不依赖 IO 回调） */
     const seeded: Record<string, string> = {};
     for (const s of summaries.value) {
       const cached = peekSignatureImage(s.id);
       if (cached) seeded[s.id] = cached;
     }
     previews.value = seeded;
+    await nextTick();
+    ensureRowObserver();
+    for (const s of summaries.value) {
+      if (!previews.value[s.id]) loadPreview(s.id);
+    }
   } catch (e) {
     msg.value = "加载失败：" + String((e as Error).message || e);
   } finally {
@@ -241,8 +250,7 @@ function closeNameDlg() {
 function confirmNameDlg() {
   const n = normalizeLabel(nameInput.value);
   if (!n) return;
-  pendingNew.value = true;
-  pendingLabel.value = n;
+  padIntent.value = { mode: "new", label: n };
   nameDlg.value = false;
   nameInput.value = "";
   dlg.value = true;
@@ -271,28 +279,30 @@ async function openNewFromRoute() {
 }
 
 async function onPadOk(dataUrl: string) {
-  const wasNew = pendingNew.value;
-  const resignTarget = resignId.value;
-  const label = normalizeLabel(pendingLabel.value) || "签名";
-  pendingNew.value = false;
-  pendingLabel.value = "";
-  resignId.value = "";
+  /** 同步消费意图，再关板（关板 watch 延后清理，双保险） */
+  const intent = padIntent.value;
+  padIntent.value = null;
   dlg.value = false;
-  if (resignTarget) {
-    /** 重新签名：保留原 id 与名称，仅替换签名图 */
-    const cur = summaries.value.find((x) => x.id === resignTarget);
+  if (!intent) {
+    msg.value = "保存失败：手写板状态已失效，请重新点「手写新建」或「重新签名」。";
+    return;
+  }
+  if (!dataUrl || !dataUrl.startsWith("data:image/")) {
+    msg.value = "保存失败：未得到有效的签名图像，请重试。";
+    return;
+  }
+  if (intent.mode === "resign") {
     await save({
-      id: resignTarget,
-      label: cur?.label || label,
+      id: intent.id,
+      label: intent.label || "签名",
       imageSrc: dataUrl,
       updatedAt: new Date().toISOString(),
     });
     return;
   }
-  if (!wasNew) return;
   const body: SignatureAsset = {
     id: newId(),
-    label,
+    label: intent.label || "签名",
     imageSrc: dataUrl,
     updatedAt: new Date().toISOString(),
   };
@@ -302,29 +312,30 @@ async function onPadOk(dataUrl: string) {
 /** 打开手写板为已有条目重画签名（名称不变） */
 function openResign(id: string) {
   const cur = summaries.value.find((x) => x.id === id);
-  resignId.value = id;
-  pendingNew.value = false;
-  pendingLabel.value = cur?.label || "";
+  padIntent.value = {
+    mode: "resign",
+    id,
+    label: cur?.label || "",
+  };
   dlg.value = true;
 }
 
-/** 手写板被取消或关闭时清掉待定状态（避免下一次误用旧名称） */
+/** 手写板被取消或点遮罩关闭时丢弃意图；延后到 microtask，避免与 @confirm 抢状态 */
 watch(dlg, (open) => {
-  if (!open) {
-    pendingNew.value = false;
-    pendingLabel.value = "";
-    resignId.value = "";
-  }
+  if (open) return;
+  queueMicrotask(() => {
+    if (!dlg.value) padIntent.value = null;
+  });
 });
 
 async function save(body: SignatureAsset) {
-  msg.value = "";
   try {
     await api.putSignature(body.id, body);
     invalidateSignature(body.id);
     primeSignatureImage(body.id, body.imageSrc);
+    previews.value = { ...previews.value, [body.id]: body.imageSrc };
+    await load(true);
     msg.value = "已保存签名条目。";
-    await load();
   } catch (e) {
     msg.value = "保存失败：" + String((e as Error).message || e);
   }
@@ -373,11 +384,13 @@ async function remove(id: string) {
   ) {
     return;
   }
-  msg.value = "";
   try {
     await api.deleteSignature(id);
     invalidateSignature(id);
-    await load();
+    const next = { ...previews.value };
+    delete next[id];
+    previews.value = next;
+    await load(true);
     msg.value = "已删除。";
   } catch (e) {
     msg.value = "删除失败：" + String((e as Error).message || e);
