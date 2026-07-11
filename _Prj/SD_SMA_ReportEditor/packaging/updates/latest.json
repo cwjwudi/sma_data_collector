@@ -1,15 +1,15 @@
 {
-  "version": "0.3.20",
-  "releasedAt": "2026-07-11T06:23:08.905Z",
-  "notes": "版式缩略图显示表格静态文字；页眉小字缩放后可读",
+  "version": "0.3.21",
+  "releasedAt": "2026-07-11T06:25:53.938Z",
+  "notes": "编辑模版/版式有未保存更改时，返回列表或切换页面会提示是否保存",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.20-x64.exe",
-      "sha256": "6a07b5bb79c575e8d7323279e0f9a04a51e92cb61d48031e61d6ab9e997e17c8",
-      "size": 145434694
+      "url": "Report Editor AI-Setup-0.3.21-x64.exe",
+      "sha256": "",
+      "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.20-arm64.dmg",
+      "url": "Report Editor AI-0.3.21-arm64.dmg",
       "sha256": "",
       "size": 0
     }

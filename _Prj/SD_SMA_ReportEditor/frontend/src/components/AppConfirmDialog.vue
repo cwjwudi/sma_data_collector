@@ -3,27 +3,35 @@
     <div
       v-if="appConfirmState.open"
       class="app-confirm-backdrop"
-      @click.self="resolveAppConfirm(false)"
-      @keydown.esc.prevent="resolveAppConfirm(false)"
+      @click.self="resolveAppConfirm('cancel')"
+      @keydown.esc.prevent="resolveAppConfirm('cancel')"
     >
       <div
         class="app-confirm"
         role="dialog"
         aria-modal="true"
         aria-labelledby="app-confirm-title"
-        @keydown.enter.prevent="resolveAppConfirm(true)"
+        @keydown.enter.prevent="onEnter"
       >
         <h2 id="app-confirm-title" class="app-confirm-title">{{ appConfirmState.title }}</h2>
         <pre class="app-confirm-message">{{ appConfirmState.message }}</pre>
         <div class="app-confirm-actions">
-          <button ref="cancelButton" type="button" class="app-confirm-btn" @click="resolveAppConfirm(false)">
+          <button ref="cancelButton" type="button" class="app-confirm-btn" @click="resolveAppConfirm('cancel')">
             {{ appConfirmState.cancelText }}
+          </button>
+          <button
+            v-if="appConfirmState.showDiscard"
+            type="button"
+            class="app-confirm-btn"
+            @click="resolveAppConfirm('discard')"
+          >
+            {{ appConfirmState.discardText }}
           </button>
           <button
             type="button"
             class="app-confirm-btn app-confirm-btn--primary"
             :class="{ 'app-confirm-btn--danger': appConfirmState.danger }"
-            @click="resolveAppConfirm(true)"
+            @click="resolveAppConfirm('confirm')"
           >
             {{ appConfirmState.confirmText }}
           </button>
@@ -38,6 +46,10 @@ import { nextTick, ref, watch } from "vue";
 import { appConfirmState, resolveAppConfirm } from "@/composables/useAppConfirm";
 
 const cancelButton = ref<HTMLButtonElement | null>(null);
+
+function onEnter() {
+  resolveAppConfirm("confirm");
+}
 
 watch(
   () => appConfirmState.value.open,
@@ -86,6 +98,7 @@ watch(
 .app-confirm-actions {
   display: flex;
   justify-content: flex-end;
+  flex-wrap: wrap;
   gap: 10px;
   margin-top: 18px;
 }

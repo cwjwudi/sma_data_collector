@@ -163,6 +163,10 @@ import { stableFingerprintPart } from "@/lib/report-template/snapshot-fingerprin
 import { watchDebounced } from "@vueuse/core";
 import { useStaleGuard } from "@/composables/useStaleGuard";
 import { appConfirm } from "@/composables/useAppConfirm";
+import {
+  useSavedFingerprintBaseline,
+  useUnsavedLeaveGuard,
+} from "@/composables/useUnsavedLeaveGuard";
 
 const pkList = ["A5", "A4", "A3", "Letter"] as PaperKind[];
 
@@ -177,6 +181,11 @@ const presetId = computed(() =>
 const msg = ref("");
 const saving = ref(false);
 const working = ref<LayoutPreset | null>(null);
+const {
+  markClean: markPresetClean,
+  clearBaseline: clearPresetBaseline,
+  isDirty: isPresetDirty,
+} = useSavedFingerprintBaseline(() => working.value);
 const loadErr = ref("");
 const dlgOpen = ref(false);
 const presetCanvasSelId = ref<string | null>(null);
@@ -308,6 +317,8 @@ function resetPresetHistoryFromWorking(w: LayoutPreset | null) {
   presetRedoStack.value = [];
   presetHistoryLastRecorded.value = w ? clonePreset(w) : null;
   presetHistoryReady.value = !!w;
+  if (w) markPresetClean();
+  else clearPresetBaseline();
 }
 
 watchDebounced(
@@ -367,6 +378,7 @@ async function loadWorking() {
   loadErr.value = "";
   msg.value = "";
   working.value = null;
+  clearPresetBaseline();
   const id = presetId.value;
   if (!id) {
     loadErr.value = "缺少版式 ID。";
@@ -394,15 +406,11 @@ async function loadWorking() {
   }
 }
 
-function back() {
-  router.push({ name: "LayoutPresets" });
-}
-
 async function savePreset() {
   const w = working.value;
   if (!w?.name.trim()) {
     msg.value = "名称不能为空。";
-    return;
+    return false;
   }
   saving.value = true;
   msg.value = "";
@@ -411,7 +419,7 @@ async function savePreset() {
     const r = await saveLayoutPresetFlexible(w);
     if (!r.ok) {
       msg.value = r.message;
-      return;
+      return false;
     }
     presetCanvasSelId.value = null;
     if (r.source === "remote") {
@@ -423,11 +431,24 @@ async function savePreset() {
       msg.value =
         `未能写入服务器（${r.warning}）。当前内容已暂存于本浏览器缓存；联网后可在「设置」迁移或再次保存。在未成功写入服务器前，勿依赖多机/多浏览器同步。`;
     }
+    return true;
   } catch (e) {
     msg.value = "保存失败：" + String((e as Error).message || e);
+    return false;
   } finally {
     saving.value = false;
   }
+}
+
+const { ensureCanLeave, skipLeaveGuard } = useUnsavedLeaveGuard({
+  isDirty: isPresetDirty,
+  save: savePreset,
+  entityLabel: "版式",
+});
+
+async function back() {
+  if (!(await ensureCanLeave())) return;
+  router.push({ name: "LayoutPresets" });
 }
 
 async function removePreset() {
@@ -446,6 +467,7 @@ async function removePreset() {
   msg.value = "";
   try {
     await deleteLayoutPresetFlexible(w.id);
+    skipLeaveGuard.value = true;
     router.replace({ name: "LayoutPresets" });
   } catch (e) {
     msg.value = "删除失败：" + String((e as Error).message || e);

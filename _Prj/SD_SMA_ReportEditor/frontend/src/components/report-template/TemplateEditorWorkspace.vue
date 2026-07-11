@@ -515,6 +515,10 @@ import { templateTableCellPickKey, reportBindingPreviewKey } from "@/lib/report-
 import { getCachedTemplateFullMap } from "@/lib/report-template/template-view-cache";
 import { useReportBindingPreview } from "@/composables/useReportBindingPreview";
 import { useStaleGuard } from "@/composables/useStaleGuard";
+import {
+  useSavedFingerprintBaseline,
+  useUnsavedLeaveGuard,
+} from "@/composables/useUnsavedLeaveGuard";
 import { watchDebounced } from "@vueuse/core";
 
 const OPC_LIVE_LS_ENABLED = "reportTplOpcUaLiveRefresh";
@@ -550,6 +554,11 @@ const router = useRouter();
 const { begin: beginLoad, isStale: isLoadStale } = useStaleGuard();
 
 const editing = ref(null);
+const {
+  markClean: markTemplateClean,
+  clearBaseline: clearTemplateBaseline,
+  isDirty: isTemplateDirty,
+} = useSavedFingerprintBaseline(() => editing.value);
 const bindingPreview = useReportBindingPreview(editing);
 provide(reportBindingPreviewKey, bindingPreview);
 const selId = ref(null);
@@ -1135,6 +1144,7 @@ function onBodyPageCountInput(ev) {
 async function boot() {
   const token = beginLoad();
   editing.value = null;
+  clearTemplateBaseline();
   bootStatus.value = "正在打开模版…";
   const id = String(route.params.id || "");
   if (!id) {
@@ -1177,6 +1187,7 @@ async function boot() {
     reclamp();
     selId.value = null;
     resetTplEditHistory();
+    markTemplateClean();
     refreshBindingsAfterOpen();
     return true;
   };
@@ -1218,6 +1229,7 @@ async function boot() {
       bootStatus.value = "无法从后端载入模版";
       hint.value = "无法从后端载入模版。";
       editing.value = null;
+      clearTemplateBaseline();
     }
   }
 }
@@ -1247,7 +1259,7 @@ function reclamp() {
 
 async function save() {
   const t = editing.value;
-  if (!t || saving.value) return;
+  if (!t || saving.value) return false;
   ensureBodyPages(t);
   syncLegacyElementsAlias(t);
   t.updatedAt = new Date().toISOString();
@@ -1258,15 +1270,25 @@ async function save() {
     await api.putTemplate(t.id, t);
     // 写回内存缓存：下次进入编辑器直接秒开最新版本
     getCachedTemplateFullMap()[t.id] = cloneDeepTemplate(t);
+    markTemplateClean();
     hint.value = "已保存。";
+    return true;
   } catch (e) {
     hint.value = "保存失败：" + String(e.message || e);
+    return false;
   } finally {
     saving.value = false;
   }
 }
 
-function back() {
+const { ensureCanLeave } = useUnsavedLeaveGuard({
+  isDirty: isTemplateDirty,
+  save,
+  entityLabel: "模版",
+});
+
+async function back() {
+  if (!(await ensureCanLeave())) return;
   router.push({ name: "TemplateManager" });
 }
 
