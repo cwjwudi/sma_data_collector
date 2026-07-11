@@ -1,12 +1,12 @@
 {
   "version": "0.3.22",
-  "releasedAt": "2026-07-11T06:49:59.644Z",
+  "releasedAt": "2026-07-11T06:59:22.818Z",
   "notes": "版式缩略图字号与模版缩略图对齐（去掉错误放大）",
   "platforms": {
     "win32-x64": {
       "url": "Report Editor AI-Setup-0.3.22-x64.exe",
-      "sha256": "",
-      "size": 0
+      "sha256": "5d41ad366c10b5d9fba4f326516d3bee4c02e97aeee1c21c44c034cd82ed00e9",
+      "size": 145438176
     },
     "darwin-arm64": {
       "url": "Report Editor AI-0.3.22-arm64.dmg",
