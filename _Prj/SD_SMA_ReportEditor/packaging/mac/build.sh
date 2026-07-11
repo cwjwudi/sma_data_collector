@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Build Report Editor macOS DMG (electron-builder).
-# Output: packaging/mac/output/Report Editor-<version>-<arch>.dmg
+# Output: packaging/mac/output/Report Editor AI-<version>-<arch>.dmg
 
 set -euo pipefail
 
@@ -163,7 +163,7 @@ fi
 step "SD SMA Report Editor - macOS DMG build"
 PKG_VERSION="$(node -p "require('$FRONTEND/package.json').version" 2>/dev/null || echo '?')"
 MANIFEST_VERSION="$(read_manifest_version)"
-EXPECTED_DMG="Report Editor-${PKG_VERSION}-${ARCH}.dmg"
+EXPECTED_DMG="Report Editor AI-${PKG_VERSION}-${ARCH}.dmg"
 echo "Version:      $PKG_VERSION"
 echo "Expected:     $EXPECTED_DMG"
 if [[ -n "$MANIFEST_VERSION" && "$MANIFEST_VERSION" != "$PKG_VERSION" ]]; then
@@ -245,7 +245,7 @@ if [[ "$SKIP_FRONTEND" == "0" ]]; then
   fi
   ok "npm dependencies ready"
   PKG_VERSION="$(node -p "require('$FRONTEND/package.json').version" 2>/dev/null || echo '?')"
-  EXPECTED_DMG="Report Editor-${PKG_VERSION}-${ARCH}.dmg"
+  EXPECTED_DMG="Report Editor AI-${PKG_VERSION}-${ARCH}.dmg"
 fi
 
 if [[ "$SKIP_BACKEND" == "0" ]]; then
@@ -291,7 +291,7 @@ DMG=""
 if [[ -f "$EXPECTED_DMG_PATH" ]]; then
   DMG="$EXPECTED_DMG_PATH"
 else
-  DMG="$(find "$OUTPUT_DIR" -maxdepth 1 -name "Report Editor-*-${ARCH}.dmg" -type f 2>/dev/null | head -1 || true)"
+  DMG="$(find "$OUTPUT_DIR" -maxdepth 1 -name "Report Editor AI-*-${ARCH}.dmg" -type f 2>/dev/null | head -1 || true)"
   if [[ -n "$DMG" && "$(basename "$DMG")" != "$EXPECTED_DMG" ]]; then
     echo "ERROR: Found $(basename "$DMG") but expected $EXPECTED_DMG" >&2
     echo "       package.json version is $PKG_VERSION — run bump-version or use --fresh" >&2

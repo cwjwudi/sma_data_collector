@@ -11,7 +11,7 @@ const DEFAULT_UPDATE_BASE_URL =
   process.env.REPORT_EDITOR_UPDATE_BASE_URL ||
   'https://brportal.cpolar.top/downloads/report-editor'
 
-const MAC_APP_BUNDLE = '/Applications/Report Editor.app'
+const MAC_APP_BUNDLE = '/Applications/Report Editor AI.app'
 let electronAutoUpdater = null
 
 function getElectronAutoUpdater() {
@@ -624,7 +624,7 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
     const baseUrl = resolveBaseUrl(app).replace(/\/+$/, '')
     if (!baseUrl) return ''
     const arch = process.arch === 'arm64' ? 'arm64' : 'x64'
-    const fileName = `Report Editor-${version}-${arch}.txt`
+    const fileName = `Report Editor AI-${version}-${arch}.txt`
     try {
       const buf = await fetchBuffer(`${baseUrl}/${encodeURIComponent(fileName)}`, {
         skipTlsVerify: Boolean(settings.skipTlsVerify),
@@ -1097,7 +1097,7 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
         return { ok: false, error: '仅 macOS 可用' }
       }
       if (!fs.existsSync(MAC_APP_BUNDLE)) {
-        return { ok: false, error: '未在「应用程序」中找到 Report Editor，请先完成拖放安装。' }
+        return { ok: false, error: '未在「应用程序」中找到 Report Editor AI，请先完成拖放安装。' }
       }
       const err = await shell.openPath(MAC_APP_BUNDLE)
       if (err) {
@@ -1378,11 +1378,11 @@ function createAppUpdater({ app, shell, getMainWindow, stopBackend }) {
           setTimeout(() => app.quit(), 400)
           const autoOpenHint = openAfterUpgrade
             ? '④ 拖放完成后，系统会尝试自动打开新版本（约需数秒）。'
-            : '④ 从启动台或应用程序文件夹重新打开 Report Editor。'
+            : '④ 从启动台或应用程序文件夹重新打开 Report Editor AI。'
           return {
             ok: true,
             mode: 'dmg',
-            message: `已打开安装镜像，本软件即将退出。请按下方步骤完成升级：① 在弹出的窗口中将「Report Editor」拖入「应用程序」；② 若系统提示替换，选择「替换」；③ 关闭安装窗口；${autoOpenHint}`,
+            message: `已打开安装镜像，本软件即将退出。请按下方步骤完成升级：① 在弹出的窗口中将「Report Editor AI」拖入「应用程序」；② 若系统提示替换，选择「替换」；③ 关闭安装窗口；${autoOpenHint}`,
           }
         }
 

@@ -4,23 +4,21 @@
 
 ← 打包总览与排错：[../README.md](../README.md)
 
-## 当前目标版本：0.2.5
+## 当前目标版本：0.3.14
 
-安装包版本来自 **`frontend/package.json`** 的 `version` 字段。打包日志首行须显示 `Version: 0.2.5` 与 `Expected: Report Editor-Setup-0.2.5-x64.exe`。
+安装包版本来自 **`frontend/package.json`** 的 `version` 字段。打包日志首行须显示 `Version: 0.3.14` 与 `Expected: Report Editor AI-Setup-0.3.14-x64.exe`。
 
 **本版更新说明**（写入 `packaging/updates/latest.json` 的 `notes`，应用内「检查更新」与 `latest.yml` 的 `releaseNotes` 均会展示）：
 
-> Report Editor 0.2.5
+> Report Editor AI 0.3.14
 >
-> - 修复数据参数「点选生成」可能导致整个软件卡死的问题；点选生成/SQL 参数等控件样式与属性面板统一
-> - 新增 PLC 心跳（软件可用信号）：默认「常写 1」模式（软件每周期写 1、PLC 收到后清零），写入周期毫秒级可调（默认 200ms）；亦可选 Bool 翻转 / 计数累加
-> - 云端同步新增「整机配置备份」：与配置备份同范围加密上传 Portal，换机一键恢复（需 Portal 支持）
-> - 云端同步说明更清晰：团队模版/版式为发版快照，「我的」为最近一次上传内容
+> - 产品更名 Report Editor AI（报表编辑器 AI 版），可与原版并装
+> - 用户数据目录改为 sd-sma-report-editor-ai；原版 .rebak 可导入
 
 发版前请 `git pull origin main`，确认上述 `notes` 已在仓库中；若需修改说明：
 
 ```powershell
-node packaging\scripts\bump-version.mjs 0.2.5 --notes "你的更新说明"
+node packaging\scripts\bump-version.mjs 0.3.14 --notes "你的更新说明"
 ```
 
 ## 一发版流程（推荐）

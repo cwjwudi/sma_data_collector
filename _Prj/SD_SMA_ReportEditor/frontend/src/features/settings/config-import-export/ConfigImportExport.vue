@@ -4,7 +4,9 @@
     <div class="backup-callout">
       <strong>升级、换电脑或重装前，请先导出备份。</strong>
       导出的备份文件已<strong>加密</strong>（`.rebak`），可防止被随意查看或篡改，换台电脑也能直接导入恢复。
+      亦可导入<strong>原版报表编辑器</strong>导出的 `.rebak`（与 AI 版数据格式互通）。
       卸载或重装前请务必先在此导出，以免本机配置丢失。
+      客户端偏好（输出目录、模版排序等）若不在备份内，导入后需在本机再设一次。
     </div>
 
     <div class="backup-block">

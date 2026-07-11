@@ -1,6 +1,8 @@
 # Windows 安装包 — 打包、安装与卸载
 
-面向 **SD SMA Report Editor**（Electron 桌面版）的现场交付，生成标准 **NSIS 安装程序**，可在「设置 → 应用」中正常卸载。
+面向 **Report Editor AI（报表编辑器 AI 版）**（Electron 桌面版）的现场交付，生成标准 **NSIS 安装程序**，可在「设置 → 应用」中正常卸载。
+
+可与原版 **Report Editor** 并装共存（不同 `appId` 与 `%APPDATA%` 目录）。两版共用本机后端端口 **8000**，**请勿同时启动**。
 
 ---
 
@@ -27,14 +29,14 @@ build.bat
 
 | 参数 | 作用 |
 |------|------|
-| `-Fresh` | 打包前清理 `packaging/windows/output/` |
+| `-Fresh` | 打包前清理当前版本产物（保留历史 Setup） |
 | `-SkipFrontendInstall` | 跳过 `npm ci`（依赖已装好时） |
 | `-SkipBackendBuild` | 跳过 PyInstaller（已有 `backend/dist/report_backend/` 时） |
 
 **产物路径：**
 
 ```text
-packaging/windows/output/SD SMA Report Editor-Setup-0.1.0-x64.exe
+packaging/windows/output/Report Editor AI-Setup-<version>-x64.exe
 ```
 
 （版本号随 `frontend/package.json` 的 `version` 变化。）
@@ -47,18 +49,21 @@ npm install
 npm.cmd run dist:win:cn:installer
 ```
 
-同时打 **安装包 + 便携版** 时：`npm.cmd run dist:win:cn`（输出在 `frontend/release/`）。
-
 ---
 
 ## 二、现场安装（最终用户）
 
-1. 将 **`SD SMA Report Editor-Setup-*-x64.exe`** 拷贝到目标 Windows 电脑。
+1. 将 **`Report Editor AI-Setup-*-x64.exe`** 拷贝到目标 Windows 电脑。
 2. 双击运行安装向导（非一键安装，可选择安装目录）。
-3. 完成后可从 **桌面** 或 **开始菜单 → B&R Team → SD SMA 报表编辑器** 启动。
+3. 完成后可从 **桌面** 或 **开始菜单** 启动 **Report Editor AI**。
 4. 首次运行会在用户目录创建数据文件夹：  
-   `%APPDATA%\sd-sma-report-editor\backend-data\`  
-   （模版、数据库连接、OPC 配置等，与程序安装目录分离。）
+   `%APPDATA%\sd-sma-report-editor-ai\backend-data\`  
+   （模版、数据库连接、OPC 配置等，与程序安装目录分离；与原版 `%APPDATA%\sd-sma-report-editor\` 互不影响。）
+
+### 从原版迁移配置
+
+1. 在原版中：**设置 → 备份与恢复 → 导出备份文件**（得到 `.rebak`）。
+2. 安装并打开 AI 版后：**设置 → 备份与恢复 → 选择备份文件** 导入即可（格式互通）。
 
 > **SmartScreen**：安装包未做代码签名时，Windows 可能提示「未知发布者」，需点「更多信息」→「仍要运行」。企业环境可申请 Authenticode 证书后对 `Setup.exe` 签名。
 
@@ -68,24 +73,24 @@ npm.cmd run dist:win:cn:installer
 
 ### 应用内升级（Setup 覆盖安装）
 
-- 数据库 / OPC UA 连接、模版等保存在 **`%APPDATA%\sd-sma-report-editor\backend-data\`**，与程序安装目录分离。
-- **正常升级应保留上述数据**（0.1.11 起修复：覆盖升级不再误删 AppData；0.1.10 及更早 Win 版升级可能丢配置，请先导出备份）。
+- 数据库 / OPC UA 连接、模版等保存在 **`%APPDATA%\sd-sma-report-editor-ai\backend-data\`**，与程序安装目录分离。
+- **正常升级应保留上述数据**。
 - 若升级后配置仍为空，请检查是否曾手动卸载过程序，或升级前是否使用过 **开发模式**（数据在仓库 `backend/data/`，与安装版路径不同）。
 
 ### 主动卸载
 
 任选其一：
 
-1. **设置** → **应用** → **已安装的应用** → **SD SMA 报表编辑器** → **卸载**
-2. **开始菜单** → **B&R Team** 或程序组 → **卸载 SD SMA 报表编辑器**
+1. **设置** → **应用** → **已安装的应用** → **Report Editor AI** → **卸载**
+2. **开始菜单** 程序组 → **卸载 Report Editor AI**
 
 卸载程序会：
 
 - 删除安装目录下的程序文件
 - 结束正在运行的主程序与内置后端进程
-- **删除** `%APPDATA%\sd-sma-report-editor\`（含 `backend-data\` 里的数据库/OPC 连接、`config.json`、模版/版式，以及本机报表相关 localStorage 偏好）
+- **删除** `%APPDATA%\sd-sma-report-editor-ai\`（含 `backend-data\`）
 
-因此 **卸载后重装** 会得到空白配置。若需保留配置，请在卸载前使用 **设置 → 配置导入/导出 → 导出（本机备份）**。
+因此 **卸载后重装** 会得到空白配置。若需保留配置，请在卸载前使用 **设置 → 备份与恢复 → 导出备份文件**。卸载时也可选择备份到「文档\ReportEditorAI-Backup」。
 
 ---
 
@@ -106,8 +111,9 @@ npm.cmd run dist:win:cn:installer
 | 现象 | 处理 |
 |------|------|
 | NSIS `Plugin not found UAC::_` | 在 `frontend/` 执行 `npm.cmd run clean:eb-cache` 后重新打包 |
-| `release` 目录被占用 | 使用 `packaging\windows\build.bat`（输出到 `packaging\windows\output`） |
+| `release` 目录被占用 | 使用 `packaging\windows\build.bat`（输出到 `packaging\windows/output`） |
 | 安装后窗口白屏 | 确认已用最新代码打包（`vite.config.js` 中 `base: './'`） |
 | 仅要绿色版、不要安装向导 | `npm.cmd run dist:cn:portable` → 便携 exe |
+| 与原版同时开打不开 | 两版共用端口 8000，请先退出另一版 |
 
 更多打包细节与排错见 [packaging/README.md](../packaging/README.md)。

@@ -187,10 +187,10 @@
       <h4 class="update-mac-guide-title">macOS 升级步骤</h4>
       <ol class="update-mac-guide-list">
         <li>点击「一键升级」后，系统会打开已下载的 .dmg 安装镜像。</li>
-        <li>将窗口中的「Report Editor」拖入「应用程序」文件夹。</li>
+        <li>将窗口中的「Report Editor AI」拖入「应用程序」文件夹。</li>
         <li>若提示是否替换现有版本，选择「替换」。</li>
         <li v-if="macOpenAfterUpgrade">拖放完成后，系统会在后台尝试自动打开新版本（约需数秒）。</li>
-        <li v-else>从启动台或应用程序文件夹重新打开 Report Editor。</li>
+        <li v-else>从启动台或应用程序文件夹重新打开 Report Editor AI。</li>
       </ol>
       <button
         type="button"
@@ -590,7 +590,7 @@ async function openMacApp() {
       setMsg(res.error || '无法打开应用', 'err')
       return
     }
-    setMsg('已打开 Report Editor。', 'ok')
+    setMsg('已打开 Report Editor AI。', 'ok')
   } catch (e) {
     setMsg(e instanceof Error ? e.message : String(e), 'err')
   }

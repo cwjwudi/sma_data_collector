@@ -1,6 +1,8 @@
 # macOS 安装包 — 打包、安装与卸载
 
-面向 **SD SMA Report Editor**（Electron 桌面版）在 **macOS** 上的交付：生成 **DMG**，用户拖入「应用程序」即可使用。
+面向 **Report Editor AI（报表编辑器 AI 版）**（Electron 桌面版）在 **macOS** 上的交付：生成 **DMG**，用户拖入「应用程序」即可使用。
+
+可与原版 Report Editor 并装；用户数据目录为 `~/Library/Application Support/sd-sma-report-editor-ai/`。两版共用后端端口时请勿同时启动。
 
 > **必须在 Mac 上打包**（无法在 Windows 上交叉编译出可用的 `.app` / `.dmg`）。
 
@@ -47,7 +49,7 @@ chmod +x build.sh build.command
 **产物示例：**
 
 ```text
-packaging/mac/output/SD SMA Report Editor-0.1.0-arm64.dmg
+packaging/mac/output/Report Editor AI-0.1.0-arm64.dmg
 ```
 
 （版本与架构随 `package.json` 的 `version` 及 `--arch` 变化。）
@@ -75,17 +77,17 @@ npx electron-builder --mac dmg --arm64 --config.directories.output=../../packagi
 ## 二、现场安装（最终用户）
 
 1. 将 **`.dmg`** 拷贝到目标 Mac。
-2. 双击打开 DMG，将 **SD SMA Report Editor** 拖入 **应用程序**。
+2. 双击打开 DMG，将 **Report Editor AI** 拖入 **应用程序**。
 3. 首次启动若提示「无法打开」「来自未知开发者」或 **「已损坏，无法打开」**（见下文「微信/网盘分发」）：
    - **右键**应用 → **打开** → 再点 **打开**（不要用双击）；或
    - 终端执行（去掉隔离标记，路径按实际安装位置修改）：
      ```bash
-     xattr -cr "/Applications/SD SMA Report Editor.app"
+     xattr -cr "/Applications/Report Editor AI.app"
      ```
 4. 用户数据目录（与程序分离）：
 
 ```text
-~/Library/Application Support/sd-sma-report-editor/backend-data/
+~/Library/Application Support/sd-sma-report-editor-ai/backend-data/
 ```
 
 （数据库/OPC 配置、`config.json`、模版等。）
@@ -100,11 +102,11 @@ npx electron-builder --mac dmg --arm64 --config.directories.output=../../packagi
 > 卸载或重装前，请务必先在应用内 **设置 → 备份与恢复 → 导出备份文件** 生成加密备份（`.rebak`），避免删除 Application Support 后配置丢失。恢复时用同一界面「选择备份文件」导入即可。
 
 1. **先导出加密备份**（见上方提示）。
-2. 将 **应用程序** 中的 **SD SMA Report Editor** 移到废纸篓。
+2. 将 **应用程序** 中的 **Report Editor AI** 移到废纸篓。
 3. 若需清空配置与模版，删除：
 
 ```text
-~/Library/Application Support/sd-sma-report-editor/
+~/Library/Application Support/sd-sma-report-editor-ai/
 ```
 
 删除上述文件夹后，再安装新 DMG 即为空白环境。重装后用 **设置 → 备份与恢复 → 选择备份文件** 导入之前的 `.rebak` 即可恢复。
@@ -118,14 +120,14 @@ npx electron-builder --mac dmg --arm64 --config.directories.output=../../packagi
 | 交付物 | `Setup.exe`（NSIS） | `.dmg` |
 | 安装 | 安装向导 | 拖入应用程序 |
 | 后端二进制 | `report_backend.exe` | `report_backend` |
-| 用户数据 | `%APPDATA%\sd-sma-report-editor\` | `~/Library/Application Support/sd-sma-report-editor/` |
+| 用户数据 | `%APPDATA%\sd-sma-report-editor-ai\` | `~/Library/Application Support/sd-sma-report-editor-ai/` |
 | 卸载删数据 | 卸载程序自动删除 | 需手动删 Application Support |
 
 ---
 
 ## 五、微信 / 网盘分发：「已损坏，无法打开」
 
-同事测试时若出现 **「"SD SMA Report Editor.app" 已损坏，无法打开。你应该将它移到废纸篓。」**，且系统提示文件由 **微信** 等创建，**多数不是包真的坏了**，而是：
+同事测试时若出现 **「"Report Editor AI.app" 已损坏，无法打开。你应该将它移到废纸篓。」**，且系统提示文件由 **微信** 等创建，**多数不是包真的坏了**，而是：
 
 1. **未做 Apple 代码签名与公证**（当前内网试用包如此），Gatekeeper 会拦截；
 2. 经 **微信直接传 `.app` 或解压后的应用**，macOS 会打上 **隔离属性**（`com.apple.quarantine`），常表现为「已损坏」。
@@ -136,7 +138,7 @@ npx electron-builder --mac dmg --arm64 --config.directories.output=../../packagi
 
 **方法 A — 右键打开（最简单）**
 
-1. 在 Finder 中找到 `SD SMA Report Editor.app`（建议在「应用程序」里）。
+1. 在 Finder 中找到 `Report Editor AI.app`（建议在「应用程序」里）。
 2. **按住 Control 键点击**（或右键）→ **打开**。
 3. 在对话框中点 **打开**（不是「移到废纸篓」）。
 4. 首次成功后，之后一般可正常双击。
@@ -144,7 +146,7 @@ npx electron-builder --mac dmg --arm64 --config.directories.output=../../packagi
 **方法 B — 终端去掉隔离（推荐，适合微信收到的包）**
 
 ```bash
-xattr -cr "/Applications/SD SMA Report Editor.app"
+xattr -cr "/Applications/Report Editor AI.app"
 ```
 
 若应用还在下载目录，把路径改成实际位置，例如：

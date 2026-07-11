@@ -1,15 +1,15 @@
 {
-  "version": "0.3.13",
-  "releasedAt": "2026-07-10T18:18:36.484Z",
-  "notes": "修复表格SQL OPC空串兜底；冒烟模版封面封尾+写入批次OPC",
+  "version": "0.3.14",
+  "releasedAt": "2026-07-11T04:10:06.176Z",
+  "notes": "产品更名 Report Editor AI（报表编辑器 AI 版），可与原版并装；原版 .rebak 可导入",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor-Setup-0.3.13-x64.exe",
-      "sha256": "41384bca94fd7f9ccd6f8372a618f05241e48e58c7853af4b066e5dcf474d1be",
-      "size": 145034493
+      "url": "Report Editor AI-Setup-0.3.14-x64.exe",
+      "sha256": "",
+      "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor-0.3.13-arm64.dmg",
+      "url": "Report Editor AI-0.3.14-arm64.dmg",
       "sha256": "",
       "size": 0
     }

@@ -14,12 +14,12 @@
             <span class="sidebar-toggle__icon" aria-hidden="true">{{ sidebarCollapsed ? '»' : '«' }}</span>
           </button>
           <h1 v-if="!sidebarCollapsed" class="logo">
-            报表编辑器<span v-if="appVersion" class="logo-version">{{ appVersion }}</span>
+            报表编辑器 AI 版<span v-if="appVersion" class="logo-version">{{ appVersion }}</span>
           </h1>
           <p
             v-else-if="appVersion"
             class="logo-version-only"
-            :title="`报表编辑器 ${appVersion}`"
+            :title="`报表编辑器 AI 版 ${appVersion}`"
           >
             {{ appVersion }}
           </p>

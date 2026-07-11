@@ -57,15 +57,15 @@ if (fs.existsSync(lockPath)) {
   fs.writeFileSync(lockPath, bumpLockfileVersion(lockRaw, version), 'utf8')
 }
 
-const defaultNotes = `Report Editor ${version}\n\n- 表格列宽输入与填充色修复\n- 模版与版式编辑器控件属性对齐`
+const defaultNotes = `Report Editor AI ${version}\n\n- （请填写本版说明）`
 const notes = args.notes || defaultNotes
 const manifest = {
   version,
   releasedAt: new Date().toISOString(),
   notes,
   platforms: {
-    'win32-x64': { url: `Report Editor-Setup-${version}-x64.exe`, sha256: '', size: 0 },
-    'darwin-arm64': { url: `Report Editor-${version}-arm64.dmg`, sha256: '', size: 0 },
+    'win32-x64': { url: `Report Editor AI-Setup-${version}-x64.exe`, sha256: '', size: 0 },
+    'darwin-arm64': { url: `Report Editor AI-${version}-arm64.dmg`, sha256: '', size: 0 },
   },
 }
 fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n', 'utf8')

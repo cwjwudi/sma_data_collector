@@ -1,6 +1,8 @@
 # 安装包打包（packaging）
 
-桌面版 **SD SMA Report Editor** 的发布构建：与 `frontend/`、`backend/` 源码分离，产物写入各平台 `output/`（不入库）。
+桌面版 **Report Editor AI（报表编辑器 AI 版）** 的发布构建：与 `frontend/`、`backend/` 源码分离，产物写入各平台 `output/`（不入库）。
+
+可与原版 Report Editor 并装；用户数据目录为 `%APPDATA%\sd-sma-report-editor-ai\`（macOS：`~/Library/Application Support/sd-sma-report-editor-ai/`）。Portal 更新地址仍为 `/downloads/report-editor`。
 
 开发启停见 [../scripts/README.md](../scripts/README.md)。工程总览见 [../README.md](../README.md)。
 
@@ -64,10 +66,10 @@ npm run clean:legacy-release
 
 | 平台 | 命令 | 产物 |
 |------|------|------|
-| **Windows** | `packaging\windows\build.bat -Fresh` | `packaging\windows\output\Report Editor-Setup-<version>-x64.exe` + `latest.yml` |
+| **Windows** | `packaging\windows\build.bat -Fresh` | `packaging\windows\output\Report Editor AI-Setup-<version>-x64.exe` + `latest.yml` |
 
 Windows 发版后运行 `publish-portal-release.mjs --only win`（`build.ps1` 已自动调用），将 `latest.json` 的 **notes** 写入 Portal 的 `latest.yml` **releaseNotes**，应用内更新可看到本版说明。
-| **macOS** | `./packaging/mac/build.sh --fresh` | `packaging/mac/output/Report Editor-<version>-<arch>.dmg` |
+| **macOS** | `./packaging/mac/build.sh --fresh` | `packaging/mac/output/Report Editor AI-<version>-<arch>.dmg` |
 
 ### Windows 参数（`build.ps1`）
 
@@ -127,9 +129,9 @@ powershell -ExecutionPolicy Bypass -File scripts/build-backend-exe.ps1
 
 **成品说明**
 
-- **NSIS**：`SD SMA Report Editor-Setup-<version>-x64.exe` — 设置中可卸载
-- **便携版**：`SD SMA Report Editor-Portable-<version>-x64.exe`
-- 用户数据：`%APPDATA%\sd-sma-report-editor\`（**主动卸载**时删除；应用内升级应保留；迁移请先导出配置包）
+- **NSIS**：`Report Editor AI-Setup-<version>-x64.exe` — 设置中可卸载
+- **便携版**：`Report Editor AI-Portable-<version>-x64.exe`
+- 用户数据：`%APPDATA%\sd-sma-report-editor-ai\`（**主动卸载**时删除；应用内升级应保留；从原版迁移请导出 `.rebak` 再导入）
 
 ### macOS
 
@@ -140,7 +142,7 @@ export ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/   # 可选
 npm run dist:mac:installer
 ```
 
-用户数据：`~/Library/Application Support/sd-sma-report-editor/`（彻底卸载请删该目录）。
+用户数据：`~/Library/Application Support/sd-sma-report-editor-ai/`（彻底卸载请删该目录）。
 
 单独重建后端：
 

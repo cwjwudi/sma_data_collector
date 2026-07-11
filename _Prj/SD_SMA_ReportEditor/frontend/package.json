@@ -1,7 +1,7 @@
 {
-  "name": "sd-sma-report-editor",
-  "version": "0.3.13",
-  "description": "Report Editor — 报表编辑器（Electron + FastAPI）",
+  "name": "sd-sma-report-editor-ai",
+  "version": "0.3.14",
+  "description": "Report Editor AI — 报表编辑器 AI 版（Electron + FastAPI）",
   "author": "B&R Team",
   "private": true,
   "type": "module",
@@ -50,8 +50,8 @@
     "bump:version": "node ../packaging/scripts/bump-version.mjs"
   },
   "build": {
-    "appId": "com.brteam.sd_sma.report_editor",
-    "productName": "Report Editor",
+    "appId": "com.brteam.sd_sma.report_editor_ai",
+    "productName": "Report Editor AI",
     "copyright": "Copyright © B&R Team",
     "publish": [
       {

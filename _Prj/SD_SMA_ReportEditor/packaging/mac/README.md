@@ -37,14 +37,14 @@ chmod +x build.sh build.command
 node packaging/scripts/bump-version.mjs <版本号> --notes "更新说明"
 ```
 
-若 `package.json` 与 `latest.json` 版本不一致，脚本会**报错退出**（可用 `--allow-version-mismatch` 仅警告）。产物文件名必须为 `Report Editor-<version>-<arch>.dmg`。
+若 `package.json` 与 `latest.json` 版本不一致，脚本会**报错退出**（可用 `--allow-version-mismatch` 仅警告）。产物文件名必须为 `Report Editor AI-<version>-<arch>.dmg`。
 
 脚本会执行 `npm test`、Vite 构建、DMG 打包，并调用 `publish-portal-release.mjs --only mac`（**保留** `latest.json` 中同版本的 `win32-x64` 条目）。
 
 ## 产物
 
 ```text
-output/Report Editor-<version>-<arch>.dmg
+output/Report Editor AI-<version>-<arch>.dmg
 ```
 
 打包成功后脚本会自动运行 `publish-portal-release.mjs`：生成 `latest.json`（含 SHA256）并同步到已挂载的 Portal 目录（如 `/Volumes/web/web-portal-demo/...`）。

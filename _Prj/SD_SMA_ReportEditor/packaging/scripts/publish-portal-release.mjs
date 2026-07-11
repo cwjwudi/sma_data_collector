@@ -82,8 +82,8 @@ function resolvePortalDir(explicit) {
 
 function artifactFileName(version, kind) {
   return kind === 'mac'
-    ? `Report Editor-${version}-arm64.dmg`
-    : `Report Editor-Setup-${version}-x64.exe`
+    ? `Report Editor AI-${version}-arm64.dmg`
+    : `Report Editor AI-Setup-${version}-x64.exe`
 }
 
 function findFirstExisting(paths) {
@@ -277,7 +277,7 @@ if (args.copyArtifacts && portalDir) {
     if (latestYml) copyFileIfNewer(latestYml, path.join(portalDir, 'latest.yml'))
     if (!blockmap || !latestYml) {
       console.warn('[warn] Windows 差分更新元数据缺失；electron-updater 将回退为完整安装包下载。')
-      console.warn('       期望 output/latest.yml 与 Report Editor-Setup-<version>-x64.exe.blockmap')
+      console.warn('       期望 output/latest.yml 与 Report Editor AI-Setup-<version>-x64.exe.blockmap')
     }
   }
 }

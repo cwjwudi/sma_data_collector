@@ -1,7 +1,7 @@
-# Build SD SMA Report Editor Windows NSIS installer (Setup.exe).
+# Build Report Editor AI Windows NSIS installer (Setup.exe).
 # ASCII-only for Windows PowerShell 5.1 compatibility.
 #
-# Output: packaging/windows/output/Report Editor-Setup-{version}-x64.exe
+# Output: packaging/windows/output/Report Editor AI-Setup-{version}-x64.exe
 
 [CmdletBinding()]
 param(
@@ -184,7 +184,7 @@ function Get-StaleSetupInstallers {
     [string]$ExpectedName
   )
   if (-not (Test-Path -LiteralPath $Dir)) { return @() }
-  return @(Get-ChildItem -LiteralPath $Dir -Filter 'Report Editor-Setup-*-x64.exe' -ErrorAction SilentlyContinue |
+  return @(Get-ChildItem -LiteralPath $Dir -Filter 'Report Editor AI-Setup-*-x64.exe' -ErrorAction SilentlyContinue |
     Where-Object { $_.Name -ne $ExpectedName })
 }
 
@@ -214,7 +214,7 @@ function Clear-CurrentVersionBuildArtifacts {
   # electron-builder may leave versioned leftovers with slightly different names
   Get-ChildItem -LiteralPath $Dir -Force -ErrorAction SilentlyContinue |
     Where-Object {
-      $_.Name -like ("Report Editor-Setup-$AppVersion*") -or
+      $_.Name -like ("Report Editor AI-Setup-$AppVersion*") -or
       $_.Name -like ("*$AppVersion*blockmap*")
     } |
     ForEach-Object {
@@ -268,12 +268,12 @@ if ((Test-Path -LiteralPath (Join-Path $Frontend 'release')) -or (Test-Path -Lit
   & powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File $MigratePs1
 }
 
-Write-Step 'SD SMA Report Editor - Windows installer build'
+Write-Step 'Report Editor AI - Windows installer build'
 $PkgJsonPath = Join-Path $Frontend 'package.json'
 $AppVersion = Get-FrontendVersion $PkgJsonPath
 $ManifestPath = Join-Path $Root 'packaging\updates\latest.json'
 $ManifestVersion = Get-ManifestVersion $ManifestPath
-$ExpectedSetup = "Report Editor-Setup-$AppVersion-x64.exe"
+$ExpectedSetup = "Report Editor AI-Setup-$AppVersion-x64.exe"
 Write-Host "Version:      $AppVersion"
 Write-Host "Expected:     $ExpectedSetup"
 if ($ManifestVersion) {
@@ -388,7 +388,7 @@ else {
 
 # Re-read version after npm ci (lockfile sync does not change package.json)
 $AppVersion = Get-FrontendVersion $PkgJsonPath
-$ExpectedSetup = "Report Editor-Setup-$AppVersion-x64.exe"
+$ExpectedSetup = "Report Editor AI-Setup-$AppVersion-x64.exe"
 
 Write-Step 'Vite production build'
 Push-Location $Frontend
@@ -442,7 +442,7 @@ finally {
   Remove-Item Env:ELECTRON_MIRROR -ErrorAction SilentlyContinue
 }
 
-$expectedSetupName = "Report Editor-Setup-$AppVersion-x64.exe"
+$expectedSetupName = "Report Editor AI-Setup-$AppVersion-x64.exe"
 $expectedSetupPath = Join-Path $OutputDir $expectedSetupName
 $setup = $null
 if (Test-Path -LiteralPath $expectedSetupPath) {
@@ -473,7 +473,7 @@ if ($setup) {
   Write-Host ''
   Write-Host 'Deliver this Setup.exe to end users (Windows 10/11 x64).' -ForegroundColor White
   Write-Host 'Install: double-click Setup, choose directory, complete wizard.' -ForegroundColor DarkGray
-  Write-Host 'Uninstall: Settings - Apps - Installed apps - SD SMA Report Editor' -ForegroundColor DarkGray
+  Write-Host 'Uninstall: Settings - Apps - Installed apps - Report Editor AI' -ForegroundColor DarkGray
   Write-Host 'Uninstall removes user data under %APPDATA%\sd-sma-report-editor' -ForegroundColor DarkGray
 
   Write-Step 'Update manifest + sync Portal (if mounted)'

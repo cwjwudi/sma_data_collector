@@ -405,7 +405,7 @@ function createWindow() {
     height: 900,
     minWidth: 1000,
     minHeight: 700,
-    title: '报表编辑器',
+    title: '报表编辑器 AI 版',
     ...(appIcon ? { icon: appIcon } : {}),
     webPreferences: {
       nodeIntegration: false,
