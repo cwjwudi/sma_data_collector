@@ -18,14 +18,43 @@
                 :align-x="el.alignX"
                 :align-y="el.alignY"
                 :rotation-deg="el.imageRotationDeg"
-                :font-size="miniReadableFontPx(el.fontSize)"
+                :font-size="Math.max(6, el.fontSize * 0.85)"
                 :color="el.color"
               >
                 <template #placeholder>
                   <span class="mini-ph">图片</span>
                 </template>
               </ZoneImageCompose>
-              <ZoneTableStatic v-else-if="el.type === 'table'" :el="el" />
+              <template v-else-if="el.type === 'table'">
+                <div class="mini-tpl-table-wrap">
+                  <table class="mini-tpl-table" :style="miniZoneTableInnerStyle(el)">
+                    <colgroup>
+                      <col
+                        v-for="(cw, ci) in miniZoneTableColInnerWidthsPx(el)"
+                        :key="'hzcol-' + el.id + '-' + ci"
+                        :style="{ width: cw + 'px' }"
+                      />
+                    </colgroup>
+                    <tbody>
+                      <tr
+                        v-for="ri in miniZoneTableRowIndices(el)"
+                        :key="'hzr-' + el.id + '-' + ri"
+                        :style="miniZoneTableRowTrStyle(el)"
+                      >
+                        <td
+                          v-for="ci in miniZoneTableColIndices(el)"
+                          :key="'hzc-' + el.id + '-' + ri + '-' + ci"
+                          class="mini-tpl-td"
+                          :style="miniZoneTableCellStyle(el, ri, ci)"
+                          :title="miniZoneTableCellText(el, ri, ci)"
+                        >
+                          {{ miniZoneTableCellText(el, ri, ci) }}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </template>
               <template v-else><LayoutZoneInlineContent :el="el" /></template>
             </div>
           </div>
@@ -49,14 +78,43 @@
                 :align-x="el.alignX"
                 :align-y="el.alignY"
                 :rotation-deg="el.imageRotationDeg"
-                :font-size="miniReadableFontPx(el.fontSize)"
+                :font-size="Math.max(6, el.fontSize * 0.85)"
                 :color="el.color"
               >
                 <template #placeholder>
                   <span class="mini-ph">图片</span>
                 </template>
               </ZoneImageCompose>
-              <ZoneTableStatic v-else-if="el.type === 'table'" :el="el" />
+              <template v-else-if="el.type === 'table'">
+                <div class="mini-tpl-table-wrap">
+                  <table class="mini-tpl-table" :style="miniZoneTableInnerStyle(el)">
+                    <colgroup>
+                      <col
+                        v-for="(cw, ci) in miniZoneTableColInnerWidthsPx(el)"
+                        :key="'bzcol-' + el.id + '-' + ci"
+                        :style="{ width: cw + 'px' }"
+                      />
+                    </colgroup>
+                    <tbody>
+                      <tr
+                        v-for="ri in miniZoneTableRowIndices(el)"
+                        :key="'bzr-' + el.id + '-' + ri"
+                        :style="miniZoneTableRowTrStyle(el)"
+                      >
+                        <td
+                          v-for="ci in miniZoneTableColIndices(el)"
+                          :key="'bzc-' + el.id + '-' + ri + '-' + ci"
+                          class="mini-tpl-td"
+                          :style="miniZoneTableCellStyle(el, ri, ci)"
+                          :title="miniZoneTableCellText(el, ri, ci)"
+                        >
+                          {{ miniZoneTableCellText(el, ri, ci) }}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </template>
               <template v-else><LayoutZoneInlineContent :el="el" /></template>
             </div>
             <div v-if="preset.bodyElements.length === 0" class="mini-body-empty">{{ bodyEmptyHint }}</div>
@@ -73,14 +131,43 @@
                 :align-x="el.alignX"
                 :align-y="el.alignY"
                 :rotation-deg="el.imageRotationDeg"
-                :font-size="miniReadableFontPx(el.fontSize)"
+                :font-size="Math.max(6, el.fontSize * 0.85)"
                 :color="el.color"
               >
                 <template #placeholder>
                   <span class="mini-ph">图片</span>
                 </template>
               </ZoneImageCompose>
-              <ZoneTableStatic v-else-if="el.type === 'table'" :el="el" />
+              <template v-else-if="el.type === 'table'">
+                <div class="mini-tpl-table-wrap">
+                  <table class="mini-tpl-table" :style="miniZoneTableInnerStyle(el)">
+                    <colgroup>
+                      <col
+                        v-for="(cw, ci) in miniZoneTableColInnerWidthsPx(el)"
+                        :key="'fzcol-' + el.id + '-' + ci"
+                        :style="{ width: cw + 'px' }"
+                      />
+                    </colgroup>
+                    <tbody>
+                      <tr
+                        v-for="ri in miniZoneTableRowIndices(el)"
+                        :key="'fzr-' + el.id + '-' + ri"
+                        :style="miniZoneTableRowTrStyle(el)"
+                      >
+                        <td
+                          v-for="ci in miniZoneTableColIndices(el)"
+                          :key="'fzc-' + el.id + '-' + ri + '-' + ci"
+                          class="mini-tpl-td"
+                          :style="miniZoneTableCellStyle(el, ri, ci)"
+                          :title="miniZoneTableCellText(el, ri, ci)"
+                        >
+                          {{ miniZoneTableCellText(el, ri, ci) }}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </template>
               <template v-else><LayoutZoneInlineContent :el="el" /></template>
             </div>
           </div>
@@ -98,21 +185,28 @@ import { computed } from "vue";
 import LayoutZoneInlineContent from "@/components/report-template/LayoutZoneInlineContent.vue";
 import MiniPreviewChrome from "@/components/report-template/MiniPreviewChrome.vue";
 import ZoneImageCompose from "@/components/report-template/ZoneImageCompose.vue";
-import ZoneTableStatic from "@/components/report-template/ZoneTableStatic.vue";
 import type { MiniPreviewVariant } from "@/components/report-template/mini-preview-types";
 import type { PaperLayoutMetrics } from "@/lib/report-template/layout-geometry";
 import { computePaperLayout } from "@/lib/report-template/layout-geometry";
 import { miniPreviewScale } from "@/lib/report-template/mini-preview-scale";
 import type { LayoutPreset } from "@/lib/report-template/layout-model";
 import { presetToSnapshot } from "@/lib/report-template/layout-model";
-import type { LayoutZoneElement } from "@/lib/report-template/layout-zone-element";
 import {
+  ensureZoneTableGrid,
   flexJustifyAlignForAxes,
   getZoneTextWrapStyle,
   normalizePageNumberMode,
   normalizeZIndex,
+  resolveTableCellBackgroundCss,
+  zoneFillBackgroundCss,
+  zoneTableColumnInnerWidthsPx,
+  zoneTableInnerBackgroundCss,
   zoneTableNodeShellBackgroundCss,
+  type LayoutZoneElement,
+  type LayoutZoneTableCell,
 } from "@/lib/report-template/layout-zone-element";
+import { clampTableRowHeightPx } from "@/lib/report-template/table-cell-metrics";
+import { formatSqlFillTableCellPreview } from "@/lib/report-template/table-sql-fill-preview";
 
 const props = withDefaults(
   defineProps<{ preset: LayoutPreset; maxWidthPx?: number; maxHeightPx?: number }>(),
@@ -201,13 +295,7 @@ const headerBand = computed(() => bandStyle(me.value, "header"));
 const bodyBand = computed(() => bandStyle(me.value, "body"));
 const footerBand = computed(() => bandStyle(me.value, "footer"));
 
-/** 缩放后屏幕字号至少约 8px，避免页眉静态中文在缩略图里变成细线 */
-function miniReadableFontPx(fontSize: number): number {
-  const base = Math.max(6, Number(fontSize) * 0.85 || 6);
-  const minOnScreen = 8 / Math.max(0.05, scale.value);
-  return Math.max(base, minOnScreen);
-}
-
+/** 与 TemplateMiniPage 一致：按设计字号缩放，不人为抬高（避免缩略图字号失真） */
 function miniZoneElStyle(el: LayoutZoneElement): Record<string, string> {
   const ff = typeof el.fontFamily === "string" ? el.fontFamily.trim() : "";
   const flex = flexJustifyAlignForAxes(el.alignX, el.alignY);
@@ -221,7 +309,7 @@ function miniZoneElStyle(el: LayoutZoneElement): Record<string, string> {
     boxSizing: "border-box",
     overflow: "hidden",
     color: el.color,
-    fontSize: `${miniReadableFontPx(el.fontSize)}px`,
+    fontSize: `${Math.max(6, el.fontSize * 0.85)}px`,
     ...(ff ? { fontFamily: ff } : {}),
     zIndex: String(normalizeZIndex(el.zIndex)),
   };
@@ -229,13 +317,16 @@ function miniZoneElStyle(el: LayoutZoneElement): Record<string, string> {
     s.display = "flex";
     s.flexDirection = "column";
     s.whiteSpace = "normal";
+    s.backgroundColor = zoneFillBackgroundCss(el.bgColor);
   } else if (el.type === "table") {
     s.display = "flex";
     s.flexDirection = "column";
     s.alignItems = "stretch";
     s.justifyContent = "stretch";
     s.padding = "2px";
-    s.background = zoneTableNodeShellBackgroundCss();
+    s.overflow = "hidden";
+    s.whiteSpace = "normal";
+    s.backgroundColor = zoneTableNodeShellBackgroundCss();
   } else {
     s.display = "flex";
     s.justifyContent = flex.justifyContent;
@@ -244,9 +335,93 @@ function miniZoneElStyle(el: LayoutZoneElement): Record<string, string> {
     else s.whiteSpace = "nowrap";
     if (el.type === "pageNumber" && normalizePageNumberMode(el.pageNumberMode) === "circle") {
       s.padding = "1px";
+      s.backgroundColor = "transparent";
+    } else {
+      s.backgroundColor = zoneFillBackgroundCss(el.bgColor);
     }
   }
   return s;
+}
+
+function truncateStatic(s: string, n: number): string {
+  const x = s.replace(/\s+/g, " ");
+  return x.length <= n ? x : `${x.slice(0, n)}…`;
+}
+
+function formatStaticTableCell(cell: LayoutZoneTableCell): string {
+  if (cell.bindingKind === "opcua") {
+    const id = cell.opcuaNodeId.trim();
+    return id ? `⟨UA⟩ ${truncateStatic(id, 48)}` : "⟨UA⟩";
+  }
+  if (cell.bindingKind === "sql") {
+    const q = cell.sqlText.trim();
+    return q ? `⟨SQL⟩ ${truncateStatic(q, 36)}` : "⟨SQL⟩";
+  }
+  if (cell.bindingKind === "mongo") {
+    const col = cell.mongoQuery?.collection?.trim() || "";
+    return col ? `⟨Mongo⟩ ${truncateStatic(col, 36)}` : "⟨Mongo⟩";
+  }
+  const t = cell.text.trim();
+  return t.length > 0 ? t : "\u00a0";
+}
+
+function zoneTableGrid(el: LayoutZoneElement): LayoutZoneTableCell[][] {
+  if (el.type !== "table") return [];
+  return ensureZoneTableGrid(el);
+}
+
+function miniZoneTableInnerStyle(el: LayoutZoneElement): Record<string, string> {
+  if (el.type !== "table") return {};
+  return { background: zoneTableInnerBackgroundCss(el.bgColor) };
+}
+
+function miniZoneTableCellStyle(el: LayoutZoneElement, ri: number, ci: number): Record<string, string> {
+  if (el.type !== "table") return {};
+  ensureZoneTableGrid(el);
+  const cell = el.tableCells?.[ri]?.[ci];
+  return {
+    backgroundColor: resolveTableCellBackgroundCss(
+      { tableBgColor: el.bgColor, tableColBgColors: el.tableColBgColors },
+      ci,
+      cell,
+    ),
+  };
+}
+
+function miniZoneTableColInnerWidthsPx(el: LayoutZoneElement): number[] {
+  if (el.type !== "table") return [];
+  return zoneTableColumnInnerWidthsPx(el);
+}
+
+function miniZoneTableRowTrStyle(el: LayoutZoneElement): Record<string, string> | undefined {
+  if (el.type !== "table") return undefined;
+  const h = clampTableRowHeightPx(el.tableRowHeightPx);
+  return { height: "auto", minHeight: `${h}px` };
+}
+
+function miniZoneTableColIndices(el: LayoutZoneElement): number[] {
+  const n = el.tableCols ?? 4;
+  return Array.from({ length: n }, (_, i) => i);
+}
+
+function miniZoneTableRowIndices(el: LayoutZoneElement): number[] {
+  const g = zoneTableGrid(el);
+  return Array.from({ length: g.length }, (_, i) => i);
+}
+
+function miniZoneTableCellText(el: LayoutZoneElement, ri: number, ci: number): string {
+  if (el.type === "table" && el.tableSqlFill?.enabled) {
+    return formatSqlFillTableCellPreview({
+      fill: el.tableSqlFill,
+      rowIndex: ri,
+      colIndex: ci,
+      preview: null,
+      previewLoading: false,
+      errorMaxLen: 36,
+    });
+  }
+  const cell = zoneTableGrid(el)[ri]?.[ci];
+  return cell ? formatStaticTableCell(cell) : "\u00a0";
 }
 </script>
 
@@ -293,13 +468,47 @@ function miniZoneElStyle(el: LayoutZoneElement): Record<string, string> {
   overflow: hidden;
   pointer-events: none;
 }
-.mini-img {
-  max-width: 100%;
-  max-height: 100%;
-  object-fit: contain;
-}
 .mini-ph {
   font-size: 8px;
   color: #a1a1aa;
+}
+/* 与 TemplateMiniPage 表格单元格样式对齐 */
+.mini-tpl-table-wrap {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  box-sizing: border-box;
+  padding-bottom: 1px;
+}
+.mini-tpl-table {
+  width: 100%;
+  height: auto;
+  max-height: none;
+  border-collapse: separate;
+  border-spacing: 0;
+  table-layout: fixed;
+  background: rgb(255 255 255 / 0.96);
+}
+.mini-tpl-table tbody td {
+  height: inherit;
+  box-sizing: border-box;
+}
+.mini-tpl-td {
+  border-top: 1px solid rgb(212 212 216);
+  border-left: 1px solid rgb(212 212 216);
+  padding: 3px 5px;
+  vertical-align: top;
+  text-align: center;
+  font-size: max(10px, 0.85em);
+  line-height: 1.3;
+  overflow: visible;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.mini-tpl-td:last-child {
+  border-right: 1px solid rgb(212 212 216);
+}
+.mini-tpl-table tbody tr:last-child .mini-tpl-td {
+  border-bottom: 1px solid rgb(212 212 216);
 }
 </style>
