@@ -397,17 +397,9 @@ export function intrinsicOuterHeightForTemplateTable(
       if (cellTextAt) return cellTextAt(ri, ci);
       const cell = grid[ri]?.[ci];
       if (!cell) return "";
-      if (cell.bindingKind === "opcua") {
-        const id = cell.opcuaNodeId.trim();
-        return id ? `⟨UA⟩ ${id}` : "⟨UA⟩";
-      }
-      if (cell.bindingKind === "sql") {
-        const q = cell.sqlText.trim();
-        return q ? `⟨SQL⟩ ${q}` : "⟨SQL⟩";
-      }
-      if (cell.bindingKind === "mongo") {
-        const col = cell.mongoQuery?.collection?.trim() || "";
-        return col ? `⟨Mongo⟩ ${col}` : "⟨Mongo⟩";
+      // 绑定格无注入实值时不按 NodeId/SQL 估高，避免编辑态跟绑定语句换行
+      if (cell.bindingKind === "opcua" || cell.bindingKind === "sql" || cell.bindingKind === "mongo") {
+        return "";
       }
       return (cell.text || "").trim();
     },
@@ -459,13 +451,16 @@ export function minOuterHeightSqlFillTableEditorPx(el: TemplateElement): number 
 }
 
 /** 表格控件外框在画布上的最小宽高（像素），随行列数增长，避免缩太小无法点格子 */
-export function minOuterSizeForTable(el: TemplateElement): { w: number; h: number } {
+export function minOuterSizeForTable(
+  el: TemplateElement,
+  cellTextAt?: (ri: number, ci: number) => string,
+): { w: number; h: number } {
   if (el.type !== "table") return { w: 20, h: 20 };
   ensureTableGrid(el);
   const cols = el.tableCols ?? 4;
   const MIN_CELL_W = 26;
   const CHROME = 8;
-  const ih = intrinsicOuterHeightForTemplateTable(el);
+  const ih = intrinsicOuterHeightForTemplateTable(el, cellTextAt);
   if (el.tableSqlFill?.enabled) {
     return {
       w: Math.max(64, cols * MIN_CELL_W + CHROME),
@@ -481,21 +476,23 @@ export function minOuterSizeForTable(el: TemplateElement): { w: number; h: numbe
 /**
  * 保证表格宽度不小于最小列宽推算值；
  * 静态表/纵表高度贴合「内容换行行高之和」（编辑态可被 maxH 限制画布壳，导出另走跨页）。
+ * `cellTextAt` 应注入绑定预览实值，避免按 NodeId 估高。
  */
 export function clampTableElementOuterSize(
   el: TemplateElement,
   maxW = Number.POSITIVE_INFINITY,
   maxH = Number.POSITIVE_INFINITY,
+  cellTextAt?: (ri: number, ci: number) => string,
 ): void {
   if (el.type !== "table") return;
-  const { w: mw } = minOuterSizeForTable(el);
+  const { w: mw } = minOuterSizeForTable(el, cellTextAt);
   const loW = Math.max(20, Math.min(mw, maxW));
   if (el.w < loW) el.w = loW;
 
   if (el.tableSqlFill?.enabled) {
     if (isVerticalSqlFill(el.tableSqlFill)) {
       syncTableRowsForVerticalSqlSlots(el, () => ensureTableGrid(el));
-      const ih = intrinsicOuterHeightForTemplateTable(el);
+      const ih = intrinsicOuterHeightForTemplateTable(el, cellTextAt);
       const nextH = Math.max(20, Math.min(ih, maxH));
       el.h = nextH;
       return;
@@ -508,7 +505,7 @@ export function clampTableElementOuterSize(
   }
 
   // 静态表：贴合内容换行行高；maxH 仅限制编辑画布壳
-  const ih = intrinsicOuterHeightForTemplateTable(el);
+  const ih = intrinsicOuterHeightForTemplateTable(el, cellTextAt);
   const nextH = Math.max(20, Math.min(ih, maxH));
   el.h = nextH;
 }

@@ -3,7 +3,7 @@
  */
 
 import type { BindingPreviewCell } from "@/lib/report-template/binding-preview-utils";
-import { cellKey } from "@/lib/report-template/binding-preview-utils";
+import { cellKey, resolveStaticTableCellLayoutText } from "@/lib/report-template/binding-preview-utils";
 import { bodyElementsRef, metricsForSheet } from "@/lib/report-template/editor-sheet";
 import type { ReportTemplate, TemplateElement } from "@/lib/report-template/model";
 import { ensureBodyPages, ensureTableGrid } from "@/lib/report-template/model";
@@ -17,7 +17,6 @@ import {
 import {
   buildLogicalRowSlicesForOverflow,
   computeTemplateTableContentRowHeightsPx,
-  formatTableCellTextForHeightEstimate,
   outerHeightFromTableRowHeightsPx,
   templateTableExceedsPageRemaining,
 } from "@/lib/report-template/table-content-layout";
@@ -237,9 +236,12 @@ function staticTableRowHeightsForPreview(
   ensureTableGrid(el);
   const grid = el.tableCells || [];
   return computeTemplateTableContentRowHeightsPx(el, (ri, ci) => {
-    const hit = previewValues[cellKey(el.id, ri, ci)];
-    if (hit?.text != null && String(hit.text).length) return String(hit.text);
-    return formatTableCellTextForHeightEstimate(grid[ri]?.[ci]);
+    const cell = grid[ri]?.[ci];
+    return resolveStaticTableCellLayoutText({
+      cell,
+      previewCell: previewValues[cellKey(el.id, ri, ci)],
+      loading: false,
+    });
   });
 }
 

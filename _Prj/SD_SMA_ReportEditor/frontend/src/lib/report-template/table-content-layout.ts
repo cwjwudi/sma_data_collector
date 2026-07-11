@@ -16,20 +16,11 @@ import {
 } from "@/lib/report-template/table-cell-metrics";
 import { tableSqlFillVerticalChromePx } from "@/lib/report-template/table-sql-fill-layout-utils";
 
-/** 估算用单元格文案（与编辑画布绑定标签口径接近，不做截断以免低估行高） */
+/** 估算用单元格文案：静态文本用 cell.text；绑定格无注入时用短占位（勿用 NodeId 估行高） */
 export function formatTableCellTextForHeightEstimate(cell: TemplateTableCell | null | undefined): string {
   if (!cell) return "";
-  if (cell.bindingKind === "opcua") {
-    const id = cell.opcuaNodeId.trim();
-    return id ? `⟨UA⟩ ${id}` : "⟨UA⟩";
-  }
-  if (cell.bindingKind === "sql") {
-    const q = cell.sqlText.trim();
-    return q ? `⟨SQL⟩ ${q}` : "⟨SQL⟩";
-  }
-  if (cell.bindingKind === "mongo") {
-    const col = cell.mongoQuery?.collection?.trim() || "";
-    return col ? `⟨Mongo⟩ ${col}` : "⟨Mongo⟩";
+  if (cell.bindingKind === "opcua" || cell.bindingKind === "sql" || cell.bindingKind === "mongo") {
+    return "";
   }
   return (cell.text || "").trim();
 }

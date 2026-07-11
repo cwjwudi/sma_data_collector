@@ -1,15 +1,15 @@
 {
-  "version": "0.3.46",
-  "releasedAt": "2026-07-11T15:53:04.529Z",
-  "notes": "Report Editor 0.3.46\n\n- 生成报表页：默认 OPC 连接，减少每条绑定重复选连接\n- 高级设置/监控曲线默认折叠；绑定卡片摘要折叠\n- 写回 serverId 回退到绑定/页级默认连接",
+  "version": "0.3.47",
+  "releasedAt": "2026-07-11T16:05:54.010Z",
+  "notes": "Report Editor 0.3.47\n\n- 表格换行/行高按 OPC 变量实值估算，不再跟随绑定 NodeId\n- 编辑画布有预览时显示变量内容并重新贴合外框",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.46-x64.exe",
-      "sha256": "e137369cf5613405cf572c6997c1315cf1965796241522eff499af9f51967ff1",
-      "size": 145408766
+      "url": "Report Editor AI-Setup-0.3.47-x64.exe",
+      "sha256": "2d8bf2f3e3785348b6a787fdeb25f635acbabdb4211a311e5a3d2f84af55b2f5",
+      "size": 145407942
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.46-arm64.dmg",
+      "url": "Report Editor AI-0.3.47-arm64.dmg",
       "sha256": "",
       "size": 0
     }

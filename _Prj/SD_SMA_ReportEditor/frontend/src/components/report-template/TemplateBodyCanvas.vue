@@ -460,8 +460,11 @@ import {
 } from "@/lib/report-template/table-sql-fill-preview";
 import { tableSqlFillVerticalChromePx } from "@/lib/report-template/table-sql-fill-layout-utils";
 import {
+  cellKey,
   paramKey,
   resolveBoundParameterPreviewText,
+  resolveStaticTableCellDisplayText,
+  resolveStaticTableCellLayoutText,
 } from "@/lib/report-template/binding-preview-utils";
 
 /** cv-scaler 左右 padding 合计（与样式 padding: 20px 一致） */
@@ -1035,8 +1038,64 @@ function formatTplBodyTableCell(el: TemplateElement, ri: number, ci: number): st
     });
   }
   const cell = tableGrid(el)[ri]?.[ci] ?? null;
+  return formatTplStaticTableCellText(el, ri, ci, cell);
+}
+
+/** 静态表单元格显示：优先 OPC/SQL 预览实值 */
+function formatTplStaticTableCellText(
+  el: TemplateElement,
+  ri: number,
+  ci: number,
+  cell: TemplateTableCell | null,
+): string {
+  const key = cellKey(el.id, ri, ci);
+  const hit = bindingPreview?.values.value[key];
+  const loading = !!(bindingPreview?.loading.value && !hit);
+  if (cell?.bindingKind === "opcua" || cell?.bindingKind === "sql" || cell?.bindingKind === "mongo") {
+    return resolveStaticTableCellDisplayText({
+      cell,
+      previewCell: hit,
+      loading,
+      unboundLabel: cell ? formatTableCellBindingLabel(cell) : undefined,
+    });
+  }
   return cell ? formatTableCellPreview(cell) : "\u00a0";
 }
+
+/** 静态表布局/换行文案：只用实值，不用绑定语句 */
+function formatTplStaticTableLayoutText(el: TemplateElement, ri: number, ci: number): string {
+  const cell = tableGrid(el)[ri]?.[ci] ?? null;
+  const key = cellKey(el.id, ri, ci);
+  const hit = bindingPreview?.values.value[key];
+  return resolveStaticTableCellLayoutText({
+    cell,
+    previewCell: hit,
+    loading: !!(bindingPreview?.loading.value && !hit),
+  });
+}
+
+function tplStaticTableCellTextAt(el: TemplateElement): (ri: number, ci: number) => string {
+  return (ri, ci) => formatTplStaticTableLayoutText(el, ri, ci);
+}
+
+function clampTplTableOuter(el: TemplateElement): void {
+  if (el.type !== "table") return;
+  const maxH = Math.max(20, me.value.contentH - el.y);
+  clampTableElementOuterSize(el, me.value.contentW, maxH, tplStaticTableCellTextAt(el));
+}
+
+/** 绑定预览更新后按实值重新贴合静态表外框高度 */
+watch(
+  () => bindingPreview?.values.value,
+  () => {
+    for (const el of list.value) {
+      if (el.type === "table" && !el.tableSqlFill?.enabled) {
+        clampTplTableOuter(el);
+      }
+    }
+  },
+  { deep: true },
+);
 
 function tplTableColInnerWidthsPx(el: TemplateElement): number[] {
   if (el.type !== "table") return [];
@@ -1163,8 +1222,7 @@ function onTplVerticalSlotChange(el: TemplateElement, ri: number, ev: Event) {
   if (!fill || fill.fillMode !== "visual" || el.type !== "table") return;
   applyVerticalSqlSlotField(fill, ri - 1, v);
   syncTableRowsForVerticalSqlSlots(el, () => ensureTableGrid(el));
-  const maxH = Math.max(20, me.value.contentH - el.y);
-  clampTableElementOuterSize(el, me.value.contentW, maxH);
+  clampTplTableOuter(el);
 }
 
 function resizeHandlesFor(el: TemplateElement): readonly H[] {
@@ -1173,7 +1231,7 @@ function resizeHandlesFor(el: TemplateElement): readonly H[] {
   return HZ;
 }
 
-/** 编辑画布：静态表各行内容感知高度（含绑定标签文案） */
+/** 编辑画布：静态表各行内容感知高度（按绑定预览实值换行，不用 NodeId） */
 function tplTableContentRowHeights(el: TemplateElement): number[] {
   if (el.type !== "table") return [];
   if (el.tableSqlFill?.enabled) {
@@ -1182,10 +1240,7 @@ function tplTableContentRowHeights(el: TemplateElement): number[] {
     const h = clampTableRowHeightPx(el.tableRowHeightPx);
     return Array.from({ length: n }, () => h);
   }
-  return computeTemplateTableContentRowHeightsPx(el, (ri, ci) => {
-    const cell = tableGrid(el)[ri]?.[ci];
-    return cell ? formatTableCellPreview(cell) : "";
-  });
+  return computeTemplateTableContentRowHeightsPx(el, tplStaticTableCellTextAt(el));
 }
 
 function tplTableRowTrStyle(el: TemplateElement, ri: number): Record<string, string> | undefined {
@@ -1285,7 +1340,7 @@ function truncatePreview(s: string, n: number): string {
   return x.length <= n ? x : `${x.slice(0, n)}…`;
 }
 
-function formatTableCellPreview(cell: TemplateTableCell): string {
+function formatTableCellBindingLabel(cell: TemplateTableCell): string {
   if (cell.bindingKind === "opcua") {
     const id = cell.opcuaNodeId.trim();
     return id ? `⟨UA⟩ ${truncatePreview(id, 72)}` : "⟨UA⟩";
@@ -1298,6 +1353,12 @@ function formatTableCellPreview(cell: TemplateTableCell): string {
     const col = cell.mongoQuery?.collection?.trim() || "";
     return col ? `⟨Mongo⟩ ${truncatePreview(col, 48)}` : "⟨Mongo⟩";
   }
+  return "";
+}
+
+function formatTableCellPreview(cell: TemplateTableCell): string {
+  const label = formatTableCellBindingLabel(cell);
+  if (label) return label;
   const t = cell.text.trim();
   return t.length > 0 ? t : "\u00a0";
 }
@@ -1500,8 +1561,7 @@ function ptrMove(ev: PointerEvent) {
       }
     }
     if (isTable) {
-      const maxH = Math.max(20, bh - Math.max(0, el.y));
-      clampTableElementOuterSize(el, bw, maxH);
+      clampTplTableOuter(el);
     }
     clamp(el);
     tplSnapGuides.value = ev.shiftKey

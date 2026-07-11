@@ -476,20 +476,11 @@ export function zoneTableVerticalChromePx(): number {
   return p.top + p.bottom + shellBottomPadPx;
 }
 
-/** 估算用单元格文案（与编辑画布绑定标签口径接近） */
+/** 估算用单元格文案：绑定格无注入时用短占位，勿按 NodeId 估行高 */
 export function formatZoneTableCellTextForHeightEstimate(cell: LayoutZoneTableCell | null | undefined): string {
   if (!cell) return "";
-  if (cell.bindingKind === "opcua") {
-    const id = cell.opcuaNodeId.trim();
-    return id ? `⟨UA⟩ ${id}` : "⟨UA⟩";
-  }
-  if (cell.bindingKind === "sql") {
-    const q = cell.sqlText.trim();
-    return q ? `⟨SQL⟩ ${q}` : "⟨SQL⟩";
-  }
-  if (cell.bindingKind === "mongo") {
-    const col = cell.mongoQuery?.collection?.trim() || "";
-    return col ? `⟨Mongo⟩ ${col}` : "⟨Mongo⟩";
+  if (cell.bindingKind === "opcua" || cell.bindingKind === "sql" || cell.bindingKind === "mongo") {
+    return "";
   }
   return (cell.text || "").trim();
 }

@@ -160,6 +160,72 @@ export function chartKey(elId: string): string {
   return `chart:${elId}`;
 }
 
+/**
+ * 静态表单元格「布局/换行」文案：优先 OPC/SQL/Mongo 预览实值；
+ * 未取到实值时用短占位，避免用 NodeId/SQL 语句抬高行高。
+ */
+export function resolveStaticTableCellLayoutText(opts: {
+  cell: {
+    bindingKind?: string;
+    text?: string;
+    decimalPlaces?: number | null;
+  } | null | undefined;
+  previewCell: BindingPreviewCell | undefined;
+  loading?: boolean;
+}): string {
+  const { cell, previewCell, loading } = opts;
+  if (!cell) return "";
+  const kind = cell.bindingKind || "none";
+  if (kind === "opcua" || kind === "sql" || kind === "mongo") {
+    if (previewCell != null) {
+      return applyDecimalPlacesToDisplayText(previewCell.text, cell.decimalPlaces);
+    }
+    if (loading) return "…";
+    return "";
+  }
+  return String(cell.text || "").trim();
+}
+
+/**
+ * 静态表单元格显示文案：有预览用实值；加载中用省略号；否则回退绑定标签。
+ */
+export function resolveStaticTableCellDisplayText(opts: {
+  cell: {
+    bindingKind?: string;
+    text?: string;
+    opcuaNodeId?: string;
+    sqlText?: string;
+    mongoQuery?: { collection?: string } | null;
+    decimalPlaces?: number | null;
+  } | null | undefined;
+  previewCell: BindingPreviewCell | undefined;
+  loading?: boolean;
+  unboundLabel?: string;
+}): string {
+  const { cell, previewCell, loading, unboundLabel } = opts;
+  if (!cell) return "\u00a0";
+  const kind = cell.bindingKind || "none";
+  if (kind === "opcua" || kind === "sql" || kind === "mongo") {
+    if (previewCell != null) {
+      return applyDecimalPlacesToDisplayText(previewCell.text, cell.decimalPlaces);
+    }
+    if (loading) return "…";
+    if (unboundLabel != null) return unboundLabel;
+    if (kind === "opcua") {
+      const id = String(cell.opcuaNodeId || "").trim();
+      return id ? `⟨UA⟩ ${id}` : "⟨UA⟩";
+    }
+    if (kind === "sql") {
+      const q = String(cell.sqlText || "").trim();
+      return q ? `⟨SQL⟩ ${q}` : "⟨SQL⟩";
+    }
+    const col = String(cell.mongoQuery?.collection || "").trim();
+    return col ? `⟨Mongo⟩ ${col}` : "⟨Mongo⟩";
+  }
+  const t = String(cell.text || "").trim();
+  return t.length > 0 ? t : "\u00a0";
+}
+
 export function connectionSupportsSql(engine: string): boolean {
   const e = (engine || "").toLowerCase();
   return (

@@ -70,6 +70,34 @@ describe("table-content-layout", () => {
     expect(tb.h).toBe(intrinsicOuterHeightForTemplateTable(tb));
   });
 
+  it("OPC binding NodeId does not inflate row height; preview value does", () => {
+    const tb = hydrateTemplateElement({
+      id: "t-opc",
+      type: "table",
+      tableRows: 1,
+      tableCols: 1,
+      tableRowHeightPx: 20,
+      w: 100,
+      fontSize: 12,
+    });
+    const cell = tb.tableCells?.[0]?.[0];
+    if (cell) {
+      cell.bindingKind = "opcua";
+      cell.opcuaNodeId =
+        "ns=2;s=Program.Very.Long.OpcUa.Node.Path.That.Would.Wrap.Many.Times.If.Used.For.Layout";
+    }
+    const byNodeId = computeTemplateTableContentRowHeightsPx(tb);
+    expect(byNodeId[0]).toBe(20);
+
+    const byValue = computeTemplateTableContentRowHeightsPx(tb, () => "OK");
+    expect(byValue[0]).toBe(20);
+
+    const longValue =
+      "这是一段很长很长很长很长很长很长很长很长很长很长很长很长很长很长的变量内容用于触发换行";
+    const byLongValue = computeTemplateTableContentRowHeightsPx(tb, () => longValue);
+    expect(byLongValue[0]).toBeGreaterThan(20);
+  });
+
   it("buildLogicalRowSlicesForOverflow covers all rows without gaps", () => {
     const heights = [40, 40, 40, 40, 40, 40, 40, 40];
     const slices = buildLogicalRowSlicesForOverflow({

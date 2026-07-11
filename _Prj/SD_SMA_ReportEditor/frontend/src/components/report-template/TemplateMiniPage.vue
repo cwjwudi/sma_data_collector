@@ -305,6 +305,7 @@ import {
   chartKey,
   paramKey,
   resolveBoundParameterPreviewText,
+  resolveStaticTableCellLayoutText,
   zoneParamKey,
   type BindingPreviewCell,
 } from "@/lib/report-template/binding-preview-utils";
@@ -753,7 +754,7 @@ function miniTplTableRowHeights(el: TemplateElement): number[] {
     lineHeight: 1.3,
     paddingX: 10,
     paddingY: 6,
-    cellTextAt: (ri, ci) => previewTableCellText(el, rowIndices[ri] ?? ri, ci),
+    cellTextAt: (ri, ci) => previewTableCellLayoutText(el, rowIndices[ri] ?? ri, ci),
   });
 }
 
@@ -1027,6 +1028,21 @@ function previewTableCellText(el: TemplateElement, ri: number, ci: number): stri
     return "…";
   }
   return cell ? formatStaticTableCell(cell) : "\u00a0";
+}
+
+/** 行高/换行估算：绑定格只用预览实值，不用 NodeId/SQL 语句 */
+function previewTableCellLayoutText(el: TemplateElement, ri: number, ci: number): string {
+  if (el.type === "table" && el.tableSqlFill?.enabled) {
+    return previewTableCellText(el, ri, ci);
+  }
+  const cell = tableGrid(el)[ri]?.[ci] ?? null;
+  const key = cellKey(el.id, ri, ci);
+  const hit = previewValues.value?.[key];
+  return resolveStaticTableCellLayoutText({
+    cell,
+    previewCell: hit,
+    loading: !!(bindingPreview?.loading.value && !hit),
+  });
 }
 
 function previewParameterText(el: TemplateElement): string {
