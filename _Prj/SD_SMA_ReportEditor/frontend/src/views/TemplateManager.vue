@@ -848,7 +848,7 @@ async function load() {
   }
 }
 
-const THUMB_FETCH_CONCURRENCY = 4;
+const THUMB_FETCH_CONCURRENCY = 2;
 /** 缩略图整页刷新代数：仅用于忽略过期失败标记，成功结果始终写入 cache */
 let thumbHydrateGen = 0;
 
@@ -920,10 +920,27 @@ async function retryThumb(id) {
 async function refreshThumbsView(opts = {}) {
   thumbsLoadingPage.value = true;
   try {
-    await loadPresets();
+    // 版式与模版并行：切勿等 /layout-presets/full（可 >1MB）完成才开始拉模版，否则易被 OPC 连接占满时整页卡住
+    const presetsTask = loadPresets();
     if (!offline.value) {
       await hydrateThumbs({ ids: pagedRows.value.map((r) => r.id) });
+      await presetsTask;
+      // 版式到位后，对本页已缓存模版再同步一次绑定快照（不阻塞首屏显示）
+      const presets = layoutPresetsAll.value;
+      if (presets.length) {
+        const next = { ...cache.value };
+        let changed = false;
+        for (const r of pagedRows.value) {
+          const t = next[r.id];
+          if (!t) continue;
+          resyncOneCachedTemplate(t);
+          next[r.id] = t;
+          changed = true;
+        }
+        if (changed) cache.value = next;
+      }
     } else {
+      await presetsTask;
       const local = loadLocal();
       const pageIds = new Set(pagedRows.value.map((r) => r.id));
       const next = { ...cache.value };
@@ -934,7 +951,10 @@ async function refreshThumbsView(opts = {}) {
         next[t.id] = t;
       }
       cache.value = next;
-      thumbFailed.value = new Set();
+      // 离线且无本地完整 JSON 的卡片标失败，避免永久「正在加载」
+      for (const r of pagedRows.value) {
+        if (!cache.value[r.id]) markThumbFailed(r.id, true);
+      }
     }
   } finally {
     thumbsLoadingPage.value = false;

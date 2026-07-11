@@ -9,22 +9,42 @@ function url(p: string) {
   return resolveApiHref(x);
 }
 
-async function fj<T>(u: string, init?: RequestInit): Promise<T> {
-  const r = await fetch(u, {
-    ...init,
-    headers: { Accept: "application/json", ...(init?.headers as object) },
-  });
-  if (!r.ok) {
-    let detail = `${r.status}`;
-    try {
-      const b = await r.json();
-      if (b?.detail !== undefined) detail = String(b.detail);
-    } catch {
-      detail = await r.text();
-    }
-    throw new Error(detail);
+async function fj<T>(u: string, init?: RequestInit & { timeoutMs?: number }): Promise<T> {
+  const timeoutMs = init?.timeoutMs ?? 30_000;
+  const { timeoutMs: _ignored, signal: userSignal, ...rest } = init ?? {};
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeoutMs);
+  const onUserAbort = () => ctrl.abort();
+  if (userSignal) {
+    if (userSignal.aborted) ctrl.abort();
+    else userSignal.addEventListener("abort", onUserAbort, { once: true });
   }
-  return r.json() as Promise<T>;
+  try {
+    const r = await fetch(u, {
+      ...rest,
+      signal: ctrl.signal,
+      headers: { Accept: "application/json", ...(rest.headers as object) },
+    });
+    if (!r.ok) {
+      let detail = `${r.status}`;
+      try {
+        const b = await r.json();
+        if (b?.detail !== undefined) detail = String(b.detail);
+      } catch {
+        detail = await r.text();
+      }
+      throw new Error(detail);
+    }
+    return r.json() as Promise<T>;
+  } catch (e) {
+    if (e instanceof DOMException && e.name === "AbortError") {
+      throw new Error(`请求超时（${Math.round(timeoutMs / 1000)} 秒）`);
+    }
+    throw e;
+  } finally {
+    clearTimeout(timer);
+    if (userSignal) userSignal.removeEventListener("abort", onUserAbort);
+  }
 }
 
 export async function listLayoutPresetSummaries() {

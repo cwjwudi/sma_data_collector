@@ -1,15 +1,15 @@
 {
-  "version": "0.3.43",
-  "releasedAt": "2026-07-11T13:46:29.518Z",
-  "notes": "修复模版缩略图：并发刷新不再丢弃已拉取的预览，避免卡在加载失败",
+  "version": "0.3.44",
+  "releasedAt": "2026-07-11T14:16:04.176Z",
+  "notes": "修复模版预览：OPC 轮询占满本机连接导致请求饿死；缩略图不再等待版式全量包",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.43-x64.exe",
-      "sha256": "a10b05115d1ae3449b322e0ea41d5843aea10126f94b59c99cf462edfe9fbb6a",
-      "size": 145404144
+      "url": "Report Editor AI-Setup-0.3.44-x64.exe",
+      "sha256": "2e4970d274bf6a72f131fb6166feb2c9e51531ac746fb3a17b8127900c4f512f",
+      "size": 145405497
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.43-arm64.dmg",
+      "url": "Report Editor AI-0.3.44-arm64.dmg",
       "sha256": "",
       "size": 0
     }

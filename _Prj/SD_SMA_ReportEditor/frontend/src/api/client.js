@@ -1,61 +1,69 @@
 import { resolveApiHref } from './apiBase.js'
+import { withOpcHttpSlot } from '../lib/opcua-http-gate.js'
+
+function isOpcUaApiPath(p) {
+  return p.startsWith('/opcua/')
+}
 
 /** 统一请求前缀 `/api`（与 Vite 代理一致；Electron file:// 时直连 localhost:8000）。 */
 export async function apiFetch(path, options = {}) {
   const p = path.startsWith('/') ? path : `/${path}`
-  const url = resolveApiHref(p)
-  const opts = { ...options }
-  const headers = { ...opts.headers }
-  if (opts.body !== undefined && typeof opts.body === 'object' && !(opts.body instanceof FormData)) {
-    headers['Content-Type'] = 'application/json'
-    opts.body = JSON.stringify(opts.body)
-  }
-  const res = await fetch(url, { ...opts, headers })
-  const text = await res.text()
-  let data = text
-  try {
-    data = text ? JSON.parse(text) : null
-  } catch {
-    /* keep text */
-  }
-  if (!res.ok) {
-    let msg = text || res.statusText
-    if (typeof data === 'object' && data?.detail !== undefined) {
-      const d = data.detail
-      msg = Array.isArray(d) ? d.map((x) => x.msg || JSON.stringify(x)).join('; ') : String(d)
+  const run = async () => {
+    const url = resolveApiHref(p)
+    const opts = { ...options }
+    const headers = { ...opts.headers }
+    if (opts.body !== undefined && typeof opts.body === 'object' && !(opts.body instanceof FormData)) {
+      headers['Content-Type'] = 'application/json'
+      opts.body = JSON.stringify(opts.body)
     }
-    const plain = typeof text === 'string' ? text.trim() : ''
-    if (
-      res.status === 500 &&
-      (plain === 'Internal Server Error' || plain.startsWith('<!DOCTYPE') || plain.startsWith('<html'))
-    ) {
-      msg = `HTTP 500：后端异常（${p}）。请在后端终端查看堆栈，并确认已安装依赖：pip install -r backend/requirements.txt`
+    const res = await fetch(url, { ...opts, headers })
+    const text = await res.text()
+    let data = text
+    try {
+      data = text ? JSON.parse(text) : null
+    } catch {
+      /* keep text */
     }
-    if (res.status === 502 || res.status === 503) {
-      msg = `${msg}（可能是后端未启动或暂时不可写配置）`
-    }
-    if (res.status === 404) {
-      const detailMsg =
-        typeof data === "object" && data?.detail !== undefined
-          ? Array.isArray(data.detail)
-            ? data.detail.map((x) => x.msg || JSON.stringify(x)).join("; ")
-            : String(data.detail)
-          : ""
-      // 业务 404（如「未找到数据库连接」）应展示后端原文；仅在无 detail / 框架 Not Found 时提示路由或旧后端
-      const looksLikeMissingRoute =
-        !detailMsg ||
-        /^not\s*found$/i.test(detailMsg.trim()) ||
-        detailMsg.trim() === "Not Found"
-      if (!looksLikeMissingRoute) {
-        throw new Error(detailMsg)
+    if (!res.ok) {
+      let msg = text || res.statusText
+      if (typeof data === 'object' && data?.detail !== undefined) {
+        const d = data.detail
+        msg = Array.isArray(d) ? d.map((x) => x.msg || JSON.stringify(x)).join('; ') : String(d)
       }
-      throw new Error(
-        `后端未找到 /api${p}（HTTP 404）。` +
-          "请在本仓库 backend 目录用当前代码重启：`python -m uvicorn main:app --reload`（或重装应用包）；" +
-          "仍 404 时请 `lsof -i :8000` 核对 8000 上是否跑着旧版 exe/其它框架。",
-      )
+      const plain = typeof text === 'string' ? text.trim() : ''
+      if (
+        res.status === 500 &&
+        (plain === 'Internal Server Error' || plain.startsWith('<!DOCTYPE') || plain.startsWith('<html'))
+      ) {
+        msg = `HTTP 500：后端异常（${p}）。请在后端终端查看堆栈，并确认已安装依赖：pip install -r backend/requirements.txt`
+      }
+      if (res.status === 502 || res.status === 503) {
+        msg = `${msg}（可能是后端未启动或暂时不可写配置）`
+      }
+      if (res.status === 404) {
+        const detailMsg =
+          typeof data === "object" && data?.detail !== undefined
+            ? Array.isArray(data.detail)
+              ? data.detail.map((x) => x.msg || JSON.stringify(x)).join("; ")
+              : String(data.detail)
+            : ""
+        const looksLikeMissingRoute =
+          !detailMsg ||
+          /^not\s*found$/i.test(detailMsg.trim()) ||
+          detailMsg.trim() === "Not Found"
+        if (!looksLikeMissingRoute) {
+          throw new Error(detailMsg)
+        }
+        throw new Error(
+          `后端未找到 /api${p}（HTTP 404）。` +
+            "请在本仓库 backend 目录用当前代码重启：`python -m uvicorn main:app --reload`（或重装应用包）；" +
+            "仍 404 时请 `lsof -i :8000` 核对 8000 上是否跑着旧版 exe/其它框架。",
+        )
+      }
+      throw new Error(msg || `HTTP ${res.status}`)
     }
-    throw new Error(msg || `HTTP ${res.status}`)
+    return data
   }
-  return data
+  // OPC 读写单独限流，避免占满浏览器对本机后端的连接槽
+  return isOpcUaApiPath(p) ? withOpcHttpSlot(run) : run()
 }

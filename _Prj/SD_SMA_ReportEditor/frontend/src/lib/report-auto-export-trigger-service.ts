@@ -69,6 +69,7 @@ export type BindingRuntime = {
 export const reportAutoExportStatus: Ref<string> = ref("");
 
 let pollTimer: ReturnType<typeof setInterval> | null = null;
+let pollInFlight = false;
 /** 正在导出（含排队已受理）的绑定 id */
 const busyBindingIds = new Set<string>();
 /** 当前真正在跑 PDF 的数量 */
@@ -722,6 +723,18 @@ function enqueueBindingExport(job: QueuedExportJob): void {
 }
 
 async function pollAutoTriggerOnce(): Promise<void> {
+  if (!electronShell()) return;
+  // 上一轮未完成时跳过：避免 setInterval 叠跑占满本机 8000 连接，饿死模版预览等请求
+  if (pollInFlight) return;
+  pollInFlight = true;
+  try {
+    await pollAutoTriggerOnceBody();
+  } finally {
+    pollInFlight = false;
+  }
+}
+
+async function pollAutoTriggerOnceBody(): Promise<void> {
   if (!electronShell()) return;
 
   const prefs = loadReportGeneratorPrefs();
