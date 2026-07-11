@@ -28,9 +28,15 @@
         数据源连接
         <select v-model="visual.connectionId" class="lpep-inp" @change="onConnChange">
           <option value="">请选择…</option>
+          <option v-if="orphanConnectionOption" :value="orphanConnectionOption.id" disabled>
+            {{ orphanConnectionOption.label }}
+          </option>
           <option v-for="c in connections" :key="c.id" :value="c.id">{{ c.name }}（{{ c.engine }}）</option>
         </select>
       </label>
+      <p v-if="orphanConnectionOption" class="ssqb-err">
+        当前绑定的数据库连接已不存在。请重新选择有效连接。
+      </p>
       <label v-if="showDatabasePick" class="ssqb-lab">
         数据库
         <select v-model="visual.database" class="lpep-inp" @change="onDatabaseChange">
@@ -138,12 +144,21 @@ const p0 = "{{p0}}";
 const p1 = "{{p1}}";
 
 const connections = ref<{ id: string; name: string; engine: string }[]>([]);
+const connectionsLoaded = ref(false);
 const catalogDatabases = ref<string[]>([]);
 const catalogTables = ref<{ name: string }[]>([]);
 const tableColumns = ref<{ name: string }[]>([]);
 const catalogErr = ref("");
 const tablePickOpen = ref(false);
 const tablePickQ = ref("");
+
+const orphanConnectionOption = computed(() => {
+  const id = (props.visual.connectionId || "").trim();
+  if (!id || !connectionsLoaded.value) return null;
+  if (connections.value.some((c) => c.id === id)) return null;
+  const short = id.length > 8 ? `${id.slice(0, 8)}…` : id;
+  return { id, label: `连接已失效（${short}）` };
+});
 
 const showDatabasePick = computed(() => {
   const c = connections.value.find((x) => x.id === props.visual.connectionId);
@@ -213,6 +228,8 @@ async function loadConnections() {
       });
   } catch (e) {
     catalogErr.value = e instanceof Error ? e.message : String(e);
+  } finally {
+    connectionsLoaded.value = true;
   }
 }
 

@@ -35,10 +35,24 @@ export async function apiFetch(path, options = {}) {
       msg = `${msg}（可能是后端未启动或暂时不可写配置）`
     }
     if (res.status === 404) {
+      const detailMsg =
+        typeof data === "object" && data?.detail !== undefined
+          ? Array.isArray(data.detail)
+            ? data.detail.map((x) => x.msg || JSON.stringify(x)).join("; ")
+            : String(data.detail)
+          : ""
+      // 业务 404（如「未找到数据库连接」）应展示后端原文；仅在无 detail / 框架 Not Found 时提示路由或旧后端
+      const looksLikeMissingRoute =
+        !detailMsg ||
+        /^not\s*found$/i.test(detailMsg.trim()) ||
+        detailMsg.trim() === "Not Found"
+      if (!looksLikeMissingRoute) {
+        throw new Error(detailMsg)
+      }
       throw new Error(
         `后端未找到 /api${p}（HTTP 404）。` +
-          '请在本仓库 backend 目录用当前代码重启：`python -m uvicorn main:app --reload`（或重装应用包）；' +
-          '仍 404 时请 `lsof -i :8000` 核对 8000 上是否跑着旧版 exe/其它框架。',
+          "请在本仓库 backend 目录用当前代码重启：`python -m uvicorn main:app --reload`（或重装应用包）；" +
+          "仍 404 时请 `lsof -i :8000` 核对 8000 上是否跑着旧版 exe/其它框架。",
       )
     }
     throw new Error(msg || `HTTP ${res.status}`)

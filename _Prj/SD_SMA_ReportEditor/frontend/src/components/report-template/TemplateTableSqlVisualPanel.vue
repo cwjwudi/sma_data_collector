@@ -7,9 +7,15 @@
       数据源连接
       <select v-model="vs.connectionId" :class="selectFieldClass" @change="onConnChange">
         <option value="">请选择…</option>
+        <option v-if="orphanConnectionOption" :value="orphanConnectionOption.id" disabled>
+          {{ orphanConnectionOption.label }}
+        </option>
         <option v-for="c in sqlConnections" :key="c.id" :value="c.id">{{ c.name }}（{{ c.engine }}）</option>
       </select>
     </label>
+    <p v-if="orphanConnectionOption" class="tsv-err">
+      当前绑定的数据库连接已不存在（可能被删除或重建）。请重新选择下方有效连接；或用 AI「创建绑定冒烟模版」重建演示数据。
+    </p>
 
     <template v-if="vs.connectionId && showDatabasePick">
       <label class="tsv-lab">
@@ -626,6 +632,7 @@ const emit = defineEmits<{
 }>();
 
 const connections = ref<{ id: string; name: string; engine: string; database?: string }[]>([]);
+const connectionsLoaded = ref(false);
 const sqlConnections = computed(() =>
   connections.value.filter((c) => {
     const e = (c.engine || "").toLowerCase();
@@ -792,6 +799,17 @@ function headerFieldCaption(ci: number): string {
 
 const activeConn = computed(() => connections.value.find((c) => c.id === vs.value.connectionId) ?? null);
 
+/** 模版里保存的 connectionId 已不在当前连接列表（删除/重建后 ID 变了） */
+const orphanConnectionOption = computed(() => {
+  const id = (vs.value.connectionId || "").trim();
+  if (!id) return null;
+  if (connections.value.some((c) => c.id === id)) return null;
+  // 连接列表尚未拉到时不误报
+  if (!connectionsLoaded.value) return null;
+  const short = id.length > 8 ? `${id.slice(0, 8)}…` : id;
+  return { id, label: `连接已失效（${short}）` };
+});
+
 const showDatabasePick = computed(() => {
   // 连接列表未加载完时回退到已保存的 engine，避免重开面板时数据库一栏闪失
   const e = (activeConn.value?.engine || vs.value.engine || "").toLowerCase();
@@ -940,6 +958,8 @@ async function loadConnections() {
     connections.value = data.connections || [];
   } catch (e) {
     catalogErr.value = e instanceof Error ? e.message : String(e);
+  } finally {
+    connectionsLoaded.value = true;
   }
 }
 
