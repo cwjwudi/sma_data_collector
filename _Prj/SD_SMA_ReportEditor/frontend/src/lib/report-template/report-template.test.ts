@@ -9,6 +9,7 @@ import {
   hydrateTemplateElement,
   createTemplate,
   ensureBodyPages,
+  clampTableElementOuterSize,
 } from "@/lib/report-template/model";
 import { blankZonesSnapshot } from "@/lib/report-template/layout-model";
 import {
@@ -133,6 +134,26 @@ describe("hydrateTemplateElement", () => {
     });
     expect(tb.tableRows).toBe(4);
     expect(tb.h).toBeLessThan(700);
+  });
+
+  it("clampTableElementOuterSize sets static table h to rows×rowHeight", () => {
+    const tb = hydrateTemplateElement({
+      id: "st",
+      type: "table",
+      tableRows: 10,
+      tableCols: 2,
+      tableRowHeightPx: 20,
+      h: 999,
+    });
+    clampTableElementOuterSize(tb, 800, 2000);
+    expect(tb.h).toBeLessThan(999);
+    const h1 = tb.h;
+    tb.tableRows = 5;
+    clampTableElementOuterSize(tb, 800, 2000);
+    expect(tb.h).toBeLessThan(h1!);
+    tb.tableRowHeightPx = 40;
+    clampTableElementOuterSize(tb, 800, 2000);
+    expect(tb.h).toBeGreaterThan(h1! / 2);
   });
 });
 

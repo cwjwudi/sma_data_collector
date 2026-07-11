@@ -105,7 +105,7 @@
             v-for="el in list"
             :key="el.id"
             class="el-node touch"
-            :class="{ sel: selId === el.id }"
+            :class="{ sel: selId === el.id, 'el-node--table': el.type === 'table' }"
             :style="elCss(el)"
             @pointerdown.stop="beginMove($event, el)"
           >
@@ -981,14 +981,24 @@ function tplTableRowIndices(el: TemplateElement): number[] {
   const base = g.length;
   const pk = templateTableSqlFillPreviewKey(el.id);
   const pv = bindingPreview?.values.value[pk]?.tableSqlFill;
-  if (!el.tableSqlFill?.enabled || !pv?.dataRows?.length) {
+  if (!el.tableSqlFill?.enabled) {
     return Array.from({ length: base }, (_, i) => i);
   }
-  const lay = tplSqlFillEditorPreviewLayout(el);
-  const fallbackDisplay = sqlFillEditorDisplayDataRowCount(el.tableSqlFill, pv.dataRows.length);
-  const visibleData = lay?.visibleDataRows ?? Math.min(fallbackDisplay, Math.max(0, base - 1));
-  const total = Math.max(1, 1 + visibleData);
-  return Array.from({ length: total }, (_, i) => i);
+  // 有预览数据：按逻辑行 + 外框可容纳行数裁剪
+  if (pv?.dataRows?.length) {
+    const lay = tplSqlFillEditorPreviewLayout(el);
+    const fallbackDisplay = sqlFillEditorDisplayDataRowCount(el.tableSqlFill, pv.dataRows.length);
+    const visibleData = lay?.visibleDataRows ?? Math.min(fallbackDisplay, Math.max(0, base - 1));
+    const total = Math.max(1, 1 + visibleData);
+    return Array.from({ length: total }, (_, i) => i);
+  }
+  // 无预览：勿按陈旧 tableRows（如 30）整表画出外溢；按外框高度估算可见行
+  const rowH = clampTableRowHeightPx(el.tableRowHeightPx);
+  const chrome = tableSqlFillVerticalChromePx();
+  const inner = Math.max(0, el.h - chrome);
+  const maxTotalRows = Math.max(1, Math.floor(inner / Math.max(1, rowH)));
+  const total = Math.min(base, maxTotalRows);
+  return Array.from({ length: Math.max(1, total) }, (_, i) => i);
 }
 
 function formatTplBodyTableCell(el: TemplateElement, ri: number, ci: number): string {
@@ -1142,10 +1152,10 @@ function onTplVerticalSlotChange(el: TemplateElement, ri: number, ev: Event) {
 function tplTableRowTrStyle(el: TemplateElement): Record<string, string> | undefined {
   if (el.type !== "table") return undefined;
   const h = clampTableRowHeightPx(el.tableRowHeightPx);
-  // 最小行高：内容换行时可撑高；原生 select 另有 CSS 限制
+  // 编辑态固定行高，与属性「行高」及外框 h=行数×行高 对齐；预览/导出仍可按内容折行抬高
   return {
-    height: "auto",
-    minHeight: `${h}px`,
+    height: `${h}px`,
+    maxHeight: `${h}px`,
   };
 }
 
@@ -1154,9 +1164,8 @@ function tplTableCellBoxStyle(el: TemplateElement, ri: number, ci: number): Reco
   const h = clampTableRowHeightPx(el.tableRowHeightPx);
   return {
     ...tplTableCellStyle(el, ri, ci),
-    height: "auto",
-    minHeight: `${h}px`,
-    maxHeight: "none",
+    height: `${h}px`,
+    maxHeight: `${h}px`,
   };
 }
 
@@ -1844,7 +1853,7 @@ async function onTplImageDropFile(ev: DragEvent, el: TemplateElement) {
   width: 100%;
   height: 100%;
   box-sizing: border-box;
-  overflow: visible;
+  overflow: hidden;
   padding-bottom: 1px;
 }
 .cv-table {
@@ -1879,9 +1888,11 @@ async function onTplImageDropFile(ev: DragEvent, el: TemplateElement) {
   border-top: 1px solid rgb(212 212 216);
   border-left: 1px solid rgb(212 212 216);
   padding: 1px 5px;
-  vertical-align: top;
+  vertical-align: middle;
   text-align: center;
-  overflow: visible;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   cursor: cell;
 }
 .cv-table-cell:last-child {
@@ -2032,10 +2043,16 @@ async function onTplImageDropFile(ev: DragEvent, el: TemplateElement) {
   position: relative;
   z-index: 1;
 }
+.el-node--table {
+  overflow: hidden;
+}
 .el-node.sel {
   outline: 2px solid #6366f1;
   overflow: visible;
   z-index: 6;
+}
+.el-node--table.sel {
+  overflow: hidden;
 }
 .touch {
   touch-action: manipulation;

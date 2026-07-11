@@ -642,6 +642,22 @@ function clampSelectedTableOuter() {
   clampTableElementOuterSize(props.el, maxW, maxH);
 }
 
+/** 改行高时：静态/纵表由 clamp 贴合；横表 SQL 保持当前可见行数并伸缩外框 */
+function applyTableRowHeightChange(nextRowH: number) {
+  const el = props.el;
+  if (el.type !== "table") return;
+  const oldH = clampTableRowHeightPx(el.tableRowHeightPx);
+  const newH = clampTableRowHeightPx(nextRowH);
+  const p = REPORT_TEMPLATE_TABLE_NODE_PADDING_PX;
+  const chrome = p.top + p.bottom + 1;
+  const visibleRows = Math.max(1, Math.round((Math.max(chrome, el.h) - chrome) / Math.max(1, oldH)));
+  el.tableRowHeightPx = newH;
+  if (el.tableSqlFill?.enabled && !isVerticalSqlFill(el.tableSqlFill)) {
+    el.h = chrome + visibleRows * newH;
+  }
+  clampSelectedTableOuter();
+}
+
 function commitGeomAndClamp() {
   if (props.el.type === "table") clampSelectedTableOuter();
 }
@@ -993,8 +1009,7 @@ const tableRowHeightModel = computed({
   },
   set(v: number) {
     if (props.el.type !== "table") return;
-    props.el.tableRowHeightPx = clampTableRowHeightPx(v);
-    clampSelectedTableOuter();
+    applyTableRowHeightChange(v);
   },
 });
 
@@ -1070,8 +1085,7 @@ function bumpTableDimCols(delta: number) {
 function bumpTableRowHeight(delta: number) {
   if (props.el.type !== "table") return;
   const cur = clampTableRowHeightPx(props.el.tableRowHeightPx);
-  props.el.tableRowHeightPx = clampTableRowHeightPx(cur + delta);
-  clampSelectedTableOuter();
+  applyTableRowHeightChange(cur + delta);
 }
 
 function applyTableDims() {

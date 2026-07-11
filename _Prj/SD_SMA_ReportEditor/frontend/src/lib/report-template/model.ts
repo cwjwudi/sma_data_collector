@@ -426,18 +426,17 @@ export function clampTableElementOuterSize(
       el.h = nextH;
       return;
     }
+    // 横表 SQL：外框为可视窗口；至少表头+1 行，允许矮于全部数据行
     const loH = Math.max(20, Math.min(minOuterHeightSqlFillTableEditorPx(el), maxH));
     if (el.h < loH) el.h = loH;
     if (el.h > maxH) el.h = maxH;
     return;
   }
 
+  // 静态表：外框始终等于「行数 × 行高 + chrome」，改行数/行高即变高度
   const ih = intrinsicOuterHeightForTemplateTable(el);
-  const capH = Math.min(ih, maxH);
-  const mh = intrinsicOuterHeightForTemplateTable(el);
-  const loH = Math.max(20, Math.min(mh, maxH));
-  if (el.h < loH) el.h = loH;
-  if (el.h > capH) el.h = capH;
+  const nextH = Math.max(20, Math.min(ih, maxH));
+  el.h = nextH;
 }
 
 function normalizeChartKind(v: unknown): "line" | "bar" {

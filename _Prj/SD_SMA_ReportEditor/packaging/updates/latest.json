@@ -1,15 +1,15 @@
 {
-  "version": "0.3.17",
-  "releasedAt": "2026-07-11T05:34:51.640Z",
-  "notes": "打开模版时自动收齐老纵表偏高的 tableRows/外框高度",
+  "version": "0.3.18",
+  "releasedAt": "2026-07-11T05:55:49.976Z",
+  "notes": "编辑态表格行高/行数真正驱动外框高度；裁剪外溢；横表改行高同步外框",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.17-x64.exe",
-      "sha256": "39bb76031f0962bea08e6423aa1467d0baf5964cc707077c0e2cc2da8130e767",
-      "size": 145222882
+      "url": "Report Editor AI-Setup-0.3.18-x64.exe",
+      "sha256": "ad9485e226d30e3a440dc0b5ed5fe5a98e05b51def02afd61743d05d2130fe23",
+      "size": 145223815
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.17-arm64.dmg",
+      "url": "Report Editor AI-0.3.18-arm64.dmg",
       "sha256": "",
       "size": 0
     }
