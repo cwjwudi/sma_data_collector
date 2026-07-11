@@ -18,13 +18,14 @@
                 :align-x="el.alignX"
                 :align-y="el.alignY"
                 :rotation-deg="el.imageRotationDeg"
-                :font-size="Math.max(6, el.fontSize * 0.85)"
+                :font-size="miniReadableFontPx(el.fontSize)"
                 :color="el.color"
               >
                 <template #placeholder>
                   <span class="mini-ph">图片</span>
                 </template>
               </ZoneImageCompose>
+              <ZoneTableStatic v-else-if="el.type === 'table'" :el="el" />
               <template v-else><LayoutZoneInlineContent :el="el" /></template>
             </div>
           </div>
@@ -48,13 +49,14 @@
                 :align-x="el.alignX"
                 :align-y="el.alignY"
                 :rotation-deg="el.imageRotationDeg"
-                :font-size="Math.max(6, el.fontSize * 0.85)"
+                :font-size="miniReadableFontPx(el.fontSize)"
                 :color="el.color"
               >
                 <template #placeholder>
                   <span class="mini-ph">图片</span>
                 </template>
               </ZoneImageCompose>
+              <ZoneTableStatic v-else-if="el.type === 'table'" :el="el" />
               <template v-else><LayoutZoneInlineContent :el="el" /></template>
             </div>
             <div v-if="preset.bodyElements.length === 0" class="mini-body-empty">{{ bodyEmptyHint }}</div>
@@ -71,13 +73,14 @@
                 :align-x="el.alignX"
                 :align-y="el.alignY"
                 :rotation-deg="el.imageRotationDeg"
-                :font-size="Math.max(6, el.fontSize * 0.85)"
+                :font-size="miniReadableFontPx(el.fontSize)"
                 :color="el.color"
               >
                 <template #placeholder>
                   <span class="mini-ph">图片</span>
                 </template>
               </ZoneImageCompose>
+              <ZoneTableStatic v-else-if="el.type === 'table'" :el="el" />
               <template v-else><LayoutZoneInlineContent :el="el" /></template>
             </div>
           </div>
@@ -95,6 +98,7 @@ import { computed } from "vue";
 import LayoutZoneInlineContent from "@/components/report-template/LayoutZoneInlineContent.vue";
 import MiniPreviewChrome from "@/components/report-template/MiniPreviewChrome.vue";
 import ZoneImageCompose from "@/components/report-template/ZoneImageCompose.vue";
+import ZoneTableStatic from "@/components/report-template/ZoneTableStatic.vue";
 import type { MiniPreviewVariant } from "@/components/report-template/mini-preview-types";
 import type { PaperLayoutMetrics } from "@/lib/report-template/layout-geometry";
 import { computePaperLayout } from "@/lib/report-template/layout-geometry";
@@ -107,6 +111,7 @@ import {
   getZoneTextWrapStyle,
   normalizePageNumberMode,
   normalizeZIndex,
+  zoneTableNodeShellBackgroundCss,
 } from "@/lib/report-template/layout-zone-element";
 
 const props = withDefaults(
@@ -196,6 +201,13 @@ const headerBand = computed(() => bandStyle(me.value, "header"));
 const bodyBand = computed(() => bandStyle(me.value, "body"));
 const footerBand = computed(() => bandStyle(me.value, "footer"));
 
+/** 缩放后屏幕字号至少约 8px，避免页眉静态中文在缩略图里变成细线 */
+function miniReadableFontPx(fontSize: number): number {
+  const base = Math.max(6, Number(fontSize) * 0.85 || 6);
+  const minOnScreen = 8 / Math.max(0.05, scale.value);
+  return Math.max(base, minOnScreen);
+}
+
 function miniZoneElStyle(el: LayoutZoneElement): Record<string, string> {
   const ff = typeof el.fontFamily === "string" ? el.fontFamily.trim() : "";
   const flex = flexJustifyAlignForAxes(el.alignX, el.alignY);
@@ -209,7 +221,7 @@ function miniZoneElStyle(el: LayoutZoneElement): Record<string, string> {
     boxSizing: "border-box",
     overflow: "hidden",
     color: el.color,
-    fontSize: `${Math.max(6, el.fontSize * 0.85)}px`,
+    fontSize: `${miniReadableFontPx(el.fontSize)}px`,
     ...(ff ? { fontFamily: ff } : {}),
     zIndex: String(normalizeZIndex(el.zIndex)),
   };
@@ -217,6 +229,13 @@ function miniZoneElStyle(el: LayoutZoneElement): Record<string, string> {
     s.display = "flex";
     s.flexDirection = "column";
     s.whiteSpace = "normal";
+  } else if (el.type === "table") {
+    s.display = "flex";
+    s.flexDirection = "column";
+    s.alignItems = "stretch";
+    s.justifyContent = "stretch";
+    s.padding = "2px";
+    s.background = zoneTableNodeShellBackgroundCss();
   } else {
     s.display = "flex";
     s.justifyContent = flex.justifyContent;
@@ -281,6 +300,6 @@ function miniZoneElStyle(el: LayoutZoneElement): Record<string, string> {
 }
 .mini-ph {
   font-size: 8px;
-  color: #94a3b8;
+  color: #a1a1aa;
 }
 </style>
