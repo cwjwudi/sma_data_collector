@@ -27,6 +27,14 @@ fi
 
 sips -Z 1024 "$TMP" --out "$DST" >/dev/null
 
+# 去掉圆角外实心黑角（桌面快捷方式否则四角发黑）
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+if command -v python3 >/dev/null 2>&1; then
+  python3 "$SCRIPT_DIR/clear-icon-black-corners.py" "$DST" || true
+elif command -v python >/dev/null 2>&1; then
+  python "$SCRIPT_DIR/clear-icon-black-corners.py" "$DST" || true
+fi
+
 FW=$(sips -g pixelWidth "$DST" | awk '/pixelWidth/ {print $2}')
 FH=$(sips -g pixelHeight "$DST" | awk '/pixelHeight/ {print $2}')
 echo "已生成 ${FW}x${FH}（居中裁切，无补边）-> $DST"

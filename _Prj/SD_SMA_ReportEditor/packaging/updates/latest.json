@@ -1,15 +1,15 @@
 {
-  "version": "0.3.35",
-  "releasedAt": "2026-07-11T10:49:41.152Z",
-  "notes": "修复签名库新建不落盘与预览/删除刷新异常",
+  "version": "0.3.36",
+  "releasedAt": "2026-07-11T11:07:50.500Z",
+  "notes": "应用图标四角黑底改为透明",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.35-x64.exe",
+      "url": "Report Editor AI-Setup-0.3.36-x64.exe",
       "sha256": "",
       "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.35-arm64.dmg",
+      "url": "Report Editor AI-0.3.36-arm64.dmg",
       "sha256": "",
       "size": 0
     }
