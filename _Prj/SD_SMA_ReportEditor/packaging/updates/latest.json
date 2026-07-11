@@ -1,15 +1,15 @@
 {
-  "version": "0.3.18",
-  "releasedAt": "2026-07-11T05:55:49.976Z",
-  "notes": "编辑态表格行高/行数真正驱动外框高度；裁剪外溢；横表改行高同步外框",
+  "version": "0.3.19",
+  "releasedAt": "2026-07-11T06:05:44.558Z",
+  "notes": "AI 版应用图标加强区分：霓虹边框、六边形光晕、大号青橙 AI 角标",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.18-x64.exe",
-      "sha256": "ad9485e226d30e3a440dc0b5ed5fe5a98e05b51def02afd61743d05d2130fe23",
-      "size": 145223815
+      "url": "Report Editor AI-Setup-0.3.19-x64.exe",
+      "sha256": "a7f164abf6fc3ff46bf19c421836b513fceb7b3fbba712076883c3156efbfff0",
+      "size": 145434198
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.18-arm64.dmg",
+      "url": "Report Editor AI-0.3.19-arm64.dmg",
       "sha256": "",
       "size": 0
     }
