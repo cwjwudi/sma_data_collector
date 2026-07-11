@@ -2,6 +2,7 @@
   <div class="page">
     <h2 class="page-title">仪表盘</h2>
     <DashboardConnectionHealth />
+    <DashboardAssetHealth />
     <DashboardFieldOps />
     <div class="card-grid">
       <router-link to="/datasource" class="quick-card">
@@ -42,6 +43,7 @@
 
 <script setup>
 import DashboardConnectionHealth from '@/features/dashboard/DashboardConnectionHealth.vue'
+import DashboardAssetHealth from '@/features/dashboard/DashboardAssetHealth.vue'
 import DashboardFieldOps from '@/features/dashboard/DashboardFieldOps.vue'
 
 defineOptions({ name: 'Dashboard' })

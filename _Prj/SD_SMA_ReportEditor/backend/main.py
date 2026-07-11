@@ -16,6 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from api.routers import ai_openai as ai_openai_router
+from api.routers import assets as assets_router
 from api.routers import audit as audit_router
 from api.routers import database as database_router
 from api.routers import demo as demo_router
@@ -96,6 +97,7 @@ def _attach_routes() -> None:
         signatures_router.router,
         audit_router.router,
         demo_router.router,
+        assets_router.router,
     )
     for r in routers:
         app.include_router(r)
