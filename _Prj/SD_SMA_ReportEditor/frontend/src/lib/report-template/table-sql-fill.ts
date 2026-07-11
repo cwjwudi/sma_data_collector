@@ -214,13 +214,29 @@ export function hydrateTableSqlLabelBinding(raw: unknown): TableSqlLabelBinding 
   };
 }
 
+/**
+ * 就地对齐标签绑定数组长度与字段。
+ * 必须保持同一数组引用、并尽量不替换已有元素对象，否则在 Vue 渲染期
+ * （ensureTableGrid / ensureZoneTableGrid）会反复触发响应式更新导致页面卡死。
+ */
 export function ensureTableSqlLabelBindings(
   arr: TableSqlLabelBinding[] | undefined,
   n: number,
 ): TableSqlLabelBinding[] {
-  const out = Array.isArray(arr) ? arr.map(hydrateTableSqlLabelBinding) : [];
-  while (out.length < n) out.push(defaultTableSqlLabelBinding());
-  out.length = Math.max(0, n);
+  const out = Array.isArray(arr) ? arr : [];
+  const target = Math.max(0, n);
+  for (let i = 0; i < out.length; i++) {
+    const cur = out[i];
+    if (!cur || typeof cur !== "object") {
+      out[i] = defaultTableSqlLabelBinding();
+      continue;
+    }
+    const kind = cur.bindingKind === "opcua" ? "opcua" : "none";
+    if (cur.bindingKind !== kind) cur.bindingKind = kind;
+    if (typeof cur.opcuaNodeId !== "string") cur.opcuaNodeId = "";
+  }
+  while (out.length < target) out.push(defaultTableSqlLabelBinding());
+  if (out.length > target) out.length = target;
   return out;
 }
 
@@ -386,8 +402,11 @@ export function ensureVerticalFieldLabels(fill: TableSqlFillConfig): void {
   const n = fill.visualSource.columns.length;
   const arr = fill.verticalFieldLabels;
   while (arr.length < n) arr.push("");
-  arr.length = n;
-  fill.verticalFieldLabelBindings = ensureTableSqlLabelBindings(fill.verticalFieldLabelBindings, n);
+  if (arr.length > n) arr.length = n;
+  if (!Array.isArray(fill.verticalFieldLabelBindings)) {
+    fill.verticalFieldLabelBindings = [];
+  }
+  ensureTableSqlLabelBindings(fill.verticalFieldLabelBindings, n);
 }
 
 /** 纵表槽位是否为空白分隔行（空串） */
@@ -674,8 +693,11 @@ function clampColIndex(v: unknown): number {
 export function ensureTableSqlResultColumnNames(fill: TableSqlFillConfig, colCount: number): void {
   const n = Math.max(1, Math.min(TEMPLATE_TABLE_MAX_COLS, Math.floor(Number(colCount)) || 1));
   while (fill.resultColumnNames.length < n) fill.resultColumnNames.push("");
-  fill.resultColumnNames.length = n;
-  fill.resultColumnNameBindings = ensureTableSqlLabelBindings(fill.resultColumnNameBindings, n);
+  if (fill.resultColumnNames.length > n) fill.resultColumnNames.length = n;
+  if (!Array.isArray(fill.resultColumnNameBindings)) {
+    fill.resultColumnNameBindings = [];
+  }
+  ensureTableSqlLabelBindings(fill.resultColumnNameBindings, n);
 }
 
 /** visual 模式下输出列与表格物理列一一对齐（从左到右）；不足的补空串，多出的截断 */
