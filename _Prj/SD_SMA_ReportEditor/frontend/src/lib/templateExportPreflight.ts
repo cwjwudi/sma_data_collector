@@ -156,7 +156,13 @@ export async function runTemplateExportPreflight(templateId: string): Promise<Te
     }),
   ]);
 
-  if (!opcTasks.length && !sqlTasks.length && !mongoTasks.length && enabledSqlFillCount === 0) {
+  if (
+    !opcTasks.length &&
+    !sqlTasks.length &&
+    !mongoTasks.length &&
+    sqlFillConnectionIds.size === 0 &&
+    mongoFillConnectionIds.size === 0
+  ) {
     warnings.push("此模版未检测到 OPC / SQL / Mongo 绑定，将按静态内容导出。");
   }
 

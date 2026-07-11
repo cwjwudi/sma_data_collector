@@ -1,15 +1,15 @@
 {
-  "version": "0.3.44",
-  "releasedAt": "2026-07-11T14:16:04.176Z",
-  "notes": "修复模版预览：OPC 轮询占满本机连接导致请求饿死；缩略图不再等待版式全量包",
+  "version": "0.3.45",
+  "releasedAt": "2026-07-11T14:40:34.763Z",
+  "notes": "修复结批预检未定义变量；修正 OPC 限流唤醒竞态",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.44-x64.exe",
-      "sha256": "2e4970d274bf6a72f131fb6166feb2c9e51531ac746fb3a17b8127900c4f512f",
-      "size": 145405497
+      "url": "Report Editor AI-Setup-0.3.45-x64.exe",
+      "sha256": "c9cbaa7459ba84ecf120d12804e431011fa8291fb9f022b90fe3e454e1050643",
+      "size": 145405667
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.44-arm64.dmg",
+      "url": "Report Editor AI-0.3.45-arm64.dmg",
       "sha256": "",
       "size": 0
     }
