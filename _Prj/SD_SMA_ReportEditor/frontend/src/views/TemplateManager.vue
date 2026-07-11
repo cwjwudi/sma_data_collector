@@ -6,11 +6,15 @@
         <button type="button" class="b" @click="mode = mode === 'list' ? 'thumbs' : 'list'">
           {{ mode === "list" ? "缩略图" : "列表" }}
         </button>
+        <button type="button" class="b" :disabled="loading" @click="enterView">刷新</button>
         <button type="button" class="b primary" @click="wizard = true">新建整份模版…</button>
       </div>
     </header>
     <p v-if="loading" class="loading-hint">正在加载模版，请稍候…</p>
-    <p v-if="msg" class="msg">{{ msg }}</p>
+    <p v-if="msg" class="msg">
+      {{ msg }}
+      <button v-if="offline" type="button" class="msg-retry" :disabled="loading" @click="enterView">重试连接</button>
+    </p>
     <p v-if="rows.length" class="drag-hint">
       {{
         mode === "list"
@@ -569,6 +573,28 @@ const summaries = ref(hasTemplateViewCache() ? getCachedTemplateSummaries() : []
 const cache = ref(hasTemplateViewCache() ? getCachedTemplateFullMap() : {});
 const thumbFailed = ref(new Set());
 const offline = ref(false);
+let offlineRetryTimer = null;
+let offlineRetryCount = 0;
+const OFFLINE_RETRY_MAX = 6;
+
+function clearOfflineRetry() {
+  if (offlineRetryTimer != null) {
+    window.clearTimeout(offlineRetryTimer);
+    offlineRetryTimer = null;
+  }
+}
+
+function scheduleOfflineRetry() {
+  if (offlineRetryTimer != null) return;
+  if (offlineRetryCount >= OFFLINE_RETRY_MAX) return;
+  offlineRetryCount += 1;
+  offlineRetryTimer = window.setTimeout(() => {
+    offlineRetryTimer = null;
+    if (!offline.value) return;
+    void enterView();
+  }, 1200 + offlineRetryCount * 400);
+}
+
 /** @type {import('vue').Ref<import('@/lib/report-template/layout-model').LayoutPreset[]>} */
 const layoutPresetsAll = ref([]);
 
@@ -784,6 +810,8 @@ async function load() {
     if (isLoadStale(token)) return;
     applyLoadedSummaries(list);
     offline.value = false;
+    offlineRetryCount = 0;
+    clearOfflineRetry();
   } catch {
     if (isLoadStale(token)) return;
     offline.value = true;
@@ -797,8 +825,11 @@ async function load() {
         orientation: t.orientation,
       })),
     );
-    msg.value = "无法连接后端，已显示本地模版摘要。";
+    msg.value = local.length
+      ? "无法连接后端，已显示本地模版摘要。"
+      : "无法连接后端（本机也无缓存模版）。后端启动后会自动重试，也可点「刷新」。";
     cache.value = Object.fromEntries(local.map((t) => [t.id, t]));
+    scheduleOfflineRetry();
   } finally {
     if (!isLoadStale(token)) loading.value = false;
   }
@@ -1302,6 +1333,7 @@ onDeactivated(() => {
 
 onUnmounted(() => {
   persistViewCache();
+  clearOfflineRetry();
   teardownCardObserver();
   window.removeEventListener("report-editor-config-imported", onExternalConfigRestored);
   window.removeEventListener("report-editor-warmup-complete", onWarmupComplete);
@@ -1382,6 +1414,20 @@ onUnmounted(() => {
   font-size: 12px;
   color: #b45309;
   margin: 8px 0;
+}
+.msg-retry {
+  margin-left: 10px;
+  padding: 2px 10px;
+  font-size: 12px;
+  border-radius: 4px;
+  border: 1px solid #d97706;
+  background: #fffbeb;
+  color: #92400e;
+  cursor: pointer;
+}
+.msg-retry:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 .loading-hint {
   margin: 8px 0 0;

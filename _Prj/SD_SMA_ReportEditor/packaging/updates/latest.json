@@ -1,15 +1,15 @@
 {
-  "version": "0.3.40",
-  "releasedAt": "2026-07-11T12:48:43.174Z",
-  "notes": "移除模拟结批用的全局结批结果反馈；写回仅保留各触发绑定内配置",
+  "version": "0.3.41",
+  "releasedAt": "2026-07-11T12:58:16.472Z",
+  "notes": "模版管理：后端未就绪时自动重试，并增加刷新按钮",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.40-x64.exe",
-      "sha256": "810d6d9bbdf5b257135fe813b23e869fad8d4b3219bc7fb75c0f79d925646253",
-      "size": 145404395
+      "url": "Report Editor AI-Setup-0.3.41-x64.exe",
+      "sha256": "32bf6afb40afbf3f1c72477d3e4b7da4f44d0488c5d95cd2ee9669f643876d3b",
+      "size": 145404950
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.40-arm64.dmg",
+      "url": "Report Editor AI-0.3.41-arm64.dmg",
       "sha256": "",
       "size": 0
     }
