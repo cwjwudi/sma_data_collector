@@ -1,15 +1,15 @@
 {
-  "version": "0.3.14",
-  "releasedAt": "2026-07-11T04:24:34.830Z",
-  "notes": "产品更名 Report Editor AI（报表编辑器 AI 版），可与原版并装；原版 .rebak 可导入",
+  "version": "0.3.15",
+  "releasedAt": "2026-07-11T04:33:16.138Z",
+  "notes": "修复与原版并装：独立快捷方式/卸载名/GUID/AppUserModelId",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.14-x64.exe",
-      "sha256": "9375d3c0e0945a2781e0016ccceddd5f91647d70e6e30f7a79545a94bdba3254",
-      "size": 145223926
+      "url": "Report Editor AI-Setup-0.3.15-x64.exe",
+      "sha256": "",
+      "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.14-arm64.dmg",
+      "url": "Report Editor AI-0.3.15-arm64.dmg",
       "sha256": "",
       "size": 0
     }

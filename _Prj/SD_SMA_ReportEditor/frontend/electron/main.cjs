@@ -1217,7 +1217,7 @@ app.whenReady().then(async () => {
   log('Starting application...')
 
   if (process.platform === 'win32') {
-    app.setAppUserModelId('com.brteam.sd_sma.report_editor')
+    app.setAppUserModelId('com.brteam.sd_sma.report_editor_ai')
   }
 
   // 字体选择器：允许 Local Font Access API（queryLocalFonts）
