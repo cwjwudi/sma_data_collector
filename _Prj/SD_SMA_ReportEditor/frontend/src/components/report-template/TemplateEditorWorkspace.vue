@@ -4,7 +4,7 @@
       <span class="ted-boot-spin" aria-hidden="true" />
       <div class="ted-boot-copy">
         <p class="ted-boot-title">{{ bootStatus || "正在打开模版…" }}</p>
-        <p class="ted-boot-sub">首次打开或数据源较慢时可能需要数秒，请稍候。</p>
+        <p class="ted-boot-sub">正在读取模版 JSON 与版式；编辑态不会在打开时查询数据库。</p>
       </div>
       <button type="button" class="link ted-boot-back" @click="back">← 返回模板列表</button>
     </div>
@@ -1182,16 +1182,16 @@ async function boot() {
   }
   hint.value = "";
 
-  /** 模版挂载后按当前视图刷新绑定；预览态显示「正在读取…」，且不写回 tableRows */
+  /**
+   * 模版挂载后：仅预览态拉 SQL/OPC。
+   * 编辑态不再静默查询——备份里 SQL 填充表多时，连不上库会卡数十秒，且挡住打开体感。
+   */
   const refreshBindingsAfterOpen = () => {
     void nextTick(() => {
       if (isLoadStale(token) || !editing.value) return;
-      if (midMode.value === "preview") {
-        bindingPreview.loading.value = true;
-        void bindingPreview.refresh({ silent: false, mutateTemplateRows: false });
-      } else {
-        void bindingPreview.refresh({ silent: true, mutateTemplateRows: false });
-      }
+      if (midMode.value !== "preview") return;
+      bindingPreview.loading.value = true;
+      void bindingPreview.refresh({ silent: false, mutateTemplateRows: false });
     });
   };
 
@@ -1199,19 +1199,25 @@ async function boot() {
   const applyTemplate = async (tpl) => {
     bootStatus.value = "正在解析模版…";
     await nextTick();
-    editing.value = cloneDeepTemplate(tpl);
-    ensureBodyPages(editing.value);
-    syncLegacyElementsAlias(editing.value);
+    const cloned = cloneDeepTemplate(tpl);
+    ensureBodyPages(cloned);
+    syncLegacyElementsAlias(cloned);
     // 旧数据里封面/末页版式装饰层中的表格提升为可编辑画布控件（拖拽/缩放/绑定与正文一致）
-    liftZoneTablesToSheetCanvas(editing.value);
+    liftZoneTablesToSheetCanvas(cloned);
     bodyPageIdx.value = 0;
+
     bootStatus.value = "正在加载版式列表…";
     await nextTick();
     await loadLayoutPresetsList();
     if (isLoadStale(token)) return false;
     if (layoutPresetsAll.value.length) {
-      resyncTemplateBoundPresets(editing.value, layoutPresetsAll.value);
+      resyncTemplateBoundPresets(cloned, layoutPresetsAll.value);
     }
+
+    bootStatus.value = "正在打开画布…";
+    await nextTick();
+    // 先挂上编辑对象再收尾，避免打开过程中静默打数据库
+    editing.value = cloned;
     // 始终 reclamp：收齐老纵表残留的偏大 tableRows/h（不依赖是否有版式列表）
     reclamp();
     selId.value = null;
@@ -1254,11 +1260,12 @@ async function boot() {
         hint.value = "此模版在其他端已有更新，当前显示为本机缓存版本；保存将覆盖远端修改。";
       }
     }
-  } catch {
+  } catch (e) {
     if (isLoadStale(token)) return;
     if (!seededUpdatedAt) {
+      const msg = e instanceof Error ? e.message : String(e);
       bootStatus.value = "无法从后端载入模版";
-      hint.value = "无法从后端载入模版。";
+      hint.value = `无法从后端载入模版：${msg}`;
       editing.value = null;
       clearTemplateBaseline();
     }

@@ -9,30 +9,52 @@ function apiUrl(path: string): string {
   return resolveApiHref(p);
 }
 
-async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
-  const r = await fetch(url, {
-    ...init,
-    headers: {
-      Accept: "application/json",
-      ...(init?.headers as Record<string, string>),
-    },
-  });
-  if (!r.ok) {
-    let detail = `${r.status} ${r.statusText}`;
-    try {
-      const body = await r.json();
-      if (body?.detail !== undefined) detail = String(body.detail);
-    } catch {
-      try {
-        detail = await r.text();
-      } catch {
-        /* ignore */
-      }
-    }
-    throw new Error(detail);
+const DEFAULT_FETCH_TIMEOUT_MS = 20_000;
+
+async function fetchJson<T>(url: string, init?: RequestInit & { timeoutMs?: number }): Promise<T> {
+  const timeoutMs = init?.timeoutMs ?? DEFAULT_FETCH_TIMEOUT_MS;
+  const { timeoutMs: _ignored, signal: userSignal, ...rest } = init ?? {};
+  const ctrl = new AbortController();
+  const timer = window.setTimeout(() => ctrl.abort(), timeoutMs);
+  const onUserAbort = () => ctrl.abort();
+  if (userSignal) {
+    if (userSignal.aborted) ctrl.abort();
+    else userSignal.addEventListener("abort", onUserAbort, { once: true });
   }
-  if (r.status === 204) return undefined as T;
-  return r.json() as Promise<T>;
+  try {
+    const r = await fetch(url, {
+      ...rest,
+      signal: ctrl.signal,
+      headers: {
+        Accept: "application/json",
+        ...(rest.headers as Record<string, string>),
+      },
+    });
+    if (!r.ok) {
+      let detail = `${r.status} ${r.statusText}`;
+      try {
+        const body = await r.json();
+        if (body?.detail !== undefined) detail = String(body.detail);
+      } catch {
+        try {
+          detail = await r.text();
+        } catch {
+          /* ignore */
+        }
+      }
+      throw new Error(detail);
+    }
+    if (r.status === 204) return undefined as T;
+    return r.json() as Promise<T>;
+  } catch (e) {
+    if (e instanceof DOMException && e.name === "AbortError") {
+      throw new Error(`请求超时（${Math.round(timeoutMs / 1000)} 秒）。请确认后端已启动，或稍后重试。`);
+    }
+    throw e;
+  } finally {
+    window.clearTimeout(timer);
+    if (userSignal) userSignal.removeEventListener("abort", onUserAbort);
+  }
 }
 
 export interface TemplateSummary {
