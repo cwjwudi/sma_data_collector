@@ -534,7 +534,9 @@ import NewTemplateWizardDialog from "@/components/report-template/NewTemplateWiz
 import { appConfirm } from "@/composables/useAppConfirm";
 
 const router = useRouter();
-const { begin: beginLoad, isStale: isLoadStale } = useStaleGuard();
+/** 列表与缩略图分两套 generation，避免 hydrate/重试把刚成功的列表结果标成 stale */
+const { begin: beginListLoad, isStale: isListLoadStale } = useStaleGuard();
+const { begin: beginThumbLoad, isStale: isThumbLoadStale } = useStaleGuard();
 
 /** 记住上次的视图模式：默认「列表」以便打开页面即时呈现（缩略图为重加载） */
 const MODE_STORAGE_KEY = "tm-view-mode";
@@ -575,7 +577,8 @@ const thumbFailed = ref(new Set());
 const offline = ref(false);
 let offlineRetryTimer = null;
 let offlineRetryCount = 0;
-const OFFLINE_RETRY_MAX = 6;
+/** 后端冷启动可能超过 30s；在仍显示离线时持续重试（有上限间隔） */
+const OFFLINE_RETRY_MAX = 40;
 
 function clearOfflineRetry() {
   if (offlineRetryTimer != null) {
@@ -588,11 +591,12 @@ function scheduleOfflineRetry() {
   if (offlineRetryTimer != null) return;
   if (offlineRetryCount >= OFFLINE_RETRY_MAX) return;
   offlineRetryCount += 1;
+  const delay = Math.min(8000, 1000 + offlineRetryCount * 500);
   offlineRetryTimer = window.setTimeout(() => {
     offlineRetryTimer = null;
     if (!offline.value) return;
     void enterView();
-  }, 1200 + offlineRetryCount * 400);
+  }, delay);
 }
 
 /** @type {import('vue').Ref<import('@/lib/report-template/layout-model').LayoutPreset[]>} */
@@ -802,36 +806,46 @@ function markThumbFailed(id, on) {
 }
 
 async function load() {
-  const token = beginLoad();
+  const token = beginListLoad();
   msg.value = "";
   if (!summaries.value.length) loading.value = true;
   try {
     const list = await api.listTemplateSummaries();
-    if (isLoadStale(token)) return;
+    if (isListLoadStale(token)) return;
     applyLoadedSummaries(list);
     offline.value = false;
     offlineRetryCount = 0;
     clearOfflineRetry();
-  } catch {
-    if (isLoadStale(token)) return;
+    msg.value = "";
+  } catch (e) {
+    if (isListLoadStale(token)) return;
     offline.value = true;
     const local = loadLocal();
-    applyLoadedSummaries(
-      local.map((t) => ({
-        id: t.id,
-        name: t.name,
-        updatedAt: t.updatedAt,
-        paperKind: t.paperKind,
-        orientation: t.orientation,
-      })),
-    );
-    msg.value = local.length
-      ? "无法连接后端，已显示本地模版摘要。"
-      : "无法连接后端（本机也无缓存模版）。后端启动后会自动重试，也可点「刷新」。";
-    cache.value = Object.fromEntries(local.map((t) => [t.id, t]));
+    if (local.length) {
+      applyLoadedSummaries(
+        local.map((t) => ({
+          id: t.id,
+          name: t.name,
+          updatedAt: t.updatedAt,
+          paperKind: t.paperKind,
+          orientation: t.orientation,
+        })),
+      );
+      cache.value = Object.fromEntries(local.map((t) => [t.id, t]));
+      msg.value = "无法连接后端，已显示本地模版摘要。";
+    } else if (!summaries.value.length) {
+      // 切勿用空本地缓存覆盖已成功加载的列表（并发旧请求失败时的典型坑）
+      applyLoadedSummaries([]);
+      msg.value =
+        "无法连接后端（本机也无缓存模版）。后端启动后会自动重试，也可点「刷新」。";
+    } else {
+      msg.value =
+        "暂时无法刷新模版列表，仍显示已加载内容。将自动重试…" +
+        (e instanceof Error && e.message ? `（${e.message}）` : "");
+    }
     scheduleOfflineRetry();
   } finally {
-    if (!isLoadStale(token)) loading.value = false;
+    if (!isListLoadStale(token)) loading.value = false;
   }
 }
 
@@ -842,7 +856,7 @@ const THUMB_FETCH_CONCURRENCY = 4;
  * @param {{ ids?: string[] }} [opts] 不传则按当前页 id；传 ids 则只拉这些
  */
 async function hydrateThumbs(opts = {}) {
-  const token = beginLoad();
+  const token = beginThumbLoad();
   const scopeIds =
     Array.isArray(opts.ids) && opts.ids.length
       ? opts.ids
@@ -862,16 +876,16 @@ async function hydrateThumbs(opts = {}) {
 
   // 不再走 /templates/full 全量包：模版多时会卡住整页；改为按本页并发渐进写入 cache
   await mapPool(pending, THUMB_FETCH_CONCURRENCY, async (id) => {
-    if (isLoadStale(token)) return;
+    if (isThumbLoadStale(token)) return;
     try {
       const t = await api.getTemplate(id);
-      if (isLoadStale(token)) return;
+      if (isThumbLoadStale(token)) return;
       normalizeOptionalSheetsForList(t);
       resyncOneCachedTemplate(t);
       cache.value = { ...cache.value, [id]: t };
       markThumbFailed(id, false);
     } catch {
-      if (isLoadStale(token)) return;
+      if (isThumbLoadStale(token)) return;
       markThumbFailed(id, true);
     }
   });
@@ -879,15 +893,15 @@ async function hydrateThumbs(opts = {}) {
 
 async function retryThumb(id) {
   markThumbFailed(id, false);
-  const token = beginLoad();
+  const token = beginThumbLoad();
   try {
     const t = await api.getTemplate(id);
-    if (isLoadStale(token)) return;
+    if (isThumbLoadStale(token)) return;
     normalizeOptionalSheetsForList(t);
     resyncOneCachedTemplate(t);
     cache.value = { ...cache.value, [id]: t };
   } catch {
-    if (isLoadStale(token)) return;
+    if (isThumbLoadStale(token)) return;
     markThumbFailed(id, true);
   }
 }
@@ -921,13 +935,13 @@ async function refreshThumbsView(opts = {}) {
 }
 
 async function loadPresets() {
-  const token = beginLoad();
+  const token = beginThumbLoad();
   try {
     const list = await ensureLayoutPresetsLoaded();
-    if (isLoadStale(token)) return;
+    if (isThumbLoadStale(token)) return;
     layoutPresetsAll.value = list;
   } catch {
-    if (isLoadStale(token)) return;
+    if (isThumbLoadStale(token)) return;
     layoutPresetsAll.value = [];
   }
 }

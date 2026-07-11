@@ -24,7 +24,7 @@ HISTORY_DIR = DATA_DIR / "history"
 CONFIG_FILE = DATA_DIR / "config.json"
 QUERY_SESSION_FILE = DATA_DIR / "query_sessions.json"
 BACKEND_ROOT = Path(__file__).resolve().parent.parent
-APP_VERSION = "0.3.41"
+APP_VERSION = "0.3.42"
 
 DEFAULT_CONFIG = {
     "schema_version": 1,

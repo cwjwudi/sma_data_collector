@@ -19,6 +19,7 @@ import {
 import { ensureSignatureSummaries } from "@/lib/signature-registry";
 import {
   getCachedTemplateFullMap,
+  getCachedTemplateSummaries,
   hasTemplateViewCache,
   saveTemplateViewCache,
 } from "@/lib/report-template/template-view-cache";
@@ -99,10 +100,11 @@ async function warmLayoutPresets(): Promise<boolean> {
  * 完整 JSON / 缩略图改由「模版管理」按当前页渐进加载，避免模版很多时启动与进页卡死。
  */
 async function warmTemplates(): Promise<boolean> {
-  if (hasTemplateViewCache()) return true;
+  // 空列表的「已 seeded」不能当作成功，否则启动竞态写下的空缓存会跳过真正拉取
+  if (hasTemplateViewCache() && getCachedTemplateSummaries().length > 0) return true;
   const summaries = await listTemplateSummaries();
   saveTemplateViewCache(summaries, getCachedTemplateFullMap());
-  return true;
+  return Array.isArray(summaries) && summaries.length >= 0;
 }
 
 /** 签名摘要：后端已确认就绪，正常情况下一次即成功。 */

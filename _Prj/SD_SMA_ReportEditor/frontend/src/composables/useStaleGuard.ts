@@ -1,6 +1,10 @@
 import { onBeforeUnmount, ref } from "vue";
 
-/** 组件卸载或手动 invalidate 后，进行中的异步任务应放弃写回状态 */
+/**
+ * 组件卸载或开启新一轮异步任务后，进行中的旧任务应放弃写回状态。
+ * begin() 会递增 generation，使并发的旧请求在完成时被 isStale 丢弃，
+ * 避免「先发出的失败请求」覆盖「后发出的成功结果」（模版列表曾因此被清空成 0/0）。
+ */
 export function useStaleGuard() {
   const generation = ref(0);
 
@@ -9,6 +13,7 @@ export function useStaleGuard() {
   });
 
   function begin(): number {
+    generation.value += 1;
     return generation.value;
   }
 

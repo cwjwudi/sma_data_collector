@@ -1,15 +1,15 @@
 {
-  "version": "0.3.41",
-  "releasedAt": "2026-07-11T12:58:16.472Z",
-  "notes": "模版管理：后端未就绪时自动重试，并增加刷新按钮",
+  "version": "0.3.42",
+  "releasedAt": "2026-07-11T13:15:11.197Z",
+  "notes": "修复模版管理并发加载竞态：旧失败请求不再清空已成功列表；Electron 等后端就绪后再开窗口",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.41-x64.exe",
-      "sha256": "32bf6afb40afbf3f1c72477d3e4b7da4f44d0488c5d95cd2ee9669f643876d3b",
-      "size": 145404950
+      "url": "Report Editor AI-Setup-0.3.42-x64.exe",
+      "sha256": "f17bdc547be997c7227433029311860ba607cd46f87b41579dc522709caaea32",
+      "size": 145405199
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.41-arm64.dmg",
+      "url": "Report Editor AI-0.3.42-arm64.dmg",
       "sha256": "",
       "size": 0
     }

@@ -1244,19 +1244,7 @@ app.whenReady().then(async () => {
     log(`powerSaveBlocker 启动失败（忽略）：${e.message}`)
   }
 
-  createWindow()
-
-  // 预热窗口保活：结批可能间隔数天，长期驻留的渲染进程可能被系统回收/崩溃，
-  // 定期检查并重建，保证下一次结批仍能热启动
-  setInterval(() => {
-    if (!mainWindow || mainWindow.isDestroyed()) return
-    const hasUnavailableWindow = warmPdfWins.some((win) => !isReusablePdfWindow(win))
-    if (hasUnavailableWindow || warmPdfWins.length < Math.min(2, pdfExportMaxParallel)) {
-      log('PDF export warm window pool unavailable; re-prewarming')
-      ensurePdfExportWindowPrewarmed(mainWindow.webContents)
-    }
-  }, 5 * 60 * 1000)
-
+  // 先拉起后端并等到健康，再开窗口，避免模版页首拉打到未就绪端口后被离线空列表「钉死」
   const isDev = !app.isPackaged
   /**
    * 默认：开发模式也由 Electron spawn 后端，关掉窗口/App 时再 killPython，与本机端口绑定一致。
@@ -1288,9 +1276,25 @@ app.whenReady().then(async () => {
     backendStartedByElectron = Boolean(pythonProcess)
   }
 
-  waitForBackend()
-    .then(() => log('Backend is ready for renderer requests'))
-    .catch((e) => log(`Warning: ${e.message} — renderer remains open with local cached data`))
+  try {
+    await waitForBackend()
+    log('Backend is ready for renderer requests')
+  } catch (e) {
+    log(`Warning: ${e.message} — opening renderer with local cached data`)
+  }
+
+  createWindow()
+
+  // 预热窗口保活：结批可能间隔数天，长期驻留的渲染进程可能被系统回收/崩溃，
+  // 定期检查并重建，保证下一次结批仍能热启动
+  setInterval(() => {
+    if (!mainWindow || mainWindow.isDestroyed()) return
+    const hasUnavailableWindow = warmPdfWins.some((win) => !isReusablePdfWindow(win))
+    if (hasUnavailableWindow || warmPdfWins.length < Math.min(2, pdfExportMaxParallel)) {
+      log('PDF export warm window pool unavailable; re-prewarming')
+      ensurePdfExportWindowPrewarmed(mainWindow.webContents)
+    }
+  }, 5 * 60 * 1000)
 })
 
 app.on('window-all-closed', () => {
