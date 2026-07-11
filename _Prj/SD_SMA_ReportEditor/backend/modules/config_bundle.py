@@ -320,13 +320,19 @@ def apply_bundle_import(
     bundle = validate_bundle_payload(incoming)
     replace_assets = mode == "replace"
     cfg_slice = extract_config_slice(bundle)
+    # import_credential_kwargs 会把 data_dir 一并塞进 **kwargs；本函数已用命名参数
+    # 收下 data_dir，须再显式传给 apply_import_*，否则口令无法重新加密（password 被丢弃）。
     cred = credential_kwargs if data_dir is not None else {}
 
     import_warnings: list[str] = []
     if mode == "replace":
-        merged_cfg, import_warnings = cie.apply_import_replace(cfg_slice, **cred)
+        merged_cfg, import_warnings = cie.apply_import_replace(
+            cfg_slice, data_dir=data_dir, **cred
+        )
     else:
-        merged_cfg, import_warnings = cie.apply_import_merge(current, cfg_slice, **cred)
+        merged_cfg, import_warnings = cie.apply_import_merge(
+            current, cfg_slice, data_dir=data_dir, **cred
+        )
 
     counts = _import_asset_lists(bundle, replace_assets=replace_assets, data_dir=data_dir)
     client_prefs = copy.deepcopy(bundle.get("client_prefs") or {})

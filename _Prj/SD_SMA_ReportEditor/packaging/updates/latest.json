@@ -1,15 +1,15 @@
 {
-  "version": "0.3.37",
-  "releasedAt": "2026-07-11T11:58:30.535Z",
-  "notes": "打开模版不再静默查库；请求超时提示更明确",
+  "version": "0.3.38",
+  "releasedAt": "2026-07-11T12:10:50.629Z",
+  "notes": "修复备份导入丢失数据库密码；连接异常详情不再一直加载中",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.37-x64.exe",
-      "sha256": "852dd979b47295a6aaa16c714e5eeb31095a1e791944408540147811c92f947e",
-      "size": 145400852
+      "url": "Report Editor AI-Setup-0.3.38-x64.exe",
+      "sha256": "d1166024a1c373f2f9244316feb92cada404cf51399d0a659760a48c3e964cc3",
+      "size": 145400804
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.37-arm64.dmg",
+      "url": "Report Editor AI-0.3.38-arm64.dmg",
       "sha256": "",
       "size": 0
     }

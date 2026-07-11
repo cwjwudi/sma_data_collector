@@ -59,13 +59,38 @@ function formatCheckedAt(ts: number | null): string {
   }
 }
 
+const LOAD_TIMEOUT_MS = 12_000;
+
+async function apiFetchWithTimeout<T>(path: string): Promise<T> {
+  if (typeof AbortController === "undefined") {
+    return apiFetch(path) as Promise<T>;
+  }
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), LOAD_TIMEOUT_MS);
+  try {
+    return (await apiFetch(path, { signal: controller.signal })) as T;
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
+
+type DbConnRow = { id?: string; name?: string; has_password?: boolean };
+type OpcServerRow = { id?: string; name?: string; has_password?: boolean };
+
+function missingPasswordHint(hasPassword: boolean | undefined): string {
+  if (hasPassword === false) {
+    return "未保存数据库密码（备份导入后可能丢失）。请在左侧重新填写密码后点「测试并保存」。";
+  }
+  return "";
+}
+
 async function loadFailures() {
   loading.value = true;
   failures.value = [];
   try {
     const [dbData, opcData] = await Promise.all([
-      apiFetch("/database/connections") as Promise<{ connections?: Array<{ id?: string; name?: string }> }>,
-      apiFetch("/opcua/servers") as Promise<{ servers?: Array<{ id?: string; name?: string }> }>,
+      apiFetchWithTimeout<{ connections?: DbConnRow[] }>("/database/connections"),
+      apiFetchWithTimeout<{ servers?: OpcServerRow[] }>("/opcua/servers"),
     ]);
     const rows: FailureRow[] = [];
     const seen = new Set<string>();
@@ -80,12 +105,24 @@ async function loadFailures() {
       const id = String(c.id || "");
       if (!id) continue;
       const rec = getDbConnectionHealth(id);
-      if (rec.state !== "fail") continue;
+      const pwdHint = missingPasswordHint(c.has_password);
+      if (rec.state !== "fail" && !pwdHint) continue;
+      if (rec.state !== "fail" && pwdHint) {
+        // 无健康记录但缺密码：仍展示，避免「红点 + 加载中」无结果
+        pushFail({
+          key: `db-${id}`,
+          kind: "数据库",
+          name: String(c.name || id),
+          message: pwdHint,
+          checkedAt: "",
+        });
+        continue;
+      }
       pushFail({
         key: `db-${id}`,
         kind: "数据库",
         name: String(c.name || id),
-        message: rec.message,
+        message: rec.message || pwdHint || "连接失败",
         checkedAt: formatCheckedAt(rec.checkedAt),
       });
     }
@@ -98,7 +135,7 @@ async function loadFailures() {
         key: `opc-${id}`,
         kind: "OPC UA",
         name: String(s.name || id),
-        message: rec.message,
+        message: rec.message || "连接失败",
         checkedAt: formatCheckedAt(rec.checkedAt),
       });
     }
@@ -110,11 +147,12 @@ async function loadFailures() {
       if (!id) continue;
       const st = session?.connHealth?.[id];
       if (st !== "fail") continue;
+      const pwdHint = missingPasswordHint(c.has_password);
       pushFail({
         key: `db-${id}`,
         kind: "数据库",
         name: String(c.name || id),
-        message: getDbConnectionHealth(id).message || "连接失败（上次检测结果）",
+        message: getDbConnectionHealth(id).message || pwdHint || "连接失败（上次检测结果）",
         checkedAt: formatCheckedAt(getDbConnectionHealth(id).checkedAt),
       });
     }
@@ -132,8 +170,23 @@ async function loadFailures() {
     }
 
     failures.value = rows;
-  } catch {
-    failures.value = [];
+  } catch (e: unknown) {
+    const aborted =
+      (e instanceof DOMException && e.name === "AbortError") ||
+      (e instanceof Error && /abort/i.test(e.message));
+    failures.value = [
+      {
+        key: "load-error",
+        kind: "提示",
+        name: "无法加载详情",
+        message: aborted
+          ? "加载超时。请确认后端已启动，或在工作台点击「测试连接」查看具体错误。"
+          : e instanceof Error
+            ? e.message
+            : String(e),
+        checkedAt: "",
+      },
+    ];
   } finally {
     loading.value = false;
   }

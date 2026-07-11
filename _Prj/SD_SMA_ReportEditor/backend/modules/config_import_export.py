@@ -164,6 +164,7 @@ def _merge_row(
             merged.pop("password_enc", None)
 
     merged.pop("has_password", None)
+    merged.pop("password", None)
     return merged, warn
 
 
