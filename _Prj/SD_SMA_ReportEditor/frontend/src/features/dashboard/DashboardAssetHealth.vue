@@ -47,10 +47,10 @@
       </div>
 
       <p v-if="result.issueCount === 0" class="dash-card__status ok">
-        未发现潜在问题（已检查连接绑定、版式引用、schema 与文件完整性）。
+        未发现潜在问题（已检查绑定语法、连接引用、版式、schema 与文件完整性）。
       </p>
       <p v-else class="dash-card__status">
-        以下为静态检查结果（不探活数据源）。优先处理标红项。
+        以下含绑定语法/配置问题（不探活数据源）。优先处理标红项。
       </p>
 
       <ul v-if="visibleIssues.length" class="dash-list">

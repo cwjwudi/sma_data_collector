@@ -1,0 +1,105 @@
+"""binding_config_scan 单元测试。"""
+
+from __future__ import annotations
+
+from modules.binding_config_scan import looks_like_opc_node_id, scan_binding_config
+
+
+def test_opc_node_format():
+    assert looks_like_opc_node_id("ns=6;s=::Program:Var") is True
+    assert looks_like_opc_node_id("ns=2;i=1234") is True
+    assert looks_like_opc_node_id("bad") is False
+    assert looks_like_opc_node_id("") is False
+
+
+def test_empty_opc_binding():
+    raw = {
+        "elements": [
+            {
+                "id": "e1",
+                "type": "parameter",
+                "bindingKind": "opcua",
+                "opcuaNodeId": "",
+                "text": "x",
+            }
+        ]
+    }
+    issues = scan_binding_config(raw, asset_kind="template", asset_id="t1", asset_name="T")
+    assert any(i["kind"] == "opc_binding_empty_node" for i in issues)
+
+
+def test_table_opc_placeholder_mismatch():
+    raw = {
+        "bodyPages": [
+            [
+                {
+                    "id": "tbl1",
+                    "type": "table",
+                    "tableCols": 2,
+                    "tableRows": 2,
+                    "tableCells": [],
+                    "tableSqlFill": {
+                        "enabled": True,
+                        "fillMode": "visual",
+                        "querySql": "SELECT a FROM `fixed_table`",
+                        "visualSource": {
+                            "connectionId": "c1",
+                            "database": "db",
+                            "table": "fixed_table",
+                            "engine": "mysql",
+                            "columns": ["a"],
+                            "tableSource": "opcua",
+                            "tableOpcNodeId": "ns=6;s=TableName",
+                        },
+                    },
+                }
+            ]
+        ]
+    }
+    issues = scan_binding_config(raw, asset_kind="template", asset_id="t1", asset_name="T")
+    assert any(i["kind"] == "sql_fill_table_placeholder_mismatch" for i in issues)
+
+
+def test_param_placeholder_oob():
+    raw = {
+        "elements": [
+            {
+                "id": "e2",
+                "type": "parameter",
+                "bindingKind": "sql",
+                "sqlText": "SELECT 1 WHERE x={{p0}} AND y={{p1}}",
+                "sqlParams": [{"source": "literal", "opcuaNodeId": "", "literalFallback": "1"}],
+            }
+        ]
+    }
+    issues = scan_binding_config(raw, asset_kind="template", asset_id="t1", asset_name="T")
+    assert any(i["kind"] == "sql_param_placeholder_oob" for i in issues)
+
+
+def test_sql_fill_table_opc_missing_node():
+    raw = {
+        "elements": [
+            {
+                "id": "tbl2",
+                "type": "table",
+                "tableSqlFill": {
+                    "enabled": True,
+                    "fillMode": "visual",
+                    "querySql": "",
+                    "visualSource": {
+                        "connectionId": "c1",
+                        "database": "db",
+                        "table": "",
+                        "engine": "mysql",
+                        "columns": [],
+                        "tableSource": "opcua",
+                        "tableOpcNodeId": "",
+                    },
+                },
+            }
+        ]
+    }
+    issues = scan_binding_config(raw, asset_kind="template", asset_id="t1", asset_name="T")
+    kinds = {i["kind"] for i in issues}
+    assert "sql_fill_table_opc_missing_node" in kinds
+    assert "sql_fill_visual_no_structure_table" in kinds

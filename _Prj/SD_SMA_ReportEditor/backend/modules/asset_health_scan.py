@@ -10,6 +10,7 @@ from typing import Any
 from core.settings import CONFIG_FILE, DATA_DIR
 from modules import config_store, layout_preset_store, template_store
 from modules.ai_template_bindings import extract_template_bindings, validate_bindings_against_config
+from modules.binding_config_scan import scan_binding_config
 from schemas.report_template import TEMPLATE_SCHEMA_VERSION, parse_report_template
 
 logger = logging.getLogger(__name__)
@@ -327,6 +328,10 @@ def _scan_one_template(
             )
         )
 
+    issues.extend(
+        scan_binding_config(raw, asset_kind="template", asset_id=tid, asset_name=name)
+    )
+
     return issues
 
 
@@ -408,6 +413,7 @@ def _scan_one_layout(
                 meta={k: v for k, v in bi.items() if k not in ("kind", "message")},
             )
         )
+    issues.extend(scan_binding_config(raw, asset_kind="layout", asset_id=lid, asset_name=name))
     return issues
 
 

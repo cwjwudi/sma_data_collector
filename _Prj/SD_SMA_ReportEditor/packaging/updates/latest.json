@@ -1,15 +1,15 @@
 {
-  "version": "0.3.27",
-  "releasedAt": "2026-07-11T08:12:34.474Z",
-  "notes": "仪表盘主动扫描模版与版式潜在问题",
+  "version": "0.3.28",
+  "releasedAt": "2026-07-11T08:27:45.569Z",
+  "notes": "仪表盘扫描绑定语法错误（OPC空节点/表名占位符/SQL参数等）",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.27-x64.exe",
-      "sha256": "1ed8a7fdba4e7d57a945cda62a249ded4b41a33ab95fc62ee0387ebf883a9c30",
-      "size": 145456866
+      "url": "Report Editor AI-Setup-0.3.28-x64.exe",
+      "sha256": "",
+      "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.27-arm64.dmg",
+      "url": "Report Editor AI-0.3.28-arm64.dmg",
       "sha256": "",
       "size": 0
     }
