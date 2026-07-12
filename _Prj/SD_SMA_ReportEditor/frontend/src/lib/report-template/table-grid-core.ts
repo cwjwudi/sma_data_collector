@@ -124,17 +124,20 @@ export function ensureTableGridCore<Cell>(
   return el.tableCells as Cell[][];
 }
 
-/** 表格当前内侧各列像素宽（与画布 colgroup 一致）；ensureGrid 由各侧注入 */
-export function tableColumnInnerWidthsPxCore(
+/**
+ * 表格内侧各列像素宽（与画布 colgroup 一致）；**只读**，绝不写回 el，
+ * 供 Vue computed / 渲染期安全调用。用列数/行数钳制值与 tableColWidthsPx 的补齐副本重算，
+ * 网格已一致时与「先 ensure 再量」结果相同，但不 ensure、不 mutate。
+ */
+export function tableColumnInnerWidthsPxReadonly(
   el: TableGridElementLike,
   nodePadding: EdgePaddingPx,
-  ensureGrid: (el: TableGridElementLike) => void,
 ): number[] {
   if (el.type !== "table") return [];
-  ensureGrid(el);
-  ensureTableColWidthsPxCore(el);
-  const cols = el.tableCols ?? 4;
-  const rows = el.tableRows ?? 3;
+  const cols = clampTableColsDim(el.tableCols, 4);
+  const rows = clampTableRowsDim(el.tableRows, 3);
+  const widths = Array.isArray(el.tableColWidthsPx) ? el.tableColWidthsPx.slice(0, cols) : [];
+  while (widths.length < cols) widths.push(0);
   const u = uniformTableCellBoxPx({
     outerW: el.w,
     outerH: el.h,
@@ -142,5 +145,5 @@ export function tableColumnInnerWidthsPxCore(
     colCount: cols,
     nodePadding,
   });
-  return distributeTableColumnInnerWidthsPx(u.innerW, cols, el.tableColWidthsPx);
+  return distributeTableColumnInnerWidthsPx(u.innerW, cols, widths);
 }

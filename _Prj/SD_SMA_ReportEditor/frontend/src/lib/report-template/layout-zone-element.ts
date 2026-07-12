@@ -14,7 +14,7 @@ import {
   clampTableRowsDim,
   ensureTableColWidthsPxCore,
   ensureTableGridCore,
-  tableColumnInnerWidthsPxCore,
+  tableColumnInnerWidthsPxReadonly,
   tableVerticalChromePxFor,
 } from "@/lib/report-template/table-grid-core";
 // tableColBgColors 原语已上移共享核心；此处再导出保持既有导入路径不变
@@ -386,9 +386,9 @@ export function ensureZoneTableColWidthsPx(el: LayoutZoneElement): void {
   ensureTableColWidthsPxCore(el);
 }
 
-/** 版式区表格当前内侧各列像素宽 */
+/** 版式区表格当前内侧各列像素宽；只读，不写回 el */
 export function zoneTableColumnInnerWidthsPx(el: LayoutZoneElement): number[] {
-  return tableColumnInnerWidthsPxCore(el, REPORT_ZONE_TABLE_NODE_PADDING_PX, ensureZoneTableGrid);
+  return tableColumnInnerWidthsPxReadonly(el, REPORT_ZONE_TABLE_NODE_PADDING_PX);
 }
 
 /** 版式区表格外框纵向 chrome（节点 padding + 表壳底 1px） */
@@ -411,8 +411,8 @@ export function computeZoneTableContentRowHeightsPx(
   cellTextAt?: (ri: number, ci: number) => string,
 ): number[] {
   if (el.type !== "table") return [];
-  ensureZoneTableGrid(el);
-  const rows = Math.max(1, el.tableRows ?? 3);
+  // 只读：不 ensure、不写回 el（渲染/computed 安全）
+  const rows = clampTableRowsDim(el.tableRows, 3);
   const minH = clampTableRowHeightPx(el.tableRowHeightPx);
   let colWidths: number[] = [];
   try {
@@ -450,8 +450,8 @@ export function intrinsicOuterHeightForZoneTable(
   cellTextAt?: (ri: number, ci: number) => string,
 ): number {
   if (el.type !== "table") return 20;
-  ensureZoneTableGrid(el);
-  const rows = Math.max(1, el.tableRows ?? 3);
+  // 只读：不 ensure、不写回 el
+  const rows = clampTableRowsDim(el.tableRows, 3);
   const minH = clampTableRowHeightPx(el.tableRowHeightPx);
   if (el.tableSqlFill?.enabled) {
     return zoneTableVerticalChromePx() + rows * minH;
@@ -460,11 +460,10 @@ export function intrinsicOuterHeightForZoneTable(
   return zoneTableVerticalChromePx() + sumTableRowHeightsPx(heights, minH, rows);
 }
 
-/** @deprecated 纵向拖外框已禁用；保留供测试兼容 */
+/** @deprecated 纵向拖外框已禁用；保留供测试兼容。只读，不写回 el */
 export function minOuterHeightForZoneTableResizePx(el: LayoutZoneElement): number {
   if (el.type !== "table") return 20;
-  ensureZoneTableGrid(el);
-  const rows = Math.max(1, el.tableRows ?? 3);
+  const rows = clampTableRowsDim(el.tableRows, 3);
   return Math.max(20, zoneTableVerticalChromePx() + rows * TABLE_ROW_HEIGHT_MIN_PX);
 }
 
@@ -488,8 +487,8 @@ export function applyZoneTableOuterHeight(
 
 export function minOuterSizeForZoneTable(el: LayoutZoneElement): { w: number; h: number } {
   if (el.type !== "table") return { w: 20, h: 20 };
-  ensureZoneTableGrid(el);
-  const cols = el.tableCols ?? 4;
+  // 只读：不 ensure、不写回 el
+  const cols = clampTableColsDim(el.tableCols, 4);
   const MIN_CELL_W = 26;
   const CHROME = 8;
   const ih = intrinsicOuterHeightForZoneTable(el);

@@ -68,7 +68,7 @@ import {
   clampTableRowsDim,
   ensureTableColWidthsPxCore,
   ensureTableGridCore,
-  tableColumnInnerWidthsPxCore,
+  tableColumnInnerWidthsPxReadonly,
   tableVerticalChromePxFor,
 } from "./table-grid-core";
 import {
@@ -286,9 +286,9 @@ export function ensureTableColWidthsPx(el: TemplateElement): void {
   ensureTableColWidthsPxCore(el);
 }
 
-/** 正文表格当前内侧各列像素宽（与画布 colgroup 一致） */
+/** 正文表格当前内侧各列像素宽（与画布 colgroup 一致）；只读，不写回 el */
 export function templateTableColumnInnerWidthsPx(el: TemplateElement): number[] {
-  return tableColumnInnerWidthsPxCore(el, REPORT_TEMPLATE_TABLE_NODE_PADDING_PX, ensureTableGrid);
+  return tableColumnInnerWidthsPxReadonly(el, REPORT_TEMPLATE_TABLE_NODE_PADDING_PX);
 }
 
 /** 正文表格外框纵向 chrome（节点 padding + 表壳底 1px，与 `.cv-table-shell` 一致） */
@@ -305,8 +305,8 @@ export function intrinsicOuterHeightForTemplateTable(
   cellTextAt?: (ri: number, ci: number) => string,
 ): number {
   if (el.type !== "table") return 20;
-  ensureTableGrid(el);
-  const rows = Math.max(1, el.tableRows ?? 3);
+  // 只读：不 ensure、不写回 el（渲染/computed 安全）；用钳制值取代 ensure 归一
+  const rows = clampTableRowsDim(el.tableRows, 3);
   const minH = clampTableRowHeightPx(el.tableRowHeightPx);
   let colWidths: number[] = [];
   try {
@@ -342,11 +342,10 @@ export function intrinsicOuterHeightForTemplateTable(
   return templateTableVerticalChromePx() + sumTableRowHeightsPx(heights, minH, rows);
 }
 
-/** @deprecated 纵向拖外框已禁用；保留供测试兼容 */
+/** @deprecated 纵向拖外框已禁用；保留供测试兼容。只读，不写回 el */
 export function minOuterHeightForTemplateTableResizePx(el: TemplateElement): number {
   if (el.type !== "table") return 20;
-  ensureTableGrid(el);
-  const rows = Math.max(1, el.tableRows ?? 3);
+  const rows = clampTableRowsDim(el.tableRows, 3);
   return Math.max(20, templateTableVerticalChromePx() + rows * TABLE_ROW_HEIGHT_MIN_PX);
 }
 
@@ -391,8 +390,8 @@ export function minOuterSizeForTable(
   cellTextAt?: (ri: number, ci: number) => string,
 ): { w: number; h: number } {
   if (el.type !== "table") return { w: 20, h: 20 };
-  ensureTableGrid(el);
-  const cols = el.tableCols ?? 4;
+  // 只读：不 ensure、不写回 el
+  const cols = clampTableColsDim(el.tableCols, 4);
   const MIN_CELL_W = 26;
   const CHROME = 8;
   const ih = intrinsicOuterHeightForTemplateTable(el, cellTextAt);
