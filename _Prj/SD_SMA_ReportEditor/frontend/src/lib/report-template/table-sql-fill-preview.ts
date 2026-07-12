@@ -268,6 +268,39 @@ export function sqlFillQueryLimit(fill: TableSqlFillConfig, fullSqlFill: boolean
   return fill.splitReportsOnMaxRows ? TABLE_SQL_FILL_FULL_ROW_LIMIT : fillMaxRows;
 }
 
+export interface SqlFillPreviewTruncation {
+  /** 预览取数上限（min(maxRows, 后端预览上限 1000)） */
+  previewLimit: number;
+  /** 单报表行数上限（用户配置 maxRows，默认 2000） */
+  singleReportMaxRows: number;
+  /** 是否开启「超上限拆分为多份报表」 */
+  splitEnabled: boolean;
+  /** 提示文案（供画布/导出预览横幅展示） */
+  message: string;
+}
+
+/**
+ * 编辑器预览是否可能未显示全部行 → 需给出提示。
+ * 后端预览接口有 PREVIEW_LIMIT_MAX=1000 硬上限（TABLE_SQL_FILL_PREVIEW_ROW_LIMIT 与之对齐），
+ * 预览按「单报表上限」maxRows 取数（受 1000 限）。当取回行数触及预览上限时，实际数据/单报表
+ * 可能还有更多行 → 预览的页数/份数不可当真，返回提示；否则返回 null（预览完整、所见即所得）。
+ */
+export function sqlFillPreviewTruncationHint(
+  fill: TableSqlFillConfig,
+  fetchedSqlRowCount: number,
+): SqlFillPreviewTruncation | null {
+  const singleReportMaxRows = Math.min(Math.max(1, fill.maxRows || 2000), TABLE_SQL_FILL_FULL_ROW_LIMIT);
+  const previewLimit = sqlFillQueryLimit(fill, false); // = min(singleReportMaxRows, 1000)
+  const fetched = Math.max(0, Math.floor(Number(fetchedSqlRowCount)) || 0);
+  if (fetched < previewLimit) return null; // 未触及上限：预览已含全部行，所见即所得
+  const splitEnabled = !!fill.splitReportsOnMaxRows;
+  const base = `预览仅显示前 ${previewLimit} 行；单报表上限 ${singleReportMaxRows} 行`;
+  const message = splitEnabled
+    ? `${base}，数据超出将拆分为多份报表，实际份数/页数以导出为准。`
+    : `${base}，实际页数以导出为准。`;
+  return { previewLimit, singleReportMaxRows, splitEnabled, message };
+}
+
 /** 画布/分页用的「显示数据行数」（纵表=逻辑行；横表=SQL 行） */
 export function sqlFillDisplayDataRowCount(fill: TableSqlFillConfig, sqlDataRowCount: number): number {
   if (isVerticalSqlFill(fill)) return verticalSqlLogicalRowCount(fill, sqlDataRowCount);

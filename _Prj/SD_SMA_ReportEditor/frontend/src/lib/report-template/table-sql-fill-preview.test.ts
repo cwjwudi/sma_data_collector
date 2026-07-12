@@ -8,6 +8,7 @@ import { formatScalarForPreviewValue } from "@/lib/report-template/binding-previ
 import {
   formatSqlFillTableCellPreview,
   sanitizeOpcTableName,
+  sqlFillPreviewTruncationHint,
   sqlFillQueryLimit,
   substituteSqlFillTableName,
   TABLE_SQL_FILL_FULL_ROW_LIMIT,
@@ -85,6 +86,42 @@ describe("sqlFillQueryLimit", () => {
   it("export with split fetches full rows for chunking", () => {
     const fill = hydrateTableSqlFill({ maxRows: 2000, splitReportsOnMaxRows: true });
     expect(sqlFillQueryLimit(fill, true)).toBe(TABLE_SQL_FILL_FULL_ROW_LIMIT);
+  });
+});
+
+describe("sqlFillPreviewTruncationHint", () => {
+  it("未触及预览上限时无提示（所见即所得）", () => {
+    const fill = hydrateTableSqlFill({ enabled: true, maxRows: 2000 });
+    expect(sqlFillPreviewTruncationHint(fill, 300)).toBeNull();
+    expect(sqlFillPreviewTruncationHint(fill, 999)).toBeNull();
+  });
+
+  it("取回行数触及 1000 预览上限（maxRows>1000）时给出提示", () => {
+    const fill = hydrateTableSqlFill({ enabled: true, maxRows: 2000 });
+    const hint = sqlFillPreviewTruncationHint(fill, 1000);
+    expect(hint).not.toBeNull();
+    expect(hint!.previewLimit).toBe(1000);
+    expect(hint!.singleReportMaxRows).toBe(2000);
+    expect(hint!.message).toContain("1000");
+    expect(hint!.message).toContain("2000");
+    expect(hint!.message).toContain("导出");
+  });
+
+  it("开启拆分时提示提及份数", () => {
+    const fill = hydrateTableSqlFill({ enabled: true, maxRows: 2000, splitReportsOnMaxRows: true });
+    const hint = sqlFillPreviewTruncationHint(fill, 1000);
+    expect(hint).not.toBeNull();
+    expect(hint!.splitEnabled).toBe(true);
+    expect(hint!.message).toContain("份");
+  });
+
+  it("maxRows<=1000 时预览上限即 maxRows，取满即提示（单报表已满、数据可能更多）", () => {
+    const fill = hydrateTableSqlFill({ enabled: true, maxRows: 500 });
+    expect(sqlFillPreviewTruncationHint(fill, 499)).toBeNull();
+    const hint = sqlFillPreviewTruncationHint(fill, 500);
+    expect(hint).not.toBeNull();
+    expect(hint!.previewLimit).toBe(500);
+    expect(hint!.singleReportMaxRows).toBe(500);
   });
 });
 
