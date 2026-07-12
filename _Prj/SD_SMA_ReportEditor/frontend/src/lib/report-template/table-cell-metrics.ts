@@ -7,8 +7,12 @@
 export const TABLE_ROW_HEIGHT_DEFAULT_PX = 28;
 export const TABLE_ROW_HEIGHT_MIN_PX = 16;
 export const TABLE_ROW_HEIGHT_MAX_PX = 120;
-/** 内容换行后单行允许的最大高度（避免单格撑满整页） */
-export const TABLE_CONTENT_ROW_HEIGHT_MAX_PX = 240;
+/**
+ * 内容换行后单行允许的最大高度（px）：以整页高度（A4 纵向 ≈ 297mm×96/25.4 ≈ 1123px）为界，
+ * 避免单行撑满并超过整页。此前固定 240px 会把窄列长文本静默裁断、导出丢内容，故放开到整页界。
+ * 注：单行内容真正超过整页时的「行内跨页断行」尚未实现（见 docs/002 P1-B 后续），此上界仅防单行占多页。
+ */
+export const TABLE_CONTENT_ROW_HEIGHT_MAX_PX = 1123;
 
 /** 正文/版式表格行数上限（含表头）；纵表字段槽可达 MAX_ROWS-1 */
 export const TEMPLATE_TABLE_MAX_ROWS = 100;

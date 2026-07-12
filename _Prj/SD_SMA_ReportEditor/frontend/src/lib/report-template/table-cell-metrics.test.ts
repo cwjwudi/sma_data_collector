@@ -33,6 +33,20 @@ describe("estimateWrappedTextHeightPx", () => {
     expect(short).toBe(28);
     expect(long).toBeGreaterThan(28);
   });
+
+  it("放开单行高度上限：超长内容不再被裁到 240px，但仍以整页高度为界", () => {
+    // 回归：默认上限固定 240px 会把窄列长文本静默裁断、导出丢内容。
+    // 放开后应长到内容所需（远超 240），且不超过整页高度上界。
+    const veryLong = "报警描述".repeat(120); // ~480 CJK 字符，窄列会折出很多行
+    const h = estimateWrappedTextHeightPx({
+      text: veryLong,
+      widthPx: 80,
+      fontSizePx: 12,
+      minHeightPx: 28,
+    });
+    expect(h).toBeGreaterThan(240); // 不再被 240 裁断
+    expect(h).toBeLessThanOrEqual(1123); // 仍以整页(A4)高度为界，避免单行占多页
+  });
 });
 
 describe("computeContentAwareTableRowHeightsPx", () => {
