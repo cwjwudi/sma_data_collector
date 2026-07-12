@@ -14,6 +14,10 @@ import {
   rowsFitInAvailWithHeights,
   templateTableExceedsPageRemaining,
 } from "@/lib/report-template/table-content-layout";
+import {
+  resolveStaticTableCellDisplayText,
+  shortBindingKindLabel,
+} from "@/lib/report-template/binding-preview-utils";
 import { computeExpandedBodyPreviewCards } from "@/lib/report-template/table-sql-fill-export-preview-split";
 
 function makeTemplateWithBodyTable(el: ReturnType<typeof hydrateTemplateElement>) {
@@ -96,6 +100,23 @@ describe("table-content-layout", () => {
       "这是一段很长很长很长很长很长很长很长很长很长很长很长很长很长很长的变量内容用于触发换行";
     const byLongValue = computeTemplateTableContentRowHeightsPx(tb, () => longValue);
     expect(byLongValue[0]).toBeGreaterThan(20);
+  });
+
+  it("unbound OPC display short label does not wrap like NodeId", () => {
+    const cell = {
+      bindingKind: "opcua" as const,
+      opcuaNodeId:
+        "ns=6;s=::AsGlobalPV:gDataReportName.TabletMoldZ.Extra.Long.Path.That.Would.Wrap",
+      text: "",
+    };
+    const display = resolveStaticTableCellDisplayText({
+      cell,
+      previewCell: undefined,
+      loading: false,
+    });
+    expect(display).toBe("⟨UA⟩");
+    expect(display).toBe(shortBindingKindLabel("opcua"));
+    expect(display.length).toBeLessThan(10);
   });
 
   it("buildLogicalRowSlicesForOverflow covers all rows without gaps", () => {

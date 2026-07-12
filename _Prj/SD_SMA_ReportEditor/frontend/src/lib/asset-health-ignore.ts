@@ -4,9 +4,6 @@ import type { AssetHealthIssue } from "@/api/assets";
 
 const STORAGE_KEY = "sd-sma-report-editor:ignored-asset-health-issues:v1";
 
-/** 可忽略的问题类型（警告级；用户确认后可从列表隐藏） */
-export const DISMISSIBLE_ASSET_HEALTH_KINDS = new Set(["missing_db"]);
-
 /** localStorage 不可用时（如单测）退回内存 */
 let memoryIgnored: Set<string> | null = null;
 
@@ -29,10 +26,11 @@ export function assetHealthIssueFingerprint(
   return `${it.assetKind}|${it.assetId}|${it.kind}|${conn}`;
 }
 
+/** 警告与提示均可忽略；错误不可忽略 */
 export function isAssetHealthIssueDismissible(
   it: Pick<AssetHealthIssue, "kind" | "severity">,
 ): boolean {
-  return it.severity === "warn" && DISMISSIBLE_ASSET_HEALTH_KINDS.has(it.kind);
+  return it.severity === "warn" || it.severity === "info";
 }
 
 export function loadIgnoredAssetHealthFingerprints(): Set<string> {

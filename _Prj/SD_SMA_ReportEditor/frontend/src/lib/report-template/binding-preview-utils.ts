@@ -161,6 +161,33 @@ export function chartKey(elId: string): string {
 }
 
 /**
+ * 静态表绑定格短标签（无预览实值时显示，避免 NodeId/SQL 语句撑行）。
+ */
+export function shortBindingKindLabel(bindingKind: string | undefined | null): string {
+  if (bindingKind === "opcua") return "⟨UA⟩";
+  if (bindingKind === "sql") return "⟨SQL⟩";
+  if (bindingKind === "mongo") return "⟨Mongo⟩";
+  return "";
+}
+
+/**
+ * 悬停提示用完整绑定路径（不参与布局）。
+ */
+export function staticTableCellBindingTitle(cell: {
+  bindingKind?: string;
+  opcuaNodeId?: string;
+  sqlText?: string;
+  mongoQuery?: { collection?: string } | null;
+} | null | undefined): string {
+  if (!cell) return "";
+  const kind = cell.bindingKind || "none";
+  if (kind === "opcua") return String(cell.opcuaNodeId || "").trim();
+  if (kind === "sql") return String(cell.sqlText || "").trim();
+  if (kind === "mongo") return String(cell.mongoQuery?.collection || "").trim();
+  return "";
+}
+
+/**
  * 静态表单元格「布局/换行」文案：优先 OPC/SQL/Mongo 预览实值；
  * 未取到实值时用短占位，避免用 NodeId/SQL 语句抬高行高。
  */
@@ -187,7 +214,7 @@ export function resolveStaticTableCellLayoutText(opts: {
 }
 
 /**
- * 静态表单元格显示文案：有预览用实值；加载中用省略号；否则回退绑定标签。
+ * 静态表单元格显示文案：有预览用实值；加载中用省略号；否则短标签（勿拼 NodeId）。
  */
 export function resolveStaticTableCellDisplayText(opts: {
   cell: {
@@ -211,16 +238,7 @@ export function resolveStaticTableCellDisplayText(opts: {
     }
     if (loading) return "…";
     if (unboundLabel != null) return unboundLabel;
-    if (kind === "opcua") {
-      const id = String(cell.opcuaNodeId || "").trim();
-      return id ? `⟨UA⟩ ${id}` : "⟨UA⟩";
-    }
-    if (kind === "sql") {
-      const q = String(cell.sqlText || "").trim();
-      return q ? `⟨SQL⟩ ${q}` : "⟨SQL⟩";
-    }
-    const col = String(cell.mongoQuery?.collection || "").trim();
-    return col ? `⟨Mongo⟩ ${col}` : "⟨Mongo⟩";
+    return shortBindingKindLabel(kind) || "\u00a0";
   }
   const t = String(cell.text || "").trim();
   return t.length > 0 ? t : "\u00a0";

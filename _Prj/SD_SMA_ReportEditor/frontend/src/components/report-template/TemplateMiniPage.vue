@@ -306,6 +306,7 @@ import {
   paramKey,
   resolveBoundParameterPreviewText,
   resolveStaticTableCellLayoutText,
+  shortBindingKindLabel,
   zoneParamKey,
   type BindingPreviewCell,
 } from "@/lib/report-template/binding-preview-utils";
@@ -771,18 +772,8 @@ function truncateStatic(s: string, n: number): string {
 }
 
 function formatStaticTableCell(cell: TemplateTableCell | LayoutZoneTableCell): string {
-  if (cell.bindingKind === "opcua") {
-    const id = cell.opcuaNodeId.trim();
-    return id ? `⟨UA⟩ ${truncateStatic(id, 48)}` : "⟨UA⟩";
-  }
-  if (cell.bindingKind === "sql") {
-    const q = cell.sqlText.trim();
-    return q ? `⟨SQL⟩ ${truncateStatic(q, 36)}` : "⟨SQL⟩";
-  }
-  if (cell.bindingKind === "mongo") {
-    const col = cell.mongoQuery?.collection?.trim() || "";
-    return col ? `⟨Mongo⟩ ${truncateStatic(col, 36)}` : "⟨Mongo⟩";
-  }
+  const short = shortBindingKindLabel(cell.bindingKind);
+  if (short) return short;
   const t = cell.text.trim();
   return t.length > 0 ? t : "\u00a0";
 }

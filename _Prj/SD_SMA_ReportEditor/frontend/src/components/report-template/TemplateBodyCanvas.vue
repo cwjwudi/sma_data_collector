@@ -221,7 +221,12 @@
                               @pointerdown.stop="pickTableCell(el, ri, ci)"
                               @keydown.stop
                             />
-                            <span v-else class="cv-table-cell-txt">{{ formatTplBodyTableCell(el, ri, ci) }}</span>
+                            <span
+                              v-else
+                              class="cv-table-cell-txt"
+                              :title="tplStaticTableCellTitle(el, ri, ci)"
+                              >{{ formatTplBodyTableCell(el, ri, ci) }}</span
+                            >
                           </template>
                         </td>
                         </tr>
@@ -465,6 +470,8 @@ import {
   resolveBoundParameterPreviewText,
   resolveStaticTableCellDisplayText,
   resolveStaticTableCellLayoutText,
+  shortBindingKindLabel,
+  staticTableCellBindingTitle,
 } from "@/lib/report-template/binding-preview-utils";
 
 /** cv-scaler 左右 padding 合计（与样式 padding: 20px 一致） */
@@ -1041,7 +1048,7 @@ function formatTplBodyTableCell(el: TemplateElement, ri: number, ci: number): st
   return formatTplStaticTableCellText(el, ri, ci, cell);
 }
 
-/** 静态表单元格显示：优先 OPC/SQL 预览实值 */
+/** 静态表单元格显示：优先 OPC/SQL 预览实值；无实值仅短标签（完整路径见 title） */
 function formatTplStaticTableCellText(
   el: TemplateElement,
   ri: number,
@@ -1056,10 +1063,20 @@ function formatTplStaticTableCellText(
       cell,
       previewCell: hit,
       loading,
-      unboundLabel: cell ? formatTableCellBindingLabel(cell) : undefined,
+      unboundLabel: shortBindingKindLabel(cell.bindingKind),
     });
   }
   return cell ? formatTableCellPreview(cell) : "\u00a0";
+}
+
+function tplStaticTableCellTitle(el: TemplateElement, ri: number, ci: number): string {
+  if (el.type !== "table" || el.tableSqlFill?.enabled) return "";
+  const cell = tableGrid(el)[ri]?.[ci] ?? null;
+  if (!cell) return "";
+  const key = cellKey(el.id, ri, ci);
+  const hit = bindingPreview?.values.value[key];
+  if (hit != null) return "";
+  return staticTableCellBindingTitle(cell);
 }
 
 /** 静态表布局/换行文案：只用实值，不用绑定语句 */
@@ -1335,30 +1352,9 @@ function isTableCellHot(el: TemplateElement, ri: number, ci: number): boolean {
   return !!(p && p.elId === el.id && p.row === ri && p.col === ci);
 }
 
-function truncatePreview(s: string, n: number): string {
-  const x = s.replace(/\s+/g, " ");
-  return x.length <= n ? x : `${x.slice(0, n)}…`;
-}
-
-function formatTableCellBindingLabel(cell: TemplateTableCell): string {
-  if (cell.bindingKind === "opcua") {
-    const id = cell.opcuaNodeId.trim();
-    return id ? `⟨UA⟩ ${truncatePreview(id, 72)}` : "⟨UA⟩";
-  }
-  if (cell.bindingKind === "sql") {
-    const q = cell.sqlText.trim();
-    return q ? `⟨SQL⟩ ${truncatePreview(q, 56)}` : "⟨SQL⟩";
-  }
-  if (cell.bindingKind === "mongo") {
-    const col = cell.mongoQuery?.collection?.trim() || "";
-    return col ? `⟨Mongo⟩ ${truncatePreview(col, 48)}` : "⟨Mongo⟩";
-  }
-  return "";
-}
-
 function formatTableCellPreview(cell: TemplateTableCell): string {
-  const label = formatTableCellBindingLabel(cell);
-  if (label) return label;
+  const short = shortBindingKindLabel(cell.bindingKind);
+  if (short) return short;
   const t = cell.text.trim();
   return t.length > 0 ? t : "\u00a0";
 }

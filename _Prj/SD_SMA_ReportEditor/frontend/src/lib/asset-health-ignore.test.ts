@@ -24,10 +24,18 @@ describe("asset-health-ignore", () => {
     clearIgnoredAssetHealthIssues();
   });
 
-  it("marks missing_db warn as dismissible", () => {
+  it("allows all warn and info issues to be dismissed; errors stay fixed", () => {
     expect(isAssetHealthIssueDismissible(sample)).toBe(true);
+    expect(
+      isAssetHealthIssueDismissible({
+        ...sample,
+        kind: "missing_default_database",
+        message: "连接未设置默认数据库，标量/SQL 可能报 1046",
+      }),
+    ).toBe(true);
+    expect(isAssetHealthIssueDismissible({ ...sample, kind: "other" })).toBe(true);
+    expect(isAssetHealthIssueDismissible({ ...sample, severity: "info", kind: "hint" })).toBe(true);
     expect(isAssetHealthIssueDismissible({ ...sample, severity: "error" })).toBe(false);
-    expect(isAssetHealthIssueDismissible({ ...sample, kind: "other" })).toBe(false);
   });
 
   it("persists ignore fingerprints and filters issues", () => {

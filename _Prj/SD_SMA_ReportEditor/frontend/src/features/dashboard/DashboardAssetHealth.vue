@@ -56,7 +56,7 @@
         <template v-else>未发现潜在问题（已检查绑定语法、连接引用、版式、schema 与文件完整性）。</template>
       </p>
       <p v-else class="dash-card__status">
-        以下含绑定语法/配置问题（不探活数据源）。优先处理标红项。连接引用类警告可忽略（例如断网误报）。
+        以下含绑定语法/配置问题（不探活数据源）。优先处理标红项。警告与提示可忽略（本机保存；错误不可忽略）。
       </p>
 
       <ul v-if="visibleIssues.length" class="dash-list">
