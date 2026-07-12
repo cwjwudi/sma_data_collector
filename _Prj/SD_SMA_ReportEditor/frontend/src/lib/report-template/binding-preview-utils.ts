@@ -457,7 +457,16 @@ export interface MongoDedupeTask {
   tableFillColCount?: number;
 }
 
-export function quoteSqlScalarValue(value: unknown, opts?: { numericStringAsNumber?: boolean }): string {
+/** MySQL/MariaDB 默认字符串字面量中反斜杠是转义符；Postgres/SQLite 标准字符串中反斜杠是字面量 */
+export function isMysqlFamilyEngine(engine?: string): boolean {
+  const e = String(engine || "").toLowerCase();
+  return e === "mysql" || e === "mariadb";
+}
+
+export function quoteSqlScalarValue(
+  value: unknown,
+  opts?: { numericStringAsNumber?: boolean; engine?: string },
+): string {
   if (value === null || value === undefined) return "NULL";
   if (typeof value === "number") return Number.isFinite(value) ? String(value) : "NULL";
   if (typeof value === "boolean") return value ? "1" : "0";
@@ -470,7 +479,11 @@ export function quoteSqlScalarValue(value: unknown, opts?: { numericStringAsNumb
   }
   const s = String(value);
   if (opts?.numericStringAsNumber && /^-?\d+(\.\d+)?$/.test(s.trim())) return s.trim();
-  return `'${s.replace(/'/g, "''")}'`;
+  // 引号按 SQL 标准翻倍；MySQL/MariaDB 另需转义反斜杠，否则尾随反斜杠会逃逸闭合引号（断串/注入）
+  const escaped = isMysqlFamilyEngine(opts?.engine)
+    ? s.replace(/\\/g, "\\\\").replace(/'/g, "''")
+    : s.replace(/'/g, "''");
+  return `'${escaped}'`;
 }
 
 export function resolveEffectiveScalarSql(
@@ -569,17 +582,18 @@ export function substituteScalarSqlParams(
   sqlRaw: string,
   params: TableSqlParamBinding[] | undefined,
   values: Record<number, unknown>,
+  engine?: string,
 ): string {
   const renderParam = (g: string): string => {
     const i = Number.parseInt(g, 10);
     const p = params?.[i];
     if (!p) return "NULL";
     if (Object.prototype.hasOwnProperty.call(values, i)) {
-      return quoteSqlScalarValue(values[i], { numericStringAsNumber: false });
+      return quoteSqlScalarValue(values[i], { numericStringAsNumber: false, engine });
     }
     const lit = (p.literalFallback ?? "").trim();
     if (!lit) return "NULL";
-    return quoteSqlScalarValue(lit, { numericStringAsNumber: true });
+    return quoteSqlScalarValue(lit, { numericStringAsNumber: true, engine });
   };
   return String(sqlRaw || "")
     .replace(/(['"])\s*\{\{p(\d+)\}\}\s*\1/gi, (_all, _quote: string, g: string) => renderParam(g))
