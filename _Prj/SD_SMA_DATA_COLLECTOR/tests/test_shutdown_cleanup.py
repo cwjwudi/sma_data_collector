@@ -108,6 +108,56 @@ class TestShutdownCleanup(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(list(processor.retry_queue), [row])
         self.assertEqual(processor.metrics["db_rows_queued_for_retry"], 1)
 
+    async def test_background_retry_commits_retained_batch_after_recovery(self):
+        db = Mock()
+        db.get_current_table_name.return_value = "Data_Audit"
+        db.execute_insert_many.side_effect = [-1, 1]
+        processor = DataStorageProcessor(db, batch_size=1)
+        processor.retry_interval_seconds = 0.01
+        processor.group_batch_sizes["Data_Audit"] = 1
+        processor.group_data_points["Data_Audit"] = ["AuditText"]
+        processor.group_partition_interval_years["Data_Audit"] = 0
+        processor.ensured_tables.add("Data_Audit")
+        await processor.start_processing()
+        processor.add_data(
+            {
+                "group_name": "Data_Audit",
+                "collection_time": __import__("datetime").datetime.now(),
+                "trigger_type": "variable",
+                "data": {"AuditText": {"value": "retry-me"}},
+            }
+        )
+        for _ in range(200):
+            if db.execute_insert_many.call_count >= 2 and not processor.retry_queue:
+                break
+            await asyncio.sleep(0.01)
+        await processor.stop_processing()
+        self.assertEqual(db.execute_insert_many.call_count, 2)
+        self.assertEqual(processor.metrics["db_rows_retried"], 1)
+        self.assertEqual(processor.metrics["db_rows_committed"], 1)
+
+    async def test_shutdown_timeout_reports_rows_without_silently_dropping_them(self):
+        db = Mock()
+        db.get_current_table_name.return_value = "Data_Alarm"
+        db.execute_insert_many.return_value = -1
+        processor = DataStorageProcessor(db, batch_size=100)
+        processor.shutdown_flush_timeout_seconds = 0
+        processor.group_batch_sizes["Data_Alarm"] = 100
+        processor.group_data_points["Data_Alarm"] = ["AlarmCode"]
+        processor.group_partition_interval_years["Data_Alarm"] = 0
+        processor.ensured_tables.add("Data_Alarm")
+        await processor.start_processing()
+        row = {
+            "group_name": "Data_Alarm",
+            "collection_time": __import__("datetime").datetime.now(),
+            "trigger_type": "variable",
+            "data": {"AlarmCode": {"value": 1}},
+        }
+        processor.add_data(row)
+        await processor.stop_processing()
+        self.assertEqual(processor.metrics["shutdown_rows_remaining"], 1)
+        self.assertEqual(list(processor.retry_queue), [row])
+
 
 if __name__ == "__main__":
     unittest.main()
