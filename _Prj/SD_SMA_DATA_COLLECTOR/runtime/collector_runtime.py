@@ -115,12 +115,18 @@ class DataCollectionSystem:
                     opcua_detail[name] = False
         opcua_all = bool(opcua_detail) and all(opcua_detail.values())
 
+        storage_metrics = (
+            self.storage_processor.get_runtime_metrics()
+            if self.storage_processor
+            else {"queue_size": 0, "retry_queue_size": 0, "inflight_size": 0}
+        )
         return {
             "collector_running": bool(self.running),
             "config_path": self.config_file,
             "initialized": self.config is not None and self.data_collector is not None,
             "database_connected": db_ok,
             "opcua": {"by_name": opcua_detail, "all_connected": opcua_all},
+            "storage": storage_metrics,
         }
 
     async def initialize(self) -> bool:

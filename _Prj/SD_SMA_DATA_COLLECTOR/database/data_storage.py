@@ -11,6 +11,8 @@ from collections import deque
 # 处理相对导入问题
 import sys
 import os
+import time
+from collections import Counter
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from database.db_manager import DatabaseManager
@@ -53,6 +55,7 @@ class DataStorageProcessor:
         self.points_dict = points_dict or {}  # 数据点配置字典
         self.insert_feedback_callback = insert_feedback_callback
         self.data_queue = deque()
+        self.retry_queue = deque()
         self.processing_task = None
         self.running = False
         self.logger = logging.getLogger(__name__)
@@ -65,6 +68,14 @@ class DataStorageProcessor:
         self.current_batch_context: Optional[Dict[str, Any]] = None
         self._closed_batch_context: Optional[Dict[str, Any]] = None
         self._batch_close_flush_requested = False
+        self.retry_interval_seconds = max(
+            0.05, float(os.getenv("SD_SMA_DB_RETRY_INTERVAL", "1.0"))
+        )
+        self.shutdown_flush_timeout_seconds = max(
+            0.0, float(os.getenv("SD_SMA_SHUTDOWN_FLUSH_TIMEOUT", "30.0"))
+        )
+        self._retry_ready_at = 0.0
+        self.metrics: Counter[str] = Counter()
     
     def add_data(self, collection_data: Dict[str, Any]) -> None:
         """
@@ -103,17 +114,11 @@ class DataStorageProcessor:
         self.logger.info("数据存储处理器已启动")
     
     async def stop_processing(self) -> None:
-        """停止数据处理任务"""
+        """Stop processing after a bounded, table-safe flush of both deques."""
         self.running = False
         ev = self._batch_ready_event
-        self._batch_ready_event = None
         if ev is not None:
             ev.set()
-        self.ensured_tables.clear()
-        self.group_open_batch_partition_times.clear()
-        self.current_batch_context = None
-        self._closed_batch_context = None
-        self._batch_close_flush_requested = False
         if self.processing_task:
             self.processing_task.cancel()
             try:
@@ -121,7 +126,39 @@ class DataStorageProcessor:
             except asyncio.CancelledError:
                 pass
             self.processing_task = None
-        self.logger.info("数据存储处理器已停止")
+
+        deadline = time.monotonic() + self.shutdown_flush_timeout_seconds
+        while self.data_queue or self.retry_queue:
+            pending = list(self.retry_queue) + list(self.data_queue)
+            self.retry_queue.clear()
+            self.data_queue.clear()
+            self.metrics["shutdown_rows_flush_attempted"] += len(pending)
+            await self._process_batch(pending, requeue_db_failures=True)
+            if not self.data_queue and not self.retry_queue:
+                break
+            if time.monotonic() >= deadline:
+                break
+            await asyncio.sleep(min(self.retry_interval_seconds, max(0.0, deadline - time.monotonic())))
+
+        remaining = len(self.data_queue) + len(self.retry_queue)
+        self.metrics["shutdown_rows_remaining"] = remaining
+        if remaining:
+            self.logger.error(
+                "停机刷新超时，内存中仍有 %s 行未写入数据库: data_queue=%s, retry_queue=%s",
+                remaining,
+                len(self.data_queue),
+                len(self.retry_queue),
+            )
+        else:
+            self.logger.info("停机前所有内存队列数据均已刷新")
+
+        self._batch_ready_event = None
+        self.ensured_tables.clear()
+        self.group_open_batch_partition_times.clear()
+        self.current_batch_context = None
+        self._closed_batch_context = None
+        self._batch_close_flush_requested = False
+        self.logger.info("数据存储处理器已停止，remaining=%s", remaining)
 
     def initialize_tables_for_runtime(self) -> bool:
         """
@@ -260,6 +297,12 @@ class DataStorageProcessor:
         """数据处理循环"""
         while self.running:
             try:
+                if self.retry_queue and time.monotonic() >= self._retry_ready_at:
+                    retry_data = list(self.retry_queue)
+                    self.retry_queue.clear()
+                    self.metrics["db_rows_retried"] += len(retry_data)
+                    await self._process_batch(retry_data, requeue_db_failures=True)
+                    continue
                 # 检查是否有足够的数据进行批量处理
                 if self._has_enough_data_for_batch():
                     # 按组分别处理数据
@@ -272,11 +315,6 @@ class DataStorageProcessor:
                         await self._wait_for_batch_ready_or_timeout(0.1)
                         
             except asyncio.CancelledError:
-                # 处理剩余数据
-                if self.data_queue:
-                    remaining_data = list(self.data_queue)
-                    self.data_queue.clear()
-                    await self._process_batch(remaining_data)
                 break
             except Exception as e:
                 self.logger.error(f"数据处理过程中发生错误: {e}", exc_info=True)
@@ -386,14 +424,21 @@ class DataStorageProcessor:
         # 分别处理每个组的数据
         for group_name in process_order:
             group_data_list = grouped_processable[group_name]
-            await self._process_group_data(group_name, group_data_list)
+            outcomes = await self._process_group_data(group_name, group_data_list)
+            if outcomes.get(self.STATUS_DB_ERROR, 0):
+                self._requeue_failed_batch(group_data_list)
 
         if self._batch_close_flush_requested:
             self.current_batch_context = None
             self._closed_batch_context = None
             self._batch_close_flush_requested = False
     
-    async def _process_batch(self, batch_data: List[Dict[str, Any]]) -> None:
+    async def _process_batch(
+        self,
+        batch_data: List[Dict[str, Any]],
+        *,
+        requeue_db_failures: bool = False,
+    ) -> Dict[str, int]:
         """
         处理一批数据
         
@@ -401,7 +446,7 @@ class DataStorageProcessor:
             batch_data: 批量数据列表
         """
         if not batch_data:
-            return
+            return self._empty_outcomes()
         
         try:
             # 按组名分组数据，确保每个组的数据单独处理
@@ -418,19 +463,55 @@ class DataStorageProcessor:
                 process_order.insert(0, self.batch_master_group_name)
 
             # 分别处理每个组的数据
+            totals = self._empty_outcomes()
             for group_name in process_order:
                 group_data_list = grouped_data[group_name]
-                await self._process_group_data(group_name, group_data_list)
+                outcomes = await self._process_group_data(group_name, group_data_list)
+                for status, count in outcomes.items():
+                    totals[status] += count
+                if requeue_db_failures and outcomes.get(self.STATUS_DB_ERROR, 0):
+                    self._requeue_failed_batch(group_data_list)
 
             if self._batch_close_flush_requested:
                 self.current_batch_context = None
                 self._closed_batch_context = None
                 self._batch_close_flush_requested = False
+            return totals
             
         except Exception as e:
             self.logger.error(f"批处理数据失败: {e}", exc_info=True)
+            if requeue_db_failures:
+                self._requeue_failed_batch(batch_data)
+            outcomes = self._empty_outcomes()
+            outcomes[self.STATUS_DB_ERROR] = len(batch_data)
+            return outcomes
+
+    def _empty_outcomes(self) -> Dict[str, int]:
+        return {
+            self.STATUS_SUCCESS: 0,
+            self.STATUS_UNIQUE_CONFLICT: 0,
+            self.STATUS_DB_ERROR: 0,
+            self.STATUS_OTHER_ERROR: 0,
+        }
+
+    def _requeue_failed_batch(self, batch_data: List[Dict[str, Any]]) -> None:
+        if not batch_data:
+            return
+        self.retry_queue.extend(batch_data)
+        self._retry_ready_at = time.monotonic() + self.retry_interval_seconds
+        self.metrics["db_rows_queued_for_retry"] += len(batch_data)
+        ev = self._batch_ready_event
+        if ev is not None and not ev.is_set():
+            ev.set()
+        self.logger.warning(
+            "数据库批次写入失败，已保留到内存重试队列: rows=%s, retry_queue=%s",
+            len(batch_data),
+            len(self.retry_queue),
+        )
     
-    async def _process_group_data(self, group_name: str, group_data_list: List[Dict[str, Any]]) -> None:
+    async def _process_group_data(
+        self, group_name: str, group_data_list: List[Dict[str, Any]]
+    ) -> Dict[str, int]:
         """
         处理单个组的数据
         
@@ -440,7 +521,7 @@ class DataStorageProcessor:
         """
         try:
             if not group_data_list:
-                return
+                return self._empty_outcomes()
 
             # 获取第一个数据项来确定表结构
             sample_data = group_data_list[0]
@@ -476,7 +557,8 @@ class DataStorageProcessor:
                     total_records,
                 )
                 await self._write_insert_feedback_by_outcome(group_name, outcome_counts)
-                return
+                self._record_storage_outcomes(outcome_counts)
+                return outcome_counts
 
             for data_item in group_data_list:
                 table_name = self._get_table_name_for_data_item(group_name, data_item)
@@ -593,6 +675,8 @@ class DataStorageProcessor:
             )
 
             await self._write_insert_feedback_by_outcome(group_name, outcome_counts)
+            self._record_storage_outcomes(outcome_counts)
+            return outcome_counts
             
         except Exception as e:
             self.logger.error(f"处理组 {group_name} 数据失败: {e}", exc_info=True)
@@ -605,6 +689,16 @@ class DataStorageProcessor:
                     self.STATUS_OTHER_ERROR: 1,
                 },
             )
+            outcomes = self._empty_outcomes()
+            outcomes[self.STATUS_DB_ERROR] = len(group_data_list)
+            self._record_storage_outcomes(outcomes)
+            return outcomes
+
+    def _record_storage_outcomes(self, outcomes: Dict[str, int]) -> None:
+        self.metrics["db_rows_committed"] += outcomes.get(self.STATUS_SUCCESS, 0)
+        self.metrics["db_rows_unique_conflict"] += outcomes.get(self.STATUS_UNIQUE_CONFLICT, 0)
+        self.metrics["db_rows_failed"] += outcomes.get(self.STATUS_DB_ERROR, 0)
+        self.metrics["db_rows_dead_letter"] += outcomes.get(self.STATUS_OTHER_ERROR, 0)
 
     def _bulk_insert_group_data(
         self,
@@ -1288,3 +1382,14 @@ class DataStorageProcessor:
     def get_queue_size(self) -> int:
         """获取队列大小"""
         return len(self.data_queue)
+
+    def get_runtime_metrics(self) -> Dict[str, int]:
+        snapshot = dict(self.metrics)
+        snapshot.update(
+            {
+                "queue_size": len(self.data_queue),
+                "retry_queue_size": len(self.retry_queue),
+                "inflight_size": 0,
+            }
+        )
+        return snapshot
