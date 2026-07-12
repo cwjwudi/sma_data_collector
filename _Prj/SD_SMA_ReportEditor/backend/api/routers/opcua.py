@@ -292,3 +292,27 @@ async def search_saved_variables(server_id: str, body: OpcUaSavedVariableSearch)
         body.max_depth,
         dt,
     )
+
+
+@router.post("/opcua/resolve_path_saved/{server_id}")
+async def resolve_path_saved(server_id: str, payload: dict = Body(default_factory=dict)):
+    """解析已配置 NodeId 的 Objects 子树祖先链（根→叶），供选择器自动展开。失败仍返回 HTTP 200。"""
+    cfg = _load_cfg()
+    srv = next((s for s in cfg.get("opcua_servers", []) if s.get("id") == server_id), None)
+    if not srv:
+        raise HTTPException(404, "未找到服务器配置")
+    ep = str(srv.get("endpoint_url") or srv.get("endpoint") or "").strip()
+    node_id = str((payload or {}).get("node_id") or "").strip()
+    if not node_id:
+        return {"ok": False, "error": "缺少 node_id", "path": []}
+    try:
+        pwd = config_store.decrypt_opcua_password(DATA_DIR, srv)
+    except ValueError as e:
+        return {"ok": False, "error": str(e), "path": []}
+    return await opcua_service.resolve_node_path_for_saved_server(
+        server_id,
+        ep,
+        node_id,
+        srv.get("username"),
+        pwd,
+    )

@@ -1,15 +1,15 @@
 {
-  "version": "0.3.49",
-  "releasedAt": "2026-07-12T07:37:47.624Z",
-  "notes": "Report Editor 0.3.49\n\n- 升级后自动从旧数据目录迁入 LLM API Key，保存时空串不再误清\n- 设置页可拉取上游模型列表下拉选择（仍可手输）",
+  "version": "0.3.50",
+  "releasedAt": "2026-07-12T08:10:39.243Z",
+  "notes": "Report Editor 0.3.50\n\n- OPC 节点从列表选择时，若已配置 NodeId 则自动展开定位到对应位置\n- 新增 resolve_path API；覆盖模版/版式/页眉页脚/生成报表全部选择入口",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.49-x64.exe",
-      "sha256": "16752847c295c4433b8db2ef63bf4487d14a6919f2f3f8cdf7398eda3e4f961b",
-      "size": 147951785
+      "url": "Report Editor AI-Setup-0.3.50-x64.exe",
+      "sha256": "f61a72ae54beb808e1f98ab8a9684196a7bf9f857f8715a97fdd9d5899d506c4",
+      "size": 147959293
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.49-arm64.dmg",
+      "url": "Report Editor AI-0.3.50-arm64.dmg",
       "sha256": "",
       "size": 0
     }

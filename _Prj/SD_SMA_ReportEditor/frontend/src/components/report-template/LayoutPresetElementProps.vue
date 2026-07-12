@@ -491,7 +491,11 @@
       /></label>
       <button type="button" class="lpep-del" @click="$emit('remove')">删除选中</button>
     </div>
-    <OpcUaNodePickerModal v-model="opcPickOpen" @confirm="onOpcPickConfirm" />
+    <OpcUaNodePickerModal
+      v-model="opcPickOpen"
+      :initial-node-id="opcPickInitialNodeId"
+      @confirm="onOpcPickConfirm"
+    />
   </div>
   <div v-else class="lpep-grey">
     <p>在画布上点选控件后在编辑属性。</p>
@@ -550,6 +554,7 @@ import {
 } from "@/lib/report-template/table-sql-fill";
 import {
   applyTableSqlFillOpcPick,
+  peekTableSqlFillOpcNodeId,
   resizeVerticalSqlSlotsToTableRows,
   syncTableRowsForVerticalSqlSlots,
 } from "@/lib/report-template/table-sql-visual-compile";
@@ -598,6 +603,7 @@ const zoneTypeLabel = computed(() => {
 });
 
 const opcPickOpen = ref(false);
+const opcPickInitialNodeId = ref("");
 const opcPickTarget = ref<
   | "parameter"
   | "table"
@@ -608,7 +614,15 @@ const opcPickTarget = ref<
 >(null);
 
 function openOpcPicker(target: "parameter" | "table") {
+  const el = props.el;
   opcPickTarget.value = target;
+  if (target === "parameter" && el) {
+    opcPickInitialNodeId.value = String(el.opcuaNodeId || "").trim();
+  } else if (target === "table") {
+    opcPickInitialNodeId.value = String(activeTableCell.value?.opcuaNodeId || "").trim();
+  } else {
+    opcPickInitialNodeId.value = "";
+  }
   opcPickOpen.value = true;
 }
 
@@ -623,6 +637,9 @@ function openZoneSqlOpcPicker(slot: number) {
   // 允许负数哨兵槽位（TABLE_SQL_FILL_TABLE_PICK_SLOT = 表名 OPC 变量）
   const s = Math.floor(Number(slot)) || 0;
   opcPickTarget.value = { kind: "tableSql", slot: s };
+  const el = props.el;
+  opcPickInitialNodeId.value =
+    el && el.type === "table" ? peekTableSqlFillOpcNodeId(ensureZoneTableSqlFill(el), s) : "";
   opcPickOpen.value = true;
 }
 
@@ -643,6 +660,7 @@ function openZoneScalarSqlParamOpcPicker(slot: number) {
   if (!el || el.type !== "parameter") return;
   ensureZoneElementSqlParams(el);
   opcPickTarget.value = { kind: "scalarSqlParam", slot };
+  opcPickInitialNodeId.value = String(el.sqlParams?.[slot]?.opcuaNodeId || "").trim();
   opcPickOpen.value = true;
 }
 
@@ -651,6 +669,7 @@ function openZoneTableCellSqlParamOpcPicker(slot: number) {
   if (!cell) return;
   ensureZoneTableCellSqlParams(cell);
   opcPickTarget.value = { kind: "scalarSqlCell", slot };
+  opcPickInitialNodeId.value = String(cell.sqlParams?.[slot]?.opcuaNodeId || "").trim();
   opcPickOpen.value = true;
 }
 
@@ -894,6 +913,7 @@ const zoneTableRowHeightModel = computed({
 function onOpcPickConfirm(payload: string | { serverId: string; nodeId: string }) {
   const t = opcPickTarget.value;
   opcPickTarget.value = null;
+  opcPickInitialNodeId.value = "";
   const id = (typeof payload === "string" ? payload : payload.nodeId).trim();
   if (!id) return;
   const el = props.el;

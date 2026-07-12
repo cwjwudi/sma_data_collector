@@ -771,6 +771,7 @@
       :title="opcPickTitle"
       :lead="opcPickLead"
       :initial-server-id="opcPickInitialServerId"
+      :initial-node-id="opcPickInitialNodeId"
       :external-servers="opcServers"
       @confirm="onRgOpcPickConfirm"
     />
@@ -999,7 +1000,34 @@ const opcPickInitialServerId = computed(() => {
     const b = prefs.value.auto.bindings.find((x) => x.id === bindId);
     return (b ? resolveEffectiveOpcServerIdForBinding(prefs.value, b) : "") || fallback();
   }
+  if (opcPickTarget.value === "heartbeat") {
+    return String(heartbeatCfg.value.serverId || "").trim() || fallback();
+  }
   return fallback();
+});
+
+const opcPickInitialNodeId = computed(() => {
+  const t = opcPickTarget.value;
+  if (!t) return "";
+  if (t === "exportDir") return String(prefs.value.autoExportDirOpcNodeId || "").trim();
+  if (t === "fileName") return String(prefs.value.autoFileNameOpcNodeId || "").trim();
+  if (t === "heartbeat") return String(heartbeatCfg.value.nodeId || "").trim();
+  const bf = parseBindingFeedbackPick(t);
+  if (bf) {
+    const b = prefs.value.auto.bindings.find((x) => x.id === bf.bindingId);
+    if (!b) return "";
+    const fb = ensureBindingFeedback(b);
+    if (bf.field === "status") return String(fb.statusNodeId || "").trim();
+    if (bf.field === "message") return String(fb.messageNodeId || "").trim();
+    if (bf.field === "path") return String(fb.filePathNodeId || "").trim();
+    return "";
+  }
+  const bindId = parseRgTriggerPickTarget(t);
+  if (bindId) {
+    const b = prefs.value.auto.bindings.find((x) => x.id === bindId);
+    return String(b?.nodeId || "").trim();
+  }
+  return "";
 });
 
 const opcPickLead = computed(() => {

@@ -572,7 +572,11 @@
 
       <button type="button" class="lpep-del" @click="emit('remove')">删除选中</button>
     </div>
-    <OpcUaNodePickerModal v-model="opcPickOpen" @confirm="onOpcPickConfirm" />
+    <OpcUaNodePickerModal
+      v-model="opcPickOpen"
+      :initial-node-id="opcPickInitialNodeId"
+      @confirm="onOpcPickConfirm"
+    />
   </div>
 </template>
 
@@ -627,6 +631,7 @@ import {
 } from "@/lib/report-template/table-sql-fill";
 import {
   applyTableSqlFillOpcPick,
+  peekTableSqlFillOpcNodeId,
   resizeVerticalSqlSlotsToTableRows,
   syncTableRowsForVerticalSqlSlots,
 } from "@/lib/report-template/table-sql-visual-compile";
@@ -717,6 +722,7 @@ const TYPE_LABELS: Record<TemplateControlType, string> = {
 const typeLabel = computed(() => TYPE_LABELS[props.el.type] ?? props.el.type);
 
 const opcPickOpen = ref(false);
+const opcPickInitialNodeId = ref("");
 const opcPickTarget = ref<
   | "parameter"
   | "table"
@@ -728,6 +734,11 @@ const opcPickTarget = ref<
 
 function openOpcPicker(target: "parameter" | "table") {
   opcPickTarget.value = target;
+  if (target === "parameter") {
+    opcPickInitialNodeId.value = String(props.el.opcuaNodeId || "").trim();
+  } else {
+    opcPickInitialNodeId.value = String(activeTableCell.value?.opcuaNodeId || "").trim();
+  }
   opcPickOpen.value = true;
 }
 
@@ -742,6 +753,7 @@ function openTplSqlOpcPicker(slot: number) {
   // 允许负数哨兵槽位（TABLE_SQL_FILL_TABLE_PICK_SLOT = 表名 OPC 变量）
   const s = Math.floor(Number(slot)) || 0;
   opcPickTarget.value = { kind: "tableSql", slot: s };
+  opcPickInitialNodeId.value = peekTableSqlFillOpcNodeId(ensureTplTableSqlFill(props.el), s);
   opcPickOpen.value = true;
 }
 
@@ -760,6 +772,7 @@ function ensureTableCellSqlParams(cell: TemplateTableCell): TableSqlParamBinding
 function openParameterSqlParamOpcPicker(slot: number) {
   ensureElementSqlParams(props.el);
   opcPickTarget.value = { kind: "scalarSqlParam", slot };
+  opcPickInitialNodeId.value = String(props.el.sqlParams?.[slot]?.opcuaNodeId || "").trim();
   opcPickOpen.value = true;
 }
 
@@ -773,6 +786,7 @@ function openTableCellSqlParamOpcPicker(slot: number) {
     col: editCellCol.value,
     slot,
   };
+  opcPickInitialNodeId.value = String(cell.sqlParams?.[slot]?.opcuaNodeId || "").trim();
   opcPickOpen.value = true;
 }
 
@@ -1040,6 +1054,7 @@ const tableRowHeightModel = computed({
 function onOpcPickConfirm(payload: string | { serverId: string; nodeId: string }) {
   const t = opcPickTarget.value;
   opcPickTarget.value = null;
+  opcPickInitialNodeId.value = "";
   const id = (typeof payload === "string" ? payload : payload.nodeId).trim();
   if (!id) return;
   if (

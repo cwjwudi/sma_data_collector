@@ -660,7 +660,11 @@
           <button type="button" class="btn btn-danger-outline" @click="removeSel">删除选中</button>
         </div>
       </details>
-      <OpcUaNodePickerModal v-model="opcPickOpen" @confirm="onHzOpcPickConfirm" />
+      <OpcUaNodePickerModal
+        v-model="opcPickOpen"
+        :initial-node-id="opcPickInitialNodeId"
+        @confirm="onHzOpcPickConfirm"
+      />
       <div class="hz-actions">
         <button type="button" class="btn" @click="close">关闭</button>
       </div>
@@ -751,6 +755,7 @@ import {
   applyTableSqlFillOpcPick,
   applyVisualSqlOutputColumnPick,
   applyVerticalSqlSlotField,
+  peekTableSqlFillOpcNodeId,
   resizeVerticalSqlSlotsToTableRows,
   syncTableRowsForVerticalSqlSlots,
 } from "@/lib/report-template/table-sql-visual-compile";
@@ -941,6 +946,7 @@ const commitHzGeomW = hzGeomWField.commit;
 const commitHzGeomH = hzGeomHField.commit;
 
 const opcPickOpen = ref(false);
+const opcPickInitialNodeId = ref("");
 const opcPickTarget = ref<
   | "parameter"
   | "table"
@@ -1043,6 +1049,7 @@ function openHzTableCellSqlParamOpcPicker(slot: number) {
   if (!cell) return;
   ensureHzTableCellSqlParams(cell);
   opcPickTarget.value = { kind: "scalarSqlCell", slot };
+  opcPickInitialNodeId.value = String(cell.sqlParams?.[slot]?.opcuaNodeId || "").trim();
   opcPickOpen.value = true;
 }
 
@@ -1242,6 +1249,9 @@ function openHzSqlOpcPicker(slot: number) {
   // 允许负数哨兵槽位（TABLE_SQL_FILL_TABLE_PICK_SLOT = 表名 OPC 变量）
   const s = Math.floor(Number(slot)) || 0;
   opcPickTarget.value = { kind: "tableSql", slot: s };
+  const sEl = sel.value;
+  opcPickInitialNodeId.value =
+    sEl && sEl.type === "table" ? peekTableSqlFillOpcNodeId(ensureHzTableSqlFill(sEl), s) : "";
   opcPickOpen.value = true;
 }
 
@@ -1272,12 +1282,18 @@ function onHzVerticalSlotsChange() {
 
 function openHzOpcPicker(target: "parameter" | "table") {
   opcPickTarget.value = target;
+  if (target === "parameter") {
+    opcPickInitialNodeId.value = String(sel.value?.opcuaNodeId || "").trim();
+  } else {
+    opcPickInitialNodeId.value = String(activeHzTableCell.value?.opcuaNodeId || "").trim();
+  }
   opcPickOpen.value = true;
 }
 
 function onHzOpcPickConfirm(payload: string | { serverId: string; nodeId: string }) {
   const t = opcPickTarget.value;
   opcPickTarget.value = null;
+  opcPickInitialNodeId.value = "";
   const id = (typeof payload === "string" ? payload : payload.nodeId).trim();
   if (!id) return;
   const s = sel.value;

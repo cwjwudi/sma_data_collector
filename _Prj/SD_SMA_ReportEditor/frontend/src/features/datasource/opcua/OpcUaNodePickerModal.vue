@@ -145,6 +145,7 @@ import {
   opcDataTypeLabelMatchesFilter,
   shouldShowOpcBrowseChild,
 } from './opcua-tree-utils.js'
+import { locateConfiguredOpcNodeInTree } from './opcua-tree-locate.js'
 
 const EXPAND_ALL_MAX_BROWSE = 350
 const EXPAND_ALL_MAX_DEPTH = 40
@@ -161,6 +162,8 @@ const props = defineProps({
   },
   /** 打开时预选连接 */
   initialServerId: { type: String, default: '' },
+  /** 打开时若已有绑定，自动展开并定位到该 NodeId */
+  initialNodeId: { type: String, default: '' },
   /** 父组件已加载的连接列表；API 暂不可用时作回退 */
   externalServers: { type: Array, default: () => [] },
   /** 为 true 时不显示全地址空间搜索（仅树浏览） */
@@ -196,6 +199,7 @@ const pickedNode = ref(null)
 const prefetchGen = ref(0)
 const expandAllBusy = ref(false)
 let expandAllGen = 0
+let locateGen = 0
 const overlayRef = ref(null)
 const searchQuery = ref('')
 
@@ -296,13 +300,62 @@ async function runPickModalVariableSearch(q, runGen) {
   }
 }
 
-async function opcApiBrowse(parentNodeId) {
+async function opcApiBrowse(parentNodeId, { skipDataTypeFilter = false } = {}) {
   const cap = browseCapability.value
   if (!cap) throw new Error('当前无法浏览')
   const body = {}
   if (parentNodeId != null && parentNodeId !== '') body.node_id = parentNodeId
-  if (dataTypeFilter.value) body.data_type = dataTypeFilter.value
+  if (!skipDataTypeFilter && dataTypeFilter.value) body.data_type = dataTypeFilter.value
   return await apiFetch(`/opcua/browse_saved/${cap.serverId}`, { method: 'POST', body })
+}
+
+/** 定位用：无类型过滤的 browse，返回已 wrap 的子节点 */
+async function browseUnfilteredWrapped(parentNodeId) {
+  const res = await opcApiBrowse(parentNodeId, { skipDataTypeFilter: true })
+  if (res.ok === false) {
+    throw new Error(res.message || '浏览失败')
+  }
+  return (res.nodes || []).map((n) => wrapOpcNode(n))
+}
+
+async function opcApiResolvePath(nodeId) {
+  const cap = browseCapability.value
+  if (!cap) throw new Error('当前无法解析路径')
+  return await apiFetch(`/opcua/resolve_path_saved/${cap.serverId}`, {
+    method: 'POST',
+    body: { node_id: String(nodeId || '').trim() },
+  })
+}
+
+async function tryLocateConfiguredNode() {
+  const nid = (props.initialNodeId || '').trim()
+  if (!nid || !browseCapability.value || searchTrimmed.value) return
+  const myGen = ++locateGen
+  msg.value = '正在定位已配置节点…'
+  const result = await locateConfiguredOpcNodeInTree({
+    targetNodeId: nid,
+    getRootNodes: () => treeNodes.value,
+    setRootNodes: (nodes) => {
+      treeNodes.value = nodes
+    },
+    resolvePath: () => opcApiResolvePath(nid),
+    browseUnfiltered: browseUnfilteredWrapped,
+    applyChildren: applyOpcBrowseChildren,
+    bumpTree,
+    shouldAbort: () => myGen !== locateGen || !props.modelValue,
+  })
+  if (myGen !== locateGen || !props.modelValue) return
+  if (result.ok && result.node) {
+    pickedNode.value = result.node
+    msg.value = '已定位到当前配置的节点'
+    bumpTree()
+    return
+  }
+  if (result.error && result.error !== 'aborted') {
+    msg.value = `未能定位到已配置节点，请手动展开或搜索（${translateOpcuaMessage(result.error)}）`
+  } else if (!result.ok) {
+    msg.value = '未能定位到已配置节点，请手动展开或搜索'
+  }
 }
 
 function pickPreferredOpcServerId(prefs, srvs, explicitPreferred) {
@@ -366,6 +419,8 @@ async function loadServersWhenOpen() {
   clearTimeout(searchDebounceTimer)
   searchDebounceTimer = null
   searchRequestGen++
+  cancelExpandAll()
+  cancelLocate()
   searchHitEntries.value = []
   searchRemoteError.value = ''
   searchRemoteInfo.value = ''
@@ -424,10 +479,15 @@ function cancelExpandAll() {
   expandAllBusy.value = false
 }
 
+function cancelLocate() {
+  locateGen += 1
+}
+
 function onServerChange() {
   clearTimeout(searchDebounceTimer)
   searchDebounceTimer = null
   cancelExpandAll()
+  cancelLocate()
   msg.value = ''
   pickedNode.value = null
   prefetchGen.value += 1
@@ -447,6 +507,7 @@ function onServerChange() {
 
 async function refreshRoot() {
   cancelExpandAll()
+  cancelLocate()
   prefetchGen.value += 1
   msg.value = ''
   const cap = browseCapability.value
@@ -470,6 +531,7 @@ async function refreshRoot() {
     if (!dataTypeFilter.value) {
       void prefetchVariableValuesInNodes(treeNodes.value)
     }
+    await tryLocateConfiguredNode()
   } catch (e) {
     msg.value = translateOpcuaMessage(e.message || String(e))
   }

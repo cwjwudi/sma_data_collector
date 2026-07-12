@@ -29,6 +29,9 @@ SEARCH_VARS_DEFAULT_MAX_RESULTS = 300
 SEARCH_VARS_DEFAULT_MAX_DEPTH = 56
 SEARCH_ROOT_TOKEN = "__objects_root__"
 
+# 按 NodeId 反查祖先链（选择器自动展开）
+RESOLVE_PATH_MAX_DEPTH = 64
+
 # server_id -> 每条目独立锁，同服务器 browse/read 串行，避免单连接并发。
 _pool: dict[str, "_PoolEntry"] = {}
 
@@ -589,6 +592,162 @@ async def _try_node_class(node) -> str:
         return str(nc).strip()
     except Exception:
         return ""
+
+
+async def _node_path_entry(
+    node: Any,
+    *,
+    data_type_cache: dict[str, str] | None = None,
+    include_data_type: bool = False,
+) -> dict[str, Any]:
+    bn = await node.read_browse_name()
+    nid = node.nodeid.to_string()
+    cls = await _try_node_class(node)
+    row: dict[str, Any] = {
+        "node_id": nid,
+        "browse_name": f"{bn.NamespaceIndex}:{bn.Name}",
+        "display_name": (await node.read_display_name()).Text,
+        "node_class": cls,
+    }
+    if include_data_type and _is_opcua_variable_value_class(cls):
+        type_name = await _try_node_data_type_name(node, data_type_cache)
+        if type_name:
+            row["data_type"] = type_name
+    return row
+
+
+async def _hierarchical_parent_node(node: Any) -> Any | None:
+    """向上取层级父节点；优先 get_parent，失败则 Inverse HierarchicalReferences。"""
+    try:
+        parent = await node.get_parent()
+        if parent is not None:
+            return parent
+    except Exception:
+        logger.debug("OPC UA get_parent failed, try inverse refs", exc_info=True)
+    try:
+        refs = await node.get_references(
+            ua.ObjectIds.HierarchicalReferences,
+            ua.BrowseDirection.Inverse,
+            ua.NodeClass.Unspecified,
+        )
+        if not refs:
+            return None
+        return OpcUaNode(node.session, refs[0].NodeId)
+    except Exception:
+        logger.debug("OPC UA inverse HierarchicalReferences failed", exc_info=True)
+        return None
+
+
+def trim_path_below_objects(
+    leaf_to_root: list[dict[str, Any]],
+    *,
+    objects_node_id: str,
+    root_node_id: str,
+) -> list[dict[str, Any]]:
+    """将「叶→根」链裁成「Objects 之下 → 叶」（不含 Objects/Root），供前端从 Objects 子树展开。"""
+    stop_ids = {str(objects_node_id or "").strip(), str(root_node_id or "").strip()}
+    stop_ids.discard("")
+    kept: list[dict[str, Any]] = []
+    for row in leaf_to_root:
+        nid = str(row.get("node_id") or "").strip()
+        if nid and nid in stop_ids:
+            break
+        kept.append(row)
+    kept.reverse()
+    return kept
+
+
+async def _resolve_node_path_with_client(
+    client: Client,
+    node_id: str,
+    *,
+    data_type_cache: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    nid = (node_id or "").strip()
+    if not nid:
+        return {"ok": False, "error": "缺少 node_id", "path": []}
+
+    try:
+        objects_nid = client.nodes.objects.nodeid.to_string()
+        root_nid = client.nodes.root.nodeid.to_string()
+    except Exception as e:
+        return {"ok": False, "error": f"无法读取 Objects/Root：{e}", "path": []}
+
+    try:
+        node = client.get_node(nid)
+        # 强制读一次，确认节点存在
+        await node.read_browse_name()
+    except Exception as e:
+        return {"ok": False, "error": f"节点不存在或无法访问：{e}", "path": []}
+
+    leaf_to_root: list[dict[str, Any]] = []
+    current: Any = node
+    seen: set[str] = set()
+    for depth in range(RESOLVE_PATH_MAX_DEPTH):
+        try:
+            current_nid = current.nodeid.to_string()
+        except Exception as e:
+            return {"ok": False, "error": f"读取节点标识失败：{e}", "path": []}
+        if current_nid in seen:
+            break
+        seen.add(current_nid)
+        if current_nid == objects_nid or current_nid == root_nid:
+            break
+        try:
+            entry = await _node_path_entry(
+                current,
+                data_type_cache=data_type_cache,
+                include_data_type=(depth == 0),
+            )
+        except Exception as e:
+            return {"ok": False, "error": f"读取节点属性失败：{e}", "path": []}
+        leaf_to_root.append(entry)
+        parent = await _hierarchical_parent_node(current)
+        if parent is None:
+            break
+        current = parent
+    else:
+        return {
+            "ok": False,
+            "error": f"祖先链超过上限（{RESOLVE_PATH_MAX_DEPTH}），无法定位",
+            "path": [],
+        }
+
+    path = trim_path_below_objects(
+        leaf_to_root,
+        objects_node_id=objects_nid,
+        root_node_id=root_nid,
+    )
+    if not path:
+        return {
+            "ok": False,
+            "error": "节点不在 Objects 子树下，无法在地址空间树中定位",
+            "path": [],
+        }
+    return {"ok": True, "path": path, "error": ""}
+
+
+async def resolve_node_path_for_saved_server(
+    server_id: str,
+    endpoint_url: str,
+    node_id: str,
+    username: str | None = None,
+    password: str | None = None,
+) -> dict[str, Any]:
+    """已保存连接：解析 NodeId 在 Objects 下的祖先链（根→叶），供前端自动展开。"""
+    entry = _get_entry(server_id)
+    async with entry.lock:
+        try:
+            client = await _ensure_connected(entry, endpoint_url, username, password)
+            return await _resolve_node_path_with_client(
+                client,
+                node_id,
+                data_type_cache=entry.data_type_cache,
+            )
+        except Exception as e:
+            logger.exception("OPC UA resolve path (pooled) failed")
+            await _invalidate_entry_client(entry)
+            return {"ok": False, "error": str(e), "path": []}
 
 
 def _clamp_variable_search_params(max_scan: Any, max_results: Any, max_depth: Any) -> tuple[int, int, int]:

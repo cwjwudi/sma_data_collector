@@ -132,6 +132,37 @@ export function applyTableSqlFillOpcPick(fill: TableSqlFillConfig, slot: number,
   }
 }
 
+/** 读取某 slot 当前已配置的 OPC NodeId（供选择器打开时自动定位）。 */
+export function peekTableSqlFillOpcNodeId(fill: TableSqlFillConfig | null | undefined, slot: number): string {
+  if (!fill) return "";
+  if (slot === TABLE_SQL_FILL_TABLE_PICK_SLOT) {
+    const vs = fill.visualSource;
+    if (vs?.tableSource === "opcua") return String(vs.tableOpcNodeId || "").trim();
+    return "";
+  }
+  if (slot === TABLE_SQL_FILL_SEP_PICK_SLOT) {
+    const b = fill.continueRecordSepLabelBinding;
+    return b?.bindingKind === "opcua" ? String(b.opcuaNodeId || "").trim() : "";
+  }
+  const hdrCi = parseTableSqlFillHdrPickSlot(slot);
+  if (hdrCi != null) {
+    const b = fill.resultColumnNameBindings?.[hdrCi];
+    return b?.bindingKind === "opcua" ? String(b.opcuaNodeId || "").trim() : "";
+  }
+  const vSi = parseTableSqlFillVlabelPickSlot(slot);
+  if (vSi != null) {
+    const b = fill.verticalFieldLabelBindings?.[vSi];
+    return b?.bindingKind === "opcua" ? String(b.opcuaNodeId || "").trim() : "";
+  }
+  if (slot < 0) return "";
+  if (fill.fillMode === "visual") {
+    const b = visualFilterBindingAtParamSlot(fill.visualFilters || [], slot);
+    return b?.source === "opcua" ? String(b.opcuaNodeId || "").trim() : "";
+  }
+  const row = fill.params?.[slot];
+  return row?.source === "opcua" ? String(row.opcuaNodeId || "").trim() : "";
+}
+
 export function buildDistinctSelectSql(engineLower: string, table: string, column: string, limit: number): string {
   const lim = Math.min(200, Math.max(1, Math.round(limit)));
   const qt = quoteSqlTableRef(engineLower, table.trim());

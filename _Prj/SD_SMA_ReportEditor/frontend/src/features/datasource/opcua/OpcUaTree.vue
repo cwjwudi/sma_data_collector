@@ -1,5 +1,5 @@
 <template>
-  <div class="address-tree" role="tree">
+  <div ref="treeRootRef" class="address-tree" role="tree">
     <div v-if="!rows.length" class="empty">无节点，请点击「刷新根」</div>
     <template v-else>
     <div
@@ -9,6 +9,7 @@
       :class="{ 'tree-row--selected': isSelectedNode(row.node) }"
       :style="{ paddingLeft: `${10 + row.depth * 18}px` }"
       role="treeitem"
+      :data-node-id="row.node.node_id || undefined"
       :aria-expanded="row.hasExpander ? row.node.expanded : undefined"
       :aria-selected="isSelectedNode(row.node) || undefined"
     >
@@ -65,7 +66,7 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { translateOpcuaMessage } from './opcua-messages.js'
 import { opcTreeNodeHasExpander } from './opcua-tree-utils.js'
 
@@ -81,10 +82,31 @@ const props = defineProps({
 
 defineEmits(['toggle', 'pick'])
 
+const treeRootRef = ref(null)
+
 function isSelectedNode(n) {
   const sel = (props.selectedNodeId || '').trim()
   return !!sel && String(n?.node_id || '') === sel
 }
+
+function scrollSelectedIntoView() {
+  const sel = (props.selectedNodeId || '').trim()
+  const root = treeRootRef.value
+  if (!sel || !root) return
+  const el = root.querySelector(`[data-node-id="${CSS.escape(sel)}"]`)
+  if (el && typeof el.scrollIntoView === 'function') {
+    el.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+  }
+}
+
+watch(
+  () => [props.selectedNodeId, props.treeRev],
+  async () => {
+    if (!(props.selectedNodeId || '').trim()) return
+    await nextTick()
+    scrollSelectedIntoView()
+  },
+)
 
 function truncateOneLine(s, max) {
   if (!s || typeof s !== 'string') return ''
