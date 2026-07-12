@@ -11,6 +11,7 @@
             :key="'ztsd-' + el.id + '-' + ri + '-' + ci"
             class="zts-td"
             :style="tdStyle(ri, ci, cell)"
+            :title="cellTitle(ri, ci, cell)"
           >
             {{ cellText(ri, ci, cell) }}
           </td>
@@ -21,7 +22,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, inject } from "vue";
 import {
   computeZoneTableContentRowHeightsPx,
   ensureZoneTableGrid,
@@ -33,11 +34,20 @@ import {
 } from "@/lib/report-template/layout-zone-element";
 import { clampTableRowHeightPx } from "@/lib/report-template/table-cell-metrics";
 import { formatSqlFillTableCellPreview } from "@/lib/report-template/table-sql-fill-preview";
+import {
+  resolveStaticTableCellDisplayText,
+  resolveStaticTableCellLayoutText,
+  shortBindingKindLabel,
+  staticTableCellBindingTitle,
+} from "@/lib/report-template/binding-preview-utils";
+import { reportBindingPreviewKey } from "@/lib/report-template/template-editor-context";
 
 /** 编辑画布上只读展示版式区/装饰层表格（拖拽编辑请在对应编辑器进行） */
 const props = defineProps<{
   el: LayoutZoneElement;
 }>();
+
+const bindingPreview = inject(reportBindingPreviewKey, null);
 
 const grid = computed<LayoutZoneTableCell[][]>(() => ensureZoneTableGrid(props.el));
 
@@ -45,23 +55,34 @@ const colWidths = computed(() => zoneTableColumnInnerWidthsPx(props.el));
 
 const innerBg = computed(() => zoneTableInnerBackgroundCss(props.el.bgColor));
 
+function zoneCellKey(ri: number, ci: number): string {
+  return `zone-cell:${props.el.id}:${ri}:${ci}`;
+}
+
+function layoutTextAt(ri: number, ci: number): string {
+  const cell = grid.value[ri]?.[ci] ?? null;
+  const hit = bindingPreview?.values.value[zoneCellKey(ri, ci)];
+  return resolveStaticTableCellLayoutText({
+    cell,
+    previewCell: hit,
+    loading: !!(bindingPreview?.loading.value && !hit),
+  });
+}
+
 const rowHeights = computed(() => {
+  // 依赖预览值以便实值更新后重算行高
+  void bindingPreview?.values.value;
   if (props.el.tableSqlFill?.enabled) {
     const n = Math.max(1, props.el.tableRows ?? 1);
     const h = clampTableRowHeightPx(props.el.tableRowHeightPx);
     return Array.from({ length: n }, () => h);
   }
-  return computeZoneTableContentRowHeightsPx(props.el);
+  return computeZoneTableContentRowHeightsPx(props.el, layoutTextAt);
 });
 
 function trStyleAt(ri: number): Record<string, string> {
   const h = rowHeights.value[ri] ?? clampTableRowHeightPx(props.el.tableRowHeightPx);
   return { height: `${h}px`, minHeight: `${h}px` };
-}
-
-function truncate(s: string, n: number): string {
-  const x = s.replace(/\s+/g, " ");
-  return x.length <= n ? x : `${x.slice(0, n)}…`;
 }
 
 function cellText(ri: number, ci: number, cell: LayoutZoneTableCell): string {
@@ -75,20 +96,25 @@ function cellText(ri: number, ci: number, cell: LayoutZoneTableCell): string {
       previewLoading: false,
     });
   }
-  if (cell.bindingKind === "opcua") {
-    const id = cell.opcuaNodeId.trim();
-    return id ? `⟨UA⟩ ${truncate(id, 48)}` : "⟨UA⟩";
-  }
-  if (cell.bindingKind === "sql") {
-    const q = cell.sqlText.trim();
-    return q ? `⟨SQL⟩ ${truncate(q, 36)}` : "⟨SQL⟩";
-  }
-  if (cell.bindingKind === "mongo") {
-    const col = cell.mongoQuery?.collection?.trim() || "";
-    return col ? `⟨Mongo⟩ ${truncate(col, 36)}` : "⟨Mongo⟩";
+  const hit = bindingPreview?.values.value[zoneCellKey(ri, ci)];
+  const loading = !!(bindingPreview?.loading.value && !hit);
+  if (cell.bindingKind === "opcua" || cell.bindingKind === "sql" || cell.bindingKind === "mongo") {
+    return resolveStaticTableCellDisplayText({
+      cell,
+      previewCell: hit,
+      loading,
+      unboundLabel: shortBindingKindLabel(cell.bindingKind),
+    });
   }
   const t = cell.text.trim();
   return t.length > 0 ? t : "\u00a0";
+}
+
+function cellTitle(ri: number, ci: number, cell: LayoutZoneTableCell): string {
+  if (props.el.tableSqlFill?.enabled) return "";
+  const hit = bindingPreview?.values.value[zoneCellKey(ri, ci)];
+  if (hit != null) return "";
+  return staticTableCellBindingTitle(cell);
 }
 
 function tdStyle(ri: number, ci: number, cell: LayoutZoneTableCell): Record<string, string> {

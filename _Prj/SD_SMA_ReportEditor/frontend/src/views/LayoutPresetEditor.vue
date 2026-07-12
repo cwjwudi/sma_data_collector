@@ -137,13 +137,13 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, provide, ref, watch } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, provide, ref, watch, type Ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import LayoutPresetZonesDialog from "@/components/report-template/LayoutPresetZonesDialog.vue";
 import LayoutPresetPaperCanvas from "@/components/report-template/LayoutPresetPaperCanvas.vue";
 import LayoutPresetElementProps from "@/components/report-template/LayoutPresetElementProps.vue";
 import type { LayoutPreset } from "@/lib/report-template/layout-model";
-import { hydrateLayoutPreset } from "@/lib/report-template/layout-model";
+import { defaultBlankLayoutSnapshot, hydrateLayoutPreset } from "@/lib/report-template/layout-model";
 import type { LayoutControlType } from "@/lib/report-template/layout-zone-element";
 import {
   copyLayoutZoneElementToClipboard,
@@ -152,7 +152,13 @@ import {
   hasLayoutElementClipboard,
   pasteLayoutZoneElementIntoPreset,
 } from "@/lib/report-template/editor-element-clipboard";
-import { layoutPresetTableCellPickKey, type TemplateTableCellPick } from "@/lib/report-template/template-editor-context";
+import {
+  layoutPresetTableCellPickKey,
+  reportBindingPreviewKey,
+  type TemplateTableCellPick,
+} from "@/lib/report-template/template-editor-context";
+import type { ReportTemplate } from "@/lib/report-template/model";
+import { useReportBindingPreview } from "@/composables/useReportBindingPreview";
 import { PAPER_LABEL, type PaperKind } from "@/lib/report-template/paper";
 import {
   deleteLayoutPresetFlexible,
@@ -199,6 +205,55 @@ const PRESET_UNDO_CAP = 80;
 
 const layoutPresetTablePick = ref<TemplateTableCellPick | null>(null);
 provide(layoutPresetTableCellPickKey, layoutPresetTablePick);
+
+/** 供绑定预览：把版式三带映射到模版 zone 字段（正文带进 coverBodyZoneElements） */
+const layoutPreviewTmpl = computed<ReportTemplate | null>(() => {
+  const p = working.value;
+  if (!p) return null;
+  const blank = defaultBlankLayoutSnapshot();
+  return {
+    id: `__layout_preview_${p.id}`,
+    name: p.name,
+    updatedAt: "",
+    elements: [],
+    bodyPages: [[]],
+    paperKind: p.paperKind,
+    orientation: p.orientation,
+    layoutPresetId: p.id,
+    layoutSnapshot: blank,
+    coverLayoutPresetId: null,
+    coverLayoutSnapshot: blank,
+    coverHeaderText: "",
+    coverFooterText: "",
+    coverHeaderElements: [],
+    coverFooterElements: [],
+    coverBodyZoneElements: p.bodyElements,
+    backLayoutPresetId: null,
+    backLayoutSnapshot: blank,
+    backHeaderText: "",
+    backFooterText: "",
+    backHeaderElements: [],
+    backFooterElements: [],
+    backBodyZoneElements: [],
+    headerText: "",
+    footerText: "",
+    headerElements: p.headerElements,
+    footerElements: p.footerElements,
+    coverElements: [],
+    backElements: [],
+  };
+});
+
+const bindingPreview = useReportBindingPreview(layoutPreviewTmpl as Ref<ReportTemplate | null>);
+provide(reportBindingPreviewKey, bindingPreview);
+
+watchDebounced(
+  layoutPreviewTmpl,
+  () => {
+    void bindingPreview.refresh({ silent: true, mutateTemplateRows: false });
+  },
+  { deep: true, debounce: 400 },
+);
 
 const presetToolLabels: Record<LayoutControlType, string> = {
   text: "文本",
@@ -398,6 +453,7 @@ async function loadWorking() {
     working.value = clonePreset(raw);
     presetCanvasSelId.value = null;
     resetPresetHistoryFromWorking(working.value);
+    void bindingPreview.refresh({ silent: true, mutateTemplateRows: false });
   } catch (e) {
     if (isLoadStale(token)) return;
     loadErr.value = "加载失败：" + String((e as Error).message || e);

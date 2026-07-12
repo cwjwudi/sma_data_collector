@@ -39,14 +39,14 @@
                       <tr
                         v-for="ri in miniZoneTableRowIndices(el)"
                         :key="'hzr-' + el.id + '-' + ri"
-                        :style="miniZoneTableRowTrStyle(el)"
+                        :style="miniZoneTableRowTrStyle(el, ri)"
                       >
                         <td
                           v-for="ci in miniZoneTableColIndices(el)"
                           :key="'hzc-' + el.id + '-' + ri + '-' + ci"
                           class="mini-tpl-td"
                           :style="miniZoneTableCellStyle(el, ri, ci)"
-                          :title="miniZoneTableCellText(el, ri, ci)"
+                          :title="miniZoneTableCellTitle(el, ri, ci)"
                         >
                           {{ miniZoneTableCellText(el, ri, ci) }}
                         </td>
@@ -99,14 +99,14 @@
                       <tr
                         v-for="ri in miniZoneTableRowIndices(el)"
                         :key="'bzr-' + el.id + '-' + ri"
-                        :style="miniZoneTableRowTrStyle(el)"
+                        :style="miniZoneTableRowTrStyle(el, ri)"
                       >
                         <td
                           v-for="ci in miniZoneTableColIndices(el)"
                           :key="'bzc-' + el.id + '-' + ri + '-' + ci"
                           class="mini-tpl-td"
                           :style="miniZoneTableCellStyle(el, ri, ci)"
-                          :title="miniZoneTableCellText(el, ri, ci)"
+                          :title="miniZoneTableCellTitle(el, ri, ci)"
                         >
                           {{ miniZoneTableCellText(el, ri, ci) }}
                         </td>
@@ -152,14 +152,14 @@
                       <tr
                         v-for="ri in miniZoneTableRowIndices(el)"
                         :key="'fzr-' + el.id + '-' + ri"
-                        :style="miniZoneTableRowTrStyle(el)"
+                        :style="miniZoneTableRowTrStyle(el, ri)"
                       >
                         <td
                           v-for="ci in miniZoneTableColIndices(el)"
                           :key="'fzc-' + el.id + '-' + ri + '-' + ci"
                           class="mini-tpl-td"
                           :style="miniZoneTableCellStyle(el, ri, ci)"
-                          :title="miniZoneTableCellText(el, ri, ci)"
+                          :title="miniZoneTableCellTitle(el, ri, ci)"
                         >
                           {{ miniZoneTableCellText(el, ri, ci) }}
                         </td>
@@ -192,6 +192,7 @@ import { miniPreviewScale } from "@/lib/report-template/mini-preview-scale";
 import type { LayoutPreset } from "@/lib/report-template/layout-model";
 import { presetToSnapshot } from "@/lib/report-template/layout-model";
 import {
+  computeZoneTableContentRowHeightsPx,
   ensureZoneTableGrid,
   flexJustifyAlignForAxes,
   getZoneTextWrapStyle,
@@ -207,6 +208,10 @@ import {
 } from "@/lib/report-template/layout-zone-element";
 import { clampTableRowHeightPx } from "@/lib/report-template/table-cell-metrics";
 import { formatSqlFillTableCellPreview } from "@/lib/report-template/table-sql-fill-preview";
+import {
+  shortBindingKindLabel,
+  staticTableCellBindingTitle,
+} from "@/lib/report-template/binding-preview-utils";
 
 const props = withDefaults(
   defineProps<{ preset: LayoutPreset; maxWidthPx?: number; maxHeightPx?: number }>(),
@@ -343,26 +348,11 @@ function miniZoneElStyle(el: LayoutZoneElement): Record<string, string> {
   return s;
 }
 
-function truncateStatic(s: string, n: number): string {
-  const x = s.replace(/\s+/g, " ");
-  return x.length <= n ? x : `${x.slice(0, n)}…`;
-}
-
 function formatStaticTableCell(cell: LayoutZoneTableCell): string {
-  if (cell.bindingKind === "opcua") {
-    const id = cell.opcuaNodeId.trim();
-    return id ? `⟨UA⟩ ${truncateStatic(id, 48)}` : "⟨UA⟩";
-  }
-  if (cell.bindingKind === "sql") {
-    const q = cell.sqlText.trim();
-    return q ? `⟨SQL⟩ ${truncateStatic(q, 36)}` : "⟨SQL⟩";
-  }
-  if (cell.bindingKind === "mongo") {
-    const col = cell.mongoQuery?.collection?.trim() || "";
-    return col ? `⟨Mongo⟩ ${truncateStatic(col, 36)}` : "⟨Mongo⟩";
-  }
-  const t = cell.text.trim();
-  return t.length > 0 ? t : "\u00a0";
+  const short = shortBindingKindLabel(cell.bindingKind);
+  if (short) return short;
+  const txt = cell.text.trim();
+  return txt.length > 0 ? txt : "\u00a0";
 }
 
 function zoneTableGrid(el: LayoutZoneElement): LayoutZoneTableCell[][] {
@@ -375,18 +365,27 @@ function miniZoneTableInnerStyle(el: LayoutZoneElement): Record<string, string> 
   return { background: zoneTableInnerBackgroundCss(el.bgColor) };
 }
 
-function miniZoneTableRowTrStyle(el: LayoutZoneElement): Record<string, string> | undefined {
+function miniZoneTableRowHeights(el: LayoutZoneElement): number[] {
+  if (el.type !== "table") return [];
+  if (el.tableSqlFill?.enabled) {
+    const n = Math.max(1, el.tableRows ?? 1);
+    const h = clampTableRowHeightPx(el.tableRowHeightPx);
+    return Array.from({ length: n }, () => h);
+  }
+  return computeZoneTableContentRowHeightsPx(el);
+}
+
+function miniZoneTableRowTrStyle(el: LayoutZoneElement, ri = 0): Record<string, string> | undefined {
   if (el.type !== "table") return undefined;
-  const h = clampTableRowHeightPx(el.tableRowHeightPx);
-  // 与版式编辑画布一致：固定行高（tr 的 min-height/auto 在表格布局下常被忽略）
-  return { height: `${h}px`, maxHeight: `${h}px` };
+  const h = miniZoneTableRowHeights(el)[ri] ?? clampTableRowHeightPx(el.tableRowHeightPx);
+  return { height: `${h}px`, minHeight: `${h}px` };
 }
 
 function miniZoneTableCellStyle(el: LayoutZoneElement, ri: number, ci: number): Record<string, string> {
   if (el.type !== "table") return {};
   ensureZoneTableGrid(el);
   const cell = el.tableCells?.[ri]?.[ci];
-  const h = clampTableRowHeightPx(el.tableRowHeightPx);
+  const h = miniZoneTableRowHeights(el)[ri] ?? clampTableRowHeightPx(el.tableRowHeightPx);
   return {
     backgroundColor: resolveTableCellBackgroundCss(
       { tableBgColor: el.bgColor, tableColBgColors: el.tableColBgColors },
@@ -427,6 +426,14 @@ function miniZoneTableCellText(el: LayoutZoneElement, ri: number, ci: number): s
   const cell = zoneTableGrid(el)[ri]?.[ci];
   return cell ? formatStaticTableCell(cell) : "\u00a0";
 }
+
+function miniZoneTableCellTitle(el: LayoutZoneElement, ri: number, ci: number): string {
+  if (el.type === "table" && el.tableSqlFill?.enabled) return miniZoneTableCellText(el, ri, ci);
+  const cell = zoneTableGrid(el)[ri]?.[ci];
+  if (!cell) return "";
+  return staticTableCellBindingTitle(cell) || miniZoneTableCellText(el, ri, ci);
+}
+
 </script>
 
 <style scoped>

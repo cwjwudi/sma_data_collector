@@ -143,7 +143,11 @@
                                 @pointerdown.stop="pickLayoutTableCell(el, ri, ci)"
                                 @keydown.stop
                               />
-                              <span v-else class="lppc-table-cell-txt">{{ formatLayoutTableCellPreview(cell) }}</span>
+                              <span
+                                v-else
+                                class="lppc-table-cell-txt"
+                                :title="layoutTableCellTitle(el, ri, ci, cell)"
+                              >{{ formatLayoutTableCellPreview(el, ri, ci, cell) }}</span>
                             </template>
                           </td>
                         </tr>
@@ -327,7 +331,11 @@
                                 @pointerdown.stop="pickLayoutTableCell(el, ri, ci)"
                                 @keydown.stop
                               />
-                              <span v-else class="lppc-table-cell-txt">{{ formatLayoutTableCellPreview(cell) }}</span>
+                              <span
+                                v-else
+                                class="lppc-table-cell-txt"
+                                :title="layoutTableCellTitle(el, ri, ci, cell)"
+                              >{{ formatLayoutTableCellPreview(el, ri, ci, cell) }}</span>
                             </template>
                           </td>
                         </tr>
@@ -511,7 +519,11 @@
                                 @pointerdown.stop="pickLayoutTableCell(el, ri, ci)"
                                 @keydown.stop
                               />
-                              <span v-else class="lppc-table-cell-txt">{{ formatLayoutTableCellPreview(cell) }}</span>
+                              <span
+                                v-else
+                                class="lppc-table-cell-txt"
+                                :title="layoutTableCellTitle(el, ri, ci, cell)"
+                              >{{ formatLayoutTableCellPreview(el, ri, ci, cell) }}</span>
                             </template>
                           </td>
                         </tr>
@@ -600,8 +612,14 @@ import {
   type LayoutZoneElement,
   type LayoutZoneTableCell,
 } from "@/lib/report-template/layout-zone-element";
-import { layoutPresetTableCellPickKey } from "@/lib/report-template/template-editor-context";
+import { layoutPresetTableCellPickKey, reportBindingPreviewKey } from "@/lib/report-template/template-editor-context";
 import { presetToSnapshot, type LayoutPreset } from "@/lib/report-template/layout-model";
+import {
+  resolveStaticTableCellDisplayText,
+  resolveStaticTableCellLayoutText,
+  shortBindingKindLabel,
+  staticTableCellBindingTitle,
+} from "@/lib/report-template/binding-preview-utils";
 import {
   alignmentGuidesForRect,
   magneticSnapResize,
@@ -660,6 +678,7 @@ function peersForSnapZone(z: Zone): SnapPeer[] {
 }
 
 const layoutTablePick = inject(layoutPresetTableCellPickKey, undefined);
+const bindingPreview = inject(reportBindingPreviewKey, null);
 
 watch(selId, (id) => {
   if (!layoutTablePick) return;
@@ -678,12 +697,31 @@ function layoutZoneTableColInnerWidthsPx(el: LayoutZoneElement): number[] {
   return zoneTableColumnInnerWidthsPx(el);
 }
 
+function zoneCellPreviewKey(elId: string, ri: number, ci: number): string {
+  return `zone-cell:${elId}:${ri}:${ci}`;
+}
+
+function layoutZoneStaticCellLayoutText(el: LayoutZoneElement, ri: number, ci: number): string {
+  const cell = layoutTableGrid(el)[ri]?.[ci] ?? null;
+  const hit = bindingPreview?.values.value[zoneCellPreviewKey(el.id, ri, ci)];
+  return resolveStaticTableCellLayoutText({
+    cell,
+    previewCell: hit,
+    loading: !!(bindingPreview?.loading.value && !hit),
+  });
+}
+
+function layoutZoneStaticCellTextAt(el: LayoutZoneElement): (ri: number, ci: number) => string {
+  return (ri, ci) => layoutZoneStaticCellLayoutText(el, ri, ci);
+}
+
 function layoutZoneTableRowTrStyle(el: LayoutZoneElement, ri = 0): Record<string, string> | undefined {
   if (el.type !== "table") return undefined;
+  void bindingPreview?.values.value;
   const heights =
     el.tableSqlFill?.enabled
       ? Array.from({ length: Math.max(1, el.tableRows ?? 1) }, () => clampTableRowHeightPx(el.tableRowHeightPx))
-      : computeZoneTableContentRowHeightsPx(el);
+      : computeZoneTableContentRowHeightsPx(el, layoutZoneStaticCellTextAt(el));
   const h = heights[ri] ?? clampTableRowHeightPx(el.tableRowHeightPx);
   return { height: `${h}px`, minHeight: `${h}px` };
 }
@@ -700,21 +738,26 @@ function formatLayoutSqlFillTableCell(el: LayoutZoneElement, ri: number, ci: num
   });
 }
 
-function formatLayoutTableCellPreview(cell: LayoutZoneTableCell): string {
-  if (cell.bindingKind === "opcua") {
-    const id = cell.opcuaNodeId.trim();
-    return id ? `⟨UA⟩ ${id.length > 48 ? `${id.slice(0, 45)}…` : id}` : "⟨UA⟩";
-  }
-  if (cell.bindingKind === "sql") {
-    const q = cell.sqlText.trim();
-    return q ? `⟨SQL⟩ ${q.length > 36 ? `${q.slice(0, 33)}…` : q}` : "⟨SQL⟩";
-  }
-  if (cell.bindingKind === "mongo") {
-    const col = cell.mongoQuery?.collection?.trim() || "";
-    return col ? `⟨Mongo⟩ ${col.length > 36 ? `${col.slice(0, 33)}…` : col}` : "⟨Mongo⟩";
+function formatLayoutTableCellPreview(el: LayoutZoneElement, ri: number, ci: number, cell: LayoutZoneTableCell): string {
+  const hit = bindingPreview?.values.value[zoneCellPreviewKey(el.id, ri, ci)];
+  const loading = !!(bindingPreview?.loading.value && !hit);
+  if (cell.bindingKind === "opcua" || cell.bindingKind === "sql" || cell.bindingKind === "mongo") {
+    return resolveStaticTableCellDisplayText({
+      cell,
+      previewCell: hit,
+      loading,
+      unboundLabel: shortBindingKindLabel(cell.bindingKind),
+    });
   }
   const t = cell.text.trim();
   return t.length > 0 ? t : "\u00a0";
+}
+
+function layoutTableCellTitle(el: LayoutZoneElement, ri: number, ci: number, cell: LayoutZoneTableCell): string {
+  if (el.tableSqlFill?.enabled) return "";
+  const hit = bindingPreview?.values.value[zoneCellPreviewKey(el.id, ri, ci)];
+  if (hit != null) return "";
+  return staticTableCellBindingTitle(cell);
 }
 
 function pickLayoutTableCell(el: LayoutZoneElement, ri: number, ci: number) {
@@ -808,6 +851,27 @@ const dragOverZone = ref<Zone | null>(null);
 
 const me = computed(() =>
   computePaperLayout(props.preset.paperKind, props.preset.orientation, presetToSnapshot(props.preset)),
+);
+
+function clampLayoutZoneTableOuter(el: LayoutZoneElement): void {
+  if (el.type !== "table" || el.tableSqlFill?.enabled) return;
+  const bandH = Math.max(me.value.hb, me.value.fb, me.value.contentH, 40);
+  clampZoneTableOuterSize(
+    el,
+    me.value.contentW,
+    Math.max(20, bandH - Math.max(0, el.y)),
+    layoutZoneStaticCellTextAt(el),
+  );
+}
+
+watch(
+  () => bindingPreview?.values.value,
+  () => {
+    for (const el of layoutPresetAllTableElements()) {
+      if (!el.tableSqlFill?.enabled) clampLayoutZoneTableOuter(el);
+    }
+  },
+  { deep: true },
 );
 
 const paperBoxStyle = computed(() => ({
@@ -1122,7 +1186,7 @@ function onZoneTableColumnResize(
   if (!next) return;
   el.tableColWidthsPx = next;
   const { w: bw, h: bh } = bandDims(z);
-  clampZoneTableOuterSize(el, bw, bh);
+  clampZoneTableOuterSize(el, bw, bh, layoutZoneStaticCellTextAt(el));
 }
 
 /** 与模版画布一致：微小位移不计入拖拽 */
@@ -1233,7 +1297,7 @@ function ptrMove(ev: PointerEvent) {
       if (isTable) el.h = resize.ih;
     }
     if (isTable) {
-      clampZoneTableOuterSize(el, bw, Math.max(16, bh - Math.max(0, el.y)));
+      clampZoneTableOuterSize(el, bw, Math.max(16, bh - Math.max(0, el.y)), layoutZoneStaticCellTextAt(el));
     }
     clampEl(el, resize.z);
     layoutSnapOverlay.value = ev.shiftKey
