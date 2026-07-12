@@ -67,9 +67,9 @@ function applyLoginItem(app, settings) {
   return s
 }
 
-/** 本次进程是否应按静默方式启动（隐藏主窗口 + 托盘）。 */
 /**
  * 本次进程是否应按静默方式启动（隐藏主窗口 + 托盘）。
+ * 勾选 silentStart 后任意启动方式均静默（含手动双击）；argv / 登录项判断保留作兼容。
  * @param {import('electron').App} app
  * @param {string[]} [argv]
  */
@@ -77,9 +77,10 @@ function shouldSilentStartThisSession(app, argv = process.argv) {
   const args = Array.isArray(argv) ? argv : []
   if (args.includes(SILENT_START_ARG)) return true
   try {
+    if (readLaunchSettings(app).silentStart) return true
     const lis = app.getLoginItemSettings()
+    // 偏好文件缺失时的兜底：系统以隐藏方式打开登录项
     if (lis && lis.wasOpenedAsHidden) return true
-    if (lis && lis.wasOpenedAtLogin && readLaunchSettings(app).silentStart) return true
   } catch {
     /* ignore */
   }
