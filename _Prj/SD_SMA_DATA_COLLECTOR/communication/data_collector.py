@@ -298,12 +298,33 @@ class DataCollector:
                 await asyncio.sleep(delay)
             readback = await self._read_boolean_trigger_value(trigger_point, opcua_client)
             if isinstance(readback, (list, tuple)):
-                confirmed = {
+                confirmed_false = {
                     index
                     for index in remaining
                     if index < len(readback) and self._is_false_trigger_value(readback[index])
                 }
-                remaining -= confirmed
+                # A successful array write followed by True is ambiguous: the PLC
+                # may already have emitted the next event. Clearing it a second time
+                # would deterministically swallow that event. Treat it as an
+                # acknowledged reset plus immediate reassertion; the caller sets the
+                # previous state False so the next poll consumes the new high level.
+                reasserted = {
+                    index
+                    for index in remaining
+                    if success
+                    and index < len(readback)
+                    and not self._is_false_trigger_value(readback[index])
+                }
+                if reasserted:
+                    self.metrics["parallel_trigger_reasserted_during_confirm"] += len(reasserted)
+                    self.logger.info(
+                        "并行触发复位后立即再次置位，将作为新事件留待下一轮采集: "
+                        "group=%s, point=%s, indices=%s",
+                        group.name,
+                        trigger_point.name,
+                        sorted(reasserted),
+                    )
+                remaining -= confirmed_false | reasserted
             if not remaining:
                 self.metrics["parallel_trigger_reset_confirmed"] += len(valid_indices)
                 return valid_indices

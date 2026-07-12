@@ -210,6 +210,35 @@ class TestParallelScalarBroadcast(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([row["data"]["AlarmCode"]["value"] for row in received], [101, 102])
         self.assertEqual(len(client.array_writes), 2)
 
+    async def test_reassert_during_reset_readback_is_not_cleared_twice(self):
+        collector = self._collector()
+        collector.trigger_reset_confirm_delay = 0
+        received = []
+        collector.register_data_callback(received.append)
+        group, points, trigger = self._parallel_fixture()
+        client = FakeParallelOpcUaClient(
+            trigger_reads=[
+                [False, False],
+                [True, False],
+                [True, False],   # already reasserted when reset confirmation reads
+                [True, False],   # next poll must consume it as a new edge
+                [False, False],
+            ],
+            data_reads=[
+                {"AlarmCode": [301, 0], "BatchCode": "B1"},
+                {"AlarmCode": [302, 0], "BatchCode": "B1"},
+            ],
+        )
+        task = asyncio.create_task(
+            collector._parallel_variable_triggered_collection(group, points, trigger, client)
+        )
+        await self._wait_for(lambda: len(received) == 2)
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+        self.assertEqual([row["data"]["AlarmCode"]["value"] for row in received], [301, 302])
+        self.assertEqual(len(client.array_writes), 2)
+        self.assertEqual(collector.metrics["parallel_trigger_reasserted_during_confirm"], 1)
+
     async def test_missing_data_is_not_acknowledged_and_retries_while_high(self):
         collector = self._collector()
         collector.trigger_reset_confirm_delay = 0
