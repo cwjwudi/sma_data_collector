@@ -58,31 +58,30 @@ import {
   normalizeTextAutoWrap,
   normalizeShowBorder,
   normalizeZIndex,
-  ensureTableColBgColors,
   hydrateTableColBgColors,
   normalizeNullDisplayMode,
   normalizeDecimalPlaces,
   type LayoutZoneElement,
 } from "./layout-zone-element";
 import {
+  clampTableColsDim,
+  clampTableRowsDim,
+  ensureTableColWidthsPxCore,
+  ensureTableGridCore,
+  tableColumnInnerWidthsPxCore,
+  tableVerticalChromePxFor,
+} from "./table-grid-core";
+import {
   clampTableRowHeightPx,
   computeContentAwareTableRowHeightsPx,
-  distributeTableColumnInnerWidthsPx,
   hydratePersistedTableColWidthsPx,
   REPORT_TEMPLATE_TABLE_NODE_PADDING_PX,
   sumTableRowHeightsPx,
   TABLE_ROW_HEIGHT_DEFAULT_PX,
   TABLE_ROW_HEIGHT_MIN_PX,
-  TEMPLATE_TABLE_MAX_COLS,
-  TEMPLATE_TABLE_MAX_ROWS,
-  uniformTableCellBoxPx,
 } from "./table-cell-metrics";
 import {
-  clampSqlFillParamColumnRefs,
   defaultTableSqlFillConfig,
-  ensureTableSqlResultColumnNames,
-  ensureTwoTableSqlParamSlots,
-  ensureVisualOutputColumnSlots,
   hydrateSqlParamBindings,
   hydrateTableSqlFill,
   isVerticalSqlFill,
@@ -251,18 +250,6 @@ function normalizeBindingKind(v: unknown): BindingKind {
 /** 正文/版式表格行数上限（含表头）；纵表字段槽可达 MAX_ROWS-1 */
 export { TEMPLATE_TABLE_MAX_ROWS, TEMPLATE_TABLE_MAX_COLS } from "./table-cell-metrics";
 
-function clampTableDim(v: unknown, fallback: number): number {
-  const n = Math.floor(Number(v));
-  if (!Number.isFinite(n)) return fallback;
-  return Math.min(TEMPLATE_TABLE_MAX_ROWS, Math.max(1, n));
-}
-
-function clampTableColDim(v: unknown, fallback: number): number {
-  const n = Math.floor(Number(v));
-  if (!Number.isFinite(n)) return fallback;
-  return Math.min(TEMPLATE_TABLE_MAX_COLS, Math.max(1, n));
-}
-
 export function defaultTableCell(): TemplateTableCell {
   return { text: "", bindingKind: "none", opcuaNodeId: "", sqlText: "", sqlParams: [], bgColor: "transparent" };
 }
@@ -289,76 +276,24 @@ export function hydrateTableCell(raw: Partial<TemplateTableCell> | undefined): T
   };
 }
 
-/** 按 tableRows/tableCols 重塑 tableCells，就地写回 el */
+/** 按 tableRows/tableCols 重塑 tableCells，就地写回 el（委托共享核心） */
 export function ensureTableGrid(el: TemplateElement): TemplateTableCell[][] {
-  if (el.type !== "table") return [];
-  const rows = clampTableDim(el.tableRows, 3);
-  const cols = clampTableColDim(el.tableCols, 4);
-  el.tableRows = rows;
-  el.tableCols = cols;
-  const prev = Array.isArray(el.tableCells) ? el.tableCells : [];
-  if (
-    prev.length === rows &&
-    prev.every((row) => Array.isArray(row) && row.length === cols)
-  ) {
-    ensureTableColWidthsPx(el);
-    ensureTableColBgColors(el);
-  } else {
-    const grid: TemplateTableCell[][] = [];
-    for (let r = 0; r < rows; r++) {
-      const pr = Array.isArray(prev[r]) ? prev[r] : [];
-      const row: TemplateTableCell[] = [];
-      for (let c = 0; c < cols; c++) {
-        row.push(hydrateTableCell(pr[c]));
-      }
-      grid.push(row);
-    }
-    el.tableCells = grid;
-    ensureTableColWidthsPx(el);
-    ensureTableColBgColors(el);
-  }
-  if (el.tableSqlFill) {
-    ensureTwoTableSqlParamSlots(el.tableSqlFill);
-    ensureTableSqlResultColumnNames(el.tableSqlFill, cols);
-    if (el.tableSqlFill.visualSource) ensureVisualOutputColumnSlots(el.tableSqlFill, cols);
-    clampSqlFillParamColumnRefs(el.tableSqlFill, cols);
-  }
-  return el.tableCells as TemplateTableCell[][];
+  return ensureTableGridCore<TemplateTableCell>(el, hydrateTableCell);
 }
 
 /** 维持 tableColWidthsPx 与 tableCols 同长度；新增列默认权重 0（表示均分） */
 export function ensureTableColWidthsPx(el: TemplateElement): void {
-  if (el.type !== "table") return;
-  const cols = el.tableCols ?? 4;
-  if (!Array.isArray(el.tableColWidthsPx)) el.tableColWidthsPx = [];
-  const arr = el.tableColWidthsPx;
-  while (arr.length < cols) arr.push(0);
-  arr.length = cols;
+  ensureTableColWidthsPxCore(el);
 }
 
 /** 正文表格当前内侧各列像素宽（与画布 colgroup 一致） */
 export function templateTableColumnInnerWidthsPx(el: TemplateElement): number[] {
-  if (el.type !== "table") return [];
-  ensureTableGrid(el);
-  ensureTableColWidthsPx(el);
-  const cols = el.tableCols ?? 4;
-  const rows = el.tableRows ?? 3;
-  const u = uniformTableCellBoxPx({
-    outerW: el.w,
-    outerH: el.h,
-    rowCount: rows,
-    colCount: cols,
-    nodePadding: REPORT_TEMPLATE_TABLE_NODE_PADDING_PX,
-  });
-  return distributeTableColumnInnerWidthsPx(u.innerW, cols, el.tableColWidthsPx);
+  return tableColumnInnerWidthsPxCore(el, REPORT_TEMPLATE_TABLE_NODE_PADDING_PX, ensureTableGrid);
 }
 
-/** 正文表格外框纵向 chrome（节点 padding + 表壳底 1px） */
+/** 正文表格外框纵向 chrome（节点 padding + 表壳底 1px，与 `.cv-table-shell` 一致） */
 export function templateTableVerticalChromePx(): number {
-  const p = REPORT_TEMPLATE_TABLE_NODE_PADDING_PX;
-  /** 与 TemplateBodyCanvas `.cv-table-shell` padding-bottom 一致 */
-  const shellBottomPadPx = 1;
-  return p.top + p.bottom + shellBottomPadPx;
+  return tableVerticalChromePxFor(REPORT_TEMPLATE_TABLE_NODE_PADDING_PX);
 }
 
 /**
@@ -759,8 +694,8 @@ export function hydrateTemplateElement(raw: Partial<TemplateElement>): TemplateE
         ],
       ];
     } else {
-      merged.tableRows = clampTableDim(raw.tableRows ?? merged.tableRows, 3);
-      merged.tableCols = clampTableColDim(raw.tableCols ?? merged.tableCols, 4);
+      merged.tableRows = clampTableRowsDim(raw.tableRows ?? merged.tableRows, 3);
+      merged.tableCols = clampTableColsDim(raw.tableCols ?? merged.tableCols, 4);
     }
     merged.tableRowHeightPx = clampTableRowHeightPx(
       raw.tableRowHeightPx ?? merged.tableRowHeightPx ?? d.tableRowHeightPx,
