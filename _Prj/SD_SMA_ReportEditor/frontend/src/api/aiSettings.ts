@@ -122,6 +122,18 @@ export async function fetchAiSettings(): Promise<AiSettingsPublic> {
   return apiFetch('/settings/ai')
 }
 
+export type AiModelsListResponse = {
+  ok: boolean
+  source: 'upstream' | 'fallback'
+  error: string | null
+  models: string[]
+  current: string
+}
+
+export async function fetchAiUpstreamModels(): Promise<AiModelsListResponse> {
+  return apiFetch('/settings/ai/models')
+}
+
 export async function patchAiSettings(patch: AiSettingsPatch): Promise<AiSettingsPublic> {
   return apiFetch('/settings/ai', { method: 'PATCH', body: patch })
 }

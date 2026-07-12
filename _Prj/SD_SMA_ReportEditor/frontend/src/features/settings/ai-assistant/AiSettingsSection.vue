@@ -29,8 +29,28 @@
     </div>
     <div class="settings-field-row" :class="{ 'settings-field-row--muted': !form.enabled }">
       <span class="settings-field-label">模型</span>
-      <input v-model="form.llm_model" class="settings-input settings-input--narrow" :disabled="busy || !form.enabled" />
+      <div class="ai-model-row">
+        <input
+          v-model="form.llm_model"
+          class="settings-input settings-input--narrow"
+          list="ai-llm-model-list"
+          :disabled="busy || !form.enabled"
+          placeholder="选择或输入模型名"
+        />
+        <datalist id="ai-llm-model-list">
+          <option v-for="m in modelOptions" :key="m" :value="m" />
+        </datalist>
+        <button
+          type="button"
+          class="settings-btn settings-btn--muted"
+          :disabled="busy || !form.enabled || modelsBusy"
+          @click="refreshModels"
+        >
+          {{ modelsBusy ? '拉取中…' : '刷新模型列表' }}
+        </button>
+      </div>
     </div>
+    <p v-if="modelsHint" class="settings-hint ai-models-hint">{{ modelsHint }}</p>
     <div class="settings-field-row" :class="{ 'settings-field-row--muted': !form.enabled }">
       <span class="settings-field-label">LLM API Key</span>
       <input
@@ -38,10 +58,11 @@
         class="settings-input"
         type="password"
         autocomplete="off"
-        :placeholder="settings.has_llm_api_key ? '已配置（留空则不修改）' : 'sk-…'"
+        :placeholder="settings.has_llm_api_key ? '已保存密钥（留空保存不会覆盖）' : 'sk-…'"
         :disabled="busy || !form.enabled"
       />
     </div>
+    <p v-if="settings.has_llm_api_key" class="settings-hint">已保存密钥 · 留空保存不会覆盖；仅在需要更换时填写新 Key。</p>
 
     <div class="settings-switch-row" :class="{ 'settings-field-row--muted': !form.enabled }">
       <button
@@ -133,6 +154,7 @@
 import { onMounted, reactive, ref } from 'vue'
 import {
   fetchAiSettings,
+  fetchAiUpstreamModels,
   patchAiSettings,
   regenerateAgentToken,
   type AiSettingsPublic,
@@ -167,6 +189,9 @@ const busy = ref(false)
 const msg = ref('')
 const msgTone = ref<'ok' | 'err' | ''>('')
 const newAgentToken = ref('')
+const modelOptions = ref<string[]>(['gpt-4o-mini', 'gpt-4o', 'gpt-4.1-mini', 'gpt-4.1'])
+const modelsBusy = ref(false)
+const modelsHint = ref('')
 
 function applyPublic(s: AiSettingsPublic) {
   settings.value = s
@@ -177,9 +202,30 @@ function applyPublic(s: AiSettingsPublic) {
   form.write_tools_enabled = s.write_tools_enabled
 }
 
+async function refreshModels() {
+  modelsBusy.value = true
+  modelsHint.value = ''
+  try {
+    const res = await fetchAiUpstreamModels()
+    modelOptions.value = res.models?.length ? res.models : modelOptions.value
+    if (res.ok) {
+      modelsHint.value = `已从上游拉取 ${res.models.length} 个模型（可下拉选择或手输）`
+    } else {
+      modelsHint.value = res.error || '已使用常用模型列表'
+    }
+  } catch (e: unknown) {
+    modelsHint.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    modelsBusy.value = false
+  }
+}
+
 async function load() {
   try {
     applyPublic(await fetchAiSettings())
+    if (settings.value.has_llm_api_key) {
+      void refreshModels()
+    }
   } catch (e: unknown) {
     msg.value = e instanceof Error ? e.message : String(e)
     msgTone.value = 'err'
@@ -210,6 +256,9 @@ async function onSave() {
     msg.value = '已保存'
     msgTone.value = 'ok'
     window.dispatchEvent(new CustomEvent('report-editor-ai-settings-changed'))
+    if (settings.value.has_llm_api_key) {
+      void refreshModels()
+    }
   } catch (e: unknown) {
     msg.value = e instanceof Error ? e.message : String(e)
     msgTone.value = 'err'
@@ -266,6 +315,20 @@ onMounted(() => {
 </script>
 
 <style scoped>
+.ai-model-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.ai-models-hint {
+  margin: -4px 0 8px;
+  padding-left: 0;
+}
+
 .ai-token-row {
   display: flex;
   flex-wrap: wrap;

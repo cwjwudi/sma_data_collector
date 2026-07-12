@@ -216,6 +216,92 @@ def get_ai_settings():
     return ai_config.public_ai_settings(port=port)
 
 
+@settings_router.get("/settings/ai/models")
+async def list_upstream_llm_models(request: Request):
+    """本机拉取上游 OpenAI 兼容 /models，供设置页下拉。"""
+    _require_loopback(request)
+    settings = ai_config.load_ai_settings()
+    api_key = ai_config.try_decrypt_llm_api_key(ai_config.DATA_DIR, settings)
+    base = str(settings.get("llm_base_url") or "").rstrip("/")
+    fallback = ai_config.list_fallback_llm_models()
+    current = str(settings.get("llm_model") or "").strip()
+    if not api_key:
+        models = list(fallback)
+        if current and current not in models:
+            models.insert(0, current)
+        return {
+            "ok": False,
+            "source": "fallback",
+            "error": "尚未配置 LLM API Key，已返回常用模型名",
+            "models": models,
+            "current": current,
+        }
+    url = f"{base}/models"
+    headers = {"Authorization": f"Bearer {api_key}"}
+    timeout = httpx.Timeout(30.0, connect=15.0)
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            resp = await client.get(url, headers=headers)
+    except httpx.RequestError as e:
+        models = list(fallback)
+        if current and current not in models:
+            models.insert(0, current)
+        return {
+            "ok": False,
+            "source": "fallback",
+            "error": f"无法连接上游模型列表 ({base})：{e}",
+            "models": models,
+            "current": current,
+        }
+    if resp.status_code >= 400:
+        models = list(fallback)
+        if current and current not in models:
+            models.insert(0, current)
+        return {
+            "ok": False,
+            "source": "fallback",
+            "error": f"上游 /models 错误 {resp.status_code}",
+            "models": models,
+            "current": current,
+        }
+    try:
+        payload = resp.json()
+    except json.JSONDecodeError:
+        models = list(fallback)
+        if current and current not in models:
+            models.insert(0, current)
+        return {
+            "ok": False,
+            "source": "fallback",
+            "error": "上游 /models 返回非 JSON",
+            "models": models,
+            "current": current,
+        }
+    ids: list[str] = []
+    data = payload.get("data") if isinstance(payload, dict) else None
+    if isinstance(data, list):
+        for item in data:
+            if isinstance(item, dict):
+                mid = str(item.get("id") or "").strip()
+                if mid and mid not in ids:
+                    ids.append(mid)
+    ids.sort(key=lambda x: x.lower())
+    if current and current not in ids:
+        ids.insert(0, current)
+    if not ids:
+        ids = list(fallback)
+        if current and current not in ids:
+            ids.insert(0, current)
+        return {
+            "ok": False,
+            "source": "fallback",
+            "error": "上游未返回模型 id",
+            "models": ids,
+            "current": current,
+        }
+    return {"ok": True, "source": "upstream", "error": None, "models": ids, "current": current}
+
+
 @settings_router.patch("/settings/ai")
 def patch_ai_settings(body: AiSettingsPatch):
     patch = body.model_dump(exclude_unset=True)

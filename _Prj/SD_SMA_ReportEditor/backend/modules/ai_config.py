@@ -70,7 +70,9 @@ def save_ai_settings(patch: dict[str, Any]) -> dict[str, Any]:
         if plain is None:
             pass
         elif plain == "":
-            cur["llm_api_key_enc"] = None
+            # 已有密钥时忽略空串，避免升级/误保存清空
+            if not cur.get("llm_api_key_enc"):
+                cur["llm_api_key_enc"] = None
         else:
             cur["llm_api_key_enc"] = secrets_mod.encrypt_secret(DATA_DIR, str(plain))
     cfg["ai_settings"] = cur
@@ -78,9 +80,106 @@ def save_ai_settings(patch: dict[str, Any]) -> dict[str, Any]:
     return cur
 
 
+def try_decrypt_llm_api_key(data_dir: Path, settings: dict[str, Any] | None) -> str:
+    """解密失败时返回空串（迁移/探测用，不抛错）。"""
+    enc = (settings or {}).get("llm_api_key_enc")
+    if not enc:
+        return ""
+    try:
+        return secrets_mod.decrypt_secret(data_dir, enc)
+    except Exception:
+        return ""
+
+
 def decrypt_llm_api_key(settings: dict[str, Any]) -> str:
     return secrets_mod.decrypt_secret(DATA_DIR, settings.get("llm_api_key_enc"))
 
+
+LEGACY_DATA_DIR_NAMES = ("sd-sma-report-editor",)
+
+
+def resolve_legacy_backend_data_dirs(current_data_dir: Path | None = None) -> list[Path]:
+    """推断旧版（无 -ai 后缀）backend-data 路径。"""
+    cur = (current_data_dir or DATA_DIR).resolve()
+    out: list[Path] = []
+    # …/sd-sma-report-editor-ai/backend-data → …/sd-sma-report-editor/backend-data
+    parent = cur.parent  # userData folder
+    appdata = parent.parent
+    for name in LEGACY_DATA_DIR_NAMES:
+        cand = appdata / name / "backend-data"
+        if cand.resolve() != cur and cand.is_dir():
+            out.append(cand)
+        # 开发态：backend/data 旁无 APPDATA 结构时，也试同级 sibling
+        cand2 = parent / name / "backend-data"
+        if cand2.resolve() != cur and cand2.is_dir() and cand2 not in out:
+            out.append(cand2)
+    return out
+
+
+def maybe_migrate_ai_settings_from_legacy(*, data_dir: Path | None = None) -> dict[str, Any]:
+    """
+    若当前目录无可用 LLM Key，尝试从旧版 backend-data 迁入一次。
+    返回 { migrated: bool, reason: str }。
+    """
+    target = (data_dir or DATA_DIR).resolve()
+    cfg_path = target / "config.json"
+    cfg = config_store.load_config(cfg_path, target)
+    if cfg.get("ai_settings_migrated_from_legacy"):
+        return {"migrated": False, "reason": "already_done"}
+
+    cur_ai = normalize_ai_settings(cfg.get("ai_settings"))
+    if try_decrypt_llm_api_key(target, cur_ai):
+        cfg["ai_settings_migrated_from_legacy"] = True
+        config_store.save_config(cfg_path, cfg)
+        return {"migrated": False, "reason": "current_has_key"}
+
+    for legacy_dir in resolve_legacy_backend_data_dirs(target):
+        legacy_cfg_path = legacy_dir / "config.json"
+        if not legacy_cfg_path.is_file():
+            continue
+        try:
+            legacy_cfg = config_store.load_config(legacy_cfg_path, legacy_dir)
+        except Exception:
+            continue
+        legacy_ai = normalize_ai_settings(legacy_cfg.get("ai_settings"))
+        plain = try_decrypt_llm_api_key(legacy_dir, legacy_ai)
+        if not plain:
+            continue
+
+        # 用当前目录 Fernet 重新加密
+        cur_ai["llm_api_key_enc"] = secrets_mod.encrypt_secret(target, plain)
+        # 仅当当前仍为默认/空时带上 URL/模型/启用
+        if cur_ai.get("llm_base_url") in ("", DEFAULT_AI_SETTINGS["llm_base_url"]):
+            if legacy_ai.get("llm_base_url"):
+                cur_ai["llm_base_url"] = legacy_ai["llm_base_url"]
+        if cur_ai.get("llm_model") in ("", DEFAULT_AI_SETTINGS["llm_model"]):
+            if legacy_ai.get("llm_model"):
+                cur_ai["llm_model"] = legacy_ai["llm_model"]
+        if not cur_ai.get("enabled") and legacy_ai.get("enabled"):
+            cur_ai["enabled"] = True
+
+        cfg["ai_settings"] = cur_ai
+        cfg["ai_settings_migrated_from_legacy"] = True
+        config_store.save_config(cfg_path, cfg)
+        return {"migrated": True, "reason": f"from:{legacy_dir}"}
+
+    cfg["ai_settings_migrated_from_legacy"] = True
+    config_store.save_config(cfg_path, cfg)
+    return {"migrated": False, "reason": "no_legacy_key"}
+
+
+FALLBACK_LLM_MODELS = (
+    "gpt-4o-mini",
+    "gpt-4o",
+    "gpt-4.1-mini",
+    "gpt-4.1",
+    "o4-mini",
+    "o3-mini",
+)
+
+
+def list_fallback_llm_models() -> list[str]:
+    return list(FALLBACK_LLM_MODELS)
 
 def decrypt_agent_token(settings: dict[str, Any]) -> str:
     return secrets_mod.decrypt_secret(DATA_DIR, settings.get("agent_token_enc"))

@@ -53,6 +53,16 @@ async def lifespan(app: FastAPI):
     except Exception:
         logger.warning("预热模版摘要失败", exc_info=True)
 
+    # 从旧版（无 -ai）数据目录迁入 LLM API Key，避免升级后需重填
+    try:
+        from modules import ai_config
+
+        mig = ai_config.maybe_migrate_ai_settings_from_legacy()
+        if mig.get("migrated"):
+            logger.info("已从旧版数据目录迁入 AI 设置：%s", mig.get("reason"))
+    except Exception:
+        logger.warning("AI 设置迁入失败", exc_info=True)
+
     logger.info("SD_SMA_ReportEditor 后端启动完成")
     try:
         yield

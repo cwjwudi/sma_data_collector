@@ -1,15 +1,15 @@
 {
-  "version": "0.3.48",
-  "releasedAt": "2026-07-12T07:23:52.786Z",
-  "notes": "Report Editor 0.3.48\n\n- 静态表无实值时仅显示 ⟨UA⟩ 短标签，避免 NodeId 换行撑高\n- 仪表盘警告与提示均可忽略（含未设默认库 1046 预警）；错误不可忽略",
+  "version": "0.3.49",
+  "releasedAt": "2026-07-12T07:37:47.624Z",
+  "notes": "Report Editor 0.3.49\n\n- 升级后自动从旧数据目录迁入 LLM API Key，保存时空串不再误清\n- 设置页可拉取上游模型列表下拉选择（仍可手输）",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.48-x64.exe",
-      "sha256": "677c166507c09f16d05467fb658b49a8841222c63a85090249d4d9a70563044d",
-      "size": 145408032
+      "url": "Report Editor AI-Setup-0.3.49-x64.exe",
+      "sha256": "16752847c295c4433b8db2ef63bf4487d14a6919f2f3f8cdf7398eda3e4f961b",
+      "size": 147951785
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.48-arm64.dmg",
+      "url": "Report Editor AI-0.3.49-arm64.dmg",
       "sha256": "",
       "size": 0
     }
