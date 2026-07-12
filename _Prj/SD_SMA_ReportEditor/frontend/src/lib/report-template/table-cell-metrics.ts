@@ -354,16 +354,19 @@ export function applyTableColumnResizeDeltaPx(
 
   const widths = distributeTableColumnInnerWidthsPx(iw, cols, rawWidthsPx);
   const lo = TABLE_COL_WIDTH_MIN_PX;
-  const maxRight = widths[i + 1] - lo;
-  const maxLeft = widths[i] - lo;
-  const diMin = -maxLeft;
-  const diMax = maxRight;
-  const diClamped = Math.min(diMax, Math.max(diMin, di));
+  // 可收缩量限非负：某列已 ≤ 下限时该侧不能再压。
+  // 旧写法 widths[x]-lo 允许为负 → diMin>diMax 使钳制方向反转；
+  // 表格过窄致各列均 ≤ 下限时两侧可收缩量均为 0 → diClamped=0 → 返回 null（拖拽无从满足）。
+  const maxLeft = Math.max(0, widths[i] - lo);
+  const maxRight = Math.max(0, widths[i + 1] - lo);
+  const diClamped = Math.min(maxRight, Math.max(-maxLeft, di));
   if (diClamped === 0) return null;
 
   const next = widths.slice();
   next[i] = widths[i] + diClamped;
   next[i + 1] = widths[i + 1] - diClamped;
 
-  return next.map((w) => Math.max(lo, Math.round(Number(w))));
+  // 只四舍五入，不对全列强制下限：被拖动的两列已由上面的钳制保证 ≥ 下限，
+  // 未触碰的列保持原值（避免旧写法把其它 <下限 的列静默顶到 lo、破坏总宽守恒）。
+  return next.map((w) => Math.round(Number(w)));
 }
