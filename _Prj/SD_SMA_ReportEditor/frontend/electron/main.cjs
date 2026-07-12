@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, shell, nativeImage, powerSaveBlocker, session } = require('electron')
+const { app, BrowserWindow, ipcMain, dialog, shell, nativeImage, powerSaveBlocker, session, Tray, Menu } = require('electron')
 const { execFileSync, spawn } = require('child_process')
 const path = require('path')
 const http = require('http')
@@ -10,11 +10,21 @@ const { createDemoPackManager } = require('./demo-pack.cjs')
 const { createLayoutSync } = require('./layout-sync.cjs')
 const { humanizePdfExportError } = require('./pdfExportErrors.cjs')
 const { outputPathForReportPart } = require('./pdf-export-paths.cjs')
+const {
+  readLaunchSettings,
+  writeLaunchSettings,
+  applyLoginItem,
+  shouldSilentStartThisSession,
+} = require('./launch.cjs')
 
 let mainWindow
 let pythonProcess
 /** 若为 true：由本 Electron 拉起的后端，exit 时需 kill（避免误杀外部 uvicorn）。 */
 let backendStartedByElectron = false
+/** 本次为静默启动：隐藏主窗口、托盘驻留；关窗不退出。 */
+let silentStartSession = false
+let isQuitting = false
+let appTray = null
 
 /** PDF 导出并发池：避免大量隐藏渲染窗口同时占用 CPU / 内存。 */
 const PDF_EXPORT_DEFAULT_MAX_PARALLEL = 4
@@ -398,14 +408,68 @@ function resolveAppIcon() {
   return null
 }
 
+function showMainWindowFromTray() {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    createWindow()
+    return
+  }
+  if (mainWindow.isMinimized()) mainWindow.restore()
+  mainWindow.show()
+  mainWindow.focus()
+}
+
+function destroyAppTray() {
+  if (!appTray) return
+  try {
+    appTray.destroy()
+  } catch {
+    /* ignore */
+  }
+  appTray = null
+}
+
+function ensureAppTray() {
+  if (appTray) return
+  const icon = resolveAppIcon()
+  if (!icon || icon.isEmpty()) {
+    log('Tray icon unavailable; silent start will still hide the window')
+  }
+  try {
+    appTray = new Tray(icon && !icon.isEmpty() ? icon : nativeImage.createEmpty())
+  } catch (e) {
+    log(`Tray create failed: ${e.message}`)
+    return
+  }
+  appTray.setToolTip('报表编辑器 AI 版')
+  const menu = Menu.buildFromTemplate([
+    {
+      label: '打开主界面',
+      click: () => showMainWindowFromTray(),
+    },
+    { type: 'separator' },
+    {
+      label: '退出',
+      click: () => {
+        isQuitting = true
+        destroyAppTray()
+        app.quit()
+      },
+    },
+  ])
+  appTray.setContextMenu(menu)
+  appTray.on('double-click', () => showMainWindowFromTray())
+}
+
 function createWindow() {
   const appIcon = resolveAppIcon()
+  const hideOnCreate = silentStartSession
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
     minWidth: 1000,
     minHeight: 700,
     title: '报表编辑器 AI 版',
+    show: !hideOnCreate,
     ...(appIcon ? { icon: appIcon } : {}),
     webPreferences: {
       nodeIntegration: false,
@@ -427,6 +491,14 @@ function createWindow() {
   mainWindow.webContents.once('did-finish-load', () => {
     ensurePdfExportWindowPrewarmed(mainWindow ? mainWindow.webContents : null)
   })
+
+  if (silentStartSession) {
+    mainWindow.on('close', (e) => {
+      if (isQuitting) return
+      e.preventDefault()
+      mainWindow.hide()
+    })
+  }
 
   mainWindow.on('closed', () => {
     mainWindow = null
@@ -1213,8 +1285,38 @@ ipcMain.handle('layout-sync-upload', (_event, payload) => getLayoutSync().upload
 ipcMain.handle('layout-sync-upload-config', (_event, payload) => getLayoutSync().uploadConfigBundle(payload || {}))
 ipcMain.handle('layout-sync-download-config', () => getLayoutSync().downloadConfigBundle())
 
+ipcMain.handle('launch-settings-get', () => {
+  const settings = readLaunchSettings(app)
+  return {
+    ...settings,
+    packaged: app.isPackaged,
+    silentStartSession: Boolean(silentStartSession),
+  }
+})
+
+ipcMain.handle('launch-settings-set', (_event, patch) => {
+  const next = writeLaunchSettings(app, patch || {})
+  applyLoginItem(app, next)
+  return {
+    ...next,
+    packaged: app.isPackaged,
+    silentStartSession: Boolean(silentStartSession),
+  }
+})
+
 app.whenReady().then(async () => {
   log('Starting application...')
+
+  silentStartSession = shouldSilentStartThisSession(app, process.argv)
+  try {
+    applyLoginItem(app, readLaunchSettings(app))
+  } catch (e) {
+    log(`applyLoginItem failed (ignore): ${e.message}`)
+  }
+  if (silentStartSession) {
+    log('Silent start session: main window hidden, tray enabled')
+    ensureAppTray()
+  }
 
   if (process.platform === 'win32') {
     app.setAppUserModelId('com.brteam.sd_sma.report_editor_ai')
@@ -1298,11 +1400,17 @@ app.whenReady().then(async () => {
 })
 
 app.on('window-all-closed', () => {
+  if (silentStartSession && !isQuitting) {
+    // 静默会话：主窗口关闭后仍由托盘保活，不杀后端
+    return
+  }
   killPython()
   // macOS 默认可驻留托盘；为使「关掉开发窗口」与 Windows 一致、并释放 8000，这里直接 quit。
   app.quit()
 })
 
 app.on('before-quit', () => {
+  isQuitting = true
+  destroyAppTray()
   killPython()
 })

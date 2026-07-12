@@ -113,4 +113,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   /** 整机配置云备份（加密 .rebak 的 base64） */
   layoutSyncUploadConfig: (payload) => ipcRenderer.invoke('layout-sync-upload-config', payload || {}),
   layoutSyncDownloadConfig: () => ipcRenderer.invoke('layout-sync-download-config'),
+
+  /** 开机自启 / 静默启动偏好（仅桌面版） */
+  getLaunchSettings: () => ipcRenderer.invoke('launch-settings-get'),
+  setLaunchSettings: (patch) => ipcRenderer.invoke('launch-settings-set', patch || {}),
 })

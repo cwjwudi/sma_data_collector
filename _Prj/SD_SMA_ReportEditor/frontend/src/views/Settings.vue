@@ -14,6 +14,7 @@
     <AiSettingsSection />
     <ServiceEndpointsSection />
     <ConnectionProbeSection />
+    <LaunchSettingsSection />
     <DemoTrainingSection />
     <section class="settings-section">
       <h3 class="settings-section__title">关于电子签名</h3>
@@ -43,6 +44,7 @@ import DataPathAndCacheSection from '@/features/settings/data-path/DataPathAndCa
 import ConfigImportExport from '@/features/settings/config-import-export/ConfigImportExport.vue'
 import AiSettingsSection from '@/features/settings/ai-assistant/AiSettingsSection.vue'
 import ConnectionProbeSection from '@/features/settings/connection-probe/ConnectionProbeSection.vue'
+import LaunchSettingsSection from '@/features/settings/LaunchSettingsSection.vue'
 import DemoTrainingSection from '@/features/settings/demo-training/DemoTrainingSection.vue'
 import MigrateLocalDataSection from '@/features/settings/migrate-local/MigrateLocalDataSection.vue'
 

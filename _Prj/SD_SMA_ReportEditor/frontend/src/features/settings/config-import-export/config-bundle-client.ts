@@ -45,6 +45,8 @@ export type ElectronBackupPrefs = {
   updateBaseUrl?: string;
   updateSkipTlsVerify?: boolean;
   macOpenAfterUpgrade?: boolean;
+  openAtLogin?: boolean;
+  silentStart?: boolean;
 };
 
 export type ConfigBundleClientPrefs = {
@@ -157,6 +159,17 @@ async function collectElectronPrefs(): Promise<ElectronBackupPrefs | undefined> 
   } catch {
     /* ignore */
   }
+  try {
+    if (typeof api.getLaunchSettings === "function") {
+      const c = await api.getLaunchSettings();
+      if (c && typeof c === "object") {
+        if (typeof c.openAtLogin === "boolean") out.openAtLogin = c.openAtLogin;
+        if (typeof c.silentStart === "boolean") out.silentStart = c.silentStart;
+      }
+    }
+  } catch {
+    /* ignore */
+  }
   return Object.keys(out).length ? out : undefined;
 }
 
@@ -191,6 +204,20 @@ async function applyElectronPrefs(prefs: ElectronBackupPrefs | undefined): Promi
       if (prefs.updateSkipTlsVerify !== undefined) patch.skipTlsVerify = prefs.updateSkipTlsVerify;
       if (prefs.macOpenAfterUpgrade !== undefined) patch.macOpenAfterUpgrade = prefs.macOpenAfterUpgrade;
       await api.setAppUpdateConfig(patch);
+      applied = true;
+    }
+  } catch {
+    /* ignore */
+  }
+  try {
+    if (
+      typeof api.setLaunchSettings === "function" &&
+      (prefs.openAtLogin !== undefined || prefs.silentStart !== undefined)
+    ) {
+      const patch: { openAtLogin?: boolean; silentStart?: boolean } = {};
+      if (prefs.openAtLogin !== undefined) patch.openAtLogin = prefs.openAtLogin;
+      if (prefs.silentStart !== undefined) patch.silentStart = prefs.silentStart;
+      await api.setLaunchSettings(patch);
       applied = true;
     }
   } catch {

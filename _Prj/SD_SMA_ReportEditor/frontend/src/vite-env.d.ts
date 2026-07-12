@@ -306,6 +306,21 @@ interface Window {
       bundleBase64?: string;
       updatedAt?: string | null;
     }>;
+    getLaunchSettings?: () => Promise<{
+      openAtLogin: boolean;
+      silentStart: boolean;
+      packaged?: boolean;
+      silentStartSession?: boolean;
+    }>;
+    setLaunchSettings?: (patch: {
+      openAtLogin?: boolean;
+      silentStart?: boolean;
+    }) => Promise<{
+      openAtLogin: boolean;
+      silentStart: boolean;
+      packaged?: boolean;
+      silentStartSession?: boolean;
+    }>;
   };
 }
 

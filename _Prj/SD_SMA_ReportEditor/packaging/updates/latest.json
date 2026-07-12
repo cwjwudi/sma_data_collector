@@ -1,15 +1,15 @@
 {
-  "version": "0.3.50",
-  "releasedAt": "2026-07-12T08:10:39.243Z",
-  "notes": "Report Editor 0.3.50\n\n- OPC 节点从列表选择时，若已配置 NodeId 则自动展开定位到对应位置\n- 新增 resolve_path API；覆盖模版/版式/页眉页脚/生成报表全部选择入口",
+  "version": "0.3.51",
+  "releasedAt": "2026-07-12T08:24:47.722Z",
+  "notes": "Report Editor 0.3.51\n\n- 设置：开机自启动\n- 可选静默无页面启动（自启时托盘驻留，可打开主界面/退出）",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.50-x64.exe",
-      "sha256": "f61a72ae54beb808e1f98ab8a9684196a7bf9f857f8715a97fdd9d5899d506c4",
-      "size": 147959293
+      "url": "Report Editor AI-Setup-0.3.51-x64.exe",
+      "sha256": "56a83ab20b1eaac022edd86cfc44bffbc4bf54c629c927fb928f8915fd15e3e6",
+      "size": 147960971
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.50-arm64.dmg",
+      "url": "Report Editor AI-0.3.51-arm64.dmg",
       "sha256": "",
       "size": 0
     }
