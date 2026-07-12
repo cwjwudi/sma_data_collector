@@ -56,6 +56,7 @@ class DataStorageProcessor:
         self.insert_feedback_callback = insert_feedback_callback
         self.data_queue = deque()
         self.retry_queue = deque()
+        self.dead_letter_queue = deque()
         self.processing_task = None
         self.running = False
         self.logger = logging.getLogger(__name__)
@@ -427,6 +428,8 @@ class DataStorageProcessor:
             outcomes = await self._process_group_data(group_name, group_data_list)
             if outcomes.get(self.STATUS_DB_ERROR, 0):
                 self._requeue_failed_batch(group_data_list)
+            if outcomes.get(self.STATUS_OTHER_ERROR, 0):
+                self._retain_dead_letter(group_data_list)
 
         if self._batch_close_flush_requested:
             self.current_batch_context = None
@@ -471,6 +474,8 @@ class DataStorageProcessor:
                     totals[status] += count
                 if requeue_db_failures and outcomes.get(self.STATUS_DB_ERROR, 0):
                     self._requeue_failed_batch(group_data_list)
+                if outcomes.get(self.STATUS_OTHER_ERROR, 0):
+                    self._retain_dead_letter(group_data_list)
 
             if self._batch_close_flush_requested:
                 self.current_batch_context = None
@@ -507,6 +512,18 @@ class DataStorageProcessor:
             "数据库批次写入失败，已保留到内存重试队列: rows=%s, retry_queue=%s",
             len(batch_data),
             len(self.retry_queue),
+        )
+
+    def _retain_dead_letter(self, batch_data: List[Dict[str, Any]]) -> None:
+        if not batch_data:
+            return
+        self.dead_letter_queue.extend(batch_data)
+        self.metrics["db_rows_retained_dead_letter"] += len(batch_data)
+        self.logger.error(
+            "存在不可自动重试的数据错误，记录已保留在内存 dead-letter 队列: "
+            "rows=%s, dead_letter_queue=%s",
+            len(batch_data),
+            len(self.dead_letter_queue),
         )
     
     async def _process_group_data(
@@ -1389,6 +1406,7 @@ class DataStorageProcessor:
             {
                 "queue_size": len(self.data_queue),
                 "retry_queue_size": len(self.retry_queue),
+                "dead_letter_queue_size": len(self.dead_letter_queue),
                 "inflight_size": 0,
             }
         )

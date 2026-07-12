@@ -118,7 +118,12 @@ class DataCollectionSystem:
         storage_metrics = (
             self.storage_processor.get_runtime_metrics()
             if self.storage_processor
-            else {"queue_size": 0, "retry_queue_size": 0, "inflight_size": 0}
+            else {
+                "queue_size": 0,
+                "retry_queue_size": 0,
+                "dead_letter_queue_size": 0,
+                "inflight_size": 0,
+            }
         )
         return {
             "collector_running": bool(self.running),

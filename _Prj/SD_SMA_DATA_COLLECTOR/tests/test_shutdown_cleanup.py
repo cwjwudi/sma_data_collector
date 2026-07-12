@@ -158,6 +158,22 @@ class TestShutdownCleanup(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(processor.metrics["shutdown_rows_remaining"], 1)
         self.assertEqual(list(processor.retry_queue), [row])
 
+    async def test_non_retryable_conversion_error_is_retained_as_dead_letter(self):
+        db = Mock()
+        db.get_current_table_name.return_value = "Data_Alarm"
+        processor = DataStorageProcessor(db, batch_size=1)
+        processor.group_data_points["Data_Alarm"] = ["AlarmCode"]
+        processor.group_partition_interval_years["Data_Alarm"] = 0
+        processor.ensured_tables.add("Data_Alarm")
+        row = {
+            "group_name": "Data_Alarm",
+            "trigger_type": "variable",
+            "data": {},
+        }
+        await processor._process_batch([row], requeue_db_failures=True)
+        self.assertEqual(list(processor.dead_letter_queue), [row])
+        self.assertEqual(processor.get_runtime_metrics()["dead_letter_queue_size"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()
