@@ -24,7 +24,6 @@ _Doc/.obsidian/
 # 通用
 *~
 ~*
-*.zip
 *.mp4
 
 # Visual Studio Code
@@ -43,6 +42,13 @@ venv/
 node_modules/
 dist/
 dist-electron/
+
+# 现场配置含真实数据库凭据，不入库（模板见 sample_config.json；密码用环境变量 SD_SMA_DB_PASSWORD 注入）
+_Prj/SD_SMA_DATA_COLLECTOR/config/_backup/
+_Prj/SD_SMA_DATA_COLLECTOR/config/Alarm_Audit.json
+_Prj/SD_SMA_DATA_COLLECTOR/config/Alarm_trend.json
+_Prj/SD_SMA_DATA_COLLECTOR/config/SMA_Data.json
+_Prj/SD_SMA_DATA_COLLECTOR/config/trend_config.json
 
 # Runtime data
 _Prj/SD_SMA_ReportEditor/backend/data/
@@ -71,6 +77,8 @@ _Prj/SD_SMA_DATA_COLLECTOR/config/.collector_runtime_settings.json
 *.pkg
 *.deb
 *.rpm
+# B&R Automation Studio 的 Package.pkg 是工程源文件，不受上面 *.pkg 规则影响
+!_Prj/**/*.pkg
 
 # 误放的 electron-builder 构建产物（正确路径为 _Prj/SD_SMA_ReportEditor/packaging/）
 /_Prj/packaging/

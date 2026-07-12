@@ -60,7 +60,8 @@ def client(test_profile_dir, monkeypatch):
     main_module.db = main_module.QueryDatabase(main_module.settings.get("database", {}))
     main_module.cfg = main_module.ConfigManager(main_module.config_store)
     opcua_client.reset_pool_for_tests()
-    with TestClient(app) as test_client:
+    # 显式模拟本机来源：默认 client host 为 "testclient"，会被远程 token 鉴权拦截。
+    with TestClient(app, client=("127.0.0.1", 50000)) as test_client:
         yield test_client
     opcua_client.reset_pool_for_tests()
 

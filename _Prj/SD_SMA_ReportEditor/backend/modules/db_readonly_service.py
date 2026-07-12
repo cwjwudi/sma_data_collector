@@ -47,20 +47,39 @@ def json_safe_sql_value(v: Any) -> Any:
 def json_safe_sql_rows(rows: list[Any]) -> list[Any]:
     return [json_safe_sql_value(r) for r in rows]
 
-FORBIDDEN_SQL_TOKENS = (
-    "INSERT ",
-    "UPDATE ",
-    "DELETE ",
-    "DROP ",
-    "ALTER ",
-    "CREATE ",
-    "TRUNCATE ",
-    "GRANT ",
-    "REVOKE ",
-    "EXEC ",
-    "CALL ",
-    "REPLACE ",
+# 写操作 DML/DDL 关键字：按 token 边界（\b）匹配，避免 updated_at / is_deleted 等列名误判；
+# 负向前瞻 (?!\s*\() 放行同名函数调用（如 REPLACE(...) / TRUNCATE(price,2)），
+# 这些语句形态的关键字后面接的是标识符/INTO 而非左括号。
+FORBIDDEN_SQL_KEYWORDS = (
+    "INSERT",
+    "UPDATE",
+    "DELETE",
+    "DROP",
+    "ALTER",
+    "CREATE",
+    "TRUNCATE",
+    "GRANT",
+    "REVOKE",
+    "EXEC",
+    "CALL",
+    "REPLACE",
 )
+_FORBIDDEN_SQL_RE = re.compile(
+    r"\b(" + "|".join(FORBIDDEN_SQL_KEYWORDS) + r")\b(?!\s*\()",
+    re.IGNORECASE,
+)
+_BLOCK_COMMENT_RE = re.compile(r"/\*.*?\*/", re.DOTALL)
+_LINE_COMMENT_RE = re.compile(r"--[^\n]*")
+
+
+def _normalize_sql_for_scan(s: str) -> str:
+    """去除 /* */ 与 -- 注释、把连续空白（含制表符/换行）折叠为单空格。
+
+    仅用于只读性判定，不改变实际执行的 SQL；防止「关键字后跟制表符」「注释拆词」绕过。
+    """
+    no_block = _BLOCK_COMMENT_RE.sub(" ", s)
+    no_line = _LINE_COMMENT_RE.sub(" ", no_block)
+    return re.sub(r"\s+", " ", no_line).strip()
 
 
 def validate_readonly_sql(sql: str) -> str:
@@ -71,10 +90,11 @@ def validate_readonly_sql(sql: str) -> str:
     if len(parts) != 1:
         raise ValueError("仅允许单条语句")
     s = parts[0]
-    upper = s.upper()
-    for tok in FORBIDDEN_SQL_TOKENS:
-        if tok in upper:
-            raise ValueError(f"禁止关键字: {tok.strip()}")
+    normalized = _normalize_sql_for_scan(s)
+    upper = normalized.upper()
+    m = _FORBIDDEN_SQL_RE.search(normalized)
+    if m:
+        raise ValueError(f"禁止关键字: {m.group(1).upper()}")
     first = upper.split()[0] if upper else ""
     allowed_first = ("SELECT", "SHOW", "DESCRIBE", "DESC", "EXPLAIN", "WITH")
     if first not in allowed_first:
@@ -93,8 +113,11 @@ def validate_mongo_aggregate(pipeline: list[Any]) -> None:
         raise ValueError("禁止 $out / $merge")
 
 
-def run_mysql_readonly(host: str, port: int, user: str, password: str, database: str, sql: str, limit: int) -> dict[str, Any]:
-    """只读执行 SQL（MySQL 与 MariaDB 协议兼容，均使用 PyMySQL）。"""
+def run_mysql_readonly(host: str, port: int, user: str, password: str, database: str, sql: str, limit: int, params: list | tuple | None = None) -> dict[str, Any]:
+    """只读执行 SQL（MySQL 与 MariaDB 协议兼容，均使用 PyMySQL）。
+
+    ``params`` 非空时走驱动参数绑定（占位符 ``%s``），避免手工转义差异导致注入。
+    """
     import pymysql
 
     sql_v = validate_readonly_sql(sql)
@@ -111,7 +134,7 @@ def run_mysql_readonly(host: str, port: int, user: str, password: str, database:
     )
     try:
         with conn.cursor() as cur:
-            cur.execute(sql_v)
+            cur.execute(sql_v, params or None)
             rows = cur.fetchmany(limit)
             cols = [d[0] for d in cur.description] if cur.description else []
         return {"columns": cols, "rows": json_safe_sql_rows(rows)}
@@ -119,7 +142,7 @@ def run_mysql_readonly(host: str, port: int, user: str, password: str, database:
         conn.close()
 
 
-def run_postgres_readonly(host: str, port: int, user: str, password: str, database: str, sql: str, limit: int) -> dict[str, Any]:
+def run_postgres_readonly(host: str, port: int, user: str, password: str, database: str, sql: str, limit: int, params: list | tuple | None = None) -> dict[str, Any]:
     import psycopg2
     import psycopg2.extras
 
@@ -134,7 +157,7 @@ def run_postgres_readonly(host: str, port: int, user: str, password: str, databa
     )
     try:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute(sql_v)
+            cur.execute(sql_v, params or None)
             rows = cur.fetchmany(limit)
             cols = [c.name for c in cur.description] if cur.description else []
             rows_list = [dict(r) for r in rows]
@@ -143,13 +166,13 @@ def run_postgres_readonly(host: str, port: int, user: str, password: str, databa
         conn.close()
 
 
-def run_sqlite_readonly(path: str, sql: str, limit: int) -> dict[str, Any]:
+def run_sqlite_readonly(path: str, sql: str, limit: int, params: list | tuple | None = None) -> dict[str, Any]:
     sql_v = validate_readonly_sql(sql)
     uri = f"file:{path}?mode=ro"
     conn = sqlite3.connect(uri, uri=True, timeout=10)
     conn.row_factory = sqlite3.Row
     try:
-        cur = conn.execute(sql_v)
+        cur = conn.execute(sql_v, params or ())
         rows = cur.fetchmany(limit)
         cols = [d[0] for d in cur.description] if cur.description else []
         return {"columns": cols, "rows": json_safe_sql_rows([dict(zip(cols, row)) for row in rows])}
@@ -157,7 +180,7 @@ def run_sqlite_readonly(path: str, sql: str, limit: int) -> dict[str, Any]:
         conn.close()
 
 
-def mysql_scalar(host: str, port: int, user: str, password: str, database: str, sql: str) -> Any:
+def mysql_scalar(host: str, port: int, user: str, password: str, database: str, sql: str, params: list | tuple | None = None) -> Any:
     import pymysql
 
     sql_v = validate_readonly_sql(sql)
@@ -174,7 +197,7 @@ def mysql_scalar(host: str, port: int, user: str, password: str, database: str, 
     )
     try:
         with conn.cursor() as cur:
-            cur.execute(sql_v)
+            cur.execute(sql_v, params or None)
             row = cur.fetchone()
             if not row:
                 return 0
@@ -183,7 +206,7 @@ def mysql_scalar(host: str, port: int, user: str, password: str, database: str, 
         conn.close()
 
 
-def postgres_scalar(host: str, port: int, user: str, password: str, database: str, sql: str) -> Any:
+def postgres_scalar(host: str, port: int, user: str, password: str, database: str, sql: str, params: list | tuple | None = None) -> Any:
     import psycopg2
     import psycopg2.extras
 
@@ -198,7 +221,7 @@ def postgres_scalar(host: str, port: int, user: str, password: str, database: st
     )
     try:
         with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-            cur.execute(sql_v)
+            cur.execute(sql_v, params or None)
             row = cur.fetchone()
             if not row:
                 return 0
@@ -207,13 +230,13 @@ def postgres_scalar(host: str, port: int, user: str, password: str, database: st
         conn.close()
 
 
-def sqlite_scalar(path: str, sql: str) -> Any:
+def sqlite_scalar(path: str, sql: str, params: list | tuple | None = None) -> Any:
     sql_v = validate_readonly_sql(sql)
     uri = f"file:{path}?mode=ro"
     conn = sqlite3.connect(uri, uri=True, timeout=10)
     conn.row_factory = sqlite3.Row
     try:
-        cur = conn.execute(sql_v)
+        cur = conn.execute(sql_v, params or ())
         row = cur.fetchone()
         if not row:
             return 0

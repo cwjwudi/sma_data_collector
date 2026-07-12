@@ -1,0 +1,39 @@
+# 仓库根级 uv 开发/测试环境（本机 dev 用，不参与现场部署）。
+# 现场部署仍以各子项目 requirements*.txt 与 _Launcher/requirements-unified.txt 为准；
+# 本文件是它们的并集，钉版项（sqlalchemy/pymysql/opcua/python-multipart）与现场保持一致。
+# 用法：仓库根执行 `uv sync`，然后在任一子项目目录内 `uv run --project ../.. pytest ...`
+[project]
+name = "sd-sma-scada-dev"
+version = "0.1.0"
+description = "SD SMA SCADA monorepo 统一本机开发测试环境"
+requires-python = ">=3.12"
+dependencies = [
+    # Web 框架（全部 FastAPI 子项目共用）
+    "fastapi",
+    "uvicorn[standard]",
+    "pydantic",
+    "python-multipart==0.0.9",
+    # 数据库（钉版与 SD_SMA_DATA_COLLECTOR / requirements-unified 一致）
+    "sqlalchemy==2.0.25",
+    "pymysql==1.1.0",
+    # ReportEditor backend 额外数据库驱动
+    "psycopg2-binary",
+    "pymongo",
+    # OPC UA：两套并存（采集器用旧 opcua，其余用 asyncua）
+    "opcua==0.98.13",
+    "asyncua>=1.2b1",
+    # ReportEditor backend
+    "cryptography",
+    "httpx>=0.27.0",
+]
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+    "black==24.1.1",
+    "flake8==7.0.0",
+]
+
+[tool.uv]
+package = false

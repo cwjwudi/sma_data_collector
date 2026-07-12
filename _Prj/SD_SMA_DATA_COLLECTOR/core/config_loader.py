@@ -4,6 +4,7 @@
 """
 
 import json
+import os
 from typing import Dict, Any
 from .config_models import (
     DataPoint, DataGroup, OpcUaConfig, DatabaseConfig, AppConfig,
@@ -178,7 +179,8 @@ class ConfigLoader:
             host=db_data.get('host', '127.0.0.1'),
             port=db_data.get('port', 3306),
             username=db_data.get('username', ''),
-            password=db_data.get('password', ''),
+            # 数据库密码优先取环境变量，配置文件无需保存明文口令
+            password=os.environ.get('SD_SMA_DB_PASSWORD') or db_data.get('password', ''),
             data_groups=data_groups
         )
                 

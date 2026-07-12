@@ -13,7 +13,8 @@ import threading
 import time
 import urllib.parse
 import webbrowser
-from dataclasses import dataclass
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any, TextIO
@@ -49,6 +50,80 @@ CONFIG_SEED_SKIP_DIR_NAMES = {
     "backups",
 }
 CONFIG_SEED_SKIP_FILE_SUFFIXES = {".pyc", ".pyo", ".log"}
+
+# Crash-restart defaults; override via SD_SMA_RESTART_* environment variables.
+DEFAULT_RESTART_MAX_RESTARTS = 3
+DEFAULT_RESTART_WINDOW_SECONDS = 60.0
+DEFAULT_RESTART_BASE_DELAY_SECONDS = 1.0
+DEFAULT_RESTART_BACKOFF_FACTOR = 2.0
+DEFAULT_RESTART_MAX_DELAY_SECONDS = 30.0
+
+
+@dataclass(frozen=True)
+class RestartDecision:
+    action: str  # "restart" | "give_up"
+    delay_seconds: float = 0.0
+
+
+@dataclass
+class RestartPolicy:
+    """Pure crash-restart decision logic for one service (no process handling).
+
+    - exit code 0: never restart (normal shutdown).
+    - exit code != 0: restart with exponential backoff (1s/2s/4s... capped at
+      max_delay_seconds) until max_restarts failures accumulate within
+      window_seconds, then give up. max_restarts=0 disables restarts.
+    """
+
+    max_restarts: int = DEFAULT_RESTART_MAX_RESTARTS
+    window_seconds: float = DEFAULT_RESTART_WINDOW_SECONDS
+    base_delay_seconds: float = DEFAULT_RESTART_BASE_DELAY_SECONDS
+    backoff_factor: float = DEFAULT_RESTART_BACKOFF_FACTOR
+    max_delay_seconds: float = DEFAULT_RESTART_MAX_DELAY_SECONDS
+    _failure_times: list[float] = field(default_factory=list, repr=False)
+
+    @classmethod
+    def from_env(cls, env: Mapping[str, str] | None = None) -> "RestartPolicy":
+        source: Mapping[str, str] = os.environ if env is None else env
+
+        def read_int(name: str, default: int) -> int:
+            try:
+                return int(source[name])
+            except (KeyError, ValueError):
+                return default
+
+        def read_float(name: str, default: float) -> float:
+            try:
+                return float(source[name])
+            except (KeyError, ValueError):
+                return default
+
+        return cls(
+            max_restarts=read_int("SD_SMA_RESTART_MAX_RESTARTS", DEFAULT_RESTART_MAX_RESTARTS),
+            window_seconds=read_float("SD_SMA_RESTART_WINDOW_SECONDS", DEFAULT_RESTART_WINDOW_SECONDS),
+            base_delay_seconds=read_float(
+                "SD_SMA_RESTART_BASE_DELAY_SECONDS", DEFAULT_RESTART_BASE_DELAY_SECONDS
+            ),
+            backoff_factor=read_float("SD_SMA_RESTART_BACKOFF_FACTOR", DEFAULT_RESTART_BACKOFF_FACTOR),
+            max_delay_seconds=read_float(
+                "SD_SMA_RESTART_MAX_DELAY_SECONDS", DEFAULT_RESTART_MAX_DELAY_SECONDS
+            ),
+        )
+
+    def decide(self, exit_code: int, now: float) -> RestartDecision:
+        if exit_code == 0:
+            return RestartDecision(action="give_up")
+        cutoff = now - self.window_seconds
+        self._failure_times = [t for t in self._failure_times if t > cutoff]
+        failures_before = len(self._failure_times)
+        if failures_before >= self.max_restarts:
+            return RestartDecision(action="give_up")
+        self._failure_times.append(now)
+        delay = min(
+            self.base_delay_seconds * (self.backoff_factor ** failures_before),
+            self.max_delay_seconds,
+        )
+        return RestartDecision(action="restart", delay_seconds=delay)
 
 
 @dataclass
@@ -623,74 +698,88 @@ def wait_for_http(url: str, timeout_seconds: float) -> bool:
     return False
 
 
-def start_services(python: Path, config: dict[str, Any]) -> list[ServiceProcess]:
+def start_service(python: Path, config: dict[str, Any], service: dict[str, Any]) -> ServiceProcess:
     env = os.environ.copy()
     env["PYTHONUNBUFFERED"] = "1"
     apply_proxy_env(env, config)
 
-    processes: list[ServiceProcess] = []
-    for service in config.get("services", []):
-        name = str(service["name"])
-        title = str(service.get("title", name))
-        cwd = resolve_path(str(service["cwd"]))
-        app = str(service["app"])
-        host = str(service.get("host", "127.0.0.1"))
-        port = int(service["port"])
-        # Process stdout/stderr go under logs/<service>/, not logs/launcher/.
-        log_dir = log_dir_from_service(service)
-        log_dir.mkdir(parents=True, exist_ok=True)
-        log_path = log_dir / "uvicorn.log"
-        log_writer = SizeRotatingLogWriter(log_path)
-        service_env = resolve_service_env(service)
-        # Let query_web also write its own rotated app.log when SD_SMA_LOG_DIR is set.
-        if "SD_SMA_LOG_DIR" not in service_env:
-            service_env = {**service_env, "SD_SMA_LOG_DIR": str(log_dir)}
-        command = [
-            str(python),
-            "-m",
-            "uvicorn",
-            app,
-            "--host",
-            host,
-            "--port",
-            str(port),
-        ]
+    name = str(service["name"])
+    title = str(service.get("title", name))
+    cwd = resolve_path(str(service["cwd"]))
+    app = str(service["app"])
+    host = str(service.get("host", "127.0.0.1"))
+    port = int(service["port"])
+    # Process stdout/stderr go under logs/<service>/, not logs/launcher/.
+    log_dir = log_dir_from_service(service)
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_path = log_dir / "uvicorn.log"
+    log_writer = SizeRotatingLogWriter(log_path)
+    service_env = resolve_service_env(service)
+    # Let query_web also write its own rotated app.log when SD_SMA_LOG_DIR is set.
+    if "SD_SMA_LOG_DIR" not in service_env:
+        service_env = {**service_env, "SD_SMA_LOG_DIR": str(log_dir)}
+    command = [
+        str(python),
+        "-m",
+        "uvicorn",
+        app,
+        "--host",
+        host,
+        "--port",
+        str(port),
+    ]
 
-        print(f"[start] {title}: http://{host}:{port}")
-        print(f"[start] log: {log_path} (rotate {DEFAULT_SERVICE_LOG_MAX_BYTES // (1024 * 1024)}MB x{DEFAULT_SERVICE_LOG_BACKUP_COUNT})")
-        for env_key, env_value in service_env.items():
-            print(f"[start] env {env_key}={env_value}")
-        process = subprocess.Popen(
-            command,
-            cwd=str(cwd),
-            env={**env, **service_env},
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            bufsize=1,
-        )
-        log_pump = threading.Thread(
-            target=_pump_process_output,
-            args=(process.stdout, log_writer),
-            name=f"log-pump-{name}",
-            daemon=True,
-        )
-        log_pump.start()
-        processes.append(
-            ServiceProcess(
-                name=name,
-                title=title,
-                url=str(service.get("open_url", f"http://{host}:{port}")),
-                log_path=log_path,
-                process=process,
-                log_file=log_writer,
-                log_pump=log_pump,
-            )
-        )
+    print(f"[start] {title}: http://{host}:{port}")
+    print(f"[start] log: {log_path} (rotate {DEFAULT_SERVICE_LOG_MAX_BYTES // (1024 * 1024)}MB x{DEFAULT_SERVICE_LOG_BACKUP_COUNT})")
+    for env_key, env_value in service_env.items():
+        print(f"[start] env {env_key}={env_value}")
+    process = subprocess.Popen(
+        command,
+        cwd=str(cwd),
+        env={**env, **service_env},
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        bufsize=1,
+    )
+    log_pump = threading.Thread(
+        target=_pump_process_output,
+        args=(process.stdout, log_writer),
+        name=f"log-pump-{name}",
+        daemon=True,
+    )
+    log_pump.start()
+    return ServiceProcess(
+        name=name,
+        title=title,
+        url=str(service.get("open_url", f"http://{host}:{port}")),
+        log_path=log_path,
+        process=process,
+        log_file=log_writer,
+        log_pump=log_pump,
+    )
 
-    return processes
+
+def start_services(python: Path, config: dict[str, Any]) -> list[ServiceProcess]:
+    return [start_service(python, config, service) for service in config.get("services", [])]
+
+
+def make_service_restarter(python: Path, config: dict[str, Any]) -> Callable[[ServiceProcess], ServiceProcess]:
+    services = {
+        str(service.get("name", "")): service
+        for service in config.get("services", [])
+        if isinstance(service, dict)
+    }
+
+    def restart(proc: ServiceProcess) -> ServiceProcess:
+        service = services.get(proc.name)
+        if service is None:
+            raise KeyError(f"Unknown service for restart: {proc.name}")
+        return start_service(python, config, service)
+
+    return restart
 
 
 def wait_for_services(config: dict[str, Any], processes: list[ServiceProcess]) -> None:
@@ -719,6 +808,21 @@ def open_browser_tabs(config: dict[str, Any], processes: list[ServiceProcess], *
         webbrowser.open(proc.url)
 
 
+def close_service_handles(proc: ServiceProcess) -> None:
+    """Release stdout pipe, log pump thread and log writer of one service."""
+    try:
+        if proc.process.stdout is not None:
+            proc.process.stdout.close()
+    except OSError:
+        pass
+    if proc.log_pump is not None:
+        proc.log_pump.join(timeout=2.0)
+    try:
+        proc.log_file.close()
+    except OSError:
+        pass
+
+
 def terminate_processes(processes: list[ServiceProcess]) -> None:
     for proc in processes:
         if proc.process.poll() is None:
@@ -731,30 +835,43 @@ def terminate_processes(processes: list[ServiceProcess]) -> None:
         if proc.process.poll() is None:
             print(f"[stop] force kill: {proc.title}")
             proc.process.kill()
-        try:
-            if proc.process.stdout is not None:
-                proc.process.stdout.close()
-        except OSError:
-            pass
-        if proc.log_pump is not None:
-            proc.log_pump.join(timeout=2.0)
-        try:
-            proc.log_file.close()
-        except OSError:
-            pass
+        close_service_handles(proc)
 
 
-def monitor(processes: list[ServiceProcess]) -> int:
+def monitor(
+    processes: list[ServiceProcess],
+    *,
+    restart_service: Callable[[ServiceProcess], ServiceProcess] | None = None,
+    policy_factory: Callable[[], RestartPolicy] | None = None,
+    sleep: Callable[[float], None] = time.sleep,
+    clock: Callable[[], float] = time.monotonic,
+    poll_interval_seconds: float = 1.0,
+) -> int:
     print("")
     print("Services are running. Press Ctrl+C to stop all services.")
     print("")
+    if policy_factory is None:
+        policy_factory = RestartPolicy.from_env
+    policies: dict[str, RestartPolicy] = {}
     while True:
-        for proc in processes:
+        for index, proc in enumerate(processes):
             code = proc.process.poll()
-            if code is not None:
-                print(f"[exit] {proc.title} exited with code {code}. See log: {proc.log_path}")
-                return code or 1
-        time.sleep(1.0)
+            if code is None:
+                continue
+            print(f"[exit] {proc.title} exited with code {code}. See log: {proc.log_path}")
+            if code == 0 or restart_service is None:
+                return code
+            policy = policies.setdefault(proc.name, policy_factory())
+            decision = policy.decide(code, clock())
+            if decision.action != "restart":
+                print(f"[restart] giving up on {proc.title}: crash limit reached")
+                return code
+            # Release old handles before spawning the replacement (no leaks).
+            close_service_handles(proc)
+            print(f"[restart] restarting {proc.title} in {decision.delay_seconds:g}s (exit code {code})")
+            sleep(decision.delay_seconds)
+            processes[index] = restart_service(proc)
+        sleep(poll_interval_seconds)
 
 
 def parse_args() -> argparse.Namespace:
@@ -792,7 +909,7 @@ def main() -> int:
                 print("[smoke] ok")
                 return 0
             open_browser_tabs(config, processes, no_browser=args.no_browser)
-            return monitor(processes)
+            return monitor(processes, restart_service=make_service_restarter(python, config))
         finally:
             terminate_processes(processes)
     except KeyboardInterrupt:

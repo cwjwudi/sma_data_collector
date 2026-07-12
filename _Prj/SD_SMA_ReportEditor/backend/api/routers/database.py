@@ -96,18 +96,66 @@ def _credentials(conn: dict[str, Any]) -> tuple[str, str]:
     return conn.get("username") or "", pwd
 
 
-def _sql_literal_filter(val: str) -> str:
-    """WHERE 单行等值过滤：整数/浮点原样，其余按字符串转义。"""
+def _pk_filter_bind_value(val: str) -> int | float | str:
+    """WHERE 单行等值过滤的绑定值：整数/浮点保持类型，其余为字符串。
+
+    不再手工拼接 SQL 字面量（旧实现只翻倍 ``'`` 不转义反斜杠，MySQL 默认把 ``\\`` 当转义符，
+    ``foo\\' OR 1=1 --`` 可逃出字符串）。改由驱动参数绑定，杜绝方言转义差异注入。
+    """
     s = (val or "").strip()
     if not s:
         raise HTTPException(400, "过滤值为空")
     if len(s) > 512:
         raise HTTPException(400, "过滤值过长")
     if re.match(r"^-?\d+$", s):
-        return s
+        return int(s)
     if re.match(r"^-?\d+\.\d+([eE][+-]?\d+)?$", s):
-        return s
-    return "'" + s.replace("'", "''") + "'"
+        return float(s)
+    return s
+
+
+def _build_table_preview_sql(
+    engine: str,
+    table: str,
+    filter_col: str | None,
+    filter_value: str | None,
+    limit: int,
+    offset: int,
+) -> tuple[str, str, list[Any]]:
+    """构造表预览的 SELECT 与 COUNT 语句及绑定参数。
+
+    标识符（表名/列名）已在上游 ``_safe_sql_table`` 校验并按引擎引用；
+    过滤「值」一律走参数占位符（MySQL/PostgreSQL 用 ``%s``，SQLite 用 ``?``），
+    不拼进 SQL 文本，避免转义差异注入。返回 ``(select_sql, count_sql, params)``。
+    """
+    eng = (engine or "").lower()
+    is_sqlite = eng == "sqlite"
+    is_pg = eng == "postgres"
+    placeholder = "?" if is_sqlite else "%s"
+    if eng in ("mysql", "mariadb"):
+        tbl_ref = f"`{table}`"
+
+        def col_ref(c: str) -> str:
+            return f"`{c}`"
+    elif is_pg:
+        tbl_ref = f'"{table}"'
+
+        def col_ref(c: str) -> str:
+            return f'"{c}"'
+    else:  # sqlite
+        tbl_ref = table
+
+        def col_ref(c: str) -> str:
+            return c
+
+    params: list[Any] = []
+    where = ""
+    if filter_col and filter_value is not None:
+        where = f" WHERE {col_ref(filter_col)} = {placeholder}"
+        params.append(_pk_filter_bind_value(filter_value))
+    select_sql = f"SELECT * FROM {tbl_ref}{where} LIMIT {limit} OFFSET {offset}"
+    count_sql = f"SELECT COUNT(*) AS __c FROM {tbl_ref}{where}"
+    return select_sql, count_sql, params
 
 
 def _effective_sql_database(conn: dict[str, Any], body_database: str | None, engine: str) -> str:
@@ -494,31 +542,21 @@ async def table_preview(body: DbTablePreviewRequest):
                 body.include_total,
             )
         tbl = _safe_sql_table(tbl_raw)
+        fcol: str | None = None
         if body.pk_filter_column and body.pk_filter_value is not None:
             fcol = _safe_sql_table(body.pk_filter_column)
-            lit = _sql_literal_filter(body.pk_filter_value)
-            sql_mysql = f"SELECT * FROM `{tbl}` WHERE `{fcol}` = {lit} LIMIT {lim} OFFSET {off}"
-            sql_pg = f'SELECT * FROM "{tbl}" WHERE "{fcol}" = {lit} LIMIT {lim} OFFSET {off}'
-            sql_lite = f"SELECT * FROM {tbl} WHERE {fcol} = {lit} LIMIT {lim} OFFSET {off}"
-            cnt_mysql = f"SELECT COUNT(*) AS __c FROM `{tbl}` WHERE `{fcol}` = {lit}"
-            cnt_pg = f'SELECT COUNT(*) AS __c FROM "{tbl}" WHERE "{fcol}" = {lit}'
-            cnt_lite = f"SELECT COUNT(*) AS __c FROM {tbl} WHERE {fcol} = {lit}"
-        else:
-            sql_mysql = f"SELECT * FROM `{tbl}` LIMIT {lim} OFFSET {off}"
-            sql_pg = f'SELECT * FROM "{tbl}" LIMIT {lim} OFFSET {off}'
-            sql_lite = f"SELECT * FROM {tbl} LIMIT {lim} OFFSET {off}"
-            cnt_mysql = f"SELECT COUNT(*) AS __c FROM `{tbl}`"
-            cnt_pg = f'SELECT COUNT(*) AS __c FROM "{tbl}"'
-            cnt_lite = f"SELECT COUNT(*) AS __c FROM {tbl}"
+        fval = body.pk_filter_value if fcol is not None else None
         if _is_mysql_family(engine):
+            sel_sql, cnt_sql, params = _build_table_preview_sql(engine, tbl, fcol, fval, lim, off)
             res = db_readonly_service.run_mysql_readonly(
                 conn.get("host") or "127.0.0.1",
                 int(conn.get("port") or 3306),
                 user,
                 pwd,
                 dbname,
-                sql_mysql,
+                sel_sql,
                 lim,
+                params=params,
             )
             if body.include_total:
                 res["total"] = int(db_readonly_service.mysql_scalar(
@@ -527,18 +565,21 @@ async def table_preview(body: DbTablePreviewRequest):
                     user,
                     pwd,
                     dbname,
-                    cnt_mysql,
+                    cnt_sql,
+                    params=params,
                 ) or 0)
             return res
         if engine == "postgres":
+            sel_sql, cnt_sql, params = _build_table_preview_sql(engine, tbl, fcol, fval, lim, off)
             res = db_readonly_service.run_postgres_readonly(
                 conn.get("host") or "127.0.0.1",
                 int(conn.get("port") or 5432),
                 user,
                 pwd,
                 dbname or "postgres",
-                sql_pg,
+                sel_sql,
                 lim,
+                params=params,
             )
             if body.include_total:
                 res["total"] = int(db_readonly_service.postgres_scalar(
@@ -547,14 +588,16 @@ async def table_preview(body: DbTablePreviewRequest):
                     user,
                     pwd,
                     dbname or "postgres",
-                    cnt_pg,
+                    cnt_sql,
+                    params=params,
                 ) or 0)
             return res
         if engine == "sqlite":
+            sel_sql, cnt_sql, params = _build_table_preview_sql(engine, tbl, fcol, fval, lim, off)
             path = conn.get("sqlite_path") or ""
-            res = db_readonly_service.run_sqlite_readonly(path, sql_lite, lim)
+            res = db_readonly_service.run_sqlite_readonly(path, sel_sql, lim, params=params)
             if body.include_total:
-                res["total"] = int(db_readonly_service.sqlite_scalar(path, cnt_lite) or 0)
+                res["total"] = int(db_readonly_service.sqlite_scalar(path, cnt_sql, params=params) or 0)
             return res
         raise HTTPException(400, "未知引擎")
     except HTTPException:

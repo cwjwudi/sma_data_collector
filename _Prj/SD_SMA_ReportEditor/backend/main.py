@@ -87,10 +87,36 @@ async def log_request_exceptions(request: Request, call_next):
         raise
 
 
+# 前端实际来源（桌面应用，非公开 Web）：
+# - Electron 生产：loadFile(file://) 加载本地打包页，跨源请求本机 uvicorn，Origin 头为字符串 "null"
+# - Vite 开发服务器：http://localhost:5173 / http://127.0.0.1:5173（默认经代理，直连后端时才需 CORS）
+# - 后端自带静态页：http(s)://127.0.0.1:8000 等为同源，浏览器不发 CORS，无需列出
+# 局域网自定义主机/端口可用 REPORT_EDITOR_CORS_ORIGINS（逗号分隔）扩展。
+# 安全约束：绝不 allow_origins=["*"] 且 allow_credentials=True 同时存在；本应用不用 Cookie/凭证，
+# 故 allow_credentials=False，跨源请求也不会携带凭证。
+_DEFAULT_CORS_ORIGINS = (
+    "null",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+)
+
+
+def _cors_allow_origins() -> list[str]:
+    """CORS 允许来源清单：默认来源 + 环境变量扩展；始终不含通配符 ``*``。"""
+    origins = list(_DEFAULT_CORS_ORIGINS)
+    extra = os.environ.get("REPORT_EDITOR_CORS_ORIGINS", "").strip()
+    if extra:
+        for item in extra.split(","):
+            o = item.strip().rstrip("/")
+            if o and o != "*" and o not in origins:
+                origins.append(o)
+    return origins
+
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=_cors_allow_origins(),
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )

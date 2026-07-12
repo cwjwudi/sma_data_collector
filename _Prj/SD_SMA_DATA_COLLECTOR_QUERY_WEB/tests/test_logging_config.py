@@ -20,12 +20,22 @@ def test_logging_config_has_timestamp_and_level():
 
 
 def test_setup_logging_emits_formatted_record(capsys):
-    setup_logging()
+    # force=True：其它测试/模块导入可能早已配置过 logging（handler 绑着旧 stderr），
+    # 必须强制重配置到 capsys 接管后的 stderr，否则本用例依赖测试执行顺序
+    setup_logging(force=True)
     logging.getLogger("app.test_logging").warning("formatted-check")
     captured = capsys.readouterr()
     assert "formatted-check" in captured.err
     assert "WARNING" in captured.err
     assert "|" in captured.err
+
+
+def test_setup_logging_force_reconfigures_even_if_already_configured(capsys):
+    setup_logging()
+    setup_logging(force=True)
+    logging.getLogger("app.test_logging").warning("force-recheck")
+    captured = capsys.readouterr()
+    assert "force-recheck" in captured.err
 
 
 def test_build_logging_config_respects_level():

@@ -8,7 +8,8 @@ services:
     container_name: report_editor_mariadb
     restart: unless-stopped
     environment:
-      MARIADB_ROOT_PASSWORD: "${MARIADB_ROOT_PASSWORD:-Br54644800@}"
+      # 必须通过环境变量或 .env 提供，不再内置默认口令
+      MARIADB_ROOT_PASSWORD: "${MARIADB_ROOT_PASSWORD:?请在环境变量或 .env 中设置 MARIADB_ROOT_PASSWORD}"
       MARIADB_DATABASE: ${MARIADB_DATABASE:-report}
       MARIADB_CHARACTER_SET_SERVER: utf8mb4
       MARIADB_COLLATE_SERVER: utf8mb4_unicode_ci

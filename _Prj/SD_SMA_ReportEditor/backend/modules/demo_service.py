@@ -27,7 +27,8 @@ REMOTE_DB = {
     "port": int(os.environ.get("REPORT_EDITOR_DEMO_REMOTE_DB_PORT", "11742")),
     "database": os.environ.get("REPORT_EDITOR_DEMO_REMOTE_DB_NAME", "report").strip() or "report",
     "username": os.environ.get("REPORT_EDITOR_DEMO_REMOTE_DB_USER", "root").strip() or "root",
-    "password": os.environ.get("REPORT_EDITOR_DEMO_REMOTE_DB_PASSWORD", "Br54644800@"),
+    # 不内置默认口令：未设置环境变量时演示库不可连，避免真实口令随安装包分发
+    "password": os.environ.get("REPORT_EDITOR_DEMO_REMOTE_DB_PASSWORD", ""),
 }
 
 LOCAL_DB = {
@@ -37,7 +38,7 @@ LOCAL_DB = {
     "port": 3306,
     "database": "report",
     "username": "root",
-    "password": os.environ.get("REPORT_EDITOR_DEMO_LOCAL_DB_PASSWORD", "Br54644800@"),
+    "password": os.environ.get("REPORT_EDITOR_DEMO_LOCAL_DB_PASSWORD", ""),
 }
 
 LOCAL_OPC = {

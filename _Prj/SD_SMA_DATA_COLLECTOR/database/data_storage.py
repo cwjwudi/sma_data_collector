@@ -5,6 +5,7 @@
 
 import asyncio
 import logging
+import time
 from typing import Dict, List, Any, Optional, Callable, Awaitable
 from datetime import datetime
 from collections import deque
@@ -30,14 +31,17 @@ class DataStorageProcessor:
         batch_size: int = 100,
         points_dict: dict = None,
         insert_feedback_callback: Optional[Callable[[str, str, int], Awaitable[bool]]] = None,
+        max_queue_size: Optional[int] = None,
     ):
         """
         初始化数据存储处理器
-        
+
         Args:
             db_manager: 数据库管理器实例
             batch_size: 默认批量插入大小（用于向后兼容）
             points_dict: 数据点字典 {point_name: DataPoint}，用于获取 datatype 信息
+            max_queue_size: 内存队列上限，超限丢最旧数据；None 时读取环境变量
+                SD_SMA_STORAGE_MAX_QUEUE_SIZE，默认 100000 条
         """
         self.db_manager = db_manager
         self.default_batch_size = batch_size
@@ -53,6 +57,16 @@ class DataStorageProcessor:
         self.points_dict = points_dict or {}  # 数据点配置字典
         self.insert_feedback_callback = insert_feedback_callback
         self.data_queue = deque()
+        # 队列上限：DB 长期不可用时插入失败数据会回队重试，必须封顶防止内存无限膨胀
+        if max_queue_size is None:
+            max_queue_size = int(os.getenv("SD_SMA_STORAGE_MAX_QUEUE_SIZE", "100000"))
+        self.max_queue_size = max(1, int(max_queue_size))
+        # 超限丢弃日志节流间隔（秒），避免持续超限时刷屏
+        self.drop_log_interval_seconds = max(
+            1.0, float(os.getenv("SD_SMA_STORAGE_DROP_LOG_INTERVAL", "30"))
+        )
+        self.dropped_records_total = 0  # 累计丢弃条数（超限丢最旧）
+        self._last_drop_log_ts = 0.0
         self.processing_task = None
         self.running = False
         self.logger = logging.getLogger(__name__)
@@ -74,8 +88,9 @@ class DataStorageProcessor:
             collection_data: 采集的数据
         """
         self.data_queue.append(collection_data)
+        self._drop_overflow_records()
         self.logger.debug(f"数据已添加到队列，当前队列大小: {len(self.data_queue)}")
-        
+
         group_name = collection_data.get('group_name')
         if group_name is not None:
             # 批次主表的任何一次触发（开批、结批或后续被数据库拒绝）
@@ -91,7 +106,40 @@ class DataStorageProcessor:
                 ev = self._batch_ready_event
                 if ev is not None and not ev.is_set():
                     ev.set()
-    
+
+    def _drop_overflow_records(self) -> None:
+        """队列超过上限时丢弃最旧数据，并按节流间隔打印告警（不允许静默丢弃）。"""
+        dropped = 0
+        while len(self.data_queue) > self.max_queue_size:
+            self.data_queue.popleft()
+            dropped += 1
+        if not dropped:
+            return
+
+        self.dropped_records_total += dropped
+        now = time.time()
+        if now - self._last_drop_log_ts >= self.drop_log_interval_seconds:
+            self._last_drop_log_ts = now
+            self.logger.warning(
+                "数据队列超过上限 %s，已丢弃最旧数据 %s 条（累计丢弃 %s 条），请检查数据库写入是否长期失败",
+                self.max_queue_size,
+                dropped,
+                self.dropped_records_total,
+            )
+
+    def _requeue_failed_items(self, group_name: str, failed_items: List[Dict[str, Any]]) -> None:
+        """数据库写入失败的数据放回队头保持时序，等待下一轮重试。"""
+        if not failed_items:
+            return
+        self.data_queue.extendleft(reversed(failed_items))
+        self._drop_overflow_records()
+        self.logger.warning(
+            "组 %s 有 %s 条数据写入数据库失败，已回队等待重试，当前队列大小: %s",
+            group_name,
+            len(failed_items),
+            len(self.data_queue),
+        )
+
     async def start_processing(self) -> None:
         """启动数据处理任务"""
         if self.running:
@@ -198,6 +246,38 @@ class DataStorageProcessor:
             return True
         # 兼容旧的单元测试/直调场景：未注入 group_data_points 时没有启动期建表上下文。
         return not self.group_data_points
+
+    async def _ensure_table_ready_at_runtime(
+        self,
+        group_name: str,
+        table_name: str,
+        ensure_attempts: Dict[str, bool],
+    ) -> bool:
+        """
+        插入前确认目标表已完成检查；运行期发现未 ensure（如跨年后的新年份分表）
+        时，按与启动相同的建表逻辑补建。同一轮处理中每张表只尝试补建一次，
+        避免 DB 故障时对同一张表反复发起建表请求。
+        建表为同步 DB 调用，放到线程池执行以免阻塞事件循环。
+        """
+        if self._is_table_ready_for_insert(table_name):
+            return True
+
+        if table_name not in ensure_attempts:
+            self.logger.info(
+                "组 %s 的目标表 %s 尚未完成检查（可能已跨年），运行期按启动逻辑补建",
+                group_name,
+                table_name,
+            )
+            ensure_attempts[table_name] = await asyncio.to_thread(
+                self._ensure_group_table, group_name, table_name
+            )
+            if not ensure_attempts[table_name]:
+                self.logger.error(
+                    "组 %s 运行期补建目标表失败: %s",
+                    group_name,
+                    table_name,
+                )
+        return ensure_attempts[table_name]
 
     def _ensure_detail_tables_for_current_batch(self) -> bool:
         batch_context = self.current_batch_context or self._closed_batch_context
@@ -464,7 +544,7 @@ class DataStorageProcessor:
             # 普通数据组不需要逐条唯一性检查或批次 upsert，先完成转换，
             # 再按目标表和列集合交给数据库驱动 executemany，一批只提交一次事务。
             if not unique_key_point and not batch_upsert_config:
-                outcome_counts = self._bulk_insert_group_data(group_name, group_data_list)
+                outcome_counts = await self._bulk_insert_group_data(group_name, group_data_list)
                 total_records = sum(outcome_counts.values())
                 self.logger.debug(
                     "组 %s 批量插入完成: success=%s, unique_conflict=%s, db_error=%s, other_error=%s, total=%s",
@@ -478,15 +558,16 @@ class DataStorageProcessor:
                 await self._write_insert_feedback_by_outcome(group_name, outcome_counts)
                 return
 
+            # 数据库故障导致写入失败的数据，循环结束后统一回队重试，避免静默丢数
+            failed_requeue_items: List[Dict[str, Any]] = []
+            # 同一轮内每张表只尝试一次运行期补建
+            runtime_ensure_attempts: Dict[str, bool] = {}
+
             for data_item in group_data_list:
                 table_name = self._get_table_name_for_data_item(group_name, data_item)
-                if not self._is_table_ready_for_insert(table_name):
-                    self.logger.error(
-                        "组 %s 的目标表尚未在启动或批次切换时完成检查: %s",
-                        group_name,
-                        table_name,
-                    )
+                if not await self._ensure_table_ready_at_runtime(group_name, table_name, runtime_ensure_attempts):
                     outcome_counts[self.STATUS_DB_ERROR] += 1
+                    failed_requeue_items.append(data_item)
                     continue
 
                 insert_data = self._convert_to_db_format(data_item)
@@ -518,10 +599,14 @@ class DataStorageProcessor:
                         outcome_counts[self.STATUS_OTHER_ERROR] += 1
                         continue
                     try:
-                        exists = self.db_manager.record_exists(table_name, unique_key_point, unique_value)
+                        # 同步 DB 查询放到线程池执行，避免阻塞事件循环
+                        exists = await asyncio.to_thread(
+                            self.db_manager.record_exists, table_name, unique_key_point, unique_value
+                        )
                         if exists:
                             if batch_upsert_config and batch_upsert_config.get("end_time_point"):
-                                handled_status = self._handle_batch_upsert_conflict(
+                                handled_status = await asyncio.to_thread(
+                                    self._handle_batch_upsert_conflict,
                                     group_name,
                                     table_name,
                                     unique_key_point,
@@ -554,9 +639,11 @@ class DataStorageProcessor:
                             exc_info=True
                         )
                         outcome_counts[self.STATUS_DB_ERROR] += 1
+                        failed_requeue_items.append(data_item)
                         continue
 
-                if self.db_manager.execute_insert(table_name, insert_data):
+                # 同步 DB 写入放到线程池执行，避免阻塞事件循环；逐条 await 保持时序
+                if await asyncio.to_thread(self.db_manager.execute_insert, table_name, insert_data):
                     outcome_counts[self.STATUS_SUCCESS] += 1
                     if batch_upsert_config and unique_key_point:
                         end_time_point = batch_upsert_config.get("end_time_point")
@@ -579,6 +666,9 @@ class DataStorageProcessor:
                                 )
                 else:
                     outcome_counts[self.STATUS_DB_ERROR] += 1
+                    failed_requeue_items.append(data_item)
+
+            self._requeue_failed_items(group_name, failed_requeue_items)
 
             total_records = sum(outcome_counts.values())
             self.logger.debug(
@@ -606,19 +696,27 @@ class DataStorageProcessor:
                 },
             )
 
-    def _bulk_insert_group_data(
+    async def _bulk_insert_group_data(
         self,
         group_name: str,
         group_data_list: List[Dict[str, Any]],
     ) -> Dict[str, int]:
-        """转换普通组记录，并按目标表与列集合执行批量插入。"""
+        """
+        转换普通组记录，并按目标表与列集合执行批量插入。
+        同步 DB 调用放到线程池执行以免阻塞事件循环；逐个目标 await 保持批次顺序。
+        """
         outcome_counts = {
             self.STATUS_SUCCESS: 0,
             self.STATUS_UNIQUE_CONFLICT: 0,
             self.STATUS_DB_ERROR: 0,
             self.STATUS_OTHER_ERROR: 0,
         }
-        rows_by_target: Dict[tuple, List[Dict[str, Any]]] = {}
+        # 目标 key -> [(insert_data, 原始采集数据)]，失败时需要用原始数据回队
+        rows_by_target: Dict[tuple, List[tuple]] = {}
+        # 数据库故障导致写入失败的数据，统一回队重试，避免静默丢数
+        failed_requeue_items: List[Dict[str, Any]] = []
+        # 同一轮内每张表只尝试一次运行期补建
+        runtime_ensure_attempts: Dict[str, bool] = {}
 
         for data_item in group_data_list:
             try:
@@ -633,13 +731,9 @@ class DataStorageProcessor:
                 outcome_counts[self.STATUS_DB_ERROR] += 1
                 continue
 
-            if not self._is_table_ready_for_insert(table_name):
-                self.logger.error(
-                    "组 %s 的目标表尚未在启动或批次切换时完成检查: %s",
-                    group_name,
-                    table_name,
-                )
+            if not await self._ensure_table_ready_at_runtime(group_name, table_name, runtime_ensure_attempts):
                 outcome_counts[self.STATUS_DB_ERROR] += 1
+                failed_requeue_items.append(data_item)
                 continue
 
             insert_data = self._convert_to_db_format(data_item)
@@ -648,10 +742,14 @@ class DataStorageProcessor:
                 continue
 
             target_key = (table_name, tuple(insert_data.keys()))
-            rows_by_target.setdefault(target_key, []).append(insert_data)
+            rows_by_target.setdefault(target_key, []).append((insert_data, data_item))
 
-        for (table_name, _columns), rows in rows_by_target.items():
-            inserted_count = self.db_manager.execute_insert_many(table_name, rows)
+        for (table_name, _columns), pairs in rows_by_target.items():
+            rows = [insert_data for insert_data, _item in pairs]
+            # 同步 DB 批量写入放到线程池执行，避免阻塞事件循环
+            inserted_count = await asyncio.to_thread(
+                self.db_manager.execute_insert_many, table_name, rows
+            )
             if inserted_count == len(rows):
                 outcome_counts[self.STATUS_SUCCESS] += inserted_count
                 self.logger.debug(
@@ -673,12 +771,15 @@ class DataStorageProcessor:
             else:
                 outcome_counts[self.STATUS_DB_ERROR] += len(rows)
                 self.logger.error(
-                    "组 %s 批量写入失败: table=%s, rows=%s",
+                    "组 %s 批量写入失败: table=%s, rows=%s，整批回队等待重试",
                     group_name,
                     table_name,
                     len(rows),
                 )
+                # 整批单事务已回滚，原始数据回队头重试不会造成重复插入
+                failed_requeue_items.extend(item for _row, item in pairs)
 
+        self._requeue_failed_items(group_name, failed_requeue_items)
         return outcome_counts
 
     async def _write_insert_feedback_by_outcome(self, group_name: str, outcome_counts: Dict[str, int]) -> None:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import re
 from datetime import datetime
 from typing import Any
@@ -38,7 +39,9 @@ class QueryDatabase:
 
     def _create_engine(self) -> Engine:
         if self.db_type == "mysql":
-            encoded_password = quote_plus(str(self.db_config.get("password", "")))
+            # 数据库密码优先取环境变量，配置文件无需保存明文口令
+            password = os.environ.get("SD_SMA_DB_PASSWORD") or str(self.db_config.get("password", ""))
+            encoded_password = quote_plus(password)
             conn_str = (
                 f"mysql+pymysql://{self.db_config.get('username', '')}:{encoded_password}"
                 f"@{self.db_config.get('host', '127.0.0.1')}:{self.db_config.get('port', 3306)}"
