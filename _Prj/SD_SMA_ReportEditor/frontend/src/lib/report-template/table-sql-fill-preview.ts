@@ -195,11 +195,10 @@ function formatVerticalSqlFillCell(opts: {
     if (ci === 1) return row.value || "\u00a0";
     return "\u00a0";
   }
-  if (ri === 0) {
-    const h = headerAt(ci);
-    return h !== "\u00a0" ? h : "…";
-  }
-  return "…";
+  // 加载中占位「…」已由 formatSqlFillTableCellPreview 上游处理；
+  // 走到此处即查询已执行且返回 0 行，正文应留空而非字面省略号
+  if (ri === 0) return headerAt(ci);
+  return "\u00a0";
 }
 
 function formatHorizontalSqlFillCell(opts: {
@@ -247,11 +246,10 @@ function formatHorizontalSqlFillCell(opts: {
     return cellAt(ri - 1, ri - 1);
   }
 
-  if (ri === 0) {
-    const h = headerAt(ci);
-    return h !== "\u00a0" ? h : "…";
-  }
-  return "…";
+  // 加载中占位「…」已由 formatSqlFillTableCellPreview 上游处理；
+  // 走到此处即查询已执行且返回 0 行，正文应留空而非字面省略号
+  if (ri === 0) return headerAt(ci);
+  return "\u00a0";
 }
 
 /** 与 backend `api/routers/database.py` 中 PREVIEW_LIMIT_MAX 一致 */

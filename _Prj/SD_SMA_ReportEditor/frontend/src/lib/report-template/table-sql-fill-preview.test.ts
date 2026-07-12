@@ -6,6 +6,7 @@ import {
 } from "@/lib/report-template/table-sql-fill";
 import { formatScalarForPreviewValue } from "@/lib/report-template/binding-preview-utils";
 import {
+  formatSqlFillTableCellPreview,
   sanitizeOpcTableName,
   sqlFillQueryLimit,
   substituteSqlFillTableName,
@@ -110,6 +111,66 @@ describe("substituteSqlFillTableName", () => {
     expect(substituteSqlFillTableName("SELECT a FROM {{table}}", "postgres", "t1")).toBe(
       'SELECT a FROM "t1"',
     );
+  });
+});
+
+describe("formatSqlFillTableCellPreview 空结果不渲染字面省略号", () => {
+  const NBSP = " ";
+
+  function verticalFill() {
+    return hydrateTableSqlFill({
+      enabled: true,
+      fillMode: "visual",
+      layoutMode: "vertical",
+      visualSource: {
+        connectionId: "c1",
+        database: "db",
+        table: "alarms",
+        engine: "mysql",
+        columns: ["name", "status"],
+      },
+      verticalFieldLabels: ["名称", "状态"],
+      resultColumnNames: ["名称", "值"],
+    });
+  }
+
+  it("纵表查询返回 0 行（非加载）时正文格为空白而非 '…'", () => {
+    // 回归：导出 refresh 为 silent（previewLoading=false），纵表 0 数据仍保留槽位行，
+    // 旧逻辑落到 return "…"，PDF 里印出字面省略号
+    const fill = verticalFill();
+    const pv = { dataRows: [] as string[][] };
+    expect(formatSqlFillTableCellPreview({ fill, rowIndex: 1, colIndex: 0, preview: pv, previewLoading: false })).toBe(NBSP);
+    expect(formatSqlFillTableCellPreview({ fill, rowIndex: 1, colIndex: 1, preview: pv, previewLoading: false })).toBe(NBSP);
+  });
+
+  it("纵表 0 行时表头行仍显示列名", () => {
+    const fill = verticalFill();
+    const pv = { dataRows: [] as string[][] };
+    expect(formatSqlFillTableCellPreview({ fill, rowIndex: 0, colIndex: 0, preview: pv, previewLoading: false })).toBe("名称");
+    expect(formatSqlFillTableCellPreview({ fill, rowIndex: 0, colIndex: 1, preview: pv, previewLoading: false })).toBe("值");
+  });
+
+  it("加载中占位 '…' 不被误伤", () => {
+    const fill = verticalFill();
+    expect(formatSqlFillTableCellPreview({ fill, rowIndex: 1, colIndex: 0, preview: null, previewLoading: true })).toBe("…");
+  });
+
+  it("横表查询返回 0 行（非加载）时正文格为空白而非 '…'", () => {
+    const fill = hydrateTableSqlFill({
+      enabled: true,
+      fillMode: "visual",
+      layoutMode: "horizontal",
+      visualSource: {
+        connectionId: "c1",
+        database: "db",
+        table: "alarms",
+        engine: "mysql",
+        columns: ["name", "status"],
+      },
+      resultColumnNames: ["名称", "状态"],
+    });
+    const pv = { dataRows: [] as string[][] };
+    expect(formatSqlFillTableCellPreview({ fill, rowIndex: 1, colIndex: 0, preview: pv, previewLoading: false })).toBe(NBSP);
   });
 });
 
