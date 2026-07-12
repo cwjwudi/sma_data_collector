@@ -7,7 +7,9 @@
 
 ## 2026-07-12
 
-- **新增 Agent 规则与文档约定**：创建 [CLAUDE.md](CLAUDE.md)（唯一正文）与 [AGENTS.md](AGENTS.md)（引用 CLAUDE.md）；确立「任务看板写 `docs/NNN-状态-主题.md`、H1 状态子任务、`todo.md` 倒序索引、README 只写功能说明、Agent 不自行 git」等约定。建立 `docs/` 任务目录。
+- **表格系统深度评估 + 修复排期**：详见 [docs/002-🚧-表格系统评估与修复.md](docs/002-🚧-表格系统评估与修复.md)。三路并行审计 ReportEditor 表格控件（几何度量层 / SQL 填充分页链路 / 组件层与重复），产出评级（设计 B+ / 实现 B- / 完整度 C+）与按严重度排序的缺陷：P1「预览取 1000 行 vs 导出取全量」的分页份数所见非所得、长内容 240px 静默裁剪、纵表 0 行渲染字面 "…"；P2 SQL 参数值前端拼接漏反斜杠、窄表列宽拖拽失效、Template/Zone 模型复制漂移；P3 度量副作用/性能/高缩放亚像素；及合并单元格等整类能力缺口。已排定修复执行顺序，下一步从 P1 起修（TDD）。
+- **Git 策略调整**：改为以 `.cursor/rules/queued-task-then-push.mdc` 为准——每完成一条队列任务即 `git add`+`commit`+`push`；CLAUDE.md/AGENTS.md 已同步。
+- **新增 Agent 规则与文档约定**：创建 [CLAUDE.md](CLAUDE.md)（唯一正文）与 [AGENTS.md](AGENTS.md)（引用 CLAUDE.md）；确立「任务看板写 `docs/NNN-状态-主题.md`、H1 状态子任务、`todo.md` 倒序索引、README 只写功能说明」等约定。建立 `docs/` 任务目录。
 - **安全与可靠性缺陷修复（A 档）**：详见 [docs/001-🚧-安全与可靠性缺陷修复.md](docs/001-🚧-安全与可靠性缺陷修复.md)。
   - 新增根级 uv 开发/测试环境（`pyproject.toml`+`uv.lock`+`.python-version`，锁 Python 3.12）。
   - 采集器可靠性三件套：失败批次回队防丢数、跨年分表运行期补建、DB 写入 `to_thread` 化不阻塞事件循环。
