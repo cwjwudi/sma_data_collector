@@ -1,6 +1,9 @@
 <template>
   <div class="page page-fill-height">
-    <h2 class="page-title">数据源配置</h2>
+    <header class="ds-hdr">
+      <h2 class="page-title">数据源配置</h2>
+      <DatasourceLockToggle v-model="datasourceLocked" />
+    </header>
     <div class="tabs-top">
       <button type="button" :class="{ on: tab === 'db' }" @click="tab = 'db'">
         <ConnectionTabLed :state="aggregateHealthState(dbHealth)" class="tab-led" />
@@ -46,6 +49,7 @@
         <DatabaseWorkbench
           v-if="dbMounted"
           ref="dbWorkbenchRef"
+          :datasource-locked="datasourceLocked"
           @health-summary="onDbHealthSummary"
         />
       </div>
@@ -53,6 +57,7 @@
         <OpcUaPanel
           v-if="opcMounted"
           ref="opcPanelRef"
+          :datasource-locked="datasourceLocked"
           @health-summary="onOpcHealthSummary"
         />
       </div>
@@ -73,10 +78,12 @@ import {
   onMounted,
   onUnmounted,
   onActivated,
+  provide,
 } from 'vue'
 import { useRoute } from 'vue-router'
 import ConnectionTabLed from '@/features/datasource/ConnectionTabLed.vue'
 import ConnectionHealthFailuresDialog from '@/features/datasource/ConnectionHealthFailuresDialog.vue'
+import DatasourceLockToggle from '@/features/datasource/DatasourceLockToggle.vue'
 import { dbConnectionHealth, opcHealthSummary } from '@/features/datasource/datasource-nav-health'
 import {
   connectionProbeIntervalMs,
@@ -84,6 +91,9 @@ import {
 } from '@/features/datasource/connection-probe-prefs'
 
 const route = useRoute()
+
+const datasourceLocked = ref(false)
+provide('datasourceLocked', datasourceLocked)
 
 const tab = ref('db')
 const dbWorkbenchRef = ref(null)
@@ -178,6 +188,12 @@ function onProbePrefsChanged(ev) {
     return
   }
   void reloadProbePrefs()
+}
+
+function onDatasourceLockChanged(ev) {
+  if (typeof ev?.detail?.locked === 'boolean') {
+    datasourceLocked.value = ev.detail.locked
+  }
 }
 
 function syncTabFromRoute() {
@@ -287,6 +303,7 @@ onMounted(() => {
   void reloadProbePrefs()
   window.addEventListener('report-editor-config-imported', onConfigImported)
   window.addEventListener('report-editor-connection-probe-changed', onProbePrefsChanged)
+  window.addEventListener('report-editor-datasource-lock-changed', onDatasourceLockChanged)
 })
 
 /** 页面被 keep-alive 缓存后再次进入：不重新拉连接/架构，仅恢复 Tab */
@@ -308,6 +325,7 @@ onUnmounted(() => {
   clearBootTimers()
   window.removeEventListener('report-editor-config-imported', onConfigImported)
   window.removeEventListener('report-editor-connection-probe-changed', onProbePrefsChanged)
+  window.removeEventListener('report-editor-datasource-lock-changed', onDatasourceLockChanged)
 })
 </script>
 
@@ -333,6 +351,15 @@ onUnmounted(() => {
 .page-title {
   font-size: 24px;
   font-weight: 600;
+  margin: 0;
+  flex-shrink: 0;
+}
+.ds-hdr {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
   margin-bottom: 12px;
   flex-shrink: 0;
 }

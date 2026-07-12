@@ -1,4 +1,4 @@
-"""应用路径与全局配置默认值（避免路由与 main 循环导入）。"""
+"""?????????????????? main ??????"""
 from __future__ import annotations
 
 import json
@@ -24,7 +24,7 @@ HISTORY_DIR = DATA_DIR / "history"
 CONFIG_FILE = DATA_DIR / "config.json"
 QUERY_SESSION_FILE = DATA_DIR / "query_sessions.json"
 BACKEND_ROOT = Path(__file__).resolve().parent.parent
-APP_VERSION = "0.3.51"
+APP_VERSION = "0.3.52"
 
 DEFAULT_CONFIG = {
     "schema_version": 1,
@@ -37,6 +37,7 @@ DEFAULT_CONFIG = {
         "last_opcua_server_id": None,
         "connection_probe_enabled": False,
         "connection_probe_interval_sec": 30,
+        "datasource_locked": False,
     },
     "db_connections": [],
     "opcua_servers": [],
@@ -46,10 +47,10 @@ DEFAULT_CONFIG = {
 def init_data_dirs() -> None:
     for d in [DATA_DIR, TEMPLATES_DIR, LAYOUT_PRESETS_DIR, SIGNATURE_ASSETS_DIR, HISTORY_DIR]:
         d.mkdir(parents=True, exist_ok=True)
-        logger.info("目录就绪: %s", d)
+        logger.info("????: %s", d)
 
     if not CONFIG_FILE.exists():
         CONFIG_FILE.write_text(json.dumps(DEFAULT_CONFIG, ensure_ascii=False, indent=2), encoding="utf-8")
-        logger.info("已创建默认配置: %s", CONFIG_FILE)
+        logger.info("???????: %s", CONFIG_FILE)
     else:
-        logger.info("配置文件已存在: %s", CONFIG_FILE)
+        logger.info("???????: %s", CONFIG_FILE)

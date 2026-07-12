@@ -38,6 +38,7 @@ export type AiPageContext = {
 export type AiPendingPromptKind =
   | 'credential'
   | 'confirm_delete'
+  | 'confirm_unlock_datasource'
   | 'confirm_reset'
   | 'confirm_import_merge'
   | 'confirm_manual_export'
@@ -48,7 +49,7 @@ export type AiPendingPromptKind =
 export type AiPendingPrompt = {
   id: string
   kind: AiPendingPromptKind
-  target_kind?: 'db' | 'opcua' | 'template' | 'layout' | 'config' | 'export' | 'app'
+  target_kind?: 'db' | 'opcua' | 'template' | 'layout' | 'config' | 'export' | 'app' | 'datasource'
   connection_id?: string
   connection_name?: string
   title?: string

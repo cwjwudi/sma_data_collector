@@ -15,14 +15,15 @@
         </dl>
         <div class="actions">
           <button type="button" class="btn seg" :disabled="busy" @click="testOnly">测试连接</button>
-          <button type="button" class="btn danger seg" v-if="draft.id" :disabled="busy" @click="remove">删除</button>
+          <button type="button" class="btn danger seg" v-if="draft.id" :disabled="formDisabled" @click="remove">删除</button>
         </div>
       </template>
       <template v-else>
+      <p v-if="locked" class="demo-conn-hint">数据源已锁定，仅可查看与测试连接。</p>
       <label>名称</label>
-      <input v-model="draft.name" class="input" placeholder="例如 产线 MySQL" />
+      <input v-model="draft.name" class="input" placeholder="例如 产线 MySQL" :disabled="formDisabled" />
       <label>引擎</label>
-      <select v-model="draft.engine" class="input" :disabled="busy">
+      <select v-model="draft.engine" class="input" :disabled="formDisabled">
         <option value="mysql">MySQL</option>
         <option value="mariadb">MariaDB</option>
         <option value="postgres">PostgreSQL</option>
@@ -31,18 +32,18 @@
       </select>
       <template v-if="draft.engine !== 'sqlite'">
         <label>主机 / IP</label>
-        <input v-model="draft.host" class="input" placeholder="192.168.1.10" :disabled="busy" />
+        <input v-model="draft.host" class="input" placeholder="192.168.1.10" :disabled="formDisabled" />
         <label>端口</label>
-        <input v-model="draft.portText" type="text" inputmode="numeric" class="input" placeholder="留空则使用默认端口" :disabled="busy" />
+        <input v-model="draft.portText" type="text" inputmode="numeric" class="input" placeholder="留空则使用默认端口" :disabled="formDisabled" />
         <label>{{ draft.engine === 'mongodb' ? '默认数据库（可选）' : '数据库（可选）' }}</label>
         <input
           v-model="draft.database"
           class="input"
           placeholder="留空则打开后自动选择可用库"
-          :disabled="busy"
+          :disabled="formDisabled"
         />
         <label>用户名</label>
-        <input v-model="draft.username" class="input" autocomplete="username" :disabled="busy" />
+        <input v-model="draft.username" class="input" autocomplete="username" :disabled="formDisabled" />
         <label>密码</label>
         <input
           v-model="draft.password"
@@ -50,22 +51,22 @@
           class="input"
           autocomplete="current-password"
           :placeholder="draft.id && hasSavedPassword ? '留空表示沿用已保存密码' : '可选'"
-          :disabled="busy"
+          :disabled="formDisabled"
         />
       </template>
       <template v-if="draft.engine === 'sqlite'">
         <label>SQLite 路径（后端所在机器上的路径）</label>
-        <input v-model="draft.sqlite_path" class="input" placeholder="D:\\data\\app.db" :disabled="busy" />
+        <input v-model="draft.sqlite_path" class="input" placeholder="D:\\data\\app.db" :disabled="formDisabled" />
       </template>
       <template v-if="draft.engine === 'mongodb'">
         <label>authSource</label>
-        <input v-model="draft.mongo_auth_source" class="input" :disabled="busy" />
+        <input v-model="draft.mongo_auth_source" class="input" :disabled="formDisabled" />
       </template>
       <div class="actions">
         <button type="button" class="btn seg" :disabled="busy" @click="testOnly">测试连接</button>
-        <button type="button" class="btn primary seg" :disabled="busy" @click="() => save(false)">仅保存</button>
-        <button type="button" class="btn primary seg" :disabled="busy" @click="testAndSave">测试并保存</button>
-        <button type="button" class="btn danger seg" v-if="draft.id" :disabled="busy" @click="remove">删除</button>
+        <button type="button" class="btn primary seg" :disabled="formDisabled" @click="() => save(false)">仅保存</button>
+        <button type="button" class="btn primary seg" :disabled="formDisabled" @click="testAndSave">测试并保存</button>
+        <button type="button" class="btn danger seg" v-if="draft.id" :disabled="formDisabled" @click="remove">删除</button>
       </div>
       </template>
       <div v-if="msg" :class="['msg', msgTone]">{{ msg }}</div>
@@ -85,25 +86,14 @@ const props = defineProps({
   creatingNew: { type: Boolean, default: false },
   loading: { type: Boolean, default: false },
   loadingMessage: { type: String, default: '正在加载已保存的连接…' },
+  locked: { type: Boolean, default: false },
 })
 const emit = defineEmits(['updated', 'new', 'connection-tested'])
-
-const draft = reactive({
-  id: '',
-  name: '',
-  engine: 'mysql',
-  host: '127.0.0.1',
-  portText: '3306',
-  database: '',
-  username: '',
-  password: '',
-  sqlite_path: '',
-  mongo_auth_source: 'admin',
-})
 
 const msg = ref('')
 const msgTone = ref('')
 const busy = ref(false)
+const formDisabled = computed(() => busy.value || props.locked)
 
 const hasSavedPassword = computed(() => {
   const v = props.modelValue
@@ -211,6 +201,11 @@ function buildApiBody() {
 }
 
 async function save(afterTest = false) {
+  if (props.locked) {
+    msg.value = '数据源已锁定，无法保存'
+    msgTone.value = 'err'
+    return
+  }
   msg.value = ''
   msgTone.value = ''
   busy.value = true
@@ -236,7 +231,7 @@ async function save(afterTest = false) {
       summary: draft.name || draft.engine || '数据库连接',
       object_type: 'db_connection',
       object_id: mine || undefined,
-      detail: { engine: draft.engine, after_test: afterTest },
+      detail: { engine: draft.engine, after_test: afterTest, note: 'ui_echo' },
     })
   } catch (e) {
     msg.value = e.message || String(e)
@@ -305,6 +300,11 @@ async function testAndSave() {
 }
 
 async function remove() {
+  if (props.locked) {
+    msg.value = '数据源已锁定，无法删除'
+    msgTone.value = 'err'
+    return
+  }
   if (!draft.id) return
   busy.value = true
   try {

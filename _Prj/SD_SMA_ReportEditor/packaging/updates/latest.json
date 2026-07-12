@@ -1,17 +1,17 @@
 {
-  "version": "0.3.51",
-  "releasedAt": "2026-07-12T08:28:26.742Z",
-  "notes": "Report Editor 0.3.51\n\n- 设置：开机自启动\n- 可选静默无页面启动（自启时托盘驻留，可打开主界面/退出）",
+  "version": "0.3.52",
+  "releasedAt": "2026-07-12T08:42:31.335Z",
+  "notes": "Report Editor 0.3.52\n\n- 数据源页滑动锁（锁定后不可改连接）\n- AI 可读 datasource_locked；锁定时弹框请人工解锁后才能写入\n- 锁切换与连接变更写入操作审计（before/after）",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.51-x64.exe",
-      "sha256": "56a83ab20b1eaac022edd86cfc44bffbc4bf54c629c927fb928f8915fd15e3e6",
-      "size": 147960971
+      "url": "Report Editor AI-Setup-0.3.52-x64.exe",
+      "sha256": "8c3cb62de40367c8a496dd3e3829789764bf686532d8d126195f0bc87b92ef38",
+      "size": 147972587
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.51-arm64.dmg",
-      "sha256": "fcbb7bbd119b94c1f1e464f0182dc691f046aefdc0f6ef58f9f756e55d09c327",
-      "size": 181950100
+      "url": "Report Editor AI-0.3.52-arm64.dmg",
+      "sha256": "",
+      "size": 0
     }
   }
 }

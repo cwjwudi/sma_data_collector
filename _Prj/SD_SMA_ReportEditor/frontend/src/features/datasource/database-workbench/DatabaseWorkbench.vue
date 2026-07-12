@@ -2,7 +2,15 @@
   <div class="wb ds-scope">
     <div v-if="loadError" class="load-err">{{ loadError }}</div>
     <div class="tabs-conn">
-      <button type="button" class="tab tab-new" @click="onNewConn">+ 新建</button>
+      <button
+        type="button"
+        class="tab tab-new"
+        :disabled="datasourceLocked"
+        :title="datasourceLocked ? '数据源已锁定' : ''"
+        @click="onNewConn"
+      >
+        + 新建
+      </button>
       <button
         v-for="t in openTabs"
         :key="t.id"
@@ -23,6 +31,7 @@
         :creating-new="creatingNew"
         :loading="connectionsLoading"
         :loading-message="connectionsLoadingMessage"
+        :locked="datasourceLocked"
         @updated="onConnectionUpdated"
         @new="onNewConn"
         @connection-tested="onConnectionTested"
@@ -159,6 +168,11 @@ const QueryEditor = defineAsyncComponent(() => import('./query-editor/QueryEdito
 const RelationshipBrowser = defineAsyncComponent(() => import('./relationship-browser/RelationshipBrowser.vue'))
 const SmartPivotPanel = defineAsyncComponent(() => import('./smart-pivot/SmartPivotPanel.vue'))
 const DdlPreviewPanel = defineAsyncComponent(() => import('./ddl-preview/DdlPreviewPanel.vue'))
+
+const props = defineProps({
+  datasourceLocked: { type: Boolean, default: false },
+})
+const datasourceLocked = computed(() => props.datasourceLocked)
 
 const connections = ref([])
 const activeConnId = ref('')
@@ -618,6 +632,7 @@ function refreshCatalog() {
 }
 
 function onNewConn() {
+  if (datasourceLocked.value) return
   creatingNew.value = true
   draftConn.value = null
   activeConnId.value = ''

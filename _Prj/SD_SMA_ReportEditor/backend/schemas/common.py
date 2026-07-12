@@ -277,6 +277,7 @@ class AppPreferencesPatch(BaseModel):
     last_opcua_server_id: str | None = None
     connection_probe_enabled: bool | None = None
     connection_probe_interval_sec: int | None = None
+    datasource_locked: bool | None = None
     demo_preferred_channel: str | None = None
     demo_remote_db_host: str | None = None
     demo_remote_db_port: int | None = None

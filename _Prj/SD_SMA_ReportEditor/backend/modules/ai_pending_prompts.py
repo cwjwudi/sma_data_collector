@@ -13,6 +13,7 @@ from core.settings import DATA_DIR
 PromptKind = Literal[
     "credential",
     "confirm_delete",
+    "confirm_unlock_datasource",
     "confirm_reset",
     "confirm_import_merge",
     "confirm_manual_export",

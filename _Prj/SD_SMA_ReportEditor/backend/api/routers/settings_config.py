@@ -74,10 +74,31 @@ def patch_app_preferences(body: AppPreferencesPatch):
     try:
         cfg = _load()
         prefs = dict(cfg.get("app_preferences") or {})
-        for k, v in body.model_dump(exclude_unset=True).items():
+        before_locked = bool(prefs.get("datasource_locked"))
+        patch = body.model_dump(exclude_unset=True)
+        for k, v in patch.items():
             prefs[k] = v
         cfg["app_preferences"] = prefs
         _save(cfg)
+        if "datasource_locked" in patch:
+            after_locked = bool(prefs.get("datasource_locked"))
+            if before_locked != after_locked:
+                action = "datasource.lock" if after_locked else "datasource.unlock"
+                try:
+                    audit_log.append_audit(
+                        DATA_DIR,
+                        action=action,
+                        result="ok",
+                        summary="数据源已锁定" if after_locked else "数据源已解锁",
+                        object_type="datasource",
+                        detail={
+                            "before": {"locked": before_locked},
+                            "after": {"locked": after_locked},
+                            "via": "app_preferences",
+                        },
+                    )
+                except Exception:
+                    logger.exception("audit lock toggle")
         return _public_app_preferences(prefs)
     except Exception as e:
         logger.exception("patch_app_preferences")

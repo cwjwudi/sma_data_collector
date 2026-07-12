@@ -5,10 +5,12 @@ import uuid
 from typing import Any, Literal
 
 from core.settings import CONFIG_FILE, DATA_DIR
-from modules import ai_pending_prompts, config_store, db_readonly_service, opcua_service
+from modules import ai_pending_prompts, audit_log, config_store, datasource_lock, db_readonly_service, opcua_service
 from schemas.common import DbConnectionSave, OpcUaServerSave
 
 TargetKind = Literal["db", "opcua"]
+
+_UNLOCK_MSG = "数据源已锁定，请确认解锁后 AI 才能修改连接配置。"
 
 
 def _cfg() -> dict[str, Any]:
@@ -17,6 +19,56 @@ def _cfg() -> dict[str, Any]:
 
 def _save(data: dict[str, Any]) -> None:
     config_store.save_config(CONFIG_FILE, data)
+
+
+def refuse_if_locked(*, attempted_action: str, object_id: str | None = None) -> dict[str, Any] | None:
+    """锁定时不落库，创建解锁确认框并返回工具错误结果。"""
+    if not datasource_lock.is_datasource_locked():
+        return None
+    try:
+        audit_log.append_audit(
+            DATA_DIR,
+            action="datasource.write_blocked",
+            result="fail",
+            summary=_UNLOCK_MSG,
+            object_type="datasource",
+            object_id=object_id,
+            detail={"attempted_action": attempted_action, "via": "ai"},
+        )
+    except Exception:
+        pass
+    prompt = ai_pending_prompts.create_prompt(
+        kind="confirm_unlock_datasource",
+        target_kind="datasource",
+        title="请解锁数据源",
+        message=_UNLOCK_MSG + " AI 无法自行解锁，需您在此确认或到「数据源配置」页滑动解锁。",
+        payload={"attempted_action": attempted_action},
+    )
+    return {
+        "ok": False,
+        "error": _UNLOCK_MSG,
+        "status": "awaiting_user_unlock",
+        "datasource_locked": True,
+        "pending_prompt_id": prompt.get("id"),
+        "prompt": prompt,
+        "message": _UNLOCK_MSG,
+    }
+
+
+# 兼容旧名
+_refuse_if_locked = refuse_if_locked
+
+
+def apply_confirm_unlock(prompt_id: str, confirmed: bool) -> dict[str, Any]:
+    item = ai_pending_prompts.get_prompt(prompt_id)
+    if not item or item.get("status") != "pending" or item.get("kind") != "confirm_unlock_datasource":
+        return {"ok": False, "error": "待办不存在或已过期"}
+    if not confirmed:
+        ai_pending_prompts.cancel_prompt(prompt_id)
+        return {"ok": True, "cancelled": True, "datasource_locked": True}
+    datasource_lock.set_datasource_locked(False, via="ai_prompt")
+    ai_pending_prompts.complete_prompt(prompt_id, result={"ok": True, "datasource_locked": False})
+    return {"ok": True, "datasource_locked": False}
 
 
 def _is_mysql_family(engine: str) -> bool:
@@ -120,6 +172,12 @@ def _needs_db_credential(*, conn: dict[str, Any] | None, engine: str, username: 
 
 
 def upsert_db_connection(args: dict[str, Any]) -> dict[str, Any]:
+    blocked = _refuse_if_locked(
+        attempted_action="ai.upsert_db_connection",
+        object_id=str(args.get("id") or "") or None,
+    )
+    if blocked:
+        return blocked
     body = DbConnectionSave(
         id=args.get("id"),
         name=str(args.get("name") or ""),
@@ -157,6 +215,7 @@ def upsert_db_connection(args: dict[str, Any]) -> dict[str, Any]:
         "mongo_auth_source": body.mongo_auth_source or "admin",
     }
     saved_id = body.id
+    before = datasource_lock.db_connection_audit_summary(existing)
     if body.id:
         found = False
         for i, c in enumerate(conns):
@@ -176,7 +235,24 @@ def upsert_db_connection(args: dict[str, Any]) -> dict[str, Any]:
 
     cfg["db_connections"] = conns
     _save(cfg)
-    masked = config_store.mask_connection_for_response(_conn_by_id(saved_id) or entry)
+    after_row = _conn_by_id(saved_id) or entry
+    try:
+        audit_log.append_audit(
+            DATA_DIR,
+            action="db.connection_save",
+            result="ok",
+            summary=str(after_row.get("name") or after_row.get("engine") or "数据库连接"),
+            object_type="db_connection",
+            object_id=saved_id,
+            detail={
+                "before": before,
+                "after": datasource_lock.db_connection_audit_summary(after_row),
+                "via": "ai",
+            },
+        )
+    except Exception:
+        pass
+    masked = config_store.mask_connection_for_response(after_row)
     needs_cred = _needs_db_credential(conn=existing, engine=eng, username=body.username)
     if needs_cred:
         prompt = ai_pending_prompts.create_prompt(
@@ -200,6 +276,12 @@ def upsert_db_connection(args: dict[str, Any]) -> dict[str, Any]:
 
 
 def upsert_opc_server(args: dict[str, Any]) -> dict[str, Any]:
+    blocked = _refuse_if_locked(
+        attempted_action="ai.upsert_opc_server",
+        object_id=str(args.get("id") or "") or None,
+    )
+    if blocked:
+        return blocked
     body = OpcUaServerSave(
         id=args.get("id"),
         name=str(args.get("name") or ""),
@@ -214,6 +296,7 @@ def upsert_opc_server(args: dict[str, Any]) -> dict[str, Any]:
     cfg = _cfg()
     servers = list(cfg.get("opcua_servers") or [])
     existing = _opc_by_id(body.id) if body.id else None
+    before = datasource_lock.opc_server_audit_summary(existing)
     entry: dict[str, Any] = {
         "name": body.name,
         "endpoint_url": body.endpoint_url,
@@ -241,7 +324,24 @@ def upsert_opc_server(args: dict[str, Any]) -> dict[str, Any]:
 
     cfg["opcua_servers"] = servers
     _save(cfg)
-    masked = config_store.mask_opcua_for_response(_opc_by_id(saved_id) or entry)
+    after_row = _opc_by_id(saved_id) or entry
+    try:
+        audit_log.append_audit(
+            DATA_DIR,
+            action="opcua.connection_save",
+            result="ok",
+            summary=str(after_row.get("name") or after_row.get("endpoint_url") or "OPC UA"),
+            object_type="opcua_server",
+            object_id=saved_id,
+            detail={
+                "before": before,
+                "after": datasource_lock.opc_server_audit_summary(after_row),
+                "via": "ai",
+            },
+        )
+    except Exception:
+        pass
+    masked = config_store.mask_opcua_for_response(after_row)
     needs_cred = False
     if body.username and str(body.username).strip():
         if not existing or not existing.get("password_enc"):
@@ -270,6 +370,12 @@ def upsert_opc_server(args: dict[str, Any]) -> dict[str, Any]:
 
 
 def request_connection_credentials(args: dict[str, Any]) -> dict[str, Any]:
+    blocked = _refuse_if_locked(
+        attempted_action="ai.request_connection_credentials",
+        object_id=str(args.get("connection_id") or "") or None,
+    )
+    if blocked:
+        return blocked
     kind = str(args.get("kind") or "").strip().lower()
     cid = str(args.get("connection_id") or "").strip()
     if not cid:
@@ -306,6 +412,9 @@ def request_connection_credentials(args: dict[str, Any]) -> dict[str, Any]:
 
 
 def delete_db_connection(connection_id: str) -> dict[str, Any]:
+    blocked = _refuse_if_locked(attempted_action="ai.delete_db_connection", object_id=connection_id or None)
+    if blocked:
+        return blocked
     conn = _conn_by_id(connection_id)
     if not conn:
         return {"ok": False, "error": "未找到数据库连接"}
@@ -328,6 +437,9 @@ def delete_db_connection(connection_id: str) -> dict[str, Any]:
 
 
 def delete_opc_server(server_id: str) -> dict[str, Any]:
+    blocked = _refuse_if_locked(attempted_action="ai.delete_opc_server", object_id=server_id or None)
+    if blocked:
+        return blocked
     srv = _opc_by_id(server_id)
     if not srv:
         return {"ok": False, "error": "未找到 OPC UA 配置"}
@@ -351,6 +463,12 @@ def apply_credential(prompt_id: str, password: str) -> dict[str, Any]:
     item = ai_pending_prompts.get_prompt(prompt_id)
     if not item or item.get("status") != "pending" or item.get("kind") != "credential":
         return {"ok": False, "error": "待办不存在或已过期"}
+    blocked = _refuse_if_locked(
+        attempted_action="ai.apply_credential",
+        object_id=str(item.get("connection_id") or "") or None,
+    )
+    if blocked:
+        return blocked
     cid = str(item.get("connection_id") or "")
     target = str(item.get("target_kind") or "")
     cfg = _cfg()
@@ -358,9 +476,27 @@ def apply_credential(prompt_id: str, password: str) -> dict[str, Any]:
         conns = cfg.get("db_connections") or []
         for i, c in enumerate(conns):
             if c.get("id") == cid:
+                before = datasource_lock.db_connection_audit_summary(c)
                 conns[i] = {**c, "password_enc": config_store.encrypt_db_password(DATA_DIR, password)}
                 cfg["db_connections"] = conns
                 _save(cfg)
+                try:
+                    audit_log.append_audit(
+                        DATA_DIR,
+                        action="db.connection_save",
+                        result="ok",
+                        summary=str(c.get("name") or cid),
+                        object_type="db_connection",
+                        object_id=cid,
+                        detail={
+                            "before": before,
+                            "after": datasource_lock.db_connection_audit_summary(conns[i]),
+                            "password_changed": True,
+                            "via": "ai_credential",
+                        },
+                    )
+                except Exception:
+                    pass
                 ai_pending_prompts.complete_prompt(prompt_id, result={"ok": True})
                 return {"ok": True, "connection_id": cid}
         return {"ok": False, "error": "连接已不存在"}
@@ -368,9 +504,27 @@ def apply_credential(prompt_id: str, password: str) -> dict[str, Any]:
         servers = cfg.get("opcua_servers") or []
         for i, s in enumerate(servers):
             if s.get("id") == cid:
+                before = datasource_lock.opc_server_audit_summary(s)
                 servers[i] = {**s, "password_enc": config_store.encrypt_opcua_password(DATA_DIR, password)}
                 cfg["opcua_servers"] = servers
                 _save(cfg)
+                try:
+                    audit_log.append_audit(
+                        DATA_DIR,
+                        action="opcua.connection_save",
+                        result="ok",
+                        summary=str(s.get("name") or cid),
+                        object_type="opcua_server",
+                        object_id=cid,
+                        detail={
+                            "before": before,
+                            "after": datasource_lock.opc_server_audit_summary(servers[i]),
+                            "password_changed": True,
+                            "via": "ai_credential",
+                        },
+                    )
+                except Exception:
+                    pass
                 ai_pending_prompts.complete_prompt(prompt_id, result={"ok": True})
                 return {"ok": True, "connection_id": cid}
         return {"ok": False, "error": "OPC 连接已不存在"}
@@ -384,20 +538,60 @@ async def apply_confirm_delete(prompt_id: str, confirmed: bool) -> dict[str, Any
     if not confirmed:
         ai_pending_prompts.cancel_prompt(prompt_id)
         return {"ok": True, "cancelled": True}
+    blocked = _refuse_if_locked(
+        attempted_action="ai.apply_confirm_delete",
+        object_id=str(item.get("connection_id") or "") or None,
+    )
+    if blocked:
+        return blocked
     cid = str(item.get("connection_id") or "")
     target = str(item.get("target_kind") or "")
     cfg = _cfg()
     if target == "db":
+        before = next((c for c in cfg.get("db_connections") or [] if c.get("id") == cid), None)
         conns = [c for c in cfg.get("db_connections") or [] if c.get("id") != cid]
         cfg["db_connections"] = conns
         _save(cfg)
+        try:
+            audit_log.append_audit(
+                DATA_DIR,
+                action="db.connection_delete",
+                result="ok",
+                summary=str((before or {}).get("name") or cid),
+                object_type="db_connection",
+                object_id=cid,
+                detail={
+                    "before": datasource_lock.db_connection_audit_summary(before),
+                    "after": None,
+                    "via": "ai",
+                },
+            )
+        except Exception:
+            pass
         ai_pending_prompts.complete_prompt(prompt_id, result={"ok": True, "deleted": cid})
         return {"ok": True, "deleted": cid, "kind": "db"}
     if target == "opcua":
+        before = next((s for s in cfg.get("opcua_servers") or [] if s.get("id") == cid), None)
         await opcua_service.drop_saved_server_pool(cid)
         servers = [s for s in cfg.get("opcua_servers") or [] if s.get("id") != cid]
         cfg["opcua_servers"] = servers
         _save(cfg)
+        try:
+            audit_log.append_audit(
+                DATA_DIR,
+                action="opcua.connection_delete",
+                result="ok",
+                summary=str((before or {}).get("name") or cid),
+                object_type="opcua_server",
+                object_id=cid,
+                detail={
+                    "before": datasource_lock.opc_server_audit_summary(before),
+                    "after": None,
+                    "via": "ai",
+                },
+            )
+        except Exception:
+            pass
         ai_pending_prompts.complete_prompt(prompt_id, result={"ok": True, "deleted": cid})
         return {"ok": True, "deleted": cid, "kind": "opcua"}
     return {"ok": False, "error": "未知 target_kind"}
@@ -575,6 +769,7 @@ async def get_datasource_inventory(
 
     return {
         "ok": True,
+        "datasource_locked": datasource_lock.is_datasource_locked(cfg),
         "summary": {
             "db_connection_count": len(db_conns),
             "opc_connection_count": len(opc_servers),
@@ -584,6 +779,7 @@ async def get_datasource_inventory(
             "user_table_count": total_user_tables,
             "opc_variable_count": total_opc_variables,
             "include_system_databases": bool(include_system_databases),
+            "datasource_locked": datasource_lock.is_datasource_locked(cfg),
         },
         "databases": db_rows,
         "opcua_servers": opc_rows,

@@ -51,7 +51,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "get_connection_health_summary",
-            "description": "汇总已保存连接与探活设置；可选 live_probe 对每个连接做测试。",
+            "description": "汇总已保存连接与探活设置；含 datasource_locked。改连接前先读此字段；可选 live_probe 对每个连接做测试。",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -206,7 +206,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "get_datasource_inventory",
-            "description": "汇总数据源库存：数据库连接数、库/表数量、OPC UA 连接数与可绑定变量数量（现场探查，只读）。",
+            "description": "汇总数据源库存：数据库连接数、库/表数量、OPC UA 连接数与可绑定变量数量（现场探查，只读）。返回含 datasource_locked；改连接前先读此字段。",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -1027,6 +1027,7 @@ async def _tool_health_summary(args: dict[str, Any]) -> dict[str, Any]:
     out: dict[str, Any] = {
         "db_count": len(dbs),
         "opc_count": len(opcs),
+        "datasource_locked": bool(prefs.get("datasource_locked")),
         "connection_probe_enabled": bool(prefs.get("connection_probe_enabled")),
         "connection_probe_interval_sec": prefs.get("connection_probe_interval_sec", 30),
         "databases": [{"id": c.get("id"), "name": c.get("name"), "engine": c.get("engine")} for c in dbs],
@@ -1171,8 +1172,15 @@ def _tool_suggest_config(args: dict[str, Any], *, page_context: dict[str, Any] |
 
 
 def _tool_update_probe(args: dict[str, Any]) -> dict[str, Any]:
+    blocked = ai_datasource_ops.refuse_if_locked(attempted_action="ai.update_connection_probe_settings")
+    if blocked:
+        return blocked
     cfg = _cfg()
     prefs = dict(cfg.get("app_preferences") or {})
+    before = {
+        "connection_probe_enabled": prefs.get("connection_probe_enabled"),
+        "connection_probe_interval_sec": prefs.get("connection_probe_interval_sec"),
+    }
     if "enabled" in args:
         prefs["connection_probe_enabled"] = bool(args["enabled"])
     if args.get("interval_sec") is not None:
@@ -1180,10 +1188,22 @@ def _tool_update_probe(args: dict[str, Any]) -> dict[str, Any]:
         prefs["connection_probe_interval_sec"] = max(10, min(sec, 3600))
     cfg["app_preferences"] = prefs
     config_store.save_config(CONFIG_FILE, cfg)
+    applied = {
+        "connection_probe_enabled": prefs.get("connection_probe_enabled"),
+        "connection_probe_interval_sec": prefs.get("connection_probe_interval_sec"),
+    }
+    try:
+        audit_log.append_audit(
+            DATA_DIR,
+            action="datasource.probe_settings",
+            result="ok",
+            summary="更新连接探活设置",
+            object_type="datasource",
+            detail={"before": before, "after": applied, "via": "ai"},
+        )
+    except Exception:
+        pass
     return {
         "ok": True,
-        "applied": {
-            "connection_probe_enabled": prefs.get("connection_probe_enabled"),
-            "connection_probe_interval_sec": prefs.get("connection_probe_interval_sec"),
-        },
+        "applied": applied,
     }

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Body, HTTPException
 
 from core.settings import CONFIG_FILE, DATA_DIR
-from modules import config_store, opcua_service
+from modules import audit_log, config_store, datasource_lock, opcua_service
 from schemas.common import (
     OpcUaBrowseRequest,
     OpcUaReadRequest,
@@ -42,8 +42,13 @@ async def list_servers():
 
 @router.post("/opcua/servers")
 async def upsert_server(body: OpcUaServerSave):
+    datasource_lock.assert_datasource_writable(
+        attempted_action="opcua.connection_save",
+        object_id=body.id,
+    )
     cfg = _load_cfg()
     servers = cfg.get("opcua_servers", [])
+    before = next((s for s in servers if s.get("id") == body.id), None) if body.id else None
     pwd_plain = body.password
     entry = {
         "id": body.id or "",
@@ -74,16 +79,53 @@ async def upsert_server(body: OpcUaServerSave):
         servers.append(entry)
     cfg["opcua_servers"] = servers
     _save_cfg(cfg)
+    after = next((s for s in servers if s.get("id") == entry.get("id")), entry)
+    try:
+        audit_log.append_audit(
+            DATA_DIR,
+            action="opcua.connection_save",
+            result="ok",
+            summary=str(after.get("name") or after.get("endpoint_url") or "OPC UA"),
+            object_type="opcua_server",
+            object_id=after.get("id"),
+            detail={
+                "before": datasource_lock.opc_server_audit_summary(before),
+                "after": datasource_lock.opc_server_audit_summary(after),
+                "password_changed": pwd_plain is not None,
+            },
+        )
+    except Exception:
+        pass
     return {"servers": [config_store.mask_opcua_for_response(s) for s in servers]}
 
 
 @router.delete("/opcua/servers/{server_id}")
 async def delete_server(server_id: str):
-    await opcua_service.drop_saved_server_pool(server_id)
+    datasource_lock.assert_datasource_writable(
+        attempted_action="opcua.connection_delete",
+        object_id=server_id,
+    )
     cfg = _load_cfg()
+    before = next((s for s in cfg.get("opcua_servers", []) if s.get("id") == server_id), None)
+    await opcua_service.drop_saved_server_pool(server_id)
     servers = [s for s in cfg.get("opcua_servers", []) if s.get("id") != server_id]
     cfg["opcua_servers"] = servers
     _save_cfg(cfg)
+    try:
+        audit_log.append_audit(
+            DATA_DIR,
+            action="opcua.connection_delete",
+            result="ok",
+            summary=str((before or {}).get("name") or server_id),
+            object_type="opcua_server",
+            object_id=server_id,
+            detail={
+                "before": datasource_lock.opc_server_audit_summary(before),
+                "after": None,
+            },
+        )
+    except Exception:
+        pass
     return {"ok": True}
 
 

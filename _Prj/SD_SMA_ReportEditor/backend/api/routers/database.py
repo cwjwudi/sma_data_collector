@@ -9,7 +9,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 
 from core.settings import CONFIG_FILE, DATA_DIR, QUERY_SESSION_FILE
-from modules import config_store, db_connection_ops, db_readonly_service, table_chart_service
+from modules import audit_log, config_store, datasource_lock, db_connection_ops, db_readonly_service, table_chart_service
 from schemas.common import (
     DbChartProfileRequest,
     DbChartSeriesRequest,
@@ -139,8 +139,15 @@ async def list_connections():
 @router.post("/database/connections")
 async def upsert_connection(body: DbConnectionSave):
     try:
+        datasource_lock.assert_datasource_writable(
+            attempted_action="db.connection_save",
+            object_id=body.id,
+        )
         cfg = _cfg()
         conns = cfg.get("db_connections", [])
+        before = None
+        if body.id:
+            before = next((c for c in conns if c.get("id") == body.id), None)
         pwd_plain = body.password
         eng = (body.engine or "").lower()
         default_port = 3306
@@ -190,6 +197,23 @@ async def upsert_connection(body: DbConnectionSave):
         cfg["db_connections"] = conns
         _save(cfg)
         saved_id = entry.get("id")
+        after = next((c for c in conns if c.get("id") == saved_id), entry)
+        try:
+            audit_log.append_audit(
+                DATA_DIR,
+                action="db.connection_save",
+                result="ok",
+                summary=str(after.get("name") or after.get("engine") or "数据库连接"),
+                object_type="db_connection",
+                object_id=saved_id,
+                detail={
+                    "before": datasource_lock.db_connection_audit_summary(before),
+                    "after": datasource_lock.db_connection_audit_summary(after),
+                    "password_changed": pwd_plain is not None,
+                },
+            )
+        except Exception:
+            logger.exception("audit db.connection_save")
         return {
             "connections": [config_store.mask_connection_for_response(c) for c in conns],
             "saved_id": saved_id,
@@ -204,11 +228,33 @@ async def upsert_connection(body: DbConnectionSave):
 @router.delete("/database/connections/{connection_id}")
 async def delete_connection(connection_id: str):
     try:
+        datasource_lock.assert_datasource_writable(
+            attempted_action="db.connection_delete",
+            object_id=connection_id,
+        )
         cfg = _cfg()
+        before = next((c for c in cfg.get("db_connections", []) if c.get("id") == connection_id), None)
         conns = [c for c in cfg.get("db_connections", []) if c.get("id") != connection_id]
         cfg["db_connections"] = conns
         _save(cfg)
+        try:
+            audit_log.append_audit(
+                DATA_DIR,
+                action="db.connection_delete",
+                result="ok",
+                summary=str((before or {}).get("name") or connection_id),
+                object_type="db_connection",
+                object_id=connection_id,
+                detail={
+                    "before": datasource_lock.db_connection_audit_summary(before),
+                    "after": None,
+                },
+            )
+        except Exception:
+            logger.exception("audit db.connection_delete")
         return {"ok": True}
+    except HTTPException:
+        raise
     except Exception as e:
         logger.exception("delete_connection")
         raise HTTPException(503, f"删除连接失败: {e}") from e

@@ -22,6 +22,7 @@ APP_PREFERENCE_KEYS: tuple[str, ...] = (
     "last_opcua_server_id",
     "connection_probe_enabled",
     "connection_probe_interval_sec",
+    "datasource_locked",
     "demo_preferred_channel",
     "demo_remote_db_host",
     "demo_remote_db_port",
@@ -163,6 +164,7 @@ def normalize_top_level(cfg: dict[str, Any]) -> dict[str, Any]:
             prefs.setdefault(k, None)
     prefs.setdefault("connection_probe_enabled", False)
     prefs.setdefault("connection_probe_interval_sec", 30)
+    prefs.setdefault("datasource_locked", False)
     out["app_preferences"] = prefs
     ai = out.get("ai_settings")
     if not isinstance(ai, dict):

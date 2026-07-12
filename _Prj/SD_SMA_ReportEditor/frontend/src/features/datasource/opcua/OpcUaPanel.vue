@@ -5,7 +5,15 @@
       若暂时没有现场服务器，可跳过此步，稍后在<strong>数据源配置</strong>中补充。
     </p>
     <div class="tabs-conn">
-      <button type="button" class="tab tab-new" @click="startNew">+ 新建</button>
+      <button
+        type="button"
+        class="tab tab-new"
+        :disabled="datasourceLocked"
+        :title="datasourceLocked ? '数据源已锁定' : ''"
+        @click="startNew"
+      >
+        + 新建
+      </button>
       <button
         v-for="s in servers"
         :key="'conn-tab-' + s.id"
@@ -26,10 +34,11 @@
         <div v-if="!wizardLayout" class="row-head">
           <h4>OPC UA 连接</h4>
         </div>
+        <p v-if="datasourceLocked" class="opc-lead">数据源已锁定，仅可查看、测试与浏览地址空间。</p>
         <label>名称</label>
-        <input v-model="form.name" class="input" />
+        <input v-model="form.name" class="input" :disabled="opcFormDisabled" />
         <label>主机 / IP</label>
-        <input v-model="form.host" class="input" placeholder="192.168.1.10" />
+        <input v-model="form.host" class="input" placeholder="192.168.1.10" :disabled="opcFormDisabled" />
         <label>端口</label>
         <input
           v-model="form.portText"
@@ -37,11 +46,18 @@
           inputmode="numeric"
           class="input"
           placeholder="4840"
+          :disabled="opcFormDisabled"
         />
         <label>用户名（可选）</label>
-        <input v-model="form.username" class="input" />
+        <input v-model="form.username" class="input" :disabled="opcFormDisabled" />
         <label>密码（可选）</label>
-        <input v-model="form.password" type="password" class="input" autocomplete="new-password" />
+        <input
+          v-model="form.password"
+          type="password"
+          class="input"
+          autocomplete="new-password"
+          :disabled="opcFormDisabled"
+        />
         <label for="opc-poll-interval">读值刷新间隔</label>
         <div class="poll-interval poll-interval--form">
           <input
@@ -118,11 +134,19 @@
           <p v-if="copyFeedback" class="copy-feedback">{{ copyFeedback }}</p>
         </div>
         <div class="actions">
-          <button type="button" class="btn primary seg" @click="saveServer">保存</button>
+          <button type="button" class="btn primary seg" :disabled="opcFormDisabled" @click="saveServer">保存</button>
           <button type="button" class="btn seg" @click="testDraft">
             {{ wizardLayout ? '测试连接' : '测试连接（当前表单）' }}
           </button>
-          <button type="button" class="btn danger seg" v-if="form.id" @click="removeServer">删除</button>
+          <button
+            type="button"
+            class="btn danger seg"
+            v-if="form.id"
+            :disabled="opcFormDisabled"
+            @click="removeServer"
+          >
+            删除
+          </button>
         </div>
         <div v-if="msg" class="msg">{{ translateOpcuaMessage(msg) }}</div>
       </div>
@@ -267,9 +291,13 @@ import { parseOpcNodeId, opcNodeClassLabel } from './opcua-node-display.js'
 const props = defineProps({
   /** 向导内：单列芯片 + 草稿浏览 + 与数据库向导一致的一体化版面 */
   wizardLayout: { type: Boolean, default: false },
+  datasourceLocked: { type: Boolean, default: false },
 })
 
 const emit = defineEmits(['health-summary'])
+
+const datasourceLocked = computed(() => props.datasourceLocked)
+const opcFormDisabled = computed(() => datasourceLocked.value)
 
 const servers = ref([])
 let loadServersToken = 0
@@ -687,6 +715,10 @@ function selectServer(s, persist = true) {
 }
 
 function startNew() {
+  if (datasourceLocked.value) {
+    msg.value = '数据源已锁定，无法新建'
+    return
+  }
   selected.value = null
   form.id = ''
   form.name = ''
@@ -720,6 +752,10 @@ function syncPickedPanelFromRead(node, res, errMsg) {
 }
 
 async function saveServer() {
+  if (datasourceLocked.value) {
+    msg.value = '数据源已锁定，无法保存'
+    return
+  }
   msg.value = ''
   try {
     let ep = currentEndpointUrl()
@@ -768,6 +804,10 @@ async function saveServer() {
 
 async function removeServer() {
   if (!form.id) return
+  if (datasourceLocked.value) {
+    msg.value = '数据源已锁定，无法删除'
+    return
+  }
   const removedId = form.id
   await apiFetch(`/opcua/servers/${removedId}`, { method: 'DELETE' })
   delete opcHealth[removedId]

@@ -45,7 +45,8 @@
         </template>
 
         <template v-else-if="isConfirmKind">
-          <p v-if="activePrompt.kind === 'confirm_reset'" class="ai-pending-warning">将清空数据源、模版、版式与审计，不可撤销。</p>
+          <p v-if="activePrompt.kind === 'confirm_unlock_datasource'" class="ai-pending-warning">确认后将解锁数据源，之后 AI 与人工均可修改连接配置。</p>
+          <p v-else-if="activePrompt.kind === 'confirm_reset'" class="ai-pending-warning">将清空数据源、模版、版式与审计，不可撤销。</p>
           <p v-else-if="activePrompt.kind === 'confirm_import_merge'" class="ai-pending-warning">将 merge 合并配置，可能覆盖同名连接与资产。</p>
           <p v-else-if="activePrompt.kind === 'confirm_manual_export'" class="ai-pending-warning">将执行一次模拟结批 PDF 导出。</p>
           <p v-else class="ai-pending-warning">此操作不可撤销。</p>
@@ -140,6 +141,7 @@ let listFingerprint = ''
 
 const CONFIRM_KINDS = new Set([
   'confirm_delete',
+  'confirm_unlock_datasource',
   'confirm_reset',
   'confirm_import_merge',
   'confirm_manual_export',
@@ -153,6 +155,7 @@ const confirmDanger = computed(() => {
 const confirmButtonLabel = computed(() => {
   if (submitting.value) return '处理中…'
   const k = activePrompt.value?.kind
+  if (k === 'confirm_unlock_datasource') return '确认解锁'
   if (k === 'confirm_reset') return '确认复位'
   if (k === 'confirm_import_merge') return '确认导入'
   if (k === 'confirm_manual_export') return '开始导出'
@@ -289,6 +292,11 @@ async function onSubmitConfirm(confirmed: boolean) {
         window.dispatchEvent(new CustomEvent('report-editor-config-imported'))
         notifyDatasourceChanged('all', 'config_reset')
         notifyAssetsChanged('config_change')
+      } else if (prompt.kind === 'confirm_unlock_datasource') {
+        window.dispatchEvent(
+          new CustomEvent('report-editor-datasource-lock-changed', { detail: { locked: false } }),
+        )
+        notifyDatasourceChanged('all', 'ai_pending_unlock')
       } else if (prompt.kind === 'confirm_delete') {
         if (prompt.target_kind === 'template' || prompt.target_kind === 'layout') {
           notifyAssetsChanged('delete')

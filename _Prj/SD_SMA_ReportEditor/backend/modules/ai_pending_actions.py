@@ -25,6 +25,9 @@ async def apply_confirm(prompt_id: str, confirmed: bool) -> dict[str, Any]:
             return ai_asset_ops.apply_delete_layout(prompt_id, item)
         return {"ok": False, "error": f"未知删除目标: {target}"}
 
+    if kind == "confirm_unlock_datasource":
+        return ai_datasource_ops.apply_confirm_unlock(prompt_id, True)
+
     if kind == "confirm_reset":
         return ai_config_ops.apply_reset(prompt_id)
 
