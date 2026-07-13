@@ -422,31 +422,11 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
-            "name": "ensure_user_demo_database",
-            "description": (
-                "在已保存的 MySQL/MariaDB 连接上创建用户库 report_user_lib，"
-                "并写入 demo_batches / demo_metrics 演示数据，供绑定冒烟测试使用。"
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "connection_id": {
-                        "type": "string",
-                        "description": "可选；默认取偏好/首个非演示 MySQL 连接",
-                    },
-                },
-                "additionalProperties": False,
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
             "name": "create_binding_smoke_template",
             "description": (
                 "创建/覆盖绑定冒烟模版：封面封尾、页眉页脚、OPC/SQL 参数与混合单元格表、"
-                "可视化 SQL 横表与纵表填充（筛选 batch_no 绑定 OPC 批次号节点并写入演示值）。"
-                "默认顺带确保用户演示库，并标记前端模版列表 reload。"
+                "可视化 SQL 横表与纵表填充（筛选 batch_no 绑定 OPC 批次号节点）。"
+                "需已有数据库与 OPC UA 连接；ensure_schema=true 时可在该连接上创建冒烟用表 report_user_lib。"
             ),
             "parameters": {
                 "type": "object",
@@ -456,7 +436,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                     "opc_server_id": {"type": "string", "description": "可选 OPC UA 连接 id"},
                     "ensure_schema": {
                         "type": "boolean",
-                        "description": "是否先创建/刷新用户演示库，默认 true",
+                        "description": "是否在已有连接上创建/刷新冒烟用表，默认 false（需库表已存在）",
                     },
                 },
                 "additionalProperties": False,
@@ -854,16 +834,12 @@ async def execute_tool(name: str, arguments: dict[str, Any] | None, *, page_cont
         result = ai_asset_ops.create_blank_template(str(args.get("name") or ""))
     elif name == "create_blank_layout":
         result = ai_asset_ops.create_blank_layout(str(args.get("name") or ""))
-    elif name == "ensure_user_demo_database":
-        result = ai_demo_template_ops.ensure_user_demo_database(
-            str(args.get("connection_id")).strip() if args.get("connection_id") else None
-        )
     elif name == "create_binding_smoke_template":
         result = await ai_demo_template_ops.create_binding_smoke_template(
             name=str(args.get("name") or "") or None,
             connection_id=str(args.get("connection_id")).strip() if args.get("connection_id") else None,
             opc_server_id=str(args.get("opc_server_id")).strip() if args.get("opc_server_id") else None,
-            ensure_schema=bool(args["ensure_schema"]) if "ensure_schema" in args else True,
+            ensure_schema=bool(args["ensure_schema"]) if "ensure_schema" in args else False,
         )
     elif name == "apply_template_sheet_layouts":
         result = ai_demo_template_ops.apply_template_sheet_layouts(

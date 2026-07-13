@@ -94,10 +94,13 @@ def _mysql_connect(conn: dict[str, Any], database: str | None = None):
 
 
 def ensure_user_demo_database(connection_id: str | None = None) -> dict[str, Any]:
-    """在指定 MySQL/MariaDB 连接上创建用户库 report_user_lib 与演示表。"""
+    """在指定 MySQL/MariaDB 连接上创建冒烟用库 report_user_lib 与示例表。
+
+    内部辅助：不再作为 AI 工具暴露；「演示与培训」通道已拆除。
+    """
     conn = _pick_db_connection(connection_id)
     if not conn:
-        return {"ok": False, "error": "未找到可用的数据库连接"}
+        return {"ok": False, "error": "未找到可用的数据库连接，请先在数据源配置中保存连接"}
     eng = (conn.get("engine") or "").lower()
     if eng not in ("mysql", "mariadb"):
         return {"ok": False, "error": f"当前仅支持 MySQL/MariaDB 创建用户库，实际引擎={eng}"}
@@ -159,7 +162,7 @@ def ensure_user_demo_database(connection_id: str | None = None) -> dict[str, Any
             "database": DEMO_DB,
             "tables": ["demo_batches", "demo_metrics"],
             "batch_no": DEMO_BATCH_NO,
-            "message": f"已确保用户库 `{DEMO_DB}` 与演示数据（批次 {DEMO_BATCH_NO}）",
+            "message": f"已确保用户库 `{DEMO_DB}` 与冒烟数据（批次 {DEMO_BATCH_NO}）",
         }
     except Exception as e:
         return {"ok": False, "error": str(e)}
@@ -225,7 +228,7 @@ async def _resolve_opc_nodes(server: dict[str, Any], *, live_search: bool = True
 
 
 async def _seed_batch_opc_value(server: dict[str, Any], node_id: str, value: str) -> dict[str, Any]:
-    """把演示批次号写入 OPC String，保证可视化 SQL 筛选能命中演示数据。"""
+    """把冒烟批次号写入 OPC String，保证可视化 SQL 筛选能命中数据。"""
     nid = (node_id or "").strip()
     if not nid:
         return {"ok": False, "error": "未指定批次号 OPC 节点"}
@@ -729,28 +732,42 @@ async def create_binding_smoke_template(
     name: str | None = None,
     connection_id: str | None = None,
     opc_server_id: str | None = None,
-    ensure_schema: bool = True,
+    ensure_schema: bool = False,
 ) -> dict[str, Any]:
     """
-    创建/覆盖绑定冒烟模版：
+    创建/覆盖绑定冒烟模版（需已有 DB/OPC 连接）：
     - 页眉页脚（含 OPC 参数、日期、页码）
     - 参数（OPC 多类型 + SQL）
     - 混合单元格绑定表
     - 可视化 SQL 横表填充（OPC 筛选 batch_no）
     - 可视化 SQL 纵表填充（OPC 筛选 batch_no）
+
+    ensure_schema=True 时在已有连接上创建 report_user_lib 冒烟表；默认 False，需库表已存在。
     """
     conn = _pick_db_connection(connection_id)
     if not conn:
         return {"ok": False, "error": "未找到可用的数据库连接，请先在数据源配置中保存连接"}
     opc = _pick_opc_server(opc_server_id)
     if not opc:
-        return {"ok": False, "error": "未找到可用的 OPC UA 连接"}
+        return {"ok": False, "error": "未找到可用的 OPC UA 连接，请先在数据源配置中保存连接"}
 
     schema_info: dict[str, Any] | None = None
     if ensure_schema:
         schema_info = ensure_user_demo_database(str(conn.get("id") or ""))
         if not schema_info.get("ok"):
             return schema_info
+    else:
+        schema_info = {
+            "ok": True,
+            "connection_id": conn.get("id"),
+            "database": DEMO_DB,
+            "tables": ["demo_batches", "demo_metrics"],
+            "batch_no": DEMO_BATCH_NO,
+            "message": (
+                f"未自动建库；请确认连接上已有 `{DEMO_DB}` 及 demo_batches/demo_metrics，"
+                "或传 ensure_schema=true"
+            ),
+        }
 
     cid = str(conn.get("id") or "")
     eng = (conn.get("engine") or "mysql").lower()

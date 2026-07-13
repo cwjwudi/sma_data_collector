@@ -206,28 +206,6 @@ interface Window {
         percent?: number | null;
       }) => void,
     ) => () => void;
-    getDemoPackState: () => Promise<{
-      installed: boolean;
-      version: string;
-      installPath: string;
-      installedAt: string | null;
-    }>;
-    checkDemoPack: () => Promise<{
-      ok: boolean;
-      error?: string;
-      version?: string;
-      notes?: string;
-      updateAvailable?: boolean;
-      installedVersion?: string;
-    }>;
-    installDemoPack: () => Promise<{
-      ok: boolean;
-      error?: string;
-      version?: string;
-      installPath?: string;
-    }>;
-    startDemoPack: () => Promise<{ ok: boolean; error?: string }>;
-    stopDemoPack: () => Promise<{ ok: boolean; error?: string }>;
     getDataSourceStartupSnapshot: () => Promise<{
       ok: boolean;
       connections?: Record<string, unknown>[];

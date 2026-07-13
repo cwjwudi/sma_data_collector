@@ -41,16 +41,10 @@ TOOL_META: dict[str, dict[str, Any]] = {
     "copy_layout_preset": {"category": "assets", "title_zh": "复制版式", "description_zh": "深拷贝版式并分配新 id", "risk": "write"},
     "create_blank_template": {"category": "assets", "title_zh": "新建空模版", "description_zh": "创建最小合法空模版", "risk": "write"},
     "create_blank_layout": {"category": "assets", "title_zh": "新建空版式", "description_zh": "创建默认版式", "risk": "write"},
-    "ensure_user_demo_database": {
-        "category": "datasource",
-        "title_zh": "创建用户演示库",
-        "description_zh": "在 MySQL 上创建 report_user_lib 与演示表/数据",
-        "risk": "write",
-    },
     "create_binding_smoke_template": {
         "category": "assets",
         "title_zh": "创建绑定冒烟模版",
-        "description_zh": "封面封尾+页眉页脚+参数/混合表+可视化横/纵表（OPC 批次筛选），可顺带建演示库并 reload",
+        "description_zh": "需已有 DB/OPC 连接；封面封尾+页眉页脚+参数/混合表+可视化横/纵表，可选在已有连接上建冒烟用表",
         "risk": "write",
     },
     "apply_template_sheet_layouts": {

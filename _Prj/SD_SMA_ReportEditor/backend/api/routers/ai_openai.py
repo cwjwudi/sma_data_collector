@@ -51,7 +51,7 @@ SYSTEM_PROMPT = (
     "模版/版式：copy_* / create_blank_* / delete_*（确认）/ set_template_display_order；打开编辑用 request_open_*。"
     "备份/导入/复位：request_config_backup_export / request_config_import_merge / request_config_reset；"
     "加密 .rebak 含口令，不得把备份内容或口令返回给 LLM。"
-    "演示库/冒烟模版：ensure_user_demo_database / create_binding_smoke_template / apply_template_sheet_layouts。"
+    "绑定冒烟模版：create_binding_smoke_template（需已有 DB/OPC 连接）/ apply_template_sheet_layouts。"
     "导出目录：set_export_dir 或 request_pick_export_dir。"
     "预检/模拟结批：preflight_export / request_manual_export（仅排队，需本机确认后导出）。"
     "结批写回/并行：set_export_result_feedback / set_max_parallel_exports；触发检查用 check_auto_trigger_bindings。"

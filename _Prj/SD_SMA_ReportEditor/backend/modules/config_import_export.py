@@ -13,6 +13,7 @@ MAX_IMPORT_JSON_BYTES = 2 * 1024 * 1024
 CURRENT_SCHEMA_VERSION = 1
 
 # 与 AppPreferencesPatch / DEFAULT_CONFIG 对齐的可迁移偏好键
+# 注：demo_preferred_channel / demo_remote_* 已退役，不再导入导出；旧 config 残留键读取不炸即可
 APP_PREFERENCE_KEYS: tuple[str, ...] = (
     "auto_select_last_connection",
     "default_connection_id",
@@ -23,15 +24,6 @@ APP_PREFERENCE_KEYS: tuple[str, ...] = (
     "connection_probe_enabled",
     "connection_probe_interval_sec",
     "datasource_locked",
-    "demo_preferred_channel",
-    "demo_remote_db_host",
-    "demo_remote_db_port",
-    "demo_remote_db_name",
-    "demo_remote_db_user",
-    "demo_remote_db_password",
-    "demo_remote_opcua_endpoint",
-    "demo_remote_opcua_user",
-    "demo_remote_opcua_password",
 )
 
 
@@ -41,7 +33,7 @@ def merge_app_preferences(
     *,
     replace: bool = False,
 ) -> dict[str, Any]:
-    """合并 app_preferences：保留探测/演示等全部白名单字段。"""
+    """合并 app_preferences：仅迁移白名单字段。"""
     base: dict[str, Any] = {} if replace else dict(current or {})
     if not isinstance(incoming, dict):
         return base

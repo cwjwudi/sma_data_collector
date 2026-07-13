@@ -53,6 +53,7 @@
 
 | 版本 | 状态 | 任务看板 | 说明 |
 |------|------|----------|------|
+| [0.3.69.md](./0.3.69.md) | 已发版 | [docs/012-✅-ReportEditor移除演示与培训.md](../../../../docs/012-✅-ReportEditor移除演示与培训.md) | 拆除演示与培训 / demo-pack |
 | [0.3.68.md](./0.3.68.md) | 已发版 | [docs/010-✅-ReportEditor历史报表子文件夹穿透.md](../../../../docs/010-✅-ReportEditor历史报表子文件夹穿透.md) | 历史报表子文件夹穿透 + 分页 |
 | [0.3.67.md](./0.3.67.md) | 已发版 | [docs/009-✅-ReportEditor导出纸张橙边框.md](../../../../docs/009-✅-ReportEditor导出纸张橙边框.md) | PDF 导出剥离封面橙/正文蓝紫 chrome |
 | [0.3.66.md](./0.3.66.md) | 已发版 | [docs/006-🚧-ReportEditor-AI上游错误体验.md](../../../../docs/006-🚧-ReportEditor-AI上游错误体验.md) | AI 工具轨迹可见；探活声称强制再调 |

@@ -1,17 +1,17 @@
 {
-  "version": "0.3.68",
-  "releasedAt": "2026-07-13T12:21:25.747Z",
-  "notes": "Report Editor AI 0.3.68\n\n- 历史报表：子文件夹穿透 + 分页浏览（不递归平铺）",
+  "version": "0.3.69",
+  "releasedAt": "2026-07-13T12:30:48.744Z",
+  "notes": "Report Editor AI 0.3.69\n\n- 移除设置「演示与培训」及 demo-pack；存量仿真连接保留可手删",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.68-x64.exe",
+      "url": "Report Editor AI-Setup-0.3.69-x64.exe",
       "sha256": "",
       "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.68-arm64.dmg",
-      "sha256": "d106a599e08a5a6fc0e2a4038588ab153b567e9979577701df561b09706506ac",
-      "size": 181963258
+      "url": "Report Editor AI-0.3.69-arm64.dmg",
+      "sha256": "a6b82250067dedb25e58059b60fcd69e09db3911ae260e85abeabd785e13710c",
+      "size": 181972236
     }
   }
 }

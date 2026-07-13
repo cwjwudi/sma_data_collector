@@ -119,7 +119,7 @@ def test_opcua_and_ai_and_prefs_roundtrip_via_bundle():
             "auto_select_last_connection": True,
             "connection_probe_enabled": True,
             "connection_probe_interval_sec": 45,
-            "demo_preferred_channel": "remote",
+            "demo_preferred_channel": "remote",  # 已退役键，导入时不应再写入
         },
         "db_connections": [],
         "opcua_servers": [
@@ -180,6 +180,7 @@ def test_opcua_and_ai_and_prefs_roundtrip_via_bundle():
     )
     assert merged["app_preferences"].get("connection_probe_enabled") is True
     assert merged["app_preferences"].get("connection_probe_interval_sec") == 45
+    assert "demo_preferred_channel" not in merged["app_preferences"]
     assert config_store.decrypt_opcua_password(dst, merged["opcua_servers"][0]) == opc_plain
     assert secrets_mod.decrypt_secret(dst, merged["ai_settings"]["llm_api_key_enc"]) == ai_key
     assert merged["ai_settings"].get("enabled") is True
@@ -201,7 +202,7 @@ def test_app_preferences_replace_keeps_probe_fields():
             "app_preferences": {
                 "connection_probe_enabled": True,
                 "connection_probe_interval_sec": 60,
-                "demo_preferred_channel": "local",
+                "demo_preferred_channel": "local",  # 已退役，replace 也不应迁入
             },
             "db_connections": [],
             "opcua_servers": [],
@@ -211,4 +212,4 @@ def test_app_preferences_replace_keeps_probe_fields():
     prefs = merged["app_preferences"]
     assert prefs.get("connection_probe_enabled") is True
     assert prefs.get("connection_probe_interval_sec") == 60
-    assert prefs.get("demo_preferred_channel") == "local"
+    assert "demo_preferred_channel" not in prefs

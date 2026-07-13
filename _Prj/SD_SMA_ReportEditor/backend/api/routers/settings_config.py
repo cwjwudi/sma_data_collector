@@ -27,9 +27,10 @@ from schemas.common import AppPreferencesPatch
 router = APIRouter(tags=["settings"])
 logger = logging.getLogger(__name__)
 
-# 演示远程连接细节仅在后端维护，不返回给前端
+# 旧版 config 可能残留 demo_remote_*；读偏好时仍过滤，避免下发给前端
 _DEMO_SENSITIVE_PREF_KEYS = frozenset(
     {
+        "demo_preferred_channel",
         "demo_remote_db_host",
         "demo_remote_db_port",
         "demo_remote_db_name",

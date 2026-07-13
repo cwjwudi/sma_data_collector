@@ -133,6 +133,7 @@ const actionOptions = [
   "datasource.unlock",
   "datasource.write_blocked",
   "datasource.probe_settings",
+  // 历史筛选：演示与培训已退役，保留以便检索旧日志
   "demo.apply_connections",
   "demo.health_check",
   "demo.pack_install",

@@ -6,7 +6,6 @@ const fs = require('fs')
 const os = require('os')
 const { pathToFileURL } = require('url')
 const { createAppUpdater } = require('./updater.cjs')
-const { createDemoPackManager } = require('./demo-pack.cjs')
 const { createLayoutSync } = require('./layout-sync.cjs')
 const { humanizePdfExportError } = require('./pdfExportErrors.cjs')
 const { outputPathForReportPart } = require('./pdf-export-paths.cjs')
@@ -1236,25 +1235,6 @@ function getLayoutSync() {
   }
   return layoutSync
 }
-
-let demoPackManager
-
-function getDemoPackManager() {
-  if (!demoPackManager) {
-    demoPackManager = createDemoPackManager({
-      app,
-      resolveBaseUrl: () => getAppUpdater().getConfig().baseUrl,
-      readSkipTlsVerify: () => Boolean(getAppUpdater().getConfig().skipTlsVerify),
-    })
-  }
-  return demoPackManager
-}
-
-ipcMain.handle('demo-pack-get-state', () => getDemoPackManager().getState())
-ipcMain.handle('demo-pack-check', () => getDemoPackManager().checkRemote())
-ipcMain.handle('demo-pack-install', () => getDemoPackManager().downloadAndInstall())
-ipcMain.handle('demo-pack-start', () => getDemoPackManager().startCompose())
-ipcMain.handle('demo-pack-stop', () => getDemoPackManager().stopCompose())
 
 ipcMain.handle('app-update-get-config', () => getAppUpdater().getConfig())
 ipcMain.handle('app-update-get-state', () => getAppUpdater().getState())
