@@ -1,12 +1,12 @@
 {
   "version": "0.3.56",
-  "releasedAt": "2026-07-13T03:42:01.744Z",
+  "releasedAt": "2026-07-13T03:48:46.911Z",
   "notes": "修复 AI 模型选择框过窄与列表无法滚动\n\n- 模型改用可滚动下拉（替代 datalist）\n- 加宽模型名称输入框",
   "platforms": {
     "win32-x64": {
       "url": "Report Editor AI-Setup-0.3.56-x64.exe",
-      "sha256": "",
-      "size": 0
+      "sha256": "82619c8791e34ce4689020cb6f1fb724613358e580123b1f626100d63a74dc7c",
+      "size": 147976932
     },
     "darwin-arm64": {
       "url": "Report Editor AI-0.3.56-arm64.dmg",
