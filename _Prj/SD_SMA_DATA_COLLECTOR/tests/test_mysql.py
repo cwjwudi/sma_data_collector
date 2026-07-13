@@ -3,6 +3,10 @@
 用于测试 MySQL/MariaDB 数据库连接
 """
 
+# This is an interactive diagnostic script whose helpers accept an explicit
+# configuration object; it is not a pytest module.
+__test__ = False
+
 import sys
 import logging
 from typing import Dict, Any

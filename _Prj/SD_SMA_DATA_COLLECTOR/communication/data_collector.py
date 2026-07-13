@@ -8,8 +8,9 @@ import logging
 import sys
 import os
 import time
-from typing import Dict, List, Callable, Any, Iterator, Optional
+from typing import Dict, List, Callable, Any, Iterator, Optional, Set, Tuple
 from datetime import datetime, timedelta
+from collections import Counter
 
 # 处理相对导入问题
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -45,6 +46,7 @@ class DataCollector:
         self.trigger_reset_confirm_attempts = 3
         self.trigger_reset_confirm_delay = 0.05
         self.trigger_stuck_reset_retry_interval = 1.0
+        self.metrics: Counter[str] = Counter()
 
     async def _read_boolean_trigger_value(
         self,
@@ -210,6 +212,137 @@ class DataCollector:
             'path': point_data.get('path'),
             'triggered_indices': triggered_indices,
         }
+
+    def _build_parallel_rows(
+        self,
+        group: DataGroup,
+        data_points: List[DataPoint],
+        data: Dict[str, Dict[str, Any]],
+        triggered_indices: List[int],
+        trigger_point: DataPoint,
+    ) -> Tuple[List[Dict[str, Any]], Dict[int, List[str]]]:
+        """Build complete scalar rows and report every rejected trigger index.
+
+        A trigger index is accepted only when every configured point has a non-None
+        value for that index. Scalars are broadcast. Array values are never silently
+        truncated: a short array rejects only the affected indices.
+        """
+        rows: List[Dict[str, Any]] = []
+        rejected: Dict[int, List[str]] = {}
+        now = datetime.now()
+        for index in triggered_indices:
+            row_data: Dict[str, Any] = {}
+            errors: List[str] = []
+            for point in data_points:
+                point_data = data.get(point.name)
+                if not isinstance(point_data, dict):
+                    errors.append(f"{point.name}:missing")
+                    continue
+                raw_value = point_data.get("value")
+                if raw_value is None:
+                    errors.append(f"{point.name}:none")
+                    continue
+                if isinstance(raw_value, (list, tuple)):
+                    if index >= len(raw_value):
+                        errors.append(f"{point.name}:index_out_of_range({len(raw_value)})")
+                        continue
+                    value = raw_value[index]
+                else:
+                    value = raw_value
+                if value is None:
+                    errors.append(f"{point.name}:none_at_index")
+                    continue
+                row_data[point.name] = {
+                    "value": value,
+                    "timestamp": point_data.get("timestamp"),
+                    "path": point_data.get("path") or point.path,
+                }
+            if errors:
+                rejected[index] = errors
+                continue
+            rows.append(
+                {
+                    "group_name": group.name,
+                    "collection_time": now,
+                    "trigger_type": "variable",
+                    "trigger_point": trigger_point.name,
+                    "is_parallel": False,
+                    "trigger_index": index,
+                    "data": row_data,
+                }
+            )
+        return rows, rejected
+
+    async def _reset_parallel_triggers_with_confirm(
+        self,
+        group: DataGroup,
+        trigger_point: DataPoint,
+        current_values: List[Any],
+        indices: Set[int],
+        opcua_client: OpcUaClient,
+        reason: str,
+    ) -> Set[int]:
+        """Reset selected array indices and return those confirmed False by readback."""
+        if not indices:
+            return set()
+        attempts = max(1, int(self.trigger_reset_confirm_attempts))
+        delay = max(0.0, float(self.trigger_reset_confirm_delay))
+        desired = list(current_values)
+        valid_indices = {index for index in indices if 0 <= index < len(desired)}
+        for index in valid_indices:
+            desired[index] = False
+        remaining = set(valid_indices)
+        for attempt in range(1, attempts + 1):
+            success = await opcua_client.write_array_value(trigger_point.path, desired)
+            if success and delay:
+                await asyncio.sleep(delay)
+            readback = await self._read_boolean_trigger_value(trigger_point, opcua_client)
+            if isinstance(readback, (list, tuple)):
+                confirmed_false = {
+                    index
+                    for index in remaining
+                    if index < len(readback) and self._is_false_trigger_value(readback[index])
+                }
+                # A successful array write followed by True is ambiguous: the PLC
+                # may already have emitted the next event. Clearing it a second time
+                # would deterministically swallow that event. Treat it as an
+                # acknowledged reset plus immediate reassertion; the caller sets the
+                # previous state False so the next poll consumes the new high level.
+                reasserted = {
+                    index
+                    for index in remaining
+                    if success
+                    and index < len(readback)
+                    and not self._is_false_trigger_value(readback[index])
+                }
+                if reasserted:
+                    self.metrics["parallel_trigger_reasserted_during_confirm"] += len(reasserted)
+                    self.logger.info(
+                        "并行触发复位后立即再次置位，将作为新事件留待下一轮采集: "
+                        "group=%s, point=%s, indices=%s",
+                        group.name,
+                        trigger_point.name,
+                        sorted(reasserted),
+                    )
+                remaining -= confirmed_false | reasserted
+            if not remaining:
+                self.metrics["parallel_trigger_reset_confirmed"] += len(valid_indices)
+                return valid_indices
+            self.logger.warning(
+                "并行触发复位未完全确认: group=%s, point=%s, reason=%s, "
+                "attempt=%s/%s, write_success=%s, remaining=%s",
+                group.name,
+                trigger_point.name,
+                reason,
+                attempt,
+                attempts,
+                success,
+                sorted(remaining),
+            )
+            if attempt < attempts and delay:
+                await asyncio.sleep(delay)
+        self.metrics["parallel_trigger_reset_failed"] += len(remaining)
+        return valid_indices - remaining
 
     def _iter_scalar_collection_rows(self, collection_data: Dict[str, Any]) -> Iterator[Dict[str, Any]]:
         """
@@ -790,6 +923,7 @@ class DataCollector:
         data_points 可为数组（按索引取值）或标量（广播到每个触发索引）。"""
         poll_interval = self._get_variable_trigger_poll_interval(group)
         previous_trigger_state = None
+        pending_reset_indices: Set[int] = set()
 
         while True:
             try:
@@ -809,6 +943,41 @@ class DataCollector:
                     await asyncio.sleep(poll_interval)
                     continue
 
+                if len(previous_trigger_state) != len(current_trigger_values):
+                    self.logger.warning(
+                        "并行触发组 %s 触发数组长度变化: previous=%s, current=%s，重新初始化状态",
+                        group.name,
+                        len(previous_trigger_state),
+                        len(current_trigger_values),
+                    )
+                    previous_trigger_state = list(current_trigger_values)
+                    pending_reset_indices = {
+                        index for index in pending_reset_indices if index < len(current_trigger_values)
+                    }
+                    await asyncio.sleep(poll_interval)
+                    continue
+
+                # Accepted rows whose acknowledgement previously failed must not be
+                # collected twice; keep retrying only their PLC reset.
+                stuck_pending = {
+                    index
+                    for index in pending_reset_indices
+                    if index < len(current_trigger_values) and current_trigger_values[index]
+                }
+                if stuck_pending:
+                    confirmed = await self._reset_parallel_triggers_with_confirm(
+                        group,
+                        trigger_point,
+                        list(current_trigger_values),
+                        stuck_pending,
+                        opcua_client,
+                        "已入队触发持续高电平",
+                    )
+                    pending_reset_indices -= confirmed
+                    for index in confirmed:
+                        current_trigger_values[index] = False
+                        previous_trigger_state[index] = False
+
                 # 检测上升沿索引
                 triggered_indices = []
                 for i, (prev, curr) in enumerate(zip(previous_trigger_state, current_trigger_values)):
@@ -818,52 +987,65 @@ class DataCollector:
                 if triggered_indices:
                     self.logger.info(f"并行触发组 {group.name} 检测到上升沿，触发索引: {triggered_indices}")
 
-                    # 读取所有数据点（数组按索引提取，标量广播到各触发行）
+                    self.metrics["parallel_edges_detected"] += len(triggered_indices)
+                    # Read once, then validate every trigger index independently.
                     data = await opcua_client.read_data_points(data_points)
-
-                    # 构建合并的 collection_data
-                    indexed_data = {}
-                    for point in data_points:
-                        point_data = data.get(point.name, {})
-                        extracted = self._extract_parallel_point_values(
-                            group.name,
-                            point.name,
-                            point_data,
-                            triggered_indices,
-                        )
-                        if extracted is not None:
-                            indexed_data[point.name] = extracted
-
-                    if indexed_data:
-                        collection_data = {
-                            'group_name': group.name,
-                            'collection_time': datetime.now(),
-                            'trigger_type': 'variable',
-                            'trigger_point': trigger_point.name,
-                            'is_parallel': True,
-                            'triggered_indices': triggered_indices,
-                            'data': indexed_data
-                        }
-
-                        # 并行结果按索引拆成多行标量，逐行回调（便于入库与 batch 计数）
-                        for row in self._iter_scalar_collection_rows(collection_data):
+                    rows, rejected = self._build_parallel_rows(
+                        group, data_points, data, triggered_indices, trigger_point
+                    )
+                    accepted_indices: Set[int] = set()
+                    for row in rows:
+                        try:
                             for callback in self.data_callbacks:
                                 callback(row)
-
-                    # 复位已触发的索引
-                    if group.reset_trigger_after_read:
-                        reset_values = list(current_trigger_values)
-                        for idx in triggered_indices:
-                            if idx < len(reset_values):
-                                reset_values[idx] = False
-                        success = await opcua_client.write_array_value(trigger_point.path, reset_values)
-                        if success:
-                            self.logger.debug(f"已复位触发点索引: {triggered_indices}")
+                        except Exception as exc:
+                            index = int(row["trigger_index"])
+                            rejected.setdefault(index, []).append(f"callback:{exc}")
+                            self.logger.error(
+                                "并行触发组 %s 索引 %s 入队回调失败，不确认触发: %s",
+                                group.name,
+                                index,
+                                exc,
+                                exc_info=True,
+                            )
                         else:
-                            self.logger.warning(f"复位触发点索引失败: {triggered_indices}")
+                            accepted_indices.add(int(row["trigger_index"]))
 
-                # 更新上一次的状态
-                previous_trigger_state = list(current_trigger_values)
+                    self.metrics["parallel_rows_accepted"] += len(accepted_indices)
+                    self.metrics["parallel_rows_rejected"] += len(rejected)
+                    for index, reasons in sorted(rejected.items()):
+                        self.logger.warning(
+                            "并行触发组 %s 索引 %s 数据不完整，不入队且不复位: %s",
+                            group.name,
+                            index,
+                            reasons,
+                        )
+
+                    if group.reset_trigger_after_read and accepted_indices:
+                        confirmed = await self._reset_parallel_triggers_with_confirm(
+                            group,
+                            trigger_point,
+                            list(current_trigger_values),
+                            accepted_indices,
+                            opcua_client,
+                            "完整数据已进入内存队列",
+                        )
+                        pending_reset_indices |= accepted_indices - confirmed
+                        for index in confirmed:
+                            current_trigger_values[index] = False
+
+                    # Rejected indices deliberately retain the pre-edge False state,
+                    # so a still-high PLC bit is retried on the next poll.
+                    next_previous = list(current_trigger_values)
+                    for index in rejected:
+                        if index < len(next_previous):
+                            next_previous[index] = False
+                    for index in pending_reset_indices:
+                        if index < len(next_previous):
+                            next_previous[index] = True
+                    previous_trigger_state = next_previous
+                else:
+                    previous_trigger_state = list(current_trigger_values)
 
                 await asyncio.sleep(poll_interval)
 
