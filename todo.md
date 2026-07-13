@@ -5,6 +5,11 @@
 
 ---
 
+## 2026-07-13
+
+- **ReportEditor 0.3.57 计划与文档分工对齐**：建立任务看板 [docs/004-⌛️-ReportEditor数据源UI修复.md](docs/004-⌛️-ReportEditor数据源UI修复.md)（滑动锁 UI / 工作台空白 / 发版，H1 均为 ⌛️）；版本产品计划见 [`_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.57.md`](_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.57.md)。更新 `009_版本Plan/README.md`、[CLAUDE.md](CLAUDE.md)、[AGENTS.md](AGENTS.md)：明确「版本 Plan ≠ 任务看板」，实施状态写 `docs/`，`todo.md` 只做索引。
+- **验收**：打开上述三处交叉链接一致；尚未写代码修复（看板仍为 ⌛️）。
+
 ## 2026-07-12
 
 - **剩余任务与后续规划汇总（交接）**：新建 [docs/003-⌛️-剩余任务与后续规划.md](docs/003-⌛️-剩余任务与后续规划.md)——跨 001/002 的统一索引/路线图，含 git 快照（`origin/main`=`ec49152`，本地领先 12 提交未推）、分类速查（本机可闭环 / 需运行应用 / 需产品决策 / 需现场真库）与建议推进顺序。同步订正 001「待提交」段（A 档已合并为 `ec49152`）。
