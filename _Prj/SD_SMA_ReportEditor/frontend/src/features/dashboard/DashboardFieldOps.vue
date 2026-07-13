@@ -352,7 +352,7 @@ async function loadPdfs() {
       pdfs.value = []
       return
     }
-    const res = await window.electronAPI!.scanExportPdfs!({ dir })
+    const res = await window.electronAPI!.scanExportPdfs!({ dir, limit: 5 })
     const files = (res?.files || []).slice(0, 5)
     pdfs.value = files.map((f) => ({
       name: f.name,

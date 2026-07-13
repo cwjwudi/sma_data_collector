@@ -7,12 +7,13 @@
 
 ## 2026-07-13
 
+- **ReportEditor 0.3.68 已发版**：历史报表子文件夹穿透 + 分页；看板 [docs/010-✅](docs/010-✅-ReportEditor历史报表子文件夹穿透.md)。
 - **ReportEditor 模版/版式编辑审计（仅计划）**：新建 [docs/013-⌛️](docs/013-⌛️-ReportEditor模版版式编辑审计.md)——保存/删除/复制落 `template.*`/`layout.*`；不记画布拖拽；与现有 `auditLog` 对齐。
 - **ReportEditor 移除演示与培训（仅计划）**：新建 [docs/012-⌛️](docs/012-⌛️-ReportEditor移除演示与培训.md)——拆除设置「演示与培训」、`/demo/*`、demo-pack；存量仿真连接默认保留可手删；勿碰证书 demo-license。
 - **ReportEditor 0.3.67 已发版**：导出 PDF 去掉封面橙 / 正文蓝紫纸张装饰边；看板 [docs/009-✅](docs/009-✅-ReportEditor导出纸张橙边框.md)。
 - **ReportEditor 导出纸张橙边框（文档订正）**：看板更名为 [docs/009-✅](docs/009-✅-ReportEditor导出纸张橙边框.md)——截图确认橙边在**整页纸张四周**（非表格附近）；主因锁定 `MiniPreviewChrome` 装饰未在导出路径剥离。
 - **ReportEditor 模版/版式多选控件（仅计划）**：新建 [docs/011-⌛️](docs/011-⌛️-ReportEditor模版版式多选控件.md)——Ctrl/Cmd 加选、框选、组移动/删除/剪贴板；属性批量与对齐为二期。
-- **ReportEditor 历史报表子文件夹穿透（仅计划）**：新建 [docs/010-⌛️](docs/010-⌛️-ReportEditor历史报表子文件夹穿透.md)——单层进入显示文件夹、禁止平铺；IPC 分页 + UI 翻页防卡顿；开工前默认项可改。
+- **ReportEditor 历史报表子文件夹穿透（仅计划）**：原 [docs/010](docs/010-✅-ReportEditor历史报表子文件夹穿透.md) 计划（已于 0.3.68 实现）。
 - **ReportEditor 0.3.66 已发版**：AI 工具轨迹可见；探活口头结论与工具不符时强制再调；看板 [docs/006-🚧](docs/006-🚧-ReportEditor-AI上游错误体验.md)（轨迹 H1 ✅，能力矩阵仍 ⌛️）。
 - **ReportEditor 表格导出橙边框（仅文档）**：原 [docs/009](docs/009-✅-ReportEditor导出纸张橙边框.md) 初版（已订正为整页纸张四周）。
 - **ReportEditor 0.3.65 已发版**：健康告警跳转高亮（含页眉/区）、连接级明示、版式进编辑器；看板 [docs/007-✅](docs/007-✅-ReportEditor健康跳转不高亮.md)。

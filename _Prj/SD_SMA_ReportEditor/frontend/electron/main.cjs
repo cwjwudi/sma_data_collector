@@ -10,6 +10,7 @@ const { createDemoPackManager } = require('./demo-pack.cjs')
 const { createLayoutSync } = require('./layout-sync.cjs')
 const { humanizePdfExportError } = require('./pdfExportErrors.cjs')
 const { outputPathForReportPart } = require('./pdf-export-paths.cjs')
+const { scanExportEntries, scanExportPdfsCompat } = require('./export-dir-scan.cjs')
 const {
   readLaunchSettings,
   writeLaunchSettings,
@@ -729,62 +730,12 @@ ipcMain.handle('path-join', (_event, parts) => {
 })
 
 ipcMain.handle('scan-export-pdfs', async (_event, opts) => {
-  const dir = opts && opts.dir
-  if (!dir || typeof dir !== 'string') {
-    return { ok: false, error: '缺少目录路径', files: [] }
-  }
-  let resolved
-  try {
-    resolved = path.resolve(dir.trim())
-  } catch (e) {
-    return { ok: false, error: String(e.message || e), files: [] }
-  }
-  if (!fs.existsSync(resolved)) {
-    return { ok: false, error: '目录不存在', files: [], dir: resolved }
-  }
-  let st
-  try {
-    st = fs.statSync(resolved)
-  } catch (e) {
-    return { ok: false, error: String(e.message || e), files: [] }
-  }
-  if (!st.isDirectory()) {
-    return { ok: false, error: '路径不是文件夹', files: [], dir: resolved }
-  }
+  return scanExportPdfsCompat(opts || {})
+})
 
-  const files = []
-  let entries
-  try {
-    entries = fs.readdirSync(resolved, { withFileTypes: true })
-  } catch (e) {
-    return { ok: false, error: `无法读取目录：${e.message || e}`, files: [], dir: resolved }
-  }
-
-  for (const ent of entries) {
-    if (!ent.isFile()) continue
-    if (!ent.name.toLowerCase().endsWith('.pdf')) continue
-    const filePath = path.join(resolved, ent.name)
-    try {
-      const fst = fs.statSync(filePath)
-      files.push({
-        name: ent.name,
-        filePath,
-        fileUrl: pathToFileURL(filePath).href,
-        sizeBytes: fst.size,
-        modifiedAt: fst.mtime.toISOString(),
-      })
-    } catch {
-      /* skip unreadable */
-    }
-  }
-
-  files.sort((a, b) => {
-    const ta = new Date(a.modifiedAt).getTime()
-    const tb = new Date(b.modifiedAt).getTime()
-    return tb - ta
-  })
-
-  return { ok: true, files, dir: resolved }
+/** 历史报表：单层文件夹+PDF 分页（010）；cwd 不得逃出 rootDir */
+ipcMain.handle('scan-export-entries', async (_event, opts) => {
+  return scanExportEntries(opts || {})
 })
 
 ipcMain.handle('delete-export-file', async (_event, opts) => {

@@ -55,8 +55,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('pdf-export-progress', fn)
   },
 
-  /** 扫描目录下 PDF（历史报表） */
+  /** 扫描目录下 PDF（历史报表兼容；仅本层 PDF） */
   scanExportPdfs: (opts) => ipcRenderer.invoke('scan-export-pdfs', opts || {}),
+
+  /** 单层文件夹 + PDF 分页浏览（010） */
+  scanExportEntries: (opts) => ipcRenderer.invoke('scan-export-entries', opts || {}),
 
   /** 删除磁盘上的导出文件 */
   deleteExportFile: (opts) => ipcRenderer.invoke('delete-export-file', opts || {}),
