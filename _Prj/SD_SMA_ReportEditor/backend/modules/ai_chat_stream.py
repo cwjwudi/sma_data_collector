@@ -93,3 +93,11 @@ def chunk_text_for_simulated_stream(text: str, size: int = 24) -> list[str]:
     if size <= 0:
         return [text]
     return [text[i : i + size] for i in range(0, len(text), size)]
+
+
+def should_hold_content_for_tools(has_tool_calls: bool) -> bool:
+    """
+    同轮若有 tool_calls，缓冲正文、先跑工具，不把「已完成」类文案提前流给用户。
+    结论由工具成功后的下一轮助手消息再流式输出。
+    """
+    return bool(has_tool_calls)

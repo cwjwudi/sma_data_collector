@@ -1,15 +1,15 @@
 {
-  "version": "0.3.77",
-  "releasedAt": "2026-07-13T16:41:13.973Z",
-  "notes": "Report Editor AI 0.3.77\n\n- AI 排队：输入框上方收纳条（类 Cursor），不再插入消息流气泡",
+  "version": "0.3.78",
+  "releasedAt": "2026-07-13T16:43:38.021Z",
+  "notes": "Report Editor AI 0.3.78\n\n- 流式同轮有工具时先执行再放正文；写类 tool 成功立刻刷新；upsert 补 datasource reload",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.77-x64.exe",
+      "url": "Report Editor AI-Setup-0.3.78-x64.exe",
       "sha256": "",
       "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.77-arm64.dmg",
+      "url": "Report Editor AI-0.3.78-arm64.dmg",
       "sha256": "",
       "size": 0
     }

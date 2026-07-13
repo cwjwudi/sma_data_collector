@@ -620,6 +620,11 @@ async function runOneTurn(text: string) {
           }
           a.toolTrace = [...(a.toolTrace || []), normalized]
           void scrollToBottom()
+          if (normalized.ok) {
+            void import('@/lib/client-prefs-mirror').then(({ syncPendingClientPrefsFromBackend }) =>
+              syncPendingClientPrefsFromBackend(),
+            )
+          }
         } else if (ev.event === 'done') {
           const trace = extractToolTrace({ report_editor_tool_trace: ev.tool_trace })
           if (trace.length) a.toolTrace = trace

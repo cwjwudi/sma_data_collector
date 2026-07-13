@@ -54,3 +54,10 @@ def test_iter_content_from_chunk():
 def test_chunk_text():
     assert chunk_text_for_simulated_stream("abcdefgh", 3) == ["abc", "def", "gh"]
     assert chunk_text_for_simulated_stream("") == []
+
+
+def test_should_hold_content_for_tools():
+    from modules.ai_chat_stream import should_hold_content_for_tools
+
+    assert should_hold_content_for_tools(True) is True
+    assert should_hold_content_for_tools(False) is False

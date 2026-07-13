@@ -1,9 +1,45 @@
 # ReportEditor AI 助手：上游错误与写入类能力闭环
 
 > 本文件为 **任务看板**；规则见 [CLAUDE.md](../CLAUDE.md)。  
-> 版本计划：探活 [0.3.60](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.60.md)；上游错误体验 [0.3.62](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.62.md)；Agent 工具轨迹 [0.3.66](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.66.md)；轨迹假失败 [0.3.71](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.71.md)；排队收纳 [0.3.77](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.77.md)。  
+> 版本计划：探活 [0.3.60](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.60.md)；上游错误体验 [0.3.62](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.62.md)；Agent 工具轨迹 [0.3.66](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.66.md)；轨迹假失败 [0.3.71](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.71.md)；排队收纳 [0.3.77](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.77.md)；流式先工具 [0.3.78](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.78.md)。  
 > **范围说明**：不只「开启定时探活」；在开启「允许 AI 写入工具」后，数据源、模版/版式资产、备份恢复、结批导出、演示冒烟、诊断取证等能力域均须**真正执行并反映到 UI**（禁止空口答应）。完整域表见下方能力矩阵 H1（仍 ⌛️）。  
 > **Agent 体验**：对话须可见工具调用与状态；口头结论必须与工具结果一致——轨迹 H1 已于 **0.3.66** 落地（探活强制再调）。
+
+---
+
+# ✅ 已完成：流式同轮先工具后正文（→ 0.3.78）
+
+## 现象（2026-07-13）
+
+用户说「打开探活」时，气泡里**先**出现「已开启…」，工具轨迹与设置开关**后**才更新，观感像空口答应。
+
+## 根因
+
+0.3.72 流式：上游同一轮里 `content` 即时 SSE `delta`，`tool_calls` 等流结束才执行 → 必然「先结论、后办事」。
+
+## 已拍板
+
+| # | 结论 |
+|---|------|
+| 同轮有 tool_calls | **缓冲正文、不发 delta**；先 `status:tools` + `tool` 事件；结论由下一轮再流 |
+| 同轮无 tool | 上游结束后再分段放出正文（`chunk_text_for_simulated_stream`） |
+| 空口探活声称 | 纠错再调前先 `replace` 清空已放出的假文案 |
+| 写类 tool 成功 | 前端立刻 `syncPendingClientPrefsFromBackend`（开关不等整轮结束） |
+| 顺带 | `upsert_db/opc` 成功补 `mark_ui_reload(datasource)` |
+
+## 实现（0.3.78）
+
+1. `ai_chat_stream.should_hold_content_for_tools` + `iter_chat_stream_sse` 缓冲策略  
+2. `SYSTEM_PROMPT`：工具成功前禁完成态措辞  
+3. `AiDrawer`：tool `ok` 即时 mirror  
+4. `ai_datasource_ops`：upsert 后 `mark_ui_reload`
+
+## 验收
+
+- [x] 同轮「正文+探活工具」：用户先见工具轨迹，后见结论文案  
+- [x] 纯聊天轮：正文仍可分段出现  
+- [x] 探活工具成功后设置开关尽快刷新  
+- [x] upsert 连接后数据源列表可 reload  
 
 ---
 
@@ -48,12 +84,12 @@
 
 - [x] T1–T5（实现按约定；`chat-queue` 单测仍绿）
 
-## 与其它 AI 体验债的关系（仅索引，本条不做）
+## 与其它 AI 体验债的关系（仅索引）
 
-| 债 | 说明 | 建议顺序 |
-|----|------|----------|
-| 流式先正文后工具 | 同轮「已开启探活」早于工具/开关 | **优先于**能力矩阵 A–N |
-| 多轮啰嗦 | 全量历史进请求，易复述 | 提示词简洁 + 可选最近 N 轮 |
+| 债 | 说明 | 状态 |
+|----|------|------|
+| 流式先正文后工具 | 同轮「已开启探活」早于工具/开关 | ✅ **0.3.78** |
+| 多轮啰嗦 | 全量历史进请求，易复述 | ⌛️ 提示词简洁 + 可选最近 N 轮 |
 
 ---
 

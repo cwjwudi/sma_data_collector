@@ -14,11 +14,13 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 from modules import ai_config, ai_datasource_ops, ai_pending_actions, ai_pending_prompts, ai_tools
 from modules.ai_chat_stream import (
+    chunk_text_for_simulated_stream,
     finalized_tool_calls,
     format_sse,
     iter_content_and_tools_from_upstream_chunk,
     merge_tool_call_deltas,
     parse_openai_sse_line,
+    should_hold_content_for_tools,
 )
 from modules.ai_claim_guard import (
     detect_probe_claim,
@@ -53,6 +55,8 @@ SYSTEM_PROMPT = (
     "收到 awaiting_user_credentials 或 awaiting_user_confirm 时，提示用户到本机报表软件内操作。"
     "suggest_config_change 只生成建议、不落库，不得冒充已修改。"
     "若工具返回 ok=false（如未启用「允许 AI 写入工具」、工具被禁用、数据源锁定），必须如实告知，禁止空口答应「已完成/正在开启」。"
+    "写入类（探活开/关、复制/删除资产、改配置等）：须先发出 tool_calls；"
+    "同一轮若调用工具，勿在工具结果返回前输出「已开启/已关闭/已完成」等完成态结论；成功后再总结。"
     "——能力域与必调工具——"
     "定时探活开/关：必须 update_connection_probe_settings（开启传 enabled=true）。"
     "配置 DB/OPC：upsert_db_connection / upsert_opc_server；密码用 request_connection_credentials；删除用 delete_*（确认流）。"
@@ -243,14 +247,12 @@ async def iter_chat_stream_sse(
                 if request is not None and await request.is_disconnected():
                     return
                 if kind == "content":
-                    if not content_parts:
-                        yield format_sse("status", {"phase": "writing"})
+                    # 缓冲至本轮上游结束：若有 tool_calls 则不提前流式「已完成」文案
                     content_parts.append(str(val))
-                    yield format_sse("delta", {"text": str(val)})
                 elif kind == "tool_calls":
                     collected_tools = val if isinstance(val, list) else []
 
-            if collected_tools:
+            if collected_tools and should_hold_content_for_tools(True):
                 yield format_sse("status", {"phase": "tools"})
                 assistant_msg: dict[str, Any] = {
                     "role": "assistant",
@@ -287,10 +289,20 @@ async def iter_chat_stream_sse(
                 upstream_payload["messages"] = messages
                 continue
 
+            # 无 tool_calls：本轮结束后再放出正文（可分段，避免整块卡住）
             assistant_text = "".join(content_parts)
+            if assistant_text:
+                yield format_sse("status", {"phase": "writing"})
+                for piece in chunk_text_for_simulated_stream(assistant_text):
+                    if request is not None and await request.is_disconnected():
+                        return
+                    yield format_sse("delta", {"text": piece})
+
             if needs_probe_claim_retry(assistant_text, tool_trace) and not claim_retry_used:
                 claim = detect_probe_claim(assistant_text)
                 claim_retry_used = True
+                # 清掉已放出的假完成文案，再进纠错轮
+                yield format_sse("replace", {"text": ""})
                 messages.append({"role": "assistant", "content": assistant_text})
                 messages.append({"role": "system", "content": probe_claim_correction_message(claim)})
                 upstream_payload["messages"] = messages
