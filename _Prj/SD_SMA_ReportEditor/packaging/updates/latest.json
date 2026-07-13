@@ -1,17 +1,17 @@
 {
-  "version": "0.3.63",
-  "releasedAt": "2026-07-13T06:51:58.747Z",
-  "notes": "Report Editor AI 0.3.63\n\n- 修复定时探活反复开关不生效（串行落库 / 字符串 false / mirror pending_token）",
+  "version": "0.3.64",
+  "releasedAt": "2026-07-13T08:46:35.750Z",
+  "notes": "Report Editor AI 0.3.64\n\n- 修复数据源锁定后连接表单底部按钮被提示顶出可视区（滚动主体 + 操作条固定）",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.63-x64.exe",
+      "url": "Report Editor AI-Setup-0.3.64-x64.exe",
       "sha256": "",
       "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.63-arm64.dmg",
-      "sha256": "d49f2052e3da8786c42803947a5a31284585756935271960b337f9f4c7c41590",
-      "size": 182004147
+      "url": "Report Editor AI-0.3.64-arm64.dmg",
+      "sha256": "e48477a6ef92848f66107dae66f43fc4aceb028eee7edf07fa312f9f9fe3aaa6",
+      "size": 182003301
     }
   }
 }
