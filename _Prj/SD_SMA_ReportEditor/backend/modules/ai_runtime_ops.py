@@ -58,6 +58,8 @@ def get_template_display_order() -> dict[str, Any]:
 
 def set_template_display_order(ordered_ids: list[str] | None, move: dict[str, Any] | None = None) -> dict[str, Any]:
     """写入模版展示顺序到镜像，前端轮询 pending_apply 后落到 localStorage。"""
+    from modules import ai_asset_ops
+
     summaries = [s.id for s in template_store.list_summaries()]
     known = set(summaries)
     mirror = _load_mirror()
@@ -76,7 +78,7 @@ def set_template_display_order(ordered_ids: list[str] | None, move: dict[str, An
             if tid not in next_ids:
                 next_ids.append(tid)
         current = next_ids
-    elif isinstance(move, dict):
+    elif isinstance(move, dict) and move:
         from_id = str(move.get("from_id") or "").strip()
         to_id = str(move.get("to_id") or "").strip()
         if from_id not in current or to_id not in current or from_id == to_id:
@@ -87,10 +89,13 @@ def set_template_display_order(ordered_ids: list[str] | None, move: dict[str, An
         base = current.index(to_id)
         insert_at = base + 1 if from_i < to_i else base
         current.insert(insert_at, from_id)
+    else:
+        return {"ok": False, "error": "须提供 ordered_ids 或 move={from_id,to_id}"}
 
     mirror["template_display_order"] = current
     mirror["pending_apply"] = True
     _save_mirror(mirror)
+    ai_asset_ops.mark_ui_reload(assets=True, reason="set_template_display_order")
     return {"ok": True, "order": current, "note": "前端将应用至模版管理页排序"}
 
 

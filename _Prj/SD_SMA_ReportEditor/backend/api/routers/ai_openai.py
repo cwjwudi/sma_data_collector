@@ -66,7 +66,7 @@ SYSTEM_PROMPT = (
     "新建空白必须 create_blank_template / create_blank_layout；"
     "删除必须 delete_template / delete_layout_preset（确认流）；"
     "若返回 awaiting_user_confirm，须提示用户在本机弹框确认，禁止声称已删除；取消则资产仍在；"
-    "排序 set_template_display_order；"
+    "排序必须 set_template_display_order（传 ordered_ids 或 move={from_id,to_id}；先 get_template_display_order / list_templates 取 id）；"
     "打开编辑必须 request_open_template / request_open_layout；"
     "返回 awaiting_user_confirm 时须提示本机确认后跳转，禁止声称已打开编辑器；取消则不跳转。"
     "备份/导入/复位：导出备份必须 request_config_backup_export（返回 awaiting_user_action，"

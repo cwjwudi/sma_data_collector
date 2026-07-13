@@ -1,15 +1,15 @@
 {
-  "version": "0.3.86",
-  "releasedAt": "2026-07-13T17:20:44.116Z",
-  "notes": "AI 能力矩阵 H：打开模版/版式确认跳转",
+  "version": "0.3.87",
+  "releasedAt": "2026-07-13T17:22:37.149Z",
+  "notes": "AI 能力矩阵 I：模版展示排序写入镜像与 reload",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.86-x64.exe",
+      "url": "Report Editor AI-Setup-0.3.87-x64.exe",
       "sha256": "",
       "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.86-arm64.dmg",
+      "url": "Report Editor AI-0.3.87-arm64.dmg",
       "sha256": "",
       "size": 0
     }

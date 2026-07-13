@@ -94,4 +94,17 @@ describe("applyPendingMirrorFromBackend · assets（复制模版/版式）", () 
     const types = spy.mock.calls.map((c) => (c[0] as Event).type);
     expect(types).not.toContain(DATASOURCE_CHANGED_EVENT);
   });
+
+  it("pending_apply + template_display_order 时派发 report-editor-assets-changed（template_order）", () => {
+    const spy = vi.spyOn(window, "dispatchEvent");
+    applyPendingMirrorFromBackend({
+      pending_apply: true,
+      template_display_order: ["a", "b"],
+    });
+    const ev = spy.mock.calls
+      .map((c) => c[0] as Event)
+      .find((e) => e.type === ASSETS_CHANGED_EVENT) as CustomEvent | undefined;
+    expect(ev).toBeTruthy();
+    expect(ev?.detail).toMatchObject({ reason: "template_order" });
+  });
 });
