@@ -54,6 +54,43 @@
           粘贴
         </button>
         <span class="bar-sep" aria-hidden="true" />
+        <button type="button" class="b" title="左对齐" :disabled="!canAlignLayout" @click="alignLayout('left')">
+          左齐
+        </button>
+        <button type="button" class="b" title="水平居中" :disabled="!canAlignLayout" @click="alignLayout('centerH')">
+          水平中
+        </button>
+        <button type="button" class="b" title="右对齐" :disabled="!canAlignLayout" @click="alignLayout('right')">
+          右齐
+        </button>
+        <button type="button" class="b" title="顶对齐" :disabled="!canAlignLayout" @click="alignLayout('top')">
+          顶齐
+        </button>
+        <button type="button" class="b" title="垂直居中" :disabled="!canAlignLayout" @click="alignLayout('centerV')">
+          垂直中
+        </button>
+        <button type="button" class="b" title="底对齐" :disabled="!canAlignLayout" @click="alignLayout('bottom')">
+          底齐
+        </button>
+        <button
+          type="button"
+          class="b"
+          title="水平等距分布（至少 3 个）"
+          :disabled="!canDistributeLayout"
+          @click="distributeLayout('horizontal')"
+        >
+          水平距
+        </button>
+        <button
+          type="button"
+          class="b"
+          title="垂直等距分布（至少 3 个）"
+          :disabled="!canDistributeLayout"
+          @click="distributeLayout('vertical')"
+        >
+          垂直距
+        </button>
+        <span class="bar-sep" aria-hidden="true" />
         <button
           type="button"
           class="b"
@@ -145,7 +182,7 @@
               </button>
             </li>
           </ul>
-          <p class="pe-multi-note">批量改属性见后续版本；当前可组移动、删除、复制/剪切/粘贴。</p>
+          <p class="pe-multi-note">Shift 区间加选；工具栏可对齐/分布。批量改属性见后续版本。</p>
         </div>
         <p v-else class="pe-props-empty">点选画布控件后在此编辑属性。</p>
       </aside>
@@ -183,6 +220,13 @@ import {
   pasteLayoutZoneElementsIntoPreset,
 } from "@/lib/report-template/editor-element-clipboard";
 import { countTypesById, primaryId, selectOnly } from "@/lib/report-template/selection-set";
+import {
+  canAlign,
+  canDistribute,
+  computeAlignPatches,
+  computeDistributePatches,
+} from "@/lib/report-template/selection-align";
+import type { AlignKind, DistributeKind } from "@/lib/report-template/selection-align";
 import {
   layoutPresetTableCellPickKey,
   reportBindingPreviewKey,
@@ -447,6 +491,51 @@ function pastePresetEl() {
   presetCanvasSelIds.value = newIds;
   msg.value =
     newIds.length > 1 ? `已粘贴 ${newIds.length} 个控件（属性已保留）。` : "已粘贴控件（属性已保留）。";
+}
+
+const canAlignLayout = computed(() => canAlign(presetCanvasSelIds.value.length));
+const canDistributeLayout = computed(() => canDistribute(presetCanvasSelIds.value.length));
+
+function gatherSelectedAlignBoxes() {
+  const out: { id: string; x: number; y: number; w: number; h: number }[] = [];
+  for (const id of presetCanvasSelIds.value) {
+    const el = findLayoutElementById(id);
+    if (!el) continue;
+    out.push({
+      id: el.id,
+      x: Number(el.x) || 0,
+      y: Number(el.y) || 0,
+      w: Number(el.w) || 0,
+      h: Number(el.h) || 0,
+    });
+  }
+  return out;
+}
+
+function applyPosPatchesToLayout(patches: { id: string; x: number; y: number }[]) {
+  let n = 0;
+  for (const p of patches) {
+    const el = findLayoutElementById(p.id);
+    if (!el) continue;
+    el.x = p.x;
+    el.y = p.y;
+    n += 1;
+  }
+  return n;
+}
+
+function alignLayout(kind: AlignKind) {
+  const boxes = gatherSelectedAlignBoxes();
+  const patches = computeAlignPatches(boxes, kind, primaryId(presetCanvasSelIds.value));
+  const n = applyPosPatchesToLayout(patches);
+  msg.value = n ? `已对齐 ${n} 个控件。` : "无需移动（已对齐或选中不足）。";
+}
+
+function distributeLayout(kind: DistributeKind) {
+  const boxes = gatherSelectedAlignBoxes();
+  const patches = computeDistributePatches(boxes, kind);
+  const n = applyPosPatchesToLayout(patches);
+  msg.value = n ? `已等距分布（调整 ${n} 个）。` : "无需移动（选中不足 3 个或已等距）。";
 }
 
 function hideBordersOnPresetPage() {

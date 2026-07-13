@@ -1,17 +1,17 @@
 {
-  "version": "0.3.74",
-  "releasedAt": "2026-07-13T14:48:24.750Z",
-  "notes": "Report Editor AI 0.3.74\n\n- Electron 整机单实例（第二实例聚焦/托盘恢复）\n- 局域网应用内 AI：allow_lan_access + Agent Token；桌面独有能力明确提示",
+  "version": "0.3.75",
+  "releasedAt": "2026-07-13T15:01:46.170Z",
+  "notes": "Report Editor AI 0.3.75\n\n- 模版/版式多选 B2：Shift 区间加选；六对齐 + 两等距分布；工具栏入口；一次 undo",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.74-x64.exe",
+      "url": "Report Editor AI-Setup-0.3.75-x64.exe",
       "sha256": "",
       "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.74-arm64.dmg",
-      "sha256": "8372a138661cd84571162fd5aad029b5066f1dd9d82ca30b7e16d3516372bd20",
-      "size": 182035564
+      "url": "Report Editor AI-0.3.75-arm64.dmg",
+      "sha256": "",
+      "size": 0
     }
   }
 }

@@ -17,10 +17,12 @@ describe("selection-set (011 A)", () => {
     expect(toggleInSelection(["b"], "b")).toEqual([]);
   });
 
-  it("A2: range in ordered list", () => {
+  it("A2: range in ordered list; target is primary", () => {
     const ids = ["a", "b", "c", "d"];
     expect(rangeSelectInList(ids, "a", "c")).toEqual(["a", "b", "c"]);
-    expect(rangeSelectInList(ids, "c", "a")).toEqual(["a", "b", "c"]);
+    expect(primaryId(rangeSelectInList(ids, "a", "c"))).toBe("c");
+    expect(rangeSelectInList(ids, "c", "a")).toEqual(["b", "c", "a"]);
+    expect(primaryId(rangeSelectInList(ids, "c", "a"))).toBe("a");
     expect(rangeSelectInList(ids, null, "b")).toEqual(["b"]);
   });
 

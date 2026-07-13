@@ -36,6 +36,7 @@ export function toggleInSelection(selectedIds: readonly string[], id: string): s
 /**
  * 同层有序列表内，从锚点到目标做闭区间选中（含两端）。
  * 锚点缺失时退化为 selectOnly(targetId)。
+ * 点击端（targetId）置于末项作为 primary。
  */
 export function rangeSelectInList(
   orderedIds: readonly string[],
@@ -49,7 +50,9 @@ export function rangeSelectInList(
   if (ai < 0) return selectOnly(targetId);
   const lo = Math.min(ai, ti);
   const hi = Math.max(ai, ti);
-  return orderedIds.slice(lo, hi + 1);
+  const slice = orderedIds.slice(lo, hi + 1);
+  const rest = slice.filter((id) => id !== targetId);
+  return [...rest, targetId];
 }
 
 export function rectsIntersect(a: Rect, b: Rect): boolean {

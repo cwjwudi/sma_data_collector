@@ -651,6 +651,7 @@ import {
   marqueeHitTest,
   normalizeRect,
   primaryId,
+  rangeSelectInList,
   selectOnly,
   toggleInSelection,
 } from "@/lib/report-template/selection-set";
@@ -1282,6 +1283,10 @@ function beginMove(ev: PointerEvent, el: LayoutZoneElement, z: Zone) {
   const wasIn = selectedIds.value.includes(el.id);
   if (toggle) {
     selectedIds.value = toggleInSelection(selectedIds.value, el.id);
+  } else if (ev.shiftKey) {
+    const ordered = elementsForZone(z).map((item) => item.id);
+    const anchor = primaryId(selectedIds.value);
+    selectedIds.value = rangeSelectInList(ordered, anchor, el.id);
   } else if (wasIn && selectedIds.value.length > 1) {
     // 保持多选
   } else {

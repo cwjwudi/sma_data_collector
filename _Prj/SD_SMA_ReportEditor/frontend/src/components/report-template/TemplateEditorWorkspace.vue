@@ -65,6 +65,31 @@
             粘贴
           </button>
           <span class="bar-sep" aria-hidden="true" />
+          <button type="button" class="b" title="左对齐" :disabled="!canAlignSel" @click="alignSel('left')">
+            左齐
+          </button>
+          <button type="button" class="b" title="水平居中" :disabled="!canAlignSel" @click="alignSel('centerH')">
+            水平中
+          </button>
+          <button type="button" class="b" title="右对齐" :disabled="!canAlignSel" @click="alignSel('right')">
+            右齐
+          </button>
+          <button type="button" class="b" title="顶对齐" :disabled="!canAlignSel" @click="alignSel('top')">
+            顶齐
+          </button>
+          <button type="button" class="b" title="垂直居中" :disabled="!canAlignSel" @click="alignSel('centerV')">
+            垂直中
+          </button>
+          <button type="button" class="b" title="底对齐" :disabled="!canAlignSel" @click="alignSel('bottom')">
+            底齐
+          </button>
+          <button type="button" class="b" title="水平等距分布（至少 3 个）" :disabled="!canDistributeSel" @click="distributeSel('horizontal')">
+            水平距
+          </button>
+          <button type="button" class="b" title="垂直等距分布（至少 3 个）" :disabled="!canDistributeSel" @click="distributeSel('vertical')">
+            垂直距
+          </button>
+          <span class="bar-sep" aria-hidden="true" />
           <button
             type="button"
             class="b"
@@ -477,7 +502,7 @@
             </button>
           </li>
         </ul>
-        <p class="ted-multi-note">批量改属性见后续版本；当前可组移动、删除、复制/剪切/粘贴。</p>
+        <p class="ted-multi-note">Shift 区间加选；工具栏可对齐/分布。批量改属性见后续版本。</p>
       </aside>
       <aside v-else-if="selZone" class="right ted-props ted-props--zone">
         <h3 class="ted-zone-title">已定位：{{ selZoneLabel }}</h3>
@@ -561,6 +586,12 @@ import {
   takeTemplateElementsPasteClones,
 } from "@/lib/report-template/editor-element-clipboard";
 import { countTypesById, primaryId, selectOnly } from "@/lib/report-template/selection-set";
+import {
+  canAlign,
+  canDistribute,
+  computeAlignPatches,
+  computeDistributePatches,
+} from "@/lib/report-template/selection-align";
 import { templateTableCellPickKey, reportBindingPreviewKey } from "@/lib/report-template/template-editor-context";
 import { getCachedTemplateFullMap } from "@/lib/report-template/template-view-cache";
 import { useReportBindingPreview } from "@/composables/useReportBindingPreview";
@@ -835,6 +866,58 @@ function gatherSelectedCanvasElements() {
 }
 
 const hasCanvasSelection = computed(() => gatherSelectedCanvasElements().length > 0);
+
+const canAlignSel = computed(() => canAlign(selectedIds.value.length));
+const canDistributeSel = computed(() => canDistribute(selectedIds.value.length));
+
+function gatherSelectedAlignBoxes() {
+  const t = editing.value;
+  if (!t) return [];
+  const out = [];
+  for (const id of selectedIds.value) {
+    const hit = findSelectableTemplateElement(t, id);
+    if (!hit?.element) continue;
+    const el = hit.element;
+    out.push({
+      id: el.id,
+      x: Number(el.x) || 0,
+      y: Number(el.y) || 0,
+      w: Number(el.w) || 0,
+      h: Number(el.h) || 0,
+    });
+  }
+  return out;
+}
+
+function applyPosPatchesToTemplate(patches) {
+  const t = editing.value;
+  if (!t || !patches.length) return 0;
+  let n = 0;
+  for (const p of patches) {
+    const hit = findSelectableTemplateElement(t, p.id);
+    if (!hit?.element) continue;
+    hit.element.x = p.x;
+    hit.element.y = p.y;
+    n += 1;
+  }
+  return n;
+}
+
+/** @param {import('@/lib/report-template/selection-align').AlignKind} kind */
+function alignSel(kind) {
+  const boxes = gatherSelectedAlignBoxes();
+  const patches = computeAlignPatches(boxes, kind, primaryId(selectedIds.value));
+  const n = applyPosPatchesToTemplate(patches);
+  hint.value = n ? `已对齐 ${n} 个控件。` : "无需移动（已对齐或选中不足）。";
+}
+
+/** @param {import('@/lib/report-template/selection-align').DistributeKind} kind */
+function distributeSel(kind) {
+  const boxes = gatherSelectedAlignBoxes();
+  const patches = computeDistributePatches(boxes, kind);
+  const n = applyPosPatchesToTemplate(patches);
+  hint.value = n ? `已等距分布（调整 ${n} 个）。` : "无需移动（选中不足 3 个或已等距）。";
+}
 
 const multiCanvasSummary = computed(() => {
   const t = editing.value;

@@ -7,6 +7,7 @@
 
 ## 2026-07-13
 
+- **ReportEditor 0.3.75 已发版**：模版/版式多选 B2（Shift 区间、六对齐、两等距分布）；看板 [docs/011-🚧](docs/011-🚧-ReportEditor模版版式多选控件.md)（B3 后置）。
 - **ReportEditor 多选 B2（计划）**：[docs/011-🚧](docs/011-🚧-ReportEditor模版版式多选控件.md) 按默认拍板——Shift 区间、六对齐、两分布、工具栏入口、一次 undo；可开工。
 - **ReportEditor 0.3.74 已发版**：整机单实例；局域网应用内 AI（开关+Token）；桌面独有提示；看板 [docs/015-✅](docs/015-✅-ReportEditor整机单实例与浏览器访问.md)。
 - **ReportEditor 局域网 AI（计划）**：[docs/015-✅](docs/015-✅-ReportEditor整机单实例与浏览器访问.md) 拍板要实现应用内 AI；复用 `allow_lan_access` + Agent Token；桌面独有能力明确提示。

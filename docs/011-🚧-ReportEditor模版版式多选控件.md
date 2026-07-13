@@ -1,19 +1,19 @@
 # ReportEditor 模版 / 版式编辑器：多选控件
 
 > 本文件为 **任务看板**；规则见 [CLAUDE.md](../CLAUDE.md)。  
-> **B1（MVP）已于 0.3.70 落地**；**B2 约定已拍板（2026-07-13，按默认）**，实现另开版本切片；B3 仍后置。  
-> 相关：`TemplateEditorWorkspace` / `TemplateBodyCanvas` / `LayoutPresetEditor` / `LayoutPresetPaperCanvas` / `selection-set.ts`。
+> **B1（MVP）已于 0.3.70 落地**；**B2 已于 0.3.75 落地**；B3 属性批改仍后置。  
+> 相关：`TemplateEditorWorkspace` / `TemplateBodyCanvas` / `LayoutPresetEditor` / `LayoutPresetPaperCanvas` / `selection-set.ts` / `selection-align.ts`。
 
 ---
 
-# 🚧 进行中：多选控件（B1 ✅ · B2 ⌛️ 可开工 · B3 后置）
+# 🚧 进行中：多选控件（B1 ✅ · B2 ✅ · B3 后置）
 
 ## 批次状态
 
 | 批次 | 范围 | 状态 |
 |------|------|------|
 | **B1 · MVP** | 多选状态 + 高亮 + Ctrl/Cmd 加选 + 框选 + 组移动/删除/多剪贴板 + 属性摘要 | ✅ **0.3.70** |
-| **B2** | Shift 区间加选；对齐 / 分布 | ⌛️ **约定已齐，可开工**（建议 **0.3.75**） |
+| **B2** | Shift 区间加选；对齐 / 分布 | ✅ **0.3.75** |
 | **B3 · 属性批改** | 交集字段批改 + E1–E6 | ⌛️（已拍板后置） |
 
 ## B1 实现摘要（0.3.70）
@@ -24,6 +24,12 @@
 - 右侧多选：「已选 N 项」+ 类型计数；点项切单选；无表格格编辑  
 - 缩放柄仅 primary；页眉 zone 只读层不参与框选批量删  
 
+## B2 实现摘要（0.3.75）
+
+- `selection-align.ts`：六对齐（primary 优先，否则外接矩形）+ 水平/垂直等距；只改 x/y  
+- `rangeSelectInList`：点击端为 primary；画布 Shift+click  
+- 模版 / 版式工具栏对齐与分布按钮；≥2 / ≥3 启用；写回进现有 debounce undo  
+
 ## 属性面板（回顾）
 
 - 单选：完整属性面板  
@@ -31,7 +37,7 @@
 
 ---
 
-# ⌛️ B2：Shift 区间加选 + 对齐 / 分布（约定 · 2026-07-13）
+# ✅ B2：Shift 区间加选 + 对齐 / 分布（0.3.75）
 
 ## 产品诉求
 
@@ -75,7 +81,7 @@
 
 ### 分布
 
-- **水平等距**：按当前中心 X（或左缘）排序后，使相邻间距在水平方向相等（两端不动，中间项重算 `x`）。  
+- **水平等距**：按当前左缘 X 排序后，使相邻间距在水平方向相等（两端不动，中间项重算 `x`）。  
 - **垂直等距**：同理重算 `y`。  
 - 选中 **&lt; 3** 个时禁用。  
 - 不改变控件尺寸。
@@ -146,7 +152,7 @@
 
 ### A. 纯函数 ✅
 
-A1–A4 + marquee apply（`selection-set.test.ts`）；多元素剪贴板（`editor-element-clipboard.test.ts`）
+A1–A4 + marquee apply（`selection-set.test.ts`）；多元素剪贴板（`editor-element-clipboard.test.ts`）；对齐/分布（`selection-align.test.ts`）
 
 ### E. 属性批改（B3 · 后置）
 
@@ -168,16 +174,16 @@ A1–A4 + marquee apply（`selection-set.test.ts`）；多元素剪贴板（`edi
 - [x] focus 路由仍单选  
 - [x] 多选属性为摘要  
 
-## 验收（B2 · 开工后）
+## 验收（B2 · 0.3.75）
 
-- [ ] Shift 区间加选正确（S1–S3）  
-- [ ] 六种对齐 + 两种分布（L/D）；禁用规则正确  
-- [ ] 一次操作一次 undo；模版与版式一致  
-- [ ] B1 回归通过  
+- [x] Shift 区间加选正确（S1–S3）  
+- [x] 六种对齐 + 两种分布（L/D）；禁用规则正确  
+- [x] 一次操作一次 undo；模版与版式一致  
+- [x] B1 回归通过（剪贴板/加选/框选路径未改破坏）  
 
 ## 本轮范围
 
 - ✅ B1 实现与发版  
 - ✅ **B2 产品约定（按默认拍板）+ 测试用例**  
-- ⌛️ B2 实现与发版  
+- ✅ B2 实现与发版（**0.3.75**）  
 - ⌛️ B3（后置）  
