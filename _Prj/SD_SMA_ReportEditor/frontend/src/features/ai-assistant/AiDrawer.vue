@@ -4,8 +4,9 @@
       v-if="!open"
       type="button"
       class="ai-fab"
+      :class="{ 'ai-fab--busy': loading }"
       title="AI 助手"
-      aria-label="打开 AI 助手"
+      :aria-label="loading ? '打开 AI 助手（生成中）' : '打开 AI 助手'"
       @click="openDrawer"
     >
       <svg
@@ -66,12 +67,27 @@
         </g>
       </svg>
       <span class="ai-fab__label">AI</span>
+      <span v-if="loading" class="ai-fab__badge" aria-hidden="true" />
     </button>
 
     <div v-if="open" class="ai-drawer-backdrop" @click.self="closeDrawer">
-      <aside class="ai-drawer" role="dialog" aria-labelledby="ai-drawer-title" aria-modal="true">
+      <aside
+        class="ai-drawer"
+        role="dialog"
+        aria-labelledby="ai-drawer-title"
+        aria-modal="true"
+        :style="{ width: drawerWidthCss }"
+      >
+        <div
+          class="ai-drawer__resize"
+          title="拖拽调整宽度"
+          @pointerdown="onResizePointerDown"
+        />
         <header class="ai-drawer__head">
-          <h2 id="ai-drawer-title" class="ai-drawer__title">AI 助手</h2>
+          <h2 id="ai-drawer-title" class="ai-drawer__title">
+            AI 助手
+            <span v-if="statusPhase" class="ai-drawer__phase">{{ statusPhaseLabel }}</span>
+          </h2>
           <button type="button" class="ai-drawer__close" aria-label="关闭" @click="closeDrawer">×</button>
         </header>
 
@@ -79,18 +95,42 @@
           <p>请先在 <router-link to="/settings" @click="closeDrawer">设置</router-link> 中启用 AI、配置 LLM Key 并生成 Agent 令牌。</p>
         </div>
 
-        <div ref="scrollEl" class="ai-drawer__messages" @scroll.passive="onMessagesScroll">
+        <div
+          ref="scrollEl"
+          class="ai-drawer__messages"
+          aria-live="polite"
+          @scroll.passive="onMessagesScroll"
+        >
           <div v-if="!messages.length && ready" class="ai-drawer__empty">
             可询问：连接探活、最近导出失败、模版列表等。当前页上下文会自动附带。
           </div>
           <div
-            v-for="(m, i) in messages"
-            :key="i"
+            v-for="m in messages"
+            :key="m.id"
             class="ai-msg"
             :class="m.role === 'user' ? 'ai-msg--user' : 'ai-msg--assistant'"
           >
-            <div class="ai-msg__role">{{ m.role === 'user' ? '你' : '助手' }}</div>
-            <pre class="ai-msg__body">{{ m.content }}</pre>
+            <div class="ai-msg__role">
+              {{ m.role === 'user' ? '你' : '助手' }}
+              <span v-if="m.status === 'queued'" class="ai-msg__badge">排队中</span>
+              <span v-else-if="m.status === 'cancelled'" class="ai-msg__badge">已停止</span>
+              <span v-else-if="m.status === 'streaming'" class="ai-msg__badge">生成中</span>
+              <button
+                v-if="m.status === 'queued'"
+                type="button"
+                class="ai-msg__cancel-q"
+                title="取消排队"
+                @click="cancelQueued(m.id)"
+              >
+                ×
+              </button>
+            </div>
+            <pre v-if="m.role === 'user'" class="ai-msg__body">{{ m.content }}</pre>
+            <div
+              v-else
+              class="ai-msg__body ai-msg__body--md"
+              v-html="renderAssistantMarkdown(m.content || (m.status === 'streaming' ? '…' : ''))"
+            />
             <details
               v-if="m.role === 'assistant' && m.toolTrace?.length"
               class="ai-msg__trace"
@@ -105,10 +145,18 @@
                   v-for="(step, si) in m.toolTrace"
                   :key="si"
                   class="ai-msg__trace-item"
-                  :class="step.ok ? 'ai-msg__trace-item--ok' : 'ai-msg__trace-item--err'"
+                  :class="
+                    step.ok === false
+                      ? 'ai-msg__trace-item--err'
+                      : step.pending
+                        ? 'ai-msg__trace-item--pending'
+                        : 'ai-msg__trace-item--ok'
+                  "
                 >
                   <div class="ai-msg__trace-head">
-                    <span class="ai-msg__trace-status">{{ step.ok ? '成功' : '失败' }}</span>
+                    <span class="ai-msg__trace-status">
+                      {{ step.pending ? '调用中' : step.ok ? '成功' : '失败' }}
+                    </span>
                     <code class="ai-msg__trace-name">{{ step.name }}</code>
                     <span v-if="step.round" class="ai-msg__trace-round">#{{ step.round }}</span>
                   </div>
@@ -120,10 +168,6 @@
               </ul>
             </details>
           </div>
-          <div v-if="loading" class="ai-msg ai-msg--assistant">
-            <div class="ai-msg__role">助手</div>
-            <p class="ai-msg__body ai-msg__body--pending">思考中…</p>
-          </div>
         </div>
 
         <form class="ai-drawer__composer" @submit.prevent="onSend">
@@ -132,18 +176,34 @@
             v-model="input"
             class="ai-drawer__input"
             rows="3"
-            placeholder="Enter 发送，Shift+Enter 换行"
-            :disabled="loading"
+            placeholder="Enter 发送，Shift+Enter 换行；生成中可继续发送排队"
+            :disabled="!ready"
             @keydown="onInputKeydown"
           />
           <div class="ai-drawer__actions">
-            <button type="button" class="ai-drawer__btn ai-drawer__btn--muted" :disabled="loading" @click="clearChat">
+            <button type="button" class="ai-drawer__btn ai-drawer__btn--muted" @click="onClearClick">
               清空
             </button>
-            <button type="submit" class="ai-drawer__btn ai-drawer__btn--primary" :disabled="loading || !input.trim() || !ready">
-              发送
+            <button
+              v-if="loading"
+              type="button"
+              class="ai-drawer__btn ai-drawer__btn--danger"
+              @click="stopGeneration"
+            >
+              停止
+            </button>
+            <button
+              type="submit"
+              class="ai-drawer__btn ai-drawer__btn--primary"
+              :disabled="!input.trim() || !ready"
+            >
+              {{ loading ? '排队发送' : '发送' }}
             </button>
           </div>
+          <p v-if="queuePaused" class="ai-drawer__warn">
+            后续排队已暂停
+            <button type="button" class="ai-drawer__link" @click="resumeQueue">继续排队</button>
+          </p>
           <p v-if="errorMsg" class="ai-drawer__error">{{ errorMsg }}</p>
         </form>
       </aside>
@@ -155,26 +215,46 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import {
-  extractAssistantText,
+  cancelAiPendingPrompt,
   extractToolTrace,
+  fetchAiPendingPrompts,
   fetchAiSettings,
-  sendAiChat,
+  sendAiChatStream,
   type AiChatMessage,
   type AiPageContext,
   type AiToolTraceStep,
 } from '@/api/aiSettings'
+import {
+  clearAiChatPersist,
+  clampDrawerWidth,
+  loadAiChatPersist,
+  saveAiChatPersist,
+  type PersistedAiMessage,
+} from '@/features/ai-assistant/chat-persist'
+import { dequeue, enqueue, removeQueued, type QueuedChatItem } from '@/features/ai-assistant/chat-queue'
+import { renderAssistantMarkdown } from '@/features/ai-assistant/render-md'
+import type { AiStreamEvent } from '@/features/ai-assistant/sse-parse'
 
 defineOptions({ name: 'AiDrawer' })
+
+type UiToolStep = AiToolTraceStep & { pending?: boolean }
+type UiMessage = AiChatMessage & { id: string; toolTrace?: UiToolStep[] }
 
 const open = ref(false)
 const ready = ref(false)
 const loading = ref(false)
 const input = ref('')
 const errorMsg = ref('')
-const messages = ref<AiChatMessage[]>([])
+const messages = ref<UiMessage[]>([])
 const scrollEl = ref<HTMLElement | null>(null)
 const inputEl = ref<HTMLTextAreaElement | null>(null)
+const statusPhase = ref('')
+const queuePaused = ref(false)
+const drawerWidthPx = ref(420)
 let stickToBottom = true
+let abortCtrl: AbortController | null = null
+let queue: QueuedChatItem[] = []
+let resizing = false
 
 const route = useRoute()
 
@@ -187,6 +267,31 @@ const pageContext = computed((): AiPageContext => {
     recentError: null,
   }
 })
+
+const drawerWidthCss = computed(() => {
+  if (typeof window !== 'undefined' && window.innerWidth < 480) return '100vw'
+  return `${clampDrawerWidth(drawerWidthPx.value)}px`
+})
+
+const statusPhaseLabel = computed(() => {
+  if (statusPhase.value === 'tools') return '工具调用中'
+  if (statusPhase.value === 'writing') return '撰写中'
+  if (statusPhase.value === 'thinking') return '思考中'
+  return ''
+})
+
+function newId(): string {
+  return typeof crypto !== 'undefined' && crypto.randomUUID
+    ? crypto.randomUUID()
+    : `m-${Date.now()}-${Math.random().toString(16).slice(2)}`
+}
+
+function persistNow() {
+  saveAiChatPersist({
+    messages: messages.value as PersistedAiMessage[],
+    drawerWidthPx: drawerWidthPx.value,
+  })
+}
 
 async function refreshStatus() {
   try {
@@ -207,22 +312,71 @@ function openDrawer() {
   })
 }
 
+/** 关抽屉：不 Abort、不清队 */
 function closeDrawer() {
   open.value = false
 }
 
-function clearChat() {
+function cancelQueued(id: string) {
+  queue = removeQueued(queue, id)
+  messages.value = messages.value.filter((m) => !(m.id === id && m.status === 'queued'))
+  persistNow()
+}
+
+async function cancelActivePending() {
+  try {
+    const { prompts } = await fetchAiPendingPrompts()
+    for (const p of prompts || []) {
+      if (p?.id) await cancelAiPendingPrompt(p.id)
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
+function stopGeneration() {
+  abortCtrl?.abort()
+  abortCtrl = null
+  void cancelActivePending()
+  const last = messages.value[messages.value.length - 1]
+  if (last?.role === 'assistant' && last.status === 'streaming') {
+    last.status = 'cancelled'
+    if (!last.content) last.content = '（已停止）'
+  }
+  loading.value = false
+  statusPhase.value = ''
+  persistNow()
+  // 队列续跑由 runOneTurn finally → pumpQueue
+}
+
+function onClearClick() {
+  if (loading.value || queue.length) {
+    if (!window.confirm('清空将停止当前生成并删除全部对话，确定？')) return
+  }
+  abortCtrl?.abort()
+  abortCtrl = null
+  void cancelActivePending()
+  queue = []
+  queuePaused.value = false
   messages.value = []
   errorMsg.value = ''
+  statusPhase.value = ''
+  loading.value = false
+  clearAiChatPersist()
   stickToBottom = true
   void scrollToBottom(true)
 }
 
-function traceHasFailure(steps: AiToolTraceStep[] | undefined): boolean {
-  return Boolean(steps?.some((s) => !s.ok))
+function resumeQueue() {
+  queuePaused.value = false
+  void pumpQueue()
 }
 
-function traceShouldOpen(steps: AiToolTraceStep[] | undefined): boolean {
+function traceHasFailure(steps: UiToolStep[] | undefined): boolean {
+  return Boolean(steps?.some((s) => s.ok === false && !s.pending))
+}
+
+function traceShouldOpen(steps: UiToolStep[] | undefined): boolean {
   return traceHasFailure(steps)
 }
 
@@ -248,7 +402,6 @@ async function scrollToBottom(force = false) {
   if (!el) return
   if (!force && !stickToBottom) return
   el.scrollTop = el.scrollHeight
-  // 二次对齐：思考中占位 / pre 换行后高度可能再变
   requestAnimationFrame(() => {
     if (force || stickToBottom) el.scrollTop = el.scrollHeight
   })
@@ -261,38 +414,160 @@ function onInputKeydown(ev: KeyboardEvent) {
   void onSend()
 }
 
+function onResizePointerDown(ev: PointerEvent) {
+  resizing = true
+  const startX = ev.clientX
+  const startW = drawerWidthPx.value
+  const target = ev.currentTarget as HTMLElement
+  target.setPointerCapture(ev.pointerId)
+  const onMove = (e: PointerEvent) => {
+    if (!resizing) return
+    const dx = startX - e.clientX
+    drawerWidthPx.value = clampDrawerWidth(startW + dx)
+  }
+  const onUp = () => {
+    resizing = false
+    target.releasePointerCapture(ev.pointerId)
+    window.removeEventListener('pointermove', onMove)
+    window.removeEventListener('pointerup', onUp)
+    persistNow()
+  }
+  window.addEventListener('pointermove', onMove)
+  window.addEventListener('pointerup', onUp)
+}
+
+function onGlobalKeydown(ev: KeyboardEvent) {
+  if (ev.key !== 'Escape') return
+  if (!open.value) return
+  // Pending 对话框自己处理 Esc；此处只关抽屉
+  closeDrawer()
+}
+
 async function onSend() {
   const text = input.value.trim()
-  if (!text || loading.value || !ready.value) return
+  if (!text || !ready.value) return
   errorMsg.value = ''
-  const userMsg: AiChatMessage = { role: 'user', content: text }
-  messages.value = [...messages.value, userMsg]
   input.value = ''
+
+  if (loading.value) {
+    const id = newId()
+    const r = enqueue(queue, { id, content: text })
+    if (!r.ok) {
+      errorMsg.value = r.reason
+      return
+    }
+    queue = r.queue
+    messages.value = [...messages.value, { id, role: 'user', content: text, status: 'queued' }]
+    stickToBottom = true
+    await scrollToBottom(true)
+    return
+  }
+
+  await runOneTurn(text)
+}
+
+async function pumpQueue() {
+  if (loading.value || queuePaused.value) return
+  const { next, rest } = dequeue(queue)
+  queue = rest
+  if (!next) return
+  const msg = messages.value.find((m) => m.id === next.id)
+  if (msg) msg.status = 'done'
+  await runOneTurn(next.content, next.id)
+}
+
+async function runOneTurn(text: string, existingUserId?: string) {
+  const userId = existingUserId || newId()
+  if (!existingUserId) {
+    messages.value = [...messages.value, { id: userId, role: 'user', content: text, status: 'done' }]
+  }
+  const assistantId = newId()
+  messages.value = [
+    ...messages.value,
+    { id: assistantId, role: 'assistant', content: '', status: 'streaming', toolTrace: [] },
+  ]
   loading.value = true
+  statusPhase.value = 'thinking'
   stickToBottom = true
   await scrollToBottom(true)
+
+  const payloadMessages = messages.value
+    .filter((m) => m.role === 'user' || m.role === 'assistant')
+    .filter((m) => m.status !== 'queued')
+    .filter((m) => m.id !== assistantId)
+    .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content }))
+
+  abortCtrl = new AbortController()
+  const assistant = () => messages.value.find((m) => m.id === assistantId)
+
   try {
-    const payloadMessages = messages.value
-      .filter((m) => m.role === 'user' || m.role === 'assistant')
-      .map((m) => ({ role: m.role, content: m.content }))
-    const data = await sendAiChat({
+    await sendAiChatStream({
       messages: payloadMessages,
       pageContext: pageContext.value,
+      signal: abortCtrl.signal,
+      onEvent: (ev: AiStreamEvent) => {
+        const a = assistant()
+        if (!a) return
+        if (ev.event === 'status') {
+          statusPhase.value = ev.phase || ''
+        } else if (ev.event === 'delta') {
+          a.content = (a.content || '') + (ev.text || '')
+          void scrollToBottom()
+        } else if (ev.event === 'replace') {
+          a.content = ev.text || ''
+          void scrollToBottom()
+        } else if (ev.event === 'tool') {
+          const step = ev.step as UiToolStep
+          const name = typeof step.name === 'string' ? step.name : ''
+          if (!name) return
+          const normalized: UiToolStep = {
+            round: typeof step.round === 'number' ? step.round : undefined,
+            name,
+            args_summary:
+              step.args_summary && typeof step.args_summary === 'object'
+                ? (step.args_summary as Record<string, unknown>)
+                : undefined,
+            ok: Boolean(step.ok),
+            message: typeof step.message === 'string' ? step.message : undefined,
+            pending: false,
+          }
+          a.toolTrace = [...(a.toolTrace || []), normalized]
+          void scrollToBottom()
+        } else if (ev.event === 'done') {
+          const trace = extractToolTrace({ report_editor_tool_trace: ev.tool_trace })
+          if (trace.length) a.toolTrace = trace
+          a.status = 'done'
+        } else if (ev.event === 'error') {
+          errorMsg.value = ev.message
+          a.status = a.content ? 'error' : 'error'
+          if (!a.content) a.content = ev.message
+          queuePaused.value = queue.length > 0
+        }
+      },
     })
-    const reply = extractAssistantText(data) || '（无文本回复）'
-    const toolTrace = extractToolTrace(data)
-    messages.value = [
-      ...messages.value,
-      { role: 'assistant', content: reply, toolTrace: toolTrace.length ? toolTrace : undefined },
-    ]
-    // AI 工具可能已新建/改模版或数据源：立即拉取 mirror 触发列表 reload
+    const a = assistant()
+    if (a && a.status === 'streaming') a.status = 'done'
     const { syncPendingClientPrefsFromBackend } = await import('@/lib/client-prefs-mirror')
     await syncPendingClientPrefsFromBackend()
   } catch (e: unknown) {
-    errorMsg.value = e instanceof Error ? e.message : String(e)
+    if ((e as { name?: string })?.name === 'AbortError') {
+      /* stopGeneration 已处理 */
+    } else {
+      errorMsg.value = e instanceof Error ? e.message : String(e)
+      const a = assistant()
+      if (a) {
+        a.status = 'error'
+        if (!a.content) a.content = errorMsg.value
+      }
+      queuePaused.value = queue.length > 0
+    }
   } finally {
     loading.value = false
+    statusPhase.value = ''
+    abortCtrl = null
+    persistNow()
     await scrollToBottom(true)
+    if (!queuePaused.value) void pumpQueue()
   }
 }
 
@@ -315,18 +590,27 @@ watch(
 )
 
 onMounted(() => {
+  const saved = loadAiChatPersist()
+  if (saved) {
+    messages.value = saved.messages.map((m) => ({
+      ...m,
+      status: m.status === 'streaming' ? 'done' : m.status,
+    })) as UiMessage[]
+    drawerWidthPx.value = saved.drawerWidthPx
+  }
   window.addEventListener('report-editor-ai-settings-changed', onSettingsChanged)
+  window.addEventListener('keydown', onGlobalKeydown)
 })
 
 onUnmounted(() => {
   window.removeEventListener('report-editor-ai-settings-changed', onSettingsChanged)
+  window.removeEventListener('keydown', onGlobalKeydown)
 })
 </script>
 
 <style scoped>
 .ai-fab {
   position: fixed;
-  /* 避开主区右侧滚动条（约 6–16px）与 gutter，避免叠在滑块上 */
   right: max(28px, calc(12px + 16px));
   bottom: 20px;
   z-index: 9000;
@@ -415,6 +699,18 @@ onUnmounted(() => {
   filter: drop-shadow(0 1px 1px rgba(127, 29, 29, 0.35));
 }
 
+.ai-fab__badge {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #0f766e;
+  box-shadow: 0 0 0 2px #fff;
+  z-index: 2;
+}
+
 .ai-fab:hover {
   transform: scale(1.06);
   filter: drop-shadow(0 12px 22px rgba(249, 115, 22, 0.4)) brightness(1.06);
@@ -452,12 +748,23 @@ onUnmounted(() => {
 }
 
 .ai-drawer {
+  position: relative;
   width: min(420px, 100vw);
   height: 100%;
   background: #fff;
   display: flex;
   flex-direction: column;
   box-shadow: -8px 0 32px rgba(15, 23, 42, 0.12);
+}
+
+.ai-drawer__resize {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  cursor: ew-resize;
+  z-index: 2;
 }
 
 .ai-drawer__head {
@@ -473,6 +780,15 @@ onUnmounted(() => {
   font-size: 16px;
   font-weight: 600;
   color: #111827;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ai-drawer__phase {
+  font-size: 12px;
+  font-weight: 500;
+  color: #0f766e;
 }
 
 .ai-drawer__close {
@@ -536,6 +852,29 @@ onUnmounted(() => {
   font-weight: 600;
   color: #6b7280;
   margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ai-msg__badge {
+  font-size: 10px;
+  font-weight: 600;
+  color: #0f766e;
+  background: #ccfbf1;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.ai-msg__cancel-q {
+  margin-left: auto;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  color: #9ca3af;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0 2px;
 }
 
 .ai-msg__body {
@@ -546,6 +885,47 @@ onUnmounted(() => {
   font-size: 13px;
   line-height: 1.45;
   color: #111827;
+}
+
+.ai-msg__body--md :deep(p) {
+  margin: 0 0 0.5em;
+}
+
+.ai-msg__body--md :deep(p:last-child) {
+  margin-bottom: 0;
+}
+
+.ai-msg__body--md :deep(ul),
+.ai-msg__body--md :deep(ol) {
+  margin: 0.25em 0;
+  padding-left: 1.25em;
+}
+
+.ai-msg__body--md :deep(table) {
+  border-collapse: collapse;
+  font-size: 12px;
+  margin: 0.4em 0;
+  max-width: 100%;
+}
+
+.ai-msg__body--md :deep(th),
+.ai-msg__body--md :deep(td) {
+  border: 1px solid #d1d5db;
+  padding: 3px 6px;
+}
+
+.ai-msg__body--md :deep(code) {
+  font-size: 12px;
+  background: #e5e7eb;
+  padding: 0 3px;
+  border-radius: 3px;
+}
+
+.ai-msg__body--md :deep(pre) {
+  overflow: auto;
+  background: #e5e7eb;
+  padding: 8px;
+  border-radius: 6px;
 }
 
 .ai-msg__trace {
@@ -594,6 +974,11 @@ onUnmounted(() => {
   background: #fef2f2;
 }
 
+.ai-msg__trace-item--pending {
+  border-color: #fde68a;
+  background: #fffbeb;
+}
+
 .ai-msg__trace-head {
   display: flex;
   align-items: center;
@@ -631,11 +1016,6 @@ onUnmounted(() => {
   color: #4b5563;
   line-height: 1.35;
   word-break: break-all;
-}
-
-.ai-msg__body--pending {
-  color: #6b7280;
-  font-style: italic;
 }
 
 .ai-drawer__composer {
@@ -687,9 +1067,33 @@ onUnmounted(() => {
   color: #374151;
 }
 
+.ai-drawer__btn--danger {
+  background: #fff;
+  border-color: #fca5a5;
+  color: #b91c1c;
+}
+
 .ai-drawer__error {
   margin: 8px 0 0;
   font-size: 12px;
   color: #b91c1c;
+}
+
+.ai-drawer__warn {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: #92400e;
+}
+
+.ai-drawer__link {
+  margin-left: 8px;
+  border: none;
+  background: none;
+  color: #0f766e;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: underline;
+  font-size: 12px;
+  padding: 0;
 }
 </style>

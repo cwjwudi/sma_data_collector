@@ -53,6 +53,7 @@
 
 | 版本 | 状态 | 任务看板 | 说明 |
 |------|------|----------|------|
+| [0.3.72.md](./0.3.72.md) | 已发版 | [docs/014-✅-ReportEditor-AI流式输出.md](../../../../docs/014-✅-ReportEditor-AI流式输出.md) | AI 正文 SSE 流式 + 整窗体验 |
 | [0.3.71.md](./0.3.71.md) | 已发版 | [docs/006-🚧-ReportEditor-AI上游错误体验.md](../../../../docs/006-🚧-ReportEditor-AI上游错误体验.md) | 工具轨迹假失败（无 ok 字段） |
 | [0.3.70.md](./0.3.70.md) | 已发版 | [docs/011-🚧-ReportEditor模版版式多选控件.md](../../../../docs/011-🚧-ReportEditor模版版式多选控件.md) | 多选 B1：加选/框选/组操作/摘要 |
 | [0.3.69.md](./0.3.69.md) | 已发版 | [docs/012-✅-ReportEditor移除演示与培训.md](../../../../docs/012-✅-ReportEditor移除演示与培训.md) | 拆除演示与培训 / demo-pack |

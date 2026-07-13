@@ -5,13 +5,21 @@ import json
 import logging
 import time
 import uuid
+from collections.abc import AsyncIterator
 from typing import Any
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 from modules import ai_config, ai_datasource_ops, ai_pending_actions, ai_pending_prompts, ai_tools
+from modules.ai_chat_stream import (
+    finalized_tool_calls,
+    format_sse,
+    iter_content_and_tools_from_upstream_chunk,
+    merge_tool_call_deltas,
+    parse_openai_sse_line,
+)
 from modules.ai_claim_guard import (
     detect_probe_claim,
     extract_assistant_text_from_response,
@@ -140,6 +148,191 @@ async def _forward_llm(
         raise HTTPException(502, "LLM 返回非 JSON 响应") from e
 
 
+async def _iter_upstream_stream(
+    *,
+    settings: dict[str, Any],
+    api_key: str,
+    payload: dict[str, Any],
+) -> AsyncIterator[tuple[str, Any]]:
+    """
+    上游 stream=true：产出 ``("content", str)`` / ``("tool_calls", list)``。
+    出错抛 HTTPException。
+    """
+    base = str(settings.get("llm_base_url") or "").rstrip("/")
+    url = f"{base}/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        "Accept": "text/event-stream",
+    }
+    body = {**payload, "stream": True}
+    timeout = httpx.Timeout(120.0, connect=30.0)
+    tool_acc: dict[int, dict[str, Any]] = {}
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        try:
+            async with client.stream("POST", url, headers=headers, json=body) as resp:
+                if resp.status_code >= 400:
+                    err_body = (await resp.aread()).decode("utf-8", errors="replace")[:2000]
+                    raise HTTPException(
+                        resp.status_code,
+                        format_llm_upstream_error(resp.status_code, err_body),
+                    )
+                async for line in resp.aiter_lines():
+                    parsed = parse_openai_sse_line(line)
+                    if not parsed:
+                        continue
+                    if parsed.get("done"):
+                        break
+                    for kind, val in iter_content_and_tools_from_upstream_chunk(parsed):
+                        if kind == "content":
+                            yield ("content", val)
+                        elif kind == "tool_delta":
+                            merge_tool_call_deltas(tool_acc, val)
+        except httpx.RequestError as e:
+            logger.exception("LLM 流式请求失败")
+            raise HTTPException(502, f"无法连接 LLM 服务 ({base})：{e}") from e
+    tools = finalized_tool_calls(tool_acc)
+    if tools:
+        yield ("tool_calls", tools)
+
+
+async def iter_chat_stream_sse(
+    body: OpenAiChatCompletionRequest,
+    *,
+    skip_agent_auth: bool = False,
+    request: Request | None = None,
+) -> AsyncIterator[str]:
+    """应用内 / OpenAI 兼容流式：产出 SSE 字符串。"""
+    try:
+        if not skip_agent_auth:
+            if request is None:
+                raise HTTPException(500, "缺少 request")
+            _require_agent_auth(request)
+
+        settings, api_key = _ensure_llm_ready()
+        page_context = body.report_editor_page_context
+        user_messages = [m for m in (body.messages or []) if isinstance(m, dict)]
+        messages: list[dict[str, Any]] = _build_system_messages(page_context) + user_messages
+        model = (body.model or settings.get("llm_model") or "gpt-4o-mini").strip()
+        tools = body.tools if body.tools is not None else ai_tools.filtered_tool_definitions()
+
+        upstream_payload: dict[str, Any] = {
+            "model": model,
+            "messages": messages,
+            "tools": tools,
+            "tool_choice": body.tool_choice or "auto",
+        }
+        if body.temperature is not None:
+            upstream_payload["temperature"] = body.temperature
+        if body.max_tokens is not None:
+            upstream_payload["max_tokens"] = body.max_tokens
+
+        tool_trace: list[dict[str, Any]] = []
+        claim_retry_used = False
+        yield format_sse("status", {"phase": "thinking"})
+
+        for round_index in range(1, MAX_TOOL_ROUNDS + 1):
+            if request is not None and await request.is_disconnected():
+                return
+
+            content_parts: list[str] = []
+            collected_tools: list[dict[str, Any]] | None = None
+            async for kind, val in _iter_upstream_stream(
+                settings=settings, api_key=api_key, payload=upstream_payload
+            ):
+                if request is not None and await request.is_disconnected():
+                    return
+                if kind == "content":
+                    if not content_parts:
+                        yield format_sse("status", {"phase": "writing"})
+                    content_parts.append(str(val))
+                    yield format_sse("delta", {"text": str(val)})
+                elif kind == "tool_calls":
+                    collected_tools = val if isinstance(val, list) else []
+
+            if collected_tools:
+                yield format_sse("status", {"phase": "tools"})
+                assistant_msg: dict[str, Any] = {
+                    "role": "assistant",
+                    "content": "".join(content_parts) or None,
+                    "tool_calls": collected_tools,
+                }
+                messages.append(assistant_msg)
+                for tc in collected_tools:
+                    fn = (tc.get("function") or {}) if isinstance(tc, dict) else {}
+                    name = fn.get("name") or ""
+                    raw_args = fn.get("arguments") or "{}"
+                    try:
+                        args = json.loads(raw_args) if isinstance(raw_args, str) else raw_args
+                    except json.JSONDecodeError:
+                        args = {}
+                    if not isinstance(args, dict):
+                        args = {}
+                    tool_result = await ai_tools.execute_tool(name, args, page_context=page_context)
+                    step = build_tool_trace_step(
+                        round_index=round_index,
+                        name=name,
+                        args=args,
+                        result=tool_result,
+                    )
+                    tool_trace.append(step)
+                    yield format_sse("tool", step)
+                    messages.append(
+                        {
+                            "role": "tool",
+                            "tool_call_id": tc.get("id") or str(uuid.uuid4()),
+                            "content": json.dumps(tool_result, ensure_ascii=False),
+                        }
+                    )
+                upstream_payload["messages"] = messages
+                continue
+
+            assistant_text = "".join(content_parts)
+            if needs_probe_claim_retry(assistant_text, tool_trace) and not claim_retry_used:
+                claim = detect_probe_claim(assistant_text)
+                claim_retry_used = True
+                messages.append({"role": "assistant", "content": assistant_text})
+                messages.append({"role": "system", "content": probe_claim_correction_message(claim)})
+                upstream_payload["messages"] = messages
+                upstream_payload["tool_choice"] = "auto"
+                yield format_sse("status", {"phase": "thinking"})
+                continue
+
+            if needs_probe_claim_retry(assistant_text, tool_trace):
+                rewritten = rewrite_probe_claim_failure(assistant_text, tool_trace)
+                yield format_sse("replace", {"text": rewritten})
+                yield format_sse("done", {"tool_trace": tool_trace, "finish_reason": "stop"})
+                return
+
+            yield format_sse("done", {"tool_trace": tool_trace, "finish_reason": "stop"})
+            return
+
+        exhausted_text = f"工具调用超过 {MAX_TOOL_ROUNDS} 轮上限，请简化请求后重试。"
+        if needs_probe_claim_retry("已经开启定时探活", tool_trace):
+            exhausted_text = rewrite_probe_claim_failure("已经开启定时探活", tool_trace)
+        yield format_sse("replace", {"text": exhausted_text})
+        yield format_sse("done", {"tool_trace": tool_trace, "finish_reason": "stop"})
+    except HTTPException as e:
+        detail = e.detail
+        msg = detail if isinstance(detail, str) else str(detail)
+        yield format_sse("error", {"message": msg})
+    except Exception as e:
+        logger.exception("AI 流式聊天失败")
+        yield format_sse("error", {"message": f"流式聊天失败：{e}"})
+
+
+def _sse_response(gen: AsyncIterator[str]) -> StreamingResponse:
+    return StreamingResponse(
+        gen,
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
 async def run_chat_completion(
     body: OpenAiChatCompletionRequest,
     *,
@@ -171,7 +364,11 @@ async def run_chat_completion(
     if body.max_tokens is not None:
         upstream_payload["max_tokens"] = body.max_tokens
     if body.stream:
-        raise HTTPException(400, "0.3.0 暂不支持 stream=true，请使用非流式请求。")
+        raise HTTPException(
+            400,
+            "请使用流式端点 POST /settings/ai/chat/stream 或 POST /v1/chat/completions/stream；"
+            "本接口仅支持非流式。",
+        )
 
     tool_trace: list[dict[str, Any]] = []
     claim_retry_used = False
@@ -263,7 +460,14 @@ async def list_models(request: Request):
 
 @openai_router.post("/v1/chat/completions")
 async def chat_completions(request: Request, body: OpenAiChatCompletionRequest):
+    if body.stream:
+        return _sse_response(iter_chat_stream_sse(body, request=request))
     return await run_chat_completion(body, request=request)
+
+
+@openai_router.post("/v1/chat/completions/stream")
+async def chat_completions_stream(request: Request, body: OpenAiChatCompletionRequest):
+    return _sse_response(iter_chat_stream_sse(body, request=request))
 
 
 @settings_router.get("/settings/ai")
@@ -383,10 +587,27 @@ async def internal_ai_chat(request: Request, body: AiChatRequest):
     req = OpenAiChatCompletionRequest(
         model=body.model,
         messages=body.messages,
-        stream=body.stream,
+        stream=False,
         report_editor_page_context=body.report_editor_page_context,
     )
+    if body.stream:
+        return _sse_response(iter_chat_stream_sse(req, skip_agent_auth=True, request=request))
     return await run_chat_completion(req, skip_agent_auth=True)
+
+
+@settings_router.post("/settings/ai/chat/stream")
+async def internal_ai_chat_stream(request: Request, body: AiChatRequest):
+    """应用内助手流式：仅本机。"""
+    client_host = request.client.host if request.client else None
+    if not ai_config.is_loopback_host(client_host):
+        raise HTTPException(403, "应用内 AI 聊天仅允许本机访问。")
+    req = OpenAiChatCompletionRequest(
+        model=body.model,
+        messages=body.messages,
+        stream=True,
+        report_editor_page_context=body.report_editor_page_context,
+    )
+    return _sse_response(iter_chat_stream_sse(req, skip_agent_auth=True, request=request))
 
 
 @settings_router.get("/settings/ai/status")

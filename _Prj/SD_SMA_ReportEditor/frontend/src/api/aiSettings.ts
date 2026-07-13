@@ -24,8 +24,10 @@ export type AiSettingsPatch = {
 }
 
 export type AiChatMessage = {
+  id?: string
   role: 'user' | 'assistant' | 'system'
   content: string
+  status?: 'queued' | 'streaming' | 'done' | 'cancelled' | 'error'
   toolTrace?: AiToolTraceStep[]
 }
 
@@ -166,6 +168,60 @@ export async function sendAiChat(opts: {
       report_editor_page_context: opts.pageContext || undefined,
     },
   })
+}
+
+export type AiStreamHandlers = {
+  onEvent: (ev: import('../features/ai-assistant/sse-parse').AiStreamEvent) => void
+  signal?: AbortSignal
+}
+
+/** 应用内流式聊天：SSE。 */
+export async function sendAiChatStream(opts: {
+  messages: Pick<AiChatMessage, 'role' | 'content'>[]
+  pageContext?: AiPageContext | null
+  signal?: AbortSignal
+  onEvent: AiStreamHandlers['onEvent']
+}): Promise<void> {
+  const { resolveApiHref } = await import('./apiBase.js')
+  const { createSseParser } = await import('../features/ai-assistant/sse-parse')
+  const url = resolveApiHref('/settings/ai/chat/stream')
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
+    body: JSON.stringify({
+      messages: opts.messages,
+      report_editor_page_context: opts.pageContext || undefined,
+      stream: true,
+    }),
+    signal: opts.signal,
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    let msg = text || res.statusText
+    try {
+      const data = JSON.parse(text)
+      if (data?.detail !== undefined) {
+        msg = Array.isArray(data.detail)
+          ? data.detail.map((x: { msg?: string }) => x.msg || JSON.stringify(x)).join('; ')
+          : String(data.detail)
+      }
+    } catch {
+      /* keep */
+    }
+    throw new Error(msg || `HTTP ${res.status}`)
+  }
+  if (!res.body) {
+    throw new Error('流式响应无 body')
+  }
+  const parser = createSseParser(opts.onEvent)
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    parser.feed(decoder.decode(value, { stream: true }))
+  }
+  parser.flush()
 }
 
 export function extractAssistantText(data: unknown): string {

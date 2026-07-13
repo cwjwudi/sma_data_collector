@@ -1,17 +1,17 @@
 {
-  "version": "0.3.71",
-  "releasedAt": "2026-07-13T12:54:40.744Z",
-  "notes": "Report Editor AI 0.3.71\n\n- 修复 AI 工具轨迹：无 ok 字段的成功读工具不再误标「含失败」",
+  "version": "0.3.72",
+  "releasedAt": "2026-07-13T13:17:49.570Z",
+  "notes": "Report Editor AI 0.3.72\n\n- AI 助手正文 SSE 流式输出；工具轨迹边到边；停止/排队/持久化/调宽",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.71-x64.exe",
+      "url": "Report Editor AI-Setup-0.3.72-x64.exe",
       "sha256": "",
       "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.71-arm64.dmg",
-      "sha256": "7acdc9bf137b976d5223de972eb9cbc92033b01f401558923b4d09223f4f1f8d",
-      "size": 181966232
+      "url": "Report Editor AI-0.3.72-arm64.dmg",
+      "sha256": "",
+      "size": 0
     }
   }
 }

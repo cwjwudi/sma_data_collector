@@ -1,14 +1,14 @@
 # ReportEditor AI 助手：流式输出（Streaming）
 
 > 本文件为 **任务看板 / 实现计划**；规则见 [CLAUDE.md](../CLAUDE.md)。  
-> **本轮仅写计划，未改代码。**  
+> **0.3.72 已实现并发版**（SSE + 整窗：停止/排队/持久化/调宽/Markdown）。  
 > 产品诉求：AI 回复需**流式输出**（边生成边显示），降低长回答等待感。  
-> 相关：[`ai_openai.py`](../_Prj/SD_SMA_ReportEditor/backend/api/routers/ai_openai.py) `run_chat_completion`、[`AiDrawer.vue`](../_Prj/SD_SMA_ReportEditor/frontend/src/features/ai-assistant/AiDrawer.vue)、[`aiSettings.ts`](../_Prj/SD_SMA_ReportEditor/frontend/src/api/aiSettings.ts)。  
-> 交叉：[docs/006](006-🚧-ReportEditor-AI上游错误体验.md) 轨迹 H1 曾明确「不做 SSE」——本需求**推翻该边界**，以流式为独立切片。
+> 相关：[`ai_openai.py`](../_Prj/SD_SMA_ReportEditor/backend/api/routers/ai_openai.py) `iter_chat_stream_sse`、[`AiDrawer.vue`](../_Prj/SD_SMA_ReportEditor/frontend/src/features/ai-assistant/AiDrawer.vue)。  
+> 交叉：[docs/006](006-🚧-ReportEditor-AI上游错误体验.md) 原写「不做 SSE」——**已由本切片推翻**，流式以 014 / 0.3.72 为准。
 
 ---
 
-# ⌛️ 未完成：AI 助手正文流式输出
+# ✅ 已完成：AI 助手正文流式输出（→ 0.3.72）
 
 ## 产品诉求（2026-07-13）
 
@@ -363,7 +363,7 @@ frontend/.../ai-assistant/drawer-width.test.ts  ← F18
 - ✅ 整窗：停止 / 轨迹 / Markdown / 持久化 / 调宽 / 排队  
 - ✅ **缺口表 G1–G15** 与建议默认  
 - ✅ **测试用例 B / F / M / R**  
-- ⌛️ 实现与发版（待开工）
+- ✅ **实现与发版 0.3.72**
 
 ## 开工前可确认（可选）
 
