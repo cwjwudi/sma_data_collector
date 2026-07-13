@@ -7,7 +7,8 @@
 
 ## 2026-07-13
 
-- **ReportEditor 模版/版式多选（计划补充）**：[docs/011-⌛️](docs/011-⌛️-ReportEditor模版版式多选控件.md) 确认属性批改 **B3 后置**；增补交集字段约定与 E1–E6 测试用例；MVP（B1）仅摘要 + 组操作。
+- **ReportEditor 0.3.70 已发版**：模版/版式多选 B1（Ctrl 加选、框选、组操作、属性摘要）；看板 [docs/011-🚧](docs/011-🚧-ReportEditor模版版式多选控件.md)（B2/B3 ⌛️）。
+- **ReportEditor 模版/版式多选（计划补充）**：原 [docs/011](docs/011-🚧-ReportEditor模版版式多选控件.md) 确认属性批改 **B3 后置**；增补交集字段约定与 E1–E6 测试用例；MVP（B1）仅摘要 + 组操作。
 - **ReportEditor 0.3.69 已发版**：移除「演示与培训」与 demo-pack；存量仿真连接保留可手删；看板 [docs/012-✅](docs/012-✅-ReportEditor移除演示与培训.md)。
 - **ReportEditor 移除演示与培训**：已拆除设置区块、`/demo/*`、demo-pack IPC/打包目录、`demo_remote_*` 配置面；AI `ensure_user_demo_database` 工具下线；存量 `is_demo` 保留（B1）。看板 [docs/012-✅](docs/012-✅-ReportEditor移除演示与培训.md)。
 - **ReportEditor AI 流式输出（仅计划）**：新建 [docs/014-⌛️](docs/014-⌛️-ReportEditor-AI流式输出.md)——助手正文 SSE 流式；工具轮默认非流 + 事件；推翻 006「不做 SSE」边界。

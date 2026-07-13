@@ -1,17 +1,17 @@
 {
-  "version": "0.3.69",
-  "releasedAt": "2026-07-13T12:30:48.744Z",
-  "notes": "Report Editor AI 0.3.69\n\n- 移除设置「演示与培训」及 demo-pack；存量仿真连接保留可手删",
+  "version": "0.3.70",
+  "releasedAt": "2026-07-13T12:49:08.749Z",
+  "notes": "Report Editor AI 0.3.70\n\n- 模版/版式编辑器多选：Ctrl 加选、框选、组移动删除与多剪贴板；属性栏多选摘要",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.69-x64.exe",
+      "url": "Report Editor AI-Setup-0.3.70-x64.exe",
       "sha256": "",
       "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.69-arm64.dmg",
-      "sha256": "a6b82250067dedb25e58059b60fcd69e09db3911ae260e85abeabd785e13710c",
-      "size": 181972236
+      "url": "Report Editor AI-0.3.70-arm64.dmg",
+      "sha256": "a710d1f0b7cd4fe0052ee008d4feb1a23df696a8c799862d07d1ee3e31cc469d",
+      "size": 181962197
     }
   }
 }

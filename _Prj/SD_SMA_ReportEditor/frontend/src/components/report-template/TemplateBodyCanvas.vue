@@ -26,7 +26,7 @@
               v-for="el in headerEls"
               :key="'hdr-' + el.id"
               class="cv-zone-el cv-zone-el--selectable"
-              :class="{ 'cv-zone-el--sel': selId === el.id }"
+              :class="{ 'cv-zone-el--sel': isSelected(el.id) }"
               :style="canvasZoneElStyle(el)"
               @pointerdown.stop="selectZoneEl(el)"
             >
@@ -71,13 +71,14 @@
           @dragleave="onDragLeaveRoot"
           @dragover.prevent="onDragOverRoot"
           @drop.prevent.stop="onDrop"
+          @pointerdown.capture="onBodyBlank"
         >
           <div v-if="decorationEls.length > 0" class="cv-zone-decor-layer">
             <div
               v-for="d in decorationEls"
               :key="'dec-' + d.id"
               class="cv-zone-el cv-zone-el--selectable"
-              :class="{ 'cv-zone-el--sel': selId === d.id }"
+              :class="{ 'cv-zone-el--sel': isSelected(d.id) }"
               :style="canvasZoneElStyle(d)"
               @pointerdown.stop="selectZoneEl(d)"
             >
@@ -109,7 +110,7 @@
             v-for="el in list"
             :key="el.id"
             class="el-node touch"
-            :class="{ sel: selId === el.id, 'el-node--table': el.type === 'table' }"
+            :class="{ sel: isSelected(el.id), 'el-node--table': el.type === 'table' }"
             :style="elCss(el)"
             @pointerdown.stop="beginMove($event, el)"
           >
@@ -247,7 +248,7 @@
                       </tbody>
                   </table>
                   <TableColumnResizeGutters
-                    v-if="selId === el.id && !interactionLocked"
+                    v-if="isPrimary(el.id) && !interactionLocked"
                     :column-widths-px="tplTableColInnerWidthsPx(el)"
                     :layout-scale="canvasScale"
                     @resize-delta="(bi, dx) => onTplTableColumnResize(el, bi, dx)"
@@ -290,7 +291,7 @@
               </template>
               <template v-else-if="el.type === 'text' || el.type === 'box'">
                 <textarea
-                  v-if="selId === el.id && !interactionLocked"
+                  v-if="isPrimary(el.id) && !interactionLocked"
                   :key="'cvtxt-' + el.id"
                   v-model="el.text"
                   class="cv-text-edit"
@@ -305,7 +306,7 @@
               </template>
               <template v-else>{{ displayEl(el) }}</template>
             </div>
-            <template v-if="selId === el.id">
+            <template v-if="isPrimary(el.id)">
               <button
                 v-for="hh in resizeHandlesFor(el)"
                 :key="hh"
@@ -316,6 +317,12 @@
               />
             </template>
           </div>
+          <div
+            v-if="marqueeRect"
+            class="cv-marquee"
+            :style="marqueeStyle"
+            aria-hidden="true"
+          />
           <div
             v-if="tplSnapGuides.v.length > 0 || tplSnapGuides.h.length > 0"
             class="cv-snap-guide-layer"
@@ -341,7 +348,7 @@
               v-for="el in footerEls"
               :key="'ftr-' + el.id"
               class="cv-zone-el cv-zone-el--selectable"
-              :class="{ 'cv-zone-el--sel': selId === el.id }"
+              :class="{ 'cv-zone-el--sel': isSelected(el.id) }"
               :style="canvasZoneElStyle(el)"
               @pointerdown.stop="selectZoneEl(el)"
             >
@@ -461,6 +468,14 @@ import LayoutZoneInlineContent from "@/components/report-template/LayoutZoneInli
 import ZoneTableStatic from "@/components/report-template/ZoneTableStatic.vue";
 import TableColumnResizeGutters from "@/components/report-template/TableColumnResizeGutters.vue";
 import ZoneImageCompose from "@/components/report-template/ZoneImageCompose.vue";
+import {
+  applyMarqueeSelection,
+  marqueeHitTest,
+  normalizeRect,
+  primaryId,
+  selectOnly,
+  toggleInSelection,
+} from "@/lib/report-template/selection-set";
 import { computed, inject, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import { reportBindingPreviewKey, templateTableCellPickKey } from "@/lib/report-template/template-editor-context";
 import {
@@ -526,7 +541,21 @@ const props = withDefaults(
     zonePreviewTotalPages: undefined,
   },
 );
-const selId = defineModel<string | null>("selectedId");
+const selectedIds = defineModel<string[]>("selectedIds", { default: () => [] });
+const selId = computed({
+  get: () => primaryId(selectedIds.value),
+  set: (v: string | null) => {
+    selectedIds.value = v ? selectOnly(v) : [];
+  },
+});
+
+function isSelected(id: string): boolean {
+  return selectedIds.value.includes(id);
+}
+
+function isPrimary(id: string): boolean {
+  return primaryId(selectedIds.value) === id;
+}
 
 const cellPickRef = inject(templateTableCellPickKey, null);
 const bindingPreview = inject(reportBindingPreviewKey, null);
@@ -665,7 +694,7 @@ const decorationEls = computed(() => zoneBodyDecorRef(props.tmpl, props.sheet));
 /** 页眉/页脚/装饰层：仅选中高亮（只读预览，不拖拽） */
 function selectZoneEl(el: { id: string }) {
   if (props.interactionLocked) return;
-  selId.value = el.id;
+  selectedIds.value = selectOnly(el.id);
 }
 function canvasZoneElStyle(el: LayoutZoneElement): Record<string, string> {
   const ff = typeof el.fontFamily === "string" ? el.fontFamily.trim() : "";
@@ -900,7 +929,7 @@ function elCss(el: TemplateElement) {
           : el.bgColor,
     ...(ff ? { fontFamily: ff } : {}),
   };
-  s.zIndex = selId.value === el.id ? String(400000 + z) : String(z);
+  s.zIndex = isSelected(el.id) ? String(400000 + z) : String(z);
   const wrap = getZoneTextWrapStyle(el);
   if (wrap) Object.assign(s, wrap);
   if (el.type === "box") s.border = el.showBorder === false ? "none" : `1px solid ${el.color}40`;
@@ -1423,11 +1452,10 @@ function displayEl(el: TemplateElement): string {
 const MOVE_DRAG_THRESHOLD_PX = 5;
 
 let move: null | {
-  sid: string;
+  origins: Map<string, { ox: number; oy: number }>;
+  primaryId: string | null;
   sx: number;
   sy: number;
-  ox: number;
-  oy: number;
   dragStarted: boolean;
 };
 let resize: null | {
@@ -1468,16 +1496,58 @@ function applySqlFillBelowRestriction(subject: TemplateElement): void {
   }
 }
 
+function clientToBodyCoords(clientX: number, clientY: number): { x: number; y: number } | null {
+  const body = paperRef.value?.querySelector(".cv-body") as HTMLElement | null;
+  if (!body) return null;
+  const r = body.getBoundingClientRect();
+  const sc = canvasScale.value || 1;
+  return {
+    x: (clientX - r.left) / sc,
+    y: (clientY - r.top) / sc,
+  };
+}
+
+const marqueeRect = ref<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
+let marqueeAdditive = false;
+let marqueeDragged = false;
+
+const marqueeStyle = computed(() => {
+  const m = marqueeRect.value;
+  if (!m) return undefined;
+  const r = normalizeRect({ x: m.x0, y: m.y0, w: m.x1 - m.x0, h: m.y1 - m.y0 });
+  return {
+    left: `${r.x}px`,
+    top: `${r.y}px`,
+    width: `${r.w}px`,
+    height: `${r.h}px`,
+  };
+});
+
 function beginMove(ev: PointerEvent, el: TemplateElement) {
   if (props.interactionLocked) return;
   clearTplSnapGuides();
-  selId.value = el.id;
+  const toggle = ev.metaKey || ev.ctrlKey;
+  const wasIn = selectedIds.value.includes(el.id);
+  if (toggle) {
+    selectedIds.value = toggleInSelection(selectedIds.value, el.id);
+  } else if (wasIn && selectedIds.value.length > 1) {
+    // 保持多选，不折叠
+  } else {
+    selectedIds.value = selectOnly(el.id);
+  }
+  if (!selectedIds.value.includes(el.id)) return;
+
+  const origins = new Map<string, { ox: number; oy: number }>();
+  for (const item of list.value) {
+    if (selectedIds.value.includes(item.id)) {
+      origins.set(item.id, { ox: item.x, oy: item.y });
+    }
+  }
   move = {
-    sid: el.id,
+    origins,
+    primaryId: primaryId(selectedIds.value),
     sx: ev.clientX,
     sy: ev.clientY,
-    ox: el.x,
-    oy: el.y,
     dragStarted: false,
   };
   bindPtr();
@@ -1498,29 +1568,58 @@ function bindPtr() {
 
 function ptrMove(ev: PointerEvent) {
   const sc = canvasScale.value || 1;
-  if (move) {
-    const el = list.value.find((x) => x.id === move!.sid);
-    if (!el) return;
-    const dxScr = ev.clientX - move!.sx;
-    const dyScr = ev.clientY - move!.sy;
-    if (!move!.dragStarted) {
-      if (Math.hypot(dxScr, dyScr) < MOVE_DRAG_THRESHOLD_PX) return;
-      move!.dragStarted = true;
+  if (marqueeRect.value) {
+    const pt = clientToBodyCoords(ev.clientX, ev.clientY);
+    if (!pt) return;
+    marqueeRect.value = { ...marqueeRect.value, x1: pt.x, y1: pt.y };
+    if (
+      Math.hypot(marqueeRect.value.x1 - marqueeRect.value.x0, marqueeRect.value.y1 - marqueeRect.value.y0) >=
+      MOVE_DRAG_THRESHOLD_PX
+    ) {
+      marqueeDragged = true;
     }
-    el.x = Math.round(Math.max(0, move!.ox + dxScr / sc));
-    el.y = Math.round(Math.max(0, move!.oy + dyScr / sc));
+    return;
+  }
+  if (move) {
+    const dxScr = ev.clientX - move.sx;
+    const dyScr = ev.clientY - move.sy;
+    if (!move.dragStarted) {
+      if (Math.hypot(dxScr, dyScr) < MOVE_DRAG_THRESHOLD_PX) return;
+      move.dragStarted = true;
+    }
+    const dx = Math.round(dxScr / sc);
+    const dy = Math.round(dyScr / sc);
+    let finalDx = dx;
+    let finalDy = dy;
+    const pid = move.primaryId;
+    const primaryEl = pid ? list.value.find((x) => x.id === pid) : null;
     const bw = me.value.contentW;
     const bh = me.value.contentH;
     const peers = bodySnapPeers();
-    if (!ev.shiftKey) {
-      const snapped = magneticSnapTranslate(el.x, el.y, el.w, el.h, bw, bh, peers, el.id);
-      el.x = snapped.x;
-      el.y = snapped.y;
+    if (primaryEl && pid && move.origins.has(pid)) {
+      const orig = move.origins.get(pid)!;
+      let nx = Math.max(0, orig.ox + dx);
+      let ny = Math.max(0, orig.oy + dy);
+      if (!ev.shiftKey) {
+        const snapped = magneticSnapTranslate(nx, ny, primaryEl.w, primaryEl.h, bw, bh, peers, pid);
+        nx = snapped.x;
+        ny = snapped.y;
+      }
+      finalDx = nx - orig.ox;
+      finalDy = ny - orig.oy;
     }
-    clamp(el);
-    tplSnapGuides.value = ev.shiftKey
-      ? { v: [], h: [] }
-      : alignmentGuidesForRect(el.x, el.y, el.w, el.h, bw, bh, peers, el.id);
+    for (const el of list.value) {
+      const orig = move.origins.get(el.id);
+      if (!orig) continue;
+      el.x = Math.max(0, orig.ox + finalDx);
+      el.y = Math.max(0, orig.oy + finalDy);
+      clamp(el);
+    }
+    const guideEl = pid ? list.value.find((x) => x.id === pid) : null;
+    tplSnapGuides.value =
+      ev.shiftKey || !guideEl
+        ? { v: [], h: [] }
+        : alignmentGuidesForRect(guideEl.x, guideEl.y, guideEl.w, guideEl.h, bw, bh, peers, guideEl.id);
     return;
   }
   if (resize) {
@@ -1578,24 +1677,51 @@ function ptrMove(ev: PointerEvent) {
 }
 
 function ptrUp() {
+  if (marqueeRect.value) {
+    if (marqueeDragged) {
+      const r = normalizeRect({
+        x: marqueeRect.value.x0,
+        y: marqueeRect.value.y0,
+        w: marqueeRect.value.x1 - marqueeRect.value.x0,
+        h: marqueeRect.value.y1 - marqueeRect.value.y0,
+      });
+      const hits = marqueeHitTest(list.value, r);
+      selectedIds.value = applyMarqueeSelection(selectedIds.value, hits, marqueeAdditive);
+    } else if (!marqueeAdditive) {
+      selectedIds.value = [];
+    }
+    marqueeRect.value = null;
+    marqueeDragged = false;
+  }
   move = null;
   resize = null;
   clearTplSnapGuides();
   window.removeEventListener("pointermove", ptrMove);
 }
 
-onBeforeUnmount(() => {
-  ptrUp();
-  embedResizeObserver?.disconnect();
-});
+function onBodyBlank(ev: PointerEvent) {
+  if (props.interactionLocked) return;
+  const t = ev.target as HTMLElement;
+  if (t.closest(".el-node")) return;
+  const pt = clientToBodyCoords(ev.clientX, ev.clientY);
+  if (!pt) return;
+  marqueeAdditive = ev.metaKey || ev.ctrlKey;
+  marqueeDragged = false;
+  marqueeRect.value = { x0: pt.x, y0: pt.y, x1: pt.x, y1: pt.y };
+  bindPtr();
+}
 
 function onPaperBlank(ev: PointerEvent) {
   if (props.interactionLocked) return;
   const t = ev.target as HTMLElement;
-  if (t.closest(".el-node")) return;
-  /** 点击画布任意空白（含正文区、页眉页脚带，非控件）即取消选中，缩放手柄随选中状态消失 */
-  selId.value = null;
+  if (t.closest(".el-node") || t.closest(".cv-zone-el--selectable") || t.closest(".cv-body")) return;
+  selectedIds.value = [];
 }
+
+onBeforeUnmount(() => {
+  ptrUp();
+  embedResizeObserver?.disconnect();
+});
 
 function onDragOverRoot() {
   if (props.interactionLocked) return;
@@ -1815,6 +1941,14 @@ async function onTplImageDropFile(ev: DragEvent, el: TemplateElement) {
   height: 100%;
   pointer-events: none;
   z-index: 0;
+}
+.cv-marquee {
+  position: absolute;
+  box-sizing: border-box;
+  border: 1px solid #6366f1;
+  background: rgb(99 102 241 / 0.12);
+  pointer-events: none;
+  z-index: 50;
 }
 .cv-snap-guide-layer {
   position: absolute;

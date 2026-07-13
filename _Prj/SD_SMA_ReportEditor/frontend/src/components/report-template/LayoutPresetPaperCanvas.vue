@@ -13,7 +13,7 @@
     <div class="lppc-flow" @wheel="onWheel">
       <div class="lppc-scale-frame" :style="canvasFrameStyle">
         <div class="lppc-scaler" :style="{ transform: `scale(${viewScale})`, transformOrigin: '0 0' }">
-      <div class="lppc-paper" :style="paperBoxStyle" @pointerdown.capture="onPaperBlank">
+      <div ref="paperRef" class="lppc-paper" :style="paperBoxStyle" @pointerdown.capture="onPaperBlank">
         <div v-if="me.hb >= 1" class="lppc-band hdr" :style="hdrBandStyle">
           <div
             ref="hdrLayerRef"
@@ -30,8 +30,8 @@
               <div
                 class="lppc-node touch"
                 :class="{
-                  selected: selId === el.id,
-                  'lppc-node--inline-textbox': selId === el.id && (el.type === 'text' || el.type === 'box'),
+                  selected: isSelected(el.id),
+                  'lppc-node--inline-textbox': isPrimary(el.id) && (el.type === 'text' || el.type === 'box'),
                 }"
                 :style="nodeStyle(el)"
                 @pointerdown.stop="beginMove($event, el, 'header')"
@@ -154,7 +154,7 @@
                       </tbody>
                     </table>
                     <TableColumnResizeGutters
-                      v-if="selId === el.id"
+                      v-if="isPrimary(el.id)"
                       :column-widths-px="layoutZoneTableColInnerWidthsPx(el)"
                       :layout-scale="viewScale"
                       @resize-delta="(bi, dx) => onZoneTableColumnResize(el, 'header', bi, dx)"
@@ -165,10 +165,10 @@
                   <LayoutZoneInlineContent
                     :el="el"
                     text-class="lppc-zone-text"
-                    :canvas-inline-edit="selId === el.id && (el.type === 'text' || el.type === 'box')"
+                    :canvas-inline-edit="isPrimary(el.id) && (el.type === 'text' || el.type === 'box')"
                   />
                 </template>
-                <template v-if="selId === el.id">
+                <template v-if="isPrimary(el.id)">
                   <button
                     v-for="pos in handlesFor(el)"
                     :key="pos"
@@ -218,8 +218,8 @@
             <div
               class="lppc-node touch"
               :class="{
-                selected: selId === el.id,
-                'lppc-node--inline-textbox': selId === el.id && (el.type === 'text' || el.type === 'box'),
+                selected: isSelected(el.id),
+                'lppc-node--inline-textbox': isPrimary(el.id) && (el.type === 'text' || el.type === 'box'),
               }"
               :style="nodeStyle(el)"
               @pointerdown.stop="beginMove($event, el, 'body')"
@@ -342,7 +342,7 @@
                       </tbody>
                     </table>
                     <TableColumnResizeGutters
-                      v-if="selId === el.id"
+                      v-if="isPrimary(el.id)"
                       :column-widths-px="layoutZoneTableColInnerWidthsPx(el)"
                       :layout-scale="viewScale"
                       @resize-delta="(bi, dx) => onZoneTableColumnResize(el, 'body', bi, dx)"
@@ -353,10 +353,10 @@
                 <LayoutZoneInlineContent
                   :el="el"
                   text-class="lppc-zone-text"
-                  :canvas-inline-edit="selId === el.id && (el.type === 'text' || el.type === 'box')"
+                  :canvas-inline-edit="isPrimary(el.id) && (el.type === 'text' || el.type === 'box')"
                 />
               </template>
-              <template v-if="selId === el.id">
+              <template v-if="isPrimary(el.id)">
                 <button
                   v-for="pos in handlesFor(el)"
                   :key="pos"
@@ -406,8 +406,8 @@
               <div
                 class="lppc-node touch"
                 :class="{
-                  selected: selId === el.id,
-                  'lppc-node--inline-textbox': selId === el.id && (el.type === 'text' || el.type === 'box'),
+                  selected: isSelected(el.id),
+                  'lppc-node--inline-textbox': isPrimary(el.id) && (el.type === 'text' || el.type === 'box'),
                 }"
                 :style="nodeStyle(el)"
                 @pointerdown.stop="beginMove($event, el, 'footer')"
@@ -530,7 +530,7 @@
                       </tbody>
                     </table>
                     <TableColumnResizeGutters
-                      v-if="selId === el.id"
+                      v-if="isPrimary(el.id)"
                       :column-widths-px="layoutZoneTableColInnerWidthsPx(el)"
                       :layout-scale="viewScale"
                       @resize-delta="(bi, dx) => onZoneTableColumnResize(el, 'footer', bi, dx)"
@@ -541,10 +541,10 @@
                   <LayoutZoneInlineContent
                     :el="el"
                     text-class="lppc-zone-text"
-                    :canvas-inline-edit="selId === el.id && (el.type === 'text' || el.type === 'box')"
+                    :canvas-inline-edit="isPrimary(el.id) && (el.type === 'text' || el.type === 'box')"
                   />
                 </template>
-                <template v-if="selId === el.id">
+                <template v-if="isPrimary(el.id)">
                   <button
                     v-for="pos in handlesFor(el)"
                     :key="pos"
@@ -578,6 +578,7 @@
             </div>
           </div>
         </div>
+        <div v-if="marqueeRect" class="lppc-marquee" :style="marqueeStyle" aria-hidden="true" />
       </div>
         </div>
       </div>
@@ -645,6 +646,14 @@ import {
   TABLE_SQL_VERTICAL_FIELD_PENDING,
 } from "@/lib/report-template/table-sql-fill";
 import { formatSqlFillTableCellPreview } from "@/lib/report-template/table-sql-fill-preview";
+import {
+  applyMarqueeSelection,
+  marqueeHitTest,
+  normalizeRect,
+  primaryId,
+  selectOnly,
+  toggleInSelection,
+} from "@/lib/report-template/selection-set";
 
 const HANDLES = ["nw", "n", "ne", "e", "se", "s", "sw", "w"] as const;
 type Handle = (typeof HANDLES)[number];
@@ -660,7 +669,21 @@ const props = defineProps<{
   preset: LayoutPreset;
 }>();
 
-const selId = defineModel<string | null>("selectedId");
+const selectedIds = defineModel<string[]>("selectedIds", { default: () => [] });
+const selId = computed({
+  get: () => primaryId(selectedIds.value),
+  set: (v: string | null) => {
+    selectedIds.value = v ? selectOnly(v) : [];
+  },
+});
+
+function isSelected(id: string): boolean {
+  return selectedIds.value.includes(id);
+}
+
+function isPrimary(id: string): boolean {
+  return primaryId(selectedIds.value) === id;
+}
 
 /** 拖拽/缩放时当前激活对齐线的区域与坐标（相对该眉/正文/脚带） */
 const layoutSnapOverlay = ref<{ zone: Zone | null; v: number[]; h: number[] }>({
@@ -844,6 +867,7 @@ function onLayoutPresetVerticalSlotChange(el: LayoutZoneElement, ri: number, ev:
 const hdrLayerRef = ref<HTMLElement | null>(null);
 const bodyLayerRef = ref<HTMLElement | null>(null);
 const ftrLayerRef = ref<HTMLElement | null>(null);
+const paperRef = ref<HTMLElement | null>(null);
 const layoutPresetImgFileRef = ref<HTMLInputElement | null>(null);
 let pendingLayoutPresetImageEl: LayoutZoneElement | null = null;
 const viewScale = ref(1);
@@ -967,26 +991,83 @@ function eventTargetIsTypingField(target: EventTarget | null): boolean {
   return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
 }
 
-function deleteSelectedZoneEl() {
-  const id = selId.value;
-  if (!id) return;
+function zoneForElementId(id: string): Zone | null {
+  if (props.preset.headerElements.some((x) => x.id === id)) return "header";
+  if (props.preset.footerElements.some((x) => x.id === id)) return "footer";
+  if (props.preset.bodyElements.some((x) => x.id === id)) return "body";
+  return null;
+}
+
+function elementPaperRect(el: LayoutZoneElement, z: Zone): { id: string; x: number; y: number; w: number; h: number } {
+  const m = me.value;
+  if (z === "header") {
+    return { id: el.id, x: m.ml + el.x, y: m.mt + el.y, w: el.w, h: el.h };
+  }
+  if (z === "body") {
+    return { id: el.id, x: m.contentLeft + el.x, y: m.contentTop + el.y, w: el.w, h: el.h };
+  }
+  const bandTop = m.pageH - m.mb - m.fb;
+  return { id: el.id, x: m.ml + el.x, y: bandTop + el.y, w: el.w, h: el.h };
+}
+
+function allElementsPaperRects(): Array<{ id: string; x: number; y: number; w: number; h: number }> {
+  const out: Array<{ id: string; x: number; y: number; w: number; h: number }> = [];
+  for (const el of props.preset.headerElements) out.push(elementPaperRect(el, "header"));
+  for (const el of props.preset.bodyElements) out.push(elementPaperRect(el, "body"));
+  for (const el of props.preset.footerElements) out.push(elementPaperRect(el, "footer"));
+  return out;
+}
+
+function clientToPaperCoords(clientX: number, clientY: number): { x: number; y: number } | null {
+  const paper = paperRef.value;
+  if (!paper) return null;
+  const r = paper.getBoundingClientRect();
+  const sc = viewScale.value || 1;
+  return { x: (clientX - r.left) / sc, y: (clientY - r.top) / sc };
+}
+
+const marqueeRect = ref<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
+let marqueeAdditive = false;
+let marqueeDragged = false;
+
+const marqueeStyle = computed(() => {
+  const m = marqueeRect.value;
+  if (!m) return undefined;
+  const r = normalizeRect({ x: m.x0, y: m.y0, w: m.x1 - m.x0, h: m.y1 - m.y0 });
+  return {
+    left: `${r.x}px`,
+    top: `${r.y}px`,
+    width: `${r.w}px`,
+    height: `${r.h}px`,
+  };
+});
+
+function deleteSelectedZoneEls() {
+  const ids = new Set(selectedIds.value);
+  if (!ids.size) return;
   const p = props.preset;
   for (const arr of [p.headerElements, p.bodyElements, p.footerElements]) {
-    const i = arr.findIndex((x) => x.id === id);
-    if (i >= 0) {
-      arr.splice(i, 1);
-      selId.value = null;
-      return;
+    for (let i = arr.length - 1; i >= 0; i--) {
+      if (ids.has(arr[i].id)) arr.splice(i, 1);
     }
   }
+  selectedIds.value = [];
 }
 
 function onWindowKeydown(ev: KeyboardEvent) {
+  if (ev.key === "Escape") {
+    if (eventTargetIsTypingField(ev.target)) return;
+    if (selectedIds.value.length) {
+      ev.preventDefault();
+      selectedIds.value = [];
+    }
+    return;
+  }
   if (ev.key !== "Delete" && ev.key !== "Backspace") return;
   if (eventTargetIsTypingField(ev.target)) return;
-  if (!selId.value) return;
+  if (!selectedIds.value.length) return;
   ev.preventDefault();
-  deleteSelectedZoneEl();
+  deleteSelectedZoneEls();
 }
 
 function layoutZoneTableInnerStyle(el: LayoutZoneElement): Record<string, string> {
@@ -1070,13 +1151,18 @@ function nodeStyle(el: LayoutZoneElement) {
 function onPaperBlank(ev: PointerEvent) {
   const t = ev.target as HTMLElement;
   if (t.closest(".lppc-node") || t.closest(".hz")) return;
-  selId.value = null;
+  const pt = clientToPaperCoords(ev.clientX, ev.clientY);
+  if (!pt) return;
+  marqueeAdditive = ev.metaKey || ev.ctrlKey;
+  marqueeDragged = false;
+  marqueeRect.value = { x0: pt.x, y0: pt.y, x1: pt.x, y1: pt.y };
+  bindPtr();
 }
 
 function onZoneBlank(ev: PointerEvent) {
   const t = ev.target as HTMLElement;
   if (t.closest(".lppc-node") || t.closest(".hz")) return;
-  selId.value = null;
+  // 由 paper capture 统一处理框选
 }
 
 function onDragLeaveZone(e: DragEvent, z: Zone) {
@@ -1140,12 +1226,10 @@ async function onDrop(e: DragEvent, zone: Zone) {
 }
 
 let move: null | {
-  sid: string;
-  z: Zone;
+  items: Array<{ id: string; z: Zone; ox: number; oy: number }>;
+  primaryId: string | null;
   sx: number;
   sy: number;
-  ox: number;
-  oy: number;
   dragStarted: boolean;
 };
 let resize: null | {
@@ -1194,14 +1278,30 @@ const MOVE_DRAG_THRESHOLD_PX = 5;
 
 function beginMove(ev: PointerEvent, el: LayoutZoneElement, z: Zone) {
   clearLayoutSnapOverlay();
-  selId.value = el.id;
+  const toggle = ev.metaKey || ev.ctrlKey;
+  const wasIn = selectedIds.value.includes(el.id);
+  if (toggle) {
+    selectedIds.value = toggleInSelection(selectedIds.value, el.id);
+  } else if (wasIn && selectedIds.value.length > 1) {
+    // 保持多选
+  } else {
+    selectedIds.value = selectOnly(el.id);
+  }
+  if (!selectedIds.value.includes(el.id)) return;
+
+  const items: Array<{ id: string; z: Zone; ox: number; oy: number }> = [];
+  for (const zone of ["header", "body", "footer"] as const) {
+    for (const item of elementsForZone(zone)) {
+      if (selectedIds.value.includes(item.id)) {
+        items.push({ id: item.id, z: zone, ox: item.x, oy: item.y });
+      }
+    }
+  }
   move = {
-    sid: el.id,
-    z,
+    items,
+    primaryId: primaryId(selectedIds.value),
     sx: ev.clientX,
     sy: ev.clientY,
-    ox: el.x,
-    oy: el.y,
     dragStarted: false,
   };
   bindPtr();
@@ -1231,31 +1331,65 @@ function bindPtr() {
 
 function ptrMove(ev: PointerEvent) {
   const sc = viewScale.value || 1;
+  if (marqueeRect.value) {
+    const pt = clientToPaperCoords(ev.clientX, ev.clientY);
+    if (!pt) return;
+    marqueeRect.value = { ...marqueeRect.value, x1: pt.x, y1: pt.y };
+    if (
+      Math.hypot(marqueeRect.value.x1 - marqueeRect.value.x0, marqueeRect.value.y1 - marqueeRect.value.y0) >=
+      MOVE_DRAG_THRESHOLD_PX
+    ) {
+      marqueeDragged = true;
+    }
+    return;
+  }
   if (move) {
-    const el = elementsForZone(move.z).find((x) => x.id === move!.sid);
-    if (!el) return;
     const dxScr = ev.clientX - move.sx;
     const dyScr = ev.clientY - move.sy;
     if (!move.dragStarted) {
       if (Math.hypot(dxScr, dyScr) < MOVE_DRAG_THRESHOLD_PX) return;
       move.dragStarted = true;
     }
-    el.x = Math.round(Math.max(0, move.ox + dxScr / sc));
-    el.y = Math.round(Math.max(0, move.oy + dyScr / sc));
-    const { w: bw, h: bh } = bandDims(move.z);
-    const peers = peersForSnapZone(move.z);
-    if (!ev.shiftKey) {
-      const snapped = magneticSnapTranslate(el.x, el.y, el.w, el.h, bw, bh, peers, el.id);
-      el.x = snapped.x;
-      el.y = snapped.y;
+    const dx = Math.round(dxScr / sc);
+    const dy = Math.round(dyScr / sc);
+    let finalDx = dx;
+    let finalDy = dy;
+    const pid = move.primaryId;
+    const primaryItem = pid ? move.items.find((x) => x.id === pid) : null;
+    if (primaryItem) {
+      const el = elementsForZone(primaryItem.z).find((x) => x.id === pid);
+      if (el) {
+        let nx = Math.max(0, primaryItem.ox + dx);
+        let ny = Math.max(0, primaryItem.oy + dy);
+        const { w: bw, h: bh } = bandDims(primaryItem.z);
+        const peers = peersForSnapZone(primaryItem.z);
+        if (!ev.shiftKey) {
+          const snapped = magneticSnapTranslate(nx, ny, el.w, el.h, bw, bh, peers, pid);
+          nx = snapped.x;
+          ny = snapped.y;
+        }
+        finalDx = nx - primaryItem.ox;
+        finalDy = ny - primaryItem.oy;
+      }
     }
-    clampEl(el, move.z);
-    layoutSnapOverlay.value = ev.shiftKey
-      ? { zone: null, v: [], h: [] }
-      : {
-          zone: move.z,
-          ...alignmentGuidesForRect(el.x, el.y, el.w, el.h, bw, bh, peers, el.id),
-        };
+    for (const item of move.items) {
+      const el = elementsForZone(item.z).find((x) => x.id === item.id);
+      if (!el) continue;
+      el.x = Math.max(0, item.ox + finalDx);
+      el.y = Math.max(0, item.oy + finalDy);
+      clampEl(el, item.z);
+    }
+    const guideEl = pid ? elementsForZone(zoneForElementId(pid) || "body").find((x) => x.id === pid) : null;
+    const gz = pid ? zoneForElementId(pid) : null;
+    if (ev.shiftKey || !guideEl || !gz) {
+      layoutSnapOverlay.value = { zone: null, v: [], h: [] };
+    } else {
+      const { w: bw, h: bh } = bandDims(gz);
+      layoutSnapOverlay.value = {
+        zone: gz,
+        ...alignmentGuidesForRect(guideEl.x, guideEl.y, guideEl.w, guideEl.h, bw, bh, peersForSnapZone(gz), guideEl.id),
+      };
+    }
     return;
   }
   if (resize) {
@@ -1310,6 +1444,22 @@ function ptrMove(ev: PointerEvent) {
 }
 
 function ptrUp() {
+  if (marqueeRect.value) {
+    if (marqueeDragged) {
+      const r = normalizeRect({
+        x: marqueeRect.value.x0,
+        y: marqueeRect.value.y0,
+        w: marqueeRect.value.x1 - marqueeRect.value.x0,
+        h: marqueeRect.value.y1 - marqueeRect.value.y0,
+      });
+      const hits = marqueeHitTest(allElementsPaperRects(), r);
+      selectedIds.value = applyMarqueeSelection(selectedIds.value, hits, marqueeAdditive);
+    } else if (!marqueeAdditive) {
+      selectedIds.value = [];
+    }
+    marqueeRect.value = null;
+    marqueeDragged = false;
+  }
   move = null;
   resize = null;
   clearLayoutSnapOverlay();
@@ -1405,6 +1555,17 @@ async function onImageFileDrop(ev: DragEvent, el: LayoutZoneElement) {
 }
 .lppc-paper {
   position: relative;
+  background: #fff;
+  border: 1px solid #d4d4d8;
+  box-shadow: 0 12px 28px rgb(24 24 27 / 0.1);
+}
+.lppc-marquee {
+  position: absolute;
+  box-sizing: border-box;
+  border: 1px solid #6366f1;
+  background: rgb(99 102 241 / 0.12);
+  pointer-events: none;
+  z-index: 60;
 }
 .lppc-band {
   box-sizing: border-box;
