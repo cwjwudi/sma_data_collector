@@ -1,9 +1,43 @@
 # ReportEditor AI 助手：上游错误与写入类能力闭环
 
 > 本文件为 **任务看板**；规则见 [CLAUDE.md](../CLAUDE.md)。  
-> 版本计划：探活 [0.3.60](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.60.md)；上游错误体验 [0.3.62](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.62.md)；Agent 工具轨迹 [0.3.66](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.66.md)；轨迹假失败 [0.3.71](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.71.md)；排队收纳 [0.3.77](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.77.md)；流式先工具 [0.3.78](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.78.md)；多轮简洁 [0.3.79](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.79.md)；复制模版/版式 [0.3.80](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.80.md)。  
+> 版本计划：探活 [0.3.60](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.60.md)；上游错误体验 [0.3.62](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.62.md)；Agent 工具轨迹 [0.3.66](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.66.md)；轨迹假失败 [0.3.71](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.71.md)；排队收纳 [0.3.77](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.77.md)；流式先工具 [0.3.78](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.78.md)；多轮简洁 [0.3.79](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.79.md)；复制模版/版式 [0.3.80](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.80.md)；删除模版/版式 [0.3.81](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.81.md)。  
 > **范围说明**：不只「开启定时探活」；在开启「允许 AI 写入工具」后，数据源、模版/版式资产、备份恢复、结批导出、演示冒烟、诊断取证等能力域均须**真正执行并反映到 UI**（禁止空口答应）。完整域表见下方能力矩阵 H1（仍 ⌛️）。  
 > **Agent 体验**：对话须可见工具调用与状态；口头结论必须与工具结果一致——轨迹 H1 已于 **0.3.66** 落地（探活强制再调）。
+
+---
+
+# ✅ 已完成：删除模版 / 版式确认流（能力矩阵 C · → 0.3.81）
+
+## 产品诉求
+
+用户说「删掉某某模版/版式」时，须调 `delete_template` / `delete_layout_preset` → pending 确认弹框 → **确认后**落盘删除并 `mark_ui_reload(assets)`；**取消则仍在**；总闸关拒绝。禁止在 `awaiting_user_confirm` 时声称已删除。
+
+## 代码侧（本版前已有）
+
+- `request_delete_*` → pending；`apply_delete_*` → 删盘 + reload
+- 前端确认后 `notifyAssetsChanged('delete')`
+
+## 本版加固（0.3.81）
+
+1. 空 / 非法 id 返回 `ok=false`，不再抛 `ValueError`  
+2. `test_ai_asset_delete.py`：请求不删、确认删除+reload、取消保留、总闸拒绝  
+3. `SYSTEM_PROMPT`：点名 delete 工具 + awaiting 禁「已删除」
+
+## 逐步测试用例
+
+| # | 步骤 | 期望 | 覆盖 |
+|---|------|------|------|
+| C1 | `delete_template` | `awaiting_user_confirm`；磁盘仍在；无 mirror | request 测例 |
+| C2 | `apply_confirm(true)` | 文件消失；list 无该 id；`ui_reload.assets` | confirm 测例 |
+| C3 | `apply_confirm(false)` | 资产仍在 | cancel 测例 |
+| C4 | 版式同 C1–C3 | 同左 | layout 测例 |
+| C5 | 空/非法/缺源 id | `ok=false` 不抛异常 | empty / invalid / missing |
+| C6 | 总闸关 | 拒绝；资产不变 | blocked 测例 |
+
+```bash
+cd _Prj/SD_SMA_ReportEditor/backend && uv run pytest modules/test_ai_asset_delete.py -q
+```
 
 ---
 
@@ -346,7 +380,7 @@ cd ../frontend && npm test -- --run src/lib/client-prefs-mirror.test.ts
 |---|------|----------|
 | A | 配置数据源 | upsert → 列表更新；需密码则弹框 |
 | B | 复制模版 / 版式 | copy_* 成功 → 列表出现副本（✅ 0.3.80） |
-| C | 删除模版 / 版式 | 确认后消失；取消则仍在 |
+| C | 删除模版 / 版式 | 确认后消失；取消则仍在（✅ 0.3.81） |
 | D | 备份 | 另存 `.rebak`；聊天无口令/密文 |
 | E | 恢复 / 复位 | 确认流 → merge/复位生效 + UI reload |
 | F | 总闸关闭 | 任一 write/confirm 意图 → 明确提示，**状态不变** |

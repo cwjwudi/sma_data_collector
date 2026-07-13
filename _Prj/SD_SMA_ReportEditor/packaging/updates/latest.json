@@ -1,15 +1,15 @@
 {
-  "version": "0.3.80",
-  "releasedAt": "2026-07-13T16:51:19.920Z",
-  "notes": "AI 复制模版/版式端到端：单测加固 copy_* + assets reload",
+  "version": "0.3.81",
+  "releasedAt": "2026-07-13T17:03:38.433Z",
+  "notes": "AI 能力矩阵 C：删除模版/版式确认流加固",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.80-x64.exe",
+      "url": "Report Editor AI-Setup-0.3.81-x64.exe",
       "sha256": "",
       "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.80-arm64.dmg",
+      "url": "Report Editor AI-0.3.81-arm64.dmg",
       "sha256": "",
       "size": 0
     }

@@ -7,6 +7,7 @@
 
 ## 2026-07-13
 
+- **ReportEditor 0.3.81 已发版**：AI 能力矩阵 C（删除模版/版式确认流 + 非法 id 防护）；看板 [docs/006-🚧](docs/006-🚧-ReportEditor-AI上游错误体验.md)。
 - **ReportEditor 0.3.80 测试加固**：能力矩阵 B 逐步用例 B1–B9（后端 14 + 前端 assets mirror）；看板 [docs/006-🚧](docs/006-🚧-ReportEditor-AI上游错误体验.md)。
 - **ReportEditor 0.3.80 已发版**：AI 能力矩阵 B（复制模版/版式单测 + 提示词）；看板 [docs/006-🚧](docs/006-🚧-ReportEditor-AI上游错误体验.md)。
 - **ReportEditor 0.3.79 macOS 已打包**：`Report Editor AI-0.3.79-arm64.dmg`；`latest.json` 已写 SHA256；Portal 未挂载。
