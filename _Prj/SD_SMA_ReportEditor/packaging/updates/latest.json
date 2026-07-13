@@ -1,15 +1,15 @@
 {
-  "version": "0.3.85",
-  "releasedAt": "2026-07-13T17:18:56.114Z",
-  "notes": "AI 能力矩阵 G：新建空白模版/版式与冒烟缺连接失败",
+  "version": "0.3.86",
+  "releasedAt": "2026-07-13T17:20:44.116Z",
+  "notes": "AI 能力矩阵 H：打开模版/版式确认跳转",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.85-x64.exe",
+      "url": "Report Editor AI-Setup-0.3.86-x64.exe",
       "sha256": "",
       "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.85-arm64.dmg",
+      "url": "Report Editor AI-0.3.86-arm64.dmg",
       "sha256": "",
       "size": 0
     }

@@ -98,7 +98,10 @@ def request_open_template(template_id: str) -> dict[str, Any]:
     tid = (template_id or "").strip()
     if not tid:
         return {"ok": False, "error": "缺少 template_id"}
-    tpl = template_store.load_template(tid)
+    try:
+        tpl = template_store.load_template(tid)
+    except ValueError:
+        return {"ok": False, "error": "模版不存在"}
     if not tpl:
         return {"ok": False, "error": "模版不存在"}
     prompt = ai_pending_prompts.create_prompt(
@@ -117,7 +120,10 @@ def request_open_layout(layout_id: str) -> dict[str, Any]:
     lid = (layout_id or "").strip()
     if not lid:
         return {"ok": False, "error": "缺少 layout_id"}
-    preset = layout_preset_store.load_preset(lid)
+    try:
+        preset = layout_preset_store.load_preset(lid)
+    except ValueError:
+        return {"ok": False, "error": "版式不存在"}
     if not preset:
         return {"ok": False, "error": "版式不存在"}
     name = str(getattr(preset, "name", None) or lid)

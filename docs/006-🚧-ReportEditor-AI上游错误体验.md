@@ -1,9 +1,40 @@
 # ReportEditor AI 助手：上游错误与写入类能力闭环
 
 > 本文件为 **任务看板**；规则见 [CLAUDE.md](../CLAUDE.md)。  
-> 版本计划：探活 [0.3.60](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.60.md)；上游错误体验 [0.3.62](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.62.md)；Agent 工具轨迹 [0.3.66](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.66.md)；轨迹假失败 [0.3.71](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.71.md)；排队收纳 [0.3.77](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.77.md)；流式先工具 [0.3.78](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.78.md)；多轮简洁 [0.3.79](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.79.md)；复制模版/版式 [0.3.80](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.80.md)；删除模版/版式 [0.3.81](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.81.md)；加密备份 [0.3.82](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.82.md)；恢复/复位 [0.3.83](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.83.md)；写入总闸 [0.3.84](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.84.md)；新建空白/冒烟 [0.3.85](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.85.md)。  
+> 版本计划：探活 [0.3.60](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.60.md)；上游错误体验 [0.3.62](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.62.md)；Agent 工具轨迹 [0.3.66](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.66.md)；轨迹假失败 [0.3.71](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.71.md)；排队收纳 [0.3.77](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.77.md)；流式先工具 [0.3.78](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.78.md)；多轮简洁 [0.3.79](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.79.md)；复制模版/版式 [0.3.80](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.80.md)；删除模版/版式 [0.3.81](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.81.md)；加密备份 [0.3.82](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.82.md)；恢复/复位 [0.3.83](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.83.md)；写入总闸 [0.3.84](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.84.md)；新建空白/冒烟 [0.3.85](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.85.md)；打开编辑 [0.3.86](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.86.md)。  
 > **范围说明**：不只「开启定时探活」；在开启「允许 AI 写入工具」后，数据源、模版/版式资产、备份恢复、结批导出、演示冒烟、诊断取证等能力域均须**真正执行并反映到 UI**（禁止空口答应）。完整域表见下方能力矩阵 H1（仍 ⌛️）。  
 > **Agent 体验**：对话须可见工具调用与状态；口头结论必须与工具结果一致——轨迹 H1 已于 **0.3.66** 落地（探活强制再调）。
+
+---
+
+# ✅ 已完成：打开模版 / 版式（能力矩阵 H · → 0.3.86）
+
+## 产品诉求
+
+「打开某某模版/版式」须调 `request_open_*` → pending 确认 → 确认后前端 `client_action=open_editor` 跳转编辑器；取消不跳转；非法 id / 总闸关拒绝。
+
+## 本版加固（0.3.86）
+
+1. `request_open_*`：空/非法 id 返回错误，不抛 `ValueError`  
+2. `test_ai_asset_open.py`：pending / 确认返回 payload / 取消 / 缺源 / 总闸  
+3. `SYSTEM_PROMPT`：点名工具；禁声称已打开
+
+## 逐步测试用例
+
+| # | 步骤 | 期望 |
+|---|------|------|
+| H1 | `request_open_template` | awaiting；payload.editor=`template` |
+| H2 | 确认 | `client_action=open_editor` + id |
+| H3 | 取消 | 无 client_action；pending 清空 |
+| H4 | 版式同 H1–H2 | editor=`layout` |
+| H5 | 空/缺/非法 id | `ok=false` |
+| H6 | 总闸关 | 拒绝 |
+
+```bash
+cd _Prj/SD_SMA_ReportEditor/backend && uv run pytest modules/test_ai_asset_open.py -q
+```
+
+> 路由 `TemplateEditor` / `LayoutPresetEditor` 跳转由前端 `AiPendingPromptDialog` 执行，属 UI 路径。
 
 ---
 
@@ -507,7 +538,7 @@ cd ../frontend && npm test -- --run src/lib/client-prefs-mirror.test.ts
 | E | 恢复 / 复位 | 确认流 → merge/复位生效 + UI reload（✅ 0.3.83） |
 | F | 总闸关闭 | 任一 write/confirm 意图 → 明确提示，**状态不变**（✅ 0.3.84） |
 | G | 新建空白 / 冒烟模版 / 演示库 | 资产或库出现 + reload（✅ 0.3.85；演示库工具已下线） |
-| H | 打开模版/版式 | 确认后进入对应编辑器 |
+| H | 打开模版/版式 | 确认后进入对应编辑器（✅ 0.3.86） |
 | I | 模版排序 | 顺序变更在模版管理页可见 |
 | J | 导出目录 | 路径写入或选目录弹框完成 |
 | K | 预检 / 模拟结批 | 预检有事实；结批确认后本机导出（非口头） |
