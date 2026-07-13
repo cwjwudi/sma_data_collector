@@ -7,7 +7,7 @@
 
 ## 2026-07-13
 
-- **ReportEditor AI 流式（计划补充）**：[docs/014-⌛️](docs/014-⌛️-ReportEditor-AI流式输出.md) 澄清关抽屉/Pending；确认持久化、调宽、排队；补 **G1–G15 缺口与建议默认**（停止/出错队列、Pending、SSE 缓冲、Esc 等）。
+- **ReportEditor AI 流式（计划补充）**：[docs/014-⌛️](docs/014-⌛️-ReportEditor-AI流式输出.md) 确认**关抽屉不停止生成**（后台继续）；持久化/调宽/排队；G1–G15。
 - **ReportEditor 0.3.71 已发版**：AI 工具轨迹假失败修正（无 `ok` 字段的成功读工具不再标红）；看板 [docs/006-🚧](docs/006-🚧-ReportEditor-AI上游错误体验.md)。
 - **ReportEditor 0.3.70 已发版**：模版/版式多选 B1（Ctrl 加选、框选、组操作、属性摘要）；看板 [docs/011-🚧](docs/011-🚧-ReportEditor模版版式多选控件.md)（B2/B3 ⌛️）。
 - **ReportEditor 模版/版式多选（计划补充）**：原 [docs/011](docs/011-🚧-ReportEditor模版版式多选控件.md) 确认属性批改 **B3 后置**；增补交集字段约定与 E1–E6 测试用例；MVP（B1）仅摘要 + 组操作。
