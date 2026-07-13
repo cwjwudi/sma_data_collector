@@ -7,6 +7,7 @@
 
 ## 2026-07-13
 
+- **ReportEditor 数据源滑动解锁（需求拍板完成）**：[docs/017-⌛️](docs/017-⌛️-ReportEditor数据源滑动解锁与限时上锁.md) Q1–Q6 已确认（自研滑块、60s 回退+秒数、切页续计、AI 同源窗口）；可开工，未实现。
 - **ReportEditor 数据源滑动解锁 UI + 60s 自动上锁（仅登记）**：新建 [docs/017-⌛️](docs/017-⌛️-ReportEditor数据源滑动解锁与限时上锁.md)——成熟滑动解锁交互；解锁后倒计时 60 秒自动锁定；未开工。
 - **ReportEditor 0.3.92 已发版**：AI 能力矩阵 N（检查更新确认流 + 禁安装断言）；看板 [docs/006-🚧](docs/006-🚧-ReportEditor-AI上游错误体验.md)。
 - **ReportEditor 0.3.91 已发版**：AI 能力矩阵 M（诊断事实工具 + 口头结论守卫）；看板 [docs/006-🚧](docs/006-🚧-ReportEditor-AI上游错误体验.md)。
