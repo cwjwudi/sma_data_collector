@@ -9,4 +9,9 @@ VAR
 	strTmp : STRING[16];
 	usiIdx : USINT;
 	bSimEnable : BOOL := TRUE;
+	bManualTrigger : BOOL;
+	uiManualIndex : UINT;
+	iEvent : INT;
+	iEventCount : INT;
+	iIdx : INT;
 END_VAR

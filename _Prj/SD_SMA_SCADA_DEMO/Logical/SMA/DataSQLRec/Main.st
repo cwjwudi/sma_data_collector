@@ -39,36 +39,54 @@ PROGRAM _CYCLIC
 		dtNow := UtcDTGetTime_0.DT1;
 	END_IF
 
-	tonRecipe(IN := bSimEnable AND NOT gDataSQLOperate.RecipeInsert, PT := T#5s);
-	IF EDGEPOS(tonRecipe.Q) THEN
+	(*Recipes change less frequently than product samples. PVI can request an extra snapshot.*)
+	tonRecipe(IN := bSimEnable AND gDataSQLBatchOpen AND NOT gDataSQLOperate.RecipeInsert, PT := T#30s);
+	IF EDGEPOS(tonRecipe.Q) OR EDGEPOS(gDataSQLBatchOpen) OR (bManualTrigger AND NOT gDataSQLOperate.RecipeInsert) THEN
+		bManualTrigger := FALSE;
+		diRecipeProfile := RandRange(1, 3);
 		gDataSQLRecipe.TimeStamp := dtNow;
-		gDataSQLRecipe.State := 1;
-		gDataSQLRecipe.CH00 := RandRangeReal(20, 80);
-		gDataSQLRecipe.CH01 := RandRangeReal(2, 6);
-		gDataSQLRecipe.CH02 := RandRangeReal(10, 40);
-		gDataSQLRecipe.CH03 := RandRangeReal(0.1, 2);
-		gDataSQLRecipe.CH04 := RandRangeReal(0.1, 2);
-		gDataSQLRecipe.CH05 := RandRangeReal(2, 6);
-		gDataSQLRecipe.CH06 := RandRangeReal(5, 20);
-		gDataSQLRecipe.CH07 := RandRangeReal(0.1, 2);
-		gDataSQLRecipe.CH08 := RandRangeReal(0.1, 2);
-		gDataSQLRecipe.CH09 := RandRangeReal(2, 6);
-		gDataSQLRecipe.CH10 := RandRangeReal(10, 40);
-		gDataSQLRecipe.CH11 := RandRangeReal(0.1, 2);
-		gDataSQLRecipe.CH12 := RandRangeReal(0.1, 2);
-		gDataSQLRecipe.CH13 := RandRangeReal(2, 6);
-		gDataSQLRecipe.CH14 := RandRangeReal(5, 20);
-		gDataSQLRecipe.CH15 := RandRangeReal(0.1, 2);
-		gDataSQLRecipe.CH16 := RandRangeReal(0.1, 2);
-		gDataSQLRecipe.CH17 := RandRangeReal(5, 15);
-		gDataSQLRecipe.CH18 := RandRangeReal(5, 15);
-		gDataSQLRecipe.CH19 := RandRangeReal(10, 50);
-		gDataSQLRecipe.CH20 := RandRangeReal(10, 50);
-		gDataSQLRecipe.CH21 := RandRangeReal(50, 150);
-		gDataSQLRecipe.CH22 := RandRangeReal(50, 150);
-		gDataSQLRecipe.CH23 := 0;
-		gDataSQLRecipe.CH24 := 0;
-		gDataSQLRecipe.CH25 := 0;
+		gDataSQLRecipe.State := DINT_TO_UDINT(diRecipeProfile);
+		CASE diRecipeProfile OF
+			1:
+				gDataSQLRecipe.CH00 := 0.500;
+				gDataSQLRecipe.CH01 := 55.0;
+				gDataSQLRecipe.CH02 := 9.00;
+				gDataSQLRecipe.CH03 := 3.50;
+				gDataSQLRecipe.CH04 := 72.0;
+			2:
+				gDataSQLRecipe.CH00 := 0.650;
+				gDataSQLRecipe.CH01 := 62.0;
+				gDataSQLRecipe.CH02 := 10.00;
+				gDataSQLRecipe.CH03 := 4.00;
+				gDataSQLRecipe.CH04 := 64.0;
+			ELSE
+				gDataSQLRecipe.CH00 := 0.350;
+				gDataSQLRecipe.CH01 := 48.0;
+				gDataSQLRecipe.CH02 := 8.00;
+				gDataSQLRecipe.CH03 := 3.00;
+				gDataSQLRecipe.CH04 := 80.0;
+		END_CASE
+		gDataSQLRecipe.CH05 := RandRangeReal(8.0, 12.0);
+		gDataSQLRecipe.CH06 := RandRangeReal(18.0, 24.0);
+		gDataSQLRecipe.CH07 := RandRangeReal(0.8, 1.2);
+		gDataSQLRecipe.CH08 := RandRangeReal(2.0, 4.0);
+		gDataSQLRecipe.CH09 := RandRangeReal(4.0, 7.0);
+		gDataSQLRecipe.CH10 := RandRangeReal(35.0, 45.0);
+		gDataSQLRecipe.CH11 := RandRangeReal(0.5, 1.0);
+		gDataSQLRecipe.CH12 := RandRangeReal(0.5, 1.0);
+		gDataSQLRecipe.CH13 := RandRangeReal(2.0, 4.0);
+		gDataSQLRecipe.CH14 := RandRangeReal(10.0, 16.0);
+		gDataSQLRecipe.CH15 := RandRangeReal(0.2, 0.8);
+		gDataSQLRecipe.CH16 := RandRangeReal(0.2, 0.8);
+		gDataSQLRecipe.CH17 := RandRangeReal(7.0, 10.0);
+		gDataSQLRecipe.CH18 := RandRangeReal(7.0, 10.0);
+		gDataSQLRecipe.CH19 := RandRangeReal(20.0, 30.0);
+		gDataSQLRecipe.CH20 := RandRangeReal(20.0, 30.0);
+		gDataSQLRecipe.CH21 := RandRangeReal(80.0, 120.0);
+		gDataSQLRecipe.CH22 := RandRangeReal(80.0, 120.0);
+		gDataSQLRecipe.CH23 := DINT_TO_REAL(diRecipeProfile);
+		gDataSQLRecipe.CH24 := 100000.0;
+		gDataSQLRecipe.CH25 := 1.0;
 		gDataSQLOperate.RecipeInsert := TRUE;
 	END_IF
 END_PROGRAM

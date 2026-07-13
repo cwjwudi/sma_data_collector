@@ -2,7 +2,10 @@
 VAR
 	ProductDataSQLQuery : DataSQLQuery_typ;
 	UtcDTGetTime_0 : UtcDTGetTime;
-	tonProduct : TON;
+	tonProductData : TON;
+	tonProductTrigger : TON;
 	dtNow : DATE_AND_TIME;
 	bSimEnable : BOOL := TRUE;
+	bManualTrigger : BOOL;
+	rProcessDrift : REAL;
 END_VAR

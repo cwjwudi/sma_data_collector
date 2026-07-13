@@ -14,52 +14,33 @@ PROGRAM _CYCLIC
 		dtNow := UtcDTGetTime_0.DT1;
 	END_IF
 
-	(*Fire parallel slots 0 / 10 / 49 when those triggers are idle*)
-	tonAudit(IN := bSimEnable AND
-		NOT AuditInsertBuffer.InsertTrigger[0] AND
-		NOT AuditInsertBuffer.InsertTrigger[10] AND
-		NOT AuditInsertBuffer.InsertTrigger[49],
-		PT := T#10s);
+	tonAudit(IN := bSimEnable AND gDataSQLBatchOpen AND NOT tonAudit.Q, PT := T#15s);
 
-	IF EDGEPOS(tonAudit.Q) THEN
-		(*Index 0*)
-		usiIdx := 0;
-		diAuditIdx := RandRange(1, 9);
-		strTmp := '';
-		brsitoa(diAuditIdx, ADR(strTmp));
-		AuditInsertBuffer.AuditTime[usiIdx] := dtNow;
-		AuditInsertBuffer.AuditOperator[usiIdx] := 'Operator';
-		brsstrcat(ADR(AuditInsertBuffer.AuditOperator[usiIdx]), ADR(strTmp));
-		AuditInsertBuffer.AuditText[usiIdx] := 'SIM_AUDIT_EVENT_';
-		brsstrcat(ADR(AuditInsertBuffer.AuditText[usiIdx]), ADR(strTmp));
-		AuditInsertBuffer.AuditBatch[usiIdx] := gDataSQLBatch.BatchCode;
-		AuditInsertBuffer.InsertTrigger[usiIdx] := TRUE;
+	IF tonAudit.Q OR bManualTrigger THEN
+		IF bManualTrigger THEN
+			iEventCount := 1;
+			iIdx := UINT_TO_INT(uiManualIndex MOD DATA_SQL_PARALLEL_SIZE);
+			bManualTrigger := FALSE;
+		ELSE
+			iEventCount := DINT_TO_INT(RandRange(1, 3));
+			iIdx := DINT_TO_INT(RandRange(0, 99));
+		END_IF
 
-		(*Index 10*)
-		usiIdx := 10;
-		diAuditIdx := RandRange(1, 9);
-		strTmp := '';
-		brsitoa(diAuditIdx, ADR(strTmp));
-		AuditInsertBuffer.AuditTime[usiIdx] := dtNow;
-		AuditInsertBuffer.AuditOperator[usiIdx] := 'Operator';
-		brsstrcat(ADR(AuditInsertBuffer.AuditOperator[usiIdx]), ADR(strTmp));
-		AuditInsertBuffer.AuditText[usiIdx] := 'SIM_AUDIT_EVENT_';
-		brsstrcat(ADR(AuditInsertBuffer.AuditText[usiIdx]), ADR(strTmp));
-		AuditInsertBuffer.AuditBatch[usiIdx] := gDataSQLBatch.BatchCode;
-		AuditInsertBuffer.InsertTrigger[usiIdx] := TRUE;
-
-		(*Index 49*)
-		usiIdx := 49;
-		diAuditIdx := RandRange(1, 9);
-		strTmp := '';
-		brsitoa(diAuditIdx, ADR(strTmp));
-		AuditInsertBuffer.AuditTime[usiIdx] := dtNow;
-		AuditInsertBuffer.AuditOperator[usiIdx] := 'Operator';
-		brsstrcat(ADR(AuditInsertBuffer.AuditOperator[usiIdx]), ADR(strTmp));
-		AuditInsertBuffer.AuditText[usiIdx] := 'SIM_AUDIT_EVENT_';
-		brsstrcat(ADR(AuditInsertBuffer.AuditText[usiIdx]), ADR(strTmp));
-		AuditInsertBuffer.AuditBatch[usiIdx] := gDataSQLBatch.BatchCode;
-		AuditInsertBuffer.InsertTrigger[usiIdx] := TRUE;
+		FOR iEvent := 0 TO iEventCount - 1 DO
+			usiIdx := INT_TO_USINT((iIdx + (iEvent * 23)) MOD 100);
+			IF NOT AuditInsertBuffer.InsertTrigger[usiIdx] THEN
+				diAuditIdx := RandRange(1, 12);
+				strTmp := '';
+				brsitoa(diAuditIdx, ADR(strTmp));
+				AuditInsertBuffer.AuditTime[usiIdx] := dtNow;
+				AuditInsertBuffer.AuditOperator[usiIdx] := 'Operator';
+				brsstrcat(ADR(AuditInsertBuffer.AuditOperator[usiIdx]), ADR(strTmp));
+				AuditInsertBuffer.AuditText[usiIdx] := 'PARAMETER_CHANGE_';
+				brsstrcat(ADR(AuditInsertBuffer.AuditText[usiIdx]), ADR(strTmp));
+				AuditInsertBuffer.AuditBatch[usiIdx] := gDataSQLBatch.BatchCode;
+				AuditInsertBuffer.InsertTrigger[usiIdx] := TRUE;
+			END_IF
+		END_FOR
 	END_IF
 END_PROGRAM
 
