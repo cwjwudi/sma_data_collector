@@ -7,8 +7,8 @@
 
 ## 2026-07-13
 
-- **ReportEditor 0.3.57 计划与文档分工对齐**：建立任务看板 [docs/004-⌛️-ReportEditor数据源UI修复.md](docs/004-⌛️-ReportEditor数据源UI修复.md)（滑动锁 UI / 工作台空白 / 发版，H1 均为 ⌛️）；版本产品计划见 [`_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.57.md`](_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.57.md)。更新 `009_版本Plan/README.md`、[CLAUDE.md](CLAUDE.md)、[AGENTS.md](AGENTS.md)：明确「版本 Plan ≠ 任务看板」，实施状态写 `docs/`，`todo.md` 只做索引。
-- **验收**：打开上述三处交叉链接一致；尚未写代码修复（看板仍为 ⌛️）。
+- **ReportEditor 0.3.57 已发版**：修复数据源滑动锁 UI（钉死轨道 + SVG）与数据库工作台空白（全高页高度链 / `.main` min-height）。看板 [docs/004-✅-ReportEditor数据源UI修复.md](docs/004-✅-ReportEditor数据源UI修复.md)；计划 [`009_版本Plan/0.3.57.md`](_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.57.md)。**验收**：vitest 248 passed；Mac DMG 已打。
+- **ReportEditor 0.3.57 计划与文档分工对齐**：建立任务看板与版本 Plan 交叉引用；更新 CLAUDE/AGENTS/todo（本条之上为实施闭环）。
 
 ## 2026-07-12
 

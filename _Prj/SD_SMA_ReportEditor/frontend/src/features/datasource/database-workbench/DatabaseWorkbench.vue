@@ -1006,8 +1006,8 @@ defineExpose({
 <style scoped>
 .wb {
   width: 100%;
-  flex: 1;
-  min-height: 0;
+  flex: 1 1 auto;
+  min-height: 280px;
   display: flex;
   flex-direction: column;
 }
@@ -1026,8 +1026,9 @@ defineExpose({
   grid-template-columns: minmax(240px, 300px) minmax(300px, 400px) minmax(320px, 1fr);
   gap: 16px;
   align-items: stretch;
-  flex: 1;
-  min-height: 0;
+  flex: 1 1 auto;
+  /* 父级未吃到全高时禁止压成 0，否则只剩「+ 新建」一行、配置面板消失 */
+  min-height: 280px;
 }
 .main > * {
   min-height: 0;

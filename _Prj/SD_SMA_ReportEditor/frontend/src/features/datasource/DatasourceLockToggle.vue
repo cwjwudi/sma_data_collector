@@ -11,10 +11,22 @@
       @pointermove="onPointerMove"
       @pointerup="onPointerUp"
       @pointercancel="onPointerUp"
+      @keydown="onKeydown"
     >
-      <span class="ds-lock-fill" :style="{ width: fillPct + '%' }" />
-      <span class="ds-lock-thumb" :style="{ left: `calc(${thumbPct}% - 14px)` }">
-        {{ locked ? "🔒" : "🔓" }}
+      <span class="ds-lock-fill" :style="{ width: `${fillPct}%` }" aria-hidden="true" />
+      <span
+        class="ds-lock-thumb"
+        :style="{ transform: `translateX(${thumbOffsetPx}px)` }"
+        aria-hidden="true"
+      >
+        <svg v-if="locked" class="ds-lock-ico" viewBox="0 0 16 16" width="12" height="12" fill="none">
+          <rect x="3.5" y="7" width="9" height="7" rx="1.5" stroke="currentColor" stroke-width="1.5" />
+          <path d="M5.5 7V5.5a2.5 2.5 0 0 1 5 0V7" stroke="currentColor" stroke-width="1.5" />
+        </svg>
+        <svg v-else class="ds-lock-ico" viewBox="0 0 16 16" width="12" height="12" fill="none">
+          <rect x="3.5" y="7" width="9" height="7" rx="1.5" stroke="currentColor" stroke-width="1.5" />
+          <path d="M5.5 7V5.2a2.5 2.5 0 0 1 4.7-1.2" stroke="currentColor" stroke-width="1.5" />
+        </svg>
       </span>
     </button>
     <div class="ds-lock-meta">
@@ -30,6 +42,13 @@ import { computed, onMounted, ref, watch } from "vue";
 import { apiFetch } from "@/api/client.js";
 
 defineOptions({ name: "DatasourceLockToggle" });
+
+/** 轨道 / 拇指几何（固定 px，避免 % 链撑破布局） */
+const TRACK_W = 88;
+const TRACK_H = 32;
+const THUMB = 24;
+const THUMB_PAD = 4;
+const THUMB_TRAVEL = TRACK_W - THUMB - THUMB_PAD * 2;
 
 const props = defineProps<{
   modelValue: boolean;
@@ -52,6 +71,11 @@ const thumbPct = computed(() => {
 });
 
 const fillPct = computed(() => thumbPct.value);
+
+const thumbOffsetPx = computed(() => {
+  const p = Math.min(100, Math.max(0, thumbPct.value)) / 100;
+  return THUMB_PAD + p * THUMB_TRAVEL;
+});
 
 function pctFromEvent(ev: PointerEvent): number {
   const el = trackEl;
@@ -89,6 +113,13 @@ async function onPointerUp(ev: PointerEvent) {
   } else if (!locked.value && wantLock) {
     await persist(true);
   }
+}
+
+async function onKeydown(ev: KeyboardEvent) {
+  if (busy.value) return;
+  if (ev.key !== "Enter" && ev.key !== " ") return;
+  ev.preventDefault();
+  await persist(!locked.value);
 }
 
 async function persist(next: boolean) {
@@ -136,24 +167,49 @@ watch(
   gap: 10px;
   flex-wrap: wrap;
   justify-content: flex-end;
+  flex-shrink: 0;
 }
 
 .ds-lock-track {
+  /* 钉死几何，避免 Electron 默认 button 样式 / % 子元素撑破 */
+  appearance: none;
+  -webkit-appearance: none;
+  box-sizing: border-box;
   position: relative;
+  flex: 0 0 auto;
   width: 88px;
-  height: 28px;
-  border-radius: 999px;
-  border: 1px solid #d1d5db;
-  background: #f3f4f6;
+  height: 32px;
+  min-width: 88px;
+  min-height: 32px;
+  max-width: 88px;
+  max-height: 32px;
+  margin: 0;
   padding: 0;
+  border-radius: 999px;
+  border: 1px solid #9ca3af;
+  background: #e5e7eb;
   cursor: pointer;
   touch-action: none;
   overflow: hidden;
+  vertical-align: middle;
+  line-height: 0;
+  color: inherit;
+  font: inherit;
+}
+
+.ds-lock-track:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.ds-lock-track:focus-visible {
+  outline: 2px solid #6366f1;
+  outline-offset: 2px;
 }
 
 .ds-lock--locked .ds-lock-track {
   border-color: #f59e0b;
-  background: #fffbeb;
+  background: #fef3c7;
 }
 
 .ds-lock-fill {
@@ -162,23 +218,35 @@ watch(
   top: 0;
   bottom: 0;
   background: linear-gradient(90deg, #fde68a, #fbbf24);
-  opacity: 0.55;
+  opacity: 0.7;
   pointer-events: none;
 }
 
 .ds-lock-thumb {
   position: absolute;
-  top: 2px;
+  top: 4px;
+  left: 0;
   width: 24px;
   height: 24px;
   border-radius: 50%;
   background: #fff;
-  border: 1px solid #d1d5db;
+  border: 1px solid #9ca3af;
   display: grid;
   place-items: center;
-  font-size: 12px;
-  box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.18);
   pointer-events: none;
+  color: #4b5563;
+  transition: transform 0.08s linear;
+  will-change: transform;
+}
+
+.ds-lock--locked .ds-lock-thumb {
+  border-color: #d97706;
+  color: #b45309;
+}
+
+.ds-lock-ico {
+  display: block;
 }
 
 .ds-lock-meta {

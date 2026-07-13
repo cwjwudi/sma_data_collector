@@ -1,17 +1,17 @@
 {
-  "version": "0.3.56",
-  "releasedAt": "2026-07-13T03:48:46.911Z",
-  "notes": "修复 AI 模型选择框过窄与列表无法滚动\n\n- 模型改用可滚动下拉（替代 datalist）\n- 加宽模型名称输入框",
+  "version": "0.3.57",
+  "releasedAt": "2026-07-13T04:37:39.753Z",
+  "notes": "修复数据源滑动锁 UI 与数据库工作台空白\n\n- 滑动锁钉死轨道几何，SVG 图标，支持键盘切换\n- 修复全高页高度链，工作台主区不再被压成 0",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.56-x64.exe",
-      "sha256": "82619c8791e34ce4689020cb6f1fb724613358e580123b1f626100d63a74dc7c",
-      "size": 147976932
+      "url": "Report Editor AI-Setup-0.3.57-x64.exe",
+      "sha256": "",
+      "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.56-arm64.dmg",
-      "sha256": "e274581b0c792a96eacfb877a2648cb74b1edc413aa7879f7d5d77a1967afd19",
-      "size": 181975422
+      "url": "Report Editor AI-0.3.57-arm64.dmg",
+      "sha256": "acf7b65701e52fbc2a9f8c0275ebd3e9c66aa2d3e7945da4efd968ef195f02a7",
+      "size": 181977129
     }
   }
 }
