@@ -6,20 +6,21 @@ PROGRAM _INIT
 		dtNow := UtcDTGetTime_0.DT1;
 	END_IF
 
-	diBatchSeq := 1;
+	diBatchSeq := DT_TO_DINT(dtNow);
 	bSimEnable := TRUE;
-	bBatchOpened := TRUE;
+	bBatchOpened := FALSE;
+	gDataSQLBatchOpen := FALSE;
 
-	(*Initial gDataSQLBatch (DataSQLBatch_typ)*)
-	gDataSQLBatch.BatchCode := 'BATCH_001';
-	gDataSQLBatch.BatchTimeStart := dtNow;
+	(*No phantom open batch after startup. The first open is emitted after the idle timer.*)
+	gDataSQLBatch.BatchCode := '';
+	gDataSQLBatch.BatchTimeStart := DT#1970-01-01-00:00:00;
 	gDataSQLBatch.BatchTimeStop := DT#1970-01-01-00:00:00;
 
 	(*Initial gDataSQLBatchInfo (DataSQLBatchInfo_typ)*)
-	gDataSQLBatchInfo.InfoProductName := 'DemoTablet';
-	gDataSQLBatchInfo.InfoProductDesc := 'SMA DEMO Product';
-	gDataSQLBatchInfo.InfoConfigure := 'CFG_DEMO';
-	gDataSQLBatchInfo.InfoRecipe := 'RCP_DEMO';
+	gDataSQLBatchInfo.InfoProductName := 'SMA Tablet';
+	gDataSQLBatchInfo.InfoProductDesc := 'Production simulation';
+	gDataSQLBatchInfo.InfoConfigure := 'CFG_CP1586';
+	gDataSQLBatchInfo.InfoRecipe := 'RCP_AUTO';
 	gDataSQLBatchInfo.InfoTabletMoldXY := 'ROUND';
 	gDataSQLBatchInfo.InfoTabletMoldZ := 'FLAT';
 	gDataSQLBatchInfo.InfoBatchStart := dtNow;
@@ -36,49 +37,56 @@ PROGRAM _CYCLIC
 	(*Shared heartbeat for collector*)
 	gDataSQLHeartBeat := gDataSQLHeartBeat + 1;
 
-	(*Fill gDataSQLBatch, then set BatchInsert (~60s open/close cycle)*)
-	tonBatch(IN := bSimEnable AND NOT gDataSQLOperate.BatchInsert, PT := T#60s);
-	IF EDGEPOS(tonBatch.Q) THEN
-		IF NOT bBatchOpened THEN
-			diBatchSeq := diBatchSeq + 1;
-			IF diBatchSeq > 999 THEN
-				diBatchSeq := 1;
-			END_IF
+	(*Automatic cycle: 5 s changeover followed by 90 s production.*)
+	tonBatchIdle(IN := bSimEnable AND NOT bBatchOpened AND NOT gDataSQLOperate.BatchInsert, PT := T#5s);
+	tonBatchRun(IN := bSimEnable AND bBatchOpened AND NOT gDataSQLOperate.BatchInsert, PT := T#90s);
+	IF tonBatchIdle.Q OR (uiManualCommand = 1 AND NOT bBatchOpened AND NOT gDataSQLOperate.BatchInsert) THEN
+		uiManualCommand := 0;
+		diBatchSeq := DT_TO_DINT(dtNow);
+		IF diBatchSeq < 0 THEN
+			diBatchSeq := -diBatchSeq;
+		END_IF
 			strTmp := '';
 			brsitoa(diBatchSeq, ADR(strTmp));
-			gDataSQLBatch.BatchCode := 'BATCH_';
+			gDataSQLBatch.BatchCode := 'SMA_';
 			brsstrcat(ADR(gDataSQLBatch.BatchCode), ADR(strTmp));
 			gDataSQLBatch.BatchTimeStart := dtNow;
 			gDataSQLBatch.BatchTimeStop := DT#1970-01-01-00:00:00;
 			gDataSQLBatchInfo.InfoBatchStart := dtNow;
 			gDataSQLBatchInfo.InfoBatchStop := DT#1970-01-01-00:00:00;
+			gDataSQLBatchInfo.InfoPieceAccept := 0;
+			gDataSQLBatchInfo.InfoPieceDebug := 0;
+			gDataSQLBatchInfo.InfoPieceTotal := 0;
 			bBatchOpened := TRUE;
-		ELSE
-			gDataSQLBatch.BatchTimeStop := dtNow;
-			gDataSQLBatchInfo.InfoBatchStop := dtNow;
-			gDataSQLBatchInfo.InfoBatchRun := dtNow - gDataSQLBatchInfo.InfoBatchStart;
-			bBatchOpened := FALSE;
-		END_IF
+			gDataSQLBatchOpen := TRUE;
+		gDataSQLOperate.BatchInsert := TRUE;
+	ELSIF tonBatchRun.Q OR (uiManualCommand = 2 AND bBatchOpened AND NOT gDataSQLOperate.BatchInsert) THEN
+		uiManualCommand := 0;
+		gDataSQLBatch.BatchTimeStop := dtNow;
+		gDataSQLBatchInfo.InfoBatchStop := dtNow;
+		gDataSQLBatchInfo.InfoBatchRun := dtNow - gDataSQLBatchInfo.InfoBatchStart;
+		bBatchOpened := FALSE;
+		gDataSQLBatchOpen := FALSE;
 		gDataSQLOperate.BatchInsert := TRUE;
 	END_IF
 
-	(*Fill gDataSQLBatchInfo, then set BatchInfoInsert (~15s)*)
-	tonBatchInfo(IN := bSimEnable AND NOT gDataSQLOperate.BatchInfoInsert, PT := T#15s);
+	(*Monotonic batch counters and measurements correlated with the active recipe.*)
+	tonBatchInfo(IN := bSimEnable AND bBatchOpened AND NOT gDataSQLOperate.BatchInfoInsert, PT := T#10s);
 	IF EDGEPOS(tonBatchInfo.Q) THEN
-		gDataSQLBatchInfo.InfoProductName := 'DemoTablet';
-		gDataSQLBatchInfo.InfoProductDesc := 'SMA DEMO Product';
-		gDataSQLBatchInfo.InfoConfigure := 'CFG_DEMO';
-		gDataSQLBatchInfo.InfoRecipe := 'RCP_DEMO';
-		gDataSQLBatchInfo.InfoTabletWeight := RandRangeReal(0.1, 1.5);
-		gDataSQLBatchInfo.InfoTabletHardness := RandRangeReal(20, 80);
+		gDataSQLBatchInfo.InfoProductName := 'SMA Tablet';
+		gDataSQLBatchInfo.InfoProductDesc := 'Production simulation';
+		gDataSQLBatchInfo.InfoConfigure := 'CFG_CP1586';
+		gDataSQLBatchInfo.InfoRecipe := 'RCP_AUTO';
+		gDataSQLBatchInfo.InfoTabletWeight := gDataSQLProduct.CH01;
+		gDataSQLBatchInfo.InfoTabletHardness := gDataSQLProduct.CH02;
 		gDataSQLBatchInfo.InfoTabletMoldXY := 'ROUND';
-		gDataSQLBatchInfo.InfoTabletDiameterX := RandRangeReal(5, 12);
-		gDataSQLBatchInfo.InfoTabletDiameterY := RandRangeReal(5, 12);
+		gDataSQLBatchInfo.InfoTabletDiameterX := gDataSQLProduct.CH04;
+		gDataSQLBatchInfo.InfoTabletDiameterY := gDataSQLProduct.CH04 + RandRangeReal(-0.03, 0.03);
 		gDataSQLBatchInfo.InfoTabletMoldZ := 'FLAT';
-		gDataSQLBatchInfo.InfoTabletThicknessZ := RandRangeReal(2, 6);
-		gDataSQLBatchInfo.InfoTabletRadiusR := RandRangeReal(0.5, 3);
-		gDataSQLBatchInfo.InfoPieceAccept := DINT_TO_UDINT(RandRange(100, 5000));
-		gDataSQLBatchInfo.InfoPieceDebug := DINT_TO_UDINT(RandRange(0, 50));
+		gDataSQLBatchInfo.InfoTabletThicknessZ := gDataSQLProduct.CH03;
+		gDataSQLBatchInfo.InfoTabletRadiusR := gDataSQLProduct.CH04 / 2.0;
+		gDataSQLBatchInfo.InfoPieceAccept := gDataSQLBatchInfo.InfoPieceAccept + DINT_TO_UDINT(RandRange(80, 120));
+		gDataSQLBatchInfo.InfoPieceDebug := gDataSQLBatchInfo.InfoPieceDebug + DINT_TO_UDINT(RandRange(0, 3));
 		gDataSQLBatchInfo.InfoPieceTotal := gDataSQLBatchInfo.InfoPieceAccept + gDataSQLBatchInfo.InfoPieceDebug;
 		IF bBatchOpened THEN
 			gDataSQLBatchInfo.InfoBatchRun := dtNow - gDataSQLBatchInfo.InfoBatchStart;

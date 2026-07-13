@@ -15,52 +15,33 @@ PROGRAM _CYCLIC
 		dtNow := UtcDTGetTime_0.DT1;
 	END_IF
 
-	(*Fire parallel slots 0 / 10 / 49 when those triggers are idle*)
-	tonAlarm(IN := bSimEnable AND
-		NOT AlarmInsertBuffer.InsertTrigger[0] AND
-		NOT AlarmInsertBuffer.InsertTrigger[10] AND
-		NOT AlarmInsertBuffer.InsertTrigger[49],
-		PT := T#8s);
+	tonAlarm(IN := bSimEnable AND gDataSQLBatchOpen AND NOT tonAlarm.Q, PT := T#12s);
 
-	IF EDGEPOS(tonAlarm.Q) THEN
-		(*Index 0*)
-		usiIdx := 0;
-		diAlarmCode := RandRange(1000, 1099);
-		AlarmInsertBuffer.AlarmTime[usiIdx] := dtNow;
-		AlarmInsertBuffer.AlarmCode[usiIdx] := DINT_TO_UDINT(diAlarmCode);
-		AlarmInsertBuffer.AlarmState[usiIdx] := DINT_TO_UDINT(RandRange(0, 1));
-		strTmp := '';
-		brsitoa(diAlarmCode, ADR(strTmp));
-		AlarmInsertBuffer.AlarmText[usiIdx] := 'SIM_ALARM_';
-		brsstrcat(ADR(AlarmInsertBuffer.AlarmText[usiIdx]), ADR(strTmp));
-		AlarmInsertBuffer.AlarmBatch[usiIdx] := gDataSQLBatch.BatchCode;
-		AlarmInsertBuffer.InsertTrigger[usiIdx] := TRUE;
+	IF tonAlarm.Q OR bManualTrigger THEN
+		IF bManualTrigger THEN
+			iEventCount := 1;
+			iIdx := UINT_TO_INT(uiManualIndex MOD DATA_SQL_PARALLEL_SIZE);
+			bManualTrigger := FALSE;
+		ELSE
+			iEventCount := DINT_TO_INT(RandRange(1, 3));
+			iIdx := DINT_TO_INT(RandRange(0, 99));
+		END_IF
 
-		(*Index 10*)
-		usiIdx := 10;
-		diAlarmCode := RandRange(1000, 1099);
-		AlarmInsertBuffer.AlarmTime[usiIdx] := dtNow;
-		AlarmInsertBuffer.AlarmCode[usiIdx] := DINT_TO_UDINT(diAlarmCode);
-		AlarmInsertBuffer.AlarmState[usiIdx] := DINT_TO_UDINT(RandRange(0, 1));
-		strTmp := '';
-		brsitoa(diAlarmCode, ADR(strTmp));
-		AlarmInsertBuffer.AlarmText[usiIdx] := 'SIM_ALARM_';
-		brsstrcat(ADR(AlarmInsertBuffer.AlarmText[usiIdx]), ADR(strTmp));
-		AlarmInsertBuffer.AlarmBatch[usiIdx] := gDataSQLBatch.BatchCode;
-		AlarmInsertBuffer.InsertTrigger[usiIdx] := TRUE;
-
-		(*Index 49*)
-		usiIdx := 49;
-		diAlarmCode := RandRange(1000, 1099);
-		AlarmInsertBuffer.AlarmTime[usiIdx] := dtNow;
-		AlarmInsertBuffer.AlarmCode[usiIdx] := DINT_TO_UDINT(diAlarmCode);
-		AlarmInsertBuffer.AlarmState[usiIdx] := DINT_TO_UDINT(RandRange(0, 1));
-		strTmp := '';
-		brsitoa(diAlarmCode, ADR(strTmp));
-		AlarmInsertBuffer.AlarmText[usiIdx] := 'SIM_ALARM_';
-		brsstrcat(ADR(AlarmInsertBuffer.AlarmText[usiIdx]), ADR(strTmp));
-		AlarmInsertBuffer.AlarmBatch[usiIdx] := gDataSQLBatch.BatchCode;
-		AlarmInsertBuffer.InsertTrigger[usiIdx] := TRUE;
+		FOR iEvent := 0 TO iEventCount - 1 DO
+			usiIdx := INT_TO_USINT((iIdx + (iEvent * 17)) MOD 100);
+			IF NOT AlarmInsertBuffer.InsertTrigger[usiIdx] THEN
+				diAlarmCode := RandRange(1000, 1049);
+				AlarmInsertBuffer.AlarmTime[usiIdx] := dtNow;
+				AlarmInsertBuffer.AlarmCode[usiIdx] := DINT_TO_UDINT(diAlarmCode);
+				AlarmInsertBuffer.AlarmState[usiIdx] := DINT_TO_UDINT(RandRange(0, 1));
+				strTmp := '';
+				brsitoa(diAlarmCode, ADR(strTmp));
+				AlarmInsertBuffer.AlarmText[usiIdx] := 'PRESS_FAULT_';
+				brsstrcat(ADR(AlarmInsertBuffer.AlarmText[usiIdx]), ADR(strTmp));
+				AlarmInsertBuffer.AlarmBatch[usiIdx] := gDataSQLBatch.BatchCode;
+				AlarmInsertBuffer.InsertTrigger[usiIdx] := TRUE;
+			END_IF
+		END_FOR
 	END_IF
 END_PROGRAM
 

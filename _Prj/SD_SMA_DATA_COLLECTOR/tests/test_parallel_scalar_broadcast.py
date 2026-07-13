@@ -210,6 +210,31 @@ class TestParallelScalarBroadcast(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([row["data"]["AlarmCode"]["value"] for row in received], [101, 102])
         self.assertEqual(len(client.array_writes), 2)
 
+    async def test_parallel_collection_consumes_high_indices_on_startup(self):
+        collector = self._collector()
+        collector.trigger_reset_confirm_delay = 0
+        received = []
+        collector.register_data_callback(received.append)
+        group, points, trigger = self._parallel_fixture()
+        client = FakeParallelOpcUaClient(
+            trigger_reads=[
+                [True, False],
+                [False, False],
+            ],
+            data_reads=[{"AlarmCode": [501, 0], "BatchCode": "B-START"}],
+        )
+
+        task = asyncio.create_task(
+            collector._parallel_variable_triggered_collection(group, points, trigger, client)
+        )
+        await self._wait_for(lambda: len(received) == 1)
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+
+        self.assertEqual(received[0]["trigger_index"], 0)
+        self.assertEqual(received[0]["data"]["AlarmCode"]["value"], 501)
+        self.assertEqual(len(client.array_writes), 1)
+
     async def test_reassert_during_reset_readback_is_not_cleared_twice(self):
         collector = self._collector()
         collector.trigger_reset_confirm_delay = 0

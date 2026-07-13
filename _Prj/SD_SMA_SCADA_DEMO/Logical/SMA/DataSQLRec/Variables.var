@@ -5,4 +5,6 @@ VAR
 	tonRecipe : TON;
 	dtNow : DATE_AND_TIME;
 	bSimEnable : BOOL := TRUE;
+	bManualTrigger : BOOL;
+	diRecipeProfile : DINT;
 END_VAR
