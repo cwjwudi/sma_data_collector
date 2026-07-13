@@ -7,6 +7,7 @@
 
 ## 2026-07-13
 
+- **ReportEditor 控件默认无边框（仅文档，待 0.3.60）**：交互控件（input/select/按钮/未选中 Tab）拟默认无实线边；分区容器默认保留。看板 [docs/005-⌛️-ReportEditor控件默认无边框.md](docs/005-⌛️-ReportEditor控件默认无边框.md)；计划 [`009_版本Plan/0.3.60.md`](_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.60.md)。**本条未改代码。**
 - **ReportEditor 0.3.59 已发版**：修复 `(0/0)` 空连接新建表单被 `startLoadWatch` 周期性刷新清空；策略单测 + ConnectionManager loading 闪烁回归；vitest **274 passed**。看板 [docs/004-✅-ReportEditor数据源UI修复.md](docs/004-✅-ReportEditor数据源UI修复.md)；计划 [`009_版本Plan/0.3.59.md`](_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.59.md)。
 - **ReportEditor 空连接表单刷新清空（文档/根因）**：已实现为 0.3.59（见上条）。
 - **ReportEditor 0.3.58 已发版**：P0 补 `ConnectionManager` `draft`；锁进度同步；UI 测试。
