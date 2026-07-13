@@ -1,12 +1,12 @@
 # ReportEditor 模版 / 版式编辑器：多选控件
 
 > 本文件为 **任务看板**；规则见 [CLAUDE.md](../CLAUDE.md)。  
-> **B1（MVP）已于 0.3.70 落地**；**B2 已于 0.3.75 落地**；B3 属性批改仍后置。  
-> 相关：`TemplateEditorWorkspace` / `TemplateBodyCanvas` / `LayoutPresetEditor` / `LayoutPresetPaperCanvas` / `selection-set.ts` / `selection-align.ts`。
+> **B1（MVP）已于 0.3.70 落地**；**B2 已于 0.3.75 落地**；**B3 约定已细化（待拍板）**，实现建议 **0.3.76**。  
+> 相关：`TemplateEditorWorkspace` / `TemplateBodyCanvas` / `LayoutPresetEditor` / `LayoutPresetPaperCanvas` / `selection-set.ts` / `selection-align.ts` /（拟）`selection-batch-props.ts`。
 
 ---
 
-# 🚧 进行中：多选控件（B1 ✅ · B2 ✅ · B3 后置）
+# 🚧 进行中：多选控件（B1 ✅ · B2 ✅ · B3 约定细化中）
 
 ## 批次状态
 
@@ -14,7 +14,7 @@
 |------|------|------|
 | **B1 · MVP** | 多选状态 + 高亮 + Ctrl/Cmd 加选 + 框选 + 组移动/删除/多剪贴板 + 属性摘要 | ✅ **0.3.70** |
 | **B2** | Shift 区间加选；对齐 / 分布 | ✅ **0.3.75** |
-| **B3 · 属性批改** | 交集字段批改 + E1–E6 | ⌛️（已拍板后置） |
+| **B3 · 属性批改** | 右侧多选面板：交集字段批改 + 「混合」态；E 系用例 | ⌛️ **约定已细化，待拍板后实现**（建议 **0.3.76**） |
 
 ## B1 实现摘要（0.3.70）
 
@@ -33,7 +33,7 @@
 ## 属性面板（回顾）
 
 - 单选：完整属性面板  
-- 多选 MVP：仅摘要（B3 再开交集字段）  
+- 多选 B1：仅摘要；**B3** 在摘要下增加「共有外观」批改（约定见下）  
 
 ---
 
@@ -54,7 +54,7 @@
 | Q5 | Shift 区间 | **同页 / 同 zone** 内：从锚点到点击项按现有 `selection-set` **range** 序选一段（与 B1 对齐）；跨页/跨区 **不做** |
 | Q6 | 撤销 | 一次对齐或一次分布 = **一次 undo** |
 | Q7 | 跨页 / 跨区 | **不做**；只动当前画布上的选中集合 |
-| Q8 | 本版不做 | B3 属性批改；吸附线与对齐混用的特殊规则（沿用现有拖拽吸附即可） |
+| Q8 | 本版不做 | B3 属性批改（已另开批次）；吸附线与对齐混用的特殊规则（沿用现有拖拽吸附即可） |
 
 ## 行为细则
 
@@ -137,33 +137,158 @@
 
 ---
 
-## B3 属性批改 · 建议字段（交集 · 后置）
+# ⌛️ B3：多选属性批改（约定细化 · 待拍板）
 
-| 字段族 | 适用 | 冲突时 |
-|--------|------|--------|
-| `showBorder` | 非 table 或集合内均非 table | 含 table → 隐藏该项 |
-| 填充色 / 文字色 | 选中项均有对应属性 | 缺省则隐藏 |
-| 字号 / 字重（若模型统一） | text/box 等同构 | 混入其它类型 → 隐藏 |
-| 换行 `textAutoWrap` | 均为 text/box | 否则隐藏 |
-| X/Y/W/H 数值 | **默认不做** | — |
-| OPC/SQL 绑定、签名、表格单元格 | **永不批改** | 仅单选 |
+## 产品诉求
 
-## 测试（既有）
+多选后不必逐个点开：在右侧面板对**所有选中项都适用且安全**的外观字段一次改完；模版与版式行为一致。绑定 / 表格格 / 签名等仍只允许单选编辑。
+
+## 现状（代码锚点）
+
+| 侧 | 多选右侧 | 单选完整面板 |
+|----|----------|--------------|
+| 模版 | `TemplateEditorWorkspace.vue` → `aside.ted-props--multi`（摘要列表 + 提示「批量改属性见后续版本」） | `TemplateElementProps.vue` |
+| 版式 | `LayoutPresetEditor.vue` → `div.pe-multi-summary` | `LayoutPresetElementProps.vue` |
+
+- 模型**无** `fontWeight` 字段；字号为 `fontSize`（number）。  
+- Undo：对 `editing` / `working` 的 deep watch + `stableFingerprintPart` debounce（约 320ms）全量快照；属性直接 mutate 元素即可入栈（与 B2 对齐同路径）。  
+- 几何输入单选走 `useDeferredGeomField`；B3 **默认不做** X/Y/W/H 批改（避免与对齐/组拖语义打架）。
+
+## 已拟默认（★ · 待你确认「按默认」或改口）
+
+| # | 问题 | 建议默认 ★ |
+|---|------|------------|
+| Q1 | 批改入口 | **仍用右侧多选面板**：保留「已选 N + 类型 chip + 可点列表」；其下增加「共有外观」表单。不新开工具栏、不弹窗 |
+| Q2 | 字段可见规则 | **交集**：仅当**每一个**选中项都支持该字段时才显示；任一不支持 → **整项隐藏**（不灰显半残控件） |
+| Q3 | 值不一致时 | 控件显示 **「混合」**（色块用棋盘/空态 + 文案；分段按钮无选中；数字框占位「混合」）；用户选定新值后**全部写为该值** |
+| Q4 | 一次改多个字段 | 每个控件一次用户提交（点击分段 / 选色 / 失焦提交字号）写回全集；debounce undo 合并连续操作——与单选一致，**不要求**「整次多选会话 = 一次 undo」 |
+| Q5 | 含 table 时 | **隐藏** `showBorder` / 填充色等表格不适用项；**永不**出现表格行列、单元格、SQL 填充入口 |
+| Q6 | 几何 X/Y/W/H | **本版不做**（对齐/分布在工具栏；组拖在画布） |
+| Q7 | 字体族 `fontFamily`、对齐 `alignX`/`alignY` | **本版做**（与单选同构、风险低）；`pageNumberMode` / `dateFormat` / 图片专项 **本版不做** |
+| Q8 | 模版独有 chart / signature、版式独有 pageNumber | 混入集合时：仅显示仍属交集的外观字段；**不**批改 chartKind / 签名 / 页码模式 |
+| Q9 | 版式 text 无独立「文字色」UI | 批改面板与**该编辑器单选习惯对齐**：模版对 text/date 显示 `color`；版式对 text **不**强行加文字色批改（box 仍可批 `bgColor`；若集合含 text+box，仅显示两边都有的字段） |
+| Q10 | 本版不做 | 绑定（OPC/SQL/Mongo）、签名库/手写、表格一切、图表、页码模式、日期格式、图片来源/旋转、参数绑定、删除按钮批删（删除仍用工具栏/快捷键） |
+
+## 首批字段清单（按交集显示）
+
+| 字段 | 模型键 | 显示条件（全部选中须满足） | 控件形态 |
+|------|--------|---------------------------|----------|
+| 预览/导出外框 | `showBorder` | 每一项 `type !== "table"` | 显示 / 隐藏 分段（同单选 `.lpep-seg`） |
+| 填充色 | `bgColor` | 每一项非 table，且单选面板会编辑 `bgColor` | 色板（复用 `BoxZoneColorPicker` 交互或等价） |
+| 文字色 | `color` | **仅模版**；且每一项为 text / date / box（与模版单选一致处） | 色板；版式路径整项不出现（除非日后单选也统一） |
+| 字号 | `fontSize` | 每一项有字号语义（text/box/date/parameter/pageNumber 等非 table/image/chart/signature；实现时以「单选面板是否渲染字号」为准） | 数字；混合时 placeholder「混合」，失焦/回车提交 |
+| 字体 | `fontFamily` | 同字号适用集合 | `LayoutFontFamilyField` 或等价；混合显示「混合」 |
+| 自动换行 | `textAutoWrap` | 每一项为 text / box / date（单选有换行的类型） | 开 / 关 分段 |
+| 水平对齐 | `alignX` | 每一项非 image（与单选：image 对齐在图片块内，本版多选不批 image 对齐） | start / center / end |
+| 垂直对齐 | `alignY` | 同 `alignX` | start / center / end |
+
+**永不批改（即使多选同类型）：**  
+`bindingKind` / `opcuaNodeId` / `sql*` / 单元格 / `chartKind` / 签名字段 / `pageNumberMode` / `dateFormat` / 图片字段 / `x` `y` `w` `h` / `zIndex`（叠放本版也不做，避免误改层序）。
+
+## 行为细则
+
+### 面板结构（多选 ≥ 2）
+
+1. **摘要区**（已有）：标题「已选 N 项」→ 类型 chip → 可点列表（点项 → `selectOnly` → 切回完整单选面板）。  
+2. **共有外观区**（新增）：仅渲染当前交集非空的字段行；若交集为空（例如 text + table 且仅剩无共有项），显示一句说明：「所选类型无共有可批量修改的外观属性；点上方列表可单选编辑。」  
+3. 去掉「批量改属性见后续版本」提示；可改为：「仅改共有外观；绑定与表格请单选。」
+
+### 「混合」态
+
+| 控件 | 混合表现 | 用户操作后 |
+|------|----------|------------|
+| 分段（边框/换行/对齐） | 无按钮处于按下态；可旁注「混合」 | 点某一侧 → 全集写该值 |
+| 色板 | 不显示单一色；文案「混合」 | 选色 → 全集写该色（含 `transparent`） |
+| 字号 / 字体 | 输入框空 + placeholder「混合」 | 提交有效值 → 全集写该值 |
+
+### 写回与撤销
+
+- 写回：对选中集合每一项直接赋字段（纯函数算出 patch 再 apply，便于单测）。  
+- Undo：依赖现有 debounce 指纹栈；连续改同一字段在 debounce 窗口内可能合并为一次 undo（与单选一致，可接受）。  
+- 不新增第三套历史 API。
+
+### 模版 vs 版式
+
+- 共用纯函数（元素数组 + 字段键 → 可见性 / mixed / apply）。  
+- UI 可共用一个 `MultiElementBatchProps.vue`（或对称两处薄封装），挂在现有多选 aside 内。  
+- 字段可见性以**当前编辑器**的单选能力为上界（Q9）。
+
+## 拟改落点
+
+1. **新建** `frontend/src/lib/report-template/selection-batch-props.ts`  
+   - `intersectBatchFields(els, surface: "template" | "layout")`  
+   - `readBatchField(els, key)` → `{ kind: "uniform", value } | { kind: "mixed" }`  
+   - `applyBatchField(els, key, value)` → 修改个数  
+   - 单测 `selection-batch-props.test.ts`（对照 `selection-align.test.ts`）
+2. **新建**（建议）`MultiElementBatchProps.vue`：接收 `els` + `surface`，emit 无需父级再算交集。  
+3. **挂载**：`TemplateEditorWorkspace` 多选 aside；`LayoutPresetEditor` 多选 summary。  
+4. **不改**：`TemplateElementProps` / `LayoutPresetElementProps` 内部塞多选分支；`selection-set.ts` 职责保持选择集合。  
+5. 发版说明写入 `007`；计划 `_Doc/009_版本Plan/0.3.76.md`（实现时）。
+
+## 测试用例（B3）
+
+### I. 交集可见性
+
+| # | 用例 | 期望 |
+|---|------|------|
+| I1 | 两 text（模版） | 可见边框、填充、文字色、字号、字体、换行、对齐 |
+| I2 | text + table | 无表格编辑；`showBorder`/色等按「含 table 隐藏」；说明文案可出现 |
+| I3 | text + image | 无换行/字号（若 image 单选无字号）；仅两边共有项（通常几乎无）→ 空态说明 |
+| I4 | 两 box | 边框 + 填充 + 字号等按 box 单选能力 |
+| I5 | 版式两 text | 无模版专属文字色批改（Q9）；其余与版式单选对齐 |
+| I6 | chart + text（模版） | 不出现 chartKind；仅交集外观（若有） |
+
+### M. 混合与写回
+
+| # | 用例 | 期望 |
+|---|------|------|
+| M1 | 两边框不同 → 「混合」→ 点「隐藏」 | 两者 `showBorder=false`；一次用户操作后 undo 可还原（允许 debounce 合并） |
+| M2 | 两填充色不同 → 选新色 | 两者 `bgColor` 统一 |
+| M3 | 两字号不同 → 输入 18 回车 | 两者 `fontSize=18` |
+| M4 | 换行一开一关 → 点「开」 | 两者 `textAutoWrap=true` |
+| M5 | 对齐不一致 → 选居中 | 两者 `alignX`（及若改的 `alignY`）统一 |
+
+### N. 永不批改 / 导航
+
+| # | 用例 | 期望 |
+|---|------|------|
+| N1 | 任意多选 | 无绑定、SQL、签名、表格格、页码模式入口 |
+| N2 | 点摘要列表某项 | `selectOnly` → 完整单选面板，可改绑定等 |
+| N3 | 多选时工具栏删除 / 对齐仍可用 | 与 B1/B2 不回归 |
+
+### E. 端到端（保留并细化）
+
+| # | 用例 | 期望 |
+|---|------|------|
+| E1 | 两同类型 text 多选 → 改 `showBorder` | 两者同变；可 undo |
+| E2 | text + table | 无表格格编辑；边框项隐藏 |
+| E3 | 颜色不同 → 「混合」→ 选新色 | 统一 |
+| E4 | 绑定类入口不可用 | 同 N1 |
+| E5 | 摘要切单选 → 完整属性面板 | 同 N2 |
+| E6 | 版式路径同 E1/E3 | 行为一致（受 Q9 文字色约束） |
+
+### R. 回归
+
+| # | 说明 |
+|---|------|
+| R1 | B1 多选/框选/组拖/剪贴板 |
+| R2 | B2 对齐/分布/Shift |
+| R3 | 单选属性面板字段与写回不变 |
+
+## 验收（B3 · 开工后勾选）
+
+- [ ] 交集字段显示正确（I1–I6）  
+- [ ] 「混合」与写回正确（M1–M5）  
+- [ ] 无绑定/表格/签名批改入口（N1）；摘要可切单选（N2）  
+- [ ] 模版与版式一致（E6）；B1/B2 回归（R）  
+
+---
+
+## 测试（既有 · B1/B2）
 
 ### A. 纯函数 ✅
 
-A1–A4 + marquee apply（`selection-set.test.ts`）；多元素剪贴板（`editor-element-clipboard.test.ts`）；对齐/分布（`selection-align.test.ts`）
-
-### E. 属性批改（B3 · 后置）
-
-| # | 用例 |
-|---|------|
-| E1 | 两同类型 text 多选 → 共有色/边框；改 `showBorder` → 两者同变、一次 undo |
-| E2 | text + table 多选 → 无表格格编辑；边框按冲突规则 |
-| E3 | 颜色不同 → 「混合」；选新色后统一 |
-| E4 | 绑定类入口不可用 |
-| E5 | 摘要切单选 → 完整属性面板 |
-| E6 | 版式路径同 E1/E3 |
+A1–A4 + marquee（`selection-set.test.ts`）；多元素剪贴板（`editor-element-clipboard.test.ts`）；对齐/分布（`selection-align.test.ts`）；B3 另增 `selection-batch-props.test.ts`
 
 ## 验收（B1）
 
@@ -184,6 +309,6 @@ A1–A4 + marquee apply（`selection-set.test.ts`）；多元素剪贴板（`edi
 ## 本轮范围
 
 - ✅ B1 实现与发版  
-- ✅ **B2 产品约定（按默认拍板）+ 测试用例**  
-- ✅ B2 实现与发版（**0.3.75**）  
-- ⌛️ B3（后置）  
+- ✅ B2 约定 + 实现（**0.3.75**）  
+- ✅ **B3 产品约定细化**（本文件；待拍板）  
+- ⌛️ B3 实现与发版（建议 **0.3.76**）  
