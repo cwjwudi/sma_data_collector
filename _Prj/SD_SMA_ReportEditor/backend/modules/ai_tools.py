@@ -857,7 +857,10 @@ async def execute_tool(name: str, arguments: dict[str, Any] | None, *, page_cont
         result = ai_config_ops.request_config_backup_export()
     elif name == "request_config_import_merge":
         bundle = args.get("bundle")
-        result = ai_config_ops.request_config_import_merge(bundle if isinstance(bundle, dict) else {})
+        if not isinstance(bundle, dict):
+            result = {"ok": False, "error": "导入内容须为 JSON 对象"}
+        else:
+            result = ai_config_ops.request_config_import_merge(bundle)
     elif name == "request_config_reset":
         result = ai_config_ops.request_config_reset()
     elif name == "get_export_dir_prefs":

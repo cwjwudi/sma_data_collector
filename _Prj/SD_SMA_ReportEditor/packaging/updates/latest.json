@@ -1,15 +1,15 @@
 {
-  "version": "0.3.82",
-  "releasedAt": "2026-07-13T17:08:07.936Z",
-  "notes": "AI 能力矩阵 D：加密备份 pending 另存，密文不进 LLM",
+  "version": "0.3.83",
+  "releasedAt": "2026-07-13T17:12:37.721Z",
+  "notes": "AI 能力矩阵 E：恢复/复位确认流与 ui_reload",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.82-x64.exe",
+      "url": "Report Editor AI-Setup-0.3.83-x64.exe",
       "sha256": "",
       "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.82-arm64.dmg",
+      "url": "Report Editor AI-0.3.83-arm64.dmg",
       "sha256": "",
       "size": 0
     }

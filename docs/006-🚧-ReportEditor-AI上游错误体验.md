@@ -1,9 +1,40 @@
 # ReportEditor AI 助手：上游错误与写入类能力闭环
 
 > 本文件为 **任务看板**；规则见 [CLAUDE.md](../CLAUDE.md)。  
-> 版本计划：探活 [0.3.60](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.60.md)；上游错误体验 [0.3.62](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.62.md)；Agent 工具轨迹 [0.3.66](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.66.md)；轨迹假失败 [0.3.71](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.71.md)；排队收纳 [0.3.77](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.77.md)；流式先工具 [0.3.78](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.78.md)；多轮简洁 [0.3.79](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.79.md)；复制模版/版式 [0.3.80](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.80.md)；删除模版/版式 [0.3.81](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.81.md)；加密备份 [0.3.82](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.82.md)。  
+> 版本计划：探活 [0.3.60](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.60.md)；上游错误体验 [0.3.62](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.62.md)；Agent 工具轨迹 [0.3.66](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.66.md)；轨迹假失败 [0.3.71](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.71.md)；排队收纳 [0.3.77](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.77.md)；流式先工具 [0.3.78](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.78.md)；多轮简洁 [0.3.79](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.79.md)；复制模版/版式 [0.3.80](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.80.md)；删除模版/版式 [0.3.81](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.81.md)；加密备份 [0.3.82](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.82.md)；恢复/复位 [0.3.83](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.83.md)。  
 > **范围说明**：不只「开启定时探活」；在开启「允许 AI 写入工具」后，数据源、模版/版式资产、备份恢复、结批导出、演示冒烟、诊断取证等能力域均须**真正执行并反映到 UI**（禁止空口答应）。完整域表见下方能力矩阵 H1（仍 ⌛️）。  
 > **Agent 体验**：对话须可见工具调用与状态；口头结论必须与工具结果一致——轨迹 H1 已于 **0.3.66** 落地（探活强制再调）。
+
+---
+
+# ✅ 已完成：恢复 / 复位确认流（能力矩阵 E · → 0.3.83）
+
+## 产品诉求
+
+「导入配置 / 快速复位」须走确认流：确认后 merge 或清空生效并 UI reload；取消则不变；工具结果不回传导入密文；总闸关拒绝。
+
+## 本版加固（0.3.83）
+
+1. `apply_reset` / `apply_import_merge` 成功后 `mark_ui_reload(assets+datasource)`  
+2. `execute_tool`：非 dict `bundle` 直接拒绝（不再静默变 `{}`）  
+3. `test_ai_config_restore.py`：pending / 取消 / 确认 / 密文不进公开结果 / 总闸  
+4. `SYSTEM_PROMPT`：点名工具；`awaiting_user_confirm` 禁「已导入/已复位」
+
+## 逐步测试用例
+
+| # | 步骤 | 期望 |
+|---|------|------|
+| E1 | `request_config_reset` | awaiting；配置与模版仍在 |
+| E2 | 取消复位 | 状态不变 |
+| E3 | 确认复位 | 连接/模版清空 + `ui_reload` |
+| E4 | `request_config_import_merge` | awaiting；公开结果无明文口令 |
+| E5 | 取消导入 | 配置不变 |
+| E6 | 确认导入 | merge 生效 + `ui_reload` |
+| E7 | 非对象 bundle / 总闸关 | `ok=false` |
+
+```bash
+cd _Prj/SD_SMA_ReportEditor/backend && uv run pytest modules/test_ai_config_restore.py -q
+```
 
 ---
 
@@ -416,7 +447,7 @@ cd ../frontend && npm test -- --run src/lib/client-prefs-mirror.test.ts
 | B | 复制模版 / 版式 | copy_* 成功 → 列表出现副本（✅ 0.3.80） |
 | C | 删除模版 / 版式 | 确认后消失；取消则仍在（✅ 0.3.81） |
 | D | 备份 | 另存 `.rebak`；聊天无口令/密文（✅ 0.3.82） |
-| E | 恢复 / 复位 | 确认流 → merge/复位生效 + UI reload |
+| E | 恢复 / 复位 | 确认流 → merge/复位生效 + UI reload（✅ 0.3.83） |
 | F | 总闸关闭 | 任一 write/confirm 意图 → 明确提示，**状态不变** |
 | G | 新建空白 / 冒烟模版 / 演示库 | 资产或库出现 + reload |
 | H | 打开模版/版式 | 确认后进入对应编辑器 |

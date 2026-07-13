@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from core.settings import CONFIG_FILE, DATA_DIR, DEFAULT_CONFIG, LAYOUT_PRESETS_DIR, QUERY_SESSION_FILE, SIGNATURE_ASSETS_DIR, TEMPLATES_DIR
-from modules import ai_pending_prompts, audit_log, config_bundle as cbundle, config_import_export as cie, config_store
+from modules import ai_asset_ops, ai_pending_prompts, audit_log, config_bundle as cbundle, config_import_export as cie, config_store
 
 _CLIENT_PREFS_MIRROR = DATA_DIR / "client_prefs_mirror.json"
 
@@ -112,6 +112,7 @@ def apply_reset(prompt_id: str) -> dict[str, Any]:
         pass
     audit_log.append_audit(DATA_DIR, action="config.reset", result="ok", summary="AI pending 快速复位")
     ai_pending_prompts.complete_prompt(prompt_id, result={"ok": True, "removed": removed})
+    ai_asset_ops.mark_ui_reload(assets=True, datasource=True, reason="config_reset")
     return {"ok": True, "removed": removed}
 
 
@@ -132,6 +133,7 @@ def apply_import_merge(prompt_id: str, item: dict[str, Any]) -> dict[str, Any]:
             warnings = cie.format_import_warnings(raw_warn)
         _save_cfg(merged)
         ai_pending_prompts.complete_prompt(prompt_id, result={"ok": True, "warnings": warnings})
+        ai_asset_ops.mark_ui_reload(assets=True, datasource=True, reason="config_import_merge")
         return {"ok": True, "warnings": warnings}
     except Exception as e:
         return {"ok": False, "error": str(e)}
