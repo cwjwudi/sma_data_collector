@@ -7,6 +7,7 @@
 
 ## 2026-07-13
 
+- **ReportEditor AI Agent 可观测性（仅文档）**：看板 [docs/006-🚧](docs/006-🚧-ReportEditor-AI上游错误体验.md) 新增 H1——说开探活必须真开否则重试/如实失败；对话框须展示工具调用与状态。
 - **ReportEditor 数据源锁定表单按钮被顶出（仅文档）**：新建 [docs/008-⌛️](docs/008-⌛️-ReportEditor数据源锁定表单按钮被顶出.md)——锁定提示挤占高度，底部删除等按钮移出可视区。
 - **ReportEditor 健康跳转不高亮（仅文档）**：新建 [docs/007-⌛️](docs/007-⌛️-ReportEditor健康跳转不高亮.md)——分析仪表盘告警点击后无控件高亮：连接级 issue 无 `elementId`；版式只链列表；页眉/zone 不在 `sel` 查找范围；并记录生产「库已存在」与 `missing_db` 的 ID 不一致可能。
 - **ReportEditor 0.3.63 已发版**：修复定时探活反复开关不生效（串行落库 / 字符串 false / mirror pending_token）。看板 [docs/006-🚧](docs/006-🚧-ReportEditor-AI上游错误体验.md)。
