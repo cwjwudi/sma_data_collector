@@ -2,7 +2,7 @@
 
 > 本文件为 **任务看板 / 说明**；规则见 [CLAUDE.md](../CLAUDE.md)。  
 > **诉求（2026-07-13）**：① 强制整机只能打开**一个**桌面软件实例；② 弄清用**别的浏览器**访问能否正常操作、有哪些限制。  
-> 相关：[`frontend/electron/main.cjs`](../_Prj/SD_SMA_ReportEditor/frontend/electron/main.cjs)、[`backend/main.py`](../_Prj/SD_SMA_ReportEditor/backend/main.py)、[`backend/run_backend.py`](../_Prj/SD_SMA_ReportEditor/backend/run_backend.py)。
+> 相关：[`frontend/electron/main.cjs`](../_Prj/SD_SMA_ReportEditor/frontend/electron/main.cjs)（含已有 `showMainWindowFromTray` / 静默启动）、[`backend/main.py`](../_Prj/SD_SMA_ReportEditor/backend/main.py)、[`backend/run_backend.py`](../_Prj/SD_SMA_ReportEditor/backend/run_backend.py)。
 
 ---
 
@@ -12,7 +12,7 @@
 
 1. 同一台电脑上，**Report Editor AI 桌面版**同时只允许跑 **1 个进程/主窗口**。  
 2. 用户再次双击图标 / 开第二个实例时：应**聚焦已有窗口**（或托盘恢复），而不是再开一套后端抢 8000 端口。  
-3. 本轮先写看板；实现另开版本切片。
+3. 计划已齐（含实现约定）；实现另开小版本切片（建议 **0.3.74**）。
 
 ## 现状（代码对照）
 
@@ -22,6 +22,7 @@
 | 后端端口 | 固定 **8000**；第二实例再拉后端易失败或行为怪异 |
 | 绑定地址 | `BACKEND_BIND_HOST = '0.0.0.0'`（本机 + 局域网网卡都监听） |
 | 网页版静态资源 | 安装包/有 `web` dist 时，后端挂载前端；浏览器可打开同端口 |
+| 静默启动 / 托盘 | 已有：`silentStartSession`、`ensureAppTray`、`showMainWindowFromTray()` |
 
 结论：桌面端**目前不强制单开**；第二实例风险主要在端口与数据目录并发。
 
@@ -29,19 +30,33 @@
 
 | 项 | 约定 |
 |----|------|
-| API | Electron `app.requestSingleInstanceLock()`；未拿到锁 → `app.quit()` |
-| 第二实例 | `second-instance` → 显示并 `focus` 已有 `mainWindow`（若最小化则还原） |
+| API | Electron `app.requestSingleInstanceLock()`；未拿到锁 → **立刻** `app.quit()` |
+| 时机 | 锁须在 `app.whenReady` **之前**申请（Electron 惯例） |
+| 未拿到锁时 | **禁止**继续往下：不注册业务 IPC、不 `startPythonBackend`、不 `createWindow` |
+| 第二实例 | `second-instance` → 走与托盘相同的 **`showMainWindowFromTray()`**（还原最小化 / `show` / `focus` / macOS 必要时 `dock.show()`），**不要**只 `focus()`（静默会话主窗可能是 hide） |
+| 启动竞态 | 第一实例已拿到锁、但尚未 `createWindow` 时收到 `second-instance`：设 `pendingFocus = true`，在 `createWindow` 之后再调 `showMainWindowFromTray()` |
+| `commandLine` | 本应用**无**自定义协议/深链；第二实例传入的 argv **忽略**即可（含 `--silent-start`） |
 | 范围 | **仅约束 Electron 桌面进程**；不禁止本机浏览器打开网页版（见下） |
-| 平台 | Windows / macOS 均做 |
+| 平台 | Windows / macOS 均做；开发模式 `electron:dev` **同样单实例** |
 | 验收 | 连开两次安装版 → 只有一个窗口；第二次把第一个拉到前台 |
+| 单测 | **本切片不做自动化单测**（Electron 进程锁难在 CI 复现）；仅手工 M1–M6 |
 
-### 可选（开工前确认）
+### 已拍板
 
-| # | 问题 | 默认 |
+| # | 问题 | 结论 |
 |---|------|------|
-| Q1 | 第二实例行为 | **聚焦已有窗口**（不弹「已在运行」对话框，除非产品要） |
-| Q2 | 是否禁止本机浏览器同时开网页版 | **否**（网页版与桌面共用后端；见边界说明）。若要「整机唯一 UI」需另做会话锁 |
+| Q1 | 第二实例行为 | **聚焦/恢复已有窗口**（不弹「已在运行」对话框） |
+| Q2 | 是否禁止本机浏览器同时开网页版 | **否**（网页版与桌面共用后端；见边界说明） |
 | Q3 | 开发模式 `electron:dev` | **同样单实例**（避免双后端） |
+| Q4 | 是否改默认只绑 127.0.0.1 | **否**（保持 0.0.0.0；现场用防火墙） |
+| Q5 | 与 013 审计谁先 | **013 已发（0.3.73）**；本切片可直接实现 |
+
+### 明确不做（本切片）
+
+- 桌面 ↔ 浏览器互斥会话  
+- 改默认绑定为仅 loopback  
+- 自定义协议唤起 / 深链转发  
+- 自动化单测  
 
 ---
 
@@ -98,33 +113,40 @@
 
 ## 拟改落点（单实例）
 
-1. `frontend/electron/main.cjs`：启动早期 `requestSingleInstanceLock`；`second-instance` focus。  
-2. 注意：锁须在 `app.whenReady` **之前**申请（Electron 惯例）。  
-3. 单测/手工：连点两次安装包或 `electron .`。  
-4. 发版说明：写入 `007`「整机单开桌面端」。
+1. `frontend/electron/main.cjs`：文件顶部（`app.whenReady` 之前）`requestSingleInstanceLock`。  
+2. 未拿到锁 → 立即 `app.quit()`；**不要**进入后端拉起与建窗逻辑。  
+3. 拿到锁后注册 `second-instance`：调用 **`showMainWindowFromTray()`**（复用现有托盘恢复路径）；处理 `pendingFocus` 竞态。  
+4. 手工验收 M1–M6；发版说明写入 `007`「整机单开桌面端」。
 
-## 测试用例（单实例 · 草案）
+## 测试用例（单实例 · 手工）
 
 | # | 用例 | 期望 |
 |---|------|------|
-| M1 | 已运行时再开安装版 | 不出现第二主窗；原窗置前 |
+| M1 | 已运行时再开安装版 | 不出现第二主窗；原窗置前；**不**起第二套后端 |
 | M2 | 原窗最小化再开 | 还原并聚焦 |
-| M3 | 托盘驻留（若启用）再开 | 聚焦/恢复，不双后端 |
+| M3 | **静默启动 / 托盘驻留**后再双击图标 | 拉出主界面（非只 focus 隐形窗）；不双后端 |
 | M4 | 本机浏览器打开 :8000 | 仍可进 UI（默认不禁） |
 | M5 | 局域网浏览器 AI 聊天 | 403 或不可用；业务页视防火墙 |
+| M6 | 开发态 `electron:dev` 再开一次 | 第二进程退出；第一窗置前（与安装版同行为） |
 
 ## 本轮范围
 
 - ✅ 记录「整机单实例」诉求与现状（无锁）  
-- ✅ **说明浏览器访问能力与限制**（答你的第二问）  
+- ✅ **说明浏览器访问能力与限制**  
+- ✅ **实现约定补充**（托盘复用、锁前 quit、pendingFocus、不做项）  
 - ⌛️ 实现 Electron 单实例锁与发版  
 - ⌛️（可选二期）仅本机绑定 / 桌面↔浏览器互斥  
 
-## 开工前可确认
+## 拍板一览
 
-| # | 问题 | 默认 |
-|---|------|------|
-| Q1 | 第二实例 | **聚焦已有窗口** |
-| Q2 | 是否同时禁浏览器 UI | **否** |
-| Q3 | 是否改默认只绑 127.0.0.1 | **否**（保持 0.0.0.0；现场用防火墙） |
-| Q4 | 与 013 审计谁先做 | 可并行；单实例改动面更小，可插队小版 |
+| # | 结论 |
+|---|------|
+| Q1 | 第二实例 → 聚焦/恢复，不弹框 |
+| Q2 | 不禁浏览器 UI |
+| Q3 | 开发态同样单实例 |
+| Q4 | 不改默认 `0.0.0.0` |
+| Q5 | 013 已发；本切片可直接开工 |
+| G1 | 第二实例恢复走 `showMainWindowFromTray()` |
+| G2 | 未拿到锁绝不拉后端/建窗 |
+| G3 | `createWindow` 前竞态用 `pendingFocus` |
+| G4 | 无深链；argv 忽略；无自动化单测 |

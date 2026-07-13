@@ -7,6 +7,7 @@
 
 ## 2026-07-13
 
+- **ReportEditor 整机单实例（计划补充）**：[docs/015-⌛️](docs/015-⌛️-ReportEditor整机单实例与浏览器访问.md) 复用托盘恢复、锁前 quit、pendingFocus 竞态、明确不做项与 M6。
 - **ReportEditor 0.3.73 已发版**：模版/版式保存审计（变更明细、15 分钟合并、中文展示）；看板 [docs/013-✅](docs/013-✅-ReportEditor模版版式编辑审计.md)。
 - **ReportEditor 整机单实例 + 浏览器访问（仅计划）**：新建 [docs/015-⌛️](docs/015-⌛️-ReportEditor整机单实例与浏览器访问.md)——强制一个 Electron；说明本机/局域网浏览器能力与 AI 本机限制。
 - **ReportEditor 模版/版式审计（计划补充）**：[docs/013-✅](docs/013-✅-ReportEditor模版版式编辑审计.md) 无变更不记；旧类型全中文；字段中文名表 + 表格 SQL 截断；变更明细与 15 分钟合并。
