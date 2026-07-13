@@ -1,7 +1,7 @@
 # ReportEditor 数据源滑动解锁 UI 与限时自动上锁
 
 > 本文件为 **任务看板**；规则见 [CLAUDE.md](../CLAUDE.md)。  
-> **状态**：需求已拍板，**可开工**；尚未实现。  
+> **状态**：需求与视觉（D3）已拍板，**可开工**；尚未实现。  
 > 相关实现面：[`DatasourceLockToggle.vue`](../_Prj/SD_SMA_ReportEditor/frontend/src/features/datasource/DatasourceLockToggle.vue)、[`datasource-lock-geometry.ts`](../_Prj/SD_SMA_ReportEditor/frontend/src/features/datasource/datasource-lock-geometry.ts)、数据源页 [`DataSourceConfig.vue`](../_Prj/SD_SMA_ReportEditor/frontend/src/views/DataSourceConfig.vue)。  
 > 相近历史：[docs/008-✅-ReportEditor数据源锁定表单按钮被顶出.md](008-✅-ReportEditor数据源锁定表单按钮被顶出.md)、[docs/004-✅-ReportEditor数据源UI修复.md](004-✅-ReportEditor数据源UI修复.md)。  
 > UI 协作约定：[.cursor/skills/ui-ux-pro-max-report-editor](../.cursor/skills/ui-ux-pro-max-report-editor/SKILL.md)。  
@@ -37,56 +37,27 @@
 | B5 | 倒计时为**应用级**窗口：切离数据源页仍继续计时/回退；到期上锁后 AI 写工具重新被拒——刻意留给 AI 在 60s 内调工具 |
 | B6 | AI pending「确认解锁」与手动滑解锁**同一限时窗口**（60s 回退 + 秒数） |
 
-## 视觉方案选型（Q7 · 待选）
+## 视觉方案选型（Q7 · 已选 D3）
 
 > 示意稿仅表达风格方向，非最终像素稿。本地图：`docs/assets/017-style-*.png`。
 
-### 方案 A · 经典 iOS 滑轨
+### ✅ 采用：D3 · 克制光扫（Indigo 灰 + 细白光带）
 
-![方案 A](assets/017-style-A-ios-classic.png)
+![方案 D3](assets/017-style-D3-subtle-sheen.png)
 
-- **特征**：浅灰胶囊轨、白圆形滑块、轨内「滑动解锁」+ 光泽扫过（经典 Slide to Unlock）
-- **气质**：大众熟悉、轻量
-- **参考**：早期 iPhone Slide to Unlock
-- **顾虑**：偏消费级；与工控数据源页略「软」
+- **色板**：背景 `#f5f6fa`、灰轨、主色 Indigo `#4f46e5`（对齐数据源 `.btn.primary`）
+- **结构**：锁定态滑块在右；解锁后滑块回退 + 「剩余 Ns」
+- **光效**：填充区**克制**细白光带扫过（非重铬/液态金属）
+- **备选曾否决**：D′ 重金属（不好看）、D4 枪灰、D5 苹果大胶囊；A/B/C/D 琥珀见历史示意
 
-### 方案 B · 工控确认滑条
+### 历史示意（归档，不采用）
 
-![方案 B](assets/017-style-B-industrial.png)
-
-- **特征**：深色粗轨、方角滑块 + 双箭头、青绿进度填充、「滑到右侧解锁」
-- **气质**：HMI / 确认动作感强，误触成本感更高
-- **参考**：Android Slide-to-Confirm、工控操作台确认条
-- **顾虑**：对比更强，浅色应用顶栏里可能偏「重」
-
-### 方案 C · 企业浅色滑条
-
-![方案 C](assets/017-style-C-enterprise.png)
-
-- **特征**：浅灰蓝细轨、蓝系圆滑块、弱阴影；旁侧「剩余 Ns」
-- **气质**：贴近后台/SaaS 设置页，易融入现有浅色 ReportEditor
-- **参考**：Ant Design / Element 类管理台控件密度
-- **顾虑**：辨识度弱于 B/D，「锁」的安全感略弱
-
-### 方案 D · 琥珀安防 + 回退倒计时（结构保留，配色已弃用）
-
-![方案 D 原琥珀稿](assets/017-style-D-amber-countdown.png)
-
-- **特征**：锁定琥珀轨；解锁绿系回退 + 秒数（初稿）
-- **结论**：结构可用，**琥珀/亮绿与整体 UI 不协调** → 见下方 **D′**
-
-### 方案 D′ · Indigo 灰体系 + 上色区流动金属光效（修订稿）
-
-![方案 D′](assets/017-style-D2-metal-sheen.png)
-
-- **色板对齐本产品**：背景 `#f5f6fa`、边框 `#d1d5db`、主色 **Indigo `#4f46e5`**（与数据源 `.btn.primary` 一致），正文 `#1a1a2e`
-- **结构仍为 D**：锁定态滑块在右；解锁后滑块回退 + 「剩余 Ns」
-- **金属光效**：仅在**已上色填充段**做斜向高光扫过（拉丝/液态金属感），灰轨与滑块本体保持扁平，避免整控件发油
-- **实现提示**：CSS `linear-gradient` + `background-position` 循环动画（或等效），非贴图视频
-
-另有一版无金属、仅协调色的底稿：`docs/assets/017-style-D2-harmonized.png`（对照用）。
-
-**请确认**：是否采用 **D′（Indigo + 填充区流动金属光）**？可回「确认 D′」或继续改（例如金属更亮/更弱、锁定态也要金属等）。
+| 代号 | 文件 | 说明 |
+|------|------|------|
+| A–C | `017-style-A/B/C-*.png` | 初筛风格 |
+| D | `017-style-D-amber-countdown.png` | 琥珀结构稿，配色弃用 |
+| D′ | `017-style-D2-metal-sheen.png` | 重金属，已否 |
+| D4/D5 | `017-style-D4/D5-*.png` | 备选未选 |
 
 ---
 
@@ -103,22 +74,21 @@
 | **Q4** | **A** — 切页**后台继续计时**；给 AI 留写工具窗口 |
 | **Q5** | **A** — 仅滑到底即解锁，无二次确认 |
 | **Q6** | **是** — AI pending 确认解锁后同样走 60s 回退倒计时 |
+| **Q7** | **D3** — Indigo 灰体系 + 填充区**克制细白光扫**（示意 `017-style-D3-subtle-sheen.png`） |
 
 ## 待拍板
 
-| # | 问题 |
-|---|------|
-| **Q7** | 视觉方案：A / B / C / D（或组合）——见上方示意稿 |
+无（Q1–Q7 已全部确认）。
 
 ## 拟改（开工后）
 
-1. 重做 `DatasourceLockToggle` 为成熟滑动解锁交互与视觉。  
+1. 重做 `DatasourceLockToggle`：视觉对齐 **D3**（Indigo 填充 + 克制光扫）。  
 2. 解锁成功（手动滑到底 / AI pending 确认）：写 `datasource_locked=false`；滑块停在解锁端；开始 60s 匀速回退 + 「剩余 Ns」。  
 3. 应用级计时：切离数据源页不暂停、不立刻上锁。  
 4. 回退至锁定端 / 到期 / 主动拖回锁定：写 `datasource_locked=true`，清定时器，派发锁变更事件。  
 5. 倒计时中再次滑到底：滑块弹回解锁端，计时与动画重置为 60s。  
 6. 单测：几何/阈值、回退与剩余时间一致、重置 60s、切页续计、AI 解锁同源。  
-7. 手工：拖滑手感；回退可见；到期后门禁恢复。
+7. 手工：拖滑手感；光扫与回退可见；到期后门禁恢复。
 
 ## 验收（实现后勾）
 
