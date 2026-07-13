@@ -29,19 +29,30 @@
 
 **新建**到画布上的控件，属性「边框」默认应为 **隐藏**（`showBorder: false`），预览与 PDF 默认不画浅灰外框；用户仍可手动改为「显示」。
 
+## 强制同步：模版 + 版式（不可只改一侧）
+
+模版正文与版式（页眉/页脚/封面封尾区等）各有一套模型与属性面板，**两边都必须改**，否则会出现「模版新建无边、版式新建仍有边」或反过来。
+
+| 侧 | 新建默认 | 属性面板 | 画布/预览渲染（核对） |
+|----|----------|----------|----------------------|
+| **模版** | `model.ts` → `defaultElement` / `makeElement` | `TemplateElementProps.vue` | `TemplateBodyCanvas`、`TemplateMiniPage` 等 |
+| **版式** | `layout-zone-element.ts` 默认区 / 新建 zone | `LayoutPresetElementProps.vue` | `LayoutPresetPaperCanvas`、`LayoutPresetMiniPage` 等 |
+
+实现与验收均以「两侧行为一致」为通过条件；单测至少各覆盖一侧新建默认 + 一侧旧稿缺字段兼容。
+
 ## 现状（代码）
 
 | 位置 | 行为 |
 |------|------|
-| `model.ts` → `defaultElement()` | `showBorder: true`（新建默认**显示**） |
-| `layout-zone-element.ts` 默认区 | 同样默认 `true` |
-| `normalizeShowBorder` | 缺省字段走 fallback；注释写明「缺省 true 兼容旧模版」 |
-| `TemplateElementProps.vue` / `LayoutPresetElementProps.vue` | `el.type !== 'table'` 时展示「边框」分段 |
+| 模版 `model.ts` → `defaultElement()` | `showBorder: true`（新建默认**显示**） |
+| 版式 `layout-zone-element.ts` 默认区 | 同样默认 `true`（**必须与模版一并改掉**） |
+| `normalizeShowBorder`（共用） | 缺省字段走 fallback；注释写明「缺省 true 兼容旧模版」；模版/版式加载都应遵守同一兼容规则 |
+| `TemplateElementProps.vue` / `LayoutPresetElementProps.vue` | `el.type !== 'table'` 时展示「边框」分段（两侧 UI 已对齐，改的是默认值不是面板） |
 | 渲染 | `TemplateBodyCanvas` / `TemplateMiniPage` / `LayoutPresetPaperCanvas` 等：`showBorder === false` → `border: none`，否则浅灰外框 |
 
-## 要改默认的控件类型
+## 要改默认的控件类型（模版与版式同类均适用）
 
-属性面板对 **表格以外** 的控件提供「边框」开关，故默认改为隐藏应覆盖这些类型的**新建**路径：
+属性面板对 **表格以外** 的控件提供「边框」开关；下列类型在**模版新建**与**版式新建**两条路径上，默认都改为隐藏：
 
 | 类型 | 说明 |
 |------|------|
@@ -52,49 +63,49 @@
 | `parameter` | 数据参数 |
 | `chart` | 图表 |
 | `signature` | 签名 |
-| 版式区同类 zone | 页眉/页脚等版式元素（与模版字段对齐） |
 
 | 类型 | 本条是否改默认 |
 |------|----------------|
-| `table` | **不改属性默认 UI**（面板本身不展示该分段）；若表格外框另有逻辑，实现时核对是否仍走 `showBorder`，避免误伤表格网格线 |
+| `table` | **不改属性默认 UI**（面板本身不展示该分段）；若表格外框另有逻辑，模版/版式实现时一并核对，避免误伤表格网格线 |
 
 ## 兼容策略（实现必须遵守）
 
-旧模版/版式 JSON **往往未写** `showBorder` 字段。若简单把 `defaultElement` 改成 `false`，且加载时用新默认作 missing fallback，会导致**旧稿预览/PDF 突然全部无外框**。
+旧**模版与版式** JSON **往往未写** `showBorder` 字段。若简单把新建默认改成 `false`，且加载时用新默认作 missing fallback，会导致**旧稿预览/PDF 突然全部无外框**。
 
 | 场景 | 期望 |
 |------|------|
-| **新建**控件（拖入/插入） | `showBorder: false`（属性面板默认停在「隐藏」） |
-| **打开旧文件**且 JSON **无** `showBorder` | 仍视为 **显示**（`true`），保持历史外观 |
+| **新建**控件（模版或版式画布拖入/插入） | `showBorder: false`（属性面板默认停在「隐藏」） |
+| **打开旧文件**且 JSON **无** `showBorder`（模版或版式） | 仍视为 **显示**（`true`），保持历史外观 |
 | 旧/新文件已显式写 `true`/`false` | 尊重文件值 |
 
-实现要点：加载路径对「字段缺失」固定兼容为 `true`；仅 `defaultElement` / `makeElement` / 版式新建默认改为 `false`。
+实现要点：加载路径对「字段缺失」固定兼容为 `true`；仅模版 `defaultElement`/`makeElement` **与** 版式新建默认改为 `false`。
 
 ## 明确不改
 
 - 编辑选中描边、缩放手柄、表格单元格网格线  
 - 设置页 / 数据源 / AI 抽屉等 **应用 UI 表单边框**（另需求另开看板）  
-- 已保存模版里用户设过的「显示/隐藏」
+- 已保存模版/版式里用户设过的「显示/隐藏」
 
 ## 拟改步骤（确认后开工）
 
-1. `defaultElement` / 版式默认：`showBorder: false`。  
-2. `normalizeShowBorder`（或加载调用处）：`undefined`/缺失 → **`true`**（旧稿兼容），勿把新默认当 missing fallback。  
-3. 单测：新建元素默认 `false`；`{ type, … }` 无 `showBorder` 字段解析为 `true`；显式 `false` 保持。  
-4. 目视：新建图片 → 属性「隐藏」选中；预览无外框；打开旧模版外观不变。  
+1. 模版 `defaultElement` **与** 版式默认：同时改为 `showBorder: false`。  
+2. `normalizeShowBorder`（或模版/版式加载调用处）：`undefined`/缺失 → **`true`**（旧稿兼容），勿把新默认当 missing fallback。  
+3. 单测：模版新建默认 `false`；版式新建默认 `false`；两侧 JSON 无 `showBorder` 解析为 `true`；显式 `false` 保持。  
+4. 目视：模版新建图片、版式新建图片 → 属性均为「隐藏」；打开旧模版/旧版式外观不变。  
 5. bump **0.3.61**（或并入当时发版线）。
 
 ## 验收
 
-1. 新建模版拖入图片/文本等（非表）：属性「边框」默认 **隐藏**；预览/导出无控件浅灰外框。  
-2. 改为「显示」后预览出现外框；再改回「隐藏」消失。  
-3. 编辑选中描边始终可用。  
-4. 打开未含 `showBorder` 的旧模版：外框行为与改前一致（仍显示）。  
-5. 相关单测绿。
+1. **模版**：拖入图片/文本等（非表）→「边框」默认隐藏；预览/导出无浅灰外框。  
+2. **版式**：同上（页眉/页脚等区新建同类控件）→ 默认隐藏，行为与模版一致。  
+3. 改为「显示」后预览出现外框；再改回「隐藏」消失（两侧各抽查一次）。  
+4. 编辑选中描边始终可用。  
+5. 打开未含 `showBorder` 的旧模版 **与** 旧版式：外框行为与改前一致（仍显示）。  
+6. 相关单测绿（含模版 + 版式）。
 
 ## 待拍板
 
-- [ ] 表格控件是否完全不碰（文档默认：**不碰**面板；实现时仅核对渲染是否共用字段）。  
+- [ ] 表格控件是否完全不碰（文档默认：**不碰**面板；实现时模版/版式仅核对渲染是否共用字段）。  
 - [ ] 是否需要「一键把当前页所有控件边框隐藏」类批量操作（**文档默认：不做**，本条只改新建默认）。
 
 ---
