@@ -7,6 +7,7 @@
 
 ## 2026-07-13
 
+- **ReportEditor 历史报表子文件夹穿透（仅计划）**：新建 [docs/010-⌛️](docs/010-⌛️-ReportEditor历史报表子文件夹穿透.md)——单层进入显示文件夹、禁止平铺；IPC 分页 + UI 翻页防卡顿；开工前默认项可改。
 - **ReportEditor 0.3.66 已发版**：AI 工具轨迹可见；探活口头结论与工具不符时强制再调；看板 [docs/006-🚧](docs/006-🚧-ReportEditor-AI上游错误体验.md)（轨迹 H1 ✅，能力矩阵仍 ⌛️）。
 - **ReportEditor 表格导出橙边框（仅文档）**：新建 [docs/009-⌛️](docs/009-⌛️-ReportEditor表格导出橙边框.md)——排查 PDF 上/左/右暖色线：最可疑为 `MiniPreviewChrome` 封面琥珀渐变/橙顶边未被 print 剥离；次要为灰格线裁切缺底边。
 - **ReportEditor 0.3.65 已发版**：健康告警跳转高亮（含页眉/区）、连接级明示、版式进编辑器；看板 [docs/007-✅](docs/007-✅-ReportEditor健康跳转不高亮.md)。
