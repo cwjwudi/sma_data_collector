@@ -7,7 +7,8 @@
 
 ## 2026-07-13
 
-- **ReportEditor AI 开启定时探活（0.3.60 · 文档+测试）**：看板 [docs/006-⌛️-ReportEditor-AI上游错误体验.md](docs/006-⌛️-ReportEditor-AI上游错误体验.md) 探活 H1→🚧；计划 [`009_版本Plan/0.3.60.md`](_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.60.md)。后端 `test_ai_update_probe.py` + 前端 `client-prefs-mirror.test.ts`。控件无边框改挂 [`0.3.61`](_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.61.md) / [docs/005](docs/005-⌛️-ReportEditor控件默认无边框.md)。
+- **ReportEditor AI 写入类能力矩阵（仅文档）**：配置数据源、复制/删除模版、备份/恢复须端到端可用（工具已有；禁空口答应）。看板 [docs/006](docs/006-⌛️-ReportEditor-AI上游错误体验.md) 新增 H1；0.3.60 仍只切定时探活。
+- **ReportEditor AI 开启定时探活（0.3.60 · 文档+测试）**：同看板探活 H1→🚧；计划 [`009_版本Plan/0.3.60.md`](_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.60.md)。后端 `test_ai_update_probe.py` + 前端 `client-prefs-mirror.test.ts`。控件无边框改挂 [`0.3.61`](_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.61.md) / [docs/005](docs/005-⌛️-ReportEditor控件默认无边框.md)。
 - **ReportEditor AI 上游/助手问题（其余仍 ⌛️）**：quota JSON；ChatGPT≠API；硅基残留 gpt-*。同看板 006。
 - **ReportEditor 控件默认无边框（仅文档，待 0.3.61）**：交互控件拟默认无实线边；分区容器默认保留。看板 [docs/005-⌛️-ReportEditor控件默认无边框.md](docs/005-⌛️-ReportEditor控件默认无边框.md)。
 - **ReportEditor 0.3.59 已发版**：空连接新建表单不再被周期刷新清空；vitest **274 passed**。看板 [docs/004-✅-ReportEditor数据源UI修复.md](docs/004-✅-ReportEditor数据源UI修复.md)。

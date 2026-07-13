@@ -1,7 +1,88 @@
-# ReportEditor AI 助手上游错误体验
+# ReportEditor AI 助手：上游错误与写入类能力闭环
 
 > 本文件为 **任务看板**；规则见 [CLAUDE.md](../CLAUDE.md)。  
-> 版本计划（探活生效）：[0.3.60 Plan](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.60.md)。
+> 版本计划（定时探活首切片）：[0.3.60 Plan](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.60.md)。  
+> **范围说明**：不只「开启定时探活」；用户期望在开启「允许 AI 写入工具」后，**配置数据源、复制/删除模版、备份/恢复**等写入/确认类能力也能**真正执行并反映到 UI**（禁止空口答应）。
+
+---
+
+# ⌛️ 未完成：AI 写入类能力须端到端可用（数据源 / 模版 / 备份恢复）
+
+## 产品诉求（2026-07-13）
+
+现场已确认写入总闸开启，仍要求助手能**实际做事**，而不只是聊天答应。覆盖至少：
+
+| 能力域 | 用户说法示例 | 期望结果 |
+|--------|--------------|----------|
+| 定时探活 | 「开启定时探活」 | 偏好落库 + 设置开关变开（见下方 🚧 H1 / 0.3.60） |
+| 配置数据源 | 「加一个 MySQL / 改 OPC 地址」 | 连接写入；密码走本机弹框；列表刷新 |
+| 复制 / 删除模版 | 「复制这份模版」「删掉某某模版」 | 资产落盘；删除需 UI 确认；列表刷新 |
+| 备份 / 恢复 | 「导出备份」「导入这份配置」 | 本机另存 `.rebak` / 选文件 merge；**密文不进 LLM** |
+
+## 代码侧已有工具（对照 `ai_tool_catalog`）
+
+工具已注册；问题多在 **模型不调工具 / 总闸 / 数据源锁 / pending 弹框未完成 / UI 未 reload**，而非「没有 API」。
+
+### 数据源配置
+
+| 工具 | 风险 | 说明 |
+|------|------|------|
+| `upsert_db_connection` | write | 新建/更新 DB（无密码字段；密码另走弹框） |
+| `upsert_opc_server` | write | 新建/更新 OPC |
+| `request_connection_credentials` | write | 唤起密码填写弹框 |
+| `delete_db_connection` / `delete_opc_server` | confirm | 需 UI 确认后删除 |
+| `list_*` / `get_*` / `probe_connection` / `get_datasource_inventory` | read | 只读探查，配置前应先读 |
+| `update_connection_probe_settings` | write | 定时探活（0.3.60 专项） |
+
+门槛：写入总闸；**数据源锁定**时 upsert/delete/凭证会拒绝并弹出解锁确认。
+
+### 模版复制 / 删除
+
+| 工具 | 风险 | 说明 |
+|------|------|------|
+| `copy_template` | write | 深拷贝；`mark_ui_reload(assets=True)` |
+| `delete_template` | confirm | 创建 pending 确认；用户确认后删并 reload |
+| `create_blank_template` / `copy_layout_preset` / `delete_layout_preset` 等 | write/confirm | 同属资产类，一并纳入「能真做事」验收 |
+
+门槛：写入总闸；删除必须等 `AiPendingPromptDialog` 确认。
+
+### 备份 / 恢复
+
+| 工具 | 风险 | 说明 |
+|------|------|------|
+| `request_config_backup_export` | confirm | 唤起 UI 另存加密 `.rebak`；备份内容与口令**不得**回传 LLM |
+| `request_config_import_merge` | confirm | 需 UI 确认后 merge 导入 |
+| `request_config_reset` | confirm | 快速复位（高危，须确认） |
+| `export_config_share_summary` | read | 脱敏摘要，非完整备份 |
+
+门槛：写入总闸；本机 Electron 弹框完成选路径/确认；助手只能排队请求，不能声称「已备份到某路径」除非 UI 回执成功。
+
+## 共性失败模式（与探活同类）
+
+1. **空口答应**：未发 `tool_calls`，或只调 `suggest_config_change`（只给建议不落库）。  
+2. **总闸未开 / 工具被禁用**：工具返回错误，模型仍说「好的已完成」。  
+3. **confirm 未走完**：删除、备份、导入停在 pending，用户未点确认 → 状态不变。  
+4. **UI 未刷新**：写库成功但列表/开关不更新（探活已用 mirror；数据源/模版依赖 `ui_reload.assets` / `datasource`，需确认聊天结束必拉 mirror）。  
+5. **数据源锁**：配置连接被挡；探活偏好 0.3.60 起不挡。
+
+## 拟改（分版本；本条先文档）
+
+1. **系统提示**：对「配置连接 / 复制删除模版 / 备份导入」强制调用对应工具；工具 `ok=false` 或 `awaiting_user_*` 必须如实转述，禁止假装已完成。  
+2. **端到端验收剧本**（手工 + 可自动化的部分）：每类至少 1 条成功路径 + 1 条总闸关闭失败路径。  
+3. **UI 同步审计**：upsert/delete/copy/backup 完成后，设置/数据源/模版页是否即时可见；缺口补 `mark_ui_reload` 或 pending 完成回调。  
+4. **单测**：按能力域补「总闸关拒绝」「成功 mark_ui_reload」「confirm 仅创建 pending 不落删」等（探活用例已有，资产/配置类对齐）。  
+5. **发版切片**：0.3.60 先闭环定时探活；其余能力闭环可挂后续小版本（见 Plan「不做」或新 Plan），但**验收标准在本看板统一登记**，避免只修探活。
+
+## 验收（能力矩阵 · 写入总闸已开）
+
+| # | 场景 | 通过标准 |
+|---|------|----------|
+| A | 配置数据源 | 说「新建/修改连接」→ 调 upsert → 列表出现/更新；需密码时弹出凭证框且填后可探活 |
+| B | 复制模版 | 说「复制某某模版」→ `copy_template` 成功 → 模版列表出现副本（无需手动刷新） |
+| C | 删除模版 | 说「删除某某」→ 弹出确认 → 确认后列表消失；取消则仍在 |
+| D | 备份 | 说「导出备份」→ 本机另存对话框 → 生成 `.rebak`；聊天中无备份口令/密文 |
+| E | 恢复 | 说「导入/恢复配置」→ 确认流 → merge 生效且 UI reload |
+| F | 总闸关闭 | 以上任一写入意图 → 明确提示须开「允许 AI 写入工具」，**配置不变** |
 
 ---
 
@@ -126,6 +207,8 @@ if resp.status_code >= 400:
 ---
 
 # 🚧 进行中：AI「开启定时探活」须真正落库并刷新 UI（→ 0.3.60）
+
+> 本条是上方「写入类能力矩阵」的**首发切片**；数据源配置 / 模版复制删除 / 备份恢复见矩阵 H1（仍 ⌛️）。
 
 ## 现象（现场 · 2026-07-13 · 0.3.59）
 
