@@ -146,7 +146,7 @@
               v-else
               class="ai-msg__body ai-msg__body--md"
               v-html="renderAssistantMarkdown(m.content || (m.status === 'streaming' ? '…' : ''))"
-            />
+            ></div>
             <details
               v-if="m.role === 'assistant' && m.toolTrace?.length"
               class="ai-msg__trace"
@@ -184,8 +184,6 @@
               </ul>
             </details>
           </div>
-        </div>
-
         </div>
 
         <div v-if="queue.length" class="ai-drawer__queue">

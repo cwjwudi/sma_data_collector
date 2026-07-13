@@ -1,6 +1,6 @@
 {
   "version": "0.3.79",
-  "releasedAt": "2026-07-13T16:45:40.766Z",
+  "releasedAt": "2026-07-13T16:49:19.761Z",
   "notes": "Report Editor AI 0.3.79\n\n- AI 多轮默认简洁：请求最近 8 条；提示词勿复述前文",
   "platforms": {
     "win32-x64": {
@@ -10,8 +10,8 @@
     },
     "darwin-arm64": {
       "url": "Report Editor AI-0.3.79-arm64.dmg",
-      "sha256": "",
-      "size": 0
+      "sha256": "66ac144e744de1885c0db7466cff9126cf825f4e49d7fbd43e73c1d9b48df7a8",
+      "size": 182023525
     }
   }
 }
