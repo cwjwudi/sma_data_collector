@@ -1,15 +1,15 @@
 {
-  "version": "0.3.75",
-  "releasedAt": "2026-07-13T15:01:46.170Z",
-  "notes": "Report Editor AI 0.3.75\n\n- 模版/版式多选 B2：Shift 区间加选；六对齐 + 两等距分布；工具栏入口；一次 undo",
+  "version": "0.3.76",
+  "releasedAt": "2026-07-13T15:50:19.598Z",
+  "notes": "Report Editor AI 0.3.76\n\n- 模版/版式多选 B3：右侧共有外观批改（边框/色/字号/字体/换行/对齐）；混合态",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.75-x64.exe",
+      "url": "Report Editor AI-Setup-0.3.76-x64.exe",
       "sha256": "",
       "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.75-arm64.dmg",
+      "url": "Report Editor AI-0.3.76-arm64.dmg",
       "sha256": "",
       "size": 0
     }

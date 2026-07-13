@@ -502,7 +502,8 @@
             </button>
           </li>
         </ul>
-        <p class="ted-multi-note">Shift 区间加选；工具栏可对齐/分布。批量改属性见后续版本。</p>
+        <MultiElementBatchProps :els="multiCanvasSummary.map((x) => x.el)" surface="template" />
+        <p class="ted-multi-note">Shift 区间加选；工具栏可对齐/分布。</p>
       </aside>
       <aside v-else-if="selZone" class="right ted-props ted-props--zone">
         <h3 class="ted-zone-title">已定位：{{ selZoneLabel }}</h3>
@@ -536,6 +537,7 @@
 import TemplateBodyCanvas from "@/components/report-template/TemplateBodyCanvas.vue";
 import TemplateExportPreviewStack from "@/components/report-template/TemplateExportPreviewStack.vue";
 import TemplateElementProps from "@/components/report-template/TemplateElementProps.vue";
+import MultiElementBatchProps from "@/components/report-template/MultiElementBatchProps.vue";
 import SignaturePadDialog from "@/components/report-template/SignaturePadDialog.vue";
 import * as api from "@/api/templates";
 import {

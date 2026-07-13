@@ -7,9 +7,10 @@
 
 ## 2026-07-13
 
-- **ReportEditor 多选 B3（约定细化）**：[docs/011-🚧](docs/011-🚧-ReportEditor模版版式多选控件.md)——交集字段、混合态、首批外观清单、永不批改边界、I/M/N/E 用例；待拍板后实现（建议 0.3.76）。
-- **ReportEditor 0.3.75 已发版**：模版/版式多选 B2（Shift 区间、六对齐、两等距分布）；看板 [docs/011-🚧](docs/011-🚧-ReportEditor模版版式多选控件.md)（B3 约定细化中）。
-- **ReportEditor 多选 B2（计划）**：[docs/011-🚧](docs/011-🚧-ReportEditor模版版式多选控件.md) 按默认拍板——Shift 区间、六对齐、两分布、工具栏入口、一次 undo；可开工。
+- **ReportEditor 0.3.76 已发版**：模版/版式多选 B3（共有外观批改、混合态）；看板 [docs/011-✅](docs/011-✅-ReportEditor模版版式多选控件.md)。
+- **ReportEditor 多选 B3（约定细化）**：[docs/011-✅](docs/011-✅-ReportEditor模版版式多选控件.md)——交集字段、混合态、首批外观清单、永不批改边界、I/M/N/E 用例；后按默认实现。
+- **ReportEditor 0.3.75 已发版**：模版/版式多选 B2（Shift 区间、六对齐、两等距分布）；看板 [docs/011-✅](docs/011-✅-ReportEditor模版版式多选控件.md)。
+- **ReportEditor 多选 B2（计划）**：[docs/011-✅](docs/011-✅-ReportEditor模版版式多选控件.md) 按默认拍板——Shift 区间、六对齐、两分布、工具栏入口、一次 undo；可开工。
 - **ReportEditor 0.3.74 已发版**：整机单实例；局域网应用内 AI（开关+Token）；桌面独有提示；看板 [docs/015-✅](docs/015-✅-ReportEditor整机单实例与浏览器访问.md)。
 - **ReportEditor 局域网 AI（计划）**：[docs/015-✅](docs/015-✅-ReportEditor整机单实例与浏览器访问.md) 拍板要实现应用内 AI；复用 `allow_lan_access` + Agent Token；桌面独有能力明确提示。
 - **ReportEditor 整机单实例（计划补充）**：[docs/015-✅](docs/015-✅-ReportEditor整机单实例与浏览器访问.md) 复用托盘恢复、锁前 quit、pendingFocus 竞态、明确不做项与 M6。
@@ -19,8 +20,8 @@
 - **ReportEditor 0.3.72 已发版**：AI 助手正文 SSE 流式；排队/持久化/调宽/Markdown；看板 [docs/014-✅](docs/014-✅-ReportEditor-AI流式输出.md)。
 - **ReportEditor AI 流式（计划补充）**：[docs/014-✅](docs/014-✅-ReportEditor-AI流式输出.md) 确认关抽屉不停止；补测试用例 B/F/M/R；持久化/调宽/排队；G1–G15。
 - **ReportEditor 0.3.71 已发版**：AI 工具轨迹假失败修正（无 `ok` 字段的成功读工具不再标红）；看板 [docs/006-🚧](docs/006-🚧-ReportEditor-AI上游错误体验.md)。
-- **ReportEditor 0.3.70 已发版**：模版/版式多选 B1（Ctrl 加选、框选、组操作、属性摘要）；看板 [docs/011-🚧](docs/011-🚧-ReportEditor模版版式多选控件.md)（B2/B3 ⌛️）。
-- **ReportEditor 模版/版式多选（计划补充）**：原 [docs/011](docs/011-🚧-ReportEditor模版版式多选控件.md) 确认属性批改 **B3 后置**；增补交集字段约定与 E1–E6 测试用例；MVP（B1）仅摘要 + 组操作。
+- **ReportEditor 0.3.70 已发版**：模版/版式多选 B1（Ctrl 加选、框选、组操作、属性摘要）；看板 [docs/011-✅](docs/011-✅-ReportEditor模版版式多选控件.md)（B2/B3 ⌛️）。
+- **ReportEditor 模版/版式多选（计划补充）**：原 [docs/011](docs/011-✅-ReportEditor模版版式多选控件.md) 确认属性批改 **B3 后置**；增补交集字段约定与 E1–E6 测试用例；MVP（B1）仅摘要 + 组操作。
 - **ReportEditor 0.3.69 已发版**：移除「演示与培训」与 demo-pack；存量仿真连接保留可手删；看板 [docs/012-✅](docs/012-✅-ReportEditor移除演示与培训.md)。
 - **ReportEditor 移除演示与培训**：已拆除设置区块、`/demo/*`、demo-pack IPC/打包目录、`demo_remote_*` 配置面；AI `ensure_user_demo_database` 工具下线；存量 `is_demo` 保留（B1）。看板 [docs/012-✅](docs/012-✅-ReportEditor移除演示与培训.md)。
 - **ReportEditor AI 流式输出（仅计划）**：新建 [docs/014](docs/014-✅-ReportEditor-AI流式输出.md)——助手正文 SSE 流式；工具轮默认非流 + 事件；推翻 006「不做 SSE」边界（后由 **0.3.72** 落地）。

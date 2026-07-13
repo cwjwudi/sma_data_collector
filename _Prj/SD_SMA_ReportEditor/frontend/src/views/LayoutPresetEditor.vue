@@ -182,7 +182,8 @@
               </button>
             </li>
           </ul>
-          <p class="pe-multi-note">Shift 区间加选；工具栏可对齐/分布。批量改属性见后续版本。</p>
+          <MultiElementBatchProps :els="multiLayoutSummary.map((x) => x.el)" surface="layout" />
+          <p class="pe-multi-note">Shift 区间加选；工具栏可对齐/分布。</p>
         </div>
         <p v-else class="pe-props-empty">点选画布控件后在此编辑属性。</p>
       </aside>
@@ -207,6 +208,7 @@ import { useRoute, useRouter } from "vue-router";
 import LayoutPresetZonesDialog from "@/components/report-template/LayoutPresetZonesDialog.vue";
 import LayoutPresetPaperCanvas from "@/components/report-template/LayoutPresetPaperCanvas.vue";
 import LayoutPresetElementProps from "@/components/report-template/LayoutPresetElementProps.vue";
+import MultiElementBatchProps from "@/components/report-template/MultiElementBatchProps.vue";
 import type { LayoutPreset } from "@/lib/report-template/layout-model";
 import { defaultBlankLayoutSnapshot, hydrateLayoutPreset } from "@/lib/report-template/layout-model";
 import type { LayoutControlType, LayoutZoneElement } from "@/lib/report-template/layout-zone-element";

@@ -1,12 +1,12 @@
 # ReportEditor 模版 / 版式编辑器：多选控件
 
 > 本文件为 **任务看板**；规则见 [CLAUDE.md](../CLAUDE.md)。  
-> **B1（MVP）已于 0.3.70 落地**；**B2 已于 0.3.75 落地**；**B3 约定已细化（待拍板）**，实现建议 **0.3.76**。  
-> 相关：`TemplateEditorWorkspace` / `TemplateBodyCanvas` / `LayoutPresetEditor` / `LayoutPresetPaperCanvas` / `selection-set.ts` / `selection-align.ts` /（拟）`selection-batch-props.ts`。
+> **B1（0.3.70）· B2（0.3.75）· B3（0.3.76）均已落地。**  
+> 相关：`TemplateEditorWorkspace` / `TemplateBodyCanvas` / `LayoutPresetEditor` / `LayoutPresetPaperCanvas` / `selection-set.ts` / `selection-align.ts` / `selection-batch-props.ts` / `MultiElementBatchProps.vue`。
 
 ---
 
-# 🚧 进行中：多选控件（B1 ✅ · B2 ✅ · B3 约定细化中）
+# ✅ 已完成：多选控件（B1 · B2 · B3）
 
 ## 批次状态
 
@@ -14,7 +14,7 @@
 |------|------|------|
 | **B1 · MVP** | 多选状态 + 高亮 + Ctrl/Cmd 加选 + 框选 + 组移动/删除/多剪贴板 + 属性摘要 | ✅ **0.3.70** |
 | **B2** | Shift 区间加选；对齐 / 分布 | ✅ **0.3.75** |
-| **B3 · 属性批改** | 右侧多选面板：交集字段批改 + 「混合」态；E 系用例 | ⌛️ **约定已细化，待拍板后实现**（建议 **0.3.76**） |
+| **B3 · 属性批改** | 右侧多选面板：交集字段批改 + 「混合」态；E 系用例 | ✅ **0.3.76** |
 
 ## B1 实现摘要（0.3.70）
 
@@ -30,10 +30,16 @@
 - `rangeSelectInList`：点击端为 primary；画布 Shift+click  
 - 模版 / 版式工具栏对齐与分布按钮；≥2 / ≥3 启用；写回进现有 debounce undo  
 
+## B3 实现摘要（0.3.76）
+
+- `selection-batch-props.ts`：交集可见字段、混合态、批量写回  
+- `MultiElementBatchProps.vue`：挂在模版/版式多选右侧摘要下  
+- 首批：`showBorder` / `bgColor` / `color`(模版) / `fontSize` / `fontFamily` / `textAutoWrap` / `alignX`·`alignY`  
+
 ## 属性面板（回顾）
 
 - 单选：完整属性面板  
-- 多选 B1：仅摘要；**B3** 在摘要下增加「共有外观」批改（约定见下）  
+- 多选：摘要 + **共有外观**批改（B3）  
 
 ---
 
@@ -137,7 +143,7 @@
 
 ---
 
-# ⌛️ B3：多选属性批改（约定细化 · 待拍板）
+# ✅ B3：多选属性批改（按默认拍板 · 0.3.76）
 
 ## 产品诉求
 
@@ -154,7 +160,7 @@
 - Undo：对 `editing` / `working` 的 deep watch + `stableFingerprintPart` debounce（约 320ms）全量快照；属性直接 mutate 元素即可入栈（与 B2 对齐同路径）。  
 - 几何输入单选走 `useDeferredGeomField`；B3 **默认不做** X/Y/W/H 批改（避免与对齐/组拖语义打架）。
 
-## 已拟默认（★ · 待你确认「按默认」或改口）
+## 已拍板（按默认 ★ · 2026-07-13）
 
 | # | 问题 | 建议默认 ★ |
 |---|------|------------|
@@ -275,20 +281,20 @@
 | R2 | B2 对齐/分布/Shift |
 | R3 | 单选属性面板字段与写回不变 |
 
-## 验收（B3 · 开工后勾选）
+## 验收（B3 · 0.3.76）
 
-- [ ] 交集字段显示正确（I1–I6）  
-- [ ] 「混合」与写回正确（M1–M5）  
-- [ ] 无绑定/表格/签名批改入口（N1）；摘要可切单选（N2）  
-- [ ] 模版与版式一致（E6）；B1/B2 回归（R）  
+- [x] 交集字段显示正确（I1–I6；纯函数单测覆盖主路径）  
+- [x] 「混合」与写回正确（M；单测）  
+- [x] 无绑定/表格/签名批改入口（N1）；摘要可切单选（N2）  
+- [x] 模版与版式一致（E6）；B1/B2 回归（R；选择/对齐单测仍绿）  
 
 ---
 
-## 测试（既有 · B1/B2）
+## 测试（既有 · B1/B2/B3）
 
 ### A. 纯函数 ✅
 
-A1–A4 + marquee（`selection-set.test.ts`）；多元素剪贴板（`editor-element-clipboard.test.ts`）；对齐/分布（`selection-align.test.ts`）；B3 另增 `selection-batch-props.test.ts`
+A1–A4 + marquee（`selection-set.test.ts`）；多元素剪贴板（`editor-element-clipboard.test.ts`）；对齐/分布（`selection-align.test.ts`）；批改（`selection-batch-props.test.ts`）
 
 ## 验收（B1）
 
@@ -310,5 +316,4 @@ A1–A4 + marquee（`selection-set.test.ts`）；多元素剪贴板（`editor-el
 
 - ✅ B1 实现与发版  
 - ✅ B2 约定 + 实现（**0.3.75**）  
-- ✅ **B3 产品约定细化**（本文件；待拍板）  
-- ⌛️ B3 实现与发版（建议 **0.3.76**）  
+- ✅ B3 约定细化 + 按默认拍板 + 实现（**0.3.76**）  

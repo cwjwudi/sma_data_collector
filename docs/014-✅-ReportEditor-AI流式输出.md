@@ -272,7 +272,7 @@ sequenceDiagram
 
 ## 测试用例（开工必跟）
 
-> 风格对齐 [docs/011](011-🚧-ReportEditor模版版式多选控件.md) E 表。  
+> 风格对齐 [docs/011](011-✅-ReportEditor模版版式多选控件.md) E 表。  
 > **B** = 后端 pytest（可 mock 上游）；**F** = 前端单测/纯函数；**M** = 手工/真机（发版前勾）。  
 > 建议落点：`backend/modules/test_ai_chat_stream*.py`、前端 `ai-assistant/*.test.ts`（或现有 vitest 目录）。
 
