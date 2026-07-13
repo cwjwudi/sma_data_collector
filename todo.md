@@ -7,6 +7,7 @@
 
 ## 2026-07-13
 
+- **ReportEditor 控件默认无边框（清单细化）**：看板 [docs/005](docs/005-⌛️-ReportEditor控件默认无边框.md) 按 P0–P3 列出要改类名（设置/数据源共用 CSS、AI 抽屉、生成报表、模版编辑器等）与明确不改项；计划仍 [`0.3.61`](_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.61.md)。
 - **ReportEditor AI 写入类能力矩阵（仅文档）**：配置数据源、复制/删除模版、备份/恢复须端到端可用（工具已有；禁空口答应）。看板 [docs/006](docs/006-⌛️-ReportEditor-AI上游错误体验.md) 新增 H1；0.3.60 仍只切定时探活。
 - **ReportEditor AI 开启定时探活（0.3.60 · 文档+测试）**：同看板探活 H1→🚧；计划 [`009_版本Plan/0.3.60.md`](_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.60.md)。后端 `test_ai_update_probe.py` + 前端 `client-prefs-mirror.test.ts`。控件无边框改挂 [`0.3.61`](_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.61.md) / [docs/005](docs/005-⌛️-ReportEditor控件默认无边框.md)。
 - **ReportEditor AI 上游/助手问题（其余仍 ⌛️）**：quota JSON；ChatGPT≠API；硅基残留 gpt-*。同看板 006。
