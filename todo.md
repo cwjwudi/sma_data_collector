@@ -7,6 +7,7 @@
 
 ## 2026-07-13
 
+- **ReportEditor AI 流式输出（仅计划）**：新建 [docs/014-⌛️](docs/014-⌛️-ReportEditor-AI流式输出.md)——助手正文 SSE 流式；工具轮默认非流 + 事件；推翻 006「不做 SSE」边界。
 - **ReportEditor 0.3.68 已发版**：历史报表子文件夹穿透 + 分页；看板 [docs/010-✅](docs/010-✅-ReportEditor历史报表子文件夹穿透.md)。
 - **ReportEditor 模版/版式编辑审计（仅计划）**：新建 [docs/013-⌛️](docs/013-⌛️-ReportEditor模版版式编辑审计.md)——保存/删除/复制落 `template.*`/`layout.*`；不记画布拖拽；与现有 `auditLog` 对齐。
 - **ReportEditor 移除演示与培训（仅计划）**：新建 [docs/012-⌛️](docs/012-⌛️-ReportEditor移除演示与培训.md)——拆除设置「演示与培训」、`/demo/*`、demo-pack；存量仿真连接默认保留可手删；勿碰证书 demo-license。
