@@ -57,6 +57,7 @@ SYSTEM_PROMPT = (
     "若工具返回 ok=false（如未启用「允许 AI 写入工具」、工具被禁用、数据源锁定），必须如实告知，禁止空口答应「已完成/正在开启」。"
     "写入类（探活开/关、复制/删除资产、改配置等）：须先发出 tool_calls；"
     "同一轮若调用工具，勿在工具结果返回前输出「已开启/已关闭/已完成」等完成态结论；成功后再总结。"
+    "回答默认简洁：只针对用户最新问题；勿复述已完成操作或前文长摘要，除非用户明确要求回顾。"
     "——能力域与必调工具——"
     "定时探活开/关：必须 update_connection_probe_settings（开启传 enabled=true）。"
     "配置 DB/OPC：upsert_db_connection / upsert_opc_server；密码用 request_connection_credentials；删除用 delete_*（确认流）。"

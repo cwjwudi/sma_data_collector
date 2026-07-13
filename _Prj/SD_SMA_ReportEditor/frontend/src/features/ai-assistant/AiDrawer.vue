@@ -280,6 +280,7 @@ import {
   type PersistedAiMessage,
 } from '@/features/ai-assistant/chat-persist'
 import { dequeue, enqueue, removeQueued, type QueuedChatItem } from '@/features/ai-assistant/chat-queue'
+import { sliceRecentChatMessages } from '@/features/ai-assistant/chat-history-window'
 import { renderAssistantMarkdown } from '@/features/ai-assistant/render-md'
 import type { AiStreamEvent } from '@/features/ai-assistant/sse-parse'
 import {
@@ -578,11 +579,13 @@ async function runOneTurn(text: string) {
   stickToBottom = true
   await scrollToBottom(true)
 
-  const payloadMessages = messages.value
-    .filter((m) => m.role === 'user' || m.role === 'assistant')
-    .filter((m) => m.status !== 'queued')
-    .filter((m) => m.id !== assistantId)
-    .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content }))
+  const payloadMessages = sliceRecentChatMessages(
+    messages.value
+      .filter((m) => m.role === 'user' || m.role === 'assistant')
+      .filter((m) => m.status !== 'queued')
+      .filter((m) => m.id !== assistantId)
+      .map((m) => ({ role: m.role as 'user' | 'assistant', content: m.content })),
+  )
 
   abortCtrl = new AbortController()
   const assistant = () => messages.value.find((m) => m.id === assistantId)

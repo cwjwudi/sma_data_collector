@@ -7,6 +7,7 @@
 
 ## 2026-07-13
 
+- **ReportEditor 0.3.79 已发版**：AI 多轮默认简洁（最近 8 条进请求 + 提示词）；看板 [docs/006-🚧](docs/006-🚧-ReportEditor-AI上游错误体验.md)。
 - **ReportEditor 0.3.78 已发版**：流式同轮先工具后正文；写类 tool 即时刷新；upsert 补 datasource reload；看板 [docs/006-🚧](docs/006-🚧-ReportEditor-AI上游错误体验.md)。
 - **ReportEditor 0.3.77 已发版**：AI 排队改输入框上方收纳条（不进消息流）；看板 [docs/006-🚧](docs/006-🚧-ReportEditor-AI上游错误体验.md)。
 - **ReportEditor AI 排队 UI（仅计划）**：[docs/006-🚧](docs/006-🚧-ReportEditor-AI上游错误体验.md)——排队改输入框上方收纳条（类 Cursor），不进消息流；出队后再进时间线。
