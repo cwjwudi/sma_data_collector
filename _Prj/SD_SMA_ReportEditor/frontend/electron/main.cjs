@@ -17,6 +17,14 @@ const {
   shouldSilentStartThisSession,
 } = require('./launch.cjs')
 
+// —— 整机单实例（须在 whenReady / 拉后端之前）——
+const gotSingleInstanceLock = app.requestSingleInstanceLock()
+if (!gotSingleInstanceLock) {
+  // 未拿到锁：立刻退出，禁止再起后端 / 建窗
+  app.quit()
+  process.exit(0)
+}
+
 let mainWindow
 let pythonProcess
 /** 若为 true：由本 Electron 拉起的后端，exit 时需 kill（避免误杀外部 uvicorn）。 */
@@ -25,6 +33,16 @@ let backendStartedByElectron = false
 let silentStartSession = false
 let isQuitting = false
 let appTray = null
+/** 第一实例尚未 createWindow 时收到 second-instance，建窗后再聚焦。 */
+let pendingFocusFromSecondInstance = false
+
+app.on('second-instance', () => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    showMainWindowFromTray()
+    return
+  }
+  pendingFocusFromSecondInstance = true
+})
 
 /** PDF 导出并发池：避免大量隐藏渲染窗口同时占用 CPU / 内存。 */
 const PDF_EXPORT_DEFAULT_MAX_PARALLEL = 4
@@ -548,6 +566,12 @@ function createWindow() {
     // 预热窗口是隐藏窗口：不销毁会阻止 window-all-closed，导致应用无法退出
     destroyWarmPdfExportWindows()
   })
+
+  if (pendingFocusFromSecondInstance) {
+    pendingFocusFromSecondInstance = false
+    // 静默启动也可能被第二实例唤起：必须 show，不能只 focus
+    showMainWindowFromTray()
+  }
 }
 
 ipcMain.handle('devtools-set-open', (_event, open) => {

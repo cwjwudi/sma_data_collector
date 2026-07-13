@@ -184,10 +184,15 @@ export async function sendAiChatStream(opts: {
 }): Promise<void> {
   const { resolveApiHref } = await import('./apiBase.js')
   const { createSseParser } = await import('../features/ai-assistant/sse-parse')
+  const { lanAiAuthHeaders } = await import('../lib/runtimeEnv')
   const url = resolveApiHref('/settings/ai/chat/stream')
   const res = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'text/event-stream',
+      ...lanAiAuthHeaders(),
+    },
     body: JSON.stringify({
       messages: opts.messages,
       report_editor_page_context: opts.pageContext || undefined,

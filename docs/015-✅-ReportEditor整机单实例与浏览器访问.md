@@ -1,30 +1,27 @@
 # ReportEditor：整机单实例 + 浏览器访问边界说明
 
 > 本文件为 **任务看板 / 说明**；规则见 [CLAUDE.md](../CLAUDE.md)。  
-> **诉求（2026-07-13）**：① 强制整机只能打开**一个**桌面软件实例；② 弄清用**别的浏览器**访问能否正常操作、有哪些限制；③ **局域网浏览器也要能用应用内 AI**（须鉴权）。  
-> 相关：[`frontend/electron/main.cjs`](../_Prj/SD_SMA_ReportEditor/frontend/electron/main.cjs)、[`backend/api/routers/ai_openai.py`](../_Prj/SD_SMA_ReportEditor/backend/api/routers/ai_openai.py)、[`backend/modules/ai_config.py`](../_Prj/SD_SMA_ReportEditor/backend/modules/ai_config.py)。
+> **已于 0.3.74 落地**（2026-07-13）。  
+> **诉求**：① 强制整机只能打开**一个**桌面软件实例；② 浏览器访问边界；③ **局域网应用内 AI**（开关 + Agent Token）。  
+> 相关：[`main.cjs`](../_Prj/SD_SMA_ReportEditor/frontend/electron/main.cjs)、[`ai_config.py`](../_Prj/SD_SMA_ReportEditor/backend/modules/ai_config.py)、[`runtimeEnv.ts`](../_Prj/SD_SMA_ReportEditor/frontend/src/lib/runtimeEnv.ts)。
 
 ---
 
-# ⌛️ 未完成：Electron 整机单实例强制
+# ✅ 已完成：Electron 整机单实例强制（0.3.74）
 
 ## 产品诉求
 
 1. 同一台电脑上，**Report Editor AI 桌面版**同时只允许跑 **1 个进程/主窗口**。  
 2. 用户再次双击图标 / 开第二个实例时：应**聚焦已有窗口**（或托盘恢复），而不是再开一套后端抢 8000 端口。  
-3. 计划已齐（含实现约定）；可与下方「局域网 AI」同版或紧随小版（建议从 **0.3.74** 起）。
+3. ~~计划~~ → **已与局域网 AI 同发 0.3.74**。
 
-## 现状（代码对照）
+## 现状（实现后）
 
 | 点 | 现状 |
 |----|------|
-| Electron `requestSingleInstanceLock` | **未使用**（`main.cjs` 无单实例锁） |
-| 后端端口 | 固定 **8000**；第二实例再拉后端易失败或行为怪异 |
-| 绑定地址 | `BACKEND_BIND_HOST = '0.0.0.0'`（本机 + 局域网网卡都监听） |
-| 网页版静态资源 | 安装包/有 `web` dist 时，后端挂载前端；浏览器可打开同端口 |
-| 静默启动 / 托盘 | 已有：`silentStartSession`、`ensureAppTray`、`showMainWindowFromTray()` |
-
-结论：桌面端**目前不强制单开**；第二实例风险主要在端口与数据目录并发。
+| Electron `requestSingleInstanceLock` | ✅ `main.cjs` 启动早期申请；未拿到锁立即退出 |
+| 第二实例 | ✅ `second-instance` → `showMainWindowFromTray()`；`pendingFocus` 竞态 |
+| 后端端口 | 仍 8000；单实例避免双开抢端口 |
 
 ## 建议实现（默认）
 
@@ -60,21 +57,19 @@
 
 ---
 
-# ⌛️ 未完成：局域网浏览器可用应用内 AI（须鉴权）
+# ✅ 已完成：局域网浏览器可用应用内 AI（0.3.74）
 
-## 产品诉求（2026-07-13 拍板方向）
+## 产品诉求（2026-07-13 拍板）
 
-1. **应用内 AI**（聊天 / 流式 / Pending 确认 / 工具开关等相关本机助手 API）在**局域网浏览器**里也要能用——与桌面壳主路径对齐。  
-2. **不能**继续「局域网免登录裸开」；须与现有 Agent 局域网策略同级的安全边界。  
-3. 真正做不到的桌面能力（托盘、更新、本机选文件夹、扫本机导出目录等）→ **明确提示**「仅桌面安装版可用」，不假装能用。
+1. **应用内 AI**在**局域网浏览器**里也能用（须鉴权）。  
+2. 真正做不到的桌面能力 → **明确提示**「仅桌面」。
 
-## 现状
+## 实现摘要
 
-| 接口族 | 现状 |
-|--------|------|
-| `/settings/ai/chat*`、Pending、tools 等 | `_require_loopback` / `is_loopback_host` → 局域网 **403** |
-| `/v1/*` Agent API | 已有 `allow_lan_access` + Agent Token |
-| 设置文案 | 开关文案仅写「允许局域网访问 Agent API（Cursor）」 |
+- 后端：`local_or_lan_ai_auth_error`；`_require_loopback` 改为本机免 Token / 局域网须 `allow_lan_access` + Agent Token  
+- 前端：`runtimeEnv.ts` + AiDrawer Token 引导；`apiFetch` / 流式请求自动带头  
+- 设置开关文案更新；历史报表 / 更新 / 启动 / 云同步等提示「仅桌面」  
+- 单测：`test_lan_ai_auth.py`、`runtimeEnv.test.ts`
 
 ## 建议实现（默认 ★）
 
@@ -179,10 +174,10 @@
 
 - ✅ 记录「整机单实例」诉求与现状  
 - ✅ 说明浏览器访问能力与限制  
-- ✅ 单实例实现约定（托盘 / 锁前 quit / pendingFocus）  
-- ✅ **拍板：局域网要能用应用内 AI（开关 + Agent Token）**；桌面独有能力明确提示  
-- ⌛️ 实现单实例锁  
-- ⌛️ 实现局域网 AI 鉴权放开 + 前端 Token 引导  
+- ✅ 单实例实现约定  
+- ✅ 拍板局域网 AI（开关 + Token）+ 桌面独有提示  
+- ✅ **实现单实例锁（0.3.74）**  
+- ✅ **实现局域网 AI 鉴权 + 前端 Token 引导（0.3.74）**  
 - ⌛️（二期）仅本机绑定 / 桌面↔浏览器互斥 / 整站登录  
 
 ## 拍板一览

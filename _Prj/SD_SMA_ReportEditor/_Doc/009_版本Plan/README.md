@@ -53,6 +53,7 @@
 
 | 版本 | 状态 | 任务看板 | 说明 |
 |------|------|----------|------|
+| [0.3.74.md](./0.3.74.md) | 已发版 | [docs/015-✅-ReportEditor整机单实例与浏览器访问.md](../../../../docs/015-✅-ReportEditor整机单实例与浏览器访问.md) | 单实例 + 局域网 AI |
 | [0.3.73.md](./0.3.73.md) | 已发版 | [docs/013-✅-ReportEditor模版版式编辑审计.md](../../../../docs/013-✅-ReportEditor模版版式编辑审计.md) | 模版/版式保存审计 |
 | [0.3.72.md](./0.3.72.md) | 已发版 | [docs/014-✅-ReportEditor-AI流式输出.md](../../../../docs/014-✅-ReportEditor-AI流式输出.md) | AI 正文 SSE 流式 + 整窗体验 |
 | [0.3.71.md](./0.3.71.md) | 已发版 | [docs/006-🚧-ReportEditor-AI上游错误体验.md](../../../../docs/006-🚧-ReportEditor-AI上游错误体验.md) | 工具轨迹假失败（无 ok 字段） |

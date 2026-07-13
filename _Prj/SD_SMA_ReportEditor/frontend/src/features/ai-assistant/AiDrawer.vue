@@ -95,6 +95,32 @@
           <p>请先在 <router-link to="/settings" @click="closeDrawer">设置</router-link> 中启用 AI、配置 LLM Key 并生成 Agent 令牌。</p>
         </div>
 
+        <div v-if="showLanAuthBanner" class="ai-drawer__banner ai-drawer__banner--lan">
+          <p>
+            当前为局域网访问：请先在本机桌面「设置 › AI」开启「允许局域网访问 Agent API 与应用内 AI」，并粘贴 Agent 令牌。
+          </p>
+          <div class="ai-drawer__lan-row">
+            <input
+              v-model="lanTokenInput"
+              class="ai-drawer__lan-input"
+              type="password"
+              autocomplete="off"
+              placeholder="粘贴 Agent Token"
+              @keydown.enter.prevent="saveLanToken"
+            />
+            <button type="button" class="ai-drawer__lan-btn" @click="saveLanToken">保存</button>
+            <button
+              v-if="hasLanToken"
+              type="button"
+              class="ai-drawer__lan-btn ai-drawer__lan-btn--muted"
+              @click="clearLanToken"
+            >
+              清除
+            </button>
+          </div>
+          <p v-if="lanTokenMsg" class="ai-drawer__lan-msg">{{ lanTokenMsg }}</p>
+        </div>
+
         <div
           ref="scrollEl"
           class="ai-drawer__messages"
@@ -177,7 +203,7 @@
             class="ai-drawer__input"
             rows="3"
             placeholder="Enter 发送，Shift+Enter 换行；生成中可继续发送排队"
-            :disabled="!ready"
+            :disabled="!composerEnabled"
             @keydown="onInputKeydown"
           />
           <div class="ai-drawer__actions">
@@ -195,7 +221,7 @@
             <button
               type="submit"
               class="ai-drawer__btn ai-drawer__btn--primary"
-              :disabled="!input.trim() || !ready"
+              :disabled="!input.trim() || !composerEnabled"
             >
               {{ loading ? '排队发送' : '发送' }}
             </button>
@@ -234,6 +260,12 @@ import {
 import { dequeue, enqueue, removeQueued, type QueuedChatItem } from '@/features/ai-assistant/chat-queue'
 import { renderAssistantMarkdown } from '@/features/ai-assistant/render-md'
 import type { AiStreamEvent } from '@/features/ai-assistant/sse-parse'
+import {
+  clearLanAiAgentToken,
+  getLanAiAgentToken,
+  needsRemoteAiAuth,
+  setLanAiAgentToken,
+} from '@/lib/runtimeEnv'
 
 defineOptions({ name: 'AiDrawer' })
 
@@ -251,6 +283,35 @@ const inputEl = ref<HTMLTextAreaElement | null>(null)
 const statusPhase = ref('')
 const queuePaused = ref(false)
 const drawerWidthPx = ref(420)
+
+const lanTokenInput = ref('')
+const lanTokenMsg = ref('')
+const lanTokenTick = ref(0)
+const showLanAuthBanner = computed(() => needsRemoteAiAuth())
+const hasLanToken = computed(() => {
+  lanTokenTick.value
+  return Boolean(getLanAiAgentToken())
+})
+const lanAiReady = computed(() => !needsRemoteAiAuth() || hasLanToken.value)
+const composerEnabled = computed(() => ready.value && lanAiReady.value)
+
+function saveLanToken() {
+  const t = lanTokenInput.value.trim()
+  if (!t) {
+    lanTokenMsg.value = '请粘贴 Agent Token'
+    return
+  }
+  setLanAiAgentToken(t)
+  lanTokenInput.value = ''
+  lanTokenTick.value += 1
+  lanTokenMsg.value = '已保存到本会话（关闭标签页后需重新粘贴）'
+}
+
+function clearLanToken() {
+  clearLanAiAgentToken()
+  lanTokenTick.value += 1
+  lanTokenMsg.value = '已清除令牌'
+}
 let stickToBottom = true
 let abortCtrl: AbortController | null = null
 let queue: QueuedChatItem[] = []
@@ -446,6 +507,10 @@ function onGlobalKeydown(ev: KeyboardEvent) {
 async function onSend() {
   const text = input.value.trim()
   if (!text || !ready.value) return
+  if (!lanAiReady.value) {
+    errorMsg.value = '请先粘贴并保存局域网 Agent Token'
+    return
+  }
   errorMsg.value = ''
   input.value = ''
 
@@ -812,6 +877,50 @@ onUnmounted(() => {
 .ai-drawer__banner a {
   color: #b45309;
   font-weight: 600;
+}
+
+.ai-drawer__banner--lan {
+  background: #eff6ff;
+  border-bottom-color: #bfdbfe;
+  color: #1e3a8a;
+}
+
+.ai-drawer__lan-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.ai-drawer__lan-input {
+  flex: 1;
+  min-width: 140px;
+  padding: 6px 8px;
+  border: 1px solid #93c5fd;
+  border-radius: 6px;
+  font-size: 13px;
+}
+
+.ai-drawer__lan-btn {
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid #3b82f6;
+  background: #2563eb;
+  color: #fff;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.ai-drawer__lan-btn--muted {
+  background: #fff;
+  color: #1e40af;
+  border-color: #93c5fd;
+}
+
+.ai-drawer__lan-msg {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: #1d4ed8;
 }
 
 .ai-drawer__messages {

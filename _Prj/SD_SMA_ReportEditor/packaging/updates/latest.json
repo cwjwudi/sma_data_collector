@@ -1,15 +1,15 @@
 {
-  "version": "0.3.73",
-  "releasedAt": "2026-07-13T14:23:18.721Z",
-  "notes": "Report Editor AI 0.3.73\n\n- 模版/版式保存审计：变更明细、15 分钟合并、无变更不记\n- 操作审计界面中文（含历史类型）；删/复制前端记",
+  "version": "0.3.74",
+  "releasedAt": "2026-07-13T14:44:00.510Z",
+  "notes": "Report Editor AI 0.3.74\n\n- Electron 整机单实例（第二实例聚焦/托盘恢复）\n- 局域网应用内 AI：allow_lan_access + Agent Token；桌面独有能力明确提示",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.73-x64.exe",
+      "url": "Report Editor AI-Setup-0.3.74-x64.exe",
       "sha256": "",
       "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.73-arm64.dmg",
+      "url": "Report Editor AI-0.3.74-arm64.dmg",
       "sha256": "",
       "size": 0
     }

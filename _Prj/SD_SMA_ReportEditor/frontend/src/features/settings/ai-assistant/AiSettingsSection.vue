@@ -92,9 +92,12 @@
         <span class="settings-switch-track" :class="{ on: form.allow_lan_access }">
           <span class="settings-switch-thumb" />
         </span>
-        <span class="settings-switch-label">允许局域网访问 Agent API（Cursor）</span>
+        <span class="settings-switch-label">允许局域网访问 Agent API 与应用内 AI</span>
       </button>
     </div>
+    <p class="settings-field-hint">
+      开启后，同网段浏览器可在粘贴 Agent Token 后使用应用内助手与 Pending；Cursor 等 Agent 客户端同样需 Token。默认关闭。
+    </p>
 
     <div class="settings-switch-row" :class="{ 'settings-field-row--muted': !form.enabled }">
       <button

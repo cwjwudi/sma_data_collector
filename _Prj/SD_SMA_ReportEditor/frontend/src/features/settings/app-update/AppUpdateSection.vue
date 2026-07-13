@@ -219,7 +219,7 @@
     </div>
 
     <p v-if="!isElectron" class="settings-hint settings-hint--muted">
-      请在桌面安装版中使用此功能。
+      软件更新仅桌面安装版可用；局域网浏览器请在本机 Electron 中检查更新。
     </p>
   </section>
 </template>

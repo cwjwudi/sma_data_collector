@@ -17,7 +17,7 @@
     </p>
 
     <div v-if="!electronShell" class="rh-banner rh-banner--warn">
-      当前运行在浏览器壳，无法读取本地文件夹。请使用 <code>npm run electron:dev</code> 或安装版客户端。
+      浏览本机导出文件夹仅桌面安装版可用；局域网浏览器无法读取工控机本地磁盘。请在本机 Electron 客户端中操作。
     </div>
 
     <div class="rh-dir-row">

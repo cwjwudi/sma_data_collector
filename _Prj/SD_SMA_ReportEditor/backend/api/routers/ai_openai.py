@@ -82,7 +82,7 @@ def _require_agent_auth(request: Request) -> None:
     if not ai_config.client_may_access_agent_api(client_host, settings):
         raise HTTPException(
             403,
-            "Agent API 默认仅允许本机访问。若需局域网接入 Cursor，请在设置中开启「允许局域网访问 Agent API」。",
+            "Agent API 默认仅允许本机访问。若需局域网接入，请在设置中开启「允许局域网访问 Agent API 与应用内 AI」。",
         )
     # 本机（loopback）对齐 LM Studio：无需 Agent Token，任意/空 Bearer 均可
     if ai_config.is_loopback_host(client_host):
@@ -580,10 +580,8 @@ def regenerate_agent_token():
 
 @settings_router.post("/settings/ai/chat")
 async def internal_ai_chat(request: Request, body: AiChatRequest):
-    """应用内助手：仅本机，无需 Bearer。"""
-    client_host = request.client.host if request.client else None
-    if not ai_config.is_loopback_host(client_host):
-        raise HTTPException(403, "应用内 AI 聊天仅允许本机访问。")
+    """应用内助手：本机免 Bearer；局域网须 allow_lan_access + Agent Token。"""
+    _require_local_or_lan_ai_auth(request)
     req = OpenAiChatCompletionRequest(
         model=body.model,
         messages=body.messages,
@@ -597,10 +595,8 @@ async def internal_ai_chat(request: Request, body: AiChatRequest):
 
 @settings_router.post("/settings/ai/chat/stream")
 async def internal_ai_chat_stream(request: Request, body: AiChatRequest):
-    """应用内助手流式：仅本机。"""
-    client_host = request.client.host if request.client else None
-    if not ai_config.is_loopback_host(client_host):
-        raise HTTPException(403, "应用内 AI 聊天仅允许本机访问。")
+    """应用内助手流式：本机免 Bearer；局域网须开关 + Token。"""
+    _require_local_or_lan_ai_auth(request)
     req = OpenAiChatCompletionRequest(
         model=body.model,
         messages=body.messages,
@@ -617,10 +613,21 @@ def ai_status():
     return JSONResponse(pub)
 
 
-def _require_loopback(request: Request) -> None:
+def _require_local_or_lan_ai_auth(request: Request) -> None:
+    """应用内 AI / Pending / 工具目录等：本机免 Token；局域网须开关 + Agent Token。"""
     client_host = request.client.host if request.client else None
-    if not ai_config.is_loopback_host(client_host):
-        raise HTTPException(403, "此 API 仅允许本机访问。")
+    err = ai_config.local_or_lan_ai_auth_error(client_host, _extract_bearer(request))
+    if err:
+        # 无 Token 或错 Token 用 401；未开局域网开关用 403（文案已区分）
+        code = 401 if "Token" in err or "令牌" in err else 403
+        if "需要有效的 Agent Token" in err:
+            code = 401
+        raise HTTPException(code, err)
+
+
+def _require_loopback(request: Request) -> None:
+    """兼容旧名：现与局域网鉴权守卫相同。"""
+    _require_local_or_lan_ai_auth(request)
 
 
 @settings_router.get("/settings/ai/pending_prompts")
