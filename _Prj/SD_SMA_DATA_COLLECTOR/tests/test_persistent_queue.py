@@ -1,4 +1,6 @@
 import sqlite3
+import subprocess
+import sys
 from datetime import datetime
 from pathlib import Path
 from unittest.mock import Mock
@@ -74,11 +76,42 @@ def test_processing_row_is_recovered_after_unclean_restart(tmp_path):
     restarted.close()
 
 
+def test_force_terminated_process_record_is_recovered(tmp_path):
+    path = tmp_path / "outbox.db"
+    project_root = Path(__file__).resolve().parents[1]
+    script = (
+        "from database.persistent_queue import PersistentQueueStore; "
+        "from datetime import datetime; import os; "
+        f"s=PersistentQueueStore({str(path)!r}); "
+        "i=s.enqueue({'group_name':'Crash','collection_time':datetime.now(),'data':{'v':{'value':1}}}); "
+        "s.mark_processing([i]); os._exit(23)"
+    )
+    result = subprocess.run([sys.executable, "-c", script], cwd=project_root, check=False)
+    assert result.returncode == 23
+
+    restarted = PersistentQueueStore(str(path))
+    assert restarted.recovered_on_open == 1
+    assert restarted.load_ready()[0]["group_name"] == "Crash"
+    restarted.close()
+
+
 def test_capacity_failure_is_transactional(tmp_path):
     store = PersistentQueueStore(str(tmp_path / "outbox.db"), max_queue_rows=1)
     store.enqueue(item(1))
     with pytest.raises(QueueCapacityError):
         store.enqueue(item(2))
+    assert store.counts()["pending"] == 1
+    store.close()
+
+
+def test_dead_letter_can_be_exported_and_explicitly_replayed(tmp_path):
+    store = PersistentQueueStore(str(tmp_path / "outbox.db"))
+    record_id = store.enqueue(item(3))
+    store.mark_dead_letter([record_id], "bad value")
+    record = store.list_records("dead_letter")[0]
+    assert record["id"] == record_id
+    assert record["payload"]["data"]["value"]["value"] == 3
+    assert store.replay_dead_letters([record_id]) == 1
     assert store.counts()["pending"] == 1
     store.close()
 

@@ -38,7 +38,8 @@ class PersistentQueueStore:
     SCHEMA_VERSION = 1
 
     def __init__(self, path: str, *, synchronous: str = "FULL", busy_timeout_ms: int = 5000,
-                 max_queue_rows: int = 1_000_000, completed_retention_days: int = 1) -> None:
+                 max_queue_rows: int = 1_000_000, completed_retention_days: int = 1,
+                 recover_on_open: bool = True) -> None:
         self.path = str(Path(path).expanduser().resolve())
         self.max_queue_rows = max(1, int(max_queue_rows))
         self.completed_retention_days = max(0, int(completed_retention_days))
@@ -57,7 +58,7 @@ class PersistentQueueStore:
             self._connection.execute(f"PRAGMA busy_timeout={max(0, int(busy_timeout_ms))}")
             self._connection.execute("PRAGMA foreign_keys=ON")
         self._migrate()
-        self.recovered_on_open = self.recover_processing()
+        self.recovered_on_open = self.recover_processing() if recover_on_open else 0
 
     def _migrate(self) -> None:
         with self._lock, self._connection:
@@ -185,6 +186,40 @@ class PersistentQueueStore:
         for row in rows:
             result[row["status"]] = row["count"]
         return result
+
+    def list_records(self, status: Optional[str] = None, limit: int = 100) -> List[Dict[str, Any]]:
+        sql = ("SELECT id, group_name, status, attempts, next_attempt_at, last_error, "
+               "created_at, updated_at, completed_at, payload_json FROM outbox_records")
+        params: List[Any] = []
+        if status:
+            sql += " WHERE status=?"
+            params.append(status)
+        sql += " ORDER BY created_at, rowid LIMIT ?"
+        params.append(max(1, int(limit)))
+        with self._lock:
+            rows = self._connection.execute(sql, params).fetchall()
+        result = []
+        for row in rows:
+            record = dict(row)
+            record["payload"] = json.loads(record.pop("payload_json"), object_hook=_json_object_hook)
+            result.append(record)
+        return result
+
+    def replay_dead_letters(self, record_ids: Optional[Iterable[str]] = None) -> int:
+        now = self._now()
+        ids = list(dict.fromkeys(record_ids or []))
+        where = "status='dead_letter'"
+        params: List[Any] = [now]
+        if ids:
+            placeholders = ",".join("?" for _ in ids)
+            where += f" AND id IN ({placeholders})"
+            params.extend(ids)
+        with self._lock, self._connection:
+            cursor = self._connection.execute(
+                "UPDATE outbox_records SET status='pending', attempts=0, next_attempt_at=NULL, "
+                f"last_error=NULL, completed_at=NULL, updated_at=? WHERE {where}", params
+            )
+        return max(0, cursor.rowcount)
 
     def purge_completed(self) -> int:
         now_dt = datetime.now().astimezone()

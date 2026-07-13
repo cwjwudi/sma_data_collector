@@ -239,6 +239,18 @@
       "主表"
     ]
   },
+  "persistent_queue": {
+    "enabled": true,
+    "path": "runtime/queue/collector_outbox.db",
+    "synchronous": "FULL",
+    "busy_timeout_ms": 5000,
+    "lease_seconds": 60,
+    "retry_interval_seconds": 5,
+    "max_retry_interval_seconds": 300,
+    "max_attempts": 0,
+    "completed_retention_days": 1,
+    "max_queue_rows": 1000000
+  },
   "logging": {
     "level": "DEBUG",
     "output_dir": "logs",
