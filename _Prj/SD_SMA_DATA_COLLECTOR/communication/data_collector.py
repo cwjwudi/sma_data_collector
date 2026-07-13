@@ -691,8 +691,9 @@ class DataCollector:
 
                 # 首次读取仅初始化状态，不触发采集
                 if previous_trigger_state is None:
-                    previous_trigger_state = current_trigger_value
-                    continue
+                    # A high value is an unacknowledged PLC event even when the
+                    # collector has just started or reconnected.
+                    previous_trigger_state = False
 
                 update_previous_state = True
                 if not previous_trigger_state and current_trigger_value:
@@ -817,10 +818,10 @@ class DataCollector:
 
                 # 首次读取仅初始化状态，不触发采集
                 if previous_trigger_state is None:
-                    previous_trigger_state = current_trigger_value
+                    # Establish a local false pre-state so a pending high PLC
+                    # trigger is collected instead of discarded on startup.
+                    previous_trigger_state = False
                     self.logger.debug(f"变量触发组 {group.name} 初始化触发状态: {current_trigger_value}")
-                    await asyncio.sleep(poll_interval)
-                    continue
 
                 update_previous_state = True
                 # 上升沿检测：从False变为True
@@ -938,10 +939,10 @@ class DataCollector:
 
                 # 首次读取仅初始化状态，不触发
                 if previous_trigger_state is None:
-                    previous_trigger_state = list(current_trigger_values)
+                    # Every high bit represents a row still owned by the PLC.
+                    # Consume pending rows after collector restart/reconnect.
+                    previous_trigger_state = [False] * len(current_trigger_values)
                     self.logger.info(f"并行触发组 {group.name} 初始化触发状态，数组长度={len(current_trigger_values)}")
-                    await asyncio.sleep(poll_interval)
-                    continue
 
                 if len(previous_trigger_state) != len(current_trigger_values):
                     self.logger.warning(
