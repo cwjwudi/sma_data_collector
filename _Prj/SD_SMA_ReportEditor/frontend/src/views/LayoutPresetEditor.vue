@@ -54,6 +54,16 @@
           粘贴
         </button>
         <span class="bar-sep" aria-hidden="true" />
+        <button
+          type="button"
+          class="b"
+          title="将本页页眉/正文/页脚中非表格控件的预览/导出外框设为隐藏（可撤销）"
+          :disabled="!working"
+          @click="hideBordersOnPresetPage"
+        >
+          一键隐藏边框
+        </button>
+        <span class="bar-sep" aria-hidden="true" />
         <button type="button" class="b primary" :disabled="saving" @click="savePreset">
           {{ saving ? "保存中…" : "保存版式" }}
         </button>
@@ -145,6 +155,7 @@ import LayoutPresetElementProps from "@/components/report-template/LayoutPresetE
 import type { LayoutPreset } from "@/lib/report-template/layout-model";
 import { defaultBlankLayoutSnapshot, hydrateLayoutPreset } from "@/lib/report-template/layout-model";
 import type { LayoutControlType } from "@/lib/report-template/layout-zone-element";
+import { hideShowBordersInElements } from "@/lib/report-template/show-border";
 import {
   copyLayoutZoneElementToClipboard,
   eventTargetIsTypingField,
@@ -351,6 +362,17 @@ function pastePresetEl() {
   if (!newId) return;
   presetCanvasSelId.value = newId;
   msg.value = "已粘贴控件（属性已保留）。";
+}
+
+function hideBordersOnPresetPage() {
+  const w = working.value;
+  if (!w) return;
+  let n = 0;
+  n += hideShowBordersInElements(w.headerElements);
+  n += hideShowBordersInElements(w.bodyElements);
+  n += hideShowBordersInElements(w.footerElements);
+  msg.value =
+    n > 0 ? `已隐藏 ${n} 个控件的预览/导出外框（表格未改，可撤销）。` : "本页没有可隐藏的控件外框。";
 }
 
 const mmFields = [

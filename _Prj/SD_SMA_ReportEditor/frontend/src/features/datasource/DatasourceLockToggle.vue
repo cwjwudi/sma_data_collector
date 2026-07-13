@@ -11,10 +11,22 @@
       @pointermove="onPointerMove"
       @pointerup="onPointerUp"
       @pointercancel="onPointerUp"
+      @keydown="onKeydown"
     >
-      <span class="ds-lock-fill" :style="{ width: fillPct + '%' }" />
-      <span class="ds-lock-thumb" :style="{ left: `calc(${thumbPct}% - 14px)` }">
-        {{ locked ? "🔒" : "🔓" }}
+      <span class="ds-lock-fill" :style="{ width: `${fillWidth}px` }" aria-hidden="true" />
+      <span
+        class="ds-lock-thumb"
+        :style="{ transform: `translateX(${thumbLeft}px)` }"
+        aria-hidden="true"
+      >
+        <svg v-if="locked" class="ds-lock-ico" viewBox="0 0 16 16" width="12" height="12" fill="none">
+          <rect x="3.5" y="7" width="9" height="7" rx="1.5" stroke="currentColor" stroke-width="1.5" />
+          <path d="M5.5 7V5.5a2.5 2.5 0 0 1 5 0V7" stroke="currentColor" stroke-width="1.5" />
+        </svg>
+        <svg v-else class="ds-lock-ico" viewBox="0 0 16 16" width="12" height="12" fill="none">
+          <rect x="3.5" y="7" width="9" height="7" rx="1.5" stroke="currentColor" stroke-width="1.5" />
+          <path d="M5.5 7V5.2a2.5 2.5 0 0 1 4.7-1.2" stroke="currentColor" stroke-width="1.5" />
+        </svg>
       </span>
     </button>
     <div class="ds-lock-meta">
@@ -28,6 +40,13 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
 import { apiFetch } from "@/api/client.js";
+import {
+  LOCK_TRACK_H,
+  LOCK_TRACK_W,
+  fillWidthPx,
+  pctFromClientX,
+  thumbOffsetPx,
+} from "./datasource-lock-geometry";
 
 defineOptions({ name: "DatasourceLockToggle" });
 
@@ -51,15 +70,15 @@ const thumbPct = computed(() => {
   return locked.value ? 100 : 0;
 });
 
-const fillPct = computed(() => thumbPct.value);
+/** 进度条与拖柄共用同一套 pct→px，避免 fill% 与 translateX(travel) 不同步 */
+const thumbLeft = computed(() => thumbOffsetPx(thumbPct.value));
+const fillWidth = computed(() => fillWidthPx(thumbPct.value));
 
 function pctFromEvent(ev: PointerEvent): number {
   const el = trackEl;
   if (!el) return locked.value ? 100 : 0;
   const r = el.getBoundingClientRect();
-  if (r.width <= 0) return 0;
-  const x = Math.min(Math.max(ev.clientX - r.left, 0), r.width);
-  return (x / r.width) * 100;
+  return pctFromClientX(ev.clientX, r.left, r.width);
 }
 
 function onPointerDown(ev: PointerEvent) {
@@ -80,15 +99,27 @@ async function onPointerUp(ev: PointerEvent) {
   if (!dragging) return;
   dragging = false;
   const pct = pctFromEvent(ev);
-  dragPct.value = null;
+  // 请求完成前保持拖拽视觉，避免 fill/拇指先弹回再跳到新状态
+  dragPct.value = pct;
   trackEl = null;
   const wantLock = pct >= 70;
   const wantUnlock = pct <= 30;
-  if (locked.value && wantUnlock) {
-    await persist(false);
-  } else if (!locked.value && wantLock) {
-    await persist(true);
+  try {
+    if (locked.value && wantUnlock) {
+      await persist(false);
+    } else if (!locked.value && wantLock) {
+      await persist(true);
+    }
+  } finally {
+    dragPct.value = null;
   }
+}
+
+async function onKeydown(ev: KeyboardEvent) {
+  if (busy.value) return;
+  if (ev.key !== "Enter" && ev.key !== " ") return;
+  ev.preventDefault();
+  await persist(!locked.value);
 }
 
 async function persist(next: boolean) {
@@ -136,24 +167,49 @@ watch(
   gap: 10px;
   flex-wrap: wrap;
   justify-content: flex-end;
+  flex-shrink: 0;
 }
 
 .ds-lock-track {
+  /* 钉死几何，避免 Electron 默认 button 样式 / % 子元素撑破 */
+  appearance: none;
+  -webkit-appearance: none;
+  box-sizing: border-box;
   position: relative;
-  width: 88px;
-  height: 28px;
-  border-radius: 999px;
-  border: 1px solid #d1d5db;
-  background: #f3f4f6;
+  flex: 0 0 auto;
+  width: v-bind("`${LOCK_TRACK_W}px`");
+  height: v-bind("`${LOCK_TRACK_H}px`");
+  min-width: v-bind("`${LOCK_TRACK_W}px`");
+  min-height: v-bind("`${LOCK_TRACK_H}px`");
+  max-width: v-bind("`${LOCK_TRACK_W}px`");
+  max-height: v-bind("`${LOCK_TRACK_H}px`");
+  margin: 0;
   padding: 0;
+  border-radius: 999px;
+  border: 1px solid #9ca3af;
+  background: #e5e7eb;
   cursor: pointer;
   touch-action: none;
   overflow: hidden;
+  vertical-align: middle;
+  line-height: 0;
+  color: inherit;
+  font: inherit;
+}
+
+.ds-lock-track:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.ds-lock-track:focus-visible {
+  outline: 2px solid #6366f1;
+  outline-offset: 2px;
 }
 
 .ds-lock--locked .ds-lock-track {
   border-color: #f59e0b;
-  background: #fffbeb;
+  background: #fef3c7;
 }
 
 .ds-lock-fill {
@@ -162,23 +218,35 @@ watch(
   top: 0;
   bottom: 0;
   background: linear-gradient(90deg, #fde68a, #fbbf24);
-  opacity: 0.55;
+  opacity: 0.7;
   pointer-events: none;
 }
 
 .ds-lock-thumb {
   position: absolute;
-  top: 2px;
+  top: 4px;
+  left: 0;
   width: 24px;
   height: 24px;
   border-radius: 50%;
   background: #fff;
-  border: 1px solid #d1d5db;
+  border: 1px solid #9ca3af;
   display: grid;
   place-items: center;
-  font-size: 12px;
-  box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.18);
   pointer-events: none;
+  color: #4b5563;
+  transition: transform 0.08s linear;
+  will-change: transform;
+}
+
+.ds-lock--locked .ds-lock-thumb {
+  border-color: #d97706;
+  color: #b45309;
+}
+
+.ds-lock-ico {
+  display: block;
 }
 
 .ds-lock-meta {

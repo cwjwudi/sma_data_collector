@@ -8,6 +8,7 @@
         class="scb-inp"
         :class="inputClass"
         :placeholder="placeholder"
+        :disabled="disabled"
         :spellcheck="false"
         autocomplete="off"
         role="combobox"
@@ -23,6 +24,7 @@
         class="scb-toggle"
         :aria-label="open ? '收起列表' : '展开列表'"
         :aria-expanded="open"
+        :disabled="disabled"
         @mousedown.prevent
         @click="toggleOpen"
       >
@@ -66,17 +68,22 @@ const props = withDefaults(
   defineProps<{
     options: readonly string[];
     placeholder?: string;
+    disabled?: boolean;
     inputClass?: string | Record<string, boolean> | (string | Record<string, boolean>)[];
     /** 选项预览样式（如字体名用自身字体渲染） */
     optPreviewStyle?: (opt: string) => Record<string, string> | undefined;
     /** 下拉最大高度（px） */
     maxListHeight?: number;
+    /** 下拉最小宽度（px）；长模型名等场景可宽于输入框 */
+    minListWidth?: number;
   }>(),
   {
     placeholder: "",
+    disabled: false,
     inputClass: undefined,
     optPreviewStyle: undefined,
     maxListHeight: 280,
+    minListWidth: 0,
   },
 );
 
@@ -111,7 +118,10 @@ function placeList() {
   const avail = Math.max(160, openUp ? spaceAbove : spaceBelow);
   const height = Math.min(maxH, avail);
   const rowW = rootRef.value?.getBoundingClientRect().width ?? r.width;
-  const width = Math.max(r.width, rowW);
+  const width = Math.min(
+    window.innerWidth - 16,
+    Math.max(r.width, rowW, props.minListWidth || 0),
+  );
   listStyle.value = {
     position: "fixed",
     left: `${Math.max(8, Math.min(r.left, window.innerWidth - width - 8))}px`,
@@ -151,11 +161,13 @@ function closeList() {
 }
 
 function toggleOpen() {
+  if (props.disabled) return;
   if (open.value) closeList();
   else openList();
 }
 
 function onFocus() {
+  if (props.disabled) return;
   openList();
 }
 
@@ -180,6 +192,7 @@ function pick(opt: string) {
 }
 
 function onKeydown(e: KeyboardEvent) {
+  if (props.disabled) return;
   if (e.key === "Escape") {
     if (open.value) {
       e.preventDefault();
@@ -237,6 +250,13 @@ watch(
   },
 );
 
+watch(
+  () => props.disabled,
+  (d) => {
+    if (d && open.value) closeList();
+  },
+);
+
 onMounted(() => {
   document.addEventListener("pointerdown", onDocPointerDown, true);
   window.addEventListener("resize", onWinChange);
@@ -278,6 +298,11 @@ onBeforeUnmount(() => {
   border-color: #a5b4fc;
   z-index: 1;
 }
+.scb-inp:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  background: #f9fafb;
+}
 .scb-toggle {
   flex: 0 0 auto;
   width: 28px;
@@ -290,8 +315,12 @@ onBeforeUnmount(() => {
   line-height: 1;
   padding: 0;
 }
-.scb-toggle:hover {
+.scb-toggle:hover:not(:disabled) {
   background: #f4f4f5;
+}
+.scb-toggle:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 </style>
 

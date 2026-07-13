@@ -1,6 +1,6 @@
 {
   "name": "sd-sma-report-editor-ai",
-  "version": "0.3.54",
+  "version": "0.3.63",
   "description": "Report Editor AI — 报表编辑器 AI 版（Electron + FastAPI）",
   "author": "B&R Team",
   "private": true,
@@ -183,9 +183,11 @@
   "devDependencies": {
     "@types/node": "^25.7.0",
     "@vitejs/plugin-vue": "^5.2.0",
+    "@vue/test-utils": "^2.4.11",
     "concurrently": "^9.2.1",
     "electron": "^34.0.0",
     "electron-builder": "^25.1.8",
+    "happy-dom": "^20.10.6",
     "rcedit": "^4.0.1",
     "typescript": "^6.0.3",
     "vite": "^6.2.0",

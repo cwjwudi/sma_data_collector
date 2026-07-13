@@ -16,6 +16,8 @@
   padding: 12px;
   background: #fafafa;
   min-width: 260px;
+  min-height: 200px;
+  height: auto;
   display: flex;
   flex-direction: column;
   gap: 6px;

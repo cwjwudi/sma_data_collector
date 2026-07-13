@@ -408,14 +408,41 @@ function resolveAppIcon() {
   return null
 }
 
+/**
+ * 菜单栏 / 系统托盘图标：macOS 需要约 16–22px，过大 PNG/ICNS 常显示为空白，
+ * 导致静默启动后找不到「打开主界面」入口。
+ */
+function resolveTrayIcon() {
+  const src = resolveAppIcon()
+  if (!src || src.isEmpty()) return null
+  if (process.platform !== 'darwin') return src
+  try {
+    const sized = src.resize({ width: 22, height: 22 })
+    if (sized.isEmpty()) return src
+    // Template 图在浅/深色菜单栏下都更易辨认
+    if (typeof sized.setTemplateImage === 'function') sized.setTemplateImage(true)
+    return sized
+  } catch {
+    return src
+  }
+}
+
 function showMainWindowFromTray() {
   if (!mainWindow || mainWindow.isDestroyed()) {
     createWindow()
-    return
+  } else {
+    if (mainWindow.isMinimized()) mainWindow.restore()
+    mainWindow.show()
+    mainWindow.focus()
   }
-  if (mainWindow.isMinimized()) mainWindow.restore()
-  mainWindow.show()
-  mainWindow.focus()
+  // 静默会话曾隐藏窗口时，确保 Dock 图标可点回（macOS）
+  if (process.platform === 'darwin' && app.dock) {
+    try {
+      app.dock.show()
+    } catch {
+      /* ignore */
+    }
+  }
 }
 
 function destroyAppTray() {
@@ -428,20 +455,8 @@ function destroyAppTray() {
   appTray = null
 }
 
-function ensureAppTray() {
-  if (appTray) return
-  const icon = resolveAppIcon()
-  if (!icon || icon.isEmpty()) {
-    log('Tray icon unavailable; silent start will still hide the window')
-  }
-  try {
-    appTray = new Tray(icon && !icon.isEmpty() ? icon : nativeImage.createEmpty())
-  } catch (e) {
-    log(`Tray create failed: ${e.message}`)
-    return
-  }
-  appTray.setToolTip('报表编辑器 AI 版')
-  const menu = Menu.buildFromTemplate([
+function buildTrayMenu() {
+  return Menu.buildFromTemplate([
     {
       label: '打开主界面',
       click: () => showMainWindowFromTray(),
@@ -456,8 +471,36 @@ function ensureAppTray() {
       },
     },
   ])
+}
+
+function ensureAppTray() {
+  if (appTray) return
+  const icon = resolveTrayIcon()
+  if (!icon || icon.isEmpty()) {
+    log('Tray icon unavailable; silent start will still hide the window')
+  }
+  try {
+    appTray = new Tray(icon && !icon.isEmpty() ? icon : nativeImage.createEmpty())
+  } catch (e) {
+    log(`Tray create failed: ${e.message}`)
+    return
+  }
+  appTray.setToolTip('报表编辑器 AI 版')
+  const menu = buildTrayMenu()
   appTray.setContextMenu(menu)
+  // Windows：双击托盘打开；macOS：单击菜单栏图标即出菜单（含「打开主界面」）
   appTray.on('double-click', () => showMainWindowFromTray())
+  if (process.platform === 'darwin') {
+    // 部分系统版本单击不弹出菜单时，仍可通过左键直接打开窗口
+    appTray.on('click', () => showMainWindowFromTray())
+    if (app.dock) {
+      try {
+        app.dock.setMenu(menu)
+      } catch (e) {
+        log(`dock.setMenu failed (ignore): ${e.message}`)
+      }
+    }
+  }
 }
 
 function createWindow() {
@@ -1407,6 +1450,13 @@ app.on('window-all-closed', () => {
   killPython()
   // macOS 默认可驻留托盘；为使「关掉开发窗口」与 Windows 一致、并释放 8000，这里直接 quit。
   app.quit()
+})
+
+// macOS：点 Dock 图标会触发 activate。静默启动时窗口是 hide 的，若不处理则用户无法再打开界面。
+app.on('activate', () => {
+  if (isQuitting) return
+  showMainWindowFromTray()
+  if (silentStartSession) ensureAppTray()
 })
 
 app.on('before-quit', () => {

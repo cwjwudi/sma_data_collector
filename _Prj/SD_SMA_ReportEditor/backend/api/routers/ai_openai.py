@@ -12,6 +12,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from modules import ai_config, ai_datasource_ops, ai_pending_actions, ai_pending_prompts, ai_tools
+from modules.llm_upstream_errors import format_llm_upstream_error
 from schemas.ai import (
     AiChatRequest,
     AiPendingConfirmSubmit,
@@ -29,13 +30,23 @@ settings_router = APIRouter(tags=["ai-settings"])
 MAX_TOOL_ROUNDS = 8
 SYSTEM_PROMPT = (
     "你是 SD_SMA_ReportEditor（报表编辑器）的 AI 助手，帮助用户诊断数据库/OPC UA 连接、"
-    "导出/结批失败与模版配置。优先调用工具获取事实，不要编造连接状态或审计内容。"
-    "开发/排障时优先 get_dev_runtime_snapshot 或 diagnose_work_chain；改数据源相关代码前先跑链路对齐现场。"
+    "导出/结批失败与模版配置。优先调用工具获取事实，不要编造连接状态、审计、版本或导出结果。"
+    "开发/排障时优先 get_dev_runtime_snapshot 或 diagnose_work_chain。"
     "禁止向用户索要或输出数据库/OPC 密码明文；密码与删除/复位/导入/结批确认仅在报表软件 UI 弹框完成。"
     "收到 awaiting_user_credentials 或 awaiting_user_confirm 时，提示用户到本机报表软件内操作。"
-    "模拟结批 request_manual_export 仅排队，需本机 Electron 运行并由用户在弹框确认后执行 PDF 导出。"
-    "加密 .rebak 备份含口令，仅能通过 request_config_backup_export 唤起 UI 另存，不得把备份内容或口令返回给 LLM。"
-    "request_check_app_update 只检查更新，不会自动安装。"
+    "suggest_config_change 只生成建议、不落库，不得冒充已修改。"
+    "若工具返回 ok=false（如未启用「允许 AI 写入工具」、工具被禁用、数据源锁定），必须如实告知，禁止空口答应「已完成/正在开启」。"
+    "——能力域与必调工具——"
+    "定时探活开/关：必须 update_connection_probe_settings（开启传 enabled=true）。"
+    "配置 DB/OPC：upsert_db_connection / upsert_opc_server；密码用 request_connection_credentials；删除用 delete_*（确认流）。"
+    "模版/版式：copy_* / create_blank_* / delete_*（确认）/ set_template_display_order；打开编辑用 request_open_*。"
+    "备份/导入/复位：request_config_backup_export / request_config_import_merge / request_config_reset；"
+    "加密 .rebak 含口令，不得把备份内容或口令返回给 LLM。"
+    "演示库/冒烟模版：ensure_user_demo_database / create_binding_smoke_template / apply_template_sheet_layouts。"
+    "导出目录：set_export_dir 或 request_pick_export_dir。"
+    "预检/模拟结批：preflight_export / request_manual_export（仅排队，需本机确认后导出）。"
+    "结批写回/并行：set_export_result_feedback / set_max_parallel_exports；触发检查用 check_auto_trigger_bindings。"
+    "检查更新：request_check_app_update 只检查、不自动安装。"
 )
 
 
@@ -113,8 +124,7 @@ async def _forward_llm(
             logger.exception("LLM 请求失败")
             raise HTTPException(502, f"无法连接 LLM 服务 ({base})：{e}") from e
     if resp.status_code >= 400:
-        detail = resp.text[:2000]
-        raise HTTPException(resp.status_code, f"LLM 上游错误：{detail}")
+        raise HTTPException(resp.status_code, format_llm_upstream_error(resp.status_code, resp.text[:2000]))
     try:
         return resp.json()
     except json.JSONDecodeError as e:
@@ -431,19 +441,47 @@ def mirror_client_prefs(request: Request, body: dict[str, Any]):
     path.parent.mkdir(parents=True, exist_ok=True)
     import json
 
-    merged = dict(body) if isinstance(body, dict) else {}
-    incoming_sets_pending = isinstance(body, dict) and "pending_apply" in body
-    if path.is_file() and not incoming_sets_pending:
+    incoming = dict(body) if isinstance(body, dict) else {}
+    existing: dict[str, Any] = {}
+    if path.is_file():
         try:
-            existing = json.loads(path.read_text(encoding="utf-8"))
-            if isinstance(existing, dict) and existing.get("pending_apply"):
-                # 保留 AI 写入的 pending 补丁，避免被前端常规镜像冲掉
-                merged = {**merged, **existing}
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(raw, dict):
+                existing = raw
         except (OSError, json.JSONDecodeError):
-            pass
-    if merged.get("pending_apply") is False:
-        merged["pending_apply"] = False
-    path.write_text(json.dumps(merged, ensure_ascii=False, indent=2), encoding="utf-8")
+            existing = {}
+
+    # 前端常规镜像（不含 pending_apply）：保留 AI 未消费的 pending
+    if "pending_apply" not in incoming:
+        if existing.get("pending_apply"):
+            merged = {**incoming, **{k: existing[k] for k in ("pending_apply", "pending_token", "ui_reload") if k in existing}}
+            path.write_text(json.dumps(merged, ensure_ascii=False, indent=2), encoding="utf-8")
+            return {"ok": True, "preserved_pending": True}
+        path.write_text(json.dumps(incoming, ensure_ascii=False, indent=2), encoding="utf-8")
+        return {"ok": True}
+
+    # 前端 ack 清除 pending：仅当 token 一致（或旧镜像无 token）才清；否则保留更新的 pending
+    if incoming.get("pending_apply") is False:
+        ack = incoming.get("ack_pending_token")
+        cur_token = existing.get("pending_token")
+        if existing.get("pending_apply") and cur_token and ack and cur_token != ack:
+            preserved = {
+                **{k: v for k, v in incoming.items() if k not in ("pending_apply", "ui_reload", "ack_pending_token", "pending_token")},
+                "pending_apply": True,
+                "pending_token": cur_token,
+                "ui_reload": existing.get("ui_reload") if isinstance(existing.get("ui_reload"), dict) else {},
+            }
+            path.write_text(json.dumps(preserved, ensure_ascii=False, indent=2), encoding="utf-8")
+            return {"ok": True, "preserved_pending": True, "pending_token": cur_token}
+        cleared = {k: v for k, v in incoming.items() if k not in ("ack_pending_token", "pending_token")}
+        cleared["pending_apply"] = False
+        cleared["ui_reload"] = incoming.get("ui_reload") if isinstance(incoming.get("ui_reload"), dict) else {}
+        cleared.pop("pending_token", None)
+        path.write_text(json.dumps(cleared, ensure_ascii=False, indent=2), encoding="utf-8")
+        return {"ok": True, "cleared_pending": True}
+
+    # 显式写入 pending（少见）；直接落盘
+    path.write_text(json.dumps(incoming, ensure_ascii=False, indent=2), encoding="utf-8")
     return {"ok": True}
 
 

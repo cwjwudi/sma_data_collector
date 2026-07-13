@@ -65,6 +65,16 @@
             粘贴
           </button>
           <span class="bar-sep" aria-hidden="true" />
+          <button
+            type="button"
+            class="b"
+            title="将当前页非表格控件的预览/导出外框设为隐藏（可撤销）"
+            :disabled="!editing"
+            @click="hideBordersOnCurrentPage"
+          >
+            一键隐藏边框
+          </button>
+          <span class="bar-sep" aria-hidden="true" />
           <button type="button" class="b primary" :disabled="saving" @click="save">
             {{ saving ? "保存中…" : "保存模版" }}
           </button>
@@ -505,6 +515,7 @@ import {
   syncLegacyElementsAlias,
   TEMPLATE_SCHEMA_VERSION,
 } from "@/lib/report-template/model";
+import { hideShowBordersInElements } from "@/lib/report-template/show-border";
 import {
   copyTemplateElementToClipboard,
   eventTargetIsTypingField,
@@ -1396,6 +1407,16 @@ function pasteSel() {
   }
   selId.value = el.id;
   hint.value = "已粘贴控件（属性已保留）。";
+}
+
+function hideBordersOnCurrentPage() {
+  const t = editing.value;
+  if (!t) return;
+  midMode.value = "edit";
+  const els = bodyElementsRef(t, sh.value, bodyPageIdx.value);
+  const n = hideShowBordersInElements(els);
+  hint.value =
+    n > 0 ? `已隐藏 ${n} 个控件的预览/导出外框（表格未改，可撤销）。` : "当前页没有可隐藏的控件外框。";
 }
 
 function sigOk(dataUrl) {

@@ -111,7 +111,7 @@ export interface TemplateElement {
   textAutoWrap: boolean;
   /**
    * 预览与导出是否绘制控件外框（编辑选中描边不受影响）。
-   * 默认 true；设为 false 可去掉 PDF/预览中的浅灰边框。
+   * 新建默认 false（表格除外仍为 true）；JSON 缺字段加载时按 true 兼容旧稿。
    */
   showBorder: boolean;
   /** 图片控件 / 签名笔迹 base64 data URL */
@@ -505,7 +505,7 @@ export function defaultElement(type: TemplateControlType): Omit<TemplateElement,
     fontFamily: "",
     zIndex: 0,
     textAutoWrap: false,
-    showBorder: true,
+    showBorder: false,
     imageSrc: "",
     alignX: "start" as LayoutAlignAxis,
     alignY: "center" as LayoutAlignAxis,
@@ -580,6 +580,8 @@ export function defaultElement(type: TemplateControlType): Omit<TemplateElement,
       text: "",
       sqlText: "",
       ...base,
+      /** 表格不参与「默认隐藏外框」；保持显示以不动网格语义 */
+      showBorder: true,
       tableRows: 3,
       tableCols: 4,
       tableCells: [],
@@ -675,7 +677,8 @@ export function hydrateTemplateElement(raw: Partial<TemplateElement>): TemplateE
       typeof raw.fontFamily === "string" ? raw.fontFamily.trim().slice(0, 240) : d.fontFamily,
     zIndex: normalizeZIndex(raw.zIndex ?? d.zIndex),
     textAutoWrap: normalizeTextAutoWrap(raw.textAutoWrap, d.textAutoWrap),
-    showBorder: normalizeShowBorder(raw.showBorder, d.showBorder),
+    // 缺字段固定兼容为 true，勿用新建默认 false 作 fallback
+    showBorder: normalizeShowBorder(raw.showBorder, true),
   };
   if (type === "table") {
     const missingCells = raw.tableCells == null || !Array.isArray(raw.tableCells);

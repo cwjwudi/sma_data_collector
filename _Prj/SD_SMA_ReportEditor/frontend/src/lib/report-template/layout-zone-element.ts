@@ -149,7 +149,7 @@ export interface LayoutZoneElement {
   textAutoWrap: boolean;
   /**
    * 预览与导出是否绘制控件外框（编辑选中描边不受影响）。
-   * 默认 true；设为 false 可去掉浅灰边框。
+   * 新建默认 false（表格除外仍为 true）；JSON 缺字段加载时按 true 兼容旧稿。
    */
   showBorder: boolean;
   /** 数据参数（parameter）或预留；其它类型多为 none */
@@ -244,8 +244,8 @@ export function normalizeTextAutoWrap(v: unknown, fallback: boolean): boolean {
   return fallback;
 }
 
-/** 预览/导出控件外框：缺省 true（兼容旧模版） */
-export function normalizeShowBorder(v: unknown, fallback: boolean): boolean {
+/** 预览/导出控件外框：缺省 true（兼容旧模版；新建默认见 default* 的 false） */
+export function normalizeShowBorder(v: unknown, fallback: boolean = true): boolean {
   if (v === true || v === "true" || v === 1 || v === "1") return true;
   if (v === false || v === "false" || v === 0 || v === "0") return false;
   return fallback;
@@ -549,7 +549,7 @@ export function defaultLayoutZoneElement(type: LayoutControlType): Omit<LayoutZo
     pageNumberMode: "plain" as PageNumberDisplayMode,
     zIndex: 0,
     textAutoWrap: false,
-    showBorder: true,
+    showBorder: false,
   };
   if (type === "text") {
     return { type: "text", x: 8, y: 8, w: 160, h: 28, ...baseText, ...axStart };
@@ -616,6 +616,8 @@ export function defaultLayoutZoneElement(type: LayoutControlType): Omit<LayoutZo
       w: 400,
       h: 200,
       ...baseText,
+      /** 表格不参与「默认隐藏外框」 */
+      showBorder: true,
       text: "",
       tableRows: 3,
       tableCols: 4,
@@ -673,7 +675,8 @@ export function hydrateLayoutZoneElement(raw: Partial<LayoutZoneElement>): Layou
       typeof raw.fontFamily === "string" ? raw.fontFamily.trim().slice(0, 240) : d.fontFamily,
     zIndex: normalizeZIndex(raw.zIndex ?? d.zIndex),
     textAutoWrap: normalizeTextAutoWrap(raw.textAutoWrap, d.textAutoWrap),
-    showBorder: normalizeShowBorder(raw.showBorder, d.showBorder),
+    // 缺字段固定兼容为 true，勿用新建默认 false 作 fallback
+    showBorder: normalizeShowBorder(raw.showBorder, true),
     bindingKind: normalizeZoneBindingKind(raw.bindingKind ?? d.bindingKind),
     opcuaNodeId: typeof raw.opcuaNodeId === "string" ? raw.opcuaNodeId : d.opcuaNodeId,
     sqlText: typeof raw.sqlText === "string" ? raw.sqlText : d.sqlText,

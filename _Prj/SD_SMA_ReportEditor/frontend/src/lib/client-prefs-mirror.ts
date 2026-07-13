@@ -33,22 +33,34 @@ async function buildExportHistorySummary(): Promise<Record<string, unknown> | nu
   }
 }
 
-export async function syncPendingClientPrefsFromBackend(): Promise<void> {
+export async function syncPendingClientPrefsFromBackend(depth = 0): Promise<void> {
+  if (depth > 5) return
   try {
     const data = (await apiFetch('/settings/client_prefs/mirror')) as {
       pending_apply?: boolean
+      pending_token?: string
       report_generator?: Record<string, unknown>
       report_export?: Record<string, unknown>
       template_display_order?: string[]
       layout_display_order?: Record<string, string[]>
-      ui_reload?: { assets?: boolean; datasource?: boolean; reason?: string }
+      ui_reload?: { assets?: boolean; datasource?: boolean; connection_probe?: boolean; reason?: string }
     }
     if (data?.pending_apply) {
       applyPendingMirrorFromBackend(data)
       await apiFetch('/settings/client_prefs/mirror', {
         method: 'POST',
-        body: { ...(await buildMirrorBody()), pending_apply: false, ui_reload: {} },
+        body: {
+          ...(await buildMirrorBody()),
+          pending_apply: false,
+          ui_reload: {},
+          ...(data.pending_token ? { ack_pending_token: data.pending_token } : {}),
+        },
       })
+      // 清除期间若 AI 又写入了新 pending，立刻再拉一次，避免反复开关丢刷新
+      const again = (await apiFetch('/settings/client_prefs/mirror')) as { pending_apply?: boolean }
+      if (again?.pending_apply) {
+        await syncPendingClientPrefsFromBackend(depth + 1)
+      }
     }
   } catch {
     /* 后端未起时静默 */
@@ -88,7 +100,7 @@ export function applyPendingMirrorFromBackend(data: {
   template_display_order?: string[]
   layout_display_order?: Record<string, string[]>
   pending_apply?: boolean
-  ui_reload?: { assets?: boolean; datasource?: boolean; reason?: string }
+  ui_reload?: { assets?: boolean; datasource?: boolean; connection_probe?: boolean; reason?: string }
 }): void {
   if (!data?.pending_apply) return
   try {
@@ -124,6 +136,13 @@ export function applyPendingMirrorFromBackend(data: {
     }
     if (reload?.datasource) {
       notifyDatasourceChanged('all', reload.reason || 'ui_reload')
+    }
+    if (reload?.connection_probe) {
+      window.dispatchEvent(
+        new CustomEvent('report-editor-connection-probe-changed', {
+          detail: { via: 'ai', reason: reload.reason || 'ui_reload' },
+        }),
+      )
     }
   } catch {
     /* ignore */
