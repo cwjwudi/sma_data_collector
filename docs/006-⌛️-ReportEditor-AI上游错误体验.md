@@ -94,3 +94,31 @@ if resp.status_code >= 400:
 1. [platform.openai.com/settings/organization/billing](https://platform.openai.com/settings/organization/billing)（或 Billing）是否有可用 credit / 付款方式。  
 2. 设置页里的 API Key 是否属于该 Organization/Project。  
 3. 若只用 ChatGPT 订阅、不想开 API 账单：需换其它已开通 API 的上游，或自备有额度的 Key。
+
+---
+
+# ⌛️ 未完成：切换硅基流动等上游后模型名仍残留 gpt-*
+
+## 现象（2026-07-13）
+
+- 设置 → AI：**LLM Base URL** 已改为 `https://api.siliconflow.cn/v1`。
+- 「刷新模型列表」下拉为硅基模型（`deepseek-ai/DeepSeek-V3`、`DeepSeek-R1`、BGE 等），**无任何 gpt-***。
+- 但「模型」输入框当前值仍是 **`gpt-4.1`**（或历史默认 `gpt-4o-mini`）。
+
+## 原因
+
+1. **硅基流动（OpenAI 兼容托管）不提供 OpenAI 官方 GPT 权重**；列表里不会出现 `gpt-4o` / `gpt-4.1`。
+2. 本软件「模型」为**可手输 Combobox**：切换 Base URL **不会自动清空/改写**已保存的 `llm_model`。
+3. 默认配置里曾用 OpenAI 系占位名（如 `gpt-4o-mini`），换上游后若未重选，会继续把无效模型名发给硅基 → 上游报错或行为异常。
+
+## 用户立刻可做
+
+1. 在下拉里选 **`deepseek-ai/DeepSeek-V3`**（推荐，支持工具调用）。  
+2. 保存 AI 设置后再试助手。  
+3. 不要用手输 `gpt-4.1`（硅基没有该模型）。
+
+## 拟改（产品，确认后实现）
+
+1. 切换 / 保存 `llm_base_url` 时：若当前 `llm_model` 不在「刚拉取的上游列表」中，提示并清空或自动选列表第一项聊天模型。  
+2. 刷新模型列表成功后：若当前值不在列表中，输入框标红/警告「当前模型不在上游列表」。  
+3. 设置页说明：OpenAI 兼容上游的模型 ID 以该平台为准，**不能沿用 gpt-* 名**。
