@@ -1,7 +1,7 @@
 # ReportEditor AI 助手：上游错误与写入类能力闭环
 
 > 本文件为 **任务看板**；规则见 [CLAUDE.md](../CLAUDE.md)。  
-> 版本计划（定时探活首切片）：[0.3.60 Plan](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.60.md)。  
+> 版本计划：探活 [0.3.60](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.60.md)（代码已合入）；本版体验切片 [0.3.62](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.62.md)。  
 > **范围说明**：不只「开启定时探活」；在开启「允许 AI 写入工具」后，数据源、模版/版式资产、备份恢复、结批导出、演示冒烟、诊断取证等能力域均须**真正执行并反映到 UI**（禁止空口答应）。完整域表见下方 H1。
 
 ---
@@ -104,11 +104,11 @@
 
 ## 拟改（分版本；本条登记标准）
 
-1. **系统提示**：按能力域点名必调工具；`ok=false` / `awaiting_user_*` 如实转述。  
+1. **系统提示**：按能力域点名必调工具；`ok=false` / `awaiting_user_*` 如实转述。→ **0.3.62 已加强 SYSTEM_PROMPT**；端到端剧本仍待后续。  
 2. **端到端剧本**：每个能力域至少 1 条成功 + 1 条总闸关闭失败（诊断域改为「未调工具则失败」）。  
 3. **UI 同步审计**：各 write/confirm 成功路径是否 `mark_ui_reload` / pending 完成回调。  
 4. **单测**：总闸关拒绝；成功 reload；confirm 仅 pending。  
-5. **切片**：探活优先；其余按现场痛点排期（资产 → 备份 → 结批 → 诊断体验），**标准以本表为准**。
+5. **切片**：探活已 ✅（0.3.60 代码 / 随 0.3.62 发版线）；其余按现场痛点排期（资产 → 备份 → 结批 → 诊断体验），**标准以本表为准**。
 
 ## 验收（能力矩阵 · 写入总闸已开，除非注明）
 
@@ -131,7 +131,7 @@
 
 ---
 
-# ⌛️ 未完成：LLM 额度不足时错误展示不友好
+# ✅ 已完成：LLM 额度不足时错误展示不友好（→ 0.3.62）
 
 ## 现象（现场截图 · 2026-07-13）
 
@@ -146,53 +146,28 @@ LLM 上游错误：{ "error": { "message": "You exceeded your current quota, ple
 
 ## 根因（代码对照）
 
-后端 `_Prj/SD_SMA_ReportEditor/backend/api/routers/ai_openai.py` 中 `_forward_llm`：
+后端 `_forward_llm` 原先把上游 **原始 JSON** 拼进 `HTTPException`；前端原样展示。
 
-```python
-if resp.status_code >= 400:
-    detail = resp.text[:2000]
-    raise HTTPException(resp.status_code, f"LLM 上游错误：{detail}")
-```
+## 实现（0.3.62）
 
-上游（OpenAI 兼容）返回的 **原始 JSON 正文**被原样拼进 `HTTPException` 详情；前端 AI 抽屉再把该字符串展示给用户，**未按 `error.code` / `type` 做中文归类**。
+1. `modules/llm_upstream_errors.py`：`format_llm_upstream_error` 映射 `insufficient_quota` / Key / 限流 / 模型不存在 / 5xx；未知错误短摘要（≤160 字），默认不含整段 JSON。  
+2. `ai_openai._forward_llm` 接入上述格式化。  
+3. 单测 `modules/test_llm_upstream_errors.py`。
 
-本例上游语义明确：
+## 验收
 
-| 字段 | 值 |
-|------|-----|
-| `error.code` / `type` | `insufficient_quota` |
-| 含义 | 当前 API Key / 套餐**额度不足或账单受限**（非报表编辑器逻辑 bug） |
-
-## 影响
-
-1. **体验**：英文 JSON 堆在聊天区，像程序崩溃。
-2. **排障误导**：现场易当成「AI 助手坏了」，而非去设置页换 Key / 充值 / 换上游。
-3. **同类错误一并裸奔**：速率限制、Key 无效、模型不存在等也会同样甩原始 body。
-
-## 拟改（确认后开工；可挂后续小版本）
-
-1. **后端**：对常见上游码映射短中文，例如：
-   - `insufficient_quota` → 「LLM 额度不足或账单受限，请到设置检查 Key / 套餐，或更换上游。」
-   - `invalid_api_key` / 401 → 「LLM Key 无效或未配置。」
-   - `rate_limit_*` → 「请求过于频繁，请稍后再试。」
-   - 其余：保留简短摘要 + 可选「详情」折叠，避免默认甩满 JSON。
-2. **前端**：AI 抽屉错误区优先显示映射文案；需要时再展开原始 detail。
-3. **测试**：对 `_forward_llm` / 错误格式化函数单测（quota / invalid key / 未知 JSON）。
-
-## 验收（实现后）
-
-1. 复现 `insufficient_quota` 时，主文案为中文说明，**默认不出现整段 JSON**。
-2. 设置页入口提示可发现（文案或链到「设置 → AI」）。
-3. 单测覆盖常见 code 映射。
+1. 复现 `insufficient_quota` → 中文额度/账单说明，**默认无整段 JSON**。  
+2. 文案提示到「设置 → AI 助手」；并注明 ChatGPT 订阅与 API 不互通。  
+3. 单测覆盖常见 code。
 
 ## 备注
 
-- 截图中 AI 输入框仍有**可见描边**（焦点/默认边），与 [docs/005-✅-ReportEditor控件默认无边框.md](005-✅-ReportEditor控件默认无边框.md) **无关**（005 已改为模版 `showBorder`）；本条只跟 LLM 错误文案。
-- **运维侧**：若 Key 确已欠费，映射文案再友好也无法代替充值/换 Key；软件只负责说清楚原因。
+- AI 输入框描边与 [docs/005](005-✅-ReportEditor控件默认无边框.md) 无关。  
+- 运维侧欠费仍须充值/换 Key；软件只负责说清楚原因。
 
 ---
 
-# ⌛️ 未完成：澄清「ChatGPT 订阅 ≠ API 额度」（用户易混淆）
+# ✅ 已完成：澄清「ChatGPT 订阅 ≠ API 额度」（→ 0.3.62）
 
 ## 现场补充（2026-07-13）
 
@@ -207,51 +182,39 @@ if resp.status_code >= 400:
 | 计费 | 订阅月费 | 另计：预付费额度 / 按量账单（Usage 页） |
 | 是否互通 | 不互通 | 有 Plus 不会自动带上 API 额度 |
 
-报表编辑器 AI 助手走的是设置里配置的 **LLM Base URL + API Key**，对应 **API 账号**，不是 ChatGPT 登录会话。
+## 实现（0.3.62）
 
-因此：
-
-1. 订阅期内仍可能收到 `insufficient_quota`——API 侧无可用额度、未绑支付、组织限额、或 Key 所属项目无余额。
-2. Usage 页几乎 $0、仅 1 次请求，更说明问题不在「用超了多少」，而在 **API 计费/额度未开通或 Key 无可用配额**（需到 **Billing** 查看支付方式与额度，而不仅是 Usage 曲线）。
-3. 软件侧仍应把该错误显示成中文「额度/账单」提示（见上一 H1），避免误判为程序崩溃。
+1. 设置 → AI 助手增加醒目提示：API Key + Base URL 与 ChatGPT 网页订阅不互通。  
+2. `insufficient_quota` 中文映射文案中再次点明不互通。
 
 ## 建议用户自查
 
-1. [platform.openai.com/settings/organization/billing](https://platform.openai.com/settings/organization/billing)（或 Billing）是否有可用 credit / 付款方式。  
-2. 设置页里的 API Key 是否属于该 Organization/Project。  
-3. 若只用 ChatGPT 订阅、不想开 API 账单：需换其它已开通 API 的上游，或自备有额度的 Key。
+1. [Billing](https://platform.openai.com/settings/organization/billing) 是否有可用 credit / 付款方式。  
+2. 设置页 API Key 是否属于该 Organization/Project。  
+3. 若只用 ChatGPT 订阅：换其它已开通 API 的上游，或自备有额度的 Key。
 
 ---
 
-# ⌛️ 未完成：切换硅基流动等上游后模型名仍残留 gpt-*
+# ✅ 已完成：切换硅基流动等上游后模型名仍残留 gpt-*（→ 0.3.62）
 
 ## 现象（2026-07-13）
 
-- 设置 → AI：**LLM Base URL** 已改为 `https://api.siliconflow.cn/v1`。
-- 「刷新模型列表」下拉为硅基模型（`deepseek-ai/DeepSeek-V3`、`DeepSeek-R1`、BGE 等），列表中**没有**任何 `gpt-*` 模型。
-- 但「模型」输入框当前值仍是 `gpt-4.1`（或历史默认 `gpt-4o-mini`）。
+- Base URL 已改为硅基；刷新列表无 `gpt-*`，但模型框仍残留 `gpt-4.1`。
 
-## 原因
+## 实现（0.3.62）
 
-1. **硅基流动（OpenAI 兼容托管）不提供 OpenAI 官方 GPT 权重**；列表里不会出现 `gpt-4o` / `gpt-4.1`。
-2. 本软件「模型」为**可手输 Combobox**：切换 Base URL **不会自动清空/改写**已保存的 `llm_model`。
-3. 默认配置里曾用 OpenAI 系占位名（如 `gpt-4o-mini`），换上游后若未重选，会继续把无效模型名发给硅基 → 上游报错或行为异常。
+1. `ai-model-list.ts`：`isModelInUpstreamList` / `pickPreferredChatModel`（跳过 embedding）。  
+2. 刷新列表后：当前模型不在列表 → 警告 + 输入框标黄。  
+3. 「改用列表首个聊天模型」一键改选（仍须用户保存）。  
+4. 设置页说明：换上游后勿沿用 `gpt-*`。
 
-## 用户立刻可做
+### 本版不做
 
-1. 在下拉里选 **`deepseek-ai/DeepSeek-V3`**（推荐，支持工具调用）。  
-2. 保存 AI 设置后再试助手。  
-3. 不要用手输 `gpt-4.1`（硅基没有该模型）。
-
-## 拟改（产品，确认后实现）
-
-1. 切换 / 保存 `llm_base_url` 时：若当前 `llm_model` 不在「刚拉取的上游列表」中，提示并清空或自动选列表第一项聊天模型。  
-2. 刷新模型列表成功后：若当前值不在列表中，输入框标红/警告「当前模型不在上游列表」。  
-3. 设置页说明：OpenAI 兼容上游的模型 ID 以该平台为准，不能沿用 `gpt-*` 名。
+- 保存 Base URL 时自动强制改写模型（仅警告 + 一键改选）。
 
 ---
 
-# 🚧 进行中：AI「开启定时探活」须真正落库并刷新 UI（→ 0.3.60）
+# ✅ 已完成：AI「开启定时探活」须真正落库并刷新 UI（→ 0.3.60 代码 / 0.3.62 发版线）
 
 > 本条是上方「写入类能力矩阵」的**首发切片**；数据源配置 / 模版复制删除 / 备份恢复见矩阵 H1（仍 ⌛️）。
 
@@ -271,20 +234,14 @@ if resp.status_code >= 400:
 | 持久化 | `config.json` → `app_preferences.connection_probe_*` |
 | UI 同步 | 成功后 `mark_ui_reload(connection_probe=True)` → 聊天结束拉 mirror → `report-editor-connection-probe-changed` |
 
-## 根因（已定位）
+## 实现要点（已落地）
 
-1. **模型空口答应**：未调工具 / 调了 `suggest_config_change` 只给建议不落库。  
-2. **写成功但 UI 不刷新**：`ConnectionProbeSection` 原先仅 `onMounted` 读偏好；AI 写库后无事件。  
-3. **总闸关时仍口头成功**：系统提示未强制「工具失败必须如实告知」。
-
-## 实现要点（代码已落地，发版前验收）
-
-1. `_tool_update_probe`：要求 `enabled` 和/或 `interval_sec`；成功后 `mark_ui_reload(connection_probe=True)`；返回可读 `message`。  
-2. `SYSTEM_PROMPT`：开启/关闭探活必须调 `update_connection_probe_settings`（传 `enabled`），禁止空口答应。  
-3. 前端：`client-prefs-mirror` 识别 `ui_reload.connection_probe` 并派发事件；设置页/导航/数据源页正确回读。  
+1. `_tool_update_probe`：要求 `enabled` 和/或 `interval_sec`；成功后 `mark_ui_reload(connection_probe=True)`。  
+2. `SYSTEM_PROMPT`：开启/关闭探活必须调工具（传 `enabled`），禁止空口答应。  
+3. 前端：`client-prefs-mirror` 派发探活变更事件；设置页/导航/数据源页回读。  
 4. 探活偏好**不再**因数据源锁拒绝。
 
-## 测试用例（必须绿）
+## 测试用例（已绿）
 
 ### 后端 `modules/test_ai_update_probe.py`
 
@@ -305,13 +262,7 @@ if resp.status_code >= 400:
 | 无 `pending_apply` | 不派发 |
 | 仅其它 reload 标志 | 不因探活标志误派发 |
 
-### 手工验收（发版后）
-
-1. 开写入总闸 + 可用上游模型（如硅基 `DeepSeek-V3`）。  
-2. 对助手说「开启定时探活」→ 工具成功 → 设置页开关**立即为开**（无需离页）。  
-3. 关总闸再说一次 → 助手应说明须先开写入，开关保持关。
-
-## 验收（0.3.60）
+## 验收
 
 1. 写入总闸开 + 模型调工具成功 → `connection_probe_enabled=true`，设置开关同步开。  
 2. 写入总闸关 → 工具失败文案；单测覆盖。  

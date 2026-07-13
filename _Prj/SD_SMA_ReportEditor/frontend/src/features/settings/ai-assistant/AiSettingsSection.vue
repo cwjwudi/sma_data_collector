@@ -7,6 +7,10 @@
       API Key 可填任意占位（本机不校验令牌）。局域网接入才需要 Agent 令牌。详见
       <a class="ai-doc-link" href="#" @click.prevent="openDocHint">接入说明</a>。
     </p>
+    <p class="settings-hint settings-hint--warn">
+      此处填写的是 <strong>API Key + Base URL</strong>（按量/预付额度），与 ChatGPT 网页/App 订阅<strong>不互通</strong>。
+      换硅基流动等上游后，请「刷新模型列表」并改选该平台模型 ID，不要沿用 gpt-* 名。
+    </p>
 
     <div class="settings-switch-row">
       <button
@@ -27,7 +31,10 @@
       <span class="settings-field-label">LLM Base URL</span>
       <input v-model="form.llm_base_url" class="settings-input" type="url" :disabled="busy || !form.enabled" />
     </div>
-    <div class="settings-field-row ai-model-field" :class="{ 'settings-field-row--muted': !form.enabled }">
+    <div
+      class="settings-field-row ai-model-field"
+      :class="{ 'settings-field-row--muted': !form.enabled, 'ai-model-field--mismatch': modelMismatch }"
+    >
       <span class="settings-field-label">模型</span>
       <div class="ai-model-row">
         <SuggestCombobox
@@ -50,7 +57,16 @@
         </button>
       </div>
     </div>
-    <p v-if="modelsHint" class="settings-hint ai-models-hint">{{ modelsHint }}</p>
+    <p v-if="modelsHint" class="settings-hint ai-models-hint" :class="{ 'settings-hint--warn': modelMismatch }">
+      {{ modelsHint }}
+    </p>
+    <p v-if="modelMismatch" class="settings-hint settings-hint--warn">
+      当前模型不在上游列表中（换 Base URL 后常见）。请下拉改选，或
+      <button type="button" class="ai-doc-link" :disabled="busy || !form.enabled" @click="usePreferredUpstreamModel">
+        改用列表首个聊天模型
+      </button>
+      。
+    </p>
     <div class="settings-field-row" :class="{ 'settings-field-row--muted': !form.enabled }">
       <span class="settings-field-label">LLM API Key</span>
       <input
@@ -151,7 +167,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import {
   fetchAiSettings,
   fetchAiUpstreamModels,
@@ -160,6 +176,7 @@ import {
   type AiSettingsPublic,
 } from '@/api/aiSettings'
 import SuggestCombobox from '@/components/report-template/SuggestCombobox.vue'
+import { isModelInUpstreamList, pickPreferredChatModel } from '@/lib/ai-model-list'
 
 defineOptions({ name: 'AiSettingsSection' })
 
@@ -193,6 +210,12 @@ const newAgentToken = ref('')
 const modelOptions = ref<string[]>(['gpt-4o-mini', 'gpt-4o', 'gpt-4.1-mini', 'gpt-4.1'])
 const modelsBusy = ref(false)
 const modelsHint = ref('')
+const upstreamListReady = ref(false)
+
+const modelMismatch = computed(() => {
+  if (!upstreamListReady.value || !modelOptions.value.length) return false
+  return !isModelInUpstreamList(form.llm_model, modelOptions.value)
+})
 
 function applyPublic(s: AiSettingsPublic) {
   settings.value = s
@@ -209,16 +232,31 @@ async function refreshModels() {
   try {
     const res = await fetchAiUpstreamModels()
     modelOptions.value = res.models?.length ? res.models : modelOptions.value
+    upstreamListReady.value = Boolean(res.models?.length)
     if (res.ok) {
       modelsHint.value = `已从上游拉取 ${res.models.length} 个模型（可下拉选择或手输）`
     } else {
       modelsHint.value = res.error || '已使用常用模型列表'
     }
+    if (upstreamListReady.value && !isModelInUpstreamList(form.llm_model, modelOptions.value)) {
+      const preferred = pickPreferredChatModel(modelOptions.value)
+      modelsHint.value += preferred
+        ? `。当前「${form.llm_model}」不在列表中，建议改为「${preferred}」。`
+        : `。当前「${form.llm_model}」不在列表中，请改选。`
+    }
   } catch (e: unknown) {
     modelsHint.value = e instanceof Error ? e.message : String(e)
+    upstreamListReady.value = false
   } finally {
     modelsBusy.value = false
   }
+}
+
+function usePreferredUpstreamModel() {
+  const preferred = pickPreferredChatModel(modelOptions.value)
+  if (!preferred) return
+  form.llm_model = preferred
+  modelsHint.value = `已改为上游列表模型「${preferred}」，请保存 AI 设置。`
 }
 
 async function load() {
@@ -344,6 +382,15 @@ onMounted(() => {
 .ai-models-hint {
   margin: -4px 0 8px;
   padding-left: 0;
+}
+
+.ai-model-field--mismatch :deep(.ai-model-combobox-inp) {
+  border-color: #d97706;
+  box-shadow: 0 0 0 1px rgba(217, 119, 6, 0.25);
+}
+
+.ai-model-field--mismatch .settings-btn {
+  border-color: #d97706;
 }
 
 .ai-token-row {

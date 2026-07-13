@@ -1,17 +1,17 @@
 {
-  "version": "0.3.61",
-  "releasedAt": "2026-07-13T06:19:46.757Z",
-  "notes": "Report Editor AI 0.3.61\n\n- 新建非表格控件默认隐藏预览/导出外框（showBorder=false）；旧稿缺字段仍显示\n- 模版/版式编辑器增加「一键隐藏边框」（跳过表格）",
+  "version": "0.3.62",
+  "releasedAt": "2026-07-13T06:44:08.749Z",
+  "notes": "Report Editor AI 0.3.62\n\n- LLM 上游错误中文映射（额度/Key/限流/模型不存在）\n- AI 设置：ChatGPT≠API 提示；模型不在上游列表时警告并可一键改选\n- 强化 SYSTEM_PROMPT 能力域必调工具；探活切片随本版合入发版线",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.61-x64.exe",
+      "url": "Report Editor AI-Setup-0.3.62-x64.exe",
       "sha256": "",
       "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.61-arm64.dmg",
-      "sha256": "ef6ebfa2c6d32e06ea9f09c397f4755f5cbcdc1a915cba4f1bec740de7dddbac",
-      "size": 181955009
+      "url": "Report Editor AI-0.3.62-arm64.dmg",
+      "sha256": "46938633be45c95b5c4f6e3001bd6ce42f733cca7675dea54da1a3daeb786eb0",
+      "size": 181982677
     }
   }
 }
