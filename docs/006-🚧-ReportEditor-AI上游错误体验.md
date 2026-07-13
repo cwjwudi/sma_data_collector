@@ -1,9 +1,33 @@
 # ReportEditor AI 助手：上游错误与写入类能力闭环
 
 > 本文件为 **任务看板**；规则见 [CLAUDE.md](../CLAUDE.md)。  
-> 版本计划：探活 [0.3.60](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.60.md)；上游错误体验 [0.3.62](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.62.md)；Agent 工具轨迹 [0.3.66](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.66.md)；轨迹假失败 [0.3.71](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.71.md)；排队收纳 [0.3.77](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.77.md)；流式先工具 [0.3.78](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.78.md)；多轮简洁 [0.3.79](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.79.md)。  
+> 版本计划：探活 [0.3.60](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.60.md)；上游错误体验 [0.3.62](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.62.md)；Agent 工具轨迹 [0.3.66](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.66.md)；轨迹假失败 [0.3.71](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.71.md)；排队收纳 [0.3.77](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.77.md)；流式先工具 [0.3.78](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.78.md)；多轮简洁 [0.3.79](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.79.md)；复制模版/版式 [0.3.80](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.80.md)。  
 > **范围说明**：不只「开启定时探活」；在开启「允许 AI 写入工具」后，数据源、模版/版式资产、备份恢复、结批导出、演示冒烟、诊断取证等能力域均须**真正执行并反映到 UI**（禁止空口答应）。完整域表见下方能力矩阵 H1（仍 ⌛️）。  
 > **Agent 体验**：对话须可见工具调用与状态；口头结论必须与工具结果一致——轨迹 H1 已于 **0.3.66** 落地（探活强制再调）。
+
+---
+
+# ✅ 已完成：复制模版 / 版式端到端（能力矩阵 B · → 0.3.80）
+
+## 产品诉求
+
+用户说「复制某某模版/版式」时，须真调 `copy_template` / `copy_layout_preset` → 落盘新 id → `mark_ui_reload(assets)` → 列表出现副本；禁止空口答应。
+
+## 代码侧（本版前已有）
+
+- `ai_asset_ops.copy_*`：深拷贝 + `mark_ui_reload(assets=True)`
+- 前端 `client-prefs-mirror`：`ui_reload.assets` → `notifyAssetsChanged`
+
+## 本版加固（0.3.80）
+
+1. `test_ai_asset_ops.py`：复制成功落盘、列表可见、mirror `assets`；缺源失败；总闸关闭拒绝  
+2. `SYSTEM_PROMPT`：复制必须点名 `copy_template` / `copy_layout_preset`（先 `list_*` 取 id）
+
+## 验收
+
+- [x] B：copy_* 成功 → 磁盘与列表有副本 + `ui_reload.assets`  
+- [x] 总闸关 → 拒绝且不落盘  
+- [x] 提示词含 copy 工具名  
 
 ---
 
@@ -297,7 +321,7 @@
 | # | 场景 | 通过标准 |
 |---|------|----------|
 | A | 配置数据源 | upsert → 列表更新；需密码则弹框 |
-| B | 复制模版 / 版式 | copy_* 成功 → 列表出现副本 |
+| B | 复制模版 / 版式 | copy_* 成功 → 列表出现副本（✅ 0.3.80） |
 | C | 删除模版 / 版式 | 确认后消失；取消则仍在 |
 | D | 备份 | 另存 `.rebak`；聊天无口令/密文 |
 | E | 恢复 / 复位 | 确认流 → merge/复位生效 + UI reload |
