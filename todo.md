@@ -7,7 +7,7 @@
 
 ## 2026-07-13
 
-- **ReportEditor AI 上游错误体验（仅记录）**：`insufficient_quota` 甩 JSON；ChatGPT≠API；**换硅基流动后模型框仍残留 gpt-***（列表无 GPT，须手选 DeepSeek-V3 等）。看板 [docs/006-⌛️-ReportEditor-AI上游错误体验.md](docs/006-⌛️-ReportEditor-AI上游错误体验.md)。
+- **ReportEditor AI 上游/助手问题（仅记录）**：quota JSON；ChatGPT≠API；硅基残留 gpt-*；**AI 开定时探活未生效**（需写入总闸 + 设置页不自动刷新）。看板 [docs/006-⌛️-ReportEditor-AI上游错误体验.md](docs/006-⌛️-ReportEditor-AI上游错误体验.md)。
 - **ReportEditor 控件默认无边框（仅文档，待 0.3.60）**：交互控件拟默认无实线边；分区容器默认保留。看板 [docs/005-⌛️-ReportEditor控件默认无边框.md](docs/005-⌛️-ReportEditor控件默认无边框.md)；计划 [`009_版本Plan/0.3.60.md`](_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.60.md)。
 - **ReportEditor 0.3.59 已发版**：空连接新建表单不再被周期刷新清空；vitest **274 passed**。看板 [docs/004-✅-ReportEditor数据源UI修复.md](docs/004-✅-ReportEditor数据源UI修复.md)。
 - **ReportEditor 空连接表单刷新清空（文档/根因）**：已实现为 0.3.59。
