@@ -20,14 +20,38 @@
 
 ## 本版加固（0.3.80）
 
-1. `test_ai_asset_ops.py`：复制成功落盘、列表可见、mirror `assets`；缺源失败；总闸关闭拒绝  
-2. `SYSTEM_PROMPT`：复制必须点名 `copy_template` / `copy_layout_preset`（先 `list_*` 取 id）
+1. `test_ai_asset_ops.py`：复制成功落盘、列表可见、mirror `assets`；缺源失败；总闸关闭拒绝；深拷贝独立；list_* 可见副本  
+2. `client-prefs-mirror.test.ts`：`assets` → `report-editor-assets-changed`  
+3. `SYSTEM_PROMPT`：复制必须点名 `copy_template` / `copy_layout_preset`（先 `list_*` 取 id）
 
 ## 验收
 
 - [x] B：copy_* 成功 → 磁盘与列表有副本 + `ui_reload.assets`  
 - [x] 总闸关 → 拒绝且不落盘  
 - [x] 提示词含 copy 工具名  
+
+## 逐步测试用例（自动化 · 2026-07-13）
+
+| # | 步骤 | 期望 | 覆盖 |
+|---|------|------|------|
+| B1 | `copy_template(source, 新名)` | `ok`；新 id；磁盘可读；源仍在 | `test_copy_template_persists…` |
+| B2 | 读 `client_prefs_mirror` | `pending_apply` + `ui_reload.assets` + reason=`copy_template` | 同上 |
+| B3 | `list_templates` | 列表含源与副本名 | `test_list_templates_sees_copy` |
+| B4 | `copy_layout_preset` + `list_layout_presets` | 同 B1–B3（版式） | layout 对应测例 |
+| B5 | 改副本边距/名称再保存 | 源名称与边距不变（深拷贝独立） | `test_copy_template_is_deep_independent` |
+| B6 | 空 / 不存在 source_id | `ok=false`；失败不写 mirror | empty / missing / failed_copy |
+| B7 | 总闸 `write_tools_enabled=false` | 拒绝；磁盘仍仅 1 份源 | `test_copy_blocked_when_write_disabled` |
+| B8 | mirror `assets` + reason | 前端派发 `report-editor-assets-changed` | `client-prefs-mirror.test.ts` |
+| B9 | 无 `pending_apply` | 即使 assets=true 也不派发 | 同上 |
+
+本地复跑：
+
+```bash
+cd _Prj/SD_SMA_ReportEditor/backend && uv run pytest modules/test_ai_asset_ops.py -q
+cd ../frontend && npm test -- --run src/lib/client-prefs-mirror.test.ts
+```
+
+> 真 LLM 对话（模型是否主动调 copy_*）仍属现场手测，不在本表自动化范围。
 
 ---
 

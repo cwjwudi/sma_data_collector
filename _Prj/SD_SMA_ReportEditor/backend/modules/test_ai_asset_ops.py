@@ -155,6 +155,100 @@ async def test_copy_blocked_when_write_disabled(asset_env):
     assert len(list((data / "layout_presets").glob("*.json"))) == 1
 
 
+@pytest.mark.asyncio
+async def test_copy_template_empty_source_id(asset_env):
+    result = await ai_tools.execute_tool("copy_template", {"source_id": "  ", "new_name": "x"})
+    assert result["ok"] is False
+    assert "source_id" in result["error"]
+
+
+@pytest.mark.asyncio
+async def test_copy_layout_empty_source_id(asset_env):
+    result = await ai_tools.execute_tool("copy_layout_preset", {"source_id": "", "new_name": "x"})
+    assert result["ok"] is False
+    assert "source_id" in result["error"]
+
+
+@pytest.mark.asyncio
+async def test_list_templates_sees_copy(asset_env):
+    _data, _cfg, src, _layout = asset_env
+    copied = await ai_tools.execute_tool(
+        "copy_template",
+        {"source_id": src.id, "new_name": "列表可见副本"},
+    )
+    assert copied["ok"] is True
+    listed = await ai_tools.execute_tool("list_templates", {})
+    ids = {t["id"] for t in listed.get("templates") or []}
+    names = {t["name"] for t in listed.get("templates") or []}
+    assert src.id in ids
+    assert copied["template_id"] in ids
+    assert "列表可见副本" in names
+
+
+@pytest.mark.asyncio
+async def test_list_layouts_sees_copy(asset_env):
+    _data, _cfg, _tpl, src = asset_env
+    copied = await ai_tools.execute_tool(
+        "copy_layout_preset",
+        {"source_id": src.id, "new_name": "版式列表副本"},
+    )
+    assert copied["ok"] is True
+    listed = await ai_tools.execute_tool("list_layout_presets", {})
+    ids = {x["id"] for x in listed.get("layouts") or []}
+    names = {x["name"] for x in listed.get("layouts") or []}
+    assert src.id in ids
+    assert copied["layout_id"] in ids
+    assert "版式列表副本" in names
+
+
+@pytest.mark.asyncio
+async def test_copy_template_is_deep_independent(asset_env):
+    """副本与源独立：改副本不得影响源文件内容。"""
+    _data, _cfg, src, _layout = asset_env
+    # 给源一个可辨识边距
+    src.layoutSnapshot.marginTopMm = 33.0
+    template_store.save_template(src)
+
+    copied = await ai_tools.execute_tool(
+        "copy_template",
+        {"source_id": src.id, "new_name": "独立副本"},
+    )
+    assert copied["ok"] is True
+    dup = template_store.load_template(copied["template_id"])
+    assert dup is not None
+    assert dup.layoutSnapshot.marginTopMm == 33.0
+
+    dup.layoutSnapshot.marginTopMm = 99.0
+    dup.name = "已改副本"
+    template_store.save_template(dup)
+
+    again = template_store.load_template(src.id)
+    assert again is not None
+    assert again.name == "源模版"
+    assert again.layoutSnapshot.marginTopMm == 33.0
+
+
+@pytest.mark.asyncio
+async def test_failed_copy_does_not_mark_ui_reload(asset_env):
+    data, _cfg, _src, _layout = asset_env
+    mirror_path = data / "client_prefs_mirror.json"
+    if mirror_path.is_file():
+        mirror_path.unlink()
+    result = await ai_tools.execute_tool(
+        "copy_template",
+        {"source_id": "no-such", "new_name": "x"},
+    )
+    assert result["ok"] is False
+    assert not mirror_path.is_file()
+
+
+def test_copy_tools_are_write_risk():
+    from modules import ai_tool_catalog
+
+    assert "copy_template" in ai_tool_catalog.WRITE_TOOLS
+    assert "copy_layout_preset" in ai_tool_catalog.WRITE_TOOLS
+
+
 def test_system_prompt_mentions_copy_tools():
     from api.routers import ai_openai
 
