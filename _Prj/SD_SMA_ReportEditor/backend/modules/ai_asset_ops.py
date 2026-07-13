@@ -64,8 +64,12 @@ def mark_ui_reload(
     datasource: bool = False,
     connection_probe: bool = False,
     reason: str = "",
-) -> None:
-    """写入 client_prefs 镜像，供前端轮询后主动 reload 模版/数据源/探活设置。"""
+) -> str:
+    """写入 client_prefs 镜像，供前端轮询后主动 reload 模版/数据源/探活设置。
+
+    每次写入刷新 ``pending_token``；前端 ack 时须带回该 token，避免清除冲掉更新的 pending。
+    返回 pending_token。
+    """
     path = DATA_DIR / "client_prefs_mirror.json"
     data: dict[str, Any] = {}
     if path.is_file():
@@ -75,7 +79,9 @@ def mark_ui_reload(
                 data = raw
         except (OSError, json.JSONDecodeError):
             data = {}
+    token = str(uuid.uuid4())
     data["pending_apply"] = True
+    data["pending_token"] = token
     reload = data.get("ui_reload") if isinstance(data.get("ui_reload"), dict) else {}
     if assets:
         reload["assets"] = True
@@ -88,6 +94,7 @@ def mark_ui_reload(
     data["ui_reload"] = reload
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+    return token
 
 
 def create_blank_template(name: str) -> dict[str, Any]:

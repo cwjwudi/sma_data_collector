@@ -158,7 +158,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                 "properties": {
                     "enabled": {
                         "type": "boolean",
-                        "description": "true=开启定时探活，false=关闭；开启/关闭时必填",
+                        "description": "true=开启定时探活，false=关闭；开启传 true，关闭传 false（不要省略）",
                     },
                     "interval_sec": {
                         "type": "integer",
@@ -1182,6 +1182,21 @@ def _tool_suggest_config(args: dict[str, Any], *, page_context: dict[str, Any] |
     return {"ok": True, "suggestion": suggestion}
 
 
+def _coerce_tool_bool(value: Any, *, field: str) -> bool:
+    """工具参数布尔解析：避免 bool(\"false\")==True 导致关不掉。"""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)) and value in (0, 1):
+        return bool(value)
+    if isinstance(value, str):
+        s = value.strip().lower()
+        if s in ("1", "true", "yes", "on", "开启", "打开", "开"):
+            return True
+        if s in ("0", "false", "no", "off", "关闭", "关"):
+            return False
+    raise ValueError(f"{field} 须为布尔值（true/false）")
+
+
 def _tool_update_probe(args: dict[str, Any]) -> dict[str, Any]:
     # 探活是应用偏好，不改连接凭证；数据源锁定时仍允许开关，避免「已开写入却开不了探活」。
     if "enabled" not in args and args.get("interval_sec") is None:
@@ -1196,7 +1211,10 @@ def _tool_update_probe(args: dict[str, Any]) -> dict[str, Any]:
         "connection_probe_interval_sec": prefs.get("connection_probe_interval_sec"),
     }
     if "enabled" in args:
-        prefs["connection_probe_enabled"] = bool(args["enabled"])
+        try:
+            prefs["connection_probe_enabled"] = _coerce_tool_bool(args["enabled"], field="enabled")
+        except ValueError as e:
+            return {"ok": False, "error": str(e)}
     if args.get("interval_sec") is not None:
         sec = int(args["interval_sec"])
         prefs["connection_probe_interval_sec"] = max(10, min(sec, 3600))

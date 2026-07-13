@@ -106,6 +106,72 @@ async def test_update_probe_works_when_datasource_locked(probe_env):
     assert result.get("datasource_locked") is not True
 
 
+@pytest.mark.asyncio
+async def test_update_probe_string_false_disables(probe_env):
+    """模型偶发传字符串 \"false\" 时不得被 bool() 当成 True。"""
+    _data, cfg_path = probe_env
+    await ai_tools.execute_tool("update_connection_probe_settings", {"enabled": True})
+    result = await ai_tools.execute_tool("update_connection_probe_settings", {"enabled": "false"})
+    assert result["ok"] is True
+    assert result["applied"]["connection_probe_enabled"] is False
+    cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+    assert cfg["app_preferences"]["connection_probe_enabled"] is False
+
+
+@pytest.mark.asyncio
+async def test_update_probe_repeated_toggle(probe_env):
+    _data, cfg_path = probe_env
+    for want in (True, False, True, False):
+        result = await ai_tools.execute_tool("update_connection_probe_settings", {"enabled": want})
+        assert result["ok"] is True
+        assert result["applied"]["connection_probe_enabled"] is want
+        cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+        assert cfg["app_preferences"]["connection_probe_enabled"] is want
+
+
+@pytest.mark.asyncio
+async def test_mirror_stale_ack_preserves_newer_pending(probe_env, monkeypatch):
+    """旧 pending_token 的 ack 不得清掉更新的 pending（反复 AI 开关场景）。"""
+    from unittest.mock import MagicMock
+
+    from api.routers import ai_openai
+
+    data, _cfg_path = probe_env
+    monkeypatch.setattr(ai_openai, "_require_loopback", lambda _req: None)
+    # mirror 路由函数内 from core.settings import DATA_DIR
+    import core.settings as core_settings
+
+    monkeypatch.setattr(core_settings, "DATA_DIR", data)
+
+    t1 = ai_asset_ops.mark_ui_reload(connection_probe=True, reason="first")
+    t2 = ai_asset_ops.mark_ui_reload(connection_probe=True, reason="second")
+    assert t1 != t2
+
+    req = MagicMock()
+    res = ai_openai.mirror_client_prefs(
+        req,
+        {
+            "pending_apply": False,
+            "ui_reload": {},
+            "ack_pending_token": t1,
+            "report_generator": {"x": 1},
+        },
+    )
+    assert res.get("preserved_pending") is True
+    mirror = json.loads((data / "client_prefs_mirror.json").read_text(encoding="utf-8"))
+    assert mirror["pending_apply"] is True
+    assert mirror["pending_token"] == t2
+    assert mirror["ui_reload"]["reason"] == "second"
+
+    res2 = ai_openai.mirror_client_prefs(
+        req,
+        {"pending_apply": False, "ui_reload": {}, "ack_pending_token": t2},
+    )
+    assert res2.get("cleared_pending") is True
+    mirror2 = json.loads((data / "client_prefs_mirror.json").read_text(encoding="utf-8"))
+    assert mirror2["pending_apply"] is False
+
+
 def test_system_prompt_requires_probe_tool():
     from api.routers import ai_openai
 

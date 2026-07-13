@@ -7,6 +7,7 @@
 
 ## 2026-07-13
 
+- **ReportEditor 0.3.63 已发版**：修复定时探活反复开关不生效（串行落库 / 字符串 false / mirror pending_token）。看板 [docs/006-🚧](docs/006-🚧-ReportEditor-AI上游错误体验.md)。
 - **ReportEditor 0.3.62 已发版**：LLM 上游错误中文映射；ChatGPT≠API / 硅基模型 mismatch 提示；能力域 SYSTEM_PROMPT；探活 H1 ✅。看板 [docs/006-🚧](docs/006-🚧-ReportEditor-AI上游错误体验.md)（能力矩阵 A–N 仍 ⌛️）。
 - **ReportEditor AI 能力域扩展（文档）**：写入矩阵扩至版式/打开编辑/排序/演示冒烟/导出结批/诊断/更新等；验收 A–N。
 - **ReportEditor 0.3.61 已发版**：新建非表格控件默认 `showBorder=false`；一键隐藏边框；看板 [docs/005-✅](docs/005-✅-ReportEditor控件默认无边框.md)。

@@ -441,19 +441,47 @@ def mirror_client_prefs(request: Request, body: dict[str, Any]):
     path.parent.mkdir(parents=True, exist_ok=True)
     import json
 
-    merged = dict(body) if isinstance(body, dict) else {}
-    incoming_sets_pending = isinstance(body, dict) and "pending_apply" in body
-    if path.is_file() and not incoming_sets_pending:
+    incoming = dict(body) if isinstance(body, dict) else {}
+    existing: dict[str, Any] = {}
+    if path.is_file():
         try:
-            existing = json.loads(path.read_text(encoding="utf-8"))
-            if isinstance(existing, dict) and existing.get("pending_apply"):
-                # 保留 AI 写入的 pending 补丁，避免被前端常规镜像冲掉
-                merged = {**merged, **existing}
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(raw, dict):
+                existing = raw
         except (OSError, json.JSONDecodeError):
-            pass
-    if merged.get("pending_apply") is False:
-        merged["pending_apply"] = False
-    path.write_text(json.dumps(merged, ensure_ascii=False, indent=2), encoding="utf-8")
+            existing = {}
+
+    # 前端常规镜像（不含 pending_apply）：保留 AI 未消费的 pending
+    if "pending_apply" not in incoming:
+        if existing.get("pending_apply"):
+            merged = {**incoming, **{k: existing[k] for k in ("pending_apply", "pending_token", "ui_reload") if k in existing}}
+            path.write_text(json.dumps(merged, ensure_ascii=False, indent=2), encoding="utf-8")
+            return {"ok": True, "preserved_pending": True}
+        path.write_text(json.dumps(incoming, ensure_ascii=False, indent=2), encoding="utf-8")
+        return {"ok": True}
+
+    # 前端 ack 清除 pending：仅当 token 一致（或旧镜像无 token）才清；否则保留更新的 pending
+    if incoming.get("pending_apply") is False:
+        ack = incoming.get("ack_pending_token")
+        cur_token = existing.get("pending_token")
+        if existing.get("pending_apply") and cur_token and ack and cur_token != ack:
+            preserved = {
+                **{k: v for k, v in incoming.items() if k not in ("pending_apply", "ui_reload", "ack_pending_token", "pending_token")},
+                "pending_apply": True,
+                "pending_token": cur_token,
+                "ui_reload": existing.get("ui_reload") if isinstance(existing.get("ui_reload"), dict) else {},
+            }
+            path.write_text(json.dumps(preserved, ensure_ascii=False, indent=2), encoding="utf-8")
+            return {"ok": True, "preserved_pending": True, "pending_token": cur_token}
+        cleared = {k: v for k, v in incoming.items() if k not in ("ack_pending_token", "pending_token")}
+        cleared["pending_apply"] = False
+        cleared["ui_reload"] = incoming.get("ui_reload") if isinstance(incoming.get("ui_reload"), dict) else {}
+        cleared.pop("pending_token", None)
+        path.write_text(json.dumps(cleared, ensure_ascii=False, indent=2), encoding="utf-8")
+        return {"ok": True, "cleared_pending": True}
+
+    # 显式写入 pending（少见）；直接落盘
+    path.write_text(json.dumps(incoming, ensure_ascii=False, indent=2), encoding="utf-8")
     return {"ok": True}
 
 

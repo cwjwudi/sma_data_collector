@@ -53,7 +53,8 @@
 
 | 版本 | 状态 | 任务看板 | 说明 |
 |------|------|----------|------|
-| [0.3.62.md](./0.3.62.md) | 已发版 | [docs/006-🚧-ReportEditor-AI上游错误体验.md](../../../../docs/006-🚧-ReportEditor-AI上游错误体验.md) | LLM 上游错误中文映射；模型 mismatch；能力域 SYSTEM_PROMPT；探活收尾 |
+| [0.3.63.md](./0.3.63.md) | 已发版 | [docs/006-🚧-ReportEditor-AI上游错误体验.md](../../../../docs/006-🚧-ReportEditor-AI上游错误体验.md) | 定时探活反复开关回归 |
+| [0.3.62.md](./0.3.62.md) | 已发版 | 同上 006-🚧 | LLM 上游错误中文映射；模型 mismatch；能力域 SYSTEM_PROMPT；探活收尾 |
 | [0.3.61.md](./0.3.61.md) | 已发版 | [docs/005-✅-ReportEditor控件默认无边框.md](../../../../docs/005-✅-ReportEditor控件默认无边框.md) | 新建控件 showBorder 默认隐藏 + 一键隐藏 |
 | [0.3.60.md](./0.3.60.md) | 已完成（随 0.3.62） | 同上 006-🚧 | AI 开启定时探活须落库并刷新 UI |
 | [0.3.59.md](./0.3.59.md) | 已发版 | [docs/004-✅-ReportEditor数据源UI修复.md](../../../../docs/004-✅-ReportEditor数据源UI修复.md) | 空连接表单周期性刷新清空 |

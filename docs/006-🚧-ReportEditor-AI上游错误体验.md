@@ -268,3 +268,11 @@ LLM 上游错误：{ "error": { "message": "You exceeded your current quota, ple
 2. 写入总闸关 → 工具失败文案；单测覆盖。  
 3. 数据源锁定不影响探活开关。  
 4. 后端 + 前端上述单测全绿。
+
+## 回归修复（0.3.63）：反复开关不生效
+
+| 根因 | 修复 |
+|------|------|
+| 设置页连点并发 PATCH，后写覆盖先写的相反态 | 串行落库 + 乐观更新（`connection-probe-serial-persist`） |
+| AI 传字符串 `"false"` 时 `bool()` 为 True | `_coerce_tool_bool` |
+| mirror 清除用旧 pending 冲掉新一轮 AI 写入 | `pending_token` ack；过期 ack 保留 pending |

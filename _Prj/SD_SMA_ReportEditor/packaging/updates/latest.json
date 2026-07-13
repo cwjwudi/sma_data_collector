@@ -1,17 +1,17 @@
 {
-  "version": "0.3.62",
-  "releasedAt": "2026-07-13T06:44:08.749Z",
-  "notes": "Report Editor AI 0.3.62\n\n- LLM 上游错误中文映射（额度/Key/限流/模型不存在）\n- AI 设置：ChatGPT≠API 提示；模型不在上游列表时警告并可一键改选\n- 强化 SYSTEM_PROMPT 能力域必调工具；探活切片随本版合入发版线",
+  "version": "0.3.63",
+  "releasedAt": "2026-07-13T06:51:58.747Z",
+  "notes": "Report Editor AI 0.3.63\n\n- 修复定时探活反复开关不生效（串行落库 / 字符串 false / mirror pending_token）",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.62-x64.exe",
+      "url": "Report Editor AI-Setup-0.3.63-x64.exe",
       "sha256": "",
       "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.62-arm64.dmg",
-      "sha256": "46938633be45c95b5c4f6e3001bd6ce42f733cca7675dea54da1a3daeb786eb0",
-      "size": 181982677
+      "url": "Report Editor AI-0.3.63-arm64.dmg",
+      "sha256": "d49f2052e3da8786c42803947a5a31284585756935271960b337f9f4c7c41590",
+      "size": 182004147
     }
   }
 }
