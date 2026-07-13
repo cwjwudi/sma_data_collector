@@ -415,7 +415,7 @@ cd ../frontend && npm test -- --run src/lib/client-prefs-mirror.test.ts
 | A | 配置数据源 | upsert → 列表更新；需密码则弹框 |
 | B | 复制模版 / 版式 | copy_* 成功 → 列表出现副本（✅ 0.3.80） |
 | C | 删除模版 / 版式 | 确认后消失；取消则仍在（✅ 0.3.81） |
-| D | 备份 | 另存 `.rebak`；聊天无口令/密文 |
+| D | 备份 | 另存 `.rebak`；聊天无口令/密文（✅ 0.3.82） |
 | E | 恢复 / 复位 | 确认流 → merge/复位生效 + UI reload |
 | F | 总闸关闭 | 任一 write/confirm 意图 → 明确提示，**状态不变** |
 | G | 新建空白 / 冒烟模版 / 演示库 | 资产或库出现 + reload |
