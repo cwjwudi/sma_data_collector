@@ -200,6 +200,8 @@ import { stableFingerprintPart } from "@/lib/report-template/snapshot-fingerprin
 import { watchDebounced } from "@vueuse/core";
 import { useStaleGuard } from "@/composables/useStaleGuard";
 import { appConfirm } from "@/composables/useAppConfirm";
+import { auditLog } from "@/lib/auditLog";
+import { summarizeDeleteLayouts } from "@/lib/auditLabels";
 import {
   useSavedFingerprintBaseline,
   useUnsavedLeaveGuard,
@@ -648,10 +650,25 @@ async function removePreset() {
   msg.value = "";
   try {
     await deleteLayoutPresetFlexible(w.id);
+    void auditLog({
+      action: "layout.delete",
+      result: "ok",
+      summary: summarizeDeleteLayouts([w.name || "未命名"]),
+      object_type: "layout",
+      object_id: w.id,
+      detail: { name: w.name || "未命名" },
+    });
     skipLeaveGuard.value = true;
     router.replace({ name: "LayoutPresets" });
   } catch (e) {
     msg.value = "删除失败：" + String((e as Error).message || e);
+    void auditLog({
+      action: "layout.delete",
+      result: "fail",
+      summary: `删除版式「${w.name || "未命名"}」失败：${String((e as Error).message || e).slice(0, 80)}`,
+      object_type: "layout",
+      object_id: w.id,
+    });
   }
 }
 

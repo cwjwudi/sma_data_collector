@@ -53,6 +53,7 @@
 
 | 版本 | 状态 | 任务看板 | 说明 |
 |------|------|----------|------|
+| [0.3.73.md](./0.3.73.md) | 已发版 | [docs/013-✅-ReportEditor模版版式编辑审计.md](../../../../docs/013-✅-ReportEditor模版版式编辑审计.md) | 模版/版式保存审计 |
 | [0.3.72.md](./0.3.72.md) | 已发版 | [docs/014-✅-ReportEditor-AI流式输出.md](../../../../docs/014-✅-ReportEditor-AI流式输出.md) | AI 正文 SSE 流式 + 整窗体验 |
 | [0.3.71.md](./0.3.71.md) | 已发版 | [docs/006-🚧-ReportEditor-AI上游错误体验.md](../../../../docs/006-🚧-ReportEditor-AI上游错误体验.md) | 工具轨迹假失败（无 ok 字段） |
 | [0.3.70.md](./0.3.70.md) | 已发版 | [docs/011-🚧-ReportEditor模版版式多选控件.md](../../../../docs/011-🚧-ReportEditor模版版式多选控件.md) | 多选 B1：加选/框选/组操作/摘要 |

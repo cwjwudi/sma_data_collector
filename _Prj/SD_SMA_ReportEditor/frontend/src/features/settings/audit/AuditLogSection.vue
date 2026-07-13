@@ -1,8 +1,8 @@
 <template>
   <section class="settings-section">
     <p class="settings-hint">
-      记录本机关键操作（配置变更、导出、写回 PLC、演示与更新等），便于现场追溯。不含 OPC 树浏览等只读操作。
-      默认保留最近 90 天、最多 5000 条。导出失败时会写入绑定/表名/SQL 等诊断字段，可点开行查看。
+      记录本机关键操作（模版/版式保存与删改、配置变更、导出、写回 PLC、更新等），便于现场追溯。不含 OPC 树浏览等只读操作。
+      默认保留最近 90 天、最多 5000 条。保存类记录可展开查看变更明细。
     </p>
 
     <div class="audit-filters">
@@ -10,15 +10,15 @@
         <span class="settings-field-label">类型</span>
         <select v-model="actionFilter" class="settings-select audit-filter-select">
           <option value="">全部</option>
-          <option v-for="a in actionOptions" :key="a" :value="a">{{ a }}</option>
+          <option v-for="a in actionOptions" :key="a.value" :value="a.value">{{ a.label }}</option>
         </select>
       </label>
       <label class="audit-filter">
         <span class="settings-field-label">结果</span>
         <select v-model="resultFilter" class="settings-select audit-filter-select">
           <option value="">全部</option>
-          <option value="ok">ok</option>
-          <option value="fail">fail</option>
+          <option value="ok">成功</option>
+          <option value="fail">失败</option>
         </select>
       </label>
       <label class="audit-filter">
@@ -69,15 +69,12 @@
                 }}</span>
               </td>
               <td class="audit-ts">{{ formatAuditTime(e.ts) }}</td>
-              <td><code>{{ e.action }}</code></td>
-              <td :class="e.result === 'ok' ? 'audit-ok' : 'audit-fail'">{{ e.result }}</td>
+              <td>{{ auditActionLabel(e.action) }}</td>
+              <td :class="e.result === 'ok' ? 'audit-ok' : 'audit-fail'">{{ auditResultLabel(e.result) }}</td>
               <td class="audit-summary">{{ e.summary || "—" }}</td>
             </tr>
             <tr v-if="expandedId === e.id && hasDetail(e)" class="audit-detail-row">
               <td colspan="5" class="audit-detail-cell">
-                <div v-if="e.object_id" class="audit-detail-meta">
-                  对象：{{ e.object_type || "—" }} / <code>{{ e.object_id }}</code>
-                </div>
                 <pre class="audit-detail-pre">{{ formatDetail(e) }}</pre>
               </td>
             </tr>
@@ -109,6 +106,12 @@ import {
   formatAuditTime,
   type AuditEntry,
 } from "@/lib/auditLog";
+import {
+  AUDIT_ACTION_OPTIONS,
+  auditActionLabel,
+  auditResultLabel,
+  formatAuditDetailReadable,
+} from "@/lib/auditLabels";
 
 const busy = ref(false);
 const msg = ref("");
@@ -121,35 +124,7 @@ const fromDate = ref("");
 const toDate = ref("");
 const expandedId = ref("");
 
-const actionOptions = [
-  "config.export",
-  "config.import",
-  "config.reset",
-  "db.connection_save",
-  "db.connection_delete",
-  "opcua.connection_save",
-  "opcua.connection_delete",
-  "datasource.lock",
-  "datasource.unlock",
-  "datasource.write_blocked",
-  "datasource.probe_settings",
-  // 历史筛选：演示与培训已退役，保留以便检索旧日志
-  "demo.apply_connections",
-  "demo.health_check",
-  "demo.pack_install",
-  "demo.compose_start",
-  "demo.compose_stop",
-  "export.batch_trigger",
-  "export.auto_pdf",
-  "export.manual_pdf",
-  "export.opc_writeback",
-  "export.opc_writeback_test",
-  "update.check",
-  "update.install",
-  "update.applied",
-  "update.download_installer",
-  "audit.export",
-];
+const actionOptions = AUDIT_ACTION_OPTIONS;
 
 function setMsg(text: string, tone: string) {
   msg.value = text;
@@ -177,12 +152,11 @@ function toggleExpand(e: AuditEntry) {
 }
 
 function formatDetail(e: AuditEntry): string {
-  const d = e.detail || {};
-  try {
-    return JSON.stringify(d, null, 2);
-  } catch {
-    return String(d);
-  }
+  return formatAuditDetailReadable(e.detail, {
+    objectType: e.object_type,
+    objectId: e.object_id,
+    actor: e.actor,
+  });
 }
 
 async function reload() {

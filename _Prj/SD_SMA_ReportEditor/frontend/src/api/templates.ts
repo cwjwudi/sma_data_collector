@@ -86,8 +86,13 @@ export async function getTemplate(templateId: string): Promise<ReportTemplate> {
   return fetchJson<ReportTemplate>(apiUrl(`/templates/${encodeURIComponent(templateId)}`));
 }
 
-export async function putTemplate(templateId: string, body: ReportTemplate): Promise<ReportTemplate> {
-  return fetchJson<ReportTemplate>(apiUrl(`/templates/${encodeURIComponent(templateId)}`), {
+export async function putTemplate(
+  templateId: string,
+  body: ReportTemplate,
+  opts?: { skipAssetAudit?: boolean },
+): Promise<ReportTemplate> {
+  const q = opts?.skipAssetAudit ? "?skip_asset_audit=true" : "";
+  return fetchJson<ReportTemplate>(apiUrl(`/templates/${encodeURIComponent(templateId)}${q}`), {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),

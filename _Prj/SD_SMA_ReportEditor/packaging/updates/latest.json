@@ -1,17 +1,17 @@
 {
-  "version": "0.3.72",
-  "releasedAt": "2026-07-13T13:21:29.757Z",
-  "notes": "Report Editor AI 0.3.72\n\n- AI 助手正文 SSE 流式输出；工具轨迹边到边；停止/排队/持久化/调宽",
+  "version": "0.3.73",
+  "releasedAt": "2026-07-13T14:23:18.721Z",
+  "notes": "Report Editor AI 0.3.73\n\n- 模版/版式保存审计：变更明细、15 分钟合并、无变更不记\n- 操作审计界面中文（含历史类型）；删/复制前端记",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.72-x64.exe",
+      "url": "Report Editor AI-Setup-0.3.73-x64.exe",
       "sha256": "",
       "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.72-arm64.dmg",
-      "sha256": "74398f30d40bb62b90b0a2be82400a684881456f1a1e595487c996e4f062eaec",
-      "size": 182001490
+      "url": "Report Editor AI-0.3.73-arm64.dmg",
+      "sha256": "",
+      "size": 0
     }
   }
 }

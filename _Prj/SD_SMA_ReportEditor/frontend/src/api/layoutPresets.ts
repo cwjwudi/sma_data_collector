@@ -60,8 +60,13 @@ export async function getLayoutPreset(id: string) {
   return fj<LayoutPreset>(url(`/layout-presets/${encodeURIComponent(id)}`));
 }
 
-export async function putLayoutPreset(id: string, body: LayoutPreset) {
-  return fj<LayoutPreset>(url(`/layout-presets/${encodeURIComponent(id)}`), {
+export async function putLayoutPreset(
+  id: string,
+  body: LayoutPreset,
+  opts?: { skipAssetAudit?: boolean },
+) {
+  const q = opts?.skipAssetAudit ? "?skip_asset_audit=true" : "";
+  return fj<LayoutPreset>(url(`/layout-presets/${encodeURIComponent(id)}${q}`), {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),

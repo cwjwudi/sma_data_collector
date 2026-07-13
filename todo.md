@@ -7,8 +7,9 @@
 
 ## 2026-07-13
 
+- **ReportEditor 0.3.73 已发版**：模版/版式保存审计（变更明细、15 分钟合并、中文展示）；看板 [docs/013-✅](docs/013-✅-ReportEditor模版版式编辑审计.md)。
 - **ReportEditor 整机单实例 + 浏览器访问（仅计划）**：新建 [docs/015-⌛️](docs/015-⌛️-ReportEditor整机单实例与浏览器访问.md)——强制一个 Electron；说明本机/局域网浏览器能力与 AI 本机限制。
-- **ReportEditor 模版/版式审计（计划补充）**：[docs/013-⌛️](docs/013-⌛️-ReportEditor模版版式编辑审计.md) 无变更不记；旧类型全中文；字段中文名表 + 表格 SQL 截断；变更明细与 15 分钟合并。
+- **ReportEditor 模版/版式审计（计划补充）**：[docs/013-✅](docs/013-✅-ReportEditor模版版式编辑审计.md) 无变更不记；旧类型全中文；字段中文名表 + 表格 SQL 截断；变更明细与 15 分钟合并。
 - **ReportEditor 0.3.72 已发版**：AI 助手正文 SSE 流式；排队/持久化/调宽/Markdown；看板 [docs/014-✅](docs/014-✅-ReportEditor-AI流式输出.md)。
 - **ReportEditor AI 流式（计划补充）**：[docs/014-✅](docs/014-✅-ReportEditor-AI流式输出.md) 确认关抽屉不停止；补测试用例 B/F/M/R；持久化/调宽/排队；G1–G15。
 - **ReportEditor 0.3.71 已发版**：AI 工具轨迹假失败修正（无 `ok` 字段的成功读工具不再标红）；看板 [docs/006-🚧](docs/006-🚧-ReportEditor-AI上游错误体验.md)。
@@ -18,7 +19,7 @@
 - **ReportEditor 移除演示与培训**：已拆除设置区块、`/demo/*`、demo-pack IPC/打包目录、`demo_remote_*` 配置面；AI `ensure_user_demo_database` 工具下线；存量 `is_demo` 保留（B1）。看板 [docs/012-✅](docs/012-✅-ReportEditor移除演示与培训.md)。
 - **ReportEditor AI 流式输出（仅计划）**：新建 [docs/014](docs/014-✅-ReportEditor-AI流式输出.md)——助手正文 SSE 流式；工具轮默认非流 + 事件；推翻 006「不做 SSE」边界（后由 **0.3.72** 落地）。
 - **ReportEditor 0.3.68 已发版**：历史报表子文件夹穿透 + 分页；看板 [docs/010-✅](docs/010-✅-ReportEditor历史报表子文件夹穿透.md)。
-- **ReportEditor 模版/版式编辑审计（仅计划）**：新建 [docs/013-⌛️](docs/013-⌛️-ReportEditor模版版式编辑审计.md)——保存/删除/复制落 `template.*`/`layout.*`；不记画布拖拽；与现有 `auditLog` 对齐。
+- **ReportEditor 模版/版式编辑审计（仅计划）**：新建 [docs/013-✅](docs/013-✅-ReportEditor模版版式编辑审计.md)——保存/删除/复制落 `template.*`/`layout.*`；不记画布拖拽；与现有 `auditLog` 对齐（后由 **0.3.73** 落地）。
 - **ReportEditor 0.3.67 已发版**：导出 PDF 去掉封面橙 / 正文蓝紫纸张装饰边；看板 [docs/009-✅](docs/009-✅-ReportEditor导出纸张橙边框.md)。
 - **ReportEditor 导出纸张橙边框（文档订正）**：看板更名为 [docs/009-✅](docs/009-✅-ReportEditor导出纸张橙边框.md)——截图确认橙边在**整页纸张四周**（非表格附近）；主因锁定 `MiniPreviewChrome` 装饰未在导出路径剥离。
 - **ReportEditor 模版/版式多选控件（仅计划）**：新建 [docs/011-⌛️](docs/011-⌛️-ReportEditor模版版式多选控件.md)——Ctrl/Cmd 加选、框选、组移动/删除/剪贴板；属性批量与对齐为二期。
