@@ -7,6 +7,7 @@
 
 ## 2026-07-13
 
+- **ReportEditor 0.3.85 已发版**：AI 能力矩阵 G（新建空白模版/版式 + 冒烟缺连接失败）；看板 [docs/006-🚧](docs/006-🚧-ReportEditor-AI上游错误体验.md)。
 - **ReportEditor 0.3.84 已发版**：AI 能力矩阵 F（写入总闸统一拒绝全部 write/confirm）；看板 [docs/006-🚧](docs/006-🚧-ReportEditor-AI上游错误体验.md)。
 - **ReportEditor 0.3.83 已发版**：AI 能力矩阵 E（恢复/复位确认流 + ui_reload；非法 bundle 拒绝）；看板 [docs/006-🚧](docs/006-🚧-ReportEditor-AI上游错误体验.md)。
 - **ReportEditor AI 对话 UI 改版（仅登记）**：新建 [docs/016-⌛️](docs/016-⌛️-ReportEditor-AI对话UI改版.md)——参考 ChatGPT 玻璃态；附图 `docs/assets/016-ai-chat-ui-reference.png`；未开工。

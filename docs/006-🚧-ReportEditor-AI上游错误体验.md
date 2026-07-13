@@ -1,9 +1,39 @@
 # ReportEditor AI 助手：上游错误与写入类能力闭环
 
 > 本文件为 **任务看板**；规则见 [CLAUDE.md](../CLAUDE.md)。  
-> 版本计划：探活 [0.3.60](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.60.md)；上游错误体验 [0.3.62](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.62.md)；Agent 工具轨迹 [0.3.66](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.66.md)；轨迹假失败 [0.3.71](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.71.md)；排队收纳 [0.3.77](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.77.md)；流式先工具 [0.3.78](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.78.md)；多轮简洁 [0.3.79](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.79.md)；复制模版/版式 [0.3.80](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.80.md)；删除模版/版式 [0.3.81](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.81.md)；加密备份 [0.3.82](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.82.md)；恢复/复位 [0.3.83](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.83.md)；写入总闸 [0.3.84](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.84.md)。  
+> 版本计划：探活 [0.3.60](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.60.md)；上游错误体验 [0.3.62](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.62.md)；Agent 工具轨迹 [0.3.66](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.66.md)；轨迹假失败 [0.3.71](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.71.md)；排队收纳 [0.3.77](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.77.md)；流式先工具 [0.3.78](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.78.md)；多轮简洁 [0.3.79](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.79.md)；复制模版/版式 [0.3.80](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.80.md)；删除模版/版式 [0.3.81](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.81.md)；加密备份 [0.3.82](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.82.md)；恢复/复位 [0.3.83](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.83.md)；写入总闸 [0.3.84](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.84.md)；新建空白/冒烟 [0.3.85](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.85.md)。  
 > **范围说明**：不只「开启定时探活」；在开启「允许 AI 写入工具」后，数据源、模版/版式资产、备份恢复、结批导出、演示冒烟、诊断取证等能力域均须**真正执行并反映到 UI**（禁止空口答应）。完整域表见下方能力矩阵 H1（仍 ⌛️）。  
 > **Agent 体验**：对话须可见工具调用与状态；口头结论必须与工具结果一致——轨迹 H1 已于 **0.3.66** 落地（探活强制再调）。
+
+---
+
+# ✅ 已完成：新建空白 / 冒烟模版（能力矩阵 G · → 0.3.85）
+
+## 产品诉求
+
+「新建空白模版/版式」须调 `create_blank_*` → 落盘 + `ui_reload.assets`；「绑定冒烟」须 `create_binding_smoke_template`（需已有 DB+OPC）；**演示库一键工具已下线**，不得空口答应建演示库。
+
+## 本版加固（0.3.85）
+
+1. `test_ai_asset_create.py`：空白模版/版式落盘+list+reload；总闸拒绝；冒烟无连接/无 OPC 明确失败  
+2. `SYSTEM_PROMPT`：点名 create_blank_*；冒烟需双连接；禁承诺 `ensure_user_demo_database`
+
+## 逐步测试用例
+
+| # | 步骤 | 期望 |
+|---|------|------|
+| G1 | `create_blank_template` | 落盘；list 可见；`ui_reload` |
+| G2 | `create_blank_layout` | 同上 |
+| G3 | 空名称 | 默认「新建模版/新建版式」 |
+| G4 | 总闸关 | 拒绝；不落盘 |
+| G5 | 冒烟无 DB/OPC | `ok=false`；不落盘 |
+| G6 | 仅有 DB 无 OPC | 报缺 OPC |
+
+```bash
+cd _Prj/SD_SMA_ReportEditor/backend && uv run pytest modules/test_ai_asset_create.py -q
+```
+
+> 冒烟在双连接齐全且可连 OPC/库表时的完整创建属现场手测；本切片覆盖门禁与失败路径。
 
 ---
 
@@ -476,7 +506,7 @@ cd ../frontend && npm test -- --run src/lib/client-prefs-mirror.test.ts
 | D | 备份 | 另存 `.rebak`；聊天无口令/密文（✅ 0.3.82） |
 | E | 恢复 / 复位 | 确认流 → merge/复位生效 + UI reload（✅ 0.3.83） |
 | F | 总闸关闭 | 任一 write/confirm 意图 → 明确提示，**状态不变**（✅ 0.3.84） |
-| G | 新建空白 / 冒烟模版 / 演示库 | 资产或库出现 + reload |
+| G | 新建空白 / 冒烟模版 / 演示库 | 资产或库出现 + reload（✅ 0.3.85；演示库工具已下线） |
 | H | 打开模版/版式 | 确认后进入对应编辑器 |
 | I | 模版排序 | 顺序变更在模版管理页可见 |
 | J | 导出目录 | 路径写入或选目录弹框完成 |
