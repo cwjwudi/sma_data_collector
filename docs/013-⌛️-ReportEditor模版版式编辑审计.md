@@ -3,7 +3,7 @@
 > 本文件为 **任务看板 / 实现计划**；规则见 [CLAUDE.md](../CLAUDE.md)。  
 > **本轮仅写计划，未改代码。**  
 > 产品诉求：在**报表模版编辑**与**版式（页眉页脚）编辑**时记录审计，便于现场追溯。  
-> 现有能力：[`auditLog.ts`](../_Prj/SD_SMA_ReportEditor/frontend/src/lib/auditLog.ts)、[`AuditLogSection.vue`](../_Prj/SD_SMA_ReportEditor/frontend/src/features/settings/audit/AuditLogSection.vue)、后端 [`audit_log.py`](../_Prj/SD_SMA_ReportEditor/backend/modules/audit_log.py)。
+> 相关：[`auditLog.ts`](../_Prj/SD_SMA_ReportEditor/frontend/src/lib/auditLog.ts)、[`AuditLogSection.vue`](../_Prj/SD_SMA_ReportEditor/frontend/src/features/settings/audit/AuditLogSection.vue)、[`audit_log.py`](../_Prj/SD_SMA_ReportEditor/backend/modules/audit_log.py)。
 
 ---
 
@@ -11,167 +11,185 @@
 
 ## 产品诉求（2026-07-13）
 
-1. 用户在**报表模版**（列表管理 + 编辑器保存）与**版式**编辑相关操作时，应在「操作审计」中可见。  
-2. 与现有数据源连接、导出结批、配置导入导出等审计风格一致（`action` + `summary` + `object_id`，失败不阻断主流程）。  
-3. 本轮**先写看板**；实现另开版本切片。
+1. 用户在**报表模版**（列表 + 编辑器保存）与**版式**相关操作时，应在「操作审计」里看得见。  
+2. 风格与现有连接保存、导出、配置导入等一致；失败不挡主流程。  
+3. **给人看的文字要清楚明白**——不要用 HTTP 方法、英文缩写码当标题（见下「人话展示」）。  
+4. 本轮先写看板；实现另开版本切片。
 
-## 现状（代码对照）
+## 现状
 
-| 域 | 写路径 | 是否已写审计 |
-|----|--------|--------------|
-| DB / OPC 连接保存删除 | 前端 `auditLog` + 部分后端 `append_audit` | ✅ |
-| 导出结批 / 写回 PLC | `report-auto-export-trigger-service` / `ReportGenerator` | ✅ |
-| 配置导入导出 / 复位 / 更新 | Settings 各区块 | ✅ |
-| **模版** `PUT/DELETE /templates` | [`TemplateEditorWorkspace`](../_Prj/SD_SMA_ReportEditor/frontend/src/components/report-template/TemplateEditorWorkspace.vue) 保存；[`TemplateManager`](../_Prj/SD_SMA_ReportEditor/frontend/src/views/TemplateManager.vue) 复制/删/改名等 | ❌ 无 `template.*` |
-| **版式** `PUT/DELETE /layout-presets` | [`layout-registry`](../_Prj/SD_SMA_ReportEditor/frontend/src/lib/report-template/layout-registry.ts) `saveLayoutPresetFlexible`；[`LayoutPresets`](../_Prj/SD_SMA_ReportEditor/frontend/src/views/LayoutPresets.vue) / [`LayoutPresetEditor`](../_Prj/SD_SMA_ReportEditor/frontend/src/views/LayoutPresetEditor.vue) | ❌ 无 `layout.*` |
-| 审计筛选下拉 `actionOptions` | `AuditLogSection.vue` | 无模版/版式项 |
+| 域 | 是否已有审计 |
+|----|--------------|
+| 数据库 / OPC 连接、导出结批、配置导入导出、更新等 | ✅ |
+| 报表模版保存 / 删除 / 复制 | ❌ |
+| 版式保存 / 删除 / 复制 | ❌ |
+| 操作审计界面 | 类型列目前多显示英文码（如 `db.connection_save`）、结果为 `ok`/`fail`——本切片要求**至少新类型中文**，并建议旧类型一并映射 |
 
-后端模板/版式路由目前只落盘，**不**调用 `append_audit`。审计文件为 JSONL **追加**（约 90 天 / 最多约 5000 行）。
-
-## 已确认约定（2026-07-13）
-
-### 记什么
-
-**只记持久化写操作**，不记拖拽/选中/打开/预览/撤销。
-
-| action | 触发 | object_type | summary |
-|--------|------|-------------|---------|
-| `template.save` | PUT 模版成功（含新建首次、应用版式导致的 PUT） | `template` | 名称 + id 短缀；折叠后「共 N 次保存」 |
-| `template.delete` | 删除成功（含批量删 → **一条汇总**） | `template` | 单删：名称；批删：数量 + 最多 5 名 +「等」 |
-| `template.duplicate` | 复制成功 | `template` | 源名 → 新名 |
-| `layout.save` | PUT 版式成功（含新建） | `layout_preset` | 同模版 save |
-| `layout.delete` | 删除成功（批删同模版规则） | `layout_preset` | 同模版 delete |
-| `layout.duplicate` | 复制成功 | `layout_preset` | 源 → 新 |
-
-- **改名**：并入 `*.save`（`detail.reason: rename` 可选），不单独 `*.rename`。  
-- **失败**：同 action、`result: fail`、短错误；**不折叠**；不阻断主流程报错。  
-- **新建**：首次落盘即 `*.save`（可 `detail.created: true`），不造 `*.create`。  
-- **配置导入**：只记现有 `config.import`，**不**为每个模版再刷 `template.save`。  
-- **显示顺序**：MVP 不记。  
-- **AI 代写**：走同一 PUT → 自然 `*.save`（后端写）。
-
-### 15 分钟折叠（已确认）
-
-仅 **`template.save` / `layout.save` 且 result=ok**：
-
-- 键：`action` + `object_id`  
-- 距**上一条同键成功 save** &lt; **15 分钟** → **不新开行**：刷新 `ts`、`detail.save_count` +1、更新 summary 名称、「共 N 次保存」；`detail.first_ts` / `last_ts`  
-- 删 / 复制 **不**折叠  
-- 改名后 id 不变 → 继续叠原 save 条并刷新名称  
-- 窗内 fail 再 ok：fail 单独条；ok 相对**上一成功 save**判断是否折叠  
-
-不做内容 diff / 画布快照。
-
-### 谁写（已确认）
-
-| 动作 | 写入方 |
-|------|--------|
-| `*.save`（含折叠） | **后端** PUT 成功后 `append_or_coalesce_audit`（AI/旁路也不漏） |
-| `*.delete` / `*.duplicate` | **前端** Manager / layout-registry（批删一条汇总） |
-| 禁止 | 同一成功 save 前后端各写一条 |
-
-`AuditLogSection.actionOptions` 增加上表 actions；展开可见 `save_count` / 起止时间。
-
-### 拟改落点
-
-1. `audit_log.py`：`append_or_coalesce_audit(..., window_sec=900)`（改写 JSONL 最近匹配行或追加）。  
-2. `templates` / `layout_presets` 路由 PUT 成功后调 coalesce（summary 用 body 名称）。  
-3. DELETE 可由后端也写（可选）；默认删/复制前端写，避免与批删汇总逻辑分叉——**批删必须前端或统一后端批接口写一条**。  
-4. 前端：删/复制/`auditLog`；**保存路径不再** `auditLog(template.save)`，防双记。  
-5. 单测：`test_audit_coalesce.py` + 前端批删摘要纯函数测。
+后端模版/版式保存成功后**尚未**写审计。日志文件约保留 90 天、最多约 5000 条。
 
 ---
 
-## 测试用例（已补全 · 开工必跟）
+## 已确认约定（2026-07-13）
 
-> 风格对齐 [docs/014](014-✅-ReportEditor-AI流式输出.md)。  
-> **B** = 后端 pytest（tmp_path JSONL）；**F** = 前端 vitest；**M** = 手工；**R** = 回归。
+### 人话展示（已确认）
 
-### B. 后端 · coalesce 与路由
+审计给现场看：**操作、结果、摘要**三栏必须是明白中文。
+
+| 不要写在主栏里 | 应写成 |
+|----------------|--------|
+| PUT、DELETE、POST 等 | 「保存」「删除」 |
+| `template.save` 这类英文码当标题 | 「保存报表模版」 |
+| `ok` / `fail` | 「成功」/「失败」 |
+| 函数名、接口路径、端口 | 不进摘要 |
+| 一长串编号当摘要主角 | 摘要以**名称**为主；编号放展开详情 |
+
+说明：存盘内部仍可用英文类型键（方便程序筛选）；**界面与摘要文案必须中文**。导出给人看的列也优先中文（或中英对照，中文在前）。
+
+#### 操作类型怎么显示
+
+| 存盘用的类型键 | 界面显示 |
+|----------------|----------|
+| `template.save` | 保存报表模版 |
+| `template.delete` | 删除报表模版 |
+| `template.duplicate` | 复制报表模版 |
+| `layout.save` | 保存版式 |
+| `layout.delete` | 删除版式 |
+| `layout.duplicate` | 复制版式 |
+
+#### 摘要怎么写（示例）
+
+| 场景 | 摘要 |
+|------|------|
+| 保存一次 | 保存报表模版「日报表」 |
+| 15 分钟内多次保存 | 保存报表模版「日报表」（15 分钟内共 5 次） |
+| 删除一个 | 删除报表模版「日报表」 |
+| 批量删除 | 删除 3 个报表模版：日报表、月报表、周报表（超过 5 个名称则「…等共 N 个」） |
+| 复制 | 复制报表模版「日报表」为「日报表 副本」 |
+| 失败 | 保存报表模版「日报表」失败：网络中断（短句，不要堆栈） |
+| 版式 | 把「报表模版」换成「版式」即可 |
+
+展开详情可写：对象类型（报表模版 / 版式）、编号、保存次数、起止时间——同样不要出现 PUT 等词。
+
+### 记哪些事
+
+**只记真正存盘的操作**，不记拖拽、选中、打开、预览、撤销。
+
+| 界面含义 | 何时记 |
+|----------|--------|
+| 保存报表模版 | 点保存成功（含新建后第一次保存、应用版式后保存） |
+| 删除报表模版 | 删除成功；多选删除 → **只记一条汇总** |
+| 复制报表模版 | 复制成功 |
+| 保存 / 删除 / 复制版式 | 同上 |
+
+- **改名**：记成保存类，摘要写清旧名→新名，或合并进「保存」并刷新名称。  
+- **配置导入**：继续用原来的「配置导入」记录，**不要**给每个模版再刷一条「保存」。  
+- **列表排序拖拽**：本版不记。  
+- **AI 改完并保存**：同样记「保存报表模版…」。
+
+### 15 分钟合并（已确认）
+
+同一模版/版式，**成功保存**若距上次成功保存不足 **15 分钟** → **不新开一行**，只更新时间和「共 N 次」。  
+删除、复制各记各的。失败单独一条，不并进成功记录。
+
+### 谁来记（已确认）
+
+| 动作 | 谁记 |
+|------|------|
+| 保存（含 15 分钟合并） | **后端**在保存成功后写（含 AI） |
+| 删除 / 复制 | **前端**在操作成功后写（批量删除一条） |
+| 禁止 | 同一次成功保存记两遍 |
+
+### 拟改落点
+
+1. 后端：保存成功 → 中文摘要写入或合并。  
+2. 前端：删除/复制 → 中文摘要；保存不再重复记。  
+3. 操作审计页：操作名、结果中文；筛选下拉显示中文。  
+4. 单测：合并逻辑、批删文案、中文标签映射。
+
+---
+
+## 测试用例（开工必跟）
+
+> **B** 后端 · **F** 前端 · **M** 手工 · **R** 回归。  
+> 验收看**界面中文**是否达标，不只看内部键。
+
+### B. 后端（保存合并）
 
 | # | 用例 | 期望 |
 |---|------|------|
-| B1 | 同 `object_id` 两次 `template.save` ok，间隔 &lt;15min | 文件仍 **1** 行；`save_count=2`；`ts`/`last_ts` 为第二次；summary 含「共 2 次」 |
-| B2 | 两次 ok，间隔 ≥15min | **2** 行；各 `save_count=1`（或无 count） |
-| B3 | ok → fail → ok（均 &lt;15min） | fail **独立 1** 行；两条 ok **折叠为 1** 行（相对上一成功 save） |
-| B4 | 不同 `object_id` 交替 save | 互不折叠，各至少 1 行 |
-| B5 | `layout.save` 同 B1 | 版式同样折叠 |
-| B6 | coalesce 键忽略 fail 行 | 找「最近成功同键」时跳过中间的 fail |
-| B7 | 改名后同 id 再 save（&lt;15min） | 叠同一行；summary 名称变为新名 |
-| B8 | PUT 模版 API 成功（集成/mock） | 自动出现 `template.save`，前端未再 POST 同条 |
-| B9 | 空 `object_id` | 不折叠（或每次追加）；不损坏文件 |
-| B10 | 连续两次物理 `delete` 审计 | 若走后端删：**2** 行不折；批删见 F3 |
+| B1 | 同一模版 15 分钟内成功保存两次 | 仍 **1** 条；摘要含「共 2 次」；时间为第二次 |
+| B2 | 间隔满 15 分钟再保存 | **2** 条 |
+| B3 | 成功 → 失败 → 成功（都在 15 分钟内） | 失败单独 1 条；两次成功合并为 1 条 |
+| B4 | 两个不同模版交替保存 | 互不合并 |
+| B5 | 版式保存同 B1 | 同样合并 |
+| B6 | 合并时跳过中间的失败记录 | 只认「上一次成功保存」 |
+| B7 | 改名后再保存（15 分钟内） | 仍 1 条；摘要名称变为新名 |
+| B8 | 保存成功 | 自动有「保存报表模版…」；前端没有再记一条 |
+| B9 | 异常空编号 | 不把日志文件写坏 |
+| B10 | 摘要与详情 | **不含** PUT/DELETE/ok/fail 等词；结果存盘可用 ok，界面显示成功 |
 
-### F. 前端 · 删/复制/筛选/防双记
-
-| # | 用例 | 期望 |
-|---|------|------|
-| F1 | 编辑器保存 | **不**再调用 `auditLog('template.save')`（由后端写）；可用 spy 断言 |
-| F2 | 单条删除成功 | `template.delete` + 名称 summary；fail 时 `result:fail` |
-| F3 | 批量删 3 个模版 | **1** 次 `auditLog`；summary 含 `3`；`detail.ids.length===3`；名称列表 ≤5 |
-| F4 | 复制模版 | `template.duplicate`；summary 含源→新 |
-| F5 | 版式删/复制 | `layout.delete` / `layout.duplicate` 同 F2/F4 |
-| F6 | `actionOptions` | 含 `template.save/delete/duplicate` 与 `layout.*` |
-| F7 | 批删摘要纯函数 | 1 个名 / 5 个名 / 6 个名截断「等」 |
-| F8 | 配置导入路径 | 不循环调用 `template.save` 审计 |
-
-### M. 手工 / 真机
+### F. 前端（删除/复制/中文界面）
 
 | # | 用例 | 期望 |
 |---|------|------|
-| M1 | 模版编辑器 15 分钟内保存 ≥5 次 | 审计列表 **1** 条 save，展开 `save_count≥5` |
-| M2 | 等满 15 分钟再保存 | **新**一条 save |
-| M3 | 保存故意失败（断后端）再成功 | 有 fail 条；成功条可折叠到更早成功 save |
-| M4 | 删除、复制各一次 | 各 1 条中文可读 |
-| M5 | 多选删多个模版 | **1** 条汇总 |
-| M6 | 版式编辑器重复 M1/M4 | 同模版行为 |
-| M7 | 操作审计筛选新 action + 导出 CSV | 能滤、能导出含新类型 |
-| M8 | 只拖拽改位置不保存 | **无**新 `template.save` |
-| M9 | 配置导入含模版 | 有 `config.import`；**无**洪水 `template.save` |
-| M10 | AI 工具改模版并落盘（若环境可用） | 有 `template.save`（后端），无双记 |
+| F1 | 编辑器保存 | 前端**不再**单独记「保存」（交给后端） |
+| F2 | 删除一个 | 摘要像「删除报表模版「××」」；失败为「…失败：…」 |
+| F3 | 一次删 3 个 | **只 1 条**；摘要含「3 个」与名称 |
+| F4 | 复制 | 「复制…为…」 |
+| F5 | 版式删/复制 | 文案用「版式」 |
+| F6 | 筛选下拉 | 显示「保存报表模版」等中文，不是英文码 |
+| F7 | 批删名称很多 | 超过 5 个名截断「等共 N 个」 |
+| F8 | 配置导入 | 不刷出一堆「保存报表模版」 |
+| F9 | 结果列 | 显示「成功」「失败」，不是 ok/fail |
+| F10 | 操作列 | 显示中文操作名 |
+
+### M. 手工
+
+| # | 用例 | 期望 |
+|---|------|------|
+| M1 | 15 分钟内连按保存多次 | 列表 1 条，能看懂「共 N 次」 |
+| M2 | 超过 15 分钟再保存 | 新的一条 |
+| M3 | 保存失败再成功 | 有失败条；成功可合并 |
+| M4 | 删除、复制 | 各 1 条，中文通顺 |
+| M5 | 多选删除 | 1 条汇总 |
+| M6 | 版式同样测一遍 | 同模版 |
+| M7 | 筛选 + 导出 | 中文类型能筛；导出可读 |
+| M8 | 只拖不存 | 无新「保存」记录 |
+| M9 | 配置导入带模版 | 有配置导入记录；无保存洪水 |
+| M10 | 打开审计页扫一眼 | **看不懂英文码/HTTP 词即不合格** |
 
 ### R. 回归
 
 | # | 说明 |
 |---|------|
-| R1 | 原有连接保存 / 导出 / 配置导入审计仍可用 |
-| R2 | 审计导出 JSON/CSV、分页、日期筛选不回归 |
-| R3 | JSONL trim（90 天 / 5000 行）在大量 coalesce 改写后仍正常 |
-
-### 单测落点建议
-
-```text
-backend/modules/test_audit_coalesce.py     ← B1–B7、B9
-backend/...（路由测可选）                   ← B8
-frontend/.../audit-batch-summary.test.ts   ← F7
-frontend 对 TemplateManager 删/复制 spy    ← F2–F4（或薄封装测）
-```
+| R1 | 原有连接、导出、配置类审计仍可用 |
+| R2 | 导出、分页、日期筛选正常 |
+| R3 | 日志自动清理（约 90 天 / 5000 条）仍正常 |
 
 ## 验收（开工后）
 
-- [ ] 模版/版式保存 → `*.save`；15 分钟内多次保存折叠为一条  
-- [ ] 删 / 复制各一条；批删一条汇总  
-- [ ] 失败独立；不阻断主流程  
-- [ ] 前端保存不双记；筛选与导出含新 action  
-- [ ] 拖拽不保存无洪水；配置导入不拆记  
-- [ ] B/F 单测通过；M 冒烟勾选  
+- [ ] 保存 / 删除 / 复制（含批删、15 分钟合并）行为正确  
+- [ ] **操作、结果、摘要均为中文**；无 PUT、无英文码标题、无 ok/fail 主显示  
+- [ ] 前端保存不双记；导入不拆记；拖拽不刷屏  
+- [ ] B/F 单测通过；M10 人话验收通过  
 
 ## 本轮范围
 
-- ✅ 诉求与缺口  
-- ✅ 只记持久化 + **15 分钟折叠（已确认）**  
-- ✅ **G1–G10 / Q1–Q7 默认已拍板写入**  
-- ✅ **测试用例 B1–B10 / F1–F8 / M1–M10 / R1–R3**  
-- ⌛️ 实现与发版（待开工）
+- ✅ 诉求与「只记落盘」  
+- ✅ **15 分钟合并**  
+- ✅ **人话展示（中文操作/结果/摘要）**  
+- ✅ 测试用例  
+- ⌛️ 实现与发版  
 
-## 拍板一览（全部按默认）
+## 拍板一览
 
 | # | 结论 |
 |---|------|
-| Q1 | 仅显式保存 + 列表 CRUD（无「打开编辑器」） |
-| Q2 | 改名并入 `*.save` |
-| Q3 | save 后端 coalesce；删/复制前端（批删一条） |
+| Q1 | 只记明确保存与列表增删改，不记打开编辑器 |
+| Q2 | 改名归入保存类中文摘要 |
+| Q3 | 保存由后端记（可合并）；删除/复制由前端记 |
 | Q4 | 不记打开编辑器 |
-| Q5 | 15 分钟窗折叠成功 save |
-| Q6 | 批量删除一条汇总 |
-| Q7 | 配置导入不拆成逐模版 save |
+| Q5 | 成功保存 15 分钟合并 |
+| Q6 | 批量删除一条中文汇总 |
+| Q7 | 配置导入不拆成逐模版保存 |
+| Q8 | **界面与摘要必须中文，禁止 HTTP/英文码当主文案** ← 本轮补充 |
