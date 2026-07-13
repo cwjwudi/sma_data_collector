@@ -7,6 +7,7 @@
 
 ## 2026-07-13
 
+- **ReportEditor 模版/版式审计（计划补充）**：[docs/013-⌛️](docs/013-⌛️-ReportEditor模版版式编辑审计.md) 约定成功 save **15 分钟窗折叠**，避免频繁编辑刷屏。
 - **ReportEditor 0.3.72 已发版**：AI 助手正文 SSE 流式；排队/持久化/调宽/Markdown；看板 [docs/014-✅](docs/014-✅-ReportEditor-AI流式输出.md)。
 - **ReportEditor AI 流式（计划补充）**：[docs/014-✅](docs/014-✅-ReportEditor-AI流式输出.md) 确认关抽屉不停止；补测试用例 B/F/M/R；持久化/调宽/排队；G1–G15。
 - **ReportEditor 0.3.71 已发版**：AI 工具轨迹假失败修正（无 `ok` 字段的成功读工具不再标红）；看板 [docs/006-🚧](docs/006-🚧-ReportEditor-AI上游错误体验.md)。
