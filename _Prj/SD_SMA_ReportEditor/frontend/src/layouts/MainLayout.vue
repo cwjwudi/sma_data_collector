@@ -645,11 +645,14 @@ const navItems = [
   min-width: 0;
   box-sizing: border-box;
 }
-/** 路由页根节点加类名后占满主区竖向高度（内部再分区滚动，避免整页一条长滚动条） */
-.content-scroll > .page-fill-height,
-.content-scroll > .page-fill {
+/** 全高页：用后代选择器，避免 keep-alive / router-view 插槽破坏「直接子元素」匹配 */
+.content-scroll .page-fill-height,
+.content-scroll .page-fill {
   flex: 1 1 auto;
   min-height: 0;
   align-self: stretch;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
 }
 </style>

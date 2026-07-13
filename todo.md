@@ -5,6 +5,11 @@
 
 ---
 
+## 2026-07-13
+
+- **ReportEditor 0.3.57 已发版**：修复数据源滑动锁 UI（钉死轨道 + SVG）与数据库工作台空白（全高页高度链 / `.main` min-height）。看板 [docs/004-✅-ReportEditor数据源UI修复.md](docs/004-✅-ReportEditor数据源UI修复.md)；计划 [`009_版本Plan/0.3.57.md`](_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.57.md)。**验收**：vitest 248 passed；Mac DMG 已打。
+- **ReportEditor 0.3.57 计划与文档分工对齐**：建立任务看板与版本 Plan 交叉引用；更新 CLAUDE/AGENTS/todo（本条之上为实施闭环）。
+
 ## 2026-07-12
 
 - **剩余任务与后续规划汇总（交接）**：新建 [docs/003-⌛️-剩余任务与后续规划.md](docs/003-⌛️-剩余任务与后续规划.md)——跨 001/002 的统一索引/路线图，含 git 快照（`origin/main`=`ec49152`，本地领先 12 提交未推）、分类速查（本机可闭环 / 需运行应用 / 需产品决策 / 需现场真库）与建议推进顺序。同步订正 001「待提交」段（A 档已合并为 `ec49152`）。

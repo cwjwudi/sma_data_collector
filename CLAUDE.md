@@ -32,13 +32,14 @@
 ├── pyproject.toml / uv.lock / .python-version  # 根级 uv 本机开发/测试环境（Python 3.12）
 ├── docs/                   # AI 自动编写的文档与任务看板（NNN-状态-主题.md）
 ├── _Doc/                   # 人工需求 / 会议纪要 / 架构 / 教程 / 配图
+│   └── … ReportEditor 另有 _Prj/SD_SMA_ReportEditor/_Doc/（含 009_版本Plan/ 按版本号的产品计划）
 ├── _Launcher/              # 统一启动器（进程监管、便携打包脚本）
 ├── _Prj/                   # 7 个子工程（见下表）
 │   ├── SD_SMA_DATA_COLLECTOR/          # 采集服务(8091)：communication/core/database/runtime/web_config
 │   ├── SD_SMA_DATA_COLLECTOR_QUERY_WEB/# 查询+OPC UA 回写(8092)：app/ + pytest 套件
 │   ├── SD_SMA_DB_ADMIN/                # 数据库备份/恢复/CSV(8093)：app/
 │   ├── SD_SMA_REPORT_COPY/            # 报表拷贝至 U 盘(8094)：app/
-│   ├── SD_SMA_ReportEditor/          # Electron+Vue3+FastAPI+AI：backend/ frontend/ rptp/ packaging/
+│   ├── SD_SMA_ReportEditor/          # Electron+Vue3+FastAPI+AI：backend/ frontend/ rptp/ packaging/ _Doc/
 │   ├── SD_SMA_SCADA_DEMO/            # B&R PLC 工程（mappView）
 │   └── SMA_DATA/                     # B&R 早期原型（遗留归档，勿新用）
 └── web-portal-demo/        # ReportEditor 自动更新/分发静态站点暂存
@@ -88,6 +89,13 @@
 ## 任务事项推进与跟踪
 
 所有涉及代码、文档、配置、测试、设计或验收推进的任务，都要在 **`docs/`** 下维护一份可视化任务说明文档，用于承载事项的范围、子任务、状态、证据与后续动作。`todo.md` 只保留按日期**倒序**归档的精炼索引，不作为主要任务看板。
+
+### ReportEditor 版本 Plan（产品计划，非任务看板）
+
+- 路径：[`_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/`](_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/)；文件名 = 版本号（如 `0.3.57.md`）。
+- **用途**：该版本要做什么、验收标准、版本级规则；与 [`007_版本发布记录.md`](_Prj/SD_SMA_ReportEditor/_Doc/007_版本发布记录.md)（发版后事实）分工。
+- **不是** `docs/NNN-状态-主题.md` 的替代：实施时仍须有（或复用）根目录任务看板，子任务用 H1（✅/🚧/⌛️）；Plan 顶部链到对应 `docs/NNN-…`；`todo.md` 只写精炼索引。
+- 用户指定在 `009_版本Plan/*.md` 写计划时：更新该 Plan，并按本节新建/更新 `docs/` 看板，二者交叉引用，不把 H1 状态只写在 Plan 里而无看板。
 
 ### 任务文档命名
 
@@ -155,6 +163,7 @@
 | 环节 | 动作 |
 | ---- | ---- |
 | 任务文档 | 所有任务推进在 `docs/NNN-状态-主题.md` 维护；新建前先按 `docs/` 文件名复用相近既有文档，否则编号递增 |
+| ReportEditor 版本 Plan | `_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/<version>.md` 写产品计划；实施状态在 `docs/` 看板；发版事实在 `007_版本发布记录.md` |
 | 子任务 | 文档内子任务用 H1：`# ✅ 已完成：...` / `# 🚧 进行中：...` / `# ⌛️ 未完成：...` |
 | 指定文件 | 用户明确指定某执行/计划 `.md` 时，优先在该文件补充，不自动新建编号文档 |
 | 计划文档 | 某 `.md` 作执行清单时：执行前与 `todo.md`、编号任务文档核对范围；执行后更新 `[x]` / 部分完成拆项 |

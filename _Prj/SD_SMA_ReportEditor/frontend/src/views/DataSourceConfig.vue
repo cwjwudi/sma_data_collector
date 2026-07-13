@@ -120,6 +120,7 @@ const DatabaseWorkbench = defineAsyncComponent({
   delay: 0,
   onError() {
     panelChunkLoading.value = false
+    pageBooting.value = false
     bootMessage.value = '数据库工作台加载失败，请刷新重试'
   },
 })
@@ -128,9 +129,15 @@ const OpcUaPanel = defineAsyncComponent({
   delay: 0,
   onError() {
     panelChunkLoading.value = false
+    pageBooting.value = false
     bootMessage.value = 'OPC UA 面板加载失败，请刷新重试'
   },
 })
+
+function unwrapExposedFlag(v) {
+  if (v && typeof v === 'object' && 'value' in v) return Boolean(v.value)
+  return Boolean(v)
+}
 
 function aggregateHealthState(summary) {
   if (!summary?.total) return 'unknown'
@@ -242,7 +249,8 @@ function tryFinishBootForActiveTab() {
     return true
   }
   if (!dbWorkbenchRef.value) return false
-  if (dbWorkbenchRef.value.connectionsLoading === true) return false
+  // defineExpose 的 ref 在脚本里不会自动解包
+  if (unwrapExposedFlag(dbWorkbenchRef.value.connectionsLoading)) return false
   finishPageBoot()
   return true
 }
@@ -333,18 +341,20 @@ onUnmounted(() => {
 .page.page-fill-height {
   display: flex;
   flex-direction: column;
+  flex: 1 1 auto;
   min-height: 0;
+  height: 100%;
 }
 .page-tab-stage {
   position: relative;
-  flex: 1;
-  min-height: 0;
+  flex: 1 1 auto;
+  min-height: 240px;
   display: flex;
   flex-direction: column;
 }
 .page-tab-body {
-  flex: 1;
-  min-height: 0;
+  flex: 1 1 auto;
+  min-height: 240px;
   display: flex;
   flex-direction: column;
 }
