@@ -1,17 +1,17 @@
 {
-  "version": "0.3.54",
-  "releasedAt": "2026-07-13T03:17:55.742Z",
-  "notes": "Report Editor 0.3.54\n\n- 版式/页眉页脚静态表 OPC 换行与模版对齐\n- 无预览仅短标签，有实值按内容抬高行高",
+  "version": "0.3.55",
+  "releasedAt": "2026-07-13T03:37:40.761Z",
+  "notes": "修复 macOS 静默启动后无法再打开主界面\n\n- 点 Dock 图标可恢复窗口（activate）\n- 菜单栏托盘图标缩小并可单击打开\n- Dock 菜单增加「打开主界面 / 退出」",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.54-x64.exe",
-      "sha256": "d1f7dcda5d46987b61743f955819e1cf1ece107664667e1040dbe433054bdad8",
-      "size": 147973642
+      "url": "Report Editor AI-Setup-0.3.55-x64.exe",
+      "sha256": "",
+      "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.54-arm64.dmg",
-      "sha256": "9384d0aacd03c8a72eaa291ee6535e005e196993dbf026edd5428d1e40aa8149",
-      "size": 181973335
+      "url": "Report Editor AI-0.3.55-arm64.dmg",
+      "sha256": "a601e4036172840bc744d20fc2e3dda7f8faf737bc72b9d885bc2ed47f143431",
+      "size": 181974431
     }
   }
 }
