@@ -161,6 +161,10 @@ import {
 } from '@/features/datasource/datasource-workbench-cache'
 import { connectionTabLabel } from './connection-tab-label.js'
 import { workbenchMainLayoutClass } from './workbench-layout'
+import {
+  emptyReloadDraftAction,
+  shouldContinueEmptyLoadWatch,
+} from './empty-connections-reload-policy'
 import ConnectionManager from './connection-manager/ConnectionManager.vue'
 import ObjectTree from './object-tree/ObjectTree.vue'
 import DataGrid from './data-grid/DataGrid.vue'
@@ -188,8 +192,11 @@ const openTabs = ref([])
 let reloadToken = 0
 let catalogLoadToken = 0
 let loadWatchTimer = null
+/** 已成功从 API 确认连接列表为空（合法稳态，停止 startLoadWatch） */
+let emptyListConfirmed = false
 const MAX_LOAD_ATTEMPTS = 8
 const FOREGROUND_LOAD_TIMEOUT_MS = 1200
+const LOAD_WATCH_MAX_TICKS = 12
 
 /** 各已保存连接标签的健康指示灯 */
 const connHealth = reactive({})
@@ -547,9 +554,16 @@ async function reloadConnections(preferredId = null, opts = {}) {
     connections.value = nextList
     openTabs.value = connections.value.map((c) => ({ id: c.id, label: connectionTabLabel(c) }))
     if (!connections.value.length) {
-      creatingNew.value = true
+      emptyListConfirmed = true
+      stopLoadWatch()
+      // 正在「+ 新建」编辑时不要 draftConn=null，否则子表单被冲掉 / loading 闪烁丢光标
+      if (emptyReloadDraftAction(creatingNew.value) === 'reset') {
+        creatingNew.value = true
+        draftConn.value = null
+      } else {
+        creatingNew.value = true
+      }
       activeConnId.value = ''
-      draftConn.value = null
       openTabs.value = []
       catalog.value = { databases: [], tables: [], collections: [] }
       emit('health-summary', connectionHealthSummary.value)
@@ -557,6 +571,7 @@ async function reloadConnections(preferredId = null, opts = {}) {
       persistWorkbenchSession()
       return
     }
+    emptyListConfirmed = false
     creatingNew.value = false
     const pid = pickPreferredConnectionId(prefs, connections.value, preferredId)
     if (pid) {
@@ -926,14 +941,22 @@ watch(
 
 function onConfigImported() {
   clearWorkbenchSession()
+  emptyListConfirmed = false
   void reloadConnections(null, { force: true })
 }
 
 function onDatasourceChanged(ev) {
   const scope = ev?.detail?.scope
   if (!scope || scope === 'all' || scope === 'db') {
+    // 外部变更可能从空→有；允许再次确认。creatingNew 时仍走 preserve 草稿逻辑
     void reloadConnections(null, { force: true, background: true })
   }
+}
+
+function stopLoadWatch() {
+  if (loadWatchTimer == null) return
+  window.clearInterval(loadWatchTimer)
+  loadWatchTimer = null
 }
 
 function startLoadWatch() {
@@ -941,17 +964,23 @@ function startLoadWatch() {
   let ticks = 0
   loadWatchTimer = window.setInterval(() => {
     ticks += 1
-    if (connections.value.length > 0 || ticks > 12) {
-      window.clearInterval(loadWatchTimer)
-      loadWatchTimer = null
+    if (
+      !shouldContinueEmptyLoadWatch({
+        connectionsCount: connections.value.length,
+        emptyListConfirmed,
+        ticks,
+        maxTicks: LOAD_WATCH_MAX_TICKS,
+      })
+    ) {
+      stopLoadWatch()
       return
     }
     if (!connectionsLoading.value) {
-      void reloadConnections(null)
+      // background：避免 connectionsLoading 闪烁卸载输入框
+      void reloadConnections(null, { background: true })
     }
   }, 2500)
 }
-
 watch(
   () => dbConnectionHealth.value.total,
   (total) => {
@@ -987,10 +1016,7 @@ onDeactivated(() => {
 onUnmounted(() => {
   persistWorkbenchSession()
   reloadToken += 1
-  if (loadWatchTimer != null) {
-    window.clearInterval(loadWatchTimer)
-    loadWatchTimer = null
-  }
+  stopLoadWatch()
   window.removeEventListener('report-editor-config-imported', onConfigImported)
   window.removeEventListener('report-editor-datasource-changed', onDatasourceChanged)
 })

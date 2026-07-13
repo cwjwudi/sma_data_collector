@@ -80,6 +80,7 @@ import { computed, reactive, ref, watch } from 'vue'
 import { apiFetch } from '@/api/client.js'
 import { auditLog } from '@/lib/auditLog'
 import '../../connection-form-pane.css'
+import { shouldPreserveCreateDraftOnNullModel } from '../empty-connections-reload-policy'
 
 const props = defineProps({
   modelValue: { type: Object, default: null },
@@ -136,11 +137,20 @@ function effectivePort() {
 }
 
 watch(
-  () => props.modelValue,
-  (v) => {
+  () => [props.modelValue, props.creatingNew],
+  ([v, creating], prev) => {
     msg.value = ''
     msgTone.value = ''
     if (!v) {
+      if (
+        shouldPreserveCreateDraftOnNullModel({
+          creatingNew: Boolean(creating),
+          prevCreatingNew: prev === undefined ? undefined : Boolean(prev[1]),
+          prevModelWasNull: prev === undefined ? undefined : prev[0] == null,
+        })
+      ) {
+        return
+      }
       draft.id = ''
       draft.name = ''
       draft.engine = 'mysql'

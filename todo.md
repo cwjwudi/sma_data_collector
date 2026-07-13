@@ -7,11 +7,12 @@
 
 ## 2026-07-13
 
-- **ReportEditor 空连接表单刷新清空（文档/根因，待 0.3.59）**：0.3.58 面板已可见，但 `(0/0)` 下 `startLoadWatch` 周期性 `reloadConnections` 把 `draftConn=null`，ConnectionManager 清空输入。看板 [docs/004-🚧-ReportEditor数据源UI修复.md](docs/004-🚧-ReportEditor数据源UI修复.md)；计划 [`009_版本Plan/0.3.59.md`](_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.59.md)。**本条仅排查与文档。**
-- **ReportEditor 0.3.58 已发版**：P0 补 `ConnectionManager` `draft`（挂载崩溃→主区空白）；锁进度与拖柄共用 pct→px；`main--solo`/全高页兜底；新增 Vue/布局契约测（263 passed）。看板曾标 ✅，现因表单刷新问题改回 004-🚧。
-- **ReportEditor 数据源 UI 重诊（文档先行）**：0.3.57 未闭环结论已写入看板/0.3.58 Plan 后开工实现（见上条）。
-- **ReportEditor 0.3.57 已发版（部分）**：滑动锁外观止血；工作台空白误判已闭环，以 0.3.58 为准。
-- **ReportEditor 0.3.57 计划与文档分工对齐**：建立任务看板与版本 Plan 交叉引用；更新 CLAUDE/AGENTS/todo。
+- **ReportEditor 0.3.59 已发版**：修复 `(0/0)` 空连接新建表单被 `startLoadWatch` 周期性刷新清空；策略单测 + ConnectionManager loading 闪烁回归；vitest **274 passed**。看板 [docs/004-✅-ReportEditor数据源UI修复.md](docs/004-✅-ReportEditor数据源UI修复.md)；计划 [`009_版本Plan/0.3.59.md`](_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.59.md)。
+- **ReportEditor 空连接表单刷新清空（文档/根因）**：已实现为 0.3.59（见上条）。
+- **ReportEditor 0.3.58 已发版**：P0 补 `ConnectionManager` `draft`；锁进度同步；UI 测试。
+- **ReportEditor 数据源 UI 重诊（文档先行）**：0.3.57 未闭环后文档先行再实现。
+- **ReportEditor 0.3.57 已发版（部分）**：滑动锁外观止血。
+- **ReportEditor 0.3.57 计划与文档分工对齐**：看板与版本 Plan 交叉引用。
 
 ## 2026-07-12
 

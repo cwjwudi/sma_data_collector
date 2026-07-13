@@ -1,17 +1,17 @@
 {
-  "version": "0.3.58",
-  "releasedAt": "2026-07-13T04:59:31.917Z",
-  "notes": "修复数据源工作台空白与滑动锁进度同步\n\n- ConnectionManager 补回 draft reactive，消除挂载崩溃导致主区空白\n- 无连接时 main--solo 单列布局；全高页 min-height 兜底\n- 锁进度与拖柄共用 pct→px；补 Vue/布局契约测试",
+  "version": "0.3.59",
+  "releasedAt": "2026-07-13T05:23:44.240Z",
+  "notes": "修复空连接新建表单被周期性刷新清空\n\n- 空列表 API 成功后停止 loadWatch；轮询改 background\n- creatingNew 时保留 draftConn；ConnectionManager 防误清空\n- 新增 empty-connections-reload 策略与组件回归测",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.58-x64.exe",
+      "url": "Report Editor AI-Setup-0.3.59-x64.exe",
       "sha256": "",
       "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.58-arm64.dmg",
-      "sha256": "0a8f8c96e2ff71e6107c596a73890d1160ca2325bdf7b083143651756d4ddfff",
-      "size": 181974888
+      "url": "Report Editor AI-0.3.59-arm64.dmg",
+      "sha256": "790e0ec84266b30aac91a3d2002562b515791c1067921d9cbc882026470e8976",
+      "size": 181973884
     }
   }
 }
