@@ -7,12 +7,10 @@
 
 ## 2026-07-13
 
-- **ReportEditor 0.3.61 已发版**：新建非表格控件默认 `showBorder=false`；旧稿缺字段仍显示；模版/版式「一键隐藏边框」跳过表格；单测 13。看板 [docs/005-✅](docs/005-✅-ReportEditor控件默认无边框.md)。
-- **ReportEditor AI 写入类能力矩阵（仅文档）**：配置数据源、复制/删除模版、备份/恢复须端到端可用。看板 [docs/006](docs/006-⌛️-ReportEditor-AI上游错误体验.md)；探活代码已在主干，版本号随 0.3.61 一并推进时注意手工验探活。
-- **ReportEditor AI 开启定时探活（代码已合入）**：同看板 006 探活 H1；计划原 0.3.60。
-- **ReportEditor AI 上游/助手问题（其余仍 ⌛️）**：quota JSON；ChatGPT≠API；硅基残留 gpt-*。同看板 006。
-- **ReportEditor 0.3.59 已发版**：空连接新建表单不再被周期刷新清空。看板 [docs/004-✅-ReportEditor数据源UI修复.md](docs/004-✅-ReportEditor数据源UI修复.md)。
-- **ReportEditor 0.3.58 / 0.3.57**：数据源 UI 相关发版见同日既有条目与 004。
+- **ReportEditor AI 能力域扩展（仅文档）**：看板 [docs/006](docs/006-⌛️-ReportEditor-AI上游错误体验.md) 写入矩阵扩至版式/打开编辑/排序/演示冒烟/导出结批/诊断/更新等（对照 `ai_tool_catalog`）；验收 A–N。
+- **ReportEditor 0.3.61 已发版**：新建非表格控件默认 `showBorder=false`；一键隐藏边框；看板 [docs/005-✅](docs/005-✅-ReportEditor控件默认无边框.md)。
+- **ReportEditor AI 写入类能力 / 探活 / 上游错误**：同看板 006（探活代码已合入；quota/硅基等仍 ⌛️）。
+- **ReportEditor 0.3.59 / 0.3.58 / 0.3.57**：数据源 UI 相关，见 [docs/004-✅](docs/004-✅-ReportEditor数据源UI修复.md)。
 
 ## 2026-07-12
 

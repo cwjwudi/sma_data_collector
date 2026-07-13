@@ -2,87 +2,132 @@
 
 > 本文件为 **任务看板**；规则见 [CLAUDE.md](../CLAUDE.md)。  
 > 版本计划（定时探活首切片）：[0.3.60 Plan](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.60.md)。  
-> **范围说明**：不只「开启定时探活」；用户期望在开启「允许 AI 写入工具」后，**配置数据源、复制/删除模版、备份/恢复**等写入/确认类能力也能**真正执行并反映到 UI**（禁止空口答应）。
+> **范围说明**：不只「开启定时探活」；在开启「允许 AI 写入工具」后，数据源、模版/版式资产、备份恢复、结批导出、演示冒烟、诊断取证等能力域均须**真正执行并反映到 UI**（禁止空口答应）。完整域表见下方 H1。
 
 ---
 
-# ⌛️ 未完成：AI 写入类能力须端到端可用（数据源 / 模版 / 备份恢复）
+# ⌛️ 未完成：AI 写入/确认类能力须端到端可用（能力域扩展）
 
 ## 产品诉求（2026-07-13）
 
-现场已确认写入总闸开启，仍要求助手能**实际做事**，而不只是聊天答应。覆盖至少：
+现场已确认写入总闸开启，仍要求助手能**实际做事**，而不只是聊天答应。  
+下列能力域均应对齐「调工具 → 落库/弹框 → UI 可见」；**禁止空口答应**。
 
-| 能力域 | 用户说法示例 | 期望结果 |
-|--------|--------------|----------|
-| 定时探活 | 「开启定时探活」 | 偏好落库 + 设置开关变开（见下方 🚧 H1 / 0.3.60） |
-| 配置数据源 | 「加一个 MySQL / 改 OPC 地址」 | 连接写入；密码走本机弹框；列表刷新 |
-| 复制 / 删除模版 | 「复制这份模版」「删掉某某模版」 | 资产落盘；删除需 UI 确认；列表刷新 |
-| 备份 / 恢复 | 「导出备份」「导入这份配置」 | 本机另存 `.rebak` / 选文件 merge；**密文不进 LLM** |
+| 能力域 | 用户说法示例 | 期望结果 | 工具侧（摘要） |
+|--------|--------------|----------|----------------|
+| 定时探活 | 「开启定时探活」 | 偏好落库 + 设置开关变开 | `update_connection_probe_settings`（0.3.60 切片，代码已合入） |
+| 配置数据源 | 「加一个 MySQL / 改 OPC」 | 连接写入；密码走本机弹框；列表刷新 | `upsert_*` / `request_connection_credentials` / `delete_*` |
+| 模版资产 | 「复制/删除/新建空白模版」 | 落盘；删除需确认；列表刷新 | `copy_template` / `delete_template` / `create_blank_template` |
+| 版式资产 | 「复制这份版式」「删掉版式」 | 同模版侧 | `copy_layout_preset` / `delete_layout_preset` / `create_blank_layout` |
+| 打开编辑 | 「打开某某模版/版式」 | pending 确认后跳转编辑器 | `request_open_template` / `request_open_layout` |
+| 模版排序 | 「把某某排到最前」 | 本机展示顺序更新并 reload | `set_template_display_order` |
+| 备份 / 恢复 / 复位 | 「导出备份」「导入配置」「清空复位」 | `.rebak` 另存 / merge / 复位确认；**密文不进 LLM** | `request_config_backup_export` / `import_merge` / `reset` |
+| 演示与冒烟 | 「建个演示库」「做个绑定冒烟模版」 | 库/模版落盘 + UI reload | `ensure_user_demo_database` / `create_binding_smoke_template` / `apply_template_sheet_layouts` |
+| 导出目录 | 「把 PDF 输出改到某某路径」 | 写偏好或唤起选目录 | `set_export_dir` / `request_pick_export_dir` |
+| 结批 / 预检 | 「预检一下」「模拟结批一次」 | 预检结果如实；结批需确认后本机导出 | `preflight_export` / `request_manual_export` |
+| 结批写回 / 并行 | 「结批结果写到 OPC」「并行改成 4」 | 配置落库 | `set_export_result_feedback` / `set_max_parallel_exports` |
+| 触发绑定检查 | 「自动结批触发变量对不对」 | 调工具返回事实，不编造 | `check_auto_trigger_bindings`（read） |
+| 诊断排障 | 「链路哪里坏了」「看审计」 | **必须调工具**拿事实 | `diagnose_work_chain` / `inspect_template_bindings` / `query_audit_log` / `get_dev_runtime_snapshot` 等 |
+| 检查更新 | 「有没有新版本」 | 仅检查、不自动安装 | `request_check_app_update` |
+
+> 只读诊断类也算「能力域」：验收标准是**禁止编造连接/审计/版本事实**，与写入类同样禁止空口。
 
 ## 代码侧已有工具（对照 `ai_tool_catalog`）
 
-工具已注册；问题多在 **模型不调工具 / 总闸 / 数据源锁 / pending 弹框未完成 / UI 未 reload**，而非「没有 API」。
+工具大多已注册；问题仍是 **模型不调工具 / 总闸 / 数据源锁 / pending 未完成 / UI 未 reload**，而非「没有 API」。
 
-### 数据源配置
-
-| 工具 | 风险 | 说明 |
-|------|------|------|
-| `upsert_db_connection` | write | 新建/更新 DB（无密码字段；密码另走弹框） |
-| `upsert_opc_server` | write | 新建/更新 OPC |
-| `request_connection_credentials` | write | 唤起密码填写弹框 |
-| `delete_db_connection` / `delete_opc_server` | confirm | 需 UI 确认后删除 |
-| `list_*` / `get_*` / `probe_connection` / `get_datasource_inventory` | read | 只读探查，配置前应先读 |
-| `update_connection_probe_settings` | write | 定时探活（0.3.60 专项） |
-
-门槛：写入总闸；**数据源锁定**时 upsert/delete/凭证会拒绝并弹出解锁确认。
-
-### 模版复制 / 删除
+### 1. 数据源
 
 | 工具 | 风险 | 说明 |
 |------|------|------|
-| `copy_template` | write | 深拷贝；`mark_ui_reload(assets=True)` |
-| `delete_template` | confirm | 创建 pending 确认；用户确认后删并 reload |
-| `create_blank_template` / `copy_layout_preset` / `delete_layout_preset` 等 | write/confirm | 同属资产类，一并纳入「能真做事」验收 |
+| `upsert_db_connection` / `upsert_opc_server` | write | 新建/更新（密码走 UI） |
+| `request_connection_credentials` | write | 唤起密码弹框 |
+| `delete_db_connection` / `delete_opc_server` | confirm | UI 确认后删除 |
+| `update_connection_probe_settings` | write | 定时探活 |
+| `ensure_user_demo_database` | write | 创建用户演示库 |
+| `list_*` / `get_*` / `probe_connection` / `get_datasource_inventory` | read | 配置前应先读 |
 
-门槛：写入总闸；删除必须等 `AiPendingPromptDialog` 确认。
+门槛：写入总闸；**数据源锁定**时 upsert/delete/凭证会拒绝并弹出解锁；探活偏好不挡（已实现）。
 
-### 备份 / 恢复
+### 2. 模版与版式资产
 
 | 工具 | 风险 | 说明 |
 |------|------|------|
-| `request_config_backup_export` | confirm | 唤起 UI 另存加密 `.rebak`；备份内容与口令**不得**回传 LLM |
-| `request_config_import_merge` | confirm | 需 UI 确认后 merge 导入 |
-| `request_config_reset` | confirm | 快速复位（高危，须确认） |
-| `export_config_share_summary` | read | 脱敏摘要，非完整备份 |
+| `copy_template` / `copy_layout_preset` | write | 深拷贝 + `mark_ui_reload(assets)` |
+| `create_blank_template` / `create_blank_layout` | write | 最小合法空资产 |
+| `delete_template` / `delete_layout_preset` | confirm | pending 确认后删 |
+| `create_binding_smoke_template` | write | 绑定冒烟模版（可顺带演示库） |
+| `apply_template_sheet_layouts` | write | 套用封面/封尾版式并提升控件 |
+| `set_template_display_order` | write | 模版管理页排序 |
+| `request_open_template` / `request_open_layout` | confirm | 确认后跳转编辑器 |
+| `list_templates` / `get_template_summary` / `list_layout_presets` | read | 操作前列举 |
 
-门槛：写入总闸；本机 Electron 弹框完成选路径/确认；助手只能排队请求，不能声称「已备份到某路径」除非 UI 回执成功。
+### 3. 配置备份与路径
+
+| 工具 | 风险 | 说明 |
+|------|------|------|
+| `request_config_backup_export` | confirm | 另存加密 `.rebak`；密文/口令不进 LLM |
+| `request_config_import_merge` | confirm | merge 导入 |
+| `request_config_reset` | confirm | 快速复位（高危） |
+| `set_export_dir` / `request_pick_export_dir` | write/confirm | 输出/监视目录 |
+| `export_config_share_summary` / `get_export_dir_prefs` | read | 摘要与当前路径 |
+
+### 4. 导出、结批与现场
+
+| 工具 | 风险 | 说明 |
+|------|------|------|
+| `preflight_export` | read | 结批前预检 |
+| `request_manual_export` | confirm | 模拟结批（本机 Electron 执行） |
+| `set_export_result_feedback` | write | 结批结果 OPC 写回 |
+| `set_max_parallel_exports` | write | 自动结批并行 1–16 |
+| `check_auto_trigger_bindings` | read | 触发变量校验 |
+| `summarize_report_history` / `analyze_export_parallel_health` / `get_export_result_feedback` | read | 历史与健康度 |
+
+### 5. 诊断与系统（以「调工具拿事实」为验收）
+
+| 工具 | 风险 | 说明 |
+|------|------|------|
+| `diagnose_work_chain` / `inspect_template_bindings` / `explain_export_diagnostics` | read | 链路/绑定/导出诊断 |
+| `query_audit_log` / `get_dev_runtime_snapshot` / `get_app_version_and_endpoints` | read | 审计与运行时 |
+| `request_check_app_update` | confirm | 只检查更新 |
+| `explain_plc_heartbeat` | read | 心跳说明 |
+| `suggest_config_change` | read | **仅建议、不落库**；不得冒充已修改 |
 
 ## 共性失败模式（与探活同类）
 
-1. **空口答应**：未发 `tool_calls`，或只调 `suggest_config_change`（只给建议不落库）。  
-2. **总闸未开 / 工具被禁用**：工具返回错误，模型仍说「好的已完成」。  
-3. **confirm 未走完**：删除、备份、导入停在 pending，用户未点确认 → 状态不变。  
-4. **UI 未刷新**：写库成功但列表/开关不更新（探活已用 mirror；数据源/模版依赖 `ui_reload.assets` / `datasource`，需确认聊天结束必拉 mirror）。  
-5. **数据源锁**：配置连接被挡；探活偏好 0.3.60 起不挡。
+1. **空口答应**：未发 `tool_calls`，或只调 `suggest_config_change`。  
+2. **总闸未开 / 工具被禁用**：工具报错，模型仍说「已完成」。  
+3. **confirm 未走完**：删除、备份、导入、结批、打开编辑停在 pending。  
+4. **UI 未刷新**：写库成功但列表/开关不更新（探活已 mirror；其余靠 `ui_reload` + 聊天结束拉 mirror）。  
+5. **数据源锁**：改连接被挡；须引导解锁确认。  
+6. **密文泄漏**：备份/密码相关内容出现在聊天（硬性禁止）。
 
-## 拟改（分版本；本条先文档）
+## 拟改（分版本；本条登记标准）
 
-1. **系统提示**：对「配置连接 / 复制删除模版 / 备份导入」强制调用对应工具；工具 `ok=false` 或 `awaiting_user_*` 必须如实转述，禁止假装已完成。  
-2. **端到端验收剧本**（手工 + 可自动化的部分）：每类至少 1 条成功路径 + 1 条总闸关闭失败路径。  
-3. **UI 同步审计**：upsert/delete/copy/backup 完成后，设置/数据源/模版页是否即时可见；缺口补 `mark_ui_reload` 或 pending 完成回调。  
-4. **单测**：按能力域补「总闸关拒绝」「成功 mark_ui_reload」「confirm 仅创建 pending 不落删」等（探活用例已有，资产/配置类对齐）。  
-5. **发版切片**：0.3.60 先闭环定时探活；其余能力闭环可挂后续小版本（见 Plan「不做」或新 Plan），但**验收标准在本看板统一登记**，避免只修探活。
+1. **系统提示**：按能力域点名必调工具；`ok=false` / `awaiting_user_*` 如实转述。  
+2. **端到端剧本**：每个能力域至少 1 条成功 + 1 条总闸关闭失败（诊断域改为「未调工具则失败」）。  
+3. **UI 同步审计**：各 write/confirm 成功路径是否 `mark_ui_reload` / pending 完成回调。  
+4. **单测**：总闸关拒绝；成功 reload；confirm 仅 pending。  
+5. **切片**：探活优先；其余按现场痛点排期（资产 → 备份 → 结批 → 诊断体验），**标准以本表为准**。
 
-## 验收（能力矩阵 · 写入总闸已开）
+## 验收（能力矩阵 · 写入总闸已开，除非注明）
 
 | # | 场景 | 通过标准 |
 |---|------|----------|
-| A | 配置数据源 | 说「新建/修改连接」→ 调 upsert → 列表出现/更新；需密码时弹出凭证框且填后可探活 |
-| B | 复制模版 | 说「复制某某模版」→ `copy_template` 成功 → 模版列表出现副本（无需手动刷新） |
-| C | 删除模版 | 说「删除某某」→ 弹出确认 → 确认后列表消失；取消则仍在 |
-| D | 备份 | 说「导出备份」→ 本机另存对话框 → 生成 `.rebak`；聊天中无备份口令/密文 |
-| E | 恢复 | 说「导入/恢复配置」→ 确认流 → merge 生效且 UI reload |
-| F | 总闸关闭 | 以上任一写入意图 → 明确提示须开「允许 AI 写入工具」，**配置不变** |
+| A | 配置数据源 | upsert → 列表更新；需密码则弹框 |
+| B | 复制模版 / 版式 | copy_* 成功 → 列表出现副本 |
+| C | 删除模版 / 版式 | 确认后消失；取消则仍在 |
+| D | 备份 | 另存 `.rebak`；聊天无口令/密文 |
+| E | 恢复 / 复位 | 确认流 → merge/复位生效 + UI reload |
+| F | 总闸关闭 | 任一 write/confirm 意图 → 明确提示，**状态不变** |
+| G | 新建空白 / 冒烟模版 / 演示库 | 资产或库出现 + reload |
+| H | 打开模版/版式 | 确认后进入对应编辑器 |
+| I | 模版排序 | 顺序变更在模版管理页可见 |
+| J | 导出目录 | 路径写入或选目录弹框完成 |
+| K | 预检 / 模拟结批 | 预检有事实；结批确认后本机导出（非口头） |
+| L | 结批写回 / 并行上限 | 配置可读回一致 |
+| M | 诊断类 | 答复可追溯到工具结果，禁止编造连接/审计 |
+| N | 检查更新 | 仅检查结果；不声称已安装 |
 
 ---
 
