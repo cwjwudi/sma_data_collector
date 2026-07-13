@@ -95,6 +95,20 @@ const msgTone = ref('')
 const busy = ref(false)
 const formDisabled = computed(() => busy.value || props.locked)
 
+/** 表单草稿：必须在任何 watch / 读 draft 之前声明，否则 immediate watch 挂载即崩 → 主区空白 */
+const draft = reactive({
+  id: '',
+  name: '',
+  engine: 'mysql',
+  host: '127.0.0.1',
+  portText: '3306',
+  database: '',
+  username: '',
+  password: '',
+  sqlite_path: '',
+  mongo_auth_source: 'admin',
+})
+
 const hasSavedPassword = computed(() => {
   const v = props.modelValue
   return !!(v && v.has_password)

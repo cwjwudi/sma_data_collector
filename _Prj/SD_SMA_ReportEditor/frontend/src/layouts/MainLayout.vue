@@ -649,7 +649,8 @@ const navItems = [
 .content-scroll .page-fill-height,
 .content-scroll .page-fill {
   flex: 1 1 auto;
-  min-height: 0;
+  /* 禁止 min-height:0 在高度链未打通时把工作台主区压没（数据源页空白） */
+  min-height: max(100%, 420px);
   align-self: stretch;
   width: 100%;
   max-width: 100%;

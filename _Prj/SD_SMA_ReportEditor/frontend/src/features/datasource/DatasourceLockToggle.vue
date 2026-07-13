@@ -13,10 +13,10 @@
       @pointercancel="onPointerUp"
       @keydown="onKeydown"
     >
-      <span class="ds-lock-fill" :style="{ width: `${fillPct}%` }" aria-hidden="true" />
+      <span class="ds-lock-fill" :style="{ width: `${fillWidth}px` }" aria-hidden="true" />
       <span
         class="ds-lock-thumb"
-        :style="{ transform: `translateX(${thumbOffsetPx}px)` }"
+        :style="{ transform: `translateX(${thumbLeft}px)` }"
         aria-hidden="true"
       >
         <svg v-if="locked" class="ds-lock-ico" viewBox="0 0 16 16" width="12" height="12" fill="none">
@@ -40,15 +40,15 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
 import { apiFetch } from "@/api/client.js";
+import {
+  LOCK_TRACK_H,
+  LOCK_TRACK_W,
+  fillWidthPx,
+  pctFromClientX,
+  thumbOffsetPx,
+} from "./datasource-lock-geometry";
 
 defineOptions({ name: "DatasourceLockToggle" });
-
-/** 轨道 / 拇指几何（固定 px，避免 % 链撑破布局） */
-const TRACK_W = 88;
-const TRACK_H = 32;
-const THUMB = 24;
-const THUMB_PAD = 4;
-const THUMB_TRAVEL = TRACK_W - THUMB - THUMB_PAD * 2;
 
 const props = defineProps<{
   modelValue: boolean;
@@ -70,20 +70,15 @@ const thumbPct = computed(() => {
   return locked.value ? 100 : 0;
 });
 
-const fillPct = computed(() => thumbPct.value);
-
-const thumbOffsetPx = computed(() => {
-  const p = Math.min(100, Math.max(0, thumbPct.value)) / 100;
-  return THUMB_PAD + p * THUMB_TRAVEL;
-});
+/** 进度条与拖柄共用同一套 pct→px，避免 fill% 与 translateX(travel) 不同步 */
+const thumbLeft = computed(() => thumbOffsetPx(thumbPct.value));
+const fillWidth = computed(() => fillWidthPx(thumbPct.value));
 
 function pctFromEvent(ev: PointerEvent): number {
   const el = trackEl;
   if (!el) return locked.value ? 100 : 0;
   const r = el.getBoundingClientRect();
-  if (r.width <= 0) return 0;
-  const x = Math.min(Math.max(ev.clientX - r.left, 0), r.width);
-  return (x / r.width) * 100;
+  return pctFromClientX(ev.clientX, r.left, r.width);
 }
 
 function onPointerDown(ev: PointerEvent) {
@@ -104,14 +99,19 @@ async function onPointerUp(ev: PointerEvent) {
   if (!dragging) return;
   dragging = false;
   const pct = pctFromEvent(ev);
-  dragPct.value = null;
+  // 请求完成前保持拖拽视觉，避免 fill/拇指先弹回再跳到新状态
+  dragPct.value = pct;
   trackEl = null;
   const wantLock = pct >= 70;
   const wantUnlock = pct <= 30;
-  if (locked.value && wantUnlock) {
-    await persist(false);
-  } else if (!locked.value && wantLock) {
-    await persist(true);
+  try {
+    if (locked.value && wantUnlock) {
+      await persist(false);
+    } else if (!locked.value && wantLock) {
+      await persist(true);
+    }
+  } finally {
+    dragPct.value = null;
   }
 }
 
@@ -177,12 +177,12 @@ watch(
   box-sizing: border-box;
   position: relative;
   flex: 0 0 auto;
-  width: 88px;
-  height: 32px;
-  min-width: 88px;
-  min-height: 32px;
-  max-width: 88px;
-  max-height: 32px;
+  width: v-bind("`${LOCK_TRACK_W}px`");
+  height: v-bind("`${LOCK_TRACK_H}px`");
+  min-width: v-bind("`${LOCK_TRACK_W}px`");
+  min-height: v-bind("`${LOCK_TRACK_H}px`");
+  max-width: v-bind("`${LOCK_TRACK_W}px`");
+  max-height: v-bind("`${LOCK_TRACK_H}px`");
   margin: 0;
   padding: 0;
   border-radius: 999px;

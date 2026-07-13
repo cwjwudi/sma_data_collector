@@ -342,19 +342,19 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   flex: 1 1 auto;
-  min-height: 0;
+  min-height: 420px;
   height: 100%;
 }
 .page-tab-stage {
   position: relative;
   flex: 1 1 auto;
-  min-height: 240px;
+  min-height: 360px;
   display: flex;
   flex-direction: column;
 }
 .page-tab-body {
   flex: 1 1 auto;
-  min-height: 240px;
+  min-height: 360px;
   display: flex;
   flex-direction: column;
 }

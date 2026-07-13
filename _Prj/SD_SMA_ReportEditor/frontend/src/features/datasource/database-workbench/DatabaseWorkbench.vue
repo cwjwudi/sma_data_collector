@@ -25,7 +25,7 @@
         <span class="tab-label">{{ t.label }}</span>
       </button>
     </div>
-    <div class="main">
+    <div :class="workbenchMainLayoutClass(!!activeConnId)">
       <ConnectionManager
         :model-value="draftConn"
         :creating-new="creatingNew"
@@ -160,6 +160,7 @@ import {
   touchProbeTime,
 } from '@/features/datasource/datasource-workbench-cache'
 import { connectionTabLabel } from './connection-tab-label.js'
+import { workbenchMainLayoutClass } from './workbench-layout'
 import ConnectionManager from './connection-manager/ConnectionManager.vue'
 import ObjectTree from './object-tree/ObjectTree.vue'
 import DataGrid from './data-grid/DataGrid.vue'
@@ -1027,11 +1028,22 @@ defineExpose({
   gap: 16px;
   align-items: stretch;
   flex: 1 1 auto;
-  /* 父级未吃到全高时禁止压成 0，否则只剩「+ 新建」一行、配置面板消失 */
+  /* 父级未吃到全高时禁止压成 0，否则只剩「+ 新建」、配置面板消失 */
   min-height: 280px;
 }
 .main > * {
   min-height: 0;
+}
+/* 无活动连接：单列表单，禁止三列空槽 + min-height:0 把 ConnectionManager 压没 */
+.main--solo {
+  grid-template-columns: minmax(280px, 420px);
+  grid-template-rows: auto;
+  align-items: start;
+  min-height: 360px;
+}
+.main--solo > * {
+  min-height: auto;
+  max-width: 420px;
 }
 .work {
   border: 1px solid #e5e7eb;

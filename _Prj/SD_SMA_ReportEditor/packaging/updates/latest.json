@@ -1,17 +1,17 @@
 {
-  "version": "0.3.57",
-  "releasedAt": "2026-07-13T04:37:39.753Z",
-  "notes": "修复数据源滑动锁 UI 与数据库工作台空白\n\n- 滑动锁钉死轨道几何，SVG 图标，支持键盘切换\n- 修复全高页高度链，工作台主区不再被压成 0",
+  "version": "0.3.58",
+  "releasedAt": "2026-07-13T04:59:31.917Z",
+  "notes": "修复数据源工作台空白与滑动锁进度同步\n\n- ConnectionManager 补回 draft reactive，消除挂载崩溃导致主区空白\n- 无连接时 main--solo 单列布局；全高页 min-height 兜底\n- 锁进度与拖柄共用 pct→px；补 Vue/布局契约测试",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.57-x64.exe",
+      "url": "Report Editor AI-Setup-0.3.58-x64.exe",
       "sha256": "",
       "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.57-arm64.dmg",
-      "sha256": "acf7b65701e52fbc2a9f8c0275ebd3e9c66aa2d3e7945da4efd968ef195f02a7",
-      "size": 181977129
+      "url": "Report Editor AI-0.3.58-arm64.dmg",
+      "sha256": "0a8f8c96e2ff71e6107c596a73890d1160ca2325bdf7b083143651756d4ddfff",
+      "size": 181974888
     }
   }
 }
