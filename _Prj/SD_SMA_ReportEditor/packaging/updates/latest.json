@@ -1,6 +1,6 @@
 {
   "version": "0.3.74",
-  "releasedAt": "2026-07-13T14:44:00.510Z",
+  "releasedAt": "2026-07-13T14:48:24.750Z",
   "notes": "Report Editor AI 0.3.74\n\n- Electron 整机单实例（第二实例聚焦/托盘恢复）\n- 局域网应用内 AI：allow_lan_access + Agent Token；桌面独有能力明确提示",
   "platforms": {
     "win32-x64": {
@@ -10,8 +10,8 @@
     },
     "darwin-arm64": {
       "url": "Report Editor AI-0.3.74-arm64.dmg",
-      "sha256": "",
-      "size": 0
+      "sha256": "8372a138661cd84571162fd5aad029b5066f1dd9d82ca30b7e16d3516372bd20",
+      "size": 182035564
     }
   }
 }
