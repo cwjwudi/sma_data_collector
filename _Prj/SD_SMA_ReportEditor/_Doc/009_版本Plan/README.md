@@ -53,7 +53,7 @@
 
 | 版本 | 状态 | 任务看板 | 说明 |
 |------|------|----------|------|
-| [0.3.61.md](./0.3.61.md) | 计划中 | [docs/005-⌛️-ReportEditor控件默认无边框.md](../../../../docs/005-⌛️-ReportEditor控件默认无边框.md) | 交互控件默认无边框 |
+| [0.3.61.md](./0.3.61.md) | 计划中 | [docs/005-⌛️-ReportEditor控件默认无边框.md](../../../../docs/005-⌛️-ReportEditor控件默认无边框.md) | 新建控件 `showBorder` 默认隐藏（预览/PDF 外框） |
 | [0.3.60.md](./0.3.60.md) | 实现中 | [docs/006-⌛️-ReportEditor-AI上游错误体验.md](../../../../docs/006-⌛️-ReportEditor-AI上游错误体验.md) | AI 开启定时探活须落库并刷新 UI |
 | [0.3.59.md](./0.3.59.md) | 已发版 | [docs/004-✅-ReportEditor数据源UI修复.md](../../../../docs/004-✅-ReportEditor数据源UI修复.md) | 空连接表单周期性刷新清空 |
 | [0.3.58.md](./0.3.58.md) | 已发版 | 同上 004-✅ | ConnectionManager `draft`、锁进度同步、UI 测试 |
