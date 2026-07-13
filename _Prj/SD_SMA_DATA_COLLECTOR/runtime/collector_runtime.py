@@ -8,6 +8,7 @@ import logging
 import os
 import re
 import sys
+from dataclasses import asdict
 from logging.handlers import TimedRotatingFileHandler
 from typing import Any, Optional
 
@@ -186,6 +187,7 @@ class DataCollectionSystem:
                 default_batch_size,
                 points_dict,
                 self._write_insert_feedback,
+                persistent_queue_config=asdict(self.config.persistent_queue),
             )
 
             for group in self.config.groups:

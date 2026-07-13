@@ -16,6 +16,7 @@ from collections import Counter
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from database.db_manager import DatabaseManager
+from database.persistent_queue import PersistentQueueStore
 
 
 class DataStorageProcessor:
@@ -32,6 +33,8 @@ class DataStorageProcessor:
         batch_size: int = 100,
         points_dict: dict = None,
         insert_feedback_callback: Optional[Callable[[str, str, int], Awaitable[bool]]] = None,
+        persistent_queue_config: Optional[Dict[str, Any]] = None,
+        max_queue_size: int = 100000,
     ):
         """
         初始化数据存储处理器
@@ -57,6 +60,12 @@ class DataStorageProcessor:
         self.data_queue = deque()
         self.retry_queue = deque()
         self.dead_letter_queue = deque()
+        self.max_queue_size = max(1, int(max_queue_size))
+        self.persistent_queue_config = dict(persistent_queue_config or {})
+        self.persistent_store: Optional[PersistentQueueStore] = None
+        self.dropped_records_total = 0
+        self._last_drop_log_ts = 0.0
+        self._drop_log_interval_seconds = 60.0
         self.processing_task = None
         self.running = False
         self.logger = logging.getLogger(__name__)
@@ -70,13 +79,26 @@ class DataStorageProcessor:
         self._closed_batch_context: Optional[Dict[str, Any]] = None
         self._batch_close_flush_requested = False
         self.retry_interval_seconds = max(
-            0.05, float(os.getenv("SD_SMA_DB_RETRY_INTERVAL", "1.0"))
+            0.05,
+            float(
+                self.persistent_queue_config.get("retry_interval_seconds")
+                or os.getenv("SD_SMA_DB_RETRY_INTERVAL", "1.0")
+            ),
         )
         self.shutdown_flush_timeout_seconds = max(
             0.0, float(os.getenv("SD_SMA_SHUTDOWN_FLUSH_TIMEOUT", "30.0"))
         )
         self._retry_ready_at = 0.0
         self.metrics: Counter[str] = Counter()
+        if self.persistent_queue_config.get("enabled", False):
+            self.persistent_store = PersistentQueueStore(
+                self.persistent_queue_config.get("path", "runtime/queue/collector_outbox.db"),
+                synchronous=self.persistent_queue_config.get("synchronous", "FULL"),
+                busy_timeout_ms=self.persistent_queue_config.get("busy_timeout_ms", 5000),
+                max_queue_rows=self.persistent_queue_config.get("max_queue_rows", 1_000_000),
+                completed_retention_days=self.persistent_queue_config.get("completed_retention_days", 1),
+            )
+            self.metrics["outbox_rows_recovered_processing"] += self.persistent_store.recovered_on_open
     
     def add_data(self, collection_data: Dict[str, Any]) -> None:
         """
@@ -85,7 +107,26 @@ class DataStorageProcessor:
         Args:
             collection_data: 采集的数据
         """
-        self.data_queue.append(collection_data)
+        queued_data = collection_data
+        if self.persistent_store is not None:
+            record_id = self.persistent_store.enqueue(collection_data)
+            queued_data = dict(collection_data)
+            queued_data["_outbox_id"] = record_id
+            self.metrics["outbox_rows_accepted"] += 1
+        elif len(self.data_queue) >= self.max_queue_size:
+            self.data_queue.popleft()
+            self.dropped_records_total += 1
+            self.metrics["queue_rows_dropped"] += 1
+            now = time.monotonic()
+            if not self._last_drop_log_ts or now - self._last_drop_log_ts >= self._drop_log_interval_seconds:
+                self.logger.warning(
+                    "内存队列达到上限，已丢弃最旧数据；累计丢弃=%s, max_queue_size=%s。"
+                    "建议启用 persistent_queue。",
+                    self.dropped_records_total,
+                    self.max_queue_size,
+                )
+                self._last_drop_log_ts = now
+        self.data_queue.append(queued_data)
         self.logger.debug(f"数据已添加到队列，当前队列大小: {len(self.data_queue)}")
         
         group_name = collection_data.get('group_name')
@@ -109,6 +150,10 @@ class DataStorageProcessor:
         if self.running:
             return
         
+        restored = self._restore_ready_outbox_rows()
+        if restored:
+            self.logger.warning("从持久化队列恢复待写数据: rows=%s", restored)
+
         self.running = True
         self._batch_ready_event = asyncio.Event()
         self.processing_task = asyncio.create_task(self._process_data_loop())
@@ -121,9 +166,14 @@ class DataStorageProcessor:
         if ev is not None:
             ev.set()
         if self.processing_task:
-            self.processing_task.cancel()
             try:
-                await self.processing_task
+                await asyncio.wait_for(
+                    asyncio.shield(self.processing_task),
+                    timeout=max(0.1, self.shutdown_flush_timeout_seconds),
+                )
+            except asyncio.TimeoutError:
+                self.processing_task.cancel()
+                await asyncio.gather(self.processing_task, return_exceptions=True)
             except asyncio.CancelledError:
                 pass
             self.processing_task = None
@@ -160,6 +210,9 @@ class DataStorageProcessor:
         self._closed_batch_context = None
         self._batch_close_flush_requested = False
         self.logger.info("数据存储处理器已停止，remaining=%s", remaining)
+
+        if self.persistent_store is not None:
+            self.persistent_store.purge_completed()
 
     def initialize_tables_for_runtime(self) -> bool:
         """
@@ -298,11 +351,17 @@ class DataStorageProcessor:
         """数据处理循环"""
         while self.running:
             try:
+                self._restore_ready_outbox_rows()
                 if self.retry_queue and time.monotonic() >= self._retry_ready_at:
                     retry_data = list(self.retry_queue)
                     self.retry_queue.clear()
                     self.metrics["db_rows_retried"] += len(retry_data)
                     await self._process_batch(retry_data, requeue_db_failures=True)
+                    continue
+                if self.data_queue and time.monotonic() < self._retry_ready_at:
+                    await self._wait_for_batch_ready_or_timeout(
+                        min(1.0, self._retry_ready_at - time.monotonic())
+                    )
                     continue
                 # 检查是否有足够的数据进行批量处理
                 if self._has_enough_data_for_batch():
@@ -425,11 +484,18 @@ class DataStorageProcessor:
         # 分别处理每个组的数据
         for group_name in process_order:
             group_data_list = grouped_processable[group_name]
+            self._outbox_mark_processing(group_data_list)
             outcomes = await self._process_group_data(group_name, group_data_list)
             if outcomes.get(self.STATUS_DB_ERROR, 0):
-                self._requeue_failed_batch(group_data_list)
-            if outcomes.get(self.STATUS_OTHER_ERROR, 0):
+                if self._outbox_mark_retry(group_data_list, "target database write failed"):
+                    self._requeue_failed_batch(group_data_list, to_data_queue=True)
+                else:
+                    self._retain_dead_letter(group_data_list)
+            elif outcomes.get(self.STATUS_OTHER_ERROR, 0):
+                self._outbox_mark_dead_letter(group_data_list, "non-retryable data conversion error")
                 self._retain_dead_letter(group_data_list)
+            else:
+                self._outbox_mark_completed(group_data_list)
 
         if self._batch_close_flush_requested:
             self.current_batch_context = None
@@ -469,13 +535,20 @@ class DataStorageProcessor:
             totals = self._empty_outcomes()
             for group_name in process_order:
                 group_data_list = grouped_data[group_name]
+                self._outbox_mark_processing(group_data_list)
                 outcomes = await self._process_group_data(group_name, group_data_list)
                 for status, count in outcomes.items():
                     totals[status] += count
                 if requeue_db_failures and outcomes.get(self.STATUS_DB_ERROR, 0):
-                    self._requeue_failed_batch(group_data_list)
-                if outcomes.get(self.STATUS_OTHER_ERROR, 0):
+                    if self._outbox_mark_retry(group_data_list, "target database write failed"):
+                        self._requeue_failed_batch(group_data_list)
+                    else:
+                        self._retain_dead_letter(group_data_list)
+                elif outcomes.get(self.STATUS_OTHER_ERROR, 0):
+                    self._outbox_mark_dead_letter(group_data_list, "non-retryable data conversion error")
                     self._retain_dead_letter(group_data_list)
+                else:
+                    self._outbox_mark_completed(group_data_list)
 
             if self._batch_close_flush_requested:
                 self.current_batch_context = None
@@ -486,7 +559,10 @@ class DataStorageProcessor:
         except Exception as e:
             self.logger.error(f"批处理数据失败: {e}", exc_info=True)
             if requeue_db_failures:
-                self._requeue_failed_batch(batch_data)
+                if self._outbox_mark_retry(batch_data, str(e)):
+                    self._requeue_failed_batch(batch_data)
+                else:
+                    self._retain_dead_letter(batch_data)
             outcomes = self._empty_outcomes()
             outcomes[self.STATUS_DB_ERROR] = len(batch_data)
             return outcomes
@@ -499,10 +575,71 @@ class DataStorageProcessor:
             self.STATUS_OTHER_ERROR: 0,
         }
 
-    def _requeue_failed_batch(self, batch_data: List[Dict[str, Any]]) -> None:
+    @staticmethod
+    def _outbox_ids(batch_data: List[Dict[str, Any]]) -> List[str]:
+        return [item["_outbox_id"] for item in batch_data if item.get("_outbox_id")]
+
+    def _outbox_mark_processing(self, batch_data: List[Dict[str, Any]]) -> None:
+        if self.persistent_store is not None:
+            self.persistent_store.mark_processing(
+                self._outbox_ids(batch_data),
+                self.persistent_queue_config.get("lease_seconds", 60.0),
+            )
+
+    def _outbox_mark_completed(self, batch_data: List[Dict[str, Any]]) -> None:
+        ids = self._outbox_ids(batch_data)
+        if self.persistent_store is not None and ids:
+            self.persistent_store.mark_completed(ids)
+            self.metrics["outbox_rows_completed"] += len(ids)
+
+    def _outbox_mark_retry(self, batch_data: List[Dict[str, Any]], error: str) -> bool:
+        ids = self._outbox_ids(batch_data)
+        if self.persistent_store is not None and ids:
+            attempts = self.persistent_store.attempts(ids)
+            max_attempts = int(self.persistent_queue_config.get("max_attempts", 0) or 0)
+            if max_attempts and attempts >= max_attempts:
+                self.persistent_store.mark_dead_letter(ids, f"retry limit reached: {error}")
+                self.metrics["outbox_rows_dead_letter"] += len(ids)
+                return False
+            max_delay = float(self.persistent_queue_config.get("max_retry_interval_seconds", 300.0))
+            delay = min(self.retry_interval_seconds * (2 ** max(0, attempts - 1)), max_delay)
+            self.persistent_store.mark_retry(ids, error, delay)
+            self.metrics["outbox_rows_retry"] += len(ids)
+        return True
+
+    def _outbox_mark_dead_letter(self, batch_data: List[Dict[str, Any]], error: str) -> None:
+        ids = self._outbox_ids(batch_data)
+        if self.persistent_store is not None and ids:
+            self.persistent_store.mark_dead_letter(ids, error)
+            self.metrics["outbox_rows_dead_letter"] += len(ids)
+
+    def _restore_ready_outbox_rows(self) -> int:
+        if self.persistent_store is None:
+            return 0
+        restored = self.persistent_store.load_ready()
+        known_ids = {
+            item.get("_outbox_id")
+            for item in (*self.data_queue, *self.retry_queue, *self.dead_letter_queue)
+            if item.get("_outbox_id")
+        }
+        restored = [item for item in restored if item.get("_outbox_id") not in known_ids]
+        self.data_queue.extend(restored)
+        self.metrics["outbox_rows_recovered"] += len(restored)
+        if restored and self._batch_ready_event is not None:
+            self._batch_ready_event.set()
+        return len(restored)
+
+    def _requeue_failed_batch(
+        self, batch_data: List[Dict[str, Any]], *, to_data_queue: bool = False
+    ) -> None:
         if not batch_data:
             return
-        self.retry_queue.extend(batch_data)
+        target_queue = self.data_queue if to_data_queue else self.retry_queue
+        if to_data_queue:
+            target_queue.extendleft(reversed(batch_data))
+            self.metrics["db_rows_retried"] += len(batch_data)
+        else:
+            target_queue.extend(batch_data)
         self._retry_ready_at = time.monotonic() + self.retry_interval_seconds
         self.metrics["db_rows_queued_for_retry"] += len(batch_data)
         ev = self._batch_ready_event
@@ -511,7 +648,7 @@ class DataStorageProcessor:
         self.logger.warning(
             "数据库批次写入失败，已保留到内存重试队列: rows=%s, retry_queue=%s",
             len(batch_data),
-            len(self.retry_queue),
+            len(target_queue),
         )
 
     def _retain_dead_letter(self, batch_data: List[Dict[str, Any]]) -> None:
@@ -558,11 +695,12 @@ class DataStorageProcessor:
                 self.STATUS_DB_ERROR: 0,
                 self.STATUS_OTHER_ERROR: 0,
             }
+            runtime_table_checks: set[str] = set()
 
             # 普通数据组不需要逐条唯一性检查或批次 upsert，先完成转换，
             # 再按目标表和列集合交给数据库驱动 executemany，一批只提交一次事务。
             if not unique_key_point and not batch_upsert_config:
-                outcome_counts = self._bulk_insert_group_data(group_name, group_data_list)
+                outcome_counts = await self._bulk_insert_group_data(group_name, group_data_list)
                 total_records = sum(outcome_counts.values())
                 self.logger.debug(
                     "组 %s 批量插入完成: success=%s, unique_conflict=%s, db_error=%s, other_error=%s, total=%s",
@@ -580,13 +718,16 @@ class DataStorageProcessor:
             for data_item in group_data_list:
                 table_name = self._get_table_name_for_data_item(group_name, data_item)
                 if not self._is_table_ready_for_insert(table_name):
-                    self.logger.error(
-                        "组 %s 的目标表尚未在启动或批次切换时完成检查: %s",
-                        group_name,
-                        table_name,
-                    )
-                    outcome_counts[self.STATUS_DB_ERROR] += 1
-                    continue
+                    if table_name in runtime_table_checks:
+                        outcome_counts[self.STATUS_DB_ERROR] += 1
+                        continue
+                    runtime_table_checks.add(table_name)
+                    if not await asyncio.to_thread(
+                        self._ensure_group_table, group_name, table_name=table_name
+                    ):
+                        self.logger.error("组 %s 的目标表运行期检查失败: %s", group_name, table_name)
+                        outcome_counts[self.STATUS_DB_ERROR] += 1
+                        continue
 
                 insert_data = self._convert_to_db_format(data_item)
                 if not insert_data:
@@ -617,10 +758,13 @@ class DataStorageProcessor:
                         outcome_counts[self.STATUS_OTHER_ERROR] += 1
                         continue
                     try:
-                        exists = self.db_manager.record_exists(table_name, unique_key_point, unique_value)
+                        exists = await asyncio.to_thread(
+                            self.db_manager.record_exists, table_name, unique_key_point, unique_value
+                        )
                         if exists:
                             if batch_upsert_config and batch_upsert_config.get("end_time_point"):
-                                handled_status = self._handle_batch_upsert_conflict(
+                                handled_status = await asyncio.to_thread(
+                                    self._handle_batch_upsert_conflict,
                                     group_name,
                                     table_name,
                                     unique_key_point,
@@ -655,7 +799,7 @@ class DataStorageProcessor:
                         outcome_counts[self.STATUS_DB_ERROR] += 1
                         continue
 
-                if self.db_manager.execute_insert(table_name, insert_data):
+                if await asyncio.to_thread(self.db_manager.execute_insert, table_name, insert_data):
                     outcome_counts[self.STATUS_SUCCESS] += 1
                     if batch_upsert_config and unique_key_point:
                         end_time_point = batch_upsert_config.get("end_time_point")
@@ -717,7 +861,7 @@ class DataStorageProcessor:
         self.metrics["db_rows_failed"] += outcomes.get(self.STATUS_DB_ERROR, 0)
         self.metrics["db_rows_dead_letter"] += outcomes.get(self.STATUS_OTHER_ERROR, 0)
 
-    def _bulk_insert_group_data(
+    async def _bulk_insert_group_data(
         self,
         group_name: str,
         group_data_list: List[Dict[str, Any]],
@@ -730,6 +874,7 @@ class DataStorageProcessor:
             self.STATUS_OTHER_ERROR: 0,
         }
         rows_by_target: Dict[tuple, List[Dict[str, Any]]] = {}
+        runtime_table_checks: set[str] = set()
 
         for data_item in group_data_list:
             try:
@@ -745,13 +890,16 @@ class DataStorageProcessor:
                 continue
 
             if not self._is_table_ready_for_insert(table_name):
-                self.logger.error(
-                    "组 %s 的目标表尚未在启动或批次切换时完成检查: %s",
-                    group_name,
-                    table_name,
-                )
-                outcome_counts[self.STATUS_DB_ERROR] += 1
-                continue
+                if table_name in runtime_table_checks:
+                    outcome_counts[self.STATUS_DB_ERROR] += 1
+                    continue
+                runtime_table_checks.add(table_name)
+                if not await asyncio.to_thread(
+                    self._ensure_group_table, group_name, table_name=table_name
+                ):
+                    self.logger.error("组 %s 的目标表运行期检查失败: %s", group_name, table_name)
+                    outcome_counts[self.STATUS_DB_ERROR] += 1
+                    continue
 
             insert_data = self._convert_to_db_format(data_item)
             if not insert_data:
@@ -762,7 +910,9 @@ class DataStorageProcessor:
             rows_by_target.setdefault(target_key, []).append(insert_data)
 
         for (table_name, _columns), rows in rows_by_target.items():
-            inserted_count = self.db_manager.execute_insert_many(table_name, rows)
+            inserted_count = await asyncio.to_thread(
+                self.db_manager.execute_insert_many, table_name, rows
+            )
             if inserted_count == len(rows):
                 outcome_counts[self.STATUS_SUCCESS] += inserted_count
                 self.logger.debug(
@@ -1402,12 +1552,24 @@ class DataStorageProcessor:
 
     def get_runtime_metrics(self) -> Dict[str, int]:
         snapshot = dict(self.metrics)
+        outbox_counts = self.persistent_store.counts() if self.persistent_store is not None else {}
         snapshot.update(
             {
                 "queue_size": len(self.data_queue),
                 "retry_queue_size": len(self.retry_queue),
                 "dead_letter_queue_size": len(self.dead_letter_queue),
                 "inflight_size": 0,
+                "outbox_enabled": int(self.persistent_store is not None),
+                "outbox_pending_size": outbox_counts.get("pending", 0),
+                "outbox_processing_size": outbox_counts.get("processing", 0),
+                "outbox_retry_size": outbox_counts.get("retry", 0),
+                "outbox_dead_letter_size": outbox_counts.get("dead_letter", 0),
+                "outbox_completed_size": outbox_counts.get("completed", 0),
+                "outbox_file_bytes": (
+                    os.path.getsize(self.persistent_store.path)
+                    if self.persistent_store is not None and os.path.exists(self.persistent_store.path)
+                    else 0
+                ),
             }
         )
         return snapshot
