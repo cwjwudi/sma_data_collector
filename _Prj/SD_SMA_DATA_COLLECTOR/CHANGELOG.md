@@ -12,6 +12,7 @@
 - 停机时先在表缓存有效期间刷新普通队列和重试队列，完成后才清理缓存；超时会保留并报告剩余行数。
 - 运行快照新增队列、重试、提交、失败和停机刷新指标。
 - 当前触发复位表示“完整数据已进入内存 deque”，仍不等同于 MySQL 已提交；进程异常退出的内存丢失风险计划由后续持久化队列特性解决。
+- 使用 `AA_SMA_DATA_TEST.json` 对全部六个数据组完成 61 分钟真实 PLC/MySQL 压力测试；69985 行提交、83 次明确 Batch 唯一键冲突，队列和触发最终全部归零，详见 `docs/ALL_GROUPS_1H_STRESS_REPORT_20260713.md`。
 
 ### 批次主表与年份分表
 - ✨ **批次主表驱动的年份分表**（`core/config_models.py`、`core/config_loader.py`、`database/db_manager.py`、`database/data_storage.py`、`runtime/collector_runtime.py`）
