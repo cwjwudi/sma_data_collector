@@ -1,6 +1,6 @@
 <template>
-  <div class="mpc" :class="'mpc--' + variant">
-    <span v-if="showTag" class="mpc-tag" :title="tagText">{{ tagText }}</span>
+  <div class="mpc" :class="['mpc--' + variant, { 'mpc--plain': plain }]">
+    <span v-if="showTag && !plain" class="mpc-tag" :title="tagText">{{ tagText }}</span>
     <div class="mpc-slot">
       <slot />
     </div>
@@ -18,8 +18,13 @@ const props = withDefaults(
     label?: string;
     /** 模版管理格子已含列标题时关闭角标避免重复 */
     showTag?: boolean;
+    /**
+     * PDF 导出等：去掉封面橙 / 正文靛蓝 / 末页紫等列表装饰边与渐变底，只留白纸内容。
+     * 模版管理缩略图保持 plain=false。
+     */
+    plain?: boolean;
   }>(),
-  { label: undefined, showTag: true },
+  { label: undefined, showTag: true, plain: false },
 );
 
 const tagText = computed(() => {
@@ -128,5 +133,19 @@ const tagText = computed(() => {
 /* 页眉脚条带示意（TemplateMiniBands） */
 .mpc--normal :deep(.mb-inner.mpp-paper) {
   border-radius: 6px;
+}
+
+/* PDF 导出：无角色色描边 / 渐变 / 阴影（009） */
+.mpc--plain {
+  padding: 0;
+  border-radius: 0;
+  background: transparent !important;
+  outline: none !important;
+}
+.mpc--plain :deep(.mpp-paper),
+.mpc--plain :deep(.mb-inner.mpp-paper) {
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
 }
 </style>

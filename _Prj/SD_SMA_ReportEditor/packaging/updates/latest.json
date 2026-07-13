@@ -1,17 +1,17 @@
 {
-  "version": "0.3.66",
-  "releasedAt": "2026-07-13T09:21:09.777Z",
-  "notes": "Report Editor AI 0.3.66\n\n- AI 助手工具轨迹可见；探活口头结论与工具不符时强制再调，仍失败则改写",
+  "version": "0.3.67",
+  "releasedAt": "2026-07-13T09:40:46.748Z",
+  "notes": "Report Editor AI 0.3.67\n\n- 导出 PDF 去掉封面橙/正文蓝紫纸张装饰边（模版缩略图装饰保留）",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.66-x64.exe",
+      "url": "Report Editor AI-Setup-0.3.67-x64.exe",
       "sha256": "",
       "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.66-arm64.dmg",
-      "sha256": "fb34c35ddf62ea929002b0c1f9b6712c7f870b70ac7a50451daa0ec76662d6f8",
-      "size": 181971818
+      "url": "Report Editor AI-0.3.67-arm64.dmg",
+      "sha256": "1dcc14be37bfb4608773319236bcaeaa527fd94bed8c63be60f90b4d6293e63a",
+      "size": 181946143
     }
   }
 }

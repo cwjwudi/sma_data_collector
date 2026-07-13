@@ -1,5 +1,5 @@
 <template>
-  <MiniPreviewChrome :variant="previewVariant" :show-tag="false">
+  <MiniPreviewChrome :variant="previewVariant" :show-tag="false" :plain="plainChrome">
     <div class="mini-wrap" :style="wrapStyle">
       <div class="mini-page mpp-paper" :style="pageBoxStyle">
         <div v-if="me.hb > 0" class="mini-band mini-band-header" :style="headerBand">
@@ -372,6 +372,8 @@ const props = withDefaults(
     previewPage?: number;
     previewTotalPages?: number;
     previewBindingValues?: Record<string, BindingPreviewCell | undefined> | null;
+    /** PDF 导出：剥离 MiniPreviewChrome 角色色纸边（009） */
+    plainChrome?: boolean;
   }>(),
   {
     maxWidthPx: 160,
@@ -382,6 +384,7 @@ const props = withDefaults(
     sqlFillHideBelow: null,
     showSqlFillTailDividerHint: false,
     tailOnlyBelowBaseline: false,
+    plainChrome: false,
   },
 );
 
