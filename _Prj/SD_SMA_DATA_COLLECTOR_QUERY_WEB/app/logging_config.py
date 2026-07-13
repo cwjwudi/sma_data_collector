@@ -134,9 +134,10 @@ def build_logging_config(level: str | None = None) -> dict[str, Any]:
 LOGGING_CONFIG = build_logging_config()
 
 
-def setup_logging(level: str | None = None) -> None:
+def setup_logging(level: str | None = None, *, force: bool = False) -> None:
+    """配置全局日志；force=True 时忽略已配置标记强制重新配置（如测试中重绑 stderr）"""
     global _configured
-    if _configured:
+    if _configured and not force:
         return
     logging.config.dictConfig(build_logging_config(level))
     _configured = True

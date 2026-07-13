@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import ctypes
+import ipaddress
 import json
 import os
 import re
+import secrets
 import threading
 import time
 import uuid
@@ -11,14 +13,36 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 PACKAGE_ROOT = BASE_DIR.parent.parent
+AUTH_TOKEN_ENV = "SD_SMA_WEB_TOKEN"
+AUTH_TOKEN_HEADER = "X-SD-SMA-Token"
+AUTH_EXEMPT_PATHS = {"/api/health"}
+
+
+def _is_loopback_host(host: str | None) -> bool:
+    if not host:
+        return False
+    h = host.strip().lower()
+    if h in ("localhost", "127.0.0.1", "::1", "[::1]"):
+        return True
+    try:
+        return ipaddress.ip_address(h.strip("[]")).is_loopback
+    except ValueError:
+        return False
+
+
+def _remote_token_ok(provided: str | None) -> bool:
+    expected = (os.getenv(AUTH_TOKEN_ENV) or "").strip()
+    if not expected or not provided or not provided.strip():
+        return False
+    return secrets.compare_digest(provided.strip(), expected)
 
 
 def _resolve_config_dir() -> Path:
@@ -334,6 +358,17 @@ def list_reports(query: str = "") -> dict[str, Any]:
 
 _jobs: dict[str, dict[str, Any]] = {}
 _jobs_lock = threading.Lock()
+MAX_FINISHED_JOBS = 200
+
+
+def _prune_finished_jobs_locked() -> None:
+    finished = [job_id for job_id, job in _jobs.items() if job.get("status") != "running"]
+    overflow = len(finished) - MAX_FINISHED_JOBS
+    if overflow <= 0:
+        return
+    finished.sort(key=lambda job_id: str(_jobs[job_id].get("created_at", "")))
+    for job_id in finished[:overflow]:
+        _jobs.pop(job_id, None)
 
 
 def append_job_log(job_id: str, message: str) -> None:
@@ -378,6 +413,7 @@ def start_job(title: str, target, *args: Any) -> dict[str, Any]:
             "result": None,
             "_started_monotonic": time.monotonic(),
         }
+        _prune_finished_jobs_locked()
 
     def runner() -> None:
         try:
@@ -504,6 +540,21 @@ def choose_folder_dialog(initial_dir: str | None = None) -> str:
 
 app = FastAPI(title="SD SMA Report Copy", version="0.1.0")
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "app" / "static")), name="static")
+
+
+@app.middleware("http")
+async def enforce_remote_token(request: Request, call_next):
+    if request.url.path in AUTH_EXEMPT_PATHS:
+        return await call_next(request)
+    client_host = request.client.host if request.client else None
+    if _is_loopback_host(client_host):
+        return await call_next(request)
+    if _remote_token_ok(request.headers.get(AUTH_TOKEN_HEADER)):
+        return await call_next(request)
+    return JSONResponse(
+        status_code=403,
+        content={"detail": f"非本机访问需在请求头 {AUTH_TOKEN_HEADER} 提供有效令牌（服务端环境变量 {AUTH_TOKEN_ENV}）"},
+    )
 
 
 @app.get("/")

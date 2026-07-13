@@ -24,7 +24,6 @@ _Doc/.obsidian/
 # 通用
 *~
 ~*
-*.zip
 *.mp4
 
 # Visual Studio Code
@@ -57,6 +56,12 @@ _Prj/SD_SMA_DATA_COLLECTOR/config/.collector_runtime_settings.json
 
 # Logs
 *.log
+log/
+logs/
+
+# Config
+config/
+configs/
 
 # 压缩文件
 *.zip
@@ -71,6 +76,8 @@ _Prj/SD_SMA_DATA_COLLECTOR/config/.collector_runtime_settings.json
 *.pkg
 *.deb
 *.rpm
+# B&R Automation Studio 的 Package.pkg 是工程源文件，不受上面 *.pkg 规则影响
+!_Prj/**/*.pkg
 
 # 误放的 electron-builder 构建产物（正确路径为 _Prj/SD_SMA_ReportEditor/packaging/）
 /_Prj/packaging/

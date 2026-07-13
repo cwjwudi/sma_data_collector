@@ -238,6 +238,34 @@ describe("applyTableColumnResizeDeltaPx", () => {
     expect(applyTableColumnResizeDeltaPx(52, 2, null, 0, 0)).toBeNull();
     expect(applyTableColumnResizeDeltaPx(52, 2, null, 0, -999)).toBeNull();
   });
+
+  it("窄表退化区（列宽已低于下限）禁用拖拽，而非反向/整体重置为下限", () => {
+    // 回归：内侧宽 60px、3 列 → 每列 20px(<26)。旧逻辑 maxLeft/maxRight 变负使钳制方向反转，
+    // 末行 Math.max(lo,·) 把所有列顶到 26，破坏总宽守恒。正确行为：无法拖拽 → 返回 null。
+    expect(applyTableColumnResizeDeltaPx(60, 3, null, 0, 30)).toBeNull();
+    expect(applyTableColumnResizeDeltaPx(60, 3, null, 0, -30)).toBeNull();
+  });
+
+  it("拖拽守恒总内宽且只影响相邻两列，不改动其它列", () => {
+    const inner = 300;
+    const cols = 4; // 均分 [75,75,75,75]
+    const r = applyTableColumnResizeDeltaPx(inner, cols, null, 1, 20);
+    expect(r).not.toBeNull();
+    expect(r!.reduce((a, b) => a + b, 0)).toBe(inner); // 守恒
+    expect(r![0]).toBe(75); // 未触碰列不变
+    expect(r![3]).toBe(75);
+    expect(r![1]).toBeGreaterThan(r![2]); // di>0：左列变宽、右列变窄（方向不反转）
+    expect(r!.every((w) => w >= 26)).toBe(true);
+  });
+
+  it("过量拖拽钳制到最小列宽并守恒总宽", () => {
+    const inner = 300;
+    const r = applyTableColumnResizeDeltaPx(inner, 3, null, 0, 1000); // 均分 [100,100,100]
+    expect(r).not.toBeNull();
+    expect(r!.reduce((a, b) => a + b, 0)).toBe(inner);
+    expect(r!.every((w) => w >= 26)).toBe(true);
+    expect(Math.min(...r!)).toBe(26); // 右邻被压到下限
+  });
 });
 
 describe("table column width integer percents", () => {

@@ -42,7 +42,9 @@
 | 路径 | 说明 |
 | ---- | ---- |
 | **`_Doc/`** | 需求、会议纪要、数据库记录、修复记录、技术栈教程、配图等 |
-| **`_Prj/`** | 工程源码：**数据采集**、**报表编辑**、**SCADA Demo** 等，见 [_Prj/README.md](./_Prj/README.md) |
+| **`_Prj/`** | 工程源码（7 个子工程），见 [_Prj/README.md](./_Prj/README.md) 与下方「子工程」表 |
+| **`_Launcher/`** | **统一启动器**（运行入口）：一键启动/监管 4 个 Python 服务，含便携打包脚本，见 [_Launcher/README.md](./_Launcher/README.md) |
+| **`web-portal-demo/`** | ReportEditor 自动更新/分发的静态站点暂存 |
 
 ---
 
@@ -74,11 +76,35 @@
 
 | 目录 | 角色 |
 | ---- | ---- |
-| `SD_SMA_DATA_COLLECTOR/` | 数据采集 |
-| `SD_SMA_ReportEditor/` | 报表编辑；打包见 `packaging/windows/`、`packaging/mac/` |
-| `SD_SMA_SCADA_DEMO/` | SCADA 演示 / 主界面类工程 |
+| `SD_SMA_DATA_COLLECTOR/` | 数据采集服务（OPC UA → MySQL/SQLite），含 `web_config/` 配置界面（默认端口 8091） |
+| `SD_SMA_DATA_COLLECTOR_QUERY_WEB/` | 历史数据查询 + OPC UA 回写服务（默认端口 8092） |
+| `SD_SMA_DB_ADMIN/` | 数据库备份 / 恢复 / CSV 导入导出工具（默认端口 8093） |
+| `SD_SMA_REPORT_COPY/` | 报表 PDF 拷贝至 U 盘工具（Windows，默认端口 8094） |
+| `SD_SMA_ReportEditor/` | 报表编辑器（Electron + Vue3 + FastAPI + AI 辅助）；打包见 `packaging/windows/`、`packaging/mac/` |
+| `SD_SMA_SCADA_DEMO/` | B&R Automation Studio SCADA 演示 / 主界面类工程（mappView） |
+| `SMA_DATA/` | 早期 B&R 数据采集原型工程（遗留归档，接口已与 SCADA_DEMO 漂移，勿新用） |
 
-详见 [**_Prj/README.md**](./_Prj/README.md)。
+详见 [**_Prj/README.md**](./_Prj/README.md)。四个 Python 服务的统一运行入口为 **`_Launcher/`**。
+
+### 本机开发/测试环境（uv）
+
+仓库根提供统一的 uv 开发环境（`pyproject.toml` + `uv.lock`，Python 3.12，依赖为各子工程 requirements 的并集；现场部署仍以各子工程 `requirements*.txt` 为准）：
+
+```bash
+uv sync                                        # 一次性创建 .venv
+uv run --directory _Prj/<子工程> python -m pytest tests -q   # 运行子工程测试
+```
+
+### 部署相关环境变量
+
+| 变量 | 作用 |
+| ---- | ---- |
+| `SD_SMA_DB_PASSWORD` | 数据库密码注入（采集器 / QUERY_WEB），配置文件不再保存明文口令 |
+| `SD_SMA_WEB_TOKEN` | 四个 Web 服务的远程访问令牌（请求头 `X-SD-SMA-Token`；loopback 免令牌，未设置时非本机一律 403） |
+| `SD_SMA_BIND_HOST` | `start_collector.bat` / `start_query_web.bat` 监听地址覆盖（默认 127.0.0.1） |
+| `SD_SMA_RESTART_MAX_RESTARTS` 等 `SD_SMA_RESTART_*` | Launcher 崩溃自动重启策略（默认窗口 60s 内最多重启 3 次，指数退避 1s/2s/4s，设 0 恢复 fail-fast） |
+| `REPORT_EDITOR_CORS_ORIGINS` | ReportEditor 后端 CORS 白名单扩展（逗号分隔） |
+| `MARIADB_ROOT_PASSWORD` | ReportEditor docker-compose 演示库口令（必填，不再内置默认值） |
 
 ---
 
@@ -92,5 +118,6 @@
 
 | 日期 | 说明 |
 | ---- | ---- |
+| 2026-07-12 | 子工程清单补全为 7 个；新增 `_Launcher` 运行入口与根级 uv 开发环境说明；`.gitignore` 修正（`*.zip` 去重、B&R `Package.pkg` 免忽略）；摘除误跟踪的 `data_collector.log`。 |
 | 2026-03-19 | README 按《新马数据需求整理》与会议纪要、005 技术栈文档充实项目说明与索引。 |
 | 2026-03-19 | 更正品牌表述为「新马」；新增 README / _Prj/README。 |

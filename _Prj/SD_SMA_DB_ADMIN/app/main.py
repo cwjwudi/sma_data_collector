@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import csv
+import ipaddress
 import json
 import os
 import re
+import secrets
+import shutil
 import sqlite3
 import subprocess
 import tempfile
@@ -15,13 +18,35 @@ from pathlib import Path
 from typing import Any
 
 import pymysql
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+AUTH_TOKEN_ENV = "SD_SMA_WEB_TOKEN"
+AUTH_TOKEN_HEADER = "X-SD-SMA-Token"
+AUTH_EXEMPT_PATHS = {"/api/health"}
+
+
+def _is_loopback_host(host: str | None) -> bool:
+    if not host:
+        return False
+    h = host.strip().lower()
+    if h in ("localhost", "127.0.0.1", "::1", "[::1]"):
+        return True
+    try:
+        return ipaddress.ip_address(h.strip("[]")).is_loopback
+    except ValueError:
+        return False
+
+
+def _remote_token_ok(provided: str | None) -> bool:
+    expected = (os.getenv(AUTH_TOKEN_ENV) or "").strip()
+    if not expected or not provided or not provided.strip():
+        return False
+    return secrets.compare_digest(provided.strip(), expected)
 
 
 def _resolve_config_dir() -> Path:
@@ -208,6 +233,17 @@ def ensure_sqlite_connection(path: str) -> dict[str, Any]:
 
 _jobs: dict[str, dict[str, Any]] = {}
 _jobs_lock = threading.Lock()
+MAX_FINISHED_JOBS = 200
+
+
+def _prune_finished_jobs_locked() -> None:
+    finished = [job_id for job_id, job in _jobs.items() if job.get("status") != "running"]
+    overflow = len(finished) - MAX_FINISHED_JOBS
+    if overflow <= 0:
+        return
+    finished.sort(key=lambda job_id: str(_jobs[job_id].get("created_at", "")))
+    for job_id in finished[:overflow]:
+        _jobs.pop(job_id, None)
 
 
 def append_job_log(job_id: str, message: str) -> None:
@@ -263,6 +299,7 @@ def start_job(title: str, target, *args: Any) -> dict[str, Any]:
             "result": None,
             "_started_monotonic": time.monotonic(),
         }
+        _prune_finished_jobs_locked()
 
     def runner() -> None:
         try:
@@ -343,30 +380,43 @@ def backup_mysql_job(job_id: str, conn: DbConnection, database: str, output_dir:
     return {"filename": out.name, "path": str(out)}
 
 
+UPLOAD_TMP_PREFIX = "sd_sma_db_admin_"
+
+
+def _cleanup_upload(path_value: str) -> None:
+    """删除 _save_upload 创建的临时目录（仅识别本服务前缀，避免误删）。"""
+    temp_dir = Path(path_value).parent
+    if temp_dir.name.startswith(UPLOAD_TMP_PREFIX):
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+
 def restore_mysql_job(job_id: str, conn: DbConnection, database: str, sql_path: str) -> dict[str, Any]:
-    dbname = safe_identifier(database, "database")
-    source = Path(sql_path)
-    if not source.is_file():
-        raise FileNotFoundError(source)
-    append_job_log(job_id, f"Restoring SQL into database {dbname}")
-    set_job_progress(job_id, 5, "restoring")
-    env = os.environ.copy()
-    env["MYSQL_PWD"] = conn.password or ""
-    cmd = [
-        mysql_tool("mysql"),
-        "--host",
-        conn.host or "127.0.0.1",
-        "--port",
-        str(int(conn.port or 3306)),
-        "--user",
-        conn.username or "",
-        "--default-character-set=utf8mb4",
-        dbname,
-    ]
-    run_cli(cmd, env=env, stdin_path=source)
-    set_job_progress(job_id, 95, "finalizing")
-    append_job_log(job_id, f"Restored from: {source.name}")
-    return {"source": source.name, "database": dbname}
+    try:
+        dbname = safe_identifier(database, "database")
+        source = Path(sql_path)
+        if not source.is_file():
+            raise FileNotFoundError(source)
+        append_job_log(job_id, f"Restoring SQL into database {dbname}")
+        set_job_progress(job_id, 5, "restoring")
+        env = os.environ.copy()
+        env["MYSQL_PWD"] = conn.password or ""
+        cmd = [
+            mysql_tool("mysql"),
+            "--host",
+            conn.host or "127.0.0.1",
+            "--port",
+            str(int(conn.port or 3306)),
+            "--user",
+            conn.username or "",
+            "--default-character-set=utf8mb4",
+            dbname,
+        ]
+        run_cli(cmd, env=env, stdin_path=source)
+        set_job_progress(job_id, 95, "finalizing")
+        append_job_log(job_id, f"Restored from: {source.name}")
+        return {"source": source.name, "database": dbname}
+    finally:
+        _cleanup_upload(sql_path)
 
 
 def export_csv_job(job_id: str, conn: DbConnection, database: str, table: str, output_dir: str = "") -> dict[str, Any]:
@@ -414,56 +464,74 @@ def export_csv_job(job_id: str, conn: DbConnection, database: str, table: str, o
 
 
 def import_csv_job(job_id: str, conn: DbConnection, database: str, table: str, csv_path: str, truncate: bool) -> dict[str, Any]:
-    dbname = safe_identifier(database, "database")
-    table_name = safe_identifier(table, "table")
-    source = Path(csv_path)
-    if not source.is_file():
-        raise FileNotFoundError(source)
-    append_job_log(job_id, f"Importing CSV into {dbname}.{table_name}")
     try:
-        with source.open("r", encoding="utf-8-sig", newline="") as counter:
-            total_rows = max(sum(1 for _ in counter) - 1, 0)
-    except OSError:
-        total_rows = 0
-    set_job_progress(job_id, 5 if total_rows else 50, "importing")
-    next_progress = 10
-    rows = 0
-    with connect_mysql(conn, dbname) as db:
-        with db.cursor() as cur, source.open("r", encoding="utf-8-sig", newline="") as f:
-            reader = csv.DictReader(f)
-            columns = reader.fieldnames or []
-            if not columns:
-                raise ValueError("CSV header is empty")
-            for col in columns:
-                safe_identifier(col, "csv column")
-            if truncate:
-                append_job_log(job_id, "Truncating target table before import")
-                cur.execute(f"TRUNCATE TABLE {quote_ident(table_name)}")
-            cols = ", ".join(quote_ident(c) for c in columns)
-            placeholders = ", ".join(["%s"] * len(columns))
-            sql = f"INSERT INTO {quote_ident(table_name)} ({cols}) VALUES ({placeholders})"
-            batch: list[tuple[Any, ...]] = []
-            for row in reader:
-                batch.append(tuple(row.get(c, "") for c in columns))
-                if len(batch) >= 500:
+        dbname = safe_identifier(database, "database")
+        table_name = safe_identifier(table, "table")
+        source = Path(csv_path)
+        if not source.is_file():
+            raise FileNotFoundError(source)
+        append_job_log(job_id, f"Importing CSV into {dbname}.{table_name}")
+        try:
+            with source.open("r", encoding="utf-8-sig", newline="") as counter:
+                total_rows = max(sum(1 for _ in counter) - 1, 0)
+        except OSError:
+            total_rows = 0
+        set_job_progress(job_id, 5 if total_rows else 50, "importing")
+        next_progress = 10
+        rows = 0
+        with connect_mysql(conn, dbname) as db:
+            with db.cursor() as cur, source.open("r", encoding="utf-8-sig", newline="") as f:
+                reader = csv.DictReader(f)
+                columns = reader.fieldnames or []
+                if not columns:
+                    raise ValueError("CSV header is empty")
+                for col in columns:
+                    safe_identifier(col, "csv column")
+                if truncate:
+                    append_job_log(job_id, "Truncating target table before import")
+                    cur.execute(f"TRUNCATE TABLE {quote_ident(table_name)}")
+                cols = ", ".join(quote_ident(c) for c in columns)
+                placeholders = ", ".join(["%s"] * len(columns))
+                sql = f"INSERT INTO {quote_ident(table_name)} ({cols}) VALUES ({placeholders})"
+                batch: list[tuple[Any, ...]] = []
+                for row in reader:
+                    batch.append(tuple(row.get(c, "") for c in columns))
+                    if len(batch) >= 500:
+                        cur.executemany(sql, batch)
+                        rows += len(batch)
+                        batch.clear()
+                        if total_rows:
+                            progress = 5 + int((rows / total_rows) * 90)
+                            if progress >= next_progress:
+                                set_job_progress(job_id, progress, "importing")
+                                next_progress = progress + 10
+                if batch:
                     cur.executemany(sql, batch)
                     rows += len(batch)
-                    batch.clear()
-                    if total_rows:
-                        progress = 5 + int((rows / total_rows) * 90)
-                        if progress >= next_progress:
-                            set_job_progress(job_id, progress, "importing")
-                            next_progress = progress + 10
-            if batch:
-                cur.executemany(sql, batch)
-                rows += len(batch)
-    set_job_progress(job_id, 95, "finalizing")
-    append_job_log(job_id, f"Imported rows: {rows}")
-    return {"database": dbname, "table": table_name, "rows": rows}
+        set_job_progress(job_id, 95, "finalizing")
+        append_job_log(job_id, f"Imported rows: {rows}")
+        return {"database": dbname, "table": table_name, "rows": rows}
+    finally:
+        _cleanup_upload(csv_path)
 
 
 app = FastAPI(title="SD SMA DB Admin", version="0.1.0")
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "app" / "static")), name="static")
+
+
+@app.middleware("http")
+async def enforce_remote_token(request: Request, call_next):
+    if request.url.path in AUTH_EXEMPT_PATHS:
+        return await call_next(request)
+    client_host = request.client.host if request.client else None
+    if _is_loopback_host(client_host):
+        return await call_next(request)
+    if _remote_token_ok(request.headers.get(AUTH_TOKEN_HEADER)):
+        return await call_next(request)
+    return JSONResponse(
+        status_code=403,
+        content={"detail": f"非本机访问需在请求头 {AUTH_TOKEN_HEADER} 提供有效令牌（服务端环境变量 {AUTH_TOKEN_ENV}）"},
+    )
 
 
 @app.get("/")
@@ -552,21 +620,25 @@ def _parse_connection_json(connection_json: str) -> DbConnection:
 
 
 def _save_upload(upload: UploadFile, suffix: str) -> str:
-    temp_dir = Path(tempfile.mkdtemp(prefix="sd_sma_db_admin_"))
+    temp_dir = Path(tempfile.mkdtemp(prefix=UPLOAD_TMP_PREFIX))
     filename = Path(upload.filename or f"upload{suffix}").name
     target = temp_dir / filename
     limit_mb = int(load_config().get("max_upload_mb") or 512)
     limit_bytes = max(1, limit_mb) * 1024 * 1024
     copied = 0
-    with target.open("wb") as f:
-        while True:
-            chunk = upload.file.read(1024 * 1024)
-            if not chunk:
-                break
-            copied += len(chunk)
-            if copied > limit_bytes:
-                raise HTTPException(413, f"Upload exceeds max_upload_mb={limit_mb}")
-            f.write(chunk)
+    try:
+        with target.open("wb") as f:
+            while True:
+                chunk = upload.file.read(1024 * 1024)
+                if not chunk:
+                    break
+                copied += len(chunk)
+                if copied > limit_bytes:
+                    raise HTTPException(413, f"Upload exceeds max_upload_mb={limit_mb}")
+                f.write(chunk)
+    except BaseException:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        raise
     return str(target)
 
 

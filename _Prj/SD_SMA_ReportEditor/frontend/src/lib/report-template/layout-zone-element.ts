@@ -3,16 +3,22 @@
 import {
   clampTableRowHeightPx,
   computeContentAwareTableRowHeightsPx,
-  distributeTableColumnInnerWidthsPx,
   hydratePersistedTableColWidthsPx,
   REPORT_ZONE_TABLE_NODE_PADDING_PX,
   sumTableRowHeightsPx,
   TABLE_ROW_HEIGHT_DEFAULT_PX,
   TABLE_ROW_HEIGHT_MIN_PX,
-  TEMPLATE_TABLE_MAX_COLS,
-  TEMPLATE_TABLE_MAX_ROWS,
-  uniformTableCellBoxPx,
 } from "@/lib/report-template/table-cell-metrics";
+import {
+  clampTableColsDim,
+  clampTableRowsDim,
+  ensureTableColWidthsPxCore,
+  ensureTableGridCore,
+  tableColumnInnerWidthsPxReadonly,
+  tableVerticalChromePxFor,
+} from "@/lib/report-template/table-grid-core";
+// tableColBgColors 原语已上移共享核心；此处再导出保持既有导入路径不变
+export { ensureTableColBgColors } from "@/lib/report-template/table-grid-core";
 
 import type { TableSqlFillConfig, TableSqlParamBinding } from "@/lib/report-template/table-sql-fill";
 import {
@@ -22,11 +28,7 @@ import {
   type ScalarSqlVisualConfig,
 } from "@/lib/report-template/scalar-sql-visual";
 import {
-  clampSqlFillParamColumnRefs,
   defaultTableSqlFillConfig,
-  ensureTableSqlResultColumnNames,
-  ensureTwoTableSqlParamSlots,
-  ensureVisualOutputColumnSlots,
   hydrateSqlParamBindings,
   hydrateTableSqlFill,
   isVerticalSqlFill,
@@ -231,25 +233,6 @@ export function hydrateTableColBgColors(raw: unknown, cols: number): string[] {
   return arr;
 }
 
-export function ensureTableColBgColors(el: {
-  type?: string;
-  tableCols?: number;
-  tableColBgColors?: string[];
-}): void {
-  if (el.type !== "table") return;
-  const cols = el.tableCols ?? 4;
-  if (!Array.isArray(el.tableColBgColors)) {
-    el.tableColBgColors = Array.from({ length: cols }, () => "transparent");
-    return;
-  }
-  const arr = el.tableColBgColors;
-  while (arr.length < cols) arr.push("transparent");
-  if (arr.length > cols) arr.length = cols;
-  for (let i = 0; i < cols; i++) {
-    if (typeof arr[i] !== "string") arr[i] = "transparent";
-  }
-}
-
 /** 表格控件外框背景：填充色不作用于 padding 环，仅表格内侧生效 */
 export function zoneTableNodeShellBackgroundCss(): string {
   return "transparent";
@@ -367,18 +350,6 @@ function normalizeZoneBindingKind(v: unknown): ZoneBindingKind {
   return "none";
 }
 
-function clampZoneTableDim(v: unknown, fallback: number): number {
-  const n = Math.floor(Number(v));
-  if (!Number.isFinite(n)) return fallback;
-  return Math.min(TEMPLATE_TABLE_MAX_ROWS, Math.max(1, n));
-}
-
-function clampZoneTableColDim(v: unknown, fallback: number): number {
-  const n = Math.floor(Number(v));
-  if (!Number.isFinite(n)) return fallback;
-  return Math.min(TEMPLATE_TABLE_MAX_COLS, Math.max(1, n));
-}
-
 export function defaultZoneTableCell(): LayoutZoneTableCell {
   return { text: "", bindingKind: "none", opcuaNodeId: "", sqlText: "", sqlParams: [], bgColor: "transparent" };
 }
@@ -405,75 +376,24 @@ export function hydrateZoneTableCell(raw: Partial<LayoutZoneTableCell> | undefin
   };
 }
 
-/** 按 tableRows/tableCols 重塑 tableCells，就地写回（仅 type===table） */
+/** 按 tableRows/tableCols 重塑 tableCells，就地写回（委托共享核心） */
 export function ensureZoneTableGrid(el: LayoutZoneElement): LayoutZoneTableCell[][] {
-  if (el.type !== "table") return [];
-  const rows = clampZoneTableDim(el.tableRows, 3);
-  const cols = clampZoneTableColDim(el.tableCols, 4);
-  el.tableRows = rows;
-  el.tableCols = cols;
-  const prev = Array.isArray(el.tableCells) ? el.tableCells : [];
-  if (
-    prev.length === rows &&
-    prev.every((row) => Array.isArray(row) && row.length === cols)
-  ) {
-    ensureZoneTableColWidthsPx(el);
-    ensureTableColBgColors(el);
-  } else {
-    const grid: LayoutZoneTableCell[][] = [];
-    for (let r = 0; r < rows; r++) {
-      const pr = Array.isArray(prev[r]) ? prev[r] : [];
-      const row: LayoutZoneTableCell[] = [];
-      for (let c = 0; c < cols; c++) {
-        row.push(hydrateZoneTableCell(pr[c]));
-      }
-      grid.push(row);
-    }
-    el.tableCells = grid;
-    ensureZoneTableColWidthsPx(el);
-    ensureTableColBgColors(el);
-  }
-  if (el.tableSqlFill) {
-    ensureTwoTableSqlParamSlots(el.tableSqlFill);
-    ensureTableSqlResultColumnNames(el.tableSqlFill, cols);
-    if (el.tableSqlFill.visualSource) ensureVisualOutputColumnSlots(el.tableSqlFill, cols);
-    clampSqlFillParamColumnRefs(el.tableSqlFill, cols);
-  }
-  return el.tableCells as LayoutZoneTableCell[][];
+  return ensureTableGridCore<LayoutZoneTableCell>(el, hydrateZoneTableCell);
 }
 
 /** 维持 zone 表格 tableColWidthsPx 与列数一致 */
 export function ensureZoneTableColWidthsPx(el: LayoutZoneElement): void {
-  if (el.type !== "table") return;
-  const cols = el.tableCols ?? 4;
-  if (!Array.isArray(el.tableColWidthsPx)) el.tableColWidthsPx = [];
-  const arr = el.tableColWidthsPx;
-  while (arr.length < cols) arr.push(0);
-  arr.length = cols;
+  ensureTableColWidthsPxCore(el);
 }
 
-/** 版式区表格当前内侧各列像素宽 */
+/** 版式区表格当前内侧各列像素宽；只读，不写回 el */
 export function zoneTableColumnInnerWidthsPx(el: LayoutZoneElement): number[] {
-  if (el.type !== "table") return [];
-  ensureZoneTableGrid(el);
-  ensureZoneTableColWidthsPx(el);
-  const cols = el.tableCols ?? 4;
-  const rows = el.tableRows ?? 3;
-  const u = uniformTableCellBoxPx({
-    outerW: el.w,
-    outerH: el.h,
-    rowCount: rows,
-    colCount: cols,
-    nodePadding: REPORT_ZONE_TABLE_NODE_PADDING_PX,
-  });
-  return distributeTableColumnInnerWidthsPx(u.innerW, cols, el.tableColWidthsPx);
+  return tableColumnInnerWidthsPxReadonly(el, REPORT_ZONE_TABLE_NODE_PADDING_PX);
 }
 
 /** 版式区表格外框纵向 chrome（节点 padding + 表壳底 1px） */
 export function zoneTableVerticalChromePx(): number {
-  const p = REPORT_ZONE_TABLE_NODE_PADDING_PX;
-  const shellBottomPadPx = 1;
-  return p.top + p.bottom + shellBottomPadPx;
+  return tableVerticalChromePxFor(REPORT_ZONE_TABLE_NODE_PADDING_PX);
 }
 
 /** 估算用单元格文案：绑定格无注入时用短占位，勿按 NodeId 估行高 */
@@ -491,8 +411,8 @@ export function computeZoneTableContentRowHeightsPx(
   cellTextAt?: (ri: number, ci: number) => string,
 ): number[] {
   if (el.type !== "table") return [];
-  ensureZoneTableGrid(el);
-  const rows = Math.max(1, el.tableRows ?? 3);
+  // 只读：不 ensure、不写回 el（渲染/computed 安全）
+  const rows = clampTableRowsDim(el.tableRows, 3);
   const minH = clampTableRowHeightPx(el.tableRowHeightPx);
   let colWidths: number[] = [];
   try {
@@ -530,8 +450,8 @@ export function intrinsicOuterHeightForZoneTable(
   cellTextAt?: (ri: number, ci: number) => string,
 ): number {
   if (el.type !== "table") return 20;
-  ensureZoneTableGrid(el);
-  const rows = Math.max(1, el.tableRows ?? 3);
+  // 只读：不 ensure、不写回 el
+  const rows = clampTableRowsDim(el.tableRows, 3);
   const minH = clampTableRowHeightPx(el.tableRowHeightPx);
   if (el.tableSqlFill?.enabled) {
     return zoneTableVerticalChromePx() + rows * minH;
@@ -540,11 +460,10 @@ export function intrinsicOuterHeightForZoneTable(
   return zoneTableVerticalChromePx() + sumTableRowHeightsPx(heights, minH, rows);
 }
 
-/** @deprecated 纵向拖外框已禁用；保留供测试兼容 */
+/** @deprecated 纵向拖外框已禁用；保留供测试兼容。只读，不写回 el */
 export function minOuterHeightForZoneTableResizePx(el: LayoutZoneElement): number {
   if (el.type !== "table") return 20;
-  ensureZoneTableGrid(el);
-  const rows = Math.max(1, el.tableRows ?? 3);
+  const rows = clampTableRowsDim(el.tableRows, 3);
   return Math.max(20, zoneTableVerticalChromePx() + rows * TABLE_ROW_HEIGHT_MIN_PX);
 }
 
@@ -568,8 +487,8 @@ export function applyZoneTableOuterHeight(
 
 export function minOuterSizeForZoneTable(el: LayoutZoneElement): { w: number; h: number } {
   if (el.type !== "table") return { w: 20, h: 20 };
-  ensureZoneTableGrid(el);
-  const cols = el.tableCols ?? 4;
+  // 只读：不 ensure、不写回 el
+  const cols = clampTableColsDim(el.tableCols, 4);
   const MIN_CELL_W = 26;
   const CHROME = 8;
   const ih = intrinsicOuterHeightForZoneTable(el);
@@ -775,8 +694,8 @@ export function hydrateLayoutZoneElement(raw: Partial<LayoutZoneElement>): Layou
         : undefined,
   };
   if (type === "table") {
-    merged.tableRows = clampZoneTableDim(raw.tableRows ?? d.tableRows ?? 3, 3);
-    merged.tableCols = clampZoneTableColDim(raw.tableCols ?? d.tableCols ?? 4, 4);
+    merged.tableRows = clampTableRowsDim(raw.tableRows ?? d.tableRows ?? 3, 3);
+    merged.tableCols = clampTableColsDim(raw.tableCols ?? d.tableCols ?? 4, 4);
     merged.tableRowHeightPx = clampTableRowHeightPx(
       raw.tableRowHeightPx ?? merged.tableRowHeightPx ?? d.tableRowHeightPx,
     );

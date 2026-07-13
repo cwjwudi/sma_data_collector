@@ -108,6 +108,9 @@ export function useReportBindingPreview(tmplRef: Ref<ReportTemplate | null>): Re
 
       const servers = (opcPkg as { servers?: { id: string }[] }).servers || [];
       const connections = (connPkg as { connections?: { id: string; engine?: string }[] }).connections || [];
+      /** 按连接 id 反查引擎，供 SQL 参数值做方言相关转义（MySQL 需转义反斜杠） */
+      const engineOfConnection = (connId: string): string =>
+        connections.find((c) => c.id === connId)?.engine || "";
 
       let opcServerId = pickPreferredOpcServerId(prefs, servers);
       if (!opcServerId && servers.length) opcServerId = servers[0].id;
@@ -125,6 +128,7 @@ export function useReportBindingPreview(tmplRef: Ref<ReportTemplate | null>): Re
       async function substituteSqlWithResolvedParams(
         sql: string,
         params: TableSqlParamBinding[],
+        engine?: string,
       ): Promise<string> {
         const paramValues = await resolveSqlParamValues(params, {
           defaultOpcServerId: opcServerId,
@@ -138,11 +142,11 @@ export function useReportBindingPreview(tmplRef: Ref<ReportTemplate | null>): Re
               body: { node_id: nodeId },
             })) as { ok?: boolean; message?: string; value?: unknown },
         });
-        return substituteScalarSqlParams(sql, params, paramValues);
+        return substituteScalarSqlParams(sql, params, paramValues, engine);
       }
 
       async function resolveScalarSqlTask(task: SqlDedupeTask): Promise<string> {
-        return substituteSqlWithResolvedParams(task.sql, task.params || []);
+        return substituteSqlWithResolvedParams(task.sql, task.params || [], engineOfConnection(task.connectionId));
       }
 
       async function resolveMongoParamValues(params: TableSqlParamBinding[]): Promise<Record<number, unknown>> {
@@ -401,7 +405,11 @@ export function useReportBindingPreview(tmplRef: Ref<ReportTemplate | null>): Re
               }
               // 表格填充的筛选参数与标量 SQL 同规则取值：OPC UA / 结批批次号 / 手写兜底
               if (task.params.length && /\{\{p\d+\}\}/i.test(sql)) {
-                sql = await substituteSqlWithResolvedParams(sql, task.params);
+                sql = await substituteSqlWithResolvedParams(
+                  sql,
+                  task.params,
+                  task.tableOpc?.engine || task.fill?.visualSource?.engine || engineOfConnection(task.connectionId),
+                );
               }
               sqlForDiag = sql;
               const body: Record<string, unknown> = {

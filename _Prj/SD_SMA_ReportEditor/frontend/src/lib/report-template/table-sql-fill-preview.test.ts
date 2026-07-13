@@ -6,7 +6,9 @@ import {
 } from "@/lib/report-template/table-sql-fill";
 import { formatScalarForPreviewValue } from "@/lib/report-template/binding-preview-utils";
 import {
+  formatSqlFillTableCellPreview,
   sanitizeOpcTableName,
+  sqlFillPreviewTruncationHint,
   sqlFillQueryLimit,
   substituteSqlFillTableName,
   TABLE_SQL_FILL_FULL_ROW_LIMIT,
@@ -87,6 +89,42 @@ describe("sqlFillQueryLimit", () => {
   });
 });
 
+describe("sqlFillPreviewTruncationHint", () => {
+  it("未触及预览上限时无提示（所见即所得）", () => {
+    const fill = hydrateTableSqlFill({ enabled: true, maxRows: 2000 });
+    expect(sqlFillPreviewTruncationHint(fill, 300)).toBeNull();
+    expect(sqlFillPreviewTruncationHint(fill, 999)).toBeNull();
+  });
+
+  it("取回行数触及 1000 预览上限（maxRows>1000）时给出提示", () => {
+    const fill = hydrateTableSqlFill({ enabled: true, maxRows: 2000 });
+    const hint = sqlFillPreviewTruncationHint(fill, 1000);
+    expect(hint).not.toBeNull();
+    expect(hint!.previewLimit).toBe(1000);
+    expect(hint!.singleReportMaxRows).toBe(2000);
+    expect(hint!.message).toContain("1000");
+    expect(hint!.message).toContain("2000");
+    expect(hint!.message).toContain("导出");
+  });
+
+  it("开启拆分时提示提及份数", () => {
+    const fill = hydrateTableSqlFill({ enabled: true, maxRows: 2000, splitReportsOnMaxRows: true });
+    const hint = sqlFillPreviewTruncationHint(fill, 1000);
+    expect(hint).not.toBeNull();
+    expect(hint!.splitEnabled).toBe(true);
+    expect(hint!.message).toContain("份");
+  });
+
+  it("maxRows<=1000 时预览上限即 maxRows，取满即提示（单报表已满、数据可能更多）", () => {
+    const fill = hydrateTableSqlFill({ enabled: true, maxRows: 500 });
+    expect(sqlFillPreviewTruncationHint(fill, 499)).toBeNull();
+    const hint = sqlFillPreviewTruncationHint(fill, 500);
+    expect(hint).not.toBeNull();
+    expect(hint!.previewLimit).toBe(500);
+    expect(hint!.singleReportMaxRows).toBe(500);
+  });
+});
+
 describe("sanitizeOpcTableName", () => {
   it("accepts valid identifiers and trims", () => {
     expect(sanitizeOpcTableName(" batch_2026 ")).toBe("batch_2026");
@@ -110,6 +148,66 @@ describe("substituteSqlFillTableName", () => {
     expect(substituteSqlFillTableName("SELECT a FROM {{table}}", "postgres", "t1")).toBe(
       'SELECT a FROM "t1"',
     );
+  });
+});
+
+describe("formatSqlFillTableCellPreview 空结果不渲染字面省略号", () => {
+  const NBSP = " ";
+
+  function verticalFill() {
+    return hydrateTableSqlFill({
+      enabled: true,
+      fillMode: "visual",
+      layoutMode: "vertical",
+      visualSource: {
+        connectionId: "c1",
+        database: "db",
+        table: "alarms",
+        engine: "mysql",
+        columns: ["name", "status"],
+      },
+      verticalFieldLabels: ["名称", "状态"],
+      resultColumnNames: ["名称", "值"],
+    });
+  }
+
+  it("纵表查询返回 0 行（非加载）时正文格为空白而非 '…'", () => {
+    // 回归：导出 refresh 为 silent（previewLoading=false），纵表 0 数据仍保留槽位行，
+    // 旧逻辑落到 return "…"，PDF 里印出字面省略号
+    const fill = verticalFill();
+    const pv = { dataRows: [] as string[][] };
+    expect(formatSqlFillTableCellPreview({ fill, rowIndex: 1, colIndex: 0, preview: pv, previewLoading: false })).toBe(NBSP);
+    expect(formatSqlFillTableCellPreview({ fill, rowIndex: 1, colIndex: 1, preview: pv, previewLoading: false })).toBe(NBSP);
+  });
+
+  it("纵表 0 行时表头行仍显示列名", () => {
+    const fill = verticalFill();
+    const pv = { dataRows: [] as string[][] };
+    expect(formatSqlFillTableCellPreview({ fill, rowIndex: 0, colIndex: 0, preview: pv, previewLoading: false })).toBe("名称");
+    expect(formatSqlFillTableCellPreview({ fill, rowIndex: 0, colIndex: 1, preview: pv, previewLoading: false })).toBe("值");
+  });
+
+  it("加载中占位 '…' 不被误伤", () => {
+    const fill = verticalFill();
+    expect(formatSqlFillTableCellPreview({ fill, rowIndex: 1, colIndex: 0, preview: null, previewLoading: true })).toBe("…");
+  });
+
+  it("横表查询返回 0 行（非加载）时正文格为空白而非 '…'", () => {
+    const fill = hydrateTableSqlFill({
+      enabled: true,
+      fillMode: "visual",
+      layoutMode: "horizontal",
+      visualSource: {
+        connectionId: "c1",
+        database: "db",
+        table: "alarms",
+        engine: "mysql",
+        columns: ["name", "status"],
+      },
+      resultColumnNames: ["名称", "状态"],
+    });
+    const pv = { dataRows: [] as string[][] };
+    expect(formatSqlFillTableCellPreview({ fill, rowIndex: 1, colIndex: 0, preview: pv, previewLoading: false })).toBe(NBSP);
   });
 });
 
