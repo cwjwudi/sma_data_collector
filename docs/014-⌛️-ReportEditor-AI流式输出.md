@@ -245,7 +245,7 @@ sequenceDiagram
 5. **调宽**：左缘拖拽，min/max + 记住宽度；窄屏近全宽。  
 6. **排队**：入队/出队、单条取消、出错暂停；出队时取当前页上下文。  
 7. **SSE 抗缓冲**：响应头与代理注意；单测 + 真机验收。  
-8. **单测**：chunk 解析；中止；持久化；宽度钳制；队列串行。
+8. **单测 / 用例**：见下文 **测试用例 B / F / M / R**；实现时同步勾选。
 
 ## 明确不做（本切片边界）
 
@@ -270,12 +270,99 @@ sequenceDiagram
 - [ ] 探活空口答应仍无假成功终态  
 - [ ] 006 交叉说明已更新（发版时）
 
+## 测试用例（开工必跟）
+
+> 风格对齐 [docs/011](011-🚧-ReportEditor模版版式多选控件.md) E 表。  
+> **B** = 后端 pytest（可 mock 上游）；**F** = 前端单测/纯函数；**M** = 手工/真机（发版前勾）。  
+> 建议落点：`backend/modules/test_ai_chat_stream*.py`、前端 `ai-assistant/*.test.ts`（或现有 vitest 目录）。
+
+### B. 后端 · 流式协议与工具环
+
+| # | 用例 | 期望 |
+|---|------|------|
+| B1 | `POST` 流式入口（或 `stream=true`）不再 400 | 返回 `text/event-stream`（或约定 NDJSON）；含禁缓冲相关头（如 `Cache-Control: no-cache`、`X-Accel-Buffering: no`） |
+| B2 | 无工具纯问答：mock 上游 chunk | 事件序：若干 `delta` → `done`；拼起来等于完整正文 |
+| B3 | 一轮工具再答：mock 非流 tool_calls + 流式正文 | 先有 `tool`（或 start/end）事件，再有 `delta` → `done`；`done` 可带轨迹汇总 |
+| B4 | 客户端断开 / Abort | 后端尽力取消上游；不再继续写事件（或写完当前后停） |
+| B5 | 上游 `insufficient_quota` 等 | 流上 `error` 事件；文案走现有中文映射；不泄原始大 JSON |
+| B6 | 探活假成功声称（流式路径） | 流结束后 claim guard 仍触发再调/`replace`；终态无「已开启」类假成功 |
+| B7 | 密文/备份口令 | 任意 `delta`/`replace`/`done` 正文不含口令明文 |
+| B8 | 旧非流式 `/v1/chat/completions` | 行为与 0.3.71 兼容；轨迹仍挂 `report_editor_tool_trace` |
+| B9 | 未配置 Key / Agent | 流式入口同样鉴权失败（401/403），不半开流 |
+
+### F. 前端 · 解析、队列、持久化、UI 逻辑
+
+| # | 用例 | 期望 |
+|---|------|------|
+| F1 | SSE（或 chunk）解析器：正常 `delta` 序列 | 累计 content 正确；忽略心跳/空行 |
+| F2 | 解析器：中途 `error` | 停止追加；保留已累计正文；抛出/返回可读 `message` |
+| F3 | 解析器：`replace` | 整段替换累计正文，非整段后再 append |
+| F4 | 解析器：半截 JSON / 粘包 | 缓冲拼帧后仍正确（不因 TCP 粘包丢字） |
+| F5 | 消息 id | 新建 user/assistant 均有稳定 `id`；非数组下标 |
+| F6 | 排队：生成中再发 | 用户气泡立即出现且 `queued`；当前 `done` 后自动发队首；同时刻仅 1 个 in-flight |
+| F7 | 排队：取消单条 | × 掉队中某条后不再发送；不影响当前流 |
+| F8 | 排队：上限 | 超过 3～5 条提示且拒绝入队 |
+| F9 | 停止：仅当前 | Abort 当前 fetch；该助手气泡 `cancelled`；**默认**队首仍继续（G1） |
+| F10 | 停止并清队（若做） | 当前 Abort + 队列空；排队中用户气泡去掉或标取消 |
+| F11 | 出错暂停队列（G2） | `error` 后不再自动出队；「继续排队」后恢复 |
+| F12 | 关抽屉 / Esc | `open=false`；**不** Abort；in-flight 与队列不变 |
+| F13 | 清空 | Abort + 清消息 + 清队列 + 清持久化（或写空） |
+| F14 | 出队页上下文（G4） | mock 换 route 后出队；请求带**出队时** `pageContext` |
+| F15 | 停止取消 Pending（G5） | 停止时调用取消 pending API（或等价）；关抽屉不调用 |
+| F16 | 持久化读写 | 写入 `messages`+`drawerWidthPx`；刷新后恢复；**不**写 API Key / 密码 / 未发出队列（默认） |
+| F17 | 持久化上限 | 超条数或超字节时截断最旧，不抛异常撑爆 |
+| F18 | 宽度钳制 | 拖到 &lt;min → min；&gt;max → max；记住合法宽度 |
+| F19 | Markdown（同版时） | 标题/列表/表格渲染；未闭合 \`\`\` 不崩、当纯文本 |
+| F20 | 自动滚底 | stick 时 delta 滚底；用户上翻后不强制；回底附近恢复 stick |
+
+### M. 手工 / 真机（发版勾选）
+
+| # | 用例 | 期望 |
+|---|------|------|
+| M1 | 短问答 | 字/段逐步出现，非整包蹦出 |
+| M2 | 长回答 + 工具（如 list_templates） | 轨迹边到边「调用中→结果」；正文仍流式 |
+| M3 | 点停止 | 立刻停；半截保留；可标「已停止」 |
+| M4 | 生成中关抽屉再开 | 仍在生成或已完成；进度/正文可见；FAB 可选「生成中」角标 |
+| M5 | Esc 关抽屉 | 同 M4，不停止 |
+| M6 | 生成中连发 2～3 问 | 排队标记正确；按序连续回答 |
+| M7 | 取消队中一条 | 该条不再答；其余继续 |
+| M8 | 模拟上游额度错误 | 中文错误；队列暂停；可继续或放弃 |
+| M9 | Pending（删模版/结批等） | 流式中仍弹确认；确认后工具完成；抽屉关着也能弹 |
+| M10 | 停止时 Pending 开着 | Pending 取消；请求中止 |
+| M11 | 刷新页面 | 历史仍在；未完成队列不恢复（默认） |
+| M12 | 清空 | 聊天没了；本地存储空；进行中已 Abort |
+| M13 | 拖宽 + 重启 | 宽度保持；窄窗近全宽可用 |
+| M14 | Markdown 表格/列表 | 可读；半截 fence 不白屏 |
+| M15 | 探活空口答应 | 终态无假成功（与 0.3.66/claim 一致） |
+| M16 | 旧设置页「测连接」等非流路径 | 仍可用（若仍走非流接口） |
+
+### 回归（勿破坏）
+
+| # | 说明 |
+|---|------|
+| R1 | 现有 `test_ai_chat_tool_trace.py` / `test_ai_tool_trace_claim_guard.py` 全绿 |
+| R2 | `tool_result_ok` 无 `ok` 字段成功读工具不标红（0.3.71） |
+| R3 | Pending 各 kind（credential / confirm_* / pick_export_dir）手工冒烟通过 |
+
+### 单测落点建议
+
+```text
+backend/modules/test_ai_chat_stream.py          ← B1–B9（mock httpx 流）
+frontend/.../ai-assistant/sse-parse.test.ts     ← F1–F4
+frontend/.../ai-assistant/chat-queue.test.ts    ← F6–F11
+frontend/.../ai-assistant/chat-persist.test.ts  ← F16–F17
+frontend/.../ai-assistant/drawer-width.test.ts  ← F18
+```
+
+> 若前端暂无 vitest 基建：F 表可先抽纯函数到 `*.ts` 再测；UI 状态机用最小单测覆盖，其余靠 M。
+
 ## 本轮范围
 
 - ✅ 记录诉求与现状  
 - ✅ SSE + S1 工具轮策略  
 - ✅ 整窗：停止 / 轨迹 / Markdown / 持久化 / 调宽 / 排队  
 - ✅ **缺口表 G1–G15** 与建议默认  
+- ✅ **测试用例 B / F / M / R**  
 - ⌛️ 实现与发版（待开工）
 
 ## 开工前可确认（可选）
