@@ -1,7 +1,7 @@
 # ReportEditor AI 助手上游错误体验
 
 > 本文件为 **任务看板**；规则见 [CLAUDE.md](../CLAUDE.md)。  
-> **本轮仅记录问题**，未改代码、未定发版号。
+> 版本计划（探活生效）：[`009_版本Plan/0.3.60.md`](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.60.md)。
 
 ---
 
@@ -125,41 +125,67 @@ if resp.status_code >= 400:
 
 ---
 
-# ⌛️ 未完成：AI「开启定时探活」未真正生效（口头答应 / UI 仍关）
+# 🚧 进行中：AI「开启定时探活」须真正落库并刷新 UI（→ 0.3.60）
 
-## 现象（2026-07-13 · 0.3.59）
+## 现象（现场 · 2026-07-13 · 0.3.59）
 
-- 用户在 AI 助手说「开启定时探活」。
-- 助手回复称将开启并反馈状态。
-- 设置页「连接定时探活 → 启用定时探活」开关仍为 **关**。
+- 用户确认 **「允许 AI 写入工具」已开**，仍要求 AI **实际能打开**定时探活。
+- 助手常口头答应「正在开启」，设置页「启用定时探活」仍为关，或配置已写但开关不刷新。
 
-## 能力与门槛（代码事实）
+## 能力与门槛
 
 | 项 | 说明 |
 |----|------|
 | 工具名 | `update_connection_probe_settings`（写探活开关/间隔） |
-| 风险级 | **write**（见 `ai_tool_catalog`） |
-| 总闸 | 设置 → AI 助手 → **「允许 AI 写入工具」** 必须开启；否则工具返回错误：未启用写入工具 |
-| 数据源锁 | 若数据源已锁定，写入会被拒绝 |
-| 持久化 | 工具成功时写入 `config.json` → `app_preferences.connection_probe_*` |
+| 风险级 | **write**（`ai_tool_catalog`） |
+| 总闸 | 设置 → AI → **「允许 AI 写入工具」**；关则工具返回明确错误 |
+| 数据源锁 | **不挡探活偏好**：探活是应用偏好，不改连接凭证（0.3.60 起） |
+| 持久化 | `config.json` → `app_preferences.connection_probe_*` |
+| UI 同步 | 成功后 `mark_ui_reload(connection_probe=True)` → 聊天结束拉 mirror → `report-editor-connection-probe-changed` |
 
-## 可能失败原因（按概率）
+## 根因（已定位）
 
-1. **未开写入总闸**：`write_tools_enabled=false`（默认关）。模型可能仍用自然语言「假装会开」，未成功调工具或忽略了工具错误。  
-2. **模型未真正调用工具**：只聊天、无 `tool_calls` → UI 绝不可能变。  
-3. **工具已写库但设置页未刷新**：`ConnectionProbeSection` 仅在 `onMounted` 读偏好；AI 改后端配置后**不会**自动 `dispatch` `report-editor-connection-probe-changed`，同页开关会仍显示旧状态，需离开再进设置或刷新才能看见。  
-4. **数据源锁定** / 工具在 AI 工具页被单独禁用。
+1. **模型空口答应**：未调工具 / 调了 `suggest_config_change` 只给建议不落库。  
+2. **写成功但 UI 不刷新**：`ConnectionProbeSection` 原先仅 `onMounted` 读偏好；AI 写库后无事件。  
+3. **总闸关时仍口头成功**：系统提示未强制「工具失败必须如实告知」。
 
-## 用户立刻可做
+## 实现要点（代码已落地，发版前验收）
 
-1. 设置 → AI 助手：打开 **「允许 AI 写入工具」** 并保存。  
-2. 再对助手说：「调用工具开启定时探活」。  
-3. 若仍显示关：离开设置页再进入，或手动拨一下开关核对是否已写入。  
-4. 也可直接手动打开「启用定时探活」（不依赖 AI）。
+1. `_tool_update_probe`：要求 `enabled` 和/或 `interval_sec`；成功后 `mark_ui_reload(connection_probe=True)`；返回可读 `message`。  
+2. `SYSTEM_PROMPT`：开启/关闭探活必须调 `update_connection_probe_settings(enabled=…)`，禁止空口答应。  
+3. 前端：`client-prefs-mirror` 识别 `ui_reload.connection_probe` 并派发事件；设置页/导航/数据源页正确回读。  
+4. 探活偏好**不再**因数据源锁拒绝。
 
-## 拟改（确认后实现）
+## 测试用例（必须绿）
 
-1. AI 执行 `update_connection_probe_settings` 成功后，通过 SSE/轮询/自定义事件通知前端刷新探活开关（与手动保存同样 `report-editor-connection-probe-changed`）。  
-2. 助手在写入类意图时：若 `write_tools_enabled=false`，**明确回复**须先开总闸，禁止空口答应「正在开启」。  
-3. 可选：系统提示强化「改探活必须调用 `update_connection_probe_settings`」。  
-4. 测试：写入总闸关 → 工具失败文案；总闸开 → 配置文件与（刷新后）UI 一致。
+### 后端 `modules/test_ai_update_probe.py`
+
+| 用例 | 期望 |
+|------|------|
+| `test_update_probe_enables_and_marks_ui_reload` | `enabled=true` → config 落库；mirror `pending_apply` + `ui_reload.connection_probe` |
+| `test_update_probe_disable_and_interval` | 可关、可改间隔 |
+| `test_update_probe_requires_args` | 空参数 → `ok=false`，提示传 `enabled` |
+| `test_update_probe_blocked_when_write_disabled` | 总闸关 → 错误含「写入工具」 |
+| `test_update_probe_works_when_datasource_locked` | 数据源锁定仍可开启探活 |
+| `test_system_prompt_requires_probe_tool` | 系统提示含工具名与 `enabled=true` |
+
+### 前端 `src/lib/client-prefs-mirror.test.ts`
+
+| 用例 | 期望 |
+|------|------|
+| pending + `connection_probe` | 派发 `report-editor-connection-probe-changed`，`detail.via === 'ai'` |
+| 无 `pending_apply` | 不派发 |
+| 仅其它 reload 标志 | 不因探活标志误派发 |
+
+### 手工验收（发版后）
+
+1. 开写入总闸 + 可用上游模型（如硅基 `DeepSeek-V3`）。  
+2. 对助手说「开启定时探活」→ 工具成功 → 设置页开关**立即为开**（无需离页）。  
+3. 关总闸再说一次 → 助手应说明须先开写入，开关保持关。
+
+## 验收（0.3.60）
+
+1. 写入总闸开 + 模型调工具成功 → `connection_probe_enabled=true`，设置开关同步开。  
+2. 写入总闸关 → 工具失败文案；单测覆盖。  
+3. 数据源锁定不影响探活开关。  
+4. 后端 + 前端上述单测全绿。

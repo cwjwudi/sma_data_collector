@@ -189,8 +189,10 @@ function onConfigImported() {
 }
 
 function onProbePrefsChanged(ev) {
-  if (ev?.detail) {
-    probePrefs = ev.detail
+  const d = ev?.detail
+  // 手动保存会带完整 prefs；AI mirror 仅带 { via: 'ai' }，需回读服务端
+  if (d && typeof d === 'object' && typeof d.enabled === 'boolean') {
+    probePrefs = d
     startHealthPolling()
     return
   }

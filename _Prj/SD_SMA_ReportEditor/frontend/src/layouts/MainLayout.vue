@@ -258,8 +258,10 @@ async function reloadNavProbePrefs() {
 }
 
 function onProbePrefsChanged(ev) {
-  if (ev?.detail) {
-    navProbePrefs = ev.detail
+  const d = ev?.detail
+  // 手动保存会带完整 prefs；AI mirror 仅带 { via: 'ai' }，需回读服务端
+  if (d && typeof d === 'object' && typeof d.enabled === 'boolean') {
+    navProbePrefs = d
     startNavDbHealthPolling()
     return
   }

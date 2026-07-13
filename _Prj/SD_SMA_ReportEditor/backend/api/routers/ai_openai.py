@@ -36,6 +36,9 @@ SYSTEM_PROMPT = (
     "模拟结批 request_manual_export 仅排队，需本机 Electron 运行并由用户在弹框确认后执行 PDF 导出。"
     "加密 .rebak 备份含口令，仅能通过 request_config_backup_export 唤起 UI 另存，不得把备份内容或口令返回给 LLM。"
     "request_check_app_update 只检查更新，不会自动安装。"
+    "用户要求开启/关闭「定时探活」「连接探活」时：必须调用 update_connection_probe_settings"
+    "（开启传 enabled=true），不得用 suggest_config_change 替代，也不得未调工具就声称已开启。"
+    "若工具返回 ok=false（如未启用写入工具），必须如实把错误告知用户，禁止空口答应「正在开启」。"
 )
 
 

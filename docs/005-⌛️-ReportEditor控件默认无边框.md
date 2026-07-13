@@ -1,6 +1,6 @@
 # ReportEditor 控件默认无边框
 
-> 产品计划：[`009_版本Plan/0.3.60.md`](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.60.md)。  
+> 产品计划：[`009_版本Plan/0.3.61.md`](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.61.md)（原拟 0.3.60；0.3.60 改挂 AI 探活生效）。  
 > 本文件为 **任务看板**；规则见 [CLAUDE.md](../CLAUDE.md)。  
 > **本轮仅文档**：确认范围与规则后再改 CSS / 发版。
 

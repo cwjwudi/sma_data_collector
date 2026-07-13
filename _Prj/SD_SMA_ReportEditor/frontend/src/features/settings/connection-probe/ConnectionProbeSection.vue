@@ -43,7 +43,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { onMounted, onUnmounted, ref } from "vue";
 import {
   DEFAULT_CONNECTION_PROBE_PREFS,
   loadConnectionProbePrefs,
@@ -56,6 +56,16 @@ const intervalLocal = ref(DEFAULT_CONNECTION_PROBE_PREFS.intervalSec);
 const busy = ref(false);
 const msg = ref("");
 const msgTone = ref("");
+
+async function reloadFromServer(opts?: { announceAi?: boolean }) {
+  const loaded = await loadConnectionProbePrefs();
+  prefs.value = loaded;
+  intervalLocal.value = loaded.intervalSec;
+  if (opts?.announceAi) {
+    msg.value = loaded.enabled ? "已由 AI 开启定时探活" : "已由 AI 更新探活设置";
+    msgTone.value = "ok";
+  }
+}
 
 async function persist(next: ConnectionProbePrefs) {
   busy.value = true;
@@ -89,10 +99,26 @@ function onIntervalChange() {
   void persist({ ...prefs.value, intervalSec: n });
 }
 
-onMounted(async () => {
-  const loaded = await loadConnectionProbePrefs();
-  prefs.value = loaded;
-  intervalLocal.value = loaded.intervalSec;
+function onProbeChanged(ev: Event) {
+  const detail = (ev as CustomEvent).detail as { via?: string } | ConnectionProbePrefs | undefined;
+  // 本组件手动保存已同步本地 state；仅 AI/外部写入时回读服务端
+  if (detail && typeof detail === "object" && "via" in detail && detail.via === "ai") {
+    void reloadFromServer({ announceAi: true });
+    return;
+  }
+  if (detail && typeof detail === "object" && "enabled" in detail) {
+    prefs.value = detail as ConnectionProbePrefs;
+    intervalLocal.value = (detail as ConnectionProbePrefs).intervalSec;
+  }
+}
+
+onMounted(() => {
+  void reloadFromServer();
+  window.addEventListener("report-editor-connection-probe-changed", onProbeChanged);
+});
+
+onUnmounted(() => {
+  window.removeEventListener("report-editor-connection-probe-changed", onProbeChanged);
 });
 </script>
 

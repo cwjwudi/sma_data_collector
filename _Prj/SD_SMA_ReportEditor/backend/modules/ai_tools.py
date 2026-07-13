@@ -149,12 +149,23 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "update_connection_probe_settings",
-            "description": "更新连接定时探活开关与间隔（需设置中启用 AI 写入工具，0.3.2）。",
+            "description": (
+                "开启/关闭连接定时探活或改间隔。用户说「打开/开启定时探活」时必须调用本工具并传 enabled=true；"
+                "禁止仅口头答应。需设置中启用「允许 AI 写入工具」。成功后前端会刷新设置开关。"
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "enabled": {"type": "boolean"},
-                    "interval_sec": {"type": "integer", "minimum": 10, "maximum": 3600},
+                    "enabled": {
+                        "type": "boolean",
+                        "description": "true=开启定时探活，false=关闭；开启/关闭时必填",
+                    },
+                    "interval_sec": {
+                        "type": "integer",
+                        "minimum": 10,
+                        "maximum": 3600,
+                        "description": "探活间隔秒数，可选",
+                    },
                 },
                 "additionalProperties": False,
             },
@@ -1172,9 +1183,12 @@ def _tool_suggest_config(args: dict[str, Any], *, page_context: dict[str, Any] |
 
 
 def _tool_update_probe(args: dict[str, Any]) -> dict[str, Any]:
-    blocked = ai_datasource_ops.refuse_if_locked(attempted_action="ai.update_connection_probe_settings")
-    if blocked:
-        return blocked
+    # 探活是应用偏好，不改连接凭证；数据源锁定时仍允许开关，避免「已开写入却开不了探活」。
+    if "enabled" not in args and args.get("interval_sec") is None:
+        return {
+            "ok": False,
+            "error": "请提供 enabled（开启/关闭）和/或 interval_sec（间隔秒）。开启定时探活请传 enabled=true。",
+        }
     cfg = _cfg()
     prefs = dict(cfg.get("app_preferences") or {})
     before = {
@@ -1203,7 +1217,15 @@ def _tool_update_probe(args: dict[str, Any]) -> dict[str, Any]:
         )
     except Exception:
         pass
+    try:
+        ai_asset_ops.mark_ui_reload(connection_probe=True, reason="ai.update_connection_probe_settings")
+    except Exception:
+        logger.exception("mark_ui_reload connection_probe failed")
     return {
         "ok": True,
         "applied": applied,
+        "message": (
+            f"定时探活已{'开启' if applied.get('connection_probe_enabled') else '关闭'}"
+            f"（间隔 {applied.get('connection_probe_interval_sec')} 秒）。设置页开关将自动刷新。"
+        ),
     }

@@ -41,7 +41,7 @@ export async function syncPendingClientPrefsFromBackend(): Promise<void> {
       report_export?: Record<string, unknown>
       template_display_order?: string[]
       layout_display_order?: Record<string, string[]>
-      ui_reload?: { assets?: boolean; datasource?: boolean; reason?: string }
+      ui_reload?: { assets?: boolean; datasource?: boolean; connection_probe?: boolean; reason?: string }
     }
     if (data?.pending_apply) {
       applyPendingMirrorFromBackend(data)
@@ -88,7 +88,7 @@ export function applyPendingMirrorFromBackend(data: {
   template_display_order?: string[]
   layout_display_order?: Record<string, string[]>
   pending_apply?: boolean
-  ui_reload?: { assets?: boolean; datasource?: boolean; reason?: string }
+  ui_reload?: { assets?: boolean; datasource?: boolean; connection_probe?: boolean; reason?: string }
 }): void {
   if (!data?.pending_apply) return
   try {
@@ -124,6 +124,13 @@ export function applyPendingMirrorFromBackend(data: {
     }
     if (reload?.datasource) {
       notifyDatasourceChanged('all', reload.reason || 'ui_reload')
+    }
+    if (reload?.connection_probe) {
+      window.dispatchEvent(
+        new CustomEvent('report-editor-connection-probe-changed', {
+          detail: { via: 'ai', reason: reload.reason || 'ui_reload' },
+        }),
+      )
     }
   } catch {
     /* ignore */
