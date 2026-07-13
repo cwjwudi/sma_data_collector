@@ -7,6 +7,7 @@
 
 ## 2026-07-13
 
+- **ReportEditor 0.3.77 已发版**：AI 排队改输入框上方收纳条（不进消息流）；看板 [docs/006-🚧](docs/006-🚧-ReportEditor-AI上游错误体验.md)。
 - **ReportEditor AI 排队 UI（仅计划）**：[docs/006-🚧](docs/006-🚧-ReportEditor-AI上游错误体验.md)——排队改输入框上方收纳条（类 Cursor），不进消息流；出队后再进时间线。
 - **ReportEditor 0.3.76 macOS 已打包**：`Report Editor AI-0.3.76-arm64.dmg`；`latest.json` 已写 SHA256；Portal 未挂载。
 - **ReportEditor 0.3.76 已发版**：模版/版式多选 B3（共有外观批改、混合态）；看板 [docs/011-✅](docs/011-✅-ReportEditor模版版式多选控件.md)。

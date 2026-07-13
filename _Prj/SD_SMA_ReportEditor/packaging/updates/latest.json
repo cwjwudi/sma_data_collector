@@ -1,17 +1,17 @@
 {
-  "version": "0.3.76",
-  "releasedAt": "2026-07-13T16:01:32.765Z",
-  "notes": "Report Editor AI 0.3.76\n\n- 模版/版式多选 B3：右侧共有外观批改（边框/色/字号/字体/换行/对齐）；混合态",
+  "version": "0.3.77",
+  "releasedAt": "2026-07-13T16:41:13.973Z",
+  "notes": "Report Editor AI 0.3.77\n\n- AI 排队：输入框上方收纳条（类 Cursor），不再插入消息流气泡",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.76-x64.exe",
+      "url": "Report Editor AI-Setup-0.3.77-x64.exe",
       "sha256": "",
       "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.76-arm64.dmg",
-      "sha256": "fb41986e228ef4d14bf46aaa67df9e92e05bb6e7342b984e4d32343b93a0b26a",
-      "size": 182020863
+      "url": "Report Editor AI-0.3.77-arm64.dmg",
+      "sha256": "",
+      "size": 0
     }
   }
 }

@@ -138,18 +138,8 @@
           >
             <div class="ai-msg__role">
               {{ m.role === 'user' ? '你' : '助手' }}
-              <span v-if="m.status === 'queued'" class="ai-msg__badge">排队中</span>
-              <span v-else-if="m.status === 'cancelled'" class="ai-msg__badge">已停止</span>
+              <span v-if="m.status === 'cancelled'" class="ai-msg__badge">已停止</span>
               <span v-else-if="m.status === 'streaming'" class="ai-msg__badge">生成中</span>
-              <button
-                v-if="m.status === 'queued'"
-                type="button"
-                class="ai-msg__cancel-q"
-                title="取消排队"
-                @click="cancelQueued(m.id)"
-              >
-                ×
-              </button>
             </div>
             <pre v-if="m.role === 'user'" class="ai-msg__body">{{ m.content }}</pre>
             <div
@@ -196,6 +186,38 @@
           </div>
         </div>
 
+        </div>
+
+        <div v-if="queue.length" class="ai-drawer__queue">
+          <button
+            type="button"
+            class="ai-drawer__queue-toggle"
+            :aria-expanded="queueTrayOpen"
+            @click="queueTrayOpen = !queueTrayOpen"
+          >
+            <span class="ai-drawer__queue-title">排队 {{ queue.length }}</span>
+            <span class="ai-drawer__queue-chev" aria-hidden="true">{{ queueTrayOpen ? '▾' : '▸' }}</span>
+          </button>
+          <ul v-if="queueTrayOpen" class="ai-drawer__queue-list">
+            <li v-for="(item, qi) in queue" :key="item.id" class="ai-drawer__queue-item">
+              <span class="ai-drawer__queue-idx">{{ qi + 1 }}</span>
+              <span class="ai-drawer__queue-text" :title="item.content">{{ queuePreview(item.content) }}</span>
+              <button
+                type="button"
+                class="ai-drawer__queue-cancel"
+                title="取消排队"
+                @click="cancelQueued(item.id)"
+              >
+                ×
+              </button>
+            </li>
+          </ul>
+          <p v-if="queuePaused" class="ai-drawer__warn ai-drawer__warn--queue">
+            后续排队已暂停
+            <button type="button" class="ai-drawer__link" @click="resumeQueue">继续排队</button>
+          </p>
+        </div>
+
         <form class="ai-drawer__composer" @submit.prevent="onSend">
           <textarea
             ref="inputEl"
@@ -226,7 +248,7 @@
               {{ loading ? '排队发送' : '发送' }}
             </button>
           </div>
-          <p v-if="queuePaused" class="ai-drawer__warn">
+          <p v-if="queuePaused && !queue.length" class="ai-drawer__warn">
             后续排队已暂停
             <button type="button" class="ai-drawer__link" @click="resumeQueue">继续排队</button>
           </p>
@@ -282,6 +304,8 @@ const scrollEl = ref<HTMLElement | null>(null)
 const inputEl = ref<HTMLTextAreaElement | null>(null)
 const statusPhase = ref('')
 const queuePaused = ref(false)
+const queue = ref<QueuedChatItem[]>([])
+const queueTrayOpen = ref(true)
 const drawerWidthPx = ref(420)
 
 const lanTokenInput = ref('')
@@ -314,8 +338,13 @@ function clearLanToken() {
 }
 let stickToBottom = true
 let abortCtrl: AbortController | null = null
-let queue: QueuedChatItem[] = []
 let resizing = false
+
+function queuePreview(text: string, max = 72): string {
+  const t = (text || '').replace(/\s+/g, ' ').trim()
+  if (t.length <= max) return t
+  return `${t.slice(0, max)}…`
+}
 
 const route = useRoute()
 
@@ -379,9 +408,7 @@ function closeDrawer() {
 }
 
 function cancelQueued(id: string) {
-  queue = removeQueued(queue, id)
-  messages.value = messages.value.filter((m) => !(m.id === id && m.status === 'queued'))
-  persistNow()
+  queue.value = removeQueued(queue.value, id)
 }
 
 async function cancelActivePending() {
@@ -411,13 +438,13 @@ function stopGeneration() {
 }
 
 function onClearClick() {
-  if (loading.value || queue.length) {
+  if (loading.value || queue.value.length) {
     if (!window.confirm('清空将停止当前生成并删除全部对话，确定？')) return
   }
   abortCtrl?.abort()
   abortCtrl = null
   void cancelActivePending()
-  queue = []
+  queue.value = []
   queuePaused.value = false
   messages.value = []
   errorMsg.value = ''
@@ -516,15 +543,14 @@ async function onSend() {
 
   if (loading.value) {
     const id = newId()
-    const r = enqueue(queue, { id, content: text })
+    const r = enqueue(queue.value, { id, content: text })
     if (!r.ok) {
       errorMsg.value = r.reason
+      input.value = text
       return
     }
-    queue = r.queue
-    messages.value = [...messages.value, { id, role: 'user', content: text, status: 'queued' }]
-    stickToBottom = true
-    await scrollToBottom(true)
+    queue.value = r.queue
+    queueTrayOpen.value = true
     return
   }
 
@@ -533,19 +559,15 @@ async function onSend() {
 
 async function pumpQueue() {
   if (loading.value || queuePaused.value) return
-  const { next, rest } = dequeue(queue)
-  queue = rest
+  const { next, rest } = dequeue(queue.value)
+  queue.value = rest
   if (!next) return
-  const msg = messages.value.find((m) => m.id === next.id)
-  if (msg) msg.status = 'done'
-  await runOneTurn(next.content, next.id)
+  await runOneTurn(next.content)
 }
 
-async function runOneTurn(text: string, existingUserId?: string) {
-  const userId = existingUserId || newId()
-  if (!existingUserId) {
-    messages.value = [...messages.value, { id: userId, role: 'user', content: text, status: 'done' }]
-  }
+async function runOneTurn(text: string) {
+  const userId = newId()
+  messages.value = [...messages.value, { id: userId, role: 'user', content: text, status: 'done' }]
   const assistantId = newId()
   messages.value = [
     ...messages.value,
@@ -606,7 +628,7 @@ async function runOneTurn(text: string, existingUserId?: string) {
           errorMsg.value = ev.message
           a.status = a.content ? 'error' : 'error'
           if (!a.content) a.content = ev.message
-          queuePaused.value = queue.length > 0
+          queuePaused.value = queue.value.length > 0
         }
       },
     })
@@ -624,7 +646,7 @@ async function runOneTurn(text: string, existingUserId?: string) {
         a.status = 'error'
         if (!a.content) a.content = errorMsg.value
       }
-      queuePaused.value = queue.length > 0
+      queuePaused.value = queue.value.length > 0
     }
   } finally {
     loading.value = false
@@ -657,10 +679,12 @@ watch(
 onMounted(() => {
   const saved = loadAiChatPersist()
   if (saved) {
-    messages.value = saved.messages.map((m) => ({
-      ...m,
-      status: m.status === 'streaming' ? 'done' : m.status,
-    })) as UiMessage[]
+    messages.value = saved.messages
+      .filter((m) => m.status !== 'queued')
+      .map((m) => ({
+        ...m,
+        status: m.status === 'streaming' ? 'done' : m.status,
+      })) as UiMessage[]
     drawerWidthPx.value = saved.drawerWidthPx
   }
   window.addEventListener('report-editor-ai-settings-changed', onSettingsChanged)
@@ -1130,6 +1154,98 @@ onUnmounted(() => {
 .ai-drawer__composer {
   border-top: 1px solid #e5e7eb;
   padding: 12px 16px 16px;
+}
+
+.ai-drawer__queue + .ai-drawer__composer {
+  border-top: none;
+}
+
+.ai-drawer__queue {
+  border-top: 1px solid #e5e7eb;
+  background: #f8fafc;
+  padding: 8px 12px;
+}
+
+.ai-drawer__queue-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  border: none;
+  background: transparent;
+  padding: 4px 2px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 650;
+  color: #334155;
+}
+
+.ai-drawer__queue-chev {
+  color: #94a3b8;
+  font-size: 11px;
+}
+
+.ai-drawer__queue-list {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 140px;
+  overflow: auto;
+}
+
+.ai-drawer__queue-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+}
+
+.ai-drawer__queue-idx {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  color: #475569;
+  font-size: 11px;
+  font-weight: 650;
+  display: grid;
+  place-items: center;
+}
+
+.ai-drawer__queue-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 12px;
+  color: #334155;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.ai-drawer__queue-cancel {
+  flex: 0 0 auto;
+  border: none;
+  background: transparent;
+  color: #94a3b8;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+}
+
+.ai-drawer__queue-cancel:hover {
+  color: #b91c1c;
+}
+
+.ai-drawer__warn--queue {
+  margin-top: 6px;
 }
 
 .ai-drawer__input {
