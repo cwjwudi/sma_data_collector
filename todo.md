@@ -7,6 +7,7 @@
 
 ## 2026-07-13
 
+- **ReportEditor 0.3.66 已发版**：AI 工具轨迹可见；探活口头结论与工具不符时强制再调；看板 [docs/006-🚧](docs/006-🚧-ReportEditor-AI上游错误体验.md)（轨迹 H1 ✅，能力矩阵仍 ⌛️）。
 - **ReportEditor 表格导出橙边框（仅文档）**：新建 [docs/009-⌛️](docs/009-⌛️-ReportEditor表格导出橙边框.md)——排查 PDF 上/左/右暖色线：最可疑为 `MiniPreviewChrome` 封面琥珀渐变/橙顶边未被 print 剥离；次要为灰格线裁切缺底边。
 - **ReportEditor 0.3.65 已发版**：健康告警跳转高亮（含页眉/区）、连接级明示、版式进编辑器；看板 [docs/007-✅](docs/007-✅-ReportEditor健康跳转不高亮.md)。
 - **ReportEditor 健康跳转不高亮（文档）**：看板 [docs/007](docs/007-✅-ReportEditor健康跳转不高亮.md) 补充测试矩阵 A–G（仪表盘链接 / 扫描 meta / focus 选中模型 / 连接级体验 / 版式 / 手工 / 认知对齐）。

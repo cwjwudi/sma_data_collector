@@ -91,6 +91,34 @@
           >
             <div class="ai-msg__role">{{ m.role === 'user' ? '你' : '助手' }}</div>
             <pre class="ai-msg__body">{{ m.content }}</pre>
+            <details
+              v-if="m.role === 'assistant' && m.toolTrace?.length"
+              class="ai-msg__trace"
+              :open="traceShouldOpen(m.toolTrace)"
+            >
+              <summary class="ai-msg__trace-sum">
+                工具调用 {{ m.toolTrace.length }} 步
+                <span v-if="traceHasFailure(m.toolTrace)" class="ai-msg__trace-fail">含失败</span>
+              </summary>
+              <ul class="ai-msg__trace-list">
+                <li
+                  v-for="(step, si) in m.toolTrace"
+                  :key="si"
+                  class="ai-msg__trace-item"
+                  :class="step.ok ? 'ai-msg__trace-item--ok' : 'ai-msg__trace-item--err'"
+                >
+                  <div class="ai-msg__trace-head">
+                    <span class="ai-msg__trace-status">{{ step.ok ? '成功' : '失败' }}</span>
+                    <code class="ai-msg__trace-name">{{ step.name }}</code>
+                    <span v-if="step.round" class="ai-msg__trace-round">#{{ step.round }}</span>
+                  </div>
+                  <p v-if="formatArgsSummary(step.args_summary)" class="ai-msg__trace-args">
+                    {{ formatArgsSummary(step.args_summary) }}
+                  </p>
+                  <p v-if="step.message" class="ai-msg__trace-msg">{{ step.message }}</p>
+                </li>
+              </ul>
+            </details>
           </div>
           <div v-if="loading" class="ai-msg ai-msg--assistant">
             <div class="ai-msg__role">助手</div>
@@ -128,10 +156,12 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import {
   extractAssistantText,
+  extractToolTrace,
   fetchAiSettings,
   sendAiChat,
   type AiChatMessage,
   type AiPageContext,
+  type AiToolTraceStep,
 } from '@/api/aiSettings'
 
 defineOptions({ name: 'AiDrawer' })
@@ -188,6 +218,23 @@ function clearChat() {
   void scrollToBottom(true)
 }
 
+function traceHasFailure(steps: AiToolTraceStep[] | undefined): boolean {
+  return Boolean(steps?.some((s) => !s.ok))
+}
+
+function traceShouldOpen(steps: AiToolTraceStep[] | undefined): boolean {
+  return traceHasFailure(steps)
+}
+
+function formatArgsSummary(args: Record<string, unknown> | undefined): string {
+  if (!args || !Object.keys(args).length) return ''
+  try {
+    return JSON.stringify(args)
+  } catch {
+    return ''
+  }
+}
+
 function onMessagesScroll() {
   const el = scrollEl.value
   if (!el) return
@@ -225,13 +272,19 @@ async function onSend() {
   stickToBottom = true
   await scrollToBottom(true)
   try {
-    const payloadMessages = messages.value.filter((m) => m.role === 'user' || m.role === 'assistant')
+    const payloadMessages = messages.value
+      .filter((m) => m.role === 'user' || m.role === 'assistant')
+      .map((m) => ({ role: m.role, content: m.content }))
     const data = await sendAiChat({
       messages: payloadMessages,
       pageContext: pageContext.value,
     })
     const reply = extractAssistantText(data) || '（无文本回复）'
-    messages.value = [...messages.value, { role: 'assistant', content: reply }]
+    const toolTrace = extractToolTrace(data)
+    messages.value = [
+      ...messages.value,
+      { role: 'assistant', content: reply, toolTrace: toolTrace.length ? toolTrace : undefined },
+    ]
     // AI 工具可能已新建/改模版或数据源：立即拉取 mirror 触发列表 reload
     const { syncPendingClientPrefsFromBackend } = await import('@/lib/client-prefs-mirror')
     await syncPendingClientPrefsFromBackend()
@@ -493,6 +546,91 @@ onUnmounted(() => {
   font-size: 13px;
   line-height: 1.45;
   color: #111827;
+}
+
+.ai-msg__trace {
+  margin-top: 8px;
+  border-top: 1px solid #e5e7eb;
+  padding-top: 6px;
+}
+
+.ai-msg__trace-sum {
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  color: #4b5563;
+  user-select: none;
+}
+
+.ai-msg__trace-fail {
+  margin-left: 6px;
+  color: #b91c1c;
+  font-weight: 700;
+}
+
+.ai-msg__trace-list {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ai-msg__trace-item {
+  border-radius: 8px;
+  padding: 6px 8px;
+  border: 1px solid #e5e7eb;
+  background: #fff;
+}
+
+.ai-msg__trace-item--ok {
+  border-color: #bbf7d0;
+  background: #f0fdf4;
+}
+
+.ai-msg__trace-item--err {
+  border-color: #fecaca;
+  background: #fef2f2;
+}
+
+.ai-msg__trace-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.ai-msg__trace-status {
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.ai-msg__trace-item--ok .ai-msg__trace-status {
+  color: #15803d;
+}
+
+.ai-msg__trace-item--err .ai-msg__trace-status {
+  color: #b91c1c;
+}
+
+.ai-msg__trace-name {
+  font-size: 11px;
+  color: #1f2937;
+}
+
+.ai-msg__trace-round {
+  font-size: 10px;
+  color: #9ca3af;
+}
+
+.ai-msg__trace-args,
+.ai-msg__trace-msg {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: #4b5563;
+  line-height: 1.35;
+  word-break: break-all;
 }
 
 .ai-msg__body--pending {

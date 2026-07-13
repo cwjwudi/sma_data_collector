@@ -12,6 +12,15 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from modules import ai_config, ai_datasource_ops, ai_pending_actions, ai_pending_prompts, ai_tools
+from modules.ai_claim_guard import (
+    detect_probe_claim,
+    extract_assistant_text_from_response,
+    needs_probe_claim_retry,
+    probe_claim_correction_message,
+    rewrite_probe_claim_failure,
+    set_assistant_text_on_response,
+)
+from modules.ai_tool_trace import attach_tool_trace, build_tool_trace_step
 from modules.llm_upstream_errors import format_llm_upstream_error
 from schemas.ai import (
     AiChatRequest,
@@ -164,13 +173,31 @@ async def run_chat_completion(
     if body.stream:
         raise HTTPException(400, "0.3.0 暂不支持 stream=true，请使用非流式请求。")
 
-    for _ in range(MAX_TOOL_ROUNDS):
+    tool_trace: list[dict[str, Any]] = []
+    claim_retry_used = False
+
+    for round_index in range(1, MAX_TOOL_ROUNDS + 1):
         data = await _forward_llm(settings=settings, api_key=api_key, payload=upstream_payload)
         choice = (data.get("choices") or [{}])[0]
         message = choice.get("message") or {}
         tool_calls = message.get("tool_calls")
         if not tool_calls:
-            return data
+            assistant_text = extract_assistant_text_from_response(data)
+            if needs_probe_claim_retry(assistant_text, tool_trace) and not claim_retry_used:
+                claim = detect_probe_claim(assistant_text)
+                # 强制再调：纠错进 messages，占用后续轮次
+                claim_retry_used = True
+                messages.append(message if isinstance(message, dict) else {"role": "assistant", "content": assistant_text})
+                messages.append({"role": "system", "content": probe_claim_correction_message(claim)})
+                upstream_payload["messages"] = messages
+                upstream_payload["tool_choice"] = "auto"
+                continue
+
+            if needs_probe_claim_retry(assistant_text, tool_trace):
+                rewritten = rewrite_probe_claim_failure(assistant_text, tool_trace)
+                data = set_assistant_text_on_response(data, rewritten)
+
+            return attach_tool_trace(data, tool_trace)
 
         messages.append(message)
         for tc in tool_calls:
@@ -184,6 +211,14 @@ async def run_chat_completion(
             if not isinstance(args, dict):
                 args = {}
             tool_result = await ai_tools.execute_tool(name, args, page_context=page_context)
+            tool_trace.append(
+                build_tool_trace_step(
+                    round_index=round_index,
+                    name=name,
+                    args=args,
+                    result=tool_result,
+                )
+            )
             messages.append(
                 {
                     "role": "tool",
@@ -193,8 +228,19 @@ async def run_chat_completion(
             )
         upstream_payload["messages"] = messages
 
-    raise HTTPException(504, f"工具调用超过 {MAX_TOOL_ROUNDS} 轮上限")
-
+    # 轮次耗尽：带轨迹返回明确说明；若仍像「假开探活」则改写为失败说明
+    exhausted_text = f"工具调用超过 {MAX_TOOL_ROUNDS} 轮上限，请简化请求后重试。"
+    if needs_probe_claim_retry("已经开启定时探活", tool_trace):
+        exhausted_text = rewrite_probe_claim_failure("已经开启定时探活", tool_trace)
+    exhausted = {
+        "choices": [
+            {
+                "message": {"role": "assistant", "content": exhausted_text},
+                "finish_reason": "stop",
+            }
+        ]
+    }
+    return attach_tool_trace(exhausted, tool_trace)
 
 @openai_router.get("/v1/models")
 async def list_models(request: Request):

@@ -26,6 +26,15 @@ export type AiSettingsPatch = {
 export type AiChatMessage = {
   role: 'user' | 'assistant' | 'system'
   content: string
+  toolTrace?: AiToolTraceStep[]
+}
+
+export type AiToolTraceStep = {
+  round?: number
+  name: string
+  args_summary?: Record<string, unknown>
+  ok: boolean
+  message?: string
 }
 
 export type AiPageContext = {
@@ -146,7 +155,10 @@ export async function regenerateAgentToken(): Promise<AiSettingsPublic & { agent
 export async function sendAiChat(opts: {
   messages: AiChatMessage[]
   pageContext?: AiPageContext | null
-}): Promise<{ choices?: { message?: { content?: string } }[] }> {
+}): Promise<{
+  choices?: { message?: { content?: string } }[]
+  report_editor_tool_trace?: AiToolTraceStep[]
+}> {
   return apiFetch('/settings/ai/chat', {
     method: 'POST',
     body: {
@@ -170,4 +182,28 @@ export function extractAssistantText(data: unknown): string {
       .trim()
   }
   return ''
+}
+
+export function extractToolTrace(data: unknown): AiToolTraceStep[] {
+  if (!data || typeof data !== 'object') return []
+  const raw = (data as { report_editor_tool_trace?: unknown }).report_editor_tool_trace
+  if (!Array.isArray(raw)) return []
+  const out: AiToolTraceStep[] = []
+  for (const row of raw) {
+    if (!row || typeof row !== 'object') continue
+    const r = row as Record<string, unknown>
+    const name = typeof r.name === 'string' ? r.name.trim() : ''
+    if (!name) continue
+    out.push({
+      round: typeof r.round === 'number' ? r.round : undefined,
+      name,
+      args_summary:
+        r.args_summary && typeof r.args_summary === 'object' && !Array.isArray(r.args_summary)
+          ? (r.args_summary as Record<string, unknown>)
+          : undefined,
+      ok: Boolean(r.ok),
+      message: typeof r.message === 'string' ? r.message : undefined,
+    })
+  }
+  return out
 }
