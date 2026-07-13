@@ -1,17 +1,17 @@
 {
-  "version": "0.3.55",
-  "releasedAt": "2026-07-13T03:37:40.761Z",
-  "notes": "修复 macOS 静默启动后无法再打开主界面\n\n- 点 Dock 图标可恢复窗口（activate）\n- 菜单栏托盘图标缩小并可单击打开\n- Dock 菜单增加「打开主界面 / 退出」",
+  "version": "0.3.56",
+  "releasedAt": "2026-07-13T03:42:01.744Z",
+  "notes": "修复 AI 模型选择框过窄与列表无法滚动\n\n- 模型改用可滚动下拉（替代 datalist）\n- 加宽模型名称输入框",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.55-x64.exe",
+      "url": "Report Editor AI-Setup-0.3.56-x64.exe",
       "sha256": "",
       "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.55-arm64.dmg",
-      "sha256": "a601e4036172840bc744d20fc2e3dda7f8faf737bc72b9d885bc2ed47f143431",
-      "size": 181974431
+      "url": "Report Editor AI-0.3.56-arm64.dmg",
+      "sha256": "e274581b0c792a96eacfb877a2648cb74b1edc413aa7879f7d5d77a1967afd19",
+      "size": 181975422
     }
   }
 }

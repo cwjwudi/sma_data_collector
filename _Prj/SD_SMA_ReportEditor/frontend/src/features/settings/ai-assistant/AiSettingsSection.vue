@@ -27,19 +27,19 @@
       <span class="settings-field-label">LLM Base URL</span>
       <input v-model="form.llm_base_url" class="settings-input" type="url" :disabled="busy || !form.enabled" />
     </div>
-    <div class="settings-field-row" :class="{ 'settings-field-row--muted': !form.enabled }">
+    <div class="settings-field-row ai-model-field" :class="{ 'settings-field-row--muted': !form.enabled }">
       <span class="settings-field-label">模型</span>
       <div class="ai-model-row">
-        <input
+        <SuggestCombobox
           v-model="form.llm_model"
-          class="settings-input settings-input--narrow"
-          list="ai-llm-model-list"
+          class="ai-model-combobox"
+          input-class="ai-model-combobox-inp"
+          :options="modelOptions"
           :disabled="busy || !form.enabled"
+          :max-list-height="320"
+          :min-list-width="420"
           placeholder="选择或输入模型名"
         />
-        <datalist id="ai-llm-model-list">
-          <option v-for="m in modelOptions" :key="m" :value="m" />
-        </datalist>
         <button
           type="button"
           class="settings-btn settings-btn--muted"
@@ -159,6 +159,7 @@ import {
   regenerateAgentToken,
   type AiSettingsPublic,
 } from '@/api/aiSettings'
+import SuggestCombobox from '@/components/report-template/SuggestCombobox.vue'
 
 defineOptions({ name: 'AiSettingsSection' })
 
@@ -315,13 +316,29 @@ onMounted(() => {
 </script>
 
 <style scoped>
+.ai-model-field {
+  max-width: 720px;
+}
+
 .ai-model-row {
   display: flex;
   flex-wrap: wrap;
-  align-items: center;
+  align-items: stretch;
   gap: 8px;
-  flex: 1;
+  width: 100%;
   min-width: 0;
+}
+
+.ai-model-combobox {
+  flex: 1 1 280px;
+  min-width: 0;
+}
+
+.ai-model-row :deep(.ai-model-combobox-inp) {
+  min-height: 40px;
+  padding: 8px 12px;
+  font-size: 14px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
 .ai-models-hint {
