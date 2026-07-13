@@ -25,8 +25,10 @@
             <div
               v-for="el in headerEls"
               :key="'hdr-' + el.id"
-              class="cv-zone-el"
+              class="cv-zone-el cv-zone-el--selectable"
+              :class="{ 'cv-zone-el--sel': selId === el.id }"
               :style="canvasZoneElStyle(el)"
+              @pointerdown.stop="selectZoneEl(el)"
             >
               <ZoneImageCompose
                 v-if="el.type === 'image'"
@@ -74,8 +76,10 @@
             <div
               v-for="d in decorationEls"
               :key="'dec-' + d.id"
-              class="cv-zone-el"
+              class="cv-zone-el cv-zone-el--selectable"
+              :class="{ 'cv-zone-el--sel': selId === d.id }"
               :style="canvasZoneElStyle(d)"
+              @pointerdown.stop="selectZoneEl(d)"
             >
               <ZoneImageCompose
                 v-if="d.type === 'image'"
@@ -336,8 +340,10 @@
             <div
               v-for="el in footerEls"
               :key="'ftr-' + el.id"
-              class="cv-zone-el"
+              class="cv-zone-el cv-zone-el--selectable"
+              :class="{ 'cv-zone-el--sel': selId === el.id }"
               :style="canvasZoneElStyle(el)"
+              @pointerdown.stop="selectZoneEl(el)"
             >
               <ZoneImageCompose
                 v-if="el.type === 'image'"
@@ -656,6 +662,11 @@ const footerEls = computed(() =>
 );
 const decorationEls = computed(() => zoneBodyDecorRef(props.tmpl, props.sheet));
 
+/** 页眉/页脚/装饰层：仅选中高亮（只读预览，不拖拽） */
+function selectZoneEl(el: { id: string }) {
+  if (props.interactionLocked) return;
+  selId.value = el.id;
+}
 function canvasZoneElStyle(el: LayoutZoneElement): Record<string, string> {
   const ff = typeof el.fontFamily === "string" ? el.fontFamily.trim() : "";
   const flex = flexJustifyAlignForAxes(el.alignX, el.alignY);
@@ -1780,6 +1791,17 @@ async function onTplImageDropFile(ev: DragEvent, el: TemplateElement) {
 }
 .cv-zone-el {
   pointer-events: none;
+}
+.cv-zone-el--selectable {
+  pointer-events: auto;
+  cursor: pointer;
+  outline: 1px solid transparent;
+  box-sizing: border-box;
+}
+.cv-zone-el--sel {
+  outline: 2px solid #6366f1;
+  box-shadow: 0 0 0 1px #6366f1 inset;
+  z-index: 5;
 }
 .cv-zone-ph {
   font-size: 11px;

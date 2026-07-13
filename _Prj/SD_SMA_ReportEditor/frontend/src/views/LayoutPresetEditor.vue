@@ -476,6 +476,8 @@ async function loadWorking() {
     presetCanvasSelId.value = null;
     resetPresetHistoryFromWorking(working.value);
     void bindingPreview.refresh({ silent: true, mutateTemplateRows: false });
+    await nextTick();
+    applyFocusFromRouteQuery();
   } catch (e) {
     if (isLoadStale(token)) return;
     loadErr.value = "加载失败：" + String((e as Error).message || e);
@@ -483,6 +485,26 @@ async function loadWorking() {
     resetPresetHistoryFromWorking(null);
   }
 }
+
+/** 仪表盘健康问题 ?focus= 跳转后自动选中版式控件 */
+function applyFocusFromRouteQuery() {
+  const focus = String(route.query.focus || "").trim();
+  if (!focus || !working.value) return;
+  const hit = findLayoutElementZone(working.value, focus);
+  if (!hit) {
+    msg.value = `健康告警指定的控件 ID「${focus}」在当前版式中未找到。`;
+    return;
+  }
+  presetCanvasSelId.value = focus;
+  msg.value = `已从健康告警定位并选中控件（ID ${focus}）。`;
+}
+
+watch(
+  () => route.query.focus,
+  () => {
+    applyFocusFromRouteQuery();
+  },
+);
 
 async function savePreset() {
   const w = working.value;

@@ -81,6 +81,8 @@ def test_empty_opc_binding_on_page2_header():
     hit = next(i for i in issues if i["kind"] == "opc_binding_empty_node")
     assert "页眉" in hit["message"]
     assert "页眉参数" in hit["message"]
+    # 007 B2：页眉 OPC 空节点必须带 elementId，仪表盘才能 ?focus=
+    assert hit["meta"]["elementId"] == "h1"
 
 
 def test_table_cell_opc_location():
@@ -115,6 +117,8 @@ def test_table_cell_opc_location():
     assert "表格" in hit["message"]
     assert "第1行" in hit["message"]
     assert "第2列" in hit["message"]
+    # 007 B4：单元格问题挂在宿主表格 elementId
+    assert hit["meta"]["elementId"] == "tbl1"
 
 
 def test_table_opc_placeholder_mismatch():

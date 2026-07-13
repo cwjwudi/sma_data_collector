@@ -7,7 +7,8 @@
 
 ## 2026-07-13
 
-- **ReportEditor 健康跳转不高亮（文档）**：看板 [docs/007-⌛️](docs/007-⌛️-ReportEditor健康跳转不高亮.md) 补充测试矩阵 A–G（仪表盘链接 / 扫描 meta / focus 选中模型 / 连接级体验 / 版式 / 手工 / 认知对齐）。
+- **ReportEditor 0.3.65 已发版**：健康告警跳转高亮（含页眉/区）、连接级明示、版式进编辑器；看板 [docs/007-✅](docs/007-✅-ReportEditor健康跳转不高亮.md)。
+- **ReportEditor 健康跳转不高亮（文档）**：看板 [docs/007](docs/007-✅-ReportEditor健康跳转不高亮.md) 补充测试矩阵 A–G（仪表盘链接 / 扫描 meta / focus 选中模型 / 连接级体验 / 版式 / 手工 / 认知对齐）。
 - **ReportEditor 0.3.64 已发版**：数据源锁定提示不再把连接表单底部按钮顶出；看板 [docs/008-✅](docs/008-✅-ReportEditor数据源锁定表单按钮被顶出.md)。
 - **ReportEditor 数据源锁定表单按钮被顶出**：看板 [docs/008](docs/008-✅-ReportEditor数据源锁定表单按钮被顶出.md) 测试矩阵 A–E 后实现。
 - **ReportEditor AI Agent 可观测性（仅文档）**：看板 [docs/006-🚧](docs/006-🚧-ReportEditor-AI上游错误体验.md) 新增 H1——说开探活必须真开否则重试/如实失败；对话框须展示工具调用与状态。

@@ -462,6 +462,21 @@
           @open-signature-pad="dlgSig = true"
         />
       </aside>
+      <aside v-else-if="selZone" class="right ted-props ted-props--zone">
+        <h3 class="ted-zone-title">已定位：{{ selZoneLabel }}</h3>
+        <p class="ted-zone-line"><span class="k">控件 ID</span> {{ selZone.id }}</p>
+        <p class="ted-zone-line"><span class="k">类型</span> {{ selZone.type }}</p>
+        <p v-if="selZone.bindingKind" class="ted-zone-line">
+          <span class="k">绑定</span> {{ selZone.bindingKind }}
+          <template v-if="selZone.opcuaNodeId"> · {{ selZone.opcuaNodeId }}</template>
+        </p>
+        <p class="ted-zone-note">
+          页眉/页脚/版式装饰层为版式快照预览。画布已高亮该控件；若需改节点或样式，请打开对应「版式与页眉页脚」编辑。
+        </p>
+        <button v-if="zoneLayoutEditorLink" type="button" class="b" @click="openZoneLayoutEditor">
+          打开绑定的版式编辑器
+        </button>
+      </aside>
       <aside v-else class="right ted-props ted-props--empty"><p class="ted-props-placeholder">点选画布控件后在此编辑属性。</p></aside>
     </div>
 
@@ -494,6 +509,11 @@ import {
   templateHasBackSheet,
   templateHasCoverSheet,
 } from "@/lib/report-template/editor-sheet";
+import {
+  findSelectableTemplateElement,
+  selectionHitLabel,
+} from "@/lib/report-template/editor-selection";
+import { connectionLevelHealthHint } from "@/lib/asset-health-links";
 import {
   clampElementToLayout,
   cloneDeepTemplate,
@@ -742,7 +762,7 @@ function undoTplEdit() {
     tplApplyingHistory.value = false;
   }
   void nextTick(() => {
-    if (!sel.value) selId.value = null;
+    if (!findSelectableTemplateElement(editing.value, selId.value)) selId.value = null;
     hint.value = "已撤销。";
     void bindingPreview.refresh({ silent: true });
   });
@@ -763,25 +783,53 @@ function redoTplEdit() {
     tplApplyingHistory.value = false;
   }
   void nextTick(() => {
-    if (!sel.value) selId.value = null;
+    if (!findSelectableTemplateElement(editing.value, selId.value)) selId.value = null;
     hint.value = "已重做。";
     void bindingPreview.refresh({ silent: true });
   });
 }
 
+const selHit = computed(() => findSelectableTemplateElement(editing.value, selId.value));
+
 const sel = computed(() => {
-  const t = editing.value;
-  const id = selId.value;
-  if (!t || !id) return null;
-  const pages = ensureBodyPages(t);
-  for (const row of pages) {
-    const found = row.find((x) => x.id === id);
-    if (found) return found;
-  }
-  const coverFound = bodyElementsRef(t, "cover").find((x) => x.id === id);
-  if (coverFound) return coverFound;
-  return bodyElementsRef(t, "back").find((x) => x.id === id) ?? null;
+  const hit = selHit.value;
+  return hit?.kind === "canvas" ? hit.element : null;
 });
+
+const selZone = computed(() => {
+  const hit = selHit.value;
+  return hit?.kind === "zone" ? hit.element : null;
+});
+
+const selZoneLabel = computed(() => {
+  const hit = selHit.value;
+  return hit ? selectionHitLabel(hit) : "";
+});
+
+const zoneLayoutEditorLink = computed(() => {
+  const t = editing.value;
+  const hit = selHit.value;
+  if (!t || hit?.kind !== "zone") return null;
+  const presetId =
+    hit.sheet === "cover"
+      ? t.coverLayoutPresetId
+      : hit.sheet === "back"
+        ? t.backLayoutPresetId
+        : t.layoutPresetId;
+  const id = typeof presetId === "string" ? presetId.trim() : "";
+  return id || null;
+});
+
+function openZoneLayoutEditor() {
+  const id = zoneLayoutEditorLink.value;
+  const focus = selZone.value?.id;
+  if (!id) return;
+  router.push({
+    name: "LayoutPresetEditor",
+    params: { id },
+    query: focus ? { focus } : {},
+  });
+}
 
 /** 属性面板改表格尺寸时与画布共用正文区边界 */
 const propsContentW = computed(() => {
@@ -1010,13 +1058,41 @@ function applyFocusFromRouteQuery() {
   if (!focus || !editing.value) return;
   midMode.value = "edit";
   selId.value = focus;
+  const hit = findSelectableTemplateElement(editing.value, focus);
+  if (hit?.kind === "zone") {
+    hint.value = `已从健康告警定位到${selectionHitLabel(hit)}控件（ID ${focus}）。版式区为预览选中；改绑请打开对应版式。`;
+  } else if (!hit) {
+    hint.value = `健康告警指定的控件 ID「${focus}」在当前模版中未找到（可能已删除）。`;
+    selId.value = null;
+  }
   void nextTick(() => scheduleScrollEditSheetIntoView());
+}
+
+/** 连接级健康告警：无 focus，顶栏说明原因 */
+function applyHealthKindHintFromRouteQuery() {
+  if (String(route.query.focus || "").trim()) return;
+  const kind = String(route.query.healthKind || "").trim();
+  if (!kind) return;
+  const connection_id = String(route.query.connectionId || "").trim();
+  const name = String(route.query.connectionName || "").trim();
+  hint.value = connectionLevelHealthHint({
+    kind,
+    meta: { connection_id, name },
+    message: "",
+  });
 }
 
 watch(
   () => route.query.focus,
   () => {
     applyFocusFromRouteQuery();
+  },
+);
+
+watch(
+  () => [route.query.healthKind, route.query.connectionId, route.query.connectionName],
+  () => {
+    applyHealthKindHintFromRouteQuery();
   },
 );
 
@@ -1237,6 +1313,7 @@ async function boot() {
     refreshBindingsAfterOpen();
     await nextTick();
     applyFocusFromRouteQuery();
+    applyHealthKindHintFromRouteQuery();
     return true;
   };
 
@@ -2089,6 +2166,34 @@ onUnmounted(() => {
 }
 .ted-props--empty {
   color: #71717a;
+}
+.ted-props--zone {
+  gap: 8px;
+}
+.ted-zone-title {
+  margin: 0 0 4px;
+  font-size: 14px;
+  font-weight: 650;
+  color: #18181b;
+}
+.ted-zone-line {
+  margin: 0;
+  font-size: 12px;
+  color: #3f3f46;
+  line-height: 1.45;
+  word-break: break-all;
+}
+.ted-zone-line .k {
+  display: inline-block;
+  min-width: 3.5em;
+  color: #71717a;
+  font-weight: 600;
+}
+.ted-zone-note {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: #64748b;
+  line-height: 1.45;
 }
 .ted-props-placeholder {
   margin: 0;
