@@ -1,7 +1,7 @@
 # ReportEditor AI 助手上游错误体验
 
 > 本文件为 **任务看板**；规则见 [CLAUDE.md](../CLAUDE.md)。  
-> 版本计划（探活生效）：[`009_版本Plan/0.3.60.md`](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.60.md)。
+> 版本计划（探活生效）：[0.3.60 Plan](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.60.md)。
 
 ---
 
@@ -75,11 +75,11 @@ if resp.status_code >= 400:
 
 ## 说明（事实）
 
-| | ChatGPT 网页/App 订阅（Plus 等） | OpenAI **API**（platform + API Key） |
-|--|--|--|
+| 对比项 | ChatGPT 网页/App 订阅（Plus 等） | OpenAI API（platform + API Key） |
+|--------|----------------------------------|----------------------------------|
 | 用途 | 浏览器里用 chatgpt.com | 第三方应用（含本报表编辑器）调 `/v1/chat/completions` |
-| 计费 | 订阅月费 | **另计**：预付费额度 / 按量账单（Usage 页） |
-| 是否互通 | **不互通** | 有 Plus **不会**自动带上 API 额度 |
+| 计费 | 订阅月费 | 另计：预付费额度 / 按量账单（Usage 页） |
+| 是否互通 | 不互通 | 有 Plus 不会自动带上 API 额度 |
 
 报表编辑器 AI 助手走的是设置里配置的 **LLM Base URL + API Key**，对应 **API 账号**，不是 ChatGPT 登录会话。
 
@@ -102,8 +102,8 @@ if resp.status_code >= 400:
 ## 现象（2026-07-13）
 
 - 设置 → AI：**LLM Base URL** 已改为 `https://api.siliconflow.cn/v1`。
-- 「刷新模型列表」下拉为硅基模型（`deepseek-ai/DeepSeek-V3`、`DeepSeek-R1`、BGE 等），**无任何 gpt-***。
-- 但「模型」输入框当前值仍是 **`gpt-4.1`**（或历史默认 `gpt-4o-mini`）。
+- 「刷新模型列表」下拉为硅基模型（`deepseek-ai/DeepSeek-V3`、`DeepSeek-R1`、BGE 等），列表中**没有**任何 `gpt-*` 模型。
+- 但「模型」输入框当前值仍是 `gpt-4.1`（或历史默认 `gpt-4o-mini`）。
 
 ## 原因
 
@@ -121,7 +121,7 @@ if resp.status_code >= 400:
 
 1. 切换 / 保存 `llm_base_url` 时：若当前 `llm_model` 不在「刚拉取的上游列表」中，提示并清空或自动选列表第一项聊天模型。  
 2. 刷新模型列表成功后：若当前值不在列表中，输入框标红/警告「当前模型不在上游列表」。  
-3. 设置页说明：OpenAI 兼容上游的模型 ID 以该平台为准，**不能沿用 gpt-* 名**。
+3. 设置页说明：OpenAI 兼容上游的模型 ID 以该平台为准，不能沿用 `gpt-*` 名。
 
 ---
 
@@ -152,7 +152,7 @@ if resp.status_code >= 400:
 ## 实现要点（代码已落地，发版前验收）
 
 1. `_tool_update_probe`：要求 `enabled` 和/或 `interval_sec`；成功后 `mark_ui_reload(connection_probe=True)`；返回可读 `message`。  
-2. `SYSTEM_PROMPT`：开启/关闭探活必须调 `update_connection_probe_settings(enabled=…)`，禁止空口答应。  
+2. `SYSTEM_PROMPT`：开启/关闭探活必须调 `update_connection_probe_settings`（传 `enabled`），禁止空口答应。  
 3. 前端：`client-prefs-mirror` 识别 `ui_reload.connection_probe` 并派发事件；设置页/导航/数据源页正确回读。  
 4. 探活偏好**不再**因数据源锁拒绝。
 
