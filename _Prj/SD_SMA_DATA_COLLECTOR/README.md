@@ -539,6 +539,7 @@ partition_interval_years=2:
 - 复位会通过 OPC UA 读回确认；若复位后 PLC 已立即再次置位，程序会保留该高电平并在下一轮作为新事件采集。
 - 触发复位表示采集器已经可靠接收；启用 outbox 时表示 SQLite 已提交，仍不表示 MySQL 已提交。
 - MySQL 瞬时失败记录进入持久化重试状态，不可重试的数据进入持久化 dead-letter；配置、恢复和运维命令见 `docs/PERSISTENT_QUEUE.md`。
+- 该模式已使用测试 PLC `192.168.50.233` 完成 61 分钟全组六组压力验证，详见 `docs/PERSISTENT_OUTBOX_1H_STRESS_REPORT_20260713.md`。
 - `bTrigger1` 为布尔数组（如 `[false, true, false, ...]`），系统检测每个索引的上升沿。
 - `data_points` 对应数组按同索引取值，并拆分为多条标量记录写入数据库。
 - 拆分记录可带 `trigger_index`，用于定位具体工位/通道。

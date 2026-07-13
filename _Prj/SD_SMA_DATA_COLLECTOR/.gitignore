@@ -126,3 +126,4 @@ Thumbs.db
 *.sqlite
 *.db
 data/
+/runtime/queue/
