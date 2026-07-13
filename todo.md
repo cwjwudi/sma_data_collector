@@ -7,6 +7,7 @@
 
 ## 2026-07-13
 
+- **ReportEditor 整机单实例 + 浏览器访问（仅计划）**：新建 [docs/015-⌛️](docs/015-⌛️-ReportEditor整机单实例与浏览器访问.md)——强制一个 Electron；说明本机/局域网浏览器能力与 AI 本机限制。
 - **ReportEditor 模版/版式审计（计划补充）**：[docs/013-⌛️](docs/013-⌛️-ReportEditor模版版式编辑审计.md) 拍板 Q1–Q7；补全测试 **B1–B10 / F1–F8 / M1–M10 / R**。
 - **ReportEditor 0.3.72 已发版**：AI 助手正文 SSE 流式；排队/持久化/调宽/Markdown；看板 [docs/014-✅](docs/014-✅-ReportEditor-AI流式输出.md)。
 - **ReportEditor AI 流式（计划补充）**：[docs/014-✅](docs/014-✅-ReportEditor-AI流式输出.md) 确认关抽屉不停止；补测试用例 B/F/M/R；持久化/调宽/排队；G1–G15。
