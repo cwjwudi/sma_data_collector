@@ -751,6 +751,9 @@ def filtered_tool_definitions() -> list[dict[str, Any]]:
 
 _WRITE_TOOLS = ai_tool_catalog.WRITE_TOOLS
 _CONFIRM_TOOLS = ai_tool_catalog.CONFIRM_TOOLS
+WRITE_TOOLS_DISABLED_ERROR = (
+    "AI 写入工具未启用。请在设置 → AI 助手中开启「允许 AI 写入工具」。"
+)
 
 
 async def execute_tool(name: str, arguments: dict[str, Any] | None, *, page_context: dict[str, Any] | None = None) -> Any:
@@ -761,10 +764,8 @@ async def execute_tool(name: str, arguments: dict[str, Any] | None, *, page_cont
     if not ai_tool_catalog.is_tool_enabled(name, settings):
         return {"ok": False, "error": f"工具「{name}」已在 AI 工具页禁用。"}
 
-    if name in _WRITE_TOOLS and not write_ok:
-        return {"ok": False, "error": "AI 写入工具未启用。请在设置 → AI 助手中开启「允许 AI 写入工具」。"}
-    if name in _CONFIRM_TOOLS and not write_ok:
-        return {"ok": False, "error": "AI 写入/确认类工具未启用。请在设置中开启「允许 AI 写入工具」。"}
+    if (name in _WRITE_TOOLS or name in _CONFIRM_TOOLS) and not write_ok:
+        return {"ok": False, "error": WRITE_TOOLS_DISABLED_ERROR}
 
     result: Any
     if name == "list_db_connections":

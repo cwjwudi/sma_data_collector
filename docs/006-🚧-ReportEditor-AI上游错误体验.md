@@ -1,9 +1,36 @@
 # ReportEditor AI 助手：上游错误与写入类能力闭环
 
 > 本文件为 **任务看板**；规则见 [CLAUDE.md](../CLAUDE.md)。  
-> 版本计划：探活 [0.3.60](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.60.md)；上游错误体验 [0.3.62](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.62.md)；Agent 工具轨迹 [0.3.66](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.66.md)；轨迹假失败 [0.3.71](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.71.md)；排队收纳 [0.3.77](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.77.md)；流式先工具 [0.3.78](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.78.md)；多轮简洁 [0.3.79](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.79.md)；复制模版/版式 [0.3.80](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.80.md)；删除模版/版式 [0.3.81](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.81.md)；加密备份 [0.3.82](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.82.md)；恢复/复位 [0.3.83](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.83.md)。  
+> 版本计划：探活 [0.3.60](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.60.md)；上游错误体验 [0.3.62](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.62.md)；Agent 工具轨迹 [0.3.66](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.66.md)；轨迹假失败 [0.3.71](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.71.md)；排队收纳 [0.3.77](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.77.md)；流式先工具 [0.3.78](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.78.md)；多轮简洁 [0.3.79](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.79.md)；复制模版/版式 [0.3.80](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.80.md)；删除模版/版式 [0.3.81](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.81.md)；加密备份 [0.3.82](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.82.md)；恢复/复位 [0.3.83](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.83.md)；写入总闸 [0.3.84](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.84.md)。  
 > **范围说明**：不只「开启定时探活」；在开启「允许 AI 写入工具」后，数据源、模版/版式资产、备份恢复、结批导出、演示冒烟、诊断取证等能力域均须**真正执行并反映到 UI**（禁止空口答应）。完整域表见下方能力矩阵 H1（仍 ⌛️）。  
 > **Agent 体验**：对话须可见工具调用与状态；口头结论必须与工具结果一致——轨迹 H1 已于 **0.3.66** 落地（探活强制再调）。
+
+---
+
+# ✅ 已完成：写入总闸关闭统一拒绝（能力矩阵 F · → 0.3.84）
+
+## 产品诉求
+
+「允许 AI 写入工具」关闭时，任一 write/confirm 意图须返回明确错误，**系统状态不变**（无 pending、不改配置）；只读工具仍可用。
+
+## 本版加固（0.3.84）
+
+1. write / confirm 共用统一错误文案 `WRITE_TOOLS_DISABLED_ERROR`  
+2. `test_ai_write_gate.py`：参数化覆盖目录内全部 write+confirm；对照总闸开；只读仍可  
+3. `SYSTEM_PROMPT`：总闸关闭须提示去设置开启，并确认状态未变
+
+## 逐步测试用例
+
+| # | 步骤 | 期望 |
+|---|------|------|
+| F1 | 总闸关 + 每个 write/confirm | `ok=false` + 统一文案含「允许 AI 写入工具」 |
+| F2 | 同上 | pending=0；config 指纹不变 |
+| F3 | 总闸关 + 只读工具 | 不得返回总闸错误 |
+| F4 | 总闸开 + 探活 write | 可越过总闸门禁 |
+
+```bash
+cd _Prj/SD_SMA_ReportEditor/backend && uv run pytest modules/test_ai_write_gate.py -q
+```
 
 ---
 
@@ -448,7 +475,7 @@ cd ../frontend && npm test -- --run src/lib/client-prefs-mirror.test.ts
 | C | 删除模版 / 版式 | 确认后消失；取消则仍在（✅ 0.3.81） |
 | D | 备份 | 另存 `.rebak`；聊天无口令/密文（✅ 0.3.82） |
 | E | 恢复 / 复位 | 确认流 → merge/复位生效 + UI reload（✅ 0.3.83） |
-| F | 总闸关闭 | 任一 write/confirm 意图 → 明确提示，**状态不变** |
+| F | 总闸关闭 | 任一 write/confirm 意图 → 明确提示，**状态不变**（✅ 0.3.84） |
 | G | 新建空白 / 冒烟模版 / 演示库 | 资产或库出现 + reload |
 | H | 打开模版/版式 | 确认后进入对应编辑器 |
 | I | 模版排序 | 顺序变更在模版管理页可见 |

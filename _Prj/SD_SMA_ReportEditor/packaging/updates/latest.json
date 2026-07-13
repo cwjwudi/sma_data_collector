@@ -1,15 +1,15 @@
 {
-  "version": "0.3.83",
-  "releasedAt": "2026-07-13T17:12:37.721Z",
-  "notes": "AI 能力矩阵 E：恢复/复位确认流与 ui_reload",
+  "version": "0.3.84",
+  "releasedAt": "2026-07-13T17:16:40.569Z",
+  "notes": "AI 能力矩阵 F：写入总闸统一拒绝全部 write/confirm",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.83-x64.exe",
+      "url": "Report Editor AI-Setup-0.3.84-x64.exe",
       "sha256": "",
       "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.83-arm64.dmg",
+      "url": "Report Editor AI-0.3.84-arm64.dmg",
       "sha256": "",
       "size": 0
     }
