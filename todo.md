@@ -7,6 +7,7 @@
 
 ## 2026-07-13
 
+- **ReportEditor 0.3.76 macOS 已打包**：`Report Editor AI-0.3.76-arm64.dmg`；`latest.json` 已写 SHA256；Portal 未挂载。
 - **ReportEditor 0.3.76 已发版**：模版/版式多选 B3（共有外观批改、混合态）；看板 [docs/011-✅](docs/011-✅-ReportEditor模版版式多选控件.md)。
 - **ReportEditor 多选 B3（约定细化）**：[docs/011-✅](docs/011-✅-ReportEditor模版版式多选控件.md)——交集字段、混合态、首批外观清单、永不批改边界、I/M/N/E 用例；后按默认实现。
 - **ReportEditor 0.3.75 已发版**：模版/版式多选 B2（Shift 区间、六对齐、两等距分布）；看板 [docs/011-✅](docs/011-✅-ReportEditor模版版式多选控件.md)。
