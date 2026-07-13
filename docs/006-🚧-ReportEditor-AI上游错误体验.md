@@ -1,7 +1,7 @@
 # ReportEditor AI 助手：上游错误与写入类能力闭环
 
 > 本文件为 **任务看板**；规则见 [CLAUDE.md](../CLAUDE.md)。  
-> 版本计划：探活 [0.3.60](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.60.md)；上游错误体验 [0.3.62](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.62.md)；Agent 工具轨迹 [0.3.66](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.66.md)。  
+> 版本计划：探活 [0.3.60](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.60.md)；上游错误体验 [0.3.62](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.62.md)；Agent 工具轨迹 [0.3.66](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.66.md)；轨迹假失败 [0.3.71](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.71.md)。  
 > **范围说明**：不只「开启定时探活」；在开启「允许 AI 写入工具」后，数据源、模版/版式资产、备份恢复、结批导出、演示冒烟、诊断取证等能力域均须**真正执行并反映到 UI**（禁止空口答应）。完整域表见下方能力矩阵 H1（仍 ⌛️）。  
 > **Agent 体验**：对话须可见工具调用与状态；口头结论必须与工具结果一致——轨迹 H1 已于 **0.3.66** 落地（探活强制再调）。
 
@@ -39,6 +39,36 @@
 
 ---
 
+# ✅ 已完成：工具轨迹把成功读工具标成「含失败」（→ 0.3.71）
+
+## 现象（现场截图 · 2026-07-13）
+
+诊断对话工具轨迹标题「含失败」，红标：
+
+- `get_connection_health_summary`（`live_probe: true`）
+- `list_templates`
+
+同轮其它带显式 `ok: true` 的工具为绿；正文仍写出连接成功与模版绑定问题（靠其它工具/模型综合）。用户误以为这两步真失败。
+
+## 根因
+
+`tool_result_ok` 仅在结果含 `"ok"` 键时判成功；**否则一律 False**。  
+而 `_tool_list_templates` / `_tool_health_summary`（无 live 失败时）等读类工具返回 `{templates,count}` / `{db_count,…}`，**无 `ok` 字段** → 轨迹假失败。
+
+## 实现（0.3.71）
+
+1. `tool_result_ok`：无 `ok` 时，无 `error` 视为成功；显式 `ok` 仍优先。  
+2. `list_templates` / `health_summary` / `query_audit` 成功载荷补 `ok: true`；live 探活有失败时 health 摘要 `ok: false`。  
+3. 单测：无 `ok` 的 list/health 载荷 → 轨迹步 `ok=true`。
+
+## 验收
+
+1. 再跑诊断：`list_templates`、成功的 health 摘要应为绿，不因「无 ok 字段」标红。  
+2. 真失败（`ok:false` / `error`）仍红。  
+3. 能力矩阵 A–N 仍 ⌛️（本条仅轨迹展示正确性）。
+
+---
+
 # ⌛️ 未完成：AI 写入/确认类能力须端到端可用（能力域扩展）
 
 ## 产品诉求（2026-07-13）
@@ -55,7 +85,7 @@
 | 打开编辑 | 「打开某某模版/版式」 | pending 确认后跳转编辑器 | `request_open_template` / `request_open_layout` |
 | 模版排序 | 「把某某排到最前」 | 本机展示顺序更新并 reload | `set_template_display_order` |
 | 备份 / 恢复 / 复位 | 「导出备份」「导入配置」「清空复位」 | `.rebak` 另存 / merge / 复位确认；**密文不进 LLM** | `request_config_backup_export` / `import_merge` / `reset` |
-| 演示与冒烟 | 「建个演示库」「做个绑定冒烟模版」 | 库/模版落盘 + UI reload | `ensure_user_demo_database` / `create_binding_smoke_template` / `apply_template_sheet_layouts` |
+| 演示与冒烟 | 「做个绑定冒烟模版」 | 依赖已有 DB/OPC；演示一键入口已拆除（012） | `create_binding_smoke_template` / `apply_template_sheet_layouts` |
 | 导出目录 | 「把 PDF 输出改到某某路径」 | 写偏好或唤起选目录 | `set_export_dir` / `request_pick_export_dir` |
 | 结批 / 预检 | 「预检一下」「模拟结批一次」 | 预检结果如实；结批需确认后本机导出 | `preflight_export` / `request_manual_export` |
 | 结批写回 / 并行 | 「结批结果写到 OPC」「并行改成 4」 | 配置落库 | `set_export_result_feedback` / `set_max_parallel_exports` |
@@ -77,8 +107,8 @@
 | `request_connection_credentials` | write | 唤起密码弹框 |
 | `delete_db_connection` / `delete_opc_server` | confirm | UI 确认后删除 |
 | `update_connection_probe_settings` | write | 定时探活 |
-| `ensure_user_demo_database` | write | 创建用户演示库 |
 | `list_*` / `get_*` / `probe_connection` / `get_datasource_inventory` | read | 配置前应先读 |
+| ~~`ensure_user_demo_database`~~ | — | **0.3.69 已随演示与培训拆除**；冒烟模版改依赖已有连接 |
 
 门槛：写入总闸；**数据源锁定**时 upsert/delete/凭证会拒绝并弹出解锁；探活偏好不挡（已实现）。
 

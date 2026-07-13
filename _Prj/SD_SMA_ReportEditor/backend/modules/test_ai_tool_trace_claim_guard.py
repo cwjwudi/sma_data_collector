@@ -12,6 +12,7 @@ from modules.ai_tool_trace import (
     attach_tool_trace,
     build_tool_trace_step,
     summarize_tool_args,
+    tool_result_ok,
 )
 
 
@@ -33,6 +34,25 @@ def test_build_step_ok_and_message():
     assert step["round"] == 1
     assert step["args_summary"]["enabled"] is True
     assert "开启" in step["message"]
+
+
+def test_tool_result_ok_without_explicit_ok_field():
+    """读类工具常返回 payloads 而无 ok；不得标红失败（006 轨迹假失败）。"""
+    assert tool_result_ok({"templates": [], "count": 0}) is True
+    assert tool_result_ok({"db_count": 1, "opc_count": 0}) is True
+    assert tool_result_ok({"ok": False, "error": "x"}) is False
+    assert tool_result_ok({"error": "boom"}) is False
+    assert tool_result_ok({"ok": True}) is True
+
+
+def test_build_step_list_templates_payload_is_ok():
+    step = build_tool_trace_step(
+        round_index=2,
+        name="list_templates",
+        args={},
+        result={"templates": [{"id": "t1"}], "count": 1},
+    )
+    assert step["ok"] is True
 
 
 def test_attach_tool_trace():

@@ -1012,6 +1012,7 @@ async def _tool_health_summary(args: dict[str, Any]) -> dict[str, Any]:
     dbs = _tool_list_db_connections()["connections"]
     opcs = _tool_list_opc_servers()["servers"]
     out: dict[str, Any] = {
+        "ok": True,
         "db_count": len(dbs),
         "opc_count": len(opcs),
         "datasource_locked": bool(prefs.get("datasource_locked")),
@@ -1031,6 +1032,10 @@ async def _tool_health_summary(args: dict[str, Any]) -> dict[str, Any]:
             if sid:
                 probes.append(await _tool_probe_connection({"kind": "opcua", "connection_id": sid}))
         out["live_probe_results"] = probes
+        # 实时探活：任一失败仍返回摘要，但 ok=false 便于轨迹如实标红
+        if any(isinstance(p, dict) and p.get("ok") is False for p in probes):
+            out["ok"] = False
+            out["error"] = "部分连接实时探活失败，见 live_probe_results"
     return out
 
 
@@ -1045,12 +1050,12 @@ def _tool_query_audit(args: dict[str, Any]) -> dict[str, Any]:
         result=str(args.get("result")).strip() if args.get("result") else None,
     )
     entries = [_mask_audit_entry(e) for e in (data.get("entries") or [])]
-    return {"entries": entries, "total": data.get("total", len(entries))}
+    return {"ok": True, "entries": entries, "total": data.get("total", len(entries))}
 
 
 def _tool_list_templates() -> dict[str, Any]:
     summaries = [s.model_dump(mode="json") for s in template_store.list_summaries()]
-    return {"templates": summaries, "count": len(summaries)}
+    return {"ok": True, "templates": summaries, "count": len(summaries)}
 
 
 def _tool_get_template_summary(args: dict[str, Any]) -> dict[str, Any]:

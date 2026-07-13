@@ -87,9 +87,23 @@ def _shorten_value(val: Any, *, max_len: int = 80) -> Any:
 
 
 def tool_result_ok(result: Any) -> bool:
-    if isinstance(result, dict) and "ok" in result:
+    """判断工具结果是否成功（供轨迹 UI）。
+
+    - 显式 ``ok`` 字段：以其布尔值为准。
+    - 无 ``ok`` 的读类成功载荷（如 list_templates 返回 templates/count）：
+      无 ``error`` 则视为成功。此前误把这类结果标红「含失败」（现场截图 2026-07-13）。
+    """
+    if not isinstance(result, dict):
+        # 非 dict 极少见；不当成功以免掩盖异常字符串
+        return False
+    if "ok" in result:
         return bool(result.get("ok"))
-    return False
+    err = result.get("error")
+    if isinstance(err, str) and err.strip():
+        return False
+    if err is True:
+        return False
+    return True
 
 
 def tool_result_message(result: Any) -> str:

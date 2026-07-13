@@ -7,6 +7,7 @@
 
 ## 2026-07-13
 
+- **ReportEditor 0.3.71 已发版**：AI 工具轨迹假失败修正（无 `ok` 字段的成功读工具不再标红）；看板 [docs/006-🚧](docs/006-🚧-ReportEditor-AI上游错误体验.md)。
 - **ReportEditor 0.3.70 已发版**：模版/版式多选 B1（Ctrl 加选、框选、组操作、属性摘要）；看板 [docs/011-🚧](docs/011-🚧-ReportEditor模版版式多选控件.md)（B2/B3 ⌛️）。
 - **ReportEditor 模版/版式多选（计划补充）**：原 [docs/011](docs/011-🚧-ReportEditor模版版式多选控件.md) 确认属性批改 **B3 后置**；增补交集字段约定与 E1–E6 测试用例；MVP（B1）仅摘要 + 组操作。
 - **ReportEditor 0.3.69 已发版**：移除「演示与培训」与 demo-pack；存量仿真连接保留可手删；看板 [docs/012-✅](docs/012-✅-ReportEditor移除演示与培训.md)。
