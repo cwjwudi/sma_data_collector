@@ -26,167 +26,152 @@
 | **版式** `PUT/DELETE /layout-presets` | [`layout-registry`](../_Prj/SD_SMA_ReportEditor/frontend/src/lib/report-template/layout-registry.ts) `saveLayoutPresetFlexible`；[`LayoutPresets`](../_Prj/SD_SMA_ReportEditor/frontend/src/views/LayoutPresets.vue) / [`LayoutPresetEditor`](../_Prj/SD_SMA_ReportEditor/frontend/src/views/LayoutPresetEditor.vue) | ❌ 无 `layout.*` |
 | 审计筛选下拉 `actionOptions` | `AuditLogSection.vue` | 无模版/版式项 |
 
-后端模板/版式路由目前只落盘，**不**调用 `append_audit`。
+后端模板/版式路由目前只落盘，**不**调用 `append_audit`。审计文件为 JSONL **追加**（约 90 天 / 最多约 5000 行）。
 
-## 建议记录粒度（默认 · 待开工确认）
+## 已确认约定（2026-07-13）
 
-**记「持久化写操作」，不记每一次画布拖拽/选中**（避免审计爆炸、与现有「不含只读操作」文案一致）。
+### 记什么
 
-### MVP action 约定
+**只记持久化写操作**，不记拖拽/选中/打开/预览/撤销。
 
-| action | 触发 | object_type | summary 建议 |
-|--------|------|-------------|--------------|
-| `template.save` | 编辑器保存成功（含新建后首次 PUT） | `template` | 名称 + id 短缀 |
-| `template.delete` | 列表删除成功 | `template` | 同上 |
-| `template.duplicate` | 列表复制成功 | `template` | 源名 → 新名 |
-| `template.rename` | 仅改名并落盘（若与 save 同路径可合并进 `template.save` + detail.reason） | `template` | 旧名 → 新名 |
-| `layout.save` | 版式编辑器 / 列表新建保存成功 | `layout_preset` | 名称 + id |
-| `layout.delete` | 删除版式成功 | `layout_preset` | 同上 |
-| `layout.duplicate` | 复制版式成功 | `layout_preset` | 源 → 新 |
+| action | 触发 | object_type | summary |
+|--------|------|-------------|---------|
+| `template.save` | PUT 模版成功（含新建首次、应用版式导致的 PUT） | `template` | 名称 + id 短缀；折叠后「共 N 次保存」 |
+| `template.delete` | 删除成功（含批量删 → **一条汇总**） | `template` | 单删：名称；批删：数量 + 最多 5 名 +「等」 |
+| `template.duplicate` | 复制成功 | `template` | 源名 → 新名 |
+| `layout.save` | PUT 版式成功（含新建） | `layout_preset` | 同模版 save |
+| `layout.delete` | 删除成功（批删同模版规则） | `layout_preset` | 同模版 delete |
+| `layout.duplicate` | 复制成功 | `layout_preset` | 源 → 新 |
 
-失败：同一 action、`result: fail`、`summary` 带错误摘要（对齐连接保存写法）。**失败不折叠**（每条失败单独留痕）。
+- **改名**：并入 `*.save`（`detail.reason: rename` 可选），不单独 `*.rename`。  
+- **失败**：同 action、`result: fail`、短错误；**不折叠**；不阻断主流程报错。  
+- **新建**：首次落盘即 `*.save`（可 `detail.created: true`），不造 `*.create`。  
+- **配置导入**：只记现有 `config.import`，**不**为每个模版再刷 `template.save`。  
+- **显示顺序**：MVP 不记。  
+- **AI 代写**：走同一 PUT → 自然 `*.save`（后端写）。
 
-### 频繁保存会不会太多？——折叠策略（建议默认）
+### 15 分钟折叠（已确认）
 
-会。若用户编辑同一模版连按十次「保存」，按「一次保存一条」会有十条几乎同文案的 `template.save`。
+仅 **`template.save` / `layout.save` 且 result=ok**：
 
-**默认：对成功的 `template.save` / `layout.save` 做会话折叠**；删/复制仍各记一条（不可合并）。
+- 键：`action` + `object_id`  
+- 距**上一条同键成功 save** &lt; **15 分钟** → **不新开行**：刷新 `ts`、`detail.save_count` +1、更新 summary 名称、「共 N 次保存」；`detail.first_ts` / `last_ts`  
+- 删 / 复制 **不**折叠  
+- 改名后 id 不变 → 继续叠原 save 条并刷新名称  
+- 窗内 fail 再 ok：fail 单独条；ok 相对**上一成功 save**判断是否折叠  
 
-| 方案 | 规则 | 列表呈现 |
-|------|------|----------|
-| **★ A · 时间窗合并（推荐）** | 同一 `object_id` + 同一 action + 成功，距**上一条同键审计** &lt; **15 分钟** → **不新开行**，更新该条：`ts` 刷新、`detail.save_count` +1、`summary` 带「共 N 次保存」 | 一天勤保存 ≈ 若干条，不是上百条 |
-| B · 编辑会话合并 | 打开编辑器起算；关抽屉/离开路由时若有过成功保存，只落 **1** 条（或离开时 upsert） | 更少；实现要挂生命周期，易漏「未关窗」 |
-| C · 不折叠 | 每次保存一条 | 最简；日志易膨胀 |
+不做内容 diff / 画布快照。
 
-**A 的细节约定：**
+### 谁写（已确认）
 
-1. 仅折叠 **ok** 的 save；中间夹了 **fail** 不吞掉 fail。  
-2. `detail` 建议：`{ save_count: N, first_ts, last_ts }`（可选）。  
-3. 删除 / 复制 / 改名（若独立）**不**参与折叠。  
-4. 实现：优先后端 `append_audit` 对 save 做「找最近同键 → patch」；或前端先查最近一条再决定 POST/PATCH。后端更稳（AI 旁路也吃得到）。  
-5. 若审计存储已有保留天数（见 `audit_log` retention），折叠是**体验减噪**，不是替代清理。
+| 动作 | 写入方 |
+|------|--------|
+| `*.save`（含折叠） | **后端** PUT 成功后 `append_or_coalesce_audit`（AI/旁路也不漏） |
+| `*.delete` / `*.duplicate` | **前端** Manager / layout-registry（批删一条汇总） |
+| 禁止 | 同一成功 save 前后端各写一条 |
 
-> 不做：把多次保存的**内容 diff** 叠进一条（体积大、难读）；折叠只合并「次数与时间」，不存画布快照。
+`AuditLogSection.actionOptions` 增加上表 actions；展开可见 `save_count` / 起止时间。
 
-### 默认不记（二期可选）
+### 拟改落点
 
-| 行为 | 原因 |
-|------|------|
-| 打开编辑器、切换页、预览刷新 | 只读 |
-| 未保存离开 / 撤销重做 | 未持久化；若记需另定策略 |
-| 显示顺序拖拽（仅 order 偏好） | 可另加 `template.reorder`；MVP 可跳过 |
-| AI 代改模版/版式 | 若走同一 PUT，应**自然落入** `*.save`；若走独立工具，可加 `detail.source: ai` |
-
-## 拟实现落点（建议）
-
-### 方案优选：**前端写审计（与现有多数路径一致）**
-
-1. **模版**  
-   - `TemplateEditorWorkspace` 在 `api.putTemplate` 成功/失败后 `auditLog({ action: 'template.save', ... })`  
-   - `TemplateManager`：删除 / 复制 / 改名（若独立于编辑器 save）各写一条  
-2. **版式**  
-   - 在 `saveLayoutPresetFlexible` / `deleteLayoutPresetFlexible` 成功失败处集中写（列表与编辑器共用，避免漏点）  
-3. **`AuditLogSection`**：`actionOptions` 增加上表 actions；文案补充「模版与版式保存/删除」  
-4. **单测**：对 registry / 薄封装做契约测（mock `auditLog` 被调用），或对关键调用点做字符串契约
-
-### 备选：后端路由内 `append_audit`
-
-- 优点：凡经 API 的写（含 AI）必记、前端难漏  
-- 缺点：需区分「新建 vs 更新」、summary 中文需后端拼；与当前 DB 审计「前后端混写」风格可并存  
-- 若选后端：在 `templates.py` / `layout_presets.py` 的 PUT/DELETE 成功后写；前端可不再重复（避免双记）
-
-**默认推荐（与折叠对齐后修订）：**
-
-| 动作 | 谁写 | 原因 |
-|------|------|------|
-| `template.save` / `layout.save`（含 15 分钟折叠） | **后端** PUT 成功后 `append_or_coalesce_audit` | JSONL 现为追加；折叠需「找最近同键 → 改写该行」；AI/旁路 PUT 也不漏 |
-| `*.delete` / `*.duplicate` / 显式 rename | **前端**（Manager / registry）即可 | 路径集中、摘要好拼中文 |
-| 禁止 | 同一成功保存 **前后端各写一条** | 会双记或拆折叠 |
-
-> 若坚持全前端：需新增「按 id patch 最近一条」API，否则无法在 JSONL 上真正折叠。
+1. `audit_log.py`：`append_or_coalesce_audit(..., window_sec=900)`（改写 JSONL 最近匹配行或追加）。  
+2. `templates` / `layout_presets` 路由 PUT 成功后调 coalesce（summary 用 body 名称）。  
+3. DELETE 可由后端也写（可选）；默认删/复制前端写，避免与批删汇总逻辑分叉——**批删必须前端或统一后端批接口写一条**。  
+4. 前端：删/复制/`auditLog`；**保存路径不再** `auditLog(template.save)`，防双记。  
+5. 单测：`test_audit_coalesce.py` + 前端批删摘要纯函数测。
 
 ---
 
-## 开工前仍建议拍板的缺口
+## 测试用例（已补全 · 开工必跟）
 
-| # | 缺口 | 建议默认 ★ |
-|---|------|------------|
-| G1 | **新建模版/版式**（空白创建、列表「新建」） | 首次成功落盘记一条 `*.save`（或 `detail.created: true`）；不另造 `*.create` |
-| G2 | **多选批量删除**（011 B1 已有组删） | **一条**审计：`summary` 含数量 + 名称列表（截断，如最多 5 个名 +「等 N 个」）；`detail.ids` |
-| G3 | **配置导入带入模版** | 仍走现有 `config.import`，**不**为每个模版再刷 `template.save` |
-| G4 | **应用版式到模版**（若会 PUT 模版） | 算一次 `template.save`（可 `detail.reason: apply_layout`）；吃 15 分钟折叠 |
-| G5 | **显示顺序拖拽** | MVP **不记**；二期 `template.reorder` |
-| G6 | **折叠键** | `action` + `object_id` + `result=ok`；**改名**后仍同一 id → 继续叠在原 save 条，并刷新 summary 名称 |
-| G7 | **折叠与 fail** | 窗内先 fail 再 ok：fail 单独一条；ok 若距**上一条成功 save**&lt;15min 则叠成功条 |
-| G8 | **审计列表 UI** | 展开可见 `save_count` / 起止时间；列表 summary 已含「共 N 次」即可 |
-| G9 | **保留策略** | 沿用现有约 90 天 + 最多约 5000 行；折叠不替代清理 |
-| G10 | **双端写入** | 见上表；save 后端、删/复制前端（或全后端，二选一写死） |
+> 风格对齐 [docs/014](014-✅-ReportEditor-AI流式输出.md)。  
+> **B** = 后端 pytest（tmp_path JSONL）；**F** = 前端 vitest；**M** = 手工；**R** = 回归。
 
-### 明确二期 / 不做
-
-- 控件级 diff、画布快照、未保存离开提示进审计  
-- 打开编辑器、预览、撤销重做  
-- 审计云同步  
-
-## 测试用例（开工必跟）
-
-### B. 后端（折叠 / coalesce）
+### B. 后端 · coalesce 与路由
 
 | # | 用例 | 期望 |
 |---|------|------|
-| B1 | 同 id 两次 `template.save` ok，间隔 &lt;15min | 仍 1 行；`save_count=2`；`ts` 为第二次 |
-| B2 | 间隔 ≥15min | 2 行 |
-| B3 | save ok → fail → save ok（均 &lt;15min） | fail 独立 1 行；两条 ok 折叠为 1 行（或 ok 叠在第一成功条上） |
-| B4 | 不同 `object_id` | 不互折 |
-| B5 | `delete` 连续两次 | 2 行，不折叠 |
+| B1 | 同 `object_id` 两次 `template.save` ok，间隔 &lt;15min | 文件仍 **1** 行；`save_count=2`；`ts`/`last_ts` 为第二次；summary 含「共 2 次」 |
+| B2 | 两次 ok，间隔 ≥15min | **2** 行；各 `save_count=1`（或无 count） |
+| B3 | ok → fail → ok（均 &lt;15min） | fail **独立 1** 行；两条 ok **折叠为 1** 行（相对上一成功 save） |
+| B4 | 不同 `object_id` 交替 save | 互不折叠，各至少 1 行 |
+| B5 | `layout.save` 同 B1 | 版式同样折叠 |
+| B6 | coalesce 键忽略 fail 行 | 找「最近成功同键」时跳过中间的 fail |
+| B7 | 改名后同 id 再 save（&lt;15min） | 叠同一行；summary 名称变为新名 |
+| B8 | PUT 模版 API 成功（集成/mock） | 自动出现 `template.save`，前端未再 POST 同条 |
+| B9 | 空 `object_id` | 不折叠（或每次追加）；不损坏文件 |
+| B10 | 连续两次物理 `delete` 审计 | 若走后端删：**2** 行不折；批删见 F3 |
 
-### F. 前端契约
-
-| # | 用例 | 期望 |
-|---|------|------|
-| F1 | 编辑器保存成功 | 触发审计（或仅依赖后端则校验未重复 POST） |
-| F2 | 删除 / 复制 | 对应 action + summary |
-| F3 | 批量删 3 个 | 1 条，summary 含数量 |
-| F4 | `actionOptions` 含 `template.*` / `layout.*` |
-
-### M. 手工
+### F. 前端 · 删/复制/筛选/防双记
 
 | # | 用例 | 期望 |
 |---|------|------|
-| M1 | 打开模版狂按保存 | 15 分钟内列表不刷屏 |
-| M2 | 删模版 / 复制 | 各一条清晰中文 |
-| M3 | 版式编辑器同 M1/M2 |
-| M4 | 导出 CSV 含新 action |
-| M5 | 仅拖拽不保存 | 无新审计 |
+| F1 | 编辑器保存 | **不**再调用 `auditLog('template.save')`（由后端写）；可用 spy 断言 |
+| F2 | 单条删除成功 | `template.delete` + 名称 summary；fail 时 `result:fail` |
+| F3 | 批量删 3 个模版 | **1** 次 `auditLog`；summary 含 `3`；`detail.ids.length===3`；名称列表 ≤5 |
+| F4 | 复制模版 | `template.duplicate`；summary 含源→新 |
+| F5 | 版式删/复制 | `layout.delete` / `layout.duplicate` 同 F2/F4 |
+| F6 | `actionOptions` | 含 `template.save/delete/duplicate` 与 `layout.*` |
+| F7 | 批删摘要纯函数 | 1 个名 / 5 个名 / 6 个名截断「等」 |
+| F8 | 配置导入路径 | 不循环调用 `template.save` 审计 |
+
+### M. 手工 / 真机
+
+| # | 用例 | 期望 |
+|---|------|------|
+| M1 | 模版编辑器 15 分钟内保存 ≥5 次 | 审计列表 **1** 条 save，展开 `save_count≥5` |
+| M2 | 等满 15 分钟再保存 | **新**一条 save |
+| M3 | 保存故意失败（断后端）再成功 | 有 fail 条；成功条可折叠到更早成功 save |
+| M4 | 删除、复制各一次 | 各 1 条中文可读 |
+| M5 | 多选删多个模版 | **1** 条汇总 |
+| M6 | 版式编辑器重复 M1/M4 | 同模版行为 |
+| M7 | 操作审计筛选新 action + 导出 CSV | 能滤、能导出含新类型 |
+| M8 | 只拖拽改位置不保存 | **无**新 `template.save` |
+| M9 | 配置导入含模版 | 有 `config.import`；**无**洪水 `template.save` |
+| M10 | AI 工具改模版并落盘（若环境可用） | 有 `template.save`（后端），无双记 |
+
+### R. 回归
+
+| # | 说明 |
+|---|------|
+| R1 | 原有连接保存 / 导出 / 配置导入审计仍可用 |
+| R2 | 审计导出 JSON/CSV、分页、日期筛选不回归 |
+| R3 | JSONL trim（90 天 / 5000 行）在大量 coalesce 改写后仍正常 |
+
+### 单测落点建议
+
+```text
+backend/modules/test_audit_coalesce.py     ← B1–B7、B9
+backend/...（路由测可选）                   ← B8
+frontend/.../audit-batch-summary.test.ts   ← F7
+frontend 对 TemplateManager 删/复制 spy    ← F2–F4（或薄封装测）
+```
 
 ## 验收（开工后）
 
-- [ ] 模版编辑器保存 → 审计出现 `template.save`，可展开见 `object_id`  
-- [ ] 模版删除 / 复制 → 对应 action  
-- [ ] 版式保存 / 删除 / 复制 → `layout.*`  
-- [ ] 同一模版 15 分钟内多次成功保存 → 审计**折叠为一条**（`save_count` 递增），非 N 条重复  
-- [ ] 删除 / 复制仍各一条；保存失败不折叠进成功条  
-- [ ] 批量删除为一条（含数量）  
-- [ ] 配置导入不额外刷每个模版的 `template.save`  
-- [ ] 画布拖拽未保存不产生洪水日志  
-- [ ] B1–B5 / F1–F4 单测或契约通过  
+- [ ] 模版/版式保存 → `*.save`；15 分钟内多次保存折叠为一条  
+- [ ] 删 / 复制各一条；批删一条汇总  
+- [ ] 失败独立；不阻断主流程  
+- [ ] 前端保存不双记；筛选与导出含新 action  
+- [ ] 拖拽不保存无洪水；配置导入不拆记  
+- [ ] B/F 单测通过；M 冒烟勾选  
 
 ## 本轮范围
 
-- ✅ 记录诉求与缺口（模版/版式零审计）  
-- ✅ 拟定 MVP action 与「只记持久化」原则；**成功 save 15 分钟窗折叠**  
-- ✅ 推荐落点；**save 折叠改后端 coalesce**（避免双记）  
-- ✅ **缺口 G1–G10** + **测试用例 B/F/M**  
+- ✅ 诉求与缺口  
+- ✅ 只记持久化 + **15 分钟折叠（已确认）**  
+- ✅ **G1–G10 / Q1–Q7 默认已拍板写入**  
+- ✅ **测试用例 B1–B10 / F1–F8 / M1–M10 / R1–R3**  
 - ⌛️ 实现与发版（待开工）
 
-## 开工前可确认（可选）
+## 拍板一览（全部按默认）
 
-| # | 问题 | 默认 / 你的选择 |
-|---|------|----------------|
-| Q1 | 自动保存 vs 显式保存 | **仅显式**（及列表 CRUD） |
-| Q2 | 改名 | **并入 `*.save`**（detail 可带 rename） |
-| Q3 | 谁写 + 折叠 | **save 后端 coalesce；删/复制前端**（或全后端） |
-| Q4 | 打开编辑器 | **否** |
-| Q5 | 频繁保存减噪 | **★ 15 分钟窗折叠** ← 已确认 |
-| Q6 | 批量删除 | **★ 一条汇总**（G2） |
-| Q7 | 配置导入 | **★ 不拆成逐模版 save**（G3） |
+| # | 结论 |
+|---|------|
+| Q1 | 仅显式保存 + 列表 CRUD（无「打开编辑器」） |
+| Q2 | 改名并入 `*.save` |
+| Q3 | save 后端 coalesce；删/复制前端（批删一条） |
+| Q4 | 不记打开编辑器 |
+| Q5 | 15 分钟窗折叠成功 save |
+| Q6 | 批量删除一条汇总 |
+| Q7 | 配置导入不拆成逐模版 save |
