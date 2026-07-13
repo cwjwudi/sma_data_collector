@@ -1,9 +1,43 @@
 # ReportEditor AI 助手：上游错误与写入类能力闭环
 
 > 本文件为 **任务看板**；规则见 [CLAUDE.md](../CLAUDE.md)。  
-> 版本计划：探活 [0.3.60](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.60.md)；上游错误体验 [0.3.62](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.62.md)；Agent 工具轨迹 [0.3.66](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.66.md)；轨迹假失败 [0.3.71](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.71.md)；排队收纳 [0.3.77](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.77.md)；流式先工具 [0.3.78](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.78.md)；多轮简洁 [0.3.79](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.79.md)；复制模版/版式 [0.3.80](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.80.md)；删除模版/版式 [0.3.81](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.81.md)。  
+> 版本计划：探活 [0.3.60](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.60.md)；上游错误体验 [0.3.62](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.62.md)；Agent 工具轨迹 [0.3.66](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.66.md)；轨迹假失败 [0.3.71](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.71.md)；排队收纳 [0.3.77](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.77.md)；流式先工具 [0.3.78](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.78.md)；多轮简洁 [0.3.79](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.79.md)；复制模版/版式 [0.3.80](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.80.md)；删除模版/版式 [0.3.81](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.81.md)；加密备份 [0.3.82](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.82.md)。  
 > **范围说明**：不只「开启定时探活」；在开启「允许 AI 写入工具」后，数据源、模版/版式资产、备份恢复、结批导出、演示冒烟、诊断取证等能力域均须**真正执行并反映到 UI**（禁止空口答应）。完整域表见下方能力矩阵 H1（仍 ⌛️）。  
 > **Agent 体验**：对话须可见工具调用与状态；口头结论必须与工具结果一致——轨迹 H1 已于 **0.3.66** 落地（探活强制再调）。
+
+---
+
+# ✅ 已完成：导出加密备份（能力矩阵 D · → 0.3.82）
+
+## 产品诉求
+
+用户说「导出备份」时，须调 `request_config_backup_export` → 本机弹框另存 `.rebak`；**聊天与工具结果不得出现口令/密文**；总闸关则拒绝。
+
+## 代码侧（本版前已有）
+
+- 工具仅建 `pick_export_dir` + `backup_export` pending；UI `fetch /settings/config/export` 下载加密字节
+- `export_config_share_summary` 仅返回计数（脱敏）
+
+## 本版加固（0.3.82）
+
+1. `test_ai_config_backup.py`：pending 无密文、总闸拒绝、share 摘要无 password、轨迹剥离 `rebak_password`  
+2. `SYSTEM_PROMPT`：点名备份工具 + `awaiting_user_action`；禁把 .rebak/口令回 LLM
+
+## 逐步测试用例
+
+| # | 步骤 | 期望 | 覆盖 |
+|---|------|------|------|
+| D1 | `request_config_backup_export` | `awaiting_user_action`；payload=`backup_export` | pending 测例 |
+| D2 | 序列化工具结果 / pending 列表 | 无明文口令、无 ciphertext、无 SDRE1 | `_assert_no_secret_leak` |
+| D3 | 总闸关 | 拒绝；无 pending | blocked 测例 |
+| D4 | `export_config_share_summary` | 仅计数；无 password | share 测例 |
+| D5 | 轨迹 args 含 `rebak_password` | 摘要剥离 | tool_trace 测例 |
+
+```bash
+cd _Prj/SD_SMA_ReportEditor/backend && uv run pytest modules/test_ai_config_backup.py -q
+```
+
+> 本机点「选择备份保存位置」下载 `.rebak` 属 Electron UI 路径；加密魔术头由 `test_bundle_crypto` / D 内 crypto 契约覆盖。
 
 ---
 

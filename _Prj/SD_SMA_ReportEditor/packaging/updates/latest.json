@@ -1,15 +1,15 @@
 {
-  "version": "0.3.81",
-  "releasedAt": "2026-07-13T17:03:38.433Z",
-  "notes": "AI 能力矩阵 C：删除模版/版式确认流加固",
+  "version": "0.3.82",
+  "releasedAt": "2026-07-13T17:08:07.936Z",
+  "notes": "AI 能力矩阵 D：加密备份 pending 另存，密文不进 LLM",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.81-x64.exe",
+      "url": "Report Editor AI-Setup-0.3.82-x64.exe",
       "sha256": "",
       "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.81-arm64.dmg",
+      "url": "Report Editor AI-0.3.82-arm64.dmg",
       "sha256": "",
       "size": 0
     }
