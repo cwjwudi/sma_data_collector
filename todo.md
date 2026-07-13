@@ -7,7 +7,7 @@
 
 ## 2026-07-13
 
-- **ReportEditor AI 上游错误体验（仅记录）**：AI 助手遇 OpenAI `insufficient_quota` 时把原始 JSON 甩在聊天区。看板 [docs/006-⌛️-ReportEditor-AI上游错误体验.md](docs/006-⌛️-ReportEditor-AI上游错误体验.md)。**本条未改代码。**
+- **ReportEditor AI 上游错误体验（仅记录）**：AI 助手遇 `insufficient_quota` 甩原始 JSON；并澄清 **ChatGPT 订阅 ≠ API 额度**（Usage 近 $0 仍可能报额度）。看板 [docs/006-⌛️-ReportEditor-AI上游错误体验.md](docs/006-⌛️-ReportEditor-AI上游错误体验.md)。**未改代码。**
 - **ReportEditor 控件默认无边框（仅文档，待 0.3.60）**：交互控件拟默认无实线边；分区容器默认保留。看板 [docs/005-⌛️-ReportEditor控件默认无边框.md](docs/005-⌛️-ReportEditor控件默认无边框.md)；计划 [`009_版本Plan/0.3.60.md`](_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.60.md)。
 - **ReportEditor 0.3.59 已发版**：空连接新建表单不再被周期刷新清空；vitest **274 passed**。看板 [docs/004-✅-ReportEditor数据源UI修复.md](docs/004-✅-ReportEditor数据源UI修复.md)。
 - **ReportEditor 空连接表单刷新清空（文档/根因）**：已实现为 0.3.59。

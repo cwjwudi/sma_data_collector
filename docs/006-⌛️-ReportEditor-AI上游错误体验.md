@@ -63,3 +63,34 @@ if resp.status_code >= 400:
 
 - 截图中 AI 输入框仍有**可见描边**（焦点/默认边），与 [docs/005-⌛️-ReportEditor控件默认无边框.md](005-⌛️-ReportEditor控件默认无边框.md) 相关，**不在本条修复范围**；本条只跟 LLM 错误文案。
 - **运维侧**：若 Key 确已欠费，映射文案再友好也无法代替充值/换 Key；软件只负责说清楚原因。
+
+---
+
+# ⌛️ 未完成：澄清「ChatGPT 订阅 ≠ API 额度」（用户易混淆）
+
+## 现场补充（2026-07-13）
+
+用户反馈：仍在 **GPT（ChatGPT）订阅期内**，不应出现额度错误。  
+同时打开的是 [platform.openai.com](https://platform.openai.com) → **Usage**，区间内显示约 **$0.00 / 1 request / 7 tokens**。
+
+## 说明（事实）
+
+| | ChatGPT 网页/App 订阅（Plus 等） | OpenAI **API**（platform + API Key） |
+|--|--|--|
+| 用途 | 浏览器里用 chatgpt.com | 第三方应用（含本报表编辑器）调 `/v1/chat/completions` |
+| 计费 | 订阅月费 | **另计**：预付费额度 / 按量账单（Usage 页） |
+| 是否互通 | **不互通** | 有 Plus **不会**自动带上 API 额度 |
+
+报表编辑器 AI 助手走的是设置里配置的 **LLM Base URL + API Key**，对应 **API 账号**，不是 ChatGPT 登录会话。
+
+因此：
+
+1. 订阅期内仍可能收到 `insufficient_quota`——API 侧无可用额度、未绑支付、组织限额、或 Key 所属项目无余额。
+2. Usage 页几乎 $0、仅 1 次请求，更说明问题不在「用超了多少」，而在 **API 计费/额度未开通或 Key 无可用配额**（需到 **Billing** 查看支付方式与额度，而不仅是 Usage 曲线）。
+3. 软件侧仍应把该错误显示成中文「额度/账单」提示（见上一 H1），避免误判为程序崩溃。
+
+## 建议用户自查
+
+1. [platform.openai.com/settings/organization/billing](https://platform.openai.com/settings/organization/billing)（或 Billing）是否有可用 credit / 付款方式。  
+2. 设置页里的 API Key 是否属于该 Organization/Project。  
+3. 若只用 ChatGPT 订阅、不想开 API 账单：需换其它已开通 API 的上游，或自备有额度的 Key。
