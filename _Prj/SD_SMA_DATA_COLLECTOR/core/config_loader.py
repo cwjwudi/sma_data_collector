@@ -9,7 +9,7 @@ from typing import Dict, Any
 from .config_models import (
     DataPoint, DataGroup, OpcUaConfig, DatabaseConfig, AppConfig,
     TriggerType, Communication, Connection, LoggingConfig, InsertFeedbackConfig,
-    BatchUpsertConfig, IndexConfig
+    BatchUpsertConfig, IndexConfig, PersistentQueueConfig
 )
 
 
@@ -195,6 +195,20 @@ class ConfigLoader:
             console_enabled=logging_data.get('console_enabled', True)
         )
                 
+        queue_data = config_data.get('persistent_queue', {})
+        persistent_queue = PersistentQueueConfig(
+            enabled=bool(queue_data.get('enabled', False)),
+            path=str(queue_data.get('path', 'runtime/queue/collector_outbox.db')),
+            synchronous=str(queue_data.get('synchronous', 'FULL')).upper(),
+            busy_timeout_ms=int(queue_data.get('busy_timeout_ms', 5000)),
+            lease_seconds=float(queue_data.get('lease_seconds', 60.0)),
+            retry_interval_seconds=float(queue_data.get('retry_interval_seconds', 5.0)),
+            max_retry_interval_seconds=float(queue_data.get('max_retry_interval_seconds', 300.0)),
+            max_attempts=int(queue_data.get('max_attempts', 0)),
+            completed_retention_days=int(queue_data.get('completed_retention_days', 1)),
+            max_queue_rows=int(queue_data.get('max_queue_rows', 1_000_000)),
+        )
+
         # 创建应用配置
         config = AppConfig(
             points=points,
@@ -203,7 +217,8 @@ class ConfigLoader:
             database=database,
             communications=communications,
             connections=connections,
-            logging=logging_config
+            logging=logging_config,
+            persistent_queue=persistent_queue,
         )
         
         # 验证配置
@@ -214,6 +229,16 @@ class ConfigLoader:
     @staticmethod
     def _validate_config(config: AppConfig) -> None:
         """验证配置的有效性"""
+        queue = config.persistent_queue
+        if queue.synchronous not in {"OFF", "NORMAL", "FULL", "EXTRA"}:
+            raise ValueError("persistent_queue.synchronous must be OFF/NORMAL/FULL/EXTRA")
+        if queue.busy_timeout_ms < 0 or queue.lease_seconds <= 0:
+            raise ValueError("persistent_queue busy_timeout_ms/lease_seconds 配置无效")
+        if queue.retry_interval_seconds <= 0 or queue.max_retry_interval_seconds < queue.retry_interval_seconds:
+            raise ValueError("persistent_queue 重试间隔配置无效")
+        if queue.max_attempts < 0 or queue.completed_retention_days < 0 or queue.max_queue_rows <= 0:
+            raise ValueError("persistent_queue 容量或保留配置无效")
+
         # 检查数据点名称唯一性
         point_names = [point.name for point in config.points]
         if len(point_names) != len(set(point_names)):

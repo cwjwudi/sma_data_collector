@@ -143,6 +143,21 @@ class LoggingConfig:
 
 
 @dataclass
+class PersistentQueueConfig:
+    """SQLite outbox configuration for crash-safe PLC acknowledgement."""
+    enabled: bool = False
+    path: str = "runtime/queue/collector_outbox.db"
+    synchronous: str = "FULL"
+    busy_timeout_ms: int = 5000
+    lease_seconds: float = 60.0
+    retry_interval_seconds: float = 5.0
+    max_retry_interval_seconds: float = 300.0
+    max_attempts: int = 0
+    completed_retention_days: int = 1
+    max_queue_rows: int = 1_000_000
+
+
+@dataclass
 class AppConfig:
     """应用总配置"""
     points: List[DataPoint]
@@ -152,6 +167,7 @@ class AppConfig:
     communications: List[Communication] = None  # 新增：通信配置列表
     connections: List[Connection] = None  # 新增：连接配置列表
     logging: LoggingConfig = None  # 日志配置
+    persistent_queue: PersistentQueueConfig = None
     
     def __post_init__(self):
         # 保持向后兼容性
@@ -161,6 +177,8 @@ class AppConfig:
             self.connections = []
         if self.logging is None:
             self.logging = LoggingConfig()
+        if self.persistent_queue is None:
+            self.persistent_queue = PersistentQueueConfig()
         
         # 如果没有communications配置，从opcua配置创建默认通信
         if not self.communications and self.opcua:
