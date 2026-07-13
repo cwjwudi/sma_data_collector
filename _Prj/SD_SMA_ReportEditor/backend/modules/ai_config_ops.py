@@ -171,6 +171,8 @@ def get_export_dir_prefs() -> dict[str, Any]:
 
 
 def set_export_dir(path: str) -> dict[str, Any]:
+    import uuid
+
     p = (path or "").strip()
     if not p:
         return {"ok": False, "error": "路径不能为空"}
@@ -190,6 +192,7 @@ def set_export_dir(path: str) -> dict[str, Any]:
     mirror["report_generator"] = rg
     mirror["report_export"] = rexp
     mirror["pending_apply"] = True
+    mirror["pending_token"] = str(uuid.uuid4())
     _CLIENT_PREFS_MIRROR.parent.mkdir(parents=True, exist_ok=True)
     _CLIENT_PREFS_MIRROR.write_text(json.dumps(mirror, ensure_ascii=False, indent=2), encoding="utf-8")
     return {"ok": True, "path": p, "note": "前端将在轮询时应用至 localStorage"}
