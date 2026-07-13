@@ -7,6 +7,7 @@
 
 ## 2026-07-13
 
+- **ReportEditor 0.3.90 已发版**：AI 能力矩阵 L（结批写回/并行上限可读回）；看板 [docs/006-🚧](docs/006-🚧-ReportEditor-AI上游错误体验.md)。
 - **ReportEditor 0.3.89 已发版**：AI 能力矩阵 K（预检事实 + 模拟结批确认流）；看板 [docs/006-🚧](docs/006-🚧-ReportEditor-AI上游错误体验.md)。
 - **ReportEditor 0.3.88 已发版**：AI 能力矩阵 J（导出目录 set/pick）；看板 [docs/006-🚧](docs/006-🚧-ReportEditor-AI上游错误体验.md)。
 - **ReportEditor 0.3.87 已发版**：AI 能力矩阵 I（模版展示排序 + reload）；看板 [docs/006-🚧](docs/006-🚧-ReportEditor-AI上游错误体验.md)。

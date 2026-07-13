@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import uuid
 from typing import Any
 
 from core.settings import DATA_DIR
@@ -180,6 +181,7 @@ def _mask_feedback(fb: dict[str, Any]) -> dict[str, Any]:
 
 
 def set_export_result_feedback(patch: dict[str, Any], template_id: str | None = None) -> dict[str, Any]:
+    """写入结批结果 OPC 写回配置到镜像；须 pending_token 供前端 ack。"""
     if not isinstance(patch, dict):
         return {"ok": False, "error": "patch 须为对象"}
     mirror = _load_mirror()
@@ -198,6 +200,10 @@ def set_export_result_feedback(patch: dict[str, Any], template_id: str | None = 
         "messageMaxLen",
     }
     clean = {k: patch[k] for k in allowed if k in patch}
+    if not clean:
+        return {"ok": False, "error": "patch 无有效字段"}
+    if "statusKind" in clean and clean["statusKind"] not in ("bool", "int"):
+        return {"ok": False, "error": "statusKind 须为 bool 或 int"}
     if tid:
         by_tpl = dict(rg.get("exportResultOpcByTemplateId") or {})
         cur = dict(by_tpl.get(tid) or {})
@@ -210,6 +216,7 @@ def set_export_result_feedback(patch: dict[str, Any], template_id: str | None = 
         rg["exportResultOpc"] = cur
     mirror["report_generator"] = rg
     mirror["pending_apply"] = True
+    mirror["pending_token"] = str(uuid.uuid4())
     _save_mirror(mirror)
     return {
         "ok": True,
@@ -394,6 +401,9 @@ def summarize_report_history() -> dict[str, Any]:
 
 
 def set_max_parallel_exports(value: int) -> dict[str, Any]:
+    """写入自动结批并行上限（1–16）到镜像；须 pending_token 供前端 ack。"""
+    if value is None or (isinstance(value, str) and not str(value).strip()):
+        return {"ok": False, "error": "max_parallel 须为整数"}
     try:
         n = int(value)
     except (TypeError, ValueError):
@@ -406,5 +416,6 @@ def set_max_parallel_exports(value: int) -> dict[str, Any]:
     rg["auto"] = auto
     mirror["report_generator"] = rg
     mirror["pending_apply"] = True
+    mirror["pending_token"] = str(uuid.uuid4())
     _save_mirror(mirror)
     return {"ok": True, "max_parallel": n, "note": "前端将应用并行上限"}

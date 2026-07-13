@@ -81,7 +81,9 @@ SYSTEM_PROMPT = (
     "禁止声称已改路径，除非工具成功或用户已在弹框完成选择。"
     "预检/模拟结批：先 preflight_export 据实汇报 ready/issues；模拟结批只用 request_manual_export（awaiting_user_confirm）；"
     "禁止声称已导出 PDF，除非用户已在本机确认弹框完成导出。"
-    "结批写回/并行：set_export_result_feedback / set_max_parallel_exports；触发检查用 check_auto_trigger_bindings。"
+    "结批写回/并行：set_export_result_feedback 后用 get_export_result_feedback 读回核对；"
+    "并行上限用 set_max_parallel_exports（1–16）后可用 check_auto_trigger_bindings 看 max_parallel；"
+    "禁止声称已改写回/并行，除非工具成功且读回一致。"
     "检查更新：request_check_app_update 只检查、不自动安装。"
 )
 
