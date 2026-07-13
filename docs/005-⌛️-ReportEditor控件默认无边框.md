@@ -89,19 +89,75 @@
 ## 拟改步骤（确认后开工）
 
 1. 模版 `defaultElement` **与** 版式默认：同时改为 `showBorder: false`。  
-2. `normalizeShowBorder`（或模版/版式加载调用处）：`undefined`/缺失 → **`true`**（旧稿兼容），勿把新默认当 missing fallback。  
-3. 单测：模版新建默认 `false`；版式新建默认 `false`；两侧 JSON 无 `showBorder` 解析为 `true`；显式 `false` 保持。  
-4. 目视：模版新建图片、版式新建图片 → 属性均为「隐藏」；打开旧模版/旧版式外观不变。  
-5. bump **0.3.61**（或并入当时发版线）。
+2. 加载兼容：`hydrateTemplateElement` / `hydrateLayoutZoneElement` 在字段**缺失**时固定为 `true`（勿再把 `d.showBorder` 当 missing fallback）。`normalizeShowBorder` 可保留，但调用处必须传兼容默认或改为「缺省恒 true」。  
+3. 后端 `schemas/report_template.py` 等模型默认若影响「新建」路径，与前端对齐核对（旧 JSON 入 API 仍应偏兼容显示）。  
+4. 按下方**测试矩阵**补单测并跑绿。  
+5. 目视：模版/版式新建图片 →「隐藏」；旧稿外观不变。  
+6. bump **0.3.61**（或并入当时发版线）。
+
+## 测试用例（当前不足 → 实现前必须补齐）
+
+### 现状结论
+
+| 项 | 状态 |
+|----|------|
+| 前端 `showBorder` / `normalizeShowBorder` 专项单测 | **无**（`report-template.test.ts` 等均未覆盖） |
+| 文档先前只写「拟改步骤第 3 点」提纲 | **不够**，缺矩阵与失败断言 |
+| 手工验收 | 有提纲，但未写成可勾选用例 |
+
+实现本需求时，至少落地下表 **A–C 自动化** + **D 手工**；缺任一侧（模版/版式）视为不通过。
+
+### A. 单元：新建默认（模版 + 版式）
+
+| # | 用例 | 断言 |
+|---|------|------|
+| A1 | `makeElement("image" \| "text" \| "box" \| "date" \| "parameter" \| "chart" \| "signature")` | `showBorder === false` |
+| A2 | `makeLayoutZoneElement` 同上各类型（版式有的类型） | `showBorder === false` |
+| A3 | `defaultElement` / `defaultLayoutZoneElement` 与 make 一致 | 与 A1/A2 相同 |
+| A4 | `makeElement("table")` | 不强制改表格语义；若字段仍存在，记录实际值并确认网格线逻辑未依赖「默认隐藏外框」误伤（与待拍板一致） |
+
+### B. 单元：加载兼容（防旧稿变无边）
+
+| # | 用例 | 断言 |
+|---|------|------|
+| B1 | `hydrateTemplateElement({ type: "image", id: "x" })`（**无** `showBorder` 键） | `showBorder === true` |
+| B2 | `hydrateLayoutZoneElement({ type: "image", id: "x" })`（无键） | `showBorder === true` |
+| B3 | hydrate 显式 `showBorder: false` | `=== false` |
+| B4 | hydrate 显式 `showBorder: true` | `=== true` |
+| B5 | hydrate 字符串/数字边界（若 `normalizeShowBorder` 仍支持 `"false"` / `0`） | 与现函数语义一致 |
+| B6 | **回归锁**：新建默认已是 `false` 时，B1/B2 仍必须为 `true`（证明 missing 未误用新默认） |
+
+### C. 单元：同步与传递（可选但建议）
+
+| # | 用例 | 断言 |
+|---|------|------|
+| C1 | `layout-apply` 版式 zone → 模版元素（或反向，若有） | `showBorder` 原样拷贝 |
+| C2 | 剪贴板复制 `makeElement` 后再 hydrate 快照 | 显式 `false` 不丢 |
+
+### D. 手工验收（发版前勾选）
+
+| # | 步骤 | 期望 |
+|---|------|------|
+| D1 | 新建模版，拖入图片 | 属性「边框」为**隐藏**；预览无浅灰外框 |
+| D2 | 新版式（页眉/正文区），拖入图片 | 同上，与模版一致 |
+| D3 | 改为「显示」再「隐藏」 | 预览外框随之出现/消失 |
+| D4 | 选中控件 | 编辑选中描边仍在 |
+| D5 | 打开改版前保存的、从未写过 `showBorder` 的旧模版 | 外框仍在（与改前一致） |
+| D6 | 打开同类旧版式 | 同上 |
+
+### 建议落点
+
+- 新建 `frontend/src/lib/report-template/show-border-default.test.ts`（或并入 `report-template.test.ts`）。  
+- 实现时先红后绿：先写 B6/A1，再改默认与 hydrate。
 
 ## 验收
 
 1. **模版**：拖入图片/文本等（非表）→「边框」默认隐藏；预览/导出无浅灰外框。  
-2. **版式**：同上（页眉/页脚等区新建同类控件）→ 默认隐藏，行为与模版一致。  
+2. **版式**：同上 → 默认隐藏，行为与模版一致。  
 3. 改为「显示」后预览出现外框；再改回「隐藏」消失（两侧各抽查一次）。  
 4. 编辑选中描边始终可用。  
 5. 打开未含 `showBorder` 的旧模版 **与** 旧版式：外框行为与改前一致（仍显示）。  
-6. 相关单测绿（含模版 + 版式）。
+6. **测试矩阵 A+B（建议含 C）全绿**；D 手工勾选完成。
 
 ## 待拍板
 
