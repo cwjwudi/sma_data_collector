@@ -51,6 +51,14 @@ _DIAG_FACT_CLAIM_RE = re.compile(
     re.I,
 )
 
+# AI 永不自动安装；此类完成态须改写
+_UPDATE_INSTALL_CLAIM_RE = re.compile(
+    r"(已安装|已经安装|安装完成|已帮你安装|已自动安装|更新已安装|已更新到最新|已经更新完成)",
+    re.I,
+)
+
+UPDATE_CHECK_TOOL = "request_check_app_update"
+
 
 def detect_probe_claim(assistant_text: str) -> ProbeClaim:
     text = (assistant_text or "").strip()
@@ -125,6 +133,20 @@ def needs_diagnostic_claim_retry(assistant_text: str, trace: list[dict[str, Any]
     if not detect_diagnostic_fact_claim(assistant_text):
         return False
     return not diagnostic_claim_has_evidence(trace)
+
+
+def detect_update_install_claim(assistant_text: str) -> bool:
+    text = (assistant_text or "").strip()
+    if not text:
+        return False
+    return bool(_UPDATE_INSTALL_CLAIM_RE.search(text))
+
+
+def rewrite_update_install_claim(_assistant_text: str = "") -> str:
+    return (
+        "检查更新只会查询是否有新版本，不会自动安装。"
+        "请在本机确认弹框中执行检查；如需安装，请按设置页或更新提示操作。"
+    )
 
 
 def probe_claim_correction_message(claim: ProbeClaim) -> str:

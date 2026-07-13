@@ -210,11 +210,13 @@ def request_pick_export_dir() -> dict[str, Any]:
 
 
 def request_check_app_update() -> dict[str, Any]:
+    """仅排队本机检查更新；确认后走 Electron 检查，绝不自动安装。"""
     prompt = ai_pending_prompts.create_prompt(
         kind="check_update",
         target_kind="app",
         title="检查软件更新",
         message="AI 助手请求检查是否有新版本。确认后将执行检查（不会自动安装）。",
+        payload={"action": "check_update", "auto_install": False},
     )
     return {"ok": True, "status": "awaiting_user_confirm", "prompt": prompt}
 

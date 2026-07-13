@@ -95,8 +95,10 @@ def test_rewrite_removes_false_success():
 def test_diagnostic_fact_claim_without_tool():
     from modules.ai_claim_guard import (
         detect_diagnostic_fact_claim,
+        detect_update_install_claim,
         needs_diagnostic_claim_retry,
         rewrite_diagnostic_claim_failure,
+        rewrite_update_install_claim,
     )
 
     assert detect_diagnostic_fact_claim("版本是 0.3.90") is True
@@ -106,6 +108,8 @@ def test_diagnostic_fact_claim_without_tool():
         [{"name": "list_db_connections", "ok": True}],
     ) is False
     assert "诊断工具" in rewrite_diagnostic_claim_failure("共有 2 个数据库连接", [])
+    assert detect_update_install_claim("已经安装完成") is True
+    assert "不会自动安装" in rewrite_update_install_claim("已经安装完成")
 
 
 def test_set_assistant_text_clears_tool_calls():

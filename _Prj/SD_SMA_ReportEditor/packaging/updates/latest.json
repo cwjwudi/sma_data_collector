@@ -1,15 +1,15 @@
 {
-  "version": "0.3.91",
-  "releasedAt": "2026-07-13T17:34:34.945Z",
-  "notes": "AI 能力矩阵 M：诊断事实工具与口头结论守卫",
+  "version": "0.3.92",
+  "releasedAt": "2026-07-13T17:36:41.198Z",
+  "notes": "AI 能力矩阵 N：检查更新确认流与禁安装断言",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.91-x64.exe",
+      "url": "Report Editor AI-Setup-0.3.92-x64.exe",
       "sha256": "",
       "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.91-arm64.dmg",
+      "url": "Report Editor AI-0.3.92-arm64.dmg",
       "sha256": "",
       "size": 0
     }

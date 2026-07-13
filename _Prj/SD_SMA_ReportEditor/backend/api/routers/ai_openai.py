@@ -24,6 +24,7 @@ from modules.ai_chat_stream import (
 )
 from modules.ai_claim_guard import (
     detect_probe_claim,
+    detect_update_install_claim,
     diagnostic_claim_correction_message,
     extract_assistant_text_from_response,
     needs_diagnostic_claim_retry,
@@ -31,6 +32,7 @@ from modules.ai_claim_guard import (
     probe_claim_correction_message,
     rewrite_diagnostic_claim_failure,
     rewrite_probe_claim_failure,
+    rewrite_update_install_claim,
     set_assistant_text_on_response,
 )
 from modules.ai_tool_trace import attach_tool_trace, build_tool_trace_step
@@ -90,7 +92,8 @@ SYSTEM_PROMPT = (
     "诊断排障：连接/审计/版本/链路事实必须先调 diagnose_work_chain / query_audit_log / "
     "get_dev_runtime_snapshot / inspect_template_bindings / list_db_connections 等工具；"
     "禁止编造连接状态、审计记录或版本号；suggest_config_change 不得冒充诊断结论。"
-    "检查更新：request_check_app_update 只检查、不自动安装。"
+    "检查更新：只用 request_check_app_update（awaiting_user_confirm）；确认后本机检查、不自动安装；"
+    "禁止声称已安装/已更新完成；禁止在用户未确认前声称已检查到结果。"
 )
 
 
@@ -355,6 +358,12 @@ async def iter_chat_stream_sse(
                 yield format_sse("done", {"tool_trace": tool_trace, "finish_reason": "stop"})
                 return
 
+            if detect_update_install_claim(assistant_text):
+                rewritten = rewrite_update_install_claim(assistant_text)
+                yield format_sse("replace", {"text": rewritten})
+                yield format_sse("done", {"tool_trace": tool_trace, "finish_reason": "stop"})
+                return
+
             yield format_sse("done", {"tool_trace": tool_trace, "finish_reason": "stop"})
             return
 
@@ -455,6 +464,10 @@ async def run_chat_completion(
 
             elif needs_diagnostic_claim_retry(assistant_text, tool_trace):
                 rewritten = rewrite_diagnostic_claim_failure(assistant_text, tool_trace)
+                data = set_assistant_text_on_response(data, rewritten)
+
+            elif detect_update_install_claim(assistant_text):
+                rewritten = rewrite_update_install_claim(assistant_text)
                 data = set_assistant_text_on_response(data, rewritten)
 
             return attach_tool_trace(data, tool_trace)
