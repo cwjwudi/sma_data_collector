@@ -7,6 +7,7 @@
 
 ## 2026-07-13
 
+- **ReportEditor 模版/版式编辑审计（仅计划）**：新建 [docs/013-⌛️](docs/013-⌛️-ReportEditor模版版式编辑审计.md)——保存/删除/复制落 `template.*`/`layout.*`；不记画布拖拽；与现有 `auditLog` 对齐。
 - **ReportEditor 移除演示与培训（仅计划）**：新建 [docs/012-⌛️](docs/012-⌛️-ReportEditor移除演示与培训.md)——拆除设置「演示与培训」、`/demo/*`、demo-pack；存量仿真连接默认保留可手删；勿碰证书 demo-license。
 - **ReportEditor 0.3.67 已发版**：导出 PDF 去掉封面橙 / 正文蓝紫纸张装饰边；看板 [docs/009-✅](docs/009-✅-ReportEditor导出纸张橙边框.md)。
 - **ReportEditor 导出纸张橙边框（文档订正）**：看板更名为 [docs/009-✅](docs/009-✅-ReportEditor导出纸张橙边框.md)——截图确认橙边在**整页纸张四周**（非表格附近）；主因锁定 `MiniPreviewChrome` 装饰未在导出路径剥离。
