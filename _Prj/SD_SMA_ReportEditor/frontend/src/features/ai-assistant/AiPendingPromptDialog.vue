@@ -110,6 +110,7 @@ import {
   type AiPendingPrompt,
 } from '@/api/aiSettings'
 import { checkAppUpdateManual } from '@/features/settings/app-update/appUpdateState'
+import { beginUnlockSession } from '@/features/datasource/datasource-unlock-session'
 import {
   collectClientPrefs,
   notifyReportEditorConfigRestored,
@@ -293,9 +294,14 @@ async function onSubmitConfirm(confirmed: boolean) {
         notifyDatasourceChanged('all', 'config_reset')
         notifyAssetsChanged('config_change')
       } else if (prompt.kind === 'confirm_unlock_datasource') {
-        window.dispatchEvent(
-          new CustomEvent('report-editor-datasource-lock-changed', { detail: { locked: false } }),
-        )
+        try {
+          await beginUnlockSession()
+        } catch (e) {
+          console.warn('[AiPendingPromptDialog] beginUnlockSession', e)
+          window.dispatchEvent(
+            new CustomEvent('report-editor-datasource-lock-changed', { detail: { locked: false } }),
+          )
+        }
         notifyDatasourceChanged('all', 'ai_pending_unlock')
       } else if (prompt.kind === 'confirm_delete') {
         if (prompt.target_kind === 'template' || prompt.target_kind === 'layout') {

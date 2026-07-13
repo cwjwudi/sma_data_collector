@@ -1,14 +1,18 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  LOCK_PCT_MIN,
   LOCK_THUMB,
   LOCK_THUMB_PAD,
   LOCK_THUMB_TRAVEL,
   LOCK_TRACK_W,
+  UNLOCK_PCT_MAX,
   clampPct,
   fillWidthPx,
   pctFromClientX,
   thumbOffsetPx,
+  wantLockAt,
+  wantUnlockAt,
 } from "./datasource-lock-geometry";
 
 describe("datasource-lock-geometry", () => {
@@ -43,5 +47,14 @@ describe("datasource-lock-geometry", () => {
   it("keeps fill and thumb in sync under the same pct used by drag", () => {
     const pct = pctFromClientX(100 + 40, 100, LOCK_TRACK_W);
     expect(fillWidthPx(pct)).toBe(thumbOffsetPx(pct) + LOCK_THUMB / 2);
+  });
+
+  it("end thresholds for unlock/lock", () => {
+    expect(wantUnlockAt(0)).toBe(true);
+    expect(wantUnlockAt(UNLOCK_PCT_MAX)).toBe(true);
+    expect(wantUnlockAt(UNLOCK_PCT_MAX + 1)).toBe(false);
+    expect(wantLockAt(100)).toBe(true);
+    expect(wantLockAt(LOCK_PCT_MIN)).toBe(true);
+    expect(wantLockAt(LOCK_PCT_MIN - 1)).toBe(false);
   });
 });
