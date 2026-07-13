@@ -220,12 +220,16 @@ def request_check_app_update() -> dict[str, Any]:
 
 
 async def preflight_export(template_id: str) -> dict[str, Any]:
+    """结批预检：返回绑定问题事实；issue 非空时 ok/ready=false（供口播，不触发导出）。"""
     from modules import ai_work_chain
 
     tid = (template_id or "").strip()
     if not tid:
         return {"ok": False, "error": "缺少 template_id"}
-    bindings = ai_work_chain.inspect_template_bindings(tid)
+    try:
+        bindings = ai_work_chain.inspect_template_bindings(tid)
+    except ValueError as e:
+        return {"ok": False, "error": str(e)}
     if not bindings.get("ok"):
         return bindings
     issues = bindings.get("issues") or []
@@ -236,16 +240,21 @@ async def preflight_export(template_id: str) -> dict[str, Any]:
         "issue_count": len(issues),
         "issues": issues,
         "ready": len(issues) == 0,
+        "resolved_connections": bindings.get("resolved_connections") or [],
     }
 
 
 def request_manual_export(template_id: str) -> dict[str, Any]:
+    """仅排队模拟结批确认；确认后由本机 Electron 导出，禁止口头宣称已导出。"""
     tid = (template_id or "").strip()
     if not tid:
         return {"ok": False, "error": "缺少 template_id"}
     from modules import template_store
 
-    tpl = template_store.load_template(tid)
+    try:
+        tpl = template_store.load_template(tid)
+    except ValueError as e:
+        return {"ok": False, "error": str(e)}
     if not tpl:
         return {"ok": False, "error": "模版不存在"}
     prompt = ai_pending_prompts.create_prompt(

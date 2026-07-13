@@ -1,15 +1,15 @@
 {
-  "version": "0.3.88",
-  "releasedAt": "2026-07-13T17:26:37.563Z",
-  "notes": "AI 能力矩阵 J：导出目录 set/pick 与镜像 pending",
+  "version": "0.3.89",
+  "releasedAt": "2026-07-13T17:28:35.478Z",
+  "notes": "AI 能力矩阵 K：预检事实 + 模拟结批确认流",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.88-x64.exe",
+      "url": "Report Editor AI-Setup-0.3.89-x64.exe",
       "sha256": "",
       "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.88-arm64.dmg",
+      "url": "Report Editor AI-0.3.89-arm64.dmg",
       "sha256": "",
       "size": 0
     }

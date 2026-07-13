@@ -79,7 +79,8 @@ SYSTEM_PROMPT = (
     "套用封面封尾：apply_template_sheet_layouts。"
     "导出目录：已知路径用 set_export_dir；需本机选目录用 request_pick_export_dir（awaiting_user_action）；"
     "禁止声称已改路径，除非工具成功或用户已在弹框完成选择。"
-    "预检/模拟结批：preflight_export / request_manual_export（仅排队，需本机确认后导出）。"
+    "预检/模拟结批：先 preflight_export 据实汇报 ready/issues；模拟结批只用 request_manual_export（awaiting_user_confirm）；"
+    "禁止声称已导出 PDF，除非用户已在本机确认弹框完成导出。"
     "结批写回/并行：set_export_result_feedback / set_max_parallel_exports；触发检查用 check_auto_trigger_bindings。"
     "检查更新：request_check_app_update 只检查、不自动安装。"
 )

@@ -1,9 +1,40 @@
 # ReportEditor AI 助手：上游错误与写入类能力闭环
 
 > 本文件为 **任务看板**；规则见 [CLAUDE.md](../CLAUDE.md)。  
-> 版本计划：探活 [0.3.60](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.60.md)；上游错误体验 [0.3.62](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.62.md)；Agent 工具轨迹 [0.3.66](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.66.md)；轨迹假失败 [0.3.71](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.71.md)；排队收纳 [0.3.77](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.77.md)；流式先工具 [0.3.78](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.78.md)；多轮简洁 [0.3.79](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.79.md)；复制模版/版式 [0.3.80](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.80.md)；删除模版/版式 [0.3.81](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.81.md)；加密备份 [0.3.82](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.82.md)；恢复/复位 [0.3.83](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.83.md)；写入总闸 [0.3.84](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.84.md)；新建空白/冒烟 [0.3.85](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.85.md)；打开编辑 [0.3.86](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.86.md)；模版排序 [0.3.87](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.87.md)；导出目录 [0.3.88](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.88.md)。  
+> 版本计划：探活 [0.3.60](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.60.md)；上游错误体验 [0.3.62](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.62.md)；Agent 工具轨迹 [0.3.66](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.66.md)；轨迹假失败 [0.3.71](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.71.md)；排队收纳 [0.3.77](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.77.md)；流式先工具 [0.3.78](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.78.md)；多轮简洁 [0.3.79](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.79.md)；复制模版/版式 [0.3.80](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.80.md)；删除模版/版式 [0.3.81](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.81.md)；加密备份 [0.3.82](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.82.md)；恢复/复位 [0.3.83](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.83.md)；写入总闸 [0.3.84](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.84.md)；新建空白/冒烟 [0.3.85](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.85.md)；打开编辑 [0.3.86](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.86.md)；模版排序 [0.3.87](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.87.md)；导出目录 [0.3.88](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.88.md)；预检/模拟结批 [0.3.89](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.89.md)。  
 > **范围说明**：不只「开启定时探活」；在开启「允许 AI 写入工具」后，数据源、模版/版式资产、备份恢复、结批导出、演示冒烟、诊断取证等能力域均须**真正执行并反映到 UI**（禁止空口答应）。完整域表见下方能力矩阵 H1（仍 ⌛️）。  
 > **Agent 体验**：对话须可见工具调用与状态；口头结论必须与工具结果一致——轨迹 H1 已于 **0.3.66** 落地（探活强制再调）。
+
+---
+
+# ✅ 已完成：预检 / 模拟结批（能力矩阵 K · → 0.3.89）
+
+## 产品诉求
+
+「先检查能不能结批」→ `preflight_export` 返回 ready/issues 事实；「模拟结批一次」→ `request_manual_export` 仅排队，用户确认后本机 Electron 导出 PDF（禁止口头宣称已导出）。
+
+## 本版加固（0.3.89）
+
+1. `preflight_export` / `request_manual_export`：空 id、非法 id、`ValueError` 防护；预检带回 `resolved_connections`  
+2. `test_ai_export_ops.py`：预检事实、pending→confirm/cancel、总闸（confirm 拒 / read 仍通）  
+3. `SYSTEM_PROMPT`：先预检据实汇报；禁空口声称已导出
+
+## 逐步测试用例
+
+| # | 步骤 | 期望 |
+|---|------|------|
+| K1 | `preflight_export` 缺 id | `ok=false` |
+| K2 | 模版不存在 | `ok=false` |
+| K3 | 空绑定模版 | `ready=true`，`issues=[]` |
+| K4 | 总闸关仍可预检 | `ok=true`（read） |
+| K5 | `request_manual_export` | `awaiting_user_confirm` + `confirm_manual_export` |
+| K6 | 确认 | `client_action=confirm_manual_export` |
+| K7 | 取消 | `cancelled`，pending 清空 |
+| K8 | 总闸关 | confirm 工具拒绝 |
+
+```bash
+cd _Prj/SD_SMA_ReportEditor/backend && uv run pytest modules/test_ai_export_ops.py -q
+```
 
 ---
 
@@ -601,7 +632,7 @@ cd ../frontend && npm test -- --run src/lib/client-prefs-mirror.test.ts
 | H | 打开模版/版式 | 确认后进入对应编辑器（✅ 0.3.86） |
 | I | 模版排序 | 顺序变更在模版管理页可见（✅ 0.3.87） |
 | J | 导出目录 | 路径写入或选目录弹框完成（✅ 0.3.88） |
-| K | 预检 / 模拟结批 | 预检有事实；结批确认后本机导出（非口头） |
+| K | 预检 / 模拟结批 | 预检有事实；结批确认后本机导出（非口头）（✅ 0.3.89） |
 | L | 结批写回 / 并行上限 | 配置可读回一致 |
 | M | 诊断类 | 答复可追溯到工具结果，禁止编造连接/审计 |
 | N | 检查更新 | 仅检查结果；不声称已安装 |
