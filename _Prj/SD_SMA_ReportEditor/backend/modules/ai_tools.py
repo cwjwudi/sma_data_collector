@@ -1074,6 +1074,8 @@ def _tool_get_template_summary(args: dict[str, Any]) -> dict[str, Any]:
 
 def _tool_explain_export_diagnostics(args: dict[str, Any]) -> dict[str, Any]:
     text = str(args.get("text") or "")
+    if not text.strip():
+        return {"ok": False, "error": "缺少 text", "hint": "请粘贴含 ---EXPORT_DIAGNOSTICS--- 的失败文案"}
     idx = text.find(EXPORT_DIAG_MARKER)
     payload: dict[str, Any] | None = None
     message = text
@@ -1124,6 +1126,7 @@ def _tool_app_version() -> dict[str, Any]:
     port = ai_config.resolve_backend_port()
     pub = ai_config.public_ai_settings(port=port)
     return {
+        "ok": True,
         "app": "SD_SMA_ReportEditor",
         "version": APP_VERSION,
         "agent_chat_url_loopback": pub.get("agent_chat_url_loopback"),

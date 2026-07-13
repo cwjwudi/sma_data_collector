@@ -24,9 +24,12 @@ from modules.ai_chat_stream import (
 )
 from modules.ai_claim_guard import (
     detect_probe_claim,
+    diagnostic_claim_correction_message,
     extract_assistant_text_from_response,
+    needs_diagnostic_claim_retry,
     needs_probe_claim_retry,
     probe_claim_correction_message,
+    rewrite_diagnostic_claim_failure,
     rewrite_probe_claim_failure,
     set_assistant_text_on_response,
 )
@@ -84,6 +87,9 @@ SYSTEM_PROMPT = (
     "结批写回/并行：set_export_result_feedback 后用 get_export_result_feedback 读回核对；"
     "并行上限用 set_max_parallel_exports（1–16）后可用 check_auto_trigger_bindings 看 max_parallel；"
     "禁止声称已改写回/并行，除非工具成功且读回一致。"
+    "诊断排障：连接/审计/版本/链路事实必须先调 diagnose_work_chain / query_audit_log / "
+    "get_dev_runtime_snapshot / inspect_template_bindings / list_db_connections 等工具；"
+    "禁止编造连接状态、审计记录或版本号；suggest_config_change 不得冒充诊断结论。"
     "检查更新：request_check_app_update 只检查、不自动安装。"
 )
 
@@ -327,8 +333,24 @@ async def iter_chat_stream_sse(
                 yield format_sse("status", {"phase": "thinking"})
                 continue
 
+            if needs_diagnostic_claim_retry(assistant_text, tool_trace) and not claim_retry_used:
+                claim_retry_used = True
+                yield format_sse("replace", {"text": ""})
+                messages.append({"role": "assistant", "content": assistant_text})
+                messages.append({"role": "system", "content": diagnostic_claim_correction_message()})
+                upstream_payload["messages"] = messages
+                upstream_payload["tool_choice"] = "auto"
+                yield format_sse("status", {"phase": "thinking"})
+                continue
+
             if needs_probe_claim_retry(assistant_text, tool_trace):
                 rewritten = rewrite_probe_claim_failure(assistant_text, tool_trace)
+                yield format_sse("replace", {"text": rewritten})
+                yield format_sse("done", {"tool_trace": tool_trace, "finish_reason": "stop"})
+                return
+
+            if needs_diagnostic_claim_retry(assistant_text, tool_trace):
+                rewritten = rewrite_diagnostic_claim_failure(assistant_text, tool_trace)
                 yield format_sse("replace", {"text": rewritten})
                 yield format_sse("done", {"tool_trace": tool_trace, "finish_reason": "stop"})
                 return
@@ -419,8 +441,20 @@ async def run_chat_completion(
                 upstream_payload["tool_choice"] = "auto"
                 continue
 
+            if needs_diagnostic_claim_retry(assistant_text, tool_trace) and not claim_retry_used:
+                claim_retry_used = True
+                messages.append(message if isinstance(message, dict) else {"role": "assistant", "content": assistant_text})
+                messages.append({"role": "system", "content": diagnostic_claim_correction_message()})
+                upstream_payload["messages"] = messages
+                upstream_payload["tool_choice"] = "auto"
+                continue
+
             if needs_probe_claim_retry(assistant_text, tool_trace):
                 rewritten = rewrite_probe_claim_failure(assistant_text, tool_trace)
+                data = set_assistant_text_on_response(data, rewritten)
+
+            elif needs_diagnostic_claim_retry(assistant_text, tool_trace):
+                rewritten = rewrite_diagnostic_claim_failure(assistant_text, tool_trace)
                 data = set_assistant_text_on_response(data, rewritten)
 
             return attach_tool_trace(data, tool_trace)

@@ -1,15 +1,15 @@
 {
-  "version": "0.3.90",
-  "releasedAt": "2026-07-13T17:30:42.603Z",
-  "notes": "AI 能力矩阵 L：结批写回/并行上限可读回",
+  "version": "0.3.91",
+  "releasedAt": "2026-07-13T17:34:34.945Z",
+  "notes": "AI 能力矩阵 M：诊断事实工具与口头结论守卫",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.90-x64.exe",
+      "url": "Report Editor AI-Setup-0.3.91-x64.exe",
       "sha256": "",
       "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.90-arm64.dmg",
+      "url": "Report Editor AI-0.3.91-arm64.dmg",
       "sha256": "",
       "size": 0
     }

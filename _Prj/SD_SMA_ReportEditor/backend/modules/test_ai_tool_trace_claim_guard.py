@@ -92,6 +92,22 @@ def test_rewrite_removes_false_success():
     assert "写入工具" in text
 
 
+def test_diagnostic_fact_claim_without_tool():
+    from modules.ai_claim_guard import (
+        detect_diagnostic_fact_claim,
+        needs_diagnostic_claim_retry,
+        rewrite_diagnostic_claim_failure,
+    )
+
+    assert detect_diagnostic_fact_claim("版本是 0.3.90") is True
+    assert needs_diagnostic_claim_retry("连接全部正常", []) is True
+    assert needs_diagnostic_claim_retry(
+        "连接全部正常",
+        [{"name": "list_db_connections", "ok": True}],
+    ) is False
+    assert "诊断工具" in rewrite_diagnostic_claim_failure("共有 2 个数据库连接", [])
+
+
 def test_set_assistant_text_clears_tool_calls():
     data = {
         "choices": [

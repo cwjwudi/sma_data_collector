@@ -1,9 +1,40 @@
 # ReportEditor AI 助手：上游错误与写入类能力闭环
 
 > 本文件为 **任务看板**；规则见 [CLAUDE.md](../CLAUDE.md)。  
-> 版本计划：探活 [0.3.60](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.60.md)；上游错误体验 [0.3.62](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.62.md)；Agent 工具轨迹 [0.3.66](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.66.md)；轨迹假失败 [0.3.71](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.71.md)；排队收纳 [0.3.77](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.77.md)；流式先工具 [0.3.78](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.78.md)；多轮简洁 [0.3.79](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.79.md)；复制模版/版式 [0.3.80](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.80.md)；删除模版/版式 [0.3.81](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.81.md)；加密备份 [0.3.82](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.82.md)；恢复/复位 [0.3.83](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.83.md)；写入总闸 [0.3.84](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.84.md)；新建空白/冒烟 [0.3.85](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.85.md)；打开编辑 [0.3.86](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.86.md)；模版排序 [0.3.87](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.87.md)；导出目录 [0.3.88](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.88.md)；预检/模拟结批 [0.3.89](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.89.md)；结批写回/并行 [0.3.90](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.90.md)。  
+> 版本计划：探活 [0.3.60](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.60.md)；上游错误体验 [0.3.62](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.62.md)；Agent 工具轨迹 [0.3.66](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.66.md)；轨迹假失败 [0.3.71](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.71.md)；排队收纳 [0.3.77](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.77.md)；流式先工具 [0.3.78](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.78.md)；多轮简洁 [0.3.79](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.79.md)；复制模版/版式 [0.3.80](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.80.md)；删除模版/版式 [0.3.81](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.81.md)；加密备份 [0.3.82](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.82.md)；恢复/复位 [0.3.83](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.83.md)；写入总闸 [0.3.84](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.84.md)；新建空白/冒烟 [0.3.85](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.85.md)；打开编辑 [0.3.86](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.86.md)；模版排序 [0.3.87](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.87.md)；导出目录 [0.3.88](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.88.md)；预检/模拟结批 [0.3.89](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.89.md)；结批写回/并行 [0.3.90](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.90.md)；诊断类 [0.3.91](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.91.md)。  
 > **范围说明**：不只「开启定时探活」；在开启「允许 AI 写入工具」后，数据源、模版/版式资产、备份恢复、结批导出、演示冒烟、诊断取证等能力域均须**真正执行并反映到 UI**（禁止空口答应）。完整域表见下方能力矩阵 H1（仍 ⌛️）。  
 > **Agent 体验**：对话须可见工具调用与状态；口头结论必须与工具结果一致——轨迹 H1 已于 **0.3.66** 落地（探活强制再调）。
+
+---
+
+# ✅ 已完成：诊断类（能力矩阵 M · → 0.3.91）
+
+## 产品诉求
+
+「链路哪里坏了 / 看审计 / 当前版本」：必须调诊断工具拿事实；口头完成态断言无工具证据时强制再调或改写。
+
+## 本版加固（0.3.91）
+
+1. `inspect_template_bindings` / `explain_export_diagnostics` / `get_app_version_and_endpoints` 防护与 `ok` 字段  
+2. `ai_claim_guard` 诊断事实断言守卫（流式/非流式纠错轮）  
+3. `test_ai_diagnostics.py`：快照计数、链路阶段、审计、绑定缺失、导出诊断块、总闸关可读  
+4. `SYSTEM_PROMPT` 点名诊断工具；禁编造连接/审计/版本
+
+## 逐步测试用例
+
+| # | 步骤 | 期望 |
+|---|------|------|
+| M1 | `get_dev_runtime_snapshot` | version/counts 与夹具一致 |
+| M2 | `diagnose_work_chain` | 六阶段齐全；db/opc 计数正确 |
+| M3 | `query_audit_log` | 读回刚写入失败审计 |
+| M4 | `inspect_template_bindings` | 缺 id/非法/缺失连接有 issues |
+| M5 | `explain_export_diagnostics` | 解析 EXPORT_DIAGNOSTICS |
+| M6 | 总闸关 | 诊断 read 仍通 |
+| M7 | claim guard | 无工具事实断言 → retry/改写 |
+
+```bash
+cd _Prj/SD_SMA_ReportEditor/backend && uv run pytest modules/test_ai_diagnostics.py modules/test_ai_tool_trace_claim_guard.py -q
+```
 
 ---
 
@@ -663,7 +694,7 @@ cd ../frontend && npm test -- --run src/lib/client-prefs-mirror.test.ts
 | J | 导出目录 | 路径写入或选目录弹框完成（✅ 0.3.88） |
 | K | 预检 / 模拟结批 | 预检有事实；结批确认后本机导出（非口头）（✅ 0.3.89） |
 | L | 结批写回 / 并行上限 | 配置可读回一致（✅ 0.3.90） |
-| M | 诊断类 | 答复可追溯到工具结果，禁止编造连接/审计 |
+| M | 诊断类 | 答复可追溯到工具结果，禁止编造连接/审计（✅ 0.3.91） |
 | N | 检查更新 | 仅检查结果；不声称已安装 |
 
 ---
