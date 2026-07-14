@@ -7,8 +7,8 @@
 
 ## 2026-07-14
 
+- **导出 PDF 纸张外仍像相框（排查结论）**：[docs/019-⌛️](docs/019-⌛️-ReportEditor导出PDF纸张外框.md)——角色色已排除；主因是导出故意压矮（−28）+ `miniPreviewScale` 仍扣列表 inset，A4 约缩 3.4%、右下白边像衬框；未改代码。
 - **ReportEditor 0.3.97**：多选共有属性扩展（显示格式 / 文案 / 同类型绑定批改）；看板 [docs/018-✅](docs/018-✅-ReportEditor多选共有小数位数.md)。
-- **导出 PDF 纸张外仍像相框（仅登记）**：新建 [docs/019-⌛️](docs/019-⌛️-ReportEditor导出PDF纸张外框.md)——0.3.67 角色色已去；排查嫌疑为控件 showBorder / 纸面与 @page 微差(+3px) / plain 路径；未改代码；排在 018 之后。
 - **ReportEditor 0.3.96**：AI 能力矩阵 A（配置数据源 upsert/凭证/删除/锁）；看板 [docs/006-🚧](docs/006-🚧-ReportEditor-AI上游错误体验.md)。
 - **ReportEditor 0.3.95 macOS 已打包**：`Report Editor AI-0.3.95-arm64.dmg`；`latest.json` 已写 SHA256（win32 亦已补全）。
 - **ReportEditor 0.3.95**：探活 claim 只读误伤修复（施为仍须 write；health 可读作状态证据）；看板 [docs/006-🚧](docs/006-🚧-ReportEditor-AI上游错误体验.md)。
