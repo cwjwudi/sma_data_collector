@@ -110,11 +110,10 @@ def plan_live_content_sse(
     将一轮上游 ``(kind, val)`` 序列规划为对客户端的 SSE 动作（不含工具执行本身）。
 
     - 每个 ``content`` → 即时 ``delta``（首次前插 ``status/writing``）
-    - 若最终有 ``tool_calls`` → 必要时 ``replace`` 清空已流出正文，再 ``status/tools``
+    - 若最终有 ``tool_calls`` → ``status/tools``（**保留**已流出正文，不清空）
     """
     plan: list[tuple[str, dict[str, Any]]] = []
     writing_started = False
-    streamed_live = False
     collected_tools: list[dict[str, Any]] | None = None
 
     for kind, val in upstream_events:
@@ -126,13 +125,10 @@ def plan_live_content_sse(
                 plan.append(("status", {"phase": "writing"}))
                 writing_started = True
             plan.append(("delta", {"text": piece}))
-            streamed_live = True
         elif kind == "tool_calls":
             collected_tools = val if isinstance(val, list) else []
 
     if collected_tools and should_hold_content_for_tools(True):
-        if streamed_live:
-            plan.append(("replace", {"text": ""}))
         plan.append(("status", {"phase": "tools"}))
 
     return plan

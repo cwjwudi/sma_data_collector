@@ -79,16 +79,14 @@ git branch -D feat/016-ai-chat-ui   # 若尚未合并
 | **后端 `iter_chat_stream_sse` 整轮缓冲** | **主因**：`_iter_upstream_stream` 虽按 token 产出 `content`，但外层只 `content_parts.append`，**等本轮上游全部结束后**才 `chunk_text_for_simulated_stream` 再发 `delta`。上游生成期间 UI 无正文增量 → 体感「流式失效」。 |
 | 与 014 设计偏差 | 014 写「转发 delta」；实现却是「缓冲 + 模拟打字」 |
 
-工具轮仍需：若本轮最终带 `tool_calls`，不应把半截「已完成」文案留给用户 → 已流式放出的正文用 `replace` 清空后再进 `tools` 相位。
+工具轮：**已改**——进入 tools **不再** `replace` 清空（见下方「吞正文」H1）；claim guard 纠错仍可用 `replace`。
 
 ## 拟修复
 
-1. 收到上游 `content` 立即 `yield` SSE `delta`（并切 `writing`）  
-2. 若本轮最终有 `tool_calls`：`replace` 清空已流出正文 → `tools` → 执行工具 → 下一轮继续真流式  
-3. 去掉无工具路径上的「整段后再模拟分段」（仅作未流出兜底）  
-4. 单测：`plan_live_content_sse` 覆盖无工具即时 delta / 有工具时 replace  
-
-**实现**：后端真转发已合入本分支（见随后 `fix` 提交）；前端 `a3f13e4` 纯文本渲染保留。待你重装 DMG 验收。
+1. 收到上游 `content` 立即 `yield` SSE `delta`（并切 `writing`） ✅  
+2. ~~有 tool_calls 时 replace 清空~~ → **改为保留正文**（见下一 H1）  
+3. 去掉无工具路径上的「整段后再模拟分段」（仅作未流出兜底） ✅  
+4. 单测：`plan_live_content_sse` ✅  
 
 ## 验收
 
@@ -129,6 +127,8 @@ git branch -D feat/016-ai-chat-ui   # 若尚未合并
 2. 工具轮与下一轮正文之间插入 `\n\n`，避免两段粘在一起。  
 3. `replace` 仍保留给 claim guard 纠错改写（探活/诊断等），不用于工具轮。  
 4. 更新 `plan_live_content_sse` 单测：有工具时**无** replace。
+
+**实现**：待本轮 `fix` 提交；重装 DMG 后验收。
 
 ## 验收
 

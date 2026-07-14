@@ -260,6 +260,7 @@ async def iter_chat_stream_sse(
 
         tool_trace: list[dict[str, Any]] = []
         claim_retry_used = False
+        prior_round_had_tools = False
         yield format_sse("status", {"phase": "thinking"})
 
         for round_index in range(1, MAX_TOOL_ROUNDS + 1):
@@ -280,9 +281,12 @@ async def iter_chat_stream_sse(
                     if not piece:
                         continue
                     content_parts.append(piece)
-                    # 真流转发：不等本轮上游结束（对齐 014）；有 tool_calls 时稍后 replace 清空
+                    # 真流转发：不等本轮上游结束（对齐 014）
                     if not writing_started:
                         yield format_sse("status", {"phase": "writing"})
+                        # 工具轮之后的新一段正文：与上一段隔开，避免粘连
+                        if prior_round_had_tools:
+                            yield format_sse("delta", {"text": "\n\n"})
                         writing_started = True
                     yield format_sse("delta", {"text": piece})
                     streamed_live = True
@@ -291,8 +295,7 @@ async def iter_chat_stream_sse(
                     collected_tools = val if isinstance(val, list) else []
 
             if collected_tools and should_hold_content_for_tools(True):
-                if streamed_live:
-                    yield format_sse("replace", {"text": ""})
+                # 保留已流出正文（勿 replace 清空，否则 UI 会吞掉「先说再调工具」的前一段）
                 yield format_sse("status", {"phase": "tools"})
                 assistant_msg: dict[str, Any] = {
                     "role": "assistant",
@@ -327,12 +330,15 @@ async def iter_chat_stream_sse(
                         }
                     )
                 upstream_payload["messages"] = messages
+                prior_round_had_tools = True
                 continue
 
             # 无 tool_calls：正文已在上游 token 到达时实时 delta；仅兜底未流出的残余
             assistant_text = "".join(content_parts)
             if assistant_text and not streamed_live:
                 yield format_sse("status", {"phase": "writing"})
+                if prior_round_had_tools:
+                    yield format_sse("delta", {"text": "\n\n"})
                 for piece in chunk_text_for_simulated_stream(assistant_text):
                     if request is not None and await request.is_disconnected():
                         return

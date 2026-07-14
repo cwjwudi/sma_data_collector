@@ -82,7 +82,7 @@ def test_plan_live_content_sse_forwards_deltas_before_round_end():
     assert not any(p[0] == "replace" for p in plan)
 
 
-def test_plan_live_content_sse_clears_when_tools():
+def test_plan_live_content_sse_keeps_text_when_tools():
     from modules.ai_chat_stream import plan_live_content_sse
 
     plan = plan_live_content_sse(
@@ -92,7 +92,6 @@ def test_plan_live_content_sse_clears_when_tools():
         ]
     )
     assert ("delta", {"text": "先说一句"}) in plan
-    assert ("replace", {"text": ""}) in plan
     assert ("status", {"phase": "tools"}) in plan
-    # replace 必须在 tools 之前
-    assert plan.index(("replace", {"text": ""})) < plan.index(("status", {"phase": "tools"}))
+    # 工具轮不得清空已流出正文（否则 UI 会「吞掉」上一段）
+    assert ("replace", {"text": ""}) not in plan
