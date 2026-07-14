@@ -205,9 +205,15 @@
                 <span v-if="m.status === 'cancelled'" class="ai-msg__badge">已停止</span>
                 <span v-else-if="m.status === 'streaming'" class="ai-msg__badge">生成中</span>
               </div>
+              <!-- 流式用纯文本插值，避免每帧 Markdown/v-html 卡住或整段才刷新 -->
+              <pre
+                v-if="m.status === 'streaming'"
+                class="ai-msg__body ai-msg__body--stream"
+              >{{ m.content || '…' }}<span class="ai-msg__caret" aria-hidden="true" /></pre>
               <div
+                v-else
                 class="ai-msg__body ai-msg__body--md"
-                v-html="renderAssistantMarkdown(m.content || (m.status === 'streaming' ? '…' : ''))"
+                v-html="renderAssistantMarkdown(m.content || '')"
               ></div>
               <div v-if="m.content && m.status !== 'streaming'" class="ai-msg__actions">
                 <button
@@ -426,6 +432,7 @@ function clearLanToken() {
 let stickToBottom = true
 let abortCtrl: AbortController | null = null
 let resizing = false
+let scrollRaf = 0
 
 function queuePreview(text: string, max = 72): string {
   const t = (text || '').replace(/\s+/g, ' ').trim()
@@ -646,6 +653,23 @@ async function scrollToBottom(force = false) {
   })
 }
 
+/** 流式高频 delta 合并到每帧最多滚一次，减轻卡顿。 */
+function scheduleScrollToBottom() {
+  if (scrollRaf) return
+  scrollRaf = requestAnimationFrame(() => {
+    scrollRaf = 0
+    void scrollToBottom()
+  })
+}
+
+function patchAssistantMessage(assistantId: string, patch: Partial<UiMessage>) {
+  const idx = messages.value.findIndex((m) => m.id === assistantId)
+  if (idx < 0) return null
+  const next = { ...messages.value[idx], ...patch }
+  messages.value.splice(idx, 1, next)
+  return next
+}
+
 function onInputKeydown(ev: KeyboardEvent) {
   if (ev.key !== 'Enter') return
   if (ev.shiftKey || ev.isComposing) return
@@ -785,7 +809,6 @@ async function runOneTurn(text: string) {
   )
 
   abortCtrl = new AbortController()
-  const assistant = () => messages.value.find((m) => m.id === assistantId)
 
   try {
     await sendAiChatStream({
@@ -793,16 +816,18 @@ async function runOneTurn(text: string) {
       pageContext: pageContext.value,
       signal: abortCtrl.signal,
       onEvent: (ev: AiStreamEvent) => {
-        const a = assistant()
+        const a = messages.value.find((m) => m.id === assistantId)
         if (!a) return
         if (ev.event === 'status') {
           statusPhase.value = ev.phase || ''
         } else if (ev.event === 'delta') {
-          a.content = (a.content || '') + (ev.text || '')
-          void scrollToBottom()
+          patchAssistantMessage(assistantId, {
+            content: (a.content || '') + (ev.text || ''),
+          })
+          scheduleScrollToBottom()
         } else if (ev.event === 'replace') {
-          a.content = ev.text || ''
-          void scrollToBottom()
+          patchAssistantMessage(assistantId, { content: ev.text || '' })
+          scheduleScrollToBottom()
         } else if (ev.event === 'tool') {
           const step = ev.step as UiToolStep
           const name = typeof step.name === 'string' ? step.name : ''
@@ -818,8 +843,10 @@ async function runOneTurn(text: string) {
             message: typeof step.message === 'string' ? step.message : undefined,
             pending: false,
           }
-          a.toolTrace = [...(a.toolTrace || []), normalized]
-          void scrollToBottom()
+          patchAssistantMessage(assistantId, {
+            toolTrace: [...(a.toolTrace || []), normalized],
+          })
+          scheduleScrollToBottom()
           if (normalized.ok) {
             void import('@/lib/client-prefs-mirror').then(({ syncPendingClientPrefsFromBackend }) =>
               syncPendingClientPrefsFromBackend(),
@@ -827,18 +854,24 @@ async function runOneTurn(text: string) {
           }
         } else if (ev.event === 'done') {
           const trace = extractToolTrace({ report_editor_tool_trace: ev.tool_trace })
-          if (trace.length) a.toolTrace = trace
-          a.status = 'done'
+          patchAssistantMessage(assistantId, {
+            status: 'done',
+            ...(trace.length ? { toolTrace: trace } : {}),
+          })
         } else if (ev.event === 'error') {
           errorMsg.value = ev.message
-          a.status = a.content ? 'error' : 'error'
-          if (!a.content) a.content = ev.message
+          patchAssistantMessage(assistantId, {
+            status: 'error',
+            content: a.content || ev.message,
+          })
           queuePaused.value = queue.value.length > 0
         }
       },
     })
-    const a = assistant()
-    if (a && a.status === 'streaming') a.status = 'done'
+    const a = messages.value.find((m) => m.id === assistantId)
+    if (a && a.status === 'streaming') {
+      patchAssistantMessage(assistantId, { status: 'done' })
+    }
     const { syncPendingClientPrefsFromBackend } = await import('@/lib/client-prefs-mirror')
     await syncPendingClientPrefsFromBackend()
   } catch (e: unknown) {
@@ -846,10 +879,12 @@ async function runOneTurn(text: string) {
       /* stopGeneration 已处理 */
     } else {
       errorMsg.value = e instanceof Error ? e.message : String(e)
-      const a = assistant()
+      const a = messages.value.find((m) => m.id === assistantId)
       if (a) {
-        a.status = 'error'
-        if (!a.content) a.content = errorMsg.value
+        patchAssistantMessage(assistantId, {
+          status: 'error',
+          content: a.content || errorMsg.value,
+        })
       }
       queuePaused.value = queue.value.length > 0
     }
@@ -908,6 +943,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   if (copiedTimer) clearTimeout(copiedTimer)
+  if (scrollRaf) cancelAnimationFrame(scrollRaf)
   window.removeEventListener('report-editor-ai-settings-changed', onSettingsChanged)
   window.removeEventListener('keydown', onGlobalKeydown)
   window.removeEventListener('resize', onWindowResize)
@@ -1447,6 +1483,30 @@ onUnmounted(() => {
   font-size: 13.5px;
   line-height: 1.55;
   color: var(--ai-text);
+}
+
+.ai-msg__body--stream {
+  background: transparent;
+  border: none;
+  padding: 0;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.ai-msg__caret {
+  display: inline-block;
+  width: 0.55em;
+  margin-left: 1px;
+  border-right: 2px solid #93c5fd;
+  animation: ai-msg-caret 1s step-end infinite;
+  vertical-align: text-bottom;
+  height: 1.1em;
+}
+
+@keyframes ai-msg-caret {
+  50% {
+    border-right-color: transparent;
+  }
 }
 
 .ai-msg__body--md :deep(p) {
