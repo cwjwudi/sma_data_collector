@@ -174,6 +174,10 @@ class ConfigLoader:
         data_groups = db_data.get('data_groups', [])
         if not data_groups and 'data_group' in db_data:
             data_groups = [db_data['data_group']] if db_data['data_group'] else []
+
+        auto_create = db_data.get('auto_create', False)
+        if not isinstance(auto_create, bool):
+            raise ValueError("database.auto_create 必须是布尔值")
                 
         database = DatabaseConfig(
             type=db_data.get('type', 'sqlite'),
@@ -183,6 +187,7 @@ class ConfigLoader:
             username=db_data.get('username', ''),
             # 数据库密码优先取环境变量，配置文件无需保存明文口令
             password=os.environ.get('SD_SMA_DB_PASSWORD') or db_data.get('password', ''),
+            auto_create=auto_create,
             data_groups=data_groups
         )
                 
