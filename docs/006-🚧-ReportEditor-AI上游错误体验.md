@@ -11,7 +11,7 @@
 
 > **流程**：先记录，未开工改代码。  
 > **发现**：2026-07-14 · 分支 `feat/016-ai-chat-ui` / 0.3.94 DMG 现场。  
-> **相关**：[`ai_claim_guard.py`](../_Prj/SD_SMA_ReportEditor/backend/modules/ai_claim_guard.py) · 流式/清屏侧见 [docs/016](016-⌛️-ReportEditor-AI对话UI改版.md)。
+> **相关**：[`ai_claim_guard.py`](../_Prj/SD_SMA_ReportEditor/backend/modules/ai_claim_guard.py) · 流式/清屏侧见 [docs/016](016-✅-ReportEditor-AI对话UI改版.md)。
 
 ## 现象（用户原话 · 问「分析一下审计记录」）
 
