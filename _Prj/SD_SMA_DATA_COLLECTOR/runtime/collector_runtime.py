@@ -168,6 +168,7 @@ class DataCollectionSystem:
                     "port": self.config.database.port,
                     "username": self.config.database.username,
                     "password": self.config.database.password,
+                    "auto_create": self.config.database.auto_create,
                 },
                 group_configs,
             )

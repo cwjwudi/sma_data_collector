@@ -54,6 +54,7 @@ function createDefaultConfig() {
       port: 3306,
       username: "",
       password: "",
+      auto_create: false,
       data_groups: [],
     },
     logging: {
@@ -1110,6 +1111,26 @@ function renderDatabase() {
       }),
     ])
   );
+
+  const autoCreateLabel = document.createElement("label");
+  autoCreateLabel.className = "database-auto-create";
+  autoCreateLabel.appendChild(
+    createCheckbox(db.auto_create === true, (checked) => {
+      db.auto_create = checked;
+      renderDatabase();
+    })
+  );
+  const autoCreateText = document.createElement("span");
+  autoCreateText.textContent = "自动创建数据库及数据表（仅 MySQL）";
+  autoCreateLabel.appendChild(autoCreateText);
+  panel.appendChild(createRow([autoCreateLabel]));
+
+  if (db.auto_create === true) {
+    const warning = document.createElement("div");
+    warning.className = "database-create-warning";
+    warning.textContent = "启用自动创建前，请确保数据库账号具备服务器 CREATE 权限；推荐使用 ROOT 账号完成数据库初始化。";
+    panel.appendChild(warning);
+  }
 }
 
 function renderLogging() {

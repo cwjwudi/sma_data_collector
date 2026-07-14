@@ -16,6 +16,7 @@ except ImportError:
     MYSQL_AVAILABLE = False
 
 from sqlalchemy import create_engine, text
+from sqlalchemy.engine import URL
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.exc import SQLAlchemyError, OperationalError
 
@@ -204,36 +205,34 @@ class DatabaseManager:
             if self.db_config['type'].lower() == 'mysql':
                 if not MYSQL_AVAILABLE:
                     raise ImportError("MySQL 驱动未安装，请安装 pymysql")
-                
-                from urllib.parse import quote_plus
-                
-                # 对密码进行 URL 编码，避免特殊字符导致解析错误
-                encoded_password = quote_plus(self.db_config['password'])
-                
-                connection_string = (
-                    f"mysql+pymysql://{self.db_config['username']}:"
-                    f"{encoded_password}@"
-                    f"{self.db_config['host']}:{self.db_config['port']}/"
-                    f"{self.db_config['name']}?charset=utf8mb4"
-                )
+                connection_string = self._mysql_url(include_database=True)
             else:  # sqlite
                 connection_string = f"sqlite:///{self.db_config['name']}"
-            
-            self.engine = create_engine(
-                connection_string,
-                pool_pre_ping=True,
-                echo=False
-            )
-            
+
+            self.engine = self._create_engine(connection_string)
+
+            try:
+                self._test_engine_connection(self.engine)
+            except OperationalError as exc:
+                should_create = (
+                    self.db_config['type'].lower() == 'mysql'
+                    and self.db_config.get('auto_create', False)
+                    and self._is_unknown_database_error(exc)
+                )
+                if not should_create:
+                    raise
+
+                self.engine.dispose()
+                self.engine = None
+                self._create_mysql_database()
+                self.engine = self._create_engine(connection_string)
+                self._test_engine_connection(self.engine)
+
             self.SessionLocal = sessionmaker(
                 autocommit=False,
                 autoflush=False,
                 bind=self.engine
             )
-            
-            # 测试连接
-            with self.engine.connect() as conn:
-                conn.execute(text("SELECT 1"))
 
             # 初始化表日期信息
             self._initialize_table_dates()
@@ -631,6 +630,76 @@ class DatabaseManager:
         except Exception as e:
             self._log_db_error("插入数据", e)
             return False
+
+    @staticmethod
+    def _is_unknown_database_error(exc: Exception) -> bool:
+        """Return True only for MySQL error 1049 (unknown database)."""
+        original = getattr(exc, "orig", None)
+        args = getattr(original, "args", None) or getattr(exc, "args", None) or ()
+        return bool(args) and args[0] == 1049
+
+    def _mysql_url(self, *, include_database: bool) -> URL:
+        return URL.create(
+            drivername="mysql+pymysql",
+            username=str(self.db_config.get("username", "")),
+            password=str(self.db_config.get("password", "")),
+            host=str(self.db_config.get("host", "127.0.0.1")),
+            port=int(self.db_config.get("port", 3306)),
+            database=str(self.db_config.get("name", "")) if include_database else None,
+            query={"charset": "utf8mb4"},
+        )
+
+    @staticmethod
+    def _create_engine(connection_url, **kwargs):
+        return create_engine(
+            connection_url,
+            pool_pre_ping=True,
+            echo=False,
+            **kwargs,
+        )
+
+    @staticmethod
+    def _test_engine_connection(engine) -> None:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+
+    @staticmethod
+    def _quote_mysql_identifier(value: Any) -> str:
+        name = str(value)
+        if not name or "\x00" in name or len(name) > 64:
+            raise ValueError("MySQL 数据库名不能为空、不能包含 NUL，且长度不能超过 64 个字符")
+        return f"`{name.replace('`', '``')}`"
+
+    def _create_mysql_database(self) -> None:
+        database_name = self.db_config.get("name", "")
+        quoted_name = self._quote_mysql_identifier(database_name)
+        sql = (
+            f"CREATE DATABASE IF NOT EXISTS {quoted_name} "
+            "CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+        )
+        admin_engine = None
+        try:
+            admin_engine = self._create_engine(
+                self._mysql_url(include_database=False),
+                isolation_level="AUTOCOMMIT",
+            )
+            self.logger.warning(
+                "MySQL 数据库 %s 不存在，正在自动创建；当前账号必须具备服务器 CREATE 权限",
+                database_name,
+            )
+            self._log_mysql_sql(sql, force_info=True)
+            with admin_engine.connect() as conn:
+                conn.execute(text(sql))
+            self.logger.info("成功自动创建 MySQL 数据库: %s", database_name)
+        except Exception:
+            self.logger.error(
+                "自动创建 MySQL 数据库 %s 失败，请确认账号具备服务器 CREATE 权限；建议使用 ROOT 账号完成初始化",
+                database_name,
+            )
+            raise
+        finally:
+            if admin_engine is not None:
+                admin_engine.dispose()
 
     def execute_insert_many(
         self,

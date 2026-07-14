@@ -310,6 +310,9 @@ SD_SMA_DATA_COLLECTOR/
   - 示例：`"heartbeat": "uiHeartBeat"`
 
 ### 数据库配置 (database)
+- `auto_create`: MySQL 目标数据库不存在时是否自动创建，默认 `false`。启用账号必须具备服务器级 `CREATE` 权限，推荐使用 ROOT 完成首次初始化。
+
+启用后仅在 MySQL 返回 `1049 Unknown database` 时执行 `CREATE DATABASE IF NOT EXISTS`，随后重新连接并沿用现有的自动建表、建索引和补列流程；密码错误、网络错误等不会触发建库。
 - `type`: 数据库类型（mysql/sqlite）
 - `name`: 数据库名称
 - `host/port/username/password`: 连接参数（MySQL 需要）

@@ -124,6 +124,7 @@ class DatabaseConfig:
     port: int = 3306
     username: str = ""
     password: str = ""
+    auto_create: bool = False  # MySQL：目标数据库不存在时自动创建（需要服务器 CREATE 权限）
     data_groups: List[str] = None  # 支持多个数据组
     
     def __post_init__(self):
