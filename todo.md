@@ -7,6 +7,7 @@
 
 ## 2026-07-14
 
+- **多选共有外观漏小数位数（仅登记）**：[docs/011-✅](docs/011-✅-ReportEditor模版版式多选控件.md) B3.1——`decimalPlaces` 未进 `selection-batch-props` 交集；未改代码。
 - **ReportEditor 0.3.96**：AI 能力矩阵 A（配置数据源 upsert/凭证/删除/锁）；看板 [docs/006-🚧](docs/006-🚧-ReportEditor-AI上游错误体验.md)。
 - **ReportEditor 0.3.95 macOS 已打包**：`Report Editor AI-0.3.95-arm64.dmg`；`latest.json` 已写 SHA256（win32 亦已补全）。
 - **ReportEditor 0.3.95**：探活 claim 只读误伤修复（施为仍须 write；health 可读作状态证据）；看板 [docs/006-🚧](docs/006-🚧-ReportEditor-AI上游错误体验.md)。

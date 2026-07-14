@@ -2,7 +2,49 @@
 
 > 本文件为 **任务看板**；规则见 [CLAUDE.md](../CLAUDE.md)。  
 > **B1（0.3.70）· B2（0.3.75）· B3（0.3.76）均已落地。**  
+> **后续缺口**：B3.1 共有外观漏「小数位数」——见下方 ⌛️（仅登记，未改代码）。  
 > 相关：`TemplateEditorWorkspace` / `TemplateBodyCanvas` / `LayoutPresetEditor` / `LayoutPresetPaperCanvas` / `selection-set.ts` / `selection-align.ts` / `selection-batch-props.ts` / `MultiElementBatchProps.vue`。
+
+---
+
+# ⌛️ 未完成：多选共有外观漏「小数位数」（decimalPlaces · B3.1）
+
+> **流程**：先记录，未开工改代码。  
+> **发现**：2026-07-14 · 用户现场。  
+> **相关**：[`selection-batch-props.ts`](../_Prj/SD_SMA_ReportEditor/frontend/src/lib/report-template/selection-batch-props.ts) · 单选入口 [`ParameterBindingFields.vue`](../_Prj/SD_SMA_ReportEditor/frontend/src/components/report-template/ParameterBindingFields.vue)（控件级）/ 表格单元格与 SQL 填充另有独立字段。
+
+## 现象
+
+多选若干控件后，右侧「共有外观」可改边框、色、字号、对齐等，但**没有「小数位数（REAL）」**。  
+用户判断：小数位数也是多控件可共享的共同属性，应在交集满足时显示并可批改。
+
+## 根因（对照代码）
+
+| 点 | 说明 |
+|----|------|
+| B3 首批清单 | `FIELD_ORDER` 仅 `showBorder` / `bgColor` / `color` / `fontSize` / `fontFamily` / `textAutoWrap` / `alignX`·`alignY` |
+| 模型已有 | 控件级 `el.decimalPlaces`（REAL 显示）；单选在绑定为 opcua/sql/mongo 时由 `ParameterBindingFields` 展示 |
+| B3 边界 | 原 Q10 把「绑定」整类划出永不批改；`decimalPlaces` 被连带排除，但它是**显示格式**而非绑定目标本身 |
+| 表格路径 | 单元格 / SQL 填充的 `decimalPlaces` 属表格专项，B3 本就禁止表格批改——**本条只谈控件级** |
+
+## 拟修复（待拍板后开工）
+
+1. 在 `selection-batch-props` 增加 `decimalPlaces`：交集规则对齐单选——每一项均为会展示小数位的控件类型（如 text / box / date / parameter；以实现时「单选 ParameterBindingFields 是否渲染」为准）。  
+2. `MultiElementBatchProps`：数字输入；混合时 placeholder「混合」；留空=不强制（与单选一致）。  
+3. 单测：两 text 可见；含 table/image 时按交集隐藏；混合写回。  
+4. **不做**：表格单元格 / SQL 填充小数位的多选批改；不借机放开绑定 NodeId/SQL 批改。
+
+## 验收
+
+- [ ] 多选 ≥2 且类型均支持时，共有外观出现「小数位数」  
+- [ ] 值不一致 →「混合」→ 提交后全集统一  
+- [ ] 含不支持类型 → 整项隐藏（交集）  
+- [ ] 单选面板与 B1/B2/B3 既有字段不回归  
+
+## 不做（本条登记）
+
+- 本轮不改代码（仅看板）  
+- 不把绑定类字段纳入批改  
 
 ---
 
@@ -15,6 +57,7 @@
 | **B1 · MVP** | 多选状态 + 高亮 + Ctrl/Cmd 加选 + 框选 + 组移动/删除/多剪贴板 + 属性摘要 | ✅ **0.3.70** |
 | **B2** | Shift 区间加选；对齐 / 分布 | ✅ **0.3.75** |
 | **B3 · 属性批改** | 右侧多选面板：交集字段批改 + 「混合」态；E 系用例 | ✅ **0.3.76** |
+| **B3.1** | 共有外观补 `decimalPlaces`（小数位数） | ⌛️ 仅登记 |
 
 ## B1 实现摘要（0.3.70）
 
@@ -317,3 +360,4 @@ A1–A4 + marquee（`selection-set.test.ts`）；多元素剪贴板（`editor-el
 - ✅ B1 实现与发版  
 - ✅ B2 约定 + 实现（**0.3.75**）  
 - ✅ B3 约定细化 + 按默认拍板 + 实现（**0.3.76**）  
+- ⌛️ B3.1 共有外观补「小数位数」（仅登记，见文首 H1）  
