@@ -37,11 +37,13 @@ describe('chat-persist', () => {
       {
         messages: [{ id: 'u1', role: 'user', content: 'q', status: 'done' }],
         drawerWidthPx: 500,
+        expanded: true,
       },
       storage,
     )
     const loaded = loadAiChatPersist(storage)
     expect(loaded?.drawerWidthPx).toBe(500)
+    expect(loaded?.expanded).toBe(true)
     expect(loaded?.messages[0].content).toBe('q')
   })
 })

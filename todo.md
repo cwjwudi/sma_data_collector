@@ -7,6 +7,7 @@
 
 ## 2026-07-14
 
+- **ReportEditor 0.3.94（分支试做）**：AI 对话深色玻璃 UI；分支 `feat/016-ai-chat-ui`，不满意可丢弃；看板 [docs/016-⌛️](docs/016-⌛️-ReportEditor-AI对话UI改版.md)。
 - **ReportEditor AI 对话 UI（排版拍板）**：[docs/016-⌛️](docs/016-⌛️-ReportEditor-AI对话UI改版.md) Q1=C（抽屉+可展开）、Q2=A（仅面板深色玻璃）、Q3=A（顶栏切模型）、Q4=B（无会话侧栏）、Q5=B（仅复制）、Q6=A（无附件）；可开工。
 
 ## 2026-07-13

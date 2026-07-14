@@ -21,6 +21,8 @@ export type PersistedAiMessage = {
 export type AiChatPersistState = {
   messages: PersistedAiMessage[]
   drawerWidthPx: number
+  /** 近全屏展开（016 Q1=C） */
+  expanded: boolean
 }
 
 export function clampDrawerWidth(px: number, min = 320, max = 720): number {
@@ -58,6 +60,7 @@ export function loadAiChatPersist(storage: Storage = localStorage): AiChatPersis
     return {
       messages: sanitizeMessagesForPersist(data.messages as PersistedAiMessage[]),
       drawerWidthPx: clampDrawerWidth(Number(data.drawerWidthPx) || 420),
+      expanded: Boolean(data.expanded),
     }
   } catch {
     return null
@@ -71,6 +74,7 @@ export function saveAiChatPersist(
   const payload: AiChatPersistState = {
     messages: sanitizeMessagesForPersist(state.messages),
     drawerWidthPx: clampDrawerWidth(state.drawerWidthPx),
+    expanded: Boolean(state.expanded),
   }
   storage.setItem(AI_CHAT_STORAGE_KEY, JSON.stringify(payload))
 }

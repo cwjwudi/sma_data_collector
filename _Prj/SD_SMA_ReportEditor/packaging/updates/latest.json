@@ -1,15 +1,15 @@
 {
-  "version": "0.3.93",
-  "releasedAt": "2026-07-13T18:10:44.598Z",
-  "notes": "数据源滑动解锁 D3 + 60s 限时自动上锁",
+  "version": "0.3.94",
+  "releasedAt": "2026-07-14T04:33:36.292Z",
+  "notes": "AI对话深色玻璃UI（抽屉可展开）",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.93-x64.exe",
+      "url": "Report Editor AI-Setup-0.3.94-x64.exe",
       "sha256": "",
       "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.93-arm64.dmg",
+      "url": "Report Editor AI-0.3.94-arm64.dmg",
       "sha256": "",
       "size": 0
     }

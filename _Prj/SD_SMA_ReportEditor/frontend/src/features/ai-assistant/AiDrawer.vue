@@ -70,29 +70,75 @@
       <span v-if="loading" class="ai-fab__badge" aria-hidden="true" />
     </button>
 
-    <div v-if="open" class="ai-drawer-backdrop" @click.self="closeDrawer">
+    <div
+      v-if="open"
+      class="ai-drawer-backdrop"
+      :class="{ 'ai-drawer-backdrop--expanded': expanded }"
+      @click.self="closeDrawer"
+    >
       <aside
         class="ai-drawer"
+        :class="{ 'ai-drawer--expanded': expanded }"
         role="dialog"
         aria-labelledby="ai-drawer-title"
         aria-modal="true"
-        :style="{ width: drawerWidthCss }"
+        :style="drawerPanelStyle"
       >
         <div
+          v-if="!expanded"
           class="ai-drawer__resize"
           title="拖拽调整宽度"
           @pointerdown="onResizePointerDown"
         />
         <header class="ai-drawer__head">
-          <h2 id="ai-drawer-title" class="ai-drawer__title">
-            AI 助手
+          <div class="ai-drawer__head-left">
+            <label class="ai-drawer__model-wrap" title="切换模型">
+              <span class="ai-drawer__model-ico" aria-hidden="true">✦</span>
+              <select
+                id="ai-drawer-title"
+                v-model="llmModel"
+                class="ai-drawer__model"
+                :disabled="!ready || modelBusy"
+                @change="onModelChange"
+              >
+                <option v-if="!modelOptions.includes(llmModel) && llmModel" :value="llmModel">
+                  {{ llmModel }}
+                </option>
+                <option v-for="m in modelOptions" :key="m" :value="m">{{ m }}</option>
+              </select>
+            </label>
             <span v-if="statusPhase" class="ai-drawer__phase">{{ statusPhaseLabel }}</span>
-          </h2>
-          <button type="button" class="ai-drawer__close" aria-label="关闭" @click="closeDrawer">×</button>
+          </div>
+          <div class="ai-drawer__head-right">
+            <button
+              type="button"
+              class="ai-drawer__icon-btn"
+              title="新对话"
+              @click="onClearClick"
+            >
+              新对话
+            </button>
+            <button
+              type="button"
+              class="ai-drawer__icon-btn"
+              :title="expanded ? '收起为侧栏' : '展开近全屏'"
+              :aria-pressed="expanded"
+              @click="toggleExpanded"
+            >
+              {{ expanded ? '收起' : '展开' }}
+            </button>
+            <button type="button" class="ai-drawer__close" aria-label="关闭" @click="closeDrawer">
+              ×
+            </button>
+          </div>
         </header>
 
         <div v-if="!ready" class="ai-drawer__banner">
-          <p>请先在 <router-link to="/settings" @click="closeDrawer">设置</router-link> 中启用 AI、配置 LLM Key 并生成 Agent 令牌。</p>
+          <p>
+            请先在
+            <router-link to="/settings" @click="closeDrawer">设置</router-link>
+            中启用 AI、配置 LLM Key 并生成 Agent 令牌。
+          </p>
         </div>
 
         <div v-if="showLanAuthBanner" class="ai-drawer__banner ai-drawer__banner--lan">
@@ -136,53 +182,70 @@
             class="ai-msg"
             :class="m.role === 'user' ? 'ai-msg--user' : 'ai-msg--assistant'"
           >
-            <div class="ai-msg__role">
-              {{ m.role === 'user' ? '你' : '助手' }}
-              <span v-if="m.status === 'cancelled'" class="ai-msg__badge">已停止</span>
-              <span v-else-if="m.status === 'streaming'" class="ai-msg__badge">生成中</span>
-            </div>
-            <pre v-if="m.role === 'user'" class="ai-msg__body">{{ m.content }}</pre>
-            <div
-              v-else
-              class="ai-msg__body ai-msg__body--md"
-              v-html="renderAssistantMarkdown(m.content || (m.status === 'streaming' ? '…' : ''))"
-            ></div>
-            <details
-              v-if="m.role === 'assistant' && m.toolTrace?.length"
-              class="ai-msg__trace"
-              :open="traceShouldOpen(m.toolTrace)"
-            >
-              <summary class="ai-msg__trace-sum">
-                工具调用 {{ m.toolTrace.length }} 步
-                <span v-if="traceHasFailure(m.toolTrace)" class="ai-msg__trace-fail">含失败</span>
-              </summary>
-              <ul class="ai-msg__trace-list">
-                <li
-                  v-for="(step, si) in m.toolTrace"
-                  :key="si"
-                  class="ai-msg__trace-item"
-                  :class="
-                    step.ok === false
-                      ? 'ai-msg__trace-item--err'
-                      : step.pending
-                        ? 'ai-msg__trace-item--pending'
-                        : 'ai-msg__trace-item--ok'
-                  "
+            <template v-if="m.role === 'user'">
+              <div class="ai-msg__user-row">
+                <pre class="ai-msg__bubble">{{ m.content }}</pre>
+                <div class="ai-msg__avatar" aria-hidden="true">我</div>
+              </div>
+            </template>
+            <template v-else>
+              <div class="ai-msg__agent">
+                <span class="ai-msg__agent-ico" aria-hidden="true">✦</span>
+                <span class="ai-msg__agent-name">Report Editor Agent</span>
+                <span v-if="m.status === 'cancelled'" class="ai-msg__badge">已停止</span>
+                <span v-else-if="m.status === 'streaming'" class="ai-msg__badge">生成中</span>
+              </div>
+              <div
+                class="ai-msg__body ai-msg__body--md"
+                v-html="renderAssistantMarkdown(m.content || (m.status === 'streaming' ? '…' : ''))"
+              ></div>
+              <div v-if="m.content && m.status !== 'streaming'" class="ai-msg__actions">
+                <button
+                  type="button"
+                  class="ai-msg__copy"
+                  :title="copiedId === m.id ? '已复制' : '复制'"
+                  @click="copyAssistant(m)"
                 >
-                  <div class="ai-msg__trace-head">
-                    <span class="ai-msg__trace-status">
-                      {{ step.pending ? '调用中' : step.ok ? '成功' : '失败' }}
-                    </span>
-                    <code class="ai-msg__trace-name">{{ step.name }}</code>
-                    <span v-if="step.round" class="ai-msg__trace-round">#{{ step.round }}</span>
-                  </div>
-                  <p v-if="formatArgsSummary(step.args_summary)" class="ai-msg__trace-args">
-                    {{ formatArgsSummary(step.args_summary) }}
-                  </p>
-                  <p v-if="step.message" class="ai-msg__trace-msg">{{ step.message }}</p>
-                </li>
-              </ul>
-            </details>
+                  {{ copiedId === m.id ? '已复制' : '复制' }}
+                </button>
+              </div>
+              <details
+                v-if="m.toolTrace?.length"
+                class="ai-msg__trace"
+                :open="traceShouldOpen(m.toolTrace)"
+              >
+                <summary class="ai-msg__trace-sum">
+                  工具调用 {{ m.toolTrace.length }} 步
+                  <span v-if="traceHasFailure(m.toolTrace)" class="ai-msg__trace-fail">含失败</span>
+                </summary>
+                <ul class="ai-msg__trace-list">
+                  <li
+                    v-for="(step, si) in m.toolTrace"
+                    :key="si"
+                    class="ai-msg__trace-item"
+                    :class="
+                      step.ok === false
+                        ? 'ai-msg__trace-item--err'
+                        : step.pending
+                          ? 'ai-msg__trace-item--pending'
+                          : 'ai-msg__trace-item--ok'
+                    "
+                  >
+                    <div class="ai-msg__trace-head">
+                      <span class="ai-msg__trace-status">
+                        {{ step.pending ? '调用中' : step.ok ? '成功' : '失败' }}
+                      </span>
+                      <code class="ai-msg__trace-name">{{ step.name }}</code>
+                      <span v-if="step.round" class="ai-msg__trace-round">#{{ step.round }}</span>
+                    </div>
+                    <p v-if="formatArgsSummary(step.args_summary)" class="ai-msg__trace-args">
+                      {{ formatArgsSummary(step.args_summary) }}
+                    </p>
+                    <p v-if="step.message" class="ai-msg__trace-msg">{{ step.message }}</p>
+                  </li>
+                </ul>
+              </details>
+            </template>
           </div>
         </div>
 
@@ -217,34 +280,34 @@
         </div>
 
         <form class="ai-drawer__composer" @submit.prevent="onSend">
-          <textarea
-            ref="inputEl"
-            v-model="input"
-            class="ai-drawer__input"
-            rows="3"
-            placeholder="Enter 发送，Shift+Enter 换行；生成中可继续发送排队"
-            :disabled="!composerEnabled"
-            @keydown="onInputKeydown"
-          />
-          <div class="ai-drawer__actions">
-            <button type="button" class="ai-drawer__btn ai-drawer__btn--muted" @click="onClearClick">
-              清空
-            </button>
-            <button
-              v-if="loading"
-              type="button"
-              class="ai-drawer__btn ai-drawer__btn--danger"
-              @click="stopGeneration"
-            >
-              停止
-            </button>
-            <button
-              type="submit"
-              class="ai-drawer__btn ai-drawer__btn--primary"
-              :disabled="!input.trim() || !composerEnabled"
-            >
-              {{ loading ? '排队发送' : '发送' }}
-            </button>
+          <div class="ai-drawer__composer-shell">
+            <textarea
+              ref="inputEl"
+              v-model="input"
+              class="ai-drawer__input"
+              rows="3"
+              placeholder="输入消息… Enter 发送，Shift+Enter 换行"
+              :disabled="!composerEnabled"
+              @keydown="onInputKeydown"
+            />
+            <div class="ai-drawer__composer-bar">
+              <button
+                v-if="loading"
+                type="button"
+                class="ai-drawer__btn ai-drawer__btn--danger"
+                @click="stopGeneration"
+              >
+                停止
+              </button>
+              <span v-else class="ai-drawer__composer-spacer" />
+              <button
+                type="submit"
+                class="ai-drawer__btn ai-drawer__btn--primary"
+                :disabled="!input.trim() || !composerEnabled"
+              >
+                {{ loading ? '排队' : '发送' }}
+              </button>
+            </div>
           </div>
           <p v-if="queuePaused && !queue.length" class="ai-drawer__warn">
             后续排队已暂停
@@ -265,6 +328,8 @@ import {
   extractToolTrace,
   fetchAiPendingPrompts,
   fetchAiSettings,
+  fetchAiUpstreamModels,
+  patchAiSettings,
   sendAiChatStream,
   type AiChatMessage,
   type AiPageContext,
@@ -306,6 +371,12 @@ const queuePaused = ref(false)
 const queue = ref<QueuedChatItem[]>([])
 const queueTrayOpen = ref(true)
 const drawerWidthPx = ref(420)
+const expanded = ref(false)
+const llmModel = ref('')
+const modelOptions = ref<string[]>(['gpt-4o-mini', 'gpt-4o', 'gpt-4.1-mini', 'gpt-4.1'])
+const modelBusy = ref(false)
+const copiedId = ref('')
+let copiedTimer: ReturnType<typeof setTimeout> | null = null
 
 const lanTokenInput = ref('')
 const lanTokenMsg = ref('')
@@ -357,9 +428,10 @@ const pageContext = computed((): AiPageContext => {
   }
 })
 
-const drawerWidthCss = computed(() => {
-  if (typeof window !== 'undefined' && window.innerWidth < 480) return '100vw'
-  return `${clampDrawerWidth(drawerWidthPx.value)}px`
+const drawerPanelStyle = computed(() => {
+  if (expanded.value) return undefined
+  if (typeof window !== 'undefined' && window.innerWidth < 480) return { width: '100vw' }
+  return { width: `${clampDrawerWidth(drawerWidthPx.value)}px` }
 })
 
 const statusPhaseLabel = computed(() => {
@@ -379,6 +451,7 @@ function persistNow() {
   saveAiChatPersist({
     messages: messages.value as PersistedAiMessage[],
     drawerWidthPx: drawerWidthPx.value,
+    expanded: expanded.value,
   })
 }
 
@@ -386,8 +459,54 @@ async function refreshStatus() {
   try {
     const s = await fetchAiSettings()
     ready.value = Boolean(s.ready)
+    if (s.llm_model) llmModel.value = s.llm_model
   } catch {
     ready.value = false
+  }
+}
+
+async function refreshModels() {
+  modelBusy.value = true
+  try {
+    const res = await fetchAiUpstreamModels()
+    if (res.models?.length) modelOptions.value = res.models
+    if (res.current && !llmModel.value) llmModel.value = res.current
+  } catch {
+    /* keep fallback list */
+  } finally {
+    modelBusy.value = false
+  }
+}
+
+async function onModelChange() {
+  const next = llmModel.value.trim()
+  if (!next) return
+  try {
+    await patchAiSettings({ llm_model: next })
+    window.dispatchEvent(new CustomEvent('report-editor-ai-settings-changed'))
+  } catch (e: unknown) {
+    errorMsg.value = e instanceof Error ? e.message : String(e)
+    void refreshStatus()
+  }
+}
+
+function toggleExpanded() {
+  expanded.value = !expanded.value
+  persistNow()
+}
+
+async function copyAssistant(m: UiMessage) {
+  const text = m.content || ''
+  if (!text) return
+  try {
+    await navigator.clipboard.writeText(text)
+    copiedId.value = m.id
+    if (copiedTimer) clearTimeout(copiedTimer)
+    copiedTimer = setTimeout(() => {
+      if (copiedId.value === m.id) copiedId.value = ''
+    }, 1600)
+  } catch {
+    errorMsg.value = '复制失败'
   }
 }
 
@@ -438,7 +557,7 @@ function stopGeneration() {
 
 function onClearClick() {
   if (loading.value || queue.value.length) {
-    if (!window.confirm('清空将停止当前生成并删除全部对话，确定？')) return
+    if (!window.confirm('新对话将停止当前生成并删除全部消息，确定？')) return
   }
   abortCtrl?.abort()
   abortCtrl = null
@@ -450,6 +569,7 @@ function onClearClick() {
   statusPhase.value = ''
   loading.value = false
   clearAiChatPersist()
+  persistNow()
   stickToBottom = true
   void scrollToBottom(true)
 }
@@ -526,7 +646,11 @@ function onResizePointerDown(ev: PointerEvent) {
 function onGlobalKeydown(ev: KeyboardEvent) {
   if (ev.key !== 'Escape') return
   if (!open.value) return
-  // Pending 对话框自己处理 Esc；此处只关抽屉
+  if (expanded.value) {
+    expanded.value = false
+    persistNow()
+    return
+  }
   closeDrawer()
 }
 
@@ -666,11 +790,13 @@ async function runOneTurn(text: string) {
 
 function onSettingsChanged() {
   void refreshStatus()
+  void refreshModels()
 }
 
 watch(open, (v) => {
   if (v) {
     void refreshStatus()
+    void refreshModels()
     void scrollToBottom(true)
   }
 })
@@ -692,12 +818,14 @@ onMounted(() => {
         status: m.status === 'streaming' ? 'done' : m.status,
       })) as UiMessage[]
     drawerWidthPx.value = saved.drawerWidthPx
+    expanded.value = saved.expanded
   }
   window.addEventListener('report-editor-ai-settings-changed', onSettingsChanged)
   window.addEventListener('keydown', onGlobalKeydown)
 })
 
 onUnmounted(() => {
+  if (copiedTimer) clearTimeout(copiedTimer)
   window.removeEventListener('report-editor-ai-settings-changed', onSettingsChanged)
   window.removeEventListener('keydown', onGlobalKeydown)
 })
@@ -837,19 +965,48 @@ onUnmounted(() => {
   position: fixed;
   inset: 0;
   z-index: 9100;
-  background: rgba(15, 23, 42, 0.35);
+  background: rgba(8, 12, 24, 0.45);
   display: flex;
   justify-content: flex-end;
+  align-items: stretch;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+}
+
+.ai-drawer-backdrop--expanded {
+  justify-content: center;
+  align-items: center;
+  padding: 24px;
+  background: rgba(6, 10, 20, 0.55);
 }
 
 .ai-drawer {
+  --ai-glass-bg: rgba(28, 32, 44, 0.82);
+  --ai-glass-border: rgba(255, 255, 255, 0.1);
+  --ai-text: #e8eaef;
+  --ai-muted: #9aa3b5;
+  --ai-accent: #5b8cff;
+  --ai-user-bubble: rgba(55, 72, 120, 0.88);
   position: relative;
   width: min(420px, 100vw);
   height: 100%;
-  background: #fff;
+  background: var(--ai-glass-bg);
+  color: var(--ai-text);
   display: flex;
   flex-direction: column;
-  box-shadow: -8px 0 32px rgba(15, 23, 42, 0.12);
+  box-shadow: -12px 0 40px rgba(0, 0, 0, 0.35);
+  border-left: 1px solid var(--ai-glass-border);
+  backdrop-filter: blur(22px) saturate(1.2);
+  -webkit-backdrop-filter: blur(22px) saturate(1.2);
+}
+
+.ai-drawer--expanded {
+  width: min(920px, calc(100vw - 48px));
+  height: min(900px, calc(100vh - 48px));
+  max-height: calc(100vh - 48px);
+  border-radius: 20px;
+  border: 1px solid var(--ai-glass-border);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.45);
 }
 
 .ai-drawer__resize {
@@ -866,53 +1023,114 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 16px;
-  border-bottom: 1px solid #e5e7eb;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--ai-glass-border);
+  flex-shrink: 0;
 }
 
-.ai-drawer__title {
-  margin: 0;
-  font-size: 16px;
-  font-weight: 600;
-  color: #111827;
+.ai-drawer__head-left,
+.ai-drawer__head-right {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
+}
+
+.ai-drawer__head-right {
+  flex-shrink: 0;
+}
+
+.ai-drawer__model-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 220px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--ai-glass-border);
+}
+
+.ai-drawer__model-ico {
+  color: #a5b4fc;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.ai-drawer__model {
+  min-width: 0;
+  max-width: 180px;
+  border: none;
+  background: transparent;
+  color: var(--ai-text);
+  font-size: 13px;
+  font-weight: 600;
+  outline: none;
+  cursor: pointer;
+}
+
+.ai-drawer__model option {
+  color: #111827;
+  background: #fff;
 }
 
 .ai-drawer__phase {
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 500;
-  color: #0f766e;
+  color: #7dd3c0;
+  white-space: nowrap;
+}
+
+.ai-drawer__icon-btn {
+  border: 1px solid var(--ai-glass-border);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--ai-text);
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 999px;
+  padding: 5px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.ai-drawer__icon-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
 }
 
 .ai-drawer__close {
   border: none;
   background: transparent;
-  font-size: 24px;
+  font-size: 22px;
   line-height: 1;
   cursor: pointer;
-  color: #6b7280;
+  color: var(--ai-muted);
   padding: 0 4px;
+}
+
+.ai-drawer__close:hover {
+  color: #fff;
 }
 
 .ai-drawer__banner {
   padding: 10px 16px;
-  background: #fffbeb;
-  border-bottom: 1px solid #fde68a;
+  background: rgba(251, 191, 36, 0.12);
+  border-bottom: 1px solid rgba(251, 191, 36, 0.28);
   font-size: 13px;
-  color: #92400e;
+  color: #fde68a;
+  flex-shrink: 0;
 }
 
 .ai-drawer__banner a {
-  color: #b45309;
+  color: #fbbf24;
   font-weight: 600;
 }
 
 .ai-drawer__banner--lan {
-  background: #eff6ff;
-  border-bottom-color: #bfdbfe;
-  color: #1e3a8a;
+  background: rgba(59, 130, 246, 0.14);
+  border-bottom-color: rgba(147, 197, 253, 0.35);
+  color: #bfdbfe;
 }
 
 .ai-drawer__lan-row {
@@ -926,94 +1144,133 @@ onUnmounted(() => {
   flex: 1;
   min-width: 140px;
   padding: 6px 8px;
-  border: 1px solid #93c5fd;
-  border-radius: 6px;
+  border: 1px solid rgba(147, 197, 253, 0.4);
+  border-radius: 8px;
   font-size: 13px;
+  background: rgba(0, 0, 0, 0.25);
+  color: var(--ai-text);
 }
 
 .ai-drawer__lan-btn {
   padding: 6px 10px;
-  border-radius: 6px;
-  border: 1px solid #3b82f6;
-  background: #2563eb;
+  border-radius: 8px;
+  border: 1px solid var(--ai-accent);
+  background: var(--ai-accent);
   color: #fff;
   font-size: 12px;
   cursor: pointer;
 }
 
 .ai-drawer__lan-btn--muted {
-  background: #fff;
-  color: #1e40af;
-  border-color: #93c5fd;
+  background: transparent;
+  color: #bfdbfe;
+  border-color: rgba(147, 197, 253, 0.45);
 }
 
 .ai-drawer__lan-msg {
   margin: 6px 0 0;
   font-size: 12px;
-  color: #1d4ed8;
+  color: #93c5fd;
 }
 
 .ai-drawer__messages {
   flex: 1;
   overflow: auto;
-  padding: 12px 16px;
+  padding: 16px 18px 12px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 16px;
 }
 
 .ai-drawer__empty {
   font-size: 13px;
-  color: #6b7280;
-  line-height: 1.5;
+  color: var(--ai-muted);
+  line-height: 1.55;
+  max-width: 36em;
+  margin: 12px auto;
+  text-align: center;
 }
 
 .ai-msg {
-  border-radius: 10px;
-  padding: 8px 10px;
   font-size: 13px;
+  max-width: 100%;
 }
 
 .ai-msg--user {
-  background: #ecfdf5;
-  align-self: flex-end;
-  max-width: 92%;
+  align-self: stretch;
 }
 
 .ai-msg--assistant {
-  background: #f3f4f6;
-  align-self: flex-start;
-  max-width: 96%;
+  align-self: stretch;
+  max-width: min(100%, 44rem);
 }
 
-.ai-msg__role {
-  font-size: 11px;
-  font-weight: 600;
-  color: #6b7280;
-  margin-bottom: 4px;
+.ai-msg__user-row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.ai-msg__bubble {
+  margin: 0;
+  max-width: min(88%, 36rem);
+  padding: 10px 14px;
+  border-radius: 16px 16px 4px 16px;
+  background: var(--ai-user-bubble);
+  color: #f4f6fb;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 1.45;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.ai-msg__avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+  background: linear-gradient(145deg, #5b8cff, #7c5cff);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.12);
+}
+
+.ai-msg__agent {
   display: flex;
   align-items: center;
   gap: 6px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.ai-msg__agent-ico {
+  color: #a5b4fc;
+  font-size: 12px;
+}
+
+.ai-msg__agent-name {
+  font-size: 12px;
+  font-weight: 650;
+  color: #c7d2fe;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(165, 180, 252, 0.12);
+  border: 1px solid rgba(165, 180, 252, 0.22);
 }
 
 .ai-msg__badge {
   font-size: 10px;
   font-weight: 600;
-  color: #0f766e;
-  background: #ccfbf1;
+  color: #7dd3c0;
+  background: rgba(45, 212, 191, 0.12);
   padding: 1px 6px;
   border-radius: 4px;
-}
-
-.ai-msg__cancel-q {
-  margin-left: auto;
-  border: none;
-  background: transparent;
-  cursor: pointer;
-  color: #9ca3af;
-  font-size: 16px;
-  line-height: 1;
-  padding: 0 2px;
 }
 
 .ai-msg__body {
@@ -1021,17 +1278,25 @@ onUnmounted(() => {
   white-space: pre-wrap;
   word-break: break-word;
   font-family: inherit;
-  font-size: 13px;
-  line-height: 1.45;
-  color: #111827;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--ai-text);
 }
 
 .ai-msg__body--md :deep(p) {
-  margin: 0 0 0.5em;
+  margin: 0 0 0.55em;
 }
 
 .ai-msg__body--md :deep(p:last-child) {
   margin-bottom: 0;
+}
+
+.ai-msg__body--md :deep(h1),
+.ai-msg__body--md :deep(h2),
+.ai-msg__body--md :deep(h3) {
+  margin: 0.7em 0 0.35em;
+  font-size: 1.05em;
+  color: #f1f5f9;
 }
 
 .ai-msg__body--md :deep(ul),
@@ -1049,41 +1314,59 @@ onUnmounted(() => {
 
 .ai-msg__body--md :deep(th),
 .ai-msg__body--md :deep(td) {
-  border: 1px solid #d1d5db;
+  border: 1px solid rgba(255, 255, 255, 0.14);
   padding: 3px 6px;
 }
 
 .ai-msg__body--md :deep(code) {
   font-size: 12px;
-  background: #e5e7eb;
+  background: rgba(255, 255, 255, 0.08);
   padding: 0 3px;
   border-radius: 3px;
 }
 
 .ai-msg__body--md :deep(pre) {
   overflow: auto;
-  background: #e5e7eb;
+  background: rgba(0, 0, 0, 0.35);
   padding: 8px;
-  border-radius: 6px;
+  border-radius: 8px;
+  border: 1px solid var(--ai-glass-border);
+}
+
+.ai-msg__actions {
+  margin-top: 8px;
+}
+
+.ai-msg__copy {
+  border: none;
+  background: transparent;
+  color: var(--ai-muted);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 2px 0;
+}
+
+.ai-msg__copy:hover {
+  color: #c7d2fe;
 }
 
 .ai-msg__trace {
-  margin-top: 8px;
-  border-top: 1px solid #e5e7eb;
-  padding-top: 6px;
+  margin-top: 10px;
+  border-top: 1px solid var(--ai-glass-border);
+  padding-top: 8px;
 }
 
 .ai-msg__trace-sum {
   cursor: pointer;
   font-size: 12px;
   font-weight: 600;
-  color: #4b5563;
+  color: var(--ai-muted);
   user-select: none;
 }
 
 .ai-msg__trace-fail {
   margin-left: 6px;
-  color: #b91c1c;
+  color: #fca5a5;
   font-weight: 700;
 }
 
@@ -1099,23 +1382,23 @@ onUnmounted(() => {
 .ai-msg__trace-item {
   border-radius: 8px;
   padding: 6px 8px;
-  border: 1px solid #e5e7eb;
-  background: #fff;
+  border: 1px solid var(--ai-glass-border);
+  background: rgba(0, 0, 0, 0.22);
 }
 
 .ai-msg__trace-item--ok {
-  border-color: #bbf7d0;
-  background: #f0fdf4;
+  border-color: rgba(74, 222, 128, 0.28);
+  background: rgba(22, 101, 52, 0.22);
 }
 
 .ai-msg__trace-item--err {
-  border-color: #fecaca;
-  background: #fef2f2;
+  border-color: rgba(252, 165, 165, 0.35);
+  background: rgba(127, 29, 29, 0.28);
 }
 
 .ai-msg__trace-item--pending {
-  border-color: #fde68a;
-  background: #fffbeb;
+  border-color: rgba(251, 191, 36, 0.35);
+  background: rgba(120, 53, 15, 0.28);
 }
 
 .ai-msg__trace-head {
@@ -1131,45 +1414,62 @@ onUnmounted(() => {
 }
 
 .ai-msg__trace-item--ok .ai-msg__trace-status {
-  color: #15803d;
+  color: #86efac;
 }
 
 .ai-msg__trace-item--err .ai-msg__trace-status {
-  color: #b91c1c;
+  color: #fca5a5;
 }
 
 .ai-msg__trace-name {
   font-size: 11px;
-  color: #1f2937;
+  color: #e2e8f0;
 }
 
 .ai-msg__trace-round {
   font-size: 10px;
-  color: #9ca3af;
+  color: #94a3b8;
 }
 
 .ai-msg__trace-args,
 .ai-msg__trace-msg {
   margin: 4px 0 0;
   font-size: 11px;
-  color: #4b5563;
+  color: #cbd5e1;
   line-height: 1.35;
   word-break: break-all;
 }
 
 .ai-drawer__composer {
-  border-top: 1px solid #e5e7eb;
-  padding: 12px 16px 16px;
+  padding: 10px 14px 16px;
+  flex-shrink: 0;
 }
 
-.ai-drawer__queue + .ai-drawer__composer {
-  border-top: none;
+.ai-drawer__composer-shell {
+  border-radius: 18px;
+  border: 1px solid var(--ai-glass-border);
+  background: rgba(0, 0, 0, 0.28);
+  padding: 10px 12px 10px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.ai-drawer__composer-bar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.ai-drawer__composer-spacer {
+  flex: 1;
 }
 
 .ai-drawer__queue {
-  border-top: 1px solid #e5e7eb;
-  background: #f8fafc;
+  border-top: 1px solid var(--ai-glass-border);
+  background: rgba(0, 0, 0, 0.18);
   padding: 8px 12px;
+  flex-shrink: 0;
 }
 
 .ai-drawer__queue-toggle {
@@ -1183,7 +1483,7 @@ onUnmounted(() => {
   cursor: pointer;
   font-size: 12px;
   font-weight: 650;
-  color: #334155;
+  color: #cbd5e1;
 }
 
 .ai-drawer__queue-chev {
@@ -1208,8 +1508,8 @@ onUnmounted(() => {
   gap: 8px;
   padding: 6px 8px;
   border-radius: 8px;
-  border: 1px solid #e2e8f0;
-  background: #fff;
+  border: 1px solid var(--ai-glass-border);
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .ai-drawer__queue-idx {
@@ -1217,8 +1517,8 @@ onUnmounted(() => {
   width: 18px;
   height: 18px;
   border-radius: 999px;
-  background: #e2e8f0;
-  color: #475569;
+  background: rgba(255, 255, 255, 0.1);
+  color: #e2e8f0;
   font-size: 11px;
   font-weight: 650;
   display: grid;
@@ -1229,7 +1529,7 @@ onUnmounted(() => {
   flex: 1 1 auto;
   min-width: 0;
   font-size: 12px;
-  color: #334155;
+  color: #e2e8f0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1247,7 +1547,7 @@ onUnmounted(() => {
 }
 
 .ai-drawer__queue-cancel:hover {
-  color: #b91c1c;
+  color: #fca5a5;
 }
 
 .ai-drawer__warn--queue {
@@ -1257,70 +1557,68 @@ onUnmounted(() => {
 .ai-drawer__input {
   width: 100%;
   box-sizing: border-box;
-  border: 1px solid #d1d5db;
-  border-radius: 8px;
-  padding: 8px 10px;
-  font-size: 13px;
-  resize: vertical;
-  min-height: 72px;
+  border: none;
+  background: transparent;
+  padding: 4px 2px;
+  font-size: 14px;
+  resize: none;
+  min-height: 64px;
+  max-height: 180px;
   font-family: inherit;
+  color: var(--ai-text);
+  outline: none;
+  line-height: 1.45;
 }
 
-.ai-drawer__actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-top: 8px;
+.ai-drawer__input::placeholder {
+  color: #6b7280;
 }
 
 .ai-drawer__btn {
-  border-radius: 8px;
-  padding: 6px 14px;
+  border-radius: 999px;
+  padding: 7px 16px;
   font-size: 13px;
+  font-weight: 650;
   cursor: pointer;
   border: 1px solid transparent;
 }
 
 .ai-drawer__btn--primary {
-  background: #0f766e;
+  background: var(--ai-accent);
   color: #fff;
-  border-color: #0f766e;
+  border-color: transparent;
+  box-shadow: 0 6px 16px rgba(91, 140, 255, 0.35);
 }
 
 .ai-drawer__btn--primary:disabled {
-  opacity: 0.5;
+  opacity: 0.45;
   cursor: not-allowed;
-}
-
-.ai-drawer__btn--muted {
-  background: #fff;
-  border-color: #d1d5db;
-  color: #374151;
+  box-shadow: none;
 }
 
 .ai-drawer__btn--danger {
-  background: #fff;
-  border-color: #fca5a5;
-  color: #b91c1c;
+  background: rgba(248, 113, 113, 0.12);
+  border-color: rgba(248, 113, 113, 0.35);
+  color: #fecaca;
 }
 
 .ai-drawer__error {
   margin: 8px 0 0;
   font-size: 12px;
-  color: #b91c1c;
+  color: #fca5a5;
 }
 
 .ai-drawer__warn {
   margin: 8px 0 0;
   font-size: 12px;
-  color: #92400e;
+  color: #fde68a;
 }
 
 .ai-drawer__link {
   margin-left: 8px;
   border: none;
   background: none;
-  color: #0f766e;
+  color: #93c5fd;
   font-weight: 600;
   cursor: pointer;
   text-decoration: underline;
