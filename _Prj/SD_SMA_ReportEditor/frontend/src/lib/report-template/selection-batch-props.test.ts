@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   applyBatchField,
+  canShowBindingSection,
   intersectBatchFields,
   readBatchField,
   supportsBatchField,
@@ -17,12 +18,16 @@ function el(partial: Partial<BatchEl> & { type: string }): BatchEl {
     textAutoWrap: false,
     alignX: "start",
     alignY: "center",
+    bindingKind: "none",
+    opcuaNodeId: "",
+    sqlText: "",
+    text: "",
     ...partial,
   };
 }
 
-describe("selection-batch-props (011 B3)", () => {
-  it("I1: two template text → full appearance set", () => {
+describe("selection-batch-props (011 B3 + 018)", () => {
+  it("I1: two template text → appearance + display + binding", () => {
     const keys = intersectBatchFields([el({ type: "text" }), el({ type: "text" })], "template");
     expect(keys).toEqual([
       "showBorder",
@@ -33,6 +38,11 @@ describe("selection-batch-props (011 B3)", () => {
       "textAutoWrap",
       "alignX",
       "alignY",
+      "text",
+      "decimalPlaces",
+      "nullDisplayMode",
+      "bindingKind",
+      "opcuaNodeId",
     ]);
   });
 
@@ -47,6 +57,7 @@ describe("selection-batch-props (011 B3)", () => {
     expect(keys).not.toContain("color");
     expect(keys).toContain("showBorder");
     expect(keys).toContain("bgColor");
+    expect(keys).toContain("bindingKind");
   });
 
   it("layout box → color supported", () => {
@@ -86,5 +97,73 @@ describe("selection-batch-props (011 B3)", () => {
     expect(keys).not.toContain("textAutoWrap");
     expect(keys).toContain("showBorder");
     expect(keys).toContain("fontSize");
+  });
+
+  it("read mixed bindings does not require apply", () => {
+    const a = el({ type: "text", bindingKind: "opcua", opcuaNodeId: "ns=1" });
+    const b = el({ type: "text", bindingKind: "opcua", opcuaNodeId: "ns=2" });
+    expect(readBatchField([a, b], "opcuaNodeId")).toEqual({ kind: "mixed" });
+    expect(readBatchField([a, b], "bindingKind")).toEqual({ kind: "uniform", value: "opcua" });
+    expect(a.opcuaNodeId).toBe("ns=1");
+    expect(b.opcuaNodeId).toBe("ns=2");
+  });
+
+  it("apply bindingKind does not clear opcuaNodeId", () => {
+    const a = el({ type: "text", bindingKind: "opcua", opcuaNodeId: "ns=1" });
+    const b = el({ type: "text", bindingKind: "none", opcuaNodeId: "ns=2" });
+    applyBatchField([a, b], "bindingKind", "opcua");
+    expect(a.opcuaNodeId).toBe("ns=1");
+    expect(b.opcuaNodeId).toBe("ns=2");
+    expect(a.bindingKind).toBe("opcua");
+    expect(b.bindingKind).toBe("opcua");
+  });
+
+  it("text+parameter → no binding section keys", () => {
+    expect(canShowBindingSection([el({ type: "text" }), el({ type: "parameter" })], "template")).toBe(
+      false,
+    );
+    const keys = intersectBatchFields(
+      [el({ type: "text" }), el({ type: "parameter" })],
+      "template",
+    );
+    expect(keys).not.toContain("bindingKind");
+    expect(keys).not.toContain("opcuaNodeId");
+    expect(keys).not.toContain("sqlText");
+  });
+
+  it("two parameter → sqlText in keys", () => {
+    const keys = intersectBatchFields(
+      [el({ type: "parameter" }), el({ type: "parameter" })],
+      "template",
+    );
+    expect(keys).toContain("sqlText");
+    expect(keys).toContain("bindingKind");
+    expect(keys).toContain("opcuaNodeId");
+  });
+
+  it("decimalPlaces clear with empty string", () => {
+    const a = el({ type: "text", decimalPlaces: 2 });
+    const b = el({ type: "text", decimalPlaces: 3 });
+    applyBatchField([a, b], "decimalPlaces", "");
+    expect(a.decimalPlaces).toBeUndefined();
+    expect(b.decimalPlaces).toBeUndefined();
+
+    const c = el({ type: "text" });
+    const d = el({ type: "text" });
+    expect(readBatchField([c, d], "decimalPlaces")).toEqual({ kind: "uniform", value: "" });
+  });
+
+  it("dateFormat for two dates", () => {
+    const keys = intersectBatchFields([el({ type: "date" }), el({ type: "date" })], "template");
+    expect(keys).toContain("dateFormat");
+    expect(keys).not.toContain("text");
+    expect(keys).not.toContain("bindingKind");
+
+    const a = el({ type: "date", dateFormat: "yyyy-MM-dd" });
+    const b = el({ type: "date", dateFormat: "HH:mm:ss" });
+    expect(readBatchField([a, b], "dateFormat").kind).toBe("mixed");
+    applyBatchField([a, b], "dateFormat", "yyyy-MM-dd");
+    expect(a.dateFormat).toBe("yyyy-MM-dd");
+    expect(b.dateFormat).toBe("yyyy-MM-dd");
   });
 });
