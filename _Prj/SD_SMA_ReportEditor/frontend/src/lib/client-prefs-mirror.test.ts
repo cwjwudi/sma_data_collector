@@ -108,3 +108,32 @@ describe("applyPendingMirrorFromBackend · assets（复制模版/版式）", () 
     expect(ev?.detail).toMatchObject({ reason: "template_order" });
   });
 });
+
+describe("applyPendingMirrorFromBackend · datasource（能力矩阵 A）", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("pending_apply + datasource 时派发 report-editor-datasource-changed（reason=upsert_db_connection）", () => {
+    const spy = vi.spyOn(window, "dispatchEvent");
+    applyPendingMirrorFromBackend({
+      pending_apply: true,
+      ui_reload: { datasource: true, reason: "upsert_db_connection" },
+    });
+    const ev = spy.mock.calls
+      .map((c) => c[0] as Event)
+      .find((e) => e.type === DATASOURCE_CHANGED_EVENT) as CustomEvent | undefined;
+    expect(ev).toBeTruthy();
+    expect(ev?.detail).toMatchObject({ reason: "upsert_db_connection" });
+  });
+
+  it("无 pending_apply 时即使 datasource=true 也不派发", () => {
+    const spy = vi.spyOn(window, "dispatchEvent");
+    applyPendingMirrorFromBackend({
+      pending_apply: false,
+      ui_reload: { datasource: true, reason: "delete_db_connection" },
+    });
+    const types = spy.mock.calls.map((c) => (c[0] as Event).type);
+    expect(types).not.toContain(DATASOURCE_CHANGED_EVENT);
+  });
+});

@@ -7,6 +7,8 @@
 
 ## 2026-07-14
 
+- **ReportEditor 0.3.96**：AI 能力矩阵 A（配置数据源 upsert/凭证/删除/锁）；看板 [docs/006-🚧](docs/006-🚧-ReportEditor-AI上游错误体验.md)。
+- **ReportEditor 0.3.95 macOS 已打包**：`Report Editor AI-0.3.95-arm64.dmg`；`latest.json` 已写 SHA256（win32 亦已补全）。
 - **ReportEditor 0.3.95**：探活 claim 只读误伤修复（施为仍须 write；health 可读作状态证据）；看板 [docs/006-🚧](docs/006-🚧-ReportEditor-AI上游错误体验.md)。
 - **OPC UA 动态采集间隔与 PLC 联调完成**：`time` / `time_and_variable` 支持通过 `interval_point` 在线定义采集间隔；完成配置、Web UI、PLC 点位与 OPC UA 映射修改，并在 `192.168.50.233` 验证 5 秒→2 秒切换、非法值回退及外部触发独立性。详见 [_Prj/SD_SMA_DATA_COLLECTOR/docs/001-✅-OPCUA动态采集间隔联调.md](_Prj/SD_SMA_DATA_COLLECTOR/docs/001-✅-OPCUA动态采集间隔联调.md)。
 - **ReportEditor 0.3.94 已合入 main**：AI 对话深色玻璃 UI + 真流式/claim 清屏修复；看板 [docs/016-✅](docs/016-✅-ReportEditor-AI对话UI改版.md)。

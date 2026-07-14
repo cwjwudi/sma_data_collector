@@ -1,17 +1,17 @@
 {
-  "version": "0.3.95",
-  "releasedAt": "2026-07-14T07:48:20.756Z",
-  "notes": "Report Editor AI 0.3.95\n\n- 探活 claim：只读查证「当前已开」不再误伤为缺写入工具",
+  "version": "0.3.96",
+  "releasedAt": "2026-07-14T07:53:33.343Z",
+  "notes": "Report Editor AI 0.3.96\n\n- AI 能力矩阵 A：配置数据源端到端（upsert/凭证/删除/锁）",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.95-x64.exe",
-      "sha256": "62cfa46b80644ccc6506683bb204838c406f05b92daf1911c481e0bfe1c6911c",
-      "size": 148131861
+      "url": "Report Editor AI-Setup-0.3.96-x64.exe",
+      "sha256": "",
+      "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.95-arm64.dmg",
-      "sha256": "9e204257017de2104251182349402aac9318fc33d2ee7956b90a6424495396e2",
-      "size": 182055467
+      "url": "Report Editor AI-0.3.96-arm64.dmg",
+      "sha256": "",
+      "size": 0
     }
   }
 }
