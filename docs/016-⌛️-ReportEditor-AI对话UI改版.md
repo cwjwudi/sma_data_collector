@@ -183,17 +183,7 @@ needs_*_claim_retry(assistant_text, tool_trace) == True
 
 ---
 
-# ⌛️ 未完成：探活 claim 误伤「审计/只读确认」（交叉）
+# ⌛️ 未完成：探活 claim 误伤「审计/只读确认」（交叉 006）
 
-> 详情与用例见 **[docs/006](006-🚧-ReportEditor-AI上游错误体验.md)** 对应 H1（2026-07-14 登记）。  
-> 摘要：问「分析审计」后用 `get_connection_health_summary` 只读确认「探活已开启」，仍被改写成「未能确认…没有成功的写入工具结果」。
-
----
-
----
-
-# ⌛️ 登记：探活 claim 误伤只读查证（交叉 006）
-
-现场：「分析审计」→ 已用 `get_connection_health_summary` 确认当前探活已开，仍被改写成「没有成功的写入工具结果」。  
-
-详见 [docs/006 · 探活 claim 误伤只读查证](006-🚧-ReportEditor-AI上游错误体验.md)（先记未修）。
+> 详情与用例见 **[docs/006](006-🚧-ReportEditor-AI上游错误体验.md)** 对应 H1（2026-07-14 登记，**仅记未修**）。  
+> 摘要：问「分析审计」→ 用 `get_connection_health_summary` 只读确认「探活已开启」→ 仍被改写成「未能确认…没有成功的写入工具结果」。
