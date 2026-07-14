@@ -70,7 +70,9 @@
                 </router-link>
               </template>
               <template v-else>
-                <router-link class="dash-asset-link" to="/layouts">{{ it.assetName || it.assetId }}</router-link>
+                <router-link class="dash-asset-link" :to="layoutEditorLink(it)">
+                  {{ it.assetName || it.assetId }}
+                </router-link>
                 <span class="muted">（版式）</span>
               </template>
             </span>
@@ -86,6 +88,9 @@
           </div>
           <p class="dash-list__msg">{{ it.message }}</p>
           <p v-if="it.hint" class="dash-list__hint">{{ it.hint }}</p>
+          <p v-if="healthIssueFocusabilityNote(it)" class="dash-list__hint dash-list__hint--focus">
+            {{ healthIssueFocusabilityNote(it) }}
+          </p>
         </li>
       </ul>
       <button
@@ -123,6 +128,11 @@ import {
   loadIgnoredAssetHealthFingerprints,
   recountAssetHealthSeverities,
 } from "@/lib/asset-health-ignore";
+import {
+  healthIssueFocusabilityNote,
+  layoutEditorLink,
+  templateEditorLink,
+} from "@/lib/asset-health-links";
 
 defineOptions({ name: "DashboardAssetHealth" });
 
@@ -168,15 +178,6 @@ function formatTime(iso: string): string {
 
 function canIgnore(it: AssetHealthIssue): boolean {
   return isAssetHealthIssueDismissible(it);
-}
-
-function templateEditorLink(it: AssetHealthIssue) {
-  const focus = typeof it.meta?.elementId === "string" ? it.meta.elementId.trim() : "";
-  return {
-    name: "TemplateEditor",
-    params: { id: it.assetId },
-    query: focus ? { focus } : {},
-  };
 }
 
 function issueKey(it: AssetHealthIssue, idx: number): string {
@@ -507,6 +508,10 @@ onUnmounted(() => {
   font-size: 12px;
   color: #64748b;
   line-height: 1.4;
+}
+
+.dash-list__hint--focus {
+  color: #b45309;
 }
 
 .dash-asset-more {

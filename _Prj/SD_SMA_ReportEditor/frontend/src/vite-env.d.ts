@@ -58,10 +58,12 @@ interface Window {
         jobId?: string;
       }) => void,
     ) => () => void;
-    scanExportPdfs: (opts: { dir: string }) => Promise<{
+    scanExportPdfs: (opts: { dir: string; limit?: number }) => Promise<{
       ok: boolean;
       error?: string;
       dir?: string;
+      total?: number;
+      truncated?: boolean;
       files?: {
         name: string;
         filePath: string;
@@ -69,6 +71,35 @@ interface Window {
         sizeBytes: number;
         modifiedAt: string;
       }[];
+    }>;
+    scanExportEntries: (opts: {
+      rootDir: string;
+      cwd?: string;
+      offset?: number;
+      limit?: number;
+      sort?: "mtime_desc" | "name_asc";
+      kinds?: "all" | "pdf_only";
+    }) => Promise<{
+      ok: boolean;
+      error?: string;
+      rootDir?: string;
+      cwd?: string;
+      relSegments?: string[];
+      total?: number;
+      offset?: number;
+      limit?: number;
+      hasMore?: boolean;
+      entries?: Array<
+        | { kind: "dir"; name: string; path: string; modifiedAt?: string }
+        | {
+            kind: "pdf";
+            name: string;
+            filePath: string;
+            fileUrl?: string;
+            sizeBytes: number;
+            modifiedAt: string;
+          }
+      >;
     }>;
     deleteExportFile: (opts: { filePath: string }) => Promise<{ ok: boolean; error?: string }>;
     showItemInFolder: (filePath: string) => Promise<{ ok: boolean; error?: string }>;
@@ -175,28 +206,6 @@ interface Window {
         percent?: number | null;
       }) => void,
     ) => () => void;
-    getDemoPackState: () => Promise<{
-      installed: boolean;
-      version: string;
-      installPath: string;
-      installedAt: string | null;
-    }>;
-    checkDemoPack: () => Promise<{
-      ok: boolean;
-      error?: string;
-      version?: string;
-      notes?: string;
-      updateAvailable?: boolean;
-      installedVersion?: string;
-    }>;
-    installDemoPack: () => Promise<{
-      ok: boolean;
-      error?: string;
-      version?: string;
-      installPath?: string;
-    }>;
-    startDemoPack: () => Promise<{ ok: boolean; error?: string }>;
-    stopDemoPack: () => Promise<{ ok: boolean; error?: string }>;
     getDataSourceStartupSnapshot: () => Promise<{
       ok: boolean;
       connections?: Record<string, unknown>[];

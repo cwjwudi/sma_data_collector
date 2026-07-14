@@ -133,7 +133,7 @@
       {{ msg }}
     </p>
 
-    <p v-if="!isElectron" class="settings-hint settings-hint--muted">请在桌面安装版中使用此功能。</p>
+    <p v-if="!isElectron" class="settings-hint settings-hint--muted">版式云同步仅桌面安装版可用；局域网浏览器请在本机 Electron 中操作。</p>
   </section>
 </template>
 

@@ -6,68 +6,79 @@
     <p v-if="loading" class="conn-placeholder">{{ loadingMessage }}</p>
     <template v-else-if="modelValue || creatingNew">
       <template v-if="isRemoteDemo">
-        <p class="demo-conn-hint">
-          此为<strong>远程演示</strong>连接，地址与账号由软件维护，无需填写。可直接浏览左侧数据库与表，或点击「测试连接」确认状态。
-        </p>
-        <dl class="demo-conn-meta">
-          <div><dt>名称</dt><dd>{{ draft.name || '演示数据库（远程）' }}</dd></div>
-          <div><dt>类型</dt><dd>MariaDB · 仿真</dd></div>
-        </dl>
-        <div class="actions">
+        <div class="conn-form-pane__body">
+          <p class="demo-conn-hint">
+            此为<strong>远程演示</strong>连接，地址与账号由软件维护，无需填写。可直接浏览左侧数据库与表，或点击「测试连接」确认状态。
+          </p>
+          <dl class="demo-conn-meta">
+            <div><dt>名称</dt><dd>{{ draft.name || '演示数据库（远程）' }}</dd></div>
+            <div><dt>类型</dt><dd>MariaDB · 仿真</dd></div>
+          </dl>
+        </div>
+        <div class="conn-form-pane__actions actions">
           <button type="button" class="btn seg" :disabled="busy" @click="testOnly">测试连接</button>
           <button type="button" class="btn danger seg" v-if="draft.id" :disabled="formDisabled" @click="remove">删除</button>
         </div>
       </template>
       <template v-else>
-      <p v-if="locked" class="demo-conn-hint">数据源已锁定，仅可查看与测试连接。</p>
-      <label>名称</label>
-      <input v-model="draft.name" class="input" placeholder="例如 产线 MySQL" :disabled="formDisabled" />
-      <label>引擎</label>
-      <select v-model="draft.engine" class="input" :disabled="formDisabled">
-        <option value="mysql">MySQL</option>
-        <option value="mariadb">MariaDB</option>
-        <option value="postgres">PostgreSQL</option>
-        <option value="sqlite">SQLite</option>
-        <option value="mongodb">MongoDB</option>
-      </select>
-      <template v-if="draft.engine !== 'sqlite'">
-        <label>主机 / IP</label>
-        <input v-model="draft.host" class="input" placeholder="192.168.1.10" :disabled="formDisabled" />
-        <label>端口</label>
-        <input v-model="draft.portText" type="text" inputmode="numeric" class="input" placeholder="留空则使用默认端口" :disabled="formDisabled" />
-        <label>{{ draft.engine === 'mongodb' ? '默认数据库（可选）' : '数据库（可选）' }}</label>
-        <input
-          v-model="draft.database"
-          class="input"
-          placeholder="留空则打开后自动选择可用库"
-          :disabled="formDisabled"
-        />
-        <label>用户名</label>
-        <input v-model="draft.username" class="input" autocomplete="username" :disabled="formDisabled" />
-        <label>密码</label>
-        <input
-          v-model="draft.password"
-          type="password"
-          class="input"
-          autocomplete="current-password"
-          :placeholder="draft.id && hasSavedPassword ? '留空表示沿用已保存密码' : '可选'"
-          :disabled="formDisabled"
-        />
-      </template>
-      <template v-if="draft.engine === 'sqlite'">
-        <label>SQLite 路径（后端所在机器上的路径）</label>
-        <input v-model="draft.sqlite_path" class="input" placeholder="D:\\data\\app.db" :disabled="formDisabled" />
-      </template>
-      <template v-if="draft.engine === 'mongodb'">
-        <label>authSource</label>
-        <input v-model="draft.mongo_auth_source" class="input" :disabled="formDisabled" />
-      </template>
-      <div class="actions">
-        <button type="button" class="btn seg" :disabled="busy" @click="testOnly">测试连接</button>
-        <button type="button" class="btn primary seg" :disabled="formDisabled" @click="() => save(false)">仅保存</button>
-        <button type="button" class="btn primary seg" :disabled="formDisabled" @click="testAndSave">测试并保存</button>
-        <button type="button" class="btn danger seg" v-if="draft.id" :disabled="formDisabled" @click="remove">删除</button>
-      </div>
+        <div class="conn-form-pane__body">
+          <p v-if="locked" class="demo-conn-hint">数据源已锁定，仅可查看与测试连接。</p>
+          <label>名称</label>
+          <input v-model="draft.name" class="input" placeholder="例如 产线 MySQL" :disabled="formDisabled" />
+          <label>引擎</label>
+          <select v-model="draft.engine" class="input" :disabled="formDisabled">
+            <option value="mysql">MySQL</option>
+            <option value="mariadb">MariaDB</option>
+            <option value="postgres">PostgreSQL</option>
+            <option value="sqlite">SQLite</option>
+            <option value="mongodb">MongoDB</option>
+          </select>
+          <template v-if="draft.engine !== 'sqlite'">
+            <label>主机 / IP</label>
+            <input v-model="draft.host" class="input" placeholder="192.168.1.10" :disabled="formDisabled" />
+            <label>端口</label>
+            <input
+              v-model="draft.portText"
+              type="text"
+              inputmode="numeric"
+              class="input"
+              placeholder="留空则使用默认端口"
+              :disabled="formDisabled"
+            />
+            <label>{{ draft.engine === 'mongodb' ? '默认数据库（可选）' : '数据库（可选）' }}</label>
+            <input
+              v-model="draft.database"
+              class="input"
+              placeholder="留空则打开后自动选择可用库"
+              :disabled="formDisabled"
+            />
+            <label>用户名</label>
+            <input v-model="draft.username" class="input" autocomplete="username" :disabled="formDisabled" />
+            <label>密码</label>
+            <input
+              v-model="draft.password"
+              type="password"
+              class="input"
+              autocomplete="current-password"
+              :placeholder="draft.id && hasSavedPassword ? '留空表示沿用已保存密码' : '可选'"
+              :disabled="formDisabled"
+            />
+          </template>
+          <template v-if="draft.engine === 'sqlite'">
+            <label>SQLite 路径（后端所在机器上的路径）</label>
+            <input v-model="draft.sqlite_path" class="input" placeholder="D:\\data\\app.db" :disabled="formDisabled" />
+          </template>
+          <template v-if="draft.engine === 'mongodb'">
+            <label>authSource</label>
+            <input v-model="draft.mongo_auth_source" class="input" :disabled="formDisabled" />
+          </template>
+        </div>
+        <div class="conn-form-pane__actions actions">
+          <button type="button" class="btn seg" :disabled="busy" @click="testOnly">测试连接</button>
+          <button type="button" class="btn primary seg" :disabled="formDisabled" @click="() => save(false)">仅保存</button>
+          <button type="button" class="btn primary seg" :disabled="formDisabled" @click="testAndSave">测试并保存</button>
+          <button type="button" class="btn danger seg" v-if="draft.id" :disabled="formDisabled" @click="remove">删除</button>
+        </div>
       </template>
       <div v-if="msg" :class="['msg', msgTone]">{{ msg }}</div>
     </template>

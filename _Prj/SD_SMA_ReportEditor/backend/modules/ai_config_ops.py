@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from core.settings import CONFIG_FILE, DATA_DIR, DEFAULT_CONFIG, LAYOUT_PRESETS_DIR, QUERY_SESSION_FILE, SIGNATURE_ASSETS_DIR, TEMPLATES_DIR
-from modules import ai_pending_prompts, audit_log, config_bundle as cbundle, config_import_export as cie, config_store
+from modules import ai_asset_ops, ai_pending_prompts, audit_log, config_bundle as cbundle, config_import_export as cie, config_store
 
 _CLIENT_PREFS_MIRROR = DATA_DIR / "client_prefs_mirror.json"
 
@@ -112,6 +112,7 @@ def apply_reset(prompt_id: str) -> dict[str, Any]:
         pass
     audit_log.append_audit(DATA_DIR, action="config.reset", result="ok", summary="AI pending 快速复位")
     ai_pending_prompts.complete_prompt(prompt_id, result={"ok": True, "removed": removed})
+    ai_asset_ops.mark_ui_reload(assets=True, datasource=True, reason="config_reset")
     return {"ok": True, "removed": removed}
 
 
@@ -132,6 +133,7 @@ def apply_import_merge(prompt_id: str, item: dict[str, Any]) -> dict[str, Any]:
             warnings = cie.format_import_warnings(raw_warn)
         _save_cfg(merged)
         ai_pending_prompts.complete_prompt(prompt_id, result={"ok": True, "warnings": warnings})
+        ai_asset_ops.mark_ui_reload(assets=True, datasource=True, reason="config_import_merge")
         return {"ok": True, "warnings": warnings}
     except Exception as e:
         return {"ok": False, "error": str(e)}
@@ -169,6 +171,8 @@ def get_export_dir_prefs() -> dict[str, Any]:
 
 
 def set_export_dir(path: str) -> dict[str, Any]:
+    import uuid
+
     p = (path or "").strip()
     if not p:
         return {"ok": False, "error": "路径不能为空"}
@@ -188,6 +192,7 @@ def set_export_dir(path: str) -> dict[str, Any]:
     mirror["report_generator"] = rg
     mirror["report_export"] = rexp
     mirror["pending_apply"] = True
+    mirror["pending_token"] = str(uuid.uuid4())
     _CLIENT_PREFS_MIRROR.parent.mkdir(parents=True, exist_ok=True)
     _CLIENT_PREFS_MIRROR.write_text(json.dumps(mirror, ensure_ascii=False, indent=2), encoding="utf-8")
     return {"ok": True, "path": p, "note": "前端将在轮询时应用至 localStorage"}
@@ -205,22 +210,28 @@ def request_pick_export_dir() -> dict[str, Any]:
 
 
 def request_check_app_update() -> dict[str, Any]:
+    """仅排队本机检查更新；确认后走 Electron 检查，绝不自动安装。"""
     prompt = ai_pending_prompts.create_prompt(
         kind="check_update",
         target_kind="app",
         title="检查软件更新",
         message="AI 助手请求检查是否有新版本。确认后将执行检查（不会自动安装）。",
+        payload={"action": "check_update", "auto_install": False},
     )
     return {"ok": True, "status": "awaiting_user_confirm", "prompt": prompt}
 
 
 async def preflight_export(template_id: str) -> dict[str, Any]:
+    """结批预检：返回绑定问题事实；issue 非空时 ok/ready=false（供口播，不触发导出）。"""
     from modules import ai_work_chain
 
     tid = (template_id or "").strip()
     if not tid:
         return {"ok": False, "error": "缺少 template_id"}
-    bindings = ai_work_chain.inspect_template_bindings(tid)
+    try:
+        bindings = ai_work_chain.inspect_template_bindings(tid)
+    except ValueError as e:
+        return {"ok": False, "error": str(e)}
     if not bindings.get("ok"):
         return bindings
     issues = bindings.get("issues") or []
@@ -231,16 +242,21 @@ async def preflight_export(template_id: str) -> dict[str, Any]:
         "issue_count": len(issues),
         "issues": issues,
         "ready": len(issues) == 0,
+        "resolved_connections": bindings.get("resolved_connections") or [],
     }
 
 
 def request_manual_export(template_id: str) -> dict[str, Any]:
+    """仅排队模拟结批确认；确认后由本机 Electron 导出，禁止口头宣称已导出。"""
     tid = (template_id or "").strip()
     if not tid:
         return {"ok": False, "error": "缺少 template_id"}
     from modules import template_store
 
-    tpl = template_store.load_template(tid)
+    try:
+        tpl = template_store.load_template(tid)
+    except ValueError as e:
+        return {"ok": False, "error": str(e)}
     if not tpl:
         return {"ok": False, "error": "模版不存在"}
     prompt = ai_pending_prompts.create_prompt(

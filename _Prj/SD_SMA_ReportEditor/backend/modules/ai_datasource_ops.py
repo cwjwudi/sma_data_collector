@@ -6,6 +6,7 @@ from typing import Any, Literal
 
 from core.settings import CONFIG_FILE, DATA_DIR
 from modules import ai_pending_prompts, audit_log, config_store, datasource_lock, db_readonly_service, opcua_service
+from modules.ai_asset_ops import mark_ui_reload
 from schemas.common import DbConnectionSave, OpcUaServerSave
 
 TargetKind = Literal["db", "opcua"]
@@ -253,6 +254,7 @@ def upsert_db_connection(args: dict[str, Any]) -> dict[str, Any]:
     except Exception:
         pass
     masked = config_store.mask_connection_for_response(after_row)
+    mark_ui_reload(datasource=True)
     needs_cred = _needs_db_credential(conn=existing, engine=eng, username=body.username)
     if needs_cred:
         prompt = ai_pending_prompts.create_prompt(
@@ -342,6 +344,7 @@ def upsert_opc_server(args: dict[str, Any]) -> dict[str, Any]:
     except Exception:
         pass
     masked = config_store.mask_opcua_for_response(after_row)
+    mark_ui_reload(datasource=True)
     needs_cred = False
     if body.username and str(body.username).strip():
         if not existing or not existing.get("password_enc"):

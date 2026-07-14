@@ -6,16 +6,24 @@ const fs = require('fs')
 const os = require('os')
 const { pathToFileURL } = require('url')
 const { createAppUpdater } = require('./updater.cjs')
-const { createDemoPackManager } = require('./demo-pack.cjs')
 const { createLayoutSync } = require('./layout-sync.cjs')
 const { humanizePdfExportError } = require('./pdfExportErrors.cjs')
 const { outputPathForReportPart } = require('./pdf-export-paths.cjs')
+const { scanExportEntries, scanExportPdfsCompat } = require('./export-dir-scan.cjs')
 const {
   readLaunchSettings,
   writeLaunchSettings,
   applyLoginItem,
   shouldSilentStartThisSession,
 } = require('./launch.cjs')
+
+// —— 整机单实例（须在 whenReady / 拉后端之前）——
+const gotSingleInstanceLock = app.requestSingleInstanceLock()
+if (!gotSingleInstanceLock) {
+  // 未拿到锁：立刻退出，禁止再起后端 / 建窗
+  app.quit()
+  process.exit(0)
+}
 
 let mainWindow
 let pythonProcess
@@ -25,6 +33,16 @@ let backendStartedByElectron = false
 let silentStartSession = false
 let isQuitting = false
 let appTray = null
+/** 第一实例尚未 createWindow 时收到 second-instance，建窗后再聚焦。 */
+let pendingFocusFromSecondInstance = false
+
+app.on('second-instance', () => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    showMainWindowFromTray()
+    return
+  }
+  pendingFocusFromSecondInstance = true
+})
 
 /** PDF 导出并发池：避免大量隐藏渲染窗口同时占用 CPU / 内存。 */
 const PDF_EXPORT_DEFAULT_MAX_PARALLEL = 4
@@ -548,6 +566,12 @@ function createWindow() {
     // 预热窗口是隐藏窗口：不销毁会阻止 window-all-closed，导致应用无法退出
     destroyWarmPdfExportWindows()
   })
+
+  if (pendingFocusFromSecondInstance) {
+    pendingFocusFromSecondInstance = false
+    // 静默启动也可能被第二实例唤起：必须 show，不能只 focus
+    showMainWindowFromTray()
+  }
 }
 
 ipcMain.handle('devtools-set-open', (_event, open) => {
@@ -729,62 +753,12 @@ ipcMain.handle('path-join', (_event, parts) => {
 })
 
 ipcMain.handle('scan-export-pdfs', async (_event, opts) => {
-  const dir = opts && opts.dir
-  if (!dir || typeof dir !== 'string') {
-    return { ok: false, error: '缺少目录路径', files: [] }
-  }
-  let resolved
-  try {
-    resolved = path.resolve(dir.trim())
-  } catch (e) {
-    return { ok: false, error: String(e.message || e), files: [] }
-  }
-  if (!fs.existsSync(resolved)) {
-    return { ok: false, error: '目录不存在', files: [], dir: resolved }
-  }
-  let st
-  try {
-    st = fs.statSync(resolved)
-  } catch (e) {
-    return { ok: false, error: String(e.message || e), files: [] }
-  }
-  if (!st.isDirectory()) {
-    return { ok: false, error: '路径不是文件夹', files: [], dir: resolved }
-  }
+  return scanExportPdfsCompat(opts || {})
+})
 
-  const files = []
-  let entries
-  try {
-    entries = fs.readdirSync(resolved, { withFileTypes: true })
-  } catch (e) {
-    return { ok: false, error: `无法读取目录：${e.message || e}`, files: [], dir: resolved }
-  }
-
-  for (const ent of entries) {
-    if (!ent.isFile()) continue
-    if (!ent.name.toLowerCase().endsWith('.pdf')) continue
-    const filePath = path.join(resolved, ent.name)
-    try {
-      const fst = fs.statSync(filePath)
-      files.push({
-        name: ent.name,
-        filePath,
-        fileUrl: pathToFileURL(filePath).href,
-        sizeBytes: fst.size,
-        modifiedAt: fst.mtime.toISOString(),
-      })
-    } catch {
-      /* skip unreadable */
-    }
-  }
-
-  files.sort((a, b) => {
-    const ta = new Date(a.modifiedAt).getTime()
-    const tb = new Date(b.modifiedAt).getTime()
-    return tb - ta
-  })
-
-  return { ok: true, files, dir: resolved }
+/** 历史报表：单层文件夹+PDF 分页（010）；cwd 不得逃出 rootDir */
+ipcMain.handle('scan-export-entries', async (_event, opts) => {
+  return scanExportEntries(opts || {})
 })
 
 ipcMain.handle('delete-export-file', async (_event, opts) => {
@@ -1285,25 +1259,6 @@ function getLayoutSync() {
   }
   return layoutSync
 }
-
-let demoPackManager
-
-function getDemoPackManager() {
-  if (!demoPackManager) {
-    demoPackManager = createDemoPackManager({
-      app,
-      resolveBaseUrl: () => getAppUpdater().getConfig().baseUrl,
-      readSkipTlsVerify: () => Boolean(getAppUpdater().getConfig().skipTlsVerify),
-    })
-  }
-  return demoPackManager
-}
-
-ipcMain.handle('demo-pack-get-state', () => getDemoPackManager().getState())
-ipcMain.handle('demo-pack-check', () => getDemoPackManager().checkRemote())
-ipcMain.handle('demo-pack-install', () => getDemoPackManager().downloadAndInstall())
-ipcMain.handle('demo-pack-start', () => getDemoPackManager().startCompose())
-ipcMain.handle('demo-pack-stop', () => getDemoPackManager().stopCompose())
 
 ipcMain.handle('app-update-get-config', () => getAppUpdater().getConfig())
 ipcMain.handle('app-update-get-state', () => getAppUpdater().getState())

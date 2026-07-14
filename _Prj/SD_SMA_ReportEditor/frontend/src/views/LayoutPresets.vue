@@ -261,6 +261,8 @@ import {
 import { getLayoutPreset } from "@/api/layoutPresets";
 import { useStaleGuard } from "@/composables/useStaleGuard";
 import { appConfirm } from "@/composables/useAppConfirm";
+import { auditLog } from "@/lib/auditLog";
+import { summarizeDeleteLayouts } from "@/lib/auditLabels";
 
 defineOptions({ name: "LayoutPresets" });
 
@@ -481,8 +483,23 @@ async function removePreset(id: string) {
     // 直接用内存快照更新列表，避免再次整份解析所有版式造成卡顿。
     presets.value = applyLayoutPresetDisplayOrders(layoutPresetsSnapshot());
     msg.value = "已删除。";
+    void auditLog({
+      action: "layout.delete",
+      result: "ok",
+      summary: summarizeDeleteLayouts([victim?.name || "未命名"]),
+      object_type: "layout",
+      object_id: id,
+      detail: { name: victim?.name || "未命名" },
+    });
   } catch (e) {
     msg.value = "删除失败：" + String((e as Error).message || e);
+    void auditLog({
+      action: "layout.delete",
+      result: "fail",
+      summary: `删除版式「${victim?.name || "未命名"}」失败：${String((e as Error).message || e).slice(0, 80)}`,
+      object_type: "layout",
+      object_id: id,
+    });
   }
 }
 
@@ -550,11 +567,26 @@ async function confirmDuplicatePreset() {
       /* 离线或已缓存完整版式时沿用列表项 */
     }
     const copy = duplicateLayoutPreset(source, trimmed);
-    const r = await saveLayoutPresetFlexible(copy);
+    const r = await saveLayoutPresetFlexible(copy, { skipAssetAudit: true });
     if (!r.ok) {
       msg.value = "复制失败：" + r.message;
+      void auditLog({
+        action: "layout.duplicate",
+        result: "fail",
+        summary: `复制版式「${source.name || "未命名"}」失败：${String(r.message).slice(0, 80)}`,
+        object_type: "layout",
+        object_id: sourceId,
+      });
       return;
     }
+    void auditLog({
+      action: "layout.duplicate",
+      result: "ok",
+      summary: `复制版式「${source.name || "未命名"}」为「${copy.name || "未命名"}」`,
+      object_type: "layout",
+      object_id: copy.id,
+      detail: { source_id: sourceId, source_name: source.name, name: copy.name },
+    });
     await afterDuplicateSaved(
       copy.id,
       sourceId,
@@ -563,6 +595,13 @@ async function confirmDuplicatePreset() {
     );
   } catch (e) {
     msg.value = "复制失败：" + String((e as Error).message || e);
+    void auditLog({
+      action: "layout.duplicate",
+      result: "fail",
+      summary: `复制版式失败：${String((e as Error).message || e).slice(0, 80)}`,
+      object_type: "layout",
+      object_id: sourceId,
+    });
   }
 }
 

@@ -41,7 +41,7 @@
             type="button"
             class="b"
             title="复制选中控件（含全部属性）(Ctrl+C)"
-            :disabled="!sel"
+            :disabled="!hasCanvasSelection"
             @click="copySel"
           >
             复制
@@ -50,7 +50,7 @@
             type="button"
             class="b"
             title="剪切选中控件 (Ctrl+X)"
-            :disabled="!sel"
+            :disabled="!hasCanvasSelection"
             @click="cutSel"
           >
             剪切
@@ -63,6 +63,31 @@
             @click="pasteSel"
           >
             粘贴
+          </button>
+          <span class="bar-sep" aria-hidden="true" />
+          <button type="button" class="b" title="左对齐" :disabled="!canAlignSel" @click="alignSel('left')">
+            左齐
+          </button>
+          <button type="button" class="b" title="水平居中" :disabled="!canAlignSel" @click="alignSel('centerH')">
+            水平中
+          </button>
+          <button type="button" class="b" title="右对齐" :disabled="!canAlignSel" @click="alignSel('right')">
+            右齐
+          </button>
+          <button type="button" class="b" title="顶对齐" :disabled="!canAlignSel" @click="alignSel('top')">
+            顶齐
+          </button>
+          <button type="button" class="b" title="垂直居中" :disabled="!canAlignSel" @click="alignSel('centerV')">
+            垂直中
+          </button>
+          <button type="button" class="b" title="底对齐" :disabled="!canAlignSel" @click="alignSel('bottom')">
+            底齐
+          </button>
+          <button type="button" class="b" title="水平等距分布（至少 3 个）" :disabled="!canDistributeSel" @click="distributeSel('horizontal')">
+            水平距
+          </button>
+          <button type="button" class="b" title="垂直等距分布（至少 3 个）" :disabled="!canDistributeSel" @click="distributeSel('vertical')">
+            垂直距
           </button>
           <span class="bar-sep" aria-hidden="true" />
           <button
@@ -399,7 +424,7 @@
                 >
                   <div class="tee-cap">封面 · 第 1 / {{ totalEditPages }} 页</div>
                   <TemplateBodyCanvas
-                    v-model:selected-id="selId"
+                    v-model:selected-ids="selectedIds"
                     :tmpl="editing"
                     sheet="cover"
                     :embed-in-parent-scroll="true"
@@ -419,7 +444,7 @@
                     正文 · 第 {{ bodyEditPreviewPage(bp) }} / {{ totalEditPages }} 页（画布 {{ bp + 1 }} / {{ bodyPageCount }}）
                   </div>
                   <TemplateBodyCanvas
-                    v-model:selected-id="selId"
+                    v-model:selected-ids="selectedIds"
                     :tmpl="editing"
                     sheet="body"
                     :body-page-index="bp"
@@ -437,7 +462,7 @@
                 >
                   <div class="tee-cap">末页 · 第 {{ totalEditPages }} / {{ totalEditPages }} 页</div>
                   <TemplateBodyCanvas
-                    v-model:selected-id="selId"
+                    v-model:selected-ids="selectedIds"
                     :tmpl="editing"
                     sheet="back"
                     :embed-in-parent-scroll="true"
@@ -462,6 +487,39 @@
           @open-signature-pad="dlgSig = true"
         />
       </aside>
+      <aside v-else-if="multiCanvasSummary" class="right ted-props ted-props--multi">
+        <h3 class="ted-multi-title">已选 {{ selectedIds.length }} 项</h3>
+        <p class="ted-multi-types">
+          <span v-for="(cnt, tp) in multiTypeCounts" :key="tp" class="ted-multi-type-chip">
+            {{ toolNames[tp] || tp }} × {{ cnt }}
+          </span>
+        </p>
+        <ul class="ted-multi-list">
+          <li v-for="item in multiCanvasSummary" :key="item.id">
+            <button type="button" class="ted-multi-item" @click="focusMultiItem(item.id)">
+              <span class="ted-multi-item-type">{{ toolNames[item.el.type] || item.el.type }}</span>
+              <span class="ted-multi-item-id">{{ item.label }} · {{ item.id }}</span>
+            </button>
+          </li>
+        </ul>
+        <MultiElementBatchProps :els="multiCanvasSummary.map((x) => x.el)" surface="template" />
+        <p class="ted-multi-note">Shift 区间加选；工具栏可对齐/分布。</p>
+      </aside>
+      <aside v-else-if="selZone" class="right ted-props ted-props--zone">
+        <h3 class="ted-zone-title">已定位：{{ selZoneLabel }}</h3>
+        <p class="ted-zone-line"><span class="k">控件 ID</span> {{ selZone.id }}</p>
+        <p class="ted-zone-line"><span class="k">类型</span> {{ selZone.type }}</p>
+        <p v-if="selZone.bindingKind" class="ted-zone-line">
+          <span class="k">绑定</span> {{ selZone.bindingKind }}
+          <template v-if="selZone.opcuaNodeId"> · {{ selZone.opcuaNodeId }}</template>
+        </p>
+        <p class="ted-zone-note">
+          页眉/页脚/版式装饰层为版式快照预览。画布已高亮该控件；若需改节点或样式，请打开对应「版式与页眉页脚」编辑。
+        </p>
+        <button v-if="zoneLayoutEditorLink" type="button" class="b" @click="openZoneLayoutEditor">
+          打开绑定的版式编辑器
+        </button>
+      </aside>
       <aside v-else class="right ted-props ted-props--empty"><p class="ted-props-placeholder">点选画布控件后在此编辑属性。</p></aside>
     </div>
 
@@ -479,6 +537,7 @@
 import TemplateBodyCanvas from "@/components/report-template/TemplateBodyCanvas.vue";
 import TemplateExportPreviewStack from "@/components/report-template/TemplateExportPreviewStack.vue";
 import TemplateElementProps from "@/components/report-template/TemplateElementProps.vue";
+import MultiElementBatchProps from "@/components/report-template/MultiElementBatchProps.vue";
 import SignaturePadDialog from "@/components/report-template/SignaturePadDialog.vue";
 import * as api from "@/api/templates";
 import {
@@ -494,6 +553,11 @@ import {
   templateHasBackSheet,
   templateHasCoverSheet,
 } from "@/lib/report-template/editor-sheet";
+import {
+  findSelectableTemplateElement,
+  selectionHitLabel,
+} from "@/lib/report-template/editor-selection";
+import { connectionLevelHealthHint } from "@/lib/asset-health-links";
 import {
   clampElementToLayout,
   cloneDeepTemplate,
@@ -518,10 +582,18 @@ import {
 import { hideShowBordersInElements } from "@/lib/report-template/show-border";
 import {
   copyTemplateElementToClipboard,
+  copyTemplateElementsToClipboard,
   eventTargetIsTypingField,
   hasTemplateElementClipboard,
-  takeTemplateElementPasteClone,
+  takeTemplateElementsPasteClones,
 } from "@/lib/report-template/editor-element-clipboard";
+import { countTypesById, primaryId, selectOnly } from "@/lib/report-template/selection-set";
+import {
+  canAlign,
+  canDistribute,
+  computeAlignPatches,
+  computeDistributePatches,
+} from "@/lib/report-template/selection-align";
 import { templateTableCellPickKey, reportBindingPreviewKey } from "@/lib/report-template/template-editor-context";
 import { getCachedTemplateFullMap } from "@/lib/report-template/template-view-cache";
 import { useReportBindingPreview } from "@/composables/useReportBindingPreview";
@@ -572,7 +644,13 @@ const {
 } = useSavedFingerprintBaseline(() => editing.value);
 const bindingPreview = useReportBindingPreview(editing);
 provide(reportBindingPreviewKey, bindingPreview);
-const selId = ref(null);
+const selectedIds = ref([]);
+const selId = computed({
+  get: () => primaryId(selectedIds.value),
+  set: (v) => {
+    selectedIds.value = v ? selectOnly(v) : [];
+  },
+});
 const sh = ref("body");
 const dlgSig = ref(false);
 /** @type {import('vue').Ref<'preview'|'edit'>} */
@@ -742,7 +820,7 @@ function undoTplEdit() {
     tplApplyingHistory.value = false;
   }
   void nextTick(() => {
-    if (!sel.value) selId.value = null;
+    if (!findSelectableTemplateElement(editing.value, selId.value)) pruneInvalidSelection();
     hint.value = "已撤销。";
     void bindingPreview.refresh({ silent: true });
   });
@@ -763,25 +841,157 @@ function redoTplEdit() {
     tplApplyingHistory.value = false;
   }
   void nextTick(() => {
-    if (!sel.value) selId.value = null;
+    if (!findSelectableTemplateElement(editing.value, selId.value)) pruneInvalidSelection();
     hint.value = "已重做。";
     void bindingPreview.refresh({ silent: true });
   });
 }
 
-const sel = computed(() => {
+function pruneInvalidSelection() {
   const t = editing.value;
-  const id = selId.value;
-  if (!t || !id) return null;
-  const pages = ensureBodyPages(t);
-  for (const row of pages) {
-    const found = row.find((x) => x.id === id);
-    if (found) return found;
+  if (!t) {
+    selectedIds.value = [];
+    return;
   }
-  const coverFound = bodyElementsRef(t, "cover").find((x) => x.id === id);
-  if (coverFound) return coverFound;
-  return bodyElementsRef(t, "back").find((x) => x.id === id) ?? null;
+  selectedIds.value = selectedIds.value.filter((id) => !!findSelectableTemplateElement(t, id));
+}
+
+function gatherSelectedCanvasElements() {
+  const t = editing.value;
+  if (!t) return [];
+  const out = [];
+  for (const id of selectedIds.value) {
+    const hit = findSelectableTemplateElement(t, id);
+    if (hit?.kind === "canvas") out.push(hit.element);
+  }
+  return out;
+}
+
+const hasCanvasSelection = computed(() => gatherSelectedCanvasElements().length > 0);
+
+const canAlignSel = computed(() => canAlign(selectedIds.value.length));
+const canDistributeSel = computed(() => canDistribute(selectedIds.value.length));
+
+function gatherSelectedAlignBoxes() {
+  const t = editing.value;
+  if (!t) return [];
+  const out = [];
+  for (const id of selectedIds.value) {
+    const hit = findSelectableTemplateElement(t, id);
+    if (!hit?.element) continue;
+    const el = hit.element;
+    out.push({
+      id: el.id,
+      x: Number(el.x) || 0,
+      y: Number(el.y) || 0,
+      w: Number(el.w) || 0,
+      h: Number(el.h) || 0,
+    });
+  }
+  return out;
+}
+
+function applyPosPatchesToTemplate(patches) {
+  const t = editing.value;
+  if (!t || !patches.length) return 0;
+  let n = 0;
+  for (const p of patches) {
+    const hit = findSelectableTemplateElement(t, p.id);
+    if (!hit?.element) continue;
+    hit.element.x = p.x;
+    hit.element.y = p.y;
+    n += 1;
+  }
+  return n;
+}
+
+/** @param {import('@/lib/report-template/selection-align').AlignKind} kind */
+function alignSel(kind) {
+  const boxes = gatherSelectedAlignBoxes();
+  const patches = computeAlignPatches(boxes, kind, primaryId(selectedIds.value));
+  const n = applyPosPatchesToTemplate(patches);
+  hint.value = n ? `已对齐 ${n} 个控件。` : "无需移动（已对齐或选中不足）。";
+}
+
+/** @param {import('@/lib/report-template/selection-align').DistributeKind} kind */
+function distributeSel(kind) {
+  const boxes = gatherSelectedAlignBoxes();
+  const patches = computeDistributePatches(boxes, kind);
+  const n = applyPosPatchesToTemplate(patches);
+  hint.value = n ? `已等距分布（调整 ${n} 个）。` : "无需移动（选中不足 3 个或已等距）。";
+}
+
+const multiCanvasSummary = computed(() => {
+  const t = editing.value;
+  if (!t || selectedIds.value.length <= 1) return null;
+  const items = [];
+  for (const id of selectedIds.value) {
+    const hit = findSelectableTemplateElement(t, id);
+    if (hit?.kind !== "canvas") return null;
+    items.push({
+      id,
+      el: hit.element,
+      label: selectionHitLabel(hit),
+    });
+  }
+  return items.length > 1 ? items : null;
 });
+
+const multiTypeCounts = computed(() => {
+  const items = multiCanvasSummary.value;
+  if (!items) return {};
+  return countTypesById(
+    items.map((x) => x.el),
+    selectedIds.value,
+  );
+});
+
+function focusMultiItem(id) {
+  selectedIds.value = selectOnly(id);
+}
+
+const selHit = computed(() => findSelectableTemplateElement(editing.value, selId.value));
+
+const sel = computed(() => {
+  if (selectedIds.value.length !== 1) return null;
+  const hit = selHit.value;
+  return hit?.kind === "canvas" ? hit.element : null;
+});
+
+const selZone = computed(() => {
+  const hit = selHit.value;
+  return hit?.kind === "zone" ? hit.element : null;
+});
+
+const selZoneLabel = computed(() => {
+  const hit = selHit.value;
+  return hit ? selectionHitLabel(hit) : "";
+});
+
+const zoneLayoutEditorLink = computed(() => {
+  const t = editing.value;
+  const hit = selHit.value;
+  if (!t || hit?.kind !== "zone") return null;
+  const presetId =
+    hit.sheet === "cover"
+      ? t.coverLayoutPresetId
+      : hit.sheet === "back"
+        ? t.backLayoutPresetId
+        : t.layoutPresetId;
+  const id = typeof presetId === "string" ? presetId.trim() : "";
+  return id || null;
+});
+
+function openZoneLayoutEditor() {
+  const id = zoneLayoutEditorLink.value;
+  const focus = selZone.value?.id;
+  if (!id) return;
+  router.push({
+    name: "LayoutPresetEditor",
+    params: { id },
+    query: focus ? { focus } : {},
+  });
+}
 
 /** 属性面板改表格尺寸时与画布共用正文区边界 */
 const propsContentW = computed(() => {
@@ -1010,13 +1220,41 @@ function applyFocusFromRouteQuery() {
   if (!focus || !editing.value) return;
   midMode.value = "edit";
   selId.value = focus;
+  const hit = findSelectableTemplateElement(editing.value, focus);
+  if (hit?.kind === "zone") {
+    hint.value = `已从健康告警定位到${selectionHitLabel(hit)}控件（ID ${focus}）。版式区为预览选中；改绑请打开对应版式。`;
+  } else if (!hit) {
+    hint.value = `健康告警指定的控件 ID「${focus}」在当前模版中未找到（可能已删除）。`;
+    selectedIds.value = [];
+  }
   void nextTick(() => scheduleScrollEditSheetIntoView());
+}
+
+/** 连接级健康告警：无 focus，顶栏说明原因 */
+function applyHealthKindHintFromRouteQuery() {
+  if (String(route.query.focus || "").trim()) return;
+  const kind = String(route.query.healthKind || "").trim();
+  if (!kind) return;
+  const connection_id = String(route.query.connectionId || "").trim();
+  const name = String(route.query.connectionName || "").trim();
+  hint.value = connectionLevelHealthHint({
+    kind,
+    meta: { connection_id, name },
+    message: "",
+  });
 }
 
 watch(
   () => route.query.focus,
   () => {
     applyFocusFromRouteQuery();
+  },
+);
+
+watch(
+  () => [route.query.healthKind, route.query.connectionId, route.query.connectionName],
+  () => {
+    applyHealthKindHintFromRouteQuery();
   },
 );
 
@@ -1080,7 +1318,7 @@ function onPresetBind(slot, ev) {
 
 function setSheet(s) {
   sh.value = s;
-  selId.value = null;
+  selectedIds.value = [];
   const t = editing.value;
   if (t && s === "body") {
     const n = ensureBodyPages(t).length;
@@ -1106,7 +1344,7 @@ function insertBodyPageAt(index, okHint) {
   pages.splice(i, 0, []);
   syncLegacyElementsAlias(t);
   bodyPageIdx.value = i;
-  selId.value = null;
+  selectedIds.value = [];
   hint.value = okHint || `已插入正文第 ${i + 1} 页（空白画布）。`;
   scrollActiveBodyPageIntoView();
 }
@@ -1144,7 +1382,7 @@ function moveBodyPage(delta) {
   pages[to] = tmp;
   syncLegacyElementsAlias(t);
   bodyPageIdx.value = to;
-  selId.value = null;
+  selectedIds.value = [];
   hint.value = delta < 0 ? `已将正文页上移至第 ${to + 1} 页。` : `已将正文页下移至第 ${to + 1} 页。`;
   scrollActiveBodyPageIntoView();
 }
@@ -1161,7 +1399,7 @@ function removeBodyPageRow() {
   pages.splice(bodyPageIdx.value, 1);
   syncLegacyElementsAlias(t);
   if (bodyPageIdx.value >= pages.length) bodyPageIdx.value = pages.length - 1;
-  selId.value = null;
+  selectedIds.value = [];
   hint.value = `已删除正文第 ${removed} 页画布。`;
   scrollActiveBodyPageIntoView();
 }
@@ -1231,12 +1469,13 @@ async function boot() {
     editing.value = cloned;
     // 始终 reclamp：收齐老纵表残留的偏大 tableRows/h（不依赖是否有版式列表）
     reclamp();
-    selId.value = null;
+    selectedIds.value = [];
     resetTplEditHistory();
     markTemplateClean();
     refreshBindingsAfterOpen();
     await nextTick();
     applyFocusFromRouteQuery();
+    applyHealthKindHintFromRouteQuery();
     return true;
   };
 
@@ -1349,45 +1588,48 @@ function dragStart(ev, tp) {
 
 function delSel() {
   const t = editing.value;
-  const id = selId.value;
-  if (!t || !id) return;
+  const ids = new Set(selectedIds.value);
+  if (!t || ids.size === 0) return;
   const pages = ensureBodyPages(t);
   for (const row of pages) {
-    const ix = row.findIndex((x) => x.id === id);
-    if (ix >= 0) {
-      row.splice(ix, 1);
-      selId.value = null;
-      return;
+    for (let i = row.length - 1; i >= 0; i--) {
+      if (ids.has(row[i].id)) row.splice(i, 1);
     }
   }
   for (const sheet of /** @type {const} */ (["cover", "back"])) {
     const arr = bodyElementsRef(t, sheet);
-    const ix = arr.findIndex((x) => x.id === id);
-    if (ix >= 0) {
-      arr.splice(ix, 1);
-      selId.value = null;
-      return;
+    for (let i = arr.length - 1; i >= 0; i--) {
+      if (ids.has(arr[i].id)) arr.splice(i, 1);
     }
   }
+  selectedIds.value = [];
 }
 
 function copySel() {
-  const el = sel.value;
-  if (!el) return;
+  const els = gatherSelectedCanvasElements();
+  if (!els.length) return;
   midMode.value = "edit";
-  copyTemplateElementToClipboard(el);
+  if (els.length === 1) {
+    copyTemplateElementToClipboard(els[0]);
+  } else {
+    copyTemplateElementsToClipboard(els);
+  }
   bumpClipboardUi();
-  hint.value = "已复制控件（含属性配置）。";
+  hint.value = els.length > 1 ? `已复制 ${els.length} 个控件（含属性配置）。` : "已复制控件（含属性配置）。";
 }
 
 function cutSel() {
-  const el = sel.value;
-  if (!el) return;
+  const els = gatherSelectedCanvasElements();
+  if (!els.length) return;
   midMode.value = "edit";
-  copyTemplateElementToClipboard(el);
+  if (els.length === 1) {
+    copyTemplateElementToClipboard(els[0]);
+  } else {
+    copyTemplateElementsToClipboard(els);
+  }
   bumpClipboardUi();
   delSel();
-  hint.value = "已剪切控件。";
+  hint.value = els.length > 1 ? `已剪切 ${els.length} 个控件。` : "已剪切控件。";
 }
 
 function pasteSel() {
@@ -1395,18 +1637,20 @@ function pasteSel() {
   if (!t || !hasTemplateElementClipboard()) return;
   midMode.value = "edit";
   const m = metricsForSheet(t, sh.value);
-  const el = takeTemplateElementPasteClone(m.contentW, m.contentH);
-  if (!el) return;
+  const els = takeTemplateElementsPasteClones(m.contentW, m.contentH);
+  if (!els.length) return;
   bumpClipboardUi();
   if (sh.value === "body") {
     const pages = ensureBodyPages(t);
     const ix = Math.max(0, Math.min(bodyPageIdx.value, pages.length - 1));
-    pages[ix].push(el);
+    for (const el of els) pages[ix].push(el);
   } else {
-    bodyElementsRef(t, sh.value).push(el);
+    const arr = bodyElementsRef(t, sh.value);
+    for (const el of els) arr.push(el);
   }
-  selId.value = el.id;
-  hint.value = "已粘贴控件（属性已保留）。";
+  selectedIds.value = els.map((e) => e.id);
+  hint.value =
+    els.length > 1 ? `已粘贴 ${els.length} 个控件（属性已保留）。` : "已粘贴控件（属性已保留）。";
 }
 
 function hideBordersOnCurrentPage() {
@@ -1479,14 +1723,14 @@ function onKey(ev) {
   }
   if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "c") {
     if (eventTargetIsTypingField(ev.target)) return;
-    if (!sel.value) return;
+    if (!hasCanvasSelection.value) return;
     ev.preventDefault();
     copySel();
     return;
   }
   if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "x") {
     if (eventTargetIsTypingField(ev.target)) return;
-    if (!sel.value) return;
+    if (!hasCanvasSelection.value) return;
     ev.preventDefault();
     cutSel();
     return;
@@ -1499,8 +1743,15 @@ function onKey(ev) {
     return;
   }
   if (eventTargetIsTypingField(ev.target)) return;
+  if (ev.key === "Escape") {
+    if (selectedIds.value.length) {
+      ev.preventDefault();
+      selectedIds.value = [];
+    }
+    return;
+  }
   if (ev.key === "Delete" || ev.key === "Backspace") {
-    if (!selId.value) return;
+    if (!hasCanvasSelection.value) return;
     ev.preventDefault();
     delSel();
   }
@@ -2089,6 +2340,100 @@ onUnmounted(() => {
 }
 .ted-props--empty {
   color: #71717a;
+}
+.ted-props--multi {
+  gap: 10px;
+}
+.ted-multi-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 650;
+  color: #18181b;
+}
+.ted-multi-types {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.ted-multi-type-chip {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgb(238 242 255);
+  color: #4338ca;
+  font-weight: 600;
+}
+.ted-multi-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 40vh;
+  overflow: auto;
+}
+.ted-multi-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid #e4e4e7;
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+  text-align: left;
+  font-size: 12px;
+}
+.ted-multi-item:hover {
+  border-color: #a5b4fc;
+  background: rgb(238 242 255 / 0.5);
+}
+.ted-multi-item-type {
+  font-weight: 600;
+  color: #3f3f46;
+}
+.ted-multi-item-id {
+  color: #71717a;
+  word-break: break-all;
+  line-height: 1.35;
+}
+.ted-multi-note {
+  margin: 0;
+  font-size: 11px;
+  color: #64748b;
+  line-height: 1.45;
+}
+.ted-props--zone {
+  gap: 8px;
+}
+.ted-zone-title {
+  margin: 0 0 4px;
+  font-size: 14px;
+  font-weight: 650;
+  color: #18181b;
+}
+.ted-zone-line {
+  margin: 0;
+  font-size: 12px;
+  color: #3f3f46;
+  line-height: 1.45;
+  word-break: break-all;
+}
+.ted-zone-line .k {
+  display: inline-block;
+  min-width: 3.5em;
+  color: #71717a;
+  font-weight: 600;
+}
+.ted-zone-note {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: #64748b;
+  line-height: 1.45;
 }
 .ted-props-placeholder {
   margin: 0;

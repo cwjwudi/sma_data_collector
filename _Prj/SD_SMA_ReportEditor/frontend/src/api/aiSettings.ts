@@ -24,8 +24,19 @@ export type AiSettingsPatch = {
 }
 
 export type AiChatMessage = {
+  id?: string
   role: 'user' | 'assistant' | 'system'
   content: string
+  status?: 'queued' | 'streaming' | 'done' | 'cancelled' | 'error'
+  toolTrace?: AiToolTraceStep[]
+}
+
+export type AiToolTraceStep = {
+  round?: number
+  name: string
+  args_summary?: Record<string, unknown>
+  ok: boolean
+  message?: string
 }
 
 export type AiPageContext = {
@@ -146,7 +157,10 @@ export async function regenerateAgentToken(): Promise<AiSettingsPublic & { agent
 export async function sendAiChat(opts: {
   messages: AiChatMessage[]
   pageContext?: AiPageContext | null
-}): Promise<{ choices?: { message?: { content?: string } }[] }> {
+}): Promise<{
+  choices?: { message?: { content?: string } }[]
+  report_editor_tool_trace?: AiToolTraceStep[]
+}> {
   return apiFetch('/settings/ai/chat', {
     method: 'POST',
     body: {
@@ -154,6 +168,65 @@ export async function sendAiChat(opts: {
       report_editor_page_context: opts.pageContext || undefined,
     },
   })
+}
+
+export type AiStreamHandlers = {
+  onEvent: (ev: import('../features/ai-assistant/sse-parse').AiStreamEvent) => void
+  signal?: AbortSignal
+}
+
+/** 应用内流式聊天：SSE。 */
+export async function sendAiChatStream(opts: {
+  messages: Pick<AiChatMessage, 'role' | 'content'>[]
+  pageContext?: AiPageContext | null
+  signal?: AbortSignal
+  onEvent: AiStreamHandlers['onEvent']
+}): Promise<void> {
+  const { resolveApiHref } = await import('./apiBase.js')
+  const { createSseParser } = await import('../features/ai-assistant/sse-parse')
+  const { lanAiAuthHeaders } = await import('../lib/runtimeEnv')
+  const url = resolveApiHref('/settings/ai/chat/stream')
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Accept: 'text/event-stream',
+      ...lanAiAuthHeaders(),
+    },
+    body: JSON.stringify({
+      messages: opts.messages,
+      report_editor_page_context: opts.pageContext || undefined,
+      stream: true,
+    }),
+    signal: opts.signal,
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    let msg = text || res.statusText
+    try {
+      const data = JSON.parse(text)
+      if (data?.detail !== undefined) {
+        msg = Array.isArray(data.detail)
+          ? data.detail.map((x: { msg?: string }) => x.msg || JSON.stringify(x)).join('; ')
+          : String(data.detail)
+      }
+    } catch {
+      /* keep */
+    }
+    throw new Error(msg || `HTTP ${res.status}`)
+  }
+  if (!res.body) {
+    throw new Error('流式响应无 body')
+  }
+  const parser = createSseParser(opts.onEvent)
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+    parser.feed(decoder.decode(value, { stream: true }))
+  }
+  parser.flush()
 }
 
 export function extractAssistantText(data: unknown): string {
@@ -170,4 +243,28 @@ export function extractAssistantText(data: unknown): string {
       .trim()
   }
   return ''
+}
+
+export function extractToolTrace(data: unknown): AiToolTraceStep[] {
+  if (!data || typeof data !== 'object') return []
+  const raw = (data as { report_editor_tool_trace?: unknown }).report_editor_tool_trace
+  if (!Array.isArray(raw)) return []
+  const out: AiToolTraceStep[] = []
+  for (const row of raw) {
+    if (!row || typeof row !== 'object') continue
+    const r = row as Record<string, unknown>
+    const name = typeof r.name === 'string' ? r.name.trim() : ''
+    if (!name) continue
+    out.push({
+      round: typeof r.round === 'number' ? r.round : undefined,
+      name,
+      args_summary:
+        r.args_summary && typeof r.args_summary === 'object' && !Array.isArray(r.args_summary)
+          ? (r.args_summary as Record<string, unknown>)
+          : undefined,
+      ok: Boolean(r.ok),
+      message: typeof r.message === 'string' ? r.message : undefined,
+    })
+  }
+  return out
 }

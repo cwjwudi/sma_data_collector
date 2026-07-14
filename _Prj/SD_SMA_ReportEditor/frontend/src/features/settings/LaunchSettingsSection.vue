@@ -1,6 +1,10 @@
 <template>
-  <section v-if="available" class="settings-section">
+  <section class="settings-section">
     <h3 class="settings-section__title">启动</h3>
+    <p v-if="!available" class="settings-hint settings-hint--muted">
+      开机自启与静默启动仅桌面安装版可用；局域网浏览器无需配置此项。
+    </p>
+    <template v-else>
     <p class="settings-hint">
       控制登录系统后是否自动启动本软件，以及是否不显示主窗口（托盘驻留，可随时打开）。
       「静默无页面启动」对开机自启与手动双击均生效。仅桌面安装包完整生效；开发态可改开关但不会写入开机启动项。
@@ -50,6 +54,7 @@
       {{ msg }}
     </p>
     <p v-if="devNote" class="settings-hint">{{ devNote }}</p>
+    </template>
   </section>
 </template>
 

@@ -6,7 +6,7 @@
         <button type="button" class="hz-close" @click="close">关闭</button>
       </div>
       <div class="hz-body">
-        <LayoutPresetPaperCanvas :preset="preset" v-model:selected-id="selId" class="hz-canvas" />
+        <LayoutPresetPaperCanvas :preset="preset" v-model:selected-ids="selectedIds" class="hz-canvas" />
       </div>
     </div>
   </div>
@@ -26,7 +26,7 @@ const emit = defineEmits<{
   (e: "update:modelValue", v: boolean): void;
 }>();
 
-const selId = defineModel<string | null>("selectedId", { default: null });
+const selectedIds = defineModel<string[]>("selectedIds", { default: () => [] });
 
 function close() {
   emit("update:modelValue", false);

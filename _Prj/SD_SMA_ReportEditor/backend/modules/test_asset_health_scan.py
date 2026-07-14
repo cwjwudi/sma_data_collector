@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from modules.ai_template_bindings import extract_template_bindings, validate_bindings_against_config
 from modules.asset_health_scan import (
     _check_orphan_presets,
     _count_sql_fill_split_tables,
     _has_legacy_elements_only,
     _issue,
 )
+from modules.binding_config_scan import scan_binding_config
 
 
 def test_issue_shape():
@@ -61,3 +63,76 @@ def test_split_sql_fill_count():
         ]
     }
     assert _count_sql_fill_split_tables(raw) == 2
+
+
+def test_missing_db_meta_has_connection_id_no_element_id():
+    """007 B5：连接级 missing_db 汇总无 elementId。"""
+    raw = {
+        "bodyPages": [
+            [
+                {
+                    "id": "e1",
+                    "type": "parameter",
+                    "bindingKind": "sql",
+                    "scalarSqlVisual": {"connectionId": "stale-conn", "database": "db", "table": "t"},
+                }
+            ]
+        ]
+    }
+    bindings = extract_template_bindings(raw)
+    issues = validate_bindings_against_config(bindings, db_by_id={}, opc_by_id={})
+    hit = next(i for i in issues if i["kind"] == "missing_db")
+    assert hit["connection_id"] == "stale-conn"
+    assert "elementId" not in hit
+
+
+def test_missing_default_database_meta_no_element_id():
+    """007 B6：连接存在但未设默认库 → 无 elementId。"""
+    raw = {
+        "bodyPages": [
+            [
+                {
+                    "id": "e1",
+                    "type": "parameter",
+                    "scalarSqlVisual": {"connectionId": "c1", "database": "db", "table": "t"},
+                }
+            ]
+        ]
+    }
+    bindings = extract_template_bindings(raw)
+    issues = validate_bindings_against_config(
+        bindings,
+        db_by_id={
+            "c1": {
+                "id": "c1",
+                "name": "SMA",
+                "engine": "mysql",
+                "database": "",
+                "has_password": True,
+            }
+        },
+        opc_by_id={},
+    )
+    hit = next(i for i in issues if i["kind"] == "missing_default_database")
+    assert hit["connection_id"] == "c1"
+    assert "elementId" not in hit
+
+
+def test_cover_opc_empty_has_element_id():
+    """007 B3：封面画布 OPC 空节点带 elementId。"""
+    raw = {
+        "coverElements": [
+            {
+                "id": "p-cover-1",
+                "type": "parameter",
+                "bindingKind": "opcua",
+                "opcuaNodeId": "",
+                "text": "批次",
+                "x": 10,
+                "y": 10,
+            }
+        ]
+    }
+    issues = scan_binding_config(raw, asset_kind="template", asset_id="t1", asset_name="T")
+    hit = next(i for i in issues if i["kind"] == "opc_binding_empty_node")
+    assert hit["meta"]["elementId"] == "p-cover-1"

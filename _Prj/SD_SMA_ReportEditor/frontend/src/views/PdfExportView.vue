@@ -279,11 +279,24 @@ watch(
     page-break-before: always;
     break-before: page;
   }
-  /* 迷你预览外壳为 inline-flex，打印时分页偶发异常；导出时改为普通块级 */
+  /* 迷你预览外壳为 inline-flex，打印时分页偶发异常；导出时改为普通块级，并剥离角色色装饰（009） */
   .pdf-export-root .mpc,
   .pdf-export-root .mpc-slot {
     display: block !important;
     padding: 0 !important;
+    background: transparent !important;
+    outline: none !important;
+    border: none !important;
+    border-radius: 0 !important;
+  }
+  .pdf-export-root .mpc-tag {
+    display: none !important;
+  }
+  .pdf-export-root .mpp-paper,
+  .pdf-export-root .mb-inner.mpp-paper {
+    border: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
   }
 }
 .pdf-export-root {

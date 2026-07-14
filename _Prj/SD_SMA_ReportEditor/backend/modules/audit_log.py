@@ -33,6 +33,10 @@ def _actor() -> dict[str, str]:
     return {"os_user": user.strip(), "hostname": host.strip()}
 
 
+COALESCE_WINDOW_SEC = 15 * 60
+_COALESCE_ACTIONS = frozenset({"template.save", "layout.save"})
+
+
 def append_audit(
     data_dir: Path,
     *,
@@ -64,6 +68,188 @@ def append_audit(
         f.write(json.dumps(entry, ensure_ascii=False) + "\n")
     _maybe_trim(path)
     return entry
+
+
+def _replace_entry_by_id(path: Path, entry_id: str, new_entry: dict[str, Any]) -> bool:
+    """按 id 原地改写一条 JSONL；找不到则返回 False。"""
+    if not path.exists():
+        return False
+    lines = path.read_text(encoding="utf-8").splitlines()
+    found = False
+    out: list[str] = []
+    for line in lines:
+        raw = line.strip()
+        if not raw:
+            continue
+        try:
+            obj = json.loads(raw)
+        except json.JSONDecodeError:
+            out.append(line)
+            continue
+        if isinstance(obj, dict) and str(obj.get("id") or "") == entry_id:
+            out.append(json.dumps(new_entry, ensure_ascii=False))
+            found = True
+        else:
+            out.append(raw)
+    if not found:
+        return False
+    path.write_text("\n".join(out) + ("\n" if out else ""), encoding="utf-8")
+    return True
+
+
+def append_or_coalesce_audit(
+    data_dir: Path,
+    *,
+    action: str,
+    result: str = "ok",
+    summary: str = "",
+    object_type: str | None = None,
+    object_id: str | None = None,
+    detail: dict[str, Any] | None = None,
+    coalesce_window_sec: float = COALESCE_WINDOW_SEC,
+    merge_changes_fn: Any | None = None,
+    build_summary_fn: Any | None = None,
+) -> dict[str, Any]:
+    """成功保存类审计：15 分钟内同一对象合并为一条。
+
+    仅对 ``template.save`` / ``layout.save`` 且 ``result=ok`` 生效；其它走普通 append。
+    合并时跳过中间的失败记录，只认上一次成功保存。
+    """
+    from modules.audit_asset_diff import build_save_summary, format_change_lines, merge_changes
+
+    action_key = (action or "").strip()
+    result_key = (result or "ok").strip() or "ok"
+    oid = (object_id or "").strip() or None
+    otype = (object_type or "").strip() or None
+    incoming_detail = dict(detail) if isinstance(detail, dict) else {}
+
+    if (
+        result_key != "ok"
+        or action_key not in _COALESCE_ACTIONS
+        or not oid
+        or coalesce_window_sec <= 0
+    ):
+        return append_audit(
+            data_dir,
+            action=action_key,
+            result=result_key,
+            summary=summary,
+            object_type=otype,
+            object_id=oid,
+            detail=incoming_detail,
+        )
+
+    now = time.time()
+    path = _audit_path(data_dir)
+    rows = _read_all_rows(path)
+    # 找窗口内最近一条同对象成功保存（按时间倒序扫）
+    prev: dict[str, Any] | None = None
+    for row in sorted(rows, key=lambda x: float(x.get("ts") or 0), reverse=True):
+        if str(row.get("action") or "") != action_key:
+            continue
+        if str(row.get("result") or "") != "ok":
+            continue
+        if (row.get("object_id") or None) != oid:
+            continue
+        ts = float(row.get("ts") or 0)
+        if not ts or (now - ts) > coalesce_window_sec:
+            break
+        prev = row
+        break
+
+    if prev is None:
+        if "save_count" not in incoming_detail:
+            incoming_detail["save_count"] = 1
+        if "first_ts" not in incoming_detail:
+            incoming_detail["first_ts"] = now
+        incoming_detail["last_ts"] = now
+        return append_audit(
+            data_dir,
+            action=action_key,
+            result=result_key,
+            summary=summary,
+            object_type=otype,
+            object_id=oid,
+            detail=incoming_detail,
+        )
+
+    merge_fn = merge_changes_fn or merge_changes
+    prev_detail = prev.get("detail") if isinstance(prev.get("detail"), dict) else {}
+    save_count = int(prev_detail.get("save_count") or 1) + 1
+    first_ts = float(prev_detail.get("first_ts") or prev.get("ts") or now)
+    old_changes = prev_detail.get("changes") if isinstance(prev_detail.get("changes"), list) else []
+    new_changes = (
+        incoming_detail.get("changes") if isinstance(incoming_detail.get("changes"), list) else []
+    )
+    merged = merge_fn(old_changes, new_changes)
+    change_count = len([c for c in merged if isinstance(c, dict) and c.get("key") != "__truncated__"])
+    # 若有截断标记，尽量保留 incoming 的 change_count 上限语义
+    if any(isinstance(c, dict) and c.get("key") == "__truncated__" for c in merged):
+        change_count = max(
+            change_count,
+            int(incoming_detail.get("change_count") or 0),
+            int(prev_detail.get("change_count") or 0),
+        )
+
+    kind = "template" if action_key == "template.save" else "layout"
+    name = str(
+        incoming_detail.get("name")
+        or prev_detail.get("name")
+        or ""
+    ).strip() or "未命名"
+    summary_fn = build_summary_fn or build_save_summary
+    new_summary = summary_fn(
+        kind=kind,
+        name=name,
+        change_count=change_count,
+        save_count=save_count,
+        created=bool(prev_detail.get("created") or incoming_detail.get("created")),
+    )
+    # 合并后若已有后续变更，摘要用「保存…共 N 次」而非「新建」
+    if save_count > 1:
+        new_summary = build_save_summary(
+            kind=kind,
+            name=name,
+            change_count=change_count,
+            save_count=save_count,
+            created=False,
+        )
+
+    updated_detail = {
+        **prev_detail,
+        **{k: v for k, v in incoming_detail.items() if k not in ("changes", "change_lines", "save_count", "first_ts", "last_ts")},
+        "name": name,
+        "save_count": save_count,
+        "first_ts": first_ts,
+        "last_ts": now,
+        "change_count": change_count,
+        "changes": merged,
+        "change_lines": format_change_lines(merged),
+        "truncated": any(isinstance(c, dict) and c.get("key") == "__truncated__" for c in merged),
+        "created": bool(prev_detail.get("created")),
+    }
+    updated: dict[str, Any] = {
+        **prev,
+        "ts": now,
+        "summary": new_summary,
+        "object_type": otype or prev.get("object_type"),
+        "object_id": oid,
+        "detail": updated_detail,
+        "actor": _actor(),
+        "result": "ok",
+        "action": action_key,
+    }
+    if not _replace_entry_by_id(path, str(prev.get("id") or ""), updated):
+        return append_audit(
+            data_dir,
+            action=action_key,
+            result=result_key,
+            summary=summary,
+            object_type=otype,
+            object_id=oid,
+            detail=incoming_detail,
+        )
+    return updated
 
 
 def _maybe_trim(path: Path, *, retention_days: int = DEFAULT_RETENTION_DAYS) -> None:

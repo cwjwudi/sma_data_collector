@@ -12,7 +12,7 @@ async function buildExportHistorySummary(): Promise<Record<string, unknown> | nu
     const dir = prefs.watchDir || loadReportGeneratorPrefs().autoExportDir || ''
     const api = window.electronAPI
     if (!dir || !api?.scanExportPdfs) return null
-    const res = await api.scanExportPdfs({ dir })
+    const res = await api.scanExportPdfs({ dir, limit: 15 })
     const rows = Array.isArray(res?.files) ? res.files : Array.isArray(res) ? res : []
     const totalBytes = rows.reduce((s: number, r: { sizeBytes?: number }) => s + (Number(r.sizeBytes) || 0), 0)
     const recent = rows.slice(0, 15).map((r: { name?: string; filePath?: string; sizeBytes?: number; modifiedAt?: string }) => ({
@@ -23,7 +23,7 @@ async function buildExportHistorySummary(): Promise<Record<string, unknown> | nu
     }))
     return {
       watchDir: dir,
-      count: rows.length,
+      count: typeof res?.total === 'number' ? res.total : rows.length,
       totalBytes,
       scannedAt: new Date().toISOString(),
       recent,

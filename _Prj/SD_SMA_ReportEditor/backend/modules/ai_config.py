@@ -227,6 +227,31 @@ def verify_agent_token(provided: str | None, settings: dict[str, Any] | None = N
     return secrets.compare_digest(str(provided).strip(), expected)
 
 
+def local_or_lan_ai_auth_error(
+    client_host: str | None,
+    bearer_token: str | None,
+    settings: dict[str, Any] | None = None,
+) -> str | None:
+    """本机免 Token；局域网须 allow_lan_access + 有效 Agent Token。
+
+    返回错误文案；None 表示通过。
+    """
+    if is_loopback_host(client_host):
+        return None
+    s = normalize_ai_settings(settings or load_ai_settings())
+    if not client_may_access_agent_api(client_host, s):
+        return (
+            "应用内 AI 默认仅允许本机访问。若需局域网使用，请在设置中开启"
+            "「允许局域网访问 Agent API 与应用内 AI」，并携带 Agent Token。"
+        )
+    if not verify_agent_token(bearer_token, s):
+        return (
+            "局域网访问应用内 AI 需要有效的 Agent Token。"
+            "请在本机设置中生成并粘贴到浏览器，或改用 http://127.0.0.1:8000/。"
+        )
+    return None
+
+
 def is_loopback_host(host: str | None) -> bool:
     if not host:
         return False

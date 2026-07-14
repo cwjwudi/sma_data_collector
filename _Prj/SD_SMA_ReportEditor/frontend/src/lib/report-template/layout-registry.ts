@@ -86,13 +86,18 @@ export type SaveLayoutPresetResult =
   | { ok: false; message: string };
 
 /** 保存单条版式：在线则 PUT 并刷新缓存；失败则写入 localStorage（迁移/离线）。 */
-export async function saveLayoutPresetFlexible(preset: LayoutPreset): Promise<SaveLayoutPresetResult> {
+export async function saveLayoutPresetFlexible(
+  preset: LayoutPreset,
+  opts?: { skipAssetAudit?: boolean },
+): Promise<SaveLayoutPresetResult> {
   const p = hydrateLayoutPreset({
     ...preset,
     updatedAt: preset.updatedAt || new Date().toISOString(),
   });
   try {
-    const body = await api.putLayoutPreset(p.id, p);
+    const body = await api.putLayoutPreset(p.id, p, {
+      skipAssetAudit: opts?.skipAssetAudit,
+    });
     const hydrated = hydrateLayoutPreset(body as Partial<LayoutPreset>);
     await refreshLayoutPresets();
     offline = false;

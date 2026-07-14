@@ -422,31 +422,11 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
     {
         "type": "function",
         "function": {
-            "name": "ensure_user_demo_database",
-            "description": (
-                "在已保存的 MySQL/MariaDB 连接上创建用户库 report_user_lib，"
-                "并写入 demo_batches / demo_metrics 演示数据，供绑定冒烟测试使用。"
-            ),
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "connection_id": {
-                        "type": "string",
-                        "description": "可选；默认取偏好/首个非演示 MySQL 连接",
-                    },
-                },
-                "additionalProperties": False,
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
             "name": "create_binding_smoke_template",
             "description": (
                 "创建/覆盖绑定冒烟模版：封面封尾、页眉页脚、OPC/SQL 参数与混合单元格表、"
-                "可视化 SQL 横表与纵表填充（筛选 batch_no 绑定 OPC 批次号节点并写入演示值）。"
-                "默认顺带确保用户演示库，并标记前端模版列表 reload。"
+                "可视化 SQL 横表与纵表填充（筛选 batch_no 绑定 OPC 批次号节点）。"
+                "需已有数据库与 OPC UA 连接；ensure_schema=true 时可在该连接上创建冒烟用表 report_user_lib。"
             ),
             "parameters": {
                 "type": "object",
@@ -456,7 +436,7 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                     "opc_server_id": {"type": "string", "description": "可选 OPC UA 连接 id"},
                     "ensure_schema": {
                         "type": "boolean",
-                        "description": "是否先创建/刷新用户演示库，默认 true",
+                        "description": "是否在已有连接上创建/刷新冒烟用表，默认 false（需库表已存在）",
                     },
                 },
                 "additionalProperties": False,
@@ -771,6 +751,9 @@ def filtered_tool_definitions() -> list[dict[str, Any]]:
 
 _WRITE_TOOLS = ai_tool_catalog.WRITE_TOOLS
 _CONFIRM_TOOLS = ai_tool_catalog.CONFIRM_TOOLS
+WRITE_TOOLS_DISABLED_ERROR = (
+    "AI 写入工具未启用。请在设置 → AI 助手中开启「允许 AI 写入工具」。"
+)
 
 
 async def execute_tool(name: str, arguments: dict[str, Any] | None, *, page_context: dict[str, Any] | None = None) -> Any:
@@ -781,10 +764,8 @@ async def execute_tool(name: str, arguments: dict[str, Any] | None, *, page_cont
     if not ai_tool_catalog.is_tool_enabled(name, settings):
         return {"ok": False, "error": f"工具「{name}」已在 AI 工具页禁用。"}
 
-    if name in _WRITE_TOOLS and not write_ok:
-        return {"ok": False, "error": "AI 写入工具未启用。请在设置 → AI 助手中开启「允许 AI 写入工具」。"}
-    if name in _CONFIRM_TOOLS and not write_ok:
-        return {"ok": False, "error": "AI 写入/确认类工具未启用。请在设置中开启「允许 AI 写入工具」。"}
+    if (name in _WRITE_TOOLS or name in _CONFIRM_TOOLS) and not write_ok:
+        return {"ok": False, "error": WRITE_TOOLS_DISABLED_ERROR}
 
     result: Any
     if name == "list_db_connections":
@@ -854,16 +835,12 @@ async def execute_tool(name: str, arguments: dict[str, Any] | None, *, page_cont
         result = ai_asset_ops.create_blank_template(str(args.get("name") or ""))
     elif name == "create_blank_layout":
         result = ai_asset_ops.create_blank_layout(str(args.get("name") or ""))
-    elif name == "ensure_user_demo_database":
-        result = ai_demo_template_ops.ensure_user_demo_database(
-            str(args.get("connection_id")).strip() if args.get("connection_id") else None
-        )
     elif name == "create_binding_smoke_template":
         result = await ai_demo_template_ops.create_binding_smoke_template(
             name=str(args.get("name") or "") or None,
             connection_id=str(args.get("connection_id")).strip() if args.get("connection_id") else None,
             opc_server_id=str(args.get("opc_server_id")).strip() if args.get("opc_server_id") else None,
-            ensure_schema=bool(args["ensure_schema"]) if "ensure_schema" in args else True,
+            ensure_schema=bool(args["ensure_schema"]) if "ensure_schema" in args else False,
         )
     elif name == "apply_template_sheet_layouts":
         result = ai_demo_template_ops.apply_template_sheet_layouts(
@@ -881,7 +858,10 @@ async def execute_tool(name: str, arguments: dict[str, Any] | None, *, page_cont
         result = ai_config_ops.request_config_backup_export()
     elif name == "request_config_import_merge":
         bundle = args.get("bundle")
-        result = ai_config_ops.request_config_import_merge(bundle if isinstance(bundle, dict) else {})
+        if not isinstance(bundle, dict):
+            result = {"ok": False, "error": "导入内容须为 JSON 对象"}
+        else:
+            result = ai_config_ops.request_config_import_merge(bundle)
     elif name == "request_config_reset":
         result = ai_config_ops.request_config_reset()
     elif name == "get_export_dir_prefs":
@@ -1036,6 +1016,7 @@ async def _tool_health_summary(args: dict[str, Any]) -> dict[str, Any]:
     dbs = _tool_list_db_connections()["connections"]
     opcs = _tool_list_opc_servers()["servers"]
     out: dict[str, Any] = {
+        "ok": True,
         "db_count": len(dbs),
         "opc_count": len(opcs),
         "datasource_locked": bool(prefs.get("datasource_locked")),
@@ -1055,6 +1036,10 @@ async def _tool_health_summary(args: dict[str, Any]) -> dict[str, Any]:
             if sid:
                 probes.append(await _tool_probe_connection({"kind": "opcua", "connection_id": sid}))
         out["live_probe_results"] = probes
+        # 实时探活：任一失败仍返回摘要，但 ok=false 便于轨迹如实标红
+        if any(isinstance(p, dict) and p.get("ok") is False for p in probes):
+            out["ok"] = False
+            out["error"] = "部分连接实时探活失败，见 live_probe_results"
     return out
 
 
@@ -1069,12 +1054,12 @@ def _tool_query_audit(args: dict[str, Any]) -> dict[str, Any]:
         result=str(args.get("result")).strip() if args.get("result") else None,
     )
     entries = [_mask_audit_entry(e) for e in (data.get("entries") or [])]
-    return {"entries": entries, "total": data.get("total", len(entries))}
+    return {"ok": True, "entries": entries, "total": data.get("total", len(entries))}
 
 
 def _tool_list_templates() -> dict[str, Any]:
     summaries = [s.model_dump(mode="json") for s in template_store.list_summaries()]
-    return {"templates": summaries, "count": len(summaries)}
+    return {"ok": True, "templates": summaries, "count": len(summaries)}
 
 
 def _tool_get_template_summary(args: dict[str, Any]) -> dict[str, Any]:
@@ -1089,6 +1074,8 @@ def _tool_get_template_summary(args: dict[str, Any]) -> dict[str, Any]:
 
 def _tool_explain_export_diagnostics(args: dict[str, Any]) -> dict[str, Any]:
     text = str(args.get("text") or "")
+    if not text.strip():
+        return {"ok": False, "error": "缺少 text", "hint": "请粘贴含 ---EXPORT_DIAGNOSTICS--- 的失败文案"}
     idx = text.find(EXPORT_DIAG_MARKER)
     payload: dict[str, Any] | None = None
     message = text
@@ -1139,6 +1126,7 @@ def _tool_app_version() -> dict[str, Any]:
     port = ai_config.resolve_backend_port()
     pub = ai_config.public_ai_settings(port=port)
     return {
+        "ok": True,
         "app": "SD_SMA_ReportEditor",
         "version": APP_VERSION,
         "agent_chat_url_loopback": pub.get("agent_chat_url_loopback"),

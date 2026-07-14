@@ -1,8 +1,653 @@
 # ReportEditor AI 助手：上游错误与写入类能力闭环
 
 > 本文件为 **任务看板**；规则见 [CLAUDE.md](../CLAUDE.md)。  
-> 版本计划：探活 [0.3.60](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.60.md)（代码已合入）；本版体验切片 [0.3.62](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.62.md)。  
-> **范围说明**：不只「开启定时探活」；在开启「允许 AI 写入工具」后，数据源、模版/版式资产、备份恢复、结批导出、演示冒烟、诊断取证等能力域均须**真正执行并反映到 UI**（禁止空口答应）。完整域表见下方 H1。
+> 版本计划：探活 [0.3.60](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.60.md)；上游错误体验 [0.3.62](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.62.md)；Agent 工具轨迹 [0.3.66](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.66.md)；轨迹假失败 [0.3.71](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.71.md)；排队收纳 [0.3.77](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.77.md)；流式先工具 [0.3.78](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.78.md)；多轮简洁 [0.3.79](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.79.md)；复制模版/版式 [0.3.80](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.80.md)；删除模版/版式 [0.3.81](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.81.md)；加密备份 [0.3.82](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.82.md)；恢复/复位 [0.3.83](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.83.md)；写入总闸 [0.3.84](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.84.md)；新建空白/冒烟 [0.3.85](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.85.md)；打开编辑 [0.3.86](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.86.md)；模版排序 [0.3.87](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.87.md)；导出目录 [0.3.88](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.88.md)；预检/模拟结批 [0.3.89](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.89.md)；结批写回/并行 [0.3.90](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.90.md)；诊断类 [0.3.91](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.91.md)；检查更新 [0.3.92](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.92.md)。  
+> **范围说明**：不只「开启定时探活」；在开启「允许 AI 写入工具」后，数据源、模版/版式资产、备份恢复、结批导出、演示冒烟、诊断取证等能力域均须**真正执行并反映到 UI**（禁止空口答应）。完整域表见下方能力矩阵 H1（仍 ⌛️）。  
+> **Agent 体验**：对话须可见工具调用与状态；口头结论必须与工具结果一致——轨迹 H1 已于 **0.3.66** 落地（探活强制再调）。
+
+---
+
+# ⌛️ 未完成：探活 claim 误伤「只读查证当前状态」（审计分析场景）
+
+> **流程**：先记录，未开工改代码。  
+> **发现**：2026-07-14 · 分支 `feat/016-ai-chat-ui` / 0.3.94 DMG 现场。  
+> **相关**：[`ai_claim_guard.py`](../_Prj/SD_SMA_ReportEditor/backend/modules/ai_claim_guard.py) · 流式/清屏侧见 [docs/016](016-⌛️-ReportEditor-AI对话UI改版.md)。
+
+## 现象（用户原话 · 问「分析一下审计记录」）
+
+1. 助手先据 `query_audit_log` 给出较完整的审计摘要（分类、时间线、注意点）——合理。  
+2. 自纠：「不该仅凭审计断言当前状态」，再调 `get_connection_health_summary`（轨迹：`live_probe: false`，工具成功）。  
+3. 正文写明：定时探活**当前** ✅ 已开启（间隔 10s）；数据源已锁定。  
+4. 文末却被 claim guard 追加/改写成：
+
+> 未能确认定时探活已开启：本轮没有成功的**写入**工具结果。请确认设置中已开启「允许 AI 写入工具」…
+
+5. 工具轨迹可见：`query_audit_log` #1 成功；`get_connection_health_summary` #3 成功——**并无** `update_connection_probe_settings` 写入，也不该要求写入。
+
+## 根因（分析）
+
+| 点 | 说明 |
+|----|------|
+| 守卫粒度 | `detect_probe_claim` 把「已开启/已经开启…」一律当作**写入完成态** |
+| 证据要求 | `probe_claim_has_evidence` **只认** `update_connection_probe_settings(enabled=…)` 成功 |
+| 误伤 | 「只读查证 → 陈述当前探活为开」与「空口声称我已帮你开启」用同一规则；读工具成功也不算证据 |
+| 文案 | `rewrite_probe_claim_failure` 固定引导「写入总闸 / 手动切换」，与**审计/诊断只读场景**不符 |
+
+诊断守卫（`needs_diagnostic_claim_retry`）本可用 `get_connection_health_summary` 等作证据；探活守卫过窄，且「探活已开」字样优先命中探活规则。
+
+## 拟修复（待拍板后开工）
+
+1. **区分意图**：仅当用户意图/助手语义为「去开启/关闭探活」时，才要求 write 工具证据。  
+2. **只读陈述放行**：若本轮已有成功的 `get_connection_health_summary`（或等价读偏好）且文案是「当前状态为…」，**不**触发探活 write claim 再调/改写。  
+3. 或收紧正则：区分「已为你开启 / 开启成功」vs「当前为开启 / 状态：已开启」。  
+4. 单测：审计分析 + health 读回「当前已开」→ **不得**改写成「没有成功的写入工具结果」。
+
+## 验收
+
+- [ ] 「分析审计」类：可陈述审计里的探活历史；查证当前状态后，不出现「缺少写入工具」误报  
+- [ ] 「请开启定时探活」：仍须 write 成功，否则再调/如实失败（原 H1 不回退）  
+- [ ] 轨迹中仅有 read 时，不要求 `update_connection_probe_settings`
+
+## 不做（本条登记）
+
+- 本轮不改代码（仅看板）  
+- 不削弱「空口答应开启探活」的 write 守卫
+
+---
+
+# ✅ 已完成：检查更新（能力矩阵 N · → 0.3.92）
+
+## 产品诉求
+
+「有没有新版本」：`request_check_app_update` 仅排队本机检查；确认后执行检查、**不自动安装**；禁止空口声称已安装。
+
+## 本版加固（0.3.92）
+
+1. pending payload 明示 `auto_install=false`  
+2. `test_ai_check_update.py`：排队/确认/取消/总闸  
+3. `ai_claim_guard`：安装完成态口头断言一律改写  
+4. `SYSTEM_PROMPT`：禁声称已安装/未确认前已有检查结果
+
+## 逐步测试用例
+
+| # | 步骤 | 期望 |
+|---|------|------|
+| N1 | `request_check_app_update` | `awaiting_user_confirm` + `check_update` |
+| N2 | 确认 | `client_action=check_update`，`auto_install=false` |
+| N3 | 取消 | pending 清空 |
+| N4 | 总闸关 | 拒绝 |
+| N5 | 「已安装」口头断言 | 改写为只检查不安装 |
+
+```bash
+cd _Prj/SD_SMA_ReportEditor/backend && uv run pytest modules/test_ai_check_update.py -q
+```
+
+---
+
+# ✅ 已完成：诊断类（能力矩阵 M · → 0.3.91）
+
+## 产品诉求
+
+「链路哪里坏了 / 看审计 / 当前版本」：必须调诊断工具拿事实；口头完成态断言无工具证据时强制再调或改写。
+
+## 本版加固（0.3.91）
+
+1. `inspect_template_bindings` / `explain_export_diagnostics` / `get_app_version_and_endpoints` 防护与 `ok` 字段  
+2. `ai_claim_guard` 诊断事实断言守卫（流式/非流式纠错轮）  
+3. `test_ai_diagnostics.py`：快照计数、链路阶段、审计、绑定缺失、导出诊断块、总闸关可读  
+4. `SYSTEM_PROMPT` 点名诊断工具；禁编造连接/审计/版本
+
+## 逐步测试用例
+
+| # | 步骤 | 期望 |
+|---|------|------|
+| M1 | `get_dev_runtime_snapshot` | version/counts 与夹具一致 |
+| M2 | `diagnose_work_chain` | 六阶段齐全；db/opc 计数正确 |
+| M3 | `query_audit_log` | 读回刚写入失败审计 |
+| M4 | `inspect_template_bindings` | 缺 id/非法/缺失连接有 issues |
+| M5 | `explain_export_diagnostics` | 解析 EXPORT_DIAGNOSTICS |
+| M6 | 总闸关 | 诊断 read 仍通 |
+| M7 | claim guard | 无工具事实断言 → retry/改写 |
+
+```bash
+cd _Prj/SD_SMA_ReportEditor/backend && uv run pytest modules/test_ai_diagnostics.py modules/test_ai_tool_trace_claim_guard.py -q
+```
+
+---
+
+# ✅ 已完成：结批写回 / 并行上限（能力矩阵 L · → 0.3.90）
+
+## 产品诉求
+
+「改结批写回 PLC / 并行数」：写入镜像后 `get_export_result_feedback` / `check_auto_trigger_bindings` 可读回一致；总闸关拒绝写。
+
+## 本版加固（0.3.90）
+
+1. `set_export_result_feedback` / `set_max_parallel_exports` 补 `pending_token`；空 patch / 非法 statusKind 拒绝  
+2. `test_ai_export_feedback.py`：默认/按模版写回、并行 clamp、总闸  
+3. `SYSTEM_PROMPT`：写后读回核对；禁空口声称已改
+
+## 逐步测试用例
+
+| # | 步骤 | 期望 |
+|---|------|------|
+| L1 | set 默认反馈 | mirror + get 读回一致 + pending_token |
+| L2 | set 按模版覆盖 | resolved 命中 by_template |
+| L3 | 空 patch / 坏 statusKind | `ok=false` |
+| L4 | set_max_parallel=3 | mirror auto + check 读回 3 |
+| L5 | 99→16、0→1、非法 | clamp 或拒绝 |
+| L6 | 总闸关 | 写拒绝；get 仍可读 |
+
+```bash
+cd _Prj/SD_SMA_ReportEditor/backend && uv run pytest modules/test_ai_export_feedback.py -q
+```
+
+---
+
+# ✅ 已完成：预检 / 模拟结批（能力矩阵 K · → 0.3.89）
+
+## 产品诉求
+
+「先检查能不能结批」→ `preflight_export` 返回 ready/issues 事实；「模拟结批一次」→ `request_manual_export` 仅排队，用户确认后本机 Electron 导出 PDF（禁止口头宣称已导出）。
+
+## 本版加固（0.3.89）
+
+1. `preflight_export` / `request_manual_export`：空 id、非法 id、`ValueError` 防护；预检带回 `resolved_connections`  
+2. `test_ai_export_ops.py`：预检事实、pending→confirm/cancel、总闸（confirm 拒 / read 仍通）  
+3. `SYSTEM_PROMPT`：先预检据实汇报；禁空口声称已导出
+
+## 逐步测试用例
+
+| # | 步骤 | 期望 |
+|---|------|------|
+| K1 | `preflight_export` 缺 id | `ok=false` |
+| K2 | 模版不存在 | `ok=false` |
+| K3 | 空绑定模版 | `ready=true`，`issues=[]` |
+| K4 | 总闸关仍可预检 | `ok=true`（read） |
+| K5 | `request_manual_export` | `awaiting_user_confirm` + `confirm_manual_export` |
+| K6 | 确认 | `client_action=confirm_manual_export` |
+| K7 | 取消 | `cancelled`，pending 清空 |
+| K8 | 总闸关 | confirm 工具拒绝 |
+
+```bash
+cd _Prj/SD_SMA_ReportEditor/backend && uv run pytest modules/test_ai_export_ops.py -q
+```
+
+---
+
+# ✅ 已完成：导出目录（能力矩阵 J · → 0.3.88）
+
+## 产品诉求
+
+「把 PDF 输出改到某某路径」：已知路径调 `set_export_dir` 写镜像；需本机选择调 `request_pick_export_dir` → pending 选目录；总闸关拒绝。
+
+## 本版加固（0.3.88）
+
+1. `set_export_dir` 写入时补 `pending_token`  
+2. `test_ai_export_dir.py`：写路径/读回、空路径、pick pending/确认/取消、总闸  
+3. `SYSTEM_PROMPT` 点名 set/pick；禁空口声称已改路径
+
+## 逐步测试用例
+
+| # | 步骤 | 期望 |
+|---|------|------|
+| J1 | `set_export_dir` | mirror 含 autoExportDir/watchDir + pending |
+| J2 | `get_export_dir_prefs` | 读回一致 |
+| J3 | 空路径 | `ok=false` |
+| J4 | `request_pick_export_dir` | awaiting_user_action |
+| J5 | 确认 / 取消 | client_action 或 cancelled |
+| J6 | 总闸关 | set/pick 均拒绝 |
+
+```bash
+cd _Prj/SD_SMA_ReportEditor/backend && uv run pytest modules/test_ai_export_dir.py -q
+```
+
+---
+
+# ✅ 已完成：模版展示排序（能力矩阵 I · → 0.3.87）
+
+## 产品诉求
+
+「把某某排到最前」须调 `set_template_display_order` → 写入镜像 `template_display_order` + pending → 前端落到 localStorage 并刷新模版管理页；空参拒绝；总闸关拒绝。
+
+## 本版加固（0.3.87）
+
+1. 须提供 `ordered_ids` 或 `move`，否则 `ok=false`  
+2. 成功后补 `mark_ui_reload(assets)`  
+3. `test_ai_template_order.py` + 前端 mirror 测 `template_order` 事件  
+4. `SYSTEM_PROMPT` 点名排序工具
+
+## 逐步测试用例
+
+| # | 步骤 | 期望 |
+|---|------|------|
+| I1 | `ordered_ids` 重排 | get 读回一致；mirror pending + order |
+| I2 | `move` | 相对位置调整成功 |
+| I3 | 空参 / 非法 move | `ok=false` |
+| I4 | 总闸关 | 拒绝；不写 mirror |
+| I5 | 总闸关时 get | 只读仍可 |
+| I6 | mirror 含 template_display_order | 派发 `template_order` |
+
+```bash
+cd _Prj/SD_SMA_ReportEditor/backend && uv run pytest modules/test_ai_template_order.py -q
+cd ../frontend && npm test -- --run src/lib/client-prefs-mirror.test.ts
+```
+
+---
+
+# ✅ 已完成：打开模版 / 版式（能力矩阵 H · → 0.3.86）
+
+## 产品诉求
+
+「打开某某模版/版式」须调 `request_open_*` → pending 确认 → 确认后前端 `client_action=open_editor` 跳转编辑器；取消不跳转；非法 id / 总闸关拒绝。
+
+## 本版加固（0.3.86）
+
+1. `request_open_*`：空/非法 id 返回错误，不抛 `ValueError`  
+2. `test_ai_asset_open.py`：pending / 确认返回 payload / 取消 / 缺源 / 总闸  
+3. `SYSTEM_PROMPT`：点名工具；禁声称已打开
+
+## 逐步测试用例
+
+| # | 步骤 | 期望 |
+|---|------|------|
+| H1 | `request_open_template` | awaiting；payload.editor=`template` |
+| H2 | 确认 | `client_action=open_editor` + id |
+| H3 | 取消 | 无 client_action；pending 清空 |
+| H4 | 版式同 H1–H2 | editor=`layout` |
+| H5 | 空/缺/非法 id | `ok=false` |
+| H6 | 总闸关 | 拒绝 |
+
+```bash
+cd _Prj/SD_SMA_ReportEditor/backend && uv run pytest modules/test_ai_asset_open.py -q
+```
+
+> 路由 `TemplateEditor` / `LayoutPresetEditor` 跳转由前端 `AiPendingPromptDialog` 执行，属 UI 路径。
+
+---
+
+# ✅ 已完成：新建空白 / 冒烟模版（能力矩阵 G · → 0.3.85）
+
+## 产品诉求
+
+「新建空白模版/版式」须调 `create_blank_*` → 落盘 + `ui_reload.assets`；「绑定冒烟」须 `create_binding_smoke_template`（需已有 DB+OPC）；**演示库一键工具已下线**，不得空口答应建演示库。
+
+## 本版加固（0.3.85）
+
+1. `test_ai_asset_create.py`：空白模版/版式落盘+list+reload；总闸拒绝；冒烟无连接/无 OPC 明确失败  
+2. `SYSTEM_PROMPT`：点名 create_blank_*；冒烟需双连接；禁承诺 `ensure_user_demo_database`
+
+## 逐步测试用例
+
+| # | 步骤 | 期望 |
+|---|------|------|
+| G1 | `create_blank_template` | 落盘；list 可见；`ui_reload` |
+| G2 | `create_blank_layout` | 同上 |
+| G3 | 空名称 | 默认「新建模版/新建版式」 |
+| G4 | 总闸关 | 拒绝；不落盘 |
+| G5 | 冒烟无 DB/OPC | `ok=false`；不落盘 |
+| G6 | 仅有 DB 无 OPC | 报缺 OPC |
+
+```bash
+cd _Prj/SD_SMA_ReportEditor/backend && uv run pytest modules/test_ai_asset_create.py -q
+```
+
+> 冒烟在双连接齐全且可连 OPC/库表时的完整创建属现场手测；本切片覆盖门禁与失败路径。
+
+---
+
+# ✅ 已完成：写入总闸关闭统一拒绝（能力矩阵 F · → 0.3.84）
+
+## 产品诉求
+
+「允许 AI 写入工具」关闭时，任一 write/confirm 意图须返回明确错误，**系统状态不变**（无 pending、不改配置）；只读工具仍可用。
+
+## 本版加固（0.3.84）
+
+1. write / confirm 共用统一错误文案 `WRITE_TOOLS_DISABLED_ERROR`  
+2. `test_ai_write_gate.py`：参数化覆盖目录内全部 write+confirm；对照总闸开；只读仍可  
+3. `SYSTEM_PROMPT`：总闸关闭须提示去设置开启，并确认状态未变
+
+## 逐步测试用例
+
+| # | 步骤 | 期望 |
+|---|------|------|
+| F1 | 总闸关 + 每个 write/confirm | `ok=false` + 统一文案含「允许 AI 写入工具」 |
+| F2 | 同上 | pending=0；config 指纹不变 |
+| F3 | 总闸关 + 只读工具 | 不得返回总闸错误 |
+| F4 | 总闸开 + 探活 write | 可越过总闸门禁 |
+
+```bash
+cd _Prj/SD_SMA_ReportEditor/backend && uv run pytest modules/test_ai_write_gate.py -q
+```
+
+---
+
+# ✅ 已完成：恢复 / 复位确认流（能力矩阵 E · → 0.3.83）
+
+## 产品诉求
+
+「导入配置 / 快速复位」须走确认流：确认后 merge 或清空生效并 UI reload；取消则不变；工具结果不回传导入密文；总闸关拒绝。
+
+## 本版加固（0.3.83）
+
+1. `apply_reset` / `apply_import_merge` 成功后 `mark_ui_reload(assets+datasource)`  
+2. `execute_tool`：非 dict `bundle` 直接拒绝（不再静默变 `{}`）  
+3. `test_ai_config_restore.py`：pending / 取消 / 确认 / 密文不进公开结果 / 总闸  
+4. `SYSTEM_PROMPT`：点名工具；`awaiting_user_confirm` 禁「已导入/已复位」
+
+## 逐步测试用例
+
+| # | 步骤 | 期望 |
+|---|------|------|
+| E1 | `request_config_reset` | awaiting；配置与模版仍在 |
+| E2 | 取消复位 | 状态不变 |
+| E3 | 确认复位 | 连接/模版清空 + `ui_reload` |
+| E4 | `request_config_import_merge` | awaiting；公开结果无明文口令 |
+| E5 | 取消导入 | 配置不变 |
+| E6 | 确认导入 | merge 生效 + `ui_reload` |
+| E7 | 非对象 bundle / 总闸关 | `ok=false` |
+
+```bash
+cd _Prj/SD_SMA_ReportEditor/backend && uv run pytest modules/test_ai_config_restore.py -q
+```
+
+---
+
+# ✅ 已完成：导出加密备份（能力矩阵 D · → 0.3.82）
+
+## 产品诉求
+
+用户说「导出备份」时，须调 `request_config_backup_export` → 本机弹框另存 `.rebak`；**聊天与工具结果不得出现口令/密文**；总闸关则拒绝。
+
+## 代码侧（本版前已有）
+
+- 工具仅建 `pick_export_dir` + `backup_export` pending；UI `fetch /settings/config/export` 下载加密字节
+- `export_config_share_summary` 仅返回计数（脱敏）
+
+## 本版加固（0.3.82）
+
+1. `test_ai_config_backup.py`：pending 无密文、总闸拒绝、share 摘要无 password、轨迹剥离 `rebak_password`  
+2. `SYSTEM_PROMPT`：点名备份工具 + `awaiting_user_action`；禁把 .rebak/口令回 LLM
+
+## 逐步测试用例
+
+| # | 步骤 | 期望 | 覆盖 |
+|---|------|------|------|
+| D1 | `request_config_backup_export` | `awaiting_user_action`；payload=`backup_export` | pending 测例 |
+| D2 | 序列化工具结果 / pending 列表 | 无明文口令、无 ciphertext、无 SDRE1 | `_assert_no_secret_leak` |
+| D3 | 总闸关 | 拒绝；无 pending | blocked 测例 |
+| D4 | `export_config_share_summary` | 仅计数；无 password | share 测例 |
+| D5 | 轨迹 args 含 `rebak_password` | 摘要剥离 | tool_trace 测例 |
+
+```bash
+cd _Prj/SD_SMA_ReportEditor/backend && uv run pytest modules/test_ai_config_backup.py -q
+```
+
+> 本机点「选择备份保存位置」下载 `.rebak` 属 Electron UI 路径；加密魔术头由 `test_bundle_crypto` / D 内 crypto 契约覆盖。
+
+---
+
+# ✅ 已完成：删除模版 / 版式确认流（能力矩阵 C · → 0.3.81）
+
+## 产品诉求
+
+用户说「删掉某某模版/版式」时，须调 `delete_template` / `delete_layout_preset` → pending 确认弹框 → **确认后**落盘删除并 `mark_ui_reload(assets)`；**取消则仍在**；总闸关拒绝。禁止在 `awaiting_user_confirm` 时声称已删除。
+
+## 代码侧（本版前已有）
+
+- `request_delete_*` → pending；`apply_delete_*` → 删盘 + reload
+- 前端确认后 `notifyAssetsChanged('delete')`
+
+## 本版加固（0.3.81）
+
+1. 空 / 非法 id 返回 `ok=false`，不再抛 `ValueError`  
+2. `test_ai_asset_delete.py`：请求不删、确认删除+reload、取消保留、总闸拒绝  
+3. `SYSTEM_PROMPT`：点名 delete 工具 + awaiting 禁「已删除」
+
+## 逐步测试用例
+
+| # | 步骤 | 期望 | 覆盖 |
+|---|------|------|------|
+| C1 | `delete_template` | `awaiting_user_confirm`；磁盘仍在；无 mirror | request 测例 |
+| C2 | `apply_confirm(true)` | 文件消失；list 无该 id；`ui_reload.assets` | confirm 测例 |
+| C3 | `apply_confirm(false)` | 资产仍在 | cancel 测例 |
+| C4 | 版式同 C1–C3 | 同左 | layout 测例 |
+| C5 | 空/非法/缺源 id | `ok=false` 不抛异常 | empty / invalid / missing |
+| C6 | 总闸关 | 拒绝；资产不变 | blocked 测例 |
+
+```bash
+cd _Prj/SD_SMA_ReportEditor/backend && uv run pytest modules/test_ai_asset_delete.py -q
+```
+
+---
+
+# ✅ 已完成：复制模版 / 版式端到端（能力矩阵 B · → 0.3.80）
+
+## 产品诉求
+
+用户说「复制某某模版/版式」时，须真调 `copy_template` / `copy_layout_preset` → 落盘新 id → `mark_ui_reload(assets)` → 列表出现副本；禁止空口答应。
+
+## 代码侧（本版前已有）
+
+- `ai_asset_ops.copy_*`：深拷贝 + `mark_ui_reload(assets=True)`
+- 前端 `client-prefs-mirror`：`ui_reload.assets` → `notifyAssetsChanged`
+
+## 本版加固（0.3.80）
+
+1. `test_ai_asset_ops.py`：复制成功落盘、列表可见、mirror `assets`；缺源失败；总闸关闭拒绝；深拷贝独立；list_* 可见副本  
+2. `client-prefs-mirror.test.ts`：`assets` → `report-editor-assets-changed`  
+3. `SYSTEM_PROMPT`：复制必须点名 `copy_template` / `copy_layout_preset`（先 `list_*` 取 id）
+
+## 验收
+
+- [x] B：copy_* 成功 → 磁盘与列表有副本 + `ui_reload.assets`  
+- [x] 总闸关 → 拒绝且不落盘  
+- [x] 提示词含 copy 工具名  
+
+## 逐步测试用例（自动化 · 2026-07-13）
+
+| # | 步骤 | 期望 | 覆盖 |
+|---|------|------|------|
+| B1 | `copy_template(source, 新名)` | `ok`；新 id；磁盘可读；源仍在 | `test_copy_template_persists…` |
+| B2 | 读 `client_prefs_mirror` | `pending_apply` + `ui_reload.assets` + reason=`copy_template` | 同上 |
+| B3 | `list_templates` | 列表含源与副本名 | `test_list_templates_sees_copy` |
+| B4 | `copy_layout_preset` + `list_layout_presets` | 同 B1–B3（版式） | layout 对应测例 |
+| B5 | 改副本边距/名称再保存 | 源名称与边距不变（深拷贝独立） | `test_copy_template_is_deep_independent` |
+| B6 | 空 / 不存在 source_id | `ok=false`；失败不写 mirror | empty / missing / failed_copy |
+| B7 | 总闸 `write_tools_enabled=false` | 拒绝；磁盘仍仅 1 份源 | `test_copy_blocked_when_write_disabled` |
+| B8 | mirror `assets` + reason | 前端派发 `report-editor-assets-changed` | `client-prefs-mirror.test.ts` |
+| B9 | 无 `pending_apply` | 即使 assets=true 也不派发 | 同上 |
+
+本地复跑：
+
+```bash
+cd _Prj/SD_SMA_ReportEditor/backend && uv run pytest modules/test_ai_asset_ops.py -q
+cd ../frontend && npm test -- --run src/lib/client-prefs-mirror.test.ts
+```
+
+> 真 LLM 对话（模型是否主动调 copy_*）仍属现场手测，不在本表自动化范围。
+
+---
+
+# ✅ 已完成：多轮对话默认简洁（最近 N 轮进请求 · → 0.3.79）
+
+## 现象（2026-07-13）
+
+连续提问时回复常复述前文、铺垫过长，显得啰嗦。
+
+## 根因
+
+抽屉把几乎全部历史 user/assistant 正文每次 POST 给模型；`SYSTEM_PROMPT` 未约束「只答最新、勿复述」。
+
+## 已拍板
+
+| # | 结论 |
+|---|------|
+| 请求窗口 | 发给 LLM **最近 8 条**消息（`sliceRecentChatMessages`）；截断后若首条是 assistant 再丢掉，避免半轮开场 |
+| 抽屉展示 | **仍显示完整历史**（仅请求侧截断） |
+| 提示词 | 默认简洁：只针对最新问题；勿复述已完成操作，除非用户要求回顾 |
+| 本条不做 | 旧轮摘要压缩、可配置 N 的设置页 UI |
+
+## 实现（0.3.79）
+
+1. `chat-history-window.ts` + 单测  
+2. `AiDrawer.runOneTurn` 用窗口切片再发流  
+3. `SYSTEM_PROMPT` 增简洁约束  
+
+## 验收
+
+- [x] 长会话请求体不超过约 8 条（单测覆盖切片）  
+- [x] 抽屉仍可见更早气泡  
+- [x] 提示词含简洁约束  
+
+---
+
+# ✅ 已完成：流式同轮先工具后正文（→ 0.3.78）
+
+## 现象（2026-07-13）
+
+用户说「打开探活」时，气泡里**先**出现「已开启…」，工具轨迹与设置开关**后**才更新，观感像空口答应。
+
+## 根因
+
+0.3.72 流式：上游同一轮里 `content` 即时 SSE `delta`，`tool_calls` 等流结束才执行 → 必然「先结论、后办事」。
+
+## 已拍板
+
+| # | 结论 |
+|---|------|
+| 同轮有 tool_calls | **缓冲正文、不发 delta**；先 `status:tools` + `tool` 事件；结论由下一轮再流 |
+| 同轮无 tool | 上游结束后再分段放出正文（`chunk_text_for_simulated_stream`） |
+| 空口探活声称 | 纠错再调前先 `replace` 清空已放出的假文案 |
+| 写类 tool 成功 | 前端立刻 `syncPendingClientPrefsFromBackend`（开关不等整轮结束） |
+| 顺带 | `upsert_db/opc` 成功补 `mark_ui_reload(datasource)` |
+
+## 实现（0.3.78）
+
+1. `ai_chat_stream.should_hold_content_for_tools` + `iter_chat_stream_sse` 缓冲策略  
+2. `SYSTEM_PROMPT`：工具成功前禁完成态措辞  
+3. `AiDrawer`：tool `ok` 即时 mirror  
+4. `ai_datasource_ops`：upsert 后 `mark_ui_reload`
+
+## 验收
+
+- [x] 同轮「正文+探活工具」：用户先见工具轨迹，后见结论文案  
+- [x] 纯聊天轮：正文仍可分段出现  
+- [x] 探活工具成功后设置开关尽快刷新  
+- [x] upsert 连接后数据源列表可 reload  
+
+---
+
+# ✅ 已完成：排队改到输入框上方收纳（类 Cursor · → 0.3.77）
+
+## 现象（2026-07-13）
+
+生成中再发问时，排队项以**用户气泡**插入消息列表并标「排队中」。当前轮结束后列表滚动/重排，排队气泡会**浮到刚出完的回复上方**，读起来像「历史里突然多了还没问的话」，和 Cursor 等产品「队在输入区附近、正文流只放已发送/已回答」不一致。
+
+## 产品诉求
+
+排队**不要进消息时间线**；在**输入框上方**用一块可收纳区域展示待发问题，直到该条**开始回复**（出队变为正式 user 气泡）再进入消息流。
+
+## 已拍板（按默认 ★ · 2026-07-13）
+
+| # | 问题 | 结论 |
+|---|------|------|
+| Q1 | 排队 UI 位置 | **composer 正上方**：折叠条「排队 N」；展开为列表（摘要 + × 取消） |
+| Q2 | 消息列表是否仍渲染 `queued` | **否**；队列只活在 `chat-queue` + 收纳条 |
+| Q3 | 出队瞬间 | 收纳条去掉该项 → 消息流追加正式 user 气泡 → 开始助手流式回复 |
+| Q4 | 空闲且队列空 | **整块收纳条隐藏** |
+| Q5 | 暂停 / 上限 / 单条取消 | 行为不变 |
+| Q6 | 持久化 | 排队**不持久化**；加载时丢弃历史 `queued` 气泡 |
+| Q7 | 本条不做 | 流式「先工具后正文」、多轮啰嗦压缩（另条） |
+
+## 实现（0.3.77）
+
+1. `AiDrawer.vue`：`queue` 改为 `ref`；消息流去掉 queued 气泡与取消按钮。  
+2. composer 上方收纳条：折叠标题、摘要列表、× 取消；暂停提示挂在收纳条。  
+3. 入队只改 `queue`；出队 `runOneTurn` 再写入正式 user 气泡。  
+4. 持久化加载过滤 `status=queued`。
+
+## 验收
+
+| # | 用例 | 期望 |
+|---|------|------|
+| T1 | 生成中连发 2 问 | 消息流无排队气泡；输入框上收纳显示 2 条 |
+| T2 | 当前轮结束 | 队首出队 → 正式 user 气泡出现在流末 → 开始回答 |
+| T3 | × 取消某条 | 仅该条从收纳消失 |
+| T4 | 队列空 | 收纳条消失 |
+| T5 | 本轮 error 暂停 | 收纳仍在；「继续排队」后照常出队 |
+
+- [x] T1–T5（实现按约定；`chat-queue` 单测仍绿）
+
+## 与其它 AI 体验债的关系（仅索引）
+
+| 债 | 说明 | 状态 |
+|----|------|------|
+| 流式先正文后工具 | 同轮「已开启探活」早于工具/开关 | ✅ **0.3.78** |
+| 多轮啰嗦 | 全量历史进请求，易复述 | ✅ **0.3.79** |
+
+---
+
+# ✅ 已完成：Agent 可见工具轨迹与结论闭环（探活硬守卫 · → 0.3.66）
+
+> **开工拍板（2026-07-13）**  
+> - **本轮范围**：仅本 H1（选项 **1A**）。能力矩阵 A–N **本轮不做**。  
+> - **结论策略（B1）**：**强制再调**——口头声称探活已开/已关但无成功工具证据 → 纠错 + 再进 tool loop；仍失败则**改写**为如实失败。  
+> - **轨迹**：`report_editor_tool_trace`；`AiDrawer` 可折叠展示。正文流式见 **[docs/014](014-✅-ReportEditor-AI流式输出.md) / 0.3.72**（本 H1 原写「不做 SSE」已废止）。
+
+## 实现（0.3.66）
+
+1. `modules/ai_tool_trace.py`：脱敏 `args_summary` + `attach_tool_trace`。  
+2. `modules/ai_claim_guard.py`：探活声称检测 / 强制再调纠错文案 / 失败改写。  
+3. `run_chat_completion`：收集轨迹；不匹配时再跑一轮；仍假成功则改写正文。  
+4. `AiDrawer`：助手气泡下可折叠工具列表（失败默认展开）。
+
+## 测试
+
+- `test_ai_tool_trace_claim_guard.py`、`test_ai_chat_tool_trace.py`  
+- `aiSettings.tool-trace.test.ts`
+
+## 验收
+
+1. 开启探活且工具成功 → 可见轨迹成功步；文案可写已开启。  
+2. 空口「已开启」→ 服务端再调；仍无证据 → 文案含「未能确认」，无假成功。  
+3. 总闸关闭导致工具失败 → 轨迹红色失败；不得声称已开启。
+
+## 与既有 H1 关系
+
+- 能力矩阵 H1：仍 ⌛️。  
+- 探活落库已在 0.3.60/0.3.63；本条补 **可观测 + 强制再调**。
+
+---
+
+# ✅ 已完成：工具轨迹把成功读工具标成「含失败」（→ 0.3.71）
+
+## 现象（现场截图 · 2026-07-13）
+
+诊断对话工具轨迹标题「含失败」，红标：
+
+- `get_connection_health_summary`（`live_probe: true`）
+- `list_templates`
+
+同轮其它带显式 `ok: true` 的工具为绿；正文仍写出连接成功与模版绑定问题（靠其它工具/模型综合）。用户误以为这两步真失败。
+
+## 根因
+
+`tool_result_ok` 仅在结果含 `"ok"` 键时判成功；**否则一律 False**。  
+而 `_tool_list_templates` / `_tool_health_summary`（无 live 失败时）等读类工具返回 `{templates,count}` / `{db_count,…}`，**无 `ok` 字段** → 轨迹假失败。
+
+## 实现（0.3.71）
+
+1. `tool_result_ok`：无 `ok` 时，无 `error` 视为成功；显式 `ok` 仍优先。  
+2. `list_templates` / `health_summary` / `query_audit` 成功载荷补 `ok: true`；live 探活有失败时 health 摘要 `ok: false`。  
+3. 单测：无 `ok` 的 list/health 载荷 → 轨迹步 `ok=true`。
+
+## 验收
+
+1. 再跑诊断：`list_templates`、成功的 health 摘要应为绿，不因「无 ok 字段」标红。  
+2. 真失败（`ok:false` / `error`）仍红。  
+3. 能力矩阵 A–N 仍 ⌛️（本条仅轨迹展示正确性）。
 
 ---
 
@@ -22,7 +667,7 @@
 | 打开编辑 | 「打开某某模版/版式」 | pending 确认后跳转编辑器 | `request_open_template` / `request_open_layout` |
 | 模版排序 | 「把某某排到最前」 | 本机展示顺序更新并 reload | `set_template_display_order` |
 | 备份 / 恢复 / 复位 | 「导出备份」「导入配置」「清空复位」 | `.rebak` 另存 / merge / 复位确认；**密文不进 LLM** | `request_config_backup_export` / `import_merge` / `reset` |
-| 演示与冒烟 | 「建个演示库」「做个绑定冒烟模版」 | 库/模版落盘 + UI reload | `ensure_user_demo_database` / `create_binding_smoke_template` / `apply_template_sheet_layouts` |
+| 演示与冒烟 | 「做个绑定冒烟模版」 | 依赖已有 DB/OPC；演示一键入口已拆除（012） | `create_binding_smoke_template` / `apply_template_sheet_layouts` |
 | 导出目录 | 「把 PDF 输出改到某某路径」 | 写偏好或唤起选目录 | `set_export_dir` / `request_pick_export_dir` |
 | 结批 / 预检 | 「预检一下」「模拟结批一次」 | 预检结果如实；结批需确认后本机导出 | `preflight_export` / `request_manual_export` |
 | 结批写回 / 并行 | 「结批结果写到 OPC」「并行改成 4」 | 配置落库 | `set_export_result_feedback` / `set_max_parallel_exports` |
@@ -44,8 +689,8 @@
 | `request_connection_credentials` | write | 唤起密码弹框 |
 | `delete_db_connection` / `delete_opc_server` | confirm | UI 确认后删除 |
 | `update_connection_probe_settings` | write | 定时探活 |
-| `ensure_user_demo_database` | write | 创建用户演示库 |
 | `list_*` / `get_*` / `probe_connection` / `get_datasource_inventory` | read | 配置前应先读 |
+| ~~`ensure_user_demo_database`~~ | — | **0.3.69 已随演示与培训拆除**；冒烟模版改依赖已有连接 |
 
 门槛：写入总闸；**数据源锁定**时 upsert/delete/凭证会拒绝并弹出解锁；探活偏好不挡（已实现）。
 
@@ -115,19 +760,19 @@
 | # | 场景 | 通过标准 |
 |---|------|----------|
 | A | 配置数据源 | upsert → 列表更新；需密码则弹框 |
-| B | 复制模版 / 版式 | copy_* 成功 → 列表出现副本 |
-| C | 删除模版 / 版式 | 确认后消失；取消则仍在 |
-| D | 备份 | 另存 `.rebak`；聊天无口令/密文 |
-| E | 恢复 / 复位 | 确认流 → merge/复位生效 + UI reload |
-| F | 总闸关闭 | 任一 write/confirm 意图 → 明确提示，**状态不变** |
-| G | 新建空白 / 冒烟模版 / 演示库 | 资产或库出现 + reload |
-| H | 打开模版/版式 | 确认后进入对应编辑器 |
-| I | 模版排序 | 顺序变更在模版管理页可见 |
-| J | 导出目录 | 路径写入或选目录弹框完成 |
-| K | 预检 / 模拟结批 | 预检有事实；结批确认后本机导出（非口头） |
-| L | 结批写回 / 并行上限 | 配置可读回一致 |
-| M | 诊断类 | 答复可追溯到工具结果，禁止编造连接/审计 |
-| N | 检查更新 | 仅检查结果；不声称已安装 |
+| B | 复制模版 / 版式 | copy_* 成功 → 列表出现副本（✅ 0.3.80） |
+| C | 删除模版 / 版式 | 确认后消失；取消则仍在（✅ 0.3.81） |
+| D | 备份 | 另存 `.rebak`；聊天无口令/密文（✅ 0.3.82） |
+| E | 恢复 / 复位 | 确认流 → merge/复位生效 + UI reload（✅ 0.3.83） |
+| F | 总闸关闭 | 任一 write/confirm 意图 → 明确提示，**状态不变**（✅ 0.3.84） |
+| G | 新建空白 / 冒烟模版 / 演示库 | 资产或库出现 + reload（✅ 0.3.85；演示库工具已下线） |
+| H | 打开模版/版式 | 确认后进入对应编辑器（✅ 0.3.86） |
+| I | 模版排序 | 顺序变更在模版管理页可见（✅ 0.3.87） |
+| J | 导出目录 | 路径写入或选目录弹框完成（✅ 0.3.88） |
+| K | 预检 / 模拟结批 | 预检有事实；结批确认后本机导出（非口头）（✅ 0.3.89） |
+| L | 结批写回 / 并行上限 | 配置可读回一致（✅ 0.3.90） |
+| M | 诊断类 | 答复可追溯到工具结果，禁止编造连接/审计（✅ 0.3.91） |
+| N | 检查更新 | 仅检查结果；不声称已安装（✅ 0.3.92） |
 
 ---
 

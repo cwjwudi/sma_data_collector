@@ -17,6 +17,8 @@
   background: #fafafa;
   min-width: 260px;
   min-height: 200px;
+  /* 网格拉伸时裁切溢出；内部 __body 滚动，避免锁定 hint 把按钮顶出白底 */
+  overflow: hidden;
   height: auto;
   display: flex;
   flex-direction: column;
@@ -26,6 +28,25 @@
   color: #111827;
   font-family: inherit;
   box-sizing: border-box;
+}
+
+.conn-form-pane__body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.conn-form-pane__actions {
+  flex-shrink: 0;
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid #e5e7eb;
+  background: #fafafa;
 }
 
 .conn-form-pane .row-head {
@@ -81,10 +102,11 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  margin-top: 8px;
+  margin-top: 0;
 }
 
 .conn-form-pane .msg {
+  flex-shrink: 0;
   margin: 0;
   font-size: 12px;
   line-height: 1.45;

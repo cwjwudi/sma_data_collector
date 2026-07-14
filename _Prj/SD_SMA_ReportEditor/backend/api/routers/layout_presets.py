@@ -6,9 +6,11 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 
+from core.settings import DATA_DIR
 from modules import layout_preset_store as store
+from modules.audit_asset_write import record_asset_save
 from schemas.layout_preset import LayoutPreset
 
 router = APIRouter(tags=["layout_presets"])
@@ -44,7 +46,11 @@ def get_layout_preset(layout_id: str):
 
 
 @router.put("/layout-presets/{layout_id}")
-def put_layout_preset(layout_id: str, body: dict[str, Any]):
+def put_layout_preset(
+    layout_id: str,
+    body: dict[str, Any],
+    skip_asset_audit: bool = Query(False, description="复制/迁移等场景跳过保存审计"),
+):
     try:
         store.sanitize_id(layout_id)
     except ValueError as e:
@@ -60,8 +66,19 @@ def put_layout_preset(layout_id: str, body: dict[str, Any]):
     except Exception as e:
         logger.exception("put_layout_preset")
         raise HTTPException(status_code=422, detail=f"版式无效: {e}") from e
+    old_obj = store.load_preset(layout_id)
+    old_dict = old_obj.model_dump(mode="json") if old_obj else None
     store.save_preset(preset)
-    return preset.model_dump(mode="json")
+    new_dict = preset.model_dump(mode="json")
+    record_asset_save(
+        DATA_DIR,
+        kind="layout",
+        object_id=layout_id,
+        old=old_dict,
+        new=new_dict,
+        skip=skip_asset_audit,
+    )
+    return new_dict
 
 
 @router.delete("/layout-presets/{layout_id}")

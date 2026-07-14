@@ -19,7 +19,6 @@ from api.routers import ai_openai as ai_openai_router
 from api.routers import assets as assets_router
 from api.routers import audit as audit_router
 from api.routers import database as database_router
-from api.routers import demo as demo_router
 from api.routers import opcua as opcua_router
 from api.routers import settings_config as settings_config_router
 from api.routers import layout_presets as layout_presets_router
@@ -132,7 +131,6 @@ def _attach_routes() -> None:
         layout_presets_router.router,
         signatures_router.router,
         audit_router.router,
-        demo_router.router,
         assets_router.router,
     )
     for r in routers:

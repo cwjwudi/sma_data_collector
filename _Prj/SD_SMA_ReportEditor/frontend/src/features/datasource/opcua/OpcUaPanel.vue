@@ -34,6 +34,7 @@
         <div v-if="!wizardLayout" class="row-head">
           <h4>OPC UA 连接</h4>
         </div>
+        <div class="conn-form-pane__body">
         <p v-if="datasourceLocked" class="opc-lead">数据源已锁定，仅可查看、测试与浏览地址空间。</p>
         <label>名称</label>
         <input v-model="form.name" class="input" :disabled="opcFormDisabled" />
@@ -133,7 +134,8 @@
           </dl>
           <p v-if="copyFeedback" class="copy-feedback">{{ copyFeedback }}</p>
         </div>
-        <div class="actions">
+        </div>
+        <div class="conn-form-pane__actions actions">
           <button type="button" class="btn primary seg" :disabled="opcFormDisabled" @click="saveServer">保存</button>
           <button type="button" class="btn seg" @click="testDraft">
             {{ wizardLayout ? '测试连接' : '测试连接（当前表单）' }}

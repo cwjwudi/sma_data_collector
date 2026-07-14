@@ -8,9 +8,70 @@
 ## 2026-07-14
 
 - **OPC UA 动态采集间隔与 PLC 联调完成**：`time` / `time_and_variable` 支持通过 `interval_point` 在线定义采集间隔；完成配置、Web UI、PLC 点位与 OPC UA 映射修改，并在 `192.168.50.233` 验证 5 秒→2 秒切换、非法值回退及外部触发独立性。详见 [_Prj/SD_SMA_DATA_COLLECTOR/docs/001-✅-OPCUA动态采集间隔联调.md](_Prj/SD_SMA_DATA_COLLECTOR/docs/001-✅-OPCUA动态采集间隔联调.md)。
+- **ReportEditor 0.3.94 已合入 main**：AI 对话深色玻璃 UI + 真流式/claim 清屏修复；看板 [docs/016-✅](docs/016-✅-ReportEditor-AI对话UI改版.md)。
+- **探活 claim 误伤只读查证（仅登记）**：[docs/006-🚧](docs/006-🚧-ReportEditor-AI上游错误体验.md)——「分析审计」后用 health 读确认探活已开，仍被改写成缺写入工具；未改代码。
+- **ReportEditor AI 吞正文（深入根因）**：[docs/016-✅](docs/016-✅-ReportEditor-AI对话UI改版.md)——claim guard 强制再调前的 `replace ""` 清泡（已随 0.3.94 修）。
+- **ReportEditor AI 流式回归（根因订正）**：[docs/016-⌛️](docs/016-⌛️-ReportEditor-AI对话UI改版.md)——主因是后端整轮缓冲后再模拟 delta，非前端 Markdown；拟真转发上游 content。
+- **ReportEditor AI 流式回归（先记后修）**：[docs/016-⌛️](docs/016-⌛️-ReportEditor-AI对话UI改版.md) 新增 H1——玻璃态改版后正文流式像失效；主嫌疑为流式期每帧 Markdown/`v-html`；候选修复 `a3f13e4` 待目视验收。
+- **ReportEditor 0.3.94（分支试做）**：AI 对话深色玻璃 UI；分支 `feat/016-ai-chat-ui`，不满意可丢弃；看板 [docs/016-⌛️](docs/016-⌛️-ReportEditor-AI对话UI改版.md)。
+- **ReportEditor AI 对话 UI（排版拍板）**：[docs/016-⌛️](docs/016-⌛️-ReportEditor-AI对话UI改版.md) Q1=C（抽屉+可展开）、Q2=A（仅面板深色玻璃）、Q3=A（顶栏切模型）、Q4=B（无会话侧栏）、Q5=B（仅复制）、Q6=A（无附件）；可开工。
 
 ## 2026-07-13
 
+- **ReportEditor 0.3.93 已发版**：数据源滑动解锁 D3 + 60s 限时自动上锁；看板 [docs/017-✅](docs/017-✅-ReportEditor数据源滑动解锁与限时上锁.md)。
+- **ReportEditor 数据源滑动解锁（视觉 D3 拍板）**：[docs/017-✅](docs/017-✅-ReportEditor数据源滑动解锁与限时上锁.md) Q7=D3（Indigo 克制光扫）；Q1–Q7 齐。
+- **ReportEditor 0.3.92 已发版**：AI 能力矩阵 N（检查更新确认流 + 禁安装断言）；看板 [docs/006-🚧](docs/006-🚧-ReportEditor-AI上游错误体验.md)。
+- **ReportEditor 0.3.91 已发版**：AI 能力矩阵 M（诊断事实工具 + 口头结论守卫）；看板 [docs/006-🚧](docs/006-🚧-ReportEditor-AI上游错误体验.md)。
+- **ReportEditor 0.3.90 已发版**：AI 能力矩阵 L（结批写回/并行上限可读回）；看板 [docs/006-🚧](docs/006-🚧-ReportEditor-AI上游错误体验.md)。
+- **ReportEditor 0.3.89 已发版**：AI 能力矩阵 K（预检事实 + 模拟结批确认流）；看板 [docs/006-🚧](docs/006-🚧-ReportEditor-AI上游错误体验.md)。
+- **ReportEditor 0.3.88 已发版**：AI 能力矩阵 J（导出目录 set/pick）；看板 [docs/006-🚧](docs/006-🚧-ReportEditor-AI上游错误体验.md)。
+- **ReportEditor 0.3.87 已发版**：AI 能力矩阵 I（模版展示排序 + reload）；看板 [docs/006-🚧](docs/006-🚧-ReportEditor-AI上游错误体验.md)。
+- **ReportEditor 0.3.86 已发版**：AI 能力矩阵 H（打开模版/版式确认跳转）；看板 [docs/006-🚧](docs/006-🚧-ReportEditor-AI上游错误体验.md)。
+- **ReportEditor 0.3.85 已发版**：AI 能力矩阵 G（新建空白模版/版式 + 冒烟缺连接失败）；看板 [docs/006-🚧](docs/006-🚧-ReportEditor-AI上游错误体验.md)。
+- **ReportEditor 0.3.84 已发版**：AI 能力矩阵 F（写入总闸统一拒绝全部 write/confirm）；看板 [docs/006-🚧](docs/006-🚧-ReportEditor-AI上游错误体验.md)。
+- **ReportEditor 0.3.83 已发版**：AI 能力矩阵 E（恢复/复位确认流 + ui_reload；非法 bundle 拒绝）；看板 [docs/006-🚧](docs/006-🚧-ReportEditor-AI上游错误体验.md)。
+- **ReportEditor AI 对话 UI 改版（仅登记）**：新建 [docs/016-⌛️](docs/016-⌛️-ReportEditor-AI对话UI改版.md)——参考 ChatGPT 玻璃态；附图 `docs/assets/016-ai-chat-ui-reference.png`；未开工。
+- **ReportEditor 0.3.82 已发版**：AI 能力矩阵 D（加密备份 pending + 密文不进 LLM）；看板 [docs/006-🚧](docs/006-🚧-ReportEditor-AI上游错误体验.md)。
+- **ReportEditor 0.3.81 已发版**：AI 能力矩阵 C（删除模版/版式确认流 + 非法 id 防护）；看板 [docs/006-🚧](docs/006-🚧-ReportEditor-AI上游错误体验.md)。
+- **ReportEditor 0.3.80 测试加固**：能力矩阵 B 逐步用例 B1–B9（后端 14 + 前端 assets mirror）；看板 [docs/006-🚧](docs/006-🚧-ReportEditor-AI上游错误体验.md)。
+- **ReportEditor 0.3.80 已发版**：AI 能力矩阵 B（复制模版/版式单测 + 提示词）；看板 [docs/006-🚧](docs/006-🚧-ReportEditor-AI上游错误体验.md)。
+- **ReportEditor 0.3.79 macOS 已打包**：`Report Editor AI-0.3.79-arm64.dmg`；`latest.json` 已写 SHA256；Portal 未挂载。
+- **ReportEditor 0.3.79 已发版**：AI 多轮默认简洁（最近 8 条进请求 + 提示词）；看板 [docs/006-🚧](docs/006-🚧-ReportEditor-AI上游错误体验.md)。
+- **ReportEditor 0.3.78 已发版**：流式同轮先工具后正文；写类 tool 即时刷新；upsert 补 datasource reload；看板 [docs/006-🚧](docs/006-🚧-ReportEditor-AI上游错误体验.md)。
+- **ReportEditor 0.3.77 已发版**：AI 排队改输入框上方收纳条（不进消息流）；看板 [docs/006-🚧](docs/006-🚧-ReportEditor-AI上游错误体验.md)。
+- **ReportEditor AI 排队 UI（仅计划）**：[docs/006-🚧](docs/006-🚧-ReportEditor-AI上游错误体验.md)——排队改输入框上方收纳条（类 Cursor），不进消息流；出队后再进时间线。
+- **ReportEditor 0.3.76 macOS 已打包**：`Report Editor AI-0.3.76-arm64.dmg`；`latest.json` 已写 SHA256；Portal 未挂载。
+- **ReportEditor 0.3.76 已发版**：模版/版式多选 B3（共有外观批改、混合态）；看板 [docs/011-✅](docs/011-✅-ReportEditor模版版式多选控件.md)。
+- **ReportEditor 多选 B3（约定细化）**：[docs/011-✅](docs/011-✅-ReportEditor模版版式多选控件.md)——交集字段、混合态、首批外观清单、永不批改边界、I/M/N/E 用例；后按默认实现。
+- **ReportEditor 0.3.75 已发版**：模版/版式多选 B2（Shift 区间、六对齐、两等距分布）；看板 [docs/011-✅](docs/011-✅-ReportEditor模版版式多选控件.md)。
+- **ReportEditor 多选 B2（计划）**：[docs/011-✅](docs/011-✅-ReportEditor模版版式多选控件.md) 按默认拍板——Shift 区间、六对齐、两分布、工具栏入口、一次 undo；可开工。
+- **ReportEditor 0.3.74 已发版**：整机单实例；局域网应用内 AI（开关+Token）；桌面独有提示；看板 [docs/015-✅](docs/015-✅-ReportEditor整机单实例与浏览器访问.md)。
+- **ReportEditor 局域网 AI（计划）**：[docs/015-✅](docs/015-✅-ReportEditor整机单实例与浏览器访问.md) 拍板要实现应用内 AI；复用 `allow_lan_access` + Agent Token；桌面独有能力明确提示。
+- **ReportEditor 整机单实例（计划补充）**：[docs/015-✅](docs/015-✅-ReportEditor整机单实例与浏览器访问.md) 复用托盘恢复、锁前 quit、pendingFocus 竞态、明确不做项与 M6。
+- **ReportEditor 0.3.73 已发版**：模版/版式保存审计（变更明细、15 分钟合并、中文展示）；看板 [docs/013-✅](docs/013-✅-ReportEditor模版版式编辑审计.md)。
+- **ReportEditor 整机单实例 + 浏览器访问（仅计划）**：新建 [docs/015-✅](docs/015-✅-ReportEditor整机单实例与浏览器访问.md)——强制一个 Electron；说明本机/局域网浏览器能力与 AI 本机限制。
+- **ReportEditor 模版/版式审计（计划补充）**：[docs/013-✅](docs/013-✅-ReportEditor模版版式编辑审计.md) 无变更不记；旧类型全中文；字段中文名表 + 表格 SQL 截断；变更明细与 15 分钟合并。
+- **ReportEditor 0.3.72 已发版**：AI 助手正文 SSE 流式；排队/持久化/调宽/Markdown；看板 [docs/014-✅](docs/014-✅-ReportEditor-AI流式输出.md)。
+- **ReportEditor AI 流式（计划补充）**：[docs/014-✅](docs/014-✅-ReportEditor-AI流式输出.md) 确认关抽屉不停止；补测试用例 B/F/M/R；持久化/调宽/排队；G1–G15。
+- **ReportEditor 0.3.71 已发版**：AI 工具轨迹假失败修正（无 `ok` 字段的成功读工具不再标红）；看板 [docs/006-🚧](docs/006-🚧-ReportEditor-AI上游错误体验.md)。
+- **ReportEditor 0.3.70 已发版**：模版/版式多选 B1（Ctrl 加选、框选、组操作、属性摘要）；看板 [docs/011-✅](docs/011-✅-ReportEditor模版版式多选控件.md)（B2/B3 ⌛️）。
+- **ReportEditor 模版/版式多选（计划补充）**：原 [docs/011](docs/011-✅-ReportEditor模版版式多选控件.md) 确认属性批改 **B3 后置**；增补交集字段约定与 E1–E6 测试用例；MVP（B1）仅摘要 + 组操作。
+- **ReportEditor 0.3.69 已发版**：移除「演示与培训」与 demo-pack；存量仿真连接保留可手删；看板 [docs/012-✅](docs/012-✅-ReportEditor移除演示与培训.md)。
+- **ReportEditor 移除演示与培训**：已拆除设置区块、`/demo/*`、demo-pack IPC/打包目录、`demo_remote_*` 配置面；AI `ensure_user_demo_database` 工具下线；存量 `is_demo` 保留（B1）。看板 [docs/012-✅](docs/012-✅-ReportEditor移除演示与培训.md)。
+- **ReportEditor AI 流式输出（仅计划）**：新建 [docs/014](docs/014-✅-ReportEditor-AI流式输出.md)——助手正文 SSE 流式；工具轮默认非流 + 事件；推翻 006「不做 SSE」边界（后由 **0.3.72** 落地）。
+- **ReportEditor 0.3.68 已发版**：历史报表子文件夹穿透 + 分页；看板 [docs/010-✅](docs/010-✅-ReportEditor历史报表子文件夹穿透.md)。
+- **ReportEditor 模版/版式编辑审计（仅计划）**：新建 [docs/013-✅](docs/013-✅-ReportEditor模版版式编辑审计.md)——保存/删除/复制落 `template.*`/`layout.*`；不记画布拖拽；与现有 `auditLog` 对齐（后由 **0.3.73** 落地）。
+- **ReportEditor 0.3.67 已发版**：导出 PDF 去掉封面橙 / 正文蓝紫纸张装饰边；看板 [docs/009-✅](docs/009-✅-ReportEditor导出纸张橙边框.md)。
+- **ReportEditor 导出纸张橙边框（文档订正）**：看板更名为 [docs/009-✅](docs/009-✅-ReportEditor导出纸张橙边框.md)——截图确认橙边在**整页纸张四周**（非表格附近）；主因锁定 `MiniPreviewChrome` 装饰未在导出路径剥离。
+- **ReportEditor 模版/版式多选控件（仅计划）**：新建 [docs/011-⌛️](docs/011-⌛️-ReportEditor模版版式多选控件.md)——Ctrl/Cmd 加选、框选、组移动/删除/剪贴板；属性批量与对齐为二期。
+- **ReportEditor 历史报表子文件夹穿透（仅计划）**：原 [docs/010](docs/010-✅-ReportEditor历史报表子文件夹穿透.md) 计划（已于 0.3.68 实现）。
+- **ReportEditor 0.3.66 已发版**：AI 工具轨迹可见；探活口头结论与工具不符时强制再调；看板 [docs/006-🚧](docs/006-🚧-ReportEditor-AI上游错误体验.md)（轨迹 H1 ✅，能力矩阵仍 ⌛️）。
+- **ReportEditor 表格导出橙边框（仅文档）**：原 [docs/009](docs/009-✅-ReportEditor导出纸张橙边框.md) 初版（已订正为整页纸张四周）。
+- **ReportEditor 0.3.65 已发版**：健康告警跳转高亮（含页眉/区）、连接级明示、版式进编辑器；看板 [docs/007-✅](docs/007-✅-ReportEditor健康跳转不高亮.md)。
+- **ReportEditor 健康跳转不高亮（文档）**：看板 [docs/007](docs/007-✅-ReportEditor健康跳转不高亮.md) 补充测试矩阵 A–G（仪表盘链接 / 扫描 meta / focus 选中模型 / 连接级体验 / 版式 / 手工 / 认知对齐）。
+- **ReportEditor 0.3.64 已发版**：数据源锁定提示不再把连接表单底部按钮顶出；看板 [docs/008-✅](docs/008-✅-ReportEditor数据源锁定表单按钮被顶出.md)。
+- **ReportEditor 数据源锁定表单按钮被顶出**：看板 [docs/008](docs/008-✅-ReportEditor数据源锁定表单按钮被顶出.md) 测试矩阵 A–E 后实现。
+- **ReportEditor AI Agent 可观测性（仅文档）**：看板 [docs/006-🚧](docs/006-🚧-ReportEditor-AI上游错误体验.md) 新增 H1——说开探活必须真开否则重试/如实失败；对话框须展示工具调用与状态。
 - **ReportEditor 健康跳转不高亮（仅文档）**：新建 [docs/007-⌛️](docs/007-⌛️-ReportEditor健康跳转不高亮.md)——分析仪表盘告警点击后无控件高亮：连接级 issue 无 `elementId`；版式只链列表；页眉/zone 不在 `sel` 查找范围；并记录生产「库已存在」与 `missing_db` 的 ID 不一致可能。
 - **ReportEditor 0.3.63 已发版**：修复定时探活反复开关不生效（串行落库 / 字符串 false / mirror pending_token）。看板 [docs/006-🚧](docs/006-🚧-ReportEditor-AI上游错误体验.md)。
 - **ReportEditor 0.3.62 已发版**：LLM 上游错误中文映射；ChatGPT≠API / 硅基模型 mismatch 提示；能力域 SYSTEM_PROMPT；探活 H1 ✅。看板 [docs/006-🚧](docs/006-🚧-ReportEditor-AI上游错误体验.md)（能力矩阵 A–N 仍 ⌛️）。

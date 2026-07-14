@@ -290,7 +290,10 @@ def inspect_template_bindings(template_id: str) -> dict[str, Any]:
     tid = (template_id or "").strip()
     if not tid:
         return {"ok": False, "error": "缺少 template_id"}
-    raw_path = template_store.template_path(tid)
+    try:
+        raw_path = template_store.template_path(tid)
+    except ValueError as e:
+        return {"ok": False, "error": str(e)}
     if not raw_path.is_file():
         return {"ok": False, "error": "模版不存在"}
     try:

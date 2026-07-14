@@ -6,12 +6,13 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 
+from core.settings import DATA_DIR
 from modules import template_store as store
+from modules.audit_asset_write import record_asset_save
 from schemas.report_template import (
     TEMPLATE_SCHEMA_VERSION,
-    ReportTemplate,
     parse_report_template,
 )
 
@@ -51,7 +52,11 @@ def get_template(template_id: str):
 
 
 @router.put("/templates/{template_id}")
-def put_template(template_id: str, body: dict[str, Any]):
+def put_template(
+    template_id: str,
+    body: dict[str, Any],
+    skip_asset_audit: bool = Query(False, description="复制/迁移等场景跳过保存审计"),
+):
     try:
         store.sanitize_template_id(template_id)
     except ValueError as e:
@@ -68,8 +73,23 @@ def put_template(template_id: str, body: dict[str, Any]):
     except Exception as e:
         logger.exception("put_template validation")
         raise HTTPException(status_code=422, detail=f"模版数据无效: {e}") from e
+    old_obj = None
+    try:
+        old_obj = store.load_template(template_id)
+    except Exception:
+        old_obj = None
+    old_dict = old_obj.model_dump(mode="json") if old_obj else None
     store.save_template(t)
-    return t.model_dump(mode="json")
+    new_dict = t.model_dump(mode="json")
+    record_asset_save(
+        DATA_DIR,
+        kind="template",
+        object_id=template_id,
+        old=old_dict,
+        new=new_dict,
+        skip=skip_asset_audit,
+    )
+    return new_dict
 
 
 @router.delete("/templates/{template_id}")

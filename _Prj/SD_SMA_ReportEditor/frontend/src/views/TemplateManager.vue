@@ -532,6 +532,8 @@ import TemplateMiniPage from "@/components/report-template/TemplateMiniPage.vue"
 import TemplateMiniBands from "@/components/report-template/TemplateMiniBands.vue";
 import NewTemplateWizardDialog from "@/components/report-template/NewTemplateWizardDialog.vue";
 import { appConfirm } from "@/composables/useAppConfirm";
+import { auditLog } from "@/lib/auditLog";
+import { summarizeDeleteTemplates } from "@/lib/auditLabels";
 
 const router = useRouter();
 /** 列表拉取用 generation，避免旧失败覆盖新成功；缩略图另用 thumbHydrateGen，成功结果始终写入 */
@@ -1246,7 +1248,7 @@ async function confirmDuplicate() {
     syncLegacyElementsAlias(copy);
     copy.schemaVersion = TEMPLATE_SCHEMA_VERSION;
     try {
-      await api.putTemplate(copy.id, copy);
+      await api.putTemplate(copy.id, copy, { skipAssetAudit: true });
     } catch {
       const list = loadLocal();
       list.push(copy);
@@ -1262,10 +1264,25 @@ async function confirmDuplicate() {
     summaries.value = next;
     syncDisplayOrderToStorage();
     if (!msg.value) msg.value = "已复制为新模版。";
+    void auditLog({
+      action: "template.duplicate",
+      result: "ok",
+      summary: `复制报表模版「${source.name || "未命名"}」为「${copy.name || "未命名"}」`,
+      object_type: "template",
+      object_id: copy.id,
+      detail: { source_id: source.id, source_name: source.name, name: copy.name },
+    });
     flashHighlight(copy.id);
     await scrollToTemplateCard(copy.id);
   } catch (e) {
     msg.value = "复制失败：" + String(e?.message || e);
+    void auditLog({
+      action: "template.duplicate",
+      result: "fail",
+      summary: `复制报表模版「${row.name || "未命名"}」失败：${String(e?.message || e).slice(0, 80)}`,
+      object_type: "template",
+      object_id: row.id,
+    });
   }
 }
 
@@ -1280,6 +1297,8 @@ async function delTpl(id) {
   ) {
     return;
   }
+  const victim = summaries.value.find((x) => x.id === id);
+  const name = victim?.name || "未命名";
   try {
     await api.deleteTemplate(id);
   } catch {
@@ -1288,6 +1307,14 @@ async function delTpl(id) {
   summaries.value = summaries.value.filter((x) => x.id !== id);
   delete cache.value[id];
   syncDisplayOrderToStorage();
+  void auditLog({
+    action: "template.delete",
+    result: "ok",
+    summary: summarizeDeleteTemplates([name]),
+    object_type: "template",
+    object_id: id,
+    detail: { name },
+  });
 }
 
 async function created(t) {

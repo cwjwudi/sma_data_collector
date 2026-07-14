@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import uuid
 from typing import Any
 
 from core.settings import DATA_DIR
@@ -58,6 +59,8 @@ def get_template_display_order() -> dict[str, Any]:
 
 def set_template_display_order(ordered_ids: list[str] | None, move: dict[str, Any] | None = None) -> dict[str, Any]:
     """写入模版展示顺序到镜像，前端轮询 pending_apply 后落到 localStorage。"""
+    from modules import ai_asset_ops
+
     summaries = [s.id for s in template_store.list_summaries()]
     known = set(summaries)
     mirror = _load_mirror()
@@ -76,7 +79,7 @@ def set_template_display_order(ordered_ids: list[str] | None, move: dict[str, An
             if tid not in next_ids:
                 next_ids.append(tid)
         current = next_ids
-    elif isinstance(move, dict):
+    elif isinstance(move, dict) and move:
         from_id = str(move.get("from_id") or "").strip()
         to_id = str(move.get("to_id") or "").strip()
         if from_id not in current or to_id not in current or from_id == to_id:
@@ -87,10 +90,13 @@ def set_template_display_order(ordered_ids: list[str] | None, move: dict[str, An
         base = current.index(to_id)
         insert_at = base + 1 if from_i < to_i else base
         current.insert(insert_at, from_id)
+    else:
+        return {"ok": False, "error": "须提供 ordered_ids 或 move={from_id,to_id}"}
 
     mirror["template_display_order"] = current
     mirror["pending_apply"] = True
     _save_mirror(mirror)
+    ai_asset_ops.mark_ui_reload(assets=True, reason="set_template_display_order")
     return {"ok": True, "order": current, "note": "前端将应用至模版管理页排序"}
 
 
@@ -98,7 +104,10 @@ def request_open_template(template_id: str) -> dict[str, Any]:
     tid = (template_id or "").strip()
     if not tid:
         return {"ok": False, "error": "缺少 template_id"}
-    tpl = template_store.load_template(tid)
+    try:
+        tpl = template_store.load_template(tid)
+    except ValueError:
+        return {"ok": False, "error": "模版不存在"}
     if not tpl:
         return {"ok": False, "error": "模版不存在"}
     prompt = ai_pending_prompts.create_prompt(
@@ -117,7 +126,10 @@ def request_open_layout(layout_id: str) -> dict[str, Any]:
     lid = (layout_id or "").strip()
     if not lid:
         return {"ok": False, "error": "缺少 layout_id"}
-    preset = layout_preset_store.load_preset(lid)
+    try:
+        preset = layout_preset_store.load_preset(lid)
+    except ValueError:
+        return {"ok": False, "error": "版式不存在"}
     if not preset:
         return {"ok": False, "error": "版式不存在"}
     name = str(getattr(preset, "name", None) or lid)
@@ -169,6 +181,7 @@ def _mask_feedback(fb: dict[str, Any]) -> dict[str, Any]:
 
 
 def set_export_result_feedback(patch: dict[str, Any], template_id: str | None = None) -> dict[str, Any]:
+    """写入结批结果 OPC 写回配置到镜像；须 pending_token 供前端 ack。"""
     if not isinstance(patch, dict):
         return {"ok": False, "error": "patch 须为对象"}
     mirror = _load_mirror()
@@ -187,6 +200,10 @@ def set_export_result_feedback(patch: dict[str, Any], template_id: str | None = 
         "messageMaxLen",
     }
     clean = {k: patch[k] for k in allowed if k in patch}
+    if not clean:
+        return {"ok": False, "error": "patch 无有效字段"}
+    if "statusKind" in clean and clean["statusKind"] not in ("bool", "int"):
+        return {"ok": False, "error": "statusKind 须为 bool 或 int"}
     if tid:
         by_tpl = dict(rg.get("exportResultOpcByTemplateId") or {})
         cur = dict(by_tpl.get(tid) or {})
@@ -199,6 +216,7 @@ def set_export_result_feedback(patch: dict[str, Any], template_id: str | None = 
         rg["exportResultOpc"] = cur
     mirror["report_generator"] = rg
     mirror["pending_apply"] = True
+    mirror["pending_token"] = str(uuid.uuid4())
     _save_mirror(mirror)
     return {
         "ok": True,
@@ -383,6 +401,9 @@ def summarize_report_history() -> dict[str, Any]:
 
 
 def set_max_parallel_exports(value: int) -> dict[str, Any]:
+    """写入自动结批并行上限（1–16）到镜像；须 pending_token 供前端 ack。"""
+    if value is None or (isinstance(value, str) and not str(value).strip()):
+        return {"ok": False, "error": "max_parallel 须为整数"}
     try:
         n = int(value)
     except (TypeError, ValueError):
@@ -395,5 +416,6 @@ def set_max_parallel_exports(value: int) -> dict[str, Any]:
     rg["auto"] = auto
     mirror["report_generator"] = rg
     mirror["pending_apply"] = True
+    mirror["pending_token"] = str(uuid.uuid4())
     _save_mirror(mirror)
     return {"ok": True, "max_parallel": n, "note": "前端将应用并行上限"}

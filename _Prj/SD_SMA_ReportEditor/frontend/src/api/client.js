@@ -1,5 +1,6 @@
 import { resolveApiHref } from './apiBase.js'
 import { withOpcHttpSlot } from '../lib/opcua-http-gate.js'
+import { isLanAiProtectedApiPath, lanAiAuthHeaders } from '../lib/runtimeEnv'
 
 function isOpcUaApiPath(p) {
   return p.startsWith('/opcua/')
@@ -11,7 +12,10 @@ export async function apiFetch(path, options = {}) {
   const run = async () => {
     const url = resolveApiHref(p)
     const opts = { ...options }
-    const headers = { ...opts.headers }
+    const headers = { ...(opts.headers || {}) }
+    if (isLanAiProtectedApiPath(p)) {
+      Object.assign(headers, lanAiAuthHeaders())
+    }
     if (opts.body !== undefined && typeof opts.body === 'object' && !(opts.body instanceof FormData)) {
       headers['Content-Type'] = 'application/json'
       opts.body = JSON.stringify(opts.body)

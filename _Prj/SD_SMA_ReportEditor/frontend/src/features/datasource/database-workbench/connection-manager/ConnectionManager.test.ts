@@ -101,3 +101,98 @@ describe("ConnectionManager empty / create states", () => {
     expect(w.find('input[placeholder="例如 产线 MySQL"]').element.value).toBe("");
   });
 });
+
+const savedConn = {
+  id: "c-lock-1",
+  name: "SMA_DATABASE",
+  engine: "mysql",
+  host: "127.0.0.1",
+  port: 3306,
+  database: "sma_data_test",
+  username: "root",
+  has_password: true,
+};
+
+describe("ConnectionManager lock hint vs actions (008)", () => {
+  it("A1: locked shows hint", () => {
+    const w = mount(ConnectionManager, {
+      props: { modelValue: savedConn, creatingNew: false, loading: false, locked: true },
+    });
+    expect(w.text()).toContain("数据源已锁定");
+    expect(w.find(".demo-conn-hint").exists()).toBe(true);
+  });
+
+  it("A2: unlocked has no lock hint", () => {
+    const w = mount(ConnectionManager, {
+      props: { modelValue: savedConn, creatingNew: false, loading: false, locked: false },
+    });
+    expect(w.text()).not.toContain("数据源已锁定");
+  });
+
+  it("A3: locked keeps actions with all four buttons", () => {
+    const w = mount(ConnectionManager, {
+      props: { modelValue: savedConn, creatingNew: false, loading: false, locked: true },
+    });
+    const actions = w.find(".conn-form-pane__actions.actions");
+    expect(actions.exists()).toBe(true);
+    expect(actions.text()).toContain("测试连接");
+    expect(actions.text()).toContain("仅保存");
+    expect(actions.text()).toContain("测试并保存");
+    expect(actions.text()).toContain("删除");
+  });
+
+  it("A4: locked disables fields but test button stays enabled when not busy", () => {
+    const w = mount(ConnectionManager, {
+      props: { modelValue: savedConn, creatingNew: false, loading: false, locked: true },
+    });
+    expect(w.find('input[placeholder="例如 产线 MySQL"]').attributes("disabled")).toBeDefined();
+    const testBtn = w.findAll("button").find((b) => b.text() === "测试连接");
+    expect(testBtn).toBeTruthy();
+    expect(testBtn!.attributes("disabled")).toBeUndefined();
+  });
+
+  it("A5: toggling locked keeps actions mounted", async () => {
+    const w = mount(ConnectionManager, {
+      props: { modelValue: savedConn, creatingNew: false, loading: false, locked: false },
+    });
+    expect(w.find(".conn-form-pane__actions").exists()).toBe(true);
+    await w.setProps({ locked: true });
+    expect(w.text()).toContain("数据源已锁定");
+    expect(w.find(".conn-form-pane__actions").exists()).toBe(true);
+    await w.setProps({ locked: false });
+    expect(w.text()).not.toContain("数据源已锁定");
+    expect(w.find(".conn-form-pane__actions").exists()).toBe(true);
+  });
+
+  it("A6: remote demo keeps actions with test/delete", () => {
+    const w = mount(ConnectionManager, {
+      props: {
+        modelValue: {
+          ...savedConn,
+          is_demo: true,
+          demo_channel: "remote",
+        },
+        creatingNew: false,
+        loading: false,
+        locked: true,
+      },
+    });
+    expect(w.text()).toMatch(/远程演示/);
+    const actions = w.find(".conn-form-pane__actions.actions");
+    expect(actions.exists()).toBe(true);
+    expect(actions.text()).toContain("测试连接");
+    expect(actions.text()).toContain("删除");
+  });
+
+  it("fields scroll in body; actions sit outside body", () => {
+    const w = mount(ConnectionManager, {
+      props: { modelValue: savedConn, creatingNew: false, loading: false, locked: true },
+    });
+    const body = w.find(".conn-form-pane__body");
+    const actions = w.find(".conn-form-pane__actions");
+    expect(body.exists()).toBe(true);
+    expect(actions.exists()).toBe(true);
+    expect(body.find(".demo-conn-hint").exists()).toBe(true);
+    expect(body.find(".conn-form-pane__actions").exists()).toBe(false);
+  });
+});

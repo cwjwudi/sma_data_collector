@@ -30,7 +30,7 @@
           type="button"
           class="b"
           title="复制选中控件（含全部属性）(Ctrl+C)"
-          :disabled="!selectedPresetEl"
+          :disabled="!hasLayoutSelection"
           @click="copySelectedPresetEl"
         >
           复制
@@ -39,7 +39,7 @@
           type="button"
           class="b"
           title="剪切选中控件 (Ctrl+X)"
-          :disabled="!selectedPresetEl"
+          :disabled="!hasLayoutSelection"
           @click="cutSelectedPresetEl"
         >
           剪切
@@ -52,6 +52,43 @@
           @click="pastePresetEl"
         >
           粘贴
+        </button>
+        <span class="bar-sep" aria-hidden="true" />
+        <button type="button" class="b" title="左对齐" :disabled="!canAlignLayout" @click="alignLayout('left')">
+          左齐
+        </button>
+        <button type="button" class="b" title="水平居中" :disabled="!canAlignLayout" @click="alignLayout('centerH')">
+          水平中
+        </button>
+        <button type="button" class="b" title="右对齐" :disabled="!canAlignLayout" @click="alignLayout('right')">
+          右齐
+        </button>
+        <button type="button" class="b" title="顶对齐" :disabled="!canAlignLayout" @click="alignLayout('top')">
+          顶齐
+        </button>
+        <button type="button" class="b" title="垂直居中" :disabled="!canAlignLayout" @click="alignLayout('centerV')">
+          垂直中
+        </button>
+        <button type="button" class="b" title="底对齐" :disabled="!canAlignLayout" @click="alignLayout('bottom')">
+          底齐
+        </button>
+        <button
+          type="button"
+          class="b"
+          title="水平等距分布（至少 3 个）"
+          :disabled="!canDistributeLayout"
+          @click="distributeLayout('horizontal')"
+        >
+          水平距
+        </button>
+        <button
+          type="button"
+          class="b"
+          title="垂直等距分布（至少 3 个）"
+          :disabled="!canDistributeLayout"
+          @click="distributeLayout('vertical')"
+        >
+          垂直距
         </button>
         <span class="bar-sep" aria-hidden="true" />
         <button
@@ -126,17 +163,36 @@
         <button type="button" class="btn-ghost" @click="dlgOpen = true">全屏放大编辑…</button>
       </aside>
       <main class="pe-mid">
-        <LayoutPresetPaperCanvas v-model:selected-id="presetCanvasSelId" :preset="working" />
+        <LayoutPresetPaperCanvas v-model:selected-ids="presetCanvasSelIds" :preset="working" />
       </main>
       <aside class="pe-right">
-        <LayoutPresetElementProps :el="selectedPresetEl" @remove="removeSelectedPresetEl" />
+        <LayoutPresetElementProps v-if="selectedPresetEl" :el="selectedPresetEl" @remove="removeSelectedPresetEl" />
+        <div v-else-if="multiLayoutSummary" class="pe-multi-summary">
+          <h3 class="pe-multi-title">已选 {{ presetCanvasSelIds.length }} 项</h3>
+          <p class="pe-multi-types">
+            <span v-for="(cnt, tp) in multiLayoutTypeCounts" :key="tp" class="pe-multi-chip">
+              {{ presetToolLabels[tp] || tp }} × {{ cnt }}
+            </span>
+          </p>
+          <ul class="pe-multi-list">
+            <li v-for="item in multiLayoutSummary" :key="item.id">
+              <button type="button" class="pe-multi-item" @click="focusLayoutItem(item.id)">
+                <span class="pe-multi-item-type">{{ presetToolLabels[item.el.type] || item.el.type }}</span>
+                <span class="pe-multi-item-id">{{ item.zoneLabel }} · {{ item.id }}</span>
+              </button>
+            </li>
+          </ul>
+          <MultiElementBatchProps :els="multiLayoutSummary.map((x) => x.el)" surface="layout" />
+          <p class="pe-multi-note">Shift 区间加选；工具栏可对齐/分布。</p>
+        </div>
+        <p v-else class="pe-props-empty">点选画布控件后在此编辑属性。</p>
       </aside>
     </div>
     </div>
 
     <LayoutPresetZonesDialog
       v-model="dlgOpen"
-      v-model:selected-id="presetCanvasSelId"
+      v-model:selected-ids="presetCanvasSelIds"
       :preset="working"
     />
   </div>
@@ -152,17 +208,27 @@ import { useRoute, useRouter } from "vue-router";
 import LayoutPresetZonesDialog from "@/components/report-template/LayoutPresetZonesDialog.vue";
 import LayoutPresetPaperCanvas from "@/components/report-template/LayoutPresetPaperCanvas.vue";
 import LayoutPresetElementProps from "@/components/report-template/LayoutPresetElementProps.vue";
+import MultiElementBatchProps from "@/components/report-template/MultiElementBatchProps.vue";
 import type { LayoutPreset } from "@/lib/report-template/layout-model";
 import { defaultBlankLayoutSnapshot, hydrateLayoutPreset } from "@/lib/report-template/layout-model";
-import type { LayoutControlType } from "@/lib/report-template/layout-zone-element";
+import type { LayoutControlType, LayoutZoneElement } from "@/lib/report-template/layout-zone-element";
 import { hideShowBordersInElements } from "@/lib/report-template/show-border";
 import {
   copyLayoutZoneElementToClipboard,
+  copyLayoutZoneElementsToClipboard,
   eventTargetIsTypingField,
   findLayoutElementZone,
   hasLayoutElementClipboard,
-  pasteLayoutZoneElementIntoPreset,
+  pasteLayoutZoneElementsIntoPreset,
 } from "@/lib/report-template/editor-element-clipboard";
+import { countTypesById, primaryId, selectOnly } from "@/lib/report-template/selection-set";
+import {
+  canAlign,
+  canDistribute,
+  computeAlignPatches,
+  computeDistributePatches,
+} from "@/lib/report-template/selection-align";
+import type { AlignKind, DistributeKind } from "@/lib/report-template/selection-align";
 import {
   layoutPresetTableCellPickKey,
   reportBindingPreviewKey,
@@ -180,6 +246,8 @@ import { stableFingerprintPart } from "@/lib/report-template/snapshot-fingerprin
 import { watchDebounced } from "@vueuse/core";
 import { useStaleGuard } from "@/composables/useStaleGuard";
 import { appConfirm } from "@/composables/useAppConfirm";
+import { auditLog } from "@/lib/auditLog";
+import { summarizeDeleteLayouts } from "@/lib/auditLabels";
 import {
   useSavedFingerprintBaseline,
   useUnsavedLeaveGuard,
@@ -205,7 +273,77 @@ const {
 } = useSavedFingerprintBaseline(() => working.value);
 const loadErr = ref("");
 const dlgOpen = ref(false);
-const presetCanvasSelId = ref<string | null>(null);
+const presetCanvasSelIds = ref<string[]>([]);
+const presetCanvasSelId = computed({
+  get: () => primaryId(presetCanvasSelIds.value),
+  set: (v: string | null) => {
+    presetCanvasSelIds.value = v ? selectOnly(v) : [];
+  },
+});
+
+const ZONE_LABEL: Record<string, string> = {
+  header: "页眉",
+  body: "正文",
+  footer: "页脚",
+};
+
+function findLayoutElementById(id: string): LayoutZoneElement | null {
+  const w = working.value;
+  if (!w || !id) return null;
+  return (
+    w.headerElements.find((x) => x.id === id) ||
+    w.footerElements.find((x) => x.id === id) ||
+    w.bodyElements.find((x) => x.id === id) ||
+    null
+  );
+}
+
+function gatherSelectedLayoutElements(): Array<{ el: LayoutZoneElement; zone: "header" | "body" | "footer" }> {
+  const w = working.value;
+  if (!w) return [];
+  const out: Array<{ el: LayoutZoneElement; zone: "header" | "body" | "footer" }> = [];
+  for (const id of presetCanvasSelIds.value) {
+    const el = findLayoutElementById(id);
+    if (!el) continue;
+    const zone = findLayoutElementZone(w, id);
+    if (!zone) continue;
+    out.push({ el, zone });
+  }
+  return out;
+}
+
+const hasLayoutSelection = computed(() => gatherSelectedLayoutElements().length > 0);
+
+const selectedPresetEl = computed(() => {
+  if (presetCanvasSelIds.value.length !== 1) return null;
+  return findLayoutElementById(presetCanvasSelId.value || "");
+});
+
+const multiLayoutSummary = computed(() => {
+  const w = working.value;
+  if (!w || presetCanvasSelIds.value.length <= 1) return null;
+  const items = [];
+  for (const id of presetCanvasSelIds.value) {
+    const el = findLayoutElementById(id);
+    const zone = findLayoutElementZone(w, id);
+    if (!el || !zone) return null;
+    items.push({ id, el, zoneLabel: ZONE_LABEL[zone] || zone });
+  }
+  return items.length > 1 ? items : null;
+});
+
+const multiLayoutTypeCounts = computed(() => {
+  const items = multiLayoutSummary.value;
+  if (!items) return {};
+  return countTypesById(
+    items.map((x) => x.el),
+    presetCanvasSelIds.value,
+  );
+});
+
+function focusLayoutItem(id: string) {
+  presetCanvasSelIds.value = selectOnly(id);
+}
 
 const presetUndoStack = ref<LayoutPreset[]>([]);
 const presetRedoStack = ref<LayoutPreset[]>([]);
@@ -296,30 +434,16 @@ const dimLabel = computed(() => {
   return PAPER_LABEL[w.paperKind] + (w.orientation === "landscape" ? " · 横" : " · 纵");
 });
 
-const selectedPresetEl = computed(() => {
-  const w = working.value;
-  const id = presetCanvasSelId.value;
-  if (!w || !id) return null;
-  return (
-    w.headerElements.find((x) => x.id === id) ||
-    w.footerElements.find((x) => x.id === id) ||
-    w.bodyElements.find((x) => x.id === id) ||
-    null
-  );
-});
-
 function removeSelectedPresetEl() {
   const w = working.value;
-  const id = presetCanvasSelId.value;
-  if (!w || !id) return;
+  const ids = new Set(presetCanvasSelIds.value);
+  if (!w || ids.size === 0) return;
   for (const arr of [w.headerElements, w.footerElements, w.bodyElements]) {
-    const i = arr.findIndex((x) => x.id === id);
-    if (i >= 0) {
-      arr.splice(i, 1);
-      presetCanvasSelId.value = null;
-      return;
+    for (let i = arr.length - 1; i >= 0; i--) {
+      if (ids.has(arr[i].id)) arr.splice(i, 1);
     }
   }
+  presetCanvasSelIds.value = [];
 }
 
 const clipboardTick = ref(0);
@@ -334,34 +458,86 @@ function bumpClipboardUi() {
 
 function copySelectedPresetEl() {
   const w = working.value;
-  const el = selectedPresetEl.value;
-  if (!w || !el) return;
-  const zone = findLayoutElementZone(w, el.id) || "body";
-  copyLayoutZoneElementToClipboard(el, zone);
+  const items = gatherSelectedLayoutElements();
+  if (!w || !items.length) return;
+  if (items.length === 1) {
+    copyLayoutZoneElementToClipboard(items[0]!.el, items[0]!.zone);
+  } else {
+    copyLayoutZoneElementsToClipboard(items.map((x) => ({ el: x.el, zone: x.zone })));
+  }
   bumpClipboardUi();
-  msg.value = "已复制控件（含属性配置）。";
+  msg.value = items.length > 1 ? `已复制 ${items.length} 个控件（含属性配置）。` : "已复制控件（含属性配置）。";
 }
 
 function cutSelectedPresetEl() {
   const w = working.value;
-  const el = selectedPresetEl.value;
-  if (!w || !el) return;
-  const zone = findLayoutElementZone(w, el.id) || "body";
-  copyLayoutZoneElementToClipboard(el, zone);
+  const items = gatherSelectedLayoutElements();
+  if (!w || !items.length) return;
+  if (items.length === 1) {
+    copyLayoutZoneElementToClipboard(items[0]!.el, items[0]!.zone);
+  } else {
+    copyLayoutZoneElementsToClipboard(items.map((x) => ({ el: x.el, zone: x.zone })));
+  }
   bumpClipboardUi();
   removeSelectedPresetEl();
-  msg.value = "已剪切控件。";
+  msg.value = items.length > 1 ? `已剪切 ${items.length} 个控件。` : "已剪切控件。";
 }
 
 function pastePresetEl() {
   const w = working.value;
   if (!w || !hasLayoutElementClipboard()) return;
   const preferred = presetCanvasSelId.value ? findLayoutElementZone(w, presetCanvasSelId.value) : null;
-  const newId = pasteLayoutZoneElementIntoPreset(w, preferred);
+  const newIds = pasteLayoutZoneElementsIntoPreset(w, preferred);
   bumpClipboardUi();
-  if (!newId) return;
-  presetCanvasSelId.value = newId;
-  msg.value = "已粘贴控件（属性已保留）。";
+  if (!newIds.length) return;
+  presetCanvasSelIds.value = newIds;
+  msg.value =
+    newIds.length > 1 ? `已粘贴 ${newIds.length} 个控件（属性已保留）。` : "已粘贴控件（属性已保留）。";
+}
+
+const canAlignLayout = computed(() => canAlign(presetCanvasSelIds.value.length));
+const canDistributeLayout = computed(() => canDistribute(presetCanvasSelIds.value.length));
+
+function gatherSelectedAlignBoxes() {
+  const out: { id: string; x: number; y: number; w: number; h: number }[] = [];
+  for (const id of presetCanvasSelIds.value) {
+    const el = findLayoutElementById(id);
+    if (!el) continue;
+    out.push({
+      id: el.id,
+      x: Number(el.x) || 0,
+      y: Number(el.y) || 0,
+      w: Number(el.w) || 0,
+      h: Number(el.h) || 0,
+    });
+  }
+  return out;
+}
+
+function applyPosPatchesToLayout(patches: { id: string; x: number; y: number }[]) {
+  let n = 0;
+  for (const p of patches) {
+    const el = findLayoutElementById(p.id);
+    if (!el) continue;
+    el.x = p.x;
+    el.y = p.y;
+    n += 1;
+  }
+  return n;
+}
+
+function alignLayout(kind: AlignKind) {
+  const boxes = gatherSelectedAlignBoxes();
+  const patches = computeAlignPatches(boxes, kind, primaryId(presetCanvasSelIds.value));
+  const n = applyPosPatchesToLayout(patches);
+  msg.value = n ? `已对齐 ${n} 个控件。` : "无需移动（已对齐或选中不足）。";
+}
+
+function distributeLayout(kind: DistributeKind) {
+  const boxes = gatherSelectedAlignBoxes();
+  const patches = computeDistributePatches(boxes, kind);
+  const n = applyPosPatchesToLayout(patches);
+  msg.value = n ? `已等距分布（调整 ${n} 个）。` : "无需移动（选中不足 3 个或已等距）。";
 }
 
 function hideBordersOnPresetPage() {
@@ -426,8 +602,7 @@ function undoPresetEdit() {
     presetApplyingHistory.value = false;
   }
   void nextTick(() => {
-    const id = presetCanvasSelId.value;
-    if (id && !selectedPresetEl.value) presetCanvasSelId.value = null;
+    if (presetCanvasSelIds.value.some((id) => !findLayoutElementById(id))) presetCanvasSelIds.value = [];
     msg.value = "已撤销。";
   });
 }
@@ -444,8 +619,7 @@ function redoPresetEdit() {
     presetApplyingHistory.value = false;
   }
   void nextTick(() => {
-    const id = presetCanvasSelId.value;
-    if (id && !selectedPresetEl.value) presetCanvasSelId.value = null;
+    if (presetCanvasSelIds.value.some((id) => !findLayoutElementById(id))) presetCanvasSelIds.value = [];
     msg.value = "已重做。";
   });
 }
@@ -473,9 +647,11 @@ async function loadWorking() {
       return;
     }
     working.value = clonePreset(raw);
-    presetCanvasSelId.value = null;
+    presetCanvasSelIds.value = [];
     resetPresetHistoryFromWorking(working.value);
     void bindingPreview.refresh({ silent: true, mutateTemplateRows: false });
+    await nextTick();
+    applyFocusFromRouteQuery();
   } catch (e) {
     if (isLoadStale(token)) return;
     loadErr.value = "加载失败：" + String((e as Error).message || e);
@@ -483,6 +659,26 @@ async function loadWorking() {
     resetPresetHistoryFromWorking(null);
   }
 }
+
+/** 仪表盘健康问题 ?focus= 跳转后自动选中版式控件 */
+function applyFocusFromRouteQuery() {
+  const focus = String(route.query.focus || "").trim();
+  if (!focus || !working.value) return;
+  const hit = findLayoutElementZone(working.value, focus);
+  if (!hit) {
+    msg.value = `健康告警指定的控件 ID「${focus}」在当前版式中未找到。`;
+    return;
+  }
+  presetCanvasSelId.value = focus;
+  msg.value = `已从健康告警定位并选中控件（ID ${focus}）。`;
+}
+
+watch(
+  () => route.query.focus,
+  () => {
+    applyFocusFromRouteQuery();
+  },
+);
 
 async function savePreset() {
   const w = working.value;
@@ -499,7 +695,7 @@ async function savePreset() {
       msg.value = r.message;
       return false;
     }
-    presetCanvasSelId.value = null;
+    presetCanvasSelIds.value = [];
     if (r.source === "remote") {
       await loadWorking();
       msg.value = "版式已保存。";
@@ -545,10 +741,25 @@ async function removePreset() {
   msg.value = "";
   try {
     await deleteLayoutPresetFlexible(w.id);
+    void auditLog({
+      action: "layout.delete",
+      result: "ok",
+      summary: summarizeDeleteLayouts([w.name || "未命名"]),
+      object_type: "layout",
+      object_id: w.id,
+      detail: { name: w.name || "未命名" },
+    });
     skipLeaveGuard.value = true;
     router.replace({ name: "LayoutPresets" });
   } catch (e) {
     msg.value = "删除失败：" + String((e as Error).message || e);
+    void auditLog({
+      action: "layout.delete",
+      result: "fail",
+      summary: `删除版式「${w.name || "未命名"}」失败：${String((e as Error).message || e).slice(0, 80)}`,
+      object_type: "layout",
+      object_id: w.id,
+    });
   }
 }
 
@@ -587,14 +798,14 @@ function onEditorWindowKeydown(ev: KeyboardEvent) {
   }
   if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "c") {
     if (eventTargetIsTypingField(ev.target)) return;
-    if (!selectedPresetEl.value) return;
+    if (!hasLayoutSelection.value) return;
     ev.preventDefault();
     copySelectedPresetEl();
     return;
   }
   if ((ev.ctrlKey || ev.metaKey) && ev.key.toLowerCase() === "x") {
     if (eventTargetIsTypingField(ev.target)) return;
-    if (!selectedPresetEl.value) return;
+    if (!hasLayoutSelection.value) return;
     ev.preventDefault();
     cutSelectedPresetEl();
     return;
@@ -607,8 +818,15 @@ function onEditorWindowKeydown(ev: KeyboardEvent) {
     return;
   }
   if (eventTargetIsTypingField(ev.target)) return;
+  if (ev.key === "Escape") {
+    if (presetCanvasSelIds.value.length) {
+      ev.preventDefault();
+      presetCanvasSelIds.value = [];
+    }
+    return;
+  }
   if (ev.key === "Delete" || ev.key === "Backspace") {
-    if (!presetCanvasSelId.value) return;
+    if (!hasLayoutSelection.value) return;
     ev.preventDefault();
     removeSelectedPresetEl();
   }
@@ -807,6 +1025,74 @@ onUnmounted(() => window.removeEventListener("keydown", onEditorWindowKeydown));
   flex-direction: column;
   overflow: hidden;
   overscroll-behavior: contain;
+}
+.pe-props-empty {
+  margin: 0;
+  color: #71717a;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.pe-multi-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.pe-multi-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 650;
+}
+.pe-multi-types {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.pe-multi-chip {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgb(238 242 255);
+  color: #4338ca;
+  font-weight: 600;
+}
+.pe-multi-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 40vh;
+  overflow: auto;
+}
+.pe-multi-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid #e4e4e7;
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+  text-align: left;
+  font-size: 12px;
+}
+.pe-multi-item-type {
+  font-weight: 600;
+  color: #3f3f46;
+}
+.pe-multi-item-id {
+  color: #71717a;
+  word-break: break-all;
+}
+.pe-multi-note {
+  margin: 0;
+  font-size: 11px;
+  color: #64748b;
+  line-height: 1.45;
 }
 .pe-right {
   padding: 10px;
