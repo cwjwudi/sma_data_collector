@@ -7,6 +7,54 @@
 
 ---
 
+# ⌛️ 未完成：探活 claim 误伤「只读查证当前状态」（审计分析场景）
+
+> **流程**：先记录，未开工改代码。  
+> **发现**：2026-07-14 · 分支 `feat/016-ai-chat-ui` / 0.3.94 DMG 现场。  
+> **相关**：[`ai_claim_guard.py`](../_Prj/SD_SMA_ReportEditor/backend/modules/ai_claim_guard.py) · 流式/清屏侧见 [docs/016](016-⌛️-ReportEditor-AI对话UI改版.md)。
+
+## 现象（用户原话 · 问「分析一下审计记录」）
+
+1. 助手先据 `query_audit_log` 给出较完整的审计摘要（分类、时间线、注意点）——合理。  
+2. 自纠：「不该仅凭审计断言当前状态」，再调 `get_connection_health_summary`（轨迹：`live_probe: false`，工具成功）。  
+3. 正文写明：定时探活**当前** ✅ 已开启（间隔 10s）；数据源已锁定。  
+4. 文末却被 claim guard 追加/改写成：
+
+> 未能确认定时探活已开启：本轮没有成功的**写入**工具结果。请确认设置中已开启「允许 AI 写入工具」…
+
+5. 工具轨迹可见：`query_audit_log` #1 成功；`get_connection_health_summary` #3 成功——**并无** `update_connection_probe_settings` 写入，也不该要求写入。
+
+## 根因（分析）
+
+| 点 | 说明 |
+|----|------|
+| 守卫粒度 | `detect_probe_claim` 把「已开启/已经开启…」一律当作**写入完成态** |
+| 证据要求 | `probe_claim_has_evidence` **只认** `update_connection_probe_settings(enabled=…)` 成功 |
+| 误伤 | 「只读查证 → 陈述当前探活为开」与「空口声称我已帮你开启」用同一规则；读工具成功也不算证据 |
+| 文案 | `rewrite_probe_claim_failure` 固定引导「写入总闸 / 手动切换」，与**审计/诊断只读场景**不符 |
+
+诊断守卫（`needs_diagnostic_claim_retry`）本可用 `get_connection_health_summary` 等作证据；探活守卫过窄，且「探活已开」字样优先命中探活规则。
+
+## 拟修复（待拍板后开工）
+
+1. **区分意图**：仅当用户意图/助手语义为「去开启/关闭探活」时，才要求 write 工具证据。  
+2. **只读陈述放行**：若本轮已有成功的 `get_connection_health_summary`（或等价读偏好）且文案是「当前状态为…」，**不**触发探活 write claim 再调/改写。  
+3. 或收紧正则：区分「已为你开启 / 开启成功」vs「当前为开启 / 状态：已开启」。  
+4. 单测：审计分析 + health 读回「当前已开」→ **不得**改写成「没有成功的写入工具结果」。
+
+## 验收
+
+- [ ] 「分析审计」类：可陈述审计里的探活历史；查证当前状态后，不出现「缺少写入工具」误报  
+- [ ] 「请开启定时探活」：仍须 write 成功，否则再调/如实失败（原 H1 不回退）  
+- [ ] 轨迹中仅有 read 时，不要求 `update_connection_probe_settings`
+
+## 不做（本条登记）
+
+- 本轮不改代码（仅看板）  
+- 不削弱「空口答应开启探活」的 write 守卫
+
+---
+
 # ✅ 已完成：检查更新（能力矩阵 N · → 0.3.92）
 
 ## 产品诉求
