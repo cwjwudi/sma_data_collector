@@ -90,6 +90,16 @@
           title="拖拽调整宽度"
           @pointerdown="onResizePointerDown"
         />
+        <template v-else>
+          <div
+            v-for="edge in expandedResizeEdges"
+            :key="edge"
+            class="ai-drawer__grip"
+            :class="`ai-drawer__grip--${edge}`"
+            :title="'拖拽调整大小'"
+            @pointerdown="onExpandedResizePointerDown($event, edge)"
+          />
+        </template>
         <header class="ai-drawer__head">
           <div class="ai-drawer__head-left">
             <label class="ai-drawer__model-wrap" title="切换模型">
@@ -338,6 +348,9 @@ import {
 import {
   clearAiChatPersist,
   clampDrawerWidth,
+  clampExpandedHeight,
+  clampExpandedWidth,
+  defaultExpandedSize,
   loadAiChatPersist,
   saveAiChatPersist,
   type PersistedAiMessage,
@@ -372,6 +385,10 @@ const queue = ref<QueuedChatItem[]>([])
 const queueTrayOpen = ref(true)
 const drawerWidthPx = ref(420)
 const expanded = ref(false)
+const expandedWidthPx = ref(defaultExpandedSize().width)
+const expandedHeightPx = ref(defaultExpandedSize().height)
+const expandedResizeEdges = ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'] as const
+type ExpandedResizeEdge = (typeof expandedResizeEdges)[number]
 const llmModel = ref('')
 const modelOptions = ref<string[]>(['gpt-4o-mini', 'gpt-4o', 'gpt-4.1-mini', 'gpt-4.1'])
 const modelBusy = ref(false)
@@ -429,7 +446,12 @@ const pageContext = computed((): AiPageContext => {
 })
 
 const drawerPanelStyle = computed(() => {
-  if (expanded.value) return undefined
+  if (expanded.value) {
+    return {
+      width: `${clampExpandedWidth(expandedWidthPx.value)}px`,
+      height: `${clampExpandedHeight(expandedHeightPx.value)}px`,
+    }
+  }
   if (typeof window !== 'undefined' && window.innerWidth < 480) return { width: '100vw' }
   return { width: `${clampDrawerWidth(drawerWidthPx.value)}px` }
 })
@@ -452,6 +474,8 @@ function persistNow() {
     messages: messages.value as PersistedAiMessage[],
     drawerWidthPx: drawerWidthPx.value,
     expanded: expanded.value,
+    expandedWidthPx: expandedWidthPx.value,
+    expandedHeightPx: expandedHeightPx.value,
   })
 }
 
@@ -491,6 +515,14 @@ async function onModelChange() {
 }
 
 function toggleExpanded() {
+  if (!expanded.value) {
+    // 进入展开：若尺寸偏小则拉到默认大窗
+    const defs = defaultExpandedSize()
+    if (expandedWidthPx.value < defs.width * 0.85) expandedWidthPx.value = defs.width
+    if (expandedHeightPx.value < defs.height * 0.85) expandedHeightPx.value = defs.height
+    expandedWidthPx.value = clampExpandedWidth(expandedWidthPx.value)
+    expandedHeightPx.value = clampExpandedHeight(expandedHeightPx.value)
+  }
   expanded.value = !expanded.value
   persistNow()
 }
@@ -641,6 +673,49 @@ function onResizePointerDown(ev: PointerEvent) {
   }
   window.addEventListener('pointermove', onMove)
   window.addEventListener('pointerup', onUp)
+}
+
+function onExpandedResizePointerDown(ev: PointerEvent, edge: ExpandedResizeEdge) {
+  ev.preventDefault()
+  ev.stopPropagation()
+  resizing = true
+  const startX = ev.clientX
+  const startY = ev.clientY
+  const startW = expandedWidthPx.value
+  const startH = expandedHeightPx.value
+  const target = ev.currentTarget as HTMLElement
+  target.setPointerCapture(ev.pointerId)
+  const onMove = (e: PointerEvent) => {
+    if (!resizing) return
+    const dx = e.clientX - startX
+    const dy = e.clientY - startY
+    let nextW = startW
+    let nextH = startH
+    if (edge.includes('e')) nextW = startW + dx
+    if (edge.includes('w')) nextW = startW - dx
+    if (edge.includes('s')) nextH = startH + dy
+    if (edge.includes('n')) nextH = startH - dy
+    expandedWidthPx.value = clampExpandedWidth(nextW)
+    expandedHeightPx.value = clampExpandedHeight(nextH)
+  }
+  const onUp = () => {
+    resizing = false
+    try {
+      target.releasePointerCapture(ev.pointerId)
+    } catch {
+      /* ignore */
+    }
+    window.removeEventListener('pointermove', onMove)
+    window.removeEventListener('pointerup', onUp)
+    persistNow()
+  }
+  window.addEventListener('pointermove', onMove)
+  window.addEventListener('pointerup', onUp)
+}
+
+function onWindowResize() {
+  expandedWidthPx.value = clampExpandedWidth(expandedWidthPx.value)
+  expandedHeightPx.value = clampExpandedHeight(expandedHeightPx.value)
 }
 
 function onGlobalKeydown(ev: KeyboardEvent) {
@@ -819,15 +894,23 @@ onMounted(() => {
       })) as UiMessage[]
     drawerWidthPx.value = saved.drawerWidthPx
     expanded.value = saved.expanded
+    expandedWidthPx.value = saved.expandedWidthPx
+    expandedHeightPx.value = saved.expandedHeightPx
+  } else {
+    const defs = defaultExpandedSize()
+    expandedWidthPx.value = defs.width
+    expandedHeightPx.value = defs.height
   }
   window.addEventListener('report-editor-ai-settings-changed', onSettingsChanged)
   window.addEventListener('keydown', onGlobalKeydown)
+  window.addEventListener('resize', onWindowResize)
 })
 
 onUnmounted(() => {
   if (copiedTimer) clearTimeout(copiedTimer)
   window.removeEventListener('report-editor-ai-settings-changed', onSettingsChanged)
   window.removeEventListener('keydown', onGlobalKeydown)
+  window.removeEventListener('resize', onWindowResize)
 })
 </script>
 
@@ -976,7 +1059,7 @@ onUnmounted(() => {
 .ai-drawer-backdrop--expanded {
   justify-content: center;
   align-items: center;
-  padding: 24px;
+  padding: 12px;
   background: rgba(6, 10, 20, 0.55);
 }
 
@@ -1001,12 +1084,12 @@ onUnmounted(() => {
 }
 
 .ai-drawer--expanded {
-  width: min(920px, calc(100vw - 48px));
-  height: min(900px, calc(100vh - 48px));
-  max-height: calc(100vh - 48px);
+  max-width: calc(100vw - 24px);
+  max-height: calc(100vh - 24px);
   border-radius: 20px;
   border: 1px solid var(--ai-glass-border);
   box-shadow: 0 24px 64px rgba(0, 0, 0, 0.45);
+  border-left: 1px solid var(--ai-glass-border);
 }
 
 .ai-drawer__resize {
@@ -1017,6 +1100,89 @@ onUnmounted(() => {
   width: 6px;
   cursor: ew-resize;
   z-index: 2;
+}
+
+.ai-drawer__grip {
+  position: absolute;
+  z-index: 4;
+  touch-action: none;
+}
+
+.ai-drawer__grip--n {
+  top: -2px;
+  left: 14px;
+  right: 14px;
+  height: 10px;
+  cursor: ns-resize;
+}
+
+.ai-drawer__grip--s {
+  bottom: -2px;
+  left: 14px;
+  right: 14px;
+  height: 10px;
+  cursor: ns-resize;
+}
+
+.ai-drawer__grip--e {
+  right: -2px;
+  top: 14px;
+  bottom: 14px;
+  width: 10px;
+  cursor: ew-resize;
+}
+
+.ai-drawer__grip--w {
+  left: -2px;
+  top: 14px;
+  bottom: 14px;
+  width: 10px;
+  cursor: ew-resize;
+}
+
+.ai-drawer__grip--ne {
+  top: -2px;
+  right: -2px;
+  width: 18px;
+  height: 18px;
+  cursor: nesw-resize;
+}
+
+.ai-drawer__grip--nw {
+  top: -2px;
+  left: -2px;
+  width: 18px;
+  height: 18px;
+  cursor: nwse-resize;
+}
+
+.ai-drawer__grip--se {
+  bottom: -2px;
+  right: -2px;
+  width: 18px;
+  height: 18px;
+  cursor: nwse-resize;
+}
+
+.ai-drawer__grip--sw {
+  bottom: -2px;
+  left: -2px;
+  width: 18px;
+  height: 18px;
+  cursor: nesw-resize;
+}
+
+.ai-drawer__grip--se::after {
+  content: '';
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  width: 10px;
+  height: 10px;
+  border-right: 2px solid rgba(255, 255, 255, 0.35);
+  border-bottom: 2px solid rgba(255, 255, 255, 0.35);
+  border-radius: 1px;
+  pointer-events: none;
 }
 
 .ai-drawer__head {

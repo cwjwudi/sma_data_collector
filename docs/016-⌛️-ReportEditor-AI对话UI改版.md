@@ -31,11 +31,11 @@
 
 ## 本轮实现
 
-1. `AiDrawer` 深色玻璃 token；展开态居中圆角面板；Esc 先收起再关  
+1. `AiDrawer` 深色玻璃 token；展开态默认约 **96%×94% 视口**，八向拖拽调尺寸并记忆；Esc 先收起再关  
 2. 顶栏：模型 `<select>` → `patchAiSettings`；新对话 / 展开 / 关闭  
 3. 用户：右气泡 +「我」头像；助手：Agent 胶囊 + 无厚底 + 复制  
 4. composer 大圆角壳 + 发送；排队收纳条保留  
-5. `chat-persist.expanded` 记忆展开偏好  
+5. `chat-persist`：`expanded` + `expandedWidthPx` / `expandedHeightPx`  
 
 ## 回滚
 
