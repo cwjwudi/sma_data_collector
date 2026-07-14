@@ -85,8 +85,10 @@ git branch -D feat/016-ai-chat-ui   # 若尚未合并
 
 1. 收到上游 `content` 立即 `yield` SSE `delta`（并切 `writing`）  
 2. 若本轮最终有 `tool_calls`：`replace` 清空已流出正文 → `tools` → 执行工具 → 下一轮继续真流式  
-3. 去掉（或仅作兜底）无工具路径上的「整段后再模拟分段」  
-4. 单测覆盖：无工具时 delta 在上游结束前即可出现（mock 异步迭代）
+3. 去掉无工具路径上的「整段后再模拟分段」（仅作未流出兜底）  
+4. 单测：`plan_live_content_sse` 覆盖无工具即时 delta / 有工具时 replace  
+
+**实现**：后端真转发已合入本分支（见随后 `fix` 提交）；前端 `a3f13e4` 纯文本渲染保留。待你重装 DMG 验收。
 
 ## 验收
 

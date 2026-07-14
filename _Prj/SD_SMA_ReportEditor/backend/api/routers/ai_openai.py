@@ -5,6 +5,7 @@ import json
 import logging
 import time
 import uuid
+import asyncio
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -267,18 +268,31 @@ async def iter_chat_stream_sse(
 
             content_parts: list[str] = []
             collected_tools: list[dict[str, Any]] | None = None
+            writing_started = False
+            streamed_live = False
             async for kind, val in _iter_upstream_stream(
                 settings=settings, api_key=api_key, payload=upstream_payload
             ):
                 if request is not None and await request.is_disconnected():
                     return
                 if kind == "content":
-                    # 缓冲至本轮上游结束：若有 tool_calls 则不提前流式「已完成」文案
-                    content_parts.append(str(val))
+                    piece = str(val)
+                    if not piece:
+                        continue
+                    content_parts.append(piece)
+                    # 真流转发：不等本轮上游结束（对齐 014）；有 tool_calls 时稍后 replace 清空
+                    if not writing_started:
+                        yield format_sse("status", {"phase": "writing"})
+                        writing_started = True
+                    yield format_sse("delta", {"text": piece})
+                    streamed_live = True
+                    await asyncio.sleep(0)
                 elif kind == "tool_calls":
                     collected_tools = val if isinstance(val, list) else []
 
             if collected_tools and should_hold_content_for_tools(True):
+                if streamed_live:
+                    yield format_sse("replace", {"text": ""})
                 yield format_sse("status", {"phase": "tools"})
                 assistant_msg: dict[str, Any] = {
                     "role": "assistant",
@@ -315,14 +329,15 @@ async def iter_chat_stream_sse(
                 upstream_payload["messages"] = messages
                 continue
 
-            # 无 tool_calls：本轮结束后再放出正文（可分段，避免整块卡住）
+            # 无 tool_calls：正文已在上游 token 到达时实时 delta；仅兜底未流出的残余
             assistant_text = "".join(content_parts)
-            if assistant_text:
+            if assistant_text and not streamed_live:
                 yield format_sse("status", {"phase": "writing"})
                 for piece in chunk_text_for_simulated_stream(assistant_text):
                     if request is not None and await request.is_disconnected():
                         return
                     yield format_sse("delta", {"text": piece})
+                    await asyncio.sleep(0)
 
             if needs_probe_claim_retry(assistant_text, tool_trace) and not claim_retry_used:
                 claim = detect_probe_claim(assistant_text)

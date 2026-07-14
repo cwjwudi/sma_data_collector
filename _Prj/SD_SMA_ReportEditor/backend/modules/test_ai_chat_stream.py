@@ -61,3 +61,38 @@ def test_should_hold_content_for_tools():
 
     assert should_hold_content_for_tools(True) is True
     assert should_hold_content_for_tools(False) is False
+
+
+def test_plan_live_content_sse_forwards_deltas_before_round_end():
+    from modules.ai_chat_stream import plan_live_content_sse
+
+    plan = plan_live_content_sse(
+        [
+            ("content", "你"),
+            ("content", "好"),
+            ("content", "！"),
+        ]
+    )
+    assert plan[0] == ("status", {"phase": "writing"})
+    assert [p for p in plan if p[0] == "delta"] == [
+        ("delta", {"text": "你"}),
+        ("delta", {"text": "好"}),
+        ("delta", {"text": "！"}),
+    ]
+    assert not any(p[0] == "replace" for p in plan)
+
+
+def test_plan_live_content_sse_clears_when_tools():
+    from modules.ai_chat_stream import plan_live_content_sse
+
+    plan = plan_live_content_sse(
+        [
+            ("content", "先说一句"),
+            ("tool_calls", [{"id": "1", "function": {"name": "list_templates"}}]),
+        ]
+    )
+    assert ("delta", {"text": "先说一句"}) in plan
+    assert ("replace", {"text": ""}) in plan
+    assert ("status", {"phase": "tools"}) in plan
+    # replace 必须在 tools 之前
+    assert plan.index(("replace", {"text": ""})) < plan.index(("status", {"phase": "tools"}))

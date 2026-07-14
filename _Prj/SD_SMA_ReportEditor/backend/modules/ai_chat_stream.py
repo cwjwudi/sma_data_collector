@@ -87,7 +87,7 @@ def iter_content_and_tools_from_upstream_chunk(
 
 
 def chunk_text_for_simulated_stream(text: str, size: int = 24) -> list[str]:
-    """非流式正文拆成小段，便于 UI 增量展示（兜底）。"""
+    """非流式正文拆成小段，便于 UI 增量展示（兜底；默认路径应真转发上游 delta）。"""
     if not text:
         return []
     if size <= 0:
@@ -101,3 +101,38 @@ def should_hold_content_for_tools(has_tool_calls: bool) -> bool:
     结论由工具成功后的下一轮助手消息再流式输出。
     """
     return bool(has_tool_calls)
+
+
+def plan_live_content_sse(
+    upstream_events: list[tuple[str, Any]],
+) -> list[tuple[str, dict[str, Any]]]:
+    """
+    将一轮上游 ``(kind, val)`` 序列规划为对客户端的 SSE 动作（不含工具执行本身）。
+
+    - 每个 ``content`` → 即时 ``delta``（首次前插 ``status/writing``）
+    - 若最终有 ``tool_calls`` → 必要时 ``replace`` 清空已流出正文，再 ``status/tools``
+    """
+    plan: list[tuple[str, dict[str, Any]]] = []
+    writing_started = False
+    streamed_live = False
+    collected_tools: list[dict[str, Any]] | None = None
+
+    for kind, val in upstream_events:
+        if kind == "content":
+            piece = str(val)
+            if not piece:
+                continue
+            if not writing_started:
+                plan.append(("status", {"phase": "writing"}))
+                writing_started = True
+            plan.append(("delta", {"text": piece}))
+            streamed_live = True
+        elif kind == "tool_calls":
+            collected_tools = val if isinstance(val, list) else []
+
+    if collected_tools and should_hold_content_for_tools(True):
+        if streamed_live:
+            plan.append(("replace", {"text": ""}))
+        plan.append(("status", {"phase": "tools"}))
+
+    return plan
