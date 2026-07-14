@@ -82,6 +82,33 @@ def test_needs_retry_when_claim_without_tool():
     assert needs_probe_claim_retry("探活已开启", [{"name": "list_templates", "ok": True, "args_summary": {}}]) is True
 
 
+def test_status_claim_with_health_read_no_retry():
+    """审计/诊断：只读查证后陈述「当前已开」不得要求写入工具。"""
+    from modules.ai_claim_guard import is_probe_agency_claim
+
+    health = [{"name": "get_connection_health_summary", "ok": True, "message": "ok"}]
+    status = "定时探活当前 ✅ 已开启（间隔 10s）；数据源已锁定。"
+    assert is_probe_agency_claim(status) is False
+    assert needs_probe_claim_retry(status, health) is False
+    assert needs_probe_claim_retry("探活已开启", health) is False
+    # 无 health 仍须再调
+    assert needs_probe_claim_retry(status, [{"name": "query_audit_log", "ok": True}]) is True
+
+
+def test_agency_claim_still_requires_write_even_with_health():
+    health = [{"name": "get_connection_health_summary", "ok": True}]
+    assert needs_probe_claim_retry("已为你开启定时探活。", health) is True
+    assert needs_probe_claim_retry("开启成功，定时探活已打开。", health) is True
+    write_ok = [
+        {
+            "name": "update_connection_probe_settings",
+            "ok": True,
+            "args_summary": {"enabled": True},
+        }
+    ]
+    assert needs_probe_claim_retry("已为你开启定时探活。", write_ok) is False
+
+
 def test_rewrite_removes_false_success():
     text = rewrite_probe_claim_failure(
         "定时探活已经开启。",
