@@ -936,7 +936,7 @@ function renderGroups() {
 
     const card = document.createElement("div");
     card.className = "group-card";
-    card.appendChild(createRow([createHeaderCell("名称"), createHeaderCell("描述"), createHeaderCell("触发类型"), createHeaderCell("采集间隔(秒)")]));
+    card.appendChild(createRow([createHeaderCell("名称"), createHeaderCell("描述"), createHeaderCell("触发类型"), createHeaderCell("静态采集间隔(秒)"), createHeaderCell("动态间隔点位")]));
     card.appendChild(
       createRow([
         createInput(item.name || "", (v) => {
@@ -955,6 +955,11 @@ function renderGroups() {
           (v) => (currentConfig.groups[idx].trigger = v)
         ),
         createInput(item.interval_seconds || 1, (v) => (currentConfig.groups[idx].interval_seconds = Number(v) || 1), "number"),
+        createSelect(
+          [{ value: "", label: "使用静态间隔" }, ...pointOptions],
+          item.interval_point || "",
+          (v) => (currentConfig.groups[idx].interval_point = v || null)
+        ),
       ])
     );
     card.appendChild(createRow([createHeaderCell("触发点"), createHeaderCell("触发间隔(秒)"), createHeaderCell("数据点列表(多选)"), createHeaderCell("唯一键点")]));
@@ -1058,6 +1063,7 @@ function renderGroups() {
     currentConfig.groups.push({
       name: "",
       interval_seconds: 1,
+      interval_point: null,
       trigger: "time",
       description: "",
       data_points: [],

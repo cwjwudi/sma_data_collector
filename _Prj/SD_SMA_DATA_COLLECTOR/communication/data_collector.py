@@ -5,6 +5,7 @@
 
 import asyncio
 import logging
+import math
 import sys
 import os
 import time
@@ -46,7 +47,9 @@ class DataCollector:
         self.trigger_reset_confirm_attempts = 3
         self.trigger_reset_confirm_delay = 0.05
         self.trigger_stuck_reset_retry_interval = 1.0
+        self.dynamic_interval_poll_seconds = 0.5
         self.metrics: Counter[str] = Counter()
+        self._interval_warning_state: Dict[str, str] = {}
 
     async def _read_boolean_trigger_value(
         self,
@@ -117,6 +120,87 @@ class DataCollector:
 
         skipped_ticks = int(lag // interval)
         return next_tick_index + skipped_ticks, skipped_ticks
+
+    @staticmethod
+    def _normalize_collection_interval(value: Any) -> float:
+        """Convert an OPC UA interval value to a positive finite number of seconds."""
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise ValueError("采集间隔必须是数值")
+        interval = float(value)
+        if not math.isfinite(interval) or interval <= 0:
+            raise ValueError("采集间隔必须是大于 0 的有限数值")
+        return interval
+
+    def _warn_interval_once(self, group: DataGroup, signature: str, message: str, *args: Any) -> None:
+        if self._interval_warning_state.get(group.name) == signature:
+            return
+        self._interval_warning_state[group.name] = signature
+        self.logger.warning(message, *args)
+
+    async def _read_collection_interval(
+        self,
+        group: DataGroup,
+        interval_point: Optional[DataPoint],
+        opcua_client: OpcUaClient,
+        current_interval: float,
+    ) -> tuple[float, bool]:
+        """Read a dynamic interval and keep the last valid value on any failure."""
+        if interval_point is None:
+            return current_interval, False
+
+        try:
+            result = await opcua_client.read_data_points([interval_point])
+            value = result.get(interval_point.name, {}).get("value")
+        except Exception as exc:  # noqa: BLE001
+            self.metrics["dynamic_interval_read_failed"] += 1
+            self._warn_interval_once(
+                group,
+                f"read:{type(exc).__name__}:{exc}",
+                "采集组 %s 读取动态间隔点 %s 失败，继续使用 %.6gs: %s",
+                group.name,
+                interval_point.name,
+                current_interval,
+                exc,
+            )
+            return current_interval, False
+
+        try:
+            new_interval = self._normalize_collection_interval(value)
+        except ValueError as exc:
+            self.metrics["dynamic_interval_invalid"] += 1
+            self._warn_interval_once(
+                group,
+                f"invalid:{value!r}",
+                "采集组 %s 的动态间隔点 %s 返回无效值 %r，继续使用 %.6gs: %s",
+                group.name,
+                interval_point.name,
+                value,
+                current_interval,
+                exc,
+            )
+            return current_interval, False
+
+        recovered = self._interval_warning_state.pop(group.name, None)
+        if recovered is not None:
+            self.logger.info(
+                "采集组 %s 的动态间隔点 %s 已恢复，当前值 %.6gs",
+                group.name,
+                interval_point.name,
+                new_interval,
+            )
+
+        if math.isclose(new_interval, current_interval, rel_tol=0.0, abs_tol=1e-9):
+            return current_interval, False
+
+        self.metrics["dynamic_interval_changed"] += 1
+        self.logger.info(
+            "采集组 %s 动态采集间隔变更: %.6gs -> %.6gs（点位 %s）",
+            group.name,
+            current_interval,
+            new_interval,
+            interval_point.name,
+        )
+        return new_interval, True
 
     async def _reset_boolean_trigger_with_confirm(
         self,
@@ -428,11 +512,18 @@ class DataCollector:
             
             # 获取该组对应的数据点
             group_points = [data_points_dict[name] for name in group.data_points]
+            interval_point = (
+                data_points_dict[group.interval_point]
+                if group.interval_point
+                else None
+            )
             
             if group.trigger == TriggerType.TIME:
                 # 时间触发采集
                 task = asyncio.create_task(
-                    self._time_triggered_collection(group, group_points, opcua_client)
+                    self._time_triggered_collection(
+                        group, group_points, opcua_client, interval_point
+                    )
                 )
                 self.collectors[group.name] = task
                 self.logger.info(f"启动时间触发采集组: {group.name}")
@@ -457,7 +548,7 @@ class DataCollector:
                 trigger_point = data_points_dict[group.trigger_point]
                 task = asyncio.create_task(
                     self._time_and_variable_collection(
-                        group, group_points, trigger_point, opcua_client
+                        group, group_points, trigger_point, opcua_client, interval_point
                     )
                 )
                 self.collectors[group.name] = task
@@ -486,7 +577,8 @@ class DataCollector:
     
     async def _time_triggered_collection(self, group: DataGroup, 
                                        data_points: List[DataPoint],
-                                       opcua_client: OpcUaClient) -> None:
+                                       opcua_client: OpcUaClient,
+                                       interval_point: Optional[DataPoint] = None) -> None:
         """时间触发的数据采集。
 
         使用固定节拍调度：实际读取可以迟到，但 collection_time 使用计划节拍时间。
@@ -494,6 +586,9 @@ class DataCollector:
         如果程序落后超过一个完整周期，只跳过已经错过的节拍，避免无限追赶。
         """
         interval = float(group.interval_seconds)
+        interval, _ = await self._read_collection_interval(
+            group, interval_point, opcua_client, interval
+        )
         anchor_monotonic, anchor_wall = self._create_fixed_cadence_anchor(
             datetime.now(),
             time.monotonic(),
@@ -507,10 +602,28 @@ class DataCollector:
                     tick_index,
                     interval,
                 )
-                now = time.monotonic()
-                wait = next_deadline - now
-                if wait > 0:
-                    await asyncio.sleep(wait)
+                wait = next_deadline - time.monotonic()
+                while wait > 0:
+                    poll_seconds = (
+                        max(0.001, float(self.dynamic_interval_poll_seconds))
+                        if interval_point is not None
+                        else wait
+                    )
+                    await asyncio.sleep(min(wait, poll_seconds))
+                    new_interval, changed = await self._read_collection_interval(
+                        group, interval_point, opcua_client, interval
+                    )
+                    if changed:
+                        interval = new_interval
+                        anchor_monotonic = time.monotonic()
+                        anchor_wall = datetime.now()
+                        tick_index = 1
+                        next_deadline = self._fixed_cadence_deadline(
+                            anchor_monotonic,
+                            tick_index,
+                            interval,
+                        )
+                    wait = next_deadline - time.monotonic()
 
                 planned_collection_time = self._fixed_cadence_collection_time(
                     anchor_wall,
@@ -600,12 +713,16 @@ class DataCollector:
         data_points: List[DataPoint],
         trigger_point: DataPoint,
         opcua_client: OpcUaClient,
+        interval_point: Optional[DataPoint] = None,
     ) -> None:
         """
         按 interval_seconds 定时采集；同时以 trigger_interval_seconds 为周期采样 trigger_point，
         上升沿时立即采集一次（行为与同组 variable 模式一致，含可选复位）。
         """
         interval = float(group.interval_seconds)
+        interval, _ = await self._read_collection_interval(
+            group, interval_point, opcua_client, interval
+        )
         trigger_interval = float(group.trigger_interval_seconds)
         anchor_monotonic, anchor_wall = self._create_fixed_cadence_anchor(
             datetime.now(),
@@ -685,6 +802,15 @@ class DataCollector:
                 until_next = next_time_deadline - time.monotonic()
                 sleep_for = min(trigger_interval, max(0.001, until_next))
                 await asyncio.sleep(sleep_for)
+
+                new_interval, changed = await self._read_collection_interval(
+                    group, interval_point, opcua_client, interval
+                )
+                if changed:
+                    interval = new_interval
+                    anchor_monotonic = time.monotonic()
+                    anchor_wall = datetime.now()
+                    tick_index = 1
 
                 trigger_data = await opcua_client.read_data_points([trigger_point])
                 current_trigger_value = trigger_data.get(trigger_point.name, {}).get('value', False)

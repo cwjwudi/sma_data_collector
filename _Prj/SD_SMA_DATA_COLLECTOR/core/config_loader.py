@@ -4,6 +4,7 @@
 """
 
 import json
+import math
 import os
 from typing import Dict, Any
 from .config_models import (
@@ -116,6 +117,7 @@ class ConfigLoader:
                 trigger=TriggerType(group_data['trigger']),
                 description=group_data['description'],
                 data_points=group_data['data_points'],
+                interval_point=group_data.get('interval_point'),
                 trigger_interval_seconds=group_data.get('trigger_interval_seconds'),
                 trigger_point=group_data.get('trigger_point'),
                 reset_trigger_after_read=group_data.get('reset_trigger_after_read', True),
@@ -255,6 +257,32 @@ class ConfigLoader:
 
         point_name_set = set(point_names)
         for group in config.groups:
+            if group.trigger in {TriggerType.TIME, TriggerType.TIME_AND_VARIABLE}:
+                if isinstance(group.interval_seconds, bool):
+                    raise ValueError(
+                        f"数据组 '{group.name}' 的 interval_seconds 必须为数值"
+                    )
+                try:
+                    group.interval_seconds = float(group.interval_seconds)
+                except (TypeError, ValueError):
+                    raise ValueError(
+                        f"数据组 '{group.name}' 的 interval_seconds 必须为数值"
+                    ) from None
+                if not math.isfinite(group.interval_seconds) or group.interval_seconds <= 0:
+                    raise ValueError(
+                        f"数据组 '{group.name}' 的 interval_seconds 必须是大于 0 的有限数值"
+                    )
+
+            if group.interval_point:
+                if group.trigger not in {TriggerType.TIME, TriggerType.TIME_AND_VARIABLE}:
+                    raise ValueError(
+                        f"数据组 '{group.name}' 仅在 trigger=time 或 time_and_variable 时支持 interval_point"
+                    )
+                if group.interval_point not in point_name_set:
+                    raise ValueError(
+                        f"数据组 '{group.name}' 的采集间隔点位不存在: {group.interval_point}"
+                    )
+
             if group.partition_interval_years < 0 or group.partition_interval_years > 10:
                 raise ValueError(
                     f"数据组 '{group.name}' 的 partition_interval_years 必须在 0 到 10 之间"

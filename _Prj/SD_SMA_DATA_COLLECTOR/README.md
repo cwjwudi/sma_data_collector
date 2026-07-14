@@ -252,7 +252,8 @@ SD_SMA_DATA_COLLECTOR/
 
 ### 数据组配置 (groups)
 - `name`: 数据组名称
-- `interval_seconds`: 采样/检查间隔（秒）
+- `interval_seconds`: 静态采样/检查间隔（秒），同时作为动态间隔点首次读取失败时的回退值
+- `interval_point`: （可选）动态采集间隔点位名称，引用 `points[].name`；点位值单位为秒，仅支持 `time` / `time_and_variable`
 - `trigger`: 触发方式
   - `time`: 时间间隔触发
   - `variable`: 变量触发（由 PLC 信号触发）
@@ -281,6 +282,8 @@ SD_SMA_DATA_COLLECTOR/
   - `allow_idempotent_same_end_time`: 是否允许相同结批时间的幂等重放
 
 **触发配置约束：**
+- `interval_point` 返回值必须是大于 `0` 的有限数值；无效值或临时读点失败时继续使用上次有效值，尚无有效值时使用 `interval_seconds`。
+- 动态间隔变化从采集器检测到新值时重新起算下一周期，不补采旧节拍；`time_and_variable` 的外部触发轮询不受影响。
 - `time_and_variable` 模式下，`trigger_point` 与 `trigger_interval_seconds` 必须配置，且 `is_parallel` 必须为 `false`。
 - 并行触发模式（`trigger: variable` + `is_parallel: true`）下，`trigger_point` 应为布尔数组节点，`data_points` 应为与触发数组同下标语义的数组节点。
 - 配置了 `unique_key_point` 时，系统会在插入前按该列做表内判重，重复数据不落库并返回唯一性冲突码。
@@ -550,6 +553,7 @@ partition_interval_years=2:
 {
   "name": "time_and_variable_group_2",
   "interval_seconds": 5,
+  "interval_point": "ProductCollectionInterval",
   "trigger": "time_and_variable",
   "trigger_interval_seconds": 0.5,
   "trigger_point": "bTrigger1",
@@ -558,7 +562,7 @@ partition_interval_years=2:
 ```
 
 混合触发运行要点：
-- 每 `interval_seconds` 执行一次定时采集。
+- 配置 `interval_point` 时按该 OPC UA 点位的秒数执行定时采集，否则按 `interval_seconds`。
 - 每 `trigger_interval_seconds` 检测触发点上升沿，出现上升沿时立即采集。
 - 该模式用于“周期采样 + 事件快照”并存场景。
 

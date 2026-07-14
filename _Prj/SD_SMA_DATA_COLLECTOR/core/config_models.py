@@ -62,10 +62,11 @@ class IndexConfig:
 class DataGroup:
     """数据组配置"""
     name: str
-    interval_seconds: int
+    interval_seconds: float
     trigger: TriggerType
     description: str
     data_points: List[str]
+    interval_point: Optional[str] = None  # time/time_and_variable：动态采集间隔点位，值单位为秒
     trigger_interval_seconds: Optional[float] = None  # variable/time_and_variable：触发变量采样周期（秒）
     trigger_point: Optional[str] = None
     reset_trigger_after_read: bool = True  # 是否在读取后复位触发点

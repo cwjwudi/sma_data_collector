@@ -5,6 +5,10 @@
 
 ---
 
+## 2026-07-14
+
+- **OPC UA 动态采集间隔与 PLC 联调完成**：`time` / `time_and_variable` 支持通过 `interval_point` 在线定义采集间隔；完成配置、Web UI、PLC 点位与 OPC UA 映射修改，并在 `192.168.50.233` 验证 5 秒→2 秒切换、非法值回退及外部触发独立性。详见 [_Prj/SD_SMA_DATA_COLLECTOR/docs/001-✅-OPCUA动态采集间隔联调.md](_Prj/SD_SMA_DATA_COLLECTOR/docs/001-✅-OPCUA动态采集间隔联调.md)。
+
 ## 2026-07-13
 
 - **ReportEditor 健康跳转不高亮（仅文档）**：新建 [docs/007-⌛️](docs/007-⌛️-ReportEditor健康跳转不高亮.md)——分析仪表盘告警点击后无控件高亮：连接级 issue 无 `elementId`；版式只链列表；页眉/zone 不在 `sel` 查找范围；并记录生产「库已存在」与 `missing_db` 的 ID 不一致可能。

@@ -1,6 +1,7 @@
 VAR
 	usiTestModel : USINT;
 	usiIdx : USINT;
+	rCollectorIntervalSeconds : REAL := 5.0;
 END_VAR
 (*Insert your comment here.*)
 VAR

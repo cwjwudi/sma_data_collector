@@ -209,6 +209,7 @@
         <Variable Name="bTriger" />
       </Task>
       <Task Name="ParallelTe">
+        <Variable Name="rCollectorIntervalSeconds" />
         <Variable Name="F1" />
         <Variable Name="F2" />
         <Variable Name="F3" />
