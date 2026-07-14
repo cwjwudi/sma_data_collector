@@ -8,7 +8,7 @@
 ## 2026-07-14
 
 - **导出 PDF 纸张外仍像相框（仅登记）**：新建 [docs/019-⌛️](docs/019-⌛️-ReportEditor导出PDF纸张外框.md)——0.3.67 角色色已去；排查嫌疑为控件 showBorder / 纸面与 @page 微差(+3px) / plain 路径；未改代码。
-- **多选共有/绑定批改扩展（仅登记）**：[docs/018-⌛️](docs/018-⌛️-ReportEditor多选共有小数位数.md)——尽量展示共有项；已有绑定可统一改（推翻 B3 绑定永不批）；未改代码。
+- **多选共有/绑定批改（Q1–Q6 已拍板）**：[docs/018-⌛️](docs/018-⌛️-ReportEditor多选共有小数位数.md)——1C 一次做完；2B 文案可批；3A 改 kind 不清附属；4B 异类型隐藏绑定区；5 模版=版式；6 先于 019；未改代码。
 - **ReportEditor 0.3.96**：AI 能力矩阵 A（配置数据源 upsert/凭证/删除/锁）；看板 [docs/006-🚧](docs/006-🚧-ReportEditor-AI上游错误体验.md)。
 - **ReportEditor 0.3.95 macOS 已打包**：`Report Editor AI-0.3.95-arm64.dmg`；`latest.json` 已写 SHA256（win32 亦已补全）。
 - **ReportEditor 0.3.95**：探活 claim 只读误伤修复（施为仍须 write；health 可读作状态证据）；看板 [docs/006-🚧](docs/006-🚧-ReportEditor-AI上游错误体验.md)。
