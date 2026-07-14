@@ -132,3 +132,24 @@ def plan_live_content_sse(
         plan.append(("status", {"phase": "tools"}))
 
     return plan
+
+
+def plan_claim_retry_client_events() -> list[tuple[str, dict[str, Any]]]:
+    """
+    claim guard 强制再调：只切 thinking，**不得** ``replace`` 空串清屏。
+    """
+    return [("status", {"phase": "thinking"})]
+
+
+def plan_final_rewrite_client_events(
+    rewritten: str,
+    *,
+    preserve_prior_ui: bool,
+) -> list[tuple[str, dict[str, Any]]]:
+    """
+    最终改写：若 UI 已有前序正文，追加而非整泡 replace。
+    """
+    text = rewritten or ""
+    if preserve_prior_ui:
+        return [("delta", {"text": "\n\n" + text})]
+    return [("replace", {"text": text})]

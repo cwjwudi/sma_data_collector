@@ -21,6 +21,8 @@ from modules.ai_chat_stream import (
     iter_content_and_tools_from_upstream_chunk,
     merge_tool_call_deltas,
     parse_openai_sse_line,
+    plan_claim_retry_client_events,
+    plan_final_rewrite_client_events,
     should_hold_content_for_tools,
 )
 from modules.ai_claim_guard import (
@@ -261,6 +263,7 @@ async def iter_chat_stream_sse(
         tool_trace: list[dict[str, Any]] = []
         claim_retry_used = False
         prior_round_had_tools = False
+        ui_has_content = False
         yield format_sse("status", {"phase": "thinking"})
 
         for round_index in range(1, MAX_TOOL_ROUNDS + 1):
@@ -290,6 +293,7 @@ async def iter_chat_stream_sse(
                         writing_started = True
                     yield format_sse("delta", {"text": piece})
                     streamed_live = True
+                    ui_has_content = True
                     await asyncio.sleep(0)
                 elif kind == "tool_calls":
                     collected_tools = val if isinstance(val, list) else []
@@ -343,45 +347,57 @@ async def iter_chat_stream_sse(
                     if request is not None and await request.is_disconnected():
                         return
                     yield format_sse("delta", {"text": piece})
+                    ui_has_content = True
                     await asyncio.sleep(0)
 
             if needs_probe_claim_retry(assistant_text, tool_trace) and not claim_retry_used:
                 claim = detect_probe_claim(assistant_text)
                 claim_retry_used = True
-                # 清掉已放出的假完成文案，再进纠错轮
-                yield format_sse("replace", {"text": ""})
+                # 禁止 replace ""：否则用户看到「刚说完就清空再调工具」
+                for ev_name, ev_data in plan_claim_retry_client_events():
+                    yield format_sse(ev_name, ev_data)
                 messages.append({"role": "assistant", "content": assistant_text})
                 messages.append({"role": "system", "content": probe_claim_correction_message(claim)})
                 upstream_payload["messages"] = messages
                 upstream_payload["tool_choice"] = "auto"
-                yield format_sse("status", {"phase": "thinking"})
                 continue
 
             if needs_diagnostic_claim_retry(assistant_text, tool_trace) and not claim_retry_used:
                 claim_retry_used = True
-                yield format_sse("replace", {"text": ""})
+                for ev_name, ev_data in plan_claim_retry_client_events():
+                    yield format_sse(ev_name, ev_data)
                 messages.append({"role": "assistant", "content": assistant_text})
                 messages.append({"role": "system", "content": diagnostic_claim_correction_message()})
                 upstream_payload["messages"] = messages
                 upstream_payload["tool_choice"] = "auto"
-                yield format_sse("status", {"phase": "thinking"})
                 continue
+
+            preserve_ui = ui_has_content or prior_round_had_tools
 
             if needs_probe_claim_retry(assistant_text, tool_trace):
                 rewritten = rewrite_probe_claim_failure(assistant_text, tool_trace)
-                yield format_sse("replace", {"text": rewritten})
+                for ev_name, ev_data in plan_final_rewrite_client_events(
+                    rewritten, preserve_prior_ui=preserve_ui
+                ):
+                    yield format_sse(ev_name, ev_data)
                 yield format_sse("done", {"tool_trace": tool_trace, "finish_reason": "stop"})
                 return
 
             if needs_diagnostic_claim_retry(assistant_text, tool_trace):
                 rewritten = rewrite_diagnostic_claim_failure(assistant_text, tool_trace)
-                yield format_sse("replace", {"text": rewritten})
+                for ev_name, ev_data in plan_final_rewrite_client_events(
+                    rewritten, preserve_prior_ui=preserve_ui
+                ):
+                    yield format_sse(ev_name, ev_data)
                 yield format_sse("done", {"tool_trace": tool_trace, "finish_reason": "stop"})
                 return
 
             if detect_update_install_claim(assistant_text):
                 rewritten = rewrite_update_install_claim(assistant_text)
-                yield format_sse("replace", {"text": rewritten})
+                for ev_name, ev_data in plan_final_rewrite_client_events(
+                    rewritten, preserve_prior_ui=preserve_ui
+                ):
+                    yield format_sse(ev_name, ev_data)
                 yield format_sse("done", {"tool_trace": tool_trace, "finish_reason": "stop"})
                 return
 
@@ -391,7 +407,10 @@ async def iter_chat_stream_sse(
         exhausted_text = f"工具调用超过 {MAX_TOOL_ROUNDS} 轮上限，请简化请求后重试。"
         if needs_probe_claim_retry("已经开启定时探活", tool_trace):
             exhausted_text = rewrite_probe_claim_failure("已经开启定时探活", tool_trace)
-        yield format_sse("replace", {"text": exhausted_text})
+        for ev_name, ev_data in plan_final_rewrite_client_events(
+            exhausted_text, preserve_prior_ui=ui_has_content or prior_round_had_tools
+        ):
+            yield format_sse(ev_name, ev_data)
         yield format_sse("done", {"tool_trace": tool_trace, "finish_reason": "stop"})
     except HTTPException as e:
         detail = e.detail

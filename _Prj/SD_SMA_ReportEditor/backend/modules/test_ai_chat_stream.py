@@ -95,3 +95,22 @@ def test_plan_live_content_sse_keeps_text_when_tools():
     assert ("status", {"phase": "tools"}) in plan
     # 工具轮不得清空已流出正文（否则 UI 会「吞掉」上一段）
     assert ("replace", {"text": ""}) not in plan
+
+
+def test_plan_claim_retry_never_clears_ui():
+    from modules.ai_chat_stream import plan_claim_retry_client_events
+
+    plan = plan_claim_retry_client_events()
+    assert plan == [("status", {"phase": "thinking"})]
+    assert not any(p[0] == "replace" for p in plan)
+
+
+def test_plan_final_rewrite_appends_when_preserving():
+    from modules.ai_chat_stream import plan_final_rewrite_client_events
+
+    assert plan_final_rewrite_client_events("改写", preserve_prior_ui=True) == [
+        ("delta", {"text": "\n\n改写"})
+    ]
+    assert plan_final_rewrite_client_events("改写", preserve_prior_ui=False) == [
+        ("replace", {"text": "改写"})
+    ]

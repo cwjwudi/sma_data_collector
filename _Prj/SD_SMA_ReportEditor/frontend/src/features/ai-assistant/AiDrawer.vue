@@ -821,12 +821,16 @@ async function runOneTurn(text: string) {
         if (ev.event === 'status') {
           statusPhase.value = ev.phase || ''
         } else if (ev.event === 'delta') {
+          const cur = messages.value.find((m) => m.id === assistantId)
           patchAssistantMessage(assistantId, {
-            content: (a.content || '') + (ev.text || ''),
+            content: ((cur?.content) || '') + (ev.text || ''),
           })
           scheduleScrollToBottom()
         } else if (ev.event === 'replace') {
-          patchAssistantMessage(assistantId, { content: ev.text || '' })
+          // 空 replace 曾用于 claim 再调清屏，会吞掉已显示正文；一律忽略
+          const next = ev.text || ''
+          if (!next) return
+          patchAssistantMessage(assistantId, { content: next })
           scheduleScrollToBottom()
         } else if (ev.event === 'tool') {
           const step = ev.step as UiToolStep
@@ -843,8 +847,9 @@ async function runOneTurn(text: string) {
             message: typeof step.message === 'string' ? step.message : undefined,
             pending: false,
           }
+          const cur = messages.value.find((m) => m.id === assistantId)
           patchAssistantMessage(assistantId, {
-            toolTrace: [...(a.toolTrace || []), normalized],
+            toolTrace: [...(cur?.toolTrace || []), normalized],
           })
           scheduleScrollToBottom()
           if (normalized.ok) {

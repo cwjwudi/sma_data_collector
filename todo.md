@@ -7,6 +7,7 @@
 
 ## 2026-07-14
 
+- **ReportEditor AI 吞正文（深入根因）**：[docs/016-⌛️](docs/016-⌛️-ReportEditor-AI对话UI改版.md)——claim guard 强制再调前的 `replace ""` 清泡；非仅 tools 路径。
 - **ReportEditor AI 流式回归（根因订正）**：[docs/016-⌛️](docs/016-⌛️-ReportEditor-AI对话UI改版.md)——主因是后端整轮缓冲后再模拟 delta，非前端 Markdown；拟真转发上游 content。
 - **ReportEditor AI 流式回归（先记后修）**：[docs/016-⌛️](docs/016-⌛️-ReportEditor-AI对话UI改版.md) 新增 H1——玻璃态改版后正文流式像失效；主嫌疑为流式期每帧 Markdown/`v-html`；候选修复 `a3f13e4` 待目视验收。
 - **ReportEditor 0.3.94（分支试做）**：AI 对话深色玻璃 UI；分支 `feat/016-ai-chat-ui`，不满意可丢弃；看板 [docs/016-⌛️](docs/016-⌛️-ReportEditor-AI对话UI改版.md)。

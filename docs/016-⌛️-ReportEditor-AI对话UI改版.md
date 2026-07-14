@@ -128,7 +128,7 @@ git branch -D feat/016-ai-chat-ui   # 若尚未合并
 3. `replace` 仍保留给 claim guard 纠错改写（探活/诊断等），不用于工具轮。  
 4. 更新 `plan_live_content_sse` 单测：有工具时**无** replace。
 
-**实现**：待本轮 `fix` 提交；重装 DMG 后验收。
+**实现**：`plan_claim_retry_client_events` + 前端忽略空 replace（见随后 fix 提交）。
 
 ## 验收
 
