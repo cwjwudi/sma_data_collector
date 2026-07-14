@@ -1,12 +1,12 @@
 {
   "version": "0.3.95",
-  "releasedAt": "2026-07-14T07:24:02.650Z",
+  "releasedAt": "2026-07-14T07:30:06.469Z",
   "notes": "Report Editor AI 0.3.95\n\n- 探活 claim：只读查证「当前已开」不再误伤为缺写入工具",
   "platforms": {
     "win32-x64": {
       "url": "Report Editor AI-Setup-0.3.95-x64.exe",
-      "sha256": "",
-      "size": 0
+      "sha256": "62cfa46b80644ccc6506683bb204838c406f05b92daf1911c481e0bfe1c6911c",
+      "size": 148131861
     },
     "darwin-arm64": {
       "url": "Report Editor AI-0.3.95-arm64.dmg",
