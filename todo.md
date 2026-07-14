@@ -7,6 +7,7 @@
 
 ## 2026-07-14
 
+- **多选组拖误改尺寸（仅登记）**：[docs/020-⌛️](docs/020-⌛️-ReportEditor多选组拖误改尺寸.md)——组拖后 `clampElementToLayout` 按剩余高度砍 `h`，多选贴底时多个控件一起变矮；非组缩放；未改代码。
 - **导出 PDF 纸张外仍像相框（排查结论）**：[docs/019-⌛️](docs/019-⌛️-ReportEditor导出PDF纸张外框.md)——角色色已排除；主因是导出故意压矮（−28）+ `miniPreviewScale` 仍扣列表 inset，A4 约缩 3.4%、右下白边像衬框；未改代码。
 - **ReportEditor 0.3.97**：多选共有属性扩展（显示格式 / 文案 / 同类型绑定批改）；看板 [docs/018-✅](docs/018-✅-ReportEditor多选共有小数位数.md)。
 - **ReportEditor 0.3.96**：AI 能力矩阵 A（配置数据源 upsert/凭证/删除/锁）；看板 [docs/006-🚧](docs/006-🚧-ReportEditor-AI上游错误体验.md)。
