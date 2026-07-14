@@ -1,17 +1,64 @@
 # ReportEditor AI 助手：上游错误与写入类能力闭环
 
 > 本文件为 **任务看板**；规则见 [CLAUDE.md](../CLAUDE.md)。  
-> 版本计划：探活 [0.3.60](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.60.md)；上游错误体验 [0.3.62](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.62.md)；Agent 工具轨迹 [0.3.66](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.66.md)；轨迹假失败 [0.3.71](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.71.md)；排队收纳 [0.3.77](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.77.md)；流式先工具 [0.3.78](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.78.md)；多轮简洁 [0.3.79](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.79.md)；复制模版/版式 [0.3.80](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.80.md)；删除模版/版式 [0.3.81](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.81.md)；加密备份 [0.3.82](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.82.md)；恢复/复位 [0.3.83](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.83.md)；写入总闸 [0.3.84](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.84.md)；新建空白/冒烟 [0.3.85](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.85.md)；打开编辑 [0.3.86](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.86.md)；模版排序 [0.3.87](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.87.md)；导出目录 [0.3.88](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.88.md)；预检/模拟结批 [0.3.89](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.89.md)；结批写回/并行 [0.3.90](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.90.md)；诊断类 [0.3.91](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.91.md)；检查更新 [0.3.92](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.92.md)。  
+> 版本计划：探活 [0.3.60](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.60.md)；上游错误体验 [0.3.62](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.62.md)；Agent 工具轨迹 [0.3.66](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.66.md)；轨迹假失败 [0.3.71](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.71.md)；排队收纳 [0.3.77](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.77.md)；流式先工具 [0.3.78](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.78.md)；多轮简洁 [0.3.79](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.79.md)；复制模版/版式 [0.3.80](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.80.md)；删除模版/版式 [0.3.81](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.81.md)；加密备份 [0.3.82](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.82.md)；恢复/复位 [0.3.83](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.83.md)；写入总闸 [0.3.84](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.84.md)；新建空白/冒烟 [0.3.85](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.85.md)；打开编辑 [0.3.86](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.86.md)；模版排序 [0.3.87](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.87.md)；导出目录 [0.3.88](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.88.md)；预检/模拟结批 [0.3.89](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.89.md)；结批写回/并行 [0.3.90](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.90.md)；诊断类 [0.3.91](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.91.md)；检查更新 [0.3.92](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.92.md)；探活 claim 只读误伤 [0.3.95](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.95.md)；配置数据源 [0.3.96](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.96.md)。  
 > **范围说明**：不只「开启定时探活」；在开启「允许 AI 写入工具」后，数据源、模版/版式资产、备份恢复、结批导出、演示冒烟、诊断取证等能力域均须**真正执行并反映到 UI**（禁止空口答应）。完整域表见下方能力矩阵 H1（仍 ⌛️）。  
 > **Agent 体验**：对话须可见工具调用与状态；口头结论必须与工具结果一致——轨迹 H1 已于 **0.3.66** 落地（探活强制再调）。
 
 ---
 
-# ⌛️ 未完成：探活 claim 误伤「只读查证当前状态」（审计分析场景）
+# ✅ 已完成：配置数据源（能力矩阵 A · → 0.3.96）
 
-> **流程**：先记录，未开工改代码。  
-> **发现**：2026-07-14 · 分支 `feat/016-ai-chat-ui` / 0.3.94 DMG 现场。  
-> **相关**：[`ai_claim_guard.py`](../_Prj/SD_SMA_ReportEditor/backend/modules/ai_claim_guard.py) · 流式/清屏侧见 [docs/016](016-⌛️-ReportEditor-AI对话UI改版.md)。
+> **落地**：0.3.96 · [`ai_datasource_ops.py`](../_Prj/SD_SMA_ReportEditor/backend/modules/ai_datasource_ops.py) · [`test_ai_datasource.py`](../_Prj/SD_SMA_ReportEditor/backend/modules/test_ai_datasource.py) · [Plan 0.3.96](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.96.md)。
+
+## 产品诉求
+
+用户说「加一个 MySQL / 改 OPC / 删连接」时，须真调 `upsert_*` / `request_connection_credentials` / `delete_*` → 落库或 pending → 列表刷新；密码走本机弹框；禁止空口答应与密文进聊天。
+
+## 本版加固（0.3.96）
+
+1. upsert / 凭证提交 / 删除确认成功均 `mark_ui_reload(datasource, reason=…)`  
+2. `test_ai_datasource.py`：A1–A14（新建凭证、sqlite 无密、OPC、删除确认/取消、总闸、锁、demo 禁删、SYSTEM_PROMPT）  
+3. `client-prefs-mirror.test.ts`：`datasource` → `report-editor-datasource-changed`  
+4. `SYSTEM_PROMPT`：先 list/health、awaiting_user_credentials/unlock/confirm 禁完成态
+
+## 验收
+
+- [x] A：upsert → 列表更新；需密码则弹框  
+- [x] 删除确认后消失 + mirror；取消仍在  
+- [x] 总闸关 / 数据源锁拒绝且不落库  
+- [x] 工具结果无密码明文  
+
+## 逐步测试用例（自动化 · 2026-07-14）
+
+| # | 步骤 | 期望 |
+|---|------|------|
+| A1 | upsert MySQL+username | 落库；`awaiting_user_credentials`；mirror `upsert_db_connection` |
+| A2 | upsert sqlite | `saved`；无 credential |
+| A3 | upsert OPC | 列表可见；mirror `upsert_opc_server` |
+| A4 | request_connection_credentials | credential pending；无密文 |
+| A5 | apply_credential | `password_enc`；mirror `apply_credential` |
+| A6 | delete_db request | confirm pending；未删 |
+| A7 | confirm delete DB | 消失；mirror `delete_db_connection` |
+| A8 | cancel delete | 仍在 |
+| A9 | confirm delete OPC | 消失；mirror `delete_opc_server` |
+| A10 | 总闸关 | 全部 write/confirm 拒绝 |
+| A11 | 锁定 + upsert | `awaiting_user_unlock`；不落库 |
+| A12 | unlock confirm | `datasource_locked=false` |
+| A13 | 删 demo | `ok=false` |
+| A14 | SYSTEM_PROMPT | 含工具名与 awaiting 禁令 |
+
+## 不做（本版）
+
+- 数据源 write claim guard（空口「已添加连接」强制再调）→ 可后续  
+- 真 LLM 对话手测剧本  
+
+---
+
+# ✅ 已完成：探活 claim 误伤「只读查证当前状态」（审计分析场景 · → 0.3.95）
+
+> **发现**：2026-07-14 · 0.3.94 现场。  
+> **落地**：0.3.95 · [`ai_claim_guard.py`](../_Prj/SD_SMA_ReportEditor/backend/modules/ai_claim_guard.py) · [Plan 0.3.95](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.95.md)。
 
 ## 现象（用户原话 · 问「分析一下审计记录」）
 
@@ -35,23 +82,22 @@
 
 诊断守卫（`needs_diagnostic_claim_retry`）本可用 `get_connection_health_summary` 等作证据；探活守卫过窄，且「探活已开」字样优先命中探活规则。
 
-## 拟修复（待拍板后开工）
+## 修复（0.3.95）
 
-1. **区分意图**：仅当用户意图/助手语义为「去开启/关闭探活」时，才要求 write 工具证据。  
-2. **只读陈述放行**：若本轮已有成功的 `get_connection_health_summary`（或等价读偏好）且文案是「当前状态为…」，**不**触发探活 write claim 再调/改写。  
-3. 或收紧正则：区分「已为你开启 / 开启成功」vs「当前为开启 / 状态：已开启」。  
-4. 单测：审计分析 + health 读回「当前已开」→ **不得**改写成「没有成功的写入工具结果」。
+1. **施为 vs 状态**：`is_probe_agency_claim` 识别「已为你开启 / 开启成功」等施为声称，仍只认写入工具。  
+2. **只读放行**：非施为且本轮有成功的 `get_connection_health_summary` 时，状态陈述（含「当前已开」）不再触发 write claim 再调/改写。  
+3. **单测**：`test_status_claim_with_health_read_no_retry` / `test_agency_claim_still_requires_write_even_with_health`。
 
 ## 验收
 
-- [ ] 「分析审计」类：可陈述审计里的探活历史；查证当前状态后，不出现「缺少写入工具」误报  
-- [ ] 「请开启定时探活」：仍须 write 成功，否则再调/如实失败（原 H1 不回退）  
-- [ ] 轨迹中仅有 read 时，不要求 `update_connection_probe_settings`
+- [x] 「分析审计」类：可陈述审计里的探活历史；查证当前状态后，不出现「缺少写入工具」误报  
+- [x] 「请开启定时探活」：仍须 write 成功，否则再调/如实失败（原 H1 不回退）  
+- [x] 轨迹中仅有 read 时，不要求 `update_connection_probe_settings`（施为声称除外）
 
-## 不做（本条登记）
+## 不做
 
-- 本轮不改代码（仅看板）  
-- 不削弱「空口答应开启探活」的 write 守卫
+- 不削弱「空口答应开启探活」的 write 守卫  
+- 能力矩阵 A（配置数据源）→ **0.3.96 已完成**
 
 ---
 
@@ -759,7 +805,7 @@ cd ../frontend && npm test -- --run src/lib/client-prefs-mirror.test.ts
 
 | # | 场景 | 通过标准 |
 |---|------|----------|
-| A | 配置数据源 | upsert → 列表更新；需密码则弹框 |
+| A | 配置数据源 | upsert → 列表更新；需密码则弹框（✅ 0.3.96） |
 | B | 复制模版 / 版式 | copy_* 成功 → 列表出现副本（✅ 0.3.80） |
 | C | 删除模版 / 版式 | 确认后消失；取消则仍在（✅ 0.3.81） |
 | D | 备份 | 另存 `.rebak`；聊天无口令/密文（✅ 0.3.82） |

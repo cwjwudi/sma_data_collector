@@ -1,17 +1,17 @@
 {
-  "version": "0.3.94",
-  "releasedAt": "2026-07-14T06:35:37.750Z",
-  "notes": "AI对话深色玻璃UI（抽屉可展开）",
+  "version": "0.3.96",
+  "releasedAt": "2026-07-14T07:53:33.343Z",
+  "notes": "Report Editor AI 0.3.96\n\n- AI 能力矩阵 A：配置数据源端到端（upsert/凭证/删除/锁）",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.94-x64.exe",
+      "url": "Report Editor AI-Setup-0.3.96-x64.exe",
       "sha256": "",
       "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.94-arm64.dmg",
-      "sha256": "fc422e14251438470013df947ad314f1ef03a8ddde41457543254d462c1cfaa1",
-      "size": 182053426
+      "url": "Report Editor AI-0.3.96-arm64.dmg",
+      "sha256": "",
+      "size": 0
     }
   }
 }

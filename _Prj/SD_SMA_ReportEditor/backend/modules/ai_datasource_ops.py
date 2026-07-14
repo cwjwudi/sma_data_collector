@@ -254,7 +254,7 @@ def upsert_db_connection(args: dict[str, Any]) -> dict[str, Any]:
     except Exception:
         pass
     masked = config_store.mask_connection_for_response(after_row)
-    mark_ui_reload(datasource=True)
+    mark_ui_reload(datasource=True, reason="upsert_db_connection")
     needs_cred = _needs_db_credential(conn=existing, engine=eng, username=body.username)
     if needs_cred:
         prompt = ai_pending_prompts.create_prompt(
@@ -344,7 +344,7 @@ def upsert_opc_server(args: dict[str, Any]) -> dict[str, Any]:
     except Exception:
         pass
     masked = config_store.mask_opcua_for_response(after_row)
-    mark_ui_reload(datasource=True)
+    mark_ui_reload(datasource=True, reason="upsert_opc_server")
     needs_cred = False
     if body.username and str(body.username).strip():
         if not existing or not existing.get("password_enc"):
@@ -501,6 +501,7 @@ def apply_credential(prompt_id: str, password: str) -> dict[str, Any]:
                 except Exception:
                     pass
                 ai_pending_prompts.complete_prompt(prompt_id, result={"ok": True})
+                mark_ui_reload(datasource=True, reason="apply_credential")
                 return {"ok": True, "connection_id": cid}
         return {"ok": False, "error": "连接已不存在"}
     if target == "opcua":
@@ -529,6 +530,7 @@ def apply_credential(prompt_id: str, password: str) -> dict[str, Any]:
                 except Exception:
                     pass
                 ai_pending_prompts.complete_prompt(prompt_id, result={"ok": True})
+                mark_ui_reload(datasource=True, reason="apply_credential")
                 return {"ok": True, "connection_id": cid}
         return {"ok": False, "error": "OPC 连接已不存在"}
     return {"ok": False, "error": "未知 target_kind"}
@@ -572,6 +574,7 @@ async def apply_confirm_delete(prompt_id: str, confirmed: bool) -> dict[str, Any
         except Exception:
             pass
         ai_pending_prompts.complete_prompt(prompt_id, result={"ok": True, "deleted": cid})
+        mark_ui_reload(datasource=True, reason="delete_db_connection")
         return {"ok": True, "deleted": cid, "kind": "db"}
     if target == "opcua":
         before = next((s for s in cfg.get("opcua_servers") or [] if s.get("id") == cid), None)
@@ -596,6 +599,7 @@ async def apply_confirm_delete(prompt_id: str, confirmed: bool) -> dict[str, Any
         except Exception:
             pass
         ai_pending_prompts.complete_prompt(prompt_id, result={"ok": True, "deleted": cid})
+        mark_ui_reload(datasource=True, reason="delete_opc_server")
         return {"ok": True, "deleted": cid, "kind": "opcua"}
     return {"ok": False, "error": "未知 target_kind"}
 

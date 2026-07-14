@@ -8,6 +8,13 @@ ProbeClaim = Literal["enable", "disable", "none"]
 
 PROBE_TOOL = "update_connection_probe_settings"
 
+# 只读查证当前探活偏好（审计/诊断场景可作状态陈述证据）
+PROBE_READ_EVIDENCE_TOOLS = frozenset(
+    {
+        "get_connection_health_summary",
+    }
+)
+
 DIAGNOSTIC_TOOLS = frozenset(
     {
         "diagnose_work_chain",
@@ -36,6 +43,24 @@ _ENABLE_CLAIM_RE = re.compile(
 )
 _DISABLE_CLAIM_RE = re.compile(
     r"(已关闭|已经关闭|已关掉|探活已关|定时探活.*(?:已)?关闭|关闭成功)",
+    re.I,
+)
+
+# 「我已帮你开启/关闭」施为声称：只认写入工具，不认 health 只读
+_AGENCY_ENABLE_RE = re.compile(
+    r"("
+    r"已为你开启|已帮你开启|已替你开启|已经帮你开启|"
+    r"我已开启|我已经开启|已成功开启|开启成功|"
+    r"已为你打开|已帮你打开|已经帮你打开"
+    r")",
+    re.I,
+)
+_AGENCY_DISABLE_RE = re.compile(
+    r"("
+    r"已为你关闭|已帮你关闭|已替你关闭|已经帮你关闭|"
+    r"我已关闭|我已经关闭|已成功关闭|关闭成功|"
+    r"已为你关掉|已帮你关掉"
+    r")",
     re.I,
 )
 
@@ -78,6 +103,19 @@ def detect_probe_claim(assistant_text: str) -> ProbeClaim:
     return "enable" if last_en >= last_di else "disable"
 
 
+def is_probe_agency_claim(assistant_text: str, claim: ProbeClaim | None = None) -> bool:
+    """是否为「施为」声称（我已帮你开/关），而非「当前状态」陈述。"""
+    text = (assistant_text or "").strip()
+    if not text:
+        return False
+    resolved = claim if claim and claim != "none" else detect_probe_claim(text)
+    if resolved == "enable":
+        return bool(_AGENCY_ENABLE_RE.search(text))
+    if resolved == "disable":
+        return bool(_AGENCY_DISABLE_RE.search(text))
+    return False
+
+
 def detect_diagnostic_fact_claim(assistant_text: str) -> bool:
     text = (assistant_text or "").strip()
     if not text:
@@ -105,14 +143,29 @@ def _probe_tool_evidence(trace: list[dict[str, Any]], want_enabled: bool) -> boo
     return False
 
 
-def probe_claim_has_evidence(claim: ProbeClaim, trace: list[dict[str, Any]]) -> bool:
+def _probe_read_evidence(trace: list[dict[str, Any]]) -> bool:
+    for step in trace or []:
+        if str(step.get("name") or "") in PROBE_READ_EVIDENCE_TOOLS and step.get("ok"):
+            return True
+    return False
+
+
+def probe_claim_has_evidence(
+    claim: ProbeClaim,
+    trace: list[dict[str, Any]],
+    assistant_text: str = "",
+) -> bool:
+    """写入证据优先；非施为的状态陈述可用 health 只读作证据。"""
     if claim == "none":
         return True
-    if claim == "enable":
-        return _probe_tool_evidence(trace, True)
-    if claim == "disable":
-        return _probe_tool_evidence(trace, False)
-    return True
+    want_enabled = claim == "enable"
+    if claim in ("enable", "disable") and _probe_tool_evidence(trace, want_enabled):
+        return True
+    if is_probe_agency_claim(assistant_text, claim):
+        return False
+    if claim in ("enable", "disable") and _probe_read_evidence(trace):
+        return True
+    return False
 
 
 def diagnostic_claim_has_evidence(trace: list[dict[str, Any]]) -> bool:
@@ -126,7 +179,7 @@ def needs_probe_claim_retry(assistant_text: str, trace: list[dict[str, Any]]) ->
     claim = detect_probe_claim(assistant_text)
     if claim == "none":
         return False
-    return not probe_claim_has_evidence(claim, trace)
+    return not probe_claim_has_evidence(claim, trace, assistant_text)
 
 
 def needs_diagnostic_claim_retry(assistant_text: str, trace: list[dict[str, Any]]) -> bool:

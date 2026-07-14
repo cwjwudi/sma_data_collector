@@ -7,14 +7,17 @@
 
 ## 2026-07-14
 
+- **ReportEditor 0.3.96**：AI 能力矩阵 A（配置数据源 upsert/凭证/删除/锁）；看板 [docs/006-🚧](docs/006-🚧-ReportEditor-AI上游错误体验.md)。
+- **ReportEditor 0.3.95 macOS 已打包**：`Report Editor AI-0.3.95-arm64.dmg`；`latest.json` 已写 SHA256（win32 亦已补全）。
+- **ReportEditor 0.3.95**：探活 claim 只读误伤修复（施为仍须 write；health 可读作状态证据）；看板 [docs/006-🚧](docs/006-🚧-ReportEditor-AI上游错误体验.md)。
 - **OPC UA 动态采集间隔与 PLC 联调完成**：`time` / `time_and_variable` 支持通过 `interval_point` 在线定义采集间隔；完成配置、Web UI、PLC 点位与 OPC UA 映射修改，并在 `192.168.50.233` 验证 5 秒→2 秒切换、非法值回退及外部触发独立性。详见 [_Prj/SD_SMA_DATA_COLLECTOR/docs/001-✅-OPCUA动态采集间隔联调.md](_Prj/SD_SMA_DATA_COLLECTOR/docs/001-✅-OPCUA动态采集间隔联调.md)。
 - **ReportEditor 0.3.94 已合入 main**：AI 对话深色玻璃 UI + 真流式/claim 清屏修复；看板 [docs/016-✅](docs/016-✅-ReportEditor-AI对话UI改版.md)。
-- **探活 claim 误伤只读查证（仅登记）**：[docs/006-🚧](docs/006-🚧-ReportEditor-AI上游错误体验.md)——「分析审计」后用 health 读确认探活已开，仍被改写成缺写入工具；未改代码。
+- **探活 claim 误伤只读查证（仅登记）**：[docs/006-🚧](docs/006-🚧-ReportEditor-AI上游错误体验.md)——「分析审计」后用 health 读确认探活已开，仍被改写成缺写入工具；**已于 0.3.95 修复**。
 - **ReportEditor AI 吞正文（深入根因）**：[docs/016-✅](docs/016-✅-ReportEditor-AI对话UI改版.md)——claim guard 强制再调前的 `replace ""` 清泡（已随 0.3.94 修）。
-- **ReportEditor AI 流式回归（根因订正）**：[docs/016-⌛️](docs/016-⌛️-ReportEditor-AI对话UI改版.md)——主因是后端整轮缓冲后再模拟 delta，非前端 Markdown；拟真转发上游 content。
-- **ReportEditor AI 流式回归（先记后修）**：[docs/016-⌛️](docs/016-⌛️-ReportEditor-AI对话UI改版.md) 新增 H1——玻璃态改版后正文流式像失效；主嫌疑为流式期每帧 Markdown/`v-html`；候选修复 `a3f13e4` 待目视验收。
-- **ReportEditor 0.3.94（分支试做）**：AI 对话深色玻璃 UI；分支 `feat/016-ai-chat-ui`，不满意可丢弃；看板 [docs/016-⌛️](docs/016-⌛️-ReportEditor-AI对话UI改版.md)。
-- **ReportEditor AI 对话 UI（排版拍板）**：[docs/016-⌛️](docs/016-⌛️-ReportEditor-AI对话UI改版.md) Q1=C（抽屉+可展开）、Q2=A（仅面板深色玻璃）、Q3=A（顶栏切模型）、Q4=B（无会话侧栏）、Q5=B（仅复制）、Q6=A（无附件）；可开工。
+- **ReportEditor AI 流式回归（根因订正）**：[docs/016-✅](docs/016-✅-ReportEditor-AI对话UI改版.md)——主因是后端整轮缓冲后再模拟 delta，非前端 Markdown；拟真转发上游 content（已合入）。
+- **ReportEditor AI 流式回归（先记后修）**：[docs/016-✅](docs/016-✅-ReportEditor-AI对话UI改版.md)——玻璃态改版后正文流式像失效；根因订正后已修。
+- **ReportEditor 0.3.94（分支试做）**：AI 对话深色玻璃 UI；已合入 main，看板 [docs/016-✅](docs/016-✅-ReportEditor-AI对话UI改版.md)。
+- **ReportEditor AI 对话 UI（排版拍板）**：[docs/016-✅](docs/016-✅-ReportEditor-AI对话UI改版.md) Q1=C（抽屉+可展开）、Q2=A（仅面板深色玻璃）、Q3=A（顶栏切模型）、Q4=B（无会话侧栏）、Q5=B（仅复制）、Q6=A（无附件）；已落地。
 
 ## 2026-07-13
 
@@ -30,7 +33,7 @@
 - **ReportEditor 0.3.85 已发版**：AI 能力矩阵 G（新建空白模版/版式 + 冒烟缺连接失败）；看板 [docs/006-🚧](docs/006-🚧-ReportEditor-AI上游错误体验.md)。
 - **ReportEditor 0.3.84 已发版**：AI 能力矩阵 F（写入总闸统一拒绝全部 write/confirm）；看板 [docs/006-🚧](docs/006-🚧-ReportEditor-AI上游错误体验.md)。
 - **ReportEditor 0.3.83 已发版**：AI 能力矩阵 E（恢复/复位确认流 + ui_reload；非法 bundle 拒绝）；看板 [docs/006-🚧](docs/006-🚧-ReportEditor-AI上游错误体验.md)。
-- **ReportEditor AI 对话 UI 改版（仅登记）**：新建 [docs/016-⌛️](docs/016-⌛️-ReportEditor-AI对话UI改版.md)——参考 ChatGPT 玻璃态；附图 `docs/assets/016-ai-chat-ui-reference.png`；未开工。
+- **ReportEditor AI 对话 UI 改版（仅登记）**：新建 [docs/016-✅](docs/016-✅-ReportEditor-AI对话UI改版.md)——参考 ChatGPT 玻璃态；附图 `docs/assets/016-ai-chat-ui-reference.png`；已合入 0.3.94。
 - **ReportEditor 0.3.82 已发版**：AI 能力矩阵 D（加密备份 pending + 密文不进 LLM）；看板 [docs/006-🚧](docs/006-🚧-ReportEditor-AI上游错误体验.md)。
 - **ReportEditor 0.3.81 已发版**：AI 能力矩阵 C（删除模版/版式确认流 + 非法 id 防护）；看板 [docs/006-🚧](docs/006-🚧-ReportEditor-AI上游错误体验.md)。
 - **ReportEditor 0.3.80 测试加固**：能力矩阵 B 逐步用例 B1–B9（后端 14 + 前端 assets mirror）；看板 [docs/006-🚧](docs/006-🚧-ReportEditor-AI上游错误体验.md)。
