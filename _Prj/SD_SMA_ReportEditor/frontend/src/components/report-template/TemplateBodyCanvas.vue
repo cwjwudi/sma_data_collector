@@ -477,6 +477,11 @@ import {
   selectOnly,
   toggleInSelection,
 } from "@/lib/report-template/selection-set";
+import {
+  applyGroupResize,
+  clampPositionOnly,
+  type GroupResizeOrigin,
+} from "@/lib/report-template/selection-group-resize";
 import { computed, inject, nextTick, onBeforeUnmount, ref, watch } from "vue";
 import { reportBindingPreviewKey, templateTableCellPickKey } from "@/lib/report-template/template-editor-context";
 import {
@@ -1468,10 +1473,28 @@ let resize: null | {
   iy: number;
   iw: number;
   ih: number;
+  /** 多选组缩放：按下时各控件几何快照 */
+  groupOrigins: GroupResizeOrigin[] | null;
 };
+
+function promotePrimary(id: string) {
+  const cur = selectedIds.value;
+  if (!cur.includes(id)) {
+    selectedIds.value = selectOnly(id);
+    return;
+  }
+  if (primaryId(cur) === id) return;
+  selectedIds.value = [...cur.filter((x) => x !== id), id];
+}
 
 function clamp(el: TemplateElement): void {
   clampElementToLayout(el, me.value.contentW, me.value.contentH);
+  applySqlFillBelowRestriction(el);
+}
+
+/** 组拖移：只钳位置，不砍尺寸（020） */
+function clampMove(el: TemplateElement): void {
+  clampPositionOnly(el, me.value.contentW, me.value.contentH);
   applySqlFillBelowRestriction(el);
 }
 
@@ -1561,8 +1584,34 @@ function beginMove(ev: PointerEvent, el: TemplateElement) {
 function beginResize(ev: PointerEvent, el: TemplateElement, h: H) {
   if (props.interactionLocked) return;
   clearTplSnapGuides();
-  selId.value = el.id;
-  resize = { sid: el.id, h, sx: ev.clientX, sy: ev.clientY, ix: el.x, iy: el.y, iw: el.w, ih: el.h };
+  // 多选时不得折叠为单选（020 组缩放）
+  promotePrimary(el.id);
+  const multi = selectedIds.value.length >= 2;
+  const groupOrigins: GroupResizeOrigin[] | null = multi
+    ? list.value
+        .filter((item) => selectedIds.value.includes(item.id))
+        .map((item) => ({
+          id: item.id,
+          x: item.x,
+          y: item.y,
+          w: item.w,
+          h: item.h,
+          horizontalOnly: item.type === "table",
+          minW: item.type === "table" ? minTableResizeW(item) : 20,
+          minH: item.type === "table" ? minTableResizeH(item) : 20,
+        }))
+    : null;
+  resize = {
+    sid: el.id,
+    h,
+    sx: ev.clientX,
+    sy: ev.clientY,
+    ix: el.x,
+    iy: el.y,
+    iw: el.w,
+    ih: el.h,
+    groupOrigins,
+  };
   bindPtr();
 }
 
@@ -1618,7 +1667,7 @@ function ptrMove(ev: PointerEvent) {
       if (!orig) continue;
       el.x = Math.max(0, orig.ox + finalDx);
       el.y = Math.max(0, orig.oy + finalDy);
-      clamp(el);
+      clampMove(el);
     }
     const guideEl = pid ? list.value.find((x) => x.id === pid) : null;
     tplSnapGuides.value =
@@ -1628,11 +1677,43 @@ function ptrMove(ev: PointerEvent) {
     return;
   }
   if (resize) {
-    const el = list.value.find((x) => x.id === resize!.sid);
-    if (!el) return;
     const dx = (ev.clientX - resize.sx) / sc;
     const dy = (ev.clientY - resize.sy) / sc;
     const { h } = resize;
+    const bw = me.value.contentW;
+    const bh = me.value.contentH;
+    const peers = bodySnapPeers();
+
+    if (resize.groupOrigins && resize.groupOrigins.length >= 2) {
+      const patches = applyGroupResize(resize.groupOrigins, h, dx, dy, {
+        lockAspect: !!ev.shiftKey,
+        defaultMinW: 20,
+        defaultMinH: 20,
+      });
+      const byId = new Map(patches.map((p) => [p.id, p]));
+      for (const el of list.value) {
+        const p = byId.get(el.id);
+        if (!p) continue;
+        el.x = p.x;
+        el.y = p.y;
+        el.w = p.w;
+        if (el.type !== "table") el.h = p.h;
+        else {
+          el.h = resize.groupOrigins.find((o) => o.id === el.id)?.h ?? el.h;
+          clampTplTableOuter(el);
+        }
+        clampMove(el);
+      }
+      const guideEl = list.value.find((x) => x.id === resize!.sid);
+      tplSnapGuides.value =
+        ev.shiftKey || !guideEl
+          ? { v: [], h: [] }
+          : alignmentGuidesForRect(guideEl.x, guideEl.y, guideEl.w, guideEl.h, bw, bh, peers, guideEl.id);
+      return;
+    }
+
+    const el = list.value.find((x) => x.id === resize!.sid);
+    if (!el) return;
     let x = resize.ix;
     let y = resize.iy;
     let w = resize.iw;
@@ -1660,9 +1741,6 @@ function ptrMove(ev: PointerEvent) {
       hh = s;
     }
     Object.assign(el, { x, y, w, h: hh });
-    const bw = me.value.contentW;
-    const bh = me.value.contentH;
-    const peers = bodySnapPeers();
     if (!ev.shiftKey) {
       const snapped = magneticSnapResize(el.x, el.y, el.w, el.h, h, bw, bh, peers, el.id, floorW, floorH);
       Object.assign(el, snapped);

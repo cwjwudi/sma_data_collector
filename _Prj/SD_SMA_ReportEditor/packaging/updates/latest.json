@@ -1,17 +1,17 @@
 {
-  "version": "0.3.97",
-  "releasedAt": "2026-07-14T14:44:24.316Z",
-  "notes": "Report Editor AI 0.3.97\n\n- 多选共有属性扩展：显示格式 / 文案 / 同类型绑定批改（混合不自动写）",
+  "version": "0.3.100",
+  "releasedAt": "2026-07-15T04:58:04.999Z",
+  "notes": "Report Editor AI 0.3.100\n\n- 历史报表分屏：导出目录 ⇄ 目标目录 复制/移动\n- 可移动存储检测确认后打开右侧；冲突一次决策",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.97-x64.exe",
-      "sha256": "",
-      "size": 0
+      "url": "Report Editor AI-Setup-0.3.100-x64.exe",
+      "sha256": "512358ef96b63465cb4558aa94f3d9249771dfeea0c91458e9c928d23fc0f925",
+      "size": 148146391
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.97-arm64.dmg",
-      "sha256": "",
-      "size": 0
+      "url": "Report Editor AI-0.3.100-arm64.dmg",
+      "sha256": "06d3e5ee2eadf658b6a0dc06d1b5d6ea543899862565946e7f0120acca9a0da3",
+      "size": 182045390
     }
   }
 }

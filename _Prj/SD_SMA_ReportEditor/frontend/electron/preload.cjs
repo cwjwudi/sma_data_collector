@@ -61,6 +61,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   /** 单层文件夹 + PDF 分页浏览（010） */
   scanExportEntries: (opts) => ipcRenderer.invoke('scan-export-entries', opts || {}),
 
+  /** 历史报表分屏：左⇄右 复制 / 移动（022） */
+  historyTransfer: (opts) => ipcRenderer.invoke('history-transfer', opts || {}),
+
+  /** 可移动存储卷枚举（022） */
+  listRemovableVolumes: () => ipcRenderer.invoke('list-removable-volumes'),
+
   /** 删除磁盘上的导出文件 */
   deleteExportFile: (opts) => ipcRenderer.invoke('delete-export-file', opts || {}),
 

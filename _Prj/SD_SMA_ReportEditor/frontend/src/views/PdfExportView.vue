@@ -61,15 +61,14 @@ const fixedCardWidthPx = computed(() => {
 });
 
 /**
- * 迷你预览默认 scale=1 时 mini-wrap 高度≈一纸；再加卡片标题与内边距会略高于 PDF @page，
- * Chromium 会把每张卡拆成两页（第二页常近乎空白）。限制 max-height 使整体略缩小，单卡落入一页。
+ * 导出 1:1 铺满 @page（019）：max 高 = 纸面 CSS px，配合 exactPageFit（不扣 inset、无 +3）。
+ * 防拆页靠打印 CSS（tep-card break + padding:0），不再靠缩小内容留 slack。
  */
 const pdfMiniMaxHeightPx = computed(() => {
   const t = tmpl.value;
   if (!t) return null;
   const { heightPx } = getPaperPageCssPx(t.paperKind as PaperKind, t.orientation);
-  const slackPx = 28; /* TemplateMiniPage scaledSize +3 与取整；caption 已在 PDF 省略 */
-  return Math.max(200, heightPx - slackPx);
+  return Math.max(200, heightPx);
 });
 
 function injectPrintPageCss(t: ReportTemplate): void {
@@ -279,14 +278,14 @@ watch(
     page-break-before: always;
     break-before: page;
   }
-  /* 迷你预览外壳为 inline-flex，打印时分页偶发异常；导出时改为普通块级，并剥离角色色装饰（009） */
+  /*
+   * 迷你预览改为块级；保留角色色 outline / 纸边粗色（021）。
+   * 仅清列表用的圆角与投影，避免垫出额外「相框」感；padding 必须为 0 以免超 @page。
+   */
   .pdf-export-root .mpc,
   .pdf-export-root .mpc-slot {
     display: block !important;
     padding: 0 !important;
-    background: transparent !important;
-    outline: none !important;
-    border: none !important;
     border-radius: 0 !important;
   }
   .pdf-export-root .mpc-tag {
@@ -294,7 +293,6 @@ watch(
   }
   .pdf-export-root .mpp-paper,
   .pdf-export-root .mb-inner.mpp-paper {
-    border: none !important;
     border-radius: 0 !important;
     box-shadow: none !important;
   }

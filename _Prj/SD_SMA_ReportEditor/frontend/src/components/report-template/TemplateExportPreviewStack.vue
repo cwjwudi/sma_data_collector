@@ -22,7 +22,8 @@
           :max-height-px="miniPageMaxHeightPx"
           :preview-page="reportCoverPreviewPage(reportIdx)"
           :preview-total-pages="totalPreviewPages"
-          :plain-chrome="pdfExportOmitCaptions"
+          :plain-chrome="false"
+          :exact-page-fit="pdfExportOmitCaptions"
         />
       </div>
 
@@ -65,7 +66,8 @@
           :max-height-px="miniPageMaxHeightPx"
           :preview-page="reportBodyPreviewPage(reportIdx, idx)"
           :preview-total-pages="totalPreviewPages"
-          :plain-chrome="pdfExportOmitCaptions"
+          :plain-chrome="false"
+          :exact-page-fit="pdfExportOmitCaptions"
         />
       </div>
 
@@ -90,7 +92,8 @@
           :max-height-px="miniPageMaxHeightPx"
           :preview-page="reportBackPreviewPage(reportIdx)"
           :preview-total-pages="totalPreviewPages"
-          :plain-chrome="pdfExportOmitCaptions"
+          :plain-chrome="false"
+          :exact-page-fit="pdfExportOmitCaptions"
         />
       </div>
     </template>

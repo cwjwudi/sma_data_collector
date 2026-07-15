@@ -655,6 +655,11 @@ import {
   selectOnly,
   toggleInSelection,
 } from "@/lib/report-template/selection-set";
+import {
+  applyGroupResize,
+  clampPositionOnly,
+  type GroupResizeOrigin,
+} from "@/lib/report-template/selection-group-resize";
 
 const HANDLES = ["nw", "n", "ne", "e", "se", "s", "sw", "w"] as const;
 type Handle = (typeof HANDLES)[number];
@@ -1243,11 +1248,27 @@ let resize: null | {
   iy: number;
   iw: number;
   ih: number;
+  groupOrigins: GroupResizeOrigin[] | null;
 };
+
+function promotePrimary(id: string) {
+  const cur = selectedIds.value;
+  if (!cur.includes(id)) {
+    selectedIds.value = selectOnly(id);
+    return;
+  }
+  if (primaryId(cur) === id) return;
+  selectedIds.value = [...cur.filter((x) => x !== id), id];
+}
 
 function clampEl(el: LayoutZoneElement, z: Zone) {
   const { w, h } = bandDims(z);
   clampZoneElement(el, w, h);
+}
+
+function clampElMove(el: LayoutZoneElement, z: Zone) {
+  const { w, h } = bandDims(z);
+  clampPositionOnly(el, w, h);
 }
 
 function onZoneTableColumnResize(
@@ -1314,7 +1335,21 @@ function beginMove(ev: PointerEvent, el: LayoutZoneElement, z: Zone) {
 
 function beginResize(ev: PointerEvent, el: LayoutZoneElement, z: Zone, h: Handle) {
   clearLayoutSnapOverlay();
-  selId.value = el.id;
+  promotePrimary(el.id);
+  const sameZone = elementsForZone(z).filter((item) => selectedIds.value.includes(item.id));
+  const groupOrigins: GroupResizeOrigin[] | null =
+    sameZone.length >= 2
+      ? sameZone.map((item) => ({
+          id: item.id,
+          x: item.x,
+          y: item.y,
+          w: item.w,
+          h: item.h,
+          horizontalOnly: item.type === "table",
+          minW: item.type === "table" ? minOuterSizeForZoneTable(item).w : 16,
+          minH: item.type === "table" ? minOuterSizeForZoneTable(item).h : 16,
+        }))
+      : null;
   resize = {
     sid: el.id,
     z,
@@ -1325,6 +1360,7 @@ function beginResize(ev: PointerEvent, el: LayoutZoneElement, z: Zone, h: Handle
     iy: el.y,
     iw: el.w,
     ih: el.h,
+    groupOrigins,
   };
   bindPtr();
 }
@@ -1382,7 +1418,7 @@ function ptrMove(ev: PointerEvent) {
       if (!el) continue;
       el.x = Math.max(0, item.ox + finalDx);
       el.y = Math.max(0, item.oy + finalDy);
-      clampEl(el, item.z);
+      clampElMove(el, item.z);
     }
     const guideEl = pid ? elementsForZone(zoneForElementId(pid) || "body").find((x) => x.id === pid) : null;
     const gz = pid ? zoneForElementId(pid) : null;
@@ -1398,18 +1434,52 @@ function ptrMove(ev: PointerEvent) {
     return;
   }
   if (resize) {
-    const el = elementsForZone(resize.z).find((x) => x.id === resize!.sid);
-    if (!el) return;
     const dx = (ev.clientX - resize.sx) / sc;
     const dy = (ev.clientY - resize.sy) / sc;
     const { h } = resize;
+    const { w: bw, h: bh } = bandDims(resize.z);
+    const peers = peersForSnapZone(resize.z);
+
+    if (resize.groupOrigins && resize.groupOrigins.length >= 2) {
+      const patches = applyGroupResize(resize.groupOrigins, h, dx, dy, {
+        lockAspect: !!ev.shiftKey,
+        defaultMinW: 16,
+        defaultMinH: 16,
+      });
+      const byId = new Map(patches.map((p) => [p.id, p]));
+      for (const origin of resize.groupOrigins) {
+        const el = elementsForZone(resize.z).find((x) => x.id === origin.id);
+        const p = byId.get(origin.id);
+        if (!el || !p) continue;
+        el.x = p.x;
+        el.y = p.y;
+        el.w = p.w;
+        if (el.type !== "table") el.h = p.h;
+        else {
+          el.h = origin.h;
+          clampZoneTableOuterSize(el, bw, Math.max(16, bh - Math.max(0, el.y)), layoutZoneStaticCellTextAt(el));
+        }
+        clampElMove(el, resize.z);
+      }
+      const guideEl = elementsForZone(resize.z).find((x) => x.id === resize!.sid);
+      layoutSnapOverlay.value =
+        ev.shiftKey || !guideEl
+          ? { zone: null, v: [], h: [] }
+          : {
+              zone: resize.z,
+              ...alignmentGuidesForRect(guideEl.x, guideEl.y, guideEl.w, guideEl.h, bw, bh, peers, guideEl.id),
+            };
+      return;
+    }
+
+    const el = elementsForZone(resize.z).find((x) => x.id === resize!.sid);
+    if (!el) return;
     let x = resize.ix;
     let y = resize.iy;
     let w = resize.iw;
     let hh = resize.ih;
     const floorW = el.type === "table" ? minOuterSizeForZoneTable(el).w : 16;
     const floorH = el.type === "table" ? minOuterSizeForZoneTable(el).h : 16;
-    const { w: bw, h: bh } = bandDims(resize.z);
     const isTable = el.type === "table";
     if (h.includes("e")) w = Math.max(floorW, Math.round(resize.iw + dx));
     if (!isTable && h.includes("s")) hh = Math.max(floorH, Math.round(resize.ih + dy));
@@ -1429,7 +1499,6 @@ function ptrMove(ev: PointerEvent) {
       hh = s;
     }
     Object.assign(el, { x, y, w, h: isTable ? resize.ih : hh });
-    const peers = peersForSnapZone(resize.z);
     if (!ev.shiftKey) {
       const snapped = magneticSnapResize(el.x, el.y, el.w, el.h, h, bw, bh, peers, el.id, floorW, floorH);
       Object.assign(el, snapped);

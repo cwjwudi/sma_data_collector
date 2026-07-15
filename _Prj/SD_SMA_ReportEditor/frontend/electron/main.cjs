@@ -10,6 +10,8 @@ const { createLayoutSync } = require('./layout-sync.cjs')
 const { humanizePdfExportError } = require('./pdfExportErrors.cjs')
 const { outputPathForReportPart } = require('./pdf-export-paths.cjs')
 const { scanExportEntries, scanExportPdfsCompat } = require('./export-dir-scan.cjs')
+const { transferHistoryItems } = require('./history-transfer.cjs')
+const { listRemovableVolumes } = require('./removable-volumes.cjs')
 const {
   readLaunchSettings,
   writeLaunchSettings,
@@ -759,6 +761,20 @@ ipcMain.handle('scan-export-pdfs', async (_event, opts) => {
 /** 历史报表：单层文件夹+PDF 分页（010）；cwd 不得逃出 rootDir */
 ipcMain.handle('scan-export-entries', async (_event, opts) => {
   return scanExportEntries(opts || {})
+})
+
+/** 历史报表分屏：左⇄右 复制/移动（022）；写入两侧均受各自 root 沙箱约束 */
+ipcMain.handle('history-transfer', async (_event, opts) => {
+  return transferHistoryItems(opts || {})
+})
+
+/** 可移动卷列表（插拔轮询由渲染进程调用） */
+ipcMain.handle('list-removable-volumes', async () => {
+  try {
+    return { ok: true, volumes: listRemovableVolumes() }
+  } catch (e) {
+    return { ok: false, error: String(e.message || e), volumes: [] }
+  }
 })
 
 ipcMain.handle('delete-export-file', async (_event, opts) => {

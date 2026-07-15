@@ -101,6 +101,32 @@ interface Window {
           }
       >;
     }>;
+    historyTransfer: (opts: {
+      sources: string[];
+      destDir: string;
+      sourceRoot: string;
+      destRoot: string;
+      mode: "copy" | "move";
+      conflict?: "skip" | "overwrite" | "rename";
+      dryRun?: boolean;
+    }) => Promise<{
+      ok: boolean;
+      error?: string;
+      dryRun?: boolean;
+      mode?: "copy" | "move";
+      needsConflictDecision?: boolean;
+      conflicts?: Array<{ source: string; dest: string; name: string }>;
+      copied?: number;
+      moved?: number;
+      skipped?: number;
+      failed?: number;
+      results?: Array<{ source: string; dest?: string; status: string; error?: string }>;
+    }>;
+    listRemovableVolumes: () => Promise<{
+      ok: boolean;
+      error?: string;
+      volumes: Array<{ path: string; label: string; platform: string }>;
+    }>;
     deleteExportFile: (opts: { filePath: string }) => Promise<{ ok: boolean; error?: string }>;
     showItemInFolder: (filePath: string) => Promise<{ ok: boolean; error?: string }>;
     getExportPdfThumbnail: (opts: { filePath: string }) => Promise<{
