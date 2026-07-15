@@ -108,9 +108,14 @@ class QueryGroupConfigUpdateRequest(BaseModel):
 class PluginQueryRequest(BaseModel):
     start_time: datetime | None = None
     end_time: datetime | None = None
+    query_mode: Literal["time", "batch"] = "time"
+    batch_code: str | None = None
     page: int = 1
     page_size: int | None = None
     table: str | None = None
+    pagination_mode: Literal["offset", "cursor"] = "offset"
+    page_cursor: HistoryCursor | None = None
+    include_total: bool = True
     cursor: int | None = -1
 
 

@@ -634,21 +634,27 @@ def _plugin_runtime_snapshot(
     target_table: str,
     start_time: datetime | None,
     end_time: datetime | None,
-    total: int,
+    total: int | None,
     columns: list[str],
     rows: list[dict[str, Any]],
     page: int,
     page_size: int,
     warnings: list[str],
+    has_more: bool = False,
 ) -> PluginRuntimeSnapshot:
     start_iso = start_time.isoformat(sep=" ") if isinstance(start_time, datetime) else None
     end_iso = end_time.isoformat(sep=" ") if isinstance(end_time, datetime) else None
-    total_pages = max(1, (total + page_size - 1) // page_size) if page_size > 0 else 1
+    if total is None:
+        total_pages = max(1, page + (1 if has_more else 0))
+        total_records = 0
+    else:
+        total_pages = max(1, (total + page_size - 1) // page_size) if page_size > 0 else 1
+        total_records = total
     return PluginRuntimeSnapshot(
         plugin_key=plugin_key,
         page=min(max(page, 1), total_pages),
         total_pages=total_pages,
-        total_records=total,
+        total_records=total_records,
         table=target_table,
         start_time=start_iso,
         end_time=end_iso,
@@ -685,6 +691,11 @@ def _execute_plugin_query(
     table: str | None = None,
     start_time: datetime | None = None,
     end_time: datetime | None = None,
+    query_mode: str = "time",
+    batch_code: str | None = None,
+    pagination_mode: str = "offset",
+    page_cursor: Any = None,
+    include_total: bool = True,
     cursor: int = -1,
 ) -> tuple[HistoryQueryResponse, PluginRuntimeSnapshot]:
     plugin_key = binding["plugin_key"]
@@ -710,10 +721,29 @@ def _execute_plugin_query(
     table_list_cfg = _get_table_list_writeback_config(binding)
     if table_list_cfg is not None and table_list_cfg.is_advanced_mode:
         resolved_start, resolved_end = None, None
+        resolved_batch_field, resolved_batch_code = None, None
+        pagination_mode, page_cursor, include_total = "offset", None, True
         if start_time is not None or end_time is not None:
             warnings.append("高级 OPC UA 模式：已忽略时间范围限制")
+        if batch_code:
+            warnings.append("高级 OPC UA 模式：已忽略批次号条件")
+    elif query_mode == "batch":
+        if start_time is not None or end_time is not None:
+            raise ValueError("按批次号查询时不能填写时间条件")
+        resolved_batch_code = str(batch_code or "").strip() or None
+        if resolved_batch_code is None:
+            raise ValueError("按批次号查询时必须选择 BatchCode")
+        resolved_batch_field = _resolve_batch_field(view, db.list_columns(target_table))
+        if resolved_batch_field is None:
+            raise ValueError("当前插件绑定的 Group 未配置有效的批次号绑定字段")
+        resolved_start, resolved_end = None, None
     else:
+        if str(batch_code or "").strip():
+            raise ValueError("按时间查询时不能填写 BatchCode")
+        if pagination_mode == "cursor" and (start_time is None or end_time is None):
+            raise ValueError("按时间查询时必须填写开始时间和结束时间")
         resolved_start, resolved_end, time_warnings = _apply_time_guardrails(start_time, end_time)
+        resolved_batch_field, resolved_batch_code = None, None
         warnings.extend(time_warnings)
 
     resolved_page_size = page_size if page_size else int(binding["page_size"])
@@ -726,12 +756,18 @@ def _execute_plugin_query(
         end_time=resolved_end,
         time_field=view["time_field"],
         filters=[],
+        batch_field=resolved_batch_field,
+        batch_code=resolved_batch_code,
         page=max(page, 1),
         page_size=resolved_page_size,
         sort_by=view["sort_by"],
         sort_dir=view["sort_dir"],
+        pagination_mode=pagination_mode,
+        cursor=page_cursor,
+        include_total=include_total,
     )
-    total, columns, rows, missing_columns = db.query_history(history_req)
+    query_result = db.query_history(history_req)
+    total, columns, rows, missing_columns = query_result
     if missing_columns:
         warnings.append("部分配置列在当前表中不存在，已自动忽略")
 
@@ -749,6 +785,7 @@ def _execute_plugin_query(
         page=history_req.page,
         page_size=history_req.page_size,
         warnings=warnings,
+        has_more=getattr(query_result, "has_more", False),
     )
     _sync_plugin_runtime(snapshot)
 
@@ -761,6 +798,9 @@ def _execute_plugin_query(
         display_columns=snapshot.display_columns,
         missing_columns=missing_columns,
         warnings=warnings,
+        pagination_mode=history_req.pagination_mode,
+        has_more=getattr(query_result, "has_more", False),
+        next_cursor=getattr(query_result, "next_cursor", None),
     )
     return response, snapshot
 
@@ -1133,6 +1173,13 @@ def resolve_plugin(plugin_key: str, request: Request) -> dict[str, Any]:
         binding["resolved_table"] = resolved_table
         binding["resolved_group"] = resolved_group
         binding["schema_report"] = schema_report
+        view = cfg.resolve_query_view(
+            binding["view_name"], table=resolved_table, group=resolved_group
+        )
+        binding["batch_field"] = _resolve_batch_field(view, db.list_columns(resolved_table)) or ""
+        binding["batch_source"] = cfg.resolve_batch_source(
+            binding["view_name"], resolved_group
+        )
         return binding
     except (OperationalError, SQLAlchemyError) as exc:
         _raise_db_error(exc)
@@ -1181,6 +1228,11 @@ async def query_plugin(plugin_key: str, payload: PluginQueryRequest, request: Re
             table=payload.table,
             start_time=payload.start_time,
             end_time=payload.end_time,
+            query_mode=payload.query_mode,
+            batch_code=payload.batch_code,
+            pagination_mode=payload.pagination_mode,
+            page_cursor=payload.page_cursor,
+            include_total=payload.include_total,
             cursor=-1 if payload.cursor is None else int(payload.cursor),
         )
         cursor = -1 if payload.cursor is None else int(payload.cursor)

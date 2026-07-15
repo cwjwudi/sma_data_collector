@@ -1,45 +1,47 @@
 (function () {
   let currentPage = 1;
   let totalPages = 1;
-  let totalRecords = 0;
+  let totalRecords = null;
+  let hasMore = false;
+  let currentPageCursor = null;
+  let nextPageCursor = null;
+  let pageCursorStack = [];
   let currentBinding = null;
-  let lastStartIso = null;
-  let lastEndIso = null;
+  let lastQueryContext = null;
   let selectedCursor = -1;
   let activePluginKey = "";
   let advancedOpcuaMode = false;
   let runtimeRevision = 0;
   let runtimePollTimer = null;
-  const quickButtons = ["btnRange1D", "btnRange1W", "btnRange1M", "btnRange1Y"];
   let pluginStateKey = null;
+  let batchCodesAvailable = false;
+  let currentBatchSource = {};
+  const quickButtons = ["btnRange1D", "btnRange1W", "btnRange1M", "btnRange1Y"];
 
-  function fetchJson(url, opts) {
-    return fetch(url, opts).then(async (resp) => {
-      const data = await resp.json();
-      if (!resp.ok) throw new Error(data.detail || JSON.stringify(data));
-      return data;
-    });
+  async function fetchJson(url, opts) {
+    const resp = await fetch(url, opts);
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.detail || JSON.stringify(data));
+    return data;
   }
 
   function getPluginKeyFromPath() {
-    const m = window.location.pathname.match(/\/plugins\/([^/]+)\.html$/);
-    return m ? decodeURIComponent(m[1]) : "";
+    const match = window.location.pathname.match(/\/plugins\/([^/]+)\.html$/);
+    return match ? decodeURIComponent(match[1]) : "";
+  }
+
+  function getQueryMode() {
+    return document.querySelector('input[name="queryMode"]:checked')?.value || "time";
   }
 
   function toInputTime(date) {
-    const pad = (n) => String(n).padStart(2, "0");
-    return (
-      date.getFullYear() +
-      "-" + pad(date.getMonth() + 1) +
-      "-" + pad(date.getDate()) +
-      "T" + pad(date.getHours()) +
-      ":" + pad(date.getMinutes())
-    );
+    const pad = (value) => String(value).padStart(2, "0");
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}` +
+      `T${pad(date.getHours())}:${pad(date.getMinutes())}`;
   }
 
   function enableButtonClickFeedback() {
-    const buttons = document.querySelectorAll("button");
-    for (const btn of buttons) {
+    for (const btn of document.querySelectorAll("button")) {
       btn.addEventListener("click", () => {
         btn.classList.remove("is-clicked");
         void btn.offsetWidth;
@@ -49,72 +51,9 @@
     }
   }
 
-  function clampPage(value) {
-    const v = Number(value || 1);
-    const bounded = Math.min(Math.max(v, 1), Math.max(totalPages, 1));
-    return Number.isFinite(bounded) ? bounded : 1;
-  }
-
-  function enableTouchPageNumberSpin(inputId) {
-    const input = document.getElementById(inputId);
-    if (!input) return;
-
-    let pointerActive = false;
-    let startY = 0;
-    let lastAppliedStep = 0;
-
-    input.style.touchAction = "none";
-
-    input.addEventListener("pointerdown", (e) => {
-      pointerActive = true;
-      startY = e.clientY;
-      lastAppliedStep = 0;
-      input.setPointerCapture(e.pointerId);
-    });
-
-    input.addEventListener("pointermove", (e) => {
-      if (!pointerActive) return;
-      const deltaY = startY - e.clientY;
-      // 每 14px 变化 1 页，滑得越远变化越快
-      const rawStep = deltaY / 14;
-      const targetStep = rawStep > 0 ? Math.floor(rawStep) : Math.ceil(rawStep);
-      if (targetStep === lastAppliedStep) return;
-
-      const diff = targetStep - lastAppliedStep;
-      lastAppliedStep = targetStep;
-
-      const current = clampPage(input.value);
-      input.value = String(clampPage(current + diff));
-      e.preventDefault();
-    });
-
-    function endPointer(e) {
-      if (!pointerActive) return;
-      pointerActive = false;
-      lastAppliedStep = 0;
-      try {
-        input.releasePointerCapture(e.pointerId);
-      } catch (_) {
-        // ignore
-      }
-    }
-
-    input.addEventListener("pointerup", endPointer);
-    input.addEventListener("pointercancel", endPointer);
-    input.addEventListener("pointerleave", endPointer);
-    input.addEventListener("change", () => {
-      input.value = String(clampPage(input.value));
-    });
-  }
-
   function setQuickActive(id) {
-    for (const btnId of quickButtons) {
-      const btn = document.getElementById(btnId);
-      if (btn) btn.classList.remove("active");
-    }
-    const active = document.getElementById(id);
-    if (active) active.classList.add("active");
-    savePluginState();
+    for (const btnId of quickButtons) document.getElementById(btnId)?.classList.remove("active");
+    document.getElementById(id)?.classList.add("active");
   }
 
   function setQuickRange(days, buttonId) {
@@ -127,34 +66,85 @@
   }
 
   function getActiveQuickButtonId() {
-    for (const id of quickButtons) {
-      const btn = document.getElementById(id);
-      if (btn && btn.classList.contains("active")) return id;
+    return quickButtons.find((id) => document.getElementById(id)?.classList.contains("active")) || "";
+  }
+
+  function updateQueryModeControls() {
+    const batchSupported = !advancedOpcuaMode && Boolean(currentBinding?.batch_field) && batchCodesAvailable;
+    const batchRadio = document.getElementById("queryModeBatch");
+    batchRadio.disabled = !batchSupported;
+    if (!batchSupported && getQueryMode() === "batch") {
+      document.getElementById("queryModeTime").checked = true;
     }
-    return "";
+    const batchMode = getQueryMode() === "batch";
+    document.getElementById("batchCode").disabled = !batchMode || !batchSupported;
+    document.getElementById("startDate").disabled = advancedOpcuaMode || batchMode;
+    document.getElementById("endDate").disabled = advancedOpcuaMode || batchMode;
+    for (const id of quickButtons) document.getElementById(id).disabled = advancedOpcuaMode || batchMode;
+    if (batchMode) {
+      document.getElementById("startDate").value = "";
+      document.getElementById("endDate").value = "";
+      setQuickActive("");
+    } else {
+      document.getElementById("batchCode").value = "";
+    }
+  }
+
+  async function loadBatchCodes(preferredValue) {
+    const select = document.getElementById("batchCode");
+    select.innerHTML = '<option value="">请选择批次号</option>';
+    batchCodesAvailable = false;
+    currentBatchSource = {};
+    if (advancedOpcuaMode || !currentBinding?.view_name || !currentBinding?.resolved_group) {
+      updateQueryModeControls();
+      return;
+    }
+    try {
+      const data = await fetchJson(
+        `/api/meta/batch-codes?view_name=${encodeURIComponent(currentBinding.view_name)}` +
+          `&group=${encodeURIComponent(currentBinding.resolved_group)}`,
+      );
+      currentBatchSource = data.source || {};
+      for (const code of data.items || []) {
+        const option = document.createElement("option");
+        option.value = code;
+        option.textContent = code;
+        select.appendChild(option);
+      }
+      batchCodesAvailable = select.options.length > 1;
+      if (preferredValue && Array.from(select.options).some((option) => option.value === preferredValue)) {
+        select.value = preferredValue;
+      }
+    } catch (error) {
+      currentBatchSource = { error: error.message };
+    }
+    updateQueryModeControls();
   }
 
   function savePluginState() {
     if (!pluginStateKey) return;
-    const tableSelector = document.getElementById("tableSelector");
-    const state = {
+    localStorage.setItem(pluginStateKey, JSON.stringify({
       startDate: document.getElementById("startDate").value || "",
       endDate: document.getElementById("endDate").value || "",
-      table: tableSelector ? tableSelector.value : "",
+      queryMode: getQueryMode(),
+      batchCode: document.getElementById("batchCode").value || "",
+      table: document.getElementById("tableSelector").value || "",
       currentPage,
+      totalPages,
+      totalRecords,
+      hasMore,
+      currentPageCursor,
+      nextPageCursor,
+      pageCursorStack,
+      lastQueryContext,
       quickActive: getActiveQuickButtonId(),
-      lastStartIso,
-      lastEndIso,
-    };
-    localStorage.setItem(pluginStateKey, JSON.stringify(state));
+    }));
   }
 
   function loadPluginState() {
     if (!pluginStateKey) return null;
-    const raw = localStorage.getItem(pluginStateKey);
-    if (!raw) return null;
     try {
-      return JSON.parse(raw);
+      return JSON.parse(localStorage.getItem(pluginStateKey) || "null");
     } catch {
       return null;
     }
@@ -164,58 +154,61 @@
     const infoParts = [
       `plugin=${binding.plugin_key}`,
       `group=${binding.resolved_group || "-"}`,
-      `table=${binding.resolved_table || "-"}`,
-      `total=${totalRecords}`,
-      `pages=${totalPages}`,
+      `table=${document.getElementById("tableSelector").value || binding.resolved_table || "-"}`,
       `current=${currentPage}`,
     ];
-    if (Array.isArray(warnings) && warnings.length > 0) {
-      infoParts.push(`warnings=${warnings.join(" | ")}`);
+    if (advancedOpcuaMode) {
+      infoParts.push(`total=${totalRecords ?? 0}`, `pages=${totalPages}`);
+    } else {
+      infoParts.push(`has_more=${hasMore}`);
+      if (currentBatchSource.table) {
+        infoParts.push(`batch_source=${currentBatchSource.table}.${currentBatchSource.field}`);
+      } else if (currentBatchSource.error) {
+        infoParts.push(`batch_warning=${currentBatchSource.error}`);
+      }
     }
+    if (Array.isArray(warnings) && warnings.length) infoParts.push(`warnings=${warnings.join(" | ")}`);
     document.getElementById("meta").textContent = infoParts.join(" ; ");
     document.getElementById("pageNumber").value = String(currentPage);
-    document.getElementById("totalPagesText").textContent = String(totalPages);
+    document.getElementById("btnPrevPage").disabled = currentPage <= 1;
+    document.getElementById("btnNextPage").disabled = advancedOpcuaMode
+      ? currentPage >= totalPages
+      : !hasMore;
   }
 
   function renderTable(columns, displayColumns, rows) {
     const table = document.getElementById("resultTable");
     table.innerHTML = "";
     const displayMap = {};
-    for (const item of displayColumns || []) {
-      if (item && item.name) displayMap[item.name] = item;
-    }
-
+    for (const item of displayColumns || []) if (item?.name) displayMap[item.name] = item;
     const thead = document.createElement("thead");
-    const trh = document.createElement("tr");
-    for (const c of columns || []) {
+    const headerRow = document.createElement("tr");
+    for (const column of columns || []) {
       const th = document.createElement("th");
-      const meta = displayMap[c] || { label_zh: c, label_en: c };
-      th.textContent = `${meta.label_zh || c} (${meta.label_en || c})`;
-      trh.appendChild(th);
+      const meta = displayMap[column] || { label_zh: column, label_en: column };
+      th.textContent = `${meta.label_zh || column} (${meta.label_en || column})`;
+      headerRow.appendChild(th);
     }
-    thead.appendChild(trh);
+    thead.appendChild(headerRow);
     table.appendChild(thead);
 
     const tbody = document.createElement("tbody");
     for (let rowIndex = 0; rowIndex < (rows || []).length; rowIndex += 1) {
       const row = rows[rowIndex];
       const tr = document.createElement("tr");
-      if (rowIndex === selectedCursor) {
-        tr.classList.add("row-selected");
-      }
+      if (rowIndex === selectedCursor) tr.classList.add("row-selected");
       tr.addEventListener("click", () => {
         selectedCursor = rowIndex;
         renderTable(columns, displayColumns, rows);
-        if (!activePluginKey) return;
         fetch(`/api/plugins/cursor/${encodeURIComponent(activePluginKey)}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ cursor: rowIndex }),
         }).catch(() => {});
       });
-      for (const c of columns || []) {
+      for (const column of columns || []) {
         const td = document.createElement("td");
-        td.textContent = row[c] == null ? "" : String(row[c]);
+        td.textContent = row[column] == null ? "" : String(row[column]);
         tr.appendChild(td);
       }
       tbody.appendChild(tr);
@@ -224,12 +217,117 @@
   }
 
   function isAdvancedTableListWriteback(binding) {
-    const cfg = binding && binding.table_list_writeback;
-    if (!cfg || !cfg.enabled) return false;
-    const mode = String(cfg.mode || "").trim().toLowerCase();
+    const config = binding?.table_list_writeback;
+    if (!config?.enabled) return false;
+    const mode = String(config.mode || "").trim().toLowerCase();
     if (mode === "advanced" || mode === "opcua") return true;
-    const advanced = cfg.advanced && typeof cfg.advanced === "object" ? cfg.advanced : {};
-    return !!(String(advanced.trigger_node || "").trim() && String(advanced.batch_no_node || "").trim());
+    const advanced = typeof config.advanced === "object" ? config.advanced : {};
+    return Boolean(String(advanced.trigger_node || "").trim() && String(advanced.batch_no_node || "").trim());
+  }
+
+  function applyQueryResult(data, targetPage, requestedCursor, proposedStack) {
+    renderTable(data.columns || [], data.display_columns || [], data.rows || []);
+    selectedCursor = -1;
+    totalRecords = data.total == null ? null : Number(data.total);
+    hasMore = Boolean(data.has_more);
+    currentPage = Math.max(1, Number(data.page || targetPage));
+    if (advancedOpcuaMode) {
+      const pageSize = Number(data.page_size || currentBinding.page_size || 10);
+      totalPages = Math.max(1, Math.ceil((totalRecords || 0) / pageSize));
+    } else {
+      currentPageCursor = requestedCursor;
+      nextPageCursor = data.next_cursor || null;
+      pageCursorStack = proposedStack;
+      totalPages = currentPage + (hasMore ? 1 : 0);
+    }
+    updatePagerMeta(currentBinding, data.warnings || []);
+    savePluginState();
+  }
+
+  function buildQueryContext() {
+    const context = {
+      table: document.getElementById("tableSelector").value || undefined,
+      queryMode: advancedOpcuaMode ? "time" : getQueryMode(),
+      startTime: null,
+      endTime: null,
+      batchCode: null,
+    };
+    if (advancedOpcuaMode) return context;
+    if (context.queryMode === "batch") {
+      context.batchCode = document.getElementById("batchCode").value.trim();
+      if (!context.batchCode) throw new Error("按批次号查询时必须选择 BatchCode");
+    } else {
+      context.startTime = document.getElementById("startDate").value;
+      context.endTime = document.getElementById("endDate").value;
+      if (!context.startTime || !context.endTime) throw new Error("按时间查询时必须填写开始时间和结束时间");
+      if (new Date(context.startTime).getTime() > new Date(context.endTime).getTime()) {
+        throw new Error("开始时间不能大于结束时间");
+      }
+    }
+    return context;
+  }
+
+  function buildPayload(context, page, pageCursor) {
+    const payload = {
+      page,
+      page_size: currentBinding.page_size || 10,
+      table: context.table,
+      cursor: -1,
+      query_mode: context.queryMode,
+      pagination_mode: advancedOpcuaMode ? "offset" : "cursor",
+      include_total: advancedOpcuaMode,
+    };
+    if (context.startTime) payload.start_time = context.startTime;
+    if (context.endTime) payload.end_time = context.endTime;
+    if (context.batchCode) payload.batch_code = context.batchCode;
+    if (pageCursor) payload.page_cursor = pageCursor;
+    return payload;
+  }
+
+  async function runFreshQuery(page = 1) {
+    lastQueryContext = buildQueryContext();
+    const targetPage = advancedOpcuaMode ? Math.max(1, page) : 1;
+    const data = await fetchJson(`/api/plugins/query/${encodeURIComponent(activePluginKey)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(buildPayload(lastQueryContext, targetPage, null)),
+    });
+    applyQueryResult(data, targetPage, null, []);
+  }
+
+  async function runAdjacentPage(direction) {
+    if (!lastQueryContext) return;
+    if (advancedOpcuaMode) {
+      const targetPage = Math.min(Math.max(currentPage + direction, 1), totalPages);
+      if (targetPage === currentPage) return;
+      const data = await fetchJson(`/api/plugins/query/${encodeURIComponent(activePluginKey)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(buildPayload(lastQueryContext, targetPage, null)),
+      });
+      applyQueryResult(data, targetPage, null, []);
+      return;
+    }
+
+    let requestedCursor = currentPageCursor;
+    const proposedStack = [...pageCursorStack];
+    let targetPage = currentPage;
+    if (direction > 0) {
+      if (!hasMore || !nextPageCursor) return;
+      proposedStack.push(currentPageCursor);
+      requestedCursor = nextPageCursor;
+      targetPage += 1;
+    } else {
+      if (currentPage <= 1) return;
+      requestedCursor = proposedStack.length ? proposedStack.pop() : null;
+      targetPage -= 1;
+    }
+    const data = await fetchJson(`/api/plugins/query/${encodeURIComponent(activePluginKey)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(buildPayload(lastQueryContext, targetPage, requestedCursor)),
+    });
+    applyQueryResult(data, targetPage, requestedCursor, proposedStack);
   }
 
   function applyRuntimeState(state) {
@@ -237,7 +335,6 @@
     renderTable(state.columns || [], state.display_columns || [], state.rows || []);
     selectedCursor = -1;
     totalRecords = Number(state.total_records || 0);
-    const pageSize = Number(currentBinding.page_size || 10);
     totalPages = Math.max(1, Number(state.total_pages || 1));
     currentPage = Math.min(Math.max(Number(state.page || 1), 1), totalPages);
     updatePagerMeta(currentBinding, state.warnings || []);
@@ -245,10 +342,7 @@
   }
 
   function startRuntimeStatePolling(pluginKey) {
-    if (runtimePollTimer) {
-      clearInterval(runtimePollTimer);
-      runtimePollTimer = null;
-    }
+    if (runtimePollTimer) clearInterval(runtimePollTimer);
     runtimePollTimer = setInterval(() => {
       fetchJson(`/api/plugins/runtime-state/${encodeURIComponent(pluginKey)}`)
         .then((state) => {
@@ -261,167 +355,90 @@
     }, 300);
   }
 
-  async function run() {
-    const pluginKey = getPluginKeyFromPath();
-    if (!pluginKey) {
-      document.getElementById("meta").textContent = "无法识别插件路径";
-      return;
-    }
-    activePluginKey = pluginKey;
-    advancedOpcuaMode = isAdvancedTableListWriteback(currentBinding);
-
-    pluginStateKey = `sd_sma_plugin_state_${pluginKey}`;
-    currentBinding = await fetchJson(`/api/plugins/resolve/${encodeURIComponent(pluginKey)}`);
-    const tableSelector = document.getElementById("tableSelector");
-    tableSelector.innerHTML = "";
-    const schemaReport = currentBinding.schema_report || null;
-    const groupTables = schemaReport && Array.isArray(schemaReport.tables) ? schemaReport.tables : [];
+  function populateTables(savedTable) {
+    const selector = document.getElementById("tableSelector");
+    selector.innerHTML = "";
+    const schema = currentBinding.schema_report || {};
+    const tables = Array.isArray(schema.tables) ? schema.tables : [];
     const defaultTable = currentBinding.resolved_table || "";
-    for (const t of groupTables) {
-      const op = document.createElement("option");
-      op.value = t;
-      const kind = schemaReport?.table_kinds?.[t] || "";
-      op.textContent = kind === "fixed" ? `${t}（固定表）` : t;
-      tableSelector.appendChild(op);
+    for (const table of tables) {
+      const option = document.createElement("option");
+      option.value = table;
+      option.textContent = schema.table_kinds?.[table] === "fixed" ? `${table}（固定表）` : table;
+      selector.appendChild(option);
     }
-    if (defaultTable && groupTables.includes(defaultTable)) {
-      tableSelector.value = defaultTable;
+    if (!tables.length && defaultTable) {
+      const option = document.createElement("option");
+      option.value = defaultTable;
+      option.textContent = defaultTable;
+      selector.appendChild(option);
     }
-    if (groupTables.length === 0 && defaultTable) {
-      const op = document.createElement("option");
-      op.value = defaultTable;
-      op.textContent = defaultTable;
-      tableSelector.appendChild(op);
-      tableSelector.value = defaultTable;
-    }
+    const preferred = savedTable && Array.from(selector.options).some((item) => item.value === savedTable)
+      ? savedTable
+      : defaultTable;
+    if (preferred) selector.value = preferred;
+  }
 
-    const savedState = loadPluginState();
-    if (savedState) {
-      if (savedState.startDate) document.getElementById("startDate").value = savedState.startDate;
-      if (savedState.endDate) document.getElementById("endDate").value = savedState.endDate;
-      if (savedState.table && Array.from(tableSelector.options).some(o => o.value === savedState.table)) {
-        tableSelector.value = savedState.table;
-      }
-      if (savedState.quickActive && quickButtons.includes(savedState.quickActive)) {
-        setQuickActive(savedState.quickActive);
-      } else {
-        setQuickActive("");
-      }
-      lastStartIso = savedState.lastStartIso || null;
-      lastEndIso = savedState.lastEndIso || null;
-    } else {
-      setQuickRange(1, "btnRange1D");
+  async function run() {
+    activePluginKey = getPluginKeyFromPath();
+    if (!activePluginKey) throw new Error("无法识别插件路径");
+    pluginStateKey = `sd_sma_plugin_state_${activePluginKey}`;
+    currentBinding = await fetchJson(`/api/plugins/resolve/${encodeURIComponent(activePluginKey)}`);
+    advancedOpcuaMode = isAdvancedTableListWriteback(currentBinding);
+    const saved = loadPluginState();
+    populateTables(saved?.table);
+    if (saved?.startDate) document.getElementById("startDate").value = saved.startDate;
+    if (saved?.endDate) document.getElementById("endDate").value = saved.endDate;
+    if (!saved) setQuickRange(1, "btnRange1D");
+    else setQuickActive(saved.quickActive || "");
+    await loadBatchCodes(saved?.batchCode);
+    if (saved?.queryMode === "batch" && !advancedOpcuaMode && batchCodesAvailable) {
+      document.getElementById("queryModeBatch").checked = true;
+      await loadBatchCodes(saved.batchCode);
     }
-
-    async function query(page) {
-      const targetPage = Math.max(1, page || 1);
-      const startInput = document.getElementById("startDate");
-      const endInput = document.getElementById("endDate");
-      const payload = {
-        page: targetPage,
-        page_size: currentBinding.page_size || 10,
-        table: tableSelector.value || undefined,
-        cursor: -1,
-      };
-      if (!advancedOpcuaMode) {
-        const startInput = document.getElementById("startDate");
-        const endInput = document.getElementById("endDate");
-        // datetime-local 是本地时间，直接传递避免 UTC 偏移导致当天数据被过滤
-        if (startInput.value) payload.start_time = startInput.value;
-        if (endInput.value) payload.end_time = endInput.value;
-        lastStartIso = payload.start_time || null;
-        lastEndIso = payload.end_time || null;
-      }
-      const data = await fetchJson(`/api/plugins/query/${encodeURIComponent(pluginKey)}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      renderTable(data.columns || [], data.display_columns || [], data.rows || []);
-      selectedCursor = -1;
-      totalRecords = Number(data.total || 0);
-      const pageSize = Number(data.page_size || currentBinding.page_size || 10);
-      totalPages = Math.max(1, Math.ceil(totalRecords / pageSize));
-      currentPage = Math.min(Math.max(Number(data.page || targetPage), 1), totalPages);
-      updatePagerMeta(currentBinding, data.warnings || []);
-      savePluginState();
-    }
-
-    async function queryCurrentPage(page) {
-      const targetPage = Math.min(Math.max(page, 1), totalPages);
-      const payload = {
-        page: targetPage,
-        page_size: currentBinding.page_size || 10,
-        table: tableSelector.value || undefined,
-        cursor: -1,
-      };
-      if (!advancedOpcuaMode) {
-        if (lastStartIso) payload.start_time = lastStartIso;
-        if (lastEndIso) payload.end_time = lastEndIso;
-      }
-      const data = await fetchJson(`/api/plugins/query/${encodeURIComponent(pluginKey)}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      renderTable(data.columns || [], data.display_columns || [], data.rows || []);
-      selectedCursor = -1;
-      totalRecords = Number(data.total || 0);
-      const pageSize = Number(data.page_size || currentBinding.page_size || 10);
-      totalPages = Math.max(1, Math.ceil(totalRecords / pageSize));
-      currentPage = Math.min(Math.max(Number(data.page || targetPage), 1), totalPages);
-      updatePagerMeta(currentBinding, data.warnings || []);
-      savePluginState();
-    }
+    updateQueryModeControls();
 
     document.getElementById("btnGo").addEventListener("click", () => {
-      query(1).catch((e) => (document.getElementById("meta").textContent = e.message));
+      runFreshQuery(1).catch((error) => (document.getElementById("meta").textContent = error.message));
     });
-    tableSelector.addEventListener("change", () => {
+    document.getElementById("tableSelector").addEventListener("change", () => {
       savePluginState();
-      query(1).catch((e) => (document.getElementById("meta").textContent = e.message));
-    });
-    document.getElementById("btnRange1D").addEventListener("click", () => setQuickRange(1, "btnRange1D"));
-    document.getElementById("btnRange1W").addEventListener("click", () => setQuickRange(7, "btnRange1W"));
-    document.getElementById("btnRange1M").addEventListener("click", () => setQuickRange(30, "btnRange1M"));
-    document.getElementById("btnRange1Y").addEventListener("click", () => setQuickRange(365, "btnRange1Y"));
-    document.getElementById("startDate").addEventListener("input", () => {
-      setQuickActive("");
-      savePluginState();
-    });
-    document.getElementById("endDate").addEventListener("input", () => {
-      setQuickActive("");
-      savePluginState();
+      runFreshQuery(1).catch((error) => (document.getElementById("meta").textContent = error.message));
     });
     document.getElementById("btnPrevPage").addEventListener("click", () => {
-      queryCurrentPage(currentPage - 1).catch((e) => (document.getElementById("meta").textContent = e.message));
+      runAdjacentPage(-1).catch((error) => (document.getElementById("meta").textContent = error.message));
     });
     document.getElementById("btnNextPage").addEventListener("click", () => {
-      queryCurrentPage(currentPage + 1).catch((e) => (document.getElementById("meta").textContent = e.message));
+      runAdjacentPage(1).catch((error) => (document.getElementById("meta").textContent = error.message));
     });
-    document.getElementById("btnGoPage").addEventListener("click", () => {
-      const target = Number(document.getElementById("pageNumber").value || 1);
-      queryCurrentPage(target).catch((e) => (document.getElementById("meta").textContent = e.message));
-    });
+    for (const radio of document.querySelectorAll('input[name="queryMode"]')) {
+      radio.addEventListener("change", () => {
+        updateQueryModeControls();
+        savePluginState();
+      });
+    }
+    document.getElementById("batchCode").addEventListener("change", savePluginState);
+    for (const [id, days] of [["btnRange1D", 1], ["btnRange1W", 7], ["btnRange1M", 30], ["btnRange1Y", 365]]) {
+      document.getElementById(id).addEventListener("click", () => setQuickRange(days, id));
+    }
+    for (const id of ["startDate", "endDate"]) {
+      document.getElementById(id).addEventListener("input", () => {
+        setQuickActive("");
+        savePluginState();
+      });
+    }
 
-    enableTouchPageNumberSpin("pageNumber");
     enableButtonClickFeedback();
-    const startPage = savedState && Number(savedState.currentPage || 1) > 1
-      ? Number(savedState.currentPage || 1)
-      : 1;
-    query(startPage).catch((e) => (document.getElementById("meta").textContent = e.message));
-
+    await runFreshQuery(advancedOpcuaMode ? Number(saved?.currentPage || 1) : 1);
     if (advancedOpcuaMode) {
-      fetchJson(`/api/plugins/runtime-state/${encodeURIComponent(pluginKey)}`)
-        .then((state) => {
-          runtimeRevision = Number(state.revision || 0);
-        })
+      fetchJson(`/api/plugins/runtime-state/${encodeURIComponent(activePluginKey)}`)
+        .then((state) => { runtimeRevision = Number(state.revision || 0); })
         .catch(() => {});
-      startRuntimeStatePolling(pluginKey);
+      startRuntimeStatePolling(activePluginKey);
     }
   }
 
-  run().catch((e) => {
-    document.getElementById("meta").textContent = e.message;
+  run().catch((error) => {
+    document.getElementById("meta").textContent = error.message;
   });
 })();

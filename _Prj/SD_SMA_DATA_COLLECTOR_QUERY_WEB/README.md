@@ -24,7 +24,9 @@
   - 模块选择（`alarm / audit / general`）
   - 页面选择（`1-5`）
   - 启用开关、标题、`view_name`、`bind_group`、`page_size`
-- 插件页右上角手动选择该 `group` 下具体表。
+- 插件页右上角手动选择该 `group` 下具体表；普通插件页与通用查询页一致，支持互斥的时间/批次号查询，并使用无总数游标前后翻页。
+- 插件页批次下拉复用绑定 View/Group 的 `batch_source` 与 `batch_field`，无需在插件配置中重复维护来源表、来源字段或目标字段。
+- 高级 OPC UA 插件页继续保留 PLC 页码驱动的 OFFSET/总数模式，不开放人工批次筛选，以保持现场协议兼容。
 - **插件页 OPC UA 回写**：查询/翻页后自动将当前页列数据写入 PLC 数组（最长 50）；点击表格行更新 `diCursor`（翻页后重置为 `-1`）。
 - **插件页批次表名回写**：绑定批次主表时，按 `diCursor` 选中行的批次号/开批时间扫描年份分表，将表名写入 PLC `STRING[50]` 数组（`[0]` 固定为主表名）。
 - 查询网页：表格查询入口（后续可扩展报警/审计专页）。
@@ -114,7 +116,7 @@
 - `POST /api/history/by-view` 按视图配置执行查询（优先推荐）
 - `POST /api/history` 通用原始查询接口（保留用于联调）
 - `GET /api/db/check` 数据库连通性检查
-- `POST /api/plugins/query/{plugin_key}` 插件页查询（可选 body `cursor`，默认 `-1` 表示未选中）
+- `POST /api/plugins/query/{plugin_key}` 插件页查询；普通页面可传 `query_mode`、`batch_code`、`pagination_mode=cursor`、`page_cursor`，行选中索引仍使用 `cursor`（默认 `-1`）
 - `POST /api/plugins/cursor/{plugin_key}` 仅更新 cursor
 
 ### 5000 万行游标查询

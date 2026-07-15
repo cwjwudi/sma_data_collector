@@ -133,6 +133,10 @@
   <div id="app" class="root">
     <div class="toolbar">
       <div class="toolbar-row">
+        <span>查询方式</span>
+        <label><input id="queryModeTime" name="queryMode" type="radio" value="time" checked /> 按时间</label>
+        <label><input id="queryModeBatch" name="queryMode" type="radio" value="batch" /> 按批次号</label>
+        <label>BatchCode</label><select id="batchCode" disabled><option value="">请选择批次号</option></select>
         <label>startDate</label><input id="startDate" type="datetime-local" />
         <label>endDate</label><input id="endDate" type="datetime-local" />
         <button id="btnRange1D">最近1天</button>
@@ -151,9 +155,8 @@
     <div class="pager">
       <button id="btnPrevPage">上一页</button>
       <button id="btnNextPage">下一页</button>
-      <span class="pageText">第</span><input id="pageNumber" class="pageInput" type="number" min="1" value="1" />
-      <span class="pageText">/</span><span id="totalPagesText" class="pageText">1</span>
-      <button id="btnGoPage">跳转页</button>
+      <span class="pageText">第</span><input id="pageNumber" class="pageInput" type="number" min="1" value="1" readonly />
+      <span class="pageText">页</span>
       <div id="meta" class="meta"></div>
     </div>
   </div>

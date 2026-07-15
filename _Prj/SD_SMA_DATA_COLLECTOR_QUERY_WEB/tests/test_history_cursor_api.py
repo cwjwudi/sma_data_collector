@@ -203,3 +203,106 @@ def test_batch_source_config_endpoint_validates_and_saves_source():
     assert response.status_code == 200
     assert response.json() == {"status": "saved", **source}
     update_source.assert_called_once_with("table", "ProductionOrder", "OrderNo")
+
+
+def test_plugin_batch_query_uses_binding_view_and_cursor_pagination():
+    captured = {}
+    binding = {
+        "plugin_key": "general_1",
+        "view_name": "table",
+        "bind_group": "ProductHistory",
+        "bind_table": None,
+        "page_size": 50,
+        "opcua_writeback": None,
+        "table_list_writeback": None,
+    }
+    view = {
+        "columns": ["id", "BatchCode", "collection_time"],
+        "column_labels": {},
+        "time_field": "collection_time",
+        "batch_field": "BatchCode",
+        "max_page_size": 500,
+        "page_size": 50,
+        "sort_by": "collection_time",
+        "sort_dir": "desc",
+    }
+
+    def fake_query(request):
+        captured["request"] = request
+        return HistoryQueryResult(
+            total=None,
+            columns=view["columns"],
+            rows=[{"id": 10, "BatchCode": "B001", "collection_time": "2026-01-01 00:00:00"}],
+            missing_columns=[],
+            has_more=True,
+            next_cursor={"sort_value": "2026-01-01 00:00:00", "id": 10},
+        )
+
+    with (
+        patch("app.main._resolve_plugin_binding", return_value=binding),
+        patch(
+            "app.main.db.get_group_schema_report",
+            return_value={
+                "tables": ["Data_Product"],
+                "baseline_table": "Data_Product",
+                "consistent": True,
+            },
+        ),
+        patch("app.main.cfg.resolve_query_view", return_value=view),
+        patch("app.main.db.list_columns", return_value=view["columns"]),
+        patch("app.main.db.query_history", side_effect=fake_query),
+    ):
+        response = TestClient(app, client=("127.0.0.1", 50000)).post(
+            "/api/plugins/query/general_1",
+            json={
+                "table": "Data_Product",
+                "query_mode": "batch",
+                "batch_code": "B001",
+                "pagination_mode": "cursor",
+                "include_total": False,
+                "cursor": -1,
+            },
+        )
+
+    assert response.status_code == 200
+    request = captured["request"]
+    assert request.batch_field == "BatchCode"
+    assert request.batch_code == "B001"
+    assert request.start_time is None
+    assert request.end_time is None
+    assert request.pagination_mode == "cursor"
+    assert request.include_total is False
+    assert response.json()["has_more"] is True
+    assert response.json()["next_cursor"]["id"] == 10
+
+
+def test_plugin_batch_query_rejects_time_condition():
+    binding = {
+        "plugin_key": "general_1",
+        "view_name": "table",
+        "bind_group": "ProductHistory",
+        "bind_table": "Data_Product",
+        "page_size": 50,
+        "opcua_writeback": None,
+        "table_list_writeback": None,
+    }
+    with (
+        patch("app.main._resolve_plugin_binding", return_value=binding),
+        patch(
+            "app.main.db.get_group_schema_report",
+            return_value={"tables": ["Data_Product"], "baseline_table": "Data_Product", "consistent": True},
+        ),
+        patch("app.main.cfg.resolve_query_view", return_value={}),
+        patch("app.main.db.list_columns", return_value=["id", "BatchCode", "collection_time"]),
+    ):
+        response = TestClient(app, client=("127.0.0.1", 50000)).post(
+            "/api/plugins/query/general_1",
+            json={
+                "query_mode": "batch",
+                "batch_code": "B001",
+                "start_time": "2026-01-01T00:00:00",
+            },
+        )
+
+    assert response.status_code == 400
+    assert "不能填写时间条件" in response.json()["detail"]
