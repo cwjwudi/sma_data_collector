@@ -199,15 +199,17 @@ class QueryDatabase:
             rows = conn.execute(text(f"PRAGMA table_info({table_ident})")).fetchall()
             return [str(row[1]) for row in rows]
 
-    def list_batch_codes(self, limit: int = 1000) -> list[str]:
+    def list_batch_codes(self, source_table: str, source_field: str, limit: int = 1000) -> list[str]:
         """Read the small batch dictionary used by the query page."""
         safe_limit = max(1, min(int(limit), 1000))
+        table_ident = _safe_ident(source_table)
+        field_ident = _safe_ident(source_field)
         with self.engine.connect() as conn:
             rows = conn.execute(
                 text(
-                    "SELECT DISTINCT `BatchCode` FROM `Data_Batch` "
-                    "WHERE `BatchCode` IS NOT NULL AND `BatchCode` <> '' "
-                    "ORDER BY `BatchCode` LIMIT :limit"
+                    f"SELECT DISTINCT {field_ident} FROM {table_ident} "
+                    f"WHERE {field_ident} IS NOT NULL AND {field_ident} <> '' "
+                    f"ORDER BY {field_ident} LIMIT :limit"
                 ),
                 {"limit": safe_limit},
             ).fetchall()

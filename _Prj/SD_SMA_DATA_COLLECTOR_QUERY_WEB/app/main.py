@@ -25,6 +25,7 @@ from .models import (
     GroupBaselineUpdateRequest,
     HistoryQueryRequest,
     HistoryQueryResponse,
+    QueryBatchSourceUpdateRequest,
     QueryGroupConfigUpdateRequest,
     PluginCursorRequest,
     PluginQueryRequest,
@@ -1025,15 +1026,42 @@ def meta_columns(table: str, request: Request) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-@app.get("/api/meta/batch-codes")
-def meta_batch_codes(request: Request) -> dict[str, list[str]]:
+@app.get("/api/meta/database-tables")
+def meta_database_tables(request: Request) -> dict[str, list[str]]:
     _enforce_rate_limit(request)
     try:
-        return {"items": db.list_batch_codes(limit=1000)}
+        return {"tables": db.list_tables()}
     except (OperationalError, SQLAlchemyError) as exc:
         _raise_db_error(exc)
     except Exception as exc:
-        raise HTTPException(status_code=400, detail=f"读取 Data_Batch.BatchCode 失败: {exc}") from exc
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/meta/batch-codes")
+def meta_batch_codes(view_name: str, request: Request, group: str | None = None) -> dict[str, Any]:
+    _enforce_rate_limit(request)
+    try:
+        source = cfg.resolve_batch_source(view_name, group)
+        if not source["table"] or not source["field"]:
+            raise HTTPException(status_code=400, detail="当前 View 未配置批次号来源表和字段")
+        available_columns = db.list_columns(source["table"])
+        if source["field"] not in available_columns:
+            raise HTTPException(
+                status_code=400,
+                detail=f"批次号来源字段不存在于表 {source['table']}: {source['field']}",
+            )
+        return {
+            "items": db.list_batch_codes(source["table"], source["field"], limit=1000),
+            "source": source,
+        }
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except (OperationalError, SQLAlchemyError) as exc:
+        _raise_db_error(exc)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"读取批次号来源失败: {exc}") from exc
 
 
 @app.post("/api/history", response_model=HistoryQueryResponse)
@@ -1365,6 +1393,39 @@ def get_group_baseline(group: str) -> dict[str, Any]:
 def set_group_baseline(payload: GroupBaselineUpdateRequest) -> dict[str, str]:
     cfg.set_group_baseline(payload.group, payload.baseline_table)
     return {"status": "saved"}
+
+
+@app.get("/api/config/query-batch-source")
+def get_query_batch_source(view_name: str) -> dict[str, str]:
+    try:
+        return cfg.get_query_batch_source(view_name)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/config/query-batch-source")
+def save_query_batch_source(payload: QueryBatchSourceUpdateRequest) -> dict[str, Any]:
+    source_table = str(payload.table or "").strip()
+    source_field = str(payload.field or "").strip()
+    if bool(source_table) != bool(source_field):
+        raise HTTPException(status_code=400, detail="批次号来源表和字段必须同时设置或同时留空")
+    if source_table:
+        try:
+            available_columns = db.list_columns(source_table)
+        except (OperationalError, SQLAlchemyError) as exc:
+            _raise_db_error(exc)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=f"读取批次号来源表失败: {exc}") from exc
+        if source_field not in available_columns:
+            raise HTTPException(
+                status_code=400,
+                detail=f"批次号来源字段不存在于表 {source_table}: {source_field}",
+            )
+    try:
+        cfg.update_query_batch_source(payload.view_name, source_table, source_field)
+        return {"status": "saved", **cfg.get_query_batch_source(payload.view_name)}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.get("/api/config/query-group")

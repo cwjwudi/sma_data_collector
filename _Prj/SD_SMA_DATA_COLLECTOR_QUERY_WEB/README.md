@@ -6,7 +6,7 @@
 
 - 数据库查询 API：健康检查、组/表/列元数据、历史数据分页查询。
 - 通用查询页默认使用 `sort_by + id` 游标分页：每次只取 `page_size + 1` 行，不强制统计总数，也不使用深 `OFFSET`。
-- 通用查询页支持互斥的 BatchCode 查询与时间范围查询；批次选项来自最多 1000 行的 `Data_Batch.BatchCode`，业务表过滤字段由 Group 配置的 `batch_field` 明确绑定。
+- 通用查询页支持互斥的 BatchCode 查询与时间范围查询；批次选项来源由 View 的 `batch_source.table/field` 配置（最多读取 1000 个不同值），业务表过滤字段由 Group 的 `batch_field` 明确绑定。
 - 查询配置驱动查询：通过 `query_view_config.json` 定义每个视图的列、分页、默认筛选、排序。
 - 支持“每个标(表)独立列配置与顺序”：`views.<view>.per_table.<table>.columns`。
 - 页面支持“应用并保存”一键生效（无需先应用再手动保存）。
@@ -16,6 +16,7 @@
   - `/query`：只负责查询与结果展示
   - `/config`：只负责人机友好的查询配置（每个 group/table）
 - 配置页不再直接暴露整份查询配置 JSON，改为表单化编辑：
+  - View 级批次号来源表与来源字段
   - 每个表的列顺序
   - `sort_by / sort_dir / page_size`
   - 每个显示列的英文/中文列名
@@ -108,6 +109,8 @@
 ## 关键查询接口
 
 - `GET /api/query/views` 获取所有查询视图配置
+- `GET/POST /api/config/query-batch-source` 获取或保存 View 级批次号来源
+- `GET /api/meta/batch-codes?view_name=...&group=...` 按配置读取最多 1000 个不同批次号
 - `POST /api/history/by-view` 按视图配置执行查询（优先推荐）
 - `POST /api/history` 通用原始查询接口（保留用于联调）
 - `GET /api/db/check` 数据库连通性检查
@@ -146,7 +149,7 @@
 }
 ```
 
-`query_mode=time` 必须同时提供 `start_time/end_time` 且不得提供 `batch_code`；`query_mode=batch` 必须提供 `batch_code` 且不得提供时间。游标模式默认 `include_total=false`，因此普通翻页不执行 `COUNT(*)`。旧插件接口仍使用原页码与总数语义，保持 OPC UA 翻页协议兼容。目标业务表应具有时间单列索引、`(BatchCode, collection_time)` 联合索引及 `id` 主键；小表 `Data_Batch` 不要求索引。
+`query_mode=time` 必须同时提供 `start_time/end_time` 且不得提供 `batch_code`；`query_mode=batch` 必须提供 `batch_code` 且不得提供时间。批次来源和过滤字段是两项独立配置，例如来源可为 `ProductionOrder.OrderNo`，而 `ProductHistory` Group 的过滤字段可为 `strOrderNumber`。游标模式默认 `include_total=false`，因此普通翻页不执行 `COUNT(*)`。旧插件接口仍使用原页码与总数语义，保持 OPC UA 翻页协议兼容。目标业务表应具有时间单列索引、批次字段与时间字段的联合索引及 `id` 主键；不超过 1000 行的批次来源表不要求索引。
 
 5000 万行真实库验证见 [游标分页验证报告](docs/2026-07-15-CURSOR_PAGINATION_50M_REPORT.md)。
 

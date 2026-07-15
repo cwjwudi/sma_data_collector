@@ -87,6 +87,12 @@ class GroupBaselineUpdateRequest(BaseModel):
     baseline_table: str
 
 
+class QueryBatchSourceUpdateRequest(BaseModel):
+    view_name: str
+    table: str = ""
+    field: str = ""
+
+
 class QueryGroupConfigUpdateRequest(BaseModel):
     view_name: str
     group: str

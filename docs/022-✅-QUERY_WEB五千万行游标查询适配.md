@@ -12,8 +12,14 @@
 
 # ✅ 已完成：兼容性与自动化测试
 
-QUERY_WEB 非集成测试 79 passed、8 deselected；新增测试覆盖 Data_Batch 字典读取、Group 批次字段持久化、互斥条件校验、连续游标翻页。前端脚本通过 `node --check`，浏览器实测两种模式的清空/禁用行为及各50行结果。
+QUERY_WEB 非集成测试 85 passed、8 deselected；新增测试覆盖可配置批次字典读取、View 来源与 Group 覆盖优先级、Group 批次字段持久化、来源成对校验、标识符安全校验、互斥条件校验和连续游标翻页。前端脚本通过 `node --check`，浏览器实测两种模式的清空/禁用行为、来源切换及各50行结果。
 
 # ✅ 已完成：Data_Batch 小表与生产约束
 
 压力测试库已创建只有 `BatchCode VARCHAR(255) NOT NULL` 的 `Data_Batch`，未创建索引；从 Data_Product 写入1000个不同批次号。建表脚本、操作记录和实库结果保存在 [`_Doc/007_Data_Product_5000万行压力测试`](../_Doc/007_Data_Product_5000万行压力测试/)。
+
+# ✅ 已完成：批次号来源表与字段可配置
+
+View 新增 `batch_source.table/field`，配置页通过数据库表和字段下拉保存；Group 的 `batch_field` 继续只负责把选中的值映射到业务表过滤字段。查询页仅发送 `view_name/group`，后端按 Group 覆盖（若存在）→ View 来源的优先级解析，校验来源表/字段后安全构造 SQL；未配置来源时禁用批次模式。
+
+压力测试库验证 `Data_Batch.BatchCode` 1000条约39.8ms；会话级临时来源 `ProductionOrderTemp.OrderNo` 返回 `PO-001/PO-002`，证明表名和字段名均可替换且未新增持久对象。浏览器验证配置保存为 `Data_Product.BatchCode` 后，查询页随即显示新来源并加载1001个选项（含空选项）。

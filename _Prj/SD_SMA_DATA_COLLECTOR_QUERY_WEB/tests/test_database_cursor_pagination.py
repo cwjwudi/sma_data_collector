@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
+import pytest
 from sqlalchemy import event, text
 
 from app.database import QueryDatabase
@@ -26,6 +27,8 @@ def _database(tmp_path) -> QueryDatabase:
         connection.execute(text("CREATE INDEX idx_time ON Data_Product (collection_time);"))
         connection.execute(text("CREATE TABLE Data_Batch (id INTEGER PRIMARY KEY, BatchCode TEXT NOT NULL)"))
         connection.execute(text("INSERT INTO Data_Batch (BatchCode) VALUES ('B002'), ('B001'), ('B001')"))
+        connection.execute(text("CREATE TABLE ProductionOrder (OrderNo TEXT NOT NULL)"))
+        connection.execute(text("INSERT INTO ProductionOrder (OrderNo) VALUES ('O002'), ('O001'), ('O001')"))
         rows = []
         for index in range(120):
             rows.append(
@@ -91,7 +94,14 @@ def test_cursor_pagination_returns_50_then_remaining_without_duplicates(tmp_path
 def test_list_batch_codes_returns_distinct_sorted_values(tmp_path):
     database = _database(tmp_path)
 
-    assert database.list_batch_codes() == ["B001", "B002"]
+    assert database.list_batch_codes("ProductionOrder", "OrderNo") == ["O001", "O002"]
+
+
+def test_list_batch_codes_rejects_unsafe_identifiers(tmp_path):
+    database = _database(tmp_path)
+
+    with pytest.raises(ValueError, match="Invalid identifier"):
+        database.list_batch_codes("ProductionOrder; DROP TABLE Data_Product", "OrderNo")
 
 
 def test_cursor_without_time_or_batch_returns_latest_rows(tmp_path):

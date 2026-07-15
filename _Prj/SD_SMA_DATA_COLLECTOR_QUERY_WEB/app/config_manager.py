@@ -138,6 +138,7 @@ class UnifiedConfigStore:
                     "title": "Table Query",
                     "description": "Generic table history query",
                     "time_field": "collection_time",
+                    "batch_source": {},
                     "columns": [],
                     "sort_by": "collection_time",
                     "sort_dir": "desc",
@@ -150,6 +151,7 @@ class UnifiedConfigStore:
                     "title": "Alarm List",
                     "description": "Alarm history query",
                     "time_field": "ts",
+                    "batch_source": {},
                     "columns": ["ts", "Status", "severity", "code", "msg", "Batch"],
                     "sort_by": "ts",
                     "sort_dir": "desc",
@@ -162,6 +164,7 @@ class UnifiedConfigStore:
                     "title": "Audit List",
                     "description": "Audit history query",
                     "time_field": "ts",
+                    "batch_source": {},
                     "columns": ["ts", "operator", "action", "result", "msg"],
                     "sort_by": "ts",
                     "sort_dir": "desc",
@@ -215,6 +218,7 @@ class UnifiedConfigStore:
                 "description": str(raw_view.get("description", "")),
                 "time_field": str(raw_view.get("time_field", "collection_time")),
                 "batch_field": str(raw_view.get("batch_field", "")),
+                "batch_source": cls._clone_json(raw_view.get("batch_source", {})) if isinstance(raw_view.get("batch_source"), dict) else {},
                 "columns": cls._clone_json(raw_view.get("columns", [])) if isinstance(raw_view.get("columns"), list) else [],
                 "sort_by": str(raw_view.get("sort_by", "collection_time")),
                 "sort_dir": "asc" if str(raw_view.get("sort_dir", "desc")).lower() == "asc" else "desc",
@@ -512,6 +516,15 @@ class ConfigManager:
             if not isinstance(filters, list):
                 raise ValueError(f"view '{view_name}'.default_filters must be a list")
 
+            batch_source = view.get("batch_source", {})
+            if batch_source is not None and not isinstance(batch_source, dict):
+                raise ValueError(f"view '{view_name}'.batch_source must be an object")
+            if isinstance(batch_source, dict):
+                source_table = str(batch_source.get("table", "") or "").strip()
+                source_field = str(batch_source.get("field", "") or "").strip()
+                if bool(source_table) != bool(source_field):
+                    raise ValueError(f"view '{view_name}'.batch_source table/field must both be set or both be empty")
+
             sort_dir = str(view.get("sort_dir", "desc")).lower()
             if sort_dir not in {"asc", "desc"}:
                 raise ValueError(f"view '{view_name}'.sort_dir must be asc or desc")
@@ -547,6 +560,17 @@ class ConfigManager:
                         raise ValueError(f"view '{view_name}'.per_group.{group_name} must be an object")
                     if "columns" in group_cfg and not isinstance(group_cfg["columns"], list):
                         raise ValueError(f"view '{view_name}'.per_group.{group_name}.columns must be a list")
+                    if "batch_source" in group_cfg:
+                        group_source = group_cfg["batch_source"]
+                        if not isinstance(group_source, dict):
+                            raise ValueError(f"view '{view_name}'.per_group.{group_name}.batch_source must be an object")
+                        group_source_table = str(group_source.get("table", "") or "").strip()
+                        group_source_field = str(group_source.get("field", "") or "").strip()
+                        if bool(group_source_table) != bool(group_source_field):
+                            raise ValueError(
+                                f"view '{view_name}'.per_group.{group_name}.batch_source table/field "
+                                "must both be set or both be empty"
+                            )
                     if "sort_dir" in group_cfg:
                         sdir = str(group_cfg["sort_dir"]).lower()
                         if sdir not in {"asc", "desc"}:
@@ -570,6 +594,46 @@ class ConfigManager:
         if not isinstance(views, dict):
             return {}
         return views
+
+    def resolve_batch_source(self, view_name: str, group: str | None = None) -> dict[str, str]:
+        config = self.get_query_view_config()
+        self._validate_query_view_config(config)
+        views = config.get("views", {})
+        if view_name not in views:
+            raise ValueError(f"Unknown view_name: {view_name}")
+
+        view = views[view_name]
+        raw_source = view.get("batch_source", {})
+        if group:
+            per_group = view.get("per_group", {})
+            group_config = per_group.get(group) if isinstance(per_group, dict) else None
+            if isinstance(group_config, dict) and "batch_source" in group_config:
+                raw_source = group_config.get("batch_source", {})
+
+        source = raw_source if isinstance(raw_source, dict) else {}
+        return {
+            "table": str(source.get("table", "") or "").strip(),
+            "field": str(source.get("field", "") or "").strip(),
+        }
+
+    def get_query_batch_source(self, view_name: str) -> dict[str, str]:
+        source = self.resolve_batch_source(view_name)
+        return {"view_name": view_name, **source}
+
+    def update_query_batch_source(self, view_name: str, table: str, field: str) -> None:
+        config = self.get_query_view_config()
+        self._validate_query_view_config(config)
+        views = config.get("views", {})
+        if view_name not in views:
+            raise ValueError(f"Unknown view_name: {view_name}")
+
+        source_table = str(table or "").strip()
+        source_field = str(field or "").strip()
+        if bool(source_table) != bool(source_field):
+            raise ValueError("batch_source table/field must both be set or both be empty")
+        views[view_name]["batch_source"] = {"table": source_table, "field": source_field}
+        self._validate_query_view_config(config)
+        self._write_query_view_config(config)
 
     @staticmethod
     def _normalize_column_defs(column_defs: list[Any]) -> tuple[list[str], dict[str, dict[str, str]]]:

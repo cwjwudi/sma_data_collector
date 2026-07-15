@@ -163,9 +163,43 @@ def test_by_view_batch_query_requires_configured_field():
 
 
 def test_batch_codes_endpoint_returns_small_dictionary():
-    with patch("app.main.db.list_batch_codes", return_value=["B001", "B002"]) as list_codes:
-        response = TestClient(app, client=("127.0.0.1", 50000)).get("/api/meta/batch-codes")
+    source = {"table": "ProductionOrder", "field": "OrderNo"}
+    with (
+        patch("app.main.cfg.resolve_batch_source", return_value=source),
+        patch("app.main.db.list_columns", return_value=["OrderNo"]),
+        patch("app.main.db.list_batch_codes", return_value=["O001", "O002"]) as list_codes,
+    ):
+        response = TestClient(app, client=("127.0.0.1", 50000)).get(
+            "/api/meta/batch-codes?view_name=table&group=ProductHistory"
+        )
 
     assert response.status_code == 200
-    assert response.json() == {"items": ["B001", "B002"]}
-    list_codes.assert_called_once_with(limit=1000)
+    assert response.json() == {"items": ["O001", "O002"], "source": source}
+    list_codes.assert_called_once_with("ProductionOrder", "OrderNo", limit=1000)
+
+
+def test_batch_codes_endpoint_rejects_missing_source_configuration():
+    with patch("app.main.cfg.resolve_batch_source", return_value={"table": "", "field": ""}):
+        response = TestClient(app, client=("127.0.0.1", 50000)).get(
+            "/api/meta/batch-codes?view_name=table&group=ProductHistory"
+        )
+
+    assert response.status_code == 400
+    assert "未配置批次号来源表和字段" in response.json()["detail"]
+
+
+def test_batch_source_config_endpoint_validates_and_saves_source():
+    source = {"view_name": "table", "table": "ProductionOrder", "field": "OrderNo"}
+    with (
+        patch("app.main.db.list_columns", return_value=["id", "OrderNo"]),
+        patch("app.main.cfg.update_query_batch_source") as update_source,
+        patch("app.main.cfg.get_query_batch_source", return_value=source),
+    ):
+        response = TestClient(app, client=("127.0.0.1", 50000)).post(
+            "/api/config/query-batch-source",
+            json=source,
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "saved", **source}
+    update_source.assert_called_once_with("table", "ProductionOrder", "OrderNo")

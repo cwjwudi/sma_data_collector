@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from app.config_manager import ConfigManager, UnifiedConfigStore
 
 
@@ -28,3 +30,44 @@ def test_group_batch_field_is_saved_and_resolved(tmp_path):
 
     assert saved["batch_field"] == "BatchCode"
     assert resolved["batch_field"] == "BatchCode"
+
+
+def test_view_batch_source_is_saved_and_resolved(tmp_path):
+    store = UnifiedConfigStore(tmp_path / "config")
+    manager = ConfigManager(store)
+
+    manager.update_query_batch_source("table", "ProductionOrder", "OrderNo")
+
+    assert manager.get_query_batch_source("table") == {
+        "view_name": "table",
+        "table": "ProductionOrder",
+        "field": "OrderNo",
+    }
+    assert manager.resolve_batch_source("table", "ProductHistory") == {
+        "table": "ProductionOrder",
+        "field": "OrderNo",
+    }
+
+
+def test_view_batch_source_requires_table_and_field_together(tmp_path):
+    store = UnifiedConfigStore(tmp_path / "config")
+    manager = ConfigManager(store)
+
+    with pytest.raises(ValueError, match="both be set"):
+        manager.update_query_batch_source("table", "ProductionOrder", "")
+
+
+def test_group_batch_source_overrides_view_source_when_present(tmp_path):
+    store = UnifiedConfigStore(tmp_path / "config")
+    manager = ConfigManager(store)
+    manager.update_query_batch_source("table", "ProductionOrder", "OrderNo")
+    config = manager.get_query_view_config()
+    config["views"]["table"]["per_group"]["SpecialHistory"] = {
+        "batch_source": {"table": "SpecialOrder", "field": "SpecialNo"}
+    }
+    manager.save_query_view_config(config)
+
+    assert manager.resolve_batch_source("table", "SpecialHistory") == {
+        "table": "SpecialOrder",
+        "field": "SpecialNo",
+    }

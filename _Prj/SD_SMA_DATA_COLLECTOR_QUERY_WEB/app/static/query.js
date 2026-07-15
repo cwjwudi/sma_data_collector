@@ -9,6 +9,7 @@ let lastQueryContext = null;
 let lastResultData = null;
 let pageSizeOverridden = false;
 let batchCodesAvailable = false;
+let currentBatchSource = {};
 const QUERY_STATE_KEY = 'sd_sma_query_page_state_v1';
 const quickRangeButtonIds = ['btnRange1D', 'btnRange1W', 'btnRange1M', 'btnRange1Y'];
 
@@ -46,13 +47,23 @@ function updateQueryModeControls() {
 }
 
 async function loadBatchCodes() {
-  const data = await fetchJson('/api/meta/batch-codes');
+  const viewName = document.getElementById('viewName').value;
+  const group = document.getElementById('group').value;
   const select = document.getElementById('batchCode');
   select.innerHTML = '';
   const empty = document.createElement('option');
   empty.value = '';
   empty.textContent = '请选择批次号';
   select.appendChild(empty);
+  batchCodesAvailable = false;
+  currentBatchSource = {};
+  if (!viewName || !group) return;
+
+  const data = await fetchJson(
+    '/api/meta/batch-codes?view_name=' + encodeURIComponent(viewName) +
+      '&group=' + encodeURIComponent(group),
+  );
+  currentBatchSource = data.source || {};
   for (const batchCode of data.items || []) {
     const option = document.createElement('option');
     option.value = batchCode;
@@ -60,6 +71,21 @@ async function loadBatchCodes() {
     select.appendChild(option);
   }
   batchCodesAvailable = select.options.length > 1;
+}
+
+async function reloadBatchCodesForCurrentContext() {
+  try {
+    await loadBatchCodes();
+    document.getElementById('queryWarnings').textContent = batchCodesAvailable
+      ? `批次号来源：${currentBatchSource.table || '-'} . ${currentBatchSource.field || '-'}`
+      : '批次号来源没有可选数据，仍可按时间查询';
+  } catch (err) {
+    batchCodesAvailable = false;
+    currentBatchSource = {};
+    document.getElementById('queryWarnings').textContent =
+      `批次号列表不可用，仍可按时间查询：${err.message}`;
+  }
+  updateQueryModeControls();
 }
 
 async function fetchJson(url, opts) {
@@ -215,7 +241,7 @@ async function loadGroupsForCurrentView(preferredGroup) {
   }
   await loadGroupSchemaHint();
   await loadTablesForCurrentGroup();
-  updateQueryModeControls();
+  await reloadBatchCodesForCurrentContext();
 }
 
 async function loadViews() {
@@ -476,7 +502,6 @@ async function restoreQueryPageState() {
   if (saved.queryMode === 'batch') document.getElementById('queryModeBatch').checked = true;
   if (saved.startTime) document.getElementById('startTime').value = saved.startTime;
   if (saved.endTime) document.getElementById('endTime').value = saved.endTime;
-  if (saved.batchCode) document.getElementById('batchCode').value = saved.batchCode;
   if (saved.pageNumber) document.getElementById('pageNumber').value = saved.pageNumber;
   if (saved.viewName && queryViews[saved.viewName]) {
     document.getElementById('viewName').value = saved.viewName;
@@ -484,6 +509,9 @@ async function restoreQueryPageState() {
   updateViewSummary();
   await loadGroupsForCurrentView(saved.group || '');
   await loadTablesForCurrentGroup(saved.table || '');
+  if (saved.batchCode && Array.from(document.getElementById('batchCode').options).some(o => o.value === saved.batchCode)) {
+    document.getElementById('batchCode').value = saved.batchCode;
+  }
   updateQueryModeControls();
 
   lastQueryContext = saved.lastQueryContext || null;
@@ -511,8 +539,8 @@ document.getElementById('btnNextPage').addEventListener('click', () => {
 });
 document.getElementById('group').addEventListener('change', () => {
   Promise.all([loadGroupSchemaHint(), loadTablesForCurrentGroup()])
+    .then(() => reloadBatchCodesForCurrentContext())
     .then(() => {
-      updateQueryModeControls();
       saveQueryPageState();
     })
     .catch(err => alert(err.message));
@@ -558,13 +586,6 @@ document.getElementById('btnRange1M').addEventListener('click', saveQueryPageSta
 document.getElementById('btnRange1Y').addEventListener('click', saveQueryPageState);
 
 async function initQueryPage() {
-  try {
-    await loadBatchCodes();
-  } catch (err) {
-    batchCodesAvailable = false;
-    document.getElementById('queryWarnings').textContent =
-      `批次号列表不可用，仍可按时间查询：${err.message}`;
-  }
   await loadViews();
   enableButtonClickFeedback();
   const saved = loadSavedQueryPageState();

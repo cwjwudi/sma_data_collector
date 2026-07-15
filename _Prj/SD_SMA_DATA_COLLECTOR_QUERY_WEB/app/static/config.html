@@ -147,6 +147,18 @@
       <section class="panel">
         <h2>Group 与列</h2>
         <p class="hint">配置各表的时间字段、批次号绑定字段、列顺序、排序、分页与列中英文显示名；仅在查询中引用已配置的组。</p>
+        <div class="settings-subsection">
+          <h3 class="subsection-title">批次号选项来源（View 级）</h3>
+          <p class="hint subsection-hint">决定查询页下拉框从哪张表、哪个字段读取；留空表示禁用批次号查询。</p>
+          <div class="row">
+            <label for="batchSourceTable">来源表</label>
+            <select id="batchSourceTable"></select>
+            <label for="batchSourceField">来源字段</label>
+            <select id="batchSourceField"></select>
+            <button type="button" id="btnSaveBatchSource">保存批次来源</button>
+          </div>
+          <div id="batchSourceHint" class="muted"></div>
+        </div>
         <div class="row">
           <label for="editViewName">View</label>
           <select id="editViewName" disabled></select>

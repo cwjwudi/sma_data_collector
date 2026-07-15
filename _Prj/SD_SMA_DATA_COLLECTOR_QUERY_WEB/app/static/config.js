@@ -161,6 +161,8 @@ function saveConfigPageState() {
     baselineTable: document.getElementById('editTableName').value || '',
     timeField: document.getElementById('tableTimeField').value || '',
     batchField: document.getElementById('tableBatchField').value || '',
+    batchSourceTable: document.getElementById('batchSourceTable').value || '',
+    batchSourceField: document.getElementById('batchSourceField').value || '',
     sortBy: document.getElementById('tableSortBy').value || '',
     sortDir: document.getElementById('tableSortDir').value || 'desc',
     pageSize: document.getElementById('tablePageSize').value || '50',
@@ -268,6 +270,78 @@ async function loadViews() {
     LOCKED_GROUP_VIEW,
     `${LOCKED_GROUP_VIEW} - ${lockedView.title || LOCKED_GROUP_VIEW}`,
   );
+  await loadBatchSourceConfig();
+}
+
+async function loadBatchSourceFields(tableName, preferredField = '') {
+  const fieldSelect = document.getElementById('batchSourceField');
+  fieldSelect.innerHTML = '';
+  appendOption(fieldSelect, '', '不启用批次号来源');
+  if (!tableName) return;
+
+  const meta = await fetchJson('/api/meta/columns?table=' + encodeURIComponent(tableName));
+  const fields = Array.isArray(meta.columns) ? meta.columns : [];
+  for (const field of fields) appendOption(fieldSelect, field);
+  if (preferredField && fields.includes(preferredField)) {
+    fieldSelect.value = preferredField;
+  }
+}
+
+async function loadBatchSourceConfig() {
+  const viewName = document.getElementById('editViewName').value || LOCKED_GROUP_VIEW;
+  const [source, tableData] = await Promise.all([
+    fetchJson('/api/config/query-batch-source?view_name=' + encodeURIComponent(viewName)),
+    fetchJson('/api/meta/database-tables'),
+  ]);
+  const tableSelect = document.getElementById('batchSourceTable');
+  tableSelect.innerHTML = '';
+  appendOption(tableSelect, '', '不启用批次号来源');
+  const tables = Array.isArray(tableData.tables) ? tableData.tables : [];
+  for (const table of tables) appendOption(tableSelect, table);
+  if (source.table && !tables.includes(source.table)) {
+    appendOption(tableSelect, source.table, `${source.table}（当前数据库不存在）`);
+  }
+  tableSelect.value = source.table || '';
+  if (source.table && !tables.includes(source.table)) {
+    const fieldSelect = document.getElementById('batchSourceField');
+    fieldSelect.innerHTML = '';
+    appendOption(fieldSelect, '', '不启用批次号来源');
+    if (source.field) appendOption(fieldSelect, source.field, `${source.field}（来源表不存在，无法校验）`);
+    fieldSelect.value = source.field || '';
+  } else {
+    await loadBatchSourceFields(source.table || '', source.field || '');
+  }
+  const hint = document.getElementById('batchSourceHint');
+  if (source.table && source.field) {
+    hint.textContent = `当前来源：${source.table}.${source.field}`;
+    hint.className = tables.includes(source.table) ? 'muted ok' : 'muted warn';
+  } else {
+    hint.textContent = '当前 View 未配置批次号来源，查询页将禁用按批次号查询';
+    hint.className = 'muted warn';
+  }
+}
+
+async function saveBatchSourceConfig() {
+  const viewName = document.getElementById('editViewName').value || LOCKED_GROUP_VIEW;
+  const table = document.getElementById('batchSourceTable').value || '';
+  const field = document.getElementById('batchSourceField').value || '';
+  if (table && !field) {
+    setHintMessage('batchSourceHint', '选择来源表后必须选择来源字段');
+    return;
+  }
+  const result = await fetchJson('/api/config/query-batch-source', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ view_name: viewName, table, field }),
+  });
+  queryViews[viewName] = queryViews[viewName] || {};
+  queryViews[viewName].batch_source = { table: result.table || '', field: result.field || '' };
+  setHintMessage(
+    'batchSourceHint',
+    table ? `已保存批次号来源：${table}.${field}` : '已清空批次号来源，查询页将禁用按批次号查询',
+    'ok',
+  );
+  saveConfigPageState();
 }
 
 async function loadAppSettings() {
@@ -1059,6 +1133,9 @@ document.getElementById('btnMoveDown').addEventListener('click', () => moveSelec
 document.getElementById('btnSaveTableConfig').addEventListener('click', () => {
   saveTableConfig().catch(catchHintError('columnEditorHint'));
 });
+document.getElementById('btnSaveBatchSource').addEventListener('click', () => {
+  saveBatchSourceConfig().catch(catchHintError('batchSourceHint'));
+});
 document.getElementById('btnDeleteGroupConfig').addEventListener('click', () => {
   deleteGroupConfig().catch(catchHintError('columnEditorHint'));
 });
@@ -1087,6 +1164,12 @@ document.getElementById('editTableName').addEventListener('change', () => {
 });
 document.getElementById('tableTimeField').addEventListener('change', saveConfigPageState);
 document.getElementById('tableBatchField').addEventListener('change', saveConfigPageState);
+document.getElementById('batchSourceTable').addEventListener('change', () => {
+  loadBatchSourceFields(document.getElementById('batchSourceTable').value, '')
+    .then(saveConfigPageState)
+    .catch(catchHintError('batchSourceHint'));
+});
+document.getElementById('batchSourceField').addEventListener('change', saveConfigPageState);
 document.getElementById('tableSortBy').addEventListener('change', saveConfigPageState);
 document.getElementById('tableSortDir').addEventListener('change', saveConfigPageState);
 document.getElementById('tablePageSize').addEventListener('change', saveConfigPageState);
