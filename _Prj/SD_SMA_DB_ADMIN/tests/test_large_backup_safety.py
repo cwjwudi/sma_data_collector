@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import json
+import os
+import sys
+import threading
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -88,13 +91,63 @@ def test_range_download_rejects_out_of_bounds(monkeypatch: pytest.MonkeyPatch, t
     assert response.headers["content-range"] == "bytes */10"
 
 
+def test_completed_backups_require_valid_manifest(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    backup = tmp_path / "valid.sql"
+    backup.write_bytes(b"SELECT 1;\n")
+    manifest = {
+        "status": "complete",
+        "filename": backup.name,
+        "size_bytes": backup.stat().st_size,
+        "sha256": main._sha256_file(backup),
+        "completed_at": "2026-07-15T12:00:00",
+    }
+    backup.with_suffix(".sql.manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    (tmp_path / "incomplete.sql").write_bytes(b"partial")
+    monkeypatch.setattr(main, "backup_dir", lambda: tmp_path)
+    assert main.list_backups()["backups"] == [
+        {
+            "filename": "valid.sql",
+            "size_bytes": 10,
+            "sha256": manifest["sha256"],
+            "completed_at": "2026-07-15T12:00:00",
+        }
+    ]
+
+
+def test_verified_restore_rejects_hash_mismatch_before_cli(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    backup = tmp_path / "bad.sql"
+    backup.write_bytes(b"SELECT 1;\n")
+    backup.with_suffix(".sql.manifest.json").write_text(
+        json.dumps(
+            {
+                "status": "complete",
+                "filename": backup.name,
+                "size_bytes": backup.stat().st_size,
+                "sha256": "0" * 64,
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(main, "backup_dir", lambda: tmp_path)
+    called = False
+
+    def fake_cli(*args, **kwargs):
+        nonlocal called
+        called = True
+
+    monkeypatch.setattr(main, "run_cli", fake_cli)
+    with pytest.raises(RuntimeError, match="SHA-256"):
+        main.restore_verified_backup_job("job", DbConnection(), "target_db", backup.name)
+    assert not called
+
+
 def test_backup_is_atomic_and_writes_manifest(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setattr(main, "resolve_output_dir", lambda value: tmp_path)
     monkeypatch.setattr(main, "_database_storage_bytes", lambda conn, database: 1024)
     monkeypatch.setattr(main.shutil, "disk_usage", lambda path: SimpleNamespace(free=10**9))
     monkeypatch.setattr(main, "load_config", lambda: {"cli_timeout_seconds": 60})
 
-    def fake_cli(cmd, *, env, stdin_path=None, stdout_path=None, timeout_seconds=None):
+    def fake_cli(cmd, *, env, stdin_path=None, stdout_path=None, timeout_seconds=None, cancel_event=None):
         assert stdout_path is not None
         assert stdout_path.name.endswith(".partial")
         stdout_path.write_bytes(b"CREATE TABLE test(id INT);\n")
@@ -115,7 +168,7 @@ def test_failed_backup_removes_partial_file(monkeypatch: pytest.MonkeyPatch, tmp
     monkeypatch.setattr(main.shutil, "disk_usage", lambda path: SimpleNamespace(free=10**9))
     monkeypatch.setattr(main, "load_config", lambda: {})
 
-    def failing_cli(cmd, *, env, stdin_path=None, stdout_path=None, timeout_seconds=None):
+    def failing_cli(cmd, *, env, stdin_path=None, stdout_path=None, timeout_seconds=None, cancel_event=None):
         assert stdout_path is not None
         stdout_path.write_bytes(b"partial")
         raise RuntimeError("dump failed")
@@ -132,3 +185,22 @@ def test_running_job_limit_returns_429(monkeypatch: pytest.MonkeyPatch) -> None:
     with pytest.raises(HTTPException) as exc_info:
         main.start_job("another", lambda job_id: None)
     assert exc_info.value.status_code == 429
+
+
+def test_cancel_running_job_sets_event() -> None:
+    event = threading.Event()
+    main._jobs["running"] = {"status": "running", "logs": [], "_cancel_event": event}
+    assert main.cancel_job("running") == {"ok": True, "job_id": "running"}
+    assert event.is_set()
+
+
+def test_run_cli_honors_cancellation() -> None:
+    event = threading.Event()
+    event.set()
+    with pytest.raises(main.JobCancelled):
+        main.run_cli(
+            [sys.executable, "-c", "import time; time.sleep(30)"],
+            env=os.environ.copy(),
+            timeout_seconds=60,
+            cancel_event=event,
+        )

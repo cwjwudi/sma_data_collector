@@ -95,6 +95,12 @@
         <h2>恢复与导入</h2>
         <p class="hint">先选择恢复/导入目标，再上传文件。点击执行后会连续弹出两次确认。</p>
         <div class="row">
+          <label for="serverBackupSelect">服务器已完成备份</label>
+          <select id="serverBackupSelect"></select>
+          <button type="button" id="btnRefreshBackups">刷新备份</button>
+          <button type="button" id="btnRestoreServerBackup" class="danger-btn">直接恢复已完成备份</button>
+        </div>
+        <div class="row">
           <label for="restoreDatabaseSelect">恢复到数据库</label>
           <select id="restoreDatabaseSelect"></select>
           <label for="restoreSqlFile">SQL 文件</label>

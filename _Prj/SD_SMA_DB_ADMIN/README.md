@@ -25,6 +25,9 @@ Large backup safeguards:
 - Destructive uploads require a short-lived, operation-bound, single-use confirmation token.
 - State-changing browser requests from a different Origin are rejected.
 - Running background jobs are bounded by `max_concurrent_jobs`.
+- Running external database commands and CSV loops can be cancelled from the job list.
+- Completed server-side SQL backups can be restored directly after manifest and SHA-256 verification;
+  large files do not need to be uploaded through the browser again.
 
 SQL backup and restore need MySQL client tools available in `PATH`, or explicit paths in
 `config/default.json`.

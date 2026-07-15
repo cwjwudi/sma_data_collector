@@ -78,7 +78,10 @@ def prepare(args: argparse.Namespace) -> None:
             cur.execute(f"CREATE DATABASE IF NOT EXISTS {quote(target)} CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci")
     with connect(target) as db:
         with db.cursor() as cur:
-            for table in ("Data_Product", "Data_Alarm", "Data_Recipe"):
+            tables_to_rebuild = ("Data_Recipe",) if args.preserve_product_alarm else ("Data_Product", "Data_Alarm", "Data_Recipe")
+            if args.preserve_product_alarm and (args.product_rows or args.alarm_rows):
+                raise ValueError("product/alarm row counts must be zero when --preserve-product-alarm is used")
+            for table in tables_to_rebuild:
                 cur.execute(f"DROP TABLE IF EXISTS {quote(table)}")
                 cur.execute(f"CREATE TABLE {quote(table)} LIKE {quote(source)}.{quote(table)}")
             create_numbers(cur)
@@ -109,7 +112,10 @@ def prepare(args: argparse.Namespace) -> None:
                 )
             if args.recipe_rows:
                 channel_columns = ",".join(f"`DataRecipeCH{i:02d}`" for i in range(26))
-                channel_values = ",".join(f"CONCAT('R{i:02d}-',SHA2(%(offset)s+n,256))" for i in range(26))
+                channel_values = ",".join(
+                    f"CONCAT('R{i:02d}-',LPAD(%(offset)s+n,10,'0'),'-',REPEAT(CHAR(65+MOD({i},26)),64))"
+                    for i in range(26)
+                )
                 sql = (
                     f"INSERT INTO `Data_Recipe` (`DataRecipeTime`,`DataRecipeState`,{channel_columns},`BatchCode`,`collection_time`) "
                     f"SELECT DATE_ADD('2024-01-01', INTERVAL MOD(%(offset)s+n,31536000) SECOND), CONCAT('RECIPE_',MOD(%(offset)s+n,32)),{channel_values},"
@@ -133,9 +139,14 @@ def snapshot(database: str) -> dict[str, Any]:
             )
             sizes = {str(name): (int(data or 0), int(index or 0)) for name, data, index in cur.fetchall()}
             for table in ("Data_Product", "Data_Alarm", "Data_Recipe"):
+                digest_columns = {
+                    "Data_Product": "`id`,`BatchCode`,`collection_time`,`DataProductState`,`DataProductCH01`,`DataProductCH06`",
+                    "Data_Alarm": "`id`,`BatchCode`,`collection_time`,`AlarmCode`,`AlarmState`,`AlarmText`",
+                    "Data_Recipe": "`id`,`BatchCode`,`collection_time`,`DataRecipeState`,`DataRecipeCH00`,`DataRecipeCH13`,`DataRecipeCH25`",
+                }[table]
                 cur.execute(
                     f"SELECT COUNT(*), COALESCE(MIN(`id`),0), COALESCE(MAX(`id`),0), "
-                    f"COALESCE(SUM(CRC32(CONCAT_WS('#',`id`,`BatchCode`,`collection_time`))),0) FROM {quote(table)}"
+                    f"COALESCE(SUM(CRC32(CONCAT_WS('#',{digest_columns}))),0) FROM {quote(table)}"
                 )
                 count, min_id, max_id, digest = cur.fetchone()
                 data_bytes, index_bytes = sizes.get(table, (0, 0))
@@ -189,6 +200,7 @@ def parse_args() -> argparse.Namespace:
     prepare_parser.add_argument("--product-rows", type=int, default=10_000_000)
     prepare_parser.add_argument("--alarm-rows", type=int, default=10_000_000)
     prepare_parser.add_argument("--recipe-rows", type=int, default=0)
+    prepare_parser.add_argument("--preserve-product-alarm", action="store_true")
     prepare_parser.add_argument("--batch-size", type=int, default=100_000, choices=range(1, 100_001), metavar="1..100000")
     snapshot_parser = sub.add_parser("snapshot")
     snapshot_parser.add_argument("database")

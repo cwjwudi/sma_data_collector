@@ -368,6 +368,39 @@ async function startRestoreSql() {
   setHint('importHint', `已开始 SQL 恢复任务，目标数据库: ${database}`, 'muted warn');
 }
 
+async function loadServerBackups() {
+  const data = await fetchJson('/api/backups');
+  const select = document.getElementById('serverBackupSelect');
+  const previous = select.value;
+  select.innerHTML = '';
+  for (const backup of data.backups || []) {
+    const option = document.createElement('option');
+    option.value = backup.filename;
+    option.textContent = `${backup.filename} (${backup.size_bytes} bytes)`;
+    select.appendChild(option);
+  }
+  if (previous && hasOption(select, previous)) select.value = previous;
+}
+
+async function startRestoreServerBackup() {
+  const database = getSelectedValue('restoreDatabaseSelect', '请先选择恢复目标数据库');
+  const filename = getSelectedValue('serverBackupSelect', '没有可恢复的已完成备份');
+  if (!(await requireDoubleConfirm('恢复服务器备份', `${filename} → ${database}`))) return;
+  const confirmationToken = await requestConfirmationToken('restore-backup', database);
+  const data = await fetchJson('/api/restore-backup', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      connection: getConnectionPayload(),
+      database,
+      filename,
+      confirmation_token: confirmationToken,
+    }),
+  });
+  watchJob(data.job.id);
+  setHint('importHint', `已开始校验并恢复: ${filename} → ${database}`, 'muted warn');
+}
+
 async function startImportCsv() {
   const database = getSelectedValue('importDatabaseSelect', '请先选择导入目标数据库');
   const table = getSelectedValue('importTableSelect', '请先选择导入目标表');
@@ -432,6 +465,20 @@ function renderJobs(jobs) {
     statusButton.dataset.jobId = String(job.id || '');
     statusButton.textContent = status;
     statusCell.appendChild(statusButton);
+    if (status === 'running') {
+      statusCell.appendChild(document.createTextNode(' '));
+      const cancelButton = document.createElement('button');
+      cancelButton.type = 'button';
+      cancelButton.className = 'job-cancel';
+      cancelButton.textContent = '取消';
+      cancelButton.addEventListener('click', async event => {
+        event.stopPropagation();
+        if (!(await showConfirmModal({ title: '取消任务', message: `确定取消 ${job.title || job.id}？`, confirmText: '确认取消' }))) return;
+        await fetchJson(`/api/jobs/${encodeURIComponent(job.id)}/cancel`, { method: 'POST' });
+        await refreshJobs();
+      });
+      statusCell.appendChild(cancelButton);
+    }
     tr.appendChild(statusCell);
 
     const progressCell = document.createElement('td');
@@ -548,6 +595,12 @@ function bindEvents() {
   document.getElementById('btnRestoreSql').addEventListener('click', () => {
     startRestoreSql().catch(err => setHint('importHint', err.message, 'muted warn'));
   });
+  document.getElementById('btnRefreshBackups').addEventListener('click', () => {
+    loadServerBackups().catch(err => setHint('importHint', err.message, 'muted warn'));
+  });
+  document.getElementById('btnRestoreServerBackup').addEventListener('click', () => {
+    startRestoreServerBackup().catch(err => setHint('importHint', err.message, 'muted warn'));
+  });
   document.getElementById('btnImportCsv').addEventListener('click', () => {
     startImportCsv().catch(err => setHint('importHint', err.message, 'muted warn'));
   });
@@ -565,6 +618,7 @@ async function init() {
     await loadDatabases(saved).catch(err => setHint('objectHint', err.message, 'muted warn'));
   }
   await refreshJobs();
+  await loadServerBackups();
 }
 
 init().catch(err => alert(err.message));

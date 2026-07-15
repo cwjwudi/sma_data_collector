@@ -101,6 +101,17 @@ class ConfirmationRequest(BaseModel):
     table: str = ""
 
 
+class RestoreBackupRequest(BaseModel):
+    connection: DbConnection
+    database: str
+    filename: str
+    confirmation_token: str
+
+
+class JobCancelled(RuntimeError):
+    pass
+
+
 def load_config() -> dict[str, Any]:
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     if not CONFIG_FILE.exists():
@@ -308,7 +319,7 @@ def _public_job(job: dict[str, Any]) -> dict[str, Any]:
 
 def issue_confirmation(action: str, database: str, table: str = "") -> str:
     action_name = (action or "").strip().lower()
-    if action_name not in {"restore-sql", "import-csv"}:
+    if action_name not in {"restore-sql", "restore-backup", "import-csv"}:
         raise ValueError("Unsupported confirmation action")
     database_name = safe_identifier(database, "database")
     table_name = safe_identifier(table, "table") if table else ""
@@ -360,6 +371,7 @@ def start_job(title: str, target, *args: Any) -> dict[str, Any]:
             "logs": [],
             "result": None,
             "_started_monotonic": time.monotonic(),
+            "_cancel_event": threading.Event(),
         }
         _prune_finished_jobs_locked()
 
@@ -376,6 +388,15 @@ def start_job(title: str, target, *args: Any) -> dict[str, Any]:
                 _finished_monotonic=time.monotonic(),
             )
             append_job_log(job_id, "Job finished")
+        except JobCancelled as exc:
+            append_job_log(job_id, f"CANCELLED: {exc}")
+            update_job(
+                job_id,
+                status="cancelled",
+                phase="cancelled",
+                error=str(exc),
+                _finished_monotonic=time.monotonic(),
+            )
         except Exception as exc:  # noqa: BLE001
             append_job_log(job_id, f"ERROR: {exc}")
             update_job(
@@ -391,6 +412,19 @@ def start_job(title: str, target, *args: Any) -> dict[str, Any]:
     return _public_job(_jobs[job_id])
 
 
+def _job_cancel_event(job_id: str) -> threading.Event | None:
+    with _jobs_lock:
+        job = _jobs.get(job_id)
+        event = job.get("_cancel_event") if job else None
+    return event if isinstance(event, threading.Event) else None
+
+
+def _raise_if_cancelled(job_id: str) -> None:
+    event = _job_cancel_event(job_id)
+    if event and event.is_set():
+        raise JobCancelled("Job cancellation was requested")
+
+
 def run_cli(
     cmd: list[str],
     *,
@@ -398,27 +432,45 @@ def run_cli(
     stdin_path: Path | None = None,
     stdout_path: Path | None = None,
     timeout_seconds: int | None = None,
+    cancel_event: threading.Event | None = None,
 ) -> None:
     stdin_file = stdin_path.open("rb") if stdin_path else None
     stdout_file = stdout_path.open("wb") if stdout_path else subprocess.PIPE
     try:
-        result = subprocess.run(
+        process = subprocess.Popen(
             cmd,
             stdin=stdin_file,
             stdout=stdout_file,
             stderr=subprocess.PIPE,
             env=env,
-            check=False,
-            timeout=timeout_seconds,
         )
+        deadline = time.monotonic() + timeout_seconds if timeout_seconds else None
+        while True:
+            try:
+                _, stderr = process.communicate(timeout=0.5)
+                break
+            except subprocess.TimeoutExpired:
+                cancelled = cancel_event is not None and cancel_event.is_set()
+                timed_out = deadline is not None and time.monotonic() >= deadline
+                if not cancelled and not timed_out:
+                    continue
+                process.terminate()
+                try:
+                    _, stderr = process.communicate(timeout=10)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    _, stderr = process.communicate()
+                if cancelled:
+                    raise JobCancelled("External database command was cancelled")
+                raise TimeoutError(f"External database command exceeded timeout_seconds={timeout_seconds}")
     finally:
         if stdin_file:
             stdin_file.close()
         if stdout_path and stdout_file:
             stdout_file.close()
-    if result.returncode != 0:
-        err = result.stderr.decode("utf-8", errors="replace").strip()
-        raise RuntimeError(err or f"Command failed with code {result.returncode}")
+    if process.returncode != 0:
+        err = (stderr or b"").decode("utf-8", errors="replace").strip()
+        raise RuntimeError(err or f"Command failed with code {process.returncode}")
 
 
 def _sha256_file(path: Path, chunk_size: int = 8 * 1024 * 1024) -> str:
@@ -488,7 +540,13 @@ def backup_mysql_job(job_id: str, conn: DbConnection, database: str, output_dir:
     timeout_seconds = max(60, int(load_config().get("cli_timeout_seconds") or 86400))
     started_at = datetime.now().isoformat(timespec="seconds")
     try:
-        run_cli(cmd, env=env, stdout_path=partial, timeout_seconds=timeout_seconds)
+        run_cli(
+            cmd,
+            env=env,
+            stdout_path=partial,
+            timeout_seconds=timeout_seconds,
+            cancel_event=_job_cancel_event(job_id),
+        )
         if not partial.is_file() or partial.stat().st_size == 0:
             raise RuntimeError("mysqldump produced an empty backup")
         set_job_progress(job_id, 95, "checksumming")
@@ -553,12 +611,62 @@ def restore_mysql_job(job_id: str, conn: DbConnection, database: str, sql_path: 
             "--default-character-set=utf8mb4",
             dbname,
         ]
-        run_cli(cmd, env=env, stdin_path=source)
+        run_cli(cmd, env=env, stdin_path=source, cancel_event=_job_cancel_event(job_id))
         set_job_progress(job_id, 95, "finalizing")
         append_job_log(job_id, f"Restored from: {source.name}")
         return {"source": source.name, "database": dbname}
     finally:
         _cleanup_upload(sql_path)
+
+
+def _completed_backup(filename: str) -> tuple[Path, dict[str, Any]]:
+    safe = Path(filename).name
+    if safe != filename or Path(safe).suffix.lower() != ".sql":
+        raise ValueError("Invalid backup filename")
+    path = backup_dir() / safe
+    manifest_path = path.with_suffix(path.suffix + ".manifest.json")
+    if not path.is_file() or not manifest_path.is_file():
+        raise FileNotFoundError("Completed backup or manifest not found")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if not isinstance(manifest, dict) or manifest.get("status") != "complete" or manifest.get("filename") != safe:
+        raise ValueError("Backup manifest is invalid or incomplete")
+    if int(manifest.get("size_bytes") or -1) != path.stat().st_size:
+        raise ValueError("Backup size does not match manifest")
+    return path, manifest
+
+
+def restore_verified_backup_job(job_id: str, conn: DbConnection, database: str, filename: str) -> dict[str, Any]:
+    source, manifest = _completed_backup(filename)
+    append_job_log(job_id, f"Verifying SHA-256 for {source.name}")
+    set_job_progress(job_id, 2, "verifying")
+    actual_sha256 = _sha256_file(source)
+    if not secrets.compare_digest(actual_sha256, str(manifest.get("sha256") or "")):
+        raise RuntimeError("Backup SHA-256 does not match manifest")
+    dbname = safe_identifier(database, "database")
+    append_job_log(job_id, f"Restoring verified backup into database {dbname}")
+    set_job_progress(job_id, 5, "restoring")
+    env = os.environ.copy()
+    env["MYSQL_PWD"] = conn.password or ""
+    cmd = [
+        mysql_tool("mysql"),
+        "--host",
+        conn.host or "127.0.0.1",
+        "--port",
+        str(int(conn.port or 3306)),
+        "--user",
+        conn.username or "",
+        "--default-character-set=utf8mb4",
+        dbname,
+    ]
+    timeout_seconds = max(60, int(load_config().get("cli_timeout_seconds") or 86400))
+    run_cli(
+        cmd,
+        env=env,
+        stdin_path=source,
+        timeout_seconds=timeout_seconds,
+        cancel_event=_job_cancel_event(job_id),
+    )
+    return {"source": source.name, "database": dbname, "sha256": actual_sha256}
 
 
 def export_csv_job(job_id: str, conn: DbConnection, database: str, table: str, output_dir: str = "") -> dict[str, Any]:
@@ -590,6 +698,7 @@ def export_csv_job(job_id: str, conn: DbConnection, database: str, table: str, o
             writer = csv.writer(f)
             writer.writerow(columns)
             while True:
+                _raise_if_cancelled(job_id)
                 batch = cur.fetchmany(1000)
                 if not batch:
                     break
@@ -637,6 +746,7 @@ def import_csv_job(job_id: str, conn: DbConnection, database: str, table: str, c
                 sql = f"INSERT INTO {quote_ident(table_name)} ({cols}) VALUES ({placeholders})"
                 batch: list[tuple[Any, ...]] = []
                 for row in reader:
+                    _raise_if_cancelled(job_id)
                     batch.append(tuple(row.get(c, "") for c in columns))
                     if len(batch) >= 500:
                         cur.executemany(sql, batch)
@@ -819,6 +929,44 @@ def restore_sql(
     return {"job": job}
 
 
+@app.get("/api/backups")
+def list_backups() -> dict[str, Any]:
+    items: list[dict[str, Any]] = []
+    for manifest_path in backup_dir().glob("*.sql.manifest.json"):
+        try:
+            filename = manifest_path.name.removesuffix(".manifest.json")
+            _, manifest = _completed_backup(filename)
+            items.append(
+                {
+                    "filename": filename,
+                    "size_bytes": int(manifest["size_bytes"]),
+                    "sha256": str(manifest["sha256"]),
+                    "completed_at": str(manifest.get("completed_at") or ""),
+                }
+            )
+        except (OSError, ValueError, json.JSONDecodeError):
+            continue
+    items.sort(key=lambda item: item["completed_at"], reverse=True)
+    return {"backups": items}
+
+
+@app.post("/api/restore-backup")
+def restore_backup(req: RestoreBackupRequest) -> dict[str, Any]:
+    consume_confirmation(req.confirmation_token, "restore-backup", req.database)
+    try:
+        _completed_backup(req.filename)
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+    job = start_job(
+        f"Restore backup {req.database}",
+        restore_verified_backup_job,
+        req.connection,
+        req.database,
+        req.filename,
+    )
+    return {"job": job}
+
+
 @app.post("/api/import-csv")
 def import_csv(
     connection_json: str = Form(...),
@@ -850,6 +998,22 @@ def get_job(job_id: str) -> dict[str, Any]:
     if not job:
         raise HTTPException(404, "Job not found")
     return {"job": _public_job(job)}
+
+
+@app.post("/api/jobs/{job_id}/cancel")
+def cancel_job(job_id: str) -> dict[str, Any]:
+    with _jobs_lock:
+        job = _jobs.get(job_id)
+        if not job:
+            raise HTTPException(404, "Job not found")
+        if job.get("status") != "running":
+            raise HTTPException(409, "Only a running job can be cancelled")
+        event = job.get("_cancel_event")
+        if not isinstance(event, threading.Event):
+            raise HTTPException(409, "Job does not support cancellation")
+        event.set()
+    append_job_log(job_id, "Cancellation requested")
+    return {"ok": True, "job_id": job_id}
 
 
 @app.get("/api/download/{filename}")
