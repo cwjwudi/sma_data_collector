@@ -11,10 +11,10 @@
 
 ## 2026-07-14
 
+- **ReportEditor 0.3.99**：多选拖一角 AABB 组缩放 + 组拖移保尺寸；看板 [docs/020-✅](docs/020-✅-ReportEditor多选组缩放.md)。
 - **ReportEditor 0.3.98**：导出 PDF 1:1 铺满 + 恢复角色色粗边（019/021 合批）；看板 [docs/019-✅](docs/019-✅-ReportEditor导出PDF纸张外框.md) · [docs/021-✅](docs/021-✅-ReportEditor导出保留角色色粗边.md)。
 - **019+021 合批实施（补测试用例）**：同版本一起做；U/V/N 用例已落地为自动化契约测；已随 0.3.98。
 - **历史报表一键复制到 U 盘（仅登记）**：新建 [docs/022-⌛️](docs/022-⌛️-ReportEditor历史报表复制到U盘.md)——整夹/单夹复制 + 建议 U 盘左右分屏模式；仅桌面；未改代码。
-- **多选组缩放（需求澄清）**：[docs/020-⌛️](docs/020-⌛️-ReportEditor多选组缩放.md)——拖 primary 一角，选中项按 AABB 一起缩放；待开工。
 - **ReportEditor 0.3.97**：多选共有属性扩展；看板 [docs/018-✅](docs/018-✅-ReportEditor多选共有小数位数.md)。
 - **ReportEditor 0.3.96**：AI 能力矩阵 A；看板 [docs/006-🚧](docs/006-🚧-ReportEditor-AI上游错误体验.md)。
 - **ReportEditor 0.3.95 macOS 已打包**：`Report Editor AI-0.3.95-arm64.dmg`；`latest.json` 已写 SHA256（win32 亦已补全）。
