@@ -4,7 +4,7 @@
 > **落地版本**：**0.3.97** · [Plan](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.97.md) · [007](../_Prj/SD_SMA_ReportEditor/_Doc/007_版本发布记录.md)  
 > **发现 / 拍板**：2026-07-14 · 用户现场。  
 > **背景（已完成、不复开）**：多选 B1–B3 见历史 [docs/011-✅](011-✅-ReportEditor模版版式多选控件.md)；本条**推翻 B3「绑定整类永不批改」**。  
-> **下一项**：[docs/019-⌛️](019-⌛️-ReportEditor导出PDF纸张外框.md)。
+> **下一项**：导出纸张已于 **0.3.98** 合批完成，见 [docs/019-✅](019-✅-ReportEditor导出PDF纸张外框.md) · [docs/021-✅](021-✅-ReportEditor导出保留角色色粗边.md)。
 
 ---
 
