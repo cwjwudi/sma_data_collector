@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 PaperKind = Literal["A3", "A4", "A5", "Letter"]
 NullDisplayMode = Literal["blank", "emptyLabel", "fallbackText"]
@@ -44,9 +44,24 @@ class TemplateTableCell(BaseModel):
     opcuaNodeId: str = ""
     sqlText: str = ""
     sqlParams: list["TableSqlParamBinding"] = Field(default_factory=list)
+    # 与前端单元格标量 SQL 可视化对齐（普通表单格配库；非 tableSqlFill）
+    scalarSqlFillMode: ScalarSqlFillMode | None = None
+    scalarSqlVisual: ScalarSqlVisualConfig | None = None
     mongoQuery: MongoQueryConfig | None = None
     bgColor: str = "transparent"
     decimalPlaces: int | None = Field(default=None, ge=0, le=10)
+
+    @field_validator("scalarSqlFillMode", mode="before")
+    @classmethod
+    def _normalize_cell_scalar_sql_fill_mode(cls, v: object) -> object:
+        """现场偶发 'Visual' 大小写；与前端 normalizeScalarSqlFillMode 对齐。"""
+        if v is None or v == "":
+            return None
+        if isinstance(v, str):
+            low = v.strip().lower()
+            if low in ("manual", "visual"):
+                return low
+        return v
 
 
 class TableSqlParamBinding(BaseModel):

@@ -1,17 +1,17 @@
 {
-  "version": "0.3.100",
-  "releasedAt": "2026-07-15T04:58:04.999Z",
-  "notes": "Report Editor AI 0.3.100\n\n- 历史报表分屏：导出目录 ⇄ 目标目录 复制/移动\n- 可移动存储检测确认后打开右侧；冲突一次决策",
+  "version": "0.3.101",
+  "releasedAt": "2026-07-15T07:12:48.409Z",
+  "notes": "Report Editor AI 0.3.101\n\n- 修复普通表格单元格可视化 SQL 保存被拒（TemplateTableCell 补 scalarSql*）",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.100-x64.exe",
-      "sha256": "512358ef96b63465cb4558aa94f3d9249771dfeea0c91458e9c928d23fc0f925",
-      "size": 148146391
+      "url": "Report Editor AI-Setup-0.3.101-x64.exe",
+      "sha256": "",
+      "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.100-arm64.dmg",
-      "sha256": "06d3e5ee2eadf658b6a0dc06d1b5d6ea543899862565946e7f0120acca9a0da3",
-      "size": 182045390
+      "url": "Report Editor AI-0.3.101-arm64.dmg",
+      "sha256": "",
+      "size": 0
     }
   }
 }
