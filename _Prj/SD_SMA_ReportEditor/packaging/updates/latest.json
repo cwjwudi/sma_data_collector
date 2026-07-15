@@ -1,15 +1,15 @@
 {
-  "version": "0.3.96",
-  "releasedAt": "2026-07-14T07:53:33.343Z",
-  "notes": "Report Editor AI 0.3.96\n\n- AI 能力矩阵 A：配置数据源端到端（upsert/凭证/删除/锁）",
+  "version": "0.3.97",
+  "releasedAt": "2026-07-14T14:44:24.316Z",
+  "notes": "Report Editor AI 0.3.97\n\n- 多选共有属性扩展：显示格式 / 文案 / 同类型绑定批改（混合不自动写）",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.96-x64.exe",
+      "url": "Report Editor AI-Setup-0.3.97-x64.exe",
       "sha256": "",
       "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.96-arm64.dmg",
+      "url": "Report Editor AI-0.3.97-arm64.dmg",
       "sha256": "",
       "size": 0
     }

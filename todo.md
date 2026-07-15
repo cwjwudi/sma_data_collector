@@ -11,6 +11,10 @@
 
 ## 2026-07-14
 
+- **导出保留橙/蓝紫粗色边（政策反转）**：新建 [docs/021-⌛️](docs/021-⌛️-ReportEditor导出保留角色色粗边.md)——推翻 009「导出去掉角色色」；019 只治白衬边；未改代码。
+- **多选组缩放（需求澄清）**：[docs/020-⌛️](docs/020-⌛️-ReportEditor多选组缩放.md)——拖 primary 一角，选中项按 AABB 一起缩放；推翻 011「只改主选」；默认 Q1–Q8 已写，待确认/开工；未改代码。
+- **导出 PDF 纸张外仍像相框（排查结论）**：[docs/019-⌛️](docs/019-⌛️-ReportEditor导出PDF纸张外框.md)——主因欠缩放白衬边；角色色改为要保留（021）；未改代码。
+- **ReportEditor 0.3.97**：多选共有属性扩展（显示格式 / 文案 / 同类型绑定批改）；看板 [docs/018-✅](docs/018-✅-ReportEditor多选共有小数位数.md)。
 - **ReportEditor 0.3.96**：AI 能力矩阵 A（配置数据源 upsert/凭证/删除/锁）；看板 [docs/006-🚧](docs/006-🚧-ReportEditor-AI上游错误体验.md)。
 - **ReportEditor 0.3.95 macOS 已打包**：`Report Editor AI-0.3.95-arm64.dmg`；`latest.json` 已写 SHA256（win32 亦已补全）。
 - **ReportEditor 0.3.95**：探活 claim 只读误伤修复（施为仍须 write；health 可读作状态证据）；看板 [docs/006-🚧](docs/006-🚧-ReportEditor-AI上游错误体验.md)。
