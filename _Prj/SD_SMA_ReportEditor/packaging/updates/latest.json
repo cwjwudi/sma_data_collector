@@ -1,15 +1,15 @@
 {
-  "version": "0.3.97",
-  "releasedAt": "2026-07-14T14:44:24.316Z",
-  "notes": "Report Editor AI 0.3.97\n\n- 多选共有属性扩展：显示格式 / 文案 / 同类型绑定批改（混合不自动写）",
+  "version": "0.3.98",
+  "releasedAt": "2026-07-15T03:23:00.592Z",
+  "notes": "Report Editor AI 0.3.98\n\n- 导出 PDF 1:1 铺满纸面（去掉欠缩放白衬边）\n- 恢复封面橙 / 正文蓝紫 / 末页紫角色色粗边",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.97-x64.exe",
+      "url": "Report Editor AI-Setup-0.3.98-x64.exe",
       "sha256": "",
       "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.97-arm64.dmg",
+      "url": "Report Editor AI-0.3.98-arm64.dmg",
       "sha256": "",
       "size": 0
     }

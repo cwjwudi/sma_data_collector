@@ -344,7 +344,10 @@ import {
   computeContentAwareTableRowHeightsPx,
   sumTableRowHeightsPx,
 } from "@/lib/report-template/table-cell-metrics";
-import { miniPreviewScale } from "@/lib/report-template/mini-preview-scale";
+import {
+  miniPreviewScale,
+  miniPreviewScaleForExport,
+} from "@/lib/report-template/mini-preview-scale";
 
 const props = withDefaults(
   defineProps<{
@@ -372,8 +375,15 @@ const props = withDefaults(
     previewPage?: number;
     previewTotalPages?: number;
     previewBindingValues?: Record<string, BindingPreviewCell | undefined> | null;
-    /** PDF 导出：剥离 MiniPreviewChrome 角色色纸边（009） */
+    /**
+     * 可选：强制 plain（无角色色）。导出默认 false（021 保留橙/蓝紫粗边）。
+     * 列表缩略等仍可显式传 true。
+     */
     plainChrome?: boolean;
+    /**
+     * PDF 导出：不扣 chrome inset、wrap 高度不加 +3，便于 1:1 铺满 @page（019）。
+     */
+    exactPageFit?: boolean;
   }>(),
   {
     maxWidthPx: 160,
@@ -385,6 +395,7 @@ const props = withDefaults(
     showSqlFillTailDividerHint: false,
     tailOnlyBelowBaseline: false,
     plainChrome: false,
+    exactPageFit: false,
   },
 );
 
@@ -468,17 +479,21 @@ const miniSqlFillTailDividerStyle = computed((): Record<string, string> | null =
   };
 });
 
-const scale = computed(() =>
-  miniPreviewScale(props.maxWidthPx, props.maxHeightPx, me.value.pageW, me.value.pageH),
-);
+const scale = computed(() => {
+  const fn = props.exactPageFit ? miniPreviewScaleForExport : miniPreviewScale;
+  return fn(props.maxWidthPx, props.maxHeightPx, me.value.pageW, me.value.pageH);
+});
 
 const scaledSize = computed(() => {
   const m = me.value;
   const s = scale.value;
   return {
     w: Math.ceil(m.pageW * s),
-    /** +3：缩放绘制与表格底线在分数像素边界上易被外层 overflow:hidden 裁掉 */
-    h: Math.ceil(m.pageH * s) + 3,
+    /**
+     * 列表缩略 +3：防分数像素裁切。
+     * 导出 exactPageFit：不加，避免系统性高于 @page（019）。
+     */
+    h: Math.ceil(m.pageH * s) + (props.exactPageFit ? 0 : 3),
   };
 });
 

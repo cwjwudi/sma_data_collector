@@ -11,13 +11,12 @@
 
 ## 2026-07-14
 
-- **019+021 合批实施（补测试用例）**：[docs/019](docs/019-⌛️-ReportEditor导出PDF纸张外框.md) 与 [docs/021](docs/021-⌛️-ReportEditor导出保留角色色粗边.md) 同版本一起做（先 1:1 铺满再恢复角色色）；已补 U/V/N 合批用例表；未改代码。
+- **ReportEditor 0.3.98**：导出 PDF 1:1 铺满 + 恢复角色色粗边（019/021 合批）；看板 [docs/019-✅](docs/019-✅-ReportEditor导出PDF纸张外框.md) · [docs/021-✅](docs/021-✅-ReportEditor导出保留角色色粗边.md)。
+- **019+021 合批实施（补测试用例）**：同版本一起做；U/V/N 用例已落地为自动化契约测；已随 0.3.98。
 - **历史报表一键复制到 U 盘（仅登记）**：新建 [docs/022-⌛️](docs/022-⌛️-ReportEditor历史报表复制到U盘.md)——整夹/单夹复制 + 建议 U 盘左右分屏模式；仅桌面；未改代码。
-- **导出保留橙/蓝紫粗色边（政策反转）**：新建 [docs/021-⌛️](docs/021-⌛️-ReportEditor导出保留角色色粗边.md)——推翻 009「导出去掉角色色」；019 只治白衬边；未改代码。
-- **多选组缩放（需求澄清）**：[docs/020-⌛️](docs/020-⌛️-ReportEditor多选组缩放.md)——拖 primary 一角，选中项按 AABB 一起缩放；推翻 011「只改主选」；默认 Q1–Q8 已写，待确认/开工；未改代码。
-- **导出 PDF 纸张外仍像相框（排查结论）**：[docs/019-⌛️](docs/019-⌛️-ReportEditor导出PDF纸张外框.md)——主因欠缩放白衬边；角色色改为要保留（021）；未改代码。
-- **ReportEditor 0.3.97**：多选共有属性扩展（显示格式 / 文案 / 同类型绑定批改）；看板 [docs/018-✅](docs/018-✅-ReportEditor多选共有小数位数.md)。
-- **ReportEditor 0.3.96**：AI 能力矩阵 A（配置数据源 upsert/凭证/删除/锁）；看板 [docs/006-🚧](docs/006-🚧-ReportEditor-AI上游错误体验.md)。
+- **多选组缩放（需求澄清）**：[docs/020-⌛️](docs/020-⌛️-ReportEditor多选组缩放.md)——拖 primary 一角，选中项按 AABB 一起缩放；待开工。
+- **ReportEditor 0.3.97**：多选共有属性扩展；看板 [docs/018-✅](docs/018-✅-ReportEditor多选共有小数位数.md)。
+- **ReportEditor 0.3.96**：AI 能力矩阵 A；看板 [docs/006-🚧](docs/006-🚧-ReportEditor-AI上游错误体验.md)。
 - **ReportEditor 0.3.95 macOS 已打包**：`Report Editor AI-0.3.95-arm64.dmg`；`latest.json` 已写 SHA256（win32 亦已补全）。
 - **ReportEditor 0.3.95**：探活 claim 只读误伤修复（施为仍须 write；health 可读作状态证据）；看板 [docs/006-🚧](docs/006-🚧-ReportEditor-AI上游错误体验.md)。
 - **OPC UA 动态采集间隔与 PLC 联调完成**：`time` / `time_and_variable` 支持通过 `interval_point` 在线定义采集间隔；完成配置、Web UI、PLC 点位与 OPC UA 映射修改，并在 `192.168.50.233` 验证 5 秒→2 秒切换、非法值回退及外部触发独立性。详见 [_Prj/SD_SMA_DATA_COLLECTOR/docs/001-✅-OPCUA动态采集间隔联调.md](_Prj/SD_SMA_DATA_COLLECTOR/docs/001-✅-OPCUA动态采集间隔联调.md)。
