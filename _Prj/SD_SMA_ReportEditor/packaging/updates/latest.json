@@ -1,15 +1,15 @@
 {
-  "version": "0.3.99",
-  "releasedAt": "2026-07-15T03:27:45.518Z",
-  "notes": "Report Editor AI 0.3.99\n\n- 多选拖一角：选中项按 AABB 组缩放；组拖移保尺寸",
+  "version": "0.3.100",
+  "releasedAt": "2026-07-15T04:35:10.827Z",
+  "notes": "Report Editor AI 0.3.100\n\n- 历史报表分屏：导出目录 ⇄ 目标目录 复制/移动\n- 可移动存储检测确认后打开右侧；冲突一次决策",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.99-x64.exe",
+      "url": "Report Editor AI-Setup-0.3.100-x64.exe",
       "sha256": "",
       "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.99-arm64.dmg",
+      "url": "Report Editor AI-0.3.100-arm64.dmg",
       "sha256": "",
       "size": 0
     }

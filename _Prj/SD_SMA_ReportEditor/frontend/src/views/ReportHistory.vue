@@ -3,8 +3,17 @@
     <header class="hdr">
       <h2 class="page-title">历史报表</h2>
       <div class="hdr-actions">
-        <button type="button" class="b" :disabled="!electronShell || !watchDir || loading" @click="refresh">
-          {{ loading ? "刷新中…" : "刷新" }}
+        <button
+          type="button"
+          class="b"
+          :class="{ 'b-on': split }"
+          :disabled="!electronShell"
+          @click="toggleSplit"
+        >
+          {{ split ? "退出分屏" : "分屏" }}
+        </button>
+        <button type="button" class="b" :disabled="!electronShell || !watchDir || transferring" @click="refreshAll">
+          {{ loadingAny ? "刷新中…" : "刷新" }}
         </button>
         <button type="button" class="b" @click="mode = mode === 'list' ? 'thumbs' : 'list'">
           {{ mode === "list" ? "缩略图" : "列表" }}
@@ -13,192 +22,208 @@
     </header>
 
     <p class="rh-lead">
-      绑定导出文件夹后，可进入<strong>子文件夹</strong>分页浏览本层 PDF（与「生成报表」中的<strong>自动导出文件夹</strong>共用）。不会一次平铺全部子目录文件。手动另存到其它路径的文件不会出现在此列表。
+      绑定导出文件夹后，可进入<strong>子文件夹</strong>分页浏览本层 PDF（与「生成报表」中的<strong>自动导出文件夹</strong>共用）。
+      <template v-if="split">
+        分屏下可在<strong>导出目录 ⇄ 目标目录</strong>之间<strong>复制 / 移动</strong>（仅桌面版）。
+      </template>
+      <template v-else> 不会一次平铺全部子目录文件。手动另存到其它路径的文件不会出现在此列表。 </template>
     </p>
 
     <div v-if="!electronShell" class="rh-banner rh-banner--warn">
       浏览本机导出文件夹仅桌面安装版可用；局域网浏览器无法读取工控机本地磁盘。请在本机 Electron 客户端中操作。
     </div>
 
-    <div class="rh-dir-row">
-      <label class="rh-dir-lbl" for="rh-watch-dir">导出文件夹</label>
-      <div class="rh-dir-inline">
-        <input
-          id="rh-watch-dir"
-          :value="watchDir || ''"
-          type="text"
-          readonly
-          class="rh-dir-inp"
-          placeholder="未绑定（点击下方选择）"
-        />
-        <button type="button" class="b primary" :disabled="!electronShell" @click="onPickDir">选择文件夹…</button>
-      </div>
-    </div>
-
-    <nav v-if="electronShell && watchDir" class="rh-crumbs" aria-label="当前路径">
-      <button type="button" class="rh-crumb" :disabled="loading || !relSegments.length" @click="goToDepth(-1)">
-        根目录
-      </button>
-      <template v-for="(seg, i) in relSegments" :key="'c-' + i + '-' + seg">
-        <span class="rh-crumb-sep" aria-hidden="true">/</span>
-        <button
-          type="button"
-          class="rh-crumb"
-          :class="{ 'rh-crumb--current': i === relSegments.length - 1 }"
-          :disabled="loading || i === relSegments.length - 1"
-          @click="goToDepth(i)"
-        >
-          {{ seg }}
-        </button>
+    <div v-if="split && electronShell" class="rh-split-bar">
+      <button type="button" class="b primary" :disabled="transferring" @click="onPickRightRoot">选右侧路径…</button>
+      <template v-if="pendingRemovable">
+        <span class="rh-removable-msg">
+          检测到可移动存储「{{ pendingRemovable.label }}」（{{ pendingRemovable.path }}）
+        </span>
+        <button type="button" class="b" :disabled="transferring" @click="confirmOpenRemovable">确认打开到右侧</button>
+        <button type="button" class="b ghost" :disabled="transferring" @click="dismissRemovable">忽略</button>
       </template>
+      <span class="rh-split-spacer" />
       <button
-        v-if="relSegments.length"
         type="button"
-        class="b ghost rh-up"
-        :disabled="loading"
-        @click="goUp"
+        class="b"
+        :disabled="!canTransferLeftToRight || transferring"
+        title="将左侧选中复制到右侧当前目录"
+        @click="runTransfer('left', 'copy')"
       >
-        上级
-      </button>
-    </nav>
-
-    <p v-if="msg" class="msg">{{ msg }}</p>
-
-    <p v-if="electronShell && !watchDir" class="rh-empty-hint">请先选择要监视的导出文件夹。</p>
-    <p v-else-if="electronShell && watchDir && !loading && !entries.length && total === 0" class="rh-empty-hint">
-      当前文件夹内暂无子文件夹或 PDF。
-    </p>
-
-    <div v-if="mode === 'list' && entries.length" class="tbl-panel">
-      <table class="tbl">
-        <thead>
-          <tr>
-            <th>名称</th>
-            <th>大小</th>
-            <th>修改时间</th>
-            <th class="th-act">操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="e in entries" :key="entryKey(e)">
-            <td class="rh-name-cell" :title="entryTitle(e)">
-              <button
-                v-if="e.kind === 'dir'"
-                type="button"
-                class="rh-folder-btn"
-                :disabled="loading"
-                @click="enterDir(e.path)"
-              >
-                <span class="rh-folder-ico" aria-hidden="true"></span>
-                {{ e.name }}
-              </button>
-              <span v-else>{{ e.name }}</span>
-            </td>
-            <td class="td-meta">{{ e.kind === "pdf" ? formatSize(e.sizeBytes) : "文件夹" }}</td>
-            <td class="td-meta">{{ formatTime(e.modifiedAt || "") }}</td>
-            <td class="td-actions">
-              <template v-if="e.kind === 'dir'">
-                <button type="button" class="b ghost" :disabled="loading" @click="enterDir(e.path)">进入</button>
-              </template>
-              <template v-else>
-                <button type="button" class="b ghost" @click="openFile(e)">打开</button>
-                <button type="button" class="b ghost" @click="revealFile(e)">所在位置</button>
-                <button type="button" class="b danger-soft" @click="deleteFile(e)">删除</button>
-              </template>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-
-    <div v-else-if="mode === 'thumbs' && entries.length" class="grid">
-      <div
-        v-for="e in entries"
-        :key="'card-' + entryKey(e)"
-        class="card"
-        :class="{ 'card--folder': e.kind === 'dir' }"
-        :ref="(el) => (e.kind === 'pdf' ? setCardRef(e.filePath, el as Element | null) : undefined)"
-      >
-        <template v-if="e.kind === 'dir'">
-          <button type="button" class="folder-card-btn" :disabled="loading" @click="enterDir(e.path)">
-            <span class="folder-card-ico" aria-hidden="true"></span>
-            <span class="folder-card-name" :title="e.name">{{ e.name }}</span>
-            <span class="folder-card-hint">点击进入</span>
-          </button>
-        </template>
-        <template v-else>
-          <div class="thumb-wrap" title="双击打开" @dblclick="openFile(e)">
-            <PdfExportThumb v-if="visibleCards.has(e.filePath)" :file-path="e.filePath" />
-            <div v-else class="thumb-lazy-ph">滚动到此加载预览…</div>
-          </div>
-          <div class="foot">
-            <div class="foot-line">
-              <b :title="e.name">{{ e.name }}</b>
-              <span class="foot-meta">{{ formatSize(e.sizeBytes) }} · {{ formatTime(e.modifiedAt) }}</span>
-            </div>
-            <div class="foot-actions">
-              <button type="button" class="b primary" @click="openFile(e)">打开</button>
-              <button type="button" class="b" @click="revealFile(e)">位置</button>
-              <button type="button" class="b danger" @click="deleteFile(e)">删除</button>
-            </div>
-          </div>
-        </template>
-      </div>
-    </div>
-
-    <div v-if="electronShell && watchDir && total > 0" class="rh-pager">
-      <span class="rh-pager-meta">共 {{ total }} 项 · 第 {{ pageIndex + 1 }} / {{ pageCount }} 页</span>
-      <label class="rh-pager-limit">
-        每页
-        <select v-model.number="pageSize" class="rh-select" :disabled="loading" @change="onPageSizeChange">
-          <option :value="20">20</option>
-          <option :value="50">50</option>
-          <option :value="100">100</option>
-        </select>
-      </label>
-      <button type="button" class="b" :disabled="loading || pageIndex <= 0" @click="goPage(pageIndex - 1)">
-        上一页
+        → 复制
       </button>
       <button
         type="button"
         class="b"
-        :disabled="loading || pageIndex + 1 >= pageCount"
-        @click="goPage(pageIndex + 1)"
+        :disabled="!canTransferLeftToRight || transferring"
+        title="将左侧选中移动到右侧当前目录"
+        @click="runTransfer('left', 'move')"
       >
-        下一页
+        → 移动
       </button>
+      <button
+        type="button"
+        class="b"
+        :disabled="!canTransferRightToLeft || transferring"
+        title="将右侧选中复制到左侧当前目录"
+        @click="runTransfer('right', 'copy')"
+      >
+        ← 复制
+      </button>
+      <button
+        type="button"
+        class="b"
+        :disabled="!canTransferRightToLeft || transferring"
+        title="将右侧选中移动到左侧当前目录"
+        @click="runTransfer('right', 'move')"
+      >
+        ← 移动
+      </button>
+    </div>
+
+    <p v-if="msg" class="msg">{{ msg }}</p>
+
+    <div v-if="!split" class="rh-single">
+      <div class="rh-dir-row">
+        <label class="rh-dir-lbl" for="rh-watch-dir">导出文件夹</label>
+        <div class="rh-dir-inline">
+          <input
+            id="rh-watch-dir"
+            :value="watchDir || ''"
+            type="text"
+            readonly
+            class="rh-dir-inp"
+            placeholder="未绑定（点击下方选择）"
+          />
+          <button type="button" class="b primary" :disabled="!electronShell" @click="onPickLeftRoot">
+            选择文件夹…
+          </button>
+        </div>
+      </div>
+      <ReportHistoryPane
+        title="导出目录"
+        :mode="mode"
+        :root-dir="watchDir"
+        :rel-segments="left.relSegments"
+        :entries="left.entries"
+        :total="left.total"
+        :page-index="left.pageIndex"
+        :page-size="pageSize"
+        :busy="left.loading || transferring"
+        :disabled="!electronShell"
+        :selectable="false"
+        :selected="left.selected"
+        :show-row-actions="true"
+        empty-root-text="请先选择要监视的导出文件夹。"
+        @pick-root="onPickLeftRoot"
+        @go-depth="(d) => goToDepth('left', d)"
+        @go-up="() => goUp('left')"
+        @enter-dir="(p) => enterDir('left', p)"
+        @open-file="openFile"
+        @reveal-file="revealFile"
+        @delete-file="deleteFile"
+        @page="(i) => goPage('left', i)"
+        @page-size="onPageSizeChange"
+        @update:selected="(s) => (left.selected = s)"
+      />
+    </div>
+
+    <div v-else class="rh-split">
+      <ReportHistoryPane
+        class="rh-split-pane"
+        title="左：导出目录"
+        :mode="mode"
+        :root-dir="watchDir"
+        :rel-segments="left.relSegments"
+        :entries="left.entries"
+        :total="left.total"
+        :page-index="left.pageIndex"
+        :page-size="pageSize"
+        :busy="left.loading || transferring"
+        :selectable="true"
+        :selected="left.selected"
+        :show-row-actions="true"
+        :show-pick-root="true"
+        pick-label="选导出目录…"
+        root-placeholder="未绑定导出监视目录"
+        empty-root-text="请先选择导出监视目录。"
+        @pick-root="onPickLeftRoot"
+        @go-depth="(d) => goToDepth('left', d)"
+        @go-up="() => goUp('left')"
+        @enter-dir="(p) => enterDir('left', p)"
+        @open-file="openFile"
+        @reveal-file="revealFile"
+        @delete-file="deleteFile"
+        @page="(i) => goPage('left', i)"
+        @page-size="onPageSizeChange"
+        @update:selected="(s) => (left.selected = s)"
+      />
+      <ReportHistoryPane
+        class="rh-split-pane"
+        title="右：目标目录"
+        :mode="mode"
+        :root-dir="rightRoot"
+        :rel-segments="right.relSegments"
+        :entries="right.entries"
+        :total="right.total"
+        :page-index="right.pageIndex"
+        :page-size="pageSize"
+        :busy="right.loading || transferring"
+        :selectable="true"
+        :selected="right.selected"
+        :show-row-actions="false"
+        :show-pick-root="true"
+        pick-label="选路径…"
+        root-placeholder="手选本机路径 / 确认后的可移动存储"
+        empty-root-text="请点击「选右侧路径…」或确认打开可移动存储。"
+        @pick-root="onPickRightRoot"
+        @go-depth="(d) => goToDepth('right', d)"
+        @go-up="() => goUp('right')"
+        @enter-dir="(p) => enterDir('right', p)"
+        @open-file="openFile"
+        @reveal-file="revealFile"
+        @delete-file="deleteFile"
+        @page="(i) => goPage('right', i)"
+        @page-size="onPageSizeChange"
+        @update:selected="(s) => (right.selected = s)"
+      />
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onActivated, onMounted, onUnmounted, ref, watch } from "vue";
-import PdfExportThumb from "@/components/report-history/PdfExportThumb.vue";
+import { computed, onActivated, onMounted, onUnmounted, reactive, ref, watch } from "vue";
+import ReportHistoryPane, {
+  type ExportEntry,
+  type PdfEntry,
+} from "@/components/report-history/ReportHistoryPane.vue";
 import {
   loadReportExportPrefs,
   saveReportExportPrefs,
 } from "@/lib/report-export-prefs";
-import { appConfirm } from "@/composables/useAppConfirm";
+import { entryPathOf, summarizeTransferResult } from "@/lib/history-selection";
+import { appConfirm, appConfirmSaveLeave } from "@/composables/useAppConfirm";
 import { segmentsForDepth, shouldApplyScanGeneration } from "@/lib/report-history-nav";
 
 defineOptions({ name: "ReportHistory" });
 
-type DirEntry = { kind: "dir"; name: string; path: string; modifiedAt?: string };
-type PdfEntry = {
-  kind: "pdf";
-  name: string;
-  filePath: string;
-  fileUrl?: string;
-  sizeBytes: number;
-  modifiedAt: string;
-};
-type ExportEntry = DirEntry | PdfEntry;
+type Side = "left" | "right";
 
-/** @deprecated 兼容旧类型名；现为 PDF 行 */
-export type ExportPdfRow = Omit<PdfEntry, "kind"> & { kind?: "pdf" };
+type PaneState = {
+  cwd: string;
+  relSegments: string[];
+  entries: ExportEntry[];
+  total: number;
+  pageIndex: number;
+  loading: boolean;
+  selected: Set<string>;
+  scanGen: number;
+};
 
 const MODE_STORAGE_KEY = "rh-view-mode";
 const PAGE_SIZE_KEY = "rh-page-size";
+const SPLIT_KEY = "rh-split";
+const RIGHT_ROOT_KEY = "rh-right-root";
 
 function readInitialMode(): "list" | "thumbs" {
   try {
@@ -220,6 +245,35 @@ function readInitialPageSize(): number {
   return 50;
 }
 
+function readSplit(): boolean {
+  try {
+    return localStorage.getItem(SPLIT_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function readRightRoot(): string | null {
+  try {
+    return localStorage.getItem(RIGHT_ROOT_KEY) || null;
+  } catch {
+    return null;
+  }
+}
+
+function makePane(): PaneState {
+  return {
+    cwd: "",
+    relSegments: [],
+    entries: [],
+    total: 0,
+    pageIndex: 0,
+    loading: false,
+    selected: new Set(),
+    scanGen: 0,
+  };
+}
+
 const mode = ref<"list" | "thumbs">(readInitialMode());
 watch(mode, (m) => {
   try {
@@ -229,18 +283,20 @@ watch(mode, (m) => {
   }
 });
 
+const split = ref(readSplit());
 const watchDir = ref<string | null>(loadReportExportPrefs().watchDir);
-const cwd = ref<string>("");
-const relSegments = ref<string[]>([]);
-const entries = ref<ExportEntry[]>([]);
-const total = ref(0);
-const pageIndex = ref(0);
+const rightRoot = ref<string | null>(readRightRoot());
 const pageSize = ref(readInitialPageSize());
-const loading = ref(false);
 const msg = ref("");
-let scanGen = 0;
+const transferring = ref(false);
 
-const pageCount = computed(() => Math.max(1, Math.ceil(total.value / pageSize.value) || 1));
+const left = reactive(makePane());
+const right = reactive(makePane());
+
+type RemovableVol = { path: string; label: string; platform: string };
+const pendingRemovable = ref<RemovableVol | null>(null);
+const dismissedRemovablePaths = ref<Set<string>>(new Set());
+let removableTimer: ReturnType<typeof setInterval> | null = null;
 
 const electronShell = computed(
   () =>
@@ -251,27 +307,62 @@ const electronShell = computed(
     ),
 );
 
-function entryKey(e: ExportEntry): string {
-  return e.kind === "dir" ? `d:${e.path}` : `p:${e.filePath}`;
+const loadingAny = computed(() => left.loading || right.loading);
+
+const canTransferLeftToRight = computed(
+  () =>
+    Boolean(watchDir.value && rightRoot.value && left.selected.size && left.cwd && right.cwd) &&
+    !transferring.value,
+);
+
+const canTransferRightToLeft = computed(
+  () =>
+    Boolean(watchDir.value && rightRoot.value && right.selected.size && left.cwd && right.cwd) &&
+    !transferring.value,
+);
+
+function paneOf(side: Side): PaneState {
+  return side === "left" ? left : right;
 }
 
-function entryTitle(e: ExportEntry): string {
-  return e.kind === "dir" ? e.path : e.filePath;
+function rootOf(side: Side): string | null {
+  return side === "left" ? watchDir.value : rightRoot.value;
 }
 
-function formatSize(bytes: number): string {
-  if (!Number.isFinite(bytes) || bytes < 0) return "—";
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+function setRoot(side: Side, path: string | null) {
+  if (side === "left") {
+    watchDir.value = path;
+    if (path) saveReportExportPrefs({ watchDir: path });
+  } else {
+    rightRoot.value = path;
+    try {
+      if (path) localStorage.setItem(RIGHT_ROOT_KEY, path);
+      else localStorage.removeItem(RIGHT_ROOT_KEY);
+    } catch {
+      /* ignore */
+    }
+  }
 }
 
-function formatTime(iso: string): string {
-  return (iso || "").replace("T", " ").slice(0, 19);
+function toggleSplit() {
+  split.value = !split.value;
+  try {
+    localStorage.setItem(SPLIT_KEY, split.value ? "1" : "0");
+  } catch {
+    /* ignore */
+  }
+  if (split.value) {
+    startRemovablePoll();
+    void refresh("right");
+  } else {
+    stopRemovablePoll();
+    left.selected = new Set();
+    right.selected = new Set();
+  }
 }
 
-async function joinUnderRoot(segments: string[]): Promise<string> {
-  const root = (watchDir.value || "").trim();
+async function joinUnderRoot(side: Side, segments: string[]): Promise<string> {
+  const root = (rootOf(side) || "").trim();
   if (!segments.length) return root;
   const api = window.electronAPI;
   if (api?.pathJoin) {
@@ -280,14 +371,14 @@ async function joinUnderRoot(segments: string[]): Promise<string> {
   return [root, ...segments].join("/");
 }
 
-async function refresh(): Promise<void> {
-  msg.value = "";
-  const root = (watchDir.value || "").trim();
+async function refresh(side: Side): Promise<void> {
+  const pane = paneOf(side);
+  const root = (rootOf(side) || "").trim();
   if (!root) {
-    entries.value = [];
-    total.value = 0;
-    relSegments.value = [];
-    cwd.value = "";
+    pane.entries = [];
+    pane.total = 0;
+    pane.relSegments = [];
+    pane.cwd = "";
     return;
   }
   const api = window.electronAPI;
@@ -296,50 +387,50 @@ async function refresh(): Promise<void> {
     return;
   }
 
-  const gen = ++scanGen;
-  loading.value = true;
+  const gen = ++pane.scanGen;
+  pane.loading = true;
   try {
-    const browse = (cwd.value || root).trim() || root;
+    const browse = (pane.cwd || root).trim() || root;
     if (api.scanExportEntries) {
       const res = await api.scanExportEntries({
         rootDir: root,
         cwd: browse,
-        offset: pageIndex.value * pageSize.value,
+        offset: pane.pageIndex * pageSize.value,
         limit: pageSize.value,
         sort: "mtime_desc",
       });
-      if (!shouldApplyScanGeneration(gen, scanGen)) return;
+      if (!shouldApplyScanGeneration(gen, pane.scanGen)) return;
       if (!res?.ok) {
-        entries.value = [];
-        total.value = 0;
+        pane.entries = [];
+        pane.total = 0;
         msg.value = res?.error || "扫描失败";
+        if (side === "right" && /不存在|拔|ENOENT/i.test(res?.error || "")) {
+          msg.value = `右侧目录不可用：${res?.error || "可能已拔出"}。请重新选择路径。`;
+        }
         return;
       }
-      if (res.rootDir && res.rootDir !== root) {
-        watchDir.value = res.rootDir;
-        saveReportExportPrefs({ watchDir: res.rootDir });
+      if (side === "left" && res.rootDir && res.rootDir !== root) {
+        setRoot("left", res.rootDir);
       }
-      cwd.value = res.cwd || browse;
-      relSegments.value = Array.isArray(res.relSegments) ? res.relSegments : [];
-      total.value = res.total ?? 0;
-      entries.value = (res.entries || []) as ExportEntry[];
-      visibleCards.value = new Set();
+      pane.cwd = res.cwd || browse;
+      pane.relSegments = Array.isArray(res.relSegments) ? res.relSegments : [];
+      pane.total = res.total ?? 0;
+      pane.entries = (res.entries || []) as ExportEntry[];
       return;
     }
 
-    // 旧壳回退：仅本层 PDF、无文件夹
     const res = await api.scanExportPdfs!({ dir: browse });
-    if (!shouldApplyScanGeneration(gen, scanGen)) return;
+    if (!shouldApplyScanGeneration(gen, pane.scanGen)) return;
     if (!res?.ok) {
-      entries.value = [];
-      total.value = 0;
+      pane.entries = [];
+      pane.total = 0;
       msg.value = res?.error || "扫描失败";
       return;
     }
-    const files = (res.files || []) as ExportPdfRow[];
-    total.value = files.length;
-    const start = pageIndex.value * pageSize.value;
-    entries.value = files.slice(start, start + pageSize.value).map((f) => ({
+    const files = res.files || [];
+    pane.total = files.length;
+    const start = pane.pageIndex * pageSize.value;
+    pane.entries = files.slice(start, start + pageSize.value).map((f) => ({
       kind: "pdf" as const,
       name: f.name,
       filePath: f.filePath,
@@ -347,79 +438,203 @@ async function refresh(): Promise<void> {
       sizeBytes: f.sizeBytes,
       modifiedAt: f.modifiedAt,
     }));
-    cwd.value = res.dir || browse;
-    relSegments.value = [];
+    pane.cwd = res.dir || browse;
+    pane.relSegments = [];
   } catch (e) {
-    if (!shouldApplyScanGeneration(gen, scanGen)) return;
-    entries.value = [];
-    total.value = 0;
+    if (!shouldApplyScanGeneration(gen, pane.scanGen)) return;
+    pane.entries = [];
+    pane.total = 0;
     msg.value = e instanceof Error ? e.message : String(e);
   } finally {
-    if (shouldApplyScanGeneration(gen, scanGen)) loading.value = false;
+    if (shouldApplyScanGeneration(gen, pane.scanGen)) pane.loading = false;
   }
 }
 
-async function enterDir(dirPath: string): Promise<void> {
-  cwd.value = dirPath;
-  pageIndex.value = 0;
-  await refresh();
+async function refreshAll() {
+  msg.value = "";
+  await refresh("left");
+  if (split.value) await refresh("right");
 }
 
-async function goToDepth(depth: number): Promise<void> {
-  // depth -1 = root；0..n-1 = 该段为止
-  const segs = depth < 0 ? [] : segmentsForDepth(relSegments.value, depth);
-  cwd.value = await joinUnderRoot(segs);
-  pageIndex.value = 0;
-  await refresh();
+async function enterDir(side: Side, dirPath: string) {
+  const pane = paneOf(side);
+  pane.cwd = dirPath;
+  pane.pageIndex = 0;
+  pane.selected = new Set();
+  await refresh(side);
 }
 
-async function goUp(): Promise<void> {
-  if (!relSegments.value.length) return;
-  await goToDepth(relSegments.value.length - 2);
+async function goToDepth(side: Side, depth: number) {
+  const pane = paneOf(side);
+  const segs = depth < 0 ? [] : segmentsForDepth(pane.relSegments, depth);
+  pane.cwd = await joinUnderRoot(side, segs);
+  pane.pageIndex = 0;
+  pane.selected = new Set();
+  await refresh(side);
 }
 
-function goPage(idx: number): void {
-  const max = pageCount.value - 1;
-  pageIndex.value = Math.max(0, Math.min(max, idx));
-  void refresh();
+async function goUp(side: Side) {
+  const pane = paneOf(side);
+  if (!pane.relSegments.length) return;
+  await goToDepth(side, pane.relSegments.length - 2);
 }
 
-function onPageSizeChange(): void {
+function goPage(side: Side, idx: number) {
+  const pane = paneOf(side);
+  const max = Math.max(0, Math.ceil(pane.total / pageSize.value) - 1);
+  pane.pageIndex = Math.max(0, Math.min(max, idx));
+  void refresh(side);
+}
+
+function onPageSizeChange(size: number) {
+  pageSize.value = size;
   try {
-    localStorage.setItem(PAGE_SIZE_KEY, String(pageSize.value));
+    localStorage.setItem(PAGE_SIZE_KEY, String(size));
   } catch {
     /* ignore */
   }
-  pageIndex.value = 0;
-  void refresh();
+  left.pageIndex = 0;
+  right.pageIndex = 0;
+  void refreshAll();
 }
 
-async function onPickDir(): Promise<void> {
+async function onPickLeftRoot() {
   msg.value = "";
   const picked = await window.electronAPI?.pickExportDirectory?.({
     title: "选择导出文件夹（历史报表监视）",
     defaultPath: watchDir.value || undefined,
   });
   if (!picked) return;
-  watchDir.value = picked;
-  cwd.value = picked;
-  relSegments.value = [];
-  pageIndex.value = 0;
-  saveReportExportPrefs({ watchDir: picked });
-  await refresh();
+  setRoot("left", picked);
+  left.cwd = picked;
+  left.relSegments = [];
+  left.pageIndex = 0;
+  left.selected = new Set();
+  await refresh("left");
 }
 
-async function openFile(r: PdfEntry): Promise<void> {
+async function onPickRightRoot() {
+  msg.value = "";
+  const picked = await window.electronAPI?.pickExportDirectory?.({
+    title: "选择右侧目标目录",
+    defaultPath: rightRoot.value || undefined,
+  });
+  if (!picked) return;
+  setRoot("right", picked);
+  right.cwd = picked;
+  right.relSegments = [];
+  right.pageIndex = 0;
+  right.selected = new Set();
+  await refresh("right");
+}
+
+function selectedPaths(side: Side): string[] {
+  const pane = paneOf(side);
+  const out: string[] = [];
+  for (const e of pane.entries) {
+    const key = e.kind === "dir" ? `d:${e.path}` : `p:${e.filePath}`;
+    if (pane.selected.has(key)) out.push(entryPathOf(e));
+  }
+  // 也保留不在本页但已选的 key（跨页）——首版仅本页可见选中有效；清空不可见
+  return out.filter(Boolean);
+}
+
+async function askConflictPolicy(sampleName: string): Promise<"overwrite" | "rename" | "skip" | null> {
+  const result = await appConfirmSaveLeave({
+    title: "目标已存在同名项",
+    message: `例如「${sampleName}」等与目标目录重名。\n请选择对本批全部冲突项的处理方式：`,
+    saveText: "全部覆盖",
+    discardText: "全部改名",
+    cancelText: "全部跳过",
+  });
+  if (result === "confirm") return "overwrite";
+  if (result === "discard") return "rename";
+  if (result === "cancel") return "skip";
+  return null;
+}
+
+async function runTransfer(from: Side, modeOp: "copy" | "move") {
+  msg.value = "";
+  const to: Side = from === "left" ? "right" : "left";
+  const sourceRoot = rootOf(from);
+  const destRoot = rootOf(to);
+  const srcPane = paneOf(from);
+  const destPane = paneOf(to);
+  const sources = selectedPaths(from);
+  if (!sourceRoot || !destRoot || !sources.length || !destPane.cwd) {
+    msg.value = "请先绑定两侧目录并选中要传输的项目。";
+    return;
+  }
+
+  if (modeOp === "move") {
+    const ok = await appConfirm({
+      title: "确认移动",
+      message: `将把 ${sources.length} 项移动到对侧当前目录。\n移动成功后会从源位置删除，是否继续？`,
+      confirmText: "移动",
+      danger: true,
+    });
+    if (!ok) return;
+  }
+
+  const api = window.electronAPI;
+  if (!api?.historyTransfer) {
+    msg.value = "当前客户端不支持复制/移动，请升级桌面版。";
+    return;
+  }
+
+  transferring.value = true;
+  try {
+    const dry = await api.historyTransfer({
+      sources,
+      destDir: destPane.cwd,
+      sourceRoot,
+      destRoot,
+      mode: modeOp,
+      dryRun: true,
+    });
+    if (!dry?.ok && !dry?.needsConflictDecision) {
+      msg.value = dry?.error || "预检失败";
+      return;
+    }
+
+    let conflict: "skip" | "overwrite" | "rename" | undefined;
+    if (dry.needsConflictDecision || (dry.conflicts && dry.conflicts.length)) {
+      const sample = dry.conflicts?.[0]?.name || "同名项";
+      const decided = await askConflictPolicy(sample);
+      if (!decided) return;
+      conflict = decided;
+    }
+
+    const res = await api.historyTransfer({
+      sources,
+      destDir: destPane.cwd,
+      sourceRoot,
+      destRoot,
+      mode: modeOp,
+      conflict,
+    });
+    msg.value = summarizeTransferResult(res) + (res.error ? ` · ${res.error}` : "");
+    srcPane.selected = new Set();
+    await refresh(from);
+    await refresh(to);
+  } catch (e) {
+    msg.value = e instanceof Error ? e.message : String(e);
+  } finally {
+    transferring.value = false;
+  }
+}
+
+async function openFile(r: PdfEntry) {
   const res = await window.electronAPI?.shellOpenPath?.(r.filePath);
   if (res && !res.ok) msg.value = `打开失败：${res.error || "未知错误"}`;
 }
 
-async function revealFile(r: PdfEntry): Promise<void> {
+async function revealFile(r: PdfEntry) {
   const res = await window.electronAPI?.showItemInFolder?.(r.filePath);
   if (res && !res.ok) msg.value = `无法定位文件：${res.error || "未知错误"}`;
 }
 
-async function deleteFile(r: PdfEntry): Promise<void> {
+async function deleteFile(r: PdfEntry) {
   if (
     !(await appConfirm({
       title: "删除文件",
@@ -437,77 +652,111 @@ async function deleteFile(r: PdfEntry): Promise<void> {
     return;
   }
   msg.value = "已删除。";
-  await refresh();
+  await refresh("left");
+  if (split.value) await refresh("right");
 }
 
-const visibleCards = ref<Set<string>>(new Set());
-const cardObserver = ref<IntersectionObserver | null>(null);
-const cardEls = new Map<string, Element>();
+async function pollRemovable() {
+  if (!split.value || !window.electronAPI?.listRemovableVolumes) return;
+  try {
+    const res = await window.electronAPI.listRemovableVolumes();
+    if (!res?.ok) return;
+    const vols = res.volumes || [];
+    const right = (rightRoot.value || "").replace(/\\/g, "/").toLowerCase();
+    const candidate = vols.find((v) => {
+      const p = (v.path || "").replace(/\\/g, "/").toLowerCase();
+      if (!p) return false;
+      if (dismissedRemovablePaths.value.has(p)) return false;
+      if (right && (right === p || right.startsWith(p.replace(/\/?$/, "/")))) return false;
+      return true;
+    });
+    if (candidate) {
+      pendingRemovable.value = candidate;
+    } else if (pendingRemovable.value) {
+      const still = vols.some(
+        (v) =>
+          (v.path || "").replace(/\\/g, "/").toLowerCase() ===
+          (pendingRemovable.value!.path || "").replace(/\\/g, "/").toLowerCase(),
+      );
+      if (!still) pendingRemovable.value = null;
+    }
 
-function ensureCardObserver() {
-  if (cardObserver.value || typeof IntersectionObserver === "undefined") return;
-  cardObserver.value = new IntersectionObserver(
-    (ioEntries) => {
-      let changed = false;
-      const next = new Set(visibleCards.value);
-      for (const e of ioEntries) {
-        if (!e.isIntersecting) continue;
-        const fp = e.target instanceof HTMLElement ? e.target.dataset.fp : "";
-        if (fp && !next.has(fp)) {
-          next.add(fp);
-          changed = true;
-        }
-      }
-      if (changed) visibleCards.value = next;
-    },
-    { root: null, rootMargin: "400px 0px", threshold: 0.01 },
-  );
-  for (const el of cardEls.values()) cardObserver.value.observe(el);
+    // 右侧路径所在卷消失
+    if (rightRoot.value && vols.length >= 0) {
+      // 仅当右侧路径位于某曾见可移动卷前缀下且该卷不在列表时，靠 refresh 报错即可
+    }
+  } catch {
+    /* ignore */
+  }
 }
 
-function setCardRef(filePath: string, el: Element | null) {
-  if (el instanceof HTMLElement) {
-    el.dataset.fp = filePath;
-    cardEls.set(filePath, el);
-    if (cardObserver.value) cardObserver.value.observe(el);
-  } else {
-    const prev = cardEls.get(filePath);
-    if (prev && cardObserver.value) cardObserver.value.unobserve(prev);
-    cardEls.delete(filePath);
+async function confirmOpenRemovable() {
+  const vol = pendingRemovable.value;
+  if (!vol) return;
+  setRoot("right", vol.path);
+  right.cwd = vol.path;
+  right.relSegments = [];
+  right.pageIndex = 0;
+  right.selected = new Set();
+  pendingRemovable.value = null;
+  await refresh("right");
+}
+
+function dismissRemovable() {
+  if (pendingRemovable.value) {
+    const p = pendingRemovable.value.path.replace(/\\/g, "/").toLowerCase();
+    dismissedRemovablePaths.value.add(p);
+  }
+  pendingRemovable.value = null;
+}
+
+function startRemovablePoll() {
+  stopRemovablePoll();
+  void pollRemovable();
+  removableTimer = setInterval(() => void pollRemovable(), 3000);
+}
+
+function stopRemovablePoll() {
+  if (removableTimer) {
+    clearInterval(removableTimer);
+    removableTimer = null;
   }
 }
 
 async function onConfigRestored() {
   watchDir.value = loadReportExportPrefs().watchDir;
-  cwd.value = watchDir.value || "";
-  relSegments.value = [];
-  pageIndex.value = 0;
-  if (watchDir.value) {
-    await refresh();
-  } else {
-    entries.value = [];
-    total.value = 0;
+  left.cwd = watchDir.value || "";
+  left.relSegments = [];
+  left.pageIndex = 0;
+  left.selected = new Set();
+  if (watchDir.value) await refresh("left");
+  else {
+    left.entries = [];
+    left.total = 0;
   }
 }
 
 onActivated(async () => {
-  ensureCardObserver();
   if (watchDir.value) {
-    if (!cwd.value) cwd.value = watchDir.value;
-    await refresh();
+    if (!left.cwd) left.cwd = watchDir.value;
+    await refresh("left");
   }
+  if (split.value && rightRoot.value) {
+    if (!right.cwd) right.cwd = rightRoot.value;
+    await refresh("right");
+  }
+  if (split.value) startRemovablePoll();
 });
 
 onMounted(() => {
   window.addEventListener("report-editor-config-imported", onConfigRestored);
-  if (watchDir.value && !cwd.value) cwd.value = watchDir.value;
+  if (watchDir.value && !left.cwd) left.cwd = watchDir.value;
+  if (rightRoot.value && !right.cwd) right.cwd = rightRoot.value;
+  if (split.value) startRemovablePoll();
 });
 
 onUnmounted(() => {
-  if (cardObserver.value) {
-    cardObserver.value.disconnect();
-    cardObserver.value = null;
-  }
+  stopRemovablePoll();
   window.removeEventListener("report-editor-config-imported", onConfigRestored);
 });
 </script>
@@ -578,58 +827,43 @@ onUnmounted(() => {
   background: rgb(255 255 255 / 0.9);
   color: #334155;
 }
-.rh-crumbs {
+.rh-split-bar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px 2px;
-  margin: 0 0 12px;
-  padding: 8px 10px;
-  border-radius: 8px;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
   background: #f8fafc;
   border: 1px solid #e2e8f0;
 }
-.rh-crumb {
-  border: none;
-  background: transparent;
-  color: #4338ca;
+.rh-split-spacer {
+  flex: 1;
+  min-width: 8px;
+}
+.rh-removable-msg {
   font-size: 13px;
+  color: #92400e;
   font-weight: 600;
-  padding: 4px 6px;
-  border-radius: 4px;
-  cursor: pointer;
-  max-width: 160px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
-.rh-crumb:hover:not(:disabled) {
-  background: #eef2ff;
+.rh-split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  align-items: start;
 }
-.rh-crumb:disabled {
-  cursor: default;
-  opacity: 0.85;
+.rh-split-pane {
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  background: rgb(255 255 255 / 0.75);
+  min-height: 320px;
 }
-.rh-crumb--current {
-  color: #1e293b;
-  cursor: default;
-}
-.rh-crumb-sep {
-  color: #94a3b8;
-  font-size: 12px;
-  user-select: none;
-}
-.rh-up {
-  margin-left: 8px;
-  min-height: 32px !important;
-  padding: 0 10px !important;
-  border-radius: 999px !important;
-  font-size: 12px !important;
-}
-.rh-empty-hint {
-  color: #71717a;
-  font-size: 13px;
-  margin: 12px 0;
+@media (max-width: 960px) {
+  .rh-split {
+    grid-template-columns: 1fr;
+  }
 }
 .msg {
   font-size: 12px;
@@ -655,273 +889,15 @@ onUnmounted(() => {
   color: #fff;
   border-color: #4338ca;
 }
-.b.danger {
-  background: #dc2626;
-  color: #fff;
-  border-color: #b91c1c;
-}
 .b.ghost {
   background: #fff;
   border-color: #e2e8f0;
   color: #475569;
 }
-.b.ghost:hover:not(:disabled) {
-  background: #f8fafc;
-  border-color: #cbd5e1;
-  color: #1e293b;
-}
-.b.danger-soft {
-  background: transparent;
-  border-color: transparent;
-  color: #dc2626;
-}
-.b.danger-soft:hover {
-  background: #fef2f2;
-  border-color: #fecaca;
-}
-.rh-folder-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  border: none;
-  background: transparent;
-  padding: 0;
-  font: inherit;
-  font-weight: 600;
-  color: #1e293b;
-  cursor: pointer;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.rh-folder-btn:hover:not(:disabled) {
-  color: #4338ca;
-}
-.rh-folder-ico {
-  flex-shrink: 0;
-  width: 14px;
-  height: 11px;
-  border: 2px solid #6366f1;
-  border-radius: 2px 2px 1px 1px;
-  box-sizing: border-box;
-  position: relative;
+.b-on {
   background: #eef2ff;
-}
-.rh-folder-ico::before {
-  content: "";
-  position: absolute;
-  left: -2px;
-  top: -5px;
-  width: 6px;
-  height: 3px;
-  border-radius: 1px 1px 0 0;
-  background: #6366f1;
-}
-.tbl-panel {
-  margin-top: 10px;
-  border-radius: 12px;
-  border: 1px solid rgb(228 228 231 / 0.95);
-  background: rgb(255 255 255 / 0.92);
-  box-shadow: 0 8px 24px rgb(15 23 42 / 0.06);
-  overflow: hidden;
-}
-.tbl {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 14px;
-}
-.tbl thead th {
-  padding: 11px 14px;
-  text-align: left;
-  font-size: 12px;
+  border-color: #a5b4fc;
+  color: #3730a3;
   font-weight: 600;
-  letter-spacing: 0.02em;
-  color: #64748b;
-  background: #f8fafc;
-  border-bottom: 1px solid #e2e8f0;
-}
-.tbl tbody td {
-  padding: 12px 14px;
-  text-align: left;
-  vertical-align: middle;
-  border-bottom: 1px solid #f1f5f9;
-  color: #334155;
-}
-.tbl tbody tr:last-child td {
-  border-bottom: none;
-}
-.tbl tbody tr:hover td {
-  background: #f8fafc;
-}
-.th-act {
-  text-align: right;
-}
-.td-meta {
-  color: #64748b;
-  font-size: 13px;
-  white-space: nowrap;
-}
-.rh-name-cell {
-  max-width: 0;
-  width: 46%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-weight: 600;
-  color: #1e293b;
-}
-.td-actions {
-  white-space: nowrap;
-  text-align: right;
-}
-.td-actions .b {
-  min-height: 32px;
-  padding: 0 12px;
-  margin-left: 6px;
-  border-radius: 999px;
-  font-size: 12px;
-  font-weight: 600;
-}
-.grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 14px;
-  margin-top: 12px;
-}
-.card {
-  border: 1px solid rgb(228 228 231 / 0.95);
-  border-radius: 12px;
-  padding: 12px;
-  background: rgb(255 255 255 / 0.92);
-  box-shadow: 0 8px 24px rgb(15 23 42 / 0.05);
-}
-.card--folder {
-  display: flex;
-  align-items: stretch;
-  min-height: 160px;
-}
-.folder-card-btn {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  border: none;
-  background: #f8fafc;
-  border-radius: 8px;
-  cursor: pointer;
-  padding: 16px;
-  color: #1e293b;
-}
-.folder-card-btn:hover:not(:disabled) {
-  background: #eef2ff;
-}
-.folder-card-ico {
-  width: 48px;
-  height: 36px;
-  border: 3px solid #6366f1;
-  border-radius: 4px 4px 2px 2px;
-  background: #eef2ff;
-  position: relative;
-  box-sizing: border-box;
-}
-.folder-card-ico::before {
-  content: "";
-  position: absolute;
-  left: -3px;
-  top: -10px;
-  width: 18px;
-  height: 8px;
-  border-radius: 2px 2px 0 0;
-  background: #6366f1;
-}
-.folder-card-name {
-  font-weight: 700;
-  font-size: 14px;
-  word-break: break-all;
-  text-align: center;
-}
-.folder-card-hint {
-  font-size: 11px;
-  color: #64748b;
-}
-.thumb-wrap {
-  display: flex;
-  justify-content: center;
-  align-items: flex-start;
-  min-height: 200px;
-  max-height: 280px;
-  overflow: hidden;
-  padding: 6px;
-  background: #f4f4f5;
-  border-radius: 8px;
-  cursor: pointer;
-}
-.thumb-lazy-ph {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  min-height: 200px;
-  font-size: 12px;
-  color: #a1a1aa;
-}
-.foot {
-  margin-top: 10px;
-  font-size: 12px;
-  line-height: 1.45;
-  color: #3f3f46;
-}
-.foot-line b {
-  display: block;
-  word-break: break-all;
-  margin-bottom: 4px;
-}
-.foot-meta {
-  color: #71717a;
-  font-size: 11px;
-}
-.foot-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 8px;
-}
-.foot-actions .b {
-  min-height: 32px;
-  padding: 5px 10px;
-  font-size: 12px;
-}
-.rh-pager {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
-  margin-top: 14px;
-  padding: 10px 0;
-}
-.rh-pager-meta {
-  font-size: 13px;
-  color: #64748b;
-  margin-right: auto;
-}
-.rh-pager-limit {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  color: #475569;
-}
-.rh-select {
-  padding: 6px 8px;
-  border-radius: 6px;
-  border: 1px solid #d4d4d8;
-  font-size: 13px;
-  background: #fff;
-}
-code {
-  font-size: 0.92em;
 }
 </style>
