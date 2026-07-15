@@ -333,11 +333,20 @@ async function requireDoubleConfirm(kind, target) {
   });
 }
 
-function buildConnectionFormData(database) {
+async function requestConfirmationToken(action, database, table = '') {
+  const data = await fetchJson('/api/confirmations', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action, database, table }),
+  });
+  return data.token;
+}
+
+function buildConnectionFormData(database, confirmationToken) {
   const fd = new FormData();
   fd.append('connection_json', JSON.stringify({ connection: getConnectionPayload() }));
   fd.append('database', database);
-  fd.append('confirmed', 'true');
+  fd.append('confirmation_token', confirmationToken);
   return fd;
 }
 
@@ -349,7 +358,8 @@ async function startRestoreSql() {
     setHint('importHint', '已取消 SQL 恢复', 'muted');
     return;
   }
-  const fd = buildConnectionFormData(database);
+  const confirmationToken = await requestConfirmationToken('restore-sql', database);
+  const fd = buildConnectionFormData(database, confirmationToken);
   fd.append('file', file);
   const resp = await fetch('/api/restore-sql', { method: 'POST', body: fd });
   const data = await resp.json();
@@ -367,7 +377,8 @@ async function startImportCsv() {
     setHint('importHint', '已取消 CSV 导入', 'muted');
     return;
   }
-  const fd = buildConnectionFormData(database);
+  const confirmationToken = await requestConfirmationToken('import-csv', database, table);
+  const fd = buildConnectionFormData(database, confirmationToken);
   fd.append('table', table);
   fd.append('truncate', document.getElementById('truncateBeforeImport').checked ? 'true' : 'false');
   fd.append('file', file);
@@ -412,15 +423,42 @@ function renderJobs(jobs) {
     const tr = document.createElement('tr');
     const status = job.status || 'running';
     const result = job.result && job.result.path
-      ? job.result.path
+      ? `${job.result.path}${job.result.size_bytes ? ` (${job.result.size_bytes} bytes)` : ''}`
       : (job.error || job.phase || '');
-    tr.innerHTML =
-      `<td><button type="button" class="job-link status-pill ${statusClass(status)}" data-job-id="${job.id}">${status}</button></td>` +
-      `<td>${renderProgress(job)}</td>` +
-      `<td>${job.title || job.id}</td>` +
-      `<td>${formatDuration(job.elapsed_seconds)}</td>` +
-      `<td>${formatDuration(job.eta_seconds)}</td>` +
-      `<td>${result}</td>`;
+    const statusCell = document.createElement('td');
+    const statusButton = document.createElement('button');
+    statusButton.type = 'button';
+    statusButton.className = `job-link status-pill ${statusClass(status)}`;
+    statusButton.dataset.jobId = String(job.id || '');
+    statusButton.textContent = status;
+    statusCell.appendChild(statusButton);
+    tr.appendChild(statusCell);
+
+    const progressCell = document.createElement('td');
+    progressCell.innerHTML = renderProgress(job);
+    tr.appendChild(progressCell);
+    for (const text of [
+      job.title || job.id,
+      formatDuration(job.elapsed_seconds),
+      formatDuration(job.eta_seconds),
+    ]) {
+      const cell = document.createElement('td');
+      cell.textContent = String(text || '');
+      tr.appendChild(cell);
+    }
+    const resultCell = document.createElement('td');
+    const resultText = document.createElement('span');
+    resultText.textContent = String(result || '');
+    resultCell.appendChild(resultText);
+    if (job.result && job.result.download_url) {
+      resultCell.appendChild(document.createTextNode(' '));
+      const downloadLink = document.createElement('a');
+      downloadLink.href = job.result.download_url;
+      downloadLink.textContent = '下载';
+      downloadLink.setAttribute('download', job.result.filename || '');
+      resultCell.appendChild(downloadLink);
+    }
+    tr.appendChild(resultCell);
     tbody.appendChild(tr);
   }
   table.appendChild(tbody);

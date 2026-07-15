@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import ipaddress
 import json
 import os
@@ -16,10 +17,11 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 import pymysql
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -93,6 +95,12 @@ class CsvExportRequest(BaseModel):
     output_dir: str = ""
 
 
+class ConfirmationRequest(BaseModel):
+    action: str
+    database: str
+    table: str = ""
+
+
 def load_config() -> dict[str, Any]:
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     if not CONFIG_FILE.exists():
@@ -128,6 +136,11 @@ def resolve_output_dir(value: str | None) -> Path:
     if not path.is_absolute():
         path = CONFIG_DIR / path
     path = path.resolve()
+    root = backup_dir()
+    try:
+        path.relative_to(root)
+    except ValueError as exc:
+        raise ValueError(f"Output directory must be inside backup directory: {root}") from exc
     path.mkdir(parents=True, exist_ok=True)
     if not path.is_dir():
         raise ValueError(f"Output directory is not available: {path}")
@@ -181,7 +194,7 @@ def quote_ident(value: str) -> str:
     return f"`{safe_identifier(value, 'identifier')}`"
 
 
-def connect_mysql(conn: DbConnection, database: str | None = None):
+def connect_mysql(conn: DbConnection, database: str | None = None, *, autocommit: bool = True):
     return pymysql.connect(
         host=conn.host or "127.0.0.1",
         port=int(conn.port or 3306),
@@ -189,7 +202,10 @@ def connect_mysql(conn: DbConnection, database: str | None = None):
         password=conn.password or "",
         database=database or conn.database or None,
         charset="utf8mb4",
-        autocommit=True,
+        autocommit=autocommit,
+        connect_timeout=10,
+        read_timeout=3600,
+        write_timeout=3600,
     )
 
 
@@ -234,6 +250,10 @@ def ensure_sqlite_connection(path: str) -> dict[str, Any]:
 _jobs: dict[str, dict[str, Any]] = {}
 _jobs_lock = threading.Lock()
 MAX_FINISHED_JOBS = 200
+MAX_JOB_LOG_LINES = 1000
+_confirmations: dict[str, dict[str, Any]] = {}
+_confirmations_lock = threading.Lock()
+CONFIRMATION_TTL_SECONDS = 120
 
 
 def _prune_finished_jobs_locked() -> None:
@@ -252,7 +272,10 @@ def append_job_log(job_id: str, message: str) -> None:
         if not job:
             return
         stamp = datetime.now().strftime("%H:%M:%S")
-        job.setdefault("logs", []).append(f"[{stamp}] {message}")
+        logs = job.setdefault("logs", [])
+        logs.append(f"[{stamp}] {message}")
+        if len(logs) > MAX_JOB_LOG_LINES:
+            del logs[: len(logs) - MAX_JOB_LOG_LINES]
 
 
 def update_job(job_id: str, **updates: Any) -> None:
@@ -283,10 +306,49 @@ def _public_job(job: dict[str, Any]) -> dict[str, Any]:
     return public
 
 
+def issue_confirmation(action: str, database: str, table: str = "") -> str:
+    action_name = (action or "").strip().lower()
+    if action_name not in {"restore-sql", "import-csv"}:
+        raise ValueError("Unsupported confirmation action")
+    database_name = safe_identifier(database, "database")
+    table_name = safe_identifier(table, "table") if table else ""
+    if action_name == "import-csv" and not table_name:
+        raise ValueError("table is required for CSV import confirmation")
+    token = secrets.token_urlsafe(32)
+    now = time.monotonic()
+    with _confirmations_lock:
+        expired = [key for key, item in _confirmations.items() if float(item["expires_at"]) <= now]
+        for key in expired:
+            _confirmations.pop(key, None)
+        _confirmations[token] = {
+            "action": action_name,
+            "database": database_name,
+            "table": table_name,
+            "expires_at": now + CONFIRMATION_TTL_SECONDS,
+        }
+    return token
+
+
+def consume_confirmation(token: str, action: str, database: str, table: str = "") -> None:
+    with _confirmations_lock:
+        item = _confirmations.pop((token or "").strip(), None)
+    if not item or float(item["expires_at"]) <= time.monotonic():
+        raise HTTPException(400, "Confirmation token is invalid, expired, or already used")
+    expected = (action, safe_identifier(database, "database"), safe_identifier(table, "table") if table else "")
+    actual = (item["action"], item["database"], item["table"])
+    if actual != expected:
+        raise HTTPException(400, "Confirmation token does not match this operation")
+
+
 def start_job(title: str, target, *args: Any) -> dict[str, Any]:
     job_id = str(uuid.uuid4())
     now = datetime.now().isoformat(timespec="seconds")
     with _jobs_lock:
+        cfg = load_config()
+        max_running = max(1, int(cfg.get("max_concurrent_jobs") or 2))
+        running = sum(1 for job in _jobs.values() if job.get("status") == "running")
+        if running >= max_running:
+            raise HTTPException(429, f"Too many running jobs (limit={max_running})")
         _jobs[job_id] = {
             "id": job_id,
             "title": title,
@@ -329,7 +391,14 @@ def start_job(title: str, target, *args: Any) -> dict[str, Any]:
     return _public_job(_jobs[job_id])
 
 
-def run_cli(cmd: list[str], *, env: dict[str, str], stdin_path: Path | None = None, stdout_path: Path | None = None) -> None:
+def run_cli(
+    cmd: list[str],
+    *,
+    env: dict[str, str],
+    stdin_path: Path | None = None,
+    stdout_path: Path | None = None,
+    timeout_seconds: int | None = None,
+) -> None:
     stdin_file = stdin_path.open("rb") if stdin_path else None
     stdout_file = stdout_path.open("wb") if stdout_path else subprocess.PIPE
     try:
@@ -340,6 +409,7 @@ def run_cli(cmd: list[str], *, env: dict[str, str], stdin_path: Path | None = No
             stderr=subprocess.PIPE,
             env=env,
             check=False,
+            timeout=timeout_seconds,
         )
     finally:
         if stdin_file:
@@ -351,11 +421,52 @@ def run_cli(cmd: list[str], *, env: dict[str, str], stdin_path: Path | None = No
         raise RuntimeError(err or f"Command failed with code {result.returncode}")
 
 
+def _sha256_file(path: Path, chunk_size: int = 8 * 1024 * 1024) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as file:
+        while chunk := file.read(chunk_size):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _database_storage_bytes(conn: DbConnection, database: str) -> int:
+    with connect_mysql(conn) as db:
+        with db.cursor() as cur:
+            cur.execute(
+                "SELECT COALESCE(SUM(data_length + index_length), 0) "
+                "FROM information_schema.tables WHERE table_schema=%s",
+                (database,),
+            )
+            return int(cur.fetchone()[0] or 0)
+
+
+def _atomic_json(path: Path, payload: dict[str, Any]) -> None:
+    temp = path.with_suffix(path.suffix + ".partial")
+    try:
+        with temp.open("w", encoding="utf-8") as file:
+            json.dump(payload, file, ensure_ascii=False, indent=2)
+            file.flush()
+            os.fsync(file.fileno())
+        temp.replace(path)
+    finally:
+        temp.unlink(missing_ok=True)
+
+
 def backup_mysql_job(job_id: str, conn: DbConnection, database: str, output_dir: str = "") -> dict[str, Any]:
     dbname = safe_identifier(database, "database")
-    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
     out = resolve_output_dir(output_dir) / f"{dbname}_backup_{stamp}.sql"
+    partial = out.with_suffix(out.suffix + ".partial")
+    estimated_bytes = _database_storage_bytes(conn, dbname)
+    reserve_factor = float(load_config().get("backup_free_space_factor") or 1.5)
+    required_bytes = max(64 * 1024 * 1024, int(estimated_bytes * reserve_factor))
+    free_bytes = shutil.disk_usage(out.parent).free
+    if free_bytes < required_bytes:
+        raise RuntimeError(
+            f"Insufficient disk space: free={free_bytes}, required={required_bytes}, estimated_database={estimated_bytes}"
+        )
     append_job_log(job_id, f"Running mysqldump for database {dbname}")
+    append_job_log(job_id, f"Estimated database bytes: {estimated_bytes}; free bytes: {free_bytes}")
     set_job_progress(job_id, 5, "dumping")
     env = os.environ.copy()
     env["MYSQL_PWD"] = conn.password or ""
@@ -374,10 +485,41 @@ def backup_mysql_job(job_id: str, conn: DbConnection, database: str, output_dir:
         "--triggers",
         dbname,
     ]
-    run_cli(cmd, env=env, stdout_path=out)
-    set_job_progress(job_id, 95, "finalizing")
+    timeout_seconds = max(60, int(load_config().get("cli_timeout_seconds") or 86400))
+    started_at = datetime.now().isoformat(timespec="seconds")
+    try:
+        run_cli(cmd, env=env, stdout_path=partial, timeout_seconds=timeout_seconds)
+        if not partial.is_file() or partial.stat().st_size == 0:
+            raise RuntimeError("mysqldump produced an empty backup")
+        set_job_progress(job_id, 95, "checksumming")
+        sha256 = _sha256_file(partial)
+        size_bytes = partial.stat().st_size
+        partial.replace(out)
+        manifest = {
+            "format_version": 1,
+            "status": "complete",
+            "database": dbname,
+            "filename": out.name,
+            "size_bytes": size_bytes,
+            "sha256": sha256,
+            "estimated_database_bytes": estimated_bytes,
+            "started_at": started_at,
+            "completed_at": datetime.now().isoformat(timespec="seconds"),
+        }
+        manifest_path = out.with_suffix(out.suffix + ".manifest.json")
+        _atomic_json(manifest_path, manifest)
+    except BaseException:
+        partial.unlink(missing_ok=True)
+        raise
     append_job_log(job_id, f"Backup file: {out}")
-    return {"filename": out.name, "path": str(out)}
+    return {
+        "filename": out.name,
+        "path": str(out),
+        "size_bytes": size_bytes,
+        "sha256": sha256,
+        "manifest": manifest_path.name,
+        "download_url": f"/api/download/{out.name}",
+    }
 
 
 UPLOAD_TMP_PREFIX = "sd_sma_db_admin_"
@@ -479,7 +621,7 @@ def import_csv_job(job_id: str, conn: DbConnection, database: str, table: str, c
         set_job_progress(job_id, 5 if total_rows else 50, "importing")
         next_progress = 10
         rows = 0
-        with connect_mysql(conn, dbname) as db:
+        with connect_mysql(conn, dbname, autocommit=False) as db:
             with db.cursor() as cur, source.open("r", encoding="utf-8-sig", newline="") as f:
                 reader = csv.DictReader(f)
                 columns = reader.fieldnames or []
@@ -488,8 +630,8 @@ def import_csv_job(job_id: str, conn: DbConnection, database: str, table: str, c
                 for col in columns:
                     safe_identifier(col, "csv column")
                 if truncate:
-                    append_job_log(job_id, "Truncating target table before import")
-                    cur.execute(f"TRUNCATE TABLE {quote_ident(table_name)}")
+                    append_job_log(job_id, "Deleting target rows transactionally before import")
+                    cur.execute(f"DELETE FROM {quote_ident(table_name)}")
                 cols = ", ".join(quote_ident(c) for c in columns)
                 placeholders = ", ".join(["%s"] * len(columns))
                 sql = f"INSERT INTO {quote_ident(table_name)} ({cols}) VALUES ({placeholders})"
@@ -508,6 +650,7 @@ def import_csv_job(job_id: str, conn: DbConnection, database: str, table: str, c
                 if batch:
                     cur.executemany(sql, batch)
                     rows += len(batch)
+            db.commit()
         set_job_progress(job_id, 95, "finalizing")
         append_job_log(job_id, f"Imported rows: {rows}")
         return {"database": dbname, "table": table_name, "rows": rows}
@@ -523,6 +666,14 @@ app.mount("/static", StaticFiles(directory=str(BASE_DIR / "app" / "static")), na
 async def enforce_remote_token(request: Request, call_next):
     if request.url.path in AUTH_EXEMPT_PATHS:
         return await call_next(request)
+    if request.method.upper() not in {"GET", "HEAD", "OPTIONS"}:
+        origin = request.headers.get("origin")
+        if origin:
+            parsed = urlsplit(origin)
+            origin_host = parsed.netloc.lower()
+            request_host = (request.headers.get("host") or "").lower()
+            if parsed.scheme not in {"http", "https"} or origin_host != request_host:
+                return JSONResponse(status_code=403, content={"detail": "Cross-origin state-changing request is forbidden"})
     client_host = request.client.host if request.client else None
     if _is_loopback_host(client_host):
         return await call_next(request)
@@ -552,11 +703,14 @@ def health() -> dict[str, Any]:
 @app.get("/api/config")
 def get_config() -> dict[str, Any]:
     cfg = load_config()
+    connection = default_connection()
+    connection.pop("password", None)
     return {
-        "default_connection": default_connection(),
+        "default_connection": connection,
         "backup_dir": str(backup_dir()),
         "mysql_tools": cfg.get("mysql_tools") or {},
         "max_upload_mb": int(cfg.get("max_upload_mb") or 512),
+        "max_concurrent_jobs": max(1, int(cfg.get("max_concurrent_jobs") or 2)),
     }
 
 
@@ -577,6 +731,15 @@ def test_connection(conn: DbConnection) -> dict[str, Any]:
         return ensure_mysql_connection(conn)
     except Exception as exc:  # noqa: BLE001
         return {"ok": False, "message": str(exc)}
+
+
+@app.post("/api/confirmations")
+def create_confirmation(req: ConfirmationRequest) -> dict[str, Any]:
+    try:
+        token = issue_confirmation(req.action, req.database, req.table)
+        return {"token": token, "expires_in_seconds": CONFIRMATION_TTL_SECONDS}
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
 
 
 @app.post("/api/databases")
@@ -646,11 +809,10 @@ def _save_upload(upload: UploadFile, suffix: str) -> str:
 def restore_sql(
     connection_json: str = Form(...),
     database: str = Form(...),
-    confirmed: bool = Form(False),
+    confirmation_token: str = Form(...),
     file: UploadFile = File(...),
 ) -> dict[str, Any]:
-    if not confirmed:
-        raise HTTPException(400, "Restore confirmation is required")
+    consume_confirmation(confirmation_token, "restore-sql", database)
     conn = _parse_connection_json(connection_json)
     sql_path = _save_upload(file, ".sql")
     job = start_job(f"Restore SQL {database}", restore_mysql_job, conn, database, sql_path)
@@ -662,12 +824,11 @@ def import_csv(
     connection_json: str = Form(...),
     database: str = Form(...),
     table: str = Form(...),
-    confirmed: bool = Form(False),
+    confirmation_token: str = Form(...),
     truncate: bool = Form(False),
     file: UploadFile = File(...),
 ) -> dict[str, Any]:
-    if not confirmed:
-        raise HTTPException(400, "Import confirmation is required")
+    consume_confirmation(confirmation_token, "import-csv", database, table)
     conn = _parse_connection_json(connection_json)
     csv_path = _save_upload(file, ".csv")
     job = start_job(f"Import CSV {table}", import_csv_job, conn, database, table, csv_path, truncate)
@@ -692,9 +853,49 @@ def get_job(job_id: str) -> dict[str, Any]:
 
 
 @app.get("/api/download/{filename}")
-def download(filename: str) -> FileResponse:
+def download(filename: str, request: Request):
     safe = Path(filename).name
     path = backup_dir() / safe
-    if not path.is_file():
+    if safe != filename or path.suffix.lower() not in {".sql", ".csv"} or not path.is_file():
         raise HTTPException(404, "File not found")
-    return FileResponse(path, filename=safe)
+    size = path.stat().st_size
+    range_header = request.headers.get("range")
+    start = 0
+    end = max(0, size - 1)
+    status_code = 200
+    if range_header:
+        match = re.fullmatch(r"bytes=(\d*)-(\d*)", range_header.strip())
+        if not match or (not match.group(1) and not match.group(2)):
+            return JSONResponse(status_code=416, content={"detail": "Invalid byte range"}, headers={"Content-Range": f"bytes */{size}"})
+        if match.group(1):
+            start = int(match.group(1))
+            end = int(match.group(2)) if match.group(2) else end
+        else:
+            suffix_length = int(match.group(2))
+            start = max(0, size - suffix_length)
+        if start >= size or start > end:
+            return JSONResponse(status_code=416, content={"detail": "Byte range is outside file"}, headers={"Content-Range": f"bytes */{size}"})
+        end = min(end, size - 1)
+        status_code = 206
+
+    length = 0 if size == 0 else end - start + 1
+
+    def iterator():
+        remaining = length
+        with path.open("rb") as file:
+            file.seek(start)
+            while remaining > 0:
+                chunk = file.read(min(1024 * 1024, remaining))
+                if not chunk:
+                    break
+                remaining -= len(chunk)
+                yield chunk
+
+    headers = {
+        "Accept-Ranges": "bytes",
+        "Content-Length": str(length),
+        "Content-Disposition": f'attachment; filename="{safe}"',
+    }
+    if status_code == 206:
+        headers["Content-Range"] = f"bytes {start}-{end}/{size}"
+    return StreamingResponse(iterator(), status_code=status_code, media_type="application/octet-stream", headers=headers)

@@ -5,6 +5,9 @@
   },
   "backup_dir": "backups",
   "max_upload_mb": 512,
+  "max_concurrent_jobs": 2,
+  "cli_timeout_seconds": 86400,
+  "backup_free_space_factor": 1.5,
   "default_connection": {
     "engine": "mysql",
     "host": "127.0.0.1",
