@@ -7,6 +7,7 @@
 
 ## 2026-07-15
 
+- **QUERY_WEB 5000 万行游标查询适配完成**：普通查询改为每次取 `page_size+1`、不强制 COUNT、不用深 OFFSET；支持 BatchCode/时间/AND/OR。50M 实库最新第二页约 5.5ms，AND 4.5ms，OR 110.6ms；73 个非集成测试通过。详见 [docs/022-✅](docs/022-✅-QUERY_WEB五千万行游标查询适配.md)。
 - **Data_Product 5000 万行查询压力测试完成**：仅在 `sma_data_stress_test.Data_Product` 生成 50M 行并保留源索引；新增时间单列与 BatchCode+时间联合索引，时间范围查询由约 23.5s 降至 11.9ms，最终表检查 OK。详见 [docs/018-✅](docs/018-✅-Data_Product五千万行查询压力测试.md)。
 
 ## 2026-07-14

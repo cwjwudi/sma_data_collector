@@ -214,6 +214,7 @@ class UnifiedConfigStore:
                 "title": str(raw_view.get("title", view_name)),
                 "description": str(raw_view.get("description", "")),
                 "time_field": str(raw_view.get("time_field", "collection_time")),
+                "batch_field": str(raw_view.get("batch_field", "")),
                 "columns": cls._clone_json(raw_view.get("columns", [])) if isinstance(raw_view.get("columns"), list) else [],
                 "sort_by": str(raw_view.get("sort_by", "collection_time")),
                 "sort_dir": "asc" if str(raw_view.get("sort_dir", "desc")).lower() == "asc" else "desc",
@@ -599,6 +600,7 @@ class ConfigManager:
             "name": view_name,
             "title": view.get("title", view_name),
             "time_field": view.get("time_field", "collection_time"),
+            "batch_field": view.get("batch_field", ""),
             "sort_by": view.get("sort_by", "collection_time"),
             "sort_dir": str(view.get("sort_dir", "desc")).lower(),
             "default_page_size": int(config.get("default_page_size", 50)),
@@ -624,6 +626,8 @@ class ConfigManager:
                         resolved["column_labels"] = glabels
                     if "time_field" in group_override and group_override["time_field"]:
                         resolved["time_field"] = str(group_override["time_field"])
+                    if "batch_field" in group_override:
+                        resolved["batch_field"] = str(group_override["batch_field"] or "")
                     if "sort_by" in group_override and group_override["sort_by"]:
                         resolved["sort_by"] = str(group_override["sort_by"])
                     if "sort_dir" in group_override and str(group_override["sort_dir"]).lower() in {"asc", "desc"}:
@@ -643,6 +647,10 @@ class ConfigManager:
                         table_columns, table_labels = self._normalize_column_defs(override["columns"])
                         resolved["columns"] = table_columns
                         resolved["column_labels"] = table_labels
+                    if "time_field" in override and override["time_field"]:
+                        resolved["time_field"] = str(override["time_field"])
+                    if "batch_field" in override:
+                        resolved["batch_field"] = str(override["batch_field"] or "")
                     if "sort_by" in override and override["sort_by"]:
                         resolved["sort_by"] = str(override["sort_by"])
                     if "sort_dir" in override and str(override["sort_dir"]).lower() in {"asc", "desc"}:

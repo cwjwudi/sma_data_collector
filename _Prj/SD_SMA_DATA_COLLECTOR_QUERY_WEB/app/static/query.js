@@ -1,6 +1,10 @@
 let queryViews = {};
 let currentPage = 1;
 let totalPages = 1;
+let hasMore = false;
+let currentCursor = null;
+let nextCursor = null;
+let cursorStack = [];
 let lastQueryContext = null;
 let lastResultData = null;
 let pageSizeOverridden = false;
@@ -24,9 +28,15 @@ function saveQueryPageState() {
     pageSizeOverridden,
     startTime: document.getElementById('startTime').value || '',
     endTime: document.getElementById('endTime').value || '',
+    batchCode: document.getElementById('batchCode').value || '',
+    combineMode: document.getElementById('combineMode').value || 'and',
     pageNumber: document.getElementById('pageNumber').value || '1',
     currentPage,
     totalPages,
+    hasMore,
+    currentCursor,
+    nextCursor,
+    cursorStack,
     lastQueryContext,
     lastResultData,
   };
@@ -210,12 +220,18 @@ function getCurrentQueryContext() {
   return { viewName, group, table };
 }
 
-function updatePageInfo(total, page, pageSize) {
-  totalPages = Math.max(1, Math.ceil((total || 0) / pageSize));
-  currentPage = Math.min(Math.max(page, 1), totalPages);
+function updatePageInfo(total, page, pageSize, more = false) {
+  hasMore = Boolean(more);
+  totalPages = total == null
+    ? Math.max(1, page + (hasMore ? 1 : 0))
+    : Math.max(1, Math.ceil((total || 0) / pageSize));
+  currentPage = Math.max(page, 1);
   document.getElementById('pageNumber').value = String(currentPage);
-  document.getElementById('pageInfo').textContent =
-    `总条数 ${total}，共 ${totalPages} 页，当前第 ${currentPage} 页`;
+  document.getElementById('btnPrevPage').disabled = currentPage <= 1;
+  document.getElementById('btnNextPage').disabled = !hasMore;
+  document.getElementById('pageInfo').textContent = total == null
+    ? `当前第 ${currentPage} 页，每页 ${pageSize} 条${hasMore ? '，还有更多' : '，已到末页'}`
+    : `总条数 ${total}，共 ${totalPages} 页，当前第 ${currentPage} 页`;
   saveQueryPageState();
 }
 
@@ -225,12 +241,18 @@ async function runQueryAtPage(page) {
   const { viewName, group, table } = context;
   const pageSize = getCurrentPageSize();
   const targetPage = Math.max(1, page);
+  currentCursor = null;
+  nextCursor = null;
+  cursorStack = [];
 
   const payload = {
     view_name: viewName,
     group,
     page: targetPage,
     page_size: pageSize,
+    pagination_mode: 'cursor',
+    include_total: false,
+    combine_mode: document.getElementById('combineMode').value || 'and',
   };
   if (table) payload.table = table;
 
@@ -242,6 +264,8 @@ async function runQueryAtPage(page) {
   // datetime-local 是本地时间，直接传递避免 toISOString() 产生时区偏移
   if (start) payload.start_time = start;
   if (end) payload.end_time = end;
+  const batchCode = document.getElementById('batchCode').value.trim();
+  if (batchCode) payload.batch_code = batchCode;
 
   const data = await fetchJson('/api/history/by-view', {
     method: 'POST',
@@ -250,13 +274,16 @@ async function runQueryAtPage(page) {
   });
 
   renderTable(data.columns || [], data.display_columns || [], data.rows || []);
+  nextCursor = data.next_cursor || null;
   document.getElementById('querySummary').textContent =
-    `total=${data.total}, page=${data.page}, page_size=${data.page_size}`;
-  updatePageInfo(data.total || 0, data.page || targetPage, data.page_size || pageSize);
+    `page=${data.page}, page_size=${data.page_size}, has_more=${Boolean(data.has_more)}`;
+  updatePageInfo(data.total, data.page || targetPage, data.page_size || pageSize, data.has_more);
   lastQueryContext = {
     ...context,
     start,
     end,
+    batchCode,
+    combineMode: payload.combine_mode,
   };
   lastResultData = data;
 
@@ -273,20 +300,36 @@ async function runQueryAtPage(page) {
 
 async function runLastQueryAtPage(page) {
   if (!lastQueryContext) return;
-  const { viewName, group, start, end } = lastQueryContext;
+  const { viewName, group, start, end, batchCode, combineMode } = lastQueryContext;
   const table = lastQueryContext.table || '';
   const pageSize = getCurrentPageSize();
   const targetPage = Math.max(1, page);
+  let requestedCursor = currentCursor;
+  const proposedStack = [...cursorStack];
+  if (targetPage > currentPage) {
+    if (!hasMore || !nextCursor) return;
+    proposedStack.push(currentCursor);
+    requestedCursor = nextCursor;
+  } else if (targetPage < currentPage) {
+    requestedCursor = proposedStack.length ? proposedStack.pop() : null;
+  } else {
+    return;
+  }
 
   const payload = {
     view_name: viewName,
     group,
     page: targetPage,
     page_size: pageSize,
+    pagination_mode: 'cursor',
+    include_total: false,
+    combine_mode: combineMode || 'and',
   };
   if (table) payload.table = table;
   if (start) payload.start_time = start;
   if (end) payload.end_time = end;
+  if (batchCode) payload.batch_code = batchCode;
+  if (requestedCursor) payload.cursor = requestedCursor;
 
   const data = await fetchJson('/api/history/by-view', {
     method: 'POST',
@@ -295,9 +338,12 @@ async function runLastQueryAtPage(page) {
   });
 
   renderTable(data.columns || [], data.display_columns || [], data.rows || []);
+  currentCursor = requestedCursor;
+  cursorStack = proposedStack;
+  nextCursor = data.next_cursor || null;
   document.getElementById('querySummary').textContent =
-    `total=${data.total}, page=${data.page}, page_size=${data.page_size}`;
-  updatePageInfo(data.total || 0, data.page || targetPage, data.page_size || pageSize);
+    `page=${targetPage}, page_size=${data.page_size}, has_more=${Boolean(data.has_more)}`;
+  updatePageInfo(data.total, targetPage, data.page_size || pageSize, data.has_more);
   lastResultData = data;
   saveQueryPageState();
 }
@@ -348,8 +394,8 @@ function restoreResultFromState(saved) {
   const data = saved.lastResultData;
   renderTable(data.columns || [], data.display_columns || [], data.rows || []);
   document.getElementById('querySummary').textContent =
-    `total=${data.total}, page=${data.page}, page_size=${data.page_size}`;
-  updatePageInfo(data.total || 0, data.page || 1, data.page_size || getCurrentPageSize());
+    `page=${data.page || 1}, page_size=${data.page_size}, has_more=${Boolean(data.has_more)}`;
+  updatePageInfo(data.total, data.page || 1, data.page_size || getCurrentPageSize(), data.has_more);
   const warningParts = [];
   if (Array.isArray(data.warnings) && data.warnings.length > 0) {
     warningParts.push(data.warnings.join(' | '));
@@ -369,6 +415,8 @@ async function restoreQueryPageState() {
   if (saved.pageSize) document.getElementById('pageSize').value = saved.pageSize;
   if (saved.startTime) document.getElementById('startTime').value = saved.startTime;
   if (saved.endTime) document.getElementById('endTime').value = saved.endTime;
+  if (saved.batchCode) document.getElementById('batchCode').value = saved.batchCode;
+  if (saved.combineMode) document.getElementById('combineMode').value = saved.combineMode;
   if (saved.pageNumber) document.getElementById('pageNumber').value = saved.pageNumber;
   if (saved.viewName && queryViews[saved.viewName]) {
     document.getElementById('viewName').value = saved.viewName;
@@ -379,6 +427,10 @@ async function restoreQueryPageState() {
 
   lastQueryContext = saved.lastQueryContext || null;
   lastResultData = saved.lastResultData || null;
+  hasMore = Boolean(saved.hasMore);
+  currentCursor = saved.currentCursor || null;
+  nextCursor = saved.nextCursor || null;
+  cursorStack = Array.isArray(saved.cursorStack) ? saved.cursorStack : [];
   restoreResultFromState(saved);
 }
 
@@ -395,11 +447,6 @@ document.getElementById('btnPrevPage').addEventListener('click', () => {
 document.getElementById('btnNextPage').addEventListener('click', () => {
   if (!lastQueryContext) return;
   runLastQueryAtPage(Math.min(totalPages, currentPage + 1)).catch(err => alert(err.message));
-});
-document.getElementById('btnGoPage').addEventListener('click', () => {
-  if (!lastQueryContext) return;
-  const target = Number(document.getElementById('pageNumber').value || 1);
-  runLastQueryAtPage(Math.min(totalPages, Math.max(1, target))).catch(err => alert(err.message));
 });
 document.getElementById('group').addEventListener('change', () => {
   Promise.all([loadGroupSchemaHint(), loadTablesForCurrentGroup()])
@@ -420,6 +467,8 @@ document.getElementById('startTime').addEventListener('input', clearQuickRangeAc
 document.getElementById('endTime').addEventListener('input', clearQuickRangeActive);
 document.getElementById('startTime').addEventListener('change', saveQueryPageState);
 document.getElementById('endTime').addEventListener('change', saveQueryPageState);
+document.getElementById('batchCode').addEventListener('change', saveQueryPageState);
+document.getElementById('combineMode').addEventListener('change', saveQueryPageState);
 document.getElementById('labelLang').addEventListener('change', saveQueryPageState);
 document.getElementById('pageSize').addEventListener('change', () => {
   pageSizeOverridden = true;
@@ -446,7 +495,7 @@ async function initQueryPage() {
   if (!saved) {
     setQuickRange(1);
     setQuickRangeActive('btnRange1D');
-    updatePageInfo(0, 1, getCurrentPageSize());
+    updatePageInfo(null, 1, getCurrentPageSize(), false);
     saveQueryPageState();
     return;
   }

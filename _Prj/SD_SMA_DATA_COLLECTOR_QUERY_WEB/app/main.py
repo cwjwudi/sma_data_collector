@@ -270,6 +270,19 @@ def _apply_time_guardrails(
     return start_time, end_time, warnings
 
 
+def _resolve_batch_field(view: dict[str, Any], available_columns: list[str]) -> str | None:
+    configured = str(view.get("batch_field", "") or "").strip()
+    if configured and configured in available_columns:
+        return configured
+
+    by_lower = {column.lower(): column for column in available_columns}
+    for candidate in ("BatchCode", "strBatchCode", "batch_code", "Batch"):
+        resolved = by_lower.get(candidate.lower())
+        if resolved:
+            return resolved
+    return None
+
+
 def _load_plugin_config() -> dict[str, Any]:
     data = config_store.get_plugins_config()
     if not isinstance(data, dict):
@@ -1021,11 +1034,14 @@ def meta_columns(table: str, request: Request) -> dict[str, Any]:
 @app.post("/api/history", response_model=HistoryQueryResponse)
 def history(req: HistoryQueryRequest, request: Request) -> HistoryQueryResponse:
     _enforce_rate_limit(request)
-    start_time, end_time, warnings = _apply_time_guardrails(req.start_time, req.end_time)
-    req.start_time = start_time
-    req.end_time = end_time
+    warnings: list[str] = []
+    if req.pagination_mode == "offset":
+        start_time, end_time, warnings = _apply_time_guardrails(req.start_time, req.end_time)
+        req.start_time = start_time
+        req.end_time = end_time
     try:
-        total, columns, rows, missing_columns = db.query_history(req)
+        query_result = db.query_history(req)
+        total, columns, rows, missing_columns = query_result
     except (OperationalError, SQLAlchemyError) as exc:
         _raise_db_error(exc)
     except ValueError as exc:
@@ -1042,6 +1058,9 @@ def history(req: HistoryQueryRequest, request: Request) -> HistoryQueryResponse:
         display_columns=[{"name": c, "label_en": c, "label_zh": c} for c in columns],
         missing_columns=missing_columns,
         warnings=warnings,
+        pagination_mode=req.pagination_mode,
+        has_more=getattr(query_result, "has_more", False),
+        next_cursor=getattr(query_result, "next_cursor", None),
     )
 
 
@@ -1191,8 +1210,6 @@ def history_by_view(req: ViewHistoryQueryRequest, request: Request) -> HistoryQu
 
     page_size = req.page_size if req.page_size else int(view["page_size"])
     page_size = min(max(page_size, 1), int(view["max_page_size"]))
-    start_time, end_time, time_warnings = _apply_time_guardrails(req.start_time, req.end_time)
-    warnings.extend(time_warnings)
 
     try:
         available_columns = db.list_columns(target_table)
@@ -1214,6 +1231,19 @@ def history_by_view(req: ViewHistoryQueryRequest, request: Request) -> HistoryQu
         sort_by = time_field
         warnings.append(f"视图排序字段不存在，已回退为 {sort_by}")
 
+    batch_code = str(req.batch_code or "").strip() or None
+    batch_field = _resolve_batch_field(view, available_columns) if batch_code else None
+    if batch_code and batch_field is None:
+        raise HTTPException(status_code=400, detail="当前表没有可用的批次字段")
+
+    if req.pagination_mode == "cursor":
+        start_time, end_time = req.start_time, req.end_time
+        if start_time is None and end_time is None and batch_code is None:
+            warnings.append("未设置筛选条件，按索引返回最新数据")
+    else:
+        start_time, end_time, time_warnings = _apply_time_guardrails(req.start_time, req.end_time)
+        warnings.extend(time_warnings)
+
     history_req = HistoryQueryRequest(
         table=target_table,
         columns=req.columns if req.columns is not None else view.get("columns", []),
@@ -1221,14 +1251,21 @@ def history_by_view(req: ViewHistoryQueryRequest, request: Request) -> HistoryQu
         end_time=end_time,
         time_field=time_field,
         filters=merged_filters,
+        batch_field=batch_field,
+        batch_code=batch_code,
+        combine_mode=req.combine_mode,
         page=req.page,
         page_size=page_size,
         sort_by=sort_by,
         sort_dir=view["sort_dir"],
+        pagination_mode=req.pagination_mode,
+        cursor=req.cursor,
+        include_total=req.include_total,
     )
 
     try:
-        total, columns, rows, missing_columns = db.query_history(history_req)
+        query_result = db.query_history(history_req)
+        total, columns, rows, missing_columns = query_result
     except (OperationalError, SQLAlchemyError) as exc:
         _raise_db_error(exc)
     except ValueError as exc:
@@ -1259,6 +1296,9 @@ def history_by_view(req: ViewHistoryQueryRequest, request: Request) -> HistoryQu
         ],
         missing_columns=missing_columns,
         warnings=warnings,
+        pagination_mode=history_req.pagination_mode,
+        has_more=getattr(query_result, "has_more", False),
+        next_cursor=getattr(query_result, "next_cursor", None),
     )
 
 

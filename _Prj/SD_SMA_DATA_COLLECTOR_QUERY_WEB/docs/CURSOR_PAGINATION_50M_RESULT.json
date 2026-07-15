@@ -1,0 +1,188 @@
+{
+  "verified_at": "2026-07-15T11:20:58+08:00",
+  "database": "sma_data_stress_test",
+  "page_size": 50,
+  "checks": {
+    "latest_first": {
+      "ms": 35.752,
+      "rows": 50
+    },
+    "latest_second": {
+      "ms": 5.458,
+      "rows": 50
+    },
+    "latest_pages_disjoint": true,
+    "batch_first": {
+      "ms": 4.344,
+      "rows": 50
+    },
+    "batch_second": {
+      "ms": 5.279,
+      "rows": 50
+    },
+    "time_only": {
+      "ms": 5.112,
+      "rows": 50
+    },
+    "batch_and_time": {
+      "ms": 4.465,
+      "rows": 50
+    },
+    "batch_or_time": {
+      "ms": 110.616,
+      "rows": 50
+    }
+  },
+  "plans": {
+    "latest": {
+      "query_block": {
+        "select_id": 1,
+        "nested_loop": [
+          {
+            "table": {
+              "table_name": "Data_Product",
+              "access_type": "index",
+              "key": "idx_Data_Product_collection_time",
+              "key_length": "5",
+              "used_key_parts": [
+                "collection_time"
+              ],
+              "rows": 51,
+              "filtered": 100,
+              "using_index": true
+            }
+          }
+        ]
+      }
+    },
+    "batch": {
+      "query_block": {
+        "select_id": 1,
+        "nested_loop": [
+          {
+            "table": {
+              "table_name": "Data_Product",
+              "access_type": "ref",
+              "possible_keys": [
+                "idx_Data_Product_BatchCode",
+                "idx_Data_Product_BatchCode_collection_time"
+              ],
+              "key": "idx_Data_Product_BatchCode_collection_time",
+              "key_length": "1023",
+              "used_key_parts": [
+                "BatchCode"
+              ],
+              "ref": [
+                "const"
+              ],
+              "rows": 500,
+              "filtered": 100,
+              "attached_condition": "Data_Product.BatchCode <=> 'SMA_1168050000' and Data_Product.BatchCode = 'SMA_1168050000'",
+              "using_index": true
+            }
+          }
+        ]
+      }
+    },
+    "time": {
+      "query_block": {
+        "select_id": 1,
+        "nested_loop": [
+          {
+            "table": {
+              "table_name": "Data_Product",
+              "access_type": "range",
+              "possible_keys": [
+                "idx_Data_Product_collection_time"
+              ],
+              "key": "idx_Data_Product_collection_time",
+              "key_length": "5",
+              "used_key_parts": [
+                "collection_time"
+              ],
+              "rows": 51058,
+              "filtered": 100,
+              "attached_condition": "Data_Product.collection_time >= '2023-11-01 00:00:00' and Data_Product.collection_time <= '2023-11-02 00:00:00'",
+              "using_index": true
+            }
+          }
+        ]
+      }
+    },
+    "batch_and_time": {
+      "query_block": {
+        "select_id": 1,
+        "nested_loop": [
+          {
+            "table": {
+              "table_name": "Data_Product",
+              "access_type": "range",
+              "possible_keys": [
+                "idx_Data_Product_BatchCode",
+                "idx_Data_Product_collection_time",
+                "idx_Data_Product_BatchCode_collection_time"
+              ],
+              "key": "idx_Data_Product_BatchCode_collection_time",
+              "key_length": "1028",
+              "used_key_parts": [
+                "BatchCode",
+                "collection_time"
+              ],
+              "rows": 500,
+              "filtered": 0.001011445,
+              "attached_condition": "Data_Product.BatchCode = 'SMA_1168050000' and Data_Product.collection_time >= '2023-11-08 16:00:00' and Data_Product.collection_time <= '2023-11-08 16:41:35'",
+              "using_index": true
+            }
+          }
+        ]
+      }
+    },
+    "batch_or_time": {
+      "query_block": {
+        "select_id": 1,
+        "nested_loop": [
+          {
+            "read_sorted_file": {
+              "filesort": {
+                "sort_key": "Data_Product.collection_time desc, Data_Product.`id` desc",
+                "table": {
+                  "table_name": "Data_Product",
+                  "access_type": "index_merge",
+                  "possible_keys": [
+                    "idx_Data_Product_BatchCode",
+                    "idx_Data_Product_collection_time",
+                    "idx_Data_Product_BatchCode_collection_time"
+                  ],
+                  "key_length": "1023,5",
+                  "index_merge": {
+                    "sort_union": [
+                      {
+                        "range": {
+                          "key": "idx_Data_Product_BatchCode",
+                          "used_key_parts": [
+                            "BatchCode"
+                          ]
+                        }
+                      },
+                      {
+                        "range": {
+                          "key": "idx_Data_Product_collection_time",
+                          "used_key_parts": [
+                            "collection_time"
+                          ]
+                        }
+                      }
+                    ]
+                  },
+                  "rows": 51558,
+                  "filtered": 100,
+                  "attached_condition": "Data_Product.BatchCode = 'SMA_1168050000' or Data_Product.collection_time >= '2023-11-01 00:00:00' and Data_Product.collection_time <= '2023-11-02 00:00:00'"
+                }
+              }
+            }
+          }
+        ]
+      }
+    }
+  }
+}

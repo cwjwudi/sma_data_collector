@@ -12,6 +12,11 @@ class QueryFilter(BaseModel):
     value: Any
 
 
+class HistoryCursor(BaseModel):
+    sort_value: Any
+    id: int
+
+
 class HistoryQueryRequest(BaseModel):
     table: str = Field(..., description="Physical table name, e.g. sensor_group_1_20260506")
     columns: list[str] = Field(default_factory=list, description="Requested columns")
@@ -19,14 +24,20 @@ class HistoryQueryRequest(BaseModel):
     end_time: datetime | None = None
     time_field: str = "collection_time"
     filters: list[QueryFilter] = Field(default_factory=list)
+    batch_field: str | None = None
+    batch_code: str | None = None
+    combine_mode: Literal["and", "or"] = "and"
     page: int = 1
     page_size: int = 50
     sort_by: str = "collection_time"
     sort_dir: Literal["asc", "desc"] = "desc"
+    pagination_mode: Literal["offset", "cursor"] = "offset"
+    cursor: HistoryCursor | None = None
+    include_total: bool = True
 
 
 class HistoryQueryResponse(BaseModel):
-    total: int
+    total: int | None = None
     page: int
     page_size: int
     columns: list[str]
@@ -34,6 +45,9 @@ class HistoryQueryResponse(BaseModel):
     display_columns: list[dict[str, str]] = Field(default_factory=list)
     missing_columns: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
+    pagination_mode: Literal["offset", "cursor"] = "offset"
+    has_more: bool = False
+    next_cursor: HistoryCursor | None = None
 
 
 class ViewHistoryQueryRequest(BaseModel):
@@ -46,6 +60,11 @@ class ViewHistoryQueryRequest(BaseModel):
     page_size: int | None = None
     filters: list[QueryFilter] = Field(default_factory=list)
     columns: list[str] | None = None
+    batch_code: str | None = None
+    combine_mode: Literal["and", "or"] = "and"
+    pagination_mode: Literal["offset", "cursor"] = "cursor"
+    cursor: HistoryCursor | None = None
+    include_total: bool = False
 
 
 class QueryTableColumnConfig(BaseModel):

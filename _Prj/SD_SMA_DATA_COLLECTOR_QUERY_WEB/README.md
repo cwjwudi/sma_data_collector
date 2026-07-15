@@ -5,6 +5,8 @@
 ## 功能范围（第一版）
 
 - 数据库查询 API：健康检查、组/表/列元数据、历史数据分页查询。
+- 通用查询页默认使用 `sort_by + id` 游标分页：每次只取 `page_size + 1` 行，不强制统计总数，也不使用深 `OFFSET`。
+- 通用查询页支持 BatchCode 单条件、时间单条件、BatchCode AND 时间及 BatchCode OR 时间；批次字段可由视图配置 `batch_field` 指定，也可自动识别常见字段名。
 - 查询配置驱动查询：通过 `query_view_config.json` 定义每个视图的列、分页、默认筛选、排序。
 - 支持“每个标(表)独立列配置与顺序”：`views.<view>.per_table.<table>.columns`。
 - 页面支持“应用并保存”一键生效（无需先应用再手动保存）。
@@ -111,6 +113,40 @@
 - `GET /api/db/check` 数据库连通性检查
 - `POST /api/plugins/query/{plugin_key}` 插件页查询（可选 body `cursor`，默认 `-1` 表示未选中）
 - `POST /api/plugins/cursor/{plugin_key}` 仅更新 cursor
+
+### 5000 万行游标查询
+
+`POST /api/history/by-view` 默认使用游标模式。首次查询示例：
+
+```json
+{
+  "view_name": "table",
+  "table": "Data_Product",
+  "batch_code": "SMA_1168050000",
+  "combine_mode": "and",
+  "page_size": 50
+}
+```
+
+响应中的 `rows` 最多 50 行；服务端实际读取 51 行，通过 `has_more` 判断是否还有下一页。下一页将 `next_cursor` 原样传回：
+
+```json
+{
+  "view_name": "table",
+  "table": "Data_Product",
+  "batch_code": "SMA_1168050000",
+  "combine_mode": "and",
+  "page_size": 50,
+  "cursor": {
+    "sort_value": "2023-11-08 03:46:40",
+    "id": 25000451
+  }
+}
+```
+
+游标模式默认 `include_total=false`，因此普通翻页不执行 `COUNT(*)`。旧插件接口仍使用原页码与总数语义，保持 OPC UA 翻页协议兼容。目标表应具有时间单列索引、`(BatchCode, collection_time)` 联合索引及 `id` 主键。
+
+5000 万行真实库验证见 [游标分页验证报告](docs/2026-07-15-CURSOR_PAGINATION_50M_REPORT.md)。
 
 ## 自动化测试
 

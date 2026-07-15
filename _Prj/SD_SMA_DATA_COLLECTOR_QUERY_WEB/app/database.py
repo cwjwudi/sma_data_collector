@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import os
 import re
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 from urllib.parse import quote_plus
@@ -23,6 +24,23 @@ from .table_partition import (
 logger = logging.getLogger(__name__)
 
 _IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+@dataclass
+class HistoryQueryResult:
+    total: int | None
+    columns: list[str]
+    rows: list[dict[str, Any]]
+    missing_columns: list[str]
+    has_more: bool = False
+    next_cursor: dict[str, Any] | None = None
+
+    def __iter__(self):
+        # 保持旧调用方的四元组解包兼容。
+        yield self.total
+        yield self.columns
+        yield self.rows
+        yield self.missing_columns
 
 
 def _safe_ident(name: str) -> str:
@@ -181,7 +199,7 @@ class QueryDatabase:
             rows = conn.execute(text(f"PRAGMA table_info({table_ident})")).fetchall()
             return [str(row[1]) for row in rows]
 
-    def query_history(self, req: HistoryQueryRequest) -> tuple[int, list[str], list[dict[str, Any]], list[str]]:
+    def query_history(self, req: HistoryQueryRequest) -> HistoryQueryResult:
         table_ident = _safe_ident(req.table)
         available_columns = self.list_columns(req.table)
         column_set = set(available_columns)
@@ -201,15 +219,24 @@ class QueryDatabase:
             raise ValueError("No valid columns selected")
 
         safe_cols = ", ".join(_safe_ident(c) for c in selected)
-        conditions: list[str] = []
+        time_conditions: list[str] = []
+        filter_conditions: list[str] = []
         params: dict[str, Any] = {}
 
         if req.start_time:
-            conditions.append(f"{_safe_ident(req.time_field)} >= :start_time")
+            time_conditions.append(f"{_safe_ident(req.time_field)} >= :start_time")
             params["start_time"] = req.start_time
         if req.end_time:
-            conditions.append(f"{_safe_ident(req.time_field)} <= :end_time")
+            time_conditions.append(f"{_safe_ident(req.time_field)} <= :end_time")
             params["end_time"] = req.end_time
+
+        batch_condition = ""
+        batch_code = str(req.batch_code or "").strip()
+        if batch_code:
+            if not req.batch_field or req.batch_field not in column_set:
+                raise ValueError(f"batch_field not found in table: {req.batch_field}")
+            batch_condition = f"{_safe_ident(req.batch_field)} = :batch_code"
+            params["batch_code"] = batch_code
 
         for idx, f in enumerate(req.filters):
             if f.field not in column_set:
@@ -219,25 +246,25 @@ class QueryDatabase:
             key = f"f_{idx}"
 
             if f.op == "eq":
-                conditions.append(f"{field_ident} = :{key}")
+                filter_conditions.append(f"{field_ident} = :{key}")
                 params[key] = f.value
             elif f.op == "ne":
-                conditions.append(f"{field_ident} != :{key}")
+                filter_conditions.append(f"{field_ident} != :{key}")
                 params[key] = f.value
             elif f.op == "gt":
-                conditions.append(f"{field_ident} > :{key}")
+                filter_conditions.append(f"{field_ident} > :{key}")
                 params[key] = f.value
             elif f.op == "gte":
-                conditions.append(f"{field_ident} >= :{key}")
+                filter_conditions.append(f"{field_ident} >= :{key}")
                 params[key] = f.value
             elif f.op == "lt":
-                conditions.append(f"{field_ident} < :{key}")
+                filter_conditions.append(f"{field_ident} < :{key}")
                 params[key] = f.value
             elif f.op == "lte":
-                conditions.append(f"{field_ident} <= :{key}")
+                filter_conditions.append(f"{field_ident} <= :{key}")
                 params[key] = f.value
             elif f.op == "like":
-                conditions.append(f"{field_ident} LIKE :{key}")
+                filter_conditions.append(f"{field_ident} LIKE :{key}")
                 params[key] = str(f.value)
             elif f.op == "in":
                 values = f.value if isinstance(f.value, list) else [f.value]
@@ -247,39 +274,88 @@ class QueryDatabase:
                     placeholders.append(f":{in_key}")
                     params[in_key] = value
                 if placeholders:
-                    conditions.append(f"{field_ident} IN ({', '.join(placeholders)})")
+                    filter_conditions.append(f"{field_ident} IN ({', '.join(placeholders)})")
 
-        where_clause = ""
-        if conditions:
-            where_clause = " WHERE " + " AND ".join(conditions)
+        primary_conditions: list[str] = []
+        time_group = f"({' AND '.join(time_conditions)})" if time_conditions else ""
+        if batch_condition and time_group:
+            joiner = " OR " if req.combine_mode == "or" else " AND "
+            primary_conditions.append(f"({batch_condition}{joiner}{time_group})")
+        elif batch_condition:
+            primary_conditions.append(batch_condition)
+        elif time_group:
+            primary_conditions.append(time_group)
 
-        order_clause = f" ORDER BY {_safe_ident(req.sort_by)} {req.sort_dir.upper()}"
+        base_conditions = primary_conditions + filter_conditions
+        base_where_clause = ""
+        if base_conditions:
+            base_where_clause = " WHERE " + " AND ".join(base_conditions)
+
+        direction = req.sort_dir.upper()
+        order_columns = [f"{_safe_ident(req.sort_by)} {direction}"]
+        cursor_supported = req.pagination_mode == "cursor" and "id" in column_set and req.sort_by != "id"
+        if cursor_supported:
+            order_columns.append(f"`id` {direction}")
+        order_clause = " ORDER BY " + ", ".join(order_columns)
         page = max(req.page, 1)
         page_size = max(min(req.page_size, 500), 1)
         offset = (page - 1) * page_size
 
-        count_sql = f"SELECT COUNT(*) AS cnt FROM {table_ident}{where_clause}"
-        data_sql = (
-            f"SELECT {safe_cols} FROM {table_ident}{where_clause}{order_clause} "
-            "LIMIT :limit_value OFFSET :offset_value"
-        )
+        where_clause = base_where_clause
+        if cursor_supported and req.cursor is not None:
+            comparator = ">" if req.sort_dir == "asc" else "<"
+            cursor_condition = (
+                f"({_safe_ident(req.sort_by)} {comparator} :cursor_sort_value OR "
+                f"({_safe_ident(req.sort_by)} = :cursor_sort_value AND `id` {comparator} :cursor_id))"
+            )
+            where_clause += (" AND " if where_clause else " WHERE ") + cursor_condition
+            params["cursor_sort_value"] = req.cursor.sort_value
+            params["cursor_id"] = req.cursor.id
+
+        count_sql = f"SELECT COUNT(*) AS cnt FROM {table_ident}{base_where_clause}"
+        select_clause = safe_cols
+        if cursor_supported:
+            select_clause += f", {_safe_ident(req.sort_by)} AS `__cursor_sort`, `id` AS `__cursor_id`"
+        data_sql = f"SELECT {select_clause} FROM {table_ident}{where_clause}{order_clause} LIMIT :limit_value"
+        if req.pagination_mode == "offset":
+            data_sql += " OFFSET :offset_value"
 
         params_with_page = dict(params)
-        params_with_page["limit_value"] = page_size
-        params_with_page["offset_value"] = offset
+        params_with_page["limit_value"] = page_size + 1 if req.pagination_mode == "cursor" else page_size
+        if req.pagination_mode == "offset":
+            params_with_page["offset_value"] = offset
 
         with self.engine.connect() as conn:
-            total = int(conn.execute(text(count_sql), params).scalar() or 0)
-            rows = conn.execute(text(data_sql), params_with_page).mappings().all()
+            total = int(conn.execute(text(count_sql), params).scalar() or 0) if req.include_total else None
+            fetched_rows = conn.execute(text(data_sql), params_with_page).mappings().all()
+
+        has_more = req.pagination_mode == "cursor" and len(fetched_rows) > page_size
+        rows = fetched_rows[:page_size]
+        next_cursor: dict[str, Any] | None = None
+        if cursor_supported and has_more and rows:
+            last_row = dict(rows[-1])
+            sort_value = last_row.get("__cursor_sort")
+            if isinstance(sort_value, datetime):
+                sort_value = sort_value.isoformat(sep=" ")
+            next_cursor = {"sort_value": sort_value, "id": int(last_row["__cursor_id"])}
 
         normalized_rows: list[dict[str, Any]] = []
         for row in rows:
             converted = {}
             for key, value in dict(row).items():
+                if key in {"__cursor_sort", "__cursor_id"}:
+                    continue
                 if isinstance(value, datetime):
                     converted[key] = value.isoformat(sep=" ", timespec="seconds")
                 else:
                     converted[key] = value
             normalized_rows.append(converted)
 
-        return total, selected, normalized_rows, missing_columns
+        return HistoryQueryResult(
+            total=total,
+            columns=selected,
+            rows=normalized_rows,
+            missing_columns=missing_columns,
+            has_more=has_more,
+            next_cursor=next_cursor,
+        )
