@@ -10,7 +10,7 @@ from typing import Dict, Any
 from .config_models import (
     DataPoint, DataGroup, OpcUaConfig, DatabaseConfig, AppConfig,
     TriggerType, Communication, Connection, LoggingConfig, InsertFeedbackConfig,
-    BatchUpsertConfig, IndexConfig, PersistentQueueConfig
+    BatchUpsertConfig, IndexConfig, PersistentQueueConfig, FIXED_INDEX_COLUMNS
 )
 
 
@@ -409,11 +409,12 @@ class ConfigLoader:
                         raise ValueError(
                             f"数据组 '{group.name}' 的 indexes[{idx_idx}].columns 不能为空"
                         )
+                    allowed_index_columns = set(group.data_points) | FIXED_INDEX_COLUMNS
                     for col in idx_cfg.columns:
-                        if col not in group.data_points:
+                        if not isinstance(col, str) or col not in allowed_index_columns:
                             raise ValueError(
                                 f"数据组 '{group.name}' 的 indexes[{idx_idx}].columns "
-                                f"引用了不存在的点位: {col}"
+                                f"引用了不存在的点位或固定字段: {col}"
                             )
                     # 校验自定义索引名
                     if idx_cfg.name:

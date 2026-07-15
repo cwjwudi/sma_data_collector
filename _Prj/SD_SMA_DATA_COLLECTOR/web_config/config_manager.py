@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from core.config_loader import ConfigLoader
+from core.config_models import FIXED_INDEX_COLUMNS
 
 
 class CollectorConfigManager:
@@ -209,11 +210,12 @@ class CollectorConfigManager:
                     columns = idx_def.get("columns", [])
                     if not isinstance(columns, list) or len(columns) == 0:
                         raise ValueError(f"数据组 '{group.get('name', '<unknown>')}' 的 indexes[{i}].columns 必须是非空数组")
+                    allowed_index_columns = set(data_points) | FIXED_INDEX_COLUMNS
                     for col in columns:
-                        if col not in data_points:
+                        if not isinstance(col, str) or col not in allowed_index_columns:
                             raise ValueError(
                                 f"数据组 '{group.get('name', '<unknown>')}' 的 indexes[{i}].columns "
-                                f"引用了不存在的点位: {col}"
+                                f"引用了不存在的点位或固定字段: {col}"
                             )
                     # 校验索引名
                     name = str(idx_def.get("name", "")).strip()

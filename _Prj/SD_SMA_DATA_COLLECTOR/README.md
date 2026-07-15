@@ -273,6 +273,7 @@ SD_SMA_DATA_COLLECTOR/
   - `code_unique_conflict`: 唯一性冲突时回写码（默认 `1`）
   - `code_db_error`: 数据库错误时回写码（默认 `2`）
   - `code_other_error`: 其他失败时回写码（默认 `3`）
+- `indexes`: （可选）索引配置列表；`columns` 可选择当前数据组的配置点位，以及固定时间字段 `collection_time`、`created_at`，并支持组合成复合索引
 - `batch_upsert`: （可选）批次主表配置，用于按唯一批次号开批/结批
   - `enabled`: 是否启用为批次主表；同一配置中最多只能有一组为 `true`
   - `start_time_point`: 开批时间点位名称，必须在该组 `data_points` 中

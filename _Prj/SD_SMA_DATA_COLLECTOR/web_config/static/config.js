@@ -22,6 +22,10 @@ let multiSelectModal = null;
 let groupConfigModal = null;
 const PAGE_STATE_KEY = "sd_sma_collector_web_state_v1";
 const ALLOWED_DATATYPES = ["bool", "int", "float", "string", "datetime"];
+const FIXED_INDEX_COLUMN_OPTIONS = [
+  { value: "collection_time", label: "collection_time（固定采集时间）" },
+  { value: "created_at", label: "created_at（固定创建时间）" },
+];
 const PARTITION_INTERVAL_YEAR_OPTIONS = [
   { value: "0", label: "不分表" },
   ...Array.from({ length: 10 }, (_, i) => {
@@ -638,7 +642,14 @@ function openInsertFeedbackConfig(groupIndex) {
 
 function openIndexesConfig(groupIndex) {
   const group = currentConfig.groups[groupIndex];
-  const pointNames = getPointNameOptions();
+  const groupPointNames = new Set(Array.isArray(group.data_points) ? group.data_points : []);
+  const fixedNames = new Set(FIXED_INDEX_COLUMN_OPTIONS.map((item) => item.value));
+  const indexColumnOptions = [
+    ...FIXED_INDEX_COLUMN_OPTIONS,
+    ...getPointNameOptions().filter(
+      (item) => groupPointNames.has(item.value) && !fixedNames.has(item.value)
+    ),
+  ];
   const draft = Array.isArray(group.indexes)
     ? group.indexes.map((idx) => ({ ...idx, columns: [...(idx.columns || [])] }))
     : [];
@@ -662,7 +673,7 @@ function openIndexesConfig(groupIndex) {
 
           const colWrapper = document.createElement("div");
           colWrapper.style.flex = "1";
-          const colWidget = createMultiSelect(pointNames, idx.columns || [], (values) => {
+          const colWidget = createMultiSelect(indexColumnOptions, idx.columns || [], (values) => {
             draft[i].columns = values;
           });
           colWrapper.appendChild(colWidget);

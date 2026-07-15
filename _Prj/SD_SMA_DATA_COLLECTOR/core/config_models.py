@@ -8,6 +8,9 @@ from dataclasses import dataclass
 from enum import Enum
 
 
+FIXED_INDEX_COLUMNS = frozenset({"collection_time", "created_at"})
+
+
 class TriggerType(Enum):
     """触发类型枚举"""
     TIME = "time"
