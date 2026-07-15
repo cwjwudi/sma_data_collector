@@ -204,7 +204,8 @@ select {
   min-width: 4.5rem;
 }
 
-input[type='checkbox'] {
+input[type='checkbox'],
+input[type='radio'] {
   flex: 0 0 auto;
   width: 18px;
   height: 18px;

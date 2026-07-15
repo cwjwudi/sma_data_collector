@@ -24,6 +24,8 @@ def _database(tmp_path) -> QueryDatabase:
             )
         )
         connection.execute(text("CREATE INDEX idx_time ON Data_Product (collection_time);"))
+        connection.execute(text("CREATE TABLE Data_Batch (id INTEGER PRIMARY KEY, BatchCode TEXT NOT NULL)"))
+        connection.execute(text("INSERT INTO Data_Batch (BatchCode) VALUES ('B002'), ('B001'), ('B001')"))
         rows = []
         for index in range(120):
             rows.append(
@@ -84,6 +86,12 @@ def test_cursor_pagination_returns_50_then_remaining_without_duplicates(tmp_path
     assert second.has_more is False
     assert first_ids.isdisjoint(second_ids)
     assert first_ids | second_ids == set(range(1, 61))
+
+
+def test_list_batch_codes_returns_distinct_sorted_values(tmp_path):
+    database = _database(tmp_path)
+
+    assert database.list_batch_codes() == ["B001", "B002"]
 
 
 def test_cursor_without_time_or_batch_returns_latest_rows(tmp_path):

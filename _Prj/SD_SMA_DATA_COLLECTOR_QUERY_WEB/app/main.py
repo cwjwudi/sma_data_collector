@@ -274,12 +274,6 @@ def _resolve_batch_field(view: dict[str, Any], available_columns: list[str]) -> 
     configured = str(view.get("batch_field", "") or "").strip()
     if configured and configured in available_columns:
         return configured
-
-    by_lower = {column.lower(): column for column in available_columns}
-    for candidate in ("BatchCode", "strBatchCode", "batch_code", "Batch"):
-        resolved = by_lower.get(candidate.lower())
-        if resolved:
-            return resolved
     return None
 
 
@@ -1031,6 +1025,17 @@ def meta_columns(table: str, request: Request) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@app.get("/api/meta/batch-codes")
+def meta_batch_codes(request: Request) -> dict[str, list[str]]:
+    _enforce_rate_limit(request)
+    try:
+        return {"items": db.list_batch_codes(limit=1000)}
+    except (OperationalError, SQLAlchemyError) as exc:
+        _raise_db_error(exc)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"读取 Data_Batch.BatchCode 失败: {exc}") from exc
+
+
 @app.post("/api/history", response_model=HistoryQueryResponse)
 def history(req: HistoryQueryRequest, request: Request) -> HistoryQueryResponse:
     _enforce_rate_limit(request)
@@ -1232,16 +1237,27 @@ def history_by_view(req: ViewHistoryQueryRequest, request: Request) -> HistoryQu
         warnings.append(f"视图排序字段不存在，已回退为 {sort_by}")
 
     batch_code = str(req.batch_code or "").strip() or None
-    batch_field = _resolve_batch_field(view, available_columns) if batch_code else None
-    if batch_code and batch_field is None:
-        raise HTTPException(status_code=400, detail="当前表没有可用的批次字段")
-
-    if req.pagination_mode == "cursor":
-        start_time, end_time = req.start_time, req.end_time
-        if start_time is None and end_time is None and batch_code is None:
-            warnings.append("未设置筛选条件，按索引返回最新数据")
+    if req.query_mode == "batch":
+        if req.start_time is not None or req.end_time is not None:
+            raise HTTPException(status_code=400, detail="按批次号查询时不能填写时间条件")
+        if batch_code is None:
+            raise HTTPException(status_code=400, detail="按批次号查询时必须选择 BatchCode")
+        batch_field = _resolve_batch_field(view, available_columns)
+        if batch_field is None:
+            raise HTTPException(status_code=400, detail="当前 Group 未配置有效的批次号绑定字段")
+        start_time = None
+        end_time = None
     else:
-        start_time, end_time, time_warnings = _apply_time_guardrails(req.start_time, req.end_time)
+        if batch_code is not None:
+            raise HTTPException(status_code=400, detail="按时间查询时不能填写 BatchCode")
+        if req.start_time is None or req.end_time is None:
+            raise HTTPException(status_code=400, detail="按时间查询时必须填写开始时间和结束时间")
+        batch_field = None
+        start_time = req.start_time
+        end_time = req.end_time
+
+    if req.pagination_mode == "offset" and req.query_mode == "time":
+        start_time, end_time, time_warnings = _apply_time_guardrails(start_time, end_time)
         warnings.extend(time_warnings)
 
     history_req = HistoryQueryRequest(
@@ -1253,7 +1269,7 @@ def history_by_view(req: ViewHistoryQueryRequest, request: Request) -> HistoryQu
         filters=merged_filters,
         batch_field=batch_field,
         batch_code=batch_code,
-        combine_mode=req.combine_mode,
+        combine_mode="and",
         page=req.page,
         page_size=page_size,
         sort_by=sort_by,
@@ -1365,10 +1381,26 @@ def get_query_group_config(view_name: str, group: str) -> dict[str, Any]:
 
 @app.post("/api/config/query-group")
 def save_query_group_config(payload: QueryGroupConfigUpdateRequest) -> dict[str, str]:
+    if payload.batch_field:
+        baseline_table = payload.baseline_table or cfg.get_group_baseline(payload.group)
+        if not baseline_table:
+            raise HTTPException(status_code=400, detail="配置批次号绑定字段时必须提供基准表")
+        try:
+            available_columns = db.list_columns(baseline_table)
+        except (OperationalError, SQLAlchemyError) as exc:
+            _raise_db_error(exc)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=f"读取基准表字段失败: {exc}") from exc
+        if payload.batch_field not in available_columns:
+            raise HTTPException(
+                status_code=400,
+                detail=f"批次号绑定字段不存在于基准表 {baseline_table}: {payload.batch_field}",
+            )
     cfg.update_query_group_config(
         view_name=payload.view_name,
         group=payload.group,
         time_field=payload.time_field,
+        batch_field=payload.batch_field,
         sort_by=payload.sort_by,
         sort_dir=payload.sort_dir,
         page_size=payload.page_size,

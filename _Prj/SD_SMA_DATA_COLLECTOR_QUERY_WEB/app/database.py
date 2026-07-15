@@ -199,6 +199,20 @@ class QueryDatabase:
             rows = conn.execute(text(f"PRAGMA table_info({table_ident})")).fetchall()
             return [str(row[1]) for row in rows]
 
+    def list_batch_codes(self, limit: int = 1000) -> list[str]:
+        """Read the small batch dictionary used by the query page."""
+        safe_limit = max(1, min(int(limit), 1000))
+        with self.engine.connect() as conn:
+            rows = conn.execute(
+                text(
+                    "SELECT DISTINCT `BatchCode` FROM `Data_Batch` "
+                    "WHERE `BatchCode` IS NOT NULL AND `BatchCode` <> '' "
+                    "ORDER BY `BatchCode` LIMIT :limit"
+                ),
+                {"limit": safe_limit},
+            ).fetchall()
+        return [str(row[0]) for row in rows]
+
     def query_history(self, req: HistoryQueryRequest) -> HistoryQueryResult:
         table_ident = _safe_ident(req.table)
         available_columns = self.list_columns(req.table)

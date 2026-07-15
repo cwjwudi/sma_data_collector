@@ -15,7 +15,7 @@
     <div class="layout layout-stack">
       <section class="panel">
         <h2>查询条件</h2>
-        <p class="hint">选择视图、数据组与时间范围后执行查询；结果在右侧表格中展示。</p>
+        <p class="hint">选择按时间或按批次号查询，两种条件互斥；结果按游标分页展示。</p>
         <div class="row">
           <label for="viewName">View</label>
           <select id="viewName"></select>
@@ -45,13 +45,11 @@
         </div>
         <div id="schemaHint" class="muted"></div>
         <div class="row">
+          <span class="inline-label">查询方式</span>
+          <label><input id="queryModeTime" name="queryMode" type="radio" value="time" checked /> 按时间</label>
+          <label><input id="queryModeBatch" name="queryMode" type="radio" value="batch" /> 按批次号</label>
           <label for="batchCode">BatchCode</label>
-          <input id="batchCode" type="text" placeholder="留空表示不限制批次" />
-          <label for="combineMode">与时间条件</label>
-          <select id="combineMode">
-            <option value="and">AND</option>
-            <option value="or">OR</option>
-          </select>
+          <select id="batchCode" disabled><option value="">请选择批次号</option></select>
           <label for="startTime">Start</label>
           <input id="startTime" type="datetime-local" />
           <label for="endTime">End</label>

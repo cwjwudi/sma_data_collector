@@ -2,7 +2,7 @@
 
 `SD_SMA_DATA_COLLECTOR_QUERY_WEB` 的通用查询页已改为每次读取 `page_size + 1` 行，不再强制执行 `COUNT(*)`，并使用 `sort_by + id` 游标继续翻页。旧插件和 OPC UA 页码链路继续保留 OFFSET/总数行为，避免破坏既有协议。
 
-实现包含 BatchCode 输入、AND/OR 选择、批次字段配置/自动识别、无时间条件时按索引返回最新数据、前后页游标栈及稳定双字段排序。
+实现包含 Data_Batch 批次下拉、按时间/按批次号互斥模式、Group 级 `batch_field` 明确绑定、前后页游标栈及稳定双字段排序。批次模式不传时间，时间模式不传 BatchCode，服务端对混合或缺失条件返回 400。
 
 # ✅ 已完成：5000 万行真实数据库验收
 
@@ -12,4 +12,8 @@
 
 # ✅ 已完成：兼容性与自动化测试
 
-QUERY_WEB 非集成测试 73 passed、8 deselected；新增测试覆盖无 COUNT、BatchCode 单条件、无时间最新数据、AND/OR 分组、连续游标翻页和 API 不补 24 小时范围。前端脚本通过 `node --check`。
+QUERY_WEB 非集成测试 79 passed、8 deselected；新增测试覆盖 Data_Batch 字典读取、Group 批次字段持久化、互斥条件校验、连续游标翻页。前端脚本通过 `node --check`，浏览器实测两种模式的清空/禁用行为及各50行结果。
+
+# ✅ 已完成：Data_Batch 小表与生产约束
+
+压力测试库已创建只有 `BatchCode VARCHAR(255) NOT NULL` 的 `Data_Batch`，未创建索引；从 Data_Product 写入1000个不同批次号。建表脚本、操作记录和实库结果保存在 [`_Doc/007_Data_Product_5000万行压力测试`](../_Doc/007_Data_Product_5000万行压力测试/)。

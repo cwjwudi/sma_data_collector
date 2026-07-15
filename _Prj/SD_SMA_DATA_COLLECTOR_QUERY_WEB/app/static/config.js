@@ -160,6 +160,7 @@ function saveConfigPageState() {
     group: document.getElementById('editGroupName').value || '',
     baselineTable: document.getElementById('editTableName').value || '',
     timeField: document.getElementById('tableTimeField').value || '',
+    batchField: document.getElementById('tableBatchField').value || '',
     sortBy: document.getElementById('tableSortBy').value || '',
     sortDir: document.getElementById('tableSortDir').value || 'desc',
     pageSize: document.getElementById('tablePageSize').value || '50',
@@ -206,15 +207,20 @@ function getSelectedValues(selectId) {
   return Array.from(sel.selectedOptions).map(x => x.value);
 }
 
-function populateFieldSelectors(columns, preferredTimeField, preferredSortBy) {
+function populateFieldSelectors(columns, preferredTimeField, preferredSortBy, preferredBatchField = '') {
   const normalizedColumns = Array.isArray(columns) ? columns : [];
   const timeField = document.getElementById('tableTimeField');
+  const batchField = document.getElementById('tableBatchField');
   const sortBy = document.getElementById('tableSortBy');
   timeField.innerHTML = '';
+  batchField.innerHTML = '';
   sortBy.innerHTML = '';
+
+  appendOption(batchField, '', '不支持批次号查询');
 
   for (const column of normalizedColumns) {
     appendOption(timeField, column);
+    appendOption(batchField, column);
     appendOption(sortBy, column);
   }
 
@@ -233,9 +239,11 @@ function populateFieldSelectors(columns, preferredTimeField, preferredSortBy) {
   } else if (normalizedColumns.length > 0) {
     sortBy.value = normalizedColumns[0];
   }
+
+  batchField.value = normalizedColumns.includes(preferredBatchField) ? preferredBatchField : '';
 }
 
-async function loadColumnsForTable(tableName, preferredTimeField, preferredSortBy) {
+async function loadColumnsForTable(tableName, preferredTimeField, preferredSortBy, preferredBatchField = '') {
   if (!tableName) {
     availableColumns = [];
     document.getElementById('availableColumns').innerHTML = '';
@@ -248,7 +256,7 @@ async function loadColumnsForTable(tableName, preferredTimeField, preferredSortB
   const available = document.getElementById('availableColumns');
   available.innerHTML = '';
   for (const c of availableColumns) appendOption(available, c);
-  populateFieldSelectors(availableColumns, preferredTimeField, preferredSortBy);
+  populateFieldSelectors(availableColumns, preferredTimeField, preferredSortBy, preferredBatchField);
 }
 
 async function loadViews() {
@@ -540,6 +548,7 @@ function clearGroupConfigEditor() {
   document.getElementById('editTableName').innerHTML = '';
   document.getElementById('availableColumns').innerHTML = '';
   document.getElementById('tableTimeField').innerHTML = '';
+  document.getElementById('tableBatchField').innerHTML = '';
   document.getElementById('tableSortBy').innerHTML = '';
   document.getElementById('schemaHint').textContent = '当前数据库下没有可用 group，请先检查连接设置。';
   document.getElementById('schemaHint').className = 'muted warn';
@@ -792,7 +801,7 @@ async function loadTableConfig() {
     };
   }
 
-  populateFieldSelectors(availableColumns, cfg.time_field, cfg.sort_by);
+  populateFieldSelectors(availableColumns, cfg.time_field, cfg.sort_by, cfg.batch_field);
   document.getElementById('tableSortDir').value = cfg.sort_dir === 'asc' ? 'asc' : 'desc';
   document.getElementById('tablePageSize').value = Number(cfg.page_size || 50);
   renderOrderedColumns();
@@ -872,6 +881,7 @@ async function saveTableConfig() {
     group,
     baseline_table: baselineTable,
     time_field: document.getElementById('tableTimeField').value || 'collection_time',
+    batch_field: document.getElementById('tableBatchField').value || '',
     sort_by: document.getElementById('tableSortBy').value || 'collection_time',
     sort_dir: document.getElementById('tableSortDir').value || 'desc',
     page_size: Number(document.getElementById('tablePageSize').value || 50),
@@ -964,6 +974,12 @@ async function restoreConfigPageState() {
         const timeFieldSel = document.getElementById('tableTimeField');
         if (Array.from(timeFieldSel.options).some(o => o.value === saved.timeField)) {
           timeFieldSel.value = saved.timeField;
+        }
+      }
+      if (saved.batchField) {
+        const batchFieldSel = document.getElementById('tableBatchField');
+        if (Array.from(batchFieldSel.options).some(o => o.value === saved.batchField)) {
+          batchFieldSel.value = saved.batchField;
         }
       }
       if (saved.sortBy) {
@@ -1065,10 +1081,12 @@ document.getElementById('editTableName').addEventListener('change', () => {
     document.getElementById('editTableName').value,
     document.getElementById('tableTimeField').value,
     document.getElementById('tableSortBy').value,
+    document.getElementById('tableBatchField').value,
   ).catch(catchHintError('columnEditorHint'));
   saveConfigPageState();
 });
 document.getElementById('tableTimeField').addEventListener('change', saveConfigPageState);
+document.getElementById('tableBatchField').addEventListener('change', saveConfigPageState);
 document.getElementById('tableSortBy').addEventListener('change', saveConfigPageState);
 document.getElementById('tableSortDir').addEventListener('change', saveConfigPageState);
 document.getElementById('tablePageSize').addEventListener('change', saveConfigPageState);

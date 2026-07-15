@@ -8,8 +8,59 @@ let cursorStack = [];
 let lastQueryContext = null;
 let lastResultData = null;
 let pageSizeOverridden = false;
+let batchCodesAvailable = false;
 const QUERY_STATE_KEY = 'sd_sma_query_page_state_v1';
 const quickRangeButtonIds = ['btnRange1D', 'btnRange1W', 'btnRange1M', 'btnRange1Y'];
+
+function getQueryMode() {
+  return document.querySelector('input[name="queryMode"]:checked')?.value || 'time';
+}
+
+function getConfiguredBatchField() {
+  const viewName = document.getElementById('viewName').value;
+  const group = document.getElementById('group').value;
+  const groupConfig = queryViews[viewName]?.per_group?.[group];
+  return String(groupConfig?.batch_field || '').trim();
+}
+
+function updateQueryModeControls() {
+  const batchModeRadio = document.getElementById('queryModeBatch');
+  const batchSupported = Boolean(getConfiguredBatchField()) && batchCodesAvailable;
+  batchModeRadio.disabled = !batchSupported;
+  if (!batchSupported && getQueryMode() === 'batch') {
+    document.getElementById('queryModeTime').checked = true;
+  }
+
+  const batchMode = getQueryMode() === 'batch';
+  document.getElementById('batchCode').disabled = !batchMode || !batchSupported;
+  document.getElementById('startTime').disabled = batchMode;
+  document.getElementById('endTime').disabled = batchMode;
+  for (const id of quickRangeButtonIds) document.getElementById(id).disabled = batchMode;
+  if (batchMode) {
+    document.getElementById('startTime').value = '';
+    document.getElementById('endTime').value = '';
+    clearQuickRangeActive();
+  } else {
+    document.getElementById('batchCode').value = '';
+  }
+}
+
+async function loadBatchCodes() {
+  const data = await fetchJson('/api/meta/batch-codes');
+  const select = document.getElementById('batchCode');
+  select.innerHTML = '';
+  const empty = document.createElement('option');
+  empty.value = '';
+  empty.textContent = '请选择批次号';
+  select.appendChild(empty);
+  for (const batchCode of data.items || []) {
+    const option = document.createElement('option');
+    option.value = batchCode;
+    option.textContent = batchCode;
+    select.appendChild(option);
+  }
+  batchCodesAvailable = select.options.length > 1;
+}
 
 async function fetchJson(url, opts) {
   const resp = await fetch(url, opts);
@@ -28,8 +79,8 @@ function saveQueryPageState() {
     pageSizeOverridden,
     startTime: document.getElementById('startTime').value || '',
     endTime: document.getElementById('endTime').value || '',
+    queryMode: getQueryMode(),
     batchCode: document.getElementById('batchCode').value || '',
-    combineMode: document.getElementById('combineMode').value || 'and',
     pageNumber: document.getElementById('pageNumber').value || '1',
     currentPage,
     totalPages,
@@ -164,6 +215,7 @@ async function loadGroupsForCurrentView(preferredGroup) {
   }
   await loadGroupSchemaHint();
   await loadTablesForCurrentGroup();
+  updateQueryModeControls();
 }
 
 async function loadViews() {
@@ -252,20 +304,28 @@ async function runQueryAtPage(page) {
     page_size: pageSize,
     pagination_mode: 'cursor',
     include_total: false,
-    combine_mode: document.getElementById('combineMode').value || 'and',
+    query_mode: getQueryMode(),
   };
   if (table) payload.table = table;
 
-  const start = document.getElementById('startTime').value;
-  const end = document.getElementById('endTime').value;
-  if (start && end && new Date(start).getTime() > new Date(end).getTime()) {
-    return alert('开始时间不能大于结束时间');
+  let start = '';
+  let end = '';
+  let batchCode = '';
+  if (payload.query_mode === 'batch') {
+    batchCode = document.getElementById('batchCode').value.trim();
+    if (!batchCode) return alert('按批次号查询时必须选择 BatchCode');
+    payload.batch_code = batchCode;
+  } else {
+    start = document.getElementById('startTime').value;
+    end = document.getElementById('endTime').value;
+    if (!start || !end) return alert('按时间查询时必须填写开始时间和结束时间');
+    if (new Date(start).getTime() > new Date(end).getTime()) {
+      return alert('开始时间不能大于结束时间');
+    }
+    // datetime-local 是本地时间，直接传递避免 toISOString() 产生时区偏移
+    payload.start_time = start;
+    payload.end_time = end;
   }
-  // datetime-local 是本地时间，直接传递避免 toISOString() 产生时区偏移
-  if (start) payload.start_time = start;
-  if (end) payload.end_time = end;
-  const batchCode = document.getElementById('batchCode').value.trim();
-  if (batchCode) payload.batch_code = batchCode;
 
   const data = await fetchJson('/api/history/by-view', {
     method: 'POST',
@@ -282,8 +342,8 @@ async function runQueryAtPage(page) {
     ...context,
     start,
     end,
+    queryMode: payload.query_mode,
     batchCode,
-    combineMode: payload.combine_mode,
   };
   lastResultData = data;
 
@@ -300,7 +360,7 @@ async function runQueryAtPage(page) {
 
 async function runLastQueryAtPage(page) {
   if (!lastQueryContext) return;
-  const { viewName, group, start, end, batchCode, combineMode } = lastQueryContext;
+  const { viewName, group, start, end, batchCode, queryMode } = lastQueryContext;
   const table = lastQueryContext.table || '';
   const pageSize = getCurrentPageSize();
   const targetPage = Math.max(1, page);
@@ -323,7 +383,7 @@ async function runLastQueryAtPage(page) {
     page_size: pageSize,
     pagination_mode: 'cursor',
     include_total: false,
-    combine_mode: combineMode || 'and',
+    query_mode: queryMode || 'time',
   };
   if (table) payload.table = table;
   if (start) payload.start_time = start;
@@ -413,10 +473,10 @@ async function restoreQueryPageState() {
   if (saved.labelLang) document.getElementById('labelLang').value = saved.labelLang;
   pageSizeOverridden = Boolean(saved.pageSizeOverridden);
   if (saved.pageSize) document.getElementById('pageSize').value = saved.pageSize;
+  if (saved.queryMode === 'batch') document.getElementById('queryModeBatch').checked = true;
   if (saved.startTime) document.getElementById('startTime').value = saved.startTime;
   if (saved.endTime) document.getElementById('endTime').value = saved.endTime;
   if (saved.batchCode) document.getElementById('batchCode').value = saved.batchCode;
-  if (saved.combineMode) document.getElementById('combineMode').value = saved.combineMode;
   if (saved.pageNumber) document.getElementById('pageNumber').value = saved.pageNumber;
   if (saved.viewName && queryViews[saved.viewName]) {
     document.getElementById('viewName').value = saved.viewName;
@@ -424,6 +484,7 @@ async function restoreQueryPageState() {
   updateViewSummary();
   await loadGroupsForCurrentView(saved.group || '');
   await loadTablesForCurrentGroup(saved.table || '');
+  updateQueryModeControls();
 
   lastQueryContext = saved.lastQueryContext || null;
   lastResultData = saved.lastResultData || null;
@@ -450,7 +511,10 @@ document.getElementById('btnNextPage').addEventListener('click', () => {
 });
 document.getElementById('group').addEventListener('change', () => {
   Promise.all([loadGroupSchemaHint(), loadTablesForCurrentGroup()])
-    .then(() => saveQueryPageState())
+    .then(() => {
+      updateQueryModeControls();
+      saveQueryPageState();
+    })
     .catch(err => alert(err.message));
 });
 document.getElementById('tableName').addEventListener('change', saveQueryPageState);
@@ -468,7 +532,12 @@ document.getElementById('endTime').addEventListener('input', clearQuickRangeActi
 document.getElementById('startTime').addEventListener('change', saveQueryPageState);
 document.getElementById('endTime').addEventListener('change', saveQueryPageState);
 document.getElementById('batchCode').addEventListener('change', saveQueryPageState);
-document.getElementById('combineMode').addEventListener('change', saveQueryPageState);
+for (const radio of document.querySelectorAll('input[name="queryMode"]')) {
+  radio.addEventListener('change', () => {
+    updateQueryModeControls();
+    saveQueryPageState();
+  });
+}
 document.getElementById('labelLang').addEventListener('change', saveQueryPageState);
 document.getElementById('pageSize').addEventListener('change', () => {
   pageSizeOverridden = true;
@@ -489,6 +558,13 @@ document.getElementById('btnRange1M').addEventListener('click', saveQueryPageSta
 document.getElementById('btnRange1Y').addEventListener('click', saveQueryPageState);
 
 async function initQueryPage() {
+  try {
+    await loadBatchCodes();
+  } catch (err) {
+    batchCodesAvailable = false;
+    document.getElementById('queryWarnings').textContent =
+      `批次号列表不可用，仍可按时间查询：${err.message}`;
+  }
   await loadViews();
   enableButtonClickFeedback();
   const saved = loadSavedQueryPageState();

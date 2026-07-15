@@ -60,8 +60,8 @@ class ViewHistoryQueryRequest(BaseModel):
     page_size: int | None = None
     filters: list[QueryFilter] = Field(default_factory=list)
     columns: list[str] | None = None
+    query_mode: Literal["time", "batch"] = "time"
     batch_code: str | None = None
-    combine_mode: Literal["and", "or"] = "and"
     pagination_mode: Literal["offset", "cursor"] = "cursor"
     cursor: HistoryCursor | None = None
     include_total: bool = False
@@ -91,6 +91,7 @@ class QueryGroupConfigUpdateRequest(BaseModel):
     view_name: str
     group: str
     time_field: str = "collection_time"
+    batch_field: str = ""
     sort_by: str
     sort_dir: Literal["asc", "desc"] = "desc"
     page_size: int = 50

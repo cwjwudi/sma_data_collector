@@ -767,6 +767,7 @@ class ConfigManager:
             "group": group,
             "baseline_table": baseline_table,
             "time_field": resolved["time_field"],
+            "batch_field": resolved["batch_field"],
             "sort_by": resolved["sort_by"],
             "sort_dir": resolved["sort_dir"],
             "page_size": resolved["page_size"],
@@ -778,6 +779,7 @@ class ConfigManager:
         view_name: str,
         group: str,
         time_field: str,
+        batch_field: str,
         sort_by: str,
         sort_dir: str,
         page_size: int,
@@ -815,6 +817,7 @@ class ConfigManager:
         per_group[group] = {
             "columns": normalized_columns,
             "time_field": str(time_field),
+            "batch_field": str(batch_field or ""),
             "sort_by": str(sort_by),
             "sort_dir": "asc" if str(sort_dir).lower() == "asc" else "desc",
             "page_size": max(1, int(page_size)),
