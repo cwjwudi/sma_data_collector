@@ -1,0 +1,117 @@
+{
+  "validated_at": "2026-07-15T10:49:55+08:00",
+  "row_identity": [
+    50000000,
+    1,
+    50000000
+  ],
+  "exact_count_seconds": 14.547,
+  "distribution": [
+    100000,
+    "2021-01-01 00:00:00",
+    "2026-09-15 08:11:35",
+    "0",
+    "0"
+  ],
+  "check_table": [
+    [
+      "sma_data_stress_test.Data_Product",
+      "check",
+      "status",
+      "OK"
+    ]
+  ],
+  "create_table": "CREATE TABLE `Data_Product` (\n  `DataProductTime` datetime DEFAULT NULL,\n  `DataProductState` varchar(255) DEFAULT NULL,\n  `DataProductCH01` varchar(255) DEFAULT NULL,\n  `DataProductCH02` varchar(255) DEFAULT NULL,\n  `DataProductCH03` varchar(255) DEFAULT NULL,\n  `DataProductCH04` varchar(255) DEFAULT NULL,\n  `DataProductCH05` varchar(255) DEFAULT NULL,\n  `DataProductCH06` varchar(255) DEFAULT NULL,\n  `BatchCode` varchar(255) DEFAULT NULL,\n  `id` bigint(20) NOT NULL AUTO_INCREMENT,\n  `collection_time` datetime NOT NULL,\n  `created_at` datetime DEFAULT current_timestamp(),\n  PRIMARY KEY (`id`),\n  KEY `idx_Data_Product_BatchCode` (`BatchCode`) USING BTREE,\n  KEY `idx_Data_Product_collection_time` (`collection_time`),\n  KEY `idx_Data_Product_BatchCode_collection_time` (`BatchCode`,`collection_time`)\n) ENGINE=InnoDB AUTO_INCREMENT=50000001 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci",
+  "indexes": [
+    [
+      "Data_Product",
+      0,
+      "PRIMARY",
+      1,
+      "id",
+      "A",
+      49434246,
+      null,
+      null,
+      "",
+      "BTREE",
+      "",
+      "",
+      "NO"
+    ],
+    [
+      "Data_Product",
+      1,
+      "idx_Data_Product_BatchCode",
+      1,
+      "BatchCode",
+      "A",
+      181077,
+      null,
+      null,
+      "YES",
+      "BTREE",
+      "",
+      "",
+      "NO"
+    ],
+    [
+      "Data_Product",
+      1,
+      "idx_Data_Product_collection_time",
+      1,
+      "collection_time",
+      "A",
+      49434246,
+      null,
+      null,
+      "",
+      "BTREE",
+      "",
+      "",
+      "NO"
+    ],
+    [
+      "Data_Product",
+      1,
+      "idx_Data_Product_BatchCode_collection_time",
+      1,
+      "BatchCode",
+      "A",
+      213078,
+      null,
+      null,
+      "YES",
+      "BTREE",
+      "",
+      "",
+      "NO"
+    ],
+    [
+      "Data_Product",
+      1,
+      "idx_Data_Product_BatchCode_collection_time",
+      2,
+      "collection_time",
+      "A",
+      49434246,
+      null,
+      null,
+      "",
+      "BTREE",
+      "",
+      "",
+      "NO"
+    ]
+  ],
+  "table_sizes": [
+    9283043328,
+    4177494016,
+    0,
+    49434246
+  ],
+  "tablespace": [
+    13555990528,
+    13555990528
+  ]
+}

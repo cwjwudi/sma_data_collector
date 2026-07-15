@@ -1,0 +1,311 @@
+{
+  "generated_at": "2026-07-15T10:40:24+08:00",
+  "phase": "baseline",
+  "server": [
+    "10.11.11-MariaDB",
+    "OFF",
+    16777216
+  ],
+  "indexes": [
+    [
+      "Data_Product",
+      0,
+      "PRIMARY",
+      1,
+      "id",
+      "A",
+      49434246,
+      null,
+      null,
+      "",
+      "BTREE",
+      "",
+      "",
+      "NO"
+    ],
+    [
+      "Data_Product",
+      1,
+      "idx_Data_Product_BatchCode",
+      1,
+      "BatchCode",
+      "A",
+      181077,
+      null,
+      null,
+      "YES",
+      "BTREE",
+      "",
+      "",
+      "NO"
+    ]
+  ],
+  "repeats": 3,
+  "sample_batch": {
+    "BatchCode": "SMA_1168050000",
+    "min_collection_time": "2023-11-08 16:00:00",
+    "max_collection_time": "2023-11-08 16:41:35",
+    "rows": 500
+  },
+  "results": {
+    "batch_only": {
+      "sql": "SELECT SQL_NO_CACHE COUNT(*) FROM Data_Product WHERE BatchCode=%s",
+      "parameters": [
+        "SMA_1168050000"
+      ],
+      "explain": {
+        "query_block": {
+          "select_id": 1,
+          "nested_loop": [
+            {
+              "table": {
+                "table_name": "Data_Product",
+                "access_type": "ref",
+                "possible_keys": [
+                  "idx_Data_Product_BatchCode"
+                ],
+                "key": "idx_Data_Product_BatchCode",
+                "key_length": "1023",
+                "used_key_parts": [
+                  "BatchCode"
+                ],
+                "ref": [
+                  "const"
+                ],
+                "rows": 500,
+                "filtered": 100,
+                "attached_condition": "Data_Product.BatchCode = 'SMA_1168050000'",
+                "using_index": true
+              }
+            }
+          ]
+        }
+      },
+      "durations_ms": [
+        0.855,
+        0.775,
+        0.729
+      ],
+      "median_ms": 0.775,
+      "result_summaries": [
+        500,
+        500,
+        500
+      ],
+      "session_status_delta": {
+        "Created_tmp_disk_tables": 0,
+        "Created_tmp_tables": 0,
+        "Handler_read_first": 0,
+        "Handler_read_key": 3,
+        "Handler_read_next": 1500,
+        "Handler_read_rnd": 0,
+        "Handler_read_rnd_next": 0
+      }
+    },
+    "collection_time_day": {
+      "sql": "SELECT SQL_NO_CACHE COUNT(*) FROM Data_Product WHERE collection_time >= %s AND collection_time < %s",
+      "parameters": [
+        "2023-11-01 00:00:00",
+        "2023-11-02 00:00:00"
+      ],
+      "explain": {
+        "query_block": {
+          "select_id": 1,
+          "nested_loop": [
+            {
+              "table": {
+                "table_name": "Data_Product",
+                "access_type": "ALL",
+                "rows": 49434246,
+                "filtered": 100,
+                "attached_condition": "Data_Product.collection_time >= '2023-11-01 00:00:00' and Data_Product.collection_time < '2023-11-02 00:00:00'"
+              }
+            }
+          ]
+        }
+      },
+      "durations_ms": [
+        23514.547,
+        23364.018,
+        23664.451
+      ],
+      "median_ms": 23514.547,
+      "result_summaries": [
+        24000,
+        24000,
+        24000
+      ],
+      "session_status_delta": {
+        "Created_tmp_disk_tables": 0,
+        "Created_tmp_tables": 0,
+        "Handler_read_first": 0,
+        "Handler_read_key": 0,
+        "Handler_read_next": 0,
+        "Handler_read_rnd": 0,
+        "Handler_read_rnd_next": 150000003
+      }
+    },
+    "batch_and_collection_time": {
+      "sql": "SELECT SQL_NO_CACHE COUNT(*) FROM Data_Product WHERE BatchCode=%s AND collection_time >= %s AND collection_time <= %s",
+      "parameters": [
+        "SMA_1168050000",
+        "2023-11-08 16:00:00",
+        "2023-11-08 16:41:35"
+      ],
+      "explain": {
+        "query_block": {
+          "select_id": 1,
+          "nested_loop": [
+            {
+              "table": {
+                "table_name": "Data_Product",
+                "access_type": "ref",
+                "possible_keys": [
+                  "idx_Data_Product_BatchCode"
+                ],
+                "key": "idx_Data_Product_BatchCode",
+                "key_length": "1023",
+                "used_key_parts": [
+                  "BatchCode"
+                ],
+                "ref": [
+                  "const"
+                ],
+                "rows": 500,
+                "filtered": 100,
+                "index_condition": "Data_Product.BatchCode = 'SMA_1168050000'",
+                "attached_condition": "Data_Product.collection_time >= '2023-11-08 16:00:00' and Data_Product.collection_time <= '2023-11-08 16:41:35'"
+              }
+            }
+          ]
+        }
+      },
+      "durations_ms": [
+        2.135,
+        2.102,
+        2.003
+      ],
+      "median_ms": 2.102,
+      "result_summaries": [
+        500,
+        500,
+        500
+      ],
+      "session_status_delta": {
+        "Created_tmp_disk_tables": 0,
+        "Created_tmp_tables": 0,
+        "Handler_read_first": 0,
+        "Handler_read_key": 3,
+        "Handler_read_next": 1500,
+        "Handler_read_rnd": 0,
+        "Handler_read_rnd_next": 0
+      }
+    },
+    "batch_or_collection_time": {
+      "sql": "SELECT SQL_NO_CACHE COUNT(*) FROM Data_Product WHERE BatchCode=%s OR (collection_time >= %s AND collection_time < %s)",
+      "parameters": [
+        "SMA_1168050000",
+        "2023-11-01 00:00:00",
+        "2023-11-02 00:00:00"
+      ],
+      "explain": {
+        "query_block": {
+          "select_id": 1,
+          "nested_loop": [
+            {
+              "table": {
+                "table_name": "Data_Product",
+                "access_type": "ALL",
+                "possible_keys": [
+                  "idx_Data_Product_BatchCode"
+                ],
+                "rows": 49434246,
+                "filtered": 100,
+                "attached_condition": "Data_Product.BatchCode = 'SMA_1168050000' or Data_Product.collection_time >= '2023-11-01 00:00:00' and Data_Product.collection_time < '2023-11-02 00:00:00'"
+              }
+            }
+          ]
+        }
+      },
+      "durations_ms": [
+        29556.444,
+        29639.899,
+        29596.964
+      ],
+      "median_ms": 29596.964,
+      "result_summaries": [
+        24500,
+        24500,
+        24500
+      ],
+      "session_status_delta": {
+        "Created_tmp_disk_tables": 0,
+        "Created_tmp_tables": 0,
+        "Handler_read_first": 0,
+        "Handler_read_key": 0,
+        "Handler_read_next": 0,
+        "Handler_read_rnd": 0,
+        "Handler_read_rnd_next": 150000003
+      }
+    },
+    "batch_order_limit": {
+      "sql": "SELECT SQL_NO_CACHE id, collection_time FROM Data_Product WHERE BatchCode=%s ORDER BY collection_time DESC LIMIT 100",
+      "parameters": [
+        "SMA_1168050000"
+      ],
+      "explain": {
+        "query_block": {
+          "select_id": 1,
+          "nested_loop": [
+            {
+              "read_sorted_file": {
+                "filesort": {
+                  "sort_key": "Data_Product.collection_time desc",
+                  "table": {
+                    "table_name": "Data_Product",
+                    "access_type": "ref",
+                    "possible_keys": [
+                      "idx_Data_Product_BatchCode"
+                    ],
+                    "key": "idx_Data_Product_BatchCode",
+                    "key_length": "1023",
+                    "used_key_parts": [
+                      "BatchCode"
+                    ],
+                    "ref": [
+                      "const"
+                    ],
+                    "rows": 500,
+                    "filtered": 100,
+                    "index_condition": "Data_Product.BatchCode = 'SMA_1168050000'",
+                    "attached_condition": "Data_Product.BatchCode <=> 'SMA_1168050000'"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      },
+      "durations_ms": [
+        4.28,
+        3.741,
+        3.917
+      ],
+      "median_ms": 3.917,
+      "result_summaries": [
+        100,
+        100,
+        100
+      ],
+      "session_status_delta": {
+        "Created_tmp_disk_tables": 0,
+        "Created_tmp_tables": 0,
+        "Handler_read_first": 0,
+        "Handler_read_key": 3,
+        "Handler_read_next": 1500,
+        "Handler_read_rnd": 300,
+        "Handler_read_rnd_next": 0
+      }
+    }
+  }
+}
