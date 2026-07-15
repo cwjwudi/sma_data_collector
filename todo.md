@@ -5,6 +5,10 @@
 
 ---
 
+## 2026-07-15
+
+- **Data_Product 5000 万行查询压力测试完成**：仅在 `sma_data_stress_test.Data_Product` 生成 50M 行并保留源索引；新增时间单列与 BatchCode+时间联合索引，时间范围查询由约 23.5s 降至 11.9ms，最终表检查 OK。详见 [docs/018-✅](docs/018-✅-Data_Product五千万行查询压力测试.md)。
+
 ## 2026-07-14
 
 - **ReportEditor 0.3.96**：AI 能力矩阵 A（配置数据源 upsert/凭证/删除/锁）；看板 [docs/006-🚧](docs/006-🚧-ReportEditor-AI上游错误体验.md)。
