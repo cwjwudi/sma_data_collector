@@ -7,7 +7,7 @@
 
 ## 2026-07-15
 
-- **历史报表双向复制（拍板中）**：[docs/022-⌛️](docs/022-⌛️-ReportEditor历史报表复制到U盘.md)——左⇄右；Q10=A Q11=B Q12=A；Q13–Q17 待回。
+- **历史报表双向复制/移动（拍板中）**：[docs/022-⌛️](docs/022-⌛️-ReportEditor历史报表复制到U盘.md)——仅分屏；手选右侧路径；U 盘确认后打开；Q10–17 已齐；Q18/Q19 待回。
 - **Data_Product 5000 万行查询压力测试完成**：仅在 `sma_data_stress_test.Data_Product` 生成 50M 行并保留源索引；新增时间单列与 BatchCode+时间联合索引，时间范围查询由约 23.5s 降至 11.9ms，最终表检查 OK。详见 [docs/018-✅](docs/018-✅-Data_Product五千万行查询压力测试.md)。
 
 ## 2026-07-14
