@@ -94,36 +94,47 @@
 
       <section class="panel">
         <h2>恢复与导入</h2>
-        <p class="hint">全部走服务端已完成文件，不经浏览器上传。外部文件请先「登记」到备份目录。大表请用 SQL 恢复，不要用 CSV。</p>
-        <div class="row">
-          <label for="serverBackupSelect">服务器已完成 SQL 备份</label>
-          <select id="serverBackupSelect"></select>
-          <button type="button" id="btnRefreshBackups">刷新备份</button>
-          <button type="button" id="btnRegisterSql">登记本地 SQL</button>
-          <button type="button" id="btnRestoreServerBackup" class="danger-btn">直接恢复 SQL</button>
+        <p class="hint">不经浏览器上传。外部文件先「登记」。GB 级请用 SQL；CSV 仅适合小数据。</p>
+
+        <div class="op-block">
+          <h3 class="op-block-title">SQL 恢复</h3>
+          <p class="hint op-block-hint">从服务器已完成备份恢复到目标库。单表备份含 DROP/CREATE，可能覆盖同名表。</p>
+          <div class="row">
+            <label for="serverBackupSelect">已完成 SQL</label>
+            <select id="serverBackupSelect"></select>
+            <button type="button" id="btnRefreshBackups">刷新</button>
+            <button type="button" id="btnRegisterSql">登记本地 SQL</button>
+          </div>
+          <div class="row">
+            <label for="restoreDatabaseSelect">恢复到数据库</label>
+            <select id="restoreDatabaseSelect"></select>
+            <button type="button" id="btnRestoreServerBackup" class="danger-btn">直接恢复 SQL</button>
+          </div>
         </div>
-        <div class="row">
-          <label for="restoreDatabaseSelect">恢复到数据库</label>
-          <select id="restoreDatabaseSelect"></select>
+
+        <div class="op-block op-block-secondary">
+          <h3 class="op-block-title">CSV 导入（小数据）</h3>
+          <p class="hint op-block-hint">仅用于小表交换，不适合 GB 级表。目标表必须已存在。</p>
+          <div class="row">
+            <label for="serverCsvSelect">已导出 CSV</label>
+            <select id="serverCsvSelect"></select>
+            <button type="button" id="btnRefreshCsvExports">刷新</button>
+            <button type="button" id="btnRegisterCsv">登记本地 CSV</button>
+          </div>
+          <div class="row">
+            <label for="importDatabaseSelect">导入到数据库</label>
+            <select id="importDatabaseSelect"></select>
+            <button type="button" id="btnRefreshImportTables">刷新表</button>
+            <label for="importTableSelect">导入到表</label>
+            <select id="importTableSelect"></select>
+          </div>
+          <div class="row">
+            <label for="truncateBeforeImport">清空表后再导入</label>
+            <input id="truncateBeforeImport" type="checkbox" />
+            <button type="button" id="btnImportServerCsv" class="danger-btn">直接导入 CSV</button>
+          </div>
         </div>
-        <div class="row">
-          <label for="serverCsvSelect">服务器已导出 CSV</label>
-          <select id="serverCsvSelect"></select>
-          <button type="button" id="btnRefreshCsvExports">刷新 CSV</button>
-          <button type="button" id="btnRegisterCsv">登记本地 CSV</button>
-        </div>
-        <div class="row">
-          <label for="importDatabaseSelect">导入到数据库</label>
-          <select id="importDatabaseSelect"></select>
-          <button type="button" id="btnRefreshImportTables">刷新目标表</button>
-          <label for="importTableSelect">导入到表</label>
-          <select id="importTableSelect"></select>
-        </div>
-        <div class="row">
-          <label for="truncateBeforeImport">清空表</label>
-          <input id="truncateBeforeImport" type="checkbox" />
-          <button type="button" id="btnImportServerCsv" class="danger-btn">直接导入 CSV</button>
-        </div>
+
         <div id="importHint" class="muted warn"></div>
       </section>
 
