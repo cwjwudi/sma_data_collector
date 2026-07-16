@@ -303,6 +303,18 @@ async function loadImportTables(preferredTable = '') {
   saveState();
 }
 
+/** Re-fetch database/table sizes while keeping current selections. */
+async function refreshSizedCatalog() {
+  const preferred = {
+    database: document.getElementById('databaseSelect').value || '',
+    restoreDatabase: document.getElementById('restoreDatabaseSelect').value || '',
+    importDatabase: document.getElementById('importDatabaseSelect').value || '',
+    table: document.getElementById('tableSelect').value || '',
+    importTable: document.getElementById('importTableSelect').value || '',
+  };
+  await loadDatabases(preferred);
+}
+
 async function chooseOutputFolder() {
   setHint('backupHint', '正在打开文件夹选择窗口...');
   const data = await fetchJson('/api/folder-dialog', {
@@ -631,15 +643,21 @@ function bindEvents() {
   document.getElementById('btnRefreshImportTables').addEventListener('click', () => {
     loadImportTables().catch(err => setHint('importHint', err.message, 'muted'));
   });
-  document.getElementById('databaseSelect').addEventListener('change', () => {
-    loadExportTables().catch(err => setHint('objectHint', err.message, 'muted warn'));
-  });
-  document.getElementById('importDatabaseSelect').addEventListener('change', () => {
-    loadImportTables().catch(err => setHint('importHint', err.message, 'muted warn'));
-  });
-  for (const id of ['tableSelect', 'restoreDatabaseSelect', 'importTableSelect', 'outputDir']) {
-    document.getElementById(id).addEventListener('change', saveState);
+  for (const id of [
+    'databaseSelect',
+    'restoreDatabaseSelect',
+    'importDatabaseSelect',
+    'tableSelect',
+    'importTableSelect',
+  ]) {
+    document.getElementById(id).addEventListener('change', () => {
+      refreshSizedCatalog().catch(err => {
+        const hintId = id.startsWith('import') ? 'importHint' : 'objectHint';
+        setHint(hintId, err.message, 'muted warn');
+      });
+    });
   }
+  document.getElementById('outputDir').addEventListener('change', saveState);
   for (const id of ['dbHost', 'dbPort', 'dbUsername']) {
     document.getElementById(id).addEventListener('change', saveState);
     document.getElementById(id).addEventListener('input', updateQuickChipState);
