@@ -13,6 +13,7 @@ Main functions:
 - Backup a whole database or a single table to SQL (`mysqldump` / `mariadb-dump`).
 - Restore completed SQL backups directly on the server (manifest + SHA-256).
 - Export a table to CSV for small data exchange; import completed CSV exports on the server.
+  Use **强制导入** when CSV columns do not match the target table (also forces truncate-before-import).
 - Register external local `.sql` / `.csv` files into the backup directory (no browser upload).
 
 ## Export / restore model

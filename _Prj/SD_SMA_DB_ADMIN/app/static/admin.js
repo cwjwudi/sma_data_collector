@@ -474,10 +474,23 @@ async function startRestoreServerBackup() {
   setHint('importHint', `已开始校验并恢复: ${filename} → ${database}`, 'muted warn');
 }
 
+function syncForceImportTruncate() {
+  const forceEl = document.getElementById('forceCsvImport');
+  const truncateEl = document.getElementById('truncateBeforeImport');
+  if (forceEl.checked) {
+    truncateEl.checked = true;
+    truncateEl.disabled = true;
+  } else {
+    truncateEl.disabled = false;
+  }
+}
+
 async function startImportServerCsv() {
   const database = getSelectedValue('importDatabaseSelect', '请先选择导入目标数据库');
   const table = getSelectedValue('importTableSelect', '请先选择导入目标表');
   const filename = getSelectedValue('serverCsvSelect', '没有可导入的已导出 CSV');
+  const force = document.getElementById('forceCsvImport').checked;
+  if (force) syncForceImportTruncate();
   if (!(await requireDoubleConfirm('导入 CSV', `${filename} → ${database}.${table}`))) {
     setHint('importHint', '已取消 CSV 导入', 'muted');
     return;
@@ -491,7 +504,8 @@ async function startImportServerCsv() {
       database,
       table,
       filename,
-      truncate: document.getElementById('truncateBeforeImport').checked,
+      force,
+      truncate: force || document.getElementById('truncateBeforeImport').checked,
       confirmation_token: confirmationToken,
     }),
   });
@@ -693,12 +707,14 @@ function bindEvents() {
   document.getElementById('btnRegisterCsv').addEventListener('click', () => {
     registerLocalFile('csv').catch(err => setHint('importHint', err.message, 'muted warn'));
   });
+  document.getElementById('forceCsvImport').addEventListener('change', syncForceImportTruncate);
   document.getElementById('btnImportServerCsv').addEventListener('click', () => {
     startImportServerCsv().catch(err => setHint('importHint', err.message, 'muted warn'));
   });
   document.getElementById('btnRefreshJobs').addEventListener('click', () => {
     refreshJobs().catch(err => setHint('jobSummary', err.message, 'muted warn'));
   });
+  syncForceImportTruncate();
 }
 
 async function init() {

@@ -63,6 +63,24 @@ def test_import_csv_job_keeps_server_file(monkeypatch: pytest.MonkeyPatch, tmp_p
     assert csv_path.is_file()
 
 
+def test_resolve_csv_import_columns_strict_rejects_mismatch() -> None:
+    with pytest.raises(ValueError, match="do not match"):
+        main._resolve_csv_import_columns(["a", "extra"], ["a", "b"], force=False)
+
+
+def test_resolve_csv_import_columns_force_intersects() -> None:
+    cols, skipped, missing = main._resolve_csv_import_columns(
+        ["a", "extra", "b"], ["b", "a", "c"], force=True
+    )
+    assert cols == ["a", "b"]
+    assert skipped == ["extra"]
+    assert missing == ["c"]
+
+
+def test_resolve_csv_import_columns_force_requires_overlap() -> None:
+    with pytest.raises(ValueError, match="no overlapping"):
+        main._resolve_csv_import_columns(["x"], ["a", "b"], force=True)
+
 def _seed_job(job_id: str, status: str, created_at: str) -> None:
     with main._jobs_lock:
         main._jobs[job_id] = {

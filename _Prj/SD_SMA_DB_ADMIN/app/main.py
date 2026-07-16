@@ -120,6 +120,7 @@ class ImportServerCsvRequest(BaseModel):
     table: str
     filename: str
     truncate: bool = False
+    force: bool = False
     confirmation_token: str
 
 
@@ -1144,6 +1145,33 @@ def export_csv_job(job_id: str, conn: DbConnection, database: str, table: str, o
     }
 
 
+def _resolve_csv_import_columns(
+    csv_columns: list[str],
+    table_columns: list[str],
+    *,
+    force: bool,
+) -> tuple[list[str], list[str], list[str]]:
+    """Return (import_columns, skipped_csv_columns, missing_table_columns)."""
+    csv_list = [str(c) for c in csv_columns]
+    table_list = [str(c) for c in table_columns]
+    table_set = set(table_list)
+    csv_set = set(csv_list)
+    skipped = [c for c in csv_list if c not in table_set]
+    missing = [c for c in table_list if c not in csv_set]
+    if not force:
+        if skipped or missing:
+            raise ValueError(
+                "CSV columns do not match table columns. "
+                f"extra_in_csv={skipped}; missing_in_csv={missing}. "
+                "Enable force import to allow mismatched fields (requires truncate)."
+            )
+        return csv_list, [], []
+    import_cols = [c for c in csv_list if c in table_set]
+    if not import_cols:
+        raise ValueError("Force import found no overlapping columns between CSV and table")
+    return import_cols, skipped, missing
+
+
 def import_csv_job(
     job_id: str,
     conn: DbConnection,
@@ -1152,6 +1180,7 @@ def import_csv_job(
     csv_path: str,
     truncate: bool,
     *,
+    force: bool = False,
     verify_sha256: str | None = None,
 ) -> dict[str, Any]:
     dbname = safe_identifier(database, "database")
@@ -1159,13 +1188,16 @@ def import_csv_job(
     source = Path(csv_path)
     if not source.is_file():
         raise FileNotFoundError(source)
+    if force:
+        truncate = True
     if verify_sha256:
         append_job_log(job_id, f"Verifying SHA-256 for {source.name}")
         set_job_progress(job_id, 2, "verifying")
         actual = _sha256_file(source, progress_hook=_cli_progress_mapper(job_id, phase="verifying", start=2, end=5))
         if not secrets.compare_digest(actual, verify_sha256):
             raise RuntimeError("CSV SHA-256 does not match manifest")
-    append_job_log(job_id, f"Importing CSV into {dbname}.{table_name}")
+    mode = "force" if force else "strict"
+    append_job_log(job_id, f"Importing CSV into {dbname}.{table_name} ({mode})")
     try:
         with source.open("r", encoding="utf-8-sig", newline="") as counter:
             total_rows = max(sum(1 for _ in counter) - 1, 0)
@@ -1177,11 +1209,19 @@ def import_csv_job(
     with connect_mysql(conn, dbname, autocommit=False) as db:
         with db.cursor() as cur, source.open("r", encoding="utf-8-sig", newline="") as f:
             reader = csv.DictReader(f)
-            columns = reader.fieldnames or []
-            if not columns:
+            csv_columns = list(reader.fieldnames or [])
+            if not csv_columns:
                 raise ValueError("CSV header is empty")
-            for col in columns:
+            for col in csv_columns:
                 safe_identifier(col, "csv column")
+            cur.execute(f"SHOW COLUMNS FROM {quote_ident(table_name)}")
+            table_columns = [str(row[0]) for row in cur.fetchall() if row and row[0] is not None]
+            columns, skipped, missing = _resolve_csv_import_columns(csv_columns, table_columns, force=force)
+            if force:
+                if skipped:
+                    append_job_log(job_id, f"Force import skipping CSV columns: {skipped}")
+                if missing:
+                    append_job_log(job_id, f"Force import leaving table columns unset: {missing}")
             if truncate:
                 append_job_log(job_id, "Deleting target rows transactionally before import")
                 cur.execute(f"DELETE FROM {quote_ident(table_name)}")
@@ -1207,11 +1247,24 @@ def import_csv_job(
         db.commit()
     set_job_progress(job_id, 95, "finalizing")
     append_job_log(job_id, f"Imported rows: {rows}")
-    return {"database": dbname, "table": table_name, "rows": rows, "source": source.name}
+    return {
+        "database": dbname,
+        "table": table_name,
+        "rows": rows,
+        "source": source.name,
+        "columns": columns,
+        "force": force,
+    }
 
 
 def import_verified_csv_job(
-    job_id: str, conn: DbConnection, database: str, table: str, filename: str, truncate: bool
+    job_id: str,
+    conn: DbConnection,
+    database: str,
+    table: str,
+    filename: str,
+    truncate: bool,
+    force: bool = False,
 ) -> dict[str, Any]:
     source, manifest = _completed_csv_export(filename)
     return import_csv_job(
@@ -1221,6 +1274,7 @@ def import_verified_csv_job(
         table,
         str(source),
         truncate,
+        force=force,
         verify_sha256=str(manifest.get("sha256") or ""),
     )
 
@@ -1537,6 +1591,7 @@ def import_server_csv(req: ImportServerCsvRequest) -> dict[str, Any]:
         _completed_csv_export(req.filename)
     except (OSError, ValueError, json.JSONDecodeError, FileNotFoundError) as exc:
         raise HTTPException(400, str(exc)) from exc
+    truncate = True if req.force else bool(req.truncate)
     job = start_job(
         f"Import CSV {req.table}",
         import_verified_csv_job,
@@ -1544,7 +1599,8 @@ def import_server_csv(req: ImportServerCsvRequest) -> dict[str, Any]:
         req.database,
         req.table,
         req.filename,
-        req.truncate,
+        truncate,
+        bool(req.force),
     )
     return {"job": job}
 
