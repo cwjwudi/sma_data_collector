@@ -1,14 +1,13 @@
 from __future__ import annotations
 
-import io
+import logging
 import threading
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
-from fastapi import HTTPException
-from starlette.datastructures import UploadFile
+from fastapi.testclient import TestClient
 
 import app.main as main
 from app.main import DbConnection
@@ -25,10 +24,6 @@ def isolated_jobs():
         main._jobs.update(saved)
 
 
-def _make_upload(data: bytes, filename: str) -> UploadFile:
-    return UploadFile(file=io.BytesIO(data), filename=filename)
-
-
 def _wait_job_done(job_id: str, timeout: float = 5.0) -> None:
     deadline = time.time() + timeout
     while time.time() < deadline:
@@ -40,30 +35,25 @@ def _wait_job_done(job_id: str, timeout: float = 5.0) -> None:
     raise AssertionError(f"job {job_id} did not finish in time")
 
 
-def test_restore_job_success_removes_upload_temp_dir(monkeypatch: pytest.MonkeyPatch) -> None:
-    sql_path = Path(main._save_upload(_make_upload(b"SELECT 1;", "dump.sql"), ".sql"))
-    assert sql_path.is_file()
-    monkeypatch.setattr(main, "run_cli", lambda *args, **kwargs: None)
-    main.restore_mysql_job("job-restore-ok", DbConnection(), "testdb", str(sql_path))
-    assert not sql_path.exists()
-    assert not sql_path.parent.exists()
+def test_upload_restore_and_import_routes_are_removed() -> None:
+    with TestClient(main.app, client=("127.0.0.1", 50000)) as client:
+        assert client.post("/api/restore-sql").status_code == 404
+        assert client.post("/api/import-csv").status_code == 404
 
 
-def test_restore_job_failure_removes_upload_temp_dir(monkeypatch: pytest.MonkeyPatch) -> None:
-    sql_path = Path(main._save_upload(_make_upload(b"SELECT 1;", "dump.sql"), ".sql"))
-
-    def boom(*args, **kwargs):
-        raise RuntimeError("mysql exited with error")
-
-    monkeypatch.setattr(main, "run_cli", boom)
-    with pytest.raises(RuntimeError):
-        main.restore_mysql_job("job-restore-fail", DbConnection(), "testdb", str(sql_path))
-    assert not sql_path.exists()
-    assert not sql_path.parent.exists()
+def test_upload_routes_missing_on_openapi() -> None:
+    paths = main.app.openapi()["paths"]
+    assert "/api/restore-sql" not in paths
+    assert "/api/import-csv" not in paths
+    assert "/api/backup-table" in paths
+    assert "/api/import-server-csv" in paths
+    assert "/api/register-file" in paths
+    assert "/api/csv-exports" in paths
 
 
-def test_import_csv_job_failure_removes_upload_temp_dir(monkeypatch: pytest.MonkeyPatch) -> None:
-    csv_path = Path(main._save_upload(_make_upload(b"col_a\n1\n", "rows.csv"), ".csv"))
+def test_import_csv_job_keeps_server_file(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    csv_path = tmp_path / "rows.csv"
+    csv_path.write_text("col_a\n1\n", encoding="utf-8")
 
     def boom(*args, **kwargs):
         raise RuntimeError("cannot connect")
@@ -71,26 +61,51 @@ def test_import_csv_job_failure_removes_upload_temp_dir(monkeypatch: pytest.Monk
     monkeypatch.setattr(main, "connect_mysql", boom)
     with pytest.raises(RuntimeError):
         main.import_csv_job("job-import-fail", DbConnection(), "testdb", "table_a", str(csv_path), False)
-    assert not csv_path.exists()
-    assert not csv_path.parent.exists()
+    assert csv_path.is_file()
 
 
-def test_save_upload_over_limit_removes_temp_dir(monkeypatch: pytest.MonkeyPatch) -> None:
-    created: list[str] = []
-    real_mkdtemp = main.tempfile.mkdtemp
+def test_resolve_csv_import_columns_strict_rejects_mismatch() -> None:
+    with pytest.raises(ValueError, match="do not match"):
+        main._resolve_csv_import_columns(["a", "extra"], ["a", "b"], force=False)
 
-    def spy_mkdtemp(*args, **kwargs):
-        path = real_mkdtemp(*args, **kwargs)
-        created.append(path)
-        return path
 
-    monkeypatch.setattr(main.tempfile, "mkdtemp", spy_mkdtemp)
-    monkeypatch.setattr(main, "load_config", lambda: {"max_upload_mb": 1})
-    with pytest.raises(HTTPException):
-        main._save_upload(_make_upload(b"x" * (2 * 1024 * 1024), "big.sql"), ".sql")
-    assert created
-    assert not Path(created[0]).exists()
+def test_resolve_csv_import_columns_force_intersects() -> None:
+    cols, skipped, missing = main._resolve_csv_import_columns(
+        ["a", "extra", "b"], ["b", "a", "c"], force=True
+    )
+    assert cols == ["a", "b"]
+    assert skipped == ["extra"]
+    assert missing == ["c"]
 
+
+def test_resolve_csv_import_columns_force_requires_overlap() -> None:
+    with pytest.raises(ValueError, match="no overlapping"):
+        main._resolve_csv_import_columns(["x"], ["a", "b"], force=True)
+
+
+def test_append_job_log_emits_console_logger(caplog: pytest.LogCaptureFixture) -> None:
+    with main._jobs_lock:
+        main._jobs["job-log-1"] = {
+            "id": "job-log-1",
+            "title": "t",
+            "status": "running",
+            "progress": 0,
+            "phase": "starting",
+            "created_at": "2020-01-01T00:00:00",
+            "updated_at": "2020-01-01T00:00:00",
+            "logs": [],
+            "result": None,
+        }
+    with caplog.at_level(logging.INFO, logger="sd_sma.db_admin.job"):
+        main.append_job_log("job-log-1", "hello console")
+    assert any("hello console" in r.message for r in caplog.records)
+    with main._jobs_lock:
+        assert main._jobs["job-log-1"]["logs"][-1].endswith("hello console")
+
+
+def test_configure_console_logging_mutes_http_access_info() -> None:
+    main.configure_console_logging()
+    assert logging.getLogger("uvicorn.access").level == logging.WARNING
 
 def _seed_job(job_id: str, status: str, created_at: str) -> None:
     with main._jobs_lock:
