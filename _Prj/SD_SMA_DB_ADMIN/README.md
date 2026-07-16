@@ -53,7 +53,11 @@ Resolution order:
 
 1. Absolute paths in `mysql_tools` inside `config/default.json`
 2. Tools available on `PATH` (`mysqldump` / `mysql`, or `mariadb-dump` / `mariadb`)
-3. Binaries under the project `_tools` directory
+3. Auto-scan under:
+   - project-local `_tools` (`SD_SMA_DB_ADMIN/_tools`)
+   - sibling `_tools` next to the project folder (`_Prj/_tools`)
+
+Binaries under a `bin/` directory are preferred when multiple matches exist.
 
 If no client is found, the job fails with
 `找不到 MySQL/MariaDB 客户端工具: ...` instead of a raw `WinError 2`.

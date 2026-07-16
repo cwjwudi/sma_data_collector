@@ -216,8 +216,42 @@ _TOOL_ALIASES: dict[str, tuple[str, ...]] = {
 def _tool_not_found_message(name: str) -> str:
     return (
         f"找不到 MySQL/MariaDB 客户端工具: {name}。"
-        "请在 mysql_tools 中配置绝对路径，或将客户端加入 PATH，或使用项目 _tools。"
+        "请在 mysql_tools 中配置绝对路径，或将客户端加入 PATH，"
+        "或在项目 _tools / 同级 _tools 下放置客户端。"
     )
+
+
+def _mysql_tools_search_roots() -> list[Path]:
+    """Project-local _tools first, then sibling _tools next to the project folder."""
+    roots: list[Path] = []
+    seen: set[str] = set()
+    for candidate in (BASE_DIR / "_tools", BASE_DIR.parent / "_tools"):
+        try:
+            resolved = candidate.resolve()
+        except OSError:
+            continue
+        key = str(resolved).lower()
+        if key in seen or not resolved.is_dir():
+            continue
+        seen.add(key)
+        roots.append(resolved)
+    return roots
+
+
+def _find_tool_under_roots(aliases: tuple[str, ...], roots: list[Path]) -> str | None:
+    scored: list[tuple[int, int, str]] = []
+    for root_index, root in enumerate(roots):
+        for alias in aliases:
+            for match in root.rglob(alias):
+                if not match.is_file():
+                    continue
+                # Prefer earlier roots, then binaries under a bin/ directory.
+                bin_penalty = 0 if match.parent.name.lower() == "bin" else 1
+                scored.append((root_index, bin_penalty, str(match.resolve())))
+    if not scored:
+        return None
+    scored.sort(key=lambda item: (item[0], item[1], item[2].lower()))
+    return scored[0][2]
 
 
 def resolve_mysql_tool(name: str) -> str:
@@ -245,13 +279,9 @@ def resolve_mysql_tool(name: str) -> str:
         if which_hit:
             return which_hit
 
-    tools_root = BASE_DIR / "_tools"
-    if tools_root.is_dir():
-        for alias in aliases:
-            matches = sorted(tools_root.rglob(alias))
-            for match in matches:
-                if match.is_file():
-                    return str(match.resolve())
+    found = _find_tool_under_roots(aliases, _mysql_tools_search_roots())
+    if found:
+        return found
 
     raise FileNotFoundError(_tool_not_found_message(name))
 

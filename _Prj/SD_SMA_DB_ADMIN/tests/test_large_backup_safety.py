@@ -200,6 +200,41 @@ def test_resolve_mysql_tool_missing_has_clear_message(monkeypatch: pytest.Monkey
     assert "WinError" not in str(exc_info.value)
 
 
+def test_resolve_mysql_tool_scans_project_and_sibling_tools(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    project = tmp_path / "SD_SMA_DB_ADMIN"
+    sibling_tools = tmp_path / "_tools" / "mariadb" / "bin"
+    project.mkdir()
+    sibling_tools.mkdir(parents=True)
+    dump = sibling_tools / "mysqldump.exe"
+    dump.write_bytes(b"MZ")
+    monkeypatch.setattr(main, "BASE_DIR", project)
+    monkeypatch.setattr(main, "load_config", lambda: {})
+    monkeypatch.setattr(main.shutil, "which", lambda name: None)
+    resolved = main.resolve_mysql_tool("mysqldump")
+    assert Path(resolved) == dump.resolve()
+
+
+def test_resolve_mysql_tool_prefers_project_tools_over_sibling(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    project = tmp_path / "SD_SMA_DB_ADMIN"
+    local_bin = project / "_tools" / "bin"
+    sibling_bin = tmp_path / "_tools" / "bin"
+    local_bin.mkdir(parents=True)
+    sibling_bin.mkdir(parents=True)
+    local_dump = local_bin / "mysqldump.exe"
+    sibling_dump = sibling_bin / "mysqldump.exe"
+    local_dump.write_bytes(b"MZ")
+    sibling_dump.write_bytes(b"MZ")
+    monkeypatch.setattr(main, "BASE_DIR", project)
+    monkeypatch.setattr(main, "load_config", lambda: {})
+    monkeypatch.setattr(main.shutil, "which", lambda name: None)
+    assert Path(main.resolve_mysql_tool("mysqldump")) == local_dump.resolve()
+
+
+
 def test_run_cli_wraps_missing_executable(monkeypatch: pytest.MonkeyPatch) -> None:
     def boom(*args, **kwargs):
         raise FileNotFoundError(2, "No such file")
