@@ -56,20 +56,37 @@ def test_confirmation_rejects_different_target() -> None:
         main.consume_confirmation(token, "restore-backup", "target_b")
 
 
-def test_config_never_returns_password(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    monkeypatch.setattr(
-        main,
-        "load_config",
-        lambda: {
-            "backup_dir": str(tmp_path),
-            "default_connection": {"username": "root", "password": "must-not-leak"},
-        },
-    )
+def test_config_returns_and_persists_password(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    cfg_file = tmp_path / "default.json"
+    stored: dict[str, Any] = {
+        "backup_dir": str(tmp_path),
+        "default_connection": {"username": "root", "password": "secret-pass"},
+    }
+
+    def fake_load() -> dict[str, Any]:
+        return dict(stored)
+
+    def fake_save(cfg: dict[str, Any]) -> None:
+        stored.clear()
+        stored.update(cfg)
+        cfg_file.write_text(json.dumps(cfg), encoding="utf-8")
+
+    monkeypatch.setattr(main, "load_config", fake_load)
+    monkeypatch.setattr(main, "save_config", fake_save)
+    monkeypatch.setattr(main, "CONFIG_DIR", tmp_path)
+    monkeypatch.setattr(main, "backup_dir", lambda: tmp_path)
+    monkeypatch.setattr(main, "last_output_dir", lambda: None)
+
     payload = main.get_config()
     assert payload["default_connection"]["username"] == "root"
-    assert "password" not in payload["default_connection"]
-    assert "must-not-leak" not in json.dumps(payload)
+    assert payload["default_connection"]["password"] == "secret-pass"
 
+    saved = main.persist_default_connection(
+        main.DbConnection(host="192.168.1.1", username="ops", password="new-secret")
+    )
+    assert saved["password"] == "new-secret"
+    assert stored["default_connection"]["password"] == "new-secret"
+    assert main.get_config()["default_connection"]["password"] == "new-secret"
 
 def test_range_download_supports_resume(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     backup = tmp_path / "large.sql"

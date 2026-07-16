@@ -190,6 +190,7 @@ function togglePasswordVisibility() {
 function clearPassword() {
   const input = document.getElementById('dbPassword');
   input.value = '';
+  persistConnectionConfig().catch(() => saveState());
   input.focus();
 }
 
@@ -232,6 +233,7 @@ function saveState() {
     host: document.getElementById('dbHost').value,
     port: document.getElementById('dbPort').value,
     username: document.getElementById('dbUsername').value,
+    password: document.getElementById('dbPassword').value,
     database: document.getElementById('databaseSelect').value,
     table: document.getElementById('tableSelect').value,
     restoreDatabase: document.getElementById('restoreDatabaseSelect').value,
@@ -265,11 +267,24 @@ async function loadConfig() {
   document.getElementById('dbHost').value = conn.host || '127.0.0.1';
   document.getElementById('dbPort').value = Number(conn.port || 3306);
   document.getElementById('dbUsername').value = conn.username || '';
-  document.getElementById('dbPassword').value = conn.password || '';
+  // Prefer browser-saved password; fall back to server default_connection.
+  document.getElementById('dbPassword').value =
+    typeof saved?.password === 'string'
+      ? saved.password
+      : String(config.default_connection?.password || '');
   document.getElementById('outputDir').value =
     saved?.outputDir || config.last_output_dir || defaultOutputDir;
   setHint('connectionHint', `默认导出目录: ${defaultOutputDir || '-'}`);
   updateQuickChipState();
+}
+
+async function persistConnectionConfig() {
+  saveState();
+  await fetchJson('/api/config/connection', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(getConnectionPayload()),
+  });
 }
 
 async function testConnection() {
@@ -279,6 +294,7 @@ async function testConnection() {
     body: JSON.stringify(getConnectionPayload()),
   });
   if (data.ok) {
+    await persistConnectionConfig().catch(() => saveState());
     setHint('connectionHint', `连接成功: ${data.engine}, version=${data.version || data.path || '-'}`, 'muted ok');
   } else {
     setHint('connectionHint', `连接失败: ${data.message || '-'}`, 'muted warn');
@@ -716,9 +732,16 @@ function bindEvents() {
   }
   document.getElementById('outputDir').addEventListener('change', saveState);
   for (const id of ['dbHost', 'dbPort', 'dbUsername']) {
-    document.getElementById(id).addEventListener('change', saveState);
+    document.getElementById(id).addEventListener('change', () => {
+      persistConnectionConfig().catch(() => saveState());
+      updateQuickChipState();
+    });
     document.getElementById(id).addEventListener('input', updateQuickChipState);
   }
+  document.getElementById('dbPassword').addEventListener('change', () => {
+    persistConnectionConfig().catch(() => saveState());
+  });
+  document.getElementById('dbPassword').addEventListener('input', saveState);
   document.getElementById('btnUseDefaultOutputDir').addEventListener('click', () => {
     document.getElementById('outputDir').value = defaultOutputDir;
     saveState();

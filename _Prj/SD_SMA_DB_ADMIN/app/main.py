@@ -332,6 +332,17 @@ def default_connection() -> dict[str, Any]:
     return base
 
 
+def persist_default_connection(conn: DbConnection) -> dict[str, Any]:
+    cfg = load_config()
+    current = dict(cfg.get("default_connection") or {}) if isinstance(cfg.get("default_connection"), dict) else {}
+    payload = conn.model_dump()
+    for key in ("engine", "host", "port", "username", "password", "database"):
+        if key in payload:
+            current[key] = payload[key]
+    cfg["default_connection"] = current
+    save_config(cfg)
+    return dict(current)
+
 def _folder_dialog_initial(initial_dir: str | None = None) -> Path:
     raw = (initial_dir or "").strip()
     if not raw:
@@ -1428,7 +1439,6 @@ def health() -> dict[str, Any]:
 def get_config() -> dict[str, Any]:
     cfg = load_config()
     connection = default_connection()
-    connection.pop("password", None)
     remembered = last_output_dir()
     return {
         "default_connection": connection,
@@ -1437,6 +1447,12 @@ def get_config() -> dict[str, Any]:
         "mysql_tools": cfg.get("mysql_tools") or {},
         "max_concurrent_jobs": max(1, int(cfg.get("max_concurrent_jobs") or 2)),
     }
+
+
+@app.post("/api/config/connection")
+def save_connection_config(conn: DbConnection) -> dict[str, Any]:
+    saved = persist_default_connection(conn)
+    return {"ok": True, "default_connection": saved}
 
 
 @app.post("/api/folder-dialog")

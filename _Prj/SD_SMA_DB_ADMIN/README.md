@@ -74,7 +74,8 @@ MySQL 8 dump clients automatically receive `--column-statistics=0` for MariaDB s
 - Any writable folder may be selected; the last choice is remembered as `last_output_dir`.
 - Lists / downloads / restores scan `backup_dir` and `last_output_dir`.
 
-Database passwords are never returned by `/api/config`.
+Database passwords are stored in `default_connection` (and browser local state) so the
+admin UI can restore them after refresh. Prefer loopback-only access for this tool.
 
 For large backups, keep at least `backup_free_space_factor` times the estimated size free
 on the output disk (default `1.5`). `cli_timeout_seconds` defaults to 24 hours.
