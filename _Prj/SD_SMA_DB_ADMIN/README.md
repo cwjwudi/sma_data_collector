@@ -10,8 +10,8 @@ Main functions:
 
 - Test MySQL connection.
 - List databases and tables.
-- Create MySQL SQL backups through `mysqldump`.
-- Restore SQL files through `mysql`.
+- Create MySQL SQL backups through `mysqldump` / `mariadb-dump`.
+- Restore SQL files through `mysql` / `mariadb`.
 - Export a table to CSV.
 - Import CSV into an existing table.
 
@@ -29,14 +29,33 @@ Large backup safeguards:
 - Completed server-side SQL backups can be restored directly after manifest and SHA-256 verification;
   large files do not need to be uploaded through the browser again.
 
-SQL backup and restore need MySQL client tools available in `PATH`, or explicit paths in
-`config/default.json`.
+## MySQL / MariaDB client tools
 
-The configured export directory must be the backup directory itself or one of its
-subdirectories. Database passwords are never returned by `/api/config`; enter them for
-the current browser session or inject them through an external credential mechanism.
+SQL backup and restore need MySQL or MariaDB client tools. Resolution order:
+
+1. Absolute paths in `mysql_tools` inside `config/default.json`
+2. Tools available on `PATH` (`mysqldump` / `mysql`, or `mariadb-dump` / `mariadb`)
+3. Binaries under the project `_tools` directory
+
+If no client is found, the job fails with a clear message
+(`找不到 MySQL/MariaDB 客户端工具: ...`) instead of a raw `WinError 2`.
+
+MySQL 8 dump clients automatically receive `--column-statistics=0` so they work
+against MariaDB servers that do not expose `information_schema.COLUMN_STATISTICS`.
+MariaDB dump clients do not receive that flag.
+
+## Export directories
+
+- The default export directory is `backup_dir` (usually `config/backups`).
+- Any writable absolute folder may be selected as the export directory.
+- The last chosen directory is remembered in the browser (`localStorage`) and on the
+  server as `last_output_dir` in `config/default.json`.
+- Completed backups are listed / downloaded / restored from `backup_dir` and
+  `last_output_dir` together.
+
+Database passwords are never returned by `/api/config`; enter them for the current
+browser session or inject them through an external credential mechanism.
 
 For large backups, keep at least `backup_free_space_factor` times the database's
 reported data-and-index size available on the output disk. The default factor is `1.5`.
 `cli_timeout_seconds` defaults to 24 hours.
-

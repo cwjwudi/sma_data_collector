@@ -146,10 +146,14 @@ def test_backup_is_atomic_and_writes_manifest(monkeypatch: pytest.MonkeyPatch, t
     monkeypatch.setattr(main, "_database_storage_bytes", lambda conn, database: 1024)
     monkeypatch.setattr(main.shutil, "disk_usage", lambda path: SimpleNamespace(free=10**9))
     monkeypatch.setattr(main, "load_config", lambda: {"cli_timeout_seconds": 60})
+    monkeypatch.setattr(main, "resolve_mysql_tool", lambda name: f"/fake/{name}")
+    monkeypatch.setattr(main, "mysql_dump_client_is_mariadb", lambda tool: True)
+    monkeypatch.setattr(main, "persist_last_output_dir", lambda path: None)
 
     def fake_cli(cmd, *, env, stdin_path=None, stdout_path=None, timeout_seconds=None, cancel_event=None):
         assert stdout_path is not None
         assert stdout_path.name.endswith(".partial")
+        assert "--column-statistics=0" not in cmd
         stdout_path.write_bytes(b"CREATE TABLE test(id INT);\n")
 
     monkeypatch.setattr(main, "run_cli", fake_cli)
@@ -167,9 +171,13 @@ def test_failed_backup_removes_partial_file(monkeypatch: pytest.MonkeyPatch, tmp
     monkeypatch.setattr(main, "_database_storage_bytes", lambda conn, database: 1024)
     monkeypatch.setattr(main.shutil, "disk_usage", lambda path: SimpleNamespace(free=10**9))
     monkeypatch.setattr(main, "load_config", lambda: {})
+    monkeypatch.setattr(main, "resolve_mysql_tool", lambda name: f"/fake/{name}")
+    monkeypatch.setattr(main, "mysql_dump_client_is_mariadb", lambda tool: False)
+    monkeypatch.setattr(main, "persist_last_output_dir", lambda path: None)
 
     def failing_cli(cmd, *, env, stdin_path=None, stdout_path=None, timeout_seconds=None, cancel_event=None):
         assert stdout_path is not None
+        assert "--column-statistics=0" in cmd
         stdout_path.write_bytes(b"partial")
         raise RuntimeError("dump failed")
 
@@ -177,6 +185,83 @@ def test_failed_backup_removes_partial_file(monkeypatch: pytest.MonkeyPatch, tmp
     with pytest.raises(RuntimeError, match="dump failed"):
         main.backup_mysql_job("job", DbConnection(), "target_db")
     assert not list(tmp_path.iterdir())
+
+
+def test_resolve_mysql_tool_missing_has_clear_message(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(main, "load_config", lambda: {"mysql_tools": {"mysqldump": str(tmp_path / "missing.exe")}})
+    monkeypatch.setattr(main.shutil, "which", lambda name: None)
+    monkeypatch.setattr(main, "BASE_DIR", tmp_path)
+    with pytest.raises(FileNotFoundError, match="找不到 MySQL/MariaDB 客户端工具") as exc_info:
+        main.resolve_mysql_tool("mysqldump")
+    assert "WinError" not in str(exc_info.value)
+
+
+def test_run_cli_wraps_missing_executable(monkeypatch: pytest.MonkeyPatch) -> None:
+    def boom(*args, **kwargs):
+        raise FileNotFoundError(2, "No such file")
+
+    monkeypatch.setattr(main.subprocess, "Popen", boom)
+    with pytest.raises(FileNotFoundError, match="找不到 MySQL/MariaDB 客户端工具") as exc_info:
+        main.run_cli(["mysqldump", "--version"], env=os.environ.copy())
+    assert "WinError" not in str(exc_info.value)
+
+
+def test_backup_adds_column_statistics_for_mysql_client(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(main, "resolve_output_dir", lambda value: tmp_path)
+    monkeypatch.setattr(main, "_database_storage_bytes", lambda conn, database: 1024)
+    monkeypatch.setattr(main.shutil, "disk_usage", lambda path: SimpleNamespace(free=10**9))
+    monkeypatch.setattr(main, "load_config", lambda: {"cli_timeout_seconds": 60})
+    monkeypatch.setattr(main, "resolve_mysql_tool", lambda name: r"C:\Program Files\MySQL\mysqldump.exe")
+    monkeypatch.setattr(main, "mysql_dump_client_is_mariadb", lambda tool: False)
+    monkeypatch.setattr(main, "persist_last_output_dir", lambda path: None)
+    seen: list[list[str]] = []
+
+    def fake_cli(cmd, *, env, stdin_path=None, stdout_path=None, timeout_seconds=None, cancel_event=None):
+        seen.append(list(cmd))
+        assert stdout_path is not None
+        stdout_path.write_bytes(b"SELECT 1;\n")
+
+    monkeypatch.setattr(main, "run_cli", fake_cli)
+    main.backup_mysql_job("job", DbConnection(), "target_db")
+    assert "--column-statistics=0" in seen[0]
+
+
+def test_resolve_output_dir_allows_outside_backup_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    backup_root = tmp_path / "backups"
+    custom = tmp_path / "custom_exports"
+    backup_root.mkdir()
+    monkeypatch.setattr(main, "backup_dir", lambda: backup_root)
+    monkeypatch.setattr(main, "load_config", lambda: {})
+    resolved = main.resolve_output_dir(str(custom))
+    assert resolved == custom.resolve()
+    assert resolved.is_dir()
+
+
+def test_list_backups_includes_last_output_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    default_root = tmp_path / "backups"
+    custom_root = tmp_path / "elsewhere"
+    default_root.mkdir()
+    custom_root.mkdir()
+    backup = custom_root / "custom.sql"
+    backup.write_bytes(b"SELECT 1;\n")
+    manifest = {
+        "status": "complete",
+        "filename": backup.name,
+        "size_bytes": backup.stat().st_size,
+        "sha256": main._sha256_file(backup),
+        "completed_at": "2026-07-16T09:00:00",
+    }
+    backup.with_suffix(".sql.manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    monkeypatch.setattr(main, "backup_dir", lambda: default_root)
+    monkeypatch.setattr(main, "last_output_dir", lambda: custom_root)
+    assert main.list_backups()["backups"] == [
+        {
+            "filename": "custom.sql",
+            "size_bytes": backup.stat().st_size,
+            "sha256": manifest["sha256"],
+            "completed_at": "2026-07-16T09:00:00",
+        }
+    ]
 
 
 def test_running_job_limit_returns_429(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -194,7 +194,8 @@ async function loadConfig() {
   document.getElementById('dbPort').value = Number(conn.port || 3306);
   document.getElementById('dbUsername').value = conn.username || '';
   document.getElementById('dbPassword').value = conn.password || '';
-  document.getElementById('outputDir').value = saved?.outputDir || defaultOutputDir;
+  document.getElementById('outputDir').value =
+    saved?.outputDir || config.last_output_dir || defaultOutputDir;
   setHint('connectionHint', `默认导出目录: ${defaultOutputDir || '-'}`);
   updateQuickChipState();
 }

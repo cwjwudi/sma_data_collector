@@ -121,6 +121,11 @@ def load_config() -> dict[str, Any]:
     return data if isinstance(data, dict) else {}
 
 
+def save_config(cfg: dict[str, Any]) -> None:
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    _atomic_json(CONFIG_FILE, cfg)
+
+
 def _config_path(value: str | None, default: Path) -> Path:
     if not value:
         return default
@@ -138,6 +143,40 @@ def backup_dir() -> Path:
     return path
 
 
+def last_output_dir() -> Path | None:
+    cfg = load_config()
+    raw = str(cfg.get("last_output_dir") or "").strip()
+    if not raw:
+        return None
+    path = _config_path(raw, backup_dir())
+    return path if path.is_dir() else None
+
+
+def persist_last_output_dir(path: Path) -> None:
+    resolved = path.resolve()
+    if not resolved.is_dir():
+        return
+    cfg = load_config()
+    if str(cfg.get("last_output_dir") or "") == str(resolved):
+        return
+    cfg["last_output_dir"] = str(resolved)
+    save_config(cfg)
+
+
+def backup_roots() -> list[Path]:
+    roots: list[Path] = []
+    seen: set[str] = set()
+    for candidate in (backup_dir(), last_output_dir()):
+        if candidate is None:
+            continue
+        key = str(candidate.resolve())
+        if key in seen or not candidate.is_dir():
+            continue
+        seen.add(key)
+        roots.append(candidate.resolve())
+    return roots
+
+
 def resolve_output_dir(value: str | None) -> Path:
     raw = (value or "").strip()
     if not raw:
@@ -147,21 +186,79 @@ def resolve_output_dir(value: str | None) -> Path:
     if not path.is_absolute():
         path = CONFIG_DIR / path
     path = path.resolve()
-    root = backup_dir()
-    try:
-        path.relative_to(root)
-    except ValueError as exc:
-        raise ValueError(f"Output directory must be inside backup directory: {root}") from exc
     path.mkdir(parents=True, exist_ok=True)
     if not path.is_dir():
         raise ValueError(f"Output directory is not available: {path}")
     return path
 
 
-def mysql_tool(name: str) -> str:
+_TOOL_ALIASES: dict[str, tuple[str, ...]] = {
+    "mysqldump": ("mysqldump.exe", "mariadb-dump.exe", "mysqldump", "mariadb-dump"),
+    "mysql": ("mysql.exe", "mariadb.exe", "mysql", "mariadb"),
+}
+
+
+def _tool_not_found_message(name: str) -> str:
+    return (
+        f"找不到 MySQL/MariaDB 客户端工具: {name}。"
+        "请在 mysql_tools 中配置绝对路径，或将客户端加入 PATH，或使用项目 _tools。"
+    )
+
+
+def resolve_mysql_tool(name: str) -> str:
     cfg = load_config()
     tools = cfg.get("mysql_tools") if isinstance(cfg.get("mysql_tools"), dict) else {}
-    return str(tools.get(name) or name)
+    configured = str(tools.get(name) or "").strip()
+    aliases = _TOOL_ALIASES.get(name, (name, f"{name}.exe"))
+
+    if configured:
+        configured_path = Path(os.path.expandvars(configured))
+        if configured_path.is_file():
+            return str(configured_path.resolve())
+        # Bare command name in config: resolve via PATH / aliases below.
+        if Path(configured).name == configured:
+            which_hit = shutil.which(configured)
+            if which_hit:
+                return which_hit
+            for alias in aliases:
+                which_hit = shutil.which(alias)
+                if which_hit:
+                    return which_hit
+
+    for alias in aliases:
+        which_hit = shutil.which(alias)
+        if which_hit:
+            return which_hit
+
+    tools_root = BASE_DIR / "_tools"
+    if tools_root.is_dir():
+        for alias in aliases:
+            matches = sorted(tools_root.rglob(alias))
+            for match in matches:
+                if match.is_file():
+                    return str(match.resolve())
+
+    raise FileNotFoundError(_tool_not_found_message(name))
+
+
+def mysql_tool(name: str) -> str:
+    """Resolve a MySQL/MariaDB client tool; raises FileNotFoundError with a clear message."""
+    return resolve_mysql_tool(name)
+
+
+def mysql_dump_client_is_mariadb(tool_path: str) -> bool:
+    try:
+        completed = subprocess.run(
+            [tool_path, "--version"],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    text = f"{completed.stdout or ''}{completed.stderr or ''}"
+    return "MariaDB" in text
 
 
 def default_connection() -> dict[str, Any]:
@@ -172,6 +269,25 @@ def default_connection() -> dict[str, Any]:
     return base
 
 
+def _folder_dialog_initial(initial_dir: str | None = None) -> Path:
+    raw = (initial_dir or "").strip()
+    if not raw:
+        return last_output_dir() or backup_dir()
+    raw = raw.replace("${DB_ADMIN_ROOT}", str(BASE_DIR)).replace("${CONFIG_DIR}", str(CONFIG_DIR))
+    path = Path(os.path.expandvars(raw))
+    if not path.is_absolute():
+        path = CONFIG_DIR / path
+    try:
+        path = path.resolve()
+    except OSError:
+        return last_output_dir() or backup_dir()
+    if path.is_dir():
+        return path
+    if path.parent.is_dir():
+        return path.parent
+    return last_output_dir() or backup_dir()
+
+
 def choose_folder_dialog(initial_dir: str | None = None) -> str:
     try:
         import tkinter as tk
@@ -179,7 +295,7 @@ def choose_folder_dialog(initial_dir: str | None = None) -> str:
     except Exception as exc:  # noqa: BLE001
         raise RuntimeError(f"Folder picker is not available: {exc}") from exc
 
-    initial = resolve_output_dir(initial_dir) if initial_dir else backup_dir()
+    initial = _folder_dialog_initial(initial_dir)
     root = tk.Tk()
     root.withdraw()
     root.attributes("-topmost", True)
@@ -192,7 +308,6 @@ def choose_folder_dialog(initial_dir: str | None = None) -> str:
     finally:
         root.destroy()
     return str(Path(selected).resolve()) if selected else ""
-
 
 def safe_identifier(value: str, label: str) -> str:
     text = (value or "").strip()
@@ -436,14 +551,20 @@ def run_cli(
 ) -> None:
     stdin_file = stdin_path.open("rb") if stdin_path else None
     stdout_file = stdout_path.open("wb") if stdout_path else subprocess.PIPE
+    process: subprocess.Popen[bytes] | None = None
     try:
-        process = subprocess.Popen(
-            cmd,
-            stdin=stdin_file,
-            stdout=stdout_file,
-            stderr=subprocess.PIPE,
-            env=env,
-        )
+        try:
+            process = subprocess.Popen(
+                cmd,
+                stdin=stdin_file,
+                stdout=stdout_file,
+                stderr=subprocess.PIPE,
+                env=env,
+            )
+        except FileNotFoundError as exc:
+            tool = Path(str(cmd[0])).name if cmd else "mysql"
+            logical = "mysqldump" if "dump" in tool.lower() else ("mysql" if "mysql" in tool.lower() or "mariadb" in tool.lower() else tool)
+            raise FileNotFoundError(_tool_not_found_message(logical)) from exc
         deadline = time.monotonic() + timeout_seconds if timeout_seconds else None
         while True:
             try:
@@ -468,6 +589,8 @@ def run_cli(
             stdin_file.close()
         if stdout_path and stdout_file:
             stdout_file.close()
+    if process is None:
+        raise RuntimeError("External database command failed to start")
     if process.returncode != 0:
         err = (stderr or b"").decode("utf-8", errors="replace").strip()
         raise RuntimeError(err or f"Command failed with code {process.returncode}")
@@ -517,13 +640,14 @@ def backup_mysql_job(job_id: str, conn: DbConnection, database: str, output_dir:
         raise RuntimeError(
             f"Insufficient disk space: free={free_bytes}, required={required_bytes}, estimated_database={estimated_bytes}"
         )
+    dump_tool = resolve_mysql_tool("mysqldump")
     append_job_log(job_id, f"Running mysqldump for database {dbname}")
     append_job_log(job_id, f"Estimated database bytes: {estimated_bytes}; free bytes: {free_bytes}")
     set_job_progress(job_id, 5, "dumping")
     env = os.environ.copy()
     env["MYSQL_PWD"] = conn.password or ""
     cmd = [
-        mysql_tool("mysqldump"),
+        dump_tool,
         "--host",
         conn.host or "127.0.0.1",
         "--port",
@@ -535,8 +659,10 @@ def backup_mysql_job(job_id: str, conn: DbConnection, database: str, output_dir:
         "--routines",
         "--events",
         "--triggers",
-        dbname,
     ]
+    if not mysql_dump_client_is_mariadb(dump_tool):
+        cmd.append("--column-statistics=0")
+    cmd.append(dbname)
     timeout_seconds = max(60, int(load_config().get("cli_timeout_seconds") or 86400))
     started_at = datetime.now().isoformat(timespec="seconds")
     try:
@@ -569,6 +695,7 @@ def backup_mysql_job(job_id: str, conn: DbConnection, database: str, output_dir:
     except BaseException:
         partial.unlink(missing_ok=True)
         raise
+    persist_last_output_dir(out.parent)
     append_job_log(job_id, f"Backup file: {out}")
     return {
         "filename": out.name,
@@ -601,7 +728,7 @@ def restore_mysql_job(job_id: str, conn: DbConnection, database: str, sql_path: 
         env = os.environ.copy()
         env["MYSQL_PWD"] = conn.password or ""
         cmd = [
-            mysql_tool("mysql"),
+            resolve_mysql_tool("mysql"),
             "--host",
             conn.host or "127.0.0.1",
             "--port",
@@ -619,11 +746,30 @@ def restore_mysql_job(job_id: str, conn: DbConnection, database: str, sql_path: 
         _cleanup_upload(sql_path)
 
 
+def _find_export_file(filename: str, *, suffixes: set[str]) -> Path | None:
+    safe = Path(filename).name
+    if safe != filename or Path(safe).suffix.lower() not in suffixes:
+        return None
+    best: Path | None = None
+    best_mtime = -1.0
+    for root in backup_roots():
+        candidate = root / safe
+        if not candidate.is_file():
+            continue
+        mtime = candidate.stat().st_mtime
+        if mtime >= best_mtime:
+            best = candidate
+            best_mtime = mtime
+    return best
+
+
 def _completed_backup(filename: str) -> tuple[Path, dict[str, Any]]:
     safe = Path(filename).name
     if safe != filename or Path(safe).suffix.lower() != ".sql":
         raise ValueError("Invalid backup filename")
-    path = backup_dir() / safe
+    path = _find_export_file(safe, suffixes={".sql"})
+    if path is None:
+        raise FileNotFoundError("Completed backup or manifest not found")
     manifest_path = path.with_suffix(path.suffix + ".manifest.json")
     if not path.is_file() or not manifest_path.is_file():
         raise FileNotFoundError("Completed backup or manifest not found")
@@ -648,7 +794,7 @@ def restore_verified_backup_job(job_id: str, conn: DbConnection, database: str, 
     env = os.environ.copy()
     env["MYSQL_PWD"] = conn.password or ""
     cmd = [
-        mysql_tool("mysql"),
+        resolve_mysql_tool("mysql"),
         "--host",
         conn.host or "127.0.0.1",
         "--port",
@@ -710,8 +856,9 @@ def export_csv_job(job_id: str, conn: DbConnection, database: str, table: str, o
                         set_job_progress(job_id, progress, "exporting")
                         next_progress = progress + 10
     set_job_progress(job_id, 95, "finalizing")
+    persist_last_output_dir(out.parent)
     append_job_log(job_id, f"CSV file: {out}")
-    return {"filename": out.name, "path": str(out), "rows": rows}
+    return {"filename": out.name, "path": str(out), "rows": rows, "download_url": f"/api/download/{out.name}"}
 
 
 def import_csv_job(job_id: str, conn: DbConnection, database: str, table: str, csv_path: str, truncate: bool) -> dict[str, Any]:
@@ -815,9 +962,11 @@ def get_config() -> dict[str, Any]:
     cfg = load_config()
     connection = default_connection()
     connection.pop("password", None)
+    remembered = last_output_dir()
     return {
         "default_connection": connection,
         "backup_dir": str(backup_dir()),
+        "last_output_dir": str(remembered) if remembered else "",
         "mysql_tools": cfg.get("mysql_tools") or {},
         "max_upload_mb": int(cfg.get("max_upload_mb") or 512),
         "max_concurrent_jobs": max(1, int(cfg.get("max_concurrent_jobs") or 2)),
@@ -828,6 +977,8 @@ def get_config() -> dict[str, Any]:
 def folder_dialog(payload: dict[str, Any]) -> dict[str, Any]:
     try:
         selected = choose_folder_dialog(str(payload.get("initial_dir") or ""))
+        if selected:
+            persist_last_output_dir(Path(selected))
         return {"selected": selected}
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(400, str(exc)) from exc
@@ -932,20 +1083,25 @@ def restore_sql(
 @app.get("/api/backups")
 def list_backups() -> dict[str, Any]:
     items: list[dict[str, Any]] = []
-    for manifest_path in backup_dir().glob("*.sql.manifest.json"):
-        try:
-            filename = manifest_path.name.removesuffix(".manifest.json")
-            _, manifest = _completed_backup(filename)
-            items.append(
-                {
-                    "filename": filename,
-                    "size_bytes": int(manifest["size_bytes"]),
-                    "sha256": str(manifest["sha256"]),
-                    "completed_at": str(manifest.get("completed_at") or ""),
-                }
-            )
-        except (OSError, ValueError, json.JSONDecodeError):
-            continue
+    seen: set[str] = set()
+    for root in backup_roots():
+        for manifest_path in root.glob("*.sql.manifest.json"):
+            try:
+                filename = manifest_path.name.removesuffix(".manifest.json")
+                if filename in seen:
+                    continue
+                _, manifest = _completed_backup(filename)
+                seen.add(filename)
+                items.append(
+                    {
+                        "filename": filename,
+                        "size_bytes": int(manifest["size_bytes"]),
+                        "sha256": str(manifest["sha256"]),
+                        "completed_at": str(manifest.get("completed_at") or ""),
+                    }
+                )
+            except (OSError, ValueError, json.JSONDecodeError, FileNotFoundError):
+                continue
     items.sort(key=lambda item: item["completed_at"], reverse=True)
     return {"backups": items}
 
@@ -1019,8 +1175,8 @@ def cancel_job(job_id: str) -> dict[str, Any]:
 @app.get("/api/download/{filename}")
 def download(filename: str, request: Request):
     safe = Path(filename).name
-    path = backup_dir() / safe
-    if safe != filename or path.suffix.lower() not in {".sql", ".csv"} or not path.is_file():
+    path = _find_export_file(safe, suffixes={".sql", ".csv"})
+    if safe != filename or path is None:
         raise HTTPException(404, "File not found")
     size = path.stat().st_size
     range_header = request.headers.get("range")
