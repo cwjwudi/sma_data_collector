@@ -532,8 +532,18 @@ def test_import_server_csv_verifies_hash(monkeypatch: pytest.MonkeyPatch, tmp_pa
     monkeypatch.setattr(main, "last_output_dir", lambda: None)
 
     class FakeCursor:
-        def execute(self, *_args, **_kwargs):
+        def __init__(self) -> None:
+            self._rows: list[tuple[str, ...]] = []
+
+        def execute(self, sql, *_args, **_kwargs):
+            if "SHOW COLUMNS" in str(sql).upper():
+                self._rows = [("col_a",)]
+            else:
+                self._rows = []
             return None
+
+        def fetchall(self):
+            return list(self._rows)
 
         def executemany(self, *_args, **_kwargs):
             return None

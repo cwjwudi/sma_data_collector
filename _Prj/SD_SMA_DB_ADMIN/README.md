@@ -43,6 +43,9 @@ table of the same name in the target database.
 - Backup names include microseconds to prevent same-second collisions.
 - Free disk space is checked before `mysqldump` starts.
 - Backup/restore progress tracks transferred bytes; CSV progress uses row counts.
+- Job progress and logs appear in the admin UI; the same job log lines are also written
+  to the process console (`sd_sma.db_admin.job`) so `_Launcher` can capture them in
+  `uvicorn.log`. HTTP access INFO lines from uvicorn are suppressed.
 - Downloads support HTTP byte ranges (`206 Partial Content`).
 - Destructive restore/import requires a short-lived, operation-bound confirmation token.
 - Cross-origin state-changing browser requests are rejected.

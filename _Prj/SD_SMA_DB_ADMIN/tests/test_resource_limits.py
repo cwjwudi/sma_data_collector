@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import threading
 import time
 from datetime import datetime, timedelta
@@ -80,6 +81,31 @@ def test_resolve_csv_import_columns_force_intersects() -> None:
 def test_resolve_csv_import_columns_force_requires_overlap() -> None:
     with pytest.raises(ValueError, match="no overlapping"):
         main._resolve_csv_import_columns(["x"], ["a", "b"], force=True)
+
+
+def test_append_job_log_emits_console_logger(caplog: pytest.LogCaptureFixture) -> None:
+    with main._jobs_lock:
+        main._jobs["job-log-1"] = {
+            "id": "job-log-1",
+            "title": "t",
+            "status": "running",
+            "progress": 0,
+            "phase": "starting",
+            "created_at": "2020-01-01T00:00:00",
+            "updated_at": "2020-01-01T00:00:00",
+            "logs": [],
+            "result": None,
+        }
+    with caplog.at_level(logging.INFO, logger="sd_sma.db_admin.job"):
+        main.append_job_log("job-log-1", "hello console")
+    assert any("hello console" in r.message for r in caplog.records)
+    with main._jobs_lock:
+        assert main._jobs["job-log-1"]["logs"][-1].endswith("hello console")
+
+
+def test_configure_console_logging_mutes_http_access_info() -> None:
+    main.configure_console_logging()
+    assert logging.getLogger("uvicorn.access").level == logging.WARNING
 
 def _seed_job(job_id: str, status: str, created_at: str) -> None:
     with main._jobs_lock:

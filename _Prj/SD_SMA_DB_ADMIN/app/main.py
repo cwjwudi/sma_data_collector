@@ -4,6 +4,7 @@ import csv
 import hashlib
 import ipaddress
 import json
+import logging
 import os
 import re
 import secrets
@@ -13,6 +14,7 @@ import subprocess
 import threading
 import time
 import uuid
+from contextlib import asynccontextmanager
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
@@ -29,6 +31,21 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 AUTH_TOKEN_ENV = "SD_SMA_WEB_TOKEN"
 AUTH_TOKEN_HEADER = "X-SD-SMA-Token"
 AUTH_EXEMPT_PATHS = {"/api/health"}
+JOB_LOGGER = logging.getLogger("sd_sma.db_admin.job")
+
+
+def configure_console_logging() -> None:
+    """Route useful logs to the process console for _Launcher; mute HTTP access INFO."""
+    root = logging.getLogger()
+    if not root.handlers:
+        logging.basicConfig(
+            level=logging.INFO,
+            format="%(asctime)s | %(levelname)-8s | %(name)s | %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
+    # Access / request spam is INFO by default; keep WARNING+ only.
+    for name in ("uvicorn.access", "uvicorn.protocols.http", "uvicorn.protocols.http.h11_impl"):
+        logging.getLogger(name).setLevel(logging.WARNING)
 
 
 def _is_loopback_host(host: str | None) -> bool:
@@ -467,6 +484,7 @@ def append_job_log(job_id: str, message: str) -> None:
         logs.append(f"[{stamp}] {message}")
         if len(logs) > MAX_JOB_LOG_LINES:
             del logs[: len(logs) - MAX_JOB_LOG_LINES]
+    JOB_LOGGER.info("job=%s %s", job_id[:8], message)
 
 
 def update_job(job_id: str, **updates: Any) -> None:
@@ -1356,7 +1374,15 @@ def register_local_export_file(source_path: str) -> dict[str, Any]:
     }
 
 
-app = FastAPI(title="SD SMA DB Admin", version="0.1.0")
+@asynccontextmanager
+async def _app_lifespan(_app: FastAPI):
+    # Uvicorn may reconfigure logging at startup; re-apply after the app is ready.
+    configure_console_logging()
+    yield
+
+
+configure_console_logging()
+app = FastAPI(title="SD SMA DB Admin", version="0.1.0", lifespan=_app_lifespan)
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "app" / "static")), name="static")
 
 
