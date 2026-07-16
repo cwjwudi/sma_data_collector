@@ -79,9 +79,17 @@ function showConfirmModal({ title, message, confirmText = '确认执行' }) {
 }
 
 function appendOption(select, value, label = '') {
+  const name = coerceIdentName(value);
+  if (!name) return;
   const op = document.createElement('option');
-  op.value = value;
-  op.textContent = label || value;
+  op.value = name;
+  if (typeof label === 'string' && label && !label.includes('[object Object]')) {
+    op.textContent = label;
+  } else if (value && typeof value === 'object' && !Array.isArray(value) && value.size_bytes != null) {
+    op.textContent = sizedLabel(name, value.size_bytes);
+  } else {
+    op.textContent = name;
+  }
   select.appendChild(op);
 }
 
@@ -101,27 +109,51 @@ function formatBytes(bytes) {
 }
 
 function sizedLabel(name, sizeBytes) {
-  if (sizeBytes == null || sizeBytes === '') return String(name || '');
-  return `${name} (${formatBytes(sizeBytes)})`;
+  const safeName = coerceIdentName(name);
+  if (!safeName) return '';
+  if (sizeBytes == null || sizeBytes === '') return safeName;
+  return `${safeName} (${formatBytes(sizeBytes)})`;
+}
+
+/** Extract a usable DB/table identifier; never allow Object.prototype.toString. */
+function coerceIdentName(value) {
+  if (value == null || value === '') return '';
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
+    const text = String(value).trim();
+    return text === '[object Object]' ? '' : text;
+  }
+  if (typeof value === 'object') {
+    if (Array.isArray(value)) return coerceIdentName(value[0]);
+    return coerceIdentName(value.name ?? value.table ?? value.database ?? '');
+  }
+  return '';
 }
 
 function normalizeSizedItems(items) {
   return (items || []).map(item => {
-    if (typeof item === 'string') return { name: item, size_bytes: null };
+    if (typeof item === 'string' || typeof item === 'number') {
+      const name = coerceIdentName(item);
+      return name ? { name, size_bytes: null } : null;
+    }
+    if (!item || typeof item !== 'object') return null;
+    const name = coerceIdentName(item);
+    if (!name) return null;
     return {
-      name: String(item?.name || ''),
-      size_bytes: item?.size_bytes == null ? null : Number(item.size_bytes),
+      name,
+      size_bytes: item.size_bytes == null ? null : Number(item.size_bytes),
     };
-  }).filter(item => item.name);
+  }).filter(Boolean);
 }
 
 function hasOption(select, value) {
-  return Array.from(select.options).some(option => option.value === value);
+  const name = coerceIdentName(value);
+  return name !== '' && Array.from(select.options).some(option => option.value === name);
 }
 
 function setSelectValueIfPresent(id, value) {
   const sel = document.getElementById(id);
-  if (value && hasOption(sel, value)) sel.value = value;
+  const name = coerceIdentName(value);
+  if (name && hasOption(sel, name)) sel.value = name;
 }
 
 function updateQuickChipState() {
@@ -168,22 +200,27 @@ function getConnectionPayload() {
     port: Number(document.getElementById('dbPort').value || 3306),
     username: document.getElementById('dbUsername').value.trim(),
     password: document.getElementById('dbPassword').value,
-    database: document.getElementById('databaseSelect').value || '',
+    database: coerceIdentName(document.getElementById('databaseSelect').value) || '',
   };
 }
 
-function getSelectedValue(id, message) {
-  const value = document.getElementById(id).value;
-  if (!value) throw new Error(message);
+function getSelectedValue(id, message, { asIdent = false } = {}) {
+  const raw = document.getElementById(id).value;
+  const value = asIdent ? coerceIdentName(raw) : String(raw || '').trim();
+  if (!value || value === '[object Object]') throw new Error(message);
+  // SQL identifiers only — do not apply to backup/CSV filenames (they contain '.').
+  if (asIdent && !/^[A-Za-z0-9_]+$/.test(value)) {
+    throw new Error(`${message}（非法名称: ${value}）`);
+  }
   return value;
 }
 
 function getExportDatabase() {
-  return getSelectedValue('databaseSelect', '请先选择数据库');
+  return getSelectedValue('databaseSelect', '请先选择数据库', { asIdent: true });
 }
 
 function getExportTable() {
-  return getSelectedValue('tableSelect', '请先选择表');
+  return getSelectedValue('tableSelect', '请先选择表', { asIdent: true });
 }
 
 function getOutputDir() {
@@ -209,7 +246,12 @@ function loadSavedState() {
   const raw = localStorage.getItem(STATE_KEY);
   if (!raw) return null;
   try {
-    return JSON.parse(raw);
+    const state = JSON.parse(raw);
+    if (!state || typeof state !== 'object') return null;
+    for (const key of ['database', 'table', 'restoreDatabase', 'importDatabase', 'importTable']) {
+      state[key] = coerceIdentName(state[key]);
+    }
+    return state;
   } catch {
     return null;
   }
@@ -247,9 +289,10 @@ function populateDatabaseSelects(databases) {
   const items = normalizeSizedItems(databases);
   for (const id of ['databaseSelect', 'restoreDatabaseSelect', 'importDatabaseSelect']) {
     const sel = document.getElementById(id);
-    const previous = sel.value;
+    const previous = coerceIdentName(sel.value);
     sel.innerHTML = '';
-    for (const item of items) appendOption(sel, item.name, sizedLabel(item.name, item.size_bytes));
+    // Pass the whole item so size remains available even if callers forget .name.
+    for (const item of items) appendOption(sel, item, sizedLabel(item.name, item.size_bytes));
     if (previous && hasOption(sel, previous)) sel.value = previous;
   }
 }
@@ -284,21 +327,21 @@ async function loadExportTables(preferredTable = '') {
   const database = getExportDatabase();
   const tables = normalizeSizedItems(await fetchTables(database));
   const sel = document.getElementById('tableSelect');
-  const previous = preferredTable || sel.value;
+  const previous = coerceIdentName(preferredTable || sel.value);
   sel.innerHTML = '';
-  for (const item of tables) appendOption(sel, item.name, sizedLabel(item.name, item.size_bytes));
+  for (const item of tables) appendOption(sel, item, sizedLabel(item.name, item.size_bytes));
   if (previous && hasOption(sel, previous)) sel.value = previous;
   setHint('objectHint', `数据库 ${database}，表数量: ${tables.length}`);
   saveState();
 }
 
 async function loadImportTables(preferredTable = '') {
-  const database = getSelectedValue('importDatabaseSelect', '请先选择导入目标数据库');
+  const database = getSelectedValue('importDatabaseSelect', '请先选择导入目标数据库', { asIdent: true });
   const tables = normalizeSizedItems(await fetchTables(database));
   const sel = document.getElementById('importTableSelect');
-  const previous = preferredTable || sel.value;
+  const previous = coerceIdentName(preferredTable || sel.value);
   sel.innerHTML = '';
-  for (const item of tables) appendOption(sel, item.name, sizedLabel(item.name, item.size_bytes));
+  for (const item of tables) appendOption(sel, item, sizedLabel(item.name, item.size_bytes));
   if (previous && hasOption(sel, previous)) sel.value = previous;
   saveState();
 }
@@ -456,7 +499,7 @@ async function loadServerCsvExports() {
 }
 
 async function startRestoreServerBackup() {
-  const database = getSelectedValue('restoreDatabaseSelect', '请先选择恢复目标数据库');
+  const database = getSelectedValue('restoreDatabaseSelect', '请先选择恢复目标数据库', { asIdent: true });
   const filename = getSelectedValue('serverBackupSelect', '没有可恢复的已完成备份');
   if (!(await requireDoubleConfirm('恢复服务器备份', `${filename} → ${database}`))) return;
   const confirmationToken = await requestConfirmationToken('restore-backup', database);
@@ -486,8 +529,8 @@ function syncForceImportTruncate() {
 }
 
 async function startImportServerCsv() {
-  const database = getSelectedValue('importDatabaseSelect', '请先选择导入目标数据库');
-  const table = getSelectedValue('importTableSelect', '请先选择导入目标表');
+  const database = getSelectedValue('importDatabaseSelect', '请先选择导入目标数据库', { asIdent: true });
+  const table = getSelectedValue('importTableSelect', '请先选择导入目标表', { asIdent: true });
   const filename = getSelectedValue('serverCsvSelect', '没有可导入的已导出 CSV');
   const force = document.getElementById('forceCsvImport').checked;
   if (force) syncForceImportTruncate();
