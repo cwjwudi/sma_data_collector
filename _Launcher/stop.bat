@@ -1,6 +1,6 @@
 @echo off
 setlocal
-chcp 936 >nul 2>&1
+chcp 65001 >nul 2>&1
 powershell -NoLogo -NoProfile -ExecutionPolicy Bypass -Command ^
   "$ports = 8091,8092,8093,8094; " ^
   "$conns = Get-NetTCPConnection -LocalPort $ports -State Listen -ErrorAction SilentlyContinue; " ^

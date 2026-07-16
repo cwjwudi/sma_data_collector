@@ -1,6 +1,6 @@
 @echo off
 setlocal
-chcp 936 >nul 2>&1
+chcp 65001 >nul 2>&1
 cd /d "%~dp0"
 title SD SMA Unified Launcher
 
