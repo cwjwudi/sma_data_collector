@@ -251,22 +251,53 @@ def test_run_cli_reports_stdout_byte_progress(tmp_path: Path) -> None:
 
 def test_run_cli_reports_stdin_byte_progress(tmp_path: Path) -> None:
     source = tmp_path / "in.sql"
-    source.write_bytes(b"x" * 4096)
+    source.write_bytes(b"x" * (2 * 1024 * 1024))
     fractions: list[float] = []
 
     def hook(fraction: float) -> None:
         fractions.append(fraction)
 
+    # Consumer that drains stdin slowly enough to exercise the feeder path.
     main.run_cli(
-        [sys.executable, "-c", "import sys; sys.stdin.buffer.read()"],
+        [
+            sys.executable,
+            "-c",
+            "import sys,time; "
+            "data=b''; "
+            "chunk=sys.stdin.buffer.read(65536); "
+            "\nwhile chunk:\n"
+            " data+=chunk\n"
+            " chunk=sys.stdin.buffer.read(65536)\n"
+            "sys.stderr.write(str(len(data)))",
+        ],
         env=os.environ.copy(),
         stdin_path=source,
         progress_hook=hook,
-        progress_total_bytes=4096,
+        progress_total_bytes=source.stat().st_size,
     )
     assert fractions
     assert fractions[-1] == 1.0
     assert max(fractions) >= 0.99
+    assert any(0 < value < 1.0 for value in fractions)
+
+
+def test_run_cli_stdin_feed_does_not_fail_write_to_closed_file(tmp_path: Path) -> None:
+    """Regression: communicate() must not close stdin while the feeder is writing."""
+    source = tmp_path / "big.sql"
+    payload = b"-- restore payload\n" + (b"SELECT 1;\n" * 200_000)
+    source.write_bytes(payload)
+    seen: list[float] = []
+
+    main.run_cli(
+        [sys.executable, "-c", "import sys; sys.stdin.buffer.read(); print('ok', flush=True)"],
+        env=os.environ.copy(),
+        stdin_path=source,
+        progress_hook=seen.append,
+        progress_total_bytes=len(payload),
+    )
+    assert seen[-1] == 1.0
+    assert max(seen) >= 0.5
+
 
 
 def test_backup_passes_dump_progress_hooks(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

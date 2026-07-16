@@ -649,7 +649,8 @@ def run_cli(
                 proc.stdin.close()
             except OSError:
                 pass
-        except BrokenPipeError:
+        except (BrokenPipeError, ValueError):
+            # ValueError: "write to closed file" when peer closes stdin early (Windows).
             pass
         except BaseException as exc:  # noqa: BLE001
             feed_error.append(exc)
@@ -658,6 +659,44 @@ def run_cli(
                     proc.stdin.close()
             except OSError:
                 pass
+
+    def _stop_process(proc: subprocess.Popen[bytes]) -> bytes:
+        stop_helpers.set()
+        proc.terminate()
+        try:
+            _out, err = proc.communicate(timeout=10)
+            return err or b""
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            _out, err = proc.communicate()
+            return err or b""
+
+    def _wait_with_stdin_feeder(proc: subprocess.Popen[bytes], feeder: threading.Thread) -> bytes:
+        """Wait without communicate() while feeder owns stdin (communicate closes stdin immediately)."""
+        deadline = time.monotonic() + timeout_seconds if timeout_seconds else None
+        while True:
+            feeder.join(timeout=0.5)
+            cancelled = cancel_event is not None and cancel_event.is_set()
+            timed_out = deadline is not None and time.monotonic() >= deadline
+            if cancelled or timed_out:
+                err = _stop_process(proc)
+                feeder.join(timeout=5)
+                if cancelled:
+                    raise JobCancelled("External database command was cancelled")
+                raise TimeoutError(f"External database command exceeded timeout_seconds={timeout_seconds}")
+            if feeder.is_alive():
+                continue
+            if proc.poll() is not None:
+                break
+            try:
+                proc.wait(timeout=0.5)
+                break
+            except subprocess.TimeoutExpired:
+                continue
+        err = proc.stderr.read() if proc.stderr else b""
+        if proc.stderr:
+            proc.stderr.close()
+        return err or b""
 
     try:
         try:
@@ -681,31 +720,26 @@ def run_cli(
             feeder = threading.Thread(target=_stdin_feeder, args=(process,), daemon=True)
             helper_threads.append(feeder)
             feeder.start()
-        elif stdout_path is not None and progress_hook is not None and int(progress_total_bytes or 0) > 0:
-            monitor = threading.Thread(target=_stdout_monitor, daemon=True)
-            helper_threads.append(monitor)
-            monitor.start()
-
-        deadline = time.monotonic() + timeout_seconds if timeout_seconds else None
-        while True:
-            try:
-                _, stderr = process.communicate(timeout=0.5)
-                break
-            except subprocess.TimeoutExpired:
-                cancelled = cancel_event is not None and cancel_event.is_set()
-                timed_out = deadline is not None and time.monotonic() >= deadline
-                if not cancelled and not timed_out:
-                    continue
-                stop_helpers.set()
-                process.terminate()
+            stderr = _wait_with_stdin_feeder(process, feeder)
+        else:
+            if stdout_path is not None and progress_hook is not None and int(progress_total_bytes or 0) > 0:
+                monitor = threading.Thread(target=_stdout_monitor, daemon=True)
+                helper_threads.append(monitor)
+                monitor.start()
+            deadline = time.monotonic() + timeout_seconds if timeout_seconds else None
+            while True:
                 try:
-                    _, stderr = process.communicate(timeout=10)
+                    _, stderr = process.communicate(timeout=0.5)
+                    break
                 except subprocess.TimeoutExpired:
-                    process.kill()
-                    _, stderr = process.communicate()
-                if cancelled:
-                    raise JobCancelled("External database command was cancelled")
-                raise TimeoutError(f"External database command exceeded timeout_seconds={timeout_seconds}")
+                    cancelled = cancel_event is not None and cancel_event.is_set()
+                    timed_out = deadline is not None and time.monotonic() >= deadline
+                    if not cancelled and not timed_out:
+                        continue
+                    stderr = _stop_process(process)
+                    if cancelled:
+                        raise JobCancelled("External database command was cancelled")
+                    raise TimeoutError(f"External database command exceeded timeout_seconds={timeout_seconds}")
     finally:
         stop_helpers.set()
         for thread in helper_threads:
