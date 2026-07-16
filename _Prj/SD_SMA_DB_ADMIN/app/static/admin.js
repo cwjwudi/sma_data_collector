@@ -78,11 +78,41 @@ function showConfirmModal({ title, message, confirmText = '确认执行' }) {
   });
 }
 
-function appendOption(select, value) {
+function appendOption(select, value, label = '') {
   const op = document.createElement('option');
   op.value = value;
-  op.textContent = value;
+  op.textContent = label || value;
   select.appendChild(op);
+}
+
+function formatBytes(bytes) {
+  const n = Math.max(0, Number(bytes) || 0);
+  if (n < 1024) return `${n} B`;
+  const units = ['KB', 'MB', 'GB', 'TB'];
+  let value = n;
+  let unit = 'B';
+  for (const next of units) {
+    value /= 1024;
+    unit = next;
+    if (value < 1024) break;
+  }
+  const digits = value >= 100 || unit === 'KB' ? 0 : 1;
+  return `${value.toFixed(digits)} ${unit}`;
+}
+
+function sizedLabel(name, sizeBytes) {
+  if (sizeBytes == null || sizeBytes === '') return String(name || '');
+  return `${name} (${formatBytes(sizeBytes)})`;
+}
+
+function normalizeSizedItems(items) {
+  return (items || []).map(item => {
+    if (typeof item === 'string') return { name: item, size_bytes: null };
+    return {
+      name: String(item?.name || ''),
+      size_bytes: item?.size_bytes == null ? null : Number(item.size_bytes),
+    };
+  }).filter(item => item.name);
 }
 
 function hasOption(select, value) {
@@ -214,11 +244,12 @@ async function testConnection() {
 }
 
 function populateDatabaseSelects(databases) {
+  const items = normalizeSizedItems(databases);
   for (const id of ['databaseSelect', 'restoreDatabaseSelect', 'importDatabaseSelect']) {
     const sel = document.getElementById(id);
     const previous = sel.value;
     sel.innerHTML = '';
-    for (const name of databases) appendOption(sel, name);
+    for (const item of items) appendOption(sel, item.name, sizedLabel(item.name, item.size_bytes));
     if (previous && hasOption(sel, previous)) sel.value = previous;
   }
 }
@@ -251,11 +282,11 @@ async function fetchTables(database) {
 
 async function loadExportTables(preferredTable = '') {
   const database = getExportDatabase();
-  const tables = await fetchTables(database);
+  const tables = normalizeSizedItems(await fetchTables(database));
   const sel = document.getElementById('tableSelect');
   const previous = preferredTable || sel.value;
   sel.innerHTML = '';
-  for (const name of tables) appendOption(sel, name);
+  for (const item of tables) appendOption(sel, item.name, sizedLabel(item.name, item.size_bytes));
   if (previous && hasOption(sel, previous)) sel.value = previous;
   setHint('objectHint', `数据库 ${database}，表数量: ${tables.length}`);
   saveState();
@@ -263,11 +294,11 @@ async function loadExportTables(preferredTable = '') {
 
 async function loadImportTables(preferredTable = '') {
   const database = getSelectedValue('importDatabaseSelect', '请先选择导入目标数据库');
-  const tables = await fetchTables(database);
+  const tables = normalizeSizedItems(await fetchTables(database));
   const sel = document.getElementById('importTableSelect');
   const previous = preferredTable || sel.value;
   sel.innerHTML = '';
-  for (const name of tables) appendOption(sel, name);
+  for (const item of tables) appendOption(sel, item.name, sizedLabel(item.name, item.size_bytes));
   if (previous && hasOption(sel, previous)) sel.value = previous;
   saveState();
 }

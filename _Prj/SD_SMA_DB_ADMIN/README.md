@@ -21,6 +21,8 @@ Large backup safeguards:
 - Each completed SQL dump has a SHA-256 manifest (`.sql.manifest.json`).
 - Backup names include microseconds to prevent same-second collisions.
 - Free disk space is checked before `mysqldump` starts.
+- Backup/restore job progress is driven by transferred bytes (dump file growth or SQL
+  bytes fed to the client); CSV import/export progress uses processed row counts.
 - Downloads support HTTP byte ranges (`206 Partial Content`) for resume-capable clients.
 - Destructive uploads require a short-lived, operation-bound, single-use confirmation token.
 - State-changing browser requests from a different Origin are rejected.

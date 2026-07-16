@@ -16,7 +16,7 @@ import time
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 from urllib.parse import urlsplit
 
 import pymysql
@@ -335,26 +335,45 @@ def connect_mysql(conn: DbConnection, database: str | None = None, *, autocommit
     )
 
 
-def list_mysql_databases(conn: DbConnection) -> list[str]:
+def list_mysql_databases(conn: DbConnection) -> list[dict[str, Any]]:
+    hidden = ("information_schema", "performance_schema", "mysql", "sys")
     with connect_mysql(conn) as db:
         with db.cursor() as cur:
+            cur.execute(
+                "SELECT table_schema, COALESCE(SUM(data_length + index_length), 0) "
+                "FROM information_schema.tables "
+                "WHERE table_schema NOT IN (%s, %s, %s, %s) "
+                "GROUP BY table_schema "
+                "ORDER BY table_schema",
+                hidden,
+            )
+            sized = {
+                str(row[0]): int(row[1] or 0)
+                for row in cur.fetchall()
+                if row and row[0] is not None
+            }
             cur.execute("SHOW DATABASES")
-            rows = [str(row[0]) for row in cur.fetchall()]
-    hidden = {"information_schema", "performance_schema", "mysql", "sys"}
-    return [name for name in rows if name not in hidden]
+            names = [str(row[0]) for row in cur.fetchall() if row and row[0] is not None]
+    return [
+        {"name": name, "size_bytes": sized.get(name, 0)}
+        for name in names
+        if name not in set(hidden)
+    ]
 
 
-def list_mysql_tables(conn: DbConnection, database: str) -> list[str]:
+def list_mysql_tables(conn: DbConnection, database: str) -> list[dict[str, Any]]:
     dbname = safe_identifier(database, "database")
     with connect_mysql(conn) as db:
         with db.cursor() as cur:
-            cur.execute(f"SHOW FULL TABLES FROM {quote_ident(dbname)}")
+            cur.execute(
+                "SELECT table_name, COALESCE(data_length + index_length, 0) "
+                "FROM information_schema.tables "
+                "WHERE table_schema=%s AND table_type='BASE TABLE' "
+                "ORDER BY table_name",
+                (dbname,),
+            )
             rows = cur.fetchall()
-    tables: list[str] = []
-    for row in rows:
-        if len(row) >= 2 and str(row[1]).upper() == "BASE TABLE":
-            tables.append(str(row[0]))
-    return tables
+    return [{"name": str(row[0]), "size_bytes": int(row[1] or 0)} for row in rows if row and row[0] is not None]
 
 
 def ensure_mysql_connection(conn: DbConnection) -> dict[str, Any]:
@@ -540,6 +559,26 @@ def _raise_if_cancelled(job_id: str) -> None:
         raise JobCancelled("Job cancellation was requested")
 
 
+def _cli_progress_mapper(
+    job_id: str,
+    *,
+    phase: str,
+    start: int,
+    end: int,
+) -> Callable[[float], None]:
+    last = [-1]
+
+    def hook(fraction: float) -> None:
+        clamped = max(0.0, min(1.0, float(fraction)))
+        value = start + int(clamped * (end - start))
+        value = max(start, min(end, value))
+        if value != last[0]:
+            last[0] = value
+            set_job_progress(job_id, value, phase)
+
+    return hook
+
+
 def run_cli(
     cmd: list[str],
     *,
@@ -548,23 +587,90 @@ def run_cli(
     stdout_path: Path | None = None,
     timeout_seconds: int | None = None,
     cancel_event: threading.Event | None = None,
+    progress_hook: Callable[[float], None] | None = None,
+    progress_total_bytes: int | None = None,
 ) -> None:
-    stdin_file = stdin_path.open("rb") if stdin_path else None
+    feed_stdin = stdin_path is not None and progress_hook is not None
+    stdin_file = None if feed_stdin else (stdin_path.open("rb") if stdin_path else None)
     stdout_file = stdout_path.open("wb") if stdout_path else subprocess.PIPE
     process: subprocess.Popen[bytes] | None = None
+    stop_helpers = threading.Event()
+    helper_threads: list[threading.Thread] = []
+    feed_error: list[BaseException] = []
+    stderr = b""
+
+    def _stdout_monitor() -> None:
+        total = max(1, int(progress_total_bytes or 0))
+        while not stop_helpers.is_set():
+            try:
+                size = stdout_path.stat().st_size if stdout_path and stdout_path.is_file() else 0
+                if progress_hook:
+                    progress_hook(min(0.99, size / total))
+            except OSError:
+                pass
+            stop_helpers.wait(0.5)
+
+    def _stdin_feeder(proc: subprocess.Popen[bytes]) -> None:
+        assert stdin_path is not None and progress_hook is not None and proc.stdin is not None
+        try:
+            total = int(progress_total_bytes or 0)
+            if total <= 0:
+                try:
+                    total = max(1, stdin_path.stat().st_size)
+                except OSError:
+                    total = 1
+            sent = 0
+            with stdin_path.open("rb") as src:
+                while not stop_helpers.is_set():
+                    if cancel_event is not None and cancel_event.is_set():
+                        break
+                    chunk = src.read(1024 * 1024)
+                    if not chunk:
+                        break
+                    proc.stdin.write(chunk)
+                    sent += len(chunk)
+                    progress_hook(min(1.0, sent / total))
+            try:
+                proc.stdin.close()
+            except OSError:
+                pass
+        except BrokenPipeError:
+            pass
+        except BaseException as exc:  # noqa: BLE001
+            feed_error.append(exc)
+            try:
+                if proc.stdin:
+                    proc.stdin.close()
+            except OSError:
+                pass
+
     try:
         try:
             process = subprocess.Popen(
                 cmd,
-                stdin=stdin_file,
+                stdin=subprocess.PIPE if feed_stdin else stdin_file,
                 stdout=stdout_file,
                 stderr=subprocess.PIPE,
                 env=env,
             )
         except FileNotFoundError as exc:
             tool = Path(str(cmd[0])).name if cmd else "mysql"
-            logical = "mysqldump" if "dump" in tool.lower() else ("mysql" if "mysql" in tool.lower() or "mariadb" in tool.lower() else tool)
+            logical = (
+                "mysqldump"
+                if "dump" in tool.lower()
+                else ("mysql" if "mysql" in tool.lower() or "mariadb" in tool.lower() else tool)
+            )
             raise FileNotFoundError(_tool_not_found_message(logical)) from exc
+
+        if feed_stdin:
+            feeder = threading.Thread(target=_stdin_feeder, args=(process,), daemon=True)
+            helper_threads.append(feeder)
+            feeder.start()
+        elif stdout_path is not None and progress_hook is not None and int(progress_total_bytes or 0) > 0:
+            monitor = threading.Thread(target=_stdout_monitor, daemon=True)
+            helper_threads.append(monitor)
+            monitor.start()
+
         deadline = time.monotonic() + timeout_seconds if timeout_seconds else None
         while True:
             try:
@@ -575,6 +681,7 @@ def run_cli(
                 timed_out = deadline is not None and time.monotonic() >= deadline
                 if not cancelled and not timed_out:
                     continue
+                stop_helpers.set()
                 process.terminate()
                 try:
                     _, stderr = process.communicate(timeout=10)
@@ -585,22 +692,40 @@ def run_cli(
                     raise JobCancelled("External database command was cancelled")
                 raise TimeoutError(f"External database command exceeded timeout_seconds={timeout_seconds}")
     finally:
+        stop_helpers.set()
+        for thread in helper_threads:
+            thread.join(timeout=5)
         if stdin_file:
             stdin_file.close()
         if stdout_path and stdout_file:
             stdout_file.close()
+    if feed_error:
+        raise feed_error[0]
     if process is None:
         raise RuntimeError("External database command failed to start")
+    if progress_hook is not None:
+        progress_hook(1.0)
     if process.returncode != 0:
         err = (stderr or b"").decode("utf-8", errors="replace").strip()
         raise RuntimeError(err or f"Command failed with code {process.returncode}")
 
 
-def _sha256_file(path: Path, chunk_size: int = 8 * 1024 * 1024) -> str:
+def _sha256_file(
+    path: Path,
+    chunk_size: int = 8 * 1024 * 1024,
+    progress_hook: Callable[[float], None] | None = None,
+) -> str:
     digest = hashlib.sha256()
+    total = path.stat().st_size if path.is_file() else 0
+    done = 0
     with path.open("rb") as file:
         while chunk := file.read(chunk_size):
             digest.update(chunk)
+            done += len(chunk)
+            if progress_hook and total > 0:
+                progress_hook(min(1.0, done / total))
+    if progress_hook:
+        progress_hook(1.0)
     return digest.hexdigest()
 
 
@@ -665,6 +790,7 @@ def backup_mysql_job(job_id: str, conn: DbConnection, database: str, output_dir:
     cmd.append(dbname)
     timeout_seconds = max(60, int(load_config().get("cli_timeout_seconds") or 86400))
     started_at = datetime.now().isoformat(timespec="seconds")
+    dump_total = max(estimated_bytes, 1)
     try:
         run_cli(
             cmd,
@@ -672,11 +798,16 @@ def backup_mysql_job(job_id: str, conn: DbConnection, database: str, output_dir:
             stdout_path=partial,
             timeout_seconds=timeout_seconds,
             cancel_event=_job_cancel_event(job_id),
+            progress_hook=_cli_progress_mapper(job_id, phase="dumping", start=5, end=90),
+            progress_total_bytes=dump_total,
         )
         if not partial.is_file() or partial.stat().st_size == 0:
             raise RuntimeError("mysqldump produced an empty backup")
-        set_job_progress(job_id, 95, "checksumming")
-        sha256 = _sha256_file(partial)
+        set_job_progress(job_id, 90, "checksumming")
+        sha256 = _sha256_file(
+            partial,
+            progress_hook=_cli_progress_mapper(job_id, phase="checksumming", start=90, end=95),
+        )
         size_bytes = partial.stat().st_size
         partial.replace(out)
         manifest = {
@@ -738,7 +869,14 @@ def restore_mysql_job(job_id: str, conn: DbConnection, database: str, sql_path: 
             "--default-character-set=utf8mb4",
             dbname,
         ]
-        run_cli(cmd, env=env, stdin_path=source, cancel_event=_job_cancel_event(job_id))
+        run_cli(
+            cmd,
+            env=env,
+            stdin_path=source,
+            cancel_event=_job_cancel_event(job_id),
+            progress_hook=_cli_progress_mapper(job_id, phase="restoring", start=5, end=95),
+            progress_total_bytes=source.stat().st_size,
+        )
         set_job_progress(job_id, 95, "finalizing")
         append_job_log(job_id, f"Restored from: {source.name}")
         return {"source": source.name, "database": dbname}
@@ -785,12 +923,15 @@ def restore_verified_backup_job(job_id: str, conn: DbConnection, database: str, 
     source, manifest = _completed_backup(filename)
     append_job_log(job_id, f"Verifying SHA-256 for {source.name}")
     set_job_progress(job_id, 2, "verifying")
-    actual_sha256 = _sha256_file(source)
+    actual_sha256 = _sha256_file(
+        source,
+        progress_hook=_cli_progress_mapper(job_id, phase="verifying", start=2, end=8),
+    )
     if not secrets.compare_digest(actual_sha256, str(manifest.get("sha256") or "")):
         raise RuntimeError("Backup SHA-256 does not match manifest")
     dbname = safe_identifier(database, "database")
     append_job_log(job_id, f"Restoring verified backup into database {dbname}")
-    set_job_progress(job_id, 5, "restoring")
+    set_job_progress(job_id, 8, "restoring")
     env = os.environ.copy()
     env["MYSQL_PWD"] = conn.password or ""
     cmd = [
@@ -811,7 +952,10 @@ def restore_verified_backup_job(job_id: str, conn: DbConnection, database: str, 
         stdin_path=source,
         timeout_seconds=timeout_seconds,
         cancel_event=_job_cancel_event(job_id),
+        progress_hook=_cli_progress_mapper(job_id, phase="restoring", start=8, end=95),
+        progress_total_bytes=source.stat().st_size,
     )
+    set_job_progress(job_id, 95, "finalizing")
     return {"source": source.name, "database": dbname, "sha256": actual_sha256}
 
 
@@ -828,7 +972,7 @@ def export_csv_job(job_id: str, conn: DbConnection, database: str, table: str, o
             count_cur.execute(f"SELECT COUNT(*) FROM {quote_ident(table_name)}")
             total_rows = int(count_cur.fetchone()[0] or 0)
     set_job_progress(job_id, 5 if total_rows else 90, "exporting")
-    next_progress = 10
+    next_progress = 7
     with pymysql.connect(
         host=conn.host or "127.0.0.1",
         port=int(conn.port or 3306),
@@ -854,7 +998,7 @@ def export_csv_job(job_id: str, conn: DbConnection, database: str, table: str, o
                     progress = 5 + int((rows / total_rows) * 90)
                     if progress >= next_progress:
                         set_job_progress(job_id, progress, "exporting")
-                        next_progress = progress + 10
+                        next_progress = progress + 2
     set_job_progress(job_id, 95, "finalizing")
     persist_last_output_dir(out.parent)
     append_job_log(job_id, f"CSV file: {out}")
@@ -875,7 +1019,7 @@ def import_csv_job(job_id: str, conn: DbConnection, database: str, table: str, c
         except OSError:
             total_rows = 0
         set_job_progress(job_id, 5 if total_rows else 50, "importing")
-        next_progress = 10
+        next_progress = 7
         rows = 0
         with connect_mysql(conn, dbname, autocommit=False) as db:
             with db.cursor() as cur, source.open("r", encoding="utf-8-sig", newline="") as f:
@@ -903,7 +1047,7 @@ def import_csv_job(job_id: str, conn: DbConnection, database: str, table: str, c
                             progress = 5 + int((rows / total_rows) * 90)
                             if progress >= next_progress:
                                 set_job_progress(job_id, progress, "importing")
-                                next_progress = progress + 10
+                                next_progress = progress + 2
                 if batch:
                     cur.executemany(sql, batch)
                     rows += len(batch)

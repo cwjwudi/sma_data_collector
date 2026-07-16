@@ -6,6 +6,7 @@ import sys
 import threading
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 from fastapi import HTTPException
@@ -150,7 +151,7 @@ def test_backup_is_atomic_and_writes_manifest(monkeypatch: pytest.MonkeyPatch, t
     monkeypatch.setattr(main, "mysql_dump_client_is_mariadb", lambda tool: True)
     monkeypatch.setattr(main, "persist_last_output_dir", lambda path: None)
 
-    def fake_cli(cmd, *, env, stdin_path=None, stdout_path=None, timeout_seconds=None, cancel_event=None):
+    def fake_cli(cmd, *, env, stdin_path=None, stdout_path=None, timeout_seconds=None, cancel_event=None, **kwargs):
         assert stdout_path is not None
         assert stdout_path.name.endswith(".partial")
         assert "--column-statistics=0" not in cmd
@@ -175,7 +176,7 @@ def test_failed_backup_removes_partial_file(monkeypatch: pytest.MonkeyPatch, tmp
     monkeypatch.setattr(main, "mysql_dump_client_is_mariadb", lambda tool: False)
     monkeypatch.setattr(main, "persist_last_output_dir", lambda path: None)
 
-    def failing_cli(cmd, *, env, stdin_path=None, stdout_path=None, timeout_seconds=None, cancel_event=None):
+    def failing_cli(cmd, *, env, stdin_path=None, stdout_path=None, timeout_seconds=None, cancel_event=None, **kwargs):
         assert stdout_path is not None
         assert "--column-statistics=0" in cmd
         stdout_path.write_bytes(b"partial")
@@ -216,7 +217,7 @@ def test_backup_adds_column_statistics_for_mysql_client(monkeypatch: pytest.Monk
     monkeypatch.setattr(main, "persist_last_output_dir", lambda path: None)
     seen: list[list[str]] = []
 
-    def fake_cli(cmd, *, env, stdin_path=None, stdout_path=None, timeout_seconds=None, cancel_event=None):
+    def fake_cli(cmd, *, env, stdin_path=None, stdout_path=None, timeout_seconds=None, cancel_event=None, **kwargs):
         seen.append(list(cmd))
         assert stdout_path is not None
         stdout_path.write_bytes(b"SELECT 1;\n")
@@ -224,6 +225,66 @@ def test_backup_adds_column_statistics_for_mysql_client(monkeypatch: pytest.Monk
     monkeypatch.setattr(main, "run_cli", fake_cli)
     main.backup_mysql_job("job", DbConnection(), "target_db")
     assert "--column-statistics=0" in seen[0]
+
+
+def test_run_cli_reports_stdout_byte_progress(tmp_path: Path) -> None:
+    out = tmp_path / "dump.sql"
+    fractions: list[float] = []
+
+    def hook(fraction: float) -> None:
+        fractions.append(fraction)
+
+    main.run_cli(
+        [sys.executable, "-c", "import sys; sys.stdout.buffer.write(b'0123456789' * 1000)"],
+        env=os.environ.copy(),
+        stdout_path=out,
+        progress_hook=hook,
+        progress_total_bytes=5000,
+    )
+    assert fractions
+    assert fractions[-1] == 1.0
+    assert any(value >= 0.5 for value in fractions)
+
+
+def test_run_cli_reports_stdin_byte_progress(tmp_path: Path) -> None:
+    source = tmp_path / "in.sql"
+    source.write_bytes(b"x" * 4096)
+    fractions: list[float] = []
+
+    def hook(fraction: float) -> None:
+        fractions.append(fraction)
+
+    main.run_cli(
+        [sys.executable, "-c", "import sys; sys.stdin.buffer.read()"],
+        env=os.environ.copy(),
+        stdin_path=source,
+        progress_hook=hook,
+        progress_total_bytes=4096,
+    )
+    assert fractions
+    assert fractions[-1] == 1.0
+    assert max(fractions) >= 0.99
+
+
+def test_backup_passes_dump_progress_hooks(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(main, "resolve_output_dir", lambda value: tmp_path)
+    monkeypatch.setattr(main, "_database_storage_bytes", lambda conn, database: 10_000)
+    monkeypatch.setattr(main.shutil, "disk_usage", lambda path: SimpleNamespace(free=10**9))
+    monkeypatch.setattr(main, "load_config", lambda: {"cli_timeout_seconds": 60})
+    monkeypatch.setattr(main, "resolve_mysql_tool", lambda name: f"/fake/{name}")
+    monkeypatch.setattr(main, "mysql_dump_client_is_mariadb", lambda tool: True)
+    monkeypatch.setattr(main, "persist_last_output_dir", lambda path: None)
+    captured: dict[str, Any] = {}
+
+    def fake_cli(cmd, *, env, stdin_path=None, stdout_path=None, timeout_seconds=None, cancel_event=None, **kwargs):
+        captured.update(kwargs)
+        assert stdout_path is not None
+        stdout_path.write_bytes(b"SELECT 1;\n")
+
+    monkeypatch.setattr(main, "run_cli", fake_cli)
+    main.backup_mysql_job("job", DbConnection(), "target_db")
+    assert callable(captured.get("progress_hook"))
+    assert captured.get("progress_total_bytes") == 10_000
 
 
 def test_resolve_output_dir_allows_outside_backup_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
