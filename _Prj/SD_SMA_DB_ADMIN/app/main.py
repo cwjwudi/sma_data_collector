@@ -10,7 +10,6 @@ import secrets
 import shutil
 import sqlite3
 import subprocess
-import tempfile
 import threading
 import time
 import uuid
@@ -20,7 +19,7 @@ from typing import Any, Callable
 from urllib.parse import urlsplit
 
 import pymysql
-from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -83,6 +82,13 @@ class BackupRequest(BaseModel):
     output_dir: str = ""
 
 
+class BackupTableRequest(BaseModel):
+    connection: DbConnection
+    database: str
+    table: str
+    output_dir: str = ""
+
+
 class TableRequest(BaseModel):
     connection: DbConnection
     database: str
@@ -105,6 +111,15 @@ class RestoreBackupRequest(BaseModel):
     connection: DbConnection
     database: str
     filename: str
+    confirmation_token: str
+
+
+class ImportServerCsvRequest(BaseModel):
+    connection: DbConnection
+    database: str
+    table: str
+    filename: str
+    truncate: bool = False
     confirmation_token: str
 
 
@@ -453,11 +468,11 @@ def _public_job(job: dict[str, Any]) -> dict[str, Any]:
 
 def issue_confirmation(action: str, database: str, table: str = "") -> str:
     action_name = (action or "").strip().lower()
-    if action_name not in {"restore-sql", "restore-backup", "import-csv"}:
+    if action_name not in {"restore-backup", "import-server-csv"}:
         raise ValueError("Unsupported confirmation action")
     database_name = safe_identifier(database, "database")
     table_name = safe_identifier(table, "table") if table else ""
-    if action_name == "import-csv" and not table_name:
+    if action_name == "import-server-csv" and not table_name:
         raise ValueError("table is required for CSV import confirmation")
     token = secrets.token_urlsafe(32)
     now = time.monotonic()
@@ -740,6 +755,19 @@ def _database_storage_bytes(conn: DbConnection, database: str) -> int:
             return int(cur.fetchone()[0] or 0)
 
 
+def _table_storage_bytes(conn: DbConnection, database: str, table: str) -> int:
+    with connect_mysql(conn) as db:
+        with db.cursor() as cur:
+            cur.execute(
+                "SELECT COALESCE(data_length + index_length, 0) "
+                "FROM information_schema.tables "
+                "WHERE table_schema=%s AND table_name=%s AND table_type='BASE TABLE'",
+                (database, table),
+            )
+            row = cur.fetchone()
+            return int((row[0] if row else 0) or 0)
+
+
 def _atomic_json(path: Path, payload: dict[str, Any]) -> None:
     temp = path.with_suffix(path.suffix + ".partial")
     try:
@@ -752,22 +780,29 @@ def _atomic_json(path: Path, payload: dict[str, Any]) -> None:
         temp.unlink(missing_ok=True)
 
 
-def backup_mysql_job(job_id: str, conn: DbConnection, database: str, output_dir: str = "") -> dict[str, Any]:
-    dbname = safe_identifier(database, "database")
-    stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-    out = resolve_output_dir(output_dir) / f"{dbname}_backup_{stamp}.sql"
+def _run_mysqldump_backup(
+    job_id: str,
+    conn: DbConnection,
+    *,
+    database: str,
+    table: str | None,
+    output_dir: str,
+    estimated_bytes: int,
+    out: Path,
+    manifest_extra: dict[str, Any],
+) -> dict[str, Any]:
     partial = out.with_suffix(out.suffix + ".partial")
-    estimated_bytes = _database_storage_bytes(conn, dbname)
     reserve_factor = float(load_config().get("backup_free_space_factor") or 1.5)
     required_bytes = max(64 * 1024 * 1024, int(estimated_bytes * reserve_factor))
     free_bytes = shutil.disk_usage(out.parent).free
     if free_bytes < required_bytes:
         raise RuntimeError(
-            f"Insufficient disk space: free={free_bytes}, required={required_bytes}, estimated_database={estimated_bytes}"
+            f"Insufficient disk space: free={free_bytes}, required={required_bytes}, estimated={estimated_bytes}"
         )
     dump_tool = resolve_mysql_tool("mysqldump")
-    append_job_log(job_id, f"Running mysqldump for database {dbname}")
-    append_job_log(job_id, f"Estimated database bytes: {estimated_bytes}; free bytes: {free_bytes}")
+    target_label = f"{database}.{table}" if table else database
+    append_job_log(job_id, f"Running mysqldump for {target_label}")
+    append_job_log(job_id, f"Estimated bytes: {estimated_bytes}; free bytes: {free_bytes}")
     set_job_progress(job_id, 5, "dumping")
     env = os.environ.copy()
     env["MYSQL_PWD"] = conn.password or ""
@@ -784,10 +819,13 @@ def backup_mysql_job(job_id: str, conn: DbConnection, database: str, output_dir:
         "--routines",
         "--events",
         "--triggers",
+        "--add-drop-table",
     ]
     if not mysql_dump_client_is_mariadb(dump_tool):
         cmd.append("--column-statistics=0")
-    cmd.append(dbname)
+    cmd.append(database)
+    if table:
+        cmd.append(table)
     timeout_seconds = max(60, int(load_config().get("cli_timeout_seconds") or 86400))
     started_at = datetime.now().isoformat(timespec="seconds")
     dump_total = max(estimated_bytes, 1)
@@ -813,13 +851,14 @@ def backup_mysql_job(job_id: str, conn: DbConnection, database: str, output_dir:
         manifest = {
             "format_version": 1,
             "status": "complete",
-            "database": dbname,
+            "database": database,
             "filename": out.name,
             "size_bytes": size_bytes,
             "sha256": sha256,
-            "estimated_database_bytes": estimated_bytes,
+            "estimated_bytes": estimated_bytes,
             "started_at": started_at,
             "completed_at": datetime.now().isoformat(timespec="seconds"),
+            **manifest_extra,
         }
         manifest_path = out.with_suffix(out.suffix + ".manifest.json")
         _atomic_json(manifest_path, manifest)
@@ -835,53 +874,46 @@ def backup_mysql_job(job_id: str, conn: DbConnection, database: str, output_dir:
         "sha256": sha256,
         "manifest": manifest_path.name,
         "download_url": f"/api/download/{out.name}",
+        "scope": manifest.get("scope"),
+        "table": manifest.get("table"),
     }
 
 
-UPLOAD_TMP_PREFIX = "sd_sma_db_admin_"
+def backup_mysql_job(job_id: str, conn: DbConnection, database: str, output_dir: str = "") -> dict[str, Any]:
+    dbname = safe_identifier(database, "database")
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    out = resolve_output_dir(output_dir) / f"{dbname}_backup_{stamp}.sql"
+    estimated_bytes = _database_storage_bytes(conn, dbname)
+    return _run_mysqldump_backup(
+        job_id,
+        conn,
+        database=dbname,
+        table=None,
+        output_dir=output_dir,
+        estimated_bytes=estimated_bytes,
+        out=out,
+        manifest_extra={"scope": "database", "estimated_database_bytes": estimated_bytes},
+    )
 
 
-def _cleanup_upload(path_value: str) -> None:
-    """删除 _save_upload 创建的临时目录（仅识别本服务前缀，避免误删）。"""
-    temp_dir = Path(path_value).parent
-    if temp_dir.name.startswith(UPLOAD_TMP_PREFIX):
-        shutil.rmtree(temp_dir, ignore_errors=True)
-
-
-def restore_mysql_job(job_id: str, conn: DbConnection, database: str, sql_path: str) -> dict[str, Any]:
-    try:
-        dbname = safe_identifier(database, "database")
-        source = Path(sql_path)
-        if not source.is_file():
-            raise FileNotFoundError(source)
-        append_job_log(job_id, f"Restoring SQL into database {dbname}")
-        set_job_progress(job_id, 5, "restoring")
-        env = os.environ.copy()
-        env["MYSQL_PWD"] = conn.password or ""
-        cmd = [
-            resolve_mysql_tool("mysql"),
-            "--host",
-            conn.host or "127.0.0.1",
-            "--port",
-            str(int(conn.port or 3306)),
-            "--user",
-            conn.username or "",
-            "--default-character-set=utf8mb4",
-            dbname,
-        ]
-        run_cli(
-            cmd,
-            env=env,
-            stdin_path=source,
-            cancel_event=_job_cancel_event(job_id),
-            progress_hook=_cli_progress_mapper(job_id, phase="restoring", start=5, end=95),
-            progress_total_bytes=source.stat().st_size,
-        )
-        set_job_progress(job_id, 95, "finalizing")
-        append_job_log(job_id, f"Restored from: {source.name}")
-        return {"source": source.name, "database": dbname}
-    finally:
-        _cleanup_upload(sql_path)
+def backup_mysql_table_job(
+    job_id: str, conn: DbConnection, database: str, table: str, output_dir: str = ""
+) -> dict[str, Any]:
+    dbname = safe_identifier(database, "database")
+    table_name = safe_identifier(table, "table")
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+    out = resolve_output_dir(output_dir) / f"{dbname}_{table_name}_backup_{stamp}.sql"
+    estimated_bytes = _table_storage_bytes(conn, dbname, table_name)
+    return _run_mysqldump_backup(
+        job_id,
+        conn,
+        database=dbname,
+        table=table_name,
+        output_dir=output_dir,
+        estimated_bytes=estimated_bytes,
+        out=out,
+        manifest_extra={"scope": "table", "table": table_name},
+    )
 
 
 def _find_export_file(filename: str, *, suffixes: set[str]) -> Path | None:
@@ -916,6 +948,24 @@ def _completed_backup(filename: str) -> tuple[Path, dict[str, Any]]:
         raise ValueError("Backup manifest is invalid or incomplete")
     if int(manifest.get("size_bytes") or -1) != path.stat().st_size:
         raise ValueError("Backup size does not match manifest")
+    return path, manifest
+
+
+def _completed_csv_export(filename: str) -> tuple[Path, dict[str, Any]]:
+    safe = Path(filename).name
+    if safe != filename or Path(safe).suffix.lower() != ".csv":
+        raise ValueError("Invalid CSV filename")
+    path = _find_export_file(safe, suffixes={".csv"})
+    if path is None:
+        raise FileNotFoundError("Completed CSV export or manifest not found")
+    manifest_path = path.with_suffix(path.suffix + ".manifest.json")
+    if not path.is_file() or not manifest_path.is_file():
+        raise FileNotFoundError("Completed CSV export or manifest not found")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if not isinstance(manifest, dict) or manifest.get("status") != "complete" or manifest.get("filename") != safe:
+        raise ValueError("CSV manifest is invalid or incomplete")
+    if int(manifest.get("size_bytes") or -1) != path.stat().st_size:
+        raise ValueError("CSV size does not match manifest")
     return path, manifest
 
 
@@ -956,7 +1006,7 @@ def restore_verified_backup_job(job_id: str, conn: DbConnection, database: str, 
         progress_total_bytes=source.stat().st_size,
     )
     set_job_progress(job_id, 95, "finalizing")
-    return {"source": source.name, "database": dbname, "sha256": actual_sha256}
+    return {"source": source.name, "database": dbname, "sha256": actual_sha256, "scope": manifest.get("scope")}
 
 
 def export_csv_job(job_id: str, conn: DbConnection, database: str, table: str, output_dir: str = "") -> dict[str, Any]:
@@ -999,64 +1049,193 @@ def export_csv_job(job_id: str, conn: DbConnection, database: str, table: str, o
                     if progress >= next_progress:
                         set_job_progress(job_id, progress, "exporting")
                         next_progress = progress + 2
-    set_job_progress(job_id, 95, "finalizing")
+    set_job_progress(job_id, 90, "checksumming")
+    sha256 = _sha256_file(out, progress_hook=_cli_progress_mapper(job_id, phase="checksumming", start=90, end=95))
+    size_bytes = out.stat().st_size
+    manifest = {
+        "format_version": 1,
+        "status": "complete",
+        "kind": "csv",
+        "database": dbname,
+        "table": table_name,
+        "filename": out.name,
+        "size_bytes": size_bytes,
+        "sha256": sha256,
+        "rows": rows,
+        "completed_at": datetime.now().isoformat(timespec="seconds"),
+    }
+    manifest_path = out.with_suffix(out.suffix + ".manifest.json")
+    _atomic_json(manifest_path, manifest)
     persist_last_output_dir(out.parent)
+    set_job_progress(job_id, 95, "finalizing")
     append_job_log(job_id, f"CSV file: {out}")
-    return {"filename": out.name, "path": str(out), "rows": rows, "download_url": f"/api/download/{out.name}"}
+    return {
+        "filename": out.name,
+        "path": str(out),
+        "rows": rows,
+        "size_bytes": size_bytes,
+        "sha256": sha256,
+        "manifest": manifest_path.name,
+        "download_url": f"/api/download/{out.name}",
+    }
 
 
-def import_csv_job(job_id: str, conn: DbConnection, database: str, table: str, csv_path: str, truncate: bool) -> dict[str, Any]:
+def import_csv_job(
+    job_id: str,
+    conn: DbConnection,
+    database: str,
+    table: str,
+    csv_path: str,
+    truncate: bool,
+    *,
+    verify_sha256: str | None = None,
+) -> dict[str, Any]:
+    dbname = safe_identifier(database, "database")
+    table_name = safe_identifier(table, "table")
+    source = Path(csv_path)
+    if not source.is_file():
+        raise FileNotFoundError(source)
+    if verify_sha256:
+        append_job_log(job_id, f"Verifying SHA-256 for {source.name}")
+        set_job_progress(job_id, 2, "verifying")
+        actual = _sha256_file(source, progress_hook=_cli_progress_mapper(job_id, phase="verifying", start=2, end=5))
+        if not secrets.compare_digest(actual, verify_sha256):
+            raise RuntimeError("CSV SHA-256 does not match manifest")
+    append_job_log(job_id, f"Importing CSV into {dbname}.{table_name}")
     try:
-        dbname = safe_identifier(database, "database")
-        table_name = safe_identifier(table, "table")
-        source = Path(csv_path)
-        if not source.is_file():
-            raise FileNotFoundError(source)
-        append_job_log(job_id, f"Importing CSV into {dbname}.{table_name}")
-        try:
-            with source.open("r", encoding="utf-8-sig", newline="") as counter:
-                total_rows = max(sum(1 for _ in counter) - 1, 0)
-        except OSError:
-            total_rows = 0
-        set_job_progress(job_id, 5 if total_rows else 50, "importing")
-        next_progress = 7
-        rows = 0
-        with connect_mysql(conn, dbname, autocommit=False) as db:
-            with db.cursor() as cur, source.open("r", encoding="utf-8-sig", newline="") as f:
-                reader = csv.DictReader(f)
-                columns = reader.fieldnames or []
-                if not columns:
-                    raise ValueError("CSV header is empty")
-                for col in columns:
-                    safe_identifier(col, "csv column")
-                if truncate:
-                    append_job_log(job_id, "Deleting target rows transactionally before import")
-                    cur.execute(f"DELETE FROM {quote_ident(table_name)}")
-                cols = ", ".join(quote_ident(c) for c in columns)
-                placeholders = ", ".join(["%s"] * len(columns))
-                sql = f"INSERT INTO {quote_ident(table_name)} ({cols}) VALUES ({placeholders})"
-                batch: list[tuple[Any, ...]] = []
-                for row in reader:
-                    _raise_if_cancelled(job_id)
-                    batch.append(tuple(row.get(c, "") for c in columns))
-                    if len(batch) >= 500:
-                        cur.executemany(sql, batch)
-                        rows += len(batch)
-                        batch.clear()
-                        if total_rows:
-                            progress = 5 + int((rows / total_rows) * 90)
-                            if progress >= next_progress:
-                                set_job_progress(job_id, progress, "importing")
-                                next_progress = progress + 2
-                if batch:
+        with source.open("r", encoding="utf-8-sig", newline="") as counter:
+            total_rows = max(sum(1 for _ in counter) - 1, 0)
+    except OSError:
+        total_rows = 0
+    set_job_progress(job_id, 5 if total_rows else 50, "importing")
+    next_progress = 7
+    rows = 0
+    with connect_mysql(conn, dbname, autocommit=False) as db:
+        with db.cursor() as cur, source.open("r", encoding="utf-8-sig", newline="") as f:
+            reader = csv.DictReader(f)
+            columns = reader.fieldnames or []
+            if not columns:
+                raise ValueError("CSV header is empty")
+            for col in columns:
+                safe_identifier(col, "csv column")
+            if truncate:
+                append_job_log(job_id, "Deleting target rows transactionally before import")
+                cur.execute(f"DELETE FROM {quote_ident(table_name)}")
+            cols = ", ".join(quote_ident(c) for c in columns)
+            placeholders = ", ".join(["%s"] * len(columns))
+            sql = f"INSERT INTO {quote_ident(table_name)} ({cols}) VALUES ({placeholders})"
+            batch: list[tuple[Any, ...]] = []
+            for row in reader:
+                _raise_if_cancelled(job_id)
+                batch.append(tuple(row.get(c, "") for c in columns))
+                if len(batch) >= 500:
                     cur.executemany(sql, batch)
                     rows += len(batch)
-            db.commit()
-        set_job_progress(job_id, 95, "finalizing")
-        append_job_log(job_id, f"Imported rows: {rows}")
-        return {"database": dbname, "table": table_name, "rows": rows}
+                    batch.clear()
+                    if total_rows:
+                        progress = 5 + int((rows / total_rows) * 90)
+                        if progress >= next_progress:
+                            set_job_progress(job_id, progress, "importing")
+                            next_progress = progress + 2
+            if batch:
+                cur.executemany(sql, batch)
+                rows += len(batch)
+        db.commit()
+    set_job_progress(job_id, 95, "finalizing")
+    append_job_log(job_id, f"Imported rows: {rows}")
+    return {"database": dbname, "table": table_name, "rows": rows, "source": source.name}
+
+
+def import_verified_csv_job(
+    job_id: str, conn: DbConnection, database: str, table: str, filename: str, truncate: bool
+) -> dict[str, Any]:
+    source, manifest = _completed_csv_export(filename)
+    return import_csv_job(
+        job_id,
+        conn,
+        database,
+        table,
+        str(source),
+        truncate,
+        verify_sha256=str(manifest.get("sha256") or ""),
+    )
+
+
+def choose_file_dialog(*, title: str, filetypes: list[tuple[str, str]], initial_dir: str | None = None) -> str:
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+    except Exception as exc:  # noqa: BLE001
+        raise RuntimeError(f"File picker is not available: {exc}") from exc
+
+    initial = _folder_dialog_initial(initial_dir)
+    root = tk.Tk()
+    root.withdraw()
+    root.attributes("-topmost", True)
+    try:
+        selected = filedialog.askopenfilename(
+            initialdir=str(initial),
+            title=title,
+            filetypes=filetypes,
+        )
     finally:
-        _cleanup_upload(csv_path)
+        root.destroy()
+    return str(Path(selected).resolve()) if selected else ""
+
+
+def register_local_export_file(source_path: str) -> dict[str, Any]:
+    source = Path(source_path).resolve()
+    if not source.is_file():
+        raise FileNotFoundError(f"File not found: {source}")
+    suffix = source.suffix.lower()
+    if suffix not in {".sql", ".csv"}:
+        raise ValueError("Only .sql and .csv files can be registered")
+    safe_name = source.name
+    if Path(safe_name).name != safe_name:
+        raise ValueError("Invalid filename")
+    target_dir = backup_dir()
+    target = target_dir / safe_name
+    if target.resolve() != source:
+        counter = 1
+        while target.exists():
+            stem = source.stem
+            target = target_dir / f"{stem}_{counter}{suffix}"
+            counter += 1
+        shutil.copy2(source, target)
+    sha256 = _sha256_file(target)
+    size_bytes = target.stat().st_size
+    completed_at = datetime.now().isoformat(timespec="seconds")
+    if suffix == ".sql":
+        manifest = {
+            "format_version": 1,
+            "status": "complete",
+            "scope": "external",
+            "filename": target.name,
+            "size_bytes": size_bytes,
+            "sha256": sha256,
+            "completed_at": completed_at,
+        }
+    else:
+        manifest = {
+            "format_version": 1,
+            "status": "complete",
+            "kind": "csv",
+            "scope": "external",
+            "filename": target.name,
+            "size_bytes": size_bytes,
+            "sha256": sha256,
+            "completed_at": completed_at,
+        }
+    manifest_path = target.with_suffix(target.suffix + ".manifest.json")
+    _atomic_json(manifest_path, manifest)
+    return {
+        "filename": target.name,
+        "path": str(target),
+        "size_bytes": size_bytes,
+        "sha256": sha256,
+        "kind": "sql" if suffix == ".sql" else "csv",
+        "manifest": manifest_path.name,
+    }
 
 
 app = FastAPI(title="SD SMA DB Admin", version="0.1.0")
@@ -1112,7 +1291,6 @@ def get_config() -> dict[str, Any]:
         "backup_dir": str(backup_dir()),
         "last_output_dir": str(remembered) if remembered else "",
         "mysql_tools": cfg.get("mysql_tools") or {},
-        "max_upload_mb": int(cfg.get("max_upload_mb") or 512),
         "max_concurrent_jobs": max(1, int(cfg.get("max_concurrent_jobs") or 2)),
     }
 
@@ -1124,6 +1302,29 @@ def folder_dialog(payload: dict[str, Any]) -> dict[str, Any]:
         if selected:
             persist_last_output_dir(Path(selected))
         return {"selected": selected}
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(400, str(exc)) from exc
+
+
+@app.post("/api/register-file")
+def register_file(payload: dict[str, Any]) -> dict[str, Any]:
+    try:
+        kind = str(payload.get("kind") or "sql").strip().lower()
+        if kind == "csv":
+            filetypes = [("CSV", "*.csv"), ("All", "*.*")]
+            title = "登记本地 CSV 文件"
+        else:
+            filetypes = [("SQL", "*.sql"), ("All", "*.*")]
+            title = "登记本地 SQL 文件"
+        selected = choose_file_dialog(
+            title=title,
+            filetypes=filetypes,
+            initial_dir=str(payload.get("initial_dir") or ""),
+        )
+        if not selected:
+            return {"selected": ""}
+        registered = register_local_export_file(selected)
+        return {"selected": registered["path"], **registered}
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(400, str(exc)) from exc
 
@@ -1171,56 +1372,22 @@ def create_backup(req: BackupRequest) -> dict[str, Any]:
     return {"job": job}
 
 
-@app.post("/api/export-csv")
-def export_csv(req: CsvExportRequest) -> dict[str, Any]:
-    job = start_job(f"Export CSV {req.table}", export_csv_job, req.connection, req.database, req.table, req.output_dir)
+@app.post("/api/backup-table")
+def create_table_backup(req: BackupTableRequest) -> dict[str, Any]:
+    job = start_job(
+        f"Backup table {req.database}.{req.table}",
+        backup_mysql_table_job,
+        req.connection,
+        req.database,
+        req.table,
+        req.output_dir,
+    )
     return {"job": job}
 
 
-def _parse_connection_json(connection_json: str) -> DbConnection:
-    try:
-        data = json.loads(connection_json)
-    except json.JSONDecodeError as exc:
-        raise HTTPException(400, "Invalid connection JSON") from exc
-    if isinstance(data, dict) and "connection" in data:
-        data = data["connection"]
-    return DbConnection(**data)
-
-
-def _save_upload(upload: UploadFile, suffix: str) -> str:
-    temp_dir = Path(tempfile.mkdtemp(prefix=UPLOAD_TMP_PREFIX))
-    filename = Path(upload.filename or f"upload{suffix}").name
-    target = temp_dir / filename
-    limit_mb = int(load_config().get("max_upload_mb") or 512)
-    limit_bytes = max(1, limit_mb) * 1024 * 1024
-    copied = 0
-    try:
-        with target.open("wb") as f:
-            while True:
-                chunk = upload.file.read(1024 * 1024)
-                if not chunk:
-                    break
-                copied += len(chunk)
-                if copied > limit_bytes:
-                    raise HTTPException(413, f"Upload exceeds max_upload_mb={limit_mb}")
-                f.write(chunk)
-    except BaseException:
-        shutil.rmtree(temp_dir, ignore_errors=True)
-        raise
-    return str(target)
-
-
-@app.post("/api/restore-sql")
-def restore_sql(
-    connection_json: str = Form(...),
-    database: str = Form(...),
-    confirmation_token: str = Form(...),
-    file: UploadFile = File(...),
-) -> dict[str, Any]:
-    consume_confirmation(confirmation_token, "restore-sql", database)
-    conn = _parse_connection_json(connection_json)
-    sql_path = _save_upload(file, ".sql")
-    job = start_job(f"Restore SQL {database}", restore_mysql_job, conn, database, sql_path)
+@app.post("/api/export-csv")
+def export_csv(req: CsvExportRequest) -> dict[str, Any]:
+    job = start_job(f"Export CSV {req.table}", export_csv_job, req.connection, req.database, req.table, req.output_dir)
     return {"job": job}
 
 
@@ -1242,12 +1409,44 @@ def list_backups() -> dict[str, Any]:
                         "size_bytes": int(manifest["size_bytes"]),
                         "sha256": str(manifest["sha256"]),
                         "completed_at": str(manifest.get("completed_at") or ""),
+                        "scope": str(manifest.get("scope") or "database"),
+                        "database": str(manifest.get("database") or ""),
+                        "table": str(manifest.get("table") or ""),
                     }
                 )
             except (OSError, ValueError, json.JSONDecodeError, FileNotFoundError):
                 continue
     items.sort(key=lambda item: item["completed_at"], reverse=True)
     return {"backups": items}
+
+
+@app.get("/api/csv-exports")
+def list_csv_exports() -> dict[str, Any]:
+    items: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for root in backup_roots():
+        for manifest_path in root.glob("*.csv.manifest.json"):
+            try:
+                filename = manifest_path.name.removesuffix(".manifest.json")
+                if filename in seen:
+                    continue
+                _, manifest = _completed_csv_export(filename)
+                seen.add(filename)
+                items.append(
+                    {
+                        "filename": filename,
+                        "size_bytes": int(manifest["size_bytes"]),
+                        "sha256": str(manifest["sha256"]),
+                        "completed_at": str(manifest.get("completed_at") or ""),
+                        "database": str(manifest.get("database") or ""),
+                        "table": str(manifest.get("table") or ""),
+                        "rows": int(manifest.get("rows") or 0),
+                    }
+                )
+            except (OSError, ValueError, json.JSONDecodeError, FileNotFoundError):
+                continue
+    items.sort(key=lambda item: item["completed_at"], reverse=True)
+    return {"exports": items}
 
 
 @app.post("/api/restore-backup")
@@ -1267,19 +1466,22 @@ def restore_backup(req: RestoreBackupRequest) -> dict[str, Any]:
     return {"job": job}
 
 
-@app.post("/api/import-csv")
-def import_csv(
-    connection_json: str = Form(...),
-    database: str = Form(...),
-    table: str = Form(...),
-    confirmation_token: str = Form(...),
-    truncate: bool = Form(False),
-    file: UploadFile = File(...),
-) -> dict[str, Any]:
-    consume_confirmation(confirmation_token, "import-csv", database, table)
-    conn = _parse_connection_json(connection_json)
-    csv_path = _save_upload(file, ".csv")
-    job = start_job(f"Import CSV {table}", import_csv_job, conn, database, table, csv_path, truncate)
+@app.post("/api/import-server-csv")
+def import_server_csv(req: ImportServerCsvRequest) -> dict[str, Any]:
+    consume_confirmation(req.confirmation_token, "import-server-csv", req.database, req.table)
+    try:
+        _completed_csv_export(req.filename)
+    except (OSError, ValueError, json.JSONDecodeError, FileNotFoundError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+    job = start_job(
+        f"Import CSV {req.table}",
+        import_verified_csv_job,
+        req.connection,
+        req.database,
+        req.table,
+        req.filename,
+        req.truncate,
+    )
     return {"job": job}
 
 

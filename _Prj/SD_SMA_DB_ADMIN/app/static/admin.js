@@ -331,7 +331,24 @@ async function startBackup() {
     }),
   });
   watchJob(data.job.id);
-  setHint('backupHint', `已开始 SQL 备份任务，输出目录: ${getOutputDir() || defaultOutputDir}`, 'muted ok');
+  setHint('backupHint', `已开始整库 SQL 备份，输出目录: ${getOutputDir() || defaultOutputDir}`, 'muted ok');
+}
+
+async function startTableBackup() {
+  const database = getExportDatabase();
+  const table = getExportTable();
+  const data = await fetchJson('/api/backup-table', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      connection: getConnectionPayload(),
+      database,
+      table,
+      output_dir: getOutputDir(),
+    }),
+  });
+  watchJob(data.job.id);
+  setHint('backupHint', `已开始单表 SQL 备份: ${database}.${table}`, 'muted ok');
 }
 
 async function startCsvExport() {
@@ -348,7 +365,7 @@ async function startCsvExport() {
     }),
   });
   watchJob(data.job.id);
-  setHint('backupHint', `已开始 CSV 导出任务，输出目录: ${getOutputDir() || defaultOutputDir}`, 'muted ok');
+  setHint('backupHint', `已开始 CSV 导出（适合小数据）: ${database}.${table}`, 'muted ok');
 }
 
 async function requireDoubleConfirm(kind, target) {
@@ -374,30 +391,24 @@ async function requestConfirmationToken(action, database, table = '') {
   return data.token;
 }
 
-function buildConnectionFormData(database, confirmationToken) {
-  const fd = new FormData();
-  fd.append('connection_json', JSON.stringify({ connection: getConnectionPayload() }));
-  fd.append('database', database);
-  fd.append('confirmation_token', confirmationToken);
-  return fd;
-}
-
-async function startRestoreSql() {
-  const database = getSelectedValue('restoreDatabaseSelect', '请先选择恢复目标数据库');
-  const file = document.getElementById('restoreSqlFile').files[0];
-  if (!file) throw new Error('请选择 SQL 文件');
-  if (!(await requireDoubleConfirm('恢复 SQL', database))) {
-    setHint('importHint', '已取消 SQL 恢复', 'muted');
+async function registerLocalFile(kind) {
+  setHint('importHint', `正在打开${kind === 'csv' ? 'CSV' : 'SQL'}文件选择窗口...`);
+  const data = await fetchJson('/api/register-file', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ kind, initial_dir: getOutputDir() || defaultOutputDir }),
+  });
+  if (!data.selected) {
+    setHint('importHint', '已取消登记本地文件', 'muted');
     return;
   }
-  const confirmationToken = await requestConfirmationToken('restore-sql', database);
-  const fd = buildConnectionFormData(database, confirmationToken);
-  fd.append('file', file);
-  const resp = await fetch('/api/restore-sql', { method: 'POST', body: fd });
-  const data = await resp.json();
-  if (!resp.ok) throw new Error(data.detail || JSON.stringify(data));
-  watchJob(data.job.id);
-  setHint('importHint', `已开始 SQL 恢复任务，目标数据库: ${database}`, 'muted warn');
+  if (kind === 'csv') {
+    await loadServerCsvExports();
+    setHint('importHint', `已登记 CSV: ${data.filename}`, 'muted ok');
+  } else {
+    await loadServerBackups();
+    setHint('importHint', `已登记 SQL: ${data.filename}`, 'muted ok');
+  }
 }
 
 async function loadServerBackups() {
@@ -408,7 +419,25 @@ async function loadServerBackups() {
   for (const backup of data.backups || []) {
     const option = document.createElement('option');
     option.value = backup.filename;
-    option.textContent = `${backup.filename} (${backup.size_bytes} bytes)`;
+    const scope = backup.scope === 'table' && backup.table
+      ? `表 ${backup.database || ''}.${backup.table}`
+      : (backup.scope === 'external' ? '外部登记' : '整库');
+    option.textContent = `${backup.filename} [${scope}] (${formatBytes(backup.size_bytes)})`;
+    select.appendChild(option);
+  }
+  if (previous && hasOption(select, previous)) select.value = previous;
+}
+
+async function loadServerCsvExports() {
+  const data = await fetchJson('/api/csv-exports');
+  const select = document.getElementById('serverCsvSelect');
+  const previous = select.value;
+  select.innerHTML = '';
+  for (const item of data.exports || []) {
+    const option = document.createElement('option');
+    option.value = item.filename;
+    const origin = item.table ? `${item.database || ''}.${item.table}` : '外部登记';
+    option.textContent = `${item.filename} [${origin}] (${formatBytes(item.size_bytes)})`;
     select.appendChild(option);
   }
   if (previous && hasOption(select, previous)) select.value = previous;
@@ -433,25 +462,29 @@ async function startRestoreServerBackup() {
   setHint('importHint', `已开始校验并恢复: ${filename} → ${database}`, 'muted warn');
 }
 
-async function startImportCsv() {
+async function startImportServerCsv() {
   const database = getSelectedValue('importDatabaseSelect', '请先选择导入目标数据库');
   const table = getSelectedValue('importTableSelect', '请先选择导入目标表');
-  const file = document.getElementById('importCsvFile').files[0];
-  if (!file) throw new Error('请选择 CSV 文件');
-  if (!(await requireDoubleConfirm('导入 CSV', `${database}.${table}`))) {
+  const filename = getSelectedValue('serverCsvSelect', '没有可导入的已导出 CSV');
+  if (!(await requireDoubleConfirm('导入 CSV', `${filename} → ${database}.${table}`))) {
     setHint('importHint', '已取消 CSV 导入', 'muted');
     return;
   }
-  const confirmationToken = await requestConfirmationToken('import-csv', database, table);
-  const fd = buildConnectionFormData(database, confirmationToken);
-  fd.append('table', table);
-  fd.append('truncate', document.getElementById('truncateBeforeImport').checked ? 'true' : 'false');
-  fd.append('file', file);
-  const resp = await fetch('/api/import-csv', { method: 'POST', body: fd });
-  const data = await resp.json();
-  if (!resp.ok) throw new Error(data.detail || JSON.stringify(data));
+  const confirmationToken = await requestConfirmationToken('import-server-csv', database, table);
+  const data = await fetchJson('/api/import-server-csv', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      connection: getConnectionPayload(),
+      database,
+      table,
+      filename,
+      truncate: document.getElementById('truncateBeforeImport').checked,
+      confirmation_token: confirmationToken,
+    }),
+  });
   watchJob(data.job.id);
-  setHint('importHint', `已开始 CSV 导入任务，目标表: ${database}.${table}`, 'muted warn');
+  setHint('importHint', `已开始 CSV 导入: ${filename} → ${database}.${table}`, 'muted warn');
 }
 
 function statusClass(status) {
@@ -621,20 +654,29 @@ function bindEvents() {
   document.getElementById('btnBackupSql').addEventListener('click', () => {
     startBackup().catch(err => setHint('backupHint', err.message, 'muted warn'));
   });
+  document.getElementById('btnBackupTableSql').addEventListener('click', () => {
+    startTableBackup().catch(err => setHint('backupHint', err.message, 'muted warn'));
+  });
   document.getElementById('btnExportCsv').addEventListener('click', () => {
     startCsvExport().catch(err => setHint('backupHint', err.message, 'muted warn'));
-  });
-  document.getElementById('btnRestoreSql').addEventListener('click', () => {
-    startRestoreSql().catch(err => setHint('importHint', err.message, 'muted warn'));
   });
   document.getElementById('btnRefreshBackups').addEventListener('click', () => {
     loadServerBackups().catch(err => setHint('importHint', err.message, 'muted warn'));
   });
+  document.getElementById('btnRegisterSql').addEventListener('click', () => {
+    registerLocalFile('sql').catch(err => setHint('importHint', err.message, 'muted warn'));
+  });
   document.getElementById('btnRestoreServerBackup').addEventListener('click', () => {
     startRestoreServerBackup().catch(err => setHint('importHint', err.message, 'muted warn'));
   });
-  document.getElementById('btnImportCsv').addEventListener('click', () => {
-    startImportCsv().catch(err => setHint('importHint', err.message, 'muted warn'));
+  document.getElementById('btnRefreshCsvExports').addEventListener('click', () => {
+    loadServerCsvExports().catch(err => setHint('importHint', err.message, 'muted warn'));
+  });
+  document.getElementById('btnRegisterCsv').addEventListener('click', () => {
+    registerLocalFile('csv').catch(err => setHint('importHint', err.message, 'muted warn'));
+  });
+  document.getElementById('btnImportServerCsv').addEventListener('click', () => {
+    startImportServerCsv().catch(err => setHint('importHint', err.message, 'muted warn'));
   });
   document.getElementById('btnRefreshJobs').addEventListener('click', () => {
     refreshJobs().catch(err => setHint('jobSummary', err.message, 'muted warn'));
@@ -651,6 +693,7 @@ async function init() {
   }
   await refreshJobs();
   await loadServerBackups();
+  await loadServerCsvExports();
 }
 
 init().catch(err => alert(err.message));

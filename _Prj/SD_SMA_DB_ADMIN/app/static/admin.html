@@ -69,7 +69,7 @@
 
       <section class="panel">
         <h2>备份与导出</h2>
-        <p class="hint">选择数据库、表和输出目录后执行。SQL 备份导出完整库结构与数据；CSV 导出只针对选中的表。</p>
+        <p class="hint">选择数据库、表和输出目录后执行。整库/单表请用 SQL（适合 GB 级）；CSV 仅适合小数据交换。</p>
         <div class="row">
           <label for="databaseSelect">数据库</label>
           <select id="databaseSelect"></select>
@@ -85,6 +85,7 @@
         </div>
         <div class="row">
           <button type="button" id="btnBackupSql">备份当前数据库为 SQL</button>
+          <button type="button" id="btnBackupTableSql">备份当前表为 SQL</button>
           <button type="button" id="btnExportCsv">导出当前表为 CSV</button>
         </div>
         <div id="objectHint" class="muted"></div>
@@ -93,19 +94,23 @@
 
       <section class="panel">
         <h2>恢复与导入</h2>
-        <p class="hint">先选择恢复/导入目标，再上传文件。点击执行后会连续弹出两次确认。</p>
+        <p class="hint">全部走服务端已完成文件，不经浏览器上传。外部文件请先「登记」到备份目录。大表请用 SQL 恢复，不要用 CSV。</p>
         <div class="row">
-          <label for="serverBackupSelect">服务器已完成备份</label>
+          <label for="serverBackupSelect">服务器已完成 SQL 备份</label>
           <select id="serverBackupSelect"></select>
           <button type="button" id="btnRefreshBackups">刷新备份</button>
-          <button type="button" id="btnRestoreServerBackup" class="danger-btn">直接恢复已完成备份</button>
+          <button type="button" id="btnRegisterSql">登记本地 SQL</button>
+          <button type="button" id="btnRestoreServerBackup" class="danger-btn">直接恢复 SQL</button>
         </div>
         <div class="row">
           <label for="restoreDatabaseSelect">恢复到数据库</label>
           <select id="restoreDatabaseSelect"></select>
-          <label for="restoreSqlFile">SQL 文件</label>
-          <input id="restoreSqlFile" type="file" accept=".sql,.txt" />
-          <button type="button" id="btnRestoreSql" class="danger-btn">恢复 SQL</button>
+        </div>
+        <div class="row">
+          <label for="serverCsvSelect">服务器已导出 CSV</label>
+          <select id="serverCsvSelect"></select>
+          <button type="button" id="btnRefreshCsvExports">刷新 CSV</button>
+          <button type="button" id="btnRegisterCsv">登记本地 CSV</button>
         </div>
         <div class="row">
           <label for="importDatabaseSelect">导入到数据库</label>
@@ -115,11 +120,9 @@
           <select id="importTableSelect"></select>
         </div>
         <div class="row">
-          <label for="importCsvFile">CSV 文件</label>
-          <input id="importCsvFile" type="file" accept=".csv,.txt" />
           <label for="truncateBeforeImport">清空表</label>
           <input id="truncateBeforeImport" type="checkbox" />
-          <button type="button" id="btnImportCsv" class="danger-btn">导入 CSV</button>
+          <button type="button" id="btnImportServerCsv" class="danger-btn">直接导入 CSV</button>
         </div>
         <div id="importHint" class="muted warn"></div>
       </section>

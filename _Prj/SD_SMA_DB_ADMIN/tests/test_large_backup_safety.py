@@ -38,22 +38,22 @@ def test_cross_origin_state_change_is_rejected() -> None:
         response = client.post(
             "/api/confirmations",
             headers={"Origin": "https://attacker.example"},
-            json={"action": "restore-sql", "database": "target_db"},
+            json={"action": "restore-backup", "database": "target_db"},
         )
     assert response.status_code == 403
 
 
 def test_confirmation_is_bound_and_single_use() -> None:
-    token = main.issue_confirmation("import-csv", "target_db", "target_table")
-    main.consume_confirmation(token, "import-csv", "target_db", "target_table")
+    token = main.issue_confirmation("import-server-csv", "target_db", "target_table")
+    main.consume_confirmation(token, "import-server-csv", "target_db", "target_table")
     with pytest.raises(HTTPException):
-        main.consume_confirmation(token, "import-csv", "target_db", "target_table")
+        main.consume_confirmation(token, "import-server-csv", "target_db", "target_table")
 
 
 def test_confirmation_rejects_different_target() -> None:
-    token = main.issue_confirmation("restore-sql", "target_a")
+    token = main.issue_confirmation("restore-backup", "target_a")
     with pytest.raises(HTTPException):
-        main.consume_confirmation(token, "restore-sql", "target_b")
+        main.consume_confirmation(token, "restore-backup", "target_b")
 
 
 def test_config_never_returns_password(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -111,6 +111,9 @@ def test_completed_backups_require_valid_manifest(monkeypatch: pytest.MonkeyPatc
             "size_bytes": 10,
             "sha256": manifest["sha256"],
             "completed_at": "2026-07-15T12:00:00",
+            "scope": "database",
+            "database": "",
+            "table": "",
         }
     ]
 
@@ -321,6 +324,9 @@ def test_list_backups_includes_last_output_dir(monkeypatch: pytest.MonkeyPatch, 
             "size_bytes": backup.stat().st_size,
             "sha256": manifest["sha256"],
             "completed_at": "2026-07-16T09:00:00",
+            "scope": "database",
+            "database": "",
+            "table": "",
         }
     ]
 
@@ -350,3 +356,142 @@ def test_run_cli_honors_cancellation() -> None:
             timeout_seconds=60,
             cancel_event=event,
         )
+
+
+def test_table_backup_includes_table_in_command_and_manifest(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(main, "resolve_output_dir", lambda value: tmp_path)
+    monkeypatch.setattr(main, "_table_storage_bytes", lambda conn, database, table: 2048)
+    monkeypatch.setattr(main.shutil, "disk_usage", lambda path: SimpleNamespace(free=10**9))
+    monkeypatch.setattr(main, "load_config", lambda: {"cli_timeout_seconds": 60})
+    monkeypatch.setattr(main, "resolve_mysql_tool", lambda name: f"/fake/{name}")
+    monkeypatch.setattr(main, "mysql_dump_client_is_mariadb", lambda tool: True)
+    monkeypatch.setattr(main, "persist_last_output_dir", lambda path: None)
+    seen: list[list[str]] = []
+
+    def fake_cli(cmd, *, env, stdin_path=None, stdout_path=None, timeout_seconds=None, cancel_event=None, **kwargs):
+        seen.append(list(cmd))
+        assert stdout_path is not None
+        assert "target_table" in cmd
+        assert kwargs.get("progress_total_bytes") == 2048
+        stdout_path.write_bytes(b"CREATE TABLE target_table(id INT);\n")
+
+    monkeypatch.setattr(main, "run_cli", fake_cli)
+    result = main.backup_mysql_table_job("job", DbConnection(), "target_db", "target_table")
+    manifest = json.loads((tmp_path / result["manifest"]).read_text(encoding="utf-8"))
+    assert manifest["scope"] == "table"
+    assert manifest["table"] == "target_table"
+    assert "--add-drop-table" in seen[0]
+
+
+def test_csv_export_writes_manifest_and_lists(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(main, "resolve_output_dir", lambda value: tmp_path)
+    monkeypatch.setattr(main, "persist_last_output_dir", lambda path: None)
+    monkeypatch.setattr(main, "backup_dir", lambda: tmp_path)
+    monkeypatch.setattr(main, "last_output_dir", lambda: None)
+
+    class FakeCursor:
+        description = (("id",), ("name",))
+
+        def execute(self, *_args, **_kwargs):
+            return None
+
+        def fetchone(self):
+            return (2,)
+
+        def fetchmany(self, _size):
+            if getattr(self, "_done", False):
+                return []
+            self._done = True
+            return [(1, "a"), (2, "b")]
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+    class FakeConn:
+        def cursor(self):
+            return FakeCursor()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+    monkeypatch.setattr(main, "connect_mysql", lambda *args, **kwargs: FakeConn())
+    monkeypatch.setattr(main.pymysql, "connect", lambda **kwargs: FakeConn())
+    result = main.export_csv_job("job", DbConnection(), "db1", "t1")
+    assert (tmp_path / result["manifest"]).is_file()
+    exports = main.list_csv_exports()["exports"]
+    assert exports[0]["filename"] == result["filename"]
+    assert exports[0]["rows"] == 2
+
+
+def test_register_local_sql_copies_and_lists(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    source_root = tmp_path / "src"
+    backup_root = tmp_path / "backups"
+    source_root.mkdir()
+    backup_root.mkdir()
+    source = source_root / "external.sql"
+    source.write_bytes(b"SELECT 42;\n")
+    monkeypatch.setattr(main, "backup_dir", lambda: backup_root)
+    monkeypatch.setattr(main, "last_output_dir", lambda: None)
+    registered = main.register_local_export_file(str(source))
+    assert registered["kind"] == "sql"
+    assert (backup_root / registered["filename"]).is_file()
+    assert (backup_root / registered["manifest"]).is_file()
+    listed = main.list_backups()["backups"]
+    assert listed[0]["filename"] == registered["filename"]
+    assert listed[0]["scope"] == "external"
+
+
+def test_import_server_csv_verifies_hash(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    csv_path = tmp_path / "rows.csv"
+    csv_path.write_text("col_a\n1\n", encoding="utf-8-sig")
+    sha = main._sha256_file(csv_path)
+    manifest = {
+        "status": "complete",
+        "kind": "csv",
+        "filename": csv_path.name,
+        "size_bytes": csv_path.stat().st_size,
+        "sha256": sha,
+        "completed_at": "2026-07-16T10:00:00",
+    }
+    csv_path.with_suffix(".csv.manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
+    monkeypatch.setattr(main, "backup_dir", lambda: tmp_path)
+    monkeypatch.setattr(main, "last_output_dir", lambda: None)
+
+    class FakeCursor:
+        def execute(self, *_args, **_kwargs):
+            return None
+
+        def executemany(self, *_args, **_kwargs):
+            return None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+    class FakeConn:
+        def cursor(self):
+            return FakeCursor()
+
+        def commit(self):
+            return None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+    monkeypatch.setattr(main, "connect_mysql", lambda *args, **kwargs: FakeConn())
+    result = main.import_verified_csv_job("job", DbConnection(), "db1", "t1", csv_path.name, False)
+    assert result["rows"] == 1
+    assert result["source"] == csv_path.name

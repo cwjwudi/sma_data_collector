@@ -8,56 +8,65 @@ Default URL when launched through `_Launcher`:
 
 Main functions:
 
-- Test MySQL connection.
-- List databases and tables.
-- Create MySQL SQL backups through `mysqldump` / `mariadb-dump`.
-- Restore SQL files through `mysql` / `mariadb`.
-- Export a table to CSV.
-- Import CSV into an existing table.
+- Test MySQL / MariaDB connection.
+- List databases and tables (with approximate sizes).
+- Backup a whole database or a single table to SQL (`mysqldump` / `mariadb-dump`).
+- Restore completed SQL backups directly on the server (manifest + SHA-256).
+- Export a table to CSV for small data exchange; import completed CSV exports on the server.
+- Register external local `.sql` / `.csv` files into the backup directory (no browser upload).
 
-Large backup safeguards:
+## Export / restore model
+
+All restore and import paths are **server-side only**. Browser file upload is not used.
+
+| Action | Format | Typical use |
+|--------|--------|-------------|
+| Backup database | `.sql` + manifest | Full database backup / restore |
+| Backup table | `.sql` + manifest | GB-scale single table backup / restore |
+| Export CSV | `.csv` + manifest | Small table exchange only |
+| Register local file | copy into `backup_dir` + manifest | Bring external dumps into the tool |
+
+Completed files live under `backup_dir` and/or `last_output_dir`. Large restores must use
+**直接恢复 SQL** / **直接导入 CSV**, not browser upload.
+
+For GB-scale single tables, prefer **备份当前表为 SQL**. CSV is not recommended as a
+primary backup format for large tables.
+
+SQL dumps include `--add-drop-table`, so restoring a table dump may replace an existing
+table of the same name in the target database.
+
+## Large backup safeguards
 
 - SQL dumps are written to a `.partial` file and atomically renamed only after success.
-- Each completed SQL dump has a SHA-256 manifest (`.sql.manifest.json`).
+- Each completed SQL / CSV export has a SHA-256 manifest.
 - Backup names include microseconds to prevent same-second collisions.
 - Free disk space is checked before `mysqldump` starts.
-- Backup/restore job progress is driven by transferred bytes (dump file growth or SQL
-  bytes fed to the client); CSV import/export progress uses processed row counts.
-- Downloads support HTTP byte ranges (`206 Partial Content`) for resume-capable clients.
-- Destructive uploads require a short-lived, operation-bound, single-use confirmation token.
-- State-changing browser requests from a different Origin are rejected.
-- Running background jobs are bounded by `max_concurrent_jobs`.
-- Running external database commands and CSV loops can be cancelled from the job list.
-- Completed server-side SQL backups can be restored directly after manifest and SHA-256 verification;
-  large files do not need to be uploaded through the browser again.
+- Backup/restore progress tracks transferred bytes; CSV progress uses row counts.
+- Downloads support HTTP byte ranges (`206 Partial Content`).
+- Destructive restore/import requires a short-lived, operation-bound confirmation token.
+- Cross-origin state-changing browser requests are rejected.
+- Running jobs are bounded by `max_concurrent_jobs` and can be cancelled.
 
 ## MySQL / MariaDB client tools
 
-SQL backup and restore need MySQL or MariaDB client tools. Resolution order:
+Resolution order:
 
 1. Absolute paths in `mysql_tools` inside `config/default.json`
 2. Tools available on `PATH` (`mysqldump` / `mysql`, or `mariadb-dump` / `mariadb`)
 3. Binaries under the project `_tools` directory
 
-If no client is found, the job fails with a clear message
-(`找不到 MySQL/MariaDB 客户端工具: ...`) instead of a raw `WinError 2`.
+If no client is found, the job fails with
+`找不到 MySQL/MariaDB 客户端工具: ...` instead of a raw `WinError 2`.
 
-MySQL 8 dump clients automatically receive `--column-statistics=0` so they work
-against MariaDB servers that do not expose `information_schema.COLUMN_STATISTICS`.
-MariaDB dump clients do not receive that flag.
+MySQL 8 dump clients automatically receive `--column-statistics=0` for MariaDB servers.
 
 ## Export directories
 
-- The default export directory is `backup_dir` (usually `config/backups`).
-- Any writable absolute folder may be selected as the export directory.
-- The last chosen directory is remembered in the browser (`localStorage`) and on the
-  server as `last_output_dir` in `config/default.json`.
-- Completed backups are listed / downloaded / restored from `backup_dir` and
-  `last_output_dir` together.
+- Default export directory is `backup_dir`.
+- Any writable folder may be selected; the last choice is remembered as `last_output_dir`.
+- Lists / downloads / restores scan `backup_dir` and `last_output_dir`.
 
-Database passwords are never returned by `/api/config`; enter them for the current
-browser session or inject them through an external credential mechanism.
+Database passwords are never returned by `/api/config`.
 
-For large backups, keep at least `backup_free_space_factor` times the database's
-reported data-and-index size available on the output disk. The default factor is `1.5`.
-`cli_timeout_seconds` defaults to 24 hours.
+For large backups, keep at least `backup_free_space_factor` times the estimated size free
+on the output disk (default `1.5`). `cli_timeout_seconds` defaults to 24 hours.
