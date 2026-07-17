@@ -4,10 +4,11 @@
       v-if="!open"
       type="button"
       class="ai-fab"
-      :class="{ 'ai-fab--busy': loading }"
-      title="AI 助手"
+      :class="{ 'ai-fab--busy': loading, 'ai-fab--dragging': fabDragging }"
+      title="AI 助手（可拖动）"
       :aria-label="loading ? '打开 AI 助手（生成中）' : '打开 AI 助手'"
-      @click="openDrawer"
+      :style="fabStyle"
+      @pointerdown="onFabPointerDown"
     >
       <svg
         class="ai-fab__neon"
@@ -74,11 +75,10 @@
       v-if="open"
       class="ai-drawer-backdrop"
       :class="{ 'ai-drawer-backdrop--expanded': expanded }"
-      @click.self="closeDrawer"
     >
       <aside
         class="ai-drawer"
-        :class="{ 'ai-drawer--expanded': expanded }"
+        :class="{ 'ai-drawer--expanded': expanded, 'ai-drawer--dragging': drawerDragging }"
         role="dialog"
         aria-labelledby="ai-drawer-title"
         aria-modal="true"
@@ -100,7 +100,11 @@
             @pointerdown="onExpandedResizePointerDown($event, edge)"
           />
         </template>
-        <header class="ai-drawer__head">
+        <header
+          class="ai-drawer__head"
+          :class="{ 'ai-drawer__head--draggable': expanded }"
+          @pointerdown="onHeadPointerDown"
+        >
           <div class="ai-drawer__head-left">
             <label class="ai-drawer__model-wrap" title="切换模型">
               <span class="ai-drawer__model-ico" aria-hidden="true">✦</span>
@@ -361,6 +365,19 @@ import {
   saveAiChatPersist,
   type PersistedAiMessage,
 } from '@/features/ai-assistant/chat-persist'
+import {
+  AI_DRAWER_POS_KEY,
+  AI_FAB_DEFAULT_BOTTOM,
+  AI_FAB_DEFAULT_RIGHT,
+  AI_FAB_POS_KEY,
+  AI_FAB_SIZE,
+  clampFloatingPos,
+  defaultExpandedDrawerPos,
+  isDragNotClick,
+  loadFloatingPos,
+  saveFloatingPos,
+  type FloatingPos,
+} from '@/features/ai-assistant/floating-pos'
 import { dequeue, enqueue, removeQueued, type QueuedChatItem } from '@/features/ai-assistant/chat-queue'
 import { sliceRecentChatMessages } from '@/features/ai-assistant/chat-history-window'
 import { renderAssistantMarkdown } from '@/features/ai-assistant/render-md'
@@ -395,6 +412,11 @@ const expandedWidthPx = ref(defaultExpandedSize().width)
 const expandedHeightPx = ref(defaultExpandedSize().height)
 const expandedResizeEdges = ['n', 's', 'e', 'w', 'ne', 'nw', 'se', 'sw'] as const
 type ExpandedResizeEdge = (typeof expandedResizeEdges)[number]
+const fabPos = ref<FloatingPos | null>(null)
+const drawerPos = ref<FloatingPos | null>(null)
+const fabDragging = ref(false)
+const drawerDragging = ref(false)
+const viewportTick = ref(0)
 const llmModel = ref('')
 const modelOptions = ref<string[]>(['gpt-4o-mini', 'gpt-4o', 'gpt-4.1-mini', 'gpt-4.1'])
 const modelBusy = ref(false)
@@ -452,11 +474,43 @@ const pageContext = computed((): AiPageContext => {
   }
 })
 
+function viewportNow(): { width: number; height: number } {
+  viewportTick.value
+  if (typeof window === 'undefined') return { width: 1280, height: 800 }
+  return { width: window.innerWidth || 1280, height: window.innerHeight || 800 }
+}
+
+function currentExpandedPos(): FloatingPos {
+  const w = clampExpandedWidth(expandedWidthPx.value)
+  const h = clampExpandedHeight(expandedHeightPx.value)
+  const vp = viewportNow()
+  if (drawerPos.value) return clampFloatingPos(drawerPos.value, { width: w, height: h }, vp)
+  return defaultExpandedDrawerPos(vp, { width: w, height: h })
+}
+
+const fabStyle = computed(() => {
+  if (!fabPos.value) return {}
+  const p = clampFloatingPos(fabPos.value, AI_FAB_SIZE, viewportNow())
+  return {
+    left: `${p.left}px`,
+    top: `${p.top}px`,
+    right: 'auto',
+    bottom: 'auto',
+  }
+})
+
 const drawerPanelStyle = computed(() => {
   if (expanded.value) {
+    const w = clampExpandedWidth(expandedWidthPx.value)
+    const h = clampExpandedHeight(expandedHeightPx.value)
+    const pos = currentExpandedPos()
     return {
-      width: `${clampExpandedWidth(expandedWidthPx.value)}px`,
-      height: `${clampExpandedHeight(expandedHeightPx.value)}px`,
+      width: `${w}px`,
+      height: `${h}px`,
+      left: `${pos.left}px`,
+      top: `${pos.top}px`,
+      position: 'fixed' as const,
+      margin: '0',
     }
   }
   if (typeof window !== 'undefined' && window.innerWidth < 480) return { width: '100vw' }
@@ -677,6 +731,94 @@ function onInputKeydown(ev: KeyboardEvent) {
   void onSend()
 }
 
+function onFabPointerDown(ev: PointerEvent) {
+  if (ev.button != null && ev.button !== 0) return
+  ev.preventDefault()
+  const startX = ev.clientX
+  const startY = ev.clientY
+  const vp = viewportNow()
+  const origin = fabPos.value
+    ? clampFloatingPos(fabPos.value, AI_FAB_SIZE, vp)
+    : clampFloatingPos(
+        {
+          left: vp.width - AI_FAB_SIZE.width - AI_FAB_DEFAULT_RIGHT,
+          top: vp.height - AI_FAB_SIZE.height - AI_FAB_DEFAULT_BOTTOM,
+        },
+        AI_FAB_SIZE,
+        vp,
+      )
+  let dragged = false
+  fabDragging.value = false
+  const target = ev.currentTarget as HTMLElement
+  try {
+    target.setPointerCapture(ev.pointerId)
+  } catch {
+    /* ignore */
+  }
+  const onMove = (e: PointerEvent) => {
+    const dx = e.clientX - startX
+    const dy = e.clientY - startY
+    if (!dragged && isDragNotClick(dx, dy)) {
+      dragged = true
+      fabDragging.value = true
+    }
+    if (!dragged) return
+    fabPos.value = clampFloatingPos(
+      { left: origin.left + dx, top: origin.top + dy },
+      AI_FAB_SIZE,
+      viewportNow(),
+    )
+  }
+  const onUp = () => {
+    window.removeEventListener('pointermove', onMove)
+    window.removeEventListener('pointerup', onUp)
+    try {
+      target.releasePointerCapture(ev.pointerId)
+    } catch {
+      /* ignore */
+    }
+    fabDragging.value = false
+    if (dragged && fabPos.value) {
+      saveFloatingPos(AI_FAB_POS_KEY, fabPos.value)
+      return
+    }
+    openDrawer()
+  }
+  window.addEventListener('pointermove', onMove)
+  window.addEventListener('pointerup', onUp)
+}
+
+function onHeadPointerDown(ev: PointerEvent) {
+  if (!expanded.value) return
+  if (ev.button != null && ev.button !== 0) return
+  const el = ev.target as HTMLElement | null
+  if (el?.closest('button, select, a, input, textarea, label, .ai-drawer__model-wrap')) return
+  ev.preventDefault()
+  const startX = ev.clientX
+  const startY = ev.clientY
+  const origin = currentExpandedPos()
+  const w = clampExpandedWidth(expandedWidthPx.value)
+  const h = clampExpandedHeight(expandedHeightPx.value)
+  drawerDragging.value = true
+  const onMove = (e: PointerEvent) => {
+    const dx = e.clientX - startX
+    const dy = e.clientY - startY
+    drawerPos.value = clampFloatingPos(
+      { left: origin.left + dx, top: origin.top + dy },
+      { width: w, height: h },
+      viewportNow(),
+    )
+  }
+  const onUp = () => {
+    window.removeEventListener('pointermove', onMove)
+    window.removeEventListener('pointerup', onUp)
+    drawerDragging.value = false
+    if (drawerPos.value) saveFloatingPos(AI_DRAWER_POS_KEY, drawerPos.value)
+  }
+  window.addEventListener('pointermove', onMove)
+  window.addEventListener('pointerup', onUp)
+}
+
 function onResizePointerDown(ev: PointerEvent) {
   resizing = true
   const startX = ev.clientX
@@ -707,6 +849,7 @@ function onExpandedResizePointerDown(ev: PointerEvent, edge: ExpandedResizeEdge)
   const startY = ev.clientY
   const startW = expandedWidthPx.value
   const startH = expandedHeightPx.value
+  const startPos = currentExpandedPos()
   const target = ev.currentTarget as HTMLElement
   target.setPointerCapture(ev.pointerId)
   const onMove = (e: PointerEvent) => {
@@ -715,12 +858,33 @@ function onExpandedResizePointerDown(ev: PointerEvent, edge: ExpandedResizeEdge)
     const dy = e.clientY - startY
     let nextW = startW
     let nextH = startH
+    let nextLeft = startPos.left
+    let nextTop = startPos.top
     if (edge.includes('e')) nextW = startW + dx
-    if (edge.includes('w')) nextW = startW - dx
+    if (edge.includes('w')) {
+      nextW = startW - dx
+      nextLeft = startPos.left + dx
+    }
     if (edge.includes('s')) nextH = startH + dy
-    if (edge.includes('n')) nextH = startH - dy
-    expandedWidthPx.value = clampExpandedWidth(nextW)
-    expandedHeightPx.value = clampExpandedHeight(nextH)
+    if (edge.includes('n')) {
+      nextH = startH - dy
+      nextTop = startPos.top + dy
+    }
+    const clampedW = clampExpandedWidth(nextW)
+    const clampedH = clampExpandedHeight(nextH)
+    if (edge.includes('w') && clampedW !== Math.round(nextW)) {
+      nextLeft = startPos.left + (startW - clampedW)
+    }
+    if (edge.includes('n') && clampedH !== Math.round(nextH)) {
+      nextTop = startPos.top + (startH - clampedH)
+    }
+    expandedWidthPx.value = clampedW
+    expandedHeightPx.value = clampedH
+    drawerPos.value = clampFloatingPos(
+      { left: nextLeft, top: nextTop },
+      { width: clampedW, height: clampedH },
+      viewportNow(),
+    )
   }
   const onUp = () => {
     resizing = false
@@ -731,6 +895,7 @@ function onExpandedResizePointerDown(ev: PointerEvent, edge: ExpandedResizeEdge)
     }
     window.removeEventListener('pointermove', onMove)
     window.removeEventListener('pointerup', onUp)
+    if (drawerPos.value) saveFloatingPos(AI_DRAWER_POS_KEY, drawerPos.value)
     persistNow()
   }
   window.addEventListener('pointermove', onMove)
@@ -738,8 +903,27 @@ function onExpandedResizePointerDown(ev: PointerEvent, edge: ExpandedResizeEdge)
 }
 
 function onWindowResize() {
+  viewportTick.value += 1
   expandedWidthPx.value = clampExpandedWidth(expandedWidthPx.value)
   expandedHeightPx.value = clampExpandedHeight(expandedHeightPx.value)
+  if (fabPos.value) {
+    fabPos.value = clampFloatingPos(fabPos.value, AI_FAB_SIZE, viewportNow())
+  }
+  if (drawerPos.value) {
+    drawerPos.value = clampFloatingPos(
+      drawerPos.value,
+      {
+        width: clampExpandedWidth(expandedWidthPx.value),
+        height: clampExpandedHeight(expandedHeightPx.value),
+      },
+      viewportNow(),
+    )
+  }
+}
+
+function onFloatingReset() {
+  fabPos.value = null
+  drawerPos.value = null
 }
 
 function onGlobalKeydown(ev: KeyboardEvent) {
@@ -941,7 +1125,10 @@ onMounted(() => {
     expandedWidthPx.value = defs.width
     expandedHeightPx.value = defs.height
   }
+  fabPos.value = loadFloatingPos(AI_FAB_POS_KEY)
+  drawerPos.value = loadFloatingPos(AI_DRAWER_POS_KEY)
   window.addEventListener('report-editor-ai-settings-changed', onSettingsChanged)
+  window.addEventListener('report-editor-ai-floating-reset', onFloatingReset)
   window.addEventListener('keydown', onGlobalKeydown)
   window.addEventListener('resize', onWindowResize)
 })
@@ -950,6 +1137,7 @@ onUnmounted(() => {
   if (copiedTimer) clearTimeout(copiedTimer)
   if (scrollRaf) cancelAnimationFrame(scrollRaf)
   window.removeEventListener('report-editor-ai-settings-changed', onSettingsChanged)
+  window.removeEventListener('report-editor-ai-floating-reset', onFloatingReset)
   window.removeEventListener('keydown', onGlobalKeydown)
   window.removeEventListener('resize', onWindowResize)
 })
@@ -970,12 +1158,18 @@ onUnmounted(() => {
   font-weight: 700;
   font-size: 13px;
   letter-spacing: 0.06em;
-  cursor: pointer;
+  cursor: grab;
+  touch-action: none;
   display: grid;
   place-items: center;
   overflow: visible;
   filter: drop-shadow(0 10px 18px rgba(220, 38, 38, 0.28));
   transition: transform 0.15s ease, filter 0.15s ease;
+}
+
+.ai-fab--dragging {
+  cursor: grabbing;
+  transition: none;
 }
 
 .ai-fab__neon {
@@ -1089,19 +1283,17 @@ onUnmounted(() => {
   position: fixed;
   inset: 0;
   z-index: 9100;
-  background: rgba(8, 12, 24, 0.45);
+  background: rgba(40, 44, 52, 0.28);
   display: flex;
   justify-content: flex-end;
   align-items: stretch;
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
 }
 
 .ai-drawer-backdrop--expanded {
   justify-content: center;
   align-items: center;
   padding: 12px;
-  background: rgba(6, 10, 20, 0.55);
+  background: rgba(40, 44, 52, 0.32);
 }
 
 .ai-drawer {
@@ -1131,6 +1323,11 @@ onUnmounted(() => {
   border: 1px solid var(--ai-glass-border);
   box-shadow: 0 24px 64px rgba(0, 0, 0, 0.45);
   border-left: 1px solid var(--ai-glass-border);
+  z-index: 9101;
+}
+
+.ai-drawer--dragging {
+  user-select: none;
 }
 
 .ai-drawer__resize {
@@ -1234,6 +1431,15 @@ onUnmounted(() => {
   padding: 12px 14px;
   border-bottom: 1px solid var(--ai-glass-border);
   flex-shrink: 0;
+}
+
+.ai-drawer__head--draggable {
+  cursor: grab;
+  touch-action: none;
+}
+
+.ai-drawer--dragging .ai-drawer__head--draggable {
+  cursor: grabbing;
 }
 
 .ai-drawer__head-left,

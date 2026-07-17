@@ -1,15 +1,15 @@
 {
-  "version": "0.3.102",
-  "releasedAt": "2026-07-17T10:09:13.578Z",
-  "notes": "Report Editor AI 0.3.102\n\n- Windows 分屏插 U 盘：Removable + USB 总线 + 新盘符差集检测提示（025）",
+  "version": "0.3.103",
+  "releasedAt": "2026-07-17T12:13:22.895Z",
+  "notes": "Report Editor AI 0.3.103\n\n- AI 悬浮按钮可拖动并记忆；展开态对话窗标题栏可拖（026）\n- 遮罩去模糊改浅灰、点外不关；设置可恢复默认位置",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.102-x64.exe",
+      "url": "Report Editor AI-Setup-0.3.103-x64.exe",
       "sha256": "",
       "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.102-arm64.dmg",
+      "url": "Report Editor AI-0.3.103-arm64.dmg",
       "sha256": "",
       "size": 0
     }

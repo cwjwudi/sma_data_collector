@@ -126,7 +126,13 @@
       <button type="button" class="settings-btn settings-btn--muted" :disabled="busy || !form.enabled" @click="onRegenerate">
         生成 Agent 令牌
       </button>
+      <button type="button" class="settings-btn settings-btn--muted" @click="onResetFloatingPos">
+        恢复 AI 按钮/对话窗默认位置
+      </button>
     </div>
+    <p class="settings-field-hint">
+      「恢复默认位置」仅清除本机记住的 AI 悬浮按钮与展开对话窗坐标，不影响 LLM 配置与会话内容。
+    </p>
 
     <div v-if="settings.has_agent_token" class="settings-note">
       当前 Agent 令牌尾号：<code>{{ settings.agent_token_hint || '****' }}</code>
@@ -179,6 +185,7 @@ import {
   type AiSettingsPublic,
 } from '@/api/aiSettings'
 import SuggestCombobox from '@/components/report-template/SuggestCombobox.vue'
+import { clearAiFloatingPositions } from '@/features/ai-assistant/floating-pos'
 import { isModelInUpstreamList, pickPreferredChatModel } from '@/lib/ai-model-list'
 
 defineOptions({ name: 'AiSettingsSection' })
@@ -276,6 +283,13 @@ async function load() {
 
 function toggleEnabled() {
   form.enabled = !form.enabled
+}
+
+function onResetFloatingPos() {
+  clearAiFloatingPositions()
+  window.dispatchEvent(new CustomEvent('report-editor-ai-floating-reset'))
+  msg.value = '已恢复 AI 按钮与对话窗默认位置'
+  msgTone.value = 'ok'
 }
 
 async function onSave() {
