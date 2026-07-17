@@ -32,6 +32,11 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "update.applied": "更新已生效",
   "update.download_installer": "下载安装包",
   "audit.export": "导出操作审计",
+  "history.removable_open": "历史报表：打开可移动存储到右侧",
+  "history.removable_dismiss": "历史报表：忽略可移动存储提示",
+  "history.select_right_root": "历史报表：选择右侧目录",
+  "history.copy": "历史报表：复制到对侧目录",
+  "history.move": "历史报表：移动到对侧目录",
 };
 
 export const AUDIT_ACTION_OPTIONS: { value: string; label: string }[] = Object.entries(

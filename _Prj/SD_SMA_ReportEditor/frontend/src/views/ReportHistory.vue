@@ -202,6 +202,13 @@ import {
   saveReportExportPrefs,
 } from "@/lib/report-export-prefs";
 import { entryPathOf, summarizeTransferResult } from "@/lib/history-selection";
+import {
+  buildHistoryTransferAudit,
+  buildRemovableDismissAudit,
+  buildRemovableOpenAudit,
+  buildSelectRightRootAudit,
+} from "@/lib/history-audit";
+import { auditLog } from "@/lib/auditLog";
 import { appConfirm, appConfirmSaveLeave } from "@/composables/useAppConfirm";
 import { segmentsForDepth, shouldApplyScanGeneration } from "@/lib/report-history-nav";
 
@@ -525,6 +532,7 @@ async function onPickRightRoot() {
   right.relSegments = [];
   right.pageIndex = 0;
   right.selected = new Set();
+  void auditLog(buildSelectRightRootAudit(picked));
   await refresh("right");
 }
 
@@ -614,6 +622,18 @@ async function runTransfer(from: Side, modeOp: "copy" | "move") {
       conflict,
     });
     msg.value = summarizeTransferResult(res) + (res.error ? ` · ${res.error}` : "");
+    void auditLog(
+      buildHistoryTransferAudit({
+        mode: modeOp,
+        from,
+        sourceRoot,
+        destRoot,
+        destDir: destPane.cwd,
+        conflict,
+        sourceCount: sources.length,
+        res,
+      }),
+    );
     srcPane.selected = new Set();
     await refresh(from);
     await refresh(to);
@@ -700,12 +720,14 @@ async function confirmOpenRemovable() {
   right.pageIndex = 0;
   right.selected = new Set();
   pendingRemovable.value = null;
+  void auditLog(buildRemovableOpenAudit(vol));
   await refresh("right");
 }
 
 function dismissRemovable() {
   if (pendingRemovable.value) {
     dismissedRemovablePaths.value.add(normalizeVolKey(pendingRemovable.value.path));
+    void auditLog(buildRemovableDismissAudit(pendingRemovable.value));
   }
   pendingRemovable.value = null;
 }

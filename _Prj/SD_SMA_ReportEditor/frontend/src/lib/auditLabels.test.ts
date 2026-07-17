@@ -33,6 +33,11 @@ describe("auditLabels", () => {
       "db.connection_save",
       "export.manual_pdf",
       "audit.export",
+      "history.removable_open",
+      "history.removable_dismiss",
+      "history.select_right_root",
+      "history.copy",
+      "history.move",
     ];
     for (const k of required) {
       expect(AUDIT_ACTION_LABELS[k]).toBeTruthy();

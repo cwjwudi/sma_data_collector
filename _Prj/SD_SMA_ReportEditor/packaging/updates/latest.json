@@ -1,17 +1,17 @@
 {
-  "version": "0.3.106",
-  "releasedAt": "2026-07-17T12:46:55.762Z",
-  "notes": "Report Editor AI 0.3.106\n\n- P2-C：版式区 SQL 填充高度与正文对齐（去掉 minH 短路）",
+  "version": "0.3.107",
+  "releasedAt": "2026-07-17T12:55:07.144Z",
+  "notes": "Report Editor AI 0.3.107\n\n- 027：历史报表可移动盘确认/忽略、手选右侧目录、左⇄右复制/移动写入操作审计",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.106-x64.exe",
+      "url": "Report Editor AI-Setup-0.3.107-x64.exe",
       "sha256": "",
       "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.106-arm64.dmg",
-      "sha256": "87ef24e118dd5d06a79552a4f2965eeb846c64a98e86ba922f529fbb86c83375",
-      "size": 182048190
+      "url": "Report Editor AI-0.3.107-arm64.dmg",
+      "sha256": "",
+      "size": 0
     }
   }
 }
