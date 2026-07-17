@@ -9,10 +9,10 @@ import {
   formatOpcuaReadPayload,
   pickPreferredOpcServerId,
   pickPreferredSqlConnectionId,
+  bindScalarSqlParams,
   resolveSqlParamValues,
   sqlResponseFirstScalar,
   sqlResponseGridSummary,
-  substituteScalarSqlParams,
   type BindingPreviewCell,
   type MongoDedupeTask,
   type SqlDedupeTask,
@@ -125,11 +125,11 @@ export function useReportBindingPreview(tmplRef: Ref<ReportTemplate | null>): Re
 
       const batchBinding = resolveAutoBatchOpcBinding(loadReportGeneratorPrefs());
 
-      async function substituteSqlWithResolvedParams(
+      async function bindSqlWithResolvedParams(
         sql: string,
         params: TableSqlParamBinding[],
         engine?: string,
-      ): Promise<string> {
+      ): Promise<{ sql: string; params: unknown[] }> {
         const paramValues = await resolveSqlParamValues(params, {
           defaultOpcServerId: opcServerId,
           batchBinding,
@@ -142,11 +142,17 @@ export function useReportBindingPreview(tmplRef: Ref<ReportTemplate | null>): Re
               body: { node_id: nodeId },
             })) as { ok?: boolean; message?: string; value?: unknown },
         });
-        return substituteScalarSqlParams(sql, params, paramValues, engine);
+        return bindScalarSqlParams(sql, params, paramValues, engine);
       }
 
-      async function resolveScalarSqlTask(task: SqlDedupeTask): Promise<string> {
-        return substituteSqlWithResolvedParams(task.sql, task.params || [], engineOfConnection(task.connectionId));
+      async function resolveScalarSqlTask(
+        task: SqlDedupeTask,
+      ): Promise<{ sql: string; params: unknown[] }> {
+        return bindSqlWithResolvedParams(
+          task.sql,
+          task.params || [],
+          engineOfConnection(task.connectionId),
+        );
       }
 
       async function resolveMongoParamValues(params: TableSqlParamBinding[]): Promise<Record<number, unknown>> {
@@ -264,13 +270,14 @@ export function useReportBindingPreview(tmplRef: Ref<ReportTemplate | null>): Re
         await runPool(sqlTasks, 6, async (task) => {
           if (gen !== generation) return;
           try {
-            const sql = await resolveScalarSqlTask(task);
+            const bound = await resolveScalarSqlTask(task);
             stats.sqlQueries += 1;
             const body: Record<string, unknown> = {
               connection_id: task.connectionId,
-              sql,
+              sql: bound.sql,
               limit: 200,
             };
+            if (bound.params.length) body.params = bound.params;
             // 可视化点选生成的标量 SQL 带有库名；连接未设默认库时必须传入，否则 MySQL 1046
             if (task.database) body.database = task.database;
             const data = await apiFetch("/database/query/sql", {
@@ -403,20 +410,28 @@ export function useReportBindingPreview(tmplRef: Ref<ReportTemplate | null>): Re
                 retriedTables.push(tableName);
                 sql = substituteSqlFillTableName(sql, task.tableOpc.engine, tableName);
               }
-              // 表格填充的筛选参数与标量 SQL 同规则取值：OPC UA / 结批批次号 / 手写兜底
+              // 表格填充的筛选参数与标量 SQL 同规则：真参数化下发（OPC / 结批批次号 / 手写兜底）
+              let sqlParams: unknown[] = [];
               if (task.params.length && /\{\{p\d+\}\}/i.test(sql)) {
-                sql = await substituteSqlWithResolvedParams(
+                const bound = await bindSqlWithResolvedParams(
                   sql,
                   task.params,
-                  task.tableOpc?.engine || task.fill?.visualSource?.engine || engineOfConnection(task.connectionId),
+                  task.tableOpc?.engine ||
+                    task.fill?.visualSource?.engine ||
+                    engineOfConnection(task.connectionId),
                 );
+                sql = bound.sql;
+                sqlParams = bound.params;
               }
-              sqlForDiag = sql;
+              sqlForDiag = sqlParams.length
+                ? `${sql} /* params=${JSON.stringify(sqlParams).slice(0, 500)} */`
+                : sql;
               const body: Record<string, unknown> = {
                 connection_id: task.connectionId,
                 sql,
                 limit: task.limit,
               };
+              if (sqlParams.length) body.params = sqlParams;
               if (task.database) body.database = task.database;
               stats.sqlQueries += 1;
               const data = await apiFetch("/database/query/sql", {

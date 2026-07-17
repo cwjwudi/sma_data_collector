@@ -413,6 +413,7 @@ async def query_sql(body: DbExecuteSqlRequest):
     lim = max(1, min(body.limit, 50000))
     eff_db = _effective_sql_database(conn, body.database, engine)
     try:
+        bind = body.params
         if _is_mysql_family(engine):
             res = db_readonly_service.run_mysql_readonly(
                 conn.get("host") or "127.0.0.1",
@@ -422,6 +423,7 @@ async def query_sql(body: DbExecuteSqlRequest):
                 eff_db,
                 body.sql,
                 lim,
+                params=bind,
             )
         elif engine == "postgres":
             res = db_readonly_service.run_postgres_readonly(
@@ -432,10 +434,11 @@ async def query_sql(body: DbExecuteSqlRequest):
                 eff_db or "postgres",
                 body.sql,
                 lim,
+                params=bind,
             )
         elif engine == "sqlite":
             path = conn.get("sqlite_path") or ""
-            res = db_readonly_service.run_sqlite_readonly(path, body.sql, lim)
+            res = db_readonly_service.run_sqlite_readonly(path, body.sql, lim, params=bind)
         else:
             raise HTTPException(400, "该引擎请使用 Mongo 查询接口")
         return res

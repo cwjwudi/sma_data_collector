@@ -600,6 +600,67 @@ export function substituteScalarSqlParams(
     .replace(/\{\{p(\d+)\}\}/gi, (_all, g: string) => renderParam(g));
 }
 
+/** 驱动占位符：sqlite 用 `?`，MySQL/MariaDB/Postgres 用 `%s`（与表预览 pk 过滤一致） */
+export function sqlParamPlaceholder(engine?: string): "%s" | "?" {
+  return String(engine || "").toLowerCase() === "sqlite" ? "?" : "%s";
+}
+
+/** 绑定参数值：不进 SQL 文本；语义对齐 quoteSqlScalarValue（数字 fallback、布尔→0/1） */
+export function coerceSqlBindValue(
+  value: unknown,
+  opts?: { numericStringAsNumber?: boolean },
+): unknown {
+  if (value === null || value === undefined) return null;
+  if (typeof value === "number") return Number.isFinite(value) ? value : null;
+  if (typeof value === "boolean") return value ? 1 : 0;
+  if (typeof value === "object") {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return String(value);
+    }
+  }
+  const s = String(value);
+  if (opts?.numericStringAsNumber && /^-?\d+(\.\d+)?$/.test(s.trim())) {
+    const n = Number(s.trim());
+    return Number.isFinite(n) ? n : s;
+  }
+  return s;
+}
+
+/**
+ * 将 `{{pN}}` / `'{{pN}}'` 编译为驱动占位符 + 有序 params（真参数化，P2-A）。
+ * 占位按出现顺序展开；值不进入 SQL 文本。
+ */
+export function bindScalarSqlParams(
+  sqlRaw: string,
+  params: TableSqlParamBinding[] | undefined,
+  values: Record<number, unknown>,
+  engine?: string,
+): { sql: string; params: unknown[] } {
+  const ph = sqlParamPlaceholder(engine);
+  const bound: unknown[] = [];
+  const resolveIndex = (g: string): unknown => {
+    const i = Number.parseInt(g, 10);
+    const p = params?.[i];
+    if (!p) return null;
+    if (Object.prototype.hasOwnProperty.call(values, i)) {
+      return coerceSqlBindValue(values[i], { numericStringAsNumber: false });
+    }
+    const lit = (p.literalFallback ?? "").trim();
+    if (!lit) return null;
+    return coerceSqlBindValue(lit, { numericStringAsNumber: true });
+  };
+  const sql = String(sqlRaw || "").replace(
+    /(['"])\s*\{\{p(\d+)\}\}\s*\1|\{\{p(\d+)\}\}/gi,
+    (_all, _quote: string | undefined, gQuoted: string | undefined, gBare: string | undefined) => {
+      bound.push(resolveIndex(gQuoted ?? gBare ?? ""));
+      return ph;
+    },
+  );
+  return { sql, params: bound };
+}
+
 function collectTableSqlFillLabelOpc(
   fill: TableSqlFillConfig,
   elId: string,

@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  bindScalarSqlParams,
   quoteSqlScalarValue,
+  sqlParamPlaceholder,
   sqlResponseFirstScalar,
   substituteScalarSqlParams,
 } from "@/lib/report-template/binding-preview-utils";
@@ -101,6 +103,90 @@ describe("substituteScalarSqlParams 透传 engine", () => {
     expect(
       substituteScalarSqlParams("SELECT * FROM t WHERE path = {{p0}}", params, { 0: "C:" + BS }, "mysql"),
     ).toBe("SELECT * FROM t WHERE path = 'C:" + BS + BS + "'");
+  });
+});
+
+describe("bindScalarSqlParams 真参数化（P2-A）", () => {
+  it("mysql/postgres 用 %s，sqlite 用 ?", () => {
+    expect(sqlParamPlaceholder("mysql")).toBe("%s");
+    expect(sqlParamPlaceholder("mariadb")).toBe("%s");
+    expect(sqlParamPlaceholder("postgres")).toBe("%s");
+    expect(sqlParamPlaceholder("sqlite")).toBe("?");
+  });
+
+  it("将 {{pN}} 编译为占位符，值只在 params 数组", () => {
+    const params: TableSqlParamBinding[] = [
+      { source: "opcua", opcuaNodeId: "ns=2;s=batch", aboveCellColumnIndex: 0, literalFallback: "" },
+    ];
+    const out = bindScalarSqlParams(
+      "SELECT v FROM t WHERE batch = {{p0}}",
+      params,
+      { 0: "A'01" },
+      "mysql",
+    );
+    expect(out.sql).toBe("SELECT v FROM t WHERE batch = %s");
+    expect(out.params).toEqual(["A'01"]);
+    expect(out.sql).not.toContain("A'01");
+  });
+
+  it("剥掉带引号占位符，不双包引号", () => {
+    const params: TableSqlParamBinding[] = [
+      { source: "opcua", opcuaNodeId: "n", aboveCellColumnIndex: 0, literalFallback: "" },
+    ];
+    const out = bindScalarSqlParams(
+      "SELECT * FROM t WHERE batch_no = '{{P0}}'",
+      params,
+      { 0: "BATCH-1" },
+      "mysql",
+    );
+    expect(out.sql).toBe("SELECT * FROM t WHERE batch_no = %s");
+    expect(out.params).toEqual(["BATCH-1"]);
+  });
+
+  it("params 顺序随占位出现顺序（乱序 p2 再 p0）", () => {
+    const params: TableSqlParamBinding[] = [
+      { source: "literal", opcuaNodeId: "", aboveCellColumnIndex: 0, literalFallback: "A" },
+      { source: "literal", opcuaNodeId: "", aboveCellColumnIndex: 0, literalFallback: "B" },
+      { source: "literal", opcuaNodeId: "", aboveCellColumnIndex: 0, literalFallback: "C" },
+    ];
+    const out = bindScalarSqlParams(
+      "SELECT {{p2}}, {{p0}}",
+      params,
+      { 0: "live0", 2: "live2" },
+      "postgres",
+    );
+    expect(out.sql).toBe("SELECT %s, %s");
+    expect(out.params).toEqual(["live2", "live0"]);
+  });
+
+  it("注入载荷与反斜杠不进入 SQL 文本", () => {
+    const params: TableSqlParamBinding[] = [
+      { source: "opcua", opcuaNodeId: "n", aboveCellColumnIndex: 0, literalFallback: "" },
+    ];
+    const payload = BS + "' OR 1=1--";
+    const out = bindScalarSqlParams(
+      "SELECT * FROM t WHERE path = {{p0}}",
+      params,
+      { 0: "C:" + BS },
+      "mysql",
+    );
+    expect(out.sql).toBe("SELECT * FROM t WHERE path = %s");
+    expect(out.params).toEqual(["C:" + BS]);
+    expect(out.sql).not.toContain(BS);
+    const inj = bindScalarSqlParams("SELECT * FROM t WHERE x = {{p0}}", params, { 0: payload }, "mysql");
+    expect(inj.sql).not.toContain("OR 1=1");
+    expect(inj.params).toEqual([payload]);
+  });
+
+  it("literal fallback：数字裸绑、字符串绑、缺省 NULL", () => {
+    const params: TableSqlParamBinding[] = [
+      { source: "literal", opcuaNodeId: "", aboveCellColumnIndex: 0, literalFallback: "42" },
+      { source: "literal", opcuaNodeId: "", aboveCellColumnIndex: 0, literalFallback: "RUN" },
+      { source: "literal", opcuaNodeId: "", aboveCellColumnIndex: 0, literalFallback: "" },
+    ];
+    const out = bindScalarSqlParams("SELECT {{p0}}, {{p1}}, {{p2}}", params, {}, "sqlite");
+    expect(out.sql).toBe("SELECT ?, ?, ?");
+    expect(out.params).toEqual([42, "RUN", null]);
   });
 });
 

@@ -93,6 +93,8 @@ class DbExecuteSqlRequest(BaseModel):
     sql: str
     limit: int = 200
     database: str | None = None  # 对象树当前库，优先于连接默认 database（MySQL/PG）
+    # 驱动绑定参数（与 SQL 中 %s / ? 占位顺序一致）；缺省则按字面量 SQL 执行
+    params: list[Any] | None = None
 
 
 class DbMongoAggregateRequest(BaseModel):
