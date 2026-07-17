@@ -1,17 +1,17 @@
 {
-  "version": "0.3.105",
-  "releasedAt": "2026-07-17T12:37:41.977Z",
-  "notes": "Report Editor AI 0.3.105\n\n- P1-A：SQL 填充预览截断提示接入属性面板\n- P3-B：可视化列目录 deep-watch 防抖 + 列宽拖拽亚像素余数",
+  "version": "0.3.106",
+  "releasedAt": "2026-07-17T12:46:55.762Z",
+  "notes": "Report Editor AI 0.3.106\n\n- P2-C：版式区 SQL 填充高度与正文对齐（去掉 minH 短路）",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.105-x64.exe",
+      "url": "Report Editor AI-Setup-0.3.106-x64.exe",
       "sha256": "",
       "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.105-arm64.dmg",
-      "sha256": "",
-      "size": 0
+      "url": "Report Editor AI-0.3.106-arm64.dmg",
+      "sha256": "87ef24e118dd5d06a79552a4f2965eeb846c64a98e86ba922f529fbb86c83375",
+      "size": 182048190
     }
   }
 }

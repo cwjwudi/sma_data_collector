@@ -451,11 +451,10 @@ export function intrinsicOuterHeightForZoneTable(
 ): number {
   if (el.type !== "table") return 20;
   // 只读：不 ensure、不写回 el
+  // P2-C：与正文 intrinsicOuterHeightForTemplateTable 对齐——SQL 填充不再走
+  // chrome+rows*minH 短路，统一内容感知行高（避免页眉/页脚与正文高度漂移）。
   const rows = clampTableRowsDim(el.tableRows, 3);
   const minH = clampTableRowHeightPx(el.tableRowHeightPx);
-  if (el.tableSqlFill?.enabled) {
-    return zoneTableVerticalChromePx() + rows * minH;
-  }
   const heights = computeZoneTableContentRowHeightsPx(el, cellTextAt);
   return zoneTableVerticalChromePx() + sumTableRowHeightsPx(heights, minH, rows);
 }

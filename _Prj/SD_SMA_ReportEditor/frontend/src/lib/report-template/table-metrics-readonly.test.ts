@@ -19,8 +19,10 @@ import {
   intrinsicOuterHeightForZoneTable,
   minOuterSizeForZoneTable,
   zoneTableColumnInnerWidthsPx,
+  zoneTableVerticalChromePx,
   type LayoutZoneElement,
 } from "@/lib/report-template/layout-zone-element";
+import { hydrateTableSqlFill } from "@/lib/report-template/table-sql-fill";
 
 /** 构造「网格已一致、但 tableColWidthsPx/tableColBgColors 故意留空」的正文表：
  *  旧实现会在度量时把两个空数组补齐到列数 → 正好用来验证「无副作用」。 */
@@ -141,5 +143,18 @@ describe("度量 getter 无副作用（渲染/computed 安全）", () => {
     expect(el.tableColWidthsPx).toHaveLength(0);
     expect(el.tableColBgColors).toHaveLength(0);
     expect(el.tableCells).toBe(cellsRef);
+  });
+
+  it("P2-C：Zone SQL 填充不再走 chrome+rows*minH 短路，长文案抬高外框", () => {
+    const long = "很长的单元格文案 ".repeat(40);
+    const el = makeZoneTable({
+      tableSqlFill: hydrateTableSqlFill({ enabled: true, maxRows: 2000 }),
+      tableRowHeightPx: 24,
+      w: 200,
+    });
+    ensureZoneTableGrid(el);
+    const shortCircuit = zoneTableVerticalChromePx() + 3 * 24;
+    const h = intrinsicOuterHeightForZoneTable(el, (ri, ci) => (ri === 1 && ci === 0 ? long : ""));
+    expect(h).toBeGreaterThan(shortCircuit);
   });
 });
