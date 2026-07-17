@@ -409,6 +409,7 @@
             v-if="zoneSqlFillEnabled"
             :fill="ensureZoneTableSqlFill(el)"
             :column-count="el.tableCols ?? 4"
+            :preview-key="'ztblfill:' + el.id"
             button-class="lpep-file-btn"
             @opc-pick-param="openZoneSqlOpcPicker"
             @layout-mode-change="onZoneSqlLayoutModeChange"

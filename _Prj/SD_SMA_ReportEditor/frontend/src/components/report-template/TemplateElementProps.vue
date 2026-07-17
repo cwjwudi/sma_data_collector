@@ -439,6 +439,7 @@
             :fill="ensureTplTableSqlFill(el)"
             :column-count="el.tableCols ?? 4"
             :allow-split-reports="true"
+            :preview-key="'tblfill:' + el.id"
             button-class="lpep-file-btn"
             @opc-pick-param="openTplSqlOpcPicker"
             @sync-headers="onTplSqlFillSyncHeaders"

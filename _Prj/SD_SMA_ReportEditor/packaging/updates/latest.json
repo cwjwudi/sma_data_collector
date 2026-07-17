@@ -1,15 +1,15 @@
 {
-  "version": "0.3.104",
-  "releasedAt": "2026-07-17T12:27:28.089Z",
-  "notes": "Report Editor AI 0.3.104\n\n- SQL 参数真参数化：{{pN}}→%s/? + params 下发（002 P2-A）\n- /database/query/sql 支持 params 绑定",
+  "version": "0.3.105",
+  "releasedAt": "2026-07-17T12:37:41.977Z",
+  "notes": "Report Editor AI 0.3.105\n\n- P1-A：SQL 填充预览截断提示接入属性面板\n- P3-B：可视化列目录 deep-watch 防抖 + 列宽拖拽亚像素余数",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.104-x64.exe",
+      "url": "Report Editor AI-Setup-0.3.105-x64.exe",
       "sha256": "",
       "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.104-arm64.dmg",
+      "url": "Report Editor AI-0.3.105-arm64.dmg",
       "sha256": "",
       "size": 0
     }

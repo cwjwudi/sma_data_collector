@@ -17,6 +17,7 @@
 
 <script setup lang="ts">
 import { computed, ref } from "vue";
+import { takeLayoutDeltaFromScreen } from "@/lib/report-template/column-resize-pointer";
 
 const props = withDefaults(
   defineProps<{
@@ -58,12 +59,15 @@ function gutterLeftPx(bi: number): number {
 
 const activeBoundary = ref<number | null>(null);
 let lastClientX = 0;
+/** 布局像素亚像素余数（P3-B）：高缩放时不足 1px 的步长不丢弃 */
+let layoutDxAccum = 0;
 
 function onDown(bi: number, ev: PointerEvent) {
   if (props.disabled) return;
   const t = ev.currentTarget as HTMLElement;
   activeBoundary.value = bi;
   lastClientX = ev.clientX;
+  layoutDxAccum = 0;
   try {
     t.setPointerCapture(ev.pointerId);
   } catch {
@@ -71,10 +75,15 @@ function onDown(bi: number, ev: PointerEvent) {
   }
   const onMove = (e: PointerEvent) => {
     if (props.disabled) return;
-    const sc = props.layoutScale > 0 ? props.layoutScale : 1;
-    const dx = (e.clientX - lastClientX) / sc;
+    const screenDx = e.clientX - lastClientX;
     lastClientX = e.clientX;
-    if (dx !== 0) emit("resizeDelta", bi, dx);
+    const { emitDx, nextAccum } = takeLayoutDeltaFromScreen(
+      layoutDxAccum,
+      screenDx,
+      props.layoutScale,
+    );
+    layoutDxAccum = nextAccum;
+    if (emitDx !== 0) emit("resizeDelta", bi, emitDx);
   };
   const onUp = (e: PointerEvent) => {
     if (e.pointerId === ev.pointerId) {

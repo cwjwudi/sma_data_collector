@@ -1,5 +1,13 @@
 <template>
   <div class="tbl-sql-fill">
+    <p
+      v-if="truncationHintMessage"
+      class="tbl-sql-fill-policy-hint tbl-sql-fill-truncation-hint"
+      role="status"
+    >
+      {{ truncationHintMessage }}
+    </p>
+
     <label class="tbl-sql-fill-mode">
       <span class="tbl-sql-fill-mode-t">来源</span>
       <select v-model="fill.fillMode" :class="selectFieldClass">
@@ -200,7 +208,9 @@ import {
   applyTableSqlLayoutMode,
   syncVisualFillQueryAndResultNames,
 } from "@/lib/report-template/table-sql-visual-compile";
-import { computed, watch } from "vue";
+import { computed, inject, watch } from "vue";
+import { reportBindingPreviewKey } from "@/lib/report-template/template-editor-context";
+import { sqlFillPreviewTruncationHint } from "@/lib/report-template/table-sql-fill-preview";
 
 const props = withDefaults(
   defineProps<{
@@ -211,14 +221,29 @@ const props = withDefaults(
     selectClass?: string;
     buttonClass?: string;
     allowSplitReports?: boolean;
+    /** 绑定预览键（如 tblfill:elId / ztblfill:elId），用于 P1-A 截断提示 */
+    previewKey?: string;
   }>(),
   {
     textareaClass: "lpep-inp",
     selectClass: "",
     buttonClass: "",
     allowSplitReports: false,
+    previewKey: "",
   },
 );
+
+const bindingPreview = inject(reportBindingPreviewKey, null);
+
+/** P1-A：预览取回行数触及上限时提示「所见非所得」 */
+const truncationHintMessage = computed(() => {
+  const key = (props.previewKey || "").trim();
+  if (!key || !bindingPreview || props.fill.fillMode === "mongo") return "";
+  const cell = bindingPreview.values.value[key];
+  const fetched = cell?.tableSqlFill?.dataRows?.length ?? 0;
+  if (!fetched) return "";
+  return sqlFillPreviewTruncationHint(props.fill, fetched)?.message ?? "";
+});
 
 const emit = defineEmits<{
   opcPickParam: [slot: number];
@@ -480,6 +505,11 @@ input.tbl-sql-text-inp {
   background: rgb(254 252 232 / 0.95);
   border: 1px solid rgb(253 230 138 / 0.85);
   border-radius: 8px;
+}
+.tbl-sql-fill-truncation-hint {
+  color: #9a3412;
+  background: rgb(255 247 237 / 0.98);
+  border-color: rgb(254 215 170 / 0.95);
 }
 /** 与正文属性侧栏 input 协调，但保留原生下拉箭头与单行高度 */
 .tbl-sql-ddl {

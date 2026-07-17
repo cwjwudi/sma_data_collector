@@ -832,13 +832,40 @@ async function refreshLayoutPresetVisualSqlCatalog(): Promise<void> {
   layoutPresetVisualSqlCatalog.value = next;
 }
 
+/** P3-B：deep watch 防抖，避免拖拽每步全量重建可视化列目录 */
+const LAYOUT_VISUAL_SQL_CATALOG_DEBOUNCE_MS = 200;
+let layoutVisualSqlCatalogTimer: ReturnType<typeof setTimeout> | null = null;
+
+function scheduleRefreshLayoutPresetVisualSqlCatalog(immediate = false) {
+  if (layoutVisualSqlCatalogTimer) {
+    clearTimeout(layoutVisualSqlCatalogTimer);
+    layoutVisualSqlCatalogTimer = null;
+  }
+  if (immediate) {
+    void refreshLayoutPresetVisualSqlCatalog();
+    return;
+  }
+  layoutVisualSqlCatalogTimer = setTimeout(() => {
+    layoutVisualSqlCatalogTimer = null;
+    void refreshLayoutPresetVisualSqlCatalog();
+  }, LAYOUT_VISUAL_SQL_CATALOG_DEBOUNCE_MS);
+}
+
 watch(
   () => props.preset,
-  () => {
-    void refreshLayoutPresetVisualSqlCatalog();
+  (_v, _o, onCleanup) => {
+    scheduleRefreshLayoutPresetVisualSqlCatalog(false);
+    onCleanup(() => {
+      if (layoutVisualSqlCatalogTimer) {
+        clearTimeout(layoutVisualSqlCatalogTimer);
+        layoutVisualSqlCatalogTimer = null;
+      }
+    });
   },
-  { deep: true, immediate: true },
+  { deep: true },
 );
+
+scheduleRefreshLayoutPresetVisualSqlCatalog(true);
 
 function layoutPresetVisualOutputValue(el: LayoutZoneElement, ci: number): string {
   const fill = el.tableSqlFill;
@@ -1544,6 +1571,10 @@ onMounted(() => window.addEventListener("keydown", onWindowKeydown));
 onBeforeUnmount(() => {
   ptrUp();
   window.removeEventListener("keydown", onWindowKeydown);
+  if (layoutVisualSqlCatalogTimer) {
+    clearTimeout(layoutVisualSqlCatalogTimer);
+    layoutVisualSqlCatalogTimer = null;
+  }
 });
 
 function onWheel(ev: WheelEvent) {

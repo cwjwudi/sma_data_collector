@@ -1216,13 +1216,40 @@ async function refreshTplVisualSqlColumnCatalog(): Promise<void> {
   tplVisualSqlColumnCatalog.value = next;
 }
 
+/** P3-B：deep watch 防抖，避免拖拽每步全量重建可视化列目录 */
+const TPL_VISUAL_SQL_CATALOG_DEBOUNCE_MS = 200;
+let tplVisualSqlCatalogTimer: ReturnType<typeof setTimeout> | null = null;
+
+function scheduleRefreshTplVisualSqlColumnCatalog(immediate = false) {
+  if (tplVisualSqlCatalogTimer) {
+    clearTimeout(tplVisualSqlCatalogTimer);
+    tplVisualSqlCatalogTimer = null;
+  }
+  if (immediate) {
+    void refreshTplVisualSqlColumnCatalog();
+    return;
+  }
+  tplVisualSqlCatalogTimer = setTimeout(() => {
+    tplVisualSqlCatalogTimer = null;
+    void refreshTplVisualSqlColumnCatalog();
+  }, TPL_VISUAL_SQL_CATALOG_DEBOUNCE_MS);
+}
+
 watch(
   () => list.value,
-  () => {
-    void refreshTplVisualSqlColumnCatalog();
+  (_v, _o, onCleanup) => {
+    scheduleRefreshTplVisualSqlColumnCatalog(false);
+    onCleanup(() => {
+      if (tplVisualSqlCatalogTimer) {
+        clearTimeout(tplVisualSqlCatalogTimer);
+        tplVisualSqlCatalogTimer = null;
+      }
+    });
   },
-  { deep: true, immediate: true },
+  { deep: true },
 );
+
+scheduleRefreshTplVisualSqlColumnCatalog(true);
 
 function tplVisualSqlStructureMissing(el: TemplateElement): boolean {
   if (el.type !== "table" || !el.tableSqlFill?.enabled || el.tableSqlFill.fillMode !== "visual") return false;
@@ -1804,6 +1831,10 @@ function onPaperBlank(ev: PointerEvent) {
 onBeforeUnmount(() => {
   ptrUp();
   embedResizeObserver?.disconnect();
+  if (tplVisualSqlCatalogTimer) {
+    clearTimeout(tplVisualSqlCatalogTimer);
+    tplVisualSqlCatalogTimer = null;
+  }
 });
 
 function onDragOverRoot() {
