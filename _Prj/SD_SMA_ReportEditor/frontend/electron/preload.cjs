@@ -64,8 +64,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   /** 历史报表分屏：左⇄右 复制 / 移动（022） */
   historyTransfer: (opts) => ipcRenderer.invoke('history-transfer', opts || {}),
 
-  /** 可移动存储卷枚举（022） */
-  listRemovableVolumes: () => ipcRenderer.invoke('list-removable-volumes'),
+  /** 可移动存储卷枚举（022/025）；opts.resetBaseline 在开启分屏时重置 Win 盘符基线 */
+  listRemovableVolumes: (opts) => ipcRenderer.invoke('list-removable-volumes', opts || {}),
 
   /** 删除磁盘上的导出文件 */
   deleteExportFile: (opts) => ipcRenderer.invoke('delete-export-file', opts || {}),

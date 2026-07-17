@@ -122,10 +122,10 @@ interface Window {
       failed?: number;
       results?: Array<{ source: string; dest?: string; status: string; error?: string }>;
     }>;
-    listRemovableVolumes: () => Promise<{
+    listRemovableVolumes: (opts?: { resetBaseline?: boolean }) => Promise<{
       ok: boolean;
       error?: string;
-      volumes: Array<{ path: string; label: string; platform: string }>;
+      volumes: Array<{ path: string; label: string; platform: string; kind?: string }>;
     }>;
     deleteExportFile: (opts: { filePath: string }) => Promise<{ ok: boolean; error?: string }>;
     showItemInFolder: (filePath: string) => Promise<{ ok: boolean; error?: string }>;

@@ -1,15 +1,15 @@
 {
-  "version": "0.3.101",
-  "releasedAt": "2026-07-15T07:12:48.409Z",
-  "notes": "Report Editor AI 0.3.101\n\n- 修复普通表格单元格可视化 SQL 保存被拒（TemplateTableCell 补 scalarSql*）",
+  "version": "0.3.102",
+  "releasedAt": "2026-07-17T10:09:13.578Z",
+  "notes": "Report Editor AI 0.3.102\n\n- Windows 分屏插 U 盘：Removable + USB 总线 + 新盘符差集检测提示（025）",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.101-x64.exe",
+      "url": "Report Editor AI-Setup-0.3.102-x64.exe",
       "sha256": "",
       "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.101-arm64.dmg",
+      "url": "Report Editor AI-0.3.102-arm64.dmg",
       "sha256": "",
       "size": 0
     }

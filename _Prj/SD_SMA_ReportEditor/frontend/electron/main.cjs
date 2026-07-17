@@ -11,7 +11,10 @@ const { humanizePdfExportError } = require('./pdfExportErrors.cjs')
 const { outputPathForReportPart } = require('./pdf-export-paths.cjs')
 const { scanExportEntries, scanExportPdfsCompat } = require('./export-dir-scan.cjs')
 const { transferHistoryItems } = require('./history-transfer.cjs')
-const { listRemovableVolumes } = require('./removable-volumes.cjs')
+const {
+  listRemovableVolumesDetailed,
+  resetWinDriveBaseline,
+} = require('./removable-volumes.cjs')
 const {
   readLaunchSettings,
   writeLaunchSettings,
@@ -768,10 +771,16 @@ ipcMain.handle('history-transfer', async (_event, opts) => {
   return transferHistoryItems(opts || {})
 })
 
-/** 可移动卷列表（插拔轮询由渲染进程调用） */
-ipcMain.handle('list-removable-volumes', async () => {
+/** 可移动卷列表（插拔轮询由渲染进程调用；025：Win 含 USB/新盘符） */
+ipcMain.handle('list-removable-volumes', async (_event, opts) => {
   try {
-    return { ok: true, volumes: listRemovableVolumes() }
+    if (opts && opts.resetBaseline) resetWinDriveBaseline()
+    const detailed = listRemovableVolumesDetailed()
+    return {
+      ok: true,
+      volumes: detailed.volumes || [],
+      error: detailed.error || undefined,
+    }
   } catch (e) {
     return { ok: false, error: String(e.message || e), volumes: [] }
   }

@@ -656,34 +656,35 @@ async function deleteFile(r: PdfEntry) {
   if (split.value) await refresh("right");
 }
 
-async function pollRemovable() {
+function normalizeVolKey(p: string): string {
+  return (p || "").replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+}
+
+async function pollRemovable(opts?: { resetBaseline?: boolean }) {
   if (!split.value || !window.electronAPI?.listRemovableVolumes) return;
   try {
-    const res = await window.electronAPI.listRemovableVolumes();
-    if (!res?.ok) return;
+    const res = await window.electronAPI.listRemovableVolumes(
+      opts?.resetBaseline ? { resetBaseline: true } : undefined,
+    );
+    if (!res?.ok) {
+      if (res?.error) msg.value = `可移动存储检测失败：${res.error}（仍可用「选右侧路径…」）`;
+      return;
+    }
     const vols = res.volumes || [];
-    const right = (rightRoot.value || "").replace(/\\/g, "/").toLowerCase();
+    const right = normalizeVolKey(rightRoot.value || "");
     const candidate = vols.find((v) => {
-      const p = (v.path || "").replace(/\\/g, "/").toLowerCase();
+      const p = normalizeVolKey(v.path || "");
       if (!p) return false;
       if (dismissedRemovablePaths.value.has(p)) return false;
-      if (right && (right === p || right.startsWith(p.replace(/\/?$/, "/")))) return false;
+      if (right && (right === p || right.startsWith(`${p}/`))) return false;
       return true;
     });
     if (candidate) {
       pendingRemovable.value = candidate;
     } else if (pendingRemovable.value) {
-      const still = vols.some(
-        (v) =>
-          (v.path || "").replace(/\\/g, "/").toLowerCase() ===
-          (pendingRemovable.value!.path || "").replace(/\\/g, "/").toLowerCase(),
-      );
+      const pendingKey = normalizeVolKey(pendingRemovable.value.path || "");
+      const still = vols.some((v) => normalizeVolKey(v.path || "") === pendingKey);
       if (!still) pendingRemovable.value = null;
-    }
-
-    // 右侧路径所在卷消失
-    if (rightRoot.value && vols.length >= 0) {
-      // 仅当右侧路径位于某曾见可移动卷前缀下且该卷不在列表时，靠 refresh 报错即可
     }
   } catch {
     /* ignore */
@@ -704,16 +705,16 @@ async function confirmOpenRemovable() {
 
 function dismissRemovable() {
   if (pendingRemovable.value) {
-    const p = pendingRemovable.value.path.replace(/\\/g, "/").toLowerCase();
-    dismissedRemovablePaths.value.add(p);
+    dismissedRemovablePaths.value.add(normalizeVolKey(pendingRemovable.value.path));
   }
   pendingRemovable.value = null;
 }
 
 function startRemovablePoll() {
   stopRemovablePoll();
-  void pollRemovable();
-  removableTimer = setInterval(() => void pollRemovable(), 3000);
+  // 开启分屏时重置 Win 盘符基线，便于「先开分屏再插盘」用新盘符差集检出
+  void pollRemovable({ resetBaseline: true });
+  removableTimer = setInterval(() => void pollRemovable(), 2500);
 }
 
 function stopRemovablePoll() {
