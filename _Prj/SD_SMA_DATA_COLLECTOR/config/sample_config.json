@@ -249,6 +249,7 @@
     "max_retry_interval_seconds": 300,
     "max_attempts": 0,
     "completed_retention_days": 1,
+    "cleanup_interval_seconds": 3600,
     "max_queue_rows": 1000000
   },
   "logging": {

@@ -28,6 +28,7 @@ SQLite 写入失败、文件达到容量上限、磁盘满或锁等待超时都�
     "max_retry_interval_seconds": 300,
     "max_attempts": 0,
     "completed_retention_days": 1,
+    "cleanup_interval_seconds": 3600,
     "max_queue_rows": 1000000
   }
 }
@@ -36,7 +37,10 @@ SQLite 写入失败、文件达到容量上限、磁盘满或锁等待超时都�
 - `synchronous=FULL`：默认工业可靠性设置。`NORMAL` 性能更高，但主机断电边界弱于 FULL。
 - `max_attempts=0`：无限重试；大于零时超过次数转入 dead-letter。
 - `max_queue_rows`：包含 pending、processing、retry 和 dead-letter。达到上限后拒绝新数据，不会删除最旧记录。
-- `completed_retention_days`：成功记录的审计保留天数；正常停机时清理过期记录。
+- `completed_retention_days`：成功记录的审计保留天数。
+- `cleanup_interval_seconds`：运行期间清理过期成功记录的周期，默认 3600 秒；启动和正常停机时也会执行清理。普通 `DELETE` 释放的 SQLite 页面会供后续写入复用，使文件稳定在保留窗口的高水位附近，但不会主动缩小主文件。
+
+运行期清理已使用测试 PLC `192.168.50.233` 和实际 MySQL 完成实机闭环验证，详见 `PERSISTENT_CLEANUP_LIVE_REPORT_20260717.md`。
 
 SQLite 文件、`-wal` 和 `-shm` 文件必须位于本地可靠磁盘，不建议放在网络共享目录。运行账号需要对父目录具有创建和写入权限。备份时应使用 SQLite 在线备份机制，不能只复制主 `.db` 而忽略 WAL。
 

@@ -159,6 +159,7 @@ class PersistentQueueConfig:
     max_retry_interval_seconds: float = 300.0
     max_attempts: int = 0
     completed_retention_days: int = 1
+    cleanup_interval_seconds: float = 3600.0
     max_queue_rows: int = 1_000_000
 
 

@@ -29,6 +29,7 @@ def queue_config(path: Path, **overrides):
         "lease_seconds": 10,
         "max_queue_rows": 100,
         "completed_retention_days": 1,
+        "cleanup_interval_seconds": 3600,
     }
     result.update(overrides)
     return result
@@ -58,7 +59,11 @@ def test_enqueue_commit_roundtrips_datetime_and_wal(tmp_path):
     assert restored[0]["collection_time"] == datetime(2026, 7, 13, 12, 0, 0)
     with sqlite3.connect(path) as connection:
         assert connection.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
-        assert connection.execute("PRAGMA user_version").fetchone()[0] == 1
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 2
+        indexes = {
+            row[1] for row in connection.execute("PRAGMA index_list('outbox_records')").fetchall()
+        }
+        assert "idx_outbox_completed_retention" in indexes
     store.close()
 
 
@@ -74,6 +79,24 @@ def test_processing_row_is_recovered_after_unclean_restart(tmp_path):
     assert restarted.recovered_on_open == 1
     assert restarted.load_ready()[0]["_outbox_id"] == record_id
     restarted.close()
+
+
+def test_existing_database_is_migrated_with_completed_retention_index(tmp_path):
+    path = tmp_path / "outbox.db"
+    store = PersistentQueueStore(str(path))
+    store.close()
+    with sqlite3.connect(path) as connection:
+        connection.execute("DROP INDEX idx_outbox_completed_retention")
+        connection.execute("PRAGMA user_version=1")
+
+    migrated = PersistentQueueStore(str(path), recover_on_open=False)
+    with sqlite3.connect(path) as connection:
+        assert connection.execute("PRAGMA user_version").fetchone()[0] == 2
+        indexes = {
+            row[1] for row in connection.execute("PRAGMA index_list('outbox_records')").fetchall()
+        }
+        assert "idx_outbox_completed_retention" in indexes
+    migrated.close()
 
 
 def test_force_terminated_process_record_is_recovered(tmp_path):
@@ -139,6 +162,28 @@ async def test_target_db_success_completes_durable_record(tmp_path):
 
     assert target.persistent_store.counts()["completed"] == 1
     assert target.get_runtime_metrics()["outbox_rows_completed"] == 1
+
+
+@pytest.mark.asyncio
+async def test_periodic_maintenance_purges_expired_completed_rows(tmp_path, monkeypatch):
+    target, _ = processor(tmp_path / "outbox.db")
+    target.persistent_store.completed_retention_days = 0
+    target.outbox_cleanup_interval_seconds = 60
+    target.add_data(item(10))
+    await target._process_data_by_groups()
+    assert target.persistent_store.counts()["completed"] == 1
+
+    target._next_outbox_cleanup_at = 100
+    monkeypatch.setattr("database.data_storage.time.monotonic", lambda: 99)
+    assert target._run_outbox_maintenance_if_due() == 0
+    assert target.persistent_store.counts()["completed"] == 1
+
+    monkeypatch.setattr("database.data_storage.time.monotonic", lambda: 100)
+    assert target._run_outbox_maintenance_if_due() == 1
+    assert target.persistent_store.counts()["completed"] == 0
+    metrics = target.get_runtime_metrics()
+    assert metrics["outbox_maintenance_runs"] == 1
+    assert metrics["outbox_rows_purged"] == 1
 
 
 @pytest.mark.asyncio

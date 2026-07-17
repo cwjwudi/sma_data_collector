@@ -213,6 +213,7 @@ class ConfigLoader:
             max_retry_interval_seconds=float(queue_data.get('max_retry_interval_seconds', 300.0)),
             max_attempts=int(queue_data.get('max_attempts', 0)),
             completed_retention_days=int(queue_data.get('completed_retention_days', 1)),
+            cleanup_interval_seconds=float(queue_data.get('cleanup_interval_seconds', 3600.0)),
             max_queue_rows=int(queue_data.get('max_queue_rows', 1_000_000)),
         )
 
@@ -243,7 +244,8 @@ class ConfigLoader:
             raise ValueError("persistent_queue busy_timeout_ms/lease_seconds 配置无效")
         if queue.retry_interval_seconds <= 0 or queue.max_retry_interval_seconds < queue.retry_interval_seconds:
             raise ValueError("persistent_queue 重试间隔配置无效")
-        if queue.max_attempts < 0 or queue.completed_retention_days < 0 or queue.max_queue_rows <= 0:
+        if (queue.max_attempts < 0 or queue.completed_retention_days < 0
+                or queue.cleanup_interval_seconds < 1 or queue.max_queue_rows <= 0):
             raise ValueError("persistent_queue 容量或保留配置无效")
 
         # 检查数据点名称唯一性

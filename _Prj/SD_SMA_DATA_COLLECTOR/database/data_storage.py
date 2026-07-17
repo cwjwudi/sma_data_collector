@@ -89,6 +89,11 @@ class DataStorageProcessor:
             0.0, float(os.getenv("SD_SMA_SHUTDOWN_FLUSH_TIMEOUT", "30.0"))
         )
         self._retry_ready_at = 0.0
+        self.outbox_cleanup_interval_seconds = max(
+            1.0,
+            float(self.persistent_queue_config.get("cleanup_interval_seconds", 3600.0)),
+        )
+        self._next_outbox_cleanup_at = 0.0
         self.metrics: Counter[str] = Counter()
         if self.persistent_queue_config.get("enabled", False):
             self.persistent_store = PersistentQueueStore(
@@ -154,6 +159,8 @@ class DataStorageProcessor:
         if restored:
             self.logger.warning("从持久化队列恢复待写数据: rows=%s", restored)
 
+        self._run_outbox_maintenance_if_due(force=True)
+
         self.running = True
         self._batch_ready_event = asyncio.Event()
         self.processing_task = asyncio.create_task(self._process_data_loop())
@@ -212,7 +219,7 @@ class DataStorageProcessor:
         self.logger.info("数据存储处理器已停止，remaining=%s", remaining)
 
         if self.persistent_store is not None:
-            self.persistent_store.purge_completed()
+            self._run_outbox_maintenance_if_due(force=True)
 
     def initialize_tables_for_runtime(self) -> bool:
         """
@@ -351,6 +358,7 @@ class DataStorageProcessor:
         """数据处理循环"""
         while self.running:
             try:
+                self._run_outbox_maintenance_if_due()
                 self._restore_ready_outbox_rows()
                 if self.retry_queue and time.monotonic() >= self._retry_ready_at:
                     retry_data = list(self.retry_queue)
@@ -628,6 +636,29 @@ class DataStorageProcessor:
         if restored and self._batch_ready_event is not None:
             self._batch_ready_event.set()
         return len(restored)
+
+    def _run_outbox_maintenance_if_due(self, *, force: bool = False) -> int:
+        """Periodically remove expired completed rows while the collector is running."""
+        if self.persistent_store is None:
+            return 0
+
+        now = time.monotonic()
+        if not force and now < self._next_outbox_cleanup_at:
+            return 0
+
+        self._next_outbox_cleanup_at = now + self.outbox_cleanup_interval_seconds
+        try:
+            purged = self.persistent_store.purge_completed()
+        except Exception:
+            self.metrics["outbox_maintenance_failures"] += 1
+            self.logger.error("持久化队列定期清理失败", exc_info=True)
+            return 0
+
+        self.metrics["outbox_maintenance_runs"] += 1
+        self.metrics["outbox_rows_purged"] += purged
+        if purged:
+            self.logger.info("持久化队列已清理过期成功记录: rows=%s", purged)
+        return purged
 
     def _requeue_failed_batch(
         self, batch_data: List[Dict[str, Any]], *, to_data_queue: bool = False

@@ -35,7 +35,7 @@ def _json_object_hook(value: Dict[str, Any]) -> Any:
 class PersistentQueueStore:
     """Synchronous SQLite store with transactional state transitions."""
 
-    SCHEMA_VERSION = 1
+    SCHEMA_VERSION = 2
 
     def __init__(self, path: str, *, synchronous: str = "FULL", busy_timeout_ms: int = 5000,
                  max_queue_rows: int = 1_000_000, completed_retention_days: int = 1,
@@ -72,6 +72,10 @@ class PersistentQueueStore:
             self._connection.execute(
                 "CREATE INDEX IF NOT EXISTS idx_outbox_ready "
                 "ON outbox_records(status, next_attempt_at, created_at)"
+            )
+            self._connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_outbox_completed_retention "
+                "ON outbox_records(status, completed_at)"
             )
             self._connection.execute(f"PRAGMA user_version={self.SCHEMA_VERSION}")
 

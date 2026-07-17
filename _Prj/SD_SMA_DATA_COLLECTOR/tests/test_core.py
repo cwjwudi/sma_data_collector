@@ -92,6 +92,26 @@ class TestConfigLoader(unittest.TestCase):
         self.assertEqual(len(config.points), 1)
         self.assertEqual(len(config.groups), 1)
         self.assertEqual(config.database.type, "sqlite")
+
+    def test_loads_persistent_queue_cleanup_interval(self):
+        self.test_config["persistent_queue"] = {
+            "enabled": True,
+            "cleanup_interval_seconds": 120,
+        }
+        with open(self.temp_file.name, "w", encoding="utf-8") as stream:
+            json.dump(self.test_config, stream)
+
+        config = ConfigLoader.load_from_file(self.temp_file.name)
+
+        self.assertEqual(config.persistent_queue.cleanup_interval_seconds, 120)
+
+    def test_rejects_too_short_persistent_queue_cleanup_interval(self):
+        self.test_config["persistent_queue"] = {"cleanup_interval_seconds": 0}
+        with open(self.temp_file.name, "w", encoding="utf-8") as stream:
+            json.dump(self.test_config, stream)
+
+        with self.assertRaisesRegex(ValueError, "容量或保留配置无效"):
+            ConfigLoader.load_from_file(self.temp_file.name)
     
     def test_load_nonexistent_file(self):
         """测试加载不存在的文件"""
