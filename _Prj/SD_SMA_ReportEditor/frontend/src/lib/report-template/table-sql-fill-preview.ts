@@ -27,6 +27,8 @@ import {
   type VerticalSqlLabelPreviewCtx,
 } from "@/lib/report-template/table-sql-vertical";
 import { verticalSqlLogicalRowCount, verticalSqlSlotsPerRecord } from "@/lib/report-template/table-sql-vertical";
+import type { TablePreviewRowSlice } from "@/lib/report-template/table-preview-row-slice";
+import { applyRowTextLineSliceToCellText } from "@/lib/report-template/table-cell-metrics";
 
 export function templateTableSqlFillPreviewKey(elId: string): string {
   return `tblfill:${elId}`;
@@ -93,12 +95,11 @@ export function formatSqlFillTableCellPreview(opts: {
   /** 绑定预览任务加载中（且无有效结果/错误） */
   previewLoading?: boolean;
   errorMaxLen?: number;
-  /** 导出预览分页：仅渲染数据行的子区间（用于跨页续表） */
-  previewSlice?: {
-    dataRowStart: number;
-    dataRowCount: number;
-    includeHeaderRow: boolean;
-  };
+  /** 导出预览分页：仅渲染数据行的子区间（用于跨页续表 / 行内断行） */
+  previewSlice?: TablePreviewRowSlice;
+  /** 列宽（行内断行截断文案时需要；缺省不截视觉行） */
+  colWidthsPx?: number[];
+  fontSizePx?: number;
   /** 列头/左列标签 OPC 预览上下文 */
   labelPreview?: {
     elId: string;
@@ -116,6 +117,8 @@ export function formatSqlFillTableCellPreview(opts: {
     errorMaxLen = 72,
     previewSlice: slice,
     labelPreview,
+    colWidthsPx,
+    fontSizePx,
   } = opts;
 
   const headerAt = (c: number): string => {
@@ -149,10 +152,32 @@ export function formatSqlFillTableCellPreview(opts: {
     return "\u00a0";
   }
 
+  let text: string;
   if (isVerticalSqlFill(fill)) {
-    return formatVerticalSqlFillCell({ fill, ri, ci, pv, slice, headerAt, labelPreview });
+    text = formatVerticalSqlFillCell({ fill, ri, ci, pv, slice, headerAt, labelPreview });
+  } else {
+    text = formatHorizontalSqlFillCell({ fill, ri, ci, pv, slice, headerAt });
   }
-  return formatHorizontalSqlFillCell({ fill, ri, ci, pv, slice, headerAt });
+
+  // 行内跨页：仅对数据行（非本卡表头）按视觉行截断
+  const isHeader = !!(slice?.includeHeaderRow && ri === 0);
+  if (
+    !isHeader &&
+    slice &&
+    slice.dataRowCount === 1 &&
+    (slice.rowTextLineStart != null || slice.rowTextLineEnd != null) &&
+    colWidthsPx?.length
+  ) {
+    const w = colWidthsPx[ci] || 40;
+    text = applyRowTextLineSliceToCellText(text, {
+      widthPx: w,
+      fontSizePx: fontSizePx ?? 12,
+      paddingX: 10,
+      rowTextLineStart: slice.rowTextLineStart,
+      rowTextLineEnd: slice.rowTextLineEnd,
+    });
+  }
+  return text;
 }
 
 function formatVerticalSqlFillCell(opts: {
@@ -160,7 +185,7 @@ function formatVerticalSqlFillCell(opts: {
   ri: number;
   ci: number;
   pv?: TableSqlFillPreviewPayload | null;
-  slice?: { dataRowStart: number; dataRowCount: number; includeHeaderRow: boolean };
+  slice?: TablePreviewRowSlice;
   headerAt: (c: number) => string;
   labelPreview?: VerticalSqlLabelPreviewCtx;
 }): string {
@@ -206,7 +231,7 @@ function formatHorizontalSqlFillCell(opts: {
   ri: number;
   ci: number;
   pv?: TableSqlFillPreviewPayload | null;
-  slice?: { dataRowStart: number; dataRowCount: number; includeHeaderRow: boolean };
+  slice?: TablePreviewRowSlice;
   headerAt: (c: number) => string;
 }): string {
   const { fill, ri, ci, pv, slice, headerAt } = opts;

@@ -8,11 +8,13 @@ export const TABLE_ROW_HEIGHT_DEFAULT_PX = 28;
 export const TABLE_ROW_HEIGHT_MIN_PX = 16;
 export const TABLE_ROW_HEIGHT_MAX_PX = 120;
 /**
- * 内容换行后单行允许的最大高度（px）：以整页高度（A4 纵向 ≈ 297mm×96/25.4 ≈ 1123px）为界，
- * 避免单行撑满并超过整页。此前固定 240px 会把窄列长文本静默裁断、导出丢内容，故放开到整页界。
- * 注：单行内容真正超过整页时的「行内跨页断行」尚未实现（见 docs/002 P1-B 后续），此上界仅防单行占多页。
+ * 编辑画布：内容换行后单行允许的最大高度（px）。
+ * A4 纵向 ≈ 297mm×96/25.4 ≈ 1123px。导出预览分页另走行内跨页断行（见 splitLogicalRowByAvailPx）。
  */
 export const TABLE_CONTENT_ROW_HEIGHT_MAX_PX = 1123;
+
+/** 分页估高：不封顶（单 fragment 高度由页可用高约束） */
+export const TABLE_CONTENT_ROW_HEIGHT_UNCAPPED_PX = Number.MAX_SAFE_INTEGER;
 
 /** 正文/版式表格行数上限（含表头）；纵表字段槽可达 MAX_ROWS-1 */
 export const TEMPLATE_TABLE_MAX_ROWS = 100;
@@ -26,6 +28,106 @@ export function clampTableRowHeightPx(v: unknown): number {
   const n = Math.round(Number(v));
   if (!Number.isFinite(n)) return TABLE_ROW_HEIGHT_DEFAULT_PX;
   return Math.min(TABLE_ROW_HEIGHT_MAX_PX, Math.max(TABLE_ROW_HEIGHT_MIN_PX, n));
+}
+
+export type VisualLineWrap = {
+  /** 各视觉行字符（软折行已切开） */
+  lines: string[];
+  /** lines[i] 是否紧跟硬换行（段落边界）；lines[0] 恒为 false */
+  hardBreakBefore: boolean[];
+};
+
+function charWidthPx(ch: string, fontSize: number): number {
+  if (/[\u2e80-\u9fff\uf900-\ufaff\uff00-\uffef]/.test(ch)) return fontSize;
+  if (ch === "\t") return fontSize * 2;
+  return fontSize * 0.55;
+}
+
+/** 与 estimateWrappedTextHeightPx 同源的折行模型 */
+export function wrapTextToVisualLines(opts: {
+  text: string;
+  widthPx: number;
+  fontSizePx: number;
+  paddingX?: number;
+}): VisualLineWrap {
+  const fontSize = Math.max(6, Number(opts.fontSizePx) || 12);
+  const padX = Number.isFinite(Number(opts.paddingX)) ? Number(opts.paddingX) : 10;
+  const availW = Math.max(8, Number(opts.widthPx) - padX);
+  const raw = String(opts.text ?? "");
+  if (!raw.replace(/\u00a0/g, " ").trim()) {
+    return { lines: [], hardBreakBefore: [] };
+  }
+  const paragraphs = raw.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
+  const lines: string[] = [];
+  const hardBreakBefore: boolean[] = [];
+  for (let pi = 0; pi < paragraphs.length; pi++) {
+    const p = paragraphs[pi];
+    const hard = pi > 0;
+    if (!p) {
+      lines.push("");
+      hardBreakBefore.push(hard);
+      continue;
+    }
+    let w = 0;
+    let buf = "";
+    let firstInPara = true;
+    for (const ch of p) {
+      const cw = charWidthPx(ch, fontSize);
+      if (w + cw > availW && w > 0) {
+        lines.push(buf);
+        hardBreakBefore.push(firstInPara ? hard : false);
+        firstInPara = false;
+        buf = ch;
+        w = cw;
+      } else {
+        buf += ch;
+        w += cw;
+      }
+    }
+    lines.push(buf);
+    hardBreakBefore.push(firstInPara ? hard : false);
+  }
+  return { lines, hardBreakBefore };
+}
+
+/** 拼接视觉行切片；软折行处无分隔符，硬换行处插入 \\n */
+export function joinVisualLinesSlice(
+  wrap: VisualLineWrap,
+  lineStart: number,
+  lineEnd: number,
+): string {
+  const start = Math.max(0, Math.floor(lineStart));
+  const end = Math.min(wrap.lines.length, Math.floor(lineEnd));
+  if (end <= start) return "";
+  let out = "";
+  for (let i = start; i < end; i++) {
+    if (i > start && wrap.hardBreakBefore[i]) out += "\n";
+    out += wrap.lines[i];
+  }
+  return out;
+}
+
+export function heightForVisualLineCount(opts: {
+  lineCount: number;
+  fontSizePx: number;
+  lineHeight?: number;
+  paddingY?: number;
+  minHeightPx: number;
+  maxHeightPx?: number;
+}): number {
+  const minH = Math.max(1, Math.round(Number(opts.minHeightPx) || TABLE_ROW_HEIGHT_DEFAULT_PX));
+  const maxH = Math.max(
+    minH,
+    Math.round(Number(opts.maxHeightPx) || TABLE_CONTENT_ROW_HEIGHT_MAX_PX),
+  );
+  const n = Math.max(0, Math.floor(Number(opts.lineCount) || 0));
+  if (n <= 0) return minH;
+  const fontSize = Math.max(6, Number(opts.fontSizePx) || 12);
+  const lineHeight = Number(opts.lineHeight) > 0 ? Number(opts.lineHeight) : 1.3;
+  const lineH = fontSize * lineHeight;
+  const padY = Number.isFinite(Number(opts.paddingY)) ? Number(opts.paddingY) : 6;
+  const needed = Math.ceil(padY + n * lineH);
+  return Math.min(maxH, Math.max(minH, needed));
 }
 
 /**
@@ -43,46 +145,209 @@ export function estimateWrappedTextHeightPx(opts: {
   maxHeightPx?: number;
 }): number {
   const minH = Math.max(1, Math.round(Number(opts.minHeightPx) || TABLE_ROW_HEIGHT_DEFAULT_PX));
-  const maxH = Math.max(
-    minH,
-    Math.round(Number(opts.maxHeightPx) || TABLE_CONTENT_ROW_HEIGHT_MAX_PX),
-  );
-  const fontSize = Math.max(6, Number(opts.fontSizePx) || 12);
-  const lineHeight = Number(opts.lineHeight) > 0 ? Number(opts.lineHeight) : 1.3;
-  const lineH = fontSize * lineHeight;
-  const padX = Number.isFinite(Number(opts.paddingX)) ? Number(opts.paddingX) : 10;
-  const padY = Number.isFinite(Number(opts.paddingY)) ? Number(opts.paddingY) : 6;
-  const availW = Math.max(8, Number(opts.widthPx) - padX);
   const raw = String(opts.text ?? "");
-  // 空白占位仍用最小行高
   if (!raw.replace(/\u00a0/g, " ").trim()) return minH;
+  const { lines } = wrapTextToVisualLines({
+    text: raw,
+    widthPx: opts.widthPx,
+    fontSizePx: opts.fontSizePx,
+    paddingX: opts.paddingX,
+  });
+  return heightForVisualLineCount({
+    lineCount: lines.length,
+    fontSizePx: opts.fontSizePx,
+    lineHeight: opts.lineHeight,
+    paddingY: opts.paddingY,
+    minHeightPx: minH,
+    maxHeightPx: opts.maxHeightPx,
+  });
+}
 
-  const paragraphs = raw.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
-  let lines = 0;
-  for (const p of paragraphs) {
-    if (!p) {
-      lines += 1;
-      continue;
-    }
-    let w = 0;
-    let lineCount = 1;
-    for (const ch of p) {
-      const cw = /[\u2e80-\u9fff\uf900-\ufaff\uff00-\uffef]/.test(ch)
-        ? fontSize
-        : ch === "\t"
-          ? fontSize * 2
-          : fontSize * 0.55;
-      if (w + cw > availW && w > 0) {
-        lineCount += 1;
-        w = cw;
-      } else {
-        w += cw;
-      }
-    }
-    lines += lineCount;
+/** 分页用：不封顶的内容行高估算 */
+export function estimateWrappedTextHeightUncappedPx(
+  opts: Omit<Parameters<typeof estimateWrappedTextHeightPx>[0], "maxHeightPx">,
+): number {
+  return estimateWrappedTextHeightPx({
+    ...opts,
+    maxHeightPx: TABLE_CONTENT_ROW_HEIGHT_UNCAPPED_PX,
+  });
+}
+
+export type LogicalRowSplitFragment = {
+  lineStart: number;
+  lineEnd: number;
+  heightPx: number;
+  cellTexts: string[];
+  totalLines: number;
+};
+
+/**
+ * 按可用内高将一逻辑行拆成若干文本行片段（多列以最高列为准对齐切点）。
+ * availInnerPx 不足以放下 1 行文本时返回 []（调用方应换页，见 R8）。
+ */
+export function splitLogicalRowByAvailPx(opts: {
+  cellTexts: string[];
+  colWidthsPx: number[];
+  fontSizePx: number;
+  lineHeight?: number;
+  paddingX?: number;
+  paddingY?: number;
+  minHeightPx: number;
+  availInnerPx: number;
+}): LogicalRowSplitFragment[] {
+  const minH = Math.max(1, Math.round(Number(opts.minHeightPx) || TABLE_ROW_HEIGHT_DEFAULT_PX));
+  const avail = Math.max(0, Number(opts.availInnerPx) || 0);
+  const cols = Math.max(opts.cellTexts.length, opts.colWidthsPx.length);
+  const wraps: VisualLineWrap[] = [];
+  let totalLines = 0;
+  for (let ci = 0; ci < cols; ci++) {
+    const w = wrapTextToVisualLines({
+      text: opts.cellTexts[ci] ?? "",
+      widthPx: opts.colWidthsPx[ci] || 40,
+      fontSizePx: opts.fontSizePx,
+      paddingX: opts.paddingX,
+    });
+    wraps.push(w);
+    if (w.lines.length > totalLines) totalLines = w.lines.length;
   }
-  const needed = Math.ceil(padY + lines * lineH);
-  return Math.min(maxH, Math.max(minH, needed));
+  if (totalLines <= 0) {
+    if (avail < minH) return [];
+    return [
+      {
+        lineStart: 0,
+        lineEnd: 0,
+        heightPx: minH,
+        cellTexts: Array.from({ length: cols }, () => ""),
+        totalLines: 0,
+      },
+    ];
+  }
+
+  const heightOf = (n: number) =>
+    heightForVisualLineCount({
+      lineCount: n,
+      fontSizePx: opts.fontSizePx,
+      lineHeight: opts.lineHeight,
+      paddingY: opts.paddingY,
+      minHeightPx: minH,
+      maxHeightPx: TABLE_CONTENT_ROW_HEIGHT_UNCAPPED_PX,
+    });
+
+  const oneLineH = heightOf(1);
+  if (avail < oneLineH) return [];
+
+  const fragments: LogicalRowSplitFragment[] = [];
+  let lineCursor = 0;
+  while (lineCursor < totalLines) {
+    let take = 0;
+    for (let n = 1; n <= totalLines - lineCursor; n++) {
+      if (heightOf(n) <= avail) take = n;
+      else break;
+    }
+    if (take <= 0) break;
+    const lineEnd = lineCursor + take;
+    const cellTexts = wraps.map((w) => joinVisualLinesSlice(w, lineCursor, lineEnd));
+    fragments.push({
+      lineStart: lineCursor,
+      lineEnd,
+      heightPx: heightOf(take),
+      cellTexts,
+      totalLines,
+    });
+    lineCursor = lineEnd;
+  }
+  return fragments;
+}
+
+/** 从 lineStart 起，在 availInnerPx 内尽量多取视觉行；放不下则 null */
+export function takeLogicalRowLinesForAvail(opts: {
+  cellTexts: string[];
+  colWidthsPx: number[];
+  fontSizePx: number;
+  lineHeight?: number;
+  paddingX?: number;
+  paddingY?: number;
+  minHeightPx: number;
+  availInnerPx: number;
+  lineStart: number;
+}): { lineEnd: number; heightPx: number; totalLines: number; cellTexts: string[] } | null {
+  const minH = Math.max(1, Math.round(Number(opts.minHeightPx) || TABLE_ROW_HEIGHT_DEFAULT_PX));
+  const avail = Math.max(0, Number(opts.availInnerPx) || 0);
+  const lineStart = Math.max(0, Math.floor(Number(opts.lineStart) || 0));
+  const cols = Math.max(opts.cellTexts.length, opts.colWidthsPx.length);
+  const wraps: VisualLineWrap[] = [];
+  let totalLines = 0;
+  for (let ci = 0; ci < cols; ci++) {
+    const w = wrapTextToVisualLines({
+      text: opts.cellTexts[ci] ?? "",
+      widthPx: opts.colWidthsPx[ci] || 40,
+      fontSizePx: opts.fontSizePx,
+      paddingX: opts.paddingX,
+    });
+    wraps.push(w);
+    if (w.lines.length > totalLines) totalLines = w.lines.length;
+  }
+  if (totalLines <= 0) {
+    if (avail < minH) return null;
+    return {
+      lineEnd: lineStart,
+      heightPx: minH,
+      totalLines: 0,
+      cellTexts: Array.from({ length: cols }, () => ""),
+    };
+  }
+  if (lineStart >= totalLines) return null;
+
+  const heightOf = (n: number) =>
+    heightForVisualLineCount({
+      lineCount: n,
+      fontSizePx: opts.fontSizePx,
+      lineHeight: opts.lineHeight,
+      paddingY: opts.paddingY,
+      minHeightPx: minH,
+      maxHeightPx: TABLE_CONTENT_ROW_HEIGHT_UNCAPPED_PX,
+    });
+  if (avail < heightOf(1)) return null;
+
+  let take = 0;
+  const maxTake = totalLines - lineStart;
+  for (let n = 1; n <= maxTake; n++) {
+    if (heightOf(n) <= avail) take = n;
+    else break;
+  }
+  if (take <= 0) return null;
+  const lineEnd = lineStart + take;
+  return {
+    lineEnd,
+    heightPx: heightOf(take),
+    totalLines,
+    cellTexts: wraps.map((w) => joinVisualLinesSlice(w, lineStart, lineEnd)),
+  };
+}
+
+/** 按 slice 的视觉行区间截断单元格文案（无区间则原样） */
+export function applyRowTextLineSliceToCellText(
+  text: string,
+  opts: {
+    widthPx: number;
+    fontSizePx: number;
+    paddingX?: number;
+    rowTextLineStart?: number;
+    rowTextLineEnd?: number;
+  },
+): string {
+  const start = opts.rowTextLineStart;
+  const end = opts.rowTextLineEnd;
+  if (start == null && end == null) return text;
+  const wrap = wrapTextToVisualLines({
+    text,
+    widthPx: opts.widthPx,
+    fontSizePx: opts.fontSizePx,
+    paddingX: opts.paddingX,
+  });
+  const ls = start ?? 0;
+  const le = end ?? wrap.lines.length;
+  return joinVisualLinesSlice(wrap, ls, le);
 }
 
 /**

@@ -2,7 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   computeContentAwareTableRowHeightsPx,
   estimateWrappedTextHeightPx,
+  estimateWrappedTextHeightUncappedPx,
+  joinVisualLinesSlice,
+  splitLogicalRowByAvailPx,
   TABLE_ROW_HEIGHT_DEFAULT_PX,
+  wrapTextToVisualLines,
 } from "./table-cell-metrics";
 
 describe("estimateWrappedTextHeightPx", () => {
@@ -46,6 +50,95 @@ describe("estimateWrappedTextHeightPx", () => {
     });
     expect(h).toBeGreaterThan(240); // 不再被 240 裁断
     expect(h).toBeLessThanOrEqual(1123); // 仍以整页(A4)高度为界，避免单行占多页
+  });
+
+  it("wrap 抽出后估高与直接估算一致（含硬换行）", () => {
+    const text = "短行\n" + "报警描述".repeat(40);
+    const direct = estimateWrappedTextHeightPx({
+      text,
+      widthPx: 80,
+      fontSizePx: 12,
+      minHeightPx: 28,
+    });
+    const wrap = wrapTextToVisualLines({ text, widthPx: 80, fontSizePx: 12 });
+    const viaWrap = estimateWrappedTextHeightPx({
+      text: joinVisualLinesSlice(wrap, 0, wrap.lines.length),
+      widthPx: 80,
+      fontSizePx: 12,
+      minHeightPx: 28,
+    });
+    // 软折行处 join 不插 \\n，硬换行保留 → 应还原原文（规范化后）
+    expect(joinVisualLinesSlice(wrap, 0, wrap.lines.length)).toBe(text.replace(/\r\n/g, "\n"));
+    expect(viaWrap).toBe(direct);
+  });
+});
+
+describe("splitLogicalRowByAvailPx", () => {
+  it("窄列超长文案切出多段且拼接还原、每段高不超过 avail", () => {
+    const text = "报警描述".repeat(80);
+    const avail = 200;
+    const frags = splitLogicalRowByAvailPx({
+      cellTexts: [text],
+      colWidthsPx: [80],
+      fontSizePx: 12,
+      minHeightPx: 28,
+      availInnerPx: avail,
+    });
+    expect(frags.length).toBeGreaterThan(1);
+    let joined = "";
+    let covered = 0;
+    for (const f of frags) {
+      expect(f.heightPx).toBeLessThanOrEqual(avail);
+      expect(f.lineStart).toBe(covered);
+      covered = f.lineEnd;
+      joined += f.cellTexts[0];
+    }
+    expect(covered).toBe(frags[0].totalLines);
+    expect(joined).toBe(text);
+  });
+
+  it("多列以最高列为准切齐", () => {
+    const tall = "报警".repeat(60);
+    const frags = splitLogicalRowByAvailPx({
+      cellTexts: ["短", tall],
+      colWidthsPx: [120, 60],
+      fontSizePx: 12,
+      minHeightPx: 28,
+      availInnerPx: 180,
+    });
+    expect(frags.length).toBeGreaterThan(1);
+    const wrapTall = wrapTextToVisualLines({ text: tall, widthPx: 60, fontSizePx: 12 });
+    expect(frags[0].totalLines).toBe(wrapTall.lines.length);
+    expect(frags.map((f) => f.cellTexts[1]).join("")).toBe(tall);
+  });
+
+  it("avail 不足以放下 1 行文本时返回空", () => {
+    const frags = splitLogicalRowByAvailPx({
+      cellTexts: ["报警描述文字"],
+      colWidthsPx: [80],
+      fontSizePx: 12,
+      minHeightPx: 28,
+      availInnerPx: 10,
+    });
+    expect(frags).toEqual([]);
+  });
+
+  it("uncapped 估高可超过整页界", () => {
+    const text = "报警描述".repeat(200);
+    const capped = estimateWrappedTextHeightPx({
+      text,
+      widthPx: 80,
+      fontSizePx: 12,
+      minHeightPx: 28,
+    });
+    const uncapped = estimateWrappedTextHeightUncappedPx({
+      text,
+      widthPx: 80,
+      fontSizePx: 12,
+      minHeightPx: 28,
+    });
+    expect(capped).toBeLessThanOrEqual(1123);
+    expect(uncapped).toBeGreaterThan(capped);
   });
 });
 

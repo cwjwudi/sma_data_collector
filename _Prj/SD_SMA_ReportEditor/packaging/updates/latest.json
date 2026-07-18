@@ -1,15 +1,15 @@
 {
-  "version": "0.3.107",
-  "releasedAt": "2026-07-17T13:04:49.928Z",
-  "notes": "Report Editor AI 0.3.107\n\n- 027：历史报表可移动盘确认/忽略、手选右侧目录、左⇄右复制/移动写入操作审计",
+  "version": "0.3.108",
+  "releasedAt": "2026-07-18T18:19:19.408Z",
+  "notes": "Report Editor AI 0.3.108\n\n- P1-B：单行超页时按视觉行跨页断行（静态表 + SQL 填充导出预览）",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.107-x64.exe",
-      "sha256": "d12f2eb8377fb026f2254c5d0d70fc6cfabc354935601489e94a54e1b94bdfa8",
-      "size": 148154079
+      "url": "Report Editor AI-Setup-0.3.108-x64.exe",
+      "sha256": "",
+      "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.107-arm64.dmg",
+      "url": "Report Editor AI-0.3.108-arm64.dmg",
       "sha256": "",
       "size": 0
     }

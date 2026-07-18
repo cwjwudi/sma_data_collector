@@ -6,8 +6,8 @@ import type { BindingPreviewCell } from "@/lib/report-template/binding-preview-u
 import { cellKey, resolveStaticTableCellLayoutText } from "@/lib/report-template/binding-preview-utils";
 import { bodyElementsRef, metricsForSheet } from "@/lib/report-template/editor-sheet";
 import type { ReportTemplate, TemplateElement } from "@/lib/report-template/model";
-import { ensureBodyPages, ensureTableGrid } from "@/lib/report-template/model";
-import { clampTableRowHeightPx } from "@/lib/report-template/table-cell-metrics";
+import { ensureBodyPages, ensureTableGrid, templateTableColumnInnerWidthsPx } from "@/lib/report-template/model";
+import { clampTableRowHeightPx, takeLogicalRowLinesForAvail } from "@/lib/report-template/table-cell-metrics";
 import {
   estimatedSqlFillTableBottomY,
   computeSqlFillLogicalRowHeightsPx,
@@ -17,10 +17,14 @@ import {
 import {
   buildLogicalRowSlicesForOverflow,
   computeTemplateTableContentRowHeightsPx,
+  makeStaticTableSplitRow,
   outerHeightFromTableRowHeightsPx,
   templateTableExceedsPageRemaining,
+  type SplitRowForAvail,
 } from "@/lib/report-template/table-content-layout";
+import type { TablePreviewRowSlice } from "@/lib/report-template/table-preview-row-slice";
 import {
+  formatSqlFillTableCellPreview,
   sqlFillDisplayDataRowCount,
   templateTableSqlFillPreviewKey,
 } from "@/lib/report-template/table-sql-fill-preview";
@@ -29,13 +33,10 @@ import {
   normalizeTableSqlVerticalMultiRecordMode,
 } from "@/lib/report-template/table-sql-fill";
 import { verticalSqlRecordLogicalRanges, verticalSqlSlotsPerRecord } from "@/lib/report-template/table-sql-vertical";
+import type { TableSqlFillPreviewPayload } from "@/lib/report-template/binding-preview-utils";
 
-/** 迷你预览中单张卡片内的表格片段（数据行为预览 payload.dataRows 的下标切片） */
-export interface SqlFillTablePreviewSlice {
-  dataRowStart: number;
-  dataRowCount: number;
-  includeHeaderRow: boolean;
-}
+/** 迷你预览中单张卡片内的表格片段（含行内跨页视觉行区间） */
+export type SqlFillTablePreviewSlice = TablePreviewRowSlice;
 
 export interface ExpandedBodyPreviewCard {
   bodyPageIndex: number;
@@ -52,24 +53,71 @@ export interface ExpandedBodyPreviewCard {
   overflowSqlFillTableId?: string;
 }
 
-/** 按可变行高累计，返回在 availPx 内能放下的行数（至少 1） */
+/** 按可变行高累计，返回在 availPx 内能放下的整行数（装不下返回 0） */
 function rowsFitWithHeights(availPx: number, heights: number[], fallbackRowH: number): number {
   const usable = Math.max(0, availPx - tableSqlFillVerticalChromePx());
   if (!heights.length) {
-    const n = Math.floor(usable / Math.max(1, fallbackRowH));
-    return Math.max(1, n);
+    return Math.max(0, Math.floor(usable / Math.max(1, fallbackRowH)));
   }
   let used = 0;
   let n = 0;
   for (const h of heights) {
     const hh = Math.max(1, h);
-    if (n > 0 && used + hh > usable) break;
-    if (n === 0 && hh > usable) return 1;
+    if (used + hh > usable) break;
     used += hh;
     n += 1;
-    if (used >= usable && n > 0) break;
   }
-  return Math.max(1, n);
+  return n;
+}
+
+function makeSqlFillDataRowSplit(
+  el: TemplateElement,
+  preview: TableSqlFillPreviewPayload | null | undefined,
+): SplitRowForAvail {
+  const minH = clampTableRowHeightPx(el.tableRowHeightPx);
+  let colWidths: number[] = [];
+  try {
+    colWidths = templateTableColumnInnerWidthsPx(el);
+  } catch {
+    colWidths = [];
+  }
+  if (!colWidths.length) {
+    const cols = el.tableCols ?? 4;
+    const inner = Math.max(40, (el.w || 200) - 8);
+    colWidths = Array.from({ length: cols }, () => Math.floor(inner / cols));
+  }
+  const fontSize = Math.max(10, (el.fontSize || 12) * 0.85);
+  const fill = el.tableSqlFill!;
+  return (dataRowIndex, availInnerPx, lineStart) => {
+    // 本地 ri：无 slice 时 format 用 ri=0 表头、ri>=1 数据 → 取数据行用 ri = dataRowIndex+1
+    const cellTexts = colWidths.map((_, ci) =>
+      formatSqlFillTableCellPreview({
+        fill,
+        rowIndex: dataRowIndex + 1,
+        colIndex: ci,
+        preview: preview ?? null,
+        previewLoading: false,
+        errorMaxLen: 500,
+      }),
+    );
+    const taken = takeLogicalRowLinesForAvail({
+      cellTexts,
+      colWidthsPx: colWidths,
+      fontSizePx: fontSize,
+      lineHeight: 1.3,
+      paddingX: 10,
+      paddingY: 6,
+      minHeightPx: minH,
+      availInnerPx,
+      lineStart,
+    });
+    if (!taken) return null;
+    return {
+      lineEnd: taken.lineEnd,
+      heightPx: taken.heightPx,
+      totalLines: taken.totalLines,
+    };
+  };
 }
 
 /** 首屏正文区从表格顶部起，能否容纳「1 行表头 + 全部数据行」（导出预览分页判定） */
@@ -111,7 +159,7 @@ function pickSqlFillTableForPreviewPagination(
     const sqlN = pv?.dataRows?.length ?? 0;
     if (!sqlN || pv?.error) continue;
     const displayN = sqlFillDisplayDataRowCount(el.tableSqlFill, sqlN);
-    const heights = computeSqlFillLogicalRowHeightsPx(el, pv, displayN);
+    const heights = computeSqlFillLogicalRowHeightsPx(el, pv, displayN, null, { uncapped: true });
     if (!sqlFillTableNeedsPreviewPagination(el, displayN, contentH, sqlN, heights)) continue;
     const bottom = estimatedSqlFillTableBottomY(el, displayN, heights);
     if (bottom >= bestBottom) {
@@ -128,39 +176,132 @@ function buildSlicesForOverflowTable(
   contentH: number,
   repeatHeader: boolean,
   allRowHeights: number[],
+  splitDataRow?: SplitRowForAvail,
 ): SqlFillTablePreviewSlice[] {
   if (el.type !== "table" || dataRowCount <= 0) return [];
   const rowH = clampTableRowHeightPx(el.tableRowHeightPx);
+  const chrome = tableSqlFillVerticalChromePx();
   const slices: SqlFillTablePreviewSlice[] = [];
   // allRowHeights: [header, data0, data1, ...]
   const headerH = allRowHeights[0] ?? rowH;
   const dataHeights = allRowHeights.slice(1);
 
-  const availFirst = contentH - el.y;
-  const firstHeights = [headerH, ...dataHeights];
-  const maxRowsFirst = rowsFitWithHeights(availFirst, firstHeights, rowH);
-  let dataCapFirst = Math.max(0, maxRowsFirst - 1);
-  if (dataCapFirst === 0 && dataRowCount > 0) dataCapFirst = 1;
-  const take0 = Math.min(dataCapFirst, dataRowCount);
-  slices.push({ dataRowStart: 0, dataRowCount: take0, includeHeaderRow: true });
+  let cursor = 0;
+  let lineStart = 0;
+  let first = true;
+  let guard = 0;
+  const maxGuard = Math.max(64, dataRowCount * 64);
 
-  let cursor = take0;
-  while (cursor < dataRowCount) {
+  while (cursor < dataRowCount && guard++ < maxGuard) {
+    const availOuter = first ? contentH - el.y : contentH;
+    const usable = Math.max(0, availOuter - chrome);
+    const includeHeader = first || repeatHeader;
+    const headerCost = includeHeader ? headerH : 0;
+    const availForData = usable - headerCost;
+
+    if (availForData <= 0) {
+      if (first) {
+        first = false;
+        continue;
+      }
+      // 整页却放不下表头：退化只推数据（极少见）
+      slices.push({
+        dataRowStart: cursor,
+        dataRowCount: 1,
+        includeHeaderRow: false,
+      });
+      cursor += 1;
+      lineStart = 0;
+      first = false;
+      continue;
+    }
+
+    if (lineStart > 0 && splitDataRow) {
+      const frag = splitDataRow(cursor, availForData, lineStart);
+      if (!frag || frag.lineEnd <= lineStart) {
+        first = false;
+        continue;
+      }
+      slices.push({
+        dataRowStart: cursor,
+        dataRowCount: 1,
+        includeHeaderRow: includeHeader,
+        rowTextLineStart: lineStart,
+        rowTextLineEnd: frag.lineEnd,
+        rowFragment: true,
+      });
+      if (frag.lineEnd >= frag.totalLines) {
+        cursor += 1;
+        lineStart = 0;
+      } else {
+        lineStart = frag.lineEnd;
+      }
+      first = false;
+      continue;
+    }
+
     const rest = dataHeights.slice(cursor);
-    const pageHeights = repeatHeader ? [headerH, ...rest] : rest;
-    const maxRows = rowsFitWithHeights(contentH, pageHeights, rowH);
-    const hdr = repeatHeader ? 1 : 0;
-    let dataCap = Math.max(0, maxRows - hdr);
-    if (dataCap === 0) dataCap = 1;
-    const take = Math.min(dataCap, dataRowCount - cursor);
-    if (take <= 0) break;
+    let used = 0;
+    let take = 0;
+    for (const h of rest) {
+      const hh = Math.max(1, h);
+      if (used + hh > availForData) break;
+      used += hh;
+      take += 1;
+    }
+
+    if (take > 0) {
+      slices.push({
+        dataRowStart: cursor,
+        dataRowCount: take,
+        includeHeaderRow: includeHeader,
+      });
+      cursor += take;
+      lineStart = 0;
+      first = false;
+      continue;
+    }
+
+    // 当前数据行整行放不下
+    const rowHgt = Math.max(1, dataHeights[cursor] ?? rowH);
+    if (splitDataRow && rowHgt > availForData) {
+      const frag = splitDataRow(cursor, availForData, 0);
+      if (frag && frag.lineEnd > 0) {
+        const isFrag = frag.lineEnd < frag.totalLines;
+        slices.push({
+          dataRowStart: cursor,
+          dataRowCount: 1,
+          includeHeaderRow: includeHeader,
+          rowTextLineStart: 0,
+          rowTextLineEnd: frag.lineEnd,
+          rowFragment: isFrag || undefined,
+        });
+        if (frag.lineEnd >= frag.totalLines) {
+          cursor += 1;
+          lineStart = 0;
+        } else {
+          lineStart = frag.lineEnd;
+        }
+        first = false;
+        continue;
+      }
+    }
+
+    if (first) {
+      first = false;
+      continue;
+    }
+
     slices.push({
       dataRowStart: cursor,
-      dataRowCount: take,
-      includeHeaderRow: repeatHeader,
+      dataRowCount: 1,
+      includeHeaderRow: includeHeader,
     });
-    cursor += take;
+    cursor += 1;
+    lineStart = 0;
+    first = false;
   }
+
   return slices;
 }
 
@@ -178,39 +319,30 @@ function buildSlicesForVerticalPagePerRecord(
   const fill = el.tableSqlFill;
   const ranges = verticalSqlRecordLogicalRanges(fill, sqlDataRowCount);
   if (!ranges.length) return [];
-  const rowH = clampTableRowHeightPx(el.tableRowHeightPx);
-  const allHeights = computeSqlFillLogicalRowHeightsPx(el, preview, sqlFillDisplayDataRowCount(fill, sqlDataRowCount));
-  const headerH = allHeights[0] ?? rowH;
+  const displayN = sqlFillDisplayDataRowCount(fill, sqlDataRowCount);
+  const allHeights = computeSqlFillLogicalRowHeightsPx(el, preview, displayN, null, { uncapped: true });
+  const splitDataRow = makeSqlFillDataRowSplit(el, preview);
   const out: SqlFillTablePreviewSlice[] = [];
 
-  for (let ri = 0; ri < ranges.length; ri++) {
-    const range = ranges[ri];
-    const availFirst = contentH - el.y;
-    const rangeHeights = allHeights.slice(range.dataRowStart + 1, range.dataRowStart + 1 + range.dataRowCount);
-    const firstPageHeights = [headerH, ...rangeHeights];
-    const maxRowsFirst = rowsFitWithHeights(availFirst, firstPageHeights, rowH);
-    let dataCapFirst = Math.max(0, maxRowsFirst - 1);
-    if (dataCapFirst === 0 && range.dataRowCount > 0) dataCapFirst = 1;
-
-    let cursor = 0;
-    let firstOfRecord = true;
-    while (cursor < range.dataRowCount) {
-      const rest = rangeHeights.slice(cursor);
-      const pageHeights = firstOfRecord || repeatHeader ? [headerH, ...rest] : rest;
-      const maxRows = rowsFitWithHeights(firstOfRecord ? availFirst : contentH, pageHeights, rowH);
-      const hdr = firstOfRecord || repeatHeader ? 1 : 0;
-      let dataCap = Math.max(0, maxRows - (firstOfRecord ? 1 : hdr));
-      if (firstOfRecord) dataCap = dataCapFirst;
-      if (dataCap === 0) dataCap = 1;
-      const take = Math.min(dataCap, range.dataRowCount - cursor);
-      if (take <= 0) break;
+  for (const range of ranges) {
+    // 将单条记录的逻辑行当作一张「子表」做 overflow 切片，再把 dataRowStart 平移到全局
+    const subHeights = [
+      allHeights[0] ?? clampTableRowHeightPx(el.tableRowHeightPx),
+      ...allHeights.slice(range.dataRowStart + 1, range.dataRowStart + 1 + range.dataRowCount),
+    ];
+    const sub = buildSlicesForOverflowTable(
+      el,
+      range.dataRowCount,
+      contentH,
+      repeatHeader,
+      subHeights,
+      (localDataIdx, avail, lineStart) => splitDataRow(range.dataRowStart + localDataIdx, avail, lineStart),
+    );
+    for (const s of sub) {
       out.push({
-        dataRowStart: range.dataRowStart + cursor,
-        dataRowCount: take,
-        includeHeaderRow: firstOfRecord || repeatHeader,
+        ...s,
+        dataRowStart: range.dataRowStart + s.dataRowStart,
       });
-      cursor += take;
-      firstOfRecord = false;
     }
   }
   return out;
@@ -232,17 +364,22 @@ function hasWidgetsBelowSqlFillTable(
 function staticTableRowHeightsForPreview(
   el: TemplateElement,
   previewValues: Record<string, BindingPreviewCell | undefined>,
+  uncapped = false,
 ): number[] {
   ensureTableGrid(el);
   const grid = el.tableCells || [];
-  return computeTemplateTableContentRowHeightsPx(el, (ri, ci) => {
-    const cell = grid[ri]?.[ci];
-    return resolveStaticTableCellLayoutText({
-      cell,
-      previewCell: previewValues[cellKey(el.id, ri, ci)],
-      loading: false,
-    });
-  });
+  return computeTemplateTableContentRowHeightsPx(
+    el,
+    (ri, ci) => {
+      const cell = grid[ri]?.[ci];
+      return resolveStaticTableCellLayoutText({
+        cell,
+        previewCell: previewValues[cellKey(el.id, ri, ci)],
+        loading: false,
+      });
+    },
+    { uncapped },
+  );
 }
 
 function pickStaticTableForPreviewPagination(
@@ -254,7 +391,7 @@ function pickStaticTableForPreviewPagination(
   let bestBottom = -Infinity;
   for (const el of els) {
     if (el.type !== "table" || el.tableSqlFill?.enabled) continue;
-    const heights = staticTableRowHeightsForPreview(el, previewValues);
+    const heights = staticTableRowHeightsForPreview(el, previewValues, true);
     if (!templateTableExceedsPageRemaining(el, contentH, heights)) continue;
     const bottom = el.y + outerHeightFromTableRowHeightsPx(heights, el.tableRowHeightPx);
     if (bottom >= bestBottom) {
@@ -271,15 +408,27 @@ function cardsForStaticTableOverflow(
   contentH: number,
   overflowEl: TemplateElement,
   allHeights: number[],
+  previewValues: Record<string, BindingPreviewCell | undefined>,
 ): ExpandedBodyPreviewCard[] {
   const rowH = clampTableRowHeightPx(overflowEl.tableRowHeightPx);
+  const grid = overflowEl.tableCells || [];
+  const splitRow = makeStaticTableSplitRow(overflowEl, (ri, ci) => {
+    const cell = grid[ri]?.[ci];
+    return resolveStaticTableCellLayoutText({
+      cell,
+      previewCell: previewValues[cellKey(overflowEl.id, ri, ci)],
+      loading: false,
+    });
+  });
   const chunks = buildLogicalRowSlicesForOverflow({
     rowHeights: allHeights,
     firstPageAvailOuterPx: contentH - overflowEl.y,
     nextPageAvailOuterPx: contentH,
     fallbackRowH: rowH,
+    splitRow,
   });
-  if (chunks.length <= 1) {
+  // 单卡但含行内片段时仍需展开（极少：整表一行且一页装下则 length=1 无 fragment）
+  if (chunks.length <= 1 && !chunks[0]?.rowFragment) {
     return [
       {
         bodyPageIndex,
@@ -334,6 +483,7 @@ function slicesForBodyPage(
         contentH,
         staticHit.el,
         staticHit.heights,
+        previewValues,
       );
     }
     return [
@@ -355,12 +505,22 @@ function slicesForBodyPage(
   const pagePerRecord =
     isVerticalSqlFill(fill) &&
     normalizeTableSqlVerticalMultiRecordMode(fill.verticalMultiRecordMode) === "page_per_record";
-  const allHeights = computeSqlFillLogicalRowHeightsPx(overflowEl, fillPv, displayN);
+  const allHeights = computeSqlFillLogicalRowHeightsPx(overflowEl, fillPv, displayN, null, {
+    uncapped: true,
+  });
+  const splitDataRow = makeSqlFillDataRowSplit(overflowEl, fillPv);
 
   // 纵表另起一页：按 SQL 记录切卡；续表 / 横表：按逻辑行高切卡
   const chunks = pagePerRecord
     ? buildSlicesForVerticalPagePerRecord(overflowEl, sqlN, contentH, repeatHeader, fillPv)
-    : buildSlicesForOverflowTable(overflowEl, displayN, contentH, repeatHeader, allHeights);
+    : buildSlicesForOverflowTable(
+        overflowEl,
+        displayN,
+        contentH,
+        repeatHeader,
+        allHeights,
+        splitDataRow,
+      );
 
   // 另起一页：即使单条也能放下，多条时仍要拆成多卡
   if (chunks.length <= 1 && !(pagePerRecord && sqlN > 1)) {

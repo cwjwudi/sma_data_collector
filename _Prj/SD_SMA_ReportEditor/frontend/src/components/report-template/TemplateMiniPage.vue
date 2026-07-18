@@ -324,6 +324,7 @@ import {
   templateTableSqlFillPreviewKey,
   zoneTableSqlFillPreviewKey,
 } from "@/lib/report-template/table-sql-fill-preview";
+import { applyRowTextLineSliceToCellText } from "@/lib/report-template/table-cell-metrics";
 import type { PaperLayoutMetrics } from "@/lib/report-template/layout-geometry";
 import {
   metricsForSheet,
@@ -747,6 +748,33 @@ function tableGrid(el: TemplateElement): TemplateTableCell[][] {
   return ensureTableGrid(el);
 }
 
+function miniTplSqlFillPreviewOpts(el: TemplateElement) {
+  const colWidths = miniTplTableColInnerWidthsPx(el);
+  const fontSize = Math.max(10, (el.fontSize || 12) * 0.85);
+  return { colWidthsPx: colWidths, fontSizePx: fontSize };
+}
+
+/** 静态表行内跨页：按 slice 视觉行截断 */
+function applyStaticRowTextLineSlice(el: TemplateElement, ri: number, ci: number, text: string): string {
+  const slice = sqlFillSliceForTpl(el);
+  if (
+    !slice ||
+    slice.dataRowCount !== 1 ||
+    ri !== slice.dataRowStart ||
+    (slice.rowTextLineStart == null && slice.rowTextLineEnd == null)
+  ) {
+    return text;
+  }
+  const { colWidthsPx, fontSizePx } = miniTplSqlFillPreviewOpts(el);
+  return applyRowTextLineSliceToCellText(text, {
+    widthPx: colWidthsPx[ci] || 40,
+    fontSizePx,
+    paddingX: 10,
+    rowTextLineStart: slice.rowTextLineStart,
+    rowTextLineEnd: slice.rowTextLineEnd,
+  });
+}
+
 function miniTplTableRowHeights(el: TemplateElement): number[] {
   if (el.type !== "table") return [];
   const rowIndices = miniTableRowIndices(el);
@@ -764,7 +792,7 @@ function miniTplTableRowHeights(el: TemplateElement): number[] {
     return computeSqlFillLogicalRowHeightsPx(el, pv, displayN, slice);
   }
 
-  // 静态表：按可见行（含跨页切片）估算高度
+  // 静态表：按可见行（含跨页切片 / 行内片段）估算高度
   return computeContentAwareTableRowHeightsPx({
     rowCount: rowIndices.length,
     colWidthsPx: colWidths,
@@ -994,6 +1022,7 @@ function miniTableStaticTitle(el: TemplateElement, ri: number, ci: number): stri
       previewLoading: loading,
       errorMaxLen: 48,
       previewSlice: sqlFillSliceForTpl(el),
+      ...miniTplSqlFillPreviewOpts(el),
       labelPreview: {
         elId: el.id,
         values: vals,
@@ -1002,7 +1031,7 @@ function miniTableStaticTitle(el: TemplateElement, ri: number, ci: number): stri
     });
   }
   const c = tableGrid(el)[ri]?.[ci];
-  return c ? formatStaticTableCell(c) : "";
+  return applyStaticRowTextLineSlice(el, ri, ci, c ? formatStaticTableCell(c) : "");
 }
 
 function previewTableCellText(el: TemplateElement, ri: number, ci: number): string {
@@ -1022,6 +1051,7 @@ function previewTableCellText(el: TemplateElement, ri: number, ci: number): stri
       previewLoading: loading,
       errorMaxLen: 36,
       previewSlice: sqlFillSliceForTpl(el),
+      ...miniTplSqlFillPreviewOpts(el),
       labelPreview: {
         elId: el.id,
         values: vals,
@@ -1032,11 +1062,17 @@ function previewTableCellText(el: TemplateElement, ri: number, ci: number): stri
 
   const key = cellKey(el.id, ri, ci);
   const hit = vals?.[key];
-  if (hit != null) return applyDecimalPlacesToDisplayText(hit.text, cell?.decimalPlaces);
-  if ((cell?.bindingKind === "opcua" || cell?.bindingKind === "sql" || cell?.bindingKind === "mongo") && bindingPreview?.loading.value) {
-    return "…";
+  let text: string;
+  if (hit != null) text = applyDecimalPlacesToDisplayText(hit.text, cell?.decimalPlaces);
+  else if (
+    (cell?.bindingKind === "opcua" || cell?.bindingKind === "sql" || cell?.bindingKind === "mongo") &&
+    bindingPreview?.loading.value
+  ) {
+    text = "…";
+  } else {
+    text = cell ? formatStaticTableCell(cell) : "\u00a0";
   }
-  return cell ? formatStaticTableCell(cell) : "\u00a0";
+  return applyStaticRowTextLineSlice(el, ri, ci, text);
 }
 
 /** 行高/换行估算：绑定格只用预览实值，不用 NodeId/SQL 语句 */
@@ -1047,11 +1083,12 @@ function previewTableCellLayoutText(el: TemplateElement, ri: number, ci: number)
   const cell = tableGrid(el)[ri]?.[ci] ?? null;
   const key = cellKey(el.id, ri, ci);
   const hit = previewValues.value?.[key];
-  return resolveStaticTableCellLayoutText({
+  const text = resolveStaticTableCellLayoutText({
     cell,
     previewCell: hit,
     loading: !!(bindingPreview?.loading.value && !hit),
   });
+  return applyStaticRowTextLineSlice(el, ri, ci, text);
 }
 
 function previewParameterText(el: TemplateElement): string {

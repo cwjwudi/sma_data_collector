@@ -6,11 +6,13 @@ import type { TemplateElement } from "@/lib/report-template/model";
 import { templateTableColumnInnerWidthsPx } from "@/lib/report-template/model";
 import {
   REPORT_TEMPLATE_TABLE_NODE_PADDING_PX,
+  TABLE_CONTENT_ROW_HEIGHT_UNCAPPED_PX,
   clampTableRowHeightPx,
   computeContentAwareTableRowHeightsPx,
   sumTableRowHeightsPx,
 } from "@/lib/report-template/table-cell-metrics";
 import type { TableSqlFillPreviewPayload } from "@/lib/report-template/binding-preview-utils";
+import type { TablePreviewRowSlice } from "@/lib/report-template/table-preview-row-slice";
 import { formatSqlFillTableCellPreview } from "@/lib/report-template/table-sql-fill-preview";
 
 /** 表格外壳纵向占位（与 intrinsicOuterHeightForTemplateTable 一致） */
@@ -25,7 +27,8 @@ export function computeSqlFillLogicalRowHeightsPx(
   el: TemplateElement,
   preview: TableSqlFillPreviewPayload | null | undefined,
   displayDataRowCount: number,
-  previewSlice?: { dataRowStart: number; dataRowCount: number; includeHeaderRow: boolean } | null,
+  previewSlice?: TablePreviewRowSlice | null,
+  opts?: { uncapped?: boolean },
 ): number[] {
   if (el.type !== "table") return [];
   const minH = clampTableRowHeightPx(el.tableRowHeightPx);
@@ -60,6 +63,7 @@ export function computeSqlFillLogicalRowHeightsPx(
     lineHeight: 1.3,
     paddingX: 10,
     paddingY: 6,
+    maxRowHeightPx: opts?.uncapped ? TABLE_CONTENT_ROW_HEIGHT_UNCAPPED_PX : undefined,
     cellTextAt: (ri, ci) =>
       formatSqlFillTableCellPreview({
         fill,
@@ -69,6 +73,8 @@ export function computeSqlFillLogicalRowHeightsPx(
         previewLoading: false,
         errorMaxLen: 500,
         previewSlice: previewSlice ?? undefined,
+        colWidthsPx: colWidths,
+        fontSizePx: fontSize,
       }),
   });
 }

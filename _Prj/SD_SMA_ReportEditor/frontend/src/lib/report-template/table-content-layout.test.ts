@@ -4,12 +4,14 @@ import {
   clampTableElementOuterSize,
   createTemplate,
   ensureBodyPages,
+  ensureTableGrid,
   hydrateTemplateElement,
   intrinsicOuterHeightForTemplateTable,
 } from "@/lib/report-template/model";
 import {
   buildLogicalRowSlicesForOverflow,
   computeTemplateTableContentRowHeightsPx,
+  makeStaticTableSplitRow,
   outerHeightFromTableRowHeightsPx,
   rowsFitInAvailWithHeights,
   templateTableExceedsPageRemaining,
@@ -18,6 +20,7 @@ import {
   resolveStaticTableCellDisplayText,
   shortBindingKindLabel,
 } from "@/lib/report-template/binding-preview-utils";
+import { estimateWrappedTextHeightUncappedPx } from "@/lib/report-template/table-cell-metrics";
 import { computeExpandedBodyPreviewCards } from "@/lib/report-template/table-sql-fill-export-preview-split";
 
 function makeTemplateWithBodyTable(el: ReturnType<typeof hydrateTemplateElement>) {
@@ -137,8 +140,61 @@ describe("table-content-layout", () => {
     expect(covered).toBe(heights.length);
   });
 
-  it("rowsFitInAvailWithHeights keeps at least one row", () => {
-    expect(rowsFitInAvailWithHeights(30, [80, 80], 28)).toBe(1);
+  it("rowsFitInAvailWithHeights returns 0 when first row exceeds usable (no force-clip)", () => {
+    // chrome≈9 → usable≈21 < 80 → 整行放不下，交由行内拆分/换页
+    expect(rowsFitInAvailWithHeights(30, [80, 80], 28)).toBe(0);
+  });
+
+  it("buildLogicalRowSlicesForOverflow splits a single ultra-tall row by text lines", () => {
+    const tall = 900;
+    const nextPage = 220;
+    const slices = buildLogicalRowSlicesForOverflow({
+      rowHeights: [tall],
+      firstPageAvailOuterPx: nextPage,
+      nextPageAvailOuterPx: nextPage,
+      fallbackRowH: 28,
+      splitRow: (_ri, availInner, lineStart) => {
+        // 模拟：每页约吃 5 行视觉文本，总 20 行
+        const totalLines = 20;
+        const lineH = 40;
+        const take = Math.max(0, Math.floor(availInner / lineH));
+        if (take <= 0 || lineStart >= totalLines) return null;
+        const lineEnd = Math.min(totalLines, lineStart + take);
+        return { lineEnd, heightPx: (lineEnd - lineStart) * lineH, totalLines };
+      },
+    });
+    expect(slices.length).toBeGreaterThan(1);
+    let lineCovered = 0;
+    for (const s of slices) {
+      expect(s.dataRowStart).toBe(0);
+      expect(s.dataRowCount).toBe(1);
+      expect(s.rowTextLineStart).toBe(lineCovered);
+      expect(s.rowTextLineEnd).toBeGreaterThan(lineCovered);
+      lineCovered = s.rowTextLineEnd!;
+    }
+    expect(lineCovered).toBe(20);
+  });
+
+  it("first-page leftover takes a fragment prefix then continues on next page", () => {
+    const slices = buildLogicalRowSlicesForOverflow({
+      rowHeights: [400, 40],
+      firstPageAvailOuterPx: 100,
+      nextPageAvailOuterPx: 500,
+      fallbackRowH: 28,
+      splitRow: (_ri, availInner, lineStart) => {
+        const totalLines = 10;
+        const take = Math.max(0, Math.floor(availInner / 36));
+        if (take <= 0 || lineStart >= totalLines) return null;
+        const lineEnd = Math.min(totalLines, lineStart + take);
+        return { lineEnd, heightPx: (lineEnd - lineStart) * 36, totalLines };
+      },
+    });
+    expect(slices[0]?.dataRowStart).toBe(0);
+    expect(slices[0]?.rowFragment).toBe(true);
+    expect(slices[0]?.rowTextLineStart).toBe(0);
+    // 后续应续完第 0 行再放第 1 行
+    const last = slices[slices.length - 1];
+    expect(last.dataRowStart + last.dataRowCount).toBe(2);
   });
 
   it("templateTableExceedsPageRemaining detects overflow", () => {
@@ -183,5 +239,46 @@ describe("table-content-layout", () => {
       covered += slice.dataRowCount;
     }
     expect(covered).toBe(40);
+  });
+
+  it("static ultra-tall cell produces fragment slices covering all text lines", () => {
+    const longText = "报警描述".repeat(120);
+    const tb = hydrateTemplateElement({
+      id: "static-tall",
+      type: "table",
+      tableRows: 1,
+      tableCols: 1,
+      tableRowHeightPx: 28,
+      x: 10,
+      y: 40,
+      w: 120,
+      fontSize: 12,
+    });
+    ensureTableGrid(tb);
+    tb.tableCells![0]![0]!.text = longText;
+    clampTableElementOuterSize(tb, 800, 20000);
+    const uncapped = estimateWrappedTextHeightUncappedPx({
+      text: longText,
+      widthPx: 100,
+      fontSizePx: Math.max(10, 12 * 0.85),
+      minHeightPx: 28,
+    });
+    expect(uncapped).toBeGreaterThan(400);
+    const heights = computeTemplateTableContentRowHeightsPx(tb, undefined, { uncapped: true });
+    const slices = buildLogicalRowSlicesForOverflow({
+      rowHeights: heights,
+      firstPageAvailOuterPx: 300,
+      nextPageAvailOuterPx: 300,
+      fallbackRowH: 28,
+      splitRow: makeStaticTableSplitRow(tb),
+    });
+    expect(slices.length).toBeGreaterThan(1);
+    let lineCovered = 0;
+    for (const s of slices) {
+      expect(s.dataRowCount).toBe(1);
+      expect(s.rowTextLineStart ?? 0).toBe(lineCovered);
+      lineCovered = s.rowTextLineEnd ?? lineCovered;
+    }
+    expect(lineCovered).toBeGreaterThan(0);
   });
 });
