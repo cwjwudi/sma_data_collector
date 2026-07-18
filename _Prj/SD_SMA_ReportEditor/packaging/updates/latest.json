@@ -1,15 +1,15 @@
 {
-  "version": "0.3.108",
-  "releasedAt": "2026-07-18T18:45:15.204Z",
-  "notes": "Report Editor AI 0.3.108\n\n- P1-B：单行超页时按视觉行跨页断行（静态表 + SQL 填充导出预览）",
+  "version": "0.3.109",
+  "releasedAt": "2026-07-18T18:25:26.343Z",
+  "notes": "Report Editor AI 0.3.109\n\n- 029：历史报表缩略图 keep-alive 重回后重建 IntersectionObserver，避免停在「滚动到此加载预览」",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.108-x64.exe",
-      "sha256": "e99f8d2875359f8eef5e9d1ef3cf147f7247a6c21c4f994e92a090f0dc4710c2",
-      "size": 148157135
+      "url": "Report Editor AI-Setup-0.3.109-x64.exe",
+      "sha256": "",
+      "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.108-arm64.dmg",
+      "url": "Report Editor AI-0.3.109-arm64.dmg",
       "sha256": "",
       "size": 0
     }

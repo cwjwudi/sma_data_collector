@@ -185,9 +185,15 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, nextTick, onActivated, onMounted, onUnmounted, ref, watch } from "vue";
 import PdfExportThumb from "@/components/report-history/PdfExportThumb.vue";
 import { applySelectionClick } from "@/lib/history-selection";
+import {
+  mergeIntersectingFilePaths,
+  nextThumbObserverAction,
+  planAfterHistoryEntriesChanged,
+  type ThumbObserverAction,
+} from "@/lib/history-thumb-visibility";
 
 export type DirEntry = { kind: "dir"; name: string; path: string; modifiedAt?: string };
 export type PdfEntry = {
@@ -323,25 +329,44 @@ const visibleCards = ref<Set<string>>(new Set());
 const cardObserver = ref<IntersectionObserver | null>(null);
 const cardEls = new Map<string, Element>();
 
-function ensureCardObserver() {
-  if (cardObserver.value || typeof IntersectionObserver === "undefined") return;
+function teardownCardObserver() {
+  if (cardObserver.value) {
+    cardObserver.value.disconnect();
+    cardObserver.value = null;
+  }
+}
+
+function createCardObserver() {
+  if (typeof IntersectionObserver === "undefined") return;
   cardObserver.value = new IntersectionObserver(
     (ioEntries) => {
-      let changed = false;
-      const next = new Set(visibleCards.value);
+      const hits: string[] = [];
       for (const e of ioEntries) {
         if (!e.isIntersecting) continue;
         const fp = e.target instanceof HTMLElement ? e.target.dataset.fp : "";
-        if (fp && !next.has(fp)) {
-          next.add(fp);
-          changed = true;
-        }
+        if (fp) hits.push(fp);
       }
+      const { next, changed } = mergeIntersectingFilePaths(visibleCards.value, hits);
       if (changed) visibleCards.value = next;
     },
     { root: null, rootMargin: "400px 0px", threshold: 0.01 },
   );
   for (const el of cardEls.values()) cardObserver.value.observe(el);
+}
+
+function applyThumbObserverAction(action: ThumbObserverAction) {
+  if (action === "noop") return;
+  if (action === "restart") teardownCardObserver();
+  createCardObserver();
+}
+
+function ensureCardObserver() {
+  applyThumbObserverAction(nextThumbObserverAction(!!cardObserver.value, "ensure"));
+}
+
+/** entries 清空 visible 后重建 Observer，强制对当前视口发卡首轮回调（029） */
+function resyncCardVisibility() {
+  applyThumbObserverAction(nextThumbObserverAction(!!cardObserver.value, "restart"));
 }
 
 function setCardRef(filePath: string, el: Element | null) {
@@ -358,20 +383,24 @@ function setCardRef(filePath: string, el: Element | null) {
 
 watch(
   () => props.entries,
-  () => {
-    visibleCards.value = new Set();
+  async () => {
+    const plan = planAfterHistoryEntriesChanged();
+    if (plan.clearVisible) visibleCards.value = new Set();
+    await nextTick();
+    if (plan.observerMode === "restart") resyncCardVisibility();
   },
 );
 
 onMounted(() => ensureCardObserver());
+onActivated(async () => {
+  await nextTick();
+  resyncCardVisibility();
+});
 onUnmounted(() => {
-  if (cardObserver.value) {
-    cardObserver.value.disconnect();
-    cardObserver.value = null;
-  }
+  teardownCardObserver();
 });
 
-defineExpose({ ensureCardObserver });
+defineExpose({ ensureCardObserver, resyncCardVisibility });
 </script>
 
 <style scoped>
