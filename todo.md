@@ -7,6 +7,8 @@
 
 ## 2026-07-20
 
+- **历史报表分屏选路径后卡顿（登记）**：分屏后 2.5s `execFileSync` 枚举可移动卷阻塞主进程（拖窗尤卡）；keep-alive 未停表 + 缩略图风暴为放大器；方案与 U/V/N 用例已写。看板 [docs/031-⌛️](docs/031-⌛️-ReportEditor历史报表分屏选路径后卡顿.md)。
+
 - **ReportEditor 0.3.111 Mac 已打包**：`Report Editor AI-0.3.111-arm64.dmg`；`latest.json` 已写 darwin SHA256（win32 仍空，需 Windows 机打 NSIS）。
 
 - **ReportEditor 0.3.111**：分卷导出首份 fullSqlFill 缓存复用 + 只渲染当前 reportPartIndex（030/023）。看板 [docs/030-🚧](docs/030-🚧-ReportEditor结批占满CPU导致mappView白屏.md)。
