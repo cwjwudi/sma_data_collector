@@ -3,7 +3,8 @@
 > 本文件为 **任务看板 / 架构裁决**；规则见 [CLAUDE.md](../CLAUDE.md)。  
 > **发现 / 评估**：2026-07-20 · 用户要求：不再逐页排列组合打补丁，统一审查跳转与更新，并覆盖表格空间、剩余计划、整体代码评估。  
 > **流程**：本轮交付评估 + 统一方法 + 分阶段修复计划；**不在本轮改业务代码**（除文档）。  
-> **关联**：跳转/卡顿 [031](031-⌛️-ReportEditor历史报表分屏选路径后卡顿.md) · 结批 CPU [030](030-🚧-ReportEditor结批占满CPU导致mappView白屏.md) · 缩略图 [029](029-✅-ReportEditor历史报表缩略图懒加载不触发.md) · 表格 [002](002-🚧-表格系统评估与修复.md) · 索引 [003](003-⌛️-剩余任务与后续规划.md)。
+> **关联**：跳转/卡顿 [031](031-✅-ReportEditor历史报表分屏选路径后卡顿.md) · 结批 CPU [030](030-🚧-ReportEditor结批占满CPU导致mappView白屏.md) · 缩略图 [029](029-✅-ReportEditor历史报表缩略图懒加载不触发.md) · 表格 [002](002-🚧-表格系统评估与修复.md) · 索引 [003](003-⌛️-剩余任务与后续规划.md)。  
+> **落地进度**：P0 代码已入 **0.3.112**；P1/P2 与手测矩阵仍开。
 
 ---
 
@@ -32,14 +33,14 @@
 | 路由 name | keep-alive | 持续任务 | activated / deactivated | 风险 |
 |-----------|------------|----------|-------------------------|------|
 | Dashboard | 是 | FieldOps 1s tick | 有 activated；**无 deactivated 停表** | 中 |
-| DataSourceConfig | 是 | 页内探活；OPC 浏览轮询 | 有 activated；**无 deactivated** | **高**（与侧栏探活双跑） |
+| DataSourceConfig | 是 | 页内探活；OPC 浏览轮询 | **0.3.112** lifecycle pause | 中（侧栏探活另路） |
 | TemplateManager | 是 | IntersectionObserver | activated + deactivated（弱） | 低–中 |
 | LayoutPresets | 是 | Observer ensure-only | 无 deactivated；**029 同类风险** | 中 |
 | SignaturesLibrary | 是 | Observer ensure-only | 无 deactivated；029 触发页 | 中 |
-| ReportGenerator | 是 | 页内图表 1s | **完整 activated/deactivated（金样）** | 低（页内） |
-| ReportHistory | 是 | 分屏 2.5s → **主进程 sync 枚举** | 有 activated；**无 deactivated** | **高（031）** |
+| ReportGenerator | 是 | 页内图表 1s | **0.3.112** lifecycle（L9 金样） | 低（页内） |
+| ReportHistory | 是 | 分屏 5s → **async 枚举** | **0.3.112** page-focus | 低–中（缩略图 P1） |
 | Settings | 是 | 无页级轮询 | — | 低 |
-| AiTools | **意图是 / 实际否** | — | 组件名 `AiToolsPage` ≠ include `AiTools` | 契约债 |
+| AiTools | 是 | — | **0.3.112** name=`AiTools` | 低 |
 | TemplateEditor / LayoutPresetEditor / AuditLog | 否 | 离开即毁 | 合理 | 低 |
 | PdfExport（壳外） | 否 | 导出心跳；预热窗 | 独立窗 | 中（030） |
 
@@ -111,7 +112,7 @@
 | SQL 高度正文/版式漂移 | ✅ 0.3.106 | 行为对齐；双系 height API 维护债 |
 | 分卷重复全量 SQL | ✅ 缓 0.3.111 | **取数重复已关**；全量内存仍开 |
 | 结批抢核白屏 | 🚧 030 | 症状缓解；引擎未换 |
-| 分屏拖窗卡顿 | ⌛️ 031 | **主进程 sync 轮询** — 纳入统一生命周期 P0 |
+| 分屏拖窗卡顿 | ✅ 031 / 0.3.112 | async + page-focus；缩略图并发仍 P1 |
 
 表格盲区（合并格等）仍属 🧭 产品决策，见 002。
 
@@ -121,15 +122,15 @@
 
 > **原则**：先落地「统一生命周期骨架 + 契约测」，再迁现有页面；禁止再开「只修某一跳转组合」的散看板（031/029 类症状并入本计划里程碑）。
 
-## P0 — 骨架 + 止血（建议下一版 0.3.112）
+## ✅ P0 — 骨架 + 止血（0.3.112）
 
 | ID | 目标 | 手段 | 验收 |
 |----|------|------|------|
-| P0-A | 统一生命周期 | 新增 `usePageLifecycle` + 页任务注册表；MainLayout 可选 afterEach 保险 | 单测：register/pause/resume |
-| P0-B | keep-alive 名一致 | 修 AiTools name；CI：include ⊆ defineOptions.name | L1 绿 |
-| P0-C | 031 止血 | 可移动卷改 async；History `onDeactivated`/退出分屏/最小化 停表；in-flight；降频；**不影响结批 A 级** | 031 U1–U3、V1–V3；最小化后结批仍触发 |
-| P0-D | 数据源探活互斥 | 页内探活 + OPC 浏览：deactivated pause；**侧栏探活保留**（用户开启时） | L7/L8 绿；离页后结批仍正常 |
-| P0-E | 契约测底线 | L1–L4、L9（ReportGenerator 金样）入库 | CI 必跑 |
+| P0-A ✅ | 统一生命周期 | `usePageLifecycle` + 注册表 | 单测绿 |
+| P0-B ✅ | keep-alive 名一致 | AiTools name；L1 | L1 绿 |
+| P0-C ✅ | 031 止血 | async 卷枚举；page-focus 停表；5s；in-flight | L3/L4 绿；V 手测 ⌛️ |
+| P0-D ✅ | 数据源探活互斥 | 页内探活 + OPC 浏览 pause；侧栏另路 | 源码接线；L7/L8 加强 ⌛️ |
+| P0-E ✅ | 契约测底线 | L1–L4、L9 入库 | CI 必跑 |
 
 ## P1 — 全量迁移 B 级任务 + 主进程卫生
 
@@ -156,15 +157,15 @@
 
 | ID | 断言 |
 |----|------|
-| L1 | keep-alive `include[]` ⊆ 存在同名 `defineOptions.name` |
-| L2 | keep-alive 页内 `setInterval` 必须有 deactivated/pause 对称路径（约定 `@page-task` 或注册表） |
-| L3 | ReportHistory：deactivated 停可移动卷 interval |
-| L4 | 可移动卷轮询路径无 `execFileSync` |
+| L1 ✅ | keep-alive `include[]` ⊆ 存在同名 `defineOptions.name` |
+| L2 ✅ | B 级 interval 页须 lifecycle / onDeactivated（底线三页） |
+| L3 ✅ | ReportHistory：page-focus 注册 removable poll |
+| L4 ✅ | 可移动卷轮询路径无 `execFileSync` |
 | L5 | 缩略图 IPC 并发 ≤ N |
 | L6 | 029 history-thumb T1–T7；Layout/签名 restart 策略 |
 | L7 | 离开 datasource：页内探活停、侧栏可启、不同时双跑 |
 | L8 | OpcUaPanel：父页 deactivated → 清浏览轮询 |
-| L9 | ReportGenerator：deactivated 后 chart timer null（金样） |
+| L9 ✅ | ReportGenerator：chart-refresh 注册为 B 级（金样） |
 | L10 | `backgroundThrottling: false` 仅白名单 |
 | L11 | dispose 自动结批 / PLC 心跳清理干净 |
 | L12 | 手测矩阵：031 V + 结批中切历史（B 级应已 pause） |

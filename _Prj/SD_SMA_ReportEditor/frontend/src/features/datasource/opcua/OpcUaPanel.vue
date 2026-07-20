@@ -253,7 +253,17 @@
 </template>
 
 <script setup>
-import { computed, defineExpose, onBeforeUnmount, onMounted, reactive, ref, shallowRef, triggerRef, watch } from 'vue'
+import {
+  computed,
+  defineExpose,
+  onBeforeUnmount,
+  onMounted,
+  reactive,
+  ref,
+  shallowRef,
+  triggerRef,
+  watch,
+} from 'vue'
 import { apiFetch } from '@/api/client.js'
 import ConnectionTabLed from '@/features/datasource/ConnectionTabLed.vue'
 import {
@@ -1251,6 +1261,17 @@ function syncAllPollTimers() {
   syncTreeRowPollTimer()
 }
 
+/** 父页 DataSourceConfig deactivated 时调用（032 B 级） */
+function pauseBrowsePolling() {
+  clearPollTimer()
+  clearTreeRowPollTimer()
+}
+
+function resumeBrowsePolling() {
+  if (!pollEnabled.value || !browseCapability.value) return
+  syncAllPollTimers()
+}
+
 watch(
   [pollEnabled, pollIntervalSeconds, browseCapability, () => pickedNode.value],
   () => {
@@ -1321,6 +1342,8 @@ defineExpose({
   probeAllConnections: probeAllOpcConnections,
   healthSummary: connectionHealthSummary,
   reloadServers: loadServers,
+  pauseBrowsePolling,
+  resumeBrowsePolling,
 })
 </script>
 

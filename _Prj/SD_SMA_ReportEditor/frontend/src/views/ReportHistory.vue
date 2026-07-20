@@ -210,9 +210,12 @@ import {
 } from "@/lib/history-audit";
 import { auditLog } from "@/lib/auditLog";
 import { appConfirm, appConfirmSaveLeave } from "@/composables/useAppConfirm";
+import { usePageLifecycle } from "@/composables/usePageLifecycle";
 import { segmentsForDepth, shouldApplyScanGeneration } from "@/lib/report-history-nav";
 
 defineOptions({ name: "ReportHistory" });
+
+const { register: registerPageTask } = usePageLifecycle("ReportHistory");
 
 type Side = "left" | "right";
 
@@ -734,9 +737,10 @@ function dismissRemovable() {
 
 function startRemovablePoll() {
   stopRemovablePoll();
+  if (!split.value) return;
   // 开启分屏时重置 Win 盘符基线，便于「先开分屏再插盘」用新盘符差集检出
   void pollRemovable({ resetBaseline: true });
-  removableTimer = setInterval(() => void pollRemovable(), 2500);
+  removableTimer = setInterval(() => void pollRemovable(), 5000);
 }
 
 function stopRemovablePoll() {
@@ -745,6 +749,16 @@ function stopRemovablePoll() {
     removableTimer = null;
   }
 }
+
+/** B 级 · page-focus：离页 / 退出分屏 / 最小化均停；结批 A 级不受影响（032 Q4′） */
+registerPageTask({
+  id: "removable-volume-poll",
+  scope: "page-focus",
+  pause: stopRemovablePoll,
+  resume: () => {
+    if (split.value) startRemovablePoll();
+  },
+});
 
 async function onConfigRestored() {
   watchDir.value = loadReportExportPrefs().watchDir;
@@ -768,18 +782,17 @@ onActivated(async () => {
     if (!right.cwd) right.cwd = rightRoot.value;
     await refresh("right");
   }
-  if (split.value) startRemovablePoll();
+  // 可移动卷轮询由 usePageLifecycle（page-focus）resume
 });
 
 onMounted(() => {
   window.addEventListener("report-editor-config-imported", onConfigRestored);
   if (watchDir.value && !left.cwd) left.cwd = watchDir.value;
   if (rightRoot.value && !right.cwd) right.cwd = rightRoot.value;
-  if (split.value) startRemovablePoll();
+  // 可移动卷轮询由 usePageLifecycle resume（首挂 onMounted 已触发）
 });
 
 onUnmounted(() => {
-  stopRemovablePoll();
   window.removeEventListener("report-editor-config-imported", onConfigRestored);
 });
 </script>

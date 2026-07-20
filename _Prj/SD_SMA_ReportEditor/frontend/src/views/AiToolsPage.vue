@@ -60,7 +60,8 @@ import {
   type AiToolRisk,
 } from '@/api/aiSettings'
 
-defineOptions({ name: 'AiToolsPage' })
+/** 须与 MainLayout keep-alive include `AiTools` 一致（032 L1） */
+defineOptions({ name: 'AiTools' })
 
 const tools = ref<AiToolCatalogEntry[]>([])
 const categories = ref<Record<string, string>>({})

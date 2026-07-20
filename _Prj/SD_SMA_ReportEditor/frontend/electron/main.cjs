@@ -825,11 +825,11 @@ ipcMain.handle('history-transfer', async (_event, opts) => {
   return transferHistoryItems(opts || {})
 })
 
-/** 可移动卷列表（插拔轮询由渲染进程调用；025：Win 含 USB/新盘符） */
+/** 可移动卷列表（插拔轮询由渲染进程调用；025：Win 含 USB/新盘符；031/032：async） */
 ipcMain.handle('list-removable-volumes', async (_event, opts) => {
   try {
     if (opts && opts.resetBaseline) resetWinDriveBaseline()
-    const detailed = listRemovableVolumesDetailed()
+    const detailed = await listRemovableVolumesDetailed()
     return {
       ok: true,
       volumes: detailed.volumes || [],

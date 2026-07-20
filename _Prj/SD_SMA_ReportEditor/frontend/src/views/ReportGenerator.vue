@@ -780,7 +780,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onActivated, onDeactivated, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, nextTick, onActivated, onMounted, onUnmounted, ref, watch } from "vue";
 import { listTemplateSummaries, type TemplateSummary } from "@/api/templates";
 import { apiFetch } from "@/api/client.js";
 import {
@@ -855,8 +855,11 @@ import {
   resetReportAutoExportBindingRuntime,
 } from "@/lib/report-auto-export-trigger-service";
 import { notifyPlcHeartbeatSettingsChanged, plcHeartbeatState } from "@/lib/plc-heartbeat-service";
+import { usePageLifecycle } from "@/composables/usePageLifecycle";
 
 defineOptions({ name: "ReportGenerator" });
+
+const { register: registerPageTask } = usePageLifecycle("ReportGenerator");
 
 /** 「生成报表」页用户可见固定用语（勿单独显示「结批」二字；PLC 信息节点标签见 exportResultOpcFeedback） */
 const RG_UI = {
@@ -1251,6 +1254,14 @@ function stopChartRefresh(): void {
     chartRefreshTimer = null;
   }
 }
+
+/** B 级金样：离页停图表 tick；自动结批服务为 A 级不在此注册（032 L9） */
+registerPageTask({
+  id: "chart-refresh",
+  scope: "page",
+  pause: stopChartRefresh,
+  resume: startChartRefresh,
+});
 
 function recordBindingOpcSample(
   bindingId: string,
@@ -1867,14 +1878,9 @@ onMounted(() => {
   window.addEventListener("report-generator-prefs-updated", onExternalPrefsUpdated);
 });
 
-/** keep-alive：每次进入刷新模版/连接列表，保证下拉项与其它页新增内容同步 */
+/** keep-alive：每次进入刷新模版/连接列表，保证下拉项与其它页新增内容同步；图表 tick 由 lifecycle resume */
 onActivated(async () => {
-  startChartRefresh();
   await Promise.all([loadSummaries(), loadOpcServers()]);
-});
-
-onDeactivated(() => {
-  stopChartRefresh();
 });
 
 function onConfigImported() {
@@ -1895,7 +1901,6 @@ function onOpcServersChanged() {
 }
 
 onUnmounted(() => {
-  stopChartRefresh();
   window.removeEventListener("report-editor-config-imported", onConfigImported);
   window.removeEventListener("report-editor-opcua-servers-changed", onOpcServersChanged);
   window.removeEventListener("report-generator-prefs-updated", onExternalPrefsUpdated);

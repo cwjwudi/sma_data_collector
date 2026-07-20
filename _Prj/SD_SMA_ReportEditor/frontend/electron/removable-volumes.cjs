@@ -1,16 +1,25 @@
 /**
- * 可移动卷枚举（022 · Q13 / 025）：Win Removable+USB / mac /Volumes。
- * 界面称「可移动存储」；确认后再开右侧。
+ * 可移动卷枚举（022 · Q13 / 025 / 031）：Win Removable+USB / mac /Volumes。
+ * 032：IPC 热路径禁止同步子进程调用；一律 async + in-flight 合并。
  */
 'use strict'
 
 const fs = require('node:fs')
 const path = require('node:path')
-const { execFileSync } = require('node:child_process')
+const { execFile } = require('node:child_process')
+const { promisify } = require('node:util')
 const os = require('node:os')
+
+const execFileAsync = promisify(execFile)
 
 /** @type {Set<string> | null} 分屏首轮可见的盘符快照（大写 `E:`） */
 let winDriveBaseline = null
+
+/** @type {Promise<{ volumes: Array<object>, error?: string }> | null} */
+let inFlightDetailed = null
+/** @type {{ at: number, result: { volumes: Array<object>, error?: string } } | null} */
+let shortCache = null
+const SHORT_CACHE_MS = 400
 
 function resetWinDriveBaseline() {
   winDriveBaseline = null
@@ -18,15 +27,18 @@ function resetWinDriveBaseline() {
 
 /**
  * @param {string} script
- * @returns {string}
+ * @param {{ timeoutMs?: number }} [opts]
+ * @returns {Promise<string>}
  */
-function runPowerShellEncoded(script) {
+async function runPowerShellEncoded(script, opts = {}) {
+  const timeoutMs = opts.timeoutMs ?? 12000
   const encoded = Buffer.from(script, 'utf16le').toString('base64')
-  return execFileSync(
+  const { stdout } = await execFileAsync(
     'powershell.exe',
     ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', encoded],
-    { encoding: 'utf8', timeout: 12000, windowsHide: true },
+    { encoding: 'utf8', timeout: timeoutMs, windowsHide: true, maxBuffer: 4 * 1024 * 1024 },
   )
+  return String(stdout || '')
 }
 
 /**
@@ -66,9 +78,9 @@ function systemDriveRoot() {
 
 /**
  * 所有已就绪逻辑盘（含 Fixed），供「新盘符」差集。
- * @returns {Array<{ path: string, label: string, platform: string, kind: string }>}
+ * @returns {Promise<Array<{ path: string, label: string, platform: string, kind: string }>>}
  */
-function listAllReadyDrivesWin() {
+async function listAllReadyDrivesWin() {
   const script = [
     "$ErrorActionPreference='SilentlyContinue'",
     "[System.IO.DriveInfo]::GetDrives() | Where-Object { $_.IsReady } | ForEach-Object {",
@@ -79,7 +91,7 @@ function listAllReadyDrivesWin() {
     '}',
   ].join('\n')
   try {
-    return parseWinVolumeLines(runPowerShellEncoded(script))
+    return parseWinVolumeLines(await runPowerShellEncoded(script))
   } catch {
     return []
   }
@@ -87,9 +99,9 @@ function listAllReadyDrivesWin() {
 
 /**
  * Removable（.NET）+ USB 总线卷（Get-Disk BusType=USB）+ 新盘符差集。
- * @returns {{ volumes: Array<object>, error?: string }}
+ * @returns {Promise<{ volumes: Array<object>, error?: string }>}
  */
-function listRemovableVolumesWin() {
+async function listRemovableVolumesWin() {
   const script = [
     "$ErrorActionPreference='SilentlyContinue'",
     "$seen = @{}",
@@ -124,13 +136,13 @@ function listRemovableVolumesWin() {
   let detected = []
   let error
   try {
-    detected = parseWinVolumeLines(runPowerShellEncoded(script))
+    detected = parseWinVolumeLines(await runPowerShellEncoded(script))
   } catch (e) {
     error = String(e && e.message ? e.message : e)
     detected = []
   }
 
-  const allReady = listAllReadyDrivesWin()
+  const allReady = await listAllReadyDrivesWin()
   const sys = systemDriveRoot()
   if (winDriveBaseline == null) {
     winDriveBaseline = new Set(allReady.map((d) => d.path.replace(/\\+$/, '').toUpperCase()))
@@ -155,15 +167,19 @@ function listRemovableVolumesWin() {
 }
 
 /**
- * @returns {Array<{ path: string, label: string, platform: string, kind?: string }>}
+ * @returns {Promise<Array<{ path: string, label: string, platform: string, kind?: string }>>}
  */
-function listRemovableVolumesMac() {
+async function listRemovableVolumesMac() {
   const volumesRoot = '/Volumes'
-  if (!fs.existsSync(volumesRoot)) return []
+  try {
+    await fs.promises.access(volumesRoot)
+  } catch {
+    return []
+  }
   const skip = new Set(['Macintosh HD', 'Macintosh HD - Data'])
   let names
   try {
-    names = fs.readdirSync(volumesRoot)
+    names = await fs.promises.readdir(volumesRoot)
   } catch {
     return []
   }
@@ -172,16 +188,17 @@ function listRemovableVolumesMac() {
     if (!name || name.startsWith('.') || skip.has(name)) continue
     const full = path.join(volumesRoot, name)
     try {
-      const st = fs.lstatSync(full)
+      const st = await fs.promises.lstat(full)
       if (!st.isDirectory() && !st.isSymbolicLink()) continue
     } catch {
       continue
     }
     let prefer = true
     try {
-      const info = execFileSync('diskutil', ['info', full], {
+      const { stdout: info } = await execFileAsync('diskutil', ['info', full], {
         encoding: 'utf8',
         timeout: 4000,
+        maxBuffer: 2 * 1024 * 1024,
       })
       const rem = /Removable Media:\s*Yes/i.test(info)
       const ext =
@@ -198,20 +215,41 @@ function listRemovableVolumesMac() {
 }
 
 /**
- * @returns {{ volumes: Array<object>, error?: string }}
+ * @returns {Promise<{ volumes: Array<object>, error?: string }>}
  */
-function listRemovableVolumesDetailed() {
+async function listRemovableVolumesDetailedOnce() {
   const plat = os.platform()
   if (plat === 'win32') return listRemovableVolumesWin()
-  if (plat === 'darwin') return { volumes: listRemovableVolumesMac() }
+  if (plat === 'darwin') return { volumes: await listRemovableVolumesMac() }
   return { volumes: [] }
 }
 
 /**
- * @returns {Array<object>}
+ * @returns {Promise<{ volumes: Array<object>, error?: string }>}
  */
-function listRemovableVolumes() {
-  return listRemovableVolumesDetailed().volumes
+async function listRemovableVolumesDetailed() {
+  const now = Date.now()
+  if (shortCache && now - shortCache.at < SHORT_CACHE_MS) {
+    return shortCache.result
+  }
+  if (inFlightDetailed) return inFlightDetailed
+  inFlightDetailed = listRemovableVolumesDetailedOnce()
+    .then((result) => {
+      shortCache = { at: Date.now(), result }
+      return result
+    })
+    .finally(() => {
+      inFlightDetailed = null
+    })
+  return inFlightDetailed
+}
+
+/**
+ * @returns {Promise<Array<object>>}
+ */
+async function listRemovableVolumes() {
+  const detailed = await listRemovableVolumesDetailed()
+  return detailed.volumes
 }
 
 module.exports = {
@@ -222,4 +260,5 @@ module.exports = {
   parseWinVolumeLines,
   resetWinDriveBaseline,
   systemDriveRoot,
+  runPowerShellEncoded,
 }

@@ -1,17 +1,17 @@
 {
-  "version": "0.3.111",
-  "releasedAt": "2026-07-20T08:54:37.102Z",
-  "notes": "Report Editor AI 0.3.111\n\n- 030：分卷首份全量取数后缓存复用；导出只渲染当前 reportPartIndex",
+  "version": "0.3.112",
+  "releasedAt": "2026-07-20T15:51:45.379Z",
+  "notes": "Report Editor AI 0.3.112\n\n- 032 P0：usePageLifecycle + 契约测 L1–L4/L9\n- 031：可移动卷 async + 分屏轮询 page-focus 停表\n- AiTools keep-alive 名一致；数据源页内探活/OPC 浏览离页停",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.111-x64.exe",
-      "sha256": "83caa8fae6aa837a90fb6434246770923ffc29707c0d54200dcd632630247f1a",
-      "size": 148157028
+      "url": "Report Editor AI-Setup-0.3.112-x64.exe",
+      "sha256": "",
+      "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.111-arm64.dmg",
-      "sha256": "41905fcef3aeaa01f9450518560dfcdc909e65002c5f76d653f969d8f75c5eed",
-      "size": 182045903
+      "url": "Report Editor AI-0.3.112-arm64.dmg",
+      "sha256": "",
+      "size": 0
     }
   }
 }
