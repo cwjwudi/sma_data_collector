@@ -1,12 +1,12 @@
 {
   "version": "0.3.113",
-  "releasedAt": "2026-07-20T16:14:07.718Z",
+  "releasedAt": "2026-07-20T16:50:08.567Z",
   "notes": "Report Editor AI 0.3.113\n\n- 032 P1：Dashboard/Layout/签名 lifecycle + Observer restart\n- 缩略图 IPC 并发≤2；导出写盘 async；可取消 + 失败清 fill-cache\n- 023 口径更正（0.3.111 后不再每分卷重复 SQL）",
   "platforms": {
     "win32-x64": {
       "url": "Report Editor AI-Setup-0.3.113-x64.exe",
-      "sha256": "",
-      "size": 0
+      "sha256": "b5abfa2e4a0c579da8bd707df80330d2772af4d7c88234db46840e04dd95b2d6",
+      "size": 148163971
     },
     "darwin-arm64": {
       "url": "Report Editor AI-0.3.113-arm64.dmg",
