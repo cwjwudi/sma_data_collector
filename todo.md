@@ -7,6 +7,8 @@
 
 ## 2026-07-20
 
+- **全站架构评估（032）**：跳转/keep-alive 缺统一 pause 为系统性债（综合≈3.0/5）；统一 `usePageLifecycle` + P0→P2 修复计划；表格空间偏移已关、导出仍绑 printToPDF。看板 [docs/032-🚧](docs/032-🚧-ReportEditor全站架构评估与统一生命周期.md)；003 已按 032 重排。
+
 - **历史报表分屏选路径后卡顿（登记）**：分屏后 2.5s `execFileSync` 枚举可移动卷阻塞主进程（拖窗尤卡）；keep-alive 未停表 + 缩略图风暴为放大器；方案与 U/V/N 用例已写。看板 [docs/031-⌛️](docs/031-⌛️-ReportEditor历史报表分屏选路径后卡顿.md)。
 
 - **ReportEditor 0.3.111 Mac 已打包**：`Report Editor AI-0.3.111-arm64.dmg`；`latest.json` 已写 darwin SHA256（win32 仍空，需 Windows 机打 NSIS）。
