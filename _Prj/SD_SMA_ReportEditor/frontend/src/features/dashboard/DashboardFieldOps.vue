@@ -129,8 +129,8 @@ import { fetchAuditEntries, formatAuditTime, type AuditEntry } from '@/lib/audit
 import {
   AUTO_EXPORT_STATUS,
   autoExportStatusLabel,
-  clampAutoExportMaxParallel,
 } from '@/lib/auto-export-status-codes'
+import { resolveAutoExportMaxParallel } from '@/lib/export-cpu-budget'
 import {
   isTriggerBindingActive,
   isTriggerBindingComplete,
@@ -196,7 +196,7 @@ const runtime = computed(() => {
   const prefs = loadReportGeneratorPrefs()
   const bindings = prefs.auto.bindings || []
   const active = bindings.filter(isTriggerBindingActive)
-  const configured = clampAutoExportMaxParallel(prefs.auto.maxParallelExports)
+  const configured = resolveAutoExportMaxParallel(prefs.auto.maxParallelExports)
   const maxParallel = Math.min(configured, Math.max(1, active.length || 1))
 
   const today0 = startOfTodayMs()

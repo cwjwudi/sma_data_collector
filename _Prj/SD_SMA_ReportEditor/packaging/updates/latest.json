@@ -1,15 +1,15 @@
 {
-  "version": "0.3.109",
-  "releasedAt": "2026-07-18T18:25:26.343Z",
-  "notes": "Report Editor AI 0.3.109\n\n- 029：历史报表缩略图 keep-alive 重回后重建 IntersectionObserver，避免停在「滚动到此加载预览」",
+  "version": "0.3.110",
+  "releasedAt": "2026-07-20T08:34:01.056Z",
+  "notes": "Report Editor AI 0.3.110\n\n- 030：结批 CPU 节制——默认并行1、≤4逻辑核预算封顶、导出 BelowNormal、分卷让出（适配 i3+Hypervisor 同机 mappView）",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.109-x64.exe",
+      "url": "Report Editor AI-Setup-0.3.110-x64.exe",
       "sha256": "",
       "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.109-arm64.dmg",
+      "url": "Report Editor AI-0.3.110-arm64.dmg",
       "sha256": "",
       "size": 0
     }

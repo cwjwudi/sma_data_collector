@@ -7,6 +7,8 @@
 
 ## 2026-07-20
 
+- **ReportEditor 0.3.110**：结批 CPU 节制（默认并行1、≤4逻辑核预算、导出 BelowNormal/分卷 yield）；现场 i3-7100U+Hypervisor 少一核+同机 DB。看板 [docs/030-🚧](docs/030-🚧-ReportEditor结批占满CPU导致mappView白屏.md)。
+
 - **结批占满 CPU → mappView 白屏（登记）**：Windows 实际结批 Electron 隐藏窗不节流 + 默认并行 4，同机 mappView 白屏；根因与现场缓解已写看板。看板 [docs/030-🚧](docs/030-🚧-ReportEditor结批占满CPU导致mappView白屏.md)。
 
 - **019 导出相框 /「表格空间向右偏移」复核**：根因仍为 slack 28 + chrome inset 欠缩放（0.3.98 已修）；代码仍在；U1–U9 8 项绿；`latest.json` 0.3.109 SHA 空未打新包。看板 [docs/019-✅](docs/019-✅-ReportEditor导出PDF纸张外框.md)。

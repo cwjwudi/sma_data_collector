@@ -34,9 +34,9 @@ export function autoExportStatusLabel(code: number): string {
   return `状态 ${n}`;
 }
 
-/** 并行导出上限：人工可配，硬顶 16 */
+/** 并行导出上限：人工可配，硬顶 16；默认 1（030：同机 HMI / 弱 CPU / Hypervisor） */
 export const AUTO_EXPORT_MAX_PARALLEL_HARD_CAP = 16;
-export const AUTO_EXPORT_MAX_PARALLEL_DEFAULT = 4;
+export const AUTO_EXPORT_MAX_PARALLEL_DEFAULT = 1;
 
 export function clampAutoExportMaxParallel(n: unknown): number {
   const v = Math.floor(Number(n));

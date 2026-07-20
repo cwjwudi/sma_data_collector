@@ -38,7 +38,9 @@ interface Window {
         writeMs?: number;
       };
     }>;
-    setPdfExportMaxParallel: (max: number) => Promise<{ max: number }>;
+    setPdfExportMaxParallel: (
+      max: number,
+    ) => Promise<{ max: number; cpuBudget?: number; logicalCores?: number }>;
     shellOpenPath: (filePath: string) => Promise<{ ok: boolean; error?: string }>;
     pathJoin: (...parts: string[]) => Promise<string>;
     notifyPdfExportReady: (payload: {
