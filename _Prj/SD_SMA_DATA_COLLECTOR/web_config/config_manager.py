@@ -330,7 +330,9 @@ class CollectorConfigManager:
         if target.exists():
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             backup_file = backup_dir / f"{target.stem}_{timestamp}{target.suffix}"
-            shutil.copy2(target, backup_file)
+            # Config backups only need file contents. copy2() also copies file
+            # metadata and can fail with WinError 127 on early Windows 10 builds.
+            shutil.copyfile(target, backup_file)
 
         tmp_target = target.with_suffix(f"{target.suffix}.tmp")
         self._write_json(tmp_target, payload)
