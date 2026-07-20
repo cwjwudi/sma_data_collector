@@ -19,6 +19,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   /** 使用隐藏窗口渲染 "#/pdf-export" 并写入 PDF */
   runPdfExport: (opts) => ipcRenderer.invoke('pdf-export-run', opts),
 
+  /** 取消进行中的 PDF 导出（032 P1-D；需与 runPdfExport 的 jobId 对应） */
+  cancelPdfExport: (opts) => ipcRenderer.invoke('pdf-export-cancel', opts || {}),
+
   /** 设置 PDF 导出最大并行数（主进程限制为 1..16） */
   setPdfExportMaxParallel: (max) => ipcRenderer.invoke('pdf-export-set-max-parallel', { max }),
 

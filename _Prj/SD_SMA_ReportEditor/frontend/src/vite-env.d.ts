@@ -22,6 +22,8 @@ interface Window {
       templateId: string;
       filePath: string;
       openAfter?: boolean;
+      /** 取消用；缺省时主进程生成 */
+      jobId?: string;
     }) => Promise<{
       ok: boolean;
       filePath: string;
@@ -38,6 +40,7 @@ interface Window {
         writeMs?: number;
       };
     }>;
+    cancelPdfExport: (opts: { jobId: string }) => Promise<{ ok: boolean; cancelled?: boolean; error?: string }>;
     setPdfExportMaxParallel: (
       max: number,
     ) => Promise<{ max: number; cpuBudget?: number; logicalCores?: number }>;

@@ -48,6 +48,10 @@ import {
   autoExportStatusLabel,
 } from "@/lib/auto-export-status-codes";
 import { resolveAutoExportMaxParallel } from "@/lib/export-cpu-budget";
+import {
+  clearPdfExportFillCacheAfterFailure,
+  newPdfExportJobId,
+} from "@/lib/pdf-export-job";
 
 const RG_UI = {
   opcAuto: "OPC UA 自动结批",
@@ -478,7 +482,9 @@ async function runAutoPdfExport(
   const prepMs = Date.now() - prepStartMs;
 
   onStage?.("正在取数并渲染报表…", AUTO_EXPORT_STATUS.READING);
+  const exportJobId = newPdfExportJobId("auto");
   const offProgress = api.onPdfExportProgress?.((p) => {
+    if (p.jobId && p.jobId !== exportJobId) return;
     if (p.templateId && p.templateId !== tid) return;
     const total = Number(p.totalReports) || 0;
     const idx = (Number(p.partIndex) || 0) + 1;
@@ -510,9 +516,11 @@ async function runAutoPdfExport(
           templateId: tid,
           filePath,
           openAfter: false,
+          jobId: exportJobId,
         });
         break;
       } catch (e) {
+        clearPdfExportFillCacheAfterFailure(e);
         const msg = e instanceof Error ? e.message : String(e);
         if (attempt >= BINDING_FILL_OUTER_RETRY_MAX || !isRetryableBindingFillSummary(msg)) {
           throw e;

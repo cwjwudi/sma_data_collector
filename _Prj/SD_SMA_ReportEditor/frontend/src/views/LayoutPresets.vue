@@ -260,11 +260,19 @@ import {
 } from "@/lib/report-template/layout-registry";
 import { getLayoutPreset } from "@/api/layoutPresets";
 import { useStaleGuard } from "@/composables/useStaleGuard";
+import { usePageLifecycle } from "@/composables/usePageLifecycle";
 import { appConfirm } from "@/composables/useAppConfirm";
 import { auditLog } from "@/lib/auditLog";
 import { summarizeDeleteLayouts } from "@/lib/auditLabels";
+import {
+  nextThumbObserverAction,
+  planAfterHistoryEntriesChanged,
+  type ThumbObserverAction,
+} from "@/lib/history-thumb-visibility";
 
 defineOptions({ name: "LayoutPresets" });
+
+const { register: registerPageTask } = usePageLifecycle("LayoutPresets");
 
 const route = useRoute();
 const router = useRouter();
@@ -324,8 +332,8 @@ function isCardVisible(id: string): boolean {
   return visibleCards.value.has(id);
 }
 
-function ensureCardObserver() {
-  if (cardObserver || typeof IntersectionObserver === "undefined") return;
+function createCardObserver() {
+  if (typeof IntersectionObserver === "undefined") return;
   cardObserver = new IntersectionObserver(
     (entries) => {
       let changed = false;
@@ -350,6 +358,30 @@ function teardownCardObserver() {
     cardObserver = null;
   }
 }
+
+function applyThumbObserverAction(action: ThumbObserverAction) {
+  if (action === "noop") return;
+  if (action === "restart") teardownCardObserver();
+  createCardObserver();
+}
+
+function ensureCardObserver() {
+  applyThumbObserverAction(nextThumbObserverAction(!!cardObserver, "ensure"));
+}
+
+/** keep-alive 重回 / 列表变更：对齐 029 restart（032 P1-A） */
+function resyncCardVisibility() {
+  applyThumbObserverAction(nextThumbObserverAction(!!cardObserver, "restart"));
+}
+
+registerPageTask({
+  id: "layout-card-observer",
+  scope: "page",
+  pause: teardownCardObserver,
+  resume: () => {
+    void nextTick().then(() => resyncCardVisibility());
+  },
+});
 
 function setCardRef(id: string, el: Element | null) {
   if (el instanceof HTMLElement) {
@@ -727,7 +759,7 @@ watch(mode, async (m, prev) => {
     if (isLoadStale(token)) return;
     presets.value = applyLayoutPresetDisplayOrders(list);
     await nextTick();
-    ensureCardObserver();
+    resyncCardVisibility();
   } catch (e) {
     if (isLoadStale(token)) return;
     msg.value = "加载缩略图数据失败：" + String((e as Error).message || e);
@@ -757,9 +789,19 @@ function onAssetsChanged() {
   void onConfigRestored();
 }
 
+watch(
+  () => presets.value.map((p) => p.id).join("|"),
+  async () => {
+    const plan = planAfterHistoryEntriesChanged();
+    if (plan.clearVisible) visibleCards.value = new Set();
+    await nextTick();
+    if (plan.observerMode === "restart") resyncCardVisibility();
+  },
+);
+
 onActivated(() => {
   void enterView();
-  ensureCardObserver();
+  // Observer 由 usePageLifecycle resume → resync
 });
 
 onMounted(() => {
@@ -768,7 +810,6 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
-  teardownCardObserver();
   window.removeEventListener("report-editor-config-imported", onConfigRestored);
   window.removeEventListener("report-editor-assets-changed", onAssetsChanged);
 });

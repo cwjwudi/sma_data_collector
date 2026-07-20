@@ -15,6 +15,13 @@ const {
   listRemovableVolumesDetailed,
   resetWinDriveBaseline,
 } = require('./removable-volumes.cjs')
+const { withThumbSlot } = require('./pdf-thumb-queue.cjs')
+const {
+  registerPdfExportJob,
+  cancelPdfExportJob,
+  isPdfExportCancelled,
+  unregisterPdfExportJob,
+} = require('./pdf-export-cancel.cjs')
 const {
   readLaunchSettings,
   writeLaunchSettings,
@@ -873,45 +880,45 @@ ipcMain.handle('show-item-in-folder', async (_event, filePath) => {
   return { ok: true }
 })
 
-/** 历史报表缩略图：优先系统缩略图，否则返回 base64 供渲染进程 pdf.js 绘制 */
+/** 历史报表缩略图：优先系统缩略图，否则返回 base64；全局并发 ≤2（032 P1-B） */
 ipcMain.handle('get-export-pdf-thumbnail', async (_event, opts) => {
-  const filePath = opts && opts.filePath
-  const maxBytes = 35 * 1024 * 1024
-  if (!filePath || typeof filePath !== 'string') {
-    return { ok: false, error: '缺少文件路径' }
-  }
-  const resolved = path.resolve(filePath)
-  if (!fs.existsSync(resolved)) {
-    return { ok: false, error: '文件不存在' }
-  }
-  let st
-  try {
-    st = fs.statSync(resolved)
-  } catch (e) {
-    return { ok: false, error: String(e.message || e) }
-  }
-  if (!st.isFile()) {
-    return { ok: false, error: '不是文件' }
-  }
-  if (st.size > maxBytes) {
-    return { ok: false, error: 'PDF 过大，无法生成缩略图' }
-  }
-
-  try {
-    const thumb = await nativeImage.createThumbnailFromPath(resolved, { width: 400, height: 520 })
-    if (thumb && !thumb.isEmpty()) {
-      return { ok: true, dataUrl: thumb.toDataURL() }
+  return withThumbSlot(async () => {
+    const filePath = opts && opts.filePath
+    const maxBytes = 35 * 1024 * 1024
+    if (!filePath || typeof filePath !== 'string') {
+      return { ok: false, error: '缺少文件路径' }
     }
-  } catch {
-    /* 部分类型（如 PDF）可能无系统缩略图，走 pdf.js */
-  }
+    const resolved = path.resolve(filePath)
+    let st
+    try {
+      st = await fs.promises.stat(resolved)
+    } catch (e) {
+      if (e && e.code === 'ENOENT') return { ok: false, error: '文件不存在' }
+      return { ok: false, error: String(e.message || e) }
+    }
+    if (!st.isFile()) {
+      return { ok: false, error: '不是文件' }
+    }
+    if (st.size > maxBytes) {
+      return { ok: false, error: 'PDF 过大，无法生成缩略图' }
+    }
 
-  try {
-    const buf = fs.readFileSync(resolved)
-    return { ok: true, base64: buf.toString('base64') }
-  } catch (e) {
-    return { ok: false, error: `读取失败：${e.message || e}` }
-  }
+    try {
+      const thumb = await nativeImage.createThumbnailFromPath(resolved, { width: 400, height: 520 })
+      if (thumb && !thumb.isEmpty()) {
+        return { ok: true, dataUrl: thumb.toDataURL() }
+      }
+    } catch {
+      /* 部分类型（如 PDF）可能无系统缩略图，走 pdf.js */
+    }
+
+    try {
+      const buf = await fs.promises.readFile(resolved)
+      return { ok: true, base64: buf.toString('base64') }
+    } catch (e) {
+      return { ok: false, error: `读取失败：${e.message || e}` }
+    }
+  })
 })
 
 function createPdfExportWindow() {
@@ -1065,18 +1072,37 @@ ipcMain.handle('pdf-export-set-max-parallel', (_event, opts) => {
   }
 })
 
+ipcMain.handle('pdf-export-cancel', async (_event, opts) => {
+  const jobId = opts && typeof opts.jobId === 'string' ? opts.jobId : ''
+  if (!jobId) return { ok: false, error: '缺少 jobId' }
+  const found = cancelPdfExportJob(jobId)
+  return { ok: found, cancelled: found }
+})
+
 ipcMain.handle('pdf-export-run', async (event, opts) => {
   const filePath = opts && opts.filePath
   const templateId = opts && opts.templateId
   const openAfter = Boolean(opts && opts.openAfter)
-  const jobId = opts && typeof opts.jobId === 'string' ? opts.jobId : ''
+  const jobId =
+    opts && typeof opts.jobId === 'string' && opts.jobId.trim()
+      ? opts.jobId.trim()
+      : `pdf-export-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
   if (!filePath || typeof filePath !== 'string') throw new Error('缺少 filePath')
   if (!templateId || typeof templateId !== 'string') throw new Error('缺少 templateId')
+
+  registerPdfExportJob(jobId)
 
   return runPdfExportWithSlot(async () => {
     let pdfWin = null
     let exportOk = false
     try {
+      function throwIfCancelled() {
+        if (isPdfExportCancelled(jobId)) {
+          throw new Error('导出已取消')
+        }
+      }
+      throwIfCancelled()
+
       function outputPathForPart(partIndex, totalReports) {
         return outputPathForReportPart(filePath, partIndex, totalReports)
       }
@@ -1107,6 +1133,7 @@ ipcMain.handle('pdf-export-run', async (event, opts) => {
       const RENDER_TOTAL_CAP_MS = 600000
 
       async function renderPart(partIndex) {
+        throwIfCancelled()
         const targetUrl = buildPdfExportUrl(event.sender, partHash(partIndex))
         /** 热切换看门狗：仅改 hash 后渲染页若迟迟没有心跳/完成信号，整页重载一次兜底 */
         const HOT_NAV_FALLBACK_MS = 8000
@@ -1240,11 +1267,12 @@ ipcMain.handle('pdf-export-run', async (event, opts) => {
         }
       }
 
-      function writePartPdf(partIndex, totalReports, pdfBuffer) {
+      async function writePartPdf(partIndex, totalReports, pdfBuffer) {
+        throwIfCancelled()
         const outPath = outputPathForPart(partIndex, totalReports)
         const writeStartMs = Date.now()
-        fs.mkdirSync(path.dirname(outPath), { recursive: true })
-        fs.writeFileSync(outPath, pdfBuffer)
+        await fs.promises.mkdir(path.dirname(outPath), { recursive: true })
+        await fs.promises.writeFile(outPath, pdfBuffer)
         timings.writeMs += Date.now() - writeStartMs
         return outPath
       }
@@ -1255,17 +1283,18 @@ ipcMain.handle('pdf-export-run', async (event, opts) => {
       stats = mergeStats(stats, first.stats)
       mergeTimings(first)
       const filePaths = []
-      filePaths.push(writePartPdf(0, totalReports, first.pdfBuffer))
+      filePaths.push(await writePartPdf(0, totalReports, first.pdfBuffer))
       sendProgress({ phase: 'saved', partIndex: 0, totalReports })
 
       for (let partIndex = 1; partIndex < totalReports; partIndex++) {
+        throwIfCancelled()
         // 030：分卷间隙让出 CPU，减轻 Hypervisor/同机 mappView 饿死
         await yieldToOs(PDF_EXPORT_PART_YIELD_MS)
         sendProgress({ phase: 'render', partIndex, totalReports })
         const part = await renderPart(partIndex)
         stats = mergeStats(stats, part.stats)
         mergeTimings(part)
-        filePaths.push(writePartPdf(partIndex, totalReports, part.pdfBuffer))
+        filePaths.push(await writePartPdf(partIndex, totalReports, part.pdfBuffer))
         sendProgress({ phase: 'saved', partIndex, totalReports })
       }
 
@@ -1286,6 +1315,7 @@ ipcMain.handle('pdf-export-run', async (event, opts) => {
     } catch (e) {
       throw new Error(humanizePdfExportError(e, { phase: 'export' }))
     } finally {
+      unregisterPdfExportJob(jobId)
       // 成功窗口回到预热页并归还空闲池；失败或超复用上限的窗口销毁。
       let recycled = false
       if (exportOk && isReusablePdfWindow(pdfWin) && mainWindow && !mainWindow.isDestroyed()) {

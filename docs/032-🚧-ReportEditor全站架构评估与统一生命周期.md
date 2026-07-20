@@ -4,7 +4,7 @@
 > **发现 / 评估**：2026-07-20 · 用户要求：不再逐页排列组合打补丁，统一审查跳转与更新，并覆盖表格空间、剩余计划、整体代码评估。  
 > **流程**：本轮交付评估 + 统一方法 + 分阶段修复计划；**不在本轮改业务代码**（除文档）。  
 > **关联**：跳转/卡顿 [031](031-✅-ReportEditor历史报表分屏选路径后卡顿.md) · 结批 CPU [030](030-🚧-ReportEditor结批占满CPU导致mappView白屏.md) · 缩略图 [029](029-✅-ReportEditor历史报表缩略图懒加载不触发.md) · 表格 [002](002-🚧-表格系统评估与修复.md) · 索引 [003](003-⌛️-剩余任务与后续规划.md)。  
-> **落地进度**：P0 代码已入 **0.3.112**；P1/P2 与手测矩阵仍开。
+> **落地进度**：P0 **0.3.112**；P1 **0.3.113**；P2 与现场手测仍开。
 
 ---
 
@@ -132,15 +132,15 @@
 | P0-D ✅ | 数据源探活互斥 | 页内探活 + OPC 浏览 pause；侧栏另路 | 源码接线；L7/L8 加强 ⌛️ |
 | P0-E ✅ | 契约测底线 | L1–L4、L9 入库 | CI 必跑 |
 
-## P1 — 全量迁移 B 级任务 + 主进程卫生
+## ✅ P1 — 全量迁移 B 级任务 + 主进程卫生（0.3.113）
 
 | ID | 目标 | 手段 | 验收 |
 |----|------|------|------|
-| P1-A | Dashboard / Layout / 签名 Observer | 全员接入 lifecycle；Observer 对齐 029 restart | 切页无泄漏；签名→历史缩略图仍出 |
-| P1-B | 缩略图并发上限 | 全局队列 ≤2–3；失败勿堵主进程 | 031 U3/V4 |
-| P1-C | 导出写盘异步 | `fs.promises.writeFile` | 多分卷时 UI 不周期性僵 |
-| P1-D | 导出 Abort + 清 cache | AbortController；失败清 fill-cache | 取消无僵尸窗 |
-| P1-E | 023 口径/现场阈值 | 真实样本；文档去掉「每份完整 SQL」过时描述 | 累计查询行≈结果行 |
+| P1-A ✅ | Dashboard / Layout / 签名 Observer | lifecycle；Observer 对齐 029 restart | L2/L6 绿 |
+| P1-B ✅ | 缩略图并发上限 | `pdf-thumb-queue` ≤2；`fs.promises.readFile` | L5 绿 |
+| P1-C ✅ | 导出写盘异步 | `fs.promises.writeFile` | 契约绿 |
+| P1-D ✅ | 导出取消 + 清 cache | `pdf-export-cancel` + jobId；失败清 fill-cache | 单测绿；UI 取消钮 ⌛️ |
+| P1-E ✅ | 023 口径 | 文档更正「每分卷重复 SQL」过时描述 | 023 已改；现场样本 ⌛️ |
 
 ## P2 — 引擎与产品能力（中长期）
 
@@ -161,8 +161,8 @@
 | L2 ✅ | B 级 interval 页须 lifecycle / onDeactivated（底线三页） |
 | L3 ✅ | ReportHistory：page-focus 注册 removable poll |
 | L4 ✅ | 可移动卷轮询路径无 `execFileSync` |
-| L5 | 缩略图 IPC 并发 ≤ N |
-| L6 | 029 history-thumb T1–T7；Layout/签名 restart 策略 |
+| L5 ✅ | 缩略图 IPC 并发 ≤ 2 |
+| L6 ✅ | Layout/签名 Observer restart（029 对齐） |
 | L7 | 离开 datasource：页内探活停、侧栏可启、不同时双跑 |
 | L8 | OpcUaPanel：父页 deactivated → 清浏览轮询 |
 | L9 ✅ | ReportGenerator：chart-refresh 注册为 B 级（金样） |

@@ -125,8 +125,16 @@ import {
   refreshSignatureSummaries,
 } from "@/lib/signature-registry";
 import { appConfirm } from "@/composables/useAppConfirm";
+import { usePageLifecycle } from "@/composables/usePageLifecycle";
+import {
+  nextThumbObserverAction,
+  planAfterHistoryEntriesChanged,
+  type ThumbObserverAction,
+} from "@/lib/history-thumb-visibility";
 
 defineOptions({ name: "SignaturesLibrary" });
+
+const { register: registerPageTask } = usePageLifecycle("SignaturesLibrary");
 
 const msg = ref("");
 const loading = ref(false);
@@ -215,8 +223,8 @@ function loadPreview(id: string) {
   });
 }
 
-function ensureRowObserver() {
-  if (rowObserver.value || typeof IntersectionObserver === "undefined") return;
+function createRowObserver() {
+  if (typeof IntersectionObserver === "undefined") return;
   rowObserver.value = new IntersectionObserver(
     (entries) => {
       for (const e of entries) {
@@ -229,6 +237,37 @@ function ensureRowObserver() {
   );
   for (const el of rowEls.values()) rowObserver.value.observe(el);
 }
+
+function teardownRowObserver() {
+  if (rowObserver.value) {
+    rowObserver.value.disconnect();
+    rowObserver.value = null;
+  }
+}
+
+function applyRowObserverAction(action: ThumbObserverAction) {
+  if (action === "noop") return;
+  if (action === "restart") teardownRowObserver();
+  createRowObserver();
+}
+
+function ensureRowObserver() {
+  applyRowObserverAction(nextThumbObserverAction(!!rowObserver.value, "ensure"));
+}
+
+/** keep-alive 重回 / 列表变更：对齐 029 restart（032 P1-A） */
+function resyncRowVisibility() {
+  applyRowObserverAction(nextThumbObserverAction(!!rowObserver.value, "restart"));
+}
+
+registerPageTask({
+  id: "signature-row-observer",
+  scope: "page",
+  pause: teardownRowObserver,
+  resume: () => {
+    void nextTick().then(() => resyncRowVisibility());
+  },
+});
 
 function setRowRef(id: string, el: Element | null) {
   if (el instanceof HTMLElement) {
@@ -401,10 +440,19 @@ function normalizeLabel(s: string) {
   return s.trim().slice(0, 128);
 }
 
+watch(
+  () => summaries.value.map((x) => x.id).join("|"),
+  async () => {
+    const plan = planAfterHistoryEntriesChanged();
+    await nextTick();
+    if (plan.observerMode === "restart") resyncRowVisibility();
+  },
+);
+
 onActivated(async () => {
-  ensureRowObserver();
   await load();
   await openNewFromRoute();
+  // Observer 由 usePageLifecycle resume → resync
 });
 
 onMounted(() => {
@@ -412,10 +460,6 @@ onMounted(() => {
 });
 
 onUnmounted(() => {
-  if (rowObserver.value) {
-    rowObserver.value.disconnect();
-    rowObserver.value = null;
-  }
   window.removeEventListener("report-editor-config-imported", onConfigRestored);
 });
 

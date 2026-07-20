@@ -856,6 +856,10 @@ import {
 } from "@/lib/report-auto-export-trigger-service";
 import { notifyPlcHeartbeatSettingsChanged, plcHeartbeatState } from "@/lib/plc-heartbeat-service";
 import { usePageLifecycle } from "@/composables/usePageLifecycle";
+import {
+  clearPdfExportFillCacheAfterFailure,
+  newPdfExportJobId,
+} from "@/lib/pdf-export-job";
 
 defineOptions({ name: "ReportGenerator" });
 
@@ -1784,7 +1788,9 @@ async function onManualExport(): Promise<void> {
     }
 
     stage("正在取数并渲染报表…");
+    const exportJobId = newPdfExportJobId("manual");
     offProgress = api.onPdfExportProgress?.((p) => {
+      if (p.jobId && p.jobId !== exportJobId) return;
       if (p.templateId && p.templateId !== tid) return;
       const total = Number(p.totalReports) || 0;
       const idx = (Number(p.partIndex) || 0) + 1;
@@ -1798,6 +1804,7 @@ async function onManualExport(): Promise<void> {
       templateId: tid,
       filePath,
       openAfter: false,
+      jobId: exportJobId,
     });
     offProgress?.();
     offProgress = undefined;
@@ -1835,6 +1842,7 @@ async function onManualExport(): Promise<void> {
     if (timingsLine) doneLines.push(timingsLine);
     showAppToast(doneLines.join("\n"), { id: progressToastId, tone: "ok", durationMs: 10000 });
   } catch (e) {
+    clearPdfExportFillCacheAfterFailure(e);
     const parsed = parseExportFailureDiagnostics(e);
     const msg = humanizePdfExportError(parsed.message || e);
     manualHint.value = msg;

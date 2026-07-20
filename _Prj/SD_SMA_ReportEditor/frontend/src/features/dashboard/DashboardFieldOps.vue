@@ -124,6 +124,7 @@
 
 <script setup lang="ts">
 import { computed, onActivated, onMounted, onUnmounted, ref } from 'vue'
+import { usePageLifecycle } from '@/composables/usePageLifecycle'
 import AutoTriggerValueSparkline from '@/components/AutoTriggerValueSparkline.vue'
 import { fetchAuditEntries, formatAuditTime, type AuditEntry } from '@/lib/auditLog'
 import {
@@ -149,6 +150,9 @@ import { listTemplateSummaries } from '@/api/templates'
 
 defineOptions({ name: 'DashboardFieldOps' })
 
+/** keep-alive 页名为 Dashboard；子组件仍收 activated/deactivated（032 P1-A） */
+const { register: registerPageTask } = usePageLifecycle('Dashboard')
+
 const electronShell = typeof window !== 'undefined' && Boolean(window.electronAPI?.scanExportPdfs)
 
 const tick = ref(0)
@@ -165,6 +169,25 @@ const pdfsError = ref('')
 const pdfDir = ref('')
 
 let pollTimer: ReturnType<typeof setInterval> | null = null
+
+function startOpsPoll(): void {
+  if (pollTimer != null) return
+  pollTimer = setInterval(refreshLocal, 1000)
+}
+
+function stopOpsPoll(): void {
+  if (pollTimer != null) {
+    clearInterval(pollTimer)
+    pollTimer = null
+  }
+}
+
+registerPageTask({
+  id: 'dashboard-ops-tick',
+  scope: 'page',
+  pause: stopOpsPoll,
+  resume: startOpsPoll,
+})
 
 function startOfTodayMs(): number {
   const d = new Date()
@@ -407,7 +430,7 @@ function onConfigImported() {
 
 onMounted(() => {
   void refreshAll()
-  pollTimer = setInterval(refreshLocal, 1000)
+  // 1s tick 由 usePageLifecycle resume
   window.addEventListener('report-generator-prefs-updated', onPrefsUpdated)
   window.addEventListener('report-generator-auto-export-changed', onPrefsUpdated)
   window.addEventListener('report-editor-config-imported', onConfigImported)
@@ -418,10 +441,6 @@ onActivated(() => {
 })
 
 onUnmounted(() => {
-  if (pollTimer) {
-    clearInterval(pollTimer)
-    pollTimer = null
-  }
   window.removeEventListener('report-generator-prefs-updated', onPrefsUpdated)
   window.removeEventListener('report-generator-auto-export-changed', onPrefsUpdated)
   window.removeEventListener('report-editor-config-imported', onConfigImported)

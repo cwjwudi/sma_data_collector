@@ -1,15 +1,15 @@
 {
-  "version": "0.3.112",
-  "releasedAt": "2026-07-20T15:51:45.379Z",
-  "notes": "Report Editor AI 0.3.112\n\n- 032 P0：usePageLifecycle + 契约测 L1–L4/L9\n- 031：可移动卷 async + 分屏轮询 page-focus 停表\n- AiTools keep-alive 名一致；数据源页内探活/OPC 浏览离页停",
+  "version": "0.3.113",
+  "releasedAt": "2026-07-20T16:14:07.718Z",
+  "notes": "Report Editor AI 0.3.113\n\n- 032 P1：Dashboard/Layout/签名 lifecycle + Observer restart\n- 缩略图 IPC 并发≤2；导出写盘 async；可取消 + 失败清 fill-cache\n- 023 口径更正（0.3.111 后不再每分卷重复 SQL）",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.112-x64.exe",
+      "url": "Report Editor AI-Setup-0.3.113-x64.exe",
       "sha256": "",
       "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.112-arm64.dmg",
+      "url": "Report Editor AI-0.3.113-arm64.dmg",
       "sha256": "",
       "size": 0
     }

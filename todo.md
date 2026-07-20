@@ -7,6 +7,8 @@
 
 ## 2026-07-20
 
+- **ReportEditor 0.3.113（032 P1）**：Dashboard/Layout/签名 lifecycle + Observer restart；缩略图并发≤2；导出写盘 async + cancelPdfExport；023 口径更正。看板 [docs/032-🚧](docs/032-🚧-ReportEditor全站架构评估与统一生命周期.md)。
+
 - **ReportEditor 0.3.112（032 P0）**：`usePageLifecycle` + AiTools keep-alive 名 + 可移动卷 async/in-flight + History page-focus 停表（5s）+ 数据源探活/OPC 浏览离页 pause + 契约测 L1–L4/L9。看板 [docs/032-🚧](docs/032-🚧-ReportEditor全站架构评估与统一生命周期.md) · [docs/031-✅](docs/031-✅-ReportEditor历史报表分屏选路径后卡顿.md)。
 
 - **032 生命周期拍板**：结批/心跳=A 级（任意页+最小化不停）；历史分屏 U 盘轮询离开页/退出分屏/最小化停；数据源 OPC 浏览与页内探活离页停、侧栏探活可留。详见 [docs/032-🚧](docs/032-🚧-ReportEditor全站架构评估与统一生命周期.md)。

@@ -1,5 +1,5 @@
 /**
- * 032 生命周期契约测 L1–L4、L9（源码级门禁，CI 必跑）
+ * 032 生命周期契约测 L1–L6、L9 + P1 写盘/取消（源码级门禁，CI 必跑）
  */
 import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -60,6 +60,9 @@ describe("032 page lifecycle contracts", () => {
       "views/ReportHistory.vue",
       "views/ReportGenerator.vue",
       "views/DataSourceConfig.vue",
+      "views/LayoutPresets.vue",
+      "views/SignaturesLibrary.vue",
+      "features/dashboard/DashboardFieldOps.vue",
     ];
     for (const rel of must) {
       const src = read(rel);
@@ -91,11 +94,50 @@ describe("032 page lifecycle contracts", () => {
     expect(code).toMatch(/inFlightDetailed|inFlight/);
   });
 
+  it("L5: 缩略图 IPC 走 withThumbSlot 且无 readFileSync", () => {
+    const main = readFileSync(join(frontendRoot, "electron/main.cjs"), "utf8");
+    expect(main).toMatch(/withThumbSlot/);
+    const thumbHandler = main.slice(main.indexOf("get-export-pdf-thumbnail"));
+    const code = thumbHandler
+      .slice(0, 1200)
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^\s*\/\/.*$/gm, "");
+    expect(code).not.toMatch(/\breadFileSync\b/);
+    expect(code).toMatch(/fs\.promises\.readFile/);
+  });
+
+  it("L6: Layout/签名 Observer 对齐 029 restart", () => {
+    for (const rel of ["views/LayoutPresets.vue", "views/SignaturesLibrary.vue"]) {
+      const src = read(rel);
+      expect(src).toMatch(/nextThumbObserverAction/);
+      expect(src).toMatch(/resync(Card|Row)Visibility/);
+      expect(src).toMatch(/observerMode:\s*["']restart["']|planAfterHistoryEntriesChanged/);
+    }
+  });
+
   it("L9: ReportGenerator 金样 chart-refresh 注册为 B 级", () => {
     const src = read("views/ReportGenerator.vue");
     expect(src).toMatch(/usePageLifecycle\(\s*["']ReportGenerator["']\s*\)/);
     expect(src).toMatch(/id:\s*["']chart-refresh["']/);
     expect(src).toMatch(/pause:\s*stopChartRefresh/);
     expect(src).toMatch(/resume:\s*startChartRefresh/);
+  });
+
+  it("P1-C: pdf-export-run 写盘用 fs.promises.writeFile", () => {
+    const main = readFileSync(join(frontendRoot, "electron/main.cjs"), "utf8");
+    const slice = main.slice(main.indexOf("writePartPdf"));
+    expect(slice).toMatch(/fs\.promises\.writeFile/);
+    const writeBody = slice.slice(0, 500).replace(/\/\*[\s\S]*?\*\//g, "");
+    expect(writeBody).not.toMatch(/\bwriteFileSync\b/);
+  });
+
+  it("P1-D: pdf-export-cancel IPC + 失败清 fill-cache", () => {
+    const main = readFileSync(join(frontendRoot, "electron/main.cjs"), "utf8");
+    expect(main).toMatch(/pdf-export-cancel/);
+    expect(main).toMatch(/cancelPdfExportJob|isPdfExportCancelled/);
+    const preload = readFileSync(join(frontendRoot, "electron/preload.cjs"), "utf8");
+    expect(preload).toMatch(/cancelPdfExport/);
+    const rg = read("views/ReportGenerator.vue");
+    expect(rg).toMatch(/clearPdfExportFillCacheAfterFailure/);
   });
 });
