@@ -227,6 +227,35 @@ function Reset-PackagedRuntimeState {
     Write-Host "[runtime] reset configs to default.json only and cleared smoke logs"
 }
 
+function Set-VenvRelocationProbe {
+    param(
+        [Parameter(Mandatory = $true)][string]$VenvDir,
+        [Parameter(Mandatory = $true)][string]$MissingPythonHome
+    )
+    $configPath = Join-Path $VenvDir "pyvenv.cfg"
+    if (-not (Test-Path -LiteralPath $configPath)) {
+        throw "Relocation probe cannot find: $configPath"
+    }
+    $missingPython = Join-Path $MissingPythonHome "python.exe"
+    $lines = Get-Content -LiteralPath $configPath
+    $rewritten = foreach ($line in $lines) {
+        if ($line -match '^\s*home\s*=') {
+            "home = $MissingPythonHome"
+        }
+        elseif ($line -match '^\s*executable\s*=') {
+            "executable = $missingPython"
+        }
+        elseif ($line -match '^\s*command\s*=') {
+            "command = $missingPython -m venv $VenvDir"
+        }
+        else {
+            $line
+        }
+    }
+    Set-Content -LiteralPath $configPath -Value $rewritten -Encoding ASCII
+    Write-Host "[relocation] injected missing build path; launcher must repair it before smoke test"
+}
+
 $PythonExe = Resolve-BuildPython -Requested $Python
 $InnoSetupExe = Resolve-InnoSetup -Requested $InnoSetup
 Ensure-Nuitka -PythonExe $PythonExe
@@ -308,6 +337,11 @@ cd /d "%~dp0_Launcher"
 "@ | Set-Content -LiteralPath (Join-Path $PackageRoot "start.bat") -Encoding ASCII
 
 if (-not $SkipSmokeTest) {
+    $missingProbeHome = Join-Path $InstallerPackageRoot "__missing_build_python__"
+    if (Test-Path -LiteralPath $missingProbeHome) {
+        throw "Relocation probe path unexpectedly exists: $missingProbeHome"
+    }
+    Set-VenvRelocationProbe -VenvDir (Join-Path $PackageRoot ".venv") -MissingPythonHome $missingProbeHome
     Write-Host "[smoke] running compiled launcher against bytecode-only services"
     & $InstalledLauncher --config $stagedConfigPath --smoke --no-browser
     if ($LASTEXITCODE -ne 0) {

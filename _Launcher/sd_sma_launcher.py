@@ -335,6 +335,51 @@ def resolve_path(value: str | os.PathLike[str], *, base: Path = PACKAGE_ROOT) ->
     return path.resolve()
 
 
+def repair_venv_config(venv_dir: Path, python_home: Path) -> bool:
+    """Repair absolute venv paths after a portable package has been relocated."""
+    config_path = venv_dir / "pyvenv.cfg"
+    python_exe = python_home / "python.exe"
+    if not config_path.is_file() or not python_exe.is_file():
+        return False
+
+    resolved_venv = venv_dir.resolve()
+    resolved_home = python_home.resolve()
+    resolved_python = python_exe.resolve()
+    desired = {
+        "home": str(resolved_home),
+        "executable": str(resolved_python),
+        "command": f"{resolved_python} -m venv {resolved_venv}",
+    }
+
+    original = config_path.read_text(encoding="utf-8", errors="replace")
+    rewritten: list[str] = []
+    seen: set[str] = set()
+    for line in original.splitlines():
+        key = line.split("=", 1)[0].strip().lower() if "=" in line else ""
+        if key in desired:
+            rewritten.append(f"{key} = {desired[key]}")
+            seen.add(key)
+        else:
+            rewritten.append(line)
+    for key in ("home", "executable", "command"):
+        if key not in seen:
+            rewritten.append(f"{key} = {desired[key]}")
+
+    updated = "\r\n".join(rewritten) + "\r\n"
+    if original.replace("\r\n", "\n") == updated.replace("\r\n", "\n"):
+        return False
+
+    temp_path = config_path.with_name(f"{config_path.name}.tmp")
+    with temp_path.open("w", encoding="utf-8", newline="") as file:
+        file.write(updated)
+    temp_path.replace(config_path)
+    return True
+
+
+def repair_bundled_venv() -> bool:
+    return repair_venv_config(PACKAGE_ROOT / ".venv", PACKAGE_ROOT / "_Python")
+
+
 def find_python(config: dict[str, Any]) -> Path:
     configured = resolve_path(str(config.get("python", "")))
     if configured.is_file():
@@ -902,9 +947,11 @@ def main() -> int:
     config_path = resolve_path(args.config, base=Path.cwd()) if args.config != str(DEFAULT_CONFIG) else DEFAULT_CONFIG
     config = load_json(config_path)
     install_missing = args.install_missing or bool(config.get("auto_install_missing", False))
-    python = find_python(config)
 
     try:
+        if repair_bundled_venv():
+            print(f"[env] repaired bundled Python paths: {PACKAGE_ROOT / '.venv' / 'pyvenv.cfg'}")
+        python = find_python(config)
         check_environment(python, config, install_missing=install_missing)
         assert_service_paths(config)
         bootstrap_runtime_dirs(config)
