@@ -54,9 +54,9 @@ onPickRightRoot → pickExportDirectory → refresh(right) → scanExportEntries
 ## A. 短期（优先落地）
 
 1. **轮询改异步**：`execFile` / `spawn`（或 utilityProcess），IPC **禁止**同步等子进程；上一轮未完成则跳过（in-flight guard）。  
-2. **生命周期**：`onDeactivated` / 退出分屏 / 离开路由 → `stopRemovablePoll`；`onActivated` 且 `split` 再启。  
+2. **生命周期（2026-07-20 拍板）**：`onDeactivated` / 退出分屏 / **最小化** → `stopRemovablePoll`；`onActivated` 且仍分屏再启。**不**停 OPC 自动结批（应用级）。  
 3. **降频**：间隔 2.5s → **5–10s**；Win 结果短缓存。  
-4. **缩略图**：全局并发上限（如 2–3）+ 失败勿整文件 `readFileSync` 堵主进程。  
+4. **缩略图**：全局并发上限（如 2–3）+ 失败勿整文件 `readFileSync` 堵主进程（默认可放 P1）。  
 5. **现场缓解（不改代码）**：分屏用**列表**模式；离开历史页前先「退出分屏」。
 
 ## B. 中期

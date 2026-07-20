@@ -61,20 +61,32 @@
 
 ### 任务分级
 
-| 级别 | 含义 | 离开页 | 失焦 | 示例 |
-|------|------|--------|------|------|
-| **A 应用级** | 产品必须跨页 | 不停 | 不停 | OPC 结批、PLC 心跳、PDF 预热渲染 |
-| **B 页可见** | 仅当前页需要 | **必须 pause** | 建议 pause/降频 | 分屏 U 盘轮询、数据源探活、OPC 浏览轮询、图表 UI tick、缩略图 Observer 活跃加载 |
+| 级别 | 含义 | 离开页 | 最小化/失焦 | 示例 |
+|------|------|--------|-------------|------|
+| **A 应用级** | 跨页业务必须可用 | **不停** | **不停** | OPC **自动结批**、PLC 心跳、PDF 预热渲染、（用户开启时）**侧栏连接探活** |
+| **B 页可见** | 只服务当前页 UI | **必须 pause** | 见下表分项 | 历史分屏 U 盘轮询、数据源**页内**探活、OPC **浏览树**轮询、生成页图表 UI tick |
 | **C 一次性** | 可取消 | cancel in-flight | — | 扫目录、单次缩略图 |
+
+> **硬约束（2026-07-20 用户拍板）**：不能因为「不在某页 / 最小化 / 在别的页」导致结批失败。A 级与页面路由解耦；B 级停的是页内辅助，不是整页业务能力作废。
+
+### 产品拍板（生命周期 · 2026-07-20）
+
+| # | 结论 |
+|---|------|
+| 1 | **结批 / 心跳**：任意页面 + 最小化都必须继续 → **A 级** |
+| 2 | **历史分屏 U 盘轮询**：离开历史页或退出分屏 → **停**；回到历史且仍分屏 → **再启** |
+| 3 | **数据源 OPC 浏览轮询**：离开数据源页 → **停**；侧栏探活若用户开着 → **可继续（A）**；页内探活离开页 → **停** |
+| Q4′ | **最小化时**：历史分屏 U 盘轮询 → **停**（结批仍跑）→ 选 **A** |
+| Q3 | keep-alive **现有名单可保留**；缓存 ≠ 乱跑任务；用 lifecycle 管 B 级（等价原确认清单 Q3=A） |
 
 ### `usePageLifecycle`（契约）
 
 所有 **进入 keep-alive 的页面**必须：
 
 1. `defineOptions({ name })` **与** MainLayout `include` **完全一致**（CI 校验）。  
-2. 用 `usePageLifecycle(pageId)` **注册**所有 B 级任务的 `pause`/`resume`。  
-3. `onActivated` → resume；`onDeactivated` + `onUnmounted` → pause。  
-4. **金样**：`ReportGenerator` 图表 timer（已有 deactivated 停表）。
+2. 用 `usePageLifecycle(pageId)` **注册**所有 B 级任务的 `pause`/`resume`；**禁止**把 A 级任务注册成 B 级。  
+3. `onActivated` → resume B；`onDeactivated` + `onUnmounted` → pause B；历史分屏另在 **visibility/minimize** 时 pause（Q4′=A）。  
+4. **金样**：`ReportGenerator` 图表 timer = B 级；同页背后的自动结批服务 = A 级（已在应用壳，不随 deactivated 停）。
 
 ### 主进程硬规则
 
@@ -115,8 +127,8 @@
 |----|------|------|------|
 | P0-A | 统一生命周期 | 新增 `usePageLifecycle` + 页任务注册表；MainLayout 可选 afterEach 保险 | 单测：register/pause/resume |
 | P0-B | keep-alive 名一致 | 修 AiTools name；CI：include ⊆ defineOptions.name | L1 绿 |
-| P0-C | 031 止血 | 可移动卷改 async；History `onDeactivated` 停表；in-flight；降频 | 031 U1–U3、V1–V3 |
-| P0-D | 数据源探活互斥 | DataSourceConfig / OpcUaPanel deactivated pause；与侧栏探活互斥 | L7/L8 绿 |
+| P0-C | 031 止血 | 可移动卷改 async；History `onDeactivated`/退出分屏/最小化 停表；in-flight；降频；**不影响结批 A 级** | 031 U1–U3、V1–V3；最小化后结批仍触发 |
+| P0-D | 数据源探活互斥 | 页内探活 + OPC 浏览：deactivated pause；**侧栏探活保留**（用户开启时） | L7/L8 绿；离页后结批仍正常 |
 | P0-E | 契约测底线 | L1–L4、L9（ReportGenerator 金样）入库 | CI 必跑 |
 
 ## P1 — 全量迁移 B 级任务 + 主进程卫生
