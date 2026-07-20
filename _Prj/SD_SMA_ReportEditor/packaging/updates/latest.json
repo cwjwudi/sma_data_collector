@@ -1,15 +1,15 @@
 {
-  "version": "0.3.110",
-  "releasedAt": "2026-07-20T08:34:01.056Z",
-  "notes": "Report Editor AI 0.3.110\n\n- 030：结批 CPU 节制——默认并行1、≤4逻辑核预算封顶、导出 BelowNormal、分卷让出（适配 i3+Hypervisor 同机 mappView）",
+  "version": "0.3.111",
+  "releasedAt": "2026-07-20T08:43:30.736Z",
+  "notes": "Report Editor AI 0.3.111\n\n- 030：分卷首份全量取数后缓存复用；导出只渲染当前 reportPartIndex",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.110-x64.exe",
+      "url": "Report Editor AI-Setup-0.3.111-x64.exe",
       "sha256": "",
       "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.110-arm64.dmg",
+      "url": "Report Editor AI-0.3.111-arm64.dmg",
       "sha256": "",
       "size": 0
     }

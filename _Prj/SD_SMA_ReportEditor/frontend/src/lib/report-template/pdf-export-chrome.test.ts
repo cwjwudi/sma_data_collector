@@ -20,6 +20,19 @@ const stackVue = readFileSync(
 );
 const pdfViewVue = readFileSync(join(root, "views/PdfExportView.vue"), "utf8");
 
+describe("PDF export fill cache / lazy reports (030)", () => {
+  it("U10: PdfExportView reuses fill cache on later parts", () => {
+    expect(pdfViewVue).toMatch(/shouldReusePdfExportFill/);
+    expect(pdfViewVue).toMatch(/setPdfExportFillCache/);
+    expect(pdfViewVue).toMatch(/clearPdfExportFillCache/);
+  });
+
+  it("U11: TemplateExportPreviewStack builds reports via buildExportPreviewReports", () => {
+    expect(stackVue).toMatch(/buildExportPreviewReports/);
+    expect(stackVue).not.toMatch(/allPreviewReports/);
+  });
+});
+
 describe("PDF export chrome (019 fill + 021 role borders)", () => {
   it("U8: MiniPreviewChrome still exposes plain mode API", () => {
     expect(chromeVue).toMatch(/mpc--plain/);

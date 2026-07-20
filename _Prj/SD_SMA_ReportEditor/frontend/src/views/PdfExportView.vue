@@ -32,6 +32,12 @@ import {
 } from "@/lib/bindingPreviewErrors";
 import { splitReportCountForPreview } from "@/lib/report-template/table-sql-fill-report-split";
 import {
+  clearPdfExportFillCache,
+  getPdfExportFillCache,
+  setPdfExportFillCache,
+  shouldReusePdfExportFill,
+} from "@/lib/report-template/pdf-export-fill-cache";
+import {
   BINDING_FILL_OUTER_RETRY_DELAYS_MS,
   BINDING_FILL_OUTER_RETRY_MAX,
   isRetryableBindingFillSummary,
@@ -147,7 +153,10 @@ async function boot(): Promise<void> {
   const id = String(route.query.templateId || "").trim();
   if (!id) {
     // 预热待命：主进程预加载本页常驻，结批时仅切 hash 进入导出，静默等待即可
-    if (route.query.prewarm != null) return;
+    if (route.query.prewarm != null) {
+      clearPdfExportFillCache();
+      return;
+    }
     errText.value = humanizePdfExportError("缺少 templateId");
     signalReady(false, errText.value);
     return;
@@ -169,26 +178,51 @@ async function boot(): Promise<void> {
   const t = tmpl.value;
   injectPrintPageCss(t);
 
+  const partIdx = reportPartIndex.value;
+  const cached = getPdfExportFillCache(id);
+  const reuseFill = shouldReusePdfExportFill({
+    templateId: id,
+    reportPartIndex: partIdx,
+    cache: cached,
+  });
+
   const dataStartMs = Date.now();
   let issueDetails = collectBindingPreviewIssueDetails({});
   let fillAttempt = 0;
-  while (fillAttempt < BINDING_FILL_OUTER_RETRY_MAX) {
-    fillAttempt += 1;
-    if (fillAttempt > 1) {
-      await sleepMs(retryDelayMs(fillAttempt - 2, BINDING_FILL_OUTER_RETRY_DELAYS_MS));
+  let totalReports = 1;
+
+  if (reuseFill && cached) {
+    // 030：后续分卷复用首份全量取数快照，仅按 reportPartIndex 内存切片渲染
+    bindingPreview.values.value = cached.values;
+    bindingPreview.lastStats.value = cached.stats
+      ? {
+          opcReads: 0,
+          sqlQueries: 0,
+          sqlRows: 0,
+          mongoQueries: 0,
+        }
+      : null;
+    totalReports = cached.totalReports;
+  } else {
+    while (fillAttempt < BINDING_FILL_OUTER_RETRY_MAX) {
+      fillAttempt += 1;
+      if (fillAttempt > 1) {
+        await sleepMs(retryDelayMs(fillAttempt - 2, BINDING_FILL_OUTER_RETRY_DELAYS_MS));
+        if (seq !== bootSeq) return;
+      }
+      await bindingPreview.refresh({ opc: true, sql: true, silent: true, fullSqlFill: true });
       if (seq !== bootSeq) return;
-    }
-    await bindingPreview.refresh({ opc: true, sql: true, silent: true, fullSqlFill: true });
-    if (seq !== bootSeq) return;
-    issueDetails = collectBindingPreviewIssueDetails(bindingPreview.values.value);
-    if (!issueDetails.length) break;
-    const summary = summarizeBindingPreviewIssueDetails(issueDetails);
-    if (fillAttempt >= BINDING_FILL_OUTER_RETRY_MAX || !isRetryableBindingFillSummary(summary)) {
-      break;
+      issueDetails = collectBindingPreviewIssueDetails(bindingPreview.values.value);
+      if (!issueDetails.length) break;
+      const summary = summarizeBindingPreviewIssueDetails(issueDetails);
+      if (fillAttempt >= BINDING_FILL_OUTER_RETRY_MAX || !isRetryableBindingFillSummary(summary)) {
+        break;
+      }
     }
   }
   const dataMs = Date.now() - dataStartMs;
   if (issueDetails.length) {
+    clearPdfExportFillCache();
     errText.value = humanizePdfExportError(summarizeBindingPreviewIssueDetails(issueDetails));
     const s = bindingPreview.lastStats.value;
     signalReady(false, errText.value, undefined, { tplMs, dataMs, paintMs: 0 }, {
@@ -196,14 +230,22 @@ async function boot(): Promise<void> {
       issueCount: issueDetails.length,
       issues: issueDetails.slice(0, 40),
       stats: s
-      ? { opcReads: s.opcReads, sqlQueries: s.sqlQueries, sqlRows: s.sqlRows, mongoQueries: s.mongoQueries }
-      : undefined,
+        ? { opcReads: s.opcReads, sqlQueries: s.sqlQueries, sqlRows: s.sqlRows, mongoQueries: s.mongoQueries }
+        : undefined,
       templateId: id,
       fillAttempts: fillAttempt,
     });
     return;
   }
-  const totalReports = splitReportCountForPreview(t, bindingPreview.values.value);
+  if (!reuseFill) {
+    totalReports = splitReportCountForPreview(t, bindingPreview.values.value);
+    setPdfExportFillCache({
+      templateId: id,
+      values: bindingPreview.values.value,
+      totalReports,
+      stats: bindingPreview.lastStats.value,
+    });
+  }
   const paintStartMs = Date.now();
   await nextTick();
   await waitPaintReady();
