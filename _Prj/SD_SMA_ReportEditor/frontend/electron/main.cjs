@@ -49,12 +49,64 @@ app.on('second-instance', () => {
   pendingFocusFromSecondInstance = true
 })
 
-/** PDF 导出并发池：避免大量隐藏渲染窗口同时占用 CPU / 内存。 */
-const PDF_EXPORT_DEFAULT_MAX_PARALLEL = 4
+/** PDF 导出并发池：默认 1（030：同机 HMI / 弱 CPU / Hypervisor）；硬顶 16。 */
+const PDF_EXPORT_DEFAULT_MAX_PARALLEL = 1
 const PDF_EXPORT_HARD_MAX_PARALLEL = 16
 let pdfExportMaxParallel = PDF_EXPORT_DEFAULT_MAX_PARALLEL
 let pdfExportActiveCount = 0
 const pdfExportSlotWaiters = []
+/** 导出进行中：整进程降为 Below Normal，给 mappView / Hypervisor 让核 */
+let pdfExportPriorityDepth = 0
+/** 分卷之间让出 CPU（ms），双核+虚拟化场景减轻 HMI 饿死 */
+const PDF_EXPORT_PART_YIELD_MS = 80
+
+function cpuBudgetMaxParallel(logicalCores) {
+  const n = Math.max(1, Math.floor(Number(logicalCores) || 1))
+  if (n <= 4) return 1
+  if (n <= 8) return 2
+  return Math.min(PDF_EXPORT_HARD_MAX_PARALLEL, Math.floor(n / 4))
+}
+
+function resolvePdfExportMaxParallel(configured) {
+  const want = Math.min(
+    PDF_EXPORT_HARD_MAX_PARALLEL,
+    Math.max(1, Number.isFinite(configured) ? Math.floor(configured) : PDF_EXPORT_DEFAULT_MAX_PARALLEL),
+  )
+  return Math.min(want, cpuBudgetMaxParallel(os.cpus().length))
+}
+
+function beginPdfExportLowPriority() {
+  pdfExportPriorityDepth += 1
+  if (pdfExportPriorityDepth !== 1) return
+  try {
+    const p = os.constants && os.constants.priority
+    if (p && typeof os.setPriority === 'function') {
+      os.setPriority(0, p.PRIORITY_BELOW_NORMAL)
+    }
+  } catch (e) {
+    log(`setPriority BelowNormal 失败（忽略）：${e.message}`)
+  }
+}
+
+function endPdfExportLowPriority() {
+  if (pdfExportPriorityDepth <= 0) return
+  pdfExportPriorityDepth -= 1
+  if (pdfExportPriorityDepth !== 0) return
+  try {
+    const p = os.constants && os.constants.priority
+    if (p && typeof os.setPriority === 'function') {
+      os.setPriority(0, p.PRIORITY_NORMAL)
+    }
+  } catch (e) {
+    log(`setPriority Normal 失败（忽略）：${e.message}`)
+  }
+}
+
+function yieldToOs(ms) {
+  const wait = Math.max(0, Number(ms) || 0)
+  if (!wait) return Promise.resolve()
+  return new Promise((resolve) => setTimeout(resolve, wait))
+}
 
 function acquirePdfExportSlot() {
   if (pdfExportActiveCount < pdfExportMaxParallel) {
@@ -78,9 +130,11 @@ function releasePdfExportSlot() {
 
 async function runPdfExportWithSlot(fn) {
   await acquirePdfExportSlot()
+  beginPdfExportLowPriority()
   try {
     return await fn()
   } finally {
+    endPdfExportLowPriority()
     releasePdfExportSlot()
   }
 }
@@ -998,14 +1052,17 @@ function destroyWarmPdfExportWindows() {
 
 ipcMain.handle('pdf-export-set-max-parallel', (_event, opts) => {
   const max = Math.floor(Number(opts && opts.max))
-  pdfExportMaxParallel = Math.min(
-    PDF_EXPORT_HARD_MAX_PARALLEL,
-    Math.max(1, Number.isFinite(max) ? max : PDF_EXPORT_DEFAULT_MAX_PARALLEL),
+  pdfExportMaxParallel = resolvePdfExportMaxParallel(
+    Number.isFinite(max) ? max : PDF_EXPORT_DEFAULT_MAX_PARALLEL,
   )
   drainPdfExportSlotWaiters()
   trimWarmPdfExportWindows()
   ensurePdfExportWindowPrewarmed()
-  return { max: pdfExportMaxParallel }
+  return {
+    max: pdfExportMaxParallel,
+    cpuBudget: cpuBudgetMaxParallel(os.cpus().length),
+    logicalCores: os.cpus().length,
+  }
 })
 
 ipcMain.handle('pdf-export-run', async (event, opts) => {
@@ -1202,6 +1259,8 @@ ipcMain.handle('pdf-export-run', async (event, opts) => {
       sendProgress({ phase: 'saved', partIndex: 0, totalReports })
 
       for (let partIndex = 1; partIndex < totalReports; partIndex++) {
+        // 030：分卷间隙让出 CPU，减轻 Hypervisor/同机 mappView 饿死
+        await yieldToOs(PDF_EXPORT_PART_YIELD_MS)
         sendProgress({ phase: 'render', partIndex, totalReports })
         const part = await renderPart(partIndex)
         stats = mergeStats(stats, part.stats)

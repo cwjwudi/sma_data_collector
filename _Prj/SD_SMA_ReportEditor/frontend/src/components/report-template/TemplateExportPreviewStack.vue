@@ -110,25 +110,13 @@ import {
   type EditorSheet,
 } from "@/lib/report-template/editor-sheet";
 import type { ExportPreviewNavPayload } from "@/lib/report-template/export-preview-nav";
-import type { BindingPreviewCell } from "@/lib/report-template/binding-preview-utils";
 import {
-  computeExpandedBodyPreviewCards,
-  type ExpandedBodyPreviewCard,
-} from "@/lib/report-template/table-sql-fill-export-preview-split";
-import {
-  buildSqlFillSplitReportPlan,
-  previewValuesForSplitReport,
-} from "@/lib/report-template/table-sql-fill-report-split";
+  buildExportPreviewReports,
+  type ExportPreviewReport,
+} from "@/lib/report-template/export-preview-reports";
 import TemplateMiniPage from "@/components/report-template/TemplateMiniPage.vue";
 
-type PreviewValues = Record<string, BindingPreviewCell | undefined>;
-
-interface PreviewReport {
-  reportIndex: number;
-  totalReports: number;
-  previewValues: PreviewValues;
-  bodyCards: ExpandedBodyPreviewCard[];
-}
+type PreviewReport = ExportPreviewReport;
 
 const props = defineProps<{
   tmpl: ReportTemplate;
@@ -196,39 +184,10 @@ const bodyPageTotal = computed(() => ensureBodyPages(props.tmpl).length);
 const includeCover = computed(() => templateHasCoverSheet(props.tmpl));
 const includeBack = computed(() => templateHasBackSheet(props.tmpl));
 
-const allPreviewReports = computed<PreviewReport[]>(() => {
-  const base = (props.previewBindingValues ?? {}) as PreviewValues;
-  const plan = buildSqlFillSplitReportPlan(props.tmpl, base);
-  if (!plan) {
-    return [
-      {
-        reportIndex: 0,
-        totalReports: 1,
-        previewValues: base,
-        bodyCards: computeExpandedBodyPreviewCards(props.tmpl, base),
-      },
-    ];
-  }
-
-  return Array.from({ length: plan.reportCount }, (_x, idx) => {
-    const previewValues = previewValuesForSplitReport(base, plan, idx);
-    return {
-      reportIndex: idx,
-      totalReports: plan.reportCount,
-      previewValues,
-      bodyCards: computeExpandedBodyPreviewCards(props.tmpl, previewValues),
-    };
-  });
-});
-
-const previewReports = computed<PreviewReport[]>(() => {
-  const all = allPreviewReports.value;
-  const idx = props.reportPartIndex;
-  if (idx == null || !Number.isFinite(idx)) return all;
-  const i = Math.trunc(idx);
-  if (i < 0 || i >= all.length) return all;
-  return [all[i]];
-});
+/** 导出带 reportPartIndex 时只算当前份（030）；编辑器侧栏不传则算全部分卷 */
+const previewReports = computed<PreviewReport[]>(() =>
+  buildExportPreviewReports(props.tmpl, props.previewBindingValues, props.reportPartIndex),
+);
 
 function reportPageCount(report: PreviewReport): number {
   return (includeCover.value ? 1 : 0) + report.bodyCards.length + (includeBack.value ? 1 : 0);

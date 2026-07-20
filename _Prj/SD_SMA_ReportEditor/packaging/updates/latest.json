@@ -1,17 +1,17 @@
 {
-  "version": "0.3.109",
-  "releasedAt": "2026-07-18T18:25:26.343Z",
-  "notes": "Report Editor AI 0.3.109\n\n- 029：历史报表缩略图 keep-alive 重回后重建 IntersectionObserver，避免停在「滚动到此加载预览」",
+  "version": "0.3.111",
+  "releasedAt": "2026-07-20T08:54:37.102Z",
+  "notes": "Report Editor AI 0.3.111\n\n- 030：分卷首份全量取数后缓存复用；导出只渲染当前 reportPartIndex",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.109-x64.exe",
-      "sha256": "",
-      "size": 0
+      "url": "Report Editor AI-Setup-0.3.111-x64.exe",
+      "sha256": "83caa8fae6aa837a90fb6434246770923ffc29707c0d54200dcd632630247f1a",
+      "size": 148157028
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.109-arm64.dmg",
-      "sha256": "",
-      "size": 0
+      "url": "Report Editor AI-0.3.111-arm64.dmg",
+      "sha256": "41905fcef3aeaa01f9450518560dfcdc909e65002c5f76d653f969d8f75c5eed",
+      "size": 182045903
     }
   }
 }

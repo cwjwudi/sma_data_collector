@@ -30,11 +30,11 @@ class MemoryStorage {
 }
 
 describe("auto-export-status-codes", () => {
-  it("clamps parallel limit to 1..16", () => {
+  it("clamps parallel limit to 1..16 (default 1)", () => {
     expect(clampAutoExportMaxParallel(0)).toBe(1);
     expect(clampAutoExportMaxParallel(4)).toBe(4);
     expect(clampAutoExportMaxParallel(99)).toBe(16);
-    expect(clampAutoExportMaxParallel("x")).toBe(4);
+    expect(clampAutoExportMaxParallel("x")).toBe(1);
   });
 
   it("labels known status codes", () => {

@@ -46,8 +46,8 @@ import {
   AUTO_EXPORT_STATUS,
   AUTO_EXPORT_STATUS_CHART_MAX_SAMPLES,
   autoExportStatusLabel,
-  clampAutoExportMaxParallel,
 } from "@/lib/auto-export-status-codes";
+import { resolveAutoExportMaxParallel } from "@/lib/export-cpu-budget";
 
 const RG_UI = {
   opcAuto: "OPC UA 自动结批",
@@ -192,12 +192,12 @@ function syncBindingConfigKey(prefs: ReportGeneratorPrefs): void {
 }
 
 function syncElectronMaxParallel(prefs: ReportGeneratorPrefs): void {
-  const max = clampAutoExportMaxParallel(prefs.auto.maxParallelExports);
+  const max = resolveAutoExportMaxParallel(prefs.auto.maxParallelExports);
   void window.electronAPI?.setPdfExportMaxParallel?.(max);
 }
 
 function currentMaxParallel(prefs: ReportGeneratorPrefs): number {
-  const configured = clampAutoExportMaxParallel(prefs.auto.maxParallelExports);
+  const configured = resolveAutoExportMaxParallel(prefs.auto.maxParallelExports);
   const activeCount = Math.max(1, prefs.auto.bindings.filter(isTriggerBindingActive).length);
   return Math.min(configured, activeCount);
 }

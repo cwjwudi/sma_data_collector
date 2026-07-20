@@ -192,8 +192,9 @@
                 <span class="rg-mini">路（1–16）</span>
               </div>
               <p class="rg-mini rg-mini--indent">
-                实际并行 = min(本设置, 已启用绑定数)。超出上限的触发会排队（状态码 3），有空槽再开跑。
+                实际并行 = min(本设置, 已启用绑定数, 本机 CPU 预算)。超出上限的触发会排队（状态码 3），有空槽再开跑。
               </p>
+              <p class="rg-mini rg-mini--indent">{{ exportCpuBudgetHintText }}</p>
             </div>
 
             <div class="rg-export-dir-block rg-export-dir-block--nested">
@@ -796,6 +797,7 @@ import {
   autoExportStatusLabel,
   clampAutoExportMaxParallel,
 } from "@/lib/auto-export-status-codes";
+import { exportCpuBudgetHint, resolveAutoExportMaxParallel } from "@/lib/export-cpu-budget";
 import { loadReportExportPrefs, saveReportExportPrefs } from "@/lib/report-export-prefs";
 import { templateSelectLabel, templateSelectRows } from "@/lib/template-display-order";
 import { createOpcTriggerPollState, type OpcTriggerPollState } from "@/lib/auto-opc-trigger";
@@ -1197,8 +1199,15 @@ function toggleBindingFeedbackExpanded(bindingId: string): void {
   };
 }
 
+const exportCpuBudgetHintText = computed(() => exportCpuBudgetHint());
+
 function onMaxParallelChange(): void {
   prefs.value.auto.maxParallelExports = clampAutoExportMaxParallel(prefs.value.auto.maxParallelExports);
+  const effective = resolveAutoExportMaxParallel(prefs.value.auto.maxParallelExports);
+  if (effective < prefs.value.auto.maxParallelExports) {
+    /* 弱 CPU / Hypervisor：保存仍可写高值，运行时按预算封顶；提示用户 */
+    autoStatus.value = `并行设置 ${prefs.value.auto.maxParallelExports}，本机 CPU 预算生效为 ${effective}`;
+  }
   notifyReportAutoExportSettingsChanged();
 }
 

@@ -336,9 +336,9 @@ def analyze_export_parallel_health(limit: int = 40) -> dict[str, Any]:
     auto = rg.get("auto") if isinstance(rg.get("auto"), dict) else {}
     max_parallel = auto.get("maxParallelExports")
     try:
-        max_parallel_i = int(max_parallel) if max_parallel is not None else 4
+        max_parallel_i = int(max_parallel) if max_parallel is not None else 1
     except (TypeError, ValueError):
-        max_parallel_i = 4
+        max_parallel_i = 1
     max_parallel_i = max(1, min(max_parallel_i, 16))
 
     avg_ms = sum(durations) / len(durations) if durations else None
