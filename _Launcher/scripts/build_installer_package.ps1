@@ -1,0 +1,296 @@
+param(
+    [string]$OutputDir = "",
+    [string]$Python = "",
+    [string]$Version = "1.0.0",
+    [string]$PipIndexUrl = "https://pypi.tuna.tsinghua.edu.cn/simple",
+    [string]$PipTrustedHost = "pypi.tuna.tsinghua.edu.cn",
+    [string]$HttpProxy = "",
+    [string]$InnoSetup = "",
+    [switch]$SkipToolInstall,
+    [switch]$SkipSmokeTest
+)
+
+$ErrorActionPreference = "Stop"
+
+$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$LauncherDir = Split-Path -Parent $ScriptDir
+$RepoRoot = Split-Path -Parent $LauncherDir
+$PortableBuilder = Join-Path $ScriptDir "build_portable_package.ps1"
+$InnoScript = Join-Path $LauncherDir "installer\SD_SMA.iss"
+
+if ([string]::IsNullOrWhiteSpace($OutputDir)) {
+    $OutputDir = Join-Path $RepoRoot "_Build\Installer"
+}
+$InstallerOutput = (New-Item -ItemType Directory -Force -Path $OutputDir).FullName
+$PackageRoot = Join-Path $RepoRoot "_Build\SD_SMA_Installer_Staging"
+$NuitkaOutput = Join-Path $RepoRoot "_Build\Nuitka_Launcher"
+
+function Assert-ChildPath {
+    param(
+        [Parameter(Mandatory = $true)][string]$Parent,
+        [Parameter(Mandatory = $true)][string]$Child
+    )
+    $parentFull = [System.IO.Path]::GetFullPath($Parent).TrimEnd("\") + "\"
+    $childFull = [System.IO.Path]::GetFullPath($Child)
+    if (-not $childFull.StartsWith($parentFull, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "Refusing operation outside expected directory: $childFull"
+    }
+}
+
+function Remove-DirectorySafely {
+    param(
+        [Parameter(Mandatory = $true)][string]$Parent,
+        [Parameter(Mandatory = $true)][string]$Target
+    )
+    Assert-ChildPath -Parent $Parent -Child $Target
+    if (Test-Path -LiteralPath $Target) {
+        Remove-Item -LiteralPath $Target -Recurse -Force
+    }
+}
+
+function Resolve-BuildPython {
+    param([string]$Requested)
+    $candidates = @()
+    if (-not [string]::IsNullOrWhiteSpace($Requested)) {
+        $candidates += $Requested
+    }
+    $candidates += (Join-Path $RepoRoot ".venv\Scripts\python.exe")
+    try {
+        $pyPaths = & py -0p 2>$null
+        foreach ($line in $pyPaths) {
+            if ($line -match '(\S:\\.*python\.exe)\s*$') {
+                $candidates += $Matches[1]
+            }
+        }
+    }
+    catch {
+        # Python launcher is optional.
+    }
+
+    foreach ($candidate in ($candidates | Select-Object -Unique)) {
+        if (-not (Test-Path -LiteralPath $candidate)) {
+            continue
+        }
+        $versionText = & $candidate -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"
+        if ($LASTEXITCODE -ne 0) {
+            continue
+        }
+        $version = [version]$versionText.Trim()
+        if ($version.Major -eq 3 -and $version.Minor -ge 10 -and $version.Minor -le 12) {
+            return (Resolve-Path -LiteralPath $candidate).Path
+        }
+    }
+    throw "Installer builds require Python 3.10-3.12. Pass -Python or create the repository .venv."
+}
+
+function Ensure-Nuitka {
+    param([Parameter(Mandatory = $true)][string]$PythonExe)
+    & $PythonExe -c "import nuitka" 2>$null
+    if ($LASTEXITCODE -eq 0) {
+        return
+    }
+    if ($SkipToolInstall) {
+        throw "Nuitka is missing in $PythonExe and -SkipToolInstall was supplied."
+    }
+    $uv = Get-Command uv -ErrorAction SilentlyContinue
+    if (-not $uv) {
+        throw "Nuitka is missing and uv was not found. Install Nuitka with: uv pip install --python `"$PythonExe`" nuitka zstandard"
+    }
+    Write-Host "[tool] installing Nuitka into build environment"
+    & $uv.Source pip install --python $PythonExe nuitka zstandard `
+        --index-url $PipIndexUrl --allow-insecure-host $PipTrustedHost
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to install Nuitka."
+    }
+}
+
+function Resolve-InnoSetup {
+    param([string]$Requested)
+    $candidates = @()
+    if (-not [string]::IsNullOrWhiteSpace($Requested)) {
+        $candidates += $Requested
+    }
+    $command = Get-Command ISCC.exe -ErrorAction SilentlyContinue
+    if ($command) {
+        $candidates += $command.Source
+    }
+    $candidates += @(
+        (Join-Path $env:LOCALAPPDATA "Programs\Inno Setup 6\ISCC.exe"),
+        (Join-Path $env:ProgramFiles "Inno Setup 6\ISCC.exe"),
+        (Join-Path ${env:ProgramFiles(x86)} "Inno Setup 6\ISCC.exe")
+    )
+    foreach ($candidate in ($candidates | Select-Object -Unique)) {
+        if (-not [string]::IsNullOrWhiteSpace($candidate) -and (Test-Path -LiteralPath $candidate)) {
+            return (Resolve-Path -LiteralPath $candidate).Path
+        }
+    }
+    throw "Inno Setup 6 was not found. Install it with: winget install --id JRSoftware.InnoSetup --exact"
+}
+
+function Remove-DevelopmentContent {
+    param([Parameter(Mandatory = $true)][string]$ProjectsRoot)
+    $skipDirectories = @(
+        "tests", "docs", "scripts", "tools", ".pytest_cache", "__pycache__",
+        "_artifacts", "_tools", "_backup", "backups", "exports", "logs"
+    )
+    Get-ChildItem -LiteralPath $ProjectsRoot -Directory -Recurse -Force |
+        Sort-Object { $_.FullName.Length } -Descending |
+        Where-Object { $skipDirectories -contains $_.Name } |
+        ForEach-Object {
+            Assert-ChildPath -Parent $ProjectsRoot -Child $_.FullName
+            Remove-Item -LiteralPath $_.FullName -Recurse -Force
+        }
+
+    $developmentFiles = @("README.md", "CHANGELOG.md", "todo.md", "requirements.txt", "requirements-dev.txt", "pytest.ini", ".gitignore")
+    Get-ChildItem -LiteralPath $ProjectsRoot -File -Recurse -Force |
+        Where-Object { $developmentFiles -contains $_.Name -or $_.Extension -in @(".log", ".pyo") } |
+        ForEach-Object { Remove-Item -LiteralPath $_.FullName -Force }
+
+    # Collector runtime queues contain machine-local SQLite/WAL data and can be
+    # hundreds of MB. They must never be copied into a customer installer.
+    $collectorQueue = Join-Path $ProjectsRoot "SD_SMA_DATA_COLLECTOR\runtime\queue"
+    Remove-DirectorySafely -Parent $ProjectsRoot -Target $collectorQueue
+}
+
+function Convert-ProjectSourcesToBytecode {
+    param(
+        [Parameter(Mandatory = $true)][string]$PythonExe,
+        [Parameter(Mandatory = $true)][string]$ProjectsRoot
+    )
+    Write-Host "[bytecode] compiling service sources with legacy import layout"
+    & $PythonExe -m compileall -b -q -f $ProjectsRoot
+    if ($LASTEXITCODE -ne 0) {
+        throw "Service bytecode compilation failed."
+    }
+    $sourceFiles = @(Get-ChildItem -LiteralPath $ProjectsRoot -Filter "*.py" -File -Recurse)
+    $missingBytecode = @($sourceFiles | Where-Object { -not (Test-Path -LiteralPath ($_.FullName + "c")) })
+    if ($missingBytecode.Count -gt 0) {
+        throw "Missing bytecode for $($missingBytecode[0].FullName)"
+    }
+    $sourceFiles | ForEach-Object { Remove-Item -LiteralPath $_.FullName -Force }
+    $remaining = @(Get-ChildItem -LiteralPath $ProjectsRoot -Filter "*.py" -File -Recurse)
+    if ($remaining.Count -ne 0) {
+        throw "Python source files remain in installer projects."
+    }
+    Write-Host "[bytecode] protected $($sourceFiles.Count) project source files"
+}
+
+function Copy-MinimalDatabaseTools {
+    param([Parameter(Mandatory = $true)][string]$ProjectsRoot)
+    $sourceTools = Join-Path $RepoRoot "_Prj\SD_SMA_DB_ADMIN\_tools"
+    if (-not (Test-Path -LiteralPath $sourceTools)) {
+        Write-Host "[db-tools] local MariaDB clients not found; DB Admin will use configured paths or PATH"
+        return
+    }
+
+    $dump = Get-ChildItem -LiteralPath $sourceTools -File -Recurse -Filter "mariadb-dump.exe" |
+        Select-Object -First 1
+    $client = Get-ChildItem -LiteralPath $sourceTools -File -Recurse -Filter "mariadb.exe" |
+        Select-Object -First 1
+    if (-not $dump -or -not $client) {
+        Write-Host "[db-tools] incomplete local MariaDB clients; DB Admin will use configured paths or PATH"
+        return
+    }
+
+    $target = Join-Path $ProjectsRoot "SD_SMA_DB_ADMIN\_tools\mariadb-client"
+    New-Item -ItemType Directory -Force -Path $target | Out-Null
+    Copy-Item -LiteralPath $dump.FullName -Destination $target -Force
+    Copy-Item -LiteralPath $client.FullName -Destination $target -Force
+    Write-Host "[db-tools] included minimal mariadb.exe + mariadb-dump.exe"
+}
+
+$PythonExe = Resolve-BuildPython -Requested $Python
+$InnoSetupExe = Resolve-InnoSetup -Requested $InnoSetup
+Ensure-Nuitka -PythonExe $PythonExe
+Write-Host "[python] $PythonExe"
+Write-Host "[inno] $InnoSetupExe"
+
+Remove-DirectorySafely -Parent (Join-Path $RepoRoot "_Build") -Target $PackageRoot
+Remove-DirectorySafely -Parent (Join-Path $RepoRoot "_Build") -Target $NuitkaOutput
+
+Write-Host "[portable] creating shared runtime staging package"
+& $PortableBuilder -OutputDir $PackageRoot -Python $PythonExe `
+    -PipIndexUrl $PipIndexUrl -PipTrustedHost $PipTrustedHost -HttpProxy $HttpProxy
+if ($LASTEXITCODE -ne 0) {
+    throw "Portable staging package build failed."
+}
+
+$PackageProjects = Join-Path $PackageRoot "_Prj"
+Remove-DevelopmentContent -ProjectsRoot $PackageProjects
+Copy-MinimalDatabaseTools -ProjectsRoot $PackageProjects
+$StagingPython = Join-Path $PackageRoot ".venv\Scripts\python.exe"
+Convert-ProjectSourcesToBytecode -PythonExe $StagingPython -ProjectsRoot $PackageProjects
+
+Write-Host "[nuitka] compiling the single public launcher executable"
+New-Item -ItemType Directory -Force -Path $NuitkaOutput | Out-Null
+& $PythonExe -m nuitka `
+    --mode=onefile `
+    --assume-yes-for-downloads `
+    --remove-output `
+    --python-flag=no_asserts `
+    --python-flag=no_docstrings `
+    --company-name=SmartData `
+    --product-name="SD SMA Runtime" `
+    --file-description="SD SMA Unified Launcher" `
+    --file-version=$Version `
+    --product-version=$Version `
+    --output-dir=$NuitkaOutput `
+    --output-filename=SD_SMA_Launcher.exe `
+    (Join-Path $LauncherDir "sd_sma_launcher.py")
+if ($LASTEXITCODE -ne 0) {
+    throw "Nuitka launcher compilation failed."
+}
+
+$CompiledLauncher = Join-Path $NuitkaOutput "SD_SMA_Launcher.exe"
+if (-not (Test-Path -LiteralPath $CompiledLauncher)) {
+    throw "Compiled launcher not found: $CompiledLauncher"
+}
+$PackageLauncher = Join-Path $PackageRoot "_Launcher"
+$InstalledLauncher = Join-Path $PackageLauncher "SD_SMA_Launcher.exe"
+Copy-Item -LiteralPath $CompiledLauncher -Destination $InstalledLauncher -Force
+Remove-Item -LiteralPath (Join-Path $PackageLauncher "sd_sma_launcher.py") -Force
+
+$stagedConfigPath = Join-Path $PackageLauncher "launcher_config.json"
+$stagedConfig = Get-Content -LiteralPath $stagedConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
+$stagedConfig.auto_install_missing = $false
+[System.IO.File]::WriteAllText(
+    $stagedConfigPath,
+    ($stagedConfig | ConvertTo-Json -Depth 30) + "`r`n",
+    [System.Text.UTF8Encoding]::new($false)
+)
+
+@"
+@echo off
+cd /d "%~dp0"
+"%~dp0SD_SMA_Launcher.exe" %*
+"@ | Set-Content -LiteralPath (Join-Path $PackageLauncher "start.bat") -Encoding ASCII
+
+@"
+@echo off
+cd /d "%~dp0_Launcher"
+"%~dp0_Launcher\SD_SMA_Launcher.exe" %*
+"@ | Set-Content -LiteralPath (Join-Path $PackageRoot "start.bat") -Encoding ASCII
+
+if (-not $SkipSmokeTest) {
+    Write-Host "[smoke] running compiled launcher against bytecode-only services"
+    & $InstalledLauncher --config $stagedConfigPath --smoke --no-browser
+    if ($LASTEXITCODE -ne 0) {
+        throw "Compiled installer staging smoke test failed."
+    }
+}
+else {
+    Write-Host "[smoke] skipped by -SkipSmokeTest"
+}
+
+Write-Host "[installer] compiling Inno Setup package"
+& $InnoSetupExe "/DSourceRoot=$PackageRoot" "/DOutputDir=$InstallerOutput" "/DAppVersion=$Version" $InnoScript
+if ($LASTEXITCODE -ne 0) {
+    throw "Inno Setup compilation failed."
+}
+
+$InstallerExe = Join-Path $InstallerOutput "SD_SMA_Setup_$Version.exe"
+if (-not (Test-Path -LiteralPath $InstallerExe)) {
+    throw "Installer output not found: $InstallerExe"
+}
+Write-Host "[done] installer: $InstallerExe"
+Write-Host "[done] one shared service runtime: $PackageRoot\.venv"

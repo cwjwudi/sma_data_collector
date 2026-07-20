@@ -20,7 +20,17 @@ from pathlib import Path
 from typing import Any, TextIO
 
 
-LAUNCHER_DIR = Path(__file__).resolve().parent
+def resolve_launcher_dir() -> Path:
+    """Return the installed launcher directory for source and Nuitka builds."""
+    override = os.environ.get("SD_SMA_LAUNCHER_DIR", "").strip()
+    if override:
+        return Path(override).resolve()
+    if globals().get("__compiled__") is not None:
+        return Path(sys.argv[0]).resolve().parent
+    return Path(__file__).resolve().parent
+
+
+LAUNCHER_DIR = resolve_launcher_dir()
 PACKAGE_ROOT = LAUNCHER_DIR.parent
 DEFAULT_CONFIG = LAUNCHER_DIR / "launcher_config.json"
 LAUNCHER_LOG_DIR = PACKAGE_ROOT / "logs" / "launcher"
