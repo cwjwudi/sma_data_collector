@@ -1,6 +1,6 @@
 {
   "version": "0.3.111",
-  "releasedAt": "2026-07-20T08:43:30.736Z",
+  "releasedAt": "2026-07-20T08:48:41.771Z",
   "notes": "Report Editor AI 0.3.111\n\n- 030：分卷首份全量取数后缓存复用；导出只渲染当前 reportPartIndex",
   "platforms": {
     "win32-x64": {
@@ -10,8 +10,8 @@
     },
     "darwin-arm64": {
       "url": "Report Editor AI-0.3.111-arm64.dmg",
-      "sha256": "",
-      "size": 0
+      "sha256": "41905fcef3aeaa01f9450518560dfcdc909e65002c5f76d653f969d8f75c5eed",
+      "size": 182045903
     }
   }
 }

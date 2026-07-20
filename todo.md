@@ -7,6 +7,8 @@
 
 ## 2026-07-20
 
+- **ReportEditor 0.3.111 Mac 已打包**：`Report Editor AI-0.3.111-arm64.dmg`；`latest.json` 已写 darwin SHA256（win32 仍空，需 Windows 机打 NSIS）。
+
 - **ReportEditor 0.3.111**：分卷导出首份 fullSqlFill 缓存复用 + 只渲染当前 reportPartIndex（030/023）。看板 [docs/030-🚧](docs/030-🚧-ReportEditor结批占满CPU导致mappView白屏.md)。
 
 - **ReportEditor 0.3.110**：结批 CPU 节制（默认并行1、≤4逻辑核预算、导出 BelowNormal/分卷 yield）；现场 i3-7100U+Hypervisor 少一核+同机 DB。看板 [docs/030-🚧](docs/030-🚧-ReportEditor结批占满CPU导致mappView白屏.md)。
