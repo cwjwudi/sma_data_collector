@@ -231,8 +231,9 @@ function Copy-DirectoryFiltered {
         foreach ($prefix in $SkipRelativePrefixes) {
             if (-not [string]::IsNullOrWhiteSpace($prefix)) {
                 $normalizedRelative = $relative.Replace("/", "\")
-                $normalizedPrefix = $prefix.Replace("/", "\")
-                if ($normalizedRelative.StartsWith($normalizedPrefix, [System.StringComparison]::OrdinalIgnoreCase)) {
+                $normalizedPrefix = $prefix.Replace("/", "\").TrimEnd("\")
+                if ($normalizedRelative.Equals($normalizedPrefix, [System.StringComparison]::OrdinalIgnoreCase) -or
+                    $normalizedRelative.StartsWith($normalizedPrefix + "\", [System.StringComparison]::OrdinalIgnoreCase)) {
                     return
                 }
             }
@@ -456,25 +457,18 @@ function Materialize-UnifiedRuntimeDirs {
 
     foreach ($service in (Get-LauncherServices)) {
         $folder = Get-ServiceFolderName -Service $service
-        $projectName = Get-ServiceProjectName -Service $service
-        $sourceConfig = Join-Path $RepoRoot "_Prj\$projectName\config"
+        $sourceConfig = Join-Path $RepoRoot "config\$folder\default.json"
         $targetConfig = Join-Path $packageConfigRoot $folder
         $targetLogs = Join-Path $packageLogsRoot $folder
 
         New-Item -ItemType Directory -Force -Path $targetLogs | Out-Null
-        if (Test-Path -LiteralPath $sourceConfig) {
-            Write-Host "[config] materialize $folder from _Prj/$projectName/config"
-            Copy-DirectoryFiltered `
-                -Source $sourceConfig `
-                -Destination $targetConfig `
-                -SkipDirectoryNames @(
-                    ".git", ".pytest_cache", ".mypy_cache", "__pycache__", "venv", ".venv",
-                    "logs", "dist", "node_modules", "_backup", "exports", "backups"
-                )
+        New-Item -ItemType Directory -Force -Path $targetConfig | Out-Null
+        if (Test-Path -LiteralPath $sourceConfig -PathType Leaf) {
+            Write-Host "[config] copy root config/$folder/default.json"
+            Copy-Item -LiteralPath $sourceConfig -Destination (Join-Path $targetConfig "default.json") -Force
         }
         else {
-            Write-Host "[config] source missing for $folder, creating empty: $targetConfig"
-            New-Item -ItemType Directory -Force -Path $targetConfig | Out-Null
+            Write-Host "[config] no root default for $folder; keeping empty: $targetConfig"
         }
 
         if ($folder -eq "report_copy") {
@@ -522,7 +516,8 @@ foreach ($projectName in $projectNames) {
     Write-Host "[copy] _Prj/$projectName"
     Copy-DirectoryFiltered `
         -Source $source `
-        -Destination (Join-Path $PackageProjects $projectName)
+        -Destination (Join-Path $PackageProjects $projectName) `
+        -SkipRelativePrefixes @("config\")
 }
 
 Materialize-UnifiedRuntimeDirs

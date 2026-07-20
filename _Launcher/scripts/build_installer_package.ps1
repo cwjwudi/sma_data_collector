@@ -19,11 +19,12 @@ $PortableBuilder = Join-Path $ScriptDir "build_portable_package.ps1"
 $InnoScript = Join-Path $LauncherDir "installer\SD_SMA.iss"
 
 if ([string]::IsNullOrWhiteSpace($OutputDir)) {
-    $OutputDir = Join-Path $RepoRoot "_Build\Installer"
+    $OutputDir = Join-Path $RepoRoot "_Build\SD_SMA_Installer_Package"
 }
-$InstallerOutput = (New-Item -ItemType Directory -Force -Path $OutputDir).FullName
-$PackageRoot = Join-Path $RepoRoot "_Build\SD_SMA_Installer_Staging"
-$NuitkaOutput = Join-Path $RepoRoot "_Build\Nuitka_Launcher"
+$InstallerPackageRoot = [System.IO.Path]::GetFullPath($OutputDir)
+$BuildRoot = Join-Path $RepoRoot "_Build"
+$PackageRoot = Join-Path $InstallerPackageRoot "Runtime"
+$NuitkaOutput = Join-Path $InstallerPackageRoot "Nuitka"
 
 function Assert-ChildPath {
     param(
@@ -199,14 +200,49 @@ function Copy-MinimalDatabaseTools {
     Write-Host "[db-tools] included minimal mariadb.exe + mariadb-dump.exe"
 }
 
+function Reset-PackagedRuntimeState {
+    param([Parameter(Mandatory = $true)][string]$RuntimeRoot)
+
+    $configRoot = Join-Path $RuntimeRoot "config"
+    if (Test-Path -LiteralPath $configRoot) {
+        Get-ChildItem -LiteralPath $configRoot -File -Force |
+            ForEach-Object { Remove-Item -LiteralPath $_.FullName -Force }
+        Get-ChildItem -LiteralPath $configRoot -Directory -Force | ForEach-Object {
+            $serviceConfig = $_.FullName
+            Get-ChildItem -LiteralPath $serviceConfig -Force |
+                Where-Object { -not ($_.PSIsContainer -eq $false -and $_.Name -eq "default.json") } |
+                ForEach-Object { Remove-Item -LiteralPath $_.FullName -Recurse -Force }
+        }
+    }
+
+    $logsRoot = Join-Path $RuntimeRoot "logs"
+    if (Test-Path -LiteralPath $logsRoot) {
+        Get-ChildItem -LiteralPath $logsRoot -Directory -Force | ForEach-Object {
+            Get-ChildItem -LiteralPath $_.FullName -Force |
+                ForEach-Object { Remove-Item -LiteralPath $_.FullName -Recurse -Force }
+        }
+        Get-ChildItem -LiteralPath $logsRoot -File -Force |
+            ForEach-Object { Remove-Item -LiteralPath $_.FullName -Force }
+    }
+    Write-Host "[runtime] reset configs to default.json only and cleared smoke logs"
+}
+
 $PythonExe = Resolve-BuildPython -Requested $Python
 $InnoSetupExe = Resolve-InnoSetup -Requested $InnoSetup
 Ensure-Nuitka -PythonExe $PythonExe
 Write-Host "[python] $PythonExe"
 Write-Host "[inno] $InnoSetupExe"
 
-Remove-DirectorySafely -Parent (Join-Path $RepoRoot "_Build") -Target $PackageRoot
-Remove-DirectorySafely -Parent (Join-Path $RepoRoot "_Build") -Target $NuitkaOutput
+Assert-ChildPath -Parent $BuildRoot -Child $InstallerPackageRoot
+Remove-DirectorySafely -Parent $BuildRoot -Target $InstallerPackageRoot
+foreach ($legacyOutput in @(
+        (Join-Path $BuildRoot "Installer"),
+        (Join-Path $BuildRoot "Nuitka_Launcher"),
+        (Join-Path $BuildRoot "SD_SMA_Installer_Staging")
+    )) {
+    Remove-DirectorySafely -Parent $BuildRoot -Target $legacyOutput
+}
+$InstallerOutput = (New-Item -ItemType Directory -Force -Path $InstallerPackageRoot).FullName
 
 Write-Host "[portable] creating shared runtime staging package"
 & $PortableBuilder -OutputDir $PackageRoot -Python $PythonExe `
@@ -281,6 +317,8 @@ if (-not $SkipSmokeTest) {
 else {
     Write-Host "[smoke] skipped by -SkipSmokeTest"
 }
+
+Reset-PackagedRuntimeState -RuntimeRoot $PackageRoot
 
 Write-Host "[installer] compiling Inno Setup package"
 & $InnoSetupExe "/DSourceRoot=$PackageRoot" "/DOutputDir=$InstallerOutput" "/DAppVersion=$Version" $InnoScript
