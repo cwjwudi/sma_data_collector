@@ -117,6 +117,11 @@ class ConfigLoader:
                 trigger=TriggerType(group_data['trigger']),
                 description=group_data['description'],
                 data_points=group_data['data_points'],
+                variable_point_overrides=(
+                    {}
+                    if group_data.get('variable_point_overrides') is None
+                    else group_data.get('variable_point_overrides')
+                ),
                 interval_point=group_data.get('interval_point'),
                 trigger_interval_seconds=group_data.get('trigger_interval_seconds'),
                 trigger_point=group_data.get('trigger_point'),
@@ -263,6 +268,7 @@ class ConfigLoader:
             raise ValueError(f"同一配置中只能启用一张 batch_upsert 批次主表: {names}")
 
         point_name_set = set(point_names)
+        points_by_name = {point.name: point for point in config.points}
         for group in config.groups:
             if group.trigger in {TriggerType.TIME, TriggerType.TIME_AND_VARIABLE}:
                 if isinstance(group.interval_seconds, bool):
@@ -299,6 +305,48 @@ class ConfigLoader:
             for point_name in group.data_points:
                 if point_name not in point_name_set:
                     raise ValueError(f"数据组 '{group.name}' 引用了不存在的数据点: {point_name}")
+
+            overrides = group.variable_point_overrides
+            if not isinstance(overrides, dict):
+                raise ValueError(
+                    f"数据组 '{group.name}' 的 variable_point_overrides 必须是对象"
+                )
+            if overrides and group.trigger != TriggerType.TIME_AND_VARIABLE:
+                raise ValueError(
+                    f"数据组 '{group.name}' 仅在 trigger=time_and_variable 时支持 "
+                    "variable_point_overrides"
+                )
+            normalized_overrides: Dict[str, str] = {}
+            for logical_name, source_name in overrides.items():
+                if not isinstance(logical_name, str) or not logical_name.strip():
+                    raise ValueError(
+                        f"数据组 '{group.name}' 的 variable_point_overrides 键必须是非空点位名"
+                    )
+                if not isinstance(source_name, str) or not source_name.strip():
+                    raise ValueError(
+                        f"数据组 '{group.name}' 的 variable_point_overrides[{logical_name}] "
+                        "必须是非空点位名"
+                    )
+                logical_name = logical_name.strip()
+                source_name = source_name.strip()
+                if logical_name not in group.data_points:
+                    raise ValueError(
+                        f"数据组 '{group.name}' 的 variable_point_overrides 逻辑点不在 "
+                        f"data_points 中: {logical_name}"
+                    )
+                if source_name not in point_name_set:
+                    raise ValueError(
+                        f"数据组 '{group.name}' 的 variable 替代点不存在: {source_name}"
+                    )
+                logical_type = (points_by_name[logical_name].datatype or '').strip().lower()
+                source_type = (points_by_name[source_name].datatype or '').strip().lower()
+                if logical_type and source_type and logical_type != source_type:
+                    raise ValueError(
+                        f"数据组 '{group.name}' 的 variable 点位类型不一致: "
+                        f"{logical_name}({logical_type}) -> {source_name}({source_type})"
+                    )
+                normalized_overrides[logical_name] = source_name
+            group.variable_point_overrides = normalized_overrides
 
             if group.unique_key_point:
                 if group.unique_key_point not in group.data_points:

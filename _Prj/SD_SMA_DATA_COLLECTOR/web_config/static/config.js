@@ -891,6 +891,76 @@ function renderConnections() {
   panel.appendChild(add);
 }
 
+function openVariablePointOverridesConfig(groupIndex) {
+  const group = currentConfig.groups[groupIndex];
+  const logicalOptions = getPointNameOptions().filter((option) =>
+    (group.data_points || []).includes(option.value)
+  );
+  const sourceOptions = getPointNameOptions();
+  const draft = Object.entries(group.variable_point_overrides || {}).map(
+    ([logical, source]) => ({ logical, source })
+  );
+
+  showGroupConfigModal({
+    title: "配置 variable 快照点位替换",
+    buildBody: (body) => {
+      function renderOverrides() {
+        body.innerHTML = "";
+        draft.forEach((mapping, i) => {
+          const row = document.createElement("div");
+          row.className = "group-config-row";
+          row.appendChild(
+            createSelect(
+              [{ value: "", label: "选择数据库逻辑字段" }, ...logicalOptions],
+              mapping.logical || "",
+              (value) => (draft[i].logical = value)
+            )
+          );
+          row.appendChild(
+            createSelect(
+              [{ value: "", label: "选择 PLC 快照点位" }, ...sourceOptions],
+              mapping.source || "",
+              (value) => (draft[i].source = value)
+            )
+          );
+          const delBtn = document.createElement("button");
+          delBtn.type = "button";
+          delBtn.textContent = "删除";
+          delBtn.addEventListener("click", () => {
+            draft.splice(i, 1);
+            renderOverrides();
+          });
+          row.appendChild(delBtn);
+          body.appendChild(row);
+        });
+
+        const addBtn = document.createElement("button");
+        addBtn.type = "button";
+        addBtn.textContent = "新增替换";
+        addBtn.addEventListener("click", () => {
+          draft.push({ logical: "", source: "" });
+          renderOverrides();
+        });
+        body.appendChild(addBtn);
+      }
+      renderOverrides();
+    },
+    onConfirm: () => {
+      const overrides = {};
+      for (const mapping of draft) {
+        if (!mapping.logical || !mapping.source) continue;
+        if (Object.prototype.hasOwnProperty.call(overrides, mapping.logical)) {
+          window.alert(`逻辑字段重复配置: ${mapping.logical}`);
+          return false;
+        }
+        overrides[mapping.logical] = mapping.source;
+      }
+      currentConfig.groups[groupIndex].variable_point_overrides = overrides;
+      return true;
+    },
+  });
+}
+
 function renderPoints() {
   const panel = document.getElementById("tab-points");
   panel.innerHTML = "";
@@ -964,7 +1034,13 @@ function renderGroups() {
             { value: "time_and_variable", label: "time_and_variable" },
           ],
           item.trigger || "time",
-          (v) => (currentConfig.groups[idx].trigger = v)
+          (v) => {
+            currentConfig.groups[idx].trigger = v;
+            if (v !== "time_and_variable") {
+              currentConfig.groups[idx].variable_point_overrides = {};
+            }
+            renderGroups();
+          }
         ),
         createInput(item.interval_seconds || 1, (v) => (currentConfig.groups[idx].interval_seconds = Number(v) || 1), "number"),
         createSelect(
@@ -986,6 +1062,13 @@ function renderGroups() {
     advancedActions.appendChild(
       createConfigActionButton("配置 indexes", () => openIndexesConfig(idx))
     );
+    if (item.trigger === "time_and_variable") {
+      advancedActions.appendChild(
+        createConfigActionButton("配置 variable 快照点", () =>
+          openVariablePointOverridesConfig(idx)
+        )
+      );
+    }
     card.appendChild(
       createRow([
         createSelect(
@@ -998,6 +1081,10 @@ function renderGroups() {
         }, "number"),
         createMultiSelect(pointOptions, item.data_points || [], (values) => {
           currentConfig.groups[idx].data_points = values;
+          const overrides = currentConfig.groups[idx].variable_point_overrides || {};
+          currentConfig.groups[idx].variable_point_overrides = Object.fromEntries(
+            Object.entries(overrides).filter(([logical]) => values.includes(logical))
+          );
           if (
             currentConfig.groups[idx].unique_key_point &&
             !values.includes(currentConfig.groups[idx].unique_key_point)
@@ -1079,6 +1166,7 @@ function renderGroups() {
       trigger: "time",
       description: "",
       data_points: [],
+      variable_point_overrides: {},
       trigger_point: "",
       reset_trigger_after_read: true,
       partition_interval_years: 1,

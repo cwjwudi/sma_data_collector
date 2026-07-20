@@ -4,7 +4,7 @@
 """
 
 from typing import List, Optional, Dict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 
 
@@ -81,6 +81,7 @@ class DataGroup:
     insert_feedback: Optional[InsertFeedbackConfig] = None  # 插入反馈配置（UDINT）
     batch_upsert: Optional[BatchUpsertConfig] = None  # 批次更新配置（唯一冲突时按 end_time 条件更新）
     indexes: Optional[List[IndexConfig]] = None  # 索引配置列表
+    variable_point_overrides: Dict[str, str] = field(default_factory=dict)
 
 
 @dataclass

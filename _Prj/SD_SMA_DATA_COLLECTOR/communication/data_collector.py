@@ -512,6 +512,18 @@ class DataCollector:
             
             # 获取该组对应的数据点
             group_points = [data_points_dict[name] for name in group.data_points]
+            variable_group_points = []
+            for point in group_points:
+                source_name = group.variable_point_overrides.get(point.name, point.name)
+                source_point = data_points_dict[source_name]
+                variable_group_points.append(
+                    DataPoint(
+                        name=point.name,
+                        path=source_point.path,
+                        description=point.description,
+                        datatype=point.datatype,
+                    )
+                )
             interval_point = (
                 data_points_dict[group.interval_point]
                 if group.interval_point
@@ -548,7 +560,12 @@ class DataCollector:
                 trigger_point = data_points_dict[group.trigger_point]
                 task = asyncio.create_task(
                     self._time_and_variable_collection(
-                        group, group_points, trigger_point, opcua_client, interval_point
+                        group,
+                        group_points,
+                        trigger_point,
+                        opcua_client,
+                        interval_point,
+                        variable_group_points,
                     )
                 )
                 self.collectors[group.name] = task
@@ -714,12 +731,14 @@ class DataCollector:
         trigger_point: DataPoint,
         opcua_client: OpcUaClient,
         interval_point: Optional[DataPoint] = None,
+        variable_data_points: Optional[List[DataPoint]] = None,
     ) -> None:
         """
         按 interval_seconds 定时采集；同时以 trigger_interval_seconds 为周期采样 trigger_point，
         上升沿时立即采集一次（行为与同组 variable 模式一致，含可选复位）。
         """
         interval = float(group.interval_seconds)
+        variable_data_points = variable_data_points or data_points
         interval, _ = await self._read_collection_interval(
             group, interval_point, opcua_client, interval
         )
@@ -826,7 +845,7 @@ class DataCollector:
                     self.logger.info(
                         f"检测到上升沿触发信号（time_and_variable）: {group.name}"
                     )
-                    data = await opcua_client.read_data_points(data_points)
+                    data = await opcua_client.read_data_points(variable_data_points)
                     valid_data = {
                         name: info for name, info in data.items() if info.get('value') is not None
                     }
