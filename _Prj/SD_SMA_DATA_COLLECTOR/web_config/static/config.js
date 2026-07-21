@@ -152,8 +152,10 @@ async function api(path, options = {}) {
   return data;
 }
 
-function setResult(text) {
+function setResult(text, kind = "") {
   resultEl.textContent = text;
+  const inferredKind = kind || (/失败|错误|不存在|不能为空|重复|不可|没有可/.test(String(text)) ? "error" : "success");
+  resultEl.className = `action-result ${inferredKind}`;
 }
 
 function getCurrentConfigFileNames() {
@@ -1050,7 +1052,7 @@ function renderGroups() {
         ),
       ])
     );
-    card.appendChild(createRow([createHeaderCell("触发点"), createHeaderCell("触发间隔(秒)"), createHeaderCell("数据点列表(多选)"), createHeaderCell("唯一键点")]));
+    card.appendChild(createRow([createHeaderCell("触发点"), createHeaderCell("触发间隔(秒)"), createHeaderCell("数据点列表(多选)"), createHeaderCell("唯一键点"), createHeaderCell("外部启用点位")]));
     const advancedActions = document.createElement("div");
     advancedActions.className = "group-config-actions";
     advancedActions.appendChild(
@@ -1097,6 +1099,11 @@ function renderGroups() {
           [{ value: "", label: "请选择点位" }, ...groupSelectedPointOptions],
           item.unique_key_point || "",
           (v) => (currentConfig.groups[idx].unique_key_point = v)
+        ),
+        createSelect(
+          [{ value: "", label: "未配置（一直启用）" }, ...pointOptions],
+          item.enable_point || "",
+          (v) => (currentConfig.groups[idx].enable_point = v || null)
         ),
       ])
     );
@@ -1166,6 +1173,7 @@ function renderGroups() {
       trigger: "time",
       description: "",
       data_points: [],
+      enable_point: null,
       variable_point_overrides: {},
       trigger_point: "",
       reset_trigger_after_read: true,
@@ -1499,9 +1507,12 @@ function createAddPointButton(item) {
       }
       currentConfig = nextConfig;
       refreshPointRelatedControls();
-      setResult(`已加入点位: ${res.point.name}`);
+      savePageState();
+      btn.disabled = true;
+      btn.textContent = "已加入 ✓";
+      setResult(`成功加入点位：${res.point.name}（points 当前共 ${currentConfig.points.length} 个）`, "success");
     } catch (error) {
-      setResult(error.message);
+      setResult(error.message, "error");
     }
   });
   return btn;

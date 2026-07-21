@@ -1,0 +1,121 @@
+{
+  "test": "group_external_enable_live",
+  "source_config": "C:\\Users\\BR\\codex_ws\\p000_sd_sma_scada\\config\\collector\\AA_test.json",
+  "started_at": "2026-07-21T16:58:59.559",
+  "ended_at": "2026-07-21T17:00:17.430",
+  "requested_duration_seconds": 75.0,
+  "elapsed_seconds": 77.875,
+  "toggle_group": "Data_Product",
+  "cycle_seconds": 30.0,
+  "off_seconds": 5.0,
+  "passed": true,
+  "error": null,
+  "event_counts": {
+    "Data_Product": 63,
+    "Data_Alarm": 44,
+    "Data_Audit": 37,
+    "Data_Recipe": 3,
+    "Data_BatchInfo": 2,
+    "Data_Batch": 1
+  },
+  "off_windows": [
+    {
+      "cycle": 1,
+      "disabled_at": "2026-07-21T16:59:06.760",
+      "baseline_after_grace": 8,
+      "count_before_enable": 8,
+      "events_while_disabled": 0,
+      "resumed": true
+    },
+    {
+      "cycle": 2,
+      "disabled_at": "2026-07-21T16:59:36.765",
+      "baseline_after_grace": 33,
+      "count_before_enable": 33,
+      "events_while_disabled": 0,
+      "resumed": true
+    },
+    {
+      "cycle": 3,
+      "disabled_at": "2026-07-21T17:00:06.783",
+      "baseline_after_grace": 58,
+      "count_before_enable": 58,
+      "events_while_disabled": 0,
+      "resumed": true
+    }
+  ],
+  "transitions": [
+    {
+      "at": "2026-07-21T16:59:04.754",
+      "value": false,
+      "readback": false
+    },
+    {
+      "at": "2026-07-21T16:59:11.761",
+      "value": true,
+      "readback": true
+    },
+    {
+      "at": "2026-07-21T16:59:34.750",
+      "value": false,
+      "readback": false
+    },
+    {
+      "at": "2026-07-21T16:59:41.781",
+      "value": true,
+      "readback": true
+    },
+    {
+      "at": "2026-07-21T17:00:04.767",
+      "value": false,
+      "readback": false
+    },
+    {
+      "at": "2026-07-21T17:00:11.796",
+      "value": true,
+      "readback": true
+    }
+  ],
+  "db_summary": {
+    "Data_Recipe": {
+      "table": "Data_Recipe",
+      "rows_since_start": 1
+    },
+    "Data_Product": {
+      "table": "Data_Product",
+      "rows_since_start": 61
+    },
+    "Data_Alarm": {
+      "table": "Data_Alarm",
+      "rows_since_start": 27
+    },
+    "Data_Audit": {
+      "table": "Data_Audit",
+      "rows_since_start": 37
+    },
+    "Data_Batch": {
+      "table": "Data_Batch",
+      "rows_since_start": 1
+    },
+    "Data_BatchInfo": {
+      "table": "Data_BatchInfo",
+      "rows_since_start": 2
+    }
+  },
+  "collector_metrics": {
+    "group_enable_transitions_to_enabled": 9,
+    "parallel_edges_detected": 81,
+    "parallel_rows_accepted": 81,
+    "parallel_rows_rejected": 0,
+    "parallel_trigger_reset_confirmed": 81,
+    "group_enable_transitions_to_disabled": 3
+  },
+  "storage_metrics": {
+    "db_rows_committed": 150,
+    "db_rows_unique_conflict": 0,
+    "db_rows_failed": 0,
+    "db_rows_dead_letter": 0,
+    "shutdown_rows_flush_attempted": 21,
+    "shutdown_rows_remaining": 0
+  }
+}

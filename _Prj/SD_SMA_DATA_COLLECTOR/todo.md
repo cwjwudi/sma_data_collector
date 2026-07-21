@@ -2,6 +2,8 @@
 
 ## 2026-07-21
 
+- **组外部启停与顶部操作反馈**：配置页反馈移动到顶部并明确显示加入结果；新增 `groups[].enable_point`，支持外部 OPC UA 点位按 1/0 启停采集组，未配置时一直启用。完整回归 `199 passed`，真实 PLC/MySQL 稳定性测试 `3608.188s`，30 个停用窗口零误采且全部恢复，提交 4528 行且失败/死信/残留均为 0。详见 [docs/006-✅-组外部启停与顶部操作反馈.md](docs/006-✅-组外部启停与顶部操作反馈.md)。
+
 - **time_and_variable 的 variable 快照点位替换**：新增 `variable_point_overrides`，time 仍读实时点、variable 按字段读 PLC 快照点且保持原数据库列名；完整回归 `180 passed`，真实 PLC/MySQL 持续 `3612.079s`，提交 `3972` 条且错误/残留为 `0`。详见 [docs/005-✅-variable触发快照点位替换.md](docs/005-✅-variable触发快照点位替换.md)。
 
 ## 2026-07-20

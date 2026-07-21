@@ -69,6 +69,7 @@ class DataGroup:
     trigger: TriggerType
     description: str
     data_points: List[str]
+    enable_point: Optional[str] = None  # 外部启停点位：1/True 启用，0/False 停用；未配置时始终启用
     interval_point: Optional[str] = None  # time/time_and_variable：动态采集间隔点位，值单位为秒
     trigger_interval_seconds: Optional[float] = None  # variable/time_and_variable：触发变量采样周期（秒）
     trigger_point: Optional[str] = None

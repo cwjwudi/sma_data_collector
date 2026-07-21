@@ -14,6 +14,7 @@
 - ✅ **超时不追欠拍**: 当单轮处理超时，下一拍自动重置为“当前时刻 + interval”，避免连续追赶历史节拍
 - ✅ **多数据点支持**: 每个数据组支持多个数据点同时采集
 - ✅ **灵活配置**: 可为不同数据组设置不同的采集间隔
+- ✅ **按组外部启停**: 每组可选配 OPC UA `enable_point`；`1/True` 启用、`0/False` 停用，未配置时始终启用
 - ✅ **批量存储**: 支持批量数据插入，提高数据库写入效率
 - ✅ **年份分表**: 支持按批次主表开批年份分表；无批次主表的旧配置仍兼容当前年份分表
 - ✅ **按组批量读取 OPC UA**: 优先单次往返批量读取，失败时自动回退逐点读取
@@ -252,6 +253,7 @@ SD_SMA_DATA_COLLECTOR/
 
 ### 数据组配置 (groups)
 - `name`: 数据组名称
+- `enable_point`: （可选）外部启停点位名称，引用 `points[].name`；值为 `1/True` 时启用本组，`0/False` 时停用，未配置时本组始终启用
 - `interval_seconds`: 静态采样/检查间隔（秒），同时作为动态间隔点首次读取失败时的回退值
 - `interval_point`: （可选）动态采集间隔点位名称，引用 `points[].name`；点位值单位为秒，仅支持 `time` / `time_and_variable`
 - `trigger`: 触发方式
@@ -284,6 +286,7 @@ SD_SMA_DATA_COLLECTOR/
   - `allow_idempotent_same_end_time`: 是否允许相同结批时间的幂等重放
 
 **触发配置约束：**
+- 配置 `enable_point` 后，采集器每秒读取一次该点；停用时取消本组采集任务，重新启用时自动恢复。读点失败或值不是 `0/1` 时保持上一有效状态；启动后尚无有效状态时保持停用。
 - `interval_point` 返回值必须是大于 `0` 的有限数值；无效值或临时读点失败时继续使用上次有效值，尚无有效值时使用 `interval_seconds`。
 - 动态间隔变化从采集器检测到新值时重新起算下一周期，不补采旧节拍；`time_and_variable` 的外部触发轮询不受影响。
 - `time_and_variable` 模式下，`trigger_point` 与 `trigger_interval_seconds` 必须配置，且 `is_parallel` 必须为 `false`。

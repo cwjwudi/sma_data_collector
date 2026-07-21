@@ -48,8 +48,148 @@ class DataCollector:
         self.trigger_reset_confirm_delay = 0.05
         self.trigger_stuck_reset_retry_interval = 1.0
         self.dynamic_interval_poll_seconds = 0.5
+        self.group_enable_poll_seconds = 1.0
         self.metrics: Counter[str] = Counter()
         self._interval_warning_state: Dict[str, str] = {}
+        self._group_enable_warning_state: Dict[str, str] = {}
+
+    @staticmethod
+    def _normalize_group_enable_value(value: Any) -> Optional[bool]:
+        """Return a valid external group-enable state, or None for invalid values."""
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            if value == 1:
+                return True
+            if value == 0:
+                return False
+        return None
+
+    async def _run_group_collection(
+        self,
+        group: DataGroup,
+        group_points: List[DataPoint],
+        opcua_client: OpcUaClient,
+        trigger_point: Optional[DataPoint],
+        interval_point: Optional[DataPoint],
+        variable_group_points: List[DataPoint],
+    ) -> None:
+        if group.trigger == TriggerType.TIME:
+            await self._time_triggered_collection(
+                group, group_points, opcua_client, interval_point
+            )
+            return
+        if group.trigger == TriggerType.VARIABLE:
+            if group.is_parallel:
+                await self._parallel_variable_triggered_collection(
+                    group, group_points, trigger_point, opcua_client
+                )
+            else:
+                await self._variable_triggered_collection(
+                    group, group_points, trigger_point, opcua_client
+                )
+            return
+        if group.trigger == TriggerType.TIME_AND_VARIABLE:
+            await self._time_and_variable_collection(
+                group,
+                group_points,
+                trigger_point,
+                opcua_client,
+                interval_point,
+                variable_group_points,
+            )
+            return
+        raise ValueError(f"不支持的数据组触发类型: {group.trigger} ({group.name})")
+
+    async def _enable_controlled_collection(
+        self,
+        group: DataGroup,
+        enable_point: DataPoint,
+        group_points: List[DataPoint],
+        opcua_client: OpcUaClient,
+        trigger_point: Optional[DataPoint],
+        interval_point: Optional[DataPoint],
+        variable_group_points: List[DataPoint],
+    ) -> None:
+        """Start/stop one group's collector according to its external OPC UA point."""
+        active_task: Optional[asyncio.Task] = None
+        previous_state: Optional[bool] = None
+        try:
+            while True:
+                try:
+                    result = await opcua_client.read_data_points([enable_point])
+                    raw_value = result.get(enable_point.name, {}).get("value")
+                    enabled = self._normalize_group_enable_value(raw_value)
+                    if enabled is None:
+                        signature = repr(raw_value)
+                        if self._group_enable_warning_state.get(group.name) != signature:
+                            self._group_enable_warning_state[group.name] = signature
+                            self.logger.warning(
+                                "采集组 %s 的外部启用点 %s 返回无效值 %r；仅接受 1/True 或 0/False，保持上一状态",
+                                group.name,
+                                enable_point.name,
+                                raw_value,
+                            )
+                        self.metrics["group_enable_invalid"] += 1
+                    else:
+                        self._group_enable_warning_state.pop(group.name, None)
+                        if enabled != previous_state:
+                            self.logger.info(
+                                "采集组 %s 外部控制状态变为 %s（点位 %s=%r）",
+                                group.name,
+                                "启用" if enabled else "停用",
+                                enable_point.name,
+                                raw_value,
+                            )
+                            self.metrics[
+                                "group_enable_transitions_to_enabled"
+                                if enabled
+                                else "group_enable_transitions_to_disabled"
+                            ] += 1
+
+                        if enabled and active_task is None:
+                            active_task = asyncio.create_task(
+                                self._run_group_collection(
+                                    group,
+                                    group_points,
+                                    opcua_client,
+                                    trigger_point,
+                                    interval_point,
+                                    variable_group_points,
+                                )
+                            )
+                        elif not enabled and active_task is not None:
+                            active_task.cancel()
+                            await asyncio.gather(active_task, return_exceptions=True)
+                            active_task = None
+                        previous_state = enabled
+
+                    if active_task is not None and active_task.done():
+                        await active_task
+                    await asyncio.sleep(self.group_enable_poll_seconds)
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:  # noqa: BLE001
+                    self.metrics["group_enable_read_failed"] += 1
+                    if _is_opcua_transient(exc):
+                        self.logger.warning(
+                            "采集组 %s 读取外部启用点 %s 失败，保持上一状态: %s",
+                            group.name,
+                            enable_point.name,
+                            exc,
+                        )
+                    else:
+                        self.logger.error(
+                            "采集组 %s 外部启用控制发生错误，保持上一状态: %s",
+                            group.name,
+                            exc,
+                            exc_info=True,
+                        )
+                    await asyncio.sleep(max(1.0, self.group_enable_poll_seconds))
+        finally:
+            if active_task is not None:
+                active_task.cancel()
+                await asyncio.gather(active_task, return_exceptions=True)
 
     async def _read_boolean_trigger_value(
         self,
@@ -529,50 +669,47 @@ class DataCollector:
                 if group.interval_point
                 else None
             )
-            
-            if group.trigger == TriggerType.TIME:
-                # 时间触发采集
-                task = asyncio.create_task(
-                    self._time_triggered_collection(
-                        group, group_points, opcua_client, interval_point
-                    )
-                )
-                self.collectors[group.name] = task
-                self.logger.info(f"启动时间触发采集组: {group.name}")
-                
-            elif group.trigger == TriggerType.VARIABLE:
-                # 变量触发采集
-                trigger_point = data_points_dict[group.trigger_point]
-                if group.is_parallel:
-                    task = asyncio.create_task(
-                        self._parallel_variable_triggered_collection(group, group_points, trigger_point, opcua_client)
-                    )
-                    self.collectors[group.name] = task
-                    self.logger.info(f"启动并行变量触发采集组: {group.name}")
-                else:
-                    task = asyncio.create_task(
-                        self._variable_triggered_collection(group, group_points, trigger_point, opcua_client)
-                    )
-                    self.collectors[group.name] = task
-                    self.logger.info(f"启动变量触发采集组: {group.name}")
+            trigger_point = (
+                data_points_dict[group.trigger_point]
+                if group.trigger_point
+                else None
+            )
+            enable_point = (
+                data_points_dict[group.enable_point]
+                if group.enable_point
+                else None
+            )
 
-            elif group.trigger == TriggerType.TIME_AND_VARIABLE:
-                trigger_point = data_points_dict[group.trigger_point]
+            if enable_point is None:
                 task = asyncio.create_task(
-                    self._time_and_variable_collection(
+                    self._run_group_collection(
                         group,
                         group_points,
-                        trigger_point,
                         opcua_client,
+                        trigger_point,
                         interval_point,
                         variable_group_points,
                     )
                 )
-                self.collectors[group.name] = task
-                self.logger.info(f"启动时间+变量触发采集组: {group.name}")
-
+                self.logger.info("启动采集组: %s（未配置外部启停，始终启用）", group.name)
             else:
-                self.logger.error("不支持的数据组触发类型: %s (%s)", group.trigger, group.name)
+                task = asyncio.create_task(
+                    self._enable_controlled_collection(
+                        group,
+                        enable_point,
+                        group_points,
+                        opcua_client,
+                        trigger_point,
+                        interval_point,
+                        variable_group_points,
+                    )
+                )
+                self.logger.info(
+                    "启动采集组外部启停监控: %s（点位 %s）",
+                    group.name,
+                    enable_point.name,
+                )
+            self.collectors[group.name] = task
 
     
     async def stop_collection(self) -> None:

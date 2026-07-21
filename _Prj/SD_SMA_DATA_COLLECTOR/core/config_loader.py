@@ -117,6 +117,7 @@ class ConfigLoader:
                 trigger=TriggerType(group_data['trigger']),
                 description=group_data['description'],
                 data_points=group_data['data_points'],
+                enable_point=group_data.get('enable_point'),
                 variable_point_overrides=(
                     {}
                     if group_data.get('variable_point_overrides') is None
@@ -270,6 +271,19 @@ class ConfigLoader:
         point_name_set = set(point_names)
         points_by_name = {point.name: point for point in config.points}
         for group in config.groups:
+            if group.enable_point is not None:
+                if not isinstance(group.enable_point, str):
+                    raise ValueError(
+                        f"数据组 '{group.name}' 的 enable_point 必须是点位名称"
+                    )
+                group.enable_point = group.enable_point.strip()
+                if not group.enable_point:
+                    group.enable_point = None
+                elif group.enable_point not in point_name_set:
+                    raise ValueError(
+                        f"数据组 '{group.name}' 的外部启用点位不存在: {group.enable_point}"
+                    )
+
             if group.trigger in {TriggerType.TIME, TriggerType.TIME_AND_VARIABLE}:
                 if isinstance(group.interval_seconds, bool):
                     raise ValueError(
