@@ -5,6 +5,10 @@
 
 ---
 
+## 2026-07-21
+
+- **结批降 CPU 现场复核（0.3.113）**：配方报表生成刷屏 1 次；生产数据≈8000 条分 4 份生成，**每份都触发画面刷新**。预期降负载未消除「按份数刷 HMI」。看板 [docs/030-🚧](docs/030-🚧-ReportEditor结批占满CPU导致mappView白屏.md)。
+
 ## 2026-07-20
 
 - **ReportEditor 0.3.113（032 P1）**：Dashboard/Layout/签名 lifecycle + Observer restart；缩略图并发≤2；导出写盘 async + cancelPdfExport；023 口径更正。看板 [docs/032-🚧](docs/032-🚧-ReportEditor全站架构评估与统一生命周期.md)。
