@@ -1,0 +1,12 @@
+{
+  "name": "spike-030-pdf-engine-a",
+  "private": true,
+  "type": "module",
+  "description": "030/0.3.114 Spike-A: pdf-lib vector PDF without Chromium printToPDF",
+  "scripts": {
+    "spike": "node spike-a-pdf-lib.mjs"
+  },
+  "dependencies": {
+    "pdf-lib": "^1.17.1"
+  }
+}

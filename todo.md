@@ -7,9 +7,11 @@
 
 ## 2026-07-21
 
-- **030 拍板：结批中 HMI 必须可操作** → 否决导出互斥；同机零闪主路径锁定为 **旁路 printToPDF**。看板 [docs/030-🚧](docs/030-🚧-ReportEditor结批占满CPU导致mappView白屏.md)。
+- **ReportEditor 0.3.114 Plan（选型）**：旁路 `printToPDF`（030 Z2 / 032 P2-B）；主推 Spike-A 矢量 pdf-lib/PDFKit，备选 WeasyPrint；否决另一 Chromium/仅调参达标。看板 [docs/030-🚧](docs/030-🚧-ReportEditor结批占满CPU导致mappView白屏.md) · [Plan 0.3.114](_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.114.md)。
 
-- **030 硬约束补充**：mappView 须完全不闪（掉线重载 ~10s）；AR+Windows 下 Chromium 不可绑核；分机不做。看板 [docs/030-🚧](docs/030-🚧-ReportEditor结批占满CPU导致mappView白屏.md)。
+- **030 拍板：结批中 HMI 必须可操作** → 否决导出互斥；主路径旁路 printToPDF。看板 [docs/030-🚧](docs/030-🚧-ReportEditor结批占满CPU导致mappView白屏.md)。
+
+- **030 硬约束补充**：零闪；AR+Windows 下 Chromium 不可绑核；分机不做。看板 [docs/030-🚧](docs/030-🚧-ReportEditor结批占满CPU导致mappView白屏.md)。
 
 - **结批降 CPU 现场复核（0.3.113）**：配方刷 1 次；生产≈8000/4 份每份刷 HMI。看板 [docs/030-🚧](docs/030-🚧-ReportEditor结批占满CPU导致mappView白屏.md)。
 
