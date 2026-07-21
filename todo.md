@@ -7,7 +7,9 @@
 
 ## 2026-07-21
 
-- **ReportEditor 0.3.114 Plan（选型）**：旁路 `printToPDF`（030 Z2 / 032 P2-B）；主推 Spike-A 矢量 pdf-lib/PDFKit，备选 WeasyPrint；否决另一 Chromium/仅调参达标。看板 [docs/030-🚧](docs/030-🚧-ReportEditor结批占满CPU导致mappView白屏.md) · [Plan 0.3.114](_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.114.md)。
+- **030 拍板补充**：实现策略 A（先零闪）；验收以**自动结批**为准；中文随包嵌入 Noto Sans SC（不拷贝雅黑/宋体）。看板 [docs/030-🚧](docs/030-🚧-ReportEditor结批占满CPU导致mappView白屏.md) · [Plan 0.3.114](_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.114.md)。
+
+- **ReportEditor 0.3.114 Plan（选型）**：旁路 `printToPDF`；Spike-A 脚手架已通。看板 [docs/030-🚧](docs/030-🚧-ReportEditor结批占满CPU导致mappView白屏.md)。
 
 - **030 拍板：结批中 HMI 必须可操作** → 否决导出互斥；主路径旁路 printToPDF。看板 [docs/030-🚧](docs/030-🚧-ReportEditor结批占满CPU导致mappView白屏.md)。
 
