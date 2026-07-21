@@ -5,9 +5,15 @@ import {
 } from "@/lib/pdf-export-engine";
 
 describe("pdf-export-engine", () => {
-  it("defaults to chromium", () => {
-    expect(normalizePdfExportEngine(undefined)).toBe("chromium");
-    expect(readPdfExportEngineFromPrefs({})).toBe("chromium");
+  it("defaults to pdf-lib (0.3.115 field verify)", () => {
+    expect(normalizePdfExportEngine(undefined)).toBe("pdf-lib");
+    expect(readPdfExportEngineFromPrefs({})).toBe("pdf-lib");
+  });
+
+  it("accepts chromium rollback aliases", () => {
+    expect(normalizePdfExportEngine("chromium")).toBe("chromium");
+    expect(normalizePdfExportEngine("printToPDF")).toBe("chromium");
+    expect(readPdfExportEngineFromPrefs({ pdfExportEngine: "chromium" })).toBe("chromium");
   });
 
   it("accepts pdf-lib aliases", () => {

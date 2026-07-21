@@ -7,6 +7,8 @@
 
 ## 2026-07-21
 
+- **ReportEditor 0.3.115**：默认 **同机优先**（pdf-lib 旁路 printToPDF）；高级设置可切 **版式优先**；审计记录 engine/exportMode；随包 Noto 位。看板 [docs/030-🚧](docs/030-🚧-ReportEditor结批占满CPU导致mappView白屏.md)。
+
 - **030 双模式评估**：导出开关正式名 **同机优先**（pdf-lib，默认）/ **版式优先**（chromium 回滚）；弃用「性能/质量」以免与 PDF 版式语义撞车；审计字段约定已写入看板。看板 [docs/030-🚧](docs/030-🚧-ReportEditor结批占满CPU导致mappView白屏.md) · [Plan 0.3.115](_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.115.md)。
 
 - **030/0.3.115 开工**：模版导出预检 + 版式保存/属性面板 **字体检查**；随包 Noto 拉取脚本；`pdfExportEngine` 脚手架。看板 [docs/030-🚧](docs/030-🚧-ReportEditor结批占满CPU导致mappView白屏.md) · [Plan 0.3.115](_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.115.md)。

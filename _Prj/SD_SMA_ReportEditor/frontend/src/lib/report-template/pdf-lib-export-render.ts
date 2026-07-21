@@ -1,0 +1,308 @@
+/**
+ * 030 / 0.3.115：无 printToPDF 的草稿级矢量导出（策略 A：先零闪）。
+ * 版式与 DOM 预览不完全 1:1；审计 layoutFidelity=draft-v1。
+ */
+import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
+import type { BindingPreviewCell } from "@/lib/report-template/binding-preview-utils";
+import {
+  cellKey,
+  forEachTemplateCanvasElement,
+  forEachZoneLayoutElement,
+} from "@/lib/report-template/binding-preview-utils";
+import { buildExportPreviewReports } from "@/lib/report-template/export-preview-reports";
+import type { ReportTemplate, TemplateElement } from "@/lib/report-template/model";
+import { ensureTableGrid } from "@/lib/report-template/model";
+import { PAPER_PRESETS, type PaperKind } from "@/lib/report-template/paper";
+import { BUNDLED_CJK_FAMILY } from "@/lib/report-template/font-availability";
+import {
+  templateTableSqlFillPreviewKey,
+} from "@/lib/report-template/table-sql-fill-preview";
+
+export type PdfLibExportMeta = {
+  engine: "pdf-lib";
+  layoutFidelity: "draft-v1";
+  fontFamily: string;
+  fontEmbedded: boolean;
+  pageCount: number;
+  pdfLibMs: number;
+  printToPDFSkipped: true;
+};
+
+function mmToPt(mm: number): number {
+  return (mm * 72) / 25.4;
+}
+
+function paperSizePt(tmpl: ReportTemplate): { w: number; h: number } {
+  const d = PAPER_PRESETS[(tmpl.paperKind as PaperKind) || "A4"] || PAPER_PRESETS.A4;
+  const portrait = tmpl.orientation !== "landscape";
+  const wmm = portrait ? d.widthMm : d.heightMm;
+  const hmm = portrait ? d.heightMm : d.widthMm;
+  return { w: mmToPt(wmm), h: mmToPt(hmm) };
+}
+
+function cellText(v: BindingPreviewCell | undefined): string {
+  if (v == null) return "";
+  if (typeof v === "string") return v;
+  if (typeof v === "object" && v && "text" in v) return String((v as { text?: unknown }).text ?? "");
+  return String(v);
+}
+
+function sanitizeForWinAnsi(s: string): string {
+  return s.replace(/[^\x20-\x7E\u00A0-\u00FF]/g, "?");
+}
+
+function decodeBase64ToBytes(b64: string): Uint8Array {
+  const bin = atob(b64);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+async function loadBundledFontBytes(fontBytesBase64?: string | null): Promise<Uint8Array | null> {
+  if (fontBytesBase64 && fontBytesBase64.length > 1000) {
+    try {
+      return decodeBase64ToBytes(fontBytesBase64);
+    } catch {
+      /* fall through */
+    }
+  }
+  const candidates = [
+    "/resources/fonts/NotoSansSC-Regular.otf",
+    "./resources/fonts/NotoSansSC-Regular.otf",
+  ];
+  const custom = (window as unknown as { __SD_SMA_BUNDLED_FONT_URL__?: string }).__SD_SMA_BUNDLED_FONT_URL__;
+  if (custom) candidates.unshift(custom);
+
+  for (const url of candidates) {
+    try {
+      const res = await fetch(url);
+      if (!res.ok) continue;
+      const buf = await res.arrayBuffer();
+      if (buf.byteLength > 1000) return new Uint8Array(buf);
+    } catch {
+      /* try next */
+    }
+  }
+  return null;
+}
+
+function drawWrapped(
+  page: PDFPage,
+  font: PDFFont,
+  text: string,
+  x: number,
+  y: number,
+  size: number,
+  maxWidth: number,
+  lineHeight: number,
+  useWinAnsi: boolean,
+): number {
+  const raw = useWinAnsi ? sanitizeForWinAnsi(text) : text;
+  const words = raw.split(/(\s+)/);
+  let line = "";
+  let cy = y;
+  const drawLine = (s: string) => {
+    if (!s) return;
+    try {
+      page.drawText(s, { x, y: cy, size, font, color: rgb(0.1, 0.1, 0.1) });
+    } catch {
+      page.drawText(sanitizeForWinAnsi(s), { x, y: cy, size, font, color: rgb(0.1, 0.1, 0.1) });
+    }
+    cy -= lineHeight;
+  };
+  for (const w of words) {
+    const trial = line + w;
+    let width = 0;
+    try {
+      width = font.widthOfTextAtSize(trial, size);
+    } catch {
+      width = trial.length * size * 0.5;
+    }
+    if (width > maxWidth && line) {
+      drawLine(line);
+      line = w.trimStart();
+    } else {
+      line = trial;
+    }
+  }
+  if (line) drawLine(line);
+  return cy;
+}
+
+/**
+ * 渲染当前分卷 PDF（Uint8Array）。
+ */
+export async function renderPdfLibExportPart(opts: {
+  tmpl: ReportTemplate;
+  previewValues: Record<string, BindingPreviewCell | undefined>;
+  reportPartIndex: number | null;
+  /** 主进程 IPC 读入的随包 Noto base64；缺省则尝试 fetch / Helvetica */
+  fontBytesBase64?: string | null;
+}): Promise<{ bytes: Uint8Array; meta: PdfLibExportMeta }> {
+  const t0 = Date.now();
+  const reports = buildExportPreviewReports(opts.tmpl, opts.previewValues, opts.reportPartIndex);
+  const report = reports[0];
+  if (!report) throw new Error("pdf-lib：无预览分卷");
+
+  const doc = await PDFDocument.create();
+  const fontBytes = await loadBundledFontBytes(opts.fontBytesBase64);
+  let font: PDFFont;
+  let fontEmbedded = false;
+  let fontFamily = BUNDLED_CJK_FAMILY;
+  if (fontBytes) {
+    font = await doc.embedFont(fontBytes, { subset: true });
+    fontEmbedded = true;
+  } else {
+    font = await doc.embedFont(StandardFonts.Helvetica);
+    fontFamily = "Helvetica (fallback)";
+  }
+  const useWinAnsi = !fontEmbedded;
+  const { w: pageW, h: pageH } = paperSizePt(opts.tmpl);
+  const margin = 36;
+  let page = doc.addPage([pageW, pageH]);
+  let y = pageH - margin;
+
+  const title = String(opts.tmpl.name || "Report").trim() || "Report";
+  page.drawText(useWinAnsi ? sanitizeForWinAnsi(title) : title, {
+    x: margin,
+    y,
+    size: 14,
+    font,
+    color: rgb(0.05, 0.05, 0.05),
+  });
+  y -= 22;
+  const partLabel = `part ${report.reportIndex + 1}/${report.totalReports} · engine=pdf-lib · fidelity=draft-v1`;
+  page.drawText(partLabel, {
+    x: margin,
+    y,
+    size: 9,
+    font,
+    color: rgb(0.4, 0.4, 0.4),
+  });
+  y -= 18;
+
+  const zoneLines: string[] = [];
+  forEachZoneLayoutElement(opts.tmpl, (el) => {
+    if (el.type !== "text" && el.type !== "parameter" && el.type !== "date" && el.type !== "pageNumber") return;
+    const raw = String(el.text || "").trim();
+    if (raw) zoneLines.push(raw);
+  });
+  for (const line of zoneLines.slice(0, 8)) {
+    if (y < margin + 40) {
+      page = doc.addPage([pageW, pageH]);
+      y = pageH - margin;
+    }
+    y = drawWrapped(page, font, line, margin, y, 10, pageW - margin * 2, 12, useWinAnsi);
+    y -= 4;
+  }
+
+  const values = report.previewValues;
+  forEachTemplateCanvasElement(opts.tmpl, (el: TemplateElement) => {
+    if (y < margin + 60) {
+      page = doc.addPage([pageW, pageH]);
+      y = pageH - margin;
+    }
+    if (el.type === "text" || el.type === "parameter" || el.type === "date") {
+      const ck = cellKey(el.id, 0, 0);
+      const bound = cellText(values[ck]);
+      const text = bound || String(el.text || "");
+      if (!text.trim()) return;
+      y = drawWrapped(
+        page,
+        font,
+        text,
+        margin,
+        y,
+        Math.max(8, Number(el.fontSize) || 11),
+        pageW - margin * 2,
+        13,
+        useWinAnsi,
+      );
+      y -= 6;
+      return;
+    }
+    if (el.type === "table") {
+      const grid = ensureTableGrid(el);
+      const rows = Math.min(grid.rows || 0, 80);
+      const cols = Math.min(grid.cols || 0, 12);
+      const sqlKey = templateTableSqlFillPreviewKey(el.id);
+      const sqlPayload = values[sqlKey] as
+        | { ok?: boolean; columns?: string[]; rows?: Record<string, unknown>[] }
+        | undefined;
+      page.drawText(useWinAnsi ? sanitizeForWinAnsi(`[table ${el.id}]`) : `[table ${el.id}]`, {
+        x: margin,
+        y,
+        size: 9,
+        font,
+        color: rgb(0.2, 0.2, 0.5),
+      });
+      y -= 14;
+      if (sqlPayload?.ok && Array.isArray(sqlPayload.rows) && sqlPayload.rows.length) {
+        const colsNames = (sqlPayload.columns || Object.keys(sqlPayload.rows[0] || {})).slice(0, cols || 6);
+        const header = colsNames.join(" | ");
+        y = drawWrapped(page, font, header, margin, y, 8, pageW - margin * 2, 10, useWinAnsi);
+        y -= 2;
+        const maxData = Math.min(sqlPayload.rows.length, 60);
+        for (let ri = 0; ri < maxData; ri++) {
+          if (y < margin + 40) {
+            page = doc.addPage([pageW, pageH]);
+            y = pageH - margin;
+          }
+          const line = colsNames
+            .map((c) => {
+              const v = sqlPayload.rows![ri]![c];
+              if (v == null) return "";
+              return String(v);
+            })
+            .join(" | ");
+          y = drawWrapped(page, font, line, margin, y, 8, pageW - margin * 2, 10, useWinAnsi);
+        }
+        y -= 8;
+        return;
+      }
+      for (let r = 0; r < Math.min(rows, 40); r++) {
+        if (y < margin + 40) {
+          page = doc.addPage([pageW, pageH]);
+          y = pageH - margin;
+        }
+        const parts: string[] = [];
+        for (let c = 0; c < cols; c++) {
+          const ck = cellKey(el.id, r, c);
+          parts.push(cellText(values[ck]) || "");
+        }
+        y = drawWrapped(page, font, parts.join(" | "), margin, y, 8, pageW - margin * 2, 10, useWinAnsi);
+      }
+      y -= 8;
+    }
+  });
+
+  const bytes = await doc.save();
+  return {
+    bytes,
+    meta: {
+      engine: "pdf-lib",
+      layoutFidelity: "draft-v1",
+      fontFamily,
+      fontEmbedded,
+      pageCount: doc.getPageCount(),
+      pdfLibMs: Date.now() - t0,
+      printToPDFSkipped: true,
+    },
+  };
+}
+
+/** IPC 友好：base64 */
+export async function renderPdfLibExportPartBase64(opts: {
+  tmpl: ReportTemplate;
+  previewValues: Record<string, BindingPreviewCell | undefined>;
+  reportPartIndex: number | null;
+  fontBytesBase64?: string | null;
+}): Promise<{ pdfBase64: string; meta: PdfLibExportMeta }> {
+  const { bytes, meta } = await renderPdfLibExportPart(opts);
+  let binary = "";
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+  }
+  return { pdfBase64: btoa(binary), meta };
+}

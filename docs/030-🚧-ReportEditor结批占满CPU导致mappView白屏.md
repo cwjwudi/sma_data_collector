@@ -222,7 +222,36 @@ Windows 实际结批 CPU≈100%，同机 mappView 白屏/刷新。
 - [x] 双模式值得做，已写入看板  
 - [x] 正式命名：**同机优先** / **版式优先**  
 - [x] 引擎映射与默认、审计字段已约定  
-- [ ] UI 开关 + 接线 → 随 [0.3.115 Plan](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.115.md) 实现（下一条）
+- [x] UI 开关 + 接线 → 见下条「0.3.115 同机优先实现」
+
+---
+
+# 🚧 进行中：0.3.115 同机优先实现与现场硬验收（2026-07-21）
+
+> **产品计划**：[0.3.115 Plan](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.115.md)  
+> **安装包**：打包完成后现场装 Setup-0.3.115 验证。
+
+## 已落地（代码）
+
+| 项 | 说明 |
+|----|------|
+| 默认同机优先 | `pdfExportEngine=pdf-lib`；取数后矢量写 PDF，**不**调 `printToPDF` |
+| 跳过 DOM 预览栈 | 同机优先下不挂 `TemplateExportPreviewStack` / 不 `waitPaintReady` |
+| UI 开关 | 报表生成 → 高级设置：**同机优先 / 版式优先** |
+| 审计 | summary 含 `同机优先/pdf-lib`；detail：`exportMode`、`engine`、`engineMeta`（含 `printToPDFSkipped`、`layoutFidelity`、`fontEmbedded`） |
+| 字体 | 打包机 `resources/fonts/NotoSansSC-Regular.otf` → extraResources；缺则 Helvetica |
+
+## 现场给人看（审计）
+
+结批成功后打开审计「自动导出 PDF」：
+
+- 摘要应含 **同机优先/pdf-lib**
+- detail：`printToPDFSkipped: true`、`layoutFidelity: draft-v1`、`fontEmbedded`（有 Noto 应为 true）
+
+## 验收
+
+- [ ] 生产 ≈8k / ≥4 份自动结批：mappView **零闪可操作**（硬）
+- [ ] （可选）切版式优先对照是否再现闪屏
 
 ---
 
@@ -243,8 +272,8 @@ Windows 实际结批 CPU≈100%，同机 mappView 白屏/刷新。
 | 候选 A 矢量 / B WeasyPrint / C 栅格 / D 另一 Chromium / E 调参 | ✅ 对比表在 Plan；D/E 作达标路径否决 |
 | Spike-Ctrl 基线 | ⌛️ 现场对照 |
 | Spike-A pdf-lib/PDFKit PoC | ✅ 脚本可跑；同机 mappView 旁观 ⌛️ |
-| 模版/版式字体检查 | 🚧 预检 warning + 版式保存确认 + 属性面板提示（0.3.115） |
-| 随包 Noto + pdf-lib 引擎 | 🚧 开工：fetch 脚本 + `pdfExportEngine` 偏好脚手架 |
+| 模版/版式字体检查 | ✅ 预检 + 版式保存 + 属性面板（0.3.115） |
+| 随包 Noto + pdf-lib 引擎 | ✅ 实现进 0.3.115；现场硬验收仍开 |
 
 ## 验收
 

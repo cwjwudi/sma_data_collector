@@ -818,6 +818,25 @@ ipcMain.handle('path-join', (_event, parts) => {
   return path.join(...parts.map(String))
 })
 
+/** 030：同机优先 pdf-lib 嵌入随包 Noto（extraResources/fonts 或开发树 resources/fonts） */
+ipcMain.handle('bundled-cjk-font', async () => {
+  const candidates = [
+    path.join(process.resourcesPath || '', 'fonts', 'NotoSansSC-Regular.otf'),
+    path.join(__dirname, '..', 'resources', 'fonts', 'NotoSansSC-Regular.otf'),
+  ]
+  for (const fp of candidates) {
+    try {
+      if (!fp || !fs.existsSync(fp)) continue
+      const buf = await fs.promises.readFile(fp)
+      if (buf.length < 1000) continue
+      return { ok: true, base64: buf.toString('base64'), path: fp, bytes: buf.length }
+    } catch {
+      /* try next */
+    }
+  }
+  return { ok: false, error: 'bundled Noto Sans SC not found' }
+})
+
 ipcMain.handle('scan-export-pdfs', async (_event, opts) => {
   return scanExportPdfsCompat(opts || {})
 })
@@ -1083,6 +1102,17 @@ ipcMain.handle('pdf-export-run', async (event, opts) => {
   const filePath = opts && opts.filePath
   const templateId = opts && opts.templateId
   const openAfter = Boolean(opts && opts.openAfter)
+  const engineRaw = opts && opts.engine
+  const exportEngine =
+    String(engineRaw || '')
+      .trim()
+      .toLowerCase() === 'chromium' ||
+    String(engineRaw || '')
+      .trim()
+      .toLowerCase() === 'printtopdf'
+      ? 'chromium'
+      : 'pdf-lib'
+  const exportMode = exportEngine === 'pdf-lib' ? 'coexist' : 'fidelity'
   const jobId =
     opts && typeof opts.jobId === 'string' && opts.jobId.trim()
       ? opts.jobId.trim()
@@ -1121,7 +1151,7 @@ ipcMain.handle('pdf-export-run', async (event, opts) => {
 
       /** seq 保证 hash 每次都变化：热切换时可靠触发导出页的路由监听重新取数 */
       function partHash(partIndex) {
-        return `#/pdf-export?templateId=${encodeURIComponent(templateId)}&reportPartIndex=${partIndex}&seq=${Date.now()}`
+        return `#/pdf-export?templateId=${encodeURIComponent(templateId)}&reportPartIndex=${partIndex}&engine=${encodeURIComponent(exportEngine)}&seq=${Date.now()}`
       }
 
       // 优先复用预热窗口：SPA 已启动，进入取数只差一次 hash 切换
@@ -1227,13 +1257,41 @@ ipcMain.handle('pdf-export-run', async (event, opts) => {
         }
 
         const printStartMs = Date.now()
-        const pdfBuffer = await pdfWin.webContents.printToPDF({
-          landscape: false,
-          printBackground: true,
-          marginsType: 1,
-          pageRanges: '',
-          preferCSSPageSize: true,
-        })
+        let pdfBuffer
+        let printMs = 0
+        let engineMeta = {
+          engine: exportEngine,
+          exportMode,
+          printToPDFSkipped: false,
+        }
+        if (payload.pdfBase64 && typeof payload.pdfBase64 === 'string') {
+          pdfBuffer = Buffer.from(payload.pdfBase64, 'base64')
+          printMs = Number(payload.pdfLibMs) || Date.now() - printStartMs
+          engineMeta = {
+            engine: payload.engine || 'pdf-lib',
+            exportMode: payload.exportMode || 'coexist',
+            layoutFidelity: payload.layoutFidelity || 'draft-v1',
+            fontFamily: payload.fontFamily || null,
+            fontEmbedded: Boolean(payload.fontEmbedded),
+            pageCount: Number(payload.pageCount) || 0,
+            pdfLibMs: Number(payload.pdfLibMs) || printMs,
+            printToPDFSkipped: true,
+          }
+        } else {
+          pdfBuffer = await pdfWin.webContents.printToPDF({
+            landscape: false,
+            printBackground: true,
+            marginsType: 1,
+            pageRanges: '',
+            preferCSSPageSize: true,
+          })
+          printMs = Date.now() - printStartMs
+          engineMeta = {
+            engine: 'chromium',
+            exportMode: 'fidelity',
+            printToPDFSkipped: false,
+          }
+        }
         pdfWin.__exportUses = (pdfWin.__exportUses || 0) + 1
         return {
           pdfBuffer,
@@ -1241,7 +1299,8 @@ ipcMain.handle('pdf-export-run', async (event, opts) => {
           stats: payload.stats || null,
           phases: payload.phases && typeof payload.phases === 'object' ? payload.phases : null,
           readyMs,
-          printMs: Date.now() - printStartMs,
+          printMs,
+          engineMeta,
         }
       }
 
@@ -1258,12 +1317,20 @@ ipcMain.handle('pdf-export-run', async (event, opts) => {
       let stats = { opcReads: 0, sqlQueries: 0, sqlRows: 0 }
       /** 分阶段耗时（多份报表求和）：readyMs 含窗口内启动+取数+绘制；dataMs 为其中的取数部分 */
       const timings = { warmStart, readyMs: 0, dataMs: 0, printMs: 0, writeMs: 0 }
+      let engineAudit = {
+        engine: exportEngine,
+        exportMode,
+        printToPDFSkipped: exportEngine === 'pdf-lib',
+      }
 
       function mergeTimings(part) {
         timings.readyMs += Number(part.readyMs) || 0
         timings.printMs += Number(part.printMs) || 0
         if (part.phases) {
           timings.dataMs += Number(part.phases.dataMs) || 0
+        }
+        if (part.engineMeta && typeof part.engineMeta === 'object') {
+          engineAudit = { ...engineAudit, ...part.engineMeta }
         }
       }
 
@@ -1310,6 +1377,9 @@ ipcMain.handle('pdf-export-run', async (event, opts) => {
         totalReports,
         stats,
         timings,
+        engine: engineAudit.engine || exportEngine,
+        exportMode: engineAudit.exportMode || exportMode,
+        engineMeta: engineAudit,
         durationMs: Date.now() - startedAtMs,
       }
     } catch (e) {

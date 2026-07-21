@@ -31,6 +31,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   /** 路径拼接（跟随 OS） */
   pathJoin: (...parts) => ipcRenderer.invoke('path-join', parts),
 
+  /** 随包 CJK 字体（pdf-lib embed；缺文件则 ok:false） */
+  getBundledCjkFont: () => ipcRenderer.invoke('bundled-cjk-font'),
+
   /** 启动阶段直读本机配置，避免等待 FastAPI 才能显示已保存连接 */
   getDataSourceStartupSnapshot: () => ipcRenderer.invoke('datasource-startup-snapshot'),
 

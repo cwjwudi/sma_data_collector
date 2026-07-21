@@ -174,9 +174,38 @@
               >▸</span
             >
             <span class="rg-lbl rg-lbl--inline">高级设置</span>
-            <span class="rg-mini rg-advanced-hint">并行上限 · 保存目录 · 文件名</span>
+            <span class="rg-mini rg-advanced-hint">导出模式 · 并行上限 · 保存目录 · 文件名</span>
           </button>
           <div v-show="advancedAutoExpanded" class="rg-advanced-body">
+            <div class="rg-row rg-row--in-panel">
+              <span class="rg-lbl" id="rg-export-mode-lbl">导出模式（手动与自动共用）</span>
+              <div class="rg-tabs" role="radiogroup" aria-labelledby="rg-export-mode-lbl">
+                <button
+                  type="button"
+                  role="radio"
+                  class="rg-tab"
+                  :class="{ 'rg-tab--on': prefs.pdfExportEngine === 'pdf-lib' }"
+                  :aria-checked="prefs.pdfExportEngine === 'pdf-lib'"
+                  @click="prefs.pdfExportEngine = 'pdf-lib'"
+                >
+                  同机优先
+                </button>
+                <button
+                  type="button"
+                  role="radio"
+                  class="rg-tab"
+                  :class="{ 'rg-tab--on': prefs.pdfExportEngine === 'chromium' }"
+                  :aria-checked="prefs.pdfExportEngine === 'chromium'"
+                  @click="prefs.pdfExportEngine = 'chromium'"
+                >
+                  版式优先
+                </button>
+              </div>
+              <p class="rg-mini rg-mini--indent">
+                同机优先：不调用 printToPDF，减轻对 mappView 争用（PDF 为草稿级版式）。版式优先：接近编辑预览，同机可能闪屏。
+              </p>
+            </div>
+
             <div class="rg-row rg-row--in-panel">
               <label class="rg-lbl" for="rg-auto-max-parallel">同时并行导出上限</label>
               <div class="rg-inline">
@@ -1805,6 +1834,7 @@ async function onManualExport(): Promise<void> {
       filePath,
       openAfter: false,
       jobId: exportJobId,
+      engine: prefs.value.pdfExportEngine === "chromium" ? "chromium" : "pdf-lib",
     });
     offProgress?.();
     offProgress = undefined;
@@ -1818,10 +1848,12 @@ async function onManualExport(): Promise<void> {
     const statsLine = formatExportStatsLine(exportRes.stats);
     const exportTimings = { preflightMs, ...(exportRes.timings || {}) };
     const timingsLine = formatExportTimingsLine(exportTimings);
+    const modeLabel = exportRes.exportMode === "fidelity" ? "版式优先" : "同机优先";
+    const engineHint = exportRes.engine ? `；${modeLabel}/${exportRes.engine}` : "";
     void auditLog({
       action: "export.manual_pdf",
       result: "ok",
-      summary: `${suggestName}（耗时 ${(totalMs / 1000).toFixed(1)} 秒${statsLine ? `；${statsLine}` : ""}${timingsLine ? `；${timingsLine}` : ""}）`,
+      summary: `${suggestName}（耗时 ${(totalMs / 1000).toFixed(1)} 秒${statsLine ? `；${statsLine}` : ""}${timingsLine ? `；${timingsLine}` : ""}${engineHint}）`,
       object_type: "template",
       object_id: tid,
       detail: {
@@ -1832,6 +1864,9 @@ async function onManualExport(): Promise<void> {
         renderMs: exportRes.durationMs,
         stats: exportRes.stats,
         timings: exportTimings,
+        engine: exportRes.engine,
+        exportMode: exportRes.exportMode,
+        engineMeta: exportRes.engineMeta,
       },
     });
     const doneLines = [

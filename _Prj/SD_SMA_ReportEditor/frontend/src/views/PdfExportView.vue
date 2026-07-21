@@ -1,7 +1,7 @@
 <template>
   <div class="pdf-export-root">
     <TemplateExportPreviewStack
-      v-if="tmpl"
+      v-if="tmpl && useChromiumPrint"
       :tmpl="tmpl"
       active-sheet="cover"
       :active-body-page-index="0"
@@ -12,6 +12,7 @@
       :mini-max-height-px="pdfMiniMaxHeightPx"
     />
     <div v-else-if="errText" class="pdf-export-err">{{ errText }}</div>
+    <div v-else-if="tmpl && !useChromiumPrint" class="pdf-export-pdflib-hint">pdf-lib · 同机优先</div>
   </div>
 </template>
 
@@ -44,10 +45,19 @@ import {
   retryDelayMs,
   sleepMs,
 } from "@/lib/report-template/sql-fill-retry";
+import { normalizePdfExportEngine, type PdfExportEngineId } from "@/lib/pdf-export-engine";
+import { renderPdfLibExportPartBase64 } from "@/lib/report-template/pdf-lib-export-render";
 
 const route = useRoute();
 const tmpl = ref<ReportTemplate | null>(null);
 const errText = ref<string | null>(null);
+
+const exportEngine = computed<PdfExportEngineId>(() => {
+  const raw = route.query.engine;
+  const s = Array.isArray(raw) ? raw[0] : raw;
+  return normalizePdfExportEngine(s);
+});
+const useChromiumPrint = computed(() => exportEngine.value === "chromium");
 
 const bindingPreview = useReportBindingPreview(tmpl);
 provide(reportBindingPreviewKey, bindingPreview);
@@ -95,12 +105,25 @@ function injectPrintPageCss(t: ReportTemplate): void {
 
 type ExportBootPhases = { tplMs: number; dataMs: number; paintMs: number };
 
+type ExportReadyExtra = {
+  pdfBase64?: string;
+  engine?: PdfExportEngineId;
+  exportMode?: "coexist" | "fidelity";
+  layoutFidelity?: string;
+  fontFamily?: string;
+  fontEmbedded?: boolean;
+  pageCount?: number;
+  pdfLibMs?: number;
+  printToPDFSkipped?: boolean;
+};
+
 function signalReady(
   ok: boolean,
   error?: string,
   totalReports?: number,
   phases?: ExportBootPhases,
   diagnostics?: ExportFailureDiagnostics,
+  extra?: ExportReadyExtra,
 ): void {
   stopExportHeartbeat();
   // 注意：stats 须转成纯对象。Vue reactive 代理经 IPC 会抛
@@ -115,6 +138,7 @@ function signalReady(
       : undefined,
     phases,
     diagnostics: diagnostics || undefined,
+    ...(extra || {}),
   });
 }
 
@@ -247,9 +271,43 @@ async function boot(): Promise<void> {
     });
   }
   const paintStartMs = Date.now();
+  if (!useChromiumPrint.value) {
+    // 同机优先：跳过 DOM 预览栈与 printToPDF，矢量写 PDF
+    try {
+      const fontRes = await window.electronAPI?.getBundledCjkFont?.();
+      const { pdfBase64, meta } = await renderPdfLibExportPartBase64({
+        tmpl: t,
+        previewValues: bindingPreview.values.value,
+        reportPartIndex: partIdx,
+        fontBytesBase64: fontRes?.ok ? fontRes.base64 : null,
+      });
+      if (seq !== bootSeq) return;
+      signalReady(true, undefined, totalReports, { tplMs, dataMs, paintMs: Date.now() - paintStartMs }, undefined, {
+        pdfBase64,
+        engine: "pdf-lib",
+        exportMode: "coexist",
+        layoutFidelity: meta.layoutFidelity,
+        fontFamily: meta.fontFamily,
+        fontEmbedded: meta.fontEmbedded,
+        pageCount: meta.pageCount,
+        pdfLibMs: meta.pdfLibMs,
+        printToPDFSkipped: true,
+      });
+    } catch (e) {
+      if (seq !== bootSeq) return;
+      errText.value = humanizePdfExportError(e);
+      signalReady(false, errText.value, undefined, { tplMs, dataMs, paintMs: Date.now() - paintStartMs });
+    }
+    return;
+  }
+
   await nextTick();
   await waitPaintReady();
-  signalReady(true, undefined, totalReports, { tplMs, dataMs, paintMs: Date.now() - paintStartMs });
+  signalReady(true, undefined, totalReports, { tplMs, dataMs, paintMs: Date.now() - paintStartMs }, undefined, {
+    engine: "chromium",
+    exportMode: "fidelity",
+    printToPDFSkipped: false,
+  });
 }
 
 onMounted(() => {
@@ -347,5 +405,10 @@ watch(
   padding: 16px;
   color: #b91c1c;
   font: 14px/1.5 system-ui, sans-serif;
+}
+.pdf-export-pdflib-hint {
+  padding: 12px 16px;
+  color: #64748b;
+  font: 12px/1.4 system-ui, sans-serif;
 }
 </style>

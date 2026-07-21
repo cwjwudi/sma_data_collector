@@ -24,6 +24,8 @@ interface Window {
       openAfter?: boolean;
       /** 取消用；缺省时主进程生成 */
       jobId?: string;
+      /** pdf-lib=同机优先；chromium=版式优先 */
+      engine?: "pdf-lib" | "chromium";
     }) => Promise<{
       ok: boolean;
       filePath: string;
@@ -31,6 +33,9 @@ interface Window {
       totalReports?: number;
       stats?: { opcReads: number; sqlQueries: number; sqlRows: number };
       durationMs?: number;
+      engine?: string;
+      exportMode?: string;
+      engineMeta?: Record<string, unknown>;
       /** 分阶段耗时（多份报表求和）：warmStart 表示复用了预热窗口 */
       timings?: {
         warmStart?: boolean;
@@ -46,12 +51,25 @@ interface Window {
     ) => Promise<{ max: number; cpuBudget?: number; logicalCores?: number }>;
     shellOpenPath: (filePath: string) => Promise<{ ok: boolean; error?: string }>;
     pathJoin: (...parts: string[]) => Promise<string>;
+    getBundledCjkFont?: () => Promise<
+      { ok: true; base64: string; path?: string; bytes?: number } | { ok: false; error?: string }
+    >;
     notifyPdfExportReady: (payload: {
       ok: boolean;
       error?: string;
       totalReports?: number;
-      stats?: { opcReads: number; sqlQueries: number; sqlRows: number };
+      stats?: { opcReads: number; sqlQueries: number; sqlRows: number; mongoQueries?: number };
       phases?: { tplMs: number; dataMs: number; paintMs: number };
+      diagnostics?: unknown;
+      pdfBase64?: string;
+      engine?: string;
+      exportMode?: string;
+      layoutFidelity?: string;
+      fontFamily?: string;
+      fontEmbedded?: boolean;
+      pageCount?: number;
+      pdfLibMs?: number;
+      printToPDFSkipped?: boolean;
     }) => void;
     notifyPdfExportHeartbeat?: () => void;
     onPdfExportProgress: (

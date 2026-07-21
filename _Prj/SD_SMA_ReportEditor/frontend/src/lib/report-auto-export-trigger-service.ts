@@ -407,6 +407,9 @@ type AutoPdfExportAttempt = {
   stats?: { opcReads: number; sqlQueries: number; sqlRows: number; mongoQueries?: number };
   durationMs?: number;
   timings?: ExportPhaseTimings;
+  engine?: string;
+  exportMode?: string;
+  engineMeta?: Record<string, unknown>;
 };
 
 /** 结批进度弹窗/审计共用：把取数统计整理成一行可读文本 */
@@ -438,7 +441,8 @@ export function formatExportTimingsLine(t: ExportPhaseTimings | null | undefined
     }
   }
   if (t.printMs != null || t.writeMs != null) {
-    parts.push(`打印 ${sec((t.printMs || 0) + (t.writeMs || 0))}`);
+    const printLabel = (t as { printToPDFSkipped?: boolean }).printToPDFSkipped ? "矢量写PDF" : "打印";
+    parts.push(`${printLabel} ${sec((t.printMs || 0) + (t.writeMs || 0))}`);
   }
   if (t.warmStart != null) parts.push(t.warmStart ? "窗口已预热" : "窗口冷启动");
   return parts.join(" · ");
@@ -517,6 +521,7 @@ async function runAutoPdfExport(
           filePath,
           openAfter: false,
           jobId: exportJobId,
+          engine: prefs.pdfExportEngine === "chromium" ? "chromium" : "pdf-lib",
         });
         break;
       } catch (e) {
@@ -545,6 +550,9 @@ async function runAutoPdfExport(
     stats: exportRes.stats,
     durationMs: exportRes.durationMs,
     timings: { preflightMs, prepMs, ...(exportRes.timings || {}) },
+    engine: exportRes.engine,
+    exportMode: exportRes.exportMode,
+    engineMeta: exportRes.engineMeta,
   };
 }
 
@@ -611,10 +619,12 @@ async function executeBindingExport(job: QueuedExportJob): Promise<void> {
     const totalMs = Date.now() - startedAtMs;
     const statsLine = formatExportStatsLine(result.stats);
     const timingsLine = formatExportTimingsLine(result.timings);
+    const modeLabel = result.exportMode === "fidelity" ? "版式优先" : "同机优先";
+    const engineHint = result.engine ? `；${modeLabel}/${result.engine}` : "";
     void auditLog({
       action: "export.auto_pdf",
       result: "ok",
-      summary: `${result.fileName}（耗时 ${(totalMs / 1000).toFixed(1)} 秒${statsLine ? `；${statsLine}` : ""}${timingsLine ? `；${timingsLine}` : ""}）`,
+      summary: `${result.fileName}（耗时 ${(totalMs / 1000).toFixed(1)} 秒${statsLine ? `；${statsLine}` : ""}${timingsLine ? `；${timingsLine}` : ""}${engineHint}）`,
       object_type: "template",
       object_id: templateId || undefined,
       detail: {
@@ -627,6 +637,9 @@ async function executeBindingExport(job: QueuedExportJob): Promise<void> {
         stats: result.stats,
         timings: result.timings,
         totalReports: result.totalReports,
+        engine: result.engine,
+        exportMode: result.exportMode,
+        engineMeta: result.engineMeta,
       },
     });
     const noteSuffix = result.note ? `（${result.note}）` : "";

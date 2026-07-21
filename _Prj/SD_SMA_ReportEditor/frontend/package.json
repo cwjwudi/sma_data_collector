@@ -1,6 +1,6 @@
 {
   "name": "sd-sma-report-editor-ai",
-  "version": "0.3.113",
+  "version": "0.3.115",
   "description": "Report Editor AI — 报表编辑器 AI 版（Electron + FastAPI）",
   "author": "B&R Team",
   "private": true,
@@ -95,6 +95,15 @@
         "filter": [
           "**/*"
         ]
+      },
+      {
+        "from": "resources/fonts",
+        "to": "fonts",
+        "filter": [
+          "**/*.otf",
+          "**/*.ttf",
+          "README.md"
+        ]
       }
     ],
     "win": {
@@ -175,6 +184,7 @@
     "electron-updater": "^6.8.9",
     "highlight.js": "^11.11.1",
     "markdown-it": "^14.0.0",
+    "pdf-lib": "^1.17.1",
     "pdfjs-dist": "^4.10.38",
     "pinia": "^2.3.0",
     "vue": "^3.5.0",

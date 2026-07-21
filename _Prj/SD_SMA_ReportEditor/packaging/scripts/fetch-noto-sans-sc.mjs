@@ -16,7 +16,7 @@ const outFile = path.join(outDir, "NotoSansSC-Regular.otf");
 
 const DEFAULT_URL =
   process.env.NOTO_SC_URL ||
-  "https://cdn.jsdelivr.net/gh/notofonts/noto-cjk@main/Sans/OTF/SimplifiedChinese/NotoSansSC-Regular.otf";
+  "https://github.com/notofonts/noto-cjk/raw/main/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Regular.otf";
 
 async function main() {
   await mkdir(outDir, { recursive: true });

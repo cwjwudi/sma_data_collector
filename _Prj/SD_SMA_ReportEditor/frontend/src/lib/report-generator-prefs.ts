@@ -135,6 +135,12 @@ export interface ReportGeneratorPrefs {
 
   manualOpenAfter: boolean;
 
+  /**
+   * 导出模式（030）：pdf-lib=同机优先；chromium=版式优先。
+   * 自动/手动导出共用。
+   */
+  pdfExportEngine: "pdf-lib" | "chromium";
+
   exportResultOpc: ExportResultOpcFeedback;
 
   /** 按报表模版单独配置的结批结果反馈变量；key 为 templateId */
@@ -198,6 +204,8 @@ export const defaultReportGeneratorPrefs = (): ReportGeneratorPrefs => ({
   autoFileNameOpcAppendHash: true,
 
   manualOpenAfter: false,
+
+  pdfExportEngine: "pdf-lib",
 
   exportResultOpc: defaultExportResultOpcFeedback(),
 
@@ -361,6 +369,13 @@ function parseStoredPrefs(o: StoredPrefs, base: ReportGeneratorPrefs): ReportGen
       typeof o.autoFileNameOpcNodeId === "string" ? o.autoFileNameOpcNodeId : base.autoFileNameOpcNodeId,
     autoFileNameOpcAppendHash: fileNameAppendHash,
     manualOpenAfter: Boolean(o.manualOpenAfter),
+    pdfExportEngine: (() => {
+      const raw = String(o.pdfExportEngine || "")
+        .trim()
+        .toLowerCase();
+      if (raw === "chromium" || raw === "printtopdf") return "chromium";
+      return "pdf-lib";
+    })(),
     exportResultOpc,
     exportResultOpcByTemplateId: parseExportResultOpcByTemplateId(
       o.exportResultOpcByTemplateId,
