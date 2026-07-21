@@ -249,7 +249,12 @@ async function handleClientAction(action: string, payload: Record<string, unknow
     const name = String(payload.template_name || prompt.connection_name || tid)
     const safe = name.replace(/[\\/:*?"<>|]/g, '_').slice(0, 80)
     const filePath = await api.pathJoin(exportDir, `${safe}_${Date.now()}.pdf`)
-    await api.runPdfExport({ templateId: tid, filePath, openAfter: false })
+    await api.runPdfExport({
+      templateId: tid,
+      filePath,
+      openAfter: false,
+      engine: prefs.pdfExportEngine === 'chromium' ? 'chromium' : 'pdf-lib',
+    })
     notifyAssetsChanged('manual_export')
     return
   }
