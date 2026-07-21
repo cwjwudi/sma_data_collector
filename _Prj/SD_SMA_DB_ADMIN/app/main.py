@@ -31,6 +31,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 AUTH_TOKEN_ENV = "SD_SMA_WEB_TOKEN"
 AUTH_TOKEN_HEADER = "X-SD-SMA-Token"
 AUTH_EXEMPT_PATHS = {"/api/health"}
+BACKUP_DIR_ENV = "SD_SMA_DB_ADMIN_BACKUP_DIR"
 JOB_LOGGER = logging.getLogger("sd_sma.db_admin.job")
 
 
@@ -171,7 +172,10 @@ def _config_path(value: str | None, default: Path) -> Path:
 
 def backup_dir() -> Path:
     cfg = load_config()
-    path = _config_path(str(cfg.get("backup_dir") or "backups"), CONFIG_DIR / "backups")
+    configured = (os.getenv(BACKUP_DIR_ENV) or "").strip()
+    if not configured:
+        configured = str(cfg.get("backup_dir") or "${DB_ADMIN_ROOT}/backups")
+    path = _config_path(configured, BASE_DIR / "backups")
     path.mkdir(parents=True, exist_ok=True)
     return path
 

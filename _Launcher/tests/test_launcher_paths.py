@@ -48,3 +48,12 @@ def test_repair_venv_config_requires_bundled_python(tmp_path: Path) -> None:
     (venv_dir / "pyvenv.cfg").write_text("home = C:\\old\n", encoding="utf-8")
 
     assert launcher.repair_venv_config(venv_dir, tmp_path / "_Python") is False
+
+
+def test_db_admin_backup_dir_resolves_from_package_root() -> None:
+    config = launcher.load_json(launcher.DEFAULT_CONFIG)
+    service = next(item for item in config["services"] if item["name"] == "db_admin")
+
+    env = launcher.resolve_service_env(service)
+
+    assert env["SD_SMA_DB_ADMIN_BACKUP_DIR"] == str((launcher.PACKAGE_ROOT / "backups").resolve())

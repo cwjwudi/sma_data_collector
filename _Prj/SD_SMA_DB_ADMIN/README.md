@@ -71,6 +71,9 @@ MySQL 8 dump clients automatically receive `--column-statistics=0` for MariaDB s
 ## Export directories
 
 - Default export directory is `backup_dir`.
+- When started through `_Launcher`, the default is `<package-root>/backups`.
+- When started standalone, the default is `<SD_SMA_DB_ADMIN-project-root>/backups`.
+- `_Launcher` supplies `SD_SMA_DB_ADMIN_BACKUP_DIR`; this environment value takes precedence over `config/default.json`.
 - Any writable folder may be selected; the last choice is remembered as `last_output_dir`.
 - Lists / downloads / restores scan `backup_dir` and `last_output_dir`.
 

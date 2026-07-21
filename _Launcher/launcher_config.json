@@ -73,7 +73,8 @@
       "health_path": "/api/health",
       "open_url": "http://127.0.0.1:8093/admin",
       "env": {
-        "SD_SMA_DB_ADMIN_CONFIG_DIR": "config/db_admin"
+        "SD_SMA_DB_ADMIN_CONFIG_DIR": "config/db_admin",
+        "SD_SMA_DB_ADMIN_BACKUP_DIR": "backups"
       }
     },
     {

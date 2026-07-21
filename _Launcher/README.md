@@ -23,8 +23,9 @@ _Launcher\start.bat
 - Service name: `db_admin`
 - Project dir: `_Prj/SD_SMA_DB_ADMIN`
 - Config env: `SD_SMA_DB_ADMIN_CONFIG_DIR`
+- Backup env: `SD_SMA_DB_ADMIN_BACKUP_DIR`
 
-便携包会一并复制 `_Prj/SD_SMA_DB_ADMIN`，并使用统一 `.venv` 启动。
+便携包会一并复制 `_Prj/SD_SMA_DB_ADMIN`，并使用统一 `.venv` 启动。通过 Launcher 启动时，整库备份、单表备份和 CSV 导出的默认目录统一为包根目录下的 `backups/`。
 
 ## Report Copy
 
@@ -193,7 +194,8 @@ logs/
 
 ```json
 "env": {
-  "SD_SMA_DB_ADMIN_CONFIG_DIR": "config/db_admin"
+  "SD_SMA_DB_ADMIN_CONFIG_DIR": "config/db_admin",
+  "SD_SMA_DB_ADMIN_BACKUP_DIR": "backups"
 }
 ```
 
