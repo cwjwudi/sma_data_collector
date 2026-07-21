@@ -166,6 +166,22 @@ export async function runTemplateExportPreflight(templateId: string): Promise<Te
     warnings.push("此模版未检测到 OPC / SQL / Mongo 绑定，将按静态内容导出。");
   }
 
+  try {
+    const { collectFontFamiliesFromTemplate } = await import(
+      "@/lib/report-template/font-families-collect"
+    );
+    const { checkFontFamiliesSync, formatFontPreflightWarnings } = await import(
+      "@/lib/report-template/font-availability"
+    );
+    const families = collectFontFamiliesFromTemplate(tmpl);
+    if (families.length) {
+      const fontResults = checkFontFamiliesSync(families);
+      warnings.push(...formatFontPreflightWarnings(fontResults));
+    }
+  } catch {
+    // 字体预检失败不阻断导出
+  }
+
   const ok = blockers.length === 0;
   return {
     ok,

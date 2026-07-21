@@ -174,9 +174,9 @@ Windows 实际结批 CPU≈100%，同机 mappView 白屏/刷新。
 | 现状管线切割点（取数/分卷保留，只换渲染→Buffer） | ✅ 已写入 Plan |
 | 候选 A 矢量 / B WeasyPrint / C 栅格 / D 另一 Chromium / E 调参 | ✅ 对比表在 Plan；D/E 作达标路径否决 |
 | Spike-Ctrl 基线 | ⌛️ 现场对照 |
-| Spike-A pdf-lib/PDFKit PoC | ✅ 脚本可跑（`packaging/spikes/030-pdf-engine-a`；4 份约 420ms）；**同机 mappView 旁观 ⌛️** |
-| Spike-B WeasyPrint PoC | ⌛️ |
-| 决议写入 Plan | ⌛️ |
+| Spike-A pdf-lib/PDFKit PoC | ✅ 脚本可跑；同机 mappView 旁观 ⌛️ |
+| 模版/版式字体检查 | 🚧 预检 warning + 版式保存确认 + 属性面板提示（0.3.115） |
+| 随包 Noto + pdf-lib 引擎 | 🚧 开工：fetch 脚本 + `pdfExportEngine` 偏好脚手架 |
 
 ## 验收
 

@@ -245,6 +245,11 @@ import {
 import { stableFingerprintPart } from "@/lib/report-template/snapshot-fingerprint";
 import { watchDebounced } from "@vueuse/core";
 import { useStaleGuard } from "@/composables/useStaleGuard";
+import { collectFontFamiliesFromLayoutElements } from "@/lib/report-template/font-families-collect";
+import {
+  checkFontFamiliesSync,
+  formatFontPreflightWarnings,
+} from "@/lib/report-template/font-availability";
 import { appConfirm } from "@/composables/useAppConfirm";
 import { auditLog } from "@/lib/auditLog";
 import { summarizeDeleteLayouts } from "@/lib/auditLabels";
@@ -685,6 +690,24 @@ async function savePreset() {
   if (!w?.name.trim()) {
     msg.value = "名称不能为空。";
     return false;
+  }
+  const fontWarns = formatFontPreflightWarnings(
+    checkFontFamiliesSync(
+      collectFontFamiliesFromLayoutElements([
+        ...w.headerElements,
+        ...w.footerElements,
+        ...w.bodyElements,
+      ]),
+    ),
+  );
+  if (fontWarns.length) {
+    const ok = await appConfirm({
+      title: "字体检查",
+      message: `${fontWarns.join("\n")}\n\n仍要保存版式吗？`,
+      confirmText: "仍要保存",
+      cancelText: "返回修改",
+    });
+    if (!ok) return false;
   }
   saving.value = true;
   msg.value = "";

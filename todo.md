@@ -7,13 +7,13 @@
 
 ## 2026-07-21
 
-- **030 拍板补充**：实现策略 A（先零闪）；验收以**自动结批**为准；中文随包嵌入 Noto Sans SC（不拷贝雅黑/宋体）。看板 [docs/030-🚧](docs/030-🚧-ReportEditor结批占满CPU导致mappView白屏.md) · [Plan 0.3.114](_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.114.md)。
+- **030/0.3.115 开工**：模版导出预检 + 版式保存/属性面板 **字体检查**；随包 Noto 拉取脚本；`pdfExportEngine` 脚手架。看板 [docs/030-🚧](docs/030-🚧-ReportEditor结批占满CPU导致mappView白屏.md) · [Plan 0.3.115](_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.115.md)。
+
+- **030 拍板补充**：实现策略 A（先零闪）；验收以**自动结批**为准；中文随包嵌入 Noto Sans SC。看板 [docs/030-🚧](docs/030-🚧-ReportEditor结批占满CPU导致mappView白屏.md)。
 
 - **ReportEditor 0.3.114 Plan（选型）**：旁路 `printToPDF`；Spike-A 脚手架已通。看板 [docs/030-🚧](docs/030-🚧-ReportEditor结批占满CPU导致mappView白屏.md)。
 
 - **030 拍板：结批中 HMI 必须可操作** → 否决导出互斥；主路径旁路 printToPDF。看板 [docs/030-🚧](docs/030-🚧-ReportEditor结批占满CPU导致mappView白屏.md)。
-
-- **030 硬约束补充**：零闪；AR+Windows 下 Chromium 不可绑核；分机不做。看板 [docs/030-🚧](docs/030-🚧-ReportEditor结批占满CPU导致mappView白屏.md)。
 
 - **结批降 CPU 现场复核（0.3.113）**：配方刷 1 次；生产≈8000/4 份每份刷 HMI。看板 [docs/030-🚧](docs/030-🚧-ReportEditor结批占满CPU导致mappView白屏.md)。
 

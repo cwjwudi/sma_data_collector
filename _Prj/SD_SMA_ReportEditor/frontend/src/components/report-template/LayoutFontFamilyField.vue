@@ -14,18 +14,38 @@
       </button>
       <button v-if="model" type="button" class="lff-btn lff-btn-muted" @click="model = ''">清除</button>
     </div>
-    <p v-if="hint" class="lff-hint">{{ hint }}</p>
+    <p v-if="availabilityHint" class="lff-hint">{{ availabilityHint }}</p>
+    <p v-else-if="hint" class="lff-hint">{{ hint }}</p>
     <p v-else class="lff-hint lff-hint-muted">点 ▾ 可浏览全部字体并滚动；输入文字可过滤。刷新需允许访问本机字体。</p>
   </label>
 </template>
 
 <script setup lang="ts">
+import { computed } from "vue";
 import SuggestCombobox from "@/components/report-template/SuggestCombobox.vue";
 import { useLayoutFontChoices } from "@/composables/useLayoutFontChoices";
+import {
+  BUNDLED_CJK_FAMILY,
+  checkFontFamilySync,
+} from "@/lib/report-template/font-availability";
 
 const model = defineModel<string>({ default: "" });
 
 const { options, loading, hint, refresh } = useLayoutFontChoices();
+
+const availabilityHint = computed(() => {
+  const f = String(model.value || "").trim();
+  if (!f) return "";
+  const r = checkFontFamilySync(f, (css) => {
+    try {
+      return typeof document !== "undefined" && !!document.fonts?.check?.(css);
+    } catch {
+      return false;
+    }
+  });
+  if (r.availableOnHost || r.coveredByBundle) return "";
+  return `本机可能没有「${f}」。导出将回退到随包「${BUNDLED_CJK_FAMILY}」。`;
+});
 
 function fontPreviewStyle(opt: string): Record<string, string> {
   return { fontFamily: `"${opt.replace(/"/g, "")}", sans-serif` };
