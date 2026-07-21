@@ -86,22 +86,22 @@ function Resolve-BuildPython {
 
 function Ensure-Nuitka {
     param([Parameter(Mandatory = $true)][string]$PythonExe)
-    & $PythonExe -c "import nuitka" 2>$null
+    & $PythonExe -c "import nuitka, psutil" 2>$null
     if ($LASTEXITCODE -eq 0) {
         return
     }
     if ($SkipToolInstall) {
-        throw "Nuitka is missing in $PythonExe and -SkipToolInstall was supplied."
+        throw "Nuitka or psutil is missing in $PythonExe and -SkipToolInstall was supplied."
     }
     $uv = Get-Command uv -ErrorAction SilentlyContinue
     if (-not $uv) {
-        throw "Nuitka is missing and uv was not found. Install Nuitka with: uv pip install --python `"$PythonExe`" nuitka zstandard"
+        throw "Nuitka/psutil is missing and uv was not found. Install them with: uv pip install --python `"$PythonExe`" nuitka zstandard psutil"
     }
-    Write-Host "[tool] installing Nuitka into build environment"
-    & $uv.Source pip install --python $PythonExe nuitka zstandard `
+    Write-Host "[tool] installing Nuitka and launcher build dependencies"
+    & $uv.Source pip install --python $PythonExe nuitka zstandard psutil `
         --index-url $PipIndexUrl --allow-insecure-host $PipTrustedHost
     if ($LASTEXITCODE -ne 0) {
-        throw "Failed to install Nuitka."
+        throw "Failed to install launcher build dependencies."
     }
 }
 
@@ -294,6 +294,7 @@ New-Item -ItemType Directory -Force -Path $NuitkaOutput | Out-Null
     --remove-output `
     --python-flag=no_asserts `
     --python-flag=no_docstrings `
+    --include-package=psutil `
     --company-name=SmartData `
     --product-name="SD SMA Runtime" `
     --file-description="SD SMA Unified Launcher" `
@@ -314,6 +315,7 @@ $PackageLauncher = Join-Path $PackageRoot "_Launcher"
 $InstalledLauncher = Join-Path $PackageLauncher "SD_SMA_Launcher.exe"
 Copy-Item -LiteralPath $CompiledLauncher -Destination $InstalledLauncher -Force
 Remove-Item -LiteralPath (Join-Path $PackageLauncher "sd_sma_launcher.py") -Force
+Remove-Item -LiteralPath (Join-Path $PackageLauncher "resource_monitor.py") -Force
 
 $stagedConfigPath = Join-Path $PackageLauncher "launcher_config.json"
 $stagedConfig = Get-Content -LiteralPath $stagedConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json

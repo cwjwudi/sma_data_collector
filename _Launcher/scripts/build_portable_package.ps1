@@ -497,6 +497,7 @@ if (Test-Path $PackageLauncher) {
 }
 New-Item -ItemType Directory -Force -Path $PackageLauncher | Out-Null
 Copy-Item -LiteralPath (Join-Path $LauncherDir "sd_sma_launcher.py") -Destination $PackageLauncher -Force
+Copy-Item -LiteralPath (Join-Path $LauncherDir "resource_monitor.py") -Destination $PackageLauncher -Force
 Copy-Item -LiteralPath (Join-Path $LauncherDir "launcher_config.json") -Destination $PackageLauncher -Force
 Copy-Item -LiteralPath (Join-Path $LauncherDir "requirements-unified.txt") -Destination $PackageLauncher -Force
 Copy-Item -LiteralPath (Join-Path $LauncherDir "start.bat") -Destination $PackageLauncher -Force

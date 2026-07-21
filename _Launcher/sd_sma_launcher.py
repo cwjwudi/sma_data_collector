@@ -19,6 +19,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, TextIO
 
+from resource_monitor import ResourceMonitor, ResourceMonitorSettings
+
 
 def resolve_launcher_dir() -> Path:
     """Return the installed launcher directory for source and Nuitka builds."""
@@ -897,6 +899,7 @@ def monitor(
     processes: list[ServiceProcess],
     *,
     restart_service: Callable[[ServiceProcess], ServiceProcess] | None = None,
+    resource_monitor: ResourceMonitor | None = None,
     policy_factory: Callable[[], RestartPolicy] | None = None,
     sleep: Callable[[float], None] = time.sleep,
     clock: Callable[[], float] = time.monotonic,
@@ -909,6 +912,8 @@ def monitor(
         policy_factory = RestartPolicy.from_env
     policies: dict[str, RestartPolicy] = {}
     while True:
+        if resource_monitor is not None:
+            resource_monitor.maybe_sample(processes)
         for index, proc in enumerate(processes):
             code = proc.process.poll()
             if code is None:
@@ -926,7 +931,28 @@ def monitor(
             print(f"[restart] restarting {proc.title} in {decision.delay_seconds:g}s (exit code {code})")
             sleep(decision.delay_seconds)
             processes[index] = restart_service(proc)
+            if resource_monitor is not None:
+                resource_monitor.note_restart(proc.name)
         sleep(poll_interval_seconds)
+
+
+def make_resource_monitor(config: Mapping[str, Any]) -> ResourceMonitor | None:
+    raw_settings = config.get("resource_monitor")
+    settings = ResourceMonitorSettings.from_mapping(raw_settings if isinstance(raw_settings, Mapping) else None)
+    if not settings.enabled:
+        print("[resource] monitoring disabled")
+        return None
+    try:
+        monitor = ResourceMonitor(settings, LAUNCHER_LOG_DIR)
+    except Exception as exc:  # Resource monitoring is optional and must not block services.
+        print(f"[resource] monitoring unavailable: {exc}")
+        return None
+    print(f"[resource] metrics: {monitor.metrics_path}")
+    print(
+        "[resource] sampling every "
+        f"{settings.sample_interval_seconds:g}s; console every {settings.console_interval_seconds:g}s"
+    )
+    return monitor
 
 
 def parse_args() -> argparse.Namespace:
@@ -966,7 +992,12 @@ def main() -> int:
                 print("[smoke] ok")
                 return 0
             open_browser_tabs(config, processes, no_browser=args.no_browser)
-            return monitor(processes, restart_service=make_service_restarter(python, config))
+            resource_monitor = make_resource_monitor(config)
+            return monitor(
+                processes,
+                restart_service=make_service_restarter(python, config),
+                resource_monitor=resource_monitor,
+            )
         finally:
             terminate_processes(processes)
     except KeyboardInterrupt:

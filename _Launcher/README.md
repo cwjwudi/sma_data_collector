@@ -211,3 +211,18 @@ logs/
 - **单独开发某个工程**：仍使用该工程自己的 `_Prj/<工程>/config`（不设上述环境变量时的默认行为）
 
 首次用 Launcher 启动时，若某个 `config/<服务>/` 为空，会自动从对应 `_Prj/<工程>/config` 复制一份作为初始配置。便携包打包时也会预先物化这些目录。
+
+## 系统资源监控
+
+Launcher 默认每 5 秒采样一次整机、Launcher 自身和各服务的资源占用。服务指标会递归汇总其子进程，适用于数据库备份、恢复等会临时启动外部程序的操作。
+
+监控文件位于：
+
+```text
+logs/launcher/resource_metrics.csv   # 周期采样历史
+logs/launcher/resource_alerts.log    # 持续超限与恢复记录
+```
+
+`resource_metrics.csv` 包含 CPU、内存、线程、Windows Handle、子进程数量、累计 I/O、运行时间和重启次数。`cpu_percent` 是按整机逻辑 CPU 数归一化后的占用率，`cpu_core_percent` 采用“单个核心满载为 100%”的口径。
+
+配置位于 `launcher_config.json` 的 `resource_monitor`。可调整采样周期、控制台摘要周期、日志大小和告警阈值；将 `enabled` 设为 `false` 可关闭监控，将某个告警阈值设为 `0` 可单独关闭该类告警。详细说明见 `_Doc/2026-07-21-Launcher资源监控说明.md`。

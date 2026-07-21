@@ -17,9 +17,23 @@
     { "package": "pymysql", "import": "pymysql" },
     { "package": "python-multipart", "import": "multipart" },
     { "package": "opcua", "import": "opcua" },
-    { "package": "asyncua", "import": "asyncua" }
+    { "package": "asyncua", "import": "asyncua" },
+    { "package": "psutil>=5.9,<8", "import": "psutil" }
   ],
   "open_browser": false,
+  "resource_monitor": {
+    "enabled": true,
+    "sample_interval_seconds": 5,
+    "console_interval_seconds": 60,
+    "include_child_processes": true,
+    "max_log_mb": 50,
+    "backup_count": 5,
+    "alerts": {
+      "cpu_percent": 80,
+      "memory_mb": 1024,
+      "sustain_seconds": 60
+    }
+  },
   "services": [
     {
       "name": "collector_web",
