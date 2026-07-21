@@ -22,9 +22,9 @@
   ],
   "open_browser": false,
   "resource_monitor": {
-    "enabled": true,
+    "enabled": false,
     "sample_interval_seconds": 5,
-    "console_interval_seconds": 60,
+    "console_interval_seconds": 5,
     "include_child_processes": true,
     "max_log_mb": 50,
     "backup_count": 5,

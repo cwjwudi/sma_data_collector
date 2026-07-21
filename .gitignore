@@ -63,6 +63,10 @@ logs/
 config/
 configs/
 
+# Backup
+backup/
+backups/
+
 # 压缩文件
 *.zip
 *.rar
