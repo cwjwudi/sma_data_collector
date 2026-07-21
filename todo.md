@@ -7,11 +7,11 @@
 
 ## 2026-07-21
 
-- **030 硬约束补充**：mappView 须**完全不闪**（掉线重载 ~10s）；贝加莱 AR+Windows Hypervisor，mappView/Chromium **不可设相关性**；只绑报表不能保证留核。零闪主路径改为「导出互斥」或「旁路 printToPDF」。看板 [docs/030-🚧](docs/030-🚧-ReportEditor结批占满CPU导致mappView白屏.md)。
+- **030 拍板：结批中 HMI 必须可操作** → 否决导出互斥；同机零闪主路径锁定为 **旁路 printToPDF**。看板 [docs/030-🚧](docs/030-🚧-ReportEditor结批占满CPU导致mappView白屏.md)。
 
-- **结批降 CPU：分机暂不可行**：同机路线重排；分机搁置。看板 [docs/030-🚧](docs/030-🚧-ReportEditor结批占满CPU导致mappView白屏.md)。
+- **030 硬约束补充**：mappView 须完全不闪（掉线重载 ~10s）；AR+Windows 下 Chromium 不可绑核；分机不做。看板 [docs/030-🚧](docs/030-🚧-ReportEditor结批占满CPU导致mappView白屏.md)。
 
-- **结批降 CPU 现场复核（0.3.113）**：配方刷 1 次；生产≈8000/4 份，每份刷 HMI。看板 [docs/030-🚧](docs/030-🚧-ReportEditor结批占满CPU导致mappView白屏.md)。
+- **结批降 CPU 现场复核（0.3.113）**：配方刷 1 次；生产≈8000/4 份每份刷 HMI。看板 [docs/030-🚧](docs/030-🚧-ReportEditor结批占满CPU导致mappView白屏.md)。
 
 ## 2026-07-20
 
