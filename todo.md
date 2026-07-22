@@ -7,6 +7,8 @@
 
 ## 2026-07-22
 
+- **ReportEditor 0.3.134**：同页纵表页底截断改为续页卡；Windows Setup 打包中。看板 [docs/002-🚧](docs/002-🚧-表格系统评估与修复.md)。
+
 - **ReportEditor 002 纵表页底截断未续页**：`sumTableRowHeightsPx` 尊重 rowCount；锚点过紧改续卡 `hideOverflowSqlFillTable`。看板 [docs/002-🚧](docs/002-🚧-表格系统评估与修复.md)。
 
 - **ReportEditor 冒烟模版微调 + 五档复验**：封面标题 28 / 作者块规范换行 / 无外框；`smoke-*-2026-07-22T11-34-32` 10/10 ok，档 0 badOverlap=0。看板 [docs/035-🚧](docs/035-🚧-ReportEditor导出性能档位与同机降载.md)。
