@@ -37,6 +37,14 @@
         <button type="button" class="btn primary" :disabled="manualBusy || !canManualExport" @click="onManualExport">
           {{ manualBusy ? `${RG_UI.manual}中…` : `选择保存文件夹并${RG_UI.manual}` }}
         </button>
+        <button
+          v-if="manualBusy && manualExportJobId"
+          type="button"
+          class="btn"
+          @click="onCancelManualExport"
+        >
+          取消
+        </button>
       </div>
       <p v-if="manualHint" class="rg-hint">{{ manualHint }}</p>
     </section>
@@ -887,6 +895,7 @@ import { notifyPlcHeartbeatSettingsChanged, plcHeartbeatState } from "@/lib/plc-
 import { usePageLifecycle } from "@/composables/usePageLifecycle";
 import {
   clearPdfExportFillCacheAfterFailure,
+  isPdfExportCancelledError,
   newPdfExportJobId,
 } from "@/lib/pdf-export-job";
 
@@ -1094,6 +1103,14 @@ const opcPickLead = computed(() => {
 const electronShell = computed(() => typeof window !== "undefined" && Boolean(window.electronAPI?.runPdfExport));
 
 const manualBusy = ref(false);
+/** 034 M7：进行中模拟结批的 jobId，供取消按钮 / toast 操作 */
+const manualExportJobId = ref("");
+
+function onCancelManualExport(): void {
+  const jobId = manualExportJobId.value.trim();
+  if (!jobId) return;
+  void window.electronAPI?.cancelPdfExport?.({ jobId });
+}
 const manualHint = ref("");
 
 const triggerLogUiMax = AUTO_TRIGGER_LOG_UI_MAX;
@@ -1778,15 +1795,25 @@ async function onManualExport(): Promise<void> {
   const filePath = await api.pathJoin(exportDir, suggestName);
 
   manualBusy.value = true;
+  manualExportJobId.value = "";
   manualHint.value = "正在检查数据源连接…";
   const startedAtMs = Date.now();
   const progressToastId = "batch-progress-manual";
   const stage = (text: string): void => {
+    const jobId = manualExportJobId.value.trim();
     showAppToast(`[${RG_UI.manual}]\n${text}`, {
       id: progressToastId,
       tone: "info",
       durationMs: 0,
       spinner: true,
+      action: jobId
+        ? {
+            label: "取消",
+            onClick: () => {
+              void window.electronAPI?.cancelPdfExport?.({ jobId });
+            },
+          }
+        : undefined,
     });
   };
   let offProgress: (() => void) | undefined;
@@ -1816,8 +1843,9 @@ async function onManualExport(): Promise<void> {
       manualHint.value = "";
     }
 
-    stage("正在取数并渲染报表…");
     const exportJobId = newPdfExportJobId("manual");
+    manualExportJobId.value = exportJobId;
+    stage("正在取数并渲染报表…");
     offProgress = api.onPdfExportProgress?.((p) => {
       if (p.jobId && p.jobId !== exportJobId) return;
       if (p.templateId && p.templateId !== tid) return;
@@ -1880,23 +1908,30 @@ async function onManualExport(): Promise<void> {
     clearPdfExportFillCacheAfterFailure(e);
     const parsed = parseExportFailureDiagnostics(e);
     const msg = humanizePdfExportError(parsed.message || e);
-    manualHint.value = msg;
-    showAppToast(`[${RG_UI.manual}] 失败\n${msg}`, { id: progressToastId, tone: "err", durationMs: 14000 });
-    void auditLog({
-      action: "export.manual_pdf",
-      result: "fail",
-      summary: msg.split("\n").slice(0, 8).join("；"),
-      object_type: "template",
-      object_id: tid,
-      detail: exportFailureAuditDetail({
-        errorMessage: msg,
-        diagnostics: parsed.diagnostics,
-        extra: { durationMs: Date.now() - startedAtMs, context: "manual" },
-      }),
-    });
+    const cancelled = isPdfExportCancelledError(e) || isPdfExportCancelledError(msg);
+    manualHint.value = cancelled ? "已取消导出。" : msg;
+    showAppToast(
+      cancelled ? `[${RG_UI.manual}] 已取消` : `[${RG_UI.manual}] 失败\n${msg}`,
+      { id: progressToastId, tone: cancelled ? "warn" : "err", durationMs: cancelled ? 6000 : 14000 },
+    );
+    if (!cancelled) {
+      void auditLog({
+        action: "export.manual_pdf",
+        result: "fail",
+        summary: msg.split("\n").slice(0, 8).join("；"),
+        object_type: "template",
+        object_id: tid,
+        detail: exportFailureAuditDetail({
+          errorMessage: msg,
+          diagnostics: parsed.diagnostics,
+          extra: { durationMs: Date.now() - startedAtMs, context: "manual" },
+        }),
+      });
+    }
   } finally {
     offProgress?.();
     manualBusy.value = false;
+    manualExportJobId.value = "";
   }
 }
 

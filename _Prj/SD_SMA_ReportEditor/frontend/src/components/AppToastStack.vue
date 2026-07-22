@@ -8,7 +8,17 @@
       role="status"
     >
       <span v-if="item.spinner" class="app-toast-spinner" aria-hidden="true" />
-      <pre class="app-toast-body">{{ item.message }}</pre>
+      <div class="app-toast-main">
+        <pre class="app-toast-body">{{ item.message }}</pre>
+        <button
+          v-if="item.action"
+          type="button"
+          class="app-toast-action"
+          @click="item.action.onClick()"
+        >
+          {{ item.action.label }}
+        </button>
+      </div>
       <button type="button" class="app-toast-close" aria-label="关闭" @click="dismissAppToast(item.id)">
         ×
       </button>
@@ -60,13 +70,36 @@ import { appToasts, dismissAppToast } from "@/composables/useAppToast";
   background: #fef2f2;
 }
 
+.app-toast-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+}
+
 .app-toast-body {
   margin: 0;
-  flex: 1;
+  width: 100%;
   font: 13px/1.45 system-ui, sans-serif;
   white-space: pre-wrap;
   word-break: break-word;
   color: #1f2937;
+}
+
+.app-toast-action {
+  border: 1px solid #c7d2fe;
+  background: #eef2ff;
+  color: #3730a3;
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.app-toast-action:hover {
+  background: #e0e7ff;
 }
 
 .app-toast-close {

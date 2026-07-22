@@ -1,15 +1,15 @@
 {
-  "version": "0.3.117",
-  "releasedAt": "2026-07-22T08:00:14.920Z",
-  "notes": "Report Editor AI 0.3.117\n\n- 仿宋随包（朱雀仿宋 OFL，UI 族名 FangSong）\n- 导出隐藏窗 ERR_FAILED 销毁重建重试",
+  "version": "0.3.118",
+  "releasedAt": "2026-07-22T09:07:10.839Z",
+  "notes": "Report Editor AI 0.3.118\n\n- 034 M1–M7：TemplateManager Observer lifecycle；Workbench loadWatch 离页停；OPC 浏览轮询门闩；契约 L7/L8/L10/L11/L13/L14；导出/结批取消 UI",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.117-x64.exe",
-      "sha256": "281e3c437463a335f9082c725b6d3bb2b6a04a574b0acb79111e3186d5865c0c",
-      "size": 167179070
+      "url": "Report Editor AI-Setup-0.3.118-x64.exe",
+      "sha256": "",
+      "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.117-arm64.dmg",
+      "url": "Report Editor AI-0.3.118-arm64.dmg",
       "sha256": "",
       "size": 0
     }

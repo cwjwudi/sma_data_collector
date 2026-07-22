@@ -1256,18 +1256,28 @@ function syncTreeRowPollTimer() {
   treeRowPollTimerId = window.setInterval(() => void pollVisibleTreeVariablesOnce(), ms)
 }
 
+/** 034 M4：父页 deactivated 后门闩，禁止 watch 把浏览轮询重新拉起 */
+let browsePollingAllowed = true
+
 function syncAllPollTimers() {
+  if (!browsePollingAllowed) {
+    clearPollTimer()
+    clearTreeRowPollTimer()
+    return
+  }
   syncPollTimer()
   syncTreeRowPollTimer()
 }
 
-/** 父页 DataSourceConfig deactivated 时调用（032 B 级） */
+/** 父页 DataSourceConfig deactivated 时调用（032 B 级 / 034 M4） */
 function pauseBrowsePolling() {
+  browsePollingAllowed = false
   clearPollTimer()
   clearTreeRowPollTimer()
 }
 
 function resumeBrowsePolling() {
+  browsePollingAllowed = true
   if (!pollEnabled.value || !browseCapability.value) return
   syncAllPollTimers()
 }

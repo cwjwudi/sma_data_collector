@@ -50,6 +50,7 @@ import {
 import { resolveAutoExportMaxParallel } from "@/lib/export-cpu-budget";
 import {
   clearPdfExportFillCacheAfterFailure,
+  isPdfExportCancelledError,
   newPdfExportJobId,
 } from "@/lib/pdf-export-job";
 
@@ -452,6 +453,7 @@ async function runAutoPdfExport(
   prefs: ReportGeneratorPrefs,
   templateId: string,
   onStage?: (text: string, code?: number) => void,
+  onJobId?: (jobId: string) => void,
 ): Promise<AutoPdfExportAttempt> {
   const api = window.electronAPI;
   if (!api?.runPdfExport || !api.pathJoin) {
@@ -487,6 +489,7 @@ async function runAutoPdfExport(
 
   onStage?.("正在取数并渲染报表…", AUTO_EXPORT_STATUS.READING);
   const exportJobId = newPdfExportJobId("auto");
+  onJobId?.(exportJobId);
   const offProgress = api.onPdfExportProgress?.((p) => {
     if (p.jobId && p.jobId !== exportJobId) return;
     if (p.templateId && p.templateId !== tid) return;
@@ -569,12 +572,22 @@ async function executeBindingExport(job: QueuedExportJob): Promise<void> {
 
   const startedAtMs = Date.now();
   const progressToastId = `batch-progress-${bindingId}`;
+  let exportJobIdForCancel = "";
   const stage = (text: string, code?: number): void => {
+    const jobId = exportJobIdForCancel;
     showAppToast(`${RG_STATUS_OPC_AUTO}·${label}\n收到结批指令（${eventLabel}）\n${text}`, {
       id: progressToastId,
       tone: "info",
       durationMs: 0,
       spinner: true,
+      action: jobId
+        ? {
+            label: "取消",
+            onClick: () => {
+              void window.electronAPI?.cancelPdfExport?.({ jobId });
+            },
+          }
+        : undefined,
     });
     if (code != null) {
       void setBindingExportStatus(prefs, binding, code, text);
@@ -593,7 +606,11 @@ async function executeBindingExport(job: QueuedExportJob): Promise<void> {
 
   let fileName = "—";
   try {
-    const result = await runAutoPdfExport(prefs, templateId, stage);
+    const result = await runAutoPdfExport(prefs, templateId, stage, (jobId) => {
+      exportJobIdForCancel = jobId;
+      // 刷新 toast，挂上取消按钮
+      stage("正在取数并渲染报表…", AUTO_EXPORT_STATUS.READING);
+    });
     fileName = result.fileName;
     prefs = recordBindingTriggerLog(prefs, bindingId, {
       event: eventLabel,
@@ -656,56 +673,87 @@ async function executeBindingExport(job: QueuedExportJob): Promise<void> {
     if (timingsLine) doneLines.push(timingsLine);
     showAppToast(doneLines.join("\n"), { id: progressToastId, tone: "ok", durationMs: 10000 });
   } catch (e) {
-    const parsed = parseExportFailureDiagnostics(e);
-    const msg = humanizePdfExportError(parsed.message || e);
-    try {
-      const summaries = await loadTemplateSummariesCached();
-      const tmeta = summaries.find((x) => x.id === templateId);
-      const built = await buildAutoExportFileName(prefs, tmeta?.name || templateId || "");
-      fileName = built.base;
-    } catch {
-      /* ignore */
+    if (isPdfExportCancelledError(e)) {
+      prefs = recordBindingTriggerLog(prefs, bindingId, {
+        event: eventLabel,
+        fileName,
+        success: false,
+        message: "已取消",
+      });
+      void auditLog({
+        action: "export.auto_pdf",
+        result: "fail",
+        summary: `${label}：用户取消导出`,
+        object_type: "template",
+        object_id: templateId || undefined,
+        detail: { bindingId, event: eventLabel, cancelled: true },
+      });
+      await setBindingExportStatus(prefs, binding, AUTO_EXPORT_STATUS.FAILED, "已取消", {
+        success: false,
+      });
+      void notifyExportResultToPlc(prefs, binding, {
+        success: false,
+        statusCode: AUTO_EXPORT_STATUS.FAILED,
+        message: "已取消",
+      });
+      reportAutoExportStatus.value = `${RG_STATUS_OPC_AUTO}·${label} 已取消`;
+      showAppToast(`${RG_STATUS_OPC_AUTO}·${label}\n已取消导出`, {
+        id: progressToastId,
+        tone: "warn",
+        durationMs: 5000,
+      });
+    } else {
+      const parsed = parseExportFailureDiagnostics(e);
+      const msg = humanizePdfExportError(parsed.message || e);
+      try {
+        const summaries = await loadTemplateSummariesCached();
+        const tmeta = summaries.find((x) => x.id === templateId);
+        const built = await buildAutoExportFileName(prefs, tmeta?.name || templateId || "");
+        fileName = built.base;
+      } catch {
+        /* ignore */
+      }
+      prefs = recordBindingTriggerLog(prefs, bindingId, {
+        event: eventLabel,
+        fileName,
+        success: false,
+        message: msg,
+      });
+      void auditLog({
+        action: "export.auto_pdf",
+        result: "fail",
+        summary: msg.split("\n").slice(0, 8).join("；"),
+        object_type: "template",
+        object_id: templateId || undefined,
+        detail: exportFailureAuditDetail({
+          errorMessage: msg,
+          diagnostics: parsed.diagnostics,
+          extra: {
+            bindingId,
+            event: eventLabel,
+            nodeId,
+            serverId,
+            label,
+            durationMs: Date.now() - startedAtMs,
+            fileName,
+          },
+        }),
+      });
+      await setBindingExportStatus(prefs, binding, AUTO_EXPORT_STATUS.FAILED, msg.split("\n")[0] || msg, {
+        success: false,
+      });
+      void notifyExportResultToPlc(prefs, binding, {
+        success: false,
+        statusCode: AUTO_EXPORT_STATUS.FAILED,
+        message: msg,
+      });
+      reportAutoExportStatus.value = `${RG_STATUS_OPC_AUTO}·${label} 失败：${msg.split("\n")[0]}`;
+      showAppToast(`${RG_STATUS_OPC_AUTO}·${label} 结批失败\n${msg}`, {
+        id: progressToastId,
+        tone: "err",
+        durationMs: 14000,
+      });
     }
-    prefs = recordBindingTriggerLog(prefs, bindingId, {
-      event: eventLabel,
-      fileName,
-      success: false,
-      message: msg,
-    });
-    void auditLog({
-      action: "export.auto_pdf",
-      result: "fail",
-      summary: msg.split("\n").slice(0, 8).join("；"),
-      object_type: "template",
-      object_id: templateId || undefined,
-      detail: exportFailureAuditDetail({
-        errorMessage: msg,
-        diagnostics: parsed.diagnostics,
-        extra: {
-          bindingId,
-          event: eventLabel,
-          nodeId,
-          serverId,
-          label,
-          durationMs: Date.now() - startedAtMs,
-          fileName,
-        },
-      }),
-    });
-    await setBindingExportStatus(prefs, binding, AUTO_EXPORT_STATUS.FAILED, msg.split("\n")[0] || msg, {
-      success: false,
-    });
-    void notifyExportResultToPlc(prefs, binding, {
-      success: false,
-      statusCode: AUTO_EXPORT_STATUS.FAILED,
-      message: msg,
-    });
-    reportAutoExportStatus.value = `${RG_STATUS_OPC_AUTO}·${label} 失败：${msg.split("\n")[0]}`;
-    showAppToast(`${RG_STATUS_OPC_AUTO}·${label} 结批失败\n${msg}`, {
-      id: progressToastId,
-      tone: "err",
-      durationMs: 14000,
-    });
   } finally {
     activeExportCount = Math.max(0, activeExportCount - 1);
     busyBindingIds.delete(bindingId);

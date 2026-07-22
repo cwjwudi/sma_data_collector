@@ -2,12 +2,19 @@ import { ref } from "vue";
 
 export type AppToastTone = "ok" | "warn" | "err" | "info";
 
+export type AppToastAction = {
+  label: string;
+  onClick: () => void;
+};
+
 export type AppToastItem = {
   id: string;
   message: string;
   tone: AppToastTone;
   /** 显示旋转指示器（用于「加载中」类持久提示） */
   spinner?: boolean;
+  /** 可选操作按钮（如导出取消） */
+  action?: AppToastAction;
 };
 
 export const appToasts = ref<AppToastItem[]>([]);
@@ -30,20 +37,27 @@ function clearToastTimer(id: string): void {
  */
 export function showAppToast(
   message: string,
-  options?: { tone?: AppToastTone; durationMs?: number; id?: string; spinner?: boolean },
+  options?: {
+    tone?: AppToastTone;
+    durationMs?: number;
+    id?: string;
+    spinner?: boolean;
+    action?: AppToastAction;
+  },
 ): string {
   const tone = options?.tone || "info";
   const durationMs = options?.durationMs ?? (tone === "err" ? 12000 : 6000);
   const id = options?.id || `toast_${Date.now()}_${++toastSeq}`;
   const spinner = Boolean(options?.spinner);
+  const action = options?.action;
 
   const existing = appToasts.value.find((t) => t.id === id);
   if (existing) {
     appToasts.value = appToasts.value.map((t) =>
-      t.id === id ? { ...t, message, tone, spinner } : t,
+      t.id === id ? { ...t, message, tone, spinner, action } : t,
     );
   } else {
-    appToasts.value = [...appToasts.value, { id, message, tone, spinner }];
+    appToasts.value = [...appToasts.value, { id, message, tone, spinner, action }];
   }
 
   clearToastTimer(id);

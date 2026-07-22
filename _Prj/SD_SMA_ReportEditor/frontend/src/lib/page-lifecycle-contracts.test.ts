@@ -1,5 +1,5 @@
 /**
- * 032 生命周期契约测 L1–L6、L9 + P1 写盘/取消（源码级门禁，CI 必跑）
+ * 032/034 生命周期契约测 L1–L14 + P1 写盘/取消（源码级门禁，CI 必跑）
  */
 import { readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -139,5 +139,95 @@ describe("032 page lifecycle contracts", () => {
     expect(preload).toMatch(/cancelPdfExport/);
     const rg = read("views/ReportGenerator.vue");
     expect(rg).toMatch(/clearPdfExportFillCacheAfterFailure/);
+  });
+
+  it("L7: 页内探活 vs 侧栏探活互斥（离开 datasource 侧栏可启、页内须停）", () => {
+    const page = read("views/DataSourceConfig.vue");
+    expect(page).toMatch(/id:\s*['"]datasource-page-probe['"]/);
+    expect(page).toMatch(/pause:\s*pausePageProbeTasks/);
+    expect(page).toMatch(/function stopHealthPolling/);
+    expect(page).toMatch(/!isPageActive\(\)/);
+
+    const layout = read("layouts/MainLayout.vue");
+    expect(layout).toMatch(/function startNavDbHealthPolling/);
+    // 在数据源页内不启侧栏探活，避免与页内双跑
+    expect(layout).toMatch(/route\.path\.startsWith\(\s*['"]\/datasource['"]\s*\)/);
+    expect(layout).toMatch(/probeAllConnectionsForNav/);
+  });
+
+  it("L8: OpcUaPanel 浏览轮询 deactivated 门闩", () => {
+    const src = read("features/datasource/opcua/OpcUaPanel.vue");
+    expect(src).toMatch(/browsePollingAllowed/);
+    expect(src).toMatch(/function pauseBrowsePolling/);
+    expect(src).toMatch(/function resumeBrowsePolling/);
+    expect(src).toMatch(/if\s*\(\s*!browsePollingAllowed\s*\)/);
+    // 父页 pause 须接到门闩
+    const page = read("views/DataSourceConfig.vue");
+    expect(page).toMatch(/pauseBrowsePolling/);
+    expect(page).toMatch(/resumeBrowsePolling/);
+  });
+
+  it("L10: backgroundThrottling: false 仅主窗 + PDF 导出窗", () => {
+    const main = readFileSync(join(frontendRoot, "electron/main.cjs"), "utf8");
+    const code = main
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^\s*\/\/.*$/gm, "");
+    const matches = [...code.matchAll(/backgroundThrottling\s*:\s*false/g)];
+    expect(matches.length, "exactly two backgroundThrottling:false").toBe(2);
+    // 出现位置须落在 createWindow / createPdfExportWindow 附近
+    const createWindowAt = code.indexOf("function createWindow");
+    const createPdfAt = code.indexOf("function createPdfExportWindow");
+    expect(createWindowAt).toBeGreaterThanOrEqual(0);
+    expect(createPdfAt).toBeGreaterThanOrEqual(0);
+    const first = code.indexOf("backgroundThrottling: false");
+    const second = code.indexOf("backgroundThrottling: false", first + 1);
+    expect(first).toBeGreaterThan(createWindowAt);
+    expect(first).toBeLessThan(createPdfAt);
+    expect(second).toBeGreaterThan(createPdfAt);
+  });
+
+  it("L11: A 级 dispose 清 timer / 解绑", () => {
+    const auto = read("lib/report-auto-export-trigger-service.ts");
+    expect(auto).toMatch(/export function disposeReportAutoExportTrigger/);
+    expect(auto).toMatch(/clearInterval\(pollTimer\)/);
+    expect(auto).toMatch(/removeEventListener\(\s*["']report-generator-auto-export-changed["']/);
+    expect(auto).toMatch(/removeEventListener\(\s*["']report-editor-config-imported["']/);
+
+    const hb = read("lib/plc-heartbeat-service.ts");
+    expect(hb).toMatch(/export function disposePlcHeartbeat/);
+    expect(hb).toMatch(/clearInterval\(timer\)/);
+    expect(hb).toMatch(/removeEventListener\(\s*["']report-generator-prefs-updated["']/);
+    expect(hb).toMatch(/removeEventListener\(\s*["']report-generator-auto-export-changed["']/);
+
+    const layout = read("layouts/MainLayout.vue");
+    expect(layout).toMatch(/disposeReportAutoExportTrigger\(\)/);
+    expect(layout).toMatch(/disposePlcHeartbeat\(\)/);
+  });
+
+  it("L13: TemplateManager Observer teardown + restart（非 ensure-only）", () => {
+    const src = read("views/TemplateManager.vue");
+    expect(src).toMatch(/usePageLifecycle\(\s*["']TemplateManager["']\s*\)/);
+    expect(src).toMatch(/id:\s*["']tm-card-observer["']/);
+    expect(src).toMatch(/pause:\s*teardownCardObserver/);
+    expect(src).toMatch(/resyncCardVisibility/);
+    expect(src).toMatch(/nextThumbObserverAction/);
+    expect(src).not.toMatch(/ensureCardObserver/);
+  });
+
+  it("L14: DatabaseWorkbench deactivated 停 loadWatch", () => {
+    const src = read("features/datasource/database-workbench/DatabaseWorkbench.vue");
+    expect(src).toMatch(/onDeactivated\s*\(\s*\(\)\s*=>\s*\{[\s\S]*?stopLoadWatch\(\)/);
+    expect(src).toMatch(/onActivated\s*\(\s*\(\)\s*=>\s*\{[\s\S]*?startLoadWatch\(\)/);
+  });
+
+  it("M7: 导出进行中取消 UI 接 cancelPdfExport", () => {
+    const rg = read("views/ReportGenerator.vue");
+    expect(rg).toMatch(/manualExportJobId/);
+    expect(rg).toMatch(/cancelPdfExport/);
+    const auto = read("lib/report-auto-export-trigger-service.ts");
+    expect(auto).toMatch(/exportJobIdForCancel/);
+    expect(auto).toMatch(/onJobId/);
+    expect(auto).toMatch(/cancelPdfExport/);
+    expect(auto).toMatch(/isPdfExportCancelledError/);
   });
 });

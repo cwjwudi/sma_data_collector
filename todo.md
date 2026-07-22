@@ -7,13 +7,15 @@
 
 ## 2026-07-22
 
+- **ReportEditor 0.3.118（034 M1–M7）**：TemplateManager Observer lifecycle；Workbench loadWatch 离页停；OPC 浏览轮询门闩；契约 L7/L8/L10/L11/L13/L14；导出/结批取消 UI。看板 [docs/034-🚧](docs/034-🚧-ReportEditor全站架构复评-2026-07-22.md)。
+
 - **PDF 交付拍板**：必须与**预览一致**；**不接受** pdf-lib draft-v1 草稿交差；M11 重定义。看板 [docs/030-🚧](docs/030-🚧-ReportEditor结批占满CPU导致mappView白屏.md) · [docs/034-🚧](docs/034-🚧-ReportEditor全站架构复评-2026-07-22.md)。
 
 - **同机优先 PDF 版式不可用（登记）**：现场「SMA报警报表」draft-v1 乱码/`{{v}}`/`[table id]`；临时用版式优先。看板 [docs/030-🚧](docs/030-🚧-ReportEditor结批占满CPU导致mappView白屏.md)。
 
-- **034 架构平复改动清单**：整理 M1–M14（先 M1–M7）；**030 8k/≥4 零闪硬验收临时挂起**。看板 [docs/034-🚧](docs/034-🚧-ReportEditor全站架构复评-2026-07-22.md) · [docs/030-🚧](docs/030-🚧-ReportEditor结批占满CPU导致mappView白屏.md)。
+- **034 架构平复改动清单**：整理 M1–M14；**M1–M7 ✅ 0.3.118**；**030 8k/≥4 零闪硬验收临时挂起**。看板 [docs/034-🚧](docs/034-🚧-ReportEditor全站架构复评-2026-07-22.md) · [docs/030-🚧](docs/030-🚧-ReportEditor结批占满CPU导致mappView白屏.md)。
 
-- **ReportEditor 全站架构复评（034）**：相对 032 复评综合 ≈3.0→**3.7**。看板 [docs/034-🚧](docs/034-🚧-ReportEditor全站架构复评-2026-07-22.md)。
+- **ReportEditor 全站架构复评（034）**：相对 032 复评综合 ≈3.0→**≈3.9**（M1–M7 后）。看板 [docs/034-🚧](docs/034-🚧-ReportEditor全站架构复评-2026-07-22.md)。
 
 - **ReportEditor 0.3.117（033）**：仿宋随包（朱雀仿宋→`FangSong`）；导出窗 `ERR_FAILED` 销毁重建重试。看板 [docs/033-✅](docs/033-✅-ReportEditor同机优先pdf-lib缺fontkit导致结批失败.md)。
 
