@@ -684,35 +684,6 @@ function drawZoneTable(
   const box = boxFromPagePx(origin.ox + x, origin.oy + y, w, h, pageH);
   const border = TABLE_GRID_BORDER;
   const thick = TABLE_GRID_BORDER_PT;
-  // 分线绘制：相邻堆叠表跳过共用边，避免矢量双线（预览 HTML 边框折叠看不出来）
-  page.drawLine({
-    start: { x: box.x, y: box.yBottom },
-    end: { x: box.x, y: box.yBottom + box.h },
-    thickness: thick,
-    color: border,
-  });
-  page.drawLine({
-    start: { x: box.x + box.w, y: box.yBottom },
-    end: { x: box.x + box.w, y: box.yBottom + box.h },
-    thickness: thick,
-    color: border,
-  });
-  if (!edge?.skipBottom) {
-    page.drawLine({
-      start: { x: box.x, y: box.yBottom },
-      end: { x: box.x + box.w, y: box.yBottom },
-      thickness: thick,
-      color: border,
-    });
-  }
-  if (!edge?.skipTop) {
-    page.drawLine({
-      start: { x: box.x, y: box.yBottom + box.h },
-      end: { x: box.x + box.w, y: box.yBottom + box.h },
-      thickness: thick,
-      color: border,
-    });
-  }
   let widthsPx: number[] = [];
   try {
     widthsPx = zoneTableColumnInnerWidthsPx(el);
@@ -742,6 +713,7 @@ function drawZoneTable(
     ? values[zoneTableSqlFillPreviewKey(el.id)]?.tableSqlFill ?? null
     : null;
   const cellTexts: string[][] = [];
+  // D9 / 眉表堆叠：必须先填格底，再描线。近白默认底会盖住「先画的」共用边，导致横线断档。
   for (let r = 0; r < rows; r++) {
     cellTexts[r] = [];
     for (let c = 0; c < cols; c++) {
@@ -764,7 +736,6 @@ function drawZoneTable(
       const cellW = (colXs[c + 1] || box.x + box.w) - cellX;
       const cellTop = box.yBottom + box.h - r * rowH;
       const cellBottom = cellTop - rowH;
-      // D9：先填格底，再画网格线
       const bgCss = resolveTableCellBackgroundCss(
         { tableBgColor: el.bgColor, tableColBgColors: el.tableColBgColors },
         c,
@@ -782,13 +753,42 @@ function drawZoneTable(
       }
     }
   }
+  // 外框 + 内网格（填底之后）；相邻堆叠表 skipBottom/skipTop 避免双线
+  page.drawLine({
+    start: { x: box.x, y: box.yBottom },
+    end: { x: box.x, y: box.yBottom + box.h },
+    thickness: thick,
+    color: border,
+  });
+  page.drawLine({
+    start: { x: box.x + box.w, y: box.yBottom },
+    end: { x: box.x + box.w, y: box.yBottom + box.h },
+    thickness: thick,
+    color: border,
+  });
+  if (!edge?.skipBottom) {
+    page.drawLine({
+      start: { x: box.x, y: box.yBottom },
+      end: { x: box.x + box.w, y: box.yBottom },
+      thickness: thick,
+      color: border,
+    });
+  }
+  if (!edge?.skipTop) {
+    page.drawLine({
+      start: { x: box.x, y: box.yBottom + box.h },
+      end: { x: box.x + box.w, y: box.yBottom + box.h },
+      thickness: thick,
+      color: border,
+    });
+  }
   for (let r = 1; r < rows; r++) {
     const yLine = box.yBottom + box.h - r * rowH;
     page.drawLine({
       start: { x: box.x, y: yLine },
       end: { x: box.x + box.w, y: yLine },
-      thickness: TABLE_GRID_BORDER_PT,
-      color: TABLE_GRID_BORDER,
+      thickness: thick,
+      color: border,
     });
   }
   for (let c = 1; c < cols; c++) {
@@ -796,8 +796,8 @@ function drawZoneTable(
     page.drawLine({
       start: { x: xLine, y: box.yBottom },
       end: { x: xLine, y: box.yBottom + box.h },
-      thickness: TABLE_GRID_BORDER_PT,
-      color: TABLE_GRID_BORDER,
+      thickness: thick,
+      color: border,
     });
   }
   const zoneInk = parseCssColor(el.color, rgb(0.08, 0.08, 0.08));
@@ -892,12 +892,12 @@ function drawZoneElements(
       continue;
     }
     if (el.type === "table") {
-      // 上方若有表底边贴齐，则本表跳过顶边，由上方表画共用线
-      const skipTop = tableGeos.some(
-        (o) => o.id !== el.id && Math.abs(o.geo.y + o.geo.h - geo.y) <= 1.5,
+      // 堆叠表共用边：上方 skipBottom，下方画顶边（且须在填底之后描线，否则近白格底盖线）
+      const skipBottom = tableGeos.some(
+        (o) => o.id !== el.id && Math.abs(geo.y + geo.h - o.geo.y) <= 1.5,
       );
       drawZoneTable(page, elFont, el, pageH, origin, values, useWinAnsi, geo, {
-        skipTop,
+        skipBottom,
       });
       continue;
     }

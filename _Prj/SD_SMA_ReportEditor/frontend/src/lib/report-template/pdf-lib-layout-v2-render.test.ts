@@ -255,6 +255,95 @@ describe("pdf-lib-layout-v2-render", () => {
     expect(text).toContain("批次报告");
   });
 
+  it("stacked zone tables render both rows (shared edge drawn after cell fills)", async () => {
+    const fs = await import("node:fs");
+    const path = await import("node:path");
+    const fontkit = (await import("@pdf-lib/fontkit")).default;
+    const { makeLayoutZoneElement } = await import("@/lib/report-template/layout-zone-element");
+    const b = blankZonesSnapshot();
+    const tmpl = createTemplate({
+      name: "stacked-zone-tables",
+      paperKind: "A4",
+      orientation: "landscape",
+      layoutPresetId: null,
+      layoutSnapshot: b.layoutSnapshot,
+      headerText: "",
+      footerText: "",
+      headerElements: [],
+      footerElements: [],
+      coverLayoutPresetId: null,
+      coverLayoutSnapshot: {
+        ...b.layoutSnapshot,
+        marginTopMm: 12,
+        marginLeftMm: 15,
+        marginRightMm: 15,
+        headerBandMm: 28,
+        footerBandMm: 0,
+      },
+      coverHeaderText: "",
+      coverFooterText: "",
+      coverHeaderElements: [],
+      coverFooterElements: [],
+      coverBodyZoneElements: [],
+      backLayoutPresetId: null,
+      backLayoutSnapshot: b.layoutSnapshot,
+      backHeaderText: "",
+      backFooterText: "",
+      backHeaderElements: [],
+      backFooterElements: [],
+      backBodyZoneElements: [],
+    });
+    const mkRow = (id: string, y: number, label: string) => {
+      const t = makeLayoutZoneElement("table");
+      t.id = id;
+      t.x = 0;
+      t.y = y;
+      t.w = 900;
+      t.h = 24;
+      t.tableRows = 1;
+      t.tableCols = 2;
+      t.tableColWidthsPx = [200, 700];
+      t.bgColor = "transparent";
+      t.tableCells = [
+        [
+          {
+            text: label,
+            bindingKind: "none",
+            opcuaNodeId: "",
+            sqlText: "",
+            sqlParams: [],
+            bgColor: "transparent",
+          },
+          {
+            text: "v",
+            bindingKind: "none",
+            opcuaNodeId: "",
+            sqlText: "",
+            sqlParams: [],
+            bgColor: "transparent",
+          },
+        ],
+      ];
+      return t;
+    };
+    tmpl.coverHeaderElements = [mkRow("z-a", 0, "上表："), mkRow("z-b", 24, "下表：")];
+    tmpl.coverElements = [];
+    const doc = await PDFDocument.create();
+    doc.registerFontkit(fontkit);
+    const font = await doc.embedFont(
+      fs.readFileSync(path.join(process.cwd(), "resources/fonts/ZhuqueFangsong-Regular.ttf")),
+      { subset: true },
+    );
+    await appendPdfLibLayoutV2Pages(doc, { tmpl, previewValues: {}, font, useWinAnsi: false });
+    const bytes = await doc.save();
+    const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+    const parsed = await pdfjs.getDocument({ data: bytes }).promise;
+    const page = await parsed.getPage(1);
+    const text = (await page.getTextContent()).items.map((it: { str: string }) => it.str).join(" ");
+    expect(text).toContain("上表");
+    expect(text).toContain("下表");
+  });
+
   it("body table cell font uses max(10px, 0.85×控件字号) like Mini (not ×0.8 shell)", async () => {
     const tb = hydrateTemplateElement({
       id: "fs-tbl",

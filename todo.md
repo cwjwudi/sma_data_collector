@@ -7,6 +7,8 @@
 
 ## 2026-07-22
 
+- **ReportEditor 0.3.129（036 眉表线）**：堆叠 zone 表近白格底盖共用边 → 先填再描线 + 下方画顶边。看板 [docs/036-🚧](docs/036-🚧-ReportEditor矢量档与预览稳样式对照.md)。
+
 - **ReportEditor 0.3.128（036 D6 表观感）**：装包复验表「完全不一样」→ 去外套框 + 表字号 `max(10px,0.85em)`（对齐 Mini）。看板 [docs/036-🚧](docs/036-🚧-ReportEditor矢量档与预览稳样式对照.md)。
 
 - **ReportEditor 0.3.127 hotfix**：安装测 Noto subset 缺字；矢量/Mini 改回朱雀仿宋；C9 仍≈0.8pt（`13-19-57`）。看板 [docs/036-🚧](docs/036-🚧-ReportEditor矢量档与预览稳样式对照.md)。
