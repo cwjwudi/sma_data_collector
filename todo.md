@@ -7,6 +7,8 @@
 
 ## 2026-07-22
 
+- **ReportEditor 035 导出性能 4 档（目标 0.3.120）**：拍板 4 档/默认均衡；看板含阶段 A–F、测试 T1–T8/H1–H6、开工日序；阶段 A 模型+单测已开工。看板 [docs/035-🚧](docs/035-🚧-ReportEditor导出性能档位与同机降载.md) · [Plan 0.3.120](_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.120.md)。
+
 - **ReportEditor 0.3.119（034 行为测 + M11）**：补全 gate/cancel-ui/KeepAlive 行为测；默认 PDF=版式优先（chromium）；旧 pdf-lib 一次性迁移；同机优先标草稿非交付。手测见 [docs/034-🚧](docs/034-🚧-ReportEditor全站架构复评-2026-07-22.md)「手测清单」。
 
 - **ReportEditor 0.3.118（034 M1–M7）**：TemplateManager Observer lifecycle；Workbench loadWatch 离页停；OPC 浏览轮询门闩；契约 L7/L8/L10/L11/L13/L14；导出/结批取消 UI。看板 [docs/034-🚧](docs/034-🚧-ReportEditor全站架构复评-2026-07-22.md)。
