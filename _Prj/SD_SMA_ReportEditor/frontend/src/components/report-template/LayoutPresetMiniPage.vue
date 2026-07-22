@@ -192,6 +192,8 @@ import { miniPreviewScale } from "@/lib/report-template/mini-preview-scale";
 import type { LayoutPreset } from "@/lib/report-template/layout-model";
 import { presetToSnapshot } from "@/lib/report-template/layout-model";
 import {
+  axisToCssTextAlign,
+  axisToCssVerticalAlign,
   computeZoneTableContentRowHeightsPx,
   ensureZoneTableGrid,
   flexJustifyAlignForAxes,
@@ -395,6 +397,8 @@ function miniZoneTableCellStyle(el: LayoutZoneElement, ri: number, ci: number): 
     ),
     height: `${h}px`,
     maxHeight: `${h}px`,
+    textAlign: axisToCssTextAlign(el.alignX),
+    verticalAlign: axisToCssVerticalAlign(el.alignY),
   };
 }
 

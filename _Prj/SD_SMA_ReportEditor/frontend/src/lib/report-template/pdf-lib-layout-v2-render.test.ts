@@ -180,7 +180,6 @@ describe("pdf-lib-layout-v2-render", () => {
     // PNG object present
     expect(Buffer.from(bytes).includes(Buffer.from("IDAT")) || bytes.byteLength > 800).toBe(true);
   });
-});
 
   it("draws cover header zone text and tables with readable CJK", async () => {
     const fs = await import("node:fs");
@@ -253,3 +252,43 @@ describe("pdf-lib-layout-v2-render", () => {
     expect(text).toContain("机器配置");
     expect(text).toContain("批次报告");
   });
+
+  it("honors table alignX start/center/end for cell text x", async () => {
+    const mk = (alignX: "start" | "center" | "end", id: string) =>
+      hydrateTemplateElement({
+        id,
+        type: "table",
+        alignX,
+        alignY: "center",
+        tableRows: 1,
+        tableCols: 1,
+        tableRowHeightPx: 28,
+        x: 40,
+        y: 40,
+        w: 400,
+        h: 28,
+        tableCells: [[ { text: "Hi", bindingKind: "none", opcuaNodeId: "", sqlText: "", sqlParams: [], bgColor: "transparent" } ]],
+      });
+
+    async function textX(alignX: "start" | "center" | "end"): Promise<number> {
+      const tmpl = makeTemplateWithBodyTable(mk(alignX, `a-${alignX}`));
+      const doc = await PDFDocument.create();
+      const font = await doc.embedFont(StandardFonts.Helvetica);
+      await appendPdfLibLayoutV2Pages(doc, { tmpl, previewValues: {}, font, useWinAnsi: true });
+      const bytes = await doc.save();
+      const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+      const parsed = await pdfjs.getDocument({ data: bytes }).promise;
+      const page = await parsed.getPage(1);
+      const items = (await page.getTextContent()).items as { str: string; transform: number[] }[];
+      const hit = items.find((it) => it.str.includes("Hi"));
+      expect(hit, `missing Hi for ${alignX}`).toBeTruthy();
+      return hit!.transform[4];
+    }
+
+    const xStart = await textX("start");
+    const xCenter = await textX("center");
+    const xEnd = await textX("end");
+    expect(xCenter).toBeGreaterThan(xStart + 20);
+    expect(xEnd).toBeGreaterThan(xCenter + 20);
+  });
+});

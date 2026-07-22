@@ -75,6 +75,14 @@
 
 ---
 
+# 🐛 缺陷记录：矢量档表格水平/垂直对齐失效（2026-07-22）
+
+**现象**（档 1 layout-v2）：属性「水平/垂直位置」左/中/右、上/中/下在矢量导出中不生效（单元格总是贴左贴顶）；预览侧单元格曾写死 `text-align:center`。  
+**根因**：`drawWrappedInBox` 未读 `alignX/alignY`；`normalizeAlignAxis` 不识别 `"start"`（改默认居中时会丢「左」）。  
+**处理**：layout-v2 按对齐偏移画字；画布/迷你页/zone 表读 `alignX/alignY`；新建表默认居中；修正 `normalizeAlignAxis`。
+
+---
+
 # 手测（应用内）
 
 | ID | 场景 | 状态 |

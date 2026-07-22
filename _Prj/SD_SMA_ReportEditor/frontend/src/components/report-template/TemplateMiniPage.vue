@@ -287,6 +287,8 @@ import ZoneImageCompose from "@/components/report-template/ZoneImageCompose.vue"
 import type { MiniPreviewVariant } from "@/components/report-template/mini-preview-types";
 import type { LayoutZoneElement, LayoutZoneTableCell } from "@/lib/report-template/layout-zone-element";
 import {
+  axisToCssTextAlign,
+  axisToCssVerticalAlign,
   ensureZoneTableGrid,
   flexJustifyAlignForAxes,
   getZoneTextWrapStyle,
@@ -740,6 +742,8 @@ function miniTplTableCellStyle(el: TemplateElement, ri: number, ci: number): Rec
       ci,
       cell,
     ),
+    textAlign: axisToCssTextAlign(el.alignX),
+    verticalAlign: axisToCssVerticalAlign(el.alignY),
   };
 }
 
@@ -897,6 +901,8 @@ function miniZoneTableCellStyle(el: LayoutZoneElement, ri: number, ci: number): 
     ),
     height: `${h}px`,
     maxHeight: `${h}px`,
+    textAlign: axisToCssTextAlign(el.alignX),
+    verticalAlign: axisToCssVerticalAlign(el.alignY),
   };
 }
 
@@ -1279,7 +1285,8 @@ function tplCaption(el: TemplateElement): string {
   border-top: 1px solid rgb(212 212 216);
   border-left: 1px solid rgb(212 212 216);
   padding: 3px 5px;
-  vertical-align: top;
+  /* text-align / vertical-align 由控件 alignX/alignY 内联控制 */
+  vertical-align: middle;
   text-align: center;
   font-size: max(10px, 0.85em);
   line-height: 1.3;

@@ -600,6 +600,8 @@ import {
   ensureZoneTableGrid,
   minOuterSizeForZoneTable,
   zoneTableColumnInnerWidthsPx,
+  axisToCssTextAlign,
+  axisToCssVerticalAlign,
   flexJustifyAlignForAxes,
   getZoneTextWrapStyle,
   makeLayoutZoneElement,
@@ -1117,6 +1119,8 @@ function layoutZoneTableCellStyle(el: LayoutZoneElement, ri: number, ci: number)
       ci,
       cell,
     ),
+    textAlign: axisToCssTextAlign(el.alignX),
+    verticalAlign: axisToCssVerticalAlign(el.alignY),
   };
 }
 

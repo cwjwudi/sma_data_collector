@@ -413,6 +413,8 @@ import {
 } from "@/lib/report-template/table-sql-fill-layout-utils";
 import { sqlFillTableNeedsPreviewPagination } from "@/lib/report-template/table-sql-fill-export-preview-split";
 import {
+  axisToCssTextAlign,
+  axisToCssVerticalAlign,
   flexJustifyAlignForAxes,
   getZoneTextWrapStyle,
   normalizePageNumberMode,
@@ -911,6 +913,8 @@ function tplTableCellStyle(el: TemplateElement, ri: number, ci: number): Record<
       ci,
       cell,
     ),
+    textAlign: axisToCssTextAlign(el.alignX),
+    verticalAlign: axisToCssVerticalAlign(el.alignY),
   };
 }
 

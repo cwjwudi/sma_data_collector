@@ -273,8 +273,22 @@ export function getZoneTextWrapStyle(el: {
 }
 
 export function normalizeAlignAxis(v: unknown, fb: LayoutAlignAxis): LayoutAlignAxis {
-  if (v === "center" || v === "end") return v;
+  if (v === "start" || v === "center" || v === "end") return v;
   return fb;
+}
+
+/** 表格/文本控件 alignX → CSS text-align */
+export function axisToCssTextAlign(ax: LayoutAlignAxis | undefined): "left" | "center" | "right" {
+  if (ax === "center") return "center";
+  if (ax === "end") return "right";
+  return "left";
+}
+
+/** 表格/文本控件 alignY → CSS vertical-align */
+export function axisToCssVerticalAlign(ay: LayoutAlignAxis | undefined): "top" | "middle" | "bottom" {
+  if (ay === "center") return "middle";
+  if (ay === "end") return "bottom";
+  return "top";
 }
 
 export function normalizeImageCaptionPosition(v: unknown, fb: ImageCaptionPosition): ImageCaptionPosition {
@@ -623,7 +637,8 @@ export function defaultLayoutZoneElement(type: LayoutControlType): Omit<LayoutZo
       tableRowHeightPx: TABLE_ROW_HEIGHT_DEFAULT_PX,
       tableCells: [],
       tableSqlFill: defaultTableSqlFillConfig(),
-      ...axStart,
+      // 与历史画布默认「单元格居中」一致；水平/垂直位置控件可改
+      ...axCenter,
     };
     return row;
   }

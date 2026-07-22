@@ -24,6 +24,8 @@
 <script setup lang="ts">
 import { computed, inject } from "vue";
 import {
+  axisToCssTextAlign,
+  axisToCssVerticalAlign,
   computeZoneTableContentRowHeightsPx,
   ensureZoneTableGrid,
   resolveTableCellBackgroundCss,
@@ -129,6 +131,8 @@ function tdStyle(ri: number, ci: number, cell: LayoutZoneTableCell): Record<stri
       ci,
       cell,
     ),
+    textAlign: axisToCssTextAlign(props.el.alignX),
+    verticalAlign: axisToCssVerticalAlign(props.el.alignY),
   };
   if (ci === cols - 1) s.borderRight = edge;
   if (ri === rows - 1) s.borderBottom = edge;

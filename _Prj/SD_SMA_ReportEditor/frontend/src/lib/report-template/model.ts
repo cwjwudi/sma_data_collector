@@ -582,6 +582,9 @@ export function defaultElement(type: TemplateControlType): Omit<TemplateElement,
       ...base,
       /** 表格不参与「默认隐藏外框」；保持显示以不动网格语义 */
       showBorder: true,
+      /** 与历史画布单元格居中一致；属性面板「水平/垂直位置」可改 */
+      alignX: "center",
+      alignY: "center",
       tableRows: 3,
       tableCols: 4,
       tableCells: [],

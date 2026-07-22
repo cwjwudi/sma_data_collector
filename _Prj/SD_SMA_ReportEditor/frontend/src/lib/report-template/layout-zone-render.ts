@@ -296,8 +296,9 @@ export function renderZoneElementsInto(
           td.style.padding = "2px 4px";
           td.style.boxSizing = "border-box";
           td.style.height = "inherit";
-          td.style.textAlign = "center";
-          td.style.verticalAlign = "middle";
+          td.style.textAlign = axisToTextAlign(el.alignX);
+          td.style.verticalAlign =
+            el.alignY === "start" ? "top" : el.alignY === "end" ? "bottom" : "middle";
           td.style.overflow = "hidden";
           td.style.fontSize = "max(10px, 0.85em)";
           td.style.lineHeight = "1.25";

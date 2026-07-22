@@ -26,7 +26,9 @@ import {
 import type { PaperLayoutMetrics } from "@/lib/report-template/layout-geometry";
 import {
   ensureZoneTableGrid,
+  normalizeAlignAxis,
   zoneTableColumnInnerWidthsPx,
+  type LayoutAlignAxis,
   type LayoutZoneElement,
 } from "@/lib/report-template/layout-zone-element";
 import type { ReportTemplate, TemplateElement } from "@/lib/report-template/model";
@@ -150,6 +152,14 @@ function safeDrawText(
   }
 }
 
+function measureTextWidthPt(font: PDFFont, text: string, size: number): number {
+  try {
+    return font.widthOfTextAtSize(text, size);
+  } catch {
+    return [...text].length * size * 0.55;
+  }
+}
+
 function drawWrappedInBox(
   page: PDFPage,
   font: PDFFont,
@@ -161,6 +171,8 @@ function drawWrappedInBox(
   size: number,
   useWinAnsi: boolean,
   color?: RGB,
+  alignX: LayoutAlignAxis = "start",
+  alignY: LayoutAlignAxis = "start",
 ): void {
   if (!(maxHeight > 2) || !(maxWidth > 2)) return;
   // 窄框（眉栏 ~18px）时字号必须压进盒高，否则 cy < floorY 会整段不画
@@ -168,38 +180,48 @@ function drawWrappedInBox(
   const lineHeight = fitSize * 1.2;
   const raw = useWinAnsi ? sanitizeForWinAnsi(text) : text;
   if (!raw) return;
-  const chars = [...raw];
+  const ax = normalizeAlignAxis(alignX, "start");
+  const ay = normalizeAlignAxis(alignY, "start");
+  const lines: string[] = [];
   let line = "";
-  let cy = topY - fitSize;
-  const floorY = topY - maxHeight;
-  const flush = () => {
+  const pushLine = () => {
     if (!line) return;
-    if (cy < floorY - 0.5) return;
-    safeDrawText(page, font, line, x, cy, fitSize, useWinAnsi, color);
-    cy -= lineHeight;
+    lines.push(line);
     line = "";
   };
-  for (const ch of chars) {
+  for (const ch of [...raw]) {
     if (ch === "\n") {
-      flush();
+      pushLine();
       continue;
     }
     const trial = line + ch;
-    let width = 0;
-    try {
-      width = font.widthOfTextAtSize(trial, size);
-    } catch {
-      width = trial.length * size * 0.55;
-    }
+    const width = measureTextWidthPt(font, trial, fitSize);
     if (width > maxWidth && line) {
-      flush();
+      pushLine();
       line = ch;
-      if (cy < floorY) return;
     } else {
       line = trial;
     }
   }
-  flush();
+  pushLine();
+  if (!lines.length) return;
+
+  const contentH = fitSize + Math.max(0, lines.length - 1) * lineHeight;
+  let yOffset = 0;
+  if (ay === "center") yOffset = Math.max(0, (maxHeight - contentH) / 2);
+  else if (ay === "end") yOffset = Math.max(0, maxHeight - contentH);
+
+  const floorY = topY - maxHeight;
+  let cy = topY - fitSize - yOffset;
+  for (const ln of lines) {
+    if (cy < floorY - 0.5) break;
+    const lw = measureTextWidthPt(font, ln, fitSize);
+    let drawX = x;
+    if (ax === "center") drawX = x + Math.max(0, (maxWidth - lw) / 2);
+    else if (ax === "end") drawX = x + Math.max(0, maxWidth - lw);
+    safeDrawText(page, font, ln, drawX, cy, fitSize, useWinAnsi, color);
+    cy -= lineHeight;
+  }
 }
 
 async function embedDataUrlImage(doc: PDFDocument, src: string): Promise<PDFImage | null> {
@@ -397,6 +419,9 @@ function drawZoneTable(
         rowH - 2,
         fontSize,
         useWinAnsi,
+        undefined,
+        el.alignX ?? "center",
+        el.alignY ?? "center",
       );
     }
   }
@@ -485,6 +510,9 @@ function drawZoneElements(
           box.h - 2,
           Math.max(7, Number(el.fontSize) || 10),
           useWinAnsi,
+          undefined,
+          el.alignX ?? "start",
+          el.alignY ?? "center",
         );
       }
       continue;
@@ -521,7 +549,20 @@ function drawZoneElements(
     }
     const size = Math.max(7, Number(el.fontSize) || 10);
     // 不用自定义 color：部分环境下带 color 的 drawText 对 subset TTF 会静默失败
-    drawWrappedInBox(page, font, text, box.x + 2, box.topY - 1, box.w - 4, box.h - 2, size, useWinAnsi);
+    drawWrappedInBox(
+      page,
+      font,
+      text,
+      box.x + 2,
+      box.topY - 1,
+      box.w - 4,
+      box.h - 2,
+      size,
+      useWinAnsi,
+      undefined,
+      el.alignX ?? "start",
+      el.alignY ?? "center",
+    );
   }
 }
 
@@ -615,6 +656,9 @@ function drawTableGrid(
         rowH - pad * 2,
         fontSize,
         useWinAnsi,
+        undefined,
+        el.alignX ?? "center",
+        el.alignY ?? "center",
       );
     }
   }
@@ -665,7 +709,20 @@ function drawTemplateElement(
     }
     const size = Math.max(7, Number(el.fontSize) || 11);
     const color = parseCssColor(el.color, rgb(0.08, 0.08, 0.08));
-    drawWrappedInBox(page, font, text, box.x + 2, box.topY - 1, box.w - 4, box.h - 2, size, useWinAnsi, color);
+    drawWrappedInBox(
+      page,
+      font,
+      text,
+      box.x + 2,
+      box.topY - 1,
+      box.w - 4,
+      box.h - 2,
+      size,
+      useWinAnsi,
+      color,
+      el.alignX ?? "start",
+      el.alignY ?? "center",
+    );
     return;
   }
   if (el.type !== "table") return;
