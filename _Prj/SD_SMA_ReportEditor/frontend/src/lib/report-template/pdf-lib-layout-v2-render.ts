@@ -42,13 +42,19 @@ import { clampTableRowHeightPx } from "@/lib/report-template/table-cell-metrics"
 import type { TablePreviewRowSlice } from "@/lib/report-template/table-preview-row-slice";
 import {
   sqlFillSliceTableOuterHeightPx,
+  tableSqlFillVerticalChromePx,
   tplElementsHorizontallyOverlap,
 } from "@/lib/report-template/table-sql-fill-layout-utils";
 import {
   computeExpandedBodyPreviewCards,
   type ExpandedBodyPreviewCard,
 } from "@/lib/report-template/table-sql-fill-export-preview-split";
-import { templateTableSqlFillPreviewKey } from "@/lib/report-template/table-sql-fill-preview";
+import {
+  formatSqlFillTableCellPreview,
+  sqlFillDisplayDataRowCount,
+  templateTableSqlFillPreviewKey,
+  zoneTableSqlFillPreviewKey,
+} from "@/lib/report-template/table-sql-fill-preview";
 
 const PX_TO_PT = 72 / 96;
 
@@ -401,11 +407,27 @@ function drawZoneTable(
     });
   }
   const fontSize = Math.max(6, Math.min(10, Number(el.fontSize) || rowH * 0.5));
+  const zoneFill = el.tableSqlFill?.enabled ? el.tableSqlFill : null;
+  const zoneFillPv = zoneFill
+    ? values[zoneTableSqlFillPreviewKey(el.id)]?.tableSqlFill ?? null
+    : null;
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
-      const bound = cellText(values[zoneCellKey(el.id, r, c)]);
-      const text = bound || String(grid[r]?.[c]?.text || "");
-      if (!text.trim()) continue;
+      let text = "";
+      if (zoneFill) {
+        text = formatSqlFillTableCellPreview({
+          fill: zoneFill,
+          rowIndex: r,
+          colIndex: c,
+          preview: zoneFillPv,
+          errorMaxLen: 48,
+          labelPreview: { elId: el.id, zone: true, values },
+        });
+      } else {
+        const bound = cellText(values[zoneCellKey(el.id, r, c)]);
+        text = bound || String(grid[r]?.[c]?.text || "");
+      }
+      if (!text.trim() || text === "\u00a0") continue;
       const cellX = colXs[c];
       const cellW = (colXs[c + 1] || box.x + box.w) - cellX;
       const cellTop = box.yBottom + box.h - r * rowH;
@@ -738,46 +760,55 @@ function drawTemplateElement(
 
   const grid = ensureTableGrid(el);
   const cols = Math.min(el.tableCols || grid[0]?.length || 1, 16);
-  const sqlKey = templateTableSqlFillPreviewKey(el.id);
-  const sqlPayload = values[sqlKey] as
-    | { ok?: boolean; columns?: string[]; rows?: Record<string, unknown>[] }
-    | undefined;
+  const fill = el.tableSqlFill?.enabled ? el.tableSqlFill : null;
+  const fillPv = fill ? values[templateTableSqlFillPreviewKey(el.id)]?.tableSqlFill ?? null : null;
 
   const staticCell = (r: number, c: number) =>
     cellText(values[cellKey(el.id, r, c)]) || String(grid[r]?.[c]?.text || "");
 
-  if (slice) {
-    const visualRows = (slice.includeHeaderRow ? 1 : 0) + Math.max(0, slice.dataRowCount);
-    if (visualRows < 1) return;
+  const sqlCell = (vr: number, c: number, previewSlice?: TablePreviewRowSlice) => {
+    if (!fill) return staticCell(vr, c);
+    const t = formatSqlFillTableCellPreview({
+      fill,
+      rowIndex: vr,
+      colIndex: c,
+      preview: fillPv,
+      previewSlice,
+      errorMaxLen: 48,
+      labelPreview: { elId: el.id, values },
+    });
+    return t === "\u00a0" ? "" : t;
+  };
+
+  if (fill) {
+    if (slice) {
+      const visualRows = (slice.includeHeaderRow ? 1 : 0) + Math.max(0, slice.dataRowCount);
+      if (visualRows < 1) return;
+      drawTableGrid(page, font, el, pageH, useWinAnsi, {
+        xPx,
+        yPx,
+        hPx: Math.max(hPx, visualRows * Math.max(12, rowHFallback * 0.5)),
+        visualRows,
+        rowTexts: (vr) => {
+          const out: string[] = [];
+          for (let c = 0; c < cols; c++) out.push(sqlCell(vr, c, slice));
+          return out;
+        },
+      });
+      return;
+    }
+    const dataN = fillPv?.dataRows?.length ?? 0;
+    const displayData = sqlFillDisplayDataRowCount(fill, dataN);
+    const visualRows = Math.min(80, Math.max(1, 1 + displayData));
+    const fillH = tableSqlFillVerticalChromePx() + visualRows * rowHFallback;
     drawTableGrid(page, font, el, pageH, useWinAnsi, {
       xPx,
       yPx,
-      hPx: Math.max(hPx, visualRows * Math.max(12, rowHFallback * 0.5)),
+      hPx: Math.max(hPx, fillH),
       visualRows,
       rowTexts: (vr) => {
         const out: string[] = [];
-        if (slice.includeHeaderRow && vr === 0) {
-          if (sqlPayload?.ok && Array.isArray(sqlPayload.columns)) {
-            for (let c = 0; c < cols; c++) out.push(String(sqlPayload.columns[c] ?? ""));
-          } else {
-            for (let c = 0; c < cols; c++) out.push(staticCell(0, c));
-          }
-          return out;
-        }
-        const dataIdx = vr - (slice.includeHeaderRow ? 1 : 0);
-        const absRow = slice.dataRowStart + dataIdx;
-        if (sqlPayload?.ok && Array.isArray(sqlPayload.rows)) {
-          const colsNames = (sqlPayload.columns || Object.keys(sqlPayload.rows[0] || {})).slice(0, cols);
-          const row = sqlPayload.rows[absRow];
-          for (let c = 0; c < cols; c++) {
-            const name = colsNames[c];
-            const v = name && row ? row[name] : undefined;
-            out.push(v == null ? "" : String(v));
-          }
-          return out;
-        }
-        const gridRow = slice.includeHeaderRow ? absRow + 1 : absRow;
-        for (let c = 0; c < cols; c++) out.push(staticCell(gridRow, c));
+        for (let c = 0; c < cols; c++) out.push(sqlCell(vr, c));
         return out;
       },
     });
@@ -786,25 +817,6 @@ function drawTemplateElement(
 
   const rows = Math.min(el.tableRows || grid.length || 0, 80);
   if (rows < 1 || cols < 1) return;
-  if (sqlPayload?.ok && Array.isArray(sqlPayload.rows) && sqlPayload.rows.length) {
-    const colsNames = (sqlPayload.columns || Object.keys(sqlPayload.rows[0] || {})).slice(0, cols);
-    const visualRows = Math.min(rows, sqlPayload.rows.length + 1);
-    drawTableGrid(page, font, el, pageH, useWinAnsi, {
-      xPx,
-      yPx,
-      hPx,
-      visualRows,
-      rowTexts: (vr) => {
-        if (vr === 0) return colsNames.map((n) => n);
-        const row = sqlPayload.rows![vr - 1];
-        return colsNames.map((n) => {
-          const v = row?.[n];
-          return v == null ? "" : String(v);
-        });
-      },
-    });
-    return;
-  }
   drawTableGrid(page, font, el, pageH, useWinAnsi, {
     xPx,
     yPx,

@@ -1651,12 +1651,12 @@ async function handlePdfExportRun(event, opts) {
 
 ipcMain.handle('pdf-export-run', (event, opts) => handlePdfExportRun(event, opts))
 
-/** 035：五档批导历史批次数上限（summary_*/tier*_* 同一时间戳算一批） */
+// 035：五档批导历史批次数上限（同时间戳的 summary_ / tierN_ 算一批）
 const FIVE_TIER_EXPORT_HISTORY_KEEP = 5
 
 /**
- * 导出目录只保留最近 keep 批（按文件名时间戳 `YYYY-MM-DDTHH-mm-ss`）。
- * 不删 `_preview` 等调试子目录。
+ * 导出目录只保留最近 keep 批（按文件名时间戳 YYYY-MM-DDTHH-mm-ss）。
+ * 不删 _preview 等调试子目录。
  */
 function pruneFiveTierExportHistory(outDir, keep = FIVE_TIER_EXPORT_HISTORY_KEEP) {
   const nKeep = Math.max(1, Math.floor(Number(keep) || FIVE_TIER_EXPORT_HISTORY_KEEP))

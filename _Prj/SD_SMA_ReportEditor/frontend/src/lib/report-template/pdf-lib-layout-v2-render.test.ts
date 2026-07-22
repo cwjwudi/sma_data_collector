@@ -291,4 +291,55 @@ describe("pdf-lib-layout-v2-render", () => {
     expect(xCenter).toBeGreaterThan(xStart + 20);
     expect(xEnd).toBeGreaterThan(xCenter + 20);
   });
+
+  it("fills body SQL table from tableSqlFill.dataRows", async () => {
+    const { templateTableSqlFillPreviewKey } = await import("@/lib/report-template/table-sql-fill-preview");
+    const tb = hydrateTemplateElement({
+      id: "sql-h",
+      type: "table",
+      tableRows: 3,
+      tableCols: 2,
+      tableRowHeightPx: 24,
+      x: 40,
+      y: 40,
+      w: 320,
+      h: 80,
+      alignX: "start",
+      alignY: "center",
+      tableSqlFill: {
+        enabled: true,
+        fillMode: "visual",
+        layoutMode: "horizontal",
+        querySql: "SELECT 1",
+        resultColumnNames: ["指标", "数值"],
+        columnRoles: ["field", "field"],
+      },
+      tableCells: [
+        [
+          { text: "指标", bindingKind: "none", opcuaNodeId: "", sqlText: "", sqlParams: [], bgColor: "transparent" },
+          { text: "数值", bindingKind: "none", opcuaNodeId: "", sqlText: "", sqlParams: [], bgColor: "transparent" },
+        ],
+        [
+          { text: "", bindingKind: "none", opcuaNodeId: "", sqlText: "", sqlParams: [], bgColor: "transparent" },
+          { text: "", bindingKind: "none", opcuaNodeId: "", sqlText: "", sqlParams: [], bgColor: "transparent" },
+        ],
+      ],
+    });
+    const tmpl = makeTemplateWithBodyTable(tb);
+    const key = templateTableSqlFillPreviewKey("sql-h");
+    const previewValues = {
+      [key]: { text: "", tableSqlFill: { dataRows: [["temp", "23.5"], ["pressure", "1.02"]] } },
+    };
+    const doc = await PDFDocument.create();
+    const font = await doc.embedFont(StandardFonts.Helvetica);
+    await appendPdfLibLayoutV2Pages(doc, { tmpl, previewValues, font, useWinAnsi: true });
+    const bytes = await doc.save();
+    const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+    const parsed = await pdfjs.getDocument({ data: bytes }).promise;
+    const page = await parsed.getPage(1);
+    const text = (await page.getTextContent()).items.map((it: { str: string }) => it.str).join(" ");
+    expect(text).toContain("temp");
+    expect(text).toContain("23.5");
+    expect(text).toContain("pressure");
+  });
 });

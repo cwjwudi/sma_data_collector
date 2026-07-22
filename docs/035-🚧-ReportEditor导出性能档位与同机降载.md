@@ -85,6 +85,14 @@
 
 ---
 
+# 🐛 缺陷记录：矢量档 SQL 填充表无数据行（2026-07-22）
+
+**现象**（档 1 layout-v2）：正文横表/纵表仅见表头或左列标签，数值格全空（Chromium 档正常）。  
+**根因**：layout-v2 误读 `{ ok, columns, rows }`，而绑定预览实际为 `values[tblfill:id].tableSqlFill.dataRows`（`string[][]`）；纵表亦未走 `formatSqlFillTableCellPreview` 转置。  
+**处理**：改读 `dataRows`，单元格统一经 `formatSqlFillTableCellPreview`（含横/纵）。
+
+---
+
 # 📋 待做：导出页背景色需可编辑（2026-07-22）
 
 **现象**（当前版本 Chromium 导出 / 预览栈，见冒烟封面截图）：纸面正文区带固定浅灰底 **`#f9f9fb`**（`rgb(249 249 251)`），Logo 等白底图会衬出灰底块；用户无法在模板/版式里改掉。  
