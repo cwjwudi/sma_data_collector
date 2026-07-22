@@ -14,7 +14,7 @@ const { resolveExportCwd } = require('./export-dir-scan.cjs')
  * @param {typeof path} [pathMod]
  */
 function isInsideRoot(root, target, pathMod = path) {
-  const r = resolveExportCwd(root, target)
+  const r = resolveExportCwd(root, target, pathMod)
   return r.ok
 }
 
@@ -69,7 +69,7 @@ function transferHistoryItems(opts = {}) {
     return { ok: false, error: '缺少源根、目标根或目标目录', conflicts: [], results: [] }
   }
 
-  const destResolved = resolveExportCwd(destRoot, destDirRaw)
+  const destResolved = resolveExportCwd(destRoot, destDirRaw, pathMod)
   if (!destResolved.ok) {
     return { ok: false, error: destResolved.error || '目标目录非法', conflicts: [], results: [] }
   }

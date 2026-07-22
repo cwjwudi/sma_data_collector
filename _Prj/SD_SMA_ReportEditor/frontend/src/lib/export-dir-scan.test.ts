@@ -6,7 +6,11 @@ import { describe, expect, it } from "vitest";
 const require = createRequire(import.meta.url);
 const here = dirname(fileURLToPath(import.meta.url));
 const scan = require(join(here, "../../electron/export-dir-scan.cjs")) as {
-  resolveExportCwd: (root: string, cwd?: string) => { ok: boolean; error?: string; root?: string; cwd?: string };
+  resolveExportCwd: (
+    root: string,
+    cwd?: string,
+    pathMod?: unknown,
+  ) => { ok: boolean; error?: string; root?: string; cwd?: string };
   pageExportEntries: (
     all: Array<{ kind: "dir" | "pdf"; name: string; modifiedAt?: string }>,
     opts?: { offset?: number; limit?: number; sort?: string },
@@ -66,27 +70,38 @@ function makeMemFs(tree: Record<string, { kind: "dir" | "file"; mtime?: string; 
 }
 
 const pathMod = {
-  resolve: (...parts: string[]) => parts.join("/").replace(/\/+/g, "/"),
-  join: (...parts: string[]) => parts.join("/").replace(/\/+/g, "/"),
+  resolve: (...parts: string[]) => {
+    const joined = parts.join("/").replace(/\\/g, "/");
+    const segs: string[] = [];
+    for (const part of joined.split("/")) {
+      if (!part || part === ".") continue;
+      if (part === "..") segs.pop();
+      else segs.push(part);
+    }
+    return "/" + segs.join("/");
+  },
+  join: (...parts: string[]) => pathMod.resolve(...parts),
   relative: (from: string, to: string) => {
-    const f = from.replace(/\/$/, "");
-    const t = to.replace(/\/$/, "");
+    const f = pathMod.resolve(from).replace(/\/$/, "");
+    const t = pathMod.resolve(to).replace(/\/$/, "");
     if (t === f) return "";
     if (t.startsWith(f + "/")) return t.slice(f.length + 1);
     return "..";
   },
-  basename: (p: string) => p.split("/").pop() || "",
+  basename: (p: string) => p.replace(/\\/g, "/").split("/").filter(Boolean).pop() || "",
+  isAbsolute: (p: string) => p.startsWith("/") || /^[A-Za-z]:/.test(p),
+  sep: "/",
 };
 
 describe("export-dir-scan (010)", () => {
   it("A4: cwd escapes rootDir → ok=false", () => {
-    const r = scan.resolveExportCwd("/exports/root", "/exports/other");
+    const r = scan.resolveExportCwd("/exports/root", "/exports/other", pathMod);
     expect(r.ok).toBe(false);
     expect(r.error).toMatch(/超出/);
   });
 
   it("A4b: cwd inside root is ok", () => {
-    const r = scan.resolveExportCwd("/exports/root", "/exports/root/2026-07");
+    const r = scan.resolveExportCwd("/exports/root", "/exports/root/2026-07", pathMod);
     expect(r.ok).toBe(true);
     expect(r.cwd).toBe("/exports/root/2026-07");
   });
