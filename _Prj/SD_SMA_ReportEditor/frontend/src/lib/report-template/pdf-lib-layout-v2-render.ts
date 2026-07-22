@@ -11,7 +11,12 @@ import {
   type RGB,
 } from "pdf-lib";
 import type { BindingPreviewCell } from "@/lib/report-template/binding-preview-utils";
-import { cellKey } from "@/lib/report-template/binding-preview-utils";
+import {
+  cellKey,
+  paramKey,
+  zoneCellKey,
+  zoneParamKey,
+} from "@/lib/report-template/binding-preview-utils";
 import {
   bodyElementsRef,
   metricsForSheet,
@@ -347,7 +352,7 @@ function drawZoneTable(
   const fontSize = Math.max(6, Math.min(10, Number(el.fontSize) || rowH * 0.5));
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
-      const bound = cellText(values[cellKey(el.id, r, c)]);
+      const bound = cellText(values[zoneCellKey(el.id, r, c)]);
       const text = bound || String(grid[r]?.[c]?.text || "");
       if (!text.trim()) continue;
       const cellX = colXs[c];
@@ -421,10 +426,12 @@ function drawZoneElements(
     if (el.type !== "text" && el.type !== "parameter" && el.type !== "date" && el.type !== "pageNumber") {
       continue;
     }
-    const ck = cellKey(el.id, 0, 0);
+    const ck = zoneParamKey(el.id);
     const bound = cellText(values[ck]);
     let text = bound || String(el.text || "");
     if (el.type === "pageNumber" && !bound) text = pageLabel || text || "1";
+    // 绑定成功时不回落控件占位文案（如 {{value}} / SQL·温度）
+    if (bound) text = bound;
     if (!text.trim()) continue;
     if (el.showBorder || (el.bgColor && el.bgColor !== "transparent" && el.bgColor !== "none")) {
       try {
@@ -575,7 +582,7 @@ function drawTemplateElement(
 
   if (el.type === "text" || el.type === "parameter" || el.type === "date") {
     const box = boxFromPagePx(xPx, yPx, el.w, el.h, pageH);
-    const ck = cellKey(el.id, 0, 0);
+    const ck = paramKey(el.id);
     const bound = cellText(values[ck]);
     const text = bound || String(el.text || "");
     if (!text.trim()) return;

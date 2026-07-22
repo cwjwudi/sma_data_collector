@@ -10,6 +10,8 @@ import {
   cellKey,
   forEachTemplateCanvasElement,
   forEachZoneLayoutElement,
+  paramKey,
+  zoneParamKey,
 } from "@/lib/report-template/binding-preview-utils";
 import { buildExportPreviewReports } from "@/lib/report-template/export-preview-reports";
 import type { ReportTemplate, TemplateElement } from "@/lib/report-template/model";
@@ -273,10 +275,12 @@ export async function renderPdfLibExportPart(opts: {
   });
   y -= 18;
 
+  const values = report.previewValues;
   const zoneLines: string[] = [];
   forEachZoneLayoutElement(opts.tmpl, (el) => {
     if (el.type !== "text" && el.type !== "parameter" && el.type !== "date" && el.type !== "pageNumber") return;
-    const raw = String(el.text || "").trim();
+    const bound = cellText(values[zoneParamKey(el.id)]);
+    const raw = (bound || String(el.text || "")).trim();
     if (raw) zoneLines.push(raw);
   });
   for (const line of zoneLines.slice(0, 8)) {
@@ -288,14 +292,13 @@ export async function renderPdfLibExportPart(opts: {
     y -= 4;
   }
 
-  const values = report.previewValues;
   forEachTemplateCanvasElement(opts.tmpl, (el: TemplateElement) => {
     if (y < margin + 60) {
       page = doc.addPage([pageW, pageH]);
       y = pageH - margin;
     }
     if (el.type === "text" || el.type === "parameter" || el.type === "date") {
-      const ck = cellKey(el.id, 0, 0);
+      const ck = paramKey(el.id);
       const bound = cellText(values[ck]);
       const text = bound || String(el.text || "");
       if (!text.trim()) return;
