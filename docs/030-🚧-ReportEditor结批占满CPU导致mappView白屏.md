@@ -141,9 +141,9 @@ Windows 实际结批 CPU≈100%，同机 mappView 白屏/刷新。
 
 ## 验收（硬）
 
-- [ ] 生产数据 ≈8k / ≥4 份生成全程：mappView **零闪、零重载、操作员可操作**  
+- [ ] ⏸ 生产数据 ≈8k / ≥4 份生成全程：mappView **零闪、零重载、操作员可操作**（**2026-07-22 临时挂起**；见上节）  
 - [x] Z1 互斥：**否决**（已拍板）  
-- [ ] Z2 换引擎：0.3.114 选型/Spike **进行中**；实现版 0.3.115+  
+- [x] Z2 换引擎：实现版 **0.3.115+**（代码已落地；现场硬验收挂起）  
 - [ ] 缓解包不单独宣称达标  
 
 ## 清单
@@ -229,7 +229,8 @@ Windows 实际结批 CPU≈100%，同机 mappView 白屏/刷新。
 # 🚧 进行中：0.3.115 同机优先实现与现场硬验收（2026-07-21）
 
 > **产品计划**：[0.3.115 Plan](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.115.md)  
-> **安装包**：打包完成后现场装 Setup-0.3.115 验证。
+> **安装包**：建议 ≥**0.3.117**（含 fontkit / 仿宋 / ERR_FAILED）。  
+> **架构平复改动清单**：[034-🚧](034-🚧-ReportEditor全站架构复评-2026-07-22.md)（M1–M14）。
 
 ## 已落地（代码）
 
@@ -239,21 +240,25 @@ Windows 实际结批 CPU≈100%，同机 mappView 白屏/刷新。
 | 跳过 DOM 预览栈 | 同机优先下不挂 `TemplateExportPreviewStack` / 不 `waitPaintReady` |
 | UI 开关 | 报表生成 → 高级设置：**同机优先 / 版式优先** |
 | 审计 | summary 含 `同机优先/pdf-lib`；detail：`exportMode`、`engine`、`engineMeta`（含 `printToPDFSkipped`、`layoutFidelity`、`fontEmbedded`） |
-| 字体 | 打包机 `resources/fonts/NotoSansSC-Regular.otf` → extraResources；缺则 Helvetica |
+| 字体 | 打包机 `resources/fonts`（Noto + 朱雀仿宋）；缺则 Helvetica |
 
-> **现场阻断（已修 0.3.116）**：`embedFont` 缺 fontkit → 见 [033-✅](033-✅-ReportEditor同机优先pdf-lib缺fontkit导致结批失败.md)。请装 **0.3.116+** 复测同机优先自动结批。
+> **现场阻断（已修 0.3.116/117）**：`embedFont` 缺 fontkit → 见 [033-✅](033-✅-ReportEditor同机优先pdf-lib缺fontkit导致结批失败.md)。
 
 ## 现场给人看（审计）
 
 结批成功后打开审计「自动导出 PDF」：
 
 - 摘要应含 **同机优先/pdf-lib**
-- detail：`printToPDFSkipped: true`、`layoutFidelity: draft-v1`、`fontEmbedded`（有 Noto 应为 true）
+- detail：`printToPDFSkipped: true`、`layoutFidelity: draft-v1`、`fontEmbedded`（有随包字体应为 true）
 
-## 验收
+## ⏸ 临时挂起：8k/≥4 份零闪硬验收（2026-07-22）
 
-- [ ] 生产 ≈8k / ≥4 份自动结批：mappView **零闪可操作**（硬）
-- [ ] （可选）切版式优先对照是否再现闪屏
+> **用户决定**：生产数据 ≈8k / ≥4 份自动结批「mappView 零闪可操作」**临时挂起**，不阻塞 [034](034-🚧-ReportEditor全站架构复评-2026-07-22.md) 架构平复代码刀（M1–M7 等）。  
+> **解挂条件**：034 清单本机项落地后，再排现场装包复测。  
+> **硬标准本身不变**（仍以自动结批为准；手动导出不作主验收）。
+
+- [ ] ~~立即执行~~ → ⏸ 生产 ≈8k / ≥4 份自动结批：mappView **零闪可操作**（硬 · **挂起**）
+- [ ] （可选）切版式优先对照是否再现闪屏（随硬验收解挂）
 
 ---
 
@@ -298,7 +303,7 @@ Windows 实际结批 CPU≈100%，同机 mappView 白屏/刷新。
 - [x] 导出 Below Normal + 分卷 yield  
 - [x] 分卷后续份跳过 fullSqlFill；Stack 按 part 懒算  
 - [ ] 现场装 0.3.111+ 后复核：多分卷结批时 `dataMs` 主要落在首份  
-- [ ] **硬验收**：自动结批多分卷时 mappView **完全不闪且可操作**（0.3.113 口述按份闪 → **未通过**；待 Z2 实现版；手动导出不作主验收）  
+- [ ] ⏸ **硬验收**：自动结批多分卷时 mappView **完全不闪且可操作**（0.3.113 口述按份闪 → **未通过**；Z2 代码已进 0.3.115+；**2026-07-22 临时挂起**；手动导出不作主验收）  
 
 ---
 
