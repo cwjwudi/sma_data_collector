@@ -1,12 +1,12 @@
 {
   "version": "0.3.117",
-  "releasedAt": "2026-07-22T07:32:35.637Z",
+  "releasedAt": "2026-07-22T08:00:14.920Z",
   "notes": "Report Editor AI 0.3.117\n\n- 仿宋随包（朱雀仿宋 OFL，UI 族名 FangSong）\n- 导出隐藏窗 ERR_FAILED 销毁重建重试",
   "platforms": {
     "win32-x64": {
       "url": "Report Editor AI-Setup-0.3.117-x64.exe",
-      "sha256": "",
-      "size": 0
+      "sha256": "281e3c437463a335f9082c725b6d3bb2b6a04a574b0acb79111e3186d5865c0c",
+      "size": 167179070
     },
     "darwin-arm64": {
       "url": "Report Editor AI-0.3.117-arm64.dmg",
