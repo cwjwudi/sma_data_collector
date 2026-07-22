@@ -1,17 +1,17 @@
 {
-  "version": "0.3.123",
-  "releasedAt": "2026-07-22T10:40:18.845Z",
-  "notes": "Report Editor AI 0.3.123\n\n- 导出性能改为分段切换（与默认文件夹同类 UI）",
+  "version": "0.3.124",
+  "releasedAt": "2026-07-22T12:35:16.855Z",
+  "notes": "036 P1：矢量表样式与模拟结批导出目录",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.123-x64.exe",
+      "url": "Report Editor AI-Setup-0.3.124-x64.exe",
       "sha256": "",
       "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.123-arm64.dmg",
-      "sha256": "b281f863216032036e50eda3a5b655d10dc3ae7339f5d62938c780c39b82d2e3",
-      "size": 205760058
+      "url": "Report Editor AI-0.3.124-arm64.dmg",
+      "sha256": "0288a66a933529322db51e60e14050940cb2ba2f32ba4377430f10888d393809",
+      "size": 205756931
     }
   }
 }
