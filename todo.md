@@ -7,9 +7,13 @@
 
 ## 2026-07-22
 
+<<<<<<< HEAD
 - **ReportEditor 仅内容叠字修复**：档 0 封面大字号压行 → 字号 cap≤14 + 随字号行高 + `\n` 硬换行；单测防回归。看板 [docs/035-🚧](docs/035-🚧-ReportEditor导出性能档位与同机降载.md)。
 
 - **ReportEditor 冒烟无外框 + 竖/横五档复验**：全模版去 `showBorder`；Docker MariaDB 建「冒烟·竖/横」；五档 10/10 `ok`（`smoke-portrait`/`smoke-landscape`）。看板 [docs/035-🚧](docs/035-🚧-ReportEditor导出性能档位与同机降载.md) · [docs/036-✅](docs/036-✅-ReportEditor矢量档与预览稳样式对照.md)。
+=======
+- **ReportEditor 0.3.133（034 M10）**：主进程冷路径去 sync——端口探测 `execFile` async；备份读/日志写/`delete-export-file`/五档收尾用 `fs.promises`；契约 M10 ✅。看板 [docs/034-🚧](docs/034-🚧-ReportEditor全站架构复评-2026-07-22.md)。
+>>>>>>> 691341f (feat(ReportEditor): 0.3.133 主进程冷路径去 sync（034 M10）)
 
 - **ReportEditor 035 手测 H1–H5**：默认预览稳、档 0 草稿、档 2/3/4 预览级、结批探活暂停/拆预热；证据 `retest-0.3.132-white-10-42-15` + 单测。H6/H7 现场 ⌛️。看板 [docs/035-🚧](docs/035-🚧-ReportEditor导出性能档位与同机降载.md)。
 
@@ -42,7 +46,7 @@
 
 - **ReportEditor 035 导出性能五档（至 0.3.132）**：5 档分段（默认预览稳）；取代 0.3.120 四档草案；本机 H1–H5 ✅。看板 [docs/035-🚧](docs/035-🚧-ReportEditor导出性能档位与同机降载.md)。
 
-- **docs 叙事对齐**：034/003/030 将「导出性能 4 档 / 默认均衡」改为 **五档已落地**；下一刀 034 M10。
+- **docs 叙事对齐**：034/003/030 将「导出性能 4 档 / 默认均衡」改为 **五档已落地**；M10 已于 0.3.133 落地。
 
 - **ReportEditor 0.3.119（034 行为测 + M11）**：补全 gate/cancel-ui/KeepAlive 行为测；默认 PDF=版式优先（chromium）；旧 pdf-lib 一次性迁移；同机优先标草稿非交付。手测见 [docs/034-🚧](docs/034-🚧-ReportEditor全站架构复评-2026-07-22.md)「手测清单」。
 

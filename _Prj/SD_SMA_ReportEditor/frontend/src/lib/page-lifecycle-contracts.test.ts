@@ -248,4 +248,28 @@ describe("032 page lifecycle contracts", () => {
     expect(rg).toMatch(/exportPerfTier/);
     expect(rg).toMatch(/resolveExportPerfProfile/);
   });
+
+  it("M10: 主进程冷路径无 execFileSync；备份/日志 IPC 用 fs.promises", () => {
+    const main = readFileSync(join(frontendRoot, "electron/main.cjs"), "utf8");
+    const code = main
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^\s*\/\/.*$/gm, "");
+    expect(code).not.toMatch(/\bexecFileSync\b/);
+    expect(code).toMatch(/execFileAsync|promisify\(execFile\)/);
+    expect(code).toMatch(/async function commandForPid/);
+    expect(code).toMatch(/async function backendListenerPid/);
+
+    const saveIdx = code.indexOf("dialog-save-text");
+    const pickDirIdx = code.indexOf("dialog-pick-directory");
+    const saveSlice = code.slice(saveIdx, pickDirIdx > saveIdx ? pickDirIdx : saveIdx + 900);
+    expect(saveSlice).toMatch(/fs\.promises\.writeFile/);
+    expect(saveSlice).not.toMatch(/\bwriteFileSync\b/);
+
+    const pickIdx = code.indexOf("dialog-pick-config-json");
+    const pickBody = code.slice(pickIdx, pickIdx + 1800);
+    expect(pickBody).toMatch(/fs\.promises\.stat/);
+    expect(pickBody).toMatch(/fs\.promises\.readFile/);
+    expect(pickBody).not.toMatch(/\bstatSync\b/);
+    expect(pickBody).not.toMatch(/\breadFileSync\b/);
+  });
 });

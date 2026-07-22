@@ -1,10 +1,13 @@
 const { app, BrowserWindow, ipcMain, dialog, shell, nativeImage, powerSaveBlocker, session, Tray, Menu } = require('electron')
-const { execFileSync, spawn } = require('child_process')
+const { execFile, spawn } = require('child_process')
+const { promisify } = require('util')
 const path = require('path')
 const http = require('http')
 const fs = require('fs')
 const os = require('os')
 const { pathToFileURL } = require('url')
+
+const execFileAsync = promisify(execFile)
 const { createAppUpdater } = require('./updater.cjs')
 const { createLayoutSync } = require('./layout-sync.cjs')
 const { humanizePdfExportError } = require('./pdfExportErrors.cjs')
@@ -233,13 +236,19 @@ function maskOpcServerForRenderer(server) {
   return out
 }
 
-function readDataSourceStartupSnapshot() {
+async function readDataSourceStartupSnapshot() {
   const file = path.join(getReportEditorDataDir(), 'config.json')
   try {
-    if (!fs.existsSync(file)) {
-      return { connections: [], app_preferences: {}, source: file, ok: true }
+    let rawText
+    try {
+      rawText = await fs.promises.readFile(file, 'utf8')
+    } catch (e) {
+      if (e && (e.code === 'ENOENT' || e.code === 'ENOTDIR')) {
+        return { connections: [], app_preferences: {}, source: file, ok: true }
+      }
+      throw e
     }
-    const raw = JSON.parse(fs.readFileSync(file, 'utf8'))
+    const raw = JSON.parse(rawText)
     const connections = Array.isArray(raw.db_connections)
       ? raw.db_connections.map(maskDbConnectionForRenderer).filter((c) => c.id)
       : []
@@ -381,10 +390,10 @@ function checkBackendHealthOnce() {
   })
 }
 
-function commandForPid(pid) {
+async function commandForPid(pid) {
   try {
     if (process.platform === 'win32') {
-      const out = execFileSync(
+      const { stdout } = await execFileAsync(
         'powershell.exe',
         [
           '-NoProfile',
@@ -393,26 +402,27 @@ function commandForPid(pid) {
         ],
         { encoding: 'utf8', windowsHide: true, timeout: 1500 },
       )
-      return out.trim()
+      return String(stdout || '').trim()
     }
-    return execFileSync('ps', ['-p', String(pid), '-o', 'command='], {
+    const { stdout } = await execFileAsync('ps', ['-p', String(pid), '-o', 'command='], {
       encoding: 'utf8',
       timeout: 1500,
-    }).trim()
+    })
+    return String(stdout || '').trim()
   } catch {
     return ''
   }
 }
 
-function backendListenerPid() {
+async function backendListenerPid() {
   try {
     if (process.platform === 'win32') {
-      const out = execFileSync('netstat.exe', ['-ano', '-p', 'tcp'], {
+      const { stdout } = await execFileAsync('netstat.exe', ['-ano', '-p', 'tcp'], {
         encoding: 'utf8',
         windowsHide: true,
         timeout: 1500,
       })
-      for (const line of out.split(/\r?\n/)) {
+      for (const line of String(stdout || '').split(/\r?\n/)) {
         if (!line.includes('LISTENING')) continue
         const parts = line.trim().split(/\s+/)
         const local = parts[1] || ''
@@ -421,11 +431,11 @@ function backendListenerPid() {
       }
       return 0
     }
-    const out = execFileSync('lsof', ['-nP', `-iTCP:${BACKEND_PORT}`, '-sTCP:LISTEN', '-t'], {
+    const { stdout } = await execFileAsync('lsof', ['-nP', `-iTCP:${BACKEND_PORT}`, '-sTCP:LISTEN', '-t'], {
       encoding: 'utf8',
       timeout: 1500,
     })
-    const pid = Number(out.trim().split(/\s+/)[0])
+    const pid = Number(String(stdout || '').trim().split(/\s+/)[0])
     return Number.isFinite(pid) ? pid : 0
   } catch {
     return 0
@@ -438,9 +448,9 @@ function isOurBackendCommand(command) {
 }
 
 async function stopStaleBundledBackendIfUnhealthy() {
-  const pid = backendListenerPid()
+  const pid = await backendListenerPid()
   if (!pid) return false
-  const command = commandForPid(pid)
+  const command = await commandForPid(pid)
   if (!isOurBackendCommand(command)) return false
   if (await checkBackendHealthOnce()) return false
   log(`发现旧后端进程占用 ${BACKEND_PORT} 且健康检查无响应，准备清理: pid=${pid}`)
@@ -452,7 +462,7 @@ async function stopStaleBundledBackendIfUnhealthy() {
   }
   for (let i = 0; i < 20; i += 1) {
     await new Promise((resolve) => setTimeout(resolve, 100))
-    if (!backendListenerPid()) return true
+    if (!(await backendListenerPid())) return true
   }
   try {
     process.kill(pid, 'SIGKILL')
@@ -460,7 +470,7 @@ async function stopStaleBundledBackendIfUnhealthy() {
     /* ignore */
   }
   await new Promise((resolve) => setTimeout(resolve, 200))
-  return !backendListenerPid()
+  return !(await backendListenerPid())
 }
 
 function waitForBackend(maxRetries = 60, interval = 500) {
@@ -785,7 +795,7 @@ ipcMain.handle('dialog-save-text', async (event, opts) => {
   })
   if (res.canceled || !res.filePath) return { ok: false, canceled: true }
   try {
-    fs.writeFileSync(res.filePath, content, 'utf8')
+    await fs.promises.writeFile(res.filePath, content, 'utf8')
     return { ok: true, filePath: res.filePath }
   } catch (e) {
     return { ok: false, error: String(e.message || e) }
@@ -825,11 +835,11 @@ ipcMain.handle('dialog-pick-config-json', async (event, opts) => {
   }
   const filePath = res.filePaths[0]
   try {
-    const stat = fs.statSync(filePath)
+    const stat = await fs.promises.stat(filePath)
     if (stat.size > MAX_CONFIG_JSON_BYTES) {
       return { ok: false, error: `备份文件过大（超过 ${Math.round(MAX_CONFIG_JSON_BYTES / 1024 / 1024)} MB）` }
     }
-    const buf = fs.readFileSync(filePath)
+    const buf = await fs.promises.readFile(filePath)
     const encrypted = buf.length >= REBAK_MAGIC.length && buf.subarray(0, REBAK_MAGIC.length).equals(REBAK_MAGIC)
     if (encrypted) {
       return {
@@ -952,17 +962,17 @@ ipcMain.handle('delete-export-file', async (_event, opts) => {
     return { ok: false, error: '无效路径' }
   }
   const resolved = path.resolve(filePath)
-  if (!fs.existsSync(resolved)) {
-    return { ok: false, error: '文件不存在' }
-  }
   try {
-    const st = fs.statSync(resolved)
+    const st = await fs.promises.stat(resolved)
     if (!st.isFile()) {
       return { ok: false, error: '不是文件' }
     }
-    fs.unlinkSync(resolved)
+    await fs.promises.unlink(resolved)
     return { ok: true }
   } catch (e) {
+    if (e && (e.code === 'ENOENT' || e.code === 'ENOTDIR')) {
+      return { ok: false, error: '文件不存在' }
+    }
     return { ok: false, error: String(e.message || e) }
   }
 })
@@ -1661,11 +1671,11 @@ const FIVE_TIER_EXPORT_HISTORY_KEEP = 5
  * 导出目录只保留最近 keep 批（按文件名时间戳 YYYY-MM-DDTHH-mm-ss）。
  * 不删 _preview 等调试子目录。
  */
-function pruneFiveTierExportHistory(outDir, keep = FIVE_TIER_EXPORT_HISTORY_KEEP) {
+async function pruneFiveTierExportHistory(outDir, keep = FIVE_TIER_EXPORT_HISTORY_KEEP) {
   const nKeep = Math.max(1, Math.floor(Number(keep) || FIVE_TIER_EXPORT_HISTORY_KEEP))
   let names
   try {
-    names = fs.readdirSync(outDir)
+    names = await fs.promises.readdir(outDir)
   } catch {
     return { kept: 0, dropped: 0, removedFiles: 0 }
   }
@@ -1684,7 +1694,7 @@ function pruneFiveTierExportHistory(outDir, keep = FIVE_TIER_EXPORT_HISTORY_KEEP
       if (!name.includes(stamp)) continue
       if (!name.startsWith('summary_') && !/^tier\d+_/.test(name)) continue
       try {
-        fs.unlinkSync(path.join(outDir, name))
+        await fs.promises.unlink(path.join(outDir, name))
         removedFiles += 1
       } catch {
         /* ignore */
@@ -1744,10 +1754,10 @@ async function runFiveTierExportBatch(spec) {
     }
   }
   const summaryPath = path.join(outDir, `summary_${stamp}.json`)
-  fs.writeFileSync(summaryPath, JSON.stringify({ templateId, outDir, results }, null, 2), 'utf8')
+  await fs.promises.writeFile(summaryPath, JSON.stringify({ templateId, outDir, results }, null, 2), 'utf8')
   log(`五档批导完成：${summaryPath}`)
   try {
-    const pruned = pruneFiveTierExportHistory(outDir, FIVE_TIER_EXPORT_HISTORY_KEEP)
+    const pruned = await pruneFiveTierExportHistory(outDir, FIVE_TIER_EXPORT_HISTORY_KEEP)
     if (pruned.dropped > 0) {
       log(
         `五档批导：已清理旧历史 ${pruned.dropped} 批（${pruned.removedFiles} 个文件），保留最近 ${pruned.kept} 批`,

@@ -1,17 +1,17 @@
 {
-  "version": "0.3.132",
-  "releasedAt": "2026-07-22T14:39:02.875Z",
-  "notes": "Report Editor AI 0.3.132\n\n- 正文底色可编辑（版式/模版 bodyBackgroundCss；预览与矢量档一致）",
+  "version": "0.3.133",
+  "releasedAt": "2026-07-22T15:20:00.000Z",
+  "notes": "Report Editor AI 0.3.133\n\n- 034 M10：主进程冷路径去 sync（端口探测 / 备份读 / 日志写 async）",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.132-x64.exe",
+      "url": "Report Editor AI-Setup-0.3.133-x64.exe",
       "sha256": "",
       "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.132-arm64.dmg",
-      "sha256": "a23b3caae24d8a05ad5e0bcb16dd0677af285b6430155ee768ad3de8172d59fb",
-      "size": 212145057
+      "url": "Report Editor AI-0.3.133-arm64.dmg",
+      "sha256": "",
+      "size": 0
     }
   }
 }
