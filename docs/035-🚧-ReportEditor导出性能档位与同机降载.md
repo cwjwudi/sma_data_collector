@@ -93,6 +93,14 @@
 
 ---
 
+# 🐛 缺陷记录：仅内容档 SQL 填充表无数据行（2026-07-22）
+
+**现象**（档 0 `draft-v1`）：流式导出只见 `[table id]`，无 SQL 行（参数标量有值）。  
+**根因**：同档 1——误读 `{ ok, rows }`；`grid.rows/cols` 不存在导致静态回落 0 行。  
+**处理**：`pdf-lib-export-render` 改读 `dataRows` + `formatSqlFillTableCellPreview`。
+
+---
+
 # 🐛 缺陷记录：矢量档 SQL 参数未居中（2026-07-22）
 
 **现象**（档 1 layout-v2）：正文 SQL 参数（温度/压力等）有值但贴左；Chromium 预览/导出看起来居中。  

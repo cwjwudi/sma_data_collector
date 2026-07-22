@@ -159,6 +159,14 @@
 
 ---
 
+# ✅ 旁路修复：档 0 仅内容 SQL 填充空表（2026-07-22）
+
+**现象**：`draft-v1` 只见 `[table …]`，无 SQL 数据行（参数标量仍有）。  
+**根因**：与已修的 layout-v2 相同——误读 `{ ok, columns, rows }`，且 `ensureTableGrid` 无 `rows/cols` 字段导致静态回落也是 0 行。  
+**处理**：改读 `values[tblfill:id].tableSqlFill.dataRows` + `formatSqlFillTableCellPreview`；静态表用 `el.tableRows/tableCols`。
+
+---
+
 # ✅ 本对照前已修（勿重复开单）
 
 | 项 | 说明 | 提交/看板 |

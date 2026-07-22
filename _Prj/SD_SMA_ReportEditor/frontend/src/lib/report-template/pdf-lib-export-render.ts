@@ -23,6 +23,8 @@ import {
   type BundledFontId,
 } from "@/lib/report-template/font-availability";
 import {
+  formatSqlFillTableCellPreview,
+  sqlFillDisplayDataRowCount,
   templateTableSqlFillPreviewKey,
 } from "@/lib/report-template/table-sql-fill-preview";
 import { appendPdfLibLayoutV2Pages } from "@/lib/report-template/pdf-lib-layout-v2-render";
@@ -318,13 +320,12 @@ export async function renderPdfLibExportPart(opts: {
     }
     if (el.type === "table") {
       const grid = ensureTableGrid(el);
-      const rows = Math.min(grid.rows || 0, 80);
-      const cols = Math.min(grid.cols || 0, 12);
+      const cols = Math.min(el.tableCols || grid[0]?.length || 1, 12);
       const sqlKey = templateTableSqlFillPreviewKey(el.id);
-      const sqlPayload = values[sqlKey] as
-        | { ok?: boolean; columns?: string[]; rows?: Record<string, unknown>[] }
-        | undefined;
-      page.drawText(useWinAnsi ? sanitizeForWinAnsi(`[table ${el.id}]`) : `[table ${el.id}]`, {
+      const fill = el.tableSqlFill?.enabled ? el.tableSqlFill : null;
+      const fillPv = fill ? values[sqlKey]?.tableSqlFill ?? null : null;
+      const label = `[table ${el.id.slice(0, 8)}]`;
+      page.drawText(useWinAnsi ? sanitizeForWinAnsi(label) : label, {
         x: margin,
         y,
         size: 9,
@@ -332,40 +333,50 @@ export async function renderPdfLibExportPart(opts: {
         color: rgb(0.2, 0.2, 0.5),
       });
       y -= 14;
-      if (sqlPayload?.ok && Array.isArray(sqlPayload.rows) && sqlPayload.rows.length) {
-        const colsNames = (sqlPayload.columns || Object.keys(sqlPayload.rows[0] || {})).slice(0, cols || 6);
-        const header = colsNames.join(" | ");
-        y = drawWrapped(page, font, header, margin, y, 8, pageW - margin * 2, 10, useWinAnsi);
-        y -= 2;
-        const maxData = Math.min(sqlPayload.rows.length, 60);
-        for (let ri = 0; ri < maxData; ri++) {
-          if (y < margin + 40) {
-            page = doc.addPage([pageW, pageH]);
-            y = pageH - margin;
-          }
-          const line = colsNames
-            .map((c) => {
-              const v = sqlPayload.rows![ri]![c];
-              if (v == null) return "";
-              return String(v);
-            })
-            .join(" | ");
-          y = drawWrapped(page, font, line, margin, y, 8, pageW - margin * 2, 10, useWinAnsi);
-        }
-        y -= 8;
-        return;
-      }
-      for (let r = 0; r < Math.min(rows, 40); r++) {
+
+      const drawTableLine = (parts: string[]) => {
         if (y < margin + 40) {
           page = doc.addPage([pageW, pageH]);
           y = pageH - margin;
         }
+        const line = parts
+          .map((t) => (t === "\u00a0" ? "" : t))
+          .join(" | ");
+        if (!line.replace(/\s|\|/g, "").trim()) return;
+        y = drawWrapped(page, font, line, margin, y, 8, pageW - margin * 2, 10, useWinAnsi);
+      };
+
+      if (fill && fillPv?.dataRows?.length) {
+        const dataN = fillPv.dataRows.length;
+        const displayData = sqlFillDisplayDataRowCount(fill, dataN);
+        const visualRows = Math.min(61, Math.max(1, 1 + displayData));
+        for (let vr = 0; vr < visualRows; vr++) {
+          const parts: string[] = [];
+          for (let c = 0; c < cols; c++) {
+            const t = formatSqlFillTableCellPreview({
+              fill,
+              rowIndex: vr,
+              colIndex: c,
+              preview: fillPv,
+              errorMaxLen: 48,
+              labelPreview: { elId: el.id, values },
+            });
+            parts.push(t);
+          }
+          drawTableLine(parts);
+        }
+        y -= 8;
+        return;
+      }
+
+      const rows = Math.min(el.tableRows || grid.length || 0, 40);
+      for (let r = 0; r < rows; r++) {
         const parts: string[] = [];
         for (let c = 0; c < cols; c++) {
           const ck = cellKey(el.id, r, c);
-          parts.push(cellText(values[ck]) || "");
+          parts.push(cellText(values[ck]) || String(grid[r]?.[c]?.text || ""));
         }
-        y = drawWrapped(page, font, parts.join(" | "), margin, y, 8, pageW - margin * 2, 10, useWinAnsi);
+        drawTableLine(parts);
       }
       y -= 8;
     }
