@@ -298,6 +298,7 @@ function drawZoneTable(
   values: Record<string, BindingPreviewCell | undefined>,
   useWinAnsi: boolean,
   geo?: { x: number; y: number; w: number; h: number },
+  edge?: { skipTop?: boolean; skipBottom?: boolean },
 ): void {
   const grid = ensureZoneTableGrid(el);
   const rows = Math.max(1, Math.min(el.tableRows || grid.length || 1, 40));
@@ -307,14 +308,37 @@ function drawZoneTable(
   const w = geo?.w ?? el.w;
   const h = geo?.h ?? el.h;
   const box = boxFromPagePx(origin.ox + x, origin.oy + y, w, h, pageH);
-  page.drawRectangle({
-    x: box.x,
-    y: box.yBottom,
-    width: box.w,
-    height: box.h,
-    borderColor: rgb(0.25, 0.25, 0.25),
-    borderWidth: 0.5,
+  const border = rgb(0.25, 0.25, 0.25);
+  const thick = 0.5;
+  // 分线绘制：相邻堆叠表跳过共用边，避免矢量双线（预览 HTML 边框折叠看不出来）
+  page.drawLine({
+    start: { x: box.x, y: box.yBottom },
+    end: { x: box.x, y: box.yBottom + box.h },
+    thickness: thick,
+    color: border,
   });
+  page.drawLine({
+    start: { x: box.x + box.w, y: box.yBottom },
+    end: { x: box.x + box.w, y: box.yBottom + box.h },
+    thickness: thick,
+    color: border,
+  });
+  if (!edge?.skipBottom) {
+    page.drawLine({
+      start: { x: box.x, y: box.yBottom },
+      end: { x: box.x + box.w, y: box.yBottom },
+      thickness: thick,
+      color: border,
+    });
+  }
+  if (!edge?.skipTop) {
+    page.drawLine({
+      start: { x: box.x, y: box.yBottom + box.h },
+      end: { x: box.x + box.w, y: box.yBottom + box.h },
+      thickness: thick,
+      color: border,
+    });
+  }
   let widthsPx: number[] = [];
   try {
     widthsPx = zoneTableColumnInnerWidthsPx(el);
@@ -408,6 +432,15 @@ function drawZoneElements(
   bandWPx?: number,
 ): void {
   const sorted = [...els].sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0));
+  const tableGeos = sorted
+    .filter((e) => e.type === "table")
+    .map((e) => ({
+      id: e.id,
+      geo:
+        bandWPx != null && bandWPx > 0
+          ? clampZoneElToBand(e, bandWPx)
+          : { x: e.x, y: e.y, w: e.w, h: e.h },
+    }));
   for (const el of sorted) {
     const geo =
       bandWPx != null && bandWPx > 0
@@ -421,7 +454,13 @@ function drawZoneElements(
       continue;
     }
     if (el.type === "table") {
-      drawZoneTable(page, font, el, pageH, origin, values, useWinAnsi, geo);
+      // 上方若有表底边贴齐，则本表跳过顶边，由上方表画共用线
+      const skipTop = tableGeos.some(
+        (o) => o.id !== el.id && Math.abs(o.geo.y + o.geo.h - geo.y) <= 1.5,
+      );
+      drawZoneTable(page, font, el, pageH, origin, values, useWinAnsi, geo, {
+        skipTop,
+      });
       continue;
     }
     if (el.type === "box") {
