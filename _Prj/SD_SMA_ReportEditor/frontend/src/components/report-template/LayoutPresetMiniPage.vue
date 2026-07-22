@@ -328,8 +328,9 @@ function miniZoneElStyle(el: LayoutZoneElement): Record<string, string> {
     s.flexDirection = "column";
     s.alignItems = "stretch";
     s.justifyContent = "stretch";
-    s.padding = "2px";
-    s.overflow = "hidden";
+    /* 与 TemplateMiniPage：贴满 band 的 zone 表避免 padding+clip 吃掉底边框 */
+    s.padding = "0";
+    s.overflow = "visible";
     s.whiteSpace = "normal";
     s.backgroundColor = zoneTableNodeShellBackgroundCss();
   } else {
@@ -450,6 +451,11 @@ function miniZoneTableCellTitle(el: LayoutZoneElement, ri: number, ci: number): 
   overflow: hidden;
   box-sizing: border-box;
 }
+@media print {
+  .mini-band-inner {
+    overflow: visible;
+  }
+}
 .mini-band-header {
   background: rgb(239 239 246 / 0.52);
 }
@@ -490,6 +496,9 @@ function miniZoneTableCellTitle(el: LayoutZoneElement, ri: number, ci: number): 
   overflow: visible;
   box-sizing: border-box;
   padding-bottom: 1px;
+}
+.mini-zone-el .mini-tpl-table-wrap {
+  padding-bottom: 0;
 }
 .mini-tpl-table {
   width: 100%;

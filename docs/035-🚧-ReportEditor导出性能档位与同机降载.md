@@ -67,6 +67,14 @@
 
 ---
 
+# 🐛 缺陷记录：不妥协档页眉表底边框被截断（2026-07-22）
+
+**现象**（档 2/3/4 Chromium `print-to-pdf`，封面页眉叠表）：最下一行**底横线缺失**，竖线悬空。  
+**根因**：眉带 `.mini-band-inner` / zone 表外壳 `overflow:hidden`，再叠加 `padding:2px` 与 `.mini-tpl-table-wrap{padding-bottom:1px}`；贴底表（bottom≈82、band≈83px）底边框落在裁剪边上。  
+**处理**：zone 表改为 `padding:0` + `overflow:visible`；zone wrap 取消底垫；`@media print` 下眉带 `overflow:visible`；冒烟封面 `headerBandMm` 22→24。
+
+---
+
 # 手测（应用内）
 
 | ID | 场景 | 状态 |

@@ -576,8 +576,13 @@ function miniZoneElStyle(el: LayoutZoneElement): Record<string, string> {
     s.flexDirection = "column";
     s.alignItems = "stretch";
     s.justifyContent = "stretch";
-    s.padding = "2px";
-    s.overflow = "hidden";
+    /**
+     * 页眉/页脚 zone 表常贴满 band（h≈rows×rowH）。padding + overflow:hidden
+     * 会把最后一行底边框裁掉（Chromium print-to-pdf / 不妥协档常见）。
+     * 与正文表一致：无内边距、可见溢出，边框落在控件盒内（td box-sizing）。
+     */
+    s.padding = "0";
+    s.overflow = "visible";
     s.whiteSpace = "normal";
     s.backgroundColor = zoneTableNodeShellBackgroundCss();
   } else {
@@ -1218,6 +1223,12 @@ function tplCaption(el: TemplateElement): string {
   overflow: hidden;
   box-sizing: border-box;
 }
+/* 导出打印：允许贴底 zone 表底边框画出 band，避免 1px 横线被裁切 */
+@media print {
+  .mini-band-inner {
+    overflow: visible;
+  }
+}
 .mini-band-header {
   background: rgb(239 239 246 / 0.52);
 }
@@ -1243,8 +1254,12 @@ function tplCaption(el: TemplateElement): string {
   height: 100%;
   overflow: visible;
   box-sizing: border-box;
-  /* 避免 overflow:hidden + height:100% 表格最后一行底边框落在裁剪边上被吃掉（导出预览常见） */
+  /* 正文表：多 1px 底垫，避免外壳 overflow 吃掉底边框 */
   padding-bottom: 1px;
+}
+/* zone 表贴 band 时禁止再垫高，否则固定 height 下底边框必裁 */
+.mini-zone-el .mini-tpl-table-wrap {
+  padding-bottom: 0;
 }
 .mini-tpl-table {
   width: 100%;

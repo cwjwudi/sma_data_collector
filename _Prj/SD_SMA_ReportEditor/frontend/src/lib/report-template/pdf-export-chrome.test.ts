@@ -60,6 +60,13 @@ describe("PDF export chrome (019 fill + 021 role borders)", () => {
     expect(miniPageVue).toMatch(/exactPageFit\s*\?\s*0\s*:\s*3/);
   });
 
+  it("U12: zone header tables keep bottom border under print-to-pdf", () => {
+    // 贴满眉带的 zone 表：禁止 padding+clip 吃掉最后一行底边框
+    expect(miniPageVue).toMatch(/\.mini-zone-el\s+\.mini-tpl-table-wrap\s*\{[^}]*padding-bottom:\s*0/s);
+    expect(miniPageVue).toMatch(/@media\s+print\s*\{[^}]*\.mini-band-inner[^}]*overflow:\s*visible/s);
+    expect(miniPageVue).toMatch(/贴满 band（h≈rows×rowH）/);
+  });
+
   it("U7: print CSS keeps role borders (no blanket border/outline none on mpc paper)", () => {
     // 仍清卡片 padding / 标签；不再用 border:none !important 抹掉角色粗边
     expect(pdfViewVue).toMatch(/\.pdf-export-root\s+\.tep-card[\s\S]*padding:\s*0\s*!important/);
