@@ -123,6 +123,8 @@ import {
   type DatasourceSyncScope,
 } from '@/lib/datasource-sync-events'
 import { loadReportGeneratorPrefs } from '@/lib/report-generator-prefs'
+import { resolveExportPerfProfile } from '@/lib/export-perf-tier'
+import { pdfExportCoexistPauseActive } from '@/lib/export-coexist-busy'
 
 defineOptions({ name: 'AiPendingPromptDialog' })
 
@@ -191,6 +193,8 @@ async function syncDatasourceFingerprint(reason: string) {
 
 async function poll() {
   if (submitting.value) return
+  // 035：结批全开降载时跳过 AI pending 轮询
+  if (pdfExportCoexistPauseActive.value) return
   try {
     await mirrorClientPrefsToBackend()
     const data = await fetchAiPendingPrompts()
@@ -253,7 +257,8 @@ async function handleClientAction(action: string, payload: Record<string, unknow
       templateId: tid,
       filePath,
       openAfter: false,
-      engine: prefs.pdfExportEngine === 'chromium' ? 'chromium' : 'pdf-lib',
+      engine: resolveExportPerfProfile(prefs.exportPerfTier).engine,
+      yieldMs: resolveExportPerfProfile(prefs.exportPerfTier).yieldMs,
     })
     notifyAssetsChanged('manual_export')
     return

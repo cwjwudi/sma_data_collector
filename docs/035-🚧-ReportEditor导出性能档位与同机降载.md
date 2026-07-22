@@ -1,7 +1,7 @@
 # ReportEditor：导出性能 4 档 + 同机降载
 
 > 本文件为 **任务看板 / 开工计划**；规则见 [CLAUDE.md](../CLAUDE.md)。  
-> **登记日期**：2026-07-22 · 基线代码 **0.3.119** · 目标发版 **0.3.120**。  
+> **登记日期**：2026-07-22 · 代码线 **0.3.120**（手测 H1–H6 / 装包另跟）。  
 > **关联**：[030](030-🚧-ReportEditor结批占满CPU导致mappView白屏.md) · [034](034-🚧-ReportEditor全站架构复评-2026-07-22.md) · [003](003-⌛️-剩余任务与后续规划.md) · Plan [`0.3.120`](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.120.md)。
 
 ---
@@ -36,42 +36,38 @@
 
 ---
 
-# 🚧 进行中：阶段与进度
+# ✅ 代码已完成：阶段与进度（手测另跟）
 
 | 阶段 | 名称 | 内容 | 进度 | 预估版本 |
 |------|------|------|------|----------|
-| **A** | 模型 + 单测 + 文档 | `export-perf-tier` knobs；T1–T3/T5/T7；本看板与 Plan | ✅ **本提交完成** | 0.3.120 内 |
-| **B** | prefs 接线 + 迁移 | `exportPerfTier` 入 `reportGeneratorPrefsV1`；旧 engine→tier；导出读 profile | ⌛️ 待开工 | 0.3.120 |
-| **C** | UI 滑条 | `ReportGenerator` 替换双 Tab；档说明文案 | ⌛️ | 0.3.120 |
-| **D** | 运行时降载 | M8 按 `coexistPause`；main 预热池/yield/并行 hint | ⌛️ | 0.3.120 |
-| **E** | 契约 T6/T8 + 手测 H1–H6 | CI 契约绿；应用内手测勾选 | ⌛️ | 0.3.120 |
-| **F** | 发版收尾 | bump、007、装包说明；解挂 030 硬验收 **不在本看板强制** | ⌛️ | 0.3.120 |
+| **A** | 模型 + 单测 + 文档 | `export-perf-tier` knobs；T1–T3/T5/T7；本看板与 Plan | ✅ | 0.3.120 |
+| **B** | prefs 接线 + 迁移 | `exportPerfTier` 入 `reportGeneratorPrefsV1`；旧 engine→tier；导出读 profile | ✅ | 0.3.120 |
+| **C** | UI 滑条 | `ReportGenerator` 替换双 Tab；档说明文案 | ✅ | 0.3.120 |
+| **D** | 运行时降载 | M8 按 `coexistPause`；main 预热池/yield/并行 hint | ✅ | 0.3.120 |
+| **E** | 契约 T6/T8 + 手测 H1–H6 | CI 契约绿；应用内手测勾选 | ✅ 契约 · ⌛️ 手测 | 0.3.120 |
+| **F** | 发版收尾 | bump、007；解挂 030 硬验收 **不在本看板强制** | ✅ 代码发版 · ⌛️ 装包 | 0.3.120 |
 
 ### 进度勾选（随提交更新）
 
 - [x] 拍板：4 档、默认均衡  
 - [x] 看板 035 + Plan 0.3.120 + 003/034/030/todo 索引  
-- [x] 阶段 A：`export-perf-tier.ts` + T1/T2/T3/T5/T7 绿；T4/T6/T8 为 `it.todo`  
-- [ ] 阶段 B：prefs + 迁移落库  
-- [ ] 阶段 C：UI 滑条  
-- [ ] 阶段 D：main/渲染降载接线  
-- [ ] 阶段 E：T6/T8 契约由 skip→绿；手测 H1–H6  
-- [ ] 阶段 F：发版 0.3.120  
+- [x] 阶段 A：`export-perf-tier.ts` + T1/T2/T3/T5/T7 绿  
+- [x] 阶段 B：prefs + 迁移落库  
+- [x] 阶段 C：UI 滑条  
+- [x] 阶段 D：main/渲染降载接线  
+- [x] 阶段 E：T4/T6/T8 契约绿（手测 H1–H6 仍待应用内）  
+- [x] 阶段 F：bump 0.3.120 + 007（装包 SHA / 现场手测另跟）  
 
 ---
 
-# ⌛️ 未完成：开工计划（建议顺序）
+# ⌛️ 未完成：应用内手测（H1–H6）
 
-> **原则**：先可测模型，再 prefs，再 UI，最后 main 降载；禁止先改 UI 无映射表。
+> 代码日序 D0–D5 已完成；下方为现场/桌面手测清单。
 
 | 日序 | 步骤 | 产出 | 退出标准 |
 |------|------|------|----------|
-| D0 | 本文档 + 阶段 A 模块/单测 | `export-perf-tier.*` CI 绿 | T1–T3、T7 绿；迁移纯函数测绿 |
-| D1 | 阶段 B | prefs 含 `exportPerfTier`；load 默认 2；旧 chromium→2、pdf-lib→0 | T4、T5 绿 |
-| D2 | 阶段 C | 滑条 UI；去掉双 Tab | 手测 H1；T8 契约绿 |
-| D3 | 阶段 D | 导出/自动结批/`main` 读 profile；M8 降载 | T6 契约绿；H4/H5 |
-| D4 | 阶段 E | 手测 H2/H3/H6 记录；修文案 | 034/035 手测勾选 |
-| D5 | 阶段 F | bump 0.3.120 + 007 notes | 推送 origin |
+| D0–D5 | A–F 代码 | 模型/prefs/UI/降载/契约/bump | ✅ 0.3.120 |
+| H | 手测 H1–H6 | 勾选本看板手测表 | 默认均衡 + 档质感 + 降载 + mappView 抽测 |
 
 **负责人**：本仓库 Agent/开发共用本看板勾选；现场 mappView 手测需工控机。
 
@@ -86,11 +82,11 @@
 | **T1** | A | `normalizeExportPerfTier`：`undefined`/非法 → **2**；0–3 原样 | ✅ 阶段 A | `export-perf-tier.test.ts` |
 | **T2** | A | 四档 knobs 冻结（engine/pool/parallel/yield/coexist/pdfQuality） | ✅ 阶段 A | 同上 |
 | **T3** | A | `resolveExportPerfProfile(2)`：默认档、chromium、预览级、`isDefault` | ✅ 阶段 A | 同上 |
-| **T4** | B | 新装 prefs 无 key → tier=2；读写 round-trip | ⌛️ | `report-generator-prefs.test.ts` |
-| **T5** | A/B | 迁移：`pdf-lib`→0；`chromium`→2；已有 tier 不覆盖 | ✅ 纯函数 A；prefs 接线 B | `export-perf-tier.test.ts` + prefs |
-| **T6** | D/E | 手动/自动结批 engine 来自 `resolveExportPerfProfile` | ⌛️（先 `it.todo`） | 契约测 |
-| **T7** | A | `shouldPauseCoexistTasks`：导出中+full→true；basic/未导出→false | ✅ 阶段 A | `export-perf-tier.test.ts` |
-| **T8** | C/E | UI 有 `exportPerfTier` 步进控件；无同机/版式双 Tab | ⌛️（先 `it.todo`） | 契约测 |
+| **T4** | B | 新装 prefs 无 key → tier=2；读写 round-trip | ✅ | `report-generator-prefs.test.ts` |
+| **T5** | A/B | 迁移：`pdf-lib`→0；`chromium`→2；已有 tier 不覆盖 | ✅ | `export-perf-tier.test.ts` + prefs |
+| **T6** | D/E | 手动/自动结批 engine 来自 `resolveExportPerfProfile` | ✅ | `export-perf-tier-contracts.test.ts` |
+| **T7** | A | `shouldPauseCoexistTasks`：导出中+full→true；basic/未导出→false | ✅ | `export-perf-tier.test.ts` |
+| **T8** | C/E | UI 有 `exportPerfTier` 步进控件；无同机/版式双 Tab | ✅ | `export-perf-tier-contracts.test.ts` |
 
 ## 手测（应用内）
 

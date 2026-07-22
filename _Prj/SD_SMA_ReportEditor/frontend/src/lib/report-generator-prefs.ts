@@ -30,7 +30,13 @@ import {
   AUTO_EXPORT_MAX_PARALLEL_DEFAULT,
   clampAutoExportMaxParallel,
 } from "@/lib/auto-export-status-codes";
-import { applyPreviewLevelPdfDefaultMigration } from "@/lib/pdf-export-engine";
+import {
+  DEFAULT_EXPORT_PERF_TIER,
+  migrateExportPerfTierFromLegacy,
+  normalizeExportPerfTier,
+  resolveExportPerfProfile,
+  type ExportPerfTier,
+} from "@/lib/export-perf-tier";
 
 
 
@@ -137,8 +143,13 @@ export interface ReportGeneratorPrefs {
   manualOpenAfter: boolean;
 
   /**
-   * 导出模式（030 / 034 M11）：chromium=版式优先（默认/交付）；pdf-lib=同机优先（草稿）。
-   * 自动/手动导出共用。
+   * 导出性能档位（035）：0 最省机 … 2 均衡（默认）… 3 最快。
+   * 由档位解析 engine / 预热 / 降载等；`pdfExportEngine` 与档位同步保留兼容。
+   */
+  exportPerfTier: ExportPerfTier;
+
+  /**
+   * 与 exportPerfTier 同步的引擎（兼容旧审计/代码路径）。
    */
   pdfExportEngine: "pdf-lib" | "chromium";
 
@@ -206,7 +217,9 @@ export const defaultReportGeneratorPrefs = (): ReportGeneratorPrefs => ({
 
   manualOpenAfter: false,
 
-  pdfExportEngine: "chromium",
+  exportPerfTier: DEFAULT_EXPORT_PERF_TIER,
+
+  pdfExportEngine: resolveExportPerfProfile(DEFAULT_EXPORT_PERF_TIER).engine,
 
   exportResultOpc: defaultExportResultOpcFeedback(),
 
@@ -370,13 +383,17 @@ function parseStoredPrefs(o: StoredPrefs, base: ReportGeneratorPrefs): ReportGen
       typeof o.autoFileNameOpcNodeId === "string" ? o.autoFileNameOpcNodeId : base.autoFileNameOpcNodeId,
     autoFileNameOpcAppendHash: fileNameAppendHash,
     manualOpenAfter: Boolean(o.manualOpenAfter),
-    pdfExportEngine: (() => {
-      const raw = String(o.pdfExportEngine || "")
-        .trim()
-        .toLowerCase();
-      if (raw === "pdf-lib" || raw === "pdflib" || raw === "vector") return "pdf-lib";
-      // 缺省 / chromium / printtopdf → 预览级交付
-      return "chromium";
+    ...(() => {
+      const mig = migrateExportPerfTierFromLegacy({
+        exportPerfTier: (o as { exportPerfTier?: unknown }).exportPerfTier,
+        pdfExportEngine: o.pdfExportEngine,
+      });
+      const tier = normalizeExportPerfTier(mig.tier);
+      const profile = resolveExportPerfProfile(tier);
+      return {
+        exportPerfTier: tier,
+        pdfExportEngine: profile.engine,
+      };
     })(),
     exportResultOpc,
     exportResultOpcByTemplateId: parseExportResultOpcByTemplateId(
@@ -406,18 +423,21 @@ export function loadReportGeneratorPrefs(): ReportGeneratorPrefs {
   const base = defaultReportGeneratorPrefs();
   try {
     const raw = localStorage.getItem(LS_KEY);
-    const loaded = raw
-      ? parseStoredPrefs(JSON.parse(raw) as StoredPrefs, base)
-      : base;
-    // 034 M11：旧默认同机优先一次性迁到版式优先（预览级交付）
-    const mig = applyPreviewLevelPdfDefaultMigration(loaded);
-    if (mig.changed) {
-      saveReportGeneratorPrefs(mig.prefs);
-    }
-    return mig.prefs;
+    if (!raw) return base;
+    return parseStoredPrefs(JSON.parse(raw) as StoredPrefs, base);
   } catch {
     return base;
   }
+}
+
+/** 按档位同步 engine（保存前调用，避免 UI 只改 tier 时引擎落后） */
+export function syncPrefsFromExportPerfTier(p: ReportGeneratorPrefs): ReportGeneratorPrefs {
+  const profile = resolveExportPerfProfile(p.exportPerfTier);
+  return {
+    ...p,
+    exportPerfTier: profile.tier,
+    pdfExportEngine: profile.engine,
+  };
 }
 
 /** 从配置包中的 report_generator 字段恢复本机偏好 */
@@ -505,17 +525,11 @@ export function defaultBindingExportResultOpcFeedback(): ExportResultOpcFeedback
 
 
 export function saveReportGeneratorPrefs(p: ReportGeneratorPrefs): void {
-
   try {
-
-    localStorage.setItem(LS_KEY, JSON.stringify(p));
-
+    localStorage.setItem(LS_KEY, JSON.stringify(syncPrefsFromExportPerfTier(p)));
   } catch {
-
     /* ignore */
-
   }
-
 }
 
 

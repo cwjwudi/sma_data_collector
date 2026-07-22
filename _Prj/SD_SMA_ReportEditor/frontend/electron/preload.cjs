@@ -25,6 +25,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   /** 设置 PDF 导出最大并行数（主进程限制为 1..16） */
   setPdfExportMaxParallel: (max) => ipcRenderer.invoke('pdf-export-set-max-parallel', { max }),
 
+  /** 035：按导出性能档位设置预热池 / yield / 并行 */
+  setPdfExportPerfProfile: (opts) => ipcRenderer.invoke('pdf-export-set-perf-profile', opts || {}),
+
   /** 使用系统默认应用打开路径（PDF 文件等） */
   shellOpenPath: (filePath) => ipcRenderer.invoke('shell-open-path', filePath),
 

@@ -24,8 +24,10 @@ interface Window {
       openAfter?: boolean;
       /** 取消用；缺省时主进程生成 */
       jobId?: string;
-      /** pdf-lib=同机优先；chromium=版式优先 */
+      /** pdf-lib=最省机草稿；chromium=预览级 */
       engine?: "pdf-lib" | "chromium";
+      /** 035：分卷 yield（ms），来自导出性能档位 */
+      yieldMs?: number;
     }) => Promise<{
       ok: boolean;
       filePath: string;
@@ -49,6 +51,15 @@ interface Window {
     setPdfExportMaxParallel: (
       max: number,
     ) => Promise<{ max: number; cpuBudget?: number; logicalCores?: number }>;
+    setPdfExportPerfProfile?: (opts: {
+      prewarmPoolSize?: number;
+      yieldMs?: number;
+      maxParallel?: number;
+    }) => Promise<{
+      prewarmPoolSize: number;
+      yieldMs: number;
+      maxParallel: number;
+    }>;
     shellOpenPath: (filePath: string) => Promise<{ ok: boolean; error?: string }>;
     pathJoin: (...parts: string[]) => Promise<string>;
     getBundledCjkFont?: (opts?: {

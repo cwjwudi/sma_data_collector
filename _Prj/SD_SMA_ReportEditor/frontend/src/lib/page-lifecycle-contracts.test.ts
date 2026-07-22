@@ -236,18 +236,16 @@ describe("032 page lifecycle contracts", () => {
     expect(ui).toMatch(/export function requestCancelPdfExport/);
   });
 
-  it("M11: 默认 PDF 引擎为 chromium（预览级交付）", () => {
-    const eng = read("lib/pdf-export-engine.ts");
-    expect(eng).toMatch(/return "chromium"/);
-    expect(eng).toMatch(/PDF_EXPORT_PREVIEW_DEFAULT_MIGRATE_KEY/);
+  it("M11/035: 默认导出性能档为均衡（chromium 预览级）", () => {
+    const tier = read("lib/export-perf-tier.ts");
+    expect(tier).toMatch(/DEFAULT_EXPORT_PERF_TIER:\s*ExportPerfTier\s*=\s*2/);
+    expect(tier).toMatch(/label:\s*"均衡"/);
     const prefs = read("lib/report-generator-prefs.ts");
-    expect(prefs).toMatch(/pdfExportEngine:\s*["']chromium["']/);
-    expect(prefs).toMatch(/applyPreviewLevelPdfDefaultMigration/);
+    expect(prefs).toMatch(/exportPerfTier:\s*DEFAULT_EXPORT_PERF_TIER/);
     const main = readFileSync(join(frontendRoot, "electron/main.cjs"), "utf8");
-    // 显式 pdf-lib 才走草稿；缺省走 chromium
     expect(main).toMatch(/engineNorm === 'pdf-lib'/);
     const rg = read("views/ReportGenerator.vue");
-    expect(rg).toMatch(/同机优先（草稿）/);
-    expect(rg).toMatch(/不可作现场交付/);
+    expect(rg).toMatch(/exportPerfTier/);
+    expect(rg).toMatch(/resolveExportPerfProfile/);
   });
 });

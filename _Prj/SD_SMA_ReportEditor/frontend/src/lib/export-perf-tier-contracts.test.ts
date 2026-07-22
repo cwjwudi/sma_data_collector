@@ -1,5 +1,5 @@
 /**
- * 035 阶段 C/D/E 契约：阶段 A 先以 todo 占位，接线后改为正式断言。
+ * 035 契约：档位模型 + prefs/UI/导出接线门禁
  */
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
@@ -12,6 +12,7 @@ import {
 
 const here = dirname(fileURLToPath(import.meta.url));
 const srcRoot = join(here, "..");
+const frontendRoot = join(here, "../..");
 
 function read(rel: string): string {
   return readFileSync(join(srcRoot, rel), "utf8");
@@ -27,12 +28,39 @@ describe("export-perf-tier contracts (035)", () => {
     expect(mod).toMatch(/export function shouldPauseCoexistTasks/);
   });
 
-  // 阶段 B：prefs 接线后启用
-  it.todo("T4: reportGeneratorPrefs default exportPerfTier=2 and round-trip");
+  it("T4: prefs default exportPerfTier=2", () => {
+    const prefs = read("lib/report-generator-prefs.ts");
+    expect(prefs).toMatch(/exportPerfTier:\s*DEFAULT_EXPORT_PERF_TIER|exportPerfTier:\s*2/);
+    expect(prefs).toMatch(/migrateExportPerfTierFromLegacy/);
+    expect(prefs).toMatch(/syncPrefsFromExportPerfTier/);
+  });
 
-  // 阶段 D：导出接线后启用
-  it.todo("T6: ReportGenerator / auto-export resolve engine via resolveExportPerfProfile");
+  it("T6: ReportGenerator / auto-export resolve engine via resolveExportPerfProfile", () => {
+    const rg = read("views/ReportGenerator.vue");
+    expect(rg).toMatch(/resolveExportPerfProfile/);
+    expect(rg).toMatch(/exportProfile\.engine|exportPerfProfile/);
+    expect(rg).toMatch(/yieldMs:\s*exportProfile\.yieldMs/);
+    const auto = read("lib/report-auto-export-trigger-service.ts");
+    expect(auto).toMatch(/resolveExportPerfProfile/);
+    expect(auto).toMatch(/engine:\s*exportProfile\.engine/);
+    expect(auto).toMatch(/beginExportCoexistSession/);
+  });
 
-  // 阶段 C：UI 滑条后启用
-  it.todo("T8: ReportGenerator stepped exportPerfTier control; dual engine tabs removed");
+  it("T8: ReportGenerator stepped exportPerfTier control; dual engine tabs removed", () => {
+    const rg = read("views/ReportGenerator.vue");
+    expect(rg).toMatch(/exportPerfTier/);
+    expect(rg).toMatch(/rg-export-perf-tier|rg-perf-tier__range/);
+    expect(rg).toMatch(/type="range"/);
+    expect(rg).not.toMatch(/同机优先（草稿）/);
+    expect(rg).not.toMatch(/prefs\.pdfExportEngine\s*=\s*['"]chromium['"]/);
+  });
+
+  it("main exposes pdf-export-set-perf-profile and uses yieldMs", () => {
+    const main = readFileSync(join(frontendRoot, "electron/main.cjs"), "utf8");
+    expect(main).toMatch(/pdf-export-set-perf-profile/);
+    expect(main).toMatch(/pdfExportPrewarmPoolSize/);
+    expect(main).toMatch(/jobYieldMs/);
+    const preload = readFileSync(join(frontendRoot, "electron/preload.cjs"), "utf8");
+    expect(preload).toMatch(/setPdfExportPerfProfile/);
+  });
 });

@@ -182,36 +182,43 @@
               >▸</span
             >
             <span class="rg-lbl rg-lbl--inline">高级设置</span>
-            <span class="rg-mini rg-advanced-hint">导出模式 · 并行上限 · 保存目录 · 文件名</span>
+            <span class="rg-mini rg-advanced-hint">导出性能 · 并行上限 · 保存目录 · 文件名</span>
           </button>
           <div v-show="advancedAutoExpanded" class="rg-advanced-body">
-            <div class="rg-row rg-row--in-panel">
-              <span class="rg-lbl" id="rg-export-mode-lbl">导出模式（手动与自动共用）</span>
-              <div class="rg-tabs" role="radiogroup" aria-labelledby="rg-export-mode-lbl">
-                <button
-                  type="button"
-                  role="radio"
-                  class="rg-tab"
-                  :class="{ 'rg-tab--on': prefs.pdfExportEngine === 'chromium' }"
-                  :aria-checked="prefs.pdfExportEngine === 'chromium'"
-                  @click="prefs.pdfExportEngine = 'chromium'"
-                >
-                  版式优先
-                </button>
-                <button
-                  type="button"
-                  role="radio"
-                  class="rg-tab"
-                  :class="{ 'rg-tab--on': prefs.pdfExportEngine === 'pdf-lib' }"
-                  :aria-checked="prefs.pdfExportEngine === 'pdf-lib'"
-                  @click="prefs.pdfExportEngine = 'pdf-lib'"
-                >
-                  同机优先（草稿）
-                </button>
+            <div class="rg-row rg-row--in-panel rg-row--perf-tier">
+              <span class="rg-lbl" id="rg-export-perf-lbl">导出性能（设备能力 · 手动与自动共用）</span>
+              <div class="rg-perf-tier" aria-labelledby="rg-export-perf-lbl">
+                <input
+                  id="rg-export-perf-tier"
+                  v-model.number="prefs.exportPerfTier"
+                  class="rg-perf-tier__range"
+                  type="range"
+                  min="0"
+                  max="3"
+                  step="1"
+                  list="rg-export-perf-ticks"
+                  :aria-valuetext="exportPerfProfile.label"
+                  @change="onExportPerfTierChange"
+                />
+                <datalist id="rg-export-perf-ticks">
+                  <option v-for="p in exportPerfProfiles" :key="p.tier" :value="p.tier" :label="p.label" />
+                </datalist>
+                <div class="rg-perf-tier__labels" aria-hidden="true">
+                  <span
+                    v-for="p in exportPerfProfiles"
+                    :key="`lbl-${p.tier}`"
+                    :class="{ 'rg-perf-tier__label--on': prefs.exportPerfTier === p.tier }"
+                  >{{ p.label }}{{ p.isDefault ? '（默认）' : '' }}</span>
+                </div>
               </div>
               <p class="rg-mini rg-mini--indent">
-                <strong>版式优先</strong>（默认 / 交付）：PDF 与编辑预览一致（Chromium printToPDF）；同机可能闪屏。
-                <strong>同机优先</strong>：草稿级版式（pdf-lib draft-v1），减轻 mappView 争用，<strong>不可作现场交付</strong>。
+                {{ exportPerfProfile.summary }}
+                <template v-if="exportPerfProfile.pdfQuality === 'draft'">
+                  <strong> 当前为草稿版式，非预览级交付。</strong>
+                </template>
+                生效：引擎 {{ exportPerfProfile.engine }} · 预热
+                {{ exportPerfProfile.prewarmPoolSize }} · yield {{ exportPerfProfile.yieldMs }}ms · 降载
+                {{ exportPerfProfile.coexistPause === 'full' ? '全开' : '基础' }}。
               </p>
             </div>
 
@@ -904,10 +911,22 @@ import {
   isPdfExportCancelledError,
   newPdfExportJobId,
 } from "@/lib/pdf-export-job";
+import {
+  listExportPerfProfiles,
+  normalizeExportPerfTier,
+  resolveExportPerfProfile,
+  type ExportPerfTier,
+} from "@/lib/export-perf-tier";
+import {
+  beginExportCoexistSession,
+  endExportCoexistSession,
+} from "@/lib/export-coexist-busy";
 
 defineOptions({ name: "ReportGenerator" });
 
 const { register: registerPageTask } = usePageLifecycle("ReportGenerator");
+
+const exportPerfProfiles = listExportPerfProfiles();
 
 /** 「生成报表」页用户可见固定用语（勿单独显示「结批」二字；PLC 信息节点标签见 exportResultOpcFeedback） */
 const RG_UI = {
@@ -920,6 +939,7 @@ const RG_STATUS_OPC_AUTO = `[${RG_UI.opcAuto}]`;
 const RG_STATUS_FEEDBACK = `[${RG_UI.feedback}]`;
 
 const prefs = ref<ReportGeneratorPrefs>(loadReportGeneratorPrefs());
+const exportPerfProfile = computed(() => resolveExportPerfProfile(prefs.value.exportPerfTier));
 const exportWatchDir = loadReportExportPrefs().watchDir;
 if (exportWatchDir && !prefs.value.autoExportDir) {
   prefs.value.autoExportDir = exportWatchDir;
@@ -1269,6 +1289,31 @@ function onMaxParallelChange(): void {
     autoStatus.value = `并行设置 ${prefs.value.auto.maxParallelExports}，本机 CPU 预算生效为 ${effective}`;
   }
   notifyReportAutoExportSettingsChanged();
+  void applyExportPerfProfileToMain();
+}
+
+function onExportPerfTierChange(): void {
+  const tier = normalizeExportPerfTier(prefs.value.exportPerfTier) as ExportPerfTier;
+  prefs.value.exportPerfTier = tier;
+  const profile = resolveExportPerfProfile(tier);
+  prefs.value.pdfExportEngine = profile.engine;
+  prefs.value.auto.maxParallelExports = clampAutoExportMaxParallel(profile.maxParallelHint);
+  notifyReportAutoExportSettingsChanged();
+  void applyExportPerfProfileToMain();
+}
+
+async function applyExportPerfProfileToMain(): Promise<void> {
+  const profile = resolveExportPerfProfile(prefs.value.exportPerfTier);
+  const api = window.electronAPI;
+  try {
+    await api?.setPdfExportPerfProfile?.({
+      prewarmPoolSize: profile.prewarmPoolSize,
+      yieldMs: profile.yieldMs,
+      maxParallel: resolveAutoExportMaxParallel(prefs.value.auto.maxParallelExports),
+    });
+  } catch {
+    /* 非 Electron 忽略 */
+  }
 }
 
 function openBindingFeedbackPick(bindingId: string, field: "status" | "message" | "path"): void {
@@ -1806,6 +1851,8 @@ async function onManualExport(): Promise<void> {
   manualHint.value = "正在检查数据源连接…";
   const startedAtMs = Date.now();
   const progressToastId = "batch-progress-manual";
+  const exportProfile = resolveExportPerfProfile(prefs.value.exportPerfTier);
+  beginExportCoexistSession(exportProfile.coexistPause);
   const stage = (text: string): void => {
     showAppToast(`[${RG_UI.manual}]\n${text}`, {
       id: progressToastId,
@@ -1863,7 +1910,8 @@ async function onManualExport(): Promise<void> {
       filePath,
       openAfter: false,
       jobId: exportJobId,
-      engine: prefs.value.pdfExportEngine === "chromium" ? "chromium" : "pdf-lib",
+      engine: exportProfile.engine,
+      yieldMs: exportProfile.yieldMs,
     });
     offProgress?.();
     offProgress = undefined;
@@ -1933,6 +1981,7 @@ async function onManualExport(): Promise<void> {
     offProgress?.();
     manualBusy.value = false;
     manualExportJobId.value = "";
+    endExportCoexistSession();
   }
 }
 
@@ -1955,6 +2004,7 @@ onMounted(() => {
   window.addEventListener("report-editor-config-imported", onConfigImported);
   window.addEventListener("report-editor-opcua-servers-changed", onOpcServersChanged);
   window.addEventListener("report-generator-prefs-updated", onExternalPrefsUpdated);
+  void applyExportPerfProfileToMain();
 });
 
 /** keep-alive：每次进入刷新模版/连接列表，保证下拉项与其它页新增内容同步；图表 tick 由 lifecycle resume */
@@ -2140,6 +2190,26 @@ onUnmounted(() => {
   margin: 0 0 0 4px;
   font-weight: normal;
   color: #a1a1aa;
+}
+.rg-perf-tier {
+  width: 100%;
+  max-width: 520px;
+}
+.rg-perf-tier__range {
+  width: 100%;
+  margin: 4px 0 8px;
+  accent-color: #2563eb;
+}
+.rg-perf-tier__labels {
+  display: flex;
+  justify-content: space-between;
+  gap: 4px;
+  font-size: 11px;
+  color: #71717a;
+}
+.rg-perf-tier__label--on {
+  color: #1d4ed8;
+  font-weight: 600;
 }
 .rg-advanced-body {
   margin-top: 8px;

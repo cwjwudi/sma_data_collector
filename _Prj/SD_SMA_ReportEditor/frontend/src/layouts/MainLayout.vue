@@ -130,6 +130,7 @@ import {
   invalidateTemplateSummariesCache,
 } from '@/lib/report-auto-export-trigger-service'
 import { disposePlcHeartbeat, initPlcHeartbeat } from '@/lib/plc-heartbeat-service'
+import { pdfExportCoexistPauseActive } from '@/lib/export-coexist-busy'
 import { loadSidebarCollapsed, saveSidebarCollapsed } from '@/lib/sidebar-layout-prefs'
 import { prefetchCoreCatalog } from '@/lib/prefetch-core'
 import sidebarFlurryUrl from '@/assets/backgrounds/sidebar-flurry.svg'
@@ -243,10 +244,16 @@ function stopNavDbHealthPolling() {
 
 function startNavDbHealthPolling() {
   stopNavDbHealthPolling()
+  // 035：结批期全开降载时暂停侧栏探活
+  if (pdfExportCoexistPauseActive.value) return
   if (route.path.startsWith('/datasource') || !navProbePrefs.enabled) return
   void probeAllConnectionsForNav()
   navDbHealthTimer = window.setInterval(() => {
-    if (!route.path.startsWith('/datasource') && navProbePrefs.enabled) {
+    if (
+      !pdfExportCoexistPauseActive.value &&
+      !route.path.startsWith('/datasource') &&
+      navProbePrefs.enabled
+    ) {
       void probeAllConnectionsForNav()
     }
   }, connectionProbeIntervalMs(navProbePrefs))
@@ -281,6 +288,11 @@ watch(
     startNavDbHealthPolling()
   },
 )
+
+watch(pdfExportCoexistPauseActive, (pause) => {
+  if (pause) stopNavDbHealthPolling()
+  else startNavDbHealthPolling()
+})
 
 function scheduleAutoUpdateCheck() {
   window.setTimeout(() => {

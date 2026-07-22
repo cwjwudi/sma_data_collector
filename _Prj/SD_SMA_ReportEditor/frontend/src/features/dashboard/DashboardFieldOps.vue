@@ -123,7 +123,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onActivated, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onActivated, onMounted, onUnmounted, ref, watch } from 'vue'
 import { usePageLifecycle } from '@/composables/usePageLifecycle'
 import AutoTriggerValueSparkline from '@/components/AutoTriggerValueSparkline.vue'
 import { fetchAuditEntries, formatAuditTime, type AuditEntry } from '@/lib/auditLog'
@@ -132,6 +132,7 @@ import {
   autoExportStatusLabel,
 } from '@/lib/auto-export-status-codes'
 import { resolveAutoExportMaxParallel } from '@/lib/export-cpu-budget'
+import { pdfExportCoexistPauseActive } from '@/lib/export-coexist-busy'
 import {
   isTriggerBindingActive,
   isTriggerBindingComplete,
@@ -151,7 +152,7 @@ import { listTemplateSummaries } from '@/api/templates'
 defineOptions({ name: 'DashboardFieldOps' })
 
 /** keep-alive 页名为 Dashboard；子组件仍收 activated/deactivated（032 P1-A） */
-const { register: registerPageTask } = usePageLifecycle('Dashboard')
+const { register: registerPageTask, isPageActive } = usePageLifecycle('Dashboard')
 
 const electronShell = typeof window !== 'undefined' && Boolean(window.electronAPI?.scanExportPdfs)
 
@@ -181,6 +182,11 @@ function stopOpsPoll(): void {
     pollTimer = null
   }
 }
+
+watch(pdfExportCoexistPauseActive, (pause) => {
+  if (pause) stopOpsPoll()
+  else if (isPageActive()) startOpsPoll()
+})
 
 registerPageTask({
   id: 'dashboard-ops-tick',

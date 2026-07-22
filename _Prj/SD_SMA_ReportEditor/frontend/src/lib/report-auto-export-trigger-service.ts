@@ -57,6 +57,11 @@ import {
   buildExportCancelToastAction,
   requestCancelPdfExport,
 } from "@/lib/pdf-export-cancel-ui";
+import { resolveExportPerfProfile } from "@/lib/export-perf-tier";
+import {
+  beginExportCoexistSession,
+  endExportCoexistSession,
+} from "@/lib/export-coexist-busy";
 
 const RG_UI = {
   opcAuto: "OPC UA 自动结批",
@@ -201,7 +206,13 @@ function syncBindingConfigKey(prefs: ReportGeneratorPrefs): void {
 }
 
 function syncElectronMaxParallel(prefs: ReportGeneratorPrefs): void {
+  const profile = resolveExportPerfProfile(prefs.exportPerfTier);
   const max = resolveAutoExportMaxParallel(prefs.auto.maxParallelExports);
+  void window.electronAPI?.setPdfExportPerfProfile?.({
+    prewarmPoolSize: profile.prewarmPoolSize,
+    yieldMs: profile.yieldMs,
+    maxParallel: max,
+  });
   void window.electronAPI?.setPdfExportMaxParallel?.(max);
 }
 
@@ -485,6 +496,7 @@ async function runAutoPdfExport(
   const dir = resolved.dir.trim();
   if (!dir) throw new Error(resolved.note || `未配置${RG_UI.opcAuto}保存目录`);
 
+  const exportProfile = resolveExportPerfProfile(prefs.exportPerfTier);
   const prepStartMs = Date.now();
   const tmeta = summaries.find((x) => x.id === tid);
   const built = await buildAutoExportFileName(prefs, tmeta?.name || tid);
@@ -528,7 +540,8 @@ async function runAutoPdfExport(
           filePath,
           openAfter: false,
           jobId: exportJobId,
-          engine: prefs.pdfExportEngine === "chromium" ? "chromium" : "pdf-lib",
+          engine: exportProfile.engine,
+          yieldMs: exportProfile.yieldMs,
         });
         break;
       } catch (e) {
@@ -601,6 +614,9 @@ async function executeBindingExport(job: QueuedExportJob): Promise<void> {
     object_id: templateId || undefined,
     detail: { bindingId, event: eventLabel, nodeId, serverId },
   });
+
+  const exportProfile = resolveExportPerfProfile(prefs.exportPerfTier);
+  beginExportCoexistSession(exportProfile.coexistPause);
 
   let fileName = "—";
   try {
@@ -753,6 +769,7 @@ async function executeBindingExport(job: QueuedExportJob): Promise<void> {
       });
     }
   } finally {
+    endExportCoexistSession();
     activeExportCount = Math.max(0, activeExportCount - 1);
     busyBindingIds.delete(bindingId);
     pumpExportQueue();

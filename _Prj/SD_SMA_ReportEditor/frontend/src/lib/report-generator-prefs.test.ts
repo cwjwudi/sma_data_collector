@@ -1,13 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   defaultBindingExportResultOpcFeedback,
+  defaultReportGeneratorPrefs,
   importReportGeneratorPrefsFromExport,
   loadReportGeneratorPrefs,
   resolveEffectiveOpcServerIdForBinding,
   resolveExportResultOpcForBinding,
+  saveReportGeneratorPrefs,
   type ReportGeneratorPrefs,
 } from "@/lib/report-generator-prefs";
 import { createAutoTriggerBinding } from "@/lib/auto-trigger-bindings";
+import { DEFAULT_EXPORT_PERF_TIER } from "@/lib/export-perf-tier";
 
 class MemoryStorage {
   private data = new Map<string, string>();
@@ -85,6 +88,33 @@ describe("report generator prefs", () => {
     expect(prefs.autoFileNameSegments).toContain("hash");
     expect(prefs.autoFileNameOpcServerId).toBe("srv-name");
     expect(prefs.autoFileNameOpcNodeId).toBe("ns=1;s=file_name");
+  });
+
+  it("T4: default exportPerfTier is 2 (均衡) and round-trips", () => {
+    expect(defaultReportGeneratorPrefs().exportPerfTier).toBe(DEFAULT_EXPORT_PERF_TIER);
+    expect(loadReportGeneratorPrefs().exportPerfTier).toBe(2);
+    const p = loadReportGeneratorPrefs();
+    p.exportPerfTier = 1;
+    saveReportGeneratorPrefs(p);
+    const again = loadReportGeneratorPrefs();
+    expect(again.exportPerfTier).toBe(1);
+    expect(again.pdfExportEngine).toBe("chromium");
+  });
+
+  it("T5: migrates legacy engine-only prefs to tier", () => {
+    storage.setItem(
+      "reportGeneratorPrefsV1",
+      JSON.stringify({ pdfExportEngine: "pdf-lib", auto: { enabled: false, bindings: [] } }),
+    );
+    expect(loadReportGeneratorPrefs().exportPerfTier).toBe(0);
+    expect(loadReportGeneratorPrefs().pdfExportEngine).toBe("pdf-lib");
+
+    storage.setItem(
+      "reportGeneratorPrefsV1",
+      JSON.stringify({ pdfExportEngine: "chromium", auto: { enabled: false, bindings: [] } }),
+    );
+    expect(loadReportGeneratorPrefs().exportPerfTier).toBe(2);
+    expect(loadReportGeneratorPrefs().pdfExportEngine).toBe("chromium");
   });
 
   it("resolves default OPC server and export feedback serverId fallback", () => {

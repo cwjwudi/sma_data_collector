@@ -66,7 +66,10 @@ const pdfExportSlotWaiters = []
 /** 导出进行中：整进程降为 Below Normal，给 mappView / Hypervisor 让核 */
 let pdfExportPriorityDepth = 0
 /** 分卷之间让出 CPU（ms），双核+虚拟化场景减轻 HMI 饿死 */
-const PDF_EXPORT_PART_YIELD_MS = 80
+/** 分卷 yield；可由渲染进程按导出性能档位覆盖（035） */
+let pdfExportPartYieldMs = 80
+/** 预热池目标大小；0 = 不预热（035 同机稳/最省机） */
+let pdfExportPrewarmPoolSize = 1
 
 function cpuBudgetMaxParallel(logicalCores) {
   const n = Math.max(1, Math.floor(Number(logicalCores) || 1))
@@ -1084,7 +1087,11 @@ function releasePdfExportWindow(win) {
 }
 
 function trimWarmPdfExportWindows() {
-  while (warmPdfWins.length > pdfExportMaxParallel) {
+  const cap =
+    pdfExportPrewarmPoolSize <= 0
+      ? 0
+      : Math.min(pdfExportPrewarmPoolSize, pdfExportMaxParallel, 2)
+  while (warmPdfWins.length > cap) {
     destroyPdfExportWindow(warmPdfWins.pop())
   }
 }
@@ -1103,7 +1110,11 @@ function ensurePdfExportWindowPrewarmed(refWc) {
   if (!mainWindow || mainWindow.isDestroyed()) return
   discardUnusableWarmPdfExportWindows()
   trimWarmPdfExportWindows()
-  const targetPoolSize = Math.min(2, pdfExportMaxParallel)
+  if (pdfExportPrewarmPoolSize <= 0) {
+    destroyWarmPdfExportWindows()
+    return
+  }
+  const targetPoolSize = Math.min(pdfExportPrewarmPoolSize, pdfExportMaxParallel, 2)
   while (warmPdfWins.length < targetPoolSize) {
     try {
       const win = createPdfExportWindow()
@@ -1142,6 +1153,31 @@ ipcMain.handle('pdf-export-set-max-parallel', (_event, opts) => {
   }
 })
 
+/** 035：按导出性能档位设置预热池 / 分卷 yield / 并行 */
+ipcMain.handle('pdf-export-set-perf-profile', (_event, opts) => {
+  const pool = Math.floor(Number(opts && opts.prewarmPoolSize))
+  if (Number.isFinite(pool) && pool >= 0) {
+    pdfExportPrewarmPoolSize = Math.min(4, pool)
+  }
+  const yieldMs = Math.floor(Number(opts && opts.yieldMs))
+  if (Number.isFinite(yieldMs) && yieldMs >= 0) {
+    pdfExportPartYieldMs = Math.min(2000, yieldMs)
+  }
+  const max = Math.floor(Number(opts && opts.maxParallel))
+  if (Number.isFinite(max) && max >= 1) {
+    pdfExportMaxParallel = resolvePdfExportMaxParallel(max)
+    drainPdfExportSlotWaiters()
+  }
+  trimWarmPdfExportWindows()
+  if (pdfExportPrewarmPoolSize <= 0) destroyWarmPdfExportWindows()
+  else ensurePdfExportWindowPrewarmed()
+  return {
+    prewarmPoolSize: pdfExportPrewarmPoolSize,
+    yieldMs: pdfExportPartYieldMs,
+    maxParallel: pdfExportMaxParallel,
+  }
+})
+
 ipcMain.handle('pdf-export-cancel', async (_event, opts) => {
   const jobId = opts && typeof opts.jobId === 'string' ? opts.jobId : ''
   if (!jobId) return { ok: false, error: '缺少 jobId' }
@@ -1163,6 +1199,11 @@ ipcMain.handle('pdf-export-run', async (event, opts) => {
       ? 'pdf-lib'
       : 'chromium'
   const exportMode = exportEngine === 'pdf-lib' ? 'coexist' : 'fidelity'
+  const jobYieldRaw = Math.floor(Number(opts && opts.yieldMs))
+  const jobYieldMs =
+    Number.isFinite(jobYieldRaw) && jobYieldRaw >= 0
+      ? Math.min(2000, jobYieldRaw)
+      : pdfExportPartYieldMs
   const jobId =
     opts && typeof opts.jobId === 'string' && opts.jobId.trim()
       ? opts.jobId.trim()
@@ -1424,7 +1465,7 @@ ipcMain.handle('pdf-export-run', async (event, opts) => {
       for (let partIndex = 1; partIndex < totalReports; partIndex++) {
         throwIfCancelled()
         // 030：分卷间隙让出 CPU，减轻 Hypervisor/同机 mappView 饿死
-        await yieldToOs(PDF_EXPORT_PART_YIELD_MS)
+        await yieldToOs(jobYieldMs)
         sendProgress({ phase: 'render', partIndex, totalReports })
         const part = await renderPart(partIndex)
         stats = mergeStats(stats, part.stats)
@@ -1642,7 +1683,11 @@ app.whenReady().then(async () => {
   setInterval(() => {
     if (!mainWindow || mainWindow.isDestroyed()) return
     const hasUnavailableWindow = warmPdfWins.some((win) => !isReusablePdfWindow(win))
-    if (hasUnavailableWindow || warmPdfWins.length < Math.min(2, pdfExportMaxParallel)) {
+    if (
+      pdfExportPrewarmPoolSize > 0 &&
+      (hasUnavailableWindow ||
+        warmPdfWins.length < Math.min(pdfExportPrewarmPoolSize, pdfExportMaxParallel, 2))
+    ) {
       log('PDF export warm window pool unavailable; re-prewarming')
       ensurePdfExportWindowPrewarmed(mainWindow.webContents)
     }

@@ -1,15 +1,15 @@
 {
-  "version": "0.3.119",
-  "releasedAt": "2026-07-22T09:17:25.898Z",
-  "notes": "Report Editor AI 0.3.119\n\n- 034：M1–M7 行为测补全\n- M11：默认版式优先（预览级 PDF）；同机优先标草稿非交付",
+  "version": "0.3.120",
+  "releasedAt": "2026-07-22T09:51:09.347Z",
+  "notes": "Report Editor AI 0.3.120\n\n- 导出性能 4 档步进滑条（默认均衡）\n- 结批同机降载（侧栏探活 / Dashboard / AI pending）\n- 按档预热池与 yield",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.119-x64.exe",
+      "url": "Report Editor AI-Setup-0.3.120-x64.exe",
       "sha256": "",
       "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.119-arm64.dmg",
+      "url": "Report Editor AI-0.3.120-arm64.dmg",
       "sha256": "",
       "size": 0
     }
