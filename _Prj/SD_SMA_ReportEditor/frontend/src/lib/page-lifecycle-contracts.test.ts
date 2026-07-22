@@ -236,10 +236,10 @@ describe("032 page lifecycle contracts", () => {
     expect(ui).toMatch(/export function requestCancelPdfExport/);
   });
 
-  it("M11/035: 默认导出性能档为均衡（chromium 预览级）", () => {
+  it("M11/035: 默认导出性能档为预览稳（chromium 预览级）", () => {
     const tier = read("lib/export-perf-tier.ts");
     expect(tier).toMatch(/DEFAULT_EXPORT_PERF_TIER:\s*ExportPerfTier\s*=\s*2/);
-    expect(tier).toMatch(/label:\s*"均衡"/);
+    expect(tier).toMatch(/label:\s*"预览稳"/);
     const prefs = read("lib/report-generator-prefs.ts");
     expect(prefs).toMatch(/exportPerfTier:\s*DEFAULT_EXPORT_PERF_TIER/);
     const main = readFileSync(join(frontendRoot, "electron/main.cjs"), "utf8");

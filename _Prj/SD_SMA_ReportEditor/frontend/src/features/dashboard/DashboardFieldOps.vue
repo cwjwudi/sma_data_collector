@@ -132,7 +132,7 @@ import {
   autoExportStatusLabel,
 } from '@/lib/auto-export-status-codes'
 import { resolveAutoExportMaxParallel } from '@/lib/export-cpu-budget'
-import { pdfExportCoexistPauseActive } from '@/lib/export-coexist-busy'
+import { uiSecondaryTasksPaused } from '@/lib/app-background-idle'
 import {
   isTriggerBindingActive,
   isTriggerBindingComplete,
@@ -173,6 +173,7 @@ let pollTimer: ReturnType<typeof setInterval> | null = null
 
 function startOpsPoll(): void {
   if (pollTimer != null) return
+  if (uiSecondaryTasksPaused.value) return
   pollTimer = setInterval(refreshLocal, 1000)
 }
 
@@ -183,7 +184,7 @@ function stopOpsPoll(): void {
   }
 }
 
-watch(pdfExportCoexistPauseActive, (pause) => {
+watch(uiSecondaryTasksPaused, (pause) => {
   if (pause) stopOpsPoll()
   else if (isPageActive()) startOpsPoll()
 })

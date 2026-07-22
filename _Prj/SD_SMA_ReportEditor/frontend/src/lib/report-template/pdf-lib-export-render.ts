@@ -1,6 +1,7 @@
 /**
- * 030 / 0.3.115：无 printToPDF 的草稿级矢量导出（策略 A：先零闪）。
- * 版式与 DOM 预览不完全 1:1；审计 layoutFidelity=draft-v1。
+ * 030 / 035：无 printToPDF 的 pdf-lib 导出。
+ * - draft-v1：流式仅内容（档 0）
+ * - layout-v2：坐标版式（档 1）
  */
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
 import fontkit from "@pdf-lib/fontkit";
@@ -22,6 +23,9 @@ import {
 import {
   templateTableSqlFillPreviewKey,
 } from "@/lib/report-template/table-sql-fill-preview";
+import { appendPdfLibLayoutV2Pages } from "@/lib/report-template/pdf-lib-layout-v2-render";
+
+export type PdfLibLayoutFidelity = "draft-v1" | "layout-v2";
 
 const BUNDLED_FONT_URLS: Record<BundledFontId, string[]> = {
   "noto-sans-sc": [
@@ -36,7 +40,7 @@ const BUNDLED_FONT_URLS: Record<BundledFontId, string[]> = {
 
 export type PdfLibExportMeta = {
   engine: "pdf-lib";
-  layoutFidelity: "draft-v1";
+  layoutFidelity: PdfLibLayoutFidelity;
   fontFamily: string;
   fontEmbedded: boolean;
   pageCount: number;
@@ -156,8 +160,12 @@ export async function renderPdfLibExportPart(opts: {
   fontBytesBase64?: string | null;
   /** 随包字体 id；默认 Noto Sans SC */
   bundledFontId?: BundledFontId | null;
+  /** 缺省 draft-v1；档 1 传 layout-v2 */
+  layoutFidelity?: PdfLibLayoutFidelity | string | null;
 }): Promise<{ bytes: Uint8Array; meta: PdfLibExportMeta }> {
   const t0 = Date.now();
+  const fidelity: PdfLibLayoutFidelity =
+    String(opts.layoutFidelity || "").toLowerCase() === "layout-v2" ? "layout-v2" : "draft-v1";
   const reports = buildExportPreviewReports(opts.tmpl, opts.previewValues, opts.reportPartIndex);
   const report = reports[0];
   if (!report) throw new Error("pdf-lib：无预览分卷");
@@ -176,6 +184,28 @@ export async function renderPdfLibExportPart(opts: {
   } else {
     font = await doc.embedFont(StandardFonts.Helvetica);
     fontFamily = "Helvetica (fallback)";
+  }
+
+  if (fidelity === "layout-v2") {
+    const pageCount = appendPdfLibLayoutV2Pages(doc, {
+      tmpl: opts.tmpl,
+      previewValues: report.previewValues,
+      font,
+      useWinAnsi: !fontEmbedded,
+    });
+    const bytes = await doc.save();
+    return {
+      bytes,
+      meta: {
+        engine: "pdf-lib",
+        layoutFidelity: "layout-v2",
+        fontFamily,
+        fontEmbedded,
+        pageCount,
+        pdfLibMs: Date.now() - t0,
+        printToPDFSkipped: true,
+      },
+    };
   }
   const useWinAnsi = !fontEmbedded;
   const { w: pageW, h: pageH } = paperSizePt(opts.tmpl);
@@ -319,6 +349,7 @@ export async function renderPdfLibExportPartBase64(opts: {
   reportPartIndex: number | null;
   fontBytesBase64?: string | null;
   bundledFontId?: BundledFontId | null;
+  layoutFidelity?: PdfLibLayoutFidelity | string | null;
 }): Promise<{ pdfBase64: string; meta: PdfLibExportMeta }> {
   const { bytes, meta } = await renderPdfLibExportPart(opts);
   let binary = "";

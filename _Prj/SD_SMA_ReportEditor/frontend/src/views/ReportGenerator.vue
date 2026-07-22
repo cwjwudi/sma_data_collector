@@ -194,7 +194,7 @@
                   class="rg-perf-tier__range"
                   type="range"
                   min="0"
-                  max="3"
+                  max="4"
                   step="1"
                   list="rg-export-perf-ticks"
                   :aria-valuetext="exportPerfProfile.label"
@@ -214,7 +214,10 @@
               <p class="rg-mini rg-mini--indent">
                 {{ exportPerfProfile.summary }}
                 <template v-if="exportPerfProfile.pdfQuality === 'draft'">
-                  <strong> 当前为草稿版式，非预览级交付。</strong>
+                  <strong> 当前为仅内容草稿，非预览级交付。</strong>
+                </template>
+                <template v-else-if="exportPerfProfile.pdfQuality === 'layout'">
+                  <strong> 当前为 pdf-lib 矢量版式（无 printToPDF），非像素级预览。</strong>
                 </template>
                 生效：引擎 {{ exportPerfProfile.engine }} · 预热
                 {{ exportPerfProfile.prewarmPoolSize }} · yield {{ exportPerfProfile.yieldMs }}ms · 降载
@@ -1911,6 +1914,7 @@ async function onManualExport(): Promise<void> {
       openAfter: false,
       jobId: exportJobId,
       engine: exportProfile.engine,
+      layoutFidelity: exportProfile.layoutFidelity,
       yieldMs: exportProfile.yieldMs,
     });
     offProgress?.();

@@ -65,11 +65,15 @@ let pdfExportActiveCount = 0
 const pdfExportSlotWaiters = []
 /** 导出进行中：整进程降为 Below Normal，给 mappView / Hypervisor 让核 */
 let pdfExportPriorityDepth = 0
+/** 主窗口后台降载优先级深度（与结批低优先级叠加） */
+let appBackgroundPriorityDepth = 0
+/** 主窗口是否处于后台（最小化 / 隐藏 / 失焦） */
+let appMainWindowBackgroundIdle = false
 /** 分卷之间让出 CPU（ms），双核+虚拟化场景减轻 HMI 饿死 */
 /** 分卷 yield；可由渲染进程按导出性能档位覆盖（035） */
 let pdfExportPartYieldMs = 80
-/** 预热池目标大小；0 = 不预热（035 同机稳/最省机） */
-let pdfExportPrewarmPoolSize = 1
+/** 预热池目标大小；0 = 不预热（035 档 0–2） */
+let pdfExportPrewarmPoolSize = 0
 
 function cpuBudgetMaxParallel(logicalCores) {
   const n = Math.max(1, Math.floor(Number(logicalCores) || 1))
@@ -103,6 +107,8 @@ function endPdfExportLowPriority() {
   if (pdfExportPriorityDepth <= 0) return
   pdfExportPriorityDepth -= 1
   if (pdfExportPriorityDepth !== 0) return
+  // 仍处于后台降载时保持 BelowNormal
+  if (appBackgroundPriorityDepth > 0) return
   try {
     const p = os.constants && os.constants.priority
     if (p && typeof os.setPriority === 'function') {
@@ -621,18 +627,31 @@ function createWindow() {
   // 主页面加载完成后预热导出窗口：结批时省去整套 SPA 冷启动
   mainWindow.webContents.once('did-finish-load', () => {
     ensurePdfExportWindowPrewarmed(mainWindow ? mainWindow.webContents : null)
+    publishAppResourceMode()
   })
+
+  // 035：后台/最小化时释放预热窗 + 通知渲染进程暂停次要轮询（不停自动结批）
+  const onActivity = () => syncMainWindowBackgroundIdle()
+  mainWindow.on('blur', onActivity)
+  mainWindow.on('focus', onActivity)
+  mainWindow.on('show', onActivity)
+  mainWindow.on('hide', onActivity)
+  mainWindow.on('minimize', onActivity)
+  mainWindow.on('restore', onActivity)
 
   if (silentStartSession) {
     mainWindow.on('close', (e) => {
       if (isQuitting) return
       e.preventDefault()
       mainWindow.hide()
+      syncMainWindowBackgroundIdle()
     })
   }
 
   mainWindow.on('closed', () => {
     mainWindow = null
+    appMainWindowBackgroundIdle = true
+    endAppBackgroundLowPriority()
     // 预热窗口是隐藏窗口：不销毁会阻止 window-all-closed，导致应用无法退出
     destroyWarmPdfExportWindows()
   })
@@ -1086,7 +1105,71 @@ function releasePdfExportWindow(win) {
   return false
 }
 
+function beginAppBackgroundLowPriority() {
+  appBackgroundPriorityDepth += 1
+  if (appBackgroundPriorityDepth !== 1) return
+  // 与结批低优先级共用 os.setPriority；已在结批中则深度叠加即可
+  try {
+    const p = os.constants && os.constants.priority
+    if (p && typeof os.setPriority === 'function') {
+      os.setPriority(0, p.PRIORITY_BELOW_NORMAL)
+    }
+  } catch (e) {
+    log(`background setPriority 失败（忽略）：${e.message}`)
+  }
+}
+
+function endAppBackgroundLowPriority() {
+  if (appBackgroundPriorityDepth <= 0) return
+  appBackgroundPriorityDepth -= 1
+  if (appBackgroundPriorityDepth !== 0) return
+  if (pdfExportPriorityDepth > 0) return
+  try {
+    const p = os.constants && os.constants.priority
+    if (p && typeof os.setPriority === 'function') {
+      os.setPriority(0, p.PRIORITY_NORMAL)
+    }
+  } catch (e) {
+    log(`background restore priority 失败（忽略）：${e.message}`)
+  }
+}
+
+function publishAppResourceMode() {
+  if (!mainWindow || mainWindow.isDestroyed()) return
+  try {
+    mainWindow.webContents.send('app-resource-mode', {
+      mode: appMainWindowBackgroundIdle ? 'background' : 'foreground',
+    })
+  } catch {
+    /* ignore */
+  }
+}
+
+function syncMainWindowBackgroundIdle() {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    appMainWindowBackgroundIdle = true
+    return
+  }
+  const idle =
+    !mainWindow.isVisible() || mainWindow.isMinimized() || !mainWindow.isFocused()
+  if (idle === appMainWindowBackgroundIdle) return
+  appMainWindowBackgroundIdle = idle
+  if (idle) {
+    // 后台：立刻拆掉空闲预热窗（进行中的导出窗不在 warm 池）
+    destroyWarmPdfExportWindows()
+    beginAppBackgroundLowPriority()
+  } else {
+    endAppBackgroundLowPriority()
+    ensurePdfExportWindowPrewarmed(mainWindow.webContents)
+  }
+  publishAppResourceMode()
+}
+
 function trimWarmPdfExportWindows() {
+  if (appMainWindowBackgroundIdle) {
+    destroyWarmPdfExportWindows()
+    return
+  }
   const cap =
     pdfExportPrewarmPoolSize <= 0
       ? 0
@@ -1108,6 +1191,10 @@ function discardUnusableWarmPdfExportWindows() {
 /** 空闲时预热少量导出窗口，失败静默不影响导出。 */
 function ensurePdfExportWindowPrewarmed(refWc) {
   if (!mainWindow || mainWindow.isDestroyed()) return
+  if (appMainWindowBackgroundIdle) {
+    destroyWarmPdfExportWindows()
+    return
+  }
   discardUnusableWarmPdfExportWindows()
   trimWarmPdfExportWindows()
   if (pdfExportPrewarmPoolSize <= 0) {
@@ -1241,8 +1328,19 @@ ipcMain.handle('pdf-export-run', async (event, opts) => {
       }
 
       /** seq 保证 hash 每次都变化：热切换时可靠触发导出页的路由监听重新取数 */
+      const layoutFidelityRaw = opts && opts.layoutFidelity
+      const layoutFidelity =
+        exportEngine === 'pdf-lib' &&
+        String(layoutFidelityRaw || '')
+          .trim()
+          .toLowerCase() === 'layout-v2'
+          ? 'layout-v2'
+          : exportEngine === 'pdf-lib'
+            ? 'draft-v1'
+            : 'print-to-pdf'
+
       function partHash(partIndex) {
-        return `#/pdf-export?templateId=${encodeURIComponent(templateId)}&reportPartIndex=${partIndex}&engine=${encodeURIComponent(exportEngine)}&seq=${Date.now()}`
+        return `#/pdf-export?templateId=${encodeURIComponent(templateId)}&reportPartIndex=${partIndex}&engine=${encodeURIComponent(exportEngine)}&layoutFidelity=${encodeURIComponent(layoutFidelity)}&seq=${Date.now()}`
       }
 
       // 优先复用预热窗口：SPA 已启动，进入取数只差一次 hash 切换
@@ -1682,6 +1780,7 @@ app.whenReady().then(async () => {
   // 定期检查并重建，保证下一次结批仍能热启动
   setInterval(() => {
     if (!mainWindow || mainWindow.isDestroyed()) return
+    if (appMainWindowBackgroundIdle) return
     const hasUnavailableWindow = warmPdfWins.some((win) => !isReusablePdfWindow(win))
     if (
       pdfExportPrewarmPoolSize > 0 &&

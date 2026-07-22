@@ -1,15 +1,15 @@
 {
-  "version": "0.3.120",
-  "releasedAt": "2026-07-22T09:51:09.347Z",
-  "notes": "Report Editor AI 0.3.120\n\n- 导出性能 4 档步进滑条（默认均衡）\n- 结批同机降载（侧栏探活 / Dashboard / AI pending）\n- 按档预热池与 yield",
+  "version": "0.3.121",
+  "releasedAt": "2026-07-22T10:16:49.558Z",
+  "notes": "Report Editor AI 0.3.121\n\n- 导出性能五档（默认预览稳）\n- pdf-lib 矢量版式 layout-v2\n- 后台释放预热窗与次要轮询",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.120-x64.exe",
+      "url": "Report Editor AI-Setup-0.3.121-x64.exe",
       "sha256": "",
       "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.120-arm64.dmg",
+      "url": "Report Editor AI-0.3.121-arm64.dmg",
       "sha256": "",
       "size": 0
     }

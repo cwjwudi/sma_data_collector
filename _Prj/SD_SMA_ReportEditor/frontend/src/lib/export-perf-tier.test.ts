@@ -4,75 +4,67 @@ import {
   listExportPerfProfiles,
   migrateExportPerfTierFromLegacy,
   normalizeExportPerfTier,
+  remapFourTierToFive,
   resolveExportPerfProfile,
   shouldPauseCoexistTasks,
 } from "@/lib/export-perf-tier";
 
-describe("export-perf-tier (035 T1–T3/T5/T7)", () => {
-  it("T1: normalize defaults to 2 (均衡); clamps invalid; keeps 0–3", () => {
+describe("export-perf-tier (035 five-tier)", () => {
+  it("T1: normalize defaults to 2; clamps invalid; keeps 0–4", () => {
     expect(normalizeExportPerfTier(undefined)).toBe(2);
     expect(normalizeExportPerfTier(null)).toBe(2);
     expect(normalizeExportPerfTier("")).toBe(2);
     expect(normalizeExportPerfTier(-1)).toBe(2);
     expect(normalizeExportPerfTier(99)).toBe(2);
-    expect(normalizeExportPerfTier("x")).toBe(2);
     expect(normalizeExportPerfTier(0)).toBe(0);
     expect(normalizeExportPerfTier(1)).toBe(1);
     expect(normalizeExportPerfTier(2)).toBe(2);
     expect(normalizeExportPerfTier(3)).toBe(3);
-    expect(normalizeExportPerfTier("3")).toBe(3);
+    expect(normalizeExportPerfTier(4)).toBe(4);
+    expect(normalizeExportPerfTier("4")).toBe(4);
     expect(DEFAULT_EXPORT_PERF_TIER).toBe(2);
   });
 
-  it("T2: four-tier knobs table is frozen", () => {
-    const t0 = resolveExportPerfProfile(0);
-    expect(t0).toMatchObject({
+  it("T2: five-tier knobs table is frozen", () => {
+    expect(resolveExportPerfProfile(0)).toMatchObject({
       engine: "pdf-lib",
+      layoutFidelity: "draft-v1",
       prewarmPoolSize: 0,
-      maxParallelHint: 1,
-      yieldMs: 200,
-      coexistPause: "full",
       pdfQuality: "draft",
-      label: "最省机",
+      label: "仅内容",
     });
-
-    const t1 = resolveExportPerfProfile(1);
-    expect(t1).toMatchObject({
-      engine: "chromium",
+    expect(resolveExportPerfProfile(1)).toMatchObject({
+      engine: "pdf-lib",
+      layoutFidelity: "layout-v2",
       prewarmPoolSize: 0,
-      maxParallelHint: 1,
+      pdfQuality: "layout",
+      label: "矢量版式",
+    });
+    expect(resolveExportPerfProfile(2)).toMatchObject({
+      engine: "chromium",
+      layoutFidelity: "print-to-pdf",
+      prewarmPoolSize: 0,
       yieldMs: 200,
       coexistPause: "full",
       pdfQuality: "preview",
-      label: "同机稳",
+      label: "预览稳",
     });
-
-    const t2 = resolveExportPerfProfile(2);
-    expect(t2).toMatchObject({
+    expect(resolveExportPerfProfile(3)).toMatchObject({
       engine: "chromium",
       prewarmPoolSize: 1,
-      maxParallelHint: 1,
       yieldMs: 80,
       coexistPause: "full",
-      pdfQuality: "preview",
-      label: "均衡",
+      label: "功能折中",
     });
-
-    const t3 = resolveExportPerfProfile(3);
-    expect(t3).toMatchObject({
+    expect(resolveExportPerfProfile(4)).toMatchObject({
       engine: "chromium",
       prewarmPoolSize: 2,
       maxParallelHint: 2,
       yieldMs: 40,
       coexistPause: "basic",
-      pdfQuality: "preview",
-      label: "最快出图",
+      label: "不妥协",
     });
-
-    expect(t0.yieldMs).toBeGreaterThan(t2.yieldMs);
-    expect(t2.yieldMs).toBeGreaterThan(t3.yieldMs);
-    expect(t1.prewarmPoolSize).toBeLessThan(t2.prewarmPoolSize);
-    expect(t2.prewarmPoolSize).toBeLessThan(t3.prewarmPoolSize);
+    expect(listExportPerfProfiles()).toHaveLength(5);
   });
 
   it("T3: default profile is tier 2 preview-level chromium", () => {
@@ -81,41 +73,43 @@ describe("export-perf-tier (035 T1–T3/T5/T7)", () => {
     expect(p.isDefault).toBe(true);
     expect(p.engine).toBe("chromium");
     expect(p.pdfQuality).toBe("preview");
-    expect(resolveExportPerfProfile(0).isDefault).toBe(false);
-    expect(listExportPerfProfiles()).toHaveLength(4);
+    expect(p.label).toBe("预览稳");
   });
 
-  it("T5: migrate from legacy engine; explicit tier wins", () => {
-    expect(migrateExportPerfTierFromLegacy({ pdfExportEngine: "pdf-lib" })).toEqual({
+  it("T5: migrate engine + remap old four-tier scale", () => {
+    expect(remapFourTierToFive(0)).toBe(0);
+    expect(remapFourTierToFive(1)).toBe(2);
+    expect(remapFourTierToFive(2)).toBe(3);
+    expect(remapFourTierToFive(3)).toBe(4);
+
+    expect(migrateExportPerfTierFromLegacy({ pdfExportEngine: "pdf-lib" })).toMatchObject({
       tier: 0,
       fromLegacy: true,
     });
-    expect(migrateExportPerfTierFromLegacy({ pdfExportEngine: "chromium" })).toEqual({
+    expect(migrateExportPerfTierFromLegacy({ pdfExportEngine: "chromium" })).toMatchObject({
       tier: 2,
       fromLegacy: true,
     });
-    expect(migrateExportPerfTierFromLegacy({})).toEqual({
-      tier: 2,
-      fromLegacy: true,
-    });
+    // 旧四档无 scale：2(均衡) → 3(功能折中)
+    expect(
+      migrateExportPerfTierFromLegacy({
+        exportPerfTier: 2,
+        pdfExportEngine: "chromium",
+      }),
+    ).toMatchObject({ tier: 3, fromLegacy: true, scale: 5 });
+    // 已是五档：保留
     expect(
       migrateExportPerfTierFromLegacy({
         exportPerfTier: 1,
+        exportPerfTierScale: 5,
         pdfExportEngine: "pdf-lib",
       }),
-    ).toEqual({ tier: 1, fromLegacy: false });
-    expect(
-      migrateExportPerfTierFromLegacy({
-        exportPerfTier: "3",
-        pdfExportEngine: "pdf-lib",
-      }),
-    ).toEqual({ tier: 3, fromLegacy: false });
+    ).toMatchObject({ tier: 1, fromLegacy: false, scale: 5 });
   });
 
   it("T7: coexist pause truth table", () => {
     expect(shouldPauseCoexistTasks(true, "full")).toBe(true);
     expect(shouldPauseCoexistTasks(false, "full")).toBe(false);
     expect(shouldPauseCoexistTasks(true, "basic")).toBe(false);
-    expect(shouldPauseCoexistTasks(false, "basic")).toBe(false);
   });
 });

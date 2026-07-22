@@ -28,6 +28,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   /** 035：按导出性能档位设置预热池 / yield / 并行 */
   setPdfExportPerfProfile: (opts) => ipcRenderer.invoke('pdf-export-set-perf-profile', opts || {}),
 
+  /** 035：主窗口后台/前台资源模式（裁剪预热窗 + 渲染进程次要轮询） */
+  onAppResourceMode: (listener) => {
+    const fn = (_event, payload) => listener(payload || {})
+    ipcRenderer.on('app-resource-mode', fn)
+    return () => ipcRenderer.removeListener('app-resource-mode', fn)
+  },
+
   /** 使用系统默认应用打开路径（PDF 文件等） */
   shellOpenPath: (filePath) => ipcRenderer.invoke('shell-open-path', filePath),
 

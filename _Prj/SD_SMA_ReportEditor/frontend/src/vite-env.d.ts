@@ -26,6 +26,8 @@ interface Window {
       jobId?: string;
       /** pdf-lib=最省机草稿；chromium=预览级 */
       engine?: "pdf-lib" | "chromium";
+      /** 035：pdf-lib 保真度 draft-v1 / layout-v2；chromium 可忽略 */
+      layoutFidelity?: "draft-v1" | "layout-v2" | "print-to-pdf" | string;
       /** 035：分卷 yield（ms），来自导出性能档位 */
       yieldMs?: number;
     }) => Promise<{
@@ -60,6 +62,8 @@ interface Window {
       yieldMs: number;
       maxParallel: number;
     }>;
+    /** 035：主窗口后台/前台资源模式；返回取消订阅 */
+    onAppResourceMode?: (listener: (payload: { mode: "foreground" | "background" }) => void) => () => void;
     shellOpenPath: (filePath: string) => Promise<{ ok: boolean; error?: string }>;
     pathJoin: (...parts: string[]) => Promise<string>;
     getBundledCjkFont?: (opts?: {

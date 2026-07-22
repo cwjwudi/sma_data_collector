@@ -32,6 +32,7 @@ import {
 } from "@/lib/auto-export-status-codes";
 import {
   DEFAULT_EXPORT_PERF_TIER,
+  EXPORT_PERF_TIER_SCALE,
   migrateExportPerfTierFromLegacy,
   normalizeExportPerfTier,
   resolveExportPerfProfile,
@@ -143,10 +144,13 @@ export interface ReportGeneratorPrefs {
   manualOpenAfter: boolean;
 
   /**
-   * 导出性能档位（035）：0 最省机 … 2 均衡（默认）… 3 最快。
+   * 导出性能档位（035）：0 仅内容 … 1 矢量版式 … 2 预览稳（默认）… 4 不妥协。
    * 由档位解析 engine / 预热 / 降载等；`pdfExportEngine` 与档位同步保留兼容。
    */
   exportPerfTier: ExportPerfTier;
+
+  /** 五档刻度标记；缺省加载时会把旧四档 remap */
+  exportPerfTierScale: typeof EXPORT_PERF_TIER_SCALE;
 
   /**
    * 与 exportPerfTier 同步的引擎（兼容旧审计/代码路径）。
@@ -218,6 +222,8 @@ export const defaultReportGeneratorPrefs = (): ReportGeneratorPrefs => ({
   manualOpenAfter: false,
 
   exportPerfTier: DEFAULT_EXPORT_PERF_TIER,
+
+  exportPerfTierScale: EXPORT_PERF_TIER_SCALE,
 
   pdfExportEngine: resolveExportPerfProfile(DEFAULT_EXPORT_PERF_TIER).engine,
 
@@ -387,11 +393,13 @@ function parseStoredPrefs(o: StoredPrefs, base: ReportGeneratorPrefs): ReportGen
       const mig = migrateExportPerfTierFromLegacy({
         exportPerfTier: (o as { exportPerfTier?: unknown }).exportPerfTier,
         pdfExportEngine: o.pdfExportEngine,
+        exportPerfTierScale: (o as { exportPerfTierScale?: unknown }).exportPerfTierScale,
       });
       const tier = normalizeExportPerfTier(mig.tier);
       const profile = resolveExportPerfProfile(tier);
       return {
         exportPerfTier: tier,
+        exportPerfTierScale: EXPORT_PERF_TIER_SCALE,
         pdfExportEngine: profile.engine,
       };
     })(),
@@ -436,6 +444,7 @@ export function syncPrefsFromExportPerfTier(p: ReportGeneratorPrefs): ReportGene
   return {
     ...p,
     exportPerfTier: profile.tier,
+    exportPerfTierScale: EXPORT_PERF_TIER_SCALE,
     pdfExportEngine: profile.engine,
   };
 }

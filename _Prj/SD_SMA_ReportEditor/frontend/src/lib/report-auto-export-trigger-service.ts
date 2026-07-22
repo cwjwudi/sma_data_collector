@@ -541,6 +541,7 @@ async function runAutoPdfExport(
           openAfter: false,
           jobId: exportJobId,
           engine: exportProfile.engine,
+          layoutFidelity: exportProfile.layoutFidelity,
           yieldMs: exportProfile.yieldMs,
         });
         break;

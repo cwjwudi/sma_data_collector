@@ -12,7 +12,9 @@
       :mini-max-height-px="pdfMiniMaxHeightPx"
     />
     <div v-else-if="errText" class="pdf-export-err">{{ errText }}</div>
-    <div v-else-if="tmpl && !useChromiumPrint" class="pdf-export-pdflib-hint">pdf-lib · 同机优先</div>
+    <div v-else-if="tmpl && !useChromiumPrint" class="pdf-export-pdflib-hint">
+      pdf-lib · {{ layoutFidelity }}
+    </div>
   </div>
 </template>
 
@@ -60,6 +62,14 @@ const exportEngine = computed<PdfExportEngineId>(() => {
   return normalizePdfExportEngine(s);
 });
 const useChromiumPrint = computed(() => exportEngine.value === "chromium");
+
+const layoutFidelity = computed(() => {
+  const raw = route.query.layoutFidelity;
+  const s = Array.isArray(raw) ? raw[0] : raw;
+  const v = String(s || "").trim().toLowerCase();
+  if (v === "layout-v2") return "layout-v2" as const;
+  return "draft-v1" as const;
+});
 
 const bindingPreview = useReportBindingPreview(tmpl);
 provide(reportBindingPreviewKey, bindingPreview);
@@ -284,6 +294,7 @@ async function boot(): Promise<void> {
         reportPartIndex: partIdx,
         fontBytesBase64: fontRes?.ok ? fontRes.base64 : null,
         bundledFontId: picked.id,
+        layoutFidelity: layoutFidelity.value,
       });
       if (seq !== bootSeq) return;
       signalReady(true, undefined, totalReports, { tplMs, dataMs, paintMs: Date.now() - paintStartMs }, undefined, {

@@ -124,7 +124,7 @@ import {
 } from '@/lib/datasource-sync-events'
 import { loadReportGeneratorPrefs } from '@/lib/report-generator-prefs'
 import { resolveExportPerfProfile } from '@/lib/export-perf-tier'
-import { pdfExportCoexistPauseActive } from '@/lib/export-coexist-busy'
+import { uiSecondaryTasksPaused } from '@/lib/app-background-idle'
 
 defineOptions({ name: 'AiPendingPromptDialog' })
 
@@ -193,8 +193,8 @@ async function syncDatasourceFingerprint(reason: string) {
 
 async function poll() {
   if (submitting.value) return
-  // 035：结批全开降载时跳过 AI pending 轮询
-  if (pdfExportCoexistPauseActive.value) return
+  // 035：结批全开降载或应用后台时跳过 AI pending 轮询
+  if (uiSecondaryTasksPaused.value) return
   try {
     await mirrorClientPrefsToBackend()
     const data = await fetchAiPendingPrompts()
@@ -258,6 +258,7 @@ async function handleClientAction(action: string, payload: Record<string, unknow
       filePath,
       openAfter: false,
       engine: resolveExportPerfProfile(prefs.exportPerfTier).engine,
+      layoutFidelity: resolveExportPerfProfile(prefs.exportPerfTier).layoutFidelity,
       yieldMs: resolveExportPerfProfile(prefs.exportPerfTier).yieldMs,
     })
     notifyAssetsChanged('manual_export')

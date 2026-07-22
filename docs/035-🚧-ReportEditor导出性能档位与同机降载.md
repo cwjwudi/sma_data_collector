@@ -1,8 +1,8 @@
-# ReportEditor：导出性能 4 档 + 同机降载
+# ReportEditor：导出性能 5 档 + 同机降载 + 后台释放
 
 > 本文件为 **任务看板 / 开工计划**；规则见 [CLAUDE.md](../CLAUDE.md)。  
-> **登记日期**：2026-07-22 · 代码线 **0.3.120**（手测 H1–H6 / 装包另跟）。  
-> **关联**：[030](030-🚧-ReportEditor结批占满CPU导致mappView白屏.md) · [034](034-🚧-ReportEditor全站架构复评-2026-07-22.md) · [003](003-⌛️-剩余任务与后续规划.md) · Plan [`0.3.120`](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.120.md)。
+> **登记日期**：2026-07-22 · 代码线 **0.3.121**（五档默认预览稳；档 1 layout-v2 首版）。  
+> **关联**：[030](030-🚧-ReportEditor结批占满CPU导致mappView白屏.md) · [034](034-🚧-ReportEditor全站架构复评-2026-07-22.md) · [003](003-⌛️-剩余任务与后续规划.md) · Plan [`0.3.121`](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.121.md)。
 
 ---
 
@@ -10,126 +10,60 @@
 
 ## 一句话目标
 
-在 **PDF≈预览（可交付）** 的前提下，按设备能力用 **4 档步进滑条** 调节导出抢核程度，减轻同机 **mappView** 掉线/闪白；引擎（pdf-lib / printToPDF）只是档位里的 knob，不是产品目的。
+在 **PDF≈预览（可交付）** 的前提下，用 **5 档步进滑条** 调节导出抢核程度；档 0–1 走 pdf-lib（最省机 / 矢量版式），档 2–4 走 chromium 预览级并按程度降载；后台额外释放预热窗与次要轮询。
 
 ## 已锁定
 
 | 项 | 决定 |
 |----|------|
-| UI | 步进滑条（离散 4 档），**替代**「同机优先 / 版式优先」双 Tab |
-| 档位数 | **4** |
-| 默认 | **档 2「均衡」**（`exportPerfTier=2`） |
-| 档 0 | pdf-lib **草稿**（救急/最省机；须标明非预览级） |
-| 档 1–3 | chromium / printToPDF **预览级**；差异在预热/并行/降载/yield |
-| 030 8k 零闪硬验收 | 仍 **⏸ 挂起**；本看板先交「可调档位 + 降载」 |
+| UI | 步进滑条（离散 **5** 档） |
+| 默认 | **档 2「预览稳」**（`exportPerfTier=2`） |
+| 档 0 | pdf-lib **仅内容**（`draft-v1`） |
+| 档 1 | pdf-lib **矢量版式**（`layout-v2`，必做） |
+| 档 2 | chromium 预览级 · **最终妥协**（默认） |
+| 档 3 | chromium · 质量与功能折中 |
+| 档 4 | chromium · **不妥协** |
+| 后台 | 可多放资源（预热窗/探活/Dashboard/AI）；**不停**自动结批与 PLC 心跳 |
+| 030 8k 零闪硬验收 | 仍 **⏸ 挂起** |
 
-## 四档定义
+## 五档定义
 
-| 档 | `exportPerfTier` | 对外名 | engine | 预热池 | 并行 hint | 结批降载 | yield | PDF |
-|----|------------------|--------|--------|--------|-----------|----------|-------|-----|
-| 0 | `0` | 最省机 | pdf-lib | 0 | 1 | 全开 | 长 | 草稿 |
-| 1 | `1` | 同机稳 | chromium | 0 | 1 | 全开 | 长 | 预览级 |
-| 2 | `2` | **均衡（默认）** | chromium | 1 | 1 | 全开 | 中 | 预览级 |
-| 3 | `3` | 最快出图 | chromium | ≥2 | 预算内可>1 | 仅基础 | 短 | 预览级 |
+| 档 | 名 | engine | fidelity | 预热 | 并行 hint | 降载 | yield | PDF |
+|----|----|--------|----------|------|-----------|------|-------|-----|
+| 0 | 仅内容 | pdf-lib | draft-v1 | 0 | 1 | full | 200 | 草稿 |
+| 1 | 矢量版式 | pdf-lib | layout-v2 | 0 | 1 | full | 200 | 坐标版式 |
+| 2 | **预览稳（默认）** | chromium | printToPDF | 0 | 1 | full | 200 | 预览级 |
+| 3 | 功能折中 | chromium | printToPDF | 1 | 1 | full | 80 | 预览级 |
+| 4 | 不妥协 | chromium | printToPDF | 2 | 2 | basic | 40 | 预览级 |
 
-结批降载「全开」= 导出中暂停侧栏探活 / Dashboard 1s / AI pending；**不停**自动结批与 PLC 心跳。
-
----
-
-# ✅ 代码已完成：阶段与进度（手测另跟）
-
-| 阶段 | 名称 | 内容 | 进度 | 预估版本 |
-|------|------|------|------|----------|
-| **A** | 模型 + 单测 + 文档 | `export-perf-tier` knobs；T1–T3/T5/T7；本看板与 Plan | ✅ | 0.3.120 |
-| **B** | prefs 接线 + 迁移 | `exportPerfTier` 入 `reportGeneratorPrefsV1`；旧 engine→tier；导出读 profile | ✅ | 0.3.120 |
-| **C** | UI 滑条 | `ReportGenerator` 替换双 Tab；档说明文案 | ✅ | 0.3.120 |
-| **D** | 运行时降载 | M8 按 `coexistPause`；main 预热池/yield/并行 hint | ✅ | 0.3.120 |
-| **E** | 契约 T6/T8 + 手测 H1–H6 | CI 契约绿；应用内手测勾选 | ✅ 契约 · ⌛️ 手测 | 0.3.120 |
-| **F** | 发版收尾 | bump、007；解挂 030 硬验收 **不在本看板强制** | ✅ 代码发版 · ⌛️ 装包 | 0.3.120 |
-
-### 进度勾选（随提交更新）
-
-- [x] 拍板：4 档、默认均衡  
-- [x] 看板 035 + Plan 0.3.120 + 003/034/030/todo 索引  
-- [x] 阶段 A：`export-perf-tier.ts` + T1/T2/T3/T5/T7 绿  
-- [x] 阶段 B：prefs + 迁移落库  
-- [x] 阶段 C：UI 滑条  
-- [x] 阶段 D：main/渲染降载接线  
-- [x] 阶段 E：T4/T6/T8 契约绿（手测 H1–H6 仍待应用内）  
-- [x] 阶段 F：bump 0.3.120 + 007（装包 SHA / 现场手测另跟）  
+旧四档迁移：`0→0`，`1→2`，`2→3`，`3→4`（`exportPerfTierScale=5`）。
 
 ---
 
-# ⌛️ 未完成：应用内手测（H1–H6）
+# ✅ 代码进度（0.3.121）
 
-> 代码日序 D0–D5 已完成；下方为现场/桌面手测清单。
-
-| 日序 | 步骤 | 产出 | 退出标准 |
-|------|------|------|----------|
-| D0–D5 | A–F 代码 | 模型/prefs/UI/降载/契约/bump | ✅ 0.3.120 |
-| H | 手测 H1–H6 | 勾选本看板手测表 | 默认均衡 + 档质感 + 降载 + mappView 抽测 |
-
-**负责人**：本仓库 Agent/开发共用本看板勾选；现场 mappView 手测需工控机。
+- [x] 五档模型 + 迁移 + 契约  
+- [x] UI 滑条 max=4；默认预览稳  
+- [x] 档 1 `layout-v2` 首版（坐标文本/表格线；SQL 填充分页续页仍可增强）  
+- [x] 后台：拆空闲预热窗 + BelowNormal + 次要轮询暂停  
+- [ ] 手测 H1–H7（含档 1 版式抽检、后台结批 mappView）  
+- [ ] 装包 SHA / Portal  
 
 ---
 
-# 测试用例（完整矩阵）
+# 手测（应用内）
 
-## 自动化（CI · vitest）
+| ID | 场景 | 状态 |
+|----|------|------|
+| **H1** | 新装/清 prefs：默认 **预览稳** | ⌛️ |
+| **H2** | 档 0：仅内容草稿 | ⌛️ |
+| **H3** | 档 1：矢量版式有坐标/表格框（抽模版） | ⌛️ |
+| **H4** | 档 2/3/4：PDF≈预览 | ⌛️ |
+| **H5** | 结批中侧栏探活停；后台再拆预热窗 | ⌛️ |
+| **H6** | 后台结批：自动结批仍触发；mappView 对比档 1 vs 2 | ⌛️ |
+| **H7** | 同机 99%：默认档 2；仍断则试档 1 | ⌛️ |
 
-| ID | 阶段 | 断言 | 状态 | 文件 |
-|----|------|------|------|------|
-| **T1** | A | `normalizeExportPerfTier`：`undefined`/非法 → **2**；0–3 原样 | ✅ 阶段 A | `export-perf-tier.test.ts` |
-| **T2** | A | 四档 knobs 冻结（engine/pool/parallel/yield/coexist/pdfQuality） | ✅ 阶段 A | 同上 |
-| **T3** | A | `resolveExportPerfProfile(2)`：默认档、chromium、预览级、`isDefault` | ✅ 阶段 A | 同上 |
-| **T4** | B | 新装 prefs 无 key → tier=2；读写 round-trip | ✅ | `report-generator-prefs.test.ts` |
-| **T5** | A/B | 迁移：`pdf-lib`→0；`chromium`→2；已有 tier 不覆盖 | ✅ | `export-perf-tier.test.ts` + prefs |
-| **T6** | D/E | 手动/自动结批 engine 来自 `resolveExportPerfProfile` | ✅ | `export-perf-tier-contracts.test.ts` |
-| **T7** | A | `shouldPauseCoexistTasks`：导出中+full→true；basic/未导出→false | ✅ | `export-perf-tier.test.ts` |
-| **T8** | C/E | UI 有 `exportPerfTier` 步进控件；无同机/版式双 Tab | ✅ | `export-perf-tier-contracts.test.ts` |
-
-## 手测（应用内）
-
-| ID | 阶段 | 场景 | 状态 |
-|----|------|------|------|
-| **H1** | C | 新装/清 prefs：滑条默认 **均衡** | ⌛️ |
-| **H2** | E | 档 0：草稿观感 + UI 草稿提示 | ⌛️ |
-| **H3** | E | 档 1/2/3：PDF≈预览（抽样模版） | ⌛️ |
-| **H4** | D/E | 档 1 vs 2：预热有无可区分 | ⌛️ |
-| **H5** | D/E | 档 0–2 导出中侧栏探活停，结束后恢复 | ⌛️ |
-| **H6** | E | 同机 mappView：档 2 抽测；闪则改档 1 对比 | ⌛️ |
-
-## 明确不做（本看板）
+## 明确不做（本看板强制外）
 
 - 8k / ≥4 份零闪硬验收 E2E（030 ⏸）  
-- Playwright 拖滑条 E2E  
-- pdf-lib 坐标布局 layout-v2（仅当档 1 仍掉线再单独立项）  
-
----
-
-# 实现要点（给开工用）
-
-| 模块 | 路径 | 阶段 |
-|------|------|------|
-| 档位模型 | `frontend/src/lib/export-perf-tier.ts` | A |
-| prefs | `report-generator-prefs.ts` 增加 `exportPerfTier` | B |
-| UI | `views/ReportGenerator.vue` 高级设置 | C |
-| 自动结批 | `report-auto-export-trigger-service.ts` | D |
-| 主进程 | `electron/main.cjs` 预热/yield | D |
-| 降载 | `MainLayout.vue` + 导出 active 信号 | D |
-
-Knobs 解析：`resolveExportPerfProfile(tier)` →  
-`{ engine, prewarmPoolSize, maxParallelHint, yieldMs, coexistPause, pdfQuality, label, summary }`。
-
-旧迁移：
-
-- 无 `exportPerfTier` 且 `pdfExportEngine=pdf-lib` → `0`  
-- 无 `exportPerfTier` 且 `chromium` → **`2`**  
-- 已有 `exportPerfTier` → 规范化后保留  
-
----
-
-## 与 030 / 034 关系
-
-- **030**：根因仍是同机 Chromium 争用；本看板用「档位 + 降载」逼近可操作，不替代硬验收解挂。  
-- **034**：M8/M9 收进本看板阶段 D；M11「默认 chromium」被 **默认均衡档（仍为 chromium 预览级）** 吸收，产品叙事改为性能档位。  
+- layout-v2 像素级对齐 printToPDF（渐进增强）  

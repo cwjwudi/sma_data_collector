@@ -130,7 +130,7 @@ import {
   invalidateTemplateSummariesCache,
 } from '@/lib/report-auto-export-trigger-service'
 import { disposePlcHeartbeat, initPlcHeartbeat } from '@/lib/plc-heartbeat-service'
-import { pdfExportCoexistPauseActive } from '@/lib/export-coexist-busy'
+import { setAppBackgroundIdle, uiSecondaryTasksPaused } from '@/lib/app-background-idle'
 import { loadSidebarCollapsed, saveSidebarCollapsed } from '@/lib/sidebar-layout-prefs'
 import { prefetchCoreCatalog } from '@/lib/prefetch-core'
 import sidebarFlurryUrl from '@/assets/backgrounds/sidebar-flurry.svg'
@@ -244,13 +244,13 @@ function stopNavDbHealthPolling() {
 
 function startNavDbHealthPolling() {
   stopNavDbHealthPolling()
-  // 035：结批期全开降载时暂停侧栏探活
-  if (pdfExportCoexistPauseActive.value) return
+  // 035：结批全开降载或应用后台时暂停侧栏探活
+  if (uiSecondaryTasksPaused.value) return
   if (route.path.startsWith('/datasource') || !navProbePrefs.enabled) return
   void probeAllConnectionsForNav()
   navDbHealthTimer = window.setInterval(() => {
     if (
-      !pdfExportCoexistPauseActive.value &&
+      !uiSecondaryTasksPaused.value &&
       !route.path.startsWith('/datasource') &&
       navProbePrefs.enabled
     ) {
@@ -289,7 +289,7 @@ watch(
   },
 )
 
-watch(pdfExportCoexistPauseActive, (pause) => {
+watch(uiSecondaryTasksPaused, (pause) => {
   if (pause) stopNavDbHealthPolling()
   else startNavDbHealthPolling()
 })
@@ -299,6 +299,8 @@ function scheduleAutoUpdateCheck() {
     void runAutoUpdateCheck()
   }, 1500)
 }
+
+let offAppResourceMode: (() => void) | undefined
 
 onMounted(() => {
   removeBeforeEach = router.beforeEach((to, from) => {
@@ -333,6 +335,9 @@ onMounted(() => {
   prefetchCoreCatalog()
   window.addEventListener('report-editor-config-imported', onConfigImported)
   window.addEventListener('report-editor-connection-probe-changed', onProbePrefsChanged)
+  offAppResourceMode = window.electronAPI?.onAppResourceMode?.((payload) => {
+    setAppBackgroundIdle(payload?.mode === 'background')
+  })
 })
 
 onUnmounted(() => {
@@ -344,6 +349,8 @@ onUnmounted(() => {
   disposeReportAutoExportTrigger()
   disposePlcHeartbeat()
   disposeAppUpdateListeners()
+  offAppResourceMode?.()
+  offAppResourceMode = undefined
   window.removeEventListener('report-editor-config-imported', onConfigImported)
   window.removeEventListener('report-editor-connection-probe-changed', onProbePrefsChanged)
 })
