@@ -19,6 +19,7 @@ class CollectorConfigManager:
         "groups",
         "database",
         "logging",
+        "persistent_queue",
     }
     REMOVED_TRIGGER_TYPES = {"query"}
 
@@ -127,6 +128,19 @@ class CollectorConfigManager:
                 "rotation_interval": 1,
                 "console_enabled": True,
             },
+            "persistent_queue": {
+                "enabled": False,
+                "path": "runtime/queue/collector_outbox.db",
+                "synchronous": "FULL",
+                "busy_timeout_ms": 5000,
+                "lease_seconds": 60.0,
+                "retry_interval_seconds": 5.0,
+                "max_retry_interval_seconds": 300.0,
+                "max_attempts": 0,
+                "completed_retention_days": 1,
+                "cleanup_interval_seconds": 3600.0,
+                "max_queue_rows": 1000000,
+            },
         }
 
     @classmethod
@@ -169,6 +183,8 @@ class CollectorConfigManager:
             sanitized["database"] = cls.default_payload()["database"]
         if not isinstance(sanitized.get("logging"), dict):
             sanitized["logging"] = cls.default_payload()["logging"]
+        if not isinstance(sanitized.get("persistent_queue"), dict):
+            sanitized["persistent_queue"] = cls.default_payload()["persistent_queue"]
 
         return sanitized, stats
 

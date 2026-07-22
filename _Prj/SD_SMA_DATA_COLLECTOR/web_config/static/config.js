@@ -69,6 +69,19 @@ function createDefaultConfig() {
       rotation_interval: 1,
       console_enabled: true,
     },
+    persistent_queue: {
+      enabled: false,
+      path: "runtime/queue/collector_outbox.db",
+      synchronous: "FULL",
+      busy_timeout_ms: 5000,
+      lease_seconds: 60,
+      retry_interval_seconds: 5,
+      max_retry_interval_seconds: 300,
+      max_attempts: 0,
+      completed_retention_days: 1,
+      cleanup_interval_seconds: 3600,
+      max_queue_rows: 1000000,
+    },
   };
 }
 
@@ -81,6 +94,9 @@ function normalizeConfig(payload) {
   next.groups = Array.isArray(next.groups) ? next.groups : [];
   next.database = typeof next.database === "object" && next.database ? { ...base.database, ...next.database } : { ...base.database };
   next.logging = typeof next.logging === "object" && next.logging ? { ...base.logging, ...next.logging } : { ...base.logging };
+  next.persistent_queue = typeof next.persistent_queue === "object" && next.persistent_queue
+    ? { ...base.persistent_queue, ...next.persistent_queue }
+    : { ...base.persistent_queue };
   return next;
 }
 
@@ -1237,6 +1253,64 @@ function renderDatabase() {
     warning.className = "database-create-warning";
     warning.textContent = "启用自动创建前，请确保数据库账号具备服务器 CREATE 权限；推荐使用 ROOT 账号完成数据库初始化。";
     panel.appendChild(warning);
+  }
+
+  const queue = currentConfig.persistent_queue;
+  const queueTitle = document.createElement("h3");
+  queueTitle.className = "config-subsection-title";
+  queueTitle.textContent = "持久化队列（断电恢复）";
+  panel.appendChild(queueTitle);
+
+  const queueEnabledLabel = document.createElement("label");
+  queueEnabledLabel.className = "database-auto-create";
+  queueEnabledLabel.appendChild(
+    createCheckbox(queue.enabled === true, (checked) => {
+      queue.enabled = checked;
+      renderDatabase();
+    })
+  );
+  const queueEnabledText = document.createElement("span");
+  queueEnabledText.textContent = "启用 SQLite 持久化队列";
+  queueEnabledLabel.appendChild(queueEnabledText);
+  panel.appendChild(createRow([queueEnabledLabel]));
+
+  const queueHint = document.createElement("div");
+  queueHint.className = "persistent-queue-hint";
+  queueHint.textContent = queue.enabled
+    ? "采集数据先写入本地 SQLite outbox，数据库写入成功后才标记完成；异常重启后可恢复待写数据。"
+    : "当前未启用：未满批次的数据只保存在内存中，断电或进程异常退出时可能丢失。";
+  panel.appendChild(queueHint);
+
+  if (queue.enabled === true) {
+    appendHeaders(panel, ["队列文件路径", "SQLite 同步级别", "忙等待超时(ms)", "租约时间(秒)"]);
+    panel.appendChild(
+      createRow([
+        createInput(queue.path, (v) => (queue.path = v)),
+        createSelect(
+          ["OFF", "NORMAL", "FULL", "EXTRA"].map((value) => ({ value, label: value })),
+          queue.synchronous,
+          (v) => (queue.synchronous = v)
+        ),
+        createInput(queue.busy_timeout_ms, (v) => (queue.busy_timeout_ms = Number(v)), "number"),
+        createInput(queue.lease_seconds, (v) => (queue.lease_seconds = Number(v)), "number"),
+      ])
+    );
+    appendHeaders(panel, ["首次重试间隔(秒)", "最大重试间隔(秒)", "最大重试次数（0=不限）", "完成记录保留天数"]);
+    panel.appendChild(
+      createRow([
+        createInput(queue.retry_interval_seconds, (v) => (queue.retry_interval_seconds = Number(v)), "number"),
+        createInput(queue.max_retry_interval_seconds, (v) => (queue.max_retry_interval_seconds = Number(v)), "number"),
+        createInput(queue.max_attempts, (v) => (queue.max_attempts = Number(v)), "number"),
+        createInput(queue.completed_retention_days, (v) => (queue.completed_retention_days = Number(v)), "number"),
+      ])
+    );
+    appendHeaders(panel, ["清理间隔(秒)", "最大队列行数"]);
+    panel.appendChild(
+      createRow([
+        createInput(queue.cleanup_interval_seconds, (v) => (queue.cleanup_interval_seconds = Number(v)), "number"),
+        createInput(queue.max_queue_rows, (v) => (queue.max_queue_rows = Number(v)), "number"),
+      ])
+    );
   }
 }
 
