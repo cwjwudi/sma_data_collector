@@ -300,7 +300,7 @@ function scheduleAutoUpdateCheck() {
   }, 1500)
 }
 
-let offAppResourceMode: (() => void) | undefined
+let offAppResourceMode = null
 
 onMounted(() => {
   removeBeforeEach = router.beforeEach((to, from) => {
@@ -350,7 +350,7 @@ onUnmounted(() => {
   disposePlcHeartbeat()
   disposeAppUpdateListeners()
   offAppResourceMode?.()
-  offAppResourceMode = undefined
+  offAppResourceMode = null
   window.removeEventListener('report-editor-config-imported', onConfigImported)
   window.removeEventListener('report-editor-connection-probe-changed', onProbePrefsChanged)
 })
