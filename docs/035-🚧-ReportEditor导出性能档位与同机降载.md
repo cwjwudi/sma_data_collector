@@ -47,7 +47,7 @@
 - [x] 档 1 `layout-v2`：坐标文本/表格线 + **bodyCards 续页**（与预览分卡对齐）  
 - [x] 后台：拆空闲预热窗 + BelowNormal + 次要轮询暂停  
 - [ ] 手测 H1–H7（含档 1 版式抽检、后台结批 mappView）  
-- [ ] 装包 SHA / Portal  
+- [x] macOS arm64 DMG 0.3.122 + `latest.json` SHA（Portal 未挂载，Win 包另打）  
 
 ---
 
