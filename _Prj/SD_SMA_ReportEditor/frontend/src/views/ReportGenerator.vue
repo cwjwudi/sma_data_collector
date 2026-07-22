@@ -936,11 +936,14 @@ const RG_UI = {
 const RG_STATUS_OPC_AUTO = `[${RG_UI.opcAuto}]`;
 const RG_STATUS_FEEDBACK = `[${RG_UI.feedback}]`;
 
+/** 036：模拟结批默认目录（已配置保存目录时直接用，免每次弹选夹） */
+const DEFAULT_MANUAL_EXPORT_DIR = "/Users/dp/Desktop/report-editor-exports";
+
 const prefs = ref<ReportGeneratorPrefs>(loadReportGeneratorPrefs());
 const exportPerfProfile = computed(() => resolveExportPerfProfile(prefs.value.exportPerfTier));
 const exportWatchDir = loadReportExportPrefs().watchDir;
-if (exportWatchDir && !prefs.value.autoExportDir) {
-  prefs.value.autoExportDir = exportWatchDir;
+if (!prefs.value.autoExportDir) {
+  prefs.value.autoExportDir = exportWatchDir || DEFAULT_MANUAL_EXPORT_DIR;
 }
 const summaries = ref<TemplateSummary[]>([]);
 const templateRows = computed(() => templateSelectRows(summaries.value));
@@ -1840,12 +1843,18 @@ async function onManualExport(): Promise<void> {
   const tmeta = summaries.value.find((x) => x.id === tid);
   const suggestName = `${(tmeta?.name || "报表").replace(/[/\\?%*:|"<>]/g, "_")}_${formatExportTs()}.pdf`;
 
-  const exportDir = await api.pickExportDirectory({
-    title: `选择${RG_UI.manual}保存文件夹`,
-  });
+  let exportDir = String(prefs.value.autoExportDir || "").trim();
   if (!exportDir) {
-    manualHint.value = "已取消保存。";
-    return;
+    exportDir =
+      (await api.pickExportDirectory({
+        title: `选择${RG_UI.manual}保存文件夹`,
+        defaultPath: DEFAULT_MANUAL_EXPORT_DIR,
+      })) || "";
+    if (!exportDir) {
+      manualHint.value = "已取消保存。";
+      return;
+    }
+    prefs.value.autoExportDir = exportDir;
   }
   const filePath = await api.pathJoin(exportDir, suggestName);
 

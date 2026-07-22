@@ -30,6 +30,7 @@ import {
   formatPageNumberDisplay,
   normalizeAlignAxis,
   normalizePageNumberMode,
+  resolveTableCellBackgroundCss,
   zoneTableColumnInnerWidthsPx,
   type LayoutAlignAxis,
   type LayoutZoneElement,
@@ -41,7 +42,11 @@ import {
   templateTableColumnInnerWidthsPx,
 } from "@/lib/report-template/model";
 import { PAPER_PRESETS, type PaperKind } from "@/lib/report-template/paper";
-import { clampTableRowHeightPx } from "@/lib/report-template/table-cell-metrics";
+import {
+  clampTableRowHeightPx,
+  computeContentAwareTableRowHeightsPx,
+  REPORT_TEMPLATE_TABLE_NODE_PADDING_PX,
+} from "@/lib/report-template/table-cell-metrics";
 import type { TablePreviewRowSlice } from "@/lib/report-template/table-preview-row-slice";
 import {
   sqlFillSliceTableOuterHeightPx,
@@ -74,6 +79,38 @@ const MINI_BAND_BG = rgb(
   (0.52 * 239 + 0.48 * 255) / 255,
   (0.52 * 246 + 0.48 * 255) / 255,
 );
+
+/** 与 Mini 正文表外壳 padding 4px / td 3×5（D6/D8） */
+const BODY_TABLE_SHELL_PAD_PT = REPORT_TEMPLATE_TABLE_NODE_PADDING_PX.top * PX_TO_PT;
+const TD_PAD_X_PT = 5 * PX_TO_PT;
+const TD_PAD_Y_PT = 3 * PX_TO_PT;
+
+function cssBgToRgbOrUndef(css: string): RGB | undefined {
+  const s = String(css || "").trim().toLowerCase();
+  if (!s || s === "transparent" || s === "none") return undefined;
+  try {
+    return parseCssColor(css, rgb(1, 1, 1));
+  } catch {
+    return undefined;
+  }
+}
+
+/** 将内容感知行高（px）缩放到目标总高（pt） */
+function scaleRowHeightsToBoxPt(heightsPx: number[], boxHPt: number, rows: number): number[] {
+  const n = Math.max(1, rows);
+  if (!heightsPx.length) {
+    const each = boxHPt / n;
+    return Array.from({ length: n }, () => each);
+  }
+  const pts = heightsPx.map((h) => Math.max(4, h * PX_TO_PT));
+  const sum = pts.reduce((a, b) => a + b, 0);
+  if (!(sum > 0) || !(boxHPt > 0)) {
+    const each = boxHPt / n;
+    return Array.from({ length: n }, () => each);
+  }
+  const scale = boxHPt / sum;
+  return pts.map((h) => h * scale);
+}
 
 function mmToPt(mm: number): number {
   return (mm * 72) / 25.4;
@@ -413,33 +450,18 @@ function drawZoneTable(
     acc += widthsPt[c] || box.w / cols;
     colXs.push(acc);
   }
-  for (let r = 1; r < rows; r++) {
-    const y = box.yBottom + box.h - r * rowH;
-    page.drawLine({
-      start: { x: box.x, y },
-      end: { x: box.x + box.w, y },
-      thickness: 0.35,
-      color: rgb(0.55, 0.55, 0.55),
-    });
-  }
-  for (let c = 1; c < cols; c++) {
-    const x = colXs[c];
-    page.drawLine({
-      start: { x, y: box.yBottom },
-      end: { x, y: box.yBottom + box.h },
-      thickness: 0.35,
-      color: rgb(0.55, 0.55, 0.55),
-    });
-  }
+  // D8：对齐 Mini `.mini-tpl-td` — max(10, 0.85em) 且 em 基于壳字号 ×0.85
   const fontSize = Math.max(
     6,
-    Math.min(10, scaledFontSize(el.fontSize, ZONE_FONT_SCALE, rowH * 0.5)),
+    Math.max(10, scaledFontSize(el.fontSize, ZONE_FONT_SCALE, 12) * ZONE_FONT_SCALE),
   );
   const zoneFill = el.tableSqlFill?.enabled ? el.tableSqlFill : null;
   const zoneFillPv = zoneFill
     ? values[zoneTableSqlFillPreviewKey(el.id)]?.tableSqlFill ?? null
     : null;
+  const cellTexts: string[][] = [];
   for (let r = 0; r < rows; r++) {
+    cellTexts[r] = [];
     for (let c = 0; c < cols; c++) {
       let text = "";
       if (zoneFill) {
@@ -455,7 +477,51 @@ function drawZoneTable(
         const bound = cellText(values[zoneCellKey(el.id, r, c)]);
         text = bound || String(grid[r]?.[c]?.text || "");
       }
-      if (!text.trim() || text === "\u00a0") continue;
+      cellTexts[r][c] = text === "\u00a0" ? "" : text;
+      const cellX = colXs[c];
+      const cellW = (colXs[c + 1] || box.x + box.w) - cellX;
+      const cellTop = box.yBottom + box.h - r * rowH;
+      const cellBottom = cellTop - rowH;
+      // D9：先填格底，再画网格线
+      const bgCss = resolveTableCellBackgroundCss(
+        { tableBgColor: el.bgColor, tableColBgColors: el.tableColBgColors },
+        c,
+        grid[r]?.[c],
+      );
+      const cellFill = cssBgToRgbOrUndef(bgCss);
+      if (cellFill) {
+        page.drawRectangle({
+          x: cellX,
+          y: cellBottom,
+          width: cellW,
+          height: rowH,
+          color: cellFill,
+        });
+      }
+    }
+  }
+  for (let r = 1; r < rows; r++) {
+    const yLine = box.yBottom + box.h - r * rowH;
+    page.drawLine({
+      start: { x: box.x, y: yLine },
+      end: { x: box.x + box.w, y: yLine },
+      thickness: 0.35,
+      color: rgb(0.55, 0.55, 0.55),
+    });
+  }
+  for (let c = 1; c < cols; c++) {
+    const xLine = colXs[c];
+    page.drawLine({
+      start: { x: xLine, y: box.yBottom },
+      end: { x: xLine, y: box.yBottom + box.h },
+      thickness: 0.35,
+      color: rgb(0.55, 0.55, 0.55),
+    });
+  }
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const text = cellTexts[r]?.[c] || "";
+      if (!text.trim()) continue;
       const cellX = colXs[c];
       const cellW = (colXs[c + 1] || box.x + box.w) - cellX;
       const cellTop = box.yBottom + box.h - r * rowH;
@@ -463,10 +529,10 @@ function drawZoneTable(
         page,
         font,
         text,
-        cellX + 2,
-        cellTop - 1,
-        cellW - 4,
-        rowH - 2,
+        cellX + TD_PAD_X_PT,
+        cellTop - TD_PAD_Y_PT,
+        cellW - TD_PAD_X_PT * 2,
+        rowH - TD_PAD_Y_PT * 2,
         fontSize,
         useWinAnsi,
         undefined,
@@ -588,7 +654,8 @@ function drawZoneElements(
       text = String(el.text || "");
     }
     if (!text.trim()) continue;
-    if (el.showBorder || (el.bgColor && el.bgColor !== "transparent" && el.bgColor !== "none")) {
+    // D10：与 Mini 一致，仅 showBorder === false 时隐藏边框（undefined 视为显示）
+    if (el.showBorder !== false || (el.bgColor && el.bgColor !== "transparent" && el.bgColor !== "none")) {
       try {
         const fill = parseCssColor(
           el.bgColor && el.bgColor !== "transparent" && el.bgColor !== "none" ? el.bgColor : "",
@@ -601,8 +668,8 @@ function drawZoneElements(
           width: box.w,
           height: box.h,
           color: hasFill ? fill : undefined,
-          borderColor: el.showBorder ? rgb(0.55, 0.55, 0.55) : undefined,
-          borderWidth: el.showBorder ? 0.4 : undefined,
+          borderColor: el.showBorder !== false ? rgb(0.55, 0.55, 0.55) : undefined,
+          borderWidth: el.showBorder !== false ? 0.4 : undefined,
         });
       } catch {
         /* ignore chrome draw errors */
@@ -697,29 +764,93 @@ function drawTableGrid(
   const rows = Math.max(1, opts.visualRows);
   const grid = ensureTableGrid(el);
   const cols = Math.min(el.tableCols || grid[0]?.length || 1, 16);
-  const bg = parseCssColor(el.bgColor, rgb(1, 1, 1));
+  // 外框线（D6：内容网格在 4px shell 内）
   page.drawRectangle({
     x: box.x,
     y: box.yBottom,
     width: box.w,
     height: box.h,
-    color: bg.red === 1 && bg.green === 1 && bg.blue === 1 ? undefined : bg,
     borderColor: rgb(0.25, 0.25, 0.25),
     borderWidth: 0.6,
   });
-  const rowH = box.h / rows;
-  const widths = colWidthsPt(el, box.w, cols);
-  let accX = box.x;
-  const colXs: number[] = [box.x];
+  const shell = BODY_TABLE_SHELL_PAD_PT;
+  const innerX = box.x + shell;
+  const innerW = Math.max(4, box.w - shell * 2);
+  const innerTop = box.yBottom + box.h - shell;
+  const innerH = Math.max(4, box.h - shell * 2);
+  const widths = colWidthsPt(el, innerW, cols);
+  let accX = innerX;
+  const colXs: number[] = [innerX];
   for (let c = 0; c < cols; c++) {
-    accX += widths[c] || box.w / cols;
+    accX += widths[c] || innerW / cols;
     colXs.push(accX);
   }
+  const cache: string[][] = [];
+  for (let r = 0; r < rows; r++) {
+    cache[r] = (opts.rowTexts(r) || []).map((t) => (t === "\u00a0" ? "" : String(t || "")));
+  }
+  let colWidthsPx: number[] = [];
+  try {
+    colWidthsPx = templateTableColumnInnerWidthsPx(el);
+  } catch {
+    colWidthsPx = [];
+  }
+  if (colWidthsPx.length !== cols) {
+    const each = Math.max(20, (el.w - 8) / cols);
+    colWidthsPx = Array.from({ length: cols }, () => each);
+  }
+  const fontSizePx = Math.max(10, scaledFontSize(el.fontSize, BODY_FONT_SCALE, 12) * 0.85);
+  const heightsPx = computeContentAwareTableRowHeightsPx({
+    rowCount: rows,
+    colWidthsPx,
+    cellTextAt: (ri, ci) => cache[ri]?.[ci] || "",
+    fontSizePx,
+    minRowHeightPx: clampTableRowHeightPx(el.tableRowHeightPx),
+    lineHeight: 1.3,
+    paddingX: 10,
+    paddingY: 6,
+  });
+  const rowHs = scaleRowHeightsToBoxPt(heightsPx, innerH, rows);
+  // 与 Mini 正文表：控件字号 ×0.8，并受最矮行约束
+  const minRowH = Math.min(...rowHs);
+  const fontSize = Math.max(
+    6,
+    Math.min(11, scaledFontSize(el.fontSize, BODY_FONT_SCALE, 12), minRowH * 0.55),
+  );
+  // D9：先填格底
+  let yCursor = innerTop;
+  for (let r = 0; r < rows; r++) {
+    const rh = rowHs[r] || innerH / rows;
+    const cellTop = yCursor;
+    const cellBottom = cellTop - rh;
+    for (let c = 0; c < cols; c++) {
+      const cellX = colXs[c];
+      const cellW = (colXs[c + 1] || innerX + innerW) - cellX;
+      const bgCss = resolveTableCellBackgroundCss(
+        { tableBgColor: el.bgColor, tableColBgColors: el.tableColBgColors },
+        c,
+        grid[r]?.[c],
+      );
+      const cellFill = cssBgToRgbOrUndef(bgCss);
+      if (cellFill) {
+        page.drawRectangle({
+          x: cellX,
+          y: cellBottom,
+          width: cellW,
+          height: rh,
+          color: cellFill,
+        });
+      }
+    }
+    yCursor = cellBottom;
+  }
+  // 网格线
+  let yLine = innerTop;
   for (let r = 1; r < rows; r++) {
-    const y = box.yBottom + box.h - r * rowH;
+    yLine -= rowHs[r - 1] || innerH / rows;
     page.drawLine({
-      start: { x: box.x, y },
-      end: { x: box.x + box.w, y },
+      start: { x: innerX, y: yLine },
+      end: { x: innerX + innerW, y: yLine },
       thickness: 0.4,
       color: rgb(0.55, 0.55, 0.55),
     });
@@ -727,34 +858,30 @@ function drawTableGrid(
   for (let c = 1; c < cols; c++) {
     const x = colXs[c];
     page.drawLine({
-      start: { x, y: box.yBottom },
-      end: { x, y: box.yBottom + box.h },
+      start: { x, y: box.yBottom + shell },
+      end: { x, y: box.yBottom + box.h - shell },
       thickness: 0.4,
       color: rgb(0.55, 0.55, 0.55),
     });
   }
-  const pad = 2;
-  // 与 Mini 正文表：控件字号 ×0.8，并受行高约束
-  const fontSize = Math.max(
-    6,
-    Math.min(11, scaledFontSize(el.fontSize, BODY_FONT_SCALE, 12), rowH * 0.55),
-  );
+  // 文本
+  yCursor = innerTop;
   for (let r = 0; r < rows; r++) {
-    const texts = opts.rowTexts(r);
+    const rh = rowHs[r] || innerH / rows;
+    const cellTop = yCursor;
     for (let c = 0; c < cols; c++) {
-      const text = texts[c] || "";
+      const text = cache[r]?.[c] || "";
       if (!text) continue;
-      const cellTop = box.yBottom + box.h - r * rowH;
       const cellX = colXs[c];
-      const cellW = (colXs[c + 1] || box.x + box.w) - cellX;
+      const cellW = (colXs[c + 1] || innerX + innerW) - cellX;
       drawWrappedInBox(
         page,
         font,
         text,
-        cellX + pad,
-        cellTop - pad,
-        cellW - pad * 2,
-        rowH - pad * 2,
+        cellX + TD_PAD_X_PT,
+        cellTop - TD_PAD_Y_PT,
+        cellW - TD_PAD_X_PT * 2,
+        rh - TD_PAD_Y_PT * 2,
         fontSize,
         useWinAnsi,
         undefined,
@@ -762,6 +889,7 @@ function drawTableGrid(
         el.alignY ?? "center",
       );
     }
+    yCursor -= rh;
   }
 }
 
@@ -800,15 +928,15 @@ function drawTemplateElement(
         ? bound.trim() || formatLayoutDate(new Date(), el.dateFormat || "HH:mm:ss")
         : bound || String(el.text || "");
     if (!text.trim()) return;
-    if (el.showBorder || (el.bgColor && el.bgColor !== "transparent")) {
+    if (el.showBorder !== false || (el.bgColor && el.bgColor !== "transparent")) {
       page.drawRectangle({
         x: box.x,
         y: box.yBottom,
         width: box.w,
         height: box.h,
         color: parseCssColor(el.bgColor, rgb(1, 1, 1)),
-        borderColor: el.showBorder ? rgb(0.55, 0.55, 0.55) : undefined,
-        borderWidth: el.showBorder ? 0.4 : undefined,
+        borderColor: el.showBorder !== false ? rgb(0.55, 0.55, 0.55) : undefined,
+        borderWidth: el.showBorder !== false ? 0.4 : undefined,
       });
     }
     const size = scaledFontSize(el.fontSize, BODY_FONT_SCALE, 11, 7);

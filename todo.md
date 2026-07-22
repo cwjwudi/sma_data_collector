@@ -7,7 +7,9 @@
 
 ## 2026-07-22
 
-- **ReportEditor 036 P0 样式收敛**：layout-v2 对齐 Mini 底色/×0.8 字号、`formatLayoutDate`、页码 `slashTotal`/`circle`；批导 `12-05-37` 复验 D1–D5/D7 ✅；余 D6/D8+。看板 [docs/036-🚧](docs/036-🚧-ReportEditor矢量档与预览稳样式对照.md)。
+- **ReportEditor 036 P1 样式收敛（代码）**：layout-v2 D6 表 shell/pad/内容感知行高、D8 zone pad/字号、D9 列格背景、D10 `showBorder !== false`；模拟结批默认目录 `~/Desktop/report-editor-exports`；单测 ✅；手测 C7–C9 ⌛️。看板 [docs/036-🚧](docs/036-🚧-ReportEditor矢量档与预览稳样式对照.md)。
+
+- **ReportEditor 036 P0 样式收敛**：layout-v2 对齐 Mini 底色/×0.8 字号、`formatLayoutDate`、页码 `slashTotal`/`circle`；批导 `12-05-37` 复验 D1–D5/D7 ✅。看板 [docs/036-🚧](docs/036-🚧-ReportEditor矢量档与预览稳样式对照.md)。
 
 - **ReportEditor 036 矢量档↔预览稳样式对照**：冒烟批导 `11-56-48` 三页完整对比；列出 D1–D17（P0：底色/白卡片、日期、页码 N/M、截断；P1：表度量/×0.8 字号）。看板 [docs/036-🚧](docs/036-🚧-ReportEditor矢量档与预览稳样式对照.md)。
 

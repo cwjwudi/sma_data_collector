@@ -421,4 +421,86 @@ describe("pdf-lib-layout-v2-render", () => {
     expect(text).toContain("23.5");
     expect(text).toContain("pressure");
   });
+
+  async function inflatedPdfPlain(bytes: Uint8Array): Promise<string> {
+    const { inflateSync } = await import("node:zlib");
+    const raw = Buffer.from(bytes);
+    const parts: string[] = [];
+    let idx = 0;
+    while (idx < raw.length) {
+      const i = raw.indexOf(Buffer.from("stream\n"), idx);
+      if (i < 0) break;
+      const j = raw.indexOf(Buffer.from("\nendstream"), i);
+      if (j < 0) break;
+      const chunk = raw.subarray(i + 7, j);
+      try {
+        parts.push(inflateSync(chunk).toString("latin1"));
+      } catch {
+        parts.push(chunk.toString("latin1"));
+      }
+      idx = j + 10;
+    }
+    return parts.join("\n");
+  }
+
+  it("D10: showBorder false hides chrome stroke; omit/true draws stroke", async () => {
+    async function plainFor(showBorder: boolean | undefined): Promise<string> {
+      const raw: Record<string, unknown> = {
+        id: `sb-${String(showBorder)}`,
+        type: "text",
+        text: "BorderProbe",
+        x: 40,
+        y: 40,
+        w: 160,
+        h: 28,
+        bgColor: "transparent",
+      };
+      if (showBorder !== undefined) raw.showBorder = showBorder;
+      const el = hydrateTemplateElement(raw);
+      if (showBorder === undefined) {
+        (el as { showBorder?: boolean }).showBorder = undefined;
+      }
+      const tmpl = makeTemplateWithBodyTable(el);
+      const doc = await PDFDocument.create();
+      const font = await doc.embedFont(StandardFonts.Helvetica);
+      await appendPdfLibLayoutV2Pages(doc, { tmpl, previewValues: {}, font, useWinAnsi: true });
+      return inflatedPdfPlain(await doc.save({ useObjectStreams: false }));
+    }
+
+    /** chrome 描边灰 rgb(0.55…) → PDF `0.55 0.55 0.55 RG` */
+    const chromeStroke = /0\.55\s+0\.55\s+0\.55\s+RG/;
+    expect(chromeStroke.test(await plainFor(false))).toBe(false);
+    expect(chromeStroke.test(await plainFor(true))).toBe(true);
+    expect(chromeStroke.test(await plainFor(undefined))).toBe(true);
+  });
+
+  it("D9: per-cell / per-col background fills appear in PDF content", async () => {
+    const tb = hydrateTemplateElement({
+      id: "bg-cells",
+      type: "table",
+      tableRows: 1,
+      tableCols: 2,
+      tableRowHeightPx: 28,
+      x: 40,
+      y: 40,
+      w: 320,
+      h: 28,
+      tableColBgColors: ["#ff0000", "transparent"],
+      tableCells: [
+        [
+          { text: "R", bindingKind: "none", opcuaNodeId: "", sqlText: "", sqlParams: [], bgColor: "transparent" },
+          { text: "B", bindingKind: "none", opcuaNodeId: "", sqlText: "", sqlParams: [], bgColor: "#0000ff" },
+        ],
+      ],
+    });
+    expect(tb.tableColBgColors?.[0]).toBe("#ff0000");
+    expect(tb.tableCells?.[0]?.[1]?.bgColor).toBe("#0000ff");
+    const tmpl = makeTemplateWithBodyTable(tb);
+    const doc = await PDFDocument.create();
+    const font = await doc.embedFont(StandardFonts.Helvetica);
+    await appendPdfLibLayoutV2Pages(doc, { tmpl, previewValues: {}, font, useWinAnsi: true });
+    const plain = await inflatedPdfPlain(await doc.save({ useObjectStreams: false }));
+    expect(plain).toMatch(/1(\.0+)?\s+0(\.0+)?\s+0(\.0+)?\s+rg/);
+    expect(plain).toMatch(/0(\.0+)?\s+0(\.0+)?\s+1(\.0+)?\s+rg/);
+  });
 });
