@@ -1,17 +1,17 @@
 {
-  "version": "0.3.126",
-  "releasedAt": "2026-07-22T13:12:34.873Z",
-  "notes": "036：Noto TTF、字号 px→pt、D8/C9、P2",
+  "version": "0.3.127",
+  "releasedAt": "2026-07-22T13:20:59.864Z",
+  "notes": "hotfix：朱雀仿宋（Noto subset 缺字）；保留字号 pt",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.126-x64.exe",
+      "url": "Report Editor AI-Setup-0.3.127-x64.exe",
       "sha256": "",
       "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.126-arm64.dmg",
-      "sha256": "16bed7d0ac0aefafc8b16d33540b02f573c88498c1bcfaa9b7a61bcb0fb35fc8",
-      "size": 212062804
+      "url": "Report Editor AI-0.3.127-arm64.dmg",
+      "sha256": "5dde04eecadf5a4b287e6125750834138cb33738410e1285a527d7fba7dc4969",
+      "size": 212110234
     }
   }
 }

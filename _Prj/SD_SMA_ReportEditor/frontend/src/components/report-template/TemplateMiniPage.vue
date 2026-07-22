@@ -565,7 +565,8 @@ function miniZoneElStyle(el: LayoutZoneElement): Record<string, string> {
     overflow: "hidden",
     color: el.color,
     fontSize: `${Math.max(6, el.fontSize * 0.85)}px`,
-    fontFamily: ff || "Noto Sans SC, -apple-system, BlinkMacSystemFont, sans-serif",
+    // 与矢量档同源：pdf-lib 现嵌朱雀仿宋（Noto subset 缺字）；空族名走 FangSong
+    fontFamily: ff || 'FangSong, "Zhuque Fangsong", "Noto Sans SC", sans-serif',
     zIndex: String(normalizeZIndex(el.zIndex)),
   };
   if (el.type === "image") {
@@ -674,7 +675,7 @@ function miniTplElStyle(el: TemplateElement): Record<string, string> {
     padding: "2px",
     color: el.color,
     fontSize: `${Math.max(6, el.fontSize * 0.8)}px`,
-    fontFamily: ff || "Noto Sans SC, -apple-system, BlinkMacSystemFont, sans-serif",
+    fontFamily: ff || 'FangSong, "Zhuque Fangsong", "Noto Sans SC", sans-serif',
     zIndex: String(z),
   };
   const wrap = getZoneTextWrapStyle(el);
@@ -1221,8 +1222,8 @@ function tplCaption(el: TemplateElement): string {
 .mini-wrap {
   touch-action: manipulation;
   margin: 0 auto;
-  /* 与矢量档默认随包 Noto 对齐（ensureBundledLayoutFontsRegistered） */
-  font-family: "Noto Sans SC", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  /* 与矢量档默认朱雀仿宋对齐（Noto pdf-lib subset 缺字；见 ensureBundledLayoutFontsRegistered） */
+  font-family: FangSong, "Zhuque Fangsong", "Noto Sans SC", -apple-system, sans-serif;
 }
 .mini-band-inner,
 .mini-body-inner {

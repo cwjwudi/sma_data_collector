@@ -191,6 +191,10 @@
 | D16 | SQL 续页 UI hint 条 | 有 | 虚线提示条 | ✅ 代码 / 手测 ⌛️ |
 | D17 | zone `box` 默认底边 | Mini 靠 bg | transparent 不强制填灰 | ✅ 代码 / 手测 ⌛️ |
 
+
+### ⚠ 0.3.126→0.3.127 字体热修
+
+安装包实测：Noto TTF/VF + pdf-lib subset 在 macOS Preview **缺字乱距**；全量嵌入过大。**0.3.127** 矢量与 Mini 空族名改回朱雀仿宋（保留 `scaledFontSizePt` / C9）。
 ### ✅ 字体同源（解锁 D8 / D15）
 
 - `fonts:fetch` → `NotoSansSC-Regular.ttf`（TrueType；禁 OTTO subset）。  

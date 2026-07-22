@@ -2,11 +2,11 @@
 
 | 文件 | UI 族名 | 许可 | 用途 |
 |------|---------|------|------|
-| `NotoSansSC-Regular.ttf` | **Noto Sans SC**（默认） | SIL OFL | pdf-lib 嵌入（须 TTF；OTF/CFF subset 会乱码）+ Mini `@font-face` |
-| `ZhuqueFangsong-Regular.ttf` | **FangSong**（自带） | SIL OFL | 仿宋；物理字体为[朱雀仿宋](https://github.com/TrionesType/zhuque)，**非**微软仿宋 |
+| `ZhuqueFangsong-Regular.ttf` | **FangSong**（矢量默认） | SIL OFL | pdf-lib subset 可用；物理字体为[朱雀仿宋](https://github.com/TrionesType/zhuque)，**非**微软仿宋 |
+| `NotoSansSC-Regular.ttf` / `.otf` | **Noto Sans SC** | SIL OFL | 供 UI/预检；**勿**对 TTF/VF 做 pdf-lib subset（macOS Preview 缺字乱距）；OTF 为 OTTO 亦不可 subset |
 
 - **禁止**：勿将微软雅黑 / 微软仿宋 / 宋体等系统字体放入本目录。
-- 历史残留的 `NotoSansSC-Regular.otf` 可删；打包与运行时优先 TTF。
+- 2026-07-22：矢量档与 Mini 空族名统一走 **FangSong**，避免 Noto subset 缺陷。
 
 ## 获取字体文件
 

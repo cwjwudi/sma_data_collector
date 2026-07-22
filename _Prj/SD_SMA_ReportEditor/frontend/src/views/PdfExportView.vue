@@ -295,14 +295,16 @@ async function boot(): Promise<void> {
   if (!useChromiumPrint.value) {
     // 同机优先：跳过 DOM 预览栈与 printToPDF，矢量写 PDF
     try {
-      // pdf-lib：优先随包 Noto TTF（OTF/CFF subset 会乱码）；模版显式仿宋再嵌朱雀
+      // pdf-lib：Noto TTF/VF subset 在 macOS Preview 会缺字乱距；矢量默认嵌朱雀仿宋（可 subset）
       const picked = pickBundledFontForExport(collectFontFamiliesFromTemplate(t));
-      let fontRes = await window.electronAPI?.getBundledCjkFont?.({ key: picked.id });
+      const preferFangsong = picked.id === "fangsong" || picked.id === "noto-sans-sc";
+      let fontRes = await window.electronAPI?.getBundledCjkFont?.({
+        key: preferFangsong ? "fangsong" : picked.id,
+      });
       if (!fontRes?.ok) {
-        fontRes = await window.electronAPI?.getBundledCjkFont?.({ key: "noto-sans-sc" });
+        fontRes = await window.electronAPI?.getBundledCjkFont?.({ key: "fangsong" });
       }
-      const bundledFontId =
-        fontRes?.ok && fontRes.key === "fangsong" ? "fangsong" : picked.id;
+      const bundledFontId = "fangsong";
       const { pdfBase64, meta } = await renderPdfLibExportPartBase64({
         tmpl: t,
         previewValues: bindingPreview.values.value,
