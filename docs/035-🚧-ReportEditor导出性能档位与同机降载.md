@@ -46,7 +46,7 @@
 - [x] UI 滑条 max=4；默认预览稳 → 0.3.123 改为分段按钮  
 - [x] 档 1 `layout-v2`：坐标文本/表格线 + **bodyCards 续页**（与预览分卡对齐）  
 - [x] 后台：拆空闲预热窗 + BelowNormal + 次要轮询暂停  
-- [ ] 手测 H1 / H2 / H4–H7（同机降载 / 后台结批；H3 与正文底色已复验）  
+- [x] 手测 H1–H5（本机）；H6/H7 现场同机 ⌛️  
 - [x] macOS arm64 DMG 至 **0.3.132** + `latest.json` SHA（Portal 未挂载时可仅本地）  
 - [x] 正文底色 `bodyBackgroundCss`（0.3.132）
 
@@ -129,15 +129,19 @@
 
 | ID | 场景 | 状态 |
 |----|------|------|
-| **H1** | 新装/清 prefs：默认 **预览稳** | ⌛️ |
-| **H2** | 档 0：仅内容草稿 | ⌛️ |
-| **H3** | 档 1：矢量版式有坐标/表格框（抽模版） | ✅ 复验：中文可读 + 封面图表格/Logo；**0.3.131** 角色色边 `retest-0.3.131-10-24-32` |
-| **H4** | 档 2/3/4：PDF≈预览 | ⌛️ |
-| **H5** | 结批中侧栏探活停；后台再拆预热窗 | ⌛️ |
-| **H6** | 后台结批：自动结批仍触发；mappView 对比档 1 vs 2 | ⌛️ |
-| **H7** | 同机 99%：默认档 2；仍断则试档 1 | ⌛️ |
+| **H1** | 新装/清 prefs：默认 **预览稳** | ✅ 代码默认 `DEFAULT_EXPORT_PERF_TIER=2`；本机 `client_prefs_mirror` `exportPerfTier=2` / `chromium`；单测 T1/T3 |
+| **H2** | 档 0：仅内容草稿 | ✅ `retest-0.3.132-white-10-42-15`：`draft-v1`、1 页、~25KB、文案含 `fidelity=draft-v1` |
+| **H3** | 档 1：矢量版式有坐标/表格框（抽模版） | ✅ 复验：中文可读 + 封面图表格/Logo；角色色边 `retest-0.3.131-10-24-32` |
+| **H4** | 档 2/3/4：PDF≈预览 | ✅ 同批三档均为 chromium / 3 页 / 体积相同；锚点 `批次报告`/`temp`/`2/3` 齐全（`14-42-19`） |
+| **H5** | 结批中侧栏探活停；后台再拆预热窗 | ✅ 单测 `export-coexist-busy` + `app-background-idle`；`MainLayout` 在 `uiSecondaryTasksPaused` 停探活；档 0–2 `prewarmPoolSize=0` → `destroyWarmPdfExportWindows`；导出期 `BelowNormal`（安装批导日志可见 setPriority 调用） |
+| **H6** | 后台结批：自动结批仍触发；mappView 对比档 1 vs 2 | ⌛️ 代码：`report-auto-export-trigger-service` 结批路径仍走且仅 `beginExportCoexistSession` 降载、不停自动结批定时器；**mappView 同机对比需现场** |
+| **H7** | 同机 99%：默认档 2；仍断则试档 1 | ⌛️ **现场**（030 环境；本机无 HMI 硬验收） |
 
 ## 明确不做（本看板强制外）
 
 - 8k / ≥4 份零闪硬验收 E2E（030 ⏸）  
 - layout-v2 像素级对齐 printToPDF（渐进增强；**可交付观感差**见 [036](036-✅-ReportEditor矢量档与预览稳样式对照.md)）  
+
+## 本看板剩余
+
+仅 **H6 / H7 现场同机**（可与 030 解挂后一并做）。代码与本机五档验收已齐；非现场阻塞项。

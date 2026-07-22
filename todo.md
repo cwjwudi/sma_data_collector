@@ -7,6 +7,8 @@
 
 ## 2026-07-22
 
+- **ReportEditor 035 手测 H1–H5**：默认预览稳、档 0 草稿、档 2/3/4 预览级、结批探活暂停/拆预热；证据 `retest-0.3.132-white-10-42-15` + 单测。H6/H7 现场 ⌛️。看板 [docs/035-🚧](docs/035-🚧-ReportEditor导出性能档位与同机降载.md)。
+
 - **ReportEditor 0.3.132（035 正文底色）**：`bodyBackgroundCss` 可编辑；装包白底五档 `retest-0.3.132-white-10-42-15`（gray249=0）。看板 [docs/035-🚧](docs/035-🚧-ReportEditor导出性能档位与同机降载.md)。
 
 - **ReportEditor 036 主路径闭环**：矢量↔预览对照 D1–D19 / C1–C10 已齐 → 改名 [docs/036-✅](docs/036-✅-ReportEditor矢量档与预览稳样式对照.md)。
