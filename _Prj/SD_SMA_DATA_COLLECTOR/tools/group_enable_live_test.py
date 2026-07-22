@@ -50,6 +50,30 @@ def build_test_config(source: Path) -> dict[str, Any]:
     return payload
 
 
+def configure_disable_flush_test(
+    payload: dict[str, Any], toggle_group: str, outbox_path: Path
+) -> None:
+    """Force partial batches so every disable transition must flush cached rows."""
+    payload["database"]["data_groups"] = [toggle_group]
+    for group in payload.get("groups", []):
+        if group.get("name") == toggle_group:
+            group["batch_insert_size"] = 100000
+            break
+    payload["persistent_queue"] = {
+        "enabled": True,
+        "path": str(outbox_path),
+        "synchronous": "FULL",
+        "busy_timeout_ms": 5000,
+        "lease_seconds": 60,
+        "retry_interval_seconds": 2,
+        "max_retry_interval_seconds": 30,
+        "max_attempts": 0,
+        "completed_retention_days": 1,
+        "cleanup_interval_seconds": 3600,
+        "max_queue_rows": 100000,
+    }
+
+
 async def wait_for_count_increase(
     counts: Counter[str], group_name: str, baseline: int, timeout: float
 ) -> bool:
@@ -68,6 +92,7 @@ async def run_test(
     toggle_group: str,
     cycle_seconds: float,
     off_seconds: float,
+    verify_disable_flush: bool,
 ) -> int:
     if toggle_group not in GROUP_ENABLE_POINTS:
         raise ValueError(f"unsupported toggle group: {toggle_group}")
@@ -75,6 +100,11 @@ async def run_test(
         raise ValueError("cycle_seconds must be at least off_seconds + 5")
 
     test_payload = build_test_config(source_config)
+    outbox_path = Path(tempfile.gettempdir()) / (
+        f"sd_sma_group_disable_flush_{os.getpid()}_{time.time_ns()}.db"
+    )
+    if verify_disable_flush:
+        configure_disable_flush_test(test_payload, toggle_group, outbox_path)
     temp_path = ""
     with tempfile.NamedTemporaryFile(
         mode="w", suffix=".json", encoding="utf-8", delete=False
@@ -87,6 +117,7 @@ async def run_test(
     counts: Counter[str] = Counter()
     transitions: list[dict[str, Any]] = []
     off_windows: list[dict[str, Any]] = []
+    flush_windows: list[dict[str, Any]] = []
     error: str | None = None
     db_summary: dict[str, Any] = {}
     system = DataCollectionSystem(temp_path)
@@ -141,8 +172,81 @@ async def run_test(
             while time.monotonic() - started_monotonic < duration - 5:
                 cycle_started = time.monotonic()
                 cycle += 1
+                queued_before_disable = sum(
+                    1
+                    for row in system.storage_processor.data_queue
+                    if row.get("group_name") == toggle_group
+                )
+                requested_before = system.storage_processor.metrics.get(
+                    "group_flush_rows_requested", 0
+                )
+                committed_before = system.storage_processor.metrics.get(
+                    "group_flush_rows_committed", 0
+                )
+                disable_started = time.monotonic()
                 await set_enable(False)
-                await asyncio.sleep(2.0)
+                if verify_disable_flush:
+                    deadline = time.monotonic() + 10.0
+                    while (
+                        system.storage_processor.metrics.get(
+                            "group_flush_rows_requested", 0
+                        )
+                        <= requested_before
+                        and time.monotonic() < deadline
+                    ):
+                        await asyncio.sleep(0.05)
+                    requested_rows = (
+                        system.storage_processor.metrics.get(
+                            "group_flush_rows_requested", 0
+                        )
+                        - requested_before
+                    )
+                    while (
+                        system.storage_processor.metrics.get(
+                            "group_flush_rows_committed", 0
+                        )
+                        < committed_before + requested_rows
+                        and time.monotonic() < deadline
+                    ):
+                        await asyncio.sleep(0.05)
+                    committed_rows = (
+                        system.storage_processor.metrics.get(
+                            "group_flush_rows_committed", 0
+                        )
+                        - committed_before
+                    )
+                    queued_after_flush = sum(
+                        1
+                        for row in system.storage_processor.data_queue
+                        if row.get("group_name") == toggle_group
+                    )
+                    flush_latency = time.monotonic() - disable_started
+                    flush_windows.append(
+                        {
+                            "cycle": cycle,
+                            "queued_before_disable": queued_before_disable,
+                            "rows_requested": requested_rows,
+                            "rows_committed": committed_rows,
+                            "queued_after_flush": queued_after_flush,
+                            "flush_latency_seconds": flush_latency,
+                        }
+                    )
+                    if requested_rows <= 0:
+                        raise RuntimeError(
+                            f"{toggle_group} had no partial batch to flush on disable"
+                        )
+                    if committed_rows != requested_rows or queued_after_flush != 0:
+                        raise RuntimeError(
+                            f"{toggle_group} disable flush incomplete: "
+                            f"requested={requested_rows}, committed={committed_rows}, "
+                            f"queued={queued_after_flush}"
+                        )
+                    if flush_latency > 5.0:
+                        raise RuntimeError(
+                            f"{toggle_group} disable flush took {flush_latency:.3f}s"
+                        )
+                else:
+                    await asyncio.sleep(2.0)
                 baseline = counts[toggle_group]
                 disabled_at = datetime.now().isoformat(timespec="milliseconds")
                 await asyncio.sleep(off_seconds)
@@ -226,10 +330,21 @@ async def run_test(
                 await asyncio.wait_for(start_task, timeout=10.0)
             else:
                 await asyncio.gather(start_task, return_exceptions=True)
+        if (
+            system.storage_processor is not None
+            and system.storage_processor.persistent_store is not None
+        ):
+            system.storage_processor.persistent_store.close()
         try:
             os.unlink(temp_path)
         except OSError:
             pass
+        if verify_disable_flush:
+            for candidate in (outbox_path, Path(f"{outbox_path}-wal"), Path(f"{outbox_path}-shm")):
+                try:
+                    candidate.unlink()
+                except OSError:
+                    pass
 
     elapsed = time.monotonic() - started_monotonic
     collector_metrics = dict(system.data_collector.metrics) if system.data_collector else {}
@@ -244,6 +359,19 @@ async def run_test(
         and db_summary.get(toggle_group, {}).get("rows_since_start", 0) > 0
         and collector_metrics.get("group_enable_read_failed", 0) == 0
         and collector_metrics.get("group_enable_invalid", 0) == 0
+        and (
+            not verify_disable_flush
+            or (
+                len(flush_windows) == len(off_windows)
+                and all(window["rows_requested"] > 0 for window in flush_windows)
+                and all(
+                    window["rows_committed"] == window["rows_requested"]
+                    and window["queued_after_flush"] == 0
+                    and window["flush_latency_seconds"] <= 5.0
+                    for window in flush_windows
+                )
+            )
+        )
     )
     evidence = {
         "test": "group_external_enable_live",
@@ -255,10 +383,12 @@ async def run_test(
         "toggle_group": toggle_group,
         "cycle_seconds": cycle_seconds,
         "off_seconds": off_seconds,
+        "verify_disable_flush": verify_disable_flush,
         "passed": passed,
         "error": error,
         "event_counts": dict(counts),
         "off_windows": off_windows,
+        "flush_windows": flush_windows,
         "transitions": transitions,
         "db_summary": db_summary,
         "collector_metrics": collector_metrics,
@@ -281,6 +411,7 @@ def main() -> int:
     parser.add_argument("--cycle-seconds", type=float, default=120.0)
     parser.add_argument("--off-seconds", type=float, default=15.0)
     parser.add_argument("--evidence", type=Path, required=True)
+    parser.add_argument("--verify-disable-flush", action="store_true")
     args = parser.parse_args()
     return asyncio.run(
         run_test(
@@ -290,6 +421,7 @@ def main() -> int:
             args.toggle_group,
             args.cycle_seconds,
             args.off_seconds,
+            args.verify_disable_flush,
         )
     )
 

@@ -240,6 +240,9 @@ class DataCollectionSystem:
 
             self.data_collector = DataCollector(self.communication_manager)
             self.data_collector.register_data_callback(self._on_data_received)
+            self.data_collector.register_group_disabled_callback(
+                self._on_group_disabled
+            )
 
             self.logger.info("系统初始化完成")
             return True
@@ -256,6 +259,10 @@ class DataCollectionSystem:
                 collection_data["group_name"],
                 collection_data["trigger_type"],
             )
+
+    def _on_group_disabled(self, group_name: str) -> None:
+        if self.storage_processor:
+            self.storage_processor.request_group_flush(group_name)
 
     async def start(self) -> None:
         if not self.config or not self.data_collector:

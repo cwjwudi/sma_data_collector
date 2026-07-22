@@ -43,6 +43,7 @@ class DataCollector:
         self.comm_manager = communication_manager
         self.logger = logging.getLogger(__name__)
         self.data_callbacks: List[Callable[[Dict[str, Any]], None]] = []
+        self.group_disabled_callbacks: List[Callable[[str], None]] = []
         self.collectors = {}  # 存储各个数据组的采集任务
         self.trigger_reset_confirm_attempts = 3
         self.trigger_reset_confirm_delay = 0.05
@@ -162,6 +163,7 @@ class DataCollector:
                             active_task.cancel()
                             await asyncio.gather(active_task, return_exceptions=True)
                             active_task = None
+                            self._notify_group_disabled(group.name)
                         previous_state = enabled
 
                     if active_task is not None and active_task.done():
@@ -633,6 +635,22 @@ class DataCollector:
             callback: 当采集到数据时调用的函数
         """
         self.data_callbacks.append(callback)
+
+    def register_group_disabled_callback(self, callback: Callable[[str], None]) -> None:
+        """Register a callback invoked after an enabled group has fully stopped."""
+        self.group_disabled_callbacks.append(callback)
+
+    def _notify_group_disabled(self, group_name: str) -> None:
+        for callback in self.group_disabled_callbacks:
+            try:
+                callback(group_name)
+            except Exception:  # noqa: BLE001
+                self.metrics["group_disable_callback_failed"] += 1
+                self.logger.error(
+                    "采集组 %s 停用后的缓存刷新通知失败",
+                    group_name,
+                    exc_info=True,
+                )
     
     async def start_collection(self, data_groups: List[DataGroup], 
                              data_points_dict: Dict[str, DataPoint]) -> None:

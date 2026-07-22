@@ -88,6 +88,8 @@ async def test_external_point_stops_and_restarts_group_collection(monkeypatch):
     enable_point = DataPoint("Enable", "ns=6;s=::Enable", "enable")
     starts = 0
     stops = 0
+    disabled_notifications = []
+    collector.register_group_disabled_callback(disabled_notifications.append)
 
     async def fake_group_collection(*_args):
         nonlocal starts, stops
@@ -120,7 +122,9 @@ async def test_external_point_stops_and_restarts_group_collection(monkeypatch):
 
         client.value = 0
         await wait_until(lambda: stops == 1)
+        await wait_until(lambda: len(disabled_notifications) == 1)
         assert stops == 1
+        assert disabled_notifications == ["Data_Test"]
 
         client.value = True
         await wait_until(lambda: starts == 2)
@@ -132,6 +136,7 @@ async def test_external_point_stops_and_restarts_group_collection(monkeypatch):
         await asyncio.gather(task, return_exceptions=True)
 
     assert stops == 2
+    assert disabled_notifications == ["Data_Test"]
 
 
 @pytest.mark.parametrize("value", [2, -1, 0.5, "1", "true", None])

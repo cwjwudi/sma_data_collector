@@ -549,6 +549,7 @@ partition_interval_years=2:
 - 未启用持久化队列时，只有某个触发索引的全部配置数据点均读取成功且该行成功进入内存队列后，程序才复位该索引。
 - 启用 `persistent_queue.enabled=true` 后，只有 SQLite outbox 事务提交成功才复位该索引；断电或进程强制终止后会从 outbox 恢复。
 - Web 配置页的“数据库”页签可直接启用持久化队列并设置 outbox 路径、同步级别、重试和容量参数。
+- 配置了 `groups[].enable_point` 的采集组从启用切换为停用时，会先停止该组采集，再立即刷新该组未满 `batch_insert_size` 的缓存；其他组缓存不受影响，失败记录继续按 outbox/内存重试策略保留。
 - 复位会通过 OPC UA 读回确认；若复位后 PLC 已立即再次置位，程序会保留该高电平并在下一轮作为新事件采集。
 - 触发复位表示采集器已经可靠接收；启用 outbox 时表示 SQLite 已提交，仍不表示 MySQL 已提交。
 - MySQL 瞬时失败记录进入持久化重试状态，不可重试的数据进入持久化 dead-letter；配置、恢复和运维命令见 `docs/PERSISTENT_QUEUE.md`。
