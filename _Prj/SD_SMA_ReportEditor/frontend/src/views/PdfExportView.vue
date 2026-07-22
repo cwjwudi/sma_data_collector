@@ -71,6 +71,13 @@ const layoutFidelity = computed(() => {
   return "draft-v1" as const;
 });
 
+/** 五档对照批导等：绑定失败仍继续渲染，便于离线比版式 */
+const allowBindingIssues = computed(() => {
+  const raw = route.query.allowBindingIssues;
+  const s = Array.isArray(raw) ? raw[0] : raw;
+  return s === "1" || s === "true";
+});
+
 const bindingPreview = useReportBindingPreview(tmpl);
 provide(reportBindingPreviewKey, bindingPreview);
 let bootSeq = 0;
@@ -257,7 +264,7 @@ async function boot(): Promise<void> {
     }
   }
   const dataMs = Date.now() - dataStartMs;
-  if (issueDetails.length) {
+  if (issueDetails.length && !allowBindingIssues.value) {
     clearPdfExportFillCache();
     errText.value = humanizePdfExportError(summarizeBindingPreviewIssueDetails(issueDetails));
     const s = bindingPreview.lastStats.value;

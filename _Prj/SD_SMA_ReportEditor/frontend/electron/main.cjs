@@ -30,6 +30,18 @@ const {
   shouldSilentStartThisSession,
 } = require('./launch.cjs')
 
+// 五档批导：独立 userData，避免与已打开的安装版抢单实例锁
+const fiveTierExportSpec = String(process.env.REPORT_EDITOR_FIVE_TIER_EXPORT || '').trim()
+if (fiveTierExportSpec) {
+  const batchUserData = path.join(os.tmpdir(), 'sd-sma-report-editor-five-tier-export')
+  try {
+    fs.mkdirSync(batchUserData, { recursive: true })
+  } catch {
+    /* ignore */
+  }
+  app.setPath('userData', batchUserData)
+}
+
 // —— 整机单实例（须在 whenReady / 拉后端之前）——
 const gotSingleInstanceLock = app.requestSingleInstanceLock()
 if (!gotSingleInstanceLock) {
@@ -618,7 +630,10 @@ function createWindow() {
   })
 
   const isDev = !app.isPackaged
-  if (isDev) {
+  const loadDist =
+    Boolean(fiveTierExportSpec) ||
+    ['1', 'true', 'yes'].includes(String(process.env.REPORT_EDITOR_LOAD_DIST || '').toLowerCase())
+  if (isDev && !loadDist) {
     mainWindow.loadURL(VITE_DEV_URL)
   } else {
     mainWindow.loadFile(getRendererIndexHtml())
@@ -628,6 +643,13 @@ function createWindow() {
   mainWindow.webContents.once('did-finish-load', () => {
     ensurePdfExportWindowPrewarmed(mainWindow ? mainWindow.webContents : null)
     publishAppResourceMode()
+    if (fiveTierExportSpec) {
+      void runFiveTierExportBatch(fiveTierExportSpec).catch((e) => {
+        log(`五档批导失败：${e && e.message ? e.message : e}`)
+        isQuitting = true
+        app.exit(1)
+      })
+    }
   })
 
   // 035：后台/最小化时释放预热窗 + 通知渲染进程暂停次要轮询（不停自动结批）
@@ -1012,24 +1034,32 @@ function createPdfExportWindow() {
   return win
 }
 
-/** 以 refWc（发起导出的窗口）的 http 源为准拼导出页 URL；否则回落 dev / 打包路径 */
+/** 以 refWc（发起导出的窗口）的 http/file 源为准拼导出页 URL；否则回落 dev / dist */
 function buildPdfExportUrl(refWc, hash) {
+  const withHash = String(hash || '').startsWith('#') ? String(hash) : `#${hash}`
   try {
     if (refWc && !refWc.isDestroyed()) {
-      const cur = refWc.getURL()
-      if (cur && /^https?:\/\//i.test(cur)) {
+      const cur = String(refWc.getURL() || '')
+      if (/^https?:\/\//i.test(cur)) {
         const u = new URL(cur)
-        u.hash = hash
-        return u.href
+        return `${u.origin}${u.pathname}${u.search}${withHash}`
+      }
+      if (/^file:/i.test(cur)) {
+        return `${cur.split('#')[0]}${withHash}`
       }
     }
   } catch {
     /* ignore */
   }
-  if (!app.isPackaged) {
-    return `${VITE_DEV_URL}/${hash}`
+  const loadDist =
+    app.isPackaged ||
+    Boolean(fiveTierExportSpec) ||
+    ['1', 'true', 'yes'].includes(String(process.env.REPORT_EDITOR_LOAD_DIST || '').toLowerCase())
+  if (!loadDist) {
+    // 历史：dev 下传入 hash=`#/pdf-export?...`
+    return `${VITE_DEV_URL}/${withHash}`
   }
-  return `${pathToFileURL(getRendererIndexHtml()).href}${hash}`
+  return `${pathToFileURL(getRendererIndexHtml()).href}${withHash}`
 }
 
 function isReusablePdfWindow(win) {
@@ -1272,7 +1302,7 @@ ipcMain.handle('pdf-export-cancel', async (_event, opts) => {
   return { ok: found, cancelled: found }
 })
 
-ipcMain.handle('pdf-export-run', async (event, opts) => {
+async function handlePdfExportRun(event, opts) {
   const filePath = opts && opts.filePath
   const templateId = opts && opts.templateId
   const openAfter = Boolean(opts && opts.openAfter)
@@ -1339,8 +1369,11 @@ ipcMain.handle('pdf-export-run', async (event, opts) => {
             ? 'draft-v1'
             : 'print-to-pdf'
 
+      const allowBindingIssues = Boolean(opts && opts.allowBindingIssues)
+
       function partHash(partIndex) {
-        return `#/pdf-export?templateId=${encodeURIComponent(templateId)}&reportPartIndex=${partIndex}&engine=${encodeURIComponent(exportEngine)}&layoutFidelity=${encodeURIComponent(layoutFidelity)}&seq=${Date.now()}`
+        const allowQ = allowBindingIssues ? '&allowBindingIssues=1' : ''
+        return `#/pdf-export?templateId=${encodeURIComponent(templateId)}&reportPartIndex=${partIndex}&engine=${encodeURIComponent(exportEngine)}&layoutFidelity=${encodeURIComponent(layoutFidelity)}${allowQ}&seq=${Date.now()}`
       }
 
       // 优先复用预热窗口：SPA 已启动，进入取数只差一次 hash 切换
@@ -1614,7 +1647,70 @@ ipcMain.handle('pdf-export-run', async (event, opts) => {
       ensurePdfExportWindowPrewarmed(event.sender)
     }
   })
-})
+}
+
+ipcMain.handle('pdf-export-run', (event, opts) => handlePdfExportRun(event, opts))
+
+/** 035：五档对照导出。env REPORT_EDITOR_FIVE_TIER_EXPORT=templateId|outDir */
+async function runFiveTierExportBatch(spec) {
+  const parts = String(spec || '').split('|')
+  const templateId = (parts[0] || '').trim()
+  const outDir = (parts[1] || '').trim() || path.join(os.tmpdir(), 'report-editor-five-tier-exports')
+  if (!templateId) throw new Error('REPORT_EDITOR_FIVE_TIER_EXPORT 缺少 templateId')
+  fs.mkdirSync(outDir, { recursive: true })
+  const tiers = [
+    { tier: 0, label: '仅内容', engine: 'pdf-lib', layoutFidelity: 'draft-v1', yieldMs: 200 },
+    { tier: 1, label: '矢量版式', engine: 'pdf-lib', layoutFidelity: 'layout-v2', yieldMs: 200 },
+    { tier: 2, label: '预览稳', engine: 'chromium', layoutFidelity: 'print-to-pdf', yieldMs: 200 },
+    { tier: 3, label: '功能折中', engine: 'chromium', layoutFidelity: 'print-to-pdf', yieldMs: 80 },
+    { tier: 4, label: '不妥协', engine: 'chromium', layoutFidelity: 'print-to-pdf', yieldMs: 40 },
+  ]
+  const sender = mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents : null
+  if (!sender) throw new Error('主窗口未就绪')
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+  const results = []
+  for (const t of tiers) {
+    const safeLabel = t.label.replace(/[\\/:*?"<>|]/g, '_')
+    const filePath = path.join(outDir, `tier${t.tier}_${safeLabel}_${stamp}.pdf`)
+    log(`五档批导：档 ${t.tier} ${t.label} → ${filePath}`)
+    try {
+      // 按档设置预热/yield（与 UI 一致）
+      pdfExportPrewarmPoolSize = t.tier >= 4 ? 2 : t.tier === 3 ? 1 : 0
+      pdfExportPartYieldMs = t.yieldMs
+      trimWarmPdfExportWindows()
+      const res = await handlePdfExportRun(
+        { sender },
+        {
+          templateId,
+          filePath,
+          openAfter: false,
+          engine: t.engine,
+          layoutFidelity: t.layoutFidelity,
+          yieldMs: t.yieldMs,
+          // 对照批导：离线 OPC/SQL 失败仍出 PDF，便于比五档版式
+          allowBindingIssues: true,
+          jobId: `five-tier-${t.tier}-${Date.now()}`,
+        },
+      )
+      results.push({ ...t, ok: true, filePath: res.filePath || filePath, engine: res.engine, exportMode: res.exportMode })
+      log(`五档批导：档 ${t.tier} 完成`)
+    } catch (e) {
+      const msg = e && e.message ? e.message : String(e)
+      results.push({ ...t, ok: false, error: msg, filePath })
+      log(`五档批导：档 ${t.tier} 失败：${msg}`)
+    }
+  }
+  const summaryPath = path.join(outDir, `summary_${stamp}.json`)
+  fs.writeFileSync(summaryPath, JSON.stringify({ templateId, outDir, results }, null, 2), 'utf8')
+  log(`五档批导完成：${summaryPath}`)
+  try {
+    shell.openPath(outDir)
+  } catch {
+    /* ignore */
+  }
+  isQuitting = true
+  app.quit()
+}
 
 function killPython() {
   if (pythonProcess && backendStartedByElectron) {
