@@ -61,6 +61,7 @@
           :tail-only-below-baseline="!!card.tailOnlyBelowBaseline"
           :tail-baseline-y="card.tailBaselineY"
           :overflow-sql-fill-table-id="card.overflowSqlFillTableId"
+          :hide-overflow-sql-fill-table="!!card.hideOverflowSqlFillTable"
           :preview-binding-values="report.previewValues"
           :max-width-px="cardWidth"
           :max-height-px="miniPageMaxHeightPx"

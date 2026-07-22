@@ -392,9 +392,16 @@ export function computeContentAwareTableRowHeightsPx(opts: {
 }
 
 export function sumTableRowHeightsPx(heights: number[], fallbackRowH: number, rowCount: number): number {
-  if (heights.length > 0) return heights.reduce((a, b) => a + b, 0);
   const n = Math.max(0, Math.floor(Number(rowCount) || 0));
-  return n * clampTableRowHeightPx(fallbackRowH);
+  const fb = Math.max(1, clampTableRowHeightPx(fallbackRowH));
+  if (n <= 0) return 0;
+  if (!heights.length) return n * fb;
+  let sum = 0;
+  for (let i = 0; i < n; i++) {
+    const h = heights[i];
+    sum += Number.isFinite(h) && (h as number) > 0 ? Math.max(1, h as number) : fb;
+  }
+  return sum;
 }
 
 export const REPORT_TEMPLATE_TABLE_NODE_PADDING_PX = {

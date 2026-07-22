@@ -456,6 +456,9 @@ function showBodyTplEl(
     if (card.overflowSqlFillTableId && el.id === card.overflowSqlFillTableId) return false;
     return el.y >= card.tailBaselineY - 0.5;
   }
+  if (card.hideOverflowSqlFillTable && card.overflowSqlFillTableId && el.id === card.overflowSqlFillTableId) {
+    return false;
+  }
   if (card.continuationHideOtherBodyElements) {
     if (el.type !== "table") return false;
     return !!card.sqlFillTableSlices?.[el.id];

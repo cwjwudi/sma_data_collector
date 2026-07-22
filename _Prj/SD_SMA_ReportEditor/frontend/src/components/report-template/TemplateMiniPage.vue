@@ -374,6 +374,8 @@ const props = withDefaults(
     tailOnlyBelowBaseline?: boolean;
     tailBaselineY?: number;
     overflowSqlFillTableId?: string;
+    /** 本卡隐藏溢出 SQL 表（改到续卡顶部） */
+    hideOverflowSqlFillTable?: boolean;
     maxWidthPx?: number;
     maxHeightPx?: number;
     /** 页眉/页脚区内页码预览 */
@@ -399,6 +401,7 @@ const props = withDefaults(
     sqlFillHideBelow: null,
     showSqlFillTailDividerHint: false,
     tailOnlyBelowBaseline: false,
+    hideOverflowSqlFillTable: false,
     plainChrome: false,
     exactPageFit: false,
   },
@@ -622,6 +625,13 @@ function miniShowBodyTplEl(el: TemplateElement): boolean {
     const base = props.tailBaselineY;
     if (props.overflowSqlFillTableId && el.id === props.overflowSqlFillTableId) return false;
     return el.y >= base - 0.5;
+  }
+  if (
+    props.hideOverflowSqlFillTable &&
+    props.overflowSqlFillTableId &&
+    el.id === props.overflowSqlFillTableId
+  ) {
+    return false;
   }
   if (props.continuationHideOtherBodyElements) {
     if (el.type !== "table") return false;
