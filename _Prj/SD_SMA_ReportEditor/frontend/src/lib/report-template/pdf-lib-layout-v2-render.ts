@@ -297,11 +297,16 @@ function drawZoneTable(
   origin: { ox: number; oy: number },
   values: Record<string, BindingPreviewCell | undefined>,
   useWinAnsi: boolean,
+  geo?: { x: number; y: number; w: number; h: number },
 ): void {
   const grid = ensureZoneTableGrid(el);
   const rows = Math.max(1, Math.min(el.tableRows || grid.length || 1, 40));
   const cols = Math.max(1, Math.min(el.tableCols || grid[0]?.length || 1, 16));
-  const box = boxFromPagePx(origin.ox + el.x, origin.oy + el.y, el.w, el.h, pageH);
+  const x = geo?.x ?? el.x;
+  const y = geo?.y ?? el.y;
+  const w = geo?.w ?? el.w;
+  const h = geo?.h ?? el.h;
+  const box = boxFromPagePx(origin.ox + x, origin.oy + y, w, h, pageH);
   page.drawRectangle({
     x: box.x,
     y: box.yBottom,
@@ -320,8 +325,8 @@ function drawZoneTable(
     widthsPx.length === cols && widthsPx.some((w) => w > 0)
       ? (() => {
           const sum = widthsPx.reduce((a, b) => a + Math.max(1, b), 0);
-          const scale = el.w / sum;
-          return widthsPx.map((w) => Math.max(4, w * scale) * PX_TO_PT);
+          const scale = w / sum;
+          return widthsPx.map((cw) => Math.max(4, cw * scale) * PX_TO_PT);
         })()
       : Array.from({ length: cols }, () => box.w / cols);
   const rowH = box.h / rows;
@@ -373,6 +378,23 @@ function drawZoneTable(
   }
 }
 
+function clampZoneElToBand(
+  el: LayoutZoneElement,
+  bandW: number,
+): { x: number; y: number; w: number; h: number } {
+  const maxW = Math.max(20, bandW - 1);
+  let x = Math.max(0, Number(el.x) || 0);
+  let w = Math.max(4, Number(el.w) || 4);
+  const y = Number(el.y) || 0;
+  const h = Math.max(4, Number(el.h) || 4);
+  if (x + w > maxW) w = Math.max(4, maxW - x);
+  if (x + w > maxW) {
+    x = Math.max(0, maxW - w);
+    w = Math.max(4, maxW - x);
+  }
+  return { x, y, w, h };
+}
+
 function drawZoneElements(
   page: PDFPage,
   font: PDFFont,
@@ -383,10 +405,15 @@ function drawZoneElements(
   useWinAnsi: boolean,
   images: Map<string, PDFImage>,
   pageLabel: string,
+  bandWPx?: number,
 ): void {
   const sorted = [...els].sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0));
   for (const el of sorted) {
-    const box = boxFromPagePx(origin.ox + el.x, origin.oy + el.y, el.w, el.h, pageH);
+    const geo =
+      bandWPx != null && bandWPx > 0
+        ? clampZoneElToBand(el, bandWPx)
+        : { x: el.x, y: el.y, w: el.w, h: el.h };
+    const box = boxFromPagePx(origin.ox + geo.x, origin.oy + geo.y, geo.w, geo.h, pageH);
     if (el.type === "image") {
       const src = String(el.imageSrc || "").trim();
       const img = src ? images.get(src) : undefined;
@@ -394,7 +421,7 @@ function drawZoneElements(
       continue;
     }
     if (el.type === "table") {
-      drawZoneTable(page, font, el, pageH, origin, values, useWinAnsi);
+      drawZoneTable(page, font, el, pageH, origin, values, useWinAnsi, geo);
       continue;
     }
     if (el.type === "box") {
@@ -744,6 +771,7 @@ export async function appendPdfLibLayoutV2Pages(
     });
     const showChrome = !card?.continuationHideOtherBodyElements && !card?.tailOnlyBelowBaseline;
     const bodyOrigin = contentOrigin(metrics);
+    const bandW = metrics.contentW;
     if (showChrome) {
       drawZoneElements(
         page,
@@ -755,6 +783,7 @@ export async function appendPdfLibLayoutV2Pages(
         useWinAnsi,
         images,
         pageLabel,
+        bandW,
       );
     }
     const effectiveCard: ExpandedBodyPreviewCard = card || {
@@ -775,6 +804,7 @@ export async function appendPdfLibLayoutV2Pages(
         useWinAnsi,
         images,
         pageLabel,
+        bandW,
       );
     }
     const sortedBody = [...bodyEls].sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0));
@@ -802,6 +832,7 @@ export async function appendPdfLibLayoutV2Pages(
         useWinAnsi,
         images,
         pageLabel,
+        bandW,
       );
     }
   };
