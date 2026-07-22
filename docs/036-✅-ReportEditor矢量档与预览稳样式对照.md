@@ -1,7 +1,7 @@
 # ReportEditor：矢量档（layout-v2）↔ 预览稳（Chromium）样式对照
 
 > 本文件为 **完整对照清单 / 修复看板**；规则见 [CLAUDE.md](../CLAUDE.md)。  
-> **状态**：✅ 主路径已闭环（2026-07-22 · 至 0.3.131 D19；正文底色可编辑见 [035](035-🚧-ReportEditor导出性能档位与同机降载.md) / 0.3.132）。  
+> **状态**：✅ 主路径已闭环（2026-07-22 · 至 **0.3.135** D20/D21 表框；此前至 0.3.131 D19；正文底色见 [035](035-🚧-ReportEditor导出性能档位与同机降载.md) / 0.3.132）。  
 > **登记日期**：2026-07-22 · 初对照 **`2026-07-22T11-56-48`** · P0 **`12-05-37`** · P1 **`12-38-51`** · **色/圆/线 `12-53-45`** · **字体+P2+D8 `13-11-28`** · 历史冒烟 `336a5e28-552a-4def-afa4-fdac8c09c46e`。  
 > **Windows 复验（无外框竖/横）**：竖 `fbbf8a05-ae98-4e12-9f86-a77eed4a67d3` · 横 `45ee4134-24c1-4cab-9e02-170650ffd4df` · 戳记 `14-59-18`/`14-59-36`（见 [035](035-🚧-ReportEditor导出性能档位与同机降载.md)）。  
 > **关联**：[035](035-🚧-ReportEditor导出性能档位与同机降载.md) · [034](034-🚧-ReportEditor全站架构复评-2026-07-22.md) · [030](030-🚧-ReportEditor结批占满CPU导致mappView白屏.md)。  
@@ -211,6 +211,22 @@
   - 同批文本锚点：`批次报告` / `机器配置` / `2/3` / `temp` / `pressure` / `Smoke` 双方均有  
 
 对照图：`~/Desktop/report-editor-exports/retest-0.3.131-10-24-32/_compare/t{1,2}_p{1,2,3}.png`。
+
+### ✅ D20 · 矢量正文表无外框线（近白格底盖边）（**0.3.135**）
+
+- **现象**（档 1 layout-v2，冒烟竖/横）：正文 SQL 表内网格隐约可见，**四周外框缺失或极淡**；档 2 Chromium 仍有完整外框。  
+- **根因（CONFIRMED）**：`drawTableGrid` 先 `drawRectangle(border)` 再按 `resolveTableCellBackgroundCss` 填默认近白（parse 后实白）；PDF 描边居中，格底盖住内侧半线 → 外框消失。眉表 `drawZoneTable` 已「先填后描」（D8b），正文表漏改。  
+- **处理**：正文表与 zone 同序——先填格底，再画外框四边 + 内网格。  
+- **测试方案**：单测 `D20: body table outer grid strokes after near-white cell fills`（白 `rg` 之后仍有网格 `RG` 描边）；五档目视档 1 外框完整。  
+- **验收**：单测 ✅。
+
+### ✅ D21 · print-to-pdf 表框线粗细不均（**0.3.135**）
+
+- **现象**（档 2–4 Chromium）：表格横/竖框线有的细有的粗，观感不齐。  
+- **根因**：Mini 屏显用 `border-collapse:separate` + 仅 `border-top/left` + CSS `1px`；`printToPDF` 映到 PDF 时抗锯齿/子像素舍入使各边不等宽。  
+- **处理**：`@media print` 改为 `collapse` + 四周统一 `0.75pt` 实线；屏显预览保持 separate。  
+- **测试方案**：契约测 `U13`；五档目视档 2–4。  
+- **验收**：契约测 ✅。
 
 ## P2 · 能力缺口（代码已落 · 装包手测 ⌛️）
 

@@ -945,4 +945,45 @@ describe("pdf-lib-layout-v2-render", () => {
     expect(plain).toMatch(/1(\.0+)?\s+0(\.0+)?\s+0(\.0+)?\s+rg/);
     expect(plain).toMatch(/0(\.0+)?\s+0(\.0+)?\s+1(\.0+)?\s+rg/);
   });
+
+  it("D20: body table outer grid strokes after near-white cell fills", async () => {
+    const cell = (text: string) => ({
+      text,
+      bindingKind: "none" as const,
+      opcuaNodeId: "",
+      sqlText: "",
+      sqlParams: [] as [],
+      bgColor: "transparent",
+    });
+    const tb = hydrateTemplateElement({
+      id: "d20-outer",
+      type: "table",
+      tableRows: 2,
+      tableCols: 2,
+      tableRowHeightPx: 28,
+      x: 40,
+      y: 40,
+      w: 320,
+      h: 56,
+      tableCells: [
+        [cell("A"), cell("B")],
+        [cell("C"), cell("D")],
+      ],
+    });
+    const tmpl = makeTemplateWithBodyTable(tb);
+    const doc = await PDFDocument.create();
+    const font = await doc.embedFont(StandardFonts.Helvetica);
+    await appendPdfLibLayoutV2Pages(doc, { tmpl, previewValues: {}, font, useWinAnsi: true });
+    const plain = await inflatedPdfPlain(await doc.save({ useObjectStreams: false }));
+    // transparent → ZONE_TABLE_DEFAULT_INNER_BG；parseCssColor 忽略 alpha → 实白 1 1 1 rg
+    const fillIdx = plain.search(/1(\.0+)?\s+1(\.0+)?\s+1(\.0+)?\s+rg/);
+    // 网格 #d4d4d8 → 212/255≈0.831
+    const strokeIdx = plain.search(/0\.83\d*\s+0\.83\d*\s+0\.84\d*\s+RG/);
+    expect(fillIdx, "expected white cell fill").toBeGreaterThanOrEqual(0);
+    expect(strokeIdx, "expected table grid stroke color").toBeGreaterThanOrEqual(0);
+    // 描边必须在填底之后，否则外框会被盖住
+    expect(strokeIdx).toBeGreaterThan(fillIdx);
+    const strokeOps = plain.match(/\bS\b/g) || [];
+    expect(strokeOps.length).toBeGreaterThanOrEqual(4);
+  });
 });

@@ -1,15 +1,15 @@
 {
-  "version": "0.3.134",
-  "releasedAt": "2026-07-22T16:02:46.540Z",
-  "notes": "Report Editor AI 0.3.134\n\n- 002：同页纵表/多表页底截断改为续页卡（sumTableRowHeightsPx + 锚点过紧 hideOverflowSqlFillTable）",
+  "version": "0.3.135",
+  "releasedAt": "2026-07-22T17:59:31.169Z",
+  "notes": "Report Editor AI 0.3.135\n\n- 036 D20：矢量正文表先填后描，恢复外框线\n- 036 D21：print-to-pdf 表框改为 0.75pt + collapse，框线匀齐",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.134-x64.exe",
-      "sha256": "0a4d72c2c161c3dba17a8d15a4f91b2cdb1a70d2e525d59dea142751337da87a",
-      "size": 175788027
+      "url": "Report Editor AI-Setup-0.3.135-x64.exe",
+      "sha256": "",
+      "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.134-arm64.dmg",
+      "url": "Report Editor AI-0.3.135-arm64.dmg",
       "sha256": "",
       "size": 0
     }

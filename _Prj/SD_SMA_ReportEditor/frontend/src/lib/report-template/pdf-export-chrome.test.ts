@@ -67,6 +67,12 @@ describe("PDF export chrome (019 fill + 021 role borders)", () => {
     expect(miniPageVue).toMatch(/贴满 band（h≈rows×rowH）/);
   });
 
+  it("U13: print CSS uses collapse + 0.75pt uniform table borders (D21)", () => {
+    expect(miniPageVue).toContain("border-collapse: collapse");
+    expect(miniPageVue).toContain("border: 0.75pt solid rgb(212 212 216)");
+    expect(miniPageVue).toMatch(/D21：printToPDF/);
+  });
+
   it("U7: print CSS keeps role borders (no blanket border/outline none on mpc paper)", () => {
     // 仍清卡片 padding / 标签；不再用 border:none !important 抹掉角色粗边
     expect(pdfViewVue).toMatch(/\.pdf-export-root\s+\.tep-card[\s\S]*padding:\s*0\s*!important/);

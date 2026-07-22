@@ -1111,21 +1111,14 @@ function drawTableGrid(
   const rows = Math.max(1, opts.visualRows);
   const grid = ensureTableGrid(el);
   const cols = Math.min(el.tableCols || grid[0]?.length || 1, 16);
-  // D6：与 Mini `.el-node--table` 一致 — 外壳 4px 透明 padding，表线只画内网格（勿在外壳再套一圈框）
+  // D6：与 Mini `.el-node--table` 一致 — 外壳 4px 透明 padding，表线画在内网格（勿在控件外壳再套一圈「相框」）
+  // D20：外框必须在格底填充之后描，否则近白默认底会盖住描边内侧半线 → 外框「消失」
   const shell = BODY_TABLE_SHELL_PAD_PT;
   const innerX = box.x + shell;
   const innerW = Math.max(4, box.w - shell * 2);
   const innerTop = box.yBottom + box.h - shell;
   const innerH = Math.max(4, box.h - shell * 2);
   const innerBottom = box.yBottom + shell;
-  page.drawRectangle({
-    x: innerX,
-    y: innerBottom,
-    width: innerW,
-    height: innerH,
-    borderColor: TABLE_GRID_BORDER,
-    borderWidth: TABLE_GRID_BORDER_PT,
-  });
   const widths = colWidthsPt(el, innerW, cols);
   let accX = innerX;
   const colXs: number[] = [innerX];
@@ -1161,7 +1154,7 @@ function drawTableGrid(
   });
   const rowHs = scaleRowHeightsToBoxPt(heightsPx, innerH, rows);
   const fontSize = fontSizePx * PX_TO_PT;
-  // D9：先填格底
+  // D9 / D20：先填格底，再描外框 + 内网格（与 drawZoneTable 同序）
   let yCursor = innerTop;
   for (let r = 0; r < rows; r++) {
     const rh = rowHs[r] || innerH / rows;
@@ -1188,24 +1181,49 @@ function drawTableGrid(
     }
     yCursor = cellBottom;
   }
-  // 网格线
+  const thick = TABLE_GRID_BORDER_PT;
+  const border = TABLE_GRID_BORDER;
+  page.drawLine({
+    start: { x: innerX, y: innerBottom },
+    end: { x: innerX, y: innerTop },
+    thickness: thick,
+    color: border,
+  });
+  page.drawLine({
+    start: { x: innerX + innerW, y: innerBottom },
+    end: { x: innerX + innerW, y: innerTop },
+    thickness: thick,
+    color: border,
+  });
+  page.drawLine({
+    start: { x: innerX, y: innerBottom },
+    end: { x: innerX + innerW, y: innerBottom },
+    thickness: thick,
+    color: border,
+  });
+  page.drawLine({
+    start: { x: innerX, y: innerTop },
+    end: { x: innerX + innerW, y: innerTop },
+    thickness: thick,
+    color: border,
+  });
   let yLine = innerTop;
   for (let r = 1; r < rows; r++) {
     yLine -= rowHs[r - 1] || innerH / rows;
     page.drawLine({
       start: { x: innerX, y: yLine },
       end: { x: innerX + innerW, y: yLine },
-      thickness: TABLE_GRID_BORDER_PT,
-      color: TABLE_GRID_BORDER,
+      thickness: thick,
+      color: border,
     });
   }
   for (let c = 1; c < cols; c++) {
     const x = colXs[c];
     page.drawLine({
-      start: { x, y: box.yBottom + shell },
-      end: { x, y: box.yBottom + box.h - shell },
-      thickness: TABLE_GRID_BORDER_PT,
-      color: TABLE_GRID_BORDER,
+      start: { x, y: innerBottom },
+      end: { x, y: innerTop },
+      thickness: thick,
+      color: border,
     });
   }
   const bodyInk = parseCssColor(el.color, rgb(0.08, 0.08, 0.08));

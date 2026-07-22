@@ -1255,6 +1255,17 @@ function tplCaption(el: TemplateElement): string {
   .mini-band-inner {
     overflow: visible;
   }
+  /*
+   * D21：printToPDF 下 CSS 1px + separate/top-left 分边易因子像素舍入粗细不均。
+   * 打印改用 collapse + 统一 0.75pt（物理单位）；屏显仍用上方 separate 方案。
+   */
+  .mini-tpl-table {
+    border-collapse: collapse;
+    border-spacing: 0;
+  }
+  .mini-tpl-td {
+    border: 0.75pt solid rgb(212 212 216) !important;
+  }
 }
 .mini-band-header {
   background: rgb(239 239 246 / 0.52);
