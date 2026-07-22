@@ -7,6 +7,69 @@ body {
   color: #1f2937;
 }
 
+body.config-page {
+  padding-bottom: 52px;
+}
+
+.config-status-bar {
+  position: fixed;
+  z-index: 1000;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 24px;
+  padding: 10px 16px;
+  border-top: 1px solid #cbd5e1;
+  background: #f8fafc;
+  color: #334155;
+  box-shadow: 0 -4px 14px rgba(15, 23, 42, 0.1);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.config-status-bar[data-tone="ok"] {
+  border-top-color: #34d399;
+  background: #ecfdf5;
+  color: #065f46;
+}
+
+.config-status-bar[data-tone="warn"] {
+  border-top-color: #f59e0b;
+  background: #fffbeb;
+  color: #92400e;
+}
+
+.config-status-bar[data-tone="error"] {
+  border-top-color: #ef4444;
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+.config-status-bar[data-tone="working"] .config-status-icon {
+  animation: config-status-pulse 1s ease-in-out infinite alternate;
+}
+
+.config-status-icon {
+  flex: 0 0 auto;
+  font-size: 11px;
+}
+
+.config-status-time {
+  margin-left: auto;
+  color: inherit;
+  font-size: 12px;
+  font-weight: 400;
+  opacity: 0.8;
+}
+
+@keyframes config-status-pulse {
+  from { opacity: 0.35; }
+  to { opacity: 1; }
+}
+
 .page-nav {
   padding: 10px 12px;
   background: #fff;

@@ -6,7 +6,7 @@
     <title>配置页 — SD SMA Query Web</title>
     <link rel="stylesheet" href="/static/styles.css" />
   </head>
-  <body>
+  <body class="config-page">
     <nav class="page-nav" aria-label="站内导航">
       <a href="/query">查询页</a>
       <span class="page-nav-sep" aria-hidden="true">·</span>
@@ -360,6 +360,11 @@
         </div>
       </div>
     </div>
-    <script src="/static/config.js?v=20260709_03"></script>
+    <div id="configStatusBar" class="config-status-bar" role="status" aria-live="polite" aria-atomic="true">
+      <span id="configStatusIcon" class="config-status-icon" aria-hidden="true">●</span>
+      <span id="configStatusMessage">配置页正在初始化…</span>
+      <time id="configStatusTime" class="config-status-time"></time>
+    </div>
+    <script src="/static/config.js?v=20260722_01"></script>
   </body>
 </html>

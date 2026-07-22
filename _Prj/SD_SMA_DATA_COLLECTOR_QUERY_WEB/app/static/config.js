@@ -4,6 +4,8 @@ let orderedColumns = [];
 let columnLabels = {};
 let currentSchema = null;
 let pluginConfigData = { modules: {} };
+let pluginOpcuaWritebackDraft = { cursor: '', columns: {} };
+let pluginTableListWritebackDraft = null;
 const CONFIG_STATE_KEY = 'sd_sma_query_config_page_state_v1';
 const LOCKED_GROUP_VIEW = 'table';
 const LOCKED_PLUGIN_MODULE = 'general';
@@ -150,8 +152,22 @@ function setHintMessage(elementId, message, tone = 'warn') {
   el.className = tone === 'ok' ? 'muted ok' : 'muted warn';
 }
 
+function setConfigStatus(message, tone = 'ok') {
+  const bar = document.getElementById('configStatusBar');
+  const messageEl = document.getElementById('configStatusMessage');
+  const timeEl = document.getElementById('configStatusTime');
+  if (!bar || !messageEl || !timeEl) return;
+  bar.dataset.tone = tone;
+  messageEl.textContent = message;
+  timeEl.textContent = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+}
+
 function catchHintError(hintId) {
-  return (err) => setHintMessage(hintId, err?.message || String(err));
+  return (err) => {
+    const message = err?.message || String(err);
+    setHintMessage(hintId, message);
+    setConfigStatus(`操作失败：${message}`, 'error');
+  };
 }
 
 function saveConfigPageState() {
@@ -341,6 +357,10 @@ async function saveBatchSourceConfig() {
     table ? `已保存批次号来源：${table}.${field}` : '已清空批次号来源，查询页将禁用按批次号查询',
     'ok',
   );
+  setConfigStatus(
+    table ? `保存成功：批次号来源=${table}.${field}` : '保存成功：已清空批次号来源',
+    'ok',
+  );
   saveConfigPageState();
 }
 
@@ -483,6 +503,7 @@ async function deleteCurrentConfigProfile() {
 }
 
 async function reloadActiveConfigData(message) {
+  setConfigStatus('正在读取配置文件及其全部设置…', 'working');
   localStorage.removeItem(CONFIG_STATE_KEY);
   queryViews = {};
   availableColumns = [];
@@ -495,8 +516,9 @@ async function reloadActiveConfigData(message) {
   await loadViews();
   await loadGroups();
   await refreshMetadataFromCurrentDatabase();
-  await loadPluginConfig().catch(() => {});
+  await loadPluginConfig();
   document.getElementById('configProfileHint').textContent = message;
+  setConfigStatus(`读取成功：${message}`, 'ok');
 }
 
 function showNameModal(defaultBaseName = 'new_config') {
@@ -701,6 +723,7 @@ async function saveAppSettings(options = {}) {
       ? '数据库设定已保存，数据库已重连，Group 与列已按当前数据库刷新'
       : '数据库设定已保存；如需刷新 Group 与列，请点击“连接数据库”');
   document.getElementById('appSettingsHint').textContent = baseMessage;
+  setConfigStatus(`保存成功：${baseMessage}`, 'ok');
   return result;
 }
 
@@ -721,6 +744,7 @@ async function saveOpcuaSettings(options = {}) {
         `${opcuaResult?.heartbeat_node || opcuaPayload.heartbeat_node ? '，已配置心跳' : '，未配置心跳'}）`;
     hint.className = 'muted ok';
   }
+  setConfigStatus('保存成功：OPC UA 连接、轮询与心跳设置已写入', 'ok');
   return opcuaResult;
 }
 
@@ -734,6 +758,7 @@ async function connectDatabase() {
   await refreshMetadataFromCurrentDatabase();
   document.getElementById('appSettingsHint').textContent =
     `数据库连接成功（${check.database || '-'}），Group 与列已刷新`;
+  setConfigStatus(`读取成功：数据库 ${check.database || '-'} 已连接，Group 与列已刷新`, 'ok');
 }
 
 async function testOpcuaConnection() {
@@ -887,6 +912,10 @@ async function loadTableConfig() {
   }
   document.getElementById('columnEditorHint').textContent =
     `已加载: view=${viewName}, group=${group}, 基准表=${baselineTable}, columns=${orderedColumns.length}（当前为 group 级配置）`;
+  setConfigStatus(
+    `读取成功：view=${viewName}，group=${group}，columns=${orderedColumns.length}`,
+    'ok',
+  );
   saveConfigPageState();
 }
 
@@ -978,6 +1007,10 @@ async function saveTableConfig() {
   });
   document.getElementById('columnEditorHint').textContent =
     `已保存: view=${viewName}, group=${group}, 基准表=${baselineTable}, columns=${orderedColumns.length}（已写入 views.${viewName}.per_group.${group}）`;
+  setConfigStatus(
+    `保存成功：view=${viewName}，group=${group}，columns=${orderedColumns.length}`,
+    'ok',
+  );
   saveConfigPageState();
 }
 
@@ -1183,10 +1216,8 @@ document.getElementById('pluginPageIndex').addEventListener('change', () => {
 });
 document.getElementById('pluginBindGroup').addEventListener('change', () => {
   const group = document.getElementById('pluginBindGroup').value || '';
-  updatePluginGroupHint(group).catch(() => {});
-  refreshPluginOpcuaWritebackTable().catch(() => {});
-  refreshPluginTableListColumnOptions().catch(() => {});
   saveConfigPageState();
+  loadPluginWritebackSettingsForGroup(group).catch(catchHintError('pluginConfigHint'));
 });
 
 function buildTableListWritebackDefaults() {
@@ -1305,12 +1336,14 @@ function syncPluginTableListAdvancedCache() {
   const payload = collectPluginTableListWriteback();
   if (!payload) {
     window.__pluginTableListAdvanced = null;
+    pluginTableListWritebackDraft = null;
     return;
   }
   const cached = { ...payload };
   delete cached._invalid;
   delete cached._invalidReason;
   window.__pluginTableListAdvanced = cached;
+  pluginTableListWritebackDraft = JSON.parse(JSON.stringify(cached));
 }
 
 function renderPluginTableListColumnOptions(columns, tableListCfg) {
@@ -1446,6 +1479,7 @@ function loadPluginTableListWritebackForm(tableListCfg) {
   const cfg = tableListCfg && typeof tableListCfg === 'object' ? tableListCfg : {};
   const resolvedMode = inferTableListWritebackMode(cfg);
   window.__pluginTableListAdvanced = { ...cfg, mode: resolvedMode };
+  pluginTableListWritebackDraft = JSON.parse(JSON.stringify({ ...cfg, mode: resolvedMode }));
   document.getElementById('pluginTableListEnabled').checked = cfg.enabled === true;
   document.getElementById('pluginTableListMode').value = resolvedMode;
   document.getElementById('pluginTableListBufferNode').value = cfg.buffer_node || '';
@@ -1567,6 +1601,24 @@ function capturePluginOpcuaMappings() {
   return { cursor, columns };
 }
 
+function updatePluginOpcuaWritebackDraft() {
+  const captured = capturePluginOpcuaMappings();
+  const draft = pluginOpcuaWritebackDraft && typeof pluginOpcuaWritebackDraft === 'object'
+    ? pluginOpcuaWritebackDraft
+    : { cursor: '', columns: {} };
+  draft.cursor = captured.cursor || '';
+  draft.columns = draft.columns && typeof draft.columns === 'object' ? draft.columns : {};
+  for (const [name, info] of Object.entries(captured.columns || {})) {
+    if (info.enabled && info.nodeId) {
+      draft.columns[name] = info.nodeId;
+    } else {
+      delete draft.columns[name];
+    }
+  }
+  pluginOpcuaWritebackDraft = draft;
+  return JSON.parse(JSON.stringify(draft));
+}
+
 function mergeCapturedMappingsToWriteback(captured) {
   const columns = {};
   for (const [name, info] of Object.entries(captured.columns || {})) {
@@ -1629,12 +1681,32 @@ async function loadPluginOpcuaWritebackTable(viewName, bindGroup, writebackCfg) 
 }
 
 async function refreshPluginOpcuaWritebackTable() {
-  const captured = capturePluginOpcuaMappings();
+  const writebackCfg = updatePluginOpcuaWritebackDraft();
   const viewName = document.getElementById('pluginViewName').value || 'table';
   const bindGroup = document.getElementById('pluginBindGroup').value || '';
-  const writebackCfg = mergeCapturedMappingsToWriteback(captured);
   await loadPluginOpcuaWritebackTable(viewName, bindGroup, writebackCfg);
   renderPluginOpcuaFeedbackEditor();
+}
+
+async function loadPluginWritebackSettingsForGroup(bindGroup) {
+  setConfigStatus(`正在读取 bind_group=${bindGroup || '-'} 的插件页设置…`, 'working');
+  const opcuaDraft = updatePluginOpcuaWritebackDraft();
+  syncPluginTableListAdvancedCache();
+  const tableListDraft = pluginTableListWritebackDraft || buildTableListWritebackDefaults();
+  const viewName = document.getElementById('pluginViewName').value || LOCKED_PLUGIN_VIEW;
+
+  await updatePluginGroupHint(bindGroup);
+  await loadPluginOpcuaWritebackTable(viewName, bindGroup, opcuaDraft);
+  renderPluginOpcuaFeedbackEditor();
+  loadPluginTableListWritebackForm(tableListDraft);
+  await refreshPluginTableListColumnOptions(tableListDraft);
+
+  const moduleName = document.getElementById('pluginModule').value || LOCKED_PLUGIN_MODULE;
+  const pageIndex = document.getElementById('pluginPageIndex').value || '1';
+  setConfigStatus(
+    `读取成功：module=${moduleName}，page=${pageIndex}，bind_group=${bindGroup || '-'}；高级回写设置已完整载入`,
+    'ok',
+  );
 }
 
 function renderPluginOpcuaFeedbackEditor() {
@@ -1663,6 +1735,7 @@ async function loadPluginPageConfig() {
 
   const viewName = LOCKED_PLUGIN_VIEW;
   const writebackCfg = pageCfg.opcua_writeback || { cursor: '', columns: {} };
+  pluginOpcuaWritebackDraft = JSON.parse(JSON.stringify(writebackCfg));
   await loadPluginOpcuaWritebackTable(viewName, bindGroup, writebackCfg);
   renderPluginOpcuaFeedbackEditor();
 
@@ -1672,6 +1745,10 @@ async function loadPluginPageConfig() {
 
   document.getElementById('pluginConfigHint').textContent =
     `当前编辑: module=${moduleName}, page=${pageIndex}`;
+  setConfigStatus(
+    `读取成功：module=${moduleName}，page=${pageIndex}，bind_group=${bindGroup || '-'}；插件页配置已完整载入`,
+    'ok',
+  );
 }
 
 async function savePluginPageConfig() {
@@ -1710,6 +1787,7 @@ async function savePluginPageConfig() {
             ? '高级模式需保留批次字段：请先在 opcua_writeback 中绑定批次列，或切换基础模式选择批次列后保存'
             : '批次表名回写已启用，请填写批次列与 Buffer NodeId';
       setHintMessage('pluginConfigHint', reason);
+      setConfigStatus(`保存未执行：${reason}`, 'warn');
       return;
     }
     delete tableListWriteback._invalid;
@@ -1733,6 +1811,14 @@ async function savePluginPageConfig() {
   await updatePluginGroupHint(pageCfg.bind_group || '');
   document.getElementById('pluginConfigHint').textContent =
     `已保存: module=${moduleName}, page=${pageIndex}, bind_group=${pageCfg.bind_group || '-'}`;
+  pluginOpcuaWritebackDraft = JSON.parse(JSON.stringify(pageCfg.opcua_writeback || { cursor: '', columns: {} }));
+  pluginTableListWritebackDraft = pageCfg.table_list_writeback
+    ? JSON.parse(JSON.stringify(pageCfg.table_list_writeback))
+    : null;
+  setConfigStatus(
+    `保存成功：module=${moduleName}，page=${pageIndex}，bind_group=${pageCfg.bind_group || '-'}；OPC UA 与批次表名回写设置已写入`,
+    'ok',
+  );
   saveConfigPageState();
 }
 
