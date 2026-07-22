@@ -7,6 +7,8 @@
 
 ## 2026-07-22
 
+- **ReportEditor 002 纵表页底截断未续页**：`sumTableRowHeightsPx` 尊重 rowCount；锚点过紧改续卡 `hideOverflowSqlFillTable`。看板 [docs/002-🚧](docs/002-🚧-表格系统评估与修复.md)。
+
 - **ReportEditor 冒烟模版微调 + 五档复验**：封面标题 28 / 作者块规范换行 / 无外框；`smoke-*-2026-07-22T11-34-32` 10/10 ok，档 0 badOverlap=0。看板 [docs/035-🚧](docs/035-🚧-ReportEditor导出性能档位与同机降载.md)。
 
 - **ReportEditor 0.3.133 Windows Setup**：`Report Editor AI-Setup-0.3.133-x64.exe`（~168MB）；SHA256 已写入 `packaging/updates/latest.json`（含 M10 + 仅内容叠字修复）。
