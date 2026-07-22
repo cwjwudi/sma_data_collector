@@ -1,17 +1,17 @@
 {
-  "version": "0.3.124",
-  "releasedAt": "2026-07-22T12:35:16.855Z",
-  "notes": "036 P1：矢量表样式与模拟结批导出目录",
+  "version": "0.3.125",
+  "releasedAt": "2026-07-22T12:56:02.847Z",
+  "notes": "036：表线色/圆页码/字色对齐预览稳",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.124-x64.exe",
+      "url": "Report Editor AI-Setup-0.3.125-x64.exe",
       "sha256": "",
       "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.124-arm64.dmg",
-      "sha256": "0288a66a933529322db51e60e14050940cb2ba2f32ba4377430f10888d393809",
-      "size": 205756931
+      "url": "Report Editor AI-0.3.125-arm64.dmg",
+      "sha256": "8810434b38a09c1ba7ea19f2932996117792dedb86b2f4cfea5a449836d531d7",
+      "size": 205762178
     }
   }
 }
