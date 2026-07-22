@@ -145,3 +145,45 @@
 ## 本看板剩余
 
 仅 **H6 / H7 现场同机**（可与 030 解挂后一并做）。代码与本机五档验收已齐；非现场阻塞项。
+
+---
+
+# ✅ 已完成：无外框冒烟模版（竖/横）+ Windows 五档复验（2026-07-22）
+
+## 目标
+
+- 全部既有模版控件 `showBorder=false`（去掉外框线；表格内格线仍由渲染层决定）。  
+- 用本机 Docker MariaDB（`:3306`）重建冒烟：封面/封尾图、SQL 表、页眉页脚；**竖版 + 横版**各一份。  
+- 对两份模版各跑五档批导，核对 `ok: true`。
+
+## 代码 / 脚本
+
+| 项 | 说明 |
+|----|------|
+| `ai_demo_template_ops.create_binding_smoke_template` | 增 `orientation`；参数/表默认无外框；落盘前 `_strip_all_show_borders` |
+| `ai_tools` | 冒烟工具 schema 透传 `orientation` |
+| `backend/scripts/setup_smoke_templates_noborder.py` | 批量去边框 + 建竖/横冒烟（`ensure_schema`） |
+
+## Windows 本机模版 ID（live data）
+
+| 名称 | ID | 方向 |
+|------|-----|------|
+| 冒烟测试报表·竖版 | `fbbf8a05-ae98-4e12-9f86-a77eed4a67d3` | portrait |
+| 冒烟测试报表·横版 | `45ee4134-24c1-4cab-9e02-170650ffd4df` | landscape |
+
+> 旧 macOS 冒烟 `336a5e28-…` 在本机不存在；036 历史对照仍可引用旧 ID，新复验用上表。
+
+## 五档批导证据
+
+| 目录 | 戳记 | 结果 |
+|------|------|------|
+| `Desktop\report-editor-five-tier-exports\smoke-portrait` | `2026-07-22T14-59-36` | 档 0–4 全部 `ok: true` |
+| `Desktop\report-editor-five-tier-exports\smoke-landscape` | `2026-07-22T14-59-18` | 档 0–4 全部 `ok: true` |
+
+体积量级：档 0 ≈35KB；档 1 ≈344KB；档 2–4 竖≈419KB / 横≈394KB（Chromium）。Electron 结束后偶发退出码 `3221225477`，PDF/summary 已落盘。
+
+## 已知缺口（不挡本条 ✅）
+
+- OPC 批号写入若仍指现场节点，可能 `BadUserAccessDenied`；五档批导 `allowBindingIssues` 仍可出 PDF。  
+- 表格单元格网格线 ≠ 控件外框；若还要「无格线」需另开需求。  
+
