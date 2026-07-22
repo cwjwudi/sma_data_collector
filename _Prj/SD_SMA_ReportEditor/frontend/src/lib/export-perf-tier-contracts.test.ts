@@ -70,8 +70,12 @@ describe("export-perf-tier contracts (035)", () => {
     const preload = readFileSync(join(frontendRoot, "electron/preload.cjs"), "utf8");
     expect(preload).toMatch(/setPdfExportPerfProfile/);
     expect(preload).toMatch(/onAppResourceMode/);
-    expect(read("lib/report-template/pdf-lib-layout-v2-render.ts")).toMatch(
-      /appendPdfLibLayoutV2Pages/,
+    const lv2 = read("lib/report-template/pdf-lib-layout-v2-render.ts");
+    expect(lv2).toMatch(/appendPdfLibLayoutV2Pages/);
+    expect(lv2).toMatch(/bodyCards/);
+    expect(lv2).toMatch(/computeExpandedBodyPreviewCards|sqlFillTableSlices/);
+    expect(read("lib/report-template/pdf-lib-export-render.ts")).toMatch(
+      /bodyCards:\s*report\.bodyCards/,
     );
   });
 });

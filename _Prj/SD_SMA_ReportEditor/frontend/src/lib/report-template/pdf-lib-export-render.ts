@@ -192,6 +192,7 @@ export async function renderPdfLibExportPart(opts: {
       previewValues: report.previewValues,
       font,
       useWinAnsi: !fontEmbedded,
+      bodyCards: report.bodyCards,
     });
     const bytes = await doc.save();
     return {

@@ -1,15 +1,26 @@
 /**
  * 035 档 1：pdf-lib 坐标版式导出（layout-v2）。
- * 按编辑器 CSS px（96dpi）映射到 PDF pt（72dpi）；画文本框/表格线，不走 printToPDF。
+ * 按编辑器 CSS px（96dpi）映射到 PDF pt（72dpi）；支持 bodyCards SQL/静态表续页。
  */
 import { rgb, type PDFFont, type PDFPage, type PDFDocument } from "pdf-lib";
 import type { BindingPreviewCell } from "@/lib/report-template/binding-preview-utils";
 import { cellKey } from "@/lib/report-template/binding-preview-utils";
+import { bodyElementsRef } from "@/lib/report-template/editor-sheet";
 import { computePaperLayout } from "@/lib/report-template/layout-geometry";
 import type { LayoutZoneElement } from "@/lib/report-template/layout-zone-element";
 import type { ReportTemplate, TemplateElement } from "@/lib/report-template/model";
-import { ensureBodyPages, ensureTableGrid } from "@/lib/report-template/model";
+import { ensureTableGrid } from "@/lib/report-template/model";
 import { PAPER_PRESETS, type PaperKind } from "@/lib/report-template/paper";
+import { clampTableRowHeightPx } from "@/lib/report-template/table-cell-metrics";
+import type { TablePreviewRowSlice } from "@/lib/report-template/table-preview-row-slice";
+import {
+  sqlFillSliceTableOuterHeightPx,
+  tplElementsHorizontallyOverlap,
+} from "@/lib/report-template/table-sql-fill-layout-utils";
+import {
+  computeExpandedBodyPreviewCards,
+  type ExpandedBodyPreviewCard,
+} from "@/lib/report-template/table-sql-fill-export-preview-split";
 import { templateTableSqlFillPreviewKey } from "@/lib/report-template/table-sql-fill-preview";
 
 const PX_TO_PT = 72 / 96;
@@ -108,13 +119,46 @@ function drawWrappedInBox(
   flush();
 }
 
-/** 编辑器坐标：原点左上；PDF：原点左下 */
-function elBoxPt(el: { x: number; y: number; w: number; h: number }, pageH: number) {
+function elBoxPt(
+  el: { x: number; y: number; w: number; h: number },
+  pageH: number,
+  override?: { yPx?: number; hPx?: number },
+) {
+  const yPx = override?.yPx ?? el.y;
+  const hPx = override?.hPx ?? el.h;
   const x = el.x * PX_TO_PT;
-  const h = Math.max(4, el.h * PX_TO_PT);
+  const h = Math.max(4, hPx * PX_TO_PT);
   const w = Math.max(4, el.w * PX_TO_PT);
-  const yBottom = pageH - el.y * PX_TO_PT - h;
+  const yBottom = pageH - yPx * PX_TO_PT - h;
   return { x, yBottom, w, h, topY: yBottom + h };
+}
+
+function showBodyTplEl(
+  el: TemplateElement,
+  card: ExpandedBodyPreviewCard,
+  pageEls: TemplateElement[],
+): boolean {
+  if (card.tailOnlyBelowBaseline && card.tailBaselineY != null) {
+    if (card.overflowSqlFillTableId && el.id === card.overflowSqlFillTableId) return false;
+    return el.y >= card.tailBaselineY - 0.5;
+  }
+  if (card.continuationHideOtherBodyElements) {
+    if (el.type !== "table") return false;
+    return !!card.sqlFillTableSlices?.[el.id];
+  }
+  const hb = card.sqlFillHideBelow;
+  if (hb) {
+    const tbl = pageEls.find((x) => x.id === hb.tableId && x.type === "table");
+    if (
+      tbl &&
+      el.id !== hb.tableId &&
+      tplElementsHorizontallyOverlap(el, tbl) &&
+      el.y >= hb.baselineY - 0.25
+    ) {
+      return false;
+    }
+  }
+  return true;
 }
 
 function drawZoneElements(
@@ -139,6 +183,75 @@ function drawZoneElements(
   }
 }
 
+function drawTableGrid(
+  page: PDFPage,
+  font: PDFFont,
+  el: TemplateElement,
+  pageH: number,
+  useWinAnsi: boolean,
+  opts: {
+    yPx: number;
+    hPx: number;
+    visualRows: number;
+    /** 每行取数：visualRowIndex → 文案数组（按列） */
+    rowTexts: (visualRow: number) => string[];
+  },
+): void {
+  const box = elBoxPt(el, pageH, { yPx: opts.yPx, hPx: opts.hPx });
+  const rows = Math.max(1, opts.visualRows);
+  const grid = ensureTableGrid(el);
+  const cols = Math.min(grid.cols || 1, 16);
+  page.drawRectangle({
+    x: box.x,
+    y: box.yBottom,
+    width: box.w,
+    height: box.h,
+    borderColor: rgb(0.25, 0.25, 0.25),
+    borderWidth: 0.6,
+  });
+  const rowH = box.h / rows;
+  const colW = box.w / cols;
+  for (let r = 1; r < rows; r++) {
+    const y = box.yBottom + box.h - r * rowH;
+    page.drawLine({
+      start: { x: box.x, y },
+      end: { x: box.x + box.w, y },
+      thickness: 0.4,
+      color: rgb(0.55, 0.55, 0.55),
+    });
+  }
+  for (let c = 1; c < cols; c++) {
+    const x = box.x + c * colW;
+    page.drawLine({
+      start: { x, y: box.yBottom },
+      end: { x, y: box.yBottom + box.h },
+      thickness: 0.4,
+      color: rgb(0.55, 0.55, 0.55),
+    });
+  }
+  const pad = 2;
+  const fontSize = Math.max(6, Math.min(10, rowH * 0.55));
+  for (let r = 0; r < rows; r++) {
+    const texts = opts.rowTexts(r);
+    for (let c = 0; c < cols; c++) {
+      const text = texts[c] || "";
+      if (!text) continue;
+      const cellTop = box.yBottom + box.h - r * rowH;
+      drawWrappedInBox(
+        page,
+        font,
+        text,
+        box.x + c * colW + pad,
+        cellTop - pad,
+        colW - pad * 2,
+        rowH - pad * 2,
+        fontSize,
+        useWinAnsi,
+      );
+    }
+  }
+}
+
 function drawTemplateElement(
   page: PDFPage,
   font: PDFFont,
@@ -146,9 +259,15 @@ function drawTemplateElement(
   pageH: number,
   values: Record<string, BindingPreviewCell | undefined>,
   useWinAnsi: boolean,
+  card: ExpandedBodyPreviewCard,
+  contentTopPx: number,
 ): void {
-  const box = elBoxPt(el, pageH);
   if (el.type === "text" || el.type === "parameter" || el.type === "date") {
+    let yPx = el.y;
+    if (card.tailOnlyBelowBaseline && card.tailBaselineY != null) {
+      yPx = el.y - card.tailBaselineY + contentTopPx;
+    }
+    const box = elBoxPt(el, pageH, { yPx });
     const ck = cellKey(el.id, 0, 0);
     const bound = cellText(values[ck]);
     const text = bound || String(el.text || "");
@@ -157,91 +276,101 @@ function drawTemplateElement(
     drawWrappedInBox(page, font, text, box.x, box.topY, box.w, box.h, size, useWinAnsi);
     return;
   }
-  if (el.type === "table") {
-    const grid = ensureTableGrid(el);
-    const rows = Math.min(grid.rows || 0, 80);
-    const cols = Math.min(grid.cols || 0, 16);
-    if (rows < 1 || cols < 1) return;
-    page.drawRectangle({
-      x: box.x,
-      y: box.yBottom,
-      width: box.w,
-      height: box.h,
-      borderColor: rgb(0.25, 0.25, 0.25),
-      borderWidth: 0.6,
-    });
-    const sqlKey = templateTableSqlFillPreviewKey(el.id);
-    const sqlPayload = values[sqlKey] as
-      | { ok?: boolean; columns?: string[]; rows?: Record<string, unknown>[] }
-      | undefined;
-    const rowH = box.h / rows;
-    const colW = box.w / cols;
-    for (let r = 1; r < rows; r++) {
-      const y = box.yBottom + box.h - r * rowH;
-      page.drawLine({
-        start: { x: box.x, y },
-        end: { x: box.x + box.w, y },
-        thickness: 0.4,
-        color: rgb(0.55, 0.55, 0.55),
-      });
-    }
-    for (let c = 1; c < cols; c++) {
-      const x = box.x + c * colW;
-      page.drawLine({
-        start: { x, y: box.yBottom },
-        end: { x, y: box.yBottom + box.h },
-        thickness: 0.4,
-        color: rgb(0.55, 0.55, 0.55),
-      });
-    }
-    const pad = 2;
-    if (sqlPayload?.ok && Array.isArray(sqlPayload.rows) && sqlPayload.rows.length) {
-      const colsNames = (sqlPayload.columns || Object.keys(sqlPayload.rows[0] || {})).slice(0, cols);
-      for (let r = 0; r < Math.min(rows, sqlPayload.rows.length + 1); r++) {
-        for (let c = 0; c < colsNames.length; c++) {
-          const name = colsNames[c]!;
-          let text = "";
-          if (r === 0) text = name;
-          else {
-            const v = sqlPayload.rows[r - 1]?.[name];
-            text = v == null ? "" : String(v);
-          }
-          const cellTop = box.yBottom + box.h - r * rowH;
-          drawWrappedInBox(
-            page,
-            font,
-            text,
-            box.x + c * colW + pad,
-            cellTop - pad,
-            colW - pad * 2,
-            rowH - pad * 2,
-            Math.max(6, Math.min(10, rowH * 0.55)),
-            useWinAnsi,
-          );
-        }
-      }
-      return;
-    }
-    for (let r = 0; r < rows; r++) {
-      for (let c = 0; c < cols; c++) {
-        const ck = cellKey(el.id, r, c);
-        const text = cellText(values[ck]) || "";
-        if (!text) continue;
-        const cellTop = box.yBottom + box.h - r * rowH;
-        drawWrappedInBox(
-          page,
-          font,
-          text,
-          box.x + c * colW + pad,
-          cellTop - pad,
-          colW - pad * 2,
-          rowH - pad * 2,
-          Math.max(6, Math.min(10, rowH * 0.55)),
-          useWinAnsi,
-        );
-      }
-    }
+  if (el.type !== "table") return;
+
+  const slice: TablePreviewRowSlice | undefined = card.sqlFillTableSlices?.[el.id];
+  const rowHFallback = clampTableRowHeightPx(el.tableRowHeightPx);
+  let yPx = el.y;
+  let hPx = el.h;
+  if (card.tailOnlyBelowBaseline && card.tailBaselineY != null) {
+    yPx = el.y - card.tailBaselineY + contentTopPx;
   }
+  if (slice) {
+    const h2 = sqlFillSliceTableOuterHeightPx(el, slice, null);
+    if (h2 != null) hPx = h2;
+    if (card.continuationIndex > 0) yPx = contentTopPx;
+  }
+
+  const grid = ensureTableGrid(el);
+  const cols = Math.min(grid.cols || 1, 16);
+  const sqlKey = templateTableSqlFillPreviewKey(el.id);
+  const sqlPayload = values[sqlKey] as
+    | { ok?: boolean; columns?: string[]; rows?: Record<string, unknown>[] }
+    | undefined;
+
+  if (slice) {
+    const visualRows = (slice.includeHeaderRow ? 1 : 0) + Math.max(0, slice.dataRowCount);
+    if (visualRows < 1) return;
+    drawTableGrid(page, font, el, pageH, useWinAnsi, {
+      yPx,
+      hPx: Math.max(hPx, visualRows * Math.max(12, rowHFallback * 0.5)),
+      visualRows,
+      rowTexts: (vr) => {
+        const out: string[] = [];
+        if (slice.includeHeaderRow && vr === 0) {
+          if (sqlPayload?.ok && Array.isArray(sqlPayload.columns)) {
+            for (let c = 0; c < cols; c++) out.push(String(sqlPayload.columns[c] ?? ""));
+          } else {
+            for (let c = 0; c < cols; c++) out.push(cellText(values[cellKey(el.id, 0, c)]) || "");
+          }
+          return out;
+        }
+        const dataIdx = vr - (slice.includeHeaderRow ? 1 : 0);
+        const absRow = slice.dataRowStart + dataIdx;
+        if (sqlPayload?.ok && Array.isArray(sqlPayload.rows)) {
+          const colsNames = (sqlPayload.columns || Object.keys(sqlPayload.rows[0] || {})).slice(0, cols);
+          const row = sqlPayload.rows[absRow];
+          for (let c = 0; c < cols; c++) {
+            const name = colsNames[c];
+            const v = name && row ? row[name] : undefined;
+            out.push(v == null ? "" : String(v));
+          }
+          return out;
+        }
+        // 静态表：dataRowStart 相对数据行（通常表头占第 0 视觉行）
+        const gridRow = slice.includeHeaderRow ? absRow + 1 : absRow;
+        for (let c = 0; c < cols; c++) {
+          out.push(cellText(values[cellKey(el.id, gridRow, c)]) || grid[gridRow]?.[c]?.text || "");
+        }
+        return out;
+      },
+    });
+    return;
+  }
+
+  // 无切片：整表（兼容简单模版）
+  const rows = Math.min(grid.rows || 0, 80);
+  if (rows < 1 || cols < 1) return;
+  if (sqlPayload?.ok && Array.isArray(sqlPayload.rows) && sqlPayload.rows.length) {
+    const colsNames = (sqlPayload.columns || Object.keys(sqlPayload.rows[0] || {})).slice(0, cols);
+    const visualRows = Math.min(rows, sqlPayload.rows.length + 1);
+    drawTableGrid(page, font, el, pageH, useWinAnsi, {
+      yPx,
+      hPx,
+      visualRows,
+      rowTexts: (vr) => {
+        if (vr === 0) return colsNames.map((n) => n);
+        const row = sqlPayload.rows![vr - 1];
+        return colsNames.map((n) => {
+          const v = row?.[n];
+          return v == null ? "" : String(v);
+        });
+      },
+    });
+    return;
+  }
+  drawTableGrid(page, font, el, pageH, useWinAnsi, {
+    yPx,
+    hPx,
+    visualRows: rows,
+    rowTexts: (vr) => {
+      const out: string[] = [];
+      for (let c = 0; c < cols; c++) {
+        out.push(cellText(values[cellKey(el.id, vr, c)]) || "");
+      }
+      return out;
+    },
+  });
 }
 
 /**
@@ -254,6 +383,8 @@ export function appendPdfLibLayoutV2Pages(
     previewValues: Record<string, BindingPreviewCell | undefined>;
     font: PDFFont;
     useWinAnsi: boolean;
+    /** 缺省则现场计算；导出路径应传入当前分卷的 bodyCards */
+    bodyCards?: ExpandedBodyPreviewCard[];
   },
 ): number {
   const { tmpl, previewValues, font, useWinAnsi } = opts;
@@ -265,10 +396,14 @@ export function appendPdfLibLayoutV2Pages(
   );
   let pageCount = 0;
 
-  const paintPage = (bodyEls: TemplateElement[], headerEls: LayoutZoneElement[], footerEls: LayoutZoneElement[]) => {
+  const paintPage = (
+    bodyEls: TemplateElement[],
+    headerEls: LayoutZoneElement[],
+    footerEls: LayoutZoneElement[],
+    card: ExpandedBodyPreviewCard | null,
+  ) => {
     const page = doc.addPage([pageW, pageH]);
     pageCount += 1;
-    // 内容区淡线（便于对照，低对比）
     const contentX = metrics.contentLeft * PX_TO_PT;
     const contentH = metrics.contentH * PX_TO_PT;
     const contentY = pageH - (metrics.contentTop + metrics.contentH) * PX_TO_PT;
@@ -280,27 +415,60 @@ export function appendPdfLibLayoutV2Pages(
       borderColor: rgb(0.85, 0.85, 0.9),
       borderWidth: 0.3,
     });
-    drawZoneElements(page, font, headerEls, pageH, previewValues, useWinAnsi);
-    for (const el of bodyEls) {
-      drawTemplateElement(page, font, el, pageH, previewValues, useWinAnsi);
+    const showChrome = !card?.continuationHideOtherBodyElements && !card?.tailOnlyBelowBaseline;
+    if (showChrome) {
+      drawZoneElements(page, font, headerEls, pageH, previewValues, useWinAnsi);
     }
-    drawZoneElements(page, font, footerEls, pageH, previewValues, useWinAnsi);
+    const effectiveCard: ExpandedBodyPreviewCard = card || {
+      bodyPageIndex: 0,
+      continuationIndex: 0,
+      sqlFillTableSlices: {},
+      continuationHideOtherBodyElements: false,
+    };
+    for (const el of bodyEls) {
+      drawTemplateElement(
+        page,
+        font,
+        el,
+        pageH,
+        previewValues,
+        useWinAnsi,
+        effectiveCard,
+        metrics.contentTop,
+      );
+    }
+    if (showChrome) {
+      drawZoneElements(page, font, footerEls, pageH, previewValues, useWinAnsi);
+    }
   };
 
   if (tmpl.coverElements?.length) {
-    paintPage(tmpl.coverElements, tmpl.coverHeaderElements || [], tmpl.coverFooterElements || []);
+    paintPage(
+      tmpl.coverElements,
+      tmpl.coverHeaderElements || [],
+      tmpl.coverFooterElements || [],
+      null,
+    );
   }
 
-  for (const pageEls of ensureBodyPages(tmpl)) {
-    paintPage(pageEls || [], tmpl.headerElements || [], tmpl.footerElements || []);
+  const cards = opts.bodyCards ?? computeExpandedBodyPreviewCards(tmpl, previewValues);
+  if (cards.length) {
+    for (const card of cards) {
+      const pageEls = bodyElementsRef(tmpl, "body", card.bodyPageIndex);
+      const visible = pageEls.filter((el) => showBodyTplEl(el, card, pageEls));
+      paintPage(visible, tmpl.headerElements || [], tmpl.footerElements || [], card);
+    }
+  } else {
+    const pageEls = bodyElementsRef(tmpl, "body", 0);
+    paintPage(pageEls, tmpl.headerElements || [], tmpl.footerElements || [], null);
   }
 
   if (tmpl.backElements?.length) {
-    paintPage(tmpl.backElements, tmpl.backHeaderElements || [], tmpl.backFooterElements || []);
+    paintPage(tmpl.backElements, tmpl.backHeaderElements || [], tmpl.backFooterElements || [], null);
   }
 
   if (pageCount === 0) {
-    paintPage([], tmpl.headerElements || [], tmpl.footerElements || []);
+    paintPage([], tmpl.headerElements || [], tmpl.footerElements || [], null);
   }
   return pageCount;
 }
