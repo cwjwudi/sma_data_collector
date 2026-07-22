@@ -51,8 +51,20 @@ interface Window {
     ) => Promise<{ max: number; cpuBudget?: number; logicalCores?: number }>;
     shellOpenPath: (filePath: string) => Promise<{ ok: boolean; error?: string }>;
     pathJoin: (...parts: string[]) => Promise<string>;
-    getBundledCjkFont?: () => Promise<
-      { ok: true; base64: string; path?: string; bytes?: number } | { ok: false; error?: string }
+    getBundledCjkFont?: (opts?: {
+      family?: string;
+      key?: "noto-sans-sc" | "fangsong";
+      id?: "noto-sans-sc" | "fangsong";
+    }) => Promise<
+      | {
+          ok: true;
+          base64: string;
+          key?: string;
+          family?: string;
+          path?: string;
+          bytes?: number;
+        }
+      | { ok: false; error?: string; key?: string }
     >;
     notifyPdfExportReady: (payload: {
       ok: boolean;

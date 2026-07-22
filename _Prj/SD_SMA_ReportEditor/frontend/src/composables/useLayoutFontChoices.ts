@@ -1,7 +1,10 @@
 import { computed, ref, shallowRef } from "vue";
-import { BUNDLED_CJK_FAMILY } from "@/lib/report-template/font-availability";
+import {
+  BUNDLED_CJK_FAMILY,
+  BUNDLED_FANGSONG_FAMILY,
+} from "@/lib/report-template/font-availability";
 
-/** 跨平台常见字体（无法枚举本机时仍可快速选）；默认 Noto 置顶见 options */
+/** 跨平台常见字体（无法枚举本机时仍可快速选）；自带字体置顶见 options */
 export const LAYOUT_FONT_FALLBACK = [
   "system-ui",
   "-apple-system",
@@ -28,6 +31,9 @@ export const LAYOUT_FONT_FALLBACK = [
 /** 软件自带默认字体族名（与随包 OTF / pdf-lib 嵌入一致） */
 export const DEFAULT_LAYOUT_FONT_FAMILY = BUNDLED_CJK_FAMILY;
 
+/** 软件自带仿宋（朱雀仿宋；UI 族名 FangSong） */
+export const BUNDLED_LAYOUT_FANGSONG_FAMILY = BUNDLED_FANGSONG_FAMILY;
+
 type FontAccessWindow = Window & {
   queryLocalFonts?: () => Promise<Iterable<{ family?: string; fullName?: string }>>;
 };
@@ -39,15 +45,16 @@ export function useLayoutFontChoices() {
   const lastOsCount = ref(0);
 
   const options = computed(() => {
-    const s = new Set<string>([DEFAULT_LAYOUT_FONT_FAMILY, ...LAYOUT_FONT_FALLBACK, ...fromOs.value]);
+    const pinned = [DEFAULT_LAYOUT_FONT_FAMILY, BUNDLED_LAYOUT_FANGSONG_FAMILY];
+    const s = new Set<string>([...pinned, ...LAYOUT_FONT_FALLBACK, ...fromOs.value]);
     for (const x of Array.from(s)) {
       if (!x || !String(x).trim()) s.delete(x);
     }
     const rest = Array.from(s)
-      .filter((x) => x !== DEFAULT_LAYOUT_FONT_FAMILY)
+      .filter((x) => !pinned.includes(x))
       .sort((a, b) => a.localeCompare(b, "zh-CN"));
-    // Q3：Noto Sans SC 置顶（默认）
-    return [DEFAULT_LAYOUT_FONT_FAMILY, ...rest];
+    // Noto（默认）+ FangSong（自带）置顶
+    return [...pinned, ...rest];
   });
 
   async function refresh() {

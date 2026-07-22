@@ -1,6 +1,6 @@
 {
   "name": "sd-sma-report-editor-ai",
-  "version": "0.3.116",
+  "version": "0.3.117",
   "description": "Report Editor AI — 报表编辑器 AI 版（Electron + FastAPI）",
   "author": "B&R Team",
   "private": true,
@@ -14,7 +14,7 @@
     "api:dev": "powershell -NoLogo -NoProfile -ExecutionPolicy Bypass -File ../backend/scripts/dev_uvicorn.ps1",
     "api:dev:unix": "bash ../backend/scripts/dev_uvicorn.sh",
     "opcua:demo": "cd ../backend && ./venv/bin/python3 scripts/demo_opcua_server.py",
-    "fonts:fetch": "node ../packaging/scripts/fetch-noto-sans-sc.mjs",
+    "fonts:fetch": "node ../packaging/scripts/fetch-bundled-fonts.mjs",
     "prebuild": "npm run fonts:fetch",
     "build": "vite build",
     "test": "vitest run",

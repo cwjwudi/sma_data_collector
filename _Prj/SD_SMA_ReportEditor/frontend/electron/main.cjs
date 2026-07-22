@@ -22,6 +22,7 @@ const {
   isPdfExportCancelled,
   unregisterPdfExportJob,
 } = require('./pdf-export-cancel.cjs')
+const { isRecoverablePdfExportNavError } = require('./pdf-export-nav-recovery.cjs')
 const {
   readLaunchSettings,
   writeLaunchSettings,
@@ -818,23 +819,55 @@ ipcMain.handle('path-join', (_event, parts) => {
   return path.join(...parts.map(String))
 })
 
-/** 030：同机优先 pdf-lib 嵌入随包 Noto（extraResources/fonts 或开发树 resources/fonts） */
-ipcMain.handle('bundled-cjk-font', async () => {
+/** 030/033：pdf-lib 嵌入随包开源 CJK（Noto / 朱雀仿宋→FangSong） */
+const BUNDLED_FONT_FILES = {
+  'noto-sans-sc': 'NotoSansSC-Regular.otf',
+  fangsong: 'ZhuqueFangsong-Regular.ttf',
+}
+
+function resolveBundledFontKey(opts) {
+  const keyRaw = opts && (opts.key || opts.id)
+  if (keyRaw && BUNDLED_FONT_FILES[keyRaw]) return keyRaw
+  const fam = String((opts && opts.family) || '')
+    .trim()
+    .toLowerCase()
+  if (
+    fam === 'fangsong' ||
+    fam === '仿宋' ||
+    fam === 'zhuque fangsong' ||
+    fam === '朱雀仿宋' ||
+    fam === 'zhuquefangsong'
+  ) {
+    return 'fangsong'
+  }
+  return 'noto-sans-sc'
+}
+
+ipcMain.handle('bundled-cjk-font', async (_event, opts) => {
+  const key = resolveBundledFontKey(opts || {})
+  const fileName = BUNDLED_FONT_FILES[key]
   const candidates = [
-    path.join(process.resourcesPath || '', 'fonts', 'NotoSansSC-Regular.otf'),
-    path.join(__dirname, '..', 'resources', 'fonts', 'NotoSansSC-Regular.otf'),
+    path.join(process.resourcesPath || '', 'fonts', fileName),
+    path.join(__dirname, '..', 'resources', 'fonts', fileName),
   ]
   for (const fp of candidates) {
     try {
       if (!fp || !fs.existsSync(fp)) continue
       const buf = await fs.promises.readFile(fp)
       if (buf.length < 1000) continue
-      return { ok: true, base64: buf.toString('base64'), path: fp, bytes: buf.length }
+      return {
+        ok: true,
+        key,
+        family: key === 'fangsong' ? 'FangSong' : 'Noto Sans SC',
+        base64: buf.toString('base64'),
+        path: fp,
+        bytes: buf.length,
+      }
     } catch {
       /* try next */
     }
   }
-  return { ok: false, error: 'bundled Noto Sans SC not found' }
+  return { ok: false, key, error: `bundled font not found: ${fileName}` }
 })
 
 ipcMain.handle('scan-export-pdfs', async (_event, opts) => {
@@ -1004,6 +1037,24 @@ async function navigatePdfExportWindow(win, targetUrl) {
   return false
 }
 
+/**
+ * 033：导航失败（如 ERR_FAILED）时销毁隐藏窗并冷启动新窗重试一次。
+ * holder.win 在 loadURL 前更新，避免 ready 信号落到旧窗引用上。
+ * @returns {Promise<boolean>} hotSwitched
+ */
+async function navigatePdfExportWindowWithRecovery(holder, targetUrl) {
+  try {
+    return await navigatePdfExportWindow(holder.win, targetUrl)
+  } catch (e) {
+    if (!isRecoverablePdfExportNavError(e)) throw e
+    log(`PDF export navigate failed (${e && e.message ? e.message : e}); recreating window`)
+    destroyPdfExportWindow(holder.win)
+    holder.win = createPdfExportWindow()
+    await holder.win.loadURL(targetUrl)
+    return false
+  }
+}
+
 function destroyPdfExportWindow(win) {
   if (win && !win.isDestroyed()) win.destroy()
 }
@@ -1157,6 +1208,15 @@ ipcMain.handle('pdf-export-run', async (event, opts) => {
       // 优先复用预热窗口：SPA 已启动，进入取数只差一次 hash 切换
       pdfWin = acquirePdfExportWindow()
       const warmStart = Boolean(pdfWin.webContents.getURL())
+      /** 033：导航恢复时同步替换引用，供 ready 过滤与 finally 回收 */
+      const pdfWinHolder = {
+        get win() {
+          return pdfWin
+        },
+        set win(w) {
+          pdfWin = w
+        },
+      }
 
       /** 渲染窗口取数期间每 10 秒发一次心跳：连续 2 分钟无心跳视为无响应；总时长上限 10 分钟 */
       const RENDER_IDLE_TIMEOUT_MS = 120000
@@ -1195,8 +1255,9 @@ ipcMain.handle('pdf-export-run', async (event, opts) => {
           }
 
           function isFromPdfWin(ev) {
-            if (!pdfWin || pdfWin.isDestroyed()) return false
-            return senderBrowserWindow(ev.sender) === pdfWin
+            const w = pdfWinHolder.win
+            if (!w || w.isDestroyed()) return false
+            return senderBrowserWindow(ev.sender) === w
           }
 
           function onHeartbeat(ev) {
@@ -1223,17 +1284,25 @@ ipcMain.handle('pdf-export-run', async (event, opts) => {
         const navStartMs = Date.now()
         // 导航与完成信号并行等待：导航报错立即失败；导航悬挂由 readyPromise 的超时兜底，
         // 避免 readyPromise 先超时时产生无人接收的 unhandled rejection 并卡死后续结批。
+        // 033：ERR_FAILED 等可恢复错误 → 销毁窗冷启动重试一次。
         const payload = await new Promise((resolve, reject) => {
           readyPromise.then(resolve, reject)
-          navigatePdfExportWindow(pdfWin, targetUrl)
+          navigatePdfExportWindowWithRecovery(pdfWinHolder, targetUrl)
             .then((hotSwitched) => {
               if (!hotSwitched) return
               hotNavFallbackTimer = setTimeout(() => {
                 if (flags.rendererSignal || flags.hotNavFellBack) return
-                if (!pdfWin || pdfWin.isDestroyed()) return
+                const w = pdfWinHolder.win
+                if (!w || w.isDestroyed()) return
                 flags.hotNavFellBack = true
                 log('PDF export hot hash-switch silent; falling back to full page load')
-                pdfWin.loadURL(targetUrl).catch(() => {})
+                w.loadURL(targetUrl).catch((err) => {
+                  if (!isRecoverablePdfExportNavError(err)) return
+                  log(`PDF export hot-nav fallback failed (${err.message}); recreating window`)
+                  destroyPdfExportWindow(pdfWinHolder.win)
+                  pdfWinHolder.win = createPdfExportWindow()
+                  pdfWinHolder.win.loadURL(targetUrl).catch(() => {})
+                })
               }, HOT_NAV_FALLBACK_MS)
             })
             .catch(reject)

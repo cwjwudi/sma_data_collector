@@ -5,6 +5,7 @@ import {
   checkFontFamiliesSync,
   formatFontPreflightWarnings,
   isBundledCjkFamily,
+  pickBundledFontForExport,
 } from "@/lib/report-template/font-availability";
 
 describe("font-families-collect", () => {
@@ -19,17 +20,25 @@ describe("font-families-collect", () => {
 });
 
 describe("font-availability", () => {
-  it("treats Noto Sans SC as bundled", () => {
+  it("treats Noto Sans SC and FangSong as bundled", () => {
     expect(isBundledCjkFamily("Noto Sans SC")).toBe(true);
     expect(isBundledCjkFamily(BUNDLED_CJK_FAMILY)).toBe(true);
+    expect(isBundledCjkFamily("FangSong")).toBe(true);
+    expect(isBundledCjkFamily("朱雀仿宋")).toBe(true);
   });
 
   it("flags host-missing non-bundled fonts for fallback warning", () => {
-    const r = checkFontFamiliesSync(["Microsoft YaHei", "Noto Sans SC"], () => false);
+    const r = checkFontFamiliesSync(["Microsoft YaHei", "Noto Sans SC", "FangSong"], () => false);
     expect(r[0]!.needsBundleFallback).toBe(true);
     expect(r[1]!.needsBundleFallback).toBe(false);
+    expect(r[2]!.needsBundleFallback).toBe(false);
     const w = formatFontPreflightWarnings(r);
     expect(w[0]).toContain("Microsoft YaHei");
     expect(w[0]).toContain(BUNDLED_CJK_FAMILY);
+  });
+
+  it("pickBundledFontForExport prefers FangSong when present", () => {
+    expect(pickBundledFontForExport(["Microsoft YaHei"]).id).toBe("noto-sans-sc");
+    expect(pickBundledFontForExport(["FangSong", "Noto Sans SC"]).id).toBe("fangsong");
   });
 });

@@ -14,10 +14,25 @@ import { buildExportPreviewReports } from "@/lib/report-template/export-preview-
 import type { ReportTemplate, TemplateElement } from "@/lib/report-template/model";
 import { ensureTableGrid } from "@/lib/report-template/model";
 import { PAPER_PRESETS, type PaperKind } from "@/lib/report-template/paper";
-import { BUNDLED_CJK_FAMILY } from "@/lib/report-template/font-availability";
+import {
+  BUNDLED_CJK_FAMILY,
+  bundledFamilyLabel,
+  type BundledFontId,
+} from "@/lib/report-template/font-availability";
 import {
   templateTableSqlFillPreviewKey,
 } from "@/lib/report-template/table-sql-fill-preview";
+
+const BUNDLED_FONT_URLS: Record<BundledFontId, string[]> = {
+  "noto-sans-sc": [
+    "/resources/fonts/NotoSansSC-Regular.otf",
+    "./resources/fonts/NotoSansSC-Regular.otf",
+  ],
+  fangsong: [
+    "/resources/fonts/ZhuqueFangsong-Regular.ttf",
+    "./resources/fonts/ZhuqueFangsong-Regular.ttf",
+  ],
+};
 
 export type PdfLibExportMeta = {
   engine: "pdf-lib";
@@ -59,7 +74,10 @@ function decodeBase64ToBytes(b64: string): Uint8Array {
   return out;
 }
 
-async function loadBundledFontBytes(fontBytesBase64?: string | null): Promise<Uint8Array | null> {
+async function loadBundledFontBytes(
+  fontBytesBase64?: string | null,
+  fontId: BundledFontId = "noto-sans-sc",
+): Promise<Uint8Array | null> {
   if (fontBytesBase64 && fontBytesBase64.length > 1000) {
     try {
       return decodeBase64ToBytes(fontBytesBase64);
@@ -67,10 +85,7 @@ async function loadBundledFontBytes(fontBytesBase64?: string | null): Promise<Ui
       /* fall through */
     }
   }
-  const candidates = [
-    "/resources/fonts/NotoSansSC-Regular.otf",
-    "./resources/fonts/NotoSansSC-Regular.otf",
-  ];
+  const candidates = [...(BUNDLED_FONT_URLS[fontId] || BUNDLED_FONT_URLS["noto-sans-sc"])];
   const custom = (window as unknown as { __SD_SMA_BUNDLED_FONT_URL__?: string }).__SD_SMA_BUNDLED_FONT_URL__;
   if (custom) candidates.unshift(custom);
 
@@ -137,8 +152,10 @@ export async function renderPdfLibExportPart(opts: {
   tmpl: ReportTemplate;
   previewValues: Record<string, BindingPreviewCell | undefined>;
   reportPartIndex: number | null;
-  /** 主进程 IPC 读入的随包 Noto base64；缺省则尝试 fetch / Helvetica */
+  /** 主进程 IPC 读入的随包字体 base64；缺省则尝试 fetch / Helvetica */
   fontBytesBase64?: string | null;
+  /** 随包字体 id；默认 Noto Sans SC */
+  bundledFontId?: BundledFontId | null;
 }): Promise<{ bytes: Uint8Array; meta: PdfLibExportMeta }> {
   const t0 = Date.now();
   const reports = buildExportPreviewReports(opts.tmpl, opts.previewValues, opts.reportPartIndex);
@@ -146,12 +163,13 @@ export async function renderPdfLibExportPart(opts: {
   if (!report) throw new Error("pdf-lib：无预览分卷");
 
   const doc = await PDFDocument.create();
-  // pdf-lib 嵌入自定义字体（Noto OTF + subset）必须先注册 fontkit（033）
+  // pdf-lib 嵌入自定义字体（OTF/TTF + subset）必须先注册 fontkit（033）
   doc.registerFontkit(fontkit);
-  const fontBytes = await loadBundledFontBytes(opts.fontBytesBase64);
+  const fontId: BundledFontId = opts.bundledFontId === "fangsong" ? "fangsong" : "noto-sans-sc";
+  const fontBytes = await loadBundledFontBytes(opts.fontBytesBase64, fontId);
   let font: PDFFont;
   let fontEmbedded = false;
-  let fontFamily = BUNDLED_CJK_FAMILY;
+  let fontFamily = bundledFamilyLabel(fontId) || BUNDLED_CJK_FAMILY;
   if (fontBytes) {
     font = await doc.embedFont(fontBytes, { subset: true });
     fontEmbedded = true;
@@ -300,6 +318,7 @@ export async function renderPdfLibExportPartBase64(opts: {
   previewValues: Record<string, BindingPreviewCell | undefined>;
   reportPartIndex: number | null;
   fontBytesBase64?: string | null;
+  bundledFontId?: BundledFontId | null;
 }): Promise<{ pdfBase64: string; meta: PdfLibExportMeta }> {
   const { bytes, meta } = await renderPdfLibExportPart(opts);
   let binary = "";

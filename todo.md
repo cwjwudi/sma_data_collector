@@ -7,7 +7,9 @@
 
 ## 2026-07-22
 
-- **ReportEditor 0.3.116（033）**：注册 `@pdf-lib/fontkit`；字体 UI 显示 `Noto Sans SC（默认）`；`prebuild` 拉随包 OTF。`ERR_FAILED` 加固另开。看板 [docs/033-✅](docs/033-✅-ReportEditor同机优先pdf-lib缺fontkit导致结批失败.md)。
+- **ReportEditor 0.3.117（033）**：仿宋随包（朱雀仿宋→`FangSong`）；导出窗 `ERR_FAILED` 销毁重建重试。看板 [docs/033-✅](docs/033-✅-ReportEditor同机优先pdf-lib缺fontkit导致结批失败.md)。
+
+- **ReportEditor 0.3.116（033）**：注册 `@pdf-lib/fontkit`；字体 UI 显示 `Noto Sans SC（默认）`；`prebuild` 拉随包 OTF。看板 [docs/033-✅](docs/033-✅-ReportEditor同机优先pdf-lib缺fontkit导致结批失败.md)。
 
 - **同机优先 pdf-lib 缺 fontkit（登记→已修）**：现场 0.3.115 OPC 自动结批 `embedFont` 缺 fontkit。看板 [docs/033-✅](docs/033-✅-ReportEditor同机优先pdf-lib缺fontkit导致结批失败.md)。
 

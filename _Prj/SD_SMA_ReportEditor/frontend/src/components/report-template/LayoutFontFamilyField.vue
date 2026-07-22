@@ -29,11 +29,13 @@
 import { computed } from "vue";
 import SuggestCombobox from "@/components/report-template/SuggestCombobox.vue";
 import {
+  BUNDLED_LAYOUT_FANGSONG_FAMILY,
   DEFAULT_LAYOUT_FONT_FAMILY,
   useLayoutFontChoices,
 } from "@/composables/useLayoutFontChoices";
 import {
   BUNDLED_CJK_FAMILY,
+  BUNDLED_FANGSONG_FAMILY,
   checkFontFamilySync,
 } from "@/lib/report-template/font-availability";
 
@@ -45,7 +47,9 @@ const { options, loading, hint, refresh } = useLayoutFontChoices();
 const defaultPlaceholder = `${DEFAULT_LAYOUT_FONT_FAMILY}（默认）`;
 
 function formatFontOption(opt: string): string {
-  return opt === DEFAULT_LAYOUT_FONT_FAMILY ? `${opt}（默认）` : opt;
+  if (opt === DEFAULT_LAYOUT_FONT_FAMILY) return `${opt}（默认）`;
+  if (opt === BUNDLED_LAYOUT_FANGSONG_FAMILY) return `${opt}（自带）`;
+  return opt;
 }
 
 const availabilityHint = computed(() => {
@@ -59,7 +63,7 @@ const availabilityHint = computed(() => {
     }
   });
   if (r.availableOnHost || r.coveredByBundle) return "";
-  return `本机可能没有「${f}」。导出将回退到随包「${BUNDLED_CJK_FAMILY}」。`;
+  return `本机可能没有「${f}」。导出将回退到随包「${BUNDLED_CJK_FAMILY}」或「${BUNDLED_FANGSONG_FAMILY}」。`;
 });
 
 function fontPreviewStyle(opt: string): Record<string, string> {

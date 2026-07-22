@@ -46,6 +46,8 @@ import {
   sleepMs,
 } from "@/lib/report-template/sql-fill-retry";
 import { normalizePdfExportEngine, type PdfExportEngineId } from "@/lib/pdf-export-engine";
+import { collectFontFamiliesFromTemplate } from "@/lib/report-template/font-families-collect";
+import { pickBundledFontForExport } from "@/lib/report-template/font-availability";
 import { renderPdfLibExportPartBase64 } from "@/lib/report-template/pdf-lib-export-render";
 
 const route = useRoute();
@@ -274,12 +276,14 @@ async function boot(): Promise<void> {
   if (!useChromiumPrint.value) {
     // 同机优先：跳过 DOM 预览栈与 printToPDF，矢量写 PDF
     try {
-      const fontRes = await window.electronAPI?.getBundledCjkFont?.();
+      const picked = pickBundledFontForExport(collectFontFamiliesFromTemplate(t));
+      const fontRes = await window.electronAPI?.getBundledCjkFont?.({ key: picked.id });
       const { pdfBase64, meta } = await renderPdfLibExportPartBase64({
         tmpl: t,
         previewValues: bindingPreview.values.value,
         reportPartIndex: partIdx,
         fontBytesBase64: fontRes?.ok ? fontRes.base64 : null,
+        bundledFontId: picked.id,
       });
       if (seq !== bootSeq) return;
       signalReady(true, undefined, totalReports, { tplMs, dataMs, paintMs: Date.now() - paintStartMs }, undefined, {

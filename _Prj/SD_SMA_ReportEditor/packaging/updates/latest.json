@@ -1,15 +1,15 @@
 {
-  "version": "0.3.116",
-  "releasedAt": "2026-07-22T06:55:37.631Z",
-  "notes": "Report Editor AI 0.3.116\n\n- 033：注册 @pdf-lib/fontkit，修复同机优先嵌入 Noto 失败\n- 字体 UI：空值显示「Noto Sans SC（默认）」；下拉置顶；build 自动拉取随包字体",
+  "version": "0.3.117",
+  "releasedAt": "2026-07-22T07:32:35.637Z",
+  "notes": "Report Editor AI 0.3.117\n\n- 仿宋随包（朱雀仿宋 OFL，UI 族名 FangSong）\n- 导出隐藏窗 ERR_FAILED 销毁重建重试",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.116-x64.exe",
+      "url": "Report Editor AI-Setup-0.3.117-x64.exe",
       "sha256": "",
       "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.116-arm64.dmg",
+      "url": "Report Editor AI-0.3.117-arm64.dmg",
       "sha256": "",
       "size": 0
     }
