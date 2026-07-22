@@ -1,15 +1,15 @@
 {
-  "version": "0.3.115",
-  "releasedAt": "2026-07-21T06:10:16.719Z",
-  "notes": "Report Editor AI 0.3.115\n\n- 同机优先(pdf-lib)默认旁路 printToPDF；版式优先可回滚\n- 高级设置导出模式开关；审计记录 engine/exportMode\n- 字体检查；随包 Noto 位（缺文件时 Helvetica 回退）",
+  "version": "0.3.116",
+  "releasedAt": "2026-07-22T06:55:37.631Z",
+  "notes": "Report Editor AI 0.3.116\n\n- 033：注册 @pdf-lib/fontkit，修复同机优先嵌入 Noto 失败\n- 字体 UI：空值显示「Noto Sans SC（默认）」；下拉置顶；build 自动拉取随包字体",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.115-x64.exe",
-      "sha256": "6e46aa2befd78e5cc589a097703457eb1a1f5f558a5ec8a16a52cb2a4dc44e92",
-      "size": 162807222
+      "url": "Report Editor AI-Setup-0.3.116-x64.exe",
+      "sha256": "",
+      "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.115-arm64.dmg",
+      "url": "Report Editor AI-0.3.116-arm64.dmg",
       "sha256": "",
       "size": 0
     }

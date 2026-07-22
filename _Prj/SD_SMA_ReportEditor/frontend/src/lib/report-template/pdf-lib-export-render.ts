@@ -3,6 +3,7 @@
  * 版式与 DOM 预览不完全 1:1；审计 layoutFidelity=draft-v1。
  */
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
+import fontkit from "@pdf-lib/fontkit";
 import type { BindingPreviewCell } from "@/lib/report-template/binding-preview-utils";
 import {
   cellKey,
@@ -145,6 +146,8 @@ export async function renderPdfLibExportPart(opts: {
   if (!report) throw new Error("pdf-lib：无预览分卷");
 
   const doc = await PDFDocument.create();
+  // pdf-lib 嵌入自定义字体（Noto OTF + subset）必须先注册 fontkit（033）
+  doc.registerFontkit(fontkit);
   const fontBytes = await loadBundledFontBytes(opts.fontBytesBase64);
   let font: PDFFont;
   let fontEmbedded = false;

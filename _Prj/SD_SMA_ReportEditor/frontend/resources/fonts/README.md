@@ -9,9 +9,13 @@
 在仓库根或本目录执行（需网络）：
 
 ```powershell
-node ..\..\scripts\fetch-noto-sans-sc.mjs
+# 在 frontend 目录
+npm run fonts:fetch
+
+# 或
+node ..\packaging\scripts\fetch-noto-sans-sc.mjs
 ```
 
-成功后应存在：`NotoSansSC-Regular.otf`（或脚本打印的实际文件名）。
+成功后应存在：`NotoSansSC-Regular.otf`（git 不入库，仅本机/打包机）。
 
-打包脚本可在缺文件时自动拉取；体积较大时优先使用子集（脚本内可改 URL）。
+`npm run build` / `prebuild` 会自动拉取（已存在则跳过）。打包经 `extraResources` 打进安装包 `resources/fonts/`。

@@ -241,7 +241,7 @@ Windows 实际结批 CPU≈100%，同机 mappView 白屏/刷新。
 | 审计 | summary 含 `同机优先/pdf-lib`；detail：`exportMode`、`engine`、`engineMeta`（含 `printToPDFSkipped`、`layoutFidelity`、`fontEmbedded`） |
 | 字体 | 打包机 `resources/fonts/NotoSansSC-Regular.otf` → extraResources；缺则 Helvetica |
 
-> **现场阻断（2026-07-22）**：自动结批报 `embedFont` 缺 fontkit → 见 [033-⌛️](033-⌛️-ReportEditor同机优先pdf-lib缺fontkit导致结批失败.md)。缓解：高级设置切 **版式优先**；修复：注册 `@pdf-lib/fontkit`。
+> **现场阻断（已修 0.3.116）**：`embedFont` 缺 fontkit → 见 [033-✅](033-✅-ReportEditor同机优先pdf-lib缺fontkit导致结批失败.md)。请装 **0.3.116+** 复测同机优先自动结批。
 
 ## 现场给人看（审计）
 

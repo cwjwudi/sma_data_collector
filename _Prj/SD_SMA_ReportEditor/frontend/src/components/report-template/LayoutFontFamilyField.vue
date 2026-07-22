@@ -4,7 +4,8 @@
     <SuggestCombobox
       v-model="model"
       :options="options"
-      placeholder="留空则跟随系统默认；点 ▾ 浏览全部"
+      :placeholder="defaultPlaceholder"
+      :format-option="formatFontOption"
       :opt-preview-style="fontPreviewStyle"
       :max-list-height="320"
     />
@@ -12,18 +13,25 @@
       <button type="button" class="lff-btn" :disabled="loading" @click="onRefresh">
         {{ loading ? "读取中…" : "刷新本机字体列表" }}
       </button>
-      <button v-if="model" type="button" class="lff-btn lff-btn-muted" @click="model = ''">清除</button>
+      <button v-if="model" type="button" class="lff-btn lff-btn-muted" @click="model = ''">
+        恢复默认
+      </button>
     </div>
     <p v-if="availabilityHint" class="lff-hint">{{ availabilityHint }}</p>
     <p v-else-if="hint" class="lff-hint">{{ hint }}</p>
-    <p v-else class="lff-hint lff-hint-muted">点 ▾ 可浏览全部字体并滚动；输入文字可过滤。刷新需允许访问本机字体。</p>
+    <p v-else class="lff-hint lff-hint-muted">
+      留空即使用软件自带默认字体「{{ DEFAULT_LAYOUT_FONT_FAMILY }}」。点 ▾ 可浏览；输入可过滤。
+    </p>
   </label>
 </template>
 
 <script setup lang="ts">
 import { computed } from "vue";
 import SuggestCombobox from "@/components/report-template/SuggestCombobox.vue";
-import { useLayoutFontChoices } from "@/composables/useLayoutFontChoices";
+import {
+  DEFAULT_LAYOUT_FONT_FAMILY,
+  useLayoutFontChoices,
+} from "@/composables/useLayoutFontChoices";
 import {
   BUNDLED_CJK_FAMILY,
   checkFontFamilySync,
@@ -32,6 +40,13 @@ import {
 const model = defineModel<string>({ default: "" });
 
 const { options, loading, hint, refresh } = useLayoutFontChoices();
+
+/** Q2=A：空值不写死进模版，输入框占位显示真实默认字体名 */
+const defaultPlaceholder = `${DEFAULT_LAYOUT_FONT_FAMILY}（默认）`;
+
+function formatFontOption(opt: string): string {
+  return opt === DEFAULT_LAYOUT_FONT_FAMILY ? `${opt}（默认）` : opt;
+}
 
 const availabilityHint = computed(() => {
   const f = String(model.value || "").trim();
