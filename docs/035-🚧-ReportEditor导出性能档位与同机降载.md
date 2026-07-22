@@ -2,7 +2,7 @@
 
 > 本文件为 **任务看板 / 开工计划**；规则见 [CLAUDE.md](../CLAUDE.md)。  
 > **登记日期**：2026-07-22 · 代码线 **0.3.122**（五档默认预览稳；layout-v2 支持 bodyCards 续页）。  
-> **关联**：[030](030-🚧-ReportEditor结批占满CPU导致mappView白屏.md) · [034](034-🚧-ReportEditor全站架构复评-2026-07-22.md) · [003](003-⌛️-剩余任务与后续规划.md) · Plan [`0.3.122`](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.122.md)。
+> **关联**：[030](030-🚧-ReportEditor结批占满CPU导致mappView白屏.md) · [034](034-🚧-ReportEditor全站架构复评-2026-07-22.md) · [036](036-🚧-ReportEditor矢量档与预览稳样式对照.md)（档 1↔2 样式完整对照） · [003](003-⌛️-剩余任务与后续规划.md) · Plan [`0.3.122`](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.122.md)。
 
 ---
 
@@ -129,4 +129,4 @@
 ## 明确不做（本看板强制外）
 
 - 8k / ≥4 份零闪硬验收 E2E（030 ⏸）  
-- layout-v2 像素级对齐 printToPDF（渐进增强）  
+- layout-v2 像素级对齐 printToPDF（渐进增强；**可交付观感差**见 [036](036-🚧-ReportEditor矢量档与预览稳样式对照.md)）  
