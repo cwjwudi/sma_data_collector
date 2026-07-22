@@ -31,6 +31,20 @@ export function shouldContinueEmptyLoadWatch(opts: {
 }
 
 /**
+ * keep-alive 回到数据源页时是否应恢复空列表 loadWatch（034 M2 / L14）。
+ * 列表仍空、尚未确认空稳态、且当前未在加载 → 恢复。
+ */
+export function shouldRestartLoadWatchOnActivate(opts: {
+  connectionsCount: number;
+  emptyListConfirmed: boolean;
+  connectionsLoading: boolean;
+}): boolean {
+  return (
+    opts.connectionsCount === 0 && !opts.emptyListConfirmed && !opts.connectionsLoading
+  );
+}
+
+/**
  * ConnectionManager：creatingNew 下父级反复下发 null 时是否保留本地 draft。
  * immediate 首次（prev 未知）应初始化；仅「已在新建且上次也是 null」时保留。
  */

@@ -299,6 +299,7 @@ import {
 } from './opcua-tree-utils.js'
 import { runOpcExpandAllTree } from './opcua-tree-expand-all.js'
 import { parseOpcNodeId, opcNodeClassLabel } from './opcua-node-display.js'
+import { createBrowsePollingGate } from './browse-polling-gate'
 
 const props = defineProps({
   /** 向导内：单列芯片 + 草稿浏览 + 与数据库向导一致的一体化版面 */
@@ -1257,29 +1258,28 @@ function syncTreeRowPollTimer() {
 }
 
 /** 034 M4：父页 deactivated 后门闩，禁止 watch 把浏览轮询重新拉起 */
-let browsePollingAllowed = true
-
-function syncAllPollTimers() {
-  if (!browsePollingAllowed) {
+const browsePollingGate = createBrowsePollingGate({
+  clearAll: () => {
     clearPollTimer()
     clearTreeRowPollTimer()
-    return
-  }
-  syncPollTimer()
-  syncTreeRowPollTimer()
+  },
+  syncWhenAllowed: () => {
+    syncPollTimer()
+    syncTreeRowPollTimer()
+  },
+})
+
+function syncAllPollTimers() {
+  browsePollingGate.syncAll()
 }
 
 /** 父页 DataSourceConfig deactivated 时调用（032 B 级 / 034 M4） */
 function pauseBrowsePolling() {
-  browsePollingAllowed = false
-  clearPollTimer()
-  clearTreeRowPollTimer()
+  browsePollingGate.pause()
 }
 
 function resumeBrowsePolling() {
-  browsePollingAllowed = true
-  if (!pollEnabled.value || !browseCapability.value) return
-  syncAllPollTimers()
+  browsePollingGate.resume(Boolean(pollEnabled.value && browseCapability.value))
 }
 
 watch(

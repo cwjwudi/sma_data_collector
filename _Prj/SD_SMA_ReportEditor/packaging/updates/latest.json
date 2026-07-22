@@ -1,15 +1,15 @@
 {
-  "version": "0.3.118",
-  "releasedAt": "2026-07-22T09:07:10.839Z",
-  "notes": "Report Editor AI 0.3.118\n\n- 034 M1–M7：TemplateManager Observer lifecycle；Workbench loadWatch 离页停；OPC 浏览轮询门闩；契约 L7/L8/L10/L11/L13/L14；导出/结批取消 UI",
+  "version": "0.3.119",
+  "releasedAt": "2026-07-22T09:17:25.898Z",
+  "notes": "Report Editor AI 0.3.119\n\n- 034：M1–M7 行为测补全\n- M11：默认版式优先（预览级 PDF）；同机优先标草稿非交付",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.118-x64.exe",
+      "url": "Report Editor AI-Setup-0.3.119-x64.exe",
       "sha256": "",
       "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.118-arm64.dmg",
+      "url": "Report Editor AI-0.3.119-arm64.dmg",
       "sha256": "",
       "size": 0
     }

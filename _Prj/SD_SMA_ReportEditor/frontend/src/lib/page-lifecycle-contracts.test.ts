@@ -157,14 +157,16 @@ describe("032 page lifecycle contracts", () => {
 
   it("L8: OpcUaPanel 浏览轮询 deactivated 门闩", () => {
     const src = read("features/datasource/opcua/OpcUaPanel.vue");
-    expect(src).toMatch(/browsePollingAllowed/);
+    expect(src).toMatch(/createBrowsePollingGate/);
     expect(src).toMatch(/function pauseBrowsePolling/);
     expect(src).toMatch(/function resumeBrowsePolling/);
-    expect(src).toMatch(/if\s*\(\s*!browsePollingAllowed\s*\)/);
+    expect(src).toMatch(/browsePollingGate\.(pause|resume|syncAll)/);
     // 父页 pause 须接到门闩
     const page = read("views/DataSourceConfig.vue");
     expect(page).toMatch(/pauseBrowsePolling/);
     expect(page).toMatch(/resumeBrowsePolling/);
+    const gate = read("features/datasource/opcua/browse-polling-gate.ts");
+    expect(gate).toMatch(/export function createBrowsePollingGate/);
   });
 
   it("L10: backgroundThrottling: false 仅主窗 + PDF 导出窗", () => {
@@ -223,11 +225,29 @@ describe("032 page lifecycle contracts", () => {
   it("M7: 导出进行中取消 UI 接 cancelPdfExport", () => {
     const rg = read("views/ReportGenerator.vue");
     expect(rg).toMatch(/manualExportJobId/);
-    expect(rg).toMatch(/cancelPdfExport/);
+    expect(rg).toMatch(/requestCancelPdfExport|cancelPdfExport/);
+    expect(rg).toMatch(/shouldShowExportCancelControl|showManualCancel/);
     const auto = read("lib/report-auto-export-trigger-service.ts");
     expect(auto).toMatch(/exportJobIdForCancel/);
     expect(auto).toMatch(/onJobId/);
-    expect(auto).toMatch(/cancelPdfExport/);
+    expect(auto).toMatch(/requestCancelPdfExport|cancelPdfExport/);
     expect(auto).toMatch(/isPdfExportCancelledError/);
+    const ui = read("lib/pdf-export-cancel-ui.ts");
+    expect(ui).toMatch(/export function requestCancelPdfExport/);
+  });
+
+  it("M11: 默认 PDF 引擎为 chromium（预览级交付）", () => {
+    const eng = read("lib/pdf-export-engine.ts");
+    expect(eng).toMatch(/return "chromium"/);
+    expect(eng).toMatch(/PDF_EXPORT_PREVIEW_DEFAULT_MIGRATE_KEY/);
+    const prefs = read("lib/report-generator-prefs.ts");
+    expect(prefs).toMatch(/pdfExportEngine:\s*["']chromium["']/);
+    expect(prefs).toMatch(/applyPreviewLevelPdfDefaultMigration/);
+    const main = readFileSync(join(frontendRoot, "electron/main.cjs"), "utf8");
+    // 显式 pdf-lib 才走草稿；缺省走 chromium
+    expect(main).toMatch(/engineNorm === 'pdf-lib'/);
+    const rg = read("views/ReportGenerator.vue");
+    expect(rg).toMatch(/同机优先（草稿）/);
+    expect(rg).toMatch(/不可作现场交付/);
   });
 });

@@ -1154,15 +1154,14 @@ ipcMain.handle('pdf-export-run', async (event, opts) => {
   const templateId = opts && opts.templateId
   const openAfter = Boolean(opts && opts.openAfter)
   const engineRaw = opts && opts.engine
+  // 034 M11：缺省 / 未知 → chromium（预览级）；仅显式 pdf-lib 走草稿
+  const engineNorm = String(engineRaw || '')
+    .trim()
+    .toLowerCase()
   const exportEngine =
-    String(engineRaw || '')
-      .trim()
-      .toLowerCase() === 'chromium' ||
-    String(engineRaw || '')
-      .trim()
-      .toLowerCase() === 'printtopdf'
-      ? 'chromium'
-      : 'pdf-lib'
+    engineNorm === 'pdf-lib' || engineNorm === 'pdflib' || engineNorm === 'vector'
+      ? 'pdf-lib'
+      : 'chromium'
   const exportMode = exportEngine === 'pdf-lib' ? 'coexist' : 'fidelity'
   const jobId =
     opts && typeof opts.jobId === 'string' && opts.jobId.trim()

@@ -30,6 +30,7 @@ import {
   AUTO_EXPORT_MAX_PARALLEL_DEFAULT,
   clampAutoExportMaxParallel,
 } from "@/lib/auto-export-status-codes";
+import { applyPreviewLevelPdfDefaultMigration } from "@/lib/pdf-export-engine";
 
 
 
@@ -136,7 +137,7 @@ export interface ReportGeneratorPrefs {
   manualOpenAfter: boolean;
 
   /**
-   * 导出模式（030）：pdf-lib=同机优先；chromium=版式优先。
+   * 导出模式（030 / 034 M11）：chromium=版式优先（默认/交付）；pdf-lib=同机优先（草稿）。
    * 自动/手动导出共用。
    */
   pdfExportEngine: "pdf-lib" | "chromium";
@@ -205,7 +206,7 @@ export const defaultReportGeneratorPrefs = (): ReportGeneratorPrefs => ({
 
   manualOpenAfter: false,
 
-  pdfExportEngine: "pdf-lib",
+  pdfExportEngine: "chromium",
 
   exportResultOpc: defaultExportResultOpcFeedback(),
 
@@ -373,8 +374,9 @@ function parseStoredPrefs(o: StoredPrefs, base: ReportGeneratorPrefs): ReportGen
       const raw = String(o.pdfExportEngine || "")
         .trim()
         .toLowerCase();
-      if (raw === "chromium" || raw === "printtopdf") return "chromium";
-      return "pdf-lib";
+      if (raw === "pdf-lib" || raw === "pdflib" || raw === "vector") return "pdf-lib";
+      // 缺省 / chromium / printtopdf → 预览级交付
+      return "chromium";
     })(),
     exportResultOpc,
     exportResultOpcByTemplateId: parseExportResultOpcByTemplateId(
@@ -404,8 +406,15 @@ export function loadReportGeneratorPrefs(): ReportGeneratorPrefs {
   const base = defaultReportGeneratorPrefs();
   try {
     const raw = localStorage.getItem(LS_KEY);
-    if (!raw) return base;
-    return parseStoredPrefs(JSON.parse(raw) as StoredPrefs, base);
+    const loaded = raw
+      ? parseStoredPrefs(JSON.parse(raw) as StoredPrefs, base)
+      : base;
+    // 034 M11：旧默认同机优先一次性迁到版式优先（预览级交付）
+    const mig = applyPreviewLevelPdfDefaultMigration(loaded);
+    if (mig.changed) {
+      saveReportGeneratorPrefs(mig.prefs);
+    }
+    return mig.prefs;
   } catch {
     return base;
   }

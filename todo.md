@@ -7,6 +7,8 @@
 
 ## 2026-07-22
 
+- **ReportEditor 0.3.119（034 行为测 + M11）**：补全 gate/cancel-ui/KeepAlive 行为测；默认 PDF=版式优先（chromium）；旧 pdf-lib 一次性迁移；同机优先标草稿非交付。手测见 [docs/034-🚧](docs/034-🚧-ReportEditor全站架构复评-2026-07-22.md)「手测清单」。
+
 - **ReportEditor 0.3.118（034 M1–M7）**：TemplateManager Observer lifecycle；Workbench loadWatch 离页停；OPC 浏览轮询门闩；契约 L7/L8/L10/L11/L13/L14；导出/结批取消 UI。看板 [docs/034-🚧](docs/034-🚧-ReportEditor全站架构复评-2026-07-22.md)。
 
 - **PDF 交付拍板**：必须与**预览一致**；**不接受** pdf-lib draft-v1 草稿交差；M11 重定义。看板 [docs/030-🚧](docs/030-🚧-ReportEditor结批占满CPU导致mappView白屏.md) · [docs/034-🚧](docs/034-🚧-ReportEditor全站架构复评-2026-07-22.md)。

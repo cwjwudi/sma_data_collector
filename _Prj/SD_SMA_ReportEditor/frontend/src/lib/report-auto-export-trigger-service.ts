@@ -53,6 +53,10 @@ import {
   isPdfExportCancelledError,
   newPdfExportJobId,
 } from "@/lib/pdf-export-job";
+import {
+  buildExportCancelToastAction,
+  requestCancelPdfExport,
+} from "@/lib/pdf-export-cancel-ui";
 
 const RG_UI = {
   opcAuto: "OPC UA 自动结批",
@@ -574,20 +578,14 @@ async function executeBindingExport(job: QueuedExportJob): Promise<void> {
   const progressToastId = `batch-progress-${bindingId}`;
   let exportJobIdForCancel = "";
   const stage = (text: string, code?: number): void => {
-    const jobId = exportJobIdForCancel;
     showAppToast(`${RG_STATUS_OPC_AUTO}·${label}\n收到结批指令（${eventLabel}）\n${text}`, {
       id: progressToastId,
       tone: "info",
       durationMs: 0,
       spinner: true,
-      action: jobId
-        ? {
-            label: "取消",
-            onClick: () => {
-              void window.electronAPI?.cancelPdfExport?.({ jobId });
-            },
-          }
-        : undefined,
+      action: buildExportCancelToastAction(exportJobIdForCancel, () => {
+        requestCancelPdfExport(exportJobIdForCancel);
+      }),
     });
     if (code != null) {
       void setBindingExportStatus(prefs, binding, code, text);

@@ -4,6 +4,7 @@ import {
   emptyReloadDraftAction,
   shouldContinueEmptyLoadWatch,
   shouldPreserveCreateDraftOnNullModel,
+  shouldRestartLoadWatchOnActivate,
 } from "./empty-connections-reload-policy";
 
 describe("emptyReloadDraftAction", () => {
@@ -50,6 +51,42 @@ describe("shouldContinueEmptyLoadWatch", () => {
         connectionsCount: 0,
         emptyListConfirmed: false,
         ticks: 13,
+      }),
+    ).toBe(false);
+  });
+});
+
+describe("shouldRestartLoadWatchOnActivate (034 M2)", () => {
+  it("restarts only when empty list still unconfirmed and idle", () => {
+    expect(
+      shouldRestartLoadWatchOnActivate({
+        connectionsCount: 0,
+        emptyListConfirmed: false,
+        connectionsLoading: false,
+      }),
+    ).toBe(true);
+  });
+
+  it("does not restart when confirmed empty, loading, or has rows", () => {
+    expect(
+      shouldRestartLoadWatchOnActivate({
+        connectionsCount: 0,
+        emptyListConfirmed: true,
+        connectionsLoading: false,
+      }),
+    ).toBe(false);
+    expect(
+      shouldRestartLoadWatchOnActivate({
+        connectionsCount: 0,
+        emptyListConfirmed: false,
+        connectionsLoading: true,
+      }),
+    ).toBe(false);
+    expect(
+      shouldRestartLoadWatchOnActivate({
+        connectionsCount: 2,
+        emptyListConfirmed: false,
+        connectionsLoading: false,
       }),
     ).toBe(false);
   });

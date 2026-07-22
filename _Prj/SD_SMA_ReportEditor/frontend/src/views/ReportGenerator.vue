@@ -38,7 +38,7 @@
           {{ manualBusy ? `${RG_UI.manual}中…` : `选择保存文件夹并${RG_UI.manual}` }}
         </button>
         <button
-          v-if="manualBusy && manualExportJobId"
+          v-if="showManualCancel"
           type="button"
           class="btn"
           @click="onCancelManualExport"
@@ -192,25 +192,26 @@
                   type="button"
                   role="radio"
                   class="rg-tab"
-                  :class="{ 'rg-tab--on': prefs.pdfExportEngine === 'pdf-lib' }"
-                  :aria-checked="prefs.pdfExportEngine === 'pdf-lib'"
-                  @click="prefs.pdfExportEngine = 'pdf-lib'"
-                >
-                  同机优先
-                </button>
-                <button
-                  type="button"
-                  role="radio"
-                  class="rg-tab"
                   :class="{ 'rg-tab--on': prefs.pdfExportEngine === 'chromium' }"
                   :aria-checked="prefs.pdfExportEngine === 'chromium'"
                   @click="prefs.pdfExportEngine = 'chromium'"
                 >
                   版式优先
                 </button>
+                <button
+                  type="button"
+                  role="radio"
+                  class="rg-tab"
+                  :class="{ 'rg-tab--on': prefs.pdfExportEngine === 'pdf-lib' }"
+                  :aria-checked="prefs.pdfExportEngine === 'pdf-lib'"
+                  @click="prefs.pdfExportEngine = 'pdf-lib'"
+                >
+                  同机优先（草稿）
+                </button>
               </div>
               <p class="rg-mini rg-mini--indent">
-                同机优先：不调用 printToPDF，减轻对 mappView 争用（PDF 为草稿级版式）。版式优先：接近编辑预览，同机可能闪屏。
+                <strong>版式优先</strong>（默认 / 交付）：PDF 与编辑预览一致（Chromium printToPDF）；同机可能闪屏。
+                <strong>同机优先</strong>：草稿级版式（pdf-lib draft-v1），减轻 mappView 争用，<strong>不可作现场交付</strong>。
               </p>
             </div>
 
@@ -874,6 +875,11 @@ import {
 } from "@/lib/auto-export-filename";
 import { humanizePdfExportError } from "@/lib/pdfExportErrors";
 import {
+  buildExportCancelToastAction,
+  requestCancelPdfExport,
+  shouldShowExportCancelControl,
+} from "@/lib/pdf-export-cancel-ui";
+import {
   exportFailureAuditDetail,
   parseExportFailureDiagnostics,
 } from "@/lib/bindingPreviewErrors";
@@ -1105,11 +1111,12 @@ const electronShell = computed(() => typeof window !== "undefined" && Boolean(wi
 const manualBusy = ref(false);
 /** 034 M7：进行中模拟结批的 jobId，供取消按钮 / toast 操作 */
 const manualExportJobId = ref("");
+const showManualCancel = computed(() =>
+  shouldShowExportCancelControl(manualBusy.value, manualExportJobId.value),
+);
 
 function onCancelManualExport(): void {
-  const jobId = manualExportJobId.value.trim();
-  if (!jobId) return;
-  void window.electronAPI?.cancelPdfExport?.({ jobId });
+  requestCancelPdfExport(manualExportJobId.value);
 }
 const manualHint = ref("");
 
@@ -1800,20 +1807,14 @@ async function onManualExport(): Promise<void> {
   const startedAtMs = Date.now();
   const progressToastId = "batch-progress-manual";
   const stage = (text: string): void => {
-    const jobId = manualExportJobId.value.trim();
     showAppToast(`[${RG_UI.manual}]\n${text}`, {
       id: progressToastId,
       tone: "info",
       durationMs: 0,
       spinner: true,
-      action: jobId
-        ? {
-            label: "取消",
-            onClick: () => {
-              void window.electronAPI?.cancelPdfExport?.({ jobId });
-            },
-          }
-        : undefined,
+      action: buildExportCancelToastAction(manualExportJobId.value, () => {
+        requestCancelPdfExport(manualExportJobId.value);
+      }),
     });
   };
   let offProgress: (() => void) | undefined;

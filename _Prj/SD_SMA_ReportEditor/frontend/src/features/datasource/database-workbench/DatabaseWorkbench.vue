@@ -164,6 +164,7 @@ import { workbenchMainLayoutClass } from './workbench-layout'
 import {
   emptyReloadDraftAction,
   shouldContinueEmptyLoadWatch,
+  shouldRestartLoadWatchOnActivate,
 } from './empty-connections-reload-policy'
 import ConnectionManager from './connection-manager/ConnectionManager.vue'
 import ObjectTree from './object-tree/ObjectTree.vue'
@@ -1016,11 +1017,13 @@ onDeactivated(() => {
 })
 
 onActivated(() => {
-  // 回到页且列表仍空、未确认空列表时，按需恢复监视
+  // 回到页且列表仍空、未确认空列表时，按需恢复监视（034 M2）
   if (
-    !connections.value.length &&
-    !emptyListConfirmed &&
-    !connectionsLoading.value
+    shouldRestartLoadWatchOnActivate({
+      connectionsCount: connections.value.length,
+      emptyListConfirmed,
+      connectionsLoading: connectionsLoading.value,
+    })
   ) {
     startLoadWatch()
   }
