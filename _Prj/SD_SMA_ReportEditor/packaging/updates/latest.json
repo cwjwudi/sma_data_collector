@@ -1,12 +1,12 @@
 {
   "version": "0.3.135",
-  "releasedAt": "2026-07-22T17:59:31.169Z",
+  "releasedAt": "2026-07-22T18:04:27.437Z",
   "notes": "Report Editor AI 0.3.135\n\n- 036 D20：矢量正文表先填后描，恢复外框线\n- 036 D21：print-to-pdf 表框改为 0.75pt + collapse，框线匀齐",
   "platforms": {
     "win32-x64": {
       "url": "Report Editor AI-Setup-0.3.135-x64.exe",
-      "sha256": "",
-      "size": 0
+      "sha256": "53371465916b96b77b5e14c86adef871281ee553a35938c91c0402190f3e108d",
+      "size": 175787133
     },
     "darwin-arm64": {
       "url": "Report Editor AI-0.3.135-arm64.dmg",
