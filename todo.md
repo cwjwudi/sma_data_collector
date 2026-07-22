@@ -7,6 +7,8 @@
 
 ## 2026-07-22
 
+- **ReportEditor 0.3.134 Windows Setup**：`Report Editor AI-Setup-0.3.134-x64.exe`（~168MB）；含同页纵表页底续页修复；SHA256 已写入 `latest.json`。看板 [docs/002-🚧](docs/002-🚧-表格系统评估与修复.md)。
+
 - **ReportEditor 0.3.134**：同页纵表页底截断改为续页卡；Windows Setup 打包中。看板 [docs/002-🚧](docs/002-🚧-表格系统评估与修复.md)。
 
 - **ReportEditor 002 纵表页底截断未续页**：`sumTableRowHeightsPx` 尊重 rowCount；锚点过紧改续卡 `hideOverflowSqlFillTable`。看板 [docs/002-🚧](docs/002-🚧-表格系统评估与修复.md)。
