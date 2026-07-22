@@ -293,14 +293,18 @@ async function boot(): Promise<void> {
   if (!useChromiumPrint.value) {
     // 同机优先：跳过 DOM 预览栈与 printToPDF，矢量写 PDF
     try {
+      // pdf-lib：NotoSansSC.otf（OTTO）subset 会乱码，优先嵌朱雀仿宋 TTF
       const picked = pickBundledFontForExport(collectFontFamiliesFromTemplate(t));
-      const fontRes = await window.electronAPI?.getBundledCjkFont?.({ key: picked.id });
+      const fontResFs = await window.electronAPI?.getBundledCjkFont?.({ key: "fangsong" });
+      const fontRes =
+        fontResFs?.ok ? fontResFs : await window.electronAPI?.getBundledCjkFont?.({ key: picked.id });
+      const bundledFontId = fontResFs?.ok ? "fangsong" : picked.id;
       const { pdfBase64, meta } = await renderPdfLibExportPartBase64({
         tmpl: t,
         previewValues: bindingPreview.values.value,
         reportPartIndex: partIdx,
         fontBytesBase64: fontRes?.ok ? fontRes.base64 : null,
-        bundledFontId: picked.id,
+        bundledFontId,
         layoutFidelity: layoutFidelity.value,
       });
       if (seq !== bootSeq) return;

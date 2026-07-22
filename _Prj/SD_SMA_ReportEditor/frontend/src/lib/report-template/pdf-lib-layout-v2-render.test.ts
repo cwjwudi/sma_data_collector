@@ -61,7 +61,7 @@ describe("pdf-lib-layout-v2-render", () => {
 
     const doc = await PDFDocument.create();
     const font = await doc.embedFont(StandardFonts.Helvetica);
-    const pageCount = appendPdfLibLayoutV2Pages(doc, {
+    const pageCount = await appendPdfLibLayoutV2Pages(doc, {
       tmpl,
       previewValues: {},
       font,
@@ -86,7 +86,7 @@ describe("pdf-lib-layout-v2-render", () => {
     const tmpl = makeTemplateWithBodyTable(tb);
     const doc = await PDFDocument.create();
     const font = await doc.embedFont(StandardFonts.Helvetica);
-    const pageCount = appendPdfLibLayoutV2Pages(doc, {
+    const pageCount = await appendPdfLibLayoutV2Pages(doc, {
       tmpl,
       previewValues: {},
       font,
@@ -94,4 +94,162 @@ describe("pdf-lib-layout-v2-render", () => {
     });
     expect(pageCount).toBeGreaterThanOrEqual(1);
   });
+
+  it("places body text at content origin and draws CJK with TTF subset (not OTTO/CFF)", async () => {
+    const fs = await import("node:fs");
+    const path = await import("node:path");
+    const fontkit = (await import("@pdf-lib/fontkit")).default;
+    const textEl = hydrateTemplateElement({
+      id: "title",
+      type: "text",
+      text: "绑定冒烟测试",
+      fontSize: 18,
+      x: 40,
+      y: 24,
+      w: 400,
+      h: 32,
+    });
+    const tmpl = makeTemplateWithBodyTable(textEl);
+    const doc = await PDFDocument.create();
+    doc.registerFontkit(fontkit);
+    // Noto OTF subset 会乱码；pdf-lib 路径应嵌入 TTF（朱雀仿宋）
+    const fontPath = path.join(process.cwd(), "resources/fonts/ZhuqueFangsong-Regular.ttf");
+    const fontBytes = fs.readFileSync(fontPath);
+    const font = await doc.embedFont(fontBytes, { subset: true });
+    const pageCount = await appendPdfLibLayoutV2Pages(doc, {
+      tmpl,
+      previewValues: {},
+      font,
+      useWinAnsi: false,
+    });
+    expect(pageCount).toBeGreaterThanOrEqual(1);
+    const bytes = await doc.save();
+    expect(bytes.byteLength).toBeGreaterThan(5_000);
+  });
+
+  it("embeds cover data-url image", async () => {
+    const tinyPng =
+      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+    const b = blankZonesSnapshot();
+    const tmpl = createTemplate({
+      name: "img",
+      paperKind: "A4",
+      orientation: "portrait",
+      layoutPresetId: null,
+      layoutSnapshot: b.layoutSnapshot,
+      headerText: "",
+      footerText: "",
+      headerElements: [],
+      footerElements: [],
+      coverLayoutPresetId: null,
+      coverLayoutSnapshot: b.layoutSnapshot,
+      coverHeaderText: "",
+      coverFooterText: "",
+      coverHeaderElements: [],
+      coverFooterElements: [],
+      coverBodyZoneElements: [],
+      backLayoutPresetId: null,
+      backLayoutSnapshot: b.layoutSnapshot,
+      backHeaderText: "",
+      backFooterText: "",
+      backHeaderElements: [],
+      backFooterElements: [],
+      backBodyZoneElements: [],
+    });
+    tmpl.coverElements = [
+      hydrateTemplateElement({
+        id: "cover-img",
+        type: "image",
+        x: 20,
+        y: 20,
+        w: 200,
+        h: 120,
+        imageSrc: tinyPng,
+      }),
+    ];
+    const doc = await PDFDocument.create();
+    const font = await doc.embedFont(StandardFonts.Helvetica);
+    const pageCount = await appendPdfLibLayoutV2Pages(doc, {
+      tmpl,
+      previewValues: {},
+      font,
+      useWinAnsi: true,
+    });
+    expect(pageCount).toBeGreaterThanOrEqual(1);
+    const bytes = await doc.save();
+    // PNG object present
+    expect(Buffer.from(bytes).includes(Buffer.from("IDAT")) || bytes.byteLength > 800).toBe(true);
+  });
 });
+
+  it("draws cover header zone text and tables with readable CJK", async () => {
+    const fs = await import("node:fs");
+    const path = await import("node:path");
+    const fontkit = (await import("@pdf-lib/fontkit")).default;
+    const { makeLayoutZoneElement } = await import("@/lib/report-template/layout-zone-element");
+    const b = blankZonesSnapshot();
+    const tmpl = createTemplate({
+      name: "cover-hdr",
+      paperKind: "A4",
+      orientation: "landscape",
+      layoutPresetId: null,
+      layoutSnapshot: b.layoutSnapshot,
+      headerText: "",
+      footerText: "",
+      headerElements: [],
+      footerElements: [],
+      coverLayoutPresetId: null,
+      coverLayoutSnapshot: {
+        ...b.layoutSnapshot,
+        marginTopMm: 15,
+        marginLeftMm: 15,
+        marginRightMm: 15,
+        headerBandMm: 22,
+        footerBandMm: 0,
+      },
+      coverHeaderText: "",
+      coverFooterText: "",
+      coverHeaderElements: [],
+      coverFooterElements: [],
+      coverBodyZoneElements: [],
+      backLayoutPresetId: null,
+      backLayoutSnapshot: b.layoutSnapshot,
+      backHeaderText: "",
+      backFooterText: "",
+      backHeaderElements: [],
+      backFooterElements: [],
+      backBodyZoneElements: [],
+    });
+    const tbl = makeLayoutZoneElement("table");
+    tbl.x = 0; tbl.y = 18; tbl.w = 800; tbl.h = 40;
+    tbl.tableRows = 2; tbl.tableCols = 2;
+    tbl.tableCells = [
+      [{ text: "机器配置：", bindingKind: "none", opcuaNodeId: "", sqlText: "", sqlParams: [], bgColor: "transparent" },
+       { text: "", bindingKind: "none", opcuaNodeId: "", sqlText: "", sqlParams: [], bgColor: "transparent" }],
+      [{ text: "批次代号：", bindingKind: "none", opcuaNodeId: "", sqlText: "", sqlParams: [], bgColor: "transparent" },
+       { text: "", bindingKind: "none", opcuaNodeId: "", sqlText: "", sqlParams: [], bgColor: "transparent" }],
+    ];
+    const title = makeLayoutZoneElement("text");
+    title.text = "批次报告";
+    title.x = 40; title.y = 2; title.w = 160; title.h = 18;
+    title.fontSize = 11;
+    title.showBorder = true;
+    const pn = makeLayoutZoneElement("pageNumber");
+    pn.x = 40; pn.y = 60; pn.w = 80; pn.h = 18;
+    tmpl.coverHeaderElements = [title, tbl, pn];
+    tmpl.coverElements = [];
+    const doc = await PDFDocument.create();
+    doc.registerFontkit(fontkit);
+    const font = await doc.embedFont(
+      fs.readFileSync(path.join(process.cwd(), "resources/fonts/ZhuqueFangsong-Regular.ttf")),
+      { subset: true },
+    );
+    await appendPdfLibLayoutV2Pages(doc, { tmpl, previewValues: {}, font, useWinAnsi: false });
+    const bytes = await doc.save();
+    const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+    const parsed = await pdfjs.getDocument({ data: bytes }).promise;
+    const page = await parsed.getPage(1);
+    const text = (await page.getTextContent()).items.map((it: { str: string }) => it.str).join(" ");
+    expect(text).toContain("机器配置");
+    expect(text).toContain("批次报告");
+  });

@@ -78,6 +78,17 @@ function decodeBase64ToBytes(b64: string): Uint8Array {
   return out;
 }
 
+/** CFF/OTTO（如 NotoSansSC.otf）：pdf-lib fontkit subset 会把 CJK 映成乱码字形 */
+function isOttoCffFont(bytes: Uint8Array): boolean {
+  return (
+    bytes.length >= 4 &&
+    bytes[0] === 0x4f &&
+    bytes[1] === 0x54 &&
+    bytes[2] === 0x54 &&
+    bytes[3] === 0x4f
+  );
+}
+
 async function loadBundledFontBytes(
   fontBytesBase64?: string | null,
   fontId: BundledFontId = "noto-sans-sc",
@@ -173,21 +184,50 @@ export async function renderPdfLibExportPart(opts: {
   const doc = await PDFDocument.create();
   // pdf-lib 嵌入自定义字体（OTF/TTF + subset）必须先注册 fontkit（033）
   doc.registerFontkit(fontkit);
-  const fontId: BundledFontId = opts.bundledFontId === "fangsong" ? "fangsong" : "noto-sans-sc";
-  const fontBytes = await loadBundledFontBytes(opts.fontBytesBase64, fontId);
+  let fontId: BundledFontId = opts.bundledFontId === "fangsong" ? "fangsong" : "noto-sans-sc";
+  let fontBytes = await loadBundledFontBytes(opts.fontBytesBase64, fontId);
+  // OTTO/CFF：fontkit subset 乱码，全量嵌入又过大 → 必须改嵌随包 TTF（朱雀仿宋）
+  if (!fontBytes || isOttoCffFont(fontBytes) || fontId === "noto-sans-sc") {
+    let ttf = await loadBundledFontBytes(fontId === "fangsong" ? opts.fontBytesBase64 : null, "fangsong");
+    if (!ttf) {
+      try {
+        const api = (window as unknown as {
+          electronAPI?: { getBundledCjkFont?: (o: { key: string }) => Promise<{ ok?: boolean; base64?: string }> };
+        }).electronAPI;
+        const res = await api?.getBundledCjkFont?.({ key: "fangsong" });
+        if (res?.ok && res.base64 && res.base64.length > 1000) {
+          ttf = decodeBase64ToBytes(res.base64);
+        }
+      } catch {
+        /* ignore */
+      }
+    }
+    if (ttf && !isOttoCffFont(ttf)) {
+      fontBytes = ttf;
+      fontId = "fangsong";
+    } else if (fontBytes && isOttoCffFont(fontBytes)) {
+      // 禁止把 16MB OTTO 打进 PDF
+      fontBytes = null;
+    }
+  }
   let font: PDFFont;
   let fontEmbedded = false;
   let fontFamily = bundledFamilyLabel(fontId) || BUNDLED_CJK_FAMILY;
-  if (fontBytes) {
-    font = await doc.embedFont(fontBytes, { subset: true });
-    fontEmbedded = true;
+  if (fontBytes && !isOttoCffFont(fontBytes)) {
+    try {
+      font = await doc.embedFont(fontBytes, { subset: true });
+      fontEmbedded = true;
+    } catch {
+      font = await doc.embedFont(StandardFonts.Helvetica);
+      fontFamily = "Helvetica (fallback)";
+    }
   } else {
     font = await doc.embedFont(StandardFonts.Helvetica);
     fontFamily = "Helvetica (fallback)";
   }
 
   if (fidelity === "layout-v2") {
-    const pageCount = appendPdfLibLayoutV2Pages(doc, {
+    const pageCount = await appendPdfLibLayoutV2Pages(doc, {
       tmpl: opts.tmpl,
       previewValues: report.previewValues,
       font,
