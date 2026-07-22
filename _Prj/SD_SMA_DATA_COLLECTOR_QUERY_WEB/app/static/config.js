@@ -1440,13 +1440,6 @@ function collectPluginTableListWriteback() {
     },
     window.__pluginTableListAdvanced || null,
   );
-  if (!payload.batch_column || !payload.buffer_node) {
-    return {
-      ...payload,
-      _invalid: true,
-      _invalidReason: mode === 'advanced' && !payload.batch_column ? 'advanced_batch_column' : 'basic_fields',
-    };
-  }
   if (!payload.start_time_column) {
     delete payload.start_time_column;
   }
@@ -1459,11 +1452,27 @@ function collectPluginTableListWriteback() {
       trigger_node: document.getElementById('pluginTableListTriggerNode').value.trim(),
     };
     payload.advanced = advanced;
-    if (!advanced.batch_no_node || !advanced.trigger_node) {
-      return { ...payload, _invalid: true, _invalidReason: 'advanced_nodes' };
+    const hasPaginationNode = Boolean(advanced.prev_page_node || advanced.next_page_node);
+    const hasBatchNode = Boolean(advanced.batch_no_node);
+    const hasTriggerNode = Boolean(advanced.trigger_node);
+    if (!hasPaginationNode && !hasBatchNode && !hasTriggerNode) {
+      return { ...payload, _invalid: true, _invalidReason: 'advanced_empty' };
+    }
+    if (hasBatchNode !== hasTriggerNode) {
+      return { ...payload, _invalid: true, _invalidReason: 'advanced_batch_pair' };
+    }
+    if (hasBatchNode && (!payload.batch_column || !payload.buffer_node)) {
+      return {
+        ...payload,
+        _invalid: true,
+        _invalidReason: !payload.batch_column ? 'advanced_batch_column' : 'advanced_buffer',
+      };
     }
   } else {
     delete payload.advanced;
+    if (!payload.batch_column || !payload.buffer_node) {
+      return { ...payload, _invalid: true, _invalidReason: 'basic_fields' };
+    }
   }
   return payload;
 }
@@ -1781,11 +1790,15 @@ async function savePluginPageConfig() {
   if (tableListWriteback && tableListWriteback.enabled) {
     if (tableListWriteback._invalid) {
       const reason =
-        tableListWriteback._invalidReason === 'advanced_nodes'
-          ? '高级模式需填写批次号 NodeId 与触发 NodeId'
+        tableListWriteback._invalidReason === 'advanced_empty'
+          ? '高级模式请至少填写上一页、下一页，或一组批次号/触发 NodeId'
+          : tableListWriteback._invalidReason === 'advanced_batch_pair'
+            ? '批次表名回写需同时填写批次号 NodeId 与触发 NodeId；仅使用翻页时两项均留空'
           : tableListWriteback._invalidReason === 'advanced_batch_column'
-            ? '高级模式需保留批次字段：请先在 opcua_writeback 中绑定批次列，或切换基础模式选择批次列后保存'
-            : '批次表名回写已启用，请填写批次列与 Buffer NodeId';
+            ? '启用批次触发回写时需绑定批次字段；仅使用翻页时可将批次号与触发 NodeId 均留空'
+            : tableListWriteback._invalidReason === 'advanced_buffer'
+              ? '启用批次触发回写时需填写 Buffer NodeId；仅使用翻页时可留空'
+              : '基础批次表名回写需填写批次列与 Buffer NodeId';
       setHintMessage('pluginConfigHint', reason);
       setConfigStatus(`保存未执行：${reason}`, 'warn');
       return;
@@ -1816,7 +1829,7 @@ async function savePluginPageConfig() {
     ? JSON.parse(JSON.stringify(pageCfg.table_list_writeback))
     : null;
   setConfigStatus(
-    `保存成功：module=${moduleName}，page=${pageIndex}，bind_group=${pageCfg.bind_group || '-'}；OPC UA 与批次表名回写设置已写入`,
+    `保存成功：module=${moduleName}，page=${pageIndex}，bind_group=${pageCfg.bind_group || '-'}；OPC UA 翻页与可选批次回写设置已写入`,
     'ok',
   );
   saveConfigPageState();

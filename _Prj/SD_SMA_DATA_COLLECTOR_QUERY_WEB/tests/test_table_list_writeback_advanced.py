@@ -28,7 +28,7 @@ async def _noop_trigger(_plugin_key: str, _batch_no: str) -> bool:
     return False
 
 
-def test_advanced_config_requires_trigger_and_batch_nodes():
+def test_advanced_config_rejects_partial_batch_trigger_pair():
     cfg = TableListWritebackConfig.from_binding(
         {
             "enabled": True,
@@ -63,6 +63,52 @@ def test_advanced_config_requires_trigger_and_batch_nodes():
     assert cfg.is_advanced_mode
     assert cfg.advanced is not None
     assert cfg.advanced.batch_no_node == "ns=2;s=Batch"
+
+
+def test_advanced_config_allows_pagination_nodes_without_batch_writeback_fields():
+    cfg = TableListWritebackConfig.from_binding(
+        {
+            "enabled": True,
+            "mode": "advanced",
+            "batch_column": "",
+            "buffer_node": "",
+            "advanced": {
+                "prev_page_node": "ns=2;s=Prev",
+                "next_page_node": "ns=2;s=Next",
+                "batch_no_node": "",
+                "trigger_node": "",
+            },
+        },
+        bind_group="ProductHistory",
+    )
+
+    assert cfg is not None
+    assert cfg.is_advanced_mode
+    assert cfg.has_batch_writeback is False
+    assert cfg.batch_column == ""
+    assert cfg.buffer_node == ""
+    assert cfg.advanced is not None
+    assert cfg.advanced.has_pagination is True
+    assert cfg.advanced.has_batch_writeback_trigger is False
+
+
+def test_advanced_config_requires_batch_fields_only_when_trigger_pair_is_enabled():
+    raw = {
+        "enabled": True,
+        "mode": "advanced",
+        "advanced": {
+            "prev_page_node": "ns=2;s=Prev",
+            "batch_no_node": "ns=2;s=Batch",
+            "trigger_node": "ns=2;s=Trig",
+        },
+    }
+    assert TableListWritebackConfig.from_binding(raw, bind_group="BatchHeader") is None
+
+    raw["batch_column"] = "strBatchCode"
+    raw["buffer_node"] = "ns=2;s=Buffer"
+    cfg = TableListWritebackConfig.from_binding(raw, bind_group="BatchHeader")
+    assert cfg is not None
+    assert cfg.has_batch_writeback is True
 
 
 def test_advanced_opcua_trigger_config_poll_interval_clamped():
@@ -245,11 +291,9 @@ def test_advanced_plugin_query_ignores_time_range():
         "table_list_writeback": {
             "enabled": True,
             "mode": "advanced",
-            "batch_column": "strBatchCode",
-            "buffer_node": "ns=2;s=Demo",
             "advanced": {
-                "batch_no_node": "ns=2;s=Batch",
-                "trigger_node": "ns=2;s=Trig",
+                "prev_page_node": "ns=2;s=Prev",
+                "next_page_node": "ns=2;s=Next",
             },
         },
     }

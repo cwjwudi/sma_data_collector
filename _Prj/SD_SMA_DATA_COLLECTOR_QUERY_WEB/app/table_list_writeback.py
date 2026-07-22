@@ -53,6 +53,14 @@ class AdvancedOpcuaTriggerConfig:
     trigger_node: str
     poll_interval_ms: int = 500
 
+    @property
+    def has_pagination(self) -> bool:
+        return bool(self.prev_page_node or self.next_page_node)
+
+    @property
+    def has_batch_writeback_trigger(self) -> bool:
+        return bool(self.batch_no_node and self.trigger_node)
+
     @classmethod
     def from_raw(cls, raw: Any) -> AdvancedOpcuaTriggerConfig | None:
         if not isinstance(raw, dict):
@@ -61,7 +69,10 @@ class AdvancedOpcuaTriggerConfig:
         next_page_node = str(raw.get("next_page_node", "") or "").strip()
         batch_no_node = str(raw.get("batch_no_node", "") or "").strip()
         trigger_node = str(raw.get("trigger_node", "") or "").strip()
-        if not trigger_node or not batch_no_node:
+        has_partial_batch_trigger = bool(trigger_node) != bool(batch_no_node)
+        if has_partial_batch_trigger:
+            return None
+        if not prev_page_node and not next_page_node and not (trigger_node and batch_no_node):
             return None
         # poll_interval_ms kept for backward-compatible JSON; runtime uses global opcua setting.
         poll_interval_ms = int(raw.get("poll_interval_ms", 500) or 500)
@@ -90,6 +101,16 @@ class TableListWritebackConfig:
     def is_advanced_mode(self) -> bool:
         return self.mode == MODE_ADVANCED and self.advanced is not None
 
+    @property
+    def has_batch_writeback(self) -> bool:
+        return bool(
+            self.is_advanced_mode
+            and self.advanced
+            and self.advanced.has_batch_writeback_trigger
+            and self.batch_column
+            and self.buffer_node
+        )
+
     @classmethod
     def from_binding(cls, raw: Any, *, bind_group: str | None = None) -> TableListWritebackConfig | None:
         if not isinstance(raw, dict):
@@ -97,11 +118,14 @@ class TableListWritebackConfig:
         if not bool(raw.get("enabled")):
             return None
 
+        mode = str(raw.get("mode", MODE_CURSOR) or MODE_CURSOR).strip().lower()
+        if mode in MODE_OPCUA_ALIASES:
+            mode = MODE_ADVANCED
+        elif mode != MODE_CURSOR:
+            mode = MODE_CURSOR
+
         batch_column = str(raw.get("batch_column", "") or "").strip()
         buffer_node = str(raw.get("buffer_node", "") or "").strip()
-        if not batch_column or not buffer_node:
-            return None
-
         start_time_column = str(raw.get("start_time_column", "") or "").strip()
         batch_master_table = str(raw.get("batch_master_table", "") or "").strip()
         if not batch_master_table and bind_group:
@@ -109,25 +133,26 @@ class TableListWritebackConfig:
 
         max_tables = int(raw.get("max_tables", DEFAULT_MAX_TABLES) or DEFAULT_MAX_TABLES)
         string_max_len = int(raw.get("string_max_len", DEFAULT_STRING_MAX_LEN) or DEFAULT_STRING_MAX_LEN)
-        mode = str(raw.get("mode", MODE_CURSOR) or MODE_CURSOR).strip().lower()
-        if mode in MODE_OPCUA_ALIASES:
-            mode = MODE_ADVANCED
-        elif mode != MODE_CURSOR:
-            mode = MODE_CURSOR
 
         advanced = None
         if mode == MODE_CURSOR:
             advanced_raw = raw.get("advanced")
             if isinstance(advanced_raw, dict):
+                prev_page_node = str(advanced_raw.get("prev_page_node", "") or "").strip()
+                next_page_node = str(advanced_raw.get("next_page_node", "") or "").strip()
                 trigger_node = str(advanced_raw.get("trigger_node", "") or "").strip()
                 batch_no_node = str(advanced_raw.get("batch_no_node", "") or "").strip()
-                if trigger_node and batch_no_node:
+                if prev_page_node or next_page_node or (trigger_node and batch_no_node):
                     mode = MODE_ADVANCED
 
         if mode == MODE_ADVANCED:
             advanced = AdvancedOpcuaTriggerConfig.from_raw(raw.get("advanced"))
             if advanced is None:
                 return None
+            if advanced.has_batch_writeback_trigger and (not batch_column or not buffer_node):
+                return None
+        elif not batch_column or not buffer_node:
+            return None
 
         return cls(
             enabled=True,

@@ -29,3 +29,13 @@ def test_bind_group_change_reloads_complete_writeback_form() -> None:
     assert "pluginOpcuaWritebackDraft" in script
     assert "读取成功：module=" in script
     assert "保存成功：module=" in script
+
+
+def test_advanced_pagination_only_does_not_require_batch_writeback_fields() -> None:
+    script = CONFIG_JS.read_text(encoding="utf-8")
+    html = CONFIG_HTML.read_text(encoding="utf-8")
+
+    assert "hasPaginationNode" in script
+    assert "hasBatchNode !== hasTriggerNode" in script
+    assert "仅使用翻页时可留空" in script
+    assert "高级模式仅翻页时可留空" in html

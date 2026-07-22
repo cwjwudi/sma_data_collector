@@ -107,6 +107,22 @@
 - 绑定表须为批次主表；`[0]` 固定写主表名，明细年份分表按 group 名稳定排序填入 `[1..]`
 - `diCursor=-1` 时写空数组；点击行后按该行批次号/开批时间匹配（未配开批时间列则按批次号反查主表）
 - 高级 JSON 可覆盖 `max_tables`、`string_max_len`、`lookup_start_time_column` 等
+- 高级模式可仅用于 PLC 翻页，此时不要求批次字段、Buffer、批次号或触发节点：
+
+```json
+"table_list_writeback": {
+  "enabled": true,
+  "mode": "advanced",
+  "advanced": {
+    "prev_page_node": "ns=6;s=::DataRev:bPrevPage",
+    "next_page_node": "ns=6;s=::DataRev:bNextPage",
+    "batch_no_node": "",
+    "trigger_node": ""
+  }
+}
+```
+
+- 需要批次表名触发回写时，`batch_no_node` 与 `trigger_node` 必须成对填写，并同时配置 `batch_column` 与 `buffer_node`
 
 ## 关键查询接口
 
