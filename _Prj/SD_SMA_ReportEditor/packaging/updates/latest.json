@@ -1,6 +1,6 @@
 {
   "version": "0.3.122",
-  "releasedAt": "2026-07-22T10:22:23.060Z",
+  "releasedAt": "2026-07-22T10:28:48.852Z",
   "notes": "Report Editor AI 0.3.122\n\n- layout-v2 按预览 bodyCards 续页\n- 长表分页与预览分卡对齐",
   "platforms": {
     "win32-x64": {
@@ -10,8 +10,8 @@
     },
     "darwin-arm64": {
       "url": "Report Editor AI-0.3.122-arm64.dmg",
-      "sha256": "",
-      "size": 0
+      "sha256": "6772c1bae0d7dfde74f4749d6d751829164362d5e46584f02d9154d95a06a5c8",
+      "size": 205760832
     }
   }
 }
