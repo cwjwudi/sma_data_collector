@@ -51,7 +51,7 @@
 
 - [x] 拍板：4 档、默认均衡  
 - [x] 看板 035 + Plan 0.3.120 + 003/034/030/todo 索引  
-- [x] 阶段 A：`export-perf-tier.ts` + 自动化测 T1–T5 辅助 / T7（见下「测试用例」）  
+- [x] 阶段 A：`export-perf-tier.ts` + T1/T2/T3/T5/T7 绿；T4/T6/T8 为 `it.todo`  
 - [ ] 阶段 B：prefs + 迁移落库  
 - [ ] 阶段 C：UI 滑条  
 - [ ] 阶段 D：main/渲染降载接线  
