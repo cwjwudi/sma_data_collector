@@ -120,6 +120,14 @@
             <option value="landscape">横向</option>
           </select>
         </label>
+        <div class="ted-meta-field ted-body-bg">
+          <TableCellFillPicker
+            :model-value="activeBodyBackgroundCss"
+            title="当前页正文底色"
+            :presets="bodyBgPresets"
+            @update:model-value="setActiveBodyBackgroundCss"
+          />
+        </div>
       </div>
       <div class="preset-bar">
         <template v-if="sh === 'body'">
@@ -539,6 +547,7 @@ import TemplateExportPreviewStack from "@/components/report-template/TemplateExp
 import TemplateElementProps from "@/components/report-template/TemplateElementProps.vue";
 import MultiElementBatchProps from "@/components/report-template/MultiElementBatchProps.vue";
 import SignaturePadDialog from "@/components/report-template/SignaturePadDialog.vue";
+import TableCellFillPicker from "@/components/report-template/TableCellFillPicker.vue";
 import * as api from "@/api/templates";
 import {
   ensureSignatureSummaries,
@@ -548,11 +557,16 @@ import { ref, computed, watch, nextTick, onMounted, onUnmounted, provide } from 
 import { useRoute, useRouter } from "vue-router";
 import { PAPER_LABEL } from "@/lib/report-template/paper";
 import {
+  activeLayoutSnapshotForSheet,
   bodyElementsRef,
   metricsForSheet,
   templateHasBackSheet,
   templateHasCoverSheet,
 } from "@/lib/report-template/editor-sheet";
+import {
+  DEFAULT_BODY_BACKGROUND_CSS,
+  resolveBodyBackgroundCss,
+} from "@/lib/report-template/layout-model";
 import {
   findSelectableTemplateElement,
   selectionHitLabel,
@@ -652,6 +666,27 @@ const selId = computed({
   },
 });
 const sh = ref("body");
+const bodyBgPresets = [
+  { value: "transparent", label: "透明（纸白）" },
+  { value: "#ffffff", label: "纯白" },
+  { value: DEFAULT_BODY_BACKGROUND_CSS, label: "默认浅灰" },
+  { value: "#fafafa", label: "近白" },
+  { value: "#f4f4f5", label: "锌灰" },
+  { value: "#eef2ff", label: "淡靛" },
+];
+const activeBodyBackgroundCss = computed(() => {
+  const t = editing.value;
+  if (!t) return DEFAULT_BODY_BACKGROUND_CSS;
+  return resolveBodyBackgroundCss(activeLayoutSnapshotForSheet(t, sh.value));
+});
+function setActiveBodyBackgroundCss(css) {
+  const t = editing.value;
+  if (!t) return;
+  const v = typeof css === "string" ? css.trim() : "";
+  if (sh.value === "cover") t.coverLayoutSnapshot = { ...t.coverLayoutSnapshot, bodyBackgroundCss: v };
+  else if (sh.value === "back") t.backLayoutSnapshot = { ...t.backLayoutSnapshot, bodyBackgroundCss: v };
+  else t.layoutSnapshot = { ...t.layoutSnapshot, bodyBackgroundCss: v };
+}
 const dlgSig = ref(false);
 /** @type {import('vue').Ref<'preview'|'edit'>} */
 /** 默认进编辑画布，避免一打开就卡在导出预览的 SQL/OPC 拉取且无反馈 */
@@ -2014,6 +2049,9 @@ onUnmounted(() => {
   gap: 4px;
   font-size: 12px;
   color: #52525b;
+}
+.ted-body-bg {
+  min-width: 200px;
 }
 .inp {
   border: 1px solid #d4d4d8;

@@ -616,7 +616,11 @@ import {
   type LayoutZoneTableCell,
 } from "@/lib/report-template/layout-zone-element";
 import { layoutPresetTableCellPickKey, reportBindingPreviewKey } from "@/lib/report-template/template-editor-context";
-import { presetToSnapshot, type LayoutPreset } from "@/lib/report-template/layout-model";
+import {
+  presetToSnapshot,
+  resolveBodyBackgroundCss,
+  type LayoutPreset,
+} from "@/lib/report-template/layout-model";
 import {
   resolveStaticTableCellDisplayText,
   resolveStaticTableCellLayoutText,
@@ -987,7 +991,10 @@ function bandBox(m: PaperLayoutMetrics, which: "hdr" | "body" | "ftr"): Record<s
 }
 
 const hdrBandStyle = computed(() => bandBox(me.value, "hdr"));
-const bodyBandStyle = computed(() => bandBox(me.value, "body"));
+const bodyBandStyle = computed(() => ({
+  ...bandBox(me.value, "body"),
+  backgroundColor: resolveBodyBackgroundCss(props.preset),
+}));
 const ftrBandStyle = computed(() => bandBox(me.value, "ftr"));
 
 const hdrLayerBox = computed(() => ({

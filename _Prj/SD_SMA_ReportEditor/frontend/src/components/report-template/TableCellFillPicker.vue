@@ -27,10 +27,17 @@
 <script setup lang="ts">
 import { computed } from "vue";
 
-const props = defineProps<{
-  modelValue: string;
-  title: string;
-}>();
+const props = withDefaults(
+  defineProps<{
+    modelValue: string;
+    title: string;
+    /** 覆盖默认色板（如正文底色：纯白 / 历史灰） */
+    presets?: { value: string; label: string }[];
+  }>(),
+  {
+    presets: undefined,
+  },
+);
 
 const emit = defineEmits<{
   "update:modelValue": [string];
@@ -38,7 +45,7 @@ const emit = defineEmits<{
 
 const FALLBACK_FILL = "#e4e4e7";
 
-const fillPresets: { value: string; label: string }[] = [
+const DEFAULT_FILL_PRESETS: { value: string; label: string }[] = [
   { value: "transparent", label: "默认白底" },
   { value: "#fafafa", label: "近白" },
   { value: "#e4e4e7", label: "浅灰" },
@@ -50,14 +57,34 @@ const fillPresets: { value: string; label: string }[] = [
   { value: "#27272a", label: "深灰" },
 ];
 
+const fillPresets = computed(() =>
+  props.presets?.length ? props.presets : DEFAULT_FILL_PRESETS,
+);
+
 function isHex6(v: string): boolean {
   return /^#[0-9A-Fa-f]{6}$/.test(v.trim());
 }
 
+function cssColorToHex6(v: string): string | null {
+  const s = v.trim();
+  if (isHex6(s)) return s;
+  // 现代语法 rgb(r g b) / 逗号写法 → 供 <input type="color">
+  const m = s.match(/^rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/i);
+  if (m) {
+    const r = Math.round(Number(m[1]));
+    const g = Math.round(Number(m[2]));
+    const b = Math.round(Number(m[3]));
+    if ([r, g, b].every((n) => Number.isFinite(n) && n >= 0 && n <= 255)) {
+      return `#${[r, g, b].map((n) => n.toString(16).padStart(2, "0")).join("")}`;
+    }
+  }
+  return null;
+}
+
 const hexForPicker = computed(() => {
   const v = props.modelValue?.trim() || "";
-  if (v === "transparent" || !isHex6(v)) return FALLBACK_FILL;
-  return v;
+  if (v === "transparent") return FALLBACK_FILL;
+  return cssColorToHex6(v) || FALLBACK_FILL;
 });
 
 function onPickerInput(ev: Event) {

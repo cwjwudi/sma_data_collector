@@ -14,6 +14,9 @@ export const LAYOUT_PAGE_ROLE_LABEL: Record<LayoutPageRole, string> = {
   back: "末页",
 };
 
+/** 与历史 Mini `.mini-body` 硬编码一致 */
+export const DEFAULT_BODY_BACKGROUND_CSS = "rgb(249 249 251)";
+
 /** 写入模版时的版式几何快照（与版式预设脱钩，避免事后改预设导致旧模版错位） */
 export interface LayoutSnapshot {
   marginTopMm: number;
@@ -24,6 +27,8 @@ export interface LayoutSnapshot {
   headerBandMm: number;
   /** 页脚预留带高度 */
   footerBandMm: number;
+  /** 正文区底色 CSS */
+  bodyBackgroundCss: string;
 }
 
 /** 可复用的版式 + 页眉页脚可视化控件（先于模版编辑维护） */
@@ -39,6 +44,7 @@ export interface LayoutPreset {
   marginLeftMm: number;
   headerBandMm: number;
   footerBandMm: number;
+  bodyBackgroundCss: string;
   /** 页面用途：正文页 / 封面 / 末页（新建模版时按用途筛选可选版式） */
   pageRole: LayoutPageRole;
   /** @deprecated 仅兼容旧数据；新界面写入 headerElements */
@@ -81,10 +87,15 @@ export function defaultBlankLayoutSnapshot(): LayoutSnapshot {
     marginLeftMm: 12,
     headerBandMm: 0,
     footerBandMm: 0,
+    bodyBackgroundCss: DEFAULT_BODY_BACKGROUND_CSS,
   };
 }
 
 export function presetToSnapshot(p: LayoutPreset): LayoutSnapshot {
+  const bg =
+    typeof p.bodyBackgroundCss === "string" && p.bodyBackgroundCss.trim()
+      ? p.bodyBackgroundCss.trim()
+      : DEFAULT_BODY_BACKGROUND_CSS;
   return {
     marginTopMm: p.marginTopMm,
     marginRightMm: p.marginRightMm,
@@ -92,6 +103,7 @@ export function presetToSnapshot(p: LayoutPreset): LayoutSnapshot {
     marginLeftMm: p.marginLeftMm,
     headerBandMm: p.headerBandMm,
     footerBandMm: p.footerBandMm,
+    bodyBackgroundCss: bg,
   };
 }
 
@@ -149,6 +161,7 @@ export function createEmptyLayoutPreset(): LayoutPreset {
     marginLeftMm: 15,
     headerBandMm: 22,
     footerBandMm: 18,
+    bodyBackgroundCss: DEFAULT_BODY_BACKGROUND_CSS,
     pageRole: "normal",
     headerText: "",
     footerText: "",
@@ -203,6 +216,10 @@ export function hydrateLayoutPreset(raw: Partial<LayoutPreset>): LayoutPreset {
     paperKind: (raw.paperKind as PaperKind) || d.paperKind,
     orientation: raw.orientation === "landscape" ? "landscape" : "portrait",
     pageRole: normalizePageRole(raw.pageRole),
+    bodyBackgroundCss:
+      typeof raw.bodyBackgroundCss === "string" && raw.bodyBackgroundCss.trim()
+        ? raw.bodyBackgroundCss.trim()
+        : d.bodyBackgroundCss,
     headerText: typeof raw.headerText === "string" ? raw.headerText : d.headerText,
     footerText: typeof raw.footerText === "string" ? raw.footerText : d.footerText,
     headerElements: normalizeZoneArray(raw.headerElements),

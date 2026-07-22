@@ -329,11 +329,13 @@ import {
 import { applyRowTextLineSliceToCellText } from "@/lib/report-template/table-cell-metrics";
 import type { PaperLayoutMetrics } from "@/lib/report-template/layout-geometry";
 import {
+  activeLayoutSnapshotForSheet,
   metricsForSheet,
   bodyElementsRef,
   zoneBodyDecorRef,
   type EditorSheet,
 } from "@/lib/report-template/editor-sheet";
+import { resolveBodyBackgroundCss } from "@/lib/report-template/layout-model";
 import type { ReportTemplate, TemplateElement, TemplateTableCell } from "@/lib/report-template/model";
 import {
   ensureTableGrid,
@@ -548,7 +550,12 @@ function bandStyle(metric: PaperLayoutMetrics, which: "header" | "body" | "foote
 }
 
 const headerBand = computed(() => bandStyle(me.value, "header"));
-const bodyBand = computed(() => bandStyle(me.value, "body"));
+const bodyBand = computed(() => ({
+  ...bandStyle(me.value, "body"),
+  backgroundColor: resolveBodyBackgroundCss(
+    activeLayoutSnapshotForSheet(props.template, props.sheet),
+  ),
+}));
 const footerBand = computed(() => bandStyle(me.value, "footer"));
 
 function miniZoneElStyle(el: LayoutZoneElement): Record<string, string> {

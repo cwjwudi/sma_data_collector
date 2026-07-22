@@ -13,6 +13,9 @@ export const LAYOUT_PAGE_ROLE_LABEL: Record<LayoutPageRole, string> = {
   back: "末页",
 };
 
+/** 与历史 Mini `.mini-body` 硬编码一致；缺省/旧 JSON 回落此值 */
+export const DEFAULT_BODY_BACKGROUND_CSS = "rgb(249 249 251)";
+
 export interface LayoutSnapshot {
   marginTopMm: number;
   marginRightMm: number;
@@ -20,6 +23,11 @@ export interface LayoutSnapshot {
   marginLeftMm: number;
   headerBandMm: number;
   footerBandMm: number;
+  /**
+   * 正文区底色（CSS）。空/缺省 → 历史浅灰；`transparent` 不填（纸白）；可自定义色。
+   * 封面/正文/末页各持一份 snapshot，可分别配置。
+   */
+  bodyBackgroundCss: string;
 }
 
 export interface LayoutPreset {
@@ -34,12 +42,41 @@ export interface LayoutPreset {
   marginLeftMm: number;
   headerBandMm: number;
   footerBandMm: number;
+  /** 与 LayoutSnapshot.bodyBackgroundCss 同语义；套用版式时写入 snapshot */
+  bodyBackgroundCss: string;
   pageRole: LayoutPageRole;
   headerText: string;
   footerText: string;
   headerElements: LayoutZoneElement[];
   footerElements: LayoutZoneElement[];
   bodyElements: LayoutZoneElement[];
+}
+
+/** 归一正文底色：空/缺省 → 历史灰；保留 transparent / 自定义色 */
+export function resolveBodyBackgroundCss(
+  snap: Pick<LayoutSnapshot, "bodyBackgroundCss"> | Partial<LayoutSnapshot> | null | undefined,
+): string {
+  const v = typeof snap?.bodyBackgroundCss === "string" ? snap.bodyBackgroundCss.trim() : "";
+  if (!v) return DEFAULT_BODY_BACKGROUND_CSS;
+  return v;
+}
+
+export function hydrateLayoutSnapshot(
+  raw: Partial<LayoutSnapshot> | null | undefined,
+): LayoutSnapshot {
+  const d = defaultBlankLayoutSnapshot();
+  if (!raw || typeof raw !== "object") return d;
+  const num = (v: unknown, fb: number) =>
+    typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : fb;
+  return {
+    marginTopMm: num(raw.marginTopMm, d.marginTopMm),
+    marginRightMm: num(raw.marginRightMm, d.marginRightMm),
+    marginBottomMm: num(raw.marginBottomMm, d.marginBottomMm),
+    marginLeftMm: num(raw.marginLeftMm, d.marginLeftMm),
+    headerBandMm: num(raw.headerBandMm, d.headerBandMm),
+    footerBandMm: num(raw.footerBandMm, d.footerBandMm),
+    bodyBackgroundCss: resolveBodyBackgroundCss(raw),
+  };
 }
 
 export type { LayoutZoneElement };
@@ -70,6 +107,7 @@ export function defaultBlankLayoutSnapshot(): LayoutSnapshot {
     marginLeftMm: 12,
     headerBandMm: 0,
     footerBandMm: 0,
+    bodyBackgroundCss: DEFAULT_BODY_BACKGROUND_CSS,
   };
 }
 
@@ -81,6 +119,7 @@ export function presetToSnapshot(p: LayoutPreset): LayoutSnapshot {
     marginLeftMm: p.marginLeftMm,
     headerBandMm: p.headerBandMm,
     footerBandMm: p.footerBandMm,
+    bodyBackgroundCss: resolveBodyBackgroundCss(p),
   };
 }
 
@@ -137,6 +176,7 @@ export function createEmptyLayoutPreset(): LayoutPreset {
     marginLeftMm: 15,
     headerBandMm: 22,
     footerBandMm: 18,
+    bodyBackgroundCss: DEFAULT_BODY_BACKGROUND_CSS,
     pageRole: "normal",
     headerText: "",
     footerText: "",
@@ -200,6 +240,7 @@ export function hydrateLayoutPreset(raw: Partial<LayoutPreset>): LayoutPreset {
     paperKind: (raw.paperKind as PaperKind) || d.paperKind,
     orientation: raw.orientation === "landscape" ? "landscape" : "portrait",
     pageRole: normalizePageRole(raw.pageRole),
+    bodyBackgroundCss: resolveBodyBackgroundCss(raw),
     headerText: typeof raw.headerText === "string" ? raw.headerText : d.headerText,
     footerText: typeof raw.footerText === "string" ? raw.footerText : d.footerText,
     headerElements: normalizeZoneArray(raw.headerElements),

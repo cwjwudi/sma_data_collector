@@ -34,6 +34,8 @@ class LayoutSnapshot(BaseModel):
     marginLeftMm: float = Field(ge=0, default=12)
     headerBandMm: float = Field(ge=0, default=0)
     footerBandMm: float = Field(ge=0, default=0)
+    # 正文区底色 CSS；与前端 DEFAULT_BODY_BACKGROUND_CSS 对齐
+    bodyBackgroundCss: str = Field(default="rgb(249 249 251)")
 
 
 class TemplateTableCell(BaseModel):

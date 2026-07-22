@@ -190,7 +190,7 @@ import type { PaperLayoutMetrics } from "@/lib/report-template/layout-geometry";
 import { computePaperLayout } from "@/lib/report-template/layout-geometry";
 import { miniPreviewScale } from "@/lib/report-template/mini-preview-scale";
 import type { LayoutPreset } from "@/lib/report-template/layout-model";
-import { presetToSnapshot } from "@/lib/report-template/layout-model";
+import { presetToSnapshot, resolveBodyBackgroundCss } from "@/lib/report-template/layout-model";
 import {
   axisToCssTextAlign,
   axisToCssVerticalAlign,
@@ -299,7 +299,10 @@ function bandStyle(metric: PaperLayoutMetrics, which: "header" | "body" | "foote
 }
 
 const headerBand = computed(() => bandStyle(me.value, "header"));
-const bodyBand = computed(() => bandStyle(me.value, "body"));
+const bodyBand = computed(() => ({
+  ...bandStyle(me.value, "body"),
+  backgroundColor: resolveBodyBackgroundCss(props.preset),
+}));
 const footerBand = computed(() => bandStyle(me.value, "footer"));
 
 /** 与 TemplateMiniPage 一致：按设计字号缩放，不人为抬高（避免缩略图字号失真） */

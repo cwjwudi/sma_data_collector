@@ -403,6 +403,7 @@ import {
   zoneBodyDecorRef,
   type EditorSheet,
 } from "@/lib/report-template/editor-sheet";
+import { resolveBodyBackgroundCss } from "@/lib/report-template/layout-model";
 import {
   alignmentGuidesForRect,
   magneticSnapResize,
@@ -799,7 +800,12 @@ function bandBox(m: PaperLayoutMetrics, which: "hdr" | "body" | "ftr"): Record<s
 }
 
 const hdrStyle = computed(() => bandBox(me.value, "hdr"));
-const bodyStyle = computed(() => bandBox(me.value, "body"));
+const bodyStyle = computed(() => ({
+  ...bandBox(me.value, "body"),
+  backgroundColor: resolveBodyBackgroundCss(
+    activeLayoutSnapshotForSheet(props.tmpl, props.sheet),
+  ),
+}));
 const ftrStyle = computed(() => bandBox(me.value, "ftr"));
 
 /** 版式未预留眉/脚带高度时，在纸张边距内给出示意（几何仍与导出一致） */

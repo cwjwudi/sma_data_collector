@@ -20,12 +20,14 @@ import {
   zoneParamKey,
 } from "@/lib/report-template/binding-preview-utils";
 import {
+  activeLayoutSnapshotForSheet,
   bodyElementsRef,
   metricsForSheet,
   zoneBodyDecorRef,
   type EditorSheet,
 } from "@/lib/report-template/editor-sheet";
 import type { PaperLayoutMetrics } from "@/lib/report-template/layout-geometry";
+import { resolveBodyBackgroundCss } from "@/lib/report-template/layout-model";
 import {
   ensureZoneTableGrid,
   formatLayoutDate,
@@ -79,8 +81,6 @@ const BODY_FONT_SCALE = 0.8;
 /** 与 TemplateMiniPage / ZoneImageCompose zone 字号 `* 0.85` 对齐 */
 const ZONE_FONT_SCALE = 0.85;
 
-/** 与 Mini `.mini-body { background: rgb(249 249 251) }` 对齐（D1） */
-const MINI_BODY_BG = rgb(249 / 255, 249 / 255, 251 / 255);
 /** 与 Mini 眉/脚带 `rgb(239 239 246 / 0.52)` 叠白近似 */
 const MINI_BAND_BG = rgb(
   (0.52 * 239 + 0.48 * 255) / 255,
@@ -1547,13 +1547,19 @@ export async function appendPdfLibLayoutV2Pages(
         color: MINI_BAND_BG,
       });
     }
-    page.drawRectangle({
-      x: contentX,
-      y: contentY,
-      width: contentW,
-      height: contentH,
-      color: MINI_BODY_BG,
-    });
+    // 035：正文底色来自 layoutSnapshot.bodyBackgroundCss（缺省历史灰；transparent 不填）
+    const bodyFill = cssBgToRgbOrUndef(
+      resolveBodyBackgroundCss(activeLayoutSnapshotForSheet(tmpl, sheet)),
+    );
+    if (bodyFill) {
+      page.drawRectangle({
+        x: contentX,
+        y: contentY,
+        width: contentW,
+        height: contentH,
+        color: bodyFill,
+      });
+    }
     const showChrome = !card?.continuationHideOtherBodyElements && !card?.tailOnlyBelowBaseline;
     const bodyOrigin = contentOrigin(metrics);
     const bandW = metrics.contentW;

@@ -40,7 +40,7 @@ export interface TemplateTableCell {
 }
 
 import type { LayoutSnapshot } from "./layout-model";
-import { defaultBlankLayoutSnapshot } from "./layout-model";
+import { defaultBlankLayoutSnapshot, hydrateLayoutSnapshot } from "./layout-model";
 import type { PaperKind } from "./paper";
 import type { LayoutAlignAxis, ImageCaptionPosition, NullDisplayMode } from "./layout-zone-element";
 import type { TableSqlFillConfig, TableSqlParamBinding } from "./table-sql-fill";
@@ -828,14 +828,21 @@ export function migrateReportTemplate(v: unknown): unknown {
       ? o.paperKind
       : "A4";
   const orientation = o.orientation === "landscape" ? "landscape" : "portrait";
-  let layoutSnapshot = o.layoutSnapshot as LayoutSnapshot | undefined;
-  if (!layoutSnapshot || typeof layoutSnapshot !== "object") {
-    layoutSnapshot = defaultBlankLayoutSnapshot();
-  }
-  let covSnap = o.coverLayoutSnapshot as LayoutSnapshot | undefined;
-  if (!covSnap || typeof covSnap !== "object") covSnap = defaultBlankLayoutSnapshot();
-  let backSnap = o.backLayoutSnapshot as LayoutSnapshot | undefined;
-  if (!backSnap || typeof backSnap !== "object") backSnap = defaultBlankLayoutSnapshot();
+  const layoutSnapshot = hydrateLayoutSnapshot(
+    o.layoutSnapshot && typeof o.layoutSnapshot === "object"
+      ? (o.layoutSnapshot as Partial<LayoutSnapshot>)
+      : null,
+  );
+  const covSnap = hydrateLayoutSnapshot(
+    o.coverLayoutSnapshot && typeof o.coverLayoutSnapshot === "object"
+      ? (o.coverLayoutSnapshot as Partial<LayoutSnapshot>)
+      : null,
+  );
+  const backSnap = hydrateLayoutSnapshot(
+    o.backLayoutSnapshot && typeof o.backLayoutSnapshot === "object"
+      ? (o.backLayoutSnapshot as Partial<LayoutSnapshot>)
+      : null,
+  );
 
   const legacyElements = normalizeTplBodyElements(o.elements);
   const bodyPages = normalizeBodyPagesRaw(o.bodyPages, legacyElements);

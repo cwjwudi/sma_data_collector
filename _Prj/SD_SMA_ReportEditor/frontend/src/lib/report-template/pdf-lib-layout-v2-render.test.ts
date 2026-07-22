@@ -427,6 +427,38 @@ describe("pdf-lib-layout-v2-render", () => {
     expect(xEnd).toBeGreaterThan(xCenter + 20);
   });
 
+  it("bodyBackgroundCss white/custom fills appear; transparent skips gray fill", async () => {
+    async function bodyPlain(bg: string): Promise<string> {
+      const b = blankZonesSnapshot();
+      b.layoutSnapshot = { ...b.layoutSnapshot, bodyBackgroundCss: bg };
+      const tmpl = makeTemplateWithBodyTable(
+        hydrateTemplateElement({
+          id: "bg-probe",
+          type: "text",
+          text: "Bg",
+          x: 40,
+          y: 40,
+          w: 80,
+          h: 24,
+        }),
+      );
+      tmpl.layoutSnapshot = b.layoutSnapshot;
+      const doc = await PDFDocument.create();
+      const font = await doc.embedFont(StandardFonts.Helvetica);
+      await appendPdfLibLayoutV2Pages(doc, { tmpl, previewValues: {}, font, useWinAnsi: true });
+      return inflatedPdfPlain(await doc.save({ useObjectStreams: false }));
+    }
+    // #ff0000 → 1 0 0 rg
+    expect(await bodyPlain("#ff0000")).toMatch(/1(\.0+)?\s+0(\.0+)?\s+0(\.0+)?\s+rg/);
+    // #ffffff → 1 1 1 rg（非历史灰 249/255）
+    const white = await bodyPlain("#ffffff");
+    expect(white).toMatch(/1(\.0+)?\s+1(\.0+)?\s+1(\.0+)?\s+rg/);
+    expect(white).not.toMatch(/0\.976\d*\s+0\.976\d*\s+0\.984\d*\s+rg/);
+    // transparent：不应再画默认浅灰正文底
+    const tr = await bodyPlain("transparent");
+    expect(tr).not.toMatch(/0\.976\d*\s+0\.976\d*\s+0\.984\d*\s+rg/);
+  });
+
   it("D19: role accent bars — cover top orange / body left indigo / back bottom purple", async () => {
     const b = blankZonesSnapshot();
     const tmpl = createTemplate({

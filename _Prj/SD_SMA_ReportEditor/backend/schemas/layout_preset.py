@@ -27,6 +27,7 @@ class LayoutPreset(BaseModel):
     marginLeftMm: float = Field(ge=0, default=15)
     headerBandMm: float = Field(ge=0, default=22)
     footerBandMm: float = Field(ge=0, default=18)
+    bodyBackgroundCss: str = Field(default="rgb(249 249 251)")
     pageRole: LayoutPageRole = "normal"
     headerText: str = ""
     footerText: str = ""

@@ -138,6 +138,13 @@
       <label v-for="fld in mmFields" :key="fld.k">
         {{ fld.lab }}（mm）<input v-model.number="working[fld.k]" type="number" min="0" class="inp" />
       </label>
+      <div class="pe-body-bg">
+        <TableCellFillPicker
+          v-model="working.bodyBackgroundCss"
+          title="正文底色"
+          :presets="bodyBgPresets"
+        />
+      </div>
     </div>
     <p class="muted">
       <strong>画布</strong>与「模版管理」一致：页眉、正文区、页脚在同一张纵向纸上；
@@ -209,8 +216,13 @@ import LayoutPresetZonesDialog from "@/components/report-template/LayoutPresetZo
 import LayoutPresetPaperCanvas from "@/components/report-template/LayoutPresetPaperCanvas.vue";
 import LayoutPresetElementProps from "@/components/report-template/LayoutPresetElementProps.vue";
 import MultiElementBatchProps from "@/components/report-template/MultiElementBatchProps.vue";
+import TableCellFillPicker from "@/components/report-template/TableCellFillPicker.vue";
 import type { LayoutPreset } from "@/lib/report-template/layout-model";
-import { defaultBlankLayoutSnapshot, hydrateLayoutPreset } from "@/lib/report-template/layout-model";
+import {
+  DEFAULT_BODY_BACKGROUND_CSS,
+  defaultBlankLayoutSnapshot,
+  hydrateLayoutPreset,
+} from "@/lib/report-template/layout-model";
 import type { LayoutControlType, LayoutZoneElement } from "@/lib/report-template/layout-zone-element";
 import { hideShowBordersInElements } from "@/lib/report-template/show-border";
 import {
@@ -565,6 +577,15 @@ const mmFields = [
   { k: "footerBandMm" as const, lab: "页脚带高度" },
 ];
 
+const bodyBgPresets = [
+  { value: "transparent", label: "透明（纸白）" },
+  { value: "#ffffff", label: "纯白" },
+  { value: DEFAULT_BODY_BACKGROUND_CSS, label: "默认浅灰" },
+  { value: "#fafafa", label: "近白" },
+  { value: "#f4f4f5", label: "锌灰" },
+  { value: "#eef2ff", label: "淡靛" },
+];
+
 function clonePreset(p: LayoutPreset): LayoutPreset {
   return hydrateLayoutPreset(JSON.parse(JSON.stringify(p)));
 }
@@ -888,6 +909,10 @@ onUnmounted(() => window.removeEventListener("keydown", onEditorWindowKeydown));
   overflow-y: auto;
   overscroll-behavior: contain;
   padding-right: 2px;
+}
+.pe-body-bg {
+  grid-column: 1 / -1;
+  max-width: 320px;
 }
 .lpe-fail {
   padding: 24px;

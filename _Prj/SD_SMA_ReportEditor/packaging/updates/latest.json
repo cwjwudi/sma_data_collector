@@ -1,17 +1,17 @@
 {
-  "version": "0.3.131",
-  "releasedAt": "2026-07-22T14:20:31.843Z",
-  "notes": "Report Editor AI 0.3.131\n\n- 矢量角色色纸边：封面橙顶 / 正文靛蓝左 / 封尾紫底（对齐 Mini 3px）",
+  "version": "0.3.132",
+  "releasedAt": "2026-07-22T14:39:02.875Z",
+  "notes": "Report Editor AI 0.3.132\n\n- 正文底色可编辑（版式/模版 bodyBackgroundCss；预览与矢量档一致）",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.131-x64.exe",
-      "sha256": "3724fad66d18b51328a9e9253faf8bc86ffed10a60f179e32ef02b89b8154b40",
-      "size": 167200094
+      "url": "Report Editor AI-Setup-0.3.132-x64.exe",
+      "sha256": "",
+      "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.131-arm64.dmg",
-      "sha256": "057da73694bda0c414faec6f3ee2290105c5a1b984fc8f676c8e324fd6fbce64",
-      "size": 212104730
+      "url": "Report Editor AI-0.3.132-arm64.dmg",
+      "sha256": "a23b3caae24d8a05ad5e0bcb16dd0677af285b6430155ee768ad3de8172d59fb",
+      "size": 212145057
     }
   }
 }
