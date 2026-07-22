@@ -657,6 +657,7 @@ function miniTplElStyle(el: TemplateElement): Record<string, string> {
   const explicitZ = normalizeZIndex(el.zIndex ?? 0);
   const z =
     explicitZ !== 0 ? explicitZ : Math.min(200000, Math.max(0, Math.floor(el.y)));
+  const defaultFlex = flexJustifyAlignForAxes(el.alignX, el.alignY);
   const s: Record<string, string> = {
     position: "absolute",
     left: `${el.x}px`,
@@ -668,8 +669,8 @@ function miniTplElStyle(el: TemplateElement): Record<string, string> {
     borderRadius: "2px",
     overflow: "hidden",
     display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
+    alignItems: defaultFlex.alignItems,
+    justifyContent: defaultFlex.justifyContent,
     padding: "2px",
     color: el.color,
     fontSize: `${Math.max(6, el.fontSize * 0.8)}px`,
@@ -1305,7 +1306,8 @@ function tplCaption(el: TemplateElement): string {
   display: block;
   max-height: 100%;
   overflow: hidden;
-  text-align: center;
+  /* 水平对齐由外层 flex（alignX）控制，勿写死 center */
+  text-align: inherit;
   line-height: 1.25;
 }
 .mini-tpl-sig-stack {

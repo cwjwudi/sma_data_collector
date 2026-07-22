@@ -616,6 +616,8 @@ export function defaultElement(type: TemplateControlType): Omit<TemplateElement,
       h: 36,
       text: "",
       ...base,
+      /** 与历史预览迷你页默认居中一致；属性面板可改左/右 */
+      alignX: "center",
       /** 数据参数以 OPC UA 为主路径，与表格单元格绑定一致 */
       bindingKind: "opcua",
     };

@@ -304,6 +304,9 @@
                 />
                 <span v-else class="cv-text-display" :style="textAlignForCanvasText(el)">{{ displayEl(el) }}</span>
               </template>
+              <template v-else-if="el.type === 'parameter'">
+                <span class="cv-text-display" :style="textAlignForCanvasText(el)">{{ displayEl(el) }}</span>
+              </template>
               <template v-else>{{ displayEl(el) }}</template>
             </div>
             <template v-if="isPrimary(el.id)">
@@ -863,7 +866,13 @@ function elInnerFlexStyle(el: TemplateElement): Record<string, string> | undefin
 }
 
 function textAlignForCanvasText(el: TemplateElement): Record<string, string> | undefined {
-  if (el.type !== "text" && el.type !== "box" && el.type !== "date" && el.type !== "signature")
+  if (
+    el.type !== "text" &&
+    el.type !== "box" &&
+    el.type !== "date" &&
+    el.type !== "signature" &&
+    el.type !== "parameter"
+  )
     return undefined;
   const ta =
     el.alignX === "center" ? "center" : el.alignX === "end" ? "right" : "left";
