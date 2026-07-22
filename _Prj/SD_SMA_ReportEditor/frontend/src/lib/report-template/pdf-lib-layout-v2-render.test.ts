@@ -292,6 +292,85 @@ describe("pdf-lib-layout-v2-render", () => {
     expect(xEnd).toBeGreaterThan(xCenter + 20);
   });
 
+  it("formats zone date by dateFormat and pageNumber slashTotal with total pages", async () => {
+    const fs = await import("node:fs");
+    const path = await import("node:path");
+    const fontkit = (await import("@pdf-lib/fontkit")).default;
+    const { makeLayoutZoneElement } = await import("@/lib/report-template/layout-zone-element");
+    const b = blankZonesSnapshot();
+    const tmpl = createTemplate({
+      name: "date-pn",
+      paperKind: "A4",
+      orientation: "portrait",
+      layoutPresetId: null,
+      layoutSnapshot: b.layoutSnapshot,
+      headerText: "",
+      footerText: "",
+      headerElements: [],
+      footerElements: [],
+      coverLayoutPresetId: null,
+      coverLayoutSnapshot: b.layoutSnapshot,
+      coverHeaderText: "",
+      coverFooterText: "",
+      coverHeaderElements: [],
+      coverFooterElements: [],
+      coverBodyZoneElements: [],
+      backLayoutPresetId: null,
+      backLayoutSnapshot: b.layoutSnapshot,
+      backHeaderText: "",
+      backFooterText: "",
+      backHeaderElements: [],
+      backFooterElements: [],
+      backBodyZoneElements: [],
+    });
+    const dateEl = makeLayoutZoneElement("date");
+    dateEl.dateFormat = "yyyy-MM-dd HH:mm";
+    dateEl.x = 20;
+    dateEl.y = 4;
+    dateEl.w = 160;
+    dateEl.h = 18;
+    dateEl.fontSize = 11;
+    const pn = makeLayoutZoneElement("pageNumber");
+    pn.pageNumberMode = "slashTotal";
+    pn.x = 200;
+    pn.y = 4;
+    pn.w = 80;
+    pn.h = 18;
+    tmpl.headerElements = [dateEl];
+    tmpl.footerElements = [pn];
+    tmpl.coverElements = [
+      hydrateTemplateElement({ id: "c1", type: "text", text: "封面", x: 40, y: 40, w: 120, h: 24 }),
+    ];
+    tmpl.backElements = [
+      hydrateTemplateElement({ id: "b1", type: "text", text: "封尾", x: 40, y: 40, w: 120, h: 24 }),
+    ];
+    ensureBodyPages(tmpl)[0].splice(
+      0,
+      ensureBodyPages(tmpl)[0].length,
+      hydrateTemplateElement({ id: "body1", type: "text", text: "正文", x: 40, y: 40, w: 120, h: 24 }),
+    );
+
+    const doc = await PDFDocument.create();
+    doc.registerFontkit(fontkit);
+    const font = await doc.embedFont(
+      fs.readFileSync(path.join(process.cwd(), "resources/fonts/ZhuqueFangsong-Regular.ttf")),
+      { subset: true },
+    );
+    const pageCount = await appendPdfLibLayoutV2Pages(doc, {
+      tmpl,
+      previewValues: {},
+      font,
+      useWinAnsi: false,
+    });
+    expect(pageCount).toBe(3);
+    const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+    const parsed = await pdfjs.getDocument({ data: await doc.save() }).promise;
+    const bodyPage = await parsed.getPage(2);
+    const bodyText = (await bodyPage.getTextContent()).items.map((it: { str: string }) => it.str).join("");
+    expect(bodyText).toMatch(/\d{4}-\d{2}-\d{2} \d{2}:\d{2}/);
+    expect(bodyText).toContain("2/3");
+  });
+
   it("fills body SQL table from tableSqlFill.dataRows", async () => {
     const { templateTableSqlFillPreviewKey } = await import("@/lib/report-template/table-sql-fill-preview");
     const tb = hydrateTemplateElement({

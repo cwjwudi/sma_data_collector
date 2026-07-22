@@ -26,7 +26,10 @@ import {
 import type { PaperLayoutMetrics } from "@/lib/report-template/layout-geometry";
 import {
   ensureZoneTableGrid,
+  formatLayoutDate,
+  formatPageNumberDisplay,
   normalizeAlignAxis,
+  normalizePageNumberMode,
   zoneTableColumnInnerWidthsPx,
   type LayoutAlignAxis,
   type LayoutZoneElement,
@@ -58,8 +61,28 @@ import {
 
 const PX_TO_PT = 72 / 96;
 
+/** 与 TemplateMiniPage 正文控件 `fontSize * 0.8` 对齐 */
+const BODY_FONT_SCALE = 0.8;
+/** 与 TemplateMiniPage / ZoneImageCompose zone 字号 `* 0.85` 对齐 */
+const ZONE_FONT_SCALE = 0.85;
+
+/** 与 Mini `.mini-body { background: rgb(249 249 251) }` 对齐（D1） */
+const MINI_BODY_BG = rgb(249 / 255, 249 / 255, 251 / 255);
+/** 与 Mini 眉/脚带 `rgb(239 239 246 / 0.52)` 叠白近似 */
+const MINI_BAND_BG = rgb(
+  (0.52 * 239 + 0.48 * 255) / 255,
+  (0.52 * 239 + 0.48 * 255) / 255,
+  (0.52 * 246 + 0.48 * 255) / 255,
+);
+
 function mmToPt(mm: number): number {
   return (mm * 72) / 25.4;
+}
+
+function scaledFontSize(raw: unknown, scale: number, fallback: number, min = 6): number {
+  const n = Number(raw);
+  const base = Number.isFinite(n) && n > 0 ? n : fallback;
+  return Math.max(min, base * scale);
 }
 
 function paperSizePt(tmpl: ReportTemplate): { w: number; h: number } {
@@ -212,7 +235,9 @@ function drawWrappedInBox(
   pushLine();
   if (!lines.length) return;
 
-  const contentH = fitSize + Math.max(0, lines.length - 1) * lineHeight;
+  // 基线排版下中文视觉中心偏上；居中/底对齐时按墨水高度估算，避免格内「贴顶」
+  const inkH = ay === "start" ? fitSize : fitSize * 0.82;
+  const contentH = inkH + Math.max(0, lines.length - 1) * lineHeight;
   let yOffset = 0;
   if (ay === "center") yOffset = Math.max(0, (maxHeight - contentH) / 2);
   else if (ay === "end") yOffset = Math.max(0, maxHeight - contentH);
@@ -406,7 +431,10 @@ function drawZoneTable(
       color: rgb(0.55, 0.55, 0.55),
     });
   }
-  const fontSize = Math.max(6, Math.min(10, Number(el.fontSize) || rowH * 0.5));
+  const fontSize = Math.max(
+    6,
+    Math.min(10, scaledFontSize(el.fontSize, ZONE_FONT_SCALE, rowH * 0.5)),
+  );
   const zoneFill = el.tableSqlFill?.enabled ? el.tableSqlFill : null;
   const zoneFillPv = zoneFill
     ? values[zoneTableSqlFillPreviewKey(el.id)]?.tableSqlFill ?? null
@@ -475,7 +503,8 @@ function drawZoneElements(
   values: Record<string, BindingPreviewCell | undefined>,
   useWinAnsi: boolean,
   images: Map<string, PDFImage>,
-  pageLabel: string,
+  pageNum: number,
+  totalPages: number,
   bandWPx?: number,
 ): void {
   const sorted = [...els].sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0));
@@ -530,7 +559,7 @@ function drawZoneElements(
           box.topY - 1,
           box.w - 4,
           box.h - 2,
-          Math.max(7, Number(el.fontSize) || 10),
+          scaledFontSize(el.fontSize, ZONE_FONT_SCALE, 10, 7),
           useWinAnsi,
           undefined,
           el.alignX ?? "start",
@@ -544,10 +573,20 @@ function drawZoneElements(
     }
     const ck = zoneParamKey(el.id);
     const bound = cellText(values[ck]);
-    let text = bound || String(el.text || "");
-    if (el.type === "pageNumber" && !bound) text = pageLabel || text || "1";
-    // 绑定成功时不回落控件占位文案（如 {{value}} / SQL·温度）
-    if (bound) text = bound;
+    let text = "";
+    const pageMode = el.type === "pageNumber" ? normalizePageNumberMode(el.pageNumberMode) : "plain";
+    if (el.type === "pageNumber") {
+      // 与 previewZoneElementDisplay 一致：页码模式优先于绑定占位
+      text = formatPageNumberDisplay(pageMode, pageNum, totalPages);
+    } else if (el.type === "date") {
+      // 与 Mini formatTplDate / previewZoneElementDisplay：按 dateFormat 格式化「现在」
+      text = bound.trim() || formatLayoutDate(new Date(), el.dateFormat || "yyyy-MM-dd");
+    } else if (bound) {
+      // 绑定成功时不回落控件占位文案（如 {{value}} / SQL·温度）
+      text = bound;
+    } else {
+      text = String(el.text || "");
+    }
     if (!text.trim()) continue;
     if (el.showBorder || (el.bgColor && el.bgColor !== "transparent" && el.bgColor !== "none")) {
       try {
@@ -569,7 +608,43 @@ function drawZoneElements(
         /* ignore chrome draw errors */
       }
     }
-    const size = Math.max(7, Number(el.fontSize) || 10);
+    const size = scaledFontSize(el.fontSize, ZONE_FONT_SCALE, 10, 7);
+    if (el.type === "pageNumber" && pageMode === "circle") {
+      const ink = parseCssColor(el.color, rgb(0.08, 0.08, 0.08));
+      const cx = box.x + box.w / 2;
+      const cy = box.yBottom + box.h / 2;
+      const r = Math.max(4, Math.min(box.w, box.h) / 2 - 0.75);
+      try {
+        page.drawCircle({
+          x: cx,
+          y: cy,
+          size: r,
+          borderColor: ink,
+          borderWidth: 1.1,
+          color:
+            el.bgColor && el.bgColor !== "transparent" && el.bgColor !== "none"
+              ? parseCssColor(el.bgColor, rgb(1, 1, 1))
+              : undefined,
+        });
+      } catch {
+        /* ignore circle draw errors */
+      }
+      drawWrappedInBox(
+        page,
+        font,
+        text,
+        cx - r + 1,
+        cy + r - 1,
+        r * 2 - 2,
+        r * 2 - 2,
+        size,
+        useWinAnsi,
+        undefined,
+        "center",
+        "center",
+      );
+      continue;
+    }
     // 不用自定义 color：部分环境下带 color 的 drawText 对 subset TTF 会静默失败
     drawWrappedInBox(
       page,
@@ -659,7 +734,11 @@ function drawTableGrid(
     });
   }
   const pad = 2;
-  const fontSize = Math.max(6, Math.min(11, rowH * 0.55));
+  // 与 Mini 正文表：控件字号 ×0.8，并受行高约束
+  const fontSize = Math.max(
+    6,
+    Math.min(11, scaledFontSize(el.fontSize, BODY_FONT_SCALE, 12), rowH * 0.55),
+  );
   for (let r = 0; r < rows; r++) {
     const texts = opts.rowTexts(r);
     for (let c = 0; c < cols; c++) {
@@ -716,7 +795,10 @@ function drawTemplateElement(
     const box = boxFromPagePx(xPx, yPx, el.w, el.h, pageH);
     const ck = paramKey(el.id);
     const bound = cellText(values[ck]);
-    const text = bound || String(el.text || "");
+    const text =
+      el.type === "date"
+        ? bound.trim() || formatLayoutDate(new Date(), el.dateFormat || "HH:mm:ss")
+        : bound || String(el.text || "");
     if (!text.trim()) return;
     if (el.showBorder || (el.bgColor && el.bgColor !== "transparent")) {
       page.drawRectangle({
@@ -729,7 +811,7 @@ function drawTemplateElement(
         borderWidth: el.showBorder ? 0.4 : undefined,
       });
     }
-    const size = Math.max(7, Number(el.fontSize) || 11);
+    const size = scaledFontSize(el.fontSize, BODY_FONT_SCALE, 11, 7);
     const color = parseCssColor(el.color, rgb(0.08, 0.08, 0.08));
     drawWrappedInBox(
       page,
@@ -855,6 +937,18 @@ export async function appendPdfLibLayoutV2Pages(
     if (img) images.set(src, img);
   }
 
+  const cards = opts.bodyCards ?? computeExpandedBodyPreviewCards(tmpl, previewValues);
+  const hasCover = Boolean(
+    tmpl.coverElements?.length || tmpl.coverHeaderElements?.length || tmpl.coverFooterElements?.length,
+  );
+  const hasBack = Boolean(
+    tmpl.backElements?.length || tmpl.backHeaderElements?.length || tmpl.backFooterElements?.length,
+  );
+  const bodyPageN = cards.length > 0 ? cards.length : 1;
+  // 与下方 paint 顺序一致，供 slashTotal / cnPage 使用
+  let plannedTotal = (hasCover ? 1 : 0) + bodyPageN + (hasBack ? 1 : 0);
+  if (plannedTotal < 1) plannedTotal = 1;
+
   const paintPage = (
     sheet: EditorSheet,
     bodyEls: TemplateElement[],
@@ -865,17 +959,41 @@ export async function appendPdfLibLayoutV2Pages(
     const metrics = metricsForSheet(tmpl, sheet);
     const page = doc.addPage([pageW, pageH]);
     pageCount += 1;
-    const pageLabel = String(pageCount);
+    const pageNum = pageCount;
+    const totalPages = Math.max(plannedTotal, pageNum);
     const contentX = metrics.contentLeft * PX_TO_PT;
+    const contentW = metrics.contentW * PX_TO_PT;
     const contentH = metrics.contentH * PX_TO_PT;
     const contentY = pageH - (metrics.contentTop + metrics.contentH) * PX_TO_PT;
+    // D1：与 Mini 页带底色对齐（替代仅描边内容框）
+    if (metrics.hb > 0) {
+      const hb = metrics.hb * PX_TO_PT;
+      const hy = pageH - (metrics.mt + metrics.hb) * PX_TO_PT;
+      page.drawRectangle({
+        x: metrics.ml * PX_TO_PT,
+        y: hy,
+        width: contentW,
+        height: hb,
+        color: MINI_BAND_BG,
+      });
+    }
+    if (metrics.fb > 0) {
+      const fb = metrics.fb * PX_TO_PT;
+      const fy = metrics.mb * PX_TO_PT;
+      page.drawRectangle({
+        x: metrics.ml * PX_TO_PT,
+        y: fy,
+        width: contentW,
+        height: fb,
+        color: MINI_BAND_BG,
+      });
+    }
     page.drawRectangle({
       x: contentX,
       y: contentY,
-      width: metrics.contentW * PX_TO_PT,
+      width: contentW,
       height: contentH,
-      borderColor: rgb(0.85, 0.85, 0.9),
-      borderWidth: 0.3,
+      color: MINI_BODY_BG,
     });
     const showChrome = !card?.continuationHideOtherBodyElements && !card?.tailOnlyBelowBaseline;
     const bodyOrigin = contentOrigin(metrics);
@@ -890,7 +1008,8 @@ export async function appendPdfLibLayoutV2Pages(
         previewValues,
         useWinAnsi,
         images,
-        pageLabel,
+        pageNum,
+        totalPages,
         bandW,
       );
     }
@@ -911,7 +1030,8 @@ export async function appendPdfLibLayoutV2Pages(
         previewValues,
         useWinAnsi,
         images,
-        pageLabel,
+        pageNum,
+        totalPages,
         bandW,
       );
     }
@@ -939,13 +1059,14 @@ export async function appendPdfLibLayoutV2Pages(
         previewValues,
         useWinAnsi,
         images,
-        pageLabel,
+        pageNum,
+        totalPages,
         bandW,
       );
     }
   };
 
-  if (tmpl.coverElements?.length || tmpl.coverHeaderElements?.length || tmpl.coverFooterElements?.length) {
+  if (hasCover) {
     paintPage(
       "cover",
       tmpl.coverElements || [],
@@ -955,7 +1076,6 @@ export async function appendPdfLibLayoutV2Pages(
     );
   }
 
-  const cards = opts.bodyCards ?? computeExpandedBodyPreviewCards(tmpl, previewValues);
   if (cards.length) {
     for (const card of cards) {
       const pageEls = bodyElementsRef(tmpl, "body", card.bodyPageIndex);
@@ -967,7 +1087,7 @@ export async function appendPdfLibLayoutV2Pages(
     paintPage("body", pageEls, tmpl.headerElements || [], tmpl.footerElements || [], null);
   }
 
-  if (tmpl.backElements?.length || tmpl.backHeaderElements?.length || tmpl.backFooterElements?.length) {
+  if (hasBack) {
     paintPage(
       "back",
       tmpl.backElements || [],

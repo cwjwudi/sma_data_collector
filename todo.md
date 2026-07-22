@@ -7,6 +7,8 @@
 
 ## 2026-07-22
 
+- **ReportEditor 036 P0 样式收敛**：layout-v2 对齐 Mini 底色/×0.8 字号、`formatLayoutDate`、页码 `slashTotal`/`circle`；批导 `12-05-37` 复验 D1–D5/D7 ✅；余 D6/D8+。看板 [docs/036-🚧](docs/036-🚧-ReportEditor矢量档与预览稳样式对照.md)。
+
 - **ReportEditor 036 矢量档↔预览稳样式对照**：冒烟批导 `11-56-48` 三页完整对比；列出 D1–D17（P0：底色/白卡片、日期、页码 N/M、截断；P1：表度量/×0.8 字号）。看板 [docs/036-🚧](docs/036-🚧-ReportEditor矢量档与预览稳样式对照.md)。
 
 - **ReportEditor 035 导出性能 4 档（目标 0.3.120）**：拍板 4 档/默认均衡；看板含阶段 A–F、测试 T1–T8/H1–H6、开工日序；阶段 A 模型+单测已开工。看板 [docs/035-🚧](docs/035-🚧-ReportEditor导出性能档位与同机降载.md) · [Plan 0.3.120](_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.120.md)。
