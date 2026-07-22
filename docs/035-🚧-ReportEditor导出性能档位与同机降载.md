@@ -2,7 +2,7 @@
 
 > 本文件为 **任务看板 / 开工计划**；规则见 [CLAUDE.md](../CLAUDE.md)。  
 > **登记日期**：2026-07-22 · 代码线 **0.3.122**（五档默认预览稳；layout-v2 支持 bodyCards 续页）。  
-> **关联**：[030](030-🚧-ReportEditor结批占满CPU导致mappView白屏.md) · [034](034-🚧-ReportEditor全站架构复评-2026-07-22.md) · [036](036-🚧-ReportEditor矢量档与预览稳样式对照.md)（档 1↔2 样式完整对照） · [003](003-⌛️-剩余任务与后续规划.md) · Plan [`0.3.122`](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.122.md)。
+> **关联**：[030](030-🚧-ReportEditor结批占满CPU导致mappView白屏.md) · [034](034-🚧-ReportEditor全站架构复评-2026-07-22.md) · [036](036-✅-ReportEditor矢量档与预览稳样式对照.md)（档 1↔2 样式完整对照） · [003](003-⌛️-剩余任务与后续规划.md) · Plan [`0.3.122`](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.122.md)。
 
 ---
 
@@ -46,8 +46,9 @@
 - [x] UI 滑条 max=4；默认预览稳 → 0.3.123 改为分段按钮  
 - [x] 档 1 `layout-v2`：坐标文本/表格线 + **bodyCards 续页**（与预览分卡对齐）  
 - [x] 后台：拆空闲预热窗 + BelowNormal + 次要轮询暂停  
-- [ ] 手测 H1–H7（含档 1 版式抽检、后台结批 mappView）  
-- [x] macOS arm64 DMG 0.3.122 / 0.3.123 + `latest.json` SHA（Portal 未挂载，Win 包另打）  
+- [ ] 手测 H1 / H2 / H4–H7（同机降载 / 后台结批；H3 与正文底色已复验）  
+- [x] macOS arm64 DMG 至 **0.3.132** + `latest.json` SHA（Portal 未挂载时可仅本地）  
+- [x] 正文底色 `bodyBackgroundCss`（0.3.132）
 
 ---
 
@@ -119,7 +120,8 @@
 - Mini / 画布 / Chromium 导出 / layout-v2 共用 `resolveBodyBackgroundCss`
 - 眉/脚带半透明灰仍为预览示意色（本期不改）
 
-**验收**：单测 `layout-model-body-bg` + layout-v2 白/红/transparent；装包手测 ⌛️。
+**验收**：单测 `layout-model-body-bg` + layout-v2 白/红/transparent；装包 `0.3.132` 五档 `retest-0.3.132-white-10-42-15`：  
+正文区改 `#ffffff` 后档 1/2 中心抽样 **exact_gray249=0**、exact_white≈87–92%（对照 0.3.131 同区 gray249≈1660）✅。冒烟模版已恢复默认（无字段=历史灰）。
 
 ---
 
@@ -138,4 +140,4 @@
 ## 明确不做（本看板强制外）
 
 - 8k / ≥4 份零闪硬验收 E2E（030 ⏸）  
-- layout-v2 像素级对齐 printToPDF（渐进增强；**可交付观感差**见 [036](036-🚧-ReportEditor矢量档与预览稳样式对照.md)）  
+- layout-v2 像素级对齐 printToPDF（渐进增强；**可交付观感差**见 [036](036-✅-ReportEditor矢量档与预览稳样式对照.md)）  

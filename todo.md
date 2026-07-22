@@ -7,25 +7,31 @@
 
 ## 2026-07-22
 
-- **ReportEditor 0.3.130（036 圆页码）**：直径按 zone×0.85；数字几何居中（复验 Δy≈档2）。看板 [docs/036-🚧](docs/036-🚧-ReportEditor矢量档与预览稳样式对照.md)。
+- **ReportEditor 0.3.132（035 正文底色）**：`bodyBackgroundCss` 可编辑；装包白底五档 `retest-0.3.132-white-10-42-15`（gray249=0）。看板 [docs/035-🚧](docs/035-🚧-ReportEditor导出性能档位与同机降载.md)。
 
-- **ReportEditor 0.3.129（036 眉表线）**：堆叠 zone 表近白格底盖共用边 → 先填再描线 + 下方画顶边。看板 [docs/036-🚧](docs/036-🚧-ReportEditor矢量档与预览稳样式对照.md)。
+- **ReportEditor 036 主路径闭环**：矢量↔预览对照 D1–D19 / C1–C10 已齐 → 改名 [docs/036-✅](docs/036-✅-ReportEditor矢量档与预览稳样式对照.md)。
 
-- **ReportEditor 0.3.128（036 D6 表观感）**：装包复验表「完全不一样」→ 去外套框 + 表字号 `max(10px,0.85em)`（对齐 Mini）。看板 [docs/036-🚧](docs/036-🚧-ReportEditor矢量档与预览稳样式对照.md)。
+- **ReportEditor 0.3.131（036 D19 角色色边）**：封面橙顶 / 正文靛蓝左 / 封尾紫底；`retest-0.3.131-10-24-32`。看板 [docs/036-✅](docs/036-✅-ReportEditor矢量档与预览稳样式对照.md)。
 
-- **ReportEditor 0.3.127 hotfix**：安装测 Noto subset 缺字；矢量/Mini 改回朱雀仿宋；C9 仍≈0.8pt（`13-19-57`）。看板 [docs/036-🚧](docs/036-🚧-ReportEditor矢量档与预览稳样式对照.md)。
+- **ReportEditor 0.3.130（036 圆页码）**：直径按 zone×0.85；数字几何居中（复验 Δy≈档2）。看板 [docs/036-✅](docs/036-✅-ReportEditor矢量档与预览稳样式对照.md)。
 
-- **ReportEditor 036 字体同源 + D8/P2（0.3.126）**：Noto TTF；`scaledFontSizePt`（修 px当 pt → C9 Δx≈0.8pt）；D11–D17 代码；批导 `13-11-28`。看板 [docs/036-🚧](docs/036-🚧-ReportEditor矢量档与预览稳样式对照.md)。
+- **ReportEditor 0.3.129（036 眉表线）**：堆叠 zone 表近白格底盖共用边 → 先填再描线 + 下方画顶边。看板 [docs/036-✅](docs/036-✅-ReportEditor矢量档与预览稳样式对照.md)。
 
-- **ReportEditor 036 D18 色/线/圆 `12-53-45`**：表线 `#d4d4d8`、圆形页码 2.75em、zone/表字色、`parseCssColor` 现代 rgb；对照 `_compare_color_2026-07-22T12-53-45/`。看板 [docs/036-🚧](docs/036-🚧-ReportEditor矢量档与预览稳样式对照.md)。
+- **ReportEditor 0.3.128（036 D6 表观感）**：装包复验表「完全不一样」→ 去外套框 + 表字号 `max(10px,0.85em)`（对齐 Mini）。看板 [docs/036-✅](docs/036-✅-ReportEditor矢量档与预览稳样式对照.md)。
 
-- **ReportEditor 036 P1 补测 `12-38-51`**：约定目录五档旁路；C7/C8 ✅；C9「批次报告」Δx≈12pt ❌ → D8 余量。对照图 `~/Desktop/report-editor-exports/_compare_p1_2026-07-22T12-38-51/`。看板 [docs/036-🚧](docs/036-🚧-ReportEditor矢量档与预览稳样式对照.md)。
+- **ReportEditor 0.3.127 hotfix**：安装测 Noto subset 缺字；矢量/Mini 改回朱雀仿宋；C9 仍≈0.8pt（`13-19-57`）。看板 [docs/036-✅](docs/036-✅-ReportEditor矢量档与预览稳样式对照.md)。
 
-- **ReportEditor 036 P1 样式收敛（代码）**：layout-v2 D6/D8/D9/D10 + 模拟结批默认目录；0.3.124；单测 ✅。看板 [docs/036-🚧](docs/036-🚧-ReportEditor矢量档与预览稳样式对照.md)。
+- **ReportEditor 036 字体同源 + D8/P2（0.3.126）**：Noto TTF；`scaledFontSizePt`（修 px当 pt → C9 Δx≈0.8pt）；D11–D17 代码；批导 `13-11-28`。看板 [docs/036-✅](docs/036-✅-ReportEditor矢量档与预览稳样式对照.md)。
 
-- **ReportEditor 036 P0 样式收敛**：layout-v2 对齐 Mini 底色/×0.8 字号、`formatLayoutDate`、页码 `slashTotal`/`circle`；批导 `12-05-37` 复验 D1–D5/D7 ✅。看板 [docs/036-🚧](docs/036-🚧-ReportEditor矢量档与预览稳样式对照.md)。
+- **ReportEditor 036 D18 色/线/圆 `12-53-45`**：表线 `#d4d4d8`、圆形页码 2.75em、zone/表字色、`parseCssColor` 现代 rgb；对照 `_compare_color_2026-07-22T12-53-45/`。看板 [docs/036-✅](docs/036-✅-ReportEditor矢量档与预览稳样式对照.md)。
 
-- **ReportEditor 036 矢量档↔预览稳样式对照**：冒烟批导 `11-56-48` 三页完整对比；列出 D1–D17（P0：底色/白卡片、日期、页码 N/M、截断；P1：表度量/×0.8 字号）。看板 [docs/036-🚧](docs/036-🚧-ReportEditor矢量档与预览稳样式对照.md)。
+- **ReportEditor 036 P1 补测 `12-38-51`**：约定目录五档旁路；C7/C8 ✅；C9「批次报告」Δx≈12pt ❌ → D8 余量。对照图 `~/Desktop/report-editor-exports/_compare_p1_2026-07-22T12-38-51/`。看板 [docs/036-✅](docs/036-✅-ReportEditor矢量档与预览稳样式对照.md)。
+
+- **ReportEditor 036 P1 样式收敛（代码）**：layout-v2 D6/D8/D9/D10 + 模拟结批默认目录；0.3.124；单测 ✅。看板 [docs/036-✅](docs/036-✅-ReportEditor矢量档与预览稳样式对照.md)。
+
+- **ReportEditor 036 P0 样式收敛**：layout-v2 对齐 Mini 底色/×0.8 字号、`formatLayoutDate`、页码 `slashTotal`/`circle`；批导 `12-05-37` 复验 D1–D5/D7 ✅。看板 [docs/036-✅](docs/036-✅-ReportEditor矢量档与预览稳样式对照.md)。
+
+- **ReportEditor 036 矢量档↔预览稳样式对照**：冒烟批导 `11-56-48` 三页完整对比；列出 D1–D17（P0：底色/白卡片、日期、页码 N/M、截断；P1：表度量/×0.8 字号）。看板 [docs/036-✅](docs/036-✅-ReportEditor矢量档与预览稳样式对照.md)。
 
 - **ReportEditor 035 导出性能 4 档（目标 0.3.120）**：拍板 4 档/默认均衡；看板含阶段 A–F、测试 T1–T8/H1–H6、开工日序；阶段 A 模型+单测已开工。看板 [docs/035-🚧](docs/035-🚧-ReportEditor导出性能档位与同机降载.md) · [Plan 0.3.120](_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.120.md)。
 
