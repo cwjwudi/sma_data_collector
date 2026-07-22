@@ -7,6 +7,8 @@
 
 ## 2026-07-22
 
+- **ReportEditor 全站架构复评（034）**：相对 032 复评综合 ≈3.0→**3.7**；下一刀：030 现场硬验收 → TemplateManager Observer / Workbench loadWatch / 契约 L7+。看板 [docs/034-🚧](docs/034-🚧-ReportEditor全站架构复评-2026-07-22.md)。
+
 - **ReportEditor 0.3.117（033）**：仿宋随包（朱雀仿宋→`FangSong`）；导出窗 `ERR_FAILED` 销毁重建重试。看板 [docs/033-✅](docs/033-✅-ReportEditor同机优先pdf-lib缺fontkit导致结批失败.md)。
 
 - **ReportEditor 0.3.116（033）**：注册 `@pdf-lib/fontkit`；字体 UI 显示 `Noto Sans SC（默认）`；`prebuild` 拉随包 OTF。看板 [docs/033-✅](docs/033-✅-ReportEditor同机优先pdf-lib缺fontkit导致结批失败.md)。
