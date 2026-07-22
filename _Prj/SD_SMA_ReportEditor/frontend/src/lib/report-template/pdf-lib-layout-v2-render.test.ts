@@ -467,11 +467,78 @@ describe("pdf-lib-layout-v2-render", () => {
       return inflatedPdfPlain(await doc.save({ useObjectStreams: false }));
     }
 
-    /** chrome 描边灰 rgb(0.55…) → PDF `0.55 0.55 0.55 RG` */
-    const chromeStroke = /0\.55\s+0\.55\s+0\.55\s+RG/;
+    /** chrome：Mini `rgb(24 24 27 / 0.15)` 叠白 ≈ 0.863 RG */
+    const chromeStroke = /0\.86\d*\s+0\.86\d*\s+0\.86\d*\s+RG/;
     expect(chromeStroke.test(await plainFor(false))).toBe(false);
     expect(chromeStroke.test(await plainFor(true))).toBe(true);
     expect(chromeStroke.test(await plainFor(undefined))).toBe(true);
+  });
+
+  it("circle pageNumber diameter follows 2.75em not full control height", async () => {
+    const fs = await import("node:fs");
+    const path = await import("node:path");
+    const fontkit = (await import("@pdf-lib/fontkit")).default;
+    const { makeLayoutZoneElement } = await import("@/lib/report-template/layout-zone-element");
+    const b = blankZonesSnapshot();
+    const tmpl = createTemplate({
+      name: "circle-pn",
+      paperKind: "A4",
+      orientation: "portrait",
+      layoutPresetId: null,
+      layoutSnapshot: b.layoutSnapshot,
+      headerText: "",
+      footerText: "",
+      headerElements: [],
+      footerElements: [],
+      coverLayoutPresetId: null,
+      coverLayoutSnapshot: b.layoutSnapshot,
+      coverHeaderText: "",
+      coverFooterText: "",
+      coverHeaderElements: [],
+      coverFooterElements: [],
+      coverBodyZoneElements: [],
+      backLayoutPresetId: null,
+      backLayoutSnapshot: {
+        ...b.layoutSnapshot,
+        footerBandMm: 24,
+      },
+      backHeaderText: "",
+      backFooterText: "",
+      backHeaderElements: [],
+      backFooterElements: [],
+      backBodyZoneElements: [],
+    });
+    const pn = makeLayoutZoneElement("pageNumber");
+    pn.pageNumberMode = "circle";
+    pn.fontSize = 12;
+    pn.x = 0;
+    pn.y = 0;
+    pn.w = 680;
+    pn.h = 68;
+    pn.color = "#52525b";
+    pn.showBorder = false;
+    tmpl.backFooterElements = [pn];
+    tmpl.backElements = [];
+    const doc = await PDFDocument.create();
+    doc.registerFontkit(fontkit);
+    const font = await doc.embedFont(
+      fs.readFileSync(path.join(process.cwd(), "resources/fonts/ZhuqueFangsong-Regular.ttf")),
+      { subset: true },
+    );
+    await appendPdfLibLayoutV2Pages(doc, { tmpl, previewValues: {}, font, useWinAnsi: false });
+    const plain = await inflatedPdfPlain(await doc.save({ useObjectStreams: false }));
+    // #52525b → ≈0.322 RG；pdf-lib 圆：`(cx-r) cy m` → 首段 c 终点 x=cx ⇒ r≈12（2.75em），旧实现≈24.75
+    expect(plain).toMatch(/0\.32\d*\s+0\.32\d*\s+0\.35\d*\s+RG/);
+    const arcs = [
+      ...plain.matchAll(
+        /([\d.]+)\s+([\d.]+)\s+m\n([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)\s+c/g,
+      ),
+    ];
+    const radii = arcs.map((m) => Math.abs(Number(m[7]) - Number(m[1])));
+    const r = radii.find((v) => v > 5 && v < 40);
+    expect(r, `radii from arcs: ${radii.slice(0, 8).join(",")}`).toBeTruthy();
+    expect(r!).toBeLessThan(18);
+    expect(r!).toBeGreaterThan(8);
   });
 
   it("D9: per-cell / per-col background fills appear in PDF content", async () => {

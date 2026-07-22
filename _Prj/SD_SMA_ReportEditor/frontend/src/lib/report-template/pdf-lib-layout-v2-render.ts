@@ -85,6 +85,20 @@ const BODY_TABLE_SHELL_PAD_PT = REPORT_TEMPLATE_TABLE_NODE_PADDING_PX.top * PX_T
 const TD_PAD_X_PT = 5 * PX_TO_PT;
 const TD_PAD_Y_PT = 3 * PX_TO_PT;
 
+/** Mini `.mini-tpl-td`：`1px solid rgb(212 212 216)` */
+const TABLE_GRID_BORDER = rgb(212 / 255, 212 / 255, 216 / 255);
+const TABLE_GRID_BORDER_PT = 1 * PX_TO_PT;
+/** Mini 控件外框：`1px solid rgb(24 24 27 / 0.15)` 叠白近似 */
+const CHROME_BORDER = rgb(
+  (0.15 * 24 + 0.85 * 255) / 255,
+  (0.15 * 24 + 0.85 * 255) / 255,
+  (0.15 * 27 + 0.85 * 255) / 255,
+);
+const CHROME_BORDER_PT = 1 * PX_TO_PT;
+/** Mini `.layout-zone-page-circle`：`min(100%, 2.75em)` + `1.5px` 描边 */
+const CIRCLE_PN_EM = 2.75;
+const CIRCLE_PN_BORDER_PT = 1.5 * PX_TO_PT;
+
 function cssBgToRgbOrUndef(css: string): RGB | undefined {
   const s = String(css || "").trim().toLowerCase();
   if (!s || s === "transparent" || s === "none") return undefined;
@@ -153,18 +167,33 @@ function parseCssColor(raw: string | undefined | null, fallback: RGB): RGB {
     .trim()
     .toLowerCase();
   if (!s || s === "transparent" || s === "none") return fallback;
-  const hex = s.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
+  const hex = s.match(/^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i);
   if (hex) {
     let h = hex[1];
     if (h.length === 3) h = h.split("").map((c) => c + c).join("");
+    if (h.length === 8) h = h.slice(0, 6); // 忽略 alpha，PDF 填色用实色
     const n = Number.parseInt(h, 16);
     return rgb(((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255);
   }
+  // rgb(r, g, b) / rgba(r, g, b, a)
   const m = s.match(/^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
   if (m) {
     return rgb(Number(m[1]) / 255, Number(m[2]) / 255, Number(m[3]) / 255);
   }
+  // 现代语法 rgb(r g b / a)
+  const m2 = s.match(/^rgba?\(\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)(?:\s*\/\s*[\d.%]+)?\s*\)$/);
+  if (m2) {
+    return rgb(Number(m2[1]) / 255, Number(m2[2]) / 255, Number(m2[3]) / 255);
+  }
   return fallback;
+}
+
+/** 圆形页码半径（pt）：与 Mini `min(100%, 2.75em)` 对齐，勿用整控件盒高 */
+function circlePageNumberRadiusPt(el: { w: number; h: number; fontSize?: unknown }): number {
+  const fs = Number(el.fontSize);
+  const em = Number.isFinite(fs) && fs > 0 ? fs : 12;
+  const diamPx = Math.min(Math.max(4, Number(el.w) || 4), Math.max(4, Number(el.h) || 4), em * CIRCLE_PN_EM);
+  return Math.max(3.5, (diamPx * PX_TO_PT) / 2 - 0.5 * PX_TO_PT);
 }
 
 function boxFromPagePx(
@@ -398,8 +427,8 @@ function drawZoneTable(
   const w = geo?.w ?? el.w;
   const h = geo?.h ?? el.h;
   const box = boxFromPagePx(origin.ox + x, origin.oy + y, w, h, pageH);
-  const border = rgb(0.25, 0.25, 0.25);
-  const thick = 0.5;
+  const border = TABLE_GRID_BORDER;
+  const thick = TABLE_GRID_BORDER_PT;
   // 分线绘制：相邻堆叠表跳过共用边，避免矢量双线（预览 HTML 边框折叠看不出来）
   page.drawLine({
     start: { x: box.x, y: box.yBottom },
@@ -505,8 +534,8 @@ function drawZoneTable(
     page.drawLine({
       start: { x: box.x, y: yLine },
       end: { x: box.x + box.w, y: yLine },
-      thickness: 0.35,
-      color: rgb(0.55, 0.55, 0.55),
+      thickness: TABLE_GRID_BORDER_PT,
+      color: TABLE_GRID_BORDER,
     });
   }
   for (let c = 1; c < cols; c++) {
@@ -514,10 +543,11 @@ function drawZoneTable(
     page.drawLine({
       start: { x: xLine, y: box.yBottom },
       end: { x: xLine, y: box.yBottom + box.h },
-      thickness: 0.35,
-      color: rgb(0.55, 0.55, 0.55),
+      thickness: TABLE_GRID_BORDER_PT,
+      color: TABLE_GRID_BORDER,
     });
   }
+  const zoneInk = parseCssColor(el.color, rgb(0.08, 0.08, 0.08));
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
       const text = cellTexts[r]?.[c] || "";
@@ -535,7 +565,7 @@ function drawZoneTable(
         rowH - TD_PAD_Y_PT * 2,
         fontSize,
         useWinAnsi,
-        undefined,
+        zoneInk,
         el.alignX ?? "center",
         el.alignY ?? "center",
       );
@@ -606,14 +636,19 @@ function drawZoneElements(
       continue;
     }
     if (el.type === "box") {
+      const boxFill =
+        el.bgColor && el.bgColor !== "transparent" && el.bgColor !== "none"
+          ? parseCssColor(el.bgColor, rgb(0.894, 0.894, 0.906)) // #e4e4e7 ≈ Mini 默认半透明灰叠白
+          : parseCssColor("#e4e4e766", rgb(0.94, 0.94, 0.945));
+      const boxInk = parseCssColor(el.color, rgb(0.094, 0.094, 0.106));
       page.drawRectangle({
         x: box.x,
         y: box.yBottom,
         width: box.w,
         height: box.h,
-        color: parseCssColor(el.bgColor, rgb(0.95, 0.95, 0.95)),
-        borderColor: rgb(0.55, 0.55, 0.55),
-        borderWidth: 0.4,
+        color: boxFill,
+        borderColor: el.showBorder !== false ? CHROME_BORDER : undefined,
+        borderWidth: el.showBorder !== false ? CHROME_BORDER_PT : undefined,
       });
       const label = String(el.text || "").trim();
       if (label) {
@@ -627,7 +662,7 @@ function drawZoneElements(
           box.h - 2,
           scaledFontSize(el.fontSize, ZONE_FONT_SCALE, 10, 7),
           useWinAnsi,
-          undefined,
+          boxInk,
           el.alignX ?? "start",
           el.alignY ?? "center",
         );
@@ -668,26 +703,31 @@ function drawZoneElements(
           width: box.w,
           height: box.h,
           color: hasFill ? fill : undefined,
-          borderColor: el.showBorder !== false ? rgb(0.55, 0.55, 0.55) : undefined,
-          borderWidth: el.showBorder !== false ? 0.4 : undefined,
+          borderColor: el.showBorder !== false ? CHROME_BORDER : undefined,
+          borderWidth: el.showBorder !== false ? CHROME_BORDER_PT : undefined,
         });
       } catch {
         /* ignore chrome draw errors */
       }
     }
+    const ink = parseCssColor(el.color, rgb(0.08, 0.08, 0.08));
     const size = scaledFontSize(el.fontSize, ZONE_FONT_SCALE, 10, 7);
     if (el.type === "pageNumber" && pageMode === "circle") {
-      const ink = parseCssColor(el.color, rgb(0.08, 0.08, 0.08));
       const cx = box.x + box.w / 2;
       const cy = box.yBottom + box.h / 2;
-      const r = Math.max(4, Math.min(box.w, box.h) / 2 - 0.75);
+      const r = circlePageNumberRadiusPt(el);
+      // Mini badge 用控件字号（非 ×0.85），圆内字随半径收敛
+      const circleFs = Math.min(
+        Math.max(6, Number(el.fontSize) || 12),
+        Math.max(6, r * 1.15),
+      );
       try {
         page.drawCircle({
           x: cx,
           y: cy,
           size: r,
           borderColor: ink,
-          borderWidth: 1.1,
+          borderWidth: CIRCLE_PN_BORDER_PT,
           color:
             el.bgColor && el.bgColor !== "transparent" && el.bgColor !== "none"
               ? parseCssColor(el.bgColor, rgb(1, 1, 1))
@@ -704,15 +744,14 @@ function drawZoneElements(
         cy + r - 1,
         r * 2 - 2,
         r * 2 - 2,
-        size,
+        circleFs,
         useWinAnsi,
-        undefined,
+        ink,
         "center",
         "center",
       );
       continue;
     }
-    // 不用自定义 color：部分环境下带 color 的 drawText 对 subset TTF 会静默失败
     drawWrappedInBox(
       page,
       font,
@@ -723,7 +762,7 @@ function drawZoneElements(
       box.h - 2,
       size,
       useWinAnsi,
-      undefined,
+      ink,
       el.alignX ?? "start",
       el.alignY ?? "center",
     );
@@ -764,14 +803,14 @@ function drawTableGrid(
   const rows = Math.max(1, opts.visualRows);
   const grid = ensureTableGrid(el);
   const cols = Math.min(el.tableCols || grid[0]?.length || 1, 16);
-  // 外框线（D6：内容网格在 4px shell 内）
+  // 外框线（D6：内容网格在 4px shell 内；色阶对齐 Mini td #d4d4d8）
   page.drawRectangle({
     x: box.x,
     y: box.yBottom,
     width: box.w,
     height: box.h,
-    borderColor: rgb(0.25, 0.25, 0.25),
-    borderWidth: 0.6,
+    borderColor: TABLE_GRID_BORDER,
+    borderWidth: TABLE_GRID_BORDER_PT,
   });
   const shell = BODY_TABLE_SHELL_PAD_PT;
   const innerX = box.x + shell;
@@ -851,8 +890,8 @@ function drawTableGrid(
     page.drawLine({
       start: { x: innerX, y: yLine },
       end: { x: innerX + innerW, y: yLine },
-      thickness: 0.4,
-      color: rgb(0.55, 0.55, 0.55),
+      thickness: TABLE_GRID_BORDER_PT,
+      color: TABLE_GRID_BORDER,
     });
   }
   for (let c = 1; c < cols; c++) {
@@ -860,10 +899,11 @@ function drawTableGrid(
     page.drawLine({
       start: { x, y: box.yBottom + shell },
       end: { x, y: box.yBottom + box.h - shell },
-      thickness: 0.4,
-      color: rgb(0.55, 0.55, 0.55),
+      thickness: TABLE_GRID_BORDER_PT,
+      color: TABLE_GRID_BORDER,
     });
   }
+  const bodyInk = parseCssColor(el.color, rgb(0.08, 0.08, 0.08));
   // 文本
   yCursor = innerTop;
   for (let r = 0; r < rows; r++) {
@@ -884,7 +924,7 @@ function drawTableGrid(
         rh - TD_PAD_Y_PT * 2,
         fontSize,
         useWinAnsi,
-        undefined,
+        bodyInk,
         el.alignX ?? "center",
         el.alignY ?? "center",
       );
@@ -935,8 +975,8 @@ function drawTemplateElement(
         width: box.w,
         height: box.h,
         color: parseCssColor(el.bgColor, rgb(1, 1, 1)),
-        borderColor: el.showBorder !== false ? rgb(0.55, 0.55, 0.55) : undefined,
-        borderWidth: el.showBorder !== false ? 0.4 : undefined,
+        borderColor: el.showBorder !== false ? CHROME_BORDER : undefined,
+        borderWidth: el.showBorder !== false ? CHROME_BORDER_PT : undefined,
       });
     }
     const size = scaledFontSize(el.fontSize, BODY_FONT_SCALE, 11, 7);

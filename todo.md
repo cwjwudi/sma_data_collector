@@ -7,6 +7,8 @@
 
 ## 2026-07-22
 
+- **ReportEditor 036 D18 色/线/圆 `12-53-45`**：表线 `#d4d4d8`、圆形页码 2.75em、zone/表字色、`parseCssColor` 现代 rgb；对照 `_compare_color_2026-07-22T12-53-45/`。看板 [docs/036-🚧](docs/036-🚧-ReportEditor矢量档与预览稳样式对照.md)。
+
 - **ReportEditor 036 P1 补测 `12-38-51`**：约定目录五档旁路；C7/C8 ✅；C9「批次报告」Δx≈12pt ❌ → D8 余量。对照图 `~/Desktop/report-editor-exports/_compare_p1_2026-07-22T12-38-51/`。看板 [docs/036-🚧](docs/036-🚧-ReportEditor矢量档与预览稳样式对照.md)。
 
 - **ReportEditor 036 P1 样式收敛（代码）**：layout-v2 D6/D8/D9/D10 + 模拟结批默认目录；0.3.124；单测 ✅。看板 [docs/036-🚧](docs/036-🚧-ReportEditor矢量档与预览稳样式对照.md)。
