@@ -5,6 +5,10 @@
 
 ---
 
+## 2026-07-22
+
+- **同机优先 pdf-lib 缺 fontkit（登记）**：现场 0.3.115 OPC 自动结批报 `embedFont` 需 `registerFontkit`；根因为未依赖/注册 `@pdf-lib/fontkit`（Noto 读成功反触发）；`ERR_FAILED` 为并发放大器。看板 [docs/033-⌛️](docs/033-⌛️-ReportEditor同机优先pdf-lib缺fontkit导致结批失败.md)。
+
 ## 2026-07-21
 
 - **ReportEditor 0.3.115**：默认 **同机优先**（pdf-lib 旁路 printToPDF）；高级设置可切 **版式优先**；审计记录 engine/exportMode；随包 Noto 位。看板 [docs/030-🚧](docs/030-🚧-ReportEditor结批占满CPU导致mappView白屏.md)。
