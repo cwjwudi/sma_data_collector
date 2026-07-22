@@ -1,17 +1,17 @@
 {
-  "version": "0.3.122",
-  "releasedAt": "2026-07-22T10:28:48.852Z",
-  "notes": "Report Editor AI 0.3.122\n\n- layout-v2 按预览 bodyCards 续页\n- 长表分页与预览分卡对齐",
+  "version": "0.3.123",
+  "releasedAt": "2026-07-22T10:39:35.414Z",
+  "notes": "Report Editor AI 0.3.123\n\n- 导出性能改为分段切换（与默认文件夹同类 UI）",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.122-x64.exe",
+      "url": "Report Editor AI-Setup-0.3.123-x64.exe",
       "sha256": "",
       "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.122-arm64.dmg",
-      "sha256": "6772c1bae0d7dfde74f4749d6d751829164362d5e46584f02d9154d95a06a5c8",
-      "size": 205760832
+      "url": "Report Editor AI-0.3.123-arm64.dmg",
+      "sha256": "",
+      "size": 0
     }
   }
 }

@@ -43,7 +43,7 @@ describe("export-perf-tier contracts (035)", () => {
     expect(rg).toMatch(/exportProfile\.engine|exportPerfProfile/);
     expect(rg).toMatch(/yieldMs:\s*exportProfile\.yieldMs/);
     expect(rg).toMatch(/layoutFidelity:\s*exportProfile\.layoutFidelity/);
-    expect(rg).toMatch(/max="4"/);
+    expect(rg).toMatch(/rg-tabs--perf/);
     const auto = read("lib/report-auto-export-trigger-service.ts");
     expect(auto).toMatch(/resolveExportPerfProfile/);
     expect(auto).toMatch(/engine:\s*exportProfile\.engine/);
@@ -51,11 +51,12 @@ describe("export-perf-tier contracts (035)", () => {
     expect(auto).toMatch(/beginExportCoexistSession/);
   });
 
-  it("T8: ReportGenerator stepped exportPerfTier control; dual engine tabs removed", () => {
+  it("T8: ReportGenerator segmented exportPerfTier tabs; dual engine tabs removed", () => {
     const rg = read("views/ReportGenerator.vue");
     expect(rg).toMatch(/exportPerfTier/);
-    expect(rg).toMatch(/rg-export-perf-tier|rg-perf-tier__range/);
-    expect(rg).toMatch(/type="range"/);
+    expect(rg).toMatch(/rg-tabs--perf/);
+    expect(rg).toMatch(/selectExportPerfTier/);
+    expect(rg).not.toMatch(/type="range"/);
     expect(rg).not.toMatch(/同机优先（草稿）/);
     expect(rg).not.toMatch(/prefs\.pdfExportEngine\s*=\s*['"]chromium['"]/);
   });

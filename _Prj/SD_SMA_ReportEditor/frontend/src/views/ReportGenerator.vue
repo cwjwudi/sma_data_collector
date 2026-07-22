@@ -187,29 +187,24 @@
           <div v-show="advancedAutoExpanded" class="rg-advanced-body">
             <div class="rg-row rg-row--in-panel rg-row--perf-tier">
               <span class="rg-lbl" id="rg-export-perf-lbl">导出性能（设备能力 · 手动与自动共用）</span>
-              <div class="rg-perf-tier" aria-labelledby="rg-export-perf-lbl">
-                <input
-                  id="rg-export-perf-tier"
-                  v-model.number="prefs.exportPerfTier"
-                  class="rg-perf-tier__range"
-                  type="range"
-                  min="0"
-                  max="4"
-                  step="1"
-                  list="rg-export-perf-ticks"
-                  :aria-valuetext="exportPerfProfile.label"
-                  @change="onExportPerfTierChange"
-                />
-                <datalist id="rg-export-perf-ticks">
-                  <option v-for="p in exportPerfProfiles" :key="p.tier" :value="p.tier" :label="p.label" />
-                </datalist>
-                <div class="rg-perf-tier__labels" aria-hidden="true">
-                  <span
-                    v-for="p in exportPerfProfiles"
-                    :key="`lbl-${p.tier}`"
-                    :class="{ 'rg-perf-tier__label--on': prefs.exportPerfTier === p.tier }"
-                  >{{ p.label }}{{ p.isDefault ? '（默认）' : '' }}</span>
-                </div>
+              <div
+                id="rg-export-perf-tier"
+                class="rg-tabs rg-tabs--perf"
+                role="tablist"
+                aria-labelledby="rg-export-perf-lbl"
+              >
+                <button
+                  v-for="p in exportPerfProfiles"
+                  :key="p.tier"
+                  type="button"
+                  role="tab"
+                  class="rg-tab"
+                  :class="{ 'rg-tab--on': prefs.exportPerfTier === p.tier }"
+                  :aria-selected="prefs.exportPerfTier === p.tier"
+                  @click="selectExportPerfTier(p.tier)"
+                >
+                  {{ p.label }}{{ p.isDefault ? '（默认）' : '' }}
+                </button>
               </div>
               <p class="rg-mini rg-mini--indent">
                 {{ exportPerfProfile.summary }}
@@ -1295,6 +1290,11 @@ function onMaxParallelChange(): void {
   void applyExportPerfProfileToMain();
 }
 
+function selectExportPerfTier(next: ExportPerfTier): void {
+  prefs.value.exportPerfTier = next;
+  onExportPerfTierChange();
+}
+
 function onExportPerfTierChange(): void {
   const tier = normalizeExportPerfTier(prefs.value.exportPerfTier) as ExportPerfTier;
   prefs.value.exportPerfTier = tier;
@@ -2195,25 +2195,19 @@ onUnmounted(() => {
   font-weight: normal;
   color: #a1a1aa;
 }
-.rg-perf-tier {
-  width: 100%;
-  max-width: 520px;
-}
-.rg-perf-tier__range {
-  width: 100%;
-  margin: 4px 0 8px;
-  accent-color: #2563eb;
-}
-.rg-perf-tier__labels {
+.rg-tabs--perf {
   display: flex;
-  justify-content: space-between;
-  gap: 4px;
-  font-size: 11px;
-  color: #71717a;
+  flex-wrap: wrap;
+  width: 100%;
+  max-width: 640px;
+  margin-top: 6px;
+  margin-bottom: 8px;
 }
-.rg-perf-tier__label--on {
-  color: #1d4ed8;
-  font-weight: 600;
+.rg-tabs--perf .rg-tab {
+  flex: 1 1 auto;
+  padding: 8px 10px;
+  font-size: 12px;
+  white-space: nowrap;
 }
 .rg-advanced-body {
   margin-top: 8px;
