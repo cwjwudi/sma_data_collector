@@ -7,6 +7,8 @@
 
 ## 2026-07-22
 
+- **ReportEditor 0.3.133 Windows Setup**：`Report Editor AI-Setup-0.3.133-x64.exe`（~168MB）；SHA256 已写入 `packaging/updates/latest.json`（含 M10 + 仅内容叠字修复）。
+
 - **ReportEditor 0.3.133（034 M10）**：主进程冷路径去 sync——端口探测 `execFile` async；备份读/日志写/`delete-export-file`/五档收尾用 `fs.promises`；契约 M10 ✅。看板 [docs/034-🚧](docs/034-🚧-ReportEditor全站架构复评-2026-07-22.md)。
 
 - **ReportEditor 仅内容叠字修复**：档 0 封面大字号压行 → 字号 cap≤14 + 随字号行高 + `\n` 硬换行；单测防回归。看板 [docs/035-🚧](docs/035-🚧-ReportEditor导出性能档位与同机降载.md)。
