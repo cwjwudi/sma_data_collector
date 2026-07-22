@@ -7,6 +7,8 @@
 
 ## 2026-07-22
 
+- **ReportEditor 0.3.128（036 D6 表观感）**：装包复验表「完全不一样」→ 去外套框 + 表字号 `max(10px,0.85em)`（对齐 Mini）。看板 [docs/036-🚧](docs/036-🚧-ReportEditor矢量档与预览稳样式对照.md)。
+
 - **ReportEditor 0.3.127 hotfix**：安装测 Noto subset 缺字；矢量/Mini 改回朱雀仿宋；C9 仍≈0.8pt（`13-19-57`）。看板 [docs/036-🚧](docs/036-🚧-ReportEditor矢量档与预览稳样式对照.md)。
 
 - **ReportEditor 036 字体同源 + D8/P2（0.3.126）**：Noto TTF；`scaledFontSizePt`（修 px当 pt → C9 Δx≈0.8pt）；D11–D17 代码；批导 `13-11-28`。看板 [docs/036-🚧](docs/036-🚧-ReportEditor矢量档与预览稳样式对照.md)。

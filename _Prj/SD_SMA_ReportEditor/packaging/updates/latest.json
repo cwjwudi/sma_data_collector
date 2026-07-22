@@ -1,17 +1,17 @@
 {
-  "version": "0.3.127",
-  "releasedAt": "2026-07-22T13:20:59.864Z",
-  "notes": "hotfix：朱雀仿宋（Noto subset 缺字）；保留字号 pt",
+  "version": "0.3.128",
+  "releasedAt": "2026-07-22T13:43:33.882Z",
+  "notes": "Report Editor AI 0.3.128\n\n- 矢量正文表：去掉外壳外套框；表字号对齐 Mini max(10px, 0.85em)",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.127-x64.exe",
+      "url": "Report Editor AI-Setup-0.3.128-x64.exe",
       "sha256": "",
       "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.127-arm64.dmg",
-      "sha256": "5dde04eecadf5a4b287e6125750834138cb33738410e1285a527d7fba7dc4969",
-      "size": 212110234
+      "url": "Report Editor AI-0.3.128-arm64.dmg",
+      "sha256": "c150b68912cf11a3d7d21ec8b5ced4af1207efd3aa20c2156134dd5fbbba274c",
+      "size": 212109360
     }
   }
 }

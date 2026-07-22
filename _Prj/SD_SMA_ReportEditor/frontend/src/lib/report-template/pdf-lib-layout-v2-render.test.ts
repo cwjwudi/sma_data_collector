@@ -255,6 +255,50 @@ describe("pdf-lib-layout-v2-render", () => {
     expect(text).toContain("批次报告");
   });
 
+  it("body table cell font uses max(10px, 0.85×控件字号) like Mini (not ×0.8 shell)", async () => {
+    const tb = hydrateTemplateElement({
+      id: "fs-tbl",
+      type: "table",
+      alignX: "start",
+      alignY: "center",
+      fontSize: 12,
+      tableRows: 1,
+      tableCols: 1,
+      tableRowHeightPx: 28,
+      x: 40,
+      y: 40,
+      w: 200,
+      h: 36,
+      tableCells: [
+        [
+          {
+            text: "Aa",
+            bindingKind: "none",
+            opcuaNodeId: "",
+            sqlText: "",
+            sqlParams: [],
+            bgColor: "transparent",
+          },
+        ],
+      ],
+    });
+    const tmpl = makeTemplateWithBodyTable(tb);
+    const doc = await PDFDocument.create();
+    const font = await doc.embedFont(StandardFonts.Helvetica);
+    await appendPdfLibLayoutV2Pages(doc, { tmpl, previewValues: {}, font, useWinAnsi: true });
+    const bytes = await doc.save();
+    const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+    const parsed = await pdfjs.getDocument({ data: bytes }).promise;
+    const page = await parsed.getPage(1);
+    const items = (await page.getTextContent()).items as { str: string; transform: number[] }[];
+    const hit = items.find((it) => it.str.includes("Aa"));
+    expect(hit).toBeTruthy();
+    // Mini: max(10, 12×0.85)=10.2px → 10.2×72/96=7.65pt；旧实现误用 ×0.8→7.2pt
+    const fontSizePt = Math.abs(hit!.transform[0]);
+    expect(fontSizePt).toBeGreaterThan(7.4);
+    expect(fontSizePt).toBeLessThan(7.9);
+  });
+
   it("honors table alignX start/center/end for cell text x", async () => {
     const mk = (alignX: "start" | "center" | "end", id: string) =>
       hydrateTemplateElement({

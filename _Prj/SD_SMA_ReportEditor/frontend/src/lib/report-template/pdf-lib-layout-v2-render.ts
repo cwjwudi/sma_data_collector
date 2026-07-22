@@ -88,7 +88,7 @@ const MINI_BAND_BG = rgb(
   (0.52 * 246 + 0.48 * 255) / 255,
 );
 
-/** 与 Mini 正文表外壳 padding 4px / td 3×5（D6/D8） */
+/** 与 Mini 正文表外壳透明 padding 4px（无外套框）/ td 3×5（D6/D8） */
 const BODY_TABLE_SHELL_PAD_PT = REPORT_TEMPLATE_TABLE_NODE_PADDING_PX.top * PX_TO_PT;
 const TD_PAD_X_PT = 5 * PX_TO_PT;
 const TD_PAD_Y_PT = 3 * PX_TO_PT;
@@ -1052,20 +1052,21 @@ function drawTableGrid(
   const rows = Math.max(1, opts.visualRows);
   const grid = ensureTableGrid(el);
   const cols = Math.min(el.tableCols || grid[0]?.length || 1, 16);
-  // 外框线（D6：内容网格在 4px shell 内；色阶对齐 Mini td #d4d4d8）
-  page.drawRectangle({
-    x: box.x,
-    y: box.yBottom,
-    width: box.w,
-    height: box.h,
-    borderColor: TABLE_GRID_BORDER,
-    borderWidth: TABLE_GRID_BORDER_PT,
-  });
+  // D6：与 Mini `.el-node--table` 一致 — 外壳 4px 透明 padding，表线只画内网格（勿在外壳再套一圈框）
   const shell = BODY_TABLE_SHELL_PAD_PT;
   const innerX = box.x + shell;
   const innerW = Math.max(4, box.w - shell * 2);
   const innerTop = box.yBottom + box.h - shell;
   const innerH = Math.max(4, box.h - shell * 2);
+  const innerBottom = box.yBottom + shell;
+  page.drawRectangle({
+    x: innerX,
+    y: innerBottom,
+    width: innerW,
+    height: innerH,
+    borderColor: TABLE_GRID_BORDER,
+    borderWidth: TABLE_GRID_BORDER_PT,
+  });
   const widths = colWidthsPt(el, innerW, cols);
   let accX = innerX;
   const colXs: number[] = [innerX];
@@ -1087,7 +1088,8 @@ function drawTableGrid(
     const each = Math.max(20, (el.w - 8) / cols);
     colWidthsPx = Array.from({ length: cols }, () => each);
   }
-  const fontSizePx = Math.max(10, scaledFontSizePx(el.fontSize, BODY_FONT_SCALE, 12) * 0.85);
+  // Mini 正文表节点用控件字号（不 ×0.8），td 为 max(10px, 0.85em)
+  const fontSizePx = Math.max(10, scaledFontSizePx(el.fontSize, 1, 12) * 0.85);
   const heightsPx = computeContentAwareTableRowHeightsPx({
     rowCount: rows,
     colWidthsPx,
@@ -1099,12 +1101,7 @@ function drawTableGrid(
     paddingY: 6,
   });
   const rowHs = scaleRowHeightsToBoxPt(heightsPx, innerH, rows);
-  // 与 Mini 正文表：控件字号 ×0.8（CSS px→pt），并受最矮行约束
-  const minRowH = Math.min(...rowHs);
-  const fontSize = Math.max(
-    6 * PX_TO_PT,
-    Math.min(11 * PX_TO_PT, scaledFontSizePt(el.fontSize, BODY_FONT_SCALE, 12), minRowH * 0.55),
-  );
+  const fontSize = fontSizePx * PX_TO_PT;
   // D9：先填格底
   let yCursor = innerTop;
   for (let r = 0; r < rows; r++) {
