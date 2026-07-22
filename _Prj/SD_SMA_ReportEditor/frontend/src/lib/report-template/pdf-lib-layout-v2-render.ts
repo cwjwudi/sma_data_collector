@@ -202,12 +202,31 @@ function parseCssColor(raw: string | undefined | null, fallback: RGB): RGB {
   return fallback;
 }
 
-/** 圆形页码半径（pt）：与 Mini `min(100%, 2.75em)` 对齐，勿用整控件盒高 */
+/** 圆形页码半径（pt）：与 Mini zone 壳字号×0.85 后的 `min(100%, 2.75em)` 对齐 */
 function circlePageNumberRadiusPt(el: { w: number; h: number; fontSize?: unknown }): number {
-  const fs = Number(el.fontSize);
-  const em = Number.isFinite(fs) && fs > 0 ? fs : 12;
+  const em = scaledFontSizePx(el.fontSize, ZONE_FONT_SCALE, 12);
   const diamPx = Math.min(Math.max(4, Number(el.w) || 4), Math.max(4, Number(el.h) || 4), em * CIRCLE_PN_EM);
   return Math.max(3.5, (diamPx * PX_TO_PT) / 2 - 0.5 * PX_TO_PT);
+}
+
+/** 圆内单字页码：按圆心跳过 drawWrappedInBox（其 inkH×0.82 会把数字压低） */
+function drawCirclePageNumberGlyph(
+  page: PDFPage,
+  font: PDFFont,
+  text: string,
+  cx: number,
+  cy: number,
+  fontSizePt: number,
+  useWinAnsi: boolean,
+  color: RGB,
+): void {
+  const raw = useWinAnsi ? sanitizeForWinAnsi(text) : text;
+  if (!raw) return;
+  const size = Math.max(5, fontSizePt);
+  const tw = measureTextWidthPt(font, raw, size);
+  // 基线：数字视觉中心约在 baseline + 0.35·size（对齐 Chromium flex 居中观感）
+  const baseline = cy - size * 0.35;
+  safeDrawText(page, font, raw, cx - tw / 2, baseline, size, useWinAnsi, color);
 }
 
 function boxFromPagePx(
@@ -964,10 +983,10 @@ function drawZoneElements(
       const cx = box.x + box.w / 2;
       const cy = box.yBottom + box.h / 2;
       const r = circlePageNumberRadiusPt(el);
-      // Mini badge 用控件字号（非 ×0.85），圆内字随半径收敛；字号 CSS px→pt
+      // Mini：zone 壳 ×0.85 后 inherit 进圆；随半径略收敛
       const circleFs = Math.min(
-        Math.max(6, Number(el.fontSize) || 12) * PX_TO_PT,
-        Math.max(6 * PX_TO_PT, r * 1.15),
+        scaledFontSizePt(el.fontSize, ZONE_FONT_SCALE, 12),
+        Math.max(6 * PX_TO_PT, r * 1.05),
       );
       try {
         page.drawCircle({
@@ -984,20 +1003,7 @@ function drawZoneElements(
       } catch {
         /* ignore circle draw errors */
       }
-      drawWrappedInBox(
-        page,
-        elFont,
-        text,
-        cx - r + 1,
-        cy + r - 1,
-        r * 2 - 2,
-        r * 2 - 2,
-        circleFs,
-        useWinAnsi,
-        ink,
-        "center",
-        "center",
-      );
+      drawCirclePageNumberGlyph(page, elFont, text, cx, cy, circleFs, useWinAnsi, ink);
       continue;
     }
     // zone 文本无 padding（对齐 Mini）；勿再留 2pt 内缩以免右对齐偏左

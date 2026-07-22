@@ -662,7 +662,7 @@ describe("pdf-lib-layout-v2-render", () => {
     );
     await appendPdfLibLayoutV2Pages(doc, { tmpl, previewValues: {}, font, useWinAnsi: false });
     const plain = await inflatedPdfPlain(await doc.save({ useObjectStreams: false }));
-    // #52525b → ≈0.322 RG；pdf-lib 圆：`(cx-r) cy m` → 首段 c 终点 x=cx ⇒ r≈12（2.75em），旧实现≈24.75
+    // #52525b → ≈0.322 RG；圆半径按 zone×0.85 的 2.75em ≈10.1pt（旧未×0.85≈12；整盒高≈24）
     expect(plain).toMatch(/0\.32\d*\s+0\.32\d*\s+0\.35\d*\s+RG/);
     const arcs = [
       ...plain.matchAll(
@@ -672,7 +672,7 @@ describe("pdf-lib-layout-v2-render", () => {
     const radii = arcs.map((m) => Math.abs(Number(m[7]) - Number(m[1])));
     const r = radii.find((v) => v > 5 && v < 40);
     expect(r, `radii from arcs: ${radii.slice(0, 8).join(",")}`).toBeTruthy();
-    expect(r!).toBeLessThan(18);
+    expect(r!).toBeLessThan(12);
     expect(r!).toBeGreaterThan(8);
   });
 

@@ -1,17 +1,17 @@
 {
-  "version": "0.3.129",
-  "releasedAt": "2026-07-22T13:55:23.863Z",
-  "notes": "Report Editor AI 0.3.129\n\n- 矢量眉表堆叠：先填格再描线；共用边改由下方表绘制，修复横线断档",
+  "version": "0.3.130",
+  "releasedAt": "2026-07-22T14:03:23.865Z",
+  "notes": "Report Editor AI 0.3.130\n\n- 矢量圆形页码：直径按 zone×0.85；数字几何居中（不再偏下）",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.129-x64.exe",
+      "url": "Report Editor AI-Setup-0.3.130-x64.exe",
       "sha256": "",
       "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.129-arm64.dmg",
-      "sha256": "313f84fca952478e188adffbf1d2d1a333f4d4a100525d8045cd4913a8936a55",
-      "size": 212107556
+      "url": "Report Editor AI-0.3.130-arm64.dmg",
+      "sha256": "e9cd395ef3627237c4a04f13d34c534f7fc089227042a31651a55c07e31d9530",
+      "size": 212101017
     }
   }
 }
