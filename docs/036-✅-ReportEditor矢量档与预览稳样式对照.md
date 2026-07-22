@@ -220,6 +220,9 @@
 - **测试方案**：单测 `D20: body table outer grid strokes after near-white cell fills`（白 `rg` 之后仍有网格 `RG` 描边）；五档目视档 1 外框完整。  
 - **验收**：单测 ✅。
 
+**装包复验（2026-07-22 · 安装版 0.3.135 · `ReportEditorAI`）**：重装后数据目录为空，已重建 MariaDB/OPC 与竖/横冒烟；五档  
+`Desktop\report-editor-five-tier-exports\smoke-*-2026-07-22T14-27-28` → **10/10 ok**。档 1–4 **pages=4**；档 1 content-stream **白填后网格描边** `orderOk=true`（D20）。
+
 ### ✅ D21 · print-to-pdf 表框线粗细不均（**0.3.135**）
 
 - **现象**（档 2–4 Chromium）：表格横/竖框线有的细有的粗，观感不齐。  
@@ -227,6 +230,8 @@
 - **处理**：`@media print` 改为 `collapse` + 四周统一 `0.75pt` 实线；屏显预览保持 separate。  
 - **测试方案**：契约测 `U13`；五档目视档 2–4。  
 - **验收**：契约测 ✅。
+
+**装包复验**：同上戳记 10/10 ok、pages=4；print 框线请打开档 2–4 目视匀齐（CSS `0.75pt`+collapse）。
 
 ## P2 · 能力缺口（代码已落 · 装包手测 ⌛️）
 

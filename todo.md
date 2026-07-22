@@ -7,6 +7,8 @@
 
 ## 2026-07-22
 
+- **ReportEditor 0.3.135 安装版五档复验**：路径 `ReportEditorAI`；重建冒烟后 `smoke-*-2026-07-22T14-27-28` 10/10 ok，档1–4 pages=4，矢量外框描边序正确。看板 [docs/036-✅](docs/036-✅-ReportEditor矢量档与预览稳样式对照.md)。
+
 - **ReportEditor 0.3.135 Windows Setup**：`Report Editor AI-Setup-0.3.135-x64.exe`（~168MB）；D20/D21 表框修复；SHA256 已写入 `latest.json`。看板 [docs/036-✅](docs/036-✅-ReportEditor矢量档与预览稳样式对照.md)。
 
 - **ReportEditor 0.3.135（036 D20/D21）**：矢量正文表先填后描恢复外框；print-to-pdf 表框改 `0.75pt`+collapse 匀线。看板 [docs/036-✅](docs/036-✅-ReportEditor矢量档与预览稳样式对照.md)。
