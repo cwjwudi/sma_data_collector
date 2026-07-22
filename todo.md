@@ -35,7 +35,9 @@
 
 - **ReportEditor 036 矢量档↔预览稳样式对照**：冒烟批导 `11-56-48` 三页完整对比；列出 D1–D17（P0：底色/白卡片、日期、页码 N/M、截断；P1：表度量/×0.8 字号）。看板 [docs/036-✅](docs/036-✅-ReportEditor矢量档与预览稳样式对照.md)。
 
-- **ReportEditor 035 导出性能 4 档（目标 0.3.120）**：拍板 4 档/默认均衡；看板含阶段 A–F、测试 T1–T8/H1–H6、开工日序；阶段 A 模型+单测已开工。看板 [docs/035-🚧](docs/035-🚧-ReportEditor导出性能档位与同机降载.md) · [Plan 0.3.120](_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.120.md)。
+- **ReportEditor 035 导出性能五档（至 0.3.132）**：5 档分段（默认预览稳）；取代 0.3.120 四档草案；本机 H1–H5 ✅。看板 [docs/035-🚧](docs/035-🚧-ReportEditor导出性能档位与同机降载.md)。
+
+- **docs 叙事对齐**：034/003/030 将「导出性能 4 档 / 默认均衡」改为 **五档已落地**；下一刀 034 M10。
 
 - **ReportEditor 0.3.119（034 行为测 + M11）**：补全 gate/cancel-ui/KeepAlive 行为测；默认 PDF=版式优先（chromium）；旧 pdf-lib 一次性迁移；同机优先标草稿非交付。手测见 [docs/034-🚧](docs/034-🚧-ReportEditor全站架构复评-2026-07-22.md)「手测清单」。
 
