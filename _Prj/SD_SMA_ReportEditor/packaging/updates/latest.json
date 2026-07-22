@@ -1,12 +1,12 @@
 {
   "version": "0.3.133",
-  "releasedAt": "2026-07-22T15:20:00.000Z",
+  "releasedAt": "2026-07-22T15:28:25.159Z",
   "notes": "Report Editor AI 0.3.133\n\n- 034 M10：主进程冷路径去 sync（端口探测 / 备份读 / 日志写 async）\n- 035：仅内容档（draft-v1）大字号叠字修复（字号 cap + 随字号行高）",
   "platforms": {
     "win32-x64": {
       "url": "Report Editor AI-Setup-0.3.133-x64.exe",
-      "sha256": "",
-      "size": 0
+      "sha256": "0f6c7281fd66cc5ca31552ac75414cc8fac116400633d2c559b1de3a70481162",
+      "size": 175787397
     },
     "darwin-arm64": {
       "url": "Report Editor AI-0.3.133-arm64.dmg",
