@@ -7,6 +7,8 @@
 
 ## 2026-07-22
 
+- **ReportEditor 036 字体同源 + D8/P2（0.3.126）**：Noto TTF；`scaledFontSizePt`（修 px当 pt → C9 Δx≈0.8pt）；D11–D17 代码；批导 `13-11-28`。看板 [docs/036-🚧](docs/036-🚧-ReportEditor矢量档与预览稳样式对照.md)。
+
 - **ReportEditor 036 D18 色/线/圆 `12-53-45`**：表线 `#d4d4d8`、圆形页码 2.75em、zone/表字色、`parseCssColor` 现代 rgb；对照 `_compare_color_2026-07-22T12-53-45/`。看板 [docs/036-🚧](docs/036-🚧-ReportEditor矢量档与预览稳样式对照.md)。
 
 - **ReportEditor 036 P1 补测 `12-38-51`**：约定目录五档旁路；C7/C8 ✅；C9「批次报告」Δx≈12pt ❌ → D8 余量。对照图 `~/Desktop/report-editor-exports/_compare_p1_2026-07-22T12-38-51/`。看板 [docs/036-🚧](docs/036-🚧-ReportEditor矢量档与预览稳样式对照.md)。

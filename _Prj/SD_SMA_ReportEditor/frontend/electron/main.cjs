@@ -863,10 +863,10 @@ ipcMain.handle('path-join', (_event, parts) => {
   return path.join(...parts.map(String))
 })
 
-/** 030/033：pdf-lib 嵌入随包开源 CJK（Noto / 朱雀仿宋→FangSong） */
+/** 030/033：pdf-lib 嵌入随包开源 CJK（Noto TTF / 朱雀仿宋→FangSong）；Noto 优先 TTF（OTF subset 乱码） */
 const BUNDLED_FONT_FILES = {
-  'noto-sans-sc': 'NotoSansSC-Regular.otf',
-  fangsong: 'ZhuqueFangsong-Regular.ttf',
+  'noto-sans-sc': ['NotoSansSC-Regular.ttf', 'NotoSansSC-Regular.otf'],
+  fangsong: ['ZhuqueFangsong-Regular.ttf'],
 }
 
 function resolveBundledFontKey(opts) {
@@ -889,29 +889,32 @@ function resolveBundledFontKey(opts) {
 
 ipcMain.handle('bundled-cjk-font', async (_event, opts) => {
   const key = resolveBundledFontKey(opts || {})
-  const fileName = BUNDLED_FONT_FILES[key]
-  const candidates = [
-    path.join(process.resourcesPath || '', 'fonts', fileName),
-    path.join(__dirname, '..', 'resources', 'fonts', fileName),
+  const fileNames = BUNDLED_FONT_FILES[key] || BUNDLED_FONT_FILES['noto-sans-sc']
+  const roots = [
+    path.join(process.resourcesPath || '', 'fonts'),
+    path.join(__dirname, '..', 'resources', 'fonts'),
   ]
-  for (const fp of candidates) {
-    try {
-      if (!fp || !fs.existsSync(fp)) continue
-      const buf = await fs.promises.readFile(fp)
-      if (buf.length < 1000) continue
-      return {
-        ok: true,
-        key,
-        family: key === 'fangsong' ? 'FangSong' : 'Noto Sans SC',
-        base64: buf.toString('base64'),
-        path: fp,
-        bytes: buf.length,
+  for (const fileName of fileNames) {
+    for (const root of roots) {
+      const fp = path.join(root, fileName)
+      try {
+        if (!fp || !fs.existsSync(fp)) continue
+        const buf = await fs.promises.readFile(fp)
+        if (buf.length < 1000) continue
+        return {
+          ok: true,
+          key,
+          family: key === 'fangsong' ? 'FangSong' : 'Noto Sans SC',
+          base64: buf.toString('base64'),
+          path: fp,
+          bytes: buf.length,
+        }
+      } catch {
+        /* try next */
       }
-    } catch {
-      /* try next */
     }
   }
-  return { ok: false, key, error: `bundled font not found: ${fileName}` }
+  return { ok: false, key, error: `bundled font not found: ${fileNames.join(' | ')}` }
 })
 
 ipcMain.handle('scan-export-pdfs', async (_event, opts) => {

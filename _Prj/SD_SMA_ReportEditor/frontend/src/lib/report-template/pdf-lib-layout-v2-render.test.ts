@@ -112,8 +112,10 @@ describe("pdf-lib-layout-v2-render", () => {
     const tmpl = makeTemplateWithBodyTable(textEl);
     const doc = await PDFDocument.create();
     doc.registerFontkit(fontkit);
-    // Noto OTF subset 会乱码；pdf-lib 路径应嵌入 TTF（朱雀仿宋）
-    const fontPath = path.join(process.cwd(), "resources/fonts/ZhuqueFangsong-Regular.ttf");
+    // Noto OTF subset 会乱码；优先嵌入 Noto TTF（其次朱雀仿宋）
+    const noto = path.join(process.cwd(), "resources/fonts/NotoSansSC-Regular.ttf");
+    const fang = path.join(process.cwd(), "resources/fonts/ZhuqueFangsong-Regular.ttf");
+    const fontPath = fs.existsSync(noto) ? noto : fang;
     const fontBytes = fs.readFileSync(fontPath);
     const font = await doc.embedFont(fontBytes, { subset: true });
     const pageCount = await appendPdfLibLayoutV2Pages(doc, {
@@ -124,7 +126,7 @@ describe("pdf-lib-layout-v2-render", () => {
     });
     expect(pageCount).toBeGreaterThanOrEqual(1);
     const bytes = await doc.save();
-    expect(bytes.byteLength).toBeGreaterThan(5_000);
+    expect(bytes.byteLength).toBeGreaterThan(2_500);
   });
 
   it("embeds cover data-url image", async () => {
@@ -539,6 +541,126 @@ describe("pdf-lib-layout-v2-render", () => {
     expect(r, `radii from arcs: ${radii.slice(0, 8).join(",")}`).toBeTruthy();
     expect(r!).toBeLessThan(18);
     expect(r!).toBeGreaterThan(8);
+  });
+
+  it("D14/D13: body box and chart placeholder are drawn", async () => {
+    const box = hydrateTemplateElement({
+      id: "box1",
+      type: "box",
+      text: "BoxLabel",
+      x: 20,
+      y: 20,
+      w: 120,
+      h: 40,
+      bgColor: "transparent",
+    });
+    const chart = hydrateTemplateElement({
+      id: "ch1",
+      type: "chart",
+      chartKind: "bar",
+      text: "ChartStub",
+      x: 20,
+      y: 80,
+      w: 160,
+      h: 60,
+    });
+    const tmpl = makeTemplateWithBodyTable(box);
+    ensureBodyPages(tmpl)[0].push(chart);
+    const doc = await PDFDocument.create();
+    const font = await doc.embedFont(StandardFonts.Helvetica);
+    await appendPdfLibLayoutV2Pages(doc, { tmpl, previewValues: {}, font, useWinAnsi: true });
+    const plain = await inflatedPdfPlain(await doc.save({ useObjectStreams: false }));
+    // Helvetica 文本以 PDF hex 串写入
+    expect(plain).toMatch(/<426F784C6162656C>/); // BoxLabel
+    expect(plain).toMatch(/<436861727453747562>/); // ChartStub
+  });
+
+  it("D11: image caption text is embedded", async () => {
+    const dataUrl =
+      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+    const img = hydrateTemplateElement({
+      id: "img1",
+      type: "image",
+      text: "CapABC",
+      imageCaptionPosition: "bottom",
+      imageSrc: dataUrl,
+      x: 10,
+      y: 10,
+      w: 200,
+      h: 120,
+    });
+    const tmpl = makeTemplateWithBodyTable(img);
+    const doc = await PDFDocument.create();
+    const font = await doc.embedFont(StandardFonts.Helvetica);
+    await appendPdfLibLayoutV2Pages(doc, { tmpl, previewValues: {}, font, useWinAnsi: true });
+    const plain = await inflatedPdfPlain(await doc.save({ useObjectStreams: false }));
+    expect(plain).toMatch(/<436170414243>/); // CapABC
+    expect(plain).toMatch(/\/Image-/);
+  });
+
+  it("D12: signature watermark text is embedded", async () => {
+    const sig = hydrateTemplateElement({
+      id: "sig1",
+      type: "signature",
+      signatureDisplayMode: "watermark",
+      signerLabel: "SignOK",
+      x: 10,
+      y: 10,
+      w: 180,
+      h: 60,
+    });
+    const tmpl = makeTemplateWithBodyTable(sig);
+    const doc = await PDFDocument.create();
+    const font = await doc.embedFont(StandardFonts.Helvetica);
+    await appendPdfLibLayoutV2Pages(doc, { tmpl, previewValues: {}, font, useWinAnsi: true });
+    const plain = await inflatedPdfPlain(await doc.save({ useObjectStreams: false }));
+    expect(plain).toMatch(/<5369676E4F4B>/); // SignOK
+    expect(plain).toMatch(/0\.72\s+0\.72\s+0\.75\s+rg/); // watermark tint
+  });
+
+  it("D17: zone box with transparent bg does not force gray fill", async () => {
+    const { makeLayoutZoneElement } = await import("@/lib/report-template/layout-zone-element");
+    const b = blankZonesSnapshot();
+    const tmpl = createTemplate({
+      name: "zone-box",
+      paperKind: "A4",
+      orientation: "portrait",
+      layoutPresetId: null,
+      layoutSnapshot: b.layoutSnapshot,
+      headerText: "",
+      footerText: "",
+      headerElements: [],
+      footerElements: [],
+      coverLayoutPresetId: null,
+      coverLayoutSnapshot: b.layoutSnapshot,
+      coverHeaderText: "",
+      coverFooterText: "",
+      coverHeaderElements: [],
+      coverFooterElements: [],
+      coverBodyZoneElements: [],
+      backLayoutPresetId: null,
+      backLayoutSnapshot: b.layoutSnapshot,
+      backHeaderText: "",
+      backFooterText: "",
+      backHeaderElements: [],
+      backFooterElements: [],
+      backBodyZoneElements: [],
+    });
+    const zb = makeLayoutZoneElement("box");
+    zb.bgColor = "transparent";
+    zb.showBorder = false;
+    zb.text = "";
+    zb.x = 10;
+    zb.y = 10;
+    zb.w = 80;
+    zb.h = 40;
+    tmpl.headerElements = [zb];
+    const doc = await PDFDocument.create();
+    const font = await doc.embedFont(StandardFonts.Helvetica);
+    await appendPdfLibLayoutV2Pages(doc, { tmpl, previewValues: {}, font, useWinAnsi: true });
+    const plain = await inflatedPdfPlain(await doc.save({ useObjectStreams: false }));
+    // 无 label、无边、透明底 → 不应出现默认灰填色块（0.94 rg 一带）
+    expect(plain).not.toMatch(/0\.94\d*\s+0\.94\d*\s+0\.94\d*\s+rg/);
   });
 
   it("D9: per-cell / per-col background fills appear in PDF content", async () => {

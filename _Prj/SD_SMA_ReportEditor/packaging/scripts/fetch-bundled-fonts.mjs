@@ -1,9 +1,9 @@
 /**
  * Download bundled OFL CJK fonts into frontend/resources/fonts/.
- * - Noto Sans SC Regular (OTF)
- * - Zhuque Fangsong Regular (TTF，映射 UI 族名 FangSong；非微软仿宋)
+ * - Noto Sans SC Regular（TTF：pdf-lib fontkit subset 可用；OTF/CFF 会乱码）
+ * - Zhuque Fangsong Regular（TTF，映射 UI 族名 FangSong；非微软仿宋）
  *
- * Override URLs: NOTO_SC_URL / ZHUQUE_FANGSONG_URL
+ * Override URLs: NOTO_SC_TTF_URL / ZHUQUE_FANGSONG_URL
  * Skip existing files.
  */
 import { createWriteStream } from "node:fs";
@@ -20,10 +20,11 @@ const execFileAsync = promisify(execFile);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const outDir = path.resolve(__dirname, "../../frontend/resources/fonts");
 
-const NOTO_URL =
-  process.env.NOTO_SC_URL ||
-  "https://github.com/notofonts/noto-cjk/raw/main/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Regular.otf";
-const NOTO_FILE = "NotoSansSC-Regular.otf";
+/** Variable TTF（TrueType）；pdf-lib subset 正常。静态实例化可选但非必需。 */
+const NOTO_TTF_URL =
+  process.env.NOTO_SC_TTF_URL ||
+  "https://github.com/notofonts/noto-cjk/raw/main/Sans/Variable/TTF/Subset/NotoSansSC-VF.ttf";
+const NOTO_TTF_FILE = "NotoSansSC-Regular.ttf";
 
 const ZHUQUE_URL =
   process.env.ZHUQUE_FANGSONG_URL ||
@@ -49,17 +50,29 @@ async function downloadTo(url, dest) {
   console.log(`[fetch-fonts] wrote ${dest}`);
 }
 
-async function fetchNoto() {
-  const outFile = path.join(outDir, NOTO_FILE);
+async function fetchNotoTtf() {
+  const outFile = path.join(outDir, NOTO_TTF_FILE);
   if (await exists(outFile)) {
     console.log(`[fetch-fonts] already exists: ${outFile}`);
     return;
   }
-  await downloadTo(NOTO_URL, outFile);
+  await downloadTo(NOTO_TTF_URL, outFile);
+  const buf = await readFile(outFile);
+  if (buf.length < 1000) throw new Error("Noto TTF too small");
+  // TrueType 魔数 00010000 或 'true'；拒绝 OTTO/CFF
+  const mag = buf.subarray(0, 4).toString("binary");
+  const isTtf =
+    (buf[0] === 0x00 && buf[1] === 0x01 && buf[2] === 0x00 && buf[3] === 0x00) ||
+    mag === "true" ||
+    mag === "typ1";
+  if (!isTtf) {
+    await rm(outFile, { force: true }).catch(() => {});
+    throw new Error(`Noto file is not TrueType (magic=${[...buf.subarray(0, 4)].map((b) => b.toString(16)).join(" ")})`);
+  }
+  console.log(`[fetch-fonts] Noto TTF ok (${buf.length} bytes)`);
 }
 
 async function unzipExtract(zipPath, destDir) {
-  // Prefer system unzip; fallback to PowerShell Expand-Archive on Windows.
   try {
     await execFileAsync("unzip", ["-o", zipPath, "-d", destDir]);
     return;
@@ -99,7 +112,7 @@ async function fetchZhuque() {
 
 async function main() {
   await mkdir(outDir, { recursive: true });
-  await fetchNoto();
+  await fetchNotoTtf();
   await fetchZhuque();
 }
 

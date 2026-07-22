@@ -20,8 +20,10 @@ import { PAPER_PRESETS, type PaperKind } from "@/lib/report-template/paper";
 import {
   BUNDLED_CJK_FAMILY,
   bundledFamilyLabel,
+  resolveBundledFontId,
   type BundledFontId,
 } from "@/lib/report-template/font-availability";
+import { collectFontFamiliesFromTemplate } from "@/lib/report-template/font-families-collect";
 import {
   formatSqlFillTableCellPreview,
   sqlFillDisplayDataRowCount,
@@ -33,6 +35,8 @@ export type PdfLibLayoutFidelity = "draft-v1" | "layout-v2";
 
 const BUNDLED_FONT_URLS: Record<BundledFontId, string[]> = {
   "noto-sans-sc": [
+    "/resources/fonts/NotoSansSC-Regular.ttf",
+    "./resources/fonts/NotoSansSC-Regular.ttf",
     "/resources/fonts/NotoSansSC-Regular.otf",
     "./resources/fonts/NotoSansSC-Regular.otf",
   ],
@@ -190,29 +194,43 @@ export async function renderPdfLibExportPart(opts: {
   doc.registerFontkit(fontkit);
   let fontId: BundledFontId = opts.bundledFontId === "fangsong" ? "fangsong" : "noto-sans-sc";
   let fontBytes = await loadBundledFontBytes(opts.fontBytesBase64, fontId);
-  // OTTO/CFF：fontkit subset 乱码，全量嵌入又过大 → 必须改嵌随包 TTF（朱雀仿宋）
-  if (!fontBytes || isOttoCffFont(fontBytes) || fontId === "noto-sans-sc") {
-    let ttf = await loadBundledFontBytes(fontId === "fangsong" ? opts.fontBytesBase64 : null, "fangsong");
+  // OTTO/CFF：fontkit subset 乱码 → 改嵌同族 TTF；再不行才回退朱雀仿宋
+  if (!fontBytes || isOttoCffFont(fontBytes)) {
+    let ttf: Uint8Array | null = null;
+    if (fontId === "noto-sans-sc") {
+      ttf = await loadBundledFontBytes(null, "noto-sans-sc");
+      if (ttf && isOttoCffFont(ttf)) ttf = null;
+    }
+    if (!ttf) {
+      ttf = await loadBundledFontBytes(fontId === "fangsong" ? opts.fontBytesBase64 : null, "fangsong");
+      if (ttf && !isOttoCffFont(ttf)) fontId = "fangsong";
+      else ttf = null;
+    }
     if (!ttf) {
       try {
-        const api = (window as unknown as {
-          electronAPI?: { getBundledCjkFont?: (o: { key: string }) => Promise<{ ok?: boolean; base64?: string }> };
-        }).electronAPI;
-        const res = await api?.getBundledCjkFont?.({ key: "fangsong" });
-        if (res?.ok && res.base64 && res.base64.length > 1000) {
-          ttf = decodeBase64ToBytes(res.base64);
+        const api = (
+          window as unknown as {
+            electronAPI?: {
+              getBundledCjkFont?: (o: { key: string }) => Promise<{ ok?: boolean; base64?: string }>;
+            };
+          }
+        ).electronAPI;
+        for (const key of [fontId, "noto-sans-sc", "fangsong"] as BundledFontId[]) {
+          const res = await api?.getBundledCjkFont?.({ key });
+          if (res?.ok && res.base64 && res.base64.length > 1000) {
+            const b = decodeBase64ToBytes(res.base64);
+            if (!isOttoCffFont(b)) {
+              ttf = b;
+              fontId = key;
+              break;
+            }
+          }
         }
       } catch {
         /* ignore */
       }
     }
-    if (ttf && !isOttoCffFont(ttf)) {
-      fontBytes = ttf;
-      fontId = "fangsong";
-    } else if (fontBytes && isOttoCffFont(fontBytes)) {
-      // 禁止把 16MB OTTO 打进 PDF
-      fontBytes = null;
-    }
+    fontBytes = ttf;
   }
   let font: PDFFont;
   let fontEmbedded = false;
@@ -230,11 +248,44 @@ export async function renderPdfLibExportPart(opts: {
     fontFamily = "Helvetica (fallback)";
   }
 
+  /** D15：模版若混用仿宋，额外嵌入第二套字体 */
+  const fontById = new Map<BundledFontId, PDFFont>();
+  if (fontEmbedded) fontById.set(fontId, font);
   if (fidelity === "layout-v2") {
+    const families = collectFontFamiliesFromTemplate(opts.tmpl);
+    const needFangsong =
+      fontId !== "fangsong" && families.some((f) => resolveBundledFontId(f) === "fangsong");
+    if (needFangsong) {
+      const fsBytes = await loadBundledFontBytes(null, "fangsong");
+      if (fsBytes && !isOttoCffFont(fsBytes)) {
+        try {
+          fontById.set("fangsong", await doc.embedFont(fsBytes, { subset: true }));
+        } catch {
+          /* keep single font */
+        }
+      }
+    }
+    if (fontId !== "noto-sans-sc" && !fontById.has("noto-sans-sc")) {
+      const notoBytes = await loadBundledFontBytes(null, "noto-sans-sc");
+      if (notoBytes && !isOttoCffFont(notoBytes)) {
+        try {
+          fontById.set("noto-sans-sc", await doc.embedFont(notoBytes, { subset: true }));
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+    const pickFont = (family?: string | null): PDFFont => {
+      const id = resolveBundledFontId(String(family || "").trim());
+      if (id && fontById.has(id)) return fontById.get(id)!;
+      if (fontById.has("noto-sans-sc")) return fontById.get("noto-sans-sc")!;
+      return font;
+    };
     const pageCount = await appendPdfLibLayoutV2Pages(doc, {
       tmpl: opts.tmpl,
       previewValues: report.previewValues,
       font,
+      pickFont,
       useWinAnsi: !fontEmbedded,
       bodyCards: report.bodyCards,
     });

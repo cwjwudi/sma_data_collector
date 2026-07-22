@@ -50,6 +50,7 @@ import {
 import { normalizePdfExportEngine, type PdfExportEngineId } from "@/lib/pdf-export-engine";
 import { collectFontFamiliesFromTemplate } from "@/lib/report-template/font-families-collect";
 import { pickBundledFontForExport } from "@/lib/report-template/font-availability";
+import { ensureBundledLayoutFontsRegistered } from "@/lib/report-template/ensure-bundled-layout-fonts";
 import { renderPdfLibExportPartBase64 } from "@/lib/report-template/pdf-lib-export-render";
 
 const route = useRoute();
@@ -181,6 +182,7 @@ function stopExportHeartbeat(): void {
 
 async function waitPaintReady(): Promise<void> {
   try {
+    await ensureBundledLayoutFontsRegistered();
     await document.fonts.ready;
   } catch {
     /* ignore */
@@ -293,12 +295,14 @@ async function boot(): Promise<void> {
   if (!useChromiumPrint.value) {
     // 同机优先：跳过 DOM 预览栈与 printToPDF，矢量写 PDF
     try {
-      // pdf-lib：NotoSansSC.otf（OTTO）subset 会乱码，优先嵌朱雀仿宋 TTF
+      // pdf-lib：优先随包 Noto TTF（OTF/CFF subset 会乱码）；模版显式仿宋再嵌朱雀
       const picked = pickBundledFontForExport(collectFontFamiliesFromTemplate(t));
-      const fontResFs = await window.electronAPI?.getBundledCjkFont?.({ key: "fangsong" });
-      const fontRes =
-        fontResFs?.ok ? fontResFs : await window.electronAPI?.getBundledCjkFont?.({ key: picked.id });
-      const bundledFontId = fontResFs?.ok ? "fangsong" : picked.id;
+      let fontRes = await window.electronAPI?.getBundledCjkFont?.({ key: picked.id });
+      if (!fontRes?.ok) {
+        fontRes = await window.electronAPI?.getBundledCjkFont?.({ key: "noto-sans-sc" });
+      }
+      const bundledFontId =
+        fontRes?.ok && fontRes.key === "fangsong" ? "fangsong" : picked.id;
       const { pdfBase64, meta } = await renderPdfLibExportPartBase64({
         tmpl: t,
         previewValues: bindingPreview.values.value,

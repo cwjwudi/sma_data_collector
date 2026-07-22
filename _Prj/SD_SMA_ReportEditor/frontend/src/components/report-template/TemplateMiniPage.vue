@@ -565,7 +565,7 @@ function miniZoneElStyle(el: LayoutZoneElement): Record<string, string> {
     overflow: "hidden",
     color: el.color,
     fontSize: `${Math.max(6, el.fontSize * 0.85)}px`,
-    ...(ff ? { fontFamily: ff } : {}),
+    fontFamily: ff || "Noto Sans SC, -apple-system, BlinkMacSystemFont, sans-serif",
     zIndex: String(normalizeZIndex(el.zIndex)),
   };
   if (el.type === "image") {
@@ -674,7 +674,7 @@ function miniTplElStyle(el: TemplateElement): Record<string, string> {
     padding: "2px",
     color: el.color,
     fontSize: `${Math.max(6, el.fontSize * 0.8)}px`,
-    ...(ff ? { fontFamily: ff } : {}),
+    fontFamily: ff || "Noto Sans SC, -apple-system, BlinkMacSystemFont, sans-serif",
     zIndex: String(z),
   };
   const wrap = getZoneTextWrapStyle(el);
@@ -1221,6 +1221,8 @@ function tplCaption(el: TemplateElement): string {
 .mini-wrap {
   touch-action: manipulation;
   margin: 0 auto;
+  /* 与矢量档默认随包 Noto 对齐（ensureBundledLayoutFontsRegistered） */
+  font-family: "Noto Sans SC", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 .mini-band-inner,
 .mini-body-inner {

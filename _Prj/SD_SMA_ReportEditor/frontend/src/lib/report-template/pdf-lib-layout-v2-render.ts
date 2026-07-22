@@ -3,6 +3,7 @@
  * 按编辑器 CSS px（96dpi）映射到 PDF pt（72dpi）；控件坐标相对各带原点（与画布一致）。
  */
 import {
+  degrees,
   rgb,
   type PDFFont,
   type PDFImage,
@@ -13,6 +14,7 @@ import {
 import type { BindingPreviewCell } from "@/lib/report-template/binding-preview-utils";
 import {
   cellKey,
+  chartKey,
   paramKey,
   zoneCellKey,
   zoneParamKey,
@@ -29,9 +31,12 @@ import {
   formatLayoutDate,
   formatPageNumberDisplay,
   normalizeAlignAxis,
+  normalizeImageCaptionPosition,
+  normalizeImageRotationDeg,
   normalizePageNumberMode,
   resolveTableCellBackgroundCss,
   zoneTableColumnInnerWidthsPx,
+  type ImageCaptionPosition,
   type LayoutAlignAxis,
   type LayoutZoneElement,
 } from "@/lib/report-template/layout-zone-element";
@@ -39,6 +44,9 @@ import type { ReportTemplate, TemplateElement } from "@/lib/report-template/mode
 import {
   ensureBodyPages,
   ensureTableGrid,
+  signatureShowsHandwriting,
+  signatureShowsWatermark,
+  signatureWatermarkText,
   templateTableColumnInnerWidthsPx,
 } from "@/lib/report-template/model";
 import { PAPER_PRESETS, type PaperKind } from "@/lib/report-template/paper";
@@ -130,10 +138,16 @@ function mmToPt(mm: number): number {
   return (mm * 72) / 25.4;
 }
 
-function scaledFontSize(raw: unknown, scale: number, fallback: number, min = 6): number {
+/** 与 Mini 一致的 CSS px 字号（含 ×0.8 / ×0.85）；勿直接当 PDF pt */
+function scaledFontSizePx(raw: unknown, scale: number, fallback: number, min = 6): number {
   const n = Number(raw);
   const base = Number.isFinite(n) && n > 0 ? n : fallback;
   return Math.max(min, base * scale);
+}
+
+/** PDF pt = CSS px × 72/96（缺此步时字号偏大 ~33%，右对齐 Δx≈12pt） */
+function scaledFontSizePt(raw: unknown, scale: number, fallback: number, minPx = 6): number {
+  return scaledFontSizePx(raw, scale, fallback, minPx) * PX_TO_PT;
 }
 
 function paperSizePt(tmpl: ReportTemplate): { w: number; h: number } {
@@ -396,16 +410,257 @@ function drawImageInBox(
   page: PDFPage,
   img: PDFImage,
   box: { x: number; yBottom: number; w: number; h: number },
+  rotationDeg = 0,
 ): void {
   const iw = img.width;
   const ih = img.height;
-  if (iw <= 0 || ih <= 0) return;
+  if (iw <= 0 || ih <= 0 || !(box.w > 1) || !(box.h > 1)) return;
+  const rot = normalizeImageRotationDeg(rotationDeg);
   const scale = Math.min(box.w / iw, box.h / ih);
   const dw = iw * scale;
   const dh = ih * scale;
-  const x = box.x + (box.w - dw) / 2;
-  const y = box.yBottom + (box.h - dh) / 2;
-  page.drawImage(img, { x, y, width: dw, height: dh });
+  const cx = box.x + box.w / 2;
+  const cy = box.yBottom + box.h / 2;
+  const x = cx - dw / 2;
+  const y = cy - dh / 2;
+  if (Math.abs(rot) < 0.01) {
+    page.drawImage(img, { x, y, width: dw, height: dh });
+    return;
+  }
+  // pdf-lib rotate 绕图像左下角；小角度/90° 步进时 contain 观感可接受
+  try {
+    page.drawImage(img, { x, y, width: dw, height: dh, rotate: degrees(rot) });
+  } catch {
+    page.drawImage(img, { x, y, width: dw, height: dh });
+  }
+}
+
+const CAPTION_GAP_PT = 4 * PX_TO_PT;
+
+/** D11：配文占位 + contain 图 + 旋转（对齐 ZoneImageCompose） */
+function drawComposedImage(
+  page: PDFPage,
+  font: PDFFont,
+  opts: {
+    img?: PDFImage | null;
+    box: { x: number; yBottom: number; w: number; h: number; topY: number };
+    captionText?: string;
+    captionPosition?: ImageCaptionPosition | string;
+    rotationDeg?: number;
+    fontSize: number;
+    color: RGB;
+    alignX?: LayoutAlignAxis;
+    alignY?: LayoutAlignAxis;
+    useWinAnsi: boolean;
+  },
+): void {
+  const side = normalizeImageCaptionPosition(opts.captionPosition, "none");
+  const caption = String(opts.captionText || "").trim();
+  const hasCap = side !== "none" && caption.length > 0;
+  let imgBox = {
+    x: opts.box.x,
+    yBottom: opts.box.yBottom,
+    w: opts.box.w,
+    h: opts.box.h,
+  };
+  if (hasCap) {
+    const fs = Math.max(6, opts.fontSize);
+    const capH = Math.min(opts.box.h * 0.45, fs * 1.25);
+    const ax = opts.alignX ?? "start";
+    if (side === "top") {
+      drawWrappedInBox(
+        page,
+        font,
+        caption,
+        opts.box.x,
+        opts.box.topY,
+        opts.box.w,
+        capH,
+        fs,
+        opts.useWinAnsi,
+        opts.color,
+        ax,
+        "center",
+      );
+      imgBox = {
+        x: opts.box.x,
+        yBottom: opts.box.yBottom,
+        w: opts.box.w,
+        h: Math.max(4, opts.box.h - capH - CAPTION_GAP_PT),
+      };
+    } else if (side === "bottom") {
+      drawWrappedInBox(
+        page,
+        font,
+        caption,
+        opts.box.x,
+        opts.box.yBottom + capH,
+        opts.box.w,
+        capH,
+        fs,
+        opts.useWinAnsi,
+        opts.color,
+        ax,
+        "center",
+      );
+      imgBox = {
+        x: opts.box.x,
+        yBottom: opts.box.yBottom + capH + CAPTION_GAP_PT,
+        w: opts.box.w,
+        h: Math.max(4, opts.box.h - capH - CAPTION_GAP_PT),
+      };
+    } else if (side === "left" || side === "right") {
+      const capW = Math.min(opts.box.w * 0.48, Math.max(24, measureTextWidthPt(font, caption, fs) + 4));
+      if (side === "left") {
+        drawWrappedInBox(
+          page,
+          font,
+          caption,
+          opts.box.x,
+          opts.box.topY,
+          capW,
+          opts.box.h,
+          fs,
+          opts.useWinAnsi,
+          opts.color,
+          ax,
+          "center",
+        );
+        imgBox = {
+          x: opts.box.x + capW + CAPTION_GAP_PT,
+          yBottom: opts.box.yBottom,
+          w: Math.max(4, opts.box.w - capW - CAPTION_GAP_PT),
+          h: opts.box.h,
+        };
+      } else {
+        drawWrappedInBox(
+          page,
+          font,
+          caption,
+          opts.box.x + opts.box.w - capW,
+          opts.box.topY,
+          capW,
+          opts.box.h,
+          fs,
+          opts.useWinAnsi,
+          opts.color,
+          ax,
+          "center",
+        );
+        imgBox = {
+          x: opts.box.x,
+          yBottom: opts.box.yBottom,
+          w: Math.max(4, opts.box.w - capW - CAPTION_GAP_PT),
+          h: opts.box.h,
+        };
+      }
+    }
+  }
+  if (opts.img) drawImageInBox(page, opts.img, imgBox, opts.rotationDeg || 0);
+}
+
+/** D12：签名水印 + 手写叠层 */
+function drawSignatureInBox(
+  page: PDFPage,
+  font: PDFFont,
+  el: TemplateElement,
+  box: { x: number; yBottom: number; w: number; h: number; topY: number },
+  img: PDFImage | undefined,
+  useWinAnsi: boolean,
+): void {
+  const ink = parseCssColor(el.color, rgb(0.08, 0.08, 0.08));
+  const fs = scaledFontSizePt(el.fontSize, BODY_FONT_SCALE, 14, 8);
+  if (signatureShowsWatermark(el)) {
+    const wm = signatureWatermarkText(el);
+    if (wm) {
+      drawWrappedInBox(
+        page,
+        font,
+        wm,
+        box.x + 2,
+        box.topY - 1,
+        box.w - 4,
+        box.h - 2,
+        Math.max(fs, fs * 1.15),
+        useWinAnsi,
+        rgb(0.72, 0.72, 0.75),
+        el.alignX ?? "center",
+        el.alignY ?? "center",
+      );
+    }
+  }
+  if (signatureShowsHandwriting(el)) {
+    if (img) {
+      drawImageInBox(page, img, box, normalizeImageRotationDeg(el.imageRotationDeg));
+    } else {
+      drawWrappedInBox(
+        page,
+        font,
+        "（无图）",
+        box.x + 2,
+        box.topY - 1,
+        box.w - 4,
+        box.h - 2,
+        Math.max(8, fs * 0.9),
+        useWinAnsi,
+        ink,
+        el.alignX ?? "center",
+        el.alignY ?? "center",
+      );
+    }
+  }
+}
+
+function drawBoxControl(
+  page: PDFPage,
+  font: PDFFont,
+  opts: {
+    box: { x: number; yBottom: number; w: number; h: number; topY: number };
+    bgColor?: string;
+    color?: string;
+    showBorder?: boolean;
+    text?: string;
+    fontSize: number;
+    alignX?: LayoutAlignAxis;
+    alignY?: LayoutAlignAxis;
+    useWinAnsi: boolean;
+    /** D17：透明时不强制填灰（zone）；正文默认半透明灰叠白 */
+    defaultFillIfEmpty: RGB | null;
+  },
+): void {
+  const raw = String(opts.bgColor || "").trim();
+  const transparent = !raw || raw === "transparent" || raw === "none";
+  const fill = transparent
+    ? opts.defaultFillIfEmpty
+    : parseCssColor(raw, opts.defaultFillIfEmpty || rgb(0.94, 0.94, 0.945));
+  const showBorder = opts.showBorder !== false;
+  if (fill || showBorder) {
+    page.drawRectangle({
+      x: opts.box.x,
+      y: opts.box.yBottom,
+      width: opts.box.w,
+      height: opts.box.h,
+      color: fill || undefined,
+      borderColor: showBorder ? CHROME_BORDER : undefined,
+      borderWidth: showBorder ? CHROME_BORDER_PT : undefined,
+    });
+  }
+  const label = String(opts.text || "").trim();
+  if (!label) return;
+  drawWrappedInBox(
+    page,
+    font,
+    label,
+    opts.box.x + 2,
+    opts.box.topY - 1,
+    opts.box.w - 4,
+    opts.box.h - 2,
+    opts.fontSize,
+    opts.useWinAnsi,
+    parseCssColor(opts.color, rgb(0.094, 0.094, 0.106)),
+    opts.alignX ?? "start",
+    opts.alignY ?? "center",
+  );
 }
 
 function drawZoneTable(
@@ -479,11 +734,9 @@ function drawZoneTable(
     acc += widthsPt[c] || box.w / cols;
     colXs.push(acc);
   }
-  // D8：对齐 Mini `.mini-tpl-td` — max(10, 0.85em) 且 em 基于壳字号 ×0.85
-  const fontSize = Math.max(
-    6,
-    Math.max(10, scaledFontSize(el.fontSize, ZONE_FONT_SCALE, 12) * ZONE_FONT_SCALE),
-  );
+  // D8：对齐 Mini `.mini-tpl-td` — max(10px, 0.85em)，em 基于壳字号 ×0.85，再换算 pt
+  const fontSize =
+    Math.max(10, scaledFontSizePx(el.fontSize, ZONE_FONT_SCALE, 12) * ZONE_FONT_SCALE) * PX_TO_PT;
   const zoneFill = el.tableSqlFill?.enabled ? el.tableSqlFill : null;
   const zoneFillPv = zoneFill
     ? values[zoneTableSqlFillPreviewKey(el.id)]?.tableSqlFill ?? null
@@ -602,6 +855,7 @@ function drawZoneElements(
   pageNum: number,
   totalPages: number,
   bandWPx?: number,
+  pickFont?: (family?: string | null) => PDFFont,
 ): void {
   const sorted = [...els].sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0));
   const tableGeos = sorted
@@ -614,6 +868,7 @@ function drawZoneElements(
           : { x: e.x, y: e.y, w: e.w, h: e.h },
     }));
   for (const el of sorted) {
+    const elFont = pickFont?.(el.fontFamily) ?? font;
     const geo =
       bandWPx != null && bandWPx > 0
         ? clampZoneElToBand(el, bandWPx)
@@ -622,7 +877,18 @@ function drawZoneElements(
     if (el.type === "image") {
       const src = String(el.imageSrc || "").trim();
       const img = src ? images.get(src) : undefined;
-      if (img) drawImageInBox(page, img, box);
+      drawComposedImage(page, elFont, {
+        img,
+        box,
+        captionText: el.text,
+        captionPosition: el.imageCaptionPosition,
+        rotationDeg: el.imageRotationDeg,
+        fontSize: scaledFontSizePt(el.fontSize, ZONE_FONT_SCALE, 10, 7),
+        color: parseCssColor(el.color, rgb(0.08, 0.08, 0.08)),
+        alignX: el.alignX,
+        alignY: el.alignY,
+        useWinAnsi,
+      });
       continue;
     }
     if (el.type === "table") {
@@ -630,43 +896,25 @@ function drawZoneElements(
       const skipTop = tableGeos.some(
         (o) => o.id !== el.id && Math.abs(o.geo.y + o.geo.h - geo.y) <= 1.5,
       );
-      drawZoneTable(page, font, el, pageH, origin, values, useWinAnsi, geo, {
+      drawZoneTable(page, elFont, el, pageH, origin, values, useWinAnsi, geo, {
         skipTop,
       });
       continue;
     }
     if (el.type === "box") {
-      const boxFill =
-        el.bgColor && el.bgColor !== "transparent" && el.bgColor !== "none"
-          ? parseCssColor(el.bgColor, rgb(0.894, 0.894, 0.906)) // #e4e4e7 ≈ Mini 默认半透明灰叠白
-          : parseCssColor("#e4e4e766", rgb(0.94, 0.94, 0.945));
-      const boxInk = parseCssColor(el.color, rgb(0.094, 0.094, 0.106));
-      page.drawRectangle({
-        x: box.x,
-        y: box.yBottom,
-        width: box.w,
-        height: box.h,
-        color: boxFill,
-        borderColor: el.showBorder !== false ? CHROME_BORDER : undefined,
-        borderWidth: el.showBorder !== false ? CHROME_BORDER_PT : undefined,
+      // D17：transparent 勿强填灰（与 Mini zoneFillBackgroundCss 一致）
+      drawBoxControl(page, elFont, {
+        box,
+        bgColor: el.bgColor,
+        color: el.color,
+        showBorder: el.showBorder,
+        text: el.text,
+        fontSize: scaledFontSizePt(el.fontSize, ZONE_FONT_SCALE, 10, 7),
+        alignX: el.alignX,
+        alignY: el.alignY,
+        useWinAnsi,
+        defaultFillIfEmpty: null,
       });
-      const label = String(el.text || "").trim();
-      if (label) {
-        drawWrappedInBox(
-          page,
-          font,
-          label,
-          box.x + 2,
-          box.topY - 1,
-          box.w - 4,
-          box.h - 2,
-          scaledFontSize(el.fontSize, ZONE_FONT_SCALE, 10, 7),
-          useWinAnsi,
-          boxInk,
-          el.alignX ?? "start",
-          el.alignY ?? "center",
-        );
-      }
       continue;
     }
     if (el.type !== "text" && el.type !== "parameter" && el.type !== "date" && el.type !== "pageNumber") {
@@ -711,15 +959,15 @@ function drawZoneElements(
       }
     }
     const ink = parseCssColor(el.color, rgb(0.08, 0.08, 0.08));
-    const size = scaledFontSize(el.fontSize, ZONE_FONT_SCALE, 10, 7);
+    const size = scaledFontSizePt(el.fontSize, ZONE_FONT_SCALE, 10, 7);
     if (el.type === "pageNumber" && pageMode === "circle") {
       const cx = box.x + box.w / 2;
       const cy = box.yBottom + box.h / 2;
       const r = circlePageNumberRadiusPt(el);
-      // Mini badge 用控件字号（非 ×0.85），圆内字随半径收敛
+      // Mini badge 用控件字号（非 ×0.85），圆内字随半径收敛；字号 CSS px→pt
       const circleFs = Math.min(
-        Math.max(6, Number(el.fontSize) || 12),
-        Math.max(6, r * 1.15),
+        Math.max(6, Number(el.fontSize) || 12) * PX_TO_PT,
+        Math.max(6 * PX_TO_PT, r * 1.15),
       );
       try {
         page.drawCircle({
@@ -738,7 +986,7 @@ function drawZoneElements(
       }
       drawWrappedInBox(
         page,
-        font,
+        elFont,
         text,
         cx - r + 1,
         cy + r - 1,
@@ -752,14 +1000,15 @@ function drawZoneElements(
       );
       continue;
     }
+    // zone 文本无 padding（对齐 Mini）；勿再留 2pt 内缩以免右对齐偏左
     drawWrappedInBox(
       page,
-      font,
+      elFont,
       text,
-      box.x + 2,
-      box.topY - 1,
-      box.w - 4,
-      box.h - 2,
+      box.x,
+      box.topY,
+      box.w,
+      box.h,
       size,
       useWinAnsi,
       ink,
@@ -838,7 +1087,7 @@ function drawTableGrid(
     const each = Math.max(20, (el.w - 8) / cols);
     colWidthsPx = Array.from({ length: cols }, () => each);
   }
-  const fontSizePx = Math.max(10, scaledFontSize(el.fontSize, BODY_FONT_SCALE, 12) * 0.85);
+  const fontSizePx = Math.max(10, scaledFontSizePx(el.fontSize, BODY_FONT_SCALE, 12) * 0.85);
   const heightsPx = computeContentAwareTableRowHeightsPx({
     rowCount: rows,
     colWidthsPx,
@@ -850,11 +1099,11 @@ function drawTableGrid(
     paddingY: 6,
   });
   const rowHs = scaleRowHeightsToBoxPt(heightsPx, innerH, rows);
-  // 与 Mini 正文表：控件字号 ×0.8，并受最矮行约束
+  // 与 Mini 正文表：控件字号 ×0.8（CSS px→pt），并受最矮行约束
   const minRowH = Math.min(...rowHs);
   const fontSize = Math.max(
-    6,
-    Math.min(11, scaledFontSize(el.fontSize, BODY_FONT_SCALE, 12), minRowH * 0.55),
+    6 * PX_TO_PT,
+    Math.min(11 * PX_TO_PT, scaledFontSizePt(el.fontSize, BODY_FONT_SCALE, 12), minRowH * 0.55),
   );
   // D9：先填格底
   let yCursor = innerTop;
@@ -943,19 +1192,103 @@ function drawTemplateElement(
   useWinAnsi: boolean,
   card: ExpandedBodyPreviewCard,
   images: Map<string, PDFImage>,
+  pickFont?: (family?: string | null) => PDFFont,
 ): void {
+  const elFont = pickFont?.(el.fontFamily) ?? font;
   let xPx = origin.ox + el.x;
   let yPx = origin.oy + el.y;
   if (card.tailOnlyBelowBaseline && card.tailBaselineY != null) {
     yPx = origin.oy + (el.y - card.tailBaselineY);
   }
 
-  if (el.type === "image" || el.type === "signature") {
+  if (el.type === "signature") {
     const src = String(el.imageSrc || "").trim();
     const img = src ? images.get(src) : undefined;
-    if (!img) return;
     const box = boxFromPagePx(xPx, yPx, el.w, el.h, pageH);
-    drawImageInBox(page, img, box);
+    if (el.showBorder !== false || (el.bgColor && el.bgColor !== "transparent")) {
+      page.drawRectangle({
+        x: box.x,
+        y: box.yBottom,
+        width: box.w,
+        height: box.h,
+        color:
+          el.bgColor && el.bgColor !== "transparent"
+            ? parseCssColor(el.bgColor, rgb(1, 1, 1))
+            : undefined,
+        borderColor: el.showBorder !== false ? CHROME_BORDER : undefined,
+        borderWidth: el.showBorder !== false ? CHROME_BORDER_PT : undefined,
+      });
+    }
+    drawSignatureInBox(page, elFont, el, box, img, useWinAnsi);
+    return;
+  }
+
+  if (el.type === "image") {
+    const src = String(el.imageSrc || "").trim();
+    const img = src ? images.get(src) : undefined;
+    const box = boxFromPagePx(xPx, yPx, el.w, el.h, pageH);
+    drawComposedImage(page, elFont, {
+      img,
+      box,
+      captionText: el.text,
+      captionPosition: el.imageCaptionPosition,
+      rotationDeg: el.imageRotationDeg,
+      fontSize: scaledFontSizePt(el.fontSize, BODY_FONT_SCALE, 11, 7),
+      color: parseCssColor(el.color, rgb(0.08, 0.08, 0.08)),
+      alignX: el.alignX,
+      alignY: el.alignY,
+      useWinAnsi,
+    });
+    return;
+  }
+
+  if (el.type === "box") {
+    const box = boxFromPagePx(xPx, yPx, el.w, el.h, pageH);
+    drawBoxControl(page, elFont, {
+      box,
+      bgColor: el.bgColor,
+      color: el.color,
+      showBorder: el.showBorder,
+      text: el.text,
+      fontSize: scaledFontSizePt(el.fontSize, BODY_FONT_SCALE, 11, 7),
+      alignX: el.alignX,
+      alignY: el.alignY,
+      useWinAnsi,
+      // Mini：transparent 时用 #e4e4e766
+      defaultFillIfEmpty: parseCssColor("#e4e4e766", rgb(0.94, 0.94, 0.945)),
+    });
+    return;
+  }
+
+  if (el.type === "chart") {
+    const box = boxFromPagePx(xPx, yPx, el.w, el.h, pageH);
+    const ck = chartKey(el.id);
+    const bound = cellText(values[ck]);
+    const kindLabel = el.chartKind === "bar" ? "柱图" : "折线";
+    const text = bound.trim() || String(el.text || "").trim() || `[${kindLabel}]`;
+    page.drawRectangle({
+      x: box.x,
+      y: box.yBottom,
+      width: box.w,
+      height: box.h,
+      color: parseCssColor(el.bgColor && el.bgColor !== "transparent" ? el.bgColor : "#f4f4f5", rgb(0.957, 0.957, 0.961)),
+      borderColor: el.showBorder !== false ? CHROME_BORDER : undefined,
+      borderWidth: el.showBorder !== false ? CHROME_BORDER_PT : undefined,
+    });
+    drawWrappedInBox(
+      page,
+      elFont,
+      text,
+      box.x + 4,
+      box.topY - 2,
+      box.w - 8,
+      box.h - 4,
+      scaledFontSizePt(el.fontSize, BODY_FONT_SCALE, 11, 7),
+      useWinAnsi,
+      parseCssColor(el.color, rgb(0.32, 0.32, 0.36)),
+      el.alignX ?? "center",
+      el.alignY ?? "center",
+    );
     return;
   }
 
@@ -979,16 +1312,18 @@ function drawTemplateElement(
         borderWidth: el.showBorder !== false ? CHROME_BORDER_PT : undefined,
       });
     }
-    const size = scaledFontSize(el.fontSize, BODY_FONT_SCALE, 11, 7);
+    // Mini 正文控件 padding 2px → 2*PX_TO_PT
+    const pad = 2 * PX_TO_PT;
+    const size = scaledFontSizePt(el.fontSize, BODY_FONT_SCALE, 11, 7);
     const color = parseCssColor(el.color, rgb(0.08, 0.08, 0.08));
     drawWrappedInBox(
       page,
-      font,
+      elFont,
       text,
-      box.x + 2,
-      box.topY - 1,
-      box.w - 4,
-      box.h - 2,
+      box.x + pad,
+      box.topY - pad * 0.5,
+      box.w - pad * 2,
+      box.h - pad,
       size,
       useWinAnsi,
       color,
@@ -1034,7 +1369,7 @@ function drawTemplateElement(
     if (slice) {
       const visualRows = (slice.includeHeaderRow ? 1 : 0) + Math.max(0, slice.dataRowCount);
       if (visualRows < 1) return;
-      drawTableGrid(page, font, el, pageH, useWinAnsi, {
+      drawTableGrid(page, elFont, el, pageH, useWinAnsi, {
         xPx,
         yPx,
         hPx: Math.max(hPx, visualRows * Math.max(12, rowHFallback * 0.5)),
@@ -1051,7 +1386,7 @@ function drawTemplateElement(
     const displayData = sqlFillDisplayDataRowCount(fill, dataN);
     const visualRows = Math.min(80, Math.max(1, 1 + displayData));
     const fillH = tableSqlFillVerticalChromePx() + visualRows * rowHFallback;
-    drawTableGrid(page, font, el, pageH, useWinAnsi, {
+    drawTableGrid(page, elFont, el, pageH, useWinAnsi, {
       xPx,
       yPx,
       hPx: Math.max(hPx, fillH),
@@ -1067,7 +1402,7 @@ function drawTemplateElement(
 
   const rows = Math.min(el.tableRows || grid.length || 0, 80);
   if (rows < 1 || cols < 1) return;
-  drawTableGrid(page, font, el, pageH, useWinAnsi, {
+  drawTableGrid(page, elFont, el, pageH, useWinAnsi, {
     xPx,
     yPx,
     hPx,
@@ -1089,12 +1424,15 @@ export async function appendPdfLibLayoutV2Pages(
     tmpl: ReportTemplate;
     previewValues: Record<string, BindingPreviewCell | undefined>;
     font: PDFFont;
+    /** D15：按控件 fontFamily 选用已嵌入字体；缺省一律用 font */
+    pickFont?: (family?: string | null) => PDFFont;
     useWinAnsi: boolean;
     /** 缺省则现场计算；导出路径应传入当前分卷的 bodyCards */
     bodyCards?: ExpandedBodyPreviewCard[];
   },
 ): Promise<number> {
   const { tmpl, previewValues, font, useWinAnsi } = opts;
+  const pickFont = opts.pickFont ?? (() => font);
   const { w: pageW, h: pageH } = paperSizePt(tmpl);
   let pageCount = 0;
 
@@ -1179,6 +1517,7 @@ export async function appendPdfLibLayoutV2Pages(
         pageNum,
         totalPages,
         bandW,
+        pickFont,
       );
     }
     const effectiveCard: ExpandedBodyPreviewCard = card || {
@@ -1201,6 +1540,7 @@ export async function appendPdfLibLayoutV2Pages(
         pageNum,
         totalPages,
         bandW,
+        pickFont,
       );
     }
     const sortedBody = [...bodyEls].sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0));
@@ -1215,7 +1555,54 @@ export async function appendPdfLibLayoutV2Pages(
         useWinAnsi,
         effectiveCard,
         images,
+        pickFont,
       );
+    }
+    // D16：SQL 续页 UI hint（对齐 Mini「以下控件将在导出预览中另起一页显示」）
+    if (
+      sheet === "body" &&
+      effectiveCard.showSqlFillTailDividerHint &&
+      effectiveCard.overflowSqlFillTableId
+    ) {
+      const tid = effectiveCard.overflowSqlFillTableId;
+      const tbl = bodyEls.find((e) => e.id === tid && e.type === "table");
+      const slice = effectiveCard.sqlFillTableSlices?.[tid];
+      if (tbl && slice) {
+        const h = sqlFillSliceTableOuterHeightPx(tbl, slice, null);
+        if (h != null) {
+          const hintBox = boxFromPagePx(
+            bodyOrigin.ox + tbl.x,
+            bodyOrigin.oy + tbl.y + h + 4,
+            tbl.w,
+            28,
+            pageH,
+          );
+          page.drawRectangle({
+            x: hintBox.x,
+            y: hintBox.yBottom,
+            width: hintBox.w,
+            height: hintBox.h,
+            color: rgb(244 / 255, 244 / 255, 245 / 255),
+            borderColor: rgb(161 / 255, 161 / 255, 170 / 255),
+            borderWidth: 0.75,
+            borderDashArray: [3, 2],
+          });
+          drawWrappedInBox(
+            page,
+            font,
+            "以下控件将在导出预览中另起一页显示",
+            hintBox.x + 4,
+            hintBox.topY - 2,
+            hintBox.w - 8,
+            hintBox.h - 4,
+            8,
+            useWinAnsi,
+            rgb(0.32, 0.32, 0.36),
+            "start",
+            "center",
+          );
+        }
+      }
     }
     if (showChrome) {
       drawZoneElements(
@@ -1230,6 +1617,7 @@ export async function appendPdfLibLayoutV2Pages(
         pageNum,
         totalPages,
         bandW,
+        pickFont,
       );
     }
   };

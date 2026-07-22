@@ -1,17 +1,17 @@
 {
-  "version": "0.3.125",
-  "releasedAt": "2026-07-22T12:56:02.847Z",
-  "notes": "036：表线色/圆页码/字色对齐预览稳",
+  "version": "0.3.126",
+  "releasedAt": "2026-07-22T13:12:34.873Z",
+  "notes": "036：Noto TTF、字号 px→pt、D8/C9、P2",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.125-x64.exe",
+      "url": "Report Editor AI-Setup-0.3.126-x64.exe",
       "sha256": "",
       "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.125-arm64.dmg",
-      "sha256": "8810434b38a09c1ba7ea19f2932996117792dedb86b2f4cfea5a449836d531d7",
-      "size": 205762178
+      "url": "Report Editor AI-0.3.126-arm64.dmg",
+      "sha256": "16bed7d0ac0aefafc8b16d33540b02f573c88498c1bcfaa9b7a61bcb0fb35fc8",
+      "size": 212062804
     }
   }
 }
