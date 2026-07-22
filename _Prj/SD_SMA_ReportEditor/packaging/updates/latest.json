@@ -1,6 +1,6 @@
 {
   "version": "0.3.131",
-  "releasedAt": "2026-07-22T14:12:01.902Z",
+  "releasedAt": "2026-07-22T14:15:36.879Z",
   "notes": "Report Editor AI 0.3.131\n\n- 矢量角色色纸边：封面橙顶 / 正文靛蓝左 / 封尾紫底（对齐 Mini 3px）",
   "platforms": {
     "win32-x64": {
@@ -10,8 +10,8 @@
     },
     "darwin-arm64": {
       "url": "Report Editor AI-0.3.131-arm64.dmg",
-      "sha256": "7de11e14df2a8649a0a07dfbe61e5487127725cf2f0be78abaa1e9d531287d99",
-      "size": 212106824
+      "sha256": "057da73694bda0c414faec6f3ee2290105c5a1b984fc8f676c8e324fd6fbce64",
+      "size": 212104730
     }
   }
 }
