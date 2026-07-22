@@ -1,6 +1,6 @@
 {
   "version": "0.3.123",
-  "releasedAt": "2026-07-22T10:39:35.414Z",
+  "releasedAt": "2026-07-22T10:40:18.845Z",
   "notes": "Report Editor AI 0.3.123\n\n- 导出性能改为分段切换（与默认文件夹同类 UI）",
   "platforms": {
     "win32-x64": {
@@ -10,8 +10,8 @@
     },
     "darwin-arm64": {
       "url": "Report Editor AI-0.3.123-arm64.dmg",
-      "sha256": "",
-      "size": 0
+      "sha256": "b281f863216032036e50eda3a5b655d10dc3ae7339f5d62938c780c39b82d2e3",
+      "size": 205760058
     }
   }
 }
