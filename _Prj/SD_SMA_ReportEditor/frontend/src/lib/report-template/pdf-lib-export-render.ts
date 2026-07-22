@@ -123,6 +123,31 @@ async function loadBundledFontBytes(
   return null;
 }
 
+/** 仅内容草稿：限制字号，避免封面 45pt 等版式字号在流式排版里互相压盖 */
+const DRAFT_V1_MAX_FONT_SIZE = 14;
+
+function draftV1FontSize(raw: unknown, fallback = 11): number {
+  const n = Number(raw);
+  const base = Number.isFinite(n) && n > 0 ? n : fallback;
+  return Math.min(DRAFT_V1_MAX_FONT_SIZE, Math.max(8, base));
+}
+
+function draftV1LineHeight(size: number): number {
+  return Math.max(size * 1.4, size + 3);
+}
+
+function measureTextWidth(font: PDFFont, text: string, size: number): number {
+  try {
+    return font.widthOfTextAtSize(text, size);
+  } catch {
+    return text.length * size * 0.55;
+  }
+}
+
+/**
+ * 流式折行：尊重显式换行；过长无空格段（CJK）按字符切分。
+ * 行高至少随字号增长，避免大字号基线间距不足导致叠字。
+ */
 function drawWrapped(
   page: PDFPage,
   font: PDFFont,
@@ -134,35 +159,64 @@ function drawWrapped(
   lineHeight: number,
   useWinAnsi: boolean,
 ): number {
+  const lh = Math.max(lineHeight, draftV1LineHeight(size));
   const raw = useWinAnsi ? sanitizeForWinAnsi(text) : text;
-  const words = raw.split(/(\s+)/);
-  let line = "";
+  const paragraphs = raw.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
   let cy = y;
   const drawLine = (s: string) => {
-    if (!s) return;
-    try {
-      page.drawText(s, { x, y: cy, size, font, color: rgb(0.1, 0.1, 0.1) });
-    } catch {
-      page.drawText(sanitizeForWinAnsi(s), { x, y: cy, size, font, color: rgb(0.1, 0.1, 0.1) });
+    const t = s.replace(/\s+$/g, "");
+    if (!t) {
+      cy -= lh;
+      return;
     }
-    cy -= lineHeight;
+    try {
+      page.drawText(t, { x, y: cy, size, font, color: rgb(0.1, 0.1, 0.1) });
+    } catch {
+      page.drawText(sanitizeForWinAnsi(t), { x, y: cy, size, font, color: rgb(0.1, 0.1, 0.1) });
+    }
+    cy -= lh;
   };
-  for (const w of words) {
-    const trial = line + w;
-    let width = 0;
-    try {
-      width = font.widthOfTextAtSize(trial, size);
-    } catch {
-      width = trial.length * size * 0.5;
-    }
-    if (width > maxWidth && line) {
+
+  const flushWrapped = (paragraph: string) => {
+    const words = paragraph.split(/(\s+)/).filter((w) => w.length > 0);
+    let line = "";
+    const pushWord = (w: string) => {
+      const trial = line ? line + w : w;
+      if (measureTextWidth(font, trial, size) <= maxWidth || !line) {
+        // 单段仍超宽：按字符切开
+        if (!line && measureTextWidth(font, w, size) > maxWidth) {
+          let chunk = "";
+          for (const ch of w) {
+            const next = chunk + ch;
+            if (chunk && measureTextWidth(font, next, size) > maxWidth) {
+              drawLine(chunk);
+              chunk = ch;
+            } else {
+              chunk = next;
+            }
+          }
+          line = chunk;
+          return;
+        }
+        line = trial;
+        return;
+      }
       drawLine(line);
-      line = w.trimStart();
-    } else {
-      line = trial;
+      line = w.replace(/^\s+/, "");
+    };
+    for (const w of words) pushWord(w);
+    if (line) drawLine(line);
+  };
+
+  for (let i = 0; i < paragraphs.length; i++) {
+    const p = paragraphs[i] ?? "";
+    if (p.length === 0) {
+      // 显式空行：推进一行，避免 \n\n 被吃掉后段落粘连
+      cy -= lh;
+      continue;
     }
+    flushWrapped(p);
   }
-  if (line) drawLine(line);
   return cy;
 }
 
@@ -299,8 +353,19 @@ export async function renderPdfLibExportPart(opts: {
       page = doc.addPage([pageW, pageH]);
       y = pageH - margin;
     }
-    y = drawWrapped(page, font, line, margin, y, 10, pageW - margin * 2, 12, useWinAnsi);
-    y -= 4;
+    const zSize = draftV1FontSize(10, 10);
+    y = drawWrapped(
+      page,
+      font,
+      line,
+      margin,
+      y,
+      zSize,
+      pageW - margin * 2,
+      draftV1LineHeight(zSize),
+      useWinAnsi,
+    );
+    y -= Math.max(4, zSize * 0.25);
   }
 
   forEachTemplateCanvasElement(opts.tmpl, (el: TemplateElement) => {
@@ -313,18 +378,19 @@ export async function renderPdfLibExportPart(opts: {
       const bound = cellText(values[ck]);
       const text = bound || String(el.text || "");
       if (!text.trim()) return;
+      const size = draftV1FontSize(el.fontSize, 11);
       y = drawWrapped(
         page,
         font,
         text,
         margin,
         y,
-        Math.max(8, Number(el.fontSize) || 11),
+        size,
         pageW - margin * 2,
-        13,
+        draftV1LineHeight(size),
         useWinAnsi,
       );
-      y -= 6;
+      y -= Math.max(6, size * 0.3);
       return;
     }
     if (el.type === "table") {
@@ -334,14 +400,15 @@ export async function renderPdfLibExportPart(opts: {
       const fill = el.tableSqlFill?.enabled ? el.tableSqlFill : null;
       const fillPv = fill ? values[sqlKey]?.tableSqlFill ?? null : null;
       const label = `[table ${el.id.slice(0, 8)}]`;
+      const labelSize = draftV1FontSize(9, 9);
       page.drawText(useWinAnsi ? sanitizeForWinAnsi(label) : label, {
         x: margin,
         y,
-        size: 9,
+        size: labelSize,
         font,
         color: rgb(0.2, 0.2, 0.5),
       });
-      y -= 14;
+      y -= draftV1LineHeight(labelSize);
 
       const drawTableLine = (parts: string[]) => {
         if (y < margin + 40) {
@@ -352,7 +419,18 @@ export async function renderPdfLibExportPart(opts: {
           .map((t) => (t === "\u00a0" ? "" : t))
           .join(" | ");
         if (!line.replace(/\s|\|/g, "").trim()) return;
-        y = drawWrapped(page, font, line, margin, y, 8, pageW - margin * 2, 10, useWinAnsi);
+        const rowSize = draftV1FontSize(8, 8);
+        y = drawWrapped(
+          page,
+          font,
+          line,
+          margin,
+          y,
+          rowSize,
+          pageW - margin * 2,
+          draftV1LineHeight(rowSize),
+          useWinAnsi,
+        );
       };
 
       if (fill && fillPv?.dataRows?.length) {

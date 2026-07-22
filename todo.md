@@ -7,6 +7,8 @@
 
 ## 2026-07-22
 
+- **ReportEditor 仅内容叠字修复**：档 0 封面大字号压行 → 字号 cap≤14 + 随字号行高 + `\n` 硬换行；单测防回归。看板 [docs/035-🚧](docs/035-🚧-ReportEditor导出性能档位与同机降载.md)。
+
 - **ReportEditor 冒烟无外框 + 竖/横五档复验**：全模版去 `showBorder`；Docker MariaDB 建「冒烟·竖/横」；五档 10/10 `ok`（`smoke-portrait`/`smoke-landscape`）。看板 [docs/035-🚧](docs/035-🚧-ReportEditor导出性能档位与同机降载.md) · [docs/036-✅](docs/036-✅-ReportEditor矢量档与预览稳样式对照.md)。
 
 - **ReportEditor 035 手测 H1–H5**：默认预览稳、档 0 草稿、档 2/3/4 预览级、结批探活暂停/拆预热；证据 `retest-0.3.132-white-10-42-15` + 单测。H6/H7 现场 ⌛️。看板 [docs/035-🚧](docs/035-🚧-ReportEditor导出性能档位与同机降载.md)。
