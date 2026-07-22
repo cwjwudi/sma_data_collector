@@ -118,6 +118,9 @@
 
 **验收**：`npm run test -- pdf-lib-export-render`；冒烟模版重导档 0 目视无叠字。
 
+**复验（2026-07-22 · 模版微调后）**：封面标题 45→28、作者块去前导 `\n`、正文标题 16、全模版无外框；五档  
+`Desktop\report-editor-five-tier-exports\smoke-{portrait,landscape}-2026-07-22T11-34-32` 共 10/10 `ok`；档 0 pdf.js **badOverlap=0**（字号 cap≤14，相邻基线间距正常）。
+
 ---
 
 # 🐛 缺陷记录：矢量档 SQL 参数未居中（2026-07-22）
