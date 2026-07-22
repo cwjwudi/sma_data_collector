@@ -7,7 +7,9 @@
 
 ## 2026-07-22
 
-- **同机优先 PDF 版式不可用（登记）**：现场「SMA报警报表」draft-v1 乱码/`{{v}}`/`[table id]`；临时用版式优先；对齐挂 034 M11。看板 [docs/030-🚧](docs/030-🚧-ReportEditor结批占满CPU导致mappView白屏.md)。
+- **PDF 交付拍板**：必须与**预览一致**；**不接受** pdf-lib draft-v1 草稿交差；M11 重定义。看板 [docs/030-🚧](docs/030-🚧-ReportEditor结批占满CPU导致mappView白屏.md) · [docs/034-🚧](docs/034-🚧-ReportEditor全站架构复评-2026-07-22.md)。
+
+- **同机优先 PDF 版式不可用（登记）**：现场「SMA报警报表」draft-v1 乱码/`{{v}}`/`[table id]`；临时用版式优先。看板 [docs/030-🚧](docs/030-🚧-ReportEditor结批占满CPU导致mappView白屏.md)。
 
 - **034 架构平复改动清单**：整理 M1–M14（先 M1–M7）；**030 8k/≥4 零闪硬验收临时挂起**。看板 [docs/034-🚧](docs/034-🚧-ReportEditor全站架构复评-2026-07-22.md) · [docs/030-🚧](docs/030-🚧-ReportEditor结批占满CPU导致mappView白屏.md)。
 
