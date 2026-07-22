@@ -1651,6 +1651,46 @@ async function handlePdfExportRun(event, opts) {
 
 ipcMain.handle('pdf-export-run', (event, opts) => handlePdfExportRun(event, opts))
 
+/** 035：五档批导历史批次数上限（summary_*/tier*_* 同一时间戳算一批） */
+const FIVE_TIER_EXPORT_HISTORY_KEEP = 5
+
+/**
+ * 导出目录只保留最近 keep 批（按文件名时间戳 `YYYY-MM-DDTHH-mm-ss`）。
+ * 不删 `_preview` 等调试子目录。
+ */
+function pruneFiveTierExportHistory(outDir, keep = FIVE_TIER_EXPORT_HISTORY_KEEP) {
+  const nKeep = Math.max(1, Math.floor(Number(keep) || FIVE_TIER_EXPORT_HISTORY_KEEP))
+  let names
+  try {
+    names = fs.readdirSync(outDir)
+  } catch {
+    return { kept: 0, dropped: 0, removedFiles: 0 }
+  }
+  const stampRe = /(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2})/
+  const stamps = new Set()
+  for (const name of names) {
+    if (!name.startsWith('summary_') && !/^tier\d+_/.test(name)) continue
+    const m = stampRe.exec(name)
+    if (m) stamps.add(m[1])
+  }
+  const ordered = [...stamps].sort().reverse()
+  const drop = ordered.slice(nKeep)
+  let removedFiles = 0
+  for (const stamp of drop) {
+    for (const name of names) {
+      if (!name.includes(stamp)) continue
+      if (!name.startsWith('summary_') && !/^tier\d+_/.test(name)) continue
+      try {
+        fs.unlinkSync(path.join(outDir, name))
+        removedFiles += 1
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+  return { kept: Math.min(ordered.length, nKeep), dropped: drop.length, removedFiles }
+}
+
 /** 035：五档对照导出。env REPORT_EDITOR_FIVE_TIER_EXPORT=templateId|outDir */
 async function runFiveTierExportBatch(spec) {
   const parts = String(spec || '').split('|')
@@ -1703,6 +1743,16 @@ async function runFiveTierExportBatch(spec) {
   const summaryPath = path.join(outDir, `summary_${stamp}.json`)
   fs.writeFileSync(summaryPath, JSON.stringify({ templateId, outDir, results }, null, 2), 'utf8')
   log(`五档批导完成：${summaryPath}`)
+  try {
+    const pruned = pruneFiveTierExportHistory(outDir, FIVE_TIER_EXPORT_HISTORY_KEEP)
+    if (pruned.dropped > 0) {
+      log(
+        `五档批导：已清理旧历史 ${pruned.dropped} 批（${pruned.removedFiles} 个文件），保留最近 ${pruned.kept} 批`,
+      )
+    }
+  } catch (e) {
+    log(`五档批导：清理旧历史失败（忽略）：${e && e.message ? e.message : e}`)
+  }
   try {
     shell.openPath(outDir)
   } catch {

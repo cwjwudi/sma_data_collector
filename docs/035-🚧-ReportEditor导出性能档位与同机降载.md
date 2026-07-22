@@ -81,6 +81,8 @@
 **根因**：`drawWrappedInBox` 未读 `alignX/alignY`；`normalizeAlignAxis` 不识别 `"start"`（改默认居中时会丢「左」）。  
 **处理**：layout-v2 按对齐偏移画字；画布/迷你页/zone 表读 `alignX/alignY`；新建表默认居中；修正 `normalizeAlignAxis`。
 
+**批导目录**：`export-five-tiers` 完成后只保留最近 **5** 批（`summary_*` / `tier*_*` 同戳为一批），不堆全历史。
+
 ---
 
 # 手测（应用内）

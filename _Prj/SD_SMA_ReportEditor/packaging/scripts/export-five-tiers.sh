@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # 用五档导出模式各导出一份 PDF（复用本机已运行的后端 :8000）。
+# 完成后 Electron 侧会按时间戳只保留最近 5 批（summary_*/tier*_*）。
 # 用法：
 #   ./packaging/scripts/export-five-tiers.sh [templateId] [outDir]
 set -euo pipefail
