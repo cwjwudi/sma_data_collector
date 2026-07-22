@@ -1,7 +1,7 @@
 {
   "version": "0.3.133",
   "releasedAt": "2026-07-22T15:20:00.000Z",
-  "notes": "Report Editor AI 0.3.133\n\n- 034 M10：主进程冷路径去 sync（端口探测 / 备份读 / 日志写 async）",
+  "notes": "Report Editor AI 0.3.133\n\n- 034 M10：主进程冷路径去 sync（端口探测 / 备份读 / 日志写 async）\n- 035：仅内容档（draft-v1）大字号叠字修复（字号 cap + 随字号行高）",
   "platforms": {
     "win32-x64": {
       "url": "Report Editor AI-Setup-0.3.133-x64.exe",
