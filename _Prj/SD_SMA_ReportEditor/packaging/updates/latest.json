@@ -1,17 +1,17 @@
 {
-  "version": "0.3.130",
-  "releasedAt": "2026-07-22T14:03:23.865Z",
-  "notes": "Report Editor AI 0.3.130\n\n- 矢量圆形页码：直径按 zone×0.85；数字几何居中（不再偏下）",
+  "version": "0.3.131",
+  "releasedAt": "2026-07-22T14:12:01.902Z",
+  "notes": "Report Editor AI 0.3.131\n\n- 矢量角色色纸边：封面橙顶 / 正文靛蓝左 / 封尾紫底（对齐 Mini 3px）",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.130-x64.exe",
+      "url": "Report Editor AI-Setup-0.3.131-x64.exe",
       "sha256": "",
       "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.130-arm64.dmg",
-      "sha256": "e9cd395ef3627237c4a04f13d34c534f7fc089227042a31651a55c07e31d9530",
-      "size": 212101017
+      "url": "Report Editor AI-0.3.131-arm64.dmg",
+      "sha256": "7de11e14df2a8649a0a07dfbe61e5487127725cf2f0be78abaa1e9d531287d99",
+      "size": 212106824
     }
   }
 }

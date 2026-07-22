@@ -427,6 +427,94 @@ describe("pdf-lib-layout-v2-render", () => {
     expect(xEnd).toBeGreaterThan(xCenter + 20);
   });
 
+  it("D19: role accent bars — cover top orange / body left indigo / back bottom purple", async () => {
+    const b = blankZonesSnapshot();
+    const tmpl = createTemplate({
+      name: "role-accent",
+      paperKind: "A4",
+      orientation: "portrait",
+      layoutPresetId: null,
+      layoutSnapshot: b.layoutSnapshot,
+      headerText: "",
+      footerText: "",
+      headerElements: [],
+      footerElements: [],
+      coverLayoutPresetId: null,
+      coverLayoutSnapshot: b.layoutSnapshot,
+      coverHeaderText: "",
+      coverFooterText: "",
+      coverHeaderElements: [],
+      coverFooterElements: [],
+      coverBodyZoneElements: [],
+      backLayoutPresetId: null,
+      backLayoutSnapshot: b.layoutSnapshot,
+      backHeaderText: "",
+      backFooterText: "",
+      backHeaderElements: [],
+      backFooterElements: [],
+      backBodyZoneElements: [],
+    });
+    tmpl.coverElements = [
+      hydrateTemplateElement({ id: "c1", type: "text", text: "Cover", x: 40, y: 40, w: 120, h: 24 }),
+    ];
+    tmpl.backElements = [
+      hydrateTemplateElement({ id: "b1", type: "text", text: "Back", x: 40, y: 40, w: 120, h: 24 }),
+    ];
+    ensureBodyPages(tmpl)[0].splice(
+      0,
+      ensureBodyPages(tmpl)[0].length,
+      hydrateTemplateElement({ id: "body1", type: "text", text: "Body", x: 40, y: 40, w: 120, h: 24 }),
+    );
+
+    const doc = await PDFDocument.create();
+    const font = await doc.embedFont(StandardFonts.Helvetica);
+    const pageCount = await appendPdfLibLayoutV2Pages(doc, {
+      tmpl,
+      previewValues: {},
+      font,
+      useWinAnsi: true,
+    });
+    expect(pageCount).toBe(3);
+
+    /** 按页拆 content stream（与 inflatedPdfPlain 相同 inflate） */
+    async function pagePlains(bytes: Uint8Array): Promise<string[]> {
+      const { inflateSync } = await import("node:zlib");
+      const raw = Buffer.from(bytes);
+      const parts: string[] = [];
+      let idx = 0;
+      while (idx < raw.length) {
+        const i = raw.indexOf(Buffer.from("stream\n"), idx);
+        if (i < 0) break;
+        const j = raw.indexOf(Buffer.from("\nendstream"), i);
+        if (j < 0) break;
+        const chunk = raw.subarray(i + 7, j);
+        try {
+          parts.push(inflateSync(chunk).toString("latin1"));
+        } catch {
+          parts.push(chunk.toString("latin1"));
+        }
+        idx = j + 10;
+      }
+      return parts.filter((p) => /\bre\b/.test(p) || /\brg\b/.test(p));
+    }
+
+    const plains = await pagePlains(await doc.save({ useObjectStreams: false }));
+    expect(plains.length).toBeGreaterThanOrEqual(3);
+    const cover = plains[0]!;
+    const body = plains[1]!;
+    const back = plains[2]!;
+    // rgb(251 146 60) / (99 102 241) / (168 139 246)
+    const orange = /0\.98\d*\s+0\.57\d*\s+0\.23\d*\s+rg/;
+    const indigo = /0\.38\d*\s+0\.4\d*\s+0\.94\d*\s+rg/;
+    const purple = /0\.65\d*\s+0\.54\d*\s+0\.96\d*\s+rg/;
+    expect(orange.test(cover), "cover missing orange top bar").toBe(true);
+    expect(indigo.test(body), "body missing indigo left bar").toBe(true);
+    expect(purple.test(back), "back missing purple bottom bar").toBe(true);
+    // 角色色互不串页
+    expect(orange.test(body)).toBe(false);
+    expect(purple.test(cover)).toBe(false);
+  });
+
   it("formats zone date by dateFormat and pageNumber slashTotal with total pages", async () => {
     const fs = await import("node:fs");
     const path = await import("node:path");

@@ -93,6 +93,15 @@ const BODY_TABLE_SHELL_PAD_PT = REPORT_TEMPLATE_TABLE_NODE_PADDING_PX.top * PX_T
 const TD_PAD_X_PT = 5 * PX_TO_PT;
 const TD_PAD_Y_PT = 3 * PX_TO_PT;
 
+/** MiniPreviewChrome 角色色纸边（021 / PdfExportView 保留）：3px */
+const ROLE_ACCENT_PT = 3 * PX_TO_PT;
+/** 封面顶边 rgb(251 146 60) */
+const ROLE_ACCENT_COVER = rgb(251 / 255, 146 / 255, 60 / 255);
+/** 正文左边 rgb(99 102 241) */
+const ROLE_ACCENT_BODY = rgb(99 / 255, 102 / 255, 241 / 255);
+/** 封尾底边 rgb(168 139 246) */
+const ROLE_ACCENT_BACK = rgb(168 / 255, 139 / 255, 246 / 255);
+
 /** Mini `.mini-tpl-td`：`1px solid rgb(212 212 216)` */
 const TABLE_GRID_BORDER = rgb(212 / 255, 212 / 255, 216 / 255);
 const TABLE_GRID_BORDER_PT = 1 * PX_TO_PT;
@@ -203,6 +212,47 @@ function parseCssColor(raw: string | undefined | null, fallback: RGB): RGB {
 }
 
 /** 圆形页码半径（pt）：与 Mini zone 壳字号×0.85 后的 `min(100%, 2.75em)` 对齐 */
+/** 与 MiniPreviewChrome `.mpc--cover|normal|back :deep(.mpp-paper)` 角色粗边对齐 */
+function drawRoleAccentBar(
+  page: PDFPage,
+  sheet: EditorSheet,
+  pageW: number,
+  pageH: number,
+): void {
+  const t = ROLE_ACCENT_PT;
+  if (!(t > 0) || !(pageW > 0) || !(pageH > 0)) return;
+  try {
+    if (sheet === "cover") {
+      page.drawRectangle({
+        x: 0,
+        y: pageH - t,
+        width: pageW,
+        height: t,
+        color: ROLE_ACCENT_COVER,
+      });
+    } else if (sheet === "back") {
+      page.drawRectangle({
+        x: 0,
+        y: 0,
+        width: pageW,
+        height: t,
+        color: ROLE_ACCENT_BACK,
+      });
+    } else {
+      // body（含续页）
+      page.drawRectangle({
+        x: 0,
+        y: 0,
+        width: t,
+        height: pageH,
+        color: ROLE_ACCENT_BODY,
+      });
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
 function circlePageNumberRadiusPt(el: { w: number; h: number; fontSize?: unknown }): number {
   const em = scaledFontSizePx(el.fontSize, ZONE_FONT_SCALE, 12);
   const diamPx = Math.min(Math.max(4, Number(el.w) || 4), Math.max(4, Number(el.h) || 4), em * CIRCLE_PN_EM);
@@ -1623,6 +1673,8 @@ export async function appendPdfLibLayoutV2Pages(
         pickFont,
       );
     }
+    // 021：封面橙顶 / 正文靛蓝左边 / 封尾紫底（与 Chromium 导出保留的角色色边一致）
+    drawRoleAccentBar(page, sheet, pageW, pageH);
   };
 
   if (hasCover) {
