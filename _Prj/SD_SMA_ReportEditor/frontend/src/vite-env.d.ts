@@ -396,6 +396,7 @@ interface Window {
       silentStart: boolean;
       packaged?: boolean;
       silentStartSession?: boolean;
+      execPath?: string;
     }>;
     setLaunchSettings?: (patch: {
       openAtLogin?: boolean;
@@ -405,6 +406,11 @@ interface Window {
       silentStart: boolean;
       packaged?: boolean;
       silentStartSession?: boolean;
+      execPath?: string;
+      loginCommand?: string | null;
+      loginApplied?: boolean;
+      loginSkipped?: boolean;
+      loginError?: string | null;
     }>;
   };
 }

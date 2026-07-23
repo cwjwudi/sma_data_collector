@@ -30,6 +30,7 @@ const {
   readLaunchSettings,
   writeLaunchSettings,
   applyLoginItem,
+  syncLoginItemOnReady,
   shouldSilentStartThisSession,
 } = require('./launch.cjs')
 
@@ -1839,16 +1840,22 @@ ipcMain.handle('launch-settings-get', () => {
     ...settings,
     packaged: app.isPackaged,
     silentStartSession: Boolean(silentStartSession),
+    execPath: process.execPath,
   }
 })
 
 ipcMain.handle('launch-settings-set', (_event, patch) => {
   const next = writeLaunchSettings(app, patch || {})
-  applyLoginItem(app, next)
+  const applied = applyLoginItem(app, next, { skip: Boolean(fiveTierExportSpec) })
   return {
     ...next,
     packaged: app.isPackaged,
     silentStartSession: Boolean(silentStartSession),
+    execPath: applied.execPath,
+    loginCommand: applied.loginCommand,
+    loginApplied: applied.applied,
+    loginSkipped: applied.skipped,
+    loginError: applied.error,
   }
 })
 
@@ -1857,7 +1864,11 @@ app.whenReady().then(async () => {
 
   silentStartSession = shouldSilentStartThisSession(app, process.argv)
   try {
-    applyLoginItem(app, readLaunchSettings(app))
+    // 037：五档批导等旁路勿改系统登录项；正常启动校正死链/无引号
+    const sync = syncLoginItemOnReady(app, { skip: Boolean(fiveTierExportSpec) })
+    if (sync.error) log(`syncLoginItemOnReady: ${sync.error}`)
+    else if (sync.applied) log(`Login item synced: ${sync.loginCommand || '(cleared)'}`)
+    else if (sync.skipped) log('Login item sync skipped')
   } catch (e) {
     log(`applyLoginItem failed (ignore): ${e.message}`)
   }

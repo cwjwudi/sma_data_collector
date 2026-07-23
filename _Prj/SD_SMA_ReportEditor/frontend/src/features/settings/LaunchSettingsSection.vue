@@ -68,6 +68,11 @@ type LaunchPrefs = {
   silentStart: boolean;
   packaged?: boolean;
   silentStartSession?: boolean;
+  execPath?: string;
+  loginCommand?: string | null;
+  loginApplied?: boolean;
+  loginSkipped?: boolean;
+  loginError?: string | null;
 };
 
 const available = ref(false);
@@ -105,9 +110,21 @@ async function persist(patch: Partial<LaunchPrefs>) {
   msg.value = "";
   msgTone.value = "";
   try {
-    prefs.value = await api.setLaunchSettings(patch);
-    msg.value = "已保存";
-    msgTone.value = "ok";
+    const next = await api.setLaunchSettings(patch);
+    prefs.value = next;
+    if (next.loginError) {
+      msg.value = `偏好已保存，但登录项同步失败：${next.loginError}`;
+      msgTone.value = "err";
+    } else if (next.packaged === false || next.loginSkipped) {
+      msg.value = "已保存（当前不会写入系统开机启动项）";
+      msgTone.value = "ok";
+    } else if (next.openAtLogin && next.loginCommand) {
+      msg.value = `已保存并注册开机启动：${next.loginCommand}`;
+      msgTone.value = "ok";
+    } else {
+      msg.value = "已保存";
+      msgTone.value = "ok";
+    }
   } catch (e: unknown) {
     msg.value = e instanceof Error ? e.message : String(e);
     msgTone.value = "err";
