@@ -1256,15 +1256,44 @@ function tplCaption(el: TemplateElement): string {
     overflow: visible;
   }
   /*
-   * D21：printToPDF 下 CSS 1px + separate/top-left 分边易因子像素舍入粗细不均。
-   * 打印改用 collapse + 统一 0.75pt（物理单位）；屏显仍用上方 separate 方案。
+   * D21b：collapse / 0.75pt border 在 Chromium printToPDF 仍交叉断点、粗细不均、表间游离线。
+   * 打印改用 separate + inset box-shadow 画顶/左边（末列/末行补右/底），避免双线叠粗与 collapse 伪影。
    */
+  .mini-tpl-table-wrap {
+    padding-bottom: 0 !important;
+  }
   .mini-tpl-table {
-    border-collapse: collapse;
-    border-spacing: 0;
+    border-collapse: separate !important;
+    border-spacing: 0 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
   .mini-tpl-td {
-    border: 0.75pt solid rgb(212 212 216) !important;
+    border: none !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    box-shadow:
+      inset 0 1px 0 0 rgb(212 212 216),
+      inset 1px 0 0 0 rgb(212 212 216);
+  }
+  .mini-tpl-td:last-child {
+    box-shadow:
+      inset 0 1px 0 0 rgb(212 212 216),
+      inset 1px 0 0 0 rgb(212 212 216),
+      inset -1px 0 0 0 rgb(212 212 216);
+  }
+  .mini-tpl-table tbody tr:last-child .mini-tpl-td {
+    box-shadow:
+      inset 0 1px 0 0 rgb(212 212 216),
+      inset 1px 0 0 0 rgb(212 212 216),
+      inset 0 -1px 0 0 rgb(212 212 216);
+  }
+  .mini-tpl-table tbody tr:last-child .mini-tpl-td:last-child {
+    box-shadow:
+      inset 0 1px 0 0 rgb(212 212 216),
+      inset 1px 0 0 0 rgb(212 212 216),
+      inset -1px 0 0 0 rgb(212 212 216),
+      inset 0 -1px 0 0 rgb(212 212 216);
   }
 }
 .mini-band-header {
