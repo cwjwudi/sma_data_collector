@@ -1,12 +1,12 @@
 {
   "version": "0.3.136",
-  "releasedAt": "2026-07-23T02:35:23.698Z",
+  "releasedAt": "2026-07-23T02:41:45.169Z",
   "notes": "Report Editor AI 0.3.136\n\n- 036 D21b：print-to-pdf 表框改 inset box-shadow，消除断点/粗细不均/表间游离线",
   "platforms": {
     "win32-x64": {
       "url": "Report Editor AI-Setup-0.3.136-x64.exe",
-      "sha256": "",
-      "size": 0
+      "sha256": "35b44c5665c85b98ee5608dbf8ccd7e5ef82b497314cfcd7f4cfba2b6972e746",
+      "size": 175787517
     },
     "darwin-arm64": {
       "url": "Report Editor AI-0.3.136-arm64.dmg",
