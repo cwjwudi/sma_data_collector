@@ -396,6 +396,7 @@ interface Window {
     getLaunchSettings?: () => Promise<{
       openAtLogin: boolean;
       silentStart: boolean;
+      exportOverlayEnabled?: boolean;
       packaged?: boolean;
       silentStartSession?: boolean;
       execPath?: string;
@@ -403,9 +404,11 @@ interface Window {
     setLaunchSettings?: (patch: {
       openAtLogin?: boolean;
       silentStart?: boolean;
+      exportOverlayEnabled?: boolean;
     }) => Promise<{
       openAtLogin: boolean;
       silentStart: boolean;
+      exportOverlayEnabled?: boolean;
       packaged?: boolean;
       silentStartSession?: boolean;
       execPath?: string;
@@ -413,6 +416,7 @@ interface Window {
       loginApplied?: boolean;
       loginSkipped?: boolean;
       loginError?: string | null;
+      loginRemovedLegacy?: string[];
     }>;
   };
 }

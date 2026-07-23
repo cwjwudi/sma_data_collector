@@ -8,6 +8,12 @@ const launch = require("../../electron/launch.cjs") as {
   parseRunKeyOutput: (stdout: string) => { name: string; data: string }[];
   listWindowsRunEntries: () => { name: string; data: string }[];
   removeLegacyRunDuplicates: (execPath: string) => string[];
+  normalizeSettings: (raw: unknown) => {
+    openAtLogin: boolean;
+    silentStart: boolean;
+    exportOverlayEnabled: boolean;
+  };
+  DEFAULTS: { openAtLogin: boolean; silentStart: boolean; exportOverlayEnabled: boolean };
   SILENT_START_ARG: string;
   LOGIN_ITEM_NAME: string;
 };
@@ -56,5 +62,15 @@ describe("launch.cjs (037)", () => {
     if (process.platform === "win32") return;
     expect(launch.listWindowsRunEntries()).toEqual([]);
     expect(launch.removeLegacyRunDuplicates("C:\\x\\Report Editor AI.exe")).toEqual([]);
+  });
+
+  it("039：导出遮罩默认开启，历史配置缺字段视为开、显式关闭保留", () => {
+    expect(launch.DEFAULTS.exportOverlayEnabled).toBe(true);
+    // 历史 launch-settings.json 无此字段 → 兜底遮罩默认可用
+    expect(launch.normalizeSettings({ openAtLogin: true }).exportOverlayEnabled).toBe(true);
+    expect(launch.normalizeSettings({}).exportOverlayEnabled).toBe(true);
+    // 现场显式关闭必须保留
+    expect(launch.normalizeSettings({ exportOverlayEnabled: false }).exportOverlayEnabled).toBe(false);
+    expect(launch.normalizeSettings({ exportOverlayEnabled: true }).exportOverlayEnabled).toBe(true);
   });
 });

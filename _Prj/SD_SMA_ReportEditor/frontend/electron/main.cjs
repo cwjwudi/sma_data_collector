@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, shell, nativeImage, powerSaveBlocker, session, Tray, Menu } = require('electron')
+const { app, BrowserWindow, ipcMain, dialog, shell, nativeImage, powerSaveBlocker, session, Tray, Menu, screen } = require('electron')
 const { execFile, spawn } = require('child_process')
 const { promisify } = require('util')
 const path = require('path')
@@ -635,6 +635,212 @@ function showMainWindowFromTray() {
     }
   }
 }
+
+/* ========== 039：导出全屏遮罩（盖住同机 mappView 被饿死的白屏） ========== */
+let exportOverlayWindow = null
+let exportOverlayHideTimer = null
+/** 进行中的导出计数（0→1 显示遮罩，→0 隐藏）；支持并行导出 */
+let exportOverlayUiCount = 0
+let exportOverlayLastProgress = null
+/** 硬超时：最多盖 120s，防遮罩卡死长时间锁住 HMI（用户确认） */
+const EXPORT_OVERLAY_MAX_MS = 120000
+
+function isExportOverlayEnabled() {
+  // 五档批导为无人值守/自动退出，不弹遮罩
+  if (fiveTierExportSpec) return false
+  try {
+    return Boolean(readLaunchSettings(app).exportOverlayEnabled)
+  } catch {
+    return true
+  }
+}
+
+function buildExportOverlayHtml() {
+  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; user-select:none; }
+  html,body { width:100%; height:100%; overflow:hidden;
+    background:radial-gradient(1200px 800px at 50% 40%, #1b2440 0%, #0b1120 70%, #070b16 100%);
+    color:#e8ecf6; font-family:"Microsoft YaHei","PingFang SC","Segoe UI",sans-serif;
+    -webkit-app-region:no-drag; cursor:default; }
+  .wrap { position:absolute; inset:0; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; gap:26px; }
+  .ring { width:76px; height:76px; border-radius:50%;
+    border:5px solid rgba(120,160,255,0.18); border-top-color:#6aa0ff;
+    animation:spin 0.9s linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  .title { font-size:30px; font-weight:600; letter-spacing:2px; }
+  .sub { font-size:16px; color:#9fb0d4; letter-spacing:1px; }
+  .counter { font-size:15px; color:#c7d4ef; min-height:20px; }
+  .bar { width:360px; max-width:60vw; height:6px; border-radius:99px;
+    background:rgba(120,160,255,0.15); overflow:hidden; position:relative; }
+  .bar > i { position:absolute; left:-40%; top:0; height:100%; width:40%;
+    border-radius:99px; background:linear-gradient(90deg,transparent,#6aa0ff,transparent);
+    animation:slide 1.25s ease-in-out infinite; }
+  @keyframes slide { 0%{left:-40%;} 100%{left:100%;} }
+  .hint { position:absolute; bottom:22px; left:0; right:0; text-align:center;
+    font-size:13px; color:#6f7ea0; }
+  #ov-close { position:absolute; top:16px; right:20px; width:40px; height:40px;
+    border-radius:8px; border:1px solid rgba(160,180,220,0.25); background:rgba(255,255,255,0.04);
+    color:#9fb0d4; font-size:20px; line-height:38px; text-align:center; cursor:pointer;
+    opacity:0.55; }
+  #ov-close:hover { opacity:1; background:rgba(255,255,255,0.1); }
+</style></head><body>
+  <div id="ov-close" title="隐藏（Esc）">×</div>
+  <div class="wrap">
+    <div class="ring"></div>
+    <div class="title">正在生成报表</div>
+    <div class="sub">结批导出进行中，请稍候…</div>
+    <div class="counter" id="ov-counter"></div>
+    <div class="bar"><i></i></div>
+  </div>
+  <div class="hint">此界面为报表结批临时提示 · 按 Esc 或点右上角 × 可隐藏回主画面</div>
+<script>
+  (function(){
+    var api = window.exportOverlay;
+    var counter = document.getElementById('ov-counter');
+    function render(p){
+      if (!p) return;
+      var total = Number(p.totalReports) || 0;
+      if (total > 1) {
+        var idx = (Number(p.partIndex) || 0) + 1;
+        if (idx > total) idx = total;
+        counter.textContent = '第 ' + idx + ' / 共 ' + total + ' 份';
+      } else {
+        counter.textContent = '';
+      }
+    }
+    if (api && api.onProgress) api.onProgress(render);
+    function dismiss(){ if (api && api.dismiss) api.dismiss(); }
+    document.addEventListener('keydown', function(e){ if (e.key === 'Escape') dismiss(); });
+    var btn = document.getElementById('ov-close');
+    if (btn) btn.addEventListener('click', dismiss);
+  })();
+</script></body></html>`
+}
+
+function armExportOverlayTimeout() {
+  if (exportOverlayHideTimer) clearTimeout(exportOverlayHideTimer)
+  exportOverlayHideTimer = setTimeout(() => {
+    log('导出遮罩：达最长显示时间（120s），自动隐藏以防锁住 HMI')
+    hideExportOverlay('timeout')
+  }, EXPORT_OVERLAY_MAX_MS)
+}
+
+function pushExportOverlayProgress(payload) {
+  if (payload) exportOverlayLastProgress = { ...(exportOverlayLastProgress || {}), ...payload }
+  const w = exportOverlayWindow
+  if (w && !w.isDestroyed()) {
+    try {
+      w.webContents.send('export-overlay-progress', exportOverlayLastProgress || {})
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+function showExportOverlay() {
+  if (!isExportOverlayEnabled()) return
+  try {
+    if (exportOverlayWindow && !exportOverlayWindow.isDestroyed()) {
+      if (!exportOverlayWindow.isVisible()) exportOverlayWindow.show()
+      exportOverlayWindow.setAlwaysOnTop(true, 'screen-saver')
+      pushExportOverlayProgress(null)
+      armExportOverlayTimeout()
+      return
+    }
+    const disp = screen.getPrimaryDisplay()
+    const b = (disp && disp.bounds) || { x: 0, y: 0, width: 1280, height: 800 }
+    const win = new BrowserWindow({
+      x: b.x,
+      y: b.y,
+      width: b.width,
+      height: b.height,
+      show: false,
+      frame: false,
+      backgroundColor: '#0b1120',
+      skipTaskbar: true,
+      resizable: false,
+      movable: false,
+      minimizable: false,
+      maximizable: false,
+      fullscreenable: true,
+      alwaysOnTop: true,
+      webPreferences: {
+        preload: path.join(__dirname, 'overlay-preload.cjs'),
+        contextIsolation: true,
+        nodeIntegration: false,
+      },
+    })
+    exportOverlayWindow = win
+    win.setMenuBarVisibility(false)
+    win.once('ready-to-show', () => {
+      if (!exportOverlayWindow || exportOverlayWindow.isDestroyed()) return
+      try {
+        win.setAlwaysOnTop(true, 'screen-saver')
+      } catch {
+        /* ignore */
+      }
+      try {
+        win.setFullScreen(true)
+      } catch {
+        /* ignore */
+      }
+      win.show()
+      win.focus()
+      pushExportOverlayProgress(null)
+    })
+    // Esc 兜底（页面内也监听；此处防页面脚本异常时仍可退出）
+    win.webContents.on('before-input-event', (_e, input) => {
+      if (input && input.type === 'keyDown' && String(input.key) === 'Escape') {
+        hideExportOverlay('esc')
+      }
+    })
+    win.on('closed', () => {
+      if (exportOverlayWindow === win) exportOverlayWindow = null
+    })
+    win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(buildExportOverlayHtml()))
+    armExportOverlayTimeout()
+  } catch (e) {
+    log(`导出遮罩显示失败（忽略）：${e && e.message ? e.message : e}`)
+  }
+}
+
+function hideExportOverlay(reason = 'done') {
+  if (exportOverlayHideTimer) {
+    clearTimeout(exportOverlayHideTimer)
+    exportOverlayHideTimer = null
+  }
+  const w = exportOverlayWindow
+  exportOverlayWindow = null
+  exportOverlayLastProgress = null
+  if (w && !w.isDestroyed()) {
+    try {
+      w.destroy()
+    } catch {
+      /* ignore */
+    }
+  }
+  if (reason && reason !== 'done') log(`导出遮罩隐藏（${reason}）`)
+}
+
+/** 导出开始：计数 0→1 时弹遮罩（用户强关后本会话不再自动重弹） */
+function beginExportOverlaySession() {
+  exportOverlayUiCount += 1
+  if (exportOverlayUiCount === 1) {
+    exportOverlayLastProgress = { phase: 'render', partIndex: 0, totalReports: 0 }
+    showExportOverlay()
+  }
+}
+
+/** 导出结束：计数归 0 时隐藏遮罩 */
+function endExportOverlaySession() {
+  exportOverlayUiCount = Math.max(0, exportOverlayUiCount - 1)
+  if (exportOverlayUiCount === 0) hideExportOverlay('done')
+}
+
+ipcMain.on('export-overlay-dismiss', () => hideExportOverlay('user'))
 
 function destroyAppTray() {
   if (!appTray) return
@@ -1418,6 +1624,8 @@ async function handlePdfExportRun(event, opts) {
   if (!templateId || typeof templateId !== 'string') throw new Error('缺少 templateId')
 
   registerPdfExportJob(jobId)
+  // 039：导出期弹全屏遮罩盖住同机 mappView（默认开，可 Esc / 角落关 / 120s 超时）
+  beginExportOverlaySession()
 
   return runPdfExportWithSlot(async () => {
     let pdfWin = null
@@ -1441,6 +1649,12 @@ async function handlePdfExportRun(event, opts) {
           if (w && !w.isDestroyed()) {
             event.sender.send('pdf-export-progress', { ...payload, jobId, templateId })
           }
+        } catch {
+          /* ignore */
+        }
+        // 039：同步喂给全屏遮罩（第 x/共 y 份）
+        try {
+          pushExportOverlayProgress({ ...payload, templateId })
         } catch {
           /* ignore */
         }
@@ -1729,6 +1943,8 @@ async function handlePdfExportRun(event, opts) {
       throw new Error(humanizePdfExportError(e, { phase: 'export' }))
     } finally {
       unregisterPdfExportJob(jobId)
+      // 039：本次导出结束，计数归 0 时收起遮罩（与 begin 对称）
+      endExportOverlaySession()
       // 导出结束：把渲染进程（归还池的窗）与后端恢复 NORMAL，避免让核状态长期残留
       try {
         if (pdfWin && !pdfWin.isDestroyed()) {

@@ -14,6 +14,8 @@ const WIN_RUN_KEY = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run'
 const DEFAULTS = {
   openAtLogin: false,
   silentStart: false,
+  // 039：导出/结批时全屏遮罩盖住同机 mappView 白屏，默认开启（现场兜底）
+  exportOverlayEnabled: true,
 }
 
 function getSettingsPath(app) {
@@ -25,6 +27,8 @@ function normalizeSettings(raw) {
   return {
     openAtLogin: Boolean(src.openAtLogin),
     silentStart: Boolean(src.silentStart),
+    // 缺省视为开启（历史配置无此字段时保持兜底遮罩可用）
+    exportOverlayEnabled: src.exportOverlayEnabled === undefined ? true : Boolean(src.exportOverlayEnabled),
   }
 }
 
