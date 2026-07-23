@@ -35,6 +35,47 @@ body {
   font-weight: 600;
 }
 
+.app-status-bar {
+  position: sticky;
+  z-index: 100;
+  top: 8px;
+  margin: 8px 12px 0;
+  padding: 10px 12px;
+  border: 1px solid #93c5fd;
+  border-left: 4px solid #2563eb;
+  border-radius: 6px;
+  background: #eff6ff;
+  color: #1e3a8a;
+  box-shadow: 0 3px 10px rgb(15 23 42 / 16%);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.app-status-bar[hidden] {
+  display: none;
+}
+
+.app-status-bar[data-tone="ok"] {
+  border-color: #86efac;
+  border-left-color: #16a34a;
+  background: #f0fdf4;
+  color: #166534;
+}
+
+.app-status-bar[data-tone="warn"] {
+  border-color: #fcd34d;
+  border-left-color: #d97706;
+  background: #fffbeb;
+  color: #92400e;
+}
+
+.app-status-bar[data-tone="error"] {
+  border-color: #fca5a5;
+  border-left-color: #dc2626;
+  background: #fef2f2;
+  color: #991b1b;
+}
+
 .layout {
   display: grid;
   grid-template-columns: 1fr 1.5fr;

@@ -8,6 +8,31 @@ const confirmModalMessage = document.getElementById('confirm-modal-message');
 const confirmModalCancel = document.getElementById('confirm-modal-cancel');
 const confirmModalConfirm = document.getElementById('confirm-modal-confirm');
 
+function safeStorageGet(key) {
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function safeStorageSet(key, value) {
+  try {
+    window.localStorage.setItem(key, value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function showStatusBar(text, tone = 'info') {
+  const bar = document.getElementById('appStatusBar');
+  if (!bar) return;
+  bar.textContent = String(text || '');
+  bar.dataset.tone = tone;
+  bar.hidden = !text;
+}
+
 async function fetchJson(url, opts) {
   const resp = await fetch(url, opts);
   const data = await resp.json();
@@ -29,8 +54,16 @@ function enableButtonClickFeedback() {
 
 function setHint(id, text, cls = 'muted') {
   const el = document.getElementById(id);
-  el.textContent = text;
-  el.className = cls;
+  if (el) {
+    el.textContent = text;
+    el.className = cls;
+  }
+  const classes = String(cls).split(/\s+/);
+  if (classes.includes('ok')) {
+    showStatusBar(text, 'ok');
+  } else if (classes.includes('warn') || classes.includes('error')) {
+    showStatusBar(text, classes.includes('error') ? 'error' : 'warn');
+  }
 }
 
 function showConfirmModal({ title, message, confirmText = '确认执行' }) {
@@ -41,7 +74,7 @@ function showConfirmModal({ title, message, confirmText = '确认执行' }) {
     !confirmModalCancel ||
     !confirmModalConfirm
   ) {
-    console.error('Confirm modal elements are missing.');
+    showStatusBar('无法显示操作确认，操作已取消。', 'error');
     return Promise.resolve(false);
   }
 
@@ -241,11 +274,11 @@ function saveState() {
     importTable: document.getElementById('importTableSelect').value,
     outputDir: document.getElementById('outputDir').value,
   };
-  localStorage.setItem(STATE_KEY, JSON.stringify(state));
+  safeStorageSet(STATE_KEY, JSON.stringify(state));
 }
 
 function loadSavedState() {
-  const raw = localStorage.getItem(STATE_KEY);
+  const raw = safeStorageGet(STATE_KEY);
   if (!raw) return null;
   try {
     const state = JSON.parse(raw);
@@ -714,7 +747,7 @@ function bindEvents() {
     loadExportTables().catch(err => setHint('objectHint', err.message, 'muted warn'));
   });
   document.getElementById('btnRefreshImportTables').addEventListener('click', () => {
-    loadImportTables().catch(err => setHint('importHint', err.message, 'muted'));
+    loadImportTables().catch(err => setHint('importHint', err.message, 'muted warn'));
   });
   for (const id of [
     'databaseSelect',
@@ -796,4 +829,4 @@ async function init() {
   await loadServerCsvExports();
 }
 
-init().catch(err => alert(err.message));
+init().catch(err => showStatusBar(err.message, 'error'));

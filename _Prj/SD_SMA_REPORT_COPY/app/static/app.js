@@ -17,6 +17,31 @@ function el(id) {
   return document.getElementById(id);
 }
 
+function safeStorageGet(key) {
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function safeStorageSet(key, value) {
+  try {
+    window.localStorage.setItem(key, value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function showStatusBar(text, tone = 'info') {
+  const bar = el('appStatusBar');
+  if (!bar) return;
+  bar.textContent = String(text || '');
+  bar.dataset.tone = tone;
+  bar.hidden = !text;
+}
+
 async function fetchJson(url, opts) {
   const resp = await fetch(url, opts);
   const data = await resp.json();
@@ -37,13 +62,29 @@ function enableButtonClickFeedback() {
 
 function setHint(id, text, cls = 'muted') {
   const target = el(id);
-  if (!target) return;
-  target.textContent = text;
-  target.className = cls;
+  if (target) {
+    target.textContent = text;
+    target.className = cls;
+  }
+  const classes = String(cls).split(/\s+/);
+  if (classes.includes('ok')) {
+    showStatusBar(text, 'ok');
+  } else if (classes.includes('warn') || classes.includes('error')) {
+    showStatusBar(text, classes.includes('error') ? 'error' : 'warn');
+  }
 }
 
 function showConfirmModal({ title, message, confirmText = '确认执行' }) {
-  if (!confirmModalOverlay) return Promise.resolve(window.confirm(message));
+  if (
+    !confirmModalOverlay ||
+    !confirmModalTitle ||
+    !confirmModalMessage ||
+    !confirmModalCancel ||
+    !confirmModalConfirm
+  ) {
+    showStatusBar('无法显示操作确认，操作已取消。', 'error');
+    return Promise.resolve(false);
+  }
   return new Promise(resolve => {
     const oldConfirmText = confirmModalConfirm.textContent;
     const close = result => {
@@ -114,7 +155,7 @@ function normalizeTargets(value) {
 
 function loadState() {
   try {
-    return JSON.parse(localStorage.getItem(STATE_KEY) || '{}');
+    return JSON.parse(safeStorageGet(STATE_KEY) || '{}');
   } catch {
     return {};
   }
@@ -127,7 +168,7 @@ function saveState() {
     viewMode: currentViewMode,
     folderPath: currentFolderPath,
   };
-  localStorage.setItem(STATE_KEY, JSON.stringify(state));
+  safeStorageSet(STATE_KEY, JSON.stringify(state));
 }
 
 function getConfigPayload() {
@@ -582,4 +623,4 @@ async function init() {
   }
 }
 
-init().catch(err => alert(err.message));
+init().catch(err => showStatusBar(err.message, 'error'));
