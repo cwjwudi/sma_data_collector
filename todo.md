@@ -5,6 +5,10 @@
 
 ---
 
+## 2026-07-23
+
+- **ReportEditor 开机自启/静默启动重启失效**：设置里改完重启会失效；已建看板待复现。看板 [docs/037-⌛️](docs/037-⌛️-ReportEditor开机自启与静默启动失效.md)。
+
 ## 2026-07-22
 
 - **ReportEditor 0.3.137（036 D21c）**：print 表框改整表 SVG 连续格线（D21b box-shadow 仍断点）。看板 [docs/036-✅](docs/036-✅-ReportEditor矢量档与预览稳样式对照.md)。
