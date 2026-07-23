@@ -7,6 +7,8 @@
 
 ## 2026-07-23
 
+- **ReportEditor 038 五档批导收尾崩溃**：退出码 `-1073741819`（`0xC0000005` ACCESS_VIOLATION）；导出已成功后 `app.quit()` 阶段崩，待查根因。看板 [docs/038-⌛️](docs/038-⌛️-ReportEditor五档批导收尾ACCESS_VIOLATION.md)。
+
 - **ReportEditor 0.3.138（037）**：开机自启 Run 强制加引号并校正死链；批导旁路不改登录项；设置页回显校验。看板 [docs/037-🚧](docs/037-🚧-ReportEditor开机自启与静默启动失效.md)。
 
 - **ReportEditor 037 开机自启/静默**：本机证实 HKCU Run 指向不存在的嵌套路径且无引号（含空格 exe 名），故重启拉不起；偏好 json 缺失加重不同步。看板 [docs/037-🚧](docs/037-🚧-ReportEditor开机自启与静默启动失效.md)。
