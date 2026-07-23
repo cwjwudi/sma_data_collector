@@ -12,6 +12,13 @@
   WriteRegExpandStr HKCU "${INSTALL_REGISTRY_KEY}" InstallLocation "$LOCALAPPDATA\Programs\ReportEditorAI"
 !macroend
 
+; 覆盖安装 / 升级前：主进程崩溃后常残留 report_backend.exe，占住 resources 导致安装器误报「正在运行」
+!macro customInit
+  nsExec::ExecToLog 'taskkill /F /IM "Report Editor AI.exe" /T 2>nul'
+  nsExec::ExecToLog 'taskkill /F /IM report_backend.exe /T 2>nul'
+  Sleep 800
+!macroend
+
 !macro customUnInstall
   nsExec::ExecToLog 'taskkill /F /IM "Report Editor AI.exe" /T 2>nul'
   nsExec::ExecToLog 'taskkill /F /IM report_backend.exe /T 2>nul'
