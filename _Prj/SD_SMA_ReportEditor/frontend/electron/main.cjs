@@ -32,6 +32,7 @@ const {
   applyLoginItem,
   syncLoginItemOnReady,
   shouldSilentStartThisSession,
+  SILENT_START_ARG,
 } = require('./launch.cjs')
 
 // 五档批导：独立 userData，避免与已打开的安装版抢单实例锁
@@ -65,7 +66,14 @@ let appTray = null
 /** 第一实例尚未 createWindow 时收到 second-instance，建窗后再聚焦。 */
 let pendingFocusFromSecondInstance = false
 
-app.on('second-instance', () => {
+app.on('second-instance', (_event, argv) => {
+  // 037b：静默自启拉起的第二实例（命令行含 --silent-start）不得弹出主窗口，
+  // 否则「开机自启 + 静默」在存在重复自启项/进程残留时会被强制显示页面。
+  const silentSecond = Array.isArray(argv) && argv.includes(SILENT_START_ARG)
+  if (silentSecond) {
+    if (silentStartSession) ensureAppTray()
+    return
+  }
   if (mainWindow && !mainWindow.isDestroyed()) {
     showMainWindowFromTray()
     return
@@ -1727,8 +1735,8 @@ async function runFiveTierExportBatch(spec) {
     const filePath = path.join(outDir, `tier${t.tier}_${safeLabel}_${stamp}.pdf`)
     log(`五档批导：档 ${t.tier} ${t.label} → ${filePath}`)
     try {
-      // 按档设置预热/yield（与 UI 一致）
-      pdfExportPrewarmPoolSize = t.tier >= 4 ? 2 : t.tier === 3 ? 1 : 0
+      // 按档设置预热/yield（与 UI 一致）；0.3.140 起档 2 也保留 1 预热窗（免冷启动）
+      pdfExportPrewarmPoolSize = t.tier >= 4 ? 2 : t.tier >= 2 ? 1 : 0
       pdfExportPartYieldMs = t.yieldMs
       trimWarmPdfExportWindows()
       const res = await handlePdfExportRun(
@@ -1894,6 +1902,7 @@ ipcMain.handle('launch-settings-set', (_event, patch) => {
     loginApplied: applied.applied,
     loginSkipped: applied.skipped,
     loginError: applied.error,
+    loginRemovedLegacy: applied.removedLegacy || [],
   }
 })
 
@@ -1904,6 +1913,9 @@ app.whenReady().then(async () => {
   try {
     // 037：五档批导等旁路勿改系统登录项；正常启动校正死链/无引号
     const sync = syncLoginItemOnReady(app, { skip: Boolean(fiveTierExportSpec) })
+    if (Array.isArray(sync.removedLegacy) && sync.removedLegacy.length) {
+      log(`Removed legacy autostart entries: ${sync.removedLegacy.join(', ')}`)
+    }
     if (sync.error) log(`syncLoginItemOnReady: ${sync.error}`)
     else if (sync.applied) log(`Login item synced: ${sync.loginCommand || '(cleared)'}`)
     else if (sync.skipped) log('Login item sync skipped')

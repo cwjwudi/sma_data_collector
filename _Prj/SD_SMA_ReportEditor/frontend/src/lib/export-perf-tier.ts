@@ -62,10 +62,13 @@ const PROFILES: Record<ExportPerfTier, Omit<ExportPerfProfile, "tier" | "isDefau
   },
   2: {
     label: "预览稳",
-    summary: "chromium 预览级 PDF；关闭预热、强降载、较长分卷间隔（默认 · 预览质量最终妥协）。",
+    summary:
+      "chromium 预览级 PDF；保留 1 预热窗免整页冷启动、强降载、较长分卷间隔让核（默认 · 预览质量最终妥协）。",
     engine: "chromium",
     layoutFidelity: "print-to-pdf",
-    prewarmPoolSize: 0,
+    // 0.3.140：由 0 改 1——冷启动 SPA（Win ~1~3s）是默认档最大延迟；
+    // 保留 1 预热窗即热 hash 切换提速，同机让核仍靠 yield=200 + BelowNormal。
+    prewarmPoolSize: 1,
     maxParallelHint: 1,
     yieldMs: 200,
     coexistPause: "full",

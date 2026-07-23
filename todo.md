@@ -7,6 +7,8 @@
 
 ## 2026-07-23
 
+- **ReportEditor 0.3.140（035）**：后三档变慢诊断——对照五档前基线，默认档 2 `prewarmPoolSize=0` 导致每次导出冷启动 SPA（Win ~1~3s）是主因，0.3.137 canvas 格线叠层为次因。改档 2 保留 1 预热窗去冷启动（yield/降载不变，同机共存性不变）；批导同步。看板 [docs/035-🚧](docs/035-🚧-ReportEditor导出性能档位与同机降载.md)。
+
 - **ReportEditor 0.3.139（038）**：五档批导收尾卸 quit 钩子后 `app.exit(0)`，消除 `0xC0000005` 盖退出码；写 `.five-tier-exit`。看板 [docs/038-✅](docs/038-✅-ReportEditor五档批导收尾ACCESS_VIOLATION.md)。
 
 - **ReportEditor 038 五档批导收尾崩溃**：退出码 `-1073741819`（`0xC0000005` ACCESS_VIOLATION）；导出已成功后 `app.quit()` 阶段崩，待查根因。看板 [docs/038-✅](docs/038-✅-ReportEditor五档批导收尾ACCESS_VIOLATION.md)。

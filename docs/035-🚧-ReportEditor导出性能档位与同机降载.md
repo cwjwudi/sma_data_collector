@@ -32,11 +32,50 @@
 |----|----|--------|----------|------|-----------|------|-------|-----|
 | 0 | 仅内容 | pdf-lib | draft-v1 | 0 | 1 | full | 200 | 草稿 |
 | 1 | 矢量版式 | pdf-lib | layout-v2 | 0 | 1 | full | 200 | 坐标版式 |
-| 2 | **预览稳（默认）** | chromium | printToPDF | 0 | 1 | full | 200 | 预览级 |
+| 2 | **预览稳（默认）** | chromium | printToPDF | **1**（0.3.140，原 0） | 1 | full | 200 | 预览级 |
 | 3 | 功能折中 | chromium | printToPDF | 1 | 1 | full | 80 | 预览级 |
 | 4 | 不妥协 | chromium | printToPDF | 2 | 2 | basic | 40 | 预览级 |
 
 旧四档迁移：`0→0`，`1→2`，`2→3`，`3→4`（`exportPerfTierScale=5`）。
+
+---
+
+# ✅ 已完成：后三档变慢诊断 + 默认档去冷启动（0.3.140 · 2026-07-23）
+
+## 背景
+
+测试反馈「后面三种（档 2/3/4 chromium `printToPDF`）导出速度相当慢，和最初没做五档时有区别」。对照五档引入前基线（commit `1cec6a8^`，0.3.119 无档位）逐项核对。
+
+## 根因（最初 vs 现在）
+
+「最初」chromium 导出基线：**常驻 1 预热窗**（`targetPoolSize=min(2,maxParallel=1)=1`，开机预热 + 每次导出后重热 + keep-alive）→ 每次导出走热 hash 切换，无整页冷启动；分卷 `PDF_EXPORT_PART_YIELD_MS=80`；导出期 `BelowNormal`（当时已有）。
+
+五档后后三档差异：
+
+| 档 | 预热窗 | yield | 并行 | 相对最初 |
+|----|-------|-------|------|---------|
+| 2 预览稳（默认） | **0 → 每次冷启动 SPA（Win ~1~3s）** | 200ms（原 80 的 2.5×） | 1 | 明显更慢 |
+| 3 功能折中 | 1（热窗） | 80ms | 1 | ≈ 最初基线 |
+| 4 不妥协 | 2（热窗） | 40ms | 2 | 比最初更快 |
+
+- **主因**：默认档 2 `prewarmPoolSize=0` 关掉预热 → 每次导出整页冷启动（Vue 启动 + 依赖解析 + 字体加载，Windows ~1~3s），是当初为「同机 mappView 不被饿死」的取舍代价。
+- **次因**：0.3.137 新增 `installPrintTableGridOverlays`（canvas 整表格线位图）在每次 chromium 渲染 `signalReady` 前跑（`getBoundingClientRect` 回流 + dpr=3 `toDataURL` PNG 编码 + `img.decode`），三档统一新增净开销（前两档 pdf-lib 不受影响）。
+
+## 处理（本次拍板：只做「默认档保留 1 预热窗」）
+
+- `export-perf-tier.ts`：档 2 `prewarmPoolSize` **0 → 1**（去冷启动，热 hash 切换提速）；同机让核仍靠 `yield=200` + `BelowNormal`，共存性不变。
+- `main.cjs` 五档批导：`pdfExportPrewarmPoolSize = t.tier>=4 ? 2 : t.tier>=2 ? 1 : 0`（档 2 同步保留 1 预热窗）。
+- 单测 `export-perf-tier.test.ts` T2 断言档 2 预热 = 1。
+
+## 未采纳（留档，用户本轮未选）
+
+- 降 canvas 叠层开销（dpr3→2 / 按需 / 换编码）——三档统一提速项。
+- 默认档 2→3。
+- 档 4「不妥协」解除 `BelowNormal`（`runPdfExportWithSlot` 目前无条件降载，与语义冲突）。
+
+## 验收
+
+`npm run test -- export-perf-tier` 绿；后续 Windows 装包重跑五档批导，对比档 2 首份 `readyMs`（应去掉 ~1~3s 冷启动）。
 
 ---
 
