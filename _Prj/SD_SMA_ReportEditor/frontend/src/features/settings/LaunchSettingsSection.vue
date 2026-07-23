@@ -73,6 +73,7 @@ type LaunchPrefs = {
   loginApplied?: boolean;
   loginSkipped?: boolean;
   loginError?: string | null;
+  loginRemovedLegacy?: string[];
 };
 
 const available = ref(false);
@@ -112,6 +113,9 @@ async function persist(patch: Partial<LaunchPrefs>) {
   try {
     const next = await api.setLaunchSettings(patch);
     prefs.value = next;
+    const cleaned = next.loginRemovedLegacy?.length
+      ? `（已清理旧的重复自启项：${next.loginRemovedLegacy.join("、")}）`
+      : "";
     if (next.loginError) {
       msg.value = `偏好已保存，但登录项同步失败：${next.loginError}`;
       msgTone.value = "err";
@@ -119,10 +123,10 @@ async function persist(patch: Partial<LaunchPrefs>) {
       msg.value = "已保存（当前不会写入系统开机启动项）";
       msgTone.value = "ok";
     } else if (next.openAtLogin && next.loginCommand) {
-      msg.value = `已保存并注册开机启动：${next.loginCommand}`;
+      msg.value = `已保存并注册开机启动：${next.loginCommand}${cleaned}`;
       msgTone.value = "ok";
     } else {
-      msg.value = "已保存";
+      msg.value = `已保存${cleaned}`;
       msgTone.value = "ok";
     }
   } catch (e: unknown) {

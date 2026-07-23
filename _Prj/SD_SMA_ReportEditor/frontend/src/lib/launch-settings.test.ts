@@ -5,6 +5,9 @@ const require = createRequire(import.meta.url);
 const launch = require("../../electron/launch.cjs") as {
   quoteWinArg: (v: string) => string;
   formatQuotedLaunchCommand: (execPath: string, args?: string[]) => string;
+  parseRunKeyOutput: (stdout: string) => { name: string; data: string }[];
+  listWindowsRunEntries: () => { name: string; data: string }[];
+  removeLegacyRunDuplicates: (execPath: string) => string[];
   SILENT_START_ARG: string;
   LOGIN_ITEM_NAME: string;
 };
@@ -27,5 +30,31 @@ describe("launch.cjs (037)", () => {
 
   it("LOGIN_ITEM_NAME matches appId", () => {
     expect(launch.LOGIN_ITEM_NAME).toBe("com.brteam.sd_sma.report_editor_ai");
+  });
+
+  it("parseRunKeyOutput parses value names with spaces", () => {
+    const stdout = [
+      "",
+      "HKEY_CURRENT_USER\\Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+      '    Report Editor AI    REG_SZ    "C:\\Programs\\Report Editor AI.exe"',
+      "    com.brteam.sd_sma.report_editor_ai    REG_SZ    \"C:\\Programs\\Report Editor AI.exe\" --silent-start",
+      "    ctfmon    REG_SZ    C:\\WINDOWS\\system32\\ctfmon.exe",
+      "",
+    ].join("\r\n");
+    const entries = launch.parseRunKeyOutput(stdout);
+    expect(entries).toEqual([
+      { name: "Report Editor AI", data: '"C:\\Programs\\Report Editor AI.exe"' },
+      {
+        name: "com.brteam.sd_sma.report_editor_ai",
+        data: '"C:\\Programs\\Report Editor AI.exe" --silent-start',
+      },
+      { name: "ctfmon", data: "C:\\WINDOWS\\system32\\ctfmon.exe" },
+    ]);
+  });
+
+  it("listWindowsRunEntries/removeLegacyRunDuplicates are no-ops off Windows", () => {
+    if (process.platform === "win32") return;
+    expect(launch.listWindowsRunEntries()).toEqual([]);
+    expect(launch.removeLegacyRunDuplicates("C:\\x\\Report Editor AI.exe")).toEqual([]);
   });
 });

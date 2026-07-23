@@ -98,6 +98,61 @@ function readWindowsRunKey(valueName = LOGIN_ITEM_NAME) {
   return null
 }
 
+/** 解析 `reg query ...\Run` 的输出为 {name,data} 列表（值名可含空格）。纯函数，便于测试。 */
+function parseRunKeyOutput(stdout) {
+  const out = []
+  for (const line of String(stdout || '').split(/\r?\n/)) {
+    // 非贪婪匹配值名到 REG_SZ/REG_EXPAND_SZ 为止
+    const m = line.match(/^\s+(.+?)\s+REG_(?:SZ|EXPAND_SZ)\s+(.*)$/i)
+    if (m) out.push({ name: m[1].trim(), data: (m[2] || '').trim() })
+  }
+  return out
+}
+
+/** 列出 HKCU\...\Run 下所有 REG_SZ 值（含旧版本遗留项）。 */
+function listWindowsRunEntries() {
+  if (process.platform !== 'win32') return []
+  try {
+    const r = spawnSync('reg', ['query', WIN_RUN_KEY], { encoding: 'utf8', windowsHide: true })
+    if (r.status !== 0 || !r.stdout) return []
+    return parseRunKeyOutput(r.stdout)
+  } catch {
+    return []
+  }
+}
+
+/** 返回任一指向本 app exe 的 Run 项数据（含旧值名），供偏好丢失时判定曾开自启。 */
+function findAppRunEntryData(execPath) {
+  const exeBase = String(execPath ? path.basename(execPath) : '').toLowerCase()
+  if (!exeBase) return null
+  for (const { data } of listWindowsRunEntries()) {
+    if (String(data).toLowerCase().includes(exeBase)) return data
+  }
+  return null
+}
+
+/**
+ * 删除旧版本用「其它值名」（0.3.138 前未传 name，Electron 默认用 app 名写入）遗留的
+ * 重复自启项，只保留 LOGIN_ITEM_NAME 一份，避免开机同时拉起两个实例、
+ * 使第二实例触发 second-instance 弹出主窗口（037b）。
+ * @param {string} execPath 当前 exe 路径，用其文件名匹配同一 app 的历史条目
+ * @returns {string[]} 被删除的值名
+ */
+function removeLegacyRunDuplicates(execPath) {
+  if (process.platform !== 'win32') return []
+  const exeBase = String(execPath ? path.basename(execPath) : '').toLowerCase()
+  if (!exeBase) return []
+  const removed = []
+  for (const { name, data } of listWindowsRunEntries()) {
+    if (!name || name === LOGIN_ITEM_NAME) continue
+    if (String(data).toLowerCase().includes(exeBase)) {
+      const res = syncWindowsRunKey(name, null)
+      if (res.ok) removed.push(name)
+    }
+  }
+  return removed
+}
+
 function syncWindowsRunKey(valueName, commandOrNull) {
   if (process.platform !== 'win32') return { ok: true }
   try {
@@ -145,6 +200,7 @@ function applyLoginItem(app, settings, opts = {}) {
     execPath: process.execPath,
     loginCommand: null,
     packaged,
+    removedLegacy: [],
   }
 
   if (opts.skip) {
@@ -185,6 +241,8 @@ function applyLoginItem(app, settings, opts = {}) {
         result.error = synced.error || '写入登录项失败'
         return result
       }
+      // 037b：无论开/关自启，都清掉旧版本遗留的重复自启项，杜绝开机双实例弹窗
+      result.removedLegacy = removeLegacyRunDuplicates(exe)
       const verified = readWindowsRunKey(LOGIN_ITEM_NAME)
       if (s.openAtLogin) {
         const okQuoted = Boolean(verified && verified.trimStart().startsWith('"'))
@@ -228,7 +286,8 @@ function syncLoginItemOnReady(app, opts = {}) {
   const settings = readLaunchSettings(app)
 
   if (!hasFile && !settings.openAtLogin && process.platform === 'win32') {
-    const existing = readWindowsRunKey(LOGIN_ITEM_NAME)
+    // 兼容旧值名：偏好丢失时，本 app 的任一 Run 项（含 0.3.138 前默认值名）都视为曾开自启
+    const existing = readWindowsRunKey(LOGIN_ITEM_NAME) || findAppRunEntryData(process.execPath)
     if (existing) {
       // AppData 偏好丢失但 Run 仍在：视为曾开自启，恢复 json 并用当前 exe 校正
       const silent = existing.includes(SILENT_START_ARG)
@@ -285,4 +344,8 @@ module.exports = {
   formatQuotedLaunchCommand,
   readWindowsRunKey,
   syncWindowsRunKey,
+  parseRunKeyOutput,
+  listWindowsRunEntries,
+  findAppRunEntryData,
+  removeLegacyRunDuplicates,
 }

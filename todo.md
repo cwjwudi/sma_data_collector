@@ -7,6 +7,8 @@
 
 ## 2026-07-23
 
+- **ReportEditor 0.3.141（037b）**：修「开静默、重启仍弹页」。第二根因＝升级后 HKCU\Run 存两份自启项（0.3.138 前无 `name` 用默认值名，0.3.138 起改固定值名却没清旧份）→ 开机双实例 → 第二实例触发无条件 `showMainWindowFromTray()` 弹窗。修复：`removeLegacyRunDuplicates` 清旧值名重复项；`second-instance` 对含 `--silent-start` 的第二实例不弹窗（该项随 0.3.140 提交入库）。测试 586 passed。看板 [docs/037-🚧](docs/037-🚧-ReportEditor开机自启与静默启动失效.md)。
+
 - **ReportEditor 0.3.140（035）**：后三档变慢诊断——对照五档前基线，默认档 2 `prewarmPoolSize=0` 导致每次导出冷启动 SPA（Win ~1~3s）是主因，0.3.137 canvas 格线叠层为次因。改档 2 保留 1 预热窗去冷启动（yield/降载不变，同机共存性不变）；批导同步。看板 [docs/035-🚧](docs/035-🚧-ReportEditor导出性能档位与同机降载.md)。
 
 - **ReportEditor 0.3.139（038）**：五档批导收尾卸 quit 钩子后 `app.exit(0)`，消除 `0xC0000005` 盖退出码；写 `.five-tier-exit`。看板 [docs/038-✅](docs/038-✅-ReportEditor五档批导收尾ACCESS_VIOLATION.md)。
