@@ -1,0 +1,518 @@
+{
+  "run_id": "0708101057",
+  "prefix": "ai_bp_0708101057",
+  "config_path": "C:\\Users\\BR\\codex_ws\\p000_sd_sma_scada\\_Prj\\SD_SMA_DATA_COLLECTOR\\config\\ai_bp_0708101057_from_sample.json",
+  "result_path": "C:\\Users\\BR\\codex_ws\\p000_sd_sma_scada\\_Prj\\SD_SMA_DATA_COLLECTOR\\docs\\ai_bp_0708101057_live_results.json",
+  "tables": {
+    "header": "ai_bp_0708101057_hdr",
+    "detail_1y": "ai_bp_0708101057_d1y",
+    "detail_2y": "ai_bp_0708101057_d2y"
+  },
+  "checks": [
+    {
+      "name": "generated config validates",
+      "passed": true,
+      "detail": {
+        "groups": [
+          "ai_bp_0708101057_hdr",
+          "ai_bp_0708101057_d1y",
+          "ai_bp_0708101057_d2y"
+        ]
+      }
+    },
+    {
+      "name": "database connects",
+      "passed": true,
+      "detail": {
+        "type": "mysql",
+        "name": "wn_10",
+        "host": "192.168.50.22",
+        "port": 3306,
+        "username": "root",
+        "password": "Br54644800@",
+        "data_groups": [
+          "ai_bp_0708101057_hdr",
+          "ai_bp_0708101057_d1y",
+          "ai_bp_0708101057_d2y"
+        ]
+      }
+    },
+    {
+      "name": "OPC UA writable: strBatchCode",
+      "passed": true,
+      "detail": {
+        "value": "'SCP173'",
+        "access": 3,
+        "user_access": 3
+      }
+    },
+    {
+      "name": "OPC UA writable: dtBtachStartTime",
+      "passed": true,
+      "detail": {
+        "value": "datetime.datetime(2007, 1, 1, 0, 1, 22)",
+        "access": 3,
+        "user_access": 3
+      }
+    },
+    {
+      "name": "OPC UA writable: dtBtachEndTime",
+      "passed": true,
+      "detail": {
+        "value": "datetime.datetime(2007, 1, 1, 0, 1, 22)",
+        "access": 3,
+        "user_access": 3
+      }
+    },
+    {
+      "name": "OPC UA writable: bBatchTriger",
+      "passed": true,
+      "detail": {
+        "value": "False",
+        "access": 3,
+        "user_access": 3
+      }
+    },
+    {
+      "name": "OPC UA writable: bDetailTrigger",
+      "passed": true,
+      "detail": {
+        "value": "False",
+        "access": 3,
+        "user_access": 3
+      }
+    },
+    {
+      "name": "batch_2025_cross_year_close: initialize",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "name": "batch_2025_cross_year_close: header inserted with fixed table",
+      "passed": true,
+      "detail": {
+        "row": [
+          "ai_bp_0708101057_B2025",
+          "2025-12-31 23:50:00",
+          "None"
+        ]
+      }
+    },
+    {
+      "name": "batch_2025_cross_year_close: current batch context",
+      "passed": true,
+      "detail": {
+        "context": "{'batch_no': 'ai_bp_0708101057_B2025', 'start_time': datetime.datetime(2025, 12, 31, 23, 50)}"
+      }
+    },
+    {
+      "name": "batch_2025_cross_year_close: detail rows queued under batch size",
+      "passed": true,
+      "detail": {
+        "ai_bp_0708101057_d1y": 1,
+        "ai_bp_0708101057_d2y": 1
+      }
+    },
+    {
+      "name": "batch_2025_cross_year_close: header end_time updated",
+      "passed": true,
+      "detail": {
+        "row": [
+          "ai_bp_0708101057_B2025",
+          "2025-12-31 23:50:00",
+          "2026-01-01 00:05:00"
+        ]
+      }
+    },
+    {
+      "name": "batch_2025_cross_year_close: detail 1y rows in ai_bp_0708101057_d1y_2025",
+      "passed": true,
+      "detail": 1
+    },
+    {
+      "name": "batch_2025_cross_year_close: detail 2y rows in ai_bp_0708101057_d2y_2025",
+      "passed": true,
+      "detail": 1
+    },
+    {
+      "name": "batch_2025_cross_year_close: no rows in wrong year tables",
+      "passed": true,
+      "detail": {
+        "d1_2026": null,
+        "d2_2026": null
+      }
+    },
+    {
+      "name": "batch_2025_cross_year_close: no create_data_table during close/detail insert",
+      "passed": true,
+      "detail": []
+    },
+    {
+      "name": "batch_2025_cross_year_close: stopped",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "name": "batch_2026_two_year_bucket: initialize",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "name": "batch_2026_two_year_bucket: header inserted with fixed table",
+      "passed": true,
+      "detail": {
+        "row": [
+          "ai_bp_0708101057_B2026",
+          "2026-01-01 00:10:00",
+          "None"
+        ]
+      }
+    },
+    {
+      "name": "batch_2026_two_year_bucket: current batch context",
+      "passed": true,
+      "detail": {
+        "context": "{'batch_no': 'ai_bp_0708101057_B2026', 'start_time': datetime.datetime(2026, 1, 1, 0, 10)}"
+      }
+    },
+    {
+      "name": "batch_2026_two_year_bucket: detail rows queued under batch size",
+      "passed": true,
+      "detail": {
+        "ai_bp_0708101057_d2y": 1,
+        "ai_bp_0708101057_d1y": 1
+      }
+    },
+    {
+      "name": "batch_2026_two_year_bucket: header end_time updated",
+      "passed": true,
+      "detail": {
+        "row": [
+          "ai_bp_0708101057_B2026",
+          "2026-01-01 00:10:00",
+          "2026-01-01 00:30:00"
+        ]
+      }
+    },
+    {
+      "name": "batch_2026_two_year_bucket: detail 1y rows in ai_bp_0708101057_d1y_2026",
+      "passed": true,
+      "detail": 1
+    },
+    {
+      "name": "batch_2026_two_year_bucket: detail 2y rows in ai_bp_0708101057_d2y_2025",
+      "passed": true,
+      "detail": 1
+    },
+    {
+      "name": "batch_2026_two_year_bucket: no rows in wrong year tables",
+      "passed": true,
+      "detail": {
+        "d2_2026": null
+      }
+    },
+    {
+      "name": "batch_2026_two_year_bucket: no create_data_table during close/detail insert",
+      "passed": true,
+      "detail": []
+    },
+    {
+      "name": "batch_2026_two_year_bucket: stopped",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "name": "batch_2027_two_year_new_bucket: initialize",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "name": "batch_2027_two_year_new_bucket: header inserted with fixed table",
+      "passed": true,
+      "detail": {
+        "row": [
+          "ai_bp_0708101057_B2027",
+          "2027-01-01 00:10:00",
+          "None"
+        ]
+      }
+    },
+    {
+      "name": "batch_2027_two_year_new_bucket: current batch context",
+      "passed": true,
+      "detail": {
+        "context": "{'batch_no': 'ai_bp_0708101057_B2027', 'start_time': datetime.datetime(2027, 1, 1, 0, 10)}"
+      }
+    },
+    {
+      "name": "batch_2027_two_year_new_bucket: detail rows queued under batch size",
+      "passed": true,
+      "detail": {
+        "ai_bp_0708101057_d1y": 1,
+        "ai_bp_0708101057_d2y": 1
+      }
+    },
+    {
+      "name": "batch_2027_two_year_new_bucket: header end_time updated",
+      "passed": true,
+      "detail": {
+        "row": [
+          "ai_bp_0708101057_B2027",
+          "2027-01-01 00:10:00",
+          "2027-01-01 00:30:00"
+        ]
+      }
+    },
+    {
+      "name": "batch_2027_two_year_new_bucket: detail 1y rows in ai_bp_0708101057_d1y_2027",
+      "passed": true,
+      "detail": 1
+    },
+    {
+      "name": "batch_2027_two_year_new_bucket: detail 2y rows in ai_bp_0708101057_d2y_2027",
+      "passed": true,
+      "detail": 1
+    },
+    {
+      "name": "batch_2027_two_year_new_bucket: no rows in wrong year tables",
+      "passed": true,
+      "detail": {
+        "d2_2025": 0
+      }
+    },
+    {
+      "name": "batch_2027_two_year_new_bucket: no create_data_table during close/detail insert",
+      "passed": true,
+      "detail": []
+    },
+    {
+      "name": "batch_2027_two_year_new_bucket: stopped",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "name": "restart_recovery_2025_phase1: initialize",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "name": "restart_recovery_2025_phase1: header inserted with fixed table",
+      "passed": true,
+      "detail": {
+        "row": [
+          "ai_bp_0708101057_RESTART_2025",
+          "2025-12-31 22:00:00",
+          "None"
+        ]
+      }
+    },
+    {
+      "name": "restart_recovery_2025_phase1: current batch context",
+      "passed": true,
+      "detail": {
+        "context": "{'batch_no': 'ai_bp_0708101057_RESTART_2025', 'start_time': datetime.datetime(2025, 12, 31, 22, 0)}"
+      }
+    },
+    {
+      "name": "restart_recovery_2025_phase1: stopped",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "name": "restart_recovery_2025: initialize after restart",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "name": "restart_recovery_2025: recovered open batch context",
+      "passed": true,
+      "detail": {
+        "context": "{'batch_no': 'ai_bp_0708101057_RESTART_2025', 'start_time': datetime.datetime(2025, 12, 31, 22, 0)}"
+      }
+    },
+    {
+      "name": "restart_recovery_2025: detail rows queued under batch size",
+      "passed": true,
+      "detail": {
+        "ai_bp_0708101057_d1y": 1,
+        "ai_bp_0708101057_d2y": 1
+      }
+    },
+    {
+      "name": "restart_recovery_2025: header end_time updated",
+      "passed": true,
+      "detail": {
+        "row": [
+          "ai_bp_0708101057_RESTART_2025",
+          "2025-12-31 22:00:00",
+          "2026-01-01 00:20:00"
+        ]
+      }
+    },
+    {
+      "name": "restart_recovery_2025: recovered detail rows in 2025 tables",
+      "passed": true,
+      "detail": {
+        "d1": 1,
+        "d2": 1
+      }
+    },
+    {
+      "name": "restart_recovery_2025: no create during recovered close/detail insert",
+      "passed": true,
+      "detail": []
+    },
+    {
+      "name": "restart_recovery_2025_phase2: stopped",
+      "passed": true,
+      "detail": null
+    },
+    {
+      "name": "header fixed table exists",
+      "passed": true,
+      "detail": "ai_bp_0708101057_hdr"
+    },
+    {
+      "name": "header has no year-suffix tables",
+      "passed": true,
+      "detail": {
+        "ai_bp_0708101057_hdr_2025": false,
+        "ai_bp_0708101057_hdr_2026": false,
+        "ai_bp_0708101057_hdr_2027": false
+      }
+    },
+    {
+      "name": "2-year detail has no 2026 table",
+      "passed": true,
+      "detail": "ai_bp_0708101057_d2y_2026 exists=False"
+    }
+  ],
+  "batches": {
+    "batch_2025_cross_year_close": {
+      "code": "ai_bp_0708101057_B2025",
+      "start": "2025-12-31 23:50:00",
+      "end": "2026-01-01 00:05:00",
+      "expected_tables": {
+        "d1": "ai_bp_0708101057_d1y_2025",
+        "d2": "ai_bp_0708101057_d2y_2025",
+        "wrong": {
+          "d1_2026": "ai_bp_0708101057_d1y_2026",
+          "d2_2026": "ai_bp_0708101057_d2y_2026"
+        }
+      },
+      "counts": {
+        "d1": 1,
+        "d2": 1,
+        "wrong": {
+          "d1_2026": null,
+          "d2_2026": null
+        }
+      },
+      "create_calls_after_open": [
+        "ai_bp_0708101057_d1y_2025",
+        "ai_bp_0708101057_d2y_2025"
+      ],
+      "create_calls_after_clear": []
+    },
+    "batch_2026_two_year_bucket": {
+      "code": "ai_bp_0708101057_B2026",
+      "start": "2026-01-01 00:10:00",
+      "end": "2026-01-01 00:30:00",
+      "expected_tables": {
+        "d1": "ai_bp_0708101057_d1y_2026",
+        "d2": "ai_bp_0708101057_d2y_2025",
+        "wrong": {
+          "d2_2026": "ai_bp_0708101057_d2y_2026"
+        }
+      },
+      "counts": {
+        "d1": 1,
+        "d2": 1,
+        "wrong": {
+          "d2_2026": null
+        }
+      },
+      "create_calls_after_open": [
+        "ai_bp_0708101057_d1y_2026",
+        "ai_bp_0708101057_d2y_2025"
+      ],
+      "create_calls_after_clear": []
+    },
+    "batch_2027_two_year_new_bucket": {
+      "code": "ai_bp_0708101057_B2027",
+      "start": "2027-01-01 00:10:00",
+      "end": "2027-01-01 00:30:00",
+      "expected_tables": {
+        "d1": "ai_bp_0708101057_d1y_2027",
+        "d2": "ai_bp_0708101057_d2y_2027",
+        "wrong": {
+          "d2_2025": "ai_bp_0708101057_d2y_2025"
+        }
+      },
+      "counts": {
+        "d1": 1,
+        "d2": 1,
+        "wrong": {
+          "d2_2025": 0
+        }
+      },
+      "create_calls_after_open": [
+        "ai_bp_0708101057_d1y_2027",
+        "ai_bp_0708101057_d2y_2027"
+      ],
+      "create_calls_after_clear": []
+    },
+    "restart_recovery_2025": {
+      "code": "ai_bp_0708101057_RESTART_2025",
+      "start": "2025-12-31 22:00:00",
+      "end": "2026-01-01 00:20:00",
+      "counts": {
+        "d1_2025": 1,
+        "d2_2025": 1
+      },
+      "recovered_context": "{'batch_no': 'ai_bp_0708101057_RESTART_2025', 'start_time': datetime.datetime(2025, 12, 31, 22, 0)}",
+      "create_calls_after_restart_start": []
+    }
+  },
+  "create_call_checks": [
+    {
+      "label": "batch_2025_cross_year_close",
+      "after_open": [
+        "ai_bp_0708101057_d1y_2025",
+        "ai_bp_0708101057_d2y_2025"
+      ]
+    },
+    {
+      "label": "batch_2026_two_year_bucket",
+      "after_open": [
+        "ai_bp_0708101057_d1y_2026",
+        "ai_bp_0708101057_d2y_2025"
+      ]
+    },
+    {
+      "label": "batch_2027_two_year_new_bucket",
+      "after_open": [
+        "ai_bp_0708101057_d1y_2027",
+        "ai_bp_0708101057_d2y_2027"
+      ]
+    }
+  ],
+  "database_info": [
+    "wn_10",
+    "10.11.11-MariaDB"
+  ],
+  "final_tables": {
+    "header_fixed_exists": true,
+    "header_year_tables": {
+      "ai_bp_0708101057_hdr_2025": false,
+      "ai_bp_0708101057_hdr_2026": false,
+      "ai_bp_0708101057_hdr_2027": false
+    },
+    "d1_2025": true,
+    "d1_2026": true,
+    "d1_2027": true,
+    "d2_2025": true,
+    "d2_2026": false,
+    "d2_2027": true
+  }
+}

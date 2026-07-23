@@ -2,6 +2,7 @@ const STATE_KEY = 'sd_sma_db_admin_state_v2';
 let activeJobId = '';
 let pollTimer = null;
 let defaultOutputDir = '';
+const notifiedJobStates = new Map();
 const confirmModalOverlay = document.getElementById('confirm-modal-overlay');
 const confirmModalTitle = document.getElementById('confirm-modal-title');
 const confirmModalMessage = document.getElementById('confirm-modal-message');
@@ -608,7 +609,26 @@ async function startImportServerCsv() {
 function statusClass(status) {
   if (status === 'done') return 'status-done';
   if (status === 'failed') return 'status-failed';
+  if (status === 'cancelled' || status === 'canceled') return 'status-cancelled';
   return 'status-running';
+}
+
+function notifyJobOutcome(job) {
+  if (!job || !job.id || job.status === 'running') return;
+  const status = String(job.status || '');
+  const notificationKey = `${job.id}:${status}`;
+  if (notifiedJobStates.get(job.id) === notificationKey) return;
+  notifiedJobStates.set(job.id, notificationKey);
+
+  const title = job.title || job.id;
+  if (status === 'done') {
+    const output = job.result?.path ? `：${job.result.path}` : '';
+    showStatusBar(`任务成功：${title}${output}`, 'ok');
+  } else if (status === 'cancelled' || status === 'canceled') {
+    showStatusBar(`任务已取消：${title}`, 'warn');
+  } else if (status === 'failed') {
+    showStatusBar(`任务失败：${title}：${job.error || '未知错误'}`, 'error');
+  }
 }
 
 function formatDuration(seconds) {
@@ -657,8 +677,13 @@ function renderJobs(jobs) {
       cancelButton.addEventListener('click', async event => {
         event.stopPropagation();
         if (!(await showConfirmModal({ title: '取消任务', message: `确定取消 ${job.title || job.id}？`, confirmText: '确认取消' }))) return;
-        await fetchJson(`/api/jobs/${encodeURIComponent(job.id)}/cancel`, { method: 'POST' });
-        await refreshJobs();
+        try {
+          await fetchJson(`/api/jobs/${encodeURIComponent(job.id)}/cancel`, { method: 'POST' });
+          showStatusBar(`已提交任务取消请求：${job.title || job.id}`, 'warn');
+          await refreshJobs();
+        } catch (err) {
+          showStatusBar(`任务取消失败：${job.title || job.id}：${err.message}`, 'error');
+        }
       });
       statusCell.appendChild(cancelButton);
     }
@@ -715,6 +740,7 @@ async function refreshJobs() {
   if (activeJobId) {
     const jobData = await fetchJson('/api/jobs/' + encodeURIComponent(activeJobId));
     renderJobLog(jobData.job);
+    notifyJobOutcome(jobData.job);
     if (jobData.job.status !== 'running' && pollTimer) {
       clearInterval(pollTimer);
       pollTimer = null;

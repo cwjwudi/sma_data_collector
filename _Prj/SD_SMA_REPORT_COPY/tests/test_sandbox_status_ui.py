@@ -36,3 +36,14 @@ def test_main_and_config_pages_use_sticky_status_bar() -> None:
     assert 'data-tone="ok"' in styles
     assert 'data-tone="warn"' in styles
     assert 'data-tone="error"' in styles
+
+
+def test_job_outcomes_are_sent_to_status_bar() -> None:
+    script = (STATIC_DIR / "app.js").read_text(encoding="utf-8")
+
+    assert "function notifyJobOutcome" in script
+    assert "任务成功：" in script
+    assert "任务完成但有失败：" in script
+    assert "任务失败：" in script
+    assert "任务已取消：" in script
+    assert "notifiedJobStates" in script

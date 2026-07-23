@@ -76,6 +76,11 @@ body {
   color: #991b1b;
 }
 
+.status-cancelled {
+  background: #fef3c7;
+  color: #92400e;
+}
+
 .layout {
   display: grid;
   gap: 12px;

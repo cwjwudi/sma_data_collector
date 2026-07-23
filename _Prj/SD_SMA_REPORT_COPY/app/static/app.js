@@ -6,6 +6,7 @@ let pollTimer = null;
 let currentConfig = {};
 let currentViewMode = 'flat';
 let currentFolderPath = '';
+const notifiedJobStates = new Map();
 
 const confirmModalOverlay = document.getElementById('confirm-modal-overlay');
 const confirmModalTitle = document.getElementById('confirm-modal-title');
@@ -473,7 +474,30 @@ async function startCopy() {
 function statusClass(status) {
   if (status === 'done') return 'status-done';
   if (status === 'failed') return 'status-failed';
+  if (status === 'cancelled' || status === 'canceled') return 'status-cancelled';
   return 'status-running';
+}
+
+function notifyJobOutcome(job) {
+  if (!job || !job.id || job.status === 'running') return;
+  const status = String(job.status || '');
+  const notificationKey = `${job.id}:${status}`;
+  if (notifiedJobStates.get(job.id) === notificationKey) return;
+  notifiedJobStates.set(job.id, notificationKey);
+
+  const title = job.title || job.id;
+  if (status === 'done') {
+    const failedCount = Array.isArray(job.result?.failed) ? job.result.failed.length : 0;
+    if (failedCount > 0) {
+      showStatusBar(`任务完成但有失败：${title}，失败 ${failedCount} 项。`, 'warn');
+    } else {
+      showStatusBar(`任务成功：${title}`, 'ok');
+    }
+  } else if (status === 'cancelled' || status === 'canceled') {
+    showStatusBar(`任务已取消：${title}`, 'warn');
+  } else if (status === 'failed') {
+    showStatusBar(`任务失败：${title}：${job.error || '未知错误'}`, 'error');
+  }
 }
 
 function formatDuration(seconds) {
@@ -536,6 +560,7 @@ async function refreshJobs() {
   if (activeJobId) {
     const jobData = await fetchJson('/api/jobs/' + encodeURIComponent(activeJobId));
     renderJobLog(jobData.job);
+    notifyJobOutcome(jobData.job);
     if (jobData.job.status !== 'running' && pollTimer) {
       clearInterval(pollTimer);
       pollTimer = null;
