@@ -657,8 +657,7 @@ function createWindow() {
     if (fiveTierExportSpec) {
       void runFiveTierExportBatch(fiveTierExportSpec).catch((e) => {
         log(`五档批导失败：${e && e.message ? e.message : e}`)
-        isQuitting = true
-        app.exit(1)
+        void finishFiveTierExportAndExit('', 1)
       })
     }
   })
@@ -1767,13 +1766,52 @@ async function runFiveTierExportBatch(spec) {
   } catch (e) {
     log(`五档批导：清理旧历史失败（忽略）：${e && e.message ? e.message : e}`)
   }
+  await finishFiveTierExportAndExit(outDir)
+}
+
+/**
+ * 038：批导收尾勿走 app.quit()——Windows 上 Chromium 析构常 0xC0000005，
+ * 且会盖掉 process.exit(0) 的退出码。卸掉 quit 钩子后硬退；并写 .five-tier-exit 供脚本认成功。
+ */
+async function finishFiveTierExportAndExit(outDir, exitCode = 0) {
+  isQuitting = true
+  const code = Number.isFinite(Number(exitCode)) ? Math.floor(Number(exitCode)) : 1
+  if (outDir) {
+    try {
+      fs.writeFileSync(path.join(outDir, '.five-tier-exit'), String(code), 'utf8')
+    } catch {
+      /* ignore */
+    }
+  }
   try {
-    shell.openPath(outDir)
+    destroyAppTray()
   } catch {
     /* ignore */
   }
-  isQuitting = true
-  app.quit()
+  try {
+    killPython()
+  } catch {
+    /* ignore */
+  }
+  try {
+    app.removeAllListeners('before-quit')
+    app.removeAllListeners('will-quit')
+    app.removeAllListeners('quit')
+    app.removeAllListeners('window-all-closed')
+  } catch {
+    /* ignore */
+  }
+  try {
+    log(`五档批导：app.exit(${code})（038 卸钩子硬退）`)
+  } catch {
+    /* ignore */
+  }
+  try {
+    app.exit(code)
+  } catch {
+    /* ignore */
+  }
+  process.exit(code)
 }
 
 function killPython() {

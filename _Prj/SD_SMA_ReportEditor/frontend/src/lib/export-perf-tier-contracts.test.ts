@@ -79,4 +79,14 @@ describe("export-perf-tier contracts (035)", () => {
       /bodyCards:\s*report\.bodyCards/,
     );
   });
+
+  it("038: five-tier batch exits via process.exit after destroying windows", () => {
+    const main = readFileSync(join(frontendRoot, "electron/main.cjs"), "utf8");
+    expect(main).toMatch(/finishFiveTierExportAndExit/);
+    expect(main).toMatch(/app\.exit\(code\)/);
+    expect(main).toMatch(/038 卸钩子硬退/);
+    expect(main).toMatch(/\.five-tier-exit/);
+    expect(main).toMatch(/removeAllListeners\('before-quit'\)/);
+    expect(main).toMatch(/await finishFiveTierExportAndExit\(outDir\)/);
+  });
 });
