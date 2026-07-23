@@ -215,7 +215,12 @@ class QueryDatabase:
             ).fetchall()
         return [str(row[0]) for row in rows]
 
-    def query_history(self, req: HistoryQueryRequest) -> HistoryQueryResult:
+    def query_history(
+        self,
+        req: HistoryQueryRequest,
+        *,
+        page_size_cap: int | None = 500,
+    ) -> HistoryQueryResult:
         table_ident = _safe_ident(req.table)
         available_columns = self.list_columns(req.table)
         column_set = set(available_columns)
@@ -314,7 +319,8 @@ class QueryDatabase:
             order_columns.append(f"`id` {direction}")
         order_clause = " ORDER BY " + ", ".join(order_columns)
         page = max(req.page, 1)
-        page_size = max(min(req.page_size, 500), 1)
+        requested_page_size = max(req.page_size, 1)
+        page_size = requested_page_size if page_size_cap is None else min(requested_page_size, page_size_cap)
         offset = (page - 1) * page_size
 
         where_clause = base_where_clause

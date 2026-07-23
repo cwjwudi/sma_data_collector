@@ -1230,6 +1230,7 @@ function buildTableListWritebackDefaults() {
     max_tables: 50,
     string_max_len: 80,
     advanced: {
+      query_node: '',
       prev_page_node: '',
       next_page_node: '',
       batch_no_node: '',
@@ -1240,6 +1241,7 @@ function buildTableListWritebackDefaults() {
 
 function buildTableListAdvancedDefaults() {
   return {
+    query_node: '',
     prev_page_node: '',
     next_page_node: '',
     batch_no_node: '',
@@ -1326,7 +1328,12 @@ function inferTableListWritebackMode(cfg) {
     return 'advanced';
   }
   const advanced = cfg.advanced && typeof cfg.advanced === 'object' ? cfg.advanced : {};
-  if (String(advanced.trigger_node || '').trim() && String(advanced.batch_no_node || '').trim()) {
+  if (
+    String(advanced.query_node || '').trim() ||
+    String(advanced.prev_page_node || '').trim() ||
+    String(advanced.next_page_node || '').trim() ||
+    (String(advanced.trigger_node || '').trim() && String(advanced.batch_no_node || '').trim())
+  ) {
     return 'advanced';
   }
   return 'cursor';
@@ -1446,16 +1453,18 @@ function collectPluginTableListWriteback() {
   payload.mode = mode;
   if (mode === 'advanced') {
     const advanced = {
+      query_node: document.getElementById('pluginTableListQueryNode').value.trim(),
       prev_page_node: document.getElementById('pluginTableListPrevPageNode').value.trim(),
       next_page_node: document.getElementById('pluginTableListNextPageNode').value.trim(),
       batch_no_node: document.getElementById('pluginTableListBatchNoNode').value.trim(),
       trigger_node: document.getElementById('pluginTableListTriggerNode').value.trim(),
     };
     payload.advanced = advanced;
+    const hasSnapshotQueryNode = Boolean(advanced.query_node);
     const hasPaginationNode = Boolean(advanced.prev_page_node || advanced.next_page_node);
     const hasBatchNode = Boolean(advanced.batch_no_node);
     const hasTriggerNode = Boolean(advanced.trigger_node);
-    if (!hasPaginationNode && !hasBatchNode && !hasTriggerNode) {
+    if (!hasSnapshotQueryNode && !hasPaginationNode && !hasBatchNode && !hasTriggerNode) {
       return { ...payload, _invalid: true, _invalidReason: 'advanced_empty' };
     }
     if (hasBatchNode !== hasTriggerNode) {
@@ -1493,6 +1502,7 @@ function loadPluginTableListWritebackForm(tableListCfg) {
   document.getElementById('pluginTableListMode').value = resolvedMode;
   document.getElementById('pluginTableListBufferNode').value = cfg.buffer_node || '';
   const advanced = cfg.advanced && typeof cfg.advanced === 'object' ? cfg.advanced : {};
+  document.getElementById('pluginTableListQueryNode').value = advanced.query_node || '';
   document.getElementById('pluginTableListPrevPageNode').value = advanced.prev_page_node || '';
   document.getElementById('pluginTableListNextPageNode').value = advanced.next_page_node || '';
   document.getElementById('pluginTableListBatchNoNode').value = advanced.batch_no_node || '';

@@ -431,6 +431,7 @@
               "max_tables": 50,
               "string_max_len": 80,
               "advanced": {
+                "query_node": "ns=6;s=::DataRev:bExecuteRead",
                 "prev_page_node": "ns=6;s=::DataRev:bPrePage",
                 "next_page_node": "ns=6;s=::DataRev:bNextPage",
                 "batch_no_node": "ns=6;s=::DataRev:strBatchCode1",

@@ -47,6 +47,7 @@ def pick_start_time_column(available_columns: set[str], preferred: str) -> str |
 
 @dataclass(frozen=True)
 class AdvancedOpcuaTriggerConfig:
+    query_node: str
     prev_page_node: str
     next_page_node: str
     batch_no_node: str
@@ -58,6 +59,10 @@ class AdvancedOpcuaTriggerConfig:
         return bool(self.prev_page_node or self.next_page_node)
 
     @property
+    def has_snapshot_query(self) -> bool:
+        return bool(self.query_node)
+
+    @property
     def has_batch_writeback_trigger(self) -> bool:
         return bool(self.batch_no_node and self.trigger_node)
 
@@ -65,6 +70,7 @@ class AdvancedOpcuaTriggerConfig:
     def from_raw(cls, raw: Any) -> AdvancedOpcuaTriggerConfig | None:
         if not isinstance(raw, dict):
             return None
+        query_node = str(raw.get("query_node", "") or "").strip()
         prev_page_node = str(raw.get("prev_page_node", "") or "").strip()
         next_page_node = str(raw.get("next_page_node", "") or "").strip()
         batch_no_node = str(raw.get("batch_no_node", "") or "").strip()
@@ -72,11 +78,12 @@ class AdvancedOpcuaTriggerConfig:
         has_partial_batch_trigger = bool(trigger_node) != bool(batch_no_node)
         if has_partial_batch_trigger:
             return None
-        if not prev_page_node and not next_page_node and not (trigger_node and batch_no_node):
+        if not query_node and not prev_page_node and not next_page_node and not (trigger_node and batch_no_node):
             return None
         # poll_interval_ms kept for backward-compatible JSON; runtime uses global opcua setting.
         poll_interval_ms = int(raw.get("poll_interval_ms", 500) or 500)
         return cls(
+            query_node=query_node,
             prev_page_node=prev_page_node,
             next_page_node=next_page_node,
             batch_no_node=batch_no_node,
@@ -138,11 +145,12 @@ class TableListWritebackConfig:
         if mode == MODE_CURSOR:
             advanced_raw = raw.get("advanced")
             if isinstance(advanced_raw, dict):
+                query_node = str(advanced_raw.get("query_node", "") or "").strip()
                 prev_page_node = str(advanced_raw.get("prev_page_node", "") or "").strip()
                 next_page_node = str(advanced_raw.get("next_page_node", "") or "").strip()
                 trigger_node = str(advanced_raw.get("trigger_node", "") or "").strip()
                 batch_no_node = str(advanced_raw.get("batch_no_node", "") or "").strip()
-                if prev_page_node or next_page_node or (trigger_node and batch_no_node):
+                if query_node or prev_page_node or next_page_node or (trigger_node and batch_no_node):
                     mode = MODE_ADVANCED
 
         if mode == MODE_ADVANCED:

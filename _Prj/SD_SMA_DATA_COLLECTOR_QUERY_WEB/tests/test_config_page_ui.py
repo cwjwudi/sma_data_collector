@@ -36,6 +36,8 @@ def test_advanced_pagination_only_does_not_require_batch_writeback_fields() -> N
     html = CONFIG_HTML.read_text(encoding="utf-8")
 
     assert "hasPaginationNode" in script
+    assert 'id="pluginTableListQueryNode"' in html
+    assert "query_node: document.getElementById('pluginTableListQueryNode')" in script
     assert "hasBatchNode !== hasTriggerNode" in script
     assert "仅使用翻页时可留空" in script
     assert "高级模式仅翻页时可留空" in html

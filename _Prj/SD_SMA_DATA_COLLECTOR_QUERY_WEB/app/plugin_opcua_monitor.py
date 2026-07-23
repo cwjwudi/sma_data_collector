@@ -87,6 +87,7 @@ class PluginRuntimeSnapshot:
 
 
 QueryHandler = Callable[[str, int], Awaitable[PluginRuntimeSnapshot | None]]
+SnapshotQueryHandler = Callable[[str], Awaitable[PluginRuntimeSnapshot | None]]
 TriggerHandler = Callable[[str, str], Awaitable[bool]]
 BindingIterator = Callable[[], list[dict[str, Any]]]
 OpcuaConnectionProvider = Callable[[], dict[str, str]]
@@ -100,12 +101,14 @@ class PluginOpcuaMonitor:
         *,
         iter_bindings: BindingIterator,
         get_opcua: OpcuaConnectionProvider,
+        on_snapshot_query: SnapshotQueryHandler,
         on_page_change: QueryHandler,
         on_trigger: TriggerHandler,
         poll_interval_ms: int = DEFAULT_POLL_INTERVAL_MS,
     ) -> None:
         self._iter_bindings = iter_bindings
         self._get_opcua = get_opcua
+        self._on_snapshot_query = on_snapshot_query
         self._on_page_change = on_page_change
         self._on_trigger = on_trigger
         self._poll_interval_ms = max(50, min(int(poll_interval_ms), 5000))
@@ -135,6 +138,12 @@ class PluginOpcuaMonitor:
         existing.warnings = list(snapshot.warnings)
         if snapshot.revision > existing.revision:
             existing.revision = snapshot.revision
+
+    def clear_runtime(self, plugin_key: str | None = None) -> None:
+        if plugin_key is None:
+            self._runtime.clear()
+        else:
+            self._runtime.pop(plugin_key, None)
 
     def stop(self) -> None:
         self._stop.set()
@@ -232,12 +241,15 @@ class PluginOpcuaMonitor:
         if not plugin_key:
             return True
 
+        query_node = str(advanced.get("query_node", "") or "").strip()
         prev_node = str(advanced.get("prev_page_node", "") or "").strip()
         next_node = str(advanced.get("next_page_node", "") or "").strip()
         batch_node = str(advanced.get("batch_no_node", "") or "").strip()
         trigger_node = str(advanced.get("trigger_node", "") or "").strip()
 
         nodes_to_read: list[tuple[str, str]] = []
+        if query_node:
+            nodes_to_read.append(("query", query_node))
         if prev_node:
             nodes_to_read.append(("prev", prev_node))
         if next_node:
@@ -260,6 +272,12 @@ class PluginOpcuaMonitor:
             except Exception:
                 logger.debug("OPC UA read failed plugin=%s node=%s", plugin_key, node_id, exc_info=True)
                 return False
+
+        edge_key_query = f"{plugin_key}:query"
+        if query_node and self._edges.check(edge_key_query, values.get("query")):
+            logger.info("OPC UA snapshot-query rising edge plugin=%s", plugin_key)
+            await self._handle_snapshot_query(plugin_key)
+            await self._reset_bool_node(endpoint, query_node, username, password, edge_key_query)
 
         edge_key_prev = f"{plugin_key}:prev"
         if prev_node and self._edges.check(edge_key_prev, values.get("prev")):
@@ -314,6 +332,23 @@ class PluginOpcuaMonitor:
             await self._reset_bool_node(endpoint, trigger_node, username, password, edge_key_trigger)
 
         return True
+
+    async def _handle_snapshot_query(self, plugin_key: str) -> None:
+        previous = self._runtime.get(plugin_key)
+        updated = await self._on_snapshot_query(plugin_key)
+        if updated is None:
+            logger.warning("OPC UA snapshot query failed plugin=%s", plugin_key)
+            return
+        updated.revision = (previous.revision if previous else 0) + 1
+        self._runtime[plugin_key] = updated
+        logger.info(
+            "OPC UA snapshot query finished plugin=%s page=%s/%s rows=%d total=%d",
+            plugin_key,
+            updated.page,
+            updated.total_pages,
+            len(updated.rows),
+            updated.total_records,
+        )
 
     async def _write_heartbeat(
         self,

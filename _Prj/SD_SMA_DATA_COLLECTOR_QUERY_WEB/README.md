@@ -114,6 +114,7 @@
   "enabled": true,
   "mode": "advanced",
   "advanced": {
+    "query_node": "ns=6;s=::DataRev:bExecuteRead",
     "prev_page_node": "ns=6;s=::DataRev:bPrevPage",
     "next_page_node": "ns=6;s=::DataRev:bNextPage",
     "batch_no_node": "",
@@ -121,6 +122,12 @@
   }
 }
 ```
+
+- `query_node` 为 BOOL 上升沿查询节点：触发后一次性建立内存快照、自动回到第 1 页并回写当前页。
+- 上一页/下一页只读取当前快照，不会再次访问数据库；尚未查询时翻页不会隐式查询。
+- 数据库后续新增、修改或删除不会改变当前快照；再次触发查询才会用最新数据替换快照。
+- 快照最多保存 100000 行，服务重启或查询/插件配置改变后需要重新查询。
+- `POST /api/plugins/snapshot-page/{plugin_key}` 用于高级模式网页从现有快照翻页。
 
 - 需要批次表名触发回写时，`batch_no_node` 与 `trigger_node` 必须成对填写，并同时配置 `batch_column` 与 `buffer_node`
 

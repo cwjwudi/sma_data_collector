@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 
 from app.plugin_opcua_monitor import PluginOpcuaMonitor, PluginRuntimeSnapshot, RisingEdgeDetector
 from app.table_list_writeback import (
@@ -21,6 +21,10 @@ def _lookup(_master_table: str, _batch_column: str, batch_value):
 
 
 async def _noop_page(_plugin_key: str, _page: int):
+    return None
+
+
+async def _noop_snapshot_query(_plugin_key: str):
     return None
 
 
@@ -92,6 +96,26 @@ def test_advanced_config_allows_pagination_nodes_without_batch_writeback_fields(
     assert cfg.advanced.has_batch_writeback_trigger is False
 
 
+def test_advanced_config_accepts_snapshot_query_node():
+    cfg = TableListWritebackConfig.from_binding(
+        {
+            "enabled": True,
+            "mode": "advanced",
+            "advanced": {
+                "query_node": "ns=2;s=Query",
+                "prev_page_node": "ns=2;s=Prev",
+                "next_page_node": "ns=2;s=Next",
+            },
+        },
+        bind_group="ProductHistory",
+    )
+
+    assert cfg is not None
+    assert cfg.advanced is not None
+    assert cfg.advanced.query_node == "ns=2;s=Query"
+    assert cfg.advanced.has_snapshot_query is True
+
+
 def test_advanced_config_requires_batch_fields_only_when_trigger_pair_is_enabled():
     raw = {
         "enabled": True,
@@ -141,6 +165,7 @@ def test_monitor_resolves_poll_interval_from_global_opcua():
             "poll_interval_ms": 100,
             "heartbeat_node": "ns=2;s=Heart",
         },
+        on_snapshot_query=_noop_snapshot_query,
         on_page_change=_noop_page,
         on_trigger=_noop_trigger,
         poll_interval_ms=200,
@@ -339,6 +364,7 @@ def test_page_delta_at_boundary_refreshes_current_page():
         monitor = PluginOpcuaMonitor(
             iter_bindings=lambda: [],
             get_opcua=lambda: {"endpoint_url": ""},
+            on_snapshot_query=_noop_snapshot_query,
             on_page_change=on_page_change,
             on_trigger=AsyncMock(return_value=True),
         )
@@ -361,3 +387,67 @@ def test_page_delta_at_boundary_refreshes_current_page():
 
     pages = asyncio.run(_run())
     assert pages == [1, 2, 3]
+
+
+def test_snapshot_pages_remain_frozen_until_next_query():
+    from app import main as main_module
+    from app.models import HistoryQueryResponse
+
+    binding = {
+        "plugin_key": "general_1",
+        "view_name": "table",
+        "bind_group": "Data_Batch",
+        "bind_table": "Data_Batch",
+        "page_size": 10,
+        "table_list_writeback": {
+            "enabled": True,
+            "mode": "advanced",
+            "advanced": {"query_node": "ns=2;s=Query"},
+        },
+    }
+    database_rows = [{"BatchCode": f"B{i:02d}"} for i in range(25, 0, -1)]
+    query_count = 0
+
+    def fake_execute(_binding, **_kwargs):
+        nonlocal query_count
+        query_count += 1
+        rows = [dict(row) for row in database_rows]
+        response = HistoryQueryResponse(
+            total=len(rows),
+            page=1,
+            page_size=len(rows),
+            columns=["BatchCode"],
+            rows=rows,
+            display_columns=[{"name": "BatchCode", "label_en": "BatchCode", "label_zh": "BatchCode"}],
+        )
+        runtime = PluginRuntimeSnapshot(
+            plugin_key="general_1",
+            table="Data_Batch",
+            total_records=len(rows),
+            columns=["BatchCode"],
+            rows=rows,
+            display_columns=response.display_columns,
+        )
+        return response, runtime
+
+    async def run_scenario():
+        main_module._clear_plugin_snapshots()
+        with (
+            patch("app.main._execute_plugin_query", side_effect=fake_execute),
+            patch("app.main._run_plugin_writeback", new=AsyncMock()),
+            patch("app.main._plugin_opcua_monitor", None),
+        ):
+            first, _runtime = await main_module._activate_plugin_snapshot(binding)
+            database_rows.insert(0, {"BatchCode": "NEW"})
+            second_page = await main_module._read_plugin_snapshot_page(binding, 2)
+            refreshed, _runtime = await main_module._activate_plugin_snapshot(binding)
+        main_module._clear_plugin_snapshots()
+        return first, second_page, refreshed
+
+    first, second_page, refreshed = asyncio.run(run_scenario())
+    assert [row["BatchCode"] for row in first.rows] == [f"B{i:02d}" for i in range(25, 15, -1)]
+    assert second_page is not None
+    assert [row["BatchCode"] for row in second_page[0].rows] == [f"B{i:02d}" for i in range(15, 5, -1)]
+    assert refreshed.page == 1
+    assert refreshed.rows[0]["BatchCode"] == "NEW"
+    assert query_count == 2

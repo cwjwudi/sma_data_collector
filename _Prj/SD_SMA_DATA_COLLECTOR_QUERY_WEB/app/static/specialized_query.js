@@ -296,14 +296,13 @@
   }
 
   async function runAdjacentPage(direction) {
-    if (!lastQueryContext) return;
+    if (!lastQueryContext && !advancedOpcuaMode) return;
     if (advancedOpcuaMode) {
       const targetPage = Math.min(Math.max(currentPage + direction, 1), totalPages);
-      if (targetPage === currentPage) return;
-      const data = await fetchJson(`/api/plugins/query/${encodeURIComponent(activePluginKey)}`, {
+      const data = await fetchJson(`/api/plugins/snapshot-page/${encodeURIComponent(activePluginKey)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(buildPayload(lastQueryContext, targetPage, null)),
+        body: JSON.stringify({ page: targetPage }),
       });
       applyQueryResult(data, targetPage, null, []);
       return;
@@ -337,7 +336,11 @@
     totalRecords = Number(state.total_records || 0);
     totalPages = Math.max(1, Number(state.total_pages || 1));
     currentPage = Math.min(Math.max(Number(state.page || 1), 1), totalPages);
-    updatePagerMeta(currentBinding, state.warnings || []);
+    const warnings = [...(state.warnings || [])];
+    if (advancedOpcuaMode && state.has_snapshot === false) {
+      warnings.push("尚未建立查询快照，请先点击查询");
+    }
+    updatePagerMeta(currentBinding, warnings);
     savePluginState();
   }
 
@@ -403,7 +406,9 @@
     });
     document.getElementById("tableSelector").addEventListener("change", () => {
       savePluginState();
-      runFreshQuery(1).catch((error) => (document.getElementById("meta").textContent = error.message));
+      if (!advancedOpcuaMode) {
+        runFreshQuery(1).catch((error) => (document.getElementById("meta").textContent = error.message));
+      }
     });
     document.getElementById("btnPrevPage").addEventListener("click", () => {
       runAdjacentPage(-1).catch((error) => (document.getElementById("meta").textContent = error.message));
@@ -429,12 +434,13 @@
     }
 
     enableButtonClickFeedback();
-    await runFreshQuery(advancedOpcuaMode ? Number(saved?.currentPage || 1) : 1);
     if (advancedOpcuaMode) {
-      fetchJson(`/api/plugins/runtime-state/${encodeURIComponent(activePluginKey)}`)
-        .then((state) => { runtimeRevision = Number(state.revision || 0); })
-        .catch(() => {});
+      const state = await fetchJson(`/api/plugins/runtime-state/${encodeURIComponent(activePluginKey)}`);
+      runtimeRevision = Number(state.revision || 0);
+      applyRuntimeState(state);
       startRuntimeStatePolling(activePluginKey);
+    } else {
+      await runFreshQuery(1);
     }
   }
 

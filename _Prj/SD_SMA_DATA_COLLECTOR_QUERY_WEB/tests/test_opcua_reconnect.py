@@ -30,6 +30,7 @@ def _make_monitor(**kwargs) -> PluginOpcuaMonitor:
             "poll_interval_ms": 200,
             "heartbeat_node": "",
         },
+        "on_snapshot_query": AsyncMock(return_value=None),
         "on_page_change": AsyncMock(return_value=None),
         "on_trigger": AsyncMock(return_value=True),
         "poll_interval_ms": 200,
