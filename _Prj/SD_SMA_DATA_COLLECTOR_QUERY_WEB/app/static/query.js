@@ -13,6 +13,23 @@ let currentBatchSource = {};
 const QUERY_STATE_KEY = 'sd_sma_query_page_state_v1';
 const quickRangeButtonIds = ['btnRange1D', 'btnRange1W', 'btnRange1M', 'btnRange1Y'];
 
+function safeStorageGet(key) {
+  try {
+    return window.localStorage.getItem(key);
+  } catch (_) {
+    return null;
+  }
+}
+
+function safeStorageSet(key, value) {
+  try {
+    window.localStorage.setItem(key, value);
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
 function getQueryMode() {
   return document.querySelector('input[name="queryMode"]:checked')?.value || 'time';
 }
@@ -117,11 +134,11 @@ function saveQueryPageState() {
     lastQueryContext,
     lastResultData,
   };
-  localStorage.setItem(QUERY_STATE_KEY, JSON.stringify(state));
+  safeStorageSet(QUERY_STATE_KEY, JSON.stringify(state));
 }
 
 function loadSavedQueryPageState() {
-  const raw = localStorage.getItem(QUERY_STATE_KEY);
+  const raw = safeStorageGet(QUERY_STATE_KEY);
   if (!raw) return null;
   try {
     return JSON.parse(raw);

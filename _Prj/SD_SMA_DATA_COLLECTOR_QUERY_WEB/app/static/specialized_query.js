@@ -16,6 +16,23 @@
   let pluginStateKey = null;
   let batchCodesAvailable = false;
   let currentBatchSource = {};
+
+  function safeStorageGet(key) {
+    try {
+      return window.localStorage.getItem(key);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function safeStorageSet(key, value) {
+    try {
+      window.localStorage.setItem(key, value);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
   const quickButtons = ["btnRange1D", "btnRange1W", "btnRange1M", "btnRange1Y"];
 
   async function fetchJson(url, opts) {
@@ -123,7 +140,7 @@
 
   function savePluginState() {
     if (!pluginStateKey) return;
-    localStorage.setItem(pluginStateKey, JSON.stringify({
+    safeStorageSet(pluginStateKey, JSON.stringify({
       startDate: document.getElementById("startDate").value || "",
       endDate: document.getElementById("endDate").value || "",
       queryMode: getQueryMode(),
@@ -144,7 +161,7 @@
   function loadPluginState() {
     if (!pluginStateKey) return null;
     try {
-      return JSON.parse(localStorage.getItem(pluginStateKey) || "null");
+      return JSON.parse(safeStorageGet(pluginStateKey) || "null");
     } catch {
       return null;
     }

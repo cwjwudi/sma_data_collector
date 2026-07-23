@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>配置页 — SD SMA Query Web</title>
-    <link rel="stylesheet" href="/static/styles.css" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260723_01" />
   </head>
   <body class="config-page">
     <nav class="page-nav" aria-label="站内导航">
@@ -12,6 +12,11 @@
       <span class="page-nav-sep" aria-hidden="true">·</span>
       <span class="page-nav-current">配置页</span>
     </nav>
+    <div id="configStatusBar" class="config-status-bar" role="status" aria-live="polite" aria-atomic="true">
+      <span id="configStatusIcon" class="config-status-icon" aria-hidden="true">●</span>
+      <span id="configStatusMessage">配置页正在初始化…</span>
+      <time id="configStatusTime" class="config-status-time"></time>
+    </div>
     <div class="layout layout-stack">
       <section class="panel active-config-bar">
         <div class="row">
@@ -366,11 +371,6 @@
         </div>
       </div>
     </div>
-    <div id="configStatusBar" class="config-status-bar" role="status" aria-live="polite" aria-atomic="true">
-      <span id="configStatusIcon" class="config-status-icon" aria-hidden="true">●</span>
-      <span id="configStatusMessage">配置页正在初始化…</span>
-      <time id="configStatusTime" class="config-status-time"></time>
-    </div>
-    <script src="/static/config.js?v=20260722_02"></script>
+    <script src="/static/config.js?v=20260723_01"></script>
   </body>
 </html>

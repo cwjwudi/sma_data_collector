@@ -4,6 +4,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG_HTML = ROOT / "app" / "static" / "config.html"
 CONFIG_JS = ROOT / "app" / "static" / "config.js"
+QUERY_JS = ROOT / "app" / "static" / "query.js"
+SPECIALIZED_QUERY_JS = ROOT / "app" / "static" / "specialized_query.js"
 STYLES_CSS = ROOT / "app" / "static" / "styles.css"
 
 
@@ -14,8 +16,35 @@ def test_config_page_has_persistent_status_bar() -> None:
     assert 'id="configStatusBar"' in html
     assert 'aria-live="polite"' in html
     assert ".config-status-bar" in css
-    assert "position: fixed" in css
-    assert "bottom: 0" in css
+    assert "position: sticky" in css
+    assert "top: 8px" in css
+    assert html.index('id="configStatusBar"') < html.index('class="layout layout-stack"')
+
+
+def test_local_storage_denial_does_not_interrupt_pages() -> None:
+    config_script = CONFIG_JS.read_text(encoding="utf-8")
+    query_script = QUERY_JS.read_text(encoding="utf-8")
+    specialized_script = SPECIALIZED_QUERY_JS.read_text(encoding="utf-8")
+
+    assert "function safeStorageGet(key)" in config_script
+    assert "function safeStorageSet(key, value)" in config_script
+    assert "function safeStorageRemove(key)" in config_script
+    assert "safeStorageSet(CONFIG_STATE_KEY" in config_script
+    assert "safeStorageGet(CONFIG_STATE_KEY)" in config_script
+    assert "safeStorageRemove(CONFIG_STATE_KEY)" in config_script
+    assert config_script.count("window.localStorage.") == 3
+
+    assert "function safeStorageGet(key)" in query_script
+    assert "function safeStorageSet(key, value)" in query_script
+    assert "safeStorageSet(QUERY_STATE_KEY" in query_script
+    assert "safeStorageGet(QUERY_STATE_KEY)" in query_script
+    assert query_script.count("window.localStorage.") == 2
+
+    assert "function safeStorageGet(key)" in specialized_script
+    assert "function safeStorageSet(key, value)" in specialized_script
+    assert "safeStorageSet(pluginStateKey" in specialized_script
+    assert "safeStorageGet(pluginStateKey)" in specialized_script
+    assert specialized_script.count("window.localStorage.") == 2
 
 
 def test_bind_group_change_reloads_complete_writeback_form() -> None:

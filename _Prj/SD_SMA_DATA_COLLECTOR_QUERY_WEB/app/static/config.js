@@ -12,6 +12,32 @@ const LOCKED_PLUGIN_MODULE = 'general';
 const LOCKED_PLUGIN_VIEW = 'table';
 let currentConfigProfile = '';
 
+function safeStorageGet(key) {
+  try {
+    return window.localStorage.getItem(key);
+  } catch (_) {
+    return null;
+  }
+}
+
+function safeStorageSet(key, value) {
+  try {
+    window.localStorage.setItem(key, value);
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+function safeStorageRemove(key) {
+  try {
+    window.localStorage.removeItem(key);
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
 function replaceSelectOptions(select, options, selectedValue) {
   if (!select) return;
   select.innerHTML = '';
@@ -188,11 +214,11 @@ function saveConfigPageState() {
     pluginPageIndex: document.getElementById('pluginPageIndex').value || '1',
     configProfile: document.getElementById('configProfileSelect').value || currentConfigProfile || '',
   };
-  localStorage.setItem(CONFIG_STATE_KEY, JSON.stringify(state));
+  safeStorageSet(CONFIG_STATE_KEY, JSON.stringify(state));
 }
 
 function loadSavedConfigPageState() {
-  const raw = localStorage.getItem(CONFIG_STATE_KEY);
+  const raw = safeStorageGet(CONFIG_STATE_KEY);
   if (!raw) return null;
   try {
     return JSON.parse(raw);
@@ -504,7 +530,7 @@ async function deleteCurrentConfigProfile() {
 
 async function reloadActiveConfigData(message) {
   setConfigStatus('正在读取配置文件及其全部设置…', 'working');
-  localStorage.removeItem(CONFIG_STATE_KEY);
+  safeStorageRemove(CONFIG_STATE_KEY);
   queryViews = {};
   availableColumns = [];
   orderedColumns = [];
