@@ -7,6 +7,8 @@
 
 ## 2026-07-22
 
+- **ReportEditor 0.3.137（036 D21c）**：print 表框改整表 SVG 连续格线（D21b box-shadow 仍断点）。看板 [docs/036-✅](docs/036-✅-ReportEditor矢量档与预览稳样式对照.md)。
+
 - **ReportEditor 0.3.136（036 D21b）**：print 表框改 inset box-shadow，修断点/粗细/表间游离线。看板 [docs/036-✅](docs/036-✅-ReportEditor矢量档与预览稳样式对照.md)。
 
 - **ReportEditor 0.3.135 安装版五档复验**：路径 `ReportEditorAI`；重建冒烟后 `smoke-*-2026-07-22T14-27-28` 10/10 ok，档1–4 pages=4，矢量外框描边序正确。看板 [docs/036-✅](docs/036-✅-ReportEditor矢量档与预览稳样式对照.md)。

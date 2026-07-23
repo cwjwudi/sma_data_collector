@@ -48,6 +48,7 @@ import {
   sleepMs,
 } from "@/lib/report-template/sql-fill-retry";
 import { normalizePdfExportEngine, type PdfExportEngineId } from "@/lib/pdf-export-engine";
+import { installPrintTableGridOverlays } from "@/lib/report-template/print-table-grid-overlay";
 import { collectFontFamiliesFromTemplate } from "@/lib/report-template/font-families-collect";
 import { pickBundledFontForExport } from "@/lib/report-template/font-availability";
 import { ensureBundledLayoutFontsRegistered } from "@/lib/report-template/ensure-bundled-layout-fonts";
@@ -335,6 +336,9 @@ async function boot(): Promise<void> {
 
   await nextTick();
   await waitPaintReady();
+  // D21c：格级 border/box-shadow 在 printToPDF 仍断点；canvas 整表格线位图
+  await installPrintTableGridOverlays(document);
+  await new Promise<void>((r) => requestAnimationFrame(() => r()));
   signalReady(true, undefined, totalReports, { tplMs, dataMs, paintMs: Date.now() - paintStartMs }, undefined, {
     engine: "chromium",
     exportMode: "fidelity",

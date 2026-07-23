@@ -67,15 +67,16 @@ describe("PDF export chrome (019 fill + 021 role borders)", () => {
     expect(miniPageVue).toMatch(/贴满 band（h≈rows×rowH）/);
   });
 
-  it("U13: print CSS uses inset box-shadow grid lines (D21b)", () => {
-    expect(miniPageVue).toMatch(/D21b：/);
-    expect(miniPageVue).toContain("inset 0 1px 0 0 rgb(212 212 216)");
-    expect(miniPageVue).toContain("inset 1px 0 0 0 rgb(212 212 216)");
-    expect(miniPageVue).toContain("inset -1px 0 0 0 rgb(212 212 216)");
-    expect(miniPageVue).toContain("inset 0 -1px 0 0 rgb(212 212 216)");
+  it("U13: print CSS clears cell borders; D21c SVG grid via PdfExportView", () => {
+    expect(miniPageVue).toMatch(/D21c：/);
     expect(miniPageVue).toMatch(
       /@media\s+print\s*\{[\s\S]*\.mini-tpl-td\s*\{[\s\S]*border:\s*none\s*!important/,
     );
+    expect(miniPageVue).toMatch(
+      /@media\s+print\s*\{[\s\S]*\.mini-tpl-td\s*\{[\s\S]*box-shadow:\s*none\s*!important/,
+    );
+    expect(pdfViewVue).toMatch(/installPrintTableGridOverlays/);
+    expect(pdfViewVue).toMatch(/print-table-grid-overlay/);
   });
 
   it("U7: print CSS keeps role borders (no blanket border/outline none on mpc paper)", () => {
