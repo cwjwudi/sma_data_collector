@@ -143,6 +143,72 @@ function endPdfExportLowPriority() {
   }
 }
 
+/**
+ * 030/现场（i3 双核 + AR Hypervisor 占核）：真正吃 CPU 的是**导出渲染进程**
+ * （pdf-lib 画版式 / fontkit subset / chromium 排版）与 **Python 后端**（取数），
+ * 二者都是独立 OS 进程。此前只 `os.setPriority(0,…)` 降了空转的主进程，等于没让核，
+ * 故矢量档也把 Windows 侧仅剩的核占满、mappView 饿死。这里按需降真正的进程优先级。
+ *
+ * @param {number} pid 目标进程 pid（0/无效则忽略）
+ * @param {number} priority os.constants.priority.* 常量
+ * @param {string} label 日志标识
+ */
+function setOsProcessPrioritySafe(pid, priority, label) {
+  const target = Math.floor(Number(pid) || 0)
+  if (!target || target <= 0) return false
+  if (typeof priority !== 'number') return false
+  try {
+    if (typeof os.setPriority === 'function') {
+      os.setPriority(target, priority)
+      return true
+    }
+  } catch (e) {
+    log(`setPriority ${label}(${target}) 失败（忽略）：${e && e.message ? e.message : e}`)
+  }
+  return false
+}
+
+/** 让核力度：full → 渲染进程 IDLE/Low（HMI 一忙即完全让路）；basic → BelowNormal。 */
+function renderProcessCoexistPriority(coexistPause) {
+  const p = os.constants && os.constants.priority
+  if (!p) return null
+  return String(coexistPause) === 'basic' ? p.PRIORITY_BELOW_NORMAL : p.PRIORITY_LOW
+}
+
+/** 导出期把渲染进程（按档 IDLE/BelowNormal）与后端（BelowNormal）降载，给同机 mappView 让核。 */
+function applyExportProcessCoexistPriority(renderWebContents, coexistPause) {
+  const p = os.constants && os.constants.priority
+  if (!p) return
+  const renderPriority = renderProcessCoexistPriority(coexistPause)
+  try {
+    if (renderWebContents && !renderWebContents.isDestroyed() && renderPriority != null) {
+      setOsProcessPrioritySafe(renderWebContents.getOSProcessId(), renderPriority, 'export-renderer')
+    }
+  } catch {
+    /* 渲染进程 pid 取用失败忽略 */
+  }
+  // 取数在后端进程，full 档一并降到 BelowNormal（IO 为主，不必 IDLE 以免拖慢取数）
+  if (String(coexistPause) !== 'basic' && pythonProcess && pythonProcess.pid) {
+    setOsProcessPrioritySafe(pythonProcess.pid, p.PRIORITY_BELOW_NORMAL, 'backend')
+  }
+}
+
+/** 导出结束/窗口归还池前，把渲染进程与后端恢复 NORMAL。 */
+function restoreExportProcessCoexistPriority(renderWebContents) {
+  const p = os.constants && os.constants.priority
+  if (!p) return
+  try {
+    if (renderWebContents && !renderWebContents.isDestroyed()) {
+      setOsProcessPrioritySafe(renderWebContents.getOSProcessId(), p.PRIORITY_NORMAL, 'export-renderer')
+    }
+  } catch {
+    /* ignore */
+  }
+  if (pythonProcess && pythonProcess.pid) {
+    setOsProcessPrioritySafe(pythonProcess.pid, p.PRIORITY_NORMAL, 'backend')
+  }
+}
+
 function yieldToOs(ms) {
   const wait = Math.max(0, Number(ms) || 0)
   if (!wait) return Promise.resolve()
@@ -1337,6 +1403,8 @@ async function handlePdfExportRun(event, opts) {
       ? 'pdf-lib'
       : 'chromium'
   const exportMode = exportEngine === 'pdf-lib' ? 'coexist' : 'fidelity'
+  // 让核力度：缺省按最强 full（渲染进程 IDLE）——现场弱 CPU 保 mappView；仅档 4 传 basic
+  const coexistPause = String((opts && opts.coexistPause) || 'full').toLowerCase() === 'basic' ? 'basic' : 'full'
   const jobYieldRaw = Math.floor(Number(opts && opts.yieldMs))
   const jobYieldMs =
     Number.isFinite(jobYieldRaw) && jobYieldRaw >= 0
@@ -1410,12 +1478,23 @@ async function handlePdfExportRun(event, opts) {
         },
       }
 
+      // 现场让核：把真正吃 CPU 的渲染进程（+ 后端）降优先级；重建窗后需重新施加
+      function applyRenderCoexistPriority() {
+        const w = pdfWinHolder.win
+        if (w && !w.isDestroyed()) {
+          applyExportProcessCoexistPriority(w.webContents, coexistPause)
+        }
+      }
+      applyRenderCoexistPriority()
+
       /** 渲染窗口取数期间每 10 秒发一次心跳：连续 2 分钟无心跳视为无响应；总时长上限 10 分钟 */
       const RENDER_IDLE_TIMEOUT_MS = 120000
       const RENDER_TOTAL_CAP_MS = 600000
 
       async function renderPart(partIndex) {
         throwIfCancelled()
+        // 每份开始前重申渲染进程优先级（复用/重建窗后 pid 可能变）
+        applyRenderCoexistPriority()
         const targetUrl = buildPdfExportUrl(event.sender, partHash(partIndex))
         /** 热切换看门狗：仅改 hash 后渲染页若迟迟没有心跳/完成信号，整页重载一次兜底 */
         const HOT_NAV_FALLBACK_MS = 8000
@@ -1481,6 +1560,8 @@ async function handlePdfExportRun(event, opts) {
           readyPromise.then(resolve, reject)
           navigatePdfExportWindowWithRecovery(pdfWinHolder, targetUrl)
             .then((hotSwitched) => {
+              // 导航后（含 033 恢复重建的新窗）重申渲染进程优先级，趁 CPU 密集渲染前生效
+              applyRenderCoexistPriority()
               if (!hotSwitched) return
               hotNavFallbackTimer = setTimeout(() => {
                 if (flags.rendererSignal || flags.hotNavFellBack) return
@@ -1494,6 +1575,7 @@ async function handlePdfExportRun(event, opts) {
                   destroyPdfExportWindow(pdfWinHolder.win)
                   pdfWinHolder.win = createPdfExportWindow()
                   pdfWinHolder.win.loadURL(targetUrl).catch(() => {})
+                  applyRenderCoexistPriority()
                 })
               }, HOT_NAV_FALLBACK_MS)
             })
@@ -1647,6 +1729,16 @@ async function handlePdfExportRun(event, opts) {
       throw new Error(humanizePdfExportError(e, { phase: 'export' }))
     } finally {
       unregisterPdfExportJob(jobId)
+      // 导出结束：把渲染进程（归还池的窗）与后端恢复 NORMAL，避免让核状态长期残留
+      try {
+        if (pdfWin && !pdfWin.isDestroyed()) {
+          restoreExportProcessCoexistPriority(pdfWin.webContents)
+        } else {
+          restoreExportProcessCoexistPriority(null)
+        }
+      } catch {
+        /* ignore */
+      }
       // 成功窗口回到预热页并归还空闲池；失败或超复用上限的窗口销毁。
       let recycled = false
       if (exportOk && isReusablePdfWindow(pdfWin) && mainWindow && !mainWindow.isDestroyed()) {
@@ -1748,6 +1840,8 @@ async function runFiveTierExportBatch(spec) {
           engine: t.engine,
           layoutFidelity: t.layoutFidelity,
           yieldMs: t.yieldMs,
+          // 让核力度：仅档 4「不妥协」basic，其余 full（渲染进程 IDLE）
+          coexistPause: t.tier >= 4 ? 'basic' : 'full',
           // 对照批导：离线 OPC/SQL 失败仍出 PDF，便于比五档版式
           allowBindingIssues: true,
           jobId: `five-tier-${t.tier}-${Date.now()}`,

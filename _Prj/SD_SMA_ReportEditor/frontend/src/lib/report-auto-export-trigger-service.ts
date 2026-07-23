@@ -543,6 +543,7 @@ async function runAutoPdfExport(
           engine: exportProfile.engine,
           layoutFidelity: exportProfile.layoutFidelity,
           yieldMs: exportProfile.yieldMs,
+          coexistPause: exportProfile.coexistPause,
         });
         break;
       } catch (e) {

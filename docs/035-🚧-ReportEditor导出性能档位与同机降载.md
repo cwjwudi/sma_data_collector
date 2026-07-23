@@ -79,6 +79,42 @@
 
 ---
 
+# ✅ 已修复：降载只降主进程，矢量档仍饿死 mappView（0.3.142 · 2026-07-23）
+
+## 现象（现场）
+
+i3-7100U（2 核 4 线程）+ 给 AR 做 Hypervisor 占 1 核 → Windows 侧仅剩约 1 物理核。即使用**矢量档（档 1，pdf-lib）**导出，CPU 仍冲 100%、同机 mappView 卡死。
+
+## 根因（真正的 bug，非取舍）
+
+`beginPdfExportLowPriority()` 用 `os.setPriority(0, BELOW_NORMAL)`，**`0`=当前进程=Electron 主进程**。但导出真正吃 CPU 的是两个**独立 OS 进程**：
+
+1. **导出渲染进程**（隐藏 `pdfWin` renderer）：矢量档在此跑 pdf-lib 画版式 + fontkit 字体 subset + base64/PNG，是纯 CPU 同步计算，占满一个核；chromium 档则是 HTML 排版 + printToPDF。
+2. **Python 后端 `report_backend.exe`**：取数（OPC/SQL）。
+
+这两个进程**全程 NORMAL 优先级，降载一个都没碰到** → 主进程降载形同虚设，渲染进程照样和 mappView 抢那唯一的 Windows 核 → 饿死。矢量档虽整体轻，但渲染进程照样满核，故一样卡。
+
+## 处理（L2：降真正的进程 + 按档 IDLE）
+
+- 新增 `applyExportProcessCoexistPriority` / `restoreExportProcessCoexistPriority`：
+  - **渲染进程**（`pdfWin.webContents.getOSProcessId()`）：`coexistPause='full'`（档 0–3）降 **IDLE/Low**（mappView 一忙即完全让路）；`basic`（档 4）降 **BelowNormal**。
+  - **后端**（`pythonProcess.pid`）：`full` 档降 **BelowNormal**（取数以 IO 为主，不用 IDLE 以免拖慢）。
+  - 施加点：acquire 后 + 每份 `renderPart` 开头 + 导航/033 重建窗后（pid 会变）；`finally` 恢复 NORMAL。
+- `coexistPause` 由档位 `profile.coexistPause` 经 opts 透传（ReportGenerator / auto-export / AiPending / 五档批导），主进程缺省按最强 `full`。
+- 契约测：main.cjs 用 `getOSProcessId` + `PRIORITY_LOW` + `pythonProcess.pid`；调用点透传 `coexistPause`。
+
+## 说明与运维建议
+
+- 优先级**不降低 CPU% 数字**，但让高优先级 mappView 随时抢到核、不再饿死——这才是同机共存的关键。
+- 现场弱 CPU（1 Windows 核）建议：**默认矢量档（档 1）**（pdf-lib 远轻于 chromium printToPDF）；导出尽量安排在 HMI 不忙时。
+- 若 L2 现场仍不足，再评估 **L3：CPU 亲和性**给 mappView 预留核（改动大、超线程共享收益有限，暂缓）。
+
+## 验收
+
+`npm run test -- export-perf-tier` 绿（含新契约）；现场 Windows 装包后，导出期用任务管理器看 `Report Editor AI`（渲染进程）优先级应为「低」、`report_backend.exe`「低于正常」，且导出期间 mappView 操作不卡顿。
+
+---
+
 # ✅ 代码进度（0.3.122+）
 
 - [x] 五档模型 + 迁移 + 契约  

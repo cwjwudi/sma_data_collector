@@ -1925,6 +1925,7 @@ async function onManualExport(): Promise<void> {
       engine: exportProfile.engine,
       layoutFidelity: exportProfile.layoutFidelity,
       yieldMs: exportProfile.yieldMs,
+      coexistPause: exportProfile.coexistPause,
     });
     offProgress?.();
     offProgress = undefined;

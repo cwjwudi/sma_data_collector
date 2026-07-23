@@ -260,6 +260,7 @@ async function handleClientAction(action: string, payload: Record<string, unknow
       engine: resolveExportPerfProfile(prefs.exportPerfTier).engine,
       layoutFidelity: resolveExportPerfProfile(prefs.exportPerfTier).layoutFidelity,
       yieldMs: resolveExportPerfProfile(prefs.exportPerfTier).yieldMs,
+      coexistPause: resolveExportPerfProfile(prefs.exportPerfTier).coexistPause,
     })
     notifyAssetsChanged('manual_export')
     return

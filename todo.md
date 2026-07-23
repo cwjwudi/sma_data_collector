@@ -7,6 +7,8 @@
 
 ## 2026-07-23
 
+- **ReportEditor 0.3.142（035）**：现场矢量档也饿死 mappView 根因——降载只 `os.setPriority(0,…)` 降了空转主进程，真正吃 CPU 的**渲染进程**（pdf-lib/fontkit）与 **Python 后端**全程 NORMAL。改为导出期降渲染进程（full 档 IDLE、basic BelowNormal）+ 后端 BelowNormal，`coexistPause` 经档位透传，finally 恢复。i3-7100U+AR 占核仅剩约 1 Windows 核，另建议现场默认矢量档。看板 [docs/035-🚧](docs/035-🚧-ReportEditor导出性能档位与同机降载.md)。
+
 - **ReportEditor 0.3.141（037b）**：修「开静默、重启仍弹页」。第二根因＝升级后 HKCU\Run 存两份自启项（0.3.138 前无 `name` 用默认值名，0.3.138 起改固定值名却没清旧份）→ 开机双实例 → 第二实例触发无条件 `showMainWindowFromTray()` 弹窗。修复：`removeLegacyRunDuplicates` 清旧值名重复项；`second-instance` 对含 `--silent-start` 的第二实例不弹窗（该项随 0.3.140 提交入库）。测试 586 passed。看板 [docs/037-🚧](docs/037-🚧-ReportEditor开机自启与静默启动失效.md)。
 
 - **ReportEditor 0.3.140（035）**：后三档变慢诊断——对照五档前基线，默认档 2 `prewarmPoolSize=0` 导致每次导出冷启动 SPA（Win ~1~3s）是主因，0.3.137 canvas 格线叠层为次因。改档 2 保留 1 预热窗去冷启动（yield/降载不变，同机共存性不变）；批导同步。看板 [docs/035-🚧](docs/035-🚧-ReportEditor导出性能档位与同机降载.md)。
