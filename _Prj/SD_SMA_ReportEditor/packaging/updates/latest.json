@@ -1,15 +1,15 @@
 {
-  "version": "0.3.138",
-  "releasedAt": "2026-07-23T05:43:04.268Z",
-  "notes": "037：开机自启 Run 加引号并校正死链；批导旁路不改登录项",
+  "version": "0.3.143",
+  "releasedAt": "2026-07-23T14:30:00.684Z",
+  "notes": "039：导出全屏遮罩盖住同机 mappView 白屏（120s超时/Esc可关/默认开）",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.138-x64.exe",
-      "sha256": "890285097c91be88f411b55da8969864858df22e5e065adb9179950da87ff51c",
-      "size": 175791595
+      "url": "Report Editor AI-Setup-0.3.143-x64.exe",
+      "sha256": "3a91e16107ae70438ed1c7afad41fb16c68832c8066f15139b5657218c5ef53a",
+      "size": 175797134
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.138-arm64.dmg",
+      "url": "Report Editor AI-0.3.143-arm64.dmg",
       "sha256": "",
       "size": 0
     }
