@@ -63,4 +63,14 @@ describe("export-overlay contracts (039)", () => {
     // 渲染进程类型声明
     expect(readSrc("vite-env.d.ts")).toMatch(/exportOverlayEnabled\?: boolean/);
   });
+
+  it("039b：改遮罩不碰登录项；reg 中文报错按 GBK 解码", () => {
+    const main = readFront("electron/main.cjs");
+    expect(main).toMatch(/patchTouchesLoginItem/);
+    expect(main).toMatch(/touchLogin/);
+    const launch = readFront("electron/launch.cjs");
+    expect(launch).toMatch(/decodeWindowsConsole/);
+    expect(launch).toMatch(/isRegNotFoundMessage/);
+    expect(launch).toMatch(/encoding:\s*'buffer'/);
+  });
 });

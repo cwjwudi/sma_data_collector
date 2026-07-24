@@ -45,3 +45,27 @@
 - ⌛️ 真机验证：现场 i3-7100U + mappView 同屏，观察遮罩是否稳定秒开、结批期间不闪不漏白屏、超时/ Esc 均可靠退出。
 - 多显示器仅盖主显示器（用户选择）；若现场 HMI 在副屏需回来调整为按 HMI 所在屏或全屏覆盖。
 - 前台手动导出也会整屏遮住 Report Editor 自身（用户选择「只要导出就弹」）；如觉打扰可在设置页关闭，或后续改为仅「主窗后台」时弹。
+
+---
+
+# ✅ 已完成：设置页开关遮罩误报「登录项同步失败」乱码（039b）
+
+## 现象
+
+安装版设置页切换「导出时全屏遮罩」时，偏好其实已写入 `launch-settings.json`，但红字提示「偏好已保存，但登录项同步失败：」后跟乱码。Codex 还原乱码为：**错误：系统找不到指定的注册表项或值。**
+
+## 根因
+
+1. `launch-settings-set` 无论改什么字段都调用 `applyLoginItem`；关自启时会对 `HKCU\...\Run` 做 `reg delete`。
+2. 项本就不存在时，中文 Windows 的 `reg.exe` 用 **GBK** 输出上述错误；代码用 `encoding: 'utf8'` 读 stderr → 乱码，且原有「找不到」正则匹配失败，被当成真实失败回传 UI。
+
+## 修复
+
+- **IPC**：仅当 patch 含 `openAtLogin` / `silentStart` 时才同步登录项（`patchTouchesLoginItem`）；只改遮罩开关不再碰注册表。
+- **`syncWindowsRunKey`**：`reg` 输出按 buffer + `decodeWindowsConsole`（优先 GBK）解码；删除时 exit 1 / 「找不到」视为幂等成功。
+- **单测**：`launch-settings.test.ts` + `export-overlay-contracts.test.ts` 相关用例 12 项全绿。
+
+## 验收
+
+- 安装版：开关「导出时全屏遮罩」应提示「已保存」，无登录项/乱码报错；偏好文件 `exportOverlayEnabled` 正确翻转。
+- 开关「开机自启动」仍会写/清 Run；Run 项本就不存在时关自启不应再红字报错。

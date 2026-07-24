@@ -87,11 +87,11 @@ function readWindowsRunKey(valueName = LOGIN_ITEM_NAME) {
     const r = spawnSync(
       'reg',
       ['query', WIN_RUN_KEY, '/v', valueName],
-      { encoding: 'utf8', windowsHide: true },
+      { encoding: 'buffer', windowsHide: true },
     )
     if (r.status !== 0 || !r.stdout) return null
     // REG_SZ    value...
-    const lines = String(r.stdout).split(/\r?\n/)
+    const lines = decodeWindowsConsole(r.stdout).split(/\r?\n/)
     for (const line of lines) {
       const m = line.match(/REG_SZ\s+(.+)$/i)
       if (m) return m[1].trim()
@@ -117,9 +117,9 @@ function parseRunKeyOutput(stdout) {
 function listWindowsRunEntries() {
   if (process.platform !== 'win32') return []
   try {
-    const r = spawnSync('reg', ['query', WIN_RUN_KEY], { encoding: 'utf8', windowsHide: true })
+    const r = spawnSync('reg', ['query', WIN_RUN_KEY], { encoding: 'buffer', windowsHide: true })
     if (r.status !== 0 || !r.stdout) return []
-    return parseRunKeyOutput(r.stdout)
+    return parseRunKeyOutput(decodeWindowsConsole(r.stdout))
   } catch {
     return []
   }
@@ -157,6 +157,54 @@ function removeLegacyRunDuplicates(execPath) {
   return removed
 }
 
+/**
+ * 解码 Windows 控制台/`reg.exe` 输出。
+ * 中文系统多为 GBK/CP936；若按 UTF-8 读会变成乱码，且「找不到」正则匹配失败。
+ * @param {Buffer|string|null|undefined} data
+ */
+function decodeWindowsConsole(data) {
+  if (data == null) return ''
+  if (typeof data === 'string') return data.trim()
+  const buf = Buffer.isBuffer(data) ? data : Buffer.from(data)
+  if (!buf.length) return ''
+  const utf8 = buf.toString('utf8')
+  // 无替换符且像英文/已是 Unicode 文本 → 直接用
+  if (!utf8.includes('\uFFFD') && /ERROR:|The operation completed|successfully/i.test(utf8)) {
+    return utf8.trim()
+  }
+  if (process.platform === 'win32') {
+    for (const enc of ['gbk', 'gb18030']) {
+      try {
+        const text = new TextDecoder(enc).decode(buf).trim()
+        if (text && !text.includes('\uFFFD')) return text
+      } catch {
+        /* ICU 未含该编码时忽略 */
+      }
+    }
+  }
+  return utf8.trim()
+}
+
+/** reg delete/query 目标不存在（中/英，含曾被误按 UTF-8 解码的乱码兜底）。 */
+function isRegNotFoundMessage(text) {
+  const s = String(text || '')
+  if (!s) return false
+  if (/unable to find|cannot find the specified|ERROR:\s*The system was unable/i.test(s)) return true
+  if (/找不到|指定的注册表/.test(s)) return true
+  return false
+}
+
+/**
+ * patch 是否触及开机自启相关字段。仅改 exportOverlayEnabled 等时不应碰 HKCU\Run，
+ * 否则关自启场景下 `reg delete` 对缺失项报错会误伤设置页（乱码「登录项同步失败」）。
+ * @param {Record<string, unknown>|null|undefined} patch
+ */
+function patchTouchesLoginItem(patch) {
+  if (!patch || typeof patch !== 'object') return false
+  return Object.prototype.hasOwnProperty.call(patch, 'openAtLogin')
+    || Object.prototype.hasOwnProperty.call(patch, 'silentStart')
+}
+
 function syncWindowsRunKey(valueName, commandOrNull) {
   if (process.platform !== 'win32') return { ok: true }
   try {
@@ -164,21 +212,24 @@ function syncWindowsRunKey(valueName, commandOrNull) {
       const r = spawnSync(
         'reg',
         ['delete', WIN_RUN_KEY, '/v', valueName, '/f'],
-        { encoding: 'utf8', windowsHide: true },
+        { encoding: 'buffer', windowsHide: true },
       )
-      // 不存在时 reg 返回 1，视为已关闭成功
-      if (r.status !== 0 && !/unable to find|找不到|ERROR: The system was unable/i.test(String(r.stderr || r.stdout || ''))) {
-        return { ok: false, error: String(r.stderr || r.stdout || `reg delete exit ${r.status}`).trim() }
+      if (r.status === 0) return { ok: true }
+      const errText = decodeWindowsConsole(r.stderr) || decodeWindowsConsole(r.stdout)
+      // 不存在时 reg 常返回 1；删除本就幂等，视为已关闭成功
+      if (r.status === 1 || isRegNotFoundMessage(errText)) {
+        return { ok: true }
       }
-      return { ok: true }
+      return { ok: false, error: errText || `reg delete exit ${r.status}` }
     }
     const r = spawnSync(
       'reg',
       ['add', WIN_RUN_KEY, '/v', valueName, '/t', 'REG_SZ', '/d', commandOrNull, '/f'],
-      { encoding: 'utf8', windowsHide: true },
+      { encoding: 'buffer', windowsHide: true },
     )
     if (r.status !== 0) {
-      return { ok: false, error: String(r.stderr || r.stdout || `reg add exit ${r.status}`).trim() }
+      const errText = decodeWindowsConsole(r.stderr) || decodeWindowsConsole(r.stdout)
+      return { ok: false, error: errText || `reg add exit ${r.status}` }
     }
     return { ok: true }
   } catch (e) {
@@ -352,4 +403,7 @@ module.exports = {
   listWindowsRunEntries,
   findAppRunEntryData,
   removeLegacyRunDuplicates,
+  decodeWindowsConsole,
+  isRegNotFoundMessage,
+  patchTouchesLoginItem,
 }

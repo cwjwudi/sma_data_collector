@@ -32,6 +32,7 @@ const {
   applyLoginItem,
   syncLoginItemOnReady,
   shouldSilentStartThisSession,
+  patchTouchesLoginItem,
   SILENT_START_ARG,
 } = require('./launch.cjs')
 
@@ -2201,8 +2202,21 @@ ipcMain.handle('launch-settings-get', () => {
 })
 
 ipcMain.handle('launch-settings-set', (_event, patch) => {
-  const next = writeLaunchSettings(app, patch || {})
-  const applied = applyLoginItem(app, next, { skip: Boolean(fiveTierExportSpec) })
+  const p = patch || {}
+  const next = writeLaunchSettings(app, p)
+  // 仅改 exportOverlayEnabled 等非自启字段时不要碰 HKCU\Run：
+  // 关自启 + 注册表项本就不存在时，reg delete 的中文报错曾被 UTF-8 误读成乱码「登录项同步失败」。
+  const touchLogin = patchTouchesLoginItem(p) && !fiveTierExportSpec
+  const applied = touchLogin
+    ? applyLoginItem(app, next)
+    : {
+        execPath: process.execPath,
+        loginCommand: null,
+        applied: false,
+        skipped: false,
+        error: null,
+        removedLegacy: [],
+      }
   return {
     ...next,
     packaged: app.isPackaged,

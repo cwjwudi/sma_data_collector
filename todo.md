@@ -5,6 +5,10 @@
 
 ---
 
+## 2026-07-24
+
+- **ReportEditor 039b**：设置页开关「导出时全屏遮罩」误报「登录项同步失败」乱码。根因＝改任意启动偏好都 `applyLoginItem` + 中文 Windows `reg delete` 缺项报错被 UTF-8 误读。修复：仅 `openAtLogin`/`silentStart` 才同步 Run；`reg` 按 GBK 解码且缺项视为幂等成功。单测 12 项全绿。看板 [docs/039-🚧](docs/039-🚧-ReportEditor导出全屏遮罩.md)。
+
 ## 2026-07-23
 
 - **ReportEditor 0.3.143（039）**：现场兜底——导出/结批期在**主显示器全屏**显示「正在生成报表」遮罩，`setAlwaysOnTop('screen-saver')` 盖住同机 mappView 白屏；遮罩窗为独立 NORMAL 优先级渲染进程 + 内联静态 HTML（不加载 SPA），自身不会跟着饿死白屏。导出计数 0→1 弹、归 0 收（与 register/unregister 对称），进度显示「第 x/共 y 份」。安全阀：120s 硬超时、Esc/右上角 × 随时可关、五档批导不弹。配置 `exportOverlayEnabled` 默认开、设置页可关。契约/单测 21 项全绿。看板 [docs/039-🚧](docs/039-🚧-ReportEditor导出全屏遮罩.md)。
