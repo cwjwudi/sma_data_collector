@@ -7,6 +7,8 @@
 
 ## 2026-07-24
 
+- **ReportEditor 0.3.144（039b）**：发版打包——开关「导出时全屏遮罩」不再误报登录项乱码；仅自启字段同步 Run，`reg` 按 GBK 解码。看板 [docs/039-🚧](docs/039-🚧-ReportEditor导出全屏遮罩.md)。
+
 - **ReportEditor 039b**：设置页开关「导出时全屏遮罩」误报「登录项同步失败」乱码。根因＝改任意启动偏好都 `applyLoginItem` + 中文 Windows `reg delete` 缺项报错被 UTF-8 误读。修复：仅 `openAtLogin`/`silentStart` 才同步 Run；`reg` 按 GBK 解码且缺项视为幂等成功。单测 12 项全绿。看板 [docs/039-🚧](docs/039-🚧-ReportEditor导出全屏遮罩.md)。
 
 ## 2026-07-23

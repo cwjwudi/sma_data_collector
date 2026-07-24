@@ -1,15 +1,15 @@
 {
-  "version": "0.3.143",
-  "releasedAt": "2026-07-23T14:30:00.684Z",
-  "notes": "039：导出全屏遮罩盖住同机 mappView 白屏（120s超时/Esc可关/默认开）",
+  "version": "0.3.144",
+  "releasedAt": "2026-07-24T08:43:03.489Z",
+  "notes": "039b：修复开关导出遮罩误报登录项乱码（仅自启字段同步Run；reg按GBK解码）",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.143-x64.exe",
-      "sha256": "3a91e16107ae70438ed1c7afad41fb16c68832c8066f15139b5657218c5ef53a",
-      "size": 175797134
+      "url": "Report Editor AI-Setup-0.3.144-x64.exe",
+      "sha256": "85917579838c1aeaafc006a0a05934125d72350aa56680427546fcddd8d025b7",
+      "size": 175796827
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.143-arm64.dmg",
+      "url": "Report Editor AI-0.3.144-arm64.dmg",
       "sha256": "",
       "size": 0
     }
