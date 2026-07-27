@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>报表复制 - SD SMA Report Copy</title>
-    <link rel="stylesheet" href="/static/styles.css?v=20260723-sandbox-status" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260727-folder-copy" />
   </head>
   <body data-page="main">
     <nav class="page-nav" aria-label="站内导航">
@@ -21,7 +21,7 @@
           <div class="panel-heading">
             <div>
               <h2>报表文件</h2>
-              <p class="hint">选择要复制到 U 盘的报表；可切换平铺或按文件夹查看。</p>
+              <p class="hint">选择要复制到 U 盘的报表；按文件夹查看时可多选文件夹并直接复制其全部内容。</p>
             </div>
             <span id="reportCount" class="touch-badge">0 个文件</span>
           </div>
@@ -36,6 +36,7 @@
           <div class="table-wrap reports-table-wrap">
             <table id="reportsTable"></table>
           </div>
+          <div id="selectionSummary" class="muted selection-summary" aria-live="polite">已选 0 个文件、0 个文件夹</div>
           <div id="reportsHint" class="muted"></div>
         </section>
 
@@ -85,6 +86,6 @@
       </div>
     </div>
 
-    <script src="/static/app.js?v=20260723-sandbox-status"></script>
+    <script src="/static/app.js?v=20260727-folder-copy"></script>
   </body>
 </html>

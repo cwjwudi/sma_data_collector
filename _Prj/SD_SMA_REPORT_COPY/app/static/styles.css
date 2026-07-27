@@ -318,6 +318,21 @@ th {
   font-weight: 700;
 }
 
+.folder-row td:first-child {
+  text-align: center;
+  vertical-align: middle;
+}
+
+.folder-check {
+  cursor: pointer;
+}
+
+.selection-summary {
+  min-height: 20px;
+  margin-top: 8px;
+  font-weight: 700;
+}
+
 .folder-toolbar-row td {
   position: sticky;
   top: 0;

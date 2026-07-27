@@ -29,7 +29,7 @@ def test_main_and_config_pages_use_sticky_status_bar() -> None:
         html = (STATIC_DIR / filename).read_text(encoding="utf-8")
         assert 'id="appStatusBar"' in html
         assert 'role="status"' in html
-        assert "20260723-sandbox-status" in html
+        assert "20260727-folder-copy" in html
 
     assert ".app-status-bar" in styles
     assert "position: sticky;" in styles

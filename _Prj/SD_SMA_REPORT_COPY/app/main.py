@@ -85,7 +85,8 @@ class AppConfig(BaseModel):
 
 class CopyRequest(BaseModel):
     drive: str
-    files: list[str]
+    files: list[str] = Field(default_factory=list)
+    folders: list[str] = Field(default_factory=list)
     destination_folder: str = ""
     overwrite: bool = False
 
@@ -190,20 +191,61 @@ def ensure_relative_path(value: str) -> Path:
     return path
 
 
-def resolve_report_file(value: str) -> Path:
-    root = report_root()
+def _resolve_report_entry(value: str, *, entry_type: str) -> tuple[Path, Path]:
+    root = report_root().resolve()
     rel = ensure_relative_path(value)
     target = (root / rel).resolve()
     try:
-        target.relative_to(root.resolve())
+        target.relative_to(root)
     except ValueError as exc:
         raise ValueError("报表路径超出配置目录") from exc
-    if not target.is_file():
+    if entry_type == "file" and not target.is_file():
         raise FileNotFoundError(target)
+    if entry_type == "folder" and not target.is_dir():
+        raise FileNotFoundError(target)
+    return root, target
+
+
+def resolve_report_file(value: str) -> Path:
+    _root, target = _resolve_report_entry(value, entry_type="file")
     ext = target.suffix.lower()
     if ext not in normalize_extensions(load_config()["allowed_extensions"]):
         raise ValueError(f"不允许的文件类型: {ext}")
     return target
+
+
+def resolve_report_folder(value: str) -> Path:
+    _root, target = _resolve_report_entry(value, entry_type="folder")
+    return target
+
+
+def collect_selected_reports(req: CopyRequest) -> list[tuple[str, Path]]:
+    """Resolve files and recursively expand selected folders, removing overlaps."""
+    root = report_root().resolve()
+    allowed = set(normalize_extensions(load_config()["allowed_extensions"]))
+    selected: dict[Path, tuple[str, Path]] = {}
+
+    def add_file(src: Path) -> None:
+        resolved = src.resolve()
+        try:
+            rel = resolved.relative_to(root).as_posix()
+        except ValueError as exc:
+            raise ValueError("报表路径超出配置目录") from exc
+        if resolved.suffix.lower() not in allowed:
+            return
+        if not resolved.is_file():
+            raise FileNotFoundError(resolved)
+        selected.setdefault(resolved, (rel, resolved))
+
+    for rel in req.files:
+        add_file(resolve_report_file(rel))
+    for rel in req.folders:
+        folder = resolve_report_folder(rel)
+        for item in folder.rglob("*"):
+            if item.is_file() and item.suffix.lower() in allowed:
+                add_file(item)
+
+    return sorted(selected.values(), key=lambda item: item[0].lower())
 
 
 def sanitize_destination_folder(value: str | None) -> Path:
@@ -339,7 +381,7 @@ def format_report(item: Path, root: Path) -> dict[str, Any]:
 
 def list_reports(query: str = "") -> dict[str, Any]:
     cfg = load_config()
-    root = report_root()
+    root = report_root().resolve()
     if not root.is_dir():
         return {"root": str(root), "exists": False, "reports": [], "count": 0}
     allowed = set(normalize_extensions(cfg["allowed_extensions"]))
@@ -467,12 +509,9 @@ def copy_reports_job(job_id: str, req: CopyRequest) -> dict[str, Any]:
     cfg = load_config()
     target_drive = ensure_target_drive(req.drive)
     dest_folder = sanitize_destination_folder(req.destination_folder or cfg["destination_folder"])
-    selected = []
-    for rel in req.files:
-        src = resolve_report_file(rel)
-        selected.append((rel, src))
+    selected = collect_selected_reports(req)
     if not selected:
-        raise ValueError("请选择至少一个报表文件")
+        raise ValueError("请选择至少一个报表文件或文件夹")
 
     total_bytes = sum(src.stat().st_size for _, src in selected)
     drive_info = next((drive for drive in list_drives() if drive["root"] == str(target_drive)), None)
@@ -485,10 +524,13 @@ def copy_reports_job(job_id: str, req: CopyRequest) -> dict[str, Any]:
     failed: list[dict[str, str]] = []
     copied_bytes = 0
     overwrite = bool(req.overwrite)
-    root = report_root()
+    root = report_root().resolve()
     destination_root = target_drive / dest_folder
     append_job_log(job_id, f"目标目录: {destination_root}")
-    append_operation_log(f"START drive={target_drive} dest={destination_root} files={len(selected)}")
+    append_operation_log(
+        f"START drive={target_drive} dest={destination_root} files={len(selected)} "
+        f"selected_files={len(req.files)} selected_folders={len(req.folders)}"
+    )
 
     for index, (rel_text, src) in enumerate(selected, start=1):
         try:
@@ -609,6 +651,8 @@ def get_reports(q: str = "") -> dict[str, Any]:
 @app.post("/api/copy")
 def start_copy(req: CopyRequest) -> dict[str, Any]:
     try:
+        if not req.files and not req.folders:
+            raise ValueError("请选择至少一个报表文件或文件夹")
         job = start_job(f"复制报表到 {normalize_drive_root(req.drive)}", copy_reports_job, req)
         return {"job": job}
     except Exception as exc:  # noqa: BLE001

@@ -7,6 +7,8 @@ let currentConfig = {};
 let currentViewMode = 'flat';
 let currentFolderPath = '';
 const notifiedJobStates = new Map();
+const selectedReportPaths = new Set();
+const selectedFolderPaths = new Set();
 
 const confirmModalOverlay = document.getElementById('confirm-modal-overlay');
 const confirmModalTitle = document.getElementById('confirm-modal-title');
@@ -275,9 +277,10 @@ function reportName(path) {
 
 function reportRowHtml(report, options = {}) {
   const label = options.nameOnly ? reportName(report.path) : report.path;
+  const checked = selectedReportPaths.has(report.path) ? ' checked' : '';
   return (
     `<tr>` +
-    `<td><input type="checkbox" class="report-check" value="${escapeHtml(report.path)}" /></td>` +
+    `<td><input type="checkbox" class="report-check" value="${escapeHtml(report.path)}"${checked} aria-label="选择报表 ${escapeHtml(label)}" /></td>` +
     `<td><span class="report-path-text" title="${escapeHtml(report.path)}">${escapeHtml(label)}</span></td>` +
     `<td>${formatBytes(report.size)}</td>` +
     `<td>${escapeHtml(report.modified_at)}</td>` +
@@ -321,10 +324,12 @@ function renderFolderReports(tbody, reports) {
   const sortedFolders = Array.from(childFolders.entries()).sort((a, b) => a[0].localeCompare(b[0]));
   for (const [childPath, count] of sortedFolders) {
     const name = reportName(childPath);
+    const checked = selectedFolderPaths.has(childPath) ? ' checked' : '';
     tbody.insertAdjacentHTML(
       'beforeend',
       `<tr class="folder-row">` +
-        `<td></td>` +
+        `<td><input type="checkbox" class="folder-check" value="${escapeHtml(childPath)}"${checked} ` +
+          `aria-label="选择文件夹 ${escapeHtml(name)}" title="复制该文件夹内全部允许类型报表（含子文件夹）" /></td>` +
         `<td><button type="button" class="folder-link" data-folder-path="${escapeHtml(childPath)}">${escapeHtml(name)}</button></td>` +
         `<td>${count} 个文件</td>` +
         `<td></td>` +
@@ -351,11 +356,37 @@ function renderReports(reports, root, exists) {
   }
   table.appendChild(tbody);
   bindFolderNavigation();
+  bindReportSelection();
+  updateSelectionSummary();
   setHint(
     'reportsHint',
     exists ? `报表根目录: ${root}` : `报表根目录不存在: ${root}`,
     exists ? 'muted' : 'muted warn',
   );
+}
+
+function updateSelectionSummary() {
+  const target = el('selectionSummary');
+  if (!target) return;
+  target.textContent = `已选 ${selectedReportPaths.size} 个文件、${selectedFolderPaths.size} 个文件夹`;
+  target.className = selectedReportPaths.size || selectedFolderPaths.size ? 'muted ok selection-summary' : 'muted selection-summary';
+}
+
+function bindReportSelection() {
+  for (const item of document.querySelectorAll('.report-check')) {
+    item.addEventListener('change', () => {
+      if (item.checked) selectedReportPaths.add(item.value);
+      else selectedReportPaths.delete(item.value);
+      updateSelectionSummary();
+    });
+  }
+  for (const item of document.querySelectorAll('.folder-check')) {
+    item.addEventListener('change', () => {
+      if (item.checked) selectedFolderPaths.add(item.value);
+      else selectedFolderPaths.delete(item.value);
+      updateSelectionSummary();
+    });
+  }
 }
 
 function bindFolderNavigation() {
@@ -383,13 +414,24 @@ async function refreshReports() {
 }
 
 function selectedReports() {
-  return Array.from(document.querySelectorAll('.report-check:checked')).map(item => item.value);
+  return Array.from(selectedReportPaths).sort();
+}
+
+function selectedFolders() {
+  return Array.from(selectedFolderPaths).sort();
 }
 
 function selectAllReports(checked) {
-  for (const item of document.querySelectorAll('.report-check')) {
-    item.checked = checked;
+  if (!checked) {
+    selectedReportPaths.clear();
+    selectedFolderPaths.clear();
   }
+  for (const item of document.querySelectorAll('.report-check, .folder-check')) {
+    item.checked = checked;
+    if (checked && item.classList.contains('report-check')) selectedReportPaths.add(item.value);
+    if (checked && item.classList.contains('folder-check')) selectedFolderPaths.add(item.value);
+  }
+  updateSelectionSummary();
 }
 
 function renderDrives(drives) {
@@ -446,14 +488,16 @@ async function refreshDrives() {
 
 async function startCopy() {
   const files = selectedReports();
+  const folders = selectedFolders();
   const drive = el('driveSelect').value;
-  if (!files.length) throw new Error('请先选择报表文件');
+  if (!files.length && !folders.length) throw new Error('请先选择报表文件或文件夹');
   if (!drive) throw new Error('请先选择U盘目标');
   const overwrite = el('overwriteCopy').checked;
   const destination = currentConfig.destination_folder || 'SMA_Report';
   const ok = await showConfirmModal({
     title: '复制报表确认',
-    message: `将 ${files.length} 个报表复制到 ${drive}\\${destination}。${overwrite ? '同名文件将被覆盖。' : '同名文件将跳过。'}是否继续？`,
+    message: `将 ${files.length} 个文件、${folders.length} 个文件夹（含子文件夹）复制到 ${drive}\\${destination}。` +
+      `${overwrite ? '同名文件将被覆盖。' : '同名文件将跳过。'}重叠选择会自动去重。是否继续？`,
     confirmText: '开始复制',
   });
   if (!ok) return;
@@ -463,12 +507,13 @@ async function startCopy() {
     body: JSON.stringify({
       drive,
       files,
+      folders,
       destination_folder: destination,
       overwrite,
     }),
   });
   watchJob(data.job.id);
-  setHint('copyHint', `复制任务已开始: ${files.length} 个文件 -> ${drive}`, 'muted ok');
+  setHint('copyHint', `复制任务已开始: ${files.length} 个文件、${folders.length} 个文件夹 -> ${drive}`, 'muted ok');
 }
 
 function statusClass(status) {
