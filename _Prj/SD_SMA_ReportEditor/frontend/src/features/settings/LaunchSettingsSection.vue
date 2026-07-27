@@ -46,6 +46,26 @@
       退出」；macOS 可点 Dock 图标，或点顶部菜单栏托盘图标「打开主界面 / 退出」。关闭后下次启动恢复显示窗口。
     </p>
 
+    <div class="settings-switch-row">
+      <button
+        type="button"
+        class="settings-switch"
+        role="switch"
+        :aria-checked="prefs.exportOverlayEnabled === false ? 'false' : 'true'"
+        :disabled="busy"
+        @click="toggleExportOverlay"
+      >
+        <span class="settings-switch-track" :class="{ on: prefs.exportOverlayEnabled !== false }">
+          <span class="settings-switch-thumb" />
+        </span>
+        <span class="settings-switch-label">导出时全屏遮罩</span>
+      </button>
+    </div>
+    <p class="settings-field-hint">
+      结批 / 导出期间在主显示器全屏显示「正在生成报表」遮罩，盖住同机 mappView
+      因抢占资源出现的白屏。最长显示 120 秒后自动隐藏；随时可按 Esc 或点右上角 × 关闭以查看现场画面。
+    </p>
+
     <p
       v-if="msg"
       class="settings-msg"
@@ -66,6 +86,7 @@ defineOptions({ name: "LaunchSettingsSection" });
 type LaunchPrefs = {
   openAtLogin: boolean;
   silentStart: boolean;
+  exportOverlayEnabled?: boolean;
   packaged?: boolean;
   silentStartSession?: boolean;
   execPath?: string;
@@ -73,13 +94,14 @@ type LaunchPrefs = {
   loginApplied?: boolean;
   loginSkipped?: boolean;
   loginError?: string | null;
+  loginRemovedLegacy?: string[];
 };
 
 const available = ref(false);
 const busy = ref(false);
 const msg = ref("");
 const msgTone = ref<"ok" | "err" | "">("");
-const prefs = ref<LaunchPrefs>({ openAtLogin: false, silentStart: false });
+const prefs = ref<LaunchPrefs>({ openAtLogin: false, silentStart: false, exportOverlayEnabled: true });
 
 const devNote = computed(() => {
   if (prefs.value.packaged === false) {
@@ -112,6 +134,9 @@ async function persist(patch: Partial<LaunchPrefs>) {
   try {
     const next = await api.setLaunchSettings(patch);
     prefs.value = next;
+    const cleaned = next.loginRemovedLegacy?.length
+      ? `（已清理旧的重复自启项：${next.loginRemovedLegacy.join("、")}）`
+      : "";
     if (next.loginError) {
       msg.value = `偏好已保存，但登录项同步失败：${next.loginError}`;
       msgTone.value = "err";
@@ -119,10 +144,10 @@ async function persist(patch: Partial<LaunchPrefs>) {
       msg.value = "已保存（当前不会写入系统开机启动项）";
       msgTone.value = "ok";
     } else if (next.openAtLogin && next.loginCommand) {
-      msg.value = `已保存并注册开机启动：${next.loginCommand}`;
+      msg.value = `已保存并注册开机启动：${next.loginCommand}${cleaned}`;
       msgTone.value = "ok";
     } else {
-      msg.value = "已保存";
+      msg.value = `已保存${cleaned}`;
       msgTone.value = "ok";
     }
   } catch (e: unknown) {
@@ -139,6 +164,10 @@ function toggleOpenAtLogin() {
 
 function toggleSilentStart() {
   void persist({ silentStart: !prefs.value.silentStart });
+}
+
+function toggleExportOverlay() {
+  void persist({ exportOverlayEnabled: prefs.value.exportOverlayEnabled === false });
 }
 
 onMounted(() => {

@@ -1,15 +1,15 @@
 {
-  "version": "0.3.138",
-  "releasedAt": "2026-07-23T05:43:04.268Z",
-  "notes": "037：开机自启 Run 加引号并校正死链；批导旁路不改登录项",
+  "version": "0.3.144",
+  "releasedAt": "2026-07-24T08:43:03.489Z",
+  "notes": "039b：修复开关导出遮罩误报登录项乱码（仅自启字段同步Run；reg按GBK解码）",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.138-x64.exe",
-      "sha256": "890285097c91be88f411b55da8969864858df22e5e065adb9179950da87ff51c",
-      "size": 175791595
+      "url": "Report Editor AI-Setup-0.3.144-x64.exe",
+      "sha256": "85917579838c1aeaafc006a0a05934125d72350aa56680427546fcddd8d025b7",
+      "size": 175796827
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.138-arm64.dmg",
+      "url": "Report Editor AI-0.3.144-arm64.dmg",
       "sha256": "",
       "size": 0
     }

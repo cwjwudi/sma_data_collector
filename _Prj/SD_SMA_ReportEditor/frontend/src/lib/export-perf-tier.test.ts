@@ -43,7 +43,8 @@ describe("export-perf-tier (035 five-tier)", () => {
     expect(resolveExportPerfProfile(2)).toMatchObject({
       engine: "chromium",
       layoutFidelity: "print-to-pdf",
-      prewarmPoolSize: 0,
+      // 0.3.140：默认档保留 1 预热窗免冷启动（同机让核仍靠 yield + 降载）
+      prewarmPoolSize: 1,
       yieldMs: 200,
       coexistPause: "full",
       pdfQuality: "preview",

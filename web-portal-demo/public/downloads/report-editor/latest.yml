@@ -1,10 +1,10 @@
 releaseNotes: |
-  修复 0.1.25 启动白屏；OPC UA 自动截批全局监听；Windows 应用内更新展示 releaseNotes
-version: 0.1.25
+  039b：修复开关导出遮罩误报登录项乱码（仅自启字段同步Run；reg按GBK解码）
+version: 0.3.144
 files:
-  - url: Report Editor-Setup-0.1.25-x64.exe
-    sha512: 5cZgc8jLX1lTDrBZY9vmGCojLO1zar22Mj5Zqe3taHMvzb+b0zfn33ocQcPI3thpoqi4PzGlmka5rIr0fVI81A==
-    size: 143359693
-path: Report Editor-Setup-0.1.25-x64.exe
-sha512: 5cZgc8jLX1lTDrBZY9vmGCojLO1zar22Mj5Zqe3taHMvzb+b0zfn33ocQcPI3thpoqi4PzGlmka5rIr0fVI81A==
-releaseDate: '2026-07-01T20:41:59.033Z'
+  - url: Report Editor AI-Setup-0.3.144-x64.exe
+    sha512: xcqyNQ6zaUN5p49bhtZLRy01TLSQPa6rgNj2vm8O9OCfA8CVUC9OJ/xQps2CdWfh7enjLeYNf2rOnGwYgqThJg==
+    size: 175796827
+path: Report Editor AI-Setup-0.3.144-x64.exe
+sha512: xcqyNQ6zaUN5p49bhtZLRy01TLSQPa6rgNj2vm8O9OCfA8CVUC9OJ/xQps2CdWfh7enjLeYNf2rOnGwYgqThJg==
+releaseDate: '2026-07-24T08:43:03.141Z'

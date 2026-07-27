@@ -30,6 +30,8 @@ interface Window {
       layoutFidelity?: "draft-v1" | "layout-v2" | "print-to-pdf" | string;
       /** 035：分卷 yield（ms），来自导出性能档位 */
       yieldMs?: number;
+      /** 让核力度（来自档位 coexistPause）：full=渲染进程 IDLE；basic=BelowNormal */
+      coexistPause?: "full" | "basic" | string;
     }) => Promise<{
       ok: boolean;
       filePath: string;
@@ -394,6 +396,7 @@ interface Window {
     getLaunchSettings?: () => Promise<{
       openAtLogin: boolean;
       silentStart: boolean;
+      exportOverlayEnabled?: boolean;
       packaged?: boolean;
       silentStartSession?: boolean;
       execPath?: string;
@@ -401,9 +404,11 @@ interface Window {
     setLaunchSettings?: (patch: {
       openAtLogin?: boolean;
       silentStart?: boolean;
+      exportOverlayEnabled?: boolean;
     }) => Promise<{
       openAtLogin: boolean;
       silentStart: boolean;
+      exportOverlayEnabled?: boolean;
       packaged?: boolean;
       silentStartSession?: boolean;
       execPath?: string;
@@ -411,6 +416,7 @@ interface Window {
       loginApplied?: boolean;
       loginSkipped?: boolean;
       loginError?: string | null;
+      loginRemovedLegacy?: string[];
     }>;
   };
 }

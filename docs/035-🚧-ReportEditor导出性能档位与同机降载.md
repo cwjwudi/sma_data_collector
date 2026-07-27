@@ -32,11 +32,86 @@
 |----|----|--------|----------|------|-----------|------|-------|-----|
 | 0 | 仅内容 | pdf-lib | draft-v1 | 0 | 1 | full | 200 | 草稿 |
 | 1 | 矢量版式 | pdf-lib | layout-v2 | 0 | 1 | full | 200 | 坐标版式 |
-| 2 | **预览稳（默认）** | chromium | printToPDF | 0 | 1 | full | 200 | 预览级 |
+| 2 | **预览稳（默认）** | chromium | printToPDF | **1**（0.3.140，原 0） | 1 | full | 200 | 预览级 |
 | 3 | 功能折中 | chromium | printToPDF | 1 | 1 | full | 80 | 预览级 |
 | 4 | 不妥协 | chromium | printToPDF | 2 | 2 | basic | 40 | 预览级 |
 
 旧四档迁移：`0→0`，`1→2`，`2→3`，`3→4`（`exportPerfTierScale=5`）。
+
+---
+
+# ✅ 已完成：后三档变慢诊断 + 默认档去冷启动（0.3.140 · 2026-07-23）
+
+## 背景
+
+测试反馈「后面三种（档 2/3/4 chromium `printToPDF`）导出速度相当慢，和最初没做五档时有区别」。对照五档引入前基线（commit `1cec6a8^`，0.3.119 无档位）逐项核对。
+
+## 根因（最初 vs 现在）
+
+「最初」chromium 导出基线：**常驻 1 预热窗**（`targetPoolSize=min(2,maxParallel=1)=1`，开机预热 + 每次导出后重热 + keep-alive）→ 每次导出走热 hash 切换，无整页冷启动；分卷 `PDF_EXPORT_PART_YIELD_MS=80`；导出期 `BelowNormal`（当时已有）。
+
+五档后后三档差异：
+
+| 档 | 预热窗 | yield | 并行 | 相对最初 |
+|----|-------|-------|------|---------|
+| 2 预览稳（默认） | **0 → 每次冷启动 SPA（Win ~1~3s）** | 200ms（原 80 的 2.5×） | 1 | 明显更慢 |
+| 3 功能折中 | 1（热窗） | 80ms | 1 | ≈ 最初基线 |
+| 4 不妥协 | 2（热窗） | 40ms | 2 | 比最初更快 |
+
+- **主因**：默认档 2 `prewarmPoolSize=0` 关掉预热 → 每次导出整页冷启动（Vue 启动 + 依赖解析 + 字体加载，Windows ~1~3s），是当初为「同机 mappView 不被饿死」的取舍代价。
+- **次因**：0.3.137 新增 `installPrintTableGridOverlays`（canvas 整表格线位图）在每次 chromium 渲染 `signalReady` 前跑（`getBoundingClientRect` 回流 + dpr=3 `toDataURL` PNG 编码 + `img.decode`），三档统一新增净开销（前两档 pdf-lib 不受影响）。
+
+## 处理（本次拍板：只做「默认档保留 1 预热窗」）
+
+- `export-perf-tier.ts`：档 2 `prewarmPoolSize` **0 → 1**（去冷启动，热 hash 切换提速）；同机让核仍靠 `yield=200` + `BelowNormal`，共存性不变。
+- `main.cjs` 五档批导：`pdfExportPrewarmPoolSize = t.tier>=4 ? 2 : t.tier>=2 ? 1 : 0`（档 2 同步保留 1 预热窗）。
+- 单测 `export-perf-tier.test.ts` T2 断言档 2 预热 = 1。
+
+## 未采纳（留档，用户本轮未选）
+
+- 降 canvas 叠层开销（dpr3→2 / 按需 / 换编码）——三档统一提速项。
+- 默认档 2→3。
+- 档 4「不妥协」解除 `BelowNormal`（`runPdfExportWithSlot` 目前无条件降载，与语义冲突）。
+
+## 验收
+
+`npm run test -- export-perf-tier` 绿；后续 Windows 装包重跑五档批导，对比档 2 首份 `readyMs`（应去掉 ~1~3s 冷启动）。
+
+---
+
+# ✅ 已修复：降载只降主进程，矢量档仍饿死 mappView（0.3.142 · 2026-07-23）
+
+## 现象（现场）
+
+i3-7100U（2 核 4 线程）+ 给 AR 做 Hypervisor 占 1 核 → Windows 侧仅剩约 1 物理核。即使用**矢量档（档 1，pdf-lib）**导出，CPU 仍冲 100%、同机 mappView 卡死。
+
+## 根因（真正的 bug，非取舍）
+
+`beginPdfExportLowPriority()` 用 `os.setPriority(0, BELOW_NORMAL)`，**`0`=当前进程=Electron 主进程**。但导出真正吃 CPU 的是两个**独立 OS 进程**：
+
+1. **导出渲染进程**（隐藏 `pdfWin` renderer）：矢量档在此跑 pdf-lib 画版式 + fontkit 字体 subset + base64/PNG，是纯 CPU 同步计算，占满一个核；chromium 档则是 HTML 排版 + printToPDF。
+2. **Python 后端 `report_backend.exe`**：取数（OPC/SQL）。
+
+这两个进程**全程 NORMAL 优先级，降载一个都没碰到** → 主进程降载形同虚设，渲染进程照样和 mappView 抢那唯一的 Windows 核 → 饿死。矢量档虽整体轻，但渲染进程照样满核，故一样卡。
+
+## 处理（L2：降真正的进程 + 按档 IDLE）
+
+- 新增 `applyExportProcessCoexistPriority` / `restoreExportProcessCoexistPriority`：
+  - **渲染进程**（`pdfWin.webContents.getOSProcessId()`）：`coexistPause='full'`（档 0–3）降 **IDLE/Low**（mappView 一忙即完全让路）；`basic`（档 4）降 **BelowNormal**。
+  - **后端**（`pythonProcess.pid`）：`full` 档降 **BelowNormal**（取数以 IO 为主，不用 IDLE 以免拖慢）。
+  - 施加点：acquire 后 + 每份 `renderPart` 开头 + 导航/033 重建窗后（pid 会变）；`finally` 恢复 NORMAL。
+- `coexistPause` 由档位 `profile.coexistPause` 经 opts 透传（ReportGenerator / auto-export / AiPending / 五档批导），主进程缺省按最强 `full`。
+- 契约测：main.cjs 用 `getOSProcessId` + `PRIORITY_LOW` + `pythonProcess.pid`；调用点透传 `coexistPause`。
+
+## 说明与运维建议
+
+- 优先级**不降低 CPU% 数字**，但让高优先级 mappView 随时抢到核、不再饿死——这才是同机共存的关键。
+- 现场弱 CPU（1 Windows 核）建议：**默认矢量档（档 1）**（pdf-lib 远轻于 chromium printToPDF）；导出尽量安排在 HMI 不忙时。
+- 若 L2 现场仍不足，再评估 **L3：CPU 亲和性**给 mappView 预留核（改动大、超线程共享收益有限，暂缓）。
+
+## 验收
+
+`npm run test -- export-perf-tier` 绿（含新契约）；现场 Windows 装包后，导出期用任务管理器看 `Report Editor AI`（渲染进程）优先级应为「低」、`report_backend.exe`「低于正常」，且导出期间 mappView 操作不卡顿。
 
 ---
 
