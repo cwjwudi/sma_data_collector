@@ -168,16 +168,18 @@
   }
 
   function updatePagerMeta(binding, warnings) {
+    const totalKnown = totalRecords !== null && Number.isFinite(totalRecords);
     const infoParts = [
       `plugin=${binding.plugin_key}`,
       `group=${binding.resolved_group || "-"}`,
       `table=${document.getElementById("tableSelector").value || binding.resolved_table || "-"}`,
       `current=${currentPage}`,
+      `has_more=${hasMore}`,
     ];
-    if (advancedOpcuaMode) {
-      infoParts.push(`total=${totalRecords ?? 0}`, `pages=${totalPages}`);
-    } else {
-      infoParts.push(`has_more=${hasMore}`);
+    if (totalKnown) {
+      infoParts.push(`total=${totalRecords}`, `pages=${totalPages}`);
+    }
+    if (!advancedOpcuaMode) {
       if (currentBatchSource.table) {
         infoParts.push(`batch_source=${currentBatchSource.table}.${currentBatchSource.field}`);
       } else if (currentBatchSource.error) {
@@ -187,6 +189,10 @@
     if (Array.isArray(warnings) && warnings.length) infoParts.push(`warnings=${warnings.join(" | ")}`);
     document.getElementById("meta").textContent = infoParts.join(" ; ");
     document.getElementById("pageNumber").value = String(currentPage);
+    document.getElementById("totalPageCount").textContent = totalKnown ? String(totalPages) : "—";
+    document.getElementById("recordSummary").textContent = totalKnown
+      ? `共 ${totalRecords} 条`
+      : "总数统计中";
     document.getElementById("btnPrevPage").disabled = currentPage <= 1;
     document.getElementById("btnNextPage").disabled = advancedOpcuaMode
       ? currentPage >= totalPages
@@ -245,17 +251,19 @@
   function applyQueryResult(data, targetPage, requestedCursor, proposedStack) {
     renderTable(data.columns || [], data.display_columns || [], data.rows || []);
     selectedCursor = -1;
-    totalRecords = data.total == null ? null : Number(data.total);
+    if (data.total != null) totalRecords = Math.max(0, Number(data.total) || 0);
     hasMore = Boolean(data.has_more);
     currentPage = Math.max(1, Number(data.page || targetPage));
+    const pageSize = Math.max(1, Number(data.page_size || currentBinding.page_size || 10));
     if (advancedOpcuaMode) {
-      const pageSize = Number(data.page_size || currentBinding.page_size || 10);
       totalPages = Math.max(1, Math.ceil((totalRecords || 0) / pageSize));
     } else {
       currentPageCursor = requestedCursor;
       nextPageCursor = data.next_cursor || null;
       pageCursorStack = proposedStack;
-      totalPages = currentPage + (hasMore ? 1 : 0);
+      totalPages = totalRecords !== null
+        ? Math.max(1, Math.ceil(totalRecords / pageSize))
+        : currentPage + (hasMore ? 1 : 0);
     }
     updatePagerMeta(currentBinding, data.warnings || []);
     savePluginState();
@@ -284,7 +292,7 @@
     return context;
   }
 
-  function buildPayload(context, page, pageCursor) {
+  function buildPayload(context, page, pageCursor, includeTotal = false) {
     const payload = {
       page,
       page_size: currentBinding.page_size || 10,
@@ -292,7 +300,7 @@
       cursor: -1,
       query_mode: context.queryMode,
       pagination_mode: advancedOpcuaMode ? "offset" : "cursor",
-      include_total: advancedOpcuaMode,
+      include_total: advancedOpcuaMode || Boolean(includeTotal),
     };
     if (context.startTime) payload.start_time = context.startTime;
     if (context.endTime) payload.end_time = context.endTime;
@@ -307,8 +315,9 @@
     const data = await fetchJson(`/api/plugins/query/${encodeURIComponent(activePluginKey)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(buildPayload(lastQueryContext, targetPage, null)),
+      body: JSON.stringify(buildPayload(lastQueryContext, targetPage, null, true)),
     });
+    if (!advancedOpcuaMode) totalRecords = null;
     applyQueryResult(data, targetPage, null, []);
   }
 

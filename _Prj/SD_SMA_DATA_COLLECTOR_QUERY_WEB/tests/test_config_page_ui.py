@@ -93,3 +93,18 @@ def test_query_pages_have_touch_friendly_controls_and_scrollable_results() -> No
     assert "touch-action: manipulation" in specialized_html
     assert "min-height: 44px" in specialized_html
     assert '.toolbar input[type="radio"]' in specialized_html
+
+
+def test_plugin_query_shows_total_pages_without_recounting_adjacent_pages() -> None:
+    html = SPECIALIZED_QUERY_HTML.read_text(encoding="utf-8")
+    script = SPECIALIZED_QUERY_JS.read_text(encoding="utf-8")
+
+    assert 'id="totalPageCount"' in html
+    assert 'id="recordSummary"' in html
+    assert 'aria-live="polite"' in html
+    assert 'document.getElementById("totalPageCount").textContent' in script
+    assert "`共 ${totalRecords} 条`" in script
+    assert "include_total: advancedOpcuaMode || Boolean(includeTotal)" in script
+    assert "buildPayload(lastQueryContext, targetPage, null, true)" in script
+    assert "buildPayload(lastQueryContext, targetPage, requestedCursor)" in script
+    assert "if (data.total != null) totalRecords =" in script
