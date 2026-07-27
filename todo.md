@@ -5,6 +5,16 @@
 
 ---
 
+## 2026-07-27
+
+- **ReportEditor 矢量档（0.3.144）四缺陷登记**：页眉一键隐藏仍见边框 · 页眉仅封面 · 小数位变整数 · 空值显示 `value`。根因与复现/待补信息已分拆看板；代码修复待样本。  
+  - [docs/040-🚧](docs/040-🚧-ReportEditor矢量导出页眉一键隐藏仍有边框.md)  
+  - [docs/041-🚧](docs/041-🚧-ReportEditor矢量导出页眉仅封面正文无.md)  
+  - [docs/042-🚧](docs/042-🚧-ReportEditor矢量导出封面小数位变整数.md)  
+  - [docs/043-🚧](docs/043-🚧-ReportEditor矢量导出空值显示value.md)
+
+---
+
 ## 2026-07-24
 
 - **ReportEditor 0.3.144（039b）**：发版打包——开关「导出时全屏遮罩」不再误报登录项乱码；仅自启字段同步 Run，`reg` 按 GBK 解码。看板 [docs/039-🚧](docs/039-🚧-ReportEditor导出全屏遮罩.md)。
@@ -28,6 +38,7 @@
 - **ReportEditor 0.3.138（037）**：开机自启 Run 强制加引号并校正死链；批导旁路不改登录项；设置页回显校验。看板 [docs/037-🚧](docs/037-🚧-ReportEditor开机自启与静默启动失效.md)。
 
 - **ReportEditor 037 开机自启/静默**：本机证实 HKCU Run 指向不存在的嵌套路径且无引号（含空格 exe 名），故重启拉不起；偏好 json 缺失加重不同步。看板 [docs/037-🚧](docs/037-🚧-ReportEditor开机自启与静默启动失效.md)。
+
 
 ## 2026-07-22
 
