@@ -5,3 +5,4 @@ pymysql==1.1.0
 fastapi
 uvicorn
 pydantic
+cryptography

@@ -5,6 +5,13 @@ import re
 from pathlib import Path
 from typing import Any
 
+from .secret_store import (
+    migrate_password_mapping,
+    password_is_configured,
+    prepare_password_mapping,
+    resolve_password,
+)
+
 _OPCUA_DEFAULT_HOST = "127.0.0.1"
 _OPCUA_DEFAULT_PORT = 4840
 
@@ -90,7 +97,6 @@ class UnifiedConfigStore:
                 "host": "127.0.0.1",
                 "port": 3306,
                 "username": "",
-                "password": "",
             },
             "query_limits": {
                 "requests_per_minute": 120,
@@ -104,7 +110,6 @@ class UnifiedConfigStore:
         return {
             "endpoint_url": "",
             "username": "",
-            "password": "",
             "heartbeat_node": "",
             "poll_interval_ms": 500,
         }
@@ -120,13 +125,15 @@ class UnifiedConfigStore:
     @classmethod
     def _normalize_opcua_settings(cls, raw: Any) -> dict[str, Any]:
         data = raw if isinstance(raw, dict) else {}
-        return {
+        normalized = {
             "endpoint_url": normalize_opcua_endpoint_url(str(data.get("endpoint_url", "") or "")),
             "username": str(data.get("username", "") or ""),
-            "password": str(data.get("password", "") or ""),
             "heartbeat_node": str(data.get("heartbeat_node", "") or "").strip(),
             "poll_interval_ms": cls._clamp_poll_interval_ms(data.get("poll_interval_ms", 500)),
         }
+        if data.get("password_enc"):
+            normalized["password_enc"] = str(data["password_enc"])
+        return normalized
 
     @classmethod
     def _default_query_view_config(cls) -> dict[str, Any]:
@@ -258,14 +265,32 @@ class UnifiedConfigStore:
         if not isinstance(normalized.get("app_settings"), dict):
             normalized["app_settings"] = self._default_app_settings()
             changed = True
+        app_settings = dict(normalized.get("app_settings", {}))
+        database = app_settings.get("database")
+        migrated_database, database_changed = migrate_password_mapping(
+            self.config_dir,
+            database if isinstance(database, dict) else {},
+        )
+        if not isinstance(database, dict):
+            migrated_database = dict(self._default_app_settings()["database"])
+            database_changed = True
+        if database_changed or migrated_database != database:
+            app_settings["database"] = migrated_database
+            normalized["app_settings"] = app_settings
+            changed = True
         if not isinstance(normalized.get("opcua"), dict):
             normalized["opcua"] = self._default_opcua_settings()
             changed = True
         else:
-            opcua_normalized = self._normalize_opcua_settings(normalized.get("opcua"))
+            migrated_opcua, opcua_password_changed = migrate_password_mapping(
+                self.config_dir,
+                normalized.get("opcua"),
+            )
+            opcua_normalized = self._normalize_opcua_settings(migrated_opcua)
             if opcua_normalized != normalized.get("opcua"):
                 normalized["opcua"] = opcua_normalized
                 changed = True
+            changed = changed or opcua_password_changed
         if not self._is_usable_query_view_config(normalized.get("query_view")):
             normalized["query_view"] = self._default_query_view_config()
             changed = True
@@ -428,11 +453,46 @@ class UnifiedConfigStore:
         self._write_json(path, normalized)
 
     def get_app_settings(self) -> dict[str, Any]:
-        return dict(self.get_active_config().get("app_settings", {}))
+        settings = dict(self.get_active_config().get("app_settings", {}))
+        database = dict(settings.get("database", {}))
+        database["password"] = resolve_password(
+            self.config_dir,
+            database,
+            env_name="SD_SMA_DB_PASSWORD",
+            label="数据库",
+        )
+        database.pop("password_enc", None)
+        settings["database"] = database
+        return settings
+
+    def get_public_app_settings(self) -> dict[str, Any]:
+        config = self.get_active_config()
+        settings = dict(config.get("app_settings", {}))
+        database = dict(settings.get("database", {}))
+        database.pop("password", None)
+        database.pop("password_enc", None)
+        database["password_configured"] = password_is_configured(
+            config.get("app_settings", {}).get("database", {}),
+            "SD_SMA_DB_PASSWORD",
+        )
+        settings["database"] = database
+        return settings
 
     def save_app_settings(self, data: dict[str, Any]) -> None:
         config = self.get_active_config()
-        config["app_settings"] = data
+        existing_settings = config.get("app_settings", {})
+        existing_database = (
+            existing_settings.get("database", {})
+            if isinstance(existing_settings, dict)
+            else {}
+        )
+        settings = dict(data)
+        settings["database"] = prepare_password_mapping(
+            self.config_dir,
+            settings.get("database", {}),
+            existing_database if isinstance(existing_database, dict) else {},
+        )
+        config["app_settings"] = settings
         self.save_active_config(config)
 
     def get_query_view_config(self) -> dict[str, Any]:
@@ -453,14 +513,40 @@ class UnifiedConfigStore:
         self.save_active_config(config)
 
     def get_opcua_settings(self) -> dict[str, Any]:
-        return self._normalize_opcua_settings(self.get_active_config().get("opcua"))
+        stored = self._normalize_opcua_settings(self.get_active_config().get("opcua"))
+        runtime = dict(stored)
+        runtime["password"] = resolve_password(
+            self.config_dir,
+            stored,
+            env_name="SD_SMA_OPCUA_PASSWORD",
+            label="OPC UA",
+        )
+        runtime.pop("password_enc", None)
+        return runtime
+
+    def get_public_opcua_settings(self) -> dict[str, Any]:
+        config = self.get_active_config()
+        stored = self._normalize_opcua_settings(config.get("opcua"))
+        public = dict(stored)
+        public.pop("password_enc", None)
+        public["password_configured"] = password_is_configured(
+            config.get("opcua"),
+            "SD_SMA_OPCUA_PASSWORD",
+        )
+        return public
 
     def save_opcua_settings(self, data: dict[str, Any]) -> dict[str, Any]:
         config = self.get_active_config()
-        normalized = self._normalize_opcua_settings(data)
+        existing = config.get("opcua", {})
+        stored = prepare_password_mapping(
+            self.config_dir,
+            data,
+            existing if isinstance(existing, dict) else {},
+        )
+        normalized = self._normalize_opcua_settings(stored)
         config["opcua"] = normalized
         self.save_active_config(config)
-        return normalized
+        return self.get_public_opcua_settings()
 
 
 class ConfigManager:

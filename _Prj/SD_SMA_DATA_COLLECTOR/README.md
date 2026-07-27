@@ -321,7 +321,9 @@ SD_SMA_DATA_COLLECTOR/
 启用后仅在 MySQL 返回 `1049 Unknown database` 时执行 `CREATE DATABASE IF NOT EXISTS`，随后重新连接并沿用现有的自动建表、建索引和补列流程；密码错误、网络错误等不会触发建库。
 - `type`: 数据库类型（mysql/sqlite）
 - `name`: 数据库名称
-- `host/port/username/password`: 连接参数（MySQL 需要）
+- `host/port/username`: 连接参数（MySQL 需要）
+- 数据库密码由 Web 配置页输入后加密为 `password_enc`；页面和 API 不回显明文或密文。也可用环境变量 `SD_SMA_DB_PASSWORD` 注入，环境变量优先级最高。
+- 加密密钥保存在配置目录的 `.sd_sma_collector_fernet.key`，迁移配置时必须与 JSON 一并安全迁移；该密钥不得提交到 Git。
 - `data_groups`: 要存储的数据组名称列表
 
 ### 日志配置 (logging)
@@ -415,7 +417,6 @@ SD_SMA_DATA_COLLECTOR/
     "host": "192.168.50.22",
     "port": 3306,
     "username": "root",
-    "password": "your_password",
     "data_groups": ["sensor_group_1", "trigger_group_1"]
   },
   "logging": {

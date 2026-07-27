@@ -6,12 +6,14 @@
 import json
 import math
 import os
+from pathlib import Path
 from typing import Dict, Any
 from .config_models import (
     DataPoint, DataGroup, OpcUaConfig, DatabaseConfig, AppConfig,
     TriggerType, Communication, Connection, LoggingConfig, InsertFeedbackConfig,
     BatchUpsertConfig, IndexConfig, PersistentQueueConfig, FIXED_INDEX_COLUMNS
 )
+from .secret_store import migrate_password_mapping, resolve_password
 
 
 class ConfigLoader:
@@ -33,16 +35,24 @@ class ConfigLoader:
             ValueError: 配置格式错误
         """
         try:
-            with open(file_path, 'r', encoding='utf-8') as f:
+            path = Path(file_path)
+            with path.open('r', encoding='utf-8') as f:
                 config_data = json.load(f)
-            return ConfigLoader._parse_config(config_data)
+            database, migrated = migrate_password_mapping(path.parent, config_data.get('database', {}))
+            if migrated:
+                config_data['database'] = database
+                tmp_path = path.with_name(f".{path.name}.secret-migration.tmp")
+                with tmp_path.open('w', encoding='utf-8') as f:
+                    json.dump(config_data, f, ensure_ascii=False, indent=2)
+                tmp_path.replace(path)
+            return ConfigLoader._parse_config(config_data, config_dir=path.parent)
         except FileNotFoundError:
             raise FileNotFoundError(f"配置文件未找到: {file_path}")
         except json.JSONDecodeError as e:
             raise ValueError(f"配置文件格式错误: {e}")
     
     @staticmethod
-    def _parse_config(config_data: Dict[str, Any]) -> AppConfig:
+    def _parse_config(config_data: Dict[str, Any], config_dir: Path | None = None) -> AppConfig:
         """解析配置数据"""
         if 'http_server' in config_data:
             raise ValueError("配置包含已删除的 http_server 字段")
@@ -191,8 +201,12 @@ class ConfigLoader:
             host=db_data.get('host', '127.0.0.1'),
             port=db_data.get('port', 3306),
             username=db_data.get('username', ''),
-            # 数据库密码优先取环境变量，配置文件无需保存明文口令
-            password=os.environ.get('SD_SMA_DB_PASSWORD') or db_data.get('password', ''),
+            # 环境变量优先；持久化配置只接受 password_enc。
+            password=(
+                resolve_password(config_dir, db_data, 'SD_SMA_DB_PASSWORD')
+                if config_dir is not None
+                else (os.environ.get('SD_SMA_DB_PASSWORD') or str(db_data.get('password', '') or ''))
+            ),
             auto_create=auto_create,
             data_groups=data_groups
         )

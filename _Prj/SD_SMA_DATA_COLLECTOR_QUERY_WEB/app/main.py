@@ -108,6 +108,8 @@ def _normalize_app_settings(data: dict[str, Any] | None) -> dict[str, Any]:
             "port": int(database.get("port", 3306) or 3306),
             "username": str(database.get("username", "") or ""),
             "password": str(database.get("password", "") or ""),
+            "password_configured": bool(database.get("password_configured", False)),
+            "clear_password": bool(database.get("clear_password", False)),
         },
         "query_limits": {
             "requests_per_minute": max(int(query_limits.get("requests_per_minute", 120) or 120), 0),
@@ -124,7 +126,7 @@ def _load_app_settings() -> dict[str, Any]:
 def _save_app_settings(data: dict[str, Any]) -> dict[str, Any]:
     normalized = _normalize_app_settings(data)
     config_store.save_app_settings(normalized)
-    return normalized
+    return _normalize_app_settings(config_store.get_public_app_settings())
 
 
 def _apply_runtime_settings(updated_settings: dict[str, Any]) -> None:
@@ -1091,7 +1093,7 @@ def check_database(request: Request) -> dict[str, Any]:
 
 @app.get("/api/config/app-settings")
 def get_app_settings() -> dict[str, Any]:
-    return _load_app_settings()
+    return _normalize_app_settings(config_store.get_public_app_settings())
 
 
 @app.get("/api/config/profiles")
@@ -1148,9 +1150,9 @@ def delete_config_profile(payload: dict[str, Any]) -> dict[str, Any]:
 @app.post("/api/config/app-settings")
 def save_app_settings(payload: dict[str, Any]) -> dict[str, Any]:
     try:
-        normalized = _save_app_settings(payload)
-        _apply_runtime_settings(normalized)
-        return {"status": "saved", "settings": normalized}
+        public_settings = _save_app_settings(payload)
+        _apply_runtime_settings(_load_app_settings())
+        return {"status": "saved", "settings": public_settings}
     except (TypeError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -1729,7 +1731,7 @@ def save_plugins_config(payload: dict[str, Any]) -> dict[str, str]:
 
 @app.get("/api/config/opcua")
 def get_opcua_config() -> dict[str, Any]:
-    return config_store.get_opcua_settings()
+    return config_store.get_public_opcua_settings()
 
 
 async def _run_opcua_connection_check(
@@ -1738,13 +1740,13 @@ async def _run_opcua_connection_check(
     password: str,
 ) -> dict[str, Any]:
     endpoint = normalize_opcua_endpoint_url(endpoint_url)
+    saved = config_store.get_opcua_settings()
     if not endpoint:
-        saved = config_store.get_opcua_settings()
         endpoint = normalize_opcua_endpoint_url(str(saved.get("endpoint_url", "") or ""))
-        if not username:
-            username = str(saved.get("username", "") or "")
-        if not password:
-            password = str(saved.get("password", "") or "")
+    if not username:
+        username = str(saved.get("username", "") or "")
+    if not password:
+        password = str(saved.get("password", "") or "")
 
     result = await opcua_client.check_connection(endpoint, username, password)
     if not result.get("ok"):

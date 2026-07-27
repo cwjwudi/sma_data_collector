@@ -127,3 +127,4 @@ Thumbs.db
 *.db
 data/
 /runtime/queue/
+/config/.sd_sma_collector_fernet.key

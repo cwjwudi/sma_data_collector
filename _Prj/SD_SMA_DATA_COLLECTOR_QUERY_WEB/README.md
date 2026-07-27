@@ -50,8 +50,10 @@
 
 ## 首次启动必做
 
-- 修改 `config/app_settings.json` 中数据库账号密码。
+- 在配置页填写数据库账号；密码可在配置页安全保存，也可通过环境变量注入。
 - 默认 `readonly_user / readonly_password` 仅为示例值，未创建对应 MySQL 用户时会报 1045 拒绝访问。
+- 数据库与 OPC UA 密码由配置页输入后只以 `password_enc` 密文保存；API 仅返回“已配置”状态，不返回明文或密文。也可分别通过 `SD_SMA_DB_PASSWORD`、`SD_SMA_OPCUA_PASSWORD` 注入。
+- 本机密钥位于配置目录 `.sd_sma_query_web_fernet.key`，不得提交；迁移 profile 时需连同密钥安全迁移。
 - 可先访问 `GET /api/db/check` 做连通性检查。
 
 ## 与采集程序的边界
@@ -68,8 +70,7 @@
 ```json
 "opcua": {
   "endpoint_url": "opc.tcp://192.168.x.x:4840",
-  "username": "",
-  "password": ""
+  "username": ""
 }
 ```
 

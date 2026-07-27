@@ -66,6 +66,7 @@ function getAppSettingsPayload() {
       port: Number(document.getElementById('appDbPort').value || 0),
       username: document.getElementById('appDbUsername').value.trim(),
       password: document.getElementById('appDbPassword').value,
+      clear_password: document.getElementById('appDbClearPassword').checked,
     },
     query_limits: {
       requests_per_minute: Number(document.getElementById('appRequestsPerMinute').value || 0),
@@ -83,7 +84,10 @@ function fillAppSettingsForm(data) {
   document.getElementById('appDbHost').value = database.host || '';
   document.getElementById('appDbPort').value = Number(database.port || 3306);
   document.getElementById('appDbUsername').value = database.username || '';
-  document.getElementById('appDbPassword').value = database.password || '';
+  const passwordInput = document.getElementById('appDbPassword');
+  passwordInput.value = '';
+  passwordInput.placeholder = database.password_configured ? '已配置；留空保持不变' : '输入数据库密码';
+  document.getElementById('appDbClearPassword').checked = false;
   document.getElementById('appRequestsPerMinute').value = Number(queryLimits.requests_per_minute || 120);
   document.getElementById('appDefaultWindowHours').value = Number(queryLimits.default_window_hours || 24);
   document.getElementById('appMaxWindowHours').value = Number(queryLimits.max_window_hours || 168);
@@ -134,6 +138,7 @@ function getOpcuaPayload() {
     ),
     username: document.getElementById('appOpcuaUsername').value.trim(),
     password: document.getElementById('appOpcuaPassword').value,
+    clear_password: document.getElementById('appOpcuaClearPassword').checked,
     heartbeat_node: document.getElementById('appOpcuaHeartbeatNode').value.trim(),
     poll_interval_ms: clampPollIntervalMs(document.getElementById('appOpcuaPollIntervalMs').value),
   };
@@ -145,7 +150,10 @@ function fillOpcuaForm(data) {
   document.getElementById('appOpcuaHost').value = endpoint.host;
   document.getElementById('appOpcuaPort').value = endpoint.port;
   document.getElementById('appOpcuaUsername').value = settings.username || '';
-  document.getElementById('appOpcuaPassword').value = settings.password || '';
+  const passwordInput = document.getElementById('appOpcuaPassword');
+  passwordInput.value = '';
+  passwordInput.placeholder = settings.password_configured ? '已配置；留空保持不变' : '输入 OPC UA 密码';
+  document.getElementById('appOpcuaClearPassword').checked = false;
   document.getElementById('appOpcuaHeartbeatNode').value = settings.heartbeat_node || '';
   document.getElementById('appOpcuaPollIntervalMs').value = clampPollIntervalMs(
     settings.poll_interval_ms ?? 500,
@@ -396,7 +404,7 @@ async function loadAppSettings() {
     fetchJson('/api/config/opcua').catch(() => ({
       endpoint_url: '',
       username: '',
-      password: '',
+      password_configured: false,
       heartbeat_node: '',
       poll_interval_ms: 500,
     })),
@@ -1184,6 +1192,12 @@ document.getElementById('btnConnectDatabase').addEventListener('click', () => {
 });
 document.getElementById('btnTestOpcuaConnection').addEventListener('click', () => {
   testOpcuaConnection().catch(catchHintError('opcuaSettingsHint'));
+});
+document.getElementById('appDbPassword').addEventListener('input', event => {
+  if (event.target.value) document.getElementById('appDbClearPassword').checked = false;
+});
+document.getElementById('appOpcuaPassword').addEventListener('input', event => {
+  if (event.target.value) document.getElementById('appOpcuaClearPassword').checked = false;
 });
 document.getElementById('btnAddColumns').addEventListener('click', addColumns);
 document.getElementById('btnRemoveColumns').addEventListener('click', removeColumns);

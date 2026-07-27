@@ -102,8 +102,14 @@ function normalizeConfig(payload) {
 
 function savePageState() {
   const activeTab = document.querySelector(".tab-btn.active")?.dataset?.tab || "communications";
+  const persistedConfig = JSON.parse(JSON.stringify(currentConfig));
+  if (persistedConfig.database && typeof persistedConfig.database === "object") {
+    persistedConfig.database.password = "";
+    persistedConfig.database.clear_password = false;
+    delete persistedConfig.database.password_enc;
+  }
   const state = {
-    currentConfig,
+    currentConfig: persistedConfig,
     currentFilename,
     activeTab,
     opcuaHost: hostInput.value || "",
@@ -127,6 +133,9 @@ function loadPageState() {
     if (parsed && typeof parsed === "object") {
       if (parsed.currentConfig) {
         currentConfig = normalizeConfig(parsed.currentConfig);
+        currentConfig.database.password = "";
+        currentConfig.database.clear_password = false;
+        delete currentConfig.database.password_enc;
       }
       if (typeof parsed.currentFilename === "string") {
         currentFilename = parsed.currentFilename;
@@ -1224,11 +1233,31 @@ function renderDatabase() {
       createInput(db.port || 3306, (v) => (db.port = Number(v) || 3306), "number"),
     ])
   );
-  appendHeaders(panel, ["用户名", "密码", "数据组(data_groups)"]);
+  appendHeaders(panel, ["用户名", "密码（加密保存）", "数据组(data_groups)"]);
+  const passwordCell = document.createElement("div");
+  passwordCell.className = "password-field";
+  const passwordInput = createInput("", (v) => {
+    db.password = v;
+    if (v) db.clear_password = false;
+  }, "password");
+  passwordInput.autocomplete = "new-password";
+  passwordInput.placeholder = db.password_configured ? "已配置；留空保持不变" : "输入数据库密码";
+  passwordCell.appendChild(passwordInput);
+  const clearLabel = document.createElement("label");
+  clearLabel.className = "inline-checkbox";
+  const clearInput = createCheckbox(!!db.clear_password, (checked) => {
+    db.clear_password = checked;
+    if (checked) {
+      db.password = "";
+      passwordInput.value = "";
+    }
+  });
+  clearLabel.append(clearInput, document.createTextNode(" 清除已保存密码"));
+  passwordCell.appendChild(clearLabel);
   panel.appendChild(
     createRow([
       createInput(db.username || "", (v) => (db.username = v)),
-      createInput(db.password || "", (v) => (db.password = v)),
+      passwordCell,
       createMultiSelect(groupOptions, db.data_groups || [], (values) => {
         db.data_groups = values;
       }),
@@ -1467,8 +1496,15 @@ async function saveCurrentFile() {
     method: "POST",
     body: JSON.stringify({ payload: currentConfig, filename }),
   });
+  const passwordWasEntered = Boolean(currentConfig.database.password);
+  const passwordWasCleared = Boolean(currentConfig.database.clear_password);
+  currentConfig.database.password_configured =
+    passwordWasCleared ? false : (passwordWasEntered || Boolean(currentConfig.database.password_configured));
+  currentConfig.database.password = "";
+  currentConfig.database.clear_password = false;
   currentFilename = filename;
   await refreshFileList();
+  renderDatabase();
   setResult(`保存成功: ${res.path}`);
   savePageState();
 }

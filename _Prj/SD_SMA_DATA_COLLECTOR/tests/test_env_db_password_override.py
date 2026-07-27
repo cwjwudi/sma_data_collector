@@ -52,16 +52,19 @@ class TestEnvDbPasswordOverride(unittest.TestCase):
         with patch.dict(os.environ, {"SD_SMA_DB_PASSWORD": "env_pw"}):
             config = ConfigLoader.load_from_file(self.temp_file.name)
         self.assertEqual(config.database.password, "env_pw")
+        stored = json.loads(open(self.temp_file.name, encoding="utf-8").read())
+        self.assertNotIn("password", stored["database"])
+        self.assertTrue(stored["database"]["password_enc"])
 
     def test_without_env_var_uses_config_password(self):
-        """未设置环境变量时沿用配置文件中的密码（向后兼容）"""
+        """未设置环境变量时使用从旧配置自动迁移的密文"""
         env = {k: v for k, v in os.environ.items() if k != "SD_SMA_DB_PASSWORD"}
         with patch.dict(os.environ, env, clear=True):
             config = ConfigLoader.load_from_file(self.temp_file.name)
         self.assertEqual(config.database.password, "file_pw")
 
     def test_empty_env_var_falls_back_to_config(self):
-        """环境变量为空字符串时视为未设置"""
+        """环境变量为空字符串时使用从旧配置自动迁移的密文"""
         with patch.dict(os.environ, {"SD_SMA_DB_PASSWORD": ""}):
             config = ConfigLoader.load_from_file(self.temp_file.name)
         self.assertEqual(config.database.password, "file_pw")

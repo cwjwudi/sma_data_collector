@@ -127,6 +127,7 @@ class OpcUaSettingsRequest(BaseModel):
     endpoint_url: str = ""
     username: str = ""
     password: str = ""
+    clear_password: bool = False
     heartbeat_node: str = ""
     poll_interval_ms: int = 500
     test_only: bool = False

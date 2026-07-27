@@ -225,6 +225,21 @@ input[type="checkbox"] {
   padding: 0;
 }
 
+.password-field {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.password-field .inline-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #52606d;
+  font-size: 12px;
+}
+
 .multi-select-inline {
   display: flex;
   align-items: center;
