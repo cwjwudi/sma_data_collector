@@ -16,6 +16,7 @@
   let pluginStateKey = null;
   let batchCodesAvailable = false;
   let currentBatchSource = {};
+  let timeRangePicker = null;
 
   function safeStorageGet(key) {
     try {
@@ -33,7 +34,16 @@
       return false;
     }
   }
-  const quickButtons = ["btnRange1D", "btnRange1W", "btnRange1M", "btnRange1Y"];
+  const quickPresets = {
+    btnRange15Min: "last15m",
+    btnRange1H: "last1h",
+    btnRange8H: "last8h",
+    btnRangeToday: "today",
+    btnRangeYesterday: "yesterday",
+    btnRange1W: "last1w",
+    btnRange1M: "last1m",
+  };
+  const quickButtons = Object.keys(quickPresets);
 
   async function fetchJson(url, opts) {
     const resp = await fetch(url, opts);
@@ -51,12 +61,6 @@
     return document.querySelector('input[name="queryMode"]:checked')?.value || "time";
   }
 
-  function toInputTime(date) {
-    const pad = (value) => String(value).padStart(2, "0");
-    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}` +
-      `T${pad(date.getHours())}:${pad(date.getMinutes())}`;
-  }
-
   function enableButtonClickFeedback() {
     for (const btn of document.querySelectorAll("button")) {
       btn.addEventListener("click", () => {
@@ -69,15 +73,18 @@
   }
 
   function setQuickActive(id) {
-    for (const btnId of quickButtons) document.getElementById(btnId)?.classList.remove("active");
-    document.getElementById(id)?.classList.add("active");
+    for (const btnId of quickButtons) {
+      const button = document.getElementById(btnId);
+      button?.classList.remove("active");
+      button?.setAttribute("aria-pressed", "false");
+    }
+    const activeButton = document.getElementById(id);
+    activeButton?.classList.add("active");
+    activeButton?.setAttribute("aria-pressed", "true");
   }
 
-  function setQuickRange(days, buttonId) {
-    const end = new Date();
-    const start = new Date(end.getTime() - days * 24 * 60 * 60 * 1000);
-    document.getElementById("startDate").value = toInputTime(start);
-    document.getElementById("endDate").value = toInputTime(end);
+  function applyQuickRange(preset, buttonId) {
+    timeRangePicker.applyPreset(preset);
     setQuickActive(buttonId);
     savePluginState();
   }
@@ -95,14 +102,9 @@
     }
     const batchMode = getQueryMode() === "batch";
     document.getElementById("batchCode").disabled = !batchMode || !batchSupported;
-    document.getElementById("startDate").disabled = advancedOpcuaMode || batchMode;
-    document.getElementById("endDate").disabled = advancedOpcuaMode || batchMode;
+    timeRangePicker?.setDisabled(advancedOpcuaMode || batchMode);
     for (const id of quickButtons) document.getElementById(id).disabled = advancedOpcuaMode || batchMode;
-    if (batchMode) {
-      document.getElementById("startDate").value = "";
-      document.getElementById("endDate").value = "";
-      setQuickActive("");
-    } else {
+    if (!batchMode) {
       document.getElementById("batchCode").value = "";
     }
   }
@@ -412,14 +414,27 @@
     activePluginKey = getPluginKeyFromPath();
     if (!activePluginKey) throw new Error("无法识别插件路径");
     pluginStateKey = `sd_sma_plugin_state_${activePluginKey}`;
+    timeRangePicker = window.TouchTimeRange.attach({
+      idPrefix: "plugin-time",
+      startInputId: "startDate",
+      endInputId: "endDate",
+      triggerId: "btnPreciseTime",
+      summaryId: "pluginTimeSummary",
+      panelId: "pluginTimePanel",
+    });
     currentBinding = await fetchJson(`/api/plugins/resolve/${encodeURIComponent(activePluginKey)}`);
     advancedOpcuaMode = isAdvancedTableListWriteback(currentBinding);
     const saved = loadPluginState();
     populateTables(saved?.table);
     if (saved?.startDate) document.getElementById("startDate").value = saved.startDate;
     if (saved?.endDate) document.getElementById("endDate").value = saved.endDate;
-    if (!saved) setQuickRange(1, "btnRange1D");
-    else setQuickActive(saved.quickActive || "");
+    timeRangePicker.refresh();
+    if (!saved) {
+      if (!advancedOpcuaMode) applyQuickRange("last1h", "btnRange1H");
+      else setQuickActive("");
+    } else {
+      setQuickActive(saved.quickActive || "");
+    }
     await loadBatchCodes(saved?.batchCode);
     if (saved?.queryMode === "batch" && !advancedOpcuaMode && batchCodesAvailable) {
       document.getElementById("queryModeBatch").checked = true;
@@ -449,8 +464,8 @@
       });
     }
     document.getElementById("batchCode").addEventListener("change", savePluginState);
-    for (const [id, days] of [["btnRange1D", 1], ["btnRange1W", 7], ["btnRange1M", 30], ["btnRange1Y", 365]]) {
-      document.getElementById(id).addEventListener("click", () => setQuickRange(days, id));
+    for (const [id, preset] of Object.entries(quickPresets)) {
+      document.getElementById(id).addEventListener("click", () => applyQuickRange(preset, id));
     }
     for (const id of ["startDate", "endDate"]) {
       document.getElementById(id).addEventListener("input", () => {

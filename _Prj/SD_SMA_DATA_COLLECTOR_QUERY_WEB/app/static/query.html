@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>查询页 — SD SMA Query Web</title>
     <link rel="stylesheet" href="/static/styles.css?v=20260727_01" />
+    <link rel="stylesheet" href="/static/touch_time_range.css?v=20260727_01" />
   </head>
   <body class="query-page">
     <nav class="page-nav" aria-label="站内导航">
@@ -50,14 +51,22 @@
           <label><input id="queryModeBatch" name="queryMode" type="radio" value="batch" /> 按批次号</label>
           <label for="batchCode">BatchCode</label>
           <select id="batchCode" disabled><option value="">请选择批次号</option></select>
-          <label for="startTime">Start</label>
-          <input id="startTime" type="datetime-local" />
-          <label for="endTime">End</label>
-          <input id="endTime" type="datetime-local" />
-          <button type="button" id="btnRange1D">最近1天</button>
-          <button type="button" id="btnRange1W">最近1周</button>
-          <button type="button" id="btnRange1M">最近1月</button>
-          <button type="button" id="btnRange1Y">最近1年</button>
+        </div>
+        <div id="queryTimePanel" class="touch-time-panel">
+          <div class="touch-time-panel-title">时间范围</div>
+          <input id="startTime" class="touch-time-value-input" type="hidden" />
+          <input id="endTime" class="touch-time-value-input" type="hidden" />
+          <div id="queryTimeSummary" class="touch-time-summary is-empty" aria-live="polite">尚未设置时间范围</div>
+          <div class="touch-time-quick-grid" aria-label="快捷时间范围">
+            <button type="button" id="btnRange15Min">最近15分钟</button>
+            <button type="button" id="btnRange1H">最近1小时</button>
+            <button type="button" id="btnRange8H">最近8小时</button>
+            <button type="button" id="btnRangeToday">今天</button>
+            <button type="button" id="btnRangeYesterday">昨天</button>
+            <button type="button" id="btnRange1W">最近1周</button>
+            <button type="button" id="btnRange1M">最近1月</button>
+          </div>
+          <button type="button" id="btnPreciseTime" class="touch-time-open">精确选择开始/结束时间</button>
         </div>
         <div id="querySummary" class="muted"></div>
         <div id="queryWarnings" class="muted warn"></div>
@@ -70,6 +79,7 @@
         </div>
       </section>
     </div>
-    <script src="/static/query.js?v=20260723_01"></script>
+    <script src="/static/touch_time_range.js?v=20260727_01"></script>
+    <script src="/static/query.js?v=20260727_02"></script>
   </body>
 </html>

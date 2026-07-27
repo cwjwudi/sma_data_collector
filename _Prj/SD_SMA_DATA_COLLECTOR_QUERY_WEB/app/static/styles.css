@@ -606,8 +606,7 @@ th {
   }
 
   .query-page .query-primary-row select,
-  .query-page .query-filter-row select,
-  .query-page .query-filter-row input[type='datetime-local'] {
+  .query-page .query-filter-row select {
     flex: 1 1 180px;
     min-width: 150px;
   }

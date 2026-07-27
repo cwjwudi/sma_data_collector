@@ -178,7 +178,6 @@
         width: 24px;
         height: 24px;
       }
-      .toolbar input[type="datetime-local"],
       .toolbar select {
         flex: 1 1 190px;
         min-width: 160px;
@@ -203,6 +202,7 @@
       }
     }
   </style>
+  <link rel="stylesheet" href="/static/touch_time_range.css?v=20260727_01" />
 </head>
 <body>
   <div id="app" class="root">
@@ -212,13 +212,23 @@
         <label><input id="queryModeTime" name="queryMode" type="radio" value="time" checked /> 按时间</label>
         <label><input id="queryModeBatch" name="queryMode" type="radio" value="batch" /> 按批次号</label>
         <label>BatchCode</label><select id="batchCode" disabled><option value="">请选择批次号</option></select>
-        <label>startDate</label><input id="startDate" type="datetime-local" />
-        <label>endDate</label><input id="endDate" type="datetime-local" />
-        <button id="btnRange1D">最近1天</button>
-        <button id="btnRange1W">最近1周</button>
-        <button id="btnRange1M">最近1月</button>
-        <button id="btnRange1Y">最近1年</button>
         <button id="btnGo">查询</button>
+      </div>
+      <div id="pluginTimePanel" class="touch-time-panel">
+        <div class="touch-time-panel-title">时间范围</div>
+        <input id="startDate" class="touch-time-value-input" type="hidden" />
+        <input id="endDate" class="touch-time-value-input" type="hidden" />
+        <div id="pluginTimeSummary" class="touch-time-summary is-empty" aria-live="polite">尚未设置时间范围</div>
+        <div class="touch-time-quick-grid" aria-label="快捷时间范围">
+          <button type="button" id="btnRange15Min">最近15分钟</button>
+          <button type="button" id="btnRange1H">最近1小时</button>
+          <button type="button" id="btnRange8H">最近8小时</button>
+          <button type="button" id="btnRangeToday">今天</button>
+          <button type="button" id="btnRangeYesterday">昨天</button>
+          <button type="button" id="btnRange1W">最近1周</button>
+          <button type="button" id="btnRange1M">最近1月</button>
+        </div>
+        <button type="button" id="btnPreciseTime" class="touch-time-open">精确选择开始/结束时间</button>
       </div>
       <div class="toolbar-row">
         <label>表</label><select id="tableSelector"></select>
@@ -236,6 +246,7 @@
       <div id="meta" class="meta"></div>
     </div>
   </div>
-  <script src="/static/specialized_query.js?v=20260727_02"></script>
+  <script src="/static/touch_time_range.js?v=20260727_01"></script>
+  <script src="/static/specialized_query.js?v=20260727_03"></script>
 </body>
 </html>

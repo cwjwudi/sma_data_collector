@@ -9,6 +9,8 @@ QUERY_JS = ROOT / "app" / "static" / "query.js"
 SPECIALIZED_QUERY_HTML = ROOT / "app" / "static" / "specialized_query.html"
 SPECIALIZED_QUERY_JS = ROOT / "app" / "static" / "specialized_query.js"
 STYLES_CSS = ROOT / "app" / "static" / "styles.css"
+TOUCH_TIME_RANGE_JS = ROOT / "app" / "static" / "touch_time_range.js"
+TOUCH_TIME_RANGE_CSS = ROOT / "app" / "static" / "touch_time_range.css"
 
 
 def test_config_page_has_persistent_status_bar() -> None:
@@ -108,3 +110,40 @@ def test_plugin_query_shows_total_pages_without_recounting_adjacent_pages() -> N
     assert "buildPayload(lastQueryContext, targetPage, null, true)" in script
     assert "buildPayload(lastQueryContext, targetPage, requestedCursor)" in script
     assert "if (data.total != null) totalRecords =" in script
+
+
+def test_query_pages_share_touch_friendly_precise_time_picker() -> None:
+    query_html = QUERY_HTML.read_text(encoding="utf-8")
+    query_script = QUERY_JS.read_text(encoding="utf-8")
+    specialized_html = SPECIALIZED_QUERY_HTML.read_text(encoding="utf-8")
+    specialized_script = SPECIALIZED_QUERY_JS.read_text(encoding="utf-8")
+    picker_script = TOUCH_TIME_RANGE_JS.read_text(encoding="utf-8")
+    picker_css = TOUCH_TIME_RANGE_CSS.read_text(encoding="utf-8")
+
+    for html in (query_html, specialized_html):
+        assert 'href="/static/touch_time_range.css' in html
+        assert 'src="/static/touch_time_range.js' in html
+        assert 'id="btnRange15Min"' in html
+        assert 'id="btnRange1H"' in html
+        assert 'id="btnRange8H"' in html
+        assert 'id="btnRangeToday"' in html
+        assert 'id="btnRangeYesterday"' in html
+        assert 'id="btnRange1W"' in html
+        assert 'id="btnRange1M"' in html
+        assert 'id="btnPreciseTime"' in html
+        assert 'type="datetime-local"' not in html
+        assert "本班次" not in html
+
+    assert "window.TouchTimeRange.attach" in query_script
+    assert "window.TouchTimeRange.attach" in specialized_script
+    assert "setAttribute('aria-pressed', 'true')" in query_script
+    assert 'setAttribute("aria-pressed", "true")' in specialized_script
+    assert 'btnRange1W: "last1w"' in specialized_script
+    assert "btnRange1W: 'last1w'" in query_script
+    assert 'else if (preset === "last1w")' in picker_script
+    assert 'else if (preset === "last1m")' in picker_script
+    assert 'data-adjust-seconds="-60"' in picker_script
+    assert 'data-adjust-seconds="60"' in picker_script
+    assert "结束时间不能早于开始时间" in picker_script
+    assert ".touch-time-segments input" in picker_css
+    assert "min-height: 52px" in picker_css

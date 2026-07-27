@@ -10,8 +10,18 @@ let lastResultData = null;
 let pageSizeOverridden = false;
 let batchCodesAvailable = false;
 let currentBatchSource = {};
+let timeRangePicker = null;
 const QUERY_STATE_KEY = 'sd_sma_query_page_state_v1';
-const quickRangeButtonIds = ['btnRange1D', 'btnRange1W', 'btnRange1M', 'btnRange1Y'];
+const quickRangePresets = {
+  btnRange15Min: 'last15m',
+  btnRange1H: 'last1h',
+  btnRange8H: 'last8h',
+  btnRangeToday: 'today',
+  btnRangeYesterday: 'yesterday',
+  btnRange1W: 'last1w',
+  btnRange1M: 'last1m',
+};
+const quickRangeButtonIds = Object.keys(quickRangePresets);
 
 function safeStorageGet(key) {
   try {
@@ -51,14 +61,9 @@ function updateQueryModeControls() {
 
   const batchMode = getQueryMode() === 'batch';
   document.getElementById('batchCode').disabled = !batchMode || !batchSupported;
-  document.getElementById('startTime').disabled = batchMode;
-  document.getElementById('endTime').disabled = batchMode;
+  timeRangePicker?.setDisabled(batchMode);
   for (const id of quickRangeButtonIds) document.getElementById(id).disabled = batchMode;
-  if (batchMode) {
-    document.getElementById('startTime').value = '';
-    document.getElementById('endTime').value = '';
-    clearQuickRangeActive();
-  } else {
+  if (!batchMode) {
     document.getElementById('batchCode').value = '';
   }
 }
@@ -122,6 +127,9 @@ function saveQueryPageState() {
     pageSizeOverridden,
     startTime: document.getElementById('startTime').value || '',
     endTime: document.getElementById('endTime').value || '',
+    quickActive: quickRangeButtonIds.find(
+      id => document.getElementById(id)?.classList.contains('is-selected'),
+    ) || '',
     queryMode: getQueryMode(),
     batchCode: document.getElementById('batchCode').value || '',
     pageNumber: document.getElementById('pageNumber').value || '1',
@@ -147,21 +155,9 @@ function loadSavedQueryPageState() {
   }
 }
 
-function toLocalDatetimeInputValue(date) {
-  const pad = (n) => String(n).padStart(2, '0');
-  const yyyy = date.getFullYear();
-  const mm = pad(date.getMonth() + 1);
-  const dd = pad(date.getDate());
-  const hh = pad(date.getHours());
-  const mi = pad(date.getMinutes());
-  return `${yyyy}-${mm}-${dd}T${hh}:${mi}`;
-}
-
-function setQuickRange(days) {
-  const end = new Date();
-  const start = new Date(end.getTime() - days * 24 * 60 * 60 * 1000);
-  document.getElementById('startTime').value = toLocalDatetimeInputValue(start);
-  document.getElementById('endTime').value = toLocalDatetimeInputValue(end);
+function applyQuickRange(preset, buttonId) {
+  timeRangePicker.applyPreset(preset);
+  setQuickRangeActive(buttonId);
   saveQueryPageState();
 }
 
@@ -180,16 +176,25 @@ function enableButtonClickFeedback() {
 function setQuickRangeActive(buttonId) {
   for (const id of quickRangeButtonIds) {
     const el = document.getElementById(id);
-    if (el) el.classList.remove('is-selected');
+    if (el) {
+      el.classList.remove('is-selected');
+      el.setAttribute('aria-pressed', 'false');
+    }
   }
   const active = document.getElementById(buttonId);
-  if (active) active.classList.add('is-selected');
+  if (active) {
+    active.classList.add('is-selected');
+    active.setAttribute('aria-pressed', 'true');
+  }
 }
 
 function clearQuickRangeActive() {
   for (const id of quickRangeButtonIds) {
     const el = document.getElementById(id);
-    if (el) el.classList.remove('is-selected');
+    if (el) {
+      el.classList.remove('is-selected');
+      el.setAttribute('aria-pressed', 'false');
+    }
   }
 }
 
@@ -365,7 +370,7 @@ async function runQueryAtPage(page) {
     if (new Date(start).getTime() > new Date(end).getTime()) {
       return alert('开始时间不能大于结束时间');
     }
-    // datetime-local 是本地时间，直接传递避免 toISOString() 产生时区偏移
+    // 选择器保存本地时间字符串，直接传递可避免 toISOString() 产生时区偏移
     payload.start_time = start;
     payload.end_time = end;
   }
@@ -519,6 +524,8 @@ async function restoreQueryPageState() {
   if (saved.queryMode === 'batch') document.getElementById('queryModeBatch').checked = true;
   if (saved.startTime) document.getElementById('startTime').value = saved.startTime;
   if (saved.endTime) document.getElementById('endTime').value = saved.endTime;
+  timeRangePicker?.refresh();
+  setQuickRangeActive(saved.quickActive || '');
   if (saved.pageNumber) document.getElementById('pageNumber').value = saved.pageNumber;
   if (saved.viewName && queryViews[saved.viewName]) {
     document.getElementById('viewName').value = saved.viewName;
@@ -588,27 +595,24 @@ document.getElementById('pageSize').addEventListener('change', () => {
   pageSizeOverridden = true;
   saveQueryPageState();
 });
-document.getElementById('btnRange1D').addEventListener('click', () => setQuickRange(1));
-document.getElementById('btnRange1W').addEventListener('click', () => setQuickRange(7));
-document.getElementById('btnRange1M').addEventListener('click', () => setQuickRange(30));
-document.getElementById('btnRange1Y').addEventListener('click', () => setQuickRange(365));
-
-document.getElementById('btnRange1D').addEventListener('click', () => setQuickRangeActive('btnRange1D'));
-document.getElementById('btnRange1W').addEventListener('click', () => setQuickRangeActive('btnRange1W'));
-document.getElementById('btnRange1M').addEventListener('click', () => setQuickRangeActive('btnRange1M'));
-document.getElementById('btnRange1Y').addEventListener('click', () => setQuickRangeActive('btnRange1Y'));
-document.getElementById('btnRange1D').addEventListener('click', saveQueryPageState);
-document.getElementById('btnRange1W').addEventListener('click', saveQueryPageState);
-document.getElementById('btnRange1M').addEventListener('click', saveQueryPageState);
-document.getElementById('btnRange1Y').addEventListener('click', saveQueryPageState);
+for (const [id, preset] of Object.entries(quickRangePresets)) {
+  document.getElementById(id).addEventListener('click', () => applyQuickRange(preset, id));
+}
 
 async function initQueryPage() {
+  timeRangePicker = window.TouchTimeRange.attach({
+    idPrefix: 'query-time',
+    startInputId: 'startTime',
+    endInputId: 'endTime',
+    triggerId: 'btnPreciseTime',
+    summaryId: 'queryTimeSummary',
+    panelId: 'queryTimePanel',
+  });
   await loadViews();
   enableButtonClickFeedback();
   const saved = loadSavedQueryPageState();
   if (!saved) {
-    setQuickRange(1);
-    setQuickRangeActive('btnRange1D');
+    applyQuickRange('last1h', 'btnRange1H');
     updatePageInfo(null, 1, getCurrentPageSize(), false);
     saveQueryPageState();
     return;
