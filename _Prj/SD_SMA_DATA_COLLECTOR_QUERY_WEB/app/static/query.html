@@ -4,9 +4,9 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>查询页 — SD SMA Query Web</title>
-    <link rel="stylesheet" href="/static/styles.css?v=20260723_01" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260727_01" />
   </head>
-  <body>
+  <body class="query-page">
     <nav class="page-nav" aria-label="站内导航">
       <span class="page-nav-current">查询页</span>
       <span class="page-nav-sep" aria-hidden="true">·</span>
@@ -16,7 +16,7 @@
       <section class="panel">
         <h2>查询条件</h2>
         <p class="hint">选择按时间或按批次号查询，两种条件互斥；结果按游标分页展示。</p>
-        <div class="row">
+        <div class="row query-primary-row">
           <label for="viewName">View</label>
           <select id="viewName"></select>
           <label for="group">Group</label>
@@ -35,7 +35,7 @@
           <button type="button" id="btnRunQuery">查询</button>
         </div>
         <div id="viewSummary" class="muted"></div>
-        <div class="row">
+        <div class="row query-pager">
           <button type="button" id="btnPrevPage">上一页</button>
           <button type="button" id="btnNextPage">下一页</button>
           <span class="inline-label">第</span>
@@ -44,7 +44,7 @@
           <span id="pageInfo" class="muted"></span>
         </div>
         <div id="schemaHint" class="muted"></div>
-        <div class="row">
+        <div class="row query-filter-row">
           <span class="inline-label">查询方式</span>
           <label><input id="queryModeTime" name="queryMode" type="radio" value="time" checked /> 按时间</label>
           <label><input id="queryModeBatch" name="queryMode" type="radio" value="batch" /> 按批次号</label>
@@ -65,7 +65,9 @@
 
       <section class="panel">
         <h2>查询结果</h2>
-        <table id="resultTable"></table>
+        <div class="query-table-wrap" tabindex="0" aria-label="查询结果，可横向滚动">
+          <table id="resultTable"></table>
+        </div>
       </section>
     </div>
     <script src="/static/query.js?v=20260723_01"></script>

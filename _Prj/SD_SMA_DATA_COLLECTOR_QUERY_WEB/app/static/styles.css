@@ -214,6 +214,55 @@ h2 {
   margin-bottom: 10px;
 }
 
+.query-page .row {
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.query-page .layout,
+.query-page .panel {
+  min-width: 0;
+}
+
+.query-page .row > label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.query-page button,
+.query-page input,
+.query-page select,
+.query-page .page-nav a {
+  touch-action: manipulation;
+}
+
+.query-page button:active {
+  background: #dbeafe;
+  border-color: #93c5fd;
+  color: #1d4ed8;
+}
+
+.query-table-wrap {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  overflow: auto;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.query-table-wrap table {
+  min-width: 720px;
+}
+
+.query-table-wrap th {
+  position: sticky;
+  z-index: 1;
+  top: 0;
+}
+
 #pluginTableListCursorFields.fields-locked {
   opacity: 0.7;
 }
@@ -509,4 +558,72 @@ th {
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+
+@media (pointer: coarse), (max-width: 900px) {
+  .query-page .page-nav {
+    padding: 8px 12px;
+  }
+
+  .query-page .page-nav a,
+  .query-page .page-nav-current {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+  }
+
+  .query-page .layout {
+    gap: 10px;
+    padding: 8px;
+  }
+
+  .query-page .panel {
+    padding: 12px 10px;
+  }
+
+  .query-page .row {
+    gap: 10px 8px;
+  }
+
+  .query-page .row > label,
+  .query-page .inline-label {
+    min-height: 44px;
+    font-size: 14px;
+  }
+
+  .query-page button,
+  .query-page input:not([type='radio']):not([type='checkbox']),
+  .query-page select {
+    min-height: 44px;
+    padding: 9px 12px;
+    font-size: 16px;
+  }
+
+  .query-page input[type='radio'],
+  .query-page input[type='checkbox'] {
+    width: 24px;
+    height: 24px;
+  }
+
+  .query-page .query-primary-row select,
+  .query-page .query-filter-row select,
+  .query-page .query-filter-row input[type='datetime-local'] {
+    flex: 1 1 180px;
+    min-width: 150px;
+  }
+
+  .query-page .query-pager button {
+    flex: 1 1 120px;
+  }
+
+  .query-page .field-page-num,
+  .query-page .field-narrow-num {
+    min-width: 78px;
+  }
+
+  .query-table-wrap th,
+  .query-table-wrap td {
+    padding: 10px 8px;
+    font-size: 14px;
+  }
 }

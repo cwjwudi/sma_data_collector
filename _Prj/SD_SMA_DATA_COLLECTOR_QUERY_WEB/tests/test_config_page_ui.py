@@ -4,7 +4,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG_HTML = ROOT / "app" / "static" / "config.html"
 CONFIG_JS = ROOT / "app" / "static" / "config.js"
+QUERY_HTML = ROOT / "app" / "static" / "query.html"
 QUERY_JS = ROOT / "app" / "static" / "query.js"
+SPECIALIZED_QUERY_HTML = ROOT / "app" / "static" / "specialized_query.html"
 SPECIALIZED_QUERY_JS = ROOT / "app" / "static" / "specialized_query.js"
 STYLES_CSS = ROOT / "app" / "static" / "styles.css"
 
@@ -70,3 +72,24 @@ def test_advanced_pagination_only_does_not_require_batch_writeback_fields() -> N
     assert "hasBatchNode !== hasTriggerNode" in script
     assert "仅使用翻页时可留空" in script
     assert "高级模式仅翻页时可留空" in html
+
+
+def test_query_pages_have_touch_friendly_controls_and_scrollable_results() -> None:
+    query_html = QUERY_HTML.read_text(encoding="utf-8")
+    specialized_html = SPECIALIZED_QUERY_HTML.read_text(encoding="utf-8")
+    css = STYLES_CSS.read_text(encoding="utf-8")
+
+    assert '<body class="query-page">' in query_html
+    assert 'class="query-table-wrap"' in query_html
+    assert 'aria-label="查询结果，可横向滚动"' in query_html
+    assert "@media (pointer: coarse), (max-width: 900px)" in css
+    assert ".query-page button," in css
+    assert "min-height: 44px" in css
+    assert "touch-action: manipulation" in css
+    assert "-webkit-overflow-scrolling: touch" in css
+    assert ".query-page .layout,\n.query-page .panel {\n  min-width: 0;" in css
+
+    assert "@media (pointer: coarse), (max-width: 900px)" in specialized_html
+    assert "touch-action: manipulation" in specialized_html
+    assert "min-height: 44px" in specialized_html
+    assert '.toolbar input[type="radio"]' in specialized_html

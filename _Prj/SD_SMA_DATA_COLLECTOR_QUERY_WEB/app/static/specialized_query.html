@@ -47,6 +47,17 @@
       background: #fff;
       height: 32px;
       box-sizing: border-box;
+      touch-action: manipulation;
+    }
+    .toolbar-row label {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .toolbar input[type="radio"] {
+      width: 20px;
+      height: 20px;
+      padding: 0;
     }
     .toolbar button {
       cursor: pointer;
@@ -126,6 +137,65 @@
     }
     #tableSelector {
       min-width: 220px;
+    }
+    @media (pointer: coarse), (max-width: 900px) {
+      .root {
+        padding: 8px;
+        gap: 10px;
+      }
+      .toolbar {
+        gap: 8px;
+      }
+      .toolbar-row,
+      .pager {
+        gap: 10px 8px;
+        min-height: 44px;
+      }
+      .toolbar-row > span,
+      .toolbar-row label,
+      .pageText {
+        min-height: 44px;
+        display: inline-flex;
+        align-items: center;
+        font-size: 14px;
+      }
+      .toolbar input:not([type="radio"]),
+      .toolbar select,
+      .toolbar button,
+      .pager input,
+      .pager button {
+        height: 44px;
+        min-height: 44px;
+        padding: 9px 12px;
+        font-size: 16px;
+      }
+      .toolbar input[type="radio"] {
+        width: 24px;
+        height: 24px;
+      }
+      .toolbar input[type="datetime-local"],
+      .toolbar select {
+        flex: 1 1 190px;
+        min-width: 160px;
+      }
+      .toolbar button,
+      .pager button {
+        min-width: 96px;
+      }
+      .pager button {
+        flex: 1 1 120px;
+      }
+      th, td {
+        padding: 10px 8px;
+        font-size: 14px;
+      }
+      tbody tr {
+        min-height: 44px;
+      }
+      .meta {
+        flex: 1 1 100%;
+        font-size: 13px;
+      }
     }
   </style>
 </head>
