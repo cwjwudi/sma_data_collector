@@ -45,12 +45,14 @@
           <span id="pageInfo" class="muted"></span>
         </div>
         <div id="schemaHint" class="muted"></div>
-        <div id="queryTimePanel" class="row query-filter-row">
+        <div class="row query-filter-row">
           <span class="inline-label">查询方式</span>
           <label><input id="queryModeTime" name="queryMode" type="radio" value="time" checked /> 按时间</label>
           <label><input id="queryModeBatch" name="queryMode" type="radio" value="batch" /> 按批次号</label>
           <label for="batchCode">BatchCode</label>
           <select id="batchCode" disabled><option value="">请选择批次号</option></select>
+        </div>
+        <div id="queryTimePanel" class="row query-filter-row">
           <span class="inline-label">时间范围</span>
           <input id="startTime" class="touch-time-value-input" type="hidden" />
           <input id="endTime" class="touch-time-value-input" type="hidden" />

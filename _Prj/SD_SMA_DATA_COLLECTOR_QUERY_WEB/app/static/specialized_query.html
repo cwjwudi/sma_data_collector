@@ -207,11 +207,14 @@
 <body>
   <div id="app" class="root">
     <div class="toolbar">
-      <div id="pluginTimePanel" class="toolbar-row">
+      <div class="toolbar-row">
         <span>查询方式</span>
         <label><input id="queryModeTime" name="queryMode" type="radio" value="time" checked /> 按时间</label>
         <label><input id="queryModeBatch" name="queryMode" type="radio" value="batch" /> 按批次号</label>
         <label>BatchCode</label><select id="batchCode" disabled><option value="">请选择批次号</option></select>
+        <button id="btnGo">查询</button>
+      </div>
+      <div id="pluginTimePanel" class="toolbar-row">
         <span>时间范围</span>
         <input id="startDate" class="touch-time-value-input" type="hidden" />
         <input id="endDate" class="touch-time-value-input" type="hidden" />
@@ -224,7 +227,6 @@
         <button type="button" id="btnRange1W">最近1周</button>
         <button type="button" id="btnRange1M">最近1月</button>
         <button type="button" id="btnPreciseTime">精确时间</button>
-        <button id="btnGo">查询</button>
       </div>
       <div class="toolbar-row">
         <label>表</label><select id="tableSelector"></select>

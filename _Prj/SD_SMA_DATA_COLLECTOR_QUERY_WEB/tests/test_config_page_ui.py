@@ -139,6 +139,14 @@ def test_query_pages_share_touch_friendly_precise_time_picker() -> None:
 
     assert 'id="queryTimePanel" class="row query-filter-row"' in query_html
     assert 'id="pluginTimePanel" class="toolbar-row"' in specialized_html
+    for html, panel_id in (
+        (query_html, 'id="queryTimePanel"'),
+        (specialized_html, 'id="pluginTimePanel"'),
+    ):
+        batch_position = html.index('id="batchCode"')
+        panel_position = html.index(panel_id)
+        assert "</div>" in html[batch_position:panel_position]
+    assert specialized_html.index('id="btnGo"') < specialized_html.index('id="pluginTimePanel"')
     assert "window.TouchTimeRange.attach" in query_script
     assert "window.TouchTimeRange.attach" in specialized_script
     assert "setAttribute('aria-pressed', 'true')" in query_script
