@@ -606,7 +606,6 @@ async function initQueryPage() {
     endInputId: 'endTime',
     triggerId: 'btnPreciseTime',
     summaryId: 'queryTimeSummary',
-    panelId: 'queryTimePanel',
   });
   await loadViews();
   enableButtonClickFeedback();

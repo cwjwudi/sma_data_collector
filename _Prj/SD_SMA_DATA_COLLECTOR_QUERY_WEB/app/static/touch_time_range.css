@@ -1,58 +1,7 @@
-.touch-time-panel {
-  display: grid;
-  gap: 10px;
-  margin: 10px 0;
-  padding: 12px;
-  border: 1px solid #bfdbfe;
-  border-radius: 10px;
-  background: #f8fbff;
-}
-
-.touch-time-panel.is-disabled {
-  opacity: 0.58;
-}
-
-.touch-time-panel-title {
-  color: #1e3a8a;
-  font-size: 14px;
-  font-weight: 700;
-}
-
-.touch-time-summary {
-  min-height: 24px;
-  color: #0f172a;
-  font-size: 15px;
-  font-weight: 700;
-  line-height: 1.55;
-}
-
-.touch-time-summary.is-empty {
-  color: #64748b;
-  font-weight: 500;
-}
-
-.touch-time-quick-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(104px, 1fr));
-  gap: 8px;
-}
-
-.touch-time-quick-grid button,
-.touch-time-open {
-  min-height: 44px;
-  touch-action: manipulation;
-}
-
-.touch-time-open {
-  border-color: #60a5fa;
-  background: #2563eb;
-  color: #fff;
-  font-size: 15px;
-  font-weight: 700;
-}
-
-.touch-time-open:hover {
-  background: #1d4ed8;
+.touch-time-inline-summary {
+  flex: 1 1 300px;
+  min-width: 220px;
+  line-height: 1.4;
 }
 
 .touch-time-value-input {
@@ -238,12 +187,11 @@
     grid-template-columns: 1fr;
   }
 
-  .touch-time-quick-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .touch-time-inline-summary {
+    flex-basis: 100%;
+    min-width: 0;
   }
 
-  .touch-time-quick-grid button,
-  .touch-time-open,
   .touch-time-adjust button,
   .touch-time-dialog .touch-time-now,
   .touch-time-dialog-tools button,

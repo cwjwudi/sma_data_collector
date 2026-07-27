@@ -91,7 +91,6 @@
     const endInput = document.getElementById(config.endInputId);
     const trigger = document.getElementById(config.triggerId);
     const summary = document.getElementById(config.summaryId);
-    const panel = config.panelId ? document.getElementById(config.panelId) : null;
     if (!startInput || !endInput || !trigger || !summary) {
       throw new Error("时间选择器缺少必要页面元素");
     }
@@ -261,7 +260,6 @@
       refresh,
       setDisabled(disabled) {
         trigger.disabled = Boolean(disabled);
-        panel?.classList.toggle("is-disabled", Boolean(disabled));
       },
     };
   }

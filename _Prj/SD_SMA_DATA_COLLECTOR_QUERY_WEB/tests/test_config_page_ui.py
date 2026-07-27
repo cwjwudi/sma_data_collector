@@ -132,8 +132,13 @@ def test_query_pages_share_touch_friendly_precise_time_picker() -> None:
         assert 'id="btnRange1M"' in html
         assert 'id="btnPreciseTime"' in html
         assert 'type="datetime-local"' not in html
+        assert 'class="touch-time-panel"' not in html
+        assert 'class="touch-time-open"' not in html
+        assert "touch-time-inline-summary" in html
         assert "本班次" not in html
 
+    assert 'id="queryTimePanel" class="row query-filter-row"' in query_html
+    assert 'id="pluginTimePanel" class="toolbar-row"' in specialized_html
     assert "window.TouchTimeRange.attach" in query_script
     assert "window.TouchTimeRange.attach" in specialized_script
     assert "setAttribute('aria-pressed', 'true')" in query_script

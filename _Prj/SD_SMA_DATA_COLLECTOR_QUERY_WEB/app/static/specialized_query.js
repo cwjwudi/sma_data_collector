@@ -420,7 +420,6 @@
       endInputId: "endDate",
       triggerId: "btnPreciseTime",
       summaryId: "pluginTimeSummary",
-      panelId: "pluginTimePanel",
     });
     currentBinding = await fetchJson(`/api/plugins/resolve/${encodeURIComponent(activePluginKey)}`);
     advancedOpcuaMode = isAdvancedTableListWriteback(currentBinding);
