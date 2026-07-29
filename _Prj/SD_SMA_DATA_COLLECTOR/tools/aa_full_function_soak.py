@@ -208,8 +208,8 @@ async def run(
     row_deltas = {
         name: (
             None
-            if rows_before.get(name) is None or rows_after.get(name) is None
-            else rows_after[name] - rows_before[name]
+            if rows_after.get(name) is None
+            else rows_after[name] - (rows_before.get(name) or 0)
         )
         for name in set(rows_before) | set(rows_after)
     }
@@ -251,6 +251,9 @@ async def run(
         "storage_metrics": storage_metrics,
         "database_rows_before": rows_before,
         "database_rows_after": rows_after,
+        "database_row_delta_rule": (
+            "A partition table absent before startup is treated as a zero-row baseline."
+        ),
         "database_row_deltas": row_deltas,
     }
     report.parent.mkdir(parents=True, exist_ok=True)
