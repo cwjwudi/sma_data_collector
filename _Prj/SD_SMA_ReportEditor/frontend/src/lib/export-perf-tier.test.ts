@@ -54,7 +54,7 @@ describe("export-perf-tier (035 five-tier)", () => {
       engine: "chromium",
       prewarmPoolSize: 1,
       yieldMs: 80,
-      coexistPause: "full",
+      coexistPause: "basic",
       label: "功能折中",
     });
     expect(resolveExportPerfProfile(4)).toMatchObject({
@@ -62,7 +62,7 @@ describe("export-perf-tier (035 five-tier)", () => {
       prewarmPoolSize: 2,
       maxParallelHint: 2,
       yieldMs: 40,
-      coexistPause: "basic",
+      coexistPause: "max",
       label: "不妥协",
     });
     expect(listExportPerfProfiles()).toHaveLength(5);
@@ -112,5 +112,6 @@ describe("export-perf-tier (035 five-tier)", () => {
     expect(shouldPauseCoexistTasks(true, "full")).toBe(true);
     expect(shouldPauseCoexistTasks(false, "full")).toBe(false);
     expect(shouldPauseCoexistTasks(true, "basic")).toBe(false);
+    expect(shouldPauseCoexistTasks(true, "max")).toBe(false);
   });
 });

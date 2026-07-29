@@ -5,7 +5,13 @@
 
 export type ExportPerfTier = 0 | 1 | 2 | 3 | 4;
 
-export type ExportPerfCoexistPause = "full" | "basic";
+/**
+ * 同机让核 / 抢核力度（透传主进程设 OS 优先级）：
+ * - full：渲染 LOW（≈IDLE），保 HMI（档 0–2）
+ * - basic：渲染 BelowNormal（档 3 折中）
+ * - max：渲染 HIGHEST 拉满，面向强机/测试机（档 4 不妥协）
+ */
+export type ExportPerfCoexistPause = "full" | "basic" | "max";
 
 /** draft=仅内容；layout=pdf-lib 坐标版式；preview=chromium 预览级 */
 export type ExportPerfPdfQuality = "draft" | "layout" | "preview";
@@ -76,24 +82,26 @@ const PROFILES: Record<ExportPerfTier, Omit<ExportPerfProfile, "tier" | "isDefau
   },
   3: {
     label: "功能折中",
-    summary: "chromium 预览级；轻度预热、并行 1、结批降载；质量与后台功能的折中。",
+    summary:
+      "chromium 预览级；轻度预热、并行 1；渲染进程 BelowNormal（比默认档少让核），质量与后台折中。",
     engine: "chromium",
     layoutFidelity: "print-to-pdf",
     prewarmPoolSize: 1,
     maxParallelHint: 1,
     yieldMs: 80,
-    coexistPause: "full",
+    coexistPause: "basic",
     pdfQuality: "preview",
   },
   4: {
     label: "不妥协",
-    summary: "chromium 预览级；预热开、可提高并行；降载仅基础，功能与质量都要，更吃 CPU。",
+    summary:
+      "chromium 预览级；预热开、可提高并行；渲染进程优先级拉满（HIGHEST），面向强机/测试机，可能抢占同机其它软件。",
     engine: "chromium",
     layoutFidelity: "print-to-pdf",
     prewarmPoolSize: 2,
     maxParallelHint: 2,
     yieldMs: 40,
-    coexistPause: "basic",
+    coexistPause: "max",
     pdfQuality: "preview",
   },
 };
@@ -176,11 +184,21 @@ export function migrateExportPerfTierFromLegacy(opts: {
 
 /**
  * 结批期是否暂停侧栏探活 / Dashboard / AI pending。
- * full：导出中暂停；basic：不因档位暂停这些任务。
+ * full：导出中暂停；basic / max：不因档位暂停这些任务。
  */
 export function shouldPauseCoexistTasks(
   exporting: boolean,
   coexistPause: ExportPerfCoexistPause,
 ): boolean {
   return Boolean(exporting) && coexistPause === "full";
+}
+
+/** UI / 审计短标签 */
+export function coexistPauseLabel(coexistPause: ExportPerfCoexistPause | string): string {
+  const s = String(coexistPause || "")
+    .trim()
+    .toLowerCase();
+  if (s === "max") return "拉满";
+  if (s === "basic") return "折中";
+  return "全开";
 }

@@ -1,15 +1,15 @@
 {
-  "version": "0.3.144",
-  "releasedAt": "2026-07-24T08:43:03.489Z",
-  "notes": "039b：修复开关导出遮罩误报登录项乱码（仅自启字段同步Run；reg按GBK解码）",
+  "version": "0.3.145",
+  "releasedAt": "2026-07-29T16:21:30.000Z",
+  "notes": "Report Editor AI 0.3.145\n\n- 035：档3渲染BelowNormal；档4不妥协拉满HIGHEST（强机/测试机）",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.144-x64.exe",
-      "sha256": "85917579838c1aeaafc006a0a05934125d72350aa56680427546fcddd8d025b7",
-      "size": 175796827
+      "url": "Report Editor AI-Setup-0.3.145-x64.exe",
+      "sha256": "",
+      "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.144-arm64.dmg",
+      "url": "Report Editor AI-0.3.145-arm64.dmg",
       "sha256": "",
       "size": 0
     }

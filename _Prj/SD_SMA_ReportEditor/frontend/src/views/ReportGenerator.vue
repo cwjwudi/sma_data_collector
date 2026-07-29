@@ -215,8 +215,14 @@
                   <strong> 当前为 pdf-lib 矢量版式（无 printToPDF），非像素级预览。</strong>
                 </template>
                 生效：引擎 {{ exportPerfProfile.engine }} · 预热
-                {{ exportPerfProfile.prewarmPoolSize }} · yield {{ exportPerfProfile.yieldMs }}ms · 降载
-                {{ exportPerfProfile.coexistPause === 'full' ? '全开' : '基础' }}。
+                {{ exportPerfProfile.prewarmPoolSize }} · yield {{ exportPerfProfile.yieldMs }}ms · 优先级
+                {{
+                  exportPerfProfile.coexistPause === 'max'
+                    ? '拉满'
+                    : exportPerfProfile.coexistPause === 'basic'
+                      ? '折中'
+                      : '全开让核'
+                }}。
               </p>
             </div>
 

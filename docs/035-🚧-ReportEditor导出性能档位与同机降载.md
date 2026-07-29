@@ -1,7 +1,7 @@
 # ReportEditor：导出性能 5 档 + 同机降载 + 后台释放
 
 > 本文件为 **任务看板 / 开工计划**；规则见 [CLAUDE.md](../CLAUDE.md)。  
-> **登记日期**：2026-07-22 · 代码线 **0.3.132**（**5 档**分段切换 · 默认预览稳；layout-v2；正文底色；本机 H1–H5 ✅）。  
+> **登记日期**：2026-07-22 · 代码线 **0.3.145**（**5 档**；档 3/4 进程优先级重分配：折中 BN / 不妥协 HIGHEST）。  
 > **关联**：[030](030-🚧-ReportEditor结批占满CPU导致mappView白屏.md) · [034](034-🚧-ReportEditor全站架构复评-2026-07-22.md) · [036](036-✅-ReportEditor矢量档与预览稳样式对照.md)（档 1↔2 样式完整对照） · [003](003-⌛️-剩余任务与后续规划.md) · Plan [`0.3.122`](../_Prj/SD_SMA_ReportEditor/_Doc/009_版本Plan/0.3.122.md)（五档；取代 0.3.120 四档草案）。
 
 ---
@@ -28,15 +28,36 @@
 
 ## 五档定义
 
-| 档 | 名 | engine | fidelity | 预热 | 并行 hint | 降载 | yield | PDF |
-|----|----|--------|----------|------|-----------|------|-------|-----|
-| 0 | 仅内容 | pdf-lib | draft-v1 | 0 | 1 | full | 200 | 草稿 |
-| 1 | 矢量版式 | pdf-lib | layout-v2 | 0 | 1 | full | 200 | 坐标版式 |
-| 2 | **预览稳（默认）** | chromium | printToPDF | **1**（0.3.140，原 0） | 1 | full | 200 | 预览级 |
-| 3 | 功能折中 | chromium | printToPDF | 1 | 1 | full | 80 | 预览级 |
-| 4 | 不妥协 | chromium | printToPDF | 2 | 2 | basic | 40 | 预览级 |
+| 档 | 名 | engine | fidelity | 预热 | 并行 hint | coexistPause | 渲染优先级 | yield | PDF |
+|----|----|--------|----------|------|-----------|--------------|------------|-------|-----|
+| 0 | 仅内容 | pdf-lib | draft-v1 | 0 | 1 | full | LOW | 200 | 草稿 |
+| 1 | 矢量版式 | pdf-lib | layout-v2 | 0 | 1 | full | LOW | 200 | 坐标版式 |
+| 2 | **预览稳（默认）** | chromium | printToPDF | **1**（0.3.140） | 1 | full | LOW | 200 | 预览级 |
+| 3 | 功能折中 | chromium | printToPDF | 1 | 1 | **basic** | **BelowNormal** | 80 | 预览级 |
+| 4 | 不妥协 | chromium | printToPDF | 2 | 2 | **max** | **HIGHEST** | 40 | 预览级 |
 
 旧四档迁移：`0→0`，`1→2`，`2→3`，`3→4`（`exportPerfTierScale=5`）。
+
+---
+
+# ✅ 已完成：档 3/4 进程优先级重分配（0.3.145 · 2026-07-29）
+
+## 拍板
+
+- 档 4「不妥协」面向**强机 / 测试机**，不按弱核同机 HMI 留余地 → 渲染与后端 **PRIORITY_HIGHEST**，主进程**不**再降 BelowNormal。  
+- 档 3「功能折中」从与默认相同的 IDLE 改为 **BelowNormal**（`coexistPause=basic`）。  
+- 档 0–2 仍 `full` → 渲染 LOW，保同机。
+
+| coexistPause | 档 | 渲染 | 后端 | 主进程结批降载 | 侧栏探活暂停 |
+|--------------|----|------|------|----------------|--------------|
+| full | 0–2 | LOW | BelowNormal | 是 | 是 |
+| basic | 3 | BelowNormal | BelowNormal | 是 | 否 |
+| max | 4 | **HIGHEST** | **HIGHEST** | **否** | 否 |
+
+## 验收
+
+- 单测 `export-perf-tier` / contracts / `export-coexist-busy`  
+- 任务管理器：档 4 导出期渲染进程应为「高」/最高；档 3 为「低于正常」；档 2 为「低」
 
 ---
 
@@ -67,11 +88,11 @@
 - `main.cjs` 五档批导：`pdfExportPrewarmPoolSize = t.tier>=4 ? 2 : t.tier>=2 ? 1 : 0`（档 2 同步保留 1 预热窗）。
 - 单测 `export-perf-tier.test.ts` T2 断言档 2 预热 = 1。
 
-## 未采纳（留档，用户本轮未选）
+## 未采纳（留档）
 
 - 降 canvas 叠层开销（dpr3→2 / 按需 / 换编码）——三档统一提速项。
 - 默认档 2→3。
-- 档 4「不妥协」解除 `BelowNormal`（`runPdfExportWithSlot` 目前无条件降载，与语义冲突）。
+- ~~档 4「不妥协」解除 BelowNormal~~ → **已于 0.3.145 升为 HIGHEST + 主进程不降**。
 
 ## 验收
 

@@ -19,8 +19,11 @@ describe("export-coexist-busy (035 M8)", () => {
     expect(pdfExportCoexistPauseActive.value).toBe(false);
   });
 
-  it("basic session does not pause coexist UI tasks", () => {
+  it("basic / max session does not pause coexist UI tasks", () => {
     beginExportCoexistSession("basic");
+    expect(pdfExportCoexistPauseActive.value).toBe(false);
+    endExportCoexistSession();
+    beginExportCoexistSession("max");
     expect(pdfExportCoexistPauseActive.value).toBe(false);
     endExportCoexistSession();
   });

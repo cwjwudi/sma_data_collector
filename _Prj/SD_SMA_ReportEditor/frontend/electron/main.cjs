@@ -169,18 +169,38 @@ function setOsProcessPrioritySafe(pid, priority, label) {
   return false
 }
 
-/** 让核力度：full → 渲染进程 IDLE/Low（HMI 一忙即完全让路）；basic → BelowNormal。 */
+/** @returns {'full'|'basic'|'max'} */
+function normalizeCoexistPause(raw) {
+  const s = String(raw || '')
+    .trim()
+    .toLowerCase()
+  if (s === 'max' || s === 'boost' || s === 'highest') return 'max'
+  if (s === 'basic' || s === 'light') return 'basic'
+  return 'full'
+}
+
+/**
+ * 让核/抢核：full → 渲染 IDLE/Low；basic → BelowNormal；max → HIGHEST（档 4 拉满）。
+ */
 function renderProcessCoexistPriority(coexistPause) {
   const p = os.constants && os.constants.priority
   if (!p) return null
-  return String(coexistPause) === 'basic' ? p.PRIORITY_BELOW_NORMAL : p.PRIORITY_LOW
+  const mode = normalizeCoexistPause(coexistPause)
+  if (mode === 'max') return p.PRIORITY_HIGHEST
+  if (mode === 'basic') return p.PRIORITY_BELOW_NORMAL
+  return p.PRIORITY_LOW
 }
 
-/** 导出期把渲染进程（按档 IDLE/BelowNormal）与后端（BelowNormal）降载，给同机 mappView 让核。 */
+/**
+ * 导出期按档调整渲染进程与后端优先级。
+ * full：渲染 LOW + 后端 BN（保 HMI）；basic：渲染 BN + 后端 BN；
+ * max：渲染/后端均 HIGHEST（强机尽快出 PDF，不降主进程）。
+ */
 function applyExportProcessCoexistPriority(renderWebContents, coexistPause) {
   const p = os.constants && os.constants.priority
   if (!p) return
-  const renderPriority = renderProcessCoexistPriority(coexistPause)
+  const mode = normalizeCoexistPause(coexistPause)
+  const renderPriority = renderProcessCoexistPriority(mode)
   try {
     if (renderWebContents && !renderWebContents.isDestroyed() && renderPriority != null) {
       setOsProcessPrioritySafe(renderWebContents.getOSProcessId(), renderPriority, 'export-renderer')
@@ -188,8 +208,11 @@ function applyExportProcessCoexistPriority(renderWebContents, coexistPause) {
   } catch {
     /* 渲染进程 pid 取用失败忽略 */
   }
-  // 取数在后端进程，full 档一并降到 BelowNormal（IO 为主，不必 IDLE 以免拖慢取数）
-  if (String(coexistPause) !== 'basic' && pythonProcess && pythonProcess.pid) {
+  if (!pythonProcess || !pythonProcess.pid) return
+  if (mode === 'max') {
+    setOsProcessPrioritySafe(pythonProcess.pid, p.PRIORITY_HIGHEST, 'backend')
+  } else {
+    // full / basic：取数以 IO 为主，BelowNormal 即可
     setOsProcessPrioritySafe(pythonProcess.pid, p.PRIORITY_BELOW_NORMAL, 'backend')
   }
 }
@@ -236,13 +259,19 @@ function releasePdfExportSlot() {
   drainPdfExportSlotWaiters()
 }
 
-async function runPdfExportWithSlot(fn) {
+/**
+ * @param {() => Promise<any>} fn
+ * @param {'full'|'basic'|'max'} [coexistPause]
+ */
+async function runPdfExportWithSlot(fn, coexistPause = 'full') {
   await acquirePdfExportSlot()
-  beginPdfExportLowPriority()
+  // 档 4 max：不降主进程（与「不妥协 / 拉满」一致）；其余仍 BelowNormal 让核
+  const demoteMain = normalizeCoexistPause(coexistPause) !== 'max'
+  if (demoteMain) beginPdfExportLowPriority()
   try {
     return await fn()
   } finally {
-    endPdfExportLowPriority()
+    if (demoteMain) endPdfExportLowPriority()
     releasePdfExportSlot()
   }
 }
@@ -1610,8 +1639,8 @@ async function handlePdfExportRun(event, opts) {
       ? 'pdf-lib'
       : 'chromium'
   const exportMode = exportEngine === 'pdf-lib' ? 'coexist' : 'fidelity'
-  // 让核力度：缺省按最强 full（渲染进程 IDLE）——现场弱 CPU 保 mappView；仅档 4 传 basic
-  const coexistPause = String((opts && opts.coexistPause) || 'full').toLowerCase() === 'basic' ? 'basic' : 'full'
+  // 让核/抢核：缺省 full（渲染 IDLE）；档 3 basic；档 4 max=HIGHEST
+  const coexistPause = normalizeCoexistPause(opts && opts.coexistPause)
   const jobYieldRaw = Math.floor(Number(opts && opts.yieldMs))
   const jobYieldMs =
     Number.isFinite(jobYieldRaw) && jobYieldRaw >= 0
@@ -1976,7 +2005,7 @@ async function handlePdfExportRun(event, opts) {
       }
       ensurePdfExportWindowPrewarmed(event.sender)
     }
-  })
+  }, coexistPause)
 }
 
 ipcMain.handle('pdf-export-run', (event, opts) => handlePdfExportRun(event, opts))
@@ -2057,8 +2086,8 @@ async function runFiveTierExportBatch(spec) {
           engine: t.engine,
           layoutFidelity: t.layoutFidelity,
           yieldMs: t.yieldMs,
-          // 让核力度：仅档 4「不妥协」basic，其余 full（渲染进程 IDLE）
-          coexistPause: t.tier >= 4 ? 'basic' : 'full',
+          // 让核/抢核：档 4 max(HIGHEST)；档 3 basic(BN)；其余 full(LOW)
+          coexistPause: t.tier >= 4 ? 'max' : t.tier >= 3 ? 'basic' : 'full',
           // 对照批导：离线 OPC/SQL 失败仍出 PDF，便于比五档版式
           allowBindingIssues: true,
           jobId: `five-tier-${t.tier}-${Date.now()}`,

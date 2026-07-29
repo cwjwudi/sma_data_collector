@@ -80,21 +80,29 @@ describe("export-perf-tier contracts (035)", () => {
     );
   });
 
-  it("现场让核：导出期降渲染进程 + 后端优先级（非只主进程）", () => {
+  it("现场让核：导出期调渲染进程 + 后端优先级（非只主进程）", () => {
     const main = readFileSync(join(frontendRoot, "electron/main.cjs"), "utf8");
     // 拿渲染进程真实 OS pid，而非 setPriority(0) 只降主进程
     expect(main).toMatch(/getOSProcessId\(\)/);
     expect(main).toMatch(/applyExportProcessCoexistPriority/);
     expect(main).toMatch(/restoreExportProcessCoexistPriority/);
-    // full 档渲染进程 IDLE/Low；后端 BelowNormal
+    // full→LOW；basic→BN；max→HIGHEST（档 4 拉满）
     expect(main).toMatch(/PRIORITY_LOW/);
+    expect(main).toMatch(/PRIORITY_BELOW_NORMAL/);
+    expect(main).toMatch(/PRIORITY_HIGHEST/);
+    expect(main).toMatch(/normalizeCoexistPause/);
     expect(main).toMatch(/pythonProcess\.pid/);
     expect(main).toMatch(/coexistPause/);
+    // 档 4 不降主进程
+    expect(main).toMatch(/demoteMain/);
     // 各调用点透传 coexistPause
     expect(read("views/ReportGenerator.vue")).toMatch(/coexistPause:\s*exportProfile\.coexistPause/);
     expect(read("lib/report-auto-export-trigger-service.ts")).toMatch(
       /coexistPause:\s*exportProfile\.coexistPause/,
     );
+    const tier = read("lib/export-perf-tier.ts");
+    expect(tier).toMatch(/coexistPause:\s*"basic"/);
+    expect(tier).toMatch(/coexistPause:\s*"max"/);
   });
 
   it("038: five-tier batch exits via process.exit after destroying windows", () => {
