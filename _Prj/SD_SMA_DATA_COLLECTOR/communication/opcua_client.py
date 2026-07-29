@@ -1,639 +1,738 @@
-"""
-OPC UA通信客户端
-负责与OPC UA服务器建立连接并读取数据
-"""
+"""基于 asyncua 的 OPC UA 客户端、订阅管理与重连状态机。"""
+
+from __future__ import annotations
 
 import asyncio
+import inspect
 import logging
-import time
-from typing import Dict, List, Any, Optional
-from datetime import datetime
-from opcua import Client, ua
-# 处理相对导入问题
-import sys
 import os
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import time
+import uuid
+from dataclasses import dataclass
+from datetime import datetime
+from enum import Enum
+from typing import Any, Awaitable, Callable, Dict, List, Optional
+
+from asyncua import Client, ua
+from asyncua.ua import uaerrors
 
 from core.config_models import DataPoint
 
 
+DataChangeCallback = Callable[[Any], Optional[Awaitable[None]]]
+
+
+class ConnectionState(str, Enum):
+    """OPC UA 会话生命周期。"""
+
+    DISCONNECTED = "disconnected"
+    CONNECTING = "connecting"
+    CONNECTED = "connected"
+    RECONNECTING = "reconnecting"
+    STOPPING = "stopping"
+
+
+@dataclass
+class _SubscriptionRegistration:
+    token: str
+    point: DataPoint
+    callback: DataChangeCallback
+    sampling_interval_ms: float
+    handle: Optional[int] = None
+
+
+class _DataChangeHandler:
+    """asyncua 订阅回调适配器；回调中只做轻量队列投递。"""
+
+    def __init__(self, owner: "OpcUaClient"):
+        self._owner = owner
+
+    async def datachange_notification(self, node, value, _data) -> None:
+        await self._owner._dispatch_data_change(node, value)
+
+    async def status_change_notification(self, status) -> None:
+        if getattr(status, "is_bad", lambda: False)():
+            await self._owner._mark_disconnected(
+                ConnectionError(f"OPC UA 订阅状态异常: {status}")
+            )
+
+
 class OpcUaClient:
-    """OPC UA客户端类 - 支持自动重连"""
-    
-    def __init__(self, server_url: str, 
-                 max_retries: int = 1000, 
-                 retry_delay: float = 5.0,
-                 health_check_interval: int = 30):
-        """
-        初始化 OPC UA 客户端
-        
-        Args:
-            server_url: OPC UA 服务器地址
-            max_retries: 兼容旧参数；当前版本不会因达到次数上限而停止后台重连
-            retry_delay: 重试延迟时间 (秒)，固定为 5 秒
-            health_check_interval: 健康检查间隔 (秒)
-        """
+    """异步 OPC UA 客户端。
+
+    - 所有网络操作原生 await，不再使用工作线程。
+    - 同一端点只运行一个连接/重连流程。
+    - 断线后重建会话和已登记的数据变化订阅。
+    """
+
+    def __init__(
+        self,
+        server_url: str,
+        max_retries: int = 1000,
+        retry_delay: float = 5.0,
+        health_check_interval: int = 30,
+    ):
         self.server_url = server_url
-        self.client: Optional[Client] = None
-        self.connected = False
+        self.max_retries = max_retries  # 兼容旧参数；状态机不会达到上限后停止。
+        self.retry_delay = max(0.1, float(retry_delay))
+        self.health_check_interval = max(0.0, float(health_check_interval))
         self.logger = logging.getLogger(__name__)
-        
-        # 重连配置
-        self.max_retries = max_retries
-        self.retry_delay = retry_delay
-        self.health_check_interval = health_check_interval
-        
-        # 重连状态
-        self.current_retry_count = 0
-        self.is_reconnecting = False
-        self._reconnect_lock = asyncio.Lock()
-        self._opcua_io_lock = asyncio.Lock()
-        self.health_check_task: Optional[asyncio.Task] = None
+
         self.operation_timeout = max(
-            0.1,
-            float(os.getenv("SD_SMA_OPCUA_OPERATION_TIMEOUT", "4.0")),
+            0.1, float(os.getenv("SD_SMA_OPCUA_OPERATION_TIMEOUT", "4.0"))
         )
-        self._async_operation_timeout = self.operation_timeout + max(
-            1.0,
-            self.operation_timeout * 0.25,
+        self.connect_timeout = max(
+            self.operation_timeout,
+            float(
+                os.getenv("SD_SMA_OPCUA_CONNECT_TIMEOUT", str(self.operation_timeout))
+            ),
+        )
+        self.max_inflight_requests = max(
+            1, int(os.getenv("SD_SMA_OPCUA_MAX_INFLIGHT", "4"))
+        )
+        self.subscription_period_ms = max(
+            20.0, float(os.getenv("SD_SMA_OPCUA_SUBSCRIPTION_PERIOD_MS", "100"))
         )
         self.log_throttle_interval = max(
-            1.0,
-            float(os.getenv("SD_SMA_OPCUA_LOG_THROTTLE_INTERVAL", "30")),
+            1.0, float(os.getenv("SD_SMA_OPCUA_LOG_THROTTLE_INTERVAL", "30"))
         )
+
+        self.client: Optional[Client] = None
+        self.connected = False  # 保留给现有状态面板和测试使用。
+        self.state = ConnectionState.DISCONNECTED
+        self.current_retry_count = 0
+        self.is_reconnecting = False
+
+        self._closing = False
+        self._connect_lock = asyncio.Lock()
+        self._request_semaphore = asyncio.Semaphore(self.max_inflight_requests)
+        self._connected_event = asyncio.Event()
+        self._reconnect_wakeup = asyncio.Event()
+        self._reconnect_task: Optional[asyncio.Task] = None
+        self.health_check_task: Optional[asyncio.Task] = None
+
+        self._subscription_lock = asyncio.Lock()
+        self._subscription = None
+        self._subscription_handler = _DataChangeHandler(self)
+        self._subscriptions: Dict[str, _SubscriptionRegistration] = {}
+        self._subscription_routes: Dict[str, List[str]] = {}
+
         self._last_reconnect_failure_log_at = 0.0
         self._suppressed_reconnect_failures = 0
         self._last_write_failure_log_at: Dict[str, float] = {}
         self._suppressed_write_failures: Dict[str, int] = {}
-    
-    async def _ensure_connected(self) -> bool:
-        """若已连接则直接返回 True，否则尝试重连（避免与 health check / 断线竞态导致 client 为 None）。"""
-        if self.connected and self.client is not None:
-            return True
-        return await self._attempt_reconnect()
 
     def _create_client(self) -> Client:
-        """创建同步 OPC UA client，并统一设置底层 socket 超时。"""
-        return Client(self.server_url, timeout=self.operation_timeout)
+        # 应用层状态机负责重连和重建订阅，避免库内自动重连与应用重连竞争。
+        return Client(
+            url=self.server_url,
+            timeout=self.operation_timeout,
+            watchdog_intervall=max(0.2, min(1.0, self.operation_timeout / 2)),
+            auto_reconnect=False,
+        )
 
-    def _discard_client(self) -> None:
-        self.connected = False
-        self.client = None
-
-    async def _run_blocking_opcua(self, action: str, func):
-        """
-        在线程中执行 python-opcua 的同步调用，并保证同一 Client 串行访问。
-
-        wait_for 超时不会强制杀死底层线程，因此超时后会废弃当前 client，
-        后续操作通过现有重连流程创建新连接。
-        """
-        async with self._opcua_io_lock:
-            try:
-                return await asyncio.wait_for(
-                    asyncio.to_thread(func),
-                    timeout=self._async_operation_timeout,
-                )
-            except asyncio.TimeoutError as exc:
-                self._discard_client()
-                raise TimeoutError(
-                    f"OPC UA {action}超时（>{self._async_operation_timeout:.1f}s）"
-                ) from exc
-
-    async def _read_node_value(self, client: Client, node_path: str, action: str) -> Any:
-        def _read_sync():
-            node = client.get_node(node_path)
-            return node.get_value()
-
-        return await self._run_blocking_opcua(action, _read_sync)
-    
     async def connect(self) -> bool:
-        """
-        连接到OPC UA服务器
-        
-        Returns:
-            bool: 连接是否成功
-        """
-        try:
-            client = self._create_client()
-            await self._run_blocking_opcua("连接", client.connect)
-            self.client = client
-            self.connected = True
-            self.current_retry_count = 0  # 重置重试计数
-            self.logger.info(f"成功连接到OPC UA服务器: {self.server_url}")
-            return True
-        except Exception as e:
-            if self._is_transient_connect_failure(e):
-                self.logger.warning(
-                    "连接OPC UA服务器失败，后台将继续重连: %s: %s",
-                    type(e).__name__,
-                    e,
-                )
-            else:
-                self.logger.error(f"连接OPC UA服务器失败: {e}", exc_info=True)
-            self.connected = False
-            self.client = None
-            return False
-        finally:
-            # 即使首次连接失败，也启动后台健康检查/重连任务，支持 PLC 晚启动。
-            await self._start_health_check()
-    
-    async def disconnect(self) -> None:
-        """断开OPC UA服务器连接"""
-        # 停止健康检查任务
-        await self._stop_health_check()
-        
-        if self.client:
-            client = self.client
-            try:
-                await self._run_blocking_opcua("断开连接", client.disconnect)
-                self.logger.info("已断开OPC UA服务器连接")
-            except Exception as e:
-                self.logger.error(f"断开连接时发生错误: {e}", exc_info=True)
-            finally:
-                if self.client is client:
-                    self.client = None
-                self.connected = False
-                self.is_reconnecting = False
-        else:
-            self.connected = False
-            self.is_reconnecting = False
-    
-    async def _read_data_points_sequential(
-        self, data_points: List[DataPoint], timestamp: datetime
-    ) -> Dict[str, Any]:
-        """逐点读取（批量失败时的回退路径，行为与历史版本一致）。"""
-        results: Dict[str, Any] = {}
-
-        def _fill_remaining(start_idx: int, error_message: str) -> None:
-            for p in data_points[start_idx:]:
-                if p.name in results:
-                    continue
-                results[p.name] = {
-                    "value": None,
-                    "timestamp": timestamp,
-                    "error": error_message,
-                    "path": p.path,
-                }
-
-        if not await self._ensure_connected():
-            self.logger.warning(
-                "OPC UA 未连接，跳过逐点读取（%d 个数据点）",
-                len(data_points),
-            )
-            _fill_remaining(0, "OPC UA 未连接")
-            return results
-
-        for idx, point in enumerate(data_points):
-            if not self.client or not self.connected:
-                if not await self._ensure_connected():
-                    self.logger.warning(
-                        "逐点读取中断：客户端不可用，剩余 %d 个数据点跳过",
-                        len(data_points) - idx,
-                    )
-                    _fill_remaining(
-                        idx,
-                        "OPC UA 客户端不可用（可能已断开或正在重连）",
-                    )
-                    break
-
-            try:
-                client = self.client
-                if not client:
-                    raise ConnectionError("OPC UA 客户端不可用")
-                value = await self._read_node_value(client, point.path, f"读取数据点 {point.name}")
-                results[point.name] = {
-                    'value': value,
-                    'timestamp': timestamp,
-                    'path': point.path
-                }
-                self.logger.debug(f"读取数据点 {point.name}: {value}")
-            except Exception as e:
-                conn_err = self._is_connection_error(e)
-                if conn_err:
-                    self.logger.warning(
-                        "读取数据点 %s 时连接异常: %s",
-                        point.name,
-                        e,
-                    )
-                    if await self._attempt_reconnect():
-                        await asyncio.sleep(2.0)
-                        try:
-                            client = self.client
-                            if not client:
-                                raise ConnectionError("重连后客户端仍不可用")
-                            value = await self._read_node_value(
-                                client,
-                                point.path,
-                                f"重连后读取数据点 {point.name}",
-                            )
-                            results[point.name] = {
-                                'value': value,
-                                'timestamp': timestamp,
-                                'path': point.path
-                            }
-                            self.logger.info(
-                                "重连后成功读取数据点 %s", point.name
-                            )
-                        except Exception as retry_e:
-                            self.logger.warning(
-                                "重连后读取数据点 %s 仍失败: %s",
-                                point.name,
-                                retry_e,
-                            )
-                            results[point.name] = {
-                                'value': None,
-                                'timestamp': timestamp,
-                                'error': str(retry_e),
-                                'path': point.path
-                            }
-                            self.logger.warning(
-                                "停止逐点读取，跳过剩余 %d 个数据点",
-                                len(data_points) - idx - 1,
-                            )
-                            _fill_remaining(
-                                idx + 1,
-                                "前序点读取失败，已中止本轮逐点读取",
-                            )
-                            break
-                    else:
-                        await asyncio.sleep(3.0)
-                        results[point.name] = {
-                            'value': None,
-                            'timestamp': timestamp,
-                            'error': f"连接失败: {str(e)}",
-                            'path': point.path
-                        }
-                        self.logger.warning(
-                            "OPC UA 重连失败，跳过剩余 %d 个数据点",
-                            len(data_points) - idx - 1,
-                        )
-                        _fill_remaining(idx + 1, "OPC UA 重连失败")
-                        break
-                else:
-                    self.logger.error(
-                        "读取数据点 %s 失败: %s", point.name, e, exc_info=True
-                    )
-                    results[point.name] = {
-                        'value': None,
-                        'timestamp': timestamp,
-                        'error': str(e),
-                        'path': point.path
-                    }
-        return results
-
-    async def read_data_points(self, data_points: List[DataPoint]) -> Dict[str, Any]:
-        """
-        读取多个数据点的值
-
-        优先使用 OPC UA 一次往返批量读取（Client.get_values）；失败时回退为逐点读取。
-        
-        Args:
-            data_points: 数据点列表
-            
-        Returns:
-            Dict[str, Any]: 数据点名称到值的映射
-        """
-        if not await self._ensure_connected():
-            raise ConnectionError("OPC UA客户端连接失败且无法重连")
-
-        if not data_points:
-            return {}
-
-        timestamp = datetime.now()
-
-        async def try_batch_read() -> Optional[Dict[str, Any]]:
-            if not await self._ensure_connected():
-                return None
-            try:
-                client = self.client
-                if not client:
-                    raise ConnectionError("OPC UA 客户端不可用")
-
-                def _batch_read_sync():
-                    nodes = [client.get_node(p.path) for p in data_points]
-                    return client.get_values(nodes)
-
-                values = await self._run_blocking_opcua("批量读取", _batch_read_sync)
-            except Exception as e:
-                if self._is_connection_error(e):
-                    self.logger.warning(f"批量读取遇连接错误，准备重连: {e}")
-                    if await self._attempt_reconnect():
-                        await asyncio.sleep(2.0)
-                        try:
-                            client = self.client
-                            if not client:
-                                raise ConnectionError("重连后客户端仍不可用")
-
-                            def _retry_batch_read_sync():
-                                nodes = [client.get_node(p.path) for p in data_points]
-                                return client.get_values(nodes)
-
-                            values = await self._run_blocking_opcua(
-                                "重连后批量读取",
-                                _retry_batch_read_sync,
-                            )
-                        except Exception as retry_e:
-                            self.logger.error(f"重连后批量读取仍失败: {retry_e}", exc_info=True)
-                            return None
-                    else:
-                        await asyncio.sleep(3.0)
-                        return None
-                else:
-                    self.logger.warning(f"批量读取失败，将回退逐点读取: {e}")
-                    return None
-
-            if len(values) != len(data_points):
-                self.logger.error(
-                    f"批量读取返回数量({len(values)})与请求({len(data_points)})不一致，回退逐点读取"
-                )
-                return None
-
-            out: Dict[str, Any] = {}
-            for point, value in zip(data_points, values):
-                out[point.name] = {
-                    'value': value,
-                    'timestamp': timestamp,
-                    'path': point.path
-                }
-                self.logger.debug(f"读取数据点 {point.name}: {value}")
-            return out
-
-        batch = await try_batch_read()
-        if batch is not None:
-            return batch
-
-        return await self._read_data_points_sequential(data_points, timestamp)
-
-    async def _write_node_data_value(self, point_path: str, data_value: Any, value_label: str) -> bool:
-        """统一写入 OPC UA 节点，所有同步读写属性操作都在线程中执行。"""
-        if not self.connected or not self.client:
-            if not await self._attempt_reconnect():
-                self.logger.debug("写入%s跳过：OPC UA 未连接: %s", value_label, point_path)
-                return False
-
-        try:
-            client = self.client
-            if not client:
-                raise ConnectionError("OPC UA 客户端不可用")
-
-            def _write_sync() -> bool:
-                node = client.get_node(point_path)
-                try:
-                    node_attrs = node.get_attributes([
-                        ua.AttributeIds.AccessLevel,
-                        ua.AttributeIds.UserAccessLevel,
-                    ])
-                    access_level = node_attrs[0].Value.Value if len(node_attrs) > 0 and node_attrs[0].Value else 0
-                    user_access_level = node_attrs[1].Value.Value if len(node_attrs) > 1 and node_attrs[1].Value else 0
-                    if not (access_level & 2) or not (user_access_level & 2):
-                        return False
-                except Exception as attr_error:
-                    self.logger.debug(f"无法获取节点属性，继续尝试写入: {attr_error}")
-
-                node.set_attribute(ua.AttributeIds.Value, data_value)
-                return True
-
-            write_ok = await self._run_blocking_opcua(f"写入{value_label}", _write_sync)
-            if not write_ok:
-                self._log_write_failure(point_path, value_label, RuntimeError("节点不可写"))
-                return False
-
-            self._last_write_failure_log_at.pop(point_path, None)
-            suppressed = self._suppressed_write_failures.pop(point_path, 0)
-            if suppressed:
-                self.logger.info("OPC UA 写入恢复：%s，之前合并了 %d 次失败日志", point_path, suppressed)
-            self.logger.debug("成功写入%s到 %s", value_label, point_path)
-            return True
-        except Exception as e:
-            if self._is_connection_error(e):
-                self._discard_client()
-                self._log_write_failure(point_path, value_label, e)
-                if await self._attempt_reconnect():
-                    return await self._write_node_data_value(point_path, data_value, value_label)
-                return False
-
-            error_str = str(e)
-            if "BadWriteNotSupported" in error_str or "not support writing" in error_str.lower():
-                self._log_write_failure(point_path, value_label, e)
-                return False
-
-            self._log_write_failure(point_path, value_label, e, exc_info=True)
-            return False
-    
-    async def write_array_value(self, point_path: str, values: list) -> bool:
-        """
-        写入数组值到指定节点
-
-        Args:
-            point_path: 节点路径
-            values: 要写入的数组值
-
-        Returns:
-            bool: 写入是否成功
-        """
-        if values and isinstance(values[0], bool):
-            variant_type = ua.VariantType.Boolean
-        elif values and isinstance(values[0], int):
-            variant_type = ua.VariantType.Int64
-        elif values and isinstance(values[0], float):
-            variant_type = ua.VariantType.Float
-        else:
-            variant_type = ua.VariantType.Null
-
-        data_value = ua.DataValue(ua.Variant(values, variant_type))
-        return await self._write_node_data_value(point_path, data_value, "数组值")
-
-    async def write_boolean_value(self, point_path: str, value: bool) -> bool:
-        """
-        写入布尔值到指定节点
-        
-        Args:
-            point_path: 节点路径
-            value: 布尔值
-            
-        Returns:
-            bool: 写入是否成功
-        """
-        return await self.write_scalar_value(point_path, value, ua.VariantType.Boolean, "布尔值")
-    
-    def is_connected(self) -> bool:
-        """检查是否已连接"""
-        return self.connected and self.client is not None
-    
-    def _is_connection_error(self, error: Exception) -> bool:
-        """
-        判断是否为连接相关的错误
-        
-        Args:
-            error: 异常对象
-            
-        Returns:
-            bool: 是否为连接错误
-        """
-        if isinstance(error, (TimeoutError, asyncio.TimeoutError, ConnectionError)):
-            return True
-        # 健康检查/重连与采集并发时，可能出现 client 已被置空仍进入读取
-        if isinstance(error, AttributeError):
-            msg = str(error).lower()
-            if "nonetype" in msg and "get_node" in msg:
-                return True
-        error_str = str(error).lower()
-        connection_keywords = [
-            'connection', 'connect', 'disconnected', 'closed',
-            'timeout', 'network', 'socket', 'winerror 10054',
-            'forcibly closed', 'broken pipe'
-        ]
-        return any(keyword in error_str for keyword in connection_keywords)
-
-    def _is_transient_connect_failure(self, error: BaseException) -> bool:
-        """
-        断连、手动关 PLC、对端不可达等场景下常见的可恢复错误。
-        此类错误只打简要日志，避免 ERROR+完整堆栈刷屏。
-        """
-        if isinstance(error, (TimeoutError, asyncio.TimeoutError, ConnectionError)):
-            return True
-        if isinstance(error, OSError):
-            code = getattr(error, "errno", None)
-            if code in {10054, 10053, 10051, 10050, 10060, 10061, 110, 111, 113}:
-                return True
-            return self._is_connection_error(error)
-        if isinstance(error, Exception):
-            return self._is_connection_error(error)
-        return False
-    
-    async def _attempt_reconnect(self, *, wait_before_attempt: bool = True) -> bool:
-        """
-        尝试重新连接到OPC UA服务器
-        
-        Returns:
-            bool: 重连是否成功
-        """
+        """立即尝试建立一次连接；失败后由后台状态机持续重试。"""
+        self._closing = False
+        await self._ensure_background_tasks()
         if self.is_connected():
             return True
+        success = await self._connect_once(reconnecting=False)
+        if not success:
+            self._reconnect_wakeup.set()
+        return success
 
-        if self._reconnect_lock.locked():
-            self.logger.debug("已在重连过程中，等待当前重连结果")
+    async def disconnect(self) -> None:
+        """停止后台任务，删除订阅并关闭会话。"""
+        self._closing = True
+        self.state = ConnectionState.STOPPING
+        self.connected = False
+        self._connected_event.clear()
+        self._reconnect_wakeup.set()
 
-        async with self._reconnect_lock:
+        tasks = [
+            task
+            for task in (self.health_check_task, self._reconnect_task)
+            if task and not task.done() and task is not asyncio.current_task()
+        ]
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+        self.health_check_task = None
+        self._reconnect_task = None
+
+        await self._drop_session()
+        self.state = ConnectionState.DISCONNECTED
+        self.is_reconnecting = False
+        self.logger.info("已断开 OPC UA 服务器连接: %s", self.server_url)
+
+    async def _ensure_background_tasks(self) -> None:
+        if self._closing:
+            return
+        if not self._reconnect_task or self._reconnect_task.done():
+            self._reconnect_task = asyncio.create_task(
+                self._reconnect_loop(),
+                name=f"opcua_reconnect_{self.server_url}",
+            )
+        if self.health_check_interval > 0 and (
+            not self.health_check_task or self.health_check_task.done()
+        ):
+            self.health_check_task = asyncio.create_task(
+                self._health_check_loop(),
+                name=f"opcua_health_{self.server_url}",
+            )
+
+    async def _connect_once(self, *, reconnecting: bool) -> bool:
+        async with self._connect_lock:
+            if self._closing:
+                return False
             if self.is_connected():
                 return True
 
-            self.is_reconnecting = True
-
+            self.state = (
+                ConnectionState.RECONNECTING
+                if reconnecting
+                else ConnectionState.CONNECTING
+            )
+            self.is_reconnecting = reconnecting
+            new_client = self._create_client()
             try:
-                self.current_retry_count += 1
-                delay = self.retry_delay
-                if wait_before_attempt:
-                    self.logger.debug(f"第 {self.current_retry_count} 次重连尝试，等待 {delay:.1f} 秒后重连")
-                    await asyncio.sleep(delay)
-                else:
-                    self.logger.debug(f"第 {self.current_retry_count} 次重连尝试")
-
-                # 断开现有连接（如果存在）
-                if self.client:
-                    client = self.client
-                    self.client = None
-                    self.connected = False
-                    try:
-                        await self._run_blocking_opcua("断开旧连接", client.disconnect)
-                    except Exception:
-                        pass  # 忽略断开连接时的错误
-
-                # 尝试重新连接
-                client = self._create_client()
-                await self._run_blocking_opcua("重连", client.connect)
-                self.client = client
+                await asyncio.wait_for(
+                    new_client.connect(),
+                    timeout=self.connect_timeout,
+                )
+                # 在暴露 connected 前完成旧会话清理和订阅恢复。
+                await self._drop_session()
+                self.client = new_client
                 self.connected = True
-                if self._suppressed_reconnect_failures:
-                    self.logger.info(
-                        "OPC UA 重连恢复，之前合并了 %d 次失败日志",
-                        self._suppressed_reconnect_failures,
-                    )
-                self._last_reconnect_failure_log_at = 0.0
-                self._suppressed_reconnect_failures = 0
-                self.logger.info(f"重连成功，已连接到 {self.server_url}")
-
-                # 重置重试计数
-                self.current_retry_count = 0
-
-                await self._start_health_check()
-                return True
-
-            except Exception as e:
-                self._log_reconnect_failure(e)
-                self.connected = False
+                self.state = ConnectionState.CONNECTED
+                await self._restore_subscriptions()
+            except asyncio.CancelledError:
+                await self._safe_disconnect(new_client)
+                raise
+            except Exception as exc:  # noqa: BLE001
+                await self._safe_disconnect(new_client)
                 self.client = None
-                await self._start_health_check()
+                self.connected = False
+                self.state = ConnectionState.DISCONNECTED
+                self._connected_event.clear()
+                self._log_reconnect_failure(exc)
                 return False
             finally:
                 self.is_reconnecting = False
-    
-    async def _start_health_check(self) -> None:
-        """启动健康检查任务"""
-        if self.health_check_interval <= 0 and self.retry_delay <= 0:
-            return
 
-        if self.health_check_task and not self.health_check_task.done():
-            return
+            self._connected_event.set()
+            if self._suppressed_reconnect_failures:
+                self.logger.info(
+                    "OPC UA 连接恢复，之前合并了 %d 次失败日志",
+                    self._suppressed_reconnect_failures,
+                )
+            self._last_reconnect_failure_log_at = 0.0
+            self._suppressed_reconnect_failures = 0
+            self.current_retry_count = 0
+            self.logger.info(
+                "%s，已连接到 %s，恢复订阅数=%d",
+                "重连成功" if reconnecting else "成功连接 OPC UA 服务器",
+                self.server_url,
+                len(self._subscriptions),
+            )
+            return True
 
-        self.health_check_task = asyncio.create_task(
-            self._health_check_loop(),
-            name=f"opcua_health_{self.server_url}",
-        )
-        self.logger.debug(
-            "已启动健康检查任务，连接正常间隔: %s 秒，断线重连间隔: %.1f 秒",
-            self.health_check_interval,
-            self.retry_delay,
-        )
-    
-    async def _stop_health_check(self) -> None:
-        """停止健康检查任务"""
-        if self.health_check_task and not self.health_check_task.done():
-            if self.health_check_task is asyncio.current_task():
-                self.health_check_task = None
-                return
-            self.health_check_task.cancel()
+    async def _reconnect_loop(self) -> None:
+        """单一后台重连状态机，采用有上限的指数退避。"""
+        while not self._closing:
             try:
-                await self.health_check_task
+                await self._reconnect_wakeup.wait()
+                self._reconnect_wakeup.clear()
+                delay = 0.0
+                while not self._closing and not self.is_connected():
+                    if delay:
+                        try:
+                            await asyncio.wait_for(
+                                self._reconnect_wakeup.wait(), timeout=delay
+                            )
+                            self._reconnect_wakeup.clear()
+                        except asyncio.TimeoutError:
+                            pass
+                    self.current_retry_count += 1
+                    if await self._connect_once(reconnecting=True):
+                        break
+                    delay = min(
+                        self.retry_delay,
+                        max(0.5, 2 ** min(self.current_retry_count - 1, 4)),
+                    )
             except asyncio.CancelledError:
-                pass
-            self.health_check_task = None
-            self.logger.debug("已停止健康检查任务")
-    
-    async def _health_check_loop(self) -> None:
-        """健康检查循环"""
-        while True:
-            try:
-                interval = self.health_check_interval if self.is_connected() else self.retry_delay
-                await asyncio.sleep(max(0.1, float(interval)))
-
-                if self.connected and self.client:
-                    # 尝试读取一个简单的节点来检查连接状态
-                    try:
-                        # 这里可以读取一个已知存在的节点或者使用服务器状态节点
-                        client = self.client
-                        if not client:
-                            raise ConnectionError("OPC UA 客户端不可用")
-                        await self._read_node_value(client, "i=2259", "健康检查读取 ServerState")
-                        self.logger.debug("健康检查: 连接正常")
-                    except Exception as e:
-                        self.logger.warning(f"健康检查发现连接异常: {e}")
-                        if self._is_connection_error(e):
-                            self._discard_client()
-                            # 触发重连
-                            self.logger.info("健康检查触发自动重连")
-                            await self._attempt_reconnect(wait_before_attempt=False)
-                else:
-                    # 如果未连接，尝试重连
-                    if not self.is_reconnecting:
-                        self.logger.debug("健康检查发现未连接，尝试重连")
-                        await self._attempt_reconnect(wait_before_attempt=False)
-                        
-            except asyncio.CancelledError:
-                self.logger.debug("健康检查任务被取消")
                 break
-            except Exception as e:
-                self.logger.error(f"健康检查过程中发生错误: {e}", exc_info=True)
+            except Exception as exc:  # noqa: BLE001
+                self.logger.error("OPC UA 重连状态机异常: %s", exc, exc_info=True)
+                await asyncio.sleep(min(self.retry_delay, 1.0))
+
+    async def _attempt_reconnect(self, *, wait_before_attempt: bool = True) -> bool:
+        """兼容现有调用；并发调用通过连接锁合并为一个实际连接尝试。"""
+        await self._ensure_background_tasks()
+        if self.is_connected():
+            return True
+        if wait_before_attempt:
+            await asyncio.sleep(self.retry_delay)
+        self.current_retry_count += 1
+        success = await self._connect_once(reconnecting=True)
+        if not success:
+            self._reconnect_wakeup.set()
+        return success
+
+    async def _ensure_connected(self) -> bool:
+        if self.is_connected():
+            return True
+        await self._ensure_background_tasks()
+        self._reconnect_wakeup.set()
+        try:
+            await asyncio.wait_for(
+                self._connected_event.wait(),
+                timeout=self.connect_timeout + 0.5,
+            )
+        except asyncio.TimeoutError:
+            return False
+        return self.is_connected()
+
+    async def _mark_disconnected(
+        self,
+        error: BaseException,
+        expected_client: Optional[Client] = None,
+    ) -> None:
+        """原子地废弃故障会话并唤醒唯一重连任务。"""
+        async with self._connect_lock:
+            if expected_client is not None and self.client is not expected_client:
+                return
+            if self._closing:
+                return
+            failed_client = self.client
+            self.client = None
+            self.connected = False
+            self.state = ConnectionState.DISCONNECTED
+            self._connected_event.clear()
+            async with self._subscription_lock:
+                self._subscription = None
+                self._subscription_routes.clear()
+                for registration in self._subscriptions.values():
+                    registration.handle = None
+        if failed_client:
+            await self._safe_disconnect(failed_client)
+        self.logger.warning(
+            "OPC UA 会话转为断开状态，准备重连: %s: %s",
+            type(error).__name__,
+            error,
+        )
+        await self._ensure_background_tasks()
+        self._reconnect_wakeup.set()
+
+    async def _drop_session(self) -> None:
+        async with self._subscription_lock:
+            subscription = self._subscription
+            self._subscription = None
+            self._subscription_routes.clear()
+            for registration in self._subscriptions.values():
+                registration.handle = None
+        if subscription is not None:
+            try:
+                await asyncio.wait_for(
+                    subscription.delete(), timeout=self.operation_timeout
+                )
+            except Exception:
+                pass
+
+        old_client = self.client
+        self.client = None
+        self.connected = False
+        self._connected_event.clear()
+        if old_client:
+            await self._safe_disconnect(old_client)
+
+    async def _safe_disconnect(self, client: Client) -> None:
+        try:
+            await asyncio.wait_for(client.disconnect(), timeout=self.operation_timeout)
+        except Exception:
+            pass
+
+    async def _run_operation(
+        self,
+        action: str,
+        operation: Callable[[Client], Awaitable[Any]],
+    ) -> Any:
+        if not await self._ensure_connected():
+            raise ConnectionError("OPC UA 客户端未连接且当前重连尚未成功")
+
+        async with self._request_semaphore:
+            client = self.client
+            if not client or not self.connected:
+                raise ConnectionError("OPC UA 客户端不可用")
+            try:
+                return await asyncio.wait_for(
+                    operation(client), timeout=self.operation_timeout
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:  # noqa: BLE001
+                if self._is_connection_error(exc):
+                    await self._mark_disconnected(exc, expected_client=client)
+                    if isinstance(exc, asyncio.TimeoutError):
+                        raise TimeoutError(
+                            f"OPC UA {action}超时（>{self.operation_timeout:.1f}s）"
+                        ) from exc
+                raise
+
+    async def read_data_points(self, data_points: List[DataPoint]) -> Dict[str, Any]:
+        """使用一次 OPC UA Read 请求读取多个点；连接故障后重连并重试一次。"""
+        if not data_points:
+            return {}
+        timestamp = datetime.now()
+
+        async def _batch(client: Client) -> List[Any]:
+            return await client.read_values(
+                [client.get_node(point.path) for point in data_points]
+            )
+
+        try:
+            values = await self._run_operation("批量读取", _batch)
+        except Exception as exc:  # noqa: BLE001
+            if self._is_connection_error(exc):
+                self.logger.warning("批量读取遇连接错误，等待重连后重试: %s", exc)
+                if await self._ensure_connected():
+                    try:
+                        values = await self._run_operation("重连后批量读取", _batch)
+                    except Exception as retry_exc:  # noqa: BLE001
+                        self.logger.warning(
+                            "重连后批量读取仍失败，回退逐点读取: %s", retry_exc
+                        )
+                        return await self._read_data_points_sequential(
+                            data_points, timestamp
+                        )
+                else:
+                    raise ConnectionError("OPC UA 重连未在限定时间内成功") from exc
+            else:
+                self.logger.warning("批量读取失败，回退逐点读取: %s", exc)
+                return await self._read_data_points_sequential(data_points, timestamp)
+
+        if len(values) != len(data_points):
+            self.logger.warning(
+                "批量读取返回数量(%d)与请求(%d)不一致，回退逐点读取",
+                len(values),
+                len(data_points),
+            )
+            return await self._read_data_points_sequential(data_points, timestamp)
+        return {
+            point.name: {
+                "value": value,
+                "timestamp": timestamp,
+                "path": point.path,
+            }
+            for point, value in zip(data_points, values)
+        }
+
+    async def read_value_by_path(self, point_path: str) -> Any:
+        """读取单个路径，供诊断/压力测试使用。"""
+
+        async def _read(client: Client) -> Any:
+            return await client.get_node(point_path).read_value()
+
+        return await self._run_operation(f"读取节点 {point_path}", _read)
+
+    async def _read_data_points_sequential(
+        self,
+        data_points: List[DataPoint],
+        timestamp: datetime,
+    ) -> Dict[str, Any]:
+        results: Dict[str, Any] = {}
+        for point in data_points:
+            try:
+
+                async def _read(client: Client, path: str = point.path):
+                    return await client.get_node(path).read_value()
+
+                value = await self._run_operation(f"读取数据点 {point.name}", _read)
+                results[point.name] = {
+                    "value": value,
+                    "timestamp": timestamp,
+                    "path": point.path,
+                }
+            except Exception as exc:  # noqa: BLE001
+                results[point.name] = {
+                    "value": None,
+                    "timestamp": timestamp,
+                    "error": str(exc),
+                    "path": point.path,
+                }
+                if self._is_connection_error(exc):
+                    for remaining in data_points[len(results) :]:
+                        results[remaining.name] = {
+                            "value": None,
+                            "timestamp": timestamp,
+                            "error": "前序点连接读取失败，本轮已中止",
+                            "path": remaining.path,
+                        }
+                    break
+                self.logger.warning("读取数据点 %s 失败: %s", point.name, exc)
+        return results
+
+    async def write_scalar_value(
+        self,
+        point_path: str,
+        value: Any,
+        variant_type: ua.VariantType,
+        value_label: str = "值",
+    ) -> bool:
+        async def _write(client: Client) -> None:
+            node = client.get_node(point_path)
+            try:
+                access = await node.get_access_level()
+                user_access = await node.get_user_access_level()
+                if (
+                    ua.AccessLevel.CurrentWrite not in access
+                    or ua.AccessLevel.CurrentWrite not in user_access
+                ):
+                    raise PermissionError("节点不可写")
+            except PermissionError:
+                raise
+            except Exception as exc:  # noqa: BLE001
+                self.logger.debug(
+                    "无法读取写权限，继续尝试写入 %s: %s", point_path, exc
+                )
+            # asyncua 的 write_value(value, variant_type) 默认附带 SourceTimestamp。
+            # B&R Embedded OPC UA Server 拒绝带状态/时间戳组合的写请求
+            # （BadWriteNotSupported），因此显式构造无时间戳 DataValue。
+            data_value = ua.DataValue(ua.Variant(value, variant_type))
+            await node.write_value(data_value)
+
+        try:
+            await self._run_operation(f"写入{value_label}", _write)
+            return True
+        except Exception as exc:  # noqa: BLE001
+            self._log_write_failure(point_path, value_label, exc)
+            return False
+
+    async def write_array_value(self, point_path: str, values: list) -> bool:
+        return await self.write_scalar_value(
+            point_path, list(values), ua.VariantType.Boolean, "布尔数组"
+        )
+
+    async def write_boolean_value(self, point_path: str, value: bool) -> bool:
+        return await self.write_scalar_value(
+            point_path, bool(value), ua.VariantType.Boolean, "布尔值"
+        )
+
+    async def write_uint16_value(self, point_path: str, value: int) -> bool:
+        return await self.write_scalar_value(
+            point_path, int(value), ua.VariantType.UInt16, "UINT16"
+        )
+
+    async def write_uint32_value(self, point_path: str, value: int) -> bool:
+        return await self.write_scalar_value(
+            point_path, int(value), ua.VariantType.UInt32, "UINT32"
+        )
+
+    async def subscribe_data_change(
+        self,
+        point: DataPoint,
+        callback: DataChangeCallback,
+        *,
+        sampling_interval_ms: float = 50.0,
+    ) -> str:
+        """登记数据变化订阅；当前断线时保留登记并在重连后自动创建。"""
+        token = uuid.uuid4().hex
+        registration = _SubscriptionRegistration(
+            token=token,
+            point=point,
+            callback=callback,
+            sampling_interval_ms=max(0.0, float(sampling_interval_ms)),
+        )
+        async with self._subscription_lock:
+            self._subscriptions[token] = registration
+            if self.is_connected():
+                await self._activate_registration(registration)
+        await self._ensure_background_tasks()
+        self._reconnect_wakeup.set()
+        self.logger.info(
+            "已登记 OPC UA 数据变化订阅: point=%s, path=%s",
+            point.name,
+            point.path,
+        )
+        return token
+
+    async def unsubscribe_data_change(self, token: str) -> None:
+        async with self._subscription_lock:
+            registration = self._subscriptions.pop(token, None)
+            if not registration:
+                return
+            key = registration.point.path
+            route = self._subscription_routes.get(key, [])
+            self._subscription_routes[key] = [item for item in route if item != token]
+            if not self._subscription_routes[key]:
+                self._subscription_routes.pop(key, None)
+            if self._subscription is not None and registration.handle is not None:
+                try:
+                    await self._subscription.unsubscribe(registration.handle)
+                except Exception as exc:  # noqa: BLE001
+                    self.logger.debug("取消订阅失败（会话可能已失效）: %s", exc)
+
+    async def _restore_subscriptions(self) -> None:
+        async with self._subscription_lock:
+            self._subscription = None
+            self._subscription_routes.clear()
+            for registration in self._subscriptions.values():
+                registration.handle = None
+            for registration in self._subscriptions.values():
+                await self._activate_registration(registration)
+
+    async def _activate_registration(
+        self, registration: _SubscriptionRegistration
+    ) -> None:
+        client = self.client
+        if not client:
+            return
+        if self._subscription is None:
+            self._subscription = await client.create_subscription(
+                self.subscription_period_ms,
+                self._subscription_handler,
+            )
+        node = client.get_node(registration.point.path)
+        self._subscription_routes.setdefault(registration.point.path, []).append(
+            registration.token
+        )
+        try:
+            registration.handle = await self._subscription.subscribe_data_change(
+                node,
+                queuesize=10,
+                sampling_interval=registration.sampling_interval_ms,
+            )
+        except Exception:
+            route = self._subscription_routes.get(registration.point.path, [])
+            self._subscription_routes[registration.point.path] = [
+                item for item in route if item != registration.token
+            ]
+            raise
+
+    async def _dispatch_data_change(self, node, value: Any) -> None:
+        path = node.nodeid.to_string()
+        # asyncua 会把字符串 NodeId 标准化；配置路径通常同样是标准形式。
+        tokens = list(self._subscription_routes.get(path, []))
+        if not tokens:
+            # 某些服务器返回的 NodeId 字符串格式与配置文本略有差异。
+            tokens = [
+                token
+                for token, registration in self._subscriptions.items()
+                if registration.point.path == path
+                or str(getattr(node, "nodeid", "")) == registration.point.path
+            ]
+        for token in tokens:
+            registration = self._subscriptions.get(token)
+            if not registration:
+                continue
+            try:
+                result = registration.callback(value)
+                if inspect.isawaitable(result):
+                    await result
+            except Exception as exc:  # noqa: BLE001
+                self.logger.error(
+                    "订阅回调失败: point=%s, error=%s",
+                    registration.point.name,
+                    exc,
+                    exc_info=True,
+                )
+
+    async def _health_check_loop(self) -> None:
+        while not self._closing:
+            try:
+                await asyncio.sleep(max(0.2, self.health_check_interval))
+                if not self.is_connected():
+                    self._reconnect_wakeup.set()
+                    continue
+
+                async def _check(client: Client) -> None:
+                    await client.check_connection()
+
+                await self._run_operation("健康检查", _check)
+            except asyncio.CancelledError:
+                break
+            except Exception as exc:  # noqa: BLE001
+                self.logger.warning("健康检查发现连接异常: %s", exc)
+                self._reconnect_wakeup.set()
+
+    def is_connected(self) -> bool:
+        return (
+            self.connected
+            and self.client is not None
+            and self.state == ConnectionState.CONNECTED
+        )
+
+    def get_connection_state(self) -> str:
+        return self.state.value
+
+    def get_subscription_count(self) -> int:
+        """返回当前会话中已成功创建 monitored item 的数量。"""
+        if not self.is_connected():
+            return 0
+        return sum(
+            registration.handle is not None
+            for registration in self._subscriptions.values()
+        )
+
+    def _is_connection_error(self, error: BaseException) -> bool:
+        if isinstance(
+            error,
+            (
+                TimeoutError,
+                asyncio.TimeoutError,
+                ConnectionError,
+                OSError,
+                uaerrors.BadConnectionClosed,
+                uaerrors.BadSessionClosed,
+                uaerrors.BadSessionIdInvalid,
+                uaerrors.BadSecureChannelClosed,
+                uaerrors.BadServerNotConnected,
+                uaerrors.BadTimeout,
+            ),
+        ):
+            return True
+        text = str(error).lower()
+        return any(
+            keyword in text
+            for keyword in (
+                "connection",
+                "disconnected",
+                "closed",
+                "timeout",
+                "network",
+                "socket",
+                "winerror 10054",
+                "forcibly closed",
+                "broken pipe",
+                "session",
+                "secure channel",
+            )
+        )
+
+    def _is_transient_connect_failure(self, error: BaseException) -> bool:
+        return self._is_connection_error(error)
+
+    def _log_reconnect_failure(self, error: BaseException) -> None:
+        now = time.monotonic()
+        if (
+            self._last_reconnect_failure_log_at
+            and now - self._last_reconnect_failure_log_at < self.log_throttle_interval
+        ):
+            self._suppressed_reconnect_failures += 1
+            self.logger.debug(
+                "OPC UA 重连失败（日志已合并）: %s: %s",
+                type(error).__name__,
+                error,
+            )
+            return
+        self._last_reconnect_failure_log_at = now
+        self.logger.warning(
+            "OPC UA 连接失败，后台将继续重试: %s: %s",
+            type(error).__name__,
+            error,
+        )
 
     def _take_throttled_log(
         self,
@@ -647,85 +746,23 @@ class OpcUaClient:
             suppressed_count = suppressed.pop(key, 0)
             last_log_at[key] = now
             return True, suppressed_count
-
         suppressed[key] = suppressed.get(key, 0) + 1
         return False, 0
 
-    def _log_reconnect_failure(self, error: BaseException) -> None:
-        now = time.monotonic()
-        if (
-            self._last_reconnect_failure_log_at
-            and now - self._last_reconnect_failure_log_at < self.log_throttle_interval
-        ):
-            self._suppressed_reconnect_failures += 1
-            self.logger.debug(
-                "重连失败（已合并日志）: %s: %s",
-                type(error).__name__,
-                error,
-            )
-            return
-
-        suppressed = self._suppressed_reconnect_failures
-        self._suppressed_reconnect_failures = 0
-        self._last_reconnect_failure_log_at = now
-        suffix = f"（期间合并 {suppressed} 次同类失败）" if suppressed else ""
-        if self._is_transient_connect_failure(error):
-            self.logger.warning(
-                "重连失败（服务器不可达或已断开）%s: %s: %s",
-                suffix,
-                type(error).__name__,
-                error,
-            )
-        else:
-            self.logger.error("重连失败%s: %s", suffix, error, exc_info=True)
-
     def _log_write_failure(
-        self,
-        point_path: str,
-        value_label: str,
-        error: BaseException,
-        *,
-        exc_info: bool = False,
+        self, point_path: str, value_label: str, error: BaseException
     ) -> None:
         should_log, suppressed = self._take_throttled_log(
             self._last_write_failure_log_at,
             self._suppressed_write_failures,
             point_path,
         )
-        if not should_log:
-            self.logger.debug(
-                "写入%s失败（已合并日志）: %s: %s",
+        if should_log:
+            suffix = f"（合并了之前 {suppressed} 次）" if suppressed else ""
+            self.logger.warning(
+                "写入%s失败: point=%s, error=%s%s",
                 value_label,
                 point_path,
                 error,
+                suffix,
             )
-            return
-
-        suffix = f"（期间合并 {suppressed} 次同类失败）" if suppressed else ""
-        self.logger.warning(
-            "写入%s失败%s: %s: %s",
-            value_label,
-            suffix,
-            point_path,
-            error,
-            exc_info=exc_info,
-        )
-
-    async def write_scalar_value(self, point_path: str, value: Any, variant_type: Any, value_label: str = "值") -> bool:
-        """写入单个 OPC UA 标量值，由客户端统一处理连接检查、重连与日志。"""
-        data_value = ua.DataValue(ua.Variant(value, variant_type))
-        return await self._write_node_data_value(point_path, data_value, value_label)
-
-    async def write_uint16_value(self, point_path: str, value: int) -> bool:
-        """写入 UInt16 标量值。"""
-        if value < 0 or value > 0xFFFF:
-            self.logger.error("UInt16 写入值越界: %s", value)
-            return False
-        return await self.write_scalar_value(point_path, value, ua.VariantType.UInt16, "UInt16")
-
-    async def write_uint32_value(self, point_path: str, value: int) -> bool:
-        """写入 UInt32/UDINT 标量值。"""
-        if value < 0 or value > 0xFFFFFFFF:
-            self.logger.error("UInt32 写入值越界: %s", value)
-            return False
-        return await self.write_scalar_value(point_path, value, ua.VariantType.UInt32, "UInt32")

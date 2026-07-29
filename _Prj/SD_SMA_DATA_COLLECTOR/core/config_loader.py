@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Dict, Any
 from .config_models import (
     DataPoint, DataGroup, OpcUaConfig, DatabaseConfig, AppConfig,
-    TriggerType, Communication, Connection, LoggingConfig, InsertFeedbackConfig,
+    TriggerMode, TriggerType, Communication, Connection, LoggingConfig, InsertFeedbackConfig,
     BatchUpsertConfig, IndexConfig, PersistentQueueConfig, FIXED_INDEX_COLUMNS
 )
 from .secret_store import migrate_password_mapping, resolve_password
@@ -121,6 +121,16 @@ class ConfigLoader:
                         index_type=idx_entry.get('index_type', 'btree'),
                     ))
 
+            raw_trigger_interval = group_data.get('trigger_interval_seconds')
+            raw_trigger_mode = group_data.get('trigger_mode', TriggerMode.POLL.value)
+            # 兼容手工把下拉框值直接保存为 "subscription" 的配置。
+            if (
+                isinstance(raw_trigger_interval, str)
+                and raw_trigger_interval.strip().lower() == TriggerMode.SUBSCRIPTION.value
+            ):
+                raw_trigger_mode = TriggerMode.SUBSCRIPTION.value
+                raw_trigger_interval = None
+
             group = DataGroup(
                 name=group_data['name'],
                 interval_seconds=group_data['interval_seconds'],
@@ -134,7 +144,8 @@ class ConfigLoader:
                     else group_data.get('variable_point_overrides')
                 ),
                 interval_point=group_data.get('interval_point'),
-                trigger_interval_seconds=group_data.get('trigger_interval_seconds'),
+                trigger_interval_seconds=raw_trigger_interval,
+                trigger_mode=TriggerMode(str(raw_trigger_mode).strip().lower()),
                 trigger_point=group_data.get('trigger_point'),
                 reset_trigger_after_read=group_data.get('reset_trigger_after_read', True),
                 partition_interval_years=int(
@@ -440,18 +451,19 @@ class ConfigLoader:
                     raise ValueError(f"触发类型为variable的数据组 '{group.name}' 必须指定trigger_point")
                 if group.trigger_point not in point_name_set:
                     raise ValueError(f"数据组 '{group.name}' 的触发点不存在: {group.trigger_point}")
-                if group.trigger_interval_seconds is None:
-                    group.trigger_interval_seconds = group.interval_seconds
-                try:
-                    trigger_interval = float(group.trigger_interval_seconds)
-                except (TypeError, ValueError):
-                    raise ValueError(
-                        f"数据组 '{group.name}' 的 trigger_interval_seconds 必须为数值（trigger=variable）"
-                    ) from None
-                if trigger_interval <= 0:
-                    raise ValueError(
-                        f"数据组 '{group.name}' 的 trigger_interval_seconds 必须大于 0（trigger=variable）"
-                    )
+                if group.trigger_mode == TriggerMode.POLL:
+                    if group.trigger_interval_seconds is None:
+                        group.trigger_interval_seconds = group.interval_seconds
+                    try:
+                        trigger_interval = float(group.trigger_interval_seconds)
+                    except (TypeError, ValueError):
+                        raise ValueError(
+                            f"数据组 '{group.name}' 的 trigger_interval_seconds 必须为数值（trigger=variable）"
+                        ) from None
+                    if trigger_interval <= 0:
+                        raise ValueError(
+                            f"数据组 '{group.name}' 的 trigger_interval_seconds 必须大于 0（trigger=variable）"
+                        )
 
             if group.trigger == TriggerType.TIME_AND_VARIABLE:
                 if group.is_parallel:
@@ -464,20 +476,22 @@ class ConfigLoader:
                     )
                 if group.trigger_point not in point_name_set:
                     raise ValueError(f"数据组 '{group.name}' 的触发点不存在: {group.trigger_point}")
-                if group.trigger_interval_seconds is None:
-                    raise ValueError(
-                        f"数据组 '{group.name}' 使用 time_and_variable 时必须配置 trigger_interval_seconds（秒）"
-                    )
-                try:
-                    tri = float(group.trigger_interval_seconds)
-                except (TypeError, ValueError):
-                    raise ValueError(
-                        f"数据组 '{group.name}' 的 trigger_interval_seconds 必须为数值"
-                    ) from None
-                if tri <= 0:
-                    raise ValueError(
-                        f"数据组 '{group.name}' 的 trigger_interval_seconds 必须大于 0"
-                    )
+                if group.trigger_mode == TriggerMode.POLL:
+                    if group.trigger_interval_seconds is None:
+                        raise ValueError(
+                            f"数据组 '{group.name}' 使用 time_and_variable 轮询时必须配置 "
+                            "trigger_interval_seconds（秒）"
+                        )
+                    try:
+                        tri = float(group.trigger_interval_seconds)
+                    except (TypeError, ValueError):
+                        raise ValueError(
+                            f"数据组 '{group.name}' 的 trigger_interval_seconds 必须为数值"
+                        ) from None
+                    if tri <= 0:
+                        raise ValueError(
+                            f"数据组 '{group.name}' 的 trigger_interval_seconds 必须大于 0"
+                        )
 
             # 验证索引配置
             if group.indexes:

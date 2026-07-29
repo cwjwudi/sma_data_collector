@@ -33,6 +33,21 @@ const PARTITION_INTERVAL_YEAR_OPTIONS = [
     return { value: String(years), label: String(years) };
   }),
 ];
+const TRIGGER_SOURCE_OPTIONS = [
+  { value: "subscription", label: "订阅（推荐）" },
+  ...Array.from({ length: 10 }, (_, i) => {
+    const seconds = i + 1;
+    return { value: String(seconds), label: `${seconds} 秒轮询` };
+  }),
+];
+
+function getTriggerSourceValue(group) {
+  if (group.trigger_mode === "subscription" || group.trigger_interval_seconds === "subscription") {
+    return "subscription";
+  }
+  const seconds = Number(group.trigger_interval_seconds);
+  return String(Number.isInteger(seconds) && seconds >= 1 && seconds <= 10 ? seconds : 1);
+}
 
 function normalizePartitionIntervalYears(value, { forceNoPartition = false } = {}) {
   if (forceNoPartition) {
@@ -1077,7 +1092,7 @@ function renderGroups() {
         ),
       ])
     );
-    card.appendChild(createRow([createHeaderCell("触发点"), createHeaderCell("触发间隔(秒)"), createHeaderCell("数据点列表(多选)"), createHeaderCell("唯一键点"), createHeaderCell("外部启用点位")]));
+    card.appendChild(createRow([createHeaderCell("触发点"), createHeaderCell("触发方式/间隔"), createHeaderCell("数据点列表(多选)"), createHeaderCell("唯一键点"), createHeaderCell("外部启用点位")]));
     const advancedActions = document.createElement("div");
     advancedActions.className = "group-config-actions";
     advancedActions.appendChild(
@@ -1103,9 +1118,20 @@ function renderGroups() {
           item.trigger_point || "",
           (v) => (currentConfig.groups[idx].trigger_point = v)
         ),
-        createInput(item.trigger_interval_seconds || "", (v) => {
-          currentConfig.groups[idx].trigger_interval_seconds = v === "" ? null : Number(v);
-        }, "number"),
+        createSelect(
+          TRIGGER_SOURCE_OPTIONS,
+          getTriggerSourceValue(item),
+          (v) => {
+            if (v === "subscription") {
+              currentConfig.groups[idx].trigger_mode = "subscription";
+              // 保留兼容回退值；断言订阅不可用时仍可明确退回 1 秒轮询。
+              currentConfig.groups[idx].trigger_interval_seconds = 1;
+            } else {
+              currentConfig.groups[idx].trigger_mode = "poll";
+              currentConfig.groups[idx].trigger_interval_seconds = Number(v);
+            }
+          }
+        ),
         createMultiSelect(pointOptions, item.data_points || [], (values) => {
           currentConfig.groups[idx].data_points = values;
           const overrides = currentConfig.groups[idx].variable_point_overrides || {};
@@ -1201,6 +1227,8 @@ function renderGroups() {
       enable_point: null,
       variable_point_overrides: {},
       trigger_point: "",
+      trigger_mode: "poll",
+      trigger_interval_seconds: 1,
       reset_trigger_after_read: true,
       partition_interval_years: 1,
       recreate_interval_days: 1,

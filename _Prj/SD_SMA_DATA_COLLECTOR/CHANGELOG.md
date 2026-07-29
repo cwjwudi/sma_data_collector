@@ -3,6 +3,14 @@
 本文档记录 SMA 数据采集系统的所有重要更新和变更。
 
 ## [Unreleased]
+### asyncua、触发订阅与完整重连状态机
+- OPC UA 客户端由同步 `python-opcua` 迁移到原生异步 `asyncua`，批量读写、心跳、触发复位及插入反馈不再占用工作线程。
+- 新增 `disconnected/connecting/connected/reconnecting/stopping` 连接状态、单重连任务、指数退避、操作超时和并发上限；重连成功会自动恢复全部触发订阅。
+- `variable` 与 `time_and_variable` 新增 `trigger_mode: subscription`，同时保留 `poll` 兼容模式；并行布尔数组触发也支持订阅事件。
+- Web 配置页将触发方式/间隔统一为“订阅”及 1–10 秒下拉选项，配置加载器继续接受旧配置中的任意正数间隔。
+- OPC UA 浏览接口同步迁移为异步调用，运行快照新增连接状态与有效订阅数量。
+- 新增单元测试、真实 PLC/MySQL 冒烟测试、主动断线恢复测试和至少一小时实机连续测试工具。
+
 ### SQLite 持久化采集队列
 - 新增可选的 SQLite WAL outbox；PLC 触发确认语义升级为“本地持久化事务已提交”。
 - 支持 pending/processing/retry/dead-letter/completed 状态、启动恢复、指数退避、最大重试次数和容量保护。

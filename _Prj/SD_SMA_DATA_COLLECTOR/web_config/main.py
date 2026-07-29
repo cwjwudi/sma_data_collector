@@ -260,31 +260,31 @@ def opcua_status() -> dict[str, Any]:
 
 
 @app.post("/api/opcua/connect")
-def opcua_connect(req: OpcUaConnectRequest) -> dict[str, Any]:
+async def opcua_connect(req: OpcUaConnectRequest) -> dict[str, Any]:
     try:
-        return opcua_browser.connect(host=req.host, port=req.port)
+        return await opcua_browser.connect(host=req.host, port=req.port)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=400, detail=f"连接失败: {exc}") from exc
 
 
 @app.post("/api/opcua/disconnect")
-def opcua_disconnect() -> dict[str, Any]:
-    opcua_browser.disconnect()
+async def opcua_disconnect() -> dict[str, Any]:
+    await opcua_browser.disconnect()
     return {"status": "disconnected"}
 
 
 @app.get("/api/opcua/browse")
-def opcua_browse(node_id: str | None = None) -> dict[str, Any]:
+async def opcua_browse(node_id: str | None = None) -> dict[str, Any]:
     try:
-        return {"items": opcua_browser.browse(node_id=node_id)}
+        return {"items": await opcua_browser.browse(node_id=node_id)}
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.get("/api/opcua/node")
-def opcua_node_meta(node_id: str) -> dict[str, Any]:
+async def opcua_node_meta(node_id: str) -> dict[str, Any]:
     try:
-        return opcua_browser.node_meta(node_id=node_id)
+        return await opcua_browser.node_meta(node_id=node_id)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

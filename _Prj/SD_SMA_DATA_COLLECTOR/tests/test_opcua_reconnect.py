@@ -1,31 +1,13 @@
 import asyncio
-import sys
-import time
-import types
 import unittest
 from unittest.mock import AsyncMock, Mock, patch
 
-try:
-    import opcua  # noqa: F401
-except ModuleNotFoundError:
-    fake_opcua = types.ModuleType("opcua")
-    fake_opcua.Client = object
-    fake_opcua.ua = types.SimpleNamespace(
-        AttributeIds=types.SimpleNamespace(
-            AccessLevel="AccessLevel",
-            UserAccessLevel="UserAccessLevel",
-            Value="Value",
-        ),
-        DataValue=lambda value: value,
-        Variant=lambda value, variant_type: (value, variant_type),
-        VariantType=types.SimpleNamespace(Boolean="Boolean", UInt16="UInt16", UInt32="UInt32"),
-    )
-    sys.modules["opcua"] = fake_opcua
+from asyncua import ua
 
-from communication.opcua_feedback_writer import OpcUaFeedbackWriter
 from communication.communication_manager import CommunicationManager
 from communication.heartbeat_manager import HeartbeatManager
-from communication.opcua_client import OpcUaClient
+from communication.opcua_client import ConnectionState, OpcUaClient
+from communication.opcua_feedback_writer import OpcUaFeedbackWriter
 from core.config_models import (
     AppConfig,
     Communication,
@@ -36,6 +18,13 @@ from core.config_models import (
 )
 
 
+def mark_connected(client: OpcUaClient, raw_client) -> None:
+    client.client = raw_client
+    client.connected = True
+    client.state = ConnectionState.CONNECTED
+    client._connected_event.set()
+
+
 class TestOpcUaReconnect(unittest.IsolatedAsyncioTestCase):
     async def test_communication_initializes_when_plc_is_offline(self):
         config = AppConfig(
@@ -44,7 +33,9 @@ class TestOpcUaReconnect(unittest.IsolatedAsyncioTestCase):
             opcua=OpcUaConfig(),
             database=DatabaseConfig(type="sqlite", name=":memory:"),
             communications=[
-                Communication(name="PLC_TPS", type="opcua", host="127.0.0.1", port=4840),
+                Communication(
+                    name="PLC_TPS", type="opcua", host="127.0.0.1", port=4840
+                ),
             ],
             connections=[],
         )
@@ -53,7 +44,9 @@ class TestOpcUaReconnect(unittest.IsolatedAsyncioTestCase):
         fake_client.disconnect = AsyncMock()
         fake_client.is_connected.return_value = False
 
-        with patch("communication.communication_manager.OpcUaClient", return_value=fake_client):
+        with patch(
+            "communication.communication_manager.OpcUaClient", return_value=fake_client
+        ):
             manager = CommunicationManager(config)
             initialized = await manager.initialize_connections()
             self.assertTrue(initialized)
@@ -70,13 +63,17 @@ class TestOpcUaReconnect(unittest.IsolatedAsyncioTestCase):
             retry_delay=0,
             health_check_interval=0,
         )
+        client._ensure_background_tasks = AsyncMock()
 
         class RefusingClient:
-            def __init__(self, _server_url):
+            def __init__(self, **_kwargs):
                 pass
 
-            def connect(self):
+            async def connect(self):
                 raise ConnectionRefusedError(10061, "connection refused")
+
+            async def disconnect(self):
+                return None
 
         with patch("communication.opcua_client.Client", RefusingClient):
             self.assertFalse(await client._attempt_reconnect(wait_before_attempt=False))
@@ -89,11 +86,15 @@ class TestOpcUaReconnect(unittest.IsolatedAsyncioTestCase):
             retry_delay=0,
             health_check_interval=0,
         )
+        client._ensure_background_tasks = AsyncMock()
 
         fake_client = Mock()
-        fake_client.connect.return_value = None
+        fake_client.connect = AsyncMock()
+        fake_client.disconnect = AsyncMock()
 
-        with patch("communication.opcua_client.Client", return_value=fake_client) as client_factory:
+        with patch(
+            "communication.opcua_client.Client", return_value=fake_client
+        ) as client_factory:
             results = await asyncio.gather(
                 client._attempt_reconnect(wait_before_attempt=False),
                 client._attempt_reconnect(wait_before_attempt=False),
@@ -116,7 +117,9 @@ class TestOpcUaReconnect(unittest.IsolatedAsyncioTestCase):
             opcua=OpcUaConfig(),
             database=DatabaseConfig(type="sqlite", name=":memory:"),
             communications=[
-                Communication(name="PLC_TPS", type="opcua", host="127.0.0.1", port=4840),
+                Communication(
+                    name="PLC_TPS", type="opcua", host="127.0.0.1", port=4840
+                ),
             ],
             connections=[
                 Connection(
@@ -142,7 +145,7 @@ class TestOpcUaReconnect(unittest.IsolatedAsyncioTestCase):
             1,
         )
 
-    async def test_batch_read_still_uses_get_values(self):
+    async def test_batch_read_uses_async_read_values(self):
         client = OpcUaClient(
             "opc.tcp://127.0.0.1:4840",
             retry_delay=0,
@@ -150,9 +153,9 @@ class TestOpcUaReconnect(unittest.IsolatedAsyncioTestCase):
         )
         raw_client = Mock()
         raw_client.get_node.side_effect = lambda path: f"node:{path}"
-        raw_client.get_values.return_value = [12.5, 13.5]
-        client.client = raw_client
-        client.connected = True
+        raw_client.read_values = AsyncMock(return_value=[12.5, 13.5])
+        raw_client.disconnect = AsyncMock()
+        mark_connected(client, raw_client)
         points = [
             DataPoint(name="p1", path="ns=2;s=p1", description=""),
             DataPoint(name="p2", path="ns=2;s=p2", description=""),
@@ -162,23 +165,26 @@ class TestOpcUaReconnect(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(data["p1"]["value"], 12.5)
         self.assertEqual(data["p2"]["value"], 13.5)
-        raw_client.get_values.assert_called_once_with(["node:ns=2;s=p1", "node:ns=2;s=p2"])
+        raw_client.read_values.assert_awaited_once_with(
+            ["node:ns=2;s=p1", "node:ns=2;s=p2"]
+        )
 
-    async def test_batch_read_failure_falls_back_to_sequential_read(self):
+    async def test_batch_read_failure_falls_back_to_async_sequential_read(self):
         client = OpcUaClient(
             "opc.tcp://127.0.0.1:4840",
             retry_delay=0,
             health_check_interval=0,
         )
+        batch_nodes = [Mock(), Mock()]
         node1 = Mock()
-        node1.get_value.return_value = 21
+        node1.read_value = AsyncMock(return_value=21)
         node2 = Mock()
-        node2.get_value.return_value = 22
+        node2.read_value = AsyncMock(return_value=22)
         raw_client = Mock()
-        raw_client.get_values.side_effect = ValueError("batch unsupported")
-        raw_client.get_node.side_effect = ["batch-node-1", "batch-node-2", node1, node2]
-        client.client = raw_client
-        client.connected = True
+        raw_client.read_values = AsyncMock(side_effect=ValueError("batch unsupported"))
+        raw_client.get_node.side_effect = [*batch_nodes, node1, node2]
+        raw_client.disconnect = AsyncMock()
+        mark_connected(client, raw_client)
         points = [
             DataPoint(name="p1", path="ns=2;s=p1", description=""),
             DataPoint(name="p2", path="ns=2;s=p2", description=""),
@@ -188,29 +194,35 @@ class TestOpcUaReconnect(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(data["p1"]["value"], 21)
         self.assertEqual(data["p2"]["value"], 22)
-        self.assertEqual(raw_client.get_values.call_count, 1)
-        node1.get_value.assert_called_once()
-        node2.get_value.assert_called_once()
+        node1.read_value.assert_awaited_once()
+        node2.read_value.assert_awaited_once()
 
-    async def test_write_uint32_uses_unified_scalar_writer(self):
+    async def test_write_uint32_uses_async_node_writer(self):
         client = OpcUaClient(
             "opc.tcp://127.0.0.1:4840",
             retry_delay=0,
             health_check_interval=0,
         )
-        attr = Mock()
-        attr.Value.Value = 3
         node = Mock()
-        node.get_attributes.return_value = [attr, attr]
+        node.get_access_level = AsyncMock(
+            return_value={ua.AccessLevel.CurrentRead, ua.AccessLevel.CurrentWrite}
+        )
+        node.get_user_access_level = AsyncMock(
+            return_value={ua.AccessLevel.CurrentRead, ua.AccessLevel.CurrentWrite}
+        )
+        node.write_value = AsyncMock()
         raw_client = Mock()
         raw_client.get_node.return_value = node
-        client.client = raw_client
-        client.connected = True
+        raw_client.disconnect = AsyncMock()
+        mark_connected(client, raw_client)
 
         self.assertTrue(await client.write_uint32_value("ns=2;s=feedback", 7))
 
-        node.get_attributes.assert_called_once()
-        node.set_attribute.assert_called_once()
+        written = node.write_value.await_args.args[0]
+        self.assertIsInstance(written, ua.DataValue)
+        self.assertEqual(written.Value.Value, 7)
+        self.assertEqual(written.Value.VariantType, ua.VariantType.UInt32)
+        self.assertIsNone(written.SourceTimestamp)
 
     async def test_feedback_writer_uses_client_uint32_writer(self):
         fake_client = Mock()
@@ -221,22 +233,56 @@ class TestOpcUaReconnect(unittest.IsolatedAsyncioTestCase):
 
         fake_client.write_uint32_value.assert_awaited_once_with("ns=2;s=feedback", 5)
 
-    async def test_blocking_opcua_timeout_discards_current_client(self):
+    async def test_async_operation_timeout_discards_session_without_worker_thread(self):
         client = OpcUaClient(
             "opc.tcp://127.0.0.1:4840",
             retry_delay=0,
             health_check_interval=0,
         )
+        client.operation_timeout = 0.01
+        client._ensure_background_tasks = AsyncMock()
         raw_client = Mock()
-        client.client = raw_client
-        client.connected = True
-        client._async_operation_timeout = 0.01
+        raw_client.disconnect = AsyncMock()
+        mark_connected(client, raw_client)
+
+        async def slow_operation(_raw_client):
+            await asyncio.sleep(0.1)
 
         with self.assertRaises(TimeoutError):
-            await client._run_blocking_opcua("测试慢调用", lambda: time.sleep(0.1))
+            await client._run_operation("测试慢调用", slow_operation)
 
         self.assertFalse(client.connected)
         self.assertIsNone(client.client)
+        self.assertEqual(client.state, ConnectionState.DISCONNECTED)
+
+    async def test_reconnect_restores_registered_subscription(self):
+        client = OpcUaClient(
+            "opc.tcp://127.0.0.1:4840",
+            retry_delay=0,
+            health_check_interval=0,
+        )
+        client._ensure_background_tasks = AsyncMock()
+        point = DataPoint("trigger", "ns=2;s=trigger", "")
+        received = []
+        await client.subscribe_data_change(point, received.append)
+        self.assertEqual(client.get_subscription_count(), 0)
+
+        subscription = Mock()
+        subscription.subscribe_data_change = AsyncMock(return_value=42)
+        subscription.delete = AsyncMock()
+        raw_client = Mock()
+        raw_client.connect = AsyncMock()
+        raw_client.disconnect = AsyncMock()
+        raw_client.create_subscription = AsyncMock(return_value=subscription)
+        raw_client.get_node.return_value = Mock()
+
+        with patch("communication.opcua_client.Client", return_value=raw_client):
+            self.assertTrue(await client._attempt_reconnect(wait_before_attempt=False))
+
+        subscription.subscribe_data_change.assert_awaited_once()
+        registration = next(iter(client._subscriptions.values()))
+        self.assertEqual(registration.handle, 42)
+        self.assertEqual(client.get_subscription_count(), 1)
 
 
 if __name__ == "__main__":
