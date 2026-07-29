@@ -31,6 +31,12 @@ def build_subscription_config(source: Path) -> tuple[Path, dict[str, Any]]:
             group["trigger_interval_seconds"] = (
                 group.get("trigger_interval_seconds", 1) or 1
             )
+        # Reconnection validation must not depend on batch lifecycle state.
+        # Partitioning and batch-context behavior are covered by separate tests.
+        group["partition_interval_years"] = 0
+    database = payload.setdefault("database", {})
+    database["name"] = f"{database.get('name', 'collector')}_reconnect_test"
+    payload.setdefault("persistent_queue", {})["enabled"] = False
     payload.setdefault("logging", {})["level"] = "WARNING"
     temp_path = source.with_name(
         f".{source.stem}.asyncua-live-{os.getpid()}-{time.time_ns()}.json"
@@ -107,11 +113,11 @@ def count_rows(system: DataCollectionSystem) -> dict[str, int | None]:
     fixed_group = system.storage_processor.batch_master_group_name
     for group in system.config.groups:
         try:
-            table = system.db_manager.get_current_table_name(
-                group.name,
-                fixed_table=group.name == fixed_group,
-                partition_interval_years=group.partition_interval_years,
-            )
+            table = system.db_manager.current_table_names.get(group.name)
+            if group.name == fixed_group:
+                table = group.name
+            if not table:
+                raise RuntimeError(f"no active database table for {group.name}")
             result = system.db_manager.execute_query(f"SELECT COUNT(*) FROM `{table}`")
             counts[group.name] = int(result[0][0]) if result else 0
         except Exception:

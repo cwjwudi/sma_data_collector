@@ -128,7 +128,11 @@ class OpcUaClient:
             url=self.server_url,
             timeout=self.operation_timeout,
             watchdog_intervall=max(0.2, min(1.0, self.operation_timeout / 2)),
-            auto_reconnect=False,
+            **(
+                {"auto_reconnect": False}
+                if "auto_reconnect" in inspect.signature(Client).parameters
+                else {}
+            ),
         )
 
     async def connect(self) -> bool:

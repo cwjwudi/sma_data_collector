@@ -26,6 +26,27 @@ def mark_connected(client: OpcUaClient, raw_client) -> None:
 
 
 class TestOpcUaReconnect(unittest.IsolatedAsyncioTestCase):
+    async def test_client_factory_supports_asyncua_without_auto_reconnect(self):
+        captured = {}
+
+        class LegacyClient:
+            def __init__(self, url, timeout=4, watchdog_intervall=1.0):
+                captured.update(
+                    url=url,
+                    timeout=timeout,
+                    watchdog_intervall=watchdog_intervall,
+                )
+
+        client = OpcUaClient(
+            "opc.tcp://127.0.0.1:4840",
+            health_check_interval=0,
+        )
+        with patch("communication.opcua_client.Client", LegacyClient):
+            raw_client = client._create_client()
+
+        self.assertIsInstance(raw_client, LegacyClient)
+        self.assertEqual(captured["url"], "opc.tcp://127.0.0.1:4840")
+
     async def test_communication_initializes_when_plc_is_offline(self):
         config = AppConfig(
             points=[],

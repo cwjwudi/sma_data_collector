@@ -1,0 +1,26 @@
+[
+  {
+    "variable": "DataSQLAla:uiManualIndex",
+    "value": 71
+  },
+  {
+    "variable": "DataSQLAud:uiManualIndex",
+    "value": 72
+  },
+  {
+    "variable": "DataSQLRec:bManualTrigger",
+    "value": true
+  },
+  {
+    "variable": "DataSQLPro:bManualTrigger",
+    "value": true
+  },
+  {
+    "variable": "DataSQLAla:bManualTrigger",
+    "value": true
+  },
+  {
+    "variable": "DataSQLAud:bManualTrigger",
+    "value": true
+  }
+]

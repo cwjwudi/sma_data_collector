@@ -105,12 +105,16 @@ async def run_test(
     )
     if verify_disable_flush:
         configure_disable_flush_test(test_payload, toggle_group, outbox_path)
-    temp_path = ""
-    with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".json", encoding="utf-8", delete=False
-    ) as temp_file:
-        json.dump(test_payload, temp_file, ensure_ascii=False, indent=2)
-        temp_path = temp_file.name
+    # Keep the derived config beside the source config. Encrypted database
+    # passwords are intentionally bound to that directory's Fernet key.
+    source_config = source_config.resolve()
+    temp_path = source_config.with_name(
+        f".{source_config.stem}.group-enable-{os.getpid()}-{time.time_ns()}.json"
+    )
+    temp_path.write_text(
+        json.dumps(test_payload, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
 
     started_at = datetime.now()
     started_monotonic = time.monotonic()
@@ -120,7 +124,7 @@ async def run_test(
     flush_windows: list[dict[str, Any]] = []
     error: str | None = None
     db_summary: dict[str, Any] = {}
-    system = DataCollectionSystem(temp_path)
+    system = DataCollectionSystem(str(temp_path))
     start_task: asyncio.Task | None = None
     control_task: asyncio.Task | None = None
     opcua_client = None
@@ -297,11 +301,11 @@ async def run_test(
 
         await asyncio.sleep(2.0)
         for group in system.config.groups:
-            table = system.db_manager.get_current_table_name(
-                group.name,
-                partition_time=started_at,
-                partition_interval_years=group.partition_interval_years,
-            )
+            if group.name != toggle_group:
+                continue
+            table = system.db_manager.current_table_names.get(group.name)
+            if not table:
+                raise RuntimeError(f"no active database table for {group.name}")
             rows = system.db_manager.execute_query(
                 f"SELECT COUNT(*) FROM `{table}` WHERE `created_at` >= :started_at",
                 {"started_at": started_at.replace(microsecond=0)},
@@ -335,10 +339,7 @@ async def run_test(
             and system.storage_processor.persistent_store is not None
         ):
             system.storage_processor.persistent_store.close()
-        try:
-            os.unlink(temp_path)
-        except OSError:
-            pass
+        temp_path.unlink(missing_ok=True)
         if verify_disable_flush:
             for candidate in (outbox_path, Path(f"{outbox_path}-wal"), Path(f"{outbox_path}-shm")):
                 try:

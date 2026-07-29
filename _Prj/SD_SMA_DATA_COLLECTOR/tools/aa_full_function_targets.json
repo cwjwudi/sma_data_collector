@@ -1,0 +1,35 @@
+{
+  "access_policy": {
+    "mode": "agent_directed",
+    "allow_dynamic_pvi_read": true,
+    "allow_dynamic_pvi_write": true,
+    "allow_dynamic_opcua_read": false,
+    "allow_dynamic_opcua_write": false,
+    "allowed_target_roles": [
+      "dedicated_test_plc"
+    ],
+    "blocked_name_patterns": [
+      "*safety*",
+      "*safeio*",
+      "*physicalio*",
+      "*iomap*",
+      "*system*",
+      "sys:*"
+    ]
+  },
+  "pvi": {
+    "enabled": true,
+    "verify_after_download": false,
+    "read_whitelist": [],
+    "write_whitelist": [],
+    "restore_writes": [],
+    "validation_variables": []
+  },
+  "targets": {
+    "test_plc_233": {
+      "ip": "192.168.50.233",
+      "role": "dedicated_test_plc",
+      "allow_auto_download": false
+    }
+  }
+}
