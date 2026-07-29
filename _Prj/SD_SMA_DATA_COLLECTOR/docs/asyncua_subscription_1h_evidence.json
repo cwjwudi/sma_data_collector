@@ -1,0 +1,103 @@
+{
+  "started_at": "2026-07-29T11:42:56.086867+08:00",
+  "ended_at": "2026-07-29T12:44:02.015278+08:00",
+  "source_config": "C:\\Users\\BR\\codex_ws\\p000_sd_sma_scada\\config\\collector\\AA_test.json",
+  "duration_requested_seconds": 3665.0,
+  "duration_actual_seconds": 3665.1879999999946,
+  "attempts": {
+    "Data_Recipe": 1319,
+    "Data_Product": 2638,
+    "Data_Alarm": 2638,
+    "Data_Audit": 2638,
+    "Data_Batch": 131,
+    "Data_BatchInfo": 527
+  },
+  "confirmed": {
+    "Data_Recipe": 1319,
+    "Data_Product": 2638,
+    "Data_Alarm": 2638,
+    "Data_Audit": 2638,
+    "Data_Batch": 131,
+    "Data_BatchInfo": 527
+  },
+  "collected": {
+    "Data_Recipe": 1321,
+    "Data_Product": 6304,
+    "Data_Alarm": 5936,
+    "Data_Audit": 5772,
+    "Data_Batch": 133,
+    "Data_BatchInfo": 680
+  },
+  "faults": [
+    {
+      "scheduled_at_seconds": 900.0,
+      "recovered": true,
+      "recovery_seconds": 0.09399999999732245,
+      "subscription_handles_before": 6,
+      "subscription_handles_after": 6
+    },
+    {
+      "scheduled_at_seconds": 2400.0,
+      "recovered": true,
+      "recovery_seconds": 0.11000000000058208,
+      "subscription_handles_before": 6,
+      "subscription_handles_after": 6
+    }
+  ],
+  "errors": [],
+  "connection_states_before_shutdown": {
+    "PLC_TPS": "connected"
+  },
+  "collector_metrics": {
+    "subscription_events_received": 21072,
+    "parallel_edges_detected": 11708,
+    "parallel_rows_accepted": 11708,
+    "parallel_rows_rejected": 0,
+    "parallel_trigger_reset_confirmed": 11708,
+    "parallel_trigger_reasserted_during_confirm": 5
+  },
+  "storage_metrics": {
+    "db_rows_committed": 20015,
+    "db_rows_unique_conflict": 131,
+    "db_rows_failed": 0,
+    "db_rows_dead_letter": 0,
+    "shutdown_rows_flush_attempted": 56,
+    "shutdown_rows_remaining": 0,
+    "queue_size": 0,
+    "retry_queue_size": 0,
+    "dead_letter_queue_size": 0,
+    "inflight_size": 0,
+    "outbox_enabled": 0,
+    "outbox_pending_size": 0,
+    "outbox_processing_size": 0,
+    "outbox_retry_size": 0,
+    "outbox_dead_letter_size": 0,
+    "outbox_completed_size": 0,
+    "outbox_file_bytes": 0
+  },
+  "database_rows_before": {
+    "Data_Recipe": 5391,
+    "Data_Product": 33356,
+    "Data_Alarm": 73024,
+    "Data_Audit": 69784,
+    "Data_Batch": 1066,
+    "Data_BatchInfo": 6651
+  },
+  "database_rows_after": {
+    "Data_Recipe": 6708,
+    "Data_Product": 39656,
+    "Data_Alarm": 78918,
+    "Data_Audit": 75550,
+    "Data_Batch": 1067,
+    "Data_BatchInfo": 7331
+  },
+  "database_row_deltas": {
+    "Data_Product": 6300,
+    "Data_Recipe": 1317,
+    "Data_Alarm": 5894,
+    "Data_BatchInfo": 680,
+    "Data_Audit": 5766,
+    "Data_Batch": 1
+  },
+  "passed": true
+}
