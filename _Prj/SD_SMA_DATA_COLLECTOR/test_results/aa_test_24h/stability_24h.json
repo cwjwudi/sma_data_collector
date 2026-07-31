@@ -1,0 +1,121 @@
+{
+  "test": "aa_full_function_mixed_mode_soak",
+  "config": "C:\\Users\\BR\\codex_ws\\p000_sd_sma_scada\\config\\collector\\AA_test.json",
+  "started_at": "2026-07-30T11:21:27.375121+08:00",
+  "ended_at": "2026-07-31T11:21:25.509221+08:00",
+  "duration_requested_seconds": 86400.0,
+  "duration_actual_seconds": 86400.14099999997,
+  "passed": true,
+  "events": {
+    "Data_Product": 88002,
+    "Data_Alarm": 12780,
+    "Data_Audit": 9153,
+    "Data_Recipe": 2293,
+    "Data_Batch": 1817,
+    "Data_BatchInfo": 2339
+  },
+  "trigger_types": {
+    "Data_Product": {
+      "time": 86401,
+      "variable": 1601
+    },
+    "Data_Alarm": {
+      "variable": 12780
+    },
+    "Data_Audit": {
+      "variable": 9153
+    },
+    "Data_Recipe": {
+      "variable": 2293
+    },
+    "Data_Batch": {
+      "variable": 1817
+    },
+    "Data_BatchInfo": {
+      "variable": 2339
+    }
+  },
+  "faults": [
+    {
+      "scheduled_at_seconds": 21600.0,
+      "communication": "PLC_TPS",
+      "recovered": true,
+      "recovery_seconds": 0.1409999999741558,
+      "subscription_handles_before": 6,
+      "subscription_handles_after": 6
+    },
+    {
+      "scheduled_at_seconds": 43200.0,
+      "communication": "PLC_TPS",
+      "recovered": true,
+      "recovery_seconds": 0.1879999999946449,
+      "subscription_handles_before": 6,
+      "subscription_handles_after": 6
+    },
+    {
+      "scheduled_at_seconds": 64800.0,
+      "communication": "PLC_TPS",
+      "recovered": true,
+      "recovery_seconds": 0.1090000000258442,
+      "subscription_handles_before": 6,
+      "subscription_handles_after": 6
+    }
+  ],
+  "errors": [],
+  "connection_states_before_shutdown": {
+    "PLC_TPS": "connected"
+  },
+  "collector_metrics": {
+    "subscription_events_received": 37900,
+    "parallel_edges_detected": 21933,
+    "parallel_rows_accepted": 21933,
+    "parallel_rows_rejected": 0,
+    "parallel_trigger_reset_confirmed": 21933
+  },
+  "storage_metrics": {
+    "db_rows_committed": 116340,
+    "db_rows_unique_conflict": 52,
+    "db_rows_failed": 1792,
+    "db_rows_dead_letter": 0,
+    "db_rows_retried": 1800,
+    "db_rows_queued_for_retry": 1800,
+    "shutdown_rows_flush_attempted": 2,
+    "shutdown_rows_remaining": 0,
+    "queue_size": 0,
+    "retry_queue_size": 0,
+    "dead_letter_queue_size": 0,
+    "inflight_size": 0,
+    "outbox_enabled": 0,
+    "outbox_pending_size": 0,
+    "outbox_processing_size": 0,
+    "outbox_retry_size": 0,
+    "outbox_dead_letter_size": 0,
+    "outbox_completed_size": 0,
+    "outbox_file_bytes": 0
+  },
+  "database_rows_before": {
+    "Data_Recipe": 6855,
+    "Data_Product": 45052,
+    "Data_Alarm": 79781,
+    "Data_Audit": 76139,
+    "Data_Batch": 1122,
+    "Data_BatchInfo": 7448
+  },
+  "database_rows_after": {
+    "Data_Recipe": 9297,
+    "Data_Product": 138958,
+    "Data_Alarm": 93414,
+    "Data_Audit": 85906,
+    "Data_Batch": 2057,
+    "Data_BatchInfo": 9899
+  },
+  "database_row_delta_rule": "A partition table absent before startup is treated as a zero-row baseline.",
+  "database_row_deltas": {
+    "Data_Audit": 9767,
+    "Data_BatchInfo": 2451,
+    "Data_Batch": 935,
+    "Data_Recipe": 2442,
+    "Data_Alarm": 13633,
+    "Data_Product": 93906
+  }
+}
