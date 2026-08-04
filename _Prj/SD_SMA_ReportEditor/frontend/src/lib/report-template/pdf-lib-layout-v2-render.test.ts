@@ -729,6 +729,79 @@ describe("pdf-lib-layout-v2-render", () => {
     expect(chromeStroke.test(await plainFor(undefined))).toBe(true);
   });
 
+  it("040 D10h: cover header chrome gone after hideBordersOnTemplateSheet", async () => {
+    const { hideBordersOnTemplateSheet } = await import("@/lib/report-template/show-border");
+    const { makeLayoutZoneElement } = await import("@/lib/report-template/layout-zone-element");
+    const chromeStroke = /0\.86\d*\s+0\.86\d*\s+0\.86\d*\s+RG/;
+
+    function buildCoverHeaderTmpl(showBorder: boolean) {
+      const b = blankZonesSnapshot();
+      b.layoutSnapshot.headerBandMm = 18;
+      const tmpl = createTemplate({
+        name: "040-hdr-chrome",
+        paperKind: "A4",
+        orientation: "portrait",
+        layoutPresetId: null,
+        layoutSnapshot: b.layoutSnapshot,
+        headerText: "",
+        footerText: "",
+        headerElements: [],
+        footerElements: [],
+        coverLayoutPresetId: "c",
+        coverLayoutSnapshot: { ...b.layoutSnapshot, headerBandMm: 18 },
+        coverHeaderText: "",
+        coverFooterText: "",
+        coverHeaderElements: [],
+        coverFooterElements: [],
+        coverBodyZoneElements: [],
+        backLayoutPresetId: null,
+        backLayoutSnapshot: b.layoutSnapshot,
+        backHeaderText: "",
+        backFooterText: "",
+        backHeaderElements: [],
+        backFooterElements: [],
+        backBodyZoneElements: [],
+      });
+      const hz = makeLayoutZoneElement("text");
+      hz.id = "hdr-probe";
+      hz.text = "HdrChromeProbe";
+      hz.x = 20;
+      hz.y = 4;
+      hz.w = 200;
+      hz.h = 22;
+      hz.bgColor = "transparent";
+      hz.showBorder = showBorder;
+      tmpl.coverHeaderElements.push(hz);
+      const body = hydrateTemplateElement({
+        id: "body-quiet",
+        type: "text",
+        text: "x",
+        x: 40,
+        y: 40,
+        w: 40,
+        h: 16,
+        showBorder: false,
+        bgColor: "transparent",
+      });
+      ensureBodyPages(tmpl)[0]!.splice(0, ensureBodyPages(tmpl)[0]!.length, body);
+      return tmpl;
+    }
+
+    async function plainOf(tmpl: ReturnType<typeof createTemplate>): Promise<string> {
+      const doc = await PDFDocument.create();
+      const font = await doc.embedFont(StandardFonts.Helvetica);
+      await appendPdfLibLayoutV2Pages(doc, { tmpl, previewValues: {}, font, useWinAnsi: true });
+      return inflatedPdfPlain(await doc.save({ useObjectStreams: false }));
+    }
+
+    expect(chromeStroke.test(await plainOf(buildCoverHeaderTmpl(true)))).toBe(true);
+
+    const tmpl = buildCoverHeaderTmpl(true);
+    expect(hideBordersOnTemplateSheet(tmpl, "cover")).toBeGreaterThanOrEqual(1);
+    expect(tmpl.coverHeaderElements[0]!.showBorder).toBe(false);
+    expect(chromeStroke.test(await plainOf(tmpl))).toBe(false);
+  });
+
   it("circle pageNumber diameter follows 2.75em not full control height", async () => {
     const fs = await import("node:fs");
     const path = await import("node:path");

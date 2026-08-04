@@ -1,17 +1,17 @@
 {
-  "version": "0.3.145",
-  "releasedAt": "2026-07-29T16:21:30.000Z",
-  "notes": "Report Editor AI 0.3.145\n\n- 035：档3渲染BelowNormal；档4不妥协拉满HIGHEST（强机/测试机）",
+  "version": "0.3.146",
+  "releasedAt": "2026-08-04T05:56:39.861Z",
+  "notes": "040：模版一键隐藏边框覆盖页眉/页脚；编辑器 zone 灰描边与 Mini 对齐",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.145-x64.exe",
+      "url": "Report Editor AI-Setup-0.3.146-x64.exe",
       "sha256": "",
       "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.145-arm64.dmg",
-      "sha256": "",
-      "size": 0
+      "url": "Report Editor AI-0.3.146-arm64.dmg",
+      "sha256": "157ef9fe1613be4ecb11ab54e3916823a5559719e3bc02314178588ea837a94e",
+      "size": 212352237
     }
   }
 }

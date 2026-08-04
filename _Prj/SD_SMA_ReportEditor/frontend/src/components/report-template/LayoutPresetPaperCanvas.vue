@@ -593,6 +593,7 @@ import LayoutZoneInlineContent from "@/components/report-template/LayoutZoneInli
 import TableColumnResizeGutters from "@/components/report-template/TableColumnResizeGutters.vue";
 import ZoneImageCompose from "@/components/report-template/ZoneImageCompose.vue";
 import { computePaperLayout, type PaperLayoutMetrics } from "@/lib/report-template/layout-geometry";
+import { chromeBorderCss } from "@/lib/report-template/show-border";
 import {
   clampZoneElement,
   clampZoneTableOuterSize,
@@ -1148,6 +1149,10 @@ function nodeStyle(el: LayoutZoneElement) {
     alignItems: flex.alignItems,
     zIndex: normalizeZIndex(el.zIndex),
     ...(wrap ?? { whiteSpace: "nowrap" }),
+    // 040：与 Mini/导出一致，页眉等 zone 文本显示灰描边
+    border: chromeBorderCss(el.showBorder, "1px solid rgb(24 24 27 / 0.15)"),
+    borderRadius: "2px",
+    boxSizing: "border-box",
   };
   if (el.type === "table") {
     return {
@@ -1160,6 +1165,8 @@ function nodeStyle(el: LayoutZoneElement) {
       overflow: "hidden",
       backgroundColor: zoneTableNodeShellBackgroundCss(),
       whiteSpace: "normal",
+      border: "none",
+      borderRadius: "0",
     };
   }
   if (el.type === "pageNumber" && normalizePageNumberMode(el.pageNumberMode) === "circle") {
@@ -1167,6 +1174,7 @@ function nodeStyle(el: LayoutZoneElement) {
       ...base,
       padding: "2px",
       backgroundColor: "transparent",
+      border: "none",
     };
   }
   if (el.type === "box") {
@@ -1174,8 +1182,17 @@ function nodeStyle(el: LayoutZoneElement) {
     return {
       ...base,
       backgroundColor: zoneFillBackgroundCss(el.bgColor),
-      border: el.showBorder === false ? "none" : `1px solid ${bc}40`,
+      border: chromeBorderCss(el.showBorder, `1px solid ${bc}40`),
       borderRadius: "4px",
+      padding: "2px 6px",
+    };
+  }
+  if (el.type === "date") {
+    return {
+      ...base,
+      backgroundColor: zoneFillBackgroundCss(el.bgColor),
+      border: "none",
+      borderRadius: "0",
       padding: "2px 6px",
     };
   }

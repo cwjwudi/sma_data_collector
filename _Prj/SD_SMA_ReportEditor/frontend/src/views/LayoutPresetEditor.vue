@@ -224,7 +224,7 @@ import {
   hydrateLayoutPreset,
 } from "@/lib/report-template/layout-model";
 import type { LayoutControlType, LayoutZoneElement } from "@/lib/report-template/layout-zone-element";
-import { hideShowBordersInElements } from "@/lib/report-template/show-border";
+import { hideBordersOnLayoutPresetBands } from "@/lib/report-template/show-border";
 import {
   copyLayoutZoneElementToClipboard,
   copyLayoutZoneElementsToClipboard,
@@ -560,10 +560,11 @@ function distributeLayout(kind: DistributeKind) {
 function hideBordersOnPresetPage() {
   const w = working.value;
   if (!w) return;
-  let n = 0;
-  n += hideShowBordersInElements(w.headerElements);
-  n += hideShowBordersInElements(w.bodyElements);
-  n += hideShowBordersInElements(w.footerElements);
+  const n = hideBordersOnLayoutPresetBands({
+    headerElements: w.headerElements,
+    bodyElements: w.bodyElements,
+    footerElements: w.footerElements,
+  });
   msg.value =
     n > 0 ? `已隐藏 ${n} 个控件的预览/导出外框（表格未改，可撤销）。` : "本页没有可隐藏的控件外框。";
 }

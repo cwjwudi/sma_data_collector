@@ -404,6 +404,7 @@ import {
   type EditorSheet,
 } from "@/lib/report-template/editor-sheet";
 import { resolveBodyBackgroundCss } from "@/lib/report-template/layout-model";
+import { chromeBorderCss } from "@/lib/report-template/show-border";
 import {
   alignmentGuidesForRect,
   magneticSnapResize,
@@ -728,6 +729,9 @@ function canvasZoneElStyle(el: LayoutZoneElement): Record<string, string> {
     zIndex: String(normalizeZIndex(el.zIndex)),
     ...(wrap ?? { whiteSpace: "nowrap" }),
     overflow: "hidden",
+    // 040：与 Mini/导出一致——页眉页脚 zone 文本也画灰描边（此前编辑器漏画，导致一键隐藏难验收）
+    border: chromeBorderCss(el.showBorder, "1px solid rgb(24 24 27 / 0.15)"),
+    borderRadius: "2px",
   };
   if (el.type === "table") {
     return {
@@ -739,6 +743,8 @@ function canvasZoneElStyle(el: LayoutZoneElement): Record<string, string> {
       padding: "2px",
       backgroundColor: zoneTableNodeShellBackgroundCss(),
       whiteSpace: "normal",
+      border: "none",
+      borderRadius: "0",
     };
   }
   if (el.type === "pageNumber" && normalizePageNumberMode(el.pageNumberMode) === "circle") {
@@ -746,6 +752,7 @@ function canvasZoneElStyle(el: LayoutZoneElement): Record<string, string> {
       ...base,
       padding: "2px",
       backgroundColor: "transparent",
+      border: "none",
     };
   }
   if (el.type === "box") {
@@ -753,8 +760,17 @@ function canvasZoneElStyle(el: LayoutZoneElement): Record<string, string> {
     return {
       ...base,
       backgroundColor: zoneFillBackgroundCss(el.bgColor),
-      border: el.showBorder === false ? "none" : `1px solid ${bc}40`,
+      border: chromeBorderCss(el.showBorder, `1px solid ${bc}40`),
       borderRadius: "4px",
+      padding: "2px 6px",
+    };
+  }
+  if (el.type === "date") {
+    return {
+      ...base,
+      backgroundColor: zoneFillBackgroundCss(el.bgColor),
+      border: "none",
+      borderRadius: "0",
       padding: "2px 6px",
     };
   }

@@ -593,7 +593,7 @@ import {
   syncLegacyElementsAlias,
   TEMPLATE_SCHEMA_VERSION,
 } from "@/lib/report-template/model";
-import { hideShowBordersInElements } from "@/lib/report-template/show-border";
+import { hideBordersOnTemplateSheet } from "@/lib/report-template/show-border";
 import {
   copyTemplateElementToClipboard,
   copyTemplateElementsToClipboard,
@@ -1692,8 +1692,8 @@ function hideBordersOnCurrentPage() {
   const t = editing.value;
   if (!t) return;
   midMode.value = "edit";
-  const els = bodyElementsRef(t, sh.value, bodyPageIdx.value);
-  const n = hideShowBordersInElements(els);
+  // 040：与版式库对齐——当前 sheet 页眉/页脚/正文（当前正文页）/ zone 装饰一并隐藏灰描边
+  const n = hideBordersOnTemplateSheet(t, sh.value, bodyPageIdx.value);
   hint.value =
     n > 0 ? `已隐藏 ${n} 个控件的预览/导出外框（表格未改，可撤销）。` : "当前页没有可隐藏的控件外框。";
 }

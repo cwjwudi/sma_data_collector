@@ -353,6 +353,7 @@ import {
   miniPreviewScale,
   miniPreviewScaleForExport,
 } from "@/lib/report-template/mini-preview-scale";
+import { chromeBorderCss } from "@/lib/report-template/show-border";
 
 const props = withDefaults(
   defineProps<{
@@ -683,7 +684,7 @@ function miniTplElStyle(el: TemplateElement): Record<string, string> {
     width: `${el.w}px`,
     height: `${heightPx}px`,
     boxSizing: "border-box",
-    border: el.showBorder === false ? "none" : "1px solid rgb(24 24 27 / 0.15)",
+    border: chromeBorderCss(el.showBorder, "1px solid rgb(24 24 27 / 0.15)"),
     borderRadius: "2px",
     overflow: "hidden",
     display: "flex",
@@ -712,7 +713,7 @@ function miniTplElStyle(el: TemplateElement): Record<string, string> {
     s.whiteSpace = "normal";
   } else if (el.type === "box") {
     const bc = typeof el.color === "string" ? el.color : "#18181b";
-    s.border = el.showBorder === false ? "none" : `1px solid ${bc}40`;
+    s.border = chromeBorderCss(el.showBorder, `1px solid ${bc}40`);
     s.borderRadius = "4px";
     s.padding = "2px 6px";
     const flex = flexJustifyAlignForAxes(el.alignX, el.alignY);

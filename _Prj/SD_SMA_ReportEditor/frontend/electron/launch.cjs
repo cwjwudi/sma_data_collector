@@ -172,14 +172,13 @@ function decodeWindowsConsole(data) {
   if (!utf8.includes('\uFFFD') && /ERROR:|The operation completed|successfully/i.test(utf8)) {
     return utf8.trim()
   }
-  if (process.platform === 'win32') {
-    for (const enc of ['gbk', 'gb18030']) {
-      try {
-        const text = new TextDecoder(enc).decode(buf).trim()
-        if (text && !text.includes('\uFFFD')) return text
-      } catch {
-        /* ICU 未含该编码时忽略 */
-      }
+  // 不限 win32：现场 reg 输出常是 GBK；本机 mac 单测/日志回放也需同一解码路径
+  for (const enc of ['gbk', 'gb18030']) {
+    try {
+      const text = new TextDecoder(enc).decode(buf).trim()
+      if (text && !text.includes('\uFFFD')) return text
+    } catch {
+      /* ICU 未含该编码时忽略 */
     }
   }
   return utf8.trim()

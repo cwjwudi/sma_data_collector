@@ -5,6 +5,12 @@
 
 ---
 
+## 2026-08-04
+
+- **ReportEditor 矢量跨份复用（需求登记）**：现状（每份 subset/嵌图/切 hash）评估为正确性优先的合理第一版；现场弱核 5 万·maxRows=1000 实测 13～17 分钟。待做 R1–R5（字体/图片复用、同窗连渲、二进制 IPC、可选自适应让核），冲刺 &lt;6 分钟。看板 [docs/045-⌛️](docs/045-⌛️-ReportEditor矢量导出跨份复用加速.md)；索引 [035](docs/035-🚧-ReportEditor导出性能档位与同机降载.md) / [003](docs/003-⌛️-剩余任务与后续规划.md)。
+
+- **ReportEditor 0.3.146（040）**：模版「一键隐藏边框」覆盖当前 sheet 页眉/页脚/正文/zone 装饰（旧实现只改正文）；编辑器 zone 灰描边与 Mini 对齐；对抗测 G1–G6 + layout-v2 D10h；全量 602 绿。看板 [docs/040-✅](docs/040-✅-ReportEditor矢量导出页眉一键隐藏仍有边框.md)。
+
 ## 2026-07-29
 
 - **ReportEditor 0.3.145（035 优先级重分配）**：档 3 `basic`→渲染 BelowNormal；档 4 `max`→渲染/后端 HIGHEST、主进程不降；档 0–2 仍 LOW 让核。看板 [docs/035-🚧](docs/035-🚧-ReportEditor导出性能档位与同机降载.md)。
@@ -18,7 +24,7 @@
 ## 2026-07-27
 
 - **ReportEditor 矢量档（0.3.144）四缺陷登记**：页眉一键隐藏仍见边框 · 页眉仅封面 · 小数位变整数 · 空值显示 `value`。根因与复现/待补信息已分拆看板；代码修复待样本。  
-  - [docs/040-🚧](docs/040-🚧-ReportEditor矢量导出页眉一键隐藏仍有边框.md)  
+  - [docs/040-✅](docs/040-✅-ReportEditor矢量导出页眉一键隐藏仍有边框.md)  
   - [docs/041-🚧](docs/041-🚧-ReportEditor矢量导出页眉仅封面正文无.md)  
   - [docs/042-🚧](docs/042-🚧-ReportEditor矢量导出封面小数位变整数.md)  
   - [docs/043-🚧](docs/043-🚧-ReportEditor矢量导出空值显示value.md)
