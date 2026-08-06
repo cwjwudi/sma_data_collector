@@ -5,6 +5,7 @@ import socket
 import threading
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 import pymysql
 import uvicorn
@@ -17,7 +18,6 @@ from launcher_security import LauncherSecurityStore
 
 
 SESSION_COOKIE = "sd_sma_launcher_admin"
-ALLOWED_ORIGINS = {"http://127.0.0.1:8090", "http://localhost:8090"}
 MANAGED_DB_SERVICES = {"collector_web", "query_web", "db_admin"}
 
 
@@ -26,6 +26,7 @@ def create_management_app(
     security: LauncherSecurityStore,
     importer: ConfigImportManager,
     static_dir: Path,
+    network: Any | None = None,
 ) -> FastAPI:
     app = FastAPI(title="SD SMA Launcher", version="1.0")
     app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
@@ -33,12 +34,18 @@ def create_management_app(
     @app.middleware("http")
     async def local_origin_guard(request: Request, call_next: Any) -> Response:
         if request.method not in {"GET", "HEAD", "OPTIONS"}:
-            origin = request.headers.get("origin", "")
-            if origin and origin not in ALLOWED_ORIGINS:
+            origin = request.headers.get("origin", "").strip()
+            origin_host = urlsplit(origin).netloc.lower() if origin else ""
+            request_host = request.headers.get("host", "").strip().lower()
+            if origin and (urlsplit(origin).scheme not in {"http", "https"} or origin_host != request_host):
                 return Response("Forbidden origin", status_code=403)
         return await call_next(request)
 
     def require_admin(request: Request) -> str:
+        if security.pin_mode == "undecided":
+            raise HTTPException(428, "请先选择是否启用管理员 PIN")
+        if security.pin_mode == "disabled":
+            return "pin-disabled"
         token = request.cookies.get(SESSION_COOKIE)
         if not security.verify_session(token):
             raise HTTPException(401, "需要管理员 PIN 解锁")
@@ -51,7 +58,13 @@ def create_management_app(
     @app.get("/api/launcher/status")
     def status() -> dict[str, Any]:
         result = supervisor.status()
-        result["security"] = {"pin_configured": security.pin_configured}
+        result["security"] = {
+            "pin_configured": security.pin_configured,
+            "pin_enabled": security.pin_enabled,
+            "pin_mode": security.pin_mode,
+        }
+        if network is not None:
+            result["network"] = network.status()
         return result
 
     @app.post("/api/launcher/auth/setup")
@@ -62,7 +75,15 @@ def create_management_app(
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from exc
         response.set_cookie(SESSION_COOKIE, token, httponly=True, samesite="strict", max_age=security.session_seconds)
-        return {"ok": True, "unlocked": True}
+        return {"ok": True, "unlocked": True, "pin_mode": security.pin_mode}
+
+    @app.post("/api/launcher/auth/disable")
+    def disable_pin(request: Request, response: Response) -> dict[str, Any]:
+        if security.pin_enabled:
+            require_admin(request)
+        security.disable_pin()
+        response.delete_cookie(SESSION_COOKIE)
+        return {"ok": True, "unlocked": True, "pin_mode": security.pin_mode}
 
     @app.post("/api/launcher/auth/unlock")
     async def unlock(request: Request, response: Response) -> dict[str, Any]:
@@ -84,7 +105,31 @@ def create_management_app(
 
     @app.get("/api/launcher/auth/session")
     def session(request: Request) -> dict[str, Any]:
-        return {"unlocked": security.verify_session(request.cookies.get(SESSION_COOKIE)), "pin_configured": security.pin_configured}
+        return {
+            "unlocked": security.pin_mode == "disabled" or security.verify_session(request.cookies.get(SESSION_COOKIE)),
+            "pin_configured": security.pin_configured,
+            "pin_enabled": security.pin_enabled,
+            "pin_mode": security.pin_mode,
+        }
+
+    @app.get("/api/launcher/settings/network")
+    def network_settings() -> dict[str, Any]:
+        if network is None:
+            raise HTTPException(503, "网络设置不可用")
+        return network.status()
+
+    @app.put("/api/launcher/settings/network")
+    async def update_network_settings(request: Request) -> dict[str, Any]:
+        require_admin(request)
+        if network is None:
+            raise HTTPException(503, "网络设置不可用")
+        body = await request.json()
+        try:
+            return network.apply(str(body.get("mode", "")))
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from exc
+        except RuntimeError as exc:
+            raise HTTPException(409, str(exc)) from exc
 
     @app.post("/api/launcher/services/{name}/{action}")
     def service_action(name: str, action: str, request: Request) -> dict[str, Any]:
@@ -240,16 +285,25 @@ class ManagementServer:
     def __init__(self, app: FastAPI, host: str = "127.0.0.1", port: int = 8090) -> None:
         self.host = host
         self.port = port
-        self.server = uvicorn.Server(
-            uvicorn.Config(app, host=host, port=port, log_level="info", access_log=False)
-        )
+        self.app = app
+        self.server = self._new_server(host)
         self.thread: threading.Thread | None = None
+        self._lock = threading.RLock()
+
+    def _new_server(self, host: str) -> uvicorn.Server:
+        return uvicorn.Server(uvicorn.Config(self.app, host=host, port=self.port, log_level="info", access_log=False))
 
     def start(self) -> None:
+        with self._lock:
+            self._start_locked()
+
+    def _start_locked(self) -> None:
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
             sock.settimeout(0.2)
-            if sock.connect_ex((self.host, self.port)) == 0:
+            probe_host = "127.0.0.1" if self.host == "0.0.0.0" else self.host
+            if sock.connect_ex((probe_host, self.port)) == 0:
                 raise RuntimeError(f"管理端口已被占用：{self.host}:{self.port}")
+        self.server = self._new_server(self.host)
         self.thread = threading.Thread(target=self.server.run, name="launcher-web", daemon=True)
         self.thread.start()
         deadline = threading.Event()
@@ -262,6 +316,34 @@ class ManagementServer:
         raise RuntimeError("Launcher 管理页面启动失败")
 
     def stop(self) -> None:
+        with self._lock:
+            self._stop_locked()
+
+    def _stop_locked(self) -> None:
         self.server.should_exit = True
-        if self.thread:
+        if self.thread and self.thread is not threading.current_thread():
             self.thread.join(timeout=5.0)
+        self.thread = None
+
+    def rebind_async(self, host: str, callback: Any, delay_seconds: float = 0.5) -> None:
+        def worker() -> None:
+            error: Exception | None = None
+            old_host = self.host
+            with self._lock:
+                try:
+                    self._stop_locked()
+                    self.host = host
+                    self._start_locked()
+                except Exception as exc:  # noqa: BLE001
+                    error = exc
+                    try:
+                        self._stop_locked()
+                        self.host = old_host
+                        self._start_locked()
+                    except Exception as rollback_error:  # noqa: BLE001
+                        error = RuntimeError(f"{exc}; management rollback failed: {rollback_error}")
+            callback(error)
+
+        timer = threading.Timer(delay_seconds, worker)
+        timer.daemon = True
+        timer.start()

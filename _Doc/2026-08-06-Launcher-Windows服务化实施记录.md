@@ -83,3 +83,24 @@ POST /api/launcher/import/inspect|apply
 
 - 正式安装后的 LocalSystem DPAPI 跨重启解密、PIN 重置脚本提权提示，以及普通用户向 `ImportBox` 投放文件的 ACL。
 - 插拔现场 U 盘后的动态根目录刷新、目标配置实际业务校验，以及故障配置自动回滚后的业务恢复。
+
+## PIN 可选与网络访问模式（2026-08-06）
+
+- PIN 安全状态扩展为 `undecided`、`enabled`、`disabled`。首次管理操作允许设置、跳过或取消；取消和 Esc 不再提交表单。关闭 PIN 会清除哈希和会话，并明确开放全部本地及远程写操作。
+- 新增系统设置页和 `POST /api/launcher/auth/disable`、`GET|PUT /api/launcher/settings/network`。状态与会话接口保留 `pin_configured`，并增加 `pin_mode`、`pin_enabled`。
+- 8090–8094 默认绑定 `0.0.0.0`。网络模式写入 `state/network.json`；切换时立即重启当前运行的业务服务、异步重绑管理端，失败则恢复原监听和持久化设置。
+- 服务页面链接根据浏览器当前主机生成；写请求 Origin 改为与实际 Host 同源校验，从而支持局域网 IP 和主机名且继续拒绝跨站写请求。
+- 安装、升级及运行时全局模式使用固定名称 `SD SMA Runtime 8090-8094` 的 Windows 防火墙规则，适用于所有网络配置文件；仅本地模式和卸载会删除该规则。
+
+### 本机验证
+
+- Launcher 46 项测试、DB Admin 57 项测试全部通过；新增用例覆盖 PIN 三态迁移、跳过/关闭/重新启用、同源访问、网络模式默认值、运行服务重启、人工停止保留，以及同步与异步切换失败回滚。
+- 管理前端通过 `node --check`，全部 Launcher Python 文件通过字节码编译，安装器和初始化 PowerShell 脚本通过语法解析。
+- 在 1024×768 触屏视口验证系统设置页无横向溢出，操作按钮高度 56px；PIN 取消不继续操作，关闭后风险横幅持续显示。
+- 完整构建通过：43 个业务源码文件转为 bytecode-only，Nuitka Launcher、五端口 smoke 和 Inno Setup 6.7.3 编译成功；默认交付配置的 8090–8094 均为 `0.0.0.0`。
+- 安装包 `_Build/SD_SMA_Installer_Package/SD_SMA_Setup_1.0.0.exe` 大小为 `58,926,160` 字节，SHA256 为 `AD906287B7368CE5CCBAC2078301DA877A4078FF795E06BEF16477A96D842245`；smoke 退出后 8090–8094 无残留监听。
+
+### 仍需现场验证
+
+- 在管理员权限的正式安装/升级/卸载流程中确认固定防火墙规则的创建、删除和恢复，覆盖域、专用、公用三类网络。
+- 从另一台局域网设备验证主机名/IP 访问，并在远程页面切换“仅本地访问”确认当前连接按提示中断。

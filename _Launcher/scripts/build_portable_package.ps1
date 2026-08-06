@@ -544,6 +544,7 @@ Copy-Item -LiteralPath (Join-Path $LauncherDir "launcher_supervisor.py") -Destin
 Copy-Item -LiteralPath (Join-Path $LauncherDir "launcher_security.py") -Destination $PackageLauncher -Force
 Copy-Item -LiteralPath (Join-Path $LauncherDir "launcher_imports.py") -Destination $PackageLauncher -Force
 Copy-Item -LiteralPath (Join-Path $LauncherDir "launcher_web.py") -Destination $PackageLauncher -Force
+Copy-Item -LiteralPath (Join-Path $LauncherDir "launcher_settings.py") -Destination $PackageLauncher -Force
 Copy-Item -LiteralPath (Join-Path $LauncherDir "static") -Destination $PackageLauncher -Recurse -Force
 Copy-Item -LiteralPath (Join-Path $LauncherDir "launcher_config.json") -Destination $PackageLauncher -Force
 Copy-Item -LiteralPath (Join-Path $LauncherDir "requirements-unified.txt") -Destination $PackageLauncher -Force

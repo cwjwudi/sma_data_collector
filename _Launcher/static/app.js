@@ -1,4 +1,4 @@
-const state={status:null,unlocked:false,credentials:[],assignments:{},currentPath:"",parentPath:"",selectedPath:"",previewToken:""};
+const state={status:null,unlocked:false,pinMode:"undecided",credentials:[],assignments:{},currentPath:"",parentPath:"",selectedPath:"",previewToken:""};
 const $=id=>document.getElementById(id);
 
 async function api(url,options={}){
@@ -12,7 +12,7 @@ function formatSeconds(value){const seconds=Math.max(0,Number(value)||0);if(seco
 const stateLabel={running:"运行中",starting:"启动中",stopping:"停止中",stopped:"已停止",restarting:"重启中",failed:"故障"};
 
 async function refreshStatus(){
-  try{state.status=await api("/api/launcher/status");renderServices();$("clock").textContent=`本机服务管理 · ${new Date().toLocaleString()}`;}
+  try{state.status=await api("/api/launcher/status");state.pinMode=state.status.security?.pin_mode||"undecided";renderServices();renderSecurityState();renderNetworkState();$("clock").textContent=`本机服务管理 · ${new Date().toLocaleString()}`;}
   catch(error){$("clock").textContent=`管理服务连接失败：${error.message}`;}
 }
 function metric(label,value){const node=document.createElement("div");node.className="metric";const strong=document.createElement("strong");strong.textContent=value;node.append(strong,document.createTextNode(label));return node;}
@@ -29,7 +29,7 @@ function renderServices(){
     const actions=document.createElement("div");actions.className="card-actions";actions.append(actionButton("启动","start",service,"primary"),actionButton("停止","stop",service,"danger"),actionButton("重启","restart",service));
     actions.children[0].disabled=["running","starting","restarting"].includes(service.state);actions.children[1].disabled=["stopped","stopping","failed"].includes(service.state);actions.children[2].disabled=service.state==="stopped";
     card.append(title,metrics,error,actions);
-    if(service.url){const link=document.createElement("a");link.className="open-link";link.href=service.url;link.target="_blank";link.rel="noopener";link.textContent="打开服务页面";card.append(link);}
+    if(service.url_path){const link=document.createElement("a");link.className="open-link";link.href=`${window.location.protocol}//${window.location.hostname}:${service.port}${service.url_path}`;link.target="_blank";link.rel="noopener";link.textContent="打开服务页面";card.append(link);}
     grid.append(card);
   }
 }
@@ -43,14 +43,18 @@ async function runServiceAction(service,action,label){
 
 function buildPinPad(){const pad=$("pinPad");for(const value of [1,2,3,4,5,6,7,8,9,"清除",0,"退格"]){const button=document.createElement("button");button.type="button";button.textContent=value;button.onclick=()=>{if(value==="清除")$("pinInput").value="";else if(value==="退格")$("pinInput").value=$("pinInput").value.slice(0,-1);else if($("pinInput").value.length<12)$("pinInput").value+=value;};pad.append(button);}}
 async function ensureAdmin(){
-  try{const session=await api("/api/launcher/auth/session");if(session.unlocked){state.unlocked=true;updateLockButton();return true;}return await showPinDialog(!session.pin_configured);}catch(error){toast(error.message);return false;}
+  try{const session=await api("/api/launcher/auth/session");state.pinMode=session.pin_mode;if(session.unlocked){state.unlocked=true;updateLockButton();renderSecurityState();return true;}return await showPinDialog(session.pin_mode==="undecided");}catch(error){toast(error.message);return false;}
 }
-function showPinDialog(setup){return new Promise(resolve=>{const dialog=$("pinDialog");$("pinTitle").textContent=setup?"设置管理员 PIN":"管理员解锁";$("pinHelp").textContent=setup?"首次使用：设置 6–12 位数字 PIN":"输入管理员 PIN 以继续";$("pinInput").value="";$("pinError").textContent="";dialog.dataset.setup=setup?"1":"0";dialog.onclose=()=>{if(dialog.returnValue!=="success")resolve(false);};dialog._resolve=resolve;dialog.showModal();});}
-$("pinForm").addEventListener("submit",async event=>{event.preventDefault();const dialog=$("pinDialog");try{const endpoint=dialog.dataset.setup==="1"?"setup":"unlock";await api(`/api/launcher/auth/${endpoint}`,{method:"POST",body:JSON.stringify({pin:$("pinInput").value})});state.unlocked=true;updateLockButton();dialog.returnValue="success";dialog.close();dialog._resolve(true);toast("管理操作已解锁");}catch(error){$("pinError").textContent=error.message;}});
-function updateLockButton(){$("lockButton").textContent=state.unlocked?"锁定管理":"管理操作";}
-$("lockButton").onclick=async()=>{if(state.unlocked){await api("/api/launcher/auth/lock",{method:"POST"});state.unlocked=false;updateLockButton();toast("已锁定");}else await ensureAdmin();};
+function showPinDialog(setup){return new Promise(resolve=>{const dialog=$("pinDialog");let settled=false;const finish=value=>{if(settled)return;settled=true;resolve(value);};$("pinTitle").textContent=setup?"设置管理员 PIN":"管理员解锁";$("pinHelp").textContent=setup?"首次使用：可设置 6–12 位数字 PIN，或明确选择暂不启用":"输入管理员 PIN 以继续";$("pinInput").value="";$("pinError").textContent="";$("pinSkip").classList.toggle("hidden",!setup);dialog.dataset.setup=setup?"1":"0";dialog.onclose=()=>finish(dialog.returnValue==="success");dialog._finish=finish;dialog.showModal();});}
+function closePinDialog(result=false){const dialog=$("pinDialog");dialog.returnValue=result?"success":"cancel";if(dialog.open)dialog.close();dialog._finish?.(result);}
+$("pinCancel").onclick=()=>closePinDialog(false);
+$("pinDialog").addEventListener("click",event=>{if(event.target===$("pinDialog"))closePinDialog(false);});
+$("pinSkip").onclick=async()=>{const dialog=$("pinDialog");dialog.onclose=null;dialog.close();if(!await confirmAction("不启用管理员 PIN","关闭 PIN 后，本机和远程访问者都能执行服务控制、配置导入和密码管理。确定继续？")){dialog._finish?.(false);return;}try{await api("/api/launcher/auth/disable",{method:"POST"});state.pinMode="disabled";state.unlocked=true;dialog._finish?.(true);updateLockButton();renderSecurityState();toast("管理员 PIN 已关闭");}catch(error){dialog._finish?.(false);toast(error.message);}};
+$("pinForm").addEventListener("submit",async event=>{event.preventDefault();const dialog=$("pinDialog");try{const endpoint=dialog.dataset.setup==="1"?"setup":"unlock";const result=await api(`/api/launcher/auth/${endpoint}`,{method:"POST",body:JSON.stringify({pin:$("pinInput").value})});state.pinMode=result.pin_mode||"enabled";state.unlocked=true;updateLockButton();renderSecurityState();closePinDialog(true);toast("管理操作已解锁");}catch(error){$("pinError").textContent=error.message;}});
+function updateLockButton(){if(state.pinMode==="disabled")$("lockButton").textContent="PIN 未启用";else $("lockButton").textContent=state.unlocked?"锁定管理":"管理操作";}
+$("lockButton").onclick=async()=>{if(state.pinMode==="disabled"){document.querySelector('[data-page="settings"]').click();return;}if(state.unlocked){await api("/api/launcher/auth/lock",{method:"POST"});state.unlocked=false;updateLockButton();toast("已锁定");}else await ensureAdmin();};
 
-document.querySelectorAll(".nav").forEach(button=>button.onclick=async()=>{document.querySelectorAll(".nav").forEach(item=>item.classList.toggle("active",item===button));document.querySelectorAll(".page").forEach(page=>page.classList.remove("active"));$(`${button.dataset.page}Page`).classList.add("active");if(button.dataset.page==="credentials"&&await ensureAdmin())await loadCredentials();if(button.dataset.page==="import"&&await ensureAdmin())await loadRoots();});
+document.querySelectorAll(".nav").forEach(button=>button.onclick=async()=>{document.querySelectorAll(".nav").forEach(item=>item.classList.toggle("active",item===button));document.querySelectorAll(".page").forEach(page=>page.classList.remove("active"));$(`${button.dataset.page}Page`).classList.add("active");if(button.dataset.page==="credentials"&&await ensureAdmin())await loadCredentials();if(button.dataset.page==="import"&&await ensureAdmin())await loadRoots();if(button.dataset.page==="settings")await refreshStatus();});
 
 async function loadCredentials(){try{const data=await api("/api/launcher/credentials");state.credentials=data.credentials;state.assignments=data.assignments;renderCredentials();}catch(error){if(error.status===401)state.unlocked=false;toast(error.message);}}
 function renderCredentials(){
@@ -73,5 +77,23 @@ function selectEntry(button,path){document.querySelectorAll(".entry.selected").f
 $("browserUp").onclick=()=>state.parentPath&&browse(state.parentPath);
 $("inspectImport").onclick=async()=>{try{const result=await api("/api/launcher/import/inspect",{method:"POST",body:JSON.stringify({service:$("importService").value,paths:[state.selectedPath]})});state.previewToken=result.preview_token;const preview=$("importPreview");preview.replaceChildren();const heading=document.createElement("h3");heading.textContent=`检查通过：${result.files.length} 个文件`;preview.append(heading);for(const file of result.files){const row=document.createElement("p");row.textContent=`${file.target_name}${file.will_overwrite?"（将覆盖）":"（新增）"}`;preview.append(row);}for(const warning of result.warnings){const row=document.createElement("p");row.className="error";row.textContent=warning;preview.append(row);}const apply=document.createElement("button");apply.className="danger";apply.textContent="确认导入并应用";apply.onclick=applyImport;preview.append(apply);preview.classList.remove("hidden");}catch(error){toast(error.message);}};
 async function applyImport(){if(!await confirmAction("应用配置","系统会先备份现有配置；运行中的目标服务将自动重启。确定继续？"))return;try{const result=await api("/api/launcher/import/apply",{method:"POST",body:JSON.stringify({preview_token:state.previewToken})});toast(`导入成功，已备份到 ${result.backup_dir}`);$("importPreview").classList.add("hidden");await refreshStatus();}catch(error){toast(error.message);}}
+
+function renderSecurityState(){
+  const mode=state.pinMode;
+  $("securityWarning").classList.toggle("hidden",mode!=="disabled");
+  $("pinStatusText").textContent=mode==="enabled"?"PIN 保护已启用，管理操作需要解锁。":mode==="disabled"?"PIN 保护已关闭，所有访问者都可以执行管理操作。":"尚未选择是否启用管理员 PIN。";
+  $("configurePin").classList.toggle("hidden",mode==="enabled");
+  $("disablePin").classList.toggle("hidden",mode!=="enabled");
+  updateLockButton();
+}
+function renderNetworkState(){
+  const network=state.status?.network;if(!network)return;
+  const radio=document.querySelector(`input[name="networkMode"][value="${network.mode}"]`);if(radio)radio.checked=true;
+  $("saveNetworkMode").disabled=Boolean(network.applying);
+  $("networkMessage").textContent=network.last_error||network.warning||(network.applying?"正在切换监听地址并重启运行中的服务…":network.mode==="global"?"当前允许其他设备访问 8090–8094。":"当前仅允许本机访问。");
+}
+$("configurePin").onclick=async()=>{if(await showPinDialog(true))await refreshStatus();};
+$("disablePin").onclick=async()=>{if(!await ensureAdmin())return;if(!await confirmAction("关闭 PIN 保护","关闭后，本机和远程访问者都可以执行全部管理操作。确定关闭？"))return;try{await api("/api/launcher/auth/disable",{method:"POST"});state.pinMode="disabled";state.unlocked=true;toast("管理员 PIN 已关闭");await refreshStatus();}catch(error){toast(error.message);}};
+$("saveNetworkMode").onclick=async()=>{const selected=document.querySelector('input[name="networkMode"]:checked');if(!selected||!await ensureAdmin())return;const mode=selected.value;const remote=!['127.0.0.1','localhost','::1'].includes(window.location.hostname);const warning=mode==="local"&&remote?"切换后当前远程连接会中断，只能在设备本机打开 http://127.0.0.1:8090。确定继续？":"切换时会重启当前运行的四个业务服务，确定继续？";if(!await confirmAction("应用网络设置",warning))return;try{const result=await api("/api/launcher/settings/network",{method:"PUT",body:JSON.stringify({mode})});toast(result.warning||"网络模式正在切换");if(mode==="local"&&remote){$("networkMessage").textContent="远程连接即将中断，请到设备本机继续操作。";}else setTimeout(refreshStatus,1500);}catch(error){toast(error.message);}};
 
 buildPinPad();refreshStatus();setInterval(refreshStatus,2000);

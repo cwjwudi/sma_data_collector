@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Mapping
+from urllib.parse import urlsplit
 
 
 def _utc_now() -> str:
@@ -150,6 +151,18 @@ class ServiceSupervisor:
             if should_restart:
                 self.command(name, "restart")
 
+    def set_listen_host(self, host: str) -> None:
+        if host not in {"0.0.0.0", "127.0.0.1"}:
+            raise ValueError("Unsupported listen host")
+        with self._lock:
+            for item in self._services.values():
+                if item.process is not None:
+                    self._stop_locked(item)
+                item.config["host"] = host
+                item.last_error = ""
+                item.restart_at = None
+            self._wake.set()
+
     def status(self) -> dict[str, Any]:
         with self._lock:
             services = [self._status_locked(item) for item in self._services.values()]
@@ -183,6 +196,11 @@ class ServiceSupervisor:
             except Exception:
                 pass
         uptime = round(time.monotonic() - item.started_monotonic, 1) if item.started_monotonic else 0.0
+        open_url = str(item.config.get("open_url", ""))
+        parsed_url = urlsplit(open_url)
+        url_path = parsed_url.path or "/"
+        if parsed_url.query:
+            url_path += f"?{parsed_url.query}"
         return {
             "name": item.name,
             "title": str(item.config.get("title", item.name)),
@@ -192,7 +210,8 @@ class ServiceSupervisor:
             "pid": pid,
             "host": str(item.config.get("host", "127.0.0.1")),
             "port": int(item.config.get("port", 0)),
-            "url": str(item.config.get("open_url", "")),
+            "url": open_url,
+            "url_path": url_path,
             "uptime_seconds": uptime,
             "restart_count": item.restart_count,
             "last_exit_code": item.last_exit_code,

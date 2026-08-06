@@ -39,3 +39,35 @@ def test_wrong_pin_is_rejected(tmp_path) -> None:
     store.setup_pin("123456")
     with pytest.raises(PermissionError):
         store.unlock("000000")
+
+
+def test_pin_modes_support_skip_disable_and_reenable(tmp_path) -> None:
+    store = LauncherSecurityStore(tmp_path / "security.json")
+    assert store.pin_mode == "undecided"
+    assert store.pin_enabled is False
+
+    store.disable_pin()
+    assert store.pin_mode == "disabled"
+    assert store.pin_configured is False
+
+    token = store.setup_pin("654321")
+    assert store.pin_mode == "enabled"
+    assert store.verify_session(token) is True
+
+    store.disable_pin()
+    assert store.pin_mode == "disabled"
+    assert store.verify_session(token) is False
+    saved = json.loads((tmp_path / "security.json").read_text(encoding="utf-8"))
+    assert "pin_hash" not in saved
+    assert "pin_salt" not in saved
+
+
+def test_legacy_pin_file_is_treated_as_enabled(tmp_path) -> None:
+    store = LauncherSecurityStore(tmp_path / "security.json")
+    store.setup_pin("123456")
+    data = json.loads((tmp_path / "security.json").read_text(encoding="utf-8"))
+    data.pop("pin_mode", None)
+    (tmp_path / "security.json").write_text(json.dumps(data), encoding="utf-8")
+
+    restored = LauncherSecurityStore(tmp_path / "security.json")
+    assert restored.pin_mode == "enabled"

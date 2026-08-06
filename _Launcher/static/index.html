@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
+  <div id="securityWarning" class="security-warning hidden">管理员 PIN 未启用：当前网络中的访问者可以执行全部管理操作。</div>
   <header>
     <div><h1>SD SMA 管理中心</h1><p id="clock">本机服务管理</p></div>
     <button id="lockButton" class="secondary">管理操作</button>
@@ -16,6 +17,7 @@
     <button class="nav active" data-page="services">服务状态</button>
     <button class="nav" data-page="import">导入配置</button>
     <button class="nav" data-page="credentials">数据库密码</button>
+    <button class="nav" data-page="settings">系统设置</button>
   </nav>
 
   <main>
@@ -62,6 +64,25 @@
         <div id="assignmentList" class="assignment-list"></div>
       </div>
     </section>
+
+    <section id="settingsPage" class="page">
+      <div class="settings-grid">
+        <div class="panel">
+          <h2>网络访问</h2>
+          <p class="hint">统一控制管理中心和四个业务服务的 8090–8094 端口。</p>
+          <label class="choice"><input type="radio" name="networkMode" value="global"> <span><strong>全局访问</strong><small>监听所有网卡，允许其他设备访问</small></span></label>
+          <label class="choice"><input type="radio" name="networkMode" value="local"> <span><strong>仅本地访问</strong><small>只允许本机通过 127.0.0.1 访问</small></span></label>
+          <p id="networkMessage" class="hint"></p>
+          <button id="saveNetworkMode" class="primary">应用网络设置</button>
+        </div>
+        <div class="panel">
+          <h2>管理员 PIN</h2>
+          <p id="pinStatusText" class="hint"></p>
+          <button id="configurePin" class="primary">设置管理员 PIN</button>
+          <button id="disablePin" class="danger hidden">关闭 PIN 保护</button>
+        </div>
+      </div>
+    </section>
   </main>
 
   <dialog id="pinDialog">
@@ -71,7 +92,7 @@
       <input id="pinInput" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="12" autocomplete="off">
       <div id="pinPad" class="pin-pad"></div>
       <p id="pinError" class="error"></p>
-      <div class="dialog-actions"><button value="cancel" class="secondary">取消</button><button id="pinSubmit" value="default" class="primary">确认</button></div>
+      <div class="dialog-actions"><button id="pinCancel" type="button" class="secondary">取消</button><button id="pinSkip" type="button" class="warning hidden">暂不启用 PIN</button><button id="pinSubmit" type="submit" class="primary">确认</button></div>
     </form>
   </dialog>
 

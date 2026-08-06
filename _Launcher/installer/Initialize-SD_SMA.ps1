@@ -38,3 +38,16 @@ if ($LASTEXITCODE -ne 0) { throw "Failed to set ProgramData permissions." }
 $importBox = Join-Path $dataRoot "ImportBox"
 & icacls.exe $importBox /grant:r "*S-1-5-32-545:(OI)(CI)M" | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "Failed to set ImportBox permissions." }
+
+$firewallMode = "Global"
+$networkState = Join-Path $dataRoot "state\network.json"
+if (Test-Path -LiteralPath $networkState) {
+    try {
+        $savedNetwork = Get-Content -LiteralPath $networkState -Raw -Encoding UTF8 | ConvertFrom-Json
+        if ($savedNetwork.network_mode -eq "local") { $firewallMode = "Local" }
+    }
+    catch {
+        Write-Warning "Invalid network state; using global access defaults."
+    }
+}
+& (Join-Path $PSScriptRoot "Configure-SD_SMA-Firewall.ps1") -Mode $firewallMode

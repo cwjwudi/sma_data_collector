@@ -50,6 +50,7 @@ Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoLogo -N
 [UninstallRun]
 Filename: "{app}\_Service\SD_SMA_Service.exe"; Parameters: "stop"; WorkingDir: "{app}\_Service"; Flags: runhidden waituntilterminated; RunOnceId: "StopService"
 Filename: "{app}\_Service\SD_SMA_Service.exe"; Parameters: "uninstall"; WorkingDir: "{app}\_Service"; Flags: runhidden waituntilterminated; RunOnceId: "RemoveService"
+Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; Parameters: "-NoLogo -NoProfile -ExecutionPolicy Bypass -File ""{app}\_Service\Configure-SD_SMA-Firewall.ps1"" -Mode Remove"; Flags: runhidden waituntilterminated; RunOnceId: "RemoveFirewallRule"
 
 [Code]
 var

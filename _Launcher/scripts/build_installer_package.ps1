@@ -324,7 +324,7 @@ $InstalledLauncher = Join-Path $PackageLauncher "SD_SMA_Launcher.exe"
 Copy-Item -LiteralPath $CompiledLauncher -Destination $InstalledLauncher -Force
 Remove-Item -LiteralPath (Join-Path $PackageLauncher "sd_sma_launcher.py") -Force
 Remove-Item -LiteralPath (Join-Path $PackageLauncher "resource_monitor.py") -Force
-foreach ($launcherModule in @("launcher_supervisor.py", "launcher_security.py", "launcher_imports.py", "launcher_web.py")) {
+foreach ($launcherModule in @("launcher_supervisor.py", "launcher_security.py", "launcher_imports.py", "launcher_web.py", "launcher_settings.py")) {
     Remove-Item -LiteralPath (Join-Path $PackageLauncher $launcherModule) -Force
 }
 
@@ -336,6 +336,7 @@ Copy-Item -LiteralPath (Join-Path $LauncherDir "installer\SD_SMA_Service.xml") -
 Copy-Item -LiteralPath (Join-Path $LauncherDir "installer\Initialize-SD_SMA.ps1") -Destination $PackageService -Force
 Copy-Item -LiteralPath (Join-Path $LauncherDir "installer\Install-SD_SMA-Service.ps1") -Destination $PackageService -Force
 Copy-Item -LiteralPath (Join-Path $LauncherDir "installer\Reset-SD_SMA-LauncherPin.ps1") -Destination $PackageService -Force
+Copy-Item -LiteralPath (Join-Path $LauncherDir "installer\Configure-SD_SMA-Firewall.ps1") -Destination $PackageService -Force
 
 $stagedConfigPath = Join-Path $PackageLauncher "launcher_config.json"
 $stagedConfig = Get-Content -LiteralPath $stagedConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json

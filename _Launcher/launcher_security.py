@@ -124,24 +124,46 @@ class LauncherSecurityStore:
     def pin_configured(self) -> bool:
         return bool(self._data.get("pin_hash") and self._data.get("pin_salt"))
 
+    @property
+    def pin_mode(self) -> str:
+        """Return the PIN policy while accepting legacy security files."""
+        if self.pin_configured:
+            return "enabled"
+        return "disabled" if self._data.get("pin_mode") == "disabled" else "undecided"
+
+    @property
+    def pin_enabled(self) -> bool:
+        return self.pin_mode == "enabled"
+
     def setup_pin(self, pin: str) -> str:
         with self._lock:
-            if self.pin_configured:
+            if self.pin_enabled:
                 raise ValueError("管理员 PIN 已配置")
             self._validate_pin(pin)
             salt = secrets.token_bytes(16)
+            self._data["pin_mode"] = "enabled"
             self._data["pin_salt"] = base64.b64encode(salt).decode("ascii")
             self._data["pin_hash"] = base64.b64encode(self._pin_hash(pin, salt)).decode("ascii")
             self._save()
             return self._new_session()
+
+    def disable_pin(self) -> None:
+        with self._lock:
+            self._data["pin_mode"] = "disabled"
+            self._data.pop("pin_hash", None)
+            self._data.pop("pin_salt", None)
+            self._sessions.clear()
+            self._failures = 0
+            self._blocked_until = 0.0
+            self._save()
 
     def unlock(self, pin: str) -> str:
         with self._lock:
             now = time.monotonic()
             if now < self._blocked_until:
                 raise PermissionError(f"尝试次数过多，请在 {int(self._blocked_until - now) + 1} 秒后重试")
-            if not self.pin_configured:
-                raise ValueError("请先设置管理员 PIN")
+            if not self.pin_enabled:
+                raise ValueError("管理员 PIN 未启用")
             salt = base64.b64decode(str(self._data["pin_salt"]))
             actual = self._pin_hash(pin, salt)
             expected = base64.b64decode(str(self._data["pin_hash"]))

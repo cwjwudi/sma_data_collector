@@ -54,6 +54,12 @@ if COMMON_ROOT.is_dir() and str(COMMON_ROOT) not in sys.path:
 
 from launcher_imports import ConfigImportManager  # noqa: E402
 from launcher_security import LauncherSecurityStore  # noqa: E402
+from launcher_settings import (  # noqa: E402
+    NETWORK_HOSTS,
+    NetworkAccessController,
+    NetworkSettingsStore,
+    apply_network_host,
+)
 from launcher_supervisor import ServiceSupervisor  # noqa: E402
 from launcher_web import ManagementServer, create_management_app  # noqa: E402
 
@@ -1122,6 +1128,8 @@ def make_resource_monitor(config: Mapping[str, Any]) -> ResourceMonitor | None:
 
 def service_health_once(service: Mapping[str, Any]) -> bool:
     host = str(service.get("host", "127.0.0.1"))
+    if host in {"0.0.0.0", "::"}:
+        host = "127.0.0.1"
     port = int(service.get("port", 0))
     path = str(service.get("health_path", "/"))
     connection: http.client.HTTPConnection | None = None
@@ -1199,25 +1207,33 @@ def main() -> int:
             return 0
         security = LauncherSecurityStore(DATA_ROOT / "secrets" / "launcher_security.json")
         importer = ConfigImportManager(DATA_ROOT)
+        network_store = NetworkSettingsStore(DATA_ROOT / "state" / "network.json")
+        runtime_services = apply_network_host(
+            [dict(item) for item in config.get("services", []) if isinstance(item, dict)],
+            network_store.mode,
+        )
 
         def managed_start(service: dict[str, Any]) -> ServiceProcess:
             return start_service(python, config, service_with_launcher_credential(service, security))
 
         supervisor = ServiceSupervisor(
-            [dict(item) for item in config.get("services", []) if isinstance(item, dict)],
+            runtime_services,
             DATA_ROOT / "state" / "services.json",
             start_process=managed_start,
             stop_process=lambda process: terminate_processes([process]),
             health_check=service_health_once,
         )
         management = config.get("management") if isinstance(config.get("management"), dict) else {}
-        management_host = str(management.get("host", "127.0.0.1"))
+        management_host = NETWORK_HOSTS[network_store.mode]
         management_port = int(management.get("port", 8090))
-        app = create_management_app(supervisor, security, importer, LAUNCHER_DIR / "static")
+        network = NetworkAccessController(network_store, supervisor)
+        app = create_management_app(supervisor, security, importer, LAUNCHER_DIR / "static", network)
         management_server = ManagementServer(app, host=management_host, port=management_port)
+        network.attach_management_server(management_server)
         try:
             management_server.start()
-            print(f"[management] http://{management_host}:{management_port}")
+            local_management_url = f"http://127.0.0.1:{management_port}"
+            print(f"[management] {local_management_url} ({network_store.mode})")
             supervisor.start()
             if args.smoke:
                 if not wait_for_supervisor_ready(supervisor):
@@ -1225,7 +1241,7 @@ def main() -> int:
                 print("[smoke] ok")
                 return 0
             if not args.no_browser and bool(config.get("open_browser", True)):
-                webbrowser.open(f"http://{management_host}:{management_port}")
+                webbrowser.open(local_management_url)
             resource_monitor = make_resource_monitor(config)
             print("")
             print("Launcher management is running. Press Ctrl+C to stop.")
