@@ -17,6 +17,7 @@
     <Task Name="DataSQLRec" Source="SMA.DataSQLRec.prg" Memory="UserROM" Language="IEC" Debugging="true" />
     <Task Name="DataSQLPro" Source="SMA.DataSQLPro.prg" Memory="UserROM" Language="IEC" Debugging="true" />
     <Task Name="DataSQLBat" Source="SMA.DataSQLBat.prg" Memory="UserROM" Language="IEC" Debugging="true" />
+    <Task Name="LoadCtrl" Source="SMA.LoadControl.prg" Memory="UserROM" Language="IEC" Debugging="true" />
   </TaskClass>
   <TaskClass Name="Cyclic#5" />
   <TaskClass Name="Cyclic#6" />

@@ -16,7 +16,7 @@ from collections import Counter
 # 处理相对导入问题
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from core.config_models import DataGroup, DataPoint, TriggerType
+from core.config_models import DataGroup, DataPoint, TriggerMode, TriggerType
 from communication.opcua_client import OpcUaClient
 from communication.communication_manager import CommunicationManager
 
@@ -91,14 +91,24 @@ class DataCollector:
                 )
             return
         if group.trigger == TriggerType.TIME_AND_VARIABLE:
-            await self._time_and_variable_collection(
-                group,
-                group_points,
-                trigger_point,
-                opcua_client,
-                interval_point,
-                variable_group_points,
-            )
+            if group.trigger_mode == TriggerMode.SUBSCRIPTION:
+                await self._time_and_variable_subscription_collection(
+                    group,
+                    group_points,
+                    trigger_point,
+                    opcua_client,
+                    interval_point,
+                    variable_group_points,
+                )
+            else:
+                await self._time_and_variable_collection(
+                    group,
+                    group_points,
+                    trigger_point,
+                    opcua_client,
+                    interval_point,
+                    variable_group_points,
+                )
             return
         raise ValueError(f"不支持的数据组触发类型: {group.trigger} ({group.name})")
 
@@ -879,6 +889,286 @@ class DataCollector:
             return float(group.trigger_interval_seconds)
         return float(group.interval_seconds)
 
+    async def _open_trigger_subscription(
+        self,
+        group: DataGroup,
+        trigger_point: DataPoint,
+        opcua_client: OpcUaClient,
+    ) -> tuple[Optional[asyncio.Queue], Optional[str]]:
+        """为订阅模式创建本地事件队列；断线重建由 OpcUaClient 负责。"""
+        if group.trigger_mode != TriggerMode.SUBSCRIPTION:
+            return None, None
+
+        queue: asyncio.Queue = asyncio.Queue(maxsize=100)
+
+        def on_value(value: Any) -> None:
+            if queue.full():
+                try:
+                    queue.get_nowait()
+                    self.metrics["subscription_events_dropped"] += 1
+                except asyncio.QueueEmpty:
+                    pass
+            queue.put_nowait(value)
+            self.metrics["subscription_events_received"] += 1
+
+        token = await opcua_client.subscribe_data_change(trigger_point, on_value)
+        self.logger.info(
+            "采集组 %s 已启用触发点订阅: %s",
+            group.name,
+            trigger_point.name,
+        )
+        return queue, token
+
+    async def _next_trigger_value(
+        self,
+        trigger_point: DataPoint,
+        opcua_client: OpcUaClient,
+        subscription_queue: Optional[asyncio.Queue],
+        *,
+        retry_timeout: Optional[float] = None,
+    ) -> Any:
+        """取得下一个触发值；订阅异常待确认时才使用定时读回。"""
+        if subscription_queue is not None:
+            if retry_timeout is None:
+                return await subscription_queue.get()
+            try:
+                return await asyncio.wait_for(
+                    subscription_queue.get(),
+                    timeout=max(0.001, retry_timeout),
+                )
+            except asyncio.TimeoutError:
+                self.metrics["subscription_retry_reads"] += 1
+
+        trigger_data = await opcua_client.read_data_points([trigger_point])
+        return trigger_data.get(trigger_point.name, {}).get("value")
+
+    async def _time_and_variable_subscription_collection(
+        self,
+        group: DataGroup,
+        data_points: List[DataPoint],
+        trigger_point: DataPoint,
+        opcua_client: OpcUaClient,
+        interval_point: Optional[DataPoint] = None,
+        variable_data_points: Optional[List[DataPoint]] = None,
+    ) -> None:
+        """定时采集与触发订阅共存；等待事件时仍保持固定时间节拍。"""
+        interval = float(group.interval_seconds)
+        variable_data_points = variable_data_points or data_points
+        interval, _ = await self._read_collection_interval(
+            group, interval_point, opcua_client, interval
+        )
+        anchor_monotonic, anchor_wall = self._create_fixed_cadence_anchor(
+            datetime.now(), time.monotonic()
+        )
+        tick_index = 0
+        previous_trigger_state = None
+        last_stuck_reset_attempt_at = 0.0
+        retry_needed = False
+        queue, token = await self._open_trigger_subscription(
+            group, trigger_point, opcua_client
+        )
+        if queue is None or token is None:
+            raise RuntimeError(f"采集组 {group.name} 未能创建触发订阅")
+
+        async def collect_time_if_due() -> None:
+            nonlocal tick_index
+            deadline = self._fixed_cadence_deadline(
+                anchor_monotonic, tick_index, interval
+            )
+            if time.monotonic() < deadline:
+                return
+            planned_time = self._fixed_cadence_collection_time(
+                anchor_wall, tick_index, interval
+            )
+            data = await opcua_client.read_data_points(data_points)
+            valid = {
+                name: info
+                for name, info in data.items()
+                if info.get("value") is not None
+            }
+            if valid:
+                for callback in self.data_callbacks:
+                    callback(
+                        {
+                            "group_name": group.name,
+                            "collection_time": planned_time,
+                            "trigger_type": "time",
+                            "data": valid,
+                        }
+                    )
+            else:
+                self.logger.warning(
+                    "采集组 %s（time_and_variable 定时）所有数据点读取失败",
+                    group.name,
+                )
+            tick_index, skipped = self._advance_fixed_cadence_tick(
+                anchor_monotonic,
+                tick_index,
+                interval,
+                time.monotonic(),
+            )
+            if skipped:
+                self.logger.warning(
+                    "采集组 %s（time_and_variable 定时）跳过 %s 个已错过节拍",
+                    group.name,
+                    skipped,
+                )
+
+        try:
+            while True:
+                try:
+                    await collect_time_if_due()
+                    deadline = self._fixed_cadence_deadline(
+                        anchor_monotonic, tick_index, interval
+                    )
+                    wait_timeout = max(0.001, deadline - time.monotonic())
+                    if interval_point is not None:
+                        wait_timeout = min(
+                            wait_timeout,
+                            max(0.001, float(self.dynamic_interval_poll_seconds)),
+                        )
+                    if retry_needed:
+                        wait_timeout = min(
+                            wait_timeout, self.trigger_stuck_reset_retry_interval
+                        )
+
+                    got_trigger_event = True
+                    try:
+                        current_trigger_value = await asyncio.wait_for(
+                            queue.get(), timeout=wait_timeout
+                        )
+                    except asyncio.TimeoutError:
+                        got_trigger_event = False
+                        current_trigger_value = None
+
+                    new_interval, changed = await self._read_collection_interval(
+                        group, interval_point, opcua_client, interval
+                    )
+                    if changed:
+                        interval = new_interval
+                        anchor_monotonic = time.monotonic()
+                        anchor_wall = datetime.now()
+                        tick_index = 1
+
+                    if not got_trigger_event and retry_needed:
+                        current_trigger_value = await self._next_trigger_value(
+                            trigger_point, opcua_client, None
+                        )
+                        got_trigger_event = True
+
+                    if not got_trigger_event:
+                        await collect_time_if_due()
+                        continue
+                    if current_trigger_value is None:
+                        retry_needed = True
+                        self.logger.warning(
+                            "time_and_variable 采集组 %s 读取触发点失败",
+                            group.name,
+                        )
+                        continue
+
+                    if previous_trigger_state is None:
+                        previous_trigger_state = False
+
+                    update_previous_state = True
+                    if not previous_trigger_state and current_trigger_value:
+                        self.logger.info(
+                            "检测到订阅上升沿触发信号（time_and_variable）: %s",
+                            group.name,
+                        )
+                        data = await opcua_client.read_data_points(
+                            variable_data_points
+                        )
+                        valid = {
+                            name: info
+                            for name, info in data.items()
+                            if info.get("value") is not None
+                        }
+                        if not valid:
+                            update_previous_state = False
+                            retry_needed = True
+                            self.logger.warning(
+                                "采集组 %s（订阅触发）所有数据点读取失败，保留触发待重试",
+                                group.name,
+                            )
+                        else:
+                            reset_confirmed = True
+                            if group.reset_trigger_after_read:
+                                reset_confirmed = (
+                                    await self._reset_boolean_trigger_with_confirm(
+                                        group,
+                                        trigger_point,
+                                        opcua_client,
+                                        "订阅上升沿采集后",
+                                    )
+                                )
+                            if reset_confirmed and group.reset_trigger_after_read:
+                                current_trigger_value = False
+                                last_stuck_reset_attempt_at = 0.0
+                            retry_needed = (
+                                group.reset_trigger_after_read
+                                and not reset_confirmed
+                            )
+                            collection_data = {
+                                "group_name": group.name,
+                                "collection_time": datetime.now(),
+                                "trigger_type": "variable",
+                                "trigger_point": trigger_point.name,
+                                "data": valid,
+                            }
+                            for callback in self.data_callbacks:
+                                callback(collection_data)
+                    elif (
+                        group.reset_trigger_after_read
+                        and previous_trigger_state
+                        and current_trigger_value
+                    ):
+                        now = time.monotonic()
+                        if (
+                            now - last_stuck_reset_attempt_at
+                            >= self.trigger_stuck_reset_retry_interval
+                        ):
+                            last_stuck_reset_attempt_at = now
+                            reset_confirmed = (
+                                await self._reset_boolean_trigger_with_confirm(
+                                    group,
+                                    trigger_point,
+                                    opcua_client,
+                                    "订阅触发点持续高电平",
+                                )
+                            )
+                            retry_needed = not reset_confirmed
+                            if reset_confirmed:
+                                current_trigger_value = False
+
+                    if update_previous_state:
+                        previous_trigger_state = current_trigger_value
+                    await collect_time_if_due()
+
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:  # noqa: BLE001
+                    retry_needed = True
+                    if _is_opcua_transient(exc):
+                        self.logger.warning(
+                            "time_and_variable 订阅采集组 %s OPC UA 暂不可用: %s",
+                            group.name,
+                            exc,
+                        )
+                    else:
+                        self.logger.error(
+                            "time_and_variable 订阅采集组 %s 异常: %s",
+                            group.name,
+                            exc,
+                            exc_info=True,
+                        )
+                    await asyncio.sleep(1)
+        finally:
+            await opcua_client.unsubscribe_data_change(token)
+            self.logger.info(
+                "time_and_variable 订阅采集组 %s 已取消", group.name
+            )
+
     async def _time_and_variable_collection(
         self,
         group: DataGroup,
@@ -929,6 +1219,7 @@ class DataCollector:
                 }
                 for callback in self.data_callbacks:
                     callback(collection_data)
+
         async def collect_time_if_due() -> None:
             nonlocal tick_index
             next_deadline = self._fixed_cadence_deadline(
@@ -1109,12 +1400,30 @@ class DataCollector:
         # 记录上一次的触发点状态，用于检测上升沿
         previous_trigger_state = None  # None 表示首次读取，只初始化不触发
         last_stuck_reset_attempt_at = 0.0
+        subscription_queue, subscription_token = await self._open_trigger_subscription(
+            group, trigger_point, opcua_client
+        )
+        subscription_retry_needed = False
 
         while True:
             try:
                 # 检查触发点状态
-                trigger_data = await opcua_client.read_data_points([trigger_point])
-                current_trigger_value = trigger_data.get(trigger_point.name, {}).get('value', False)
+                current_trigger_value = await self._next_trigger_value(
+                    trigger_point,
+                    opcua_client,
+                    subscription_queue,
+                    retry_timeout=(
+                        self.trigger_stuck_reset_retry_interval
+                        if subscription_retry_needed
+                        else None
+                    ),
+                )
+                if current_trigger_value is None:
+                    subscription_retry_needed = subscription_queue is not None
+                    self.logger.warning("变量触发组 %s 读取触发点失败", group.name)
+                    if subscription_queue is None:
+                        await asyncio.sleep(poll_interval)
+                    continue
 
                 # 首次读取仅初始化状态，不触发采集
                 if previous_trigger_state is None:
@@ -1139,6 +1448,7 @@ class DataCollector:
                         self.logger.warning(f"变量触发组 {group.name} 所有数据点读取失败，跳过本次采集")
                         if group.reset_trigger_after_read:
                             update_previous_state = False
+                            subscription_retry_needed = subscription_queue is not None
                             self.logger.warning(
                                 "变量触发组 %s 本轮数据读取失败，保持触发内部状态为 False，下一周期继续重试读取",
                                 group.name,
@@ -1160,8 +1470,12 @@ class DataCollector:
                             if reset_confirmed:
                                 current_trigger_value = False
                                 last_stuck_reset_attempt_at = 0.0
+                                subscription_retry_needed = False
+                            else:
+                                subscription_retry_needed = subscription_queue is not None
                         else:
                             self.logger.debug(f"根据配置跳过触发点复位：{trigger_point.name}")
+                            subscription_retry_needed = False
                                             
                         # 添加元数据
                         collection_data = {
@@ -1193,15 +1507,21 @@ class DataCollector:
                         )
                         if reset_confirmed:
                             current_trigger_value = False
+                            subscription_retry_needed = False
+                        else:
+                            subscription_retry_needed = subscription_queue is not None
                 
                 # 更新上一次的状态
                 if update_previous_state:
                     previous_trigger_state = current_trigger_value
                 
                 # 短暂等待后继续检查
-                await asyncio.sleep(poll_interval)
+                if subscription_queue is None:
+                    await asyncio.sleep(poll_interval)
                 
             except asyncio.CancelledError:
+                if subscription_token:
+                    await opcua_client.unsubscribe_data_change(subscription_token)
                 self.logger.info(f"变量触发采集组 {group.name} 已取消")
                 break
             except Exception as e:
@@ -1225,17 +1545,33 @@ class DataCollector:
         poll_interval = self._get_variable_trigger_poll_interval(group)
         previous_trigger_state = None
         pending_reset_indices: Set[int] = set()
+        subscription_queue, subscription_token = await self._open_trigger_subscription(
+            group, trigger_point, opcua_client
+        )
+        subscription_retry_needed = False
 
         while True:
             try:
                 # 读取触发点数组
-                trigger_data = await opcua_client.read_data_points([trigger_point])
-                current_trigger_values = trigger_data.get(trigger_point.name, {}).get('value')
+                current_trigger_values = await self._next_trigger_value(
+                    trigger_point,
+                    opcua_client,
+                    subscription_queue,
+                    retry_timeout=(
+                        self.trigger_stuck_reset_retry_interval
+                        if subscription_retry_needed
+                        else None
+                    ),
+                )
 
                 if current_trigger_values is None:
+                    subscription_retry_needed = subscription_queue is not None
                     self.logger.warning(f"并行触发组 {group.name} 读取触发点失败")
-                    await asyncio.sleep(poll_interval)
+                    if subscription_queue is None:
+                        await asyncio.sleep(poll_interval)
                     continue
+
+                current_trigger_values = list(current_trigger_values)
 
                 # 首次读取仅初始化状态，不触发
                 if previous_trigger_state is None:
@@ -1255,7 +1591,9 @@ class DataCollector:
                     pending_reset_indices = {
                         index for index in pending_reset_indices if index < len(current_trigger_values)
                     }
-                    await asyncio.sleep(poll_interval)
+                    subscription_retry_needed = bool(pending_reset_indices)
+                    if subscription_queue is None:
+                        await asyncio.sleep(poll_interval)
                     continue
 
                 # Accepted rows whose acknowledgement previously failed must not be
@@ -1278,6 +1616,7 @@ class DataCollector:
                     for index in confirmed:
                         current_trigger_values[index] = False
                         previous_trigger_state[index] = False
+                    subscription_retry_needed = bool(pending_reset_indices)
 
                 # 检测上升沿索引
                 triggered_indices = []
@@ -1345,12 +1684,17 @@ class DataCollector:
                         if index < len(next_previous):
                             next_previous[index] = True
                     previous_trigger_state = next_previous
+                    subscription_retry_needed = bool(rejected or pending_reset_indices)
                 else:
                     previous_trigger_state = list(current_trigger_values)
+                    subscription_retry_needed = bool(pending_reset_indices)
 
-                await asyncio.sleep(poll_interval)
+                if subscription_queue is None:
+                    await asyncio.sleep(poll_interval)
 
             except asyncio.CancelledError:
+                if subscription_token:
+                    await opcua_client.unsubscribe_data_change(subscription_token)
                 self.logger.info(f"并行触发采集组 {group.name} 已取消")
                 break
             except Exception as e:

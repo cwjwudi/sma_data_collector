@@ -18,6 +18,12 @@ class TriggerType(Enum):
     TIME_AND_VARIABLE = "time_and_variable"
 
 
+class TriggerMode(Enum):
+    """变量触发点的获取方式。"""
+    POLL = "poll"
+    SUBSCRIPTION = "subscription"
+
+
 @dataclass
 class DataPoint:
     """数据点配置"""
@@ -72,6 +78,7 @@ class DataGroup:
     enable_point: Optional[str] = None  # 外部启停点位：1/True 启用，0/False 停用；未配置时始终启用
     interval_point: Optional[str] = None  # time/time_and_variable：动态采集间隔点位，值单位为秒
     trigger_interval_seconds: Optional[float] = None  # variable/time_and_variable：触发变量采样周期（秒）
+    trigger_mode: TriggerMode = TriggerMode.POLL  # poll=轮询；subscription=OPC UA 数据变化订阅
     trigger_point: Optional[str] = None
     reset_trigger_after_read: bool = True  # 是否在读取后复位触发点
     partition_interval_years: int = 1  # 0=不分表；1..10=分表间隔年份

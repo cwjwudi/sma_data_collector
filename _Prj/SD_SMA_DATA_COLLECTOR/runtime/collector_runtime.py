@@ -21,8 +21,15 @@ from core.config_models import AppConfig
 from database.data_storage import DataStorageProcessor
 from database.db_manager import DatabaseManager
 
-# 禁止 opcua 的 info/debug 日志
+# 禁止 OPC UA 库的高频 info/debug 日志；需要协议明细时可通过环境变量临时开启。
 logging.getLogger("opcua").setLevel(logging.WARNING)
+logging.getLogger("asyncua").setLevel(
+    getattr(
+        logging,
+        os.getenv("SD_SMA_ASYNCUA_LOG_LEVEL", "WARNING").upper(),
+        logging.WARNING,
+    )
+)
 
 
 class DataCollectionSystem:
@@ -108,12 +115,18 @@ class DataCollectionSystem:
                 db_ok = False
 
         opcua_detail: dict[str, bool] = {}
+        opcua_states: dict[str, str] = {}
+        opcua_subscriptions: dict[str, int] = {}
         if self.communication_manager and self.communication_manager.clients:
             for name, client in self.communication_manager.clients.items():
                 try:
                     opcua_detail[name] = bool(client.is_connected())
+                    opcua_states[name] = client.get_connection_state()
+                    opcua_subscriptions[name] = client.get_subscription_count()
                 except Exception:
                     opcua_detail[name] = False
+                    opcua_states[name] = "unknown"
+                    opcua_subscriptions[name] = 0
         opcua_all = bool(opcua_detail) and all(opcua_detail.values())
 
         storage_metrics = (
@@ -131,7 +144,12 @@ class DataCollectionSystem:
             "config_path": self.config_file,
             "initialized": self.config is not None and self.data_collector is not None,
             "database_connected": db_ok,
-            "opcua": {"by_name": opcua_detail, "all_connected": opcua_all},
+            "opcua": {
+                "by_name": opcua_detail,
+                "state_by_name": opcua_states,
+                "subscriptions_by_name": opcua_subscriptions,
+                "all_connected": opcua_all,
+            },
             "storage": storage_metrics,
         }
 

@@ -26,6 +26,7 @@ async def run_test(
     duration: float,
     evidence_path: Path,
     trigger_period: float,
+    group_name: str,
 ) -> int:
     started_at = datetime.now()
     started_monotonic = time.monotonic()
@@ -37,6 +38,8 @@ async def run_test(
         raise RuntimeError("collector initialization failed")
 
     def capture(row: dict[str, Any]) -> None:
+        if row.get("group_name") != group_name:
+            return
         events.append(
             {
                 "received_at": datetime.now().isoformat(timespec="milliseconds"),
@@ -48,7 +51,16 @@ async def run_test(
 
     system.data_collector.register_data_callback(capture)
     start_task = asyncio.create_task(system.start(), name="snapshot-live-collector")
-    group = system.config.groups[0]
+    group = next(
+        (item for item in system.config.groups if item.name == group_name),
+        None,
+    )
+    if group is None:
+        await system.stop()
+        raise ValueError(f"data group not found: {group_name}")
+    if not group.variable_point_overrides:
+        await system.stop()
+        raise ValueError(f"data group has no variable_point_overrides: {group_name}")
     trigger_point = next(
         point for point in system.config.points if point.name == group.trigger_point
     )
@@ -88,11 +100,20 @@ async def run_test(
 
         await asyncio.sleep(2.0)
         if system.db_manager and system.config:
-            table = system.db_manager.get_current_table_name(
-                group.name,
-                partition_time=started_at,
-                partition_interval_years=group.partition_interval_years,
-            )
+            if system.storage_processor:
+                system.storage_processor.request_group_flush(group.name)
+                flush_deadline = time.monotonic() + 5.0
+                while (
+                    any(
+                        item.get("group_name") == group.name
+                        for item in system.storage_processor.data_queue
+                    )
+                    and time.monotonic() < flush_deadline
+                ):
+                    await asyncio.sleep(0.1)
+            table = system.db_manager.current_table_names.get(group.name)
+            if not table:
+                raise RuntimeError(f"no active database table for {group.name}")
             rows = system.db_manager.execute_query(
                 f"SELECT COUNT(*), "
                 f"SUM(CASE WHEN `BatchCode` = :snapshot_value THEN 1 ELSE 0 END) "
@@ -146,6 +167,7 @@ async def run_test(
     evidence = {
         "test": "variable_point_overrides_live",
         "config": str(config.resolve()),
+        "group": group.name,
         "started_at": started_at.isoformat(timespec="milliseconds"),
         "ended_at": ended_at.isoformat(timespec="milliseconds"),
         "requested_duration_seconds": duration,
@@ -175,10 +197,17 @@ def main() -> int:
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--duration", type=float, default=3605.0)
     parser.add_argument("--trigger-period", type=float, default=10.0)
+    parser.add_argument("--group", default="Data_Product")
     parser.add_argument("--evidence", type=Path, required=True)
     args = parser.parse_args()
     return asyncio.run(
-        run_test(args.config, args.duration, args.evidence, args.trigger_period)
+        run_test(
+            args.config,
+            args.duration,
+            args.evidence,
+            args.trigger_period,
+            args.group,
+        )
     )
 
 

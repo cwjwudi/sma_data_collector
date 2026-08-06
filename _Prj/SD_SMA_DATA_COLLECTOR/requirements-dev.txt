@@ -1,7 +1,7 @@
 # 测试依赖
 pytest==7.4.4
 pytest-asyncio==0.23.4
-asyncua
+asyncua>=2.0,<3
 
 # 代码质量工具
 black==24.1.1

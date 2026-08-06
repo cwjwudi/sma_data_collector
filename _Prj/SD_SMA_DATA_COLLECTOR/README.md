@@ -117,7 +117,7 @@
 ## 快速开始
 
 ### 环境要求
-- Python 3.8+
+- Python 3.10+
 - pip 包管理器
 - MySQL 5.7+ 或 SQLite 3.x
 - OPC UA 服务器
@@ -259,11 +259,12 @@ SD_SMA_DATA_COLLECTOR/
 - `trigger`: 触发方式
   - `time`: 时间间隔触发
   - `variable`: 变量触发（由 PLC 信号触发）
-  - `time_and_variable`: 定时采集 + 变量上升沿立即采集（需配置 `trigger_interval_seconds`）
+  - `time_and_variable`: 定时采集 + 变量上升沿立即采集
 - `data_points`: 包含的数据点名称列表
 - `variable_point_overrides`: （可选）仅用于 `time_and_variable`；按“`data_points` 逻辑字段名 -> PLC 快照点名”配置 variable 触发时的替代读取源。数据库列名仍保持逻辑字段名，time 采集仍读取原始点位。
 - `trigger_point`: 触发变量名称（`variable` / `time_and_variable` 需要）
-- `trigger_interval_seconds`: 触发点轮询间隔（`time_and_variable` 必填；`variable` 可选，未配置时回退 `interval_seconds`）
+- `trigger_mode`: 触发点检测方式。`poll`（默认）按间隔轮询；`subscription` 使用 OPC UA 数据变化订阅
+- `trigger_interval_seconds`: `poll` 模式的触发点轮询间隔；Web 配置页提供 1–10 秒下拉选项，加载器仍兼容历史配置中的任意正数
 - `reset_trigger_after_read`: 读取后是否复位触发信号
 - `is_parallel`: 是否启用并行触发模式（仅 `trigger: variable` 可用）
 - `partition_interval_years`: 数据库分表间隔年份，默认 `1`
@@ -288,8 +289,10 @@ SD_SMA_DATA_COLLECTOR/
 **触发配置约束：**
 - 配置 `enable_point` 后，采集器每秒读取一次该点；停用时取消本组采集任务，重新启用时自动恢复。读点失败或值不是 `0/1` 时保持上一有效状态；启动后尚无有效状态时保持停用。
 - `interval_point` 返回值必须是大于 `0` 的有限数值；无效值或临时读点失败时继续使用上次有效值，尚无有效值时使用 `interval_seconds`。
-- 动态间隔变化从采集器检测到新值时重新起算下一周期，不补采旧节拍；`time_and_variable` 的外部触发轮询不受影响。
-- `time_and_variable` 模式下，`trigger_point` 与 `trigger_interval_seconds` 必须配置，且 `is_parallel` 必须为 `false`。
+- 动态间隔变化从采集器检测到新值时重新起算下一周期，不补采旧节拍；`time_and_variable` 的外部触发检测不受影响。
+- `variable` / `time_and_variable` 均支持 `trigger_mode: subscription`。订阅模式由服务器数据变化事件驱动，不再周期读触发点；连接恢复后会自动重建订阅并推送当前值。
+- `poll` 模式要求有效的正数 `trigger_interval_seconds`；`variable` 未配置时兼容回退到 `interval_seconds`。
+- `time_and_variable` 模式下必须配置 `trigger_point`，且 `is_parallel` 必须为 `false`。
 - `variable_point_overrides` 的键必须存在于本组 `data_points`，值必须引用已定义的 `points[].name`；两侧都声明 `datatype` 时必须一致。PLC 应先写完整快照再置位 Trigger，且 Trigger 未复位前不得覆盖快照。
 - 并行触发模式（`trigger: variable` + `is_parallel: true`）下，`trigger_point` 应为布尔数组节点，`data_points` 应为与触发数组同下标语义的数组节点。
 - 配置了 `unique_key_point` 时，系统会在插入前按该列做表内判重，重复数据不落库并返回唯一性冲突码。
@@ -303,6 +306,7 @@ SD_SMA_DATA_COLLECTOR/
 - `type`: 通信类型（目前仅支持 "opcua"）
 - `host`: OPC UA 服务器地址
 - `port`: OPC UA 服务器端口
+- OPC UA 通信使用原生异步 `asyncua`；状态机为 `disconnected → connecting/reconnecting → connected`，同一连接只允许一个重连任务，重连成功后自动恢复全部订阅。
 
 ### 连接配置 (connections)
 - `name`: 连接配置名称（唯一标识）

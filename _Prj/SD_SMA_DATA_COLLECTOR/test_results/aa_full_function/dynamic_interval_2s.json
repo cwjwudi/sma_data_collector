@@ -1,0 +1,112 @@
+{
+  "config": "C:\\Users\\BR\\codex_ws\\p000_sd_sma_scada\\config\\collector\\AA_full_function_test.json",
+  "group": "Data_Product",
+  "static_interval_seconds": 1.0,
+  "interval_point": "DynamicCollectionInterval",
+  "duration_seconds": 20.0,
+  "started_at": "2026-07-29T13:17:14+08:00",
+  "collector_metrics": {
+    "group_enable_transitions_to_enabled": 1,
+    "dynamic_interval_changed": 1,
+    "subscription_events_received": 2
+  },
+  "event_count": 12,
+  "events": [
+    {
+      "elapsed_seconds": 0.031,
+      "observed_at": "2026-07-29T13:17:14.509+08:00",
+      "trigger_type": "time",
+      "trigger_point": null,
+      "collection_time": "2026-07-29 13:17:14",
+      "data_point_count": 9
+    },
+    {
+      "elapsed_seconds": 0.187,
+      "observed_at": "2026-07-29T13:17:14.669+08:00",
+      "trigger_type": "variable",
+      "trigger_point": "ProductInsertTrigger",
+      "collection_time": "2026-07-29 13:17:14.669127",
+      "data_point_count": 9
+    },
+    {
+      "elapsed_seconds": 1.531,
+      "observed_at": "2026-07-29T13:17:16.002+08:00",
+      "trigger_type": "time",
+      "trigger_point": null,
+      "collection_time": "2026-07-29 13:17:16",
+      "data_point_count": 9
+    },
+    {
+      "elapsed_seconds": 3.547,
+      "observed_at": "2026-07-29T13:17:18.016+08:00",
+      "trigger_type": "time",
+      "trigger_point": null,
+      "collection_time": "2026-07-29 13:17:18",
+      "data_point_count": 9
+    },
+    {
+      "elapsed_seconds": 5.531,
+      "observed_at": "2026-07-29T13:17:20.002+08:00",
+      "trigger_type": "time",
+      "trigger_point": null,
+      "collection_time": "2026-07-29 13:17:20",
+      "data_point_count": 9
+    },
+    {
+      "elapsed_seconds": 7.547,
+      "observed_at": "2026-07-29T13:17:22.016+08:00",
+      "trigger_type": "time",
+      "trigger_point": null,
+      "collection_time": "2026-07-29 13:17:22",
+      "data_point_count": 9
+    },
+    {
+      "elapsed_seconds": 9.547,
+      "observed_at": "2026-07-29T13:17:24.028+08:00",
+      "trigger_type": "time",
+      "trigger_point": null,
+      "collection_time": "2026-07-29 13:17:24",
+      "data_point_count": 9
+    },
+    {
+      "elapsed_seconds": 11.531,
+      "observed_at": "2026-07-29T13:17:26.015+08:00",
+      "trigger_type": "time",
+      "trigger_point": null,
+      "collection_time": "2026-07-29 13:17:26",
+      "data_point_count": 9
+    },
+    {
+      "elapsed_seconds": 13.547,
+      "observed_at": "2026-07-29T13:17:28.017+08:00",
+      "trigger_type": "time",
+      "trigger_point": null,
+      "collection_time": "2026-07-29 13:17:28",
+      "data_point_count": 9
+    },
+    {
+      "elapsed_seconds": 15.547,
+      "observed_at": "2026-07-29T13:17:30.029+08:00",
+      "trigger_type": "time",
+      "trigger_point": null,
+      "collection_time": "2026-07-29 13:17:30",
+      "data_point_count": 9
+    },
+    {
+      "elapsed_seconds": 17.547,
+      "observed_at": "2026-07-29T13:17:32.029+08:00",
+      "trigger_type": "time",
+      "trigger_point": null,
+      "collection_time": "2026-07-29 13:17:32",
+      "data_point_count": 9
+    },
+    {
+      "elapsed_seconds": 19.531,
+      "observed_at": "2026-07-29T13:17:34.003+08:00",
+      "trigger_type": "time",
+      "trigger_point": null,
+      "collection_time": "2026-07-29 13:17:34",
+      "data_point_count": 9
+    }
+  ]
+}

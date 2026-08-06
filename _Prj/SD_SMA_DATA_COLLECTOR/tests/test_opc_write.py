@@ -1,5 +1,5 @@
 import asyncio
-from opcua import Client, ua
+from asyncua import Client, ua
 
 async def toggle_opc_value():
     # OPC UA服务器地址
@@ -10,7 +10,7 @@ async def toggle_opc_value():
     
     try:
         # 连接到OPC UA服务器
-        client.connect()
+        await client.connect()
         print("Connected to OPC UA server")
         
         # 获取节点
@@ -18,14 +18,16 @@ async def toggle_opc_value():
         
         while True:
             # 读取当前值
-            current_value = node.get_value()
+            current_value = await node.read_value()
             print(f"Current value: {current_value}")
             
             # 取反操作
             new_value = not current_value
             
             # 写入新值
-            node.set_attribute(ua.AttributeIds.Value, ua.DataValue(ua.Variant(new_value, ua.VariantType.Boolean)))
+            await node.write_value(
+                ua.DataValue(ua.Variant(new_value, ua.VariantType.Boolean))
+            )
             print(f"New value set to: {new_value}")
             
             # 等待1秒
@@ -35,7 +37,7 @@ async def toggle_opc_value():
         print(f"An error occurred: {e}")
     finally:
         # 断开连接
-        client.disconnect()
+        await client.disconnect()
         print("Disconnected from OPC UA server")
 
 # 运行异步函数

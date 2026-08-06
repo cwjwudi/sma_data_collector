@@ -1,0 +1,87 @@
+{
+  "started_at": "2026-07-29T11:38:52.716893+08:00",
+  "ended_at": "2026-07-29T11:39:09.979137+08:00",
+  "source_config": "C:\\Users\\BR\\codex_ws\\p000_sd_sma_scada\\config\\collector\\AA_test.json",
+  "duration_requested_seconds": 15.0,
+  "duration_actual_seconds": 16.468999999997322,
+  "attempts": {
+    "Data_Recipe": 10,
+    "Data_Product": 10,
+    "Data_Alarm": 10,
+    "Data_Audit": 10,
+    "Data_Batch": 10,
+    "Data_BatchInfo": 10
+  },
+  "confirmed": {
+    "Data_Recipe": 10,
+    "Data_Product": 10,
+    "Data_Alarm": 10,
+    "Data_Audit": 10,
+    "Data_Batch": 10,
+    "Data_BatchInfo": 10
+  },
+  "collected": {
+    "Data_Recipe": 12,
+    "Data_Product": 29,
+    "Data_Alarm": 22,
+    "Data_Audit": 17,
+    "Data_Batch": 12,
+    "Data_BatchInfo": 10
+  },
+  "faults": [],
+  "errors": [],
+  "connection_states_before_shutdown": {
+    "PLC_TPS": "connected"
+  },
+  "collector_metrics": {
+    "subscription_events_received": 135,
+    "parallel_edges_detected": 39,
+    "parallel_rows_accepted": 39,
+    "parallel_rows_rejected": 0,
+    "parallel_trigger_reset_confirmed": 39
+  },
+  "storage_metrics": {
+    "db_rows_committed": 92,
+    "db_rows_unique_conflict": 10,
+    "db_rows_failed": 0,
+    "db_rows_dead_letter": 0,
+    "shutdown_rows_flush_attempted": 1,
+    "shutdown_rows_remaining": 0,
+    "queue_size": 0,
+    "retry_queue_size": 0,
+    "dead_letter_queue_size": 0,
+    "inflight_size": 0,
+    "outbox_enabled": 0,
+    "outbox_pending_size": 0,
+    "outbox_processing_size": 0,
+    "outbox_retry_size": 0,
+    "outbox_dead_letter_size": 0,
+    "outbox_completed_size": 0,
+    "outbox_file_bytes": 0
+  },
+  "database_rows_before": {
+    "Data_Recipe": 5362,
+    "Data_Product": 33283,
+    "Data_Alarm": 72975,
+    "Data_Audit": 69745,
+    "Data_Batch": 1065,
+    "Data_BatchInfo": 6624
+  },
+  "database_rows_after": {
+    "Data_Recipe": 5374,
+    "Data_Product": 33311,
+    "Data_Alarm": 72997,
+    "Data_Audit": 69762,
+    "Data_Batch": 1066,
+    "Data_BatchInfo": 6634
+  },
+  "database_row_deltas": {
+    "Data_Product": 28,
+    "Data_Batch": 1,
+    "Data_Alarm": 22,
+    "Data_Recipe": 12,
+    "Data_Audit": 17,
+    "Data_BatchInfo": 10
+  },
+  "passed": true
+}
