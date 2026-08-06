@@ -6,6 +6,7 @@ import json
 import os
 import re
 import secrets
+import sys
 import threading
 import time
 import uuid
@@ -21,6 +22,13 @@ from pydantic import BaseModel, Field
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 PACKAGE_ROOT = BASE_DIR.parent.parent
+DATA_ROOT = Path(os.path.expandvars(os.getenv("SD_SMA_DATA_ROOT", str(PACKAGE_ROOT)))).resolve()
+COMMON_ROOT = BASE_DIR.parent / "SD_SMA_COMMON"
+if COMMON_ROOT.is_dir() and str(COMMON_ROOT) not in sys.path:
+    sys.path.insert(0, str(COMMON_ROOT))
+
+from sd_sma_common import FilesystemBrowser, FilesystemBrowserError
+
 AUTH_TOKEN_ENV = "SD_SMA_WEB_TOKEN"
 AUTH_TOKEN_HEADER = "X-SD-SMA-Token"
 AUTH_EXEMPT_PATHS = {"/api/health"}
@@ -51,6 +59,7 @@ def _resolve_config_dir() -> Path:
         return (BASE_DIR / "config").resolve()
     value = raw.replace("${REPORT_COPY_ROOT}", str(BASE_DIR))
     value = value.replace("${PACKAGE_ROOT}", str(PACKAGE_ROOT))
+    value = value.replace("${DATA_ROOT}", str(DATA_ROOT))
     path = Path(os.path.expandvars(value))
     if not path.is_absolute():
         path = PACKAGE_ROOT / path
@@ -66,7 +75,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "copy_subdirectories": True,
     "overwrite_by_default": False,
     "allowed_target_roots": [],
-    "log_dir": "${PACKAGE_ROOT}/logs/report_copy",
+    "allowed_source_roots": [],
+    "log_dir": "${DATA_ROOT}/logs/report_copy",
 }
 DRIVE_REMOVABLE = 2
 DRIVE_FIXED = 3
@@ -80,7 +90,8 @@ class AppConfig(BaseModel):
     copy_subdirectories: bool = True
     overwrite_by_default: bool = False
     allowed_target_roots: list[str] = Field(default_factory=list)
-    log_dir: str = "${PACKAGE_ROOT}/logs/report_copy"
+    allowed_source_roots: list[str] = Field(default_factory=list)
+    log_dir: str = "${DATA_ROOT}/logs/report_copy"
 
 
 class CopyRequest(BaseModel):
@@ -132,6 +143,7 @@ def expand_path(raw: str, *, default_base: Path = BASE_DIR) -> Path:
     value = str(raw or "").strip()
     value = value.replace("${REPORT_COPY_ROOT}", str(BASE_DIR))
     value = value.replace("${PACKAGE_ROOT}", str(PACKAGE_ROOT))
+    value = value.replace("${DATA_ROOT}", str(DATA_ROOT))
     value = value.replace("${CONFIG_DIR}", str(CONFIG_DIR))
     path = Path(os.path.expandvars(value))
     if not path.is_absolute():
@@ -155,7 +167,8 @@ def normalize_extensions(values: list[str]) -> list[str]:
 def public_config(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
     cfg = cfg or load_config()
     source = expand_path(str(cfg["report_source_dir"]))
-    log_dir = expand_path(str(cfg["log_dir"]), default_base=PACKAGE_ROOT)
+    configured_log_dir = os.getenv("SD_SMA_LOG_DIR", "").strip() or str(cfg["log_dir"])
+    log_dir = expand_path(configured_log_dir, default_base=DATA_ROOT)
     data = dict(cfg)
     data["report_source_dir_resolved"] = str(source)
     data["report_source_exists"] = source.is_dir()
@@ -169,7 +182,8 @@ def report_root() -> Path:
 
 def log_dir() -> Path:
     cfg = load_config()
-    path = expand_path(str(cfg["log_dir"]), default_base=PACKAGE_ROOT)
+    configured = os.getenv("SD_SMA_LOG_DIR", "").strip() or str(cfg["log_dir"])
+    path = expand_path(configured, default_base=DATA_ROOT)
     path.mkdir(parents=True, exist_ok=True)
     return path
 
@@ -365,6 +379,13 @@ def ensure_target_drive(value: str) -> Path:
     if not drive.get("is_allowed"):
         raise ValueError(f"目标盘符未被允许: {root}")
     return Path(root)
+
+
+def source_filesystem_browser() -> FilesystemBrowser:
+    cfg = load_config()
+    roots: list[str | Path] = [report_root(), *(cfg.get("allowed_source_roots") or [])]
+    roots.extend(drive["root"] for drive in list_drives() if drive.get("is_removable"))
+    return FilesystemBrowser(roots)
 
 
 def format_report(item: Path, root: Path) -> dict[str, Any]:
@@ -563,23 +584,6 @@ def copy_reports_job(job_id: str, req: CopyRequest) -> dict[str, Any]:
     }
 
 
-def choose_folder_dialog(initial_dir: str | None = None) -> str:
-    try:
-        import tkinter as tk
-        from tkinter import filedialog
-    except Exception as exc:  # noqa: BLE001
-        raise RuntimeError(f"Folder picker is not available: {exc}") from exc
-    initial = expand_path(initial_dir or str(report_root()))
-    root = tk.Tk()
-    root.withdraw()
-    root.attributes("-topmost", True)
-    try:
-        selected = filedialog.askdirectory(initialdir=str(initial), title="选择报表目录", mustexist=True)
-    finally:
-        root.destroy()
-    return str(Path(selected).resolve()) if selected else ""
-
-
 app = FastAPI(title="SD SMA Report Copy", version="0.1.0")
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "app" / "static")), name="static")
 
@@ -627,11 +631,23 @@ def post_config(payload: dict[str, Any]) -> dict[str, Any]:
         raise HTTPException(400, str(exc)) from exc
 
 
-@app.post("/api/folder-dialog")
-def folder_dialog(payload: dict[str, Any]) -> dict[str, Any]:
+@app.get("/api/filesystem/roots")
+def filesystem_roots(purpose: str = "source") -> dict[str, Any]:
     try:
-        return {"selected": choose_folder_dialog(str(payload.get("initial_dir") or ""))}
-    except Exception as exc:  # noqa: BLE001
+        if purpose != "source":
+            raise FilesystemBrowserError("Unsupported browse purpose")
+        return {"roots": source_filesystem_browser().public_roots()}
+    except FilesystemBrowserError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@app.get("/api/filesystem/entries")
+def filesystem_entries(path: str, purpose: str = "source") -> dict[str, Any]:
+    try:
+        if purpose != "source":
+            raise FilesystemBrowserError("Unsupported browse purpose")
+        return source_filesystem_browser().entries(path, include_files=False)
+    except FilesystemBrowserError as exc:
         raise HTTPException(400, str(exc)) from exc
 
 

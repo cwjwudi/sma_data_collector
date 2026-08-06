@@ -4,6 +4,7 @@
     "mysql": "mysql"
   },
   "backup_dir": "${DB_ADMIN_ROOT}/backups",
+  "allowed_browse_roots": [],
   "max_upload_mb": 512,
   "max_concurrent_jobs": 2,
   "cli_timeout_seconds": 86400,

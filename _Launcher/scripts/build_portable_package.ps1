@@ -378,6 +378,7 @@ function Get-ServiceProjectName {
 
 function Get-ServiceProjectNames {
     $names = New-Object System.Collections.Generic.List[string]
+    $names.Add("SD_SMA_COMMON")
     foreach ($service in (Get-LauncherServices)) {
         $projectName = Get-ServiceProjectName -Service $service
         if (-not $names.Contains($projectName)) {
@@ -399,7 +400,7 @@ function Set-ReportCopyLogDir {
 
     $raw = Get-Content -LiteralPath $ConfigFile -Raw -Encoding UTF8
     $data = $raw | ConvertFrom-Json
-    $desired = '${PACKAGE_ROOT}/logs/report_copy'
+    $desired = '${DATA_ROOT}/logs/report_copy'
     if ($data.log_dir -eq $desired) {
         return
     }

@@ -2,11 +2,19 @@
 from __future__ import annotations
 
 from pathlib import Path
+import threading
 from typing import Callable
 
 import sd_sma_launcher as launcher
 
 POLL_SENTINEL = 99.0  # 测试里用可辨识的轮询间隔，便于把退避 sleep 与轮询 sleep 区分开
+
+
+def test_monitor_exits_cleanly_when_shutdown_is_requested() -> None:
+    event = threading.Event()
+    event.set()
+
+    assert launcher.monitor([], shutdown_event=event, sleep=lambda _: None) == 0
 
 
 class FakeStream:

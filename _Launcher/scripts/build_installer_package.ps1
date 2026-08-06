@@ -17,6 +17,8 @@ $LauncherDir = Split-Path -Parent $ScriptDir
 $RepoRoot = Split-Path -Parent $LauncherDir
 $PortableBuilder = Join-Path $ScriptDir "build_portable_package.ps1"
 $InnoScript = Join-Path $LauncherDir "installer\SD_SMA.iss"
+$WinSWSource = Join-Path $LauncherDir "installer\tools\WinSW-x64.exe"
+$WinSWExpectedHash = "05B82D46AD331CC16BDC00DE5C6332C1EF818DF8CEEFCD49C726553209B3A0DA"
 
 if ([string]::IsNullOrWhiteSpace($OutputDir)) {
     $OutputDir = Join-Path $RepoRoot "_Build\SD_SMA_Installer_Package"
@@ -262,6 +264,12 @@ Ensure-Nuitka -PythonExe $PythonExe
 Write-Host "[python] $PythonExe"
 Write-Host "[inno] $InnoSetupExe"
 
+$actualWinSWHash = (Get-FileHash -LiteralPath $WinSWSource -Algorithm SHA256).Hash
+if ($actualWinSWHash -ne $WinSWExpectedHash) {
+    throw "WinSW 2.12.0 SHA-256 mismatch: $actualWinSWHash"
+}
+Write-Host "[winsw] verified 2.12.0: $actualWinSWHash"
+
 Assert-ChildPath -Parent $BuildRoot -Child $InstallerPackageRoot
 Remove-DirectorySafely -Parent $BuildRoot -Target $InstallerPackageRoot
 foreach ($legacyOutput in @(
@@ -316,6 +324,14 @@ $InstalledLauncher = Join-Path $PackageLauncher "SD_SMA_Launcher.exe"
 Copy-Item -LiteralPath $CompiledLauncher -Destination $InstalledLauncher -Force
 Remove-Item -LiteralPath (Join-Path $PackageLauncher "sd_sma_launcher.py") -Force
 Remove-Item -LiteralPath (Join-Path $PackageLauncher "resource_monitor.py") -Force
+
+$PackageService = Join-Path $PackageRoot "_Service"
+New-Item -ItemType Directory -Force -Path $PackageService | Out-Null
+Copy-Item -LiteralPath $WinSWSource -Destination (Join-Path $PackageService "SD_SMA_Service.exe") -Force
+Copy-Item -LiteralPath (Join-Path $LauncherDir "installer\tools\WinSW-LICENSE.txt") -Destination $PackageService -Force
+Copy-Item -LiteralPath (Join-Path $LauncherDir "installer\SD_SMA_Service.xml") -Destination $PackageService -Force
+Copy-Item -LiteralPath (Join-Path $LauncherDir "installer\Initialize-SD_SMA.ps1") -Destination $PackageService -Force
+Copy-Item -LiteralPath (Join-Path $LauncherDir "installer\Install-SD_SMA-Service.ps1") -Destination $PackageService -Force
 
 $stagedConfigPath = Join-Path $PackageLauncher "launcher_config.json"
 $stagedConfig = Get-Content -LiteralPath $stagedConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json

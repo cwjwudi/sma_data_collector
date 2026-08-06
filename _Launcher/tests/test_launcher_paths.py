@@ -16,6 +16,22 @@ def test_source_launcher_dir_is_launcher_folder(monkeypatch) -> None:
     assert launcher.resolve_launcher_dir() == Path(launcher.__file__).resolve().parent
 
 
+def test_data_root_defaults_to_package_and_honors_override(monkeypatch, tmp_path: Path) -> None:
+    package_root = tmp_path / "package"
+    monkeypatch.delenv("SD_SMA_DATA_ROOT", raising=False)
+    assert launcher.resolve_data_root(package_root) == package_root.resolve()
+
+    expected = tmp_path / "program-data"
+    monkeypatch.setenv("SD_SMA_DATA_ROOT", str(expected))
+    assert launcher.resolve_data_root(package_root) == expected.resolve()
+
+
+def test_expand_config_value_supports_data_root(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(launcher, "DATA_ROOT", tmp_path.resolve())
+
+    assert Path(launcher.expand_config_value("${DATA_ROOT}/logs")) == tmp_path.resolve() / "logs"
+
+
 def test_repair_venv_config_rewrites_relocated_paths(tmp_path: Path) -> None:
     runtime = tmp_path / "installed"
     venv_dir = runtime / ".venv"
@@ -50,10 +66,10 @@ def test_repair_venv_config_requires_bundled_python(tmp_path: Path) -> None:
     assert launcher.repair_venv_config(venv_dir, tmp_path / "_Python") is False
 
 
-def test_db_admin_backup_dir_resolves_from_package_root() -> None:
+def test_db_admin_backup_dir_resolves_from_data_root() -> None:
     config = launcher.load_json(launcher.DEFAULT_CONFIG)
     service = next(item for item in config["services"] if item["name"] == "db_admin")
 
     env = launcher.resolve_service_env(service)
 
-    assert env["SD_SMA_DB_ADMIN_BACKUP_DIR"] == str((launcher.PACKAGE_ROOT / "backups").resolve())
+    assert env["SD_SMA_DB_ADMIN_BACKUP_DIR"] == str((launcher.DATA_ROOT / "backups").resolve())

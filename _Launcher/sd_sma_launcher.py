@@ -5,6 +5,7 @@ import atexit
 import http.client
 import json
 import os
+import signal
 import shutil
 import socket
 import subprocess
@@ -32,10 +33,20 @@ def resolve_launcher_dir() -> Path:
     return Path(__file__).resolve().parent
 
 
+def resolve_data_root(package_root: Path) -> Path:
+    """Return the writable runtime root (ProgramData for service installs)."""
+    override = os.environ.get("SD_SMA_DATA_ROOT", "").strip()
+    if not override:
+        return package_root.resolve()
+    expanded = os.path.expandvars(override)
+    return Path(expanded).resolve()
+
+
 LAUNCHER_DIR = resolve_launcher_dir()
 PACKAGE_ROOT = LAUNCHER_DIR.parent
+DATA_ROOT = resolve_data_root(PACKAGE_ROOT)
 DEFAULT_CONFIG = LAUNCHER_DIR / "launcher_config.json"
-LAUNCHER_LOG_DIR = PACKAGE_ROOT / "logs" / "launcher"
+LAUNCHER_LOG_DIR = DATA_ROOT / "logs" / "launcher"
 LAUNCHER_LOG_FILE = LAUNCHER_LOG_DIR / "launcher.log"
 DEFAULT_SERVICE_LOG_MAX_BYTES = 5 * 1024 * 1024
 DEFAULT_SERVICE_LOG_BACKUP_COUNT = 5
@@ -147,6 +158,101 @@ class ServiceProcess:
     process: subprocess.Popen
     log_file: Any
     log_pump: Any = None
+
+
+class WindowsProcessJob:
+    """Best-effort Job Object that kills managed descendants when closed."""
+
+    def __init__(self) -> None:
+        self._handle: Any = None
+        if os.name != "nt":
+            return
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            class IO_COUNTERS(ctypes.Structure):
+                _fields_ = [
+                    ("ReadOperationCount", ctypes.c_ulonglong),
+                    ("WriteOperationCount", ctypes.c_ulonglong),
+                    ("OtherOperationCount", ctypes.c_ulonglong),
+                    ("ReadTransferCount", ctypes.c_ulonglong),
+                    ("WriteTransferCount", ctypes.c_ulonglong),
+                    ("OtherTransferCount", ctypes.c_ulonglong),
+                ]
+
+            class JOBOBJECT_BASIC_LIMIT_INFORMATION(ctypes.Structure):
+                _fields_ = [
+                    ("PerProcessUserTimeLimit", ctypes.c_longlong),
+                    ("PerJobUserTimeLimit", ctypes.c_longlong),
+                    ("LimitFlags", wintypes.DWORD),
+                    ("MinimumWorkingSetSize", ctypes.c_size_t),
+                    ("MaximumWorkingSetSize", ctypes.c_size_t),
+                    ("ActiveProcessLimit", wintypes.DWORD),
+                    ("Affinity", ctypes.c_size_t),
+                    ("PriorityClass", wintypes.DWORD),
+                    ("SchedulingClass", wintypes.DWORD),
+                ]
+
+            class JOBOBJECT_EXTENDED_LIMIT_INFORMATION(ctypes.Structure):
+                _fields_ = [
+                    ("BasicLimitInformation", JOBOBJECT_BASIC_LIMIT_INFORMATION),
+                    ("IoInfo", IO_COUNTERS),
+                    ("ProcessMemoryLimit", ctypes.c_size_t),
+                    ("JobMemoryLimit", ctypes.c_size_t),
+                    ("PeakProcessMemoryUsed", ctypes.c_size_t),
+                    ("PeakJobMemoryUsed", ctypes.c_size_t),
+                ]
+
+            kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+            kernel32.CreateJobObjectW.argtypes = [ctypes.c_void_p, wintypes.LPCWSTR]
+            kernel32.CreateJobObjectW.restype = wintypes.HANDLE
+            kernel32.SetInformationJobObject.argtypes = [
+                wintypes.HANDLE,
+                ctypes.c_int,
+                ctypes.c_void_p,
+                wintypes.DWORD,
+            ]
+            kernel32.SetInformationJobObject.restype = wintypes.BOOL
+            kernel32.AssignProcessToJobObject.argtypes = [wintypes.HANDLE, wintypes.HANDLE]
+            kernel32.AssignProcessToJobObject.restype = wintypes.BOOL
+            kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+            kernel32.CloseHandle.restype = wintypes.BOOL
+            handle = kernel32.CreateJobObjectW(None, None)
+            if not handle:
+                return
+            info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION()
+            info.BasicLimitInformation.LimitFlags = 0x00002000  # JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+            ok = kernel32.SetInformationJobObject(
+                handle, 9, ctypes.byref(info), ctypes.sizeof(info)
+            )
+            if not ok:
+                kernel32.CloseHandle(handle)
+                return
+            self._handle = handle
+            self._kernel32 = kernel32
+        except Exception:
+            self._handle = None
+
+    def assign(self, process: subprocess.Popen) -> bool:
+        if self._handle is None or os.name != "nt":
+            return False
+        try:
+            return bool(self._kernel32.AssignProcessToJobObject(self._handle, int(process._handle)))
+        except Exception:
+            return False
+
+    def close(self) -> None:
+        if self._handle is not None:
+            try:
+                self._kernel32.CloseHandle(self._handle)
+            finally:
+                self._handle = None
+
+
+_PROCESS_JOB = WindowsProcessJob()
+atexit.register(_PROCESS_JOB.close)
+_SHUTDOWN_EVENT = threading.Event()
 
 
 class SizeRotatingLogWriter:
@@ -330,6 +436,7 @@ def resolve_path(value: str | os.PathLike[str], *, base: Path = PACKAGE_ROOT) ->
     raw = str(value)
     raw = raw.replace("${PACKAGE_ROOT}", str(PACKAGE_ROOT))
     raw = raw.replace("${LAUNCHER_DIR}", str(LAUNCHER_DIR))
+    raw = raw.replace("${DATA_ROOT}", str(DATA_ROOT))
     raw = os.path.expandvars(raw)
     path = Path(raw)
     if not path.is_absolute():
@@ -419,6 +526,7 @@ def expand_config_value(value: str) -> str:
     raw = str(value)
     raw = raw.replace("${PACKAGE_ROOT}", str(PACKAGE_ROOT))
     raw = raw.replace("${LAUNCHER_DIR}", str(LAUNCHER_DIR))
+    raw = raw.replace("${DATA_ROOT}", str(DATA_ROOT))
     return os.path.expandvars(raw)
 
 
@@ -437,7 +545,7 @@ def resolve_service_env(service: dict[str, Any]) -> dict[str, str]:
         if env_key.endswith(path_suffixes):
             path = Path(expanded)
             if not path.is_absolute():
-                path = PACKAGE_ROOT / path
+                path = DATA_ROOT / path
             expanded = str(path.resolve())
         resolved[env_key] = expanded
     return resolved
@@ -455,14 +563,14 @@ def config_dir_from_service(service: dict[str, Any]) -> Path:
     for key, value in env.items():
         if key.endswith("_CONFIG_DIR"):
             return Path(value)
-    return PACKAGE_ROOT / "config" / service_folder_name(service)
+    return DATA_ROOT / "config" / service_folder_name(service)
 
 
 def log_dir_from_service(service: dict[str, Any]) -> Path:
     env = resolve_service_env(service)
     if "SD_SMA_LOG_DIR" in env:
         return Path(env["SD_SMA_LOG_DIR"])
-    return PACKAGE_ROOT / "logs" / service_folder_name(service)
+    return DATA_ROOT / "logs" / service_folder_name(service)
 
 
 def _config_dir_is_empty(path: Path) -> bool:
@@ -518,7 +626,7 @@ def ensure_report_copy_log_dir(config_dir: Path) -> None:
     except (OSError, ValueError, json.JSONDecodeError):
         return
 
-    desired = "${PACKAGE_ROOT}/logs/report_copy"
+    desired = "${DATA_ROOT}/logs/report_copy"
     if data.get("log_dir") == desired:
         return
     data["log_dir"] = desired
@@ -576,11 +684,12 @@ def bootstrap_runtime_dirs(config: dict[str, Any]) -> None:
         config_dir.mkdir(parents=True, exist_ok=True)
         log_dir.mkdir(parents=True, exist_ok=True)
         # Always keep a reserved per-service log folder under logs/<folder>.
-        (PACKAGE_ROOT / "logs" / folder).mkdir(parents=True, exist_ok=True)
+        (DATA_ROOT / "logs" / folder).mkdir(parents=True, exist_ok=True)
 
         if _config_dir_is_empty(config_dir):
+            packaged_defaults = PACKAGE_ROOT / "config" / folder
             cwd = resolve_path(str(service.get("cwd", "")))
-            source = cwd / "config"
+            source = packaged_defaults if packaged_defaults != config_dir and packaged_defaults.is_dir() else cwd / "config"
             copied = seed_config_dir(config_dir, source)
             if copied:
                 print(f"[bootstrap] seeded {name} config from {source} -> {config_dir} ({copied} files)")
@@ -725,7 +834,11 @@ def assert_ports_free(config: dict[str, Any]) -> None:
             raise RuntimeError(f"Port already in use: {host}:{port} ({service.get('name')})")
 
 
-def wait_for_http(url: str, timeout_seconds: float) -> bool:
+def wait_for_http(
+    url: str,
+    timeout_seconds: float,
+    shutdown_event: threading.Event | None = None,
+) -> bool:
     parsed = urllib.parse.urlparse(url)
     host = parsed.hostname or "127.0.0.1"
     port = parsed.port or (443 if parsed.scheme == "https" else 80)
@@ -735,6 +848,8 @@ def wait_for_http(url: str, timeout_seconds: float) -> bool:
 
     deadline = time.monotonic() + timeout_seconds
     while time.monotonic() < deadline:
+        if shutdown_event is not None and shutdown_event.is_set():
+            return False
         conn: http.client.HTTPConnection | None = None
         try:
             if parsed.scheme == "https":
@@ -772,6 +887,13 @@ def start_service(python: Path, config: dict[str, Any], service: dict[str, Any])
     log_path = log_dir / "uvicorn.log"
     log_writer = SizeRotatingLogWriter(log_path)
     service_env = resolve_service_env(service)
+    common_root = PACKAGE_ROOT / "_Prj" / "SD_SMA_COMMON"
+    if common_root.is_dir():
+        existing_pythonpath = str(service_env.get("PYTHONPATH") or env.get("PYTHONPATH") or "")
+        service_env = {
+            **service_env,
+            "PYTHONPATH": str(common_root) + (os.pathsep + existing_pythonpath if existing_pythonpath else ""),
+        }
     # Let query_web also write its own rotated app.log when SD_SMA_LOG_DIR is set.
     if "SD_SMA_LOG_DIR" not in service_env:
         service_env = {**service_env, "SD_SMA_LOG_DIR": str(log_dir)}
@@ -801,6 +923,8 @@ def start_service(python: Path, config: dict[str, Any], service: dict[str, Any])
         errors="replace",
         bufsize=1,
     )
+    if os.name == "nt" and not _PROCESS_JOB.assign(process):
+        print(f"[job] warning: could not attach {title} to launcher Job Object")
     log_pump = threading.Thread(
         target=_pump_process_output,
         args=(process.stdout, log_writer),
@@ -839,7 +963,11 @@ def make_service_restarter(python: Path, config: dict[str, Any]) -> Callable[[Se
     return restart
 
 
-def wait_for_services(config: dict[str, Any], processes: list[ServiceProcess]) -> None:
+def wait_for_services(
+    config: dict[str, Any],
+    processes: list[ServiceProcess],
+    shutdown_event: threading.Event | None = None,
+) -> bool:
     by_name = {p.name: p for p in processes}
     for service in config.get("services", []):
         name = str(service["name"])
@@ -849,12 +977,15 @@ def wait_for_services(config: dict[str, Any], processes: list[ServiceProcess]) -
         health_path = str(service.get("health_path", "/"))
         url = f"http://{host}:{port}{health_path}"
         print(f"[health] waiting for {proc.title}: {url}")
-        ok = wait_for_http(url, timeout_seconds=30.0)
+        ok = wait_for_http(url, timeout_seconds=30.0, shutdown_event=shutdown_event)
         if not ok:
+            if shutdown_event is not None and shutdown_event.is_set():
+                return False
             if proc.process.poll() is not None:
                 raise RuntimeError(f"{proc.title} exited early. See log: {proc.log_path}")
             raise RuntimeError(f"{proc.title} did not become ready in time. See log: {proc.log_path}")
         print(f"[health] ready: {proc.title}")
+    return True
 
 
 def open_browser_tabs(config: dict[str, Any], processes: list[ServiceProcess], *, no_browser: bool) -> None:
@@ -904,6 +1035,7 @@ def monitor(
     sleep: Callable[[float], None] = time.sleep,
     clock: Callable[[], float] = time.monotonic,
     poll_interval_seconds: float = 1.0,
+    shutdown_event: threading.Event | None = None,
 ) -> int:
     print("")
     print("Services are running. Press Ctrl+C to stop all services.")
@@ -912,6 +1044,9 @@ def monitor(
         policy_factory = RestartPolicy.from_env
     policies: dict[str, RestartPolicy] = {}
     while True:
+        if shutdown_event is not None and shutdown_event.is_set():
+            print("[stop] shutdown requested")
+            return 0
         if resource_monitor is not None:
             resource_monitor.maybe_sample(processes)
         for index, proc in enumerate(processes):
@@ -934,6 +1069,23 @@ def monitor(
             if resource_monitor is not None:
                 resource_monitor.note_restart(proc.name)
         sleep(poll_interval_seconds)
+
+
+def install_signal_handlers(shutdown_event: threading.Event) -> None:
+    """Translate console/service termination signals into orderly shutdown."""
+
+    def request_shutdown(signum: int, _frame: Any) -> None:
+        print(f"[stop] received signal {signum}")
+        shutdown_event.set()
+
+    supported = [signal.SIGINT, signal.SIGTERM]
+    if hasattr(signal, "SIGBREAK"):
+        supported.append(signal.SIGBREAK)
+    for signum in supported:
+        try:
+            signal.signal(signum, request_shutdown)
+        except (OSError, ValueError):
+            pass
 
 
 def make_resource_monitor(config: Mapping[str, Any]) -> ResourceMonitor | None:
@@ -967,8 +1119,11 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
+    _SHUTDOWN_EVENT.clear()
+    install_signal_handlers(_SHUTDOWN_EVENT)
     launcher_log = setup_launcher_file_logging()
     print(f"[log] launcher file: {launcher_log}")
+    print(f"[data] runtime root: {DATA_ROOT}")
 
     config_path = resolve_path(args.config, base=Path.cwd()) if args.config != str(DEFAULT_CONFIG) else DEFAULT_CONFIG
     config = load_json(config_path)
@@ -987,7 +1142,9 @@ def main() -> int:
         assert_ports_free(config)
         processes = start_services(python, config)
         try:
-            wait_for_services(config, processes)
+            if not wait_for_services(config, processes, shutdown_event=_SHUTDOWN_EVENT):
+                print("[stop] shutdown requested during startup")
+                return 0
             if args.smoke:
                 print("[smoke] ok")
                 return 0
@@ -997,6 +1154,7 @@ def main() -> int:
                 processes,
                 restart_service=make_service_restarter(python, config),
                 resource_monitor=resource_monitor,
+                shutdown_event=_SHUTDOWN_EVENT,
             )
         finally:
             terminate_processes(processes)

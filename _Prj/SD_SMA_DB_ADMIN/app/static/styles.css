@@ -464,6 +464,12 @@ textarea {
   margin-top: 16px;
 }
 
+.filesystem-dialog { width: min(760px, calc(100vw - 32px)); }
+.filesystem-path { padding: 10px; margin-bottom: 8px; background: #f3f5f7; border-radius: 6px; overflow-wrap: anywhere; }
+.filesystem-list { min-height: 220px; max-height: 52vh; overflow: auto; border: 1px solid #d8dde3; border-radius: 6px; }
+.filesystem-entry { display: flex; width: 100%; justify-content: space-between; border: 0; border-bottom: 1px solid #edf0f2; border-radius: 0; text-align: left; background: #fff; }
+.filesystem-entry:hover { background: #eef6ff; }
+
 .status-pill {
   display: inline-block;
   padding: 2px 6px;

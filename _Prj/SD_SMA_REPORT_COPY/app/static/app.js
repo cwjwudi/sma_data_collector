@@ -77,6 +77,63 @@ function setHint(id, text, cls = 'muted') {
   }
 }
 
+async function openFilesystemBrowser(initialPath = '') {
+  const overlay = el('filesystem-modal-overlay');
+  const pathLabel = el('filesystem-modal-path');
+  const list = el('filesystem-modal-list');
+  const cancel = el('filesystem-modal-cancel');
+  const select = el('filesystem-modal-select');
+  if (!overlay) throw new Error('文件浏览窗口不可用');
+  let current = '';
+
+  return new Promise((resolve, reject) => {
+    const finish = value => { overlay.style.display = 'none'; resolve(value); };
+    const fail = error => { overlay.style.display = 'none'; reject(error); };
+    cancel.onclick = () => finish('');
+    overlay.onclick = event => { if (event.target === overlay) finish(''); };
+    select.onclick = () => finish(current);
+    overlay.style.display = 'flex';
+    const renderButton = (label, meta, onClick) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'filesystem-entry';
+      const name = document.createElement('span');
+      const detail = document.createElement('span');
+      name.textContent = label;
+      detail.textContent = meta;
+      detail.className = 'muted';
+      button.append(name, detail);
+      button.onclick = onClick;
+      list.appendChild(button);
+    };
+    const showRoots = async () => {
+      const data = await fetchJson('/api/filesystem/roots?purpose=source');
+      current = '';
+      select.disabled = true;
+      pathLabel.textContent = '允许访问的位置';
+      list.innerHTML = '';
+      for (const root of data.roots || []) {
+        renderButton(root.name, root.exists ? root.path : '目录不存在', () => {
+          if (root.exists) showDirectory(root.path).catch(fail);
+        });
+      }
+    };
+    const showDirectory = async path => {
+      const data = await fetchJson(`/api/filesystem/entries?purpose=source&path=${encodeURIComponent(path)}`);
+      current = data.current;
+      select.disabled = false;
+      pathLabel.textContent = current;
+      list.innerHTML = '';
+      if (data.parent) renderButton('..', '上一级', () => showDirectory(data.parent).catch(fail));
+      else renderButton('位置列表', '返回', () => showRoots().catch(fail));
+      for (const entry of data.entries || []) {
+        renderButton(entry.name, '文件夹', () => showDirectory(entry.path).catch(fail));
+      }
+    };
+    (initialPath ? showDirectory(initialPath).catch(() => showRoots()) : showRoots()).catch(fail);
+  });
+}
+
 function showConfirmModal({ title, message, confirmText = '确认执行' }) {
   if (
     !confirmModalOverlay ||
@@ -226,15 +283,11 @@ async function saveConfig() {
 }
 
 async function chooseSourceFolder() {
-  setHint('configHint', '正在打开文件夹选择窗口...');
-  const data = await fetchJson('/api/folder-dialog', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ initial_dir: el('sourceDir').value }),
-  });
-  if (data.selected) {
-    el('sourceDir').value = data.selected;
-    setHint('configHint', `已选择报表目录: ${data.selected}`, 'muted ok');
+  setHint('configHint', '请选择服务允许访问的报表目录...');
+  const selected = await openFilesystemBrowser(el('sourceDir').value);
+  if (selected) {
+    el('sourceDir').value = selected;
+    setHint('configHint', `已选择报表目录: ${selected}`, 'muted ok');
   } else {
     setHint('configHint', '已取消选择报表目录');
   }

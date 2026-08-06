@@ -11,6 +11,7 @@ import secrets
 import shutil
 import sqlite3
 import subprocess
+import sys
 import threading
 import time
 import uuid
@@ -28,6 +29,12 @@ from pydantic import BaseModel
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+COMMON_ROOT = BASE_DIR.parent / "SD_SMA_COMMON"
+if COMMON_ROOT.is_dir() and str(COMMON_ROOT) not in sys.path:
+    sys.path.insert(0, str(COMMON_ROOT))
+
+from sd_sma_common import FilesystemBrowser, FilesystemBrowserError, windows_removable_roots
+
 AUTH_TOKEN_ENV = "SD_SMA_WEB_TOKEN"
 AUTH_TOKEN_HEADER = "X-SD-SMA-Token"
 AUTH_EXEMPT_PATHS = {"/api/health"}
@@ -178,6 +185,22 @@ def backup_dir() -> Path:
     path = _config_path(configured, BASE_DIR / "backups")
     path.mkdir(parents=True, exist_ok=True)
     return path
+
+
+def filesystem_browser(purpose: str) -> tuple[FilesystemBrowser, set[str], bool]:
+    cfg = load_config()
+    configured = cfg.get("allowed_browse_roots") or []
+    if not isinstance(configured, list):
+        configured = []
+    roots = [backup_dir(), *configured, *windows_removable_roots()]
+    normalized = purpose.strip().lower()
+    if normalized == "sql":
+        return FilesystemBrowser(roots), {".sql"}, True
+    if normalized == "csv":
+        return FilesystemBrowser(roots), {".csv"}, True
+    if normalized == "directory":
+        return FilesystemBrowser(roots), set(), False
+    raise FilesystemBrowserError("Unsupported browse purpose")
 
 
 def last_output_dir() -> Path | None:
@@ -346,46 +369,6 @@ def persist_default_connection(conn: DbConnection) -> dict[str, Any]:
     cfg["default_connection"] = current
     save_config(cfg)
     return dict(current)
-
-def _folder_dialog_initial(initial_dir: str | None = None) -> Path:
-    raw = (initial_dir or "").strip()
-    if not raw:
-        return last_output_dir() or backup_dir()
-    raw = raw.replace("${DB_ADMIN_ROOT}", str(BASE_DIR)).replace("${CONFIG_DIR}", str(CONFIG_DIR))
-    path = Path(os.path.expandvars(raw))
-    if not path.is_absolute():
-        path = CONFIG_DIR / path
-    try:
-        path = path.resolve()
-    except OSError:
-        return last_output_dir() or backup_dir()
-    if path.is_dir():
-        return path
-    if path.parent.is_dir():
-        return path.parent
-    return last_output_dir() or backup_dir()
-
-
-def choose_folder_dialog(initial_dir: str | None = None) -> str:
-    try:
-        import tkinter as tk
-        from tkinter import filedialog
-    except Exception as exc:  # noqa: BLE001
-        raise RuntimeError(f"Folder picker is not available: {exc}") from exc
-
-    initial = _folder_dialog_initial(initial_dir)
-    root = tk.Tk()
-    root.withdraw()
-    root.attributes("-topmost", True)
-    try:
-        selected = filedialog.askdirectory(
-            initialdir=str(initial),
-            title="选择导出文件夹",
-            mustexist=True,
-        )
-    finally:
-        root.destroy()
-    return str(Path(selected).resolve()) if selected else ""
 
 def safe_identifier(value: str, label: str) -> str:
     text = (value or "").strip()
@@ -1312,28 +1295,6 @@ def import_verified_csv_job(
     )
 
 
-def choose_file_dialog(*, title: str, filetypes: list[tuple[str, str]], initial_dir: str | None = None) -> str:
-    try:
-        import tkinter as tk
-        from tkinter import filedialog
-    except Exception as exc:  # noqa: BLE001
-        raise RuntimeError(f"File picker is not available: {exc}") from exc
-
-    initial = _folder_dialog_initial(initial_dir)
-    root = tk.Tk()
-    root.withdraw()
-    root.attributes("-topmost", True)
-    try:
-        selected = filedialog.askopenfilename(
-            initialdir=str(initial),
-            title=title,
-            filetypes=filetypes,
-        )
-    finally:
-        root.destroy()
-    return str(Path(selected).resolve()) if selected else ""
-
-
 def register_local_export_file(source_path: str) -> dict[str, Any]:
     source = Path(source_path).resolve()
     if not source.is_file():
@@ -1459,14 +1420,21 @@ def save_connection_config(conn: DbConnection) -> dict[str, Any]:
     return {"ok": True, "default_connection": saved}
 
 
-@app.post("/api/folder-dialog")
-def folder_dialog(payload: dict[str, Any]) -> dict[str, Any]:
+@app.get("/api/filesystem/roots")
+def filesystem_roots(purpose: str = "directory") -> dict[str, Any]:
     try:
-        selected = choose_folder_dialog(str(payload.get("initial_dir") or ""))
-        if selected:
-            persist_last_output_dir(Path(selected))
-        return {"selected": selected}
-    except Exception as exc:  # noqa: BLE001
+        browser, _, _ = filesystem_browser(purpose)
+        return {"roots": browser.public_roots()}
+    except FilesystemBrowserError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@app.get("/api/filesystem/entries")
+def filesystem_entries(path: str, purpose: str = "directory") -> dict[str, Any]:
+    try:
+        browser, extensions, include_files = filesystem_browser(purpose)
+        return browser.entries(path, extensions=extensions, include_files=include_files)
+    except FilesystemBrowserError as exc:
         raise HTTPException(400, str(exc)) from exc
 
 
@@ -1474,22 +1442,13 @@ def folder_dialog(payload: dict[str, Any]) -> dict[str, Any]:
 def register_file(payload: dict[str, Any]) -> dict[str, Any]:
     try:
         kind = str(payload.get("kind") or "sql").strip().lower()
-        if kind == "csv":
-            filetypes = [("CSV", "*.csv"), ("All", "*.*")]
-            title = "登记本地 CSV 文件"
-        else:
-            filetypes = [("SQL", "*.sql"), ("All", "*.*")]
-            title = "登记本地 SQL 文件"
-        selected = choose_file_dialog(
-            title=title,
-            filetypes=filetypes,
-            initial_dir=str(payload.get("initial_dir") or ""),
-        )
-        if not selected:
-            return {"selected": ""}
-        registered = register_local_export_file(selected)
+        browser, extensions, _ = filesystem_browser(kind)
+        selected, _ = browser.authorize(str(payload.get("path") or ""))
+        if not selected.is_file() or selected.suffix.lower() not in extensions:
+            raise FilesystemBrowserError(f"Selected file must be {kind.upper()}")
+        registered = register_local_export_file(str(selected))
         return {"selected": registered["path"], **registered}
-    except Exception as exc:  # noqa: BLE001
+    except (FilesystemBrowserError, OSError, ValueError, RuntimeError) as exc:
         raise HTTPException(400, str(exc)) from exc
 
 

@@ -67,6 +67,71 @@ function setHint(id, text, cls = 'muted') {
   }
 }
 
+async function openFilesystemBrowser({ purpose, initialPath = '', allowFiles = false }) {
+  const overlay = document.getElementById('filesystem-modal-overlay');
+  const title = document.getElementById('filesystem-modal-title');
+  const pathLabel = document.getElementById('filesystem-modal-path');
+  const list = document.getElementById('filesystem-modal-list');
+  const cancel = document.getElementById('filesystem-modal-cancel');
+  const select = document.getElementById('filesystem-modal-select');
+  if (!overlay) throw new Error('文件浏览窗口不可用');
+  let current = '';
+
+  return new Promise((resolve, reject) => {
+    const finish = value => { overlay.style.display = 'none'; resolve(value); };
+    const fail = error => { overlay.style.display = 'none'; reject(error); };
+    cancel.onclick = () => finish('');
+    overlay.onclick = event => { if (event.target === overlay) finish(''); };
+    select.style.display = allowFiles ? 'none' : '';
+    select.onclick = () => finish(current);
+    title.textContent = allowFiles ? `选择 ${purpose.toUpperCase()} 文件` : '选择服务器目录';
+    overlay.style.display = 'flex';
+
+    const renderButton = (label, meta, onClick) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'filesystem-entry';
+      const name = document.createElement('span');
+      const detail = document.createElement('span');
+      name.textContent = label;
+      detail.textContent = meta;
+      detail.className = 'muted';
+      button.append(name, detail);
+      button.onclick = onClick;
+      list.appendChild(button);
+    };
+    const showRoots = async () => {
+      const data = await fetchJson(`/api/filesystem/roots?purpose=${encodeURIComponent(purpose)}`);
+      current = '';
+      select.disabled = true;
+      pathLabel.textContent = '允许访问的位置';
+      list.innerHTML = '';
+      for (const root of data.roots || []) {
+        renderButton(root.name, root.exists ? root.path : '目录不存在', () => {
+          if (root.exists) showDirectory(root.path).catch(fail);
+        });
+      }
+    };
+    const showDirectory = async path => {
+      const data = await fetchJson(`/api/filesystem/entries?purpose=${encodeURIComponent(purpose)}&path=${encodeURIComponent(path)}`);
+      current = data.current;
+      select.disabled = false;
+      pathLabel.textContent = current;
+      list.innerHTML = '';
+      if (data.parent) renderButton('..', '上一级', () => showDirectory(data.parent).catch(fail));
+      else renderButton('位置列表', '返回', () => showRoots().catch(fail));
+      for (const entry of data.entries || []) {
+        const isDirectory = entry.type === 'directory';
+        renderButton(entry.name, isDirectory ? '文件夹' : entry.modified_at, () => {
+          if (isDirectory) showDirectory(entry.path).catch(fail);
+          else if (allowFiles) finish(entry.path);
+        });
+      }
+    };
+    (initialPath ? showDirectory(initialPath).catch(() => showRoots()) : showRoots()).catch(fail);
+  });
+}
+
 function showConfirmModal({ title, message, confirmText = '确认执行' }) {
   if (
     !confirmModalOverlay ||
@@ -409,16 +474,12 @@ async function refreshSizedCatalog() {
 }
 
 async function chooseOutputFolder() {
-  setHint('backupHint', '正在打开文件夹选择窗口...');
-  const data = await fetchJson('/api/folder-dialog', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ initial_dir: getOutputDir() || defaultOutputDir }),
-  });
-  if (data.selected) {
-    document.getElementById('outputDir').value = data.selected;
+  setHint('backupHint', '请选择服务允许访问的输出目录...');
+  const selected = await openFilesystemBrowser({ purpose: 'directory', initialPath: getOutputDir() || defaultOutputDir });
+  if (selected) {
+    document.getElementById('outputDir').value = selected;
     saveState();
-    setHint('backupHint', `已选择导出目录: ${data.selected}`, 'muted ok');
+    setHint('backupHint', `已选择导出目录: ${selected}`, 'muted ok');
   } else {
     setHint('backupHint', '已取消选择导出目录', 'muted');
   }
@@ -497,16 +558,17 @@ async function requestConfirmationToken(action, database, table = '') {
 }
 
 async function registerLocalFile(kind) {
-  setHint('importHint', `正在打开${kind === 'csv' ? 'CSV' : 'SQL'}文件选择窗口...`);
-  const data = await fetchJson('/api/register-file', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ kind, initial_dir: getOutputDir() || defaultOutputDir }),
-  });
-  if (!data.selected) {
+  setHint('importHint', `请选择服务允许访问的 ${kind.toUpperCase()} 文件...`);
+  const selected = await openFilesystemBrowser({ purpose: kind, initialPath: getOutputDir() || defaultOutputDir, allowFiles: true });
+  if (!selected) {
     setHint('importHint', '已取消登记本地文件', 'muted');
     return;
   }
+  const data = await fetchJson('/api/register-file', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ kind, path: selected }),
+  });
   if (kind === 'csv') {
     await loadServerCsvExports();
     setHint('importHint', `已登记 CSV: ${data.filename}`, 'muted ok');

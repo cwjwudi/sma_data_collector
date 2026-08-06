@@ -25,7 +25,7 @@ _Launcher\start.bat
 - Config env: `SD_SMA_DB_ADMIN_CONFIG_DIR`
 - Backup env: `SD_SMA_DB_ADMIN_BACKUP_DIR`
 
-便携包会一并复制 `_Prj/SD_SMA_DB_ADMIN`，并使用统一 `.venv` 启动。通过 Launcher 启动时，整库备份、单表备份和 CSV 导出的默认目录统一为包根目录下的 `backups/`。
+便携包会一并复制 `_Prj/SD_SMA_DB_ADMIN`，并使用统一 `.venv` 启动。便携模式下备份目录位于包根 `backups/`；Windows 服务模式下位于 ProgramData 数据根的 `backups/`。
 
 ## Report Copy
 
@@ -161,7 +161,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File _Launcher\scripts\build_port
 
 ## 配置目录
 
-Launcher / 便携包统一使用包根下的目录：
+便携模式默认使用包根目录；Windows 服务模式使用 ProgramData 下的同一目录结构：
 
 ```text
 config/
@@ -181,38 +181,73 @@ logs/
 
 ```json
 "env": {
-  "SD_SMA_COLLECTOR_CONFIG_DIR": "config/collector",
-  "SD_SMA_LOG_DIR": "logs/collector"
+  "SD_SMA_COLLECTOR_CONFIG_DIR": "${DATA_ROOT}/config/collector",
+  "SD_SMA_LOG_DIR": "${DATA_ROOT}/logs/collector"
 }
 ```
 
 ```json
 "env": {
-  "SD_SMA_QUERY_WEB_CONFIG_DIR": "config/query_web"
+  "SD_SMA_QUERY_WEB_CONFIG_DIR": "${DATA_ROOT}/config/query_web"
 }
 ```
 
 ```json
 "env": {
-  "SD_SMA_DB_ADMIN_CONFIG_DIR": "config/db_admin",
-  "SD_SMA_DB_ADMIN_BACKUP_DIR": "backups"
+  "SD_SMA_DB_ADMIN_CONFIG_DIR": "${DATA_ROOT}/config/db_admin",
+  "SD_SMA_DB_ADMIN_BACKUP_DIR": "${DATA_ROOT}/backups"
 }
 ```
 
 ```json
 "env": {
-  "SD_SMA_REPORT_COPY_CONFIG_DIR": "config/report_copy"
+  "SD_SMA_REPORT_COPY_CONFIG_DIR": "${DATA_ROOT}/config/report_copy",
+  "SD_SMA_LOG_DIR": "${DATA_ROOT}/logs/report_copy"
 }
 ```
 
-相对路径按包根目录解析，绝对路径会直接使用。
+`${PACKAGE_ROOT}` 表示只读程序包位置，`${DATA_ROOT}` 表示可写运行数据位置。相对数据路径按 `DATA_ROOT` 解析。
 
 分工：
 
-- **现场 / Launcher 启动**：读写包根 `config/<服务>/` 与 `logs/<服务>/`
+- **便携包 / Launcher 启动**：未设置 `SD_SMA_DATA_ROOT` 时，继续读写包根 `config/<服务>/` 与 `logs/<服务>/`
+- **Windows 服务安装**：`SD_SMA_DATA_ROOT=%ProgramData%\SmartData\SD SMA`，程序目录保持只读
 - **单独开发某个工程**：仍使用该工程自己的 `_Prj/<工程>/config`（不设上述环境变量时的默认行为）
 
 首次用 Launcher 启动时，若某个 `config/<服务>/` 为空，会自动从对应 `_Prj/<工程>/config` 复制一份作为初始配置。便携包打包时也会预先物化这些目录。
+
+## Windows 服务安装
+
+安装包将程序安装到：
+
+```text
+C:\Program Files\SmartData\SD SMA
+```
+
+活动配置和运行数据位于：
+
+```text
+C:\ProgramData\SmartData\SD SMA\
+  config\
+  logs\
+  backups\
+  runtime\
+```
+
+服务名称为 `SD_SMA`，显示名称为 `SD SMA Runtime`，使用 `LocalSystem` 延迟自动启动。常用管理命令：
+
+```powershell
+Get-Service SD_SMA
+Start-Service SD_SMA
+Stop-Service SD_SMA
+Restart-Service SD_SMA
+```
+
+WinSW 包装日志位于 `C:\ProgramData\SmartData\SD SMA\logs\service`，Launcher 日志位于 `logs\launcher`。停止服务时 Launcher 会先优雅停止四个子服务，超时后清理整个 Job Object 进程树。
+
+升级安装不会覆盖 ProgramData 中的活动配置。卸载默认保留配置、日志和备份；只有在卸载界面明确选择并再次确认后才会删除。旧用户级安装不会自动迁移，若 8091–8094 仍被旧程序占用，安装器会中止并提示先停止旧版本。
+
+DB Admin 和 Report Copy 使用浏览器内的受限目录浏览器，不再从后台服务打开 Windows/Tk 文件选择窗口。可分别通过 `allowed_browse_roots`、`allowed_source_roots` 扩充允许访问的服务器目录；网络共享请使用 UNC 路径，不要依赖登录用户的映射盘符。
 
 ## 系统资源监控
 
