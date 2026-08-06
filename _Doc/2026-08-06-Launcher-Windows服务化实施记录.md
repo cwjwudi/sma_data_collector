@@ -36,3 +36,11 @@ Report Copy: allowed_source_roots
 - 使用 `Stop-Service SD_SMA` 以及强制结束 Launcher 验证 8091–8094 无残留进程。
 - 验证 LocalSystem 对目标 U 盘的写权限；网络共享必须使用 UNC 路径和适当服务身份。
 - 卸载清理选项涉及不可恢复数据，正式发布前使用现场副本复验二次确认流程。
+
+## 完整构建验证（2026-08-06）
+
+- 执行 `_Launcher/scripts/build_installer_package.ps1 -Version 1.0.0`，完整构建成功。
+- 依赖校验、43 个项目源码字节码编译、Nuitka Launcher 编译及四个子服务 smoke test 均通过。
+- Inno Setup 6.7.3 正式编译成功，生成 `SD_SMA_Setup_1.0.0.exe`。
+- smoke test 退出后确认 8091–8094 无残留监听。
+- 构建时会从交付用默认配置中递归移除 `password` 和 `password_enc`，避免目标机器因缺少源机器 Fernet 密钥而无法首次启动；源码配置不会被改写。

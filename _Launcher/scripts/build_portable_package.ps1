@@ -445,6 +445,45 @@ function Clear-CollectorRelativeLogDirs {
     }
 }
 
+function Remove-PackagedSecretFields {
+    param([Parameter(Mandatory = $true)][string]$ConfigFile)
+
+    if (-not (Test-Path -LiteralPath $ConfigFile -PathType Leaf)) {
+        return
+    }
+    $data = Get-Content -LiteralPath $ConfigFile -Raw -Encoding UTF8 | ConvertFrom-Json
+    $counter = [pscustomobject]@{ Value = 0 }
+
+    function Remove-SecretProperties {
+        param($Node)
+        if ($null -eq $Node -or $Node -is [string] -or $Node -is [ValueType]) {
+            return
+        }
+        if ($Node -is [System.Collections.IEnumerable] -and -not ($Node -is [pscustomobject])) {
+            foreach ($item in $Node) {
+                Remove-SecretProperties -Node $item
+            }
+            return
+        }
+        foreach ($property in @($Node.PSObject.Properties)) {
+            if ($property.Name -in @("password", "password_enc")) {
+                $Node.PSObject.Properties.Remove($property.Name)
+                $counter.Value += 1
+            }
+            else {
+                Remove-SecretProperties -Node $property.Value
+            }
+        }
+    }
+
+    Remove-SecretProperties -Node $data
+    if ($counter.Value -gt 0) {
+        $json = $data | ConvertTo-Json -Depth 50
+        [System.IO.File]::WriteAllText($ConfigFile, $json + "`r`n", [System.Text.UTF8Encoding]::new($false))
+        Write-Host "[config] removed $($counter.Value) secret field(s): $ConfigFile"
+    }
+}
+
 function Materialize-UnifiedRuntimeDirs {
     $packageConfigRoot = Join-Path $PackageRoot "config"
     $packageLogsRoot = Join-Path $PackageRoot "logs"
@@ -466,7 +505,9 @@ function Materialize-UnifiedRuntimeDirs {
         New-Item -ItemType Directory -Force -Path $targetConfig | Out-Null
         if (Test-Path -LiteralPath $sourceConfig -PathType Leaf) {
             Write-Host "[config] copy root config/$folder/default.json"
-            Copy-Item -LiteralPath $sourceConfig -Destination (Join-Path $targetConfig "default.json") -Force
+            $targetDefault = Join-Path $targetConfig "default.json"
+            Copy-Item -LiteralPath $sourceConfig -Destination $targetDefault -Force
+            Remove-PackagedSecretFields -ConfigFile $targetDefault
         }
         else {
             Write-Host "[config] no root default for $folder; keeping empty: $targetConfig"
