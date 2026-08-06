@@ -48,6 +48,15 @@ DATA_ROOT = resolve_data_root(PACKAGE_ROOT)
 DEFAULT_CONFIG = LAUNCHER_DIR / "launcher_config.json"
 LAUNCHER_LOG_DIR = DATA_ROOT / "logs" / "launcher"
 LAUNCHER_LOG_FILE = LAUNCHER_LOG_DIR / "launcher.log"
+COMMON_ROOT = PACKAGE_ROOT / "_Prj" / "SD_SMA_COMMON"
+if COMMON_ROOT.is_dir() and str(COMMON_ROOT) not in sys.path:
+    sys.path.insert(0, str(COMMON_ROOT))
+
+from launcher_imports import ConfigImportManager  # noqa: E402
+from launcher_security import LauncherSecurityStore  # noqa: E402
+from launcher_supervisor import ServiceSupervisor  # noqa: E402
+from launcher_web import ManagementServer, create_management_app  # noqa: E402
+
 DEFAULT_SERVICE_LOG_MAX_BYTES = 5 * 1024 * 1024
 DEFAULT_SERVICE_LOG_BACKUP_COUNT = 5
 
@@ -551,6 +560,10 @@ def resolve_service_env(service: dict[str, Any]) -> dict[str, str]:
     return resolved
 
 
+def safe_env_display(name: str, value: str) -> str:
+    return "***" if any(part in name.upper() for part in ("PASSWORD", "SECRET", "TOKEN", "API_KEY")) else value
+
+
 def service_folder_name(service: dict[str, Any]) -> str:
     name = str(service.get("name", "")).strip()
     if name in SERVICE_DATA_DIRS:
@@ -911,7 +924,7 @@ def start_service(python: Path, config: dict[str, Any], service: dict[str, Any])
     print(f"[start] {title}: http://{host}:{port}")
     print(f"[start] log: {log_path} (rotate {DEFAULT_SERVICE_LOG_MAX_BYTES // (1024 * 1024)}MB x{DEFAULT_SERVICE_LOG_BACKUP_COUNT})")
     for env_key, env_value in service_env.items():
-        print(f"[start] env {env_key}={env_value}")
+        print(f"[start] env {env_key}={safe_env_display(env_key, env_value)}")
     process = subprocess.Popen(
         command,
         cwd=str(cwd),
@@ -1107,6 +1120,51 @@ def make_resource_monitor(config: Mapping[str, Any]) -> ResourceMonitor | None:
     return monitor
 
 
+def service_health_once(service: Mapping[str, Any]) -> bool:
+    host = str(service.get("host", "127.0.0.1"))
+    port = int(service.get("port", 0))
+    path = str(service.get("health_path", "/"))
+    connection: http.client.HTTPConnection | None = None
+    try:
+        connection = http.client.HTTPConnection(host, port, timeout=0.4)
+        connection.request("GET", path, headers={"Host": host, "Connection": "close"})
+        response = connection.getresponse()
+        response.read()
+        return response.status < 500
+    except OSError:
+        return False
+    finally:
+        if connection is not None:
+            connection.close()
+
+
+def service_with_launcher_credential(
+    service: Mapping[str, Any], security: LauncherSecurityStore
+) -> dict[str, Any]:
+    result = dict(service)
+    credential = security.credential_for_service(str(service.get("name", "")))
+    if credential is None:
+        return result
+    environment = dict(service.get("env") or {})
+    environment["SD_SMA_DB_PASSWORD"] = str(credential.get("password", ""))
+    environment["SD_SMA_DB_CREDENTIAL_MANAGED"] = "1"
+    result["env"] = environment
+    return result
+
+
+def wait_for_supervisor_ready(supervisor: ServiceSupervisor, timeout_seconds: float = 35.0) -> bool:
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        services = supervisor.status()["services"]
+        if services and all(item["state"] == "running" for item in services):
+            return True
+        if any(item["state"] == "failed" for item in services):
+            return False
+        if _SHUTDOWN_EVENT.wait(0.25):
+            return False
+    return False
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="SD SMA unified launcher")
     parser.add_argument("--config", default=str(DEFAULT_CONFIG), help="Path to launcher_config.json")
@@ -1139,25 +1197,47 @@ def main() -> int:
         if args.check:
             print("[check] ok")
             return 0
-        assert_ports_free(config)
-        processes = start_services(python, config)
+        security = LauncherSecurityStore(DATA_ROOT / "secrets" / "launcher_security.json")
+        importer = ConfigImportManager(DATA_ROOT)
+
+        def managed_start(service: dict[str, Any]) -> ServiceProcess:
+            return start_service(python, config, service_with_launcher_credential(service, security))
+
+        supervisor = ServiceSupervisor(
+            [dict(item) for item in config.get("services", []) if isinstance(item, dict)],
+            DATA_ROOT / "state" / "services.json",
+            start_process=managed_start,
+            stop_process=lambda process: terminate_processes([process]),
+            health_check=service_health_once,
+        )
+        management = config.get("management") if isinstance(config.get("management"), dict) else {}
+        management_host = str(management.get("host", "127.0.0.1"))
+        management_port = int(management.get("port", 8090))
+        app = create_management_app(supervisor, security, importer, LAUNCHER_DIR / "static")
+        management_server = ManagementServer(app, host=management_host, port=management_port)
         try:
-            if not wait_for_services(config, processes, shutdown_event=_SHUTDOWN_EVENT):
-                print("[stop] shutdown requested during startup")
-                return 0
+            management_server.start()
+            print(f"[management] http://{management_host}:{management_port}")
+            supervisor.start()
             if args.smoke:
+                if not wait_for_supervisor_ready(supervisor):
+                    raise RuntimeError("One or more managed services did not become ready")
                 print("[smoke] ok")
                 return 0
-            open_browser_tabs(config, processes, no_browser=args.no_browser)
+            if not args.no_browser and bool(config.get("open_browser", True)):
+                webbrowser.open(f"http://{management_host}:{management_port}")
             resource_monitor = make_resource_monitor(config)
-            return monitor(
-                processes,
-                restart_service=make_service_restarter(python, config),
-                resource_monitor=resource_monitor,
-                shutdown_event=_SHUTDOWN_EVENT,
-            )
+            print("")
+            print("Launcher management is running. Press Ctrl+C to stop.")
+            while not _SHUTDOWN_EVENT.wait(0.5):
+                if management_server.thread is not None and not management_server.thread.is_alive():
+                    raise RuntimeError("Launcher management server exited unexpectedly")
+                if resource_monitor is not None:
+                    resource_monitor.maybe_sample(supervisor.processes())
+            return 0
         finally:
-            terminate_processes(processes)
+            management_server.stop()
+            supervisor.shutdown()
     except KeyboardInterrupt:
         print("")
         print("[stop] interrupted")

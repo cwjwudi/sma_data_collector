@@ -3,6 +3,12 @@ from pathlib import Path
 import sd_sma_launcher as launcher
 
 
+def test_safe_env_display_masks_credentials() -> None:
+    assert launcher.safe_env_display("SD_SMA_DB_PASSWORD", "do-not-log") == "***"
+    assert launcher.safe_env_display("SD_SMA_WEB_TOKEN", "do-not-log") == "***"
+    assert launcher.safe_env_display("SD_SMA_LOG_DIR", "C:/logs") == "C:/logs"
+
+
 def test_resolve_launcher_dir_honors_explicit_override(monkeypatch, tmp_path: Path) -> None:
     expected = tmp_path / "installed" / "_Launcher"
     monkeypatch.setenv("SD_SMA_LAUNCHER_DIR", str(expected))

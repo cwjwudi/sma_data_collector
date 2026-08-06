@@ -20,7 +20,11 @@
     { "package": "asyncua", "import": "asyncua" },
     { "package": "psutil>=5.9,<8", "import": "psutil" }
   ],
-  "open_browser": false,
+  "open_browser": true,
+  "management": {
+    "host": "127.0.0.1",
+    "port": 8090
+  },
   "resource_monitor": {
     "enabled": false,
     "sample_interval_seconds": 5,

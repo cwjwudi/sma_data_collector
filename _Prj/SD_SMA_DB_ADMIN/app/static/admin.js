@@ -299,7 +299,6 @@ function getConnectionPayload() {
     host: document.getElementById('dbHost').value.trim() || '127.0.0.1',
     port: Number(document.getElementById('dbPort').value || 3306),
     username: document.getElementById('dbUsername').value.trim(),
-    password: document.getElementById('dbPassword').value,
     database: coerceIdentName(document.getElementById('databaseSelect').value) || '',
   };
 }
@@ -366,14 +365,15 @@ async function loadConfig() {
   document.getElementById('dbHost').value = conn.host || '127.0.0.1';
   document.getElementById('dbPort').value = Number(conn.port || 3306);
   document.getElementById('dbUsername').value = conn.username || '';
-  // Prefer browser-saved password; fall back to server default_connection.
-  document.getElementById('dbPassword').value =
-    typeof saved?.password === 'string'
-      ? saved.password
-      : String(config.default_connection?.password || '');
+  // Passwords are never restored into the DOM or browser storage. Launcher-managed
+  // services receive the credential through their process environment.
+  document.getElementById('dbPassword').value = '';
   document.getElementById('outputDir').value =
     saved?.outputDir || config.last_output_dir || defaultOutputDir;
-  setHint('connectionHint', `默认导出目录: ${defaultOutputDir || '-'}`);
+  const passwordState = config.default_connection?.password_managed
+    ? '数据库密码由 Launcher 管理'
+    : (config.default_connection?.password_configured ? '数据库密码已安全保存' : '尚未配置数据库密码');
+  setHint('connectionHint', `${passwordState} · 默认导出目录: ${defaultOutputDir || '-'}`);
   updateQuickChipState();
 }
 

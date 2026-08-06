@@ -37,8 +37,8 @@ SetupLogging=yes
 Source: "{#SourceRoot}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{group}\{#AppName}"; Filename: "{cmd}"; Parameters: "/c start """" ""http://127.0.0.1:8091/dashboard"""
-Name: "{autodesktop}\{#AppName}"; Filename: "{cmd}"; Parameters: "/c start """" ""http://127.0.0.1:8091/dashboard"""; Tasks: desktopicon
+Name: "{group}\{#AppName}"; Filename: "{cmd}"; Parameters: "/c start """" ""http://127.0.0.1:8090/"""
+Name: "{autodesktop}\{#AppName}"; Filename: "{cmd}"; Parameters: "/c start """" ""http://127.0.0.1:8090/"""; Tasks: desktopicon
 
 [Tasks]
 Name: "desktopicon"; Description: "创建桌面快捷方式"; GroupDescription: "附加快捷方式："
@@ -67,13 +67,13 @@ begin
     Exec(ServiceExe, 'stop', ExpandConstant('{app}\_Service'), SW_HIDE, ewWaitUntilTerminated, ResultCode);
 
   Command := '-NoLogo -NoProfile -ExecutionPolicy Bypass -Command "' +
-    '$ports=8091,8092,8093,8094; Start-Sleep -Seconds 2; ' +
+    '$ports=8090,8091,8092,8093,8094; Start-Sleep -Seconds 2; ' +
     '$busy=@(Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue | Where-Object {$ports -contains $_.LocalPort}); ' +
     'if($busy.Count -gt 0){exit 42}"';
   if not Exec(ExpandConstant('{sys}\WindowsPowerShell\v1.0\powershell.exe'), Command, '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
     Result := '无法执行端口预检查。'
   else if ResultCode = 42 then
-    Result := '端口 8091-8094 仍被旧 Launcher 或其他程序占用。请先停止旧版本后重试。';
+    Result := '端口 8090-8094 仍被旧 Launcher 或其他程序占用。请先停止旧版本后重试。';
 end;
 
 function InitializeUninstall(): Boolean;

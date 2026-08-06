@@ -22,6 +22,7 @@ from typing import Any, Callable
 from urllib.parse import urlsplit
 
 import pymysql
+from cryptography.fernet import Fernet, InvalidToken
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -88,6 +89,7 @@ def _resolve_config_dir() -> Path:
 
 CONFIG_DIR = _resolve_config_dir()
 CONFIG_FILE = CONFIG_DIR / "default.json"
+SECRET_KEY_FILE = CONFIG_DIR / ".sd_sma_db_admin_fernet.key"
 SAFE_NAME_RE = re.compile(r"^[A-Za-z0-9_]+$")
 
 
@@ -165,6 +167,32 @@ def load_config() -> dict[str, Any]:
 def save_config(cfg: dict[str, Any]) -> None:
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     _atomic_json(CONFIG_FILE, cfg)
+
+
+def _secret_key() -> bytes:
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    if SECRET_KEY_FILE.exists():
+        return SECRET_KEY_FILE.read_bytes().strip()
+    key = Fernet.generate_key()
+    SECRET_KEY_FILE.write_bytes(key)
+    try:
+        SECRET_KEY_FILE.chmod(0o600)
+    except OSError:
+        pass
+    return key
+
+
+def _encrypt_password(value: str) -> str:
+    return Fernet(_secret_key()).encrypt(value.encode("utf-8")).decode("ascii")
+
+
+def _decrypt_password(value: str) -> str:
+    if not value:
+        return ""
+    try:
+        return Fernet(_secret_key()).decrypt(value.encode("ascii")).decode("utf-8")
+    except (InvalidToken, ValueError) as exc:
+        raise ValueError("数据库密码密文无法在本机解密，请在 Launcher 中重新设置凭据") from exc
 
 
 def _config_path(value: str | None, default: Path) -> Path:
@@ -355,20 +383,47 @@ def default_connection() -> dict[str, Any]:
     cfg = load_config()
     conn = cfg.get("default_connection") if isinstance(cfg.get("default_connection"), dict) else {}
     base = DbConnection().model_dump()
-    base.update(conn)
+    base.update({key: value for key, value in conn.items() if key not in {"password", "password_enc"}})
+    base["password"] = ""
+    base["password_configured"] = bool(
+        os.getenv("SD_SMA_DB_PASSWORD") or conn.get("password_enc") or conn.get("password")
+    )
+    base["password_managed"] = bool(os.getenv("SD_SMA_DB_CREDENTIAL_MANAGED"))
     return base
 
 
 def persist_default_connection(conn: DbConnection) -> dict[str, Any]:
     cfg = load_config()
     current = dict(cfg.get("default_connection") or {}) if isinstance(cfg.get("default_connection"), dict) else {}
+    legacy_password = str(current.get("password") or "")
     payload = conn.model_dump()
-    for key in ("engine", "host", "port", "username", "password", "database"):
+    for key in ("engine", "host", "port", "username", "database"):
         if key in payload:
             current[key] = payload[key]
+    current.pop("password", None)
+    if os.getenv("SD_SMA_DB_CREDENTIAL_MANAGED"):
+        current.pop("password_enc", None)
+    elif conn.password:
+        current["password_enc"] = _encrypt_password(conn.password)
+    elif legacy_password and not current.get("password_enc"):
+        current["password_enc"] = _encrypt_password(legacy_password)
     cfg["default_connection"] = current
     save_config(cfg)
-    return dict(current)
+    return default_connection()
+
+
+def connection_password(conn: DbConnection) -> str:
+    managed = os.getenv("SD_SMA_DB_PASSWORD")
+    if managed is not None:
+        return managed
+    if conn.password:
+        return conn.password
+    cfg = load_config()
+    current = cfg.get("default_connection") if isinstance(cfg.get("default_connection"), dict) else {}
+    if current.get("password_enc"):
+        return _decrypt_password(str(current["password_enc"]))
+    # One-time compatibility for legacy files; the next save migrates it.
+    return str(current.get("password") or "")
 
 def safe_identifier(value: str, label: str) -> str:
     text = (value or "").strip()
@@ -386,7 +441,7 @@ def connect_mysql(conn: DbConnection, database: str | None = None, *, autocommit
         host=conn.host or "127.0.0.1",
         port=int(conn.port or 3306),
         user=conn.username or "",
-        password=conn.password or "",
+        password=connection_password(conn),
         database=database or conn.database or None,
         charset="utf8mb4",
         autocommit=autocommit,
@@ -886,7 +941,7 @@ def _run_mysqldump_backup(
     append_job_log(job_id, f"Estimated bytes: {estimated_bytes}; free bytes: {free_bytes}")
     set_job_progress(job_id, 5, "dumping")
     env = os.environ.copy()
-    env["MYSQL_PWD"] = conn.password or ""
+    env["MYSQL_PWD"] = connection_password(conn)
     cmd = [
         dump_tool,
         "--host",
@@ -1064,7 +1119,7 @@ def restore_verified_backup_job(job_id: str, conn: DbConnection, database: str, 
     append_job_log(job_id, f"Restoring verified backup into database {dbname}")
     set_job_progress(job_id, 8, "restoring")
     env = os.environ.copy()
-    env["MYSQL_PWD"] = conn.password or ""
+    env["MYSQL_PWD"] = connection_password(conn)
     cmd = [
         resolve_mysql_tool("mysql"),
         "--host",
@@ -1108,7 +1163,7 @@ def export_csv_job(job_id: str, conn: DbConnection, database: str, table: str, o
         host=conn.host or "127.0.0.1",
         port=int(conn.port or 3306),
         user=conn.username or "",
-        password=conn.password or "",
+        password=connection_password(conn),
         database=dbname,
         charset="utf8mb4",
         cursorclass=pymysql.cursors.SSCursor,

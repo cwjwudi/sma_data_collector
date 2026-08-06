@@ -1,11 +1,26 @@
 # SD SMA Unified Launcher
 
-这个目录用于统一启动：
+这个目录用于统一启动和管理：
 
 - `_Prj/SD_SMA_DATA_COLLECTOR`
 - `_Prj/SD_SMA_DATA_COLLECTOR_QUERY_WEB`
+- `_Prj/SD_SMA_DB_ADMIN`
+- `_Prj/SD_SMA_REPORT_COPY`
 
-启动器会使用同一个 Python 环境，检查依赖包，检查端口，然后分别启动两个 FastAPI 服务。
+启动器会使用同一个 Python 环境，检查依赖和端口，并在 `http://127.0.0.1:8090/` 提供触屏管理中心。四个子服务可以独立启动、停止和重启；人工停止状态会在 Launcher 或系统重启后保留。
+
+## 触屏管理中心
+
+管理中心默认地址：`http://127.0.0.1:8090/`。状态页无需登录；启动、停止、导入配置、修改数据库凭据等写操作需要 6–12 位数字管理员 PIN。首次进入写操作时创建 PIN，会话闲置后需重新解锁。
+
+页面提供：
+
+- 服务健康状态、PID、端口、运行时间、重启次数、CPU 和内存
+- 单服务启动、停止、重启和打开业务页面
+- 从 U 盘、`ImportBox` 或管理员白名单目录检查并导入配置
+- 使用 Windows DPAPI 管理多个数据库凭据档案并分配给 Collector、Query Web、DB Admin
+
+数据库密码不通过 API 回显，也不会写入浏览器存储。Windows 安装模式下凭据密文位于 ProgramData 的 `secrets` 目录，只允许 LocalSystem 和管理员访问，并且不能复制到另一台设备解密。
 
 ## 直接启动
 
@@ -40,6 +55,7 @@ _Launcher\start.bat
 
 默认地址：
 
+- Launcher 管理中心：`http://127.0.0.1:8090/`
 - 采集配置/监控：`http://127.0.0.1:8091/dashboard`
 - 历史查询：`http://127.0.0.1:8092/query`
 - 数据库管理：`http://127.0.0.1:8093/admin`
@@ -69,7 +85,7 @@ _Launcher\start.bat --check
 
 ## 启动冒烟测试
 
-短暂启动两个服务，健康检查通过后自动退出：
+短暂启动管理中心和四个服务，健康检查通过后自动退出：
 
 ```bat
 _Launcher\start.bat --smoke --no-browser
@@ -77,7 +93,7 @@ _Launcher\start.bat --smoke --no-browser
 
 ## 清理残留服务
 
-如果启动器提示 `Port already in use: 127.0.0.1:8091` 或 `8092`，通常是上一次启动留下了服务进程。可以运行：
+如果启动器提示 8090–8094 端口被占用，通常是上一次启动留下了 Launcher 或服务进程。可以运行：
 
 ```bat
 _Launcher\stop.bat
@@ -152,6 +168,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File _Launcher\scripts\build_port
 
 默认端口：
 
+- `8090`: Launcher 触屏管理中心
 - `8091`: 采集配置/监控 Web
 - `8092`: 查询 Web
 - `8093`: 数据库管理 Web
@@ -165,6 +182,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File _Launcher\scripts\build_port
 
 ```text
 config/
+  launcher/       # Launcher 活动配置及导入白名单
   collector/
   query_web/
   db_admin/
@@ -175,6 +193,9 @@ logs/
   query_web/     # query_web uvicorn.log
   db_admin/      # db_admin uvicorn.log
   report_copy/   # 报表复制业务日志 + uvicorn.log
+state/           # 各服务期望启停状态
+secrets/         # PIN 哈希与 DPAPI 数据库凭据密文
+ImportBox/       # 登录用户可投放待导入 JSON 的目录
 ```
 
 默认环境变量（见 `launcher_config.json`）：
@@ -232,6 +253,9 @@ C:\ProgramData\SmartData\SD SMA\
   logs\
   backups\
   runtime\
+  state\
+  secrets\
+  ImportBox\
 ```
 
 服务名称为 `SD_SMA`，显示名称为 `SD SMA Runtime`，使用 `LocalSystem` 延迟自动启动。常用管理命令：
@@ -245,13 +269,17 @@ Restart-Service SD_SMA
 
 WinSW 包装日志位于 `C:\ProgramData\SmartData\SD SMA\logs\service`，Launcher 日志位于 `logs\launcher`。停止服务时 Launcher 会先优雅停止四个子服务，超时后清理整个 Job Object 进程树。
 
-升级安装不会覆盖 ProgramData 中的活动配置。卸载默认保留配置、日志和备份；只有在卸载界面明确选择并再次确认后才会删除。旧用户级安装不会自动迁移，若 8091–8094 仍被旧程序占用，安装器会中止并提示先停止旧版本。
+升级安装不会覆盖 ProgramData 中的活动配置。卸载默认保留配置、日志、凭据和备份；只有在卸载界面明确选择并再次确认后才会删除。旧用户级安装不会自动迁移，若 8090–8094 仍被旧程序占用，安装器会中止并提示先停止旧版本。
+
+忘记 PIN 时，以管理员身份运行安装目录 `_Service\Reset-SD_SMA-LauncherPin.ps1`。脚本只移除 PIN 哈希，保留凭据和服务分配，下一次写操作会要求重新创建 PIN。
+
+导入前会解析并校验 JSON、移除外机密码字段并展示覆盖摘要；确认后先备份到 `backups\config_import`，再原子替换配置。运行中的目标服务会自动重启并做健康检查，失败时恢复原配置；原本停止的服务不会被自动启动。
 
 DB Admin 和 Report Copy 使用浏览器内的受限目录浏览器，不再从后台服务打开 Windows/Tk 文件选择窗口。可分别通过 `allowed_browse_roots`、`allowed_source_roots` 扩充允许访问的服务器目录；网络共享请使用 UNC 路径，不要依赖登录用户的映射盘符。
 
 ## 系统资源监控
 
-Launcher 默认每 5 秒采样一次整机、Launcher 自身和各服务的资源占用。服务指标会递归汇总其子进程，适用于数据库备份、恢复等会临时启动外部程序的操作。
+管理中心周期显示各受管服务的 CPU、内存、PID、健康状态和重启次数。原有 CSV 资源采样器仍可通过 `launcher_config.json` 的 `resource_monitor.enabled` 单独启用，用于长期留档。
 
 监控文件位于：
 

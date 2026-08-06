@@ -44,3 +44,42 @@ Report Copy: allowed_source_roots
 - Inno Setup 6.7.3 正式编译成功，生成 `SD_SMA_Setup_1.0.0.exe`。
 - smoke test 退出后确认 8091–8094 无残留监听。
 - 构建时会从交付用默认配置中递归移除 `password` 和 `password_enc`，避免目标机器因缺少源机器 Fernet 密钥而无法首次启动；源码配置不会被改写。
+
+## Launcher 管理中心实施（2026-08-06）
+
+### 已实施
+
+- 新增 `127.0.0.1:8090` 触屏管理中心，统一展示四个子服务的健康状态、PID、端口、运行时间、重启次数、CPU 和内存。
+- 原批量监控循环改为独立服务主管；支持单服务启停和重启，人工停止状态写入 `state/services.json` 并跨重启保留，子服务故障不再导致管理中心和其他服务退出。
+- 写操作使用 6–12 位管理员 PIN 解锁；PIN 仅保存 PBKDF2 盐和哈希，短时会话保存在 HttpOnly、SameSite Cookie 中，并限制外部 Origin 和连续失败尝试。
+- 数据库凭据按档案管理，密码使用 Windows DPAPI LocalMachine 加密后存入 `secrets/launcher_security.json`。Collector、Query Web 和 DB Admin 通过 `SD_SMA_DB_PASSWORD` 接收分配的密码，API、日志和浏览器均不返回密码。
+- DB Admin 独立模式改用本机 Fernet 密文保存密码；Launcher 受管模式使用中央密码并清理本地密码字段，不再将密码写入浏览器存储。
+- 配置导入默认允许可移动盘和 `ImportBox`，支持额外本地白名单。导入经过路径沙箱、JSON 类型检查、敏感字段清理、覆盖预览、备份和原子替换；运行服务重启健康检查失败时恢复备份。
+- 安装器快捷方式改为 8090，端口检查扩展为 8090–8094，并加入管理员 PIN 重置脚本。ProgramData 继续仅允许 LocalSystem/Administrators，`ImportBox` 单独授予普通用户修改权限。
+
+### 新增管理接口
+
+```text
+GET  /api/launcher/status
+POST /api/launcher/services/{name}/start|stop|restart
+POST /api/launcher/auth/setup|unlock|lock
+GET  /api/launcher/auth/session
+GET|POST|DELETE /api/launcher/credentials...
+PUT  /api/launcher/credentials/assignments/{service}
+GET  /api/launcher/filesystem/roots|entries
+GET|PUT /api/launcher/import/settings
+POST /api/launcher/import/inspect|apply
+```
+
+### 验证记录
+
+- Launcher 新旧测试共 37 项通过；DB Admin 57 项通过；Collector 212 项通过；Common 2 项通过、1 项因 Windows 符号链接权限跳过。
+- 源码 smoke 成功启动 8090–8094，退出后确认五个端口均无残留监听。
+- 管理页面通过 JavaScript 语法检查，并在 1024×768 浏览器视口验证四服务卡片、首次 PIN、导入页、凭据页以及 Query Web 单服务停止和恢复运行。
+- 完整安装包构建通过：Nuitka 编译、bytecode-only 四服务 smoke、8090 管理端健康检查和 Inno Setup 6.7.3 编译全部成功。最终生成文件大小 `58,899,885` 字节，SHA256 为 `A475775C9998D15FAC881D823F06E748EF5551424BD35A0CB0E013D0EAB38581`；退出后 8090–8094 无残留监听。
+- Query Web 全量测试 109 项中 108 项通过；`test_table_list_writeback_on_cursor` 的本地 asyncua mock 连接在第二次写入前断开，单独复跑仍失败。本次未修改 Query Web 源码，作为既有 Windows 集成测试不稳定项保留。
+
+### 仍需现场验证
+
+- 正式安装后的 LocalSystem DPAPI 跨重启解密、PIN 重置脚本提权提示，以及普通用户向 `ImportBox` 投放文件的 ACL。
+- 插拔现场 U 盘后的动态根目录刷新、目标配置实际业务校验，以及故障配置自动回滚后的业务恢复。
