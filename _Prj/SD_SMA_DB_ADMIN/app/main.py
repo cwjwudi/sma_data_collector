@@ -156,6 +156,20 @@ class CopyBackupsRequest(BaseModel):
     destination_dir: str
 
 
+class CopyBackupFilesRequest(BaseModel):
+    paths: list[str]
+    destination_dir: str
+
+
+class DeleteBackupFilesConfirmationRequest(BaseModel):
+    paths: list[str]
+
+
+class DeleteBackupFilesRequest(BaseModel):
+    paths: list[str]
+    confirmation_token: str
+
+
 class JobCancelled(RuntimeError):
     pass
 
@@ -552,6 +566,8 @@ MAX_JOB_LOG_LINES = 1000
 _confirmations: dict[str, dict[str, Any]] = {}
 _confirmations_lock = threading.Lock()
 CONFIRMATION_TTL_SECONDS = 120
+_protected_export_paths: dict[str, int] = {}
+_protected_export_paths_lock = threading.Lock()
 
 
 def _prune_finished_jobs_locked() -> None:
@@ -634,19 +650,51 @@ def consume_confirmation(token: str, action: str, database: str, table: str = ""
     if not item or float(item["expires_at"]) <= time.monotonic():
         raise HTTPException(400, "Confirmation token is invalid, expired, or already used")
     expected = (action, safe_identifier(database, "database"), safe_identifier(table, "table") if table else "")
-    actual = (item["action"], item["database"], item["table"])
+    actual = (item.get("action"), item.get("database"), item.get("table"))
     if actual != expected:
         raise HTTPException(400, "Confirmation token does not match this operation")
 
 
-def start_job(title: str, target, *args: Any) -> dict[str, Any]:
+def _reserve_export_paths(paths: list[str], *, exclusive: bool = False) -> list[str]:
+    keys = sorted({os.path.normcase(str(Path(path).resolve())) for path in paths})
+    with _protected_export_paths_lock:
+        for key in keys:
+            current = _protected_export_paths.get(key, 0)
+            if current < 0 or (exclusive and current > 0):
+                raise HTTPException(409, f"Backup file is being used by another operation: {key}")
+        for key in keys:
+            if exclusive:
+                _protected_export_paths[key] = -1
+            else:
+                _protected_export_paths[key] = _protected_export_paths.get(key, 0) + 1
+    return keys
+
+
+def _release_export_paths(keys: list[str], *, exclusive: bool = False) -> None:
+    with _protected_export_paths_lock:
+        for key in keys:
+            current = _protected_export_paths.get(key, 0)
+            if exclusive or current <= 1:
+                _protected_export_paths.pop(key, None)
+            else:
+                _protected_export_paths[key] = current - 1
+
+
+def start_job(
+    title: str,
+    target,
+    *args: Any,
+    protected_paths: list[str] | None = None,
+) -> dict[str, Any]:
     job_id = str(uuid.uuid4())
     now = datetime.now().isoformat(timespec="seconds")
+    reserved_keys = _reserve_export_paths(protected_paths or [])
     with _jobs_lock:
         cfg = load_config()
         max_running = max(1, int(cfg.get("max_concurrent_jobs") or 2))
         running = sum(1 for job in _jobs.values() if job.get("status") == "running")
         if running >= max_running:
+            _release_export_paths(reserved_keys)
             raise HTTPException(429, f"Too many running jobs (limit={max_running})")
         _jobs[job_id] = {
             "id": job_id,
@@ -704,9 +752,15 @@ def start_job(title: str, target, *args: Any) -> dict[str, Any]:
                 error=str(exc),
                 _finished_monotonic=time.monotonic(),
             )
+        finally:
+            _release_export_paths(reserved_keys)
 
-    thread = threading.Thread(target=runner, name=f"db-admin-job-{job_id[:8]}", daemon=True)
-    thread.start()
+    try:
+        thread = threading.Thread(target=runner, name=f"db-admin-job-{job_id[:8]}", daemon=True)
+        thread.start()
+    except BaseException:
+        _release_export_paths(reserved_keys)
+        raise
     return _public_job(_jobs[job_id])
 
 
@@ -1135,6 +1189,156 @@ def _completed_backup(filename: str) -> tuple[Path, dict[str, Any]]:
     return path, manifest
 
 
+def _completed_export_path(value: str | os.PathLike[str]) -> tuple[Path, dict[str, Any]]:
+    if ".." in Path(value).parts:
+        raise FilesystemBrowserError("Parent path segments are not allowed")
+    browser = FilesystemBrowser(backup_roots())
+    path, _root = browser.authorize(value)
+    if not path.is_file() or path.suffix.lower() not in {".sql", ".csv"}:
+        raise ValueError("Managed backup file must be a completed SQL or CSV export")
+    manifest_path = path.with_suffix(path.suffix + ".manifest.json")
+    if not manifest_path.is_file():
+        raise FileNotFoundError(f"Completed manifest not found: {path.name}")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if not isinstance(manifest, dict) or manifest.get("status") != "complete":
+        raise ValueError(f"Export manifest is invalid or incomplete: {path.name}")
+    if manifest.get("filename") != path.name:
+        raise ValueError(f"Export manifest filename does not match: {path.name}")
+    if int(manifest.get("size_bytes") or -1) != path.stat().st_size:
+        raise ValueError(f"Export size does not match manifest: {path.name}")
+    if not re.fullmatch(r"[0-9a-fA-F]{64}", str(manifest.get("sha256") or "")):
+        raise ValueError(f"Export manifest SHA-256 is invalid: {path.name}")
+    return path, manifest
+
+
+def _prepare_managed_export_paths(values: list[str]) -> list[tuple[Path, dict[str, Any]]]:
+    if not values:
+        raise ValueError("Select at least one completed SQL or CSV file")
+    if len(values) > 500:
+        raise ValueError("At most 500 files can be managed at once")
+    prepared: list[tuple[Path, dict[str, Any]]] = []
+    seen: set[str] = set()
+    for value in values:
+        path, manifest = _completed_export_path(value)
+        key = os.path.normcase(str(path))
+        if key in seen:
+            raise ValueError(f"Duplicate managed file path: {path}")
+        seen.add(key)
+        prepared.append((path, manifest))
+    return prepared
+
+
+def backup_file_roots() -> dict[str, Any]:
+    return {"roots": FilesystemBrowser(backup_roots()).public_roots()}
+
+
+def backup_file_entries(path: str) -> dict[str, Any]:
+    if ".." in Path(path).parts:
+        raise FilesystemBrowserError("Parent path segments are not allowed")
+    browser = FilesystemBrowser(backup_roots())
+    listing = browser.entries(path, extensions={".sql", ".csv"}, include_files=True)
+    entries: list[dict[str, Any]] = []
+    for entry in listing["entries"]:
+        if entry["type"] == "directory":
+            entries.append(entry)
+            continue
+        try:
+            managed_path, manifest = _completed_export_path(str(entry["path"]))
+        except (FilesystemBrowserError, FileNotFoundError, OSError, ValueError, json.JSONDecodeError):
+            continue
+        entries.append(
+            {
+                **entry,
+                "path": str(managed_path),
+                "kind": managed_path.suffix.lower().removeprefix("."),
+                "sha256": str(manifest.get("sha256") or ""),
+                "completed_at": str(manifest.get("completed_at") or entry.get("modified_at") or ""),
+                "scope": str(manifest.get("scope") or ""),
+                "database": str(manifest.get("database") or ""),
+                "table": str(manifest.get("table") or ""),
+            }
+        )
+    return {**listing, "entries": entries}
+
+
+def _managed_path_signature(prepared: list[tuple[Path, dict[str, Any]]]) -> tuple[str, ...]:
+    return tuple(sorted(os.path.normcase(str(path)) for path, _manifest in prepared))
+
+
+def issue_delete_backup_files_confirmation(paths: list[str]) -> str:
+    prepared = _prepare_managed_export_paths(paths)
+    signature = _managed_path_signature(prepared)
+    token = secrets.token_urlsafe(32)
+    now = time.monotonic()
+    with _confirmations_lock:
+        expired = [key for key, item in _confirmations.items() if float(item["expires_at"]) <= now]
+        for key in expired:
+            _confirmations.pop(key, None)
+        _confirmations[token] = {
+            "action": "delete-backup-files",
+            "paths": signature,
+            "expires_at": now + CONFIRMATION_TTL_SECONDS,
+        }
+    return token
+
+
+def consume_delete_backup_files_confirmation(token: str, prepared: list[tuple[Path, dict[str, Any]]]) -> None:
+    with _confirmations_lock:
+        item = _confirmations.pop((token or "").strip(), None)
+    if not item or float(item["expires_at"]) <= time.monotonic():
+        raise HTTPException(400, "Deletion confirmation token is invalid, expired, or already used")
+    expected = ("delete-backup-files", _managed_path_signature(prepared))
+    actual = (item.get("action"), tuple(item.get("paths") or ()))
+    if actual != expected:
+        raise HTTPException(400, "Deletion confirmation token does not match the selected files")
+
+
+def delete_backup_files(paths: list[str], confirmation_token: str) -> dict[str, Any]:
+    prepared = _prepare_managed_export_paths(paths)
+    consume_delete_backup_files_confirmation(confirmation_token, prepared)
+    reserved_keys = _reserve_export_paths([str(path) for path, _manifest in prepared], exclusive=True)
+    renamed: list[tuple[Path, Path]] = []
+    deletion_id = uuid.uuid4().hex[:12]
+    try:
+        prepared = _prepare_managed_export_paths([str(path) for path, _manifest in prepared])
+        for path, _manifest in prepared:
+            manifest_path = path.with_suffix(path.suffix + ".manifest.json")
+            for original in (path, manifest_path):
+                tombstone = original.with_name(f".{original.name}.delete-{deletion_id}")
+                if tombstone.exists():
+                    raise RuntimeError(f"Temporary deletion target already exists: {tombstone.name}")
+                original.replace(tombstone)
+                renamed.append((original, tombstone))
+    except BaseException:
+        for original, tombstone in reversed(renamed):
+            if tombstone.exists() and not original.exists():
+                try:
+                    tombstone.replace(original)
+                except OSError:
+                    pass
+        raise
+    finally:
+        if len(renamed) != len(prepared) * 2:
+            _release_export_paths(reserved_keys, exclusive=True)
+
+    failed_cleanup: list[dict[str, str]] = []
+    try:
+        for _original, tombstone in renamed:
+            try:
+                tombstone.unlink()
+            except OSError as exc:
+                failed_cleanup.append({"path": str(tombstone), "error": str(exc)})
+    finally:
+        _release_export_paths(reserved_keys, exclusive=True)
+    if failed_cleanup:
+        raise RuntimeError(f"Files were removed from the catalog but temporary cleanup failed: {failed_cleanup}")
+    return {
+        "deleted": [str(path) for path, _manifest in prepared],
+        "count": len(prepared),
+        "size_bytes": sum(int(manifest.get("size_bytes") or 0) for _path, manifest in prepared),
+    }
+
+
 def _removable_destination(value: str) -> tuple[Path, Path]:
     browser = FilesystemBrowser(windows_removable_roots())
     destination, drive_root = browser.authorize(value)
@@ -1175,32 +1379,23 @@ def _copy_job_file(
     return completed_bytes
 
 
-def copy_backups_job(job_id: str, filenames: list[str], destination_dir: str) -> dict[str, Any]:
-    if not filenames:
-        raise ValueError("Select at least one completed SQL backup")
-    safe_names: list[str] = []
-    seen: set[str] = set()
-    for filename in filenames:
-        safe = Path(str(filename)).name
-        if safe != filename or Path(safe).suffix.lower() != ".sql":
-            raise ValueError(f"Invalid backup filename: {filename}")
-        key = os.path.normcase(safe)
-        if key in seen:
-            raise ValueError(f"Duplicate backup filename: {safe}")
-        seen.add(key)
-        safe_names.append(safe)
-
+def copy_backup_files_job(job_id: str, paths: list[str], destination_dir: str) -> dict[str, Any]:
+    selected = _prepare_managed_export_paths(paths)
     destination, drive_root = _removable_destination(destination_dir)
     append_job_log(job_id, f"Preflight destination: {destination}")
     prepared: list[dict[str, Any]] = []
     total_bytes = 0
     required_free_bytes = 0
-    for index, filename in enumerate(safe_names, start=1):
+    target_names: set[str] = set()
+    for index, (source, manifest) in enumerate(selected, start=1):
         _raise_if_cancelled(job_id)
-        set_job_progress(job_id, 0, f"preflight {index}/{len(safe_names)}")
-        source, manifest = _completed_backup(filename)
+        set_job_progress(job_id, 0, f"preflight {index}/{len(selected)}")
+        target_key = os.path.normcase(source.name)
+        if target_key in target_names:
+            raise RuntimeError(f"Multiple selected files have the same destination name: {source.name}")
+        target_names.add(target_key)
         source_manifest = source.with_suffix(source.suffix + ".manifest.json")
-        target = destination / filename
+        target = destination / source.name
         target_manifest = target.with_suffix(target.suffix + ".manifest.json")
         source_bytes = source.stat().st_size
         manifest_bytes = source_manifest.stat().st_size
@@ -1324,6 +1519,25 @@ def copy_backups_job(job_id: str, filenames: list[str], destination_dir: str) ->
         "verified": verified,
         "total_bytes": total_bytes,
     }
+
+
+def copy_backups_job(job_id: str, filenames: list[str], destination_dir: str) -> dict[str, Any]:
+    safe_names: list[str] = []
+    seen: set[str] = set()
+    for filename in filenames:
+        safe = Path(str(filename)).name
+        if safe != filename or Path(safe).suffix.lower() != ".sql":
+            raise ValueError(f"Invalid backup filename: {filename}")
+        key = os.path.normcase(safe)
+        if key in seen:
+            raise ValueError(f"Duplicate backup filename: {safe}")
+        seen.add(key)
+        safe_names.append(safe)
+    paths: list[str] = []
+    for safe in safe_names:
+        source, _manifest = _completed_backup(safe)
+        paths.append(str(source))
+    return copy_backup_files_job(job_id, paths, destination_dir)
 
 
 def _completed_csv_export(filename: str) -> tuple[Path, dict[str, Any]]:
@@ -1734,6 +1948,19 @@ def filesystem_entries(path: str, purpose: str = "directory") -> dict[str, Any]:
         raise HTTPException(400, str(exc)) from exc
 
 
+@app.get("/api/backup-files/roots")
+def get_backup_file_roots() -> dict[str, Any]:
+    return backup_file_roots()
+
+
+@app.get("/api/backup-files/entries")
+def get_backup_file_entries(path: str) -> dict[str, Any]:
+    try:
+        return backup_file_entries(path)
+    except (FilesystemBrowserError, OSError, ValueError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
 @app.post("/api/register-file")
 def register_file(payload: dict[str, Any]) -> dict[str, Any]:
     try:
@@ -1841,13 +2068,55 @@ def list_backups() -> dict[str, Any]:
 
 @app.post("/api/copy-backups")
 def copy_backups(req: CopyBackupsRequest) -> dict[str, Any]:
+    sources = [
+        str(path)
+        for filename in req.filenames
+        if (path := _find_export_file(filename, suffixes={".sql"})) is not None
+    ]
     job = start_job(
         f"Copy {len(req.filenames)} backup(s) to removable drive",
         copy_backups_job,
         req.filenames,
         req.destination_dir,
+        **({"protected_paths": sources} if sources else {}),
     )
     return {"job": job}
+
+
+@app.post("/api/copy-backup-files")
+def copy_backup_files(req: CopyBackupFilesRequest) -> dict[str, Any]:
+    try:
+        prepared = _prepare_managed_export_paths(req.paths)
+    except (FilesystemBrowserError, FileNotFoundError, OSError, ValueError, json.JSONDecodeError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+    sources = [str(path) for path, _manifest in prepared]
+    job = start_job(
+        f"Copy {len(sources)} backup file(s) to external device",
+        copy_backup_files_job,
+        sources,
+        req.destination_dir,
+        protected_paths=sources,
+    )
+    return {"job": job}
+
+
+@app.post("/api/backup-files/delete-confirmation")
+def create_delete_backup_files_confirmation(req: DeleteBackupFilesConfirmationRequest) -> dict[str, Any]:
+    try:
+        token = issue_delete_backup_files_confirmation(req.paths)
+        return {"token": token, "expires_in_seconds": CONFIRMATION_TTL_SECONDS}
+    except (FilesystemBrowserError, FileNotFoundError, OSError, ValueError, json.JSONDecodeError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@app.post("/api/delete-backup-files")
+def delete_backup_files_api(req: DeleteBackupFilesRequest) -> dict[str, Any]:
+    try:
+        return delete_backup_files(req.paths, req.confirmation_token)
+    except HTTPException:
+        raise
+    except (FilesystemBrowserError, FileNotFoundError, OSError, RuntimeError, ValueError, json.JSONDecodeError) as exc:
+        raise HTTPException(400, str(exc)) from exc
 
 
 @app.get("/api/csv-exports")
@@ -1883,7 +2152,7 @@ def list_csv_exports() -> dict[str, Any]:
 def restore_backup(req: RestoreBackupRequest) -> dict[str, Any]:
     consume_confirmation(req.confirmation_token, "restore-backup", req.database)
     try:
-        _completed_backup(req.filename)
+        source, _manifest = _completed_backup(req.filename)
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         raise HTTPException(400, str(exc)) from exc
     job = start_job(
@@ -1892,6 +2161,7 @@ def restore_backup(req: RestoreBackupRequest) -> dict[str, Any]:
         req.connection,
         req.database,
         req.filename,
+        protected_paths=[str(source)],
     )
     return {"job": job}
 
@@ -1900,7 +2170,7 @@ def restore_backup(req: RestoreBackupRequest) -> dict[str, Any]:
 def import_server_csv(req: ImportServerCsvRequest) -> dict[str, Any]:
     consume_confirmation(req.confirmation_token, "import-server-csv", req.database, req.table)
     try:
-        _completed_csv_export(req.filename)
+        source, _manifest = _completed_csv_export(req.filename)
     except (OSError, ValueError, json.JSONDecodeError, FileNotFoundError) as exc:
         raise HTTPException(400, str(exc)) from exc
     truncate = True if req.force else bool(req.truncate)
@@ -1913,6 +2183,7 @@ def import_server_csv(req: ImportServerCsvRequest) -> dict[str, Any]:
         req.filename,
         truncate,
         bool(req.force),
+        protected_paths=[str(source)],
     )
     return {"job": job}
 

@@ -12,7 +12,7 @@ Main functions:
 - List databases and tables (with approximate sizes).
 - Backup a whole database or a single table to SQL (`mysqldump` / `mariadb-dump`).
 - Restore completed SQL backups directly on the server (manifest + SHA-256).
-- Copy one or more completed SQL backups to a removable drive, including manifests and post-copy SHA-256 verification.
+- Browse completed SQL / CSV files, copy selected files to an external device, or permanently delete selected files.
 - Export a table to CSV for small data exchange; import completed CSV exports on the server.
   Use **强制导入** when CSV columns do not match the target table (also forces truncate-before-import).
 - Register external local `.sql` / `.csv` files into the backup directory (no browser upload).
@@ -27,7 +27,7 @@ All restore and import paths are **server-side only**. Browser file upload is no
 | Backup table | `.sql` + manifest | GB-scale single table backup / restore |
 | Export CSV | `.csv` + manifest | Small table exchange only |
 | Register local file | copy into `backup_dir` + manifest | Bring external dumps into the tool |
-| Copy to removable drive | `.sql` + manifest | Offline archive to a USB drive / removable disk |
+| Backup file management | `.sql` / `.csv` + manifest | Browse, copy to an external device, or permanently delete |
 
 Completed files live under `backup_dir` and/or `last_output_dir`. Large restores must use
 **直接恢复 SQL** / **直接导入 CSV**, not browser upload.
@@ -53,14 +53,14 @@ table of the same name in the target database.
 - Cross-origin state-changing browser requests are rejected.
 - Running jobs are bounded by `max_concurrent_jobs` and can be cancelled.
 
-## Copy backups to a removable drive
+## Backup file management
 
-- Select one or more completed SQL backups in the **复制备份到移动硬盘 / U 盘** panel.
-- With one removable drive connected, the default destination is `SD_SMA_Backups` on that drive. You can also choose another existing directory on a removable drive.
-- Only drives currently reported by Windows as removable are accepted; configured fixed-disk browse roots and network drives are rejected.
-- The copy runs as a cancellable background job and writes through temporary files. Each SQL file is verified against its manifest before the manifest is committed.
-- An existing file with the same SHA-256 is skipped and its manifest is refreshed. A different file with the same name rejects the whole batch before copying begins.
-- Removing the drive or cancelling the task cleans the current incomplete copy while leaving already completed backup pairs intact.
+- The independent **备份文件管理** panel browses `backup_dir` and `last_output_dir`. It only shows completed `.sql` / `.csv` files with valid adjacent manifests.
+- Selections persist while navigating directories. Exact canonical paths are sent to the server, so files with the same name in different roots cannot be confused.
+- **复制到外部设备** still accepts only drives currently reported by Windows as removable; fixed-disk browse roots and network drives remain rejected. With one device connected, the default destination is `SD_SMA_Backups`.
+- Copy runs as a cancellable background job, uses temporary files, copies the manifest, and verifies SHA-256. Same-name/same-hash files are skipped; different content with the same name rejects the batch.
+- Permanent deletion requires two UI confirmations plus a short-lived path-bound server token. SQL/CSV and manifest pairs are renamed as a batch before deletion, with rollback if preparation fails.
+- Files in use by copy, SQL restore, or CSV import jobs are protected from deletion.
 
 ## MySQL / MariaDB client tools
 

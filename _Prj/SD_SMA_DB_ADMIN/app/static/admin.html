@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>数据库管理 - SD SMA DB Admin</title>
-    <link rel="stylesheet" href="/static/styles.css?v=20260723-sandbox-status-20260807-removable-backup-copy" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260723-sandbox-status-20260807-backup-file-manager" />
   </head>
   <body>
     <nav class="page-nav" aria-label="站内导航">
@@ -113,27 +113,6 @@
             <button type="button" id="btnRestoreServerBackup" class="danger-btn">直接恢复 SQL</button>
           </div>
 
-          <div class="backup-copy-block">
-            <div class="backup-copy-heading">
-              <div>
-                <h4>复制备份到移动硬盘 / U 盘</h4>
-                <p class="hint">可选择一个或多个已完成 SQL；同时复制校验清单，复制完成后重新校验 SHA-256。</p>
-              </div>
-              <div class="row backup-copy-tools">
-                <button type="button" id="btnSelectAllBackups">全选</button>
-                <button type="button" id="btnClearBackupSelection">清空</button>
-              </div>
-            </div>
-            <div id="backupCopyList" class="backup-copy-list" role="group" aria-label="选择要复制的 SQL 备份"></div>
-            <div class="row backup-copy-destination">
-              <label for="backupCopyDestination">U 盘目标目录</label>
-              <input id="backupCopyDestination" type="text" readonly placeholder="请插入并选择 U 盘" />
-              <button type="button" id="btnChooseBackupDestination">选择目录</button>
-              <button type="button" id="btnRefreshRemovableDrives">立即刷新</button>
-              <button type="button" id="btnCopyBackups" class="primary-btn">复制到 U 盘</button>
-            </div>
-            <div id="backupCopyHint" class="muted"></div>
-          </div>
         </div>
 
         <div class="op-block op-block-secondary">
@@ -162,6 +141,54 @@
         </div>
 
         <div id="importHint" class="muted warn"></div>
+      </section>
+
+      <section class="panel backup-manager-panel">
+        <div class="panel-heading">
+          <div>
+            <h2>备份文件管理</h2>
+            <p class="hint">浏览备份目录并勾选 SQL 或 CSV。可跨目录选择，复制时会同时复制 manifest 并校验 SHA-256。</p>
+          </div>
+          <span class="touch-badge">触屏优化</span>
+        </div>
+        <div class="backup-manager-grid">
+          <div class="backup-browser-pane">
+            <div class="backup-browser-toolbar">
+              <button type="button" id="btnBackupFilesRoots">位置列表</button>
+              <button type="button" id="btnBackupFilesParent">上一级</button>
+              <button type="button" id="btnRefreshBackupFiles">刷新</button>
+              <button type="button" id="btnSelectCurrentBackupFiles">全选当前目录</button>
+            </div>
+            <div id="backupFilesPath" class="filesystem-path">允许访问的位置</div>
+            <div id="backupFilesList" class="backup-files-list" role="group" aria-label="备份文件目录"></div>
+          </div>
+          <aside class="backup-actions-pane">
+            <div class="backup-selection-heading">
+              <h3>已选择文件</h3>
+              <button type="button" id="btnClearBackupSelection">清空选择</button>
+            </div>
+            <div id="backupSelectionSummary" class="backup-selection-summary"></div>
+            <div id="backupSelectedFiles" class="backup-selected-files"></div>
+
+            <div class="backup-action-block">
+              <h3>复制到外部设备</h3>
+              <label for="backupCopyDestination">目标目录</label>
+              <input id="backupCopyDestination" type="text" readonly placeholder="请插入并选择外部设备" />
+              <div class="backup-action-buttons">
+                <button type="button" id="btnChooseBackupDestination">选择外部设备目录</button>
+                <button type="button" id="btnRefreshRemovableDrives">立即刷新</button>
+                <button type="button" id="btnCopyBackups" class="primary-btn">复制所选文件</button>
+              </div>
+            </div>
+
+            <div class="backup-action-block backup-delete-block">
+              <h3>删除已有备份</h3>
+              <p class="hint warn">永久删除所选数据文件及 manifest，不可恢复。</p>
+              <button type="button" id="btnDeleteBackupFiles" class="danger-btn">永久删除所选文件</button>
+            </div>
+            <div id="backupManagerHint" class="muted"></div>
+          </aside>
+        </div>
       </section>
 
       <section class="panel">
@@ -201,6 +228,6 @@
       </div>
     </div>
 
-    <script src="/static/admin.js?v=20260807-removable-backup-copy"></script>
+    <script src="/static/admin.js?v=20260807-backup-file-manager"></script>
   </body>
 </html>
