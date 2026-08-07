@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>数据库管理 - SD SMA DB Admin</title>
-    <link rel="stylesheet" href="/static/styles.css?v=20260723-sandbox-status" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260723-sandbox-status-20260807-removable-backup-copy" />
   </head>
   <body>
     <nav class="page-nav" aria-label="站内导航">
@@ -112,6 +112,28 @@
             <select id="restoreDatabaseSelect"></select>
             <button type="button" id="btnRestoreServerBackup" class="danger-btn">直接恢复 SQL</button>
           </div>
+
+          <div class="backup-copy-block">
+            <div class="backup-copy-heading">
+              <div>
+                <h4>复制备份到移动硬盘 / U 盘</h4>
+                <p class="hint">可选择一个或多个已完成 SQL；同时复制校验清单，复制完成后重新校验 SHA-256。</p>
+              </div>
+              <div class="row backup-copy-tools">
+                <button type="button" id="btnSelectAllBackups">全选</button>
+                <button type="button" id="btnClearBackupSelection">清空</button>
+              </div>
+            </div>
+            <div id="backupCopyList" class="backup-copy-list" role="group" aria-label="选择要复制的 SQL 备份"></div>
+            <div class="row backup-copy-destination">
+              <label for="backupCopyDestination">U 盘目标目录</label>
+              <input id="backupCopyDestination" type="text" readonly placeholder="请插入并选择 U 盘" />
+              <button type="button" id="btnChooseBackupDestination">选择目录</button>
+              <button type="button" id="btnRefreshRemovableDrives">立即刷新</button>
+              <button type="button" id="btnCopyBackups" class="primary-btn">复制到 U 盘</button>
+            </div>
+            <div id="backupCopyHint" class="muted"></div>
+          </div>
         </div>
 
         <div class="op-block op-block-secondary">
@@ -172,12 +194,13 @@
         <div id="filesystem-modal-path" class="filesystem-path"></div>
         <div id="filesystem-modal-list" class="filesystem-list"></div>
         <div class="modal-footer">
+          <button id="filesystem-modal-refresh" type="button" style="display: none">立即刷新</button>
           <button id="filesystem-modal-cancel" type="button">取消</button>
           <button id="filesystem-modal-select" type="button">选择当前目录</button>
         </div>
       </div>
     </div>
 
-    <script src="/static/admin.js?v=20260806-service-browser"></script>
+    <script src="/static/admin.js?v=20260807-removable-backup-copy"></script>
   </body>
 </html>

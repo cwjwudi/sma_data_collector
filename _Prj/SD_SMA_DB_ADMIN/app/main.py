@@ -151,8 +151,19 @@ class ImportServerCsvRequest(BaseModel):
     confirmation_token: str
 
 
+class CopyBackupsRequest(BaseModel):
+    filenames: list[str]
+    destination_dir: str
+
+
 class JobCancelled(RuntimeError):
     pass
+
+
+class JobFailedWithResult(RuntimeError):
+    def __init__(self, message: str, result: dict[str, Any]) -> None:
+        super().__init__(message)
+        self.result = result
 
 
 def load_config() -> dict[str, Any]:
@@ -228,6 +239,8 @@ def filesystem_browser(purpose: str) -> tuple[FilesystemBrowser, set[str], bool]
         return FilesystemBrowser(roots), {".csv"}, True
     if normalized == "directory":
         return FilesystemBrowser(roots), set(), False
+    if normalized == "removable-directory":
+        return FilesystemBrowser(windows_removable_roots()), set(), False
     raise FilesystemBrowserError("Unsupported browse purpose")
 
 
@@ -672,6 +685,16 @@ def start_job(title: str, target, *args: Any) -> dict[str, Any]:
                 error=str(exc),
                 _finished_monotonic=time.monotonic(),
             )
+        except JobFailedWithResult as exc:
+            append_job_log(job_id, f"ERROR: {exc}")
+            update_job(
+                job_id,
+                status="failed",
+                phase="failed",
+                error=str(exc),
+                result=exc.result,
+                _finished_monotonic=time.monotonic(),
+            )
         except Exception as exc:  # noqa: BLE001
             append_job_log(job_id, f"ERROR: {exc}")
             update_job(
@@ -1110,6 +1133,197 @@ def _completed_backup(filename: str) -> tuple[Path, dict[str, Any]]:
     if int(manifest.get("size_bytes") or -1) != path.stat().st_size:
         raise ValueError("Backup size does not match manifest")
     return path, manifest
+
+
+def _removable_destination(value: str) -> tuple[Path, Path]:
+    browser = FilesystemBrowser(windows_removable_roots())
+    destination, drive_root = browser.authorize(value)
+    if not drive_root.is_dir():
+        raise FilesystemBrowserError("The removable drive is no longer available")
+    destination.mkdir(parents=True, exist_ok=True)
+    destination, current_root = FilesystemBrowser(windows_removable_roots()).authorize(destination)
+    if current_root != drive_root or not destination.is_dir():
+        raise FilesystemBrowserError("The destination is no longer on the selected removable drive")
+    return destination, current_root
+
+
+def _copy_job_file(
+    job_id: str,
+    source: Path,
+    temporary: Path,
+    *,
+    completed_bytes: int,
+    total_bytes: int,
+    phase: str,
+) -> int:
+    temporary.unlink(missing_ok=True)
+    temporary.parent.mkdir(parents=True, exist_ok=True)
+    with source.open("rb") as reader, temporary.open("xb") as writer:
+        while chunk := reader.read(1024 * 1024):
+            _raise_if_cancelled(job_id)
+            writer.write(chunk)
+            completed_bytes += len(chunk)
+            set_job_progress(
+                job_id,
+                max(1, min(96, int(completed_bytes / max(total_bytes, 1) * 96))),
+                phase,
+            )
+        writer.flush()
+        os.fsync(writer.fileno())
+    if temporary.stat().st_size != source.stat().st_size:
+        raise RuntimeError(f"Copied size does not match source: {source.name}")
+    return completed_bytes
+
+
+def copy_backups_job(job_id: str, filenames: list[str], destination_dir: str) -> dict[str, Any]:
+    if not filenames:
+        raise ValueError("Select at least one completed SQL backup")
+    safe_names: list[str] = []
+    seen: set[str] = set()
+    for filename in filenames:
+        safe = Path(str(filename)).name
+        if safe != filename or Path(safe).suffix.lower() != ".sql":
+            raise ValueError(f"Invalid backup filename: {filename}")
+        key = os.path.normcase(safe)
+        if key in seen:
+            raise ValueError(f"Duplicate backup filename: {safe}")
+        seen.add(key)
+        safe_names.append(safe)
+
+    destination, drive_root = _removable_destination(destination_dir)
+    append_job_log(job_id, f"Preflight destination: {destination}")
+    prepared: list[dict[str, Any]] = []
+    total_bytes = 0
+    required_free_bytes = 0
+    for index, filename in enumerate(safe_names, start=1):
+        _raise_if_cancelled(job_id)
+        set_job_progress(job_id, 0, f"preflight {index}/{len(safe_names)}")
+        source, manifest = _completed_backup(filename)
+        source_manifest = source.with_suffix(source.suffix + ".manifest.json")
+        target = destination / filename
+        target_manifest = target.with_suffix(target.suffix + ".manifest.json")
+        source_bytes = source.stat().st_size
+        manifest_bytes = source_manifest.stat().st_size
+        total_bytes += source_bytes + manifest_bytes
+        skip_sql = False
+        if target.exists():
+            if not target.is_file():
+                raise RuntimeError(f"Destination name is not a file: {target.name}")
+            append_job_log(job_id, f"Checking existing file: {target.name}")
+            target_sha256 = _sha256_file(
+                target,
+                progress_hook=lambda _value: _raise_if_cancelled(job_id),
+            )
+            if not secrets.compare_digest(target_sha256, str(manifest.get("sha256") or "")):
+                raise RuntimeError(f"A different backup with the same name already exists: {target.name}")
+            skip_sql = True
+            required_free_bytes += manifest_bytes
+        else:
+            required_free_bytes += source_bytes + manifest_bytes
+        prepared.append(
+            {
+                "source": source,
+                "source_manifest": source_manifest,
+                "target": target,
+                "target_manifest": target_manifest,
+                "manifest": manifest,
+                "skip_sql": skip_sql,
+            }
+        )
+
+    try:
+        free_bytes = int(shutil.disk_usage(drive_root).free)
+    except OSError as exc:
+        raise RuntimeError(f"Unable to read removable drive free space: {exc}") from exc
+    if required_free_bytes > free_bytes:
+        raise RuntimeError(
+            f"Removable drive free space is insufficient: need {required_free_bytes} bytes, available {free_bytes} bytes"
+        )
+
+    copied: list[str] = []
+    skipped: list[str] = []
+    failed: list[dict[str, str]] = []
+    verified: list[str] = []
+    completed_bytes = 0
+    for index, item in enumerate(prepared, start=1):
+        _raise_if_cancelled(job_id)
+        source = item["source"]
+        target = item["target"]
+        target_manifest = item["target_manifest"]
+        sql_temp = target.with_name(f".{target.name}.{job_id[:8]}.tmp")
+        manifest_temp = target_manifest.with_name(f".{target_manifest.name}.{job_id[:8]}.tmp")
+        committed_sql = False
+        committed_manifest = False
+        was_skipped = bool(item["skip_sql"])
+        append_job_log(job_id, f"{index}/{len(prepared)} Copying {source.name}")
+        try:
+            if was_skipped:
+                completed_bytes += source.stat().st_size
+            else:
+                completed_bytes = _copy_job_file(
+                    job_id,
+                    source,
+                    sql_temp,
+                    completed_bytes=completed_bytes,
+                    total_bytes=total_bytes,
+                    phase=f"copying {index}/{len(prepared)} {source.name}",
+                )
+                set_job_progress(job_id, min(98, int(completed_bytes / max(total_bytes, 1) * 96)), "verifying")
+                actual_sha256 = _sha256_file(
+                    sql_temp,
+                    progress_hook=lambda _value: _raise_if_cancelled(job_id),
+                )
+                if not secrets.compare_digest(actual_sha256, str(item["manifest"].get("sha256") or "")):
+                    raise RuntimeError(f"SHA-256 verification failed after copying: {source.name}")
+                sql_temp.replace(target)
+                committed_sql = True
+
+            completed_bytes = _copy_job_file(
+                job_id,
+                item["source_manifest"],
+                manifest_temp,
+                completed_bytes=completed_bytes,
+                total_bytes=total_bytes,
+                phase=f"finalizing {index}/{len(prepared)} {source.name}",
+            )
+            _raise_if_cancelled(job_id)
+            manifest_temp.replace(target_manifest)
+            committed_manifest = True
+            if was_skipped:
+                skipped.append(source.name)
+            else:
+                copied.append(source.name)
+            verified.append(source.name)
+            append_job_log(job_id, f"Verified: {target}")
+        except BaseException as exc:
+            sql_temp.unlink(missing_ok=True)
+            manifest_temp.unlink(missing_ok=True)
+            if committed_sql and not committed_manifest:
+                target.unlink(missing_ok=True)
+            if isinstance(exc, JobCancelled):
+                raise
+            failed.append({"filename": source.name, "error": str(exc)})
+            raise JobFailedWithResult(
+                str(exc),
+                {
+                    "destination": str(destination),
+                    "copied": copied,
+                    "skipped": skipped,
+                    "failed": failed,
+                    "verified": verified,
+                    "total_bytes": total_bytes,
+                },
+            ) from exc
+
+    set_job_progress(job_id, 99, "finalizing")
+    return {
+        "destination": str(destination),
+        "copied": copied,
+        "skipped": skipped,
+        "failed": failed,
+        "verified": verified,
+        "total_bytes": total_bytes,
+    }
 
 
 def _completed_csv_export(filename: str) -> tuple[Path, dict[str, Any]]:
@@ -1623,6 +1837,17 @@ def list_backups() -> dict[str, Any]:
                 continue
     items.sort(key=lambda item: item["completed_at"], reverse=True)
     return {"backups": items}
+
+
+@app.post("/api/copy-backups")
+def copy_backups(req: CopyBackupsRequest) -> dict[str, Any]:
+    job = start_job(
+        f"Copy {len(req.filenames)} backup(s) to removable drive",
+        copy_backups_job,
+        req.filenames,
+        req.destination_dir,
+    )
+    return {"job": job}
 
 
 @app.get("/api/csv-exports")

@@ -2,6 +2,9 @@ const STATE_KEY = 'sd_sma_db_admin_state_v2';
 let activeJobId = '';
 let pollTimer = null;
 let defaultOutputDir = '';
+let availableBackups = [];
+let selectedBackupNames = new Set();
+let removableRoots = [];
 const notifiedJobStates = new Map();
 const confirmModalOverlay = document.getElementById('confirm-modal-overlay');
 const confirmModalTitle = document.getElementById('confirm-modal-title');
@@ -74,16 +77,25 @@ async function openFilesystemBrowser({ purpose, initialPath = '', allowFiles = f
   const list = document.getElementById('filesystem-modal-list');
   const cancel = document.getElementById('filesystem-modal-cancel');
   const select = document.getElementById('filesystem-modal-select');
+  const refresh = document.getElementById('filesystem-modal-refresh');
   if (!overlay) throw new Error('文件浏览窗口不可用');
   let current = '';
+  let removablePollTimer = null;
+  let rootSignature = '';
 
   return new Promise((resolve, reject) => {
-    const finish = value => { overlay.style.display = 'none'; resolve(value); };
-    const fail = error => { overlay.style.display = 'none'; reject(error); };
+    const close = () => {
+      if (removablePollTimer) clearInterval(removablePollTimer);
+      removablePollTimer = null;
+      overlay.style.display = 'none';
+    };
+    const finish = value => { close(); resolve(value); };
+    const fail = error => { close(); reject(error); };
     cancel.onclick = () => finish('');
     overlay.onclick = event => { if (event.target === overlay) finish(''); };
     select.style.display = allowFiles ? 'none' : '';
     select.onclick = () => finish(current);
+    refresh.style.display = purpose === 'removable-directory' ? '' : 'none';
     title.textContent = allowFiles ? `选择 ${purpose.toUpperCase()} 文件` : '选择服务器目录';
     overlay.style.display = 'flex';
 
@@ -100,8 +112,7 @@ async function openFilesystemBrowser({ purpose, initialPath = '', allowFiles = f
       button.onclick = onClick;
       list.appendChild(button);
     };
-    const showRoots = async () => {
-      const data = await fetchJson(`/api/filesystem/roots?purpose=${encodeURIComponent(purpose)}`);
+    const renderRoots = data => {
       current = '';
       select.disabled = true;
       pathLabel.textContent = '允许访问的位置';
@@ -111,6 +122,14 @@ async function openFilesystemBrowser({ purpose, initialPath = '', allowFiles = f
           if (root.exists) showDirectory(root.path).catch(fail);
         });
       }
+      if (!(data.roots || []).some(root => root.exists)) {
+        renderButton('未检测到移动硬盘 / U 盘', '插入后会自动刷新，也可点击“立即刷新”', () => {});
+      }
+    };
+    const showRoots = async () => {
+      const data = await fetchJson(`/api/filesystem/roots?purpose=${encodeURIComponent(purpose)}`);
+      rootSignature = JSON.stringify((data.roots || []).map(root => [root.path, root.exists]));
+      renderRoots(data);
     };
     const showDirectory = async path => {
       const data = await fetchJson(`/api/filesystem/entries?purpose=${encodeURIComponent(purpose)}&path=${encodeURIComponent(path)}`);
@@ -128,6 +147,21 @@ async function openFilesystemBrowser({ purpose, initialPath = '', allowFiles = f
         });
       }
     };
+    const pollRemovableRoots = async () => {
+      if (purpose !== 'removable-directory') return;
+      const data = await fetchJson(`/api/filesystem/roots?purpose=${encodeURIComponent(purpose)}`);
+      const nextSignature = JSON.stringify((data.roots || []).map(root => [root.path, root.exists]));
+      if (nextSignature === rootSignature) return;
+      rootSignature = nextSignature;
+      const roots = (data.roots || []).filter(root => root.exists);
+      const normalizedCurrent = current.toLowerCase();
+      const currentStillAvailable = roots.some(root => normalizedCurrent.startsWith(root.path.toLowerCase()));
+      if (!current || !currentStillAvailable) renderRoots(data);
+    };
+    refresh.onclick = () => showRoots().catch(fail);
+    if (purpose === 'removable-directory') {
+      removablePollTimer = setInterval(() => pollRemovableRoots().catch(() => {}), 1000);
+    }
     (initialPath ? showDirectory(initialPath).catch(() => showRoots()) : showRoots()).catch(fail);
   });
 }
@@ -580,10 +614,13 @@ async function registerLocalFile(kind) {
 
 async function loadServerBackups() {
   const data = await fetchJson('/api/backups');
+  availableBackups = data.backups || [];
+  const availableNames = new Set(availableBackups.map(item => item.filename));
+  selectedBackupNames = new Set([...selectedBackupNames].filter(name => availableNames.has(name)));
   const select = document.getElementById('serverBackupSelect');
   const previous = select.value;
   select.innerHTML = '';
-  for (const backup of data.backups || []) {
+  for (const backup of availableBackups) {
     const option = document.createElement('option');
     option.value = backup.filename;
     const scope = backup.scope === 'table' && backup.table
@@ -593,6 +630,132 @@ async function loadServerBackups() {
     select.appendChild(option);
   }
   if (previous && hasOption(select, previous)) select.value = previous;
+  renderBackupCopyList();
+}
+
+function backupScopeLabel(backup) {
+  if (backup.scope === 'table' && backup.table) return `单表 ${backup.database || ''}.${backup.table}`;
+  if (backup.scope === 'external') return '外部登记';
+  return backup.database ? `整库 ${backup.database}` : '整库';
+}
+
+function renderBackupCopyList() {
+  const list = document.getElementById('backupCopyList');
+  list.innerHTML = '';
+  if (!availableBackups.length) {
+    const empty = document.createElement('div');
+    empty.className = 'backup-copy-empty';
+    empty.textContent = '暂无已完成的 SQL 备份';
+    list.appendChild(empty);
+    updateBackupCopyControls();
+    return;
+  }
+  for (const backup of availableBackups) {
+    const label = document.createElement('label');
+    label.className = 'backup-copy-card';
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.value = backup.filename;
+    checkbox.checked = selectedBackupNames.has(backup.filename);
+    checkbox.addEventListener('change', () => {
+      if (checkbox.checked) selectedBackupNames.add(backup.filename);
+      else selectedBackupNames.delete(backup.filename);
+      label.classList.toggle('is-selected', checkbox.checked);
+      updateBackupCopyControls();
+    });
+    const content = document.createElement('span');
+    content.className = 'backup-copy-card-content';
+    const name = document.createElement('strong');
+    name.textContent = backup.filename;
+    const meta = document.createElement('span');
+    meta.className = 'muted';
+    meta.textContent = `${backupScopeLabel(backup)} · ${formatBytes(backup.size_bytes)} · ${backup.completed_at || '时间未知'}`;
+    content.append(name, meta);
+    label.append(checkbox, content);
+    label.classList.toggle('is-selected', checkbox.checked);
+    list.appendChild(label);
+  }
+  updateBackupCopyControls();
+}
+
+function destinationIsOnAvailableDrive(destination) {
+  const value = String(destination || '').toLowerCase();
+  return removableRoots.some(root => value.startsWith(String(root.path || '').toLowerCase()));
+}
+
+function updateBackupCopyControls() {
+  const selected = availableBackups.filter(item => selectedBackupNames.has(item.filename));
+  const totalBytes = selected.reduce((sum, item) => sum + Number(item.size_bytes || 0), 0);
+  const destination = document.getElementById('backupCopyDestination').value.trim();
+  const copyButton = document.getElementById('btnCopyBackups');
+  copyButton.disabled = !selected.length || !destination || !destinationIsOnAvailableDrive(destination);
+  document.getElementById('btnSelectAllBackups').disabled = !availableBackups.length;
+  document.getElementById('btnClearBackupSelection').disabled = !selected.length;
+  const driveText = removableRoots.length ? `${removableRoots.length} 个移动盘可用` : '未检测到移动硬盘 / U 盘';
+  setHint(
+    'backupCopyHint',
+    `已选择 ${selected.length} 个备份（${formatBytes(totalBytes)}）；${driveText}`,
+    removableRoots.length ? 'muted' : 'muted warn',
+  );
+}
+
+function defaultRemovableBackupDir(root) {
+  return `${String(root || '').replace(/[\\/]+$/, '')}\\SD_SMA_Backups`;
+}
+
+async function refreshRemovableDrives({ announce = false } = {}) {
+  const data = await fetchJson('/api/filesystem/roots?purpose=removable-directory');
+  removableRoots = (data.roots || []).filter(root => root.exists);
+  const input = document.getElementById('backupCopyDestination');
+  if (!removableRoots.length) {
+    input.value = '';
+  } else if (!destinationIsOnAvailableDrive(input.value)) {
+    input.value = removableRoots.length === 1 ? defaultRemovableBackupDir(removableRoots[0].path) : '';
+  }
+  updateBackupCopyControls();
+  if (announce) {
+    setHint(
+      'backupCopyHint',
+      removableRoots.length ? `已检测到 ${removableRoots.length} 个移动盘` : '未检测到移动硬盘 / U 盘',
+      removableRoots.length ? 'muted ok' : 'muted warn',
+    );
+  }
+  return removableRoots;
+}
+
+async function chooseBackupCopyDestination() {
+  await refreshRemovableDrives();
+  const input = document.getElementById('backupCopyDestination');
+  const selected = await openFilesystemBrowser({
+    purpose: 'removable-directory',
+    initialPath: input.value,
+  });
+  if (selected) input.value = selected;
+  await refreshRemovableDrives();
+}
+
+async function startCopyBackups() {
+  const selected = availableBackups.filter(item => selectedBackupNames.has(item.filename));
+  const destination = document.getElementById('backupCopyDestination').value.trim();
+  if (!selected.length) throw new Error('请至少选择一个 SQL 备份');
+  if (!destination || !destinationIsOnAvailableDrive(destination)) throw new Error('请选择当前可用的移动硬盘 / U 盘目录');
+  const totalBytes = selected.reduce((sum, item) => sum + Number(item.size_bytes || 0), 0);
+  const confirmed = await showConfirmModal({
+    title: '确认复制数据库备份',
+    message: `将 ${selected.length} 个备份（${formatBytes(totalBytes)}）复制到：${destination}。复制后将校验 SHA-256。`,
+    confirmText: '开始复制',
+  });
+  if (!confirmed) return;
+  const data = await fetchJson('/api/copy-backups', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      filenames: selected.map(item => item.filename),
+      destination_dir: destination,
+    }),
+  });
+  watchJob(data.job.id);
+  setHint('backupCopyHint', `已开始复制到 ${destination}`, 'muted ok');
 }
 
 async function loadServerCsvExports() {
@@ -684,7 +847,8 @@ function notifyJobOutcome(job) {
 
   const title = job.title || job.id;
   if (status === 'done') {
-    const output = job.result?.path ? `：${job.result.path}` : '';
+    const outputPath = job.result?.path || job.result?.destination || '';
+    const output = outputPath ? `：${outputPath}` : '';
     showStatusBar(`任务成功：${title}${output}`, 'ok');
   } else if (status === 'cancelled' || status === 'canceled') {
     showStatusBar(`任务已取消：${title}`, 'warn');
@@ -720,9 +884,14 @@ function renderJobs(jobs) {
   for (const job of jobs) {
     const tr = document.createElement('tr');
     const status = job.status || 'running';
-    const result = job.result && job.result.path
-      ? `${job.result.path}${job.result.size_bytes ? ` (${job.result.size_bytes} bytes)` : ''}`
-      : (job.error || job.phase || '');
+    let result = job.error || job.phase || '';
+    if (job.result?.path) {
+      result = `${job.result.path}${job.result.size_bytes ? ` (${job.result.size_bytes} bytes)` : ''}`;
+    } else if (job.result?.destination) {
+      const copied = (job.result.copied || []).length;
+      const skipped = (job.result.skipped || []).length;
+      result = `${job.result.destination} / 已复制 ${copied} / 已跳过 ${skipped}`;
+    }
     const statusCell = document.createElement('td');
     const statusButton = document.createElement('button');
     statusButton.type = 'button';
@@ -882,6 +1051,23 @@ function bindEvents() {
   document.getElementById('btnRefreshBackups').addEventListener('click', () => {
     loadServerBackups().catch(err => setHint('importHint', err.message, 'muted warn'));
   });
+  document.getElementById('btnSelectAllBackups').addEventListener('click', () => {
+    selectedBackupNames = new Set(availableBackups.map(item => item.filename));
+    renderBackupCopyList();
+  });
+  document.getElementById('btnClearBackupSelection').addEventListener('click', () => {
+    selectedBackupNames.clear();
+    renderBackupCopyList();
+  });
+  document.getElementById('btnChooseBackupDestination').addEventListener('click', () => {
+    chooseBackupCopyDestination().catch(err => setHint('backupCopyHint', err.message, 'muted warn'));
+  });
+  document.getElementById('btnRefreshRemovableDrives').addEventListener('click', () => {
+    refreshRemovableDrives({ announce: true }).catch(err => setHint('backupCopyHint', err.message, 'muted warn'));
+  });
+  document.getElementById('btnCopyBackups').addEventListener('click', () => {
+    startCopyBackups().catch(err => setHint('backupCopyHint', err.message, 'muted warn'));
+  });
   document.getElementById('btnRegisterSql').addEventListener('click', () => {
     registerLocalFile('sql').catch(err => setHint('importHint', err.message, 'muted warn'));
   });
@@ -914,6 +1100,7 @@ async function init() {
   }
   await refreshJobs();
   await loadServerBackups();
+  await refreshRemovableDrives();
   await loadServerCsvExports();
 }
 
