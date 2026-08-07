@@ -13,6 +13,7 @@
   let advancedOpcuaMode = false;
   let runtimeRevision = 0;
   let runtimePollTimer = null;
+  let runtimePollGeneration = 0;
   let pluginStateKey = null;
   let batchCodesAvailable = false;
   let currentBatchSource = {};
@@ -372,18 +373,39 @@
     savePluginState();
   }
 
+  function stopRuntimeStatePolling() {
+    runtimePollGeneration += 1;
+    if (runtimePollTimer) clearTimeout(runtimePollTimer);
+    runtimePollTimer = null;
+  }
+
+  function scheduleRuntimeStatePoll(pluginKey, generation, delayMs = 1000) {
+    if (generation !== runtimePollGeneration || document.hidden) return;
+    runtimePollTimer = setTimeout(() => {
+      pollRuntimeState(pluginKey, generation).catch(() => {});
+    }, delayMs);
+  }
+
+  async function pollRuntimeState(pluginKey, generation) {
+    if (generation !== runtimePollGeneration || document.hidden) return;
+    try {
+      const state = await fetchJson(
+        `/api/plugins/runtime-state/${encodeURIComponent(pluginKey)}?since_revision=${runtimeRevision}`,
+      );
+      if (generation !== runtimePollGeneration) return;
+      if (state.changed !== false) {
+        runtimeRevision = Number(state.revision || 0);
+        applyRuntimeState(state);
+      }
+    } finally {
+      scheduleRuntimeStatePoll(pluginKey, generation);
+    }
+  }
+
   function startRuntimeStatePolling(pluginKey) {
-    if (runtimePollTimer) clearInterval(runtimePollTimer);
-    runtimePollTimer = setInterval(() => {
-      fetchJson(`/api/plugins/runtime-state/${encodeURIComponent(pluginKey)}`)
-        .then((state) => {
-          const revision = Number(state.revision || 0);
-          if (revision === runtimeRevision) return;
-          runtimeRevision = revision;
-          applyRuntimeState(state);
-        })
-        .catch(() => {});
-    }, 300);
+    stopRuntimeStatePolling();
+    const generation = runtimePollGeneration;
+    scheduleRuntimeStatePoll(pluginKey, generation);
   }
 
   function populateTables(savedTable) {
@@ -483,6 +505,21 @@
       await runFreshQuery(1);
     }
   }
+
+  document.addEventListener("visibilitychange", () => {
+    if (!advancedOpcuaMode || !activePluginKey) return;
+    if (document.hidden) {
+      stopRuntimeStatePolling();
+    } else {
+      startRuntimeStatePolling(activePluginKey);
+      const generation = runtimePollGeneration;
+      if (runtimePollTimer) clearTimeout(runtimePollTimer);
+      runtimePollTimer = null;
+      pollRuntimeState(activePluginKey, generation).catch(() => {});
+    }
+  });
+  window.addEventListener("pagehide", stopRuntimeStatePolling);
+  window.addEventListener("beforeunload", stopRuntimeStatePolling);
 
   run().catch((error) => {
     document.getElementById("meta").textContent = error.message;

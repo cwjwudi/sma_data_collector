@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import threading
 from datetime import datetime
 from unittest.mock import AsyncMock, patch
 
@@ -173,6 +174,33 @@ def test_monitor_resolves_poll_interval_from_global_opcua():
     assert monitor._resolve_poll_interval_ms() == 100
 
 
+def test_monitor_runtime_config_rebuilds_only_when_revision_changes():
+    from app import main as main_module
+
+    active = {"plugins": {"modules": {}}}
+    revisions = iter([("default.json", 1), ("default.json", 1), ("default.json", 2)])
+    main_module._monitor_config_revision = None
+    main_module._monitor_config_snapshot = None
+    with (
+        patch.object(
+            main_module.config_store,
+            "get_active_config_with_revision",
+            side_effect=lambda: (active, next(revisions)),
+        ),
+        patch("app.main._iter_advanced_plugin_bindings", return_value=[]) as compile_bindings,
+        patch("app.main._get_opcua_connection", return_value={"poll_interval_ms": 500}),
+    ):
+        first = main_module._get_monitor_runtime_config()
+        second = main_module._get_monitor_runtime_config()
+        third = main_module._get_monitor_runtime_config()
+
+    assert first is second
+    assert third is not second
+    assert compile_bindings.call_count == 2
+    main_module._monitor_config_revision = None
+    main_module._monitor_config_snapshot = None
+
+
 def test_resolve_table_names_for_batch_no():
     cfg = TableListWritebackConfig.from_binding(
         {
@@ -204,6 +232,89 @@ def test_rising_edge_detector_ignores_first_sample():
     assert detector.check("k", True) is False
     assert detector.check("k", False) is False
     assert detector.check("k", True) is True
+
+
+def test_monitor_batch_reads_duplicate_nodes_once_per_poll():
+    async def _run() -> None:
+        bindings = [
+            {
+                "plugin_key": key,
+                "_table_list_config": object(),
+                "_table_list_advanced": {
+                    "query_node": "ns=2;s=Shared",
+                    "prev_page_node": "",
+                    "next_page_node": "",
+                    "batch_no_node": "",
+                    "trigger_node": "",
+                },
+            }
+            for key in ("general_1", "general_2")
+        ]
+        monitor = PluginOpcuaMonitor(
+            get_runtime_config=lambda: {
+                "bindings": bindings,
+                "opcua": {"endpoint_url": "opc.tcp://127.0.0.1:4840/"},
+            },
+            on_snapshot_query=_noop_snapshot_query,
+            on_page_change=_noop_page,
+            on_trigger=_noop_trigger,
+        )
+        with patch(
+            "app.plugin_opcua_monitor.opcua_client.read_scalars",
+            new=AsyncMock(return_value=[False]),
+        ) as read_many:
+            assert await monitor._poll_once() is True
+            read_many.assert_awaited_once_with(
+                "opc.tcp://127.0.0.1:4840/",
+                ["ns=2;s=Shared"],
+                username="",
+                password="",
+            )
+
+    asyncio.run(_run())
+
+
+def test_monitor_requires_observed_false_before_rearming_trigger():
+    async def _run() -> int:
+        binding = {
+            "plugin_key": "general_1",
+            "_table_list_config": object(),
+            "_table_list_advanced": {
+                "query_node": "ns=2;s=Query",
+                "prev_page_node": "",
+                "next_page_node": "",
+                "batch_no_node": "",
+                "trigger_node": "",
+            },
+        }
+        on_snapshot = AsyncMock(
+            return_value=PluginRuntimeSnapshot(plugin_key="general_1", total_pages=1)
+        )
+        monitor = PluginOpcuaMonitor(
+            get_runtime_config=lambda: {
+                "bindings": [binding],
+                "opcua": {"endpoint_url": "opc.tcp://127.0.0.1:4840/"},
+            },
+            on_snapshot_query=on_snapshot,
+            on_page_change=_noop_page,
+            on_trigger=_noop_trigger,
+        )
+        samples = [[False], [True], [True], [False], [True]]
+        with (
+            patch(
+                "app.plugin_opcua_monitor.opcua_client.read_scalars",
+                new=AsyncMock(side_effect=samples),
+            ),
+            patch(
+                "app.plugin_opcua_monitor.opcua_client.write_scalar",
+                new=AsyncMock(return_value=True),
+            ),
+        ):
+            for _ in samples:
+                assert await monitor._poll_once() is True
+        return on_snapshot.await_count
+
+    assert asyncio.run(_run()) == 2
 
 
 def test_advanced_config_inferred_from_advanced_block_when_mode_cursor():
@@ -451,3 +562,69 @@ def test_snapshot_pages_remain_frozen_until_next_query():
     assert refreshed.page == 1
     assert refreshed.rows[0]["BatchCode"] == "NEW"
     assert query_count == 2
+
+
+def test_concurrent_snapshot_requests_share_one_worker_query():
+    from app import main as main_module
+    from app.models import HistoryQueryResponse
+
+    binding = {
+        "plugin_key": "general_1",
+        "view_name": "table",
+        "bind_group": "Data_Batch",
+        "bind_table": "Data_Batch",
+        "page_size": 10,
+    }
+    query_started = threading.Event()
+    release_query = threading.Event()
+    query_calls = 0
+    worker_thread_ids: list[int] = []
+
+    def fake_execute(_binding, **_kwargs):
+        nonlocal query_calls
+        query_calls += 1
+        worker_thread_ids.append(threading.get_ident())
+        query_started.set()
+        assert release_query.wait(timeout=2)
+        rows = [{"BatchCode": "B01"}]
+        response = HistoryQueryResponse(
+            total=1,
+            page=1,
+            page_size=1,
+            columns=["BatchCode"],
+            rows=rows,
+            display_columns=[{"name": "BatchCode"}],
+        )
+        runtime = PluginRuntimeSnapshot(
+            plugin_key="general_1",
+            table="Data_Batch",
+            total_records=1,
+            columns=["BatchCode"],
+            rows=rows,
+            display_columns=response.display_columns,
+        )
+        return response, runtime
+
+    async def _run():
+        main_module._clear_plugin_snapshots()
+        main_module._plugin_snapshot_tasks.clear()
+        event_loop_thread = threading.get_ident()
+        with (
+            patch("app.main._execute_plugin_query", side_effect=fake_execute),
+            patch("app.main._run_plugin_writeback", new=AsyncMock()),
+            patch("app.main._plugin_opcua_monitor", None),
+        ):
+            first_task = asyncio.create_task(main_module._activate_plugin_snapshot(binding))
+            assert await asyncio.to_thread(query_started.wait, 1)
+            second_task = asyncio.create_task(main_module._activate_plugin_snapshot(binding))
+            await asyncio.sleep(0)
+            release_query.set()
+            first, second = await asyncio.gather(first_task, second_task)
+        main_module._clear_plugin_snapshots()
+        return event_loop_thread, first, second
+
+    event_loop_thread, first, second = asyncio.run(_run())
+    assert query_calls == 1
+    assert len(worker_thread_ids) == 1
+    assert worker_thread_ids[0] != event_loop_thread
+    assert first[0].rows == second[0].rows == [{"BatchCode": "B01"}]

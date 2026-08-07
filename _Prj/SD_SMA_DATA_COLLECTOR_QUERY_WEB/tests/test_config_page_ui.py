@@ -112,6 +112,20 @@ def test_plugin_query_shows_total_pages_without_recounting_adjacent_pages() -> N
     assert "if (data.total != null) totalRecords =" in script
 
 
+def test_advanced_runtime_polling_is_serial_visibility_aware_and_revision_based() -> None:
+    script = SPECIALIZED_QUERY_JS.read_text(encoding="utf-8")
+
+    assert "setInterval" not in script
+    assert "setTimeout" in script
+    assert "since_revision=${runtimeRevision}" in script
+    assert "state.changed !== false" in script
+    assert "document.hidden" in script
+    assert 'document.addEventListener("visibilitychange"' in script
+    assert 'window.addEventListener("pagehide"' in script
+    assert 'window.addEventListener("beforeunload"' in script
+    assert "delayMs = 1000" in script
+
+
 def test_query_pages_share_touch_friendly_precise_time_picker() -> None:
     query_html = QUERY_HTML.read_text(encoding="utf-8")
     query_script = QUERY_JS.read_text(encoding="utf-8")

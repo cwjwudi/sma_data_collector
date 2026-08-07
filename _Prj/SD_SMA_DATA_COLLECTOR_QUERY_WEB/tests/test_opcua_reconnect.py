@@ -122,12 +122,48 @@ def test_poll_once_returns_false_on_read_failure():
             },
         )
         with patch(
-            "app.plugin_opcua_monitor.opcua_client.read_scalar",
+            "app.plugin_opcua_monitor.opcua_client.read_scalars",
             new=AsyncMock(side_effect=ConnectionError("down")),
         ):
             return await monitor._poll_once()
 
     assert asyncio.run(_run()) is False
+
+
+def test_read_scalars_uses_one_client_batch_call():
+    async def _run() -> list[object]:
+        fake_client = MagicMock()
+        fake_client.get_node.side_effect = lambda node_id: f"node:{node_id}"
+        fake_client.read_values = AsyncMock(return_value=[10, 20])
+        with patch("app.opcua_client._ensure_connected", new=AsyncMock(return_value=fake_client)):
+            values = await opcua_client.read_scalars(
+                "opc.tcp://127.0.0.1:4840/",
+                ["ns=2;s=A", "ns=2;s=B"],
+            )
+        fake_client.read_values.assert_awaited_once_with(["node:ns=2;s=A", "node:ns=2;s=B"])
+        return values
+
+    assert asyncio.run(_run()) == [10, 20]
+
+
+def test_heartbeat_variant_type_is_cached_until_connection_invalidates():
+    async def _run() -> None:
+        fake_node = MagicMock()
+        fake_node.write_attribute = AsyncMock()
+        fake_client = MagicMock()
+        fake_client.get_node.return_value = fake_node
+        with (
+            patch("app.opcua_client._ensure_connected", new=AsyncMock(return_value=fake_client)),
+            patch(
+                "app.opcua_client._read_variant_type",
+                new=AsyncMock(return_value=opcua_client.ua.VariantType.UInt16),
+            ) as read_type,
+        ):
+            assert await opcua_client.write_heartbeat("opc.tcp://127.0.0.1:4840/", "ns=2;s=Heart")
+            assert await opcua_client.write_heartbeat("opc.tcp://127.0.0.1:4840/", "ns=2;s=Heart")
+            assert read_type.await_count == 1
+
+    asyncio.run(_run())
 
 
 def test_poll_once_returns_false_on_heartbeat_failure():

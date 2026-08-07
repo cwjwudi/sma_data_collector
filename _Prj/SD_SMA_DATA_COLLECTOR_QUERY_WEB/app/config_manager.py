@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -60,7 +61,27 @@ class UnifiedConfigStore:
             "query_view_config.json",
             "plugins_config.json",
         }
+        self._cache_lock = threading.RLock()
+        self._active_config_cache: dict[str, Any] | None = None
+        self._active_config_signature: tuple[Any, ...] | None = None
+        self._cached_active_name: str | None = None
+        self._cached_pointer_signature: tuple[int, int] | None = None
         self.ensure_default_profile()
+
+    @staticmethod
+    def _file_signature(path: Path) -> tuple[int, int] | None:
+        try:
+            stat = path.stat()
+        except OSError:
+            return None
+        return stat.st_mtime_ns, stat.st_size
+
+    def _invalidate_active_cache(self) -> None:
+        with self._cache_lock:
+            self._active_config_cache = None
+            self._active_config_signature = None
+            self._cached_active_name = None
+            self._cached_pointer_signature = None
 
     @staticmethod
     def _load_json(path: Path) -> dict[str, Any]:
@@ -382,6 +403,7 @@ class UnifiedConfigStore:
         if not path.exists():
             raise FileNotFoundError(f"config profile not found: {name}")
         self.active_profile_path.write_text(name, encoding="utf-8")
+        self._invalidate_active_cache()
         return self.get_active_config()
 
     def create_profile(self, filename: str) -> dict[str, Any]:
@@ -400,6 +422,7 @@ class UnifiedConfigStore:
         )
         self._write_json(path, data)
         self.active_profile_path.write_text(name, encoding="utf-8")
+        self._invalidate_active_cache()
 
         return {
             "status": "created",
@@ -418,6 +441,7 @@ class UnifiedConfigStore:
             path.unlink()
             if self.active_profile_path.exists():
                 self.active_profile_path.unlink()
+            self._invalidate_active_cache()
             self.ensure_default_profile()
             return {
                 "status": "reset",
@@ -432,6 +456,7 @@ class UnifiedConfigStore:
         if was_active:
             remaining = self._profile_files()
             self.active_profile_path.write_text(remaining[0].name, encoding="utf-8")
+        self._invalidate_active_cache()
 
         return {
             "status": "deleted",
@@ -440,18 +465,51 @@ class UnifiedConfigStore:
             "profiles": self.list_profiles(),
         }
 
+    def get_active_config_with_revision(self) -> tuple[dict[str, Any], tuple[Any, ...]]:
+        """Return an isolated active config and a revision that tracks external file changes."""
+        with self._cache_lock:
+            pointer_signature = self._file_signature(self.active_profile_path)
+            if (
+                self._cached_active_name is not None
+                and pointer_signature == self._cached_pointer_signature
+            ):
+                active_name = self._cached_active_name
+            else:
+                active_name = self.get_active_profile_name()
+                pointer_signature = self._file_signature(self.active_profile_path)
+                self._cached_active_name = active_name
+                self._cached_pointer_signature = pointer_signature
+
+            path = self._profile_path(active_name)
+            profile_signature = self._file_signature(path)
+            signature: tuple[Any, ...] = (
+                active_name,
+                pointer_signature,
+                profile_signature,
+            )
+            if self._active_config_cache is not None and signature == self._active_config_signature:
+                return self._clone_json(self._active_config_cache), signature
+
+            data = self._load_json(path)
+            data, changed = self._normalize_profile_data(data, path.stem)
+            if changed:
+                self._write_json(path, data)
+                profile_signature = self._file_signature(path)
+                signature = (active_name, pointer_signature, profile_signature)
+
+            self._active_config_cache = data
+            self._active_config_signature = signature
+            return self._clone_json(data), signature
+
     def get_active_config(self) -> dict[str, Any]:
-        path = self._profile_path(self.get_active_profile_name())
-        data = self._load_json(path)
-        data, changed = self._normalize_profile_data(data, path.stem)
-        if changed:
-            self._write_json(path, data)
+        data, _revision = self.get_active_config_with_revision()
         return data
 
     def save_active_config(self, data: dict[str, Any]) -> None:
         path = self._profile_path(self.get_active_profile_name())
         normalized, _ = self._normalize_profile_data(data, path.stem)
         self._write_json(path, normalized)
+        self._invalidate_active_cache()
 
     def get_app_settings(self) -> dict[str, Any]:
         settings = dict(self.get_active_config().get("app_settings", {}))
