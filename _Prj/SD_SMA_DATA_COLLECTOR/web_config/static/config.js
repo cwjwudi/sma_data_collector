@@ -24,6 +24,7 @@ const PAGE_STATE_KEY = "sd_sma_collector_web_state_v1";
 const ALLOWED_DATATYPES = ["bool", "int", "float", "string", "datetime"];
 const FIXED_INDEX_COLUMN_OPTIONS = [
   { value: "collection_time", label: "collection_time（固定采集时间）" },
+  { value: "is_backfill", label: "is_backfill（固定补采标记）" },
   { value: "created_at", label: "created_at（固定创建时间）" },
 ];
 const PARTITION_INTERVAL_YEAR_OPTIONS = [
@@ -1081,6 +1082,9 @@ function renderGroups() {
             if (v !== "time_and_variable") {
               currentConfig.groups[idx].variable_point_overrides = {};
             }
+            if (v !== "time" && v !== "time_and_variable") {
+              currentConfig.groups[idx].force_cadence_alignment = false;
+            }
             renderGroups();
           }
         ),
@@ -1158,7 +1162,7 @@ function renderGroups() {
         ),
       ])
     );
-    card.appendChild(createRow([createHeaderCell("读后复位"), createHeaderCell("分表间隔年份"), createHeaderCell("批量写入"), createHeaderCell("并行触发")]));
+    card.appendChild(createRow([createHeaderCell("读后复位"), createHeaderCell("分表间隔年份"), createHeaderCell("批量写入"), createHeaderCell("并行触发"), createHeaderCell("强制对齐节拍"), createHeaderCell("最大补采节拍数")]));
 
     const partitionYearsInput = createSelect(
       PARTITION_INTERVAL_YEAR_OPTIONS,
@@ -1178,6 +1182,30 @@ function renderGroups() {
     );
     batchInsertInput.disabled = batchUpsertEnabled;
 
+    const cadenceSupported = item.trigger === "time" || item.trigger === "time_and_variable";
+    const forceCadenceInput = createCheckbox(
+      cadenceSupported && currentConfig.groups[idx].force_cadence_alignment === true,
+      (v) => {
+        currentConfig.groups[idx].force_cadence_alignment = v;
+        renderGroups();
+      }
+    );
+    forceCadenceInput.disabled = !cadenceSupported;
+    const maxBackfillInput = createInput(
+      Number(currentConfig.groups[idx].max_backfill_ticks) || 1000,
+      (v) => {
+        const parsed = Math.trunc(Number(v));
+        currentConfig.groups[idx].max_backfill_ticks = Math.min(
+          100000,
+          Math.max(1, Number.isFinite(parsed) ? parsed : 1000)
+        );
+      },
+      "number"
+    );
+    maxBackfillInput.min = "1";
+    maxBackfillInput.max = "100000";
+    maxBackfillInput.disabled = !cadenceSupported || item.force_cadence_alignment !== true;
+
     card.appendChild(
       createRow([
         createCheckbox(item.reset_trigger_after_read !== false, (v) => (currentConfig.groups[idx].reset_trigger_after_read = v)),
@@ -1194,8 +1222,17 @@ function renderGroups() {
           })(),
           batchUpsertEnabled
         ),
+        forceCadenceInput,
+        maxBackfillInput,
       ])
     );
+
+    if (cadenceSupported && item.force_cadence_alignment === true) {
+      const warning = document.createElement("div");
+      warning.className = "database-create-warning";
+      warning.textContent = "补采记录使用 OPC UA 恢复后的当前快照，并按欠拍时间写入；数据库 is_backfill=1，可供报表识别。";
+      card.appendChild(warning);
+    }
 
     const deleteRow = document.createElement("div");
     deleteRow.className = "group-delete-row";
@@ -1221,6 +1258,8 @@ function renderGroups() {
       name: "",
       interval_seconds: 1,
       interval_point: null,
+      force_cadence_alignment: false,
+      max_backfill_ticks: 1000,
       trigger: "time",
       description: "",
       data_points: [],

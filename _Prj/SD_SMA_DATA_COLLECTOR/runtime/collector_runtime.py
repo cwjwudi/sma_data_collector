@@ -139,6 +139,11 @@ class DataCollectionSystem:
                 "inflight_size": 0,
             }
         )
+        collection_metrics = (
+            dict(self.data_collector.metrics)
+            if self.data_collector
+            else {}
+        )
         return {
             "collector_running": bool(self.running),
             "config_path": self.config_file,
@@ -151,6 +156,7 @@ class DataCollectionSystem:
                 "all_connected": opcua_all,
             },
             "storage": storage_metrics,
+            "collection": collection_metrics,
         }
 
     async def initialize(self) -> bool:

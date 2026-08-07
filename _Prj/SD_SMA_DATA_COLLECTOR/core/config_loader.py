@@ -144,6 +144,8 @@ class ConfigLoader:
                     else group_data.get('variable_point_overrides')
                 ),
                 interval_point=group_data.get('interval_point'),
+                force_cadence_alignment=group_data.get('force_cadence_alignment', False),
+                max_backfill_ticks=group_data.get('max_backfill_ticks', 1000),
                 trigger_interval_seconds=raw_trigger_interval,
                 trigger_mode=TriggerMode(str(raw_trigger_mode).strip().lower()),
                 trigger_point=group_data.get('trigger_point'),
@@ -334,6 +336,33 @@ class ConfigLoader:
                     raise ValueError(
                         f"数据组 '{group.name}' 的采集间隔点位不存在: {group.interval_point}"
                     )
+
+            if not isinstance(group.force_cadence_alignment, bool):
+                raise ValueError(
+                    f"数据组 '{group.name}' 的 force_cadence_alignment 必须是布尔值"
+                )
+            if group.force_cadence_alignment and group.trigger not in {
+                TriggerType.TIME,
+                TriggerType.TIME_AND_VARIABLE,
+            }:
+                raise ValueError(
+                    f"数据组 '{group.name}' 仅在 trigger=time 或 time_and_variable 时支持 "
+                    "force_cadence_alignment"
+                )
+            if isinstance(group.max_backfill_ticks, bool):
+                raise ValueError(
+                    f"数据组 '{group.name}' 的 max_backfill_ticks 必须是整数"
+                )
+            try:
+                group.max_backfill_ticks = int(group.max_backfill_ticks)
+            except (TypeError, ValueError):
+                raise ValueError(
+                    f"数据组 '{group.name}' 的 max_backfill_ticks 必须是整数"
+                ) from None
+            if group.max_backfill_ticks < 1 or group.max_backfill_ticks > 100000:
+                raise ValueError(
+                    f"数据组 '{group.name}' 的 max_backfill_ticks 必须在 1 到 100000 之间"
+                )
 
             if group.partition_interval_years < 0 or group.partition_interval_years > 10:
                 raise ValueError(

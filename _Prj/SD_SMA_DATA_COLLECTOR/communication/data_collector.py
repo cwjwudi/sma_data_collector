@@ -21,6 +21,80 @@ from communication.opcua_client import OpcUaClient
 from communication.communication_manager import CommunicationManager
 
 
+_LOCAL_CADENCE_EPOCH = datetime(1970, 1, 1)
+
+
+class _AlignedCadenceState:
+    """运行期自然时间节拍状态；不跨进程恢复。"""
+
+    def __init__(self, interval: float, now_wall: datetime):
+        self.interval = float(interval)
+        self.next_slot_seconds = 0.0
+        self.recovery_pending = False
+        self.retry_not_before_monotonic = 0.0
+        self.rebase(interval, now_wall)
+
+    @staticmethod
+    def _wall_seconds(now_wall: datetime) -> float:
+        return (now_wall - _LOCAL_CADENCE_EPOCH).total_seconds()
+
+    def rebase(self, interval: float, now_wall: datetime) -> None:
+        """从严格晚于当前时间的下一个自然边界开始。"""
+        self.interval = float(interval)
+        now_seconds = self._wall_seconds(now_wall)
+        self.next_slot_seconds = (
+            math.floor(now_seconds / self.interval) + 1
+        ) * self.interval
+        self.recovery_pending = False
+        self.retry_not_before_monotonic = 0.0
+
+    def seconds_until_next(self, now_wall: datetime) -> float:
+        wall_delay = self.next_slot_seconds - self._wall_seconds(now_wall)
+        if wall_delay > 0:
+            return wall_delay
+        return max(
+            wall_delay,
+            self.retry_not_before_monotonic - time.monotonic(),
+        )
+
+    def retry_ready(self) -> bool:
+        return time.monotonic() >= self.retry_not_before_monotonic
+
+    def defer_retry(self) -> None:
+        self.retry_not_before_monotonic = time.monotonic() + min(
+            1.0, max(0.05, self.interval)
+        )
+
+    def due_slots(
+        self,
+        now_wall: datetime,
+        limit: int,
+    ) -> tuple[List[datetime], int, int]:
+        """返回最近的到期节拍、总到期数和因上限丢弃的旧节拍数。"""
+        now_seconds = self._wall_seconds(now_wall)
+        if now_seconds + 1e-9 < self.next_slot_seconds:
+            return [], 0, 0
+
+        total = int(
+            math.floor(
+                (now_seconds - self.next_slot_seconds + 1e-9) / self.interval
+            )
+        ) + 1
+        retained = min(total, max(1, int(limit)))
+        truncated = total - retained
+        first = self.next_slot_seconds + truncated * self.interval
+        slots = [
+            _LOCAL_CADENCE_EPOCH + timedelta(seconds=first + index * self.interval)
+            for index in range(retained)
+        ]
+        return slots, total, truncated
+
+    def commit(self, total_due: int) -> None:
+        self.next_slot_seconds += int(total_due) * self.interval
+        self.recovery_pending = False
+        self.retry_not_before_monotonic = 0.0
+
+
 def _is_opcua_transient(exc: BaseException) -> bool:
     """手动断线、PLC 关机、对端不可达等：用简短日志即可，不必打 ERROR 全栈。"""
     if isinstance(exc, (ConnectionError, TimeoutError)):
@@ -646,6 +720,111 @@ class DataCollector:
         """
         self.data_callbacks.append(callback)
 
+    def _emit_collection(self, collection_data: Dict[str, Any]) -> None:
+        """统一补齐采集元数据后通知下游。"""
+        collection_data.setdefault("is_backfill", False)
+        for callback in self.data_callbacks:
+            callback(collection_data)
+
+    async def _collect_aligned_time_if_due(
+        self,
+        group: DataGroup,
+        data_points: List[DataPoint],
+        opcua_client: OpcUaClient,
+        cadence: _AlignedCadenceState,
+        *,
+        context: str,
+    ) -> bool:
+        """到期时读取一次快照，并将其展开到全部欠拍节拍。"""
+        slots_before_read, _, _ = cadence.due_slots(
+            datetime.now(), group.max_backfill_ticks
+        )
+        if not slots_before_read or not cadence.retry_ready():
+            return False
+
+        try:
+            data = await opcua_client.read_data_points(data_points)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            cadence.recovery_pending = True
+            cadence.defer_retry()
+            self.metrics["cadence_recovery_failures"] += 1
+            raise
+
+        valid_data = {
+            name: info for name, info in data.items() if info.get("value") is not None
+        }
+        if not valid_data:
+            cadence.recovery_pending = True
+            cadence.defer_retry()
+            self.metrics["cadence_recovery_failures"] += 1
+            self.logger.warning(
+                "采集组 %s（%s）所有数据点读取失败，保留当前节拍等待恢复补采",
+                group.name,
+                context,
+            )
+            return False
+
+        invalid_points = [
+            name for name, info in data.items() if info.get("value") is None
+        ]
+        if invalid_points:
+            self.logger.warning(
+                "采集组 %s（%s）以下数据点读取失败，已过滤：%s",
+                group.name,
+                context,
+                invalid_points,
+            )
+
+        slots, total_due, truncated = cadence.due_slots(
+            datetime.now(), group.max_backfill_ticks
+        )
+        if not slots:
+            # 读取期间系统时间向后调整；不提交也不制造重复节拍。
+            return False
+
+        is_backfill_batch = cadence.recovery_pending or total_due > 1
+        if truncated:
+            self.metrics["cadence_backfill_truncated_ticks"] += truncated
+            self.logger.warning(
+                "采集组 %s 欠拍 %s 条，超过上限 %s；放弃最旧 %s 条，仅补最近节拍",
+                group.name,
+                total_due,
+                group.max_backfill_ticks,
+                truncated,
+            )
+
+        try:
+            for planned_time in slots:
+                self._emit_collection(
+                    {
+                        "group_name": group.name,
+                        "collection_time": planned_time,
+                        "trigger_type": "time",
+                        "is_backfill": is_backfill_batch,
+                        "data": valid_data,
+                    }
+                )
+        except Exception:
+            cadence.recovery_pending = True
+            cadence.defer_retry()
+            self.metrics["cadence_recovery_failures"] += 1
+            raise
+
+        cadence.commit(total_due)
+        if is_backfill_batch:
+            self.metrics["cadence_backfill_batches"] += 1
+            self.metrics["cadence_backfill_rows"] += len(slots)
+            self.logger.warning(
+                "采集组 %s 已使用恢复快照补采节拍: rows=%s, first=%s, last=%s",
+                group.name,
+                len(slots),
+                slots[0],
+                slots[-1],
+            )
+        return True
+
     def register_group_disabled_callback(self, callback: Callable[[str], None]) -> None:
         """Register a callback invoked after an enabled group has fully stopped."""
         self.group_disabled_callbacks.append(callback)
@@ -757,32 +936,33 @@ class DataCollector:
                     self.logger.error("停止采集组 %s 时发生错误: %s", name, result, exc_info=result)
         self.collectors.clear()
     
-    async def _time_triggered_collection(self, group: DataGroup, 
-                                       data_points: List[DataPoint],
-                                       opcua_client: OpcUaClient,
-                                       interval_point: Optional[DataPoint] = None) -> None:
-        """时间触发的数据采集。
+    async def _time_triggered_collection(
+        self,
+        group: DataGroup,
+        data_points: List[DataPoint],
+        opcua_client: OpcUaClient,
+        interval_point: Optional[DataPoint] = None,
+    ) -> None:
+        """时间触发的数据采集；未启用强制对齐时保持原有跳拍语义。"""
+        if group.force_cadence_alignment:
+            await self._aligned_time_triggered_collection(
+                group, data_points, opcua_client, interval_point
+            )
+            return
 
-        使用固定节拍调度：实际读取可以迟到，但 collection_time 使用计划节拍时间。
-        例如计划 18s 采集，实际 18.6s 开始、19.1s 返回，入库时间仍写 18s。
-        如果程序落后超过一个完整周期，只跳过已经错过的节拍，避免无限追赶。
-        """
         interval = float(group.interval_seconds)
         interval, _ = await self._read_collection_interval(
             group, interval_point, opcua_client, interval
         )
         anchor_monotonic, anchor_wall = self._create_fixed_cadence_anchor(
-            datetime.now(),
-            time.monotonic(),
+            datetime.now(), time.monotonic()
         )
         tick_index = 0
 
         while True:
             try:
                 next_deadline = self._fixed_cadence_deadline(
-                    anchor_monotonic,
-                    tick_index,
-                    interval,
+                    anchor_monotonic, tick_index, interval
                 )
                 wait = next_deadline - time.monotonic()
                 while wait > 0:
@@ -801,37 +981,43 @@ class DataCollector:
                         anchor_wall = datetime.now()
                         tick_index = 1
                         next_deadline = self._fixed_cadence_deadline(
-                            anchor_monotonic,
-                            tick_index,
-                            interval,
+                            anchor_monotonic, tick_index, interval
                         )
                     wait = next_deadline - time.monotonic()
 
                 planned_collection_time = self._fixed_cadence_collection_time(
-                    anchor_wall,
-                    tick_index,
-                    interval,
+                    anchor_wall, tick_index, interval
                 )
                 data = await opcua_client.read_data_points(data_points)
-
-                valid_data = {name: info for name, info in data.items() if info.get('value') is not None}
-
+                valid_data = {
+                    name: info
+                    for name, info in data.items()
+                    if info.get("value") is not None
+                }
                 if not valid_data:
-                    self.logger.warning(f"采集组 {group.name} 所有数据点读取失败，跳过本次采集")
+                    self.logger.warning(
+                        "采集组 %s 所有数据点读取失败，跳过本次采集", group.name
+                    )
                 else:
-                    invalid_points = [name for name, info in data.items() if info.get('value') is None]
+                    invalid_points = [
+                        name
+                        for name, info in data.items()
+                        if info.get("value") is None
+                    ]
                     if invalid_points:
-                        self.logger.warning(f"采集组 {group.name} 以下数据点读取失败，已过滤：{invalid_points}")
-
-                    collection_data = {
-                        'group_name': group.name,
-                        'collection_time': planned_collection_time,
-                        'trigger_type': 'time',
-                        'data': valid_data
-                    }
-
-                    for callback in self.data_callbacks:
-                        callback(collection_data)
+                        self.logger.warning(
+                            "采集组 %s 以下数据点读取失败，已过滤：%s",
+                            group.name,
+                            invalid_points,
+                        )
+                    self._emit_collection(
+                        {
+                            "group_name": group.name,
+                            "collection_time": planned_collection_time,
+                            "trigger_type": "time",
+                            "data": valid_data,
+                        }
+                    )
 
                 tick_index, skipped_ticks = self._advance_fixed_cadence_tick(
                     anchor_monotonic,
@@ -845,26 +1031,28 @@ class DataCollector:
                         group.name,
                         skipped_ticks,
                         self._fixed_cadence_collection_time(
-                            anchor_wall,
-                            tick_index,
-                            interval,
+                            anchor_wall, tick_index, interval
                         ),
                     )
-
             except asyncio.CancelledError:
-                self.logger.info(f"时间触发采集组 {group.name} 已取消")
+                self.logger.info("时间触发采集组 %s 已取消", group.name)
                 break
-            except Exception as e:
-                if _is_opcua_transient(e):
+            except Exception as exc:  # noqa: BLE001
+                if _is_opcua_transient(exc):
                     self.logger.warning(
                         "时间触发采集组 %s OPC UA 暂不可用，5s 后重试: %s: %s",
                         group.name,
-                        type(e).__name__,
-                        e,
+                        type(exc).__name__,
+                        exc,
                     )
                 else:
-                    self.logger.error(f"时间触发采集组 {group.name} 发生错误: {e}", exc_info=True)
-                await asyncio.sleep(5)  # 错误后等待5秒重试
+                    self.logger.error(
+                        "时间触发采集组 %s 发生错误: %s",
+                        group.name,
+                        exc,
+                        exc_info=True,
+                    )
+                await asyncio.sleep(5)
                 tick_index, skipped_ticks = self._advance_fixed_cadence_tick(
                     anchor_monotonic,
                     tick_index,
@@ -877,11 +1065,69 @@ class DataCollector:
                         group.name,
                         skipped_ticks,
                         self._fixed_cadence_collection_time(
-                            anchor_wall,
-                            tick_index,
-                            interval,
+                            anchor_wall, tick_index, interval
                         ),
                     )
+
+    async def _aligned_time_triggered_collection(
+        self,
+        group: DataGroup,
+        data_points: List[DataPoint],
+        opcua_client: OpcUaClient,
+        interval_point: Optional[DataPoint] = None,
+    ) -> None:
+        """按本机自然时间边界采集，并在运行期恢复后补齐欠拍。"""
+        interval = float(group.interval_seconds)
+        interval, _ = await self._read_collection_interval(
+            group, interval_point, opcua_client, interval
+        )
+        cadence = _AlignedCadenceState(interval, datetime.now())
+
+        while True:
+            try:
+                wait = cadence.seconds_until_next(datetime.now())
+                while wait > 0:
+                    poll_seconds = (
+                        max(0.001, float(self.dynamic_interval_poll_seconds))
+                        if interval_point is not None
+                        else wait
+                    )
+                    await asyncio.sleep(min(wait, poll_seconds))
+                    new_interval, changed = await self._read_collection_interval(
+                        group, interval_point, opcua_client, interval
+                    )
+                    if changed:
+                        interval = new_interval
+                        cadence.rebase(interval, datetime.now())
+                    wait = cadence.seconds_until_next(datetime.now())
+
+                collected = await self._collect_aligned_time_if_due(
+                    group,
+                    data_points,
+                    opcua_client,
+                    cadence,
+                    context="强制对齐定时",
+                )
+                if not collected:
+                    await asyncio.sleep(min(1.0, max(0.05, interval)))
+            except asyncio.CancelledError:
+                self.logger.info("强制对齐时间采集组 %s 已取消", group.name)
+                break
+            except Exception as exc:  # noqa: BLE001
+                if _is_opcua_transient(exc):
+                    self.logger.warning(
+                        "强制对齐采集组 %s OPC UA 暂不可用，保留欠拍并等待恢复: %s",
+                        group.name,
+                        exc,
+                    )
+                else:
+                    self.logger.error(
+                        "强制对齐采集组 %s 发生错误，保留欠拍: %s",
+                        group.name,
+                        exc,
+                        exc_info=True,
+                    )
+                await asyncio.sleep(min(1.0, max(0.05, interval)))
 
     def _get_variable_trigger_poll_interval(self, group: DataGroup) -> float:
         """获取 variable 类触发模式的触发点轮询间隔（秒）。"""
@@ -957,6 +1203,11 @@ class DataCollector:
         interval, _ = await self._read_collection_interval(
             group, interval_point, opcua_client, interval
         )
+        aligned_cadence = (
+            _AlignedCadenceState(interval, datetime.now())
+            if group.force_cadence_alignment
+            else None
+        )
         anchor_monotonic, anchor_wall = self._create_fixed_cadence_anchor(
             datetime.now(), time.monotonic()
         )
@@ -972,6 +1223,15 @@ class DataCollector:
 
         async def collect_time_if_due() -> None:
             nonlocal tick_index
+            if aligned_cadence is not None:
+                await self._collect_aligned_time_if_due(
+                    group,
+                    data_points,
+                    opcua_client,
+                    aligned_cadence,
+                    context="time_and_variable 订阅定时",
+                )
+                return
             deadline = self._fixed_cadence_deadline(
                 anchor_monotonic, tick_index, interval
             )
@@ -987,15 +1247,14 @@ class DataCollector:
                 if info.get("value") is not None
             }
             if valid:
-                for callback in self.data_callbacks:
-                    callback(
-                        {
-                            "group_name": group.name,
-                            "collection_time": planned_time,
-                            "trigger_type": "time",
-                            "data": valid,
-                        }
-                    )
+                self._emit_collection(
+                    {
+                        "group_name": group.name,
+                        "collection_time": planned_time,
+                        "trigger_type": "time",
+                        "data": valid,
+                    }
+                )
             else:
                 self.logger.warning(
                     "采集组 %s（time_and_variable 定时）所有数据点读取失败",
@@ -1018,10 +1277,16 @@ class DataCollector:
             while True:
                 try:
                     await collect_time_if_due()
-                    deadline = self._fixed_cadence_deadline(
-                        anchor_monotonic, tick_index, interval
-                    )
-                    wait_timeout = max(0.001, deadline - time.monotonic())
+                    if aligned_cadence is not None:
+                        wait_timeout = max(
+                            0.001,
+                            aligned_cadence.seconds_until_next(datetime.now()),
+                        )
+                    else:
+                        deadline = self._fixed_cadence_deadline(
+                            anchor_monotonic, tick_index, interval
+                        )
+                        wait_timeout = max(0.001, deadline - time.monotonic())
                     if interval_point is not None:
                         wait_timeout = min(
                             wait_timeout,
@@ -1046,9 +1311,12 @@ class DataCollector:
                     )
                     if changed:
                         interval = new_interval
-                        anchor_monotonic = time.monotonic()
-                        anchor_wall = datetime.now()
-                        tick_index = 1
+                        if aligned_cadence is not None:
+                            aligned_cadence.rebase(interval, datetime.now())
+                        else:
+                            anchor_monotonic = time.monotonic()
+                            anchor_wall = datetime.now()
+                            tick_index = 1
 
                     if not got_trigger_event and retry_needed:
                         current_trigger_value = await self._next_trigger_value(
@@ -1116,8 +1384,7 @@ class DataCollector:
                                 "trigger_point": trigger_point.name,
                                 "data": valid,
                             }
-                            for callback in self.data_callbacks:
-                                callback(collection_data)
+                            self._emit_collection(collection_data)
                     elif (
                         group.reset_trigger_after_read
                         and previous_trigger_state
@@ -1188,6 +1455,11 @@ class DataCollector:
             group, interval_point, opcua_client, interval
         )
         trigger_interval = float(group.trigger_interval_seconds)
+        aligned_cadence = (
+            _AlignedCadenceState(interval, datetime.now())
+            if group.force_cadence_alignment
+            else None
+        )
         anchor_monotonic, anchor_wall = self._create_fixed_cadence_anchor(
             datetime.now(),
             time.monotonic(),
@@ -1217,11 +1489,19 @@ class DataCollector:
                     'trigger_type': 'time',
                     'data': valid_data,
                 }
-                for callback in self.data_callbacks:
-                    callback(collection_data)
+                self._emit_collection(collection_data)
 
         async def collect_time_if_due() -> None:
             nonlocal tick_index
+            if aligned_cadence is not None:
+                await self._collect_aligned_time_if_due(
+                    group,
+                    data_points,
+                    opcua_client,
+                    aligned_cadence,
+                    context="time_and_variable 轮询定时",
+                )
+                return
             next_deadline = self._fixed_cadence_deadline(
                 anchor_monotonic,
                 tick_index,
@@ -1259,12 +1539,15 @@ class DataCollector:
             try:
                 await collect_time_if_due()
 
-                next_time_deadline = self._fixed_cadence_deadline(
-                    anchor_monotonic,
-                    tick_index,
-                    interval,
-                )
-                until_next = next_time_deadline - time.monotonic()
+                if aligned_cadence is not None:
+                    until_next = aligned_cadence.seconds_until_next(datetime.now())
+                else:
+                    next_time_deadline = self._fixed_cadence_deadline(
+                        anchor_monotonic,
+                        tick_index,
+                        interval,
+                    )
+                    until_next = next_time_deadline - time.monotonic()
                 sleep_for = min(trigger_interval, max(0.001, until_next))
                 await asyncio.sleep(sleep_for)
 
@@ -1273,9 +1556,12 @@ class DataCollector:
                 )
                 if changed:
                     interval = new_interval
-                    anchor_monotonic = time.monotonic()
-                    anchor_wall = datetime.now()
-                    tick_index = 1
+                    if aligned_cadence is not None:
+                        aligned_cadence.rebase(interval, datetime.now())
+                    else:
+                        anchor_monotonic = time.monotonic()
+                        anchor_wall = datetime.now()
+                        tick_index = 1
 
                 trigger_data = await opcua_client.read_data_points([trigger_point])
                 current_trigger_value = trigger_data.get(trigger_point.name, {}).get('value', False)
@@ -1333,8 +1619,7 @@ class DataCollector:
                             'trigger_point': trigger_point.name,
                             'data': valid_data,
                         }
-                        for callback in self.data_callbacks:
-                            callback(collection_data)
+                        self._emit_collection(collection_data)
 
                 elif group.reset_trigger_after_read and previous_trigger_state and current_trigger_value:
                     now_for_reset = time.monotonic()
@@ -1372,24 +1657,29 @@ class DataCollector:
                     )
                 else:
                     self.logger.error(f"time_and_variable 采集组 {group.name} 发生错误: {e}", exc_info=True)
-                await asyncio.sleep(5)
-                tick_index, skipped_ticks = self._advance_fixed_cadence_tick(
-                    anchor_monotonic,
-                    tick_index,
-                    interval,
-                    time.monotonic(),
+                await asyncio.sleep(
+                    min(1.0, max(0.05, interval))
+                    if aligned_cadence is not None
+                    else 5
                 )
-                if skipped_ticks:
-                    self.logger.warning(
-                        "采集组 %s（time_and_variable 定时）异常恢复后跳过 %s 个已错过节拍，下一个计划时间=%s",
-                        group.name,
-                        skipped_ticks,
-                        self._fixed_cadence_collection_time(
-                            anchor_wall,
-                            tick_index,
-                            interval,
-                        ),
+                if aligned_cadence is None:
+                    tick_index, skipped_ticks = self._advance_fixed_cadence_tick(
+                        anchor_monotonic,
+                        tick_index,
+                        interval,
+                        time.monotonic(),
                     )
+                    if skipped_ticks:
+                        self.logger.warning(
+                            "采集组 %s（time_and_variable 定时）异常恢复后跳过 %s 个已错过节拍，下一个计划时间=%s",
+                            group.name,
+                            skipped_ticks,
+                            self._fixed_cadence_collection_time(
+                                anchor_wall,
+                                tick_index,
+                                interval,
+                            ),
+                        )
     
     async def _variable_triggered_collection(self, group: DataGroup,
                                            data_points: List[DataPoint],
@@ -1487,8 +1777,7 @@ class DataCollector:
                         }
                                             
                         # 调用回调函数
-                        for callback in self.data_callbacks:
-                            callback(collection_data)
+                        self._emit_collection(collection_data)
 
                 elif group.reset_trigger_after_read and previous_trigger_state and current_trigger_value:
                     now_for_reset = time.monotonic()
@@ -1636,8 +1925,7 @@ class DataCollector:
                     accepted_indices: Set[int] = set()
                     for row in rows:
                         try:
-                            for callback in self.data_callbacks:
-                                callback(row)
+                            self._emit_collection(row)
                         except Exception as exc:
                             index = int(row["trigger_index"])
                             rejected.setdefault(index, []).append(f"callback:{exc}")

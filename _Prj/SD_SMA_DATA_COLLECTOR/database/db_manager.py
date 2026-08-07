@@ -290,11 +290,13 @@ class DatabaseManager:
             column_definitions.extend([
                 "`id` INTEGER PRIMARY KEY AUTOINCREMENT",
                 "`collection_time` DATETIME NOT NULL",
+                "`is_backfill` INTEGER NOT NULL DEFAULT 0",
                 "`created_at` DATETIME DEFAULT CURRENT_TIMESTAMP"
             ])
 
             if self.db_config['type'].lower() == 'mysql':
-                column_definitions[-3] = "`id` BIGINT AUTO_INCREMENT PRIMARY KEY"
+                column_definitions[-4] = "`id` BIGINT AUTO_INCREMENT PRIMARY KEY"
+                column_definitions[-2] = "`is_backfill` TINYINT(1) NOT NULL DEFAULT 0"
                 auto_increment = "AUTO_INCREMENT"
             else:
                 auto_increment = "AUTOINCREMENT"
@@ -347,8 +349,13 @@ class DatabaseManager:
         确保已有表包含配置中的全部业务列；缺失列自动 ALTER TABLE ADD COLUMN。
         不修改已有列类型，避免破坏历史数据。
         """
-        if not columns:
-            return True
+        required_columns = dict(columns)
+        required_columns.setdefault(
+            "is_backfill",
+            "TINYINT(1) NOT NULL DEFAULT 0"
+            if self.db_config.get('type', '').lower() == 'mysql'
+            else "INTEGER NOT NULL DEFAULT 0",
+        )
 
         existing = self.get_table_column_names(table_name)
         if existing is None:
@@ -357,7 +364,7 @@ class DatabaseManager:
         existing_lower = {name.lower() for name in existing}
         missing = [
             (col_name, col_type)
-            for col_name, col_type in columns.items()
+            for col_name, col_type in required_columns.items()
             if col_name.lower() not in existing_lower
         ]
         if not missing:

@@ -137,6 +137,13 @@ class DataStorageProcessor:
         
         group_name = collection_data.get('group_name')
         if group_name is not None:
+            if collection_data.get("is_backfill"):
+                self._group_flush_requests.add(group_name)
+                self.metrics["backfill_flush_requests"] += 1
+                ev = self._batch_ready_event
+                if ev is not None and not ev.is_set():
+                    ev.set()
+
             # 批次主表的任何一次触发（开批、结批或后续被数据库拒绝）
             # 都必须立即唤醒处理循环，以便强制刷写当前队列快照。
             if self._is_batch_master_record(collection_data):
@@ -1388,6 +1395,7 @@ class DataStorageProcessor:
             
             # 添加通用字段
             db_data['collection_time'] = collection_time
+            db_data['is_backfill'] = 1 if collection_data.get('is_backfill') else 0
             
             # 添加数据点值
             data_points = collection_data['data']

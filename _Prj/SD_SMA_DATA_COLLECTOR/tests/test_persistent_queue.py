@@ -67,6 +67,20 @@ def test_enqueue_commit_roundtrips_datetime_and_wal(tmp_path):
     store.close()
 
 
+def test_backfill_marker_roundtrips_and_requests_immediate_group_flush(tmp_path):
+    target, _db = processor(tmp_path / "backfill.db", batch_size=100)
+    row = item(9)
+    row["is_backfill"] = True
+
+    target.add_data(row)
+
+    assert target.data_queue[0]["is_backfill"] is True
+    assert "Data_Test" in target._group_flush_requests
+    converted = target._convert_to_db_format(row)
+    assert converted["is_backfill"] == 1
+    target.persistent_store.close()
+
+
 def test_processing_row_is_recovered_after_unclean_restart(tmp_path):
     path = tmp_path / "outbox.db"
     first = PersistentQueueStore(str(path))

@@ -2,6 +2,8 @@ import unittest
 from datetime import datetime
 from unittest.mock import Mock
 
+from sqlalchemy import text
+
 from database.data_storage import DataStorageProcessor
 from database.db_manager import DatabaseManager
 
@@ -371,6 +373,36 @@ class TestEnsureTableColumns(unittest.TestCase):
         columns = manager.get_table_column_names("主表")
         self.assertIn("dtBtachStartTime", columns)
         self.assertIn("dtBtachEndTime", columns)
+        self.assertIn("is_backfill", columns)
+        row = manager.execute_query("SELECT `is_backfill` FROM `主表` LIMIT 1")
+        self.assertEqual(row, [])
+        manager.disconnect()
+
+    def test_existing_table_is_migrated_with_backfill_marker_default(self):
+        manager = DatabaseManager({"type": "sqlite", "name": ":memory:"})
+        self.assertTrue(manager.connect())
+        with manager.engine.begin() as connection:
+            connection.execute(
+                text(
+                    "CREATE TABLE `legacy` ("
+                    "`id` INTEGER PRIMARY KEY AUTOINCREMENT, "
+                    "`collection_time` DATETIME NOT NULL, "
+                    "`value` DOUBLE)"
+                )
+            )
+            connection.execute(
+                text(
+                    "INSERT INTO `legacy` (`collection_time`, `value`) "
+                    "VALUES ('2026-08-07 12:00:00', 1)"
+                )
+            )
+
+        self.assertTrue(manager.ensure_table_columns("legacy", {"value": "DOUBLE"}))
+        self.assertIn("is_backfill", manager.get_table_column_names("legacy"))
+        self.assertEqual(
+            manager.execute_query("SELECT `is_backfill` FROM `legacy`"),
+            [(0,)],
+        )
         manager.disconnect()
 
 

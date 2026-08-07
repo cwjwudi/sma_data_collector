@@ -3,6 +3,12 @@
 本文档记录 SMA 数据采集系统的所有重要更新和变更。
 
 ## [Unreleased]
+### 强制节拍对齐与断线补采
+- `time` / `time_and_variable` 数据组新增 `force_cadence_alignment` 与 `max_backfill_ticks`，按本机自然时间边界调度并限制恢复批次规模。
+- OPC UA 运行期断连或全点读取失败后保留欠拍；恢复时单次读取当前快照，按原计划节拍时间补写并立即刷新数据库队列。
+- 采集表新增固定列 `is_backfill`，既有目标表自动补列且历史行默认为 `0`，补采行为 `1`。
+- Web 配置页新增节拍开关、补采上限和数据语义警告；运行快照新增补采批次、行数、截断与恢复失败指标。
+
 ### asyncua、触发订阅与完整重连状态机
 - OPC UA 客户端由同步 `python-opcua` 迁移到原生异步 `asyncua`，批量读写、心跳、触发复位及插入反馈不再占用工作线程。
 - 新增 `disconnected/connecting/connected/reconnecting/stopping` 连接状态、单重连任务、指数退避、操作超时和并发上限；重连成功会自动恢复全部触发订阅。

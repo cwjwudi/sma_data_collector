@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 
 
-FIXED_INDEX_COLUMNS = frozenset({"collection_time", "created_at"})
+FIXED_INDEX_COLUMNS = frozenset({"collection_time", "created_at", "is_backfill"})
 
 
 class TriggerType(Enum):
@@ -90,6 +90,8 @@ class DataGroup:
     batch_upsert: Optional[BatchUpsertConfig] = None  # 批次更新配置（唯一冲突时按 end_time 条件更新）
     indexes: Optional[List[IndexConfig]] = None  # 索引配置列表
     variable_point_overrides: Dict[str, str] = field(default_factory=dict)
+    force_cadence_alignment: bool = False  # 按自然时间边界对齐，并在运行期恢复后补齐欠拍
+    max_backfill_ticks: int = 1000  # 一次恢复最多补写的节拍数
 
 
 @dataclass
