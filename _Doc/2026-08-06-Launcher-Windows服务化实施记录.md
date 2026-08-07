@@ -104,3 +104,13 @@ POST /api/launcher/import/inspect|apply
 
 - 在管理员权限的正式安装/升级/卸载流程中确认固定防火墙规则的创建、删除和恢复，覆盖域、专用、公用三类网络。
 - 从另一台局域网设备验证主机名/IP 访问，并在远程页面切换“仅本地访问”确认当前连接按提示中断。
+
+## 外部配置整包导入与监控修正（2026-08-07）
+
+- 中央数据库凭据从仅注入 `SD_SMA_DB_PASSWORD` 改为同时注入 `SD_SMA_DB_HOST`、`SD_SMA_DB_PORT`、`SD_SMA_DB_USERNAME`、`SD_SMA_DB_DATABASE` 和密码。Collector、Query Web、DB Admin 在运行时统一优先使用这些字段，外部配置中的连接账户不再覆盖 Launcher 分配。
+- 导入接口新增 `service=all`，支持一次选择完整配置根目录。识别 `collector/query_web/db_admin/report_copy` 短目录及四个项目目录下的 `config` 布局；四插件统一预览、清理外部密码、分服务备份、原子写入，并且只重启原先运行的服务。
+- 导入页增加每秒一次的可移动盘自动检测和手动刷新；根目录没有变化时不重绘当前目录，避免打断触屏选择。真实运行时连续调用根目录接口 5 次共耗时约 52 ms。
+- 控制面板资源采样改为跨刷新缓存 `psutil.Process`，汇总服务进程及全部子进程；CPU 按逻辑 CPU 数归一化，另保留单核心口径，内存使用进程树 RSS 总和。真实四服务运行时已取得非零 CPU 采样与约 52–93 MB 的进程树内存。
+- 验证结果：Launcher 51 项、Collector 213 项、DB Admin 58 项全部通过；Query Web 本次凭据测试 3 项通过，完整套件 109 项通过、原有 `test_table_list_writeback_on_cursor` OPC UA mock 写回不稳定项 1 项失败。
+- 真实运行态从 `_Prj` 布局预览并应用 4 个插件共 23 个配置文件，四个运行服务全部重启并恢复健康；退出 Launcher 后 8090–8094 无残留监听。
+- 完整安装包构建通过：Nuitka Launcher、43 个业务源码 bytecode-only、四服务 smoke 和 Inno Setup 6.7.3 均成功。`SD_SMA_Setup_1.0.0.exe` 大小为 `58,943,096` 字节，SHA256 为 `CA97118C661562A1ADDCB1B1DF727D3EED4BEAE23F42D018BD09D2EA097921EF`。

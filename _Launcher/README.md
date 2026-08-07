@@ -15,13 +15,15 @@
 
 页面提供：
 
-- 服务健康状态、PID、端口、运行时间、重启次数、CPU 和内存
+- 服务健康状态、PID、端口、运行时间、重启次数，以及按整机口径计算的进程树 CPU 和内存
 - 单服务启动、停止、重启和打开业务页面
-- 从 U 盘、`ImportBox` 或管理员白名单目录检查并导入配置
+- 从 U 盘、`ImportBox` 或管理员白名单目录检查并导入单服务配置，也可以选择包含 `collector`、`query_web`、`db_admin`、`report_copy` 的整个配置文件夹一次导入四个插件
 - 使用 Windows DPAPI 管理多个数据库凭据档案并分配给 Collector、Query Web、DB Admin
 - 在“系统设置”中统一切换 8090–8094 的全局访问/仅本地访问，并启用或关闭管理员 PIN
 
-数据库密码不通过 API 回显，也不会写入浏览器存储。Windows 安装模式下凭据密文位于 ProgramData 的 `secrets` 目录，只允许 LocalSystem 和管理员访问，并且不能复制到另一台设备解密。
+数据库密码不通过 API 回显，也不会写入浏览器存储。Windows 安装模式下凭据密文位于 ProgramData 的 `secrets` 目录，只允许 LocalSystem 和管理员访问，并且不能复制到另一台设备解密。分配中央凭据后，Launcher 会覆盖 Collector、Query Web 和 DB Admin 的数据库主机、端口、用户名、数据库名和密码；因此外部导入配置不会覆盖中央账户。
+
+导入页每秒检测一次可移动盘，也提供“立即刷新”。整包目录既支持上述四个短目录名，也支持 `_Prj` 风格的 `SD_SMA_DATA_COLLECTOR/config`、`SD_SMA_DATA_COLLECTOR_QUERY_WEB/config`、`SD_SMA_DB_ADMIN/config` 和 `SD_SMA_REPORT_COPY/config`。四个目录必须齐全，预览通过后统一备份并应用；只重启导入前正在运行的服务。
 
 安装器默认为 TCP 8090–8094 创建适用于域、专用和公用网络的 Windows 防火墙入站规则。切换为“仅本地访问”会立即将五个端口改绑到 `127.0.0.1` 并删除该规则；切回全局访问会绑定 `0.0.0.0` 并恢复规则。切换时只重启当前运行的业务服务，人工停止的服务保持停止。便携模式没有管理员权限时，监听仍会切换，但需要管理员手工处理防火墙。
 

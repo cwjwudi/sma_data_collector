@@ -57,6 +57,7 @@ class ServiceSupervisor:
         max_restarts: int = 3,
         restart_window_seconds: float = 60.0,
         restart_max_delay_seconds: float = 30.0,
+        psutil_module: Any | None = None,
     ) -> None:
         self.state_path = state_path
         self.start_process = start_process
@@ -79,6 +80,14 @@ class ServiceSupervisor:
         self._wake = threading.Event()
         self._shutdown = threading.Event()
         self._thread: threading.Thread | None = None
+        if psutil_module is None:
+            try:
+                import psutil as psutil_module
+            except ImportError:
+                psutil_module = None
+        self._psutil = psutil_module
+        self._logical_cpu_count = max(1, int(psutil_module.cpu_count(logical=True) or 1)) if psutil_module else 1
+        self._metric_processes: dict[int, Any] = {}
 
     def _load_desired_state(self) -> dict[str, bool]:
         try:
@@ -185,14 +194,12 @@ class ServiceSupervisor:
         process = item.process
         pid = int(process.process.pid) if process is not None else None
         cpu_percent: float | None = None
+        cpu_core_percent: float | None = None
         memory_mb: float | None = None
+        child_count = 0
         if pid:
             try:
-                import psutil
-
-                ps_process = psutil.Process(pid)
-                cpu_percent = round(float(ps_process.cpu_percent(interval=None)), 1)
-                memory_mb = round(float(ps_process.memory_info().rss) / (1024 * 1024), 1)
+                cpu_percent, cpu_core_percent, memory_mb, child_count = self._process_tree_metrics(pid)
             except Exception:
                 pass
         uptime = round(time.monotonic() - item.started_monotonic, 1) if item.started_monotonic else 0.0
@@ -218,8 +225,59 @@ class ServiceSupervisor:
             "last_error": item.last_error,
             "transition_at": item.transition_at,
             "cpu_percent": cpu_percent,
+            "cpu_core_percent": cpu_core_percent,
             "memory_mb": memory_mb,
+            "child_count": child_count,
         }
+
+    def _process_tree_metrics(self, pid: int) -> tuple[float, float, float, int]:
+        if self._psutil is None:
+            raise RuntimeError("psutil is unavailable")
+        root = self._cached_metric_process(pid)
+        candidates = [root, *root.children(recursive=True)]
+        cpu_core = 0.0
+        rss = 0
+        active = 0
+        for candidate in candidates:
+            try:
+                process = self._cached_metric_process(int(candidate.pid), candidate)
+                if not process.is_running():
+                    continue
+                cpu_core += max(0.0, float(process.cpu_percent(interval=None)))
+                rss += int(process.memory_info().rss)
+                active += 1
+            except Exception:
+                continue
+        self._prune_metric_processes()
+        return (
+            round(cpu_core / self._logical_cpu_count, 1),
+            round(cpu_core, 1),
+            round(rss / (1024 * 1024), 1),
+            max(0, active - 1),
+        )
+
+    def _cached_metric_process(self, pid: int, candidate: Any | None = None) -> Any:
+        cached = self._metric_processes.get(pid)
+        if cached is not None:
+            try:
+                if cached.is_running():
+                    return cached
+            except Exception:
+                pass
+            self._metric_processes.pop(pid, None)
+        process = candidate or self._psutil.Process(pid)
+        process.cpu_percent(interval=None)
+        self._metric_processes[pid] = process
+        return process
+
+    def _prune_metric_processes(self) -> None:
+        for pid, process in list(self._metric_processes.items()):
+            try:
+                if process.is_running():
+                    continue
+            except Exception:
+                pass
+            self._metric_processes.pop(pid, None)
 
     def _run(self) -> None:
         while not self._shutdown.is_set():

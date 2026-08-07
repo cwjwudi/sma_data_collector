@@ -56,6 +56,22 @@ class TestEnvDbPasswordOverride(unittest.TestCase):
         self.assertNotIn("password", stored["database"])
         self.assertTrue(stored["database"]["password_enc"])
 
+    def test_launcher_managed_connection_overrides_imported_account(self):
+        env = {
+            "SD_SMA_DB_HOST": "central-db",
+            "SD_SMA_DB_PORT": "3307",
+            "SD_SMA_DB_USERNAME": "central-user",
+            "SD_SMA_DB_DATABASE": "central-name",
+            "SD_SMA_DB_PASSWORD": "central-password",
+        }
+        with patch.dict(os.environ, env, clear=False):
+            config = ConfigLoader.load_from_file(self.temp_file.name)
+        self.assertEqual(config.database.host, "central-db")
+        self.assertEqual(config.database.port, 3307)
+        self.assertEqual(config.database.username, "central-user")
+        self.assertEqual(config.database.name, "central-name")
+        self.assertEqual(config.database.password, "central-password")
+
     def test_without_env_var_uses_config_password(self):
         """未设置环境变量时使用从旧配置自动迁移的密文"""
         env = {k: v for k, v in os.environ.items() if k != "SD_SMA_DB_PASSWORD"}

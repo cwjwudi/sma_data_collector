@@ -80,3 +80,34 @@ def test_blank_password_preserves_ciphertext_and_clear_removes_it(tmp_path: Path
     public["database"]["clear_password"] = True
     store.save_app_settings(public)
     assert "password_enc" not in store.get_active_config()["app_settings"]["database"]
+
+
+def test_launcher_managed_connection_overrides_imported_profile(tmp_path: Path, monkeypatch) -> None:
+    store = UnifiedConfigStore(tmp_path / "config")
+    store.save_app_settings(
+        {
+            "database": {
+                "type": "mysql",
+                "host": "imported-db",
+                "port": 3306,
+                "name": "imported-name",
+                "username": "imported-user",
+                "password": "imported-password",
+            }
+        }
+    )
+    monkeypatch.setenv("SD_SMA_DB_HOST", "central-db")
+    monkeypatch.setenv("SD_SMA_DB_PORT", "3307")
+    monkeypatch.setenv("SD_SMA_DB_USERNAME", "central-user")
+    monkeypatch.setenv("SD_SMA_DB_DATABASE", "central-name")
+    monkeypatch.setenv("SD_SMA_DB_PASSWORD", "central-password")
+
+    private = store.get_app_settings()["database"]
+    public = store.get_public_app_settings()["database"]
+    assert private["password"] == "central-password"
+    assert (private["host"], private["port"], private["username"], private["name"]) == (
+        "central-db", 3307, "central-user", "central-name"
+    )
+    assert (public["host"], public["port"], public["username"], public["name"]) == (
+        "central-db", 3307, "central-user", "central-name"
+    )

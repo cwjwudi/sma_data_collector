@@ -1154,7 +1154,15 @@ def service_with_launcher_credential(
     if credential is None:
         return result
     environment = dict(service.get("env") or {})
-    environment["SD_SMA_DB_PASSWORD"] = str(credential.get("password", ""))
+    environment.update(
+        {
+            "SD_SMA_DB_HOST": str(credential.get("host", "")),
+            "SD_SMA_DB_PORT": str(credential.get("port", "")),
+            "SD_SMA_DB_USERNAME": str(credential.get("username", "")),
+            "SD_SMA_DB_DATABASE": str(credential.get("database", "")),
+            "SD_SMA_DB_PASSWORD": str(credential.get("password", "")),
+        }
+    )
     environment["SD_SMA_DB_CREDENTIAL_MANAGED"] = "1"
     result["env"] = environment
     return result

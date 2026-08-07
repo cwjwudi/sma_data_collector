@@ -36,7 +36,7 @@ def test_import_preview_strips_secrets_and_backs_up(tmp_path) -> None:
     assert "password" not in database
     assert "password_enc" not in database
     backup = result["backup_dir"]
-    assert (type(target)(backup) / "profile.json").exists()
+    assert (type(target)(backup) / "query_web" / "profile.json").exists()
 
 
 def test_db_admin_requires_exactly_one_json(tmp_path) -> None:
@@ -52,3 +52,45 @@ def test_db_admin_requires_exactly_one_json(tmp_path) -> None:
         assert "只能导入一个" in str(exc)
     else:
         raise AssertionError("multiple DB Admin configs must be rejected")
+
+
+def test_whole_config_folder_imports_all_four_services_atomically(tmp_path) -> None:
+    source_root = tmp_path / "usb" / "SD_SMA_Config"
+    payloads = {
+        "collector": {"database": {"host": "imported", "password": "remove-me"}},
+        "query_web": {"app_settings": {"database": {"host": "imported"}}},
+        "db_admin": {"default_connection": {"host": "imported"}},
+        "report_copy": {"report_source_dir": "D:/Reports"},
+    }
+    for folder, payload in payloads.items():
+        path = source_root / folder
+        path.mkdir(parents=True)
+        (path / f"{folder}.json").write_text(json.dumps(payload), encoding="utf-8")
+
+    manager = ConfigImportManager(tmp_path / "data")
+    manager.update_settings([str(source_root.parent)])
+    preview = manager.inspect("all", [str(source_root)])
+
+    assert preview["services"] == ["collector_web", "query_web", "db_admin", "report_copy"]
+    assert {row["service"] for row in preview["files"]} == set(preview["services"])
+    result = manager.apply(preview["preview_token"])
+    assert result["services"] == preview["services"]
+    assert (tmp_path / "data" / "config" / "collector" / "collector.json").exists()
+    assert (tmp_path / "data" / "config" / "query_web" / "query_web.json").exists()
+    assert (tmp_path / "data" / "config" / "db_admin" / "default.json").exists()
+    assert (tmp_path / "data" / "config" / "report_copy" / "default.json").exists()
+    imported = json.loads((tmp_path / "data" / "config" / "collector" / "collector.json").read_text())
+    assert "password" not in imported["database"]
+
+
+def test_whole_config_folder_requires_every_service(tmp_path) -> None:
+    source_root = tmp_path / "usb"
+    (source_root / "collector").mkdir(parents=True)
+    manager = ConfigImportManager(tmp_path / "data")
+    manager.update_settings([str(source_root)])
+    try:
+        manager.inspect("all", [str(source_root)])
+    except ValueError as exc:
+        assert "缺少" in str(exc)
+    else:
+        raise AssertionError("incomplete config bundle must be rejected")

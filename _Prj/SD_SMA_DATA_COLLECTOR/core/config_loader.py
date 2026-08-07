@@ -208,10 +208,10 @@ class ConfigLoader:
                 
         database = DatabaseConfig(
             type=db_data.get('type', 'sqlite'),
-            name=db_data.get('name', 'data.db'),
-            host=db_data.get('host', '127.0.0.1'),
-            port=db_data.get('port', 3306),
-            username=db_data.get('username', ''),
+            name=os.environ.get('SD_SMA_DB_DATABASE') or db_data.get('name', 'data.db'),
+            host=os.environ.get('SD_SMA_DB_HOST') or db_data.get('host', '127.0.0.1'),
+            port=int(os.environ.get('SD_SMA_DB_PORT') or db_data.get('port', 3306)),
+            username=os.environ.get('SD_SMA_DB_USERNAME') or db_data.get('username', ''),
             # 环境变量优先；持久化配置只接受 password_enc。
             password=(
                 resolve_password(config_dir, db_data, 'SD_SMA_DB_PASSWORD')

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 from pathlib import Path
 from typing import Any
@@ -455,6 +456,10 @@ class UnifiedConfigStore:
     def get_app_settings(self) -> dict[str, Any]:
         settings = dict(self.get_active_config().get("app_settings", {}))
         database = dict(settings.get("database", {}))
+        database["host"] = os.environ.get("SD_SMA_DB_HOST") or database.get("host", "127.0.0.1")
+        database["port"] = int(os.environ.get("SD_SMA_DB_PORT") or database.get("port", 3306))
+        database["username"] = os.environ.get("SD_SMA_DB_USERNAME") or database.get("username", "")
+        database["name"] = os.environ.get("SD_SMA_DB_DATABASE") or database.get("name", "")
         database["password"] = resolve_password(
             self.config_dir,
             database,
@@ -469,6 +474,10 @@ class UnifiedConfigStore:
         config = self.get_active_config()
         settings = dict(config.get("app_settings", {}))
         database = dict(settings.get("database", {}))
+        database["host"] = os.environ.get("SD_SMA_DB_HOST") or database.get("host", "127.0.0.1")
+        database["port"] = int(os.environ.get("SD_SMA_DB_PORT") or database.get("port", 3306))
+        database["username"] = os.environ.get("SD_SMA_DB_USERNAME") or database.get("username", "")
+        database["name"] = os.environ.get("SD_SMA_DB_DATABASE") or database.get("name", "")
         database.pop("password", None)
         database.pop("password_enc", None)
         database["password_configured"] = password_is_configured(

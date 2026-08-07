@@ -5,6 +5,29 @@ import sd_sma_launcher as launcher
 
 def test_safe_env_display_masks_credentials() -> None:
     assert launcher.safe_env_display("SD_SMA_DB_PASSWORD", "do-not-log") == "***"
+
+
+def test_launcher_injects_complete_managed_database_connection() -> None:
+    class Security:
+        @staticmethod
+        def credential_for_service(_name):
+            return {
+                "host": "db.internal",
+                "port": 3307,
+                "username": "operator",
+                "database": "production",
+                "password": "secret",
+            }
+
+    service = launcher.service_with_launcher_credential({"name": "query_web", "env": {}}, Security())
+    assert service["env"] == {
+        "SD_SMA_DB_HOST": "db.internal",
+        "SD_SMA_DB_PORT": "3307",
+        "SD_SMA_DB_USERNAME": "operator",
+        "SD_SMA_DB_DATABASE": "production",
+        "SD_SMA_DB_PASSWORD": "secret",
+        "SD_SMA_DB_CREDENTIAL_MANAGED": "1",
+    }
     assert launcher.safe_env_display("SD_SMA_WEB_TOKEN", "do-not-log") == "***"
     assert launcher.safe_env_display("SD_SMA_LOG_DIR", "C:/logs") == "C:/logs"
 

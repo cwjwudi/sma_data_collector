@@ -384,6 +384,14 @@ def default_connection() -> dict[str, Any]:
     conn = cfg.get("default_connection") if isinstance(cfg.get("default_connection"), dict) else {}
     base = DbConnection().model_dump()
     base.update({key: value for key, value in conn.items() if key not in {"password", "password_enc"}})
+    for key, env_name in {
+        "host": "SD_SMA_DB_HOST",
+        "port": "SD_SMA_DB_PORT",
+        "username": "SD_SMA_DB_USERNAME",
+        "database": "SD_SMA_DB_DATABASE",
+    }.items():
+        if os.getenv(env_name):
+            base[key] = int(os.environ[env_name]) if key == "port" else os.environ[env_name]
     base["password"] = ""
     base["password_configured"] = bool(
         os.getenv("SD_SMA_DB_PASSWORD") or conn.get("password_enc") or conn.get("password")
@@ -425,6 +433,21 @@ def connection_password(conn: DbConnection) -> str:
     # One-time compatibility for legacy files; the next save migrates it.
     return str(current.get("password") or "")
 
+
+def managed_connection(conn: DbConnection) -> DbConnection:
+    """Apply all Launcher-managed connection fields, not only the password."""
+    updates: dict[str, Any] = {}
+    for key, env_name in {
+        "host": "SD_SMA_DB_HOST",
+        "port": "SD_SMA_DB_PORT",
+        "username": "SD_SMA_DB_USERNAME",
+        "database": "SD_SMA_DB_DATABASE",
+    }.items():
+        value = os.getenv(env_name)
+        if value:
+            updates[key] = int(value) if key == "port" else value
+    return conn.model_copy(update=updates) if updates else conn
+
 def safe_identifier(value: str, label: str) -> str:
     text = (value or "").strip()
     if not SAFE_NAME_RE.match(text):
@@ -437,6 +460,7 @@ def quote_ident(value: str) -> str:
 
 
 def connect_mysql(conn: DbConnection, database: str | None = None, *, autocommit: bool = True):
+    conn = managed_connection(conn)
     return pymysql.connect(
         host=conn.host or "127.0.0.1",
         port=int(conn.port or 3306),
@@ -927,6 +951,7 @@ def _run_mysqldump_backup(
     out: Path,
     manifest_extra: dict[str, Any],
 ) -> dict[str, Any]:
+    conn = managed_connection(conn)
     partial = out.with_suffix(out.suffix + ".partial")
     reserve_factor = float(load_config().get("backup_free_space_factor") or 1.5)
     required_bytes = max(64 * 1024 * 1024, int(estimated_bytes * reserve_factor))
@@ -1106,6 +1131,7 @@ def _completed_csv_export(filename: str) -> tuple[Path, dict[str, Any]]:
 
 
 def restore_verified_backup_job(job_id: str, conn: DbConnection, database: str, filename: str) -> dict[str, Any]:
+    conn = managed_connection(conn)
     source, manifest = _completed_backup(filename)
     append_job_log(job_id, f"Verifying SHA-256 for {source.name}")
     set_job_progress(job_id, 2, "verifying")
@@ -1146,6 +1172,7 @@ def restore_verified_backup_job(job_id: str, conn: DbConnection, database: str, 
 
 
 def export_csv_job(job_id: str, conn: DbConnection, database: str, table: str, output_dir: str = "") -> dict[str, Any]:
+    conn = managed_connection(conn)
     dbname = safe_identifier(database, "database")
     table_name = safe_identifier(table, "table")
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")

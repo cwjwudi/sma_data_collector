@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from fastapi.testclient import TestClient
 
 from launcher_imports import ConfigImportManager
@@ -10,9 +12,10 @@ from launcher_web import create_management_app
 class FakeSupervisor:
     def __init__(self) -> None:
         self.commands = []
+        self.services = []
 
     def status(self):
-        return {"launcher": {"state": "running"}, "services": []}
+        return {"launcher": {"state": "running"}, "services": self.services}
 
     def command(self, name, action):
         self.commands.append((name, action))
@@ -79,3 +82,51 @@ def test_actual_same_origin_is_accepted(tmp_path) -> None:
             "/api/launcher/auth/setup", json={"pin": "123456"}, headers={"Origin": "http://192.168.10.20:8090"}
         )
     assert response.status_code == 200
+
+
+def test_whole_folder_import_restarts_only_running_services(tmp_path) -> None:
+    supervisor = FakeSupervisor()
+    supervisor.services = [
+        {
+            "name": name,
+            "desired_running": name != "report_copy",
+            "pid": None if name == "report_copy" else 100,
+            "state": "stopped" if name == "report_copy" else "running",
+            "health_ready": name != "report_copy",
+        }
+        for name in ("collector_web", "query_web", "db_admin", "report_copy")
+    ]
+    source = tmp_path / "usb" / "config"
+    payloads = {
+        "collector": {"database": {}},
+        "query_web": {"app_settings": {}},
+        "db_admin": {"default_connection": {}},
+        "report_copy": {"report_source_dir": "D:/Reports"},
+    }
+    for folder, payload in payloads.items():
+        directory = source / folder
+        directory.mkdir(parents=True)
+        (directory / "default.json").write_text(json.dumps(payload), encoding="utf-8")
+    importer = ConfigImportManager(tmp_path / "data")
+    importer.update_settings([str(source.parent)])
+    static = tmp_path / "static"
+    static.mkdir()
+    (static / "index.html").write_text("ok", encoding="utf-8")
+    app = create_management_app(supervisor, LauncherSecurityStore(tmp_path / "security.json"), importer, static)
+
+    with TestClient(app) as client:
+        assert client.post("/api/launcher/auth/disable").status_code == 200
+        preview = client.post(
+            "/api/launcher/import/inspect", json={"service": "all", "paths": [str(source)]}
+        )
+        assert preview.status_code == 200
+        applied = client.post(
+            "/api/launcher/import/apply", json={"preview_token": preview.json()["preview_token"]}
+        )
+
+    assert applied.status_code == 200
+    assert applied.json()["restarted_services"] == ["collector_web", "query_web", "db_admin"]
+    assert supervisor.commands[-1] == (
+        "restart_if_running",
+        ("collector_web", "query_web", "db_admin"),
+    )

@@ -244,38 +244,45 @@ def create_management_app(
     async def apply_import(request: Request) -> dict[str, Any]:
         require_admin(request)
         body = await request.json()
-        service_name = ""
         try:
             result = importer.apply(str(body.get("preview_token", "")))
         except (ValueError, OSError) as exc:
             raise HTTPException(400, str(exc)) from exc
-        service_name = str(result["service"])
-        before = next(
-            (item for item in supervisor.status()["services"] if item["name"] == service_name),
-            {},
-        )
-        was_running = bool(before.get("desired_running") and before.get("pid"))
-        if was_running:
-            supervisor.restart_if_running([service_name])
+        service_names = [str(item) for item in result.get("services") or [result["service"]]]
+        before = {item["name"]: item for item in supervisor.status()["services"]}
+        running_services = [
+            name
+            for name in service_names
+            if before.get(name, {}).get("desired_running") and before.get(name, {}).get("pid")
+        ]
+        if running_services:
+            supervisor.restart_if_running(running_services)
             deadline = asyncio.get_running_loop().time() + 35.0
             while asyncio.get_running_loop().time() < deadline:
-                current = next(
-                    (item for item in supervisor.status()["services"] if item["name"] == service_name),
-                    {},
-                )
-                if current.get("state") == "running" and current.get("health_ready"):
+                current = {item["name"]: item for item in supervisor.status()["services"]}
+                if all(
+                    current.get(name, {}).get("state") == "running"
+                    and current.get(name, {}).get("health_ready")
+                    for name in running_services
+                ):
                     break
-                if current.get("state") == "failed":
+                if any(current.get(name, {}).get("state") == "failed" for name in running_services):
                     deadline = 0.0
                     break
                 await asyncio.sleep(0.25)
             else:
                 current = {}
-            if not (current.get("state") == "running" and current.get("health_ready")):
+            if not all(
+                current.get(name, {}).get("state") == "running"
+                and current.get(name, {}).get("health_ready")
+                for name in running_services
+            ):
                 importer.rollback(result)
-                supervisor.command(service_name, "start")
+                for name in running_services:
+                    supervisor.command(name, "start")
                 raise HTTPException(500, "新配置健康检查失败，已恢复原配置并重新启动服务")
-        result["restarted_if_running"] = was_running
+        result["restarted_services"] = running_services
+        result["restarted_if_running"] = bool(running_services)
         return result
 
     return app

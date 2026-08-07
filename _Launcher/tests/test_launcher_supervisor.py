@@ -11,6 +11,40 @@ class FakeServiceProcess:
         self.process = SimpleNamespace(pid=pid, poll=lambda: None)
 
 
+class FakeMetricProcess:
+    def __init__(self, pid, cpu, rss_mb, children=None):
+        self.pid = pid
+        self.cpu = cpu
+        self.rss_mb = rss_mb
+        self._children = children or []
+
+    def cpu_percent(self, interval=None):
+        return self.cpu
+
+    def memory_info(self):
+        return SimpleNamespace(rss=self.rss_mb * 1024 * 1024)
+
+    def children(self, recursive=True):
+        return self._children
+
+    def is_running(self):
+        return True
+
+
+class FakePsutil:
+    def __init__(self, root):
+        self.root = root
+        self.process_calls = 0
+
+    def cpu_count(self, logical=True):
+        return 4
+
+    def Process(self, pid):
+        assert pid == self.root.pid
+        self.process_calls += 1
+        return self.root
+
+
 def test_manual_stop_persists_and_does_not_restart(tmp_path) -> None:
     starts = []
     stops = []
@@ -65,3 +99,32 @@ def test_listen_host_change_preserves_manual_stop(tmp_path) -> None:
     assert status["host"] == "127.0.0.1"
     assert status["desired_running"] is False
     assert status["url_path"] == "/query"
+
+
+def test_status_uses_cached_process_tree_metrics(tmp_path) -> None:
+    child = FakeMetricProcess(9021, 20.0, 50)
+    root = FakeMetricProcess(9020, 40.0, 100, [child])
+    fake_psutil = FakePsutil(root)
+    supervisor = ServiceSupervisor(
+        [{"name": "query_web", "port": 8092}],
+        tmp_path / "state.json",
+        start_process=lambda _config: FakeServiceProcess(9020),
+        stop_process=lambda _process: None,
+        health_check=lambda _config: True,
+        poll_interval_seconds=0.01,
+        psutil_module=fake_psutil,
+    )
+    supervisor.start()
+    deadline = time.monotonic() + 1
+    while time.monotonic() < deadline and supervisor.status()["services"][0]["state"] != "running":
+        time.sleep(0.01)
+    first = supervisor.status()["services"][0]
+    second = supervisor.status()["services"][0]
+    supervisor.shutdown()
+
+    assert first["cpu_percent"] == 15.0
+    assert first["cpu_core_percent"] == 60.0
+    assert first["memory_mb"] == 150.0
+    assert first["child_count"] == 1
+    assert second["memory_mb"] == 150.0
+    assert fake_psutil.process_calls == 1
