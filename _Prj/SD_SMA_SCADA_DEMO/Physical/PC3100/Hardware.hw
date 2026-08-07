@@ -1,9 +1,8 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <?AutomationStudio Version=4.12.6.106 FileVersion="4.9"?>
 <Hardware xmlns="http://br-automation.co.at/AS/Hardware">
-  <Module Name="5APC3100_KBU2_000" Type="5APC3100.KBU2-000" Version="2.2.1.0">
-    <Connector Name="IF3">
-      <Parameter ID="AssignedOperatingSystem" Value="ARemb" />
+  <Module Name="X20CP1586" Type="X20CP1586" Version="1.10.0.0">
+    <Connector Name="IF2">
       <Parameter ID="ActivateDevice" Value="1" />
       <Parameter ID="Mode" Value="Manual" />
       <Parameter ID="InternetAddress" Value="192.168.50.233" />
@@ -11,24 +10,8 @@
       <Parameter ID="InaPort" Value="0" />
       <Parameter ID="ActivateSnmp" Value="2" />
     </Connector>
-    <Connector Name="IF4">
-      <Parameter ID="AssignedOperatingSystem" Value="GPOS" />
-    </Connector>
-    <Connector Name="IF9">
-      <Parameter ID="OperatingSystem" Value="ARemb" />
-      <Parameter ID="ActivateDevice" Value="1" />
-    </Connector>
-    <Connector Name="IF5">
-      <Parameter ID="AssignedOperatingSystem" Value="ARemb" />
-    </Connector>
-    <Connector Name="IF6">
-      <Parameter ID="AssignedOperatingSystem" Value="ARemb" />
-    </Connector>
-    <Connector Name="IF7">
-      <Parameter ID="AssignedOperatingSystem" Value="GPOS" />
-    </Connector>
-    <Connector Name="IF8">
-      <Parameter ID="AssignedOperatingSystem" Value="GPOS" />
+    <Connector Name="IF3">
+      <Parameter ID="CycleTime" Value="400" />
     </Connector>
     <Parameter ID="ConfigurationID" Value="SD_SMA_SCADA_DEMO_Config1" />
     <Parameter ID="UserPartitionSize" Value="100" />
@@ -44,7 +27,5 @@
     <Parameter ID="WebServerStartPage" Value="line.html" />
     <Parameter ID="ActivateOpcUa" Value="1" />
     <Parameter ID="OpcUaInformationModels_PV_Version" Value="1" />
-    <Parameter ID="ActivateHypervisor" Value="1" />
-    <Parameter ID="ARembDramSizeInMb" Value="2048" />
   </Module>
 </Hardware>

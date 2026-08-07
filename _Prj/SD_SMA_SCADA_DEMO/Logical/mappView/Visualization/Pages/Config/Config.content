@@ -13,6 +13,11 @@
             <Widget xsi:type="widgets.brease.ContentControl" id="ContentControl2" top="0" left="0" width="1480" height="780" zIndex="0" contentId="Collector_Config_content" />
           </Widgets>
         </Widget>
+        <Widget xsi:type="widgets.brease.TabItem" id="TabItem3" left="0" zIndex="2" text="TabItem3">
+          <Widgets>
+            <Widget xsi:type="widgets.brease.WebViewer" id="WebViewer1" top="25" left="25" width="1425" height="735" zIndex="0" host="localhost" path="" port="8093" />
+          </Widgets>
+        </Widget>
       </Widgets>
     </Widget>
   </Widgets>
