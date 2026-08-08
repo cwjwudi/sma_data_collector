@@ -7,6 +7,7 @@
 
 ## 2026-08-09
 
+- **ReportEditor 039g（并行完成数漏计 + ETA）**：`skipPartSaved` 粘连导致「已完成」冻结；ETA 近窗+吞吐。版本 0.3.159。看板 [docs/039-🚧](docs/039-🚧-ReportEditor导出全屏遮罩.md)。
 - **ReportEditor 0.3.158 Win 打包**：并行进度遮罩多列网格（16 路 4 列）。发版记录 `_Doc/007` · [docs/039-🚧](docs/039-🚧-ReportEditor导出全屏遮罩.md)。
 - **ReportEditor 0.3.157 Win 打包**：`Report Editor AI-Setup-0.3.157-x64.exe`；修 16 路并行 20s 超时中止。发版记录 `_Doc/007`。
 - **ReportEditor 035（16 路超时）**：support-pack 导出中止——跨窗共享 fill cache + 导出窗 getTemplate 120s。看板 [docs/035-🚧](docs/035-🚧-ReportEditor导出性能档位与同机降载.md)。

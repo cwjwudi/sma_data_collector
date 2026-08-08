@@ -899,18 +899,56 @@ function enrichExportOverlayProgress(base) {
   }
   p.percent = percent
 
-  let etaMs = null
-  const durations = exportOverlayEta.partDurationsMs || []
-  if (durations.length > 0 && total > 0) {
-    const avg = durations.reduce((a, b) => a + b, 0) / durations.length
-    const remainParts = Math.max(0, total - completed)
-    // 并行路数近似加速：剩余份 / 活跃路数 * 均耗
-    const lanesBusy = Math.max(1, activeBusy || lanes.length || 1)
-    etaMs = (remainParts / lanesBusy) * avg
-  }
-  p.etaMs = etaMs
-  p.etaLabel = formatExportOverlayEta(etaMs)
+  p.etaMs = estimateExportOverlayEtaMs({
+    total,
+    completed,
+    activeBusy,
+    lanesLen: lanes.length,
+    durations: exportOverlayEta.partDurationsMs || [],
+    sessionStartedAt: exportOverlayEta.sessionStartedAt,
+  })
+  p.etaLabel = formatExportOverlayEta(p.etaMs)
   return p
+}
+
+/**
+ * 剩余时间：近窗均耗 ×（未开始 + 在制折半）/ 活跃路数，并与墙钟吞吐混合。
+ * 首份常含全量取数，样本≥4 时丢掉第一条；完成数偏少时吞吐兜底。
+ */
+function estimateExportOverlayEtaMs(opts) {
+  const total = Math.max(0, Math.floor(Number(opts && opts.total) || 0))
+  const completed = Math.max(0, Math.floor(Number(opts && opts.completed) || 0))
+  if (total <= 0) return null
+  if (completed >= total) return 0
+  const remain = Math.max(0, total - completed)
+  const activeBusy = Math.max(0, Math.floor(Number(opts && opts.activeBusy) || 0))
+  const lanesLen = Math.max(0, Math.floor(Number(opts && opts.lanesLen) || 0))
+  const lanesBusy = Math.max(1, activeBusy || lanesLen || 1)
+  const inFlight = Math.min(remain, activeBusy)
+  const remainWork = Math.max(0, remain - inFlight) + inFlight * 0.45
+
+  let samples = Array.isArray(opts && opts.durations) ? opts.durations.slice() : []
+  if (samples.length >= 4) samples = samples.slice(1)
+  const window = samples.slice(-Math.min(12, samples.length))
+  let sampleEta = null
+  if (window.length > 0) {
+    const avg = window.reduce((a, b) => a + b, 0) / window.length
+    sampleEta = (remainWork / lanesBusy) * avg
+  }
+
+  let throughputEta = null
+  const startedAt = Number(opts && opts.sessionStartedAt) || 0
+  const elapsed = startedAt > 0 ? Date.now() - startedAt : 0
+  if (completed >= 2 && elapsed > 2000) {
+    throughputEta = (remain / completed) * elapsed
+  }
+
+  if (sampleEta != null && throughputEta != null) {
+    return 0.7 * sampleEta + 0.3 * throughputEta
+  }
+  if (sampleEta != null) return sampleEta
+  if (throughputEta != null) return throughputEta
+  return null
 }
 
 function buildExportOverlayHtml() {
@@ -1337,12 +1375,19 @@ function noteExportOverlayPartSaved(partIndex) {
   delete startedMap[key]
 }
 
+/** 仅本拍有效的瞬时标志：禁止粘在 lastProgress 上（否则首路 idle 后真实 saved 永不计入） */
+const EXPORT_OVERLAY_EPHEMERAL_KEYS = ['skipPartSaved', 'workerIdle', 'workerBusy']
+
 /**
  * 合并遮罩进度：跳过 undefined/null；已得知总份数后禁止被 0/缺省冲掉。
  * 并行心跳常带 totalReports: undefined，Object.assign 会抹掉总份数 → 分路 UI 闪一下消失、ETA 永「预估中」。
+ * 上一拍的 skipPartSaved/workerIdle 不继承——否则首个 worker 收尾后后续「已保存」全被漏计。
  */
 function mergeExportOverlayProgress(prev, payload) {
   const next = { ...(prev || {}) }
+  for (const k of EXPORT_OVERLAY_EPHEMERAL_KEYS) {
+    delete next[k]
+  }
   if (payload && typeof payload === 'object') {
     for (const key of Object.keys(payload)) {
       const v = payload[key]
@@ -1378,22 +1423,29 @@ function pushExportOverlayProgress(payload) {
     const phase = String(next.phase || '')
     const stage = String(next.stage || phase || '')
     const partIndex = Math.max(0, Math.floor(Number(next.partIndex) || 0))
+    // 瞬时标志只看本拍 payload，禁止读合并残留
+    const skipPartSaved = Boolean(payload && payload.skipPartSaved)
+    const workerIdleHint = Boolean(payload && payload.workerIdle)
     // 每份开始渲染：按份续 120s（Q1A）
     if (phase === 'render' || stage === 'render' || stage === 'load' || stage === 'fetch') {
       noteExportOverlayPartStart(partIndex)
       next.workerIdle = false
       next.workerBusy = true
     }
-    if ((phase === 'saved' || stage === 'saved') && !next.skipPartSaved) {
+    if ((phase === 'saved' || stage === 'saved') && !skipPartSaved) {
       noteExportOverlayPartSaved(partIndex)
       next.workerIdle = true
       next.workerBusy = false
-    } else if (next.skipPartSaved || next.workerIdle) {
+    } else if (skipPartSaved || workerIdleHint) {
       // 并行 worker 收尾：只标空闲，不计入「已保存份」
       next.workerIdle = true
       next.workerBusy = false
     }
     upsertExportOverlayWorkerLane(next)
+    // 瞬时标志不落盘，避免下一拍误判
+    for (const k of EXPORT_OVERLAY_EPHEMERAL_KEYS) {
+      delete next[k]
+    }
     exportOverlayLastProgress = next
   }
   broadcastExportOverlayProgress()

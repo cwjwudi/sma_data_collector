@@ -6,6 +6,28 @@
 
 ---
 
+# ✅ 已完成：并行「已完成」漏计 + ETA 失真（039g · 2026-08-09）
+
+## 现象
+
+导出做到约第 80 份时，「已完成」仍停在约 65；剩余时间长期偏大或不准。
+
+## 根因
+
+并行 worker 收尾会发 `skipPartSaved: true`。该标志经 `mergeExportOverlayProgress` **粘在** `exportOverlayLastProgress` 上；之后真实 `stage: saved` 读到合并残留的 `skipPartSaved`，不再调用 `noteExportOverlayPartSaved` → 完成数冻结。ETA 用「全样本均耗 × (total−completed)/路数」，完成数偏小且首份全量取数拉高均耗。
+
+## 修复
+
+- `EXPORT_OVERLAY_EPHEMERAL_KEYS`：合并前清掉上一拍的 `skipPartSaved` / `workerIdle` / `workerBusy`；计数只认本拍 `payload.skipPartSaved`
+- `estimateExportOverlayEtaMs`：丢掉偏长的首样本、近窗均耗、在制折半，并与墙钟吞吐混合
+
+## 验收
+
+- 16 路并行导出：做到第 N 份时「已完成」≈ 已写盘份数（允许差在制路数，不应长期少十几）
+- ETA 随完成推进下降，不再在首路 idle 后永久「预估中」或明显偏大
+
+---
+
 # ✅ 已完成：并行分路进度多列网格（039f · 2026-08-09）
 
 16 路单列堆叠浪费横向空间。遮罩 `.workers` 改为 CSS grid：2–4 路两列、5–9 三列、≥10 四列；窄屏自动降列。

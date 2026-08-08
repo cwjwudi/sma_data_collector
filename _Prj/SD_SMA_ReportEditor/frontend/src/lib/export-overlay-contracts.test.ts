@@ -65,6 +65,10 @@ describe("export-overlay contracts (039 / 039c)", () => {
     // 多路时多列网格（16 路用 4 列）
     expect(main).toMatch(/cols-4/);
     expect(main).toMatch(/grid-template-columns:repeat\(4/);
+    // 039g：skipPartSaved 不粘连；ETA 用近窗+吞吐
+    expect(main).toMatch(/EXPORT_OVERLAY_EPHEMERAL_KEYS/);
+    expect(main).toMatch(/Boolean\(payload && payload\.skipPartSaved\)/);
+    expect(main).toMatch(/estimateExportOverlayEtaMs/);
   });
 
   it("overlay-preload.cjs：onProgress / onMetrics / dismiss / exportSupportPack", () => {

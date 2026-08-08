@@ -1,15 +1,15 @@
 {
-  "version": "0.3.158",
-  "releasedAt": "2026-08-08T20:36:37.798Z",
-  "notes": "Report Editor AI 0.3.158\n\n- 039：并行进度遮罩改为多列网格（16 路 4 列）\n- 含 0.3.157：跨窗共享取数",
+  "version": "0.3.159",
+  "releasedAt": "2026-08-08T20:41:46.769Z",
+  "notes": "Report Editor AI 0.3.159\n\n- 039g：修并行「已完成」漏计（skipPartSaved 粘连）+ ETA 近窗/吞吐",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.158-x64.exe",
-      "sha256": "138fe7033a7fc6a2662a5be20d056636aedd8dcbcfd9577cb3858ea7693f9937",
-      "size": 162552389
+      "url": "Report Editor AI-Setup-0.3.159-x64.exe",
+      "sha256": "",
+      "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.158-arm64.dmg",
+      "url": "Report Editor AI-0.3.159-arm64.dmg",
       "sha256": "",
       "size": 0
     }
