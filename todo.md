@@ -7,6 +7,7 @@
 
 ## 2026-08-09
 
+- **ReportEditor 0.3.158 Win 打包**：并行进度遮罩多列网格（16 路 4 列）。发版记录 `_Doc/007` · [docs/039-🚧](docs/039-🚧-ReportEditor导出全屏遮罩.md)。
 - **ReportEditor 0.3.157 Win 打包**：`Report Editor AI-Setup-0.3.157-x64.exe`；修 16 路并行 20s 超时中止。发版记录 `_Doc/007`。
 - **ReportEditor 035（16 路超时）**：support-pack 导出中止——跨窗共享 fill cache + 导出窗 getTemplate 120s。看板 [docs/035-🚧](docs/035-🚧-ReportEditor导出性能档位与同机降载.md)。
 - **ReportEditor 0.3.156 Win 打包**：`Report Editor AI-Setup-0.3.156-x64.exe`；并行开导即建路 / ready 后派活。发版记录 `_Doc/007`。

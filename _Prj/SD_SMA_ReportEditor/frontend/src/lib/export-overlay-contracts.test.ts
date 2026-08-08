@@ -62,6 +62,9 @@ describe("export-overlay contracts (039 / 039c)", () => {
     expect(main).toMatch(/p\.workers/);
     expect(main).toMatch(/mergeExportOverlayProgress/);
     expect(main).toMatch(/stickyTotal/);
+    // 多路时多列网格（16 路用 4 列）
+    expect(main).toMatch(/cols-4/);
+    expect(main).toMatch(/grid-template-columns:repeat\(4/);
   });
 
   it("overlay-preload.cjs：onProgress / onMetrics / dismiss / exportSupportPack", () => {
