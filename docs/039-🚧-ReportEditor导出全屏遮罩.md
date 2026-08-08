@@ -6,6 +6,33 @@
 
 ---
 
+# ✅ 已完成：遮罩右下角 CPU / 内存曲线（039d · 2026-08-09）
+
+## 目标
+
+结批全屏遮罩右下角实时显示：
+- **CPU 逻辑核占用**曲线（整机合计%，近约 60 秒）
+- **内存用量**曲线（物理内存已用 / 总量）
+
+便于现场观察导出机负载；与进度 ETA 并存，不挡中央进度区。
+
+## 实现
+
+- `electron/host-resource-sample.cjs`：`os.cpus()` 差分算 CPU%、`totalmem/freemem` 算内存
+- 遮罩显示期间主进程约 1Hz 推送 `export-overlay-metrics`；preload `onMetrics`
+- 遮罩内联页 canvas 折线（无第三方图表库）
+
+## 关于「不妥协」档 CPU 仍不高
+
+档 4 会把导出渲染/后端提到 **HIGHEST**，但 PDF 路径仍多为**单流水线**（取数 → 渲染 → printToPDF/写盘），且仍有 `yieldMs=40` 让出事件循环；强机上常见「墙钟在跑、整机 CPU% 不高」。曲线用于观测，不代表档位未生效。
+
+## 验收
+
+- 单测：`host-resource-sample.test.ts` + overlay contracts 含 metrics
+- 手测：模拟结批遮罩右下角曲线随时间滚动；关遮罩后停采样
+
+---
+
 # ✅ 已完成：强关后可由侧栏显式重开（051b · 2026-08-09）
 
 用户 Esc / × / 120s 超时关掉遮罩后，进度更新**仍不自动重弹**（保 HMI）；结批未结束时，侧栏进度条 / toast「打开全屏进度」/ 导航「生成报表」经 IPC `export-overlay-reshow` 可显式拉回，并保留第 x/共 y 份进度。详见 [051](051-✅-ReportEditor结批离开后侧栏重开.md)。

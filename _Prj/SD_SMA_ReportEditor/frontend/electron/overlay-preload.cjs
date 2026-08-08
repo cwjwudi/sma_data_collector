@@ -23,6 +23,22 @@ contextBridge.exposeInMainWorld('exportOverlay', {
     ipcRenderer.on('export-overlay-progress', handler)
     return () => ipcRenderer.removeListener('export-overlay-progress', handler)
   },
+  /**
+   * 039d：主机负载（约 1Hz）
+   * { cpuPercent, logicalCores, memPercent, memUsedLabel, memTotalLabel, cpuHistory, memHistory }
+   */
+  onMetrics: (cb) => {
+    if (typeof cb !== 'function') return () => {}
+    const handler = (_e, payload) => {
+      try {
+        cb(payload || {})
+      } catch {
+        /* ignore */
+      }
+    }
+    ipcRenderer.on('export-overlay-metrics', handler)
+    return () => ipcRenderer.removeListener('export-overlay-metrics', handler)
+  },
   /** 操作员强制隐藏（Esc / 角落按钮）——保证任何时候能看回 HMI */
   dismiss: () => ipcRenderer.send('export-overlay-dismiss'),
   /** 遮罩页一键打问题反馈包（主进程调后端 048） */

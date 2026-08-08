@@ -1,15 +1,15 @@
 {
-  "version": "0.3.150",
-  "releasedAt": "2026-08-08T18:21:38.385Z",
-  "notes": "039c：导出遮罩盖任务栏/Dock；按份续 120s；设置页可配显示屏与触发范围；阶段/ETA/进度条；遮罩页可导出问题反馈包（048）。含 0.3.149：051b 侧栏重开拉回遮罩。",
+  "version": "0.3.151",
+  "releasedAt": "2026-08-08T18:39:47.848Z",
+  "notes": "Report Editor AI 0.3.151\n\n- 039d：导出全屏遮罩右下角实时 CPU 逻辑核占用 + 内存用量曲线\n- 含 0.3.150：039c 遮罩增强 + 048 问题反馈包",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.150-x64.exe",
-      "sha256": "d8614ee24de500a5b232678dc4937fc87fda056424f1c6a5b6f4a2609b480e22",
-      "size": 162543056
+      "url": "Report Editor AI-Setup-0.3.151-x64.exe",
+      "sha256": "40ca384cc534d44e0ed8543e4cfbe2ceae21aee106618b25658bb198dd229149",
+      "size": 162545459
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.150-arm64.dmg",
+      "url": "Report Editor AI-0.3.151-arm64.dmg",
       "sha256": "",
       "size": 0
     }

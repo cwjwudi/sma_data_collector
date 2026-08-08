@@ -7,6 +7,8 @@
 
 ## 2026-08-09
 
+- **ReportEditor 0.3.151 Win 打包**：`Report Editor AI-Setup-0.3.151-x64.exe`（SHA256 `40ca384c…9149`）；039d 遮罩右下角 CPU/内存曲线。发版记录 `_Doc/007`。
+- **ReportEditor 039d（遮罩 CPU/内存曲线）**：全屏导出遮罩右下角实时 CPU 逻辑核占用 + 内存用量折线（主进程 1Hz 采样）。看板 [docs/039-🚧](docs/039-🚧-ReportEditor导出全屏遮罩.md)。
 - **ReportEditor 同步远端 0.3.150 + Win 打包**：`git pull` 快进合并 `039c + 048 问题反馈包`；本机此前停在 0.3.149 故设置无反馈包。已打 `Report Editor AI-Setup-0.3.150-x64.exe`（SHA256 `d8614ee2…0e22`）。
 - **ReportEditor 0.3.149 Win 打包**：`Report Editor AI-Setup-0.3.149-x64.exe`（SHA256 `30ee9caa…bffe`）；051b 重开拉回全屏遮罩。发版记录 `_Doc/007`。
 - **ReportEditor 051b（重开拉回全屏遮罩）**：Esc/× 关掉「正在生成报表」后，侧栏/「打开全屏进度」经 `export-overlay-reshow` 显式重开并续进度。看板 [docs/051-✅](docs/051-✅-ReportEditor结批离开后侧栏重开.md) · [039](docs/039-🚧-ReportEditor导出全屏遮罩.md)。

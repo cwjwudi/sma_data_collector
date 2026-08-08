@@ -50,15 +50,23 @@ describe("export-overlay contracts (039 / 039c)", () => {
     expect(main).toMatch(/etaLabel/);
     expect(main).toMatch(/export-overlay-support-pack/);
     expect(main).toMatch(/stageLabel/);
+    // 039d：右下角 CPU/内存曲线
+    expect(main).toMatch(/host-resource-sample\.cjs/);
+    expect(main).toMatch(/startExportOverlayMetricsTick/);
+    expect(main).toMatch(/export-overlay-metrics/);
+    expect(main).toMatch(/ov-cpu-chart/);
+    expect(main).toMatch(/ov-mem-chart/);
   });
 
-  it("overlay-preload.cjs：onProgress / dismiss / exportSupportPack", () => {
+  it("overlay-preload.cjs：onProgress / onMetrics / dismiss / exportSupportPack", () => {
     const preload = readFront("electron/overlay-preload.cjs");
     expect(preload).toMatch(/exposeInMainWorld\('exportOverlay'/);
     expect(preload).toMatch(/onProgress/);
+    expect(preload).toMatch(/onMetrics/);
     expect(preload).toMatch(/dismiss/);
     expect(preload).toMatch(/exportSupportPack/);
     expect(preload).toMatch(/export-overlay-progress/);
+    expect(preload).toMatch(/export-overlay-metrics/);
     expect(preload).toMatch(/export-overlay-dismiss/);
     expect(preload).toMatch(/export-overlay-support-pack/);
     const main = readFront("electron/main.cjs");

@@ -35,6 +35,13 @@ const {
   patchTouchesLoginItem,
   SILENT_START_ARG,
 } = require('./launch.cjs')
+const {
+  snapshotCpu,
+  cpuPercentBetween,
+  memorySample,
+  pushRing,
+  formatBytesShort,
+} = require('./host-resource-sample.cjs')
 
 // 五档批导：独立 userData，避免与已打开的安装版抢单实例锁
 const fiveTierExportSpec = String(process.env.REPORT_EDITOR_FIVE_TIER_EXPORT || '').trim()
@@ -682,6 +689,14 @@ let exportOverlayWindows = []
 let exportOverlayHideTimer = null
 /** ETA 文案每秒刷新（不续 120s，仅重算剩余） */
 let exportOverlayEtaTickTimer = null
+/** 039d：主机 CPU/内存曲线采样 */
+let exportOverlayMetricsTimer = null
+let exportOverlayCpuPrev = null
+/** @type {number[]} */
+let exportOverlayCpuHistory = []
+/** @type {number[]} */
+let exportOverlayMemHistory = []
+const EXPORT_OVERLAY_METRICS_MAX = 60
 /** 进行中的导出计数（0→1 显示遮罩，→0 隐藏）；支持并行导出 */
 let exportOverlayUiCount = 0
 let exportOverlayLastProgress = null
@@ -845,8 +860,20 @@ function buildExportOverlayHtml() {
   #ov-close { position:absolute; top:16px; right:20px; width:40px; height:40px;
     border-radius:8px; border:1px solid rgba(160,180,220,0.25); background:rgba(255,255,255,0.04);
     color:#9fb0d4; font-size:20px; line-height:38px; text-align:center; cursor:pointer;
-    opacity:0.55; }
+    opacity:0.55; z-index:2; }
   #ov-close:hover { opacity:1; background:rgba(255,255,255,0.1); }
+  .ov-metrics { position:absolute; right:18px; bottom:48px; width:min(300px, 38vw);
+    display:flex; flex-direction:column; gap:10px; pointer-events:none; z-index:1; }
+  .ov-metrics__card { padding:10px 12px 8px; border-radius:10px;
+    border:1px solid rgba(140,170,230,0.22); background:rgba(8,14,28,0.72);
+    backdrop-filter: blur(6px); }
+  .ov-metrics__head { display:flex; justify-content:space-between; align-items:baseline;
+    gap:8px; margin-bottom:6px; font-size:12px; color:#9fb0d4; }
+  .ov-metrics__val { font-size:14px; font-weight:600; color:#e8ecf6;
+    font-variant-numeric: tabular-nums; }
+  .ov-metrics__sub { margin-top:4px; font-size:11px; color:#6f7ea0;
+    font-variant-numeric: tabular-nums; }
+  .ov-metrics__card canvas { display:block; width:100%; height:52px; }
 </style></head><body>
   <div id="ov-close" title="隐藏（Esc）">×</div>
   <div class="wrap">
@@ -863,6 +890,24 @@ function buildExportOverlayHtml() {
     </div>
     <div id="ov-support-msg"></div>
   </div>
+  <div class="ov-metrics" aria-hidden="true">
+    <div class="ov-metrics__card">
+      <div class="ov-metrics__head">
+        <span>CPU 逻辑核占用</span>
+        <span class="ov-metrics__val" id="ov-cpu-val">—</span>
+      </div>
+      <canvas id="ov-cpu-chart" width="276" height="52"></canvas>
+      <div class="ov-metrics__sub" id="ov-cpu-sub">整机合计 · 近 60 秒</div>
+    </div>
+    <div class="ov-metrics__card">
+      <div class="ov-metrics__head">
+        <span>内存用量</span>
+        <span class="ov-metrics__val" id="ov-mem-val">—</span>
+      </div>
+      <canvas id="ov-mem-chart" width="276" height="52"></canvas>
+      <div class="ov-metrics__sub" id="ov-mem-sub">本机物理内存</div>
+    </div>
+  </div>
   <div class="hint">此界面为报表导出临时提示 · 按 Esc 或点右上角 × 可隐藏回主画面</div>
 <script>
   (function(){
@@ -875,6 +920,77 @@ function buildExportOverlayHtml() {
     var pctEl = document.getElementById('ov-pct');
     var supportBtn = document.getElementById('ov-support');
     var supportMsg = document.getElementById('ov-support-msg');
+    var cpuVal = document.getElementById('ov-cpu-val');
+    var memVal = document.getElementById('ov-mem-val');
+    var cpuSub = document.getElementById('ov-cpu-sub');
+    var memSub = document.getElementById('ov-mem-sub');
+    var cpuCanvas = document.getElementById('ov-cpu-chart');
+    var memCanvas = document.getElementById('ov-mem-chart');
+    function drawSpark(canvas, values, stroke, fillColor){
+      if (!canvas) return;
+      var ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      var dpr = window.devicePixelRatio || 1;
+      var cssW = canvas.clientWidth || canvas.width;
+      var cssH = canvas.clientHeight || canvas.height;
+      if (canvas.width !== Math.round(cssW * dpr) || canvas.height !== Math.round(cssH * dpr)) {
+        canvas.width = Math.round(cssW * dpr);
+        canvas.height = Math.round(cssH * dpr);
+      }
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, cssW, cssH);
+      var arr = Array.isArray(values) ? values : [];
+      if (arr.length < 1) return;
+      var pad = 2;
+      var w = cssW - pad * 2;
+      var h = cssH - pad * 2;
+      ctx.strokeStyle = 'rgba(120,160,255,0.12)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(pad, pad + h * 0.5);
+      ctx.lineTo(pad + w, pad + h * 0.5);
+      ctx.stroke();
+      var n = arr.length;
+      ctx.beginPath();
+      for (var i = 0; i < n; i++) {
+        var x = pad + (n === 1 ? w : (i / (n - 1)) * w);
+        var y = pad + h - (Math.max(0, Math.min(100, Number(arr[i]) || 0)) / 100) * h;
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.strokeStyle = stroke;
+      ctx.lineWidth = 1.6;
+      ctx.lineJoin = 'round';
+      ctx.stroke();
+      if (fillColor && n > 1) {
+        var lastX = pad + w;
+        var lastY = pad + h - (Math.max(0, Math.min(100, Number(arr[n - 1]) || 0)) / 100) * h;
+        ctx.lineTo(lastX, pad + h);
+        ctx.lineTo(pad, pad + h);
+        ctx.closePath();
+        ctx.fillStyle = fillColor;
+        ctx.fill();
+      }
+    }
+    function renderMetrics(m){
+      if (!m) return;
+      var cpu = Number(m.cpuPercent);
+      var mem = Number(m.memPercent);
+      if (cpuVal) cpuVal.textContent = Number.isFinite(cpu) ? (Math.round(cpu) + '%') : '—';
+      if (memVal) memVal.textContent = Number.isFinite(mem) ? (Math.round(mem) + '%') : '—';
+      if (cpuSub) {
+        var cores = Number(m.logicalCores) || 0;
+        cpuSub.textContent = cores > 0
+          ? ('整机 ' + cores + ' 逻辑核合计 · 近 60 秒')
+          : '整机合计 · 近 60 秒';
+      }
+      if (memSub) {
+        memSub.textContent = (m.memUsedLabel && m.memTotalLabel)
+          ? (m.memUsedLabel + ' / ' + m.memTotalLabel)
+          : '本机物理内存';
+      }
+      drawSpark(cpuCanvas, m.cpuHistory, '#6aa0ff', 'rgba(106,160,255,0.14)');
+      drawSpark(memCanvas, m.memHistory, '#5eead4', 'rgba(94,234,212,0.12)');
+    }
     function render(p){
       if (!p) return;
       stageEl.textContent = p.stageLabel || '';
@@ -902,6 +1018,7 @@ function buildExportOverlayHtml() {
       if (supportBtn) supportBtn.disabled = !!p.supportBusy;
     }
     if (api && api.onProgress) api.onProgress(render);
+    if (api && api.onMetrics) api.onMetrics(renderMetrics);
     function dismiss(){ if (api && api.dismiss) api.dismiss(); }
     document.addEventListener('keydown', function(e){ if (e.key === 'Escape') dismiss(); });
     var btn = document.getElementById('ov-close');
@@ -946,6 +1063,73 @@ function stopExportOverlayEtaTick() {
   if (!exportOverlayEtaTickTimer) return
   clearInterval(exportOverlayEtaTickTimer)
   exportOverlayEtaTickTimer = null
+}
+
+function resetExportOverlayMetrics() {
+  exportOverlayCpuPrev = null
+  exportOverlayCpuHistory = []
+  exportOverlayMemHistory = []
+}
+
+function sampleAndBroadcastOverlayMetrics() {
+  if (!exportOverlayWindows.length) return
+  try {
+    const cpuSnap = snapshotCpu(os.cpus())
+    const isFirst = !exportOverlayCpuPrev
+    let cpuPercent = 0
+    if (!isFirst) {
+      cpuPercent = cpuPercentBetween(exportOverlayCpuPrev, cpuSnap)
+      exportOverlayCpuHistory = pushRing(
+        exportOverlayCpuHistory,
+        cpuPercent,
+        EXPORT_OVERLAY_METRICS_MAX,
+      )
+    }
+    exportOverlayCpuPrev = cpuSnap
+    const mem = memorySample(os.totalmem(), os.freemem())
+    exportOverlayMemHistory = pushRing(
+      exportOverlayMemHistory,
+      mem.memPercent,
+      EXPORT_OVERLAY_METRICS_MAX,
+    )
+    const payload = {
+      t: Date.now(),
+      cpuPercent: isFirst ? null : cpuPercent,
+      logicalCores: cpuSnap.cores,
+      memPercent: mem.memPercent,
+      memUsedBytes: mem.memUsedBytes,
+      memTotalBytes: mem.memTotalBytes,
+      memUsedLabel: formatBytesShort(mem.memUsedBytes),
+      memTotalLabel: formatBytesShort(mem.memTotalBytes),
+      cpuHistory: exportOverlayCpuHistory.slice(),
+      memHistory: exportOverlayMemHistory.slice(),
+    }
+    for (const w of exportOverlayWindows) {
+      if (!w || w.isDestroyed()) continue
+      try {
+        w.webContents.send('export-overlay-metrics', payload)
+      } catch {
+        /* ignore */
+      }
+    }
+  } catch (e) {
+    log(`导出遮罩负载采样失败（忽略）：${e && e.message ? e.message : e}`)
+  }
+}
+
+function startExportOverlayMetricsTick() {
+  if (exportOverlayMetricsTimer) return
+  sampleAndBroadcastOverlayMetrics()
+  exportOverlayMetricsTimer = setInterval(() => {
+    if (!exportOverlayWindows.length) return
+    sampleAndBroadcastOverlayMetrics()
+  }, 1000)
+}
+
+function stopExportOverlayMetricsTick() {
+  if (!exportOverlayMetricsTimer) return
+  clearInterval(exportOverlayMetricsTimer)
+  exportOverlayMetricsTimer = null
 }
 
 function resetExportOverlayEta() {
@@ -1106,12 +1290,14 @@ function showExportOverlay() {
       // 会话已在跑：不在此处重置 120s（由每份 noteExportOverlayPartStart 负责）
       if (!exportOverlayHideTimer) armExportOverlayTimeout()
       startExportOverlayEtaTick()
+      startExportOverlayMetricsTick()
       return
     }
     const displays = resolveOverlayDisplays()
     exportOverlayWindows = displays.map((d) => createExportOverlayWindowForDisplay(d))
     armExportOverlayTimeout()
     startExportOverlayEtaTick()
+    startExportOverlayMetricsTick()
   } catch (e) {
     log(`导出遮罩显示失败（忽略）：${e && e.message ? e.message : e}`)
   }
@@ -1123,6 +1309,7 @@ function hideExportOverlay(reason = 'done') {
     exportOverlayHideTimer = null
   }
   stopExportOverlayEtaTick()
+  stopExportOverlayMetricsTick()
   const wins = exportOverlayWindows.slice()
   exportOverlayWindows = []
   const exportStillRunning = exportOverlayUiCount > 0 && reason !== 'done'
@@ -1133,6 +1320,7 @@ function hideExportOverlay(reason = 'done') {
     exportOverlayLastProgress = null
     exportOverlaySuppressed = false
     resetExportOverlayEta()
+    resetExportOverlayMetrics()
   }
   for (const w of wins) {
     // 050：与 PDF 导出窗同一套延迟销毁，避免 Accessibility UAF
