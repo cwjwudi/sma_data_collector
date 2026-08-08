@@ -40,7 +40,17 @@ export function registerOpenGenerateReportPage(handler: (() => void | Promise<vo
   openGeneratePageHandler = handler;
 }
 
+/** 结批进行中：拉回 039 全屏「正在生成报表」遮罩（Esc/× 强关后可显式恢复） */
+export function reshowExportOverlayIfBusy(): void {
+  if (!hasActiveReportExport.value) return;
+  const api = typeof window !== "undefined" ? window.electronAPI : undefined;
+  if (typeof api?.reshowExportOverlay === "function") {
+    void api.reshowExportOverlay();
+  }
+}
+
 export function openGenerateReportPage(): void {
+  reshowExportOverlayIfBusy();
   void openGeneratePageHandler?.();
 }
 
@@ -77,7 +87,7 @@ function upsertSession(
 
 function buildOpenPageAction(): AppToastAction {
   return {
-    label: "打开页面",
+    label: "打开全屏进度",
     onClick: () => openGenerateReportPage(),
   };
 }
@@ -138,7 +148,7 @@ export function tryMinimizeBatchExportProgress(id: string): boolean {
   return true;
 }
 
-/** 侧栏 / 「打开页面」：恢复 toast 并跳转生成报表 */
+/** 侧栏 / 「打开全屏进度」：拉回全屏遮罩、恢复 toast，并跳转生成报表 */
 export function restoreBatchExportProgress(id?: string): void {
   const targetId = String(id || primaryReportExportSession.value?.id || "").trim();
   const session = reportExportProgressSessions.value.find((s) => s.id === targetId && s.busy);
@@ -148,5 +158,6 @@ export function restoreBatchExportProgress(id?: string): void {
   }
   upsertSession({ ...session, minimized: false });
   showProgressToast(session);
+  // openGenerateReportPage 内会 reshow 全屏遮罩
   openGenerateReportPage();
 }

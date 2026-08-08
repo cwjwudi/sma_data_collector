@@ -7,6 +7,8 @@
 
 ## 2026-08-09
 
+- **ReportEditor 0.3.149 Win 打包**：`Report Editor AI-Setup-0.3.149-x64.exe`（SHA256 `30ee9caa…bffe`）；051b 重开拉回全屏遮罩。发版记录 `_Doc/007`。
+- **ReportEditor 051b（重开拉回全屏遮罩）**：Esc/× 关掉「正在生成报表」后，侧栏/「打开全屏进度」经 `export-overlay-reshow` 显式重开并续进度。看板 [docs/051-✅](docs/051-✅-ReportEditor结批离开后侧栏重开.md) · [039](docs/039-🚧-ReportEditor导出全屏遮罩.md)。
 - **ReportEditor 0.3.148 Win 打包**：`Report Editor AI-Setup-0.3.148-x64.exe`（约 155MB，SHA256 `6c6d61f6…e15f`）；含 051 侧栏重开 + 035 模拟结批五档。发版记录 `_Doc/007`。
 - **ReportEditor 035（模拟结批露出导出档位）**：五档选择从 OPC「高级设置」挪到「模拟结批」卡片内；自动结批仍共用。看板 [docs/035-🚧](docs/035-🚧-ReportEditor导出性能档位与同机降载.md)。
 - **ReportEditor 051（结批离开后侧栏重开）**：结批进行中离开「生成报表」后，侧栏底部进度条 +「生成报表」角标可重回页面；进度 toast 增「打开页面」、点 × 收起仍可从侧栏恢复。看板 [docs/051-✅](docs/051-✅-ReportEditor结批离开后侧栏重开.md)。

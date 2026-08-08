@@ -1,15 +1,15 @@
 {
-  "version": "0.3.148",
-  "releasedAt": "2026-08-08T16:53:19.572Z",
-  "notes": "Report Editor AI 0.3.148\n\n- 051：结批离开后可从侧栏重开生成报表（进度条/角标/打开页面）\n- 035：模拟结批卡片内直接选择导出性能五档（与 OPC 自动共用）\n- 含 0.3.147：049 整模版一键隐藏边框等",
+  "version": "0.3.149",
+  "releasedAt": "2026-08-08T17:00:31.925Z",
+  "notes": "Report Editor AI 0.3.149\n\n- 051b：结批中 Esc/× 关掉全屏遮罩后，侧栏/「打开全屏进度」可重新拉起「正在生成报表」遮罩并续进度\n- 含 0.3.148：051 侧栏重开 + 035 模拟结批五档",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.148-x64.exe",
-      "sha256": "6c6d61f6f6a267860b113adba9baf31147ee6b396bd2c076389a4a6e0173e15f",
-      "size": 162518557
+      "url": "Report Editor AI-Setup-0.3.149-x64.exe",
+      "sha256": "30ee9caacb6edd7b1024e1f0e68f4009b04439e7354f3542256fb18dd183bffe",
+      "size": 162519062
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.148-arm64.dmg",
+      "url": "Report Editor AI-0.3.149-arm64.dmg",
       "sha256": "",
       "size": 0
     }

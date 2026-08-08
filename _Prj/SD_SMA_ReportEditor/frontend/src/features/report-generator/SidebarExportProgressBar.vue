@@ -17,7 +17,7 @@
         <span class="sidebar-export__text">
           <span class="sidebar-export__title">{{ session.title }}</span>
           <span class="sidebar-export__detail">{{ session.detail }}</span>
-          <span class="sidebar-export__hint">点击重新打开页面</span>
+          <span class="sidebar-export__hint">点击打开全屏导出进度</span>
         </span>
       </template>
     </button>
@@ -40,7 +40,7 @@ const session = primaryReportExportSession;
 const tooltip = computed(() => {
   const s = session.value;
   if (!s) return "结批进行中";
-  return `${s.title}：${s.detail}（点击重新打开生成报表）`;
+  return `${s.title}：${s.detail}（点击打开全屏导出进度）`;
 });
 
 const ariaLabel = computed(() => tooltip.value);

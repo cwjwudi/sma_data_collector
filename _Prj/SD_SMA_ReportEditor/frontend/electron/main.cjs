@@ -672,6 +672,11 @@ let exportOverlayHideTimer = null
 /** 进行中的导出计数（0→1 显示遮罩，→0 隐藏）；支持并行导出 */
 let exportOverlayUiCount = 0
 let exportOverlayLastProgress = null
+/**
+ * 用户 Esc/×/超时强关后：本会话进度更新不再自动重弹；
+ * 侧栏「重新打开」可经 reshowExportOverlay 显式拉回。
+ */
+let exportOverlaySuppressed = false
 /** 硬超时：最多盖 120s，防遮罩卡死长时间锁住 HMI（用户确认） */
 const EXPORT_OVERLAY_MAX_MS = 120000
 
@@ -844,7 +849,14 @@ function hideExportOverlay(reason = 'done') {
   }
   const w = exportOverlayWindow
   exportOverlayWindow = null
-  exportOverlayLastProgress = null
+  const exportStillRunning = exportOverlayUiCount > 0 && reason !== 'done'
+  if (exportStillRunning) {
+    // 保留进度，供侧栏「重新打开」拉回全屏遮罩
+    exportOverlaySuppressed = true
+  } else {
+    exportOverlayLastProgress = null
+    exportOverlaySuppressed = false
+  }
   if (w && !w.isDestroyed()) {
     try {
       w.destroy()
@@ -855,10 +867,11 @@ function hideExportOverlay(reason = 'done') {
   if (reason && reason !== 'done') log(`导出遮罩隐藏（${reason}）`)
 }
 
-/** 导出开始：计数 0→1 时弹遮罩（用户强关后本会话不再自动重弹） */
+/** 导出开始：计数 0→1 时弹遮罩（用户强关后本会话不再自动重弹，需显式 reshow） */
 function beginExportOverlaySession() {
   exportOverlayUiCount += 1
   if (exportOverlayUiCount === 1) {
+    exportOverlaySuppressed = false
     exportOverlayLastProgress = { phase: 'render', partIndex: 0, totalReports: 0 }
     showExportOverlay()
   }
@@ -870,7 +883,23 @@ function endExportOverlaySession() {
   if (exportOverlayUiCount === 0) hideExportOverlay('done')
 }
 
+/**
+ * 侧栏/进度条「重新打开」：导出仍在进行时显式拉回全屏遮罩（含曾 Esc/× 强关）。
+ * @returns {{ ok: boolean, shown?: boolean, reason?: string }}
+ */
+function reshowExportOverlay() {
+  if (!isExportOverlayEnabled()) return { ok: false, reason: 'disabled' }
+  if (exportOverlayUiCount <= 0) return { ok: false, reason: 'idle' }
+  exportOverlaySuppressed = false
+  if (!exportOverlayLastProgress) {
+    exportOverlayLastProgress = { phase: 'render', partIndex: 0, totalReports: 0 }
+  }
+  showExportOverlay()
+  return { ok: true, shown: true }
+}
+
 ipcMain.on('export-overlay-dismiss', () => hideExportOverlay('user'))
+ipcMain.handle('export-overlay-reshow', () => reshowExportOverlay())
 
 function destroyAppTray() {
   if (!appTray) return

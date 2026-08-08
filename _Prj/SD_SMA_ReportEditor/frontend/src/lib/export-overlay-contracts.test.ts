@@ -33,6 +33,10 @@ describe("export-overlay contracts (039)", () => {
     // Esc 兜底 + 用户强关 IPC
     expect(main).toMatch(/before-input-event/);
     expect(main).toMatch(/export-overlay-dismiss/);
+    // 051：强关后可经 IPC 显式重开全屏遮罩
+    expect(main).toMatch(/function reshowExportOverlay/);
+    expect(main).toMatch(/export-overlay-reshow/);
+    expect(main).toMatch(/exportOverlaySuppressed/);
     // 进度喂给遮罩（第 x/共 y 份）
     expect(main).toMatch(/pushExportOverlayProgress/);
     // 五档批导不弹遮罩
@@ -49,6 +53,10 @@ describe("export-overlay contracts (039)", () => {
     // 遮罩窗使用该 preload
     const main = readFront("electron/main.cjs");
     expect(main).toMatch(/overlay-preload\.cjs/);
+    // 主窗口 preload 暴露 reshow
+    const appPreload = readFront("electron/preload.cjs");
+    expect(appPreload).toMatch(/reshowExportOverlay/);
+    expect(appPreload).toMatch(/export-overlay-reshow/);
   });
 
   it("配置：launch.cjs 默认开启、UI/类型透出 exportOverlayEnabled", () => {

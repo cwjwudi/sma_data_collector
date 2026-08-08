@@ -118,6 +118,7 @@ import {
   hasActiveReportExport,
   registerOpenGenerateReportPage,
   REPORT_GENERATE_ROUTE,
+  reshowExportOverlayIfBusy,
 } from '@/lib/report-export-progress-state'
 import {
   appUpdateAvailable,
@@ -217,8 +218,13 @@ function endRouteLoading() {
 /** 先让加载条完成一帧绘制，再执行路由跳转，减轻大 chunk 解析时的「假死」感 */
 async function onNavClick(e, item) {
   const targetPath = item.path
-  if (navActive(targetPath) && route.path === targetPath) return
+  if (navActive(targetPath) && route.path === targetPath) {
+    // 已在生成报表页：结批中再点导航也拉回全屏遮罩
+    if (targetPath === REPORT_GENERATE_ROUTE) reshowExportOverlayIfBusy()
+    return
+  }
   e.preventDefault()
+  if (targetPath === REPORT_GENERATE_ROUTE) reshowExportOverlayIfBusy()
   beginRouteLoading(targetPath, { immediate: true })
   await nextTick()
   await new Promise((resolve) => {

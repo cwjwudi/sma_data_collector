@@ -17,9 +17,10 @@ describe("report-export-progress-state", () => {
     reportExportProgressSessions.value = [];
     appToasts.value = [];
     registerOpenGenerateReportPage(null);
+    delete (window as unknown as { electronAPI?: unknown }).electronAPI;
   });
 
-  it("publish shows toast with open-page action while busy", () => {
+  it("publish shows toast with open-fullscreen action while busy", () => {
     const onCancel = vi.fn();
     publishBatchExportProgress({
       id: "batch-progress-manual",
@@ -31,10 +32,28 @@ describe("report-export-progress-state", () => {
     expect(hasActiveReportExport.value).toBe(true);
     const toast = appToasts.value.find((t) => t.id === "batch-progress-manual");
     expect(toast?.spinner).toBe(true);
-    expect(toast?.secondaryAction?.label).toBe("打开页面");
+    expect(toast?.secondaryAction?.label).toBe("打开全屏进度");
     expect(toast?.action?.label).toBe("取消");
     toast?.action?.onClick();
     expect(onCancel).toHaveBeenCalled();
+  });
+
+  it("openGenerateReportPage reshowns fullscreen overlay when export busy", () => {
+    const reshow = vi.fn(async () => ({ ok: true, shown: true }));
+    const open = vi.fn();
+    ;(window as unknown as { electronAPI: { reshowExportOverlay: typeof reshow } }).electronAPI = {
+      reshowExportOverlay: reshow,
+    };
+    registerOpenGenerateReportPage(open);
+    publishBatchExportProgress({
+      id: "batch-progress-manual",
+      title: "模拟结批",
+      detail: "…",
+      jobId: "job-1",
+    });
+    openGenerateReportPage();
+    expect(reshow).toHaveBeenCalled();
+    expect(open).toHaveBeenCalled();
   });
 
   it("dismiss while busy minimizes to sidebar session instead of dropping progress", () => {

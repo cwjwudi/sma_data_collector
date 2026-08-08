@@ -52,6 +52,8 @@ interface Window {
       };
     }>;
     cancelPdfExport: (opts: { jobId: string }) => Promise<{ ok: boolean; cancelled?: boolean; error?: string }>;
+    /** 039/051：导出仍在进行时重新打开全屏「正在生成报表」遮罩 */
+    reshowExportOverlay?: () => Promise<{ ok: boolean; shown?: boolean; reason?: string }>;
     setPdfExportMaxParallel: (
       max: number,
     ) => Promise<{ max: number; cpuBudget?: number; logicalCores?: number }>;
