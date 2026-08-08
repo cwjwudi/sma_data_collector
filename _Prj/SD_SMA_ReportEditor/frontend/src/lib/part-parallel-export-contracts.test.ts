@@ -67,21 +67,21 @@ describe("part-parallel export contracts (035)", () => {
     expect(main).not.toMatch(/acquireExtrasPromise/);
   });
 
-  it("跨窗共享 fill cache：落盘 + preload 直读（避免大 IPC 克隆卡死）", () => {
+  it("跨窗共享 fill cache：按份落盘，各窗只 hydrate 当前份", () => {
     const main = readFront("electron/main.cjs");
     const preload = readFront("electron/preload.cjs");
     const pdfView = readFront("src/views/PdfExportView.vue");
     const fill = readFront("src/lib/report-template/pdf-export-fill-cache.ts");
     expect(main).toMatch(/pdf-export-fill-cache-get/);
     expect(main).toMatch(/pdfExportFillCacheBridgeMeta/);
-    expect(main).toMatch(/不把 values 塞进 IPC/);
-    expect(preload).toMatch(/getPdfExportFillCacheBridge/);
+    expect(main).toMatch(/part-\$\{partIndex\}\.json/);
+    expect(preload).toMatch(/setPdfExportFillCacheBridgeParts/);
     expect(preload).toMatch(/readFileSync/);
-    expect(preload).toMatch(/writeFileSync/);
     expect(fill).toMatch(/publishPdfExportFillCacheToBridge/);
-    expect(fill).toMatch(/waitPdfExportFillCacheFromBridge/);
-    expect(pdfView).toMatch(/publishPdfExportFillCacheToBridge/);
-    expect(pdfView).toMatch(/waitPdfExportFillCacheFromBridge/);
+    expect(fill).toMatch(/previewValuesForSplitReport/);
+    expect(fill).toMatch(/partIndex/);
+    expect(pdfView).toMatch(/publishPdfExportFillCacheToBridge\(t\)/);
+    expect(pdfView).toMatch(/reportPartIndex:\s*partIdx/);
     expect(pdfView).toMatch(/pulseExportHeartbeat\(["']hydrate["']\)/);
     expect(main).toMatch(/同步取数缓存/);
   });

@@ -4,11 +4,12 @@
  */
 
 export function chromiumPartParallelCapFromBytes(totalMemBytes: number): number {
+  // 与 electron/chromium-export-parallel-cap.cjs 对齐（052c 按份切片后上调）
   const gb = Number(totalMemBytes) / (1024 * 1024 * 1024);
-  if (!Number.isFinite(gb) || gb < 8) return 2;
-  if (gb < 16) return 3;
-  if (gb < 24) return 4;
-  return 6;
+  if (!Number.isFinite(gb) || gb < 8) return 4;
+  if (gb < 16) return 8;
+  if (gb < 24) return 12;
+  return 16;
 }
 
 /** 浏览器侧：用 deviceMemory（GiB，可能偏保守）估算；缺省按 3 */
@@ -21,7 +22,7 @@ export function chromiumPartParallelCapInRenderer(): number {
   } catch {
     /* ignore */
   }
-  return 3;
+  return 8;
 }
 
 export function resolvePartExportConcurrencyForUi(opts: {

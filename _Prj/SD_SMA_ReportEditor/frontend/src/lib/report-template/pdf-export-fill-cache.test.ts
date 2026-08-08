@@ -11,7 +11,7 @@ describe("pdf-export-fill-cache (030)", () => {
     clearPdfExportFillCache();
   });
 
-  it("U1: part 0 never reuses; part>0 reuses same template cache", () => {
+  it("U1: part 0 never reuses; full cache allows any part>0", () => {
     setPdfExportFillCache({
       templateId: "tpl-a",
       values: { k: { text: "1" } },
@@ -22,6 +22,18 @@ describe("pdf-export-fill-cache (030)", () => {
     expect(shouldReusePdfExportFill({ templateId: "tpl-a", reportPartIndex: 1 })).toBe(true);
     expect(shouldReusePdfExportFill({ templateId: "tpl-a", reportPartIndex: 2 })).toBe(true);
     expect(shouldReusePdfExportFill({ templateId: "tpl-b", reportPartIndex: 1 })).toBe(false);
+  });
+
+  it("U1b: 按份切片缓存仅匹配同一 partIndex", () => {
+    setPdfExportFillCache({
+      templateId: "tpl-a",
+      values: { k: { text: "part1" } },
+      totalReports: 3,
+      stats: null,
+      partIndex: 1,
+    });
+    expect(shouldReusePdfExportFill({ templateId: "tpl-a", reportPartIndex: 1 })).toBe(true);
+    expect(shouldReusePdfExportFill({ templateId: "tpl-a", reportPartIndex: 2 })).toBe(false);
   });
 
   it("U2: clear / mismatch drops reuse", () => {

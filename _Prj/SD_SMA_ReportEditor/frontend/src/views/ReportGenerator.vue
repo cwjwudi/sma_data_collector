@@ -101,9 +101,9 @@
           min(本设置, 本机 CPU 预算)。改大可能影响同机 HMI。OPC 多路自动结批也使用同一上限。
         </p>
         <p v-if="exportPerfProfile.coexistPause === 'max'" class="rg-mini">
-          当前「不妥协」：已关闭 CPU 预算封顶。矢量（pdf-lib）可按设置开满；当前引擎若为 Chromium
-          printToPDF，本机内存安全并发约 {{ chromiumPartParallelCap }} 路（不是设置里的
-          {{ effectivePartParallel }}），否则易闪退或其它路卡在同步缓存。
+          当前「不妥协」：已关闭 CPU 预算封顶。分卷取数按「当前份」切片（约每份
+          maxRows），不再每窗扛全量行。矢量（pdf-lib）可开满设置；Chromium
+          printToPDF 本机约最多 {{ chromiumPartParallelCap }} 路（进程本身仍占内存）。
         </p>
         <p v-else class="rg-mini">{{ exportCpuBudgetHintText }}</p>
       </div>

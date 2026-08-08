@@ -2698,19 +2698,26 @@ ipcMain.handle('pdf-export-cancel', async (_event, opts) => {
 })
 
 /**
- * 035 / 052b：分卷并行跨窗共享首份 fullSqlFill。
- * 大快照只落盘；IPC 只传 path/元数据。preload 用 fs 直读，避免 Electron structured-clone
- * 把 8 万行整包克隆进其它窗 → 假死在「取数中」、只剩第 0 路在干活。
+ * 035 / 052c：分卷并行跨窗共享首份 fullSqlFill。
+ * 按「份」落盘（dir/part-N.json）；各窗只读当前份切片（约 maxRows），不把 8 万行灌进每个窗。
  */
-/** @type {{ templateId: string, totalReports: number, stats: object|null, path: string }|null} */
+/** @type {{ templateId: string, totalReports: number, stats: object|null, path?: string, dir?: string, partCount?: number }|null} */
 let pdfExportFillCacheBridgeMeta = null
 
 function clearPdfExportFillCacheBridge() {
-  const p = pdfExportFillCacheBridgeMeta && pdfExportFillCacheBridgeMeta.path
+  const meta = pdfExportFillCacheBridgeMeta
   pdfExportFillCacheBridgeMeta = null
-  if (p) {
+  if (!meta) return
+  if (meta.dir) {
     try {
-      fs.unlinkSync(p)
+      fs.rmSync(meta.dir, { recursive: true, force: true })
+    } catch {
+      /* ignore */
+    }
+  }
+  if (meta.path) {
+    try {
+      fs.unlinkSync(meta.path)
     } catch {
       /* ignore */
     }
@@ -2720,15 +2727,34 @@ function clearPdfExportFillCacheBridge() {
 ipcMain.handle('pdf-export-fill-cache-get', (_event, opts) => {
   const id = String((opts && opts.templateId) || '').trim()
   const meta = pdfExportFillCacheBridgeMeta
-  if (!id || !meta || meta.templateId !== id || !meta.path) {
+  if (!id || !meta || meta.templateId !== id) {
     return { ok: false }
   }
+  const partIndex = Math.max(0, Math.floor(Number(opts && opts.reportPartIndex) || 0))
+  // 052c：优先按份目录
+  if (meta.dir) {
+    const partPath = path.join(meta.dir, `part-${partIndex}.json`)
+    try {
+      if (!fs.existsSync(partPath)) return { ok: false }
+    } catch {
+      return { ok: false }
+    }
+    return {
+      ok: true,
+      dir: meta.dir,
+      path: partPath,
+      partIndex,
+      templateId: meta.templateId,
+      totalReports: meta.totalReports,
+      stats: meta.stats,
+    }
+  }
+  if (!meta.path) return { ok: false }
   try {
     if (!fs.existsSync(meta.path)) return { ok: false }
   } catch {
     return { ok: false }
   }
-  // 不把 values 塞进 IPC 返回值
   return {
     ok: true,
     path: meta.path,
@@ -2750,9 +2776,30 @@ ipcMain.handle('pdf-export-fill-cache-set', async (_event, snap) => {
   }
   const totalReports = Math.max(1, Math.floor(Number(snap.totalReports) || 1))
   const stats = snap.stats && typeof snap.stats === 'object' ? snap.stats : null
+  const dir = typeof snap.dir === 'string' ? snap.dir.trim() : ''
   let filePath = typeof snap.path === 'string' ? snap.path.trim() : ''
+  const partCount = Math.max(0, Math.floor(Number(snap.partCount) || 0))
 
-  // preload 已写盘：只登记 path。旧调用仍可能带 values，由主进程代写。
+  if (dir) {
+    try {
+      if (!fs.existsSync(dir)) {
+        return { ok: false, error: 'fill-cache 分份目录不存在' }
+      }
+    } catch (e) {
+      return { ok: false, error: (e && e.message) || 'fill-cache 目录无效' }
+    }
+    clearPdfExportFillCacheBridge()
+    pdfExportFillCacheBridgeMeta = {
+      templateId: id,
+      totalReports,
+      stats,
+      dir,
+      partCount: partCount || totalReports,
+    }
+    return { ok: true, dir, partCount: pdfExportFillCacheBridgeMeta.partCount }
+  }
+
+  // 兼容：单文件全量（无分份）
   if (!filePath) {
     try {
       filePath = path.join(
@@ -2780,19 +2827,12 @@ ipcMain.handle('pdf-export-fill-cache-set', async (_event, snap) => {
     }
   }
 
-  const prev = pdfExportFillCacheBridgeMeta && pdfExportFillCacheBridgeMeta.path
+  clearPdfExportFillCacheBridge()
   pdfExportFillCacheBridgeMeta = {
     templateId: id,
     totalReports,
     stats,
     path: filePath,
-  }
-  if (prev && prev !== filePath) {
-    try {
-      fs.unlinkSync(prev)
-    } catch {
-      /* ignore */
-    }
   }
   return { ok: true, path: filePath }
 })

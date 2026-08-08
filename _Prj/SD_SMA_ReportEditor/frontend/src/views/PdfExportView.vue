@@ -37,6 +37,7 @@ import { splitReportCountForPreview } from "@/lib/report-template/table-sql-fill
 import {
   clearPdfExportFillCache,
   getPdfExportFillCache,
+  peekPdfExportFillCache,
   publishPdfExportFillCacheToBridge,
   setPdfExportFillCache,
   shouldReusePdfExportFill,
@@ -251,11 +252,24 @@ async function boot(): Promise<void> {
   injectPrintPageCss(t);
 
   const partIdx = reportPartIndex.value;
-  // 035：其它并行窗从 bridge 灌入首份取数，避免 N×全量 SQL（052b：落盘直读，勿标「取数中」）
-  if (partIdx > 0) {
-    pulseExportHeartbeat("hydrate");
-    await waitPdfExportFillCacheFromBridge(id, { timeoutMs: 180_000 });
-    if (seq !== bootSeq) return;
+  // 052c：按「当前份」从 bridge 灌入切片（约 maxRows）；错份或 part>0 都要重灌
+  {
+    const existing = peekPdfExportFillCache();
+    const needBridge =
+      (partIdx != null && partIdx > 0) ||
+      (existing != null &&
+        existing.templateId === id &&
+        existing.partIndex != null &&
+        partIdx != null &&
+        existing.partIndex !== partIdx);
+    if (needBridge) {
+      pulseExportHeartbeat("hydrate");
+      await waitPdfExportFillCacheFromBridge(id, {
+        timeoutMs: 180_000,
+        reportPartIndex: partIdx ?? 0,
+      });
+      if (seq !== bootSeq) return;
+    }
   }
   const cached = getPdfExportFillCache(id);
   const reuseFill = shouldReusePdfExportFill({
@@ -324,8 +338,13 @@ async function boot(): Promise<void> {
       totalReports,
       stats: bindingPreview.lastStats.value,
     });
-    // 须在 signalReady 之前推送，其它并行路才能在 onReady 后立刻复用
-    await publishPdfExportFillCacheToBridge();
+    // 须在 signalReady 前按份落盘；本窗内存缩成第 0 份（约 maxRows）
+    await publishPdfExportFillCacheToBridge(t);
+    const sliced = getPdfExportFillCache(id);
+    if (sliced?.partIndex === 0) {
+      bindingPreview.values.value = sliced.values;
+      totalReports = sliced.totalReports;
+    }
   }
   const paintStartMs = Date.now();
   pulseExportHeartbeat("render");

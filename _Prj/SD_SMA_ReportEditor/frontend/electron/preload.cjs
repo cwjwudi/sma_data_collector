@@ -76,8 +76,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   notifyPdfExportHeartbeat: (payload) => ipcRenderer.send('pdf-export-heartbeat', payload || {}),
 
   /**
-   * 035/052b：跨导出窗共享首份 fullSqlFill。
-   * 大 JSON 由 preload 写/读临时文件；IPC 只传 path，避免 structured-clone 卡死其它路。
+   * 035/052c：跨导出窗共享取数。优先按份文件（只读当前 maxRows 切片）；IPC 只传 path/dir。
    */
   getPdfExportFillCacheBridge: async (opts) => {
     const meta = await ipcRenderer.invoke('pdf-export-fill-cache-get', opts || {})
@@ -118,7 +117,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
         'utf8',
       )
     } catch (e) {
-      // 回退：让主进程代写（仍可能走大 IPC）
       return ipcRenderer.invoke('pdf-export-fill-cache-set', snap)
     }
     return ipcRenderer.invoke('pdf-export-fill-cache-set', {
@@ -126,6 +124,52 @@ contextBridge.exposeInMainWorld('electronAPI', {
       path: filePath,
       totalReports,
       stats,
+    })
+  },
+  /** 052c：按份写入 dir/part-N.json，各窗只 hydrate 当前份 */
+  setPdfExportFillCacheBridgeParts: async (payload) => {
+    if (!payload || typeof payload !== 'object') return { ok: false }
+    const id = String(payload.templateId || '').trim()
+    if (!id) return { ok: false }
+    const totalReports = Math.max(1, Math.floor(Number(payload.totalReports) || 1))
+    const stats = payload.stats && typeof payload.stats === 'object' ? payload.stats : null
+    const parts = Array.isArray(payload.parts) ? payload.parts : []
+    if (!parts.length) return { ok: false }
+    const dir = path.join(
+      os.tmpdir(),
+      `sd-sma-fill-parts-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    )
+    try {
+      fs.mkdirSync(dir, { recursive: true })
+      for (const p of parts) {
+        if (!p || typeof p !== 'object') continue
+        const partIndex = Math.max(0, Math.floor(Number(p.partIndex) || 0))
+        fs.writeFileSync(
+          path.join(dir, `part-${partIndex}.json`),
+          JSON.stringify({
+            templateId: id,
+            values: p.values && typeof p.values === 'object' ? p.values : {},
+            totalReports,
+            stats,
+            partIndex,
+          }),
+          'utf8',
+        )
+      }
+    } catch (e) {
+      try {
+        fs.rmSync(dir, { recursive: true, force: true })
+      } catch {
+        /* ignore */
+      }
+      return { ok: false, error: (e && e.message) || '分份落盘失败' }
+    }
+    return ipcRenderer.invoke('pdf-export-fill-cache-set', {
+      templateId: id,
+      dir,
+      totalReports,
+      stats,
+      partCount: parts.length,
     })
   },
   clearPdfExportFillCacheBridge: () => ipcRenderer.invoke('pdf-export-fill-cache-clear'),

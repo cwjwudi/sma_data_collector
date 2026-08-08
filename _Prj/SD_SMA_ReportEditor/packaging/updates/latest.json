@@ -1,15 +1,15 @@
 {
-  "version": "0.3.161",
-  "releasedAt": "2026-08-08T21:13:24.503Z",
-  "notes": "Report Editor AI 0.3.161\n\n- 052b：fill-cache 落盘直读（修其它路假死取数中）+ UI 标明 Chromium 生效路数",
+  "version": "0.3.162",
+  "releasedAt": "2026-08-08T21:15:56.721Z",
+  "notes": "Report Editor AI 0.3.162\n\n- 052c：分卷按份切片取数（各窗只持当前份）+ Chromium 并发上调",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.161-x64.exe",
-      "sha256": "ac25481b1ca2f1b406cd2acde3e2f4d5caeec3c9633e032ccbf5be910d629c0d",
-      "size": 162553891
+      "url": "Report Editor AI-Setup-0.3.162-x64.exe",
+      "sha256": "",
+      "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.161-arm64.dmg",
+      "url": "Report Editor AI-0.3.162-arm64.dmg",
       "sha256": "",
       "size": 0
     }

@@ -5,11 +5,12 @@
  */
 
 function chromiumPartParallelCap(totalMemBytes) {
+  // 052c：各窗只持当前份切片后，可显著提高并发；仍保留余量防 Chromium 进程本身爆内存
   const gb = Number(totalMemBytes) / (1024 * 1024 * 1024)
-  if (!Number.isFinite(gb) || gb < 8) return 2
-  if (gb < 16) return 3
-  if (gb < 24) return 4
-  return 6
+  if (!Number.isFinite(gb) || gb < 8) return 4
+  if (gb < 16) return 8
+  if (gb < 24) return 12
+  return 16
 }
 
 /**

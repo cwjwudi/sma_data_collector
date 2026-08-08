@@ -118,13 +118,23 @@ interface Window {
       printToPDFSkipped?: boolean;
     }) => void;
     notifyPdfExportHeartbeat?: (payload?: { stage?: string }) => void;
-    /** 035：跨导出窗共享首份 fullSqlFill */
+    /** 035/052c：跨导出窗共享取数（可按 reportPartIndex 只取当前份切片） */
     getPdfExportFillCacheBridge?: (opts: {
       templateId: string;
+      reportPartIndex?: number;
     }) => Promise<{ ok: boolean; snap?: import("@/lib/report-template/pdf-export-fill-cache").PdfExportFillSnapshot }>;
     setPdfExportFillCacheBridge?: (
       snap: import("@/lib/report-template/pdf-export-fill-cache").PdfExportFillSnapshot,
     ) => Promise<{ ok: boolean }>;
+    setPdfExportFillCacheBridgeParts?: (payload: {
+      templateId: string;
+      totalReports: number;
+      stats: import("@/lib/report-template/pdf-export-fill-cache").PdfExportFillSnapshot["stats"];
+      parts: Array<{
+        partIndex: number;
+        values: import("@/lib/report-template/pdf-export-fill-cache").PdfExportFillSnapshot["values"];
+      }>;
+    }) => Promise<{ ok: boolean; dir?: string; partCount?: number; error?: string }>;
     clearPdfExportFillCacheBridge?: () => Promise<{ ok: boolean }>;
     onPdfExportProgress: (
       listener: (payload: {

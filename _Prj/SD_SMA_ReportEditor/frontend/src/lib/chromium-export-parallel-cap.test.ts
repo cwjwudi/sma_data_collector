@@ -21,16 +21,16 @@ const {
 const GB = 1024 ** 3;
 
 describe("chromium-export-parallel-cap (052)", () => {
-  it("按物理内存分级封顶", () => {
-    expect(chromiumPartParallelCap(4 * GB)).toBe(2);
-    expect(chromiumPartParallelCap(8 * GB)).toBe(3);
-    expect(chromiumPartParallelCap(16 * GB)).toBe(4);
-    expect(chromiumPartParallelCap(32 * GB)).toBe(6);
+  it("按物理内存分级封顶（052c 按份切片后上调）", () => {
+    expect(chromiumPartParallelCap(4 * GB)).toBe(4);
+    expect(chromiumPartParallelCap(8 * GB)).toBe(8);
+    expect(chromiumPartParallelCap(16 * GB)).toBe(12);
+    expect(chromiumPartParallelCap(32 * GB)).toBe(16);
   });
 
   it("chromium 受内存帽；pdf-lib 可用满 planned", () => {
-    expect(resolvePartExportConcurrency(16, 80, "chromium", 16 * GB)).toBe(4);
-    expect(resolvePartExportConcurrency(16, 80, "pdf-lib", 16 * GB)).toBe(16);
+    expect(resolvePartExportConcurrency(16, 80, "chromium", 15 * GB)).toBe(8);
+    expect(resolvePartExportConcurrency(16, 80, "pdf-lib", 15 * GB)).toBe(16);
     expect(resolvePartExportConcurrency(16, 3, "chromium", 32 * GB)).toBe(3);
   });
 });
