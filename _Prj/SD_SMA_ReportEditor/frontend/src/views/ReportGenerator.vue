@@ -88,16 +88,22 @@
             :disabled="manualBusy || hasActiveReportExport"
             @change="onMaxParallelChange"
           />
-          <span class="rg-mini">路（1–16）· 生效 {{ effectivePartParallel }} 路</span>
+          <span class="rg-mini">
+            路（1–16）· CPU/设置生效 {{ effectivePartParallel }} 路
+            <template v-if="chromiumPartParallelCap < effectivePartParallel">
+              · Chromium 约 {{ chromiumPartParallelCap }} 路
+            </template>
+          </span>
         </div>
         <p class="rg-mini">
           同一次{{ RG_UI.manual }}里多分卷 PDF 可同时渲染的路数。任一档位并行≥2
-          时遮罩/进度按路分栏。「不妥协」按你设置的路数生效（硬顶 16，不套 CPU 预算）；其它档实际 =
+          时遮罩/进度按路分栏。「不妥协」关闭 CPU 预算（硬顶 16）；其它档实际 =
           min(本设置, 本机 CPU 预算)。改大可能影响同机 HMI。OPC 多路自动结批也使用同一上限。
         </p>
         <p v-if="exportPerfProfile.coexistPause === 'max'" class="rg-mini">
-          当前「不妥协」：已关闭 CPU 预算封顶。矢量（pdf-lib）可按设置开满；Chromium
-          printToPDF 另有内存安全并发上限（约 2–6，视本机内存），避免首次结批多窗闪退。
+          当前「不妥协」：已关闭 CPU 预算封顶。矢量（pdf-lib）可按设置开满；当前引擎若为 Chromium
+          printToPDF，本机内存安全并发约 {{ chromiumPartParallelCap }} 路（不是设置里的
+          {{ effectivePartParallel }}），否则易闪退或其它路卡在同步缓存。
         </p>
         <p v-else class="rg-mini">{{ exportCpuBudgetHintText }}</p>
       </div>
@@ -883,6 +889,7 @@ import {
   clampAutoExportMaxParallel,
 } from "@/lib/auto-export-status-codes";
 import { exportCpuBudgetHint, resolveAutoExportMaxParallel } from "@/lib/export-cpu-budget";
+import { chromiumPartParallelCapInRenderer } from "@/lib/chromium-export-parallel-cap";
 import { loadReportExportPrefs, saveReportExportPrefs } from "@/lib/report-export-prefs";
 import { templateSelectLabel, templateSelectRows } from "@/lib/template-display-order";
 import { createOpcTriggerPollState, type OpcTriggerPollState } from "@/lib/auto-opc-trigger";
@@ -1335,6 +1342,8 @@ const effectivePartParallel = computed(() =>
     ignoreCpuBudget: exportPerfProfile.value.coexistPause === "max",
   }),
 );
+/** Chromium printToPDF 内存帽（与主进程 cjs 对齐；本机约 15GB → 3） */
+const chromiumPartParallelCap = chromiumPartParallelCapInRenderer();
 
 function onMaxParallelChange(): void {
   prefs.value.auto.maxParallelExports = clampAutoExportMaxParallel(prefs.value.auto.maxParallelExports);

@@ -1,4 +1,7 @@
 const { contextBridge, ipcRenderer } = require('electron')
+const fs = require('fs')
+const os = require('os')
+const path = require('path')
 
 contextBridge.exposeInMainWorld('electronAPI', {
   /** 打开/关闭 Chromium DevTools（主进程侧停靠，默认右侧） */
@@ -72,9 +75,59 @@ contextBridge.exposeInMainWorld('electronAPI', {
   /** 仅 PDF 导出隐藏窗口：取数期间心跳，避免大模版慢取数被 2 分钟硬超时误杀 */
   notifyPdfExportHeartbeat: (payload) => ipcRenderer.send('pdf-export-heartbeat', payload || {}),
 
-  /** 035：多分卷并行时跨导出窗共享首份 fullSqlFill 快照（主进程桥） */
-  getPdfExportFillCacheBridge: (opts) => ipcRenderer.invoke('pdf-export-fill-cache-get', opts || {}),
-  setPdfExportFillCacheBridge: (snap) => ipcRenderer.invoke('pdf-export-fill-cache-set', snap || {}),
+  /**
+   * 035/052b：跨导出窗共享首份 fullSqlFill。
+   * 大 JSON 由 preload 写/读临时文件；IPC 只传 path，避免 structured-clone 卡死其它路。
+   */
+  getPdfExportFillCacheBridge: async (opts) => {
+    const meta = await ipcRenderer.invoke('pdf-export-fill-cache-get', opts || {})
+    if (!meta || !meta.ok) return { ok: false }
+    if (meta.snap && typeof meta.snap === 'object') return { ok: true, snap: meta.snap }
+    const filePath = typeof meta.path === 'string' ? meta.path : ''
+    if (!filePath) return { ok: false }
+    try {
+      const raw = fs.readFileSync(filePath, 'utf8')
+      const snap = JSON.parse(raw)
+      if (!snap || typeof snap !== 'object' || !snap.templateId) return { ok: false }
+      return { ok: true, snap }
+    } catch {
+      return { ok: false }
+    }
+  },
+  setPdfExportFillCacheBridge: async (snap) => {
+    if (!snap || typeof snap !== 'object') {
+      return ipcRenderer.invoke('pdf-export-fill-cache-set', snap || {})
+    }
+    const id = String(snap.templateId || '').trim()
+    if (!id) return { ok: false }
+    const totalReports = Math.max(1, Math.floor(Number(snap.totalReports) || 1))
+    const stats = snap.stats && typeof snap.stats === 'object' ? snap.stats : null
+    const filePath = path.join(
+      os.tmpdir(),
+      `sd-sma-fill-cache-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.json`,
+    )
+    try {
+      fs.writeFileSync(
+        filePath,
+        JSON.stringify({
+          templateId: id,
+          values: snap.values && typeof snap.values === 'object' ? snap.values : {},
+          totalReports,
+          stats,
+        }),
+        'utf8',
+      )
+    } catch (e) {
+      // 回退：让主进程代写（仍可能走大 IPC）
+      return ipcRenderer.invoke('pdf-export-fill-cache-set', snap)
+    }
+    return ipcRenderer.invoke('pdf-export-fill-cache-set', {
+      templateId: id,
+      path: filePath,
+      totalReports,
+      stats,
+    })
+  },
   clearPdfExportFillCacheBridge: () => ipcRenderer.invoke('pdf-export-fill-cache-clear'),
 
   /** 订阅 PDF 导出阶段进度（结批弹窗显示「第 X/Y 份」等），返回取消订阅函数 */

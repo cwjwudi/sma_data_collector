@@ -7,6 +7,7 @@
 
 ## 2026-08-09
 
+- **ReportEditor 052b / 0.3.161**：fill-cache 落盘直读修其它路假死「取数中」；UI 标明 Chromium 约 N 路（15GB→3，非设置 16）。看板 [docs/035-🚧](docs/035-🚧-ReportEditor导出性能档位与同机降载.md)。
 - **ReportEditor 0.3.160 Win 打包**：`Report Editor AI-Setup-0.3.160-x64.exe`（SHA256 `430a0551…9745`）；052 修首次模拟结批 Chromium 多路闪退。发版记录 `_Doc/007` · [docs/035-🚧](docs/035-🚧-ReportEditor导出性能档位与同机降载.md)。
 - **ReportEditor 052 / 0.3.160（首次模拟结批闪退）**：Chromium 内存安全并发 + 懒建窗 + printToPDF 限流；崩溃落盘 `process-gone.log`。看板 [docs/035-🚧](docs/035-🚧-ReportEditor导出性能档位与同机降载.md)。
 - **ReportEditor 0.3.159 Win 打包**：`Report Editor AI-Setup-0.3.159-x64.exe`（SHA256 `5804be72…60d5`）；039g 修并行「已完成」漏计 + ETA。发版记录 `_Doc/007` · [docs/039-🚧](docs/039-🚧-ReportEditor导出全屏遮罩.md)。

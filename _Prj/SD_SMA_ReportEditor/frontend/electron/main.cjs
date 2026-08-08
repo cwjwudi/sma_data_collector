@@ -850,6 +850,7 @@ let exportOverlayWorkerLanes = []
 const EXPORT_OVERLAY_STAGE_LABELS = {
   load: '加载模版',
   fetch: '取数中（OPC / SQL）',
+  hydrate: '同步取数缓存',
   render: '渲染 PDF',
   write: '写入磁盘',
   saved: '本份已保存',
@@ -916,6 +917,7 @@ function stageWeightForOverlay(stage, phase) {
   if (s === 'write') return 0.92
   if (s === 'render') return 0.72
   if (s === 'fetch') return 0.42
+  if (s === 'hydrate') return 0.35
   if (s === 'load') return 0.12
   return 0.28
 }
@@ -1512,8 +1514,14 @@ function pushExportOverlayProgress(payload) {
     // 瞬时标志只看本拍 payload，禁止读合并残留
     const skipPartSaved = Boolean(payload && payload.skipPartSaved)
     const workerIdleHint = Boolean(payload && payload.workerIdle)
-    // 每份开始渲染：按份续 120s（Q1A）
-    if (phase === 'render' || stage === 'render' || stage === 'load' || stage === 'fetch') {
+    // 每份开始渲染/同步缓存：按份续 120s（Q1A）
+    if (
+      phase === 'render' ||
+      stage === 'render' ||
+      stage === 'load' ||
+      stage === 'fetch' ||
+      stage === 'hydrate'
+    ) {
       noteExportOverlayPartStart(partIndex)
       next.workerIdle = false
       next.workerBusy = true
@@ -2690,18 +2698,16 @@ ipcMain.handle('pdf-export-cancel', async (_event, opts) => {
 })
 
 /**
- * 035：分卷并行跨 BrowserWindow 共享首份 fullSqlFill。
- * 各导出窗 JS 堆隔离，仅靠同窗内存缓存会导致 N 路各打一遍 8 万行 SQL → 后端挤爆 / 20s 超时。
- * 052：hydrate IPC 串行，避免 16 路同时 structured-clone 大快照把进程打崩。
+ * 035 / 052b：分卷并行跨窗共享首份 fullSqlFill。
+ * 大快照只落盘；IPC 只传 path/元数据。preload 用 fs 直读，避免 Electron structured-clone
+ * 把 8 万行整包克隆进其它窗 → 假死在「取数中」、只剩第 0 路在干活。
  */
-let pdfExportFillCacheBridge = null
-let pdfExportFillCacheBridgePath = null
-let pdfExportFillCacheHydrateChain = Promise.resolve()
+/** @type {{ templateId: string, totalReports: number, stats: object|null, path: string }|null} */
+let pdfExportFillCacheBridgeMeta = null
 
 function clearPdfExportFillCacheBridge() {
-  pdfExportFillCacheBridge = null
-  const p = pdfExportFillCacheBridgePath
-  pdfExportFillCacheBridgePath = null
+  const p = pdfExportFillCacheBridgeMeta && pdfExportFillCacheBridgeMeta.path
+  pdfExportFillCacheBridgeMeta = null
   if (p) {
     try {
       fs.unlinkSync(p)
@@ -2711,20 +2717,25 @@ function clearPdfExportFillCacheBridge() {
   }
 }
 
-ipcMain.handle('pdf-export-fill-cache-get', async (_event, opts) => {
+ipcMain.handle('pdf-export-fill-cache-get', (_event, opts) => {
   const id = String((opts && opts.templateId) || '').trim()
-  const run = async () => {
-    if (!id || !pdfExportFillCacheBridge || pdfExportFillCacheBridge.templateId !== id) {
-      return { ok: false }
-    }
-    return { ok: true, snap: pdfExportFillCacheBridge }
+  const meta = pdfExportFillCacheBridgeMeta
+  if (!id || !meta || meta.templateId !== id || !meta.path) {
+    return { ok: false }
   }
-  const p = pdfExportFillCacheHydrateChain.then(run, run)
-  pdfExportFillCacheHydrateChain = p.then(
-    () => undefined,
-    () => undefined,
-  )
-  return p
+  try {
+    if (!fs.existsSync(meta.path)) return { ok: false }
+  } catch {
+    return { ok: false }
+  }
+  // 不把 values 塞进 IPC 返回值
+  return {
+    ok: true,
+    path: meta.path,
+    templateId: meta.templateId,
+    totalReports: meta.totalReports,
+    stats: meta.stats,
+  }
 })
 
 ipcMain.handle('pdf-export-fill-cache-set', async (_event, snap) => {
@@ -2737,30 +2748,53 @@ ipcMain.handle('pdf-export-fill-cache-set', async (_event, snap) => {
     clearPdfExportFillCacheBridge()
     return { ok: false }
   }
-  pdfExportFillCacheBridge = {
-    templateId: id,
-    values: snap.values && typeof snap.values === 'object' ? snap.values : {},
-    totalReports: Math.max(1, Math.floor(Number(snap.totalReports) || 1)),
-    stats: snap.stats && typeof snap.stats === 'object' ? snap.stats : null,
-  }
-  try {
-    const out = path.join(
-      app.getPath('temp'),
-      `sd-sma-fill-cache-${process.pid}-${Date.now()}.json`,
-    )
-    await fs.promises.writeFile(out, JSON.stringify(pdfExportFillCacheBridge), 'utf8')
-    if (pdfExportFillCacheBridgePath && pdfExportFillCacheBridgePath !== out) {
-      try {
-        await fs.promises.unlink(pdfExportFillCacheBridgePath)
-      } catch {
-        /* ignore */
+  const totalReports = Math.max(1, Math.floor(Number(snap.totalReports) || 1))
+  const stats = snap.stats && typeof snap.stats === 'object' ? snap.stats : null
+  let filePath = typeof snap.path === 'string' ? snap.path.trim() : ''
+
+  // preload 已写盘：只登记 path。旧调用仍可能带 values，由主进程代写。
+  if (!filePath) {
+    try {
+      filePath = path.join(
+        app.getPath('temp'),
+        `sd-sma-fill-cache-${process.pid}-${Date.now()}.json`,
+      )
+      const body = {
+        templateId: id,
+        values: snap.values && typeof snap.values === 'object' ? snap.values : {},
+        totalReports,
+        stats,
       }
+      await fs.promises.writeFile(filePath, JSON.stringify(body), 'utf8')
+    } catch (e) {
+      log(`fill-cache 落盘失败：${e && e.message}`)
+      return { ok: false, error: (e && e.message) || 'fill-cache 落盘失败' }
     }
-    pdfExportFillCacheBridgePath = out
-  } catch (e) {
-    log(`fill-cache 落盘失败（仍用内存 bridge）：${e && e.message}`)
+  } else {
+    try {
+      if (!fs.existsSync(filePath)) {
+        return { ok: false, error: 'fill-cache 文件不存在' }
+      }
+    } catch (e) {
+      return { ok: false, error: (e && e.message) || 'fill-cache 路径无效' }
+    }
   }
-  return { ok: true }
+
+  const prev = pdfExportFillCacheBridgeMeta && pdfExportFillCacheBridgeMeta.path
+  pdfExportFillCacheBridgeMeta = {
+    templateId: id,
+    totalReports,
+    stats,
+    path: filePath,
+  }
+  if (prev && prev !== filePath) {
+    try {
+      fs.unlinkSync(prev)
+    } catch {
+      /* ignore */
+    }
+  }
+  return { ok: true, path: filePath }
 })
 
 ipcMain.handle('pdf-export-fill-cache-clear', () => {
@@ -2828,7 +2862,13 @@ async function handlePdfExportRun(event, opts) {
             const stage = String(payload.stage || phase || '')
             const partIndex = Math.max(0, Math.floor(Number(payload.partIndex) || 0))
             const lanePayload = { ...payload, templateId }
-            if (phase === 'render' || stage === 'render' || stage === 'load' || stage === 'fetch') {
+            if (
+              phase === 'render' ||
+              stage === 'render' ||
+              stage === 'load' ||
+              stage === 'fetch' ||
+              stage === 'hydrate'
+            ) {
               noteExportOverlayPartStart(partIndex)
               lanePayload.workerIdle = false
               lanePayload.workerBusy = true

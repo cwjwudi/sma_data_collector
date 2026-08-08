@@ -67,19 +67,23 @@ describe("part-parallel export contracts (035)", () => {
     expect(main).not.toMatch(/acquireExtrasPromise/);
   });
 
-  it("跨窗共享 fill cache bridge，避免 N 路各打全量 SQL", () => {
+  it("跨窗共享 fill cache：落盘 + preload 直读（避免大 IPC 克隆卡死）", () => {
     const main = readFront("electron/main.cjs");
     const preload = readFront("electron/preload.cjs");
     const pdfView = readFront("src/views/PdfExportView.vue");
     const fill = readFront("src/lib/report-template/pdf-export-fill-cache.ts");
     expect(main).toMatch(/pdf-export-fill-cache-get/);
-    expect(main).toMatch(/pdfExportFillCacheBridge/);
+    expect(main).toMatch(/pdfExportFillCacheBridgeMeta/);
+    expect(main).toMatch(/不把 values 塞进 IPC/);
     expect(preload).toMatch(/getPdfExportFillCacheBridge/);
+    expect(preload).toMatch(/readFileSync/);
+    expect(preload).toMatch(/writeFileSync/);
     expect(fill).toMatch(/publishPdfExportFillCacheToBridge/);
     expect(fill).toMatch(/waitPdfExportFillCacheFromBridge/);
     expect(pdfView).toMatch(/publishPdfExportFillCacheToBridge/);
     expect(pdfView).toMatch(/waitPdfExportFillCacheFromBridge/);
-    expect(fill).toMatch(/waitPdfExportFillCacheFromBridge/);
+    expect(pdfView).toMatch(/pulseExportHeartbeat\(["']hydrate["']\)/);
+    expect(main).toMatch(/同步取数缓存/);
   });
 
   it("不妥协忽略 CPU 预算；Chromium 另受内存安全并发帽", () => {

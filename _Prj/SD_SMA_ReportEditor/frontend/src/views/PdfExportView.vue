@@ -251,9 +251,9 @@ async function boot(): Promise<void> {
   injectPrintPageCss(t);
 
   const partIdx = reportPartIndex.value;
-  // 035：其它并行窗从主进程 bridge 灌入首份取数，避免 N×全量 SQL
+  // 035：其它并行窗从 bridge 灌入首份取数，避免 N×全量 SQL（052b：落盘直读，勿标「取数中」）
   if (partIdx > 0) {
-    pulseExportHeartbeat("fetch");
+    pulseExportHeartbeat("hydrate");
     await waitPdfExportFillCacheFromBridge(id, { timeoutMs: 180_000 });
     if (seq !== bootSeq) return;
   }
