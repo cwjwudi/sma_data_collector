@@ -1,12 +1,12 @@
 {
   "version": "0.3.162",
-  "releasedAt": "2026-08-08T21:15:56.721Z",
+  "releasedAt": "2026-08-08T21:18:21.855Z",
   "notes": "Report Editor AI 0.3.162\n\n- 052c：分卷按份切片取数（各窗只持当前份）+ Chromium 并发上调",
   "platforms": {
     "win32-x64": {
       "url": "Report Editor AI-Setup-0.3.162-x64.exe",
-      "sha256": "",
-      "size": 0
+      "sha256": "42c06bccc281294b2c7b1ac726bf7644417543eb448963d0a948ddfe0ba11f75",
+      "size": 162554283
     },
     "darwin-arm64": {
       "url": "Report Editor AI-0.3.162-arm64.dmg",

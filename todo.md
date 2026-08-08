@@ -7,6 +7,7 @@
 
 ## 2026-08-09
 
+- **ReportEditor 0.3.162 Win 打包**：`Report Editor AI-Setup-0.3.162-x64.exe`（SHA256 `42c06bcc…1f75`）；052c 按份切片取数。发版记录 `_Doc/007` · [docs/035-🚧](docs/035-🚧-ReportEditor导出性能档位与同机降载.md)。
 - **ReportEditor 052c / 0.3.162**：分卷按份切片取数（各窗只持当前份）+ Chromium 并发上调。看板 [docs/035-🚧](docs/035-🚧-ReportEditor导出性能档位与同机降载.md)。
 - **ReportEditor 0.3.161 Win 打包**：`Report Editor AI-Setup-0.3.161-x64.exe`（SHA256 `ac25481b…9c0d`）；052b 修并行路假死取数中。发版记录 `_Doc/007` · [docs/035-🚧](docs/035-🚧-ReportEditor导出性能档位与同机降载.md)。
 - **ReportEditor 052b / 0.3.161**：fill-cache 落盘直读修其它路假死「取数中」；UI 标明 Chromium 约 N 路（15GB→3，非设置 16）。看板 [docs/035-🚧](docs/035-🚧-ReportEditor导出性能档位与同机降载.md)。
