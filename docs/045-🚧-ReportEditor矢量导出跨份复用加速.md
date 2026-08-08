@@ -22,7 +22,7 @@
 
 | 已知代价（非 bug） | 说明 |
 |---|---|
-| **每份从零建 PDF** | `PDFDocument.create` + fontkit `subset` + 封面图 `embedPng` + `save`/`btoa`/IPC |
+| **每份从零建 PDF** | `PDFDocument.create` + fontkit `subset` + 封面图 `embedPng` + `save` |
 | **每份改 hash 重跑导出页** | 同窗热切，但仍走完整 boot→画→回传 |
 | 份数 = `ceil(行数/maxRows)` | `maxRows=1000` → 5 万条 **50 份**，固定开销被乘大 |
 
@@ -52,38 +52,65 @@
 | R1a 字体 IPC 缓存 | `PdfExportView.vue` | `getBundledCjkFontCached`：预热窗进程内首份取一次，后续份不再走 **MB 级 base64 IPC** |
 | R2 图片字节缓存 | `pdf-lib-layout-v2-render.ts` | `embedDataUrlImage` 前按完整 dataURL 缓存解码字节（上限 24 条防膨胀）；每份仍须 `embedPng`（PDFImage 绑定单个 PDFDocument），省的是 base64 解码 |
 
-**尚未覆盖的每份固定开销**（见下方 ⌛️）：fontkit `subset`（各份字符集不同，安全复用需预裁字体或全量嵌入）、`doc.save` + `btoa` + IPC 字符串（R4）、每份 hash 切换 boot（R3）。
-
 ## 测试证据
 
 - 「045 R1: bundled font bytes cross-part cache」：首份传 base64 嵌入后，第二份**不传 base64 且 fetch 被禁**仍嵌入成功（缓存命中）。  
 - 「045 R2: data-url image bytes cached across parts」：同一 dataURL 连渲三份，缓存条目数不增长。  
-- 全量 vitest：**107 文件 / 629 用例全绿**（2026-08-08）。
-
-## R3 / R4 评估结论（2026-08-08，本机核对）
-
-- **R4（去 base64 IPC）阻塞点**：`preload.cjs` `notifyPdfExportReady` 用 `JSON.parse(JSON.stringify(payload))` 兜底剥 Vue 代理——**任何二进制载荷会被 JSON 序列化破坏**。改二进制需专门通道（或临时文件回传路径），且完成信号是结批链路历史最脆弱点（0.2.3~0.2.5 结批失败根因即在此），须配 Windows 实机回归再动。  
-- **R3（同窗连渲）**：现架构每份靠 `route.fullPath` hash 切换触发 `boot()`；连渲需把「份循环」下沉进导出视图单次 boot 内，同时保住心跳/取消/「第 x/共 y」进度与 fill-cache 语义——中型重构，建议与 R4 同一专项、现场复测护航。
 
 ---
 
-# ⌛️ 未完成：R1b 预裁字体 / R3 同窗连渲 / R4 二进制回传 / R5 让核
+# ✅ 已完成：R4 临时文件回传（去掉巨型 base64 IPC）（2026-08-09）
+
+## 问题
+
+`preload.notifyPdfExportReady` 用 `JSON.parse(JSON.stringify(payload))` 剥 Vue Proxy——**不能传二进制**；旧路径只能 `doc.save` → chunked `btoa` → 巨型 base64 字符串经 JSON IPC，每份固定 CPU/内存/IPC 成本被份数放大。
+
+## 实现（对标 fill-cache：主进程写 temp）
+
+| 位置 | 变更 |
+| ---- | ---- |
+| `electron/main.cjs` | `pdf-export-write-temp-part`：structured-clone 收 `Uint8Array`/`Buffer`，写入 `temp/sd-sma-pdf-part-*.pdf`；路径白名单校验；按 `jobId` 跟踪；取消/失败 `clearPdfExportTempPartsForJob`；>1h 孤儿扫尾 |
+| `electron/preload.cjs` | `writePdfExportTempPart({ bytes, jobId })` → invoke（**禁止** JSON 序列化 bytes） |
+| `PdfExportView.vue` | 矢量路径改 `renderPdfLibExportPart`（字节）→ 写 temp → `signalReady({ pdfTempPath })`，不再塞 `pdfBase64` |
+| `main.renderPartOnWindow` | 优先 `pdfTempPath` 读盘；兼容旧 `pdfBase64`；hash 带 `jobId` |
+| `vite-env.d.ts` | 类型声明 |
+
+`renderPdfLibExportPartBase64` 保留作工具/兼容，导出热路径不再调用。
+
+## 测试证据
+
+- `part-parallel-export-contracts.test.ts`：「045 R4：矢量 PDF 临时文件回传…」契约锁 main/preload/PdfExportView。  
+- 相关套件（R1/R2/契约）复跑：**3 文件 / 37 用例全绿**（2026-08-09）。
+
+## 未覆盖（仍见下方 ⌛️）
+
+- fontkit `subset` 每份仍跑（R1b）  
+- 每份 hash 切页/boot（R3）  
+- 现场弱核 5 万条墙钟复测（验收仍 ⌛️）
+
+---
+
+# ⌛️ 未完成：R1b 预裁字体 / R3 同窗连渲 / R5 让核 / 现场复测
 
 ## 目标
 
-在保持 layout-v2 版式与「首份全量取数、后续切片」语义不变的前提下，去掉或摊薄「每份重复的固定 CPU/IPC」，使上述现场场景墙钟明显下降（冲刺 **&lt;6 分钟**；验收以同机复测为准）。
+在保持 layout-v2 版式与「首份全量取数、后续切片」语义不变的前提下，继续摊薄每份固定开销，使上述现场场景墙钟明显下降（冲刺 **&lt;6 分钟**；验收以同机复测为准）。
 
 ## 拟改项（按收益预期）
 
 | ID | 项 | 做法要点 | 预期 | 状态 |
 |----|----|----------|------|------|
-| **R1** | 字体跨份复用 | ✅ R1a：字体**字节**（IPC/fetch/解码）跨份缓存；⌛️ R1b：subset 复用需预裁「报表常用字」TTF（缺字风险，见风险节），或全量嵌入换体积 | 高 | 部分 ✅ |
-| **R2** | 图片跨份复用 | ✅ 解码字节按 dataURL 缓存；`embedPng` 仍每份一次（PDFImage 绑定单 doc） | 高 | ✅ |
-| **R3** | 同窗连渲 | 取数一次后，同一渲染进程内连续 `renderPart(0..N-1)`，减少每份 hash 切页/boot（见上方评估结论） | 高 | ⌛️ |
-| **R4** | 去掉巨型 base64 IPC | PDF 字节改临时文件或二进制通道回主进程；受 preload JSON 兜底阻塞（见上方评估结论） | 中 | ⌛️ |
+| **R1** | 字体跨份复用 | ✅ R1a：字体**字节**（IPC/fetch/解码）跨份缓存；⌛️ R1b：subset 复用需预裁「报表常用字」TTF（缺字风险），或全量嵌入换体积 | 高 | 部分 ✅ |
+| **R2** | 图片跨份复用 | ✅ 解码字节按 dataURL 缓存；`embedPng` 仍每份一次 | 高 | ✅ |
+| **R3** | 同窗连渲 | 取数一次后，同一渲染进程内连续 `renderPart(0..N-1)`，减少每份 hash 切页/boot | 高 | � `renderPart(0..N-1)`，减少每份 hash 切页/boot | 高 | ⌛️ |
+| **R4** | 去掉巨型 base64 IPC | ✅ PDF 字节改主进程临时文件；ready 只带路径字符串 | 中 | ✅ |
 | **R5** |（可选）自适应让核 | HMI 空闲时缩短 yield / 略提渲染优先级；忙时保持 full IDLE——与 030 零闪目标权衡，**需产品拍板** | 视现场 | ⌛️ |
 
 **不做（本条）**：改回默认 chromium；用 draft-v1 交差；假设「只优化 SQL」即可进 6 分钟。
+
+## R3 评估结论（仍有效）
+
+现架构每份靠 `route.fullPath` hash 切换触发 `boot()`；连渲需把「份循环」下沉进导出视图单次 boot 内，同时保住心跳/取消/「第 x/共 y」进度与 fill-cache 语义——中型重构，建议现场复测 R1a/R2/R4 收益后再开专项。
 
 ## 配置侧对照（非本条必做，可并行试）
 
@@ -92,15 +119,17 @@
 
 ## 验收
 
-- [ ] 同机复测：配方报表 · 矢量 · 5 万条 · 记录 `maxRows`、总耗时、首份 `dataMs`、各份 `pdfLibMs` 中位数。  
-- [ ] 目标：**总墙钟 &lt; 6 分钟**（若仅代码复用未达标，在看板写清缺口与是否依赖 R5/加核）。  
+- [ ] 同机复测：配方报表 · 矢量 · 5 万条 · 记录 `maxRows`、总耗时、首份 `dataMs`、各份 `pdfLibMs` 中位数（含 R4 后对比）。  
+- [ ] 目标：**总墙钟 &lt; 6 分钟**（若仅代码复用未达标，在看板写清缺口与是否依赖 R3/R5/加核）。  
 - [ ] 版式：抽查封面图、眉脚、表框、中文不回归（对照 036）。  
 - [ ] 取数：仍仅首份全量 SQL；后续份 `sqlQueries≈0`。  
-- [ ] 单测：字体/图片缓存命中、连渲份数与行切片一致。
+- [x] 单测：字体/图片缓存命中；R4 临时路径契约。  
+- [ ] 单测：连渲份数与行切片一致（待 R3）。
 
 ## 风险
 
 - 跨份缓存生命周期必须绑在同一次导出 job；取消/失败要清空，避免串模版。  
 - 预裁字体需覆盖现场字符集，缺字比 subset 失败更隐蔽。  
 - R3 连渲时心跳/取消/进度「第 x/共 y」仍要可用。  
-- R5 与 030「HMI 必须可操作」冲突时，不得静默改默认让核策略。
+- R5 与 030「HMI 必须可操作」冲突时，不得静默改默认让核策略。  
+- R4 临时文件：路径须在 `app.getPath('temp')` 且前缀 `sd-sma-pdf-part-`；job 结束/取消扫尾，另有 >1h 孤儿清理。

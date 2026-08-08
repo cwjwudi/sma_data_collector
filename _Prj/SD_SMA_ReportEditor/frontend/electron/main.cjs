@@ -2871,6 +2871,149 @@ ipcMain.handle('pdf-export-fill-cache-clear', () => {
   return { ok: true }
 })
 
+/**
+ * 045 R4：矢量导出 PDF 字节经 structured-clone 落临时文件，ready 只回传路径。
+ * 避开 preload notifyPdfExportReady 的 JSON 兜底（会毁掉二进制 / 放大 base64 IPC）。
+ */
+/** @type {Map<string, Set<string>>} */
+const pdfExportTempPartsByJob = new Map()
+
+function coerceIpcBytesToBuffer(bytes) {
+  if (!bytes) return null
+  if (Buffer.isBuffer(bytes)) return bytes
+  if (bytes instanceof Uint8Array) {
+    return Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+  }
+  if (bytes instanceof ArrayBuffer) return Buffer.from(bytes)
+  // 部分通道会把 Buffer 解成 { type:'Buffer', data:number[] }
+  if (bytes.type === 'Buffer' && Array.isArray(bytes.data)) return Buffer.from(bytes.data)
+  return null
+}
+
+function isAllowedPdfExportTempPartPath(filePath) {
+  if (!filePath || typeof filePath !== 'string') return false
+  let tempRoot
+  let resolved
+  try {
+    tempRoot = path.resolve(app.getPath('temp'))
+    resolved = path.resolve(filePath)
+  } catch {
+    return false
+  }
+  const prefix = tempRoot.endsWith(path.sep) ? tempRoot : tempRoot + path.sep
+  if (!resolved.startsWith(prefix)) return false
+  const base = path.basename(resolved)
+  return base.startsWith('sd-sma-pdf-part-') && base.toLowerCase().endsWith('.pdf')
+}
+
+function trackPdfExportTempPart(jobId, filePath) {
+  const id = String(jobId || '').trim()
+  if (!id || !filePath) return
+  let set = pdfExportTempPartsByJob.get(id)
+  if (!set) {
+    set = new Set()
+    pdfExportTempPartsByJob.set(id, set)
+  }
+  set.add(filePath)
+}
+
+function untrackPdfExportTempPart(jobId, filePath) {
+  const id = String(jobId || '').trim()
+  if (!id || !filePath) return
+  const set = pdfExportTempPartsByJob.get(id)
+  if (!set) return
+  set.delete(filePath)
+  if (set.size === 0) pdfExportTempPartsByJob.delete(id)
+}
+
+async function unlinkPdfExportTempPart(filePath, jobId) {
+  if (!isAllowedPdfExportTempPartPath(filePath)) return
+  if (jobId) untrackPdfExportTempPart(jobId, filePath)
+  else {
+    for (const [id, set] of pdfExportTempPartsByJob) {
+      if (set.delete(filePath) && set.size === 0) pdfExportTempPartsByJob.delete(id)
+    }
+  }
+  try {
+    await fs.promises.unlink(filePath)
+  } catch {
+    /* ignore */
+  }
+}
+
+async function clearPdfExportTempPartsForJob(jobId) {
+  const id = String(jobId || '').trim()
+  const set = id ? pdfExportTempPartsByJob.get(id) : null
+  if (!set) return
+  const paths = [...set]
+  pdfExportTempPartsByJob.delete(id)
+  for (const p of paths) {
+    try {
+      await fs.promises.unlink(p)
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+/** 清理超过 1h 的孤儿 sd-sma-pdf-part-*.pdf（取消后未 ready 的残留） */
+async function sweepOrphanPdfExportTempParts() {
+  let tempRoot
+  try {
+    tempRoot = app.getPath('temp')
+  } catch {
+    return
+  }
+  let names
+  try {
+    names = await fs.promises.readdir(tempRoot)
+  } catch {
+    return
+  }
+  const cutoff = Date.now() - 60 * 60 * 1000
+  for (const name of names) {
+    if (!name.startsWith('sd-sma-pdf-part-') || !name.toLowerCase().endsWith('.pdf')) continue
+    const full = path.join(tempRoot, name)
+    try {
+      const st = await fs.promises.stat(full)
+      if (st.mtimeMs < cutoff) await fs.promises.unlink(full)
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+ipcMain.handle('pdf-export-write-temp-part', async (_event, opts) => {
+  const buf = coerceIpcBytesToBuffer(opts && opts.bytes)
+  if (!buf || buf.length <= 0) {
+    return { ok: false, error: '缺少 PDF 字节' }
+  }
+  // 单份上限 256MB，防止异常载荷撑爆 temp
+  if (buf.length > 256 * 1024 * 1024) {
+    return { ok: false, error: 'PDF 临时文件过大' }
+  }
+  const jobId = String((opts && opts.jobId) || '').trim()
+  const filePath = path.join(
+    app.getPath('temp'),
+    `sd-sma-pdf-part-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.pdf`,
+  )
+  try {
+    await fs.promises.writeFile(filePath, buf)
+    if (jobId) trackPdfExportTempPart(jobId, filePath)
+    // 轻量扫尾：不阻塞成功路径
+    void sweepOrphanPdfExportTempParts()
+    return { ok: true, path: filePath, bytes: buf.length }
+  } catch (e) {
+    try {
+      await fs.promises.unlink(filePath)
+    } catch {
+      /* ignore */
+    }
+    log(`pdf-export-write-temp-part 失败：${e && e.message}`)
+    return { ok: false, error: (e && e.message) || 'PDF 临时落盘失败' }
+  }
+})
+
 async function handlePdfExportRun(event, opts) {
   const filePath = opts && opts.filePath
   const templateId = opts && opts.templateId
@@ -2987,7 +3130,9 @@ async function handlePdfExportRun(event, opts) {
 
       function partHash(partIndex) {
         const allowQ = allowBindingIssues ? '&allowBindingIssues=1' : ''
-        return `#/pdf-export?templateId=${encodeURIComponent(templateId)}&reportPartIndex=${partIndex}&engine=${encodeURIComponent(exportEngine)}&layoutFidelity=${encodeURIComponent(layoutFidelity)}${allowQ}&seq=${Date.now()}`
+        // seq=：每次导出刷新 hash，避免复用预热窗时 Vue 认为路由未变而不触发 boot
+        // jobId=：045 R4 临时 PDF 按 job 跟踪，取消/失败可扫尾
+        return `#/pdf-export?templateId=${encodeURIComponent(templateId)}&reportPartIndex=${partIndex}&engine=${encodeURIComponent(exportEngine)}&layoutFidelity=${encodeURIComponent(layoutFidelity)}&jobId=${encodeURIComponent(jobId)}${allowQ}&seq=${Date.now()}`
       }
 
       // 优先复用预热窗口：SPA 已启动，进入取数只差一次 hash 切换
@@ -3171,7 +3316,33 @@ async function handlePdfExportRun(event, opts) {
           printToPDFSkipped: false,
         }
         const activeWin = winHolder.win
-        if (payload.pdfBase64 && typeof payload.pdfBase64 === 'string') {
+        const pdfTempPath =
+          payload.pdfTempPath && typeof payload.pdfTempPath === 'string'
+            ? payload.pdfTempPath.trim()
+            : ''
+        if (pdfTempPath) {
+          // 045 R4：优先读临时文件（无巨型 base64 IPC）
+          if (!isAllowedPdfExportTempPartPath(pdfTempPath)) {
+            throw new Error('PDF 临时路径非法')
+          }
+          try {
+            pdfBuffer = await fs.promises.readFile(pdfTempPath)
+          } finally {
+            await unlinkPdfExportTempPart(pdfTempPath, jobId)
+          }
+          printMs = Number(payload.pdfLibMs) || Date.now() - printStartMs
+          engineMeta = {
+            engine: payload.engine || 'pdf-lib',
+            exportMode: payload.exportMode || 'coexist',
+            layoutFidelity: payload.layoutFidelity || 'draft-v1',
+            fontFamily: payload.fontFamily || null,
+            fontEmbedded: Boolean(payload.fontEmbedded),
+            pageCount: Number(payload.pageCount) || 0,
+            pdfLibMs: Number(payload.pdfLibMs) || printMs,
+            printToPDFSkipped: true,
+            pdfTempPath: true,
+          }
+        } else if (payload.pdfBase64 && typeof payload.pdfBase64 === 'string') {
           pdfBuffer = Buffer.from(payload.pdfBase64, 'base64')
           printMs = Number(payload.pdfLibMs) || Date.now() - printStartMs
           engineMeta = {
@@ -3511,6 +3682,8 @@ async function handlePdfExportRun(event, opts) {
       throw new Error(humanizePdfExportError(e, { phase: 'export' }))
     } finally {
       clearPdfExportFillCacheBridge()
+      // 045 R4：取消/失败时扫掉本 job 未消费的临时 PDF
+      await clearPdfExportTempPartsForJob(jobId)
       unregisterPdfExportJob(jobId)
       // 039c：仅当本次确实弹了遮罩时成对收起
       if (armOverlay) endExportOverlaySession()

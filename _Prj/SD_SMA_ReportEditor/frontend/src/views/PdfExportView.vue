@@ -55,7 +55,7 @@ import { installPrintTableGridOverlays } from "@/lib/report-template/print-table
 import { collectFontFamiliesFromTemplate } from "@/lib/report-template/font-families-collect";
 import { pickBundledFontForExport } from "@/lib/report-template/font-availability";
 import { ensureBundledLayoutFontsRegistered } from "@/lib/report-template/ensure-bundled-layout-fonts";
-import { renderPdfLibExportPartBase64 } from "@/lib/report-template/pdf-lib-export-render";
+import { renderPdfLibExportPart } from "@/lib/report-template/pdf-lib-export-render";
 
 const route = useRoute();
 const tmpl = ref<ReportTemplate | null>(null);
@@ -94,6 +94,13 @@ const reportPartIndex = computed(() => {
   return Number.isFinite(n) && n >= 0 ? n : null;
 });
 
+/** 045 R4：与主进程 job 对齐，临时 PDF 取消时可扫尾 */
+const exportJobId = computed(() => {
+  const raw = route.query.jobId;
+  const s = Array.isArray(raw) ? raw[0] : raw;
+  return String(s || "").trim();
+});
+
 const fixedCardWidthPx = computed(() => {
   const t = tmpl.value;
   if (!t) return 520;
@@ -130,7 +137,10 @@ function injectPrintPageCss(t: ReportTemplate): void {
 type ExportBootPhases = { tplMs: number; dataMs: number; paintMs: number };
 
 type ExportReadyExtra = {
+  /** @deprecated 045 R4 起矢量优先 pdfTempPath */
   pdfBase64?: string;
+  /** 045 R4：主进程临时 PDF 路径 */
+  pdfTempPath?: string;
   engine?: PdfExportEngineId;
   exportMode?: "coexist" | "fidelity";
   layoutFidelity?: string;
@@ -367,7 +377,8 @@ async function boot(): Promise<void> {
         fontRes = await getBundledCjkFontCached("fangsong");
       }
       const bundledFontId = "fangsong";
-      const { pdfBase64, meta } = await renderPdfLibExportPartBase64({
+      // 045 R4：直接拿字节经主进程落 temp，ready 只带路径（避开 btoa + 巨型 base64 JSON IPC）
+      const { bytes, meta } = await renderPdfLibExportPart({
         tmpl: t,
         previewValues: bindingPreview.values.value,
         reportPartIndex: partIdx,
@@ -376,8 +387,15 @@ async function boot(): Promise<void> {
         layoutFidelity: layoutFidelity.value,
       });
       if (seq !== bootSeq) return;
+      const writeRes = await window.electronAPI?.writePdfExportTempPart?.({
+        bytes,
+        jobId: exportJobId.value || undefined,
+      });
+      if (!writeRes?.ok || !writeRes.path) {
+        throw new Error(writeRes?.error || "PDF 临时落盘失败");
+      }
       signalReady(true, undefined, totalReports, { tplMs, dataMs, paintMs: Date.now() - paintStartMs }, undefined, {
-        pdfBase64,
+        pdfTempPath: writeRes.path,
         engine: "pdf-lib",
         exportMode: "coexist",
         layoutFidelity: meta.layoutFidelity,

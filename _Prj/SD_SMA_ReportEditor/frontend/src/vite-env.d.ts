@@ -107,7 +107,10 @@ interface Window {
       stats?: { opcReads: number; sqlQueries: number; sqlRows: number; mongoQueries?: number };
       phases?: { tplMs: number; dataMs: number; paintMs: number };
       diagnostics?: unknown;
+      /** @deprecated 045 R4 起矢量路径优先 pdfTempPath */
       pdfBase64?: string;
+      /** 045 R4：主进程临时 PDF 绝对路径（字符串，可安全过 JSON 兜底） */
+      pdfTempPath?: string;
       engine?: string;
       exportMode?: string;
       layoutFidelity?: string;
@@ -118,6 +121,11 @@ interface Window {
       printToPDFSkipped?: boolean;
     }) => void;
     notifyPdfExportHeartbeat?: (payload?: { stage?: string }) => void;
+    /** 045 R4：将矢量 PDF 字节落到主进程 temp，返回路径供 notifyPdfExportReady */
+    writePdfExportTempPart?: (opts: {
+      bytes: Uint8Array;
+      jobId?: string;
+    }) => Promise<{ ok: boolean; path?: string; bytes?: number; error?: string }>;
     /** 035/052c：跨导出窗共享取数（可按 reportPartIndex 只取当前份切片） */
     getPdfExportFillCacheBridge?: (opts: {
       templateId: string;

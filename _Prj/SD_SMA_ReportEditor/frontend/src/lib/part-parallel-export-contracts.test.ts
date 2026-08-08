@@ -67,6 +67,26 @@ describe("part-parallel export contracts (035)", () => {
     expect(main).not.toMatch(/acquireExtrasPromise/);
   });
 
+  it("045 R4：矢量 PDF 临时文件回传（无巨型 base64 JSON IPC）", () => {
+    const main = readFront("electron/main.cjs");
+    const preload = readFront("electron/preload.cjs");
+    const pdfView = readFront("src/views/PdfExportView.vue");
+    expect(main).toMatch(/pdf-export-write-temp-part/);
+    expect(main).toMatch(/isAllowedPdfExportTempPartPath/);
+    expect(main).toMatch(/pdfTempPath/);
+    expect(main).toMatch(/clearPdfExportTempPartsForJob/);
+    expect(main).toMatch(/jobId=\$\{encodeURIComponent\(jobId\)\}/);
+    expect(preload).toMatch(/writePdfExportTempPart/);
+    expect(preload).toMatch(/pdf-export-write-temp-part/);
+    // ready 仍走 JSON 剥 Proxy，但只带路径字符串
+    expect(preload).toMatch(/JSON\.parse\(JSON\.stringify\(payload/);
+    expect(pdfView).toMatch(/writePdfExportTempPart/);
+    expect(pdfView).toMatch(/pdfTempPath:\s*writeRes\.path/);
+    expect(pdfView).toMatch(/renderPdfLibExportPart\(/);
+    expect(pdfView).not.toMatch(/renderPdfLibExportPartBase64/);
+    expect(pdfView).not.toMatch(/pdfBase64,/);
+  });
+
   it("跨窗共享 fill cache：按份落盘；预热不得清 bridge；partsJson 避 Proxy", () => {
     const main = readFront("electron/main.cjs");
     const preload = readFront("electron/preload.cjs");

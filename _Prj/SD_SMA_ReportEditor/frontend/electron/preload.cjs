@@ -75,6 +75,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
   /** 仅 PDF 导出隐藏窗口：取数期间心跳，避免大模版慢取数被 2 分钟硬超时误杀 */
   notifyPdfExportHeartbeat: (payload) => ipcRenderer.send('pdf-export-heartbeat', payload || {}),
 
+  /**
+   * 045 R4：矢量 PDF 字节走 invoke structured-clone 落主进程临时文件。
+   * 禁止 JSON 序列化 bytes；ready 只带 pdfTempPath 字符串。
+   */
+  writePdfExportTempPart: (opts) => {
+    const bytes = opts && opts.bytes
+    const jobId = opts && typeof opts.jobId === 'string' ? opts.jobId : ''
+    return ipcRenderer.invoke('pdf-export-write-temp-part', { bytes, jobId })
+  },
+
   /** 035/052c：跨窗共享取数；读写临时文件一律在主进程，preload 只做 IPC */
   getPdfExportFillCacheBridge: (opts) => ipcRenderer.invoke('pdf-export-fill-cache-get', opts || {}),
   setPdfExportFillCacheBridge: (snap) => ipcRenderer.invoke('pdf-export-fill-cache-set', snap || {}),
