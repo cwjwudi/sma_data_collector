@@ -38,6 +38,17 @@ describe("part-parallel export contracts (035)", () => {
     // 乱序完成按已保存份数计数，禁止 max\(partIndex\+1\) 虚高
     expect(main).toMatch(/savedParts/);
     expect(main).toMatch(/Object\.keys\(exportOverlayEta\.savedParts\)\.length/);
+    // 进度事件带 workers 快照，供任一档位 toast/侧栏分路显示
+    expect(main).toMatch(/msg\.workers/);
+    expect(main).toMatch(/msg\.completedParts/);
+  });
+
+  it("ReportGenerator / 自动结批：并行进度走分路文案", () => {
+    const rg = readFront("src/views/ReportGenerator.vue");
+    const auto = readFront("src/lib/report-auto-export-trigger-service.ts");
+    expect(rg).toMatch(/formatPdfExportParallelProgressDetail/);
+    expect(auto).toMatch(/formatPdfExportParallelProgressDetail/);
+    expect(rg).toMatch(/任一导出档位只要并行≥2/);
   });
 
   it("ReportGenerator：模拟结批卡片露出分卷并行数", () => {

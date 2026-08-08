@@ -92,8 +92,8 @@
         </div>
         <p class="rg-mini">
           同一次{{ RG_UI.manual }}里多分卷 PDF 可同时渲染的路数；实际 =
-          min(本设置, 本机 CPU 预算)。档「不妥协」默认 hint=2；「预览稳 / 功能折中」默认 1，改大可能影响同机
-          HMI。OPC 多路自动结批也使用同一上限。
+          min(本设置, 本机 CPU 预算)。任一导出档位只要并行≥2，遮罩/进度都会按路分栏显示「第几份」。档「不妥协」默认
+          hint=2；「预览稳 / 功能折中」默认 1，改大可能影响同机 HMI。OPC 多路自动结批也使用同一上限。
         </p>
         <p class="rg-mini">{{ exportCpuBudgetHintText }}</p>
       </div>
@@ -952,6 +952,7 @@ import {
   isPdfExportCancelledError,
   newPdfExportJobId,
 } from "@/lib/pdf-export-job";
+import { formatPdfExportParallelProgressDetail } from "@/lib/pdf-export-parallel-progress";
 import {
   listExportPerfProfiles,
   normalizeExportPerfTier,
@@ -1974,6 +1975,11 @@ async function onManualExport(): Promise<void> {
       if (p.jobId && p.jobId !== exportJobId) return;
       if (p.templateId && p.templateId !== tid) return;
       const total = Number(p.totalReports) || 0;
+      const parallelDetail = formatPdfExportParallelProgressDetail(p);
+      if (parallelDetail) {
+        stage(parallelDetail);
+        return;
+      }
       const idx = (Number(p.partIndex) || 0) + 1;
       if (p.phase === "render") {
         stage(total > 1 ? `正在取数并渲染第 ${idx}/${total} 份报表…` : "正在取数并渲染报表…");

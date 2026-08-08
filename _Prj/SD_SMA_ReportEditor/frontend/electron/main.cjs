@@ -2536,17 +2536,44 @@ async function handlePdfExportRun(event, opts) {
 
       /** 向发起导出的窗口推送阶段进度（结批弹窗显示用；窗口已关则忽略） */
       function sendProgress(payload) {
+        // 先更新遮罩/lane（任一档位分卷并行≥2 都走 workerSlot），再带 workers 快照给渲染进程 toast
         try {
-          const w = senderBrowserWindow(event.sender)
-          if (w && !w.isDestroyed()) {
-            event.sender.send('pdf-export-progress', { ...payload, jobId, templateId })
+          if (armOverlay) {
+            pushExportOverlayProgress({ ...payload, templateId })
+          } else if (payload && payload.workerSlot != null) {
+            const phase = String(payload.phase || '')
+            const stage = String(payload.stage || phase || '')
+            const partIndex = Math.max(0, Math.floor(Number(payload.partIndex) || 0))
+            const lanePayload = { ...payload, templateId }
+            if (phase === 'render' || stage === 'render' || stage === 'load' || stage === 'fetch') {
+              noteExportOverlayPartStart(partIndex)
+              lanePayload.workerIdle = false
+              lanePayload.workerBusy = true
+            }
+            if ((phase === 'saved' || stage === 'saved') && !payload.skipPartSaved) {
+              noteExportOverlayPartSaved(partIndex)
+              lanePayload.workerIdle = true
+              lanePayload.workerBusy = false
+            } else if (payload.skipPartSaved || payload.workerIdle) {
+              lanePayload.workerIdle = true
+              lanePayload.workerBusy = false
+            }
+            upsertExportOverlayWorkerLane(lanePayload)
           }
         } catch {
           /* ignore */
         }
-        // 039c：同步喂给全屏遮罩（份进度 / 阶段 / ETA）
         try {
-          if (armOverlay) pushExportOverlayProgress({ ...payload, templateId })
+          const w = senderBrowserWindow(event.sender)
+          if (w && !w.isDestroyed()) {
+            const msg = { ...payload, jobId, templateId }
+            if (exportOverlayWorkerLanes.length > 1) {
+              msg.workers = exportOverlayWorkerLanes.map((lane) => ({ ...lane }))
+              msg.completedParts = exportOverlayEta.completedParts
+              msg.parallelWorkers = exportOverlayWorkerLanes.length
+            }
+            event.sender.send('pdf-export-progress', msg)
+          }
         } catch {
           /* ignore */
         }

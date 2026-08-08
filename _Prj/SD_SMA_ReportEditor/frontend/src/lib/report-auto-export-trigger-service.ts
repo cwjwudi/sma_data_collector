@@ -55,6 +55,7 @@ import {
   newPdfExportJobId,
 } from "@/lib/pdf-export-job";
 import { requestCancelPdfExport } from "@/lib/pdf-export-cancel-ui";
+import { formatPdfExportParallelProgressDetail } from "@/lib/pdf-export-parallel-progress";
 import { resolveExportPerfProfile } from "@/lib/export-perf-tier";
 import {
   beginExportCoexistSession,
@@ -522,6 +523,14 @@ async function runAutoPdfExport(
     if (p.jobId && p.jobId !== exportJobId) return;
     if (p.templateId && p.templateId !== tid) return;
     const total = Number(p.totalReports) || 0;
+    const parallelDetail = formatPdfExportParallelProgressDetail(p);
+    if (parallelDetail) {
+      onStage?.(
+        parallelDetail,
+        p.phase === "saved" ? AUTO_EXPORT_STATUS.SAVING : AUTO_EXPORT_STATUS.RENDERING,
+      );
+      return;
+    }
     const idx = (Number(p.partIndex) || 0) + 1;
     if (p.phase === "render") {
       onStage?.(

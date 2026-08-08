@@ -7,7 +7,7 @@
 
 ## 2026-08-09
 
-- **ReportEditor 039e / 035（并行遮罩分路显示）**：分卷并行时遮罩按 worker 分行显示「第几份」，汇总「已完成 x/共 y」；修正乱序完成时进度虚高。看板 [docs/039-🚧](docs/039-🚧-ReportEditor导出全屏遮罩.md) · [docs/035-🚧](docs/035-🚧-ReportEditor导出性能档位与同机降载.md)。
+- **ReportEditor 039e / 035（并行分路显示·全档位）**：任一导出档位只要分卷并行≥2，遮罩/toast 均按 worker 分行显示「第几份」（不限不妥协）；汇总「已完成 x/共 y」。看板 [docs/039-🚧](docs/039-🚧-ReportEditor导出全屏遮罩.md) · [docs/035-🚧](docs/035-🚧-ReportEditor导出性能档位与同机降载.md)。
 - **ReportEditor 0.3.152 Win 打包**：`Report Editor AI-Setup-0.3.152-x64.exe`（SHA256 `8397a218…d654`）；035 模拟结批分卷并行。发版记录 `_Doc/007`。
 - **ReportEditor 035（模拟结批分卷并行）**：同一次模拟结批多分卷按并行数多窗并发；模拟结批卡片露出「分卷并行数」。看板 [docs/035-🚧](docs/035-🚧-ReportEditor导出性能档位与同机降载.md)。
 - **ReportEditor 0.3.151 Win 打包**：`Report Editor AI-Setup-0.3.151-x64.exe`（SHA256 `40ca384c…9149`）；039d 遮罩右下角 CPU/内存曲线。发版记录 `_Doc/007`。
