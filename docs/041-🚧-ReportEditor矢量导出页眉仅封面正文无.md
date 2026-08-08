@@ -7,7 +7,26 @@
 
 ---
 
-# 🚧 进行中：现象与根因排查
+# ✅ 已完成：H2 修复——矢量续页/尾页漏画页眉页脚（2026-08-08）
+
+## 定性
+
+- Mini / Chromium（`TemplateMiniPage.vue`）：页眉带 `v-if="me.hb > 0"`、页脚带 `v-if="me.fb > 0"`，**不受续页标志影响**；仅正文 zone 装饰用 `miniShowDecorationEls` 在续页/尾页隐藏。  
+- 矢量（`pdf-lib-layout-v2-render.ts` · `paintPage`）：旧 `showChrome = !continuationHideOtherBodyElements && !tailOnlyBelowBaseline` 把**页眉、页脚、装饰一并跳过**——SQL/静态表撑开的第 2+ 张正文页只剩灰带无眉脚内容。  
+- 且 `zoneBodyDecorRef(tmpl, "body")` 恒返回 `[]`（正文无 zone 装饰）：`showChrome` 在正文续页的唯一实际效果就是吞眉脚，属**纯缺陷**（H2 确认；封面/末页无续页卡不受影响）。
+
+## 修复
+
+- `paintPage`：页眉/页脚 `drawZoneElements` 改为**无条件绘制**（与 Mini/Chromium 对齐）；原条件更名 `showBodyDecor`，仅约束正文 zone 装饰（cover/back 语义不变）。
+
+## 对抗测试
+
+- `pdf-lib-layout-v2-render.test.ts` 新增「041: header/footer are drawn on SQL continuation pages」：40 行静态表撑 2+ 卡，断言**每页**均含页眉文本与 `n/N` 页脚页码；已验证在旧逻辑下第 2 页即红（`page 2 missing header`）。  
+- 全量 vitest：**107 文件 / 624 用例全绿**（2026-08-08）。
+
+---
+
+# 🚧 进行中：现象与根因排查（H1/H4 待现场样本）
 
 ## 现象
 
@@ -29,14 +48,12 @@ Mini / Chromium 导出同样按 sheet 取对应数组（`TemplateMiniBands` / `T
 
 ### 假设优先级
 
-| ID | 假设 | 说明 |
+| ID | 假设 | 状态 |
 |----|------|------|
-| H1 | 模板数据：仅封面有眉 | `coverHeaderElements.length > 0` 且 `headerElements` 空 → 封面有、正文无；档 2 也应如此 |
-| H2 | SQL 续页藏 chrome | `showChrome = !card.continuationHideOtherBodyElements && !card.tailOnlyBelowBaseline`；续页可能不画眉脚 |
-| H3 | 正文绑了另一版式 / 眉带高度 0 | `layoutSnapshot.headerBandMm === 0` 时灰底不画，但元素仍应 `drawZoneElements`；需看是否被夹到不可见区 |
-| H4 | 误以为封面眉会继承到正文 | 产品未做「封面眉同步正文」；属预期认知差，不是渲染漏画 |
-
-若 **仅矢量无、档 2 有** 正文页眉，则超出上表，需另查矢量 `cards` / `showChrome` 与 Chromium DOM 差异（优先抓同戳 PDF）。
+| H1 | 模板数据：仅封面有眉（`coverHeaderElements` 有、`headerElements` 空） | ⌛️ 待现场 JSON 判定；若成立属数据/认知差，档 2 也应无正文眉 |
+| H2 | SQL 续页藏 chrome（`showChrome` 把眉脚一并跳过） | ✅ **已确认为代码缺陷并修复**（见上方 H2 修复段） |
+| H3 | 正文绑了另一版式 / 眉带高度 0 | ⌛️ 待现场 `headerBandMm`；矢量元素绘制不依赖带高>0，仅灰底受影响 |
+| H4 | 误以为封面眉会继承到正文 | ⌛️ 若 H1 成立则并入产品提示/一键复制方案 |
 
 ## 本机复现思路
 
@@ -65,8 +82,9 @@ Mini / Chromium 导出同样按 sheet 取对应数组（`TemplateMiniBands` / `T
 
 ---
 
-# ⌛️ 未完成：按样本定性后修复并验收
+# ⌛️ 未完成：现场样本对照与剩余定性
 
-- [ ] 用档 2 对照判定 H1–H4  
-- [ ] 修复或产品补齐（复制眉 / 续页策略）  
-- [ ] 验收：期望纸面均有眉；续页行为与预览一致  
+- [x] H2 续页漏眉脚：已修复 + 对抗测试（2026-08-08）  
+- [ ] 现场重导同模版档 1 PDF：确认「SQL 撑开第 2+ 张」的眉脚恢复  
+- [ ] 若第一张正文页也无眉：取模版 JSON 判定 H1（`headerElements` 是否为空）→ 产品提示或「封面眉复制到正文」一键  
+- [ ] 验收：期望纸面均有眉；续页行为与档 2 预览一致  

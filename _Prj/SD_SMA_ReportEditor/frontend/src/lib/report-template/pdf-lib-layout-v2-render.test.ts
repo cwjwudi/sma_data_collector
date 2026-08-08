@@ -72,6 +72,57 @@ describe("pdf-lib-layout-v2-render", () => {
     expect(doc.getPageCount()).toBe(cards.length);
   });
 
+  it("041: header/footer are drawn on SQL continuation pages (parity with Mini/Chromium)", async () => {
+    const { makeLayoutZoneElement } = await import("@/lib/report-template/layout-zone-element");
+    const tb = hydrateTemplateElement({
+      id: "ov-041",
+      type: "table",
+      tableRows: 40,
+      tableCols: 2,
+      tableRowHeightPx: 36,
+      x: 10,
+      y: 40,
+      w: 500,
+    });
+    clampTableElementOuterSize(tb, 800, 20000);
+    const tmpl = makeTemplateWithBodyTable(tb);
+    tmpl.layoutSnapshot = { ...tmpl.layoutSnapshot, headerBandMm: 18, footerBandMm: 14 };
+    const hdr = makeLayoutZoneElement("text");
+    hdr.text = "HdrEveryPage";
+    hdr.x = 20; hdr.y = 4; hdr.w = 240; hdr.h = 20;
+    hdr.fontSize = 11;
+    const pn = makeLayoutZoneElement("pageNumber");
+    pn.pageNumberMode = "slashTotal";
+    pn.x = 20; pn.y = 4; pn.w = 100; pn.h = 18;
+    tmpl.headerElements = [hdr];
+    tmpl.footerElements = [pn];
+
+    const cards = computeExpandedBodyPreviewCards(tmpl, {});
+    expect(cards.length).toBeGreaterThan(1);
+    // 前提：第 2+ 张为 SQL/静态表续页卡（旧实现在此类卡上整体跳过眉脚）
+    expect(cards.some((c) => c.continuationHideOtherBodyElements || c.tailOnlyBelowBaseline)).toBe(true);
+
+    const doc = await PDFDocument.create();
+    const font = await doc.embedFont(StandardFonts.Helvetica);
+    const pageCount = await appendPdfLibLayoutV2Pages(doc, {
+      tmpl,
+      previewValues: {},
+      font,
+      useWinAnsi: true,
+      bodyCards: cards,
+    });
+    expect(pageCount).toBe(cards.length);
+
+    const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+    const parsed = await pdfjs.getDocument({ data: await doc.save() }).promise;
+    for (let p = 1; p <= pageCount; p++) {
+      const page = await parsed.getPage(p);
+      const text = (await page.getTextContent()).items.map((it: { str: string }) => it.str).join("");
+      expect(text, `page ${p} missing header`).toContain("HdrEveryPage");
+      expect(text, `page ${p} missing footer page number`).toContain(`${p}/${pageCount}`);
+    }
+  });
+
   it("single short page still produces one page", async () => {
     const tb = hydrateTemplateElement({
       id: "short",

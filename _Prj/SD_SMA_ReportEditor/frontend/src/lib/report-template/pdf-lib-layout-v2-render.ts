@@ -1581,25 +1581,25 @@ export async function appendPdfLibLayoutV2Pages(
         color: bodyFill,
       });
     }
-    const showChrome = !card?.continuationHideOtherBodyElements && !card?.tailOnlyBelowBaseline;
+    // 041：页眉/页脚与 Mini/Chromium 对齐——SQL 续页/尾页照常绘制（旧 showChrome 误把眉脚一并跳过，
+    // 造成矢量档正文续页只剩灰带无内容）；仅正文 zone 装饰沿用续页/尾页隐藏语义。
+    const showBodyDecor = !card?.continuationHideOtherBodyElements && !card?.tailOnlyBelowBaseline;
     const bodyOrigin = contentOrigin(metrics);
     const bandW = metrics.contentW;
-    if (showChrome) {
-      drawZoneElements(
-        page,
-        font,
-        headerEls,
-        pageH,
-        headerOrigin(metrics),
-        previewValues,
-        useWinAnsi,
-        images,
-        pageNum,
-        totalPages,
-        bandW,
-        pickFont,
-      );
-    }
+    drawZoneElements(
+      page,
+      font,
+      headerEls,
+      pageH,
+      headerOrigin(metrics),
+      previewValues,
+      useWinAnsi,
+      images,
+      pageNum,
+      totalPages,
+      bandW,
+      pickFont,
+    );
     const effectiveCard: ExpandedBodyPreviewCard = card || {
       bodyPageIndex: 0,
       continuationIndex: 0,
@@ -1607,7 +1607,7 @@ export async function appendPdfLibLayoutV2Pages(
       continuationHideOtherBodyElements: false,
     };
     const decor = zoneBodyDecorRef(tmpl, sheet);
-    if (decor?.length && showChrome) {
+    if (decor?.length && showBodyDecor) {
       drawZoneElements(
         page,
         font,
@@ -1684,22 +1684,20 @@ export async function appendPdfLibLayoutV2Pages(
         }
       }
     }
-    if (showChrome) {
-      drawZoneElements(
-        page,
-        font,
-        footerEls,
-        pageH,
-        footerOrigin(metrics),
-        previewValues,
-        useWinAnsi,
-        images,
-        pageNum,
-        totalPages,
-        bandW,
-        pickFont,
-      );
-    }
+    drawZoneElements(
+      page,
+      font,
+      footerEls,
+      pageH,
+      footerOrigin(metrics),
+      previewValues,
+      useWinAnsi,
+      images,
+      pageNum,
+      totalPages,
+      bandW,
+      pickFont,
+    );
     // 021：封面橙顶 / 正文靛蓝左边 / 封尾紫底（与 Chromium 导出保留的角色色边一致）
     drawRoleAccentBar(page, sheet, pageW, pageH);
   };
