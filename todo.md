@@ -7,6 +7,7 @@
 
 ## 2026-08-09
 
+- **ReportEditor 048 ✅**：问题反馈包一键导出——用户 0.3.164 实包验收通过（结构/模版/审计/附件齐全）；顺带修包内 appVersion 硬编码 0.3.146。看板 [docs/048-✅](docs/048-✅-ReportEditor问题反馈包一键导出.md)。
 - **ReportEditor 0.3.164 Win 打包**：`Report Editor AI-Setup-0.3.164-x64.exe`（SHA256 `11916824…b110`）；052e 修其它路永卡同步取数缓存。发版记录 `_Doc/007` · [docs/035-🚧](docs/035-🚧-ReportEditor导出性能档位与同机降载.md)。
 - **ReportEditor 052e / 0.3.164**：修其它路永卡「同步取数缓存」（预热误清 bridge + partsJson）。看板 [docs/035-🚧](docs/035-🚧-ReportEditor导出性能档位与同机降载.md)。
 - **ReportEditor 0.3.163 Win 打包**：`Report Editor AI-Setup-0.3.163-x64.exe`（SHA256 `99835c88…f5f3`）；052d 修桌面壳误报浏览器壳。发版记录 `_Doc/007` · [docs/035-🚧](docs/035-🚧-ReportEditor导出性能档位与同机降载.md)。

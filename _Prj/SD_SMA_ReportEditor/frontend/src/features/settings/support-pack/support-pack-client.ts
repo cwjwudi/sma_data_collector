@@ -3,6 +3,7 @@
  */
 import { resolveApiHref } from "@/api/apiBase.js";
 import { listTemplateSummaries, type TemplateSummary } from "@/api/templates";
+import { loadAppCurrentVersion } from "@/features/settings/app-update/appUpdateState";
 import { loadReportGeneratorPrefs } from "@/lib/report-generator-prefs";
 
 export type SupportPackDraft = {
@@ -66,6 +67,12 @@ function collectEnv(): Record<string, unknown> {
 
 async function resolveAppVersion(): Promise<string> {
   try {
+    const fromUpdate = await loadAppCurrentVersion();
+    if (fromUpdate) return fromUpdate;
+  } catch {
+    /* ignore */
+  }
+  try {
     const er = (
       window as {
         reportEditor?: {
@@ -85,7 +92,14 @@ async function resolveAppVersion(): Promise<string> {
   } catch {
     /* ignore */
   }
-  return "0.3.146";
+  // 安装版 UA：… sd-sma-report-editor-ai/0.3.164 …
+  try {
+    const m = /sd-sma-report-editor-ai\/(\d+\.\d+\.\d+)/i.exec(navigator.userAgent || "");
+    if (m?.[1]) return m[1];
+  } catch {
+    /* ignore */
+  }
+  return "dev";
 }
 
 function downloadBlob(blob: Blob, filename: string) {
