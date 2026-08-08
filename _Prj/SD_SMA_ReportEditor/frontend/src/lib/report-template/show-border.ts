@@ -2,6 +2,7 @@
 
 import type { LayoutZoneElement } from "./layout-zone-element";
 import type { ReportTemplate, TemplateElement } from "./model";
+import { ensureBodyPages } from "./model";
 import {
   bodyElementsRef,
   type EditorSheet,
@@ -49,8 +50,8 @@ function footerElsMut(t: ReportTemplate, sheet: EditorSheet): LayoutZoneElement[
 }
 
 /**
- * 模版编辑器「一键隐藏边框」：当前 sheet 的页眉 + 页脚 + 正文（当前正文页）+ 正文 zone 装饰。
- * 与版式库三带语义对齐；不改其它 sheet，不改正文其它分页。
+ * 单 sheet「一键隐藏边框」（细粒度 / 测试用）：页眉 + 页脚 + 正文（指定正文页）+ zone 装饰。
+ * 模版编辑器工具栏请用 {@link hideBordersOnEntireTemplate}。
  */
 export function hideBordersOnTemplateSheet(
   t: ReportTemplate,
@@ -62,6 +63,29 @@ export function hideBordersOnTemplateSheet(
   n += hideShowBordersInElements(footerElsMut(t, sheet));
   n += hideShowBordersInElements(bodyElementsRef(t, sheet, bodyPageIndex));
   n += hideShowBordersInElements(zoneBodyDecorRef(t, sheet) as ShowBorderElementLike[]);
+  return n;
+}
+
+/**
+ * 模版编辑器「一键隐藏边框」：整份模版（封面 + 正文全部页 + 封底）的页眉/页脚/正文/zone 装饰。
+ * 表格控件仍跳过。不依赖当前选中 sheet/页。
+ */
+export function hideBordersOnEntireTemplate(t: ReportTemplate): number {
+  let n = 0;
+  const sheets: EditorSheet[] = ["cover", "body", "back"];
+  for (const sheet of sheets) {
+    n += hideShowBordersInElements(headerElsMut(t, sheet));
+    n += hideShowBordersInElements(footerElsMut(t, sheet));
+    n += hideShowBordersInElements(zoneBodyDecorRef(t, sheet) as ShowBorderElementLike[]);
+    if (sheet === "body") {
+      const pages = ensureBodyPages(t);
+      for (const page of pages) {
+        n += hideShowBordersInElements(page);
+      }
+    } else {
+      n += hideShowBordersInElements(bodyElementsRef(t, sheet, 0));
+    }
+  }
   return n;
 }
 

@@ -93,9 +93,9 @@
           <button
             type="button"
             class="b"
-            title="将当前页非表格控件的预览/导出外框设为隐藏（可撤销）"
+            title="将整份模版（封面/正文全部页/封底）非表格控件的预览/导出外框设为隐藏（可撤销）"
             :disabled="!editing"
-            @click="hideBordersOnCurrentPage"
+            @click="hideBordersOnEntireTemplateClick"
           >
             一键隐藏边框
           </button>
@@ -615,7 +615,7 @@ import {
   TEMPLATE_SCHEMA_VERSION,
 } from "@/lib/report-template/model";
 import { isAbsoluteLocalDir } from "@/lib/resolve-report-output-dir";
-import { hideBordersOnTemplateSheet } from "@/lib/report-template/show-border";
+import { hideBordersOnEntireTemplate } from "@/lib/report-template/show-border";
 import {
   copyTemplateElementToClipboard,
   copyTemplateElementsToClipboard,
@@ -1745,14 +1745,16 @@ function pasteSel() {
     els.length > 1 ? `已粘贴 ${els.length} 个控件（属性已保留）。` : "已粘贴控件（属性已保留）。";
 }
 
-function hideBordersOnCurrentPage() {
+function hideBordersOnEntireTemplateClick() {
   const t = editing.value;
   if (!t) return;
   midMode.value = "edit";
-  // 040：与版式库对齐——当前 sheet 页眉/页脚/正文（当前正文页）/ zone 装饰一并隐藏灰描边
-  const n = hideBordersOnTemplateSheet(t, sh.value, bodyPageIdx.value);
+  // 049：整份模版（封面+正文全部页+封底）页眉/页脚/正文/zone 装饰一并隐藏；不依赖当前选中页
+  const n = hideBordersOnEntireTemplate(t);
   hint.value =
-    n > 0 ? `已隐藏 ${n} 个控件的预览/导出外框（表格未改，可撤销）。` : "当前页没有可隐藏的控件外框。";
+    n > 0
+      ? `已隐藏整份模版 ${n} 个控件的预览/导出外框（表格未改，可撤销）。`
+      : "模版里没有可隐藏的控件外框。";
 }
 
 function sigOk(dataUrl) {

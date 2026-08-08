@@ -15,6 +15,7 @@ import {
 } from "@/lib/report-template/layout-zone-element";
 import {
   chromeBorderCss,
+  hideBordersOnEntireTemplate,
   hideBordersOnLayoutPresetBands,
   hideBordersOnTemplateSheet,
   hideShowBordersInElements,
@@ -244,7 +245,7 @@ describe("showBorder · 模版一键覆盖页眉页脚（040 · G）", () => {
     expect(snap.body.find((x) => x.id === "bt")!.showBorder).toBe(true);
   });
 
-  it("G3 正文多页：只改当前页 + 共享眉脚；其它正文页与其它 sheet 不动", () => {
+  it("G3 细粒度 sheet API：只改当前页 + 共享眉脚；其它正文页与其它 sheet 不动", () => {
     const t = fixtureTemplate();
     const pages = ensureBodyPages(t);
     while (pages.length < 2) pages.push([]);
@@ -281,6 +282,69 @@ describe("showBorder · 模版一键覆盖页眉页脚（040 · G）", () => {
 
     expect(hideBordersOnTemplateSheet(t, "body", 1)).toBe(1); // 仅 p1；眉脚已 false
     expect(pages[1]![0]!.showBorder).toBe(false);
+  });
+
+  it("G3b 049 整模版：一点即改封面眉脚+正文全部页+封底（不依赖当前 sheet）", () => {
+    const t = fixtureTemplate();
+    const pages = ensureBodyPages(t);
+    while (pages.length < 2) pages.push([]);
+
+    const ch = makeLayoutZoneElement("text");
+    ch.id = "cover-h";
+    ch.showBorder = true;
+    t.coverHeaderElements.push(ch);
+    const cf = makeLayoutZoneElement("text");
+    cf.id = "cover-f";
+    cf.showBorder = true;
+    t.coverFooterElements.push(cf);
+    const cb = makeElement("text");
+    cb.id = "cover-b";
+    cb.showBorder = true;
+    t.coverElements.push(cb);
+
+    const bh = makeLayoutZoneElement("text");
+    bh.id = "body-h";
+    bh.showBorder = true;
+    t.headerElements.push(bh);
+    const bf = makeLayoutZoneElement("text");
+    bf.id = "body-f";
+    bf.showBorder = true;
+    t.footerElements.push(bf);
+    const p0 = makeElement("text");
+    p0.id = "p0";
+    p0.showBorder = true;
+    pages[0]!.push(p0);
+    const p1 = makeElement("text");
+    p1.id = "p1";
+    p1.showBorder = true;
+    pages[1]!.push(p1);
+    const tbl = makeElement("table");
+    tbl.id = "tbl";
+    tbl.showBorder = true;
+    pages[0]!.push(tbl);
+
+    const xh = makeLayoutZoneElement("text");
+    xh.id = "back-h";
+    xh.showBorder = true;
+    t.backHeaderElements.push(xh);
+    const xb = makeElement("text");
+    xb.id = "back-b";
+    xb.showBorder = true;
+    t.backElements.push(xb);
+
+    // 9 个非表格（cover h/f/b + body h/f/p0/p1 + back h/b）；table 跳过
+    expect(hideBordersOnEntireTemplate(t)).toBe(9);
+    expect(t.coverHeaderElements[0]!.showBorder).toBe(false);
+    expect(t.coverFooterElements[0]!.showBorder).toBe(false);
+    expect(t.coverElements[0]!.showBorder).toBe(false);
+    expect(t.headerElements[0]!.showBorder).toBe(false);
+    expect(t.footerElements[0]!.showBorder).toBe(false);
+    expect(pages[0]![0]!.showBorder).toBe(false);
+    expect(pages[1]![0]!.showBorder).toBe(false);
+    expect(pages[0]!.find((e) => e.id === "tbl")!.showBorder).toBe(true);
+    expect(t.backHeaderElements[0]!.showBorder).toBe(false);
+    expect(t.backElements[0]!.showBorder).toBe(false);
+    expect(hideBordersOnEntireTemplate(t)).toBe(0);
   });
 
   it("G4 封尾 sheet 独立；幂等第二次为 0", () => {

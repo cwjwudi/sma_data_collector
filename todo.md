@@ -7,17 +7,18 @@
 
 ## 2026-08-08
 
+- **ReportEditor 049 Win 落地（一键隐藏整模版边框）**：代码 `hideBordersOnEntireTemplate` + G3b；工具栏一点清封面/正文全部分页/封底；Win Setup `Report Editor AI-Setup-0.3.147-x64.exe`（SHA256 `a298ef00…ee59`）。看板 [docs/049-✅](docs/049-✅-ReportEditor一键隐藏整模版边框.md)。
 - **ReportEditor 050 mac 手测通过**：导出后不再 SIGSEGV（含延时崩）；darwin 禁预热池 + 安全销毁已闭环。看板 [docs/050-✅](docs/050-✅-ReportEditor冒烟非批次手动导出SIGSEGV闪退.md)。
 - **ReportEditor 048 UI**：问题反馈包表单改纵向 `settings-field-row`，消除标签/输入重叠。看板 [docs/048-🚧](docs/048-🚧-ReportEditor问题反馈包一键导出.md)。
-- **ReportEditor 049 mac 手测通过**：一键隐藏边框整模版生效。看板 [docs/049-✅](docs/049-✅-ReportEditor一键隐藏边框整模版.md)。
+- **ReportEditor 049 mac 手测通过**：一键隐藏边框整模版生效。看板 [docs/049-✅](docs/049-✅-ReportEditor一键隐藏整模版边框.md)。
 - **ReportEditor 050b（延时 SIGSEGV）**：导出后预热池滞留隐藏窗，mac Accessibility 稍后查询崩溃；darwin 禁用复用/预热，导出即销毁；destroy 改 about:blank+300ms。看板见上。
-- **ReportEditor 049 实现（一键隐藏边框整模版）**：`hideBordersOnEntireTemplate` 覆盖封面+全部正文页+封底；编辑器按钮改走整模版；G7 单测。看板 [docs/049-✅](docs/049-✅-ReportEditor一键隐藏边框整模版.md)。
+- **ReportEditor 049 实现（一键隐藏边框整模版）**：`hideBordersOnEntireTemplate` 覆盖封面+全部正文页+封底；编辑器按钮改走整模版；G3b 单测。看板 [docs/049-✅](docs/049-✅-ReportEditor一键隐藏整模版边框.md)。
 - **ReportEditor 050 兜底（导出收尾 Accessibility SIGSEGV）**：`safeDestroyBrowserWindow`（hide+延迟 destroy）；遮罩/PDF 窗共用；导出窗非白底/不可聚焦；finally 先关遮罩再动 PDF 窗。看板见上。
 - **ReportEditor 0.3.147 本地打包（Mac DMG）**：含 041 续页眉脚 / 042 小数位 / 043 空值占位 / 047 旧值兼容 / 049 整模版一键隐藏边框修复、044 去 5 万取数上限、045 R1a/R2 跨份缓存、046 批次/非批次导出、048 问题反馈包。`packaging/mac/output/Report Editor AI-0.3.147-arm64.dmg`（SHA256 `dc831f55…c6c9`）。发版记录 `_Prj/SD_SMA_ReportEditor/_Doc/007_版本发布记录.md`。
 - **ReportEditor 048 实现（问题反馈包）**：设置页导出 zip（Markdown+模版+结批 prefs+连接骨架+审计切片+可选 PDF）；审计失败旁路；`support.pack_export`；后端单测 4 绿。手测 ⌛️。看板 [docs/048-🚧](docs/048-🚧-ReportEditor问题反馈包一键导出.md)。
 - **ReportEditor 050 补证（白屏不关 + Accessibility SIGSEGV）**：非批次「冒烟」手动导 PDF 已成功仍闪退；用户见白屏页不关。`.ips`：`EXC_BAD_ACCESS` @0x10，`CrBrowserMain` → `objc_msgSend` / **NSAccessibility**。看板见上。
 - **ReportEditor 050 缺陷登记（冒烟非批次手动导出闪退）**：用户口述「猫眼」=本机「冒烟·一键无边框」(`cde79a7c`，nonBatch→Desktop)；同会话 PDF 曾写成功，随后 Electron `SIGSEGV` 闪退。看板见上。
-- **ReportEditor 049 需求登记（一键隐藏边框整模版）**：现网只清当前 sheet/正文页，须逐页点选，违背「一键」；口径改为点一次覆盖封面+全部正文页+封底的眉脚/正文/zone 装饰（仍跳过表格、可一次撤销）；版式库本期不改。看板 [docs/049-✅](docs/049-✅-ReportEditor一键隐藏边框整模版.md)。
+- **ReportEditor 049 需求登记（一键隐藏边框整模版）**：现网只清当前 sheet/正文页，须逐页点选，违背「一键」；口径改为点一次覆盖封面+全部正文页+封底的眉脚/正文/zone 装饰（仍跳过表格、可一次撤销）；版式库本期不改。看板 [docs/049-✅](docs/049-✅-ReportEditor一键隐藏整模版边框.md)。
 - **ReportEditor 042/043 修复（矢量绑定文案对齐 Mini）**：layout-v2 zone/正文 text·box·parameter 与静态表 cell 统一走 `resolveBoundParameterPreviewText`/`applyDecimalPlacesToDisplayText`——小数位生效（`12`+2位→`12.00`）；空 bound 走 `nullDisplayMode` 不再回落控件占位（PDF 不再出现字面 `value`）。单测锁 042/043 各场景。看板 [docs/042-✅](docs/042-✅-ReportEditor矢量导出封面小数位变整数.md) / [docs/043-✅](docs/043-✅-ReportEditor矢量导出空值显示value.md)。
 - **ReportEditor 044 实现（去 5 万取数硬上限）**：前端 `TABLE_SQL_FILL_FULL_ROW_LIMIT` 50000→5M（仅异常防护）；分报表全量取数、未分报表按单份 `maxRows`；后端 `query/sql` 防护值同步 5M；预览 1000 与单份 maxRows clamp 保留。单测锁 ≥80000 反例。现场 8 万条实测 ⌛️。看板 [docs/044-🚧](docs/044-🚧-ReportEditor导出SQL取数无硬上限.md)。
 - **ReportEditor 045 R1a/R2（矢量跨份缓存）**：随包字体字节 + IPC 结果跨份缓存（每份省 MB 级 base64 IPC 与解码）；封面/Logo dataURL 解码字节按内容寻址缓存（上限 24 条）。R3 连渲/R4 二进制回传评估已写入看板（R4 阻塞点：preload `notifyPdfExportReady` JSON 兜底会毁二进制载荷）；R5 待拍板。全量 629 绿。看板 [docs/045-🚧](docs/045-🚧-ReportEditor矢量导出跨份复用加速.md)。
