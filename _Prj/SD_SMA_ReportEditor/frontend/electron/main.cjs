@@ -42,6 +42,7 @@ const {
   pushRing,
   formatBytesShort,
 } = require('./host-resource-sample.cjs')
+const { resolvePartExportConcurrency } = require('./chromium-export-parallel-cap.cjs')
 
 // 五档批导：独立 userData，避免与已打开的安装版抢单实例锁
 const fiveTierExportSpec = String(process.env.REPORT_EDITOR_FIVE_TIER_EXPORT || '').trim()
@@ -346,6 +347,91 @@ const VITE_DEV_URL = 'http://localhost:5173'
 
 function log(msg) {
   console.log(`[Electron] ${msg}`)
+}
+
+/** 渲染/子进程崩溃落盘，便于「闪退」无审计时取证 */
+function appendProcessGoneLog(kind, details) {
+  try {
+    const line = JSON.stringify({
+      ts: new Date().toISOString(),
+      kind,
+      ...(details && typeof details === 'object' ? details : { details }),
+    })
+    log(`CRASH ${kind}: ${line}`)
+    const dir = path.join(app.getPath('userData'), 'logs')
+    fs.mkdirSync(dir, { recursive: true })
+    fs.appendFileSync(path.join(dir, 'process-gone.log'), `${line}\n`, 'utf8')
+  } catch (e) {
+    try {
+      log(`appendProcessGoneLog failed: ${e && e.message}`)
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+function installProcessGoneLogging() {
+  try {
+    app.on('render-process-gone', (_event, wc, details) => {
+      let url = ''
+      try {
+        url = wc && !wc.isDestroyed() ? String(wc.getURL() || '') : ''
+      } catch {
+        url = ''
+      }
+      appendProcessGoneLog('render-process-gone', {
+        reason: details && details.reason,
+        exitCode: details && details.exitCode,
+        url: url.slice(0, 500),
+      })
+    })
+  } catch {
+    /* ignore */
+  }
+  try {
+    app.on('child-process-gone', (_event, details) => {
+      appendProcessGoneLog('child-process-gone', {
+        type: details && details.type,
+        reason: details && details.reason,
+        exitCode: details && details.exitCode,
+        serviceName: details && details.serviceName,
+        name: details && details.name,
+      })
+    })
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Chromium printToPDF 全进程信号量：多窗可并行取数/排版，真正打 PDF 限流防爆内存 */
+let printToPdfActive = 0
+const printToPdfWaiters = []
+const PRINT_TO_PDF_MAX_CONCURRENT = 2
+
+function withPrintToPdfSlot(fn) {
+  return new Promise((resolve, reject) => {
+    const run = () => {
+      printToPdfActive += 1
+      Promise.resolve()
+        .then(fn)
+        .then(
+          (v) => {
+            printToPdfActive = Math.max(0, printToPdfActive - 1)
+            const next = printToPdfWaiters.shift()
+            if (next) next()
+            resolve(v)
+          },
+          (err) => {
+            printToPdfActive = Math.max(0, printToPdfActive - 1)
+            const next = printToPdfWaiters.shift()
+            if (next) next()
+            reject(err)
+          },
+        )
+    }
+    if (printToPdfActive < PRINT_TO_PDF_MAX_CONCURRENT) run()
+    else printToPdfWaiters.push(run)
+  })
 }
 
 function getBackendDir() {
@@ -2606,29 +2692,49 @@ ipcMain.handle('pdf-export-cancel', async (_event, opts) => {
 /**
  * 035：分卷并行跨 BrowserWindow 共享首份 fullSqlFill。
  * 各导出窗 JS 堆隔离，仅靠同窗内存缓存会导致 N 路各打一遍 8 万行 SQL → 后端挤爆 / 20s 超时。
+ * 052：hydrate IPC 串行，避免 16 路同时 structured-clone 大快照把进程打崩。
  */
 let pdfExportFillCacheBridge = null
+let pdfExportFillCacheBridgePath = null
+let pdfExportFillCacheHydrateChain = Promise.resolve()
 
 function clearPdfExportFillCacheBridge() {
   pdfExportFillCacheBridge = null
+  const p = pdfExportFillCacheBridgePath
+  pdfExportFillCacheBridgePath = null
+  if (p) {
+    try {
+      fs.unlinkSync(p)
+    } catch {
+      /* ignore */
+    }
+  }
 }
 
-ipcMain.handle('pdf-export-fill-cache-get', (_event, opts) => {
+ipcMain.handle('pdf-export-fill-cache-get', async (_event, opts) => {
   const id = String((opts && opts.templateId) || '').trim()
-  if (!id || !pdfExportFillCacheBridge || pdfExportFillCacheBridge.templateId !== id) {
-    return { ok: false }
+  const run = async () => {
+    if (!id || !pdfExportFillCacheBridge || pdfExportFillCacheBridge.templateId !== id) {
+      return { ok: false }
+    }
+    return { ok: true, snap: pdfExportFillCacheBridge }
   }
-  return { ok: true, snap: pdfExportFillCacheBridge }
+  const p = pdfExportFillCacheHydrateChain.then(run, run)
+  pdfExportFillCacheHydrateChain = p.then(
+    () => undefined,
+    () => undefined,
+  )
+  return p
 })
 
-ipcMain.handle('pdf-export-fill-cache-set', (_event, snap) => {
+ipcMain.handle('pdf-export-fill-cache-set', async (_event, snap) => {
   if (!snap || typeof snap !== 'object') {
-    pdfExportFillCacheBridge = null
+    clearPdfExportFillCacheBridge()
     return { ok: false }
   }
   const id = String(snap.templateId || '').trim()
   if (!id) {
-    pdfExportFillCacheBridge = null
+    clearPdfExportFillCacheBridge()
     return { ok: false }
   }
   pdfExportFillCacheBridge = {
@@ -2636,6 +2742,23 @@ ipcMain.handle('pdf-export-fill-cache-set', (_event, snap) => {
     values: snap.values && typeof snap.values === 'object' ? snap.values : {},
     totalReports: Math.max(1, Math.floor(Number(snap.totalReports) || 1)),
     stats: snap.stats && typeof snap.stats === 'object' ? snap.stats : null,
+  }
+  try {
+    const out = path.join(
+      app.getPath('temp'),
+      `sd-sma-fill-cache-${process.pid}-${Date.now()}.json`,
+    )
+    await fs.promises.writeFile(out, JSON.stringify(pdfExportFillCacheBridge), 'utf8')
+    if (pdfExportFillCacheBridgePath && pdfExportFillCacheBridgePath !== out) {
+      try {
+        await fs.promises.unlink(pdfExportFillCacheBridgePath)
+      } catch {
+        /* ignore */
+      }
+    }
+    pdfExportFillCacheBridgePath = out
+  } catch (e) {
+    log(`fill-cache 落盘失败（仍用内存 bridge）：${e && e.message}`)
   }
   return { ok: true }
 })
@@ -2953,13 +3076,15 @@ async function handlePdfExportRun(event, opts) {
             printToPDFSkipped: true,
           }
         } else {
-          pdfBuffer = await activeWin.webContents.printToPDF({
-            landscape: false,
-            printBackground: true,
-            marginsType: 1,
-            pageRanges: '',
-            preferCSSPageSize: true,
-          })
+          pdfBuffer = await withPrintToPdfSlot(() =>
+            activeWin.webContents.printToPDF({
+              landscape: false,
+              printBackground: true,
+              marginsType: 1,
+              pageRanges: '',
+              preferCSSPageSize: true,
+            }),
+          )
           printMs = Date.now() - printStartMs
           engineMeta = {
             engine: 'chromium',
@@ -3065,7 +3190,7 @@ async function handlePdfExportRun(event, opts) {
         const workerHolders = [pdfWinHolder]
         let extraSlots = 0
         try {
-          // 开导即按配置建 N 路遮罩 + 额外导出窗（其它路先显示「等待总份数」）
+          // 开导先按配置显示 N 路「等待」；真正开窗数等 totalReports + Chromium 内存帽后再建
           exportOverlayWorkerLanes = Array.from({ length: plannedParallel }, (_, slot) => ({
             workerSlot: slot,
             partIndex: 0,
@@ -3096,15 +3221,6 @@ async function handlePdfExportRun(event, opts) {
             })
           }
 
-          const acquireExtrasPromise = (async () => {
-            for (let i = 1; i < plannedParallel; i++) {
-              await acquirePdfExportSlot()
-              extraSlots += 1
-              workerHolders.push({ win: acquirePdfExportWindow() })
-              applyRenderCoexistPriorityOn(workerHolders[workerHolders.length - 1])
-            }
-          })()
-
           let totalResolved = 0
           /** @type {(n: number) => void} */
           let resolveTotalReports
@@ -3125,15 +3241,33 @@ async function handlePdfExportRun(event, opts) {
           })
 
           totalReports = await totalReportsPromise
-          await acquireExtrasPromise
-
-          const concurrency = Math.min(plannedParallel, totalReports)
+          // Chromium：内存安全并发（与「不妥协」CPU 预算解耦）；pdf-lib 仍可用满 planned
+          const concurrency = resolvePartExportConcurrency(
+            plannedParallel,
+            totalReports,
+            exportEngine,
+            os.totalmem(),
+          )
           if (exportOverlayWorkerLanes.length > concurrency) {
             exportOverlayWorkerLanes = exportOverlayWorkerLanes.slice(0, concurrency)
           }
+          if (concurrency < plannedParallel) {
+            log(
+              `PDF 分卷并行内存帽：engine=${exportEngine} planned=${plannedParallel} → concurrency=${concurrency}（避免多窗 printToPDF + 大快照 IPC 闪退）`,
+            )
+          }
           log(
-            `PDF 分卷并行：planned=${plannedParallel} concurrency=${concurrency} total=${totalReports} maxParallel=${pdfExportMaxParallel}（ready 后即派活，不等第 0 份写盘）`,
+            `PDF 分卷并行：planned=${plannedParallel} concurrency=${concurrency} total=${totalReports} maxParallel=${pdfExportMaxParallel} engine=${exportEngine}（ready 后懒建窗派活）`,
           )
+
+          // 总份数已知后，错峰建额外导出窗（勿与首份全量 SQL 叠峰冷启 15 窗）
+          for (let i = 1; i < concurrency; i++) {
+            await acquirePdfExportSlot()
+            extraSlots += 1
+            workerHolders.push({ win: acquirePdfExportWindow() })
+            applyRenderCoexistPriorityOn(workerHolders[workerHolders.length - 1])
+            await yieldToOs(Math.max(40, Math.min(200, jobYieldMs || 80)))
+          }
 
           filePaths = new Array(totalReports)
           const remainingIndices = []
@@ -3214,7 +3348,7 @@ async function handlePdfExportRun(event, opts) {
             }
           }
 
-          // 总份数一知：其余路立刻开工；第 0 路继续出 PDF/写盘后再加入偷取队列
+          // 总份数一知且窗已建：其余路开工；第 0 路继续出 PDF/写盘后再偷取
           await Promise.all(
             workerHolders.slice(0, concurrency).map((h, slot) => partWorker(h, slot)),
           )
@@ -3569,6 +3703,7 @@ ipcMain.handle('launch-settings-set', (_event, patch) => {
 
 app.whenReady().then(async () => {
   log('Starting application...')
+  installProcessGoneLogging()
 
   silentStartSession = shouldSilentStartThisSession(app, process.argv)
   try {

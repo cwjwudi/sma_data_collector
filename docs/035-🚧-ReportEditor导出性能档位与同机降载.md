@@ -6,6 +6,30 @@
 
 ---
 
+# ✅ 已完成：首次模拟结批 Chromium 多路闪退（052 · 2026-08-09）
+
+## 现象
+
+安装版首次点「模拟结批」（不妥协 + 分卷并行 16 + Chromium + 8 万条分卷）进程直接退出，几乎无审计。
+
+## 根因
+
+CPU 预算关闭后按设置冷启最多 16 个导出窗，叠加大 fill-cache IPC 克隆与并发 `printToPDF`，Windows 上易 OOM / 渲染进程被杀导致整进程闪退。
+
+## 改动
+
+- `chromium-export-parallel-cap.cjs`：Chromium 分卷并发按物理内存封顶（约 2–6）；pdf-lib 仍可用满设置
+- 总份数 ready 后**懒建**额外窗（错峰），不再与首份 SQL 并行预建 N−1 窗
+- `printToPDF` 全进程最多 2 路同时执行；fill-cache hydrate IPC 串行
+- `render-process-gone` / `child-process-gone` 写入 `%APPDATA%/.../logs/process-gone.log`
+
+## 验收
+
+- Win 干净安装：a044 + 不妥协 + 并行 16 + Chromium → 不闪退；日志可出现「内存帽 … → concurrency=N」
+- 闪退若再现：查 `process-gone.log`
+
+---
+
 # ✅ 已完成：模拟结批分卷并行（2026-08-09）
 
 ## 问题

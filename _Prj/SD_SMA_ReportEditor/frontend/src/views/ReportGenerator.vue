@@ -96,7 +96,8 @@
           min(本设置, 本机 CPU 预算)。改大可能影响同机 HMI。OPC 多路自动结批也使用同一上限。
         </p>
         <p v-if="exportPerfProfile.coexistPause === 'max'" class="rg-mini">
-          当前「不妥协」：已关闭 CPU 预算封顶，设 16 即最多 16 路并行。
+          当前「不妥协」：已关闭 CPU 预算封顶。矢量（pdf-lib）可按设置开满；Chromium
+          printToPDF 另有内存安全并发上限（约 2–6，视本机内存），避免首次结批多窗闪退。
         </p>
         <p v-else class="rg-mini">{{ exportCpuBudgetHintText }}</p>
       </div>

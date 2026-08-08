@@ -1,15 +1,15 @@
 {
-  "version": "0.3.159",
-  "releasedAt": "2026-08-08T20:48:37.670Z",
-  "notes": "Report Editor AI 0.3.159\n\n- 039g：修并行「已完成」漏计（skipPartSaved 粘连）+ ETA 近窗/吞吐",
+  "version": "0.3.160",
+  "releasedAt": "2026-08-08T20:59:36.621Z",
+  "notes": "Report Editor AI 0.3.160\n\n- 052：修首次模拟结批 Chromium 多路闪退（内存安全并发 + 懒建窗 + printToPDF 限流）",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.159-x64.exe",
-      "sha256": "5804be72d7d4fba18c98a421012e41c9e5577811f84c6768225b8987f2f760d5",
-      "size": 162552287
+      "url": "Report Editor AI-Setup-0.3.160-x64.exe",
+      "sha256": "",
+      "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.159-arm64.dmg",
+      "url": "Report Editor AI-0.3.160-arm64.dmg",
       "sha256": "",
       "size": 0
     }

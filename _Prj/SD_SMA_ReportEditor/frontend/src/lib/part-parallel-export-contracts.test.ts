@@ -54,14 +54,17 @@ describe("part-parallel export contracts (035)", () => {
     expect(rg).toMatch(/生效 \{\{ effectivePartParallel \}\}/);
   });
 
-  it("main.cjs：开导即按并行数建路，ready 后派活（不等第 0 份写盘）", () => {
+  it("main.cjs：开导建遮罩路，ready 后懒建窗派活（Chromium 内存帽）", () => {
     const main = readFront("electron/main.cjs");
     expect(main).toMatch(/plannedParallel/);
     expect(main).toMatch(/等待总份数/);
     expect(main).toMatch(/onReady/);
-    expect(main).toMatch(/ready 后即派活/);
+    expect(main).toMatch(/ready 后懒建窗派活/);
     expect(main).toMatch(/totalReportsPromise/);
-    expect(main).toMatch(/acquireExtrasPromise/);
+    expect(main).toMatch(/resolvePartExportConcurrency/);
+    expect(main).toMatch(/withPrintToPdfSlot/);
+    expect(main).toMatch(/installProcessGoneLogging/);
+    expect(main).not.toMatch(/acquireExtrasPromise/);
   });
 
   it("跨窗共享 fill cache bridge，避免 N 路各打全量 SQL", () => {
@@ -76,20 +79,23 @@ describe("part-parallel export contracts (035)", () => {
     expect(fill).toMatch(/waitPdfExportFillCacheFromBridge/);
     expect(pdfView).toMatch(/publishPdfExportFillCacheToBridge/);
     expect(pdfView).toMatch(/waitPdfExportFillCacheFromBridge/);
-    expect(pdfView).toMatch(/timeoutMs:\s*120_000/);
+    expect(fill).toMatch(/waitPdfExportFillCacheFromBridge/);
   });
 
-  it("不妥协忽略 CPU 预算：设 16 可真正 16 路", () => {
+  it("不妥协忽略 CPU 预算；Chromium 另受内存安全并发帽", () => {
     const main = readFront("electron/main.cjs");
     const budget = readFront("src/lib/export-cpu-budget.ts");
     const rg = readFront("src/views/ReportGenerator.vue");
     const auto = readFront("src/lib/report-auto-export-trigger-service.ts");
+    const cap = readFront("electron/chromium-export-parallel-cap.cjs");
     expect(main).toMatch(/pdfExportIgnoreCpuBudget/);
     expect(budget).toMatch(/ignoreCpuBudget/);
     expect(rg).toMatch(/coexistPause === ["']max["']/);
     expect(rg).toMatch(/ignoreCpuBudget/);
     expect(auto).toMatch(/ignoreCpuBudget:\s*profile\.coexistPause === ["']max["']/);
     expect(rg).toMatch(/已关闭 CPU 预算封顶/);
+    expect(cap).toMatch(/chromiumPartParallelCap/);
+    expect(cap).toMatch(/pdf-lib/);
   });
 
   it("ReportGenerator：模拟结批卡片露出分卷并行数", () => {
