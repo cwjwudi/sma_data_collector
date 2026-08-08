@@ -7,6 +7,7 @@
 
 ## 2026-08-08
 
+- **ReportEditor 047 修复（冒烟·一键无边框打不开）**：列表可见但打开 404——0.3.x 早期落盘旧值（`scalarSqlFillMode:"none"`、`nullDisplayMode:"empty"`、`mongoQuery:""`、`table*` 数组为 null、`TemplateElement` 残留 `pageNumberMode`）被收紧后的后端 schema 拒绝。`report_template.py` 增 `_normalize_legacy_element_raw` 兼容层（三元素模型 before 归一，与前端 hydrate 对齐），不改数据文件；新增 `test_template_legacy_field_compat.py`，后端快速套件 281 绿；实测该模板 API 404→200。看板 [docs/047-✅](docs/047-✅-ReportEditor冒烟一键无边框模板打不开.md)。
 - **ReportEditor 041 H2 修复（矢量续页漏眉脚）**：`pdf-lib-layout-v2-render.paintPage` 旧 `showChrome` 在 SQL/静态表续页把页眉页脚一并跳过（Mini/Chromium 无条件渲染眉脚）；改为眉脚无条件绘制、仅正文 zone 装饰保留续页隐藏。对抗测试证明旧逻辑第 2 页即红；全量 624 绿。H1（数据侧仅封面配眉）待现场 JSON。看板 [docs/041-🚧](docs/041-🚧-ReportEditor矢量导出页眉仅封面正文无.md)。
 - **ReportEditor 批次 vs 非批次实现（046 本机闭环）**：模版增 `reportKind`/`nonBatchOutputDir`（前后端+sidecar）；导出调度按类型分支——批次 `根\批号\`（文件名/目录 OPC 任一有效，皆无显式失败，废除静默回落）、非批次落模版绝对路径（写盘端自动建目录）；手动模拟结批同规则；编辑器加类型开关+目录校验；历史报表左侧多根下拉（全局根+非批次目录，不污染 watchDir）；审计增 `reportKind`/`outputDir`/`batchNo`。vitest 107 文件 623 全绿；Windows 手测 ⌛️。⚠️ 现场未绑批号 OPC 的批次导出升级后会显式失败。看板 [docs/046-🚧](docs/046-🚧-ReportEditor批次与非批次报表导出.md)。
 - **ReportEditor 批次 vs 非批次（Q7–Q9 拍板）**：历史多根聚合；非批次目录不存在则创建；批号=文件名OPC或目录OPC任一有效，皆无则失败。看板 [docs/046-🚧](docs/046-🚧-ReportEditor批次与非批次报表导出.md)。

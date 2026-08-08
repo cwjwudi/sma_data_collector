@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 PaperKind = Literal["A3", "A4", "A5", "Letter"]
 NullDisplayMode = Literal["blank", "emptyLabel", "fallbackText"]
@@ -23,6 +23,39 @@ AlignAxis = Literal["start", "center", "end"]
 ImageCaptionPosition = Literal["none", "top", "bottom", "left", "right"]
 
 TEMPLATE_SCHEMA_VERSION = 4
+
+_VALID_NULL_DISPLAY_MODES = ("blank", "emptyLabel", "fallbackText")
+_VALID_SCALAR_SQL_FILL_MODES = ("manual", "visual")
+
+
+def _normalize_legacy_element_raw(data: Any, *, drop_page_number_mode: bool = False) -> Any:
+    """兼容旧版落盘元素字段（现场 0.3.x 早期文件；与前端 normalize* 对齐）：
+
+    - scalarSqlFillMode：'none'/''/大小写混写 → None 或小写合法值（前端 normalizeScalarSqlFillMode）
+    - nullDisplayMode：旧值 'empty' 等未知字符串 → 'blank'（前端 normalizeNullDisplayMode）
+    - mongoQuery：'' → None
+    - tableCells / tableColWidthsPx / tableColBgColors：null → []
+    - drop_page_number_mode=True 时丢弃 pageNumberMode（版式区控件上浮到 TemplateElement 的残留，
+      与 ai_demo_template_ops._TEMPLATE_ELEMENT_DROP_KEYS 同因）
+    """
+    if not isinstance(data, dict):
+        return data
+    d = dict(data)
+    if drop_page_number_mode:
+        d.pop("pageNumberMode", None)
+    mode = d.get("scalarSqlFillMode")
+    if isinstance(mode, str):
+        low = mode.strip().lower()
+        d["scalarSqlFillMode"] = low if low in _VALID_SCALAR_SQL_FILL_MODES else None
+    if d.get("mongoQuery") == "":
+        d["mongoQuery"] = None
+    nd = d.get("nullDisplayMode")
+    if isinstance(nd, str) and nd not in _VALID_NULL_DISPLAY_MODES:
+        d["nullDisplayMode"] = "blank"
+    for key in ("tableCells", "tableColWidthsPx", "tableColBgColors"):
+        if key in d and d[key] is None:
+            d[key] = []
+    return d
 
 
 class LayoutSnapshot(BaseModel):
@@ -53,17 +86,11 @@ class TemplateTableCell(BaseModel):
     bgColor: str = "transparent"
     decimalPlaces: int | None = Field(default=None, ge=0, le=10)
 
-    @field_validator("scalarSqlFillMode", mode="before")
+    @model_validator(mode="before")
     @classmethod
-    def _normalize_cell_scalar_sql_fill_mode(cls, v: object) -> object:
-        """现场偶发 'Visual' 大小写；与前端 normalizeScalarSqlFillMode 对齐。"""
-        if v is None or v == "":
-            return None
-        if isinstance(v, str):
-            low = v.strip().lower()
-            if low in ("manual", "visual"):
-                return low
-        return v
+    def _compat_legacy_cell_fields(cls, data: Any) -> Any:
+        """现场旧文件兼容：'Visual' 大小写、'none' 填充模式、mongoQuery '' 等。"""
+        return _normalize_legacy_element_raw(data)
 
 
 class TableSqlParamBinding(BaseModel):
@@ -218,6 +245,11 @@ class LayoutZoneElement(BaseModel):
     tableColBgColors: list[str] = Field(default_factory=list)
     tableSqlFill: TableSqlFillConfig | None = None
 
+    @model_validator(mode="before")
+    @classmethod
+    def _compat_legacy_zone_fields(cls, data: Any) -> Any:
+        return _normalize_legacy_element_raw(data)
+
 
 class TemplateElement(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -262,6 +294,12 @@ class TemplateElement(BaseModel):
     tableColWidthsPx: list[float] = Field(default_factory=list)
     tableColBgColors: list[str] = Field(default_factory=list)
     tableSqlFill: TableSqlFillConfig | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _compat_legacy_template_fields(cls, data: Any) -> Any:
+        # TemplateElement 无 pageNumberMode 字段（extra=forbid）：旧版把版式区控件上浮进正文时会残留该键
+        return _normalize_legacy_element_raw(data, drop_page_number_mode=True)
 
 
 class ReportTemplate(BaseModel):
