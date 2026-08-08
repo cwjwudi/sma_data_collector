@@ -1,15 +1,15 @@
 {
-  "version": "0.3.154",
-  "releasedAt": "2026-08-08T19:42:21.165Z",
-  "notes": "Report Editor AI 0.3.154\n\n- 039e 补丁：修复并行心跳冲掉总份数导致分路进度闪没、一直「预估中」\n- 含 0.3.153：分卷并行分路显示",
+  "version": "0.3.155",
+  "releasedAt": "2026-08-08T19:54:20.823Z",
+  "notes": "Report Editor AI 0.3.155\n\n- 035：不妥协档不再套用 CPU 并行预算（设 16 即最多 16 路）\n- UI 显示生效路数\n- 含 0.3.154：并行分路进度闪没修复",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.154-x64.exe",
-      "sha256": "983881910594c983844fa90e507397edbd367439aca201f95199c4dd731d4213",
-      "size": 162549336
+      "url": "Report Editor AI-Setup-0.3.155-x64.exe",
+      "sha256": "9f3881642b6660ea470195d1b3ee1bd4bf5dc56b4b34e91bb6510c7493bca45d",
+      "size": 162552110
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.154-arm64.dmg",
+      "url": "Report Editor AI-0.3.155-arm64.dmg",
       "sha256": "",
       "size": 0
     }

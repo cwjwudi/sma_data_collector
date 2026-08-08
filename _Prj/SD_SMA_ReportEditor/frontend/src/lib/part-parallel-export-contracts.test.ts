@@ -51,7 +51,20 @@ describe("part-parallel export contracts (035)", () => {
     const auto = readFront("src/lib/report-auto-export-trigger-service.ts");
     expect(rg).toMatch(/formatPdfExportParallelProgressDetail/);
     expect(auto).toMatch(/formatPdfExportParallelProgressDetail/);
-    expect(rg).toMatch(/任一导出档位只要并行≥2/);
+    expect(rg).toMatch(/生效 \{\{ effectivePartParallel \}\}/);
+  });
+
+  it("不妥协忽略 CPU 预算：设 16 可真正 16 路", () => {
+    const main = readFront("electron/main.cjs");
+    const budget = readFront("src/lib/export-cpu-budget.ts");
+    const rg = readFront("src/views/ReportGenerator.vue");
+    const auto = readFront("src/lib/report-auto-export-trigger-service.ts");
+    expect(main).toMatch(/pdfExportIgnoreCpuBudget/);
+    expect(budget).toMatch(/ignoreCpuBudget/);
+    expect(rg).toMatch(/coexistPause === ["']max["']/);
+    expect(rg).toMatch(/ignoreCpuBudget/);
+    expect(auto).toMatch(/ignoreCpuBudget:\s*profile\.coexistPause === ["']max["']/);
+    expect(rg).toMatch(/已关闭 CPU 预算封顶/);
   });
 
   it("ReportGenerator：模拟结批卡片露出分卷并行数", () => {

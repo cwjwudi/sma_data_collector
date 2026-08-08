@@ -57,16 +57,29 @@ interface Window {
     /** 039/051：导出仍在进行时重新打开全屏「正在生成报表」遮罩 */
     reshowExportOverlay?: () => Promise<{ ok: boolean; shown?: boolean; reason?: string }>;
     setPdfExportMaxParallel: (
-      max: number,
-    ) => Promise<{ max: number; cpuBudget?: number; logicalCores?: number }>;
+      max:
+        | number
+        | {
+            max?: number;
+            ignoreCpuBudget?: boolean;
+          },
+    ) => Promise<{
+      max: number;
+      cpuBudget?: number;
+      logicalCores?: number;
+      ignoreCpuBudget?: boolean;
+    }>;
     setPdfExportPerfProfile?: (opts: {
       prewarmPoolSize?: number;
       yieldMs?: number;
       maxParallel?: number;
+      ignoreCpuBudget?: boolean;
+      coexistPause?: string;
     }) => Promise<{
       prewarmPoolSize: number;
       yieldMs: number;
       maxParallel: number;
+      ignoreCpuBudget?: boolean;
     }>;
     /** 035：主窗口后台/前台资源模式；返回取消订阅 */
     onAppResourceMode?: (listener: (payload: { mode: "foreground" | "background" }) => void) => () => void;

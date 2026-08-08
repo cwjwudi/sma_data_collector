@@ -25,8 +25,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   /** 039/051：结批进行中重新打开全屏导出遮罩（Esc/× 强关后可拉回） */
   reshowExportOverlay: () => ipcRenderer.invoke('export-overlay-reshow'),
 
-  /** 设置 PDF 导出最大并行数（主进程限制为 1..16） */
-  setPdfExportMaxParallel: (max) => ipcRenderer.invoke('pdf-export-set-max-parallel', { max }),
+  /** 设置 PDF 导出最大并行数（主进程限制为 1..16；可传 { max, ignoreCpuBudget }） */
+  setPdfExportMaxParallel: (maxOrOpts) => {
+    if (maxOrOpts && typeof maxOrOpts === 'object') {
+      return ipcRenderer.invoke('pdf-export-set-max-parallel', maxOrOpts)
+    }
+    return ipcRenderer.invoke('pdf-export-set-max-parallel', { max: maxOrOpts })
+  },
 
   /** 035：按导出性能档位设置预热池 / yield / 并行 */
   setPdfExportPerfProfile: (opts) => ipcRenderer.invoke('pdf-export-set-perf-profile', opts || {}),

@@ -93,6 +93,8 @@ app.on('second-instance', (_event, argv) => {
 const PDF_EXPORT_DEFAULT_MAX_PARALLEL = 1
 const PDF_EXPORT_HARD_MAX_PARALLEL = 16
 let pdfExportMaxParallel = PDF_EXPORT_DEFAULT_MAX_PARALLEL
+/** 035「不妥协」：不套用 CPU 预算，按用户设置（硬顶 16） */
+let pdfExportIgnoreCpuBudget = false
 let pdfExportActiveCount = 0
 const pdfExportSlotWaiters = []
 /** 导出进行中：整进程降为 Below Normal，给 mappView / Hypervisor 让核 */
@@ -114,11 +116,16 @@ function cpuBudgetMaxParallel(logicalCores) {
   return Math.min(PDF_EXPORT_HARD_MAX_PARALLEL, Math.floor(n / 4))
 }
 
-function resolvePdfExportMaxParallel(configured) {
+function resolvePdfExportMaxParallel(configured, opts) {
   const want = Math.min(
     PDF_EXPORT_HARD_MAX_PARALLEL,
     Math.max(1, Number.isFinite(configured) ? Math.floor(configured) : PDF_EXPORT_DEFAULT_MAX_PARALLEL),
   )
+  const ignore =
+    opts && typeof opts === 'object'
+      ? Boolean(opts.ignoreCpuBudget)
+      : pdfExportIgnoreCpuBudget
+  if (ignore) return want
   return Math.min(want, cpuBudgetMaxParallel(os.cpus().length))
 }
 
@@ -2464,6 +2471,9 @@ function destroyWarmPdfExportWindows() {
 }
 
 ipcMain.handle('pdf-export-set-max-parallel', (_event, opts) => {
+  if (opts && typeof opts === 'object' && opts.ignoreCpuBudget != null) {
+    pdfExportIgnoreCpuBudget = Boolean(opts.ignoreCpuBudget)
+  }
   const max = Math.floor(Number(opts && opts.max))
   pdfExportMaxParallel = resolvePdfExportMaxParallel(
     Number.isFinite(max) ? max : PDF_EXPORT_DEFAULT_MAX_PARALLEL,
@@ -2475,6 +2485,7 @@ ipcMain.handle('pdf-export-set-max-parallel', (_event, opts) => {
     max: pdfExportMaxParallel,
     cpuBudget: cpuBudgetMaxParallel(os.cpus().length),
     logicalCores: os.cpus().length,
+    ignoreCpuBudget: pdfExportIgnoreCpuBudget,
   }
 })
 
@@ -2488,6 +2499,17 @@ ipcMain.handle('pdf-export-set-perf-profile', (_event, opts) => {
   if (Number.isFinite(yieldMs) && yieldMs >= 0) {
     pdfExportPartYieldMs = Math.min(2000, yieldMs)
   }
+  // 不妥协（coexistPause=max）或显式 ignoreCpuBudget：按用户设置，不套 floor(cores/4)
+  if (opts && typeof opts === 'object') {
+    if (opts.ignoreCpuBudget != null) {
+      pdfExportIgnoreCpuBudget = Boolean(opts.ignoreCpuBudget)
+    } else if (opts.coexistPause != null) {
+      const pause = String(opts.coexistPause || '')
+        .trim()
+        .toLowerCase()
+      pdfExportIgnoreCpuBudget = pause === 'max' || pause === 'none' || pause === 'off'
+    }
+  }
   const max = Math.floor(Number(opts && opts.maxParallel))
   if (Number.isFinite(max) && max >= 1) {
     pdfExportMaxParallel = resolvePdfExportMaxParallel(max)
@@ -2500,6 +2522,7 @@ ipcMain.handle('pdf-export-set-perf-profile', (_event, opts) => {
     prewarmPoolSize: pdfExportPrewarmPoolSize,
     yieldMs: pdfExportPartYieldMs,
     maxParallel: pdfExportMaxParallel,
+    ignoreCpuBudget: pdfExportIgnoreCpuBudget,
   }
 })
 

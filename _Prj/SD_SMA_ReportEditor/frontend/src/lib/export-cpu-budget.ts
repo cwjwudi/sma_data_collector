@@ -38,12 +38,32 @@ export function cpuBudgetMaxParallel(logicalCores: number): number {
   return Math.min(AUTO_EXPORT_MAX_PARALLEL_HARD_CAP, Math.floor(n / 4));
 }
 
-/** 配置值经 1..16 clamp 后再按 CPU 预算封顶 */
+export type ResolveAutoExportMaxParallelOpts = {
+  /** true：不套用 CPU 预算（035「不妥协」档，按用户设置硬顶 16） */
+  ignoreCpuBudget?: boolean;
+  logicalCores?: number;
+};
+
+/**
+ * 配置值经 1..16 clamp；默认再按 CPU 预算封顶。
+ * 兼容旧签名：`(configured, logicalCores?: number)`。
+ */
 export function resolveAutoExportMaxParallel(
   configured: unknown,
-  logicalCores?: number,
+  logicalCoresOrOpts?: number | ResolveAutoExportMaxParallelOpts,
+  maybeOpts?: ResolveAutoExportMaxParallelOpts,
 ): number {
+  let logicalCores: number | undefined;
+  let opts: ResolveAutoExportMaxParallelOpts = {};
+  if (typeof logicalCoresOrOpts === "number") {
+    logicalCores = logicalCoresOrOpts;
+    opts = maybeOpts || {};
+  } else if (logicalCoresOrOpts && typeof logicalCoresOrOpts === "object") {
+    opts = logicalCoresOrOpts;
+    logicalCores = opts.logicalCores;
+  }
   const want = clampAutoExportMaxParallel(configured);
+  if (opts.ignoreCpuBudget) return want;
   const budget = cpuBudgetMaxParallel(logicalCpuCount(logicalCores));
   return Math.min(want, budget);
 }
@@ -54,7 +74,7 @@ export function exportCpuBudgetHint(logicalCores?: number): string {
   if (budget <= 1) {
     return `本机约 ${cores} 逻辑核（含 Hypervisor/同机 HMI 场景）：并行预算为 1，避免挤占 mappView。`;
   }
-  return `本机约 ${cores} 逻辑核：并行预算上限 ${budget}（设置更高也不会超过预算）。`;
+  return `本机约 ${cores} 逻辑核：并行预算上限 ${budget}（非「不妥协」档时，设置更高也不会超过预算；16 核常见上限 4）。`;
 }
 
 export { AUTO_EXPORT_MAX_PARALLEL_DEFAULT };

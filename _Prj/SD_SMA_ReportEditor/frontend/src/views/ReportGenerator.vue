@@ -88,14 +88,17 @@
             :disabled="manualBusy || hasActiveReportExport"
             @change="onMaxParallelChange"
           />
-          <span class="rg-mini">路（1–16）</span>
+          <span class="rg-mini">路（1–16）· 生效 {{ effectivePartParallel }} 路</span>
         </div>
         <p class="rg-mini">
-          同一次{{ RG_UI.manual }}里多分卷 PDF 可同时渲染的路数；实际 =
-          min(本设置, 本机 CPU 预算)。任一导出档位只要并行≥2，遮罩/进度都会按路分栏显示「第几份」。档「不妥协」默认
-          hint=2；「预览稳 / 功能折中」默认 1，改大可能影响同机 HMI。OPC 多路自动结批也使用同一上限。
+          同一次{{ RG_UI.manual }}里多分卷 PDF 可同时渲染的路数。任一档位并行≥2
+          时遮罩/进度按路分栏。「不妥协」按你设置的路数生效（硬顶 16，不套 CPU 预算）；其它档实际 =
+          min(本设置, 本机 CPU 预算)。改大可能影响同机 HMI。OPC 多路自动结批也使用同一上限。
         </p>
-        <p class="rg-mini">{{ exportCpuBudgetHintText }}</p>
+        <p v-if="exportPerfProfile.coexistPause === 'max'" class="rg-mini">
+          当前「不妥协」：已关闭 CPU 预算封顶，设 16 即最多 16 路并行。
+        </p>
+        <p v-else class="rg-mini">{{ exportCpuBudgetHintText }}</p>
       </div>
       <div class="rg-actions">
         <button type="button" class="btn primary" :disabled="manualBusy || !canManualExport" @click="onManualExport">
@@ -1326,12 +1329,20 @@ function toggleBindingFeedbackExpanded(bindingId: string): void {
 
 const exportCpuBudgetHintText = computed(() => exportCpuBudgetHint());
 
+const effectivePartParallel = computed(() =>
+  resolveAutoExportMaxParallel(prefs.value.auto.maxParallelExports, {
+    ignoreCpuBudget: exportPerfProfile.value.coexistPause === "max",
+  }),
+);
+
 function onMaxParallelChange(): void {
   prefs.value.auto.maxParallelExports = clampAutoExportMaxParallel(prefs.value.auto.maxParallelExports);
-  const effective = resolveAutoExportMaxParallel(prefs.value.auto.maxParallelExports);
+  const effective = effectivePartParallel.value;
   if (effective < prefs.value.auto.maxParallelExports) {
     /* 弱 CPU / Hypervisor：保存仍可写高值，运行时按预算封顶；提示用户 */
     autoStatus.value = `并行设置 ${prefs.value.auto.maxParallelExports}，本机 CPU 预算生效为 ${effective}`;
+  } else if (exportPerfProfile.value.coexistPause === "max") {
+    autoStatus.value = `不妥协并行生效 ${effective} 路（不套 CPU 预算）`;
   }
   notifyReportAutoExportSettingsChanged();
   void applyExportPerfProfileToMain();
@@ -1354,13 +1365,20 @@ function onExportPerfTierChange(): void {
 
 async function applyExportPerfProfileToMain(): Promise<void> {
   const profile = resolveExportPerfProfile(prefs.value.exportPerfTier);
+  const ignoreCpuBudget = profile.coexistPause === "max";
+  const maxParallel = resolveAutoExportMaxParallel(prefs.value.auto.maxParallelExports, {
+    ignoreCpuBudget,
+  });
   const api = window.electronAPI;
   try {
     await api?.setPdfExportPerfProfile?.({
       prewarmPoolSize: profile.prewarmPoolSize,
       yieldMs: profile.yieldMs,
-      maxParallel: resolveAutoExportMaxParallel(prefs.value.auto.maxParallelExports),
+      maxParallel,
+      ignoreCpuBudget,
+      coexistPause: profile.coexistPause,
     });
+    await api?.setPdfExportMaxParallel?.({ max: maxParallel, ignoreCpuBudget });
   } catch {
     /* 非 Electron 忽略 */
   }

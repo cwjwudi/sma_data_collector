@@ -27,6 +27,14 @@ describe("export-cpu-budget (030)", () => {
     expect(resolveAutoExportMaxParallel(1, 4)).toBe(1);
     expect(resolveAutoExportMaxParallel(4, 8)).toBe(2);
     expect(resolveAutoExportMaxParallel(3, 16)).toBe(3);
+    // 16 核预算 4：设 16 仍被盖到 4（非不妥协）
+    expect(resolveAutoExportMaxParallel(16, 16)).toBe(4);
+  });
+
+  it("U3b: 不妥协 ignoreCpuBudget 时尊重用户设置（硬顶 16）", () => {
+    expect(resolveAutoExportMaxParallel(16, { ignoreCpuBudget: true, logicalCores: 16 })).toBe(16);
+    expect(resolveAutoExportMaxParallel(16, 16, { ignoreCpuBudget: true })).toBe(16);
+    expect(resolveAutoExportMaxParallel(99, { ignoreCpuBudget: true })).toBe(16);
   });
 
   it("U4: logicalCpuCount respects override", () => {

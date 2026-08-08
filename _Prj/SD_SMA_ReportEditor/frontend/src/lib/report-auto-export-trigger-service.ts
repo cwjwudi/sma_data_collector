@@ -210,17 +210,23 @@ function syncBindingConfigKey(prefs: ReportGeneratorPrefs): void {
 
 function syncElectronMaxParallel(prefs: ReportGeneratorPrefs): void {
   const profile = resolveExportPerfProfile(prefs.exportPerfTier);
-  const max = resolveAutoExportMaxParallel(prefs.auto.maxParallelExports);
+  const ignoreCpuBudget = profile.coexistPause === "max";
+  const max = resolveAutoExportMaxParallel(prefs.auto.maxParallelExports, { ignoreCpuBudget });
   void window.electronAPI?.setPdfExportPerfProfile?.({
     prewarmPoolSize: profile.prewarmPoolSize,
     yieldMs: profile.yieldMs,
     maxParallel: max,
+    ignoreCpuBudget,
+    coexistPause: profile.coexistPause,
   });
-  void window.electronAPI?.setPdfExportMaxParallel?.(max);
+  void window.electronAPI?.setPdfExportMaxParallel?.({ max, ignoreCpuBudget });
 }
 
 function currentMaxParallel(prefs: ReportGeneratorPrefs): number {
-  const configured = resolveAutoExportMaxParallel(prefs.auto.maxParallelExports);
+  const profile = resolveExportPerfProfile(prefs.exportPerfTier);
+  const configured = resolveAutoExportMaxParallel(prefs.auto.maxParallelExports, {
+    ignoreCpuBudget: profile.coexistPause === "max",
+  });
   const activeCount = Math.max(1, prefs.auto.bindings.filter(isTriggerBindingActive).length);
   return Math.min(configured, activeCount);
 }
