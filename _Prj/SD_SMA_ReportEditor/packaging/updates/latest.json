@@ -1,12 +1,12 @@
 {
   "version": "0.3.160",
-  "releasedAt": "2026-08-08T20:59:36.621Z",
+  "releasedAt": "2026-08-08T21:02:08.736Z",
   "notes": "Report Editor AI 0.3.160\n\n- 052：修首次模拟结批 Chromium 多路闪退（内存安全并发 + 懒建窗 + printToPDF 限流）",
   "platforms": {
     "win32-x64": {
       "url": "Report Editor AI-Setup-0.3.160-x64.exe",
-      "sha256": "",
-      "size": 0
+      "sha256": "430a055153f5e20be355d2ceaad984593b9c2b23aa2fab48bf3d7ea13ba99745",
+      "size": 162552761
     },
     "darwin-arm64": {
       "url": "Report Editor AI-0.3.160-arm64.dmg",
