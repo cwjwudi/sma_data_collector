@@ -247,6 +247,13 @@ describe("032 page lifecycle contracts", () => {
     const rg = read("views/ReportGenerator.vue");
     expect(rg).toMatch(/exportPerfTier/);
     expect(rg).toMatch(/resolveExportPerfProfile/);
+    // 五档选择须在「模拟结批」卡片内露出，不能只藏在 OPC 高级设置
+    const manualH3 = rg.indexOf('<h3 class="rg-h3">{{ RG_UI.manual }}</h3>');
+    const perfTier = rg.indexOf('id="rg-export-perf-tier"');
+    const opcH3 = rg.indexOf('<h3 class="rg-h3">{{ RG_UI.opcAuto }}</h3>');
+    expect(manualH3).toBeGreaterThanOrEqual(0);
+    expect(perfTier).toBeGreaterThan(manualH3);
+    expect(opcH3).toBeGreaterThan(perfTier);
   });
 
   it("M10: 主进程冷路径无 execFileSync；备份/日志 IPC 用 fs.promises", () => {

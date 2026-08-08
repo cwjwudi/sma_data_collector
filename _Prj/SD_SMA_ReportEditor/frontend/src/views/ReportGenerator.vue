@@ -33,6 +33,48 @@
           @click="toggleManualOpenAfter"
         />
       </div>
+      <div class="rg-row rg-row--perf-tier">
+        <span class="rg-lbl" id="rg-export-perf-lbl">导出性能档位（设备能力 · 与 OPC 自动结批共用）</span>
+        <div
+          id="rg-export-perf-tier"
+          class="rg-tabs rg-tabs--perf"
+          role="tablist"
+          aria-labelledby="rg-export-perf-lbl"
+        >
+          <button
+            v-for="p in exportPerfProfiles"
+            :key="p.tier"
+            type="button"
+            role="tab"
+            class="rg-tab"
+            :class="{ 'rg-tab--on': prefs.exportPerfTier === p.tier }"
+            :aria-selected="prefs.exportPerfTier === p.tier"
+            :disabled="manualBusy || hasActiveReportExport"
+            @click="selectExportPerfTier(p.tier)"
+          >
+            {{ p.label }}{{ p.isDefault ? '（默认）' : '' }}
+          </button>
+        </div>
+        <p class="rg-mini">
+          {{ exportPerfProfile.summary }}
+          <template v-if="exportPerfProfile.pdfQuality === 'draft'">
+            <strong> 当前为仅内容草稿，非预览级交付。</strong>
+          </template>
+          <template v-else-if="exportPerfProfile.pdfQuality === 'layout'">
+            <strong> 当前为 pdf-lib 矢量版式（无 printToPDF），非像素级预览。</strong>
+          </template>
+          生效：引擎 {{ exportPerfProfile.engine }} · 预热
+          {{ exportPerfProfile.prewarmPoolSize }} · yield {{ exportPerfProfile.yieldMs }}ms · 优先级
+          {{
+            exportPerfProfile.coexistPause === 'max'
+              ? '拉满'
+              : exportPerfProfile.coexistPause === 'basic'
+                ? '折中'
+                : '全开让核'
+          }}。
+          {{ RG_UI.manual }}开始前请先选好档位；结批进行中不可切换。
+        </p>
+      </div>
       <div class="rg-actions">
         <button type="button" class="btn primary" :disabled="manualBusy || !canManualExport" @click="onManualExport">
           {{ manualBusy ? `${RG_UI.manual}中…` : `${RG_UI.manual}（按模版类型保存）` }}
@@ -182,49 +224,12 @@
               >▸</span
             >
             <span class="rg-lbl rg-lbl--inline">高级设置</span>
-            <span class="rg-mini rg-advanced-hint">导出性能 · 并行上限 · 保存目录 · 文件名</span>
+            <span class="rg-mini rg-advanced-hint">并行上限 · 保存目录 · 文件名</span>
           </button>
           <div v-show="advancedAutoExpanded" class="rg-advanced-body">
-            <div class="rg-row rg-row--in-panel rg-row--perf-tier">
-              <span class="rg-lbl" id="rg-export-perf-lbl">导出性能（设备能力 · 手动与自动共用）</span>
-              <div
-                id="rg-export-perf-tier"
-                class="rg-tabs rg-tabs--perf"
-                role="tablist"
-                aria-labelledby="rg-export-perf-lbl"
-              >
-                <button
-                  v-for="p in exportPerfProfiles"
-                  :key="p.tier"
-                  type="button"
-                  role="tab"
-                  class="rg-tab"
-                  :class="{ 'rg-tab--on': prefs.exportPerfTier === p.tier }"
-                  :aria-selected="prefs.exportPerfTier === p.tier"
-                  @click="selectExportPerfTier(p.tier)"
-                >
-                  {{ p.label }}{{ p.isDefault ? '（默认）' : '' }}
-                </button>
-              </div>
-              <p class="rg-mini rg-mini--indent">
-                {{ exportPerfProfile.summary }}
-                <template v-if="exportPerfProfile.pdfQuality === 'draft'">
-                  <strong> 当前为仅内容草稿，非预览级交付。</strong>
-                </template>
-                <template v-else-if="exportPerfProfile.pdfQuality === 'layout'">
-                  <strong> 当前为 pdf-lib 矢量版式（无 printToPDF），非像素级预览。</strong>
-                </template>
-                生效：引擎 {{ exportPerfProfile.engine }} · 预热
-                {{ exportPerfProfile.prewarmPoolSize }} · yield {{ exportPerfProfile.yieldMs }}ms · 优先级
-                {{
-                  exportPerfProfile.coexistPause === 'max'
-                    ? '拉满'
-                    : exportPerfProfile.coexistPause === 'basic'
-                      ? '折中'
-                      : '全开让核'
-                }}。
-              </p>
-            </div>
+            <p class="rg-mini rg-mini--indent">
+              导出性能档位与「{{ RG_UI.manual }}」共用，请在上方「{{ RG_UI.manual }}」卡片内选择（当前：{{ exportPerfProfile.label }}）。
+            </p>
 
             <div class="rg-row rg-row--in-panel">
               <label class="rg-lbl" for="rg-auto-max-parallel">同时并行导出上限</label>
@@ -894,6 +899,7 @@ import {
 } from "@/lib/pdf-export-cancel-ui";
 import {
   endBatchExportProgress,
+  hasActiveReportExport,
   publishBatchExportProgress,
 } from "@/lib/report-export-progress-state";
 import {
@@ -2257,6 +2263,14 @@ onUnmounted(() => {
   padding: 8px 10px;
   font-size: 12px;
   white-space: nowrap;
+}
+.rg-tabs--perf .rg-tab:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.rg-row--perf-tier {
+  margin-top: 12px;
+  margin-bottom: 4px;
 }
 .rg-advanced-body {
   margin-top: 8px;
