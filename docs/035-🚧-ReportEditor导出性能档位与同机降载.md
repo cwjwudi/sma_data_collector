@@ -6,6 +6,27 @@
 
 ---
 
+# ✅ 已完成：桌面壳误报「浏览器壳」（052d · 2026-08-09）
+
+## 现象
+
+安装版/Electron 桌面壳打开「生成报表」仍黄条：「当前运行在浏览器壳…」。
+
+## 根因
+
+052b/c 在 `preload.cjs` 顶层 `require('fs')`。Electron 默认 sandbox 下 preload 整段失败 → `window.electronAPI` 未注入 → `electronShell` 为 false。
+
+## 修复
+
+- preload 只保留 IPC；fill-cache 按份读写全部回到主进程
+- 契约：preload 不得 `require('fs')`
+
+## 验收
+
+- 安装版打开生成报表：**无**「浏览器壳」黄条；可点「模拟结批」
+
+---
+
 # ✅ 已完成：按份切片取数，降低并行内存（052c · 2026-08-09）
 
 ## 问题

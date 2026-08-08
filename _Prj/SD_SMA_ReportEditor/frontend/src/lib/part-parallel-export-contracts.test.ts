@@ -67,7 +67,7 @@ describe("part-parallel export contracts (035)", () => {
     expect(main).not.toMatch(/acquireExtrasPromise/);
   });
 
-  it("跨窗共享 fill cache：按份落盘，各窗只 hydrate 当前份", () => {
+  it("跨窗共享 fill cache：按份落盘在主进程；preload 无 fs（防误报浏览器壳）", () => {
     const main = readFront("electron/main.cjs");
     const preload = readFront("electron/preload.cjs");
     const pdfView = readFront("src/views/PdfExportView.vue");
@@ -75,8 +75,10 @@ describe("part-parallel export contracts (035)", () => {
     expect(main).toMatch(/pdf-export-fill-cache-get/);
     expect(main).toMatch(/pdfExportFillCacheBridgeMeta/);
     expect(main).toMatch(/part-\$\{partIndex\}\.json/);
+    expect(main).toMatch(/Array\.isArray\(snap\.parts\)/);
     expect(preload).toMatch(/setPdfExportFillCacheBridgeParts/);
-    expect(preload).toMatch(/readFileSync/);
+    expect(preload).not.toMatch(/require\(['"]fs['"]\)/);
+    expect(preload).toMatch(/勿在 preload 顶层 require/);
     expect(fill).toMatch(/publishPdfExportFillCacheToBridge/);
     expect(fill).toMatch(/previewValuesForSplitReport/);
     expect(fill).toMatch(/partIndex/);
@@ -84,6 +86,12 @@ describe("part-parallel export contracts (035)", () => {
     expect(pdfView).toMatch(/reportPartIndex:\s*partIdx/);
     expect(pdfView).toMatch(/pulseExportHeartbeat\(["']hydrate["']\)/);
     expect(main).toMatch(/同步取数缓存/);
+  });
+
+  it("ReportGenerator：桌面壳检测依赖 electronAPI.runPdfExport", () => {
+    const rg = readFront("src/views/ReportGenerator.vue");
+    expect(rg).toMatch(/electronAPI\?\.runPdfExport/);
+    expect(rg).toMatch(/浏览器壳/);
   });
 
   it("不妥协忽略 CPU 预算；Chromium 另受内存安全并发帽", () => {

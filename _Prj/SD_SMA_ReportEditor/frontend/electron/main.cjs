@@ -2731,36 +2731,22 @@ ipcMain.handle('pdf-export-fill-cache-get', (_event, opts) => {
     return { ok: false }
   }
   const partIndex = Math.max(0, Math.floor(Number(opts && opts.reportPartIndex) || 0))
-  // 052c：优先按份目录
-  if (meta.dir) {
-    const partPath = path.join(meta.dir, `part-${partIndex}.json`)
-    try {
-      if (!fs.existsSync(partPath)) return { ok: false }
-    } catch {
-      return { ok: false }
-    }
-    return {
-      ok: true,
-      dir: meta.dir,
-      path: partPath,
-      partIndex,
-      templateId: meta.templateId,
-      totalReports: meta.totalReports,
-      stats: meta.stats,
-    }
-  }
-  if (!meta.path) return { ok: false }
   try {
-    if (!fs.existsSync(meta.path)) return { ok: false }
-  } catch {
+    // 052c：按份文件只含当前份切片（约 maxRows），经 IPC 返回可接受
+    if (meta.dir) {
+      const partPath = path.join(meta.dir, `part-${partIndex}.json`)
+      if (!fs.existsSync(partPath)) return { ok: false }
+      const snap = JSON.parse(fs.readFileSync(partPath, 'utf8'))
+      if (!snap || typeof snap !== 'object' || snap.templateId !== id) return { ok: false }
+      return { ok: true, snap }
+    }
+    if (!meta.path || !fs.existsSync(meta.path)) return { ok: false }
+    const snap = JSON.parse(fs.readFileSync(meta.path, 'utf8'))
+    if (!snap || typeof snap !== 'object' || snap.templateId !== id) return { ok: false }
+    return { ok: true, snap }
+  } catch (e) {
+    log(`fill-cache-get 失败：${e && e.message}`)
     return { ok: false }
-  }
-  return {
-    ok: true,
-    path: meta.path,
-    templateId: meta.templateId,
-    totalReports: meta.totalReports,
-    stats: meta.stats,
   }
 })
 
@@ -2776,30 +2762,64 @@ ipcMain.handle('pdf-export-fill-cache-set', async (_event, snap) => {
   }
   const totalReports = Math.max(1, Math.floor(Number(snap.totalReports) || 1))
   const stats = snap.stats && typeof snap.stats === 'object' ? snap.stats : null
-  const dir = typeof snap.dir === 'string' ? snap.dir.trim() : ''
-  let filePath = typeof snap.path === 'string' ? snap.path.trim() : ''
-  const partCount = Math.max(0, Math.floor(Number(snap.partCount) || 0))
+  const parts = Array.isArray(snap.parts) ? snap.parts : null
 
-  if (dir) {
+  // 052c：主进程按份落盘（preload 不再 require fs，避免 sandbox 下整段 preload 失败）
+  if (parts && parts.length > 0) {
+    const dir = path.join(
+      app.getPath('temp'),
+      `sd-sma-fill-parts-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    )
     try {
-      if (!fs.existsSync(dir)) {
-        return { ok: false, error: 'fill-cache 分份目录不存在' }
+      await fs.promises.mkdir(dir, { recursive: true })
+      let written = 0
+      for (const p of parts) {
+        if (!p || typeof p !== 'object') continue
+        const partIndex = Math.max(0, Math.floor(Number(p.partIndex) || 0))
+        const body = {
+          templateId: id,
+          values: p.values && typeof p.values === 'object' ? p.values : {},
+          totalReports,
+          stats,
+          partIndex,
+        }
+        await fs.promises.writeFile(
+          path.join(dir, `part-${partIndex}.json`),
+          JSON.stringify(body),
+          'utf8',
+        )
+        written += 1
       }
+      if (written <= 0) {
+        try {
+          await fs.promises.rm(dir, { recursive: true, force: true })
+        } catch {
+          /* ignore */
+        }
+        return { ok: false, error: '分份落盘为空' }
+      }
+      clearPdfExportFillCacheBridge()
+      pdfExportFillCacheBridgeMeta = {
+        templateId: id,
+        totalReports,
+        stats,
+        dir,
+        partCount: written,
+      }
+      return { ok: true, dir, partCount: written }
     } catch (e) {
-      return { ok: false, error: (e && e.message) || 'fill-cache 目录无效' }
+      try {
+        await fs.promises.rm(dir, { recursive: true, force: true })
+      } catch {
+        /* ignore */
+      }
+      log(`fill-cache 分份落盘失败：${e && e.message}`)
+      return { ok: false, error: (e && e.message) || '分份落盘失败' }
     }
-    clearPdfExportFillCacheBridge()
-    pdfExportFillCacheBridgeMeta = {
-      templateId: id,
-      totalReports,
-      stats,
-      dir,
-      partCount: partCount || totalReports,
-    }
-    return { ok: true, dir, partCount: pdfExportFillCacheBridgeMeta.partCount }
   }
 
   // 兼容：单文件全量（无分份）
+  let filePath = typeof snap.path === 'string' ? snap.path.trim() : ''
   if (!filePath) {
     try {
       filePath = path.join(

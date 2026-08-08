@@ -1,7 +1,7 @@
 const { contextBridge, ipcRenderer } = require('electron')
-const fs = require('fs')
-const os = require('os')
-const path = require('path')
+
+// 注意：勿在 preload 顶层 require('fs'/'os'/'path')。
+// Electron 默认 sandbox 下会直接导致整段 preload 失败 → window.electronAPI 缺失 → 界面误报「浏览器壳」。
 
 contextBridge.exposeInMainWorld('electronAPI', {
   /** 打开/关闭 Chromium DevTools（主进程侧停靠，默认右侧） */
@@ -75,103 +75,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   /** 仅 PDF 导出隐藏窗口：取数期间心跳，避免大模版慢取数被 2 分钟硬超时误杀 */
   notifyPdfExportHeartbeat: (payload) => ipcRenderer.send('pdf-export-heartbeat', payload || {}),
 
-  /**
-   * 035/052c：跨导出窗共享取数。优先按份文件（只读当前 maxRows 切片）；IPC 只传 path/dir。
-   */
-  getPdfExportFillCacheBridge: async (opts) => {
-    const meta = await ipcRenderer.invoke('pdf-export-fill-cache-get', opts || {})
-    if (!meta || !meta.ok) return { ok: false }
-    if (meta.snap && typeof meta.snap === 'object') return { ok: true, snap: meta.snap }
-    const filePath = typeof meta.path === 'string' ? meta.path : ''
-    if (!filePath) return { ok: false }
-    try {
-      const raw = fs.readFileSync(filePath, 'utf8')
-      const snap = JSON.parse(raw)
-      if (!snap || typeof snap !== 'object' || !snap.templateId) return { ok: false }
-      return { ok: true, snap }
-    } catch {
-      return { ok: false }
-    }
-  },
-  setPdfExportFillCacheBridge: async (snap) => {
-    if (!snap || typeof snap !== 'object') {
-      return ipcRenderer.invoke('pdf-export-fill-cache-set', snap || {})
-    }
-    const id = String(snap.templateId || '').trim()
-    if (!id) return { ok: false }
-    const totalReports = Math.max(1, Math.floor(Number(snap.totalReports) || 1))
-    const stats = snap.stats && typeof snap.stats === 'object' ? snap.stats : null
-    const filePath = path.join(
-      os.tmpdir(),
-      `sd-sma-fill-cache-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.json`,
-    )
-    try {
-      fs.writeFileSync(
-        filePath,
-        JSON.stringify({
-          templateId: id,
-          values: snap.values && typeof snap.values === 'object' ? snap.values : {},
-          totalReports,
-          stats,
-        }),
-        'utf8',
-      )
-    } catch (e) {
-      return ipcRenderer.invoke('pdf-export-fill-cache-set', snap)
-    }
-    return ipcRenderer.invoke('pdf-export-fill-cache-set', {
-      templateId: id,
-      path: filePath,
-      totalReports,
-      stats,
-    })
-  },
-  /** 052c：按份写入 dir/part-N.json，各窗只 hydrate 当前份 */
-  setPdfExportFillCacheBridgeParts: async (payload) => {
-    if (!payload || typeof payload !== 'object') return { ok: false }
-    const id = String(payload.templateId || '').trim()
-    if (!id) return { ok: false }
-    const totalReports = Math.max(1, Math.floor(Number(payload.totalReports) || 1))
-    const stats = payload.stats && typeof payload.stats === 'object' ? payload.stats : null
-    const parts = Array.isArray(payload.parts) ? payload.parts : []
-    if (!parts.length) return { ok: false }
-    const dir = path.join(
-      os.tmpdir(),
-      `sd-sma-fill-parts-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    )
-    try {
-      fs.mkdirSync(dir, { recursive: true })
-      for (const p of parts) {
-        if (!p || typeof p !== 'object') continue
-        const partIndex = Math.max(0, Math.floor(Number(p.partIndex) || 0))
-        fs.writeFileSync(
-          path.join(dir, `part-${partIndex}.json`),
-          JSON.stringify({
-            templateId: id,
-            values: p.values && typeof p.values === 'object' ? p.values : {},
-            totalReports,
-            stats,
-            partIndex,
-          }),
-          'utf8',
-        )
-      }
-    } catch (e) {
-      try {
-        fs.rmSync(dir, { recursive: true, force: true })
-      } catch {
-        /* ignore */
-      }
-      return { ok: false, error: (e && e.message) || '分份落盘失败' }
-    }
-    return ipcRenderer.invoke('pdf-export-fill-cache-set', {
-      templateId: id,
-      dir,
-      totalReports,
-      stats,
-      partCount: parts.length,
-    })
-  },
+  /** 035/052c：跨窗共享取数；读写临时文件一律在主进程，preload 只做 IPC */
+  getPdfExportFillCacheBridge: (opts) => ipcRenderer.invoke('pdf-export-fill-cache-get', opts || {}),
+  setPdfExportFillCacheBridge: (snap) => ipcRenderer.invoke('pdf-export-fill-cache-set', snap || {}),
+  setPdfExportFillCacheBridgeParts: (payload) =>
+    ipcRenderer.invoke('pdf-export-fill-cache-set', {
+      ...(payload || {}),
+      parts: Array.isArray(payload && payload.parts) ? payload.parts : [],
+    }),
   clearPdfExportFillCacheBridge: () => ipcRenderer.invoke('pdf-export-fill-cache-clear'),
 
   /** 订阅 PDF 导出阶段进度（结批弹窗显示「第 X/Y 份」等），返回取消订阅函数 */
