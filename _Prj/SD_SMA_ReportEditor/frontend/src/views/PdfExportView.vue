@@ -179,14 +179,21 @@ async function getBundledCjkFontCached(
   return res;
 }
 
-/** 取数期间向主进程发心跳：大模版慢取数不再被固定 2 分钟超时误杀 */
+/** 取数期间向主进程发心跳：大模版慢取数不再被固定 2 分钟超时误杀；并可带 stage 给遮罩 */
 let exportHeartbeatTimer: ReturnType<typeof setInterval> | null = null;
+let exportHeartbeatStage: "load" | "fetch" | "render" = "load";
 
-function startExportHeartbeat(): void {
+function pulseExportHeartbeat(stage?: "load" | "fetch" | "render"): void {
+  if (stage) exportHeartbeatStage = stage;
+  window.electronAPI?.notifyPdfExportHeartbeat?.({ stage: exportHeartbeatStage });
+}
+
+function startExportHeartbeat(stage: "load" | "fetch" | "render" = "load"): void {
+  exportHeartbeatStage = stage;
+  pulseExportHeartbeat(stage);
   if (exportHeartbeatTimer) return;
-  window.electronAPI?.notifyPdfExportHeartbeat?.();
   exportHeartbeatTimer = setInterval(() => {
-    window.electronAPI?.notifyPdfExportHeartbeat?.();
+    pulseExportHeartbeat();
   }, 10_000);
 }
 
@@ -223,7 +230,7 @@ async function boot(): Promise<void> {
     signalReady(false, errText.value);
     return;
   }
-  startExportHeartbeat();
+  startExportHeartbeat("load");
   const tplStartMs = Date.now();
   try {
     const loaded = await getTemplate(id);
@@ -253,6 +260,7 @@ async function boot(): Promise<void> {
   let fillAttempt = 0;
   let totalReports = 1;
 
+  pulseExportHeartbeat(reuseFill ? "render" : "fetch");
   if (reuseFill && cached) {
     // 030：后续分卷复用首份全量取数快照，仅按 reportPartIndex 内存切片渲染
     bindingPreview.values.value = cached.values;
@@ -309,6 +317,7 @@ async function boot(): Promise<void> {
     });
   }
   const paintStartMs = Date.now();
+  pulseExportHeartbeat("render");
   if (!useChromiumPrint.value) {
     // 同机优先：跳过 DOM 预览栈与 printToPDF，矢量写 PDF
     try {

@@ -1,15 +1,15 @@
 {
-  "version": "0.3.149",
-  "releasedAt": "2026-08-08T17:00:31.925Z",
-  "notes": "Report Editor AI 0.3.149\n\n- 051b：结批中 Esc/× 关掉全屏遮罩后，侧栏/「打开全屏进度」可重新拉起「正在生成报表」遮罩并续进度\n- 含 0.3.148：051 侧栏重开 + 035 模拟结批五档",
+  "version": "0.3.150",
+  "releasedAt": "2026-08-08T18:30:00.000Z",
+  "notes": "039c：导出遮罩盖任务栏/Dock；按份续 120s；设置页可配显示屏与触发范围；阶段/ETA/进度条；遮罩页可导出问题反馈包（048）。含 0.3.149：051b 侧栏重开拉回遮罩。",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.149-x64.exe",
-      "sha256": "30ee9caacb6edd7b1024e1f0e68f4009b04439e7354f3542256fb18dd183bffe",
-      "size": 162519062
+      "url": "Report Editor AI-Setup-0.3.150-x64.exe",
+      "sha256": "",
+      "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.149-arm64.dmg",
+      "url": "Report Editor AI-0.3.150-arm64.dmg",
       "sha256": "",
       "size": 0
     }

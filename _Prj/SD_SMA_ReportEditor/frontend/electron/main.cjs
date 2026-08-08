@@ -285,6 +285,16 @@ const PDF_EXPORT_PREWARM_HASH = '#/pdf-export?prewarm=1'
 /** 复用上限：超过后销毁重建，避免长期驻留的渲染进程累积内存 */
 const PDF_EXPORT_WINDOW_MAX_USES = 30
 
+/**
+ * 050b：macOS 上隐藏 BrowserWindow 仍进 Accessibility 树；
+ * 预热池/复用窗滞留后，过一会被 Cursor/系统查询 → SIGSEGV @0x10。
+ * darwin 禁用池与复用，导出结束即销毁。
+ */
+function pdfExportWarmPoolAllowed() {
+  if (process.platform === 'darwin') return false
+  return true
+}
+
 const BACKEND_PORT = 8000
 /** 后端绑定地址：0.0.0.0 表示同时监听本机回环与局域网网卡（同网段可访问）。 */
 const BACKEND_BIND_HOST = '0.0.0.0'
@@ -666,9 +676,12 @@ function showMainWindowFromTray() {
   }
 }
 
-/* ========== 039：导出全屏遮罩（盖住同机 mappView 被饿死的白屏） ========== */
-let exportOverlayWindow = null
+/* ========== 039 / 039c：导出全屏遮罩（盖住同机 mappView + 任务栏/Dock） ========== */
+/** @type {import('electron').BrowserWindow[]} */
+let exportOverlayWindows = []
 let exportOverlayHideTimer = null
+/** ETA 文案每秒刷新（不续 120s，仅重算剩余） */
+let exportOverlayEtaTickTimer = null
 /** 进行中的导出计数（0→1 显示遮罩，→0 隐藏）；支持并行导出 */
 let exportOverlayUiCount = 0
 let exportOverlayLastProgress = null
@@ -677,8 +690,25 @@ let exportOverlayLastProgress = null
  * 侧栏「重新打开」可经 reshowExportOverlay 显式拉回。
  */
 let exportOverlaySuppressed = false
-/** 硬超时：最多盖 120s，防遮罩卡死长时间锁住 HMI（用户确认） */
+/** 单份最长遮罩 120s；每份开始时重新计时（用户确认方案 A） */
 const EXPORT_OVERLAY_MAX_MS = 120000
+/** ETA：本会话已完成份耗时 */
+let exportOverlayEta = {
+  sessionStartedAt: 0,
+  partStartedAt: 0,
+  armedPartIndex: -1,
+  completedParts: 0,
+  partDurationsMs: [],
+}
+
+const EXPORT_OVERLAY_STAGE_LABELS = {
+  load: '加载模版',
+  fetch: '取数中（OPC / SQL）',
+  render: '渲染 PDF',
+  write: '写入磁盘',
+  saved: '本份已保存',
+  export: '导出进行中',
+}
 
 function isExportOverlayEnabled() {
   // 五档批导为无人值守/自动退出，不弹遮罩
@@ -688,6 +718,90 @@ function isExportOverlayEnabled() {
   } catch {
     return true
   }
+}
+
+/** 039c：触发范围——always 全部导出；autoOnly 仅自动结批 */
+function shouldArmExportOverlay(opts) {
+  if (!isExportOverlayEnabled()) return false
+  let trigger = 'always'
+  try {
+    trigger = readLaunchSettings(app).exportOverlayTrigger || 'always'
+  } catch {
+    trigger = 'always'
+  }
+  if (trigger === 'autoOnly') {
+    const src = opts && typeof opts.exportSource === 'string' ? opts.exportSource.trim() : ''
+    return src === 'auto'
+  }
+  return true
+}
+
+function resolveOverlayDisplays() {
+  let mode = 'primary'
+  try {
+    mode = readLaunchSettings(app).exportOverlayDisplay || 'primary'
+  } catch {
+    mode = 'primary'
+  }
+  const all = screen.getAllDisplays()
+  const primary = screen.getPrimaryDisplay()
+  if (!primary) return [{ bounds: { x: 0, y: 0, width: 1280, height: 800 } }]
+  if (mode === 'all') return all.length ? all : [primary]
+  if (mode === 'secondary') {
+    const sec = all.find((d) => d && d.id !== primary.id)
+    return [sec || primary]
+  }
+  return [primary]
+}
+
+function formatExportOverlayEta(ms) {
+  if (ms == null || !Number.isFinite(ms) || ms < 0) return '预估中…'
+  const sec = Math.max(0, Math.ceil(ms / 1000))
+  if (sec < 60) return `约剩余 ${sec} 秒`
+  const m = Math.floor(sec / 60)
+  const s = sec % 60
+  return s > 0 ? `约剩余 ${m} 分 ${s} 秒` : `约剩余 ${m} 分钟`
+}
+
+function stageWeightForOverlay(stage, phase) {
+  const s = String(stage || phase || '').toLowerCase()
+  if (s === 'saved') return 1
+  if (s === 'write') return 0.92
+  if (s === 'render') return 0.72
+  if (s === 'fetch') return 0.42
+  if (s === 'load') return 0.12
+  return 0.28
+}
+
+function enrichExportOverlayProgress(base) {
+  const p = { ...(base || {}) }
+  const stage = String(p.stage || p.phase || 'export')
+  p.stage = stage
+  p.stageLabel = EXPORT_OVERLAY_STAGE_LABELS[stage] || EXPORT_OVERLAY_STAGE_LABELS.export
+  const total = Math.max(0, Math.floor(Number(p.totalReports) || 0))
+  const partIndex = Math.max(0, Math.floor(Number(p.partIndex) || 0))
+  const completed = Math.max(0, Math.floor(Number(exportOverlayEta.completedParts) || 0))
+  let percent = 0
+  if (total > 0) {
+    const frac = Math.min(1, stageWeightForOverlay(stage, p.phase))
+    percent = Math.min(99, Math.round(((completed + frac) / total) * 100))
+    if (stage === 'saved' && partIndex + 1 >= total) percent = 100
+  }
+  p.percent = percent
+
+  let etaMs = null
+  const durations = exportOverlayEta.partDurationsMs || []
+  if (durations.length > 0 && total > 0) {
+    const avg = durations.reduce((a, b) => a + b, 0) / durations.length
+    const currentElapsed = Math.max(0, Date.now() - (exportOverlayEta.partStartedAt || Date.now()))
+    const remainCurrent =
+      stage === 'saved' ? 0 : Math.max(0, avg - currentElapsed)
+    const remainAfter = Math.max(0, total - completed - (stage === 'saved' ? 0 : 1)) * avg
+    etaMs = remainCurrent + remainAfter
+  }
+  p.etaMs = etaMs
+  p.etaLabel = formatExportOverlayEta(etaMs)
+  return p
 }
 
 function buildExportOverlayHtml() {
@@ -700,22 +814,34 @@ function buildExportOverlayHtml() {
     color:#e8ecf6; font-family:"Microsoft YaHei","PingFang SC","Segoe UI",sans-serif;
     -webkit-app-region:no-drag; cursor:default; }
   .wrap { position:absolute; inset:0; display:flex; flex-direction:column;
-    align-items:center; justify-content:center; gap:26px; }
+    align-items:center; justify-content:center; gap:18px; padding:24px; }
   .ring { width:76px; height:76px; border-radius:50%;
     border:5px solid rgba(120,160,255,0.18); border-top-color:#6aa0ff;
     animation:spin 0.9s linear infinite; }
   @keyframes spin { to { transform:rotate(360deg); } }
   .title { font-size:30px; font-weight:600; letter-spacing:2px; }
   .sub { font-size:16px; color:#9fb0d4; letter-spacing:1px; }
+  .stage { font-size:17px; color:#d7e2ff; min-height:24px; }
   .counter { font-size:15px; color:#c7d4ef; min-height:20px; }
-  .bar { width:360px; max-width:60vw; height:6px; border-radius:99px;
+  .eta { font-size:14px; color:#8fa3c8; min-height:20px; }
+  .bar { width:420px; max-width:70vw; height:8px; border-radius:99px;
     background:rgba(120,160,255,0.15); overflow:hidden; position:relative; }
-  .bar > i { position:absolute; left:-40%; top:0; height:100%; width:40%;
-    border-radius:99px; background:linear-gradient(90deg,transparent,#6aa0ff,transparent);
-    animation:slide 1.25s ease-in-out infinite; }
+  .bar > i { position:absolute; left:0; top:0; height:100%; width:0%;
+    border-radius:99px; background:linear-gradient(90deg,#3d6fd6,#6aa0ff);
+    transition:width 0.35s ease; }
+  .bar.indeterminate > i { left:-40%; width:40%;
+    background:linear-gradient(90deg,transparent,#6aa0ff,transparent);
+    animation:slide 1.25s ease-in-out infinite; transition:none; }
   @keyframes slide { 0%{left:-40%;} 100%{left:100%;} }
+  .pct { font-size:13px; color:#7f93b8; min-height:18px; }
+  .actions { margin-top:8px; display:flex; gap:12px; align-items:center; }
+  #ov-support { border:1px solid rgba(160,180,220,0.28); background:rgba(255,255,255,0.06);
+    color:#c7d4ef; font-size:13px; padding:8px 14px; border-radius:8px; cursor:pointer; }
+  #ov-support:hover { background:rgba(255,255,255,0.12); color:#fff; }
+  #ov-support:disabled { opacity:0.45; cursor:wait; }
+  #ov-support-msg { font-size:12px; color:#8fa3c8; max-width:360px; text-align:center; min-height:16px; }
   .hint { position:absolute; bottom:22px; left:0; right:0; text-align:center;
-    font-size:13px; color:#6f7ea0; }
+    font-size:13px; color:#6f7ea0; padding:0 24px; }
   #ov-close { position:absolute; top:16px; right:20px; width:40px; height:40px;
     border-radius:8px; border:1px solid rgba(160,180,220,0.25); background:rgba(255,255,255,0.04);
     color:#9fb0d4; font-size:20px; line-height:38px; text-align:center; cursor:pointer;
@@ -727,30 +853,75 @@ function buildExportOverlayHtml() {
     <div class="ring"></div>
     <div class="title">正在生成报表</div>
     <div class="sub">结批导出进行中，请稍候…</div>
+    <div class="stage" id="ov-stage"></div>
     <div class="counter" id="ov-counter"></div>
-    <div class="bar"><i></i></div>
+    <div class="eta" id="ov-eta"></div>
+    <div class="bar indeterminate" id="ov-bar"><i id="ov-bar-fill"></i></div>
+    <div class="pct" id="ov-pct"></div>
+    <div class="actions">
+      <button type="button" id="ov-support">导出问题反馈包</button>
+    </div>
+    <div id="ov-support-msg"></div>
   </div>
-  <div class="hint">此界面为报表结批临时提示 · 按 Esc 或点右上角 × 可隐藏回主画面</div>
+  <div class="hint">此界面为报表导出临时提示 · 按 Esc 或点右上角 × 可隐藏回主画面</div>
 <script>
   (function(){
     var api = window.exportOverlay;
+    var stageEl = document.getElementById('ov-stage');
     var counter = document.getElementById('ov-counter');
+    var etaEl = document.getElementById('ov-eta');
+    var bar = document.getElementById('ov-bar');
+    var fill = document.getElementById('ov-bar-fill');
+    var pctEl = document.getElementById('ov-pct');
+    var supportBtn = document.getElementById('ov-support');
+    var supportMsg = document.getElementById('ov-support-msg');
     function render(p){
       if (!p) return;
+      stageEl.textContent = p.stageLabel || '';
       var total = Number(p.totalReports) || 0;
-      if (total > 1) {
+      if (total > 0) {
         var idx = (Number(p.partIndex) || 0) + 1;
         if (idx > total) idx = total;
-        counter.textContent = '第 ' + idx + ' / 共 ' + total + ' 份';
+        var name = p.templateName ? (' · ' + p.templateName) : '';
+        counter.textContent = '第 ' + idx + ' / 共 ' + total + ' 份' + name;
       } else {
-        counter.textContent = '';
+        counter.textContent = p.templateName || '';
       }
+      etaEl.textContent = p.etaLabel || '预估中…';
+      var pct = Number(p.percent);
+      if (total > 0 && Number.isFinite(pct) && pct >= 0) {
+        bar.classList.remove('indeterminate');
+        fill.style.width = Math.max(0, Math.min(100, pct)) + '%';
+        pctEl.textContent = '总进度 ' + Math.max(0, Math.min(100, Math.round(pct))) + '%';
+      } else {
+        bar.classList.add('indeterminate');
+        fill.style.width = '';
+        pctEl.textContent = '';
+      }
+      if (p.supportMsg) supportMsg.textContent = p.supportMsg;
+      if (supportBtn) supportBtn.disabled = !!p.supportBusy;
     }
     if (api && api.onProgress) api.onProgress(render);
     function dismiss(){ if (api && api.dismiss) api.dismiss(); }
     document.addEventListener('keydown', function(e){ if (e.key === 'Escape') dismiss(); });
     var btn = document.getElementById('ov-close');
     if (btn) btn.addEventListener('click', dismiss);
+    if (supportBtn) supportBtn.addEventListener('click', function(){
+      if (!api || !api.exportSupportPack) return;
+      supportBtn.disabled = true;
+      supportMsg.textContent = '正在生成反馈包…';
+      Promise.resolve(api.exportSupportPack()).then(function(res){
+        if (res && res.ok) {
+          supportMsg.textContent = '已保存：' + (res.filePath || res.filename || '反馈包');
+        } else if (res && res.canceled) {
+          supportMsg.textContent = '已取消保存';
+        } else {
+          supportMsg.textContent = (res && res.error) || '导出反馈包失败';
+        }
+      }).catch(function(e){
+        supportMsg.textContent = (e && e.message) ? e.message : String(e);
+      }).then(function(){ supportBtn.disabled = false; });
+    });
   })();
 </script></body></html>`
 }
@@ -758,85 +929,189 @@ function buildExportOverlayHtml() {
 function armExportOverlayTimeout() {
   if (exportOverlayHideTimer) clearTimeout(exportOverlayHideTimer)
   exportOverlayHideTimer = setTimeout(() => {
-    log('导出遮罩：达最长显示时间（120s），自动隐藏以防锁住 HMI')
+    log('导出遮罩：本份达最长显示时间（120s），自动隐藏以防锁住 HMI')
     hideExportOverlay('timeout')
   }, EXPORT_OVERLAY_MAX_MS)
 }
 
-function pushExportOverlayProgress(payload) {
-  if (payload) exportOverlayLastProgress = { ...(exportOverlayLastProgress || {}), ...payload }
-  const w = exportOverlayWindow
-  if (w && !w.isDestroyed()) {
+function startExportOverlayEtaTick() {
+  if (exportOverlayEtaTickTimer) return
+  exportOverlayEtaTickTimer = setInterval(() => {
+    if (!exportOverlayWindows.length) return
+    broadcastExportOverlayProgress()
+  }, 1000)
+}
+
+function stopExportOverlayEtaTick() {
+  if (!exportOverlayEtaTickTimer) return
+  clearInterval(exportOverlayEtaTickTimer)
+  exportOverlayEtaTickTimer = null
+}
+
+function resetExportOverlayEta() {
+  const now = Date.now()
+  exportOverlayEta = {
+    sessionStartedAt: now,
+    partStartedAt: now,
+    armedPartIndex: -1,
+    completedParts: 0,
+    partDurationsMs: [],
+  }
+}
+
+/** 每份开始：重置 120s；记录份起始时刻供 ETA */
+function noteExportOverlayPartStart(partIndex) {
+  const idx = Math.max(0, Math.floor(Number(partIndex) || 0))
+  if (exportOverlayEta.armedPartIndex === idx) return
+  exportOverlayEta.armedPartIndex = idx
+  exportOverlayEta.partStartedAt = Date.now()
+  armExportOverlayTimeout()
+}
+
+function noteExportOverlayPartSaved(partIndex) {
+  const started = exportOverlayEta.partStartedAt || Date.now()
+  const dur = Math.max(1, Date.now() - started)
+  exportOverlayEta.partDurationsMs.push(dur)
+  exportOverlayEta.completedParts = Math.max(
+    exportOverlayEta.completedParts,
+    Math.floor(Number(partIndex) || 0) + 1,
+  )
+}
+
+function broadcastExportOverlayProgress() {
+  const payload = enrichExportOverlayProgress(exportOverlayLastProgress || {})
+  exportOverlayLastProgress = payload
+  for (const w of exportOverlayWindows) {
+    if (!w || w.isDestroyed()) continue
     try {
-      w.webContents.send('export-overlay-progress', exportOverlayLastProgress || {})
+      w.webContents.send('export-overlay-progress', payload)
     } catch {
       /* ignore */
     }
   }
 }
 
+function pushExportOverlayProgress(payload) {
+  if (payload) {
+    const prev = exportOverlayLastProgress || {}
+    const next = { ...prev, ...payload }
+    const phase = String(next.phase || '')
+    const stage = String(next.stage || phase || '')
+    const partIndex = Math.max(0, Math.floor(Number(next.partIndex) || 0))
+    // 每份开始渲染：按份续 120s（Q1A）
+    if (phase === 'render' || stage === 'render' || stage === 'load' || stage === 'fetch') {
+      noteExportOverlayPartStart(partIndex)
+    }
+    if (phase === 'saved' || stage === 'saved') {
+      noteExportOverlayPartSaved(partIndex)
+    }
+    exportOverlayLastProgress = next
+  }
+  broadcastExportOverlayProgress()
+}
+
+function assertOverlayWindowOnTop(win, bounds) {
+  if (!win || win.isDestroyed()) return
+  try {
+    // 用 bounds 铺满整块物理屏（含任务栏/Dock），避免 setFullScreen 留给系统栏
+    if (bounds) win.setBounds(bounds, false)
+  } catch {
+    /* ignore */
+  }
+  try {
+    win.setAlwaysOnTop(true, 'screen-saver')
+  } catch {
+    try {
+      win.setAlwaysOnTop(true)
+    } catch {
+      /* ignore */
+    }
+  }
+  try {
+    win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  } catch {
+    try {
+      win.setVisibleOnAllWorkspaces(true)
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+function createExportOverlayWindowForDisplay(disp) {
+  const b = (disp && disp.bounds) || { x: 0, y: 0, width: 1280, height: 800 }
+  const win = new BrowserWindow({
+    x: b.x,
+    y: b.y,
+    width: b.width,
+    height: b.height,
+    show: false,
+    frame: false,
+    transparent: false,
+    backgroundColor: '#0b1120',
+    skipTaskbar: true,
+    resizable: false,
+    movable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    simpleFullscreen: false,
+    hasShadow: false,
+    alwaysOnTop: true,
+    focusable: true,
+    webPreferences: {
+      preload: path.join(__dirname, 'overlay-preload.cjs'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  })
+  win.setMenuBarVisibility(false)
+  try {
+    if (process.platform === 'darwin') win.setWindowButtonVisibility(false)
+  } catch {
+    /* ignore */
+  }
+  win.once('ready-to-show', () => {
+    if (!exportOverlayWindows.includes(win) || win.isDestroyed()) return
+    assertOverlayWindowOnTop(win, b)
+    win.show()
+    win.focus()
+    // 再钉一次 bounds：部分 Windows 在 show 后会缩回 workArea
+    setTimeout(() => assertOverlayWindowOnTop(win, b), 50)
+    broadcastExportOverlayProgress()
+  })
+  win.webContents.on('before-input-event', (_e, input) => {
+    if (input && input.type === 'keyDown' && String(input.key) === 'Escape') {
+      hideExportOverlay('esc')
+    }
+  })
+  win.on('closed', () => {
+    exportOverlayWindows = exportOverlayWindows.filter((w) => w !== win)
+  })
+  win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(buildExportOverlayHtml()))
+  return win
+}
+
 function showExportOverlay() {
   if (!isExportOverlayEnabled()) return
   try {
-    if (exportOverlayWindow && !exportOverlayWindow.isDestroyed()) {
-      if (!exportOverlayWindow.isVisible()) exportOverlayWindow.show()
-      exportOverlayWindow.setAlwaysOnTop(true, 'screen-saver')
-      pushExportOverlayProgress(null)
-      armExportOverlayTimeout()
+    const alive = exportOverlayWindows.filter((w) => w && !w.isDestroyed())
+    if (alive.length) {
+      exportOverlayWindows = alive
+      for (const w of alive) {
+        if (!w.isVisible()) w.show()
+        assertOverlayWindowOnTop(w, w.getBounds())
+      }
+      broadcastExportOverlayProgress()
+      // 会话已在跑：不在此处重置 120s（由每份 noteExportOverlayPartStart 负责）
+      if (!exportOverlayHideTimer) armExportOverlayTimeout()
+      startExportOverlayEtaTick()
       return
     }
-    const disp = screen.getPrimaryDisplay()
-    const b = (disp && disp.bounds) || { x: 0, y: 0, width: 1280, height: 800 }
-    const win = new BrowserWindow({
-      x: b.x,
-      y: b.y,
-      width: b.width,
-      height: b.height,
-      show: false,
-      frame: false,
-      backgroundColor: '#0b1120',
-      skipTaskbar: true,
-      resizable: false,
-      movable: false,
-      minimizable: false,
-      maximizable: false,
-      fullscreenable: true,
-      alwaysOnTop: true,
-      webPreferences: {
-        preload: path.join(__dirname, 'overlay-preload.cjs'),
-        contextIsolation: true,
-        nodeIntegration: false,
-      },
-    })
-    exportOverlayWindow = win
-    win.setMenuBarVisibility(false)
-    win.once('ready-to-show', () => {
-      if (!exportOverlayWindow || exportOverlayWindow.isDestroyed()) return
-      try {
-        win.setAlwaysOnTop(true, 'screen-saver')
-      } catch {
-        /* ignore */
-      }
-      try {
-        win.setFullScreen(true)
-      } catch {
-        /* ignore */
-      }
-      win.show()
-      win.focus()
-      pushExportOverlayProgress(null)
-    })
-    // Esc 兜底（页面内也监听；此处防页面脚本异常时仍可退出）
-    win.webContents.on('before-input-event', (_e, input) => {
-      if (input && input.type === 'keyDown' && String(input.key) === 'Escape') {
-        hideExportOverlay('esc')
-      }
-    })
-    win.on('closed', () => {
-      if (exportOverlayWindow === win) exportOverlayWindow = null
-    })
-    win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(buildExportOverlayHtml()))
+    const displays = resolveOverlayDisplays()
+    exportOverlayWindows = displays.map((d) => createExportOverlayWindowForDisplay(d))
     armExportOverlayTimeout()
+    startExportOverlayEtaTick()
   } catch (e) {
     log(`导出遮罩显示失败（忽略）：${e && e.message ? e.message : e}`)
   }
@@ -847,8 +1122,9 @@ function hideExportOverlay(reason = 'done') {
     clearTimeout(exportOverlayHideTimer)
     exportOverlayHideTimer = null
   }
-  const w = exportOverlayWindow
-  exportOverlayWindow = null
+  stopExportOverlayEtaTick()
+  const wins = exportOverlayWindows.slice()
+  exportOverlayWindows = []
   const exportStillRunning = exportOverlayUiCount > 0 && reason !== 'done'
   if (exportStillRunning) {
     // 保留进度，供侧栏「重新打开」拉回全屏遮罩
@@ -856,13 +1132,11 @@ function hideExportOverlay(reason = 'done') {
   } else {
     exportOverlayLastProgress = null
     exportOverlaySuppressed = false
+    resetExportOverlayEta()
   }
-  if (w && !w.isDestroyed()) {
-    try {
-      w.destroy()
-    } catch {
-      /* ignore */
-    }
+  for (const w of wins) {
+    // 050：与 PDF 导出窗同一套延迟销毁，避免 Accessibility UAF
+    safeDestroyBrowserWindow(w, `export-overlay:${reason || 'done'}`)
   }
   if (reason && reason !== 'done') log(`导出遮罩隐藏（${reason}）`)
 }
@@ -872,8 +1146,16 @@ function beginExportOverlaySession() {
   exportOverlayUiCount += 1
   if (exportOverlayUiCount === 1) {
     exportOverlaySuppressed = false
-    exportOverlayLastProgress = { phase: 'render', partIndex: 0, totalReports: 0 }
+    resetExportOverlayEta()
+    exportOverlayLastProgress = {
+      phase: 'render',
+      stage: 'load',
+      partIndex: 0,
+      totalReports: 0,
+    }
     showExportOverlay()
+    noteExportOverlayPartStart(0)
+    broadcastExportOverlayProgress()
   }
 }
 
@@ -900,6 +1182,152 @@ function reshowExportOverlay() {
 
 ipcMain.on('export-overlay-dismiss', () => hideExportOverlay('user'))
 ipcMain.handle('export-overlay-reshow', () => reshowExportOverlay())
+
+/** 遮罩页 → 主进程打 048 问题反馈包并另存 zip */
+ipcMain.handle('export-overlay-support-pack', async () => {
+  try {
+    const progress = exportOverlayLastProgress || {}
+    const templateId =
+      typeof progress.templateId === 'string' && progress.templateId.trim()
+        ? progress.templateId.trim()
+        : ''
+    const suggestions = await new Promise((resolve) => {
+      const req = http.get(`${BACKEND_URL}/settings/support-pack/suggestions`, (res) => {
+        const chunks = []
+        res.on('data', (c) => chunks.push(c))
+        res.on('end', () => {
+          try {
+            resolve(JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}'))
+          } catch {
+            resolve({})
+          }
+        })
+      })
+      req.on('error', () => resolve({}))
+      req.setTimeout(8000, () => {
+        try {
+          req.destroy()
+        } catch {
+          /* ignore */
+        }
+        resolve({})
+      })
+    })
+    const templateIds = []
+    if (templateId) templateIds.push(templateId)
+    for (const id of suggestions.templateIds || []) {
+      const s = String(id || '').trim()
+      if (s && !templateIds.includes(s)) templateIds.push(s)
+      if (templateIds.length >= 8) break
+    }
+    const pdfPaths = Array.isArray(suggestions.pdfPaths)
+      ? suggestions.pdfPaths.map(String).filter(Boolean).slice(0, 8)
+      : []
+    const now = new Date()
+    const pad = (n) => String(n).padStart(2, '0')
+    const stamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`
+    const body = {
+      title: '导出遮罩现场反馈',
+      symptom: '结批/导出遮罩期间反馈（遮罩页一键导出）',
+      expected: '',
+      steps: '1. 触发导出/结批\n2. 观察遮罩进度与现场现象\n3. 在遮罩页导出本反馈包',
+      occurredAt: stamp,
+      templateIds,
+      includeFailedPdf: true,
+      pdfPaths,
+      env: {
+        platform: process.platform,
+        arch: process.arch,
+        appVersion: app.getVersion(),
+        overlayProgress: {
+          stage: progress.stage,
+          phase: progress.phase,
+          partIndex: progress.partIndex,
+          totalReports: progress.totalReports,
+          percent: progress.percent,
+          etaLabel: progress.etaLabel,
+        },
+      },
+      appVersion: app.getVersion(),
+    }
+    const zipBuf = await new Promise((resolve, reject) => {
+      const payload = JSON.stringify(body)
+      const req = http.request(
+        {
+          hostname: '127.0.0.1',
+          port: BACKEND_PORT,
+          path: '/settings/support-pack/export',
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Content-Length': Buffer.byteLength(payload),
+          },
+        },
+        (res) => {
+          const chunks = []
+          res.on('data', (c) => chunks.push(c))
+          res.on('end', () => {
+            const buf = Buffer.concat(chunks)
+            if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
+              resolve({ buf, headers: res.headers })
+            } else {
+              reject(new Error(buf.toString('utf8') || `HTTP ${res.statusCode}`))
+            }
+          })
+        },
+      )
+      req.on('error', reject)
+      req.setTimeout(120000, () => {
+        try {
+          req.destroy()
+        } catch {
+          /* ignore */
+        }
+        reject(new Error('反馈包生成超时'))
+      })
+      req.write(payload)
+      req.end()
+    })
+    const cd = String((zipBuf.headers && zipBuf.headers['content-disposition']) || '')
+    const m = /filename="([^"]+)"/.exec(cd)
+    const filename = m?.[1] || `support-pack-${app.getVersion()}.zip`
+    const parent =
+      exportOverlayWindows.find((w) => w && !w.isDestroyed()) ||
+      (mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined)
+    // 临时降置顶，避免挡住系统保存对话框
+    for (const w of exportOverlayWindows) {
+      if (w && !w.isDestroyed()) {
+        try {
+          w.setAlwaysOnTop(false)
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+    const save = await dialog.showSaveDialog(parent, {
+      title: '保存问题反馈包',
+      defaultPath: path.join(app.getPath('desktop'), filename),
+      filters: [{ name: 'ZIP', extensions: ['zip'] }],
+    })
+    for (const w of exportOverlayWindows) {
+      if (w && !w.isDestroyed()) assertOverlayWindowOnTop(w, w.getBounds())
+    }
+    if (save.canceled || !save.filePath) return { ok: false, canceled: true }
+    let fp = save.filePath
+    if (!fp.toLowerCase().endsWith('.zip')) fp += '.zip'
+    await fs.promises.writeFile(fp, zipBuf.buf)
+    try {
+      shell.showItemInFolder(fp)
+    } catch {
+      /* ignore */
+    }
+    return { ok: true, filePath: fp, filename: path.basename(fp) }
+  } catch (e) {
+    const msg = e && e.message ? e.message : String(e)
+    log(`遮罩导出反馈包失败：${msg}`)
+    return { ok: false, error: msg }
+  }
+})
 
 function destroyAppTray() {
   if (!appTray) return
@@ -1374,6 +1802,11 @@ function createPdfExportWindow() {
     show: false,
     width: 1280,
     height: 1680,
+    // 050：隐藏窗默认白底；若系统/辅助功能短暂露出会像「白屏不关」
+    backgroundColor: '#0b1120',
+    skipTaskbar: true,
+    focusable: false,
+    paintWhenInitiallyHidden: true,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -1460,7 +1893,54 @@ async function navigatePdfExportWindowWithRecovery(holder, targetUrl) {
 }
 
 function destroyPdfExportWindow(win) {
-  if (win && !win.isDestroyed()) win.destroy()
+  // 050：先 hide 再延迟 destroy，避免 Accessibility 查已毁窗 → SIGSEGV
+  safeDestroyBrowserWindow(win, 'pdf-export')
+}
+
+/**
+ * 050：安全销毁 BrowserWindow。
+ * 崩溃栈为 CrBrowserMain → NSAccessibility… → objc_msgSend @0x10：
+ * 同步 destroy 时系统辅助功能仍可能读窗属性。先卸内容、hide，稍后再 destroy。
+ */
+function safeDestroyBrowserWindow(win, label = '') {
+  if (!win || win.isDestroyed()) return
+  try {
+    if (win.isVisible()) win.hide()
+  } catch {
+    /* ignore */
+  }
+  try {
+    win.setOpacity(0)
+  } catch {
+    /* ignore */
+  }
+  try {
+    win.removeAllListeners()
+  } catch {
+    /* ignore */
+  }
+  try {
+    const wc = win.webContents
+    if (wc && !wc.isDestroyed()) {
+      // 卸掉 SPA，降低 Accessibility 读复杂 DOM 时踩空指针概率
+      wc.loadURL('about:blank').catch(() => {})
+    }
+  } catch {
+    /* ignore */
+  }
+  const run = () => {
+    try {
+      if (win && !win.isDestroyed()) win.destroy()
+    } catch (e) {
+      log(`safeDestroyBrowserWindow(${label})：${e && e.message ? e.message : e}`)
+    }
+  }
+  // 050b：比 setImmediate 稍长，给 Accessibility MIG 收尾时间
+  try {
+    setTimeout(run, 300)
+  } catch {
+    run()
+  }
 }
 
 /** 从空闲池中取一个窗口；没有可用窗口时创建独立窗口供当前导出任务使用。 */
@@ -1475,6 +1955,10 @@ function acquirePdfExportWindow() {
 
 /** 将成功导出的窗口归还空闲池；已达到复用次数或池已满时销毁。 */
 function releasePdfExportWindow(win) {
+  if (!pdfExportWarmPoolAllowed()) {
+    destroyPdfExportWindow(win)
+    return false
+  }
   const reusable =
     isReusablePdfWindow(win) &&
     (win.__exportUses || 0) < PDF_EXPORT_WINDOW_MAX_USES &&
@@ -1572,6 +2056,10 @@ function discardUnusableWarmPdfExportWindows() {
 
 /** 空闲时预热少量导出窗口，失败静默不影响导出。 */
 function ensurePdfExportWindowPrewarmed(refWc) {
+  if (!pdfExportWarmPoolAllowed()) {
+    destroyWarmPdfExportWindows()
+    return
+  }
   if (!mainWindow || mainWindow.isDestroyed()) return
   if (appMainWindowBackgroundIdle) {
     destroyWarmPdfExportWindows()
@@ -1683,8 +2171,9 @@ async function handlePdfExportRun(event, opts) {
   if (!templateId || typeof templateId !== 'string') throw new Error('缺少 templateId')
 
   registerPdfExportJob(jobId)
-  // 039：导出期弹全屏遮罩盖住同机 mappView（默认开，可 Esc / 角落关 / 120s 超时）
-  beginExportOverlaySession()
+  // 039c：按配置决定是否弹遮罩（总开关 / 仅自动结批）
+  const armOverlay = shouldArmExportOverlay(opts)
+  if (armOverlay) beginExportOverlaySession()
 
   return runPdfExportWithSlot(async () => {
     let pdfWin = null
@@ -1711,9 +2200,9 @@ async function handlePdfExportRun(event, opts) {
         } catch {
           /* ignore */
         }
-        // 039：同步喂给全屏遮罩（第 x/共 y 份）
+        // 039c：同步喂给全屏遮罩（份进度 / 阶段 / ETA）
         try {
-          pushExportOverlayProgress({ ...payload, templateId })
+          if (armOverlay) pushExportOverlayProgress({ ...payload, templateId })
         } catch {
           /* ignore */
         }
@@ -1804,10 +2293,23 @@ async function handlePdfExportRun(event, opts) {
             return senderBrowserWindow(ev.sender) === w
           }
 
-          function onHeartbeat(ev) {
+          function onHeartbeat(ev, hbPayload) {
             if (!isFromPdfWin(ev)) return
             flags.rendererSignal = true
             armIdleTimer()
+            // 039c：渲染页阶段（load/fetch/render）推到遮罩
+            if (armOverlay && hbPayload && typeof hbPayload === 'object' && hbPayload.stage) {
+              try {
+                pushExportOverlayProgress({
+                  phase: 'render',
+                  stage: String(hbPayload.stage),
+                  partIndex,
+                  templateId,
+                })
+              } catch {
+                /* ignore */
+              }
+            }
           }
 
           function onReady(ev, payload) {
@@ -1952,6 +2454,7 @@ async function handlePdfExportRun(event, opts) {
 
       async function writePartPdf(partIndex, totalReports, pdfBuffer) {
         throwIfCancelled()
+        sendProgress({ phase: 'write', stage: 'write', partIndex, totalReports })
         const outPath = outputPathForPart(partIndex, totalReports)
         const writeStartMs = Date.now()
         await fs.promises.mkdir(path.dirname(outPath), { recursive: true })
@@ -1960,25 +2463,25 @@ async function handlePdfExportRun(event, opts) {
         return outPath
       }
 
-      sendProgress({ phase: 'render', partIndex: 0, totalReports: 0 })
+      sendProgress({ phase: 'render', stage: 'load', partIndex: 0, totalReports: 0 })
       const first = await renderPart(0)
       const totalReports = first.totalReports
       stats = mergeStats(stats, first.stats)
       mergeTimings(first)
       const filePaths = []
       filePaths.push(await writePartPdf(0, totalReports, first.pdfBuffer))
-      sendProgress({ phase: 'saved', partIndex: 0, totalReports })
+      sendProgress({ phase: 'saved', stage: 'saved', partIndex: 0, totalReports })
 
       for (let partIndex = 1; partIndex < totalReports; partIndex++) {
         throwIfCancelled()
         // 030：分卷间隙让出 CPU，减轻 Hypervisor/同机 mappView 饿死
         await yieldToOs(jobYieldMs)
-        sendProgress({ phase: 'render', partIndex, totalReports })
+        sendProgress({ phase: 'render', stage: 'load', partIndex, totalReports })
         const part = await renderPart(partIndex)
         stats = mergeStats(stats, part.stats)
         mergeTimings(part)
         filePaths.push(await writePartPdf(partIndex, totalReports, part.pdfBuffer))
-        sendProgress({ phase: 'saved', partIndex, totalReports })
+        sendProgress({ phase: 'saved', stage: 'saved', partIndex, totalReports })
       }
 
       if (openAfter) {
@@ -2002,8 +2505,10 @@ async function handlePdfExportRun(event, opts) {
       throw new Error(humanizePdfExportError(e, { phase: 'export' }))
     } finally {
       unregisterPdfExportJob(jobId)
-      // 039：本次导出结束，计数归 0 时收起遮罩（与 begin 对称）
-      endExportOverlaySession()
+      // 039c：仅当本次确实弹了遮罩时成对收起
+      if (armOverlay) endExportOverlaySession()
+      // 050：等一拍，让遮罩 hide/destroy 先离开 Accessibility 查询窗口，再动 PDF 窗
+      await new Promise((resolve) => setImmediate(resolve))
       // 导出结束：把渲染进程（归还池的窗）与后端恢复 NORMAL，避免让核状态长期残留
       try {
         if (pdfWin && !pdfWin.isDestroyed()) {
@@ -2014,9 +2519,15 @@ async function handlePdfExportRun(event, opts) {
       } catch {
         /* ignore */
       }
-      // 成功窗口回到预热页并归还空闲池；失败或超复用上限的窗口销毁。
+      // 成功则尝试归还预热池；macOS（050b）禁止滞留隐藏窗，始终销毁。
       let recycled = false
-      if (exportOk && isReusablePdfWindow(pdfWin) && mainWindow && !mainWindow.isDestroyed()) {
+      if (
+        pdfExportWarmPoolAllowed() &&
+        exportOk &&
+        isReusablePdfWindow(pdfWin) &&
+        mainWindow &&
+        !mainWindow.isDestroyed()
+      ) {
         let prewarmNavigationOk = false
         try {
           await navigatePdfExportWindow(
@@ -2032,7 +2543,11 @@ async function handlePdfExportRun(event, opts) {
       if (!recycled) {
         destroyPdfExportWindow(pdfWin)
       }
-      ensurePdfExportWindowPrewarmed(event.sender)
+      if (pdfExportWarmPoolAllowed()) {
+        ensurePdfExportWindowPrewarmed(event.sender)
+      } else {
+        destroyWarmPdfExportWindows()
+      }
     }
   }, coexistPause)
 }

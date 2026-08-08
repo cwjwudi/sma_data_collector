@@ -1965,6 +1965,7 @@ async function onManualExport(): Promise<void> {
       layoutFidelity: exportProfile.layoutFidelity,
       yieldMs: exportProfile.yieldMs,
       coexistPause: exportProfile.coexistPause,
+      exportSource: "manual",
     });
     offProgress?.();
     offProgress = undefined;

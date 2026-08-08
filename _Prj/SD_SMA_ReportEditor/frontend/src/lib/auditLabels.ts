@@ -7,6 +7,7 @@ export const AUDIT_ACTION_LABELS: Record<string, string> = {
   "layout.delete": "删除版式",
   "layout.duplicate": "复制版式",
   "config.export": "导出配置备份",
+  "support.pack_export": "导出问题反馈包",
   "config.import": "导入配置",
   "config.reset": "快速复位",
   "db.connection_save": "保存数据库连接",

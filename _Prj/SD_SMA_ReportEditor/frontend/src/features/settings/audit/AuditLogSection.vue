@@ -76,6 +76,15 @@
             <tr v-if="expandedId === e.id && hasDetail(e)" class="audit-detail-row">
               <td colspan="5" class="audit-detail-cell">
                 <pre class="audit-detail-pre">{{ formatDetail(e) }}</pre>
+                <button
+                  v-if="isExportFail(e)"
+                  type="button"
+                  class="settings-btn audit-support-btn"
+                  :disabled="busy"
+                  @click.stop="exportPackFor(e)"
+                >
+                  导出问题反馈包
+                </button>
               </td>
             </tr>
           </template>
@@ -112,6 +121,10 @@ import {
   auditResultLabel,
   formatAuditDetailReadable,
 } from "@/lib/auditLabels";
+import {
+  draftFromExportFailure,
+  exportSupportPackZip,
+} from "@/features/settings/support-pack/support-pack-client";
 
 const busy = ref(false);
 const msg = ref("");
@@ -157,6 +170,35 @@ function formatDetail(e: AuditEntry): string {
     objectId: e.object_id,
     actor: e.actor,
   });
+}
+
+function isExportFail(e: AuditEntry): boolean {
+  return e.result === "fail" && String(e.action || "").startsWith("export.");
+}
+
+async function exportPackFor(e: AuditEntry) {
+  busy.value = true;
+  setMsg("", "");
+  try {
+    const detail = e.detail && typeof e.detail === "object" ? (e.detail as Record<string, unknown>) : {};
+    const filePath =
+      typeof detail.filePath === "string"
+        ? detail.filePath
+        : Array.isArray(detail.filePaths) && typeof detail.filePaths[0] === "string"
+          ? detail.filePaths[0]
+          : null;
+    const draft = draftFromExportFailure({
+      templateId: e.object_id,
+      summary: e.summary,
+      filePath,
+    });
+    const { filename } = await exportSupportPackZip(draft);
+    setMsg(`已下载问题反馈包 ${filename}`, "ok");
+  } catch (err: unknown) {
+    setMsg(err instanceof Error ? err.message : String(err), "err");
+  } finally {
+    busy.value = false;
+  }
 }
 
 async function reload() {
@@ -325,6 +367,10 @@ onMounted(() => {
   white-space: pre-wrap;
   word-break: break-word;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.audit-support-btn {
+  margin-top: 10px;
 }
 
 .audit-ts {

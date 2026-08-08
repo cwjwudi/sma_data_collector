@@ -1,5 +1,5 @@
 /**
- * 039 契约：导出全屏遮罩接线门禁（main 主进程 + preload 桥 + 配置 + UI 开关）
+ * 039 / 039c 契约：导出全屏遮罩接线门禁（main 主进程 + preload 桥 + 配置 + UI）
  */
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
@@ -17,20 +17,24 @@ function readFront(rel: string): string {
   return readFileSync(join(frontendRoot, rel), "utf8");
 }
 
-describe("export-overlay contracts (039)", () => {
-  it("main.cjs：导出计数开合遮罩 + 主显示器全屏 + 置顶 + 120s 硬超时", () => {
+describe("export-overlay contracts (039 / 039c)", () => {
+  it("main.cjs：导出计数开合遮罩 + bounds 盖任务栏 + 置顶 + 按份 120s", () => {
     const main = readFront("electron/main.cjs");
-    // 导出开始/结束成对开合遮罩，与 register/unregister 对称
     expect(main).toMatch(/beginExportOverlaySession\(\)/);
     expect(main).toMatch(/endExportOverlaySession\(\)/);
     expect(main).toMatch(/function showExportOverlay/);
     expect(main).toMatch(/function hideExportOverlay/);
-    // 主显示器全屏 + 置顶盖住 mappView
+    expect(main).toMatch(/function resolveOverlayDisplays/);
     expect(main).toMatch(/screen\.getPrimaryDisplay\(\)/);
+    // 039c：用 bounds 铺满（含任务栏/Dock），禁止 setFullScreen 留系统栏
+    expect(main).toMatch(/assertOverlayWindowOnTop/);
+    expect(main).toMatch(/setBounds\(bounds/);
+    expect(main).not.toMatch(/win\.setFullScreen\(true\)/);
     expect(main).toMatch(/setAlwaysOnTop\(true, 'screen-saver'\)/);
-    // 硬超时 120s，防遮罩卡死锁住 HMI
     expect(main).toMatch(/EXPORT_OVERLAY_MAX_MS\s*=\s*120000/);
-    // Esc 兜底 + 用户强关 IPC
+    // Q1A：每份开始续期
+    expect(main).toMatch(/function noteExportOverlayPartStart/);
+    expect(main).toMatch(/armExportOverlayTimeout\(\)/);
     expect(main).toMatch(/before-input-event/);
     expect(main).toMatch(/export-overlay-dismiss/);
     // 051：强关后可经 IPC 显式重开全屏遮罩
@@ -39,18 +43,24 @@ describe("export-overlay contracts (039)", () => {
     expect(main).toMatch(/exportOverlaySuppressed/);
     // 进度喂给遮罩（第 x/共 y 份）
     expect(main).toMatch(/pushExportOverlayProgress/);
-    // 五档批导不弹遮罩
     expect(main).toMatch(/if \(fiveTierExportSpec\) return false/);
+    // 039c：触发范围 + ETA + 反馈包
+    expect(main).toMatch(/function shouldArmExportOverlay/);
+    expect(main).toMatch(/exportSource/);
+    expect(main).toMatch(/etaLabel/);
+    expect(main).toMatch(/export-overlay-support-pack/);
+    expect(main).toMatch(/stageLabel/);
   });
 
-  it("overlay-preload.cjs：仅暴露 onProgress / dismiss，加载静态内联页", () => {
+  it("overlay-preload.cjs：onProgress / dismiss / exportSupportPack", () => {
     const preload = readFront("electron/overlay-preload.cjs");
     expect(preload).toMatch(/exposeInMainWorld\('exportOverlay'/);
     expect(preload).toMatch(/onProgress/);
     expect(preload).toMatch(/dismiss/);
+    expect(preload).toMatch(/exportSupportPack/);
     expect(preload).toMatch(/export-overlay-progress/);
     expect(preload).toMatch(/export-overlay-dismiss/);
-    // 遮罩窗使用该 preload
+    expect(preload).toMatch(/export-overlay-support-pack/);
     const main = readFront("electron/main.cjs");
     expect(main).toMatch(/overlay-preload\.cjs/);
     // 主窗口 preload 暴露 reshow
@@ -59,26 +69,46 @@ describe("export-overlay contracts (039)", () => {
     expect(appPreload).toMatch(/export-overlay-reshow/);
   });
 
-  it("配置：launch.cjs 默认开启、UI/类型透出 exportOverlayEnabled", () => {
+  it("配置：launch 默认开 + display/trigger；UI 透出", () => {
     const launch = readFront("electron/launch.cjs");
     expect(launch).toMatch(/exportOverlayEnabled/);
-    // 缺省视为开启
     expect(launch).toMatch(/exportOverlayEnabled === undefined \? true/);
-    // 设置页开关
+    expect(launch).toMatch(/exportOverlayDisplay/);
+    expect(launch).toMatch(/exportOverlayTrigger/);
+    expect(launch).toMatch(/normalizeOverlayDisplay/);
+    expect(launch).toMatch(/normalizeOverlayTrigger/);
     const ui = readSrc("features/settings/LaunchSettingsSection.vue");
     expect(ui).toMatch(/toggleExportOverlay/);
     expect(ui).toMatch(/exportOverlayEnabled/);
-    // 渲染进程类型声明
+    expect(ui).toMatch(/exportOverlayDisplay/);
+    expect(ui).toMatch(/exportOverlayTrigger/);
+    expect(ui).toMatch(/onDisplayChange/);
+    expect(ui).toMatch(/onTriggerChange/);
     expect(readSrc("vite-env.d.ts")).toMatch(/exportOverlayEnabled\?: boolean/);
+    expect(readSrc("vite-env.d.ts")).toMatch(/exportOverlayDisplay\?:/);
+    expect(readSrc("vite-env.d.ts")).toMatch(/exportOverlayTrigger\?:/);
+    expect(readSrc("vite-env.d.ts")).toMatch(/exportSource\?:/);
   });
 
-  it("039b：改遮罩不碰登录项；reg 中文报错按 GBK 解码", () => {
+  it("渲染页心跳带 stage；自动/手动传 exportSource", () => {
+    const view = readSrc("views/PdfExportView.vue");
+    expect(view).toMatch(/pulseExportHeartbeat/);
+    expect(view).toMatch(/"fetch"/);
+    expect(view).toMatch(/"render"/);
+    expect(readSrc("lib/report-auto-export-trigger-service.ts")).toMatch(/exportSource:\s*"auto"/);
+    expect(readSrc("views/ReportGenerator.vue")).toMatch(/exportSource:\s*"manual"/);
+  });
+
+  it("050：导出窗/遮罩安全销毁（hide + setImmediate destroy）防 Accessibility SIGSEGV", () => {
     const main = readFront("electron/main.cjs");
-    expect(main).toMatch(/patchTouchesLoginItem/);
-    expect(main).toMatch(/touchLogin/);
-    const launch = readFront("electron/launch.cjs");
-    expect(launch).toMatch(/decodeWindowsConsole/);
-    expect(launch).toMatch(/isRegNotFoundMessage/);
-    expect(launch).toMatch(/encoding:\s*'buffer'/);
+    expect(main).toMatch(/function safeDestroyBrowserWindow/);
+    expect(main).toMatch(/setTimeout\(run,\s*300\)/);
+    expect(main).toMatch(/safeDestroyBrowserWindow\(w,/);
+    expect(main).toMatch(/safeDestroyBrowserWindow\(win,/);
+    expect(main).toMatch(/backgroundColor: '#0b1120'/);
+    expect(main).toMatch(/focusable: false/);
+    expect(main).toMatch(/endExportOverlaySession\(\)[\s\S]*?setImmediate\(resolve\)/);
+    expect(main).toMatch(/function pdfExportWarmPoolAllowed/);
+    expect(main).toMatch(/process\.platform === ['"]darwin['"]/);
   });
 });

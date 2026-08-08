@@ -30,6 +30,7 @@ describe("auditLabels", () => {
       "layout.delete",
       "layout.duplicate",
       "config.export",
+      "support.pack_export",
       "db.connection_save",
       "export.manual_pdf",
       "audit.export",

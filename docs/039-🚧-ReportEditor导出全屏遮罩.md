@@ -1,8 +1,8 @@
 # 039 · ReportEditor 导出全屏遮罩（盖住同机 mappView 白屏）
 
-> 现场兜底：结批/导出期间在**主显示器全屏**显示「正在生成报表」遮罩，盖住同机 mappView 因抢占资源出现的白屏（观感像崩溃）。是 [035 同机降载](035-🚧-ReportEditor导出性能档位与同机降载.md) 的视觉兜底、[030 结批占满 CPU 白屏](030-🚧-ReportEditor结批占满CPU导致mappView白屏.md) 症状的体验补丁。
+> 现场兜底：结批/导出期间全屏显示「正在生成报表」遮罩，盖住同机 mappView 因抢占资源出现的白屏（观感像崩溃）。是 [035 同机降载](035-🚧-ReportEditor导出性能档位与同机降载.md) 的视觉兜底、[030 结批占满 CPU 白屏](030-🚧-ReportEditor结批占满CPU导致mappView白屏.md) 症状的体验补丁。
 >
-> 关联版本：0.3.143 / **0.3.144（039b）** · 发布记录见 [_Doc/007_版本发布记录.md](../_Prj/SD_SMA_ReportEditor/_Doc/007_版本发布记录.md)
+> 关联版本：0.3.143 / **0.3.144（039b）** / **039c（本轮增强）** · 发布记录见 [_Doc/007_版本发布记录.md](../_Prj/SD_SMA_ReportEditor/_Doc/007_版本发布记录.md)
 
 ---
 
@@ -18,7 +18,7 @@
 
 导出/结批未完成时，在主显示器最前台盖一张全屏遮罩（标题「正在生成报表」+ 结批文案 + 进度条 + 第 x/共 y 份），把 mappView 抢占 CPU 时的白屏挡住；完成即隐藏。工业 HMI 敏感——必须保证任何时候能看回现场画面。
 
-## 现场确认的行为（用户拍板）
+## 现场确认的行为（用户拍板 · 首轮）
 
 | 项 | 决策 |
 | --- | --- |
@@ -28,50 +28,65 @@
 | 手动关闭 | **Esc / 右上角 ×** 随时可关（保障能看报警） |
 | 默认 | **默认开启**（现场开箱即用），设置页可关 |
 
-## 实现
+## 实现（0.3.143）
 
 - **遮罩窗（主进程独立 BrowserWindow）**：`electron/main.cjs`
-  - `showExportOverlay()`：`screen.getPrimaryDisplay()` 定位主显示器，全屏、无边框、`skipTaskbar`、`setAlwaysOnTop(true,'screen-saver')` 盖住 mappView（另一应用）。
-  - **自身不白屏**：035 只降**导出渲染进程 + 后端**，遮罩窗是另一个渲染进程、保持 NORMAL 优先级；内容是**内联静态 HTML + CSS 动画**（`buildExportOverlayHtml`，不加载 SPA），画一帧后靠合成器动画，几乎不吃 CPU。
-  - **开合**：`beginExportOverlaySession()` / `endExportOverlaySession()` 用导出计数 0→1 弹、归 0 收，插在 `handlePdfExportRun` 的 `registerPdfExportJob` 后与 `finally`（与 `unregisterPdfExportJob` 对称，支持并行导出）。
-  - **进度**：`sendProgress` 同步 `pushExportOverlayProgress({phase,partIndex,totalReports})`，页面显示「第 x/共 y 份」。
-  - **安全阀**：`EXPORT_OVERLAY_MAX_MS = 120000` 硬超时 → `hideExportOverlay('timeout')`；`before-input-event` 捕获 Esc 兜底；`ipcMain.on('export-overlay-dismiss')` 处理页面内 Esc / × 强关（强关后本会话不再自动重弹）。
-  - **不弹场景**：`fiveTierExportSpec`（五档批导，无人值守自动退出）直接跳过。
-- **桥**：新增 `electron/overlay-preload.cjs`，仅暴露 `exportOverlay.onProgress` / `exportOverlay.dismiss`（`contextIsolation`），随 `electron/**/*.cjs` 打包。
-- **配置**：`electron/launch.cjs` `DEFAULTS.exportOverlayEnabled=true`、`normalizeSettings` 缺字段视为开；经既有 `launch-settings-get/set` IPC 透传（handler 已 spread 归一化设置，无需改动）。
-- **UI**：`features/settings/LaunchSettingsSection.vue`「启动」区加「导出时全屏遮罩」开关；`vite-env.d.ts` 补 `exportOverlayEnabled` 类型。
+  - `showExportOverlay()`：主显示器定位，无边框、`skipTaskbar`、`setAlwaysOnTop(true,'screen-saver')`。
+  - **自身不白屏**：内容是**内联静态 HTML + CSS 动画**（不加载 SPA）。
+  - **开合**：`beginExportOverlaySession()` / `endExportOverlaySession()` 导出计数 0→1 弹、归 0 收。
+  - **安全阀**：`EXPORT_OVERLAY_MAX_MS = 120000`；Esc / × 强关。
+  - **不弹场景**：`fiveTierExportSpec`（五档批导）直接跳过。
+- **桥**：`electron/overlay-preload.cjs`（`onProgress` / `dismiss`）。
+- **配置**：`launch.cjs` `exportOverlayEnabled` 默认开；设置页「启动」区开关。
 
 ## 验收
 
-- 单测：`src/lib/launch-settings.test.ts`（默认开 / 缺字段视为开 / 显式关保留）+ `src/lib/export-overlay-contracts.test.ts`（主进程开合、主显示器全屏、`screen-saver` 置顶、120s 超时、Esc/dismiss、preload 桥、UI/类型透出）——本轮 4 文件 21 项全绿。
-- 编辑器 TS 诊断：改动文件无报错。
-
-## 后续 / 风险
-
-- ⌛️ 真机验证：现场 i3-7100U + mappView 同屏，观察遮罩是否稳定秒开、结批期间不闪不漏白屏、超时/ Esc 均可靠退出。
-- 多显示器仅盖主显示器（用户选择）；若现场 HMI 在副屏需回来调整为按 HMI 所在屏或全屏覆盖。
-- 前台手动导出也会整屏遮住 Report Editor 自身（用户选择「只要导出就弹」）；如觉打扰可在设置页关闭，或后续改为仅「主窗后台」时弹。
+- 单测：`launch-settings.test.ts` + `export-overlay-contracts.test.ts`。
 
 ---
 
 # ✅ 已完成：设置页开关遮罩误报「登录项同步失败」乱码（039b）
 
-## 现象
+## 现象 / 根因 / 修复
 
-安装版设置页切换「导出时全屏遮罩」时，偏好其实已写入 `launch-settings.json`，但红字提示「偏好已保存，但登录项同步失败：」后跟乱码。Codex 还原乱码为：**错误：系统找不到指定的注册表项或值。**
+见历史：仅当 patch 含 `openAtLogin` / `silentStart` 时才同步登录项；Windows `reg` 输出按 GBK 解码，「找不到」视为幂等成功。
 
-## 根因
+---
 
-1. `launch-settings-set` 无论改什么字段都调用 `applyLoginItem`；关自启时会对 `HKCU\...\Run` 做 `reg delete`。
-2. 项本就不存在时，中文 Windows 的 `reg.exe` 用 **GBK** 输出上述错误；代码用 `encoding: 'utf8'` 读 stderr → 乱码，且原有「找不到」正则匹配失败，被当成真实失败回传 UI。
+# ✅ 已完成：039c 遮罩增强（任务栏 / 配置 / 按份超时 / ETA / 阶段 / 反馈包）
 
-## 修复
+## 现场反馈（用户实测截图）
 
-- **IPC**：仅当 patch 含 `openAtLogin` / `silentStart` 时才同步登录项（`patchTouchesLoginItem`）；只改遮罩开关不再碰注册表。
-- **`syncWindowsRunKey`**：`reg` 输出按 buffer + `decodeWindowsConsole`（优先 GBK）解码；删除时 exit 1 / 「找不到」视为幂等成功。
-- **单测**：`launch-settings.test.ts` + `export-overlay-contracts.test.ts` 相关用例 12 项全绿。
+- 遮罩可用，但 **未挡住 Windows 任务栏 / macOS Dock**（半屏菜单栏仍可见）。
+- 进度目前只有「第 x / 共 y 份」，缺阶段与剩余时间。
+- 设置页只有总开关，无法配置显示屏范围与触发范围。
+
+## 用户拍板（本轮）
+
+| 项 | 决策 |
+| --- | --- |
+| Q1 · 120s | **按份续期（方案 A）**：每份报表**开始**时重新计 120s；不是整次导出共用一个 120s |
+| Q2 · 多屏 | 工控机单屏，**暂不强制副屏**；但设置里仍提供「主屏 / 副屏 / 全部」便于日后配置 |
+| Q3 · 触发 | 「只要导出就弹」现场 OK；设置增加可配置：**全部导出** / **仅自动结批** |
+| 盖栏 | 必须盖住任务栏 / Dock（用显示器 `bounds` 铺满，避免 `setFullScreen` 留出系统栏） |
+| ETA | 按实际已完成份数**实时预测**剩余时间 |
+| 进度文案 | 明确：第几份、进度%、当前阶段（加载 / 取数 / 渲染 / 写盘） |
+| 反馈包 | 遮罩页可一键导出问题反馈包（对接 048） |
+
+## 实现要点
+
+- **盖任务栏/Dock**：遮罩窗用 `display.bounds`（非 `workArea`），**不**调用 `setFullScreen`；`setAlwaysOnTop(...,'screen-saver')` + `setVisibleOnAllWorkspaces`；show 后再钉一次 bounds。
+- **按份 120s**：`noteExportOverlayPartStart` 在新 `partIndex` 时 `armExportOverlayTimeout()`。
+- **配置**（`launch-settings.json`）：
+  - `exportOverlayEnabled`：总开关
+  - `exportOverlayDisplay`：`primary` \| `secondary` \| `all`
+  - `exportOverlayTrigger`：`always` \| `autoOnly`
+- **触发**：`runPdfExport({ exportSource: 'auto' \| 'manual' })`；`autoOnly` 时手动导出不弹。
+- **阶段**：渲染页心跳带 `stage`（load/fetch/render）；主进程写盘前推 `write`。
+- **ETA**：已完成份均时 × 剩余份 + 当前份剩余估时；首份完成前显示「预估中…」；遮罩每秒刷新文案。
+- **反馈包**：遮罩按钮 → IPC → 主进程调后端 `/settings/support-pack/*` → 另存为 zip。
 
 ## 验收
 
-- 安装版：开关「导出时全屏遮罩」应提示「已保存」，无登录项/乱码报错；偏好文件 `exportOverlayEnabled` 正确翻转。
-- 开关「开机自启动」仍会写/清 Run；Run 项本就不存在时关自启不应再红字报错。
+- 契约测：`export-overlay-contracts.test.ts` + `launch-settings.test.ts` 相关项全绿。
+- ⌛️ 真机：Windows 任务栏 / macOS Dock 被盖住；阶段与 ETA 可读；遮罩页反馈包可保存。

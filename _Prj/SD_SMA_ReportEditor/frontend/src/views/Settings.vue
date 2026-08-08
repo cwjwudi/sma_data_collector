@@ -11,6 +11,7 @@
       </button>
     </section>
     <ConfigImportExport />
+    <SupportPackSection />
     <AiSettingsSection />
     <ServiceEndpointsSection />
     <ConnectionProbeSection />
@@ -41,6 +42,7 @@ import AppUpdateSection from '@/features/settings/app-update/AppUpdateSection.vu
 import LayoutCloudSyncSection from '@/features/settings/layout-cloud-sync/LayoutCloudSyncSection.vue'
 import DataPathAndCacheSection from '@/features/settings/data-path/DataPathAndCacheSection.vue'
 import ConfigImportExport from '@/features/settings/config-import-export/ConfigImportExport.vue'
+import SupportPackSection from '@/features/settings/support-pack/SupportPackSection.vue'
 import AiSettingsSection from '@/features/settings/ai-assistant/AiSettingsSection.vue'
 import ConnectionProbeSection from '@/features/settings/connection-probe/ConnectionProbeSection.vue'
 import LaunchSettingsSection from '@/features/settings/LaunchSettingsSection.vue'
