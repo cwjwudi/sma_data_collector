@@ -16,6 +16,25 @@ const DEFAULTS = {
   silentStart: false,
   // 039：导出/结批时全屏遮罩盖住同机 mappView 白屏，默认开启（现场兜底）
   exportOverlayEnabled: true,
+  // 039c：遮罩落在哪块屏（工控机通常单屏主屏即可）
+  exportOverlayDisplay: 'primary',
+  // 039c：何时弹遮罩——全部导出 / 仅自动结批
+  exportOverlayTrigger: 'always',
+}
+
+const OVERLAY_DISPLAY_MODES = new Set(['primary', 'secondary', 'all'])
+const OVERLAY_TRIGGER_MODES = new Set(['always', 'autoOnly'])
+
+function normalizeOverlayDisplay(v) {
+  const s = String(v || '').trim().toLowerCase()
+  return OVERLAY_DISPLAY_MODES.has(s) ? s : DEFAULTS.exportOverlayDisplay
+}
+
+function normalizeOverlayTrigger(v) {
+  const s = String(v || '').trim()
+  // 兼容旧拼写
+  if (s === 'auto' || s === 'auto_only' || s === 'auto-only') return 'autoOnly'
+  return OVERLAY_TRIGGER_MODES.has(s) ? s : DEFAULTS.exportOverlayTrigger
 }
 
 function getSettingsPath(app) {
@@ -29,6 +48,8 @@ function normalizeSettings(raw) {
     silentStart: Boolean(src.silentStart),
     // 缺省视为开启（历史配置无此字段时保持兜底遮罩可用）
     exportOverlayEnabled: src.exportOverlayEnabled === undefined ? true : Boolean(src.exportOverlayEnabled),
+    exportOverlayDisplay: normalizeOverlayDisplay(src.exportOverlayDisplay),
+    exportOverlayTrigger: normalizeOverlayTrigger(src.exportOverlayTrigger),
   }
 }
 
@@ -387,6 +408,8 @@ module.exports = {
   SILENT_START_ARG,
   LOGIN_ITEM_NAME,
   DEFAULTS,
+  OVERLAY_DISPLAY_MODES,
+  OVERLAY_TRIGGER_MODES,
   readLaunchSettings,
   writeLaunchSettings,
   hasLaunchSettingsFile,
@@ -394,6 +417,8 @@ module.exports = {
   syncLoginItemOnReady,
   shouldSilentStartThisSession,
   normalizeSettings,
+  normalizeOverlayDisplay,
+  normalizeOverlayTrigger,
   quoteWinArg,
   formatQuotedLaunchCommand,
   readWindowsRunKey,

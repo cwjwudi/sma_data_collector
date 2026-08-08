@@ -62,9 +62,39 @@
       </button>
     </div>
     <p class="settings-field-hint">
-      结批 / 导出期间在主显示器全屏显示「正在生成报表」遮罩，盖住同机 mappView
-      因抢占资源出现的白屏。最长显示 120 秒后自动隐藏；随时可按 Esc 或点右上角 × 关闭以查看现场画面。
+      结批 / 导出期间全屏显示「正在生成报表」遮罩（盖住任务栏 / Dock 与同机 mappView
+      白屏）。每份报表开始时重新计 120 秒；可按 Esc 或点右上角 × 关闭。遮罩页可导出问题反馈包。
     </p>
+
+    <div v-if="prefs.exportOverlayEnabled !== false" class="settings-overlay-opts">
+      <label class="settings-field-label" for="ov-display">遮罩显示屏</label>
+      <select
+        id="ov-display"
+        class="settings-select"
+        :disabled="busy"
+        :value="prefs.exportOverlayDisplay || 'primary'"
+        @change="onDisplayChange"
+      >
+        <option value="primary">主显示器</option>
+        <option value="secondary">副显示器（无副屏则回落主屏）</option>
+        <option value="all">全部显示器</option>
+      </select>
+
+      <label class="settings-field-label" for="ov-trigger">弹出时机</label>
+      <select
+        id="ov-trigger"
+        class="settings-select"
+        :disabled="busy"
+        :value="prefs.exportOverlayTrigger || 'always'"
+        @change="onTriggerChange"
+      >
+        <option value="always">全部导出（手动 + 自动结批）</option>
+        <option value="autoOnly">仅自动结批</option>
+      </select>
+      <p class="settings-field-hint">
+        工控机通常单屏选「主显示器」即可。若仅希望结批时遮罩、手动导出不挡编辑器，选「仅自动结批」。
+      </p>
+    </div>
 
     <p
       v-if="msg"
@@ -83,10 +113,15 @@ import { computed, onMounted, ref } from "vue";
 
 defineOptions({ name: "LaunchSettingsSection" });
 
+type OverlayDisplay = "primary" | "secondary" | "all";
+type OverlayTrigger = "always" | "autoOnly";
+
 type LaunchPrefs = {
   openAtLogin: boolean;
   silentStart: boolean;
   exportOverlayEnabled?: boolean;
+  exportOverlayDisplay?: OverlayDisplay;
+  exportOverlayTrigger?: OverlayTrigger;
   packaged?: boolean;
   silentStartSession?: boolean;
   execPath?: string;
@@ -101,7 +136,13 @@ const available = ref(false);
 const busy = ref(false);
 const msg = ref("");
 const msgTone = ref<"ok" | "err" | "">("");
-const prefs = ref<LaunchPrefs>({ openAtLogin: false, silentStart: false, exportOverlayEnabled: true });
+const prefs = ref<LaunchPrefs>({
+  openAtLogin: false,
+  silentStart: false,
+  exportOverlayEnabled: true,
+  exportOverlayDisplay: "primary",
+  exportOverlayTrigger: "always",
+});
 
 const devNote = computed(() => {
   if (prefs.value.packaged === false) {
@@ -170,7 +211,41 @@ function toggleExportOverlay() {
   void persist({ exportOverlayEnabled: prefs.value.exportOverlayEnabled === false });
 }
 
+function onDisplayChange(ev: Event) {
+  const v = (ev.target as HTMLSelectElement).value as OverlayDisplay;
+  void persist({ exportOverlayDisplay: v });
+}
+
+function onTriggerChange(ev: Event) {
+  const v = (ev.target as HTMLSelectElement).value as OverlayTrigger;
+  void persist({ exportOverlayTrigger: v });
+}
+
 onMounted(() => {
   void load();
 });
 </script>
+
+<style scoped>
+.settings-overlay-opts {
+  display: grid;
+  gap: 8px;
+  margin: 4px 0 12px;
+  max-width: 420px;
+}
+.settings-field-label {
+  font-size: 13px;
+  color: var(--settings-muted, #64748b);
+  margin-top: 4px;
+}
+.settings-select {
+  appearance: auto;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(100, 116, 139, 0.35);
+  background: var(--settings-input-bg, #fff);
+  color: inherit;
+  font-size: 13px;
+}
+</style>

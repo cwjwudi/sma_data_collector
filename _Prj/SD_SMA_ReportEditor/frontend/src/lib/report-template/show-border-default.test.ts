@@ -17,6 +17,7 @@ import {
   chromeBorderCss,
   hideBordersOnEntireTemplate,
   hideBordersOnLayoutPresetBands,
+  hideBordersOnEntireTemplate,
   hideBordersOnTemplateSheet,
   hideShowBordersInElements,
   sheetShowBorderSnapshot,
@@ -402,5 +403,59 @@ describe("showBorder · 模版一键覆盖页眉页脚（040 · G）", () => {
     expect(t.coverElements.every((e) => e.type === "table" || e.showBorder === false)).toBe(true);
     expect(t.headerElements.every((e) => e.showBorder === false)).toBe(true);
     expect(ensureBodyPages(t)[0]!.every((e) => e.showBorder === false)).toBe(true);
+  });
+
+  it("G7 049：整模版一次清掉封面/其它正文页/封底（不依赖当前页）", () => {
+    const t = fixtureTemplate();
+    const pages = ensureBodyPages(t);
+    while (pages.length < 2) pages.push([]);
+
+    const ch = makeLayoutZoneElement("text");
+    ch.id = "cover-h";
+    ch.showBorder = true;
+    t.coverHeaderElements.push(ch);
+    const cb = makeElement("text");
+    cb.id = "cover-b";
+    cb.showBorder = true;
+    t.coverElements.push(cb);
+
+    const bh = makeLayoutZoneElement("text");
+    bh.id = "body-h";
+    bh.showBorder = true;
+    t.headerElements.push(bh);
+    const p0 = makeElement("text");
+    p0.id = "p0";
+    p0.showBorder = true;
+    pages[0]!.push(p0);
+    const p1 = makeElement("text");
+    p1.id = "p1";
+    p1.showBorder = true;
+    pages[1]!.push(p1);
+    const p1tbl = makeElement("table");
+    p1tbl.id = "p1t";
+    p1tbl.showBorder = true;
+    pages[1]!.push(p1tbl);
+
+    const xh = makeLayoutZoneElement("text");
+    xh.id = "back-h";
+    xh.showBorder = true;
+    t.backHeaderElements.push(xh);
+    const xb = makeElement("text");
+    xb.id = "back-b";
+    xb.showBorder = true;
+    t.backElements.push(xb);
+
+    // 模拟停在正文第 0 页：一次整模版隐藏
+    const n = hideBordersOnEntireTemplate(t);
+    expect(n).toBe(7); // 全部非表格
+    expect(t.coverHeaderElements[0]!.showBorder).toBe(false);
+    expect(t.coverElements[0]!.showBorder).toBe(false);
+    expect(t.headerElements[0]!.showBorder).toBe(false);
+    expect(pages[0]![0]!.showBorder).toBe(false);
+    expect(pages[1]![0]!.showBorder).toBe(false);
+    expect(pages[1]![1]!.showBorder).toBe(true); // table 跳过
+    expect(t.backHeaderElements[0]!.showBorder).toBe(false);
+    expect(t.backElements[0]!.showBorder).toBe(false);
+    expect(hideBordersOnEntireTemplate(t)).toBe(0);
   });
 });

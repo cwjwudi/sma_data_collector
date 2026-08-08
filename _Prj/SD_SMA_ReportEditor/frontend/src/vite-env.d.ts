@@ -32,6 +32,8 @@ interface Window {
       yieldMs?: number;
       /** 让核/抢核（来自档位 coexistPause）：full=LOW；basic=BelowNormal；max=HIGHEST */
       coexistPause?: "full" | "basic" | "max" | string;
+      /** 039c：导出触发来源——auto=自动结批；manual=手动（遮罩触发范围用） */
+      exportSource?: "auto" | "manual" | string;
     }) => Promise<{
       ok: boolean;
       filePath: string;
@@ -102,7 +104,7 @@ interface Window {
       pdfLibMs?: number;
       printToPDFSkipped?: boolean;
     }) => void;
-    notifyPdfExportHeartbeat?: () => void;
+    notifyPdfExportHeartbeat?: (payload?: { stage?: string }) => void;
     onPdfExportProgress: (
       listener: (payload: {
         phase?: string;
@@ -399,6 +401,8 @@ interface Window {
       openAtLogin: boolean;
       silentStart: boolean;
       exportOverlayEnabled?: boolean;
+      exportOverlayDisplay?: "primary" | "secondary" | "all";
+      exportOverlayTrigger?: "always" | "autoOnly";
       packaged?: boolean;
       silentStartSession?: boolean;
       execPath?: string;
@@ -407,10 +411,14 @@ interface Window {
       openAtLogin?: boolean;
       silentStart?: boolean;
       exportOverlayEnabled?: boolean;
+      exportOverlayDisplay?: "primary" | "secondary" | "all";
+      exportOverlayTrigger?: "always" | "autoOnly";
     }) => Promise<{
       openAtLogin: boolean;
       silentStart: boolean;
       exportOverlayEnabled?: boolean;
+      exportOverlayDisplay?: "primary" | "secondary" | "all";
+      exportOverlayTrigger?: "always" | "autoOnly";
       packaged?: boolean;
       silentStartSession?: boolean;
       execPath?: string;

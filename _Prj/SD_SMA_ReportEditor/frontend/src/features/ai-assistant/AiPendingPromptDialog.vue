@@ -261,6 +261,7 @@ async function handleClientAction(action: string, payload: Record<string, unknow
       layoutFidelity: resolveExportPerfProfile(prefs.exportPerfTier).layoutFidelity,
       yieldMs: resolveExportPerfProfile(prefs.exportPerfTier).yieldMs,
       coexistPause: resolveExportPerfProfile(prefs.exportPerfTier).coexistPause,
+      exportSource: "manual",
     })
     notifyAssetsChanged('manual_export')
     return

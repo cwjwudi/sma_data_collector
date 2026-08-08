@@ -12,8 +12,16 @@ const launch = require("../../electron/launch.cjs") as {
     openAtLogin: boolean;
     silentStart: boolean;
     exportOverlayEnabled: boolean;
+    exportOverlayDisplay: string;
+    exportOverlayTrigger: string;
   };
-  DEFAULTS: { openAtLogin: boolean; silentStart: boolean; exportOverlayEnabled: boolean };
+  DEFAULTS: {
+    openAtLogin: boolean;
+    silentStart: boolean;
+    exportOverlayEnabled: boolean;
+    exportOverlayDisplay: string;
+    exportOverlayTrigger: string;
+  };
   SILENT_START_ARG: string;
   LOGIN_ITEM_NAME: string;
   decodeWindowsConsole: (data: Buffer | string | null | undefined) => string;
@@ -75,6 +83,26 @@ describe("launch.cjs (037)", () => {
     // 现场显式关闭必须保留
     expect(launch.normalizeSettings({ exportOverlayEnabled: false }).exportOverlayEnabled).toBe(false);
     expect(launch.normalizeSettings({ exportOverlayEnabled: true }).exportOverlayEnabled).toBe(true);
+  });
+
+  it("039c：遮罩显示屏 / 触发范围默认与归一化", () => {
+    expect(launch.DEFAULTS.exportOverlayDisplay).toBe("primary");
+    expect(launch.DEFAULTS.exportOverlayTrigger).toBe("always");
+    expect(launch.normalizeSettings({}).exportOverlayDisplay).toBe("primary");
+    expect(launch.normalizeSettings({}).exportOverlayTrigger).toBe("always");
+    expect(launch.normalizeSettings({ exportOverlayDisplay: "all" }).exportOverlayDisplay).toBe("all");
+    expect(launch.normalizeSettings({ exportOverlayDisplay: "secondary" }).exportOverlayDisplay).toBe(
+      "secondary",
+    );
+    expect(launch.normalizeSettings({ exportOverlayDisplay: "nope" }).exportOverlayDisplay).toBe(
+      "primary",
+    );
+    expect(launch.normalizeSettings({ exportOverlayTrigger: "autoOnly" }).exportOverlayTrigger).toBe(
+      "autoOnly",
+    );
+    expect(launch.normalizeSettings({ exportOverlayTrigger: "auto" }).exportOverlayTrigger).toBe(
+      "autoOnly",
+    );
   });
 
   it("039b：仅改遮罩开关不视为触及登录项", () => {
