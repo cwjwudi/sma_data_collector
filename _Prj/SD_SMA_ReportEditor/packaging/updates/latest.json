@@ -1,15 +1,15 @@
 {
-  "version": "0.3.152",
-  "releasedAt": "2026-08-08T19:07:33.272Z",
-  "notes": "Report Editor AI 0.3.152\n\n- 035：模拟结批多分卷可并行（不妥协默认 2 路；卡片可调分卷并行数）\n- 含 0.3.151：遮罩 CPU/内存曲线",
+  "version": "0.3.153",
+  "releasedAt": "2026-08-08T19:27:50.884Z",
+  "notes": "Report Editor AI 0.3.153\n\n- 039e：分卷并行≥2 时遮罩/toast 按 worker 分路显示第几份（任一档位）\n- 修正乱序完成时总进度虚高\n- 含 0.3.152：模拟结批分卷并行",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.152-x64.exe",
-      "sha256": "8397a2181fab08a4b426645ae945ee356694f7b6f65475e7052f09a23a8dd654",
-      "size": 162547575
+      "url": "Report Editor AI-Setup-0.3.153-x64.exe",
+      "sha256": "08d05e25a519eeb135b0757fca23d31b5a5558f5558421dcf0544d9c6f844604",
+      "size": 162551216
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.152-arm64.dmg",
+      "url": "Report Editor AI-0.3.153-arm64.dmg",
       "sha256": "",
       "size": 0
     }
