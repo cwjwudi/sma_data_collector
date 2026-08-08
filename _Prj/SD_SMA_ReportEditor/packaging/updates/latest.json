@@ -1,12 +1,12 @@
 {
   "version": "0.3.159",
-  "releasedAt": "2026-08-08T20:41:46.769Z",
+  "releasedAt": "2026-08-08T20:48:37.670Z",
   "notes": "Report Editor AI 0.3.159\n\n- 039g：修并行「已完成」漏计（skipPartSaved 粘连）+ ETA 近窗/吞吐",
   "platforms": {
     "win32-x64": {
       "url": "Report Editor AI-Setup-0.3.159-x64.exe",
-      "sha256": "",
-      "size": 0
+      "sha256": "5804be72d7d4fba18c98a421012e41c9e5577811f84c6768225b8987f2f760d5",
+      "size": 162552287
     },
     "darwin-arm64": {
       "url": "Report Editor AI-0.3.159-arm64.dmg",
