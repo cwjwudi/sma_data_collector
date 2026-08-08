@@ -6,6 +6,25 @@
 
 ---
 
+# ✅ 已完成：并行分卷时遮罩分路显示进度（039e · 2026-08-09）
+
+## 问题
+
+[035 分卷并行](035-🚧-ReportEditor导出性能档位与同机降载.md) 开启后，遮罩「第 x / 共 y 份」被多路 `partIndex` 后写覆盖，观感错乱。
+
+## 改动
+
+- 进度载荷增加 `workers[]`（每路 `workerSlot` / `partIndex` / `stage` / `busy`）与准确 `completedParts`
+- 遮罩内联页：并行≥2 时中央显示「已完成…」+ 每路「并行 N：第 k 份 · 阶段」；串行仍单行
+- 关联主进程：`exportOverlayWorkerLanes` / `upsertExportOverlayWorkerLane`
+
+## 验收
+
+- 不妥协 + 分卷并行≥2：遮罩分行数 = 并发路数，各路份号独立
+- Esc 关掉再经侧栏重开：仍能续看多路进度（`export-overlay-reshow` 推最后一次 enriched payload）
+
+---
+
 # ✅ 已完成：遮罩右下角 CPU / 内存曲线（039d · 2026-08-09）
 
 ## 目标

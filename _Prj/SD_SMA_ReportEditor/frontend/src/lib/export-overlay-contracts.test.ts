@@ -56,6 +56,10 @@ describe("export-overlay contracts (039 / 039c)", () => {
     expect(main).toMatch(/export-overlay-metrics/);
     expect(main).toMatch(/ov-cpu-chart/);
     expect(main).toMatch(/ov-mem-chart/);
+    // 039e：分卷并行时按 worker 分栏
+    expect(main).toMatch(/exportOverlayWorkerLanes/);
+    expect(main).toMatch(/ov-workers/);
+    expect(main).toMatch(/p\.workers/);
   });
 
   it("overlay-preload.cjs：onProgress / onMetrics / dismiss / exportSupportPack", () => {

@@ -743,7 +743,16 @@ let exportOverlayEta = {
   armedPartIndex: -1,
   completedParts: 0,
   partDurationsMs: [],
+  /** @type {Record<string, number>} partIndex → 开始时刻（并行分卷各自计时） */
+  partStartedAtByIndex: {},
+  /** @type {Record<string, true>} 已保存的 partIndex */
+  savedParts: {},
 }
+/**
+ * 035 并行分卷：遮罩上每路 worker 当前份数（避免「第几份」被后写覆盖错乱）
+ * @type {{ workerSlot: number, partIndex: number, stage: string, stageLabel: string, busy: boolean }[]}
+ */
+let exportOverlayWorkerLanes = []
 
 const EXPORT_OVERLAY_STAGE_LABELS = {
   load: '加载模版',
@@ -817,6 +826,36 @@ function stageWeightForOverlay(stage, phase) {
   return 0.28
 }
 
+function upsertExportOverlayWorkerLane(payload) {
+  if (payload == null || payload.workerSlot == null) return
+  const slot = Math.max(0, Math.floor(Number(payload.workerSlot) || 0))
+  const parallel = Math.max(
+    slot + 1,
+    Math.floor(Number(payload.parallelWorkers) || exportOverlayWorkerLanes.length || 1),
+  )
+  while (exportOverlayWorkerLanes.length < parallel) {
+    exportOverlayWorkerLanes.push({
+      workerSlot: exportOverlayWorkerLanes.length,
+      partIndex: 0,
+      stage: '',
+      stageLabel: '',
+      busy: false,
+    })
+  }
+  if (exportOverlayWorkerLanes.length > parallel) {
+    exportOverlayWorkerLanes = exportOverlayWorkerLanes.slice(0, parallel)
+  }
+  const stage = String(payload.stage || payload.phase || '')
+  const busy = Boolean(payload.workerBusy) || (stage !== '' && stage !== 'saved' && !payload.workerIdle)
+  exportOverlayWorkerLanes[slot] = {
+    workerSlot: slot,
+    partIndex: Math.max(0, Math.floor(Number(payload.partIndex) || 0)),
+    stage,
+    stageLabel: EXPORT_OVERLAY_STAGE_LABELS[stage] || '',
+    busy: payload.workerIdle ? false : busy,
+  }
+}
+
 function enrichExportOverlayProgress(base) {
   const p = { ...(base || {}) }
   const stage = String(p.stage || p.phase || 'export')
@@ -825,11 +864,30 @@ function enrichExportOverlayProgress(base) {
   const total = Math.max(0, Math.floor(Number(p.totalReports) || 0))
   const partIndex = Math.max(0, Math.floor(Number(p.partIndex) || 0))
   const completed = Math.max(0, Math.floor(Number(exportOverlayEta.completedParts) || 0))
+  p.completedParts = completed
+  const lanes = exportOverlayWorkerLanes.slice()
+  p.workers = lanes
+  p.parallelWorkers = lanes.length
+  const activeBusy = lanes.filter((w) => w && w.busy).length
+  if (lanes.length > 1) {
+    p.stageLabel = `${lanes.length} 路并行导出中`
+  }
   let percent = 0
   if (total > 0) {
-    const frac = Math.min(1, stageWeightForOverlay(stage, p.phase))
-    percent = Math.min(99, Math.round(((completed + frac) / total) * 100))
-    if (stage === 'saved' && partIndex + 1 >= total) percent = 100
+    // 并行：已完成份 + 各忙碌路的阶段权重分摊，避免乱序 partIndex 把进度顶飞
+    if (lanes.length > 1) {
+      let fracSum = 0
+      for (const w of lanes) {
+        if (!w || !w.busy) continue
+        fracSum += stageWeightForOverlay(w.stage, w.stage)
+      }
+      percent = Math.min(99, Math.round(((completed + fracSum) / total) * 100))
+    } else {
+      const frac = Math.min(1, stageWeightForOverlay(stage, p.phase))
+      percent = Math.min(99, Math.round(((completed + frac) / total) * 100))
+    }
+    if (completed >= total) percent = 100
+    else if (stage === 'saved' && partIndex + 1 >= total && lanes.length <= 1) percent = 100
   }
   p.percent = percent
 
@@ -837,11 +895,10 @@ function enrichExportOverlayProgress(base) {
   const durations = exportOverlayEta.partDurationsMs || []
   if (durations.length > 0 && total > 0) {
     const avg = durations.reduce((a, b) => a + b, 0) / durations.length
-    const currentElapsed = Math.max(0, Date.now() - (exportOverlayEta.partStartedAt || Date.now()))
-    const remainCurrent =
-      stage === 'saved' ? 0 : Math.max(0, avg - currentElapsed)
-    const remainAfter = Math.max(0, total - completed - (stage === 'saved' ? 0 : 1)) * avg
-    etaMs = remainCurrent + remainAfter
+    const remainParts = Math.max(0, total - completed)
+    // 并行路数近似加速：剩余份 / 活跃路数 * 均耗
+    const lanesBusy = Math.max(1, activeBusy || lanes.length || 1)
+    etaMs = (remainParts / lanesBusy) * avg
   }
   p.etaMs = etaMs
   p.etaLabel = formatExportOverlayEta(etaMs)
@@ -867,6 +924,18 @@ function buildExportOverlayHtml() {
   .sub { font-size:16px; color:#9fb0d4; letter-spacing:1px; }
   .stage { font-size:17px; color:#d7e2ff; min-height:24px; }
   .counter { font-size:15px; color:#c7d4ef; min-height:20px; }
+  .workers { display:none; flex-direction:column; gap:8px; width:min(440px, 78vw);
+    margin-top:2px; }
+  .workers.show { display:flex; }
+  .ov-worker { display:flex; align-items:baseline; gap:10px; flex-wrap:wrap;
+    padding:8px 12px; border-radius:8px;
+    border:1px solid rgba(140,170,230,0.2); background:rgba(255,255,255,0.04);
+    font-size:13px; color:#c7d4ef; }
+  .ov-worker__id { color:#6aa0ff; font-weight:600; min-width:3.2em;
+    font-variant-numeric: tabular-nums; }
+  .ov-worker__part { font-variant-numeric: tabular-nums; }
+  .ov-worker__stage { color:#8fa3c8; }
+  .ov-worker.is-idle { opacity:0.55; }
   .eta { font-size:14px; color:#8fa3c8; min-height:20px; }
   .bar { width:420px; max-width:70vw; height:8px; border-radius:99px;
     background:rgba(120,160,255,0.15); overflow:hidden; position:relative; }
@@ -911,6 +980,7 @@ function buildExportOverlayHtml() {
     <div class="sub">结批导出进行中，请稍候…</div>
     <div class="stage" id="ov-stage"></div>
     <div class="counter" id="ov-counter"></div>
+    <div class="workers" id="ov-workers" aria-live="polite"></div>
     <div class="eta" id="ov-eta"></div>
     <div class="bar indeterminate" id="ov-bar"><i id="ov-bar-fill"></i></div>
     <div class="pct" id="ov-pct"></div>
@@ -943,6 +1013,7 @@ function buildExportOverlayHtml() {
     var api = window.exportOverlay;
     var stageEl = document.getElementById('ov-stage');
     var counter = document.getElementById('ov-counter');
+    var workersEl = document.getElementById('ov-workers');
     var etaEl = document.getElementById('ov-eta');
     var bar = document.getElementById('ov-bar');
     var fill = document.getElementById('ov-bar-fill');
@@ -1020,17 +1091,49 @@ function buildExportOverlayHtml() {
       drawSpark(cpuCanvas, m.cpuHistory, '#6aa0ff', 'rgba(106,160,255,0.14)');
       drawSpark(memCanvas, m.memHistory, '#5eead4', 'rgba(94,234,212,0.12)');
     }
+    function escapeHtml(s){
+      return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
     function render(p){
       if (!p) return;
       stageEl.textContent = p.stageLabel || '';
       var total = Number(p.totalReports) || 0;
-      if (total > 0) {
-        var idx = (Number(p.partIndex) || 0) + 1;
-        if (idx > total) idx = total;
-        var name = p.templateName ? (' · ' + p.templateName) : '';
-        counter.textContent = '第 ' + idx + ' / 共 ' + total + ' 份' + name;
+      var workers = Array.isArray(p.workers) ? p.workers : [];
+      var name = p.templateName ? (' · ' + p.templateName) : '';
+      if (workers.length > 1 && total > 0) {
+        var done = Number(p.completedParts);
+        if (!Number.isFinite(done) || done < 0) done = 0;
+        counter.textContent = '已完成 ' + done + ' / 共 ' + total + ' 份' + name;
+        var html = '';
+        for (var wi = 0; wi < workers.length; wi++) {
+          var w = workers[wi] || {};
+          var busy = !!w.busy;
+          var wIdx = (Number(w.partIndex) || 0) + 1;
+          if (wIdx > total) wIdx = total;
+          var partLabel = busy
+            ? ('第 ' + wIdx + ' / 共 ' + total + ' 份')
+            : '空闲';
+          var st = busy ? (w.stageLabel || '') : '';
+          html += '<div class="ov-worker' + (busy ? '' : ' is-idle') + '">'
+            + '<span class="ov-worker__id">并行 ' + (wi + 1) + '</span>'
+            + '<span class="ov-worker__part">' + escapeHtml(partLabel) + '</span>'
+            + (st ? '<span class="ov-worker__stage">' + escapeHtml(st) + '</span>' : '')
+            + '</div>';
+        }
+        workersEl.innerHTML = html;
+        workersEl.classList.add('show');
       } else {
-        counter.textContent = p.templateName || '';
+        workersEl.innerHTML = '';
+        workersEl.classList.remove('show');
+        if (total > 0) {
+          var idx = (Number(p.partIndex) || 0) + 1;
+          if (idx > total) idx = total;
+          counter.textContent = '第 ' + idx + ' / 共 ' + total + ' 份' + name;
+        } else {
+          counter.textContent = p.templateName || '';
+        }
       }
       etaEl.textContent = p.etaLabel || '预估中…';
       var pct = Number(p.percent);
@@ -1169,26 +1272,41 @@ function resetExportOverlayEta() {
     armedPartIndex: -1,
     completedParts: 0,
     partDurationsMs: [],
+    partStartedAtByIndex: {},
+    savedParts: {},
+  }
+  exportOverlayWorkerLanes = []
+}
+
+/** 每份开始：重置 120s；记录份起始时刻供 ETA（并行时按 partIndex 各自计时） */
+function noteExportOverlayPartStart(partIndex) {
+  const idx = Math.max(0, Math.floor(Number(partIndex) || 0))
+  const key = String(idx)
+  if (!exportOverlayEta.partStartedAtByIndex) exportOverlayEta.partStartedAtByIndex = {}
+  if (exportOverlayEta.partStartedAtByIndex[key] == null) {
+    exportOverlayEta.partStartedAtByIndex[key] = Date.now()
+  }
+  exportOverlayEta.partStartedAt = exportOverlayEta.partStartedAtByIndex[key]
+  // 并行多路会交错启动不同 partIndex：任一新份都续 120s
+  if (exportOverlayEta.armedPartIndex !== idx) {
+    exportOverlayEta.armedPartIndex = idx
+    armExportOverlayTimeout()
   }
 }
 
-/** 每份开始：重置 120s；记录份起始时刻供 ETA */
-function noteExportOverlayPartStart(partIndex) {
-  const idx = Math.max(0, Math.floor(Number(partIndex) || 0))
-  if (exportOverlayEta.armedPartIndex === idx) return
-  exportOverlayEta.armedPartIndex = idx
-  exportOverlayEta.partStartedAt = Date.now()
-  armExportOverlayTimeout()
-}
-
 function noteExportOverlayPartSaved(partIndex) {
-  const started = exportOverlayEta.partStartedAt || Date.now()
+  const idx = Math.max(0, Math.floor(Number(partIndex) || 0))
+  const key = String(idx)
+  if (!exportOverlayEta.savedParts) exportOverlayEta.savedParts = {}
+  // 并行乱序完成：按「已保存份数」计数，禁止用 max(partIndex+1) 虚高进度
+  if (exportOverlayEta.savedParts[key]) return
+  exportOverlayEta.savedParts[key] = true
+  const startedMap = exportOverlayEta.partStartedAtByIndex || {}
+  const started = startedMap[key] || exportOverlayEta.partStartedAt || Date.now()
   const dur = Math.max(1, Date.now() - started)
   exportOverlayEta.partDurationsMs.push(dur)
-  exportOverlayEta.completedParts = Math.max(
-    exportOverlayEta.completedParts,
-    Math.floor(Number(partIndex) || 0) + 1,
-  )
+  exportOverlayEta.completedParts = Object.keys(exportOverlayEta.savedParts).length
+  delete startedMap[key]
 }
 
 function broadcastExportOverlayProgress() {
@@ -1214,10 +1332,19 @@ function pushExportOverlayProgress(payload) {
     // 每份开始渲染：按份续 120s（Q1A）
     if (phase === 'render' || stage === 'render' || stage === 'load' || stage === 'fetch') {
       noteExportOverlayPartStart(partIndex)
+      next.workerIdle = false
+      next.workerBusy = true
     }
-    if (phase === 'saved' || stage === 'saved') {
+    if ((phase === 'saved' || stage === 'saved') && !next.skipPartSaved) {
       noteExportOverlayPartSaved(partIndex)
+      next.workerIdle = true
+      next.workerBusy = false
+    } else if (next.skipPartSaved || next.workerIdle) {
+      // 并行 worker 收尾：只标空闲，不计入「已保存份」
+      next.workerIdle = true
+      next.workerBusy = false
     }
+    upsertExportOverlayWorkerLane(next)
     exportOverlayLastProgress = next
   }
   broadcastExportOverlayProgress()
@@ -2474,8 +2601,17 @@ async function handlePdfExportRun(event, opts) {
        * 在指定导出窗上渲染一份分卷（035：分卷并行时每路独立 holder）。
        * @param {{ win: import('electron').BrowserWindow }} winHolder
        * @param {number} partIndex
+       * @param {{ workerSlot?: number, parallelWorkers?: number } | null} [workerMeta]
        */
-      async function renderPartOnWindow(winHolder, partIndex) {
+      async function renderPartOnWindow(winHolder, partIndex, workerMeta) {
+        const workerSlot =
+          workerMeta && workerMeta.workerSlot != null
+            ? Math.max(0, Math.floor(Number(workerMeta.workerSlot) || 0))
+            : null
+        const parallelWorkers =
+          workerMeta && workerMeta.parallelWorkers != null
+            ? Math.max(1, Math.floor(Number(workerMeta.parallelWorkers) || 1))
+            : null
         throwIfCancelled()
         applyRenderCoexistPriorityOn(winHolder)
         const targetUrl = buildPdfExportUrl(event.sender, partHash(partIndex))
@@ -2520,12 +2656,21 @@ async function handlePdfExportRun(event, opts) {
             armIdleTimer()
             if (armOverlay && hbPayload && typeof hbPayload === 'object' && hbPayload.stage) {
               try {
-                pushExportOverlayProgress({
+                const hb = {
                   phase: 'render',
                   stage: String(hbPayload.stage),
                   partIndex,
                   templateId,
-                })
+                  totalReports:
+                    Number.isFinite(Number(hbPayload.totalReports))
+                      ? Number(hbPayload.totalReports)
+                      : undefined,
+                }
+                if (workerSlot != null) {
+                  hb.workerSlot = workerSlot
+                  if (parallelWorkers != null) hb.parallelWorkers = parallelWorkers
+                }
+                pushExportOverlayProgress(hb)
               } catch {
                 /* ignore */
               }
@@ -2673,9 +2818,19 @@ async function handlePdfExportRun(event, opts) {
         }
       }
 
-      async function writePartPdf(partIndex, totalReports, pdfBuffer) {
+      async function writePartPdf(partIndex, totalReports, pdfBuffer, workerMeta) {
         throwIfCancelled()
-        sendProgress({ phase: 'write', stage: 'write', partIndex, totalReports })
+        const writeProg = { phase: 'write', stage: 'write', partIndex, totalReports }
+        if (workerMeta && workerMeta.workerSlot != null) {
+          writeProg.workerSlot = Math.max(0, Math.floor(Number(workerMeta.workerSlot) || 0))
+          if (workerMeta.parallelWorkers != null) {
+            writeProg.parallelWorkers = Math.max(
+              1,
+              Math.floor(Number(workerMeta.parallelWorkers) || 1),
+            )
+          }
+        }
+        sendProgress(writeProg)
         const outPath = outputPathForPart(partIndex, totalReports)
         const writeStartMs = Date.now()
         await fs.promises.mkdir(path.dirname(outPath), { recursive: true })
@@ -2725,27 +2880,76 @@ async function handlePdfExportRun(event, opts) {
           log(
             `PDF 分卷并行：partParallel concurrency=${concurrency} remaining=${remainingIndices.length} maxParallel=${pdfExportMaxParallel}`,
           )
+          // 遮罩多路分栏：按并发路数预建 lane，避免「第几份」被后写覆盖
+          exportOverlayWorkerLanes = Array.from({ length: concurrency }, (_, slot) => ({
+            workerSlot: slot,
+            partIndex: 0,
+            stage: '',
+            stageLabel: '',
+            busy: false,
+          }))
+          try {
+            broadcastExportOverlayProgress()
+          } catch {
+            /* ignore */
+          }
           let nextPart = 0
-          async function partWorker(holder) {
+          async function partWorker(holder, workerSlot) {
+            const workerMeta = { workerSlot, parallelWorkers: concurrency }
             while (true) {
               throwIfCancelled()
               const i = nextPart
               nextPart += 1
-              if (i >= remainingIndices.length) return
+              if (i >= remainingIndices.length) {
+                const lastIdx =
+                  (exportOverlayWorkerLanes[workerSlot] &&
+                    exportOverlayWorkerLanes[workerSlot].partIndex) ||
+                  0
+                sendProgress({
+                  phase: 'render',
+                  stage: 'saved',
+                  partIndex: lastIdx,
+                  totalReports,
+                  workerSlot,
+                  parallelWorkers: concurrency,
+                  workerIdle: true,
+                  skipPartSaved: true,
+                })
+                return
+              }
               const partIndex = remainingIndices[i]
               await yieldToOs(jobYieldMs)
-              sendProgress({ phase: 'render', stage: 'load', partIndex, totalReports })
-              const part = await renderPartOnWindow(holder, partIndex)
+              sendProgress({
+                phase: 'render',
+                stage: 'load',
+                partIndex,
+                totalReports,
+                workerSlot,
+                parallelWorkers: concurrency,
+              })
+              const part = await renderPartOnWindow(holder, partIndex, workerMeta)
               if (holder === pdfWinHolder) {
                 pdfWin = holder.win
               }
               stats = mergeStats(stats, part.stats)
               mergeTimings(part)
-              filePaths[partIndex] = await writePartPdf(partIndex, totalReports, part.pdfBuffer)
-              sendProgress({ phase: 'saved', stage: 'saved', partIndex, totalReports })
+              filePaths[partIndex] = await writePartPdf(
+                partIndex,
+                totalReports,
+                part.pdfBuffer,
+                workerMeta,
+              )
+              sendProgress({
+                phase: 'saved',
+                stage: 'saved',
+                partIndex,
+                totalReports,
+                workerSlot,
+                parallelWorkers: concurrency,
+              })
             }
           }
-          await Promise.all(workerHolders.map((h) => partWorker(h)))
+          await Promise.all(workerHolders.map((h, slot) => partWorker(h, slot)))
         } finally {
           pdfWin = pdfWinHolder.win
           for (let i = 1; i < workerHolders.length; i++) {

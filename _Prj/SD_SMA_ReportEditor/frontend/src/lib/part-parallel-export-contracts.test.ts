@@ -27,6 +27,19 @@ describe("part-parallel export contracts (035)", () => {
     expect(main).toMatch(/yieldToOs\(jobYieldMs\)/);
   });
 
+  it("main.cjs：并行遮罩按 worker 分栏显示第几份", () => {
+    const main = readFront("electron/main.cjs");
+    expect(main).toMatch(/exportOverlayWorkerLanes/);
+    expect(main).toMatch(/upsertExportOverlayWorkerLane/);
+    expect(main).toMatch(/workerSlot/);
+    expect(main).toMatch(/ov-workers/);
+    expect(main).toMatch(/并行 /);
+    expect(main).toMatch(/已完成 /);
+    // 乱序完成按已保存份数计数，禁止 max\(partIndex\+1\) 虚高
+    expect(main).toMatch(/savedParts/);
+    expect(main).toMatch(/Object\.keys\(exportOverlayEta\.savedParts\)\.length/);
+  });
+
   it("ReportGenerator：模拟结批卡片露出分卷并行数", () => {
     const rg = readFront("src/views/ReportGenerator.vue");
     const manualH3 = rg.indexOf('<h3 class="rg-h3">{{ RG_UI.manual }}</h3>');
