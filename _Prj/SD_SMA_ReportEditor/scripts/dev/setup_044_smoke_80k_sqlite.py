@@ -87,7 +87,7 @@ def upsert_connection() -> None:
             "name": CONN_NAME,
             "engine": "sqlite",
             "host": "",
-            "port": 0,
+            "port": None,
             "database": "",
             "username": "",
             "sqlite_path": str(DB_PATH),

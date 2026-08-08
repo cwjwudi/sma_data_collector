@@ -83,6 +83,9 @@ class DbConnectionSave(BaseModel):
             n = int(v)
         except (TypeError, ValueError):
             raise ValueError("端口必须是有效整数") from None
+        # SQLite 等无端口连接常落盘为 0；与缺省同等视为「未设置」
+        if n == 0:
+            return None
         if n < 1 or n > 65535:
             raise ValueError("端口必须在 1–65535 之间")
         return n

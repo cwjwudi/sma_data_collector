@@ -330,18 +330,23 @@ async def test_saved_connection(connection_id: str):
         conn = _conn_by_id(connection_id)
     except HTTPException as e:
         return {"ok": False, "message": e.detail if isinstance(e.detail, str) else "未找到数据库连接"}
-    body = DbConnectionSave(
-        id=conn.get("id"),
-        name=conn.get("name") or "",
-        engine=conn.get("engine") or "",
-        host=conn.get("host"),
-        port=conn.get("port"),
-        database=conn.get("database"),
-        username=conn.get("username"),
-        password=None,
-        sqlite_path=conn.get("sqlite_path"),
-        mongo_auth_source=conn.get("mongo_auth_source") or "admin",
-    )
+    try:
+        body = DbConnectionSave(
+            id=conn.get("id"),
+            name=conn.get("name") or "",
+            engine=conn.get("engine") or "",
+            host=conn.get("host"),
+            port=conn.get("port"),
+            database=conn.get("database"),
+            username=conn.get("username"),
+            password=None,
+            sqlite_path=conn.get("sqlite_path"),
+            mongo_auth_source=conn.get("mongo_auth_source") or "admin",
+        )
+    except Exception as e:
+        # 旧落盘（如 sqlite port=0）勿再打成 HTTP 500
+        logger.warning("test_saved_connection invalid saved row %s: %s", connection_id, e)
+        return {"ok": False, "message": f"已保存连接字段无效: {e}"}
     try:
         merged = _body_with_resolved_password_for_test(body)
     except ValueError as e:
