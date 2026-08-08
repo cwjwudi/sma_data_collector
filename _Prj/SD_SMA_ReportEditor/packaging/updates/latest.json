@@ -1,15 +1,15 @@
 {
-  "version": "0.3.147",
-  "releasedAt": "2026-08-08T15:32:46.946Z",
-  "notes": "049：一键隐藏边框改为整份模版；041 续页眉脚/042 小数位/043 空值占位；044 去 5 万取数上限；045 字体图片跨份缓存；046 批次/非批次导出；048 问题反馈包",
+  "version": "0.3.148",
+  "releasedAt": "2026-08-08T16:53:19.572Z",
+  "notes": "Report Editor AI 0.3.148\n\n- 051：结批离开后可从侧栏重开生成报表（进度条/角标/打开页面）\n- 035：模拟结批卡片内直接选择导出性能五档（与 OPC 自动共用）\n- 含 0.3.147：049 整模版一键隐藏边框等",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.147-x64.exe",
-      "sha256": "a298ef00213f0947f4fd1ae089d64c894bfac931c3495648f64d9750f05fee59",
-      "size": 162516195
+      "url": "Report Editor AI-Setup-0.3.148-x64.exe",
+      "sha256": "6c6d61f6f6a267860b113adba9baf31147ee6b396bd2c076389a4a6e0173e15f",
+      "size": 162518557
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.147-arm64.dmg",
+      "url": "Report Editor AI-0.3.148-arm64.dmg",
       "sha256": "",
       "size": 0
     }
