@@ -25,6 +25,24 @@
 
 ---
 
+# ✅ 已完成：并行心跳冲掉 totalReports 导致分路闪没（039e 补丁 · 2026-08-09）
+
+## 现象
+
+四路并行时标题仍显示「4 路并行导出中」，但「已完成 / 各路第几份」只闪一下，随后长期停在「预估中…」。
+
+## 根因
+
+渲染心跳把 `totalReports: undefined` 合并进进度对象（`{...prev,...payload}` 会覆盖），总份数变 0 → 分路 UI 条件失败、ETA 因 `total<=0` 不算。
+
+## 修复
+
+- `mergeExportOverlayProgress`：跳过 null/undefined；已得知总份数后禁止被 0 冲掉
+- 心跳仅在有限正数时带 `totalReports`
+- 遮罩页 `stickyTotal` 兜底
+
+---
+
 # ✅ 已完成：遮罩右下角 CPU / 内存曲线（039d · 2026-08-09）
 
 ## 目标

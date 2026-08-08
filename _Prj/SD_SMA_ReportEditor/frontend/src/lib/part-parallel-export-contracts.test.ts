@@ -41,6 +41,9 @@ describe("part-parallel export contracts (035)", () => {
     // 进度事件带 workers 快照，供任一档位 toast/侧栏分路显示
     expect(main).toMatch(/msg\.workers/);
     expect(main).toMatch(/msg\.completedParts/);
+    // 心跳不得用 undefined/0 冲掉已得知的 totalReports（否则分路 UI 闪没、ETA 永预估中）
+    expect(main).toMatch(/function mergeExportOverlayProgress/);
+    expect(main).toMatch(/prevTotal > 0 && nextTotal <= 0/);
   });
 
   it("ReportGenerator / 自动结批：并行进度走分路文案", () => {

@@ -1,15 +1,15 @@
 {
-  "version": "0.3.153",
-  "releasedAt": "2026-08-08T19:27:50.884Z",
-  "notes": "Report Editor AI 0.3.153\n\n- 039e：分卷并行≥2 时遮罩/toast 按 worker 分路显示第几份（任一档位）\n- 修正乱序完成时总进度虚高\n- 含 0.3.152：模拟结批分卷并行",
+  "version": "0.3.154",
+  "releasedAt": "2026-08-08T19:42:21.165Z",
+  "notes": "Report Editor AI 0.3.154\n\n- 039e 补丁：修复并行心跳冲掉总份数导致分路进度闪没、一直「预估中」\n- 含 0.3.153：分卷并行分路显示",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.153-x64.exe",
-      "sha256": "08d05e25a519eeb135b0757fca23d31b5a5558f5558421dcf0544d9c6f844604",
-      "size": 162551216
+      "url": "Report Editor AI-Setup-0.3.154-x64.exe",
+      "sha256": "983881910594c983844fa90e507397edbd367439aca201f95199c4dd731d4213",
+      "size": 162549336
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.153-arm64.dmg",
+      "url": "Report Editor AI-0.3.154-arm64.dmg",
       "sha256": "",
       "size": 0
     }

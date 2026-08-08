@@ -1096,10 +1096,13 @@ function buildExportOverlayHtml() {
         .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;');
     }
+    var stickyTotal = 0;
     function render(p){
       if (!p) return;
       stageEl.textContent = p.stageLabel || '';
       var total = Number(p.totalReports) || 0;
+      if (total > 0) stickyTotal = total;
+      else if (stickyTotal > 0) total = stickyTotal;
       var workers = Array.isArray(p.workers) ? p.workers : [];
       var name = p.templateName ? (' · ' + p.templateName) : '';
       if (workers.length > 1 && total > 0) {
@@ -1309,6 +1312,27 @@ function noteExportOverlayPartSaved(partIndex) {
   delete startedMap[key]
 }
 
+/**
+ * 合并遮罩进度：跳过 undefined/null；已得知总份数后禁止被 0/缺省冲掉。
+ * 并行心跳常带 totalReports: undefined，Object.assign 会抹掉总份数 → 分路 UI 闪一下消失、ETA 永「预估中」。
+ */
+function mergeExportOverlayProgress(prev, payload) {
+  const next = { ...(prev || {}) }
+  if (payload && typeof payload === 'object') {
+    for (const key of Object.keys(payload)) {
+      const v = payload[key]
+      if (v === undefined || v === null) continue
+      next[key] = v
+    }
+  }
+  const prevTotal = Math.max(0, Math.floor(Number(prev && prev.totalReports) || 0))
+  const nextTotal = Math.max(0, Math.floor(Number(next.totalReports) || 0))
+  if (prevTotal > 0 && nextTotal <= 0) {
+    next.totalReports = prevTotal
+  }
+  return next
+}
+
 function broadcastExportOverlayProgress() {
   const payload = enrichExportOverlayProgress(exportOverlayLastProgress || {})
   exportOverlayLastProgress = payload
@@ -1325,7 +1349,7 @@ function broadcastExportOverlayProgress() {
 function pushExportOverlayProgress(payload) {
   if (payload) {
     const prev = exportOverlayLastProgress || {}
-    const next = { ...prev, ...payload }
+    const next = mergeExportOverlayProgress(prev, payload)
     const phase = String(next.phase || '')
     const stage = String(next.stage || phase || '')
     const partIndex = Math.max(0, Math.floor(Number(next.partIndex) || 0))
@@ -2688,11 +2712,9 @@ async function handlePdfExportRun(event, opts) {
                   stage: String(hbPayload.stage),
                   partIndex,
                   templateId,
-                  totalReports:
-                    Number.isFinite(Number(hbPayload.totalReports))
-                      ? Number(hbPayload.totalReports)
-                      : undefined,
                 }
+                const hbTotal = Math.floor(Number(hbPayload.totalReports))
+                if (Number.isFinite(hbTotal) && hbTotal > 0) hb.totalReports = hbTotal
                 if (workerSlot != null) {
                   hb.workerSlot = workerSlot
                   if (parallelWorkers != null) hb.parallelWorkers = parallelWorkers

@@ -60,6 +60,8 @@ describe("export-overlay contracts (039 / 039c)", () => {
     expect(main).toMatch(/exportOverlayWorkerLanes/);
     expect(main).toMatch(/ov-workers/);
     expect(main).toMatch(/p\.workers/);
+    expect(main).toMatch(/mergeExportOverlayProgress/);
+    expect(main).toMatch(/stickyTotal/);
   });
 
   it("overlay-preload.cjs：onProgress / onMetrics / dismiss / exportSupportPack", () => {
