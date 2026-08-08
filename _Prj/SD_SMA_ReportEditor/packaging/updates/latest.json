@@ -1,17 +1,17 @@
 {
-  "version": "0.3.146",
-  "releasedAt": "2026-08-04T05:56:39.861Z",
-  "notes": "040：模版一键隐藏边框覆盖页眉/页脚；编辑器 zone 灰描边与 Mini 对齐",
+  "version": "0.3.147",
+  "releasedAt": "2026-08-08T14:08:12.693Z",
+  "notes": "041 续页眉脚/042 小数位/043 空值占位修复；044 去 5 万取数上限；045 字体图片跨份缓存；046 批次/非批次导出",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.146-x64.exe",
+      "url": "Report Editor AI-Setup-0.3.147-x64.exe",
       "sha256": "",
       "size": 0
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.146-arm64.dmg",
-      "sha256": "157ef9fe1613be4ecb11ab54e3916823a5559719e3bc02314178588ea837a94e",
-      "size": 212352237
+      "url": "Report Editor AI-0.3.147-arm64.dmg",
+      "sha256": "",
+      "size": 0
     }
   }
 }
