@@ -54,15 +54,16 @@ import {
   isPdfExportCancelledError,
   newPdfExportJobId,
 } from "@/lib/pdf-export-job";
-import {
-  buildExportCancelToastAction,
-  requestCancelPdfExport,
-} from "@/lib/pdf-export-cancel-ui";
+import { requestCancelPdfExport } from "@/lib/pdf-export-cancel-ui";
 import { resolveExportPerfProfile } from "@/lib/export-perf-tier";
 import {
   beginExportCoexistSession,
   endExportCoexistSession,
 } from "@/lib/export-coexist-busy";
+import {
+  endBatchExportProgress,
+  publishBatchExportProgress,
+} from "@/lib/report-export-progress-state";
 
 const RG_UI = {
   opcAuto: "OPC UA 自动结批",
@@ -607,15 +608,16 @@ async function executeBindingExport(job: QueuedExportJob): Promise<void> {
   const startedAtMs = Date.now();
   const progressToastId = `batch-progress-${bindingId}`;
   let exportJobIdForCancel = "";
+  const progressTitle = `${RG_UI.opcAuto}·${label}`;
   const stage = (text: string, code?: number): void => {
-    showAppToast(`${RG_STATUS_OPC_AUTO}·${label}\n收到结批指令（${eventLabel}）\n${text}`, {
+    publishBatchExportProgress({
       id: progressToastId,
-      tone: "info",
-      durationMs: 0,
-      spinner: true,
-      action: buildExportCancelToastAction(exportJobIdForCancel, () => {
+      title: progressTitle,
+      detail: `收到结批指令（${eventLabel}）\n${text}`,
+      jobId: exportJobIdForCancel,
+      onCancel: () => {
         requestCancelPdfExport(exportJobIdForCancel);
-      }),
+      },
     });
     if (code != null) {
       void setBindingExportStatus(prefs, binding, code, text);
@@ -705,6 +707,7 @@ async function executeBindingExport(job: QueuedExportJob): Promise<void> {
       `耗时 ${(totalMs / 1000).toFixed(1)} 秒${statsLine ? ` · ${statsLine}` : ""}`,
     ];
     if (timingsLine) doneLines.push(timingsLine);
+    endBatchExportProgress(progressToastId);
     showAppToast(doneLines.join("\n"), { id: progressToastId, tone: "ok", durationMs: 10000 });
   } catch (e) {
     if (isPdfExportCancelledError(e)) {
@@ -731,6 +734,7 @@ async function executeBindingExport(job: QueuedExportJob): Promise<void> {
         message: "已取消",
       });
       reportAutoExportStatus.value = `${RG_STATUS_OPC_AUTO}·${label} 已取消`;
+      endBatchExportProgress(progressToastId);
       showAppToast(`${RG_STATUS_OPC_AUTO}·${label}\n已取消导出`, {
         id: progressToastId,
         tone: "warn",
@@ -782,6 +786,7 @@ async function executeBindingExport(job: QueuedExportJob): Promise<void> {
         message: msg,
       });
       reportAutoExportStatus.value = `${RG_STATUS_OPC_AUTO}·${label} 失败：${msg.split("\n")[0]}`;
+      endBatchExportProgress(progressToastId);
       showAppToast(`${RG_STATUS_OPC_AUTO}·${label} 结批失败\n${msg}`, {
         id: progressToastId,
         tone: "err",
@@ -789,6 +794,7 @@ async function executeBindingExport(job: QueuedExportJob): Promise<void> {
       });
     }
   } finally {
+    endBatchExportProgress(progressToastId);
     endExportCoexistSession();
     activeExportCount = Math.max(0, activeExportCount - 1);
     busyBindingIds.delete(bindingId);

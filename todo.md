@@ -5,6 +5,10 @@
 
 ---
 
+## 2026-08-09
+
+- **ReportEditor 051（结批离开后侧栏重开）**：结批进行中离开「生成报表」后，侧栏底部进度条 +「生成报表」角标可重回页面；进度 toast 增「打开页面」、点 × 收起仍可从侧栏恢复。看板 [docs/051-✅](docs/051-✅-ReportEditor结批离开后侧栏重开.md)。
+
 ## 2026-08-08
 
 - **ReportEditor 044 本机冒烟准备**：Docker Desktop 已装但缺 WSL2 未起引擎；已提供 `setup_044_docker.ps1` / `setup_044_smoke_80k.py`。SQLite 兜底已灌 **80000** 行 + 模版「测试·044·8万条分卷导出（SQLite）」；后端 `/database/query/sql` limit=80000 实测取满。PDF 全量分卷手测 ⌛️。说明 [samples/README-044](_Prj/SD_SMA_ReportEditor/getting-started/samples/README-044-smoke-80k.md)；看板 [docs/044-🚧](docs/044-🚧-ReportEditor导出SQL取数无硬上限.md)。

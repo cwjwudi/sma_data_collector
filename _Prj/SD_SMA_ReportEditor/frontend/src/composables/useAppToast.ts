@@ -15,6 +15,10 @@ export type AppToastItem = {
   spinner?: boolean;
   /** 可选操作按钮（如导出取消） */
   action?: AppToastAction;
+  /** 次要操作（如结批进度「打开页面」） */
+  secondaryAction?: AppToastAction;
+  /** 点击正文（离开生成页后点进度条可回到页面） */
+  onBodyClick?: () => void;
 };
 
 export const appToasts = ref<AppToastItem[]>([]);
@@ -43,6 +47,8 @@ export function showAppToast(
     id?: string;
     spinner?: boolean;
     action?: AppToastAction;
+    secondaryAction?: AppToastAction;
+    onBodyClick?: () => void;
   },
 ): string {
   const tone = options?.tone || "info";
@@ -50,14 +56,19 @@ export function showAppToast(
   const id = options?.id || `toast_${Date.now()}_${++toastSeq}`;
   const spinner = Boolean(options?.spinner);
   const action = options?.action;
+  const secondaryAction = options?.secondaryAction;
+  const onBodyClick = options?.onBodyClick;
 
   const existing = appToasts.value.find((t) => t.id === id);
   if (existing) {
     appToasts.value = appToasts.value.map((t) =>
-      t.id === id ? { ...t, message, tone, spinner, action } : t,
+      t.id === id ? { ...t, message, tone, spinner, action, secondaryAction, onBodyClick } : t,
     );
   } else {
-    appToasts.value = [...appToasts.value, { id, message, tone, spinner, action }];
+    appToasts.value = [
+      ...appToasts.value,
+      { id, message, tone, spinner, action, secondaryAction, onBodyClick },
+    ];
   }
 
   clearToastTimer(id);

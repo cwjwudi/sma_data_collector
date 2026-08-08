@@ -889,10 +889,13 @@ import {
 } from "@/lib/auto-export-filename";
 import { humanizePdfExportError } from "@/lib/pdfExportErrors";
 import {
-  buildExportCancelToastAction,
   requestCancelPdfExport,
   shouldShowExportCancelControl,
 } from "@/lib/pdf-export-cancel-ui";
+import {
+  endBatchExportProgress,
+  publishBatchExportProgress,
+} from "@/lib/report-export-progress-state";
 import {
   exportFailureAuditDetail,
   parseExportFailureDiagnostics,
@@ -1895,14 +1898,14 @@ async function onManualExport(): Promise<void> {
   const exportProfile = resolveExportPerfProfile(prefs.value.exportPerfTier);
   beginExportCoexistSession(exportProfile.coexistPause);
   const stage = (text: string): void => {
-    showAppToast(`[${RG_UI.manual}]\n${text}`, {
+    publishBatchExportProgress({
       id: progressToastId,
-      tone: "info",
-      durationMs: 0,
-      spinner: true,
-      action: buildExportCancelToastAction(manualExportJobId.value, () => {
+      title: RG_UI.manual,
+      detail: text,
+      jobId: manualExportJobId.value,
+      onCancel: () => {
         requestCancelPdfExport(manualExportJobId.value);
-      }),
+      },
     });
   };
   let offProgress: (() => void) | undefined;
@@ -1912,6 +1915,7 @@ async function onManualExport(): Promise<void> {
     const preflight = await runTemplateExportPreflight(tid);
     const preflightMs = Date.now() - preflightStartMs;
     if (!preflight.ok) {
+      endBatchExportProgress(progressToastId);
       dismissAppToast(progressToastId);
       if (preflight.blockers.some(isReportSplitPreflightBlocker)) {
         manualHint.value = preflight.summary;
@@ -1998,6 +2002,7 @@ async function onManualExport(): Promise<void> {
       `耗时 ${(totalMs / 1000).toFixed(1)} 秒${statsLine ? ` · ${statsLine}` : ""}`,
     ];
     if (timingsLine) doneLines.push(timingsLine);
+    endBatchExportProgress(progressToastId);
     showAppToast(doneLines.join("\n"), { id: progressToastId, tone: "ok", durationMs: 10000 });
   } catch (e) {
     clearPdfExportFillCacheAfterFailure(e);
@@ -2005,6 +2010,7 @@ async function onManualExport(): Promise<void> {
     const msg = humanizePdfExportError(parsed.message || e);
     const cancelled = isPdfExportCancelledError(e) || isPdfExportCancelledError(msg);
     manualHint.value = cancelled ? "已取消导出。" : msg;
+    endBatchExportProgress(progressToastId);
     showAppToast(
       cancelled ? `[${RG_UI.manual}] 已取消` : `[${RG_UI.manual}] 失败\n${msg}`,
       { id: progressToastId, tone: cancelled ? "warn" : "err", durationMs: cancelled ? 6000 : 14000 },
@@ -2025,6 +2031,7 @@ async function onManualExport(): Promise<void> {
     }
   } finally {
     offProgress?.();
+    endBatchExportProgress(progressToastId);
     manualBusy.value = false;
     manualExportJobId.value = "";
     endExportCoexistSession();

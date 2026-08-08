@@ -47,10 +47,17 @@
                 title="有新版本可更新"
                 aria-label="有新版本可更新"
               />
+              <span
+                v-if="item.path === '/generate' && hasActiveReportExport"
+                class="nav-badge nav-badge--export"
+                title="结批进行中，点击可打开生成报表"
+                aria-label="结批进行中"
+              />
             </span>
             <span v-show="!sidebarCollapsed" class="nav-label">{{ item.label }}</span>
           </router-link>
         </nav>
+        <SidebarExportProgressBar :collapsed="sidebarCollapsed" />
         <SidebarAppUpdateBar :collapsed="sidebarCollapsed" />
       </aside>
       <main class="content">
@@ -104,8 +111,14 @@ import { useRoute, useRouter } from 'vue-router'
 import SetupWizard from '@/features/onboarding/SetupWizard.vue'
 import AppUpdatePromptDialog from '@/features/settings/app-update/AppUpdatePromptDialog.vue'
 import SidebarAppUpdateBar from '@/features/settings/app-update/SidebarAppUpdateBar.vue'
+import SidebarExportProgressBar from '@/features/report-generator/SidebarExportProgressBar.vue'
 import AppConfirmDialog from '@/components/AppConfirmDialog.vue'
 import AppToastStack from '@/components/AppToastStack.vue'
+import {
+  hasActiveReportExport,
+  registerOpenGenerateReportPage,
+  REPORT_GENERATE_ROUTE,
+} from '@/lib/report-export-progress-state'
 import {
   appUpdateAvailable,
   appUpdateStartupPromptOpen,
@@ -303,6 +316,22 @@ function scheduleAutoUpdateCheck() {
 let offAppResourceMode = null
 
 onMounted(() => {
+  registerOpenGenerateReportPage(async () => {
+    if (route.path === REPORT_GENERATE_ROUTE || route.path.startsWith(`${REPORT_GENERATE_ROUTE}/`)) {
+      return
+    }
+    beginRouteLoading(REPORT_GENERATE_ROUTE, { immediate: true })
+    await nextTick()
+    await new Promise((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(resolve))
+    })
+    try {
+      await router.push(REPORT_GENERATE_ROUTE)
+    } catch (err) {
+      routeTransitionPending.value = false
+      throw err
+    }
+  })
   removeBeforeEach = router.beforeEach((to, from) => {
     if (to.path === from.path) return
     beginRouteLoading(to.path)
@@ -341,6 +370,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  registerOpenGenerateReportPage(null)
   clearRouteLoadingTimers()
   removeBeforeEach?.()
   removeAfterEach?.()
@@ -577,6 +607,24 @@ const navItems = [
   border: 2px solid hsl(238, 82%, 13%);
   box-sizing: content-box;
   pointer-events: none;
+}
+
+.nav-badge--export {
+  background: #38bdf8;
+  box-shadow: 0 0 0 0 rgba(56, 189, 248, 0.55);
+  animation: nav-badge-export-pulse 1.4s ease-out infinite;
+}
+
+@keyframes nav-badge-export-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(56, 189, 248, 0.55);
+  }
+  70% {
+    box-shadow: 0 0 0 6px rgba(56, 189, 248, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(56, 189, 248, 0);
+  }
 }
 
 .sidebar--collapsed .nav-badge {
