@@ -7,6 +7,7 @@
 
 ## 2026-08-09
 
+- **ReportEditor 052e / 0.3.164**：修其它路永卡「同步取数缓存」（预热误清 bridge + partsJson）。看板 [docs/035-🚧](docs/035-🚧-ReportEditor导出性能档位与同机降载.md)。
 - **ReportEditor 0.3.163 Win 打包**：`Report Editor AI-Setup-0.3.163-x64.exe`（SHA256 `99835c88…f5f3`）；052d 修桌面壳误报浏览器壳。发版记录 `_Doc/007` · [docs/035-🚧](docs/035-🚧-ReportEditor导出性能档位与同机降载.md)。
 - **ReportEditor 052d / 0.3.163**：修桌面壳误报「浏览器壳」（preload sandbox + fs）。看板 [docs/035-🚧](docs/035-🚧-ReportEditor导出性能档位与同机降载.md)。
 - **ReportEditor 0.3.162 Win 打包**：`Report Editor AI-Setup-0.3.162-x64.exe`（SHA256 `42c06bcc…1f75`）；052c 按份切片取数。发版记录 `_Doc/007` · [docs/035-🚧](docs/035-🚧-ReportEditor导出性能档位与同机降载.md)。

@@ -2762,9 +2762,18 @@ ipcMain.handle('pdf-export-fill-cache-set', async (_event, snap) => {
   }
   const totalReports = Math.max(1, Math.floor(Number(snap.totalReports) || 1))
   const stats = snap.stats && typeof snap.stats === 'object' ? snap.stats : null
-  const parts = Array.isArray(snap.parts) ? snap.parts : null
+  let parts = Array.isArray(snap.parts) ? snap.parts : null
+  if ((!parts || !parts.length) && typeof snap.partsJson === 'string' && snap.partsJson) {
+    try {
+      const parsed = JSON.parse(snap.partsJson)
+      if (Array.isArray(parsed)) parts = parsed
+    } catch (e) {
+      log(`fill-cache partsJson 解析失败：${e && e.message}`)
+      return { ok: false, error: 'partsJson 解析失败' }
+    }
+  }
 
-  // 052c：主进程按份落盘（preload 不再 require fs，避免 sandbox 下整段 preload 失败）
+  // 052c/e：主进程按份落盘（preload 不再 require fs；partsJson 避 Proxy）
   if (parts && parts.length > 0) {
     const dir = path.join(
       app.getPath('temp'),

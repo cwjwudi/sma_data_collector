@@ -224,7 +224,7 @@ async function boot(): Promise<void> {
   errText.value = null;
   const id = String(route.query.templateId || "").trim();
   if (!id) {
-    // 预热待命：主进程预加载本页常驻，结批时仅切 hash 进入导出，静默等待即可
+    // 预热待命：只清本窗内存，禁止动全局 bridge（否则并行其它路会永等「同步取数缓存」）
     if (route.query.prewarm != null) {
       clearPdfExportFillCache();
       return;
@@ -315,7 +315,8 @@ async function boot(): Promise<void> {
   }
   const dataMs = Date.now() - dataStartMs;
   if (issueDetails.length && !allowBindingIssues.value) {
-    clearPdfExportFillCache();
+    // 仅首份失败时清全局 bridge；其它份只清本窗
+    clearPdfExportFillCache({ bridge: !reuseFill && (partIdx == null || partIdx <= 0) });
     errText.value = humanizePdfExportError(summarizeBindingPreviewIssueDetails(issueDetails));
     const s = bindingPreview.lastStats.value;
     signalReady(false, errText.value, undefined, { tplMs, dataMs, paintMs: 0 }, {
@@ -338,8 +339,15 @@ async function boot(): Promise<void> {
       totalReports,
       stats: bindingPreview.lastStats.value,
     });
-    // 须在 signalReady 前按份落盘；本窗内存缩成第 0 份（约 maxRows）
-    await publishPdfExportFillCacheToBridge(t);
+    // 须在 signalReady 前按份落盘；失败则整份导出失败（其它路依赖 bridge）
+    try {
+      await publishPdfExportFillCacheToBridge(t);
+    } catch (e) {
+      if (seq !== bootSeq) return;
+      errText.value = humanizePdfExportError(e);
+      signalReady(false, errText.value, undefined, { tplMs, dataMs, paintMs: 0 });
+      return;
+    }
     const sliced = getPdfExportFillCache(id);
     if (sliced?.partIndex === 0) {
       bindingPreview.values.value = sliced.values;

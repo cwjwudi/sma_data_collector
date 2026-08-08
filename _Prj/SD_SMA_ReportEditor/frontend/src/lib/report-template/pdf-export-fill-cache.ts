@@ -1,7 +1,10 @@
 /**
- * 导出窗分卷取数缓存（030 / 023 / 052c）：
- * 首份 fullSqlFill 一次后，按「份」切片落盘；各并行窗只 hydrate 当前份（约 maxRows），
- * 不再把整包 8 万行灌进每个 BrowserWindow。
+ * 导出窗分卷取数缓存（030 / 023 / 052c / 052e）：
+ * 首份 fullSqlFill 一次后，按「份」切片落盘；各并行窗只 hydrate 当前份。
+ *
+ * 052e：
+ * - 清本窗缓存默认不动全局 bridge（预热窗曾误清导致其它路永等「同步取数缓存」）
+ * - publish 前 JSON 序列化，避免 Vue 代理让 IPC 静默失败；可用 partsJson 字符串降低克隆风险
  */
 import type { BindingPreviewCell } from "@/lib/report-template/binding-preview-utils";
 import type { ReportTemplate } from "@/lib/report-template/model";
@@ -30,8 +33,18 @@ function sleepMs(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-export function clearPdfExportFillCache(): void {
+/** 剥掉 Vue Proxy / 不可克隆对象，供 IPC */
+function toPlainJson<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
+/**
+ * 清本窗内存缓存。
+ * @param opts.bridge 为 true 时才清主进程全局 bridge（仅导出失败/任务结束）
+ */
+export function clearPdfExportFillCache(opts?: { bridge?: boolean }): void {
   cache = null;
+  if (!opts?.bridge) return;
   try {
     void window.electronAPI?.clearPdfExportFillCacheBridge?.();
   } catch {
@@ -89,16 +102,20 @@ export async function publishPdfExportFillCacheToBridge(
           values: previewValuesForSplitReport(snap.values, plan, i) as Record<string, BindingPreviewCell>,
         });
       }
-      await api.setPdfExportFillCacheBridgeParts({
+      // 先成本地纯 JSON，再以字符串交给主进程，避免 Proxy / 巨型 structured-clone 失败
+      const plainParts = toPlainJson(parts);
+      const res = await api.setPdfExportFillCacheBridgeParts({
         templateId: snap.templateId,
         totalReports: reportCount,
-        stats: snap.stats,
-        parts,
+        stats: snap.stats ? toPlainJson(snap.stats) : null,
+        partsJson: JSON.stringify(plainParts),
       });
-      // 本窗立刻丢掉全量，只留第 0 份
+      if (!res?.ok) {
+        throw new Error((res as { error?: string } | undefined)?.error || "分份 fill-cache 落盘失败");
+      }
       setPdfExportFillCache({
         templateId: snap.templateId,
-        values: parts[0].values,
+        values: plainParts[0].values,
         totalReports: reportCount,
         stats: snap.stats,
         partIndex: 0,
@@ -106,9 +123,15 @@ export async function publishPdfExportFillCacheToBridge(
       return;
     }
 
-    await api.setPdfExportFillCacheBridge?.(snap);
-  } catch {
-    /* ignore */
+    const plainSnap = toPlainJson(snap);
+    const res = await api.setPdfExportFillCacheBridge?.(plainSnap);
+    if (res && res.ok === false) {
+      throw new Error("fill-cache 落盘失败");
+    }
+  } catch (e) {
+    // 不吞掉到「假成功」：让调用方可感知；并行其它路依赖 bridge
+    console.error("[pdf-export-fill-cache] publish failed", e);
+    throw e instanceof Error ? e : new Error(String(e || "publish fill-cache failed"));
   }
 }
 
@@ -127,7 +150,6 @@ export async function hydratePdfExportFillCacheFromBridge(
   const existing = getPdfExportFillCache(id);
   if (existing) {
     if (wantPart == null) return true;
-    // 全量旧缓存：可复用
     if (existing.partIndex == null) return true;
     if (existing.partIndex === wantPart) return true;
   }

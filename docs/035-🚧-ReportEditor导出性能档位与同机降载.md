@@ -6,6 +6,28 @@
 
 ---
 
+# ✅ 已完成：其它路永卡「同步取数缓存」（052e · 2026-08-09）
+
+## 现象
+
+8 路并行：第 1 路已到 20+ 份，2–8 路一直「同步取数缓存」。
+
+## 根因
+
+1. 预热窗 `clearPdfExportFillCache()` 会清**全局** bridge，首份 publish 后被其它窗预热/回收清掉  
+2. 按份 publish 带着 Vue Proxy，IPC structured-clone 可能静默失败；第 0 路仍持本地全量/切片继续跑，其它路永等 bridge
+
+## 修复
+
+- 清本窗默认不动 bridge；失败/收尾才 `bridge: true`  
+- publish 用 `toPlainJson` + `partsJson` 字符串；失败则首份 `signalReady(false)`
+
+## 验收
+
+- 8 路 80 份：各路应轮流出现「渲染 PDF / 写入」，不应 7 路长期停在「同步取数缓存」
+
+---
+
 # ✅ 已完成：桌面壳误报「浏览器壳」（052d · 2026-08-09）
 
 ## 现象

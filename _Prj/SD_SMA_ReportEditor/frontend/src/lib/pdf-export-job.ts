@@ -12,8 +12,8 @@ export function isPdfExportCancelledError(err: unknown): boolean {
   return /导出已取消|cancelled/i.test(msg);
 }
 
-/** 导出失败或取消后清缓存，避免僵尸 fill 状态 */
+/** 导出失败或取消后清本窗 + 全局 bridge，避免僵尸 fill 状态 */
 export function clearPdfExportFillCacheAfterFailure(err?: unknown): void {
   void err;
-  clearPdfExportFillCache();
+  clearPdfExportFillCache({ bridge: true });
 }

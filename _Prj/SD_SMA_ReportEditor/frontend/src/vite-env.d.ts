@@ -130,7 +130,9 @@ interface Window {
       templateId: string;
       totalReports: number;
       stats: import("@/lib/report-template/pdf-export-fill-cache").PdfExportFillSnapshot["stats"];
-      parts: Array<{
+      /** 推荐：已 JSON.stringify 的 parts，避免 IPC/Proxy 问题 */
+      partsJson?: string;
+      parts?: Array<{
         partIndex: number;
         values: import("@/lib/report-template/pdf-export-fill-cache").PdfExportFillSnapshot["values"];
       }>;

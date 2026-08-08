@@ -80,8 +80,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setPdfExportFillCacheBridge: (snap) => ipcRenderer.invoke('pdf-export-fill-cache-set', snap || {}),
   setPdfExportFillCacheBridgeParts: (payload) =>
     ipcRenderer.invoke('pdf-export-fill-cache-set', {
-      ...(payload || {}),
-      parts: Array.isArray(payload && payload.parts) ? payload.parts : [],
+      templateId: payload && payload.templateId,
+      totalReports: payload && payload.totalReports,
+      stats: payload && payload.stats,
+      // 优先 partsJson（字符串），避免巨型对象 structured-clone / Vue Proxy 问题
+      partsJson: payload && typeof payload.partsJson === 'string' ? payload.partsJson : undefined,
+      parts: Array.isArray(payload && payload.parts) ? payload.parts : undefined,
     }),
   clearPdfExportFillCacheBridge: () => ipcRenderer.invoke('pdf-export-fill-cache-clear'),
 
