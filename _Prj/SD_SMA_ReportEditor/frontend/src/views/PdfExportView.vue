@@ -37,8 +37,10 @@ import { splitReportCountForPreview } from "@/lib/report-template/table-sql-fill
 import {
   clearPdfExportFillCache,
   getPdfExportFillCache,
+  publishPdfExportFillCacheToBridge,
   setPdfExportFillCache,
   shouldReusePdfExportFill,
+  waitPdfExportFillCacheFromBridge,
 } from "@/lib/report-template/pdf-export-fill-cache";
 import {
   BINDING_FILL_OUTER_RETRY_DELAYS_MS,
@@ -233,7 +235,8 @@ async function boot(): Promise<void> {
   startExportHeartbeat("load");
   const tplStartMs = Date.now();
   try {
-    const loaded = await getTemplate(id);
+    // 多窗并行时模版接口易被挤满；导出窗单独加长超时（现场 16 路曾 20s 误杀）
+    const loaded = await getTemplate(id, { timeoutMs: 120_000 });
     if (seq !== bootSeq) return;
     tmpl.value = loaded;
   } catch (e) {
@@ -248,6 +251,12 @@ async function boot(): Promise<void> {
   injectPrintPageCss(t);
 
   const partIdx = reportPartIndex.value;
+  // 035：其它并行窗从主进程 bridge 灌入首份取数，避免 N×全量 SQL
+  if (partIdx > 0) {
+    pulseExportHeartbeat("fetch");
+    await waitPdfExportFillCacheFromBridge(id, { timeoutMs: 180_000 });
+    if (seq !== bootSeq) return;
+  }
   const cached = getPdfExportFillCache(id);
   const reuseFill = shouldReusePdfExportFill({
     templateId: id,
@@ -315,6 +324,8 @@ async function boot(): Promise<void> {
       totalReports,
       stats: bindingPreview.lastStats.value,
     });
+    // 须在 signalReady 之前推送，其它并行路才能在 onReady 后立刻复用
+    await publishPdfExportFillCacheToBridge();
   }
   const paintStartMs = Date.now();
   pulseExportHeartbeat("render");

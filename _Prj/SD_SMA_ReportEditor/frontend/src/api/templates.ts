@@ -86,8 +86,13 @@ export async function importTemplatesBulk(items: ReportTemplate[]) {
   });
 }
 
-export async function getTemplate(templateId: string): Promise<ReportTemplate> {
-  return fetchJson<ReportTemplate>(apiUrl(`/templates/${encodeURIComponent(templateId)}`));
+export async function getTemplate(
+  templateId: string,
+  opts?: { timeoutMs?: number },
+): Promise<ReportTemplate> {
+  return fetchJson<ReportTemplate>(apiUrl(`/templates/${encodeURIComponent(templateId)}`), {
+    timeoutMs: opts?.timeoutMs,
+  });
 }
 
 export async function putTemplate(

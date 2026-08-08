@@ -118,6 +118,14 @@ interface Window {
       printToPDFSkipped?: boolean;
     }) => void;
     notifyPdfExportHeartbeat?: (payload?: { stage?: string }) => void;
+    /** 035：跨导出窗共享首份 fullSqlFill */
+    getPdfExportFillCacheBridge?: (opts: {
+      templateId: string;
+    }) => Promise<{ ok: boolean; snap?: import("@/lib/report-template/pdf-export-fill-cache").PdfExportFillSnapshot }>;
+    setPdfExportFillCacheBridge?: (
+      snap: import("@/lib/report-template/pdf-export-fill-cache").PdfExportFillSnapshot,
+    ) => Promise<{ ok: boolean }>;
+    clearPdfExportFillCacheBridge?: () => Promise<{ ok: boolean }>;
     onPdfExportProgress: (
       listener: (payload: {
         phase?: string;

@@ -72,6 +72,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   /** 仅 PDF 导出隐藏窗口：取数期间心跳，避免大模版慢取数被 2 分钟硬超时误杀 */
   notifyPdfExportHeartbeat: (payload) => ipcRenderer.send('pdf-export-heartbeat', payload || {}),
 
+  /** 035：多分卷并行时跨导出窗共享首份 fullSqlFill 快照（主进程桥） */
+  getPdfExportFillCacheBridge: (opts) => ipcRenderer.invoke('pdf-export-fill-cache-get', opts || {}),
+  setPdfExportFillCacheBridge: (snap) => ipcRenderer.invoke('pdf-export-fill-cache-set', snap || {}),
+  clearPdfExportFillCacheBridge: () => ipcRenderer.invoke('pdf-export-fill-cache-clear'),
+
   /** 订阅 PDF 导出阶段进度（结批弹窗显示「第 X/Y 份」等），返回取消订阅函数 */
   onPdfExportProgress: (listener) => {
     const fn = (_event, payload) => listener(payload)

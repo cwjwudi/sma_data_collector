@@ -64,6 +64,21 @@ describe("part-parallel export contracts (035)", () => {
     expect(main).toMatch(/acquireExtrasPromise/);
   });
 
+  it("跨窗共享 fill cache bridge，避免 N 路各打全量 SQL", () => {
+    const main = readFront("electron/main.cjs");
+    const preload = readFront("electron/preload.cjs");
+    const pdfView = readFront("src/views/PdfExportView.vue");
+    const fill = readFront("src/lib/report-template/pdf-export-fill-cache.ts");
+    expect(main).toMatch(/pdf-export-fill-cache-get/);
+    expect(main).toMatch(/pdfExportFillCacheBridge/);
+    expect(preload).toMatch(/getPdfExportFillCacheBridge/);
+    expect(fill).toMatch(/publishPdfExportFillCacheToBridge/);
+    expect(fill).toMatch(/waitPdfExportFillCacheFromBridge/);
+    expect(pdfView).toMatch(/publishPdfExportFillCacheToBridge/);
+    expect(pdfView).toMatch(/waitPdfExportFillCacheFromBridge/);
+    expect(pdfView).toMatch(/timeoutMs:\s*120_000/);
+  });
+
   it("不妥协忽略 CPU 预算：设 16 可真正 16 路", () => {
     const main = readFront("electron/main.cjs");
     const budget = readFront("src/lib/export-cpu-budget.ts");

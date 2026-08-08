@@ -2534,6 +2534,48 @@ ipcMain.handle('pdf-export-cancel', async (_event, opts) => {
   return { ok: found, cancelled: found }
 })
 
+/**
+ * 035：分卷并行跨 BrowserWindow 共享首份 fullSqlFill。
+ * 各导出窗 JS 堆隔离，仅靠同窗内存缓存会导致 N 路各打一遍 8 万行 SQL → 后端挤爆 / 20s 超时。
+ */
+let pdfExportFillCacheBridge = null
+
+function clearPdfExportFillCacheBridge() {
+  pdfExportFillCacheBridge = null
+}
+
+ipcMain.handle('pdf-export-fill-cache-get', (_event, opts) => {
+  const id = String((opts && opts.templateId) || '').trim()
+  if (!id || !pdfExportFillCacheBridge || pdfExportFillCacheBridge.templateId !== id) {
+    return { ok: false }
+  }
+  return { ok: true, snap: pdfExportFillCacheBridge }
+})
+
+ipcMain.handle('pdf-export-fill-cache-set', (_event, snap) => {
+  if (!snap || typeof snap !== 'object') {
+    pdfExportFillCacheBridge = null
+    return { ok: false }
+  }
+  const id = String(snap.templateId || '').trim()
+  if (!id) {
+    pdfExportFillCacheBridge = null
+    return { ok: false }
+  }
+  pdfExportFillCacheBridge = {
+    templateId: id,
+    values: snap.values && typeof snap.values === 'object' ? snap.values : {},
+    totalReports: Math.max(1, Math.floor(Number(snap.totalReports) || 1)),
+    stats: snap.stats && typeof snap.stats === 'object' ? snap.stats : null,
+  }
+  return { ok: true }
+})
+
+ipcMain.handle('pdf-export-fill-cache-clear', () => {
+  clearPdfExportFillCacheBridge()
+  return { ok: true }
+})
+
 async function handlePdfExportRun(event, opts) {
   const filePath = opts && opts.filePath
   const templateId = opts && opts.templateId
@@ -2563,6 +2605,7 @@ async function handlePdfExportRun(event, opts) {
   if (!templateId || typeof templateId !== 'string') throw new Error('缺少 templateId')
 
   registerPdfExportJob(jobId)
+  clearPdfExportFillCacheBridge()
   // 039c：按配置决定是否弹遮罩（总开关 / 仅自动结批）
   const armOverlay = shouldArmExportOverlay(opts)
   if (armOverlay) beginExportOverlaySession()
@@ -3155,6 +3198,7 @@ async function handlePdfExportRun(event, opts) {
     } catch (e) {
       throw new Error(humanizePdfExportError(e, { phase: 'export' }))
     } finally {
+      clearPdfExportFillCacheBridge()
       unregisterPdfExportJob(jobId)
       // 039c：仅当本次确实弹了遮罩时成对收起
       if (armOverlay) endExportOverlaySession()

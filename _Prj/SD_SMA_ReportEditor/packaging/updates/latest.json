@@ -1,15 +1,15 @@
 {
-  "version": "0.3.156",
-  "releasedAt": "2026-08-08T20:09:23.800Z",
-  "notes": "Report Editor AI 0.3.156\n\n- 035：并行开导即按配置建 N 路；第 0 份取数 ready 后立刻派其余路（不等第一份写盘）\n- 含 0.3.155：不妥协不套 CPU 并行预算",
+  "version": "0.3.157",
+  "releasedAt": "2026-08-08T20:24:16.781Z",
+  "notes": "Report Editor AI 0.3.157\n\n- 035：16 路并行跨窗共享取数缓存，避免 N×全量 SQL / 模版 20s 超时中止\n- 导出窗 getTemplate 超时 120s\n- 含 0.3.156：并行开导即建路",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.156-x64.exe",
-      "sha256": "1b493534be88398ceeafda951e6c3b0499b88ebfb2318e0c029439f820104a15",
-      "size": 162551892
+      "url": "Report Editor AI-Setup-0.3.157-x64.exe",
+      "sha256": "d370d4622f635dc25efa6ced2f34ced212081678c1788cd28fb57384930bc16e",
+      "size": 162551154
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.156-arm64.dmg",
+      "url": "Report Editor AI-0.3.157-arm64.dmg",
       "sha256": "",
       "size": 0
     }

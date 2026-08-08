@@ -25,6 +25,30 @@
 
 ---
 
+# ✅ 已完成：16 路并行取数挤爆后端 20s 超时（support-pack · 2026-08-09）
+
+## 现象
+
+`support-pack-0.3.146-…`：不妥协 + 16 路 + 8 万条分卷，约 28s 失败：
+`请求超时（20 秒）。请确认后端已启动…`（`templates.ts` 默认超时）。
+
+## 根因
+
+1. 多 `BrowserWindow` 各自一份 JS 堆，fill-cache 不共享 → N 路各打全量 SQL（审计见 sqlQueries≈并行路数）
+2. N 路同时 `getTemplate` 挤后端，20s 客户端超时误杀
+
+## 改动
+
+- 主进程 `pdf-export-fill-cache-*` bridge：首份 publish，其它路 wait/hydrate 后跳过 fullSqlFill
+- 导出窗 `getTemplate` 超时 20s→120s
+- `signalReady` 前必须已 publish bridge
+
+## 验收
+
+- 16 路 80 份：审计 sqlQueries 应接近 1（非 ≈16）；不再因模版 20s 超时中止
+
+---
+
 # ✅ 已完成：并行开导即建路，ready 后派活（2026-08-09）
 
 ## 问题
