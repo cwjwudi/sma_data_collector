@@ -1,12 +1,12 @@
 {
   "version": "0.3.163",
-  "releasedAt": "2026-08-08T21:24:54.573Z",
+  "releasedAt": "2026-08-08T21:27:23.227Z",
   "notes": "Report Editor AI 0.3.163\n\n- 052d：修桌面壳误报浏览器壳（preload 去掉 fs，fill-cache 读写回主进程）",
   "platforms": {
     "win32-x64": {
       "url": "Report Editor AI-Setup-0.3.163-x64.exe",
-      "sha256": "",
-      "size": 0
+      "sha256": "99835c88bf53d514253b0aa25697871b4157b81ac806d8b7e39a775fec7ef5f3",
+      "size": 162555052
     },
     "darwin-arm64": {
       "url": "Report Editor AI-0.3.163-arm64.dmg",
