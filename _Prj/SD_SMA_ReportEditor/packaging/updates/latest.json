@@ -1,12 +1,12 @@
 {
   "version": "0.3.164",
-  "releasedAt": "2026-08-08T21:34:04.688Z",
+  "releasedAt": "2026-08-08T21:36:59.743Z",
   "notes": "Report Editor AI 0.3.164\n\n- 052e：修其它路永卡同步取数缓存（预热误清 bridge + partsJson）",
   "platforms": {
     "win32-x64": {
       "url": "Report Editor AI-Setup-0.3.164-x64.exe",
-      "sha256": "",
-      "size": 0
+      "sha256": "119168247dbf08e1ccd5c8203751362726e8e3025e023c92b643fce279cab110",
+      "size": 162555361
     },
     "darwin-arm64": {
       "url": "Report Editor AI-0.3.164-arm64.dmg",
