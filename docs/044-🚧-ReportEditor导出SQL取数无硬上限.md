@@ -39,9 +39,20 @@
 
 ---
 
-# ⌛️ 未完成：现场 8 万条实测与发版记录回写
+# 🚧 进行中：本机 / 现场 8 万条实测
 
-- [ ] 现场 80000 条结批：导出合计行数与 SQL 一致（分卷不丢行）；关注内存与墙钟（联动 [045](045-🚧-ReportEditor矢量导出跨份复用加速.md) / [030](030-🚧-ReportEditor结批占满CPU导致mappView白屏.md)）。  
+## 本机准备（2026-08-08）
+
+说明见 [README-044-smoke-80k.md](../_Prj/SD_SMA_ReportEditor/getting-started/samples/README-044-smoke-80k.md)。
+
+| 路径 | 状态 |
+|------|------|
+| Docker Desktop | 已安装；**缺 WSL2**，引擎暂无法启动（需管理员 `wsl --install` 后重启） |
+| Docker MariaDB 灌库脚本 | `scripts/dev/setup_044_docker.ps1` + `setup_044_smoke_80k.py`（就绪，待引擎） |
+| SQLite 兜底（可立即测） | 已灌 **80000** 行 + 模版「测试·044·8万条分卷导出（SQLite）」；输出桌面 `ReportEditor044Smoke` |
+
+- [ ] **手测导出**：重启 AI 版 → 报表生成导出该模版 → 桌面 PDF 份数≈80、合计行 80000（旧行为≈50 份）。  
+- [ ] Docker 路径：管理员装 WSL → Desktop Running → `setup_044_docker.ps1` 再导一次（与现网 MariaDB 对齐）。  
 - [ ] 下次发版在 `_Doc/007_版本发布记录.md` 记「去掉导出 5 万硬上限」；023 补 8 万+ 场景阈值与风险说明。
 
 ## 旧现状存档（改前）

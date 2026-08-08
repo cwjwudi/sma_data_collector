@@ -7,6 +7,7 @@
 
 ## 2026-08-08
 
+- **ReportEditor 044 本机冒烟准备**：Docker Desktop 已装但缺 WSL2 未起引擎；已提供 `setup_044_docker.ps1` / `setup_044_smoke_80k.py`。SQLite 兜底已灌 **80000** 行 + 模版「测试·044·8万条分卷导出（SQLite）」；后端 `/database/query/sql` limit=80000 实测取满。PDF 全量分卷手测 ⌛️。说明 [samples/README-044](_Prj/SD_SMA_ReportEditor/getting-started/samples/README-044-smoke-80k.md)；看板 [docs/044-🚧](docs/044-🚧-ReportEditor导出SQL取数无硬上限.md)。
 - **ReportEditor 049 Win 落地（一键隐藏整模版边框）**：代码 `hideBordersOnEntireTemplate` + G3b；工具栏一点清封面/正文全部分页/封底；Win Setup `Report Editor AI-Setup-0.3.147-x64.exe`（SHA256 `a298ef00…ee59`）。看板 [docs/049-✅](docs/049-✅-ReportEditor一键隐藏整模版边框.md)。
 - **ReportEditor 050 mac 手测通过**：导出后不再 SIGSEGV（含延时崩）；darwin 禁预热池 + 安全销毁已闭环。看板 [docs/050-✅](docs/050-✅-ReportEditor冒烟非批次手动导出SIGSEGV闪退.md)。
 - **ReportEditor 048 UI**：问题反馈包表单改纵向 `settings-field-row`，消除标签/输入重叠。看板 [docs/048-🚧](docs/048-🚧-ReportEditor问题反馈包一键导出.md)。
