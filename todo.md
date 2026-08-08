@@ -7,6 +7,7 @@
 
 ## 2026-08-09
 
+- **ReportEditor 同步远端 0.3.150 + Win 打包**：`git pull` 快进合并 `039c + 048 问题反馈包`；本机此前停在 0.3.149 故设置无反馈包。已打 `Report Editor AI-Setup-0.3.150-x64.exe`（SHA256 `d8614ee2…0e22`）。
 - **ReportEditor 0.3.149 Win 打包**：`Report Editor AI-Setup-0.3.149-x64.exe`（SHA256 `30ee9caa…bffe`）；051b 重开拉回全屏遮罩。发版记录 `_Doc/007`。
 - **ReportEditor 051b（重开拉回全屏遮罩）**：Esc/× 关掉「正在生成报表」后，侧栏/「打开全屏进度」经 `export-overlay-reshow` 显式重开并续进度。看板 [docs/051-✅](docs/051-✅-ReportEditor结批离开后侧栏重开.md) · [039](docs/039-🚧-ReportEditor导出全屏遮罩.md)。
 - **ReportEditor 0.3.148 Win 打包**：`Report Editor AI-Setup-0.3.148-x64.exe`（约 155MB，SHA256 `6c6d61f6…e15f`）；含 051 侧栏重开 + 035 模拟结批五档。发版记录 `_Doc/007`。
