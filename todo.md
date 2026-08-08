@@ -46,7 +46,7 @@
 
 ## 2026-08-08
 
-- **ReportEditor 044 本机冒烟准备**：Docker Desktop 已装但缺 WSL2 未起引擎；已提供 `setup_044_docker.ps1` / `setup_044_smoke_80k.py`。SQLite 兜底已灌 **80000** 行 + 模版「测试·044·8万条分卷导出（SQLite）」；后端 `/database/query/sql` limit=80000 实测取满。PDF 全量分卷手测 ⌛️。说明 [samples/README-044](_Prj/SD_SMA_ReportEditor/getting-started/samples/README-044-smoke-80k.md)；看板 [docs/044-🚧](docs/044-🚧-ReportEditor导出SQL取数无硬上限.md)。
+- **ReportEditor 044 本机冒烟准备**：Docker Desktop 已装但缺 WSL2 未起引擎；已提供 `setup_044_docker.ps1` / `setup_044_smoke_80k.py`。SQLite 兜底已灌 **80000** 行 + 模版「测试·044·8万条分卷导出（SQLite）」；后端 `/database/query/sql` limit=80000 实测取满。PDF 全量分卷手测 ⌛️。说明 [samples/README-044](_Prj/SD_SMA_ReportEditor/getting-started/samples/README-044-smoke-80k.md)；看板 [docs/044-✅](docs/044-✅-ReportEditor导出SQL取数无硬上限.md)。
 - **ReportEditor 049 Win 落地（一键隐藏整模版边框）**：代码 `hideBordersOnEntireTemplate` + G3b；工具栏一点清封面/正文全部分页/封底；Win Setup `Report Editor AI-Setup-0.3.147-x64.exe`（SHA256 `a298ef00…ee59`）。看板 [docs/049-✅](docs/049-✅-ReportEditor一键隐藏整模版边框.md)。
 - **ReportEditor 050 mac 手测通过**：导出后不再 SIGSEGV（含延时崩）；darwin 禁预热池 + 安全销毁已闭环。看板 [docs/050-✅](docs/050-✅-ReportEditor冒烟非批次手动导出SIGSEGV闪退.md)。
 - **ReportEditor 048 UI**：问题反馈包表单改纵向 `settings-field-row`，消除标签/输入重叠。看板 [docs/048-🚧](docs/048-✅-ReportEditor问题反馈包一键导出.md)。
@@ -60,7 +60,7 @@
 - **ReportEditor 050 缺陷登记（冒烟非批次手动导出闪退）**：用户口述「猫眼」=本机「冒烟·一键无边框」(`cde79a7c`，nonBatch→Desktop)；同会话 PDF 曾写成功，随后 Electron `SIGSEGV` 闪退。看板见上。
 - **ReportEditor 049 需求登记（一键隐藏边框整模版）**：现网只清当前 sheet/正文页，须逐页点选，违背「一键」；口径改为点一次覆盖封面+全部正文页+封底的眉脚/正文/zone 装饰（仍跳过表格、可一次撤销）；版式库本期不改。看板 [docs/049-✅](docs/049-✅-ReportEditor一键隐藏整模版边框.md)。
 - **ReportEditor 042/043 修复（矢量绑定文案对齐 Mini）**：layout-v2 zone/正文 text·box·parameter 与静态表 cell 统一走 `resolveBoundParameterPreviewText`/`applyDecimalPlacesToDisplayText`——小数位生效（`12`+2位→`12.00`）；空 bound 走 `nullDisplayMode` 不再回落控件占位（PDF 不再出现字面 `value`）。单测锁 042/043 各场景。看板 [docs/042-✅](docs/042-✅-ReportEditor矢量导出封面小数位变整数.md) / [docs/043-✅](docs/043-✅-ReportEditor矢量导出空值显示value.md)。
-- **ReportEditor 044 实现（去 5 万取数硬上限）**：前端 `TABLE_SQL_FILL_FULL_ROW_LIMIT` 50000→5M（仅异常防护）；分报表全量取数、未分报表按单份 `maxRows`；后端 `query/sql` 防护值同步 5M；预览 1000 与单份 maxRows clamp 保留。单测锁 ≥80000 反例。现场 8 万条实测 ⌛️。看板 [docs/044-🚧](docs/044-🚧-ReportEditor导出SQL取数无硬上限.md)。
+- **ReportEditor 044 实现（去 5 万取数硬上限）**：前端 `TABLE_SQL_FILL_FULL_ROW_LIMIT` 50000→5M（仅异常防护）；分报表全量取数、未分报表按单份 `maxRows`；后端 `query/sql` 防护值同步 5M；预览 1000 与单份 maxRows clamp 保留。单测锁 ≥80000 反例。现场 8 万条实测 ⌛️。看板 [docs/044-✅](docs/044-✅-ReportEditor导出SQL取数无硬上限.md)。
 - **ReportEditor 045 R1a/R2（矢量跨份缓存）**：随包字体字节 + IPC 结果跨份缓存（每份省 MB 级 base64 IPC 与解码）；封面/Logo dataURL 解码字节按内容寻址缓存（上限 24 条）。R3 连渲/R4 二进制回传评估已写入看板（R4 阻塞点：preload `notifyPdfExportReady` JSON 兜底会毁二进制载荷）；R5 待拍板。全量 629 绿。看板 [docs/045-🚧](docs/045-🚧-ReportEditor矢量导出跨份复用加速.md)。
 - **ReportEditor 048 拍板（Q1–Q7）**：Markdown 主文档 + 附件（模版/配置/审计/失败 PDF）打一个 zip；模版预勾失败相关可改；审计近 7 天≤500 失败优先；连接骨架无密；一期仅导出；设置页+导出失败旁路；**默认附最近失败 PDF**。代码未开工。看板 [docs/048-🚧](docs/048-✅-ReportEditor问题反馈包一键导出.md)。
 - **ReportEditor 048 需求登记（问题反馈包一键导出）**：面向 Agent 复现的裁剪包，与全量 `.rebak` 区分。看板见上。
@@ -84,7 +84,7 @@
 
 - **ReportEditor 0.3.145（035 优先级重分配）**：档 3 `basic`→渲染 BelowNormal；档 4 `max`→渲染/后端 HIGHEST、主进程不降；档 0–2 仍 LOW 让核。看板 [docs/035-🚧](docs/035-🚧-ReportEditor导出性能档位与同机降载.md)。
 
-- **ReportEditor 导出 SQL 取数口径**：正式导出/结批应对齐「SQL 返回多少用多少」，不设结果集总量硬上限；现网 50000 钳制为待改实现。`maxRows` 仅管单份/分卷；预览 1000 保留。看板 [docs/044-🚧](docs/044-🚧-ReportEditor导出SQL取数无硬上限.md)。
+- **ReportEditor 导出 SQL 取数口径**：正式导出/结批应对齐「SQL 返回多少用多少」，不设结果集总量硬上限；现网 50000 钳制为待改实现。`maxRows` 仅管单份/分卷；预览 1000 保留。看板 [docs/044-✅](docs/044-✅-ReportEditor导出SQL取数无硬上限.md)。
 
 - **现场口述补记（030）**：单表格 SQL 填充 **1000 行不触发** mappView 白屏刷新，**2000 行会触发**；敏感点更像单份渲染负载。看板 [docs/030-🚧](docs/030-🚧-ReportEditor结批占满CPU导致mappView白屏.md)。
 
