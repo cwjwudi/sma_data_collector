@@ -18,12 +18,12 @@ describe("part-parallel export contracts (035)", () => {
     const main = readFront("electron/main.cjs");
     expect(main).toMatch(/function runPartIndexPool/);
     expect(main).toMatch(/async function renderPartOnWindow/);
-    expect(main).toMatch(/partParallel/);
+    expect(main).toMatch(/plannedParallel/);
     expect(main).toMatch(/PDF 分卷并行/);
     expect(main).toMatch(/acquirePdfExportSlot\(\)/);
     expect(main).toMatch(/extraSlots/);
     // 串行回退仍保留 yield
-    expect(main).toMatch(/concurrency <= 1/);
+    expect(main).toMatch(/plannedParallel <= 1/);
     expect(main).toMatch(/yieldToOs\(jobYieldMs\)/);
   });
 
@@ -52,6 +52,16 @@ describe("part-parallel export contracts (035)", () => {
     expect(rg).toMatch(/formatPdfExportParallelProgressDetail/);
     expect(auto).toMatch(/formatPdfExportParallelProgressDetail/);
     expect(rg).toMatch(/生效 \{\{ effectivePartParallel \}\}/);
+  });
+
+  it("main.cjs：开导即按并行数建路，ready 后派活（不等第 0 份写盘）", () => {
+    const main = readFront("electron/main.cjs");
+    expect(main).toMatch(/plannedParallel/);
+    expect(main).toMatch(/等待总份数/);
+    expect(main).toMatch(/onReady/);
+    expect(main).toMatch(/ready 后即派活/);
+    expect(main).toMatch(/totalReportsPromise/);
+    expect(main).toMatch(/acquireExtrasPromise/);
   });
 
   it("不妥协忽略 CPU 预算：设 16 可真正 16 路", () => {

@@ -1,15 +1,15 @@
 {
-  "version": "0.3.155",
-  "releasedAt": "2026-08-08T19:54:20.823Z",
-  "notes": "Report Editor AI 0.3.155\n\n- 035：不妥协档不再套用 CPU 并行预算（设 16 即最多 16 路）\n- UI 显示生效路数\n- 含 0.3.154：并行分路进度闪没修复",
+  "version": "0.3.156",
+  "releasedAt": "2026-08-08T20:09:23.800Z",
+  "notes": "Report Editor AI 0.3.156\n\n- 035：并行开导即按配置建 N 路；第 0 份取数 ready 后立刻派其余路（不等第一份写盘）\n- 含 0.3.155：不妥协不套 CPU 并行预算",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.155-x64.exe",
-      "sha256": "9f3881642b6660ea470195d1b3ee1bd4bf5dc56b4b34e91bb6510c7493bca45d",
-      "size": 162552110
+      "url": "Report Editor AI-Setup-0.3.156-x64.exe",
+      "sha256": "1b493534be88398ceeafda951e6c3b0499b88ebfb2318e0c029439f820104a15",
+      "size": 162551892
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.155-arm64.dmg",
+      "url": "Report Editor AI-0.3.156-arm64.dmg",
       "sha256": "",
       "size": 0
     }

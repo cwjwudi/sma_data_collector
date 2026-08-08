@@ -767,6 +767,7 @@ const EXPORT_OVERLAY_STAGE_LABELS = {
   render: '渲染 PDF',
   write: '写入磁盘',
   saved: '本份已保存',
+  wait: '等待总份数',
   export: '导出进行中',
 }
 
@@ -2676,8 +2677,10 @@ async function handlePdfExportRun(event, opts) {
        * @param {{ win: import('electron').BrowserWindow }} winHolder
        * @param {number} partIndex
        * @param {{ workerSlot?: number, parallelWorkers?: number } | null} [workerMeta]
+       * @param {{ onReady?: (payload: object) => void } | null} [hooks]
+       *   onReady：取数/绘制完成（printToPDF 之前）回调——用于尽早得知 totalReports 并派其余并行路
        */
-      async function renderPartOnWindow(winHolder, partIndex, workerMeta) {
+      async function renderPartOnWindow(winHolder, partIndex, workerMeta, hooks) {
         const workerSlot =
           workerMeta && workerMeta.workerSlot != null
             ? Math.max(0, Math.floor(Number(workerMeta.workerSlot) || 0))
@@ -2753,7 +2756,15 @@ async function handlePdfExportRun(event, opts) {
             if (!isFromPdfWin(ev)) return
             flags.rendererSignal = true
             cleanup()
-            resolve(payload || {})
+            const body = payload || {}
+            if (hooks && typeof hooks.onReady === 'function') {
+              try {
+                hooks.onReady(body)
+              } catch {
+                /* ignore */
+              }
+            }
+            resolve(body)
           }
 
           capTimer = setTimeout(() => {
@@ -2911,24 +2922,23 @@ async function handlePdfExportRun(event, opts) {
         return outPath
       }
 
-      sendProgress({ phase: 'render', stage: 'load', partIndex: 0, totalReports: 0 })
-      const first = await renderPart(0)
-      const totalReports = first.totalReports
-      stats = mergeStats(stats, first.stats)
-      mergeTimings(first)
+      // 035：并行路数开导前已知；总份数仍须等第 0 份取数 ready（非等整份 PDF 写完）
+      const plannedParallel = Math.max(1, Math.floor(Number(pdfExportMaxParallel) || 1))
       /** @type {(string|undefined)[]} */
-      const filePaths = new Array(totalReports)
-      filePaths[0] = await writePartPdf(0, totalReports, first.pdfBuffer)
-      sendProgress({ phase: 'saved', stage: 'saved', partIndex: 0, totalReports })
+      let filePaths
+      /** @type {number} */
+      let totalReports
 
-      // 035：分卷并行 — 受 pdfExportMaxParallel（含 CPU 预算）约束；=1 时保持串行+yield
-      const partParallel = Math.max(1, Math.min(pdfExportMaxParallel, totalReports))
-      const remainingIndices = []
-      for (let i = 1; i < totalReports; i++) remainingIndices.push(i)
-      const concurrency = Math.min(partParallel, Math.max(1, remainingIndices.length))
-
-      if (remainingIndices.length > 0 && concurrency <= 1) {
-        for (const partIndex of remainingIndices) {
+      if (plannedParallel <= 1) {
+        sendProgress({ phase: 'render', stage: 'load', partIndex: 0, totalReports: 0 })
+        const first = await renderPart(0)
+        totalReports = first.totalReports
+        stats = mergeStats(stats, first.stats)
+        mergeTimings(first)
+        filePaths = new Array(totalReports)
+        filePaths[0] = await writePartPdf(0, totalReports, first.pdfBuffer)
+        sendProgress({ phase: 'saved', stage: 'saved', partIndex: 0, totalReports })
+        for (let partIndex = 1; partIndex < totalReports; partIndex++) {
           throwIfCancelled()
           await yieldToOs(jobYieldMs)
           sendProgress({ phase: 'render', stage: 'load', partIndex, totalReports })
@@ -2938,55 +2948,125 @@ async function handlePdfExportRun(event, opts) {
           filePaths[partIndex] = await writePartPdf(partIndex, totalReports, part.pdfBuffer)
           sendProgress({ phase: 'saved', stage: 'saved', partIndex, totalReports })
         }
-      } else if (remainingIndices.length > 0) {
+      } else {
         /** @type {{ win: import('electron').BrowserWindow }[]} */
         const workerHolders = [pdfWinHolder]
         let extraSlots = 0
         try {
-          for (let i = 1; i < concurrency; i++) {
-            await acquirePdfExportSlot()
-            extraSlots += 1
-            workerHolders.push({ win: acquirePdfExportWindow() })
-            applyRenderCoexistPriorityOn(workerHolders[workerHolders.length - 1])
-          }
-          log(
-            `PDF 分卷并行：partParallel concurrency=${concurrency} remaining=${remainingIndices.length} maxParallel=${pdfExportMaxParallel}`,
-          )
-          // 遮罩多路分栏：按并发路数预建 lane，避免「第几份」被后写覆盖
-          exportOverlayWorkerLanes = Array.from({ length: concurrency }, (_, slot) => ({
+          // 开导即按配置建 N 路遮罩 + 额外导出窗（其它路先显示「等待总份数」）
+          exportOverlayWorkerLanes = Array.from({ length: plannedParallel }, (_, slot) => ({
             workerSlot: slot,
             partIndex: 0,
-            stage: '',
-            stageLabel: '',
-            busy: false,
+            stage: slot === 0 ? 'load' : 'wait',
+            stageLabel:
+              slot === 0
+                ? EXPORT_OVERLAY_STAGE_LABELS.load
+                : EXPORT_OVERLAY_STAGE_LABELS.wait,
+            busy: true,
           }))
-          try {
-            broadcastExportOverlayProgress()
-          } catch {
-            /* ignore */
+          sendProgress({
+            phase: 'render',
+            stage: 'load',
+            partIndex: 0,
+            totalReports: 0,
+            workerSlot: 0,
+            parallelWorkers: plannedParallel,
+          })
+          for (let slot = 1; slot < plannedParallel; slot++) {
+            sendProgress({
+              phase: 'render',
+              stage: 'wait',
+              partIndex: 0,
+              totalReports: 0,
+              workerSlot: slot,
+              parallelWorkers: plannedParallel,
+              workerBusy: true,
+            })
           }
+
+          const acquireExtrasPromise = (async () => {
+            for (let i = 1; i < plannedParallel; i++) {
+              await acquirePdfExportSlot()
+              extraSlots += 1
+              workerHolders.push({ win: acquirePdfExportWindow() })
+              applyRenderCoexistPriorityOn(workerHolders[workerHolders.length - 1])
+            }
+          })()
+
+          let totalResolved = 0
+          /** @type {(n: number) => void} */
+          let resolveTotalReports
+          const totalReportsPromise = new Promise((resolve) => {
+            resolveTotalReports = resolve
+          })
+
+          const part0Meta = { workerSlot: 0, parallelWorkers: plannedParallel }
+          const part0Promise = renderPartOnWindow(pdfWinHolder, 0, part0Meta, {
+            onReady: (payload) => {
+              if (totalResolved > 0) return
+              totalResolved = Math.max(1, Math.floor(Number(payload && payload.totalReports) || 1))
+              resolveTotalReports(totalResolved)
+            },
+          }).catch((err) => {
+            if (totalResolved <= 0) resolveTotalReports(1)
+            throw err
+          })
+
+          totalReports = await totalReportsPromise
+          await acquireExtrasPromise
+
+          const concurrency = Math.min(plannedParallel, totalReports)
+          if (exportOverlayWorkerLanes.length > concurrency) {
+            exportOverlayWorkerLanes = exportOverlayWorkerLanes.slice(0, concurrency)
+          }
+          log(
+            `PDF 分卷并行：planned=${plannedParallel} concurrency=${concurrency} total=${totalReports} maxParallel=${pdfExportMaxParallel}（ready 后即派活，不等第 0 份写盘）`,
+          )
+
+          filePaths = new Array(totalReports)
+          const remainingIndices = []
+          for (let i = 1; i < totalReports; i++) remainingIndices.push(i)
           let nextPart = 0
+
+          async function markWorkerIdle(workerSlot, parallelWorkers) {
+            const lastIdx =
+              (exportOverlayWorkerLanes[workerSlot] &&
+                exportOverlayWorkerLanes[workerSlot].partIndex) ||
+              0
+            sendProgress({
+              phase: 'render',
+              stage: 'saved',
+              partIndex: lastIdx,
+              totalReports,
+              workerSlot,
+              parallelWorkers,
+              workerIdle: true,
+              skipPartSaved: true,
+            })
+          }
+
           async function partWorker(holder, workerSlot) {
             const workerMeta = { workerSlot, parallelWorkers: concurrency }
+            if (workerSlot === 0) {
+              const first = await part0Promise
+              stats = mergeStats(stats, first.stats)
+              mergeTimings(first)
+              filePaths[0] = await writePartPdf(0, totalReports, first.pdfBuffer, workerMeta)
+              sendProgress({
+                phase: 'saved',
+                stage: 'saved',
+                partIndex: 0,
+                totalReports,
+                workerSlot: 0,
+                parallelWorkers: concurrency,
+              })
+            }
             while (true) {
               throwIfCancelled()
               const i = nextPart
               nextPart += 1
               if (i >= remainingIndices.length) {
-                const lastIdx =
-                  (exportOverlayWorkerLanes[workerSlot] &&
-                    exportOverlayWorkerLanes[workerSlot].partIndex) ||
-                  0
-                sendProgress({
-                  phase: 'render',
-                  stage: 'saved',
-                  partIndex: lastIdx,
-                  totalReports,
-                  workerSlot,
-                  parallelWorkers: concurrency,
-                  workerIdle: true,
-                  skipPartSaved: true,
-                })
+                await markWorkerIdle(workerSlot, concurrency)
                 return
               }
               const partIndex = remainingIndices[i]
@@ -3021,7 +3101,11 @@ async function handlePdfExportRun(event, opts) {
               })
             }
           }
-          await Promise.all(workerHolders.map((h, slot) => partWorker(h, slot)))
+
+          // 总份数一知：其余路立刻开工；第 0 路继续出 PDF/写盘后再加入偷取队列
+          await Promise.all(
+            workerHolders.slice(0, concurrency).map((h, slot) => partWorker(h, slot)),
+          )
         } finally {
           pdfWin = pdfWinHolder.win
           for (let i = 1; i < workerHolders.length; i++) {

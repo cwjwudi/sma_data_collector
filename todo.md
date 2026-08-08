@@ -7,6 +7,8 @@
 
 ## 2026-08-09
 
+- **ReportEditor 0.3.156 Win 打包**：`Report Editor AI-Setup-0.3.156-x64.exe`；并行开导即建路 / ready 后派活。发版记录 `_Doc/007`。
+- **ReportEditor 035（并行开导即建路）**：并行路数开导前已知即建 N 路遮罩；第 0 份 ready 后立刻派其余路（不等第一份写盘）。看板 [docs/035-🚧](docs/035-🚧-ReportEditor导出性能档位与同机降载.md)。
 - **ReportEditor 0.3.155 Win 打包**：`Report Editor AI-Setup-0.3.155-x64.exe`；不妥协不套 CPU 并行预算。发版记录 `_Doc/007`。
 - **ReportEditor 035（不妥协不套 CPU 并行预算）**：16 核机设 16 路不再被 `floor(cores/4)=4` 盖掉；其它档仍受预算。看板 [docs/035-🚧](docs/035-🚧-ReportEditor导出性能档位与同机降载.md)。
 - **ReportEditor 0.3.154 Win 打包**：`Report Editor AI-Setup-0.3.154-x64.exe`；039e 补丁修并行心跳冲掉总份数（分路闪没 / 永预估中）。发版记录 `_Doc/007` · [docs/039-🚧](docs/039-🚧-ReportEditor导出全屏遮罩.md)。
