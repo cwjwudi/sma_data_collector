@@ -7,6 +7,8 @@
 
 ## 2026-08-09
 
+- **ReportEditor 0.3.152 Win 打包**：`Report Editor AI-Setup-0.3.152-x64.exe`（SHA256 `8397a218…d654`）；035 模拟结批分卷并行。发版记录 `_Doc/007`。
+- **ReportEditor 035（模拟结批分卷并行）**：同一次模拟结批多分卷按并行数多窗并发；模拟结批卡片露出「分卷并行数」。看板 [docs/035-🚧](docs/035-🚧-ReportEditor导出性能档位与同机降载.md)。
 - **ReportEditor 0.3.151 Win 打包**：`Report Editor AI-Setup-0.3.151-x64.exe`（SHA256 `40ca384c…9149`）；039d 遮罩右下角 CPU/内存曲线。发版记录 `_Doc/007`。
 - **ReportEditor 039d（遮罩 CPU/内存曲线）**：全屏导出遮罩右下角实时 CPU 逻辑核占用 + 内存用量折线（主进程 1Hz 采样）。看板 [docs/039-🚧](docs/039-🚧-ReportEditor导出全屏遮罩.md)。
 - **ReportEditor 同步远端 0.3.150 + Win 打包**：`git pull` 快进合并 `039c + 048 问题反馈包`；本机此前停在 0.3.149 故设置无反馈包。已打 `Report Editor AI-Setup-0.3.150-x64.exe`（SHA256 `d8614ee2…0e22`）。

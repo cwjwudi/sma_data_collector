@@ -1,15 +1,15 @@
 {
-  "version": "0.3.151",
-  "releasedAt": "2026-08-08T18:39:47.848Z",
-  "notes": "Report Editor AI 0.3.151\n\n- 039d：导出全屏遮罩右下角实时 CPU 逻辑核占用 + 内存用量曲线\n- 含 0.3.150：039c 遮罩增强 + 048 问题反馈包",
+  "version": "0.3.152",
+  "releasedAt": "2026-08-08T19:07:33.272Z",
+  "notes": "Report Editor AI 0.3.152\n\n- 035：模拟结批多分卷可并行（不妥协默认 2 路；卡片可调分卷并行数）\n- 含 0.3.151：遮罩 CPU/内存曲线",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.151-x64.exe",
-      "sha256": "40ca384cc534d44e0ed8543e4cfbe2ceae21aee106618b25658bb198dd229149",
-      "size": 162545459
+      "url": "Report Editor AI-Setup-0.3.152-x64.exe",
+      "sha256": "8397a2181fab08a4b426645ae945ee356694f7b6f65475e7052f09a23a8dd654",
+      "size": 162547575
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.151-arm64.dmg",
+      "url": "Report Editor AI-0.3.152-arm64.dmg",
       "sha256": "",
       "size": 0
     }

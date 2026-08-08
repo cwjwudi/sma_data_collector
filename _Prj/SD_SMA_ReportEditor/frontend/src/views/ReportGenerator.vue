@@ -75,6 +75,28 @@
           {{ RG_UI.manual }}开始前请先选好档位；结批进行中不可切换。
         </p>
       </div>
+      <div class="rg-row rg-row--part-parallel">
+        <label class="rg-lbl" for="rg-manual-part-parallel">分卷并行数（{{ RG_UI.manual }}多分卷 · 与 OPC 共用）</label>
+        <div class="rg-inline">
+          <input
+            id="rg-manual-part-parallel"
+            v-model.number="prefs.auto.maxParallelExports"
+            type="number"
+            min="1"
+            max="16"
+            class="rg-inp rg-inp--sep"
+            :disabled="manualBusy || hasActiveReportExport"
+            @change="onMaxParallelChange"
+          />
+          <span class="rg-mini">路（1–16）</span>
+        </div>
+        <p class="rg-mini">
+          同一次{{ RG_UI.manual }}里多分卷 PDF 可同时渲染的路数；实际 =
+          min(本设置, 本机 CPU 预算)。档「不妥协」默认 hint=2；「预览稳 / 功能折中」默认 1，改大可能影响同机
+          HMI。OPC 多路自动结批也使用同一上限。
+        </p>
+        <p class="rg-mini">{{ exportCpuBudgetHintText }}</p>
+      </div>
       <div class="rg-actions">
         <button type="button" class="btn primary" :disabled="manualBusy || !canManualExport" @click="onManualExport">
           {{ manualBusy ? `${RG_UI.manual}中…` : `${RG_UI.manual}（按模版类型保存）` }}
@@ -228,11 +250,13 @@
           </button>
           <div v-show="advancedAutoExpanded" class="rg-advanced-body">
             <p class="rg-mini rg-mini--indent">
-              导出性能档位与「{{ RG_UI.manual }}」共用，请在上方「{{ RG_UI.manual }}」卡片内选择（当前：{{ exportPerfProfile.label }}）。
+              导出性能档位与分卷并行数均与「{{ RG_UI.manual }}」共用，请在上方「{{ RG_UI.manual }}」卡片内调整（当前档：{{
+                exportPerfProfile.label
+              }}，并行 {{ prefs.auto.maxParallelExports }} 路）。
             </p>
 
             <div class="rg-row rg-row--in-panel">
-              <label class="rg-lbl" for="rg-auto-max-parallel">同时并行导出上限</label>
+              <label class="rg-lbl" for="rg-auto-max-parallel">同时并行导出上限（OPC 多绑定）</label>
               <div class="rg-inline">
                 <input
                   id="rg-auto-max-parallel"
@@ -246,7 +270,8 @@
                 <span class="rg-mini">路（1–16）</span>
               </div>
               <p class="rg-mini rg-mini--indent">
-                实际并行 = min(本设置, 已启用绑定数, 本机 CPU 预算)。超出上限的触发会排队（状态码 3），有空槽再开跑。
+                与上方「分卷并行数」同一设置：OPC 多路绑定同时跑几个 job；模拟结批多分卷同时渲几份。实际 =
+                min(本设置, 已启用绑定数, 本机 CPU 预算)。超出上限的触发会排队（状态码 3）。
               </p>
               <p class="rg-mini rg-mini--indent">{{ exportCpuBudgetHintText }}</p>
             </div>
@@ -2272,6 +2297,13 @@ onUnmounted(() => {
 .rg-row--perf-tier {
   margin-top: 12px;
   margin-bottom: 4px;
+}
+.rg-row--part-parallel {
+  margin-top: 10px;
+  margin-bottom: 8px;
+}
+.rg-row--part-parallel .rg-inp--sep {
+  width: 72px;
 }
 .rg-advanced-body {
   margin-top: 8px;

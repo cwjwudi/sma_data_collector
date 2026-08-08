@@ -267,6 +267,35 @@ function releasePdfExportSlot() {
 }
 
 /**
+ * 035：分卷并行池（模拟结批多分卷）。items 为 partIndex 列表；concurrency 路同时跑 fn。
+ * @template T
+ * @param {number[]} items
+ * @param {number} concurrency
+ * @param {(partIndex: number) => Promise<T>} fn
+ * @param {() => void} [throwIfCancelled]
+ * @returns {Promise<T[]>} 与 items 同序的结果（按 partIndex 在 items 中的位置）
+ */
+async function runPartIndexPool(items, concurrency, fn, throwIfCancelled) {
+  const list = Array.isArray(items) ? items : []
+  if (!list.length) return []
+  const n = Math.max(1, Math.min(Math.floor(Number(concurrency) || 1), list.length))
+  /** @type {unknown[]} */
+  const results = new Array(list.length)
+  let next = 0
+  async function worker() {
+    while (true) {
+      if (typeof throwIfCancelled === 'function') throwIfCancelled()
+      const i = next
+      next += 1
+      if (i >= list.length) return
+      results[i] = await fn(list[i])
+    }
+  }
+  await Promise.all(Array.from({ length: n }, () => worker()))
+  return results
+}
+
+/**
  * @param {() => Promise<any>} fn
  * @param {'full'|'basic'|'max'} [coexistPause]
  */
@@ -2429,22 +2458,26 @@ async function handlePdfExportRun(event, opts) {
       }
 
       // 现场让核：把真正吃 CPU 的渲染进程（+ 后端）降优先级；重建窗后需重新施加
-      function applyRenderCoexistPriority() {
-        const w = pdfWinHolder.win
+      function applyRenderCoexistPriorityOn(holder) {
+        const w = holder && holder.win
         if (w && !w.isDestroyed()) {
           applyExportProcessCoexistPriority(w.webContents, coexistPause)
         }
       }
-      applyRenderCoexistPriority()
+      applyRenderCoexistPriorityOn(pdfWinHolder)
 
       /** 渲染窗口取数期间每 10 秒发一次心跳：连续 2 分钟无心跳视为无响应；总时长上限 10 分钟 */
       const RENDER_IDLE_TIMEOUT_MS = 120000
       const RENDER_TOTAL_CAP_MS = 600000
 
-      async function renderPart(partIndex) {
+      /**
+       * 在指定导出窗上渲染一份分卷（035：分卷并行时每路独立 holder）。
+       * @param {{ win: import('electron').BrowserWindow }} winHolder
+       * @param {number} partIndex
+       */
+      async function renderPartOnWindow(winHolder, partIndex) {
         throwIfCancelled()
-        // 每份开始前重申渲染进程优先级（复用/重建窗后 pid 可能变）
-        applyRenderCoexistPriority()
+        applyRenderCoexistPriorityOn(winHolder)
         const targetUrl = buildPdfExportUrl(event.sender, partHash(partIndex))
         /** 热切换看门狗：仅改 hash 后渲染页若迟迟没有心跳/完成信号，整页重载一次兜底 */
         const HOT_NAV_FALLBACK_MS = 8000
@@ -2476,7 +2509,7 @@ async function handlePdfExportRun(event, opts) {
           }
 
           function isFromPdfWin(ev) {
-            const w = pdfWinHolder.win
+            const w = winHolder.win
             if (!w || w.isDestroyed()) return false
             return senderBrowserWindow(ev.sender) === w
           }
@@ -2485,7 +2518,6 @@ async function handlePdfExportRun(event, opts) {
             if (!isFromPdfWin(ev)) return
             flags.rendererSignal = true
             armIdleTimer()
-            // 039c：渲染页阶段（load/fetch/render）推到遮罩
             if (armOverlay && hbPayload && typeof hbPayload === 'object' && hbPayload.stage) {
               try {
                 pushExportOverlayProgress({
@@ -2516,29 +2548,25 @@ async function handlePdfExportRun(event, opts) {
         })
 
         const navStartMs = Date.now()
-        // 导航与完成信号并行等待：导航报错立即失败；导航悬挂由 readyPromise 的超时兜底，
-        // 避免 readyPromise 先超时时产生无人接收的 unhandled rejection 并卡死后续结批。
-        // 033：ERR_FAILED 等可恢复错误 → 销毁窗冷启动重试一次。
         const payload = await new Promise((resolve, reject) => {
           readyPromise.then(resolve, reject)
-          navigatePdfExportWindowWithRecovery(pdfWinHolder, targetUrl)
+          navigatePdfExportWindowWithRecovery(winHolder, targetUrl)
             .then((hotSwitched) => {
-              // 导航后（含 033 恢复重建的新窗）重申渲染进程优先级，趁 CPU 密集渲染前生效
-              applyRenderCoexistPriority()
+              applyRenderCoexistPriorityOn(winHolder)
               if (!hotSwitched) return
               hotNavFallbackTimer = setTimeout(() => {
                 if (flags.rendererSignal || flags.hotNavFellBack) return
-                const w = pdfWinHolder.win
+                const w = winHolder.win
                 if (!w || w.isDestroyed()) return
                 flags.hotNavFellBack = true
                 log('PDF export hot hash-switch silent; falling back to full page load')
                 w.loadURL(targetUrl).catch((err) => {
                   if (!isRecoverablePdfExportNavError(err)) return
                   log(`PDF export hot-nav fallback failed (${err.message}); recreating window`)
-                  destroyPdfExportWindow(pdfWinHolder.win)
-                  pdfWinHolder.win = createPdfExportWindow()
-                  pdfWinHolder.win.loadURL(targetUrl).catch(() => {})
-                  applyRenderCoexistPriority()
+                  destroyPdfExportWindow(winHolder.win)
+                  winHolder.win = createPdfExportWindow()
+                  winHolder.win.loadURL(targetUrl).catch(() => {})
+                  applyRenderCoexistPriorityOn(winHolder)
                 })
               }, HOT_NAV_FALLBACK_MS)
             })
@@ -2570,6 +2598,7 @@ async function handlePdfExportRun(event, opts) {
           exportMode,
           printToPDFSkipped: false,
         }
+        const activeWin = winHolder.win
         if (payload.pdfBase64 && typeof payload.pdfBase64 === 'string') {
           pdfBuffer = Buffer.from(payload.pdfBase64, 'base64')
           printMs = Number(payload.pdfLibMs) || Date.now() - printStartMs
@@ -2584,7 +2613,7 @@ async function handlePdfExportRun(event, opts) {
             printToPDFSkipped: true,
           }
         } else {
-          pdfBuffer = await pdfWin.webContents.printToPDF({
+          pdfBuffer = await activeWin.webContents.printToPDF({
             landscape: false,
             printBackground: true,
             marginsType: 1,
@@ -2598,7 +2627,7 @@ async function handlePdfExportRun(event, opts) {
             printToPDFSkipped: false,
           }
         }
-        pdfWin.__exportUses = (pdfWin.__exportUses || 0) + 1
+        activeWin.__exportUses = (activeWin.__exportUses || 0) + 1
         return {
           pdfBuffer,
           totalReports: Math.max(1, Math.floor(Number(payload.totalReports) || 1)),
@@ -2608,6 +2637,10 @@ async function handlePdfExportRun(event, opts) {
           printMs,
           engineMeta,
         }
+      }
+
+      async function renderPart(partIndex) {
+        return renderPartOnWindow(pdfWinHolder, partIndex)
       }
 
       function mergeStats(total, part) {
@@ -2656,31 +2689,101 @@ async function handlePdfExportRun(event, opts) {
       const totalReports = first.totalReports
       stats = mergeStats(stats, first.stats)
       mergeTimings(first)
-      const filePaths = []
-      filePaths.push(await writePartPdf(0, totalReports, first.pdfBuffer))
+      /** @type {(string|undefined)[]} */
+      const filePaths = new Array(totalReports)
+      filePaths[0] = await writePartPdf(0, totalReports, first.pdfBuffer)
       sendProgress({ phase: 'saved', stage: 'saved', partIndex: 0, totalReports })
 
-      for (let partIndex = 1; partIndex < totalReports; partIndex++) {
-        throwIfCancelled()
-        // 030：分卷间隙让出 CPU，减轻 Hypervisor/同机 mappView 饿死
-        await yieldToOs(jobYieldMs)
-        sendProgress({ phase: 'render', stage: 'load', partIndex, totalReports })
-        const part = await renderPart(partIndex)
-        stats = mergeStats(stats, part.stats)
-        mergeTimings(part)
-        filePaths.push(await writePartPdf(partIndex, totalReports, part.pdfBuffer))
-        sendProgress({ phase: 'saved', stage: 'saved', partIndex, totalReports })
+      // 035：分卷并行 — 受 pdfExportMaxParallel（含 CPU 预算）约束；=1 时保持串行+yield
+      const partParallel = Math.max(1, Math.min(pdfExportMaxParallel, totalReports))
+      const remainingIndices = []
+      for (let i = 1; i < totalReports; i++) remainingIndices.push(i)
+      const concurrency = Math.min(partParallel, Math.max(1, remainingIndices.length))
+
+      if (remainingIndices.length > 0 && concurrency <= 1) {
+        for (const partIndex of remainingIndices) {
+          throwIfCancelled()
+          await yieldToOs(jobYieldMs)
+          sendProgress({ phase: 'render', stage: 'load', partIndex, totalReports })
+          const part = await renderPart(partIndex)
+          stats = mergeStats(stats, part.stats)
+          mergeTimings(part)
+          filePaths[partIndex] = await writePartPdf(partIndex, totalReports, part.pdfBuffer)
+          sendProgress({ phase: 'saved', stage: 'saved', partIndex, totalReports })
+        }
+      } else if (remainingIndices.length > 0) {
+        /** @type {{ win: import('electron').BrowserWindow }[]} */
+        const workerHolders = [pdfWinHolder]
+        let extraSlots = 0
+        try {
+          for (let i = 1; i < concurrency; i++) {
+            await acquirePdfExportSlot()
+            extraSlots += 1
+            workerHolders.push({ win: acquirePdfExportWindow() })
+            applyRenderCoexistPriorityOn(workerHolders[workerHolders.length - 1])
+          }
+          log(
+            `PDF 分卷并行：partParallel concurrency=${concurrency} remaining=${remainingIndices.length} maxParallel=${pdfExportMaxParallel}`,
+          )
+          let nextPart = 0
+          async function partWorker(holder) {
+            while (true) {
+              throwIfCancelled()
+              const i = nextPart
+              nextPart += 1
+              if (i >= remainingIndices.length) return
+              const partIndex = remainingIndices[i]
+              await yieldToOs(jobYieldMs)
+              sendProgress({ phase: 'render', stage: 'load', partIndex, totalReports })
+              const part = await renderPartOnWindow(holder, partIndex)
+              if (holder === pdfWinHolder) {
+                pdfWin = holder.win
+              }
+              stats = mergeStats(stats, part.stats)
+              mergeTimings(part)
+              filePaths[partIndex] = await writePartPdf(partIndex, totalReports, part.pdfBuffer)
+              sendProgress({ phase: 'saved', stage: 'saved', partIndex, totalReports })
+            }
+          }
+          await Promise.all(workerHolders.map((h) => partWorker(h)))
+        } finally {
+          pdfWin = pdfWinHolder.win
+          for (let i = 1; i < workerHolders.length; i++) {
+            try {
+              const w = workerHolders[i].win
+              if (w && !w.isDestroyed()) {
+                restoreExportProcessCoexistPriority(w.webContents)
+              }
+            } catch {
+              /* ignore */
+            }
+            destroyPdfExportWindow(workerHolders[i].win)
+          }
+          while (extraSlots > 0) {
+            releasePdfExportSlot()
+            extraSlots -= 1
+          }
+        }
+      }
+
+      const orderedPaths = []
+      for (let i = 0; i < totalReports; i++) {
+        const p = filePaths[i]
+        if (typeof p !== 'string' || !p) {
+          throw new Error(`分卷导出不完整：缺少第 ${i + 1}/${totalReports} 份`)
+        }
+        orderedPaths.push(p)
       }
 
       if (openAfter) {
-        await shell.openPath(filePaths[0])
+        await shell.openPath(orderedPaths[0])
       }
 
       exportOk = true
       return {
         ok: true,
-        filePath: filePaths[0],
-        filePaths,
+        filePath: orderedPaths[0],
+        filePaths: orderedPaths,
         totalReports,
         stats,
         timings,

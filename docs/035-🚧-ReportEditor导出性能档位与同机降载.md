@@ -6,6 +6,25 @@
 
 ---
 
+# ✅ 已完成：模拟结批分卷并行（2026-08-09）
+
+## 问题
+
+档 4「不妥协」`maxParallelHint=2` 只抬高 OPC 多绑定 job 槽与主进程 `pdfExportMaxParallel`，**同一次模拟结批的多分卷**仍在 `handlePdfExportRun` 里单窗串行，观感像「不妥协没并行」。
+
+## 改动
+
+- 主进程：part 0 仍串行拿 `totalReports`；其余分卷按 `min(pdfExportMaxParallel, remaining)` 多窗池并发；额外槽位 `acquirePdfExportSlot`，避免与 OPC 抢爆；`=1` 时保持串行 + `yieldMs`
+- UI：模拟结批卡片「分卷并行数」（绑定 `prefs.auto.maxParallelExports`，与 OPC 共用）
+- 契约：`part-parallel-export-contracts.test.ts`
+
+## 验收
+
+- 选不妥协、并行≥2，80 份分卷时主进程日志出现 `PDF 分卷并行`；遮罩份数可乱序推进
+- 并行=1 时行为与改前一致
+
+---
+
 # ✅ 已完成：模拟结批卡片内露出五档选择（2026-08-09）
 
 ## 问题
