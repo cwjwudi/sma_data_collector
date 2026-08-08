@@ -2,34 +2,34 @@
 
 目标：验证分卷导出取数不再静默截断到 50000。
 
-## A. Docker MariaDB（推荐，与现网一致）
+## A. 本机 MariaDB（当前推荐；Docker 起不来时用）
 
-### 一次性前置（需管理员）
+本机 Docker Desktop 仍报 **Virtualization support not detected**（缺 WSL2 内核/虚拟机平台），短期改用 **winget 安装的 MariaDB 12.3** 跑在 `127.0.0.1:3306`。
 
-本机当前状态：
-- Docker Desktop **已安装**
-- **WSL2 未安装** → Desktop 无法启动引擎
+### 已就绪（本机）
 
-请用**管理员 PowerShell**执行：
+| 项 | 值 |
+|----|-----|
+| 服务方式 | `mariadbd` 用户进程（非 Windows 服务；关机后需再启） |
+| 启动脚本 | `scripts\dev\start_local_mariadb_044.ps1` |
+| 账号 | `root` / `report_editor_044` |
+| 库表 | `report_user_lib.demo_metrics`，`batch_no=SMOKE_80K`，**80000** 行 |
+| 连接 | `本机 MariaDB（044）` / id=`local-mariadb-044` |
+| 模版 | **测试·044·8万条分卷导出** |
 
-```powershell
-wsl --install
-```
-
-重启电脑 → 打开 **Docker Desktop** → 等到左下角绿色 Running。
-
-### 一键灌库 + 模版
+重启电脑后先：
 
 ```powershell
 cd _Prj\SD_SMA_ReportEditor
-.\scripts\dev\setup_044_docker.ps1
+.\scripts\dev\start_local_mariadb_044.ps1
 ```
 
-会：
-1. `docker compose up -d mariadb`（口令见 `.env` 的 `MARIADB_ROOT_PASSWORD`）
-2. 在 `report_user_lib.demo_metrics` 插入 **80000** 行（`batch_no=SMOKE_80K`）
-3. 写入 AI 版数据源连接 `local-docker-mariadb-044`
-4. 写入模版 **测试·044·8万条分卷导出**（非批次，输出到桌面 `ReportEditor044Smoke`）
+若要重灌数据：
+
+```powershell
+$env:MARIADB_ROOT_PASSWORD='report_editor_044'
+.\backend\venv\Scripts\python.exe scripts\dev\setup_044_smoke_80k.py
+```
 
 ### 导出验收
 
@@ -40,6 +40,11 @@ cd _Prj\SD_SMA_ReportEditor
    - **失败（旧行为）**：约 **50** 个 PDF（被 5 万硬上限截断）
 
 > 全量 80 份 PDF 墙钟可能很长（联动 045/030）。可先在数据源工作台对同一 SQL 用 limit=80000 点查询，确认后端能取满 8 万。
+
+### Docker（可选，需管理员修好虚拟化）
+
+管理员 PowerShell：`wsl --install` → 重启 → Docker Desktop 绿灯 → `.\scripts\dev\setup_044_docker.ps1`。  
+在修好之前请用上面的本机 MariaDB，不必再卡在 Docker。
 
 ---
 
