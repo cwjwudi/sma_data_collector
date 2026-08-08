@@ -410,7 +410,8 @@ async def query_sql(body: DbExecuteSqlRequest):
     conn = _conn_by_id(body.connection_id)
     engine = (conn.get("engine") or "").lower()
     user, pwd = _credentials(conn)
-    lim = max(1, min(body.limit, 50000))
+    # 044：导出/结批不设总量业务上限；5_000_000 仅为异常防护（防失控查询耗尽内存），不作产品截断
+    lim = max(1, min(body.limit, 5_000_000))
     eff_db = _effective_sql_database(conn, body.database, engine)
     try:
         bind = body.params

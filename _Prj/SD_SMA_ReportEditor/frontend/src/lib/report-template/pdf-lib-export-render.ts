@@ -95,13 +95,32 @@ function isOttoCffFont(bytes: Uint8Array): boolean {
   );
 }
 
+/**
+ * 045 R1：随包字体字节跨份缓存。字体是随包静态资源，进程生命周期内不变，
+ * 按 fontId 内容寻址缓存不会串模版；多分卷导出可省去每份的 IPC/fetch + base64 解码。
+ */
+const bundledFontBytesCache = new Map<BundledFontId, Uint8Array>();
+
+export function cacheBundledFontBytes(fontId: BundledFontId, bytes: Uint8Array): void {
+  bundledFontBytesCache.set(fontId, bytes);
+}
+
+/** 仅供单测（045 R1） */
+export function clearBundledFontBytesCacheForTest(): void {
+  bundledFontBytesCache.clear();
+}
+
 async function loadBundledFontBytes(
   fontBytesBase64?: string | null,
   fontId: BundledFontId = "noto-sans-sc",
 ): Promise<Uint8Array | null> {
+  const cached = bundledFontBytesCache.get(fontId);
+  if (cached) return cached;
   if (fontBytesBase64 && fontBytesBase64.length > 1000) {
     try {
-      return decodeBase64ToBytes(fontBytesBase64);
+      const bytes = decodeBase64ToBytes(fontBytesBase64);
+      bundledFontBytesCache.set(fontId, bytes);
+      return bytes;
     } catch {
       /* fall through */
     }
@@ -115,7 +134,11 @@ async function loadBundledFontBytes(
       const res = await fetch(url);
       if (!res.ok) continue;
       const buf = await res.arrayBuffer();
-      if (buf.byteLength > 1000) return new Uint8Array(buf);
+      if (buf.byteLength > 1000) {
+        const bytes = new Uint8Array(buf);
+        bundledFontBytesCache.set(fontId, bytes);
+        return bytes;
+      }
     } catch {
       /* try next */
     }
@@ -265,7 +288,10 @@ export async function renderPdfLibExportPart(opts: {
         const res = await api?.getBundledCjkFont?.({ key: "fangsong" });
         if (res?.ok && res.base64 && res.base64.length > 1000) {
           const b = decodeBase64ToBytes(res.base64);
-          if (!isOttoCffFont(b)) fontBytes = b;
+          if (!isOttoCffFont(b)) {
+            fontBytes = b;
+            cacheBundledFontBytes("fangsong", b);
+          }
         }
       } catch {
         /* ignore */

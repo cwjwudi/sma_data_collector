@@ -42,7 +42,32 @@
 
 ---
 
-# ⌛️ 未完成：跨份复用（字体 / 图片 / 同窗连渲 / 传输）
+# ✅ 已完成：R1a 字体字节 / R2 图片字节跨份缓存（2026-08-08）
+
+## 实现
+
+| 项 | 位置 | 说明 |
+|----|------|------|
+| R1a 字体字节缓存 | `pdf-lib-export-render.ts` | `loadBundledFontBytes` 按 `fontId` 缓存解码字节；IPC 兜底命中也写缓存。随包字体是静态资源，**内容寻址不会串模版**，无需绑 job 生命周期 |
+| R1a 字体 IPC 缓存 | `PdfExportView.vue` | `getBundledCjkFontCached`：预热窗进程内首份取一次，后续份不再走 **MB 级 base64 IPC** |
+| R2 图片字节缓存 | `pdf-lib-layout-v2-render.ts` | `embedDataUrlImage` 前按完整 dataURL 缓存解码字节（上限 24 条防膨胀）；每份仍须 `embedPng`（PDFImage 绑定单个 PDFDocument），省的是 base64 解码 |
+
+**尚未覆盖的每份固定开销**（见下方 ⌛️）：fontkit `subset`（各份字符集不同，安全复用需预裁字体或全量嵌入）、`doc.save` + `btoa` + IPC 字符串（R4）、每份 hash 切换 boot（R3）。
+
+## 测试证据
+
+- 「045 R1: bundled font bytes cross-part cache」：首份传 base64 嵌入后，第二份**不传 base64 且 fetch 被禁**仍嵌入成功（缓存命中）。  
+- 「045 R2: data-url image bytes cached across parts」：同一 dataURL 连渲三份，缓存条目数不增长。  
+- 全量 vitest：**107 文件 / 629 用例全绿**（2026-08-08）。
+
+## R3 / R4 评估结论（2026-08-08，本机核对）
+
+- **R4（去 base64 IPC）阻塞点**：`preload.cjs` `notifyPdfExportReady` 用 `JSON.parse(JSON.stringify(payload))` 兜底剥 Vue 代理——**任何二进制载荷会被 JSON 序列化破坏**。改二进制需专门通道（或临时文件回传路径），且完成信号是结批链路历史最脆弱点（0.2.3~0.2.5 结批失败根因即在此），须配 Windows 实机回归再动。  
+- **R3（同窗连渲）**：现架构每份靠 `route.fullPath` hash 切换触发 `boot()`；连渲需把「份循环」下沉进导出视图单次 boot 内，同时保住心跳/取消/「第 x/共 y」进度与 fill-cache 语义——中型重构，建议与 R4 同一专项、现场复测护航。
+
+---
+
+# ⌛️ 未完成：R1b 预裁字体 / R3 同窗连渲 / R4 二进制回传 / R5 让核
 
 ## 目标
 
@@ -50,13 +75,13 @@
 
 ## 拟改项（按收益预期）
 
-| ID | 项 | 做法要点 | 预期 |
-|----|----|----------|------|
-| **R1** | 字体跨份复用 | 首份 `embedFont`/`subset` 一次；后续份复用已嵌入字体字节或预裁「报表常用字」静态 TTF，避免 50 次 fontkit subset | 高 |
-| **R2** | 图片跨份复用 | 封面/页眉 Logo 等 `embedPng` 结果（或解码后的 bytes）按 `imageSrc` 缓存，各份共用 | 高 |
-| **R3** | 同窗连渲 | 取数一次后，同一渲染进程内连续 `renderPart(0..N-1)`，减少每份 hash 切页/boot | 高 |
-| **R4** | 去掉巨型 base64 IPC | PDF 字节改临时文件或二进制通道回主进程，避免 `btoa` + 字符串拷贝 | 中 |
-| **R5** |（可选）自适应让核 | HMI 空闲时缩短 yield / 略提渲染优先级；忙时保持 full IDLE——与 030 零闪目标权衡，需产品拍板 | 视现场 |
+| ID | 项 | 做法要点 | 预期 | 状态 |
+|----|----|----------|------|------|
+| **R1** | 字体跨份复用 | ✅ R1a：字体**字节**（IPC/fetch/解码）跨份缓存；⌛️ R1b：subset 复用需预裁「报表常用字」TTF（缺字风险，见风险节），或全量嵌入换体积 | 高 | 部分 ✅ |
+| **R2** | 图片跨份复用 | ✅ 解码字节按 dataURL 缓存；`embedPng` 仍每份一次（PDFImage 绑定单 doc） | 高 | ✅ |
+| **R3** | 同窗连渲 | 取数一次后，同一渲染进程内连续 `renderPart(0..N-1)`，减少每份 hash 切页/boot（见上方评估结论） | 高 | ⌛️ |
+| **R4** | 去掉巨型 base64 IPC | PDF 字节改临时文件或二进制通道回主进程；受 preload JSON 兜底阻塞（见上方评估结论） | 中 | ⌛️ |
+| **R5** |（可选）自适应让核 | HMI 空闲时缩短 yield / 略提渲染优先级；忙时保持 full IDLE——与 030 零闪目标权衡，**需产品拍板** | 视现场 | ⌛️ |
 
 **不做（本条）**：改回默认 chromium；用 draft-v1 交差；假设「只优化 SQL」即可进 6 分钟。
 

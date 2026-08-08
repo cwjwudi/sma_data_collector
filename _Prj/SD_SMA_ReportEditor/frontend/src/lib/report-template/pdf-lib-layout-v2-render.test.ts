@@ -7,7 +7,10 @@ import {
   ensureBodyPages,
   hydrateTemplateElement,
 } from "@/lib/report-template/model";
-import { appendPdfLibLayoutV2Pages } from "@/lib/report-template/pdf-lib-layout-v2-render";
+import {
+  appendPdfLibLayoutV2Pages,
+  imageBytesCacheSizeForTest,
+} from "@/lib/report-template/pdf-lib-layout-v2-render";
 import { computeExpandedBodyPreviewCards } from "@/lib/report-template/table-sql-fill-export-preview-split";
 
 function makeTemplateWithBodyTable(el: ReturnType<typeof hydrateTemplateElement>) {
@@ -123,6 +126,156 @@ describe("pdf-lib-layout-v2-render", () => {
     }
   });
 
+  it("042: decimalPlaces applied to bound values (body param / static cell / zone param)", async () => {
+    const { paramKey, cellKey, zoneParamKey } = await import(
+      "@/lib/report-template/binding-preview-utils"
+    );
+    const { makeLayoutZoneElement } = await import("@/lib/report-template/layout-zone-element");
+    const param = hydrateTemplateElement({
+      id: "p42",
+      type: "parameter",
+      text: "占位",
+      bindingKind: "sql",
+      decimalPlaces: 2,
+      x: 40,
+      y: 30,
+      w: 160,
+      h: 24,
+    });
+    const tmpl = makeTemplateWithBodyTable(param);
+    const tb = hydrateTemplateElement({
+      id: "t42",
+      type: "table",
+      tableRows: 1,
+      tableCols: 1,
+      tableRowHeightPx: 28,
+      x: 40,
+      y: 80,
+      w: 200,
+      h: 28,
+      tableCells: [
+        [
+          {
+            text: "",
+            bindingKind: "sql",
+            opcuaNodeId: "",
+            sqlText: "SELECT 1",
+            sqlParams: [],
+            bgColor: "transparent",
+            decimalPlaces: 1,
+          },
+        ],
+      ],
+    });
+    ensureBodyPages(tmpl)[0].push(tb);
+    tmpl.layoutSnapshot = { ...tmpl.layoutSnapshot, headerBandMm: 18 };
+    const zp = makeLayoutZoneElement("parameter");
+    zp.id = "zp42";
+    zp.bindingKind = "sql";
+    zp.decimalPlaces = 2;
+    zp.text = "zplace";
+    zp.x = 20; zp.y = 4; zp.w = 120; zp.h = 18;
+    tmpl.headerElements = [zp];
+
+    const previewValues = {
+      [paramKey("p42")]: { text: "12" },
+      [cellKey("t42", 0, 0)]: { text: "3.14159" },
+      [zoneParamKey("zp42")]: { text: "9" },
+    };
+    const doc = await PDFDocument.create();
+    const font = await doc.embedFont(StandardFonts.Helvetica);
+    await appendPdfLibLayoutV2Pages(doc, { tmpl, previewValues, font, useWinAnsi: true });
+    const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+    const parsed = await pdfjs.getDocument({ data: await doc.save() }).promise;
+    const page = await parsed.getPage(1);
+    const text = (await page.getTextContent()).items.map((it: { str: string }) => it.str).join(" ");
+    expect(text).toContain("12.00");
+    expect(text).toContain("3.1");
+    expect(text).not.toContain("3.14159");
+    expect(text).toContain("9.00");
+  });
+
+  it("043: empty bound value honors nullDisplayMode instead of falling back to el.text", async () => {
+    const { paramKey, cellKey, zoneParamKey } = await import(
+      "@/lib/report-template/binding-preview-utils"
+    );
+    const { makeLayoutZoneElement } = await import("@/lib/report-template/layout-zone-element");
+    // blank（缺省）：空 bound → 空白，不得画控件占位 "value"
+    const pBlank = hydrateTemplateElement({
+      id: "p43a",
+      type: "parameter",
+      text: "value",
+      bindingKind: "sql",
+      x: 40,
+      y: 30,
+      w: 160,
+      h: 24,
+    });
+    // fallbackText：空 bound → 回落控件文案（显式配置时才允许）
+    const pFallback = hydrateTemplateElement({
+      id: "p43b",
+      type: "parameter",
+      text: "N/A",
+      bindingKind: "sql",
+      nullDisplayMode: "fallbackText",
+      x: 40,
+      y: 70,
+      w: 160,
+      h: 24,
+    });
+    const tmpl = makeTemplateWithBodyTable(pBlank);
+    ensureBodyPages(tmpl)[0].push(pFallback);
+    // 静态表：空 bound 不得回落 grid 文案
+    const tb = hydrateTemplateElement({
+      id: "t43",
+      type: "table",
+      tableRows: 1,
+      tableCols: 1,
+      tableRowHeightPx: 28,
+      x: 40,
+      y: 120,
+      w: 200,
+      h: 28,
+      tableCells: [
+        [
+          {
+            text: "GridFallback",
+            bindingKind: "sql",
+            opcuaNodeId: "",
+            sqlText: "SELECT 1",
+            sqlParams: [],
+            bgColor: "transparent",
+          },
+        ],
+      ],
+    });
+    ensureBodyPages(tmpl)[0].push(tb);
+    tmpl.layoutSnapshot = { ...tmpl.layoutSnapshot, headerBandMm: 18 };
+    const zp = makeLayoutZoneElement("parameter");
+    zp.id = "zp43";
+    zp.bindingKind = "sql";
+    zp.text = "value";
+    zp.x = 20; zp.y = 4; zp.w = 120; zp.h = 18;
+    tmpl.headerElements = [zp];
+
+    const previewValues = {
+      [paramKey("p43a")]: { text: "" },
+      [paramKey("p43b")]: { text: "" },
+      [cellKey("t43", 0, 0)]: { text: "" },
+      [zoneParamKey("zp43")]: { text: "" },
+    };
+    const doc = await PDFDocument.create();
+    const font = await doc.embedFont(StandardFonts.Helvetica);
+    await appendPdfLibLayoutV2Pages(doc, { tmpl, previewValues, font, useWinAnsi: true });
+    const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+    const parsed = await pdfjs.getDocument({ data: await doc.save() }).promise;
+    const page = await parsed.getPage(1);
+    const text = (await page.getTextContent()).items.map((it: { str: string }) => it.str).join(" ");
+    expect(text).not.toContain("value");
+    expect(text).not.toContain("GridFallback");
+    expect(text).toContain("N/A");
+  });
+
   it("single short page still produces one page", async () => {
     const tb = hydrateTemplateElement({
       id: "short",
@@ -178,6 +331,33 @@ describe("pdf-lib-layout-v2-render", () => {
     expect(pageCount).toBeGreaterThanOrEqual(1);
     const bytes = await doc.save();
     expect(bytes.byteLength).toBeGreaterThan(2_500);
+  });
+
+  it("045 R2: data-url image bytes cached across parts (same key not re-added)", async () => {
+    const tinyPng =
+      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+    const tb = hydrateTemplateElement({
+      id: "img-r2",
+      type: "image",
+      x: 20,
+      y: 20,
+      w: 120,
+      h: 80,
+      imageSrc: tinyPng,
+    });
+    const tmpl = makeTemplateWithBodyTable(tb);
+    async function renderOnce(): Promise<void> {
+      const doc = await PDFDocument.create();
+      const font = await doc.embedFont(StandardFonts.Helvetica);
+      await appendPdfLibLayoutV2Pages(doc, { tmpl, previewValues: {}, font, useWinAnsi: true });
+    }
+    await renderOnce();
+    const afterFirst = imageBytesCacheSizeForTest();
+    expect(afterFirst).toBeGreaterThanOrEqual(1);
+    await renderOnce();
+    await renderOnce();
+    // 同一 dataURL 跨份复用：缓存条目数不再增长
+    expect(imageBytesCacheSizeForTest()).toBe(afterFirst);
   });
 
   it("embeds cover data-url image", async () => {

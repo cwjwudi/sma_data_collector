@@ -279,16 +279,20 @@ function formatHorizontalSqlFillCell(opts: {
 
 /** 与 backend `api/routers/database.py` 中 PREVIEW_LIMIT_MAX 一致 */
 export const TABLE_SQL_FILL_PREVIEW_ROW_LIMIT = 1000;
-export const TABLE_SQL_FILL_FULL_ROW_LIMIT = 50000;
+/**
+ * 044：正式导出/结批不设结果集总量业务上限（SQL 查多少用多少）。
+ * 此值仅作异常防护（与后端 `query/sql` 防护值一致），不作产品截断。
+ */
+export const TABLE_SQL_FILL_FULL_ROW_LIMIT = 5_000_000;
 
 /**
  * 单次填充查询的行数上限。
  * - 编辑器画布预览（fullSqlFill=false）：为响应速度截到 1000 行；
- * - 正式导出（fullSqlFill=true）：尊重用户配置的 maxRows（分报表模式取全量后再按 maxRows 切分）。
- *   注意不能沿用预览上限：否则「最大行数 > 1000 且未开分报表」的导出会被静默截断。
+ * - 正式导出（fullSqlFill=true）：分报表模式取全量（仅异常防护值封顶，044 不再设 5 万总量帽）；
+ *   未开分报表按用户 maxRows 截断（单份行数语义）。
  */
 export function sqlFillQueryLimit(fill: TableSqlFillConfig, fullSqlFill: boolean): number {
-  const fillMaxRows = Math.min(Math.max(1, fill.maxRows || 2000), TABLE_SQL_FILL_FULL_ROW_LIMIT);
+  const fillMaxRows = Math.max(1, fill.maxRows || 2000);
   if (!fullSqlFill) return Math.min(fillMaxRows, TABLE_SQL_FILL_PREVIEW_ROW_LIMIT);
   return fill.splitReportsOnMaxRows ? TABLE_SQL_FILL_FULL_ROW_LIMIT : fillMaxRows;
 }
@@ -314,7 +318,7 @@ export function sqlFillPreviewTruncationHint(
   fill: TableSqlFillConfig,
   fetchedSqlRowCount: number,
 ): SqlFillPreviewTruncation | null {
-  const singleReportMaxRows = Math.min(Math.max(1, fill.maxRows || 2000), TABLE_SQL_FILL_FULL_ROW_LIMIT);
+  const singleReportMaxRows = Math.max(1, fill.maxRows || 2000);
   const previewLimit = sqlFillQueryLimit(fill, false); // = min(singleReportMaxRows, 1000)
   const fetched = Math.max(0, Math.floor(Number(fetchedSqlRowCount)) || 0);
   if (fetched < previewLimit) return null; // 未触及上限：预览已含全部行，所见即所得

@@ -13,9 +13,11 @@ import {
 } from "pdf-lib";
 import type { BindingPreviewCell } from "@/lib/report-template/binding-preview-utils";
 import {
+  applyDecimalPlacesToDisplayText,
   cellKey,
   chartKey,
   paramKey,
+  resolveBoundParameterPreviewText,
   zoneCellKey,
   zoneParamKey,
 } from "@/lib/report-template/binding-preview-utils";
@@ -172,6 +174,49 @@ function cellText(v: BindingPreviewCell | undefined): string {
   if (typeof v === "string") return v;
   if (typeof v === "object" && v && "text" in v) return String((v as { text?: unknown }).text ?? "");
   return String(v);
+}
+
+/**
+ * 042/043：zone 控件绑定文案与 Mini `previewZoneInlineText` 同语义——
+ * text/box 仅 opcua、parameter 支持 opcua/sql/mongo；命中预览键即用实值
+ * （空值走 nullDisplayMode + decimalPlaces，不回落控件占位文案）。
+ */
+function zoneBoundDisplayText(
+  el: LayoutZoneElement,
+  previewCell: BindingPreviewCell | undefined,
+): string {
+  const isTextBox = el.type === "text" || el.type === "box";
+  const bindable = isTextBox
+    ? el.bindingKind === "opcua"
+    : el.type === "parameter" &&
+      (el.bindingKind === "opcua" || el.bindingKind === "sql" || el.bindingKind === "mongo");
+  if (!bindable) return String(el.text || "");
+  return resolveBoundParameterPreviewText({
+    bindingKind: el.bindingKind,
+    text: String(el.text || ""),
+    nullDisplayMode: el.nullDisplayMode,
+    decimalPlaces: el.decimalPlaces,
+    previewCell: previewCell != null ? { text: cellText(previewCell) } : undefined,
+    loading: false,
+  });
+}
+
+/** 042/043：正文控件绑定文案与 Mini `previewParameterText` 同语义（text/box/parameter 通用）。 */
+function bodyBoundDisplayText(
+  el: TemplateElement,
+  previewCell: BindingPreviewCell | undefined,
+): string {
+  if (el.bindingKind === "opcua" || el.bindingKind === "sql" || el.bindingKind === "mongo") {
+    return resolveBoundParameterPreviewText({
+      bindingKind: el.bindingKind,
+      text: String(el.text || ""),
+      nullDisplayMode: el.nullDisplayMode,
+      decimalPlaces: el.decimalPlaces,
+      previewCell: previewCell != null ? { text: cellText(previewCell) } : undefined,
+      loading: false,
+    });
+  }
+  return String(el.text || "");
 }
 
 function sanitizeForWinAnsi(s: string): string {
@@ -404,12 +449,36 @@ function drawWrappedInBox(
   }
 }
 
+/**
+ * 045 R2：dataURL → 解码字节跨份缓存。按完整 dataURL 内容寻址（同串必同字节），
+ * 不会串模版；多分卷导出省去每份对封面/Logo 大图的 base64 解码。上限防内存膨胀。
+ */
+const IMAGE_BYTES_CACHE_MAX = 24;
+const imageBytesCache = new Map<string, Uint8Array>();
+
+/** 仅供单测（045 R2） */
+export function imageBytesCacheSizeForTest(): number {
+  return imageBytesCache.size;
+}
+
+function decodedDataUrlImageBytes(dataUrl: string, base64Payload: string): Uint8Array {
+  const hit = imageBytesCache.get(dataUrl);
+  if (hit) return hit;
+  const bytes = decodeBase64ToBytes(base64Payload.replace(/\s+/g, ""));
+  if (imageBytesCache.size >= IMAGE_BYTES_CACHE_MAX) {
+    const oldest = imageBytesCache.keys().next().value;
+    if (oldest !== undefined) imageBytesCache.delete(oldest);
+  }
+  imageBytesCache.set(dataUrl, bytes);
+  return bytes;
+}
+
 async function embedDataUrlImage(doc: PDFDocument, src: string): Promise<PDFImage | null> {
   const s = String(src || "").trim();
   const m = /^data:image\/(png|jpe?g);base64,([\s\S]+)$/i.exec(s);
   if (!m) return null;
   try {
-    const bytes = decodeBase64ToBytes(m[2].replace(/\s+/g, ""));
+    const bytes = decodedDataUrlImageBytes(s, m[2]);
     if (bytes.byteLength < 32) return null;
     if (/^png$/i.test(m[1])) return await doc.embedPng(bytes);
     return await doc.embedJpg(bytes);
@@ -800,8 +869,13 @@ function drawZoneTable(
           labelPreview: { elId: el.id, zone: true, values },
         });
       } else {
-        const bound = cellText(values[zoneCellKey(el.id, r, c)]);
-        text = bound || String(grid[r]?.[c]?.text || "");
+        // 042/043：命中预览键即用实值（含空串），并按单元格 decimalPlaces 补小数位（对齐 Mini）
+        const hit = values[zoneCellKey(el.id, r, c)];
+        const cell = grid[r]?.[c];
+        text =
+          hit != null
+            ? applyDecimalPlacesToDisplayText(cellText(hit), cell?.decimalPlaces)
+            : String(cell?.text || "");
       }
       cellTexts[r][c] = text === "\u00a0" ? "" : text;
       const cellX = colXs[c];
@@ -980,7 +1054,7 @@ function drawZoneElements(
         bgColor: el.bgColor,
         color: el.color,
         showBorder: el.showBorder,
-        text: el.text,
+        text: zoneBoundDisplayText(el, values[zoneParamKey(el.id)]),
         fontSize: scaledFontSizePt(el.fontSize, ZONE_FONT_SCALE, 10, 7),
         alignX: el.alignX,
         alignY: el.alignY,
@@ -1002,11 +1076,10 @@ function drawZoneElements(
     } else if (el.type === "date") {
       // 与 Mini formatTplDate / previewZoneElementDisplay：按 dateFormat 格式化「现在」
       text = bound.trim() || formatLayoutDate(new Date(), el.dateFormat || "yyyy-MM-dd");
-    } else if (bound) {
-      // 绑定成功时不回落控件占位文案（如 {{value}} / SQL·温度）
-      text = bound;
     } else {
-      text = String(el.text || "");
+      // 042/043：与 Mini previewZoneInlineText 同语义——空 bound 走 nullDisplayMode
+      // （不再把空串当「未绑定」回落 el.text），并应用 decimalPlaces
+      text = zoneBoundDisplayText(el, values[ck]);
     }
     if (!text.trim()) continue;
     // D10：与 Mini 一致，仅 showBorder === false 时隐藏边框（undefined 视为显示）
@@ -1323,7 +1396,7 @@ function drawTemplateElement(
       bgColor: el.bgColor,
       color: el.color,
       showBorder: el.showBorder,
-      text: el.text,
+      text: bodyBoundDisplayText(el, values[paramKey(el.id)]),
       fontSize: scaledFontSizePt(el.fontSize, BODY_FONT_SCALE, 11, 7),
       alignX: el.alignX,
       alignY: el.alignY,
@@ -1370,10 +1443,11 @@ function drawTemplateElement(
     const box = boxFromPagePx(xPx, yPx, el.w, el.h, pageH);
     const ck = paramKey(el.id);
     const bound = cellText(values[ck]);
+    // 042/043：与 Mini previewParameterText 同语义——空 bound 走 nullDisplayMode + decimalPlaces
     const text =
       el.type === "date"
         ? bound.trim() || formatLayoutDate(new Date(), el.dateFormat || "HH:mm:ss")
-        : bound || String(el.text || "");
+        : bodyBoundDisplayText(el, values[ck]);
     if (!text.trim()) return;
     if (el.showBorder !== false || (el.bgColor && el.bgColor !== "transparent")) {
       page.drawRectangle({
@@ -1422,8 +1496,13 @@ function drawTemplateElement(
   const fill = el.tableSqlFill?.enabled ? el.tableSqlFill : null;
   const fillPv = fill ? values[templateTableSqlFillPreviewKey(el.id)]?.tableSqlFill ?? null : null;
 
-  const staticCell = (r: number, c: number) =>
-    cellText(values[cellKey(el.id, r, c)]) || String(grid[r]?.[c]?.text || "");
+  // 042/043：命中预览键即用实值（含空串），并按单元格 decimalPlaces 补小数位（对齐 Mini）
+  const staticCell = (r: number, c: number): string => {
+    const hit = values[cellKey(el.id, r, c)];
+    const cell = grid[r]?.[c];
+    if (hit != null) return applyDecimalPlacesToDisplayText(cellText(hit), cell?.decimalPlaces);
+    return String(cell?.text || "");
+  };
 
   const sqlCell = (vr: number, c: number, previewSlice?: TablePreviewRowSlice) => {
     if (!fill) return staticCell(vr, c);

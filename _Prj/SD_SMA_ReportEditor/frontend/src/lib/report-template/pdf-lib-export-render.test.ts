@@ -1,12 +1,86 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { blankZonesSnapshot } from "@/lib/report-template/layout-model";
 import {
   createTemplate,
   ensureBodyPages,
   hydrateTemplateElement,
 } from "@/lib/report-template/model";
-import { renderPdfLibExportPart } from "@/lib/report-template/pdf-lib-export-render";
+import {
+  clearBundledFontBytesCacheForTest,
+  renderPdfLibExportPart,
+} from "@/lib/report-template/pdf-lib-export-render";
 import { templateTableSqlFillPreviewKey } from "@/lib/report-template/table-sql-fill-preview";
+
+function makeBlankTemplate(name: string) {
+  const b = blankZonesSnapshot();
+  return createTemplate({
+    name,
+    paperKind: "A4",
+    orientation: "portrait",
+    layoutPresetId: null,
+    layoutSnapshot: b.layoutSnapshot,
+    headerText: "",
+    footerText: "",
+    headerElements: [],
+    footerElements: [],
+    coverLayoutPresetId: null,
+    coverLayoutSnapshot: b.layoutSnapshot,
+    coverHeaderText: "",
+    coverFooterText: "",
+    coverHeaderElements: [],
+    coverFooterElements: [],
+    coverBodyZoneElements: [],
+    backLayoutPresetId: null,
+    backLayoutSnapshot: b.layoutSnapshot,
+    backHeaderText: "",
+    backFooterText: "",
+    backHeaderElements: [],
+    backFooterElements: [],
+    backBodyZoneElements: [],
+  });
+}
+
+describe("045 R1: bundled font bytes cross-part cache", () => {
+  it("second part reuses cached font bytes without re-fetch or base64 input", async () => {
+    const fs = await import("node:fs");
+    const path = await import("node:path");
+    clearBundledFontBytesCacheForTest();
+    const fontB64 = fs
+      .readFileSync(path.join(process.cwd(), "resources/fonts/ZhuqueFangsong-Regular.ttf"))
+      .toString("base64");
+    const tmpl = makeBlankTemplate("r1-font-cache");
+    ensureBodyPages(tmpl)[0].splice(
+      0,
+      ensureBodyPages(tmpl)[0].length,
+      hydrateTemplateElement({ id: "t1", type: "text", text: "FontCacheProbe", x: 40, y: 40, w: 200, h: 24 }),
+    );
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("no network"));
+    try {
+      const first = await renderPdfLibExportPart({
+        tmpl,
+        previewValues: {},
+        reportPartIndex: null,
+        layoutFidelity: "layout-v2",
+        fontBytesBase64: fontB64,
+        bundledFontId: "fangsong",
+      });
+      expect(first.meta.fontEmbedded).toBe(true);
+      // 第二份不再传 base64（模拟结批第 2+ 卷）：须命中缓存仍嵌入成功，且不发起任何 fetch
+      const second = await renderPdfLibExportPart({
+        tmpl,
+        previewValues: {},
+        reportPartIndex: null,
+        layoutFidelity: "layout-v2",
+        fontBytesBase64: null,
+        bundledFontId: "fangsong",
+      });
+      expect(second.meta.fontEmbedded).toBe(true);
+      expect(fetchSpy).not.toHaveBeenCalled();
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+});
 
 describe("pdf-lib-export-render draft-v1", () => {
   it("fills SQL table from tableSqlFill.dataRows (not ok/rows)", async () => {

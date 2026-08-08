@@ -3,11 +3,29 @@
 > 本文件为 **缺陷看板**；规则见 [CLAUDE.md](../CLAUDE.md)。  
 > **登记日期**：2026-07-27 · 现场装包 **0.3.144**（与 `frontend/package.json` / Portal Setup 一致）。  
 > **范围**：导出档 **1「矢量版式」**（`layout-v2`）；封面数据库 / OPC UA 绑定空值。  
-> **关联**：[042](042-🚧-ReportEditor矢量导出封面小数位变整数.md) · [036](036-✅-ReportEditor矢量档与预览稳样式对照.md)。
+> **关联**：[042](042-✅-ReportEditor矢量导出封面小数位变整数.md) · [036](036-✅-ReportEditor矢量档与预览稳样式对照.md)。
 
 ---
 
-# 🚧 进行中：现象与根因排查
+# ✅ 已完成：空值策略对齐预览（2026-08-08）
+
+## 修复
+
+与 [042](042-✅-ReportEditor矢量导出封面小数位变整数.md) 同一改造点——`pdf-lib-layout-v2-render.ts` 统一走 `resolveBoundParameterPreviewText`：
+
+- 「已有预览结果」判定改为 **`previewCell != null`**（key 命中即算），不再用 `if (bound)` 真值——空串不再被当成「未绑定」回落 `el.text`。  
+- `nullDisplayMode` 全量生效：`blank` → 空白；`emptyLabel` → 「空值」；`fallbackText` → 控件文案。  
+- 静态表 cell 同步：命中键即用实值（含空串），不回落 grid 文案。  
+- 仅真正未命中预览键（未取到/加载中）时才回落控件文案提示——与 Mini/Chromium 一致。
+
+## 测试证据
+
+- `pdf-lib-layout-v2-render.test.ts`「043: empty bound value honors nullDisplayMode」：空 bound + `el.text="value"`（blank）→ PDF **无** `value`；静态表空 bound → 无 grid 回落文案；`fallbackText` + `el.text="N/A"` → 显示 `N/A`。  
+- 全量 vitest：**107 文件 / 629 用例全绿**（2026-08-08）。
+
+---
+
+# ✅ 已完成：现象与根因排查（存档）
 
 ## 现象
 
@@ -65,7 +83,7 @@ const text = bound || String(el.text || "");
 
 ## 建议修复方向
 
-1. layout-v2 统一改用 `resolveBoundParameterPreviewText` / `resolveParameterDisplayText`（与 [042](042-🚧-ReportEditor矢量导出封面小数位变整数.md) 同一改造点）。  
+1. layout-v2 统一改用 `resolveBoundParameterPreviewText` / `resolveParameterDisplayText`（与 [042](042-✅-ReportEditor矢量导出封面小数位变整数.md) 同一改造点）。  
 2. 判定「已有预览结果」用 `previewCell != null`（或 key 存在），**不要**用 `if (bound)` 真值。  
 3. 尊重 `nullDisplayMode`：`blank` / `emptyLabel`（「空值」）/ `fallbackText`。  
 4. 仅在真正未取到预览（无 key、加载中）时才显示 unbound 提示，且避免默认 `"value"` 占位；必要时清洗历史 `el.text === "value"`。  
@@ -83,8 +101,8 @@ const text = bound || String(el.text || "");
 
 ---
 
-# ⌛️ 未完成：空值策略对齐预览并验收
+# ✅ 已完成：空值策略对齐预览并验收
 
-- [ ] layout-v2 接入 `resolveBoundParameterPreviewText`  
-- [ ] 单测：空 bound + text=`value` → PDF 无 `value`  
-- [ ] 与 042 一并回归封面绑定参数  
+- [x] layout-v2 接入 `resolveBoundParameterPreviewText`  
+- [x] 单测：空 bound + text=`value` → PDF 无 `value`  
+- [x] 与 042 一并回归封面绑定参数（同一 PR，629 全绿）  

@@ -163,6 +163,22 @@ function signalReady(
   });
 }
 
+/**
+ * 045 R1：随包字体 IPC 结果跨份缓存。字体为随包静态资源，预热窗进程生命周期内不变；
+ * 多分卷结批不再每份走一次 MB 级 base64 IPC。
+ */
+const bundledFontResCache = new Map<string, { ok?: boolean; base64?: string }>();
+
+async function getBundledCjkFontCached(
+  key: string,
+): Promise<{ ok?: boolean; base64?: string } | undefined> {
+  const hit = bundledFontResCache.get(key);
+  if (hit?.ok) return hit;
+  const res = await window.electronAPI?.getBundledCjkFont?.({ key });
+  if (res?.ok) bundledFontResCache.set(key, res);
+  return res;
+}
+
 /** 取数期间向主进程发心跳：大模版慢取数不再被固定 2 分钟超时误杀 */
 let exportHeartbeatTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -299,11 +315,9 @@ async function boot(): Promise<void> {
       // pdf-lib：Noto TTF/VF subset 在 macOS Preview 会缺字乱距；矢量默认嵌朱雀仿宋（可 subset）
       const picked = pickBundledFontForExport(collectFontFamiliesFromTemplate(t));
       const preferFangsong = picked.id === "fangsong" || picked.id === "noto-sans-sc";
-      let fontRes = await window.electronAPI?.getBundledCjkFont?.({
-        key: preferFangsong ? "fangsong" : picked.id,
-      });
+      let fontRes = await getBundledCjkFontCached(preferFangsong ? "fangsong" : picked.id);
       if (!fontRes?.ok) {
-        fontRes = await window.electronAPI?.getBundledCjkFont?.({ key: "fangsong" });
+        fontRes = await getBundledCjkFontCached("fangsong");
       }
       const bundledFontId = "fangsong";
       const { pdfBase64, meta } = await renderPdfLibExportPartBase64({
