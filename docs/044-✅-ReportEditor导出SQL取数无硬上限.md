@@ -64,12 +64,13 @@
 
 | 项 | 状态 |
 | --- | --- |
-| Docker Desktop | 已装；**引擎起不来**（本机缺 WSL2 / Virtualization） |
-| `setup_044_docker.ps1` | 脚本就绪；需管理员 `wsl --install` → 重启 → Desktop Running 后再跑 |
+| Docker Desktop | 已装；**引擎起不来**（`wsl --status`：未启用虚拟化 / 可选组件） |
+| WSL2 准备脚本 | `scripts/dev/setup_wsl2_for_docker.ps1`（**管理员**启用 WSL + 虚拟机平台 → 重启） |
+| `setup_044_docker.ps1` | 组件就绪且 Desktop Running 后再跑灌库 |
 | 本机 MariaDB / SQLite | README 已提供等价冒烟路径；**044 验收不依赖 Docker** |
 
 说明见 [README-044-smoke-80k.md](../_Prj/SD_SMA_ReportEditor/getting-started/samples/README-044-smoke-80k.md)。  
-若日后要对齐现网 MariaDB 容器，修好 WSL2 后执行 `setup_044_docker.ps1` 即可；**不阻塞本条闭环**。
+若要对齐现网 MariaDB 容器：管理员跑 `setup_wsl2_for_docker.ps1` → 重启 → Desktop 绿灯 → `setup_044_docker.ps1`。
 
 ---
 

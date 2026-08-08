@@ -42,10 +42,25 @@ $env:MARIADB_ROOT_PASSWORD='report_editor_044'
 
 > 全量 80 份 PDF 墙钟可能很长（联动 045/030）。可先在数据源工作台对同一 SQL 用 limit=80000 点查询，确认后端能取满 8 万。
 
-### Docker（可选，需管理员修好虚拟化）
+### Docker（可选，需管理员修好 WSL2 / 虚拟化）
 
-管理员 PowerShell：`wsl --install` → 重启 → Docker Desktop 绿灯 → `.\scripts\dev\setup_044_docker.ps1`。  
-在修好之前请用上面的本机 MariaDB，不必再卡在 Docker。
+本机常见卡点（`wsl --status`）：
+
+- 未启用「Windows Subsystem for Linux」/「虚拟机平台」
+- 固件未开 CPU 虚拟化（Intel VT-x / AMD-V）→ 见 https://aka.ms/enablevirtualization
+
+**一键（管理员）**：
+
+```powershell
+cd _Prj\SD_SMA_ReportEditor
+# 右键「使用 PowerShell 以管理员身份运行」，或：
+Start-Process powershell -Verb RunAs -ArgumentList '-ExecutionPolicy Bypass -File .\scripts\dev\setup_wsl2_for_docker.ps1'
+```
+
+脚本会启用可选组件、`wsl --update`、默认 WSL2，并提示是否重启。  
+重启后：Docker Desktop 绿灯 → `.\scripts\dev\setup_044_docker.ps1`。
+
+在修好之前请用上面的本机 MariaDB / SQLite，不必再卡在 Docker。
 
 ---
 
