@@ -12,7 +12,7 @@
         >
           {{ split ? "退出分屏" : "分屏" }}
         </button>
-        <button type="button" class="b" :disabled="!electronShell || !watchDir || transferring" @click="refreshAll">
+        <button type="button" class="b" :disabled="!electronShell || !leftRoot || transferring" @click="refreshAll">
           {{ loadingAny ? "刷新中…" : "刷新" }}
         </button>
         <button type="button" class="b" @click="mode = mode === 'list' ? 'thumbs' : 'list'">
@@ -83,13 +83,26 @@
 
     <p v-if="msg" class="msg">{{ msg }}</p>
 
+    <div v-if="rootOptions.length > 1" class="rh-dir-row">
+      <label class="rh-dir-lbl" for="rh-root-sel">浏览目录（左侧：导出根目录 / 非批次模版目标文件夹）</label>
+      <select
+        id="rh-root-sel"
+        class="rh-root-sel"
+        :value="leftRoot || ''"
+        :disabled="transferring"
+        @change="onSelectLeftRoot(($event.target as HTMLSelectElement).value)"
+      >
+        <option v-for="opt in rootOptions" :key="opt.path" :value="opt.path">{{ opt.label }}</option>
+      </select>
+    </div>
+
     <div v-if="!split" class="rh-single">
       <div class="rh-dir-row">
         <label class="rh-dir-lbl" for="rh-watch-dir">导出文件夹</label>
         <div class="rh-dir-inline">
           <input
             id="rh-watch-dir"
-            :value="watchDir || ''"
+            :value="leftRoot || ''"
             type="text"
             readonly
             class="rh-dir-inp"
@@ -103,7 +116,7 @@
       <ReportHistoryPane
         title="导出目录"
         :mode="mode"
-        :root-dir="watchDir"
+        :root-dir="leftRoot"
         :rel-segments="left.relSegments"
         :entries="left.entries"
         :total="left.total"
@@ -133,7 +146,7 @@
         class="rh-split-pane"
         title="左：导出目录"
         :mode="mode"
-        :root-dir="watchDir"
+        :root-dir="leftRoot"
         :rel-segments="left.relSegments"
         :entries="left.entries"
         :total="left.total"
@@ -201,6 +214,8 @@ import {
   loadReportExportPrefs,
   saveReportExportPrefs,
 } from "@/lib/report-export-prefs";
+import { listTemplateSummaries } from "@/api/templates";
+import { buildHistoryRootOptions, type HistoryRootOption } from "@/lib/report-history-roots";
 import { entryPathOf, summarizeTransferResult } from "@/lib/history-selection";
 import {
   buildHistoryTransferAudit,
@@ -295,6 +310,10 @@ watch(mode, (m) => {
 
 const split = ref(readSplit());
 const watchDir = ref<string | null>(loadReportExportPrefs().watchDir);
+/** 046 Q7B：左侧浏览根（全局导出根或某个非批次模版目录） */
+const leftRoot = ref<string | null>(watchDir.value);
+const leftRootKind = ref<"global" | "nonBatch">("global");
+const rootOptions = ref<HistoryRootOption[]>([]);
 const rightRoot = ref<string | null>(readRightRoot());
 const pageSize = ref(readInitialPageSize());
 const msg = ref("");
@@ -321,13 +340,13 @@ const loadingAny = computed(() => left.loading || right.loading);
 
 const canTransferLeftToRight = computed(
   () =>
-    Boolean(watchDir.value && rightRoot.value && left.selected.size && left.cwd && right.cwd) &&
+    Boolean(leftRoot.value && rightRoot.value && left.selected.size && left.cwd && right.cwd) &&
     !transferring.value,
 );
 
 const canTransferRightToLeft = computed(
   () =>
-    Boolean(watchDir.value && rightRoot.value && right.selected.size && left.cwd && right.cwd) &&
+    Boolean(leftRoot.value && rightRoot.value && right.selected.size && left.cwd && right.cwd) &&
     !transferring.value,
 );
 
@@ -336,13 +355,17 @@ function paneOf(side: Side): PaneState {
 }
 
 function rootOf(side: Side): string | null {
-  return side === "left" ? watchDir.value : rightRoot.value;
+  return side === "left" ? leftRoot.value : rightRoot.value;
 }
 
 function setRoot(side: Side, path: string | null) {
   if (side === "left") {
-    watchDir.value = path;
-    if (path) saveReportExportPrefs({ watchDir: path });
+    leftRoot.value = path;
+    // 仅浏览全局导出根时才回写偏好；浏览非批次目录不改动全局 watchDir
+    if (leftRootKind.value === "global") {
+      watchDir.value = path;
+      if (path) saveReportExportPrefs({ watchDir: path });
+    }
   } else {
     rightRoot.value = path;
     try {
@@ -515,11 +538,38 @@ async function onPickLeftRoot() {
     defaultPath: watchDir.value || undefined,
   });
   if (!picked) return;
+  // 手选文件夹 = 更换全局导出根
+  leftRootKind.value = "global";
   setRoot("left", picked);
   left.cwd = picked;
   left.relSegments = [];
   left.pageIndex = 0;
   left.selected = new Set();
+  await loadRootOptions();
+  await refresh("left");
+}
+
+/** 046 Q7B：加载浏览根选项（全局根 + 非批次模版目录） */
+async function loadRootOptions(): Promise<void> {
+  let summaries: Awaited<ReturnType<typeof listTemplateSummaries>> = [];
+  try {
+    summaries = await listTemplateSummaries();
+  } catch {
+    summaries = [];
+  }
+  rootOptions.value = buildHistoryRootOptions(watchDir.value, summaries);
+}
+
+async function onSelectLeftRoot(path: string): Promise<void> {
+  const opt = rootOptions.value.find((x) => x.path === path);
+  if (!opt || opt.path === leftRoot.value) return;
+  leftRootKind.value = opt.kind;
+  leftRoot.value = opt.path;
+  left.cwd = opt.path;
+  left.relSegments = [];
+  left.pageIndex = 0;
+  left.selected = new Set();
+  msg.value = "";
   await refresh("left");
 }
 
@@ -762,10 +812,13 @@ registerPageTask({
 
 async function onConfigRestored() {
   watchDir.value = loadReportExportPrefs().watchDir;
+  leftRootKind.value = "global";
+  leftRoot.value = watchDir.value;
   left.cwd = watchDir.value || "";
   left.relSegments = [];
   left.pageIndex = 0;
   left.selected = new Set();
+  await loadRootOptions();
   if (watchDir.value) await refresh("left");
   else {
     left.entries = [];
@@ -774,8 +827,9 @@ async function onConfigRestored() {
 }
 
 onActivated(async () => {
-  if (watchDir.value) {
-    if (!left.cwd) left.cwd = watchDir.value;
+  await loadRootOptions();
+  if (leftRoot.value) {
+    if (!left.cwd) left.cwd = leftRoot.value;
     await refresh("left");
   }
   if (split.value && rightRoot.value) {
@@ -787,8 +841,9 @@ onActivated(async () => {
 
 onMounted(() => {
   window.addEventListener("report-editor-config-imported", onConfigRestored);
-  if (watchDir.value && !left.cwd) left.cwd = watchDir.value;
+  if (leftRoot.value && !left.cwd) left.cwd = leftRoot.value;
   if (rightRoot.value && !right.cwd) right.cwd = rightRoot.value;
+  void loadRootOptions();
   // 可移动卷轮询由 usePageLifecycle resume（首挂 onMounted 已触发）
 });
 
@@ -856,6 +911,16 @@ onUnmounted(() => {
 .rh-dir-inp {
   flex: 1;
   min-width: 0;
+  padding: 9px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 13px;
+  background: rgb(255 255 255 / 0.9);
+  color: #334155;
+}
+.rh-root-sel {
+  width: 100%;
+  max-width: 720px;
   padding: 9px 12px;
   border: 1px solid #e2e8f0;
   border-radius: 8px;

@@ -120,6 +120,27 @@
             <option value="landscape">横向</option>
           </select>
         </label>
+        <label
+          class="ted-meta-field"
+          title="批次：在导出根目录下按批号建子文件夹（现网默认）；非批次：写入本模版指定的绝对路径文件夹"
+          >报表类型
+          <select v-model="editingReportKind" class="inp">
+            <option value="batch">批次（按批号建子目录）</option>
+            <option value="nonBatch">非批次（指定文件夹）</option>
+          </select>
+        </label>
+        <label v-if="editingReportKind === 'nonBatch'" class="ted-meta-field ted-nonbatch-field"
+          >目标文件夹
+          <span class="ted-nonbatch-row">
+            <input
+              v-model.trim="editingNonBatchDir"
+              class="inp ted-nonbatch-inp"
+              placeholder="本机绝对路径，如 D:\Reports\Daily"
+              title="非批次报表导出写入此文件夹；目录不存在时导出会自动创建"
+            />
+            <button v-if="canPickNonBatchDir" type="button" class="b" @click="pickNonBatchDir">选择…</button>
+          </span>
+        </label>
         <div class="ted-meta-field ted-body-bg">
           <TableCellFillPicker
             :model-value="activeBodyBackgroundCss"
@@ -593,6 +614,7 @@ import {
   syncLegacyElementsAlias,
   TEMPLATE_SCHEMA_VERSION,
 } from "@/lib/report-template/model";
+import { isAbsoluteLocalDir } from "@/lib/resolve-report-output-dir";
 import { hideBordersOnTemplateSheet } from "@/lib/report-template/show-border";
 import {
   copyTemplateElementToClipboard,
@@ -687,6 +709,30 @@ function setActiveBodyBackgroundCss(css) {
   else if (sh.value === "back") t.backLayoutSnapshot = { ...t.backLayoutSnapshot, bodyBackgroundCss: v };
   else t.layoutSnapshot = { ...t.layoutSnapshot, bodyBackgroundCss: v };
 }
+/** 046 批次/非批次：旧模版缺字段时按 batch 处理 */
+const editingReportKind = computed({
+  get: () => (editing.value && editing.value.reportKind === "nonBatch" ? "nonBatch" : "batch"),
+  set: (v) => {
+    if (!editing.value) return;
+    editing.value.reportKind = v === "nonBatch" ? "nonBatch" : "batch";
+  },
+});
+const editingNonBatchDir = computed({
+  get: () => (editing.value && typeof editing.value.nonBatchOutputDir === "string" ? editing.value.nonBatchOutputDir : ""),
+  set: (v) => {
+    if (!editing.value) return;
+    editing.value.nonBatchOutputDir = typeof v === "string" ? v : "";
+  },
+});
+const canPickNonBatchDir = computed(() => Boolean(window.electronAPI?.pickExportDirectory));
+async function pickNonBatchDir() {
+  const p = await window.electronAPI?.pickExportDirectory?.({
+    title: "选择非批次报表目标文件夹",
+    defaultPath: editingNonBatchDir.value || undefined,
+  });
+  if (p && editing.value) editing.value.nonBatchOutputDir = p;
+}
+
 const dlgSig = ref(false);
 /** @type {import('vue').Ref<'preview'|'edit'>} */
 /** 默认进编辑画布，避免一打开就卡在导出预览的 SQL/OPC 拉取且无反馈 */
@@ -1583,6 +1629,17 @@ function reclamp() {
 async function save() {
   const t = editing.value;
   if (!t || saving.value) return false;
+  // 046：非批次模版必须配置本机绝对路径目标文件夹（Q2A）
+  if (t.reportKind !== "nonBatch") t.reportKind = "batch";
+  if (typeof t.nonBatchOutputDir !== "string") t.nonBatchOutputDir = "";
+  if (t.reportKind === "nonBatch") {
+    const dir = String(t.nonBatchOutputDir || "").trim();
+    if (!dir || !isAbsoluteLocalDir(dir)) {
+      hint.value = "非批次模版需配置「目标文件夹」为本机绝对路径（如 D:\\Reports\\Daily），已阻止保存。";
+      return false;
+    }
+    t.nonBatchOutputDir = dir;
+  }
   ensureBodyPages(t);
   syncLegacyElementsAlias(t);
   t.updatedAt = new Date().toISOString();
@@ -2042,6 +2099,19 @@ onUnmounted(() => {
   align-items: flex-end;
   gap: 12px;
   padding: 8px 8px 4px;
+}
+.ted-nonbatch-field {
+  flex: 1;
+  min-width: 260px;
+}
+.ted-nonbatch-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.ted-nonbatch-inp {
+  flex: 1;
+  min-width: 200px;
 }
 .ted-meta-field {
   display: flex;

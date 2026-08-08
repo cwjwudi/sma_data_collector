@@ -171,11 +171,22 @@ export interface TemplateElement {
   dateFormat?: string;
 }
 
+/** 046：批次（按批号建子目录，现网默认）/ 非批次（写入模版指定绝对路径） */
+export type ReportKind = "batch" | "nonBatch";
+
+export function normalizeReportKind(v: unknown): ReportKind {
+  return v === "nonBatch" ? "nonBatch" : "batch";
+}
+
 export interface ReportTemplate {
   schemaVersion?: number;
   id: string;
   name: string;
   updatedAt: string;
+  /** 报表类型（046）：缺省视为 batch（保持现网批次语义） */
+  reportKind?: ReportKind;
+  /** 仅 reportKind=nonBatch：目标文件夹（本机绝对路径，如 D:\Reports\Daily） */
+  nonBatchOutputDir?: string;
   /** 正文第 1 页画布（与 bodyPages[0] 同一引用；兼容 schema≤2 仅含 elements 的旧 JSON） */
   elements: TemplateElement[];
   /** schema≥3：正文分页，每项为一页独立画布（顺序即导出正文页序） */
@@ -778,6 +789,8 @@ export function createTemplate(opts: NewTemplateOptions): ReportTemplate {
     id: newId(),
     name: opts.name.trim() || "未命名模版",
     updatedAt: now,
+    reportKind: "batch",
+    nonBatchOutputDir: "",
     elements: page0,
     bodyPages: [page0],
     paperKind: opts.paperKind,
@@ -850,6 +863,8 @@ export function migrateReportTemplate(v: unknown): unknown {
   return {
     ...o,
     schemaVersion: typeof o.schemaVersion === "number" ? o.schemaVersion : 1,
+    reportKind: normalizeReportKind(o.reportKind),
+    nonBatchOutputDir: typeof o.nonBatchOutputDir === "string" ? o.nonBatchOutputDir : "",
     paperKind,
     orientation,
     layoutPresetId: typeof o.layoutPresetId === "string" ? o.layoutPresetId : null,

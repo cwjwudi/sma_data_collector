@@ -4,7 +4,8 @@
 import { ref, type Ref } from "vue";
 import { listTemplateSummaries, type TemplateSummary } from "@/api/templates";
 import { evaluateAutoOpcTrigger, createOpcTriggerPollState, type OpcTriggerPollState } from "@/lib/auto-opc-trigger";
-import { resolveAutoExportDir } from "@/lib/resolve-auto-export-dir";
+import { resolveReportOutputTarget, type BatchNoSource } from "@/lib/resolve-report-output-dir";
+import { normalizeReportKind, type ReportKind } from "@/lib/report-template/model";
 import { readSavedOpcNodeValue } from "@/lib/opcua-string-variables";
 import { appendTriggerLogEntry, autoTriggerEventLabel } from "@/lib/auto-trigger-log";
 import {
@@ -426,6 +427,11 @@ type AutoPdfExportAttempt = {
   engine?: string;
   exportMode?: string;
   engineMeta?: Record<string, unknown>;
+  /** 046：本次导出的报表类型与目标目录（审计用） */
+  reportKind?: ReportKind;
+  outputDir?: string;
+  batchNo?: string;
+  batchNoSource?: BatchNoSource;
 };
 
 /** 结批进度弹窗/审计共用：把取数统计整理成一行可读文本 */
@@ -479,13 +485,12 @@ async function runAutoPdfExport(
   if (!tid) throw new Error(`未配置${RG_UI.opcAuto}报表模版`);
 
   onStage?.("正在检查数据源连接…", AUTO_EXPORT_STATUS.PREFLIGHT);
-  // 预检、导出目录解析、模版列表三者互不依赖：并行执行缩短结批前等待。
+  // 预检与模版列表互不依赖：并行执行缩短结批前等待。
   // 后台保活已缓存的新鲜预检结果直接取用（连接状态刚验证过），预检耗时降为 0
   const preflightStartMs = Date.now();
   const cachedPreflight = getFreshPreflightResult(tid);
-  const [preflight, resolved, summaries] = await Promise.all([
+  const [preflight, summaries] = await Promise.all([
     cachedPreflight ?? runTemplateExportPreflight(tid),
-    resolveAutoExportDir(prefs),
     loadTemplateSummariesCached(),
   ]);
   const preflightMs = Date.now() - preflightStartMs;
@@ -493,12 +498,18 @@ async function runAutoPdfExport(
     throw new Error(preflight.summary);
   }
 
-  const dir = resolved.dir.trim();
-  if (!dir) throw new Error(resolved.note || `未配置${RG_UI.opcAuto}保存目录`);
+  // 046：按模版类型解析目标目录——batch 需有效批号（无批号失败）；nonBatch 用模版绝对路径
+  const tmeta = summaries.find((x) => x.id === tid);
+  const target = await resolveReportOutputTarget({
+    reportKind: normalizeReportKind(tmeta?.reportKind),
+    nonBatchOutputDir: tmeta?.nonBatchOutputDir,
+    prefs,
+  });
+  if (!target.ok) throw new Error(target.error);
+  const dir = target.dir;
 
   const exportProfile = resolveExportPerfProfile(prefs.exportPerfTier);
   const prepStartMs = Date.now();
-  const tmeta = summaries.find((x) => x.id === tid);
   const built = await buildAutoExportFileName(prefs, tmeta?.name || tid);
   const filePath = await api.pathJoin(dir, built.base);
   const prepMs = Date.now() - prepStartMs;
@@ -559,7 +570,7 @@ async function runAutoPdfExport(
     offProgress?.();
   }
 
-  const notes = [resolved.note, built.note].filter(Boolean).join("；");
+  const notes = [built.note].filter(Boolean).join("；");
   const savedPaths = normalizeSavedPdfPaths(exportRes, filePath);
   const splitNote = pdfExportSummaryForPaths(savedPaths);
   const exportNote = [preflight.warnings.join(" "), notes, splitNote].filter(Boolean).join("；");
@@ -575,6 +586,10 @@ async function runAutoPdfExport(
     engine: exportRes.engine,
     exportMode: exportRes.exportMode,
     engineMeta: exportRes.engineMeta,
+    reportKind: target.kind,
+    outputDir: dir,
+    batchNo: target.batchNo,
+    batchNoSource: target.batchNoSource,
   };
 }
 
@@ -673,6 +688,9 @@ async function executeBindingExport(job: QueuedExportJob): Promise<void> {
         engine: result.engine,
         exportMode: result.exportMode,
         engineMeta: result.engineMeta,
+        reportKind: result.reportKind,
+        outputDir: result.outputDir,
+        batchNo: result.batchNo,
       },
     });
     const noteSuffix = result.note ? `（${result.note}）` : "";
@@ -846,13 +864,21 @@ async function pollAutoTriggerOnceBody(): Promise<void> {
     return;
   }
 
-  const resolved = await resolveAutoExportDir(prefs);
-  if (!resolved.dir.trim()) {
-    reportAutoExportStatus.value = `${RG_STATUS_OPC_AUTO} ${resolved.note || `请配置默认或 OPC ${RG_UI.opcAuto}保存文件夹…`}`;
-    return;
-  }
-
   const summaries = await loadTemplateSummariesCached();
+
+  // 046：批次模版需要导出根目录；仅当所有启用绑定都是批次且根缺失时才整体拦截。
+  // 非批次模版用模版自身目标目录，不依赖导出根；批次无批号在触发时显式失败。
+  const exportRootConfigured = Boolean((prefs.autoExportDir || "").trim());
+  if (!exportRootConfigured) {
+    const anyNonBatchActive = active.some((b) => {
+      const s = summaries.find((x) => x.id === (b.templateId || "").trim());
+      return normalizeReportKind(s?.reportKind) === "nonBatch";
+    });
+    if (!anyNonBatchActive) {
+      reportAutoExportStatus.value = `${RG_STATUS_OPC_AUTO} 请配置${RG_UI.opcAuto}保存文件夹（批次报表的导出根目录）…`;
+      return;
+    }
+  }
   const statusParts: string[] = [];
   let anyListening = false;
   const defaultSrv = String(prefs.auto.defaultOpcServerId || "").trim();

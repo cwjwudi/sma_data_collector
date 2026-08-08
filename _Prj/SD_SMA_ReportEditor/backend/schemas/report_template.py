@@ -273,6 +273,9 @@ class ReportTemplate(BaseModel):
     id: str
     name: str
     updatedAt: str
+    # 046 批次/非批次：缺省 batch 保持现网批次语义；nonBatch 时导出写入 nonBatchOutputDir（本机绝对路径）
+    reportKind: Literal["batch", "nonBatch"] = "batch"
+    nonBatchOutputDir: str = ""
     elements: list[TemplateElement] = Field(default_factory=list)
     bodyPages: list[list[TemplateElement]] = Field(default_factory=list)
     paperKind: PaperKind = "A4"
@@ -333,6 +336,8 @@ class ReportTemplateSummary(BaseModel):
     updatedAt: str
     paperKind: PaperKind
     orientation: Orientation
+    reportKind: Literal["batch", "nonBatch"] = "batch"
+    nonBatchOutputDir: str = ""
 
 
 def parse_report_template(raw: dict[str, Any]) -> ReportTemplate:
@@ -377,6 +382,10 @@ def parse_report_template(raw: dict[str, Any]) -> ReportTemplate:
         data["paperKind"] = "A4"
     if "orientation" not in data:
         data["orientation"] = "portrait"
+    if data.get("reportKind") not in ("batch", "nonBatch"):
+        data["reportKind"] = "batch"
+    if not isinstance(data.get("nonBatchOutputDir"), str):
+        data["nonBatchOutputDir"] = ""
     return ReportTemplate.model_validate(data)
 
 

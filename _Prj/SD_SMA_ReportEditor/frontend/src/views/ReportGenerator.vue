@@ -35,7 +35,7 @@
       </div>
       <div class="rg-actions">
         <button type="button" class="btn primary" :disabled="manualBusy || !canManualExport" @click="onManualExport">
-          {{ manualBusy ? `${RG_UI.manual}中…` : `选择保存文件夹并${RG_UI.manual}` }}
+          {{ manualBusy ? `${RG_UI.manual}中…` : `${RG_UI.manual}（按模版类型保存）` }}
         </button>
         <button
           v-if="showManualCancel"
@@ -248,7 +248,9 @@
 
             <div class="rg-export-dir-block rg-export-dir-block--nested">
               <span class="rg-lbl">{{ RG_UI.opcAuto }}保存文件夹（全部绑定共用）</span>
-              <p class="rg-mini rg-mini--indent">所有触发绑定写入同一批次目录；多路并行时仍落在此文件夹。</p>
+              <p class="rg-mini rg-mini--indent">
+                批次模版落盘为「根目录\批号\」；非批次模版写入其模版内配置的目标文件夹，不使用此目录。
+              </p>
               <div class="rg-tabs" role="tablist" :aria-label="`${RG_UI.opcAuto}保存文件夹来源`">
                 <button
                   type="button"
@@ -294,7 +296,7 @@
 
                 <template v-else>
                   <div class="rg-row rg-row--in-panel">
-                    <label class="rg-lbl" for="rg-auto-dir-fallback">保底目录</label>
+                    <label class="rg-lbl" for="rg-auto-dir-fallback">导出根目录</label>
                     <div class="rg-inline">
                       <input
                         id="rg-auto-dir-fallback"
@@ -309,7 +311,7 @@
                       </button>
                     </div>
                     <p class="rg-mini rg-mini--indent">
-                      OPC 路径变量为空或读取失败时，{{ RG_UI.opcAuto }}保存到此保底目录。
+                      批次报表按「根目录\批号\」落盘；批号取结批文件名或下方目录 OPC 变量，均无有效值时导出失败（不再回落根目录）。
                     </p>
                   </div>
                   <div class="rg-row rg-row--in-panel">
@@ -850,7 +852,8 @@ import { exportCpuBudgetHint, resolveAutoExportMaxParallel } from "@/lib/export-
 import { loadReportExportPrefs, saveReportExportPrefs } from "@/lib/report-export-prefs";
 import { templateSelectLabel, templateSelectRows } from "@/lib/template-display-order";
 import { createOpcTriggerPollState, type OpcTriggerPollState } from "@/lib/auto-opc-trigger";
-import { resolveAutoExportDir } from "@/lib/resolve-auto-export-dir";
+import { resolveReportOutputTarget } from "@/lib/resolve-report-output-dir";
+import { normalizeReportKind } from "@/lib/report-template/model";
 import { readSavedOpcNodeValue, readSavedOpcStringValue } from "@/lib/opcua-string-variables";
 import { opcDataTypeLabelMatchesFilter } from "@/features/datasource/opcua/opcua-tree-utils.js";
 import {
@@ -1847,21 +1850,41 @@ async function onManualExport(): Promise<void> {
   if (!tid) return;
 
   const tmeta = summaries.value.find((x) => x.id === tid);
+  const reportKind = normalizeReportKind(tmeta?.reportKind);
   const suggestName = `${(tmeta?.name || "报表").replace(/[/\\?%*:|"<>]/g, "_")}_${formatExportTs()}.pdf`;
 
-  let exportDir = String(prefs.value.autoExportDir || "").trim();
-  if (!exportDir) {
-    exportDir =
+  // 046 Q4A：手动导出与自动结批同规则——batch → 根目录/批号/（无批号禁止导出）；nonBatch → 模版指定绝对路径
+  if (reportKind === "batch" && !String(prefs.value.autoExportDir || "").trim()) {
+    const picked =
       (await api.pickExportDirectory({
-        title: `选择${RG_UI.manual}保存文件夹`,
+        title: `选择${RG_UI.manual}导出根目录`,
         defaultPath: DEFAULT_MANUAL_EXPORT_DIR,
       })) || "";
-    if (!exportDir) {
+    if (!picked) {
       manualHint.value = "已取消保存。";
       return;
     }
-    prefs.value.autoExportDir = exportDir;
+    prefs.value.autoExportDir = picked;
   }
+  const target = await resolveReportOutputTarget({
+    reportKind,
+    nonBatchOutputDir: tmeta?.nonBatchOutputDir,
+    prefs: prefs.value,
+  });
+  if (!target.ok) {
+    manualHint.value = target.error;
+    showAppToast(`[${RG_UI.manual}] ${target.error}`, { tone: "err", durationMs: 12000 });
+    void auditLog({
+      action: "export.manual_pdf",
+      result: "fail",
+      summary: target.error,
+      object_type: "template",
+      object_id: tid,
+      detail: { context: "manual", reportKind, error: target.error },
+    });
+    return;
+  }
+  const exportDir = target.dir;
   const filePath = await api.pathJoin(exportDir, suggestName);
 
   manualBusy.value = true;
@@ -1964,6 +1987,9 @@ async function onManualExport(): Promise<void> {
         engine: exportRes.engine,
         exportMode: exportRes.exportMode,
         engineMeta: exportRes.engineMeta,
+        reportKind,
+        outputDir: exportDir,
+        batchNo: target.batchNo,
       },
     });
     const doneLines = [
@@ -1993,7 +2019,7 @@ async function onManualExport(): Promise<void> {
         detail: exportFailureAuditDetail({
           errorMessage: msg,
           diagnostics: parsed.diagnostics,
-          extra: { durationMs: Date.now() - startedAtMs, context: "manual" },
+          extra: { durationMs: Date.now() - startedAtMs, context: "manual", reportKind, outputDir: exportDir },
         }),
       });
     }
@@ -2008,7 +2034,7 @@ async function onManualExport(): Promise<void> {
 async function onPickAutoDir(): Promise<void> {
   const title =
     prefs.value.autoExportDirSource === "opcua"
-      ? `选择${RG_UI.opcAuto}保底目录`
+      ? `选择${RG_UI.opcAuto}导出根目录`
       : `选择${RG_UI.opcAuto}保存目录`;
   const p = await window.electronAPI?.pickExportDirectory?.({ title });
   if (p) {

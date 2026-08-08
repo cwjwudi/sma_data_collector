@@ -78,12 +78,18 @@ def _summary_from_raw(raw: dict[str, Any]) -> ReportTemplateSummary | None:
         orient = "portrait"
     name = raw.get("name")
     updated = raw.get("updatedAt")
+    kind = raw.get("reportKind")
+    if kind not in ("batch", "nonBatch"):
+        kind = "batch"
+    nb_dir = raw.get("nonBatchOutputDir")
     return ReportTemplateSummary(
         id=tid,
         name=name if isinstance(name, str) else tid,
         updatedAt=updated if isinstance(updated, str) else "",
         paperKind=paper,
         orientation=orient,
+        reportKind=kind,
+        nonBatchOutputDir=nb_dir if isinstance(nb_dir, str) else "",
     )
 
 
@@ -117,12 +123,17 @@ def _fast_summary_from_head(p: Path) -> ReportTemplateSummary | None:
     updated = jhs.extract_string(head, "updatedAt") or ""
     paper = jhs.extract_string(head, "paperKind")
     orient = jhs.extract_string(head, "orientation")
+    # 046：reportKind/nonBatchOutputDir 在模型字段序中位于大数组之前，头部通常可取到
+    kind = jhs.extract_string(head, "reportKind")
+    nb_dir = jhs.extract_string(head, "nonBatchOutputDir")
     return ReportTemplateSummary(
         id=tid,
         name=name,
         updatedAt=updated,
         paperKind=paper if paper in _PAPER_KINDS else "A4",
         orientation=orient if orient in _ORIENTATIONS else "portrait",
+        reportKind=kind if kind in ("batch", "nonBatch") else "batch",
+        nonBatchOutputDir=nb_dir or "",
     )
 
 
