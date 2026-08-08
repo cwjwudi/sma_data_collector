@@ -22,11 +22,12 @@
     </header>
 
     <p class="rh-lead">
-      绑定导出文件夹后，可进入<strong>子文件夹</strong>分页浏览本层 PDF（与「生成报表」中的<strong>自动导出文件夹</strong>共用）。
+      可浏览<strong>导出根目录</strong>与各<strong>非批次模版目标文件夹</strong>（多根聚合；切换非批次根不会改写全局导出根）。
+      进入<strong>子文件夹</strong>分页浏览本层 PDF。
       <template v-if="split">
         分屏下可在<strong>导出目录 ⇄ 目标目录</strong>之间<strong>复制 / 移动</strong>（仅桌面版）。
       </template>
-      <template v-else> 不会一次平铺全部子目录文件。手动另存到其它路径的文件不会出现在此列表。 </template>
+      <template v-else> 不会一次平铺全部子目录文件。 </template>
     </p>
 
     <div v-if="!electronShell" class="rh-banner rh-banner--warn">
@@ -83,8 +84,8 @@
 
     <p v-if="msg" class="msg">{{ msg }}</p>
 
-    <div v-if="rootOptions.length > 1" class="rh-dir-row">
-      <label class="rh-dir-lbl" for="rh-root-sel">浏览目录（左侧：导出根目录 / 非批次模版目标文件夹）</label>
+    <div v-if="showRootSelector" class="rh-dir-row">
+      <label class="rh-dir-lbl" for="rh-root-sel">浏览目录（导出根 / 非批次模版目标文件夹）</label>
       <select
         id="rh-root-sel"
         class="rh-root-sel"
@@ -215,7 +216,11 @@ import {
   saveReportExportPrefs,
 } from "@/lib/report-export-prefs";
 import { listTemplateSummaries } from "@/api/templates";
-import { buildHistoryRootOptions, type HistoryRootOption } from "@/lib/report-history-roots";
+import {
+  buildHistoryRootOptions,
+  normalizeRootKey,
+  type HistoryRootOption,
+} from "@/lib/report-history-roots";
 import { entryPathOf, summarizeTransferResult } from "@/lib/history-selection";
 import {
   buildHistoryTransferAudit,
@@ -337,6 +342,13 @@ const electronShell = computed(
 );
 
 const loadingAny = computed(() => left.loading || right.loading);
+
+/** 有非批次根时即使只剩 1 项也显示下拉，便于确认当前浏览的是模版目录而非全局根 */
+const showRootSelector = computed(
+  () =>
+    rootOptions.value.length > 1 ||
+    rootOptions.value.some((o) => o.kind === "nonBatch"),
+);
 
 const canTransferLeftToRight = computed(
   () =>
@@ -549,7 +561,7 @@ async function onPickLeftRoot() {
   await refresh("left");
 }
 
-/** 046 Q7B：加载浏览根选项（全局根 + 非批次模版目录） */
+/** 046 Q7B：加载浏览根选项（全局根 + 非批次模版目录）；无全局根时自动落首个非批次根 */
 async function loadRootOptions(): Promise<void> {
   let summaries: Awaited<ReturnType<typeof listTemplateSummaries>> = [];
   try {
@@ -558,6 +570,20 @@ async function loadRootOptions(): Promise<void> {
     summaries = [];
   }
   rootOptions.value = buildHistoryRootOptions(watchDir.value, summaries);
+  const stillValid =
+    Boolean(leftRoot.value) &&
+    rootOptions.value.some((o) => normalizeRootKey(o.path) === normalizeRootKey(leftRoot.value || ""));
+  if (!stillValid) {
+    const next = rootOptions.value[0] || null;
+    leftRoot.value = next?.path ?? null;
+    leftRootKind.value = next?.kind ?? "global";
+    left.cwd = next?.path || "";
+    left.relSegments = [];
+    left.pageIndex = 0;
+    left.selected = new Set();
+  } else if (leftRoot.value && !left.cwd) {
+    left.cwd = leftRoot.value;
+  }
 }
 
 async function onSelectLeftRoot(path: string): Promise<void> {
@@ -819,7 +845,7 @@ async function onConfigRestored() {
   left.pageIndex = 0;
   left.selected = new Set();
   await loadRootOptions();
-  if (watchDir.value) await refresh("left");
+  if (leftRoot.value) await refresh("left");
   else {
     left.entries = [];
     left.total = 0;
@@ -843,7 +869,13 @@ onMounted(() => {
   window.addEventListener("report-editor-config-imported", onConfigRestored);
   if (leftRoot.value && !left.cwd) left.cwd = leftRoot.value;
   if (rightRoot.value && !right.cwd) right.cwd = rightRoot.value;
-  void loadRootOptions();
+  void (async () => {
+    await loadRootOptions();
+    if (leftRoot.value) {
+      if (!left.cwd) left.cwd = leftRoot.value;
+      await refresh("left");
+    }
+  })();
   // 可移动卷轮询由 usePageLifecycle resume（首挂 onMounted 已触发）
 });
 

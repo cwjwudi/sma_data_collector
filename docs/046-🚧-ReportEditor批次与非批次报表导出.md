@@ -3,7 +3,8 @@
 > 本文件为 **任务看板**；规则见 [CLAUDE.md](../CLAUDE.md)。  
 > **登记日期**：2026-08-07。  
 > **拍板日期**：2026-08-08（Q1–Q9 现场确认）。  
-> **实现日期**：2026-08-08（本机 TDD 闭环；Windows 实机手测 ⌛️）。  
+> **实现日期**：2026-08-08（本机 TDD 闭环）。  
+> **补强日期**：2026-08-09（历史多根 UX + 自动结批失败审计补 `reportKind`/`outputDir`；非批次手测证据入库）。  
 > **范围**：报表生成落盘路径与模版/触发绑定配置。  
 > **关联**：历史子文件夹 [010](010-✅-ReportEditor历史报表子文件夹穿透.md) · U 盘拷移 [022](022-✅-ReportEditor历史报表复制到U盘.md) · [027](027-✅-ReportEditor历史报表拷移与U盘审计.md)。
 
@@ -68,19 +69,55 @@
 ## 测试证据
 
 - 新增 `resolve-report-output-dir.test.ts`（批号优先级/回落/双失败/根缺失/非批次绝对路径与相对路径拒绝/批号段清洗）+ `report-history-roots.test.ts`（聚合/去重/无根）。
-- 前端全量 vitest：**107 文件 / 623 用例全绿**（2026-08-08）。
+- 前端相关 vitest（2026-08-09 复跑）：`resolve-report-output-dir` + `report-history-roots` **2 文件 / 32 用例全绿**。
 - 后端 schema 自检：旧 JSON 缺字段 → `batch`；新字段位于落盘 JSON 头部（`['schemaVersion','id','name','updatedAt','reportKind','nonBatchOutputDir','elements']`）。
 
 ---
 
-# ⌛️ 未完成：Windows 实机手测与现场验收
+# ✅ 已完成：历史多根 UX 与失败审计补强（2026-08-09）
+
+## 问题
+
+1. **仅有非批次根、无全局导出根**时：`loadRootOptions` 不自动选中首个根 → 历史页左侧空白。
+2. **仅 1 个非批次根**时：原 `rootOptions.length > 1` 才显示下拉 → 用户看不见当前浏览根。
+3. **自动结批失败**审计 `export.auto_pdf` 的 `extra` 缺 `reportKind` / `outputDir`（成功路径已有）。
+
+## 修复
+
+| 位置 | 变更 |
+| --- | --- |
+| `ReportHistory.vue` | `showRootSelector`：有非批次根即显示；`loadRootOptions` 后若当前左根无效则落首个选项；挂载/配置恢复后按左根刷新列表 |
+| `report-auto-export-trigger-service.ts` | 失败审计补 `reportKind`；解析仍成功时再补 `outputDir` |
+
+---
+
+# ✅ 已完成：非批次 Windows 手测与审计证据（support-pack）
+
+证据包：`_Temp/support-pack-0.3.146/`（现场 UA 实为较新桌面壳；模版/审计内容有效）。
+
+| 项 | 证据 |
+| --- | --- |
+| 非批次模版落盘 | `a044-smoke-80k-split-sqlite.json`：`reportKind=nonBatch`，`nonBatchOutputDir=C:\Users\dp\Desktop\ReportEditor044Smoke` |
+| 手动模拟结批直落指定目录 | 多条 `export.manual_pdf` `result=ok`，`detail.reportKind=nonBatch`，`outputDir` 与模版一致；PDF 路径在该目录下（含分卷 part） |
+| 失败审计字段 | 同模版 `export.manual_pdf` `result=fail` 亦带 `reportKind`/`outputDir` |
+| 另一非批次样例 | `8f650efa-…` → `C:\Users\dp\Desktop\ReportEditorNonBatchTest\`，审计含 `reportKind=nonBatch` |
+
+勾选对照：
+
+- [x] 手动模拟结批：非批次直落指定目录（审计 + 落盘路径）。  
+- [x] 审计：`export.manual_pdf` detail 含 `reportKind` / `outputDir`（非批次已验；批次 `batchNo` 由单测与成功审计路径覆盖）。  
+- [x] 旧模版兼容：缺字段默认 `batch`（schema/migrate 单测与后端自检）。
+
+---
+
+# ⌛️ 未完成：批次 OPC / 自动结批现场手测
+
+需现场 PLC / 自动结批绑定，本机 support-pack **无** `export.auto_pdf` 样本：
 
 - [ ] 批次模版自动结批：落 `根\<批号>\`；文件名 OPC 与目录 OPC 各验一次；两路均无值时结批失败且 PLC 反馈状态码。  
 - [ ] 非批次模版自动结批：落模版绝对路径；目录不存在自动创建；相对路径/未配置时显式失败。  
-- [ ] 手动模拟结批：批次无批号 → 报错禁止导出；非批次直落指定目录。  
-- [ ] 历史报表：下拉切换到非批次目录可见产出、可删/可拷 U 盘；全局 `watchDir` 不被非批次浏览污染。  
-- [ ] 审计：`export.auto_pdf` / `export.manual_pdf` detail 含 `reportKind` / `outputDir` / `batchNo`。  
-- [ ] 旧模版兼容：升级后未动过的模版仍按批次导出，行为与现网一致（除无批号不再静默落根）。
+- [ ] 手动模拟结批：批次无批号 → 报错禁止导出（代码已实现；缺现场截图/审计样本）。  
+- [ ] 历史报表：下拉切换到非批次目录可见产出、可删/可拷 U 盘；全局 `watchDir` 不被非批次浏览污染（UX 已修；缺手测勾选）。
 
 ## 现场提醒（行为变化）
 

@@ -759,11 +759,21 @@ async function executeBindingExport(job: QueuedExportJob): Promise<void> {
     } else {
       const parsed = parseExportFailureDiagnostics(e);
       const msg = humanizePdfExportError(parsed.message || e);
+      let failReportKind: ReportKind | undefined;
+      let failOutputDir: string | undefined;
       try {
         const summaries = await loadTemplateSummariesCached();
         const tmeta = summaries.find((x) => x.id === templateId);
+        failReportKind = normalizeReportKind(tmeta?.reportKind);
         const built = await buildAutoExportFileName(prefs, tmeta?.name || templateId || "");
         fileName = built.base;
+        // 失败时尽量补齐已解析目标目录（解析阶段失败则仅有 reportKind）
+        const target = await resolveReportOutputTarget({
+          reportKind: failReportKind,
+          nonBatchOutputDir: tmeta?.nonBatchOutputDir,
+          prefs,
+        });
+        if (target.ok) failOutputDir = target.dir;
       } catch {
         /* ignore */
       }
@@ -790,6 +800,8 @@ async function executeBindingExport(job: QueuedExportJob): Promise<void> {
             label,
             durationMs: Date.now() - startedAtMs,
             fileName,
+            reportKind: failReportKind,
+            ...(failOutputDir ? { outputDir: failOutputDir } : {}),
           },
         }),
       });
