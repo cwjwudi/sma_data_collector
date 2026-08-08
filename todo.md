@@ -7,6 +7,7 @@
 
 ## 2026-08-09
 
+- **ReportEditor 044 ✅**：导出 SQL 取数无硬上限闭环——实现已落地；support-pack 0.3.164 实机 `totalReports=80` / `sqlRows=80000`（SQLite）。Docker 因本机缺 WSL2 仍起不来，属可选路径、不阻塞关闭。看板 [docs/044-✅](docs/044-✅-ReportEditor导出SQL取数无硬上限.md)。
 - **ReportEditor 045 R4（矢量跨份·临时文件回传）**：去掉 pdf-lib 每份 `btoa`+巨型 base64 JSON IPC；字节经主进程落 `sd-sma-pdf-part-*.pdf`，ready 只带路径；按 jobId 扫尾。R3 连渲/R1b/R5/现场 5 万条复测仍 ⌛️。看板 [docs/045-🚧](docs/045-🚧-ReportEditor矢量导出跨份复用加速.md)。
 - **ReportEditor 046（批次/非批次补强）**：历史多根——仅非批次根也显示下拉并自动选中；自动结批失败审计补 `reportKind`/`outputDir`；support-pack 验收非批次手动落盘与审计字段。批次 OPC/自动结批现场手测仍 ⌛️。看板 [docs/046-🚧](docs/046-🚧-ReportEditor批次与非批次报表导出.md)。
 - **ReportEditor 048 ✅**：问题反馈包一键导出——用户 0.3.164 实包验收通过（结构/模版/审计/附件齐全）；顺带修包内 appVersion 硬编码 0.3.146。看板 [docs/048-✅](docs/048-✅-ReportEditor问题反馈包一键导出.md)。
