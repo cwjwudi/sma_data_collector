@@ -7,6 +7,7 @@
 
 ## 2026-08-09
 
+- **本机 Docker MariaDB（044）**：WSL2/Desktop 已就绪；Hub 超时改 DaoCloud 拉 `mariadb:11`；容器 healthy，已灌 **80000** 行 + 连接 `local-docker-mariadb-044` + 模版「测试·044·8万条分卷导出」。`setup_044_docker.ps1` 修编码并加镜像回退。
 - **本机 WSL2 准备（Docker/044）**：诊断确认未启用「虚拟机平台」/虚拟化；新增管理员脚本 `scripts/dev/setup_wsl2_for_docker.ps1`（启用组件 → 重启 → 再开 Docker）。提权需本机点 UAC。
 - **ReportEditor 044 ✅**：导出 SQL 取数无硬上限闭环——实现已落地；support-pack 0.3.164 实机 `totalReports=80` / `sqlRows=80000`（SQLite）。Docker 因本机缺 WSL2 仍起不来，属可选路径、不阻塞关闭。看板 [docs/044-✅](docs/044-✅-ReportEditor导出SQL取数无硬上限.md)。
 - **ReportEditor 045 R4（矢量跨份·临时文件回传）**：去掉 pdf-lib 每份 `btoa`+巨型 base64 JSON IPC；字节经主进程落 `sd-sma-pdf-part-*.pdf`，ready 只带路径；按 jobId 扫尾。R3 连渲/R1b/R5/现场 5 万条复测仍 ⌛️。看板 [docs/045-🚧](docs/045-🚧-ReportEditor矢量导出跨份复用加速.md)。

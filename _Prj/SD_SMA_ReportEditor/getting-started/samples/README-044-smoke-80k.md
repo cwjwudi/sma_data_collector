@@ -58,7 +58,10 @@ Start-Process powershell -Verb RunAs -ArgumentList '-ExecutionPolicy Bypass -Fil
 ```
 
 脚本会启用可选组件、`wsl --update`、默认 WSL2，并提示是否重启。  
-重启后：Docker Desktop 绿灯 → `.\scripts\dev\setup_044_docker.ps1`。
+重启后：Docker Desktop 绿灯 → `.\scripts\dev\setup_044_docker.ps1`。  
+若 Docker Hub 拉不动 `mariadb:11`，脚本会回退 DaoCloud 镜像 `docker.m.daocloud.io/library/mariadb:11` 再 tag。
+
+**本机已就绪时**：容器 `report_editor_mariadb` · 库表 `report_user_lib.demo_metrics` · `batch_no=SMOKE_80K` · **80000** 行；连接 `local-docker-mariadb-044`；模版「测试·044·8万条分卷导出」。重启 AI 版后导出验收即可。
 
 在修好之前请用上面的本机 MariaDB / SQLite，不必再卡在 Docker。
 
