@@ -21,70 +21,43 @@
 
 ## 对抗测试
 
-- `pdf-lib-layout-v2-render.test.ts` 新增「041: header/footer are drawn on SQL continuation pages」：40 行静态表撑 2+ 卡，断言**每页**均含页眉文本与 `n/N` 页脚页码；已验证在旧逻辑下第 2 页即红（`page 2 missing header`）。  
+- `pdf-lib-layout-v2-render.test.ts`「041: header/footer are drawn on SQL continuation pages」：40 行静态表撑 2+ 卡，断言**每页**均含页眉文本与 `n/N` 页脚页码。  
 - 全量 vitest：**107 文件 / 624 用例全绿**（2026-08-08）。
 
 ---
 
-# 🚧 进行中：现象与根因排查（H1/H4 待现场样本）
+# ✅ 已完成：H1/H4——封面与正文页眉独立 + 一键复制（2026-08-09）
 
-## 现象
+## 定性
 
-- 矢量导出：封面有页眉内容。  
-- **后续正文页没有页眉**（用户期望正文也带同一套页眉，或预览里正文曾有页眉）。
-
-## 代码根因（本机已核对路径）
-
-`pdf-lib-layout-v2-render.ts` → `paintPage`：
-
-| 纸面 | 页眉数组 |
-|------|----------|
-| cover | `tmpl.coverHeaderElements` |
-| body | `tmpl.headerElements` |
-| back | `tmpl.backHeaderElements` |
-
-封面与正文页眉在数据模型上 **完全独立**（版式应用到封面只写 `coverHeader*`；应用到正文只写 `header*`，见 `layout-apply.ts`）。  
-Mini / Chromium 导出同样按 sheet 取对应数组（`TemplateMiniBands` / `TemplateBodyCanvas`），**不是矢量独有分支**。
-
-### 假设优先级
+封面与正文页眉在数据模型上 **完全独立**（`coverHeaderElements` vs `headerElements`；`layout-apply` 按槽写入）。Mini / Chromium 同样分槽——**不是矢量独有**。用户常误以为「封面配了眉，正文也会有」（H4）。
 
 | ID | 假设 | 状态 |
 |----|------|------|
-| H1 | 模板数据：仅封面有眉（`coverHeaderElements` 有、`headerElements` 空） | ⌛️ 待现场 JSON 判定；若成立属数据/认知差，档 2 也应无正文眉 |
-| H2 | SQL 续页藏 chrome（`showChrome` 把眉脚一并跳过） | ✅ **已确认为代码缺陷并修复**（见上方 H2 修复段） |
-| H3 | 正文绑了另一版式 / 眉带高度 0 | ⌛️ 待现场 `headerBandMm`；矢量元素绘制不依赖带高>0，仅灰底受影响 |
-| H4 | 误以为封面眉会继承到正文 | ⌛️ 若 H1 成立则并入产品提示/一键复制方案 |
+| H1 | 模板数据：仅封面有眉（`coverHeaderElements` 有、`headerElements` 空） | ✅ 按此产品路径处理（提示 + 一键复制） |
+| H2 | SQL 续页藏 chrome | ✅ 已修（见上） |
+| H3 | 正文眉带高度 0 | 部分缓解：复制时若封面 `headerBandMm` 更高则抬升正文带高 |
+| H4 | 误以为封面眉会继承到正文 | ✅ 并入提示与一键复制 |
 
-## 本机复现思路
+## 实现
 
-1. 构造模板：`coverHeaderElements=[标题]`，`headerElements=[]`，有 body → 矢量封面有眉、正文无眉（**H1 复现**）。  
-2. 再设 `headerElements` 与封面同内容 → 正文应出现眉（验证渲染通路正常）。  
-3. 大 SQL 分卡：看续页是否 `continuationHideOtherBodyElements`（**H2**）。
+| 位置 | 变更 |
+| ---- | ---- |
+| `copy-sheet-bands.ts` | `copyCoverHeaderToBody`：深拷封面眉控件（新 id）+ `headerText`；必要时抬升正文 `headerBandMm`；`templateNeedsCoverHeaderCopyHint` |
+| `TemplateEditorWorkspace.vue` | 工具栏「封面页眉→正文」（覆盖前 `appConfirm`）；sheet/preset 文案标明「互不继承」；封面有眉正文无时黄条提示 |
+| `copy-sheet-bands.test.ts` | 拷贝/抬高眉带/覆盖语义 |
 
-## 建议修复方向
+## 使用
 
-| 若确认 | 做法 |
-|--------|------|
-| H1 / H4 | 产品：模版编辑提示「封面/正文/封尾页眉各自独立」；或提供「将封面页眉复制到正文」一键 |
-| H2 | 与 Mini 对齐：续页是否应保留眉脚；改 `showChrome` 条件或续页策略 |
-| H3 | 校正正文 `headerBandMm` / zone 原点；保证眉带高度 ≥ 控件 |
-| 仅矢量差 | 对照 `appendPdfLibLayoutV2Pages` 与 `PdfExportView` 分页卡片字段 |
-
-## 需要补充的信息
-
-| # | 请提供 |
-|---|--------|
-| 1 | 准确版本号；模板 ID / 导出 JSON |
-| 2 | 同一次导出的档 1 + 档 2 PDF（或预览截图：正文页是否有眉） |
-| 3 | JSON：`coverHeaderElements` / `headerElements` 长度与摘要；正文 `layoutSnapshot.headerBandMm` |
-| 4 | 无眉的是「第一张正文」还是「SQL 撑开的第 2+ 张」 |
-| 5 | 封面/正文是否绑了不同版式预设 |
+1. 打开模版编辑器 → 若黄条提示「封面有页眉、正文暂无」→ 点「封面页眉→正文」→ 保存。  
+2. 或在「版式与页眉页脚」为**正文**版式单独配页眉后套用到正文槽。
 
 ---
 
-# ⌛️ 未完成：现场样本对照与剩余定性
+# ⌛️ 未完成：现场样本对照
 
-- [x] H2 续页漏眉脚：已修复 + 对抗测试（2026-08-08）  
-- [ ] 现场重导同模版档 1 PDF：确认「SQL 撑开第 2+ 张」的眉脚恢复  
-- [ ] 若第一张正文页也无眉：取模版 JSON 判定 H1（`headerElements` 是否为空）→ 产品提示或「封面眉复制到正文」一键  
+- [x] H2 续页漏眉脚：已修复 + 对抗测试  
+- [x] H1/H4 产品：独立提示 + 一键复制（本机单测）  
+- [ ] 现场重导同模版档 1 PDF：确认「SQL 撑开第 2+ 张」的眉脚恢复（H2）  
+- [ ] 若第一张正文曾无眉：用「封面页眉→正文」后重导，验收正文亦有眉  
 - [ ] 验收：期望纸面均有眉；续页行为与档 2 预览一致  

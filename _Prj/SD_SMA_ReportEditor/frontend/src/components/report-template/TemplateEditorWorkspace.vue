@@ -99,6 +99,15 @@
           >
             一键隐藏边框
           </button>
+          <button
+            type="button"
+            class="b"
+            title="041：封面/正文页眉各自独立。将封面页眉控件与文案复制到正文页眉（覆盖正文现有页眉；可撤销）"
+            :disabled="!canCopyCoverHeaderToBody"
+            @click="copyCoverHeaderToBodyClick"
+          >
+            封面页眉→正文
+          </button>
           <span class="bar-sep" aria-hidden="true" />
           <button type="button" class="b primary" :disabled="saving" @click="save">
             {{ saving ? "保存中…" : "保存模版" }}
@@ -221,8 +230,11 @@
           <span v-else class="preset-empty">暂无末页版式列表。</span>
         </template>
         <span class="preset-hint"
-          >正文支持<strong>多页独立画布</strong>。「导出预览」按封面→各正文页→末页排列。「编辑画布」时正文页<strong>纵向连续</strong>编排；封面/末页为单页画布。</span
+          >正文支持<strong>多页独立画布</strong>。「导出预览」按封面→各正文页→末页排列。「编辑画布」时正文页<strong>纵向连续</strong>编排；封面/末页为单页画布。封面 / 正文 / 末页的<strong>页眉各自独立</strong>（选用版式只改当前段）。</span
         >
+        <p v-if="needsCoverHeaderCopyHint" class="preset-copy-hint" role="status">
+          封面有页眉、正文暂无——导出时正文页不会出现封面眉。可用工具栏「封面页眉→正文」一键复制。
+        </p>
       </div>
     </div>
     <div class="cols">
@@ -409,12 +421,14 @@
         </template>
         <p class="sheet-hint">
           <template v-if="sh === 'body'"
-            ><strong>正文页</strong>：编辑画布中与预览一致为封面→正文各页→末页纵向排列；点左侧标签或正文下拉可滚动到对应卡片。可用「前插 / 后插 / 末加」在指定位置增页，「↑ ↓」调整顺序，「−删本页」删除当前页。页眉页脚请在「版式与页眉页脚」中维护。</template
+            ><strong>正文页</strong>：编辑画布中与预览一致为封面→正文各页→末页纵向排列；点左侧标签或正文下拉可滚动到对应卡片。可用「前插 / 后插 / 末加」在指定位置增页，「↑ ↓」调整顺序，「−删本页」删除当前页。页眉页脚请在「版式与页眉页脚」中维护；<strong>与封面页眉互不继承</strong>，可用「封面页眉→正文」复制。</template
           >
           <template v-else-if="sh === 'cover'"
-            ><strong>封面</strong>：导出首页整页；此处编辑封面画布。页眉页脚请在版式编辑器维护。</template
+            ><strong>封面</strong>：导出首页整页；此处编辑封面画布。页眉页脚请在版式编辑器维护（不会自动出现在正文页）。</template
           >
-          <template v-else><strong>末页</strong>：导出最后一页整页；此处编辑末页画布。页眉页脚请在版式编辑器维护。</template>
+          <template v-else
+            ><strong>末页</strong>：导出最后一页整页；此处编辑末页画布。页眉页脚请在版式编辑器维护（与封面/正文互不继承）。</template
+          >
         </p>
       </aside>
       <main class="mid">
@@ -616,6 +630,11 @@ import {
 } from "@/lib/report-template/model";
 import { isAbsoluteLocalDir } from "@/lib/resolve-report-output-dir";
 import { hideBordersOnEntireTemplate } from "@/lib/report-template/show-border";
+import {
+  copyCoverHeaderToBody,
+  templateNeedsCoverHeaderCopyHint,
+} from "@/lib/report-template/copy-sheet-bands";
+import { appConfirm } from "@/composables/useAppConfirm";
 import {
   copyTemplateElementToClipboard,
   copyTemplateElementsToClipboard,
@@ -1757,6 +1776,53 @@ function hideBordersOnEntireTemplateClick() {
       : "模版里没有可隐藏的控件外框。";
 }
 
+const canCopyCoverHeaderToBody = computed(() => {
+  const t = editing.value;
+  if (!t) return false;
+  return templateNeedsCoverHeaderCopyHint(t) || (t.coverHeaderElements?.length ?? 0) > 0 || Boolean(String(t.coverHeaderText || "").trim());
+});
+
+const needsCoverHeaderCopyHint = computed(() => {
+  const t = editing.value;
+  return Boolean(t && templateNeedsCoverHeaderCopyHint(t));
+});
+
+async function copyCoverHeaderToBodyClick() {
+  const t = editing.value;
+  if (!t) return;
+  const coverHas =
+    (t.coverHeaderElements?.length ?? 0) > 0 || Boolean(String(t.coverHeaderText || "").trim());
+  if (!coverHas) {
+    hint.value = "封面尚无页眉可复制。请先在「版式与页眉页脚」为封面配置页眉。";
+    return;
+  }
+  const bodyHas =
+    (t.headerElements?.length ?? 0) > 0 || Boolean(String(t.headerText || "").trim());
+  if (bodyHas) {
+    const ok = await appConfirm({
+      title: "覆盖正文页眉？",
+      message: "正文已有页眉内容。继续将用封面页眉覆盖正文页眉（可撤销）。",
+      confirmText: "覆盖复制",
+      cancelText: "取消",
+    });
+    if (!ok) return;
+  }
+  midMode.value = "edit";
+  sh.value = "body";
+  const r = copyCoverHeaderToBody(t);
+  if (r.copied <= 0 && !String(t.headerText || "").trim()) {
+    hint.value = "封面没有可复制的页眉。";
+    return;
+  }
+  const parts = [
+    r.copied > 0 ? `已复制 ${r.copied} 个页眉控件到正文` : "已复制封面页眉文案到正文",
+  ];
+  if (r.replacedExisting) parts.push("已覆盖原正文页眉");
+  if (r.headerBandMmRaised) parts.push("正文眉带高度已对齐封面");
+  parts.push("可撤销");
+  hint.value = `${parts.join("；")}。`;
+}
+
 function sigOk(dataUrl) {
   dlgSig.value = false;
   if (!sel.value || sel.value.type !== "signature") return;
@@ -1972,6 +2038,17 @@ onUnmounted(() => {
   min-width: 0;
   color: #78716c;
   line-height: 1.4;
+}
+.preset-copy-hint {
+  flex: 1 1 100%;
+  margin: 0;
+  padding: 6px 8px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #92400e;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: 6px;
 }
 .sheet-hint {
   margin: 0;
