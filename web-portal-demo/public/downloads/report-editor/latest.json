@@ -1,15 +1,15 @@
 {
-  "version": "0.3.144",
-  "releasedAt": "2026-07-24T08:43:03.489Z",
-  "notes": "039b：修复开关导出遮罩误报登录项乱码（仅自启字段同步Run；reg按GBK解码）",
+  "version": "0.3.165",
+  "releasedAt": "2026-08-09T02:06:17.336Z",
+  "notes": "Report Editor AI 0.3.165\n\n- 041 H1：封面页眉一键复制到正文（互不继承提示）\n- 045 R4：矢量 PDF 临时文件回传（去巨型 base64 IPC）\n- 046：历史多根 UX + 失败审计 reportKind\n- 044：Docker MariaDB 冒烟灌库就绪",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.144-x64.exe",
-      "sha256": "85917579838c1aeaafc006a0a05934125d72350aa56680427546fcddd8d025b7",
-      "size": 175796827
+      "url": "Report Editor AI-Setup-0.3.165-x64.exe",
+      "sha256": "fc4fd15e5a8cf973a31b456ac7ebfd2186b379605b29987fb81642e15cba0689",
+      "size": 162559989
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.144-arm64.dmg",
+      "url": "Report Editor AI-0.3.165-arm64.dmg",
       "sha256": "",
       "size": 0
     }

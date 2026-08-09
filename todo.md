@@ -7,6 +7,7 @@
 
 ## 2026-08-09
 
+- **ReportEditor 0.3.165 Win 打包**：`Report Editor AI-Setup-0.3.165-x64.exe`（SHA256 `fc4fd15e…0689`）；含 041 H1 / 045 R4 / 046 / 044 Docker。发版记录 `_Doc/007` · Portal 已同步。
 - **ReportEditor 041 H1（封面眉不进正文）**：产品补强——文案标明封面/正文/末页页眉互不继承；工具栏「封面页眉→正文」一键复制（覆盖确认、眉带高度对齐）；黄条提示封面有眉正文无。H2 续页漏眉仍为已修；现场重导验收 ⌛️。看板 [docs/041-🚧](docs/041-🚧-ReportEditor矢量导出页眉仅封面正文无.md)。
 - **本机 Docker MariaDB（044）**：WSL2/Desktop 已就绪；Hub 超时改 DaoCloud 拉 `mariadb:11`；容器 healthy，已灌 **80000** 行 + 连接 `local-docker-mariadb-044` + 模版「测试·044·8万条分卷导出」。`setup_044_docker.ps1` 修编码并加镜像回退。
 - **本机 WSL2 准备（Docker/044）**：诊断确认未启用「虚拟机平台」/虚拟化；新增管理员脚本 `scripts/dev/setup_wsl2_for_docker.ps1`（启用组件 → 重启 → 再开 Docker）。提权需本机点 UAC。

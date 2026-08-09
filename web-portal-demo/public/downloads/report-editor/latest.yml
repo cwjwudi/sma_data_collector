@@ -1,10 +1,15 @@
 releaseNotes: |
-  039b：修复开关导出遮罩误报登录项乱码（仅自启字段同步Run；reg按GBK解码）
-version: 0.3.144
+  Report Editor AI 0.3.165
+  
+  - 041 H1：封面页眉一键复制到正文（互不继承提示）
+  - 045 R4：矢量 PDF 临时文件回传（去巨型 base64 IPC）
+  - 046：历史多根 UX + 失败审计 reportKind
+  - 044：Docker MariaDB 冒烟灌库就绪
+version: 0.3.165
 files:
-  - url: Report Editor AI-Setup-0.3.144-x64.exe
-    sha512: xcqyNQ6zaUN5p49bhtZLRy01TLSQPa6rgNj2vm8O9OCfA8CVUC9OJ/xQps2CdWfh7enjLeYNf2rOnGwYgqThJg==
-    size: 175796827
-path: Report Editor AI-Setup-0.3.144-x64.exe
-sha512: xcqyNQ6zaUN5p49bhtZLRy01TLSQPa6rgNj2vm8O9OCfA8CVUC9OJ/xQps2CdWfh7enjLeYNf2rOnGwYgqThJg==
-releaseDate: '2026-07-24T08:43:03.141Z'
+  - url: Report Editor AI-Setup-0.3.165-x64.exe
+    sha512: B8N0EomRGuqF5NsHxdTB7NT7oHsbhINchm8WzdqJkWNLn+wuQAJfHdEyQI+4GHbCSXPfYLjX4X8MUWZhnzSYEg==
+    size: 162559989
+path: Report Editor AI-Setup-0.3.165-x64.exe
+sha512: B8N0EomRGuqF5NsHxdTB7NT7oHsbhINchm8WzdqJkWNLn+wuQAJfHdEyQI+4GHbCSXPfYLjX4X8MUWZhnzSYEg==
+releaseDate: '2026-08-09T02:06:17.037Z'
