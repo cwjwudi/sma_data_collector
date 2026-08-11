@@ -5,6 +5,10 @@
 
 ---
 
+## 2026-08-10
+
+- **ReportEditor 052（数据源配置 CRUD 异常）**：登记用户反馈——新建不显示、测连卡顿、删不掉、连点保存重复；代码对照指向保存后未回写 `saved_id`/`busy` 窗口可重复 POST 新建、保存后全量 `probeAll`、锁态禁删等。修复与手测仍 ⌛️。看板 [docs/052-🚧](docs/052-🚧-ReportEditor数据源配置CRUD异常.md)。
+
 ## 2026-08-09
 
 - **ReportEditor 0.3.165 Win 打包**：`Report Editor AI-Setup-0.3.165-x64.exe`（SHA256 `fc4fd15e…0689`）；含 041 H1 / 045 R4 / 046 / 044 Docker。发版记录 `_Doc/007` · Portal 已同步。
