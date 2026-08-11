@@ -7,7 +7,7 @@
 
 ## 2026-08-11
 
-- **ReportEditor 052（本机 OPC 复现）**：审计 `report-editor-audit-2026-08-11.json` 证实——无 id 连点保存出多 uuid；删除无防重连打 DELETE；坏链下 `loadServers`→`probeAllOpcConnections` 拖垮新建/删除。远端环境难复现因缺坏链/未走 OPC 连点。修复仍 ⌛️。看板 [docs/052-🚧](docs/052-🚧-ReportEditor数据源配置CRUD异常.md)。
+- **ReportEditor 052（本机 OPC 复现）**：审计 + Agent 对运行中后端复测——**前置有未正常连接的 OPC**（`666@192.168.137.1` 探活 ~8s）；`probeAll`/删除链墙钟 ~8s；无 id 双 POST 出双 uuid。远端难复现因缺坏链。修复仍 ⌛️。看板 [docs/052-🚧](docs/052-🚧-ReportEditor数据源配置CRUD异常.md)。
 
 ## 2026-08-10
 
