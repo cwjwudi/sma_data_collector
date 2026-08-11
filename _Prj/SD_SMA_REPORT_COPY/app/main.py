@@ -6,6 +6,7 @@ import json
 import os
 import re
 import secrets
+import sys
 import threading
 import time
 import uuid
@@ -21,6 +22,13 @@ from pydantic import BaseModel, Field
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 PACKAGE_ROOT = BASE_DIR.parent.parent
+DATA_ROOT = Path(os.path.expandvars(os.getenv("SD_SMA_DATA_ROOT", str(PACKAGE_ROOT)))).resolve()
+COMMON_ROOT = BASE_DIR.parent / "SD_SMA_COMMON"
+if COMMON_ROOT.is_dir() and str(COMMON_ROOT) not in sys.path:
+    sys.path.insert(0, str(COMMON_ROOT))
+
+from sd_sma_common import FilesystemBrowser, FilesystemBrowserError
+
 AUTH_TOKEN_ENV = "SD_SMA_WEB_TOKEN"
 AUTH_TOKEN_HEADER = "X-SD-SMA-Token"
 AUTH_EXEMPT_PATHS = {"/api/health"}
@@ -51,6 +59,7 @@ def _resolve_config_dir() -> Path:
         return (BASE_DIR / "config").resolve()
     value = raw.replace("${REPORT_COPY_ROOT}", str(BASE_DIR))
     value = value.replace("${PACKAGE_ROOT}", str(PACKAGE_ROOT))
+    value = value.replace("${DATA_ROOT}", str(DATA_ROOT))
     path = Path(os.path.expandvars(value))
     if not path.is_absolute():
         path = PACKAGE_ROOT / path
@@ -66,7 +75,8 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "copy_subdirectories": True,
     "overwrite_by_default": False,
     "allowed_target_roots": [],
-    "log_dir": "${PACKAGE_ROOT}/logs/report_copy",
+    "allowed_source_roots": [],
+    "log_dir": "${DATA_ROOT}/logs/report_copy",
 }
 DRIVE_REMOVABLE = 2
 DRIVE_FIXED = 3
@@ -80,12 +90,14 @@ class AppConfig(BaseModel):
     copy_subdirectories: bool = True
     overwrite_by_default: bool = False
     allowed_target_roots: list[str] = Field(default_factory=list)
-    log_dir: str = "${PACKAGE_ROOT}/logs/report_copy"
+    allowed_source_roots: list[str] = Field(default_factory=list)
+    log_dir: str = "${DATA_ROOT}/logs/report_copy"
 
 
 class CopyRequest(BaseModel):
     drive: str
-    files: list[str]
+    files: list[str] = Field(default_factory=list)
+    folders: list[str] = Field(default_factory=list)
     destination_folder: str = ""
     overwrite: bool = False
 
@@ -131,6 +143,7 @@ def expand_path(raw: str, *, default_base: Path = BASE_DIR) -> Path:
     value = str(raw or "").strip()
     value = value.replace("${REPORT_COPY_ROOT}", str(BASE_DIR))
     value = value.replace("${PACKAGE_ROOT}", str(PACKAGE_ROOT))
+    value = value.replace("${DATA_ROOT}", str(DATA_ROOT))
     value = value.replace("${CONFIG_DIR}", str(CONFIG_DIR))
     path = Path(os.path.expandvars(value))
     if not path.is_absolute():
@@ -154,7 +167,8 @@ def normalize_extensions(values: list[str]) -> list[str]:
 def public_config(cfg: dict[str, Any] | None = None) -> dict[str, Any]:
     cfg = cfg or load_config()
     source = expand_path(str(cfg["report_source_dir"]))
-    log_dir = expand_path(str(cfg["log_dir"]), default_base=PACKAGE_ROOT)
+    configured_log_dir = os.getenv("SD_SMA_LOG_DIR", "").strip() or str(cfg["log_dir"])
+    log_dir = expand_path(configured_log_dir, default_base=DATA_ROOT)
     data = dict(cfg)
     data["report_source_dir_resolved"] = str(source)
     data["report_source_exists"] = source.is_dir()
@@ -168,7 +182,8 @@ def report_root() -> Path:
 
 def log_dir() -> Path:
     cfg = load_config()
-    path = expand_path(str(cfg["log_dir"]), default_base=PACKAGE_ROOT)
+    configured = os.getenv("SD_SMA_LOG_DIR", "").strip() or str(cfg["log_dir"])
+    path = expand_path(configured, default_base=DATA_ROOT)
     path.mkdir(parents=True, exist_ok=True)
     return path
 
@@ -190,20 +205,61 @@ def ensure_relative_path(value: str) -> Path:
     return path
 
 
-def resolve_report_file(value: str) -> Path:
-    root = report_root()
+def _resolve_report_entry(value: str, *, entry_type: str) -> tuple[Path, Path]:
+    root = report_root().resolve()
     rel = ensure_relative_path(value)
     target = (root / rel).resolve()
     try:
-        target.relative_to(root.resolve())
+        target.relative_to(root)
     except ValueError as exc:
         raise ValueError("报表路径超出配置目录") from exc
-    if not target.is_file():
+    if entry_type == "file" and not target.is_file():
         raise FileNotFoundError(target)
+    if entry_type == "folder" and not target.is_dir():
+        raise FileNotFoundError(target)
+    return root, target
+
+
+def resolve_report_file(value: str) -> Path:
+    _root, target = _resolve_report_entry(value, entry_type="file")
     ext = target.suffix.lower()
     if ext not in normalize_extensions(load_config()["allowed_extensions"]):
         raise ValueError(f"不允许的文件类型: {ext}")
     return target
+
+
+def resolve_report_folder(value: str) -> Path:
+    _root, target = _resolve_report_entry(value, entry_type="folder")
+    return target
+
+
+def collect_selected_reports(req: CopyRequest) -> list[tuple[str, Path]]:
+    """Resolve files and recursively expand selected folders, removing overlaps."""
+    root = report_root().resolve()
+    allowed = set(normalize_extensions(load_config()["allowed_extensions"]))
+    selected: dict[Path, tuple[str, Path]] = {}
+
+    def add_file(src: Path) -> None:
+        resolved = src.resolve()
+        try:
+            rel = resolved.relative_to(root).as_posix()
+        except ValueError as exc:
+            raise ValueError("报表路径超出配置目录") from exc
+        if resolved.suffix.lower() not in allowed:
+            return
+        if not resolved.is_file():
+            raise FileNotFoundError(resolved)
+        selected.setdefault(resolved, (rel, resolved))
+
+    for rel in req.files:
+        add_file(resolve_report_file(rel))
+    for rel in req.folders:
+        folder = resolve_report_folder(rel)
+        for item in folder.rglob("*"):
+            if item.is_file() and item.suffix.lower() in allowed:
+                add_file(item)
+
+    return sorted(selected.values(), key=lambda item: item[0].lower())
 
 
 def sanitize_destination_folder(value: str | None) -> Path:
@@ -325,6 +381,13 @@ def ensure_target_drive(value: str) -> Path:
     return Path(root)
 
 
+def source_filesystem_browser() -> FilesystemBrowser:
+    cfg = load_config()
+    roots: list[str | Path] = [report_root(), *(cfg.get("allowed_source_roots") or [])]
+    roots.extend(drive["root"] for drive in list_drives() if drive.get("is_removable"))
+    return FilesystemBrowser(roots)
+
+
 def format_report(item: Path, root: Path) -> dict[str, Any]:
     stat = item.stat()
     rel = item.relative_to(root).as_posix()
@@ -339,7 +402,7 @@ def format_report(item: Path, root: Path) -> dict[str, Any]:
 
 def list_reports(query: str = "") -> dict[str, Any]:
     cfg = load_config()
-    root = report_root()
+    root = report_root().resolve()
     if not root.is_dir():
         return {"root": str(root), "exists": False, "reports": [], "count": 0}
     allowed = set(normalize_extensions(cfg["allowed_extensions"]))
@@ -467,12 +530,9 @@ def copy_reports_job(job_id: str, req: CopyRequest) -> dict[str, Any]:
     cfg = load_config()
     target_drive = ensure_target_drive(req.drive)
     dest_folder = sanitize_destination_folder(req.destination_folder or cfg["destination_folder"])
-    selected = []
-    for rel in req.files:
-        src = resolve_report_file(rel)
-        selected.append((rel, src))
+    selected = collect_selected_reports(req)
     if not selected:
-        raise ValueError("请选择至少一个报表文件")
+        raise ValueError("请选择至少一个报表文件或文件夹")
 
     total_bytes = sum(src.stat().st_size for _, src in selected)
     drive_info = next((drive for drive in list_drives() if drive["root"] == str(target_drive)), None)
@@ -485,10 +545,13 @@ def copy_reports_job(job_id: str, req: CopyRequest) -> dict[str, Any]:
     failed: list[dict[str, str]] = []
     copied_bytes = 0
     overwrite = bool(req.overwrite)
-    root = report_root()
+    root = report_root().resolve()
     destination_root = target_drive / dest_folder
     append_job_log(job_id, f"目标目录: {destination_root}")
-    append_operation_log(f"START drive={target_drive} dest={destination_root} files={len(selected)}")
+    append_operation_log(
+        f"START drive={target_drive} dest={destination_root} files={len(selected)} "
+        f"selected_files={len(req.files)} selected_folders={len(req.folders)}"
+    )
 
     for index, (rel_text, src) in enumerate(selected, start=1):
         try:
@@ -519,23 +582,6 @@ def copy_reports_job(job_id: str, req: CopyRequest) -> dict[str, Any]:
         "failed": failed,
         "total_bytes": total_bytes,
     }
-
-
-def choose_folder_dialog(initial_dir: str | None = None) -> str:
-    try:
-        import tkinter as tk
-        from tkinter import filedialog
-    except Exception as exc:  # noqa: BLE001
-        raise RuntimeError(f"Folder picker is not available: {exc}") from exc
-    initial = expand_path(initial_dir or str(report_root()))
-    root = tk.Tk()
-    root.withdraw()
-    root.attributes("-topmost", True)
-    try:
-        selected = filedialog.askdirectory(initialdir=str(initial), title="选择报表目录", mustexist=True)
-    finally:
-        root.destroy()
-    return str(Path(selected).resolve()) if selected else ""
 
 
 app = FastAPI(title="SD SMA Report Copy", version="0.1.0")
@@ -585,11 +631,23 @@ def post_config(payload: dict[str, Any]) -> dict[str, Any]:
         raise HTTPException(400, str(exc)) from exc
 
 
-@app.post("/api/folder-dialog")
-def folder_dialog(payload: dict[str, Any]) -> dict[str, Any]:
+@app.get("/api/filesystem/roots")
+def filesystem_roots(purpose: str = "source") -> dict[str, Any]:
     try:
-        return {"selected": choose_folder_dialog(str(payload.get("initial_dir") or ""))}
-    except Exception as exc:  # noqa: BLE001
+        if purpose != "source":
+            raise FilesystemBrowserError("Unsupported browse purpose")
+        return {"roots": source_filesystem_browser().public_roots()}
+    except FilesystemBrowserError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@app.get("/api/filesystem/entries")
+def filesystem_entries(path: str, purpose: str = "source") -> dict[str, Any]:
+    try:
+        if purpose != "source":
+            raise FilesystemBrowserError("Unsupported browse purpose")
+        return source_filesystem_browser().entries(path, include_files=False)
+    except FilesystemBrowserError as exc:
         raise HTTPException(400, str(exc)) from exc
 
 
@@ -609,6 +667,8 @@ def get_reports(q: str = "") -> dict[str, Any]:
 @app.post("/api/copy")
 def start_copy(req: CopyRequest) -> dict[str, Any]:
     try:
+        if not req.files and not req.folders:
+            raise ValueError("请选择至少一个报表文件或文件夹")
         job = start_job(f"复制报表到 {normalize_drive_root(req.drive)}", copy_reports_job, req)
         return {"job": job}
     except Exception as exc:  # noqa: BLE001

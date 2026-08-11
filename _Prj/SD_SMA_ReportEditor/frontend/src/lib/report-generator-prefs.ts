@@ -30,6 +30,14 @@ import {
   AUTO_EXPORT_MAX_PARALLEL_DEFAULT,
   clampAutoExportMaxParallel,
 } from "@/lib/auto-export-status-codes";
+import {
+  DEFAULT_EXPORT_PERF_TIER,
+  EXPORT_PERF_TIER_SCALE,
+  migrateExportPerfTierFromLegacy,
+  normalizeExportPerfTier,
+  resolveExportPerfProfile,
+  type ExportPerfTier,
+} from "@/lib/export-perf-tier";
 
 
 
@@ -135,6 +143,20 @@ export interface ReportGeneratorPrefs {
 
   manualOpenAfter: boolean;
 
+  /**
+   * 导出性能档位（035）：0 仅内容 … 1 矢量版式 … 2 预览稳（默认）… 4 不妥协。
+   * 由档位解析 engine / 预热 / 降载等；`pdfExportEngine` 与档位同步保留兼容。
+   */
+  exportPerfTier: ExportPerfTier;
+
+  /** 五档刻度标记；缺省加载时会把旧四档 remap */
+  exportPerfTierScale: typeof EXPORT_PERF_TIER_SCALE;
+
+  /**
+   * 与 exportPerfTier 同步的引擎（兼容旧审计/代码路径）。
+   */
+  pdfExportEngine: "pdf-lib" | "chromium";
+
   exportResultOpc: ExportResultOpcFeedback;
 
   /** 按报表模版单独配置的结批结果反馈变量；key 为 templateId */
@@ -198,6 +220,12 @@ export const defaultReportGeneratorPrefs = (): ReportGeneratorPrefs => ({
   autoFileNameOpcAppendHash: true,
 
   manualOpenAfter: false,
+
+  exportPerfTier: DEFAULT_EXPORT_PERF_TIER,
+
+  exportPerfTierScale: EXPORT_PERF_TIER_SCALE,
+
+  pdfExportEngine: resolveExportPerfProfile(DEFAULT_EXPORT_PERF_TIER).engine,
 
   exportResultOpc: defaultExportResultOpcFeedback(),
 
@@ -361,6 +389,20 @@ function parseStoredPrefs(o: StoredPrefs, base: ReportGeneratorPrefs): ReportGen
       typeof o.autoFileNameOpcNodeId === "string" ? o.autoFileNameOpcNodeId : base.autoFileNameOpcNodeId,
     autoFileNameOpcAppendHash: fileNameAppendHash,
     manualOpenAfter: Boolean(o.manualOpenAfter),
+    ...(() => {
+      const mig = migrateExportPerfTierFromLegacy({
+        exportPerfTier: (o as { exportPerfTier?: unknown }).exportPerfTier,
+        pdfExportEngine: o.pdfExportEngine,
+        exportPerfTierScale: (o as { exportPerfTierScale?: unknown }).exportPerfTierScale,
+      });
+      const tier = normalizeExportPerfTier(mig.tier);
+      const profile = resolveExportPerfProfile(tier);
+      return {
+        exportPerfTier: tier,
+        exportPerfTierScale: EXPORT_PERF_TIER_SCALE,
+        pdfExportEngine: profile.engine,
+      };
+    })(),
     exportResultOpc,
     exportResultOpcByTemplateId: parseExportResultOpcByTemplateId(
       o.exportResultOpcByTemplateId,
@@ -394,6 +436,17 @@ export function loadReportGeneratorPrefs(): ReportGeneratorPrefs {
   } catch {
     return base;
   }
+}
+
+/** 按档位同步 engine（保存前调用，避免 UI 只改 tier 时引擎落后） */
+export function syncPrefsFromExportPerfTier(p: ReportGeneratorPrefs): ReportGeneratorPrefs {
+  const profile = resolveExportPerfProfile(p.exportPerfTier);
+  return {
+    ...p,
+    exportPerfTier: profile.tier,
+    exportPerfTierScale: EXPORT_PERF_TIER_SCALE,
+    pdfExportEngine: profile.engine,
+  };
 }
 
 /** 从配置包中的 report_generator 字段恢复本机偏好 */
@@ -481,17 +534,11 @@ export function defaultBindingExportResultOpcFeedback(): ExportResultOpcFeedback
 
 
 export function saveReportGeneratorPrefs(p: ReportGeneratorPrefs): void {
-
   try {
-
-    localStorage.setItem(LS_KEY, JSON.stringify(p));
-
+    localStorage.setItem(LS_KEY, JSON.stringify(syncPrefsFromExportPerfTier(p)));
   } catch {
-
     /* ignore */
-
   }
-
 }
 
 

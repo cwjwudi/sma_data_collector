@@ -6,12 +6,14 @@
 import json
 import math
 import os
+from pathlib import Path
 from typing import Dict, Any
 from .config_models import (
     DataPoint, DataGroup, OpcUaConfig, DatabaseConfig, AppConfig,
-    TriggerType, Communication, Connection, LoggingConfig, InsertFeedbackConfig,
+    TriggerMode, TriggerType, Communication, Connection, LoggingConfig, InsertFeedbackConfig,
     BatchUpsertConfig, IndexConfig, PersistentQueueConfig, FIXED_INDEX_COLUMNS
 )
+from .secret_store import migrate_password_mapping, resolve_password
 
 
 class ConfigLoader:
@@ -33,16 +35,24 @@ class ConfigLoader:
             ValueError: 配置格式错误
         """
         try:
-            with open(file_path, 'r', encoding='utf-8') as f:
+            path = Path(file_path)
+            with path.open('r', encoding='utf-8') as f:
                 config_data = json.load(f)
-            return ConfigLoader._parse_config(config_data)
+            database, migrated = migrate_password_mapping(path.parent, config_data.get('database', {}))
+            if migrated:
+                config_data['database'] = database
+                tmp_path = path.with_name(f".{path.name}.secret-migration.tmp")
+                with tmp_path.open('w', encoding='utf-8') as f:
+                    json.dump(config_data, f, ensure_ascii=False, indent=2)
+                tmp_path.replace(path)
+            return ConfigLoader._parse_config(config_data, config_dir=path.parent)
         except FileNotFoundError:
             raise FileNotFoundError(f"配置文件未找到: {file_path}")
         except json.JSONDecodeError as e:
             raise ValueError(f"配置文件格式错误: {e}")
     
     @staticmethod
-    def _parse_config(config_data: Dict[str, Any]) -> AppConfig:
+    def _parse_config(config_data: Dict[str, Any], config_dir: Path | None = None) -> AppConfig:
         """解析配置数据"""
         if 'http_server' in config_data:
             raise ValueError("配置包含已删除的 http_server 字段")
@@ -111,14 +121,33 @@ class ConfigLoader:
                         index_type=idx_entry.get('index_type', 'btree'),
                     ))
 
+            raw_trigger_interval = group_data.get('trigger_interval_seconds')
+            raw_trigger_mode = group_data.get('trigger_mode', TriggerMode.POLL.value)
+            # 兼容手工把下拉框值直接保存为 "subscription" 的配置。
+            if (
+                isinstance(raw_trigger_interval, str)
+                and raw_trigger_interval.strip().lower() == TriggerMode.SUBSCRIPTION.value
+            ):
+                raw_trigger_mode = TriggerMode.SUBSCRIPTION.value
+                raw_trigger_interval = None
+
             group = DataGroup(
                 name=group_data['name'],
                 interval_seconds=group_data['interval_seconds'],
                 trigger=TriggerType(group_data['trigger']),
                 description=group_data['description'],
                 data_points=group_data['data_points'],
+                enable_point=group_data.get('enable_point'),
+                variable_point_overrides=(
+                    {}
+                    if group_data.get('variable_point_overrides') is None
+                    else group_data.get('variable_point_overrides')
+                ),
                 interval_point=group_data.get('interval_point'),
-                trigger_interval_seconds=group_data.get('trigger_interval_seconds'),
+                force_cadence_alignment=group_data.get('force_cadence_alignment', False),
+                max_backfill_ticks=group_data.get('max_backfill_ticks', 1000),
+                trigger_interval_seconds=raw_trigger_interval,
+                trigger_mode=TriggerMode(str(raw_trigger_mode).strip().lower()),
                 trigger_point=group_data.get('trigger_point'),
                 reset_trigger_after_read=group_data.get('reset_trigger_after_read', True),
                 partition_interval_years=int(
@@ -181,12 +210,16 @@ class ConfigLoader:
                 
         database = DatabaseConfig(
             type=db_data.get('type', 'sqlite'),
-            name=db_data.get('name', 'data.db'),
-            host=db_data.get('host', '127.0.0.1'),
-            port=db_data.get('port', 3306),
-            username=db_data.get('username', ''),
-            # 数据库密码优先取环境变量，配置文件无需保存明文口令
-            password=os.environ.get('SD_SMA_DB_PASSWORD') or db_data.get('password', ''),
+            name=os.environ.get('SD_SMA_DB_DATABASE') or db_data.get('name', 'data.db'),
+            host=os.environ.get('SD_SMA_DB_HOST') or db_data.get('host', '127.0.0.1'),
+            port=int(os.environ.get('SD_SMA_DB_PORT') or db_data.get('port', 3306)),
+            username=os.environ.get('SD_SMA_DB_USERNAME') or db_data.get('username', ''),
+            # 环境变量优先；持久化配置只接受 password_enc。
+            password=(
+                resolve_password(config_dir, db_data, 'SD_SMA_DB_PASSWORD')
+                if config_dir is not None
+                else (os.environ.get('SD_SMA_DB_PASSWORD') or str(db_data.get('password', '') or ''))
+            ),
             auto_create=auto_create,
             data_groups=data_groups
         )
@@ -263,7 +296,21 @@ class ConfigLoader:
             raise ValueError(f"同一配置中只能启用一张 batch_upsert 批次主表: {names}")
 
         point_name_set = set(point_names)
+        points_by_name = {point.name: point for point in config.points}
         for group in config.groups:
+            if group.enable_point is not None:
+                if not isinstance(group.enable_point, str):
+                    raise ValueError(
+                        f"数据组 '{group.name}' 的 enable_point 必须是点位名称"
+                    )
+                group.enable_point = group.enable_point.strip()
+                if not group.enable_point:
+                    group.enable_point = None
+                elif group.enable_point not in point_name_set:
+                    raise ValueError(
+                        f"数据组 '{group.name}' 的外部启用点位不存在: {group.enable_point}"
+                    )
+
             if group.trigger in {TriggerType.TIME, TriggerType.TIME_AND_VARIABLE}:
                 if isinstance(group.interval_seconds, bool):
                     raise ValueError(
@@ -290,6 +337,33 @@ class ConfigLoader:
                         f"数据组 '{group.name}' 的采集间隔点位不存在: {group.interval_point}"
                     )
 
+            if not isinstance(group.force_cadence_alignment, bool):
+                raise ValueError(
+                    f"数据组 '{group.name}' 的 force_cadence_alignment 必须是布尔值"
+                )
+            if group.force_cadence_alignment and group.trigger not in {
+                TriggerType.TIME,
+                TriggerType.TIME_AND_VARIABLE,
+            }:
+                raise ValueError(
+                    f"数据组 '{group.name}' 仅在 trigger=time 或 time_and_variable 时支持 "
+                    "force_cadence_alignment"
+                )
+            if isinstance(group.max_backfill_ticks, bool):
+                raise ValueError(
+                    f"数据组 '{group.name}' 的 max_backfill_ticks 必须是整数"
+                )
+            try:
+                group.max_backfill_ticks = int(group.max_backfill_ticks)
+            except (TypeError, ValueError):
+                raise ValueError(
+                    f"数据组 '{group.name}' 的 max_backfill_ticks 必须是整数"
+                ) from None
+            if group.max_backfill_ticks < 1 or group.max_backfill_ticks > 100000:
+                raise ValueError(
+                    f"数据组 '{group.name}' 的 max_backfill_ticks 必须在 1 到 100000 之间"
+                )
+
             if group.partition_interval_years < 0 or group.partition_interval_years > 10:
                 raise ValueError(
                     f"数据组 '{group.name}' 的 partition_interval_years 必须在 0 到 10 之间"
@@ -299,6 +373,48 @@ class ConfigLoader:
             for point_name in group.data_points:
                 if point_name not in point_name_set:
                     raise ValueError(f"数据组 '{group.name}' 引用了不存在的数据点: {point_name}")
+
+            overrides = group.variable_point_overrides
+            if not isinstance(overrides, dict):
+                raise ValueError(
+                    f"数据组 '{group.name}' 的 variable_point_overrides 必须是对象"
+                )
+            if overrides and group.trigger != TriggerType.TIME_AND_VARIABLE:
+                raise ValueError(
+                    f"数据组 '{group.name}' 仅在 trigger=time_and_variable 时支持 "
+                    "variable_point_overrides"
+                )
+            normalized_overrides: Dict[str, str] = {}
+            for logical_name, source_name in overrides.items():
+                if not isinstance(logical_name, str) or not logical_name.strip():
+                    raise ValueError(
+                        f"数据组 '{group.name}' 的 variable_point_overrides 键必须是非空点位名"
+                    )
+                if not isinstance(source_name, str) or not source_name.strip():
+                    raise ValueError(
+                        f"数据组 '{group.name}' 的 variable_point_overrides[{logical_name}] "
+                        "必须是非空点位名"
+                    )
+                logical_name = logical_name.strip()
+                source_name = source_name.strip()
+                if logical_name not in group.data_points:
+                    raise ValueError(
+                        f"数据组 '{group.name}' 的 variable_point_overrides 逻辑点不在 "
+                        f"data_points 中: {logical_name}"
+                    )
+                if source_name not in point_name_set:
+                    raise ValueError(
+                        f"数据组 '{group.name}' 的 variable 替代点不存在: {source_name}"
+                    )
+                logical_type = (points_by_name[logical_name].datatype or '').strip().lower()
+                source_type = (points_by_name[source_name].datatype or '').strip().lower()
+                if logical_type and source_type and logical_type != source_type:
+                    raise ValueError(
+                        f"数据组 '{group.name}' 的 variable 点位类型不一致: "
+                        f"{logical_name}({logical_type}) -> {source_name}({source_type})"
+                    )
+                normalized_overrides[logical_name] = source_name
+            group.variable_point_overrides = normalized_overrides
 
             if group.unique_key_point:
                 if group.unique_key_point not in group.data_points:
@@ -364,18 +480,19 @@ class ConfigLoader:
                     raise ValueError(f"触发类型为variable的数据组 '{group.name}' 必须指定trigger_point")
                 if group.trigger_point not in point_name_set:
                     raise ValueError(f"数据组 '{group.name}' 的触发点不存在: {group.trigger_point}")
-                if group.trigger_interval_seconds is None:
-                    group.trigger_interval_seconds = group.interval_seconds
-                try:
-                    trigger_interval = float(group.trigger_interval_seconds)
-                except (TypeError, ValueError):
-                    raise ValueError(
-                        f"数据组 '{group.name}' 的 trigger_interval_seconds 必须为数值（trigger=variable）"
-                    ) from None
-                if trigger_interval <= 0:
-                    raise ValueError(
-                        f"数据组 '{group.name}' 的 trigger_interval_seconds 必须大于 0（trigger=variable）"
-                    )
+                if group.trigger_mode == TriggerMode.POLL:
+                    if group.trigger_interval_seconds is None:
+                        group.trigger_interval_seconds = group.interval_seconds
+                    try:
+                        trigger_interval = float(group.trigger_interval_seconds)
+                    except (TypeError, ValueError):
+                        raise ValueError(
+                            f"数据组 '{group.name}' 的 trigger_interval_seconds 必须为数值（trigger=variable）"
+                        ) from None
+                    if trigger_interval <= 0:
+                        raise ValueError(
+                            f"数据组 '{group.name}' 的 trigger_interval_seconds 必须大于 0（trigger=variable）"
+                        )
 
             if group.trigger == TriggerType.TIME_AND_VARIABLE:
                 if group.is_parallel:
@@ -388,20 +505,22 @@ class ConfigLoader:
                     )
                 if group.trigger_point not in point_name_set:
                     raise ValueError(f"数据组 '{group.name}' 的触发点不存在: {group.trigger_point}")
-                if group.trigger_interval_seconds is None:
-                    raise ValueError(
-                        f"数据组 '{group.name}' 使用 time_and_variable 时必须配置 trigger_interval_seconds（秒）"
-                    )
-                try:
-                    tri = float(group.trigger_interval_seconds)
-                except (TypeError, ValueError):
-                    raise ValueError(
-                        f"数据组 '{group.name}' 的 trigger_interval_seconds 必须为数值"
-                    ) from None
-                if tri <= 0:
-                    raise ValueError(
-                        f"数据组 '{group.name}' 的 trigger_interval_seconds 必须大于 0"
-                    )
+                if group.trigger_mode == TriggerMode.POLL:
+                    if group.trigger_interval_seconds is None:
+                        raise ValueError(
+                            f"数据组 '{group.name}' 使用 time_and_variable 轮询时必须配置 "
+                            "trigger_interval_seconds（秒）"
+                        )
+                    try:
+                        tri = float(group.trigger_interval_seconds)
+                    except (TypeError, ValueError):
+                        raise ValueError(
+                            f"数据组 '{group.name}' 的 trigger_interval_seconds 必须为数值"
+                        ) from None
+                    if tri <= 0:
+                        raise ValueError(
+                            f"数据组 '{group.name}' 的 trigger_interval_seconds 必须大于 0"
+                        )
 
             # 验证索引配置
             if group.indexes:

@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import asyncio
 from typing import Any
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
 
 from app import opcua_client
 from app.main import app
+from app.plugin_opcua_monitor import PluginOpcuaMonitor, PluginRuntimeSnapshot
 from tests.conftest import opcua_mock_meta
 
 SAMPLE_ROWS = [
@@ -225,6 +226,58 @@ def test_opcua_check_endpoint(client: TestClient, opcua_mock_meta: dict):
     data = resp.json()
     assert data.get("ok") is True
     assert data.get("status") == "ok"
+
+
+@pytest.mark.integration
+def test_snapshot_query_rising_edge_runs_query_and_resets_node(opcua_mock_meta: dict):
+    async def run() -> None:
+        opcua_client.reset_pool_for_tests()
+        on_query = AsyncMock(
+            return_value=PluginRuntimeSnapshot(
+                plugin_key="general_1",
+                page=1,
+                total_pages=3,
+                total_records=25,
+                rows=[{"code": 101}],
+            )
+        )
+        binding = {
+            "plugin_key": "general_1",
+            "_table_list_config": object(),
+            "_table_list_advanced": {
+                "query_node": opcua_mock_meta["query"],
+                "prev_page_node": "",
+                "next_page_node": "",
+                "batch_no_node": "",
+                "trigger_node": "",
+            },
+        }
+        monitor = PluginOpcuaMonitor(
+            iter_bindings=lambda: [binding],
+            get_opcua=lambda: {
+                "endpoint_url": opcua_mock_meta["endpoint_url"],
+                "username": "",
+                "password": "",
+                "heartbeat_node": "",
+            },
+            on_snapshot_query=on_query,
+            on_page_change=AsyncMock(return_value=None),
+            on_trigger=AsyncMock(return_value=True),
+        )
+        assert await monitor._poll_once() is True
+        assert await opcua_client.write_scalar(
+            opcua_mock_meta["endpoint_url"], opcua_mock_meta["query"], True
+        )
+        assert await monitor._poll_once() is True
+        on_query.assert_awaited_once_with("general_1")
+        value = await opcua_client.read_scalar(
+            opcua_mock_meta["endpoint_url"], opcua_mock_meta["query"]
+        )
+        assert value is False
+        assert monitor.get_runtime("general_1").total_records == 25
+        await opcua_client.close_pool()
+
+    asyncio.run(run())
 
 
 @pytest.mark.asyncio

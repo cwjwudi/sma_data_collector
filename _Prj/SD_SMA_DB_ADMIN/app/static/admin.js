@@ -2,11 +2,43 @@ const STATE_KEY = 'sd_sma_db_admin_state_v2';
 let activeJobId = '';
 let pollTimer = null;
 let defaultOutputDir = '';
+let availableBackups = [];
+let selectedManagedFiles = new Map();
+let currentManagedPath = '';
+let currentManagedParent = '';
+let currentManagedFiles = [];
+let removableRoots = [];
+const notifiedJobStates = new Map();
 const confirmModalOverlay = document.getElementById('confirm-modal-overlay');
 const confirmModalTitle = document.getElementById('confirm-modal-title');
 const confirmModalMessage = document.getElementById('confirm-modal-message');
 const confirmModalCancel = document.getElementById('confirm-modal-cancel');
 const confirmModalConfirm = document.getElementById('confirm-modal-confirm');
+
+function safeStorageGet(key) {
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function safeStorageSet(key, value) {
+  try {
+    window.localStorage.setItem(key, value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function showStatusBar(text, tone = 'info') {
+  const bar = document.getElementById('appStatusBar');
+  if (!bar) return;
+  bar.textContent = String(text || '');
+  bar.dataset.tone = tone;
+  bar.hidden = !text;
+}
 
 async function fetchJson(url, opts) {
   const resp = await fetch(url, opts);
@@ -29,8 +61,114 @@ function enableButtonClickFeedback() {
 
 function setHint(id, text, cls = 'muted') {
   const el = document.getElementById(id);
-  el.textContent = text;
-  el.className = cls;
+  if (el) {
+    el.textContent = text;
+    el.className = cls;
+  }
+  const classes = String(cls).split(/\s+/);
+  if (classes.includes('ok')) {
+    showStatusBar(text, 'ok');
+  } else if (classes.includes('warn') || classes.includes('error')) {
+    showStatusBar(text, classes.includes('error') ? 'error' : 'warn');
+  }
+}
+
+async function openFilesystemBrowser({ purpose, initialPath = '', allowFiles = false }) {
+  const overlay = document.getElementById('filesystem-modal-overlay');
+  const title = document.getElementById('filesystem-modal-title');
+  const pathLabel = document.getElementById('filesystem-modal-path');
+  const list = document.getElementById('filesystem-modal-list');
+  const cancel = document.getElementById('filesystem-modal-cancel');
+  const select = document.getElementById('filesystem-modal-select');
+  const refresh = document.getElementById('filesystem-modal-refresh');
+  if (!overlay) throw new Error('文件浏览窗口不可用');
+  let current = '';
+  let removablePollTimer = null;
+  let rootSignature = '';
+
+  return new Promise((resolve, reject) => {
+    const close = () => {
+      if (removablePollTimer) clearInterval(removablePollTimer);
+      removablePollTimer = null;
+      overlay.style.display = 'none';
+    };
+    const finish = value => { close(); resolve(value); };
+    const fail = error => { close(); reject(error); };
+    cancel.onclick = () => finish('');
+    overlay.onclick = event => { if (event.target === overlay) finish(''); };
+    select.style.display = allowFiles ? 'none' : '';
+    select.onclick = () => finish(current);
+    refresh.style.display = purpose === 'removable-directory' ? '' : 'none';
+    title.textContent = allowFiles
+      ? `选择 ${purpose.toUpperCase()} 文件`
+      : (purpose === 'removable-directory' ? '选择外部设备目录' : '选择服务器目录');
+    overlay.style.display = 'flex';
+
+    const renderButton = (label, meta, onClick) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'filesystem-entry';
+      const name = document.createElement('span');
+      const detail = document.createElement('span');
+      name.textContent = label;
+      detail.textContent = meta;
+      detail.className = 'muted';
+      button.append(name, detail);
+      button.onclick = onClick;
+      list.appendChild(button);
+    };
+    const renderRoots = data => {
+      current = '';
+      select.disabled = true;
+      pathLabel.textContent = '允许访问的位置';
+      list.innerHTML = '';
+      for (const root of data.roots || []) {
+        renderButton(root.name, root.exists ? root.path : '目录不存在', () => {
+          if (root.exists) showDirectory(root.path).catch(fail);
+        });
+      }
+      if (!(data.roots || []).some(root => root.exists)) {
+        renderButton('未检测到外部设备', '插入后会自动刷新，也可点击“立即刷新”', () => {});
+      }
+    };
+    const showRoots = async () => {
+      const data = await fetchJson(`/api/filesystem/roots?purpose=${encodeURIComponent(purpose)}`);
+      rootSignature = JSON.stringify((data.roots || []).map(root => [root.path, root.exists]));
+      renderRoots(data);
+    };
+    const showDirectory = async path => {
+      const data = await fetchJson(`/api/filesystem/entries?purpose=${encodeURIComponent(purpose)}&path=${encodeURIComponent(path)}`);
+      current = data.current;
+      select.disabled = false;
+      pathLabel.textContent = current;
+      list.innerHTML = '';
+      if (data.parent) renderButton('..', '上一级', () => showDirectory(data.parent).catch(fail));
+      else renderButton('位置列表', '返回', () => showRoots().catch(fail));
+      for (const entry of data.entries || []) {
+        const isDirectory = entry.type === 'directory';
+        renderButton(entry.name, isDirectory ? '文件夹' : entry.modified_at, () => {
+          if (isDirectory) showDirectory(entry.path).catch(fail);
+          else if (allowFiles) finish(entry.path);
+        });
+      }
+    };
+    const pollRemovableRoots = async () => {
+      if (purpose !== 'removable-directory') return;
+      const data = await fetchJson(`/api/filesystem/roots?purpose=${encodeURIComponent(purpose)}`);
+      const nextSignature = JSON.stringify((data.roots || []).map(root => [root.path, root.exists]));
+      if (nextSignature === rootSignature) return;
+      rootSignature = nextSignature;
+      const roots = (data.roots || []).filter(root => root.exists);
+      const normalizedCurrent = current.toLowerCase();
+      const currentStillAvailable = roots.some(root => normalizedCurrent.startsWith(root.path.toLowerCase()));
+      if (!current || !currentStillAvailable) renderRoots(data);
+    };
+    refresh.onclick = () => showRoots().catch(fail);
+    if (purpose === 'removable-directory') {
+      removablePollTimer = setInterval(() => pollRemovableRoots().catch(() => {}), 1000);
+    }
+    (initialPath ? showDirectory(initialPath).catch(() => showRoots()) : showRoots()).catch(fail);
+  });
 }
 
 function showConfirmModal({ title, message, confirmText = '确认执行' }) {
@@ -41,7 +179,7 @@ function showConfirmModal({ title, message, confirmText = '确认执行' }) {
     !confirmModalCancel ||
     !confirmModalConfirm
   ) {
-    console.error('Confirm modal elements are missing.');
+    showStatusBar('无法显示操作确认，操作已取消。', 'error');
     return Promise.resolve(false);
   }
 
@@ -200,7 +338,6 @@ function getConnectionPayload() {
     host: document.getElementById('dbHost').value.trim() || '127.0.0.1',
     port: Number(document.getElementById('dbPort').value || 3306),
     username: document.getElementById('dbUsername').value.trim(),
-    password: document.getElementById('dbPassword').value,
     database: coerceIdentName(document.getElementById('databaseSelect').value) || '',
   };
 }
@@ -241,11 +378,11 @@ function saveState() {
     importTable: document.getElementById('importTableSelect').value,
     outputDir: document.getElementById('outputDir').value,
   };
-  localStorage.setItem(STATE_KEY, JSON.stringify(state));
+  safeStorageSet(STATE_KEY, JSON.stringify(state));
 }
 
 function loadSavedState() {
-  const raw = localStorage.getItem(STATE_KEY);
+  const raw = safeStorageGet(STATE_KEY);
   if (!raw) return null;
   try {
     const state = JSON.parse(raw);
@@ -267,14 +404,15 @@ async function loadConfig() {
   document.getElementById('dbHost').value = conn.host || '127.0.0.1';
   document.getElementById('dbPort').value = Number(conn.port || 3306);
   document.getElementById('dbUsername').value = conn.username || '';
-  // Prefer browser-saved password; fall back to server default_connection.
-  document.getElementById('dbPassword').value =
-    typeof saved?.password === 'string'
-      ? saved.password
-      : String(config.default_connection?.password || '');
+  // Passwords are never restored into the DOM or browser storage. Launcher-managed
+  // services receive the credential through their process environment.
+  document.getElementById('dbPassword').value = '';
   document.getElementById('outputDir').value =
     saved?.outputDir || config.last_output_dir || defaultOutputDir;
-  setHint('connectionHint', `默认导出目录: ${defaultOutputDir || '-'}`);
+  const passwordState = config.default_connection?.password_managed
+    ? '数据库密码由 Launcher 管理'
+    : (config.default_connection?.password_configured ? '数据库密码已安全保存' : '尚未配置数据库密码');
+  setHint('connectionHint', `${passwordState} · 默认导出目录: ${defaultOutputDir || '-'}`);
   updateQuickChipState();
 }
 
@@ -375,16 +513,12 @@ async function refreshSizedCatalog() {
 }
 
 async function chooseOutputFolder() {
-  setHint('backupHint', '正在打开文件夹选择窗口...');
-  const data = await fetchJson('/api/folder-dialog', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ initial_dir: getOutputDir() || defaultOutputDir }),
-  });
-  if (data.selected) {
-    document.getElementById('outputDir').value = data.selected;
+  setHint('backupHint', '请选择服务允许访问的输出目录...');
+  const selected = await openFilesystemBrowser({ purpose: 'directory', initialPath: getOutputDir() || defaultOutputDir });
+  if (selected) {
+    document.getElementById('outputDir').value = selected;
     saveState();
-    setHint('backupHint', `已选择导出目录: ${data.selected}`, 'muted ok');
+    setHint('backupHint', `已选择导出目录: ${selected}`, 'muted ok');
   } else {
     setHint('backupHint', '已取消选择导出目录', 'muted');
   }
@@ -463,16 +597,17 @@ async function requestConfirmationToken(action, database, table = '') {
 }
 
 async function registerLocalFile(kind) {
-  setHint('importHint', `正在打开${kind === 'csv' ? 'CSV' : 'SQL'}文件选择窗口...`);
-  const data = await fetchJson('/api/register-file', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ kind, initial_dir: getOutputDir() || defaultOutputDir }),
-  });
-  if (!data.selected) {
+  setHint('importHint', `请选择服务允许访问的 ${kind.toUpperCase()} 文件...`);
+  const selected = await openFilesystemBrowser({ purpose: kind, initialPath: getOutputDir() || defaultOutputDir, allowFiles: true });
+  if (!selected) {
     setHint('importHint', '已取消登记本地文件', 'muted');
     return;
   }
+  const data = await fetchJson('/api/register-file', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ kind, path: selected }),
+  });
   if (kind === 'csv') {
     await loadServerCsvExports();
     setHint('importHint', `已登记 CSV: ${data.filename}`, 'muted ok');
@@ -484,10 +619,11 @@ async function registerLocalFile(kind) {
 
 async function loadServerBackups() {
   const data = await fetchJson('/api/backups');
+  availableBackups = data.backups || [];
   const select = document.getElementById('serverBackupSelect');
   const previous = select.value;
   select.innerHTML = '';
-  for (const backup of data.backups || []) {
+  for (const backup of availableBackups) {
     const option = document.createElement('option');
     option.value = backup.filename;
     const scope = backup.scope === 'table' && backup.table
@@ -497,6 +633,238 @@ async function loadServerBackups() {
     select.appendChild(option);
   }
   if (previous && hasOption(select, previous)) select.value = previous;
+}
+
+function destinationIsOnAvailableDrive(destination) {
+  const value = String(destination || '').toLowerCase();
+  return removableRoots.some(root => value.startsWith(String(root.path || '').toLowerCase()));
+}
+
+function managedFileMeta(item) {
+  const origin = item.scope === 'table' && item.table
+    ? `单表 ${item.database || ''}.${item.table}`
+    : (item.database ? `数据库 ${item.database}` : (item.scope === 'external' ? '外部登记' : '已完成'));
+  return `${String(item.kind || '').toUpperCase()} · ${origin} · ${formatBytes(item.size || 0)} · ${item.completed_at || item.modified_at || '时间未知'}`;
+}
+
+function selectedManagedFileList() {
+  return [...selectedManagedFiles.values()];
+}
+
+function renderManagedSelection() {
+  const selected = selectedManagedFileList();
+  const totalBytes = selected.reduce((sum, item) => sum + Number(item.size || 0), 0);
+  document.getElementById('backupSelectionSummary').textContent = `已选择 ${selected.length} 个文件，共 ${formatBytes(totalBytes)}`;
+  const container = document.getElementById('backupSelectedFiles');
+  container.innerHTML = '';
+  for (const item of selected) {
+    const row = document.createElement('div');
+    row.className = 'backup-selected-item';
+    const text = document.createElement('span');
+    text.textContent = item.name;
+    text.title = item.path;
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.textContent = '移除';
+    remove.addEventListener('click', () => {
+      selectedManagedFiles.delete(item.path);
+      renderManagedEntries();
+      renderManagedSelection();
+    });
+    row.append(text, remove);
+    container.appendChild(row);
+  }
+  const destination = document.getElementById('backupCopyDestination').value.trim();
+  document.getElementById('btnCopyBackups').disabled = !selected.length || !destination || !destinationIsOnAvailableDrive(destination);
+  document.getElementById('btnDeleteBackupFiles').disabled = !selected.length;
+  document.getElementById('btnClearBackupSelection').disabled = !selected.length;
+  const driveText = removableRoots.length ? `${removableRoots.length} 个外部设备可用` : '未检测到外部设备';
+  setHint(
+    'backupManagerHint',
+    `${driveText}；已选择 ${selected.length} 个文件（${formatBytes(totalBytes)}）`,
+    removableRoots.length ? 'muted' : 'muted warn',
+  );
+}
+
+function renderManagedEntries() {
+  const list = document.getElementById('backupFilesList');
+  list.innerHTML = '';
+  document.getElementById('backupFilesPath').textContent = currentManagedPath || '允许访问的位置';
+  document.getElementById('btnBackupFilesParent').disabled = !currentManagedParent;
+  document.getElementById('btnSelectCurrentBackupFiles').disabled = !currentManagedFiles.some(item => item.type === 'file');
+  if (!currentManagedFiles.length) {
+    const empty = document.createElement('div');
+    empty.className = 'backup-files-empty';
+    empty.textContent = '当前目录没有有效的 SQL / CSV 备份文件';
+    list.appendChild(empty);
+    return;
+  }
+  for (const entry of currentManagedFiles) {
+    if (entry.type === 'directory') {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'backup-directory-entry';
+      button.innerHTML = '<span class="backup-entry-icon">📁</span>';
+      const label = document.createElement('span');
+      label.textContent = entry.name;
+      button.appendChild(label);
+      button.addEventListener('click', () => loadManagedDirectory(entry.path).catch(showBackupManagerError));
+      list.appendChild(button);
+      continue;
+    }
+    const label = document.createElement('label');
+    label.className = 'backup-file-entry';
+    label.classList.toggle('is-selected', selectedManagedFiles.has(entry.path));
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.checked = selectedManagedFiles.has(entry.path);
+    checkbox.addEventListener('change', () => {
+      if (checkbox.checked) selectedManagedFiles.set(entry.path, entry);
+      else selectedManagedFiles.delete(entry.path);
+      label.classList.toggle('is-selected', checkbox.checked);
+      renderManagedSelection();
+    });
+    const content = document.createElement('span');
+    content.className = 'backup-file-entry-content';
+    const name = document.createElement('strong');
+    name.textContent = entry.name;
+    const meta = document.createElement('span');
+    meta.className = 'muted';
+    meta.textContent = managedFileMeta(entry);
+    content.append(name, meta);
+    label.append(checkbox, content);
+    list.appendChild(label);
+  }
+}
+
+function showBackupManagerError(error) {
+  setHint('backupManagerHint', error.message || String(error), 'muted warn');
+}
+
+async function loadManagedRoots() {
+  const data = await fetchJson('/api/backup-files/roots');
+  currentManagedPath = '';
+  currentManagedParent = '';
+  currentManagedFiles = (data.roots || []).filter(root => root.exists).map(root => ({
+    ...root,
+    type: 'directory',
+    name: root.name || root.path,
+  }));
+  renderManagedEntries();
+}
+
+async function loadManagedDirectory(path) {
+  const data = await fetchJson(`/api/backup-files/entries?path=${encodeURIComponent(path)}`);
+  currentManagedPath = data.current || path;
+  currentManagedParent = data.parent || '';
+  currentManagedFiles = data.entries || [];
+  const validPaths = new Set(currentManagedFiles.filter(item => item.type === 'file').map(item => item.path));
+  for (const selected of selectedManagedFileList()) {
+    const slash = Math.max(selected.path.lastIndexOf('\\'), selected.path.lastIndexOf('/'));
+    const selectedParent = slash >= 0 ? selected.path.slice(0, slash) : '';
+    if (selectedParent.toLowerCase() === currentManagedPath.toLowerCase() && !validPaths.has(selected.path)) {
+      selectedManagedFiles.delete(selected.path);
+    }
+  }
+  renderManagedEntries();
+  renderManagedSelection();
+}
+
+async function refreshManagedFiles() {
+  if (currentManagedPath) await loadManagedDirectory(currentManagedPath);
+  else await loadManagedRoots();
+}
+
+function defaultRemovableBackupDir(root) {
+  return `${String(root || '').replace(/[\\/]+$/, '')}\\SD_SMA_Backups`;
+}
+
+async function refreshRemovableDrives({ announce = false } = {}) {
+  const data = await fetchJson('/api/filesystem/roots?purpose=removable-directory');
+  removableRoots = (data.roots || []).filter(root => root.exists);
+  const input = document.getElementById('backupCopyDestination');
+  if (!removableRoots.length) {
+    input.value = '';
+  } else if (!destinationIsOnAvailableDrive(input.value)) {
+    input.value = removableRoots.length === 1 ? defaultRemovableBackupDir(removableRoots[0].path) : '';
+  }
+  if (announce) {
+    setHint(
+      'backupManagerHint',
+      removableRoots.length ? `已检测到 ${removableRoots.length} 个外部设备` : '未检测到外部设备',
+      removableRoots.length ? 'muted ok' : 'muted warn',
+    );
+  }
+  renderManagedSelection();
+  return removableRoots;
+}
+
+async function chooseBackupCopyDestination() {
+  await refreshRemovableDrives();
+  const input = document.getElementById('backupCopyDestination');
+  const selected = await openFilesystemBrowser({
+    purpose: 'removable-directory',
+    initialPath: input.value,
+  });
+  if (selected) input.value = selected;
+  await refreshRemovableDrives();
+}
+
+async function startCopyBackups() {
+  const selected = selectedManagedFileList();
+  const destination = document.getElementById('backupCopyDestination').value.trim();
+  if (!selected.length) throw new Error('请至少选择一个 SQL 或 CSV 文件');
+  if (!destination || !destinationIsOnAvailableDrive(destination)) throw new Error('请选择当前可用的外部设备目录');
+  const totalBytes = selected.reduce((sum, item) => sum + Number(item.size || 0), 0);
+  const confirmed = await showConfirmModal({
+    title: '确认复制备份文件',
+    message: `将 ${selected.length} 个文件（${formatBytes(totalBytes)}）复制到外部设备：${destination}。复制后将校验 SHA-256。`,
+    confirmText: '开始复制',
+  });
+  if (!confirmed) return;
+  const data = await fetchJson('/api/copy-backup-files', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      paths: selected.map(item => item.path),
+      destination_dir: destination,
+    }),
+  });
+  watchJob(data.job.id);
+  setHint('backupManagerHint', `已开始复制到外部设备：${destination}`, 'muted ok');
+}
+
+async function deleteSelectedBackupFiles() {
+  const selected = selectedManagedFileList();
+  if (!selected.length) throw new Error('请至少选择一个要删除的文件');
+  const totalBytes = selected.reduce((sum, item) => sum + Number(item.size || 0), 0);
+  const first = await showConfirmModal({
+    title: '删除备份文件（1/2）',
+    message: `将永久删除 ${selected.length} 个文件及其 manifest，共 ${formatBytes(totalBytes)}。此操作不可恢复，是否继续？`,
+    confirmText: '继续',
+  });
+  if (!first) return;
+  const second = await showConfirmModal({
+    title: '删除备份文件（2/2）',
+    message: '二次确认：所选 SQL / CSV 及校验清单将被永久删除，确定执行？',
+    confirmText: '永久删除',
+  });
+  if (!second) return;
+  const paths = selected.map(item => item.path);
+  const confirmation = await fetchJson('/api/backup-files/delete-confirmation', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ paths }),
+  });
+  const result = await fetchJson('/api/delete-backup-files', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ paths, confirmation_token: confirmation.token }),
+  });
+  selectedManagedFiles.clear();
+  await Promise.all([refreshManagedFiles(), loadServerBackups(), loadServerCsvExports()]);
+  renderManagedSelection();
+  setHint('backupManagerHint', `已永久删除 ${result.count} 个文件（${formatBytes(result.size_bytes)}）`, 'muted ok');
 }
 
 async function loadServerCsvExports() {
@@ -575,7 +943,27 @@ async function startImportServerCsv() {
 function statusClass(status) {
   if (status === 'done') return 'status-done';
   if (status === 'failed') return 'status-failed';
+  if (status === 'cancelled' || status === 'canceled') return 'status-cancelled';
   return 'status-running';
+}
+
+function notifyJobOutcome(job) {
+  if (!job || !job.id || job.status === 'running') return;
+  const status = String(job.status || '');
+  const notificationKey = `${job.id}:${status}`;
+  if (notifiedJobStates.get(job.id) === notificationKey) return;
+  notifiedJobStates.set(job.id, notificationKey);
+
+  const title = job.title || job.id;
+  if (status === 'done') {
+    const outputPath = job.result?.path || job.result?.destination || '';
+    const output = outputPath ? `：${outputPath}` : '';
+    showStatusBar(`任务成功：${title}${output}`, 'ok');
+  } else if (status === 'cancelled' || status === 'canceled') {
+    showStatusBar(`任务已取消：${title}`, 'warn');
+  } else if (status === 'failed') {
+    showStatusBar(`任务失败：${title}：${job.error || '未知错误'}`, 'error');
+  }
 }
 
 function formatDuration(seconds) {
@@ -605,9 +993,14 @@ function renderJobs(jobs) {
   for (const job of jobs) {
     const tr = document.createElement('tr');
     const status = job.status || 'running';
-    const result = job.result && job.result.path
-      ? `${job.result.path}${job.result.size_bytes ? ` (${job.result.size_bytes} bytes)` : ''}`
-      : (job.error || job.phase || '');
+    let result = job.error || job.phase || '';
+    if (job.result?.path) {
+      result = `${job.result.path}${job.result.size_bytes ? ` (${job.result.size_bytes} bytes)` : ''}`;
+    } else if (job.result?.destination) {
+      const copied = (job.result.copied || []).length;
+      const skipped = (job.result.skipped || []).length;
+      result = `${job.result.destination} / 已复制 ${copied} / 已跳过 ${skipped}`;
+    }
     const statusCell = document.createElement('td');
     const statusButton = document.createElement('button');
     statusButton.type = 'button';
@@ -624,8 +1017,13 @@ function renderJobs(jobs) {
       cancelButton.addEventListener('click', async event => {
         event.stopPropagation();
         if (!(await showConfirmModal({ title: '取消任务', message: `确定取消 ${job.title || job.id}？`, confirmText: '确认取消' }))) return;
-        await fetchJson(`/api/jobs/${encodeURIComponent(job.id)}/cancel`, { method: 'POST' });
-        await refreshJobs();
+        try {
+          await fetchJson(`/api/jobs/${encodeURIComponent(job.id)}/cancel`, { method: 'POST' });
+          showStatusBar(`已提交任务取消请求：${job.title || job.id}`, 'warn');
+          await refreshJobs();
+        } catch (err) {
+          showStatusBar(`任务取消失败：${job.title || job.id}：${err.message}`, 'error');
+        }
       });
       statusCell.appendChild(cancelButton);
     }
@@ -682,6 +1080,7 @@ async function refreshJobs() {
   if (activeJobId) {
     const jobData = await fetchJson('/api/jobs/' + encodeURIComponent(activeJobId));
     renderJobLog(jobData.job);
+    notifyJobOutcome(jobData.job);
     if (jobData.job.status !== 'running' && pollTimer) {
       clearInterval(pollTimer);
       pollTimer = null;
@@ -714,7 +1113,7 @@ function bindEvents() {
     loadExportTables().catch(err => setHint('objectHint', err.message, 'muted warn'));
   });
   document.getElementById('btnRefreshImportTables').addEventListener('click', () => {
-    loadImportTables().catch(err => setHint('importHint', err.message, 'muted'));
+    loadImportTables().catch(err => setHint('importHint', err.message, 'muted warn'));
   });
   for (const id of [
     'databaseSelect',
@@ -761,6 +1160,39 @@ function bindEvents() {
   document.getElementById('btnRefreshBackups').addEventListener('click', () => {
     loadServerBackups().catch(err => setHint('importHint', err.message, 'muted warn'));
   });
+  document.getElementById('btnBackupFilesRoots').addEventListener('click', () => {
+    loadManagedRoots().catch(showBackupManagerError);
+  });
+  document.getElementById('btnBackupFilesParent').addEventListener('click', () => {
+    if (currentManagedParent) loadManagedDirectory(currentManagedParent).catch(showBackupManagerError);
+  });
+  document.getElementById('btnRefreshBackupFiles').addEventListener('click', () => {
+    refreshManagedFiles().catch(showBackupManagerError);
+  });
+  document.getElementById('btnSelectCurrentBackupFiles').addEventListener('click', () => {
+    for (const entry of currentManagedFiles) {
+      if (entry.type === 'file') selectedManagedFiles.set(entry.path, entry);
+    }
+    renderManagedEntries();
+    renderManagedSelection();
+  });
+  document.getElementById('btnClearBackupSelection').addEventListener('click', () => {
+    selectedManagedFiles.clear();
+    renderManagedEntries();
+    renderManagedSelection();
+  });
+  document.getElementById('btnChooseBackupDestination').addEventListener('click', () => {
+    chooseBackupCopyDestination().catch(showBackupManagerError);
+  });
+  document.getElementById('btnRefreshRemovableDrives').addEventListener('click', () => {
+    refreshRemovableDrives({ announce: true }).catch(showBackupManagerError);
+  });
+  document.getElementById('btnCopyBackups').addEventListener('click', () => {
+    startCopyBackups().catch(showBackupManagerError);
+  });
+  document.getElementById('btnDeleteBackupFiles').addEventListener('click', () => {
+    deleteSelectedBackupFiles().catch(showBackupManagerError);
+  });
   document.getElementById('btnRegisterSql').addEventListener('click', () => {
     registerLocalFile('sql').catch(err => setHint('importHint', err.message, 'muted warn'));
   });
@@ -793,7 +1225,10 @@ async function init() {
   }
   await refreshJobs();
   await loadServerBackups();
+  await refreshRemovableDrives();
   await loadServerCsvExports();
+  await loadManagedRoots();
+  renderManagedSelection();
 }
 
-init().catch(err => alert(err.message));
+init().catch(err => showStatusBar(err.message, 'error'));

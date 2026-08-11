@@ -51,6 +51,8 @@ export interface ExpandedBodyPreviewCard {
   tailOnlyBelowBaseline?: boolean;
   tailBaselineY?: number;
   overflowSqlFillTableId?: string;
+  /** 本卡不画溢出 SQL 表（锚点页放不下、表改到续卡 top=0） */
+  hideOverflowSqlFillTable?: boolean;
 }
 
 /** 按可变行高累计，返回在 availPx 内能放下的整行数（装不下返回 0） */
@@ -177,6 +179,7 @@ function buildSlicesForOverflowTable(
   repeatHeader: boolean,
   allRowHeights: number[],
   splitDataRow?: SplitRowForAvail,
+  opts?: { forceStartOnFreshPage?: boolean },
 ): SqlFillTablePreviewSlice[] {
   if (el.type !== "table" || dataRowCount <= 0) return [];
   const rowH = clampTableRowHeightPx(el.tableRowHeightPx);
@@ -188,7 +191,8 @@ function buildSlicesForOverflowTable(
 
   let cursor = 0;
   let lineStart = 0;
-  let first = true;
+  // 锚点页放不下时，直接按「整页」几何切分（续卡 top=0）
+  let first = opts?.forceStartOnFreshPage ? false : true;
   let guard = 0;
   const maxGuard = Math.max(64, dataRowCount * 64);
 
@@ -522,21 +526,64 @@ function slicesForBodyPage(
         splitDataRow,
       );
 
+  const logicalBottom = estimatedSqlFillTableBottomY(overflowEl, displayN, allHeights);
+  const overflowsAtAnchor = logicalBottom > contentH + 0.5;
+  const firstPageAvail = contentH - overflowEl.y;
+  const chrome = tableSqlFillVerticalChromePx();
+  const headerH = allHeights[0] ?? clampTableRowHeightPx(overflowEl.tableRowHeightPx);
+  const firstPageTooTight = firstPageAvail - chrome - headerH <= 0;
+
   // 另起一页：即使单条也能放下，多条时仍要拆成多卡
+  let finalChunks = chunks;
+  let deferTableToFreshPage = false;
+
   if (chunks.length <= 1 && !(pagePerRecord && sqlN > 1)) {
-    return [
-      {
-        bodyPageIndex,
-        continuationIndex: 0,
-        sqlFillTableSlices: {},
-        continuationHideOtherBodyElements: false,
-      },
-    ];
+    if (!overflowsAtAnchor) {
+      return [
+        {
+          bodyPageIndex,
+          continuationIndex: 0,
+          sqlFillTableSlices: {},
+          continuationHideOtherBodyElements: false,
+        },
+      ];
+    }
+    // 需要分页却只得到 1 chunk（常见：锚点页跳过后整表装进一页）→ 强制从整页几何重切，并推迟到续卡
+    finalChunks = buildSlicesForOverflowTable(
+      overflowEl,
+      displayN,
+      contentH,
+      repeatHeader,
+      allHeights,
+      splitDataRow,
+      { forceStartOnFreshPage: true },
+    );
+    deferTableToFreshPage = true;
+    if (finalChunks.length === 0) {
+      finalChunks = [
+        {
+          dataRowStart: 0,
+          dataRowCount: displayN,
+          includeHeaderRow: true,
+        },
+      ];
+    }
+  } else if (firstPageTooTight && !pagePerRecord) {
+    // 锚点页连表头都放不下：整表改到续卡顶部，避免在原 y 裁切
+    finalChunks = buildSlicesForOverflowTable(
+      overflowEl,
+      displayN,
+      contentH,
+      repeatHeader,
+      allHeights,
+      splitDataRow,
+      { forceStartOnFreshPage: true },
+    );
+    deferTableToFreshPage = true;
   }
 
   // page_per_record 且每条都能放下时，chunks 可能已按记录拆好；若仍为 1 且 sqlN>1，强制按记录拆
-  let finalChunks = chunks;
-  if (pagePerRecord && sqlN > 1 && chunks.length <= 1) {
+  if (pagePerRecord && sqlN > 1 && finalChunks.length <= 1) {
     const per = verticalSqlSlotsPerRecord(fill);
     finalChunks = [];
     for (let i = 0; i < sqlN; i++) {
@@ -546,27 +593,45 @@ function slicesForBodyPage(
         includeHeaderRow: true,
       });
     }
+    deferTableToFreshPage = overflowEl.y > 0.5;
   }
 
-  const logicalBottom = estimatedSqlFillTableBottomY(overflowEl, displayN, allHeights);
   const hasBelow = hasWidgetsBelowSqlFillTable(els, overflowEl, logicalBottom);
 
-  const cards: ExpandedBodyPreviewCard[] = finalChunks.map((slice, idx) => ({
-    bodyPageIndex,
-    continuationIndex: idx,
-    sqlFillTableSlices: { [overflowEl.id]: slice },
-    continuationHideOtherBodyElements: idx > 0,
-    sqlFillHideBelow:
-      idx === 0 ? { tableId: overflowEl.id, baselineY: logicalBottom } : undefined,
-    showSqlFillTailDividerHint:
-      hasBelow && idx === finalChunks.length - 1 ? true : undefined,
-    overflowSqlFillTableId: overflowEl.id,
-  }));
+  const cards: ExpandedBodyPreviewCard[] = [];
+  if (deferTableToFreshPage) {
+    cards.push({
+      bodyPageIndex,
+      continuationIndex: 0,
+      sqlFillTableSlices: {},
+      continuationHideOtherBodyElements: false,
+      overflowSqlFillTableId: overflowEl.id,
+      hideOverflowSqlFillTable: true,
+    });
+  }
+
+  for (let idx = 0; idx < finalChunks.length; idx++) {
+    const slice = finalChunks[idx]!;
+    const contIdx = deferTableToFreshPage ? idx + 1 : idx;
+    cards.push({
+      bodyPageIndex,
+      continuationIndex: contIdx,
+      sqlFillTableSlices: { [overflowEl.id]: slice },
+      continuationHideOtherBodyElements: deferTableToFreshPage || contIdx > 0,
+      sqlFillHideBelow:
+        !deferTableToFreshPage && idx === 0
+          ? { tableId: overflowEl.id, baselineY: logicalBottom }
+          : undefined,
+      showSqlFillTailDividerHint:
+        hasBelow && idx === finalChunks.length - 1 ? true : undefined,
+      overflowSqlFillTableId: overflowEl.id,
+    });
+  }
 
   if (hasBelow) {
     cards.push({
       bodyPageIndex,
-      continuationIndex: finalChunks.length,
+      continuationIndex: (deferTableToFreshPage ? 1 : 0) + finalChunks.length,
       sqlFillTableSlices: {},
       continuationHideOtherBodyElements: true,
       tailOnlyBelowBaseline: true,

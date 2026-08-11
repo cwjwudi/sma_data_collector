@@ -1,7 +1,7 @@
 <template>
   <div class="pdf-export-root">
     <TemplateExportPreviewStack
-      v-if="tmpl"
+      v-if="tmpl && useChromiumPrint"
       :tmpl="tmpl"
       active-sheet="cover"
       :active-body-page-index="0"
@@ -12,6 +12,9 @@
       :mini-max-height-px="pdfMiniMaxHeightPx"
     />
     <div v-else-if="errText" class="pdf-export-err">{{ errText }}</div>
+    <div v-else-if="tmpl && !useChromiumPrint" class="pdf-export-pdflib-hint">
+      pdf-lib · {{ layoutFidelity }}
+    </div>
   </div>
 </template>
 
@@ -32,16 +35,53 @@ import {
 } from "@/lib/bindingPreviewErrors";
 import { splitReportCountForPreview } from "@/lib/report-template/table-sql-fill-report-split";
 import {
+  clearPdfExportFillCache,
+  getPdfExportFillCache,
+  peekPdfExportFillCache,
+  publishPdfExportFillCacheToBridge,
+  setPdfExportFillCache,
+  shouldReusePdfExportFill,
+  waitPdfExportFillCacheFromBridge,
+} from "@/lib/report-template/pdf-export-fill-cache";
+import {
   BINDING_FILL_OUTER_RETRY_DELAYS_MS,
   BINDING_FILL_OUTER_RETRY_MAX,
   isRetryableBindingFillSummary,
   retryDelayMs,
   sleepMs,
 } from "@/lib/report-template/sql-fill-retry";
+import { normalizePdfExportEngine, type PdfExportEngineId } from "@/lib/pdf-export-engine";
+import { installPrintTableGridOverlays } from "@/lib/report-template/print-table-grid-overlay";
+import { collectFontFamiliesFromTemplate } from "@/lib/report-template/font-families-collect";
+import { pickBundledFontForExport } from "@/lib/report-template/font-availability";
+import { ensureBundledLayoutFontsRegistered } from "@/lib/report-template/ensure-bundled-layout-fonts";
+import { renderPdfLibExportPart } from "@/lib/report-template/pdf-lib-export-render";
 
 const route = useRoute();
 const tmpl = ref<ReportTemplate | null>(null);
 const errText = ref<string | null>(null);
+
+const exportEngine = computed<PdfExportEngineId>(() => {
+  const raw = route.query.engine;
+  const s = Array.isArray(raw) ? raw[0] : raw;
+  return normalizePdfExportEngine(s);
+});
+const useChromiumPrint = computed(() => exportEngine.value === "chromium");
+
+const layoutFidelity = computed(() => {
+  const raw = route.query.layoutFidelity;
+  const s = Array.isArray(raw) ? raw[0] : raw;
+  const v = String(s || "").trim().toLowerCase();
+  if (v === "layout-v2") return "layout-v2" as const;
+  return "draft-v1" as const;
+});
+
+/** 五档对照批导等：绑定失败仍继续渲染，便于离线比版式 */
+const allowBindingIssues = computed(() => {
+  const raw = route.query.allowBindingIssues;
+  const s = Array.isArray(raw) ? raw[0] : raw;
+  return s === "1" || s === "true";
+});
 
 const bindingPreview = useReportBindingPreview(tmpl);
 provide(reportBindingPreviewKey, bindingPreview);
@@ -52,6 +92,13 @@ const reportPartIndex = computed(() => {
   const s = Array.isArray(raw) ? raw[0] : raw;
   const n = Number.parseInt(String(s ?? ""), 10);
   return Number.isFinite(n) && n >= 0 ? n : null;
+});
+
+/** 045 R4：与主进程 job 对齐，临时 PDF 取消时可扫尾 */
+const exportJobId = computed(() => {
+  const raw = route.query.jobId;
+  const s = Array.isArray(raw) ? raw[0] : raw;
+  return String(s || "").trim();
 });
 
 const fixedCardWidthPx = computed(() => {
@@ -89,12 +136,28 @@ function injectPrintPageCss(t: ReportTemplate): void {
 
 type ExportBootPhases = { tplMs: number; dataMs: number; paintMs: number };
 
+type ExportReadyExtra = {
+  /** @deprecated 045 R4 起矢量优先 pdfTempPath */
+  pdfBase64?: string;
+  /** 045 R4：主进程临时 PDF 路径 */
+  pdfTempPath?: string;
+  engine?: PdfExportEngineId;
+  exportMode?: "coexist" | "fidelity";
+  layoutFidelity?: string;
+  fontFamily?: string;
+  fontEmbedded?: boolean;
+  pageCount?: number;
+  pdfLibMs?: number;
+  printToPDFSkipped?: boolean;
+};
+
 function signalReady(
   ok: boolean,
   error?: string,
   totalReports?: number,
   phases?: ExportBootPhases,
   diagnostics?: ExportFailureDiagnostics,
+  extra?: ExportReadyExtra,
 ): void {
   stopExportHeartbeat();
   // 注意：stats 须转成纯对象。Vue reactive 代理经 IPC 会抛
@@ -109,17 +172,41 @@ function signalReady(
       : undefined,
     phases,
     diagnostics: diagnostics || undefined,
+    ...(extra || {}),
   });
 }
 
-/** 取数期间向主进程发心跳：大模版慢取数不再被固定 2 分钟超时误杀 */
-let exportHeartbeatTimer: ReturnType<typeof setInterval> | null = null;
+/**
+ * 045 R1：随包字体 IPC 结果跨份缓存。字体为随包静态资源，预热窗进程生命周期内不变；
+ * 多分卷结批不再每份走一次 MB 级 base64 IPC。
+ */
+const bundledFontResCache = new Map<string, { ok?: boolean; base64?: string }>();
 
-function startExportHeartbeat(): void {
+async function getBundledCjkFontCached(
+  key: string,
+): Promise<{ ok?: boolean; base64?: string } | undefined> {
+  const hit = bundledFontResCache.get(key);
+  if (hit?.ok) return hit;
+  const res = await window.electronAPI?.getBundledCjkFont?.({ key });
+  if (res?.ok) bundledFontResCache.set(key, res);
+  return res;
+}
+
+/** 取数期间向主进程发心跳：大模版慢取数不再被固定 2 分钟超时误杀；并可带 stage 给遮罩 */
+let exportHeartbeatTimer: ReturnType<typeof setInterval> | null = null;
+let exportHeartbeatStage: "load" | "fetch" | "render" = "load";
+
+function pulseExportHeartbeat(stage?: "load" | "fetch" | "render"): void {
+  if (stage) exportHeartbeatStage = stage;
+  window.electronAPI?.notifyPdfExportHeartbeat?.({ stage: exportHeartbeatStage });
+}
+
+function startExportHeartbeat(stage: "load" | "fetch" | "render" = "load"): void {
+  exportHeartbeatStage = stage;
+  pulseExportHeartbeat(stage);
   if (exportHeartbeatTimer) return;
-  window.electronAPI?.notifyPdfExportHeartbeat?.();
   exportHeartbeatTimer = setInterval(() => {
-    window.electronAPI?.notifyPdfExportHeartbeat?.();
+    pulseExportHeartbeat();
   }, 10_000);
 }
 
@@ -132,6 +219,7 @@ function stopExportHeartbeat(): void {
 
 async function waitPaintReady(): Promise<void> {
   try {
+    await ensureBundledLayoutFontsRegistered();
     await document.fonts.ready;
   } catch {
     /* ignore */
@@ -146,16 +234,20 @@ async function boot(): Promise<void> {
   errText.value = null;
   const id = String(route.query.templateId || "").trim();
   if (!id) {
-    // 预热待命：主进程预加载本页常驻，结批时仅切 hash 进入导出，静默等待即可
-    if (route.query.prewarm != null) return;
+    // 预热待命：只清本窗内存，禁止动全局 bridge（否则并行其它路会永等「同步取数缓存」）
+    if (route.query.prewarm != null) {
+      clearPdfExportFillCache();
+      return;
+    }
     errText.value = humanizePdfExportError("缺少 templateId");
     signalReady(false, errText.value);
     return;
   }
-  startExportHeartbeat();
+  startExportHeartbeat("load");
   const tplStartMs = Date.now();
   try {
-    const loaded = await getTemplate(id);
+    // 多窗并行时模版接口易被挤满；导出窗单独加长超时（现场 16 路曾 20s 误杀）
+    const loaded = await getTemplate(id, { timeoutMs: 120_000 });
     if (seq !== bootSeq) return;
     tmpl.value = loaded;
   } catch (e) {
@@ -169,26 +261,72 @@ async function boot(): Promise<void> {
   const t = tmpl.value;
   injectPrintPageCss(t);
 
+  const partIdx = reportPartIndex.value;
+  // 052c：按「当前份」从 bridge 灌入切片（约 maxRows）；错份或 part>0 都要重灌
+  {
+    const existing = peekPdfExportFillCache();
+    const needBridge =
+      (partIdx != null && partIdx > 0) ||
+      (existing != null &&
+        existing.templateId === id &&
+        existing.partIndex != null &&
+        partIdx != null &&
+        existing.partIndex !== partIdx);
+    if (needBridge) {
+      pulseExportHeartbeat("hydrate");
+      await waitPdfExportFillCacheFromBridge(id, {
+        timeoutMs: 180_000,
+        reportPartIndex: partIdx ?? 0,
+      });
+      if (seq !== bootSeq) return;
+    }
+  }
+  const cached = getPdfExportFillCache(id);
+  const reuseFill = shouldReusePdfExportFill({
+    templateId: id,
+    reportPartIndex: partIdx,
+    cache: cached,
+  });
+
   const dataStartMs = Date.now();
   let issueDetails = collectBindingPreviewIssueDetails({});
   let fillAttempt = 0;
-  while (fillAttempt < BINDING_FILL_OUTER_RETRY_MAX) {
-    fillAttempt += 1;
-    if (fillAttempt > 1) {
-      await sleepMs(retryDelayMs(fillAttempt - 2, BINDING_FILL_OUTER_RETRY_DELAYS_MS));
+  let totalReports = 1;
+
+  pulseExportHeartbeat(reuseFill ? "render" : "fetch");
+  if (reuseFill && cached) {
+    // 030：后续分卷复用首份全量取数快照，仅按 reportPartIndex 内存切片渲染
+    bindingPreview.values.value = cached.values;
+    bindingPreview.lastStats.value = cached.stats
+      ? {
+          opcReads: 0,
+          sqlQueries: 0,
+          sqlRows: 0,
+          mongoQueries: 0,
+        }
+      : null;
+    totalReports = cached.totalReports;
+  } else {
+    while (fillAttempt < BINDING_FILL_OUTER_RETRY_MAX) {
+      fillAttempt += 1;
+      if (fillAttempt > 1) {
+        await sleepMs(retryDelayMs(fillAttempt - 2, BINDING_FILL_OUTER_RETRY_DELAYS_MS));
+        if (seq !== bootSeq) return;
+      }
+      await bindingPreview.refresh({ opc: true, sql: true, silent: true, fullSqlFill: true });
       if (seq !== bootSeq) return;
-    }
-    await bindingPreview.refresh({ opc: true, sql: true, silent: true, fullSqlFill: true });
-    if (seq !== bootSeq) return;
-    issueDetails = collectBindingPreviewIssueDetails(bindingPreview.values.value);
-    if (!issueDetails.length) break;
-    const summary = summarizeBindingPreviewIssueDetails(issueDetails);
-    if (fillAttempt >= BINDING_FILL_OUTER_RETRY_MAX || !isRetryableBindingFillSummary(summary)) {
-      break;
+      issueDetails = collectBindingPreviewIssueDetails(bindingPreview.values.value);
+      if (!issueDetails.length) break;
+      const summary = summarizeBindingPreviewIssueDetails(issueDetails);
+      if (fillAttempt >= BINDING_FILL_OUTER_RETRY_MAX || !isRetryableBindingFillSummary(summary)) {
+        break;
+      }
     }
   }
   const dataMs = Date.now() - dataStartMs;
-  if (issueDetails.length) {
+  if (issueDetails.length && !allowBindingIssues.value) {
+    // 仅首份失败时清全局 bridge；其它份只清本窗
+    clearPdfExportFillCache({ bridge: !reuseFill && (partIdx == null || partIdx <= 0) });
     errText.value = humanizePdfExportError(summarizeBindingPreviewIssueDetails(issueDetails));
     const s = bindingPreview.lastStats.value;
     signalReady(false, errText.value, undefined, { tplMs, dataMs, paintMs: 0 }, {
@@ -196,18 +334,95 @@ async function boot(): Promise<void> {
       issueCount: issueDetails.length,
       issues: issueDetails.slice(0, 40),
       stats: s
-      ? { opcReads: s.opcReads, sqlQueries: s.sqlQueries, sqlRows: s.sqlRows, mongoQueries: s.mongoQueries }
-      : undefined,
+        ? { opcReads: s.opcReads, sqlQueries: s.sqlQueries, sqlRows: s.sqlRows, mongoQueries: s.mongoQueries }
+        : undefined,
       templateId: id,
       fillAttempts: fillAttempt,
     });
     return;
   }
-  const totalReports = splitReportCountForPreview(t, bindingPreview.values.value);
+  if (!reuseFill) {
+    totalReports = splitReportCountForPreview(t, bindingPreview.values.value);
+    setPdfExportFillCache({
+      templateId: id,
+      values: bindingPreview.values.value,
+      totalReports,
+      stats: bindingPreview.lastStats.value,
+    });
+    // 须在 signalReady 前按份落盘；失败则整份导出失败（其它路依赖 bridge）
+    try {
+      await publishPdfExportFillCacheToBridge(t);
+    } catch (e) {
+      if (seq !== bootSeq) return;
+      errText.value = humanizePdfExportError(e);
+      signalReady(false, errText.value, undefined, { tplMs, dataMs, paintMs: 0 });
+      return;
+    }
+    const sliced = getPdfExportFillCache(id);
+    if (sliced?.partIndex === 0) {
+      bindingPreview.values.value = sliced.values;
+      totalReports = sliced.totalReports;
+    }
+  }
   const paintStartMs = Date.now();
+  pulseExportHeartbeat("render");
+  if (!useChromiumPrint.value) {
+    // 同机优先：跳过 DOM 预览栈与 printToPDF，矢量写 PDF
+    try {
+      // pdf-lib：Noto TTF/VF subset 在 macOS Preview 会缺字乱距；矢量默认嵌朱雀仿宋（可 subset）
+      const picked = pickBundledFontForExport(collectFontFamiliesFromTemplate(t));
+      const preferFangsong = picked.id === "fangsong" || picked.id === "noto-sans-sc";
+      let fontRes = await getBundledCjkFontCached(preferFangsong ? "fangsong" : picked.id);
+      if (!fontRes?.ok) {
+        fontRes = await getBundledCjkFontCached("fangsong");
+      }
+      const bundledFontId = "fangsong";
+      // 045 R4：直接拿字节经主进程落 temp，ready 只带路径（避开 btoa + 巨型 base64 JSON IPC）
+      const { bytes, meta } = await renderPdfLibExportPart({
+        tmpl: t,
+        previewValues: bindingPreview.values.value,
+        reportPartIndex: partIdx,
+        fontBytesBase64: fontRes?.ok ? fontRes.base64 : null,
+        bundledFontId,
+        layoutFidelity: layoutFidelity.value,
+      });
+      if (seq !== bootSeq) return;
+      const writeRes = await window.electronAPI?.writePdfExportTempPart?.({
+        bytes,
+        jobId: exportJobId.value || undefined,
+      });
+      if (!writeRes?.ok || !writeRes.path) {
+        throw new Error(writeRes?.error || "PDF 临时落盘失败");
+      }
+      signalReady(true, undefined, totalReports, { tplMs, dataMs, paintMs: Date.now() - paintStartMs }, undefined, {
+        pdfTempPath: writeRes.path,
+        engine: "pdf-lib",
+        exportMode: "coexist",
+        layoutFidelity: meta.layoutFidelity,
+        fontFamily: meta.fontFamily,
+        fontEmbedded: meta.fontEmbedded,
+        pageCount: meta.pageCount,
+        pdfLibMs: meta.pdfLibMs,
+        printToPDFSkipped: true,
+      });
+    } catch (e) {
+      if (seq !== bootSeq) return;
+      errText.value = humanizePdfExportError(e);
+      signalReady(false, errText.value, undefined, { tplMs, dataMs, paintMs: Date.now() - paintStartMs });
+    }
+    return;
+  }
+
   await nextTick();
   await waitPaintReady();
-  signalReady(true, undefined, totalReports, { tplMs, dataMs, paintMs: Date.now() - paintStartMs });
+  // D21c：格级 border/box-shadow 在 printToPDF 仍断点；canvas 整表格线位图
+  await installPrintTableGridOverlays(document);
+  await new Promise<void>((r) => requestAnimationFrame(() => r()));
+  signalReady(true, undefined, totalReports, { tplMs, dataMs, paintMs: Date.now() - paintStartMs }, undefined, {
+    engine: "chromium",
+    exportMode: "fidelity",
+    printToPDFSkipped: false,
+  });
 }
 
 onMounted(() => {
@@ -305,5 +520,10 @@ watch(
   padding: 16px;
   color: #b91c1c;
   font: 14px/1.5 system-ui, sans-serif;
+}
+.pdf-export-pdflib-hint {
+  padding: 12px 16px;
+  color: #64748b;
+  font: 12px/1.4 system-ui, sans-serif;
 }
 </style>

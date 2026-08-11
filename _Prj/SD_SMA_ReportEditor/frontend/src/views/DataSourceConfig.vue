@@ -89,8 +89,10 @@ import {
   connectionProbeIntervalMs,
   loadConnectionProbePrefs,
 } from '@/features/datasource/connection-probe-prefs'
+import { usePageLifecycle } from '@/composables/usePageLifecycle'
 
 const route = useRoute()
+const { register: registerPageTask, isPageActive } = usePageLifecycle('DataSourceConfig')
 
 const datasourceLocked = ref(false)
 provide('datasourceLocked', datasourceLocked)
@@ -175,9 +177,27 @@ function stopHealthPolling() {
 function startHealthPolling() {
   stopHealthPolling()
   // 子面板挂载时会自行探活；此处只按偏好做定时轮询，避免进入页时重复探测叠压
-  if (!probePrefs.enabled) return
+  // B 级：离页不跑（侧栏探活另路，见 032 Q3）
+  if (!isPageActive() || !probePrefs.enabled) return
   healthPollTimer = window.setInterval(probeAllDataSourceHealth, connectionProbeIntervalMs(probePrefs))
 }
+
+function pausePageProbeTasks() {
+  stopHealthPolling()
+  opcPanelRef.value?.pauseBrowsePolling?.()
+}
+
+function resumePageProbeTasks() {
+  startHealthPolling()
+  opcPanelRef.value?.resumeBrowsePolling?.()
+}
+
+registerPageTask({
+  id: 'datasource-page-probe',
+  scope: 'page',
+  pause: pausePageProbeTasks,
+  resume: resumePageProbeTasks,
+})
 
 async function reloadProbePrefs() {
   probePrefs = await loadConnectionProbePrefs()

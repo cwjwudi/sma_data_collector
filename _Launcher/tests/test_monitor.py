@@ -2,11 +2,19 @@
 from __future__ import annotations
 
 from pathlib import Path
+import threading
 from typing import Callable
 
 import sd_sma_launcher as launcher
 
 POLL_SENTINEL = 99.0  # 测试里用可辨识的轮询间隔，便于把退避 sleep 与轮询 sleep 区分开
+
+
+def test_monitor_exits_cleanly_when_shutdown_is_requested() -> None:
+    event = threading.Event()
+    event.set()
+
+    assert launcher.monitor([], shutdown_event=event, sleep=lambda _: None) == 0
 
 
 class FakeStream:
@@ -152,3 +160,33 @@ def test_monitor_does_not_restart_on_clean_exit_even_with_restarter() -> None:
     )
     assert code == 0
     assert restarted == []
+
+
+def test_monitor_samples_resources_and_records_restart() -> None:
+    class FakeResourceMonitor:
+        def __init__(self) -> None:
+            self.samples = 0
+            self.restarts: list[str] = []
+
+        def maybe_sample(self, processes: list[launcher.ServiceProcess]) -> None:
+            self.samples += 1
+
+        def note_restart(self, service_name: str) -> None:
+            self.restarts.append(service_name)
+
+    crashed = make_service(name="collector_web", poll_results=[1])
+    replacement = make_service(name="collector_web", poll_results=[0])
+    resources = FakeResourceMonitor()
+
+    code = launcher.monitor(
+        [crashed],
+        restart_service=lambda _proc: replacement,
+        resource_monitor=resources,  # type: ignore[arg-type]
+        policy_factory=lambda: launcher.RestartPolicy(),
+        sleep=lambda _seconds: None,
+        clock=make_clock(),
+    )
+
+    assert code == 0
+    assert resources.samples == 2
+    assert resources.restarts == ["collector_web"]

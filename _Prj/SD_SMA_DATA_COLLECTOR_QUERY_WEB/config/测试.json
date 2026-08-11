@@ -7,8 +7,7 @@
       "name": "wn_9",
       "host": "127.0.0.1",
       "port": 3306,
-      "username": "root",
-      "password": "123456"
+      "username": "root"
     },
     "query_limits": {
       "requests_per_minute": 180,
@@ -18,8 +17,7 @@
   },
   "opcua": {
     "endpoint_url": "opc.tcp://127.0.0.1:4840",
-    "username": "",
-    "password": ""
+    "username": ""
   },
   "query_view": {
     "default_page_size": 10,

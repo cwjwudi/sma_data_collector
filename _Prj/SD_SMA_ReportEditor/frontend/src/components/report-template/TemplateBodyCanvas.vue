@@ -304,6 +304,9 @@
                 />
                 <span v-else class="cv-text-display" :style="textAlignForCanvasText(el)">{{ displayEl(el) }}</span>
               </template>
+              <template v-else-if="el.type === 'parameter'">
+                <span class="cv-text-display" :style="textAlignForCanvasText(el)">{{ displayEl(el) }}</span>
+              </template>
               <template v-else>{{ displayEl(el) }}</template>
             </div>
             <template v-if="isPrimary(el.id)">
@@ -400,6 +403,8 @@ import {
   zoneBodyDecorRef,
   type EditorSheet,
 } from "@/lib/report-template/editor-sheet";
+import { resolveBodyBackgroundCss } from "@/lib/report-template/layout-model";
+import { chromeBorderCss } from "@/lib/report-template/show-border";
 import {
   alignmentGuidesForRect,
   magneticSnapResize,
@@ -413,6 +418,8 @@ import {
 } from "@/lib/report-template/table-sql-fill-layout-utils";
 import { sqlFillTableNeedsPreviewPagination } from "@/lib/report-template/table-sql-fill-export-preview-split";
 import {
+  axisToCssTextAlign,
+  axisToCssVerticalAlign,
   flexJustifyAlignForAxes,
   getZoneTextWrapStyle,
   normalizePageNumberMode,
@@ -722,6 +729,9 @@ function canvasZoneElStyle(el: LayoutZoneElement): Record<string, string> {
     zIndex: String(normalizeZIndex(el.zIndex)),
     ...(wrap ?? { whiteSpace: "nowrap" }),
     overflow: "hidden",
+    // 040：与 Mini/导出一致——页眉页脚 zone 文本也画灰描边（此前编辑器漏画，导致一键隐藏难验收）
+    border: chromeBorderCss(el.showBorder, "1px solid rgb(24 24 27 / 0.15)"),
+    borderRadius: "2px",
   };
   if (el.type === "table") {
     return {
@@ -733,6 +743,8 @@ function canvasZoneElStyle(el: LayoutZoneElement): Record<string, string> {
       padding: "2px",
       backgroundColor: zoneTableNodeShellBackgroundCss(),
       whiteSpace: "normal",
+      border: "none",
+      borderRadius: "0",
     };
   }
   if (el.type === "pageNumber" && normalizePageNumberMode(el.pageNumberMode) === "circle") {
@@ -740,6 +752,7 @@ function canvasZoneElStyle(el: LayoutZoneElement): Record<string, string> {
       ...base,
       padding: "2px",
       backgroundColor: "transparent",
+      border: "none",
     };
   }
   if (el.type === "box") {
@@ -747,8 +760,17 @@ function canvasZoneElStyle(el: LayoutZoneElement): Record<string, string> {
     return {
       ...base,
       backgroundColor: zoneFillBackgroundCss(el.bgColor),
-      border: el.showBorder === false ? "none" : `1px solid ${bc}40`,
+      border: chromeBorderCss(el.showBorder, `1px solid ${bc}40`),
       borderRadius: "4px",
+      padding: "2px 6px",
+    };
+  }
+  if (el.type === "date") {
+    return {
+      ...base,
+      backgroundColor: zoneFillBackgroundCss(el.bgColor),
+      border: "none",
+      borderRadius: "0",
       padding: "2px 6px",
     };
   }
@@ -794,7 +816,12 @@ function bandBox(m: PaperLayoutMetrics, which: "hdr" | "body" | "ftr"): Record<s
 }
 
 const hdrStyle = computed(() => bandBox(me.value, "hdr"));
-const bodyStyle = computed(() => bandBox(me.value, "body"));
+const bodyStyle = computed(() => ({
+  ...bandBox(me.value, "body"),
+  backgroundColor: resolveBodyBackgroundCss(
+    activeLayoutSnapshotForSheet(props.tmpl, props.sheet),
+  ),
+}));
 const ftrStyle = computed(() => bandBox(me.value, "ftr"));
 
 /** 版式未预留眉/脚带高度时，在纸张边距内给出示意（几何仍与导出一致） */
@@ -861,7 +888,13 @@ function elInnerFlexStyle(el: TemplateElement): Record<string, string> | undefin
 }
 
 function textAlignForCanvasText(el: TemplateElement): Record<string, string> | undefined {
-  if (el.type !== "text" && el.type !== "box" && el.type !== "date" && el.type !== "signature")
+  if (
+    el.type !== "text" &&
+    el.type !== "box" &&
+    el.type !== "date" &&
+    el.type !== "signature" &&
+    el.type !== "parameter"
+  )
     return undefined;
   const ta =
     el.alignX === "center" ? "center" : el.alignX === "end" ? "right" : "left";
@@ -911,6 +944,8 @@ function tplTableCellStyle(el: TemplateElement, ri: number, ci: number): Record<
       ci,
       cell,
     ),
+    textAlign: axisToCssTextAlign(el.alignX),
+    verticalAlign: axisToCssVerticalAlign(el.alignY),
   };
 }
 

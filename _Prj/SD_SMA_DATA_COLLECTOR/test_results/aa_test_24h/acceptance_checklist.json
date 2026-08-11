@@ -1,0 +1,124 @@
+{
+  "schema_version": 1,
+  "overall_status": "completed_strict_stability_failed_recovery_passed",
+  "requirements": [
+    {
+      "id": "duration",
+      "requirement": "Continuous execution for at least 86400 seconds",
+      "status": "passed",
+      "actual_seconds": 86400.141,
+      "evidence": [
+        "stability_24h.json:duration_actual_seconds",
+        "collector_stdout.log"
+      ]
+    },
+    {
+      "id": "all_groups",
+      "requirement": "All six configured groups continue producing events",
+      "status": "passed",
+      "groups": [
+        "Data_Recipe",
+        "Data_Product",
+        "Data_Alarm",
+        "Data_Audit",
+        "Data_Batch",
+        "Data_BatchInfo"
+      ],
+      "evidence": [
+        "stability_24h.json:events",
+        "collector_stdout.log"
+      ]
+    },
+    {
+      "id": "database_inserts",
+      "requirement": "All six database tables gain rows and remain current",
+      "status": "passed_with_recovered_outage",
+      "evidence": [
+        "stability_24h.json:database_row_deltas",
+        "database_checkpoints.jsonl"
+      ]
+    },
+    {
+      "id": "disconnect_recovery",
+      "requirement": "All three planned OPC UA disconnects recover with subscription handles restored",
+      "status": "passed",
+      "expected_faults": 3,
+      "evidence": [
+        "stability_24h.json:faults",
+        "collector_stdout.log",
+        "process_resources.csv"
+      ]
+    },
+    {
+      "id": "pvi_disturbances",
+      "requirement": "External PVI disturbances are accepted, consumed, reset, and followed by database inserts",
+      "status": "passed",
+      "planned_rounds": 6,
+      "completed_rounds": 6,
+      "successful_writes": 42,
+      "evidence": [
+        "pvi_disturbances.jsonl",
+        "database_checkpoints.jsonl",
+        "B&R PLC toolchain audit files"
+      ]
+    },
+    {
+      "id": "runtime_terminal_state",
+      "requirement": "Before shutdown all connections are connected, errors are empty, and all outbox queues are empty",
+      "status": "passed",
+      "evidence": [
+        "stability_24h.json:connection_states_before_shutdown",
+        "stability_24h.json:errors",
+        "stability_24h.json:storage_metrics",
+        "collector_stderr.log"
+      ]
+    },
+    {
+      "id": "resource_stability",
+      "requirement": "No unbounded process resource growth across the full window and reconnect cycles",
+      "status": "passed_with_transient_spike_recovered",
+      "evidence": [
+        "process_resources.csv",
+        "process_resources_final.csv",
+        "040 test narrative"
+      ]
+    },
+    {
+      "id": "strict_zero_database_errors",
+      "requirement": "No database write or connection failures occur anywhere in the 24-hour window",
+      "status": "failed",
+      "observed": {
+        "logger_error_lines": 552,
+        "traceback_starts": 120,
+        "db_rows_failed_attempts": 1792,
+        "db_rows_retried": 1800,
+        "dead_letter_rows": 0,
+        "shutdown_rows_remaining": 0
+      },
+      "evidence": [
+        "collector_stdout.log",
+        "incidents.jsonl",
+        "stability_24h.json:storage_metrics"
+      ]
+    },
+    {
+      "id": "plc_restoration",
+      "requirement": "All manual triggers and batch command are reset after the final disturbance",
+      "status": "passed",
+      "evidence": [
+        "final PVI readback",
+        "pvi_disturbances.jsonl"
+      ]
+    },
+    {
+      "id": "records_and_verification",
+      "requirement": "Evidence is archived, helper code is verified, and the final narrative is complete",
+      "status": "passed",
+      "evidence": [
+        "run_manifest.json",
+        "040 test narrative",
+        "repository test results"
+      ]
+    }
+  ]
+}

@@ -12,6 +12,7 @@ Main functions:
 - List databases and tables (with approximate sizes).
 - Backup a whole database or a single table to SQL (`mysqldump` / `mariadb-dump`).
 - Restore completed SQL backups directly on the server (manifest + SHA-256).
+- Browse completed SQL / CSV files, copy selected files to an external device, or permanently delete selected files.
 - Export a table to CSV for small data exchange; import completed CSV exports on the server.
   Use **强制导入** when CSV columns do not match the target table (also forces truncate-before-import).
 - Register external local `.sql` / `.csv` files into the backup directory (no browser upload).
@@ -26,6 +27,7 @@ All restore and import paths are **server-side only**. Browser file upload is no
 | Backup table | `.sql` + manifest | GB-scale single table backup / restore |
 | Export CSV | `.csv` + manifest | Small table exchange only |
 | Register local file | copy into `backup_dir` + manifest | Bring external dumps into the tool |
+| Backup file management | `.sql` / `.csv` + manifest | Browse, copy to an external device, or permanently delete |
 
 Completed files live under `backup_dir` and/or `last_output_dir`. Large restores must use
 **直接恢复 SQL** / **直接导入 CSV**, not browser upload.
@@ -51,6 +53,15 @@ table of the same name in the target database.
 - Cross-origin state-changing browser requests are rejected.
 - Running jobs are bounded by `max_concurrent_jobs` and can be cancelled.
 
+## Backup file management
+
+- The independent **备份文件管理** panel browses `backup_dir` and `last_output_dir`. It only shows completed `.sql` / `.csv` files with valid adjacent manifests.
+- Selections persist while navigating directories. Exact canonical paths are sent to the server, so files with the same name in different roots cannot be confused.
+- **复制到外部设备** still accepts only drives currently reported by Windows as removable; fixed-disk browse roots and network drives remain rejected. With one device connected, the default destination is `SD_SMA_Backups`.
+- Copy runs as a cancellable background job, uses temporary files, copies the manifest, and verifies SHA-256. Same-name/same-hash files are skipped; different content with the same name rejects the batch.
+- Permanent deletion requires two UI confirmations plus a short-lived path-bound server token. SQL/CSV and manifest pairs are renamed as a batch before deletion, with rollback if preparation fails.
+- Files in use by copy, SQL restore, or CSV import jobs are protected from deletion.
+
 ## MySQL / MariaDB client tools
 
 Resolution order:
@@ -71,6 +82,9 @@ MySQL 8 dump clients automatically receive `--column-statistics=0` for MariaDB s
 ## Export directories
 
 - Default export directory is `backup_dir`.
+- When started through `_Launcher`, the default is `<package-root>/backups`.
+- When started standalone, the default is `<SD_SMA_DB_ADMIN-project-root>/backups`.
+- `_Launcher` supplies `SD_SMA_DB_ADMIN_BACKUP_DIR`; this environment value takes precedence over `config/default.json`.
 - Any writable folder may be selected; the last choice is remembered as `last_output_dir`.
 - Lists / downloads / restores scan `backup_dir` and `last_output_dir`.
 

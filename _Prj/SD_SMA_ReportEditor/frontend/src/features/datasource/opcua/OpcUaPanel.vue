@@ -253,7 +253,17 @@
 </template>
 
 <script setup>
-import { computed, defineExpose, onBeforeUnmount, onMounted, reactive, ref, shallowRef, triggerRef, watch } from 'vue'
+import {
+  computed,
+  defineExpose,
+  onBeforeUnmount,
+  onMounted,
+  reactive,
+  ref,
+  shallowRef,
+  triggerRef,
+  watch,
+} from 'vue'
 import { apiFetch } from '@/api/client.js'
 import ConnectionTabLed from '@/features/datasource/ConnectionTabLed.vue'
 import {
@@ -289,6 +299,7 @@ import {
 } from './opcua-tree-utils.js'
 import { runOpcExpandAllTree } from './opcua-tree-expand-all.js'
 import { parseOpcNodeId, opcNodeClassLabel } from './opcua-node-display.js'
+import { createBrowsePollingGate } from './browse-polling-gate'
 
 const props = defineProps({
   /** 向导内：单列芯片 + 草稿浏览 + 与数据库向导一致的一体化版面 */
@@ -1246,9 +1257,29 @@ function syncTreeRowPollTimer() {
   treeRowPollTimerId = window.setInterval(() => void pollVisibleTreeVariablesOnce(), ms)
 }
 
+/** 034 M4：父页 deactivated 后门闩，禁止 watch 把浏览轮询重新拉起 */
+const browsePollingGate = createBrowsePollingGate({
+  clearAll: () => {
+    clearPollTimer()
+    clearTreeRowPollTimer()
+  },
+  syncWhenAllowed: () => {
+    syncPollTimer()
+    syncTreeRowPollTimer()
+  },
+})
+
 function syncAllPollTimers() {
-  syncPollTimer()
-  syncTreeRowPollTimer()
+  browsePollingGate.syncAll()
+}
+
+/** 父页 DataSourceConfig deactivated 时调用（032 B 级 / 034 M4） */
+function pauseBrowsePolling() {
+  browsePollingGate.pause()
+}
+
+function resumeBrowsePolling() {
+  browsePollingGate.resume(Boolean(pollEnabled.value && browseCapability.value))
 }
 
 watch(
@@ -1321,6 +1352,8 @@ defineExpose({
   probeAllConnections: probeAllOpcConnections,
   healthSummary: connectionHealthSummary,
   reloadServers: loadServers,
+  pauseBrowsePolling,
+  resumeBrowsePolling,
 })
 </script>
 

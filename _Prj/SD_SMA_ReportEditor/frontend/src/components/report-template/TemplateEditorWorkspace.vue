@@ -93,11 +93,20 @@
           <button
             type="button"
             class="b"
-            title="将当前页非表格控件的预览/导出外框设为隐藏（可撤销）"
+            title="将整份模版（封面/正文全部页/封底）非表格控件的预览/导出外框设为隐藏（可撤销）"
             :disabled="!editing"
-            @click="hideBordersOnCurrentPage"
+            @click="hideBordersOnEntireTemplateClick"
           >
             一键隐藏边框
+          </button>
+          <button
+            type="button"
+            class="b"
+            title="041：封面/正文页眉各自独立。将封面页眉控件与文案复制到正文页眉（覆盖正文现有页眉；可撤销）"
+            :disabled="!canCopyCoverHeaderToBody"
+            @click="copyCoverHeaderToBodyClick"
+          >
+            封面页眉→正文
           </button>
           <span class="bar-sep" aria-hidden="true" />
           <button type="button" class="b primary" :disabled="saving" @click="save">
@@ -120,6 +129,35 @@
             <option value="landscape">横向</option>
           </select>
         </label>
+        <label
+          class="ted-meta-field"
+          title="批次：在导出根目录下按批号建子文件夹（现网默认）；非批次：写入本模版指定的绝对路径文件夹"
+          >报表类型
+          <select v-model="editingReportKind" class="inp">
+            <option value="batch">批次（按批号建子目录）</option>
+            <option value="nonBatch">非批次（指定文件夹）</option>
+          </select>
+        </label>
+        <label v-if="editingReportKind === 'nonBatch'" class="ted-meta-field ted-nonbatch-field"
+          >目标文件夹
+          <span class="ted-nonbatch-row">
+            <input
+              v-model.trim="editingNonBatchDir"
+              class="inp ted-nonbatch-inp"
+              placeholder="本机绝对路径，如 D:\Reports\Daily"
+              title="非批次报表导出写入此文件夹；目录不存在时导出会自动创建"
+            />
+            <button v-if="canPickNonBatchDir" type="button" class="b" @click="pickNonBatchDir">选择…</button>
+          </span>
+        </label>
+        <div class="ted-meta-field ted-body-bg">
+          <TableCellFillPicker
+            :model-value="activeBodyBackgroundCss"
+            title="当前页正文底色"
+            :presets="bodyBgPresets"
+            @update:model-value="setActiveBodyBackgroundCss"
+          />
+        </div>
       </div>
       <div class="preset-bar">
         <template v-if="sh === 'body'">
@@ -192,8 +230,11 @@
           <span v-else class="preset-empty">暂无末页版式列表。</span>
         </template>
         <span class="preset-hint"
-          >正文支持<strong>多页独立画布</strong>。「导出预览」按封面→各正文页→末页排列。「编辑画布」时正文页<strong>纵向连续</strong>编排；封面/末页为单页画布。</span
+          >正文支持<strong>多页独立画布</strong>。「导出预览」按封面→各正文页→末页排列。「编辑画布」时正文页<strong>纵向连续</strong>编排；封面/末页为单页画布。封面 / 正文 / 末页的<strong>页眉各自独立</strong>（选用版式只改当前段）。</span
         >
+        <p v-if="needsCoverHeaderCopyHint" class="preset-copy-hint" role="status">
+          封面有页眉、正文暂无——导出时正文页不会出现封面眉。可用工具栏「封面页眉→正文」一键复制。
+        </p>
       </div>
     </div>
     <div class="cols">
@@ -380,12 +421,14 @@
         </template>
         <p class="sheet-hint">
           <template v-if="sh === 'body'"
-            ><strong>正文页</strong>：编辑画布中与预览一致为封面→正文各页→末页纵向排列；点左侧标签或正文下拉可滚动到对应卡片。可用「前插 / 后插 / 末加」在指定位置增页，「↑ ↓」调整顺序，「−删本页」删除当前页。页眉页脚请在「版式与页眉页脚」中维护。</template
+            ><strong>正文页</strong>：编辑画布中与预览一致为封面→正文各页→末页纵向排列；点左侧标签或正文下拉可滚动到对应卡片。可用「前插 / 后插 / 末加」在指定位置增页，「↑ ↓」调整顺序，「−删本页」删除当前页。页眉页脚请在「版式与页眉页脚」中维护；<strong>与封面页眉互不继承</strong>，可用「封面页眉→正文」复制。</template
           >
           <template v-else-if="sh === 'cover'"
-            ><strong>封面</strong>：导出首页整页；此处编辑封面画布。页眉页脚请在版式编辑器维护。</template
+            ><strong>封面</strong>：导出首页整页；此处编辑封面画布。页眉页脚请在版式编辑器维护（不会自动出现在正文页）。</template
           >
-          <template v-else><strong>末页</strong>：导出最后一页整页；此处编辑末页画布。页眉页脚请在版式编辑器维护。</template>
+          <template v-else
+            ><strong>末页</strong>：导出最后一页整页；此处编辑末页画布。页眉页脚请在版式编辑器维护（与封面/正文互不继承）。</template
+          >
         </p>
       </aside>
       <main class="mid">
@@ -539,6 +582,7 @@ import TemplateExportPreviewStack from "@/components/report-template/TemplateExp
 import TemplateElementProps from "@/components/report-template/TemplateElementProps.vue";
 import MultiElementBatchProps from "@/components/report-template/MultiElementBatchProps.vue";
 import SignaturePadDialog from "@/components/report-template/SignaturePadDialog.vue";
+import TableCellFillPicker from "@/components/report-template/TableCellFillPicker.vue";
 import * as api from "@/api/templates";
 import {
   ensureSignatureSummaries,
@@ -548,11 +592,16 @@ import { ref, computed, watch, nextTick, onMounted, onUnmounted, provide } from 
 import { useRoute, useRouter } from "vue-router";
 import { PAPER_LABEL } from "@/lib/report-template/paper";
 import {
+  activeLayoutSnapshotForSheet,
   bodyElementsRef,
   metricsForSheet,
   templateHasBackSheet,
   templateHasCoverSheet,
 } from "@/lib/report-template/editor-sheet";
+import {
+  DEFAULT_BODY_BACKGROUND_CSS,
+  resolveBodyBackgroundCss,
+} from "@/lib/report-template/layout-model";
 import {
   findSelectableTemplateElement,
   selectionHitLabel,
@@ -579,7 +628,13 @@ import {
   syncLegacyElementsAlias,
   TEMPLATE_SCHEMA_VERSION,
 } from "@/lib/report-template/model";
-import { hideShowBordersInElements } from "@/lib/report-template/show-border";
+import { isAbsoluteLocalDir } from "@/lib/resolve-report-output-dir";
+import { hideBordersOnEntireTemplate } from "@/lib/report-template/show-border";
+import {
+  copyCoverHeaderToBody,
+  templateNeedsCoverHeaderCopyHint,
+} from "@/lib/report-template/copy-sheet-bands";
+import { appConfirm } from "@/composables/useAppConfirm";
 import {
   copyTemplateElementToClipboard,
   copyTemplateElementsToClipboard,
@@ -652,6 +707,51 @@ const selId = computed({
   },
 });
 const sh = ref("body");
+const bodyBgPresets = [
+  { value: "transparent", label: "透明（纸白）" },
+  { value: "#ffffff", label: "纯白" },
+  { value: DEFAULT_BODY_BACKGROUND_CSS, label: "默认浅灰" },
+  { value: "#fafafa", label: "近白" },
+  { value: "#f4f4f5", label: "锌灰" },
+  { value: "#eef2ff", label: "淡靛" },
+];
+const activeBodyBackgroundCss = computed(() => {
+  const t = editing.value;
+  if (!t) return DEFAULT_BODY_BACKGROUND_CSS;
+  return resolveBodyBackgroundCss(activeLayoutSnapshotForSheet(t, sh.value));
+});
+function setActiveBodyBackgroundCss(css) {
+  const t = editing.value;
+  if (!t) return;
+  const v = typeof css === "string" ? css.trim() : "";
+  if (sh.value === "cover") t.coverLayoutSnapshot = { ...t.coverLayoutSnapshot, bodyBackgroundCss: v };
+  else if (sh.value === "back") t.backLayoutSnapshot = { ...t.backLayoutSnapshot, bodyBackgroundCss: v };
+  else t.layoutSnapshot = { ...t.layoutSnapshot, bodyBackgroundCss: v };
+}
+/** 046 批次/非批次：旧模版缺字段时按 batch 处理 */
+const editingReportKind = computed({
+  get: () => (editing.value && editing.value.reportKind === "nonBatch" ? "nonBatch" : "batch"),
+  set: (v) => {
+    if (!editing.value) return;
+    editing.value.reportKind = v === "nonBatch" ? "nonBatch" : "batch";
+  },
+});
+const editingNonBatchDir = computed({
+  get: () => (editing.value && typeof editing.value.nonBatchOutputDir === "string" ? editing.value.nonBatchOutputDir : ""),
+  set: (v) => {
+    if (!editing.value) return;
+    editing.value.nonBatchOutputDir = typeof v === "string" ? v : "";
+  },
+});
+const canPickNonBatchDir = computed(() => Boolean(window.electronAPI?.pickExportDirectory));
+async function pickNonBatchDir() {
+  const p = await window.electronAPI?.pickExportDirectory?.({
+    title: "选择非批次报表目标文件夹",
+    defaultPath: editingNonBatchDir.value || undefined,
+  });
+  if (p && editing.value) editing.value.nonBatchOutputDir = p;
+}
+
 const dlgSig = ref(false);
 /** @type {import('vue').Ref<'preview'|'edit'>} */
 /** 默认进编辑画布，避免一打开就卡在导出预览的 SQL/OPC 拉取且无反馈 */
@@ -1548,6 +1648,17 @@ function reclamp() {
 async function save() {
   const t = editing.value;
   if (!t || saving.value) return false;
+  // 046：非批次模版必须配置本机绝对路径目标文件夹（Q2A）
+  if (t.reportKind !== "nonBatch") t.reportKind = "batch";
+  if (typeof t.nonBatchOutputDir !== "string") t.nonBatchOutputDir = "";
+  if (t.reportKind === "nonBatch") {
+    const dir = String(t.nonBatchOutputDir || "").trim();
+    if (!dir || !isAbsoluteLocalDir(dir)) {
+      hint.value = "非批次模版需配置「目标文件夹」为本机绝对路径（如 D:\\Reports\\Daily），已阻止保存。";
+      return false;
+    }
+    t.nonBatchOutputDir = dir;
+  }
   ensureBodyPages(t);
   syncLegacyElementsAlias(t);
   t.updatedAt = new Date().toISOString();
@@ -1653,14 +1764,63 @@ function pasteSel() {
     els.length > 1 ? `已粘贴 ${els.length} 个控件（属性已保留）。` : "已粘贴控件（属性已保留）。";
 }
 
-function hideBordersOnCurrentPage() {
+function hideBordersOnEntireTemplateClick() {
   const t = editing.value;
   if (!t) return;
   midMode.value = "edit";
-  const els = bodyElementsRef(t, sh.value, bodyPageIdx.value);
-  const n = hideShowBordersInElements(els);
+  // 049：整份模版（封面+正文全部页+封底）页眉/页脚/正文/zone 装饰一并隐藏；不依赖当前选中页
+  const n = hideBordersOnEntireTemplate(t);
   hint.value =
-    n > 0 ? `已隐藏 ${n} 个控件的预览/导出外框（表格未改，可撤销）。` : "当前页没有可隐藏的控件外框。";
+    n > 0
+      ? `已隐藏整份模版 ${n} 个控件的预览/导出外框（表格未改，可撤销）。`
+      : "模版里没有可隐藏的控件外框。";
+}
+
+const canCopyCoverHeaderToBody = computed(() => {
+  const t = editing.value;
+  if (!t) return false;
+  return templateNeedsCoverHeaderCopyHint(t) || (t.coverHeaderElements?.length ?? 0) > 0 || Boolean(String(t.coverHeaderText || "").trim());
+});
+
+const needsCoverHeaderCopyHint = computed(() => {
+  const t = editing.value;
+  return Boolean(t && templateNeedsCoverHeaderCopyHint(t));
+});
+
+async function copyCoverHeaderToBodyClick() {
+  const t = editing.value;
+  if (!t) return;
+  const coverHas =
+    (t.coverHeaderElements?.length ?? 0) > 0 || Boolean(String(t.coverHeaderText || "").trim());
+  if (!coverHas) {
+    hint.value = "封面尚无页眉可复制。请先在「版式与页眉页脚」为封面配置页眉。";
+    return;
+  }
+  const bodyHas =
+    (t.headerElements?.length ?? 0) > 0 || Boolean(String(t.headerText || "").trim());
+  if (bodyHas) {
+    const ok = await appConfirm({
+      title: "覆盖正文页眉？",
+      message: "正文已有页眉内容。继续将用封面页眉覆盖正文页眉（可撤销）。",
+      confirmText: "覆盖复制",
+      cancelText: "取消",
+    });
+    if (!ok) return;
+  }
+  midMode.value = "edit";
+  sh.value = "body";
+  const r = copyCoverHeaderToBody(t);
+  if (r.copied <= 0 && !String(t.headerText || "").trim()) {
+    hint.value = "封面没有可复制的页眉。";
+    return;
+  }
+  const parts = [
+    r.copied > 0 ? `已复制 ${r.copied} 个页眉控件到正文` : "已复制封面页眉文案到正文",
+  ];
+  if (r.replacedExisting) parts.push("已覆盖原正文页眉");
+  if (r.headerBandMmRaised) parts.push("正文眉带高度已对齐封面");
+  parts.push("可撤销");
+  hint.value = `${parts.join("；")}。`;
 }
 
 function sigOk(dataUrl) {
@@ -1879,6 +2039,17 @@ onUnmounted(() => {
   color: #78716c;
   line-height: 1.4;
 }
+.preset-copy-hint {
+  flex: 1 1 100%;
+  margin: 0;
+  padding: 6px 8px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #92400e;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: 6px;
+}
 .sheet-hint {
   margin: 0;
   padding: 8px;
@@ -2008,12 +2179,28 @@ onUnmounted(() => {
   gap: 12px;
   padding: 8px 8px 4px;
 }
+.ted-nonbatch-field {
+  flex: 1;
+  min-width: 260px;
+}
+.ted-nonbatch-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.ted-nonbatch-inp {
+  flex: 1;
+  min-width: 200px;
+}
 .ted-meta-field {
   display: flex;
   flex-direction: column;
   gap: 4px;
   font-size: 12px;
   color: #52525b;
+}
+.ted-body-bg {
+  min-width: 200px;
 }
 .inp {
   border: 1px solid #d4d4d8;

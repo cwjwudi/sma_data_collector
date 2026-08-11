@@ -1,0 +1,68 @@
+{
+  "test": "SD_SMA_DATA_COLLECTOR 24-hour stability test",
+  "status": "completed_strict_stability_failed_recovery_passed",
+  "started_at": "2026-07-30T11:21:25+08:00",
+  "expected_end_after": "2026-07-31T11:21:25+08:00",
+  "ended_at": "2026-07-31T11:21:25.509221+08:00",
+  "duration_actual_seconds": 86400.141,
+  "duration_seconds": 86400,
+  "repository": {
+    "branch": "test/aa-full-function-regression",
+    "baseline_commit": "a6942e8ca800af0cee38899ea6ab3e56ee7f514f"
+  },
+  "config": {
+    "path": "C:\\Users\\BR\\codex_ws\\p000_sd_sma_scada\\config\\collector\\AA_test.json",
+    "sha256": "453B061DB57EC07CB6F1A297AFB6B8504B56D3E376F87F4037EBE7CCF0D5218F",
+    "group_count": 6,
+    "variable_count": 97
+  },
+  "targets": {
+    "plc": "192.168.50.233",
+    "opcua_endpoint": "opc.tcp://192.168.50.233:4840",
+    "database": "192.168.50.22:3306/sma_data_test"
+  },
+  "runtime": {
+    "uv_pid": 7408,
+    "python_wrapper_pid": 31960,
+    "collector_pid": 3424,
+    "resource_monitor_pid": 33276,
+    "final_resource_monitor_pid": 576,
+    "uv_version": "0.11.23",
+    "python_version": "3.12.13",
+    "asyncua_version": "2.0.1",
+    "pymysql_version": "1.4.6"
+  },
+  "planned_disconnects_seconds": [
+    21600,
+    43200,
+    64800
+  ],
+  "planned_pvi_rounds_hours": [
+    6,
+    12,
+    18,
+    23
+  ],
+  "result": {
+    "program_passed": true,
+    "strict_zero_database_errors_passed": false,
+    "planned_disconnects_recovered": 3,
+    "pvi_rounds_completed": 6,
+    "pvi_writes_succeeded": 42,
+    "database_incidents": 1,
+    "final_plc_restore_audit": "C:\\Users\\BR\\codex_ws\\br_device_autodev\\var\\audit\\2026-07-31\\040052_559673_plc_write_pvi_succeeded_1cc54586.json",
+    "quick_tests": "212 passed, 4 warnings"
+  },
+  "evidence": {
+    "acceptance_checklist": "acceptance_checklist.json",
+    "stdout": "collector_stdout.log",
+    "stderr": "collector_stderr.log",
+    "resources": "process_resources.csv",
+    "final_resources": "process_resources_final.csv",
+    "database_checkpoints": "database_checkpoints.jsonl",
+    "pvi_disturbances": "pvi_disturbances.jsonl",
+    "incidents": "incidents.jsonl",
+    "final_report": "stability_24h.json",
+    "narrative": "..\\..\\..\\..\\docs\\040-✅-数据采集器24小时稳定性测试.md"
+  }
+}

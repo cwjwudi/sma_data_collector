@@ -1,10 +1,15 @@
 releaseNotes: |
-  修复 0.1.25 启动白屏；OPC UA 自动截批全局监听；Windows 应用内更新展示 releaseNotes
-version: 0.1.25
+  Report Editor AI 0.3.165
+  
+  - 041 H1：封面页眉一键复制到正文（互不继承提示）
+  - 045 R4：矢量 PDF 临时文件回传（去巨型 base64 IPC）
+  - 046：历史多根 UX + 失败审计 reportKind
+  - 044：Docker MariaDB 冒烟灌库就绪
+version: 0.3.165
 files:
-  - url: Report Editor-Setup-0.1.25-x64.exe
-    sha512: 5cZgc8jLX1lTDrBZY9vmGCojLO1zar22Mj5Zqe3taHMvzb+b0zfn33ocQcPI3thpoqi4PzGlmka5rIr0fVI81A==
-    size: 143359693
-path: Report Editor-Setup-0.1.25-x64.exe
-sha512: 5cZgc8jLX1lTDrBZY9vmGCojLO1zar22Mj5Zqe3taHMvzb+b0zfn33ocQcPI3thpoqi4PzGlmka5rIr0fVI81A==
-releaseDate: '2026-07-01T20:41:59.033Z'
+  - url: Report Editor AI-Setup-0.3.165-x64.exe
+    sha512: B8N0EomRGuqF5NsHxdTB7NT7oHsbhINchm8WzdqJkWNLn+wuQAJfHdEyQI+4GHbCSXPfYLjX4X8MUWZhnzSYEg==
+    size: 162559989
+path: Report Editor AI-Setup-0.3.165-x64.exe
+sha512: B8N0EomRGuqF5NsHxdTB7NT7oHsbhINchm8WzdqJkWNLn+wuQAJfHdEyQI+4GHbCSXPfYLjX4X8MUWZhnzSYEg==
+releaseDate: '2026-08-09T02:06:17.037Z'

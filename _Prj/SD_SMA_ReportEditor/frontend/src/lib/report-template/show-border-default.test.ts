@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  createTemplate,
   defaultElement,
+  ensureBodyPages,
   hydrateTemplateElement,
   makeElement,
   type TemplateControlType,
@@ -11,8 +13,17 @@ import {
   makeLayoutZoneElement,
   type LayoutControlType,
 } from "@/lib/report-template/layout-zone-element";
-import { hideShowBordersInElements } from "@/lib/report-template/show-border";
+import {
+  chromeBorderCss,
+  hideBordersOnEntireTemplate,
+  hideBordersOnLayoutPresetBands,
+  hideBordersOnEntireTemplate,
+  hideBordersOnTemplateSheet,
+  hideShowBordersInElements,
+  sheetShowBorderSnapshot,
+} from "@/lib/report-template/show-border";
 import { templateElementFromZoneElement } from "@/lib/report-template/layout-apply";
+import { blankZonesSnapshot } from "@/lib/report-template/layout-model";
 
 const TPL_NON_TABLE: TemplateControlType[] = [
   "image",
@@ -140,5 +151,311 @@ describe("showBorder · 传递（C1）", () => {
     const te = templateElementFromZoneElement(zone);
     expect(te).toBeTruthy();
     expect(te!.showBorder).toBe(false);
+  });
+});
+
+describe("showBorder · Chromium/Mini CSS 契约（F）", () => {
+  it("F1 showBorder false → none；true/undefined → 可见边框串", () => {
+    const visible = "1px solid rgb(24 24 27 / 0.15)";
+    expect(chromeBorderCss(false, visible)).toBe("none");
+    expect(chromeBorderCss(true, visible)).toBe(visible);
+    expect(chromeBorderCss(undefined, visible)).toBe(visible);
+  });
+});
+
+function fixtureTemplate() {
+  const z = blankZonesSnapshot();
+  const t = createTemplate({
+    name: "040-hide-borders",
+    paperKind: "A4",
+    orientation: "portrait",
+    layoutPresetId: null,
+    layoutSnapshot: z.layoutSnapshot,
+    headerText: "",
+    footerText: "",
+    headerElements: [],
+    footerElements: [],
+    coverLayoutPresetId: "cover-preset",
+    coverLayoutSnapshot: z.layoutSnapshot,
+    coverHeaderText: "",
+    coverFooterText: "",
+    coverHeaderElements: [],
+    coverFooterElements: [],
+    coverBodyZoneElements: [],
+    backLayoutPresetId: "back-preset",
+    backLayoutSnapshot: z.layoutSnapshot,
+    backHeaderText: "",
+    backFooterText: "",
+    backHeaderElements: [],
+    backFooterElements: [],
+    backBodyZoneElements: [],
+  });
+  return t;
+}
+
+describe("showBorder · 模版一键覆盖页眉页脚（040 · G）", () => {
+  it("G1 回归：旧逻辑只改正文时页眉仍 true（对照）", () => {
+    const t = fixtureTemplate();
+    const h = makeLayoutZoneElement("text");
+    h.id = "ch";
+    h.showBorder = true;
+    h.text = "Hdr";
+    t.coverHeaderElements.push(h);
+    const body = makeElement("text");
+    body.id = "cb";
+    body.showBorder = true;
+    t.coverElements.push(body);
+
+    // 旧路径：仅 body
+    expect(hideShowBordersInElements(t.coverElements)).toBe(1);
+    expect(t.coverElements[0]!.showBorder).toBe(false);
+    expect(t.coverHeaderElements[0]!.showBorder).toBe(true);
+  });
+
+  it("G2 封面 sheet：页眉+正文+页脚+装饰全 false；table 跳过", () => {
+    const t = fixtureTemplate();
+    const mk = (type: "text" | "table" | "parameter", id: string, border = true) => {
+      const el = makeLayoutZoneElement(
+        type === "table" ? "table" : type === "parameter" ? "parameter" : "text",
+      );
+      el.id = id;
+      el.showBorder = border;
+      el.text = id;
+      return el;
+    };
+    t.coverHeaderElements.push(mk("text", "h1"), mk("table", "ht"));
+    t.coverFooterElements.push(mk("parameter", "f1"));
+    t.coverBodyZoneElements.push(mk("text", "d1"));
+    const body = makeElement("text");
+    body.id = "b1";
+    body.showBorder = true;
+    t.coverElements.push(body);
+    const bodyTbl = makeElement("table");
+    bodyTbl.id = "bt";
+    bodyTbl.showBorder = true;
+    t.coverElements.push(bodyTbl);
+
+    const n = hideBordersOnTemplateSheet(t, "cover");
+    expect(n).toBe(4); // h1, f1, d1, b1 — 两张 table 跳过
+    const snap = sheetShowBorderSnapshot(t, "cover");
+    expect(snap.header.find((x) => x.id === "h1")!.showBorder).toBe(false);
+    expect(snap.header.find((x) => x.id === "ht")!.showBorder).toBe(true);
+    expect(snap.footer[0]!.showBorder).toBe(false);
+    expect(snap.bodyDecor[0]!.showBorder).toBe(false);
+    expect(snap.body.find((x) => x.id === "b1")!.showBorder).toBe(false);
+    expect(snap.body.find((x) => x.id === "bt")!.showBorder).toBe(true);
+  });
+
+  it("G3 细粒度 sheet API：只改当前页 + 共享眉脚；其它正文页与其它 sheet 不动", () => {
+    const t = fixtureTemplate();
+    const pages = ensureBodyPages(t);
+    while (pages.length < 2) pages.push([]);
+
+    const h = makeLayoutZoneElement("text");
+    h.id = "bh";
+    h.showBorder = true;
+    t.headerElements.push(h);
+    const f = makeLayoutZoneElement("text");
+    f.id = "bf";
+    f.showBorder = true;
+    t.footerElements.push(f);
+
+    const p0 = makeElement("text");
+    p0.id = "p0";
+    p0.showBorder = true;
+    pages[0]!.push(p0);
+    const p1 = makeElement("text");
+    p1.id = "p1";
+    p1.showBorder = true;
+    pages[1]!.push(p1);
+
+    const ch = makeLayoutZoneElement("text");
+    ch.id = "cover-h";
+    ch.showBorder = true;
+    t.coverHeaderElements.push(ch);
+
+    expect(hideBordersOnTemplateSheet(t, "body", 0)).toBe(3); // header+footer+p0
+    expect(t.headerElements[0]!.showBorder).toBe(false);
+    expect(t.footerElements[0]!.showBorder).toBe(false);
+    expect(pages[0]![0]!.showBorder).toBe(false);
+    expect(pages[1]![0]!.showBorder).toBe(true);
+    expect(t.coverHeaderElements[0]!.showBorder).toBe(true);
+
+    expect(hideBordersOnTemplateSheet(t, "body", 1)).toBe(1); // 仅 p1；眉脚已 false
+    expect(pages[1]![0]!.showBorder).toBe(false);
+  });
+
+  it("G3b 049 整模版：一点即改封面眉脚+正文全部页+封底（不依赖当前 sheet）", () => {
+    const t = fixtureTemplate();
+    const pages = ensureBodyPages(t);
+    while (pages.length < 2) pages.push([]);
+
+    const ch = makeLayoutZoneElement("text");
+    ch.id = "cover-h";
+    ch.showBorder = true;
+    t.coverHeaderElements.push(ch);
+    const cf = makeLayoutZoneElement("text");
+    cf.id = "cover-f";
+    cf.showBorder = true;
+    t.coverFooterElements.push(cf);
+    const cb = makeElement("text");
+    cb.id = "cover-b";
+    cb.showBorder = true;
+    t.coverElements.push(cb);
+
+    const bh = makeLayoutZoneElement("text");
+    bh.id = "body-h";
+    bh.showBorder = true;
+    t.headerElements.push(bh);
+    const bf = makeLayoutZoneElement("text");
+    bf.id = "body-f";
+    bf.showBorder = true;
+    t.footerElements.push(bf);
+    const p0 = makeElement("text");
+    p0.id = "p0";
+    p0.showBorder = true;
+    pages[0]!.push(p0);
+    const p1 = makeElement("text");
+    p1.id = "p1";
+    p1.showBorder = true;
+    pages[1]!.push(p1);
+    const tbl = makeElement("table");
+    tbl.id = "tbl";
+    tbl.showBorder = true;
+    pages[0]!.push(tbl);
+
+    const xh = makeLayoutZoneElement("text");
+    xh.id = "back-h";
+    xh.showBorder = true;
+    t.backHeaderElements.push(xh);
+    const xb = makeElement("text");
+    xb.id = "back-b";
+    xb.showBorder = true;
+    t.backElements.push(xb);
+
+    // 9 个非表格（cover h/f/b + body h/f/p0/p1 + back h/b）；table 跳过
+    expect(hideBordersOnEntireTemplate(t)).toBe(9);
+    expect(t.coverHeaderElements[0]!.showBorder).toBe(false);
+    expect(t.coverFooterElements[0]!.showBorder).toBe(false);
+    expect(t.coverElements[0]!.showBorder).toBe(false);
+    expect(t.headerElements[0]!.showBorder).toBe(false);
+    expect(t.footerElements[0]!.showBorder).toBe(false);
+    expect(pages[0]![0]!.showBorder).toBe(false);
+    expect(pages[1]![0]!.showBorder).toBe(false);
+    expect(pages[0]!.find((e) => e.id === "tbl")!.showBorder).toBe(true);
+    expect(t.backHeaderElements[0]!.showBorder).toBe(false);
+    expect(t.backElements[0]!.showBorder).toBe(false);
+    expect(hideBordersOnEntireTemplate(t)).toBe(0);
+  });
+
+  it("G4 封尾 sheet 独立；幂等第二次为 0", () => {
+    const t = fixtureTemplate();
+    const h = makeLayoutZoneElement("text");
+    h.id = "xh";
+    h.showBorder = true;
+    t.backHeaderElements.push(h);
+    const n1 = hideBordersOnTemplateSheet(t, "back");
+    expect(n1).toBe(1);
+    expect(hideBordersOnTemplateSheet(t, "back")).toBe(0);
+  });
+
+  it("G5 版式三带 helper 与模版语义一致", () => {
+    const bands = {
+      headerElements: [{ type: "text", showBorder: true }],
+      bodyElements: [
+        { type: "text", showBorder: true },
+        { type: "table", showBorder: true },
+      ],
+      footerElements: [{ type: "pageNumber", showBorder: true }],
+    };
+    expect(hideBordersOnLayoutPresetBands(bands)).toBe(3);
+    expect(bands.headerElements[0]!.showBorder).toBe(false);
+    expect(bands.bodyElements[0]!.showBorder).toBe(false);
+    expect(bands.bodyElements[1]!.showBorder).toBe(true);
+    expect(bands.footerElements[0]!.showBorder).toBe(false);
+  });
+
+  it("G6 040 JSON 样例：修好前→修好后", () => {
+    const t = fixtureTemplate();
+    for (const [arr, id] of [
+      [t.coverHeaderElements, "h1"],
+      [t.coverHeaderElements, "h2"],
+      [t.headerElements, "bh1"],
+    ] as const) {
+      const el = makeLayoutZoneElement(id === "h2" ? "parameter" : "text");
+      el.id = id;
+      el.showBorder = true;
+      arr.push(el);
+    }
+    const c1 = makeElement("text");
+    c1.id = "c1";
+    c1.showBorder = true;
+    t.coverElements.push(c1);
+    const b1 = makeElement("text");
+    b1.id = "b1";
+    b1.showBorder = true;
+    ensureBodyPages(t)[0]!.push(b1);
+
+    hideBordersOnTemplateSheet(t, "cover");
+    hideBordersOnTemplateSheet(t, "body", 0);
+
+    expect(t.coverHeaderElements.every((e) => e.showBorder === false)).toBe(true);
+    expect(t.coverElements.every((e) => e.type === "table" || e.showBorder === false)).toBe(true);
+    expect(t.headerElements.every((e) => e.showBorder === false)).toBe(true);
+    expect(ensureBodyPages(t)[0]!.every((e) => e.showBorder === false)).toBe(true);
+  });
+
+  it("G7 049：整模版一次清掉封面/其它正文页/封底（不依赖当前页）", () => {
+    const t = fixtureTemplate();
+    const pages = ensureBodyPages(t);
+    while (pages.length < 2) pages.push([]);
+
+    const ch = makeLayoutZoneElement("text");
+    ch.id = "cover-h";
+    ch.showBorder = true;
+    t.coverHeaderElements.push(ch);
+    const cb = makeElement("text");
+    cb.id = "cover-b";
+    cb.showBorder = true;
+    t.coverElements.push(cb);
+
+    const bh = makeLayoutZoneElement("text");
+    bh.id = "body-h";
+    bh.showBorder = true;
+    t.headerElements.push(bh);
+    const p0 = makeElement("text");
+    p0.id = "p0";
+    p0.showBorder = true;
+    pages[0]!.push(p0);
+    const p1 = makeElement("text");
+    p1.id = "p1";
+    p1.showBorder = true;
+    pages[1]!.push(p1);
+    const p1tbl = makeElement("table");
+    p1tbl.id = "p1t";
+    p1tbl.showBorder = true;
+    pages[1]!.push(p1tbl);
+
+    const xh = makeLayoutZoneElement("text");
+    xh.id = "back-h";
+    xh.showBorder = true;
+    t.backHeaderElements.push(xh);
+    const xb = makeElement("text");
+    xb.id = "back-b";
+    xb.showBorder = true;
+    t.backElements.push(xb);
+
+    // 模拟停在正文第 0 页：一次整模版隐藏
+    const n = hideBordersOnEntireTemplate(t);
+    expect(n).toBe(7); // 全部非表格
+    expect(t.coverHeaderElements[0]!.showBorder).toBe(false);
+    expect(t.coverElements[0]!.showBorder).toBe(false);
+    expect(t.headerElements[0]!.showBorder).toBe(false);
+    expect(pages[0]![0]!.showBorder).toBe(false);
+    expect(pages[1]![0]!.showBorder).toBe(false);
+    expect(pages[1]![1]!.showBorder).toBe(true); // table 跳过
+    expect(t.backHeaderElements[0]!.showBorder).toBe(false);
+    expect(t.backElements[0]!.showBorder).toBe(false);
+    expect(hideBordersOnEntireTemplate(t)).toBe(0);
   });
 });

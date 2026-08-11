@@ -1,10 +1,13 @@
-const { app, BrowserWindow, ipcMain, dialog, shell, nativeImage, powerSaveBlocker, session, Tray, Menu } = require('electron')
-const { execFileSync, spawn } = require('child_process')
+const { app, BrowserWindow, ipcMain, dialog, shell, nativeImage, powerSaveBlocker, session, Tray, Menu, screen } = require('electron')
+const { execFile, spawn } = require('child_process')
+const { promisify } = require('util')
 const path = require('path')
 const http = require('http')
 const fs = require('fs')
 const os = require('os')
 const { pathToFileURL } = require('url')
+
+const execFileAsync = promisify(execFile)
 const { createAppUpdater } = require('./updater.cjs')
 const { createLayoutSync } = require('./layout-sync.cjs')
 const { humanizePdfExportError } = require('./pdfExportErrors.cjs')
@@ -15,12 +18,43 @@ const {
   listRemovableVolumesDetailed,
   resetWinDriveBaseline,
 } = require('./removable-volumes.cjs')
+const { withThumbSlot } = require('./pdf-thumb-queue.cjs')
+const {
+  registerPdfExportJob,
+  cancelPdfExportJob,
+  isPdfExportCancelled,
+  unregisterPdfExportJob,
+} = require('./pdf-export-cancel.cjs')
+const { isRecoverablePdfExportNavError } = require('./pdf-export-nav-recovery.cjs')
 const {
   readLaunchSettings,
   writeLaunchSettings,
   applyLoginItem,
+  syncLoginItemOnReady,
   shouldSilentStartThisSession,
+  patchTouchesLoginItem,
+  SILENT_START_ARG,
 } = require('./launch.cjs')
+const {
+  snapshotCpu,
+  cpuPercentBetween,
+  memorySample,
+  pushRing,
+  formatBytesShort,
+} = require('./host-resource-sample.cjs')
+const { resolvePartExportConcurrency } = require('./chromium-export-parallel-cap.cjs')
+
+// 五档批导：独立 userData，避免与已打开的安装版抢单实例锁
+const fiveTierExportSpec = String(process.env.REPORT_EDITOR_FIVE_TIER_EXPORT || '').trim()
+if (fiveTierExportSpec) {
+  const batchUserData = path.join(os.tmpdir(), 'sd-sma-report-editor-five-tier-export')
+  try {
+    fs.mkdirSync(batchUserData, { recursive: true })
+  } catch {
+    /* ignore */
+  }
+  app.setPath('userData', batchUserData)
+}
 
 // —— 整机单实例（须在 whenReady / 拉后端之前）——
 const gotSingleInstanceLock = app.requestSingleInstanceLock()
@@ -41,7 +75,14 @@ let appTray = null
 /** 第一实例尚未 createWindow 时收到 second-instance，建窗后再聚焦。 */
 let pendingFocusFromSecondInstance = false
 
-app.on('second-instance', () => {
+app.on('second-instance', (_event, argv) => {
+  // 037b：静默自启拉起的第二实例（命令行含 --silent-start）不得弹出主窗口，
+  // 否则「开机自启 + 静默」在存在重复自启项/进程残留时会被强制显示页面。
+  const silentSecond = Array.isArray(argv) && argv.includes(SILENT_START_ARG)
+  if (silentSecond) {
+    if (silentStartSession) ensureAppTray()
+    return
+  }
   if (mainWindow && !mainWindow.isDestroyed()) {
     showMainWindowFromTray()
     return
@@ -49,12 +90,169 @@ app.on('second-instance', () => {
   pendingFocusFromSecondInstance = true
 })
 
-/** PDF 导出并发池：避免大量隐藏渲染窗口同时占用 CPU / 内存。 */
-const PDF_EXPORT_DEFAULT_MAX_PARALLEL = 4
+/** PDF 导出并发池：默认 1（030：同机 HMI / 弱 CPU / Hypervisor）；硬顶 16。 */
+const PDF_EXPORT_DEFAULT_MAX_PARALLEL = 1
 const PDF_EXPORT_HARD_MAX_PARALLEL = 16
 let pdfExportMaxParallel = PDF_EXPORT_DEFAULT_MAX_PARALLEL
+/** 035「不妥协」：不套用 CPU 预算，按用户设置（硬顶 16） */
+let pdfExportIgnoreCpuBudget = false
 let pdfExportActiveCount = 0
 const pdfExportSlotWaiters = []
+/** 导出进行中：整进程降为 Below Normal，给 mappView / Hypervisor 让核 */
+let pdfExportPriorityDepth = 0
+/** 主窗口后台降载优先级深度（与结批低优先级叠加） */
+let appBackgroundPriorityDepth = 0
+/** 主窗口是否处于后台（最小化 / 隐藏 / 失焦） */
+let appMainWindowBackgroundIdle = false
+/** 分卷之间让出 CPU（ms），双核+虚拟化场景减轻 HMI 饿死 */
+/** 分卷 yield；可由渲染进程按导出性能档位覆盖（035） */
+let pdfExportPartYieldMs = 80
+/** 预热池目标大小；0 = 不预热（035 档 0–2） */
+let pdfExportPrewarmPoolSize = 0
+
+function cpuBudgetMaxParallel(logicalCores) {
+  const n = Math.max(1, Math.floor(Number(logicalCores) || 1))
+  if (n <= 4) return 1
+  if (n <= 8) return 2
+  return Math.min(PDF_EXPORT_HARD_MAX_PARALLEL, Math.floor(n / 4))
+}
+
+function resolvePdfExportMaxParallel(configured, opts) {
+  const want = Math.min(
+    PDF_EXPORT_HARD_MAX_PARALLEL,
+    Math.max(1, Number.isFinite(configured) ? Math.floor(configured) : PDF_EXPORT_DEFAULT_MAX_PARALLEL),
+  )
+  const ignore =
+    opts && typeof opts === 'object'
+      ? Boolean(opts.ignoreCpuBudget)
+      : pdfExportIgnoreCpuBudget
+  if (ignore) return want
+  return Math.min(want, cpuBudgetMaxParallel(os.cpus().length))
+}
+
+function beginPdfExportLowPriority() {
+  pdfExportPriorityDepth += 1
+  if (pdfExportPriorityDepth !== 1) return
+  try {
+    const p = os.constants && os.constants.priority
+    if (p && typeof os.setPriority === 'function') {
+      os.setPriority(0, p.PRIORITY_BELOW_NORMAL)
+    }
+  } catch (e) {
+    log(`setPriority BelowNormal 失败（忽略）：${e.message}`)
+  }
+}
+
+function endPdfExportLowPriority() {
+  if (pdfExportPriorityDepth <= 0) return
+  pdfExportPriorityDepth -= 1
+  if (pdfExportPriorityDepth !== 0) return
+  // 仍处于后台降载时保持 BelowNormal
+  if (appBackgroundPriorityDepth > 0) return
+  try {
+    const p = os.constants && os.constants.priority
+    if (p && typeof os.setPriority === 'function') {
+      os.setPriority(0, p.PRIORITY_NORMAL)
+    }
+  } catch (e) {
+    log(`setPriority Normal 失败（忽略）：${e.message}`)
+  }
+}
+
+/**
+ * 030/现场（i3 双核 + AR Hypervisor 占核）：真正吃 CPU 的是**导出渲染进程**
+ * （pdf-lib 画版式 / fontkit subset / chromium 排版）与 **Python 后端**（取数），
+ * 二者都是独立 OS 进程。此前只 `os.setPriority(0,…)` 降了空转的主进程，等于没让核，
+ * 故矢量档也把 Windows 侧仅剩的核占满、mappView 饿死。这里按需降真正的进程优先级。
+ *
+ * @param {number} pid 目标进程 pid（0/无效则忽略）
+ * @param {number} priority os.constants.priority.* 常量
+ * @param {string} label 日志标识
+ */
+function setOsProcessPrioritySafe(pid, priority, label) {
+  const target = Math.floor(Number(pid) || 0)
+  if (!target || target <= 0) return false
+  if (typeof priority !== 'number') return false
+  try {
+    if (typeof os.setPriority === 'function') {
+      os.setPriority(target, priority)
+      return true
+    }
+  } catch (e) {
+    log(`setPriority ${label}(${target}) 失败（忽略）：${e && e.message ? e.message : e}`)
+  }
+  return false
+}
+
+/** @returns {'full'|'basic'|'max'} */
+function normalizeCoexistPause(raw) {
+  const s = String(raw || '')
+    .trim()
+    .toLowerCase()
+  if (s === 'max' || s === 'boost' || s === 'highest') return 'max'
+  if (s === 'basic' || s === 'light') return 'basic'
+  return 'full'
+}
+
+/**
+ * 让核/抢核：full → 渲染 IDLE/Low；basic → BelowNormal；max → HIGHEST（档 4 拉满）。
+ */
+function renderProcessCoexistPriority(coexistPause) {
+  const p = os.constants && os.constants.priority
+  if (!p) return null
+  const mode = normalizeCoexistPause(coexistPause)
+  if (mode === 'max') return p.PRIORITY_HIGHEST
+  if (mode === 'basic') return p.PRIORITY_BELOW_NORMAL
+  return p.PRIORITY_LOW
+}
+
+/**
+ * 导出期按档调整渲染进程与后端优先级。
+ * full：渲染 LOW + 后端 BN（保 HMI）；basic：渲染 BN + 后端 BN；
+ * max：渲染/后端均 HIGHEST（强机尽快出 PDF，不降主进程）。
+ */
+function applyExportProcessCoexistPriority(renderWebContents, coexistPause) {
+  const p = os.constants && os.constants.priority
+  if (!p) return
+  const mode = normalizeCoexistPause(coexistPause)
+  const renderPriority = renderProcessCoexistPriority(mode)
+  try {
+    if (renderWebContents && !renderWebContents.isDestroyed() && renderPriority != null) {
+      setOsProcessPrioritySafe(renderWebContents.getOSProcessId(), renderPriority, 'export-renderer')
+    }
+  } catch {
+    /* 渲染进程 pid 取用失败忽略 */
+  }
+  if (!pythonProcess || !pythonProcess.pid) return
+  if (mode === 'max') {
+    setOsProcessPrioritySafe(pythonProcess.pid, p.PRIORITY_HIGHEST, 'backend')
+  } else {
+    // full / basic：取数以 IO 为主，BelowNormal 即可
+    setOsProcessPrioritySafe(pythonProcess.pid, p.PRIORITY_BELOW_NORMAL, 'backend')
+  }
+}
+
+/** 导出结束/窗口归还池前，把渲染进程与后端恢复 NORMAL。 */
+function restoreExportProcessCoexistPriority(renderWebContents) {
+  const p = os.constants && os.constants.priority
+  if (!p) return
+  try {
+    if (renderWebContents && !renderWebContents.isDestroyed()) {
+      setOsProcessPrioritySafe(renderWebContents.getOSProcessId(), p.PRIORITY_NORMAL, 'export-renderer')
+    }
+  } catch {
+    /* ignore */
+  }
+  if (pythonProcess && pythonProcess.pid) {
+    setOsProcessPrioritySafe(pythonProcess.pid, p.PRIORITY_NORMAL, 'backend')
+  }
+}
+
+function yieldToOs(ms) {
+  const wait = Math.max(0, Number(ms) || 0)
+  if (!wait) return Promise.resolve()
+  return new Promise((resolve) => setTimeout(resolve, wait))
+}
 
 function acquirePdfExportSlot() {
   if (pdfExportActiveCount < pdfExportMaxParallel) {
@@ -76,11 +274,48 @@ function releasePdfExportSlot() {
   drainPdfExportSlotWaiters()
 }
 
-async function runPdfExportWithSlot(fn) {
+/**
+ * 035：分卷并行池（模拟结批多分卷）。items 为 partIndex 列表；concurrency 路同时跑 fn。
+ * @template T
+ * @param {number[]} items
+ * @param {number} concurrency
+ * @param {(partIndex: number) => Promise<T>} fn
+ * @param {() => void} [throwIfCancelled]
+ * @returns {Promise<T[]>} 与 items 同序的结果（按 partIndex 在 items 中的位置）
+ */
+async function runPartIndexPool(items, concurrency, fn, throwIfCancelled) {
+  const list = Array.isArray(items) ? items : []
+  if (!list.length) return []
+  const n = Math.max(1, Math.min(Math.floor(Number(concurrency) || 1), list.length))
+  /** @type {unknown[]} */
+  const results = new Array(list.length)
+  let next = 0
+  async function worker() {
+    while (true) {
+      if (typeof throwIfCancelled === 'function') throwIfCancelled()
+      const i = next
+      next += 1
+      if (i >= list.length) return
+      results[i] = await fn(list[i])
+    }
+  }
+  await Promise.all(Array.from({ length: n }, () => worker()))
+  return results
+}
+
+/**
+ * @param {() => Promise<any>} fn
+ * @param {'full'|'basic'|'max'} [coexistPause]
+ */
+async function runPdfExportWithSlot(fn, coexistPause = 'full') {
   await acquirePdfExportSlot()
+  // 档 4 max：不降主进程（与「不妥协 / 拉满」一致）；其余仍 BelowNormal 让核
+  const demoteMain = normalizeCoexistPause(coexistPause) !== 'max'
+  if (demoteMain) beginPdfExportLowPriority()
   try {
     return await fn()
   } finally {
+    if (demoteMain) endPdfExportLowPriority()
     releasePdfExportSlot()
   }
 }
@@ -94,6 +329,16 @@ const PDF_EXPORT_PREWARM_HASH = '#/pdf-export?prewarm=1'
 /** 复用上限：超过后销毁重建，避免长期驻留的渲染进程累积内存 */
 const PDF_EXPORT_WINDOW_MAX_USES = 30
 
+/**
+ * 050b：macOS 上隐藏 BrowserWindow 仍进 Accessibility 树；
+ * 预热池/复用窗滞留后，过一会被 Cursor/系统查询 → SIGSEGV @0x10。
+ * darwin 禁用池与复用，导出结束即销毁。
+ */
+function pdfExportWarmPoolAllowed() {
+  if (process.platform === 'darwin') return false
+  return true
+}
+
 const BACKEND_PORT = 8000
 /** 后端绑定地址：0.0.0.0 表示同时监听本机回环与局域网网卡（同网段可访问）。 */
 const BACKEND_BIND_HOST = '0.0.0.0'
@@ -102,6 +347,91 @@ const VITE_DEV_URL = 'http://localhost:5173'
 
 function log(msg) {
   console.log(`[Electron] ${msg}`)
+}
+
+/** 渲染/子进程崩溃落盘，便于「闪退」无审计时取证 */
+function appendProcessGoneLog(kind, details) {
+  try {
+    const line = JSON.stringify({
+      ts: new Date().toISOString(),
+      kind,
+      ...(details && typeof details === 'object' ? details : { details }),
+    })
+    log(`CRASH ${kind}: ${line}`)
+    const dir = path.join(app.getPath('userData'), 'logs')
+    fs.mkdirSync(dir, { recursive: true })
+    fs.appendFileSync(path.join(dir, 'process-gone.log'), `${line}\n`, 'utf8')
+  } catch (e) {
+    try {
+      log(`appendProcessGoneLog failed: ${e && e.message}`)
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+function installProcessGoneLogging() {
+  try {
+    app.on('render-process-gone', (_event, wc, details) => {
+      let url = ''
+      try {
+        url = wc && !wc.isDestroyed() ? String(wc.getURL() || '') : ''
+      } catch {
+        url = ''
+      }
+      appendProcessGoneLog('render-process-gone', {
+        reason: details && details.reason,
+        exitCode: details && details.exitCode,
+        url: url.slice(0, 500),
+      })
+    })
+  } catch {
+    /* ignore */
+  }
+  try {
+    app.on('child-process-gone', (_event, details) => {
+      appendProcessGoneLog('child-process-gone', {
+        type: details && details.type,
+        reason: details && details.reason,
+        exitCode: details && details.exitCode,
+        serviceName: details && details.serviceName,
+        name: details && details.name,
+      })
+    })
+  } catch {
+    /* ignore */
+  }
+}
+
+/** Chromium printToPDF 全进程信号量：多窗可并行取数/排版，真正打 PDF 限流防爆内存 */
+let printToPdfActive = 0
+const printToPdfWaiters = []
+const PRINT_TO_PDF_MAX_CONCURRENT = 2
+
+function withPrintToPdfSlot(fn) {
+  return new Promise((resolve, reject) => {
+    const run = () => {
+      printToPdfActive += 1
+      Promise.resolve()
+        .then(fn)
+        .then(
+          (v) => {
+            printToPdfActive = Math.max(0, printToPdfActive - 1)
+            const next = printToPdfWaiters.shift()
+            if (next) next()
+            resolve(v)
+          },
+          (err) => {
+            printToPdfActive = Math.max(0, printToPdfActive - 1)
+            const next = printToPdfWaiters.shift()
+            if (next) next()
+            reject(err)
+          },
+        )
+    }
+    if (printToPdfActive < PRINT_TO_PDF_MAX_CONCURRENT) run()
+    else printToPdfWaiters.push(run)
+  })
 }
 
 function getBackendDir() {
@@ -150,13 +480,19 @@ function maskOpcServerForRenderer(server) {
   return out
 }
 
-function readDataSourceStartupSnapshot() {
+async function readDataSourceStartupSnapshot() {
   const file = path.join(getReportEditorDataDir(), 'config.json')
   try {
-    if (!fs.existsSync(file)) {
-      return { connections: [], app_preferences: {}, source: file, ok: true }
+    let rawText
+    try {
+      rawText = await fs.promises.readFile(file, 'utf8')
+    } catch (e) {
+      if (e && (e.code === 'ENOENT' || e.code === 'ENOTDIR')) {
+        return { connections: [], app_preferences: {}, source: file, ok: true }
+      }
+      throw e
     }
-    const raw = JSON.parse(fs.readFileSync(file, 'utf8'))
+    const raw = JSON.parse(rawText)
     const connections = Array.isArray(raw.db_connections)
       ? raw.db_connections.map(maskDbConnectionForRenderer).filter((c) => c.id)
       : []
@@ -298,10 +634,10 @@ function checkBackendHealthOnce() {
   })
 }
 
-function commandForPid(pid) {
+async function commandForPid(pid) {
   try {
     if (process.platform === 'win32') {
-      const out = execFileSync(
+      const { stdout } = await execFileAsync(
         'powershell.exe',
         [
           '-NoProfile',
@@ -310,26 +646,27 @@ function commandForPid(pid) {
         ],
         { encoding: 'utf8', windowsHide: true, timeout: 1500 },
       )
-      return out.trim()
+      return String(stdout || '').trim()
     }
-    return execFileSync('ps', ['-p', String(pid), '-o', 'command='], {
+    const { stdout } = await execFileAsync('ps', ['-p', String(pid), '-o', 'command='], {
       encoding: 'utf8',
       timeout: 1500,
-    }).trim()
+    })
+    return String(stdout || '').trim()
   } catch {
     return ''
   }
 }
 
-function backendListenerPid() {
+async function backendListenerPid() {
   try {
     if (process.platform === 'win32') {
-      const out = execFileSync('netstat.exe', ['-ano', '-p', 'tcp'], {
+      const { stdout } = await execFileAsync('netstat.exe', ['-ano', '-p', 'tcp'], {
         encoding: 'utf8',
         windowsHide: true,
         timeout: 1500,
       })
-      for (const line of out.split(/\r?\n/)) {
+      for (const line of String(stdout || '').split(/\r?\n/)) {
         if (!line.includes('LISTENING')) continue
         const parts = line.trim().split(/\s+/)
         const local = parts[1] || ''
@@ -338,11 +675,11 @@ function backendListenerPid() {
       }
       return 0
     }
-    const out = execFileSync('lsof', ['-nP', `-iTCP:${BACKEND_PORT}`, '-sTCP:LISTEN', '-t'], {
+    const { stdout } = await execFileAsync('lsof', ['-nP', `-iTCP:${BACKEND_PORT}`, '-sTCP:LISTEN', '-t'], {
       encoding: 'utf8',
       timeout: 1500,
     })
-    const pid = Number(out.trim().split(/\s+/)[0])
+    const pid = Number(String(stdout || '').trim().split(/\s+/)[0])
     return Number.isFinite(pid) ? pid : 0
   } catch {
     return 0
@@ -355,9 +692,9 @@ function isOurBackendCommand(command) {
 }
 
 async function stopStaleBundledBackendIfUnhealthy() {
-  const pid = backendListenerPid()
+  const pid = await backendListenerPid()
   if (!pid) return false
-  const command = commandForPid(pid)
+  const command = await commandForPid(pid)
   if (!isOurBackendCommand(command)) return false
   if (await checkBackendHealthOnce()) return false
   log(`发现旧后端进程占用 ${BACKEND_PORT} 且健康检查无响应，准备清理: pid=${pid}`)
@@ -369,7 +706,7 @@ async function stopStaleBundledBackendIfUnhealthy() {
   }
   for (let i = 0; i < 20; i += 1) {
     await new Promise((resolve) => setTimeout(resolve, 100))
-    if (!backendListenerPid()) return true
+    if (!(await backendListenerPid())) return true
   }
   try {
     process.kill(pid, 'SIGKILL')
@@ -377,7 +714,7 @@ async function stopStaleBundledBackendIfUnhealthy() {
     /* ignore */
   }
   await new Promise((resolve) => setTimeout(resolve, 200))
-  return !backendListenerPid()
+  return !(await backendListenerPid())
 }
 
 function waitForBackend(maxRetries = 60, interval = 500) {
@@ -468,6 +805,1069 @@ function showMainWindowFromTray() {
   }
 }
 
+/* ========== 039 / 039c：导出全屏遮罩（盖住同机 mappView + 任务栏/Dock） ========== */
+/** @type {import('electron').BrowserWindow[]} */
+let exportOverlayWindows = []
+let exportOverlayHideTimer = null
+/** ETA 文案每秒刷新（不续 120s，仅重算剩余） */
+let exportOverlayEtaTickTimer = null
+/** 039d：主机 CPU/内存曲线采样 */
+let exportOverlayMetricsTimer = null
+let exportOverlayCpuPrev = null
+/** @type {number[]} */
+let exportOverlayCpuHistory = []
+/** @type {number[]} */
+let exportOverlayMemHistory = []
+const EXPORT_OVERLAY_METRICS_MAX = 60
+/** 进行中的导出计数（0→1 显示遮罩，→0 隐藏）；支持并行导出 */
+let exportOverlayUiCount = 0
+let exportOverlayLastProgress = null
+/**
+ * 用户 Esc/×/超时强关后：本会话进度更新不再自动重弹；
+ * 侧栏「重新打开」可经 reshowExportOverlay 显式拉回。
+ */
+let exportOverlaySuppressed = false
+/** 单份最长遮罩 120s；每份开始时重新计时（用户确认方案 A） */
+const EXPORT_OVERLAY_MAX_MS = 120000
+/** ETA：本会话已完成份耗时 */
+let exportOverlayEta = {
+  sessionStartedAt: 0,
+  partStartedAt: 0,
+  armedPartIndex: -1,
+  completedParts: 0,
+  partDurationsMs: [],
+  /** @type {Record<string, number>} partIndex → 开始时刻（并行分卷各自计时） */
+  partStartedAtByIndex: {},
+  /** @type {Record<string, true>} 已保存的 partIndex */
+  savedParts: {},
+}
+/**
+ * 035 并行分卷：遮罩上每路 worker 当前份数（避免「第几份」被后写覆盖错乱）
+ * @type {{ workerSlot: number, partIndex: number, stage: string, stageLabel: string, busy: boolean }[]}
+ */
+let exportOverlayWorkerLanes = []
+
+const EXPORT_OVERLAY_STAGE_LABELS = {
+  load: '加载模版',
+  fetch: '取数中（OPC / SQL）',
+  hydrate: '同步取数缓存',
+  render: '渲染 PDF',
+  write: '写入磁盘',
+  saved: '本份已保存',
+  wait: '等待总份数',
+  export: '导出进行中',
+}
+
+function isExportOverlayEnabled() {
+  // 五档批导为无人值守/自动退出，不弹遮罩
+  if (fiveTierExportSpec) return false
+  try {
+    return Boolean(readLaunchSettings(app).exportOverlayEnabled)
+  } catch {
+    return true
+  }
+}
+
+/** 039c：触发范围——always 全部导出；autoOnly 仅自动结批 */
+function shouldArmExportOverlay(opts) {
+  if (!isExportOverlayEnabled()) return false
+  let trigger = 'always'
+  try {
+    trigger = readLaunchSettings(app).exportOverlayTrigger || 'always'
+  } catch {
+    trigger = 'always'
+  }
+  if (trigger === 'autoOnly') {
+    const src = opts && typeof opts.exportSource === 'string' ? opts.exportSource.trim() : ''
+    return src === 'auto'
+  }
+  return true
+}
+
+function resolveOverlayDisplays() {
+  let mode = 'primary'
+  try {
+    mode = readLaunchSettings(app).exportOverlayDisplay || 'primary'
+  } catch {
+    mode = 'primary'
+  }
+  const all = screen.getAllDisplays()
+  const primary = screen.getPrimaryDisplay()
+  if (!primary) return [{ bounds: { x: 0, y: 0, width: 1280, height: 800 } }]
+  if (mode === 'all') return all.length ? all : [primary]
+  if (mode === 'secondary') {
+    const sec = all.find((d) => d && d.id !== primary.id)
+    return [sec || primary]
+  }
+  return [primary]
+}
+
+function formatExportOverlayEta(ms) {
+  if (ms == null || !Number.isFinite(ms) || ms < 0) return '预估中…'
+  const sec = Math.max(0, Math.ceil(ms / 1000))
+  if (sec < 60) return `约剩余 ${sec} 秒`
+  const m = Math.floor(sec / 60)
+  const s = sec % 60
+  return s > 0 ? `约剩余 ${m} 分 ${s} 秒` : `约剩余 ${m} 分钟`
+}
+
+function stageWeightForOverlay(stage, phase) {
+  const s = String(stage || phase || '').toLowerCase()
+  if (s === 'saved') return 1
+  if (s === 'write') return 0.92
+  if (s === 'render') return 0.72
+  if (s === 'fetch') return 0.42
+  if (s === 'hydrate') return 0.35
+  if (s === 'load') return 0.12
+  return 0.28
+}
+
+function upsertExportOverlayWorkerLane(payload) {
+  if (payload == null || payload.workerSlot == null) return
+  const slot = Math.max(0, Math.floor(Number(payload.workerSlot) || 0))
+  const parallel = Math.max(
+    slot + 1,
+    Math.floor(Number(payload.parallelWorkers) || exportOverlayWorkerLanes.length || 1),
+  )
+  while (exportOverlayWorkerLanes.length < parallel) {
+    exportOverlayWorkerLanes.push({
+      workerSlot: exportOverlayWorkerLanes.length,
+      partIndex: 0,
+      stage: '',
+      stageLabel: '',
+      busy: false,
+    })
+  }
+  if (exportOverlayWorkerLanes.length > parallel) {
+    exportOverlayWorkerLanes = exportOverlayWorkerLanes.slice(0, parallel)
+  }
+  const stage = String(payload.stage || payload.phase || '')
+  const busy = Boolean(payload.workerBusy) || (stage !== '' && stage !== 'saved' && !payload.workerIdle)
+  exportOverlayWorkerLanes[slot] = {
+    workerSlot: slot,
+    partIndex: Math.max(0, Math.floor(Number(payload.partIndex) || 0)),
+    stage,
+    stageLabel: EXPORT_OVERLAY_STAGE_LABELS[stage] || '',
+    busy: payload.workerIdle ? false : busy,
+  }
+}
+
+function enrichExportOverlayProgress(base) {
+  const p = { ...(base || {}) }
+  const stage = String(p.stage || p.phase || 'export')
+  p.stage = stage
+  p.stageLabel = EXPORT_OVERLAY_STAGE_LABELS[stage] || EXPORT_OVERLAY_STAGE_LABELS.export
+  const total = Math.max(0, Math.floor(Number(p.totalReports) || 0))
+  const partIndex = Math.max(0, Math.floor(Number(p.partIndex) || 0))
+  const completed = Math.max(0, Math.floor(Number(exportOverlayEta.completedParts) || 0))
+  p.completedParts = completed
+  const lanes = exportOverlayWorkerLanes.slice()
+  p.workers = lanes
+  p.parallelWorkers = lanes.length
+  const activeBusy = lanes.filter((w) => w && w.busy).length
+  if (lanes.length > 1) {
+    p.stageLabel = `${lanes.length} 路并行导出中`
+  }
+  let percent = 0
+  if (total > 0) {
+    // 并行：已完成份 + 各忙碌路的阶段权重分摊，避免乱序 partIndex 把进度顶飞
+    if (lanes.length > 1) {
+      let fracSum = 0
+      for (const w of lanes) {
+        if (!w || !w.busy) continue
+        fracSum += stageWeightForOverlay(w.stage, w.stage)
+      }
+      percent = Math.min(99, Math.round(((completed + fracSum) / total) * 100))
+    } else {
+      const frac = Math.min(1, stageWeightForOverlay(stage, p.phase))
+      percent = Math.min(99, Math.round(((completed + frac) / total) * 100))
+    }
+    if (completed >= total) percent = 100
+    else if (stage === 'saved' && partIndex + 1 >= total && lanes.length <= 1) percent = 100
+  }
+  p.percent = percent
+
+  p.etaMs = estimateExportOverlayEtaMs({
+    total,
+    completed,
+    activeBusy,
+    lanesLen: lanes.length,
+    durations: exportOverlayEta.partDurationsMs || [],
+    sessionStartedAt: exportOverlayEta.sessionStartedAt,
+  })
+  p.etaLabel = formatExportOverlayEta(p.etaMs)
+  return p
+}
+
+/**
+ * 剩余时间：近窗均耗 ×（未开始 + 在制折半）/ 活跃路数，并与墙钟吞吐混合。
+ * 首份常含全量取数，样本≥4 时丢掉第一条；完成数偏少时吞吐兜底。
+ */
+function estimateExportOverlayEtaMs(opts) {
+  const total = Math.max(0, Math.floor(Number(opts && opts.total) || 0))
+  const completed = Math.max(0, Math.floor(Number(opts && opts.completed) || 0))
+  if (total <= 0) return null
+  if (completed >= total) return 0
+  const remain = Math.max(0, total - completed)
+  const activeBusy = Math.max(0, Math.floor(Number(opts && opts.activeBusy) || 0))
+  const lanesLen = Math.max(0, Math.floor(Number(opts && opts.lanesLen) || 0))
+  const lanesBusy = Math.max(1, activeBusy || lanesLen || 1)
+  const inFlight = Math.min(remain, activeBusy)
+  const remainWork = Math.max(0, remain - inFlight) + inFlight * 0.45
+
+  let samples = Array.isArray(opts && opts.durations) ? opts.durations.slice() : []
+  if (samples.length >= 4) samples = samples.slice(1)
+  const window = samples.slice(-Math.min(12, samples.length))
+  let sampleEta = null
+  if (window.length > 0) {
+    const avg = window.reduce((a, b) => a + b, 0) / window.length
+    sampleEta = (remainWork / lanesBusy) * avg
+  }
+
+  let throughputEta = null
+  const startedAt = Number(opts && opts.sessionStartedAt) || 0
+  const elapsed = startedAt > 0 ? Date.now() - startedAt : 0
+  if (completed >= 2 && elapsed > 2000) {
+    throughputEta = (remain / completed) * elapsed
+  }
+
+  if (sampleEta != null && throughputEta != null) {
+    return 0.7 * sampleEta + 0.3 * throughputEta
+  }
+  if (sampleEta != null) return sampleEta
+  if (throughputEta != null) return throughputEta
+  return null
+}
+
+function buildExportOverlayHtml() {
+  return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; user-select:none; }
+  html,body { width:100%; height:100%; overflow:hidden;
+    background:radial-gradient(1200px 800px at 50% 40%, #1b2440 0%, #0b1120 70%, #070b16 100%);
+    color:#e8ecf6; font-family:"Microsoft YaHei","PingFang SC","Segoe UI",sans-serif;
+    -webkit-app-region:no-drag; cursor:default; }
+  .wrap { position:absolute; inset:0; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; gap:18px; padding:24px; }
+  .ring { width:76px; height:76px; border-radius:50%;
+    border:5px solid rgba(120,160,255,0.18); border-top-color:#6aa0ff;
+    animation:spin 0.9s linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  .title { font-size:30px; font-weight:600; letter-spacing:2px; }
+  .sub { font-size:16px; color:#9fb0d4; letter-spacing:1px; }
+  .stage { font-size:17px; color:#d7e2ff; min-height:24px; }
+  .counter { font-size:15px; color:#c7d4ef; min-height:20px; }
+  .workers { display:none; width:min(960px, 92vw); max-height:min(42vh, 440px);
+    margin-top:2px; gap:8px; overflow-x:hidden; overflow-y:auto;
+    padding:2px 2px 4px; scrollbar-width:thin;
+    scrollbar-color:rgba(120,160,255,0.35) transparent; }
+  .workers.show { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); }
+  .workers.show.cols-3 { grid-template-columns:repeat(3, minmax(0, 1fr)); }
+  .workers.show.cols-4 { grid-template-columns:repeat(4, minmax(0, 1fr)); }
+  .ov-worker { display:flex; flex-direction:column; align-items:flex-start; gap:2px;
+    min-width:0; padding:8px 10px; border-radius:8px;
+    border:1px solid rgba(140,170,230,0.2); background:rgba(255,255,255,0.04);
+    font-size:12px; color:#c7d4ef; }
+  .ov-worker__id { color:#6aa0ff; font-weight:600;
+    font-variant-numeric: tabular-nums; }
+  .ov-worker__part { font-variant-numeric: tabular-nums; white-space:nowrap;
+    overflow:hidden; text-overflow:ellipsis; max-width:100%; }
+  .ov-worker__stage { color:#8fa3c8; white-space:nowrap;
+    overflow:hidden; text-overflow:ellipsis; max-width:100%; }
+  .ov-worker.is-idle { opacity:0.55; }
+  @media (max-width:900px) {
+    .workers.show.cols-4 { grid-template-columns:repeat(3, minmax(0, 1fr)); }
+  }
+  @media (max-width:640px) {
+    .workers.show, .workers.show.cols-3, .workers.show.cols-4 {
+      grid-template-columns:repeat(2, minmax(0, 1fr)); }
+  }
+  .eta { font-size:14px; color:#8fa3c8; min-height:20px; }
+  .bar { width:min(560px, 70vw); height:8px; border-radius:99px;
+    background:rgba(120,160,255,0.15); overflow:hidden; position:relative; }
+  .bar > i { position:absolute; left:0; top:0; height:100%; width:0%;
+    border-radius:99px; background:linear-gradient(90deg,#3d6fd6,#6aa0ff);
+    transition:width 0.35s ease; }
+  .bar.indeterminate > i { left:-40%; width:40%;
+    background:linear-gradient(90deg,transparent,#6aa0ff,transparent);
+    animation:slide 1.25s ease-in-out infinite; transition:none; }
+  @keyframes slide { 0%{left:-40%;} 100%{left:100%;} }
+  .pct { font-size:13px; color:#7f93b8; min-height:18px; }
+  .actions { margin-top:8px; display:flex; gap:12px; align-items:center; }
+  #ov-support { border:1px solid rgba(160,180,220,0.28); background:rgba(255,255,255,0.06);
+    color:#c7d4ef; font-size:13px; padding:8px 14px; border-radius:8px; cursor:pointer; }
+  #ov-support:hover { background:rgba(255,255,255,0.12); color:#fff; }
+  #ov-support:disabled { opacity:0.45; cursor:wait; }
+  #ov-support-msg { font-size:12px; color:#8fa3c8; max-width:360px; text-align:center; min-height:16px; }
+  .hint { position:absolute; bottom:22px; left:0; right:0; text-align:center;
+    font-size:13px; color:#6f7ea0; padding:0 24px; }
+  #ov-close { position:absolute; top:16px; right:20px; width:40px; height:40px;
+    border-radius:8px; border:1px solid rgba(160,180,220,0.25); background:rgba(255,255,255,0.04);
+    color:#9fb0d4; font-size:20px; line-height:38px; text-align:center; cursor:pointer;
+    opacity:0.55; z-index:2; }
+  #ov-close:hover { opacity:1; background:rgba(255,255,255,0.1); }
+  .ov-metrics { position:absolute; right:18px; bottom:48px; width:min(300px, 38vw);
+    display:flex; flex-direction:column; gap:10px; pointer-events:none; z-index:1; }
+  .ov-metrics__card { padding:10px 12px 8px; border-radius:10px;
+    border:1px solid rgba(140,170,230,0.22); background:rgba(8,14,28,0.72);
+    backdrop-filter: blur(6px); }
+  .ov-metrics__head { display:flex; justify-content:space-between; align-items:baseline;
+    gap:8px; margin-bottom:6px; font-size:12px; color:#9fb0d4; }
+  .ov-metrics__val { font-size:14px; font-weight:600; color:#e8ecf6;
+    font-variant-numeric: tabular-nums; }
+  .ov-metrics__sub { margin-top:4px; font-size:11px; color:#6f7ea0;
+    font-variant-numeric: tabular-nums; }
+  .ov-metrics__card canvas { display:block; width:100%; height:52px; }
+</style></head><body>
+  <div id="ov-close" title="隐藏（Esc）">×</div>
+  <div class="wrap">
+    <div class="ring"></div>
+    <div class="title">正在生成报表</div>
+    <div class="sub">结批导出进行中，请稍候…</div>
+    <div class="stage" id="ov-stage"></div>
+    <div class="counter" id="ov-counter"></div>
+    <div class="workers" id="ov-workers" aria-live="polite"></div>
+    <div class="eta" id="ov-eta"></div>
+    <div class="bar indeterminate" id="ov-bar"><i id="ov-bar-fill"></i></div>
+    <div class="pct" id="ov-pct"></div>
+    <div class="actions">
+      <button type="button" id="ov-support">导出问题反馈包</button>
+    </div>
+    <div id="ov-support-msg"></div>
+  </div>
+  <div class="ov-metrics" aria-hidden="true">
+    <div class="ov-metrics__card">
+      <div class="ov-metrics__head">
+        <span>CPU 逻辑核占用</span>
+        <span class="ov-metrics__val" id="ov-cpu-val">—</span>
+      </div>
+      <canvas id="ov-cpu-chart" width="276" height="52"></canvas>
+      <div class="ov-metrics__sub" id="ov-cpu-sub">整机合计 · 近 60 秒</div>
+    </div>
+    <div class="ov-metrics__card">
+      <div class="ov-metrics__head">
+        <span>内存用量</span>
+        <span class="ov-metrics__val" id="ov-mem-val">—</span>
+      </div>
+      <canvas id="ov-mem-chart" width="276" height="52"></canvas>
+      <div class="ov-metrics__sub" id="ov-mem-sub">本机物理内存</div>
+    </div>
+  </div>
+  <div class="hint">此界面为报表导出临时提示 · 按 Esc 或点右上角 × 可隐藏回主画面</div>
+<script>
+  (function(){
+    var api = window.exportOverlay;
+    var stageEl = document.getElementById('ov-stage');
+    var counter = document.getElementById('ov-counter');
+    var workersEl = document.getElementById('ov-workers');
+    var etaEl = document.getElementById('ov-eta');
+    var bar = document.getElementById('ov-bar');
+    var fill = document.getElementById('ov-bar-fill');
+    var pctEl = document.getElementById('ov-pct');
+    var supportBtn = document.getElementById('ov-support');
+    var supportMsg = document.getElementById('ov-support-msg');
+    var cpuVal = document.getElementById('ov-cpu-val');
+    var memVal = document.getElementById('ov-mem-val');
+    var cpuSub = document.getElementById('ov-cpu-sub');
+    var memSub = document.getElementById('ov-mem-sub');
+    var cpuCanvas = document.getElementById('ov-cpu-chart');
+    var memCanvas = document.getElementById('ov-mem-chart');
+    function drawSpark(canvas, values, stroke, fillColor){
+      if (!canvas) return;
+      var ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      var dpr = window.devicePixelRatio || 1;
+      var cssW = canvas.clientWidth || canvas.width;
+      var cssH = canvas.clientHeight || canvas.height;
+      if (canvas.width !== Math.round(cssW * dpr) || canvas.height !== Math.round(cssH * dpr)) {
+        canvas.width = Math.round(cssW * dpr);
+        canvas.height = Math.round(cssH * dpr);
+      }
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, cssW, cssH);
+      var arr = Array.isArray(values) ? values : [];
+      if (arr.length < 1) return;
+      var pad = 2;
+      var w = cssW - pad * 2;
+      var h = cssH - pad * 2;
+      ctx.strokeStyle = 'rgba(120,160,255,0.12)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(pad, pad + h * 0.5);
+      ctx.lineTo(pad + w, pad + h * 0.5);
+      ctx.stroke();
+      var n = arr.length;
+      ctx.beginPath();
+      for (var i = 0; i < n; i++) {
+        var x = pad + (n === 1 ? w : (i / (n - 1)) * w);
+        var y = pad + h - (Math.max(0, Math.min(100, Number(arr[i]) || 0)) / 100) * h;
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.strokeStyle = stroke;
+      ctx.lineWidth = 1.6;
+      ctx.lineJoin = 'round';
+      ctx.stroke();
+      if (fillColor && n > 1) {
+        var lastX = pad + w;
+        var lastY = pad + h - (Math.max(0, Math.min(100, Number(arr[n - 1]) || 0)) / 100) * h;
+        ctx.lineTo(lastX, pad + h);
+        ctx.lineTo(pad, pad + h);
+        ctx.closePath();
+        ctx.fillStyle = fillColor;
+        ctx.fill();
+      }
+    }
+    function renderMetrics(m){
+      if (!m) return;
+      var cpu = Number(m.cpuPercent);
+      var mem = Number(m.memPercent);
+      if (cpuVal) cpuVal.textContent = Number.isFinite(cpu) ? (Math.round(cpu) + '%') : '—';
+      if (memVal) memVal.textContent = Number.isFinite(mem) ? (Math.round(mem) + '%') : '—';
+      if (cpuSub) {
+        var cores = Number(m.logicalCores) || 0;
+        cpuSub.textContent = cores > 0
+          ? ('整机 ' + cores + ' 逻辑核合计 · 近 60 秒')
+          : '整机合计 · 近 60 秒';
+      }
+      if (memSub) {
+        memSub.textContent = (m.memUsedLabel && m.memTotalLabel)
+          ? (m.memUsedLabel + ' / ' + m.memTotalLabel)
+          : '本机物理内存';
+      }
+      drawSpark(cpuCanvas, m.cpuHistory, '#6aa0ff', 'rgba(106,160,255,0.14)');
+      drawSpark(memCanvas, m.memHistory, '#5eead4', 'rgba(94,234,212,0.12)');
+    }
+    function escapeHtml(s){
+      return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+    var stickyTotal = 0;
+    function render(p){
+      if (!p) return;
+      stageEl.textContent = p.stageLabel || '';
+      var total = Number(p.totalReports) || 0;
+      if (total > 0) stickyTotal = total;
+      else if (stickyTotal > 0) total = stickyTotal;
+      var workers = Array.isArray(p.workers) ? p.workers : [];
+      var name = p.templateName ? (' · ' + p.templateName) : '';
+      if (workers.length > 1 && total > 0) {
+        var done = Number(p.completedParts);
+        if (!Number.isFinite(done) || done < 0) done = 0;
+        counter.textContent = '已完成 ' + done + ' / 共 ' + total + ' 份' + name;
+        var html = '';
+        for (var wi = 0; wi < workers.length; wi++) {
+          var w = workers[wi] || {};
+          var busy = !!w.busy;
+          var wIdx = (Number(w.partIndex) || 0) + 1;
+          if (wIdx > total) wIdx = total;
+          var partLabel = busy
+            ? ('第 ' + wIdx + ' / 共 ' + total + ' 份')
+            : '空闲';
+          var st = busy ? (w.stageLabel || '') : '';
+          html += '<div class="ov-worker' + (busy ? '' : ' is-idle') + '">'
+            + '<span class="ov-worker__id">并行 ' + (wi + 1) + '</span>'
+            + '<span class="ov-worker__part">' + escapeHtml(partLabel) + '</span>'
+            + (st ? '<span class="ov-worker__stage">' + escapeHtml(st) + '</span>' : '')
+            + '</div>';
+        }
+        workersEl.innerHTML = html;
+        workersEl.classList.remove('cols-3', 'cols-4');
+        // 2–4 路两列；5–9 三列；≥10 四列（16 路时更省纵向空间）
+        if (workers.length >= 10) workersEl.classList.add('cols-4');
+        else if (workers.length >= 5) workersEl.classList.add('cols-3');
+        workersEl.classList.add('show');
+      } else {
+        workersEl.innerHTML = '';
+        workersEl.classList.remove('show', 'cols-3', 'cols-4');
+        if (total > 0) {
+          var idx = (Number(p.partIndex) || 0) + 1;
+          if (idx > total) idx = total;
+          counter.textContent = '第 ' + idx + ' / 共 ' + total + ' 份' + name;
+        } else {
+          counter.textContent = p.templateName || '';
+        }
+      }
+      etaEl.textContent = p.etaLabel || '预估中…';
+      var pct = Number(p.percent);
+      if (total > 0 && Number.isFinite(pct) && pct >= 0) {
+        bar.classList.remove('indeterminate');
+        fill.style.width = Math.max(0, Math.min(100, pct)) + '%';
+        pctEl.textContent = '总进度 ' + Math.max(0, Math.min(100, Math.round(pct))) + '%';
+      } else {
+        bar.classList.add('indeterminate');
+        fill.style.width = '';
+        pctEl.textContent = '';
+      }
+      if (p.supportMsg) supportMsg.textContent = p.supportMsg;
+      if (supportBtn) supportBtn.disabled = !!p.supportBusy;
+    }
+    if (api && api.onProgress) api.onProgress(render);
+    if (api && api.onMetrics) api.onMetrics(renderMetrics);
+    function dismiss(){ if (api && api.dismiss) api.dismiss(); }
+    document.addEventListener('keydown', function(e){ if (e.key === 'Escape') dismiss(); });
+    var btn = document.getElementById('ov-close');
+    if (btn) btn.addEventListener('click', dismiss);
+    if (supportBtn) supportBtn.addEventListener('click', function(){
+      if (!api || !api.exportSupportPack) return;
+      supportBtn.disabled = true;
+      supportMsg.textContent = '正在生成反馈包…';
+      Promise.resolve(api.exportSupportPack()).then(function(res){
+        if (res && res.ok) {
+          supportMsg.textContent = '已保存：' + (res.filePath || res.filename || '反馈包');
+        } else if (res && res.canceled) {
+          supportMsg.textContent = '已取消保存';
+        } else {
+          supportMsg.textContent = (res && res.error) || '导出反馈包失败';
+        }
+      }).catch(function(e){
+        supportMsg.textContent = (e && e.message) ? e.message : String(e);
+      }).then(function(){ supportBtn.disabled = false; });
+    });
+  })();
+</script></body></html>`
+}
+
+function armExportOverlayTimeout() {
+  if (exportOverlayHideTimer) clearTimeout(exportOverlayHideTimer)
+  exportOverlayHideTimer = setTimeout(() => {
+    log('导出遮罩：本份达最长显示时间（120s），自动隐藏以防锁住 HMI')
+    hideExportOverlay('timeout')
+  }, EXPORT_OVERLAY_MAX_MS)
+}
+
+function startExportOverlayEtaTick() {
+  if (exportOverlayEtaTickTimer) return
+  exportOverlayEtaTickTimer = setInterval(() => {
+    if (!exportOverlayWindows.length) return
+    broadcastExportOverlayProgress()
+  }, 1000)
+}
+
+function stopExportOverlayEtaTick() {
+  if (!exportOverlayEtaTickTimer) return
+  clearInterval(exportOverlayEtaTickTimer)
+  exportOverlayEtaTickTimer = null
+}
+
+function resetExportOverlayMetrics() {
+  exportOverlayCpuPrev = null
+  exportOverlayCpuHistory = []
+  exportOverlayMemHistory = []
+}
+
+function sampleAndBroadcastOverlayMetrics() {
+  if (!exportOverlayWindows.length) return
+  try {
+    const cpuSnap = snapshotCpu(os.cpus())
+    const isFirst = !exportOverlayCpuPrev
+    let cpuPercent = 0
+    if (!isFirst) {
+      cpuPercent = cpuPercentBetween(exportOverlayCpuPrev, cpuSnap)
+      exportOverlayCpuHistory = pushRing(
+        exportOverlayCpuHistory,
+        cpuPercent,
+        EXPORT_OVERLAY_METRICS_MAX,
+      )
+    }
+    exportOverlayCpuPrev = cpuSnap
+    const mem = memorySample(os.totalmem(), os.freemem())
+    exportOverlayMemHistory = pushRing(
+      exportOverlayMemHistory,
+      mem.memPercent,
+      EXPORT_OVERLAY_METRICS_MAX,
+    )
+    const payload = {
+      t: Date.now(),
+      cpuPercent: isFirst ? null : cpuPercent,
+      logicalCores: cpuSnap.cores,
+      memPercent: mem.memPercent,
+      memUsedBytes: mem.memUsedBytes,
+      memTotalBytes: mem.memTotalBytes,
+      memUsedLabel: formatBytesShort(mem.memUsedBytes),
+      memTotalLabel: formatBytesShort(mem.memTotalBytes),
+      cpuHistory: exportOverlayCpuHistory.slice(),
+      memHistory: exportOverlayMemHistory.slice(),
+    }
+    for (const w of exportOverlayWindows) {
+      if (!w || w.isDestroyed()) continue
+      try {
+        w.webContents.send('export-overlay-metrics', payload)
+      } catch {
+        /* ignore */
+      }
+    }
+  } catch (e) {
+    log(`导出遮罩负载采样失败（忽略）：${e && e.message ? e.message : e}`)
+  }
+}
+
+function startExportOverlayMetricsTick() {
+  if (exportOverlayMetricsTimer) return
+  sampleAndBroadcastOverlayMetrics()
+  exportOverlayMetricsTimer = setInterval(() => {
+    if (!exportOverlayWindows.length) return
+    sampleAndBroadcastOverlayMetrics()
+  }, 1000)
+}
+
+function stopExportOverlayMetricsTick() {
+  if (!exportOverlayMetricsTimer) return
+  clearInterval(exportOverlayMetricsTimer)
+  exportOverlayMetricsTimer = null
+}
+
+function resetExportOverlayEta() {
+  const now = Date.now()
+  exportOverlayEta = {
+    sessionStartedAt: now,
+    partStartedAt: now,
+    armedPartIndex: -1,
+    completedParts: 0,
+    partDurationsMs: [],
+    partStartedAtByIndex: {},
+    savedParts: {},
+  }
+  exportOverlayWorkerLanes = []
+}
+
+/** 每份开始：重置 120s；记录份起始时刻供 ETA（并行时按 partIndex 各自计时） */
+function noteExportOverlayPartStart(partIndex) {
+  const idx = Math.max(0, Math.floor(Number(partIndex) || 0))
+  const key = String(idx)
+  if (!exportOverlayEta.partStartedAtByIndex) exportOverlayEta.partStartedAtByIndex = {}
+  if (exportOverlayEta.partStartedAtByIndex[key] == null) {
+    exportOverlayEta.partStartedAtByIndex[key] = Date.now()
+  }
+  exportOverlayEta.partStartedAt = exportOverlayEta.partStartedAtByIndex[key]
+  // 并行多路会交错启动不同 partIndex：任一新份都续 120s
+  if (exportOverlayEta.armedPartIndex !== idx) {
+    exportOverlayEta.armedPartIndex = idx
+    armExportOverlayTimeout()
+  }
+}
+
+function noteExportOverlayPartSaved(partIndex) {
+  const idx = Math.max(0, Math.floor(Number(partIndex) || 0))
+  const key = String(idx)
+  if (!exportOverlayEta.savedParts) exportOverlayEta.savedParts = {}
+  // 并行乱序完成：按「已保存份数」计数，禁止用 max(partIndex+1) 虚高进度
+  if (exportOverlayEta.savedParts[key]) return
+  exportOverlayEta.savedParts[key] = true
+  const startedMap = exportOverlayEta.partStartedAtByIndex || {}
+  const started = startedMap[key] || exportOverlayEta.partStartedAt || Date.now()
+  const dur = Math.max(1, Date.now() - started)
+  exportOverlayEta.partDurationsMs.push(dur)
+  exportOverlayEta.completedParts = Object.keys(exportOverlayEta.savedParts).length
+  delete startedMap[key]
+}
+
+/** 仅本拍有效的瞬时标志：禁止粘在 lastProgress 上（否则首路 idle 后真实 saved 永不计入） */
+const EXPORT_OVERLAY_EPHEMERAL_KEYS = ['skipPartSaved', 'workerIdle', 'workerBusy']
+
+/**
+ * 合并遮罩进度：跳过 undefined/null；已得知总份数后禁止被 0/缺省冲掉。
+ * 并行心跳常带 totalReports: undefined，Object.assign 会抹掉总份数 → 分路 UI 闪一下消失、ETA 永「预估中」。
+ * 上一拍的 skipPartSaved/workerIdle 不继承——否则首个 worker 收尾后后续「已保存」全被漏计。
+ */
+function mergeExportOverlayProgress(prev, payload) {
+  const next = { ...(prev || {}) }
+  for (const k of EXPORT_OVERLAY_EPHEMERAL_KEYS) {
+    delete next[k]
+  }
+  if (payload && typeof payload === 'object') {
+    for (const key of Object.keys(payload)) {
+      const v = payload[key]
+      if (v === undefined || v === null) continue
+      next[key] = v
+    }
+  }
+  const prevTotal = Math.max(0, Math.floor(Number(prev && prev.totalReports) || 0))
+  const nextTotal = Math.max(0, Math.floor(Number(next.totalReports) || 0))
+  if (prevTotal > 0 && nextTotal <= 0) {
+    next.totalReports = prevTotal
+  }
+  return next
+}
+
+function broadcastExportOverlayProgress() {
+  const payload = enrichExportOverlayProgress(exportOverlayLastProgress || {})
+  exportOverlayLastProgress = payload
+  for (const w of exportOverlayWindows) {
+    if (!w || w.isDestroyed()) continue
+    try {
+      w.webContents.send('export-overlay-progress', payload)
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+function pushExportOverlayProgress(payload) {
+  if (payload) {
+    const prev = exportOverlayLastProgress || {}
+    const next = mergeExportOverlayProgress(prev, payload)
+    const phase = String(next.phase || '')
+    const stage = String(next.stage || phase || '')
+    const partIndex = Math.max(0, Math.floor(Number(next.partIndex) || 0))
+    // 瞬时标志只看本拍 payload，禁止读合并残留
+    const skipPartSaved = Boolean(payload && payload.skipPartSaved)
+    const workerIdleHint = Boolean(payload && payload.workerIdle)
+    // 每份开始渲染/同步缓存：按份续 120s（Q1A）
+    if (
+      phase === 'render' ||
+      stage === 'render' ||
+      stage === 'load' ||
+      stage === 'fetch' ||
+      stage === 'hydrate'
+    ) {
+      noteExportOverlayPartStart(partIndex)
+      next.workerIdle = false
+      next.workerBusy = true
+    }
+    if ((phase === 'saved' || stage === 'saved') && !skipPartSaved) {
+      noteExportOverlayPartSaved(partIndex)
+      next.workerIdle = true
+      next.workerBusy = false
+    } else if (skipPartSaved || workerIdleHint) {
+      // 并行 worker 收尾：只标空闲，不计入「已保存份」
+      next.workerIdle = true
+      next.workerBusy = false
+    }
+    upsertExportOverlayWorkerLane(next)
+    // 瞬时标志不落盘，避免下一拍误判
+    for (const k of EXPORT_OVERLAY_EPHEMERAL_KEYS) {
+      delete next[k]
+    }
+    exportOverlayLastProgress = next
+  }
+  broadcastExportOverlayProgress()
+}
+
+function assertOverlayWindowOnTop(win, bounds) {
+  if (!win || win.isDestroyed()) return
+  try {
+    // 用 bounds 铺满整块物理屏（含任务栏/Dock），避免 setFullScreen 留给系统栏
+    if (bounds) win.setBounds(bounds, false)
+  } catch {
+    /* ignore */
+  }
+  try {
+    win.setAlwaysOnTop(true, 'screen-saver')
+  } catch {
+    try {
+      win.setAlwaysOnTop(true)
+    } catch {
+      /* ignore */
+    }
+  }
+  try {
+    win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+  } catch {
+    try {
+      win.setVisibleOnAllWorkspaces(true)
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+function createExportOverlayWindowForDisplay(disp) {
+  const b = (disp && disp.bounds) || { x: 0, y: 0, width: 1280, height: 800 }
+  const win = new BrowserWindow({
+    x: b.x,
+    y: b.y,
+    width: b.width,
+    height: b.height,
+    show: false,
+    frame: false,
+    transparent: false,
+    backgroundColor: '#0b1120',
+    skipTaskbar: true,
+    resizable: false,
+    movable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    simpleFullscreen: false,
+    hasShadow: false,
+    alwaysOnTop: true,
+    focusable: true,
+    webPreferences: {
+      preload: path.join(__dirname, 'overlay-preload.cjs'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  })
+  win.setMenuBarVisibility(false)
+  try {
+    if (process.platform === 'darwin') win.setWindowButtonVisibility(false)
+  } catch {
+    /* ignore */
+  }
+  win.once('ready-to-show', () => {
+    if (!exportOverlayWindows.includes(win) || win.isDestroyed()) return
+    assertOverlayWindowOnTop(win, b)
+    win.show()
+    win.focus()
+    // 再钉一次 bounds：部分 Windows 在 show 后会缩回 workArea
+    setTimeout(() => assertOverlayWindowOnTop(win, b), 50)
+    broadcastExportOverlayProgress()
+  })
+  win.webContents.on('before-input-event', (_e, input) => {
+    if (input && input.type === 'keyDown' && String(input.key) === 'Escape') {
+      hideExportOverlay('esc')
+    }
+  })
+  win.on('closed', () => {
+    exportOverlayWindows = exportOverlayWindows.filter((w) => w !== win)
+  })
+  win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(buildExportOverlayHtml()))
+  return win
+}
+
+function showExportOverlay() {
+  if (!isExportOverlayEnabled()) return
+  try {
+    const alive = exportOverlayWindows.filter((w) => w && !w.isDestroyed())
+    if (alive.length) {
+      exportOverlayWindows = alive
+      for (const w of alive) {
+        if (!w.isVisible()) w.show()
+        assertOverlayWindowOnTop(w, w.getBounds())
+      }
+      broadcastExportOverlayProgress()
+      // 会话已在跑：不在此处重置 120s（由每份 noteExportOverlayPartStart 负责）
+      if (!exportOverlayHideTimer) armExportOverlayTimeout()
+      startExportOverlayEtaTick()
+      startExportOverlayMetricsTick()
+      return
+    }
+    const displays = resolveOverlayDisplays()
+    exportOverlayWindows = displays.map((d) => createExportOverlayWindowForDisplay(d))
+    armExportOverlayTimeout()
+    startExportOverlayEtaTick()
+    startExportOverlayMetricsTick()
+  } catch (e) {
+    log(`导出遮罩显示失败（忽略）：${e && e.message ? e.message : e}`)
+  }
+}
+
+function hideExportOverlay(reason = 'done') {
+  if (exportOverlayHideTimer) {
+    clearTimeout(exportOverlayHideTimer)
+    exportOverlayHideTimer = null
+  }
+  stopExportOverlayEtaTick()
+  stopExportOverlayMetricsTick()
+  const wins = exportOverlayWindows.slice()
+  exportOverlayWindows = []
+  const exportStillRunning = exportOverlayUiCount > 0 && reason !== 'done'
+  if (exportStillRunning) {
+    // 保留进度，供侧栏「重新打开」拉回全屏遮罩
+    exportOverlaySuppressed = true
+  } else {
+    exportOverlayLastProgress = null
+    exportOverlaySuppressed = false
+    resetExportOverlayEta()
+    resetExportOverlayMetrics()
+  }
+  for (const w of wins) {
+    // 050：与 PDF 导出窗同一套延迟销毁，避免 Accessibility UAF
+    safeDestroyBrowserWindow(w, `export-overlay:${reason || 'done'}`)
+  }
+  if (reason && reason !== 'done') log(`导出遮罩隐藏（${reason}）`)
+}
+
+/** 导出开始：计数 0→1 时弹遮罩（用户强关后本会话不再自动重弹，需显式 reshow） */
+function beginExportOverlaySession() {
+  exportOverlayUiCount += 1
+  if (exportOverlayUiCount === 1) {
+    exportOverlaySuppressed = false
+    resetExportOverlayEta()
+    exportOverlayLastProgress = {
+      phase: 'render',
+      stage: 'load',
+      partIndex: 0,
+      totalReports: 0,
+    }
+    showExportOverlay()
+    noteExportOverlayPartStart(0)
+    broadcastExportOverlayProgress()
+  }
+}
+
+/** 导出结束：计数归 0 时隐藏遮罩 */
+function endExportOverlaySession() {
+  exportOverlayUiCount = Math.max(0, exportOverlayUiCount - 1)
+  if (exportOverlayUiCount === 0) hideExportOverlay('done')
+}
+
+/**
+ * 侧栏/进度条「重新打开」：导出仍在进行时显式拉回全屏遮罩（含曾 Esc/× 强关）。
+ * @returns {{ ok: boolean, shown?: boolean, reason?: string }}
+ */
+function reshowExportOverlay() {
+  if (!isExportOverlayEnabled()) return { ok: false, reason: 'disabled' }
+  if (exportOverlayUiCount <= 0) return { ok: false, reason: 'idle' }
+  exportOverlaySuppressed = false
+  if (!exportOverlayLastProgress) {
+    exportOverlayLastProgress = { phase: 'render', partIndex: 0, totalReports: 0 }
+  }
+  showExportOverlay()
+  return { ok: true, shown: true }
+}
+
+ipcMain.on('export-overlay-dismiss', () => hideExportOverlay('user'))
+ipcMain.handle('export-overlay-reshow', () => reshowExportOverlay())
+
+/** 遮罩页 → 主进程打 048 问题反馈包并另存 zip */
+ipcMain.handle('export-overlay-support-pack', async () => {
+  try {
+    const progress = exportOverlayLastProgress || {}
+    const templateId =
+      typeof progress.templateId === 'string' && progress.templateId.trim()
+        ? progress.templateId.trim()
+        : ''
+    const suggestions = await new Promise((resolve) => {
+      const req = http.get(`${BACKEND_URL}/settings/support-pack/suggestions`, (res) => {
+        const chunks = []
+        res.on('data', (c) => chunks.push(c))
+        res.on('end', () => {
+          try {
+            resolve(JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}'))
+          } catch {
+            resolve({})
+          }
+        })
+      })
+      req.on('error', () => resolve({}))
+      req.setTimeout(8000, () => {
+        try {
+          req.destroy()
+        } catch {
+          /* ignore */
+        }
+        resolve({})
+      })
+    })
+    const templateIds = []
+    if (templateId) templateIds.push(templateId)
+    for (const id of suggestions.templateIds || []) {
+      const s = String(id || '').trim()
+      if (s && !templateIds.includes(s)) templateIds.push(s)
+      if (templateIds.length >= 8) break
+    }
+    const pdfPaths = Array.isArray(suggestions.pdfPaths)
+      ? suggestions.pdfPaths.map(String).filter(Boolean).slice(0, 8)
+      : []
+    const now = new Date()
+    const pad = (n) => String(n).padStart(2, '0')
+    const stamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`
+    const body = {
+      title: '导出遮罩现场反馈',
+      symptom: '结批/导出遮罩期间反馈（遮罩页一键导出）',
+      expected: '',
+      steps: '1. 触发导出/结批\n2. 观察遮罩进度与现场现象\n3. 在遮罩页导出本反馈包',
+      occurredAt: stamp,
+      templateIds,
+      includeFailedPdf: true,
+      pdfPaths,
+      env: {
+        platform: process.platform,
+        arch: process.arch,
+        appVersion: app.getVersion(),
+        overlayProgress: {
+          stage: progress.stage,
+          phase: progress.phase,
+          partIndex: progress.partIndex,
+          totalReports: progress.totalReports,
+          percent: progress.percent,
+          etaLabel: progress.etaLabel,
+        },
+      },
+      appVersion: app.getVersion(),
+    }
+    const zipBuf = await new Promise((resolve, reject) => {
+      const payload = JSON.stringify(body)
+      const req = http.request(
+        {
+          hostname: '127.0.0.1',
+          port: BACKEND_PORT,
+          path: '/settings/support-pack/export',
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Content-Length': Buffer.byteLength(payload),
+          },
+        },
+        (res) => {
+          const chunks = []
+          res.on('data', (c) => chunks.push(c))
+          res.on('end', () => {
+            const buf = Buffer.concat(chunks)
+            if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
+              resolve({ buf, headers: res.headers })
+            } else {
+              reject(new Error(buf.toString('utf8') || `HTTP ${res.statusCode}`))
+            }
+          })
+        },
+      )
+      req.on('error', reject)
+      req.setTimeout(120000, () => {
+        try {
+          req.destroy()
+        } catch {
+          /* ignore */
+        }
+        reject(new Error('反馈包生成超时'))
+      })
+      req.write(payload)
+      req.end()
+    })
+    const cd = String((zipBuf.headers && zipBuf.headers['content-disposition']) || '')
+    const m = /filename="([^"]+)"/.exec(cd)
+    const filename = m?.[1] || `support-pack-${app.getVersion()}.zip`
+    const parent =
+      exportOverlayWindows.find((w) => w && !w.isDestroyed()) ||
+      (mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined)
+    // 临时降置顶，避免挡住系统保存对话框
+    for (const w of exportOverlayWindows) {
+      if (w && !w.isDestroyed()) {
+        try {
+          w.setAlwaysOnTop(false)
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+    const save = await dialog.showSaveDialog(parent, {
+      title: '保存问题反馈包',
+      defaultPath: path.join(app.getPath('desktop'), filename),
+      filters: [{ name: 'ZIP', extensions: ['zip'] }],
+    })
+    for (const w of exportOverlayWindows) {
+      if (w && !w.isDestroyed()) assertOverlayWindowOnTop(w, w.getBounds())
+    }
+    if (save.canceled || !save.filePath) return { ok: false, canceled: true }
+    let fp = save.filePath
+    if (!fp.toLowerCase().endsWith('.zip')) fp += '.zip'
+    await fs.promises.writeFile(fp, zipBuf.buf)
+    try {
+      shell.showItemInFolder(fp)
+    } catch {
+      /* ignore */
+    }
+    return { ok: true, filePath: fp, filename: path.basename(fp) }
+  } catch (e) {
+    const msg = e && e.message ? e.message : String(e)
+    log(`遮罩导出反馈包失败：${msg}`)
+    return { ok: false, error: msg }
+  }
+})
+
 function destroyAppTray() {
   if (!appTray) return
   try {
@@ -547,7 +1947,10 @@ function createWindow() {
   })
 
   const isDev = !app.isPackaged
-  if (isDev) {
+  const loadDist =
+    Boolean(fiveTierExportSpec) ||
+    ['1', 'true', 'yes'].includes(String(process.env.REPORT_EDITOR_LOAD_DIST || '').toLowerCase())
+  if (isDev && !loadDist) {
     mainWindow.loadURL(VITE_DEV_URL)
   } else {
     mainWindow.loadFile(getRendererIndexHtml())
@@ -556,18 +1959,37 @@ function createWindow() {
   // 主页面加载完成后预热导出窗口：结批时省去整套 SPA 冷启动
   mainWindow.webContents.once('did-finish-load', () => {
     ensurePdfExportWindowPrewarmed(mainWindow ? mainWindow.webContents : null)
+    publishAppResourceMode()
+    if (fiveTierExportSpec) {
+      void runFiveTierExportBatch(fiveTierExportSpec).catch((e) => {
+        log(`五档批导失败：${e && e.message ? e.message : e}`)
+        void finishFiveTierExportAndExit('', 1)
+      })
+    }
   })
+
+  // 035：后台/最小化时释放预热窗 + 通知渲染进程暂停次要轮询（不停自动结批）
+  const onActivity = () => syncMainWindowBackgroundIdle()
+  mainWindow.on('blur', onActivity)
+  mainWindow.on('focus', onActivity)
+  mainWindow.on('show', onActivity)
+  mainWindow.on('hide', onActivity)
+  mainWindow.on('minimize', onActivity)
+  mainWindow.on('restore', onActivity)
 
   if (silentStartSession) {
     mainWindow.on('close', (e) => {
       if (isQuitting) return
       e.preventDefault()
       mainWindow.hide()
+      syncMainWindowBackgroundIdle()
     })
   }
 
   mainWindow.on('closed', () => {
     mainWindow = null
+    appMainWindowBackgroundIdle = true
+    endAppBackgroundLowPriority()
     // 预热窗口是隐藏窗口：不销毁会阻止 window-all-closed，导致应用无法退出
     destroyWarmPdfExportWindows()
   })
@@ -679,7 +2101,7 @@ ipcMain.handle('dialog-save-text', async (event, opts) => {
   })
   if (res.canceled || !res.filePath) return { ok: false, canceled: true }
   try {
-    fs.writeFileSync(res.filePath, content, 'utf8')
+    await fs.promises.writeFile(res.filePath, content, 'utf8')
     return { ok: true, filePath: res.filePath }
   } catch (e) {
     return { ok: false, error: String(e.message || e) }
@@ -719,11 +2141,11 @@ ipcMain.handle('dialog-pick-config-json', async (event, opts) => {
   }
   const filePath = res.filePaths[0]
   try {
-    const stat = fs.statSync(filePath)
+    const stat = await fs.promises.stat(filePath)
     if (stat.size > MAX_CONFIG_JSON_BYTES) {
       return { ok: false, error: `备份文件过大（超过 ${Math.round(MAX_CONFIG_JSON_BYTES / 1024 / 1024)} MB）` }
     }
-    const buf = fs.readFileSync(filePath)
+    const buf = await fs.promises.readFile(filePath)
     const encrypted = buf.length >= REBAK_MAGIC.length && buf.subarray(0, REBAK_MAGIC.length).equals(REBAK_MAGIC)
     if (encrypted) {
       return {
@@ -757,6 +2179,60 @@ ipcMain.handle('path-join', (_event, parts) => {
   return path.join(...parts.map(String))
 })
 
+/** 030/033：pdf-lib 嵌入随包开源 CJK（Noto TTF / 朱雀仿宋→FangSong）；Noto 优先 TTF（OTF subset 乱码） */
+const BUNDLED_FONT_FILES = {
+  'noto-sans-sc': ['NotoSansSC-Regular.ttf', 'NotoSansSC-Regular.otf'],
+  fangsong: ['ZhuqueFangsong-Regular.ttf'],
+}
+
+function resolveBundledFontKey(opts) {
+  const keyRaw = opts && (opts.key || opts.id)
+  if (keyRaw && BUNDLED_FONT_FILES[keyRaw]) return keyRaw
+  const fam = String((opts && opts.family) || '')
+    .trim()
+    .toLowerCase()
+  if (
+    fam === 'fangsong' ||
+    fam === '仿宋' ||
+    fam === 'zhuque fangsong' ||
+    fam === '朱雀仿宋' ||
+    fam === 'zhuquefangsong'
+  ) {
+    return 'fangsong'
+  }
+  return 'noto-sans-sc'
+}
+
+ipcMain.handle('bundled-cjk-font', async (_event, opts) => {
+  const key = resolveBundledFontKey(opts || {})
+  const fileNames = BUNDLED_FONT_FILES[key] || BUNDLED_FONT_FILES['noto-sans-sc']
+  const roots = [
+    path.join(process.resourcesPath || '', 'fonts'),
+    path.join(__dirname, '..', 'resources', 'fonts'),
+  ]
+  for (const fileName of fileNames) {
+    for (const root of roots) {
+      const fp = path.join(root, fileName)
+      try {
+        if (!fp || !fs.existsSync(fp)) continue
+        const buf = await fs.promises.readFile(fp)
+        if (buf.length < 1000) continue
+        return {
+          ok: true,
+          key,
+          family: key === 'fangsong' ? 'FangSong' : 'Noto Sans SC',
+          base64: buf.toString('base64'),
+          path: fp,
+          bytes: buf.length,
+        }
+      } catch {
+        /* try next */
+      }
+    }
+  }
+  return { ok: false, key, error: `bundled font not found: ${fileNames.join(' | ')}` }
+})
+
 ipcMain.handle('scan-export-pdfs', async (_event, opts) => {
   return scanExportPdfsCompat(opts || {})
 })
@@ -771,11 +2247,11 @@ ipcMain.handle('history-transfer', async (_event, opts) => {
   return transferHistoryItems(opts || {})
 })
 
-/** 可移动卷列表（插拔轮询由渲染进程调用；025：Win 含 USB/新盘符） */
+/** 可移动卷列表（插拔轮询由渲染进程调用；025：Win 含 USB/新盘符；031/032：async） */
 ipcMain.handle('list-removable-volumes', async (_event, opts) => {
   try {
     if (opts && opts.resetBaseline) resetWinDriveBaseline()
-    const detailed = listRemovableVolumesDetailed()
+    const detailed = await listRemovableVolumesDetailed()
     return {
       ok: true,
       volumes: detailed.volumes || [],
@@ -792,17 +2268,17 @@ ipcMain.handle('delete-export-file', async (_event, opts) => {
     return { ok: false, error: '无效路径' }
   }
   const resolved = path.resolve(filePath)
-  if (!fs.existsSync(resolved)) {
-    return { ok: false, error: '文件不存在' }
-  }
   try {
-    const st = fs.statSync(resolved)
+    const st = await fs.promises.stat(resolved)
     if (!st.isFile()) {
       return { ok: false, error: '不是文件' }
     }
-    fs.unlinkSync(resolved)
+    await fs.promises.unlink(resolved)
     return { ok: true }
   } catch (e) {
+    if (e && (e.code === 'ENOENT' || e.code === 'ENOTDIR')) {
+      return { ok: false, error: '文件不存在' }
+    }
     return { ok: false, error: String(e.message || e) }
   }
 })
@@ -819,45 +2295,45 @@ ipcMain.handle('show-item-in-folder', async (_event, filePath) => {
   return { ok: true }
 })
 
-/** 历史报表缩略图：优先系统缩略图，否则返回 base64 供渲染进程 pdf.js 绘制 */
+/** 历史报表缩略图：优先系统缩略图，否则返回 base64；全局并发 ≤2（032 P1-B） */
 ipcMain.handle('get-export-pdf-thumbnail', async (_event, opts) => {
-  const filePath = opts && opts.filePath
-  const maxBytes = 35 * 1024 * 1024
-  if (!filePath || typeof filePath !== 'string') {
-    return { ok: false, error: '缺少文件路径' }
-  }
-  const resolved = path.resolve(filePath)
-  if (!fs.existsSync(resolved)) {
-    return { ok: false, error: '文件不存在' }
-  }
-  let st
-  try {
-    st = fs.statSync(resolved)
-  } catch (e) {
-    return { ok: false, error: String(e.message || e) }
-  }
-  if (!st.isFile()) {
-    return { ok: false, error: '不是文件' }
-  }
-  if (st.size > maxBytes) {
-    return { ok: false, error: 'PDF 过大，无法生成缩略图' }
-  }
-
-  try {
-    const thumb = await nativeImage.createThumbnailFromPath(resolved, { width: 400, height: 520 })
-    if (thumb && !thumb.isEmpty()) {
-      return { ok: true, dataUrl: thumb.toDataURL() }
+  return withThumbSlot(async () => {
+    const filePath = opts && opts.filePath
+    const maxBytes = 35 * 1024 * 1024
+    if (!filePath || typeof filePath !== 'string') {
+      return { ok: false, error: '缺少文件路径' }
     }
-  } catch {
-    /* 部分类型（如 PDF）可能无系统缩略图，走 pdf.js */
-  }
+    const resolved = path.resolve(filePath)
+    let st
+    try {
+      st = await fs.promises.stat(resolved)
+    } catch (e) {
+      if (e && e.code === 'ENOENT') return { ok: false, error: '文件不存在' }
+      return { ok: false, error: String(e.message || e) }
+    }
+    if (!st.isFile()) {
+      return { ok: false, error: '不是文件' }
+    }
+    if (st.size > maxBytes) {
+      return { ok: false, error: 'PDF 过大，无法生成缩略图' }
+    }
 
-  try {
-    const buf = fs.readFileSync(resolved)
-    return { ok: true, base64: buf.toString('base64') }
-  } catch (e) {
-    return { ok: false, error: `读取失败：${e.message || e}` }
-  }
+    try {
+      const thumb = await nativeImage.createThumbnailFromPath(resolved, { width: 400, height: 520 })
+      if (thumb && !thumb.isEmpty()) {
+        return { ok: true, dataUrl: thumb.toDataURL() }
+      }
+    } catch {
+      /* 部分类型（如 PDF）可能无系统缩略图，走 pdf.js */
+    }
+
+    try {
+      const buf = await fs.promises.readFile(resolved)
+      return { ok: true, base64: buf.toString('base64') }
+    } catch (e) {
+      return { ok: false, error: `读取失败：${e.message || e}` }
+    }
+  })
 })
 
 function createPdfExportWindow() {
@@ -865,6 +2341,11 @@ function createPdfExportWindow() {
     show: false,
     width: 1280,
     height: 1680,
+    // 050：隐藏窗默认白底；若系统/辅助功能短暂露出会像「白屏不关」
+    backgroundColor: '#0b1120',
+    skipTaskbar: true,
+    focusable: false,
+    paintWhenInitiallyHidden: true,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -877,24 +2358,32 @@ function createPdfExportWindow() {
   return win
 }
 
-/** 以 refWc（发起导出的窗口）的 http 源为准拼导出页 URL；否则回落 dev / 打包路径 */
+/** 以 refWc（发起导出的窗口）的 http/file 源为准拼导出页 URL；否则回落 dev / dist */
 function buildPdfExportUrl(refWc, hash) {
+  const withHash = String(hash || '').startsWith('#') ? String(hash) : `#${hash}`
   try {
     if (refWc && !refWc.isDestroyed()) {
-      const cur = refWc.getURL()
-      if (cur && /^https?:\/\//i.test(cur)) {
+      const cur = String(refWc.getURL() || '')
+      if (/^https?:\/\//i.test(cur)) {
         const u = new URL(cur)
-        u.hash = hash
-        return u.href
+        return `${u.origin}${u.pathname}${u.search}${withHash}`
+      }
+      if (/^file:/i.test(cur)) {
+        return `${cur.split('#')[0]}${withHash}`
       }
     }
   } catch {
     /* ignore */
   }
-  if (!app.isPackaged) {
-    return `${VITE_DEV_URL}/${hash}`
+  const loadDist =
+    app.isPackaged ||
+    Boolean(fiveTierExportSpec) ||
+    ['1', 'true', 'yes'].includes(String(process.env.REPORT_EDITOR_LOAD_DIST || '').toLowerCase())
+  if (!loadDist) {
+    // 历史：dev 下传入 hash=`#/pdf-export?...`
+    return `${VITE_DEV_URL}/${withHash}`
   }
-  return `${pathToFileURL(getRendererIndexHtml()).href}${hash}`
+  return `${pathToFileURL(getRendererIndexHtml()).href}${withHash}`
 }
 
 function isReusablePdfWindow(win) {
@@ -924,8 +2413,73 @@ async function navigatePdfExportWindow(win, targetUrl) {
   return false
 }
 
+/**
+ * 033：导航失败（如 ERR_FAILED）时销毁隐藏窗并冷启动新窗重试一次。
+ * holder.win 在 loadURL 前更新，避免 ready 信号落到旧窗引用上。
+ * @returns {Promise<boolean>} hotSwitched
+ */
+async function navigatePdfExportWindowWithRecovery(holder, targetUrl) {
+  try {
+    return await navigatePdfExportWindow(holder.win, targetUrl)
+  } catch (e) {
+    if (!isRecoverablePdfExportNavError(e)) throw e
+    log(`PDF export navigate failed (${e && e.message ? e.message : e}); recreating window`)
+    destroyPdfExportWindow(holder.win)
+    holder.win = createPdfExportWindow()
+    await holder.win.loadURL(targetUrl)
+    return false
+  }
+}
+
 function destroyPdfExportWindow(win) {
-  if (win && !win.isDestroyed()) win.destroy()
+  // 050：先 hide 再延迟 destroy，避免 Accessibility 查已毁窗 → SIGSEGV
+  safeDestroyBrowserWindow(win, 'pdf-export')
+}
+
+/**
+ * 050：安全销毁 BrowserWindow。
+ * 崩溃栈为 CrBrowserMain → NSAccessibility… → objc_msgSend @0x10：
+ * 同步 destroy 时系统辅助功能仍可能读窗属性。先卸内容、hide，稍后再 destroy。
+ */
+function safeDestroyBrowserWindow(win, label = '') {
+  if (!win || win.isDestroyed()) return
+  try {
+    if (win.isVisible()) win.hide()
+  } catch {
+    /* ignore */
+  }
+  try {
+    win.setOpacity(0)
+  } catch {
+    /* ignore */
+  }
+  try {
+    win.removeAllListeners()
+  } catch {
+    /* ignore */
+  }
+  try {
+    const wc = win.webContents
+    if (wc && !wc.isDestroyed()) {
+      // 卸掉 SPA，降低 Accessibility 读复杂 DOM 时踩空指针概率
+      wc.loadURL('about:blank').catch(() => {})
+    }
+  } catch {
+    /* ignore */
+  }
+  const run = () => {
+    try {
+      if (win && !win.isDestroyed()) win.destroy()
+    } catch (e) {
+      log(`safeDestroyBrowserWindow(${label})：${e && e.message ? e.message : e}`)
+    }
+  }
+  // 050b：比 setImmediate 稍长，给 Accessibility MIG 收尾时间
+  try {
+    setTimeout(run, 300)
+  } catch {
+    run()
+  }
 }
 
 /** 从空闲池中取一个窗口；没有可用窗口时创建独立窗口供当前导出任务使用。 */
@@ -940,6 +2494,10 @@ function acquirePdfExportWindow() {
 
 /** 将成功导出的窗口归还空闲池；已达到复用次数或池已满时销毁。 */
 function releasePdfExportWindow(win) {
+  if (!pdfExportWarmPoolAllowed()) {
+    destroyPdfExportWindow(win)
+    return false
+  }
   const reusable =
     isReusablePdfWindow(win) &&
     (win.__exportUses || 0) < PDF_EXPORT_WINDOW_MAX_USES &&
@@ -952,8 +2510,76 @@ function releasePdfExportWindow(win) {
   return false
 }
 
+function beginAppBackgroundLowPriority() {
+  appBackgroundPriorityDepth += 1
+  if (appBackgroundPriorityDepth !== 1) return
+  // 与结批低优先级共用 os.setPriority；已在结批中则深度叠加即可
+  try {
+    const p = os.constants && os.constants.priority
+    if (p && typeof os.setPriority === 'function') {
+      os.setPriority(0, p.PRIORITY_BELOW_NORMAL)
+    }
+  } catch (e) {
+    log(`background setPriority 失败（忽略）：${e.message}`)
+  }
+}
+
+function endAppBackgroundLowPriority() {
+  if (appBackgroundPriorityDepth <= 0) return
+  appBackgroundPriorityDepth -= 1
+  if (appBackgroundPriorityDepth !== 0) return
+  if (pdfExportPriorityDepth > 0) return
+  try {
+    const p = os.constants && os.constants.priority
+    if (p && typeof os.setPriority === 'function') {
+      os.setPriority(0, p.PRIORITY_NORMAL)
+    }
+  } catch (e) {
+    log(`background restore priority 失败（忽略）：${e.message}`)
+  }
+}
+
+function publishAppResourceMode() {
+  if (!mainWindow || mainWindow.isDestroyed()) return
+  try {
+    mainWindow.webContents.send('app-resource-mode', {
+      mode: appMainWindowBackgroundIdle ? 'background' : 'foreground',
+    })
+  } catch {
+    /* ignore */
+  }
+}
+
+function syncMainWindowBackgroundIdle() {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    appMainWindowBackgroundIdle = true
+    return
+  }
+  const idle =
+    !mainWindow.isVisible() || mainWindow.isMinimized() || !mainWindow.isFocused()
+  if (idle === appMainWindowBackgroundIdle) return
+  appMainWindowBackgroundIdle = idle
+  if (idle) {
+    // 后台：立刻拆掉空闲预热窗（进行中的导出窗不在 warm 池）
+    destroyWarmPdfExportWindows()
+    beginAppBackgroundLowPriority()
+  } else {
+    endAppBackgroundLowPriority()
+    ensurePdfExportWindowPrewarmed(mainWindow.webContents)
+  }
+  publishAppResourceMode()
+}
+
 function trimWarmPdfExportWindows() {
-  while (warmPdfWins.length > pdfExportMaxParallel) {
+  if (appMainWindowBackgroundIdle) {
+    destroyWarmPdfExportWindows()
+    return
+  }
+  const cap =
+    pdfExportPrewarmPoolSize <= 0
+      ? 0
+      : Math.min(pdfExportPrewarmPoolSize, pdfExportMaxParallel, 2)
+  while (warmPdfWins.length > cap) {
     destroyPdfExportWindow(warmPdfWins.pop())
   }
 }
@@ -969,10 +2595,22 @@ function discardUnusableWarmPdfExportWindows() {
 
 /** 空闲时预热少量导出窗口，失败静默不影响导出。 */
 function ensurePdfExportWindowPrewarmed(refWc) {
+  if (!pdfExportWarmPoolAllowed()) {
+    destroyWarmPdfExportWindows()
+    return
+  }
   if (!mainWindow || mainWindow.isDestroyed()) return
+  if (appMainWindowBackgroundIdle) {
+    destroyWarmPdfExportWindows()
+    return
+  }
   discardUnusableWarmPdfExportWindows()
   trimWarmPdfExportWindows()
-  const targetPoolSize = Math.min(2, pdfExportMaxParallel)
+  if (pdfExportPrewarmPoolSize <= 0) {
+    destroyWarmPdfExportWindows()
+    return
+  }
+  const targetPoolSize = Math.min(pdfExportPrewarmPoolSize, pdfExportMaxParallel, 2)
   while (warmPdfWins.length < targetPoolSize) {
     try {
       const win = createPdfExportWindow()
@@ -997,39 +2635,479 @@ function destroyWarmPdfExportWindows() {
 }
 
 ipcMain.handle('pdf-export-set-max-parallel', (_event, opts) => {
+  if (opts && typeof opts === 'object' && opts.ignoreCpuBudget != null) {
+    pdfExportIgnoreCpuBudget = Boolean(opts.ignoreCpuBudget)
+  }
   const max = Math.floor(Number(opts && opts.max))
-  pdfExportMaxParallel = Math.min(
-    PDF_EXPORT_HARD_MAX_PARALLEL,
-    Math.max(1, Number.isFinite(max) ? max : PDF_EXPORT_DEFAULT_MAX_PARALLEL),
+  pdfExportMaxParallel = resolvePdfExportMaxParallel(
+    Number.isFinite(max) ? max : PDF_EXPORT_DEFAULT_MAX_PARALLEL,
   )
   drainPdfExportSlotWaiters()
   trimWarmPdfExportWindows()
   ensurePdfExportWindowPrewarmed()
-  return { max: pdfExportMaxParallel }
+  return {
+    max: pdfExportMaxParallel,
+    cpuBudget: cpuBudgetMaxParallel(os.cpus().length),
+    logicalCores: os.cpus().length,
+    ignoreCpuBudget: pdfExportIgnoreCpuBudget,
+  }
 })
 
-ipcMain.handle('pdf-export-run', async (event, opts) => {
+/** 035：按导出性能档位设置预热池 / 分卷 yield / 并行 */
+ipcMain.handle('pdf-export-set-perf-profile', (_event, opts) => {
+  const pool = Math.floor(Number(opts && opts.prewarmPoolSize))
+  if (Number.isFinite(pool) && pool >= 0) {
+    pdfExportPrewarmPoolSize = Math.min(4, pool)
+  }
+  const yieldMs = Math.floor(Number(opts && opts.yieldMs))
+  if (Number.isFinite(yieldMs) && yieldMs >= 0) {
+    pdfExportPartYieldMs = Math.min(2000, yieldMs)
+  }
+  // 不妥协（coexistPause=max）或显式 ignoreCpuBudget：按用户设置，不套 floor(cores/4)
+  if (opts && typeof opts === 'object') {
+    if (opts.ignoreCpuBudget != null) {
+      pdfExportIgnoreCpuBudget = Boolean(opts.ignoreCpuBudget)
+    } else if (opts.coexistPause != null) {
+      const pause = String(opts.coexistPause || '')
+        .trim()
+        .toLowerCase()
+      pdfExportIgnoreCpuBudget = pause === 'max' || pause === 'none' || pause === 'off'
+    }
+  }
+  const max = Math.floor(Number(opts && opts.maxParallel))
+  if (Number.isFinite(max) && max >= 1) {
+    pdfExportMaxParallel = resolvePdfExportMaxParallel(max)
+    drainPdfExportSlotWaiters()
+  }
+  trimWarmPdfExportWindows()
+  if (pdfExportPrewarmPoolSize <= 0) destroyWarmPdfExportWindows()
+  else ensurePdfExportWindowPrewarmed()
+  return {
+    prewarmPoolSize: pdfExportPrewarmPoolSize,
+    yieldMs: pdfExportPartYieldMs,
+    maxParallel: pdfExportMaxParallel,
+    ignoreCpuBudget: pdfExportIgnoreCpuBudget,
+  }
+})
+
+ipcMain.handle('pdf-export-cancel', async (_event, opts) => {
+  const jobId = opts && typeof opts.jobId === 'string' ? opts.jobId : ''
+  if (!jobId) return { ok: false, error: '缺少 jobId' }
+  const found = cancelPdfExportJob(jobId)
+  return { ok: found, cancelled: found }
+})
+
+/**
+ * 035 / 052c：分卷并行跨窗共享首份 fullSqlFill。
+ * 按「份」落盘（dir/part-N.json）；各窗只读当前份切片（约 maxRows），不把 8 万行灌进每个窗。
+ */
+/** @type {{ templateId: string, totalReports: number, stats: object|null, path?: string, dir?: string, partCount?: number }|null} */
+let pdfExportFillCacheBridgeMeta = null
+
+function clearPdfExportFillCacheBridge() {
+  const meta = pdfExportFillCacheBridgeMeta
+  pdfExportFillCacheBridgeMeta = null
+  if (!meta) return
+  if (meta.dir) {
+    try {
+      fs.rmSync(meta.dir, { recursive: true, force: true })
+    } catch {
+      /* ignore */
+    }
+  }
+  if (meta.path) {
+    try {
+      fs.unlinkSync(meta.path)
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+ipcMain.handle('pdf-export-fill-cache-get', (_event, opts) => {
+  const id = String((opts && opts.templateId) || '').trim()
+  const meta = pdfExportFillCacheBridgeMeta
+  if (!id || !meta || meta.templateId !== id) {
+    return { ok: false }
+  }
+  const partIndex = Math.max(0, Math.floor(Number(opts && opts.reportPartIndex) || 0))
+  try {
+    // 052c：按份文件只含当前份切片（约 maxRows），经 IPC 返回可接受
+    if (meta.dir) {
+      const partPath = path.join(meta.dir, `part-${partIndex}.json`)
+      if (!fs.existsSync(partPath)) return { ok: false }
+      const snap = JSON.parse(fs.readFileSync(partPath, 'utf8'))
+      if (!snap || typeof snap !== 'object' || snap.templateId !== id) return { ok: false }
+      return { ok: true, snap }
+    }
+    if (!meta.path || !fs.existsSync(meta.path)) return { ok: false }
+    const snap = JSON.parse(fs.readFileSync(meta.path, 'utf8'))
+    if (!snap || typeof snap !== 'object' || snap.templateId !== id) return { ok: false }
+    return { ok: true, snap }
+  } catch (e) {
+    log(`fill-cache-get 失败：${e && e.message}`)
+    return { ok: false }
+  }
+})
+
+ipcMain.handle('pdf-export-fill-cache-set', async (_event, snap) => {
+  if (!snap || typeof snap !== 'object') {
+    clearPdfExportFillCacheBridge()
+    return { ok: false }
+  }
+  const id = String(snap.templateId || '').trim()
+  if (!id) {
+    clearPdfExportFillCacheBridge()
+    return { ok: false }
+  }
+  const totalReports = Math.max(1, Math.floor(Number(snap.totalReports) || 1))
+  const stats = snap.stats && typeof snap.stats === 'object' ? snap.stats : null
+  let parts = Array.isArray(snap.parts) ? snap.parts : null
+  if ((!parts || !parts.length) && typeof snap.partsJson === 'string' && snap.partsJson) {
+    try {
+      const parsed = JSON.parse(snap.partsJson)
+      if (Array.isArray(parsed)) parts = parsed
+    } catch (e) {
+      log(`fill-cache partsJson 解析失败：${e && e.message}`)
+      return { ok: false, error: 'partsJson 解析失败' }
+    }
+  }
+
+  // 052c/e：主进程按份落盘（preload 不再 require fs；partsJson 避 Proxy）
+  if (parts && parts.length > 0) {
+    const dir = path.join(
+      app.getPath('temp'),
+      `sd-sma-fill-parts-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    )
+    try {
+      await fs.promises.mkdir(dir, { recursive: true })
+      let written = 0
+      for (const p of parts) {
+        if (!p || typeof p !== 'object') continue
+        const partIndex = Math.max(0, Math.floor(Number(p.partIndex) || 0))
+        const body = {
+          templateId: id,
+          values: p.values && typeof p.values === 'object' ? p.values : {},
+          totalReports,
+          stats,
+          partIndex,
+        }
+        await fs.promises.writeFile(
+          path.join(dir, `part-${partIndex}.json`),
+          JSON.stringify(body),
+          'utf8',
+        )
+        written += 1
+      }
+      if (written <= 0) {
+        try {
+          await fs.promises.rm(dir, { recursive: true, force: true })
+        } catch {
+          /* ignore */
+        }
+        return { ok: false, error: '分份落盘为空' }
+      }
+      clearPdfExportFillCacheBridge()
+      pdfExportFillCacheBridgeMeta = {
+        templateId: id,
+        totalReports,
+        stats,
+        dir,
+        partCount: written,
+      }
+      return { ok: true, dir, partCount: written }
+    } catch (e) {
+      try {
+        await fs.promises.rm(dir, { recursive: true, force: true })
+      } catch {
+        /* ignore */
+      }
+      log(`fill-cache 分份落盘失败：${e && e.message}`)
+      return { ok: false, error: (e && e.message) || '分份落盘失败' }
+    }
+  }
+
+  // 兼容：单文件全量（无分份）
+  let filePath = typeof snap.path === 'string' ? snap.path.trim() : ''
+  if (!filePath) {
+    try {
+      filePath = path.join(
+        app.getPath('temp'),
+        `sd-sma-fill-cache-${process.pid}-${Date.now()}.json`,
+      )
+      const body = {
+        templateId: id,
+        values: snap.values && typeof snap.values === 'object' ? snap.values : {},
+        totalReports,
+        stats,
+      }
+      await fs.promises.writeFile(filePath, JSON.stringify(body), 'utf8')
+    } catch (e) {
+      log(`fill-cache 落盘失败：${e && e.message}`)
+      return { ok: false, error: (e && e.message) || 'fill-cache 落盘失败' }
+    }
+  } else {
+    try {
+      if (!fs.existsSync(filePath)) {
+        return { ok: false, error: 'fill-cache 文件不存在' }
+      }
+    } catch (e) {
+      return { ok: false, error: (e && e.message) || 'fill-cache 路径无效' }
+    }
+  }
+
+  clearPdfExportFillCacheBridge()
+  pdfExportFillCacheBridgeMeta = {
+    templateId: id,
+    totalReports,
+    stats,
+    path: filePath,
+  }
+  return { ok: true, path: filePath }
+})
+
+ipcMain.handle('pdf-export-fill-cache-clear', () => {
+  clearPdfExportFillCacheBridge()
+  return { ok: true }
+})
+
+/**
+ * 045 R4：矢量导出 PDF 字节经 structured-clone 落临时文件，ready 只回传路径。
+ * 避开 preload notifyPdfExportReady 的 JSON 兜底（会毁掉二进制 / 放大 base64 IPC）。
+ */
+/** @type {Map<string, Set<string>>} */
+const pdfExportTempPartsByJob = new Map()
+
+function coerceIpcBytesToBuffer(bytes) {
+  if (!bytes) return null
+  if (Buffer.isBuffer(bytes)) return bytes
+  if (bytes instanceof Uint8Array) {
+    return Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+  }
+  if (bytes instanceof ArrayBuffer) return Buffer.from(bytes)
+  // 部分通道会把 Buffer 解成 { type:'Buffer', data:number[] }
+  if (bytes.type === 'Buffer' && Array.isArray(bytes.data)) return Buffer.from(bytes.data)
+  return null
+}
+
+function isAllowedPdfExportTempPartPath(filePath) {
+  if (!filePath || typeof filePath !== 'string') return false
+  let tempRoot
+  let resolved
+  try {
+    tempRoot = path.resolve(app.getPath('temp'))
+    resolved = path.resolve(filePath)
+  } catch {
+    return false
+  }
+  const prefix = tempRoot.endsWith(path.sep) ? tempRoot : tempRoot + path.sep
+  if (!resolved.startsWith(prefix)) return false
+  const base = path.basename(resolved)
+  return base.startsWith('sd-sma-pdf-part-') && base.toLowerCase().endsWith('.pdf')
+}
+
+function trackPdfExportTempPart(jobId, filePath) {
+  const id = String(jobId || '').trim()
+  if (!id || !filePath) return
+  let set = pdfExportTempPartsByJob.get(id)
+  if (!set) {
+    set = new Set()
+    pdfExportTempPartsByJob.set(id, set)
+  }
+  set.add(filePath)
+}
+
+function untrackPdfExportTempPart(jobId, filePath) {
+  const id = String(jobId || '').trim()
+  if (!id || !filePath) return
+  const set = pdfExportTempPartsByJob.get(id)
+  if (!set) return
+  set.delete(filePath)
+  if (set.size === 0) pdfExportTempPartsByJob.delete(id)
+}
+
+async function unlinkPdfExportTempPart(filePath, jobId) {
+  if (!isAllowedPdfExportTempPartPath(filePath)) return
+  if (jobId) untrackPdfExportTempPart(jobId, filePath)
+  else {
+    for (const [id, set] of pdfExportTempPartsByJob) {
+      if (set.delete(filePath) && set.size === 0) pdfExportTempPartsByJob.delete(id)
+    }
+  }
+  try {
+    await fs.promises.unlink(filePath)
+  } catch {
+    /* ignore */
+  }
+}
+
+async function clearPdfExportTempPartsForJob(jobId) {
+  const id = String(jobId || '').trim()
+  const set = id ? pdfExportTempPartsByJob.get(id) : null
+  if (!set) return
+  const paths = [...set]
+  pdfExportTempPartsByJob.delete(id)
+  for (const p of paths) {
+    try {
+      await fs.promises.unlink(p)
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+/** 清理超过 1h 的孤儿 sd-sma-pdf-part-*.pdf（取消后未 ready 的残留） */
+async function sweepOrphanPdfExportTempParts() {
+  let tempRoot
+  try {
+    tempRoot = app.getPath('temp')
+  } catch {
+    return
+  }
+  let names
+  try {
+    names = await fs.promises.readdir(tempRoot)
+  } catch {
+    return
+  }
+  const cutoff = Date.now() - 60 * 60 * 1000
+  for (const name of names) {
+    if (!name.startsWith('sd-sma-pdf-part-') || !name.toLowerCase().endsWith('.pdf')) continue
+    const full = path.join(tempRoot, name)
+    try {
+      const st = await fs.promises.stat(full)
+      if (st.mtimeMs < cutoff) await fs.promises.unlink(full)
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+ipcMain.handle('pdf-export-write-temp-part', async (_event, opts) => {
+  const buf = coerceIpcBytesToBuffer(opts && opts.bytes)
+  if (!buf || buf.length <= 0) {
+    return { ok: false, error: '缺少 PDF 字节' }
+  }
+  // 单份上限 256MB，防止异常载荷撑爆 temp
+  if (buf.length > 256 * 1024 * 1024) {
+    return { ok: false, error: 'PDF 临时文件过大' }
+  }
+  const jobId = String((opts && opts.jobId) || '').trim()
+  const filePath = path.join(
+    app.getPath('temp'),
+    `sd-sma-pdf-part-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.pdf`,
+  )
+  try {
+    await fs.promises.writeFile(filePath, buf)
+    if (jobId) trackPdfExportTempPart(jobId, filePath)
+    // 轻量扫尾：不阻塞成功路径
+    void sweepOrphanPdfExportTempParts()
+    return { ok: true, path: filePath, bytes: buf.length }
+  } catch (e) {
+    try {
+      await fs.promises.unlink(filePath)
+    } catch {
+      /* ignore */
+    }
+    log(`pdf-export-write-temp-part 失败：${e && e.message}`)
+    return { ok: false, error: (e && e.message) || 'PDF 临时落盘失败' }
+  }
+})
+
+async function handlePdfExportRun(event, opts) {
   const filePath = opts && opts.filePath
   const templateId = opts && opts.templateId
   const openAfter = Boolean(opts && opts.openAfter)
-  const jobId = opts && typeof opts.jobId === 'string' ? opts.jobId : ''
+  const engineRaw = opts && opts.engine
+  // 034 M11：缺省 / 未知 → chromium（预览级）；仅显式 pdf-lib 走草稿
+  const engineNorm = String(engineRaw || '')
+    .trim()
+    .toLowerCase()
+  const exportEngine =
+    engineNorm === 'pdf-lib' || engineNorm === 'pdflib' || engineNorm === 'vector'
+      ? 'pdf-lib'
+      : 'chromium'
+  const exportMode = exportEngine === 'pdf-lib' ? 'coexist' : 'fidelity'
+  // 让核/抢核：缺省 full（渲染 IDLE）；档 3 basic；档 4 max=HIGHEST
+  const coexistPause = normalizeCoexistPause(opts && opts.coexistPause)
+  const jobYieldRaw = Math.floor(Number(opts && opts.yieldMs))
+  const jobYieldMs =
+    Number.isFinite(jobYieldRaw) && jobYieldRaw >= 0
+      ? Math.min(2000, jobYieldRaw)
+      : pdfExportPartYieldMs
+  const jobId =
+    opts && typeof opts.jobId === 'string' && opts.jobId.trim()
+      ? opts.jobId.trim()
+      : `pdf-export-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
   if (!filePath || typeof filePath !== 'string') throw new Error('缺少 filePath')
   if (!templateId || typeof templateId !== 'string') throw new Error('缺少 templateId')
+
+  registerPdfExportJob(jobId)
+  clearPdfExportFillCacheBridge()
+  // 039c：按配置决定是否弹遮罩（总开关 / 仅自动结批）
+  const armOverlay = shouldArmExportOverlay(opts)
+  if (armOverlay) beginExportOverlaySession()
 
   return runPdfExportWithSlot(async () => {
     let pdfWin = null
     let exportOk = false
     try {
+      function throwIfCancelled() {
+        if (isPdfExportCancelled(jobId)) {
+          throw new Error('导出已取消')
+        }
+      }
+      throwIfCancelled()
+
       function outputPathForPart(partIndex, totalReports) {
         return outputPathForReportPart(filePath, partIndex, totalReports)
       }
 
       /** 向发起导出的窗口推送阶段进度（结批弹窗显示用；窗口已关则忽略） */
       function sendProgress(payload) {
+        // 先更新遮罩/lane（任一档位分卷并行≥2 都走 workerSlot），再带 workers 快照给渲染进程 toast
+        try {
+          if (armOverlay) {
+            pushExportOverlayProgress({ ...payload, templateId })
+          } else if (payload && payload.workerSlot != null) {
+            const phase = String(payload.phase || '')
+            const stage = String(payload.stage || phase || '')
+            const partIndex = Math.max(0, Math.floor(Number(payload.partIndex) || 0))
+            const lanePayload = { ...payload, templateId }
+            if (
+              phase === 'render' ||
+              stage === 'render' ||
+              stage === 'load' ||
+              stage === 'fetch' ||
+              stage === 'hydrate'
+            ) {
+              noteExportOverlayPartStart(partIndex)
+              lanePayload.workerIdle = false
+              lanePayload.workerBusy = true
+            }
+            if ((phase === 'saved' || stage === 'saved') && !payload.skipPartSaved) {
+              noteExportOverlayPartSaved(partIndex)
+              lanePayload.workerIdle = true
+              lanePayload.workerBusy = false
+            } else if (payload.skipPartSaved || payload.workerIdle) {
+              lanePayload.workerIdle = true
+              lanePayload.workerBusy = false
+            }
+            upsertExportOverlayWorkerLane(lanePayload)
+          }
+        } catch {
+          /* ignore */
+        }
         try {
           const w = senderBrowserWindow(event.sender)
           if (w && !w.isDestroyed()) {
-            event.sender.send('pdf-export-progress', { ...payload, jobId, templateId })
+            const msg = { ...payload, jobId, templateId }
+            if (exportOverlayWorkerLanes.length > 1) {
+              msg.workers = exportOverlayWorkerLanes.map((lane) => ({ ...lane }))
+              msg.completedParts = exportOverlayEta.completedParts
+              msg.parallelWorkers = exportOverlayWorkerLanes.length
+            }
+            event.sender.send('pdf-export-progress', msg)
           }
         } catch {
           /* ignore */
@@ -1037,19 +3115,71 @@ ipcMain.handle('pdf-export-run', async (event, opts) => {
       }
 
       /** seq 保证 hash 每次都变化：热切换时可靠触发导出页的路由监听重新取数 */
+      const layoutFidelityRaw = opts && opts.layoutFidelity
+      const layoutFidelity =
+        exportEngine === 'pdf-lib' &&
+        String(layoutFidelityRaw || '')
+          .trim()
+          .toLowerCase() === 'layout-v2'
+          ? 'layout-v2'
+          : exportEngine === 'pdf-lib'
+            ? 'draft-v1'
+            : 'print-to-pdf'
+
+      const allowBindingIssues = Boolean(opts && opts.allowBindingIssues)
+
       function partHash(partIndex) {
-        return `#/pdf-export?templateId=${encodeURIComponent(templateId)}&reportPartIndex=${partIndex}&seq=${Date.now()}`
+        const allowQ = allowBindingIssues ? '&allowBindingIssues=1' : ''
+        // seq=：每次导出刷新 hash，避免复用预热窗时 Vue 认为路由未变而不触发 boot
+        // jobId=：045 R4 临时 PDF 按 job 跟踪，取消/失败可扫尾
+        return `#/pdf-export?templateId=${encodeURIComponent(templateId)}&reportPartIndex=${partIndex}&engine=${encodeURIComponent(exportEngine)}&layoutFidelity=${encodeURIComponent(layoutFidelity)}&jobId=${encodeURIComponent(jobId)}${allowQ}&seq=${Date.now()}`
       }
 
       // 优先复用预热窗口：SPA 已启动，进入取数只差一次 hash 切换
       pdfWin = acquirePdfExportWindow()
       const warmStart = Boolean(pdfWin.webContents.getURL())
+      /** 033：导航恢复时同步替换引用，供 ready 过滤与 finally 回收 */
+      const pdfWinHolder = {
+        get win() {
+          return pdfWin
+        },
+        set win(w) {
+          pdfWin = w
+        },
+      }
+
+      // 现场让核：把真正吃 CPU 的渲染进程（+ 后端）降优先级；重建窗后需重新施加
+      function applyRenderCoexistPriorityOn(holder) {
+        const w = holder && holder.win
+        if (w && !w.isDestroyed()) {
+          applyExportProcessCoexistPriority(w.webContents, coexistPause)
+        }
+      }
+      applyRenderCoexistPriorityOn(pdfWinHolder)
 
       /** 渲染窗口取数期间每 10 秒发一次心跳：连续 2 分钟无心跳视为无响应；总时长上限 10 分钟 */
       const RENDER_IDLE_TIMEOUT_MS = 120000
       const RENDER_TOTAL_CAP_MS = 600000
 
-      async function renderPart(partIndex) {
+      /**
+       * 在指定导出窗上渲染一份分卷（035：分卷并行时每路独立 holder）。
+       * @param {{ win: import('electron').BrowserWindow }} winHolder
+       * @param {number} partIndex
+       * @param {{ workerSlot?: number, parallelWorkers?: number } | null} [workerMeta]
+       * @param {{ onReady?: (payload: object) => void } | null} [hooks]
+       *   onReady：取数/绘制完成（printToPDF 之前）回调——用于尽早得知 totalReports 并派其余并行路
+       */
+      async function renderPartOnWindow(winHolder, partIndex, workerMeta, hooks) {
+        const workerSlot =
+          workerMeta && workerMeta.workerSlot != null
+            ? Math.max(0, Math.floor(Number(workerMeta.workerSlot) || 0))
+            : null
+        const parallelWorkers =
+          workerMeta && workerMeta.parallelWorkers != null
+            ? Math.max(1, Math.floor(Number(workerMeta.parallelWorkers) || 1))
+            : null
+        throwIfCancelled()
+        applyRenderCoexistPriorityOn(winHolder)
         const targetUrl = buildPdfExportUrl(event.sender, partHash(partIndex))
         /** 热切换看门狗：仅改 hash 后渲染页若迟迟没有心跳/完成信号，整页重载一次兜底 */
         const HOT_NAV_FALLBACK_MS = 8000
@@ -1081,21 +3211,49 @@ ipcMain.handle('pdf-export-run', async (event, opts) => {
           }
 
           function isFromPdfWin(ev) {
-            if (!pdfWin || pdfWin.isDestroyed()) return false
-            return senderBrowserWindow(ev.sender) === pdfWin
+            const w = winHolder.win
+            if (!w || w.isDestroyed()) return false
+            return senderBrowserWindow(ev.sender) === w
           }
 
-          function onHeartbeat(ev) {
+          function onHeartbeat(ev, hbPayload) {
             if (!isFromPdfWin(ev)) return
             flags.rendererSignal = true
             armIdleTimer()
+            if (armOverlay && hbPayload && typeof hbPayload === 'object' && hbPayload.stage) {
+              try {
+                const hb = {
+                  phase: 'render',
+                  stage: String(hbPayload.stage),
+                  partIndex,
+                  templateId,
+                }
+                const hbTotal = Math.floor(Number(hbPayload.totalReports))
+                if (Number.isFinite(hbTotal) && hbTotal > 0) hb.totalReports = hbTotal
+                if (workerSlot != null) {
+                  hb.workerSlot = workerSlot
+                  if (parallelWorkers != null) hb.parallelWorkers = parallelWorkers
+                }
+                pushExportOverlayProgress(hb)
+              } catch {
+                /* ignore */
+              }
+            }
           }
 
           function onReady(ev, payload) {
             if (!isFromPdfWin(ev)) return
             flags.rendererSignal = true
             cleanup()
-            resolve(payload || {})
+            const body = payload || {}
+            if (hooks && typeof hooks.onReady === 'function') {
+              try {
+                hooks.onReady(body)
+              } catch {
+                /* ignore */
+              }
+            }
+            resolve(body)
           }
 
           capTimer = setTimeout(() => {
@@ -1107,19 +3265,26 @@ ipcMain.handle('pdf-export-run', async (event, opts) => {
         })
 
         const navStartMs = Date.now()
-        // 导航与完成信号并行等待：导航报错立即失败；导航悬挂由 readyPromise 的超时兜底，
-        // 避免 readyPromise 先超时时产生无人接收的 unhandled rejection 并卡死后续结批。
         const payload = await new Promise((resolve, reject) => {
           readyPromise.then(resolve, reject)
-          navigatePdfExportWindow(pdfWin, targetUrl)
+          navigatePdfExportWindowWithRecovery(winHolder, targetUrl)
             .then((hotSwitched) => {
+              applyRenderCoexistPriorityOn(winHolder)
               if (!hotSwitched) return
               hotNavFallbackTimer = setTimeout(() => {
                 if (flags.rendererSignal || flags.hotNavFellBack) return
-                if (!pdfWin || pdfWin.isDestroyed()) return
+                const w = winHolder.win
+                if (!w || w.isDestroyed()) return
                 flags.hotNavFellBack = true
                 log('PDF export hot hash-switch silent; falling back to full page load')
-                pdfWin.loadURL(targetUrl).catch(() => {})
+                w.loadURL(targetUrl).catch((err) => {
+                  if (!isRecoverablePdfExportNavError(err)) return
+                  log(`PDF export hot-nav fallback failed (${err.message}); recreating window`)
+                  destroyPdfExportWindow(winHolder.win)
+                  winHolder.win = createPdfExportWindow()
+                  winHolder.win.loadURL(targetUrl).catch(() => {})
+                  applyRenderCoexistPriorityOn(winHolder)
+                })
               }, HOT_NAV_FALLBACK_MS)
             })
             .catch(reject)
@@ -1143,22 +3308,84 @@ ipcMain.handle('pdf-export-run', async (event, opts) => {
         }
 
         const printStartMs = Date.now()
-        const pdfBuffer = await pdfWin.webContents.printToPDF({
-          landscape: false,
-          printBackground: true,
-          marginsType: 1,
-          pageRanges: '',
-          preferCSSPageSize: true,
-        })
-        pdfWin.__exportUses = (pdfWin.__exportUses || 0) + 1
+        let pdfBuffer
+        let printMs = 0
+        let engineMeta = {
+          engine: exportEngine,
+          exportMode,
+          printToPDFSkipped: false,
+        }
+        const activeWin = winHolder.win
+        const pdfTempPath =
+          payload.pdfTempPath && typeof payload.pdfTempPath === 'string'
+            ? payload.pdfTempPath.trim()
+            : ''
+        if (pdfTempPath) {
+          // 045 R4：优先读临时文件（无巨型 base64 IPC）
+          if (!isAllowedPdfExportTempPartPath(pdfTempPath)) {
+            throw new Error('PDF 临时路径非法')
+          }
+          try {
+            pdfBuffer = await fs.promises.readFile(pdfTempPath)
+          } finally {
+            await unlinkPdfExportTempPart(pdfTempPath, jobId)
+          }
+          printMs = Number(payload.pdfLibMs) || Date.now() - printStartMs
+          engineMeta = {
+            engine: payload.engine || 'pdf-lib',
+            exportMode: payload.exportMode || 'coexist',
+            layoutFidelity: payload.layoutFidelity || 'draft-v1',
+            fontFamily: payload.fontFamily || null,
+            fontEmbedded: Boolean(payload.fontEmbedded),
+            pageCount: Number(payload.pageCount) || 0,
+            pdfLibMs: Number(payload.pdfLibMs) || printMs,
+            printToPDFSkipped: true,
+            pdfTempPath: true,
+          }
+        } else if (payload.pdfBase64 && typeof payload.pdfBase64 === 'string') {
+          pdfBuffer = Buffer.from(payload.pdfBase64, 'base64')
+          printMs = Number(payload.pdfLibMs) || Date.now() - printStartMs
+          engineMeta = {
+            engine: payload.engine || 'pdf-lib',
+            exportMode: payload.exportMode || 'coexist',
+            layoutFidelity: payload.layoutFidelity || 'draft-v1',
+            fontFamily: payload.fontFamily || null,
+            fontEmbedded: Boolean(payload.fontEmbedded),
+            pageCount: Number(payload.pageCount) || 0,
+            pdfLibMs: Number(payload.pdfLibMs) || printMs,
+            printToPDFSkipped: true,
+          }
+        } else {
+          pdfBuffer = await withPrintToPdfSlot(() =>
+            activeWin.webContents.printToPDF({
+              landscape: false,
+              printBackground: true,
+              marginsType: 1,
+              pageRanges: '',
+              preferCSSPageSize: true,
+            }),
+          )
+          printMs = Date.now() - printStartMs
+          engineMeta = {
+            engine: 'chromium',
+            exportMode: 'fidelity',
+            printToPDFSkipped: false,
+          }
+        }
+        activeWin.__exportUses = (activeWin.__exportUses || 0) + 1
         return {
           pdfBuffer,
           totalReports: Math.max(1, Math.floor(Number(payload.totalReports) || 1)),
           stats: payload.stats || null,
           phases: payload.phases && typeof payload.phases === 'object' ? payload.phases : null,
           readyMs,
-          printMs: Date.now() - printStartMs,
+          printMs,
+          engineMeta,
         }
+      }
+
+      async function renderPart(partIndex) {
+        return renderPartOnWindow(pdfWinHolder, partIndex)
       }
 
       function mergeStats(total, part) {
@@ -1174,6 +3401,11 @@ ipcMain.handle('pdf-export-run', async (event, opts) => {
       let stats = { opcReads: 0, sqlQueries: 0, sqlRows: 0 }
       /** 分阶段耗时（多份报表求和）：readyMs 含窗口内启动+取数+绘制；dataMs 为其中的取数部分 */
       const timings = { warmStart, readyMs: 0, dataMs: 0, printMs: 0, writeMs: 0 }
+      let engineAudit = {
+        engine: exportEngine,
+        exportMode,
+        printToPDFSkipped: exportEngine === 'pdf-lib',
+      }
 
       function mergeTimings(part) {
         timings.readyMs += Number(part.readyMs) || 0
@@ -1181,55 +3413,301 @@ ipcMain.handle('pdf-export-run', async (event, opts) => {
         if (part.phases) {
           timings.dataMs += Number(part.phases.dataMs) || 0
         }
+        if (part.engineMeta && typeof part.engineMeta === 'object') {
+          engineAudit = { ...engineAudit, ...part.engineMeta }
+        }
       }
 
-      function writePartPdf(partIndex, totalReports, pdfBuffer) {
+      async function writePartPdf(partIndex, totalReports, pdfBuffer, workerMeta) {
+        throwIfCancelled()
+        const writeProg = { phase: 'write', stage: 'write', partIndex, totalReports }
+        if (workerMeta && workerMeta.workerSlot != null) {
+          writeProg.workerSlot = Math.max(0, Math.floor(Number(workerMeta.workerSlot) || 0))
+          if (workerMeta.parallelWorkers != null) {
+            writeProg.parallelWorkers = Math.max(
+              1,
+              Math.floor(Number(workerMeta.parallelWorkers) || 1),
+            )
+          }
+        }
+        sendProgress(writeProg)
         const outPath = outputPathForPart(partIndex, totalReports)
         const writeStartMs = Date.now()
-        fs.mkdirSync(path.dirname(outPath), { recursive: true })
-        fs.writeFileSync(outPath, pdfBuffer)
+        await fs.promises.mkdir(path.dirname(outPath), { recursive: true })
+        await fs.promises.writeFile(outPath, pdfBuffer)
         timings.writeMs += Date.now() - writeStartMs
         return outPath
       }
 
-      sendProgress({ phase: 'render', partIndex: 0, totalReports: 0 })
-      const first = await renderPart(0)
-      const totalReports = first.totalReports
-      stats = mergeStats(stats, first.stats)
-      mergeTimings(first)
-      const filePaths = []
-      filePaths.push(writePartPdf(0, totalReports, first.pdfBuffer))
-      sendProgress({ phase: 'saved', partIndex: 0, totalReports })
+      // 035：并行路数开导前已知；总份数仍须等第 0 份取数 ready（非等整份 PDF 写完）
+      const plannedParallel = Math.max(1, Math.floor(Number(pdfExportMaxParallel) || 1))
+      /** @type {(string|undefined)[]} */
+      let filePaths
+      /** @type {number} */
+      let totalReports
 
-      for (let partIndex = 1; partIndex < totalReports; partIndex++) {
-        sendProgress({ phase: 'render', partIndex, totalReports })
-        const part = await renderPart(partIndex)
-        stats = mergeStats(stats, part.stats)
-        mergeTimings(part)
-        filePaths.push(writePartPdf(partIndex, totalReports, part.pdfBuffer))
-        sendProgress({ phase: 'saved', partIndex, totalReports })
+      if (plannedParallel <= 1) {
+        sendProgress({ phase: 'render', stage: 'load', partIndex: 0, totalReports: 0 })
+        const first = await renderPart(0)
+        totalReports = first.totalReports
+        stats = mergeStats(stats, first.stats)
+        mergeTimings(first)
+        filePaths = new Array(totalReports)
+        filePaths[0] = await writePartPdf(0, totalReports, first.pdfBuffer)
+        sendProgress({ phase: 'saved', stage: 'saved', partIndex: 0, totalReports })
+        for (let partIndex = 1; partIndex < totalReports; partIndex++) {
+          throwIfCancelled()
+          await yieldToOs(jobYieldMs)
+          sendProgress({ phase: 'render', stage: 'load', partIndex, totalReports })
+          const part = await renderPart(partIndex)
+          stats = mergeStats(stats, part.stats)
+          mergeTimings(part)
+          filePaths[partIndex] = await writePartPdf(partIndex, totalReports, part.pdfBuffer)
+          sendProgress({ phase: 'saved', stage: 'saved', partIndex, totalReports })
+        }
+      } else {
+        /** @type {{ win: import('electron').BrowserWindow }[]} */
+        const workerHolders = [pdfWinHolder]
+        let extraSlots = 0
+        try {
+          // 开导先按配置显示 N 路「等待」；真正开窗数等 totalReports + Chromium 内存帽后再建
+          exportOverlayWorkerLanes = Array.from({ length: plannedParallel }, (_, slot) => ({
+            workerSlot: slot,
+            partIndex: 0,
+            stage: slot === 0 ? 'load' : 'wait',
+            stageLabel:
+              slot === 0
+                ? EXPORT_OVERLAY_STAGE_LABELS.load
+                : EXPORT_OVERLAY_STAGE_LABELS.wait,
+            busy: true,
+          }))
+          sendProgress({
+            phase: 'render',
+            stage: 'load',
+            partIndex: 0,
+            totalReports: 0,
+            workerSlot: 0,
+            parallelWorkers: plannedParallel,
+          })
+          for (let slot = 1; slot < plannedParallel; slot++) {
+            sendProgress({
+              phase: 'render',
+              stage: 'wait',
+              partIndex: 0,
+              totalReports: 0,
+              workerSlot: slot,
+              parallelWorkers: plannedParallel,
+              workerBusy: true,
+            })
+          }
+
+          let totalResolved = 0
+          /** @type {(n: number) => void} */
+          let resolveTotalReports
+          const totalReportsPromise = new Promise((resolve) => {
+            resolveTotalReports = resolve
+          })
+
+          const part0Meta = { workerSlot: 0, parallelWorkers: plannedParallel }
+          const part0Promise = renderPartOnWindow(pdfWinHolder, 0, part0Meta, {
+            onReady: (payload) => {
+              if (totalResolved > 0) return
+              totalResolved = Math.max(1, Math.floor(Number(payload && payload.totalReports) || 1))
+              resolveTotalReports(totalResolved)
+            },
+          }).catch((err) => {
+            if (totalResolved <= 0) resolveTotalReports(1)
+            throw err
+          })
+
+          totalReports = await totalReportsPromise
+          // Chromium：内存安全并发（与「不妥协」CPU 预算解耦）；pdf-lib 仍可用满 planned
+          const concurrency = resolvePartExportConcurrency(
+            plannedParallel,
+            totalReports,
+            exportEngine,
+            os.totalmem(),
+          )
+          if (exportOverlayWorkerLanes.length > concurrency) {
+            exportOverlayWorkerLanes = exportOverlayWorkerLanes.slice(0, concurrency)
+          }
+          if (concurrency < plannedParallel) {
+            log(
+              `PDF 分卷并行内存帽：engine=${exportEngine} planned=${plannedParallel} → concurrency=${concurrency}（避免多窗 printToPDF + 大快照 IPC 闪退）`,
+            )
+          }
+          log(
+            `PDF 分卷并行：planned=${plannedParallel} concurrency=${concurrency} total=${totalReports} maxParallel=${pdfExportMaxParallel} engine=${exportEngine}（ready 后懒建窗派活）`,
+          )
+
+          // 总份数已知后，错峰建额外导出窗（勿与首份全量 SQL 叠峰冷启 15 窗）
+          for (let i = 1; i < concurrency; i++) {
+            await acquirePdfExportSlot()
+            extraSlots += 1
+            workerHolders.push({ win: acquirePdfExportWindow() })
+            applyRenderCoexistPriorityOn(workerHolders[workerHolders.length - 1])
+            await yieldToOs(Math.max(40, Math.min(200, jobYieldMs || 80)))
+          }
+
+          filePaths = new Array(totalReports)
+          const remainingIndices = []
+          for (let i = 1; i < totalReports; i++) remainingIndices.push(i)
+          let nextPart = 0
+
+          async function markWorkerIdle(workerSlot, parallelWorkers) {
+            const lastIdx =
+              (exportOverlayWorkerLanes[workerSlot] &&
+                exportOverlayWorkerLanes[workerSlot].partIndex) ||
+              0
+            sendProgress({
+              phase: 'render',
+              stage: 'saved',
+              partIndex: lastIdx,
+              totalReports,
+              workerSlot,
+              parallelWorkers,
+              workerIdle: true,
+              skipPartSaved: true,
+            })
+          }
+
+          async function partWorker(holder, workerSlot) {
+            const workerMeta = { workerSlot, parallelWorkers: concurrency }
+            if (workerSlot === 0) {
+              const first = await part0Promise
+              stats = mergeStats(stats, first.stats)
+              mergeTimings(first)
+              filePaths[0] = await writePartPdf(0, totalReports, first.pdfBuffer, workerMeta)
+              sendProgress({
+                phase: 'saved',
+                stage: 'saved',
+                partIndex: 0,
+                totalReports,
+                workerSlot: 0,
+                parallelWorkers: concurrency,
+              })
+            }
+            while (true) {
+              throwIfCancelled()
+              const i = nextPart
+              nextPart += 1
+              if (i >= remainingIndices.length) {
+                await markWorkerIdle(workerSlot, concurrency)
+                return
+              }
+              const partIndex = remainingIndices[i]
+              await yieldToOs(jobYieldMs)
+              sendProgress({
+                phase: 'render',
+                stage: 'load',
+                partIndex,
+                totalReports,
+                workerSlot,
+                parallelWorkers: concurrency,
+              })
+              const part = await renderPartOnWindow(holder, partIndex, workerMeta)
+              if (holder === pdfWinHolder) {
+                pdfWin = holder.win
+              }
+              stats = mergeStats(stats, part.stats)
+              mergeTimings(part)
+              filePaths[partIndex] = await writePartPdf(
+                partIndex,
+                totalReports,
+                part.pdfBuffer,
+                workerMeta,
+              )
+              sendProgress({
+                phase: 'saved',
+                stage: 'saved',
+                partIndex,
+                totalReports,
+                workerSlot,
+                parallelWorkers: concurrency,
+              })
+            }
+          }
+
+          // 总份数一知且窗已建：其余路开工；第 0 路继续出 PDF/写盘后再偷取
+          await Promise.all(
+            workerHolders.slice(0, concurrency).map((h, slot) => partWorker(h, slot)),
+          )
+        } finally {
+          pdfWin = pdfWinHolder.win
+          for (let i = 1; i < workerHolders.length; i++) {
+            try {
+              const w = workerHolders[i].win
+              if (w && !w.isDestroyed()) {
+                restoreExportProcessCoexistPriority(w.webContents)
+              }
+            } catch {
+              /* ignore */
+            }
+            destroyPdfExportWindow(workerHolders[i].win)
+          }
+          while (extraSlots > 0) {
+            releasePdfExportSlot()
+            extraSlots -= 1
+          }
+        }
+      }
+
+      const orderedPaths = []
+      for (let i = 0; i < totalReports; i++) {
+        const p = filePaths[i]
+        if (typeof p !== 'string' || !p) {
+          throw new Error(`分卷导出不完整：缺少第 ${i + 1}/${totalReports} 份`)
+        }
+        orderedPaths.push(p)
       }
 
       if (openAfter) {
-        await shell.openPath(filePaths[0])
+        await shell.openPath(orderedPaths[0])
       }
 
       exportOk = true
       return {
         ok: true,
-        filePath: filePaths[0],
-        filePaths,
+        filePath: orderedPaths[0],
+        filePaths: orderedPaths,
         totalReports,
         stats,
         timings,
+        engine: engineAudit.engine || exportEngine,
+        exportMode: engineAudit.exportMode || exportMode,
+        engineMeta: engineAudit,
         durationMs: Date.now() - startedAtMs,
       }
     } catch (e) {
       throw new Error(humanizePdfExportError(e, { phase: 'export' }))
     } finally {
-      // 成功窗口回到预热页并归还空闲池；失败或超复用上限的窗口销毁。
+      clearPdfExportFillCacheBridge()
+      // 045 R4：取消/失败时扫掉本 job 未消费的临时 PDF
+      await clearPdfExportTempPartsForJob(jobId)
+      unregisterPdfExportJob(jobId)
+      // 039c：仅当本次确实弹了遮罩时成对收起
+      if (armOverlay) endExportOverlaySession()
+      // 050：等一拍，让遮罩 hide/destroy 先离开 Accessibility 查询窗口，再动 PDF 窗
+      await new Promise((resolve) => setImmediate(resolve))
+      // 导出结束：把渲染进程（归还池的窗）与后端恢复 NORMAL，避免让核状态长期残留
+      try {
+        if (pdfWin && !pdfWin.isDestroyed()) {
+          restoreExportProcessCoexistPriority(pdfWin.webContents)
+        } else {
+          restoreExportProcessCoexistPriority(null)
+        }
+      } catch {
+        /* ignore */
+      }
+      // 成功则尝试归还预热池；macOS（050b）禁止滞留隐藏窗，始终销毁。
       let recycled = false
-      if (exportOk && isReusablePdfWindow(pdfWin) && mainWindow && !mainWindow.isDestroyed()) {
+      if (
+        pdfExportWarmPoolAllowed() &&
+        exportOk &&
+        isReusablePdfWindow(pdfWin) &&
+        mainWindow &&
+        !mainWindow.isDestroyed()
+      ) {
         let prewarmNavigationOk = false
         try {
           await navigatePdfExportWindow(
@@ -1245,10 +3723,168 @@ ipcMain.handle('pdf-export-run', async (event, opts) => {
       if (!recycled) {
         destroyPdfExportWindow(pdfWin)
       }
-      ensurePdfExportWindowPrewarmed(event.sender)
+      if (pdfExportWarmPoolAllowed()) {
+        ensurePdfExportWindowPrewarmed(event.sender)
+      } else {
+        destroyWarmPdfExportWindows()
+      }
     }
-  })
-})
+  }, coexistPause)
+}
+
+ipcMain.handle('pdf-export-run', (event, opts) => handlePdfExportRun(event, opts))
+
+// 035：五档批导历史批次数上限（同时间戳的 summary_ / tierN_ 算一批）
+const FIVE_TIER_EXPORT_HISTORY_KEEP = 5
+
+/**
+ * 导出目录只保留最近 keep 批（按文件名时间戳 YYYY-MM-DDTHH-mm-ss）。
+ * 不删 _preview 等调试子目录。
+ */
+async function pruneFiveTierExportHistory(outDir, keep = FIVE_TIER_EXPORT_HISTORY_KEEP) {
+  const nKeep = Math.max(1, Math.floor(Number(keep) || FIVE_TIER_EXPORT_HISTORY_KEEP))
+  let names
+  try {
+    names = await fs.promises.readdir(outDir)
+  } catch {
+    return { kept: 0, dropped: 0, removedFiles: 0 }
+  }
+  const stampRe = /(\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2})/
+  const stamps = new Set()
+  for (const name of names) {
+    if (!name.startsWith('summary_') && !/^tier\d+_/.test(name)) continue
+    const m = stampRe.exec(name)
+    if (m) stamps.add(m[1])
+  }
+  const ordered = [...stamps].sort().reverse()
+  const drop = ordered.slice(nKeep)
+  let removedFiles = 0
+  for (const stamp of drop) {
+    for (const name of names) {
+      if (!name.includes(stamp)) continue
+      if (!name.startsWith('summary_') && !/^tier\d+_/.test(name)) continue
+      try {
+        await fs.promises.unlink(path.join(outDir, name))
+        removedFiles += 1
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+  return { kept: Math.min(ordered.length, nKeep), dropped: drop.length, removedFiles }
+}
+
+/** 035：五档对照导出。env REPORT_EDITOR_FIVE_TIER_EXPORT=templateId|outDir */
+async function runFiveTierExportBatch(spec) {
+  const parts = String(spec || '').split('|')
+  const templateId = (parts[0] || '').trim()
+  const outDir = (parts[1] || '').trim() || path.join(os.tmpdir(), 'report-editor-five-tier-exports')
+  if (!templateId) throw new Error('REPORT_EDITOR_FIVE_TIER_EXPORT 缺少 templateId')
+  fs.mkdirSync(outDir, { recursive: true })
+  const tiers = [
+    { tier: 0, label: '仅内容', engine: 'pdf-lib', layoutFidelity: 'draft-v1', yieldMs: 200 },
+    { tier: 1, label: '矢量版式', engine: 'pdf-lib', layoutFidelity: 'layout-v2', yieldMs: 200 },
+    { tier: 2, label: '预览稳', engine: 'chromium', layoutFidelity: 'print-to-pdf', yieldMs: 200 },
+    { tier: 3, label: '功能折中', engine: 'chromium', layoutFidelity: 'print-to-pdf', yieldMs: 80 },
+    { tier: 4, label: '不妥协', engine: 'chromium', layoutFidelity: 'print-to-pdf', yieldMs: 40 },
+  ]
+  const sender = mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents : null
+  if (!sender) throw new Error('主窗口未就绪')
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
+  const results = []
+  for (const t of tiers) {
+    const safeLabel = t.label.replace(/[\\/:*?"<>|]/g, '_')
+    const filePath = path.join(outDir, `tier${t.tier}_${safeLabel}_${stamp}.pdf`)
+    log(`五档批导：档 ${t.tier} ${t.label} → ${filePath}`)
+    try {
+      // 按档设置预热/yield（与 UI 一致）；0.3.140 起档 2 也保留 1 预热窗（免冷启动）
+      pdfExportPrewarmPoolSize = t.tier >= 4 ? 2 : t.tier >= 2 ? 1 : 0
+      pdfExportPartYieldMs = t.yieldMs
+      trimWarmPdfExportWindows()
+      const res = await handlePdfExportRun(
+        { sender },
+        {
+          templateId,
+          filePath,
+          openAfter: false,
+          engine: t.engine,
+          layoutFidelity: t.layoutFidelity,
+          yieldMs: t.yieldMs,
+          // 让核/抢核：档 4 max(HIGHEST)；档 3 basic(BN)；其余 full(LOW)
+          coexistPause: t.tier >= 4 ? 'max' : t.tier >= 3 ? 'basic' : 'full',
+          // 对照批导：离线 OPC/SQL 失败仍出 PDF，便于比五档版式
+          allowBindingIssues: true,
+          jobId: `five-tier-${t.tier}-${Date.now()}`,
+        },
+      )
+      results.push({ ...t, ok: true, filePath: res.filePath || filePath, engine: res.engine, exportMode: res.exportMode })
+      log(`五档批导：档 ${t.tier} 完成`)
+    } catch (e) {
+      const msg = e && e.message ? e.message : String(e)
+      results.push({ ...t, ok: false, error: msg, filePath })
+      log(`五档批导：档 ${t.tier} 失败：${msg}`)
+    }
+  }
+  const summaryPath = path.join(outDir, `summary_${stamp}.json`)
+  await fs.promises.writeFile(summaryPath, JSON.stringify({ templateId, outDir, results }, null, 2), 'utf8')
+  log(`五档批导完成：${summaryPath}`)
+  try {
+    const pruned = await pruneFiveTierExportHistory(outDir, FIVE_TIER_EXPORT_HISTORY_KEEP)
+    if (pruned.dropped > 0) {
+      log(
+        `五档批导：已清理旧历史 ${pruned.dropped} 批（${pruned.removedFiles} 个文件），保留最近 ${pruned.kept} 批`,
+      )
+    }
+  } catch (e) {
+    log(`五档批导：清理旧历史失败（忽略）：${e && e.message ? e.message : e}`)
+  }
+  await finishFiveTierExportAndExit(outDir)
+}
+
+/**
+ * 038：批导收尾勿走 app.quit()——Windows 上 Chromium 析构常 0xC0000005，
+ * 且会盖掉 process.exit(0) 的退出码。卸掉 quit 钩子后硬退；并写 .five-tier-exit 供脚本认成功。
+ */
+async function finishFiveTierExportAndExit(outDir, exitCode = 0) {
+  isQuitting = true
+  const code = Number.isFinite(Number(exitCode)) ? Math.floor(Number(exitCode)) : 1
+  if (outDir) {
+    try {
+      fs.writeFileSync(path.join(outDir, '.five-tier-exit'), String(code), 'utf8')
+    } catch {
+      /* ignore */
+    }
+  }
+  try {
+    destroyAppTray()
+  } catch {
+    /* ignore */
+  }
+  try {
+    killPython()
+  } catch {
+    /* ignore */
+  }
+  try {
+    app.removeAllListeners('before-quit')
+    app.removeAllListeners('will-quit')
+    app.removeAllListeners('quit')
+    app.removeAllListeners('window-all-closed')
+  } catch {
+    /* ignore */
+  }
+  try {
+    log(`五档批导：app.exit(${code})（038 卸钩子硬退）`)
+  } catch {
+    /* ignore */
+  }
+  try {
+    app.exit(code)
+  } catch {
+    /* ignore */
+  }
+  process.exit(code)
+}
 
 function killPython() {
   if (pythonProcess && backendStartedByElectron) {
@@ -1314,25 +3950,53 @@ ipcMain.handle('launch-settings-get', () => {
     ...settings,
     packaged: app.isPackaged,
     silentStartSession: Boolean(silentStartSession),
+    execPath: process.execPath,
   }
 })
 
 ipcMain.handle('launch-settings-set', (_event, patch) => {
-  const next = writeLaunchSettings(app, patch || {})
-  applyLoginItem(app, next)
+  const p = patch || {}
+  const next = writeLaunchSettings(app, p)
+  // 仅改 exportOverlayEnabled 等非自启字段时不要碰 HKCU\Run：
+  // 关自启 + 注册表项本就不存在时，reg delete 的中文报错曾被 UTF-8 误读成乱码「登录项同步失败」。
+  const touchLogin = patchTouchesLoginItem(p) && !fiveTierExportSpec
+  const applied = touchLogin
+    ? applyLoginItem(app, next)
+    : {
+        execPath: process.execPath,
+        loginCommand: null,
+        applied: false,
+        skipped: false,
+        error: null,
+        removedLegacy: [],
+      }
   return {
     ...next,
     packaged: app.isPackaged,
     silentStartSession: Boolean(silentStartSession),
+    execPath: applied.execPath,
+    loginCommand: applied.loginCommand,
+    loginApplied: applied.applied,
+    loginSkipped: applied.skipped,
+    loginError: applied.error,
+    loginRemovedLegacy: applied.removedLegacy || [],
   }
 })
 
 app.whenReady().then(async () => {
   log('Starting application...')
+  installProcessGoneLogging()
 
   silentStartSession = shouldSilentStartThisSession(app, process.argv)
   try {
-    applyLoginItem(app, readLaunchSettings(app))
+    // 037：五档批导等旁路勿改系统登录项；正常启动校正死链/无引号
+    const sync = syncLoginItemOnReady(app, { skip: Boolean(fiveTierExportSpec) })
+    if (Array.isArray(sync.removedLegacy) && sync.removedLegacy.length) {
+      log(`Removed legacy autostart entries: ${sync.removedLegacy.join(', ')}`)
+    }
+    if (sync.error) log(`syncLoginItemOnReady: ${sync.error}`)
+    else if (sync.applied) log(`Login item synced: ${sync.loginCommand || '(cleared)'}`)
+    else if (sync.skipped) log('Login item sync skipped')
   } catch (e) {
     log(`applyLoginItem failed (ignore): ${e.message}`)
   }
@@ -1414,8 +4078,13 @@ app.whenReady().then(async () => {
   // 定期检查并重建，保证下一次结批仍能热启动
   setInterval(() => {
     if (!mainWindow || mainWindow.isDestroyed()) return
+    if (appMainWindowBackgroundIdle) return
     const hasUnavailableWindow = warmPdfWins.some((win) => !isReusablePdfWindow(win))
-    if (hasUnavailableWindow || warmPdfWins.length < Math.min(2, pdfExportMaxParallel)) {
+    if (
+      pdfExportPrewarmPoolSize > 0 &&
+      (hasUnavailableWindow ||
+        warmPdfWins.length < Math.min(pdfExportPrewarmPoolSize, pdfExportMaxParallel, 2))
+    ) {
       log('PDF export warm window pool unavailable; re-prewarming')
       ensurePdfExportWindowPrewarmed(mainWindow.webContents)
     }

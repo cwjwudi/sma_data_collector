@@ -1,0 +1,152 @@
+{
+  "test": "aa_full_function_mixed_mode_soak",
+  "config": "C:\\Users\\BR\\codex_ws\\p000_sd_sma_scada\\config\\collector\\AA_full_function_test.json",
+  "started_at": "2026-07-29T13:46:02.067324+08:00",
+  "ended_at": "2026-07-29T14:46:08.357934+08:00",
+  "duration_requested_seconds": 3605.0,
+  "duration_actual_seconds": 3605.4850000000006,
+  "passed": true,
+  "events": {
+    "Data_Audit": 385,
+    "Data_Product": 1850,
+    "Data_Alarm": 535,
+    "Data_BatchInfo": 265,
+    "Data_Batch": 76,
+    "Data_Recipe": 114
+  },
+  "trigger_types": {
+    "Data_Audit": {
+      "variable": 385
+    },
+    "Data_Product": {
+      "time": 1803,
+      "variable": 47
+    },
+    "Data_Alarm": {
+      "variable": 535
+    },
+    "Data_BatchInfo": {
+      "variable": 265
+    },
+    "Data_Batch": {
+      "variable": 76
+    },
+    "Data_Recipe": {
+      "variable": 114
+    }
+  },
+  "faults": [
+    {
+      "scheduled_at_seconds": 600.0,
+      "communication": "PLC_TPS",
+      "recovered": true,
+      "recovery_seconds": 0.10899999999674037,
+      "subscription_handles_before": 2,
+      "subscription_handles_after": 2
+    },
+    {
+      "scheduled_at_seconds": 600.0,
+      "communication": "PLC_TPS_SECONDARY",
+      "recovered": true,
+      "recovery_seconds": 0.10899999999674037,
+      "subscription_handles_before": 1,
+      "subscription_handles_after": 1
+    },
+    {
+      "scheduled_at_seconds": 1800.0,
+      "communication": "PLC_TPS",
+      "recovered": true,
+      "recovery_seconds": 0.125,
+      "subscription_handles_before": 2,
+      "subscription_handles_after": 2
+    },
+    {
+      "scheduled_at_seconds": 1800.0,
+      "communication": "PLC_TPS_SECONDARY",
+      "recovered": true,
+      "recovery_seconds": 0.10899999999674037,
+      "subscription_handles_before": 1,
+      "subscription_handles_after": 1
+    },
+    {
+      "scheduled_at_seconds": 3000.0,
+      "communication": "PLC_TPS",
+      "recovered": true,
+      "recovery_seconds": 0.10899999999674037,
+      "subscription_handles_before": 2,
+      "subscription_handles_after": 2
+    },
+    {
+      "scheduled_at_seconds": 3000.0,
+      "communication": "PLC_TPS_SECONDARY",
+      "recovered": true,
+      "recovery_seconds": 0.11000000000058208,
+      "subscription_handles_before": 1,
+      "subscription_handles_after": 1
+    }
+  ],
+  "errors": [],
+  "connection_states_before_shutdown": {
+    "PLC_TPS": "connected",
+    "PLC_TPS_SECONDARY": "connected"
+  },
+  "collector_metrics": {
+    "group_enable_transitions_to_enabled": 6,
+    "parallel_edges_detected": 920,
+    "dynamic_interval_changed": 1,
+    "parallel_rows_accepted": 920,
+    "parallel_rows_rejected": 0,
+    "parallel_trigger_reset_confirmed": 920,
+    "subscription_events_received": 789
+  },
+  "storage_metrics": {
+    "outbox_rows_recovered_processing": 0,
+    "outbox_rows_recovered": 0,
+    "outbox_maintenance_runs": 120,
+    "outbox_rows_purged": 0,
+    "outbox_rows_accepted": 3225,
+    "db_rows_committed": 3225,
+    "db_rows_unique_conflict": 0,
+    "db_rows_failed": 0,
+    "db_rows_dead_letter": 0,
+    "outbox_rows_completed": 3225,
+    "shutdown_rows_flush_attempted": 14,
+    "shutdown_rows_remaining": 0,
+    "queue_size": 0,
+    "retry_queue_size": 0,
+    "dead_letter_queue_size": 0,
+    "inflight_size": 0,
+    "outbox_enabled": 1,
+    "outbox_pending_size": 0,
+    "outbox_processing_size": 0,
+    "outbox_retry_size": 0,
+    "outbox_dead_letter_size": 0,
+    "outbox_completed_size": 3225,
+    "outbox_file_bytes": 8032256
+  },
+  "database_rows_before": {
+    "Data_Recipe": null,
+    "Data_Product": 0,
+    "Data_Alarm": 0,
+    "Data_Audit": 0,
+    "Data_Batch": 0,
+    "Data_BatchInfo": 0
+  },
+  "database_rows_after": {
+    "Data_Recipe": 111,
+    "Data_Product": 1847,
+    "Data_Alarm": 527,
+    "Data_Audit": 385,
+    "Data_Batch": 39,
+    "Data_BatchInfo": 265
+  },
+  "database_row_delta_rule": "A partition table absent before startup is treated as a zero-row baseline.",
+  "database_row_deltas": {
+    "Data_Batch": 39,
+    "Data_Audit": 385,
+    "Data_Recipe": 111,
+    "Data_BatchInfo": 265,
+    "Data_Alarm": 527,
+    "Data_Product": 1847
+  }
+}

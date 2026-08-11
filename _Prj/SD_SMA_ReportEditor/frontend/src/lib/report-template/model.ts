@@ -40,7 +40,7 @@ export interface TemplateTableCell {
 }
 
 import type { LayoutSnapshot } from "./layout-model";
-import { defaultBlankLayoutSnapshot } from "./layout-model";
+import { defaultBlankLayoutSnapshot, hydrateLayoutSnapshot } from "./layout-model";
 import type { PaperKind } from "./paper";
 import type { LayoutAlignAxis, ImageCaptionPosition, NullDisplayMode } from "./layout-zone-element";
 import type { TableSqlFillConfig, TableSqlParamBinding } from "./table-sql-fill";
@@ -171,11 +171,22 @@ export interface TemplateElement {
   dateFormat?: string;
 }
 
+/** 046：批次（按批号建子目录，现网默认）/ 非批次（写入模版指定绝对路径） */
+export type ReportKind = "batch" | "nonBatch";
+
+export function normalizeReportKind(v: unknown): ReportKind {
+  return v === "nonBatch" ? "nonBatch" : "batch";
+}
+
 export interface ReportTemplate {
   schemaVersion?: number;
   id: string;
   name: string;
   updatedAt: string;
+  /** 报表类型（046）：缺省视为 batch（保持现网批次语义） */
+  reportKind?: ReportKind;
+  /** 仅 reportKind=nonBatch：目标文件夹（本机绝对路径，如 D:\Reports\Daily） */
+  nonBatchOutputDir?: string;
   /** 正文第 1 页画布（与 bodyPages[0] 同一引用；兼容 schema≤2 仅含 elements 的旧 JSON） */
   elements: TemplateElement[];
   /** schema≥3：正文分页，每项为一页独立画布（顺序即导出正文页序） */
@@ -582,6 +593,9 @@ export function defaultElement(type: TemplateControlType): Omit<TemplateElement,
       ...base,
       /** 表格不参与「默认隐藏外框」；保持显示以不动网格语义 */
       showBorder: true,
+      /** 与历史画布单元格居中一致；属性面板「水平/垂直位置」可改 */
+      alignX: "center",
+      alignY: "center",
       tableRows: 3,
       tableCols: 4,
       tableCells: [],
@@ -613,6 +627,8 @@ export function defaultElement(type: TemplateControlType): Omit<TemplateElement,
       h: 36,
       text: "",
       ...base,
+      /** 与历史预览迷你页默认居中一致；属性面板可改左/右 */
+      alignX: "center",
       /** 数据参数以 OPC UA 为主路径，与表格单元格绑定一致 */
       bindingKind: "opcua",
     };
@@ -773,6 +789,8 @@ export function createTemplate(opts: NewTemplateOptions): ReportTemplate {
     id: newId(),
     name: opts.name.trim() || "未命名模版",
     updatedAt: now,
+    reportKind: "batch",
+    nonBatchOutputDir: "",
     elements: page0,
     bodyPages: [page0],
     paperKind: opts.paperKind,
@@ -823,14 +841,21 @@ export function migrateReportTemplate(v: unknown): unknown {
       ? o.paperKind
       : "A4";
   const orientation = o.orientation === "landscape" ? "landscape" : "portrait";
-  let layoutSnapshot = o.layoutSnapshot as LayoutSnapshot | undefined;
-  if (!layoutSnapshot || typeof layoutSnapshot !== "object") {
-    layoutSnapshot = defaultBlankLayoutSnapshot();
-  }
-  let covSnap = o.coverLayoutSnapshot as LayoutSnapshot | undefined;
-  if (!covSnap || typeof covSnap !== "object") covSnap = defaultBlankLayoutSnapshot();
-  let backSnap = o.backLayoutSnapshot as LayoutSnapshot | undefined;
-  if (!backSnap || typeof backSnap !== "object") backSnap = defaultBlankLayoutSnapshot();
+  const layoutSnapshot = hydrateLayoutSnapshot(
+    o.layoutSnapshot && typeof o.layoutSnapshot === "object"
+      ? (o.layoutSnapshot as Partial<LayoutSnapshot>)
+      : null,
+  );
+  const covSnap = hydrateLayoutSnapshot(
+    o.coverLayoutSnapshot && typeof o.coverLayoutSnapshot === "object"
+      ? (o.coverLayoutSnapshot as Partial<LayoutSnapshot>)
+      : null,
+  );
+  const backSnap = hydrateLayoutSnapshot(
+    o.backLayoutSnapshot && typeof o.backLayoutSnapshot === "object"
+      ? (o.backLayoutSnapshot as Partial<LayoutSnapshot>)
+      : null,
+  );
 
   const legacyElements = normalizeTplBodyElements(o.elements);
   const bodyPages = normalizeBodyPagesRaw(o.bodyPages, legacyElements);
@@ -838,6 +863,8 @@ export function migrateReportTemplate(v: unknown): unknown {
   return {
     ...o,
     schemaVersion: typeof o.schemaVersion === "number" ? o.schemaVersion : 1,
+    reportKind: normalizeReportKind(o.reportKind),
+    nonBatchOutputDir: typeof o.nonBatchOutputDir === "string" ? o.nonBatchOutputDir : "",
     paperKind,
     orientation,
     layoutPresetId: typeof o.layoutPresetId === "string" ? o.layoutPresetId : null,

@@ -438,6 +438,10 @@ TOOL_DEFINITIONS: list[dict[str, Any]] = [
                         "type": "boolean",
                         "description": "是否在已有连接上创建/刷新冒烟用表，默认 false（需库表已存在）",
                     },
+                    "orientation": {
+                        "type": "string",
+                        "description": "纸张方向 portrait|landscape，默认 portrait",
+                    },
                 },
                 "additionalProperties": False,
             },
@@ -841,6 +845,7 @@ async def execute_tool(name: str, arguments: dict[str, Any] | None, *, page_cont
             connection_id=str(args.get("connection_id")).strip() if args.get("connection_id") else None,
             opc_server_id=str(args.get("opc_server_id")).strip() if args.get("opc_server_id") else None,
             ensure_schema=bool(args["ensure_schema"]) if "ensure_schema" in args else False,
+            orientation=str(args.get("orientation") or "").strip() or None,
         )
     elif name == "apply_template_sheet_layouts":
         result = ai_demo_template_ops.apply_template_sheet_layouts(

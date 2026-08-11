@@ -39,7 +39,7 @@
 
 # ✅ 已完成：一键将当前页非表格控件边框设为隐藏
 
-- 模版：当前 sheet + 当前正文页（`bodyElementsRef`）  
+- 模版：当前 sheet 的**页眉 + 页脚 + 当前正文页 + zone 装饰**（0.3.146 / [040](040-✅-ReportEditor矢量导出页眉一键隐藏仍有边框.md)；此前误为仅 `bodyElementsRef`）  
 - 版式：页眉 + 正文 + 页脚三带  
 - 纳入现有 debounce undo 历史  
 

@@ -33,9 +33,91 @@
           @click="toggleManualOpenAfter"
         />
       </div>
+      <div class="rg-row rg-row--perf-tier">
+        <span class="rg-lbl" id="rg-export-perf-lbl">导出性能档位（设备能力 · 与 OPC 自动结批共用）</span>
+        <div
+          id="rg-export-perf-tier"
+          class="rg-tabs rg-tabs--perf"
+          role="tablist"
+          aria-labelledby="rg-export-perf-lbl"
+        >
+          <button
+            v-for="p in exportPerfProfiles"
+            :key="p.tier"
+            type="button"
+            role="tab"
+            class="rg-tab"
+            :class="{ 'rg-tab--on': prefs.exportPerfTier === p.tier }"
+            :aria-selected="prefs.exportPerfTier === p.tier"
+            :disabled="manualBusy || hasActiveReportExport"
+            @click="selectExportPerfTier(p.tier)"
+          >
+            {{ p.label }}{{ p.isDefault ? '（默认）' : '' }}
+          </button>
+        </div>
+        <p class="rg-mini">
+          {{ exportPerfProfile.summary }}
+          <template v-if="exportPerfProfile.pdfQuality === 'draft'">
+            <strong> 当前为仅内容草稿，非预览级交付。</strong>
+          </template>
+          <template v-else-if="exportPerfProfile.pdfQuality === 'layout'">
+            <strong> 当前为 pdf-lib 矢量版式（无 printToPDF），非像素级预览。</strong>
+          </template>
+          生效：引擎 {{ exportPerfProfile.engine }} · 预热
+          {{ exportPerfProfile.prewarmPoolSize }} · yield {{ exportPerfProfile.yieldMs }}ms · 优先级
+          {{
+            exportPerfProfile.coexistPause === 'max'
+              ? '拉满'
+              : exportPerfProfile.coexistPause === 'basic'
+                ? '折中'
+                : '全开让核'
+          }}。
+          {{ RG_UI.manual }}开始前请先选好档位；结批进行中不可切换。
+        </p>
+      </div>
+      <div class="rg-row rg-row--part-parallel">
+        <label class="rg-lbl" for="rg-manual-part-parallel">分卷并行数（{{ RG_UI.manual }}多分卷 · 与 OPC 共用）</label>
+        <div class="rg-inline">
+          <input
+            id="rg-manual-part-parallel"
+            v-model.number="prefs.auto.maxParallelExports"
+            type="number"
+            min="1"
+            max="16"
+            class="rg-inp rg-inp--sep"
+            :disabled="manualBusy || hasActiveReportExport"
+            @change="onMaxParallelChange"
+          />
+          <span class="rg-mini">
+            路（1–16）· CPU/设置生效 {{ effectivePartParallel }} 路
+            <template v-if="chromiumPartParallelCap < effectivePartParallel">
+              · Chromium 约 {{ chromiumPartParallelCap }} 路
+            </template>
+          </span>
+        </div>
+        <p class="rg-mini">
+          同一次{{ RG_UI.manual }}里多分卷 PDF 可同时渲染的路数。任一档位并行≥2
+          时遮罩/进度按路分栏。「不妥协」关闭 CPU 预算（硬顶 16）；其它档实际 =
+          min(本设置, 本机 CPU 预算)。改大可能影响同机 HMI。OPC 多路自动结批也使用同一上限。
+        </p>
+        <p v-if="exportPerfProfile.coexistPause === 'max'" class="rg-mini">
+          当前「不妥协」：已关闭 CPU 预算封顶。分卷取数按「当前份」切片（约每份
+          maxRows），不再每窗扛全量行。矢量（pdf-lib）可开满设置；Chromium
+          printToPDF 本机约最多 {{ chromiumPartParallelCap }} 路（进程本身仍占内存）。
+        </p>
+        <p v-else class="rg-mini">{{ exportCpuBudgetHintText }}</p>
+      </div>
       <div class="rg-actions">
         <button type="button" class="btn primary" :disabled="manualBusy || !canManualExport" @click="onManualExport">
-          {{ manualBusy ? `${RG_UI.manual}中…` : `选择保存文件夹并${RG_UI.manual}` }}
+          {{ manualBusy ? `${RG_UI.manual}中…` : `${RG_UI.manual}（按模版类型保存）` }}
+        </button>
+        <button
+          v-if="showManualCancel"
+          type="button"
+          class="btn"
+          @click="onCancelManualExport"
+        >
+          取消
         </button>
       </div>
       <p v-if="manualHint" class="rg-hint">{{ manualHint }}</p>
@@ -177,8 +259,14 @@
             <span class="rg-mini rg-advanced-hint">并行上限 · 保存目录 · 文件名</span>
           </button>
           <div v-show="advancedAutoExpanded" class="rg-advanced-body">
+            <p class="rg-mini rg-mini--indent">
+              导出性能档位与分卷并行数均与「{{ RG_UI.manual }}」共用，请在上方「{{ RG_UI.manual }}」卡片内调整（当前档：{{
+                exportPerfProfile.label
+              }}，并行 {{ prefs.auto.maxParallelExports }} 路）。
+            </p>
+
             <div class="rg-row rg-row--in-panel">
-              <label class="rg-lbl" for="rg-auto-max-parallel">同时并行导出上限</label>
+              <label class="rg-lbl" for="rg-auto-max-parallel">同时并行导出上限（OPC 多绑定）</label>
               <div class="rg-inline">
                 <input
                   id="rg-auto-max-parallel"
@@ -192,13 +280,17 @@
                 <span class="rg-mini">路（1–16）</span>
               </div>
               <p class="rg-mini rg-mini--indent">
-                实际并行 = min(本设置, 已启用绑定数)。超出上限的触发会排队（状态码 3），有空槽再开跑。
+                与上方「分卷并行数」同一设置：OPC 多路绑定同时跑几个 job；模拟结批多分卷同时渲几份。实际 =
+                min(本设置, 已启用绑定数, 本机 CPU 预算)。超出上限的触发会排队（状态码 3）。
               </p>
+              <p class="rg-mini rg-mini--indent">{{ exportCpuBudgetHintText }}</p>
             </div>
 
             <div class="rg-export-dir-block rg-export-dir-block--nested">
               <span class="rg-lbl">{{ RG_UI.opcAuto }}保存文件夹（全部绑定共用）</span>
-              <p class="rg-mini rg-mini--indent">所有触发绑定写入同一批次目录；多路并行时仍落在此文件夹。</p>
+              <p class="rg-mini rg-mini--indent">
+                批次模版落盘为「根目录\批号\」；非批次模版写入其模版内配置的目标文件夹，不使用此目录。
+              </p>
               <div class="rg-tabs" role="tablist" :aria-label="`${RG_UI.opcAuto}保存文件夹来源`">
                 <button
                   type="button"
@@ -244,7 +336,7 @@
 
                 <template v-else>
                   <div class="rg-row rg-row--in-panel">
-                    <label class="rg-lbl" for="rg-auto-dir-fallback">保底目录</label>
+                    <label class="rg-lbl" for="rg-auto-dir-fallback">导出根目录</label>
                     <div class="rg-inline">
                       <input
                         id="rg-auto-dir-fallback"
@@ -259,7 +351,7 @@
                       </button>
                     </div>
                     <p class="rg-mini rg-mini--indent">
-                      OPC 路径变量为空或读取失败时，{{ RG_UI.opcAuto }}保存到此保底目录。
+                      批次报表按「根目录\批号\」落盘；批号取结批文件名或下方目录 OPC 变量，均无有效值时导出失败（不再回落根目录）。
                     </p>
                   </div>
                   <div class="rg-row rg-row--in-panel">
@@ -779,7 +871,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onActivated, onDeactivated, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, nextTick, onActivated, onMounted, onUnmounted, ref, watch } from "vue";
 import { listTemplateSummaries, type TemplateSummary } from "@/api/templates";
 import { apiFetch } from "@/api/client.js";
 import {
@@ -796,10 +888,13 @@ import {
   autoExportStatusLabel,
   clampAutoExportMaxParallel,
 } from "@/lib/auto-export-status-codes";
+import { exportCpuBudgetHint, resolveAutoExportMaxParallel } from "@/lib/export-cpu-budget";
+import { chromiumPartParallelCapInRenderer } from "@/lib/chromium-export-parallel-cap";
 import { loadReportExportPrefs, saveReportExportPrefs } from "@/lib/report-export-prefs";
 import { templateSelectLabel, templateSelectRows } from "@/lib/template-display-order";
 import { createOpcTriggerPollState, type OpcTriggerPollState } from "@/lib/auto-opc-trigger";
-import { resolveAutoExportDir } from "@/lib/resolve-auto-export-dir";
+import { resolveReportOutputTarget } from "@/lib/resolve-report-output-dir";
+import { normalizeReportKind } from "@/lib/report-template/model";
 import { readSavedOpcNodeValue, readSavedOpcStringValue } from "@/lib/opcua-string-variables";
 import { opcDataTypeLabelMatchesFilter } from "@/features/datasource/opcua/opcua-tree-utils.js";
 import {
@@ -835,6 +930,15 @@ import {
 } from "@/lib/auto-export-filename";
 import { humanizePdfExportError } from "@/lib/pdfExportErrors";
 import {
+  requestCancelPdfExport,
+  shouldShowExportCancelControl,
+} from "@/lib/pdf-export-cancel-ui";
+import {
+  endBatchExportProgress,
+  hasActiveReportExport,
+  publishBatchExportProgress,
+} from "@/lib/report-export-progress-state";
+import {
   exportFailureAuditDetail,
   parseExportFailureDiagnostics,
 } from "@/lib/bindingPreviewErrors";
@@ -853,8 +957,29 @@ import {
   resetReportAutoExportBindingRuntime,
 } from "@/lib/report-auto-export-trigger-service";
 import { notifyPlcHeartbeatSettingsChanged, plcHeartbeatState } from "@/lib/plc-heartbeat-service";
+import { usePageLifecycle } from "@/composables/usePageLifecycle";
+import {
+  clearPdfExportFillCacheAfterFailure,
+  isPdfExportCancelledError,
+  newPdfExportJobId,
+} from "@/lib/pdf-export-job";
+import { formatPdfExportParallelProgressDetail } from "@/lib/pdf-export-parallel-progress";
+import {
+  listExportPerfProfiles,
+  normalizeExportPerfTier,
+  resolveExportPerfProfile,
+  type ExportPerfTier,
+} from "@/lib/export-perf-tier";
+import {
+  beginExportCoexistSession,
+  endExportCoexistSession,
+} from "@/lib/export-coexist-busy";
 
 defineOptions({ name: "ReportGenerator" });
+
+const { register: registerPageTask } = usePageLifecycle("ReportGenerator");
+
+const exportPerfProfiles = listExportPerfProfiles();
 
 /** 「生成报表」页用户可见固定用语（勿单独显示「结批」二字；PLC 信息节点标签见 exportResultOpcFeedback） */
 const RG_UI = {
@@ -866,10 +991,14 @@ const RG_UI = {
 const RG_STATUS_OPC_AUTO = `[${RG_UI.opcAuto}]`;
 const RG_STATUS_FEEDBACK = `[${RG_UI.feedback}]`;
 
+/** 036：模拟结批默认目录（已配置保存目录时直接用，免每次弹选夹） */
+const DEFAULT_MANUAL_EXPORT_DIR = "/Users/dp/Desktop/report-editor-exports";
+
 const prefs = ref<ReportGeneratorPrefs>(loadReportGeneratorPrefs());
+const exportPerfProfile = computed(() => resolveExportPerfProfile(prefs.value.exportPerfTier));
 const exportWatchDir = loadReportExportPrefs().watchDir;
-if (exportWatchDir && !prefs.value.autoExportDir) {
-  prefs.value.autoExportDir = exportWatchDir;
+if (!prefs.value.autoExportDir) {
+  prefs.value.autoExportDir = exportWatchDir || DEFAULT_MANUAL_EXPORT_DIR;
 }
 const summaries = ref<TemplateSummary[]>([]);
 const templateRows = computed(() => templateSelectRows(summaries.value));
@@ -1056,6 +1185,15 @@ const opcPickLead = computed(() => {
 const electronShell = computed(() => typeof window !== "undefined" && Boolean(window.electronAPI?.runPdfExport));
 
 const manualBusy = ref(false);
+/** 034 M7：进行中模拟结批的 jobId，供取消按钮 / toast 操作 */
+const manualExportJobId = ref("");
+const showManualCancel = computed(() =>
+  shouldShowExportCancelControl(manualBusy.value, manualExportJobId.value),
+);
+
+function onCancelManualExport(): void {
+  requestCancelPdfExport(manualExportJobId.value);
+}
 const manualHint = ref("");
 
 const triggerLogUiMax = AUTO_TRIGGER_LOG_UI_MAX;
@@ -1197,9 +1335,63 @@ function toggleBindingFeedbackExpanded(bindingId: string): void {
   };
 }
 
+const exportCpuBudgetHintText = computed(() => exportCpuBudgetHint());
+
+const effectivePartParallel = computed(() =>
+  resolveAutoExportMaxParallel(prefs.value.auto.maxParallelExports, {
+    ignoreCpuBudget: exportPerfProfile.value.coexistPause === "max",
+  }),
+);
+/** Chromium printToPDF 内存帽（与主进程 cjs 对齐；本机约 15GB → 3） */
+const chromiumPartParallelCap = chromiumPartParallelCapInRenderer();
+
 function onMaxParallelChange(): void {
   prefs.value.auto.maxParallelExports = clampAutoExportMaxParallel(prefs.value.auto.maxParallelExports);
+  const effective = effectivePartParallel.value;
+  if (effective < prefs.value.auto.maxParallelExports) {
+    /* 弱 CPU / Hypervisor：保存仍可写高值，运行时按预算封顶；提示用户 */
+    autoStatus.value = `并行设置 ${prefs.value.auto.maxParallelExports}，本机 CPU 预算生效为 ${effective}`;
+  } else if (exportPerfProfile.value.coexistPause === "max") {
+    autoStatus.value = `不妥协并行生效 ${effective} 路（不套 CPU 预算）`;
+  }
   notifyReportAutoExportSettingsChanged();
+  void applyExportPerfProfileToMain();
+}
+
+function selectExportPerfTier(next: ExportPerfTier): void {
+  prefs.value.exportPerfTier = next;
+  onExportPerfTierChange();
+}
+
+function onExportPerfTierChange(): void {
+  const tier = normalizeExportPerfTier(prefs.value.exportPerfTier) as ExportPerfTier;
+  prefs.value.exportPerfTier = tier;
+  const profile = resolveExportPerfProfile(tier);
+  prefs.value.pdfExportEngine = profile.engine;
+  prefs.value.auto.maxParallelExports = clampAutoExportMaxParallel(profile.maxParallelHint);
+  notifyReportAutoExportSettingsChanged();
+  void applyExportPerfProfileToMain();
+}
+
+async function applyExportPerfProfileToMain(): Promise<void> {
+  const profile = resolveExportPerfProfile(prefs.value.exportPerfTier);
+  const ignoreCpuBudget = profile.coexistPause === "max";
+  const maxParallel = resolveAutoExportMaxParallel(prefs.value.auto.maxParallelExports, {
+    ignoreCpuBudget,
+  });
+  const api = window.electronAPI;
+  try {
+    await api?.setPdfExportPerfProfile?.({
+      prewarmPoolSize: profile.prewarmPoolSize,
+      yieldMs: profile.yieldMs,
+      maxParallel,
+      ignoreCpuBudget,
+      coexistPause: profile.coexistPause,
+    });
+    await api?.setPdfExportMaxParallel?.({ max: maxParallel, ignoreCpuBudget });
+  } catch {
+    /* 非 Electron 忽略 */
+  }
 }
 
 function openBindingFeedbackPick(bindingId: string, field: "status" | "message" | "path"): void {
@@ -1242,6 +1434,14 @@ function stopChartRefresh(): void {
     chartRefreshTimer = null;
   }
 }
+
+/** B 级金样：离页停图表 tick；自动结批服务为 A 级不在此注册（032 L9） */
+registerPageTask({
+  id: "chart-refresh",
+  scope: "page",
+  pause: stopChartRefresh,
+  resume: startChartRefresh,
+});
 
 function recordBindingOpcSample(
   bindingId: string,
@@ -1713,27 +1913,59 @@ async function onManualExport(): Promise<void> {
   if (!tid) return;
 
   const tmeta = summaries.value.find((x) => x.id === tid);
+  const reportKind = normalizeReportKind(tmeta?.reportKind);
   const suggestName = `${(tmeta?.name || "报表").replace(/[/\\?%*:|"<>]/g, "_")}_${formatExportTs()}.pdf`;
 
-  const exportDir = await api.pickExportDirectory({
-    title: `选择${RG_UI.manual}保存文件夹`,
+  // 046 Q4A：手动导出与自动结批同规则——batch → 根目录/批号/（无批号禁止导出）；nonBatch → 模版指定绝对路径
+  if (reportKind === "batch" && !String(prefs.value.autoExportDir || "").trim()) {
+    const picked =
+      (await api.pickExportDirectory({
+        title: `选择${RG_UI.manual}导出根目录`,
+        defaultPath: DEFAULT_MANUAL_EXPORT_DIR,
+      })) || "";
+    if (!picked) {
+      manualHint.value = "已取消保存。";
+      return;
+    }
+    prefs.value.autoExportDir = picked;
+  }
+  const target = await resolveReportOutputTarget({
+    reportKind,
+    nonBatchOutputDir: tmeta?.nonBatchOutputDir,
+    prefs: prefs.value,
   });
-  if (!exportDir) {
-    manualHint.value = "已取消保存。";
+  if (!target.ok) {
+    manualHint.value = target.error;
+    showAppToast(`[${RG_UI.manual}] ${target.error}`, { tone: "err", durationMs: 12000 });
+    void auditLog({
+      action: "export.manual_pdf",
+      result: "fail",
+      summary: target.error,
+      object_type: "template",
+      object_id: tid,
+      detail: { context: "manual", reportKind, error: target.error },
+    });
     return;
   }
+  const exportDir = target.dir;
   const filePath = await api.pathJoin(exportDir, suggestName);
 
   manualBusy.value = true;
+  manualExportJobId.value = "";
   manualHint.value = "正在检查数据源连接…";
   const startedAtMs = Date.now();
   const progressToastId = "batch-progress-manual";
+  const exportProfile = resolveExportPerfProfile(prefs.value.exportPerfTier);
+  beginExportCoexistSession(exportProfile.coexistPause);
   const stage = (text: string): void => {
-    showAppToast(`[${RG_UI.manual}]\n${text}`, {
+    publishBatchExportProgress({
       id: progressToastId,
-      tone: "info",
-      durationMs: 0,
-      spinner: true,
+      title: RG_UI.manual,
+      detail: text,
+      jobId: manualExportJobId.value,
+      onCancel: () => {
+        requestCancelPdfExport(manualExportJobId.value);
+      },
     });
   };
   let offProgress: (() => void) | undefined;
@@ -1743,6 +1975,7 @@ async function onManualExport(): Promise<void> {
     const preflight = await runTemplateExportPreflight(tid);
     const preflightMs = Date.now() - preflightStartMs;
     if (!preflight.ok) {
+      endBatchExportProgress(progressToastId);
       dismissAppToast(progressToastId);
       if (preflight.blockers.some(isReportSplitPreflightBlocker)) {
         manualHint.value = preflight.summary;
@@ -1763,10 +1996,18 @@ async function onManualExport(): Promise<void> {
       manualHint.value = "";
     }
 
+    const exportJobId = newPdfExportJobId("manual");
+    manualExportJobId.value = exportJobId;
     stage("正在取数并渲染报表…");
     offProgress = api.onPdfExportProgress?.((p) => {
+      if (p.jobId && p.jobId !== exportJobId) return;
       if (p.templateId && p.templateId !== tid) return;
       const total = Number(p.totalReports) || 0;
+      const parallelDetail = formatPdfExportParallelProgressDetail(p);
+      if (parallelDetail) {
+        stage(parallelDetail);
+        return;
+      }
       const idx = (Number(p.partIndex) || 0) + 1;
       if (p.phase === "render") {
         stage(total > 1 ? `正在取数并渲染第 ${idx}/${total} 份报表…` : "正在取数并渲染报表…");
@@ -1778,6 +2019,12 @@ async function onManualExport(): Promise<void> {
       templateId: tid,
       filePath,
       openAfter: false,
+      jobId: exportJobId,
+      engine: exportProfile.engine,
+      layoutFidelity: exportProfile.layoutFidelity,
+      yieldMs: exportProfile.yieldMs,
+      coexistPause: exportProfile.coexistPause,
+      exportSource: "manual",
     });
     offProgress?.();
     offProgress = undefined;
@@ -1791,10 +2038,12 @@ async function onManualExport(): Promise<void> {
     const statsLine = formatExportStatsLine(exportRes.stats);
     const exportTimings = { preflightMs, ...(exportRes.timings || {}) };
     const timingsLine = formatExportTimingsLine(exportTimings);
+    const modeLabel = exportRes.exportMode === "fidelity" ? "版式优先" : "同机优先";
+    const engineHint = exportRes.engine ? `；${modeLabel}/${exportRes.engine}` : "";
     void auditLog({
       action: "export.manual_pdf",
       result: "ok",
-      summary: `${suggestName}（耗时 ${(totalMs / 1000).toFixed(1)} 秒${statsLine ? `；${statsLine}` : ""}${timingsLine ? `；${timingsLine}` : ""}）`,
+      summary: `${suggestName}（耗时 ${(totalMs / 1000).toFixed(1)} 秒${statsLine ? `；${statsLine}` : ""}${timingsLine ? `；${timingsLine}` : ""}${engineHint}）`,
       object_type: "template",
       object_id: tid,
       detail: {
@@ -1805,6 +2054,12 @@ async function onManualExport(): Promise<void> {
         renderMs: exportRes.durationMs,
         stats: exportRes.stats,
         timings: exportTimings,
+        engine: exportRes.engine,
+        exportMode: exportRes.exportMode,
+        engineMeta: exportRes.engineMeta,
+        reportKind,
+        outputDir: exportDir,
+        batchNo: target.batchNo,
       },
     });
     const doneLines = [
@@ -1813,34 +2068,46 @@ async function onManualExport(): Promise<void> {
       `耗时 ${(totalMs / 1000).toFixed(1)} 秒${statsLine ? ` · ${statsLine}` : ""}`,
     ];
     if (timingsLine) doneLines.push(timingsLine);
+    endBatchExportProgress(progressToastId);
     showAppToast(doneLines.join("\n"), { id: progressToastId, tone: "ok", durationMs: 10000 });
   } catch (e) {
+    clearPdfExportFillCacheAfterFailure(e);
     const parsed = parseExportFailureDiagnostics(e);
     const msg = humanizePdfExportError(parsed.message || e);
-    manualHint.value = msg;
-    showAppToast(`[${RG_UI.manual}] 失败\n${msg}`, { id: progressToastId, tone: "err", durationMs: 14000 });
-    void auditLog({
-      action: "export.manual_pdf",
-      result: "fail",
-      summary: msg.split("\n").slice(0, 8).join("；"),
-      object_type: "template",
-      object_id: tid,
-      detail: exportFailureAuditDetail({
-        errorMessage: msg,
-        diagnostics: parsed.diagnostics,
-        extra: { durationMs: Date.now() - startedAtMs, context: "manual" },
-      }),
-    });
+    const cancelled = isPdfExportCancelledError(e) || isPdfExportCancelledError(msg);
+    manualHint.value = cancelled ? "已取消导出。" : msg;
+    endBatchExportProgress(progressToastId);
+    showAppToast(
+      cancelled ? `[${RG_UI.manual}] 已取消` : `[${RG_UI.manual}] 失败\n${msg}`,
+      { id: progressToastId, tone: cancelled ? "warn" : "err", durationMs: cancelled ? 6000 : 14000 },
+    );
+    if (!cancelled) {
+      void auditLog({
+        action: "export.manual_pdf",
+        result: "fail",
+        summary: msg.split("\n").slice(0, 8).join("；"),
+        object_type: "template",
+        object_id: tid,
+        detail: exportFailureAuditDetail({
+          errorMessage: msg,
+          diagnostics: parsed.diagnostics,
+          extra: { durationMs: Date.now() - startedAtMs, context: "manual", reportKind, outputDir: exportDir },
+        }),
+      });
+    }
   } finally {
     offProgress?.();
+    endBatchExportProgress(progressToastId);
     manualBusy.value = false;
+    manualExportJobId.value = "";
+    endExportCoexistSession();
   }
 }
 
 async function onPickAutoDir(): Promise<void> {
   const title =
     prefs.value.autoExportDirSource === "opcua"
-      ? `选择${RG_UI.opcAuto}保底目录`
+      ? `选择${RG_UI.opcAuto}导出根目录`
       : `选择${RG_UI.opcAuto}保存目录`;
   const p = await window.electronAPI?.pickExportDirectory?.({ title });
   if (p) {
@@ -1856,16 +2123,12 @@ onMounted(() => {
   window.addEventListener("report-editor-config-imported", onConfigImported);
   window.addEventListener("report-editor-opcua-servers-changed", onOpcServersChanged);
   window.addEventListener("report-generator-prefs-updated", onExternalPrefsUpdated);
+  void applyExportPerfProfileToMain();
 });
 
-/** keep-alive：每次进入刷新模版/连接列表，保证下拉项与其它页新增内容同步 */
+/** keep-alive：每次进入刷新模版/连接列表，保证下拉项与其它页新增内容同步；图表 tick 由 lifecycle resume */
 onActivated(async () => {
-  startChartRefresh();
   await Promise.all([loadSummaries(), loadOpcServers()]);
-});
-
-onDeactivated(() => {
-  stopChartRefresh();
 });
 
 function onConfigImported() {
@@ -1886,7 +2149,6 @@ function onOpcServersChanged() {
 }
 
 onUnmounted(() => {
-  stopChartRefresh();
   window.removeEventListener("report-editor-config-imported", onConfigImported);
   window.removeEventListener("report-editor-opcua-servers-changed", onOpcServersChanged);
   window.removeEventListener("report-generator-prefs-updated", onExternalPrefsUpdated);
@@ -2047,6 +2309,35 @@ onUnmounted(() => {
   margin: 0 0 0 4px;
   font-weight: normal;
   color: #a1a1aa;
+}
+.rg-tabs--perf {
+  display: flex;
+  flex-wrap: wrap;
+  width: 100%;
+  max-width: 640px;
+  margin-top: 6px;
+  margin-bottom: 8px;
+}
+.rg-tabs--perf .rg-tab {
+  flex: 1 1 auto;
+  padding: 8px 10px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.rg-tabs--perf .rg-tab:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.rg-row--perf-tier {
+  margin-top: 12px;
+  margin-bottom: 4px;
+}
+.rg-row--part-parallel {
+  margin-top: 10px;
+  margin-bottom: 8px;
+}
+.rg-row--part-parallel .rg-inp--sep {
+  width: 72px;
 }
 .rg-advanced-body {
   margin-top: 8px;

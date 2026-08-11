@@ -9,5 +9,6 @@
     <Object Type="Program" Language="IEC" Description="Recipe data + query">DataSQLRec</Object>
     <Object Type="Program" Language="IEC" Description="Product data + query">DataSQLPro</Object>
     <Object Type="Program" Language="IEC" Description="Batch / BatchInfo data">DataSQLBat</Object>
+    <Object Type="Program" Language="IEC" Description="Closed-loop CPU load controller">LoadControl</Object>
   </Objects>
 </Package>

@@ -9,7 +9,7 @@ import secrets
 import time
 from collections import defaultdict, deque
 from contextlib import asynccontextmanager
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -108,6 +108,8 @@ def _normalize_app_settings(data: dict[str, Any] | None) -> dict[str, Any]:
             "port": int(database.get("port", 3306) or 3306),
             "username": str(database.get("username", "") or ""),
             "password": str(database.get("password", "") or ""),
+            "password_configured": bool(database.get("password_configured", False)),
+            "clear_password": bool(database.get("clear_password", False)),
         },
         "query_limits": {
             "requests_per_minute": max(int(query_limits.get("requests_per_minute", 120) or 120), 0),
@@ -124,7 +126,7 @@ def _load_app_settings() -> dict[str, Any]:
 def _save_app_settings(data: dict[str, Any]) -> dict[str, Any]:
     normalized = _normalize_app_settings(data)
     config_store.save_app_settings(normalized)
-    return normalized
+    return _normalize_app_settings(config_store.get_public_app_settings())
 
 
 def _apply_runtime_settings(updated_settings: dict[str, Any]) -> None:
@@ -136,6 +138,7 @@ def _apply_runtime_settings(updated_settings: dict[str, Any]) -> None:
     RATE_LIMIT_PER_MINUTE = int(QUERY_LIMITS.get("requests_per_minute", 120))
     DEFAULT_WINDOW_HOURS = int(QUERY_LIMITS.get("default_window_hours", 24))
     MAX_WINDOW_HOURS = int(QUERY_LIMITS.get("max_window_hours", 168))
+    _clear_plugin_snapshots()
 
 
 config_store = UnifiedConfigStore(
@@ -154,11 +157,50 @@ MAX_WINDOW_HOURS = int(QUERY_LIMITS.get("max_window_hours", 168))
 _REQUEST_BUCKETS: dict[str, deque[float]] = defaultdict(deque)
 PLUGIN_KEY_PATTERN = re.compile(r"^([A-Za-z0-9_]+)_([1-5])$")
 DEFAULT_LOOKUP_START_TIME_COLUMN = "dtBatchStartTime"
+MAX_PLUGIN_SNAPSHOT_ROWS = 100_000
 _plugin_query_cache: dict[str, dict[str, Any]] = {}
+_plugin_data_snapshots: dict[str, "PluginDataSnapshot"] = {}
+_plugin_snapshot_locks: dict[str, asyncio.Lock] = {}
+_plugin_snapshot_tasks: dict[str, asyncio.Task[tuple[HistoryQueryResponse, PluginRuntimeSnapshot]]] = {}
 _plugin_opcua_monitor: PluginOpcuaMonitor | None = None
 _plugin_opcua_monitor_task: asyncio.Task | None = None
+_monitor_config_revision: tuple[Any, ...] | None = None
+_monitor_config_snapshot: dict[str, Any] | None = None
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class PluginDataSnapshot:
+    plugin_key: str
+    table: str
+    page_size: int
+    columns: list[str]
+    rows: list[dict[str, Any]]
+    display_columns: list[dict[str, Any]]
+    warnings: list[str]
+    created_at: str
+
+
+def _clear_plugin_snapshots(plugin_key: str | None = None) -> None:
+    if plugin_key is None:
+        tasks = list(_plugin_snapshot_tasks.values())
+        _plugin_snapshot_tasks.clear()
+        for task in tasks:
+            if not task.done():
+                task.get_loop().call_soon_threadsafe(task.cancel)
+        _plugin_data_snapshots.clear()
+        _plugin_query_cache.clear()
+        _plugin_snapshot_locks.clear()
+    else:
+        task = _plugin_snapshot_tasks.pop(plugin_key, None)
+        if task is not None and not task.done():
+            task.get_loop().call_soon_threadsafe(task.cancel)
+        _plugin_data_snapshots.pop(plugin_key, None)
+        _plugin_query_cache.pop(plugin_key, None)
+        _plugin_snapshot_locks.pop(plugin_key, None)
+    if _plugin_opcua_monitor is not None:
+        _plugin_opcua_monitor.clear_runtime(plugin_key)
 
 
 @asynccontextmanager
@@ -166,8 +208,8 @@ async def _app_lifespan(_app: FastAPI):
     global _plugin_opcua_monitor, _plugin_opcua_monitor_task
     if os.getenv("SD_SMA_DISABLE_OPCUA_MONITOR", "").strip().lower() not in {"1", "true", "yes"}:
         _plugin_opcua_monitor = PluginOpcuaMonitor(
-            iter_bindings=_iter_advanced_plugin_bindings,
-            get_opcua=_get_opcua_connection,
+            get_runtime_config=_get_monitor_runtime_config,
+            on_snapshot_query=_monitor_query_plugin_snapshot,
             on_page_change=_monitor_change_plugin_page,
             on_trigger=_monitor_trigger_writeback,
         )
@@ -309,13 +351,16 @@ def _save_plugin_config(data: dict[str, Any]) -> None:
     config_store.save_plugins_config(data)
 
 
-def _resolve_plugin_binding(plugin_key: str) -> dict[str, Any]:
+def _resolve_plugin_binding(
+    plugin_key: str,
+    plugin_cfg: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     match = PLUGIN_KEY_PATTERN.match(plugin_key)
     if not match:
         raise ValueError("插件路径必须是 <module>_<1-5> 格式")
     module_name, page_index = match.group(1), match.group(2)
 
-    plugin_cfg = _load_plugin_config()
+    plugin_cfg = plugin_cfg if isinstance(plugin_cfg, dict) else _load_plugin_config()
     modules = plugin_cfg.get("modules", {})
     module_cfg = modules.get(module_name)
     if not isinstance(module_cfg, dict):
@@ -589,8 +634,10 @@ async def _run_advanced_trigger_writeback(binding: dict[str, Any], batch_no: str
         return False
 
 
-def _iter_advanced_plugin_bindings() -> list[dict[str, Any]]:
-    plugin_cfg = _load_plugin_config()
+def _iter_advanced_plugin_bindings(
+    plugin_cfg: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    plugin_cfg = plugin_cfg if isinstance(plugin_cfg, dict) else _load_plugin_config()
     modules = plugin_cfg.get("modules", {})
     if not isinstance(modules, dict):
         return []
@@ -608,7 +655,7 @@ def _iter_advanced_plugin_bindings() -> list[dict[str, Any]]:
                 continue
             plugin_key = f"{module_name}_{page_index}"
             try:
-                binding = _resolve_plugin_binding(plugin_key)
+                binding = _resolve_plugin_binding(plugin_key, plugin_cfg)
             except ValueError:
                 continue
             config = _get_table_list_writeback_config(binding)
@@ -617,6 +664,7 @@ def _iter_advanced_plugin_bindings() -> list[dict[str, Any]]:
             enriched = dict(binding)
             enriched["_table_list_config"] = config
             enriched["_table_list_advanced"] = {
+                "query_node": config.advanced.query_node,
                 "prev_page_node": config.advanced.prev_page_node,
                 "next_page_node": config.advanced.next_page_node,
                 "batch_no_node": config.advanced.batch_no_node,
@@ -624,6 +672,32 @@ def _iter_advanced_plugin_bindings() -> list[dict[str, Any]]:
             }
             bindings.append(enriched)
     return bindings
+
+
+def _get_monitor_runtime_config() -> dict[str, Any]:
+    """Compile monitor bindings once per active-config revision."""
+    global _monitor_config_revision, _monitor_config_snapshot
+
+    active, revision = config_store.get_active_config_with_revision()
+    if _monitor_config_snapshot is not None and revision == _monitor_config_revision:
+        return _monitor_config_snapshot
+
+    plugin_cfg = active.get("plugins", {"modules": {}})
+    if not isinstance(plugin_cfg, dict):
+        plugin_cfg = {"modules": {}}
+    snapshot = {
+        "revision": repr(revision),
+        "bindings": _iter_advanced_plugin_bindings(plugin_cfg),
+        "opcua": _get_opcua_connection(),
+    }
+    _monitor_config_revision = revision
+    _monitor_config_snapshot = snapshot
+    logger.info(
+        "OPC UA monitor config rebuilt revision=%s bindings=%d",
+        snapshot["revision"],
+        len(snapshot["bindings"]),
+    )
+    return snapshot
 
 
 def _plugin_runtime_snapshot(
@@ -697,6 +771,7 @@ def _execute_plugin_query(
     page_cursor: Any = None,
     include_total: bool = True,
     cursor: int = -1,
+    snapshot_all: bool = False,
 ) -> tuple[HistoryQueryResponse, PluginRuntimeSnapshot]:
     plugin_key = binding["plugin_key"]
     target_table = table or binding["bind_table"]
@@ -746,8 +821,11 @@ def _execute_plugin_query(
         resolved_batch_field, resolved_batch_code = None, None
         warnings.extend(time_warnings)
 
-    resolved_page_size = page_size if page_size else int(binding["page_size"])
-    resolved_page_size = min(max(resolved_page_size, 1), int(view["max_page_size"]))
+    if snapshot_all:
+        resolved_page_size = MAX_PLUGIN_SNAPSHOT_ROWS + 1
+    else:
+        resolved_page_size = page_size if page_size else int(binding["page_size"])
+        resolved_page_size = min(max(resolved_page_size, 1), int(view["max_page_size"]))
 
     history_req = HistoryQueryRequest(
         table=target_table,
@@ -766,12 +844,13 @@ def _execute_plugin_query(
         cursor=page_cursor,
         include_total=include_total,
     )
-    query_result = db.query_history(history_req)
+    query_result = db.query_history(history_req, page_size_cap=None) if snapshot_all else db.query_history(history_req)
     total, columns, rows, missing_columns = query_result
     if missing_columns:
         warnings.append("部分配置列在当前表中不存在，已自动忽略")
 
-    _cache_plugin_query(plugin_key, rows, target_table)
+    if not snapshot_all:
+        _cache_plugin_query(plugin_key, rows, target_table)
     snapshot = _plugin_runtime_snapshot(
         plugin_key,
         binding=binding,
@@ -787,7 +866,8 @@ def _execute_plugin_query(
         warnings=warnings,
         has_more=getattr(query_result, "has_more", False),
     )
-    _sync_plugin_runtime(snapshot)
+    if not snapshot_all:
+        _sync_plugin_runtime(snapshot)
 
     response = HistoryQueryResponse(
         total=total,
@@ -805,29 +885,163 @@ def _execute_plugin_query(
     return response, snapshot
 
 
+def _snapshot_lock(plugin_key: str) -> asyncio.Lock:
+    lock = _plugin_snapshot_locks.get(plugin_key)
+    if lock is None:
+        lock = asyncio.Lock()
+        _plugin_snapshot_locks[plugin_key] = lock
+    return lock
+
+
+def _runtime_from_data_snapshot(data: PluginDataSnapshot, page: int) -> PluginRuntimeSnapshot:
+    total_records = len(data.rows)
+    total_pages = max(1, (total_records + data.page_size - 1) // data.page_size)
+    resolved_page = min(max(int(page), 1), total_pages)
+    start = (resolved_page - 1) * data.page_size
+    rows = data.rows[start : start + data.page_size]
+    return PluginRuntimeSnapshot(
+        plugin_key=data.plugin_key,
+        page=resolved_page,
+        total_pages=total_pages,
+        total_records=total_records,
+        table=data.table,
+        columns=list(data.columns),
+        rows=[dict(row) for row in rows],
+        display_columns=[dict(column) for column in data.display_columns],
+        warnings=list(data.warnings),
+    )
+
+
+def _response_from_runtime(snapshot: PluginRuntimeSnapshot, page_size: int) -> HistoryQueryResponse:
+    return HistoryQueryResponse(
+        total=snapshot.total_records,
+        page=snapshot.page,
+        page_size=page_size,
+        columns=list(snapshot.columns),
+        rows=[dict(row) for row in snapshot.rows],
+        display_columns=[dict(column) for column in snapshot.display_columns],
+        warnings=list(snapshot.warnings),
+        pagination_mode="offset",
+        has_more=snapshot.page < snapshot.total_pages,
+        next_cursor=None,
+    )
+
+
+async def _activate_plugin_snapshot(
+    binding: dict[str, Any],
+    *,
+    table: str | None = None,
+) -> tuple[HistoryQueryResponse, PluginRuntimeSnapshot]:
+    plugin_key = binding["plugin_key"]
+    existing_task = _plugin_snapshot_tasks.get(plugin_key)
+    if existing_task is not None and not existing_task.done():
+        logger.info("Plugin snapshot request merged with in-flight query plugin=%s", plugin_key)
+        return await asyncio.shield(existing_task)
+
+    task = asyncio.create_task(_activate_plugin_snapshot_once(binding, table=table))
+    _plugin_snapshot_tasks[plugin_key] = task
+    try:
+        return await asyncio.shield(task)
+    finally:
+        if _plugin_snapshot_tasks.get(plugin_key) is task and task.done():
+            _plugin_snapshot_tasks.pop(plugin_key, None)
+
+
+async def _activate_plugin_snapshot_once(
+    binding: dict[str, Any],
+    *,
+    table: str | None = None,
+) -> tuple[HistoryQueryResponse, PluginRuntimeSnapshot]:
+    plugin_key = binding["plugin_key"]
+    total_started = time.perf_counter()
+    async with _snapshot_lock(plugin_key):
+        db_started = time.perf_counter()
+        response, full_runtime = await asyncio.to_thread(
+            _execute_plugin_query,
+            binding,
+            page=1,
+            table=table,
+            cursor=-1,
+            snapshot_all=True,
+        )
+        db_elapsed = time.perf_counter() - db_started
+        if response.total is not None and response.total > MAX_PLUGIN_SNAPSHOT_ROWS:
+            raise ValueError(
+                f"快照记录数 {response.total} 超过上限 {MAX_PLUGIN_SNAPSHOT_ROWS}，请缩小绑定表或调整快照策略"
+            )
+        if len(response.rows) > MAX_PLUGIN_SNAPSHOT_ROWS:
+            raise ValueError(f"快照记录数超过上限 {MAX_PLUGIN_SNAPSHOT_ROWS}")
+
+        convert_started = time.perf_counter()
+        data = PluginDataSnapshot(
+            plugin_key=plugin_key,
+            table=full_runtime.table,
+            page_size=int(binding["page_size"]),
+            columns=list(response.columns),
+            rows=response.rows,
+            display_columns=[dict(column) for column in response.display_columns],
+            warnings=list(response.warnings),
+            created_at=datetime.now().isoformat(sep=" ", timespec="seconds"),
+        )
+        page_runtime = _runtime_from_data_snapshot(data, 1)
+        existing = _plugin_opcua_monitor.get_runtime(plugin_key) if _plugin_opcua_monitor else None
+        page_runtime.revision = (existing.revision if existing else 0) + 1
+
+        # Replace only after the complete database read succeeds.
+        _plugin_data_snapshots[plugin_key] = data
+        _cache_plugin_query(plugin_key, page_runtime.rows, data.table)
+        if _plugin_opcua_monitor is not None:
+            _plugin_opcua_monitor.update_runtime(page_runtime)
+        convert_elapsed = time.perf_counter() - convert_started
+        await _run_plugin_writeback(binding, page_runtime.columns, page_runtime.rows, -1)
+        logger.info(
+            "Plugin snapshot activated plugin=%s rows=%d pages=%d db_ms=%.1f convert_ms=%.1f total_ms=%.1f created_at=%s",
+            plugin_key,
+            len(data.rows),
+            page_runtime.total_pages,
+            db_elapsed * 1000.0,
+            convert_elapsed * 1000.0,
+            (time.perf_counter() - total_started) * 1000.0,
+            data.created_at,
+        )
+        return _response_from_runtime(page_runtime, data.page_size), page_runtime
+
+
+async def _read_plugin_snapshot_page(
+    binding: dict[str, Any],
+    page: int,
+) -> tuple[HistoryQueryResponse, PluginRuntimeSnapshot] | None:
+    plugin_key = binding["plugin_key"]
+    async with _snapshot_lock(plugin_key):
+        data = _plugin_data_snapshots.get(plugin_key)
+        if data is None:
+            logger.info("Plugin snapshot page ignored before query plugin=%s page=%s", plugin_key, page)
+            return None
+        runtime = _runtime_from_data_snapshot(data, page)
+        existing = _plugin_opcua_monitor.get_runtime(plugin_key) if _plugin_opcua_monitor else None
+        runtime.revision = (existing.revision if existing else 0) + 1
+        _cache_plugin_query(plugin_key, runtime.rows, data.table)
+        if _plugin_opcua_monitor is not None:
+            _plugin_opcua_monitor.update_runtime(runtime)
+        await _run_plugin_writeback(binding, runtime.columns, runtime.rows, -1)
+        return _response_from_runtime(runtime, data.page_size), runtime
+
+
+async def _monitor_query_plugin_snapshot(plugin_key: str) -> PluginRuntimeSnapshot | None:
+    try:
+        binding = _resolve_plugin_binding(plugin_key)
+        _response, runtime = await _activate_plugin_snapshot(binding)
+        return runtime
+    except Exception:
+        logger.warning("OPC UA monitor snapshot query failed plugin=%s", plugin_key, exc_info=True)
+        return None
+
+
 async def _monitor_change_plugin_page(plugin_key: str, page: int) -> PluginRuntimeSnapshot | None:
     try:
         binding = _resolve_plugin_binding(plugin_key)
-        runtime = _plugin_opcua_monitor.get_runtime(plugin_key) if _plugin_opcua_monitor else None
-        table = runtime.table if runtime and runtime.table else None
-        start_time = None
-        end_time = None
-        if runtime and runtime.start_time:
-            start_time = datetime.fromisoformat(runtime.start_time.replace(" ", "T", 1))
-        if runtime and runtime.end_time:
-            end_time = datetime.fromisoformat(runtime.end_time.replace(" ", "T", 1))
-
-        response, snapshot = _execute_plugin_query(
-            binding,
-            page=page,
-            table=table,
-            start_time=start_time,
-            end_time=end_time,
-            cursor=-1,
-        )
-        await _run_plugin_writeback(binding, response.columns, response.rows, -1)
-        _cache_plugin_query(plugin_key, response.rows, snapshot.table)
-        return snapshot
+        result = await _read_plugin_snapshot_page(binding, page)
+        return result[1] if result is not None else None
     except Exception:
         logger.warning("OPC UA monitor page change failed plugin=%s page=%s", plugin_key, page, exc_info=True)
         return None
@@ -949,7 +1163,7 @@ def check_database(request: Request) -> dict[str, Any]:
 
 @app.get("/api/config/app-settings")
 def get_app_settings() -> dict[str, Any]:
-    return _load_app_settings()
+    return _normalize_app_settings(config_store.get_public_app_settings())
 
 
 @app.get("/api/config/profiles")
@@ -1006,9 +1220,9 @@ def delete_config_profile(payload: dict[str, Any]) -> dict[str, Any]:
 @app.post("/api/config/app-settings")
 def save_app_settings(payload: dict[str, Any]) -> dict[str, Any]:
     try:
-        normalized = _save_app_settings(payload)
-        _apply_runtime_settings(normalized)
-        return {"status": "saved", "settings": normalized}
+        public_settings = _save_app_settings(payload)
+        _apply_runtime_settings(_load_app_settings())
+        return {"status": "saved", "settings": public_settings}
     except (TypeError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -1188,7 +1402,11 @@ def resolve_plugin(plugin_key: str, request: Request) -> dict[str, Any]:
 
 
 @app.get("/api/plugins/runtime-state/{plugin_key}")
-def get_plugin_runtime_state(plugin_key: str, request: Request) -> dict[str, Any]:
+def get_plugin_runtime_state(
+    plugin_key: str,
+    request: Request,
+    since_revision: int | None = None,
+) -> dict[str, Any]:
     _enforce_rate_limit(request)
     if _plugin_opcua_monitor is None:
         raise HTTPException(status_code=404, detail="OPC UA monitor not running")
@@ -1201,6 +1419,8 @@ def get_plugin_runtime_state(plugin_key: str, request: Request) -> dict[str, Any
                 raise HTTPException(status_code=404, detail="插件未启用高级 OPC UA 模式")
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+        if since_revision == 0:
+            return {"plugin_key": plugin_key, "revision": 0, "changed": False}
         return {
             "plugin_key": plugin_key,
             "mode": "advanced",
@@ -1212,8 +1432,22 @@ def get_plugin_runtime_state(plugin_key: str, request: Request) -> dict[str, Any
             "display_columns": [],
             "warnings": [],
             "revision": 0,
+            "has_snapshot": False,
+            "snapshot_created_at": None,
+            "changed": True,
         }
-    return snapshot.to_api_dict()
+    if since_revision is not None and since_revision == snapshot.revision:
+        return {
+            "plugin_key": plugin_key,
+            "revision": snapshot.revision,
+            "changed": False,
+        }
+    result = snapshot.to_api_dict()
+    data_snapshot = _plugin_data_snapshots.get(plugin_key)
+    result["has_snapshot"] = data_snapshot is not None
+    result["snapshot_created_at"] = data_snapshot.created_at if data_snapshot else None
+    result["changed"] = True
+    return result
 
 
 @app.post("/api/plugins/query/{plugin_key}", response_model=HistoryQueryResponse)
@@ -1221,6 +1455,10 @@ async def query_plugin(plugin_key: str, payload: PluginQueryRequest, request: Re
     _enforce_rate_limit(request)
     try:
         binding = _resolve_plugin_binding(plugin_key)
+        table_list_config = _get_table_list_writeback_config(binding)
+        if table_list_config is not None and table_list_config.is_advanced_mode:
+            response, _runtime = await _activate_plugin_snapshot(binding, table=payload.table)
+            return response
         response, _snapshot = _execute_plugin_query(
             binding,
             page=payload.page,
@@ -1407,6 +1645,7 @@ def get_query_view_config() -> dict[str, Any]:
 def save_query_view_config(payload: dict[str, Any]) -> dict[str, str]:
     try:
         cfg.save_query_view_config(payload)
+        _clear_plugin_snapshots()
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"status": "saved"}
@@ -1431,6 +1670,7 @@ def save_query_table_config(payload: QueryTableConfigUpdateRequest) -> dict[str,
             page_size=payload.page_size,
             columns=[c.model_dump() for c in payload.columns],
         )
+        _clear_plugin_snapshots()
         return {"status": "saved"}
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -1444,6 +1684,7 @@ def get_group_baseline(group: str) -> dict[str, Any]:
 @app.post("/api/config/group-baseline")
 def set_group_baseline(payload: GroupBaselineUpdateRequest) -> dict[str, str]:
     cfg.set_group_baseline(payload.group, payload.baseline_table)
+    _clear_plugin_snapshots()
     return {"status": "saved"}
 
 
@@ -1451,6 +1692,28 @@ def set_group_baseline(payload: GroupBaselineUpdateRequest) -> dict[str, str]:
 def get_query_batch_source(view_name: str) -> dict[str, str]:
     try:
         return cfg.get_query_batch_source(view_name)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/plugins/snapshot-page/{plugin_key}", response_model=HistoryQueryResponse)
+async def plugin_snapshot_page(
+    plugin_key: str,
+    payload: PluginQueryRequest,
+    request: Request,
+) -> HistoryQueryResponse:
+    _enforce_rate_limit(request)
+    try:
+        binding = _resolve_plugin_binding(plugin_key)
+        config = _get_table_list_writeback_config(binding)
+        if config is None or not config.is_advanced_mode:
+            raise ValueError("插件未启用高级 OPC UA 快照模式")
+        result = await _read_plugin_snapshot_page(binding, payload.page)
+        if result is None:
+            raise ValueError("尚未建立查询快照，请先点击查询")
+        return result[0]
+    except (OperationalError, SQLAlchemyError) as exc:
+        _raise_db_error(exc)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -1475,6 +1738,7 @@ def save_query_batch_source(payload: QueryBatchSourceUpdateRequest) -> dict[str,
             )
     try:
         cfg.update_query_batch_source(payload.view_name, source_table, source_field)
+        _clear_plugin_snapshots()
         return {"status": "saved", **cfg.get_query_batch_source(payload.view_name)}
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -1520,6 +1784,7 @@ def save_query_group_config(payload: QueryGroupConfigUpdateRequest) -> dict[str,
         columns=[c.model_dump() for c in payload.columns],
         baseline_table=payload.baseline_table,
     )
+    _clear_plugin_snapshots()
     return {"status": "saved"}
 
 
@@ -1527,6 +1792,7 @@ def save_query_group_config(payload: QueryGroupConfigUpdateRequest) -> dict[str,
 def delete_query_group_config(view_name: str, group: str) -> dict[str, Any]:
     try:
         existed = cfg.delete_query_group_config(view_name=view_name, group=group)
+        _clear_plugin_snapshots()
         return {"status": "deleted" if existed else "not_found", "view_name": view_name, "group": group}
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -1541,6 +1807,7 @@ def get_plugins_config() -> dict[str, Any]:
 def save_plugins_config(payload: dict[str, Any]) -> dict[str, str]:
     try:
         _save_plugin_config(payload)
+        _clear_plugin_snapshots()
         return {"status": "saved"}
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -1548,7 +1815,7 @@ def save_plugins_config(payload: dict[str, Any]) -> dict[str, str]:
 
 @app.get("/api/config/opcua")
 def get_opcua_config() -> dict[str, Any]:
-    return config_store.get_opcua_settings()
+    return config_store.get_public_opcua_settings()
 
 
 async def _run_opcua_connection_check(
@@ -1557,13 +1824,13 @@ async def _run_opcua_connection_check(
     password: str,
 ) -> dict[str, Any]:
     endpoint = normalize_opcua_endpoint_url(endpoint_url)
+    saved = config_store.get_opcua_settings()
     if not endpoint:
-        saved = config_store.get_opcua_settings()
         endpoint = normalize_opcua_endpoint_url(str(saved.get("endpoint_url", "") or ""))
-        if not username:
-            username = str(saved.get("username", "") or "")
-        if not password:
-            password = str(saved.get("password", "") or "")
+    if not username:
+        username = str(saved.get("username", "") or "")
+    if not password:
+        password = str(saved.get("password", "") or "")
 
     result = await opcua_client.check_connection(endpoint, username, password)
     if not result.get("ok"):

@@ -17,6 +17,8 @@ $LauncherDir = Split-Path -Parent $ScriptDir
 $RepoRoot = Split-Path -Parent $LauncherDir
 $PortableBuilder = Join-Path $ScriptDir "build_portable_package.ps1"
 $InnoScript = Join-Path $LauncherDir "installer\SD_SMA.iss"
+$WinSWSource = Join-Path $LauncherDir "installer\tools\WinSW-x64.exe"
+$WinSWExpectedHash = "05B82D46AD331CC16BDC00DE5C6332C1EF818DF8CEEFCD49C726553209B3A0DA"
 
 if ([string]::IsNullOrWhiteSpace($OutputDir)) {
     $OutputDir = Join-Path $RepoRoot "_Build\SD_SMA_Installer_Package"
@@ -86,22 +88,22 @@ function Resolve-BuildPython {
 
 function Ensure-Nuitka {
     param([Parameter(Mandatory = $true)][string]$PythonExe)
-    & $PythonExe -c "import nuitka" 2>$null
+    & $PythonExe -c "import nuitka, psutil" 2>$null
     if ($LASTEXITCODE -eq 0) {
         return
     }
     if ($SkipToolInstall) {
-        throw "Nuitka is missing in $PythonExe and -SkipToolInstall was supplied."
+        throw "Nuitka or psutil is missing in $PythonExe and -SkipToolInstall was supplied."
     }
     $uv = Get-Command uv -ErrorAction SilentlyContinue
     if (-not $uv) {
-        throw "Nuitka is missing and uv was not found. Install Nuitka with: uv pip install --python `"$PythonExe`" nuitka zstandard"
+        throw "Nuitka/psutil is missing and uv was not found. Install them with: uv pip install --python `"$PythonExe`" nuitka zstandard psutil"
     }
-    Write-Host "[tool] installing Nuitka into build environment"
-    & $uv.Source pip install --python $PythonExe nuitka zstandard `
+    Write-Host "[tool] installing Nuitka and launcher build dependencies"
+    & $uv.Source pip install --python $PythonExe nuitka zstandard psutil `
         --index-url $PipIndexUrl --allow-insecure-host $PipTrustedHost
     if ($LASTEXITCODE -ne 0) {
-        throw "Failed to install Nuitka."
+        throw "Failed to install launcher build dependencies."
     }
 }
 
@@ -227,11 +229,46 @@ function Reset-PackagedRuntimeState {
     Write-Host "[runtime] reset configs to default.json only and cleared smoke logs"
 }
 
+function Set-VenvRelocationProbe {
+    param(
+        [Parameter(Mandatory = $true)][string]$VenvDir,
+        [Parameter(Mandatory = $true)][string]$MissingPythonHome
+    )
+    $configPath = Join-Path $VenvDir "pyvenv.cfg"
+    if (-not (Test-Path -LiteralPath $configPath)) {
+        throw "Relocation probe cannot find: $configPath"
+    }
+    $missingPython = Join-Path $MissingPythonHome "python.exe"
+    $lines = Get-Content -LiteralPath $configPath
+    $rewritten = foreach ($line in $lines) {
+        if ($line -match '^\s*home\s*=') {
+            "home = $MissingPythonHome"
+        }
+        elseif ($line -match '^\s*executable\s*=') {
+            "executable = $missingPython"
+        }
+        elseif ($line -match '^\s*command\s*=') {
+            "command = $missingPython -m venv $VenvDir"
+        }
+        else {
+            $line
+        }
+    }
+    Set-Content -LiteralPath $configPath -Value $rewritten -Encoding ASCII
+    Write-Host "[relocation] injected missing build path; launcher must repair it before smoke test"
+}
+
 $PythonExe = Resolve-BuildPython -Requested $Python
 $InnoSetupExe = Resolve-InnoSetup -Requested $InnoSetup
 Ensure-Nuitka -PythonExe $PythonExe
 Write-Host "[python] $PythonExe"
 Write-Host "[inno] $InnoSetupExe"
+
+$actualWinSWHash = (Get-FileHash -LiteralPath $WinSWSource -Algorithm SHA256).Hash
+if ($actualWinSWHash -ne $WinSWExpectedHash) {
+    throw "WinSW 2.12.0 SHA-256 mismatch: $actualWinSWHash"
+}
+Write-Host "[winsw] verified 2.12.0: $actualWinSWHash"
 
 Assert-ChildPath -Parent $BuildRoot -Child $InstallerPackageRoot
 Remove-DirectorySafely -Parent $BuildRoot -Target $InstallerPackageRoot
@@ -265,6 +302,7 @@ New-Item -ItemType Directory -Force -Path $NuitkaOutput | Out-Null
     --remove-output `
     --python-flag=no_asserts `
     --python-flag=no_docstrings `
+    --include-package=psutil `
     --company-name=SmartData `
     --product-name="SD SMA Runtime" `
     --file-description="SD SMA Unified Launcher" `
@@ -285,6 +323,20 @@ $PackageLauncher = Join-Path $PackageRoot "_Launcher"
 $InstalledLauncher = Join-Path $PackageLauncher "SD_SMA_Launcher.exe"
 Copy-Item -LiteralPath $CompiledLauncher -Destination $InstalledLauncher -Force
 Remove-Item -LiteralPath (Join-Path $PackageLauncher "sd_sma_launcher.py") -Force
+Remove-Item -LiteralPath (Join-Path $PackageLauncher "resource_monitor.py") -Force
+foreach ($launcherModule in @("launcher_supervisor.py", "launcher_security.py", "launcher_imports.py", "launcher_web.py", "launcher_settings.py")) {
+    Remove-Item -LiteralPath (Join-Path $PackageLauncher $launcherModule) -Force
+}
+
+$PackageService = Join-Path $PackageRoot "_Service"
+New-Item -ItemType Directory -Force -Path $PackageService | Out-Null
+Copy-Item -LiteralPath $WinSWSource -Destination (Join-Path $PackageService "SD_SMA_Service.exe") -Force
+Copy-Item -LiteralPath (Join-Path $LauncherDir "installer\tools\WinSW-LICENSE.txt") -Destination $PackageService -Force
+Copy-Item -LiteralPath (Join-Path $LauncherDir "installer\SD_SMA_Service.xml") -Destination $PackageService -Force
+Copy-Item -LiteralPath (Join-Path $LauncherDir "installer\Initialize-SD_SMA.ps1") -Destination $PackageService -Force
+Copy-Item -LiteralPath (Join-Path $LauncherDir "installer\Install-SD_SMA-Service.ps1") -Destination $PackageService -Force
+Copy-Item -LiteralPath (Join-Path $LauncherDir "installer\Reset-SD_SMA-LauncherPin.ps1") -Destination $PackageService -Force
+Copy-Item -LiteralPath (Join-Path $LauncherDir "installer\Configure-SD_SMA-Firewall.ps1") -Destination $PackageService -Force
 
 $stagedConfigPath = Join-Path $PackageLauncher "launcher_config.json"
 $stagedConfig = Get-Content -LiteralPath $stagedConfigPath -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -308,6 +360,11 @@ cd /d "%~dp0_Launcher"
 "@ | Set-Content -LiteralPath (Join-Path $PackageRoot "start.bat") -Encoding ASCII
 
 if (-not $SkipSmokeTest) {
+    $missingProbeHome = Join-Path $InstallerPackageRoot "__missing_build_python__"
+    if (Test-Path -LiteralPath $missingProbeHome) {
+        throw "Relocation probe path unexpectedly exists: $missingProbeHome"
+    }
+    Set-VenvRelocationProbe -VenvDir (Join-Path $PackageRoot ".venv") -MissingPythonHome $missingProbeHome
     Write-Host "[smoke] running compiled launcher against bytecode-only services"
     & $InstalledLauncher --config $stagedConfigPath --smoke --no-browser
     if ($LASTEXITCODE -ne 0) {

@@ -123,14 +123,16 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onActivated, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onActivated, onMounted, onUnmounted, ref, watch } from 'vue'
+import { usePageLifecycle } from '@/composables/usePageLifecycle'
 import AutoTriggerValueSparkline from '@/components/AutoTriggerValueSparkline.vue'
 import { fetchAuditEntries, formatAuditTime, type AuditEntry } from '@/lib/auditLog'
 import {
   AUTO_EXPORT_STATUS,
   autoExportStatusLabel,
-  clampAutoExportMaxParallel,
 } from '@/lib/auto-export-status-codes'
+import { resolveAutoExportMaxParallel } from '@/lib/export-cpu-budget'
+import { uiSecondaryTasksPaused } from '@/lib/app-background-idle'
 import {
   isTriggerBindingActive,
   isTriggerBindingComplete,
@@ -149,6 +151,9 @@ import { listTemplateSummaries } from '@/api/templates'
 
 defineOptions({ name: 'DashboardFieldOps' })
 
+/** keep-alive 页名为 Dashboard；子组件仍收 activated/deactivated（032 P1-A） */
+const { register: registerPageTask, isPageActive } = usePageLifecycle('Dashboard')
+
 const electronShell = typeof window !== 'undefined' && Boolean(window.electronAPI?.scanExportPdfs)
 
 const tick = ref(0)
@@ -165,6 +170,31 @@ const pdfsError = ref('')
 const pdfDir = ref('')
 
 let pollTimer: ReturnType<typeof setInterval> | null = null
+
+function startOpsPoll(): void {
+  if (pollTimer != null) return
+  if (uiSecondaryTasksPaused.value) return
+  pollTimer = setInterval(refreshLocal, 1000)
+}
+
+function stopOpsPoll(): void {
+  if (pollTimer != null) {
+    clearInterval(pollTimer)
+    pollTimer = null
+  }
+}
+
+watch(uiSecondaryTasksPaused, (pause) => {
+  if (pause) stopOpsPoll()
+  else if (isPageActive()) startOpsPoll()
+})
+
+registerPageTask({
+  id: 'dashboard-ops-tick',
+  scope: 'page',
+  pause: stopOpsPoll,
+  resume: startOpsPoll,
+})
 
 function startOfTodayMs(): number {
   const d = new Date()
@@ -196,7 +226,7 @@ const runtime = computed(() => {
   const prefs = loadReportGeneratorPrefs()
   const bindings = prefs.auto.bindings || []
   const active = bindings.filter(isTriggerBindingActive)
-  const configured = clampAutoExportMaxParallel(prefs.auto.maxParallelExports)
+  const configured = resolveAutoExportMaxParallel(prefs.auto.maxParallelExports)
   const maxParallel = Math.min(configured, Math.max(1, active.length || 1))
 
   const today0 = startOfTodayMs()
@@ -407,7 +437,7 @@ function onConfigImported() {
 
 onMounted(() => {
   void refreshAll()
-  pollTimer = setInterval(refreshLocal, 1000)
+  // 1s tick 由 usePageLifecycle resume
   window.addEventListener('report-generator-prefs-updated', onPrefsUpdated)
   window.addEventListener('report-generator-auto-export-changed', onPrefsUpdated)
   window.addEventListener('report-editor-config-imported', onConfigImported)
@@ -418,10 +448,6 @@ onActivated(() => {
 })
 
 onUnmounted(() => {
-  if (pollTimer) {
-    clearInterval(pollTimer)
-    pollTimer = null
-  }
   window.removeEventListener('report-generator-prefs-updated', onPrefsUpdated)
   window.removeEventListener('report-generator-auto-export-changed', onPrefsUpdated)
   window.removeEventListener('report-editor-config-imported', onConfigImported)

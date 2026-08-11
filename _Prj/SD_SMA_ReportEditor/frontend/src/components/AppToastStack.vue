@@ -4,12 +4,37 @@
       v-for="item in appToasts"
       :key="item.id"
       class="app-toast"
-      :class="`app-toast--${item.tone}`"
+      :class="[`app-toast--${item.tone}`, { 'app-toast--clickable': Boolean(item.onBodyClick) }]"
       role="status"
     >
       <span v-if="item.spinner" class="app-toast-spinner" aria-hidden="true" />
-      <pre class="app-toast-body">{{ item.message }}</pre>
-      <button type="button" class="app-toast-close" aria-label="关闭" @click="dismissAppToast(item.id)">
+      <div class="app-toast-main">
+        <pre
+          class="app-toast-body"
+          :class="{ 'app-toast-body--clickable': Boolean(item.onBodyClick) }"
+          :title="item.onBodyClick ? '点击打开生成报表页面' : undefined"
+          @click="onBodyClick(item)"
+        >{{ item.message }}</pre>
+        <div v-if="item.secondaryAction || item.action" class="app-toast-actions">
+          <button
+            v-if="item.secondaryAction"
+            type="button"
+            class="app-toast-action app-toast-action--secondary"
+            @click="item.secondaryAction.onClick()"
+          >
+            {{ item.secondaryAction.label }}
+          </button>
+          <button
+            v-if="item.action"
+            type="button"
+            class="app-toast-action"
+            @click="item.action.onClick()"
+          >
+            {{ item.action.label }}
+          </button>
+        </div>
+      </div>
+      <button type="button" class="app-toast-close" aria-label="关闭" @click="onClose(item.id)">
         ×
       </button>
     </div>
@@ -17,7 +42,17 @@
 </template>
 
 <script setup lang="ts">
-import { appToasts, dismissAppToast } from "@/composables/useAppToast";
+import { appToasts, dismissAppToast, type AppToastItem } from "@/composables/useAppToast";
+import { tryMinimizeBatchExportProgress } from "@/lib/report-export-progress-state";
+
+function onClose(id: string): void {
+  if (tryMinimizeBatchExportProgress(id)) return;
+  dismissAppToast(id);
+}
+
+function onBodyClick(item: AppToastItem): void {
+  item.onBodyClick?.();
+}
 </script>
 
 <style scoped>
@@ -60,13 +95,61 @@ import { appToasts, dismissAppToast } from "@/composables/useAppToast";
   background: #fef2f2;
 }
 
+.app-toast-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+}
+
 .app-toast-body {
   margin: 0;
-  flex: 1;
+  width: 100%;
   font: 13px/1.45 system-ui, sans-serif;
   white-space: pre-wrap;
   word-break: break-word;
   color: #1f2937;
+}
+
+.app-toast-body--clickable {
+  cursor: pointer;
+}
+
+.app-toast-body--clickable:hover {
+  color: #1e3a8a;
+}
+
+.app-toast-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.app-toast-action {
+  border: 1px solid #c7d2fe;
+  background: #eef2ff;
+  color: #3730a3;
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.app-toast-action:hover {
+  background: #e0e7ff;
+}
+
+.app-toast-action--secondary {
+  border-color: #93c5fd;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.app-toast-action--secondary:hover {
+  background: #dbeafe;
 }
 
 .app-toast-close {
@@ -88,7 +171,7 @@ import { appToasts, dismissAppToast } from "@/composables/useAppToast";
   border: 2px solid #c7d2fe;
   border-top-color: #4f46e5;
   border-radius: 50%;
-  animation: app-toast-spin 0.7s linear infinite;
+  animation: app-toast-spin 0.8s linear infinite;
 }
 
 @keyframes app-toast-spin {

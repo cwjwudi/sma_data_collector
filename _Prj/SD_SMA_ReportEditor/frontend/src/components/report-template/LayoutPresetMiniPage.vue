@@ -190,8 +190,10 @@ import type { PaperLayoutMetrics } from "@/lib/report-template/layout-geometry";
 import { computePaperLayout } from "@/lib/report-template/layout-geometry";
 import { miniPreviewScale } from "@/lib/report-template/mini-preview-scale";
 import type { LayoutPreset } from "@/lib/report-template/layout-model";
-import { presetToSnapshot } from "@/lib/report-template/layout-model";
+import { presetToSnapshot, resolveBodyBackgroundCss } from "@/lib/report-template/layout-model";
 import {
+  axisToCssTextAlign,
+  axisToCssVerticalAlign,
   computeZoneTableContentRowHeightsPx,
   ensureZoneTableGrid,
   flexJustifyAlignForAxes,
@@ -297,7 +299,10 @@ function bandStyle(metric: PaperLayoutMetrics, which: "header" | "body" | "foote
 }
 
 const headerBand = computed(() => bandStyle(me.value, "header"));
-const bodyBand = computed(() => bandStyle(me.value, "body"));
+const bodyBand = computed(() => ({
+  ...bandStyle(me.value, "body"),
+  backgroundColor: resolveBodyBackgroundCss(props.preset),
+}));
 const footerBand = computed(() => bandStyle(me.value, "footer"));
 
 /** 与 TemplateMiniPage 一致：按设计字号缩放，不人为抬高（避免缩略图字号失真） */
@@ -328,8 +333,9 @@ function miniZoneElStyle(el: LayoutZoneElement): Record<string, string> {
     s.flexDirection = "column";
     s.alignItems = "stretch";
     s.justifyContent = "stretch";
-    s.padding = "2px";
-    s.overflow = "hidden";
+    /* 与 TemplateMiniPage：贴满 band 的 zone 表避免 padding+clip 吃掉底边框 */
+    s.padding = "0";
+    s.overflow = "visible";
     s.whiteSpace = "normal";
     s.backgroundColor = zoneTableNodeShellBackgroundCss();
   } else {
@@ -394,6 +400,8 @@ function miniZoneTableCellStyle(el: LayoutZoneElement, ri: number, ci: number): 
     ),
     height: `${h}px`,
     maxHeight: `${h}px`,
+    textAlign: axisToCssTextAlign(el.alignX),
+    verticalAlign: axisToCssVerticalAlign(el.alignY),
   };
 }
 
@@ -450,6 +458,11 @@ function miniZoneTableCellTitle(el: LayoutZoneElement, ri: number, ci: number): 
   overflow: hidden;
   box-sizing: border-box;
 }
+@media print {
+  .mini-band-inner {
+    overflow: visible;
+  }
+}
 .mini-band-header {
   background: rgb(239 239 246 / 0.52);
 }
@@ -490,6 +503,9 @@ function miniZoneTableCellTitle(el: LayoutZoneElement, ri: number, ci: number): 
   overflow: visible;
   box-sizing: border-box;
   padding-bottom: 1px;
+}
+.mini-zone-el .mini-tpl-table-wrap {
+  padding-bottom: 0;
 }
 .mini-tpl-table {
   width: 100%;

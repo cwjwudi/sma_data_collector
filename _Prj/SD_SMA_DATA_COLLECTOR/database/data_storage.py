@@ -5,7 +5,7 @@
 
 import asyncio
 import logging
-from typing import Dict, List, Any, Optional, Callable, Awaitable
+from typing import Dict, List, Any, Optional, Callable, Awaitable, Set
 from datetime import datetime
 from collections import deque
 # 处理相对导入问题
@@ -72,6 +72,7 @@ class DataStorageProcessor:
         self.column_types_cache = {}  # 缓存列类型信息
         self.ensured_tables = set()  # 记录已确保存在的数据表，避免重复 CREATE TABLE
         self._batch_ready_event: Optional[asyncio.Event] = None # 某组达到 batch大小时唤醒处理循环
+        self._group_flush_requests: Set[str] = set()
         self.batch_master_group_name: Optional[str] = None
         self.batch_master_config: Dict[str, Any] = {}
         self.batch_master_unique_key_point: Optional[str] = None
@@ -136,6 +137,13 @@ class DataStorageProcessor:
         
         group_name = collection_data.get('group_name')
         if group_name is not None:
+            if collection_data.get("is_backfill"):
+                self._group_flush_requests.add(group_name)
+                self.metrics["backfill_flush_requests"] += 1
+                ev = self._batch_ready_event
+                if ev is not None and not ev.is_set():
+                    ev.set()
+
             # 批次主表的任何一次触发（开批、结批或后续被数据库拒绝）
             # 都必须立即唤醒处理循环，以便强制刷写当前队列快照。
             if self._is_batch_master_record(collection_data):
@@ -149,7 +157,30 @@ class DataStorageProcessor:
                 ev = self._batch_ready_event
                 if ev is not None and not ev.is_set():
                     ev.set()
-    
+
+    def request_group_flush(self, group_name: str) -> int:
+        """Wake the storage loop to flush one group's current partial batch."""
+        queued_rows = sum(
+            1 for item in self.data_queue if item.get("group_name") == group_name
+        )
+        self.metrics["group_flush_requests"] += 1
+        if queued_rows <= 0:
+            self.metrics["group_flush_empty"] += 1
+            self.logger.info("采集组 %s 已停用，当前没有待刷新的批量缓存", group_name)
+            return 0
+
+        self._group_flush_requests.add(group_name)
+        self.metrics["group_flush_rows_requested"] += queued_rows
+        ev = self._batch_ready_event
+        if ev is not None and not ev.is_set():
+            ev.set()
+        self.logger.info(
+            "采集组 %s 已停用，请求立即刷新批量缓存: rows=%s",
+            group_name,
+            queued_rows,
+        )
+        return queued_rows
+
     async def start_processing(self) -> None:
         """启动数据处理任务"""
         if self.running:
@@ -211,6 +242,7 @@ class DataStorageProcessor:
             self.logger.info("停机前所有内存队列数据均已刷新")
 
         self._batch_ready_event = None
+        self._group_flush_requests.clear()
         self.ensured_tables.clear()
         self.group_open_batch_partition_times.clear()
         self.current_batch_context = None
@@ -424,6 +456,9 @@ class DataStorageProcessor:
 
             group_name = data_item['group_name']
             group_counts[group_name] = group_counts.get(group_name, 0) + 1
+
+        if self._group_flush_requests.intersection(group_counts):
+            return True
         
         # 检查是否有任何一个组达到了其batch_size
         for group_name, count in group_counts.items():
@@ -446,6 +481,7 @@ class DataStorageProcessor:
         unprocessable_data = []
         
         group_counts = {}
+        requested_groups = set(self._group_flush_requests)
         force_flush_all = False
         for data_item in temp_queue:
             group_name = data_item['group_name']
@@ -466,7 +502,11 @@ class DataStorageProcessor:
             group_name = data_item['group_name']
             batch_size = self.group_batch_sizes.get(group_name, self.default_batch_size)
             
-            if force_flush_all or group_counts[group_name] >= batch_size:
+            if (
+                force_flush_all
+                or group_name in requested_groups
+                or group_counts[group_name] >= batch_size
+            ):
                 processable_data.append(data_item)
             else:
                 unprocessable_data.append(data_item)
@@ -492,6 +532,7 @@ class DataStorageProcessor:
         # 分别处理每个组的数据
         for group_name in process_order:
             group_data_list = grouped_processable[group_name]
+            is_requested_flush = group_name in requested_groups
             self._outbox_mark_processing(group_data_list)
             outcomes = await self._process_group_data(group_name, group_data_list)
             if outcomes.get(self.STATUS_DB_ERROR, 0):
@@ -499,11 +540,21 @@ class DataStorageProcessor:
                     self._requeue_failed_batch(group_data_list, to_data_queue=True)
                 else:
                     self._retain_dead_letter(group_data_list)
+                    self._group_flush_requests.discard(group_name)
             elif outcomes.get(self.STATUS_OTHER_ERROR, 0):
                 self._outbox_mark_dead_letter(group_data_list, "non-retryable data conversion error")
                 self._retain_dead_letter(group_data_list)
+                self._group_flush_requests.discard(group_name)
             else:
                 self._outbox_mark_completed(group_data_list)
+                self._group_flush_requests.discard(group_name)
+                if is_requested_flush:
+                    self.metrics["group_flush_rows_committed"] += len(group_data_list)
+                    self.logger.info(
+                        "采集组 %s 停用缓存已立即写入: rows=%s",
+                        group_name,
+                        len(group_data_list),
+                    )
 
         if self._batch_close_flush_requested:
             self.current_batch_context = None
@@ -1344,6 +1395,7 @@ class DataStorageProcessor:
             
             # 添加通用字段
             db_data['collection_time'] = collection_time
+            db_data['is_backfill'] = 1 if collection_data.get('is_backfill') else 0
             
             # 添加数据点值
             data_points = collection_data['data']

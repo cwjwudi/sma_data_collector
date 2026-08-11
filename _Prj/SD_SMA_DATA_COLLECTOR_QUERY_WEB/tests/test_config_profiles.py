@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
+from unittest.mock import patch
 
 from app.config_manager import ConfigManager, UnifiedConfigStore
 
@@ -145,3 +147,43 @@ def test_empty_config_dir_bootstraps_usable_default_views(tmp_path: Path) -> Non
 
     query_views = ConfigManager(store).get_query_views()
     assert set(query_views) == {"table", "alarm", "audit"}
+
+
+def test_active_config_cache_isolated_and_invalidated_by_external_write(tmp_path: Path) -> None:
+    config_dir = tmp_path / "config"
+    store = UnifiedConfigStore(config_dir)
+
+    with patch.object(store, "_load_json", wraps=store._load_json) as load_json:
+        first, first_revision = store.get_active_config_with_revision()
+        first["name"] = "mutated-by-caller"
+        second, second_revision = store.get_active_config_with_revision()
+
+        assert load_json.call_count == 1
+        assert second["name"] == "default"
+        assert second_revision == first_revision
+
+        active_path = config_dir / "default.json"
+        external = json.loads(active_path.read_text(encoding="utf-8"))
+        external["name"] = "externally-updated-name-with-different-size"
+        active_path.write_text(json.dumps(external, ensure_ascii=False, indent=2), encoding="utf-8")
+        os.utime(active_path, None)
+
+        updated, updated_revision = store.get_active_config_with_revision()
+        assert load_json.call_count == 2
+        assert updated["name"] == "default"
+        assert updated_revision != first_revision
+
+
+def test_active_config_cache_invalidates_when_profile_pointer_changes(tmp_path: Path) -> None:
+    config_dir = tmp_path / "config"
+    store = UnifiedConfigStore(config_dir)
+    store.create_profile("second.json")
+    store.set_active_profile("default.json")
+    first, first_revision = store.get_active_config_with_revision()
+
+    (config_dir / ".active_query_config").write_text("second.json", encoding="utf-8")
+    second, second_revision = store.get_active_config_with_revision()
+
+    assert first["name"] == "default"
+    assert second["name"] == "second"
+    assert second_revision != first_revision

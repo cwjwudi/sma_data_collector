@@ -1,17 +1,17 @@
 {
-  "version": "0.1.25",
-  "releasedAt": "2026-07-01T20:41:59.416Z",
-  "notes": "修复 0.1.25 启动白屏；OPC UA 自动截批全局监听；Windows 应用内更新展示 releaseNotes",
+  "version": "0.3.165",
+  "releasedAt": "2026-08-09T02:06:17.336Z",
+  "notes": "Report Editor AI 0.3.165\n\n- 041 H1：封面页眉一键复制到正文（互不继承提示）\n- 045 R4：矢量 PDF 临时文件回传（去巨型 base64 IPC）\n- 046：历史多根 UX + 失败审计 reportKind\n- 044：Docker MariaDB 冒烟灌库就绪",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor-Setup-0.1.25-x64.exe",
-      "sha256": "c8781bdeb72409d642da8c8999780739454f72e95432959779d11279c8353cbb",
-      "size": 143359693
+      "url": "Report Editor AI-Setup-0.3.165-x64.exe",
+      "sha256": "fc4fd15e5a8cf973a31b456ac7ebfd2186b379605b29987fb81642e15cba0689",
+      "size": 162559989
     },
     "darwin-arm64": {
-      "url": "Report Editor-0.1.25-arm64.dmg",
-      "sha256": "fd052d958e61964f8ace593470648e47bc874d042cc6d48efb34d65f130070b1",
-      "size": 177244363
+      "url": "Report Editor AI-0.3.165-arm64.dmg",
+      "sha256": "",
+      "size": 0
     }
   }
 }

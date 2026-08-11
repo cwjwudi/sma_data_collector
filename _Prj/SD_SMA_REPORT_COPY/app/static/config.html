@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>报表复制配置 - SD SMA Report Copy</title>
-    <link rel="stylesheet" href="/static/styles.css" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260727-folder-copy" />
   </head>
   <body data-page="config">
     <nav class="page-nav" aria-label="站内导航">
@@ -12,6 +12,8 @@
       <span class="page-nav-sep">/</span>
       <span class="page-nav-current">配置</span>
     </nav>
+
+    <div id="appStatusBar" class="app-status-bar" role="status" aria-live="polite" aria-atomic="true" hidden></div>
 
     <div class="layout layout-stack">
       <section class="panel connection-panel">
@@ -65,6 +67,18 @@
       </section>
     </div>
 
-    <script src="/static/app.js"></script>
+    <div id="filesystem-modal-overlay" class="modal-overlay" style="display: none">
+      <div class="modal-dialog filesystem-dialog">
+        <h3 id="filesystem-modal-title" class="modal-title">选择服务器路径</h3>
+        <div id="filesystem-modal-path" class="filesystem-path"></div>
+        <div id="filesystem-modal-list" class="filesystem-list"></div>
+        <div class="modal-footer">
+          <button id="filesystem-modal-cancel" type="button">取消</button>
+          <button id="filesystem-modal-select" type="button">选择当前目录</button>
+        </div>
+      </div>
+    </div>
+
+    <script src="/static/app.js?v=20260806-service-browser"></script>
   </body>
 </html>

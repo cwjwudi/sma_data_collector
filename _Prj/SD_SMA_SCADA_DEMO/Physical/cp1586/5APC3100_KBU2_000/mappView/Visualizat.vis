@@ -18,9 +18,9 @@
     <Content refId="content_Alarm" />
     <Content refId="content_Trend" />
     <Content refId="content_Line" />
-    <Content refId="content_Config" />
     <Content refId="Query_Config_content" />
     <Content refId="Collector_Config_content" />
+    <Content refId="content_Config" />
   </Contents>
   <SnippetsSets>
     <SnippetsSet refId="snippet_Audit" />

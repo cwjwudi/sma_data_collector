@@ -87,6 +87,12 @@ describe("sqlFillQueryLimit", () => {
     const fill = hydrateTableSqlFill({ maxRows: 2000, splitReportsOnMaxRows: true });
     expect(sqlFillQueryLimit(fill, true)).toBe(TABLE_SQL_FILL_FULL_ROW_LIMIT);
   });
+
+  it("044: split export no longer capped at 50000 (80000-row site case fits)", () => {
+    // 回归：现网 5 万总量帽会把 8 万条结果静默截断；防护值必须远大于现场量级
+    const fill = hydrateTableSqlFill({ maxRows: 1000, splitReportsOnMaxRows: true });
+    expect(sqlFillQueryLimit(fill, true)).toBeGreaterThanOrEqual(80000);
+  });
 });
 
 describe("sqlFillPreviewTruncationHint", () => {

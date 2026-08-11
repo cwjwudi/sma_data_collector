@@ -1,0 +1,70 @@
+[
+  {
+    "variable": "gDataSQLOperate.RecipeCollectEnable",
+    "value": true
+  },
+  {
+    "variable": "gDataSQLOperate.ProductCollectEnable",
+    "value": true
+  },
+  {
+    "variable": "gDataSQLOperate.AlarmCollectEnable",
+    "value": true
+  },
+  {
+    "variable": "gDataSQLOperate.AuditCollectEnable",
+    "value": true
+  },
+  {
+    "variable": "gDataSQLOperate.BatchCollectEnable",
+    "value": true
+  },
+  {
+    "variable": "gDataSQLOperate.BatchInfoCollectEnable",
+    "value": true
+  },
+  {
+    "variable": "gDataSQLOperate.RecipeReadStatus",
+    "value": 2
+  },
+  {
+    "variable": "gDataSQLOperate.ProductInsertStatus",
+    "value": 0
+  },
+  {
+    "variable": "gDataSQLOperate.RecipeInsert",
+    "value": false
+  },
+  {
+    "variable": "gDataSQLOperate.ProductInsert",
+    "value": false
+  },
+  {
+    "variable": "gDataSQLOperate.BatchInsert",
+    "value": false
+  },
+  {
+    "variable": "gDataSQLOperate.BatchInfoInsert",
+    "value": false
+  },
+  {
+    "variable": "DataSQLRec:bManualTrigger",
+    "value": false
+  },
+  {
+    "variable": "DataSQLPro:bManualTrigger",
+    "value": false
+  },
+  {
+    "variable": "DataSQLAla:bManualTrigger",
+    "value": false
+  },
+  {
+    "variable": "DataSQLAud:bManualTrigger",
+    "value": false
+  },
+  {
+    "variable": "DataSQLBat:uiManualCommand",
+    "value": 0
+  }
+]

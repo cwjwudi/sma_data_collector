@@ -63,6 +63,10 @@ export interface TemplateSummary {
   updatedAt: string;
   paperKind: string;
   orientation: string;
+  /** 046 批次/非批次：旧后端或旧 sidecar 可能缺省，缺省视为 batch */
+  reportKind?: "batch" | "nonBatch";
+  /** 仅 reportKind=nonBatch：目标文件夹绝对路径 */
+  nonBatchOutputDir?: string;
 }
 
 export async function listTemplateSummaries(): Promise<TemplateSummary[]> {
@@ -82,8 +86,13 @@ export async function importTemplatesBulk(items: ReportTemplate[]) {
   });
 }
 
-export async function getTemplate(templateId: string): Promise<ReportTemplate> {
-  return fetchJson<ReportTemplate>(apiUrl(`/templates/${encodeURIComponent(templateId)}`));
+export async function getTemplate(
+  templateId: string,
+  opts?: { timeoutMs?: number },
+): Promise<ReportTemplate> {
+  return fetchJson<ReportTemplate>(apiUrl(`/templates/${encodeURIComponent(templateId)}`), {
+    timeoutMs: opts?.timeoutMs,
+  });
 }
 
 export async function putTemplate(

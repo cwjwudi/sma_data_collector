@@ -6,6 +6,9 @@ let pollTimer = null;
 let currentConfig = {};
 let currentViewMode = 'flat';
 let currentFolderPath = '';
+const notifiedJobStates = new Map();
+const selectedReportPaths = new Set();
+const selectedFolderPaths = new Set();
 
 const confirmModalOverlay = document.getElementById('confirm-modal-overlay');
 const confirmModalTitle = document.getElementById('confirm-modal-title');
@@ -15,6 +18,31 @@ const confirmModalConfirm = document.getElementById('confirm-modal-confirm');
 
 function el(id) {
   return document.getElementById(id);
+}
+
+function safeStorageGet(key) {
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function safeStorageSet(key, value) {
+  try {
+    window.localStorage.setItem(key, value);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function showStatusBar(text, tone = 'info') {
+  const bar = el('appStatusBar');
+  if (!bar) return;
+  bar.textContent = String(text || '');
+  bar.dataset.tone = tone;
+  bar.hidden = !text;
 }
 
 async function fetchJson(url, opts) {
@@ -37,13 +65,86 @@ function enableButtonClickFeedback() {
 
 function setHint(id, text, cls = 'muted') {
   const target = el(id);
-  if (!target) return;
-  target.textContent = text;
-  target.className = cls;
+  if (target) {
+    target.textContent = text;
+    target.className = cls;
+  }
+  const classes = String(cls).split(/\s+/);
+  if (classes.includes('ok')) {
+    showStatusBar(text, 'ok');
+  } else if (classes.includes('warn') || classes.includes('error')) {
+    showStatusBar(text, classes.includes('error') ? 'error' : 'warn');
+  }
+}
+
+async function openFilesystemBrowser(initialPath = '') {
+  const overlay = el('filesystem-modal-overlay');
+  const pathLabel = el('filesystem-modal-path');
+  const list = el('filesystem-modal-list');
+  const cancel = el('filesystem-modal-cancel');
+  const select = el('filesystem-modal-select');
+  if (!overlay) throw new Error('文件浏览窗口不可用');
+  let current = '';
+
+  return new Promise((resolve, reject) => {
+    const finish = value => { overlay.style.display = 'none'; resolve(value); };
+    const fail = error => { overlay.style.display = 'none'; reject(error); };
+    cancel.onclick = () => finish('');
+    overlay.onclick = event => { if (event.target === overlay) finish(''); };
+    select.onclick = () => finish(current);
+    overlay.style.display = 'flex';
+    const renderButton = (label, meta, onClick) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'filesystem-entry';
+      const name = document.createElement('span');
+      const detail = document.createElement('span');
+      name.textContent = label;
+      detail.textContent = meta;
+      detail.className = 'muted';
+      button.append(name, detail);
+      button.onclick = onClick;
+      list.appendChild(button);
+    };
+    const showRoots = async () => {
+      const data = await fetchJson('/api/filesystem/roots?purpose=source');
+      current = '';
+      select.disabled = true;
+      pathLabel.textContent = '允许访问的位置';
+      list.innerHTML = '';
+      for (const root of data.roots || []) {
+        renderButton(root.name, root.exists ? root.path : '目录不存在', () => {
+          if (root.exists) showDirectory(root.path).catch(fail);
+        });
+      }
+    };
+    const showDirectory = async path => {
+      const data = await fetchJson(`/api/filesystem/entries?purpose=source&path=${encodeURIComponent(path)}`);
+      current = data.current;
+      select.disabled = false;
+      pathLabel.textContent = current;
+      list.innerHTML = '';
+      if (data.parent) renderButton('..', '上一级', () => showDirectory(data.parent).catch(fail));
+      else renderButton('位置列表', '返回', () => showRoots().catch(fail));
+      for (const entry of data.entries || []) {
+        renderButton(entry.name, '文件夹', () => showDirectory(entry.path).catch(fail));
+      }
+    };
+    (initialPath ? showDirectory(initialPath).catch(() => showRoots()) : showRoots()).catch(fail);
+  });
 }
 
 function showConfirmModal({ title, message, confirmText = '确认执行' }) {
-  if (!confirmModalOverlay) return Promise.resolve(window.confirm(message));
+  if (
+    !confirmModalOverlay ||
+    !confirmModalTitle ||
+    !confirmModalMessage ||
+    !confirmModalCancel ||
+    !confirmModalConfirm
+  ) {
+    showStatusBar('无法显示操作确认，操作已取消。', 'error');
+    return Promise.resolve(false);
+  }
   return new Promise(resolve => {
     const oldConfirmText = confirmModalConfirm.textContent;
     const close = result => {
@@ -114,7 +215,7 @@ function normalizeTargets(value) {
 
 function loadState() {
   try {
-    return JSON.parse(localStorage.getItem(STATE_KEY) || '{}');
+    return JSON.parse(safeStorageGet(STATE_KEY) || '{}');
   } catch {
     return {};
   }
@@ -127,7 +228,7 @@ function saveState() {
     viewMode: currentViewMode,
     folderPath: currentFolderPath,
   };
-  localStorage.setItem(STATE_KEY, JSON.stringify(state));
+  safeStorageSet(STATE_KEY, JSON.stringify(state));
 }
 
 function getConfigPayload() {
@@ -182,15 +283,11 @@ async function saveConfig() {
 }
 
 async function chooseSourceFolder() {
-  setHint('configHint', '正在打开文件夹选择窗口...');
-  const data = await fetchJson('/api/folder-dialog', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ initial_dir: el('sourceDir').value }),
-  });
-  if (data.selected) {
-    el('sourceDir').value = data.selected;
-    setHint('configHint', `已选择报表目录: ${data.selected}`, 'muted ok');
+  setHint('configHint', '请选择服务允许访问的报表目录...');
+  const selected = await openFilesystemBrowser(el('sourceDir').value);
+  if (selected) {
+    el('sourceDir').value = selected;
+    setHint('configHint', `已选择报表目录: ${selected}`, 'muted ok');
   } else {
     setHint('configHint', '已取消选择报表目录');
   }
@@ -233,9 +330,10 @@ function reportName(path) {
 
 function reportRowHtml(report, options = {}) {
   const label = options.nameOnly ? reportName(report.path) : report.path;
+  const checked = selectedReportPaths.has(report.path) ? ' checked' : '';
   return (
     `<tr>` +
-    `<td><input type="checkbox" class="report-check" value="${escapeHtml(report.path)}" /></td>` +
+    `<td><input type="checkbox" class="report-check" value="${escapeHtml(report.path)}"${checked} aria-label="选择报表 ${escapeHtml(label)}" /></td>` +
     `<td><span class="report-path-text" title="${escapeHtml(report.path)}">${escapeHtml(label)}</span></td>` +
     `<td>${formatBytes(report.size)}</td>` +
     `<td>${escapeHtml(report.modified_at)}</td>` +
@@ -279,10 +377,12 @@ function renderFolderReports(tbody, reports) {
   const sortedFolders = Array.from(childFolders.entries()).sort((a, b) => a[0].localeCompare(b[0]));
   for (const [childPath, count] of sortedFolders) {
     const name = reportName(childPath);
+    const checked = selectedFolderPaths.has(childPath) ? ' checked' : '';
     tbody.insertAdjacentHTML(
       'beforeend',
       `<tr class="folder-row">` +
-        `<td></td>` +
+        `<td><input type="checkbox" class="folder-check" value="${escapeHtml(childPath)}"${checked} ` +
+          `aria-label="选择文件夹 ${escapeHtml(name)}" title="复制该文件夹内全部允许类型报表（含子文件夹）" /></td>` +
         `<td><button type="button" class="folder-link" data-folder-path="${escapeHtml(childPath)}">${escapeHtml(name)}</button></td>` +
         `<td>${count} 个文件</td>` +
         `<td></td>` +
@@ -309,11 +409,37 @@ function renderReports(reports, root, exists) {
   }
   table.appendChild(tbody);
   bindFolderNavigation();
+  bindReportSelection();
+  updateSelectionSummary();
   setHint(
     'reportsHint',
     exists ? `报表根目录: ${root}` : `报表根目录不存在: ${root}`,
     exists ? 'muted' : 'muted warn',
   );
+}
+
+function updateSelectionSummary() {
+  const target = el('selectionSummary');
+  if (!target) return;
+  target.textContent = `已选 ${selectedReportPaths.size} 个文件、${selectedFolderPaths.size} 个文件夹`;
+  target.className = selectedReportPaths.size || selectedFolderPaths.size ? 'muted ok selection-summary' : 'muted selection-summary';
+}
+
+function bindReportSelection() {
+  for (const item of document.querySelectorAll('.report-check')) {
+    item.addEventListener('change', () => {
+      if (item.checked) selectedReportPaths.add(item.value);
+      else selectedReportPaths.delete(item.value);
+      updateSelectionSummary();
+    });
+  }
+  for (const item of document.querySelectorAll('.folder-check')) {
+    item.addEventListener('change', () => {
+      if (item.checked) selectedFolderPaths.add(item.value);
+      else selectedFolderPaths.delete(item.value);
+      updateSelectionSummary();
+    });
+  }
 }
 
 function bindFolderNavigation() {
@@ -341,13 +467,24 @@ async function refreshReports() {
 }
 
 function selectedReports() {
-  return Array.from(document.querySelectorAll('.report-check:checked')).map(item => item.value);
+  return Array.from(selectedReportPaths).sort();
+}
+
+function selectedFolders() {
+  return Array.from(selectedFolderPaths).sort();
 }
 
 function selectAllReports(checked) {
-  for (const item of document.querySelectorAll('.report-check')) {
-    item.checked = checked;
+  if (!checked) {
+    selectedReportPaths.clear();
+    selectedFolderPaths.clear();
   }
+  for (const item of document.querySelectorAll('.report-check, .folder-check')) {
+    item.checked = checked;
+    if (checked && item.classList.contains('report-check')) selectedReportPaths.add(item.value);
+    if (checked && item.classList.contains('folder-check')) selectedFolderPaths.add(item.value);
+  }
+  updateSelectionSummary();
 }
 
 function renderDrives(drives) {
@@ -404,14 +541,16 @@ async function refreshDrives() {
 
 async function startCopy() {
   const files = selectedReports();
+  const folders = selectedFolders();
   const drive = el('driveSelect').value;
-  if (!files.length) throw new Error('请先选择报表文件');
+  if (!files.length && !folders.length) throw new Error('请先选择报表文件或文件夹');
   if (!drive) throw new Error('请先选择U盘目标');
   const overwrite = el('overwriteCopy').checked;
   const destination = currentConfig.destination_folder || 'SMA_Report';
   const ok = await showConfirmModal({
     title: '复制报表确认',
-    message: `将 ${files.length} 个报表复制到 ${drive}\\${destination}。${overwrite ? '同名文件将被覆盖。' : '同名文件将跳过。'}是否继续？`,
+    message: `将 ${files.length} 个文件、${folders.length} 个文件夹（含子文件夹）复制到 ${drive}\\${destination}。` +
+      `${overwrite ? '同名文件将被覆盖。' : '同名文件将跳过。'}重叠选择会自动去重。是否继续？`,
     confirmText: '开始复制',
   });
   if (!ok) return;
@@ -421,18 +560,42 @@ async function startCopy() {
     body: JSON.stringify({
       drive,
       files,
+      folders,
       destination_folder: destination,
       overwrite,
     }),
   });
   watchJob(data.job.id);
-  setHint('copyHint', `复制任务已开始: ${files.length} 个文件 -> ${drive}`, 'muted ok');
+  setHint('copyHint', `复制任务已开始: ${files.length} 个文件、${folders.length} 个文件夹 -> ${drive}`, 'muted ok');
 }
 
 function statusClass(status) {
   if (status === 'done') return 'status-done';
   if (status === 'failed') return 'status-failed';
+  if (status === 'cancelled' || status === 'canceled') return 'status-cancelled';
   return 'status-running';
+}
+
+function notifyJobOutcome(job) {
+  if (!job || !job.id || job.status === 'running') return;
+  const status = String(job.status || '');
+  const notificationKey = `${job.id}:${status}`;
+  if (notifiedJobStates.get(job.id) === notificationKey) return;
+  notifiedJobStates.set(job.id, notificationKey);
+
+  const title = job.title || job.id;
+  if (status === 'done') {
+    const failedCount = Array.isArray(job.result?.failed) ? job.result.failed.length : 0;
+    if (failedCount > 0) {
+      showStatusBar(`任务完成但有失败：${title}，失败 ${failedCount} 项。`, 'warn');
+    } else {
+      showStatusBar(`任务成功：${title}`, 'ok');
+    }
+  } else if (status === 'cancelled' || status === 'canceled') {
+    showStatusBar(`任务已取消：${title}`, 'warn');
+  } else if (status === 'failed') {
+    showStatusBar(`任务失败：${title}：${job.error || '未知错误'}`, 'error');
+  }
 }
 
 function formatDuration(seconds) {
@@ -495,6 +658,7 @@ async function refreshJobs() {
   if (activeJobId) {
     const jobData = await fetchJson('/api/jobs/' + encodeURIComponent(activeJobId));
     renderJobLog(jobData.job);
+    notifyJobOutcome(jobData.job);
     if (jobData.job.status !== 'running' && pollTimer) {
       clearInterval(pollTimer);
       pollTimer = null;
@@ -582,4 +746,4 @@ async function init() {
   }
 }
 
-init().catch(err => alert(err.message));
+init().catch(err => showStatusBar(err.message, 'error'));

@@ -11,6 +11,7 @@ import secrets
 import shutil
 import sqlite3
 import subprocess
+import sys
 import threading
 import time
 import uuid
@@ -21,6 +22,7 @@ from typing import Any, Callable
 from urllib.parse import urlsplit
 
 import pymysql
+from cryptography.fernet import Fernet, InvalidToken
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -28,9 +30,16 @@ from pydantic import BaseModel
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+COMMON_ROOT = BASE_DIR.parent / "SD_SMA_COMMON"
+if COMMON_ROOT.is_dir() and str(COMMON_ROOT) not in sys.path:
+    sys.path.insert(0, str(COMMON_ROOT))
+
+from sd_sma_common import FilesystemBrowser, FilesystemBrowserError, windows_removable_roots
+
 AUTH_TOKEN_ENV = "SD_SMA_WEB_TOKEN"
 AUTH_TOKEN_HEADER = "X-SD-SMA-Token"
 AUTH_EXEMPT_PATHS = {"/api/health"}
+BACKUP_DIR_ENV = "SD_SMA_DB_ADMIN_BACKUP_DIR"
 JOB_LOGGER = logging.getLogger("sd_sma.db_admin.job")
 
 
@@ -80,6 +89,7 @@ def _resolve_config_dir() -> Path:
 
 CONFIG_DIR = _resolve_config_dir()
 CONFIG_FILE = CONFIG_DIR / "default.json"
+SECRET_KEY_FILE = CONFIG_DIR / ".sd_sma_db_admin_fernet.key"
 SAFE_NAME_RE = re.compile(r"^[A-Za-z0-9_]+$")
 
 
@@ -141,8 +151,33 @@ class ImportServerCsvRequest(BaseModel):
     confirmation_token: str
 
 
+class CopyBackupsRequest(BaseModel):
+    filenames: list[str]
+    destination_dir: str
+
+
+class CopyBackupFilesRequest(BaseModel):
+    paths: list[str]
+    destination_dir: str
+
+
+class DeleteBackupFilesConfirmationRequest(BaseModel):
+    paths: list[str]
+
+
+class DeleteBackupFilesRequest(BaseModel):
+    paths: list[str]
+    confirmation_token: str
+
+
 class JobCancelled(RuntimeError):
     pass
+
+
+class JobFailedWithResult(RuntimeError):
+    def __init__(self, message: str, result: dict[str, Any]) -> None:
+        super().__init__(message)
+        self.result = result
 
 
 def load_config() -> dict[str, Any]:
@@ -159,6 +194,32 @@ def save_config(cfg: dict[str, Any]) -> None:
     _atomic_json(CONFIG_FILE, cfg)
 
 
+def _secret_key() -> bytes:
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    if SECRET_KEY_FILE.exists():
+        return SECRET_KEY_FILE.read_bytes().strip()
+    key = Fernet.generate_key()
+    SECRET_KEY_FILE.write_bytes(key)
+    try:
+        SECRET_KEY_FILE.chmod(0o600)
+    except OSError:
+        pass
+    return key
+
+
+def _encrypt_password(value: str) -> str:
+    return Fernet(_secret_key()).encrypt(value.encode("utf-8")).decode("ascii")
+
+
+def _decrypt_password(value: str) -> str:
+    if not value:
+        return ""
+    try:
+        return Fernet(_secret_key()).decrypt(value.encode("ascii")).decode("utf-8")
+    except (InvalidToken, ValueError) as exc:
+        raise ValueError("数据库密码密文无法在本机解密，请在 Launcher 中重新设置凭据") from exc
+
+
 def _config_path(value: str | None, default: Path) -> Path:
     if not value:
         return default
@@ -171,9 +232,30 @@ def _config_path(value: str | None, default: Path) -> Path:
 
 def backup_dir() -> Path:
     cfg = load_config()
-    path = _config_path(str(cfg.get("backup_dir") or "backups"), CONFIG_DIR / "backups")
+    configured = (os.getenv(BACKUP_DIR_ENV) or "").strip()
+    if not configured:
+        configured = str(cfg.get("backup_dir") or "${DB_ADMIN_ROOT}/backups")
+    path = _config_path(configured, BASE_DIR / "backups")
     path.mkdir(parents=True, exist_ok=True)
     return path
+
+
+def filesystem_browser(purpose: str) -> tuple[FilesystemBrowser, set[str], bool]:
+    cfg = load_config()
+    configured = cfg.get("allowed_browse_roots") or []
+    if not isinstance(configured, list):
+        configured = []
+    roots = [backup_dir(), *configured, *windows_removable_roots()]
+    normalized = purpose.strip().lower()
+    if normalized == "sql":
+        return FilesystemBrowser(roots), {".sql"}, True
+    if normalized == "csv":
+        return FilesystemBrowser(roots), {".csv"}, True
+    if normalized == "directory":
+        return FilesystemBrowser(roots), set(), False
+    if normalized == "removable-directory":
+        return FilesystemBrowser(windows_removable_roots()), set(), False
+    raise FilesystemBrowserError("Unsupported browse purpose")
 
 
 def last_output_dir() -> Path | None:
@@ -328,60 +410,70 @@ def default_connection() -> dict[str, Any]:
     cfg = load_config()
     conn = cfg.get("default_connection") if isinstance(cfg.get("default_connection"), dict) else {}
     base = DbConnection().model_dump()
-    base.update(conn)
+    base.update({key: value for key, value in conn.items() if key not in {"password", "password_enc"}})
+    for key, env_name in {
+        "host": "SD_SMA_DB_HOST",
+        "port": "SD_SMA_DB_PORT",
+        "username": "SD_SMA_DB_USERNAME",
+        "database": "SD_SMA_DB_DATABASE",
+    }.items():
+        if os.getenv(env_name):
+            base[key] = int(os.environ[env_name]) if key == "port" else os.environ[env_name]
+    base["password"] = ""
+    base["password_configured"] = bool(
+        os.getenv("SD_SMA_DB_PASSWORD") or conn.get("password_enc") or conn.get("password")
+    )
+    base["password_managed"] = bool(os.getenv("SD_SMA_DB_CREDENTIAL_MANAGED"))
     return base
 
 
 def persist_default_connection(conn: DbConnection) -> dict[str, Any]:
     cfg = load_config()
     current = dict(cfg.get("default_connection") or {}) if isinstance(cfg.get("default_connection"), dict) else {}
+    legacy_password = str(current.get("password") or "")
     payload = conn.model_dump()
-    for key in ("engine", "host", "port", "username", "password", "database"):
+    for key in ("engine", "host", "port", "username", "database"):
         if key in payload:
             current[key] = payload[key]
+    current.pop("password", None)
+    if os.getenv("SD_SMA_DB_CREDENTIAL_MANAGED"):
+        current.pop("password_enc", None)
+    elif conn.password:
+        current["password_enc"] = _encrypt_password(conn.password)
+    elif legacy_password and not current.get("password_enc"):
+        current["password_enc"] = _encrypt_password(legacy_password)
     cfg["default_connection"] = current
     save_config(cfg)
-    return dict(current)
-
-def _folder_dialog_initial(initial_dir: str | None = None) -> Path:
-    raw = (initial_dir or "").strip()
-    if not raw:
-        return last_output_dir() or backup_dir()
-    raw = raw.replace("${DB_ADMIN_ROOT}", str(BASE_DIR)).replace("${CONFIG_DIR}", str(CONFIG_DIR))
-    path = Path(os.path.expandvars(raw))
-    if not path.is_absolute():
-        path = CONFIG_DIR / path
-    try:
-        path = path.resolve()
-    except OSError:
-        return last_output_dir() or backup_dir()
-    if path.is_dir():
-        return path
-    if path.parent.is_dir():
-        return path.parent
-    return last_output_dir() or backup_dir()
+    return default_connection()
 
 
-def choose_folder_dialog(initial_dir: str | None = None) -> str:
-    try:
-        import tkinter as tk
-        from tkinter import filedialog
-    except Exception as exc:  # noqa: BLE001
-        raise RuntimeError(f"Folder picker is not available: {exc}") from exc
+def connection_password(conn: DbConnection) -> str:
+    managed = os.getenv("SD_SMA_DB_PASSWORD")
+    if managed is not None:
+        return managed
+    if conn.password:
+        return conn.password
+    cfg = load_config()
+    current = cfg.get("default_connection") if isinstance(cfg.get("default_connection"), dict) else {}
+    if current.get("password_enc"):
+        return _decrypt_password(str(current["password_enc"]))
+    # One-time compatibility for legacy files; the next save migrates it.
+    return str(current.get("password") or "")
 
-    initial = _folder_dialog_initial(initial_dir)
-    root = tk.Tk()
-    root.withdraw()
-    root.attributes("-topmost", True)
-    try:
-        selected = filedialog.askdirectory(
-            initialdir=str(initial),
-            title="选择导出文件夹",
-            mustexist=True,
-        )
-    finally:
-        root.destroy()
-    return str(Path(selected).resolve()) if selected else ""
+
+def managed_connection(conn: DbConnection) -> DbConnection:
+    """Apply all Launcher-managed connection fields, not only the password."""
+    updates: dict[str, Any] = {}
+    for key, env_name in {
+        "host": "SD_SMA_DB_HOST",
+        "port": "SD_SMA_DB_PORT",
+        "username": "SD_SMA_DB_USERNAME",
+        "database": "SD_SMA_DB_DATABASE",
+    }.items():
+        value = os.getenv(env_name)
+        if value:
+            updates[key] = int(value) if key == "port" else value
+    return conn.model_copy(update=updates) if updates else conn
 
 def safe_identifier(value: str, label: str) -> str:
     text = (value or "").strip()
@@ -395,11 +487,12 @@ def quote_ident(value: str) -> str:
 
 
 def connect_mysql(conn: DbConnection, database: str | None = None, *, autocommit: bool = True):
+    conn = managed_connection(conn)
     return pymysql.connect(
         host=conn.host or "127.0.0.1",
         port=int(conn.port or 3306),
         user=conn.username or "",
-        password=conn.password or "",
+        password=connection_password(conn),
         database=database or conn.database or None,
         charset="utf8mb4",
         autocommit=autocommit,
@@ -473,6 +566,8 @@ MAX_JOB_LOG_LINES = 1000
 _confirmations: dict[str, dict[str, Any]] = {}
 _confirmations_lock = threading.Lock()
 CONFIRMATION_TTL_SECONDS = 120
+_protected_export_paths: dict[str, int] = {}
+_protected_export_paths_lock = threading.Lock()
 
 
 def _prune_finished_jobs_locked() -> None:
@@ -555,19 +650,51 @@ def consume_confirmation(token: str, action: str, database: str, table: str = ""
     if not item or float(item["expires_at"]) <= time.monotonic():
         raise HTTPException(400, "Confirmation token is invalid, expired, or already used")
     expected = (action, safe_identifier(database, "database"), safe_identifier(table, "table") if table else "")
-    actual = (item["action"], item["database"], item["table"])
+    actual = (item.get("action"), item.get("database"), item.get("table"))
     if actual != expected:
         raise HTTPException(400, "Confirmation token does not match this operation")
 
 
-def start_job(title: str, target, *args: Any) -> dict[str, Any]:
+def _reserve_export_paths(paths: list[str], *, exclusive: bool = False) -> list[str]:
+    keys = sorted({os.path.normcase(str(Path(path).resolve())) for path in paths})
+    with _protected_export_paths_lock:
+        for key in keys:
+            current = _protected_export_paths.get(key, 0)
+            if current < 0 or (exclusive and current > 0):
+                raise HTTPException(409, f"Backup file is being used by another operation: {key}")
+        for key in keys:
+            if exclusive:
+                _protected_export_paths[key] = -1
+            else:
+                _protected_export_paths[key] = _protected_export_paths.get(key, 0) + 1
+    return keys
+
+
+def _release_export_paths(keys: list[str], *, exclusive: bool = False) -> None:
+    with _protected_export_paths_lock:
+        for key in keys:
+            current = _protected_export_paths.get(key, 0)
+            if exclusive or current <= 1:
+                _protected_export_paths.pop(key, None)
+            else:
+                _protected_export_paths[key] = current - 1
+
+
+def start_job(
+    title: str,
+    target,
+    *args: Any,
+    protected_paths: list[str] | None = None,
+) -> dict[str, Any]:
     job_id = str(uuid.uuid4())
     now = datetime.now().isoformat(timespec="seconds")
+    reserved_keys = _reserve_export_paths(protected_paths or [])
     with _jobs_lock:
         cfg = load_config()
         max_running = max(1, int(cfg.get("max_concurrent_jobs") or 2))
         running = sum(1 for job in _jobs.values() if job.get("status") == "running")
         if running >= max_running:
+            _release_export_paths(reserved_keys)
             raise HTTPException(429, f"Too many running jobs (limit={max_running})")
         _jobs[job_id] = {
             "id": job_id,
@@ -606,6 +733,16 @@ def start_job(title: str, target, *args: Any) -> dict[str, Any]:
                 error=str(exc),
                 _finished_monotonic=time.monotonic(),
             )
+        except JobFailedWithResult as exc:
+            append_job_log(job_id, f"ERROR: {exc}")
+            update_job(
+                job_id,
+                status="failed",
+                phase="failed",
+                error=str(exc),
+                result=exc.result,
+                _finished_monotonic=time.monotonic(),
+            )
         except Exception as exc:  # noqa: BLE001
             append_job_log(job_id, f"ERROR: {exc}")
             update_job(
@@ -615,9 +752,15 @@ def start_job(title: str, target, *args: Any) -> dict[str, Any]:
                 error=str(exc),
                 _finished_monotonic=time.monotonic(),
             )
+        finally:
+            _release_export_paths(reserved_keys)
 
-    thread = threading.Thread(target=runner, name=f"db-admin-job-{job_id[:8]}", daemon=True)
-    thread.start()
+    try:
+        thread = threading.Thread(target=runner, name=f"db-admin-job-{job_id[:8]}", daemon=True)
+        thread.start()
+    except BaseException:
+        _release_export_paths(reserved_keys)
+        raise
     return _public_job(_jobs[job_id])
 
 
@@ -885,6 +1028,7 @@ def _run_mysqldump_backup(
     out: Path,
     manifest_extra: dict[str, Any],
 ) -> dict[str, Any]:
+    conn = managed_connection(conn)
     partial = out.with_suffix(out.suffix + ".partial")
     reserve_factor = float(load_config().get("backup_free_space_factor") or 1.5)
     required_bytes = max(64 * 1024 * 1024, int(estimated_bytes * reserve_factor))
@@ -899,7 +1043,7 @@ def _run_mysqldump_backup(
     append_job_log(job_id, f"Estimated bytes: {estimated_bytes}; free bytes: {free_bytes}")
     set_job_progress(job_id, 5, "dumping")
     env = os.environ.copy()
-    env["MYSQL_PWD"] = conn.password or ""
+    env["MYSQL_PWD"] = connection_password(conn)
     cmd = [
         dump_tool,
         "--host",
@@ -1045,6 +1189,357 @@ def _completed_backup(filename: str) -> tuple[Path, dict[str, Any]]:
     return path, manifest
 
 
+def _completed_export_path(value: str | os.PathLike[str]) -> tuple[Path, dict[str, Any]]:
+    if ".." in Path(value).parts:
+        raise FilesystemBrowserError("Parent path segments are not allowed")
+    browser = FilesystemBrowser(backup_roots())
+    path, _root = browser.authorize(value)
+    if not path.is_file() or path.suffix.lower() not in {".sql", ".csv"}:
+        raise ValueError("Managed backup file must be a completed SQL or CSV export")
+    manifest_path = path.with_suffix(path.suffix + ".manifest.json")
+    if not manifest_path.is_file():
+        raise FileNotFoundError(f"Completed manifest not found: {path.name}")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if not isinstance(manifest, dict) or manifest.get("status") != "complete":
+        raise ValueError(f"Export manifest is invalid or incomplete: {path.name}")
+    if manifest.get("filename") != path.name:
+        raise ValueError(f"Export manifest filename does not match: {path.name}")
+    if int(manifest.get("size_bytes") or -1) != path.stat().st_size:
+        raise ValueError(f"Export size does not match manifest: {path.name}")
+    if not re.fullmatch(r"[0-9a-fA-F]{64}", str(manifest.get("sha256") or "")):
+        raise ValueError(f"Export manifest SHA-256 is invalid: {path.name}")
+    return path, manifest
+
+
+def _prepare_managed_export_paths(values: list[str]) -> list[tuple[Path, dict[str, Any]]]:
+    if not values:
+        raise ValueError("Select at least one completed SQL or CSV file")
+    if len(values) > 500:
+        raise ValueError("At most 500 files can be managed at once")
+    prepared: list[tuple[Path, dict[str, Any]]] = []
+    seen: set[str] = set()
+    for value in values:
+        path, manifest = _completed_export_path(value)
+        key = os.path.normcase(str(path))
+        if key in seen:
+            raise ValueError(f"Duplicate managed file path: {path}")
+        seen.add(key)
+        prepared.append((path, manifest))
+    return prepared
+
+
+def backup_file_roots() -> dict[str, Any]:
+    return {"roots": FilesystemBrowser(backup_roots()).public_roots()}
+
+
+def backup_file_entries(path: str) -> dict[str, Any]:
+    if ".." in Path(path).parts:
+        raise FilesystemBrowserError("Parent path segments are not allowed")
+    browser = FilesystemBrowser(backup_roots())
+    listing = browser.entries(path, extensions={".sql", ".csv"}, include_files=True)
+    entries: list[dict[str, Any]] = []
+    for entry in listing["entries"]:
+        if entry["type"] == "directory":
+            entries.append(entry)
+            continue
+        try:
+            managed_path, manifest = _completed_export_path(str(entry["path"]))
+        except (FilesystemBrowserError, FileNotFoundError, OSError, ValueError, json.JSONDecodeError):
+            continue
+        entries.append(
+            {
+                **entry,
+                "path": str(managed_path),
+                "kind": managed_path.suffix.lower().removeprefix("."),
+                "sha256": str(manifest.get("sha256") or ""),
+                "completed_at": str(manifest.get("completed_at") or entry.get("modified_at") or ""),
+                "scope": str(manifest.get("scope") or ""),
+                "database": str(manifest.get("database") or ""),
+                "table": str(manifest.get("table") or ""),
+            }
+        )
+    return {**listing, "entries": entries}
+
+
+def _managed_path_signature(prepared: list[tuple[Path, dict[str, Any]]]) -> tuple[str, ...]:
+    return tuple(sorted(os.path.normcase(str(path)) for path, _manifest in prepared))
+
+
+def issue_delete_backup_files_confirmation(paths: list[str]) -> str:
+    prepared = _prepare_managed_export_paths(paths)
+    signature = _managed_path_signature(prepared)
+    token = secrets.token_urlsafe(32)
+    now = time.monotonic()
+    with _confirmations_lock:
+        expired = [key for key, item in _confirmations.items() if float(item["expires_at"]) <= now]
+        for key in expired:
+            _confirmations.pop(key, None)
+        _confirmations[token] = {
+            "action": "delete-backup-files",
+            "paths": signature,
+            "expires_at": now + CONFIRMATION_TTL_SECONDS,
+        }
+    return token
+
+
+def consume_delete_backup_files_confirmation(token: str, prepared: list[tuple[Path, dict[str, Any]]]) -> None:
+    with _confirmations_lock:
+        item = _confirmations.pop((token or "").strip(), None)
+    if not item or float(item["expires_at"]) <= time.monotonic():
+        raise HTTPException(400, "Deletion confirmation token is invalid, expired, or already used")
+    expected = ("delete-backup-files", _managed_path_signature(prepared))
+    actual = (item.get("action"), tuple(item.get("paths") or ()))
+    if actual != expected:
+        raise HTTPException(400, "Deletion confirmation token does not match the selected files")
+
+
+def delete_backup_files(paths: list[str], confirmation_token: str) -> dict[str, Any]:
+    prepared = _prepare_managed_export_paths(paths)
+    consume_delete_backup_files_confirmation(confirmation_token, prepared)
+    reserved_keys = _reserve_export_paths([str(path) for path, _manifest in prepared], exclusive=True)
+    renamed: list[tuple[Path, Path]] = []
+    deletion_id = uuid.uuid4().hex[:12]
+    try:
+        prepared = _prepare_managed_export_paths([str(path) for path, _manifest in prepared])
+        for path, _manifest in prepared:
+            manifest_path = path.with_suffix(path.suffix + ".manifest.json")
+            for original in (path, manifest_path):
+                tombstone = original.with_name(f".{original.name}.delete-{deletion_id}")
+                if tombstone.exists():
+                    raise RuntimeError(f"Temporary deletion target already exists: {tombstone.name}")
+                original.replace(tombstone)
+                renamed.append((original, tombstone))
+    except BaseException:
+        for original, tombstone in reversed(renamed):
+            if tombstone.exists() and not original.exists():
+                try:
+                    tombstone.replace(original)
+                except OSError:
+                    pass
+        raise
+    finally:
+        if len(renamed) != len(prepared) * 2:
+            _release_export_paths(reserved_keys, exclusive=True)
+
+    failed_cleanup: list[dict[str, str]] = []
+    try:
+        for _original, tombstone in renamed:
+            try:
+                tombstone.unlink()
+            except OSError as exc:
+                failed_cleanup.append({"path": str(tombstone), "error": str(exc)})
+    finally:
+        _release_export_paths(reserved_keys, exclusive=True)
+    if failed_cleanup:
+        raise RuntimeError(f"Files were removed from the catalog but temporary cleanup failed: {failed_cleanup}")
+    return {
+        "deleted": [str(path) for path, _manifest in prepared],
+        "count": len(prepared),
+        "size_bytes": sum(int(manifest.get("size_bytes") or 0) for _path, manifest in prepared),
+    }
+
+
+def _removable_destination(value: str) -> tuple[Path, Path]:
+    browser = FilesystemBrowser(windows_removable_roots())
+    destination, drive_root = browser.authorize(value)
+    if not drive_root.is_dir():
+        raise FilesystemBrowserError("The removable drive is no longer available")
+    destination.mkdir(parents=True, exist_ok=True)
+    destination, current_root = FilesystemBrowser(windows_removable_roots()).authorize(destination)
+    if current_root != drive_root or not destination.is_dir():
+        raise FilesystemBrowserError("The destination is no longer on the selected removable drive")
+    return destination, current_root
+
+
+def _copy_job_file(
+    job_id: str,
+    source: Path,
+    temporary: Path,
+    *,
+    completed_bytes: int,
+    total_bytes: int,
+    phase: str,
+) -> int:
+    temporary.unlink(missing_ok=True)
+    temporary.parent.mkdir(parents=True, exist_ok=True)
+    with source.open("rb") as reader, temporary.open("xb") as writer:
+        while chunk := reader.read(1024 * 1024):
+            _raise_if_cancelled(job_id)
+            writer.write(chunk)
+            completed_bytes += len(chunk)
+            set_job_progress(
+                job_id,
+                max(1, min(96, int(completed_bytes / max(total_bytes, 1) * 96))),
+                phase,
+            )
+        writer.flush()
+        os.fsync(writer.fileno())
+    if temporary.stat().st_size != source.stat().st_size:
+        raise RuntimeError(f"Copied size does not match source: {source.name}")
+    return completed_bytes
+
+
+def copy_backup_files_job(job_id: str, paths: list[str], destination_dir: str) -> dict[str, Any]:
+    selected = _prepare_managed_export_paths(paths)
+    destination, drive_root = _removable_destination(destination_dir)
+    append_job_log(job_id, f"Preflight destination: {destination}")
+    prepared: list[dict[str, Any]] = []
+    total_bytes = 0
+    required_free_bytes = 0
+    target_names: set[str] = set()
+    for index, (source, manifest) in enumerate(selected, start=1):
+        _raise_if_cancelled(job_id)
+        set_job_progress(job_id, 0, f"preflight {index}/{len(selected)}")
+        target_key = os.path.normcase(source.name)
+        if target_key in target_names:
+            raise RuntimeError(f"Multiple selected files have the same destination name: {source.name}")
+        target_names.add(target_key)
+        source_manifest = source.with_suffix(source.suffix + ".manifest.json")
+        target = destination / source.name
+        target_manifest = target.with_suffix(target.suffix + ".manifest.json")
+        source_bytes = source.stat().st_size
+        manifest_bytes = source_manifest.stat().st_size
+        total_bytes += source_bytes + manifest_bytes
+        skip_sql = False
+        if target.exists():
+            if not target.is_file():
+                raise RuntimeError(f"Destination name is not a file: {target.name}")
+            append_job_log(job_id, f"Checking existing file: {target.name}")
+            target_sha256 = _sha256_file(
+                target,
+                progress_hook=lambda _value: _raise_if_cancelled(job_id),
+            )
+            if not secrets.compare_digest(target_sha256, str(manifest.get("sha256") or "")):
+                raise RuntimeError(f"A different backup with the same name already exists: {target.name}")
+            skip_sql = True
+            required_free_bytes += manifest_bytes
+        else:
+            required_free_bytes += source_bytes + manifest_bytes
+        prepared.append(
+            {
+                "source": source,
+                "source_manifest": source_manifest,
+                "target": target,
+                "target_manifest": target_manifest,
+                "manifest": manifest,
+                "skip_sql": skip_sql,
+            }
+        )
+
+    try:
+        free_bytes = int(shutil.disk_usage(drive_root).free)
+    except OSError as exc:
+        raise RuntimeError(f"Unable to read removable drive free space: {exc}") from exc
+    if required_free_bytes > free_bytes:
+        raise RuntimeError(
+            f"Removable drive free space is insufficient: need {required_free_bytes} bytes, available {free_bytes} bytes"
+        )
+
+    copied: list[str] = []
+    skipped: list[str] = []
+    failed: list[dict[str, str]] = []
+    verified: list[str] = []
+    completed_bytes = 0
+    for index, item in enumerate(prepared, start=1):
+        _raise_if_cancelled(job_id)
+        source = item["source"]
+        target = item["target"]
+        target_manifest = item["target_manifest"]
+        sql_temp = target.with_name(f".{target.name}.{job_id[:8]}.tmp")
+        manifest_temp = target_manifest.with_name(f".{target_manifest.name}.{job_id[:8]}.tmp")
+        committed_sql = False
+        committed_manifest = False
+        was_skipped = bool(item["skip_sql"])
+        append_job_log(job_id, f"{index}/{len(prepared)} Copying {source.name}")
+        try:
+            if was_skipped:
+                completed_bytes += source.stat().st_size
+            else:
+                completed_bytes = _copy_job_file(
+                    job_id,
+                    source,
+                    sql_temp,
+                    completed_bytes=completed_bytes,
+                    total_bytes=total_bytes,
+                    phase=f"copying {index}/{len(prepared)} {source.name}",
+                )
+                set_job_progress(job_id, min(98, int(completed_bytes / max(total_bytes, 1) * 96)), "verifying")
+                actual_sha256 = _sha256_file(
+                    sql_temp,
+                    progress_hook=lambda _value: _raise_if_cancelled(job_id),
+                )
+                if not secrets.compare_digest(actual_sha256, str(item["manifest"].get("sha256") or "")):
+                    raise RuntimeError(f"SHA-256 verification failed after copying: {source.name}")
+                sql_temp.replace(target)
+                committed_sql = True
+
+            completed_bytes = _copy_job_file(
+                job_id,
+                item["source_manifest"],
+                manifest_temp,
+                completed_bytes=completed_bytes,
+                total_bytes=total_bytes,
+                phase=f"finalizing {index}/{len(prepared)} {source.name}",
+            )
+            _raise_if_cancelled(job_id)
+            manifest_temp.replace(target_manifest)
+            committed_manifest = True
+            if was_skipped:
+                skipped.append(source.name)
+            else:
+                copied.append(source.name)
+            verified.append(source.name)
+            append_job_log(job_id, f"Verified: {target}")
+        except BaseException as exc:
+            sql_temp.unlink(missing_ok=True)
+            manifest_temp.unlink(missing_ok=True)
+            if committed_sql and not committed_manifest:
+                target.unlink(missing_ok=True)
+            if isinstance(exc, JobCancelled):
+                raise
+            failed.append({"filename": source.name, "error": str(exc)})
+            raise JobFailedWithResult(
+                str(exc),
+                {
+                    "destination": str(destination),
+                    "copied": copied,
+                    "skipped": skipped,
+                    "failed": failed,
+                    "verified": verified,
+                    "total_bytes": total_bytes,
+                },
+            ) from exc
+
+    set_job_progress(job_id, 99, "finalizing")
+    return {
+        "destination": str(destination),
+        "copied": copied,
+        "skipped": skipped,
+        "failed": failed,
+        "verified": verified,
+        "total_bytes": total_bytes,
+    }
+
+
+def copy_backups_job(job_id: str, filenames: list[str], destination_dir: str) -> dict[str, Any]:
+    safe_names: list[str] = []
+    seen: set[str] = set()
+    for filename in filenames:
+        safe = Path(str(filename)).name
+        if safe != filename or Path(safe).suffix.lower() != ".sql":
+            raise ValueError(f"Invalid backup filename: {filename}")
+        key = os.path.normcase(safe)
+        if key in seen:
+            raise ValueError(f"Duplicate backup filename: {safe}")
+        seen.add(key)
+        safe_names.append(safe)
+    paths: list[str] = []
+    for safe in safe_names:
+        source, _manifest = _completed_backup(safe)
+        paths.append(str(source))
+    return copy_backup_files_job(job_id, paths, destination_dir)
+
+
 def _completed_csv_export(filename: str) -> tuple[Path, dict[str, Any]]:
     safe = Path(filename).name
     if safe != filename or Path(safe).suffix.lower() != ".csv":
@@ -1064,6 +1559,7 @@ def _completed_csv_export(filename: str) -> tuple[Path, dict[str, Any]]:
 
 
 def restore_verified_backup_job(job_id: str, conn: DbConnection, database: str, filename: str) -> dict[str, Any]:
+    conn = managed_connection(conn)
     source, manifest = _completed_backup(filename)
     append_job_log(job_id, f"Verifying SHA-256 for {source.name}")
     set_job_progress(job_id, 2, "verifying")
@@ -1077,7 +1573,7 @@ def restore_verified_backup_job(job_id: str, conn: DbConnection, database: str, 
     append_job_log(job_id, f"Restoring verified backup into database {dbname}")
     set_job_progress(job_id, 8, "restoring")
     env = os.environ.copy()
-    env["MYSQL_PWD"] = conn.password or ""
+    env["MYSQL_PWD"] = connection_password(conn)
     cmd = [
         resolve_mysql_tool("mysql"),
         "--host",
@@ -1104,6 +1600,7 @@ def restore_verified_backup_job(job_id: str, conn: DbConnection, database: str, 
 
 
 def export_csv_job(job_id: str, conn: DbConnection, database: str, table: str, output_dir: str = "") -> dict[str, Any]:
+    conn = managed_connection(conn)
     dbname = safe_identifier(database, "database")
     table_name = safe_identifier(table, "table")
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -1121,7 +1618,7 @@ def export_csv_job(job_id: str, conn: DbConnection, database: str, table: str, o
         host=conn.host or "127.0.0.1",
         port=int(conn.port or 3306),
         user=conn.username or "",
-        password=conn.password or "",
+        password=connection_password(conn),
         database=dbname,
         charset="utf8mb4",
         cursorclass=pymysql.cursors.SSCursor,
@@ -1308,28 +1805,6 @@ def import_verified_csv_job(
     )
 
 
-def choose_file_dialog(*, title: str, filetypes: list[tuple[str, str]], initial_dir: str | None = None) -> str:
-    try:
-        import tkinter as tk
-        from tkinter import filedialog
-    except Exception as exc:  # noqa: BLE001
-        raise RuntimeError(f"File picker is not available: {exc}") from exc
-
-    initial = _folder_dialog_initial(initial_dir)
-    root = tk.Tk()
-    root.withdraw()
-    root.attributes("-topmost", True)
-    try:
-        selected = filedialog.askopenfilename(
-            initialdir=str(initial),
-            title=title,
-            filetypes=filetypes,
-        )
-    finally:
-        root.destroy()
-    return str(Path(selected).resolve()) if selected else ""
-
-
 def register_local_export_file(source_path: str) -> dict[str, Any]:
     source = Path(source_path).resolve()
     if not source.is_file():
@@ -1455,14 +1930,34 @@ def save_connection_config(conn: DbConnection) -> dict[str, Any]:
     return {"ok": True, "default_connection": saved}
 
 
-@app.post("/api/folder-dialog")
-def folder_dialog(payload: dict[str, Any]) -> dict[str, Any]:
+@app.get("/api/filesystem/roots")
+def filesystem_roots(purpose: str = "directory") -> dict[str, Any]:
     try:
-        selected = choose_folder_dialog(str(payload.get("initial_dir") or ""))
-        if selected:
-            persist_last_output_dir(Path(selected))
-        return {"selected": selected}
-    except Exception as exc:  # noqa: BLE001
+        browser, _, _ = filesystem_browser(purpose)
+        return {"roots": browser.public_roots()}
+    except FilesystemBrowserError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@app.get("/api/filesystem/entries")
+def filesystem_entries(path: str, purpose: str = "directory") -> dict[str, Any]:
+    try:
+        browser, extensions, include_files = filesystem_browser(purpose)
+        return browser.entries(path, extensions=extensions, include_files=include_files)
+    except FilesystemBrowserError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@app.get("/api/backup-files/roots")
+def get_backup_file_roots() -> dict[str, Any]:
+    return backup_file_roots()
+
+
+@app.get("/api/backup-files/entries")
+def get_backup_file_entries(path: str) -> dict[str, Any]:
+    try:
+        return backup_file_entries(path)
+    except (FilesystemBrowserError, OSError, ValueError) as exc:
         raise HTTPException(400, str(exc)) from exc
 
 
@@ -1470,22 +1965,13 @@ def folder_dialog(payload: dict[str, Any]) -> dict[str, Any]:
 def register_file(payload: dict[str, Any]) -> dict[str, Any]:
     try:
         kind = str(payload.get("kind") or "sql").strip().lower()
-        if kind == "csv":
-            filetypes = [("CSV", "*.csv"), ("All", "*.*")]
-            title = "登记本地 CSV 文件"
-        else:
-            filetypes = [("SQL", "*.sql"), ("All", "*.*")]
-            title = "登记本地 SQL 文件"
-        selected = choose_file_dialog(
-            title=title,
-            filetypes=filetypes,
-            initial_dir=str(payload.get("initial_dir") or ""),
-        )
-        if not selected:
-            return {"selected": ""}
-        registered = register_local_export_file(selected)
+        browser, extensions, _ = filesystem_browser(kind)
+        selected, _ = browser.authorize(str(payload.get("path") or ""))
+        if not selected.is_file() or selected.suffix.lower() not in extensions:
+            raise FilesystemBrowserError(f"Selected file must be {kind.upper()}")
+        registered = register_local_export_file(str(selected))
         return {"selected": registered["path"], **registered}
-    except Exception as exc:  # noqa: BLE001
+    except (FilesystemBrowserError, OSError, ValueError, RuntimeError) as exc:
         raise HTTPException(400, str(exc)) from exc
 
 
@@ -1580,6 +2066,59 @@ def list_backups() -> dict[str, Any]:
     return {"backups": items}
 
 
+@app.post("/api/copy-backups")
+def copy_backups(req: CopyBackupsRequest) -> dict[str, Any]:
+    sources = [
+        str(path)
+        for filename in req.filenames
+        if (path := _find_export_file(filename, suffixes={".sql"})) is not None
+    ]
+    job = start_job(
+        f"Copy {len(req.filenames)} backup(s) to removable drive",
+        copy_backups_job,
+        req.filenames,
+        req.destination_dir,
+        **({"protected_paths": sources} if sources else {}),
+    )
+    return {"job": job}
+
+
+@app.post("/api/copy-backup-files")
+def copy_backup_files(req: CopyBackupFilesRequest) -> dict[str, Any]:
+    try:
+        prepared = _prepare_managed_export_paths(req.paths)
+    except (FilesystemBrowserError, FileNotFoundError, OSError, ValueError, json.JSONDecodeError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+    sources = [str(path) for path, _manifest in prepared]
+    job = start_job(
+        f"Copy {len(sources)} backup file(s) to external device",
+        copy_backup_files_job,
+        sources,
+        req.destination_dir,
+        protected_paths=sources,
+    )
+    return {"job": job}
+
+
+@app.post("/api/backup-files/delete-confirmation")
+def create_delete_backup_files_confirmation(req: DeleteBackupFilesConfirmationRequest) -> dict[str, Any]:
+    try:
+        token = issue_delete_backup_files_confirmation(req.paths)
+        return {"token": token, "expires_in_seconds": CONFIRMATION_TTL_SECONDS}
+    except (FilesystemBrowserError, FileNotFoundError, OSError, ValueError, json.JSONDecodeError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
+@app.post("/api/delete-backup-files")
+def delete_backup_files_api(req: DeleteBackupFilesRequest) -> dict[str, Any]:
+    try:
+        return delete_backup_files(req.paths, req.confirmation_token)
+    except HTTPException:
+        raise
+    except (FilesystemBrowserError, FileNotFoundError, OSError, RuntimeError, ValueError, json.JSONDecodeError) as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+
 @app.get("/api/csv-exports")
 def list_csv_exports() -> dict[str, Any]:
     items: list[dict[str, Any]] = []
@@ -1613,7 +2152,7 @@ def list_csv_exports() -> dict[str, Any]:
 def restore_backup(req: RestoreBackupRequest) -> dict[str, Any]:
     consume_confirmation(req.confirmation_token, "restore-backup", req.database)
     try:
-        _completed_backup(req.filename)
+        source, _manifest = _completed_backup(req.filename)
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         raise HTTPException(400, str(exc)) from exc
     job = start_job(
@@ -1622,6 +2161,7 @@ def restore_backup(req: RestoreBackupRequest) -> dict[str, Any]:
         req.connection,
         req.database,
         req.filename,
+        protected_paths=[str(source)],
     )
     return {"job": job}
 
@@ -1630,7 +2170,7 @@ def restore_backup(req: RestoreBackupRequest) -> dict[str, Any]:
 def import_server_csv(req: ImportServerCsvRequest) -> dict[str, Any]:
     consume_confirmation(req.confirmation_token, "import-server-csv", req.database, req.table)
     try:
-        _completed_csv_export(req.filename)
+        source, _manifest = _completed_csv_export(req.filename)
     except (OSError, ValueError, json.JSONDecodeError, FileNotFoundError) as exc:
         raise HTTPException(400, str(exc)) from exc
     truncate = True if req.force else bool(req.truncate)
@@ -1643,6 +2183,7 @@ def import_server_csv(req: ImportServerCsvRequest) -> dict[str, Any]:
         req.filename,
         truncate,
         bool(req.force),
+        protected_paths=[str(source)],
     )
     return {"job": job}
 

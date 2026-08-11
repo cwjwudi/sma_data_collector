@@ -30,7 +30,7 @@
         </div>
         <span v-if="headerEls.length === 0" class="mb-legacy">{{ headerFb }}</span>
       </div>
-      <div class="mb-gap" :style="{ flex: `0 0 ${gapH}px` }">{{ gapLabel }}</div>
+      <div class="mb-gap" :style="{ flex: `0 0 ${gapH}px`, backgroundColor: bodyGapBg }">{{ gapLabel }}</div>
       <div v-if="me.fb > 0" class="mb-strip mb-ftr" :style="footerBandStyle">
         <div class="mb-strip-rel">
           <div v-for="el in footerEls" :key="el.id" class="mb-z" :style="miniZoneElStyle(el)">
@@ -73,7 +73,12 @@ import {
   normalizeZIndex,
 } from "@/lib/report-template/layout-zone-element";
 import type { PaperLayoutMetrics } from "@/lib/report-template/layout-geometry";
-import { metricsForSheet, type EditorSheet } from "@/lib/report-template/editor-sheet";
+import {
+  activeLayoutSnapshotForSheet,
+  metricsForSheet,
+  type EditorSheet,
+} from "@/lib/report-template/editor-sheet";
+import { resolveBodyBackgroundCss } from "@/lib/report-template/layout-model";
 import type { ReportTemplate } from "@/lib/report-template/model";
 import { miniPreviewScale } from "@/lib/report-template/mini-preview-scale";
 
@@ -136,6 +141,9 @@ const hdrH = computed(() => Math.max(0, me.value.hb));
 const ftrH = computed(() => Math.max(0, me.value.fb));
 const gapH = computed(() =>
   Math.max(28, me.value.contentH * 0.12),
+);
+const bodyGapBg = computed(() =>
+  resolveBodyBackgroundCss(activeLayoutSnapshotForSheet(props.template, sheet.value)),
 );
 
 /** 垂直堆叠总高度（与整页宽度同尺） */

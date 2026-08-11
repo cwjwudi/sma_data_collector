@@ -526,7 +526,7 @@ def _param_el(
         "fontSize": 13,
         "fontFamily": "",
         "zIndex": 1,
-        "showBorder": True,
+        "showBorder": False,
         "alignX": "start",
         "alignY": "center",
         "bindingKind": binding_kind,
@@ -727,12 +727,25 @@ def _find_existing_smoke_id(name: str) -> str | None:
     return None
 
 
+def _strip_all_show_borders(node: Any) -> None:
+    """递归将模版/版式 JSON 中控件 showBorder 置为 False（保留表格内格线由渲染层决定）。"""
+    if isinstance(node, dict):
+        if "showBorder" in node:
+            node["showBorder"] = False
+        for v in node.values():
+            _strip_all_show_borders(v)
+    elif isinstance(node, list):
+        for item in node:
+            _strip_all_show_borders(item)
+
+
 async def create_binding_smoke_template(
     *,
     name: str | None = None,
     connection_id: str | None = None,
     opc_server_id: str | None = None,
     ensure_schema: bool = False,
+    orientation: str | None = None,
 ) -> dict[str, Any]:
     """
     创建/覆盖绑定冒烟模版（需已有 DB/OPC 连接）：
@@ -743,7 +756,12 @@ async def create_binding_smoke_template(
     - 可视化 SQL 纵表填充（OPC 筛选 batch_no）
 
     ensure_schema=True 时在已有连接上创建 report_user_lib 冒烟表；默认 False，需库表已存在。
+    orientation: portrait | landscape（默认 portrait；会覆盖封面版式可能带入的横向）。
+    控件默认无外框（showBorder=false），便于五档对照。
     """
+    orient = (orientation or "portrait").strip().lower()
+    if orient not in ("portrait", "landscape"):
+        orient = "portrait"
     conn = _pick_db_connection(connection_id)
     if not conn:
         return {"ok": False, "error": "未找到可用的数据库连接，请先在数据源配置中保存连接"}
@@ -837,7 +855,7 @@ async def create_binding_smoke_template(
         "fontSize": 12,
         "fontFamily": "",
         "zIndex": 1,
-        "showBorder": True,
+        "showBorder": False,
         "alignX": "start",
         "alignY": "center",
         "bindingKind": "none",
@@ -927,7 +945,7 @@ async def create_binding_smoke_template(
         "fontSize": 12,
         "fontFamily": "",
         "zIndex": 1,
-        "showBorder": True,
+        "showBorder": False,
         "alignX": "start",
         "alignY": "center",
         "bindingKind": "none",
@@ -964,7 +982,7 @@ async def create_binding_smoke_template(
         "fontSize": 12,
         "fontFamily": "",
         "zIndex": 1,
-        "showBorder": True,
+        "showBorder": False,
         "alignX": "start",
         "alignY": "center",
         "bindingKind": "none",
@@ -1048,7 +1066,7 @@ async def create_binding_smoke_template(
         "name": tpl_name,
         "updatedAt": _now_iso(),
         "paperKind": "A4",
-        "orientation": "portrait",
+        "orientation": orient,
         "layoutSnapshot": snap,
         "coverLayoutSnapshot": snap,
         "backLayoutSnapshot": snap,
@@ -1106,6 +1124,10 @@ async def create_binding_smoke_template(
                 "backElements",
             ):
                 raw[k] = tmp[k]
+
+    # 封面版式可能改写 orientation；冒烟对照以参数为准
+    raw["orientation"] = orient
+    _strip_all_show_borders(raw)
 
     tpl = parse_report_template(raw)
     template_store.save_template(tpl)

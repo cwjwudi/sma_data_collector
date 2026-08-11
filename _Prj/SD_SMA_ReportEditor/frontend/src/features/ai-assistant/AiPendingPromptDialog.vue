@@ -123,6 +123,8 @@ import {
   type DatasourceSyncScope,
 } from '@/lib/datasource-sync-events'
 import { loadReportGeneratorPrefs } from '@/lib/report-generator-prefs'
+import { resolveExportPerfProfile } from '@/lib/export-perf-tier'
+import { uiSecondaryTasksPaused } from '@/lib/app-background-idle'
 
 defineOptions({ name: 'AiPendingPromptDialog' })
 
@@ -191,6 +193,8 @@ async function syncDatasourceFingerprint(reason: string) {
 
 async function poll() {
   if (submitting.value) return
+  // 035：结批全开降载或应用后台时跳过 AI pending 轮询
+  if (uiSecondaryTasksPaused.value) return
   try {
     await mirrorClientPrefsToBackend()
     const data = await fetchAiPendingPrompts()
@@ -249,7 +253,16 @@ async function handleClientAction(action: string, payload: Record<string, unknow
     const name = String(payload.template_name || prompt.connection_name || tid)
     const safe = name.replace(/[\\/:*?"<>|]/g, '_').slice(0, 80)
     const filePath = await api.pathJoin(exportDir, `${safe}_${Date.now()}.pdf`)
-    await api.runPdfExport({ templateId: tid, filePath, openAfter: false })
+    await api.runPdfExport({
+      templateId: tid,
+      filePath,
+      openAfter: false,
+      engine: resolveExportPerfProfile(prefs.exportPerfTier).engine,
+      layoutFidelity: resolveExportPerfProfile(prefs.exportPerfTier).layoutFidelity,
+      yieldMs: resolveExportPerfProfile(prefs.exportPerfTier).yieldMs,
+      coexistPause: resolveExportPerfProfile(prefs.exportPerfTier).coexistPause,
+      exportSource: "manual",
+    })
     notifyAssetsChanged('manual_export')
     return
   }

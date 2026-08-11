@@ -4,14 +4,19 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>配置页 — SD SMA Query Web</title>
-    <link rel="stylesheet" href="/static/styles.css" />
+    <link rel="stylesheet" href="/static/styles.css?v=20260723_01" />
   </head>
-  <body>
+  <body class="config-page">
     <nav class="page-nav" aria-label="站内导航">
       <a href="/query">查询页</a>
       <span class="page-nav-sep" aria-hidden="true">·</span>
       <span class="page-nav-current">配置页</span>
     </nav>
+    <div id="configStatusBar" class="config-status-bar" role="status" aria-live="polite" aria-atomic="true">
+      <span id="configStatusIcon" class="config-status-icon" aria-hidden="true">●</span>
+      <span id="configStatusMessage">配置页正在初始化…</span>
+      <time id="configStatusTime" class="config-status-time"></time>
+    </div>
     <div class="layout layout-stack">
       <section class="panel active-config-bar">
         <div class="row">
@@ -61,7 +66,8 @@
             <label for="appDbUsername">DB 用户名</label>
             <input id="appDbUsername" type="text" />
             <label for="appDbPassword">DB 密码</label>
-            <input id="appDbPassword" type="password" />
+            <input id="appDbPassword" type="password" autocomplete="new-password" />
+            <label><input id="appDbClearPassword" type="checkbox" /> 清除已保存密码</label>
           </div>
         </div>
 
@@ -106,7 +112,8 @@
             <label for="appOpcuaUsername">OPC 用户名</label>
             <input id="appOpcuaUsername" type="text" />
             <label for="appOpcuaPassword">OPC 密码</label>
-            <input id="appOpcuaPassword" type="password" />
+            <input id="appOpcuaPassword" type="password" autocomplete="new-password" />
+            <label><input id="appOpcuaClearPassword" type="checkbox" /> 清除已保存密码</label>
           </div>
         </div>
 
@@ -271,10 +278,10 @@
           <div id="pluginOpcuaFeedbackHint" class="muted"></div>
         </details>
         <div id="pluginTableListWriteback" class="opcua-writeback-panel">
-          <h3 class="subsection-title">批次表名回写</h3>
+          <h3 class="subsection-title">OPC UA 翻页 / 批次表名回写</h3>
           <p class="hint">
-            绑定批次主表时启用。基础模式根据 <code>diCursor</code> 选中行写表名数组；高级模式由 PLC
-            OPC UA 上升沿触发翻页与回写。
+            基础模式根据 <code>diCursor</code> 选中行写批次表名数组；高级模式可只配置上一页/下一页，
+            也可额外配置批次号与触发节点执行批次表名回写。
           </p>
           <div class="row">
             <label for="pluginTableListEnabled">启用</label>
@@ -284,7 +291,7 @@
             <label for="pluginTableListMode">回写模式</label>
             <select id="pluginTableListMode">
               <option value="cursor">基础 · 选中行 (diCursor)</option>
-              <option value="advanced">高级 · OPC UA 上升沿</option>
+              <option value="advanced">高级 · OPC UA 翻页 / 可选批次回写</option>
             </select>
           </div>
           <div id="pluginTableListCursorFields" class="row">
@@ -302,13 +309,19 @@
               class="field-wide"
               placeholder="ns=6;s=::DataRev:strListName"
             />
+            <span class="muted inline-hint">高级模式仅翻页时可留空</span>
           </div>
           <div id="pluginTableListAdvancedFields" class="opcua-writeback-panel nested-panel" hidden>
             <h4 class="subsection-title">高级 · OPC UA 节点</h4>
             <p class="hint">
-              上一页/下一页绑定两个 BOOL 节点（上升沿触发，与插件页翻页一致）；批次号节点接收 PLC 字符串；触发节点上升沿时按批次号回写 Buffer。
+              上一页/下一页为独立可选的 BOOL 节点（上升沿触发）。仅使用翻页时，批次号 NodeId、触发 NodeId、Buffer NodeId 均可留空；
+              如需批次表名回写，则批次号与触发节点必须成对填写，并配置 Buffer。
               轮询间隔与心跳在上方「OPCUA设定」中全局配置。
             </p>
+            <div class="row">
+              <label for="pluginTableListQueryNode">查询 NodeId</label>
+              <input id="pluginTableListQueryNode" type="text" class="field-wide" placeholder="ns=6;s=::DataRev:bExecuteRead" />
+            </div>
             <div class="row">
               <label for="pluginTableListPrevPageNode">上一页 NodeId</label>
               <input id="pluginTableListPrevPageNode" type="text" class="field-wide" placeholder="ns=6;s=::DataRev:bPrevPage" />
@@ -360,6 +373,6 @@
         </div>
       </div>
     </div>
-    <script src="/static/config.js?v=20260709_03"></script>
+    <script src="/static/config.js?v=20260723_01"></script>
   </body>
 </html>

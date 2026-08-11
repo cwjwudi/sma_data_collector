@@ -11,3 +11,4 @@ pymysql==1.1.0
 python-multipart==0.0.9
 opcua==0.98.13
 asyncua>=1.2b1
+psutil>=5.9,<8

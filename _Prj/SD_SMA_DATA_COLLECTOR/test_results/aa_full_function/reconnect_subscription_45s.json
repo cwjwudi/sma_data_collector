@@ -1,0 +1,105 @@
+{
+  "started_at": "2026-07-29T13:27:03.523315+08:00",
+  "ended_at": "2026-07-29T13:27:50.167866+08:00",
+  "source_config": "C:\\Users\\BR\\codex_ws\\p000_sd_sma_scada\\config\\collector\\AA_full_function_test.json",
+  "duration_requested_seconds": 45.0,
+  "duration_actual_seconds": 45.88999999999942,
+  "attempts": {
+    "Data_Recipe": 16,
+    "Data_Product": 32,
+    "Data_Alarm": 32,
+    "Data_Audit": 32,
+    "Data_Batch": 1,
+    "Data_BatchInfo": 6
+  },
+  "confirmed": {
+    "Data_Recipe": 16,
+    "Data_Product": 32,
+    "Data_Alarm": 32,
+    "Data_Audit": 32,
+    "Data_Batch": 1,
+    "Data_BatchInfo": 6
+  },
+  "collected": {
+    "Data_Recipe": 18,
+    "Data_Product": 57,
+    "Data_Alarm": 78,
+    "Data_Audit": 73,
+    "Data_Batch": 3,
+    "Data_BatchInfo": 8
+  },
+  "faults": [
+    {
+      "scheduled_at_seconds": 10.0,
+      "recovered": true,
+      "recovery_seconds": 0.11000000000058208,
+      "subscription_handles_before": 3,
+      "subscription_handles_after": 3
+    },
+    {
+      "scheduled_at_seconds": 25.0,
+      "recovered": true,
+      "recovery_seconds": 0.10899999999674037,
+      "subscription_handles_before": 3,
+      "subscription_handles_after": 3
+    }
+  ],
+  "errors": [],
+  "connection_states_before_shutdown": {
+    "PLC_TPS": "connected",
+    "PLC_TPS_SECONDARY": "connected"
+  },
+  "collector_metrics": {
+    "group_enable_transitions_to_enabled": 6,
+    "dynamic_interval_changed": 1,
+    "subscription_events_received": 272,
+    "parallel_edges_detected": 151,
+    "parallel_rows_accepted": 151,
+    "parallel_rows_rejected": 0,
+    "parallel_trigger_reset_confirmed": 151
+  },
+  "storage_metrics": {
+    "db_rows_committed": 236,
+    "db_rows_unique_conflict": 1,
+    "db_rows_failed": 0,
+    "db_rows_dead_letter": 0,
+    "shutdown_rows_flush_attempted": 34,
+    "shutdown_rows_remaining": 0,
+    "queue_size": 0,
+    "retry_queue_size": 0,
+    "dead_letter_queue_size": 0,
+    "inflight_size": 0,
+    "outbox_enabled": 0,
+    "outbox_pending_size": 0,
+    "outbox_processing_size": 0,
+    "outbox_retry_size": 0,
+    "outbox_dead_letter_size": 0,
+    "outbox_completed_size": 0,
+    "outbox_file_bytes": 0
+  },
+  "database_rows_before": {
+    "Data_Recipe": 0,
+    "Data_Product": 0,
+    "Data_Alarm": 0,
+    "Data_Audit": 0,
+    "Data_Batch": 6,
+    "Data_BatchInfo": 0
+  },
+  "database_rows_after": {
+    "Data_Recipe": 17,
+    "Data_Product": 56,
+    "Data_Alarm": 50,
+    "Data_Audit": 69,
+    "Data_Batch": 7,
+    "Data_BatchInfo": 8
+  },
+  "database_row_deltas": {
+    "Data_Product": 56,
+    "Data_Recipe": 17,
+    "Data_BatchInfo": 8,
+    "Data_Alarm": 50,
+    "Data_Batch": 1,
+    "Data_Audit": 69
+  },
+  "passed": true
+}

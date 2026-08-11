@@ -58,6 +58,7 @@ def _payload(index_columns):
     [
         ["collection_time"],
         ["created_at"],
+        ["is_backfill"],
         ["collection_time", "created_at"],
         ["SensorValue", "collection_time"],
     ],
@@ -76,7 +77,7 @@ def test_runtime_loader_rejects_unknown_or_non_group_index_columns(column):
 def test_web_config_validation_accepts_fixed_index_columns(tmp_path):
     manager = CollectorConfigManager(tmp_path)
     assert manager.validate_template(
-        _payload(["SensorValue", "collection_time", "created_at"])
+        _payload(["SensorValue", "collection_time", "is_backfill", "created_at"])
     ) == {"ok": True}
 
 
@@ -120,6 +121,7 @@ def test_index_dialog_exposes_only_fixed_and_current_group_columns():
         Path(__file__).resolve().parents[1] / "web_config" / "static" / "config.js"
     ).read_text(encoding="utf-8")
     assert 'value: "collection_time"' in source
+    assert 'value: "is_backfill"' in source
     assert 'value: "created_at"' in source
     assert "groupPointNames.has(item.value)" in source
     assert "createMultiSelect(indexColumnOptions" in source

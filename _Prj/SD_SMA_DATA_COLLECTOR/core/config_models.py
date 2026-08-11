@@ -4,11 +4,11 @@
 """
 
 from typing import List, Optional, Dict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 
 
-FIXED_INDEX_COLUMNS = frozenset({"collection_time", "created_at"})
+FIXED_INDEX_COLUMNS = frozenset({"collection_time", "created_at", "is_backfill"})
 
 
 class TriggerType(Enum):
@@ -16,6 +16,12 @@ class TriggerType(Enum):
     TIME = "time"
     VARIABLE = "variable"
     TIME_AND_VARIABLE = "time_and_variable"
+
+
+class TriggerMode(Enum):
+    """变量触发点的获取方式。"""
+    POLL = "poll"
+    SUBSCRIPTION = "subscription"
 
 
 @dataclass
@@ -69,8 +75,10 @@ class DataGroup:
     trigger: TriggerType
     description: str
     data_points: List[str]
+    enable_point: Optional[str] = None  # 外部启停点位：1/True 启用，0/False 停用；未配置时始终启用
     interval_point: Optional[str] = None  # time/time_and_variable：动态采集间隔点位，值单位为秒
     trigger_interval_seconds: Optional[float] = None  # variable/time_and_variable：触发变量采样周期（秒）
+    trigger_mode: TriggerMode = TriggerMode.POLL  # poll=轮询；subscription=OPC UA 数据变化订阅
     trigger_point: Optional[str] = None
     reset_trigger_after_read: bool = True  # 是否在读取后复位触发点
     partition_interval_years: int = 1  # 0=不分表；1..10=分表间隔年份
@@ -81,6 +89,9 @@ class DataGroup:
     insert_feedback: Optional[InsertFeedbackConfig] = None  # 插入反馈配置（UDINT）
     batch_upsert: Optional[BatchUpsertConfig] = None  # 批次更新配置（唯一冲突时按 end_time 条件更新）
     indexes: Optional[List[IndexConfig]] = None  # 索引配置列表
+    variable_point_overrides: Dict[str, str] = field(default_factory=dict)
+    force_cadence_alignment: bool = False  # 按自然时间边界对齐，并在运行期恢复后补齐欠拍
+    max_backfill_ticks: int = 1000  # 一次恢复最多补写的节拍数
 
 
 @dataclass

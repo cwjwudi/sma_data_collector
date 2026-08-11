@@ -14,22 +14,23 @@ const MAX_LIMIT = 200
 /**
  * @param {string} rootDir
  * @param {string | undefined} cwd
+ * @param {typeof path} [pathMod]
  * @returns {{ ok: true, root: string, cwd: string } | { ok: false, error: string }}
  */
-function resolveExportCwd(rootDir, cwd) {
+function resolveExportCwd(rootDir, cwd, pathMod = path) {
   if (!rootDir || typeof rootDir !== 'string') {
     return { ok: false, error: '缺少导出根目录' }
   }
   let root
   let cur
   try {
-    root = path.resolve(rootDir.trim())
-    cur = path.resolve((cwd && String(cwd).trim()) || root)
+    root = pathMod.resolve(rootDir.trim())
+    cur = pathMod.resolve((cwd && String(cwd).trim()) || root)
   } catch (e) {
     return { ok: false, error: String(e.message || e) }
   }
-  const rel = path.relative(root, cur)
-  if (rel.startsWith('..') || path.isAbsolute(rel)) {
+  const rel = pathMod.relative(root, cur)
+  if (rel.startsWith('..') || pathMod.isAbsolute(rel)) {
     return { ok: false, error: '路径超出导出根目录' }
   }
   return { ok: true, root, cwd: cur }
@@ -107,7 +108,7 @@ function scanExportEntries(opts = {}) {
   const pathMod = opts.pathModule || path
   const kinds = opts.kinds === 'pdf_only' ? 'pdf_only' : 'all'
 
-  const resolved = resolveExportCwd(opts.rootDir, opts.cwd)
+  const resolved = resolveExportCwd(opts.rootDir, opts.cwd, pathMod)
   if (!resolved.ok) {
     return { ok: false, error: resolved.error, entries: [], total: 0, offset: 0, limit: DEFAULT_LIMIT }
   }

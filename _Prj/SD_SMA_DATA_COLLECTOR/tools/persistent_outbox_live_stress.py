@@ -23,7 +23,7 @@ async def wait_reset(
 ) -> bool:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
-        value = await client._read_node_value(client.client, path, "stress trigger readback")
+        value = await client.read_value_by_path(path)
         if parallel:
             selected = indices if indices is not None else list(range(len(value)))
             if not any(bool(value[index]) for index in selected):
@@ -38,13 +38,13 @@ async def trigger_group(
     client, path: str, parallel: bool, parallel_width: int, parallel_start_index: int
 ) -> bool:
     if parallel:
-        current = list(await client._read_node_value(client.client, path, "stress trigger array read"))
+        current = list(await client.read_value_by_path(path))
         start = min(max(0, parallel_start_index), max(0, len(current) - 1))
         width = min(max(1, parallel_width), len(current) - start)
         indices = list(range(start, start + width))
         if not await wait_reset(client, path, True, indices=indices):
             return False
-        values = list(await client._read_node_value(client.client, path, "stress trigger array refresh"))
+        values = list(await client.read_value_by_path(path))
         for index in indices:
             values[index] = True
         if not await client.write_array_value(path, values):
@@ -134,8 +134,8 @@ async def run(config_path: Path, duration: float, interval: float, parallel_widt
             client = system.communication_manager.get_client_for_group(group.name)
             if client and client.client:
                 try:
-                    final_triggers[group.name] = await client._read_node_value(
-                        client.client, points[group.trigger_point], "final trigger readback"
+                    final_triggers[group.name] = await client.read_value_by_path(
+                        points[group.trigger_point]
                     )
                 except Exception as exc:  # noqa: BLE001
                     final_triggers[group.name] = repr(exc)

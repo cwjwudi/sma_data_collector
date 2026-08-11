@@ -23,6 +23,7 @@ CONNECT_TIMEOUT_SEC = 5
 class _PoolEntry:
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     client: Client | None = None
+    event_loop: asyncio.AbstractEventLoop | None = None
     last_used: float = 0.0
     endpoint_url: str = ""
     username: str = ""
@@ -30,6 +31,7 @@ class _PoolEntry:
 
 
 _pool: _PoolEntry | None = None
+_heartbeat_type_cache: dict[tuple[str, str, str, str], ua.VariantType | None] = {}
 
 
 def _password_fingerprint(password: str) -> str:
@@ -50,6 +52,8 @@ async def _safe_disconnect(client: Client | None) -> None:
 async def _invalidate_client(entry: _PoolEntry) -> None:
     client = entry.client
     entry.client = None
+    entry.event_loop = None
+    _heartbeat_type_cache.clear()
     await _safe_disconnect(client)
 
 
@@ -89,6 +93,9 @@ async def _ensure_connected(
 
     entry = _pool
     async with entry.lock:
+        current_loop = asyncio.get_running_loop()
+        if entry.client is not None and entry.event_loop is not current_loop:
+            await _invalidate_client(entry)
         if _config_mismatch(entry, endpoint_url, username, password):
             await _invalidate_client(entry)
         entry.endpoint_url = endpoint_url
@@ -108,6 +115,7 @@ async def _ensure_connected(
                 await _invalidate_client(entry)
                 raise exc
             entry.client = client
+            entry.event_loop = current_loop
 
         entry.last_used = time.monotonic()
         return entry.client
@@ -234,7 +242,12 @@ async def write_heartbeat(
         if client is None:
             return False
         node = client.get_node(node_id)
-        variant_type = await _read_variant_type(node)
+        cache_key = (normalize_opcua_endpoint_url(endpoint_url), username, _password_fingerprint(password), node_id)
+        if cache_key in _heartbeat_type_cache:
+            variant_type = _heartbeat_type_cache[cache_key]
+        else:
+            variant_type = await _read_variant_type(node)
+            _heartbeat_type_cache[cache_key] = variant_type
         clean_value = _coerce_heartbeat_value(1, variant_type)
         if variant_type is None:
             data_value = ua.DataValue(ua.Variant(clean_value))
@@ -243,6 +256,10 @@ async def write_heartbeat(
         await node.write_attribute(ua.AttributeIds.Value, data_value)
         return True
     except TypeError as exc:
+        _heartbeat_type_cache.pop(
+            (normalize_opcua_endpoint_url(endpoint_url), username, _password_fingerprint(password), node_id),
+            None,
+        )
         logger.warning("OPC UA heartbeat rejected node_id=%s: %s", node_id, exc)
         return False
     except Exception as exc:
@@ -472,6 +489,33 @@ async def read_scalar(
         raise
 
 
+async def read_scalars(
+    endpoint_url: str,
+    node_ids: list[str],
+    *,
+    username: str = "",
+    password: str = "",
+) -> list[Any]:
+    """Read multiple scalar nodes in one OPC UA service call."""
+    if not node_ids:
+        return []
+    try:
+        client = await _ensure_connected(endpoint_url, username, password)
+        if client is None:
+            raise RuntimeError("OPC UA not connected")
+        values = list(await client.read_values([client.get_node(node_id) for node_id in node_ids]))
+        if len(values) != len(node_ids):
+            raise RuntimeError(
+                f"OPC UA batch read returned {len(values)} values for {len(node_ids)} nodes"
+            )
+        return values
+    except Exception:
+        if _pool is not None:
+            async with _pool.lock:
+                await _invalidate_client(_pool)
+        raise
+
+
 def is_connected() -> bool:
     """Return True when the pooled OPC UA client is present."""
     return _pool is not None and _pool.client is not None
@@ -491,3 +535,4 @@ def reset_pool_for_tests() -> None:
     """Clear connection pool without disconnect (legacy test helper)."""
     global _pool
     _pool = None
+    _heartbeat_type_cache.clear()

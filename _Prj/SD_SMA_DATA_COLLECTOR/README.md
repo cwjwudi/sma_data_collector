@@ -14,6 +14,7 @@
 - ✅ **超时不追欠拍**: 当单轮处理超时，下一拍自动重置为“当前时刻 + interval”，避免连续追赶历史节拍
 - ✅ **多数据点支持**: 每个数据组支持多个数据点同时采集
 - ✅ **灵活配置**: 可为不同数据组设置不同的采集间隔
+- ✅ **按组外部启停**: 每组可选配 OPC UA `enable_point`；`1/True` 启用、`0/False` 停用，未配置时始终启用
 - ✅ **批量存储**: 支持批量数据插入，提高数据库写入效率
 - ✅ **年份分表**: 支持按批次主表开批年份分表；无批次主表的旧配置仍兼容当前年份分表
 - ✅ **按组批量读取 OPC UA**: 优先单次往返批量读取，失败时自动回退逐点读取
@@ -116,7 +117,7 @@
 ## 快速开始
 
 ### 环境要求
-- Python 3.8+
+- Python 3.10+
 - pip 包管理器
 - MySQL 5.7+ 或 SQLite 3.x
 - OPC UA 服务器
@@ -252,15 +253,20 @@ SD_SMA_DATA_COLLECTOR/
 
 ### 数据组配置 (groups)
 - `name`: 数据组名称
+- `enable_point`: （可选）外部启停点位名称，引用 `points[].name`；值为 `1/True` 时启用本组，`0/False` 时停用，未配置时本组始终启用
 - `interval_seconds`: 静态采样/检查间隔（秒），同时作为动态间隔点首次读取失败时的回退值
 - `interval_point`: （可选）动态采集间隔点位名称，引用 `points[].name`；点位值单位为秒，仅支持 `time` / `time_and_variable`
+- `force_cadence_alignment`: （可选，默认 `false`）按本机自然时间边界对齐定时节拍，并在运行期 OPC UA 恢复后补齐欠拍
+- `max_backfill_ticks`: （可选，默认 `1000`）一次最多补写的欠拍数量，范围 `1–100000`
 - `trigger`: 触发方式
   - `time`: 时间间隔触发
   - `variable`: 变量触发（由 PLC 信号触发）
-  - `time_and_variable`: 定时采集 + 变量上升沿立即采集（需配置 `trigger_interval_seconds`）
+  - `time_and_variable`: 定时采集 + 变量上升沿立即采集
 - `data_points`: 包含的数据点名称列表
+- `variable_point_overrides`: （可选）仅用于 `time_and_variable`；按“`data_points` 逻辑字段名 -> PLC 快照点名”配置 variable 触发时的替代读取源。数据库列名仍保持逻辑字段名，time 采集仍读取原始点位。
 - `trigger_point`: 触发变量名称（`variable` / `time_and_variable` 需要）
-- `trigger_interval_seconds`: 触发点轮询间隔（`time_and_variable` 必填；`variable` 可选，未配置时回退 `interval_seconds`）
+- `trigger_mode`: 触发点检测方式。`poll`（默认）按间隔轮询；`subscription` 使用 OPC UA 数据变化订阅
+- `trigger_interval_seconds`: `poll` 模式的触发点轮询间隔；Web 配置页提供 1–10 秒下拉选项，加载器仍兼容历史配置中的任意正数
 - `reset_trigger_after_read`: 读取后是否复位触发信号
 - `is_parallel`: 是否启用并行触发模式（仅 `trigger: variable` 可用）
 - `partition_interval_years`: 数据库分表间隔年份，默认 `1`
@@ -273,7 +279,7 @@ SD_SMA_DATA_COLLECTOR/
   - `code_unique_conflict`: 唯一性冲突时回写码（默认 `1`）
   - `code_db_error`: 数据库错误时回写码（默认 `2`）
   - `code_other_error`: 其他失败时回写码（默认 `3`）
-- `indexes`: （可选）索引配置列表；`columns` 可选择当前数据组的配置点位，以及固定时间字段 `collection_time`、`created_at`，并支持组合成复合索引
+- `indexes`: （可选）索引配置列表；`columns` 可选择当前数据组的配置点位，以及固定字段 `collection_time`、`is_backfill`、`created_at`，并支持组合成复合索引
 - `batch_upsert`: （可选）批次主表配置，用于按唯一批次号开批/结批
   - `enabled`: 是否启用为批次主表；同一配置中最多只能有一组为 `true`
   - `start_time_point`: 开批时间点位名称，必须在该组 `data_points` 中
@@ -283,9 +289,17 @@ SD_SMA_DATA_COLLECTOR/
   - `allow_idempotent_same_end_time`: 是否允许相同结批时间的幂等重放
 
 **触发配置约束：**
+- 配置 `enable_point` 后，采集器每秒读取一次该点；停用时取消本组采集任务，重新启用时自动恢复。读点失败或值不是 `0/1` 时保持上一有效状态；启动后尚无有效状态时保持停用。
 - `interval_point` 返回值必须是大于 `0` 的有限数值；无效值或临时读点失败时继续使用上次有效值，尚无有效值时使用 `interval_seconds`。
-- 动态间隔变化从采集器检测到新值时重新起算下一周期，不补采旧节拍；`time_and_variable` 的外部触发轮询不受影响。
-- `time_and_variable` 模式下，`trigger_point` 与 `trigger_interval_seconds` 必须配置，且 `is_parallel` 必须为 `false`。
+- 动态间隔变化从采集器检测到新值时重新起算下一周期，不补采旧节拍；`time_and_variable` 的外部触发检测不受影响。
+- 开启 `force_cadence_alignment` 后，5 秒周期固定落在 `:00/:05/:10` 等自然边界。首次启动和外部重新启用从下一个边界开始，不补停机或停用期间的数据。
+- 运行中断连或全部点位读取失败时会保留欠拍；恢复后只读取一次当前快照，按正确的计划时间补写全部欠拍。超过 `max_backfill_ticks` 时仅保留最近部分并告警。
+- 补采值是恢复时刻的当前快照，并非 OPC UA 历史真实值。数据库固定列 `is_backfill` 中普通记录为 `0`、补采记录为 `1`；补采批次会立即请求数据库刷新。
+- 动态间隔发生变化时会清除旧周期欠拍状态，从新周期的下一个自然边界重新对齐。
+- `variable` / `time_and_variable` 均支持 `trigger_mode: subscription`。订阅模式由服务器数据变化事件驱动，不再周期读触发点；连接恢复后会自动重建订阅并推送当前值。
+- `poll` 模式要求有效的正数 `trigger_interval_seconds`；`variable` 未配置时兼容回退到 `interval_seconds`。
+- `time_and_variable` 模式下必须配置 `trigger_point`，且 `is_parallel` 必须为 `false`。
+- `variable_point_overrides` 的键必须存在于本组 `data_points`，值必须引用已定义的 `points[].name`；两侧都声明 `datatype` 时必须一致。PLC 应先写完整快照再置位 Trigger，且 Trigger 未复位前不得覆盖快照。
 - 并行触发模式（`trigger: variable` + `is_parallel: true`）下，`trigger_point` 应为布尔数组节点，`data_points` 应为与触发数组同下标语义的数组节点。
 - 配置了 `unique_key_point` 时，系统会在插入前按该列做表内判重，重复数据不落库并返回唯一性冲突码。
 - 启用 `batch_upsert` 的组必须配置 `unique_key_point`，并配置有效的开批/结批时间点位。
@@ -298,6 +312,7 @@ SD_SMA_DATA_COLLECTOR/
 - `type`: 通信类型（目前仅支持 "opcua"）
 - `host`: OPC UA 服务器地址
 - `port`: OPC UA 服务器端口
+- OPC UA 通信使用原生异步 `asyncua`；状态机为 `disconnected → connecting/reconnecting → connected`，同一连接只允许一个重连任务，重连成功后自动恢复全部订阅。
 
 ### 连接配置 (connections)
 - `name`: 连接配置名称（唯一标识）
@@ -316,7 +331,9 @@ SD_SMA_DATA_COLLECTOR/
 启用后仅在 MySQL 返回 `1049 Unknown database` 时执行 `CREATE DATABASE IF NOT EXISTS`，随后重新连接并沿用现有的自动建表、建索引和补列流程；密码错误、网络错误等不会触发建库。
 - `type`: 数据库类型（mysql/sqlite）
 - `name`: 数据库名称
-- `host/port/username/password`: 连接参数（MySQL 需要）
+- `host/port/username`: 连接参数（MySQL 需要）
+- 数据库密码由 Web 配置页输入后加密为 `password_enc`；页面和 API 不回显明文或密文。也可用环境变量 `SD_SMA_DB_PASSWORD` 注入，环境变量优先级最高。
+- 加密密钥保存在配置目录的 `.sd_sma_collector_fernet.key`，迁移配置时必须与 JSON 一并安全迁移；该密钥不得提交到 Git。
 - `data_groups`: 要存储的数据组名称列表
 
 ### 日志配置 (logging)
@@ -410,7 +427,6 @@ SD_SMA_DATA_COLLECTOR/
     "host": "192.168.50.22",
     "port": 3306,
     "username": "root",
-    "password": "your_password",
     "data_groups": ["sensor_group_1", "trigger_group_1"]
   },
   "logging": {
@@ -543,6 +559,8 @@ partition_interval_years=2:
 
 - 未启用持久化队列时，只有某个触发索引的全部配置数据点均读取成功且该行成功进入内存队列后，程序才复位该索引。
 - 启用 `persistent_queue.enabled=true` 后，只有 SQLite outbox 事务提交成功才复位该索引；断电或进程强制终止后会从 outbox 恢复。
+- Web 配置页的“数据库”页签可直接启用持久化队列并设置 outbox 路径、同步级别、重试和容量参数。
+- 配置了 `groups[].enable_point` 的采集组从启用切换为停用时，会先停止该组采集，再立即刷新该组未满 `batch_insert_size` 的缓存；其他组缓存不受影响，失败记录继续按 outbox/内存重试策略保留。
 - 复位会通过 OPC UA 读回确认；若复位后 PLC 已立即再次置位，程序会保留该高电平并在下一轮作为新事件采集。
 - 触发复位表示采集器已经可靠接收；启用 outbox 时表示 SQLite 已提交，仍不表示 MySQL 已提交。
 - MySQL 瞬时失败记录进入持久化重试状态，不可重试的数据进入持久化 dead-letter；配置、恢复和运维命令见 `docs/PERSISTENT_QUEUE.md`。
@@ -559,16 +577,24 @@ partition_interval_years=2:
   "name": "time_and_variable_group_2",
   "interval_seconds": 5,
   "interval_point": "ProductCollectionInterval",
+  "force_cadence_alignment": true,
+  "max_backfill_ticks": 1000,
   "trigger": "time_and_variable",
   "trigger_interval_seconds": 0.5,
   "trigger_point": "bTrigger1",
+  "data_points": ["ProductCode", "State"],
+  "variable_point_overrides": {
+    "ProductCode": "SnapshotProductCode"
+  },
   "is_parallel": false
 }
 ```
 
 混合触发运行要点：
 - 配置 `interval_point` 时按该 OPC UA 点位的秒数执行定时采集，否则按 `interval_seconds`。
+- 配置 `force_cadence_alignment` 时定时分支按自然时间边界运行并补齐在线断连欠拍；变量触发分支仍按事件发生时间立即采集。
 - 每 `trigger_interval_seconds` 检测触发点上升沿，出现上升沿时立即采集。
+- time 记录从 `data_points` 原点位读取；variable 记录对配置了 `variable_point_overrides` 的字段改读快照点，但输出字段名不变。
 - 该模式用于“周期采样 + 事件快照”并存场景。
 
 ## 开发指南

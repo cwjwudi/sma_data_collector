@@ -22,6 +22,18 @@ interface Window {
       templateId: string;
       filePath: string;
       openAfter?: boolean;
+      /** 取消用；缺省时主进程生成 */
+      jobId?: string;
+      /** pdf-lib=最省机草稿；chromium=预览级 */
+      engine?: "pdf-lib" | "chromium";
+      /** 035：pdf-lib 保真度 draft-v1 / layout-v2；chromium 可忽略 */
+      layoutFidelity?: "draft-v1" | "layout-v2" | "print-to-pdf" | string;
+      /** 035：分卷 yield（ms），来自导出性能档位 */
+      yieldMs?: number;
+      /** 让核/抢核（来自档位 coexistPause）：full=LOW；basic=BelowNormal；max=HIGHEST */
+      coexistPause?: "full" | "basic" | "max" | string;
+      /** 039c：导出触发来源——auto=自动结批；manual=手动（遮罩触发范围用） */
+      exportSource?: "auto" | "manual" | string;
     }) => Promise<{
       ok: boolean;
       filePath: string;
@@ -29,6 +41,9 @@ interface Window {
       totalReports?: number;
       stats?: { opcReads: number; sqlQueries: number; sqlRows: number };
       durationMs?: number;
+      engine?: string;
+      exportMode?: string;
+      engineMeta?: Record<string, unknown>;
       /** 分阶段耗时（多份报表求和）：warmStart 表示复用了预热窗口 */
       timings?: {
         warmStart?: boolean;
@@ -38,17 +53,99 @@ interface Window {
         writeMs?: number;
       };
     }>;
-    setPdfExportMaxParallel: (max: number) => Promise<{ max: number }>;
+    cancelPdfExport: (opts: { jobId: string }) => Promise<{ ok: boolean; cancelled?: boolean; error?: string }>;
+    /** 039/051：导出仍在进行时重新打开全屏「正在生成报表」遮罩 */
+    reshowExportOverlay?: () => Promise<{ ok: boolean; shown?: boolean; reason?: string }>;
+    setPdfExportMaxParallel: (
+      max:
+        | number
+        | {
+            max?: number;
+            ignoreCpuBudget?: boolean;
+          },
+    ) => Promise<{
+      max: number;
+      cpuBudget?: number;
+      logicalCores?: number;
+      ignoreCpuBudget?: boolean;
+    }>;
+    setPdfExportPerfProfile?: (opts: {
+      prewarmPoolSize?: number;
+      yieldMs?: number;
+      maxParallel?: number;
+      ignoreCpuBudget?: boolean;
+      coexistPause?: string;
+    }) => Promise<{
+      prewarmPoolSize: number;
+      yieldMs: number;
+      maxParallel: number;
+      ignoreCpuBudget?: boolean;
+    }>;
+    /** 035：主窗口后台/前台资源模式；返回取消订阅 */
+    onAppResourceMode?: (listener: (payload: { mode: "foreground" | "background" }) => void) => () => void;
     shellOpenPath: (filePath: string) => Promise<{ ok: boolean; error?: string }>;
     pathJoin: (...parts: string[]) => Promise<string>;
+    getBundledCjkFont?: (opts?: {
+      family?: string;
+      key?: "noto-sans-sc" | "fangsong";
+      id?: "noto-sans-sc" | "fangsong";
+    }) => Promise<
+      | {
+          ok: true;
+          base64: string;
+          key?: string;
+          family?: string;
+          path?: string;
+          bytes?: number;
+        }
+      | { ok: false; error?: string; key?: string }
+    >;
     notifyPdfExportReady: (payload: {
       ok: boolean;
       error?: string;
       totalReports?: number;
-      stats?: { opcReads: number; sqlQueries: number; sqlRows: number };
+      stats?: { opcReads: number; sqlQueries: number; sqlRows: number; mongoQueries?: number };
       phases?: { tplMs: number; dataMs: number; paintMs: number };
+      diagnostics?: unknown;
+      /** @deprecated 045 R4 起矢量路径优先 pdfTempPath */
+      pdfBase64?: string;
+      /** 045 R4：主进程临时 PDF 绝对路径（字符串，可安全过 JSON 兜底） */
+      pdfTempPath?: string;
+      engine?: string;
+      exportMode?: string;
+      layoutFidelity?: string;
+      fontFamily?: string;
+      fontEmbedded?: boolean;
+      pageCount?: number;
+      pdfLibMs?: number;
+      printToPDFSkipped?: boolean;
     }) => void;
-    notifyPdfExportHeartbeat?: () => void;
+    notifyPdfExportHeartbeat?: (payload?: { stage?: string }) => void;
+    /** 045 R4：将矢量 PDF 字节落到主进程 temp，返回路径供 notifyPdfExportReady */
+    writePdfExportTempPart?: (opts: {
+      bytes: Uint8Array;
+      jobId?: string;
+    }) => Promise<{ ok: boolean; path?: string; bytes?: number; error?: string }>;
+    /** 035/052c：跨导出窗共享取数（可按 reportPartIndex 只取当前份切片） */
+    getPdfExportFillCacheBridge?: (opts: {
+      templateId: string;
+      reportPartIndex?: number;
+    }) => Promise<{ ok: boolean; snap?: import("@/lib/report-template/pdf-export-fill-cache").PdfExportFillSnapshot }>;
+    setPdfExportFillCacheBridge?: (
+      snap: import("@/lib/report-template/pdf-export-fill-cache").PdfExportFillSnapshot,
+    ) => Promise<{ ok: boolean }>;
+    setPdfExportFillCacheBridgeParts?: (payload: {
+      templateId: string;
+      totalReports: number;
+      stats: import("@/lib/report-template/pdf-export-fill-cache").PdfExportFillSnapshot["stats"];
+      /** 推荐：已 JSON.stringify 的 parts，避免 IPC/Proxy 问题 */
+      partsJson?: string;
+      parts?: Array<{
+        partIndex: number;
+        values: import("@/lib/report-template/pdf-export-fill-cache").PdfExportFillSnapshot["values"];
+      }>;
+    }) => Promise<{ ok: boolean; dir?: string; partCount?: number; error?: string }>;
+    clearPdfExportFillCacheBridge?: () => Promise<{ ok: boolean }>;
     onPdfExportProgress: (
       listener: (payload: {
         phase?: string;
@@ -344,17 +441,33 @@ interface Window {
     getLaunchSettings?: () => Promise<{
       openAtLogin: boolean;
       silentStart: boolean;
+      exportOverlayEnabled?: boolean;
+      exportOverlayDisplay?: "primary" | "secondary" | "all";
+      exportOverlayTrigger?: "always" | "autoOnly";
       packaged?: boolean;
       silentStartSession?: boolean;
+      execPath?: string;
     }>;
     setLaunchSettings?: (patch: {
       openAtLogin?: boolean;
       silentStart?: boolean;
+      exportOverlayEnabled?: boolean;
+      exportOverlayDisplay?: "primary" | "secondary" | "all";
+      exportOverlayTrigger?: "always" | "autoOnly";
     }) => Promise<{
       openAtLogin: boolean;
       silentStart: boolean;
+      exportOverlayEnabled?: boolean;
+      exportOverlayDisplay?: "primary" | "secondary" | "all";
+      exportOverlayTrigger?: "always" | "autoOnly";
       packaged?: boolean;
       silentStartSession?: boolean;
+      execPath?: string;
+      loginCommand?: string | null;
+      loginApplied?: boolean;
+      loginSkipped?: boolean;
+      loginError?: string | null;
+      loginRemovedLegacy?: string[];
     }>;
   };
 }

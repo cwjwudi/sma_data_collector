@@ -7,6 +7,7 @@
 - 数据库查询 API：健康检查、组/表/列元数据、历史数据分页查询。
 - 通用查询页默认使用 `sort_by + id` 游标分页：每次只取 `page_size + 1` 行，不强制统计总数，也不使用深 `OFFSET`。
 - 通用查询页支持互斥的 BatchCode 查询与时间范围查询；批次选项来源由 View 的 `batch_source.table/field` 配置（最多读取 1000 个不同值），业务表过滤字段由 Group 的 `batch_field` 明确绑定。
+- 通用查询页和插件查询页共用触屏时间选择器：提供最近 15 分钟、1 小时、8 小时、今天、昨天、1 周、1 月快捷范围，并可在大尺寸控件中精确编辑日期与时/分/秒。
 - 查询配置驱动查询：通过 `query_view_config.json` 定义每个视图的列、分页、默认筛选、排序。
 - 支持“每个标(表)独立列配置与顺序”：`views.<view>.per_table.<table>.columns`。
 - 页面支持“应用并保存”一键生效（无需先应用再手动保存）。
@@ -24,7 +25,7 @@
   - 模块选择（`alarm / audit / general`）
   - 页面选择（`1-5`）
   - 启用开关、标题、`view_name`、`bind_group`、`page_size`
-- 插件页右上角手动选择该 `group` 下具体表；普通插件页与通用查询页一致，支持互斥的时间/批次号查询，并使用无总数游标前后翻页。
+- 插件页右上角手动选择该 `group` 下具体表；普通插件页与通用查询页一致，支持互斥的时间/批次号查询。首次查询统计总记录数并显示总页数，后续仍使用游标前后翻页且不重复计数。
 - 插件页批次下拉复用绑定 View/Group 的 `batch_source` 与 `batch_field`，无需在插件配置中重复维护来源表、来源字段或目标字段。
 - 高级 OPC UA 插件页继续保留 PLC 页码驱动的 OFFSET/总数模式，不开放人工批次筛选，以保持现场协议兼容。
 - **插件页 OPC UA 回写**：查询/翻页后自动将当前页列数据写入 PLC 数组（最长 50）；点击表格行更新 `diCursor`（翻页后重置为 `-1`）。
@@ -50,8 +51,10 @@
 
 ## 首次启动必做
 
-- 修改 `config/app_settings.json` 中数据库账号密码。
+- 在配置页填写数据库账号；密码可在配置页安全保存，也可通过环境变量注入。
 - 默认 `readonly_user / readonly_password` 仅为示例值，未创建对应 MySQL 用户时会报 1045 拒绝访问。
+- 数据库与 OPC UA 密码由配置页输入后只以 `password_enc` 密文保存；API 仅返回“已配置”状态，不返回明文或密文。也可分别通过 `SD_SMA_DB_PASSWORD`、`SD_SMA_OPCUA_PASSWORD` 注入。
+- 本机密钥位于配置目录 `.sd_sma_query_web_fernet.key`，不得提交；迁移 profile 时需连同密钥安全迁移。
 - 可先访问 `GET /api/db/check` 做连通性检查。
 
 ## 与采集程序的边界
@@ -68,8 +71,7 @@
 ```json
 "opcua": {
   "endpoint_url": "opc.tcp://192.168.x.x:4840",
-  "username": "",
-  "password": ""
+  "username": ""
 }
 ```
 
@@ -107,6 +109,29 @@
 - 绑定表须为批次主表；`[0]` 固定写主表名，明细年份分表按 group 名稳定排序填入 `[1..]`
 - `diCursor=-1` 时写空数组；点击行后按该行批次号/开批时间匹配（未配开批时间列则按批次号反查主表）
 - 高级 JSON 可覆盖 `max_tables`、`string_max_len`、`lookup_start_time_column` 等
+- 高级模式可仅用于 PLC 翻页，此时不要求批次字段、Buffer、批次号或触发节点：
+
+```json
+"table_list_writeback": {
+  "enabled": true,
+  "mode": "advanced",
+  "advanced": {
+    "query_node": "ns=6;s=::DataRev:bExecuteRead",
+    "prev_page_node": "ns=6;s=::DataRev:bPrevPage",
+    "next_page_node": "ns=6;s=::DataRev:bNextPage",
+    "batch_no_node": "",
+    "trigger_node": ""
+  }
+}
+```
+
+- `query_node` 为 BOOL 上升沿查询节点：触发后一次性建立内存快照、自动回到第 1 页并回写当前页。
+- 上一页/下一页只读取当前快照，不会再次访问数据库；尚未查询时翻页不会隐式查询。
+- 数据库后续新增、修改或删除不会改变当前快照；再次触发查询才会用最新数据替换快照。
+- 快照最多保存 100000 行，服务重启或查询/插件配置改变后需要重新查询。
+- `POST /api/plugins/snapshot-page/{plugin_key}` 用于高级模式网页从现有快照翻页。
+
+- 需要批次表名触发回写时，`batch_no_node` 与 `trigger_node` 必须成对填写，并同时配置 `batch_column` 与 `buffer_node`
 
 ## 关键查询接口
 
@@ -154,6 +179,14 @@
 `query_mode=time` 必须同时提供 `start_time/end_time` 且不得提供 `batch_code`；`query_mode=batch` 必须提供 `batch_code` 且不得提供时间。批次来源和过滤字段是两项独立配置，例如来源可为 `ProductionOrder.OrderNo`，而 `ProductHistory` Group 的过滤字段可为 `strOrderNumber`。游标模式默认 `include_total=false`，因此普通翻页不执行 `COUNT(*)`。旧插件接口仍使用原页码与总数语义，保持 OPC UA 翻页协议兼容。目标业务表应具有时间单列索引、批次字段与时间字段的联合索引及 `id` 主键；不超过 1000 行的批次来源表不要求索引。
 
 5000 万行真实库验证见 [游标分页验证报告](docs/2026-07-15-CURSOR_PAGINATION_50M_REPORT.md)。
+
+## 性能与轮询行为
+
+- 活动配置按配置指针、文件修改时间和大小缓存；外部替换配置文件或切换 profile 后自动重载，无需重启服务。
+- OPC UA 高级插件的控制节点按轮次去重并批量读取，心跳数据类型在当前连接内复用；连接或端点变化后自动失效。
+- 高级查询页每 1 秒检查一次运行状态，页面隐藏时暂停；客户端通过 `since_revision` 只在状态变化时接收完整行数据。
+- 高级快照仍保留最多 100,000 行和本地分页；数据库读取在线程中执行，同一插件的并发快照请求会合并为一次查询。
+- 服务每 60 秒输出一条 OPC UA 轮询性能日志，包含轮询次数、操作数量、平均耗时和绑定数量，不记录节点值或密码。
 
 ## 自动化测试
 

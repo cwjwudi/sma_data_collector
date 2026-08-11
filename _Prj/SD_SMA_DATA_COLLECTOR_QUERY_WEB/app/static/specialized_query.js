@@ -13,10 +13,38 @@
   let advancedOpcuaMode = false;
   let runtimeRevision = 0;
   let runtimePollTimer = null;
+  let runtimePollGeneration = 0;
   let pluginStateKey = null;
   let batchCodesAvailable = false;
   let currentBatchSource = {};
-  const quickButtons = ["btnRange1D", "btnRange1W", "btnRange1M", "btnRange1Y"];
+  let timeRangePicker = null;
+
+  function safeStorageGet(key) {
+    try {
+      return window.localStorage.getItem(key);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function safeStorageSet(key, value) {
+    try {
+      window.localStorage.setItem(key, value);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+  const quickPresets = {
+    btnRange15Min: "last15m",
+    btnRange1H: "last1h",
+    btnRange8H: "last8h",
+    btnRangeToday: "today",
+    btnRangeYesterday: "yesterday",
+    btnRange1W: "last1w",
+    btnRange1M: "last1m",
+  };
+  const quickButtons = Object.keys(quickPresets);
 
   async function fetchJson(url, opts) {
     const resp = await fetch(url, opts);
@@ -34,12 +62,6 @@
     return document.querySelector('input[name="queryMode"]:checked')?.value || "time";
   }
 
-  function toInputTime(date) {
-    const pad = (value) => String(value).padStart(2, "0");
-    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}` +
-      `T${pad(date.getHours())}:${pad(date.getMinutes())}`;
-  }
-
   function enableButtonClickFeedback() {
     for (const btn of document.querySelectorAll("button")) {
       btn.addEventListener("click", () => {
@@ -52,15 +74,18 @@
   }
 
   function setQuickActive(id) {
-    for (const btnId of quickButtons) document.getElementById(btnId)?.classList.remove("active");
-    document.getElementById(id)?.classList.add("active");
+    for (const btnId of quickButtons) {
+      const button = document.getElementById(btnId);
+      button?.classList.remove("active");
+      button?.setAttribute("aria-pressed", "false");
+    }
+    const activeButton = document.getElementById(id);
+    activeButton?.classList.add("active");
+    activeButton?.setAttribute("aria-pressed", "true");
   }
 
-  function setQuickRange(days, buttonId) {
-    const end = new Date();
-    const start = new Date(end.getTime() - days * 24 * 60 * 60 * 1000);
-    document.getElementById("startDate").value = toInputTime(start);
-    document.getElementById("endDate").value = toInputTime(end);
+  function applyQuickRange(preset, buttonId) {
+    timeRangePicker.applyPreset(preset);
     setQuickActive(buttonId);
     savePluginState();
   }
@@ -78,14 +103,9 @@
     }
     const batchMode = getQueryMode() === "batch";
     document.getElementById("batchCode").disabled = !batchMode || !batchSupported;
-    document.getElementById("startDate").disabled = advancedOpcuaMode || batchMode;
-    document.getElementById("endDate").disabled = advancedOpcuaMode || batchMode;
+    timeRangePicker?.setDisabled(advancedOpcuaMode || batchMode);
     for (const id of quickButtons) document.getElementById(id).disabled = advancedOpcuaMode || batchMode;
-    if (batchMode) {
-      document.getElementById("startDate").value = "";
-      document.getElementById("endDate").value = "";
-      setQuickActive("");
-    } else {
+    if (!batchMode) {
       document.getElementById("batchCode").value = "";
     }
   }
@@ -123,7 +143,7 @@
 
   function savePluginState() {
     if (!pluginStateKey) return;
-    localStorage.setItem(pluginStateKey, JSON.stringify({
+    safeStorageSet(pluginStateKey, JSON.stringify({
       startDate: document.getElementById("startDate").value || "",
       endDate: document.getElementById("endDate").value || "",
       queryMode: getQueryMode(),
@@ -144,23 +164,25 @@
   function loadPluginState() {
     if (!pluginStateKey) return null;
     try {
-      return JSON.parse(localStorage.getItem(pluginStateKey) || "null");
+      return JSON.parse(safeStorageGet(pluginStateKey) || "null");
     } catch {
       return null;
     }
   }
 
   function updatePagerMeta(binding, warnings) {
+    const totalKnown = totalRecords !== null && Number.isFinite(totalRecords);
     const infoParts = [
       `plugin=${binding.plugin_key}`,
       `group=${binding.resolved_group || "-"}`,
       `table=${document.getElementById("tableSelector").value || binding.resolved_table || "-"}`,
       `current=${currentPage}`,
+      `has_more=${hasMore}`,
     ];
-    if (advancedOpcuaMode) {
-      infoParts.push(`total=${totalRecords ?? 0}`, `pages=${totalPages}`);
-    } else {
-      infoParts.push(`has_more=${hasMore}`);
+    if (totalKnown) {
+      infoParts.push(`total=${totalRecords}`, `pages=${totalPages}`);
+    }
+    if (!advancedOpcuaMode) {
       if (currentBatchSource.table) {
         infoParts.push(`batch_source=${currentBatchSource.table}.${currentBatchSource.field}`);
       } else if (currentBatchSource.error) {
@@ -170,6 +192,10 @@
     if (Array.isArray(warnings) && warnings.length) infoParts.push(`warnings=${warnings.join(" | ")}`);
     document.getElementById("meta").textContent = infoParts.join(" ; ");
     document.getElementById("pageNumber").value = String(currentPage);
+    document.getElementById("totalPageCount").textContent = totalKnown ? String(totalPages) : "—";
+    document.getElementById("recordSummary").textContent = totalKnown
+      ? `共 ${totalRecords} 条`
+      : "总数统计中";
     document.getElementById("btnPrevPage").disabled = currentPage <= 1;
     document.getElementById("btnNextPage").disabled = advancedOpcuaMode
       ? currentPage >= totalPages
@@ -228,17 +254,19 @@
   function applyQueryResult(data, targetPage, requestedCursor, proposedStack) {
     renderTable(data.columns || [], data.display_columns || [], data.rows || []);
     selectedCursor = -1;
-    totalRecords = data.total == null ? null : Number(data.total);
+    if (data.total != null) totalRecords = Math.max(0, Number(data.total) || 0);
     hasMore = Boolean(data.has_more);
     currentPage = Math.max(1, Number(data.page || targetPage));
+    const pageSize = Math.max(1, Number(data.page_size || currentBinding.page_size || 10));
     if (advancedOpcuaMode) {
-      const pageSize = Number(data.page_size || currentBinding.page_size || 10);
       totalPages = Math.max(1, Math.ceil((totalRecords || 0) / pageSize));
     } else {
       currentPageCursor = requestedCursor;
       nextPageCursor = data.next_cursor || null;
       pageCursorStack = proposedStack;
-      totalPages = currentPage + (hasMore ? 1 : 0);
+      totalPages = totalRecords !== null
+        ? Math.max(1, Math.ceil(totalRecords / pageSize))
+        : currentPage + (hasMore ? 1 : 0);
     }
     updatePagerMeta(currentBinding, data.warnings || []);
     savePluginState();
@@ -267,7 +295,7 @@
     return context;
   }
 
-  function buildPayload(context, page, pageCursor) {
+  function buildPayload(context, page, pageCursor, includeTotal = false) {
     const payload = {
       page,
       page_size: currentBinding.page_size || 10,
@@ -275,7 +303,7 @@
       cursor: -1,
       query_mode: context.queryMode,
       pagination_mode: advancedOpcuaMode ? "offset" : "cursor",
-      include_total: advancedOpcuaMode,
+      include_total: advancedOpcuaMode || Boolean(includeTotal),
     };
     if (context.startTime) payload.start_time = context.startTime;
     if (context.endTime) payload.end_time = context.endTime;
@@ -290,20 +318,20 @@
     const data = await fetchJson(`/api/plugins/query/${encodeURIComponent(activePluginKey)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(buildPayload(lastQueryContext, targetPage, null)),
+      body: JSON.stringify(buildPayload(lastQueryContext, targetPage, null, true)),
     });
+    if (!advancedOpcuaMode) totalRecords = null;
     applyQueryResult(data, targetPage, null, []);
   }
 
   async function runAdjacentPage(direction) {
-    if (!lastQueryContext) return;
+    if (!lastQueryContext && !advancedOpcuaMode) return;
     if (advancedOpcuaMode) {
       const targetPage = Math.min(Math.max(currentPage + direction, 1), totalPages);
-      if (targetPage === currentPage) return;
-      const data = await fetchJson(`/api/plugins/query/${encodeURIComponent(activePluginKey)}`, {
+      const data = await fetchJson(`/api/plugins/snapshot-page/${encodeURIComponent(activePluginKey)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(buildPayload(lastQueryContext, targetPage, null)),
+        body: JSON.stringify({ page: targetPage }),
       });
       applyQueryResult(data, targetPage, null, []);
       return;
@@ -337,22 +365,47 @@
     totalRecords = Number(state.total_records || 0);
     totalPages = Math.max(1, Number(state.total_pages || 1));
     currentPage = Math.min(Math.max(Number(state.page || 1), 1), totalPages);
-    updatePagerMeta(currentBinding, state.warnings || []);
+    const warnings = [...(state.warnings || [])];
+    if (advancedOpcuaMode && state.has_snapshot === false) {
+      warnings.push("尚未建立查询快照，请先点击查询");
+    }
+    updatePagerMeta(currentBinding, warnings);
     savePluginState();
   }
 
+  function stopRuntimeStatePolling() {
+    runtimePollGeneration += 1;
+    if (runtimePollTimer) clearTimeout(runtimePollTimer);
+    runtimePollTimer = null;
+  }
+
+  function scheduleRuntimeStatePoll(pluginKey, generation, delayMs = 1000) {
+    if (generation !== runtimePollGeneration || document.hidden) return;
+    runtimePollTimer = setTimeout(() => {
+      pollRuntimeState(pluginKey, generation).catch(() => {});
+    }, delayMs);
+  }
+
+  async function pollRuntimeState(pluginKey, generation) {
+    if (generation !== runtimePollGeneration || document.hidden) return;
+    try {
+      const state = await fetchJson(
+        `/api/plugins/runtime-state/${encodeURIComponent(pluginKey)}?since_revision=${runtimeRevision}`,
+      );
+      if (generation !== runtimePollGeneration) return;
+      if (state.changed !== false) {
+        runtimeRevision = Number(state.revision || 0);
+        applyRuntimeState(state);
+      }
+    } finally {
+      scheduleRuntimeStatePoll(pluginKey, generation);
+    }
+  }
+
   function startRuntimeStatePolling(pluginKey) {
-    if (runtimePollTimer) clearInterval(runtimePollTimer);
-    runtimePollTimer = setInterval(() => {
-      fetchJson(`/api/plugins/runtime-state/${encodeURIComponent(pluginKey)}`)
-        .then((state) => {
-          const revision = Number(state.revision || 0);
-          if (revision === runtimeRevision) return;
-          runtimeRevision = revision;
-          applyRuntimeState(state);
-        })
-        .catch(() => {});
-    }, 300);
+    stopRuntimeStatePolling();
+    const generation = runtimePollGeneration;
+    scheduleRuntimeStatePoll(pluginKey, generation);
   }
 
   function populateTables(savedTable) {
@@ -383,14 +436,26 @@
     activePluginKey = getPluginKeyFromPath();
     if (!activePluginKey) throw new Error("无法识别插件路径");
     pluginStateKey = `sd_sma_plugin_state_${activePluginKey}`;
+    timeRangePicker = window.TouchTimeRange.attach({
+      idPrefix: "plugin-time",
+      startInputId: "startDate",
+      endInputId: "endDate",
+      triggerId: "btnPreciseTime",
+      summaryId: "pluginTimeSummary",
+    });
     currentBinding = await fetchJson(`/api/plugins/resolve/${encodeURIComponent(activePluginKey)}`);
     advancedOpcuaMode = isAdvancedTableListWriteback(currentBinding);
     const saved = loadPluginState();
     populateTables(saved?.table);
     if (saved?.startDate) document.getElementById("startDate").value = saved.startDate;
     if (saved?.endDate) document.getElementById("endDate").value = saved.endDate;
-    if (!saved) setQuickRange(1, "btnRange1D");
-    else setQuickActive(saved.quickActive || "");
+    timeRangePicker.refresh();
+    if (!saved) {
+      if (!advancedOpcuaMode) applyQuickRange("last1h", "btnRange1H");
+      else setQuickActive("");
+    } else {
+      setQuickActive(saved.quickActive || "");
+    }
     await loadBatchCodes(saved?.batchCode);
     if (saved?.queryMode === "batch" && !advancedOpcuaMode && batchCodesAvailable) {
       document.getElementById("queryModeBatch").checked = true;
@@ -403,7 +468,9 @@
     });
     document.getElementById("tableSelector").addEventListener("change", () => {
       savePluginState();
-      runFreshQuery(1).catch((error) => (document.getElementById("meta").textContent = error.message));
+      if (!advancedOpcuaMode) {
+        runFreshQuery(1).catch((error) => (document.getElementById("meta").textContent = error.message));
+      }
     });
     document.getElementById("btnPrevPage").addEventListener("click", () => {
       runAdjacentPage(-1).catch((error) => (document.getElementById("meta").textContent = error.message));
@@ -418,8 +485,8 @@
       });
     }
     document.getElementById("batchCode").addEventListener("change", savePluginState);
-    for (const [id, days] of [["btnRange1D", 1], ["btnRange1W", 7], ["btnRange1M", 30], ["btnRange1Y", 365]]) {
-      document.getElementById(id).addEventListener("click", () => setQuickRange(days, id));
+    for (const [id, preset] of Object.entries(quickPresets)) {
+      document.getElementById(id).addEventListener("click", () => applyQuickRange(preset, id));
     }
     for (const id of ["startDate", "endDate"]) {
       document.getElementById(id).addEventListener("input", () => {
@@ -429,14 +496,30 @@
     }
 
     enableButtonClickFeedback();
-    await runFreshQuery(advancedOpcuaMode ? Number(saved?.currentPage || 1) : 1);
     if (advancedOpcuaMode) {
-      fetchJson(`/api/plugins/runtime-state/${encodeURIComponent(activePluginKey)}`)
-        .then((state) => { runtimeRevision = Number(state.revision || 0); })
-        .catch(() => {});
+      const state = await fetchJson(`/api/plugins/runtime-state/${encodeURIComponent(activePluginKey)}`);
+      runtimeRevision = Number(state.revision || 0);
+      applyRuntimeState(state);
       startRuntimeStatePolling(activePluginKey);
+    } else {
+      await runFreshQuery(1);
     }
   }
+
+  document.addEventListener("visibilitychange", () => {
+    if (!advancedOpcuaMode || !activePluginKey) return;
+    if (document.hidden) {
+      stopRuntimeStatePolling();
+    } else {
+      startRuntimeStatePolling(activePluginKey);
+      const generation = runtimePollGeneration;
+      if (runtimePollTimer) clearTimeout(runtimePollTimer);
+      runtimePollTimer = null;
+      pollRuntimeState(activePluginKey, generation).catch(() => {});
+    }
+  });
+  window.addEventListener("pagehide", stopRuntimeStatePolling);
+  window.addEventListener("beforeunload", stopRuntimeStatePolling);
 
   run().catch((error) => {
     document.getElementById("meta").textContent = error.message;

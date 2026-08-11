@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable
 
@@ -87,9 +88,11 @@ class PluginRuntimeSnapshot:
 
 
 QueryHandler = Callable[[str, int], Awaitable[PluginRuntimeSnapshot | None]]
+SnapshotQueryHandler = Callable[[str], Awaitable[PluginRuntimeSnapshot | None]]
 TriggerHandler = Callable[[str, str], Awaitable[bool]]
 BindingIterator = Callable[[], list[dict[str, Any]]]
 OpcuaConnectionProvider = Callable[[], dict[str, str]]
+RuntimeConfigProvider = Callable[[], dict[str, Any]]
 
 
 class PluginOpcuaMonitor:
@@ -98,14 +101,18 @@ class PluginOpcuaMonitor:
     def __init__(
         self,
         *,
-        iter_bindings: BindingIterator,
-        get_opcua: OpcuaConnectionProvider,
+        iter_bindings: BindingIterator | None = None,
+        get_opcua: OpcuaConnectionProvider | None = None,
+        get_runtime_config: RuntimeConfigProvider | None = None,
+        on_snapshot_query: SnapshotQueryHandler,
         on_page_change: QueryHandler,
         on_trigger: TriggerHandler,
         poll_interval_ms: int = DEFAULT_POLL_INTERVAL_MS,
     ) -> None:
         self._iter_bindings = iter_bindings
         self._get_opcua = get_opcua
+        self._get_runtime_config = get_runtime_config
+        self._on_snapshot_query = on_snapshot_query
         self._on_page_change = on_page_change
         self._on_trigger = on_trigger
         self._poll_interval_ms = max(50, min(int(poll_interval_ms), 5000))
@@ -114,6 +121,14 @@ class PluginOpcuaMonitor:
         self._runtime: dict[str, PluginRuntimeSnapshot] = {}
         self._reconnect_delay_sec = 0.0
         self._was_connected = True
+        self._last_opcua: dict[str, Any] = {}
+        self._metrics_started = time.monotonic()
+        self._metrics_polls = 0
+        self._metrics_nodes = 0
+        self._metrics_elapsed_sec = 0.0
+
+        if self._get_runtime_config is None and (self._iter_bindings is None or self._get_opcua is None):
+            raise ValueError("get_runtime_config or both legacy config providers are required")
 
     def get_runtime(self, plugin_key: str) -> PluginRuntimeSnapshot | None:
         return self._runtime.get(plugin_key)
@@ -136,13 +151,19 @@ class PluginOpcuaMonitor:
         if snapshot.revision > existing.revision:
             existing.revision = snapshot.revision
 
+    def clear_runtime(self, plugin_key: str | None = None) -> None:
+        if plugin_key is None:
+            self._runtime.clear()
+        else:
+            self._runtime.pop(plugin_key, None)
+
     def stop(self) -> None:
         self._stop.set()
 
     def _resolve_poll_interval_ms(self) -> int:
         """Use global OPC UA poll interval from connection settings."""
         try:
-            opcua = self._get_opcua() or {}
+            opcua = self._last_opcua or (self._get_opcua() if self._get_opcua is not None else {}) or {}
             raw = opcua.get("poll_interval_ms", self._poll_interval_ms)
             return max(50, min(int(raw), 5000))
         except Exception:
@@ -191,20 +212,56 @@ class PluginOpcuaMonitor:
 
     async def _poll_once(self) -> bool:
         """Poll bindings and heartbeat. Return False when OPC UA I/O fails (triggers reconnect backoff)."""
-        bindings = self._iter_bindings()
-        opcua = self._get_opcua()
+        started = time.perf_counter()
+        if self._get_runtime_config is not None:
+            runtime_config = self._get_runtime_config() or {}
+            bindings = list(runtime_config.get("bindings") or [])
+            opcua = dict(runtime_config.get("opcua") or {})
+        else:
+            bindings = self._iter_bindings() if self._iter_bindings is not None else []
+            opcua = self._get_opcua() if self._get_opcua is not None else {}
+        self._last_opcua = opcua
         endpoint = opcua.get("endpoint_url", "")
         if not endpoint:
+            self._record_poll_metrics(started, 0, len(bindings))
             return True
 
         username = opcua.get("username", "")
         password = opcua.get("password", "")
         heartbeat_node = str(opcua.get("heartbeat_node", "") or "").strip()
 
+        node_ids: list[str] = []
+        for binding in bindings:
+            advanced = binding.get("_table_list_advanced") or {}
+            for field in ("query_node", "prev_page_node", "next_page_node", "trigger_node"):
+                node_id = str(advanced.get(field, "") or "").strip()
+                if node_id and node_id not in node_ids:
+                    node_ids.append(node_id)
+
+        values_by_node: dict[str, Any] = {}
         ok = True
-        if bindings:
+        if node_ids:
+            try:
+                values = await opcua_client.read_scalars(
+                    endpoint,
+                    node_ids,
+                    username=username,
+                    password=password,
+                )
+                values_by_node = dict(zip(node_ids, values))
+            except Exception:
+                logger.debug("OPC UA batch read failed nodes=%d", len(node_ids), exc_info=True)
+                ok = False
+
+        if ok:
             for binding in bindings:
-                if not await self._poll_binding(binding, endpoint, username, password):
+                if not await self._poll_binding(
+                    binding,
+                    endpoint,
+                    username,
+                    password,
+                    values_by_node,
+                ):
                     ok = False
                     break
 
@@ -213,7 +270,36 @@ class PluginOpcuaMonitor:
             if not await self._write_heartbeat(endpoint, heartbeat_node, username, password, "global"):
                 ok = False
 
+        self._record_poll_metrics(
+            started,
+            len(node_ids) + (1 if heartbeat_node else 0),
+            len(bindings),
+        )
         return ok
+
+    def _record_poll_metrics(
+        self,
+        started: float,
+        operation_count: int,
+        binding_count: int,
+    ) -> None:
+        self._metrics_polls += 1
+        self._metrics_nodes += operation_count
+        self._metrics_elapsed_sec += time.perf_counter() - started
+        now = time.monotonic()
+        if now - self._metrics_started < 60.0:
+            return
+        logger.info(
+            "OPC UA monitor performance polls=%d operations=%d avg_poll_ms=%.2f bindings=%d",
+            self._metrics_polls,
+            self._metrics_nodes,
+            self._metrics_elapsed_sec * 1000.0 / max(self._metrics_polls, 1),
+            binding_count,
+        )
+        self._metrics_started = now
+        self._metrics_polls = 0
+        self._metrics_nodes = 0
+        self._metrics_elapsed_sec = 0.0
 
     async def _poll_binding(
         self,
@@ -221,6 +307,7 @@ class PluginOpcuaMonitor:
         endpoint: str,
         username: str,
         password: str,
+        values_by_node: dict[str, Any],
     ) -> bool:
         """Return False when an OPC UA read fails; True when skipped or reads succeed."""
         config = binding.get("_table_list_config")
@@ -232,12 +319,15 @@ class PluginOpcuaMonitor:
         if not plugin_key:
             return True
 
+        query_node = str(advanced.get("query_node", "") or "").strip()
         prev_node = str(advanced.get("prev_page_node", "") or "").strip()
         next_node = str(advanced.get("next_page_node", "") or "").strip()
         batch_node = str(advanced.get("batch_no_node", "") or "").strip()
         trigger_node = str(advanced.get("trigger_node", "") or "").strip()
 
         nodes_to_read: list[tuple[str, str]] = []
+        if query_node:
+            nodes_to_read.append(("query", query_node))
         if prev_node:
             nodes_to_read.append(("prev", prev_node))
         if next_node:
@@ -248,30 +338,25 @@ class PluginOpcuaMonitor:
         if not nodes_to_read:
             return True
 
-        values: dict[str, Any] = {}
-        for label, node_id in nodes_to_read:
-            try:
-                values[label] = await opcua_client.read_scalar(
-                    endpoint,
-                    node_id,
-                    username=username,
-                    password=password,
-                )
-            except Exception:
-                logger.debug("OPC UA read failed plugin=%s node=%s", plugin_key, node_id, exc_info=True)
-                return False
+        values = {label: values_by_node.get(node_id) for label, node_id in nodes_to_read}
+
+        edge_key_query = f"{plugin_key}:query"
+        if query_node and self._edges.check(edge_key_query, values.get("query")):
+            logger.info("OPC UA snapshot-query rising edge plugin=%s", plugin_key)
+            await self._handle_snapshot_query(plugin_key)
+            await self._reset_bool_node(endpoint, query_node, username, password)
 
         edge_key_prev = f"{plugin_key}:prev"
         if prev_node and self._edges.check(edge_key_prev, values.get("prev")):
             logger.info("OPC UA prev-page rising edge plugin=%s", plugin_key)
             await self._handle_page_delta(plugin_key, -1)
-            await self._reset_bool_node(endpoint, prev_node, username, password, edge_key_prev)
+            await self._reset_bool_node(endpoint, prev_node, username, password)
 
         edge_key_next = f"{plugin_key}:next"
         if next_node and self._edges.check(edge_key_next, values.get("next")):
             logger.info("OPC UA next-page rising edge plugin=%s", plugin_key)
             await self._handle_page_delta(plugin_key, 1)
-            await self._reset_bool_node(endpoint, next_node, username, password, edge_key_next)
+            await self._reset_bool_node(endpoint, next_node, username, password)
 
         edge_key_trigger = f"{plugin_key}:trigger"
         if trigger_node and self._edges.check(edge_key_trigger, values.get("trigger")):
@@ -311,9 +396,26 @@ class PluginOpcuaMonitor:
                 ok,
                 batch_no,
             )
-            await self._reset_bool_node(endpoint, trigger_node, username, password, edge_key_trigger)
+            await self._reset_bool_node(endpoint, trigger_node, username, password)
 
         return True
+
+    async def _handle_snapshot_query(self, plugin_key: str) -> None:
+        previous = self._runtime.get(plugin_key)
+        updated = await self._on_snapshot_query(plugin_key)
+        if updated is None:
+            logger.warning("OPC UA snapshot query failed plugin=%s", plugin_key)
+            return
+        updated.revision = (previous.revision if previous else 0) + 1
+        self._runtime[plugin_key] = updated
+        logger.info(
+            "OPC UA snapshot query finished plugin=%s page=%s/%s rows=%d total=%d",
+            plugin_key,
+            updated.page,
+            updated.total_pages,
+            len(updated.rows),
+            updated.total_records,
+        )
 
     async def _write_heartbeat(
         self,
@@ -344,7 +446,6 @@ class PluginOpcuaMonitor:
         node_id: str,
         username: str,
         password: str,
-        edge_key: str,
     ) -> None:
         if not node_id:
             return
@@ -356,7 +457,6 @@ class PluginOpcuaMonitor:
             password=password,
         )
         if ok:
-            self._edges.set_last(edge_key, False)
             logger.debug("OPC UA reset node=%s to FALSE", node_id)
         else:
             logger.warning("OPC UA reset failed node=%s", node_id)

@@ -129,7 +129,7 @@
 </template>
 
 <script setup>
-import { computed, defineAsyncComponent, defineExpose, onDeactivated, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, defineExpose, onActivated, onDeactivated, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 
 const emit = defineEmits(['health-summary'])
 import { apiFetch } from '@/api/client.js'
@@ -164,6 +164,7 @@ import { workbenchMainLayoutClass } from './workbench-layout'
 import {
   emptyReloadDraftAction,
   shouldContinueEmptyLoadWatch,
+  shouldRestartLoadWatchOnActivate,
 } from './empty-connections-reload-policy'
 import ConnectionManager from './connection-manager/ConnectionManager.vue'
 import ObjectTree from './object-tree/ObjectTree.vue'
@@ -1010,7 +1011,22 @@ onMounted(() => {
 })
 
 onDeactivated(() => {
+  // 034 M2：keep-alive 离页须停空列表监视，避免后台继续 reloadConnections
+  stopLoadWatch()
   persistWorkbenchSession()
+})
+
+onActivated(() => {
+  // 回到页且列表仍空、未确认空列表时，按需恢复监视（034 M2）
+  if (
+    shouldRestartLoadWatchOnActivate({
+      connectionsCount: connections.value.length,
+      emptyListConfirmed,
+      connectionsLoading: connectionsLoading.value,
+    })
+  ) {
+    startLoadWatch()
+  }
 })
 
 onUnmounted(() => {

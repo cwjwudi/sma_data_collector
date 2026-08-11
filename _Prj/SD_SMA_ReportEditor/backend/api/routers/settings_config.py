@@ -361,3 +361,135 @@ def reset_config():
     except Exception as e:
         logger.exception("reset_config")
         raise HTTPException(503, f"复位失败: {e}") from e
+
+
+@router.get("/settings/support-pack/suggestions")
+def support_pack_suggestions():
+    """048：预勾选建议——近 7 天导出失败相关模版 id + 最近 PDF 路径。"""
+    from modules import support_pack as sp
+
+    try:
+        entries = audit_log.export_audit(DATA_DIR)
+    except Exception:
+        entries = []
+    sliced = sp.slice_audit_entries(entries)
+    return {
+        "templateIds": sp.failed_template_ids_from_audit(sliced),
+        "pdfPaths": sp.recent_failed_pdf_paths(sliced, limit=3),
+        "auditCount": len(sliced),
+    }
+
+
+@router.post("/settings/support-pack/export")
+async def export_support_pack(request: Request):
+    """048：导出问题反馈 zip（Markdown + 模版/配置/审计 + 可选 PDF）。"""
+    from modules import support_pack as sp
+    from modules import template_store
+
+    raw = await request.body()
+    body: dict[str, Any] = {}
+    if raw:
+        try:
+            parsed = json.loads(raw.decode("utf-8"))
+            if isinstance(parsed, dict):
+                body = parsed
+        except (UnicodeDecodeError, json.JSONDecodeError) as e:
+            raise HTTPException(400, f"无效 JSON: {e}") from e
+
+    template_ids = body.get("templateIds") or body.get("template_ids") or []
+    if not isinstance(template_ids, list):
+        raise HTTPException(400, "templateIds 须为数组")
+    template_ids = [str(x).strip() for x in template_ids if str(x).strip()]
+    template_ids = template_ids[: sp.MAX_TEMPLATES]
+
+    include_pdf = body.get("includeFailedPdf")
+    if include_pdf is None:
+        include_pdf = body.get("include_failed_pdf", True)
+    include_pdf = bool(include_pdf)
+
+    pdf_paths = body.get("pdfPaths") or body.get("pdf_paths") or []
+    if pdf_paths is not None and not isinstance(pdf_paths, list):
+        raise HTTPException(400, "pdfPaths 须为数组")
+    pdf_paths = [str(x).strip() for x in (pdf_paths or []) if str(x).strip()]
+
+    generator_prefs = body.get("generatorPrefs") or body.get("generator_prefs") or {}
+    if generator_prefs is not None and not isinstance(generator_prefs, dict):
+        raise HTTPException(400, "generatorPrefs 须为对象")
+    env = body.get("env") if isinstance(body.get("env"), dict) else {}
+
+    templates_raw: list[dict[str, Any]] = []
+    for tid in template_ids:
+        try:
+            path = template_store.template_path(tid)
+            if not path.is_file():
+                continue
+            data = json.loads(path.read_text(encoding="utf-8"))
+            if isinstance(data, dict):
+                templates_raw.append(data)
+        except Exception:
+            logger.warning("support pack: skip template %s", tid, exc_info=True)
+
+    try:
+        entries = audit_log.export_audit(DATA_DIR)
+    except Exception:
+        entries = []
+
+    cfg = _load()
+    connections = sp.connection_skeleton(
+        list(cfg.get("db_connections") or []),
+        list(cfg.get("opcua_servers") or []),
+    )
+
+    app_version = str(env.get("appVersion") or body.get("appVersion") or "")
+
+    try:
+        zip_bytes, manifest = sp.build_support_pack_zip(
+            title=str(body.get("title") or ""),
+            symptom=str(body.get("symptom") or body.get("description") or ""),
+            expected=str(body.get("expected") or ""),
+            steps=str(body.get("steps") or ""),
+            occurred_at=str(body.get("occurredAt") or body.get("occurred_at") or ""),
+            env=env,
+            template_ids=template_ids,
+            templates_raw=templates_raw,
+            generator_prefs=generator_prefs if isinstance(generator_prefs, dict) else {},
+            connections=connections,
+            audit_entries=entries,
+            include_failed_pdf=include_pdf,
+            pdf_paths=pdf_paths,
+            app_version=app_version,
+        )
+    except Exception as e:
+        logger.exception("support_pack_export")
+        raise HTTPException(503, f"生成反馈包失败: {e}") from e
+
+    filename = f"{manifest.get('packName') or 'support-pack'}.zip"
+    try:
+        audit_log.append_audit(
+            DATA_DIR,
+            action="support.pack_export",
+            result="ok",
+            summary=(
+                f"问题反馈包 {filename}（模版 {len(manifest.get('templateIds') or [])} · "
+                f"审计 {manifest.get('auditCount', 0)} · "
+                f"附件 {len(manifest.get('attachments') or [])}）"
+            ),
+            detail={
+                "packName": manifest.get("packName"),
+                "templateIds": manifest.get("templateIds"),
+                "auditCount": manifest.get("auditCount"),
+                "attachments": manifest.get("attachments"),
+            },
+        )
+    except Exception:
+        logger.exception("audit support.pack_export")
+
+    headers = {
+        "Content-Disposition": f'attachment; filename="{filename}"',
+        "X-Support-Pack-Templates": str(len(manifest.get("templateIds") or [])),
+        "X-Support-Pack-Audit": str(manifest.get("auditCount") or 0),
+        "Access-Control-Expose-Headers": (
+            "Content-Disposition, X-Support-Pack-Templates, X-Support-Pack-Audit"
+        ),
+    }
+    return Response(content=zip_bytes, media_type="application/zip", headers=headers)

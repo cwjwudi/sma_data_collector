@@ -138,6 +138,13 @@
       <label v-for="fld in mmFields" :key="fld.k">
         {{ fld.lab }}（mm）<input v-model.number="working[fld.k]" type="number" min="0" class="inp" />
       </label>
+      <div class="pe-body-bg">
+        <TableCellFillPicker
+          v-model="working.bodyBackgroundCss"
+          title="正文底色"
+          :presets="bodyBgPresets"
+        />
+      </div>
     </div>
     <p class="muted">
       <strong>画布</strong>与「模版管理」一致：页眉、正文区、页脚在同一张纵向纸上；
@@ -209,10 +216,15 @@ import LayoutPresetZonesDialog from "@/components/report-template/LayoutPresetZo
 import LayoutPresetPaperCanvas from "@/components/report-template/LayoutPresetPaperCanvas.vue";
 import LayoutPresetElementProps from "@/components/report-template/LayoutPresetElementProps.vue";
 import MultiElementBatchProps from "@/components/report-template/MultiElementBatchProps.vue";
+import TableCellFillPicker from "@/components/report-template/TableCellFillPicker.vue";
 import type { LayoutPreset } from "@/lib/report-template/layout-model";
-import { defaultBlankLayoutSnapshot, hydrateLayoutPreset } from "@/lib/report-template/layout-model";
+import {
+  DEFAULT_BODY_BACKGROUND_CSS,
+  defaultBlankLayoutSnapshot,
+  hydrateLayoutPreset,
+} from "@/lib/report-template/layout-model";
 import type { LayoutControlType, LayoutZoneElement } from "@/lib/report-template/layout-zone-element";
-import { hideShowBordersInElements } from "@/lib/report-template/show-border";
+import { hideBordersOnLayoutPresetBands } from "@/lib/report-template/show-border";
 import {
   copyLayoutZoneElementToClipboard,
   copyLayoutZoneElementsToClipboard,
@@ -245,6 +257,11 @@ import {
 import { stableFingerprintPart } from "@/lib/report-template/snapshot-fingerprint";
 import { watchDebounced } from "@vueuse/core";
 import { useStaleGuard } from "@/composables/useStaleGuard";
+import { collectFontFamiliesFromLayoutElements } from "@/lib/report-template/font-families-collect";
+import {
+  checkFontFamiliesSync,
+  formatFontPreflightWarnings,
+} from "@/lib/report-template/font-availability";
 import { appConfirm } from "@/composables/useAppConfirm";
 import { auditLog } from "@/lib/auditLog";
 import { summarizeDeleteLayouts } from "@/lib/auditLabels";
@@ -543,10 +560,11 @@ function distributeLayout(kind: DistributeKind) {
 function hideBordersOnPresetPage() {
   const w = working.value;
   if (!w) return;
-  let n = 0;
-  n += hideShowBordersInElements(w.headerElements);
-  n += hideShowBordersInElements(w.bodyElements);
-  n += hideShowBordersInElements(w.footerElements);
+  const n = hideBordersOnLayoutPresetBands({
+    headerElements: w.headerElements,
+    bodyElements: w.bodyElements,
+    footerElements: w.footerElements,
+  });
   msg.value =
     n > 0 ? `已隐藏 ${n} 个控件的预览/导出外框（表格未改，可撤销）。` : "本页没有可隐藏的控件外框。";
 }
@@ -558,6 +576,15 @@ const mmFields = [
   { k: "marginLeftMm" as const, lab: "左边距" },
   { k: "headerBandMm" as const, lab: "页眉带高度" },
   { k: "footerBandMm" as const, lab: "页脚带高度" },
+];
+
+const bodyBgPresets = [
+  { value: "transparent", label: "透明（纸白）" },
+  { value: "#ffffff", label: "纯白" },
+  { value: DEFAULT_BODY_BACKGROUND_CSS, label: "默认浅灰" },
+  { value: "#fafafa", label: "近白" },
+  { value: "#f4f4f5", label: "锌灰" },
+  { value: "#eef2ff", label: "淡靛" },
 ];
 
 function clonePreset(p: LayoutPreset): LayoutPreset {
@@ -685,6 +712,24 @@ async function savePreset() {
   if (!w?.name.trim()) {
     msg.value = "名称不能为空。";
     return false;
+  }
+  const fontWarns = formatFontPreflightWarnings(
+    checkFontFamiliesSync(
+      collectFontFamiliesFromLayoutElements([
+        ...w.headerElements,
+        ...w.footerElements,
+        ...w.bodyElements,
+      ]),
+    ),
+  );
+  if (fontWarns.length) {
+    const ok = await appConfirm({
+      title: "字体检查",
+      message: `${fontWarns.join("\n")}\n\n仍要保存版式吗？`,
+      confirmText: "仍要保存",
+      cancelText: "返回修改",
+    });
+    if (!ok) return false;
   }
   saving.value = true;
   msg.value = "";
@@ -865,6 +910,10 @@ onUnmounted(() => window.removeEventListener("keydown", onEditorWindowKeydown));
   overflow-y: auto;
   overscroll-behavior: contain;
   padding-right: 2px;
+}
+.pe-body-bg {
+  grid-column: 1 / -1;
+  max-width: 320px;
 }
 .lpe-fail {
   padding: 24px;

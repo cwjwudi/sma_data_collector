@@ -54,7 +54,7 @@
           @mouseenter="activeIndex = i"
           @click="pick(opt)"
         >
-          {{ opt }}
+          {{ formatOption?.(opt) ?? opt }}
         </li>
       </ul>
     </Teleport>
@@ -72,6 +72,8 @@ const props = withDefaults(
     inputClass?: string | Record<string, boolean> | (string | Record<string, boolean>)[];
     /** 选项预览样式（如字体名用自身字体渲染） */
     optPreviewStyle?: (opt: string) => Record<string, string> | undefined;
+    /** 列表展示文案（可与 v-model 值不同，如「Noto Sans SC（默认）」） */
+    formatOption?: (opt: string) => string;
     /** 下拉最大高度（px） */
     maxListHeight?: number;
     /** 下拉最小宽度（px）；长模型名等场景可宽于输入框 */
@@ -82,6 +84,7 @@ const props = withDefaults(
     disabled: false,
     inputClass: undefined,
     optPreviewStyle: undefined,
+    formatOption: undefined,
     maxListHeight: 280,
     minListWidth: 0,
   },

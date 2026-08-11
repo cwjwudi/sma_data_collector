@@ -19,6 +19,12 @@ TYPE
 		AlarmInsertFault : BOOL;
 		BatchInsert : BOOL;
 		BatchInfoInsert : BOOL;
+		RecipeCollectEnable : BOOL;
+		ProductCollectEnable : BOOL;
+		AlarmCollectEnable : BOOL;
+		AuditCollectEnable : BOOL;
+		BatchCollectEnable : BOOL;
+		BatchInfoCollectEnable : BOOL;
 	END_STRUCT;
 END_TYPE
 

@@ -287,6 +287,8 @@ import ZoneImageCompose from "@/components/report-template/ZoneImageCompose.vue"
 import type { MiniPreviewVariant } from "@/components/report-template/mini-preview-types";
 import type { LayoutZoneElement, LayoutZoneTableCell } from "@/lib/report-template/layout-zone-element";
 import {
+  axisToCssTextAlign,
+  axisToCssVerticalAlign,
   ensureZoneTableGrid,
   flexJustifyAlignForAxes,
   getZoneTextWrapStyle,
@@ -327,11 +329,13 @@ import {
 import { applyRowTextLineSliceToCellText } from "@/lib/report-template/table-cell-metrics";
 import type { PaperLayoutMetrics } from "@/lib/report-template/layout-geometry";
 import {
+  activeLayoutSnapshotForSheet,
   metricsForSheet,
   bodyElementsRef,
   zoneBodyDecorRef,
   type EditorSheet,
 } from "@/lib/report-template/editor-sheet";
+import { resolveBodyBackgroundCss } from "@/lib/report-template/layout-model";
 import type { ReportTemplate, TemplateElement, TemplateTableCell } from "@/lib/report-template/model";
 import {
   ensureTableGrid,
@@ -349,6 +353,7 @@ import {
   miniPreviewScale,
   miniPreviewScaleForExport,
 } from "@/lib/report-template/mini-preview-scale";
+import { chromeBorderCss } from "@/lib/report-template/show-border";
 
 const props = withDefaults(
   defineProps<{
@@ -370,6 +375,8 @@ const props = withDefaults(
     tailOnlyBelowBaseline?: boolean;
     tailBaselineY?: number;
     overflowSqlFillTableId?: string;
+    /** 本卡隐藏溢出 SQL 表（改到续卡顶部） */
+    hideOverflowSqlFillTable?: boolean;
     maxWidthPx?: number;
     maxHeightPx?: number;
     /** 页眉/页脚区内页码预览 */
@@ -395,6 +402,7 @@ const props = withDefaults(
     sqlFillHideBelow: null,
     showSqlFillTailDividerHint: false,
     tailOnlyBelowBaseline: false,
+    hideOverflowSqlFillTable: false,
     plainChrome: false,
     exactPageFit: false,
   },
@@ -546,7 +554,12 @@ function bandStyle(metric: PaperLayoutMetrics, which: "header" | "body" | "foote
 }
 
 const headerBand = computed(() => bandStyle(me.value, "header"));
-const bodyBand = computed(() => bandStyle(me.value, "body"));
+const bodyBand = computed(() => ({
+  ...bandStyle(me.value, "body"),
+  backgroundColor: resolveBodyBackgroundCss(
+    activeLayoutSnapshotForSheet(props.template, props.sheet),
+  ),
+}));
 const footerBand = computed(() => bandStyle(me.value, "footer"));
 
 function miniZoneElStyle(el: LayoutZoneElement): Record<string, string> {
@@ -563,7 +576,8 @@ function miniZoneElStyle(el: LayoutZoneElement): Record<string, string> {
     overflow: "hidden",
     color: el.color,
     fontSize: `${Math.max(6, el.fontSize * 0.85)}px`,
-    ...(ff ? { fontFamily: ff } : {}),
+    // 与矢量档同源：pdf-lib 现嵌朱雀仿宋（Noto subset 缺字）；空族名走 FangSong
+    fontFamily: ff || 'FangSong, "Zhuque Fangsong", "Noto Sans SC", sans-serif',
     zIndex: String(normalizeZIndex(el.zIndex)),
   };
   if (el.type === "image") {
@@ -576,8 +590,13 @@ function miniZoneElStyle(el: LayoutZoneElement): Record<string, string> {
     s.flexDirection = "column";
     s.alignItems = "stretch";
     s.justifyContent = "stretch";
-    s.padding = "2px";
-    s.overflow = "hidden";
+    /**
+     * 页眉/页脚 zone 表常贴满 band（h≈rows×rowH）。padding + overflow:hidden
+     * 会把最后一行底边框裁掉（Chromium print-to-pdf / 不妥协档常见）。
+     * 与正文表一致：无内边距、可见溢出，边框落在控件盒内（td box-sizing）。
+     */
+    s.padding = "0";
+    s.overflow = "visible";
     s.whiteSpace = "normal";
     s.backgroundColor = zoneTableNodeShellBackgroundCss();
   } else {
@@ -607,6 +626,13 @@ function miniShowBodyTplEl(el: TemplateElement): boolean {
     const base = props.tailBaselineY;
     if (props.overflowSqlFillTableId && el.id === props.overflowSqlFillTableId) return false;
     return el.y >= base - 0.5;
+  }
+  if (
+    props.hideOverflowSqlFillTable &&
+    props.overflowSqlFillTableId &&
+    el.id === props.overflowSqlFillTableId
+  ) {
+    return false;
   }
   if (props.continuationHideOtherBodyElements) {
     if (el.type !== "table") return false;
@@ -650,6 +676,7 @@ function miniTplElStyle(el: TemplateElement): Record<string, string> {
   const explicitZ = normalizeZIndex(el.zIndex ?? 0);
   const z =
     explicitZ !== 0 ? explicitZ : Math.min(200000, Math.max(0, Math.floor(el.y)));
+  const defaultFlex = flexJustifyAlignForAxes(el.alignX, el.alignY);
   const s: Record<string, string> = {
     position: "absolute",
     left: `${el.x}px`,
@@ -657,16 +684,16 @@ function miniTplElStyle(el: TemplateElement): Record<string, string> {
     width: `${el.w}px`,
     height: `${heightPx}px`,
     boxSizing: "border-box",
-    border: el.showBorder === false ? "none" : "1px solid rgb(24 24 27 / 0.15)",
+    border: chromeBorderCss(el.showBorder, "1px solid rgb(24 24 27 / 0.15)"),
     borderRadius: "2px",
     overflow: "hidden",
     display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
+    alignItems: defaultFlex.alignItems,
+    justifyContent: defaultFlex.justifyContent,
     padding: "2px",
     color: el.color,
     fontSize: `${Math.max(6, el.fontSize * 0.8)}px`,
-    ...(ff ? { fontFamily: ff } : {}),
+    fontFamily: ff || 'FangSong, "Zhuque Fangsong", "Noto Sans SC", sans-serif',
     zIndex: String(z),
   };
   const wrap = getZoneTextWrapStyle(el);
@@ -686,7 +713,7 @@ function miniTplElStyle(el: TemplateElement): Record<string, string> {
     s.whiteSpace = "normal";
   } else if (el.type === "box") {
     const bc = typeof el.color === "string" ? el.color : "#18181b";
-    s.border = el.showBorder === false ? "none" : `1px solid ${bc}40`;
+    s.border = chromeBorderCss(el.showBorder, `1px solid ${bc}40`);
     s.borderRadius = "4px";
     s.padding = "2px 6px";
     const flex = flexJustifyAlignForAxes(el.alignX, el.alignY);
@@ -735,6 +762,8 @@ function miniTplTableCellStyle(el: TemplateElement, ri: number, ci: number): Rec
       ci,
       cell,
     ),
+    textAlign: axisToCssTextAlign(el.alignX),
+    verticalAlign: axisToCssVerticalAlign(el.alignY),
   };
 }
 
@@ -892,6 +921,8 @@ function miniZoneTableCellStyle(el: LayoutZoneElement, ri: number, ci: number): 
     ),
     height: `${h}px`,
     maxHeight: `${h}px`,
+    textAlign: axisToCssTextAlign(el.alignX),
+    verticalAlign: axisToCssVerticalAlign(el.alignY),
   };
 }
 
@@ -1209,6 +1240,8 @@ function tplCaption(el: TemplateElement): string {
 .mini-wrap {
   touch-action: manipulation;
   margin: 0 auto;
+  /* 与矢量档默认朱雀仿宋对齐（Noto pdf-lib subset 缺字；见 ensureBundledLayoutFontsRegistered） */
+  font-family: FangSong, "Zhuque Fangsong", "Noto Sans SC", -apple-system, sans-serif;
 }
 .mini-band-inner,
 .mini-body-inner {
@@ -1217,6 +1250,31 @@ function tplCaption(el: TemplateElement): string {
   height: 100%;
   overflow: hidden;
   box-sizing: border-box;
+}
+/* 导出打印：允许贴底 zone 表底边框画出 band，避免 1px 横线被裁切 */
+@media print {
+  .mini-band-inner {
+    overflow: visible;
+  }
+  /*
+   * D21c：格级 border / inset box-shadow 在 Chromium printToPDF 仍交叉断点与粗细不均。
+   * 打印去掉格线，改由 PdfExportView 注入的整表 canvas 格线位图（.mini-tpl-print-grid）。
+   */
+  .mini-tpl-table-wrap {
+    padding-bottom: 0 !important;
+  }
+  .mini-tpl-table {
+    border-collapse: separate !important;
+    border-spacing: 0 !important;
+  }
+  .mini-tpl-td {
+    border: none !important;
+    box-shadow: none !important;
+  }
+  .mini-tpl-print-grid {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
 }
 .mini-band-header {
   background: rgb(239 239 246 / 0.52);
@@ -1243,8 +1301,12 @@ function tplCaption(el: TemplateElement): string {
   height: 100%;
   overflow: visible;
   box-sizing: border-box;
-  /* 避免 overflow:hidden + height:100% 表格最后一行底边框落在裁剪边上被吃掉（导出预览常见） */
+  /* 正文表：多 1px 底垫，避免外壳 overflow 吃掉底边框 */
   padding-bottom: 1px;
+}
+/* zone 表贴 band 时禁止再垫高，否则固定 height 下底边框必裁 */
+.mini-zone-el .mini-tpl-table-wrap {
+  padding-bottom: 0;
 }
 .mini-tpl-table {
   width: 100%;
@@ -1264,7 +1326,8 @@ function tplCaption(el: TemplateElement): string {
   border-top: 1px solid rgb(212 212 216);
   border-left: 1px solid rgb(212 212 216);
   padding: 3px 5px;
-  vertical-align: top;
+  /* text-align / vertical-align 由控件 alignX/alignY 内联控制 */
+  vertical-align: middle;
   text-align: center;
   font-size: max(10px, 0.85em);
   line-height: 1.3;
@@ -1283,7 +1346,8 @@ function tplCaption(el: TemplateElement): string {
   display: block;
   max-height: 100%;
   overflow: hidden;
-  text-align: center;
+  /* 水平对齐由外层 flex（alignX）控制，勿写死 center */
+  text-align: inherit;
   line-height: 1.25;
 }
 .mini-tpl-sig-stack {

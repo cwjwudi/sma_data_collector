@@ -56,7 +56,7 @@ def test_confirmation_rejects_different_target() -> None:
         main.consume_confirmation(token, "restore-backup", "target_b")
 
 
-def test_config_returns_and_persists_password(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+def test_config_masks_and_encrypts_password(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     cfg_file = tmp_path / "default.json"
     stored: dict[str, Any] = {
         "backup_dir": str(tmp_path),
@@ -79,14 +79,18 @@ def test_config_returns_and_persists_password(monkeypatch: pytest.MonkeyPatch, t
 
     payload = main.get_config()
     assert payload["default_connection"]["username"] == "root"
-    assert payload["default_connection"]["password"] == "secret-pass"
+    assert payload["default_connection"]["password"] == ""
+    assert payload["default_connection"]["password_configured"] is True
 
     saved = main.persist_default_connection(
         main.DbConnection(host="192.168.1.1", username="ops", password="new-secret")
     )
-    assert saved["password"] == "new-secret"
-    assert stored["default_connection"]["password"] == "new-secret"
-    assert main.get_config()["default_connection"]["password"] == "new-secret"
+    assert saved["password"] == ""
+    assert saved["password_configured"] is True
+    assert "password" not in stored["default_connection"]
+    assert stored["default_connection"]["password_enc"]
+    assert main.connection_password(main.DbConnection()) == "new-secret"
+    assert main.get_config()["default_connection"]["password"] == ""
 
 def test_range_download_supports_resume(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     backup = tmp_path / "large.sql"

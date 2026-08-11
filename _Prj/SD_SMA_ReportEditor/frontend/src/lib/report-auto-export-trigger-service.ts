@@ -4,7 +4,8 @@
 import { ref, type Ref } from "vue";
 import { listTemplateSummaries, type TemplateSummary } from "@/api/templates";
 import { evaluateAutoOpcTrigger, createOpcTriggerPollState, type OpcTriggerPollState } from "@/lib/auto-opc-trigger";
-import { resolveAutoExportDir } from "@/lib/resolve-auto-export-dir";
+import { resolveReportOutputTarget, type BatchNoSource } from "@/lib/resolve-report-output-dir";
+import { normalizeReportKind, type ReportKind } from "@/lib/report-template/model";
 import { readSavedOpcNodeValue } from "@/lib/opcua-string-variables";
 import { appendTriggerLogEntry, autoTriggerEventLabel } from "@/lib/auto-trigger-log";
 import {
@@ -46,8 +47,24 @@ import {
   AUTO_EXPORT_STATUS,
   AUTO_EXPORT_STATUS_CHART_MAX_SAMPLES,
   autoExportStatusLabel,
-  clampAutoExportMaxParallel,
 } from "@/lib/auto-export-status-codes";
+import { resolveAutoExportMaxParallel } from "@/lib/export-cpu-budget";
+import {
+  clearPdfExportFillCacheAfterFailure,
+  isPdfExportCancelledError,
+  newPdfExportJobId,
+} from "@/lib/pdf-export-job";
+import { requestCancelPdfExport } from "@/lib/pdf-export-cancel-ui";
+import { formatPdfExportParallelProgressDetail } from "@/lib/pdf-export-parallel-progress";
+import { resolveExportPerfProfile } from "@/lib/export-perf-tier";
+import {
+  beginExportCoexistSession,
+  endExportCoexistSession,
+} from "@/lib/export-coexist-busy";
+import {
+  endBatchExportProgress,
+  publishBatchExportProgress,
+} from "@/lib/report-export-progress-state";
 
 const RG_UI = {
   opcAuto: "OPC UA 自动结批",
@@ -192,12 +209,24 @@ function syncBindingConfigKey(prefs: ReportGeneratorPrefs): void {
 }
 
 function syncElectronMaxParallel(prefs: ReportGeneratorPrefs): void {
-  const max = clampAutoExportMaxParallel(prefs.auto.maxParallelExports);
-  void window.electronAPI?.setPdfExportMaxParallel?.(max);
+  const profile = resolveExportPerfProfile(prefs.exportPerfTier);
+  const ignoreCpuBudget = profile.coexistPause === "max";
+  const max = resolveAutoExportMaxParallel(prefs.auto.maxParallelExports, { ignoreCpuBudget });
+  void window.electronAPI?.setPdfExportPerfProfile?.({
+    prewarmPoolSize: profile.prewarmPoolSize,
+    yieldMs: profile.yieldMs,
+    maxParallel: max,
+    ignoreCpuBudget,
+    coexistPause: profile.coexistPause,
+  });
+  void window.electronAPI?.setPdfExportMaxParallel?.({ max, ignoreCpuBudget });
 }
 
 function currentMaxParallel(prefs: ReportGeneratorPrefs): number {
-  const configured = clampAutoExportMaxParallel(prefs.auto.maxParallelExports);
+  const profile = resolveExportPerfProfile(prefs.exportPerfTier);
+  const configured = resolveAutoExportMaxParallel(prefs.auto.maxParallelExports, {
+    ignoreCpuBudget: profile.coexistPause === "max",
+  });
   const activeCount = Math.max(1, prefs.auto.bindings.filter(isTriggerBindingActive).length);
   return Math.min(configured, activeCount);
 }
@@ -403,6 +432,14 @@ type AutoPdfExportAttempt = {
   stats?: { opcReads: number; sqlQueries: number; sqlRows: number; mongoQueries?: number };
   durationMs?: number;
   timings?: ExportPhaseTimings;
+  engine?: string;
+  exportMode?: string;
+  engineMeta?: Record<string, unknown>;
+  /** 046：本次导出的报表类型与目标目录（审计用） */
+  reportKind?: ReportKind;
+  outputDir?: string;
+  batchNo?: string;
+  batchNoSource?: BatchNoSource;
 };
 
 /** 结批进度弹窗/审计共用：把取数统计整理成一行可读文本 */
@@ -434,7 +471,8 @@ export function formatExportTimingsLine(t: ExportPhaseTimings | null | undefined
     }
   }
   if (t.printMs != null || t.writeMs != null) {
-    parts.push(`打印 ${sec((t.printMs || 0) + (t.writeMs || 0))}`);
+    const printLabel = (t as { printToPDFSkipped?: boolean }).printToPDFSkipped ? "矢量写PDF" : "打印";
+    parts.push(`${printLabel} ${sec((t.printMs || 0) + (t.writeMs || 0))}`);
   }
   if (t.warmStart != null) parts.push(t.warmStart ? "窗口已预热" : "窗口冷启动");
   return parts.join(" · ");
@@ -444,6 +482,7 @@ async function runAutoPdfExport(
   prefs: ReportGeneratorPrefs,
   templateId: string,
   onStage?: (text: string, code?: number) => void,
+  onJobId?: (jobId: string) => void,
 ): Promise<AutoPdfExportAttempt> {
   const api = window.electronAPI;
   if (!api?.runPdfExport || !api.pathJoin) {
@@ -454,13 +493,12 @@ async function runAutoPdfExport(
   if (!tid) throw new Error(`未配置${RG_UI.opcAuto}报表模版`);
 
   onStage?.("正在检查数据源连接…", AUTO_EXPORT_STATUS.PREFLIGHT);
-  // 预检、导出目录解析、模版列表三者互不依赖：并行执行缩短结批前等待。
+  // 预检与模版列表互不依赖：并行执行缩短结批前等待。
   // 后台保活已缓存的新鲜预检结果直接取用（连接状态刚验证过），预检耗时降为 0
   const preflightStartMs = Date.now();
   const cachedPreflight = getFreshPreflightResult(tid);
-  const [preflight, resolved, summaries] = await Promise.all([
+  const [preflight, summaries] = await Promise.all([
     cachedPreflight ?? runTemplateExportPreflight(tid),
-    resolveAutoExportDir(prefs),
     loadTemplateSummariesCached(),
   ]);
   const preflightMs = Date.now() - preflightStartMs;
@@ -468,19 +506,37 @@ async function runAutoPdfExport(
     throw new Error(preflight.summary);
   }
 
-  const dir = resolved.dir.trim();
-  if (!dir) throw new Error(resolved.note || `未配置${RG_UI.opcAuto}保存目录`);
-
-  const prepStartMs = Date.now();
+  // 046：按模版类型解析目标目录——batch 需有效批号（无批号失败）；nonBatch 用模版绝对路径
   const tmeta = summaries.find((x) => x.id === tid);
+  const target = await resolveReportOutputTarget({
+    reportKind: normalizeReportKind(tmeta?.reportKind),
+    nonBatchOutputDir: tmeta?.nonBatchOutputDir,
+    prefs,
+  });
+  if (!target.ok) throw new Error(target.error);
+  const dir = target.dir;
+
+  const exportProfile = resolveExportPerfProfile(prefs.exportPerfTier);
+  const prepStartMs = Date.now();
   const built = await buildAutoExportFileName(prefs, tmeta?.name || tid);
   const filePath = await api.pathJoin(dir, built.base);
   const prepMs = Date.now() - prepStartMs;
 
   onStage?.("正在取数并渲染报表…", AUTO_EXPORT_STATUS.READING);
+  const exportJobId = newPdfExportJobId("auto");
+  onJobId?.(exportJobId);
   const offProgress = api.onPdfExportProgress?.((p) => {
+    if (p.jobId && p.jobId !== exportJobId) return;
     if (p.templateId && p.templateId !== tid) return;
     const total = Number(p.totalReports) || 0;
+    const parallelDetail = formatPdfExportParallelProgressDetail(p);
+    if (parallelDetail) {
+      onStage?.(
+        parallelDetail,
+        p.phase === "saved" ? AUTO_EXPORT_STATUS.SAVING : AUTO_EXPORT_STATUS.RENDERING,
+      );
+      return;
+    }
     const idx = (Number(p.partIndex) || 0) + 1;
     if (p.phase === "render") {
       onStage?.(
@@ -510,9 +566,16 @@ async function runAutoPdfExport(
           templateId: tid,
           filePath,
           openAfter: false,
+          jobId: exportJobId,
+          engine: exportProfile.engine,
+          layoutFidelity: exportProfile.layoutFidelity,
+          yieldMs: exportProfile.yieldMs,
+          coexistPause: exportProfile.coexistPause,
+          exportSource: "auto",
         });
         break;
       } catch (e) {
+        clearPdfExportFillCacheAfterFailure(e);
         const msg = e instanceof Error ? e.message : String(e);
         if (attempt >= BINDING_FILL_OUTER_RETRY_MAX || !isRetryableBindingFillSummary(msg)) {
           throw e;
@@ -524,7 +587,7 @@ async function runAutoPdfExport(
     offProgress?.();
   }
 
-  const notes = [resolved.note, built.note].filter(Boolean).join("；");
+  const notes = [built.note].filter(Boolean).join("；");
   const savedPaths = normalizeSavedPdfPaths(exportRes, filePath);
   const splitNote = pdfExportSummaryForPaths(savedPaths);
   const exportNote = [preflight.warnings.join(" "), notes, splitNote].filter(Boolean).join("；");
@@ -537,6 +600,13 @@ async function runAutoPdfExport(
     stats: exportRes.stats,
     durationMs: exportRes.durationMs,
     timings: { preflightMs, prepMs, ...(exportRes.timings || {}) },
+    engine: exportRes.engine,
+    exportMode: exportRes.exportMode,
+    engineMeta: exportRes.engineMeta,
+    reportKind: target.kind,
+    outputDir: dir,
+    batchNo: target.batchNo,
+    batchNoSource: target.batchNoSource,
   };
 }
 
@@ -553,12 +623,17 @@ async function executeBindingExport(job: QueuedExportJob): Promise<void> {
 
   const startedAtMs = Date.now();
   const progressToastId = `batch-progress-${bindingId}`;
+  let exportJobIdForCancel = "";
+  const progressTitle = `${RG_UI.opcAuto}·${label}`;
   const stage = (text: string, code?: number): void => {
-    showAppToast(`${RG_STATUS_OPC_AUTO}·${label}\n收到结批指令（${eventLabel}）\n${text}`, {
+    publishBatchExportProgress({
       id: progressToastId,
-      tone: "info",
-      durationMs: 0,
-      spinner: true,
+      title: progressTitle,
+      detail: `收到结批指令（${eventLabel}）\n${text}`,
+      jobId: exportJobIdForCancel,
+      onCancel: () => {
+        requestCancelPdfExport(exportJobIdForCancel);
+      },
     });
     if (code != null) {
       void setBindingExportStatus(prefs, binding, code, text);
@@ -575,9 +650,16 @@ async function executeBindingExport(job: QueuedExportJob): Promise<void> {
     detail: { bindingId, event: eventLabel, nodeId, serverId },
   });
 
+  const exportProfile = resolveExportPerfProfile(prefs.exportPerfTier);
+  beginExportCoexistSession(exportProfile.coexistPause);
+
   let fileName = "—";
   try {
-    const result = await runAutoPdfExport(prefs, templateId, stage);
+    const result = await runAutoPdfExport(prefs, templateId, stage, (jobId) => {
+      exportJobIdForCancel = jobId;
+      // 刷新 toast，挂上取消按钮
+      stage("正在取数并渲染报表…", AUTO_EXPORT_STATUS.READING);
+    });
     fileName = result.fileName;
     prefs = recordBindingTriggerLog(prefs, bindingId, {
       event: eventLabel,
@@ -603,10 +685,12 @@ async function executeBindingExport(job: QueuedExportJob): Promise<void> {
     const totalMs = Date.now() - startedAtMs;
     const statsLine = formatExportStatsLine(result.stats);
     const timingsLine = formatExportTimingsLine(result.timings);
+    const modeLabel = result.exportMode === "fidelity" ? "版式优先" : "同机优先";
+    const engineHint = result.engine ? `；${modeLabel}/${result.engine}` : "";
     void auditLog({
       action: "export.auto_pdf",
       result: "ok",
-      summary: `${result.fileName}（耗时 ${(totalMs / 1000).toFixed(1)} 秒${statsLine ? `；${statsLine}` : ""}${timingsLine ? `；${timingsLine}` : ""}）`,
+      summary: `${result.fileName}（耗时 ${(totalMs / 1000).toFixed(1)} 秒${statsLine ? `；${statsLine}` : ""}${timingsLine ? `；${timingsLine}` : ""}${engineHint}）`,
       object_type: "template",
       object_id: templateId || undefined,
       detail: {
@@ -619,6 +703,12 @@ async function executeBindingExport(job: QueuedExportJob): Promise<void> {
         stats: result.stats,
         timings: result.timings,
         totalReports: result.totalReports,
+        engine: result.engine,
+        exportMode: result.exportMode,
+        engineMeta: result.engineMeta,
+        reportKind: result.reportKind,
+        outputDir: result.outputDir,
+        batchNo: result.batchNo,
       },
     });
     const noteSuffix = result.note ? `（${result.note}）` : "";
@@ -633,59 +723,107 @@ async function executeBindingExport(job: QueuedExportJob): Promise<void> {
       `耗时 ${(totalMs / 1000).toFixed(1)} 秒${statsLine ? ` · ${statsLine}` : ""}`,
     ];
     if (timingsLine) doneLines.push(timingsLine);
+    endBatchExportProgress(progressToastId);
     showAppToast(doneLines.join("\n"), { id: progressToastId, tone: "ok", durationMs: 10000 });
   } catch (e) {
-    const parsed = parseExportFailureDiagnostics(e);
-    const msg = humanizePdfExportError(parsed.message || e);
-    try {
-      const summaries = await loadTemplateSummariesCached();
-      const tmeta = summaries.find((x) => x.id === templateId);
-      const built = await buildAutoExportFileName(prefs, tmeta?.name || templateId || "");
-      fileName = built.base;
-    } catch {
-      /* ignore */
+    if (isPdfExportCancelledError(e)) {
+      prefs = recordBindingTriggerLog(prefs, bindingId, {
+        event: eventLabel,
+        fileName,
+        success: false,
+        message: "已取消",
+      });
+      void auditLog({
+        action: "export.auto_pdf",
+        result: "fail",
+        summary: `${label}：用户取消导出`,
+        object_type: "template",
+        object_id: templateId || undefined,
+        detail: { bindingId, event: eventLabel, cancelled: true },
+      });
+      await setBindingExportStatus(prefs, binding, AUTO_EXPORT_STATUS.FAILED, "已取消", {
+        success: false,
+      });
+      void notifyExportResultToPlc(prefs, binding, {
+        success: false,
+        statusCode: AUTO_EXPORT_STATUS.FAILED,
+        message: "已取消",
+      });
+      reportAutoExportStatus.value = `${RG_STATUS_OPC_AUTO}·${label} 已取消`;
+      endBatchExportProgress(progressToastId);
+      showAppToast(`${RG_STATUS_OPC_AUTO}·${label}\n已取消导出`, {
+        id: progressToastId,
+        tone: "warn",
+        durationMs: 5000,
+      });
+    } else {
+      const parsed = parseExportFailureDiagnostics(e);
+      const msg = humanizePdfExportError(parsed.message || e);
+      let failReportKind: ReportKind | undefined;
+      let failOutputDir: string | undefined;
+      try {
+        const summaries = await loadTemplateSummariesCached();
+        const tmeta = summaries.find((x) => x.id === templateId);
+        failReportKind = normalizeReportKind(tmeta?.reportKind);
+        const built = await buildAutoExportFileName(prefs, tmeta?.name || templateId || "");
+        fileName = built.base;
+        // 失败时尽量补齐已解析目标目录（解析阶段失败则仅有 reportKind）
+        const target = await resolveReportOutputTarget({
+          reportKind: failReportKind,
+          nonBatchOutputDir: tmeta?.nonBatchOutputDir,
+          prefs,
+        });
+        if (target.ok) failOutputDir = target.dir;
+      } catch {
+        /* ignore */
+      }
+      prefs = recordBindingTriggerLog(prefs, bindingId, {
+        event: eventLabel,
+        fileName,
+        success: false,
+        message: msg,
+      });
+      void auditLog({
+        action: "export.auto_pdf",
+        result: "fail",
+        summary: msg.split("\n").slice(0, 8).join("；"),
+        object_type: "template",
+        object_id: templateId || undefined,
+        detail: exportFailureAuditDetail({
+          errorMessage: msg,
+          diagnostics: parsed.diagnostics,
+          extra: {
+            bindingId,
+            event: eventLabel,
+            nodeId,
+            serverId,
+            label,
+            durationMs: Date.now() - startedAtMs,
+            fileName,
+            reportKind: failReportKind,
+            ...(failOutputDir ? { outputDir: failOutputDir } : {}),
+          },
+        }),
+      });
+      await setBindingExportStatus(prefs, binding, AUTO_EXPORT_STATUS.FAILED, msg.split("\n")[0] || msg, {
+        success: false,
+      });
+      void notifyExportResultToPlc(prefs, binding, {
+        success: false,
+        statusCode: AUTO_EXPORT_STATUS.FAILED,
+        message: msg,
+      });
+      reportAutoExportStatus.value = `${RG_STATUS_OPC_AUTO}·${label} 失败：${msg.split("\n")[0]}`;
+      endBatchExportProgress(progressToastId);
+      showAppToast(`${RG_STATUS_OPC_AUTO}·${label} 结批失败\n${msg}`, {
+        id: progressToastId,
+        tone: "err",
+        durationMs: 14000,
+      });
     }
-    prefs = recordBindingTriggerLog(prefs, bindingId, {
-      event: eventLabel,
-      fileName,
-      success: false,
-      message: msg,
-    });
-    void auditLog({
-      action: "export.auto_pdf",
-      result: "fail",
-      summary: msg.split("\n").slice(0, 8).join("；"),
-      object_type: "template",
-      object_id: templateId || undefined,
-      detail: exportFailureAuditDetail({
-        errorMessage: msg,
-        diagnostics: parsed.diagnostics,
-        extra: {
-          bindingId,
-          event: eventLabel,
-          nodeId,
-          serverId,
-          label,
-          durationMs: Date.now() - startedAtMs,
-          fileName,
-        },
-      }),
-    });
-    await setBindingExportStatus(prefs, binding, AUTO_EXPORT_STATUS.FAILED, msg.split("\n")[0] || msg, {
-      success: false,
-    });
-    void notifyExportResultToPlc(prefs, binding, {
-      success: false,
-      statusCode: AUTO_EXPORT_STATUS.FAILED,
-      message: msg,
-    });
-    reportAutoExportStatus.value = `${RG_STATUS_OPC_AUTO}·${label} 失败：${msg.split("\n")[0]}`;
-    showAppToast(`${RG_STATUS_OPC_AUTO}·${label} 结批失败\n${msg}`, {
-      id: progressToastId,
-      tone: "err",
-      durationMs: 14000,
-    });
   } finally {
+    endBatchExportProgress(progressToastId);
+    endExportCoexistSession();
     activeExportCount = Math.max(0, activeExportCount - 1);
     busyBindingIds.delete(bindingId);
     pumpExportQueue();
@@ -760,13 +898,21 @@ async function pollAutoTriggerOnceBody(): Promise<void> {
     return;
   }
 
-  const resolved = await resolveAutoExportDir(prefs);
-  if (!resolved.dir.trim()) {
-    reportAutoExportStatus.value = `${RG_STATUS_OPC_AUTO} ${resolved.note || `请配置默认或 OPC ${RG_UI.opcAuto}保存文件夹…`}`;
-    return;
-  }
-
   const summaries = await loadTemplateSummariesCached();
+
+  // 046：批次模版需要导出根目录；仅当所有启用绑定都是批次且根缺失时才整体拦截。
+  // 非批次模版用模版自身目标目录，不依赖导出根；批次无批号在触发时显式失败。
+  const exportRootConfigured = Boolean((prefs.autoExportDir || "").trim());
+  if (!exportRootConfigured) {
+    const anyNonBatchActive = active.some((b) => {
+      const s = summaries.find((x) => x.id === (b.templateId || "").trim());
+      return normalizeReportKind(s?.reportKind) === "nonBatch";
+    });
+    if (!anyNonBatchActive) {
+      reportAutoExportStatus.value = `${RG_STATUS_OPC_AUTO} 请配置${RG_UI.opcAuto}保存文件夹（批次报表的导出根目录）…`;
+      return;
+    }
+  }
   const statusParts: string[] = [];
   let anyListening = false;
   const defaultSrv = String(prefs.auto.defaultOpcServerId || "").trim();

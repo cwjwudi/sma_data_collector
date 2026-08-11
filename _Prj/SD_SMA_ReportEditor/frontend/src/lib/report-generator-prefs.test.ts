@@ -1,13 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   defaultBindingExportResultOpcFeedback,
+  defaultReportGeneratorPrefs,
   importReportGeneratorPrefsFromExport,
   loadReportGeneratorPrefs,
   resolveEffectiveOpcServerIdForBinding,
   resolveExportResultOpcForBinding,
+  saveReportGeneratorPrefs,
   type ReportGeneratorPrefs,
 } from "@/lib/report-generator-prefs";
 import { createAutoTriggerBinding } from "@/lib/auto-trigger-bindings";
+import { DEFAULT_EXPORT_PERF_TIER } from "@/lib/export-perf-tier";
 
 class MemoryStorage {
   private data = new Map<string, string>();
@@ -85,6 +88,42 @@ describe("report generator prefs", () => {
     expect(prefs.autoFileNameSegments).toContain("hash");
     expect(prefs.autoFileNameOpcServerId).toBe("srv-name");
     expect(prefs.autoFileNameOpcNodeId).toBe("ns=1;s=file_name");
+  });
+
+  it("T4: default exportPerfTier is 2 (预览稳) and round-trips", () => {
+    expect(defaultReportGeneratorPrefs().exportPerfTier).toBe(DEFAULT_EXPORT_PERF_TIER);
+    expect(loadReportGeneratorPrefs().exportPerfTier).toBe(2);
+    expect(loadReportGeneratorPrefs().pdfExportEngine).toBe("chromium");
+    const p = loadReportGeneratorPrefs();
+    p.exportPerfTier = 1;
+    saveReportGeneratorPrefs(p);
+    const again = loadReportGeneratorPrefs();
+    expect(again.exportPerfTier).toBe(1);
+    expect(again.pdfExportEngine).toBe("pdf-lib");
+    expect(again.exportPerfTierScale).toBe(5);
+  });
+
+  it("T5: migrates legacy engine-only prefs and remaps old four-tier", () => {
+    storage.setItem(
+      "reportGeneratorPrefsV1",
+      JSON.stringify({ pdfExportEngine: "pdf-lib", auto: { enabled: false, bindings: [] } }),
+    );
+    expect(loadReportGeneratorPrefs().exportPerfTier).toBe(0);
+    expect(loadReportGeneratorPrefs().pdfExportEngine).toBe("pdf-lib");
+
+    storage.setItem(
+      "reportGeneratorPrefsV1",
+      JSON.stringify({ pdfExportEngine: "chromium", auto: { enabled: false, bindings: [] } }),
+    );
+    expect(loadReportGeneratorPrefs().exportPerfTier).toBe(2);
+    expect(loadReportGeneratorPrefs().pdfExportEngine).toBe("chromium");
+
+    // 旧四档无 scale：2 → 3
+    storage.setItem(
+      "reportGeneratorPrefsV1",
+      JSON.stringify({ exportPerfTier: 2, pdfExportEngine: "chromium", auto: { enabled: false, bindings: [] } }),
+    );
+    expect(loadReportGeneratorPrefs().exportPerfTier).toBe(3);
   });
 
   it("resolves default OPC server and export feedback serverId fallback", () => {

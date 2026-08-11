@@ -61,6 +61,13 @@ async def _run(args: argparse.Namespace) -> None:
     )
     await ar_table_names.set_writable()
 
+    query_var = await demo.add_variable(ns_idx, "query", False, varianttype=ua.VariantType.Boolean)
+    await query_var.set_writable()
+    prev_var = await demo.add_variable(ns_idx, "prevPage", False, varianttype=ua.VariantType.Boolean)
+    await prev_var.set_writable()
+    next_var = await demo.add_variable(ns_idx, "nextPage", False, varianttype=ua.VariantType.Boolean)
+    await next_var.set_writable()
+
     meta = {
         "endpoint_url": bind_url.replace(f"{args.host}", "127.0.0.1"),
         "ns": ns_idx,
@@ -68,6 +75,9 @@ async def _run(args: argparse.Namespace) -> None:
         "arCode": ar_code.nodeid.to_string(),
         "arMsg": ar_msg.nodeid.to_string(),
         "strListName": ar_table_names.nodeid.to_string(),
+        "query": query_var.nodeid.to_string(),
+        "prevPage": prev_var.nodeid.to_string(),
+        "nextPage": next_var.nodeid.to_string(),
     }
     if args.meta_out:
         Path(args.meta_out).write_text(json.dumps(meta, indent=2), encoding="utf-8")

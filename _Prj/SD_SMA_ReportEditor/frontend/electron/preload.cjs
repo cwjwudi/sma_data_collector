@@ -1,5 +1,8 @@
 const { contextBridge, ipcRenderer } = require('electron')
 
+// 注意：勿在 preload 顶层 require('fs'/'os'/'path')。
+// Electron 默认 sandbox 下会直接导致整段 preload 失败 → window.electronAPI 缺失 → 界面误报「浏览器壳」。
+
 contextBridge.exposeInMainWorld('electronAPI', {
   /** 打开/关闭 Chromium DevTools（主进程侧停靠，默认右侧） */
   setDevtoolsOpen: (open) => ipcRenderer.invoke('devtools-set-open', Boolean(open)),
@@ -19,14 +22,38 @@ contextBridge.exposeInMainWorld('electronAPI', {
   /** 使用隐藏窗口渲染 "#/pdf-export" 并写入 PDF */
   runPdfExport: (opts) => ipcRenderer.invoke('pdf-export-run', opts),
 
-  /** 设置 PDF 导出最大并行数（主进程限制为 1..16） */
-  setPdfExportMaxParallel: (max) => ipcRenderer.invoke('pdf-export-set-max-parallel', { max }),
+  /** 取消进行中的 PDF 导出（032 P1-D；需与 runPdfExport 的 jobId 对应） */
+  cancelPdfExport: (opts) => ipcRenderer.invoke('pdf-export-cancel', opts || {}),
+
+  /** 039/051：结批进行中重新打开全屏导出遮罩（Esc/× 强关后可拉回） */
+  reshowExportOverlay: () => ipcRenderer.invoke('export-overlay-reshow'),
+
+  /** 设置 PDF 导出最大并行数（主进程限制为 1..16；可传 { max, ignoreCpuBudget }） */
+  setPdfExportMaxParallel: (maxOrOpts) => {
+    if (maxOrOpts && typeof maxOrOpts === 'object') {
+      return ipcRenderer.invoke('pdf-export-set-max-parallel', maxOrOpts)
+    }
+    return ipcRenderer.invoke('pdf-export-set-max-parallel', { max: maxOrOpts })
+  },
+
+  /** 035：按导出性能档位设置预热池 / yield / 并行 */
+  setPdfExportPerfProfile: (opts) => ipcRenderer.invoke('pdf-export-set-perf-profile', opts || {}),
+
+  /** 035：主窗口后台/前台资源模式（裁剪预热窗 + 渲染进程次要轮询） */
+  onAppResourceMode: (listener) => {
+    const fn = (_event, payload) => listener(payload || {})
+    ipcRenderer.on('app-resource-mode', fn)
+    return () => ipcRenderer.removeListener('app-resource-mode', fn)
+  },
 
   /** 使用系统默认应用打开路径（PDF 文件等） */
   shellOpenPath: (filePath) => ipcRenderer.invoke('shell-open-path', filePath),
 
   /** 路径拼接（跟随 OS） */
   pathJoin: (...parts) => ipcRenderer.invoke('path-join', parts),
+
+  /** 随包 CJK 字体（pdf-lib embed；opts.family / opts.key；缺文件则 ok:false） */
+  getBundledCjkFont: (opts) => ipcRenderer.invoke('bundled-cjk-font', opts || {}),
 
   /** 启动阶段直读本机配置，避免等待 FastAPI 才能显示已保存连接 */
   getDataSourceStartupSnapshot: () => ipcRenderer.invoke('datasource-startup-snapshot'),
@@ -46,7 +73,31 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   /** 仅 PDF 导出隐藏窗口：取数期间心跳，避免大模版慢取数被 2 分钟硬超时误杀 */
-  notifyPdfExportHeartbeat: () => ipcRenderer.send('pdf-export-heartbeat'),
+  notifyPdfExportHeartbeat: (payload) => ipcRenderer.send('pdf-export-heartbeat', payload || {}),
+
+  /**
+   * 045 R4：矢量 PDF 字节走 invoke structured-clone 落主进程临时文件。
+   * 禁止 JSON 序列化 bytes；ready 只带 pdfTempPath 字符串。
+   */
+  writePdfExportTempPart: (opts) => {
+    const bytes = opts && opts.bytes
+    const jobId = opts && typeof opts.jobId === 'string' ? opts.jobId : ''
+    return ipcRenderer.invoke('pdf-export-write-temp-part', { bytes, jobId })
+  },
+
+  /** 035/052c：跨窗共享取数；读写临时文件一律在主进程，preload 只做 IPC */
+  getPdfExportFillCacheBridge: (opts) => ipcRenderer.invoke('pdf-export-fill-cache-get', opts || {}),
+  setPdfExportFillCacheBridge: (snap) => ipcRenderer.invoke('pdf-export-fill-cache-set', snap || {}),
+  setPdfExportFillCacheBridgeParts: (payload) =>
+    ipcRenderer.invoke('pdf-export-fill-cache-set', {
+      templateId: payload && payload.templateId,
+      totalReports: payload && payload.totalReports,
+      stats: payload && payload.stats,
+      // 优先 partsJson（字符串），避免巨型对象 structured-clone / Vue Proxy 问题
+      partsJson: payload && typeof payload.partsJson === 'string' ? payload.partsJson : undefined,
+      parts: Array.isArray(payload && payload.parts) ? payload.parts : undefined,
+    }),
+  clearPdfExportFillCacheBridge: () => ipcRenderer.invoke('pdf-export-fill-cache-clear'),
 
   /** 订阅 PDF 导出阶段进度（结批弹窗显示「第 X/Y 份」等），返回取消订阅函数 */
   onPdfExportProgress: (listener) => {

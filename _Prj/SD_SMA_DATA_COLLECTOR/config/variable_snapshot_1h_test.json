@@ -1,0 +1,128 @@
+{
+  "communications": [
+    {
+      "name": "PLC_TPS",
+      "type": "opcua",
+      "host": "192.168.50.233",
+      "port": 4840
+    }
+  ],
+  "connections": [
+    {
+      "name": "Connection_TPS",
+      "communication": "PLC_TPS",
+      "data_groups": ["Data_Product_Snapshot_Test"],
+      "heartbeat": "gDataSQLHeartBeat"
+    }
+  ],
+  "points": [
+    {
+      "name": "DataProductTime",
+      "path": "ns=6;s=::AsGlobalPV:gDataSQLProduct.TimeStamp",
+      "description": "生产数据时间戳",
+      "datatype": "datetime"
+    },
+    {
+      "name": "DataProductState",
+      "path": "ns=6;s=::AsGlobalPV:gDataSQLProduct.State",
+      "description": "生产数据状态"
+    },
+    {
+      "name": "DataProductCH01",
+      "path": "ns=6;s=::AsGlobalPV:gDataSQLProduct.CH01",
+      "description": "生产数据 CH01"
+    },
+    {
+      "name": "DataProductCH02",
+      "path": "ns=6;s=::AsGlobalPV:gDataSQLProduct.CH02",
+      "description": "生产数据 CH02"
+    },
+    {
+      "name": "DataProductCH03",
+      "path": "ns=6;s=::AsGlobalPV:gDataSQLProduct.CH03",
+      "description": "生产数据 CH03"
+    },
+    {
+      "name": "DataProductCH04",
+      "path": "ns=6;s=::AsGlobalPV:gDataSQLProduct.CH04",
+      "description": "生产数据 CH04"
+    },
+    {
+      "name": "DataProductCH05",
+      "path": "ns=6;s=::AsGlobalPV:gDataSQLProduct.CH05",
+      "description": "生产数据 CH05"
+    },
+    {
+      "name": "DataProductCH06",
+      "path": "ns=6;s=::AsGlobalPV:gDataSQLProduct.CH06",
+      "description": "生产数据 CH06"
+    },
+    {
+      "name": "BatchCode",
+      "path": "ns=6;s=::AsGlobalPV:gDataSQLBatch.BatchCode",
+      "description": "time 模式实时字符串",
+      "datatype": "string"
+    },
+    {
+      "name": "SnapshotBatchCode",
+      "path": "ns=6;s=::AsGlobalPV:gDataSQLBatchInfo.InfoProductName",
+      "description": "variable 模式快照字符串测试源",
+      "datatype": "string"
+    },
+    {
+      "name": "ProductInsertTrigger",
+      "path": "ns=6;s=::AsGlobalPV:gDataSQLOperate.ProductInsert",
+      "description": "生产数据存储触发"
+    },
+    {
+      "name": "gDataSQLHeartBeat",
+      "path": "ns=6;s=::AsGlobalPV:gDataSQLHeartBeat",
+      "description": "心跳"
+    }
+  ],
+  "groups": [
+    {
+      "name": "Data_Product_Snapshot_Test",
+      "interval_seconds": 1,
+      "trigger_interval_seconds": 0.2,
+      "trigger": "time_and_variable",
+      "description": "基于 AA_test 的实时区/快照区 1 小时验证",
+      "data_points": [
+        "DataProductTime",
+        "DataProductState",
+        "DataProductCH01",
+        "DataProductCH02",
+        "DataProductCH03",
+        "DataProductCH04",
+        "DataProductCH05",
+        "DataProductCH06",
+        "BatchCode"
+      ],
+      "variable_point_overrides": {
+        "BatchCode": "SnapshotBatchCode"
+      },
+      "trigger_point": "ProductInsertTrigger",
+      "reset_trigger_after_read": true,
+      "batch_insert_size": 1,
+      "is_parallel": false,
+      "partition_interval_years": 1
+    }
+  ],
+  "database": {
+    "type": "mysql",
+    "name": "sma_data_test",
+    "host": "192.168.50.22",
+    "port": 3306,
+    "username": "root",
+    "auto_create": true,
+    "data_groups": ["Data_Product_Snapshot_Test"]
+  },
+  "logging": {
+    "level": "INFO",
+    "output_dir": "logs/variable_snapshot_1h_test",
+    "backup_days": 14,
+    "rotation_when": "midnight",
+    "rotation_interval": 1,
+    "console_enabled": true
+  }
+}

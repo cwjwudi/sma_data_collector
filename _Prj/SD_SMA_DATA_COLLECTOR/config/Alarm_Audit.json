@@ -63,7 +63,6 @@
     "host": "192.168.50.22",
     "port": 3306,
     "username": "root",
-    "password": "Br54644800@",
     "data_groups": [
       "sensor_group_1"
     ]

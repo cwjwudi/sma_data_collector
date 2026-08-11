@@ -20,6 +20,19 @@ const stackVue = readFileSync(
 );
 const pdfViewVue = readFileSync(join(root, "views/PdfExportView.vue"), "utf8");
 
+describe("PDF export fill cache / lazy reports (030)", () => {
+  it("U10: PdfExportView reuses fill cache on later parts", () => {
+    expect(pdfViewVue).toMatch(/shouldReusePdfExportFill/);
+    expect(pdfViewVue).toMatch(/setPdfExportFillCache/);
+    expect(pdfViewVue).toMatch(/clearPdfExportFillCache/);
+  });
+
+  it("U11: TemplateExportPreviewStack builds reports via buildExportPreviewReports", () => {
+    expect(stackVue).toMatch(/buildExportPreviewReports/);
+    expect(stackVue).not.toMatch(/allPreviewReports/);
+  });
+});
+
 describe("PDF export chrome (019 fill + 021 role borders)", () => {
   it("U8: MiniPreviewChrome still exposes plain mode API", () => {
     expect(chromeVue).toMatch(/mpc--plain/);
@@ -45,6 +58,25 @@ describe("PDF export chrome (019 fill + 021 role borders)", () => {
 
   it("U4: exactPageFit disables scaledSize +3", () => {
     expect(miniPageVue).toMatch(/exactPageFit\s*\?\s*0\s*:\s*3/);
+  });
+
+  it("U12: zone header tables keep bottom border under print-to-pdf", () => {
+    // 贴满眉带的 zone 表：禁止 padding+clip 吃掉最后一行底边框
+    expect(miniPageVue).toMatch(/\.mini-zone-el\s+\.mini-tpl-table-wrap\s*\{[^}]*padding-bottom:\s*0/s);
+    expect(miniPageVue).toMatch(/@media\s+print\s*\{[^}]*\.mini-band-inner[^}]*overflow:\s*visible/s);
+    expect(miniPageVue).toMatch(/贴满 band（h≈rows×rowH）/);
+  });
+
+  it("U13: print CSS clears cell borders; D21c SVG grid via PdfExportView", () => {
+    expect(miniPageVue).toMatch(/D21c：/);
+    expect(miniPageVue).toMatch(
+      /@media\s+print\s*\{[\s\S]*\.mini-tpl-td\s*\{[\s\S]*border:\s*none\s*!important/,
+    );
+    expect(miniPageVue).toMatch(
+      /@media\s+print\s*\{[\s\S]*\.mini-tpl-td\s*\{[\s\S]*box-shadow:\s*none\s*!important/,
+    );
+    expect(pdfViewVue).toMatch(/installPrintTableGridOverlays/);
+    expect(pdfViewVue).toMatch(/print-table-grid-overlay/);
   });
 
   it("U7: print CSS keeps role borders (no blanket border/outline none on mpc paper)", () => {

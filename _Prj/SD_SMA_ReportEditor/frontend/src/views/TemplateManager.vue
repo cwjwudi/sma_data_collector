@@ -483,7 +483,12 @@ import { useRouter } from "vue-router";
 
 defineOptions({ name: "TemplateManager" });
 import * as api from "@/api/templates";
+import { usePageLifecycle } from "@/composables/usePageLifecycle";
 import { mapPool, useStaleGuard } from "@/composables/useStaleGuard";
+import {
+  nextThumbObserverAction,
+  planAfterHistoryEntriesChanged,
+} from "@/lib/history-thumb-visibility";
 import { PAPER_LABEL } from "@/lib/report-template/paper";
 import {
   applyDisplayOrder,
@@ -606,6 +611,7 @@ const layoutPresetsAll = ref([]);
 /**
  * 缩略图卡片懒渲染：只有进入（或接近）视口的卡片才构建其微缩预览重 DOM，
  * 避免模版较多时一次性挂载数十个完整预览。已渲染过的卡片保持渲染，滚回时无需重建。
+ * 034 M1：keep-alive 须 teardown + restart，禁止 ensure-only（对齐 029）。
  */
 const visibleCards = ref(new Set());
 /** @type {IntersectionObserver | null} */
@@ -613,13 +619,15 @@ let cardObserver = null;
 /** @type {Map<string, HTMLElement>} */
 const cardEls = new Map();
 
+const { register: registerPageTask } = usePageLifecycle("TemplateManager");
+
 /** @param {string} id */
 function isCardVisible(id) {
   return visibleCards.value.has(id);
 }
 
-function ensureCardObserver() {
-  if (cardObserver || typeof IntersectionObserver === "undefined") return;
+function createCardObserver() {
+  if (typeof IntersectionObserver === "undefined") return;
   cardObserver = new IntersectionObserver(
     (entries) => {
       let changed = false;
@@ -644,6 +652,26 @@ function teardownCardObserver() {
     cardObserver = null;
   }
 }
+
+/** @param {import('@/lib/history-thumb-visibility').ThumbObserverAction} action */
+function applyThumbObserverAction(action) {
+  if (action === "noop") return;
+  if (action === "restart") teardownCardObserver();
+  createCardObserver();
+}
+
+function resyncCardVisibility() {
+  applyThumbObserverAction(nextThumbObserverAction(!!cardObserver, "restart"));
+}
+
+registerPageTask({
+  id: "tm-card-observer",
+  scope: "page",
+  pause: teardownCardObserver,
+  resume: () => {
+    void nextTick().then(() => resyncCardVisibility());
+  },
+});
 
 /** 模板卡片 DOM 引用回调：注册后交给 IntersectionObserver 观测 */
 function setCardRef(id, el) {
@@ -1361,9 +1389,20 @@ function persistViewCache() {
  * 组件被 <keep-alive> 缓存：`onActivated` 在首次挂载与每次重新进入时都会触发，
  * 因此把加载逻辑放在这里即可「切回秒显示 + 后台增量刷新」，无需在 onMounted 再跑一次。
  */
+watch(
+  () => summaries.value.map((s) => s.id).join("|"),
+  async () => {
+    if (mode.value !== "thumbs") return;
+    const plan = planAfterHistoryEntriesChanged();
+    if (plan.clearVisible) visibleCards.value = new Set();
+    await nextTick();
+    if (plan.observerMode === "restart") resyncCardVisibility();
+  },
+);
+
 onActivated(() => {
   void enterView();
-  ensureCardObserver();
+  // Observer 由 usePageLifecycle resume → resync（034 M1）
 });
 
 function onExternalConfigRestored() {

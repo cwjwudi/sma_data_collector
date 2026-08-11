@@ -25,6 +25,14 @@ PROGRAM _INIT
 	gDataSQLBatchInfo.InfoTabletMoldZ := 'FLAT';
 	gDataSQLBatchInfo.InfoBatchStart := dtNow;
 	gDataSQLBatchInfo.InfoBatchStop := DT#1970-01-01-00:00:00;
+
+	(*Collector groups are enabled by default; external OPC UA clients may toggle each flag.*)
+	gDataSQLOperate.RecipeCollectEnable := TRUE;
+	gDataSQLOperate.ProductCollectEnable := TRUE;
+	gDataSQLOperate.AlarmCollectEnable := TRUE;
+	gDataSQLOperate.AuditCollectEnable := TRUE;
+	gDataSQLOperate.BatchCollectEnable := TRUE;
+	gDataSQLOperate.BatchInfoCollectEnable := TRUE;
 END_PROGRAM
 
 PROGRAM _CYCLIC

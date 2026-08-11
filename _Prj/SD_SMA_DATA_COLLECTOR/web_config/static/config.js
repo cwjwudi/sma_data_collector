@@ -24,6 +24,7 @@ const PAGE_STATE_KEY = "sd_sma_collector_web_state_v1";
 const ALLOWED_DATATYPES = ["bool", "int", "float", "string", "datetime"];
 const FIXED_INDEX_COLUMN_OPTIONS = [
   { value: "collection_time", label: "collection_time（固定采集时间）" },
+  { value: "is_backfill", label: "is_backfill（固定补采标记）" },
   { value: "created_at", label: "created_at（固定创建时间）" },
 ];
 const PARTITION_INTERVAL_YEAR_OPTIONS = [
@@ -33,6 +34,21 @@ const PARTITION_INTERVAL_YEAR_OPTIONS = [
     return { value: String(years), label: String(years) };
   }),
 ];
+const TRIGGER_SOURCE_OPTIONS = [
+  { value: "subscription", label: "订阅（推荐）" },
+  ...Array.from({ length: 10 }, (_, i) => {
+    const seconds = i + 1;
+    return { value: String(seconds), label: `${seconds} 秒轮询` };
+  }),
+];
+
+function getTriggerSourceValue(group) {
+  if (group.trigger_mode === "subscription" || group.trigger_interval_seconds === "subscription") {
+    return "subscription";
+  }
+  const seconds = Number(group.trigger_interval_seconds);
+  return String(Number.isInteger(seconds) && seconds >= 1 && seconds <= 10 ? seconds : 1);
+}
 
 function normalizePartitionIntervalYears(value, { forceNoPartition = false } = {}) {
   if (forceNoPartition) {
@@ -69,6 +85,19 @@ function createDefaultConfig() {
       rotation_interval: 1,
       console_enabled: true,
     },
+    persistent_queue: {
+      enabled: false,
+      path: "runtime/queue/collector_outbox.db",
+      synchronous: "FULL",
+      busy_timeout_ms: 5000,
+      lease_seconds: 60,
+      retry_interval_seconds: 5,
+      max_retry_interval_seconds: 300,
+      max_attempts: 0,
+      completed_retention_days: 1,
+      cleanup_interval_seconds: 3600,
+      max_queue_rows: 1000000,
+    },
   };
 }
 
@@ -81,13 +110,22 @@ function normalizeConfig(payload) {
   next.groups = Array.isArray(next.groups) ? next.groups : [];
   next.database = typeof next.database === "object" && next.database ? { ...base.database, ...next.database } : { ...base.database };
   next.logging = typeof next.logging === "object" && next.logging ? { ...base.logging, ...next.logging } : { ...base.logging };
+  next.persistent_queue = typeof next.persistent_queue === "object" && next.persistent_queue
+    ? { ...base.persistent_queue, ...next.persistent_queue }
+    : { ...base.persistent_queue };
   return next;
 }
 
 function savePageState() {
   const activeTab = document.querySelector(".tab-btn.active")?.dataset?.tab || "communications";
+  const persistedConfig = JSON.parse(JSON.stringify(currentConfig));
+  if (persistedConfig.database && typeof persistedConfig.database === "object") {
+    persistedConfig.database.password = "";
+    persistedConfig.database.clear_password = false;
+    delete persistedConfig.database.password_enc;
+  }
   const state = {
-    currentConfig,
+    currentConfig: persistedConfig,
     currentFilename,
     activeTab,
     opcuaHost: hostInput.value || "",
@@ -111,6 +149,9 @@ function loadPageState() {
     if (parsed && typeof parsed === "object") {
       if (parsed.currentConfig) {
         currentConfig = normalizeConfig(parsed.currentConfig);
+        currentConfig.database.password = "";
+        currentConfig.database.clear_password = false;
+        delete currentConfig.database.password_enc;
       }
       if (typeof parsed.currentFilename === "string") {
         currentFilename = parsed.currentFilename;
@@ -152,8 +193,10 @@ async function api(path, options = {}) {
   return data;
 }
 
-function setResult(text) {
+function setResult(text, kind = "") {
   resultEl.textContent = text;
+  const inferredKind = kind || (/失败|错误|不存在|不能为空|重复|不可|没有可/.test(String(text)) ? "error" : "success");
+  resultEl.className = `action-result ${inferredKind}`;
 }
 
 function getCurrentConfigFileNames() {
@@ -891,6 +934,76 @@ function renderConnections() {
   panel.appendChild(add);
 }
 
+function openVariablePointOverridesConfig(groupIndex) {
+  const group = currentConfig.groups[groupIndex];
+  const logicalOptions = getPointNameOptions().filter((option) =>
+    (group.data_points || []).includes(option.value)
+  );
+  const sourceOptions = getPointNameOptions();
+  const draft = Object.entries(group.variable_point_overrides || {}).map(
+    ([logical, source]) => ({ logical, source })
+  );
+
+  showGroupConfigModal({
+    title: "配置 variable 快照点位替换",
+    buildBody: (body) => {
+      function renderOverrides() {
+        body.innerHTML = "";
+        draft.forEach((mapping, i) => {
+          const row = document.createElement("div");
+          row.className = "group-config-row";
+          row.appendChild(
+            createSelect(
+              [{ value: "", label: "选择数据库逻辑字段" }, ...logicalOptions],
+              mapping.logical || "",
+              (value) => (draft[i].logical = value)
+            )
+          );
+          row.appendChild(
+            createSelect(
+              [{ value: "", label: "选择 PLC 快照点位" }, ...sourceOptions],
+              mapping.source || "",
+              (value) => (draft[i].source = value)
+            )
+          );
+          const delBtn = document.createElement("button");
+          delBtn.type = "button";
+          delBtn.textContent = "删除";
+          delBtn.addEventListener("click", () => {
+            draft.splice(i, 1);
+            renderOverrides();
+          });
+          row.appendChild(delBtn);
+          body.appendChild(row);
+        });
+
+        const addBtn = document.createElement("button");
+        addBtn.type = "button";
+        addBtn.textContent = "新增替换";
+        addBtn.addEventListener("click", () => {
+          draft.push({ logical: "", source: "" });
+          renderOverrides();
+        });
+        body.appendChild(addBtn);
+      }
+      renderOverrides();
+    },
+    onConfirm: () => {
+      const overrides = {};
+      for (const mapping of draft) {
+        if (!mapping.logical || !mapping.source) continue;
+        if (Object.prototype.hasOwnProperty.call(overrides, mapping.logical)) {
+          window.alert(`逻辑字段重复配置: ${mapping.logical}`);
+          return false;
+        }
+        overrides[mapping.logical] = mapping.source;
+      }
+      currentConfig.groups[groupIndex].variable_point_overrides = overrides;
+      return true;
+    },
+  });
+}
+
 function renderPoints() {
   const panel = document.getElementById("tab-points");
   panel.innerHTML = "";
@@ -964,7 +1077,16 @@ function renderGroups() {
             { value: "time_and_variable", label: "time_and_variable" },
           ],
           item.trigger || "time",
-          (v) => (currentConfig.groups[idx].trigger = v)
+          (v) => {
+            currentConfig.groups[idx].trigger = v;
+            if (v !== "time_and_variable") {
+              currentConfig.groups[idx].variable_point_overrides = {};
+            }
+            if (v !== "time" && v !== "time_and_variable") {
+              currentConfig.groups[idx].force_cadence_alignment = false;
+            }
+            renderGroups();
+          }
         ),
         createInput(item.interval_seconds || 1, (v) => (currentConfig.groups[idx].interval_seconds = Number(v) || 1), "number"),
         createSelect(
@@ -974,7 +1096,7 @@ function renderGroups() {
         ),
       ])
     );
-    card.appendChild(createRow([createHeaderCell("触发点"), createHeaderCell("触发间隔(秒)"), createHeaderCell("数据点列表(多选)"), createHeaderCell("唯一键点")]));
+    card.appendChild(createRow([createHeaderCell("触发点"), createHeaderCell("触发方式/间隔"), createHeaderCell("数据点列表(多选)"), createHeaderCell("唯一键点"), createHeaderCell("外部启用点位")]));
     const advancedActions = document.createElement("div");
     advancedActions.className = "group-config-actions";
     advancedActions.appendChild(
@@ -986,6 +1108,13 @@ function renderGroups() {
     advancedActions.appendChild(
       createConfigActionButton("配置 indexes", () => openIndexesConfig(idx))
     );
+    if (item.trigger === "time_and_variable") {
+      advancedActions.appendChild(
+        createConfigActionButton("配置 variable 快照点", () =>
+          openVariablePointOverridesConfig(idx)
+        )
+      );
+    }
     card.appendChild(
       createRow([
         createSelect(
@@ -993,11 +1122,26 @@ function renderGroups() {
           item.trigger_point || "",
           (v) => (currentConfig.groups[idx].trigger_point = v)
         ),
-        createInput(item.trigger_interval_seconds || "", (v) => {
-          currentConfig.groups[idx].trigger_interval_seconds = v === "" ? null : Number(v);
-        }, "number"),
+        createSelect(
+          TRIGGER_SOURCE_OPTIONS,
+          getTriggerSourceValue(item),
+          (v) => {
+            if (v === "subscription") {
+              currentConfig.groups[idx].trigger_mode = "subscription";
+              // 保留兼容回退值；断言订阅不可用时仍可明确退回 1 秒轮询。
+              currentConfig.groups[idx].trigger_interval_seconds = 1;
+            } else {
+              currentConfig.groups[idx].trigger_mode = "poll";
+              currentConfig.groups[idx].trigger_interval_seconds = Number(v);
+            }
+          }
+        ),
         createMultiSelect(pointOptions, item.data_points || [], (values) => {
           currentConfig.groups[idx].data_points = values;
+          const overrides = currentConfig.groups[idx].variable_point_overrides || {};
+          currentConfig.groups[idx].variable_point_overrides = Object.fromEntries(
+            Object.entries(overrides).filter(([logical]) => values.includes(logical))
+          );
           if (
             currentConfig.groups[idx].unique_key_point &&
             !values.includes(currentConfig.groups[idx].unique_key_point)
@@ -1011,9 +1155,14 @@ function renderGroups() {
           item.unique_key_point || "",
           (v) => (currentConfig.groups[idx].unique_key_point = v)
         ),
+        createSelect(
+          [{ value: "", label: "未配置（一直启用）" }, ...pointOptions],
+          item.enable_point || "",
+          (v) => (currentConfig.groups[idx].enable_point = v || null)
+        ),
       ])
     );
-    card.appendChild(createRow([createHeaderCell("读后复位"), createHeaderCell("分表间隔年份"), createHeaderCell("批量写入"), createHeaderCell("并行触发")]));
+    card.appendChild(createRow([createHeaderCell("读后复位"), createHeaderCell("分表间隔年份"), createHeaderCell("批量写入"), createHeaderCell("并行触发"), createHeaderCell("强制对齐节拍"), createHeaderCell("最大补采节拍数")]));
 
     const partitionYearsInput = createSelect(
       PARTITION_INTERVAL_YEAR_OPTIONS,
@@ -1033,6 +1182,30 @@ function renderGroups() {
     );
     batchInsertInput.disabled = batchUpsertEnabled;
 
+    const cadenceSupported = item.trigger === "time" || item.trigger === "time_and_variable";
+    const forceCadenceInput = createCheckbox(
+      cadenceSupported && currentConfig.groups[idx].force_cadence_alignment === true,
+      (v) => {
+        currentConfig.groups[idx].force_cadence_alignment = v;
+        renderGroups();
+      }
+    );
+    forceCadenceInput.disabled = !cadenceSupported;
+    const maxBackfillInput = createInput(
+      Number(currentConfig.groups[idx].max_backfill_ticks) || 1000,
+      (v) => {
+        const parsed = Math.trunc(Number(v));
+        currentConfig.groups[idx].max_backfill_ticks = Math.min(
+          100000,
+          Math.max(1, Number.isFinite(parsed) ? parsed : 1000)
+        );
+      },
+      "number"
+    );
+    maxBackfillInput.min = "1";
+    maxBackfillInput.max = "100000";
+    maxBackfillInput.disabled = !cadenceSupported || item.force_cadence_alignment !== true;
+
     card.appendChild(
       createRow([
         createCheckbox(item.reset_trigger_after_read !== false, (v) => (currentConfig.groups[idx].reset_trigger_after_read = v)),
@@ -1049,8 +1222,17 @@ function renderGroups() {
           })(),
           batchUpsertEnabled
         ),
+        forceCadenceInput,
+        maxBackfillInput,
       ])
     );
+
+    if (cadenceSupported && item.force_cadence_alignment === true) {
+      const warning = document.createElement("div");
+      warning.className = "database-create-warning";
+      warning.textContent = "补采记录使用 OPC UA 恢复后的当前快照，并按欠拍时间写入；数据库 is_backfill=1，可供报表识别。";
+      card.appendChild(warning);
+    }
 
     const deleteRow = document.createElement("div");
     deleteRow.className = "group-delete-row";
@@ -1076,10 +1258,16 @@ function renderGroups() {
       name: "",
       interval_seconds: 1,
       interval_point: null,
+      force_cadence_alignment: false,
+      max_backfill_ticks: 1000,
       trigger: "time",
       description: "",
       data_points: [],
+      enable_point: null,
+      variable_point_overrides: {},
       trigger_point: "",
+      trigger_mode: "poll",
+      trigger_interval_seconds: 1,
       reset_trigger_after_read: true,
       partition_interval_years: 1,
       recreate_interval_days: 1,
@@ -1112,11 +1300,31 @@ function renderDatabase() {
       createInput(db.port || 3306, (v) => (db.port = Number(v) || 3306), "number"),
     ])
   );
-  appendHeaders(panel, ["用户名", "密码", "数据组(data_groups)"]);
+  appendHeaders(panel, ["用户名", "密码（加密保存）", "数据组(data_groups)"]);
+  const passwordCell = document.createElement("div");
+  passwordCell.className = "password-field";
+  const passwordInput = createInput("", (v) => {
+    db.password = v;
+    if (v) db.clear_password = false;
+  }, "password");
+  passwordInput.autocomplete = "new-password";
+  passwordInput.placeholder = db.password_configured ? "已配置；留空保持不变" : "输入数据库密码";
+  passwordCell.appendChild(passwordInput);
+  const clearLabel = document.createElement("label");
+  clearLabel.className = "inline-checkbox";
+  const clearInput = createCheckbox(!!db.clear_password, (checked) => {
+    db.clear_password = checked;
+    if (checked) {
+      db.password = "";
+      passwordInput.value = "";
+    }
+  });
+  clearLabel.append(clearInput, document.createTextNode(" 清除已保存密码"));
+  passwordCell.appendChild(clearLabel);
   panel.appendChild(
     createRow([
       createInput(db.username || "", (v) => (db.username = v)),
-      createInput(db.password || "", (v) => (db.password = v)),
+      passwordCell,
       createMultiSelect(groupOptions, db.data_groups || [], (values) => {
         db.data_groups = values;
       }),
@@ -1141,6 +1349,64 @@ function renderDatabase() {
     warning.className = "database-create-warning";
     warning.textContent = "启用自动创建前，请确保数据库账号具备服务器 CREATE 权限；推荐使用 ROOT 账号完成数据库初始化。";
     panel.appendChild(warning);
+  }
+
+  const queue = currentConfig.persistent_queue;
+  const queueTitle = document.createElement("h3");
+  queueTitle.className = "config-subsection-title";
+  queueTitle.textContent = "持久化队列（断电恢复）";
+  panel.appendChild(queueTitle);
+
+  const queueEnabledLabel = document.createElement("label");
+  queueEnabledLabel.className = "database-auto-create";
+  queueEnabledLabel.appendChild(
+    createCheckbox(queue.enabled === true, (checked) => {
+      queue.enabled = checked;
+      renderDatabase();
+    })
+  );
+  const queueEnabledText = document.createElement("span");
+  queueEnabledText.textContent = "启用 SQLite 持久化队列";
+  queueEnabledLabel.appendChild(queueEnabledText);
+  panel.appendChild(createRow([queueEnabledLabel]));
+
+  const queueHint = document.createElement("div");
+  queueHint.className = "persistent-queue-hint";
+  queueHint.textContent = queue.enabled
+    ? "采集数据先写入本地 SQLite outbox，数据库写入成功后才标记完成；异常重启后可恢复待写数据。"
+    : "当前未启用：未满批次的数据只保存在内存中，断电或进程异常退出时可能丢失。";
+  panel.appendChild(queueHint);
+
+  if (queue.enabled === true) {
+    appendHeaders(panel, ["队列文件路径", "SQLite 同步级别", "忙等待超时(ms)", "租约时间(秒)"]);
+    panel.appendChild(
+      createRow([
+        createInput(queue.path, (v) => (queue.path = v)),
+        createSelect(
+          ["OFF", "NORMAL", "FULL", "EXTRA"].map((value) => ({ value, label: value })),
+          queue.synchronous,
+          (v) => (queue.synchronous = v)
+        ),
+        createInput(queue.busy_timeout_ms, (v) => (queue.busy_timeout_ms = Number(v)), "number"),
+        createInput(queue.lease_seconds, (v) => (queue.lease_seconds = Number(v)), "number"),
+      ])
+    );
+    appendHeaders(panel, ["首次重试间隔(秒)", "最大重试间隔(秒)", "最大重试次数（0=不限）", "完成记录保留天数"]);
+    panel.appendChild(
+      createRow([
+        createInput(queue.retry_interval_seconds, (v) => (queue.retry_interval_seconds = Number(v)), "number"),
+        createInput(queue.max_retry_interval_seconds, (v) => (queue.max_retry_interval_seconds = Number(v)), "number"),
+        createInput(queue.max_attempts, (v) => (queue.max_attempts = Number(v)), "number"),
+        createInput(queue.completed_retention_days, (v) => (queue.completed_retention_days = Number(v)), "number"),
+      ])
+    );
+    appendHeaders(panel, ["清理间隔(秒)", "最大队列行数"]);
+    panel.appendChild(
+      createRow([
+        createInput(queue.cleanup_interval_seconds, (v) => (queue.cleanup_interval_seconds = Number(v)), "number"),
+        createInput(queue.max_queue_rows, (v) => (queue.max_queue_rows = Number(v)), "number"),
+      ])
+    );
   }
 }
 
@@ -1297,8 +1563,15 @@ async function saveCurrentFile() {
     method: "POST",
     body: JSON.stringify({ payload: currentConfig, filename }),
   });
+  const passwordWasEntered = Boolean(currentConfig.database.password);
+  const passwordWasCleared = Boolean(currentConfig.database.clear_password);
+  currentConfig.database.password_configured =
+    passwordWasCleared ? false : (passwordWasEntered || Boolean(currentConfig.database.password_configured));
+  currentConfig.database.password = "";
+  currentConfig.database.clear_password = false;
   currentFilename = filename;
   await refreshFileList();
+  renderDatabase();
   setResult(`保存成功: ${res.path}`);
   savePageState();
 }
@@ -1411,9 +1684,12 @@ function createAddPointButton(item) {
       }
       currentConfig = nextConfig;
       refreshPointRelatedControls();
-      setResult(`已加入点位: ${res.point.name}`);
+      savePageState();
+      btn.disabled = true;
+      btn.textContent = "已加入 ✓";
+      setResult(`成功加入点位：${res.point.name}（points 当前共 ${currentConfig.points.length} 个）`, "success");
     } catch (error) {
-      setResult(error.message);
+      setResult(error.message, "error");
     }
   });
   return btn;

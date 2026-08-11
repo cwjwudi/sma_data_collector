@@ -56,6 +56,10 @@ export function zoneParamKey(elId: string): string {
   return `zone-param:${elId}`;
 }
 
+export function zoneCellKey(elId: string, row: number, col: number): string {
+  return `zone-cell:${elId}:${row}:${col}`;
+}
+
 /** 绑定读数是否视为空（null / 空串 / 历史 OPC 字面量 null） */
 export function isBoundValueEmpty(text: string | null | undefined): boolean {
   if (text === null || text === undefined) return true;
