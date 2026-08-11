@@ -791,7 +791,7 @@
   },
   "logging": {
     "level": "INFO",
-    "output_dir": "logs/full_function_test",
+    "output_dir": "",
     "backup_days": 5,
     "rotation_when": "S",
     "rotation_interval": 30,

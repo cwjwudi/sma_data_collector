@@ -569,6 +569,9 @@ foreach ($projectName in $projectNames) {
         -SkipRelativePrefixes @("config\")
 }
 
+. (Join-Path $ScriptDir "database_tools.ps1")
+$DatabaseToolsResult = Install-DatabaseClientTools -RepoRoot $RepoRoot -ProjectsRoot $PackageProjects
+
 Materialize-UnifiedRuntimeDirs
 
 $RootStart = Join-Path $PackageRoot "start.bat"
@@ -667,3 +670,9 @@ if ($Zip) {
 
 Write-Host "[done] portable package is ready."
 Write-Host "[done] start with: $PackageRoot\start.bat"
+if ($DatabaseToolsResult.Included) {
+    Write-Host "[done] database client included: $($DatabaseToolsResult.Family)"
+}
+else {
+    Write-Warning "[done] database client was not included in the portable package."
+}

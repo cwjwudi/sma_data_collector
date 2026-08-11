@@ -406,6 +406,23 @@ def mysql_dump_client_is_mariadb(tool_path: str) -> bool:
     return "MariaDB" in text
 
 
+def mysql_client_plugin_args(tool_path: str) -> list[str]:
+    """Return an explicit plugin directory for packaged MariaDB/MySQL clients."""
+    try:
+        tool = Path(tool_path).resolve()
+    except OSError:
+        return []
+    candidates = (
+        tool.parent.parent / "lib" / "plugin",
+        tool.parent / "lib" / "plugin",
+        tool.parent,
+    )
+    for candidate in candidates:
+        if (candidate / "caching_sha2_password.dll").is_file():
+            return [f"--plugin-dir={candidate.resolve()}"]
+    return []
+
+
 def default_connection() -> dict[str, Any]:
     cfg = load_config()
     conn = cfg.get("default_connection") if isinstance(cfg.get("default_connection"), dict) else {}
@@ -1046,6 +1063,7 @@ def _run_mysqldump_backup(
     env["MYSQL_PWD"] = connection_password(conn)
     cmd = [
         dump_tool,
+        *mysql_client_plugin_args(dump_tool),
         "--host",
         conn.host or "127.0.0.1",
         "--port",
@@ -1574,8 +1592,10 @@ def restore_verified_backup_job(job_id: str, conn: DbConnection, database: str, 
     set_job_progress(job_id, 8, "restoring")
     env = os.environ.copy()
     env["MYSQL_PWD"] = connection_password(conn)
+    mysql_tool_path = resolve_mysql_tool("mysql")
     cmd = [
-        resolve_mysql_tool("mysql"),
+        mysql_tool_path,
+        *mysql_client_plugin_args(mysql_tool_path),
         "--host",
         conn.host or "127.0.0.1",
         "--port",

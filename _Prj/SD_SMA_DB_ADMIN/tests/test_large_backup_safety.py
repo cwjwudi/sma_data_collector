@@ -221,6 +221,25 @@ def test_resolve_mysql_tool_missing_has_clear_message(monkeypatch: pytest.Monkey
     assert "WinError" not in str(exc_info.value)
 
 
+def test_resolve_mysql_tool_uses_path_when_tools_dirs_have_no_dump(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    project = tmp_path / "SD_SMA_DB_ADMIN"
+    (project / "_tools").mkdir(parents=True)
+    (tmp_path / "_tools").mkdir()
+    path_bin = tmp_path / "path-bin"
+    path_bin.mkdir()
+    dump = path_bin / "mysqldump.exe"
+    dump.write_bytes(b"MZ")
+
+    monkeypatch.setattr(main, "BASE_DIR", project)
+    monkeypatch.setattr(main, "load_config", lambda: {"mysql_tools": {"mysqldump": "mysqldump"}})
+    monkeypatch.setenv("PATH", str(path_bin))
+    monkeypatch.setenv("PATHEXT", ".COM;.EXE;.BAT;.CMD")
+
+    assert Path(main.resolve_mysql_tool("mysqldump")) == dump.resolve()
+
+
 def test_resolve_mysql_tool_scans_project_and_sibling_tools(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -253,6 +272,74 @@ def test_resolve_mysql_tool_prefers_project_tools_over_sibling(
     monkeypatch.setattr(main, "load_config", lambda: {})
     monkeypatch.setattr(main.shutil, "which", lambda name: None)
     assert Path(main.resolve_mysql_tool("mysqldump")) == local_dump.resolve()
+
+
+def test_mysql_client_plugin_args_finds_packaged_plugin(tmp_path: Path) -> None:
+    tool = tmp_path / "_tools" / "database-client" / "bin" / "mariadb-dump.exe"
+    plugin = tool.parent.parent / "lib" / "plugin" / "caching_sha2_password.dll"
+    tool.parent.mkdir(parents=True)
+    plugin.parent.mkdir(parents=True)
+    tool.write_bytes(b"MZ")
+    plugin.write_bytes(b"MZ")
+
+    assert main.mysql_client_plugin_args(str(tool)) == [f"--plugin-dir={plugin.parent.resolve()}"]
+
+
+def test_backup_uses_packaged_mysql_plugin_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    tool = tmp_path / "database-client" / "bin" / "mariadb-dump.exe"
+    plugin = tool.parent.parent / "lib" / "plugin" / "caching_sha2_password.dll"
+    tool.parent.mkdir(parents=True)
+    plugin.parent.mkdir(parents=True)
+    tool.write_bytes(b"MZ")
+    plugin.write_bytes(b"MZ")
+
+    monkeypatch.setattr(main, "resolve_output_dir", lambda value: tmp_path)
+    monkeypatch.setattr(main, "_database_storage_bytes", lambda conn, database: 1024)
+    monkeypatch.setattr(main.shutil, "disk_usage", lambda path: SimpleNamespace(free=10**9))
+    monkeypatch.setattr(main, "load_config", lambda: {"cli_timeout_seconds": 60})
+    monkeypatch.setattr(main, "resolve_mysql_tool", lambda name: str(tool))
+    monkeypatch.setattr(main, "mysql_dump_client_is_mariadb", lambda value: True)
+    monkeypatch.setattr(main, "persist_last_output_dir", lambda path: None)
+    seen: list[str] = []
+
+    def fake_cli(cmd, *, stdout_path=None, **kwargs):
+        seen.extend(cmd)
+        assert stdout_path is not None
+        stdout_path.write_bytes(b"SELECT 1;\n")
+
+    monkeypatch.setattr(main, "run_cli", fake_cli)
+    main.backup_mysql_job("job", DbConnection(), "target_db")
+
+    assert f"--plugin-dir={plugin.parent.resolve()}" in seen
+
+
+def test_restore_uses_packaged_mysql_plugin_dir(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    source = tmp_path / "backup.sql"
+    source.write_bytes(b"SELECT 1;\n")
+    sha256 = main._sha256_file(source)
+    tool = tmp_path / "database-client" / "bin" / "mariadb.exe"
+    plugin = tool.parent.parent / "lib" / "plugin" / "caching_sha2_password.dll"
+    tool.parent.mkdir(parents=True)
+    plugin.parent.mkdir(parents=True)
+    tool.write_bytes(b"MZ")
+    plugin.write_bytes(b"MZ")
+
+    monkeypatch.setattr(
+        main,
+        "_completed_backup",
+        lambda filename: (source, {"sha256": sha256, "scope": "database"}),
+    )
+    monkeypatch.setattr(main, "resolve_mysql_tool", lambda name: str(tool))
+    monkeypatch.setattr(main, "load_config", lambda: {"cli_timeout_seconds": 60})
+    seen: list[str] = []
+
+    def fake_cli(cmd, **kwargs):
+        seen.extend(cmd)
+
+    monkeypatch.setattr(main, "run_cli", fake_cli)
+    main.restore_verified_backup_job("job", DbConnection(), "target_db", source.name)
+
+    assert f"--plugin-dir={plugin.parent.resolve()}" in seen
 
 
 

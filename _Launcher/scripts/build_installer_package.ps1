@@ -28,6 +28,8 @@ $BuildRoot = Join-Path $RepoRoot "_Build"
 $PackageRoot = Join-Path $InstallerPackageRoot "Runtime"
 $NuitkaOutput = Join-Path $InstallerPackageRoot "Nuitka"
 
+. (Join-Path $ScriptDir "database_tools.ps1")
+
 function Assert-ChildPath {
     param(
         [Parameter(Mandatory = $true)][string]$Parent,
@@ -178,30 +180,6 @@ function Convert-ProjectSourcesToBytecode {
     Write-Host "[bytecode] protected $($sourceFiles.Count) project source files"
 }
 
-function Copy-MinimalDatabaseTools {
-    param([Parameter(Mandatory = $true)][string]$ProjectsRoot)
-    $sourceTools = Join-Path $RepoRoot "_Prj\SD_SMA_DB_ADMIN\_tools"
-    if (-not (Test-Path -LiteralPath $sourceTools)) {
-        Write-Host "[db-tools] local MariaDB clients not found; DB Admin will use configured paths or PATH"
-        return
-    }
-
-    $dump = Get-ChildItem -LiteralPath $sourceTools -File -Recurse -Filter "mariadb-dump.exe" |
-        Select-Object -First 1
-    $client = Get-ChildItem -LiteralPath $sourceTools -File -Recurse -Filter "mariadb.exe" |
-        Select-Object -First 1
-    if (-not $dump -or -not $client) {
-        Write-Host "[db-tools] incomplete local MariaDB clients; DB Admin will use configured paths or PATH"
-        return
-    }
-
-    $target = Join-Path $ProjectsRoot "SD_SMA_DB_ADMIN\_tools\mariadb-client"
-    New-Item -ItemType Directory -Force -Path $target | Out-Null
-    Copy-Item -LiteralPath $dump.FullName -Destination $target -Force
-    Copy-Item -LiteralPath $client.FullName -Destination $target -Force
-    Write-Host "[db-tools] included minimal mariadb.exe + mariadb-dump.exe"
-}
-
 function Reset-PackagedRuntimeState {
     param([Parameter(Mandatory = $true)][string]$RuntimeRoot)
 
@@ -290,7 +268,7 @@ if ($LASTEXITCODE -ne 0) {
 
 $PackageProjects = Join-Path $PackageRoot "_Prj"
 Remove-DevelopmentContent -ProjectsRoot $PackageProjects
-Copy-MinimalDatabaseTools -ProjectsRoot $PackageProjects
+$DatabaseToolsResult = Install-DatabaseClientTools -RepoRoot $RepoRoot -ProjectsRoot $PackageProjects
 $StagingPython = Join-Path $PackageRoot ".venv\Scripts\python.exe"
 Convert-ProjectSourcesToBytecode -PythonExe $StagingPython -ProjectsRoot $PackageProjects
 
@@ -389,3 +367,9 @@ if (-not (Test-Path -LiteralPath $InstallerExe)) {
 }
 Write-Host "[done] installer: $InstallerExe"
 Write-Host "[done] one shared service runtime: $PackageRoot\.venv"
+if ($DatabaseToolsResult.Included) {
+    Write-Host "[done] database client included: $($DatabaseToolsResult.Family)"
+}
+else {
+    Write-Warning "[done] database client was not included in the installer."
+}
