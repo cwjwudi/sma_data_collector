@@ -111,6 +111,7 @@ async def delete_server(server_id: str):
     )
     cfg = _load_cfg()
     before = next((s for s in cfg.get("opcua_servers", []) if s.get("id") == server_id), None)
+    # 池断开有短超时；不可达会话不得拖死 DELETE
     await opcua_service.drop_saved_server_pool(server_id)
     servers = [s for s in cfg.get("opcua_servers", []) if s.get("id") != server_id]
     cfg["opcua_servers"] = servers

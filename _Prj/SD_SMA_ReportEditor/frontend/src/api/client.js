@@ -1,10 +1,6 @@
 import { resolveApiHref } from './apiBase.js'
-import { withOpcHttpSlot } from '../lib/opcua-http-gate.js'
+import { withOpcHttpSlotForPath } from '../lib/opcua-http-gate.js'
 import { isLanAiProtectedApiPath, lanAiAuthHeaders } from '../lib/runtimeEnv'
-
-function isOpcUaApiPath(p) {
-  return p.startsWith('/opcua/')
-}
 
 /** 统一请求前缀 `/api`（与 Vite 代理一致；Electron file:// 时直连 localhost:8000）。 */
 export async function apiFetch(path, options = {}) {
@@ -68,6 +64,6 @@ export async function apiFetch(path, options = {}) {
     }
     return data
   }
-  // OPC 读写单独限流，避免占满浏览器对本机后端的连接槽
-  return isOpcUaApiPath(p) ? withOpcHttpSlot(run) : run()
+  // OPC：配置 CRUD 不占槽；探活与 browse 分槽，避免坏链堵死删除/好链浏览
+  return withOpcHttpSlotForPath(p, run)
 }

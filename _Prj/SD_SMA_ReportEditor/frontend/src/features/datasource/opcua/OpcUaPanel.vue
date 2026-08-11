@@ -137,7 +137,7 @@
         </div>
         <div class="conn-form-pane__actions actions">
           <button type="button" class="btn primary seg" :disabled="opcFormDisabled" @click="saveServer">
-            {{ crudBusy ? '保存中…' : '保存' }}
+            {{ crudAction === 'save' ? '保存中…' : '保存' }}
           </button>
           <button type="button" class="btn seg" :disabled="crudBusy" @click="testDraft">
             {{ wizardLayout ? '测试连接' : '测试连接（当前表单）' }}
@@ -149,7 +149,7 @@
             :disabled="opcFormDisabled"
             @click="removeServer"
           >
-            {{ crudBusy ? '删除中…' : '删除' }}
+            {{ crudAction === 'delete' ? '删除中…' : '删除' }}
           </button>
         </div>
         <div v-if="msg" class="msg">{{ translateOpcuaMessage(msg) }}</div>
@@ -314,7 +314,10 @@ const emit = defineEmits(['health-summary'])
 const datasourceLocked = computed(() => props.datasourceLocked)
 /** 保存/删除进行中：防连点重复 POST/DELETE，并禁用表单 */
 const crudBusy = ref(false)
+/** 'save' | 'delete' | '' —— 按钮文案区分，避免删除时也显示「保存中」 */
+const crudAction = ref('')
 const opcFormDisabled = computed(() => datasourceLocked.value || crudBusy.value)
+let browseRootGen = 0
 
 const servers = ref([])
 let loadServersToken = 0
@@ -640,9 +643,10 @@ function hydrateOpcServersFromLocalConfig() {
 function probeAllOpcConnections() {
   const ids = servers.value.map((s) => s.id).filter(Boolean)
   pruneOpcHealth(ids)
+  // 探活槽前端仅 1 路；并发 1，避免多条坏链同时占满
   void probeConnectionIds(ids, probeOpcSavedConnection, setOpcHealth, 'opcua', {
     silent: true,
-    concurrency: 2,
+    concurrency: 1,
   })
 }
 
@@ -760,10 +764,16 @@ function selectServer(s, persist = true) {
   pickedValueText.value = ''
   pickedReadError.value = ''
   readEpoch.value += 1
+  browseRootGen += 1
   if (persist) {
     void persistLastOpcuaServer(row.id)
   }
-  refreshRoot()
+  // 已知失败的坏链不要自动 browse：会占满 OPC HTTP 槽，拖死其它连接
+  if (row?.id && opcHealth[row.id] === 'fail') {
+    msg.value = '该连接最近探活失败，已跳过自动浏览。可点「刷新根」重试。'
+    return
+  }
+  void refreshRoot()
 }
 
 function startNew() {
@@ -823,6 +833,7 @@ async function saveServer() {
     return
   }
   crudBusy.value = true
+  crudAction.value = 'save'
   try {
     const postRes = await apiFetch('/opcua/servers', {
       method: 'POST',
@@ -861,6 +872,7 @@ async function saveServer() {
     msg.value = e.message || String(e)
   } finally {
     crudBusy.value = false
+    crudAction.value = ''
   }
 }
 
@@ -873,20 +885,22 @@ async function removeServer() {
   if (crudBusy.value) return
   const removedId = form.id
   crudBusy.value = true
-  // 乐观摘 tab，避免等待 reload 期间连点同一 id
+  crudAction.value = 'delete'
+  browseRootGen += 1
+  // 乐观摘 tab：UI 立刻响应，DELETE 在后台完成（不再被坏链 browse 槽堵住）
   servers.value = servers.value.filter((s) => s.id !== removedId)
   delete opcHealth[removedId]
   startNew()
   try {
     await apiFetch(`/opcua/servers/${removedId}`, { method: 'DELETE' })
-    await loadServers(null, { probe: 'none', selectMode: 'none' })
-    startNew()
     notifyOpcServersChanged()
+    void loadServers(null, { probe: 'none', selectMode: 'none' })
   } catch (e) {
     msg.value = e.message || String(e)
-    await loadServers(null, { probe: 'none', selectMode: 'none' })
+    void loadServers(null, { probe: 'none', selectMode: 'none' })
   } finally {
     crudBusy.value = false
+    crudAction.value = ''
   }
 }
 
@@ -1005,6 +1019,7 @@ async function expandAllTree() {
 async function refreshRoot() {
   cancelExpandAll()
   prefetchGen.value += 1
+  const myGen = ++browseRootGen
   msg.value = ''
   const cap = browseCapability.value
   if (!cap) {
@@ -1018,8 +1033,10 @@ async function refreshRoot() {
   }
   try {
     const res = await opcApiBrowse(null)
+    if (myGen !== browseRootGen) return
     if (res.ok === false) {
       msg.value = res.message || '浏览失败'
+      if (form.id) setOpcHealth(form.id, 'fail', msg.value)
       treeNodes.value = []
       bumpTree()
       return
@@ -1029,7 +1046,9 @@ async function refreshRoot() {
     bumpTree()
     void prefetchVariableValuesInNodes(treeNodes.value)
   } catch (e) {
+    if (myGen !== browseRootGen) return
     msg.value = e.message || String(e)
+    if (form.id) setOpcHealth(form.id, 'fail', msg.value)
   }
 }
 
