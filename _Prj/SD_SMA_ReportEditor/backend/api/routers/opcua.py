@@ -96,7 +96,11 @@ async def upsert_server(body: OpcUaServerSave):
         )
     except Exception:
         pass
-    return {"servers": [config_store.mask_opcua_for_response(s) for s in servers]}
+    saved_id = after.get("id") or entry.get("id")
+    return {
+        "servers": [config_store.mask_opcua_for_response(s) for s in servers],
+        "saved_id": saved_id,
+    }
 
 
 @router.delete("/opcua/servers/{server_id}")
@@ -111,21 +115,23 @@ async def delete_server(server_id: str):
     servers = [s for s in cfg.get("opcua_servers", []) if s.get("id") != server_id]
     cfg["opcua_servers"] = servers
     _save_cfg(cfg)
-    try:
-        audit_log.append_audit(
-            DATA_DIR,
-            action="opcua.connection_delete",
-            result="ok",
-            summary=str((before or {}).get("name") or server_id),
-            object_type="opcua_server",
-            object_id=server_id,
-            detail={
-                "before": datasource_lock.opc_server_audit_summary(before),
-                "after": None,
-            },
-        )
-    except Exception:
-        pass
+    # 幂等连点删除：条目已不存在时不再刷审计，避免连点刷屏
+    if before is not None:
+        try:
+            audit_log.append_audit(
+                DATA_DIR,
+                action="opcua.connection_delete",
+                result="ok",
+                summary=str(before.get("name") or server_id),
+                object_type="opcua_server",
+                object_id=server_id,
+                detail={
+                    "before": datasource_lock.opc_server_audit_summary(before),
+                    "after": None,
+                },
+            )
+        except Exception:
+            pass
     return {"ok": True}
 
 

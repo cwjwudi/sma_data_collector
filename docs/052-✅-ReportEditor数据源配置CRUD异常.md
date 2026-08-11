@@ -203,31 +203,35 @@
 
 ---
 
-# ⌛️ 未完成：修复实现（防重保存 / 乐观 id / 删除与探测）
+# ✅ 已完成：修复实现（防重保存 / 乐观 id / 删除与探测）
 
-## 范围（建议按优先级）
+## 已落地（0.3.166）
 
-1. **P0** 保存防重 + 响应后立刻绑定 `saved_id`（DB + OPC）
-2. **P0** `testAndSave` / 删除 的忙态与错误提示闭环
-3. **P1** 删除成功后本地先摘 tab，再后台 reload（避免「删了还在」错觉）
-4. **P1** 全量 `probeAll`：错峰、并发上限、或保存后仅测当前连接；缩短不可达超时或前端可取消
-5. **P2** 新建保存后保证 tab 可见（选中 + 滚动进视口）；空名称校验
+| 优先级 | 项 | 实现 |
+| ------ | -- | ---- |
+| P0 | OPC 保存防重 + 立刻绑 id | `OpcUaPanel`：`crudBusy`；响应 `saved_id` 立刻写 `form.id`；按钮「保存中…」 |
+| P0 | OPC 删除防重 + 乐观摘 tab | 先从列表移除再 DELETE；`loadServers({ probe:'none', selectMode:'none' })` 避免误选坏链 browse |
+| P0 | 后端 `saved_id` | `POST /opcua/servers` 返回 `saved_id`；幂等 DELETE（`before is None`）不刷审计 |
+| P0 | DB `draft.id` + testAndSave 忙态 | `ConnectionManager`：保存后立刻 `draft.id=`；`testAndSave` 全程 `busy` |
+| P1 | 探活限流 / CRUD 不全量探 | `probeConnectionIds` 默认 concurrency=2；保存后 `probe:'one'`；切 tab 只探当前 |
+| P2 | tab 滚入视口 / 空名校验 | 本轮不做 |
 
 ## 非目标（本轮）
 
 - 不改动数据源锁的业务语义（锁后禁止改/删）
 - 不重做数据源信息架构
+- 不缩短单次 OPC `test_connection` 的 8s 超时（靠「不全量探」规避 CRUD 卡顿）
 
-## 验收（实现后）
+## 验收证据
 
-- 连点保存只产生 **一条**；单测锁「无 id 双飞只建一条」或「第二次带 id upsert」
-- 删除后 tab 立即消失且落盘一致；锁态有明确文案
-- 测连：无效主机有超时上限；保存不触发「全连接长时间阻塞 UI」
+- 前端 vitest：`connection-tab-health.test.ts`（并发上限）+ `ConnectionManager.test.ts` 绿
+- 后端 pytest：`modules/test_opcua_crud_052.py`（`saved_id` upsert、幂等删除审计×1）**2 passed**
+- 装包版 UI 手测：见版本 Plan / 发版后现场确认（有坏链时保存/删除应秒级返回，不再被全量探活拖 ~8s）
 
 ---
 
-# ⌛️ 未完成：回归单测与文档收尾
+# ✅ 已完成：回归单测与文档收尾
 
-- 前端：`ConnectionManager` 保存防重 / `saved_id` 回写；可选 OPC `saveServer` busy
-- 后端：若加幂等（如短窗同内容去重）再补 API 测；默认以前端防重为主
-- 关闭本看板前：文件名改 `052-✅-…`，`todo.md` 记验收证据
+- [x] 前端探活并发单测；OPC/DB 防重改动
+- [x] 后端 `test_opcua_crud_052.py`
+- [x] 文件名改 `052-✅-…`；`todo.md` 记验收；发版 **0.3.166**

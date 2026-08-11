@@ -1,15 +1,13 @@
 releaseNotes: |
-  Report Editor AI 0.3.165
+  Report Editor AI 0.3.166
   
-  - 041 H1：封面页眉一键复制到正文（互不继承提示）
-  - 045 R4：矢量 PDF 临时文件回传（去巨型 base64 IPC）
-  - 046：历史多根 UX + 失败审计 reportKind
-  - 044：Docker MariaDB 冒烟灌库就绪
-version: 0.3.165
+  - 052：OPC/DB 数据源保存删除防重；坏链下 CRUD 不再全量探活卡顿
+  - OPC POST 返回 saved_id；删除幂等不刷审计；探活默认并发 2
+version: 0.3.166
 files:
-  - url: Report Editor AI-Setup-0.3.165-x64.exe
-    sha512: B8N0EomRGuqF5NsHxdTB7NT7oHsbhINchm8WzdqJkWNLn+wuQAJfHdEyQI+4GHbCSXPfYLjX4X8MUWZhnzSYEg==
-    size: 162559989
-path: Report Editor AI-Setup-0.3.165-x64.exe
-sha512: B8N0EomRGuqF5NsHxdTB7NT7oHsbhINchm8WzdqJkWNLn+wuQAJfHdEyQI+4GHbCSXPfYLjX4X8MUWZhnzSYEg==
-releaseDate: '2026-08-09T02:06:17.037Z'
+  - url: Report Editor AI-Setup-0.3.166-x64.exe
+    sha512: adT5u7Ldg0aflGkedM9AU01suJoasGWhpkdiRzSbSans9jnWCYE94idZ1IUu57PNVgF/TrDUvTvAbfhteX8tvQ==
+    size: 162561885
+path: Report Editor AI-Setup-0.3.166-x64.exe
+sha512: adT5u7Ldg0aflGkedM9AU01suJoasGWhpkdiRzSbSans9jnWCYE94idZ1IUu57PNVgF/TrDUvTvAbfhteX8tvQ==
+releaseDate: '2026-08-11T04:33:05.679Z'

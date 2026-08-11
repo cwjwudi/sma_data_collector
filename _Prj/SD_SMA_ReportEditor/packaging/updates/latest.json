@@ -1,15 +1,15 @@
 {
-  "version": "0.3.165",
-  "releasedAt": "2026-08-09T02:06:17.336Z",
-  "notes": "Report Editor AI 0.3.165\n\n- 041 H1：封面页眉一键复制到正文（互不继承提示）\n- 045 R4：矢量 PDF 临时文件回传（去巨型 base64 IPC）\n- 046：历史多根 UX + 失败审计 reportKind\n- 044：Docker MariaDB 冒烟灌库就绪",
+  "version": "0.3.166",
+  "releasedAt": "2026-08-11T04:33:05.976Z",
+  "notes": "Report Editor AI 0.3.166\n\n- 052：OPC/DB 数据源保存删除防重；坏链下 CRUD 不再全量探活卡顿\n- OPC POST 返回 saved_id；删除幂等不刷审计；探活默认并发 2",
   "platforms": {
     "win32-x64": {
-      "url": "Report Editor AI-Setup-0.3.165-x64.exe",
-      "sha256": "fc4fd15e5a8cf973a31b456ac7ebfd2186b379605b29987fb81642e15cba0689",
-      "size": 162559989
+      "url": "Report Editor AI-Setup-0.3.166-x64.exe",
+      "sha256": "907a944b3ab58c4dfdfba1be7c18a2ba658b9ebef8fd0394dfef7040e9656ab2",
+      "size": 162561885
     },
     "darwin-arm64": {
-      "url": "Report Editor AI-0.3.165-arm64.dmg",
+      "url": "Report Editor AI-0.3.166-arm64.dmg",
       "sha256": "",
       "size": 0
     }

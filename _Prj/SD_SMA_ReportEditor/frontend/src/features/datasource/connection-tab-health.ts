@@ -60,9 +60,14 @@ export type ProbeConnectionOptions = {
    * 用于定时轮询，避免每 5 秒闪黄造成不安。
    */
   silent?: boolean;
+  /**
+   * 最大并行探测数。默认 2，避免多条不可达 OPC/DB 同时占满后端超时窗口，拖垮保存/删除。
+   * 设为 0 或负数表示不限制（旧行为：全并行）。
+   */
+  concurrency?: number;
 };
 
-/** 后台批量探测（并行），逐条回调状态；同 scope 内新一批开始后忽略上一批未完成的结果 */
+/** 后台批量探测（限流并行），逐条回调状态；同 scope 内新一批开始后忽略上一批未完成的结果 */
 export async function probeConnectionIds(
   ids: string[],
   probe: (id: string) => Promise<ConnectionProbeResult>,
@@ -73,6 +78,13 @@ export async function probeConnectionIds(
   const list = ids.filter((id) => id?.trim());
   if (!list.length) return;
   const silent = options.silent !== false;
+  const concurrencyRaw = options.concurrency;
+  const concurrency =
+    concurrencyRaw === undefined
+      ? 2
+      : concurrencyRaw <= 0
+        ? list.length
+        : Math.max(1, Math.floor(concurrencyRaw));
   const batchId = (probeBatchGenerationByScope.get(scope) ?? 0) + 1;
   probeBatchGenerationByScope.set(scope, batchId);
   const emit = (id: string, state: ConnectionHealthState, message = "") => {
@@ -84,10 +96,16 @@ export async function probeConnectionIds(
       emit(id, "checking");
     }
   }
-  await Promise.all(
-    list.map(async (id) => {
+  let next = 0;
+  const workers = Array.from({ length: Math.min(concurrency, list.length) }, async () => {
+    while (true) {
+      const i = next++;
+      if (i >= list.length) return;
+      if (batchId !== probeBatchGenerationByScope.get(scope)) return;
+      const id = list[i];
       const res = await probe(id);
       emit(id, res.ok ? "ok" : "fail", res.message);
-    }),
-  );
+    }
+  });
+  await Promise.all(workers);
 }

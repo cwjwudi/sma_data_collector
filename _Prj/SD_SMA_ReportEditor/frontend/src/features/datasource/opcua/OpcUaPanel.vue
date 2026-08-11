@@ -8,8 +8,8 @@
       <button
         type="button"
         class="tab tab-new"
-        :disabled="datasourceLocked"
-        :title="datasourceLocked ? '数据源已锁定' : ''"
+        :disabled="datasourceLocked || crudBusy"
+        :title="datasourceLocked ? '数据源已锁定' : crudBusy ? '正在保存/删除…' : ''"
         @click="startNew"
       >
         + 新建
@@ -136,8 +136,10 @@
         </div>
         </div>
         <div class="conn-form-pane__actions actions">
-          <button type="button" class="btn primary seg" :disabled="opcFormDisabled" @click="saveServer">保存</button>
-          <button type="button" class="btn seg" @click="testDraft">
+          <button type="button" class="btn primary seg" :disabled="opcFormDisabled" @click="saveServer">
+            {{ crudBusy ? '保存中…' : '保存' }}
+          </button>
+          <button type="button" class="btn seg" :disabled="crudBusy" @click="testDraft">
             {{ wizardLayout ? '测试连接' : '测试连接（当前表单）' }}
           </button>
           <button
@@ -147,7 +149,7 @@
             :disabled="opcFormDisabled"
             @click="removeServer"
           >
-            删除
+            {{ crudBusy ? '删除中…' : '删除' }}
           </button>
         </div>
         <div v-if="msg" class="msg">{{ translateOpcuaMessage(msg) }}</div>
@@ -310,7 +312,9 @@ const props = defineProps({
 const emit = defineEmits(['health-summary'])
 
 const datasourceLocked = computed(() => props.datasourceLocked)
-const opcFormDisabled = computed(() => datasourceLocked.value)
+/** 保存/删除进行中：防连点重复 POST/DELETE，并禁用表单 */
+const crudBusy = ref(false)
+const opcFormDisabled = computed(() => datasourceLocked.value || crudBusy.value)
 
 const servers = ref([])
 let loadServersToken = 0
@@ -636,7 +640,19 @@ function hydrateOpcServersFromLocalConfig() {
 function probeAllOpcConnections() {
   const ids = servers.value.map((s) => s.id).filter(Boolean)
   pruneOpcHealth(ids)
-  void probeConnectionIds(ids, probeOpcSavedConnection, setOpcHealth, 'opcua')
+  void probeConnectionIds(ids, probeOpcSavedConnection, setOpcHealth, 'opcua', {
+    silent: true,
+    concurrency: 2,
+  })
+}
+
+function probeOneOpcConnection(serverId) {
+  const id = String(serverId || '').trim()
+  if (!id) return
+  void probeConnectionIds([id], probeOpcSavedConnection, setOpcHealth, 'opcua', {
+    silent: true,
+    concurrency: 1,
+  })
 }
 
 const connectionHealthSummary = computed(() =>
@@ -655,9 +671,23 @@ watch(
   },
 )
 
+/**
+ * @param {string|null} explicitPreferred
+ * @param {{
+ *   attempt?: number,
+ *   token?: number,
+ *   probe?: 'all'|'one'|'none',
+ *   probeId?: string|null,
+ *   selectMode?: 'auto'|'none',
+ * }} [opts]
+ * - probe: CRUD 后默认不要全量探活（坏链 ~8s 会拖垮后端）；进页/导入仍用 all
+ * - selectMode 'none': 不自动 selectServer（删除后进新建态，避免误选坏链触发 browse 超时）
+ */
 async function loadServers(explicitPreferred = null, opts = {}) {
   const attempt = opts.attempt ?? 0
   const token = opts.token ?? ++loadServersToken
+  const probeMode = opts.probe ?? 'all'
+  const selectMode = opts.selectMode ?? 'auto'
 
   let prefs = {}
   try {
@@ -669,11 +699,19 @@ async function loadServers(explicitPreferred = null, opts = {}) {
     const data = await apiFetch('/opcua/servers')
     if (token !== loadServersToken) return
     servers.value = data.servers || []
-    probeAllOpcConnections()
+    if (probeMode === 'all') {
+      probeAllOpcConnections()
+    } else if (probeMode === 'one') {
+      const pid = opts.probeId || explicitPreferred || form.id
+      if (pid) probeOneOpcConnection(pid)
+    }
     emit('health-summary', connectionHealthSummary.value)
     setOpcHealthSummary(connectionHealthSummary.value)
     if (!servers.value.length) {
       startNew()
+      return
+    }
+    if (selectMode === 'none') {
       return
     }
     const pid = pickPreferredOpcServerId(prefs, servers.value, explicitPreferred)
@@ -695,7 +733,7 @@ async function loadServers(explicitPreferred = null, opts = {}) {
     if (attempt < 7) {
       const delayMs = Math.min(350 * 2 ** attempt, 3000)
       await new Promise((r) => window.setTimeout(r, delayMs))
-      return loadServers(explicitPreferred, { attempt: attempt + 1, token })
+      return loadServers(explicitPreferred, { ...opts, attempt: attempt + 1, token })
     }
     msg.value = e.message || String(e)
   }
@@ -703,7 +741,8 @@ async function loadServers(explicitPreferred = null, opts = {}) {
 
 function onOpcConnTabClick(s) {
   selectServer(s)
-  probeAllOpcConnections()
+  // 只探当前 tab，避免列表里有坏链时每次切换都全量 timeout
+  if (s?.id) probeOneOpcConnection(s.id)
 }
 
 function selectServer(s, persist = true) {
@@ -769,20 +808,22 @@ async function saveServer() {
     msg.value = '数据源已锁定，无法保存'
     return
   }
+  if (crudBusy.value) return
   msg.value = ''
+  let ep = currentEndpointUrl()
+  const nmRaw = String(form.name || '').trim()
+  let nm = nmRaw
+  if (form.id) {
+    const baseline = servers.value.find((x) => x.id === form.id)
+    if (!ep) ep = String(baseline?.endpoint_url || '').trim()
+    if (!nm) nm = String(baseline?.name || '').trim()
+  }
+  if (!ep) {
+    msg.value = '请先填写主机与端口'
+    return
+  }
+  crudBusy.value = true
   try {
-    let ep = currentEndpointUrl()
-    const nmRaw = String(form.name || '').trim()
-    let nm = nmRaw
-    if (form.id) {
-      const baseline = servers.value.find((x) => x.id === form.id)
-      if (!ep) ep = String(baseline?.endpoint_url || '').trim()
-      if (!nm) nm = String(baseline?.name || '').trim()
-    }
-    if (!ep) {
-      msg.value = '请先填写主机与端口'
-      return
-    }
     const postRes = await apiFetch('/opcua/servers', {
       method: 'POST',
       body: {
@@ -794,12 +835,18 @@ async function saveServer() {
       },
     })
     const list = postRes.servers || []
-    const created =
-      list.find((x) => String(x.name || '').trim() === nm && String(x.endpoint_url || '').trim() === ep) ||
-      list.find((x) => String(x.endpoint_url || '').trim() === ep)
-    await loadServers(created?.id || null)
-    if (created?.id) {
-      await persistLastOpcuaServer(created.id)
+    const savedId =
+      postRes.saved_id ||
+      list.find((x) => String(x.name || '').trim() === nm && String(x.endpoint_url || '').trim() === ep)?.id ||
+      list.find((x) => String(x.endpoint_url || '').trim() === ep)?.id ||
+      null
+    // 立刻绑定 id，防止 busy 清除前连点再次以 id=null 新建
+    if (savedId) {
+      form.id = savedId
+    }
+    await loadServers(savedId || null, { probe: 'one', probeId: savedId || null })
+    if (savedId) {
+      await persistLastOpcuaServer(savedId)
     }
     msg.value = '已保存'
     notifyOpcServersChanged()
@@ -808,10 +855,12 @@ async function saveServer() {
       result: 'ok',
       summary: nm || ep,
       object_type: 'opcua_server',
-      object_id: created?.id || undefined,
+      object_id: savedId || undefined,
     })
   } catch (e) {
     msg.value = e.message || String(e)
+  } finally {
+    crudBusy.value = false
   }
 }
 
@@ -821,12 +870,24 @@ async function removeServer() {
     msg.value = '数据源已锁定，无法删除'
     return
   }
+  if (crudBusy.value) return
   const removedId = form.id
-  await apiFetch(`/opcua/servers/${removedId}`, { method: 'DELETE' })
+  crudBusy.value = true
+  // 乐观摘 tab，避免等待 reload 期间连点同一 id
+  servers.value = servers.value.filter((s) => s.id !== removedId)
   delete opcHealth[removedId]
-  await loadServers()
   startNew()
-  notifyOpcServersChanged()
+  try {
+    await apiFetch(`/opcua/servers/${removedId}`, { method: 'DELETE' })
+    await loadServers(null, { probe: 'none', selectMode: 'none' })
+    startNew()
+    notifyOpcServersChanged()
+  } catch (e) {
+    msg.value = e.message || String(e)
+    await loadServers(null, { probe: 'none', selectMode: 'none' })
+  } finally {
+    crudBusy.value = false
+  }
 }
 
 async function testDraft() {

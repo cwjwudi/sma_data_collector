@@ -235,15 +235,16 @@ function buildApiBody() {
   }
 }
 
-async function save(afterTest = false) {
+async function save(afterTest = false, { manageBusy = true } = {}) {
   if (props.locked) {
     msg.value = '数据源已锁定，无法保存'
     msgTone.value = 'err'
     return
   }
+  if (manageBusy && busy.value) return
   msg.value = ''
   msgTone.value = ''
-  busy.value = true
+  if (manageBusy) busy.value = true
   try {
     const data = await apiFetch('/database/connections', {
       method: 'POST',
@@ -256,6 +257,8 @@ async function save(afterTest = false) {
       list.find((x) => x.name === draft.name && x.engine === draft.engine)?.id ||
       list[list.length - 1]?.id ||
       null
+    // 立刻回写 id，避免 busy 结束后连点仍以 id=null 再插一条
+    if (mine) draft.id = mine
     emit('updated', mine)
     if (mine) emit('connection-tested', { id: mine, ok: true })
     msg.value = afterTest ? '连接成功，已写入本地配置' : '已保存'
@@ -272,12 +275,12 @@ async function save(afterTest = false) {
     msg.value = e.message || String(e)
     msgTone.value = 'err'
   } finally {
-    busy.value = false
+    if (manageBusy) busy.value = false
   }
 }
 
-async function runTest() {
-  busy.value = true
+async function runTest({ manageBusy = true } = {}) {
+  if (manageBusy) busy.value = true
   try {
     const res = await apiFetch('/database/test', {
       method: 'POST',
@@ -287,11 +290,12 @@ async function runTest() {
   } catch (e) {
     return { ok: false, message: e.message || String(e) }
   } finally {
-    busy.value = false
+    if (manageBusy) busy.value = false
   }
 }
 
 async function testOnly() {
+  if (busy.value) return
   msg.value = ''
   msgTone.value = ''
   busy.value = true
@@ -323,15 +327,26 @@ async function testOnly() {
 }
 
 async function testAndSave() {
-  msg.value = ''
-  msgTone.value = ''
-  const t = await runTest()
-  if (!t.ok) {
-    msg.value = t.message || '连接失败'
+  if (props.locked) {
+    msg.value = '数据源已锁定，无法保存'
     msgTone.value = 'err'
     return
   }
-  await save(true)
+  if (busy.value) return
+  msg.value = ''
+  msgTone.value = ''
+  busy.value = true
+  try {
+    const t = await runTest({ manageBusy: false })
+    if (!t.ok) {
+      msg.value = t.message || '连接失败'
+      msgTone.value = 'err'
+      return
+    }
+    await save(true, { manageBusy: false })
+  } finally {
+    busy.value = false
+  }
 }
 
 async function remove() {
@@ -341,6 +356,7 @@ async function remove() {
     return
   }
   if (!draft.id) return
+  if (busy.value) return
   busy.value = true
   try {
     await apiFetch(`/database/connections/${draft.id}`, { method: 'DELETE' })

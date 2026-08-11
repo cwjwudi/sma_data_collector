@@ -7,11 +7,12 @@
 
 ## 2026-08-11
 
-- **ReportEditor 052（本机 OPC 复现）**：审计 + Agent 对运行中后端复测——**前置有未正常连接的 OPC**（`666@192.168.137.1` 探活 ~8s）；`probeAll`/删除链墙钟 ~8s；无 id 双 POST 出双 uuid。远端难复现因缺坏链。修复仍 ⌛️。看板 [docs/052-🚧](docs/052-🚧-ReportEditor数据源配置CRUD异常.md)。
+- **ReportEditor 0.3.166 / 052 ✅**：OPC/DB 保存删除防重；坏链下 CRUD 不全量探活（并发 2）；`saved_id` + 幂等删除审计。vitest/pytest 绿；Win 包 `Setup-0.3.166-x64`（SHA256 `907a944b…6ab2`）。看板 [docs/052-✅](docs/052-✅-ReportEditor数据源配置CRUD异常.md) · Plan `0.3.166`。
+- **ReportEditor 052（本机 OPC 复现）**：审计 + Agent 对运行中后端复测——**前置有未正常连接的 OPC**（`666@192.168.137.1` 探活 ~8s）；`probeAll`/删除链墙钟 ~8s；无 id 双 POST 出双 uuid。远端难复现因缺坏链。已修于 0.3.166。看板 [docs/052-✅](docs/052-✅-ReportEditor数据源配置CRUD异常.md)。
 
 ## 2026-08-10
 
-- **ReportEditor 052（数据源配置 CRUD 异常）**：登记用户反馈——新建不显示、测连卡顿、删不掉、连点保存重复；代码对照指向保存后未回写 `saved_id`/`busy` 窗口可重复 POST 新建、保存后全量 `probeAll`、锁态禁删等。修复与手测仍 ⌛️。看板 [docs/052-🚧](docs/052-🚧-ReportEditor数据源配置CRUD异常.md)。
+- **ReportEditor 052（数据源配置 CRUD 异常）**：登记用户反馈——新建不显示、测连卡顿、删不掉、连点保存重复；代码对照指向保存后未回写 `saved_id`/`busy` 窗口可重复 POST 新建、保存后全量 `probeAll`、锁态禁删等。已于 0.3.166 闭环。看板 [docs/052-✅](docs/052-✅-ReportEditor数据源配置CRUD异常.md)。
 
 ## 2026-08-09
 
