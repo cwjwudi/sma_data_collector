@@ -205,15 +205,17 @@
 
 # ✅ 已完成：修复实现（防重保存 / 乐观 id / 删除与探测）
 
-## 已落地（0.3.166）
+## 已落地（0.3.166 → 0.3.167）
 
 | 优先级 | 项 | 实现 |
 | ------ | -- | ---- |
-| P0 | OPC 保存防重 + 立刻绑 id | `OpcUaPanel`：`crudBusy`；响应 `saved_id` 立刻写 `form.id`；按钮「保存中…」 |
-| P0 | OPC 删除防重 + 乐观摘 tab | 先从列表移除再 DELETE；`loadServers({ probe:'none', selectMode:'none' })` 避免误选坏链 browse |
-| P0 | 后端 `saved_id` | `POST /opcua/servers` 返回 `saved_id`；幂等 DELETE（`before is None`）不刷审计 |
+| P0 | OPC 保存防重 + 立刻绑 id | `OpcUaPanel`：`crudBusy`；响应 `saved_id` 立刻写 `form.id` |
+| P0 | OPC 删除防重 + 乐观摘 tab | 先从列表移除再 DELETE；删除后不全量探活 |
+| P0 | 后端 `saved_id` | `POST /opcua/servers` 返回 `saved_id`；幂等 DELETE 不刷审计 |
 | P0 | DB `draft.id` + testAndSave 忙态 | `ConnectionManager`：保存后立刻 `draft.id=`；`testAndSave` 全程 `busy` |
-| P1 | 探活限流 / CRUD 不全量探 | `probeConnectionIds` 默认 concurrency=2；保存后 `probe:'one'`；切 tab 只探当前 |
+| P0 | **0.3.167** OPC HTTP 槽分层 | 配置 CRUD **不占槽**；探活 1 槽 / browse 2 槽——坏链不再堵删除与好链浏览（0.3.166 现场复现根因） |
+| P0 | **0.3.167** 短超时 + 跳过坏链自动 browse | 探活/池连接约 3s；`drop_pool` 短超时；`health=fail` 时不自动 `refreshRoot` |
+| P1 | 探活限流 / CRUD 不全量探 | 保存后 `probe:'one'`；切 tab 只探当前；全量探活 concurrency=1 |
 | P2 | tab 滚入视口 / 空名校验 | 本轮不做 |
 
 ## 非目标（本轮）

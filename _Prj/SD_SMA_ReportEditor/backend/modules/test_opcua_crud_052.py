@@ -98,6 +98,30 @@ def test_upsert_returns_saved_id_and_second_with_id_is_upsert(opc_client):
     assert sum(1 for s in r3.json()["servers"] if s.get("name") == "repro") == 2
 
 
+def test_drop_pool_returns_quickly_when_lock_held():
+    """坏链 connect 占锁时，drop 不得等满 TCP 超时。"""
+    import asyncio
+    import time
+    from modules import opcua_service
+
+    async def _run():
+        opcua_service._pool.clear()
+        entry = opcua_service._get_entry("hung-bad")
+        await entry.lock.acquire()
+        try:
+            t0 = time.perf_counter()
+            await opcua_service.drop_saved_server_pool("hung-bad")
+            elapsed = time.perf_counter() - t0
+            assert elapsed < 3.0, f"drop took {elapsed:.2f}s"
+            assert "hung-bad" not in opcua_service._pool
+        finally:
+            if entry.lock.locked():
+                entry.lock.release()
+
+    asyncio.run(_run())
+
+
+
 def test_idempotent_delete_audits_once(opc_client, monkeypatch: pytest.MonkeyPatch):
     client, data = opc_client
     calls: list[dict] = []

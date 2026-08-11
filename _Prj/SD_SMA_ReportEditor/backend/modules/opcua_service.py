@@ -19,6 +19,10 @@ from modules.connection_error_hints import humanize_opcua_error
 logger = logging.getLogger(__name__)
 
 POOL_IDLE_SEC = 90.0
+# 不可达主机上过长超时会占满前端 OPC HTTP 槽 / 后端事件循环，拖死其它连接的浏览与删除
+POOL_CONNECT_TIMEOUT_SEC = 3.5
+TEST_CONNECT_TIMEOUT_SEC = 3.0
+DROP_POOL_WAIT_SEC = 0.8
 
 # 单层浏览返回的最大子节点数（PLC 数据块下变量极多时过小的上限会截掉末尾项）
 DEFAULT_OPCUA_BROWSE_MAX_CHILDREN = 2000
@@ -51,7 +55,7 @@ async def _safe_disconnect(client: Client | None) -> None:
     if not client:
         return
     try:
-        await client.disconnect()
+        await asyncio.wait_for(client.disconnect(), timeout=1.0)
     except Exception:
         logger.debug("OPC UA disconnect ignored", exc_info=True)
 
@@ -104,11 +108,15 @@ async def _ensure_connected(
     await _prune_if_idle(entry)
 
     if entry.client is None:
-        client = Client(url=endpoint_url, timeout=15)
+        client = Client(url=endpoint_url, timeout=int(POOL_CONNECT_TIMEOUT_SEC))
         if username:
             client.set_user(username)
             client.set_password(password or "")
-        await client.connect()
+        try:
+            await asyncio.wait_for(client.connect(), timeout=POOL_CONNECT_TIMEOUT_SEC)
+        except Exception:
+            await _safe_disconnect(client)
+            raise
         entry.client = client
 
     entry.last_used = time.monotonic()
@@ -125,26 +133,24 @@ async def test_connection(
     endpoint_url: str,
     username: str | None = None,
     password: str | None = None,
-    timeout_sec: float = 8.0,
+    timeout_sec: float = TEST_CONNECT_TIMEOUT_SEC,
     *,
     connection_name: str | None = None,
 ) -> dict[str, Any]:
+    timeout_sec = max(1.0, float(timeout_sec))
     client = Client(url=endpoint_url, timeout=int(timeout_sec))
     try:
         if username:
             client.set_user(username)
             client.set_password(password or "")
-        await client.connect()
+        await asyncio.wait_for(client.connect(), timeout=timeout_sec)
         root = client.nodes.objects
-        await root.read_browse_name()
-        await client.disconnect()
+        await asyncio.wait_for(root.read_browse_name(), timeout=timeout_sec)
+        await _safe_disconnect(client)
         return {"ok": True, "message": "连接成功"}
     except Exception as e:
         logger.exception("OPC UA test failed")
-        try:
-            await client.disconnect()
-        except Exception:
-            pass
+        await _safe_disconnect(client)
         return {
             "ok": False,
             "message": humanize_opcua_error(
@@ -207,12 +213,12 @@ async def browse_children(
     max_children: int = DEFAULT_OPCUA_BROWSE_MAX_CHILDREN,
 ) -> dict[str, Any]:
     """按需临时连接（例如未保存到配置的浏览）。"""
-    client = Client(url=endpoint_url, timeout=15)
+    client = Client(url=endpoint_url, timeout=int(POOL_CONNECT_TIMEOUT_SEC))
     try:
         if username:
             client.set_user(username)
             client.set_password(password or "")
-        await client.connect()
+        await asyncio.wait_for(client.connect(), timeout=POOL_CONNECT_TIMEOUT_SEC)
         return await _browse_with_client(client, node_id, max_children)
     except Exception as e:
         logger.exception("OPC UA browse failed")
@@ -1126,9 +1132,33 @@ async def count_variables_for_saved_server(
 
 
 async def drop_saved_server_pool(server_id: str) -> None:
-    """删除已保存服务器配置时释放对应连接，避免持有无效会话。"""
+    """删除已保存服务器配置时释放对应连接，避免持有无效会话。
+
+    不可达主机上 connect 可能长时间占锁；删除配置时绝不能等满超时，
+    否则前端 DELETE 与其它 OPC 请求一起卡住。
+    """
     entry = _pool.pop(server_id, None)
     if not entry:
         return
-    async with entry.lock:
-        await _invalidate_entry_client(entry)
+    client = entry.client
+    entry.client = None
+
+    async def _cleanup() -> None:
+        try:
+            await asyncio.wait_for(entry.lock.acquire(), timeout=DROP_POOL_WAIT_SEC)
+        except asyncio.TimeoutError:
+            # 锁仍被 hung connect 占用：尽最大努力断开，不阻塞调用方
+            await _safe_disconnect(client)
+            return
+        try:
+            await _safe_disconnect(client)
+            if entry.client is not None:
+                await _invalidate_entry_client(entry)
+        finally:
+            entry.lock.release()
+
+    try:
+        await asyncio.wait_for(_cleanup(), timeout=DROP_POOL_WAIT_SEC + 1.0)
+    except asyncio.TimeoutError:
+        logger.warning("drop_saved_server_pool timed out for %s", server_id)
+        asyncio.create_task(_safe_disconnect(client))
