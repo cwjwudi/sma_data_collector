@@ -7,7 +7,7 @@
 
 ## 2026-08-11
 
-- **ReportEditor 0.3.167 / 052b**：OPC HTTP 槽分层（配置 CRUD 不排队）；坏链不再堵删除/好链浏览；探活约 3s。看板 [docs/052-✅](docs/052-✅-ReportEditor数据源配置CRUD异常.md) · Plan `0.3.167`。
+- **ReportEditor 0.3.167 / 052b**：OPC HTTP 槽分层（配置 CRUD 不排队）；坏链不再堵删除/好链浏览；探活约 3s。Win 包 `Setup-0.3.167-x64`（SHA256 `75c396b9…6da1`）。看板 [docs/052-✅](docs/052-✅-ReportEditor数据源配置CRUD异常.md) · Plan `0.3.167`。
 - **ReportEditor 0.3.166 / 052 ✅**：OPC/DB 保存删除防重；坏链下 CRUD 不全量探活；`saved_id` + 幂等删除审计。Win 包 `Setup-0.3.166-x64`（SHA256 `907a944b…6ab2`）。看板 [docs/052-✅](docs/052-✅-ReportEditor数据源配置CRUD异常.md) · Plan `0.3.166`。
 - **ReportEditor 052（本机 OPC 复现）**：审计 + Agent 对运行中后端复测——**前置有未正常连接的 OPC**（`666@192.168.137.1` 探活 ~8s）；`probeAll`/删除链墙钟 ~8s；无 id 双 POST 出双 uuid。远端难复现因缺坏链。已修于 0.3.166。看板 [docs/052-✅](docs/052-✅-ReportEditor数据源配置CRUD异常.md)。
 
