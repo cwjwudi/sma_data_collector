@@ -5,6 +5,10 @@
 
 ---
 
+## 2026-08-11
+
+- **ReportEditor 052（本机 OPC 复现）**：审计 `report-editor-audit-2026-08-11.json` 证实——无 id 连点保存出多 uuid；删除无防重连打 DELETE；坏链下 `loadServers`→`probeAllOpcConnections` 拖垮新建/删除。远端环境难复现因缺坏链/未走 OPC 连点。修复仍 ⌛️。看板 [docs/052-🚧](docs/052-🚧-ReportEditor数据源配置CRUD异常.md)。
+
 ## 2026-08-10
 
 - **ReportEditor 052（数据源配置 CRUD 异常）**：登记用户反馈——新建不显示、测连卡顿、删不掉、连点保存重复；代码对照指向保存后未回写 `saved_id`/`busy` 窗口可重复 POST 新建、保存后全量 `probeAll`、锁态禁删等。修复与手测仍 ⌛️。看板 [docs/052-🚧](docs/052-🚧-ReportEditor数据源配置CRUD异常.md)。

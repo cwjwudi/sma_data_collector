@@ -15,7 +15,8 @@
 3. **老的配置删不掉**
 4. **多次点击保存会保存好多个**（重复条目）
 
-范围优先：**数据库工作台**连接 CRUD；OPC UA 面板有同类「无忙态 / 新建无 id 连点」风险，一并列入排查。
+范围优先曾写：**数据库工作台**连接 CRUD；OPC UA 面板有同类「无忙态 / 新建无 id 连点」风险。  
+**2026-08-11 本机手测**：四类现象在 **OPC UA** 路径已用审计复现（见下「本机运行时复现」）；DB 工作台仍待对照补测。
 
 ---
 
@@ -83,29 +84,95 @@
 
 - [x] 四类现象均有代码对照与可疑点
 - [x] 写出可复现步骤与修复方向
-- [ ] 运行时手测勾选（见下一 H1）
+- [x] 运行时手测勾选（见下一 H1；OPC 路径本机已复现）
 
 ## 证据
 
 - `ConnectionManager.vue`：`save` / `runTest` / `testAndSave` / `remove`
 - `DatabaseWorkbench.vue`：`onConnectionUpdated`、`reloadConnections`、`probeAllDatabaseConnections`
 - `backend/api/routers/database.py`：`upsert_connection` / `delete_connection` / `test*`
-- `OpcUaPanel.vue`：`saveServer` / `removeServer` / `testDraft`
+- `OpcUaPanel.vue`：`saveServer` / `removeServer` / `testDraft` / `loadServers` → `probeAllOpcConnections`
 
 ---
 
-# ⌛️ 未完成：手测复现清单
+# ✅ 已完成：本机运行时复现（OPC UA 路径，2026-08-11）
 
-| # | 步骤 | 期望 / 观察 |
-| - | ---- | ----------- |
-| 1 | 解锁 → 新建 → 慢点一次「仅保存」 | 顶部出现一条且选中；`draft` 带 id |
-| 2 | 新建 → **连点**「仅保存」 | 当前是否出现多条（验证 A） |
-| 3 | 新建 → 「测试并保存」连点 | 是否重复插入 + UI 是否长时间 busy |
-| 4 | 锁态下点删除 | 应提示锁定，配置仍在 |
-| 5 | 解锁后删除一条，重启进页 | 该 id 应消失 |
-| 6 | 多条无效主机时进页 / 保存 | 是否全量探测导致卡顿 |
+## 环境与材料
 
-环境：ReportEditor 当前开发版或现场安装包版本号请在复现时注明。
+| 项 | 值 |
+| -- | -- |
+| 主机 | `WIN-VADV2GRD869` / os_user `dp` |
+| 版本痕迹 | 审计含 `update.applied`：`0.3.163` → `0.3.164`（本机可复现；远端登记环境未能复现） |
+| 证据文件 | 本机导出审计 `report-editor-audit-2026-08-11.json`（152 条；其中 `opcua.connection_save`×48、`opcua.connection_delete`×37） |
+| 复现入口 | 数据源 → **OPC UA**（非数据库工作台） |
+
+## 现象对照（口述 → 运行时）
+
+| 口述 | 本机结论 | 置信 |
+| ---- | -------- | ---- |
+| 多次点击保存会保存好多个 | **已复现**。同名同 endpoint 在无 `form.id` 时连点 → 多条不同 `uuid`（例：`RRR`/`WWW222`/`666`/`测试机` 各出现 2 个 id） | 高 |
+| 连接测试很慢、很卡 | **已复现（与坏链强相关）**。保存/删后 `loadServers` 必调 `probeAllOpcConnections` → 对**全部**已存连接并行 `POST /opcua/test_saved/{id}`；不可达 endpoint（如 `192.168.1.10:4840`、`192.168.137.1:4840`、`127.0.0.10:4840`）单次约 8s 超时，多条叠加时新建/删除操作体感卡顿 | 高 |
+| 老的配置删不掉 | **部分复现为「体感删不掉 / 连点才消」**。`removeServer` **无 busy/防重**；`form.id` 在 `await loadServers()` 完成前仍保留 → 同一 id 可在 ~150–320ms 内连打 DELETE 5～10 次（审计爆发）。首条删除已落盘，后续 DELETE 的 `before=null` 仍记 `ok`，UI 因全量探活未结束仍「卡住」，像删不动 | 高 |
+| 新建配置会不显示 | **与 A 叠加可解释**：连点产生多条同名 tab；`saveServer` 用 name+endpoint 在列表里找 `created`，多副本时选中/展示易乱；刷新期无明确忙态 | 中 |
+
+## 审计硬证据（节选）
+
+1. **连点新建多 uuid（验证 A · OPC）**  
+   - `WWW222` @ `opc.tcp://127.0.0.1:4840`：`d1d04b7a-…` 与 `77c27478-…` 间隔约 80ms 各建一条。  
+   - `RRR` 同理：`cd5615e7-…` 与 `326b1c12-…`。  
+   - 说明：`POST /opcua/servers` 在 `id` 为空时每次 `uuid4()` + `append`；前端 `saveServer` **无 busy**，保存成功后 **未立刻写回 `form.id`**（等 `loadServers` + name/endpoint 匹配），窗口内可再 POST 新建。
+
+2. **删除爆发（验证 C · OPC）**  
+   - `446ced4d-…`：约 320ms 内 `opcua.connection_delete` ×9。  
+   - `660c918a-…`（`SMA_TEST2` / `127.0.0.1:4840`）：约 240ms 内 ×10；前 1～2 条 `detail.before` 有 name/url，其后 `before=null`（已删仍打 DELETE）。  
+   - 后端 `delete_server` **幂等仍写审计**，故审计条数 ≈ 连点次数，不等于「删失败」。
+
+3. **坏链与卡顿（验证 D · OPC）**  
+   - 会话中出现不可达/异常 endpoint：`192.168.1.10:4840`、`192.168.137.1:4840`、`127.0.0.10:4840` 等。  
+   - 每次 `loadServers` 成功后立即 `probeAllOpcConnections()`（`OpcUaPanel.vue`）；点 tab 也会再全量探测。  
+   - `probeConnectionIds` 虽用 generation 丢弃过期 UI 结果，但 **HTTP/后端探测仍会跑完**；坏链超时叠加 → 新建/删除操作期间 UI 卡顿。
+
+4. **审计双记说明**  
+   - `opcua.connection_save`：前端 `auditLog` + 后端 `audit_log.append_audit` 各一条 → 同一次保存常成对出现（计数×2，勿当成两次用户点击）。  
+   - `opcua.connection_delete`：仅后端记；爆发次数 ≈ 真实连点 DELETE 次数。
+
+## 为何远端登记环境「不能复现」
+
+静态排查时优先写了 **数据库工作台**；本机可复现路径在 **OPC UA 面板**，且依赖：
+
+1. 存在 **不可达 / 错误** 的 OPC endpoint（触发全量 `test_saved` 超时）；  
+2. 在 **新建态（无 id）** 下连点「保存」，或删除时连点（无防重）；  
+3. 连接列表里已有多条坏链时，任意一次保存/删除/切 tab 都会放大卡顿。
+
+仅测「可达的本机 demo OPC」或只点一次保存，往往看不到重复条目与卡顿，与远端「登记了但环境复现不了」一致。
+
+## 结论（给修复用）
+
+1. **根因主链（OPC，已证实）**：无 id 连点保存 → 多 uuid；无 busy 连点删除 → 多次 DELETE + 审计爆发；保存/删除/切 tab → `probeAll` 全量测连，坏链超时拖垮交互。  
+2. **「删不掉」优先按**「重复副本未删净（A）+ 删除后探活卡顿伪装成失败（D）+ 无防重连点」**解释，而非 DELETE API 拒删。  
+3. **修复优先级不变**：P0 保存防重 + 立刻绑定 `saved_id`/`form.id`；P0 删除 busy/单飞；P1 `probeAll` 限流/保存后仅测当前/坏链短超时；删除成功先摘 tab。  
+4. DB 工作台静态结论仍有效，本轮手测以 OPC 为准；DB 连点保存可另补一轮对照。
+
+## 验收方式（本 H1）
+
+- [x] 本机 OPC 路径复现 A/C/D，审计可指到具体 id/时间簇  
+- [x] 写明与远端「不能复现」的环境差（坏链 + OPC 面板 + 连点）  
+- [x] 结论回写修复优先级（不改代码，仅证据闭环）
+
+---
+
+# ✅ 已完成：手测复现清单（OPC 本机）
+
+| # | 步骤 | 期望 / 观察 | 本机 |
+| - | ---- | ----------- | ---- |
+| 1 | 解锁 → 新建 → 慢点一次「保存」 | 顶部出现一条且选中；`form` 带 id | 未单独慢点记录；逻辑与静态 A 一致 |
+| 2 | 新建 → **连点**「保存」 | 是否出现多条（验证 A） | ✅ 审计：`RRR`/`WWW222` 等双 id |
+| 3 | 新建 → 「测试并保存」连点 | DB 路径；OPC 无同名按钮 | OPC：N/A（测「测试连接」+ 坏链超时） |
+| 4 | 锁态下点删除 | 应提示锁定，配置仍在 | 未专项测；代码有 `datasourceLocked` 分支 |
+| 5 | 解锁后删除一条，重启进页 | 该 id 应消失 | ✅ 能删掉；连点会多记审计；坏链时体感卡 |
+| 6 | 多条无效主机时进页 / 保存 / 删 | 全量探测导致卡顿 | ✅ 与坏链 + `probeAllOpcConnections` 一致 |
+
+环境：本机 Win，审计时段版本约 **0.3.164**（见上表）。DB 工作台 #1–#3 仍可补测。
 
 ---
 
